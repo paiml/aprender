@@ -53,6 +53,10 @@ name: Binary Release
 #   - `release: published` — fires automatically on each tagged release
 #   - `workflow_dispatch` — manual re-run / backfill, takes a tag input
 #
+# All the other workspace [[bin]]s (G5, #4189): `build-all-bins` ships each one, derived by
+# scripts/nightly_manifest.py bins exactly as nightly.yml does, as <bin>-<tag>-<target>.tar.gz for
+# x86_64/aarch64 gnu, each checked by asset_version_check.sh under its own name before upload.
+#
 # pv targets: 4 Linux (x86_64/aarch64 × musl/gnu), each built natively on
 # the box of its architecture (x86_64 on yoga, aarch64 on gx10): gnu inside
 # rust:1.93.0-bullseye, musl inside rust:1.93.0-bookworm. musl variants are static and ideal for Docker /
@@ -204,7 +208,7 @@ jobs:
               esac
               ldd --version | head -1 > /workspace/target/BUILDER_GLIBC
               rustc --version > /workspace/target/BUILDER_RUSTC
-              cargo build --release --locked --bin pv -p aprender-contracts-cli --target "$T"
+              cargo build --release --locked --bin pv -p aprender-contracts-cli --features update-check,build-sha --target "$T"
               strip "/workspace/target/$T/release/pv"'
           mkdir -p "target/$T/release"
           cp "$CACHE/target/$T/release/pv" "target/$T/release/pv"
@@ -277,6 +281,178 @@ jobs:
               --data-binary @"$f" "https://uploads.github.com/repos/${GITHUB_REPOSITORY}/releases/$rid/assets?name=$f" \
               | python3 -c 'import json,sys; a=json.load(sys.stdin); print("uploaded", a["name"], a["size"], "bytes")'
           done
+
+  # G5 (#4189): every other workspace [[bin]] on every tag. The set is the nightly's, derived by
+  # `scripts/nightly_manifest.py bins` from `cargo metadata` of the TAG tree -- never a hand list, so a
+  # new [[bin]] ships on the next tag with no edit here. apr and pv are the only bins left out: their
+  # dedicated lanes above ship them (cuda/cpu/darwin apr, musl+gnu pv), and a second `pv-<tag>-<target>`
+  # from this lane would clobber the pv lane's asset of the same name. gnu only, inside
+  # rust:1.93.0-bullseye (the 2.31 floor), natively on the box of each architecture as the pv lane.
+  # Each bin must answer `--help`, and its `--version` must print `<bin> <tag version> (<sha>)` --
+  # asset_version_check.sh with the bin's own name, the check verify-apr-assets makes of apr --
+  # before anything is uploaded; nightly_manifest.py smoke then gives the nightly's verdicts on the
+  # same executables. Assets are `<bin>-<tag>-<target>.tar.gz` + .sha256: they carry the tag once, so
+  # promote_rc.sh renames them for a final like every other asset.
+  build-all-bins:
+    name: all [[bin]]s ${{ matrix.target }} on ${{ matrix.host }}
+    needs: assets
+    if: needs.assets.outputs.present == 'false'
+    runs-on: ${{ fromJSON(matrix.labels) }}
+    timeout-minutes: 120
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - target: x86_64-unknown-linux-gnu
+            host: yoga
+            labels: '["self-hosted", "Linux", "X64", "cuda", "yoga"]'
+          - target: aarch64-unknown-linux-gnu
+            host: gx10
+            labels: '["self-hosted", "Linux", "ARM64", "cuda", "gx10"]'
+    steps:
+      - name: Resolve release tag
+        id: tag
+        run: |
+          TAG="${{ github.event.release.tag_name || inputs.tag }}"
+          if [ -z "$TAG" ]; then
+            echo "::error::No tag resolved (release event missing tag_name and no dispatch input)"
+            exit 1
+          fi
+          echo "tag=$TAG" >> "$GITHUB_OUTPUT"
+
+      - name: Checkout at tag
+        uses: actions/checkout@v7
+        with:
+          ref: ${{ steps.tag.outputs.tag }}
+
+      # As every lane: the stamper and the checker come from THIS workflow's commit, not the tag tree.
+      - name: Stamp the rc version into the tag tree (#4110)
+        env:
+          TAG: ${{ steps.tag.outputs.tag }}
+        run: |
+          git fetch --no-tags --depth 1 origin "$GITHUB_WORKFLOW_SHA"
+          git show "FETCH_HEAD:scripts/release/asset_version_check.sh" > "$RUNNER_TEMP/asset_version_check.sh"
+          git show "FETCH_HEAD:scripts/nightly_manifest.py" > "$RUNNER_TEMP/nightly_manifest.py"
+          case "$TAG" in *-rc.*) ;; *) echo "final tag $TAG: nothing to stamp"; exit 0 ;; esac
+          git show "FETCH_HEAD:scripts/release/stamp_rc_version.sh" > "$RUNNER_TEMP/stamp_rc_version.sh"
+          bash "$RUNNER_TEMP/stamp_rc_version.sh" "$GITHUB_WORKSPACE" "$TAG"
+
+      - name: Preflight - this box has the tools this job assumes
+        run: bash scripts/ci_self_hosted_preflight.sh --need docker objdump
+
+      - name: Build every [[bin]] inside rust:1.93.0-bullseye (glibc 2.31 floor)
+        run: |
+          set -euo pipefail
+          DOCKER=docker; docker ps >/dev/null 2>&1 || DOCKER="sudo -n docker"
+          T="${{ matrix.target }}"
+          CACHE="$(cd "$GITHUB_WORKSPACE/../.." && pwd)/cache-allbins/$T"
+          mkdir -p "$CACHE/registry" "$CACHE/target" "$GITHUB_WORKSPACE/target"
+          $DOCKER run --rm \
+            -v "$GITHUB_WORKSPACE:/workspace" \
+            -v "$CACHE/registry:/usr/local/cargo/registry" \
+            -w /workspace \
+            rust:1.93.0-bullseye \
+            cargo metadata --locked --no-deps --format-version 1 > "$RUNNER_TEMP/metadata.json"
+          ALL=$(python3 "$RUNNER_TEMP/nightly_manifest.py" bins --metadata "$RUNNER_TEMP/metadata.json")
+          BINS=$(echo "$ALL" | tr ',' '\n' | grep -vxE 'apr|pv' | paste -sd, -)
+          if [ -z "$BINS" ]; then echo "::error::no [[bin]] derived from the tag tree"; exit 1; fi
+          # the nightly's own cargo selection, verbatim (it builds apr and pv too; they are not packaged)
+          ARGS=$(python3 "$RUNNER_TEMP/nightly_manifest.py" bins --metadata "$RUNNER_TEMP/metadata.json" --format cargo)
+          echo "BINS=$BINS" >> "$GITHUB_ENV"
+          echo "Shipping $(echo "$BINS" | tr ',' '\n' | wc -l) bins (+ apr, pv from their own lanes): $BINS"
+          APR_SHA=$(git rev-parse --short=9 HEAD)
+          $DOCKER run --rm \
+            -v "$GITHUB_WORKSPACE:/workspace" \
+            -v "$CACHE/registry:/usr/local/cargo/registry" \
+            -v "$CACHE/target:/workspace/target" \
+            -w /workspace \
+            -e CARGO_TARGET_DIR=/workspace/target \
+            -e CARGO_INCREMENTAL=0 \
+            -e APR_GIT_SHA_OVERRIDE="$APR_SHA" \
+            -e T="$T" \
+            -e ARGS="$ARGS" \
+            rust:1.93.0-bullseye \
+            sh -c 'set -e; ldd --version | head -1; cargo build --locked --release $ARGS --target "$T"'
+          mkdir -p "target/$T/release"
+          # a bin that did not build fails this cp, which fails the step
+          for b in ${BINS//,/ }; do cp "$CACHE/target/$T/release/$b" "target/$T/release/$b"; done
+
+      # Checks that can fail, on the box that built them (native arch): every bin answers --help, its
+      # --version belongs to the tag (stdout only: aprender-ptx-debug's deprecation notice is stderr),
+      # the nightly's verdicts hold, and no gnu asset imports above GLIBC_2.31.
+      - name: Every bin runs, belongs to the tag, and keeps the 2.31 floor
+        env:
+          TAG: ${{ steps.tag.outputs.tag }}
+        run: |
+          set -uo pipefail
+          T="${{ matrix.target }}"; SHA=$(git rev-parse HEAD); bad=0
+          V=$(awk '/^\[workspace.package\]/{p=1;next} /^\[/{p=0} p&&/^version *=/{gsub(/"/,"",$3);print $3;exit}' Cargo.toml)
+          for b in ${BINS//,/ }; do
+            BIN="target/$T/release/$b"
+            line=$(timeout 30 "$BIN" --version 2>/dev/null | head -1)
+            if ! bash "$RUNNER_TEMP/asset_version_check.sh" "$TAG" "$SHA" "$line" "$b"; then bad=1; fi
+            if ! timeout 30 "$BIN" --help > /dev/null 2>&1; then echo "::error::$b --help failed"; bad=1; fi
+            FLOOR=$(objdump -T "$BIN" | grep -oE 'GLIBC_[0-9]+\.[0-9]+(\.[0-9]+)?' | sort -u -t_ -k2 -V | tail -1)
+            got=${FLOOR#GLIBC_}
+            if [ -n "$got" ] && [ "$(printf '%s\n%s\n' "$got" 2.31 | sort -V | tail -1)" != 2.31 ]; then
+              echo "::error::$b needs $FLOOR, above the GLIBC_2.31 floor"; bad=1
+            fi
+          done
+          python3 "$RUNNER_TEMP/nightly_manifest.py" smoke --sha "$SHA" --bins "$BINS" \
+            --bin-dir "target/$T/release" --version "$V" > "$RUNNER_TEMP/smoke.json" || bad=1
+          { echo "### all [[bin]]s $T: $(echo "$BINS" | tr ',' '\n' | wc -l) bins at $TAG"
+            echo '```json'; cat "$RUNNER_TEMP/smoke.json"; echo '```'; } >> "$GITHUB_STEP_SUMMARY"
+          if [ "$bad" -ne 0 ]; then echo "::error::a [[bin]] does not belong to $TAG; nothing is uploaded"; exit 1; fi
+
+      - name: Package archives
+        env:
+          TAG: ${{ steps.tag.outputs.tag }}
+        run: |
+          set -euo pipefail
+          T="${{ matrix.target }}"
+          mkdir -p dist
+          for b in ${BINS//,/ }; do
+            A="$b-$TAG-$T"
+            mkdir -p "$A"
+            cp "target/$T/release/$b" "$A/"
+            for f in README.md LICENSE LICENSE-MIT LICENSE-APACHE; do
+              if [ -f "$f" ]; then cp "$f" "$A/"; fi
+            done
+            tar czf "dist/$A.tar.gz" "$A"
+            (cd dist && shasum -a 256 "$A.tar.gz" > "$A.tar.gz.sha256")
+          done
+          find dist -type f | wc -l
+
+      # The pv lane's REST upload (these boxes carry no `gh`), then a read-back: every packaged file
+      # must be on the release, or the lane is red.
+      - name: Upload assets to release (REST, no gh)
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          TAG: ${{ steps.tag.outputs.tag }}
+        run: |
+          set -euo pipefail
+          API="https://api.github.com/repos/${GITHUB_REPOSITORY}"
+          rel_json() {
+            curl -sSf -H "Authorization: Bearer $GH_TOKEN" -H "Accept: application/vnd.github+json" "$API/releases?per_page=100" \
+              | python3 -c 'import json,sys; t=sys.argv[1]; print(json.dumps(next(r for r in json.load(sys.stdin) if r["tag_name"]==t)))' "$TAG"
+          }
+          rel=$(rel_json)
+          rid=$(printf '%s' "$rel" | python3 -c 'import json,sys; print(json.load(sys.stdin)["id"])')
+          cd dist
+          for f in *; do
+            aid=$(printf '%s' "$rel" | python3 -c 'import json,sys; n=sys.argv[1]; print(next((a["id"] for a in json.load(sys.stdin)["assets"] if a["name"]==n), ""))' "$f")
+            if [ -n "$aid" ]; then curl -sSf -X DELETE -H "Authorization: Bearer $GH_TOKEN" "$API/releases/assets/$aid" > /dev/null; fi
+            curl -sSf -X POST -H "Authorization: Bearer $GH_TOKEN" -H "Content-Type: application/octet-stream" \
+              --data-binary @"$f" "https://uploads.github.com/repos/${GITHUB_REPOSITORY}/releases/$rid/assets?name=$f" \
+              | python3 -c 'import json,sys; a=json.load(sys.stdin); print("uploaded", a["name"], a["size"], "bytes")'
+          done
+          have=$(rel_json | python3 -c 'import json,sys; print("\n".join(a["name"] for a in json.load(sys.stdin)["assets"]))')
+          missing=0
+          for f in *; do
+            if ! grep -qxF -- "$f" <<< "$have"; then echo "::error::$f is not on $TAG after upload"; missing=1; fi
+          done
+          [ "$missing" -eq 0 ]
+          echo "- $(find . -type f | wc -l) assets on $TAG, read back" >> "$GITHUB_STEP_SUMMARY"
 
   build-apr-cuda:
     name: apr (cuda) ${{ matrix.target }} on ${{ matrix.host }}
@@ -918,7 +1094,7 @@ jobs:
 
   summary:
     name: Summary
-    needs: [assets, build, build-apr-cuda, build-apr-cpu, build-apr-darwin, verify-apr-assets, smoke-cuda, smoke-cpu]
+    needs: [assets, build, build-all-bins, build-apr-cuda, build-apr-cpu, build-apr-darwin, verify-apr-assets, smoke-cuda, smoke-cpu]
     runs-on: [self-hosted, Linux, X64, clean-room]
     if: always()
     steps:
@@ -943,6 +1119,7 @@ jobs:
             else
               echo "- Build matrix: **partial** (status=$STATUS)"
             fi
+            echo "- every other [[bin]] (G5 #4189, x86_64+aarch64 gnu): ${{ needs.build-all-bins.result }}"
             echo "- Targets:"
             echo "  - x86_64-unknown-linux-musl"
             echo "  - x86_64-unknown-linux-gnu"

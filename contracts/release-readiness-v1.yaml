@@ -81,6 +81,9 @@ entity:
 relations:
   depends_on: [ont-shapes-v1, ont-model-receipts-v1, model-capability-ladder-v1]
 
+# #3610 exemptions, by shape id. Here and not on the shape: the fleet-pinned pv refuses an unknown shape key.
+allow_empty:
+  release-readiness-v1.refusal: "a RefusalCell exists only where a cell does not fit its host; a release where every cell fits has none (#3610)"
 shapes:
   - id: release-readiness-v1.release
     targetClass: release:Release
@@ -190,7 +193,6 @@ shapes:
   # mid-run, never a silent truncation, never a pass (#3710 rule)
   - id: release-readiness-v1.refusal
     targetClass: release:RefusalCell
-    allowEmpty: "a RefusalCell exists only where a cell does not fit its host; a release where every cell fits has none (#3610)"
     properties:
       - {path: release:row, minCount: 1, maxCount: 1, nodeKind: IRI,
          node: {properties: [{path: release:verdict, minCount: 1, maxCount: 1, in: [refused]},

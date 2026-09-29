@@ -3,6 +3,8 @@
 
 /// Update identity (EPIC #4232). `update` is dispatched here, not in the
 /// library, so `apr pv update` can never install pv over the apr executable.
+/// Behind `update-check` (#4604 C2): the crates.io default builds without it.
+#[cfg(feature = "update-check")]
 const PRODUCT: sovereign_update::Product = sovereign_update::Product {
     bin: "pv",
     repo: "paiml/aprender",
@@ -13,10 +15,13 @@ const PRODUCT: sovereign_update::Product = sovereign_update::Product {
 };
 
 fn main() {
-    let args: Vec<String> = std::env::args().collect();
-    if args.get(1).is_some_and(|a| a == "update") {
-        std::process::exit(sovereign_update::update_main(&PRODUCT, &args[2..]));
+    #[cfg(feature = "update-check")]
+    {
+        let args: Vec<String> = std::env::args().collect();
+        if args.get(1).is_some_and(|a| a == "update") {
+            std::process::exit(sovereign_update::update_main(&PRODUCT, &args[2..]));
+        }
+        sovereign_update::startup(&PRODUCT, &args);
     }
-    sovereign_update::startup(&PRODUCT, &args);
     aprender_contracts_cli::run();
 }

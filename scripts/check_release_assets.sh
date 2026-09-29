@@ -132,8 +132,9 @@ check_tag() { # check_tag TAG -> 0 complete · 1 missing · 2 ENV
     have=$(read_assets "$tag") || return 2
     while IFS= read -r want; do
         [ -n "$want" ] || continue
-        # a here-string, never `printf | grep -q`: under pipefail grep's early exit on a
-        # match SIGPIPEs printf, and a PRESENT asset read as MISSING (~1 run in 8)
+        # A here-string, never `printf | grep -q`: under this file's pipefail, grep -q exits on
+        # its first match, printf takes SIGPIPE (141) and the `if` reads a PRESENT asset as
+        # MISSING. It bit CI run 36510076745 (release_criteria.sh --self-test row 6).
         if grep -qxF -- "$want" <<< "$have"; then
             printf 'ok      %s\n' "$want"
         else
@@ -161,6 +162,8 @@ selftest() {
     grep -v '^pv-' "$work/complete.txt" > "$work/nopv.txt"
     grep -vx "apr-$tag-aarch64-apple-darwin-cpu.tar.gz" "$work/complete.txt" > "$work/nodarwin.txt"
     : > "$work/empty.txt"
+    # a release that also carries many other assets: $have outgrows the 64 KiB pipe buffer
+    { cat "$work/complete.txt"; seq -f 'extra-asset-%06g.tar.gz' 1 20000; } > "$work/big.txt"
 
     row() { # row <want-rc> <label> <cmd...>
         local want=$1 label=$2; shift 2
@@ -181,6 +184,8 @@ selftest() {
     row 1 "a missing .sha256 is as fatal as a missing tarball" bash "$0" "$tag" --assets-from "$work/nosha.txt"
     row 1 "the eight pv assets are required too"               bash "$0" "$tag" --assets-from "$work/nopv.txt"
     row 1 "an empty release is MISSING (1), not ENV"           bash "$0" "$tag" --assets-from "$work/empty.txt"
+    row 0 "a complete release with 20000 other assets is still credited (no SIGPIPE false MISSING)" \
+        bash "$0" "$tag" --assets-from "$work/big.txt"
     row 2 "an unreadable asset list is ENV (2), never a pass"  bash "$0" "$tag" --assets-from "$work/nope.txt"
     row 2 "no tag at all is a usage error (2)"                 bash "$0"
     row 0 "RELEASE_ASSETS_FIXTURE is the same seam as --assets-from" \

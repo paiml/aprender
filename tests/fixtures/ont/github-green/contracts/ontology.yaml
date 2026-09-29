@@ -204,6 +204,7 @@ subsumes:
   - {sub: Milestone, sup: Json}
 
 readers:
+  entity_type_target_class: ontology/shapes.rs
   concepts: ontology/sigma.rs
   subsumes: ontology/sigma.rs, ontology/extract/mod.rs, lint/subsumption.rs, ontology/owl.rs
   roles: lint/sigma_gate.rs, lint/relations_gate.rs
@@ -213,3 +214,21 @@ readers:
   entity_types: lint/sigma_gate.rs, ontology/extract/json/github.rs
   extractors: ontology/sigma.rs
   not_expressible: ontology/sigma.rs
+
+# The class a shape with no `targetClass` targets, by entity type (sigma.rs integrity rule; same values as contracts/ontology.yaml).
+entity_type_target_class:
+  pv-contract: ont:Contract
+  readme: readme:Readme
+  llm-context: llm:LlmContext
+  csv: csv:Dataset
+  apr-model: model:AprModel
+  gguf: model:Model
+  json: ~
+  code: ~
+  lean: ~
+  parity-receipt: ~
+  release-evidence: ~
+  repo: ont:Repo
+  issue: ont:Issue
+  pull-request: ont:PullRequest
+  milestone: ont:Milestone

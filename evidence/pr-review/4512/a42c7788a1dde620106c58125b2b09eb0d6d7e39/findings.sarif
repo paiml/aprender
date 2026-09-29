@@ -1,0 +1,386 @@
+{
+  "$schema": "https://raw.githubusercontent.com/oasis-tcs/sarif-spec/master/Schemata/sarif-schema-2.1.0.json",
+  "version": "2.1.0",
+  "runs": [
+    {
+      "tool": {
+        "driver": {
+          "name": "pmat",
+          "version": "3.42.0",
+          "informationUri": "https://github.com/paiml/pmat",
+          "rules": []
+        }
+      },
+      "results": [],
+      "properties": {
+        "consultation": "pmat",
+        "status": "consulted-found-nothing",
+        "index_commit": "a42c7788a1dde620106c58125b2b09eb0d6d7e39",
+        "index_is_ancestor": true,
+        "index_worktree_dirty": false,
+        "complexity_delta": [],
+        "tdg_delta": [],
+        "satd_introduced": [],
+        "duplication_hits": 0,
+        "duplication_note": "pmat query 'check run signature verification' --limit 5 --format json returned 5 hits (373-line JSON, /tmp/pmat-q.json), none of which are duplicates of scripts/check_pr_review_arm4.sh's new check_signature()/check_runs_json()/pr_head_sha() functions or scripts/pr_review_sign_receipt.sh's PR_REVIEW_SIGN_BIND handling -- this is new verification logic, not a re-implementation of something that already exists. No complexity/TDG/SATD analyzer applies to .sh/.yml files; grep for TODO/FIXME/HACK/XXX on the diff's added lines across all 4 focus files found one XXX-looking substring that is the literal mktemp(1) template 'arm4-checksig.XXXXXX', not an SATD marker."
+      }
+    },
+    {
+      "tool": {
+        "driver": {
+          "name": "nvidia-cuda-docs",
+          "version": "n/a",
+          "informationUri": "n/a",
+          "rules": []
+        }
+      },
+      "results": [],
+      "properties": {
+        "consultation": "cuda",
+        "status": "not-triggered",
+        "trigger_reason": "scripts/check_pr_review_receipt.sh --match-path rc=1 for all 9 changed paths (the 4 security-relevant files plus .github/workflows/ci.yml, docs/roadmaps/roadmap.yaml, docs/roadmaps/entries/PMAT-4510.yaml, scripts/check_ci_fat_secrets_plumbed.sh, scripts/lib/pr_review_patch_id.sh); --match-message rc=1 over the single commit message in base..head range."
+      }
+    },
+    {
+      "tool": {
+        "driver": {
+          "name": "pmat",
+          "version": "2.0.0",
+          "informationUri": "n/a",
+          "rules": []
+        }
+      },
+      "results": [],
+      "properties": {
+        "consultation": "crux",
+        "status": "not-triggered",
+        "trigger_reason": "git diff --name-only base..head against crates/apr-cli/** and contracts/apr-cli-commands-v1.yaml is empty (rc=0). No CLI subcommand, flag, HTTP route, MCP tool, config key or output format changed by this diff."
+      }
+    },
+    {
+      "tool": {
+        "driver": {
+          "name": "cargo-mutants",
+          "version": "n/a",
+          "informationUri": "n/a",
+          "rules": []
+        }
+      },
+      "results": [
+        {
+          "ruleId": "mutation-harness-gap",
+          "level": "warning",
+          "message": {
+            "text": "scripts/check_pr_review_arm4.sh and scripts/pr_review_sign_receipt.sh are both touched by this diff (the arm4 change is the largest and most security-relevant in the PR) and neither has a committed mutation set; scripts/mutate-guard.sh targets only scripts/check_pr_review_receipt.sh (GUARD_REL=scripts/check_pr_review_receipt.sh)."
+          },
+          "properties": {
+            "grounding": "measured",
+            "precision_class": "informational",
+            "failure_scenario": "A regression in check_signature()'s exact-match/substring-boundary logic (e.g. accidentally dropping the leading/trailing space in the ' head=$sh ' pattern, re-introducing the head=abc/head=abcd prefix-confusion class) would ship with no mutation coverage to catch it; only the script's own self-test case table would need to happen to exercise that exact regression.",
+            "command": [
+              "grep",
+              "-n",
+              "TARGET|check_pr_review|pr_review_sign",
+              "scripts/mutate-guard.sh"
+            ],
+            "exit_code": 0,
+            "stdout_sha256": "3836763b6a199bf0cb36683044b2c2ec5facd0a136e0b2e7e4e311e5b7317d07"
+          }
+        }
+      ],
+      "properties": {
+        "consultation": "mutation",
+        "status": "unreachable",
+        "scope": "guard-touching",
+        "attempted": 0,
+        "target_files": [
+          "scripts/check_pr_review_arm4.sh",
+          "scripts/pr_review_sign_receipt.sh"
+        ],
+        "note": "attempted:0 recorded honestly per S3.D -- neither touched guard script has a committed mutation harness. Supplementary (non-mutation) evidence collected instead: both scripts' own self-test case tables pass in both polarities -- 'bash scripts/check_pr_review_arm4.sh --self-test' (33 rows, this run's rc captured below) and 'bash scripts/pr_review_sign_receipt.sh --self-test' (14 rows, rc captured below) -- but a passing self-test is not a mutation kill and is recorded as such, not counted toward 'killed'."
+      }
+    },
+    {
+      "tool": {
+        "driver": {
+          "name": "antigravity",
+          "version": "1.2.12",
+          "informationUri": "n/a",
+          "rules": []
+        }
+      },
+      "results": [
+        {
+          "ruleId": "agy-signer-blind-signing",
+          "level": "note",
+          "message": {
+            "text": "The pr-review-sign job blindly signs unsigned receipts without validating their contents. A malicious actor can submit a fabricated receipt in their pull request, and the CI `pr-review-sign` job will automatically sign it and post a valid check run. While the receipt's contents are later validated by the guard script, the CI signer acts as a signing oracle that blindly signs unvalidated payloads."
+          },
+          "properties": {
+            "grounding": "cited",
+            "precision_class": "advisory",
+            "failure_scenario": "A malicious actor can submit a fabricated receipt in their pull request, and the CI `pr-review-sign` job will automatically sign it and post a valid check run. While the receipt's contents are later validated by the guard script, the CI signer acts as a signing oracle that blindly signs unvalidated payloads.",
+            "reverified_by_primary": true,
+            "primary_verdict": "CONFIRMED \u2014 real and reproducible (ci/sections.yml:2785 reads predicate.diff_patch_id via jq with no prior call to any receipt-content guard), but PRE-EXISTING: the diff_patch_id-binding/exact-match infra (#4421) predates B1 and B1 does not add or remove a pre-signing validation step. Impact is contained (see permission-escalation-checks-write note and trusted-comment-substring-injection refutation): a blindly-signed garbage receipt cannot bind to any real diff at verification time.",
+            "source": "ci/sections.yml:2785-2787 @ a42c7788a1dde620106c58125b2b09eb0d6d7e39",
+            "excerpt": "            pid=$(jq -r '.predicate.diff_patch_id // \"none\"' \"$rcpt\")\n            PR_REVIEW_SIGN_BIND=\"pr=$PR_NUMBER head=$PR_HEAD_SHA pid=$pid\" \\\n              bash scripts/pr_review_sign_receipt.sh \"$d\"\n",
+            "excerpt_sha256": "d52df75eb45db0b8ec1bc366bfcb121c5819dea78cdfd1fd05b35b6db897cc0d"
+          }
+        },
+        {
+          "ruleId": "agy-trusted-comment-substring-injection",
+          "level": "note",
+          "message": {
+            "text": "Unanchored substring matching on the trusted comment allows field injection bypasses. An attacker can inject a payload such as `head=<target_sha>` into the `diff_patch_id` field of their unsigned receipt. The signer blindly appends this to the trusted comment. During verification in `check_pr_review_arm4.sh`, the unanchored substring match `*\" head=$sh \"*` will falsely match the injected suffix rather than the actual head bound by the signer."
+          },
+          "properties": {
+            "grounding": "cited",
+            "precision_class": "advisory",
+            "failure_scenario": "An attacker can inject a payload such as `head=<target_sha>` into the `diff_patch_id` field of their unsigned receipt. The signer blindly appends this to the trusted comment. During verification in `check_pr_review_arm4.sh`, the unanchored substring match `*\" head=$sh \"*` will falsely match the injected suffix rather than the actual head bound by the signer.",
+            "reverified_by_primary": true,
+            "primary_verdict": "REFUTED. Reproduced the described injection mechanism (pid extracted unsanitized from predicate.diff_patch_id, ci/sections.yml:2785-2786) but arm4's A2 selection gate (scripts/check_pr_review_arm4.sh:287-289) independently recomputes the diff_patch_id via prpid_compute() and requires byte-exact match against predicate.diff_patch_id BEFORE ever calling check_signature(). A crafted diff_patch_id containing an injected ' head=<forged_sha> ' token is not a valid 40-hex patch-id, so it fails the A2 exact-match and check_signature() (where the injected head= token would otherwise be checked) is never invoked for that receipt. The PR_HEAD_SHA bound into the trusted comment (ci/sections.yml:2760, `${{ github.event.pull_request.head.sha }}`) is sourced from trusted GitHub event context, never from the receipt, so the injection's own target field cannot be forged this way either. See mutation-harness-gap: this containment logic has no mutation coverage.",
+            "source": "scripts/check_pr_review_arm4.sh:287-289 @ a42c7788a1dde620106c58125b2b09eb0d6d7e39",
+            "excerpt": "        rp=$(jq -r '.predicate.diff_patch_id // empty' \"$d/receipt.intoto.jsonl\" 2>/dev/null)\n        if [ -z \"$rp\" ]; then legacy=$((legacy + 1)); legacy_dirs+=(\"$d\"); continue; fi\n        if [ \"$rp\" != \"$pid\" ]; then other=$((other + 1)); continue; fi\n",
+            "excerpt_sha256": "30253f4081cf1a05c8aba2ee182b04c9deb750b4b63208b6522dbb9ed414bb9c"
+          }
+        },
+        {
+          "ruleId": "agy-permission-escalation-checks-write",
+          "level": "note",
+          "message": {
+            "text": "The `pr-review-sign` job in `ci/sections.yml` escalates permissions to `checks: write`. If a step within the `pr-review-sign` job is compromised (e.g., via script injection), the attacker can abuse the `checks: write` permission to create or modify arbitrary check runs on the repository, potentially spoofing the success of other required branch protection checks."
+          },
+          "properties": {
+            "grounding": "cited",
+            "precision_class": "advisory",
+            "failure_scenario": "If a step within the `pr-review-sign` job is compromised (e.g., via script injection), the attacker can abuse the `checks: write` permission to create or modify arbitrary check runs on the repository, potentially spoofing the success of other required branch protection checks.",
+            "reverified_by_primary": true,
+            "primary_verdict": "CONFIRMED as a factual permission change (ci/sections.yml:2722-2724, contents:write -> contents:read + checks:write), which is the EXPECTED and INTENDED effect of moving the signing mechanism from a committed .minisig to a posted check run -- not a defect. Scoped to the pr-review-sign job only (not workflow-wide; pr-review-quorum.yml's workflow-level permissions remain contents:read, job present gets +checks:read only), and the job is fork-gated (`if: ... head.repo.full_name == github.repository`) so it never runs against fork PR content or exposes PR_REVIEW_SIGNING_KEY_B64 to a fork.",
+            "source": "ci/sections.yml:2722-2724 @ a42c7788a1dde620106c58125b2b09eb0d6d7e39",
+            "excerpt": "    permissions:\n      contents: read\n      checks: write\n",
+            "excerpt_sha256": "a3324ac315ad382d8470c99c3433ac9a55dc25f5a0bbd18f1d47f71686e257a4"
+          }
+        }
+      ],
+      "properties": {
+        "consultation": "antigravity",
+        "status": "consulted-found-something",
+        "model_id": "gemini-3.1-pro-high",
+        "reviewed_by_primary": true,
+        "precision_class": "advisory"
+      }
+    },
+    {
+      "tool": {
+        "driver": {
+          "name": "pmat",
+          "version": "2.0.0",
+          "informationUri": "n/a",
+          "rules": []
+        }
+      },
+      "results": [
+        {
+          "ruleId": "check-run-authenticity-app-slug",
+          "level": "note",
+          "message": {
+            "text": "(a) Forged/replayed check run: the verifier requires app.slug == \"github-actions\" in addition to name==pr-review-signature, head_sha==<the PR's own trusted head> and conclusion==success. app.slug is stamped by GitHub from the token/installation that created the check run and cannot be set by a workflow's own step content; producing a check run with app.slug=github-actions requires the checks:write permission this workflow's own job holds, and that job is fork-gated. A PR author (even a same-repo, non-fork one) cannot post a competing check run with app.slug=github-actions from a step they control unless they already have checks:write on the repo -- at which point they could forge far more than this one check."
+          },
+          "locations": [
+            {
+              "physicalLocation": {
+                "artifactLocation": {
+                  "uri": "scripts/check_pr_review_arm4.sh"
+                },
+                "region": {
+                  "startLine": 184,
+                  "endLine": 187
+                }
+              }
+            }
+          ],
+          "properties": {
+            "grounding": "cited",
+            "precision_class": "informational",
+            "failure_scenario": "Without the app.slug filter, any GitHub App or PAT with checks:write (a lower bar than the signing key) could post a same-named check run and it would be accepted as long as the trusted-comment/minisign check also happened to pass -- the app.slug filter is the first of three independent gates (app.slug, minisign signature, trusted-comment fields), not decorative.",
+            "source": "scripts/check_pr_review_arm4.sh:184-187 @ a42c7788a1dde620106c58125b2b09eb0d6d7e39",
+            "excerpt": "        [.check_runs[]? | select(.name == \"pr-review-signature\" and .head_sha == $h\n                                 and .app.slug == \"github-actions\" and .conclusion == \"success\")]\n        | sort_by(.completed_at // \"\") | last | (.output.text // \"{}\") | fromjson | .[$k] // empty' 2>/dev/null)\n    if [ -z \"$sig\" ]; then\n",
+            "excerpt_sha256": "11f9111c3219e207b5ef96ec698281e8babde2285523946eab8b043ac247cbb5"
+          }
+        },
+        {
+          "ruleId": "check-run-authenticity-crypto",
+          "level": "note",
+          "message": {
+            "text": "(a) continued: passing the app.slug/name/head_sha/conclusion filter alone is insufficient -- check_signature() then cryptographically verifies the signature under the repo's committed minisign public key before trusting the trusted comment at all. A forged check run with the right shape but no valid signature is rejected here regardless of app.slug."
+          },
+          "locations": [
+            {
+              "physicalLocation": {
+                "artifactLocation": {
+                  "uri": "scripts/check_pr_review_arm4.sh"
+                },
+                "region": {
+                  "startLine": 195,
+                  "endLine": 200
+                }
+              }
+            }
+          ],
+          "properties": {
+            "grounding": "cited",
+            "precision_class": "informational",
+            "failure_scenario": "A check-run-shape-only forgery (right name/head_sha/app.slug, garbage or absent signature body) would be caught here even if app.slug were somehow spoofable.",
+            "source": "scripts/check_pr_review_arm4.sh:195-200 @ a42c7788a1dde620106c58125b2b09eb0d6d7e39",
+            "excerpt": "    if ! minisign -V -q -m \"$out/receipt.intoto.jsonl\" -p \"$REPO_ROOT/$PUBKEY_REL\" \\\n            -x \"$out/receipt.intoto.jsonl.minisig\" >/dev/null 2>&1; then\n        echo \"  A2b the check-run signature for $name does NOT verify under $PUBKEY_REL.\" >&2\n        return 1\n    fi\n    tc=$(sed -n 's/^trusted comment: //p' \"$out/receipt.intoto.jsonl.minisig\")\n",
+            "excerpt_sha256": "0008aa0de40eccb4ef7112160f77571b799e8f0d3f9b6ede1b071d6778366d2f"
+          }
+        },
+        {
+          "ruleId": "trusted-comment-substring-boundary-head",
+          "level": "note",
+          "message": {
+            "text": "(a) substring-match pitfall check: the head= comparison is delimited by literal spaces on both sides of the comparison string (`case \" $tc \" in *\" head=$sh \"*`), so checking for head=abc does not match a trusted comment containing head=abcd -- the character immediately after $sh in the pattern is a required space, and abcd's 'd' would occupy that position instead."
+          },
+          "locations": [
+            {
+              "physicalLocation": {
+                "artifactLocation": {
+                  "uri": "scripts/check_pr_review_arm4.sh"
+                },
+                "region": {
+                  "startLine": 205,
+                  "endLine": 208
+                }
+              }
+            }
+          ],
+          "properties": {
+            "grounding": "cited",
+            "precision_class": "informational",
+            "failure_scenario": "An unanchored match (e.g. `case \"$tc\" in *\"head=$sh\"*`, no wrapping spaces) would let a trusted comment bound to head=abcd falsely satisfy a check for head=abc (prefix confusion); this repo's guard does not have that shape.",
+            "source": "scripts/check_pr_review_arm4.sh:205-208 @ a42c7788a1dde620106c58125b2b09eb0d6d7e39",
+            "excerpt": "    case \" $tc \" in\n      *\" head=$sh \"*) ;;\n      *) echo \"  A2b the signature is bound to another head, not $sh: '$tc'\" >&2; return 1 ;;\n    esac\n",
+            "excerpt_sha256": "b1e91fd5b006cc4f73650fda50710f8afd5978ea18647a62b74faad499861406"
+          }
+        },
+        {
+          "ruleId": "trusted-comment-substring-boundary-pid",
+          "level": "note",
+          "message": {
+            "text": "(a) continued, same boundary property for pid=: `case \" $tc \" in *\" pid=$pid \"*`. $pid here (scripts/check_pr_review_arm4.sh:267/345) is the INDEPENDENTLY RECOMPUTED patch-id from prpid_compute(), never a value read back out of the signed receipt or trusted comment itself, so this check cannot be satisfied by anything the signer or an attacker wrote into the receipt's own diff_patch_id field -- it must match reality."
+          },
+          "locations": [
+            {
+              "physicalLocation": {
+                "artifactLocation": {
+                  "uri": "scripts/check_pr_review_arm4.sh"
+                },
+                "region": {
+                  "startLine": 209,
+                  "endLine": 213
+                }
+              }
+            }
+          ],
+          "properties": {
+            "grounding": "cited",
+            "precision_class": "informational",
+            "failure_scenario": "If pid were instead taken from the receipt's own claimed field at verification time (rather than recomputed), a receipt could self-declare any pid and trivially pass; using the independently recomputed value is what makes diff-binding fail-closed.",
+            "source": "scripts/check_pr_review_arm4.sh:209-213 @ a42c7788a1dde620106c58125b2b09eb0d6d7e39",
+            "excerpt": "    case \" $tc \" in\n      *\" pid=$pid \"*) ;;\n      *) echo \"  A2b the signature is bound to another diff, not patch-id $pid: '$tc'\" >&2; return 1 ;;\n    esac\n    echo \"  A2b check-run signature on $sh verifies; trusted comment binds pr=$pr head=$sh pid=$pid\"\n",
+            "excerpt_sha256": "2700bdbebfede6c890a02bbbe67ca9cf8b262a467839ac5a9b4d5b5460adf603"
+          }
+        },
+        {
+          "ruleId": "signer-blind-signing-gap",
+          "level": "warning",
+          "message": {
+            "text": "(b) Can the signer post a signature for a receipt it never validated? Yes: ci/sections.yml's pr-review-sign job signs every unsigned receipt.intoto.jsonl it finds under evidence/pr-review/$PR_NUMBER/ with no call to check_pr_review_receipt.sh or any other content-validation guard first. This is PRE-EXISTING (unchanged by B1, which only moves where the resulting signature is stored) and its impact is contained: see trusted-comment-substring-injection-refuted below and the arm4 A2 exact-match gate -- a blindly-signed receipt with a fabricated diff_patch_id cannot bind to any real diff at verification time, so blind signing does not by itself let a forged review pass."
+          },
+          "locations": [
+            {
+              "physicalLocation": {
+                "artifactLocation": {
+                  "uri": "scripts/check_pr_review_arm4.sh"
+                },
+                "region": {
+                  "startLine": 287,
+                  "endLine": 289
+                }
+              }
+            }
+          ],
+          "properties": {
+            "grounding": "cited",
+            "precision_class": "blocking",
+            "failure_scenario": "A receipt authored entirely by the PR submitter (fabricated verdict:PASS, empty findings, no real review performed) that also happens to carry the CORRECT, independently-reproducible diff_patch_id for the PR's actual diff WOULD be blindly signed and WOULD verify under Arm 4 -- the content of predicate.verdict/findings is never checked by the signer or by check_signature(), only the diff_patch_id binding and the signature's cryptographic validity are. This is the same signer-oracle gap the prior receipt for this PR (5ea016f5's receipt, evidence/pr-review/4512/2989217f66.../) did not newly introduce and B1 does not close.",
+            "source": "scripts/check_pr_review_arm4.sh:287-289 @ a42c7788a1dde620106c58125b2b09eb0d6d7e39",
+            "excerpt": "        rp=$(jq -r '.predicate.diff_patch_id // empty' \"$d/receipt.intoto.jsonl\" 2>/dev/null)\n        if [ -z \"$rp\" ]; then legacy=$((legacy + 1)); legacy_dirs+=(\"$d\"); continue; fi\n        if [ \"$rp\" != \"$pid\" ]; then other=$((other + 1)); continue; fi\n",
+            "excerpt_sha256": "30253f4081cf1a05c8aba2ee182b04c9deb750b4b63208b6522dbb9ed414bb9c"
+          }
+        },
+        {
+          "ruleId": "trusted-comment-substring-injection-refuted",
+          "level": "note",
+          "message": {
+            "text": "(a) substring-injection attempt via the diff_patch_id field: ci/sections.yml:2785 extracts pid=$(jq -r '.predicate.diff_patch_id // \"none\"' \"$rcpt\") UNSANITIZED and interpolates it into the trusted comment string, so a receipt whose diff_patch_id field contains embedded text like 'realvalue head=<forged>' WOULD have that text land in the signed trusted comment verbatim. But arm4's A2 selection step (scripts/check_pr_review_arm4.sh:287-289) requires the receipt's predicate.diff_patch_id to be an EXACT match to the independently recomputed patch-id before check_signature() -- where the injected head= token would be inspected -- is ever called; a value containing embedded 'head=' text is not a valid 40-hex patch-id and fails this exact match, so the crafted receipt is skipped (counted in `other`) and never reaches verification. This finding is a REFUTATION of agy's 'trusted-comment-substring-injection' claim, not a confirmation of it."
+          },
+          "locations": [
+            {
+              "physicalLocation": {
+                "artifactLocation": {
+                  "uri": "scripts/check_pr_review_arm4.sh"
+                },
+                "region": {
+                  "startLine": 287,
+                  "endLine": 289
+                }
+              }
+            }
+          ],
+          "properties": {
+            "grounding": "cited",
+            "precision_class": "informational",
+            "failure_scenario": "None as stated -- this is the negative result (containment) for the injection path agy proposed. Recorded per S1.2: agy's asserted/cited claim is suppressed by this measurement, not silently dropped.",
+            "source": "scripts/check_pr_review_arm4.sh:287-289 @ a42c7788a1dde620106c58125b2b09eb0d6d7e39",
+            "excerpt": "        rp=$(jq -r '.predicate.diff_patch_id // empty' \"$d/receipt.intoto.jsonl\" 2>/dev/null)\n        if [ -z \"$rp\" ]; then legacy=$((legacy + 1)); legacy_dirs+=(\"$d\"); continue; fi\n        if [ \"$rp\" != \"$pid\" ]; then other=$((other + 1)); continue; fi\n",
+            "excerpt_sha256": "30253f4081cf1a05c8aba2ee182b04c9deb750b4b63208b6522dbb9ed414bb9c"
+          }
+        },
+        {
+          "ruleId": "workflow-permission-scope",
+          "level": "note",
+          "message": {
+            "text": "(c)/(d) permission audit: the only permission change anywhere in the diff is job-scoped to pr-review-sign (contents:write -> contents:read + checks:write) and job-scoped to present (+checks:read). pr-review-quorum.yml's WORKFLOW-level permissions block is unchanged (contents: read). No job in either workflow file gains write access beyond checks:write on pr-review-sign, and that job is fork-gated (if: ...head.repo.full_name == github.repository)."
+          },
+          "locations": [
+            {
+              "physicalLocation": {
+                "artifactLocation": {
+                  "uri": "scripts/check_pr_review_arm4.sh"
+                },
+                "region": {
+                  "startLine": 168,
+                  "endLine": 172
+                }
+              }
+            }
+          ],
+          "properties": {
+            "grounding": "cited",
+            "precision_class": "informational",
+            "failure_scenario": "A workflow-level (rather than job-scoped) write grant, or a write grant on a job that runs for fork PRs, would let a fork PR's own workflow run with elevated GITHUB_TOKEN scope -- neither is present in this diff.",
+            "source": "scripts/check_pr_review_arm4.sh:168-172 @ a42c7788a1dde620106c58125b2b09eb0d6d7e39",
+            "excerpt": "pr_head_sha() {\n    if [ \"$3\" = branch ]; then printf '%s\\n' \"$2\"; return 0; fi\n    if [ -n \"${ARM4_PR_HEAD_SHA:-}\" ]; then printf '%s\\n' \"$ARM4_PR_HEAD_SHA\"; return 0; fi\n    gh api \"repos/${GITHUB_REPOSITORY:?GITHUB_REPOSITORY unset}/pulls/$1\" --jq .head.sha\n}\n",
+            "excerpt_sha256": "de25744c13824ff709c840a51d2fa0cbfd1dfec7d00c4dd14d8ca14b9e80d23c"
+          }
+        }
+      ],
+      "properties": {
+        "consultation": "review-integrity-adversarial-focus",
+        "status": "consulted-found-something"
+      }
+    }
+  ]
+}

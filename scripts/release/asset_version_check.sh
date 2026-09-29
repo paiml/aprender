@@ -1,11 +1,14 @@
 #!/usr/bin/env bash
 # asset_version_check.sh — does a release asset belong to its tag? (#4275, RC-DOGFOOD-001)
 #
-#   bash scripts/release/asset_version_check.sh TAG COMMIT "VERSION_LINE"
+#   bash scripts/release/asset_version_check.sh TAG COMMIT "VERSION_LINE" [BIN]
 #   bash scripts/release/asset_version_check.sh --self-test
 #
 # TAG is vX.Y.Z or vX.Y.Z-rc.N. COMMIT is the full sha the tag points at.
-# VERSION_LINE is the first line of the asset's `apr --version`: `apr X.Y.Z (<sha>)`.
+# VERSION_LINE is the first line of the asset's `<BIN> --version`: `<BIN> X.Y.Z (<sha>)`.
+# BIN defaults to apr. Every [[bin]] of the release (#4189 G5, `nightly_manifest.py bins`)
+# prints the same `<bin> X.Y.Z (<sha>)` shape, so one check serves all 29; the line must
+# name the bin it was read from, so a pv line offered for apr (or the reverse) is refused.
 #
 # The printed version must equal the tag EXACTLY, -rc.N included (operator 2026-09-24: "we
 # need actual version numbers", "version number needs release canidate info in it"). The rc
@@ -32,8 +35,11 @@ PROG=asset_version_check
 
 # Pure. Prints `ok <version> at <sha>` or `bad <reason>`.
 avc_decide() {
-    local tag=$1 commit=$2 line=$3 want got sha
+    local tag=$1 commit=$2 line=$3 bin=${4:-apr} want got sha rest
     local promoted=""
+    if [[ ! $bin =~ ^[A-Za-z0-9][A-Za-z0-9_-]*$ ]]; then
+        echo "bad bin name '$bin'"; return
+    fi
     if [[ $tag =~ ^v([0-9]+\.[0-9]+\.[0-9]+)(-rc\.[0-9]+)?$ ]]; then
         want=${tag#v}
     else
@@ -42,10 +48,13 @@ avc_decide() {
     if [[ ! $commit =~ ^[0-9a-f]{40}$ ]]; then
         echo "bad commit '$commit' is not a full 40-hex sha"; return
     fi
-    if [[ $line =~ ^apr\ ([0-9]+\.[0-9]+\.[0-9]+(-[0-9A-Za-z.]+)?)\ \((.*)\)$ ]]; then
+    # the bin name is compared as a literal prefix, never spliced into the regex
+    rest=${line#"$bin "}
+    # the sha is the FIRST parenthesised field; pv and pv-sat append ` (<what it is>)` after it
+    if [[ $rest != "$line" && $rest =~ ^([0-9]+\.[0-9]+\.[0-9]+(-[0-9A-Za-z.]+)?)\ \(([^\)]*)\)(\ \(.*\))?$ ]]; then
         got=${BASH_REMATCH[1]}; sha=${BASH_REMATCH[3]}
     else
-        echo "bad version line '$line' is not 'apr X.Y.Z[-rc.N] (<sha>)'"; return
+        echo "bad version line '$line' is not '$bin X.Y.Z[-rc.N] (<sha>)'"; return
     fi
     if [ "$got" != "$want" ]; then
         # a final tag carrying its own rc's bytes (#4286): X.Y.Z-rc.N on vX.Y.Z, nothing looser.
@@ -66,11 +75,11 @@ avc_decide() {
 }
 
 self_test() {
-    local fail=0 got want tag line c=7ff50ec2a1f671ad031ba427a275b1f983031d66
+    local fail=0 got want tag line bin c=7ff50ec2a1f671ad031ba427a275b1f983031d66
     echo "$PROG self-test: case table"
-    # want<TAB>tag<TAB>commit<TAB>version line<TAB>why
-    while IFS=$'\t' read -r want tag commit line why; do
-        got=$(avc_decide "$tag" "$commit" "$line")
+    # want<TAB>tag<TAB>commit<TAB>version line<TAB>why[<TAB>bin, default apr]
+    while IFS=$'\t' read -r want tag commit line why bin; do
+        got=$(avc_decide "$tag" "$commit" "$line" "${bin:-apr}")
         if [ "${got%% *}" = "$want" ]; then echo "  ok   $why"; else echo "  FAIL $why: wanted $want, got '$got'"; fail=1; fi
     done <<EOF
 ok	v0.69.3	$c	apr 0.69.3 (7ff50ec2a)	a final tag matches its version
@@ -96,6 +105,19 @@ bad	v0.69.3	$c	apr 0.69.3 (7ff50e)	a 6-hex sha is too short to bind anything
 bad	v0.69.3-beta	$c	apr 0.69.3 (7ff50ec2a)	a tag that is neither vX.Y.Z nor vX.Y.Z-rc.N
 bad	v0.69.3	7ff50ec2a	apr 0.69.3 (7ff50ec2a)	the expected commit must be a full sha
 bad	v0.69.3	$c	pv 0.69.3 (7ff50ec2a)	a line that is not apr's
+ok	v0.70.0-rc.1	$c	pv 0.70.0-rc.1 (7ff50ec2a)	any [[bin]]: pv on an rc (G5 #4189)	pv
+ok	v0.70.0-rc.1	$c	aprender-ptx-debug 0.70.0-rc.1 (7ff50ec2a)	a hyphenated bin name	aprender-ptx-debug
+ok	v0.70.0	$c	batuta 0.70.0-rc.1 (7ff50ec2a)	a promoted final holds for every bin	batuta
+bad	v0.70.0-rc.1	$c	apr 0.70.0-rc.1 (7ff50ec2a)	apr's line offered as pv's asset	pv
+bad	v0.70.0-rc.1	$c	pvx 0.70.0-rc.1 (7ff50ec2a)	a bin whose name only starts with the wanted one	pv
+bad	v0.70.0-rc.1	$c	pv 0.70.0-rc.1 (7ff50ec2a)	a bare prefix of the name is not the bin	p
+bad	v0.70.0-rc.1	$c	pv 0.70.0 (7ff50ec2a)	a non-apr bin printing bare X.Y.Z on an rc	pv
+bad	v0.70.0-rc.1	$c	pv 0.70.0-rc.1 (v0.70.0+no-git)	a non-apr bin with no sha	pv
+ok	v0.70.0-rc.1	$c	pv 0.70.0-rc.1 (7ff50ec2a) (aprender provable-contracts verifier)	pv's measured line: a description after the sha	pv
+bad	v0.70.0-rc.1	$c	pv 0.70.0-rc.1 (0badc0de1) (7ff50ec2a)	the sha is the first field, not a later one	pv
+bad	v0.70.0-rc.1	$c	pv 0.70.0-rc.1 (7ff50ec2a) trailing	unparenthesised text after the sha	pv
+bad	v0.70.0-rc.1	$c	cgp 0.70.0-rc.1 (7ff50ec2a)	the bin must print its own [[bin]] name (aprender-cgp printed cgp)	aprender-cgp
+bad	v0.70.0-rc.1	$c	a.b 0.70.0-rc.1 (7ff50ec2a)	a bin name that is not [A-Za-z0-9_-]	a.b
 EOF
     if [ "$fail" -eq 0 ]; then echo "$PROG self-test: PASS"; return 0; fi
     echo "$PROG self-test: FAIL"; return 1
@@ -104,11 +126,11 @@ EOF
 main() {
     case "${1:-}" in
         --self-test) self_test; return ;;
-        -h|--help) sed -n '2,21p' "${BASH_SOURCE[0]}"; return 0 ;;
+        -h|--help) sed -n '2,24p' "${BASH_SOURCE[0]}"; return 0 ;;
     esac
-    if [ "$#" -ne 3 ]; then echo "$PROG: usage: TAG COMMIT \"VERSION_LINE\" | --self-test" >&2; return 2; fi
+    if [ "$#" -ne 3 ] && [ "$#" -ne 4 ]; then echo "$PROG: usage: TAG COMMIT \"VERSION_LINE\" [BIN] | --self-test" >&2; return 2; fi
     local verdict
-    verdict=$(avc_decide "$1" "$2" "$3")
+    verdict=$(avc_decide "$1" "$2" "$3" "${4:-apr}")
     echo "$PROG: $verdict"
     [ "${verdict%% *}" = ok ]
 }

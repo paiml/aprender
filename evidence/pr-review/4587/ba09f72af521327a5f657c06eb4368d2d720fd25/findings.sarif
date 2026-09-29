@@ -1,0 +1,218 @@
+{
+  "version": "2.1.0",
+  "$schema": "https://raw.githubusercontent.com/oasis-tcs/sarif-spec/master/Schemata/sarif-schema-2.1.0.json",
+  "runs": [
+    {
+      "tool": {
+        "driver": {
+          "name": "pmat",
+          "informationUri": "https://github.com/paiml/pmat",
+          "version": "3.30.0",
+          "rules": []
+        }
+      },
+      "invocations": [
+        {
+          "executionSuccessful": true,
+          "commandLine": "pmat query \"provable contracts lint gate\" --limit 3 --format json"
+        }
+      ],
+      "results": [
+        {
+          "ruleId": "PRREV-SCOPE-001",
+          "level": "note",
+          "message": {
+            "text": "Carried over from the d57f897 receipt, updated for the new head ba09f72a: this run reviewed the 2-commit, 869-line delta on top of d57f897 (c1e4d195c5 guard mutation sets + CI wiring; ba09f72af5 bump-version.sh facade-pin fix) IN FULL. The wider PR (728 files vs merge-base ef72c05809) retains the same scope limitation recorded previously -- only shapes_gate.rs (200/974 diff lines) and this new delta were read in depth; the remaining ~726 files were not re-read this run."
+          },
+          "properties": {
+            "grounding": "measured",
+            "command": [
+              "git",
+              "diff",
+              "--stat",
+              "d57f897bbb2f754a943dc5c3dfb309fb0e9ea9b9",
+              "ba09f72af521327a5f657c06eb4368d2d720fd25"
+            ],
+            "exit_code": 0,
+            "stdout_sha256": "639711b2eec811ec3c6789e180dbec9f597a82218ef9e9f6a5f7f774b914e658",
+            "failure_scenario": "A reader could assume this receipt re-reviewed the full 728-file PR; it reviewed the full 2-commit delta plus the previously-sampled files, not the whole diff again.",
+            "precision_class": "advisory"
+          }
+        },
+        {
+          "ruleId": "PRREV-GUARD-MUTSET-001",
+          "level": "note",
+          "message": {
+            "text": "RESOLVED (was 'error' at d57f897): c1e4d195c5 adds a committed cargo-mutants-style mutation set for each of the 3 guard/gate-logic scripts flagged at the prior head, wired into ci/sections.yml so they run in CI (not just self-test). Independently re-run in this review, outside CI: scripts/mutate_facade_compat_guard.sh -> 17 killed, 0 survived, 0 invalid (100%); scripts/mutate_lean_modules_reachable_guard.sh -> 18 killed, 0 survived, 0 invalid (100%); scripts/mutate_leanchecker_scoped_guard.sh -> 31 killed, 0 survived, 0 invalid (100%). All three matched the coordinator's claimed counts exactly. Each mutation set's patch step fails closed (old text must occur exactly once, patched file must differ, new text must be present afterward -- rc 3/4/5 on violation, never silently scored a kill or a survivor), and each declares its excluded equivalent mutants with a stated reason rather than omitting them silently. Also independently re-ran (not just self-test) check_facade_compat.sh, check_leanchecker_scoped.sh and check_lean_modules_reachable.sh against the real tree: all 3 pass (rc=0) in addition to their --self-test tables (8/8+11/11, 27/27, 5-row judge battery), so the CI wiring is exercising real logic, not just an inline fixture table authored by the same PR. B3 (S3.D: guard-touching PR must reach 100% kill on a COMMITTED mutation set) is satisfied for this PR's own 3 new/modified guard scripts."
+          },
+          "properties": {
+            "grounding": "measured",
+            "command": [
+              "bash",
+              "scripts/mutate_facade_compat_guard.sh"
+            ],
+            "exit_code": 0,
+            "stdout_sha256": "a49cb1486dc5be9e72df916d14e73caea4e799a2982a2a97862d425a16baa247",
+            "failure_scenario": "Without independently re-running these sets (not just reading the PR's own claimed counts), a mutation set that always reports success regardless of what it mutates would look identical to a working one in the diff alone.",
+            "precision_class": "advisory"
+          }
+        },
+        {
+          "ruleId": "PRREV-GUARD-MUTSET-002",
+          "level": "note",
+          "message": {
+            "text": "Second and third mutation sets independently re-run, corroborating PRREV-GUARD-MUTSET-001: scripts/mutate_lean_modules_reachable_guard.sh -> 18 killed/0 survived/0 invalid (its battery covers both reach()'s direct self-test rows AND judge()'s exit-status rows against staged clean/orphan/noroot trees, closing the exact gap its own comment names: '--self-test calls reach() directly ... without these rows nothing tests judge()'s exit status'). scripts/mutate_leanchecker_scoped_guard.sh -> 31 killed/0 survived/0 invalid (covers judge_line()'s scope/memorymax/optout rules, the OPTOUT_RE and CMD_RE regex alternatives -- the class of guard-regex defect this repo's own CLAUDE.md records as wrong five times previously -- and scan()'s per-surface rows for .yml/.yaml/Makefile/*.mk/*.sh plus the UNMEASURED-floor case)."
+          },
+          "properties": {
+            "grounding": "measured",
+            "command": [
+              "bash",
+              "scripts/mutate_leanchecker_scoped_guard.sh"
+            ],
+            "exit_code": 0,
+            "stdout_sha256": "e2568a76e305ad78d3d9caa57909546aacdf808076f2390a51d9ce601fd58ef9",
+            "failure_scenario": "A regex mutation set that never actually exercised CMD_RE's alternatives (a documented five-times-wrong defect class here) could look complete while leaving the exact class of bug that has recurred untested.",
+            "precision_class": "advisory"
+          }
+        },
+        {
+          "ruleId": "PRREV-VERSION-001",
+          "level": "note",
+          "message": {
+            "text": "ba09f72af5 fixes a real defect: bump-version.sh --check previously compared every facade's pin against the ROOT WORKSPACE version (WS), which is wrong for the scoped-release crates (#4604) whose facades re-export a crate intentionally pinned AHEAD of the workspace (e.g. aprender-contracts-macros at 0.69.4 while the workspace sits at 0.69.3) -- the old check would have flagged a CORRECT scoped pin as drift, or accepted a facade pin that matches the workspace but not the crate it actually re-exports. The fix adds facade_upstream_version() (reads the upstream crate's own Cargo.toml, falling through to root_version() when that crate is on `version.workspace = true` or carries no literal version) and check_facade_pins(), and threads it through --check in place of the old inline WS-only loop. Read the full diff and independently re-ran --self-test: 10/10 rows pass, including the 4 new rows (7-10) covering pin==upstream-crate (pass), pin==workspace-but-not-upstream-crate (RED), upstream-on-workspace-versioning (pass), and pin-matches-neither (RED) -- a genuine case table, not a single happy-path check. No defect found in the portion read."
+          },
+          "properties": {
+            "grounding": "measured",
+            "command": [
+              "bash",
+              "scripts/bump-version.sh",
+              "--self-test"
+            ],
+            "exit_code": 0,
+            "stdout_sha256": "ce2f0ed9a01be1c9a91f3cb57e7143a8debefe3705b9a9fe407ca3f92dd0511c",
+            "failure_scenario": "Without the fix, a correctly-scoped facade pin (aprender-contracts-macros at 0.69.4, ahead of a 0.69.3 workspace) would be reported as drifted by --check, or a facade pin left at the stale workspace version while its upstream crate moved on to a scoped release would pass silently; either would either block a correct release or ship a stale facade unnoticed.",
+            "precision_class": "advisory"
+          }
+        },
+        {
+          "ruleId": "PRREV-MUTANTS-001",
+          "level": "error",
+          "message": {
+            "text": "PR1-MUTANTS HARD-STOP CARRIED FORWARD, UNCHANGED (operator-declared, non-waivable): the base_sha is unchanged (ef72c05809) and this 2-commit/869-line delta touches no application logic in the 3555-mutant surface measured at d57f897 (it adds guard mutation-set scripts, a CI wiring block, and the bump-version.sh facade-pin fix, none of which cargo-mutants' --in-diff would score against the ORIGINAL diff's already-measured 3555 count in the same way -- the new files are themselves mutation-testing infrastructure, not mutated application logic). Per this run's explicit instruction the 3555-vs-60-cap figure was not re-measured against the new head; it is carried forward as still standing. This finding alone continues to force verdict BLOCK regardless of B3's resolution."
+          },
+          "properties": {
+            "grounding": "measured",
+            "command": [
+              "cargo",
+              "mutants",
+              "--workspace",
+              "--exclude",
+              "crates/aprender-gpu/**",
+              "--exclude",
+              "crates/aprender-cuda-edge/**",
+              "--exclude",
+              "crates/aprender-compute/**",
+              "--in-diff",
+              "pr4587-at-d57f897.diff",
+              "--list"
+            ],
+            "exit_code": 0,
+            "stdout_sha256": "4545734880fe9021ebb99e4418979df3a5d23c8453d5f80dbaedcce64c6e2d05",
+            "failure_scenario": "Merging this PR against a 60-mutant CI cap while its underlying diff contains 3555 in-diff mutants means the mutation gate cannot meaningfully exercise the vast majority of changed logic; treating B3's resolution as sufficient to lift BLOCK would ship that gap unaddressed.",
+            "precision_class": "advisory"
+          }
+        },
+        {
+          "ruleId": "PRREV-DUP-001",
+          "level": "note",
+          "message": {
+            "text": "Carried forward unchanged from the d57f897 receipt: the full scripts/pr_review_duplication_scan.sh horizon sweep was not run this session either. duplication_coverage remains 'none' across every surface."
+          },
+          "properties": {
+            "grounding": "asserted",
+            "rationale": "No new duplication sweep was performed this run; restating the prior honest gap rather than silently dropping it.",
+            "failure_scenario": "A near-duplicate re-implementation anywhere in the 728-file diff would go undetected without this sweep.",
+            "precision_class": "advisory"
+          }
+        }
+      ]
+    },
+    {
+      "tool": {
+        "driver": {
+          "name": "nvidia-cuda-docs",
+          "informationUri": "https://developer.nvidia.com/cuda-toolkit"
+        }
+      },
+      "invocations": [
+        {
+          "executionSuccessful": false,
+          "toolExecutionNotifications": [
+            {
+              "level": "error",
+              "message": {
+                "text": "Carried forward unchanged: mcp__nvidia-cuda-docs__search_cuda_docs not present in this session's tool set; only authenticate/complete_authentication surfaced. Not re-checked this run (the 869-line delta touches no CUDA-adjacent path)."
+              },
+              "properties": {
+                "grounding": "asserted",
+                "rationale": "No new path in the delta matches the S3.B trigger; transport status carried forward from the prior receipt rather than re-probed.",
+                "exit_code": 0
+              }
+            }
+          ]
+        }
+      ],
+      "results": [
+        {
+          "ruleId": "PRREV-CUDA-001",
+          "level": "note",
+          "message": {
+            "text": "Carried forward unchanged from the d57f897 receipt: the S3.B path trigger's 2 false-positive files are untouched by this delta (confirmed via git diff --stat above -- neither cuda_simd_scores.rs.txt nor fp8-interchange-v1.lean appears in the 10-file delta). No re-check needed; disposition stands."
+          },
+          "properties": {
+            "grounding": "measured",
+            "command": [
+              "git",
+              "diff",
+              "--stat",
+              "d57f897bbb2f754a943dc5c3dfb309fb0e9ea9b9",
+              "ba09f72af521327a5f657c06eb4368d2d720fd25"
+            ],
+            "exit_code": 0,
+            "stdout_sha256": "639711b2eec811ec3c6789e180dbec9f597a82218ef9e9f6a5f7f774b914e658",
+            "failure_scenario": "If the delta had touched either fixture file, the disposition would need re-checking; it does not.",
+            "precision_class": "advisory"
+          }
+        }
+      ]
+    },
+    {
+      "tool": {
+        "driver": {
+          "name": "crux",
+          "informationUri": "internal:crux"
+        }
+      },
+      "invocations": [
+        {
+          "executionSuccessful": true
+        }
+      ],
+      "results": [
+        {
+          "ruleId": "PRREV-CRUX-001",
+          "level": "note",
+          "message": {
+            "text": "Carried forward unchanged from the d57f897 receipt: the delta touches no contracts/apr-cli-commands-v1.yaml or crux-adjacent surface (it is guard scripts, CI wiring, and bump-version.sh -- none of it a CLI command surface). crux_coverage remains 'none' for the surfaces named at the prior head; not re-swept this run since the delta introduces no new CLI-facing surface."
+          },
+          "properties": {
+            "grounding": "asserted",
+            "rationale": "The 10-file delta (ci/sections.yml, scripts/*, scripts/lib/facade_cases/*.json) contains no apr/pv CLI surface change, so the prior crux disposition is unaffected.",
+            "failure_scenario": "If the delta had added a new CLI-facing command, the crux disposition would need re-checking; it does not.",
+            "precision_class": "advisory"
+          }
+        }
+      ]
+    }
+  ]
+}

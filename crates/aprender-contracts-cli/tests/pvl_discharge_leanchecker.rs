@@ -90,15 +90,45 @@ impl Fx {
         )
     }
 
+    /// Unscoped: the stub `lake` cannot starve anything, and a CI container has no user systemd — scoped, the
+    /// probe declines (#4348) before the stub runs, so neither verdict below would be measured.
     fn check(&self) -> (i32, String) {
         self.pv(&[
             "discharge",
             "check",
             "lean",
             "--leanchecker",
+            "--leanchecker-unscoped",
             "--leanchecker-timeout",
             "60",
         ])
+    }
+
+    /// The stub leanchecker cannot starve anything, so the rows that judge ITS verdict run unscoped: CI's test
+    /// container has no user systemd, and the scoped path would decline (rc 2) before the stub ever ran.
+    fn check_unscoped(&self) -> (i32, String) {
+        self.pv(&[
+            "discharge",
+            "check",
+            "lean",
+            "--leanchecker",
+            "--leanchecker-unscoped",
+            "--leanchecker-timeout",
+            "60",
+        ])
+    }
+
+    /// `bin/systemd-run` on the test's PATH that always fails: a host where the #4348 scope cannot be created.
+    fn stub_no_user_systemd(&self) {
+        let p = self.path("bin/systemd-run");
+        std::fs::write(
+            &p,
+            "#!/bin/sh\necho 'Failed to connect to bus' >&2\nexit 1\n",
+        )
+        .expect("w");
+        let mut perm = std::fs::metadata(&p).expect("meta").permissions();
+        std::os::unix::fs::PermissionsExt::set_mode(&mut perm, 0o755);
+        std::fs::set_permissions(&p, perm).expect("chmod");
     }
 }
 
@@ -112,7 +142,7 @@ fn a_passing_leanchecker_accepts() {
     let fx = Fx::new();
     fx.stub_lake(true, 0);
     assert_rc(
-        &fx.check(),
+        &fx.check_unscoped(),
         0,
         "ok    lake env leanchecker ProvableContracts",
     );
@@ -122,9 +152,19 @@ fn a_passing_leanchecker_accepts() {
 fn a_failing_leanchecker_rejects_with_its_output() {
     let fx = Fx::new();
     fx.stub_lake(true, 1);
-    let r = fx.check();
+    let r = fx.check_unscoped();
     assert_rc(&r, 1, "FAIL  lake env leanchecker ProvableContracts");
     assert!(r.1.contains("stub leanchecker says 1"), "{}", r.1);
+}
+
+#[test]
+fn scoped_without_user_systemd_declines_and_never_runs_the_checker() {
+    let fx = Fx::new();
+    fx.stub_lake(true, 1);
+    fx.stub_no_user_systemd();
+    let r = fx.check();
+    assert_rc(&r, 2, "`systemd-run --user --scope` is unavailable here");
+    assert!(!r.1.contains("stub leanchecker says"), "{}", r.1);
 }
 
 #[test]

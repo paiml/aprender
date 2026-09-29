@@ -1,0 +1,381 @@
+{
+  "ticket": "PMAT-4510",
+  "base": "origin/main",
+  "base_resolved": "origin/main",
+  "base_note": "no origin/origin/main exists; judged against the local ref",
+  "head": "2989217f66eabee4d86324b847e7ffe3ed2d32c9",
+  "diff_sha256": "36dc6cdec5c0949725d929f5a3173cf5894a2d2cd9860eec66f5a708cd3ab469",
+  "width": 3,
+  "executor": "agy",
+  "prompt_mode": "inline",
+  "prompt_bytes": 58317,
+  "prompt_sha256": "d1feee3e533b77f14107feedb9b098ecab3ef96d3caa48ec65e985f03802bca8",
+  "author": {
+    "model": "claude-opus-5-5",
+    "family": "claude",
+    "source": "flag"
+  },
+  "agreed": true,
+  "lanes": [
+    {
+      "lane": 1,
+      "status": "SUCCESS",
+      "verdict": "PASS",
+      "summary": "The diff correctly fixes the #4441 truncation (FAT_SECRET_PR_REVIEW_SIGNING_KEY_B → _B64) to match what ci/sections.yml's pr-review-sign section actually reads (verified: sections.yml:2751 secrets.PR_REVIEW_SIGNING_KEY_B64, and x86-main runs pr-review-sign as a section, ci.yml:110). Adds a non-vacuous guard script (check_ci_fat_secrets_plumbed.sh) whose self-test carries the #4441 defect byte-for-byte and is wired into x86-main's steps before Sections run (self-test then guard, matching AC4). Adds the operator-ordered fingerprint idempotence fix in pr_review_patch_id.sh (excludes docs/audits/quorum-*.json glob) with a genuine self-test in check_pr_review_arm4.sh proving head=+receipt=+quorum=re-stamp equality plus a control case that an unrelated file still moves the fingerprint. Arm4 step-name row count (23→25) matches the two new case-table rows added. No permissions/triggers/secret-value changes, no scope creep beyond the ticket and the operator's explicit fingerprint-exclusion instruction.",
+      "findings": [],
+      "raw_bytes": 2929,
+      "err_bytes": 0,
+      "envelope_status": "SUCCESS",
+      "verdict_source": "structured_output",
+      "executor": "claude-code",
+      "grounding_check": "parity",
+      "role": "counted",
+      "model": "claude-sonnet-5",
+      "model_measured": "claude-sonnet-5",
+      "model_source": "flag",
+      "family": "claude",
+      "brief_sha256": "d1feee3e533b77f14107feedb9b098ecab3ef96d3caa48ec65e985f03802bca8",
+      "trace": {
+        "input_sha256": "5554e76c28032e3077f72c434a9027fe0e9eec257c79ac2704b550acdace9684",
+        "output_sha256": "ad38ab9e1d81abc8299f8e22ea03d64c78cdcd3a543665e26915d55227f0a76c",
+        "store": null,
+        "store_why": "almacen not provisioned yet (infra-27): the blobs stay in the round's gitignored .lanes dir"
+      },
+      "fallback": {
+        "judged_by": "claude-sonnet-5",
+        "exhausted": false,
+        "attempts": [
+          {
+            "model": "claude-sonnet-5",
+            "family": "claude",
+            "outcome": "answered"
+          }
+        ],
+        "skipped": []
+      }
+    },
+    {
+      "lane": 2,
+      "status": "SUCCESS",
+      "verdict": "PASS",
+      "summary": "The diff correctly implements all criteria of PMAT-4510. It fixes the environment variable truncation in ci.yml, adds a guard script to ensure plumbing matches the sections.yml requirements, integrates the guard into the CI workflow before sections execute, and excludes quorum verdicts from the patch-id diff to ensure fingerprint idempotence (tested by a comprehensive control test).",
+      "findings": [
+        {
+          "claim": "Plumbs FAT_SECRET_PR_REVIEW_SIGNING_KEY_B64 from secrets.PR_REVIEW_SIGNING_KEY_B64 instead of the truncated _B suffix.",
+          "file": ".github/workflows/ci.yml",
+          "grounding": "cited",
+          "line": 88
+        },
+        {
+          "claim": "The x86-main job runs check_ci_fat_secrets_plumbed.sh --self-test and then the guard on the tree before the sections run.",
+          "file": ".github/workflows/ci.yml",
+          "grounding": "cited",
+          "line": 100
+        },
+        {
+          "claim": "Guard script self-test carries the #4441 truncation byte for byte and asserts it fails (returns RED).",
+          "file": "scripts/check_ci_fat_secrets_plumbed.sh",
+          "grounding": "cited",
+          "line": 88
+        },
+        {
+          "claim": "Excludes docs/audits/quorum-*.json from the fingerprint input set.",
+          "file": "scripts/lib/pr_review_patch_id.sh",
+          "grounding": "cited",
+          "line": 70
+        },
+        {
+          "claim": "Self-test proves head = +receipt = +quorum = re-stamp, and that a control file still moves the fingerprint.",
+          "file": "scripts/check_pr_review_arm4.sh",
+          "grounding": "cited",
+          "line": 388
+        }
+      ],
+      "raw_bytes": 5350,
+      "err_bytes": 103,
+      "envelope_status": "SUCCESS",
+      "verdict_source": "structured_output",
+      "grounding_check": "parity",
+      "role": "independent",
+      "model": "gemini-3.1-pro-high",
+      "model_measured": "gemini-3.1-pro-high",
+      "model_source": "measured",
+      "family": "gemini",
+      "executor": "agy",
+      "brief_sha256": "d1feee3e533b77f14107feedb9b098ecab3ef96d3caa48ec65e985f03802bca8",
+      "trace": {
+        "input_sha256": "d970a2e3ddb42c968d25a1b5e4eb94e4697e2ef88649b34c841b8a2b624d0b73",
+        "output_sha256": "af3f4c562e2b1b4e8b85017cd569fc2d5ba752a7ca6e3c6c6da4a4a6ae22f767",
+        "store": null,
+        "store_why": "almacen not provisioned yet (infra-27): the blobs stay in the round's gitignored .lanes dir"
+      },
+      "fallback": {
+        "judged_by": "gemini-3.1-pro-high",
+        "exhausted": false,
+        "attempts": [
+          {
+            "model": "gemini-3.1-pro-high",
+            "family": "gemini",
+            "outcome": "answered"
+          }
+        ],
+        "skipped": []
+      }
+    },
+    {
+      "lane": 3,
+      "status": "SUCCESS",
+      "verdict": "PASS",
+      "summary": "All five acceptance criteria for PMAT-4510 are fully implemented. The diff fixes the FAT_SECRET_PR_REVIEW_SIGNING_KEY_B truncation to _B64 in ci.yml, adds a regression guard script with self-test (carrying the #4441 defect byte-for-byte), wires it into x86-main before sections run, and adds fingerprint idempotence exclusions (evidence/pr-review/<pr> and docs/audits/quorum-*.json) with comprehensive self-tests. Receipts are now signed (minisig files present). No out-of-scope changes to permissions, triggers, or secret values. All three independent lanes report PASS.",
+      "findings": [],
+      "raw_bytes": 2049,
+      "err_bytes": 0,
+      "envelope_status": "SUCCESS",
+      "verdict_source": "structured_output",
+      "executor": "claude-code",
+      "grounding_check": "parity",
+      "role": "counted",
+      "model": "claude-haiku-4-5",
+      "model_measured": "claude-haiku-4-5",
+      "model_source": "flag",
+      "family": "claude",
+      "brief_sha256": "d1feee3e533b77f14107feedb9b098ecab3ef96d3caa48ec65e985f03802bca8",
+      "trace": {
+        "input_sha256": "6867fcee0c2956915947220f863b43c1eba17c9146491be8efb44af4fbe7d46e",
+        "output_sha256": "b9a9bdcdd66c886b8908667fb607b0a784a4e5d858c213307698ebbfb62b6133",
+        "store": null,
+        "store_why": "almacen not provisioned yet (infra-27): the blobs stay in the round's gitignored .lanes dir"
+      },
+      "fallback": {
+        "judged_by": "claude-haiku-4-5",
+        "exhausted": false,
+        "attempts": [
+          {
+            "model": "claude-haiku-4-5",
+            "family": "claude",
+            "outcome": "answered"
+          }
+        ],
+        "skipped": []
+      }
+    }
+  ],
+  "dissent": [],
+  "dedup": [
+    {
+      "file": ".github/workflows/ci.yml",
+      "line": 88,
+      "lanes_agreeing": [
+        2
+      ],
+      "claims": [
+        "Plumbs FAT_SECRET_PR_REVIEW_SIGNING_KEY_B64 from secrets.PR_REVIEW_SIGNING_KEY_B64 instead of the truncated _B suffix."
+      ]
+    },
+    {
+      "file": ".github/workflows/ci.yml",
+      "line": 100,
+      "lanes_agreeing": [
+        2
+      ],
+      "claims": [
+        "The x86-main job runs check_ci_fat_secrets_plumbed.sh --self-test and then the guard on the tree before the sections run."
+      ]
+    },
+    {
+      "file": "scripts/check_ci_fat_secrets_plumbed.sh",
+      "line": 88,
+      "lanes_agreeing": [
+        2
+      ],
+      "claims": [
+        "Guard script self-test carries the #4441 truncation byte for byte and asserts it fails (returns RED)."
+      ]
+    },
+    {
+      "file": "scripts/check_pr_review_arm4.sh",
+      "line": 388,
+      "lanes_agreeing": [
+        2
+      ],
+      "claims": [
+        "Self-test proves head = +receipt = +quorum = re-stamp, and that a control file still moves the fingerprint."
+      ]
+    },
+    {
+      "file": "scripts/lib/pr_review_patch_id.sh",
+      "line": 70,
+      "lanes_agreeing": [
+        2
+      ],
+      "claims": [
+        "Excludes docs/audits/quorum-*.json from the fingerprint input set."
+      ]
+    }
+  ],
+  "uncovered": [],
+  "coverage_source": "lanes",
+  "partial": false,
+  "partial_reasons": [],
+  "fallback": {
+    "same_family_width": 2,
+    "chain": [
+      {
+        "model": "claude-sonnet-5",
+        "family": "claude",
+        "disposition": "claude-code",
+        "why": "run by Claude Code on its own budget: a configured seat runs every round, a fallback step only when every non-Claude family is measured out (PMAT-360, operator standing rule)"
+      },
+      {
+        "model": "gemini-3.1-pro-high",
+        "family": "gemini",
+        "disposition": "configured"
+      },
+      {
+        "model": "claude-haiku-4-5",
+        "family": "claude",
+        "disposition": "claude-code",
+        "why": "run by Claude Code on its own budget: a configured seat runs every round, a fallback step only when every non-Claude family is measured out (PMAT-360, operator standing rule)"
+      },
+      {
+        "model": "claude-opus-5-5",
+        "family": "claude",
+        "disposition": "excluded-self-review",
+        "why": "the author's own model id (claude-opus-5-5) — a model never reviews its own diff, at any width (R-15a identity bar)"
+      },
+      {
+        "model": "qwen3.5",
+        "family": "qwen",
+        "disposition": "not-run",
+        "why": "no quorum.local_lane in the config — the aprender lane has no model to load"
+      }
+    ],
+    "precheck": [
+      {
+        "family": "gemini",
+        "model": "gemini-3.1-pro-high",
+        "probe": 1,
+        "outcome": "live"
+      }
+    ],
+    "degraded": null,
+    "prah": {
+      "source": "install-receipt",
+      "path": "/home/noah/.claude/skills/paiml-implement/bin/prah"
+    },
+    "tier1": {
+      "agy_tier1_only": true,
+      "tier1": true,
+      "matched": [
+        ".github/workflows/ci.yml",
+        ".github/workflows/pr-review-quorum.yml",
+        "scripts/check_ci_fat_secrets_plumbed.sh"
+      ],
+      "paths": 14,
+      "patterns": [
+        "^\\.github/workflows/",
+        "(^|/)release[^/]*\\.(ya?ml|sh|rs|toml)$",
+        "cuda|kernel|\\.cu$|\\.ptx$",
+        "(^|/)[^/]*(gate|guard)[^/]*\\.(sh|rs|py)$|^hooks/",
+        "security|secret|credential|(^|/)deny\\.toml$",
+        "^skills/quorum-review/|(^|/)(receipt-lint|roadmap-lint|release-lint|kind-gate|model-gate)[^/]*$|^crates/prah-lint/"
+      ],
+      "builtin": "^skills/quorum-review/|(^|/)skills/paiml-implement/config\\.json$|(^|/)(modellib|lane-reduce|lane-fallback|lane-group|agy-lane|cc-lane|receipt-lint|route|quota)\\.sh$|^crates/prah-lint/"
+    },
+    "bucket": {
+      "ledger": "/home/noah/.local/state/paiml-implement/agy-bucket.jsonl",
+      "window_s": 18000,
+      "pace": "off",
+      "buckets": {
+        "gemini": {
+          "bucket": "gemini",
+          "budget": 86,
+          "basis": "[U] default 30, raised to the 86 calls a window has made without a 429; no window reached one",
+          "window_start": null,
+          "window_calls": 0,
+          "window_429": 0,
+          "hour_calls": 0,
+          "share": 17,
+          "want": 2,
+          "state": "open",
+          "reason": ""
+        }
+      },
+      "closed": []
+    }
+  },
+  "auto_merge": {
+    "checked": true,
+    "was_armed": false,
+    "disarmed": false,
+    "note": "auto-merge not armed"
+  },
+  "cheap_seat": "claude-haiku-4-5",
+  "canary": {
+    "skipped": "brief 58317 bytes > 24576"
+  },
+  "advisory_lane": {
+    "state": "answered",
+    "counts": false,
+    "row": {
+      "Verdict": {
+        "verdict": "PASS",
+        "cell": "gx10-cuda",
+        "backend": "cuda"
+      }
+    },
+    "verdict": "PASS",
+    "why": null,
+    "served_by": "gx10-cuda",
+    "gpu_proof": {
+      "used_gpu_probe": true,
+      "server_holds_gpu": true,
+      "used_gpu_source": "completions probe (chat omits used_gpu, aprender#4146)",
+      "trace_lines": [
+        "1463624, 311 MiB"
+      ]
+    },
+    "apr": "0.70.0",
+    "apr_binary_sha256": "6b2a7dc66c38adcca20b315beac70a1a31e7bd0af2a1cc5c2a7730ca6086d417",
+    "apr_tag": "v0.70.0-dev.3990584f0",
+    "apr_commit": "3990584f0bf5af6bca34ea9298df92177f3ef79a",
+    "apr_build_why": null,
+    "model": "/home/noah/data/models/Qwen3.5-4B-Q4_K_M.gguf",
+    "model_sha256": "00fe7986ff5f6b463e62455821146049db6f9313603938a70800d1fb69ef11a4",
+    "rc": 0,
+    "wall_s": 42,
+    "collected_s": 1541,
+    "budget_s": 170,
+    "budget_basis": "ledger: 2 x p95 85 s over 72 gx10-cuda Verdict rows",
+    "brief": {
+      "bytes": 58317,
+      "sent_bytes": 58486,
+      "max_bytes": 196608
+    },
+    "trace": {
+      "input_sha256": "116aa270b1b9d4fd095d79bea8c8c9ef8688d1443b903ab365ff9c147d54ca00",
+      "raw": "advisory.json"
+    },
+    "attempts": [
+      {
+        "host": "gx10",
+        "ok": true,
+        "wall_s": 42,
+        "used_gpu": true,
+        "ts": "2026-09-28T11:40:39.986Z",
+        "wall_ms": 41484,
+        "request_id": "01a0e7d1-2aaf-799d-8d35-591ba53da45e",
+        "load1": 1.49,
+        "cold": false
+      }
+    ],
+    "ledger": "/home/noah/.local/state/paiml-implement/advisory-ledger.jsonl",
+    "raw": "advisory.json",
+    "agrees_with_counted": true,
+    "counted": "PASS"
+  },
+  "lint": {
+    "ok": true,
+    "output": "receipt complete: kind=artifact lanes=3 author=claude-opus-5-5/claude same_family=2/2"
+  }
+}

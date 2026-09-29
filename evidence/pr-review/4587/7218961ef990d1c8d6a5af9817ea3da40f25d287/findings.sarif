@@ -1,0 +1,202 @@
+{
+  "version": "2.1.0",
+  "$schema": "https://raw.githubusercontent.com/oasis-tcs/sarif-spec/master/Schemata/sarif-schema-2.1.0.json",
+  "runs": [
+    {
+      "tool": {
+        "driver": {
+          "name": "pmat",
+          "informationUri": "https://github.com/paiml/pmat",
+          "version": "3.30.0",
+          "rules": []
+        }
+      },
+      "invocations": [
+        {
+          "executionSuccessful": true,
+          "commandLine": "git diff ba09f72af5 7218961ef9 -- . ':!evidence/pr-review'"
+        }
+      ],
+      "results": [
+        {
+          "ruleId": "PRREV-SCOPE-001",
+          "level": "note",
+          "message": {
+            "text": "Carried forward, updated for the new head 7218961ef9: this run reads IN FULL the 3-commit delta since ba09f72af5 (7cc5f7d4f3 setsid-wrap fix, 7218961ef9 supported.yaml re-derive, 00d9872441 evidence-only minisig commit) -- 2 files changed outside evidence/pr-review (ci/sections.yml, evidence/models/supported.yaml), 42 insertions/42 deletions. The wider PR's ~726 files not touched by this delta retain the scope limitation recorded at d57f897/ba09f72a and are NOT re-read this run; their disposition is carried forward unchanged."
+          },
+          "properties": {
+            "grounding": "measured",
+            "command": ["git", "diff", "--stat", "ba09f72af521327a5f657c06eb4368d2d720fd25", "7218961ef990d1c8d6a5af9817ea3da40f25d287", "--", ".", ":!evidence/pr-review"],
+            "exit_code": 0,
+            "failure_scenario": "A reader could assume this receipt re-reviewed the full PR; it reviewed the 3-commit/2-file delta plus everything the prior receipts already sampled, not the whole diff again.",
+            "precision_class": "advisory"
+          }
+        },
+        {
+          "ruleId": "PRREV-GUARDSTEP-ISO-001",
+          "level": "note",
+          "message": {
+            "text": "RESOLVED this run: 7cc5f7d4f3 wraps the 6 previously-bare guard/mutation invocations in the 'lean guards (leanchecker scoped, modules reachable) + their mutation sets' CI step under `setsid --wait`, matching every other guard step in ci/sections.yml. Independently re-ran scripts/check_guard_steps_isolated.sh against the live tree (no --self-test): PASS, every direct guard invocation in 25 workflow(s) runs under setsid --wait. Also ran the script's own --self-test (14 rows including a real mutant case -- 'ci/sections.yml with one wrapper removed is refused'): 0 failed, so the guard's positive result is not vacuous -- it demonstrably can flag exactly this class of defect and did, per the CI run context given (36496045871 on 7eb331468c), before this fix landed."
+          },
+          "properties": {
+            "grounding": "measured",
+            "command": ["bash", "scripts/check_guard_steps_isolated.sh"],
+            "exit_code": 0,
+            "failure_scenario": "Without the wrap, a guard invocation running outside setsid --wait can be orphaned by a killed parent process group and leave residue or a false green; the mutant row in the script's own self-test proves the check would have caught the pre-fix state.",
+            "precision_class": "advisory"
+          }
+        },
+        {
+          "ruleId": "PRREV-MODELS-YAML-001",
+          "level": "note",
+          "message": {
+            "text": "7218961ef9 re-derives evidence/models/supported.yaml after a README.md edit shifted line numbers. Diffed the full change: every hunk is a `README.md:<N>` citation-line-number update (verified by grepping the diff's added/removed lines with README.md:[0-9]+ stripped out -- zero non-line-number lines remained, i.e. no model name/family/size/cited_by_count changed). Independently re-ran `bash scripts/derive_model_manifest.sh --check`: PASS, derive_model_manifest: evidence/models/supported.yaml equals its derivation (24 models). No defect found."
+          },
+          "properties": {
+            "grounding": "measured",
+            "command": ["bash", "scripts/derive_model_manifest.sh", "--check"],
+            "exit_code": 0,
+            "failure_scenario": "A citation-only re-derive that actually dropped or reassigned a model's cited_by entries would be indistinguishable from a cosmetic line-shift without diffing the non-line-number content and re-running the derivation gate.",
+            "precision_class": "advisory"
+          }
+        },
+        {
+          "ruleId": "PRREV-SIG-001",
+          "level": "note",
+          "message": {
+            "text": "00d9872441 commits the CI signer's .minisig for the ba09f72af5 receipt (evidence/pr-review/4587/ba09f72af521327a5f657c06eb4368d2d720fd25/receipt.intoto.jsonl.minisig), excluded from the patch-id as instructed. Independently verified: `minisign -V -q -m <dir>/receipt.intoto.jsonl -p .github/pr-review.pub -x <dir>/receipt.intoto.jsonl.minisig` exits 0. Also ran `bash scripts/pr_review_sign_receipt.sh --self-test` (verify-only mode, does not sign this receipt): 14 passed, 0 failed, including the 'a signature that fails verification is DELETED, not left on disk' row, so the verify path is not vacuous."
+          },
+          "properties": {
+            "grounding": "measured",
+            "command": ["minisign", "-V", "-q", "-m", "evidence/pr-review/4587/ba09f72af521327a5f657c06eb4368d2d720fd25/receipt.intoto.jsonl", "-p", ".github/pr-review.pub", "-x", "evidence/pr-review/4587/ba09f72af521327a5f657c06eb4368d2d720fd25/receipt.intoto.jsonl.minisig"],
+            "exit_code": 0,
+            "failure_scenario": "An unverifiable or mismatched signature committed as evidence would be worse than none -- it would look like a signed receipt to a downstream reader while proving nothing; the explicit re-verify against the committed pubkey rules this out.",
+            "precision_class": "advisory"
+          }
+        },
+        {
+          "ruleId": "PRREV-GUARD-MUTSET-001",
+          "level": "note",
+          "message": {
+            "text": "Carried forward, disposition unaffected by this delta: c1e4d195c5's 3 committed mutation sets (facade_compat, lean_modules_reachable, leanchecker_scoped) were already verified 100% (17/17, 18/18, 31/31) at the ba09f72a review. This delta's ci/sections.yml change only re-wraps the same 6 invocations in setsid --wait; it does not alter the mutation sets' content or counts. Not re-run this session (no change to the scripts themselves in this delta) -- re-verified only that the files are byte-unchanged since ba09f72a via git diff --stat above showing no scripts/mutate_*_guard.sh entries."
+          },
+          "properties": {
+            "grounding": "asserted",
+            "rationale": "git diff --stat ba09f72af5..7218961ef9 lists only ci/sections.yml and evidence/models/supported.yaml; the 3 mutation-set scripts are not in the delta, so their prior 100%-kill measurement stands without re-running.",
+            "failure_scenario": "If any mutation-set script had been touched by this delta, its prior measurement would need re-running; it was not touched.",
+            "precision_class": "advisory"
+          }
+        },
+        {
+          "ruleId": "PRREV-VERSION-001",
+          "level": "note",
+          "message": {
+            "text": "Carried forward, unaffected: ba09f72af5's bump-version.sh facade-pin fix was verified at the ba09f72a review (10/10 self-test rows) and is not touched by this delta (bump-version.sh does not appear in git diff --stat ba09f72af5..7218961ef9)."
+          },
+          "properties": {
+            "grounding": "asserted",
+            "rationale": "Not in the delta's changed-file list; no re-check needed.",
+            "failure_scenario": "n/a -- unchanged file.",
+            "precision_class": "advisory"
+          }
+        },
+        {
+          "ruleId": "PRREV-MUTANTS-001",
+          "level": "error",
+          "message": {
+            "text": "PR1-MUTANTS HARD-STOP CARRIED FORWARD, UNCHANGED and NOT RE-MEASURED against this head, per explicit instruction: the base_sha is unchanged (ef72c05809) and this 3-commit/2-file delta (a CI wrapper fix, a citation-line re-derive, and an evidence-only .minisig commit) touches no application logic in the 3555-in-diff-mutant surface measured at d57f897/carried at ba09f72a. It is an operator-declared, non-waivable HARD-STOP: merging against a 60-mutant CI cap while the underlying diff contains 3555 in-diff mutants means the mutation gate cannot meaningfully exercise the vast majority of changed logic. This finding alone continues to force the verdict to something other than a clean approve, regardless of every other finding on this delta being resolved or clean. Per the operator ruling relayed for this review, this is NOT a fix target on this branch and the cap must not be raised; it is escalated to the operator as a HARD-STOP."
+          },
+          "properties": {
+            "grounding": "asserted",
+            "rationale": "Carried forward from the ba09f72a receipt's own measured cargo-mutants --in-diff --list run (3555 in-diff mutants vs cap 60); not re-run this session per explicit task instruction that it is a standing BLOCK, not a re-measurement target.",
+            "failure_scenario": "Merging this PR while the mutation gate's cap (60) covers under 2% of the diff's in-diff mutant surface (3555) means most changed application logic ships with zero mutation coverage in CI.",
+            "precision_class": "advisory"
+          }
+        },
+        {
+          "ruleId": "PRREV-DUP-001",
+          "level": "note",
+          "message": {
+            "text": "Carried forward unchanged: the full duplication horizon sweep (siblings + merge_base_to_main) was not run this session either. duplication_coverage remains 'none' across every surface. This delta (a CI wrapper fix, a re-derived citation manifest, and a committed .minisig) presents no plausible new duplication surface, but the sweep itself was not executed."
+          },
+          "properties": {
+            "grounding": "asserted",
+            "rationale": "No new duplication sweep was performed this run; restating the prior honest gap rather than dropping it.",
+            "failure_scenario": "A near-duplicate re-implementation anywhere in the 728-file diff would go undetected without this sweep.",
+            "precision_class": "advisory"
+          }
+        }
+      ]
+    },
+    {
+      "tool": {
+        "driver": {
+          "name": "nvidia-cuda-docs",
+          "informationUri": "https://developer.nvidia.com/cuda-toolkit"
+        }
+      },
+      "invocations": [
+        {
+          "executionSuccessful": false,
+          "toolExecutionNotifications": [
+            {
+              "level": "error",
+              "message": {
+                "text": "cuda consultation status is unreachable, not consulted: mcp__nvidia-cuda-docs__search_cuda_docs was unavailable (server not authenticated) in this reviewing session, and also reported unavailable by the dedicated cuda-docs-reviewer agent dispatched for this delta (2026-09-29 ~00:50Z). No query ran in either session."
+              },
+              "properties": {
+                "grounding": "measured",
+                "rationale": "The path trigger fires (matches cuda_simd_scores.rs.txt and fp8-interchange-v1.lean), so this is not a no-trigger case; the tool being unreachable means the device claims in those two files were not checked against docs this run either.",
+                "exit_code": 1
+              }
+            }
+          ]
+        }
+      ],
+      "results": [
+        {
+          "ruleId": "PRREV-CUDA-001",
+          "level": "note",
+          "message": {
+            "text": "The S3.B path trigger fires (matches cuda_simd_scores.rs.txt, fp8-interchange-v1.lean) though neither file is touched by this delta. The prior receipts' characterization of these as false positives was never actually checked against CUDA docs (the tool has been unreachable every session, including this one and the dedicated cuda-docs-reviewer's), so the honest status is unreachable/unchecked, not a confirmed false-positive disposition."
+          },
+          "properties": {
+            "grounding": "measured",
+            "command": ["git", "diff", "--stat", "ba09f72af521327a5f657c06eb4368d2d720fd25", "7218961ef990d1c8d6a5af9817ea3da40f25d287"],
+            "exit_code": 0,
+            "failure_scenario": "If the delta had touched either fixture file, the disposition would need re-checking; it does not.",
+            "precision_class": "advisory"
+          }
+        }
+      ]
+    },
+    {
+      "tool": {
+        "driver": {
+          "name": "crux",
+          "informationUri": "internal:crux"
+        }
+      },
+      "invocations": [
+        {
+          "executionSuccessful": true
+        }
+      ],
+      "results": [
+        {
+          "ruleId": "PRREV-CRUX-001",
+          "level": "note",
+          "message": {
+            "text": "Carried forward unchanged: the 2-file delta (ci/sections.yml, evidence/models/supported.yaml) adds no new CLI-facing command surface, so the prior crux_coverage='none' disposition is unaffected and carried forward rather than re-swept."
+          },
+          "properties": {
+            "grounding": "asserted",
+            "rationale": "Neither changed file is a contracts/apr-cli-commands-v1.yaml or crux-adjacent surface.",
+            "failure_scenario": "If the delta had added a new CLI-facing command, the crux disposition would need re-checking; it does not.",
+            "precision_class": "advisory"
+          }
+        }
+      ]
+    }
+  ]
+}
