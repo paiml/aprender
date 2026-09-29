@@ -44,7 +44,9 @@ gate() { # gate <diff> <cap> <jobs> <max-missed> <out> [excluded crate...]
   shift 5
   local -a ex=()
   for c in "$@"; do ex+=(--exclude "crates/$c/**"); done
-  [ -z "$DEFER" ] || : > "$DEFER" || return 1   # written first: an early pass defers nothing, and says so
+  # written first: an early pass defers nothing, and says so. Its directory may not exist yet: CI hands
+  # mutants-gate/not_measured.txt to a fresh checkout, and the redirect failed before --out was made (#4620 x86-main)
+  [ -z "$DEFER" ] || { mkdir -p "$(dirname "$DEFER")" && : > "$DEFER"; } || return 1
   [ -s "$diff" ] || { echo "ok    empty diff: nothing to mutate"; return 0; }
   mkdir -p "$out" || return 1
   local -a ta=(--lib)
@@ -295,6 +297,10 @@ STUB
         STUB_OUTCOMES='{"total_mutants":2,"missed":1,"caught":1,"timeout":0}' STUB_MISSED='crates/foo/src/gated.rs:7:5: replace g -> bool with true\n'
     if [ "$(cat "$T/defer.txt" 2> /dev/null)" = "crates/foo/src/gated.rs:7:5: replace g -> bool with true" ]; then echo "ok    deferred-set-written"
     else echo "FAIL  deferred-set-written -- $(cat "$T/defer.txt" 2> /dev/null)"; fi
+    # the deferred file's directory need not exist: CI passes mutants-gate/not_measured.txt on a fresh checkout
+    rm -rf -- "${T:?}/fresh"   # the table runs once per mutant on one $T: a stale directory would hide the mutant
+    GATE_OPTS="--defer-unbuilt $T/fresh/dir/defer3.txt" row defer-into-a-missing-dir 0 "0 mutants in the diff" STUB_LIST=""
+    [ -f "$T/fresh/dir/defer3.txt" ] && echo "ok    defer-dir-created" || echo "FAIL  defer-dir-created -- no $T/fresh/dir/defer3.txt"
     GATE_OPTS="--defer-unbuilt $T/defer2.txt" row deferred-built-survivor-is-red 1 "  crates/foo/src/built.rs:3:1: replace k with ()" STUB_LIST='a\nb\n' \
         STUB_OUTCOMES='{"total_mutants":2,"missed":2,"caught":0,"timeout":0}' \
         STUB_MISSED='crates/foo/src/gated.rs:7:5: replace g -> bool with true\ncrates/foo/src/built.rs:3:1: replace k with ()\n'
@@ -349,6 +355,7 @@ built-survivor-hidden~built-survivor-beside-unbuilt-is-red~    if [ "$((missed +
 empty-depinfo-means-all-unbuilt~depinfo-empty-is-red~  [ "${#built[@]}" -gt 0 ] || {~  true || {
 names-dropped~test-names-on-the-run~    ta+=(-- --exact --test-threads 1 "${c[@]}")~    :
 empty-names-accepted~empty-test-names-is-red~    [ -s "$NAMES" ] || { echo "RED   --test-names~    true || { echo "RED   --test-names
+defer-dir-not-made~defer-into-a-missing-dir~{ mkdir -p "$(dirname "$DEFER")" && : > "$DEFER"; }~{ : > "$DEFER"; }
 defer-ignored~unbuilt-deferred-passes-and-is-written~    if [ -n "$DEFER" ]; then~    if false; then
 deferred-set-unsorted~deferred-set-written~      printf '%s' "$UNBUILT" | LC_ALL=C sort > "$DEFER" || return 1~      : > "$DEFER"
 gated-includes-default-built~gated-scope-and-measured-set~    if [ -n "${feat[$f]:-}" ] && [ -z "${dflt[$f]:-}" ]; then GATED+=("$f"); fi~    if [ -n "${feat[$f]:-}" ]; then GATED+=("$f"); fi
