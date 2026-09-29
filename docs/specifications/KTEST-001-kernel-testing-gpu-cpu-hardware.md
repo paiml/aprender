@@ -250,6 +250,34 @@ A kernel receipt is valid while its `input_set_hash` is unchanged. A release re-
 - **L1:** Kani proves the scalar reference's index maps and the SIMD remainder masks for bounded sizes. Miri runs the scalar and portable paths (Miri doesn't cover most `core::arch` intrinsics `[C]`, so those are covered by L2, L3 and ASan).
 - Denormal and FTZ behaviour on CPU: MXCSR FTZ/DAZ state is pinned and recorded in the receipt (a thread-pool worker that inherits FTZ is a known heisenbug class).
 
+### 6.1.1 KTEST-04 amendment: one registry row per ISA path (2026-09-30, kreg)
+
+**Finding.** Every CPU registry row today is `arch: any`, `isa_features: none`, and its intel receipt was taken in a native process. On a row whose source has a SIMD branch, the receipt therefore measured the AVX2/AVX-512 path while claiming the portable one. The scalar path was never receipted; this is STOP S-2 (a backend claimed without receipts).
+
+| Row | Paths in the source (the features its dispatch checks) |
+|---|---|
+| `cpu.matvec.q4_0` | `avx512vnni+avx512bw`; `avx2`; scalar |
+| `cpu.matvec.q8_0` | `avx2+fma`; scalar |
+| `cpu.matvec.q4_k` | `avx512f+avx512vnni`; `avx2+fma`; scalar |
+| `cpu.matvec.q6_k` | `avx2+fma`; scalar |
+| `cpu.matvec.f16` / `bf16` | `avx2+fma+f16c` / `avx2+fma`; scalar |
+| `cpu.rmsnorm.f32` | trueno backend (AVX2/AVX-512); scalar |
+| `cpu.rope.*` | `avx512f`; `avx2+fma` (NEOX only); scalar |
+| attention ops | `avx2+fma`; scalar |
+
+Every other CPU row (q5_k, iq\*, q2_k/q3_k/q4_1/q5_0/q5_1, layernorm, gelu, argmax) is scalar only, so its existing receipt is already correct.
+
+**Decision.** §4 and §5.1 name one kernel per ISA path (`cpu-scalar`, `cpu-avx2`, `cpu-avx512`, …), and the KREG registry already expresses that as `backend: cpu` + `arch` + `isa_features`. The registry's `admit_for` picks the most specific row the target satisfies, and `APR_FORCE_ISA` narrows `Target::host()`. So:
+1. Each SIMD path gets its own row, `cpu.<op>.<qtype>.<isa>`, with `arch: x86_64` and `isa_features` equal to exactly the features its dispatch checks (the table above). Because the registry key includes the feature set, two paths cannot share a row.
+2. The base `any`/`none` row becomes the scalar path. Its receipt is re-emitted under `APR_FORCE_ISA=scalar`.
+3. The emitter refuses to write a receipt unless `admit_for(Target::host())` is the row being receipted, and it records `isa_forced` in the header. Together these stop a native run from being stamped on the scalar row.
+4. The committed-receipt hold test checks each row in a child process forced to that row's ceiling, because the ceiling is fixed once per process.
+5. **Ratchet.** `unreceipted_max` is never raised. A per-ISA row lands only in the same commit as its receipt, so no row is ever added without one.
+6. **F-11.** A fleet ISA table, verified from `/proc/cpuinfo`, lists what each host can run. intel (Xeon W-3245) has `fma sse4_1 f16c avx2 avx512f avx512bw avx512_vnni`, so it covers every x86 row. gx10 and mini are `[U]` until KTEST-00. A row whose `isa_features` no host in the table satisfies is refused.
+7. The MXCSR FTZ/DAZ state goes into the receipt header next to `isa_forced` (§6.1).
+
+The mechanism (`APR_FORCE_ISA`, every serve dispatch site gated, and trueno backend selection capped) is on branch `la-71/ktest-04-force-isa`. Steps 1–7 land after that branch's intel receipts.
+
 ### 6.2 NVIDIA CUDA (sm_89 lambda, sm_121 gx10, yoga `[U]`)
 - **Native code for every arch, no PTX JIT:** the fatbin must contain SASS for every arch in the support matrix, checked with `cuobjdump --list-elf`. A separate L2 run with `CUDA_FORCE_PTX_JIT=1` proves the PTX path is also correct. Missing `sm_121` SASS is the "correct but silently slow" bug class (APR-QUALITY §6.1) → falsifier F-4.
 - Tensor-core and TF32 modes are explicit registry dtypes (K1b). `compute-sanitizer` runs its four tools nightly on the small-shape classes (L5).
