@@ -508,14 +508,9 @@ fn try_cuda_batch_generate(
         ..Default::default()
     };
 
-    let mut results = Vec::with_capacity(request.prompts.len());
-    let mut cuda_model = cuda_model_lock.write().map_err(|_| {
-        api_err(
-            StatusCode::INTERNAL_SERVER_ERROR,
-            "Failed to acquire CUDA model lock",
-        )
-    })?;
-
+    // D5: tokenize and pre-flight every prompt before the write lock, so an
+    // over-context prompt is a 400 with the model untouched and no GPU work spent.
+    let mut encoded = Vec::with_capacity(request.prompts.len());
     for prompt_text in &request.prompts {
         let prompt_ids = tokenizer.encode(prompt_text);
         if prompt_ids.is_empty() {
@@ -524,10 +519,22 @@ fn try_cuda_batch_generate(
                 format!("Prompt '{prompt_text}' tokenizes to empty sequence"),
             ));
         }
+        preflight_serving_context(state, prompt_ids.len())?;
+        encoded.push(prompt_ids);
+    }
+
+    let mut results = Vec::with_capacity(encoded.len());
+    let mut cuda_model = cuda_model_lock.write().map_err(|_| {
+        api_err(
+            StatusCode::INTERNAL_SERVER_ERROR,
+            "Failed to acquire CUDA model lock",
+        )
+    })?;
+
+    for prompt_ids in &encoded {
         let prompt_tokens = prompt_ids.len();
-        preflight_serving_context(state, prompt_tokens)?;
         let generated = cuda_model
-            .generate_gpu_resident(&prompt_ids, &q_config)
+            .generate_gpu_resident(prompt_ids, &q_config)
             .map_err(|e| {
                 api_err(
                     crate::api::generation_error_status(&e),
