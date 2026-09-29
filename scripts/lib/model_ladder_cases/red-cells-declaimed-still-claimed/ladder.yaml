@@ -38,8 +38,6 @@ ladder:
     - cpu
     - cuda
     gguf: c.gguf
-    hosts:
-    - lambda
     id: ctrl-q4km
     required: true
     sha256: '0000000000000000000000000000000000000000000000000000000000000000'

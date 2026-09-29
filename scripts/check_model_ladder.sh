@@ -890,6 +890,7 @@ if [ "$SELF_TEST" = 1 ]; then
     cmutant rungs-floor     red-cells-rung-dropped-vs-main  's/        if gone:/        if False:/'
     cmutant declaim-skip    green-cells-declaimed           's/        if d:  # printed on every run/        if False:  # printed on every run/'
     cmutant declaim-bare    red-cells-declaimed-bare        's/        if bad:  # a bare de-claim/        if False:  # a bare de-claim/'
+    cmutant declaim-claimed red-cells-declaimed-still-claimed 's/            if d:  # a claim the de-claim withdraws/            if False:  # a claim the de-claim withdraws/'
     mutant declaim-host     declaimed-host-on-rung          's/                gone = {g for g in gone if (g, r.get("arch")) not in dcl}/                gone = set(gone)/'
     # #3957 F4/F8: the CRUX join (scripts/lib/model_ladder_crux.py), each rule deleted in a copy
     # imported through MODEL_LADDER_CRUX_LIB; the case that names the rule must go RED.

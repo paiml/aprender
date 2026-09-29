@@ -8,19 +8,16 @@
 # missing edge `minCount 1` rejects). Both call sites must ask it the same question with the same subject,
 # the same receipts-commit rule and the same exit mapping — two hand-copied `pv lint` lines would drift.
 #
-# MODE. `enforce` (the committed default below, flipped 2026-09-28 for 0.70, #3715 B1) or `report`.
+# MODE. `enforce`, and nothing else (flipped 2026-09-28 for 0.70, #3715 B1; the report arm was deleted
+#   for R10: "report-only is not an option", L19: a silent report-only check = hard stop).
 #   Measured 2026-09-25 with pv 0.69.3 on 0.69.1 @d8a6df53a: rc 1, 1101 violations, 1008 of them cells with
 #   no `ont:release/row`, because models_t1 measured rungs only. models_t1 now passes --cells on both hosts,
 #   and the operator's de-claim of Qwen3 on gx10 (#4590) is DATA the released pv reads (rung hosts + the
-#   receipt's inventory), so a Fail STOPs the train before the tag. Going back to `report` is a reviewed
-#   commit to DEFAULT_MODE, never an environment variable.
-#   RELEASE_READINESS_MODE may only STRENGTHEN the committed mode (`enforce`); asking for `report` over an
-#   `enforce` default, or any other value, is a caller error (3). A gate an env var can weaken is theater.
-#   Could-not-judge under `report` (cop ruling 2026-09-25 09:15Z: "record the rc and receipt, don't
-#   stop"): a decline (pv 2), an unknown exit, a missing pv, or a "Fail" exit carrying no Fail verdict is
-#   printed as its FAIL row PLUS a `WARN  R8 REPORT-ONLY could not judge (rc 2)` row, and exits 0. The
-#   rc is on the page, not hidden. Under `enforce` each is exit 2. A caller error (3) stops in either
-#   mode: it means this script was called wrong, and that is a wiring defect, not a verdict.
+#   receipt's inventory), so a Fail STOPs the train before the tag.
+#   RELEASE_READINESS_MODE may only say `enforce`; `report`, as the env value OR as a committed DEFAULT_MODE,
+#   or any other value, is a caller error (3). A gate an env var or a one-word edit can weaken is theater.
+#   Could-not-judge (a decline (pv 2), an unknown exit, a missing pv, or a "Fail" exit carrying no Fail
+#   verdict) is exit 2, a stop. A caller error (3) means this script was called wrong: a wiring defect.
 #
 # RECEIPTS-COMMIT (T-4). The committed receipts were measured at the binary's commit (their `apr_sha`),
 # which is never the tagged HEAD: the receipts are committed on top. pv takes `--receipts-commit` on trust
@@ -28,8 +25,8 @@
 # `git diff X <release-commit>` is empty outside evidence/. Otherwise the flag is withheld, pv grades the
 # receipts against the release commit, and a stale receipt is a violation — the row says which.
 #
-# EXIT  0 Pass, or a Fail verdict under `report` (WARN row) · 1 Fail under `enforce` ·
-#       2 pv declined / could not judge / is missing, under `enforce` (a WARN + 0 under `report`) ·
+# EXIT  0 Pass · 1 Fail ·
+#       2 pv declined / could not judge / is missing ·
 #       3 caller error. Every non-zero STOPs the caller.
 #
 # SEAMS (the selftest drives every row through them; production sets neither):
@@ -47,12 +44,12 @@ SHAPE=release-readiness-v1
 
 caller_error() { printf 'FAIL  R8 %s: caller error: %s\n' "$PROG" "$*"; exit 3; }
 
-# resolve_mode committed-default env-value -> prints the mode; 1 on a value that would weaken or is unknown
+# resolve_mode committed-default env-value -> prints `enforce`; 1 on anything else. There is no report mode
+# (operator R10, 2026-09-28: "report-only is not an option"; L19: a silent report-only check = hard stop).
 resolve_mode() {
+    [ "$1" = enforce ] || return 1
     case "${2:-}" in
-        '') printf '%s\n' "$1" ;;
-        enforce) printf 'enforce\n' ;;
-        report) [ "$1" = report ] || return 1; printf 'report\n' ;;
+        ''|enforce) printf 'enforce\n' ;;
         *) return 1 ;;
     esac
 }
@@ -158,7 +155,7 @@ judge() { # judge mode root version commit receipts dogfood out
     case "$rc" in
         0) echo "ok    R8 $label: Pass"
            # #3715 B1 (operator 2026-09-28): the ONE line autopilot cut_tag() requires before `git tag`.
-           # Printed only for an enforced Pass, so a report-mode run, a skipped step or an absent log
+           # Printed only for an enforced Pass, so a weakened run, a skipped step or an absent log
            # all leave the tag refused. out_sha256 is pv's verdict output, for the receipt.
            if [ "$mode" = enforce ]; then
                echo "ok    R8 #3715 ENFORCE PASS version=$version commit=$commit pv=${pvv:-unknown} out_sha256=$(sha256sum < "$out" | cut -c1-64)"
@@ -168,11 +165,7 @@ judge() { # judge mode root version commit receipts dogfood out
             if ! sum="$(summarize "$out")"; then
                 echo "FAIL  R8 $label: pv exited 1 with no Fail verdict in its output, so it did not judge"; tail -n 3 "$out" | sed 's/^/        /'; return 2
             fi
-            if [ "$mode" = enforce ]; then
-                echo "FAIL  R8 $label: Fail, $sum"; return 1
-            fi
-            echo "WARN  R8 REPORT-ONLY $label: Fail, $sum (not a stop until #3712 lands; DEFAULT_MODE in $PROG)"
-            return 0 ;;
+            echo "FAIL  R8 $label: Fail, $sum"; return 1 ;;
         2) echo "FAIL  R8 $label: pv DECLINED (rc 2), and a decline is not a pass: $(tail -n 1 "$out")"; return 2 ;;
         3) echo "FAIL  R8 $label: pv refused the call (rc 3, caller error): $(tail -n 1 "$out")"; return 3 ;;
         *) echo "FAIL  R8 $label: pv exited $rc, which is outside its 0/1/2/3 contract: $(tail -n 1 "$out")"; return 2 ;;
@@ -200,7 +193,7 @@ main() {
     [ -n "$version" ] || caller_error "--version is required"
     [ -n "$commit" ] || caller_error "--commit is required"
     mode="$(resolve_mode "$DEFAULT_MODE" "${RELEASE_READINESS_MODE:-}")" \
-        || caller_error "RELEASE_READINESS_MODE='${RELEASE_READINESS_MODE:-}' may only strengthen the committed mode ($DEFAULT_MODE) to enforce"
+        || caller_error "RELEASE_READINESS_MODE='${RELEASE_READINESS_MODE:-}' / DEFAULT_MODE='$DEFAULT_MODE': the only mode is enforce; there is no report mode (may only strengthen)"
     [ -n "$root" ] || root="$(cd -- "$(dirname -- "$SCRIPT_PATH")/../.." && pwd)"
     git -C "$root" rev-parse --verify --quiet HEAD >/dev/null || { echo "FAIL  R8 $root is not a git repository"; exit 2; }
     [ -z "$dogfood" ] || [ -f "$dogfood" ] || caller_error "--dogfood-receipt $dogfood does not exist"
@@ -211,10 +204,6 @@ main() {
     [ -f "$surface" ] || surface=""
     if [ -n "$out" ]; then tmpout="$out"; else tmpout="$(mktemp)"; fi
     judge "$mode" "$root" "$version" "$commit" "$receipts" "$dogfood" "$tmpout" "$surface"; rc=$?
-    if [ "$rc" = 2 ] && [ "$mode" = report ]; then
-        echo "WARN  R8 REPORT-ONLY could not judge (rc 2), recorded and not a stop until #3712 lands (DEFAULT_MODE in $PROG)"
-        rc=0
-    fi
     [ -n "$out" ] || rm -f -- "$tmpout"
     exit "$rc"
 }
@@ -315,11 +304,11 @@ STUB
     else
         printf '  BROKE %-44s DEFAULT_MODE=%s\n' committed_default_is_enforce "$DEFAULT_MODE"; fail=$((fail + 1))
     fi
-    if [ "$(resolve_mode report '')" = report ] && [ "$(resolve_mode enforce '')" = enforce ] \
-        && ! resolve_mode enforce report >/dev/null && [ "$(resolve_mode report enforce)" = enforce ]; then
-        printf '  ok    %-44s report over enforce refused, enforce over report taken\n' mode_env_only_strengthens; pass=$((pass + 1))
+    if [ "$(resolve_mode enforce '')" = enforce ] && [ "$(resolve_mode enforce enforce)" = enforce ] \
+        && ! resolve_mode enforce report >/dev/null && ! resolve_mode report '' >/dev/null && ! resolve_mode report enforce >/dev/null; then
+        printf '  ok    %-44s report is refused as env AND as a committed default\n' mode_has_no_report_arm; pass=$((pass + 1))
     else
-        printf '  BROKE %-44s\n' mode_env_only_strengthens; fail=$((fail + 1))
+        printf '  BROKE %-44s\n' mode_has_no_report_arm; fail=$((fail + 1))
     fi
     printf -- '--- %s/%s rows ---\n' "$pass" "$((pass + fail))"
     [ "$fail" -eq 0 ]

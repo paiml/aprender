@@ -363,7 +363,7 @@ r_stops() { # TAG AUTOPILOT MODELS_T1 NEEDLE ENV... -> 0 when the step STOPped n
     return 0
 }
 r_pass()    { r_goes "rpass-$1" "$2" "$3" ok "ok    R8 release-readiness-v1 Pass"; }
-r_warn()    { r_goes "rwarn-$1" "$2" "$3" WARN "WARN  R8 REPORT-ONLY" 'FX_RR_LINE=WARN  R8 REPORT-ONLY fixture Fail'; }
+r_warn()    { r_stops "rwarn-$1" "$2" "$3" "T-1 release-readiness-v1 printed a WARN R8 row" 'FX_RR_LINE=WARN  R8 REPORT-ONLY fixture Fail'; }
 r_fail()    { r_stops "rfail-$1" "$2" "$3" "T-1 release-readiness-v1 rc=1" FX_RR_RC=1 'FX_RR_LINE=FAIL  R8 fixture Fail'; }
 r_decline() { r_stops "rdecl-$1" "$2" "$3" "T-1 release-readiness-v1 rc=2" FX_RR_RC=2 'FX_RR_LINE=FAIL  R8 fixture decline'; }
 r_no_dr()   { r_stops "rnodr-$1" "$2" "$3" "T-1 readiness: no dogfood receipt" FX_NO_DR=1; }
@@ -379,7 +379,7 @@ for spec in "green-pair green_pair" "gx10-unreachable unreachable" "build-fails 
     set -- $spec
     msg=$($2 real "$AUTOPILOT" "$MODELS"); row "$1" "$?" "$msg"
 done
-for spec in "readiness-pass r_pass" "readiness-warn-continues r_warn" "readiness-fail-stops r_fail" \
+for spec in "readiness-pass r_pass" "readiness-warn-stops r_warn" "readiness-fail-stops r_fail" \
             "readiness-decline-stops r_decline" "readiness-no-dogfood-receipt r_no_dr" \
             "readiness-stale-apr-stops r_stale"; do
     set -- $spec

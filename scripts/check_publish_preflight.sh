@@ -311,9 +311,21 @@ rule_r8() {
     receipt="$(newest_receipt "${PUBLISH_PREFLIGHT_RECEIPT_DIR:-$root/.dogfood}")"
     out="$(bash "$wrapper" --root "$root" --version "$version" --commit "$head" ${receipt:+--dogfood-receipt "$receipt"} 2>&1)"; rc=$?
     printf '%s\n' "$out"
-    [ "$rc" -eq 0 ] && return 0
-    echo "FAIL  R8 the release-readiness wrapper exited $rc (1 Fail under enforce, 2 could not judge, 3 caller error): none is a pass"
-    return 1
+    if [ "$rc" -ne 0 ]; then
+        echo "FAIL  R8 the release-readiness wrapper exited $rc (1 Fail, 2 could not judge, 3 caller error): none is a pass"
+        return 1
+    fi
+    # R10/L19 (operator 2026-09-28): report-only is a waiver and a waiver is a stop. rc 0 alone is not
+    # a pass: the wrapper must have printed the enforced Pass for exactly this version and HEAD.
+    if printf '%s\n' "$out" | grep -qE '^WARN +R8 '; then
+        echo "FAIL  R8 the release-readiness wrapper printed a WARN R8 row: report-only is a waiver, not a pass"
+        return 1
+    fi
+    if ! printf '%s\n' "$out" | grep -qF "ok    R8 #3715 ENFORCE PASS version=$version commit=$head pv="; then
+        echo "FAIL  R8 the release-readiness wrapper exited 0 without '#3715 ENFORCE PASS' for $version at $head"
+        return 1
+    fi
+    return 0
 }
 
 gate() {
@@ -506,10 +518,9 @@ fi
 exit "${FX_LADDER_RC:-0}"
 FXJUDGE
         # R8's wrapper: it must be asked about THIS root, version 1.2.3, HEAD and the newest dogfood
-        # receipt, and it answers FX_READINESS_RC (default 0; FX_READINESS_WARN=1 prints the
-        # report-mode WARN row a Fail verdict yields under DEFAULT_MODE=report; the committed mode is
-        # enforce since #3715 B1, so that row is only reachable by a hand-edited wrapper, and R8 still
-        # refuses on any non-zero exit whatever the mode).
+        # receipt, and it answers FX_READINESS_RC (default 0, with the enforced-Pass line). FX_READINESS_WARN=1
+        # prints a WARN R8 row and exits 0: only a hand-edited wrapper can, and R8 refuses it (R10).
+        # FX_READINESS_NO_ENFORCE=1 exits 0 without the enforced-Pass line: refused too.
         mkdir -p "$1/scripts/release"
         cat > "$1/scripts/release/release_readiness.sh" <<'FXREADY'
 #!/usr/bin/env bash
@@ -519,6 +530,8 @@ want="--version 1.2.3 --commit $(git -C "$me" rev-parse HEAD) --dogfood-receipt"
 case "${*:3}" in "$want "*.dogfood/receipt-*.json) : ;; *) echo "FAIL  R8 wrapper asked: $*"; exit 3 ;; esac
 [ "${FX_READINESS_WARN:-0}" = 1 ] && echo "WARN  R8 REPORT-ONLY release-readiness-v1 for 1.2.3: Fail, 3 violation(s): cell=3"
 [ "${FX_READINESS_RC:-0}" = 0 ] && [ "${FX_READINESS_WARN:-0}" = 0 ] && echo "ok    R8 release-readiness-v1 for 1.2.3: Pass"
+[ "${FX_READINESS_RC:-0}" = 0 ] && [ "${FX_READINESS_WARN:-0}" = 0 ] && [ "${FX_READINESS_NO_ENFORCE:-0}" = 0 ] \
+    && echo "ok    R8 #3715 ENFORCE PASS version=1.2.3 commit=$(git -C "$me" rev-parse HEAD) pv=pv-fixture out_sha256=0"
 exit "${FX_READINESS_RC:-0}"
 FXREADY
     }
@@ -698,7 +711,8 @@ FXREADY
     # green row (the stub exits 3 unless it is asked about this root, 1.2.3, HEAD and the dogfood receipt).
     d="$tmp/r8"; build_repo "$d"
     row r8_pass_is_named                  0 "ok    R8 release-readiness-v1 for 1.2.3: Pass" "$d"
-    FX_READINESS_WARN=1 row r8_report_mode_warn_passes 0 "WARN  R8 REPORT-ONLY" "$d"
+    FX_READINESS_WARN=1 row r8_report_mode_warn_refuses 1 "report-only is a waiver" "$d"
+    FX_READINESS_NO_ENFORCE=1 row r8_rc0_without_enforce_pass_refuses 1 "without '#3715 ENFORCE PASS'" "$d"
     FX_READINESS_RC=1 row r8_enforced_fail_refuses 1 "FAIL  R8 the release-readiness wrapper exited 1" "$d"
     FX_READINESS_RC=2 row r8_could_not_judge_refuses 1 "FAIL  R8 the release-readiness wrapper exited 2" "$d"
     FX_READINESS_RC=3 row r8_caller_error_refuses 1 "FAIL  R8 the release-readiness wrapper exited 3" "$d"
