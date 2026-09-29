@@ -1,0 +1,47 @@
+{
+  "build_identity": "9fe053979b",
+  "host": "mac-server",
+  "host_arch": "x86_64",
+  "input_set": {
+    "device": "x86_64+sse4.2+avx+avx2+fma+avx512f+avx512bw+avx512vnni",
+    "driver": "none",
+    "oracle": "f64_definition:rope:norm+neox,d=128,theta=1e6,pos<32768,angle=pos*theta^(-2i/d)",
+    "row_sha256": "53691828064511b5321f12f33782cba3bf648fd45e855473eaa11b1e9f5ab0f0",
+    "source_sha256": "3503a3cf16d8df209b7ff5b888edc39cfb7780638ae11c5ff8566eb654629348",
+    "toolchain": "1.93.0"
+  },
+  "input_set_hash": "be2f399446634d65cefd9e79596f69216ea31c8e86caddf8d1e8c6b39ad6fcc4",
+  "isa_detected": [
+    "sse4.2",
+    "avx",
+    "avx2",
+    "fma",
+    "avx512f",
+    "avx512bw",
+    "avx512vnni"
+  ],
+  "kernel_id": "cpu.rope.f32",
+  "margin": {
+    "bound_rel": 0.008286646010608956,
+    "error_model": "EM-ROPE",
+    "verdict": "within",
+    "why": "sqrt2*3u*pos_max+4u: f32 angle pos*theta^(-2i/d), powf 2ulp + mul 1ulp"
+  },
+  "oracle": "f64_definition",
+  "oracle_formula": "rope:norm+neox,d=128,theta=1e6,pos<32768,angle=pos*theta^(-2i/d)",
+  "oracle_independent": true,
+  "registry_precision": "f32",
+  "schema": "kernel-parity-receipt/v1",
+  "served": {
+    "max_abs_err": 0.0028444676141875097,
+    "max_rel_err": 0.0010378146379689493
+  },
+  "source_fn": "apply_rope",
+  "tolerance_rel": 0.003,
+  "ts": "2026-09-29T05:33:31Z",
+  "workload": {
+    "n": 512,
+    "seed": 1161367296,
+    "trials": 8
+  }
+}
