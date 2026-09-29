@@ -274,7 +274,7 @@ pub const ERROR_MODELS: [&str; 8] = [
 
 /// The per-forward ops an `ops[]` row may name. The `kernel-registry-v1.op` shape holds the same
 /// closed set, and `the_op_set_is_the_contracts` keeps the two equal.
-pub const OPS: [&str; 19] = [
+pub const OPS: [&str; 20] = [
     "embed",
     "rmsnorm",
     "layernorm",
@@ -294,6 +294,7 @@ pub const OPS: [&str; 19] = [
     "elementwise_mul",
     "sample",
     "route_topk",
+    "repeat_penalty",
 ];
 
 /// A cross-field rule SHACL Core cannot state: an atomics-based kernel (`EM-NONDET`) is never
@@ -1602,6 +1603,8 @@ mod tests {
             "cuda.argmax.host.f32",
             "cpu.sample.seeded.f32",
             "cuda.route_topk.host.f32",
+            "cpu.repeat_penalty.f32",
+            "cuda.repeat_penalty.host.f32",
         ] {
             assert!(ids.contains(&want), "{want} not in {ids:?}");
         }
