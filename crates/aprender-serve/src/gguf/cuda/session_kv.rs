@@ -114,10 +114,12 @@ mod tests {
         assert_eq!(session_kv_len(0, 0, 0, 0, 0), 1);
     }
 
-    /// K1: Qwen3-1.7B on a 24 GB card serves its whole 40960 context, where serve
-    /// used a fixed 4096. RED before K1: the > 4096 serve cells overflowed the KV.
+    /// K1: Qwen3-1.7B on a 24 GB card serves far past 4096 (the room after weights,
+    /// FP16 cache and reserve, split across the session KV and two batched slots:
+    /// ~18.8K positions), where serve used a fixed 4096 -- the > 4096 serve cells
+    /// overflowed the KV. With room for all of it (gx10, 128 GB) it is the whole 40960.
     #[test]
-    fn serve_gives_a_small_model_its_whole_context() {
+    fn serve_gives_a_small_model_far_more_than_4096() {
         let len = serving_kv_len(
             40_960,
             QWEN3_1_7B_KV,
@@ -125,7 +127,12 @@ mod tests {
             GB + QWEN3_1_7B_FP16,
             4_600_000_000,
         );
-        assert_eq!(len, 40_960);
+        assert!(len > 16_384, "{len}");
+        assert!(len < 40_960, "{len}");
+        assert_eq!(
+            serving_kv_len(40_960, QWEN3_1_7B_KV, 100 * GB, GB, 4_600_000_000),
+            40_960
+        );
     }
 
     /// K1: the budget pays for the batched slots too, so the session KV plus
