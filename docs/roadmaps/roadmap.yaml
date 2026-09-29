@@ -21773,6 +21773,27 @@ roadmap:
   labels:
   - kind:code
   notes: null
+- id: PMAT-4139
+  github_issue: 4139
+  item_type: task
+  title: 'PVL-001 EV-6a: pv discharge check -- axiom subset pins; compiler-escape allowlist'
+  status: in_progress
+  priority: high
+  assigned_to: aprender-6c
+  created: 2026-09-24T00:00:00Z
+  updated: 2026-09-24T00:00:00Z
+  spec: null
+  acceptance_criteria:
+  - 'PVL-001 EV-6a probe (infra spec, amended infra#992): escape-allowlist.yaml and Axioms.lean tracked; `pv discharge gen-axioms $LEAN --check` rc 0; `pv discharge check $LEAN --no-lake` rc 0'
+  - 'accept: `lake env lean Axioms.lean` passes on the built tree; `pv discharge check $LEAN --strict` rc 1 until the 7 pending entries are confirmed; `cargo test -p aprender-contracts-cli --test pvl_discharge_check`'
+  - 'infra#992: MISSING-ROOT rc 1 for exact `ProvableContracts.<...>.<decl>` refs and capstones naming no theorem; labels rc 1 only when NOT in $LEAN/unresolved-labels.json; the gate never writes that file (make label-ratchet does)'
+  - 'mutations: `axiom pvl_mutation : False` in a Theorem file -> scan RED and subset pin RED; `@[implemented_by]` on a def -> allowlist RED'
+  phases: []
+  subtasks: []
+  estimated_effort: null
+  labels:
+  - kind:code
+  notes: 'Stacked on EV-5a (#4122). Scope from #4139 and PVL-001 EV-6a as amended by infra#992 (cop relay, 2026-09-24). Also withdraws a false L4 claim: cooperative-matrix-gemm-v1 cited the AXIOM f16_accumulation_error_bound as its lean_theorem; the reference becomes the `none -- ...` sentinel. MEASURED on lambda: check with lake elaboration rc 0 (164 pinned, 85 ORPHANED-ROOT, 7 PENDING); --strict rc 1; the pvl_mutation mutation turns scan and pin RED.'
 - id: PMAT-4142
   github_issue: 4142
   item_type: task
@@ -21809,6 +21830,24 @@ roadmap:
   - 'accept-level (pv lint --gate shapes on a fixture): two entity types, two closed shapes scoped by entity class, Pass with no cross-firing'
   - 'must-RED: the same two shapes scoped by ont:Contract cross-fire (the gap, measured); a planted wrong-type contract fails its type''s shape'
   - 'apex: the study shape over all apex contracts passes and does not fire on the 18 claim contracts (acceptance run coordinated with apex-4c)'
+  phases: []
+  subtasks: []
+  estimated_effort: null
+  labels:
+  - kind:code
+  notes: null
+- id: PMAT-4166
+  github_issue: 4166
+  item_type: task
+  title: 'PVL-11: pv lint ratchets — theorem pairing and depends_on'
+  status: planned
+  priority: high
+  assigned_to: null
+  created: 2026-09-24T07:10:50Z
+  updated: 2026-09-24T07:10:50Z
+  spec: null
+  acceptance_criteria:
+  - paiml/infra PVL-001 EV-11 (00553b0b). Cop (aprender-cf) assignment 2026-09-24.
   phases: []
   subtasks: []
   estimated_effort: null
@@ -21852,6 +21891,54 @@ roadmap:
   - P0
   - kind:code
   notes: null
+- id: PMAT-4199
+  github_issue: 4199
+  item_type: task
+  title: 'PVL-001 EV-6b: pv discharge check --leanchecker -- non-fresh kernel re-check, bounded'
+  status: completed
+  priority: high
+  assigned_to: aprender-5d
+  created: 2026-09-24T00:00:00Z
+  updated: 2026-09-26T19:10:00Z
+  spec: null
+  acceptance_criteria:
+  - 'PVL-001 EV-6b probe (amended as EV-7b A-7b.1: the target is wired through ci/explicit-test-commands.d, so the literal can never appear in ci.yml): `cd "$WT" && tracked crates/aprender-contracts-cli/tests/pvl_discharge_leanchecker.rs && present -- ''ci_run_explicit_test_commands\.sh --run ci/explicit-test-commands\.d'' .github/workflows/ci.yml && bash scripts/ci_run_explicit_test_commands.sh --list ci/explicit-test-commands.d | present -- ''--test pvl_discharge_leanchecker( |$)'' && merged EV-6b`'
+  - 'probe arms MEASURED on 4cb4dffd2 (lambda, 2026-09-24): GREEN rc 0; 470-*.cmd removed rc 1; restored rc 0; ci.yml pointed at another directory rc 1; restored rc 0'
+  - 'RED: a stub `lake` on PATH whose leanchecker returns 1 -> rc 1; no lake -> rc 2; a toolchain without bin/leanchecker -> rc 2 `decline: leanchecker not in toolchain`, never rc 1'
+  - '`timeout <T> lake env leanchecker ProvableContracts` (--leanchecker-timeout, default 3600 s; --leanchecker-ulimit-v KiB when set); a timeout rejects; timeout/ulimit/lake start failures (rc 125-127) decline'
+  - 'formalization.yaml `scope` states the non-fresh limitation: --fresh replays Mathlib and is the nightly''s (PVL-F7)'
+  - 'accept on lambda: `timeout 60m "$PV" discharge check "$LEAN" --leanchecker`'
+  - 'probe amended A-7b.2 (the runner moved from ci.yml to ci/sections.yml with the five fat jobs, so the A-7b.1 ci.yml arm now reads RED on a wired tree): `present -- ''ci_run_explicit_test_commands\.sh --run ci/explicit-test-commands\.d'' ci/sections.yml`; the .cmd is 471-*, renumbered from 470'
+  - 'A-7b.2 arms MEASURED on b1cd8c0b08 (lambda, 2026-09-26): GREEN rc 0; 471-*.cmd removed rc 1; sections.yml runner repointed rc 1; restored rc 0'
+  - 'MEASURED on b1cd8c0b08 (lambda, 2026-09-26): tests/pvl_discharge_leanchecker.rs 6/6 pass (accept, reject, no-lake decline, no-checker decline, --no-lake conflict, non-fresh scope); aprender-contracts --lib discharge 105/105'
+  - 'accept MEASURED on lambda 2026-09-26, pv built at b1cd8c0b08, after `lake build` (6877 jobs, rc 0, 74 s): `timeout 60m pv discharge check crates/aprender-contracts-staging/lean --leanchecker` from the repo root -> rc 0 in 289 s (ROOTS 250 pinned; leanchecker ok, 8 threads, MemoryMax=24G CPUQuota=800%)'
+  phases: []
+  subtasks: []
+  estimated_effort: null
+  labels:
+  - kind:code
+  notes: 'proof:crates/aprender-contracts-cli/tests/pvl_discharge_leanchecker.rs. Stacked on EV-6a (#4139). Absent vs failed is decided by probing `lake env printenv LEAN_SYSROOT` for bin/leanchecker, because MEASURED on elan v4.15.0 `lake env leanchecker` exits 1 "does not have the binary" -- the rc alone would read a missing checker as a failed proof.'
+- id: PMAT-4200
+  github_issue: 4200
+  item_type: task
+  title: 'PVL-001 EV-7a: pv challenge gen/check -- pin each contract-bound statement apart from its proof'
+  status: in_progress
+  priority: high
+  assigned_to: aprender-dd
+  created: 2026-09-24T00:00:00Z
+  updated: 2026-09-24T00:00:00Z
+  spec: null
+  acceptance_criteria:
+  - '`pv challenge gen contracts $LEAN` writes $LEAN/Challenge/<contract>.lean: every bound root X restated as `theorem _root_.PvlChallenge.X <statement> := sorry` inside the scope frames still open at its declaration'
+  - '`pv challenge check contracts $LEAN` rc 0 when fresh; rc 1 on an extra, missing or differing file or an unrestated root; rc 2 on zero challenges or an unloadable tree'
+  - 'lint gate 13 `challenge-fresh` = check; skipped when no lean base or no challenge exists'
+  - 'mutation: a hand-edited challenge statement turns check RED (`cargo test -p aprender-contracts-cli --test pvl_challenge`)'
+  phases: []
+  subtasks: []
+  estimated_effort: null
+  labels:
+  - kind:code
+  notes: 'Stacked on EV-6a (#4139). Consumed by EV-7b (aprender-98). Frames, not `open`: an opened namespace loses the current-namespace priority (alibi `dist` was ambiguous, Alibi.dist vs Dist.dist); a `_root_.` decl inside the reopened namespace resolves as the source does, and a sibling name reads the solution (lean v4.29.0-rc4 core probe). challenge-fresh is NOT armed in lint-baseline.json; it moves only via make ont-ratchet.'
 - id: PMAT-4215
   github_issue: 4215
   item_type: task
@@ -22052,6 +22139,44 @@ roadmap:
   labels:
   - kind:code
   notes: null
+- id: PMAT-4347
+  github_issue: 4347
+  item_type: task
+  title: 'PVL: prove all 7 escape-allowlist axioms (DPO x3, f16 bound, NF4 x3) instead of confirming them'
+  status: in_progress
+  priority: high
+  assigned_to: pvl-b
+  created: 2026-09-25T01:30:00Z
+  updated: 2026-09-25T02:00:00Z
+  spec: infra docs/specifications/PVL-001-pv-lean-gate.md
+  acceptance_criteria:
+  - every escape-allowlist.yaml axiom is a Lean theorem whose #print axioms is [propext, Classical.choice, Quot.sound]
+  - escape-allowlist.yaml carries no entry for a proved decl; Axioms.lean regenerated (pv discharge gen-axioms --check rc 0)
+  - pv discharge check --no-lake PENDING count drops by the number proved
+  phases: []
+  subtasks: []
+  estimated_effort: null
+  labels:
+  - kind:code
+  notes: 'DPO x3 by pvl-b; NF4 x3 and f16 by aprender-57. The old dpo_gradient_formula axiom was false for beta < 0; now a HasDerivAt theorem plus dpo_gradient_scale_nonpos (0 <= beta).'
+- id: PMAT-4369
+  github_issue: 4369
+  item_type: task
+  title: 'Migrate the 12 hand-rolled producer build.rs key builders onto build_helper::env_key (#2699 remainder)'
+  status: in_progress
+  priority: high
+  assigned_to: null
+  created: 2026-09-25T09:13:07Z
+  updated: 2026-09-29T17:20:00Z
+  spec: null
+  acceptance_criteria:
+  - Folded into #4587 (PR-1 of #4502), C78. Every binding build.rs keys through build_helper::env_key with its build-dep, and Cargo.lock carries the edges (CI builds --locked).
+  phases: []
+  subtasks: []
+  estimated_effort: null
+  labels:
+  - kind:code
+  notes: null
 - id: PMAT-4421
   github_issue: 4421
   item_type: task
@@ -22151,6 +22276,23 @@ roadmap:
   labels:
   - kind:code
   notes: 'Operator ruling 2026-09-26 (via the cop): yoga''s GPU is exclusive for CI. Host side paiml/infra#1182 (PMAT-1178 there), applied on yoga. PR #4468.'
+- id: PMAT-4502
+  github_issue: 4502
+  item_type: task
+  title: 'batch/ont-10: every remaining ONT-10 row for 0.70.0 (one PR, one quorum, one CI)'
+  status: in_progress
+  priority: critical
+  assigned_to: aprender-88
+  created: 2026-09-27T10:17:06Z
+  updated: 2026-09-27T10:17:06Z
+  spec: null
+  acceptance_criteria:
+  - 'every ONT-10 row on the batch lands in this one PR (no per-row PRs); origin/main merged in without rebase or force'
+  - 'Sigma binary is implemented by extract:binary from the tracked evidence/binary/snapshot.jsonl, one node per cargo bin target keyed binary/<package>/<target>; binary-target is NOT in armed_shapes'
+  - 'scripts/surface_audit_bins_gate.sh is GREEN (every [[bin]] has a docs/audits/surface_audit.csv row) and RED on an empty ledger'
+  - 'pv validate passes on contracts/binary-surface-v1.yaml and every contracts/bin-*.yaml; the aprender-contracts lib is green'
+  - 'a gate still RED stays in its contract with the observed value in if_fails, never dropped'
+  - '(process, not diff content) one quorum on the combined head; pmat-merge arms with --match-head-commit'
 - id: PMAT-4510
   github_issue: 4510
   item_type: task
@@ -22188,4 +22330,22 @@ roadmap:
   subtasks: []
   estimated_effort: null
   labels: []
+  notes: null
+- id: PMAT-4604
+  github_issue: 4604
+  item_type: task
+  title: 'C2: publish pv (aprender-contracts-cli) 0.69.4 + deps for B1 gate tool (L20)'
+  status: in_progress
+  priority: high
+  assigned_to: null
+  created: 2026-09-28T14:17:01Z
+  updated: 2026-09-29T17:20:00Z
+  spec: null
+  acceptance_criteria:
+  - Folded into #4587 (PR-1 of #4502), C78. The 6-crate pv set is at 0.69.4, the facade guard allows exactly that set, and binary-release builds pv with --features update-check,build-sha.
+  phases: []
+  subtasks: []
+  estimated_effort: null
+  labels:
+  - kind:code
   notes: null
