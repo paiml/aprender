@@ -28,6 +28,35 @@ pub(crate) fn session_kv_len(
     (room / kv_bytes_per_position.max(1)).clamp(floor, context_length.max(floor))
 }
 
+/// K1 (#4603): batched-KV slots an `apr serve` KV budget holds beside the session KV.
+/// The continuous-batching scheduler allocates slots of the same length for concurrent
+/// requests (`fit_batched_kv_alloc`); two keep c=2 at full context.
+pub(crate) const SERVE_BATCH_SLOTS: usize = 2;
+
+/// K1 (#4603): serve's fixed KV length before K1. A server never gets less, so a
+/// model that fills the card serves exactly what it served before.
+pub(crate) const SERVE_FLOOR: usize = 4096;
+
+/// K1 (#4603): the device KV length for `apr serve`: [`session_kv_len`] with each
+/// position also paying for [`SERVE_BATCH_SLOTS`] batched slots, floored at
+/// [`SERVE_FLOOR`] (or the model's context when shorter).
+pub(crate) fn serving_kv_len(
+    context_length: usize,
+    kv_bytes_per_position: usize,
+    free_vram: usize,
+    resident_bytes: usize,
+    reserve_bytes: usize,
+) -> usize {
+    let fit = session_kv_len(
+        context_length,
+        kv_bytes_per_position.saturating_mul(1 + SERVE_BATCH_SLOTS),
+        free_vram,
+        resident_bytes,
+        reserve_bytes,
+    );
+    fit.max(SERVE_FLOOR.min(context_length.max(1)))
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -83,5 +112,46 @@ mod tests {
     fn floor_never_exceeds_a_short_context() {
         assert_eq!(session_kv_len(512, QWEN3_1_7B_KV, 0, 0, 0), 512);
         assert_eq!(session_kv_len(0, 0, 0, 0, 0), 1);
+    }
+
+    /// K1: Qwen3-1.7B on a 24 GB card serves its whole 40960 context, where serve
+    /// used a fixed 4096. RED before K1: the > 4096 serve cells overflowed the KV.
+    #[test]
+    fn serve_gives_a_small_model_its_whole_context() {
+        let len = serving_kv_len(
+            40_960,
+            QWEN3_1_7B_KV,
+            22 * GB,
+            GB + QWEN3_1_7B_FP16,
+            4_600_000_000,
+        );
+        assert_eq!(len, 40_960);
+    }
+
+    /// K1: the budget pays for the batched slots too, so the session KV plus
+    /// `SERVE_BATCH_SLOTS` slots of the same length fit in the room.
+    #[test]
+    fn serve_budget_holds_the_batched_slots() {
+        let room = 3 * GB;
+        let len = serving_kv_len(1 << 20, QWEN3_1_7B_KV, 10 * GB, 5 * GB, 2 * GB);
+        let per_pos = QWEN3_1_7B_KV * (1 + SERVE_BATCH_SLOTS);
+        assert!(len * per_pos <= room);
+        assert!((len + 1) * per_pos > room);
+        assert!(len < session_kv_len(1 << 20, QWEN3_1_7B_KV, 10 * GB, 5 * GB, 2 * GB));
+    }
+
+    /// K1: a model that fills the card (Qwen3-8B + FP16 cache on 24 GB) keeps serve's
+    /// old 4096, never the session floor of 2048 -- no model serves less than before.
+    #[test]
+    fn serve_never_drops_below_its_old_length() {
+        let len = serving_kv_len(
+            40_960,
+            QWEN3_8B_KV,
+            22 * GB,
+            4_800_000_000 + QWEN3_8B_FP16,
+            4_600_000_000,
+        );
+        assert_eq!(len, SERVE_FLOOR);
+        assert_eq!(serving_kv_len(2048, QWEN3_8B_KV, 0, 0, 0), 2048);
     }
 }
