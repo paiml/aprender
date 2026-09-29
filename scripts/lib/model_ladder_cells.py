@@ -21,8 +21,19 @@ evidence/release/context-rungs.json (schema apr-release-context-rungs/v1, #3715)
 second declaration is how two readers drift. consumer-max is derived there: the max over
 consumers[].max_prompt_tokens, and a consumer without a number is a violation, never a smaller max.
 
-judge(ladder, receipts, rungs_doc, out) -> 0 green | 1 red. `receipts` maps host id -> receipt;
-`rungs_doc` is the parsed context-rungs file, or None when it is missing or unreadable (a named FAIL).
+judge(ladder, receipts, rungs_doc, out, rungs_main, helpers) -> 0 green | 1 red. `receipts` maps host id ->
+receipt; `rungs_doc` is the parsed context-rungs file, or None when it is missing or unreadable (a named FAIL).
+
+CLASS-KEYED CELLS (M3, operator 2026-09-29 "shorten the cells with capacity, never by cutting scope"; cop ruling
+(a) 06:40Z). A non-required host that declares the `class` of exactly one required host is that host's HELPER;
+`helpers` maps its id -> its receipt (already bound to the cut by the caller). What is OWED never moves: it is
+still derived from the required (lead) host's own inventory and total. A helper's measured rows only SUPPLY
+owed cells, and only when (1) its measured cc equals the lead's measured cc (a foreign class credits nothing),
+(2) its own receipt declares red == 0 (a sick host credits nothing), (3) the contract's `admitted_by` names a
+health receipt beside the host receipts whose MEASURED terms this module judges (HEALTH_SCHEMA: a window of at
+least HEALTH_MIN_WINDOW_S, zero throttle events, peak GPU temperature under its limit), and (4) every row it
+supplies names, by sha256, the artifact the lead holds. A helper's pass is judged against the helper's
+OWN total; its honest refusal supplies nothing (the lead still owes the cell); its failure is a FAIL.
 """
 import re
 
@@ -206,27 +217,68 @@ def _judge_item(item, rows, total, S, tally):
                     fails.append(f"{label} MISSING"); failed_somewhere.add(key); continue
                 if len(got) > 1:
                     fails.append(f"{label} has {len(got)} rows -- ambiguous"); failed_somewhere.add(key); continue
-                msg, outcome = _judge_row(got[0], label, mode, tok, fit, need, total)
+                row = got[0]
+                by = row.get("_host")
+                if by:  # a helper's row: judged against the host that RAN it, never the lead's total
+                    rfit, rneed = fits(item, row.get("_total"), tok)
+                    msg, outcome = _judge_row(row, f"{label} on {by}", mode, tok, rfit, rneed, row.get("_total"))
+                else:
+                    msg, outcome = _judge_row(row, label, mode, tok, fit, need, total)
                 if msg is not None:
                     fails.append(msg)
                     failed_somewhere.add(key)
                 elif outcome == "pass":
                     tally["passed"] += 1; S["passed_anywhere"][key] = True
+                    if by:
+                        tally["by"][by] = tally["by"].get(by, 0) + 1
                 else:
                     tally["refused"] += 1
     return fails
 
 
-def _judge_host(hid, R, S, rc, out):
+def _helper_rows(hid, R, helpers, rows, out):
+    """Merge each admitted helper's rows into the lead's `rows`; -> rc. A row names the host that ran it."""
+    rc = 0
+    held = {i.get("file"): str(i.get("sha256") or "").lower()
+            for i in (R.get("inventory") or []) + (R.get("declaimed_inventory") or [])}
+    for xid, X in helpers:
+        xheld = {i.get("file"): str(i.get("sha256") or "").lower() for i in X.get("inventory") or []}
+        used = refused = 0
+        foreign = set()
+        for c in X.get("cells") or []:
+            f = c.get("file")
+            if f not in held:
+                continue  # the lead does not hold it, so it is owed by nobody here: supplies nothing
+            row_sha = str(c.get("sha256") or "").lower()  # a helper row must name its artifact: no fallback
+            if xheld.get(f) != held[f] or row_sha != held[f]:
+                if f not in foreign:  # once per file: every row of it is the same finding
+                    out(f"FAIL  {xid:7} holds {f} as sha256 {str(xheld.get(f))[:12]} (its row names {row_sha[:12]}), "
+                        f"{hid} holds {held[f][:12]} -- a different artifact supplies no cell of {hid}'s")
+                foreign.add(f)
+                rc = 1
+                continue
+            if c.get("verdict") == "refused":
+                refused += 1
+                continue  # the helper cannot hold it: the lead still owes it, nothing is withdrawn
+            k = (f, c.get("verb"), c.get("thinking"), c.get("context"))
+            rows.setdefault(k, []).append(dict(c, _host=xid, _total=X.get("gpu_mem_total_bytes")))
+            used += 1
+        out(f"info  {xid:7} helper of {hid}: supplies {used} row(s), {refused} refusal(s) left owed by {hid}")
+    return rc
+
+
+def _judge_host(hid, R, S, rc, out, helpers=()):
     total = R.get("gpu_mem_total_bytes")
     rows = {}
     for c in R.get("cells") or []:
         k = (c.get("file"), c.get("verb"), c.get("thinking"), c.get("context"))
         rows.setdefault(k, []).append(c)
-    if not R.get("cells"):
+    if not R.get("cells") and not any(X.get("cells") for _, X in helpers):
         out(f"FAIL  {hid:7} receipt carries no cells -- no verb was dogfooded at any context (#3712)")
         rc = 1
-    tally = {"owed": 0, "passed": 0, "refused": 0}
+    if _helper_rows(hid, R, helpers, rows, out):
+        rc = 1
+    tally = {"owed": 0, "passed": 0, "refused": 0, "by": {}}
     host_rc = rc  # an unsized rung set is red for every host, never an 'ok 0 owed'
     # declaimed_inventory[] (#4590) is judged like inventory[]: an item there whose (host, arch) is NOT de-claimed
     # in the contract owes every cell, so moving a file out of inventory[] exempts nothing by itself.
@@ -249,7 +301,8 @@ def _judge_host(hid, R, S, rc, out):
             out(f"FAIL  {hid:7} {f}: {w}")
         if fails:
             rc = host_rc = 1
-    out(f"{'ok  ' if host_rc == 0 else 'info'}  {hid:7} cells: {tally['owed']} owed, {tally['passed']} pass, {tally['refused']} honest refusal(s)")
+    by = "".join(f", {n} of them by {x}" for x, n in sorted(tally["by"].items()))
+    out(f"{'ok  ' if host_rc == 0 else 'info'}  {hid:7} cells: {tally['owed']} owed, {tally['passed']} pass{by}, {tally['refused']} honest refusal(s)")
     return rc
 
 
@@ -282,6 +335,72 @@ def _passes_nowhere(passed_anywhere, failed_somewhere, out):
 
 
 SHA_KEY, FILE_KEY = "sha256:", "file:"
+HEALTH_SCHEMA, HEALTH_MIN_WINDOW_S = "apr-host-health/v1", 600
+
+
+def _int(v):
+    return type(v) is int  # a bool is an int in Python: `red: false` is not a count
+
+
+def health_defects(doc, xid, version=None):
+    """-> what keeps a helper's health receipt from admitting it; [] admits. The verdict is computed HERE from
+    measured terms, never read from the receipt: a self-declared 'healthy' is a declaration, not a measurement."""
+    if not isinstance(doc, dict):
+        return ["no health receipt beside the host receipts"]
+    if doc.get("_error"):
+        return [f"health receipt unreadable: {_loud(doc['_error'], 80)}"]
+    bad = []
+    if doc.get("schema") != HEALTH_SCHEMA: bad.append(f"schema {doc.get('schema')!r} is not {HEALTH_SCHEMA}")
+    if doc.get("host") != xid: bad.append(f"it measured host {doc.get('host')!r}")
+    if doc.get("version") != version: bad.append(f"it is for {doc.get('version')!r}, the receipts for {version!r} -- a host is admitted per cut")
+    w, t, lim, thr = (doc.get(k) for k in ("window_s", "max_gpu_temp_c", "gpu_temp_limit_c", "throttle_events"))
+    if not (_int(w) and w >= HEALTH_MIN_WINDOW_S): bad.append(f"window_s {w!r} < {HEALTH_MIN_WINDOW_S}")
+    if not (_int(thr) and thr == 0): bad.append(f"throttle_events {thr!r}")
+    if not (_int(t) and _int(lim) and t < lim): bad.append(f"max_gpu_temp_c {t!r} is not under gpu_temp_limit_c {lim!r}")
+    return bad
+
+
+def admitted_helpers(L, receipts, helpers, out):
+    """-> ({lead id: [(helper id, receipt)]}, rc). Which helper may supply which required host's cells (M3)."""
+    hosts = L.get("hosts") or []
+    req = [h for h in hosts if h.get("required")]
+    got, rc = {}, 0
+    for h in hosts:
+        if h.get("required") or not h.get("class"):
+            continue
+        xid = h.get("id")
+        if xid in {r.get("id") for r in req}:
+            out(f"FAIL  {xid:7} is declared both required and a helper -- a host cannot supply its own cells")
+            rc = 1; continue
+        leads = [r for r in req if r.get("class") == h["class"]]
+        if len(leads) != 1:
+            out(f"FAIL  {xid:7} declares class {h['class']!r}, which {len(leads)} required host(s) declare -- a helper "
+                f"supplies exactly one required host's cells")
+            rc = 1; continue
+        lid = leads[0].get("id")
+        if not str(h.get("admitted_by") or "").strip():
+            out(f"FAIL  {xid:7} is a helper of {lid} with no admitted_by -- a host joins a class on a health receipt "
+                f"(yoga: its thermal receipt), never on its declaration")
+            rc = 1; continue
+        X, R = helpers.get(xid), receipts.get(lid)
+        if X is None or R is None:
+            continue  # the caller already FAILed the missing or unbound receipt
+        unfit = health_defects(X.get("_health"), xid, X.get("version"))
+        if unfit:
+            out(f"FAIL  {xid:7} is not admitted by {h['admitted_by']}: {'; '.join(unfit)} -- an unhealthy host supplies no cell")
+            rc = 1; continue
+        if X.get("host") != xid:
+            out(f"FAIL  {xid:7} receipt names host {X.get('host')!r} -- a receipt supplies cells only as the host it measured")
+            rc = 1; continue
+        if str(X.get("cc")) != str(R.get("cc")):
+            out(f"FAIL  {xid:7} measured cc {X.get('cc')!r}, its class lead {lid} measured {R.get('cc')!r} -- a "
+                f"foreign class supplies no cell")
+            rc = 1; continue
+        if not _int(X.get("red")) or X["red"] != 0:
+            out(f"FAIL  {xid:7} declares red={X.get('red')!r} -- a sick host supplies no cell of {lid}'s")
+            rc = 1; continue
+        got.setdefault(lid, []).append((xid, X))
+    return got, rc
 
 
 def declaim_of(dec, host, item):
@@ -352,7 +471,7 @@ def declaim_still_claimed(L, dec, out):
     return rc
 
 
-def judge(L, receipts, rungs_doc, out, rungs_main=None):
+def judge(L, receipts, rungs_doc, out, rungs_main=None, helpers=None):
     C = L.get("cells")
     if not C:
         return 0
@@ -380,7 +499,7 @@ def judge(L, receipts, rungs_doc, out, rungs_main=None):
     # emits them the judge arms itself with no edit here, and a receipt that carries cells
     # beside one that does not is a REGRESSION and still FAILs. Proven by the case table's
     # cells-partial row; deleting either branch below turns it red.
-    carrying = {hid for hid, R in receipts.items() if R.get("cells")}
+    carrying = {hid for hid, R in list(receipts.items()) + list((helpers or {}).items()) if R.get("cells")}
     if receipts and not carrying:
         out(
             "NOT ARMED  cells: no required receipt carries a `cells` block, and "
@@ -409,8 +528,10 @@ def judge(L, receipts, rungs_doc, out, rungs_main=None):
         "failed_somewhere": set(),  # keys already reported by a per-host FAIL
         "declaimed": dec,  # (host, arch | "sha256:<hex>" | "file:<name>") -> the cells.declaimed entry (#4590, D2)
     }
+    by_lead, hrc = admitted_helpers(L, receipts, helpers or {}, out)
+    rc = rc or hrc
     for hid, R in receipts.items():
-        rc = _judge_host(hid, R, S, rc, out)
+        rc = _judge_host(hid, R, S, rc, out, by_lead.get(hid, []))
     if _long_rung_holes(receipts, long_for, out):
         rc = 1
     if _passes_nowhere(S["passed_anywhere"], S["failed_somewhere"], out):

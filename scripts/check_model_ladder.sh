@@ -389,7 +389,12 @@ def known_red(row_key, f, sha, why):
     return hits
 
 good = {}  # host id -> a receipt that passed the host-level checks; the cells judge reads only these
-for h in hosts:
+# M3 (operator 2026-09-29, cop ruling (a) 06:40Z): a non-required host declaring a `class` is a HELPER. Its receipt
+# passes the SAME binding checks as a required host's (version, apr_sha at the cut, executed, inventory), then is
+# handed to the cells judge only: it adds capacity to its class, it never owes a rung and never narrows what is owed.
+helper_hosts = [dict(h, _helper=True) for h in L.get("hosts", []) if not h.get("required") and h.get("class")]
+helpers = {}  # host id -> a helper receipt that passed the host-level checks
+for h in hosts + helper_hosts:
     f = os.path.join(rdir, f"{h['id']}.json")
     if not os.path.exists(f):
         print(f"FAIL  {h['id']:7} no receipt at {f} — run scripts/model_ladder.sh on {h['id']} ({h.get('gpu')}, {h.get('cc')})"); rc = 1; continue
@@ -431,6 +436,17 @@ for h in hosts:
             # every real per-row refusal behind it, which is the same suppression the
             # check exists to expose.
             print(f"FAIL  {h['id']:7} receipt says red={declared_red} but carries {rows_red} non-green row(s) — a red that is counted and not recorded is a red nobody can read (#3842)"); rc = 1
+    if h.get("_helper"):
+        # admitted_by names the helper's health receipt BESIDE the host receipts (a bare file name, never a path);
+        # the cells judge computes admission from its measured terms (model_ladder_cells.health_defects).
+        adm = str(h.get("admitted_by") or "")
+        if adm and os.path.basename(adm) == adm and os.path.exists(os.path.join(rdir, adm)):
+            try:
+                R["_health"] = json.load(open(os.path.join(rdir, adm)))
+            except Exception as e:
+                R["_health"] = {"_error": str(e)}
+        helpers[h["id"]] = R
+        continue
     good[h["id"]] = R
     held_sha[h["id"]] = {i.get("file"): i.get("sha256") for i in inv if isinstance(i, dict)}
     by = {r.get("id"): r for r in R.get("rungs", [])}
@@ -533,7 +549,7 @@ for e in KR:
 if any(e["_used"] for e in KR):
     print(f"KNOWN-RED {sum(e['_used'] for e in KR)} row(s) ship RED with their tickets: "
           + ", ".join(sorted({e['ticket'] for e in KR if e['_used']})) + " -- counted RED, never green")
-if model_ladder_cells.judge(L, good, rungs_doc, print, rungs_main):
+if model_ladder_cells.judge(L, good, rungs_doc, print, rungs_main, helpers):
     rc = 1
 # #3957 F4/F8: every (model, format, quant, host, backend, verb) cell must be PROVEN by an outside
 # oracle -- the CRUX receipts bound to the cut -- or, for .apr, by the chain to its source.
@@ -902,6 +918,26 @@ if [ "$SELF_TEST" = 1 ]; then
     cmutant declaim-claimed red-cells-declaimed-still-claimed 's/            if d:  # a claim the de-claim withdraws/            if False:  # a claim the de-claim withdraws/'
     cmutant declaim-claimed-file red-cells-declaimed-file-still-claimed 's/            d = declaim_of(dec, h, r)  # D2/            d = dec.get((h, r.get("arch")))  # D2/'
     cmutant declaim-sha-int red-cells-declaimed-file-sha-int 's/not (isinstance(d\["sha256"\], str) and re.fullmatch(r"\[0-9a-f\]{64}", d\["sha256"\]))/not re.fullmatch(r"[0-9a-f]{64}", str(d["sha256"]))/'
+    cmutant class-foreign   red-cells-class-foreign         's/        if str(X.get("cc")) != str(R.get("cc")):/        if False:/'
+    cmutant class-sick      red-cells-class-sick            's/        if not _int(X.get("red")) or X\["red"\] != 0:/        if False:/'
+    cmutant class-red-bool  red-cells-class-red-bool        's/    return type(v) is int  # a bool/    return isinstance(v, int)  # a bool/'
+    cmutant class-self      red-cells-class-self-helper     's/        if xid in {r.get("id") for r in req}:/        if False:/'
+    cmutant class-host-name red-cells-class-host-mismatch   's/        if X.get("host") != xid:/        if False:/'
+    cmutant class-unhealthy red-cells-class-unhealthy       's/    if not (_int(thr) and thr == 0): bad.append/    if False: bad.append/'
+    cmutant class-hot       red-cells-class-too-hot         's/    if not (_int(t) and _int(lim) and t < lim): bad.append/    if False: bad.append/'
+    cmutant class-window    red-cells-class-short-window    's/    if not (_int(w) and w >= HEALTH_MIN_WINDOW_S): bad.append/    if False: bad.append/'
+    cmutant class-stale-health red-cells-class-health-stale 's/    if doc.get("version") != version: bad.append/    if False: bad.append/'
+    cmutant class-health-host red-cells-class-health-host   's/    if doc.get("host") != xid: bad.append/    if False: bad.append/'
+    cmutant class-no-health red-cells-class-health-missing  's/        if unfit:/        if False:/'
+    cmutant class-row-nosha red-cells-class-row-without-sha 's/            row_sha = str(c.get("sha256") or "").lower()/            row_sha = str(c.get("sha256") or xheld.get(f)).lower()/'
+    cmutant class-unadmitted red-cells-class-unadmitted     's/        if not str(h.get("admitted_by") or "").strip():/        if False:/'
+    cmutant class-two-leads red-cells-class-two-leads       's/        if len(leads) != 1:/        if not leads:/'
+    cmutant class-artifact  red-cells-class-other-artifact  's/            if xheld.get(f) != held\[f\] or row_sha != held\[f\]:/            if row_sha != held[f]:/'
+    cmutant class-row-sha   red-cells-class-row-sha         's/            if xheld.get(f) != held\[f\] or row_sha != held\[f\]:/            if xheld.get(f) != held[f]:/'
+    cmutant class-own-total red-cells-class-helper-beyond-fit 's/rfit, rneed = fits(item, row.get("_total"), tok)/rfit, rneed = fit, need/'
+    cmutant class-credit    green-cells-class-helper        's/            rows.setdefault(k, \[\]).append(dict(c, _host=xid/            0 and rows.setdefault(k, []).append(dict(c, _host=xid/'
+    cmutant class-refusal-owed green-cells-class-helper     's/                continue  # the helper cannot hold it/                pass  # the helper cannot hold it/'
+    cmutant class-unlinked  green-cells-class-helper        's/        got.setdefault(lid, \[\]).append((xid, X))/        pass/'
     mutant declaim-host     declaimed-host-on-rung          's/                gone = {g for g in gone if dkey(g, r) not in dcl}/                gone = set(gone)/'
     # #3957 F4/F8: the CRUX join (scripts/lib/model_ladder_crux.py), each rule deleted in a copy
     # imported through MODEL_LADDER_CRUX_LIB; the case that names the rule must go RED.

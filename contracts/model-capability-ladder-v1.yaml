@@ -55,9 +55,16 @@ entity:
 #     An inventory model missing from the run, or not green on CUDA, is a FAIL
 #     naming it. A rung is still how a model gets a pinned sha256 and a host list.
 ladder:
+  # M3 (operator 2026-09-29 "shorten the cells with capacity, never by cutting scope"; cop ruling (a) 06:40Z):
+  # `class` is isa/backend/cc. A non-required host naming the class of exactly one required host is its HELPER:
+  # its bound receipt SUPPLIES that host's owed cells (same measured cc, red == 0, same artifact sha256), and
+  # never changes what is owed. `admitted_by` names its health receipt (apr-host-health/v1) beside the host
+  # receipts; the judge computes admission from its measured terms (window >= 600 s, 0 throttle events, peak GPU
+  # temp under its limit), never from a declared verdict. No helper is declared until one is admitted (yoga: its
+  # thermal receipt). Judge: scripts/lib/model_ladder_cells.py admitted_helpers() / health_defects().
   hosts:
-    - { id: lambda, isa: x86_64, gpu: "RTX 4090", cc: sm_89,  required: true }
-    - { id: gx10,   isa: aarch64, gpu: "GB10",     cc: sm_121, required: true }
+    - { id: lambda, isa: x86_64, gpu: "RTX 4090", cc: sm_89,  required: true, class: x86_64/cuda/sm_89 }
+    - { id: gx10,   isa: aarch64, gpu: "GB10",     cc: sm_121, required: true, class: aarch64/cuda/sm_121 }
   # #3943 (b), cop ruling 2026-09-23: the `serve` probe waits on the SERVER, not a clock.
   # It waits while the process is alive AND making progress (serve log growing, or the
   # process tree's CPU time growing). A load quiet on both for stall_s is HUNG -> RED.
