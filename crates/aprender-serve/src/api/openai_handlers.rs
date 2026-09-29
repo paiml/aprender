@@ -1081,7 +1081,13 @@ fn try_gpu_backend(
     };
     let generated = match model.generate(&prompt_usize, &gpu_config) {
         Ok(g) => g,
-        Err(e) => return Some(fail_response(state, StatusCode::INTERNAL_SERVER_ERROR, e)),
+        Err(e) => {
+            return Some(fail_response(
+                state,
+                crate::api::generation_error_status(&e),
+                e,
+            ))
+        },
     };
 
     let token_ids: Vec<u32> = generated

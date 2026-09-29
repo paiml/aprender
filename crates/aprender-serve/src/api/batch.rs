@@ -271,7 +271,7 @@ fn try_apr_generate(
         .generate_with_cache(&prompt_ids, &gen_config)
         .map_err(|e| {
             api_err(
-                StatusCode::INTERNAL_SERVER_ERROR,
+                crate::api::generation_error_status(&e),
                 format!("APR generation failed: {e}"),
             )
         })?;
@@ -321,7 +321,7 @@ fn registry_generate(
 
     let generated = model
         .generate(&prompt, &config)
-        .map_err(|e| api_err(StatusCode::INTERNAL_SERVER_ERROR, e))?;
+        .map_err(|e| api_err(crate::api::generation_error_status(&e), e))?;
 
     let token_ids: Vec<u32> = generated
         .iter()
@@ -622,7 +622,7 @@ fn try_apr_batch_generate(
             .generate_with_cache(&prompt_ids, &gen_config)
             .map_err(|e| {
                 api_err(
-                    StatusCode::INTERNAL_SERVER_ERROR,
+                    crate::api::generation_error_status(&e),
                     format!("APR generation failed: {e}"),
                 )
             })?;
@@ -682,7 +682,7 @@ fn registry_batch_generate(
         let prompt: Vec<usize> = prompt_ids.iter().map(|&id| id as usize).collect();
         let generated = model
             .generate(&prompt, &config)
-            .map_err(|e| api_err(StatusCode::INTERNAL_SERVER_ERROR, e))?;
+            .map_err(|e| api_err(crate::api::generation_error_status(&e), e))?;
         let token_ids: Vec<u32> = generated
             .iter()
             .map(|&id| {

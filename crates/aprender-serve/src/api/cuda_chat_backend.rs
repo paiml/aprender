@@ -61,7 +61,7 @@ fn try_safetensors_cuda_backend(
             let msg = format!("SafeTensors CUDA generation failed: {e}");
             return Some(
                 (
-                    axum::http::StatusCode::INTERNAL_SERVER_ERROR,
+                    crate::api::generation_error_status(&e),
                     axum::Json(serde_json::json!({"error": msg})),
                 )
                     .into_response(),

@@ -40,7 +40,7 @@ fn dense_stream_tokens(
 
     let generated = model
         .generate(&prompt, &config)
-        .map_err(|e| api_err(StatusCode::INTERNAL_SERVER_ERROR, e))?;
+        .map_err(|e| api_err(crate::api::generation_error_status(&e), e))?;
 
     let token_ids: Vec<u32> = generated
         .iter()
