@@ -1,7 +1,7 @@
 - id: PMAT-4083
   github_issue: 4083
   item_type: task
-  title: 'PVL-001 EV-9 — PVL-9: provable-ladder required on main'
+  title: 'PVL-001 EV-9 (part 1 of 2): provable-ladder runs on every PR, advisory; a forced skip is RED'
   status: in_progress
   priority: high
   assigned_to: null
