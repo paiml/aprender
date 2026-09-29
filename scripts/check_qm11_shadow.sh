@@ -5,7 +5,8 @@
 # decision beside today's tier. It is admitted to CI on one condition: it changes no
 # gate. This guard makes that condition a check instead of a promise:
 #   S1  the step exists in workspace-test-build, once;
-#   S2  it is continue-on-error: true, and a fault is turned into a ::warning::;
+#   S2  it is continue-on-error: true with a timeout-minutes of at most 10, a fault is turned
+#       into a ::warning::, and every curl in the step script is bounded by --max-time;
 #   S3  it runs AFTER the tier is staged (it cannot change what the shards and the
 #       fan-in check read) and BEFORE the sigma-build upload (its file is published);
 #   S4  it writes sigma-build/qm11-route.json, and no workflow or section reads that
@@ -13,6 +14,7 @@
 #       ruling (docs/audits/qm11-design-note.md), not a drive-by;
 #   T1  tier_router.py's own case table and mutants still turn RED;
 #   T2  tier_route_step.sh's own case table passes.
+# --self-test mutates the wiring (sections.yml) AND the step script; every mutant must be RED.
 #
 # usage: check_qm11_shadow.sh [--self-test]
 # exit:  0 PASS · 1 FAIL · 64 usage
@@ -50,6 +52,9 @@ if len(hits) != 1:
 i = hits[0]; s = blob[i]
 if not re.search(r"^        continue-on-error: true\s*$", s, re.M):
     fails.append("S2: the shadow step is not continue-on-error: true")
+m = re.search(r"^        timeout-minutes: (\d+)\s*$", s, re.M)
+if not m or int(m.group(1)) > 10:
+    fails.append("S2: the shadow step has no timeout-minutes <= 10 (a hung fetch would hold the job)")
 if "|| echo \"::warning::qm11-shadow" not in s:
     fails.append("S2: a fault of the shadow step is not turned into a ::warning::")
 stage = [k for k, b in enumerate(blob) if "Stage the tier this job decided" in b]
@@ -80,14 +85,30 @@ sys.exit(1 if fails else 0)
 PY
 }
 
+# bounded_curl <step.sh>: every curl invocation line and the shared header array carry --max-time.
+bounded_curl() {
+  python3 - "$1" <<'PY'
+import sys
+lines = [l for l in open(sys.argv[1]) if not l.lstrip().startswith("#")]
+hdr = [l for l in lines if "hdr=(" in l]
+calls = [l for l in lines if "curl " in l]
+ok = (len(hdr) == 1 and "--max-time" in hdr[0] and "--connect-timeout" in hdr[0]
+      and calls and all('"${hdr[@]}"' in l for l in calls))
+sys.exit(0 if ok else 1)
+PY
+}
+
 run() {
-  local rc=0
+  local rc=0 o
   command -v jq >/dev/null || { echo "FAIL T2: jq is not on PATH (input_set.sh needs it); NOT a skip"; return 1; }
   structure "$ROOT/ci/sections.yml" "$ROOT/ci" "$ROOT/.github/workflows" || rc=1
-  python3 "$ROOT/scripts/ci/tier_router.py" --self-test > /tmp/qm11-t1.$$ 2>&1 || { tail -5 /tmp/qm11-t1.$$; echo "FAIL T1: tier_router.py --self-test"; rc=1; }
-  tail -1 /tmp/qm11-t1.$$; rm -f "/tmp/qm11-t1.$$"
-  bash "$ROOT/scripts/ci/tier_route_step.sh" --self-test > /tmp/qm11-t2.$$ 2>&1 || { grep FAIL /tmp/qm11-t2.$$; echo "FAIL T2: tier_route_step.sh --self-test"; rc=1; }
-  tail -1 /tmp/qm11-t2.$$; rm -f "/tmp/qm11-t2.$$"
+  bounded_curl "$ROOT/scripts/ci/tier_route_step.sh" \
+    || { echo "FAIL S2: a curl in tier_route_step.sh is not bounded by --max-time"; rc=1; }
+  o=$(mktemp); trap 'rm -f "${o:?}"' RETURN
+  python3 "$ROOT/scripts/ci/tier_router.py" --self-test > "$o" 2>&1 || { tail -5 "$o"; echo "FAIL T1: tier_router.py --self-test"; rc=1; }
+  tail -1 "$o"
+  bash "$ROOT/scripts/ci/tier_route_step.sh" --self-test > "$o" 2>&1 || { grep FAIL "$o"; echo "FAIL T2: tier_route_step.sh --self-test"; rc=1; }
+  tail -1 "$o"
   [ "$rc" -eq 0 ] && echo "PASS check_qm11_shadow: the shadow observes and gates nothing"
   return "$rc"
 }
@@ -104,7 +125,7 @@ self_test() {
     if cmp -s "$ROOT/ci/sections.yml" "$t/s.yml"; then echo "FAIL  $1 (mutant did not apply)"; fail=$((fail + 1)); return; fi
     if structure "$t/s.yml" "$t/wf" >/dev/null; then echo "FAIL  $1 stayed GREEN"; fail=$((fail + 1)); else echo "RED   $1"; fi
   }
-  mut "continue-on-error dropped" "s.replace('        continue-on-error: true\n        shell: bash\n        env:\n          GH_TOKEN: \${{ github.token }}\n        run: |\n          bash scripts/ci/tier_route_step.sh', '        shell: bash\n        env:\n          GH_TOKEN: \${{ github.token }}\n        run: |\n          bash scripts/ci/tier_route_step.sh', 1)"
+  mut "continue-on-error dropped" "s.replace('        continue-on-error: true\n        timeout-minutes: 5\n', '        timeout-minutes: 5\n', 1)"
   mut "fault no longer a warning" "s.replace('|| echo \"::warning::qm11-shadow', '|| exit 1 # ', 1)"
   mut "step renamed away (not wired)" "s.replace('QM-11 shadow: the tier router', 'QM-11 shadow: renamed', 1)"
   mut "step moved before the tier is staged" "(lambda a, b: s.replace(b, '').replace('      - name: \"Stage the tier this job decided', b + '      - name: \"Stage the tier this job decided', 1))(None, s[s.index('      - name: \"QM-11 shadow'):s.index('      - uses: actions/upload-artifact@v7\n        with:\n          name: ws-lib-archive')])"
@@ -113,6 +134,43 @@ self_test() {
   n=$((n + 1))
   printf 'jobs:\n  x:\n    steps:\n      - run: cat sigma-build/qm11-route.json\n' > "$t/wf/other.yml"
   if structure "$ROOT/ci/sections.yml" "$t/wf" >/dev/null; then echo "FAIL  a reader in another workflow stayed GREEN"; fail=$((fail + 1)); else echo "RED   a reader in another workflow"; fi
+  mut "timeout-minutes dropped" "s.replace('        continue-on-error: true\n        timeout-minutes: 5\n', '        continue-on-error: true\n', 1)"
+  mut "timeout-minutes raised past 10" "s.replace('        continue-on-error: true\n        timeout-minutes: 5\n', '        continue-on-error: true\n        timeout-minutes: 60\n', 1)"
+  # The step script: each mutant is one way it could lie; its own case table must turn RED.
+  # QM11_BIN points the mutated copy at the real helpers beside the real script.
+  local step="$ROOT/scripts/ci/tier_route_step.sh"
+  smut() { # smut <key>: the mutant table below; one fixed-string replacement each
+    n=$((n + 1))
+    python3 - "$step" "$t/step.sh" "$1" <<'PY'
+import sys
+src, dst, key = sys.argv[1:4]
+M = {
+  # the pre-quorum shape: the ref pasted into the child script between single quotes
+  "injection": ("""'bash "$BIN/input_set.sh" base "$W/input-set.json" . "$QM11_BASE" > "$W/base.log" 2>&1'""",
+                """"bash \\"\\$BIN/input_set.sh\\" base \\"\\$W/input-set.json\\" . '$QM11_BASE' > \\"\\$W/base.log\\" 2>&1\""""),
+  "owners-dropped": ('args+=(--owners "$work/owners.json"); ', ''),
+  "stale-as-valid": ('args+=(--stale "$work/stale.txt")', 'args+=(--base-valid)'),
+  "refusal-ignored": ('if ! why=$(in_env', 'if false && ! why=$(in_env'),
+}
+a, b = M[key]
+s = open(src).read()
+open(dst, "w").write(s.replace(a, b, 1))
+PY
+    if cmp -s "$step" "$t/step.sh"; then echo "FAIL  $1 (mutant did not apply)"; fail=$((fail + 1)); return; fi
+    if QM11_BIN="$ROOT/scripts/ci" bash "$t/step.sh" --self-test >/dev/null 2>&1; then
+      echo "FAIL  step mutant $1 stayed GREEN"; fail=$((fail + 1))
+    else echo "RED   step mutant $1"; fi
+  }
+  smut injection; smut owners-dropped; smut stale-as-valid; smut refusal-ignored
+  n=$((n + 1))
+  sed 's/--connect-timeout 10 --max-time 60 //' "$step" > "$t/step.sh"
+  if bounded_curl "$t/step.sh"; then echo "FAIL  unbounded curl stayed GREEN"; fail=$((fail + 1)); else echo "RED   unbounded curl"; fi
+  n=$((n + 1))
+  sed 's/-fsSL "\${hdr\[@\]}"/-fsSL/' "$step" > "$t/step.sh"
+  if cmp -s "$step" "$t/step.sh"; then echo "FAIL  curl-without-hdr (mutant did not apply)"; fail=$((fail + 1))
+  elif bounded_curl "$t/step.sh"; then echo "FAIL  a curl without the bounded header stayed GREEN"; fail=$((fail + 1))
+  else echo "RED   a curl without the bounded header"; fi
+  bounded_curl "$step" || { echo "FAIL the real step script is not bounded"; fail=$((fail + 1)); }
   echo "check_qm11_shadow self-test: $((n - fail))/$n mutants RED"
   [ "$fail" -eq 0 ]
 }

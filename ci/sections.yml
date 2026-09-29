@@ -1133,10 +1133,14 @@ jobs:
       - name: "QM-11 shadow: the tier router beside today's tier (telemetry, gates nothing, #4529)"
         if: github.event_name == 'pull_request'
         continue-on-error: true
+        timeout-minutes: 5
         shell: bash
         env:
           GH_TOKEN: ${{ github.token }}
         run: |
+          # The compile step's target dir (full tier only): owners from its rustc dep-info.
+          # Absent on other tiers, and then the printed line says owners=absent.
+          QM11_TARGET_DIR="/mnt/nvme-raid0/targets/aprender-ci/${PR_OR_REF}/run-${GITHUB_RUN_ID}" \
           bash scripts/ci/tier_route_step.sh . "$RUNNER_TEMP/tier.txt" "$RUNNER_TEMP/touched.txt" \
             "origin/${GITHUB_BASE_REF}" sigma-build/qm11-route.json \
             || echo "::warning::qm11-shadow: the step faulted (rc=$?); it gates nothing"

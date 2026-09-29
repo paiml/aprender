@@ -1,7 +1,7 @@
 # QM-11 (#4529) tier router — how it plugs into today's tiers (aprender-52, 2026-09-29)
 
 Branch `52/4529-qm11-tier-router`, stacked on `60/qm10-on-qm09` (QM-09 #4527 + QM-10 #4528). The router is
-aprender-a2's (`scripts/ci/tier_router.py`, self-test 19/19 rows, 5/5 mutants RED on this stack).
+aprender-a2's (`scripts/ci/tier_router.py`, self-test 19/19 rows, 6/6 mutants RED on this stack).
 
 ## What exists today (ci/sections.yml `ws_tier` → scripts/ci_test_tier.sh)
 
