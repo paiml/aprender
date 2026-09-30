@@ -146,7 +146,7 @@ FAKE
         commit 3  garbage garbage
         commit 2  ok low2
         commit 0  clean clean
-        git tag v1.0.0 base; git tag v1.1.0 lower; git tag v1.2.0-rc.1 higher; git tag v9.9.9 garbage
+        git tag v1.0.0 base; git tag v1.1.0 lower; git tag v1.2.0-rc.1 higher; git tag v1.9.0 higher; git tag v1.10.0 higher; git tag v9.9.9 garbage
     ) || { rm -rf "${d:?}"; return 3; }
     check() { # <name> <base> <head> <want-rc> [<rc-source-dir override>]
         local rc
@@ -174,9 +174,9 @@ FAKE
     ( cd "$d/r" && PMAT_BIN="$pm" timeout 20 bash "$SELF" --base >"$d/out" 2>&1 ); [ $? = 2 ] \
         && printf '  ok    %-28s rc=2\n' "dangling --base is rc 2" \
         || { printf '  FAIL  dangling --base must be rc 2\n'; bad=$((bad + 1)); }
-    ( cd "$d/r" && git checkout -q garbage && [ "$(bash "$SELF" --default-base)" = v1.1.0 ] ) \
-        && printf '  ok    %-28s v1.1.0\n' "default-base skips rc + tag at HEAD" \
-        || { printf '  FAIL  default-base want v1.1.0\n'; bad=$((bad + 1)); }
+    ( cd "$d/r" && git checkout -q garbage && [ "$(bash "$SELF" --default-base)" = v1.10.0 ] ) \
+        && printf '  ok    %-28s v1.10.0\n' "default-base numeric sort, skips rc+HEAD" \
+        || { printf '  FAIL  default-base want v1.10.0\n'; bad=$((bad + 1)); }
     ( cd "$d/r" && git checkout -q lower && [ "$(bash "$SELF" --default-base)" = v1.0.0 ] ) \
         && printf '  ok    %-28s v1.0.0\n' "tag containing HEAD excluded" \
         || { printf '  FAIL  default-base on tagged HEAD want v1.0.0\n'; bad=$((bad + 1)); }
