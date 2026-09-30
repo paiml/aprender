@@ -20684,7 +20684,7 @@
 <https://ont.paiml.dev/v1alpha1/issue/paiml%2Faprender%233022%402026-09-10T03:13:40Z> <https://ont.paiml.dev/v1alpha1/issue/updatedAt> "2026-09-10T03:13:40Z"^^<http://www.w3.org/2001/XMLSchema#string> .
 <https://ont.paiml.dev/v1alpha1/issue/paiml%2Faprender%233022%402026-09-10T03:13:40Z> <https://ont.paiml.dev/v1alpha1/issue/url> "https://github.com/paiml/aprender/issues/3022"^^<http://www.w3.org/2001/XMLSchema#string> .
 <https://ont.paiml.dev/v1alpha1/llm/claude-md> <http://www.w3.org/1999/02/22-rdf-syntax-ns#type> <https://ont.paiml.dev/v1alpha1/llm/LlmContext> .
-<https://ont.paiml.dev/v1alpha1/llm/claude-md> <https://ont.paiml.dev/v1alpha1/llm/command> "bash scripts/check_package_includes.sh"^^<http://www.w3.org/2001/XMLSchema#string> .
+<https://ont.paiml.dev/v1alpha1/llm/claude-md> <https://ont.paiml.dev/v1alpha1/llm/command> "setsid --wait bash scripts/check_package_includes.sh"^^<http://www.w3.org/2001/XMLSchema#string> .
 <https://ont.paiml.dev/v1alpha1/llm/claude-md> <https://ont.paiml.dev/v1alpha1/llm/commandsSection> "APR CLI (`cargo install aprender`)"^^<http://www.w3.org/2001/XMLSchema#string> .
 <https://ont.paiml.dev/v1alpha1/llm/claude-md> <https://ont.paiml.dev/v1alpha1/llm/commandsSection> "Build Commands"^^<http://www.w3.org/2001/XMLSchema#string> .
 <https://ont.paiml.dev/v1alpha1/llm/claude-md> <https://ont.paiml.dev/v1alpha1/llm/commandsSection> "Debugging: Use apr Tools First (MANDATORY)"^^<http://www.w3.org/2001/XMLSchema#string> .
@@ -21106,7 +21106,7 @@
 <https://ont.paiml.dev/v1alpha1/readme/readme-root> <https://ont.paiml.dev/v1alpha1/readme/section> "Quick Start"^^<http://www.w3.org/2001/XMLSchema#string> .
 <https://ont.paiml.dev/v1alpha1/readme/readme-root> <https://ont.paiml.dev/v1alpha1/readme/section> "Verified this release"^^<http://www.w3.org/2001/XMLSchema#string> .
 <https://ont.paiml.dev/v1alpha1/readme/readme-root> <https://ont.paiml.dev/v1alpha1/readme/section> "What is Aprender?"^^<http://www.w3.org/2001/XMLSchema#string> .
-<https://ont.paiml.dev/v1alpha1/readme/readme-root> <https://ont.paiml.dev/v1alpha1/readme/verifiedCommand> "bash scripts/check_readme_claims.sh"^^<http://www.w3.org/2001/XMLSchema#string> .
+<https://ont.paiml.dev/v1alpha1/readme/readme-root> <https://ont.paiml.dev/v1alpha1/readme/verifiedCommand> "setsid --wait bash scripts/check_readme_claims.sh"^^<http://www.w3.org/2001/XMLSchema#string> .
 <https://ont.paiml.dev/v1alpha1/receipt/0.68.1%2Fgx10%2Fqwen2-1.5b-q4km> <http://www.w3.org/1999/02/22-rdf-syntax-ns#type> <https://ont.paiml.dev/v1alpha1/model/Receipt> .
 <https://ont.paiml.dev/v1alpha1/receipt/0.68.1%2Fgx10%2Fqwen2-1.5b-q4km> <https://ont.paiml.dev/v1alpha1/model/backendRan> "cpu=ok"^^<http://www.w3.org/2001/XMLSchema#string> .
 <https://ont.paiml.dev/v1alpha1/receipt/0.68.1%2Fgx10%2Fqwen2-1.5b-q4km> <https://ont.paiml.dev/v1alpha1/model/backendRan> "cuda=ok"^^<http://www.w3.org/2001/XMLSchema#string> .
