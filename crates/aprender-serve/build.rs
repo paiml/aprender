@@ -267,6 +267,17 @@ fn main() {
     }
 }
 
+/// Watch `path` for changes, but only if it exists.
+///
+/// A watched path that does not exist makes Cargo rerun this script on every build,
+/// which rebuilds the crate and everything above it each time (the #4614 mutants
+/// timeouts). A helper, not an inline `if`, so callers do not grow in complexity.
+fn watch_if_exists(path: &Path) {
+    if path.exists() {
+        println!("cargo:rerun-if-changed={}", path.display());
+    }
+}
+
 /// Phase 2: Read binding.yaml and emit CONTRACT_* env vars for the proc macro.
 fn emit_contract_bindings() {
     // Re-run if binding.yaml changes
@@ -279,11 +290,7 @@ fn emit_contract_bindings() {
         .join("realizar")
         .join("binding.yaml");
 
-    // A watched path that does not exist makes Cargo rerun this script on every build,
-    // which rebuilds the crate and everything above it each time (the #4614 mutants timeouts).
-    if binding_path.exists() {
-        println!("cargo:rerun-if-changed={}", binding_path.display());
-    }
+    watch_if_exists(&binding_path);
 
     if !binding_path.exists() {
         // Graceful fallback: CI/crates.io builds won't have the sibling repo.
@@ -503,10 +510,7 @@ fn generate_arch_requirements_file() {
         .join("contracts")
         .join("architecture-requirements-v1.yaml");
 
-    // #4614: see emit_contract_bindings; watch only a path that exists.
-    if yaml_path.exists() {
-        println!("cargo:rerun-if-changed={}", yaml_path.display());
-    }
+    watch_if_exists(&yaml_path);
 
     if !yaml_path.exists() {
         // Graceful fallback for CI/crates.io — write a stub generated file
@@ -817,10 +821,7 @@ fn generate_tensor_names_file() {
         .join("contracts")
         .join("tensor-names-v1.yaml");
 
-    // #4614: see emit_contract_bindings; watch only a path that exists.
-    if yaml_path.exists() {
-        println!("cargo:rerun-if-changed={}", yaml_path.display());
-    }
+    watch_if_exists(&yaml_path);
 
     std::fs::write(&out_path, include_str!("src/tensor_names_fallback.rs"))
         .expect("Failed to write tensor_names_generated.rs");
