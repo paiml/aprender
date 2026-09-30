@@ -1,0 +1,334 @@
+{
+  "$schema": "https://json.schemastore.org/sarif-2.1.0.json",
+  "version": "2.1.0",
+  "runs": [
+    {
+      "tool": {
+        "driver": {
+          "name": "pmat",
+          "informationUri": "https://github.com/paiml/aprender",
+          "rules": []
+        }
+      },
+      "invocations": [
+        {
+          "executionSuccessful": true,
+          "commandLine": "cargo test (two targets, private CARGO_TARGET_DIR); git diff f0906750fe 14e1e3335c read by hand"
+        }
+      ],
+      "results": [
+        {
+          "ruleId": "review.delta-unit-tests-pass",
+          "level": "note",
+          "message": {
+            "text": "Ran the three tests this delta touches or adds at 14e1e3335c (the_summary_sits_beside_the_lean_dir_never_inside_it with the two new asserts, a_section_glob_star_needs_the_tail_and_question_mark_takes_any_one_byte, harness_broken_declines_only_when_a_cause_is_named): 3 passed. stdout_sha256 is over the last three lines of output (tail -8), printed with no trailing newline."
+          },
+          "properties": {
+            "grounding": "measured",
+            "command": [
+              "cargo",
+              "test",
+              "-q",
+              "-p",
+              "aprender-contracts",
+              "--lib",
+              "--",
+              "summary_path",
+              "the_summary_sits",
+              "a_section_glob",
+              "harness_broken_declines"
+            ],
+            "exit_code": 0,
+            "stdout_sha256": "b6713e4af298e28a9aa2a2e1b9da07c94561e640f9e516a8084687749e87d83f",
+            "failure_scenario": "If the new glob asserts encoded a wrong expectation of section_selected, the test would fail here; it does not, so the case table matches the implementation.",
+            "precision_class": "advisory"
+          }
+        },
+        {
+          "ruleId": "review.delta-contracts-nt-shapes-gate",
+          "level": "note",
+          "message": {
+            "text": "Ran the ONT-4b shapes gate integration target, which re-extracts the ontology and compares it to the committed contracts/contracts.nt: 11 passed. The two changed verifiedCommand literals (claude-md command and readme verifiedCommand, both now prefixed setsid --wait) are therefore what the extractor emits from the tree. stdout_sha256 is over the last three lines (tail -6), no trailing newline."
+          },
+          "properties": {
+            "grounding": "measured",
+            "command": [
+              "cargo",
+              "test",
+              "-q",
+              "-p",
+              "aprender-contracts-cli",
+              "--test",
+              "ont4b_shapes_gate"
+            ],
+            "exit_code": 0,
+            "stdout_sha256": "afa1a8cf40de4ffd30d144c2c1aac1254f80b9922da5b3d5b376ba0519b199a4",
+            "failure_scenario": "A stale contracts.nt would make the extract-vs-committed comparison fail; it passed at this head.",
+            "precision_class": "advisory"
+          }
+        },
+        {
+          "ruleId": "review.delta-summary-path-behaviour-identical",
+          "level": "note",
+          "message": {
+            "text": "summary_path refactor reviewed by hand over the four inputs. Old: parent Some(p) non-empty -> p.join(f), else PathBuf::from(f). New: parent().unwrap_or(\"\").join(f). '/' has no parent: old f, new Path::new(\"\").join(f)=f. '' has no parent: same, f. 'lean' has parent '': old f (empty arm), new ''.join(f)=f. '/a/lean' has parent '/a': both /a/discharge-summary.json. '/lean' (parent '/', non-empty): both /discharge-summary.json. Identical on all five. The new asserts for '/' and '' pin the two no-parent cases that had no test."
+          },
+          "properties": {
+            "grounding": "asserted",
+            "rationale": "Path::join with an empty base returns the joined component unchanged; verified by reading std semantics and by the unit test passing, not by an exhaustive property test.",
+            "failure_scenario": "A Path::join edge case on an exotic input (for example a Windows prefix) is not covered; the function is only used on repo-relative lean dirs.",
+            "precision_class": "advisory"
+          }
+        },
+        {
+          "ruleId": "review.delta-shapes-gate-clippy-fix",
+          "level": "note",
+          "message": {
+            "text": "lint/shapes_gate.rs replaces a mut Default plus field assignment with a struct literal using ..Default::default(); the same values are set (release = Some(ReleaseStats{crux: Some(default), ..default})). Test body is otherwise unchanged. Purely the clippy field_reassign_with_default fix."
+          },
+          "properties": {
+            "grounding": "asserted",
+            "rationale": "Read from the diff; the enclosing test passed in the run above.",
+            "failure_scenario": "If the literal dropped a field the assignment had set, the assertion following it would have changed outcome; it passed.",
+            "precision_class": "advisory"
+          }
+        },
+        {
+          "ruleId": "review.mutation-and-quorum-carried",
+          "level": "note",
+          "message": {
+            "text": "Mutation, pmat, cuda and crux are CARRIED from the receipt for 55835bd46b. The delta adds no logic beyond the summary_path refactor, which is behaviour-identical, plus tests and a regenerated data file. The full mutation set was not re-run here; TDG, SATD and the duplication scan were not measured. The antigravity arm remains unreachable. The Q0 quorum is a separate artifact."
+          },
+          "properties": {
+            "grounding": "asserted",
+            "rationale": "Recording scope honestly; nothing here is measured beyond the two test runs.",
+            "failure_scenario": "A mutant in summary_path introduced by the refactor is not separately measured; the added '/' and '' asserts are the only new guard on it.",
+            "precision_class": "advisory"
+          }
+        }
+      ]
+    },
+    {
+      "tool": {
+        "driver": {
+          "name": "nvidia-cuda-docs",
+          "informationUri": "https://github.com/paiml/aprender",
+          "rules": []
+        }
+      },
+      "invocations": [
+        {
+          "executionSuccessful": true,
+          "commandLine": "mcp__nvidia-cuda-docs__search_cuda_docs x2 (inline; cuda-docs-reviewer agent not dispatched)"
+        }
+      ],
+      "results": [
+        {
+          "ruleId": "cuda.trigger-false-positive",
+          "level": "note",
+          "message": {
+            "text": "--match-path fires for 2 changed paths, both under crates/aprender-contracts-staging/lean/Challenge/ (fp8-interchange-v1.lean and its sibling). They are Lean challenge statements whose theorems are all `:= sorry`; they run no device code. Two queries were run inline (the cuda-docs-reviewer agent was not dispatched). The first, on FP8 conversion and saturation, returned the CUDA Math API fp8 conversion reference. The second returned the PTX ISA alternate-format definitions quoted here. Whether the Lean statement's NaN and infinity claims agree with this text was not checked."
+          },
+          "properties": {
+            "grounding": "cited",
+            "source": "nvidia-cuda-docs search_cuda_docs, PTX ISA 5.2 alternate floating-point data formats",
+            "excerpt": "`e4m3` data format:\n:   This data format is an 8-bit floating point format with 4 bits for exponent and 3 bits for\n    mantissa. The `e4m3` encoding does not support infinity and `NaN` values are limited to\n    `0x7f` and `0xff`.",
+            "excerpt_sha256": "f7c2dd6c0f558aceb30a46e2ee78fd96c8e48b26639f62578971a6103af345b2",
+            "failure_scenario": "If the fp8-interchange Lean statement later is discharged with a NaN encoding other than 0x7f/0xff for e4m3, the proof would certify a format the hardware does not use.",
+            "precision_class": "advisory"
+          }
+        }
+      ]
+    },
+    {
+      "tool": {
+        "driver": {
+          "name": "crux",
+          "informationUri": "https://github.com/paiml/aprender",
+          "rules": []
+        }
+      },
+      "invocations": [
+        {
+          "executionSuccessful": true,
+          "commandLine": "guard predicate --match-crux-surface over the changed pv CLI surface; no crux contract read"
+        }
+      ],
+      "results": [
+        {
+          "ruleId": "crux.no-contract-covers-surface",
+          "level": "note",
+          "message": {
+            "text": "The diff adds new pv subcommands and flags (discharge, challenge, ontology, role surfaces in crates/aprender-contracts-cli/src/cli.rs). No crux contract was read for them. That is recorded as coverage none; no comparative claim is made and no gap is opened or closed."
+          },
+          "properties": {
+            "grounding": "asserted",
+            "rationale": "Recorded as a finding per S3.C; nothing was measured against a competing tool.",
+            "failure_scenario": "A comparative claim about pv against another prover CLI added later would have no crux contract behind it.",
+            "precision_class": "advisory"
+          }
+        }
+      ]
+    },
+    {
+      "tool": {
+        "driver": {
+          "name": "cargo-mutants",
+          "informationUri": "https://github.com/paiml/aprender",
+          "rules": []
+        }
+      },
+      "invocations": [
+        {
+          "executionSuccessful": false,
+          "toolExecutionNotifications": [
+            {
+              "level": "error",
+              "message": {
+                "text": "cargo mutants was not attempted (attempted=0). The hard rules for this review forbid cargo test, nextest and cargo-mutants on this host (lambda). The diff changes 185 .rs files, so the mutation consultation is triggered and unreachable; the PR's own CI mutants jobs, including the survivor-table gate this PR adds, are the only measurement. Cargo-free guard mutation sets that WERE run are recorded as results below."
+              }
+            }
+          ]
+        }
+      ],
+      "results": [
+        {
+          "ruleId": "cargo-free.guard-mutation-and-selftests",
+          "level": "note",
+          "message": {
+            "text": "Cargo-free checks re-run at write time on the disposable-free worktree at head: mutate_lean_modules_reachable_guard.sh scored 18/18 mutants killed; mutate_leanchecker_scoped_guard.sh scored 31/31. Recorded under the cargo-mutants driver only for lack of a better home: they are guard mutation sets for two new shell guards, not cargo-mutants on Rust. stdout_sha256 is the 31/31 run."
+          },
+          "properties": {
+            "grounding": "measured",
+            "command": [
+              "bash",
+              "scripts/mutate_leanchecker_scoped_guard.sh"
+            ],
+            "exit_code": 0,
+            "stdout_sha256": "e2568a76e305ad78d3d9caa57909546aacdf808076f2390a51d9ce601fd58ef9",
+            "failure_scenario": "These sets cover two guards only; the Python survivor-table checker and the Rust code have no mutation measurement here.",
+            "precision_class": "advisory"
+          }
+        },
+        {
+          "ruleId": "cargo-free.selftest",
+          "level": "note",
+          "message": {
+            "text": "Self-test, rc 0: survivor-table gate rule: planted weak rules turn the table RED."
+          },
+          "properties": {
+            "grounding": "measured",
+            "command": [
+              "bash",
+              "scripts/check_ci_gate_mutants_table_rule.sh",
+              "--self-test"
+            ],
+            "exit_code": 0,
+            "stdout_sha256": "053f06ffad15e8b029ca828ca15c53a9e271d4531963519b9b499ed19c0efeb1",
+            "failure_scenario": "A self-test that passes proves the guard turns RED on the planted cases only, not that the gate is wired into the branch-protection set.",
+            "precision_class": "advisory"
+          }
+        },
+        {
+          "ruleId": "cargo-free.selftest",
+          "level": "note",
+          "message": {
+            "text": "Self-test, rc 0: feature-group guard: red/green over the real shard script and checker."
+          },
+          "properties": {
+            "grounding": "measured",
+            "command": [
+              "bash",
+              "scripts/check_mutants_feature_groups.sh",
+              "--self-test"
+            ],
+            "exit_code": 0,
+            "stdout_sha256": "0f4c72e0cba44593afb770a6946b2fd8a0271ca29886618845e94bb44b633960",
+            "failure_scenario": "A self-test that passes proves the guard turns RED on the planted cases only, not that the gate is wired into the branch-protection set.",
+            "precision_class": "advisory"
+          }
+        },
+        {
+          "ruleId": "cargo-free.selftest",
+          "level": "note",
+          "message": {
+            "text": "Self-test, rc 0: survivor-table checker case table."
+          },
+          "properties": {
+            "grounding": "measured",
+            "command": [
+              "python3",
+              "scripts/ci/mutants_survivor_table.py",
+              "--self-test"
+            ],
+            "exit_code": 0,
+            "stdout_sha256": "96e7c86d07fa5f79cd9a8141d5b5d015376c769986720ffc8f1a6a360b20f350",
+            "failure_scenario": "A self-test that passes proves the guard turns RED on the planted cases only, not that the gate is wired into the branch-protection set.",
+            "precision_class": "advisory"
+          }
+        },
+        {
+          "ruleId": "cargo-free.selftest",
+          "level": "note",
+          "message": {
+            "text": "Self-test, rc 0: lean-modules-reachable guard self-test."
+          },
+          "properties": {
+            "grounding": "measured",
+            "command": [
+              "bash",
+              "scripts/check_lean_modules_reachable.sh",
+              "--self-test"
+            ],
+            "exit_code": 0,
+            "stdout_sha256": "439dd5db927460817431d3db63021bb4db954ca62a0e37a431662605d1061611",
+            "failure_scenario": "A self-test that passes proves the guard turns RED on the planted cases only, not that the gate is wired into the branch-protection set.",
+            "precision_class": "advisory"
+          }
+        },
+        {
+          "ruleId": "cargo-free.selftest",
+          "level": "note",
+          "message": {
+            "text": "Self-test, rc 0: leanchecker-scoped guard self-test (27/27 rows)."
+          },
+          "properties": {
+            "grounding": "measured",
+            "command": [
+              "bash",
+              "scripts/check_leanchecker_scoped.sh",
+              "--self-test"
+            ],
+            "exit_code": 0,
+            "stdout_sha256": "4b70da35380c3db5e50d00f414b6ae747e65793149f02b6dbd42163910ea913b",
+            "failure_scenario": "A self-test that passes proves the guard turns RED on the planted cases only, not that the gate is wired into the branch-protection set.",
+            "precision_class": "advisory"
+          }
+        }
+      ]
+    },
+    {
+      "tool": {
+        "driver": {
+          "name": "antigravity",
+          "informationUri": "https://github.com/paiml/aprender",
+          "rules": []
+        }
+      },
+      "invocations": [
+        {
+          "executionSuccessful": false,
+          "toolExecutionNotifications": [
+            {
+              "level": "error",
+              "message": {
+                "text": "agy 1.2.13 (/home/noah/.local/bin/agy) was invoked twice with model gpt-oss-120b-medium (gemini is quota-exhausted) and both returned UNAVAILABLE code 503: No capacity available for model gpt-oss-120b-medium on the server, retryable true. A response body was written with status ERROR and was not schema-checked or used. The arm is therefore unreachable; the Q0 quorum (4/4 AGREED at 5dfa5e7715) is a separate record and is not a substitute."
+              }
+            }
+          ]
+        }
+      ],
+      "results": []
+    }
+  ]
+}
