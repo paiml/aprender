@@ -493,4 +493,57 @@ mod tests {
             );
         }
     }
+
+    /// Weight base and the weight row each `dot_fn` call reads, in call order.
+    static TILE_TRACE: std::sync::Mutex<(usize, usize, Vec<usize>)> =
+        std::sync::Mutex::new((0, 1, Vec::new()));
+
+    fn tracing_dot(data: &[u8], _acts: &[f32]) -> Result<f32> {
+        let mut g = TILE_TRACE.lock().expect("trace lock");
+        let row = (data.as_ptr() as usize - g.0) / g.1;
+        g.2.push(row);
+        Ok(0.0)
+    }
+
+    /// The row tile is `clamp(256 KiB / bytes_per_row, 4, 64) / 4 * 4` rows: the tile is
+    /// invisible in the output, so read it off the order of `dot_fn` calls on one thread
+    /// (a tile runs every token over its rows before the next tile starts).
+    #[test]
+    fn test_multirow_row_tile_is_l2_sized_and_a_multiple_of_four() {
+        let (m, in_dim, out_dim) = (2usize, 256 * 70, 96usize);
+        let bytes_per_row = 70 * 144; // 10080: 262144 / 10080 = 26 -> 26 / 4 * 4 = 24
+        let weights = vec![0u8; out_dim * bytes_per_row];
+        let input = vec![0.0f32; m * in_dim];
+        let mut output = vec![1.0f32; m * out_dim];
+        let pool = rayon::ThreadPoolBuilder::new()
+            .num_threads(1)
+            .build()
+            .expect("one-thread pool");
+        let trace = {
+            let mut g = TILE_TRACE.lock().expect("trace lock");
+            *g = (weights.as_ptr() as usize, bytes_per_row, Vec::new());
+            drop(g);
+            pool.install(|| {
+                generic_multirow_matmul_into::<Q4K>(
+                    &weights,
+                    &input,
+                    m,
+                    in_dim,
+                    out_dim,
+                    &mut output,
+                    tracing_dot,
+                )
+                .expect("multirow");
+            });
+            let t = TILE_TRACE.lock().expect("trace lock").2.clone();
+            t
+        };
+        assert_eq!(trace.len(), m * out_dim);
+        let first_run = trace[1..]
+            .iter()
+            .position(|&r| r <= trace[0])
+            .map(|p| p + 1)
+            .expect("the first tile's second token restarts at its first row");
+        assert_eq!(first_run, 24, "row tile size");
+    }
 }
