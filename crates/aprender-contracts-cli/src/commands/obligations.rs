@@ -474,6 +474,26 @@ mod tests {
         assert_eq!(py_list(&[]), "[]");
     }
 
+    /// `\bword\b` needs a boundary at BOTH ends, each tested where the word actually starts and ends (#4588).
+    #[test]
+    fn mentions_needs_a_boundary_at_both_ends() {
+        let d = tempfile::tempdir().expect("tempdir");
+        std::fs::create_dir(d.path().join("src")).expect("mkdir");
+        std::fs::write(d.path().join("src/a.rs"), "   abc\n").expect("write");
+        std::fs::write(d.path().join("src/b.rs"), "   ab c\n").expect("write");
+        let mut src = SrcTree::new(d.path().join("src"));
+        assert!(
+            !src.mentions("src/a.rs", "ab"),
+            "`abc` does not mention `ab`"
+        );
+        assert!(src.mentions("src/b.rs", "ab"));
+        assert!(!src.mentions("src/a.rs", "bc"), "no boundary before `bc`");
+        assert!(
+            !src.mentions("src/c.rs", "ab"),
+            "only the named file counts"
+        );
+    }
+
     #[test]
     fn boundary_is_regex_backslash_b() {
         assert!(boundary("fn score", "(x)"));
