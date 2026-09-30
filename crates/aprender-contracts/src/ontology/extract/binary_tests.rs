@@ -425,6 +425,23 @@ fn pair_mismatches_only_pairs_same_named_targets() {
     assert_eq!(m[0][0].package, "p2");
 }
 
+/// Kills `==` -> `!=` on the target test in `pair_mismatches`: two targets of one package with the same
+/// name but different target ids are distinct binaries, so differing help pairs them.
+#[test]
+fn pair_mismatches_pairs_same_package_different_targets() {
+    let mk = |target: &str, help: &str| Target {
+        package: "p1".into(),
+        target: target.into(),
+        name: "a".into(),
+        help_sha256: help.into(),
+        ..Target::default()
+    };
+    let ts = [mk("t1", "h1"), mk("t2", "h2")];
+    let m = pair_mismatches(&ts);
+    assert_eq!((m[0].len(), m[1].len()), (1, 1));
+    assert_eq!(m[0][0].target, "t2");
+}
+
 /// Kills `delete field at_workspace_root` in `extract_at` and `extract -> Default::default()`.
 #[test]
 fn extract_reports_the_workspace_root_and_the_targets() {
