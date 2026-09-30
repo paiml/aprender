@@ -1627,11 +1627,13 @@ mod tests {
     fn harness_broken_declines_only_when_a_cause_is_named() {
         assert!(harness_broken(&extract::Extraction::default()).is_none());
 
-        let mut x = extract::Extraction::default();
-        x.release = Some(extract::release_evidence::ReleaseStats {
-            crux: Some(extract::release_crux::CruxStats::default()),
+        let mut x = extract::Extraction {
+            release: Some(extract::release_evidence::ReleaseStats {
+                crux: Some(extract::release_crux::CruxStats::default()),
+                ..Default::default()
+            }),
             ..Default::default()
-        });
+        };
         assert!(
             harness_broken(&x).is_none(),
             "a measured harness with no cause is not broken"

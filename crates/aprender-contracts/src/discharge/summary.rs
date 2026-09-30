@@ -94,10 +94,11 @@ impl Summary {
 /// `<lean-dir>`'s sibling `discharge-summary.json` (`${LEAN%/lean}/discharge-summary.json`).
 #[must_use]
 pub fn summary_path(lean_dir: &Path) -> PathBuf {
-    match lean_dir.parent() {
-        Some(p) if !p.as_os_str().is_empty() => p.join(SUMMARY_FILE),
-        _ => PathBuf::from(SUMMARY_FILE),
-    }
+    // `Path::new("").join(f)` is `f`: a bare `lean` (parent "") and a root (no parent) need no arm of their own.
+    lean_dir
+        .parent()
+        .unwrap_or_else(|| Path::new(""))
+        .join(SUMMARY_FILE)
 }
 
 /// Read a summary. `Err` names why (absent, unreadable, not a summary); the gate reads any `Err` as "derives nothing".

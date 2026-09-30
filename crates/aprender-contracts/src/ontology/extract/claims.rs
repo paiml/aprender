@@ -767,4 +767,19 @@ mod tests {
         assert_eq!(camel("contract-count"), "contractCount");
         assert_eq!(camel("kind"), "kind");
     }
+
+    #[test]
+    fn a_section_glob_star_needs_the_tail_and_question_mark_takes_any_one_byte() {
+        // `*` may absorb bytes, never skip the rest of the pattern.
+        assert!(section_selected("determinism", "det*"));
+        assert!(section_selected("determinism", "*ism"));
+        assert!(!section_selected("determinism", "*x"));
+        assert!(!section_selected("", "*x"));
+        // `?` is exactly one byte of any value, not a literal '?'.
+        assert!(section_selected("ab", "a?"));
+        assert!(section_selected("gpu-touched", "gpu?touched"));
+        assert!(!section_selected("a", "a?"));
+        // a matrix pin selects its job
+        assert!(section_selected("determinism", "determinism[X64]"));
+    }
 }
