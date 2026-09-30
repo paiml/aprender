@@ -14,9 +14,9 @@ code change. A stored limit plus a moving scanner is not evidence (never-worse r
 1. `scripts/cb200_head_vs_base.sh` (new): measures HEAD and BASE with one pinned `$PMAT_BIN` in one run, `[tdg] baseline`
    set to 0 in both scratch trees (the stored value cannot decide anything). Exit 0 head ≤ base, 1 head > base, 2 usage,
    3 NOT MEASURED (Skip, no count, unparsable, unresolvable ref, `PMAT_BIN` unset). Never a pass on 3. `--selftest`: 14 rows.
-2. `scripts/dogfood.sh`: on CB-200 `Fail` (stored baseline exceeded) compares head to `$DOGFOOD_CB200_BASE`, default the newest
-   final `vX.Y.Z` tag (v0.69.3 today). Pass/Warn unchanged; Skip/absent still FAIL; anything unmeasurable still FAIL.
-   It only turns a stored-limit FAIL into a head-vs-base verdict, so it cannot loosen anything that was RED because of new debt.
+2. `scripts/dogfood.sh`: on CB-200 `Warn` or `Fail` (at/over the stored baseline) compares head to `$DOGFOOD_CB200_BASE`, default the newest
+   final `vX.Y.Z` tag (v0.69.3 today). Pass unchanged; Skip/absent still FAIL; anything unmeasurable still FAIL.
+   It replaces the stored-limit verdict with a head-vs-base one (Warn now also measured), so it cannot loosen anything that was RED because of new debt.
 3. The 4 definitions main added over v0.69.3 (618 → 622), refactored into behaviour-identical helpers:
    `check_valid_under` (Rust), `scripts/coverage_serve_shards.py::main`, `scripts/lib/git_patch_id.py::get_one_patchid`,
    `scripts/nightly_manifest.py::main`.

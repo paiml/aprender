@@ -118,6 +118,8 @@ case "$1" in
     query) exit 0 ;;
     comply)
         m=$(cat mode 2>/dev/null || echo ok); n=$(cat count 2>/dev/null || echo 0)
+        # a pmat that reads the stored baseline: unless the helper zeroed it, there is no count to read
+        grep -qE "^baseline = 0$" .pmat-gates.toml || m=garbage
         case "$m" in
             ok)   printf '{"summary":{},"checks":[{"name":"CB-200: TDG Grade Gate","status":"Fail","message":"%s definition(s) below minimum grade B - baseline"}]}' "$n" ;;
             skip) printf '{"summary":{},"checks":[{"name":"CB-200: TDG Grade Gate","status":"Skip","message":"Not measured"}]}' ;;
