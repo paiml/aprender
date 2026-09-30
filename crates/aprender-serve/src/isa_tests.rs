@@ -221,14 +221,17 @@ mod forced {
                 got[o].to_bits() == want.to_bits()
             })
             .count();
+        // The registry's view of this CPU must narrow with the dispatch sites (KTEST-04 §4).
+        let host = format!("{:?}", crate::kernel_registry::Target::host());
         println!(
-            "{TAG} ceiling={} refused={} equal={equal} rows={OUT_DIM}",
+            "{TAG} ceiling={} refused={} equal={equal} rows={OUT_DIM} registry_avx2={}",
             crate::isa::ceiling().name(),
-            crate::isa::refused()
+            crate::isa::refused(),
+            host.contains("\"avx2\"")
         );
     }
 
-    fn child(force: &str) -> (String, u64, usize) {
+    fn child(force: &str) -> (String, u64, usize, bool) {
         let exe = std::env::current_exe().expect("test binary path");
         let out = std::process::Command::new(exe)
             .args([
@@ -262,6 +265,7 @@ mod forced {
             field("ceiling="),
             field("refused=").parse().expect("refused"),
             field("equal=").parse().expect("equal"),
+            field("registry_avx2=").parse().expect("registry_avx2"),
         )
     }
 
@@ -277,8 +281,12 @@ mod forced {
                 && std::arch::is_x86_feature_detected!("fma"),
             "this host has no AVX2+FMA path to force off, so the test would prove nothing"
         );
-        let (c, refused, equal) = child("scalar");
+        let (c, refused, equal, registry_avx2) = child("scalar");
         assert_eq!(c, "scalar");
+        assert!(
+            !registry_avx2,
+            "scalar forced, yet the registry's host target still reports avx2"
+        );
         assert!(
             refused > 0,
             "scalar forced, yet no dispatch site refused a feature"
@@ -288,8 +296,12 @@ mod forced {
             "scalar forced, yet {equal}/{OUT_DIM} rows match scalar"
         );
 
-        let (c, refused, equal) = child("native");
+        let (c, refused, equal, registry_avx2) = child("native");
         assert_eq!(c, "native");
+        assert!(
+            registry_avx2,
+            "native: the registry's host target lacks avx2"
+        );
         assert_eq!(refused, 0, "native refused {refused} features");
         assert!(
             equal < OUT_DIM,
