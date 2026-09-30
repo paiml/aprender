@@ -426,3 +426,214 @@ fn emit_obligation(
         }
     }
 }
+
+#[cfg(test)]
+mod tests {
+    //! Swarm #4587: the private CRUX judges, each pinned to an exact outcome so a flipped comparison, a
+    //! dropped `!` or a no-op body changes a count, a message or a triple.
+    use super::*;
+
+    const SHA: &str = "aaaa";
+    const FILE: &str = "a.gguf";
+    const COMMIT: &str = "0123456789abcdef0123456789abcdef01234567";
+
+    fn subject() -> Subject {
+        Subject::new("0.72.0", COMMIT).expect("valid subject")
+    }
+
+    fn key_for(sha: &str, file: &str) -> Key {
+        (
+            "lambda".into(),
+            sha.into(),
+            file.into(),
+            "run".into(),
+            Some("on".into()),
+            Some("r1".into()),
+        )
+    }
+
+    fn row(
+        (host, sha, verb): (&str, &str, &str),
+        thinking: &str,
+        rung: &str,
+        prompt_id: &str,
+        verdict: &str,
+        mode: Option<&str>,
+    ) -> CruxRow {
+        CruxRow {
+            file: "evidence/crux/0.72.0/a.json".into(),
+            version_line: String::new(),
+            model_sha256: sha.into(),
+            host: host.into(),
+            verb: verb.into(),
+            thinking: Some(thinking.into()),
+            rung: Some(rung.into()),
+            prompt_id: prompt_id.into(),
+            verdict: verdict.into(),
+            mode: mode.map(str::to_string),
+            positive_control: false,
+        }
+    }
+
+    /// A row on exactly `key_for(SHA, FILE)`.
+    fn exact(prompt_id: &str, verdict: &str, mode: Option<&str>) -> CruxRow {
+        row(("lambda", SHA, "run"), "on", "r1", prompt_id, verdict, mode)
+    }
+
+    /// One row per key field, each differing from `key_for(SHA, FILE)` in that field alone.
+    fn near_misses(mode: Option<&str>) -> Vec<CruxRow> {
+        vec![
+            row(("intel", SHA, "run"), "on", "r1", "host", "GREEN", mode),
+            row(("lambda", "bbbb", "run"), "on", "r1", "sha", "GREEN", mode),
+            row(("lambda", SHA, "chat"), "on", "r1", "verb", "GREEN", mode),
+            row(
+                ("lambda", SHA, "run"),
+                "off",
+                "r1",
+                "thinking",
+                "GREEN",
+                mode,
+            ),
+            row(("lambda", SHA, "run"), "on", "r2", "rung", "GREEN", mode),
+        ]
+    }
+
+    fn control(sha: &str, verdict: &str) -> CruxRow {
+        let mut r = row(("lambda", sha, "run"), "on", "r1", "ctl", verdict, None);
+        r.positive_control = true;
+        r
+    }
+
+    /// Every literal object of `release/<predicate>`, sorted.
+    fn literals(g: &Graph, predicate: &str) -> Vec<String> {
+        let p = rel(predicate);
+        let mut out: Vec<String> = g
+            .iter()
+            .filter(|t| t.predicate == p)
+            .filter_map(|t| t.object.as_literal().map(|(v, _)| v.to_string()))
+            .collect();
+        out.sort();
+        out
+    }
+
+    fn obligation(modes: &[String], rows: &[CruxRow]) -> (Graph, CruxStats) {
+        let mut g = Graph::new();
+        let mut st = CruxStats::default();
+        emit_obligation(
+            &mut g,
+            &subject(),
+            &key_for(SHA, FILE),
+            modes,
+            rows,
+            &mut st,
+        );
+        (g, st)
+    }
+
+    #[test]
+    fn obligation_keys_a_row_only_when_every_field_matches() {
+        let mut rows = near_misses(None);
+        rows.push(exact("exact", "GREEN", None));
+        let (g, st) = obligation(&[], &rows);
+        assert_eq!(st.rows, 1);
+        assert_eq!(st.all_wrong, 0);
+        assert!(st.all_wrong_by_model.is_empty());
+        assert_eq!(g.instances_of(&rel("CruxObligation")).len(), 1);
+        assert_eq!(g.instances_of(&rel("CruxCell")).len(), 1);
+        assert_eq!(literals(&g, "promptId"), vec!["exact".to_string()]);
+        assert!(literals(&g, "modeMissing").is_empty());
+    }
+
+    #[test]
+    fn obligation_counts_all_wrong_per_model() {
+        let rows = vec![
+            exact("p1", "ALL_WRONG", None),
+            exact("p2", "ALL_WRONG", None),
+            exact("p3", "GREEN", None),
+        ];
+        let (g, st) = obligation(&[], &rows);
+        assert_eq!(st.rows, 3);
+        assert_eq!(st.all_wrong, 2);
+        assert_eq!(st.all_wrong_by_model.get(FILE), Some(&2));
+        assert_eq!(st.all_wrong_by_model.len(), 1);
+        assert_eq!(g.instances_of(&rel("CruxCell")).len(), 3);
+    }
+
+    #[test]
+    fn obligation_row_is_fresh_only_with_version_and_short_sha() {
+        let mut rows = vec![
+            exact("both", "GREEN", None),
+            exact("version-only", "GREEN", None),
+            exact("sha-only", "GREEN", None),
+        ];
+        rows[0].version_line = "apr 0.72.0 (012345678)".into();
+        rows[1].version_line = "apr 0.72.0 (fffffffff)".into();
+        rows[2].version_line = "apr 0.71.0 (012345678)".into();
+        let (g, _) = obligation(&[], &rows);
+        assert_eq!(literals(&g, "fresh"), vec!["false", "false", "true"]);
+    }
+
+    #[test]
+    fn obligation_names_each_declared_mode_without_a_row() {
+        let mut rows = near_misses(Some("nonstream"));
+        rows.push(exact("exact", "GREEN", Some("stream")));
+        let modes = vec!["nonstream".to_string(), "stream".to_string()];
+        let (g, _) = obligation(&modes, &rows);
+        assert_eq!(literals(&g, "modeMissing"), vec!["nonstream".to_string()]);
+    }
+
+    #[test]
+    fn verb_answers_every_declared_engine_by_kind() {
+        let mapping = Mapping {
+            engines: ["llama.cpp", "ollama", "vllm", "sglang"]
+                .map(str::to_string)
+                .to_vec(),
+            verbs: BTreeMap::new(),
+        };
+        let mut entry = Entry::default();
+        entry
+            .engines
+            .insert("llama.cpp".into(), Ok("llama-cli".into()));
+        entry.engines.insert("ollama".into(), Err("no verb".into()));
+        entry.engines.insert("vllm".into(), Err("  ".into()));
+        let mut g = Graph::new();
+        emit_verb(&mut g, &subject(), "run", Some(&mapping), Some(&entry));
+        assert_eq!(g.instances_of(&rel("CruxVerb")).len(), 1);
+        assert_eq!(literals(&g, "verb"), vec!["run"]);
+        assert_eq!(literals(&g, "mappingEntry"), vec!["run"]);
+        assert_eq!(literals(&g, "counterpart"), vec!["llama.cpp: llama-cli"]);
+        assert_eq!(literals(&g, "noCounterpart"), vec!["ollama: no verb"]);
+        assert_eq!(literals(&g, "noneWithoutReason"), vec!["vllm"]);
+        assert_eq!(literals(&g, "engineMissing"), vec!["sglang"]);
+    }
+
+    #[test]
+    fn harness_is_sound_with_a_green_control() {
+        let owed: BTreeSet<Key> = [key_for(SHA, FILE)].into_iter().collect();
+        // an ALL_WRONG row that is NOT the control must not break the harness
+        let rows = vec![control(SHA, "GREEN"), exact("p1", "ALL_WRONG", None)];
+        assert_eq!(harness_broken(&owed, &rows), Vec::<String>::new());
+    }
+
+    #[test]
+    fn harness_names_the_model_without_its_own_control() {
+        let owed: BTreeSet<Key> = [key_for(SHA, FILE), key_for("bbbb", "b.gguf")]
+            .into_iter()
+            .collect();
+        let rows = vec![control(SHA, "GREEN")];
+        assert_eq!(
+            harness_broken(&owed, &rows),
+            vec!["b.gguf: no measured positive-control cell".to_string()]
+        );
+    }
+
+    #[test]
+    fn harness_names_an_all_wrong_control() {
+        let owed: BTreeSet<Key> = [key_for(SHA, FILE)].into_iter().collect();
+        let rows = vec![control(SHA, "GREEN"), control(SHA, "ALL_WRONG")];
+        assert_eq!(
+            harness_broken(&owed, &rows),
+            vec!["a.gguf: its positive-control prompt came back ALL_WRONG".to_string()]
+        );
+    }
+}
