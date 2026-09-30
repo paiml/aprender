@@ -1,0 +1,358 @@
+{
+  "ticket": "PMAT-4641",
+  "base": "origin/main",
+  "base_resolved": "origin/main",
+  "base_note": "no origin/origin/main exists; judged against the local ref",
+  "head": "bb78aabc18f88ae19b07fc3ef7c8049ce4a70a2f",
+  "diff_sha256": "627afb54367c97612f5e46dd7cecb273cf8cb7fc8a8e7a1bd7196b66673d11c9",
+  "width": 3,
+  "executor": "agy",
+  "prompt_mode": "inline",
+  "prompt_bytes": 42963,
+  "prompt_sha256": "ab0cad73a3fc420f0396989a295838bede24f2fbce0cd8acb6b74549b27be231",
+  "author": {
+    "model": "claude-sonnet-5-5",
+    "family": "claude",
+    "source": "flag"
+  },
+  "agreed": true,
+  "lanes": [
+    {
+      "lane": 1,
+      "status": "SUCCESS",
+      "verdict": "PASS",
+      "summary": "The diff does what PMAT-4641 asks, and I found nothing that refutes it; four minor findings are below. The release path's CB-200 check no longer trusts the stored `[tdg] baseline`. Both Warn and Fail now go to scripts/check_cb200_head_vs_base.sh. That script measures head and the newest final tag that does not contain HEAD, with one pmat in one run and the stored baseline set to 0 in both trees. Every case where nothing was measured returns rc 3, and dogfood marks that FAIL. The gate only got stricter where it matters: Warn used to pass on the stored number alone and now also needs head ≤ base. Fail can become PASS only when head ≤ the last release, which is what the cop ruled. PMAT_BIN is exported by verifier_pin_pmat, so the helper runs with the pinned pmat. WORKLOG is a mktemp directory outside the repo, so the dirty-tree check is not polluted by dogfood's own files. I read the four refactors against the diff and they behave the same as before: in check_valid_under, both early `return`s stay in the parent before the two new helpers are called; get_one_patchid keeps the `\\ ` / commit / From precedence and the fall-through order; the coverage_serve_shards solo check is vacuous when there is no solo file; nightly_manifest dispatches through the same argparse. I did not re-run anything; the recorded evidence is 17/17 cargo tests, byte-identical golden diffs and a 14/14 selftest. Tree witness: I could not produce it. /home/noah/src/aprender/.git/worktrees/0d-cb200/paiml-lane-witness does not exist (Read and Glob both found nothing), so I left tree_witness empty rather than make one up.",
+      "findings": [
+        {
+          "file": "docs/audits/impl-PMAT-4641-receipt.md",
+          "line": 17,
+          "claim": "The receipt contradicts itself and the diff. Change item 2 says the check runs 'on CB-200 `Fail`' and that 'Pass/Warn unchanged', but the dogfood arm is `Warn|Fail)`, so Warn now changes too (the Round-4 section of the same receipt admits this).",
+          "grounding": "cited",
+          "fix": "Update Change item 2 to say Warn and Fail are both re-judged head-vs-release, and only Pass is unchanged."
+        },
+        {
+          "file": "scripts/dogfood.sh",
+          "line": 1197,
+          "claim": "The comment above the case block still says `Warn` 'is a GO — holding debt flat is the entire point'. Warn no longer passes on the stored baseline alone, so the comment is stale.",
+          "grounding": "measured",
+          "fix": "Reword lines 1197-1200 to say Warn is re-judged head-vs-release in the `Warn|Fail)` arm."
+        },
+        {
+          "file": "scripts/dogfood.sh",
+          "line": 1224,
+          "claim": "When there is no base ref, the message says 'CB-200 = Fail against the stored baseline' even when CM_CB200 is Warn, so the receipt text can misstate what pmat reported.",
+          "grounding": "cited",
+          "fix": "Put $CM_CB200 in the message instead of the literal 'Fail'."
+        },
+        {
+          "file": "scripts/dogfood.sh",
+          "line": 1230,
+          "claim": "The dirty-tree refusal runs only after the helper has run. On a dirty tree the result is still FAIL (it fails closed), but it can first spend up to four 900 s pmat runs measuring before throwing the result away.",
+          "grounding": "cited",
+          "fix": "Check `git status --porcelain` before calling check_cb200_head_vs_base.sh."
+        }
+      ],
+      "raw_bytes": 7236,
+      "err_bytes": 0,
+      "envelope_status": "SUCCESS",
+      "verdict_source": "structured_output",
+      "executor": "claude-code",
+      "grounding_check": "parity",
+      "role": "counted",
+      "model": "claude-opus-5-5",
+      "model_measured": "claude-opus-5-5",
+      "model_source": "flag",
+      "family": "claude",
+      "brief_sha256": "ab0cad73a3fc420f0396989a295838bede24f2fbce0cd8acb6b74549b27be231",
+      "trace": {
+        "input_sha256": "bf62889abb1c2ab5b8a75c2eebe031fc11060595dc77b607fd6a7ba187837fef",
+        "output_sha256": "64739dc2b2847d80c9f56980325926c19ae51263152d8e1944323fba2794ae3f",
+        "store": null,
+        "store_why": "almacen not provisioned yet (infra-27): the blobs stay in the round's gitignored .lanes dir"
+      },
+      "fallback": {
+        "judged_by": "claude-opus-5-5",
+        "exhausted": false,
+        "attempts": [
+          {
+            "model": "claude-opus-5-5",
+            "family": "claude",
+            "outcome": "answered"
+          }
+        ],
+        "skipped": []
+      }
+    },
+    {
+      "lane": 2,
+      "status": "SUCCESS",
+      "verdict": "PASS",
+      "summary": "All changes adhere to PMAT-4641: CB-200 release gate now compares HEAD to the last release tag, stored baseline is neutralised, and the gate logic is tightened without weakening any checks. Refactored lint helpers and script clean‑ups preserve existing behavior. No receipt claims are unsupported and no prohibited behavior is introduced.",
+      "findings": [],
+      "raw_bytes": 4938,
+      "err_bytes": 0,
+      "envelope_status": "SUCCESS",
+      "verdict_source": "structured_output",
+      "grounding_check": "parity",
+      "role": "independent",
+      "model": "gpt-oss-120b-medium",
+      "model_measured": "gpt-oss-120b-medium",
+      "model_source": "measured",
+      "family": "openai",
+      "executor": "agy",
+      "brief_sha256": "ab0cad73a3fc420f0396989a295838bede24f2fbce0cd8acb6b74549b27be231",
+      "trace": {
+        "input_sha256": "c666b5a9519a031f4f431c720e2409b1cb69c2c766262533c86594f49785f1e5",
+        "output_sha256": "997d69acb9481b9118eec102a55835621b1cc10c80174efbfcd7a465a210ce2f",
+        "store": null,
+        "store_why": "almacen not provisioned yet (infra-27): the blobs stay in the round's gitignored .lanes dir"
+      },
+      "fallback": {
+        "judged_by": "gpt-oss-120b-medium",
+        "exhausted": false,
+        "attempts": [
+          {
+            "model": "gpt-oss-120b-medium",
+            "family": "openai",
+            "outcome": "answered"
+          }
+        ],
+        "skipped": []
+      }
+    },
+    {
+      "lane": 3,
+      "status": "SUCCESS",
+      "verdict": "PASS",
+      "summary": "The diff correctly implements PMAT-4641: a new head-vs-base comparison gate replaces the stored CB-200 baseline for release judgment. The script has comprehensive error handling and selftest; dogfood.sh correctly re-judges Warn/Fail cases; four functions are refactored into behavior-identical helpers. The only dependency (SKILL_DIR variable) is verified by guards per the receipt.",
+      "findings": [],
+      "raw_bytes": 1710,
+      "err_bytes": 0,
+      "envelope_status": "SUCCESS",
+      "verdict_source": "structured_output",
+      "executor": "claude-code",
+      "grounding_check": "parity",
+      "role": "counted",
+      "model": "claude-haiku-4-5",
+      "model_measured": "claude-haiku-4-5",
+      "model_source": "flag",
+      "family": "claude",
+      "brief_sha256": "ab0cad73a3fc420f0396989a295838bede24f2fbce0cd8acb6b74549b27be231",
+      "trace": {
+        "input_sha256": "ad86c07ee089053aa7246caa0ba9666cd1925df4f92d6390531c96f75b694e0b",
+        "output_sha256": "65b91848c5062ad07cf0b7637ca2f30d2f8969027bfa35dacd49b1afc5363890",
+        "store": null,
+        "store_why": "almacen not provisioned yet (infra-27): the blobs stay in the round's gitignored .lanes dir"
+      },
+      "fallback": {
+        "judged_by": "claude-haiku-4-5",
+        "exhausted": false,
+        "attempts": [
+          {
+            "model": "claude-haiku-4-5",
+            "family": "claude",
+            "outcome": "answered"
+          }
+        ],
+        "skipped": []
+      }
+    }
+  ],
+  "dissent": [],
+  "dedup": [
+    {
+      "file": "docs/audits/impl-PMAT-4641-receipt.md",
+      "line": 17,
+      "lanes_agreeing": [
+        1
+      ],
+      "claims": [
+        "The receipt contradicts itself and the diff. Change item 2 says the check runs 'on CB-200 `Fail`' and that 'Pass/Warn unchanged', but the dogfood arm is `Warn|Fail)`, so Warn now changes too (the Round-4 section of the same receipt admits this)."
+      ]
+    },
+    {
+      "file": "scripts/dogfood.sh",
+      "line": 1197,
+      "lanes_agreeing": [
+        1
+      ],
+      "claims": [
+        "The comment above the case block still says `Warn` 'is a GO — holding debt flat is the entire point'. Warn no longer passes on the stored baseline alone, so the comment is stale."
+      ]
+    },
+    {
+      "file": "scripts/dogfood.sh",
+      "line": 1224,
+      "lanes_agreeing": [
+        1
+      ],
+      "claims": [
+        "When there is no base ref, the message says 'CB-200 = Fail against the stored baseline' even when CM_CB200 is Warn, so the receipt text can misstate what pmat reported."
+      ]
+    },
+    {
+      "file": "scripts/dogfood.sh",
+      "line": 1230,
+      "lanes_agreeing": [
+        1
+      ],
+      "claims": [
+        "The dirty-tree refusal runs only after the helper has run. On a dirty tree the result is still FAIL (it fails closed), but it can first spend up to four 900 s pmat runs measuring before throwing the result away."
+      ]
+    }
+  ],
+  "uncovered": [],
+  "coverage_source": "lanes",
+  "partial": false,
+  "partial_reasons": [],
+  "fallback": {
+    "same_family_width": 2,
+    "chain": [
+      {
+        "model": "claude-opus-5-5",
+        "family": "claude",
+        "disposition": "claude-code",
+        "why": "run by Claude Code on its own budget: a configured seat runs every round, a fallback step only when every non-Claude family is measured out (PMAT-360, operator standing rule)"
+      },
+      {
+        "model": "gpt-oss-120b-medium",
+        "family": "openai",
+        "disposition": "configured"
+      },
+      {
+        "model": "claude-haiku-4-5",
+        "family": "claude",
+        "disposition": "claude-code",
+        "why": "run by Claude Code on its own budget: a configured seat runs every round, a fallback step only when every non-Claude family is measured out (PMAT-360, operator standing rule)"
+      },
+      {
+        "model": "qwen3.5",
+        "family": "qwen",
+        "disposition": "not-run",
+        "why": "no quorum.local_lane in the config — the aprender lane has no model to load"
+      }
+    ],
+    "precheck": [
+      {
+        "family": "openai",
+        "model": "gpt-oss-120b-medium",
+        "probe": 1,
+        "outcome": "live"
+      }
+    ],
+    "degraded": null,
+    "prah": {
+      "source": "install-receipt",
+      "path": "/home/noah/.claude/skills/paiml-implement/bin/prah"
+    },
+    "tier1": {
+      "agy_tier1_only": true,
+      "tier1": true,
+      "matched": [
+        "crates/aprender-contracts/src/lint/valid_under_gate.rs"
+      ],
+      "paths": 8,
+      "patterns": [
+        "^\\.github/workflows/",
+        "(^|/)release[^/]*\\.(ya?ml|sh|rs|toml)$",
+        "cuda|kernel|\\.cu$|\\.ptx$",
+        "(^|/)[^/]*(gate|guard)[^/]*\\.(sh|rs|py)$|^hooks/",
+        "security|secret|credential|(^|/)deny\\.toml$",
+        "^skills/quorum-review/|(^|/)(receipt-lint|roadmap-lint|release-lint|kind-gate|model-gate)[^/]*$|^crates/prah-lint/"
+      ],
+      "builtin": "^skills/quorum-review/|(^|/)skills/paiml-implement/config\\.json$|(^|/)(modellib|lane-reduce|lane-fallback|lane-group|agy-lane|cc-lane|receipt-lint|route|quota)\\.sh$|^crates/prah-lint/"
+    },
+    "bucket": {
+      "ledger": "/home/noah/.local/state/paiml-implement/agy-bucket.jsonl",
+      "window_s": 18000,
+      "pace": "off",
+      "buckets": {
+        "claude-gpt": {
+          "bucket": "claude-gpt",
+          "budget": 0,
+          "basis": "ledger: the calls served before the first 429 of the latest window that reached one",
+          "window_start": null,
+          "window_calls": 0,
+          "window_429": 0,
+          "hour_calls": 4,
+          "share": 1,
+          "want": 2,
+          "state": "empty",
+          "reason": "agy bucket claude-gpt is empty: 0 calls in this window reach its budget 0 (ledger: the calls served before the first 429 of the latest window that reached one)"
+        }
+      },
+      "closed": []
+    }
+  },
+  "auto_merge": {
+    "checked": true,
+    "was_armed": false,
+    "disarmed": false,
+    "note": "auto-merge not armed"
+  },
+  "cheap_seat": "claude-haiku-4-5",
+  "advisory_lane": {
+    "state": "answered",
+    "counts": false,
+    "row": {
+      "Verdict": {
+        "verdict": "FAIL",
+        "cell": "gx10-cuda",
+        "backend": "cuda"
+      }
+    },
+    "verdict": "FAIL",
+    "why": null,
+    "served_by": "gx10-cuda",
+    "gpu_proof": {
+      "used_gpu_probe": true,
+      "server_holds_gpu": true,
+      "used_gpu_source": "completions probe (chat omits used_gpu, aprender#4146)",
+      "trace_lines": [
+        "1083089, 309 MiB"
+      ]
+    },
+    "apr": "0.70.0",
+    "apr_binary_sha256": "6b2a7dc66c38adcca20b315beac70a1a31e7bd0af2a1cc5c2a7730ca6086d417",
+    "apr_tag": "v0.70.0-dev.3990584f0",
+    "apr_commit": "3990584f0bf5af6bca34ea9298df92177f3ef79a",
+    "apr_build_why": null,
+    "model": "/home/noah/data/models/Qwen3.5-4B-Q4_K_M.gguf",
+    "model_sha256": "00fe7986ff5f6b463e62455821146049db6f9313603938a70800d1fb69ef11a4",
+    "rc": 0,
+    "wall_s": 16,
+    "collected_s": 184,
+    "budget_s": 164,
+    "budget_basis": "ledger: 2 x p95 82 s over 113 gx10-cuda Verdict rows",
+    "brief": {
+      "bytes": 42963,
+      "sent_bytes": 43132,
+      "max_bytes": 196608
+    },
+    "trace": {
+      "input_sha256": "fb07477b8cb3048e84d49edd5a872e029c067892db48279b515e4414cecbdceb",
+      "raw": "advisory.json"
+    },
+    "attempts": [
+      {
+        "host": "gx10",
+        "ok": true,
+        "wall_s": 16,
+        "used_gpu": true,
+        "ts": "2026-09-30T00:08:17.462Z",
+        "wall_ms": 15798,
+        "request_id": "01a0efa3-ff33-7c04-9ff3-feec0d3699ac",
+        "load1": 54.19,
+        "cold": false
+      }
+    ],
+    "ledger": "/home/noah/.local/state/paiml-implement/advisory-ledger.jsonl",
+    "raw": "advisory.json",
+    "agrees_with_counted": false,
+    "counted": "PASS"
+  },
+  "lint": {
+    "ok": true,
+    "output": "receipt complete: kind=artifact lanes=3 author=claude-sonnet-5-5/claude same_family=2/2"
+  }
+}
