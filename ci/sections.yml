@@ -3428,6 +3428,7 @@ jobs:
             exit 0
           fi
           docker run --rm \
+            --memory=16g --memory-swap=16g \
           -e CI -e GITHUB_ACTIONS -e GITHUB_REF -e GITHUB_SHA -e GITHUB_REPOSITORY -e GITHUB_RUN_ID -e GITHUB_EVENT_NAME -e GITHUB_WORKFLOW \
             -v "${GITHUB_WORKSPACE}:/workspace" \
             -w /workspace \
