@@ -1,0 +1,372 @@
+{
+  "$schema": "https://json.schemastore.org/sarif-2.1.0.json",
+  "version": "2.1.0",
+  "runs": [
+    {
+      "tool": {
+        "driver": {
+          "name": "pmat",
+          "informationUri": "https://github.com/paiml/aprender",
+          "rules": []
+        }
+      },
+      "invocations": [
+        {
+          "executionSuccessful": true,
+          "commandLine": "pmat analyze complexity --file (CLI transport); pmat query --literal; pmat index rebuild at HEAD"
+        }
+      ],
+      "results": [
+        {
+          "ruleId": "pmat.complexity-new-files",
+          "level": "note",
+          "message": {
+            "text": "Cognitive complexity of two new Rust files that carry real logic: crates/aprender-contracts/src/discharge/mod.rs max cognitive 11 (judge_escapes), max cyclomatic 8, 30 functions; crates/aprender-common/src/cli_roles.rs max cognitive 2, 22 functions. Both are below the configured max_complexity 10 on cyclomatic; the cognitive 11 is one function. Only these two of the 185 changed .rs files were measured. stdout_sha256 is the discharge/mod.rs run."
+          },
+          "properties": {
+            "grounding": "measured",
+            "command": [
+              "pmat",
+              "analyze",
+              "complexity",
+              "--file",
+              "crates/aprender-contracts/src/discharge/mod.rs",
+              "--format",
+              "json"
+            ],
+            "exit_code": 0,
+            "stdout_sha256": "8c0669419351c734dc8750c72937ca28909152c9348ac7faf6429e2cc747ed1a",
+            "failure_scenario": "A cognitive-11 judge_escapes in the discharge judge is the hardest function to reason about in a PR that gates lean proofs; growth past it would slip in unmeasured because the other 183 .rs files were not measured.",
+            "precision_class": "advisory"
+          }
+        },
+        {
+          "ruleId": "pmat.duplication-scan-incomplete",
+          "level": "note",
+          "message": {
+            "text": "pr_review_duplication_scan.sh was started and ran over 14 minutes (a giant git grep -w -F needle list); a --horizon none retry timed out at 110 s. No scan result is recorded. Instead a manual name check of the PR's new tool names against the tree found no prior art: the nearest, scripts/check_shell_lint_ratchet.sh, is a different tool. Every surface is therefore recorded as duplication method none, and the sibling-branch sweep as 0 of 1173 scanned."
+          },
+          "properties": {
+            "grounding": "asserted",
+            "rationale": "The manual check is a human-shaped grep over a handful of names, not the scan; it cannot stand for the semantic search.",
+            "failure_scenario": "A duplicate of an existing guard or of a sibling branch's work would not be found; the PR adds ~10 new scripts/ci helpers and a new pv discharge/challenge/ontology surface.",
+            "precision_class": "advisory"
+          }
+        },
+        {
+          "ruleId": "pmat.index-stale-later",
+          "level": "note",
+          "message": {
+            "text": "The pmat index was rebuilt at HEAD in this worktree (93542 functions, 50.2 s) and the first queries used it. A later pmat query in the same session reported the index stale (context.db written after context.idx/manifest.json) and began a rebuild that did not finish in the 100 s allowed. The index files are gitignored. TDG and SATD were not measured for this PR."
+          },
+          "properties": {
+            "grounding": "asserted",
+            "rationale": "Recording what happened; nothing was inferred from the stale index.",
+            "failure_scenario": "Any pmat answer cited from the index after the first queries would describe a database the manifest does not match.",
+            "precision_class": "advisory"
+          }
+        },
+        {
+          "ruleId": "review.delta-kani-harness-property-unchanged",
+          "level": "note",
+          "message": {
+            "text": "Reviewed d3991868d2 against witness.rs. accepted_verdict_is_semantic_u8 now takes the verdict; the two Kani harnesses (KANI-ONT-9-1 core and model halves) pass check_u8(&g, &core_as(..)) / check_u8(&g, &model_as(..)), which is exactly the expression the old body computed internally. check_u8 is pub in witness_small.rs and is added to the harness import list. The property (an accepted core is contradictory and names known variables; an accepted model satisfies the graph) is unchanged, and the proptest twin passes the same check_string/check_u8 calls. The new refuses_an_unsound_verdict test hands it hand-built unsound verdicts (core on a satisfiable graph, model on an unsatisfiable one, empty core, id 3 == VARS.len()), so the predicate is no longer indistinguishable from true."
+          },
+          "properties": {
+            "grounding": "asserted",
+            "rationale": "Read from the diff and source only; Kani and the tests were not run here (no cargo on this host).",
+            "failure_scenario": "If check_u8 were not pub or the harness import were wrong, the cfg(kani) build would fail to compile; kani is not built by workspace-test, so a break there would surface only in the Kani job.",
+            "precision_class": "advisory"
+          }
+        },
+        {
+          "ruleId": "review.delta-tests-not-executed-here",
+          "level": "note",
+          "message": {
+            "text": "Delta 5dfa5e7715..55835bd46b: 11 test/refactor files under aprender-contracts plus README.md, contracts/census.json and contracts.nt (census regen, n_files 1860, consistent). No new test asserts a constant: they assert exact values or both-ways predicates. I did not execute them. The author's scoped local mutation run reports 46/46 (a07-m4587p), 8/8 (a07-m4587b-part1) and 105 caught + 5 missed (a07-m4587r on d3991868d2); the 5 missed were then each manually re-applied against 55835bd46b and the test run exited 101 (log km4587.log: codebase.rs 183 and 190 with -= and *=, binary.rs 483 !=). I read that log's tail, not the runs' own output."
+          },
+          "properties": {
+            "grounding": "asserted",
+            "rationale": "Adversarial read of the diff; the mutation counts are the author's, relayed, and not re-run.",
+            "failure_scenario": "A relayed count is not a measurement I made; the CI mutants shards remain the gate.",
+            "precision_class": "advisory"
+          }
+        },
+        {
+          "ruleId": "review.delta-step-as-checked-sub",
+          "level": "note",
+          "message": {
+            "text": "step_as now uses checked_sub(3): code<3 gives Unit(id(code)), otherwise Implies(IMPLY_PAIRS[(code-3)%6]). This is the same mapping as the old k<3 / (k-3)%6 form for every u8 code. New tests pin codes 3..8 to the six pairs in order, and step_as(9)==step_as(3) for the wrap."
+          },
+          "properties": {
+            "grounding": "asserted",
+            "rationale": "Read from the diff and source only; not executed here.",
+            "failure_scenario": "A regression in the wrap (e.g. removing %6) would index IMPLY_PAIRS out of range for code >= 9; STEP_CODES bounds the harness to 0..9 so Kani would not see it, only the new test does.",
+            "precision_class": "advisory"
+          }
+        },
+        {
+          "ruleId": "review.delta-inline-mod-test-negative-only",
+          "level": "note",
+          "message": {
+            "text": "an_inline_mod_is_not_a_file_backed_child_that_includes_a_sibling asserts only resolve(\"k::inc\",\"f\").is_err(). The fixture shape (workspace Cargo.toml, k/Cargo.toml with [package] name only) matches the neighbouring passing tests, but the test has no positive twin in the same body: an error for any other reason (a scan failure, a wrong path) would also satisfy it, so it kills the targeted mutant only if the fixture scans."
+          },
+          "properties": {
+            "grounding": "asserted",
+            "rationale": "Adversarial read of crates/aprender-contracts/src/ontology/extract/code.rs at HEAD; the mutant is CI's to confirm.",
+            "failure_scenario": "If Workspace::scan skipped the fixture, is_err() would hold with the mutant applied and the survivor would remain MISSED in the CI shard.",
+            "precision_class": "advisory"
+          }
+        },
+        {
+          "ruleId": "review.delta-binary-control-bare-sample-orphans",
+          "level": "note",
+          "message": {
+            "text": "the_positive_control_refuses_a_third_apr asserts that clearing every target's commands makes positive_control false because 'apr run' becomes a second orphan (the tightened conjunct is ledgerOrphan.len() == 1 on the second node). Whether both orphans land on that node depends on emit_all's orphan attribution, which this review read but did not execute."
+          },
+          "properties": {
+            "grounding": "asserted",
+            "rationale": "Not executed: cargo test is forbidden on this host.",
+            "failure_scenario": "If orphans attach elsewhere or only once, the second assertion would fail in CI (a red test, not a vacuous one).",
+            "precision_class": "advisory"
+          }
+        },
+        {
+          "ruleId": "review.delta-55835bd46b-kill-tests",
+          "level": "note",
+          "message": {
+            "text": "Reviewed 55835bd46b (2 test files, +56 lines, rustfmt-clean). proof_depth_counts_kani_and_proved_lean_exactly: I recomputed the expectation from compute_proof_depth (0.1 + 0.3 per obligation when falsification tests exist, +0.4 when any kani harness exists, +0.2 when that obligation's lean status is proved): obligation one is 1.0, obligation two is 0.8, mean 0.9 under the 1.0 cap, so the assertion is exact and cannot pass under the += to -= or *= mutants. pair_mismatches_pairs_same_package_different_targets: same package and name with different target ids and differing help must pair, which pins the target comparison; the assertion checks both directions of the pair. Neither test is vacuous."
+          },
+          "properties": {
+            "grounding": "asserted",
+            "rationale": "Hand recomputation from source; not executed here.",
+            "failure_scenario": "If the kani harness list shape (id/obligation/bound) did not parse, parse_contract_str would fail and the test would panic in CI, not pass vacuously.",
+            "precision_class": "advisory"
+          }
+        }
+      ]
+    },
+    {
+      "tool": {
+        "driver": {
+          "name": "nvidia-cuda-docs",
+          "informationUri": "https://github.com/paiml/aprender",
+          "rules": []
+        }
+      },
+      "invocations": [
+        {
+          "executionSuccessful": true,
+          "commandLine": "mcp__nvidia-cuda-docs__search_cuda_docs x2 (inline; cuda-docs-reviewer agent not dispatched)"
+        }
+      ],
+      "results": [
+        {
+          "ruleId": "cuda.trigger-false-positive",
+          "level": "note",
+          "message": {
+            "text": "--match-path fires for 2 changed paths, both under crates/aprender-contracts-staging/lean/Challenge/ (fp8-interchange-v1.lean and its sibling). They are Lean challenge statements whose theorems are all `:= sorry`; they run no device code. Two queries were run inline (the cuda-docs-reviewer agent was not dispatched). The first, on FP8 conversion and saturation, returned the CUDA Math API fp8 conversion reference. The second returned the PTX ISA alternate-format definitions quoted here. Whether the Lean statement's NaN and infinity claims agree with this text was not checked."
+          },
+          "properties": {
+            "grounding": "cited",
+            "source": "nvidia-cuda-docs search_cuda_docs, PTX ISA 5.2 alternate floating-point data formats",
+            "excerpt": "`e4m3` data format:\n:   This data format is an 8-bit floating point format with 4 bits for exponent and 3 bits for\n    mantissa. The `e4m3` encoding does not support infinity and `NaN` values are limited to\n    `0x7f` and `0xff`.",
+            "excerpt_sha256": "f7c2dd6c0f558aceb30a46e2ee78fd96c8e48b26639f62578971a6103af345b2",
+            "failure_scenario": "If the fp8-interchange Lean statement later is discharged with a NaN encoding other than 0x7f/0xff for e4m3, the proof would certify a format the hardware does not use.",
+            "precision_class": "advisory"
+          }
+        }
+      ]
+    },
+    {
+      "tool": {
+        "driver": {
+          "name": "crux",
+          "informationUri": "https://github.com/paiml/aprender",
+          "rules": []
+        }
+      },
+      "invocations": [
+        {
+          "executionSuccessful": true,
+          "commandLine": "guard predicate --match-crux-surface over the changed pv CLI surface; no crux contract read"
+        }
+      ],
+      "results": [
+        {
+          "ruleId": "crux.no-contract-covers-surface",
+          "level": "note",
+          "message": {
+            "text": "The diff adds new pv subcommands and flags (discharge, challenge, ontology, role surfaces in crates/aprender-contracts-cli/src/cli.rs). No crux contract was read for them. That is recorded as coverage none; no comparative claim is made and no gap is opened or closed."
+          },
+          "properties": {
+            "grounding": "asserted",
+            "rationale": "Recorded as a finding per S3.C; nothing was measured against a competing tool.",
+            "failure_scenario": "A comparative claim about pv against another prover CLI added later would have no crux contract behind it.",
+            "precision_class": "advisory"
+          }
+        }
+      ]
+    },
+    {
+      "tool": {
+        "driver": {
+          "name": "cargo-mutants",
+          "informationUri": "https://github.com/paiml/aprender",
+          "rules": []
+        }
+      },
+      "invocations": [
+        {
+          "executionSuccessful": false,
+          "toolExecutionNotifications": [
+            {
+              "level": "error",
+              "message": {
+                "text": "cargo mutants was not attempted (attempted=0). The hard rules for this review forbid cargo test, nextest and cargo-mutants on this host (lambda). The diff changes 185 .rs files, so the mutation consultation is triggered and unreachable; the PR's own CI mutants jobs, including the survivor-table gate this PR adds, are the only measurement. Cargo-free guard mutation sets that WERE run are recorded as results below."
+              }
+            }
+          ]
+        }
+      ],
+      "results": [
+        {
+          "ruleId": "cargo-free.guard-mutation-and-selftests",
+          "level": "note",
+          "message": {
+            "text": "Cargo-free checks re-run at write time on the disposable-free worktree at head: mutate_lean_modules_reachable_guard.sh scored 18/18 mutants killed; mutate_leanchecker_scoped_guard.sh scored 31/31. Recorded under the cargo-mutants driver only for lack of a better home: they are guard mutation sets for two new shell guards, not cargo-mutants on Rust. stdout_sha256 is the 31/31 run."
+          },
+          "properties": {
+            "grounding": "measured",
+            "command": [
+              "bash",
+              "scripts/mutate_leanchecker_scoped_guard.sh"
+            ],
+            "exit_code": 0,
+            "stdout_sha256": "e2568a76e305ad78d3d9caa57909546aacdf808076f2390a51d9ce601fd58ef9",
+            "failure_scenario": "These sets cover two guards only; the Python survivor-table checker and the Rust code have no mutation measurement here.",
+            "precision_class": "advisory"
+          }
+        },
+        {
+          "ruleId": "cargo-free.selftest",
+          "level": "note",
+          "message": {
+            "text": "Self-test, rc 0: survivor-table gate rule: planted weak rules turn the table RED."
+          },
+          "properties": {
+            "grounding": "measured",
+            "command": [
+              "bash",
+              "scripts/check_ci_gate_mutants_table_rule.sh",
+              "--self-test"
+            ],
+            "exit_code": 0,
+            "stdout_sha256": "053f06ffad15e8b029ca828ca15c53a9e271d4531963519b9b499ed19c0efeb1",
+            "failure_scenario": "A self-test that passes proves the guard turns RED on the planted cases only, not that the gate is wired into the branch-protection set.",
+            "precision_class": "advisory"
+          }
+        },
+        {
+          "ruleId": "cargo-free.selftest",
+          "level": "note",
+          "message": {
+            "text": "Self-test, rc 0: feature-group guard: red/green over the real shard script and checker."
+          },
+          "properties": {
+            "grounding": "measured",
+            "command": [
+              "bash",
+              "scripts/check_mutants_feature_groups.sh",
+              "--self-test"
+            ],
+            "exit_code": 0,
+            "stdout_sha256": "0f4c72e0cba44593afb770a6946b2fd8a0271ca29886618845e94bb44b633960",
+            "failure_scenario": "A self-test that passes proves the guard turns RED on the planted cases only, not that the gate is wired into the branch-protection set.",
+            "precision_class": "advisory"
+          }
+        },
+        {
+          "ruleId": "cargo-free.selftest",
+          "level": "note",
+          "message": {
+            "text": "Self-test, rc 0: survivor-table checker case table."
+          },
+          "properties": {
+            "grounding": "measured",
+            "command": [
+              "python3",
+              "scripts/ci/mutants_survivor_table.py",
+              "--self-test"
+            ],
+            "exit_code": 0,
+            "stdout_sha256": "96e7c86d07fa5f79cd9a8141d5b5d015376c769986720ffc8f1a6a360b20f350",
+            "failure_scenario": "A self-test that passes proves the guard turns RED on the planted cases only, not that the gate is wired into the branch-protection set.",
+            "precision_class": "advisory"
+          }
+        },
+        {
+          "ruleId": "cargo-free.selftest",
+          "level": "note",
+          "message": {
+            "text": "Self-test, rc 0: lean-modules-reachable guard self-test."
+          },
+          "properties": {
+            "grounding": "measured",
+            "command": [
+              "bash",
+              "scripts/check_lean_modules_reachable.sh",
+              "--self-test"
+            ],
+            "exit_code": 0,
+            "stdout_sha256": "439dd5db927460817431d3db63021bb4db954ca62a0e37a431662605d1061611",
+            "failure_scenario": "A self-test that passes proves the guard turns RED on the planted cases only, not that the gate is wired into the branch-protection set.",
+            "precision_class": "advisory"
+          }
+        },
+        {
+          "ruleId": "cargo-free.selftest",
+          "level": "note",
+          "message": {
+            "text": "Self-test, rc 0: leanchecker-scoped guard self-test (27/27 rows)."
+          },
+          "properties": {
+            "grounding": "measured",
+            "command": [
+              "bash",
+              "scripts/check_leanchecker_scoped.sh",
+              "--self-test"
+            ],
+            "exit_code": 0,
+            "stdout_sha256": "4b70da35380c3db5e50d00f414b6ae747e65793149f02b6dbd42163910ea913b",
+            "failure_scenario": "A self-test that passes proves the guard turns RED on the planted cases only, not that the gate is wired into the branch-protection set.",
+            "precision_class": "advisory"
+          }
+        }
+      ]
+    },
+    {
+      "tool": {
+        "driver": {
+          "name": "antigravity",
+          "informationUri": "https://github.com/paiml/aprender",
+          "rules": []
+        }
+      },
+      "invocations": [
+        {
+          "executionSuccessful": false,
+          "toolExecutionNotifications": [
+            {
+              "level": "error",
+              "message": {
+                "text": "agy 1.2.13 (/home/noah/.local/bin/agy) was invoked twice with model gpt-oss-120b-medium (gemini is quota-exhausted) and both returned UNAVAILABLE code 503: No capacity available for model gpt-oss-120b-medium on the server, retryable true. A response body was written with status ERROR and was not schema-checked or used. The arm is therefore unreachable; the Q0 quorum (4/4 AGREED at 5dfa5e7715) is a separate record and is not a substitute."
+              }
+            }
+          ]
+        }
+      ],
+      "results": []
+    }
+  ]
+}
