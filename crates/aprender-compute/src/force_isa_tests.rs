@@ -70,9 +70,10 @@ fn child(force: &str) -> String {
         "child {force}: {}\n{stdout}",
         String::from_utf8_lossy(&out.stderr)
     );
+    // libtest prints `test <name> ... ` without a newline before the child's own output.
     stdout
         .lines()
-        .find(|l| l.starts_with(TAG))
+        .find_map(|l| l.find(TAG).map(|i| &l[i..]))
         .unwrap_or_else(|| panic!("child {force} printed no probe line:\n{stdout}"))
         .to_string()
 }

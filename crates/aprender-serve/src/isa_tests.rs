@@ -247,9 +247,10 @@ mod forced {
             "child {force}: {}\n{stdout}",
             String::from_utf8_lossy(&out.stderr)
         );
+        // libtest prints `test <name> ... ` without a newline before the child's own output.
         let line = stdout
             .lines()
-            .find(|l| l.starts_with(TAG))
+            .find_map(|l| l.find(TAG).map(|i| &l[i..]))
             .unwrap_or_else(|| panic!("child {force} printed no probe line:\n{stdout}"));
         let field = |k: &str| {
             line.split_whitespace()
