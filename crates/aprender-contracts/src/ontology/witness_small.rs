@@ -241,11 +241,14 @@ pub fn id_u8(i: usize) -> u8 {
 #[must_use]
 pub fn step_as<I>(code: u8, id: fn(usize) -> I) -> Step<I> {
     let k = usize::from(code);
-    if k < 3 {
-        Step::Unit(id(k))
-    } else {
-        let (a, b) = IMPLY_PAIRS[(k - 3) % 6];
-        Step::Implies(id(a), id(b))
+    // `checked_sub`, not `k < 3` then `(k - 3) % 6`: that `-` had an equivalent mutant (`(k + 3) % 6` is the
+    // same index for every k >= 3), which no test can kill (#4588).
+    match k.checked_sub(3) {
+        None => Step::Unit(id(k)),
+        Some(j) => {
+            let (a, b) = IMPLY_PAIRS[j % 6];
+            Step::Implies(id(a), id(b))
+        }
     }
 }
 
@@ -454,5 +457,27 @@ mod tests {
             prop_assert_eq!(relabel(check_u8(&g, &core_as(&codes, conflict, id_u8))), check_string(&g, &core(&codes, conflict)));
             prop_assert_eq!(relabel(check_u8(&g, &model_as(false_bits, id_u8))), check_string(&g, &model(false_bits)));
         }
+    }
+
+    /// Every step code decodes as [`STEP_CODES`] documents: `0..3` a unit, `3..9` the implication
+    /// `IMPLY_PAIRS[k - 3]`, and a code past the table wraps mod 6 rather than panicking.
+    #[test]
+    fn every_step_code_decodes_as_documented() {
+        let pair = |k: usize| {
+            let (a, b) = IMPLY_PAIRS[k];
+            Step::Implies(id_string(a), id_string(b))
+        };
+        for code in 0..=u8::MAX {
+            let k = usize::from(code);
+            let want = if k < 3 {
+                Step::Unit(id_string(k))
+            } else {
+                pair((k - 3) % 6)
+            };
+            assert_eq!(step(code), want, "code {code}");
+        }
+        assert_eq!(step(3), pair(0));
+        assert_eq!(step(8), pair(5));
+        assert_eq!(step(9), pair(0));
     }
 }
