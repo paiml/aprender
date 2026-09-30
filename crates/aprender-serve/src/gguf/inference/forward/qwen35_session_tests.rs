@@ -475,6 +475,46 @@ mod gpu {
         assert_eq!(t2.tokens, one_shot_gpu(&mapped, &p1, &config));
     }
 
+    /// A second save on the device writes into the first save's buffers
+    /// rather than allocating a fresh copy per turn (#4214). Allocations are
+    /// counted, not addresses compared: freeing the old copy first and
+    /// allocating anew hands back the same addresses.
+    #[test]
+    fn gpu_a_second_checkpoint_allocates_nothing_on_the_device() {
+        use crate::session::ArchForward;
+        use trueno_gpu::driver::device_allocs_total;
+        let mapped = mapped_or_skip!();
+        if !crate::cuda::CudaExecutor::is_available() {
+            eprintln!("SKIP: no CUDA device");
+            return;
+        }
+        let mut f = Qwen35Forward::load(&mapped, false).expect("load");
+        assert!(
+            f.on_gpu(),
+            "a CUDA build on a CUDA host serves from the GPU"
+        );
+        let prompt = encode(&mapped, &user_turn("Name the capital of Peru."));
+        f.reserve(prompt.len() + 1).expect("reserve");
+        f.forward(&prompt[..prompt.len() - 1], 0).expect("prefill");
+        let before = device_allocs_total();
+        f.save_checkpoint().expect("save 1");
+        assert!(
+            device_allocs_total() > before,
+            "the first save allocates the copy"
+        );
+        f.forward(&prompt[prompt.len() - 1..], prompt.len() - 1)
+            .expect("one more");
+        let before = device_allocs_total();
+        f.save_checkpoint().expect("save 2");
+        assert_eq!(
+            device_allocs_total(),
+            before,
+            "the second save reused the first one's buffers"
+        );
+        assert!(f.on_gpu(), "no fallback");
+        assert!(matches!(f.checkpoint, Some(Checkpoint::Gpu(_))));
+    }
+
     #[test]
     fn gpu_a_re_rendered_turn_two_resumes_at_turn_ones_header_and_matches_one_shot() {
         let mapped = mapped_or_skip!();
@@ -597,4 +637,169 @@ fn a_state_that_outgrows_min_capacity_leaves_headroom_for_the_next_turn() {
     // The e2e shape: turn 2 (4279 positions) fits what turn 1 allocated.
     let first = grown_capacity(4197, 0, MIN_CAPACITY, 8192);
     assert!(4279 <= first, "turn 2 would reallocate from {first}");
+}
+
+// ---- checkpoint save/restore on the CPU backend, with no GGUF file ----------
+//
+// The tests above skip when the real hybrid file is absent (CI), so the CPU
+// checkpoint arms were unexercised there. This builds the smallest host model
+// in memory (no layers) and drives `save_checkpoint` / `restore_checkpoint`
+// directly on its `Backend::Cpu` state.
+
+fn empty_tensor() -> crate::gguf::OwnedQuantizedTensor {
+    crate::gguf::OwnedQuantizedTensor {
+        data: Vec::new(),
+        in_dim: 0,
+        out_dim: 0,
+        qtype: crate::gguf::types::GGUF_TYPE_F32,
+    }
+}
+
+fn synthetic_forward() -> Qwen35Forward {
+    let config = crate::gguf::GGUFConfig {
+        architecture: "qwen35".to_string(),
+        constraints: crate::gguf::ArchConstraints::from_architecture("qwen35"),
+        hidden_dim: 4,
+        num_layers: 0,
+        num_heads: 1,
+        num_kv_heads: 1,
+        vocab_size: 1,
+        intermediate_dim: 4,
+        context_length: 32,
+        rope_theta: 10_000.0,
+        eps: 1.0e-6,
+        rope_type: 2,
+        explicit_head_dim: Some(4),
+        query_pre_attn_scalar: None,
+        bos_token_id: None,
+        eos_token_id: None,
+    };
+    let base = OwnedQuantizedModel {
+        config,
+        token_embedding: vec![0.0; 4],
+        position_embedding: None,
+        layers: vec![],
+        encoder_layers: vec![],
+        encoder_output_norm_weight: None,
+        encoder_output_norm_bias: None,
+        output_norm_weight: vec![1.0; 4],
+        output_norm_bias: None,
+        lm_head_weight: empty_tensor(),
+        lm_head_bias: None,
+        #[cfg(feature = "cuda")]
+        cuda_executor: None,
+        #[cfg(feature = "cuda")]
+        cuda_kernel_count: std::sync::atomic::AtomicU64::new(0),
+        #[cfg(feature = "cuda")]
+        cached_weight_names: std::sync::Mutex::new(std::collections::HashSet::new()),
+    };
+    let base: &'static OwnedQuantizedModel = Box::leak(Box::new(base));
+    let qwen: &'static Qwen35Model<'static> = Box::leak(Box::new(Qwen35Model {
+        base,
+        layers: vec![],
+        head_dim: 4,
+        num_kv_heads: 1,
+        num_v_heads: 1,
+        head_v_dim: 1,
+        num_k_heads: 1,
+        head_k_dim: 1,
+        conv_kernel: 4,
+        rope_sections: [1, 1, 0, 0],
+    }));
+    let mut state = qwen.new_state(8);
+    state.conv_states = vec![vec![0.0; 3]];
+    state.ssm_states = vec![vec![0.0; 2]];
+    Qwen35Forward {
+        qwen,
+        backend: Backend::Cpu(Some(state)),
+        capacity: 8,
+        turn_positions: 0,
+        allocations: 1,
+        min_capacity: 0,
+        context_length: 32,
+        notices: Vec::new(),
+        per_token_prefill: false,
+        batched_prefills: 0,
+        checkpoint: None,
+        im_start: None,
+    }
+}
+
+fn cpu_state(f: &mut Qwen35Forward) -> &mut Qwen35State {
+    match &mut f.backend {
+        Backend::Cpu(Some(state)) => state,
+        _ => panic!("the synthetic forward runs on the CPU with a state"),
+    }
+}
+
+#[test]
+fn a_cpu_checkpoint_is_saved_and_restored_into_the_state() {
+    use crate::session::ArchForward;
+    let mut f = synthetic_forward();
+    assert!(!f.on_gpu(), "the synthetic session is on the CPU");
+    assert!(
+        !f.restore_checkpoint().expect("restore with nothing saved"),
+        "nothing saved: nothing to restore"
+    );
+
+    cpu_state(&mut f).conv_states[0][1] = 3.0;
+    cpu_state(&mut f).ssm_states[0][0] = 5.0;
+    cpu_state(&mut f).kv_cache.advance();
+    f.save_checkpoint().expect("save");
+    assert!(
+        matches!(f.checkpoint, Some(Checkpoint::Cpu(_))),
+        "saving on the CPU keeps a CPU checkpoint"
+    );
+
+    // Move the state on, then return to the checkpoint.
+    cpu_state(&mut f).conv_states[0][1] = 9.0;
+    cpu_state(&mut f).ssm_states[0][0] = 9.0;
+    cpu_state(&mut f).kv_cache.advance();
+    cpu_state(&mut f).kv_cache.advance();
+    assert!(
+        f.restore_checkpoint().expect("restore"),
+        "a saved CPU checkpoint restores"
+    );
+    let state = cpu_state(&mut f);
+    assert_eq!(state.conv_states[0][1], 3.0, "conv window restored");
+    assert_eq!(state.ssm_states[0][0], 5.0, "recurrent state restored");
+    assert_eq!(state.kv_cache.len(), 1, "KV rows truncated to the save");
+}
+
+/// A failed restore: on the device it is a GPU failure the session survives on the CPU, loudly, prefilling
+/// from 0 (`Ok(false)`, checkpoint dropped); on the CPU the error is the caller's. Both halves run here on the
+/// CPU build, since a device restore cannot fail without a device.
+#[test]
+fn a_failed_restore_falls_back_on_the_device_and_propagates_on_the_cpu() {
+    use crate::session::ArchForward;
+    let refused = || RealizarError::UnsupportedOperation {
+        operation: "restore".to_string(),
+        reason: "planted".to_string(),
+    };
+
+    let mut f = synthetic_forward();
+    f.save_checkpoint().expect("save");
+    let err = f
+        .after_failed_restore(false, refused())
+        .expect_err("a CPU restore failure is the caller's error");
+    assert!(err.to_string().contains("planted"), "{err}");
+    assert!(f.checkpoint.is_some(), "propagating keeps the checkpoint");
+    assert!(f.notices.is_empty(), "no fallback was announced");
+
+    let mut f = synthetic_forward();
+    f.save_checkpoint().expect("save");
+    assert!(
+        !f.after_failed_restore(true, refused())
+            .expect("a device restore failure falls back"),
+        "after the fallback the turn prefills from 0"
+    );
+    assert!(f.checkpoint.is_none(), "the device checkpoint is dropped");
+    assert!(!f.on_gpu());
+    assert_eq!(f.notices.len(), 1, "{:?}", f.notices);
+    assert!(
+        f.notices[0].contains("the device checkpoint would not restore: ")
+            && f.notices[0].contains("planted"),
+        "{:?}",
+        f.notices
+    );
 }

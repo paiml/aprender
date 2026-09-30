@@ -671,6 +671,21 @@ impl Qwen35Forward {
     }
 }
 
+impl Qwen35Forward {
+    /// A restore that failed on the device is a GPU failure: the session moves to the CPU, loudly, and the
+    /// turn prefills from 0 there (`Ok(false)`). On the CPU there is nothing to fall back to, so the error is
+    /// the caller's. Split out of `restore_checkpoint` so the CPU build tests both halves: a device restore
+    /// cannot fail without a device.
+    fn after_failed_restore(&mut self, on_gpu: bool, e: RealizarError) -> Result<bool> {
+        if on_gpu {
+            self.fall_back_to_cpu(&format!("the device checkpoint would not restore: {e}"))?;
+            Ok(false)
+        } else {
+            Err(e)
+        }
+    }
+}
+
 impl crate::session::ArchForward for Qwen35Forward {
     fn arch(&self) -> &'static str {
         "qwen35"
@@ -750,11 +765,7 @@ impl crate::session::ArchForward for Qwen35Forward {
         };
         match restored {
             Ok(restored) => Ok(restored),
-            Err(e) if self.on_gpu() => {
-                self.fall_back_to_cpu(&format!("the device checkpoint would not restore: {e}"))?;
-                Ok(false)
-            },
-            Err(e) => Err(e),
+            Err(e) => self.after_failed_restore(self.on_gpu(), e),
         }
     }
 

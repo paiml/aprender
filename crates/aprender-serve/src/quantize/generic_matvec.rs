@@ -415,4 +415,55 @@ mod tests {
         );
         assert!(result.is_ok());
     }
+
+    /// Each of the three size checks in `generic_multirow_matmul_into` rejects on its own.
+    #[test]
+    fn test_multirow_rejects_each_mis_sized_buffer_alone() {
+        let (m, in_dim, out_dim) = (2usize, 256usize, 3usize);
+        let bytes_per_row = 144;
+        let need = out_dim * bytes_per_row;
+        let acts = vec![1.0f32; m * in_dim];
+        let run = |weight: usize, input: usize, output: usize| {
+            let weights = vec![0u8; weight];
+            let acts = vec![1.0f32; input];
+            let mut out = vec![0.0f32; output];
+            generic_multirow_matmul_into::<Q4K>(
+                &weights,
+                &acts,
+                m,
+                in_dim,
+                out_dim,
+                &mut out,
+                q4k_scalar_dot,
+            )
+        };
+        assert!(
+            run(need, acts.len(), m * out_dim).is_ok(),
+            "exact sizes fit"
+        );
+        assert!(
+            run(need - 1, acts.len(), m * out_dim).is_err(),
+            "weight one byte short"
+        );
+        assert!(
+            run(need + 1, acts.len(), m * out_dim).is_ok(),
+            "a longer weight is fine"
+        );
+        assert!(
+            run(need, acts.len() - 1, m * out_dim).is_err(),
+            "input one short"
+        );
+        assert!(
+            run(need, acts.len() + 1, m * out_dim).is_err(),
+            "input one long"
+        );
+        assert!(
+            run(need, acts.len(), m * out_dim - 1).is_err(),
+            "output one short"
+        );
+        assert!(
+            run(need, acts.len(), m * out_dim + 1).is_ok(),
+            "a longer output is fine"
+        );
+    }
 }
