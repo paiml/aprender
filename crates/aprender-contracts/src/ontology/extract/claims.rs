@@ -82,10 +82,11 @@ fn fence_open(s: &str) -> Option<(char, usize, String)> {
     Some((c, n, info))
 }
 
-/// Does `s` close a fence opened with `n` × `c`?
+/// Does `s` close a fence opened with `n` × `c`? `c` is `` ` `` or `~` (see `fence_open`), one byte each, so
+/// `m` chars are `m` bytes.
 fn fence_close(s: &str, c: char, n: usize) -> bool {
     let m = s.chars().take_while(|x| *x == c).count();
-    m >= n && s[m * c.len_utf8()..].trim().is_empty()
+    m >= n && s[m..].trim().is_empty()
 }
 
 /// Every fenced code block in `text`, in order. An unclosed fence runs to the end of the document.
@@ -662,6 +663,26 @@ mod tests {
         assert_eq!(f[1].body, vec!["cargo y"]);
         assert_eq!(f[2].body, vec!["ls"]);
         assert!(f.iter().all(Fence::is_claim));
+    }
+
+    /// #4588: the backtick-in-info rule is for BACKTICK fences only (CommonMark 4.5); a tilde fence may carry one.
+    #[test]
+    fn only_a_backtick_fence_refuses_a_backtick_in_its_info() {
+        assert_eq!(fence_open("```a`b"), None);
+        assert_eq!(fence_open("```a b"), Some(('`', 3, "a b".to_string())));
+        assert_eq!(fence_open("~~~ a`b"), Some(('~', 3, "a`b".to_string())));
+        assert!(fences("```a`b\nx\n").is_empty());
+    }
+
+    /// #4588: fence and prose line numbers are 1-based, even on the first line.
+    #[test]
+    fn fence_and_prose_line_numbers_are_one_based() {
+        let f = fences("```bash\nmake\n```\n");
+        assert_eq!(f[0].line, 1);
+        let f = fences("a\n\n~~~\nx\n~~~\n");
+        assert_eq!(f[0].line, 3);
+        let p = prose_lines("one\n```\nx\n```\nfive\n");
+        assert_eq!(p, vec![(1, "one".to_string()), (5, "five".to_string())]);
     }
 
     #[test]
