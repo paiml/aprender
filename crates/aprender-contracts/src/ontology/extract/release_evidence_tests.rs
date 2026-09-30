@@ -264,6 +264,11 @@ fn a_kernel_on_one_hosts_dispatch_path_is_an_obligation_on_every_required_host()
     let mut g = Graph::new();
     let st = extract(&mut g, &c, &subject()).expect("extracts");
     assert_eq!(st.kernel_cells, 2, "one kernel × two required hosts");
+    assert_eq!(
+        (st.kernel_receipts, st.model_receipts, st.context_rungs),
+        (1, 0, 2),
+        "the stats count what was read"
+    );
     let lambda = iri_path("release-kernel", &["0.69.1", "lambda", "q4k_gemv", "q4_k"]);
     let gx10 = iri_path("release-kernel", &["0.69.1", "gx10", "q4k_gemv", "q4_k"]);
     assert!(
@@ -604,4 +609,94 @@ fn a_count_above_its_ceiling_grows_the_ratchet_and_one_at_it_does_not() {
     assert!(missing[0].starts_with("stdin_undeclared: no committed ceiling in "));
     assert!(missing[1].starts_with("unknown_args: no committed ceiling in "));
     assert!(subject_lits(&g2, "ratchetGrew").is_empty());
+}
+
+#[test]
+fn the_projection_costs_each_cell_the_median_wall_time_of_its_class() {
+    let (t, c) = repo(&format!(
+        "    - {{id: a, sha256: {SHA_A}, arch: qwen2, gguf: a.gguf, backends: [cuda], hosts: [lambda], required: true}}\n"
+    ));
+    // four samples of the (gen, golden) class: the median is the upper middle one, 7000 ms
+    let rows = [1000, 9000, 2000, 7000]
+        .iter()
+        .map(|ms| {
+            row(&gen_id("lambda", "a.gguf", "off", "golden"))
+                .replace(r#""rc":0"#, &format!(r#""rc":0,"wall_ms":{ms}"#))
+        })
+        .collect::<Vec<_>>()
+        .join(",");
+    let inv = format!(r#"{{"file":"a.gguf","sha256":"{SHA_A}"}}"#);
+    write_receipt(t.path(), "lambda", &receipt("lambda", MC, &inv, &rows));
+    let mut g = Graph::new();
+    let st = extract(&mut g, &c, &subject_with_surface(t.path())).expect("extracts");
+    assert_eq!(st.model_receipts, 1);
+    let p = &st.projection["lambda"];
+    let golden = st
+        .derived
+        .iter()
+        .filter(|c| c.host == "lambda" && c.rung.as_deref() == Some("golden"))
+        .count();
+    let all = st.derived.iter().filter(|c| c.host == "lambda").count();
+    assert!(
+        golden >= 2 && all > golden,
+        "the case needs measured and unmeasured cells"
+    );
+    assert_eq!(p.cells, all);
+    assert_eq!(p.measured_cells, golden);
+    assert_eq!(p.unmeasured_cells, all - golden);
+    assert_eq!(
+        p.projected_secs,
+        7 * golden as u64,
+        "7000 ms is 7 s per golden cell"
+    );
+}
+
+#[test]
+fn the_dominating_class_is_the_largest_total_and_a_tie_keeps_the_earlier() {
+    let (t, c) = repo(&format!(
+        "    - {{id: a, sha256: {SHA_A}, arch: qwen2, gguf: a.gguf, backends: [cuda], hosts: [lambda], required: true}}\n"
+    ));
+    let inv = format!(r#"{{"file":"a.gguf","sha256":"{SHA_A}"}}"#);
+    let base = extract(&mut Graph::new(), &c, &subject_with_surface(t.path())).expect("extracts");
+    let mine: Vec<&CellSpec> = base.derived.iter().filter(|c| c.host == "lambda").collect();
+    // a class's total is its median times EVERY cell in it, measured row or not
+    let n = |r: &str| mine.iter().filter(|c| c.rung.as_deref() == Some(r)).count() as u64;
+    let has_matrix = |r: &str| {
+        mine.iter()
+            .any(|c| c.kind == CellKind::Matrix && c.rung.as_deref() == Some(r))
+    };
+    let rungs: Vec<&str> = mine
+        .iter()
+        .filter_map(|c| c.rung.as_deref())
+        .collect::<BTreeSet<_>>()
+        .into_iter()
+        .collect();
+    assert!(
+        rungs.len() == 3 && rungs.iter().all(|r| has_matrix(r)),
+        "the case needs three classes with matrix cells: {rungs:?}"
+    );
+    // the first class costs 1 s a cell; the second and third both total f·n1·n2 s,
+    // which outgrows the first — so the second displaces it and the third only ties
+    let f = n(rungs[0]) + 1;
+    let wall = |r: &str| match rungs.iter().position(|x| *x == r) {
+        Some(0) => 1000,
+        Some(1) => 1000 * f * n(rungs[2]),
+        _ => 1000 * f * n(rungs[1]),
+    };
+    let rows = mine
+        .iter()
+        .filter(|c| c.kind == CellKind::Matrix)
+        .map(|c| {
+            let ms = wall(c.rung.as_deref().expect("a matrix cell has a rung"));
+            row(&c.id).replace(r#""rc":0"#, &format!(r#""rc":0,"wall_ms":{ms}"#))
+        })
+        .collect::<Vec<_>>()
+        .join(",");
+    write_receipt(t.path(), "lambda", &receipt("lambda", MC, &inv, &rows));
+    let st = extract(&mut Graph::new(), &c, &subject_with_surface(t.path())).expect("extracts");
+    assert_eq!(
+        st.projection["lambda"].dominating_class,
+        format!("gen @ {} ({} s)", rungs[1], f * n(rungs[1]) * n(rungs[2])),
+        "a larger class displaces the first; a tie keeps the one already chosen"
+    );
 }

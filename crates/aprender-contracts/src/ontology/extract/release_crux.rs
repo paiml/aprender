@@ -432,6 +432,7 @@ mod tests {
     //! Swarm #4587: the private CRUX judges, each pinned to an exact outcome so a flipped comparison, a
     //! dropped `!` or a no-op body changes a count, a message or a triple.
     use super::*;
+    use crate::ontology::extract::cli_surface::Command;
 
     const SHA: &str = "aaaa";
     const FILE: &str = "a.gguf";
@@ -634,6 +635,161 @@ mod tests {
         assert_eq!(
             harness_broken(&owed, &rows),
             vec!["a.gguf: its positive-control prompt came back ALL_WRONG".to_string()]
+        );
+    }
+
+    #[test]
+    fn read_mapping_splits_counterparts_from_none_and_refuses_a_foreign_schema() {
+        let t = tempfile::tempdir().expect("tempdir");
+        assert_eq!(
+            read_mapping(t.path()).expect("absent is not an error"),
+            None
+        );
+        let path = t.path().join(MAPPING_FILE);
+        std::fs::create_dir_all(path.parent().expect("parent")).expect("mapping dir");
+        let body = |schema: &str| {
+            format!(
+                "schema: {schema}\nengines: [ollama, llamacpp]\nverbs:\n  - verb: run\n    modes: [nonstream, stream]\n    comparators:\n      ollama: {{cmd: ollama-run}}\n      llamacpp: {{none: no run verb}}\n  - verb: chat\n    comparator: none\n    reason: interactive only\n  - {{noverb: x}}\n"
+            )
+        };
+        std::fs::write(&path, body("crux-verb-correspondence/v0")).expect("write");
+        assert!(
+            read_mapping(t.path()).is_err(),
+            "a foreign schema is refused"
+        );
+        std::fs::write(&path, body(MAPPING_SCHEMA)).expect("write");
+        let m = read_mapping(t.path()).expect("reads").expect("present");
+        assert_eq!(m.engines, ["ollama", "llamacpp"]);
+        assert_eq!(m.verbs.len(), 2, "an entry with no verb is skipped");
+        let run = &m.verbs["run"];
+        assert_eq!(run.modes, ["nonstream", "stream"]);
+        assert_eq!(run.engines["ollama"], Ok("cmd: ollama-run".to_string()));
+        assert_eq!(run.engines["llamacpp"], Err("no run verb".to_string()));
+        assert!(run.has_counterpart());
+        let chat = &m.verbs["chat"];
+        assert!(chat.modes.is_empty());
+        assert_eq!(
+            chat.engines.len(),
+            2,
+            "comparator: none answers every engine"
+        );
+        assert!(chat
+            .engines
+            .values()
+            .all(|a| *a == Err("interactive only".to_string())));
+        assert!(!chat.has_counterpart());
+    }
+
+    #[test]
+    fn read_receipts_reads_only_json_and_refuses_a_foreign_schema() {
+        let t = tempfile::tempdir().expect("tempdir");
+        let dir = t.path().join("crux");
+        std::fs::create_dir_all(&dir).expect("dir");
+        std::fs::write(dir.join("notes.txt"), "not json").expect("txt");
+        let receipt = |schema: &str| {
+            format!(
+                r#"{{"schema":"{schema}","apr":{{"version_line":"apr 0.72.0"}},"cells":[
+                {{"key":{{"model_sha256":"AAAA","host":"lambda","verb":"run","thinking":"on","rung":"r1","prompt_id":"p1","mode":"stream"}},
+                  "verdict":"PASS","positive_control":true}},
+                {{"key":{{"host":"lambda","verb":"run"}},"verdict":"PASS"}}]}}"#
+            )
+        };
+        std::fs::write(dir.join("a.json"), receipt(RECEIPT_SCHEMA)).expect("json");
+        let rows = read_receipts(&dir, t.path()).expect("reads");
+        assert_eq!(rows.len(), 1, "a cell without a model sha is dropped");
+        let r = &rows[0];
+        assert_eq!(r.file, "crux/a.json");
+        assert_eq!(r.version_line, "apr 0.72.0");
+        assert_eq!(r.model_sha256, "aaaa");
+        assert_eq!(r.mode.as_deref(), Some("stream"));
+        assert!(r.positive_control);
+        std::fs::write(dir.join("b.json"), receipt("crux-inference-receipt/v0")).expect("json");
+        assert!(
+            read_receipts(&dir, t.path()).is_err(),
+            "a foreign schema is refused"
+        );
+    }
+
+    #[test]
+    fn emit_counts_leaf_verbs_mapped_verbs_and_only_matrix_cells_of_mapped_verbs() {
+        let cmd = |key: &str, leaf: bool| Command {
+            key: key.into(),
+            path: vec![key.into()],
+            leaf,
+            hidden: false,
+            foreign: false,
+            generates: None,
+            args: Vec::new(),
+        };
+        let surface = Surface {
+            file: "surface.json".into(),
+            version: "0.72.0".into(),
+            git_sha: COMMIT.into(),
+            global_args: Vec::new(),
+            commands: vec![
+                cmd("run", true),
+                cmd("chat", true),
+                cmd("serve", true),
+                cmd("group", false),
+            ],
+        };
+        let entry = |ok: bool| Entry {
+            engines: [(
+                "ollama".to_string(),
+                if ok {
+                    Ok("x".to_string())
+                } else {
+                    Err("r".to_string())
+                },
+            )]
+            .into_iter()
+            .collect(),
+            modes: Vec::new(),
+        };
+        let mapping = Mapping {
+            engines: vec!["ollama".into()],
+            verbs: [
+                ("run".to_string(), entry(true)),
+                ("chat".to_string(), entry(false)),
+            ]
+            .into_iter()
+            .collect(),
+        };
+        let cell = |command: &str, rung: &str, kind: CellKind, sha: Option<&str>| CellSpec {
+            id: format!("{command}/{rung}"),
+            host: "lambda".into(),
+            command: command.into(),
+            generates: true,
+            model_sha256: sha.map(str::to_string),
+            model_file: Some(FILE.into()),
+            args: Vec::new(),
+            shape: None,
+            thinking: Some("on".into()),
+            rung: Some(rung.into()),
+            rung_tokens: None,
+            kind,
+        };
+        let cells = [
+            cell("run", "r1", CellKind::Matrix, Some(SHA)),
+            cell("run", "r2", CellKind::Matrix, Some(SHA)),
+            cell("run", "r3", CellKind::Probe, Some(SHA)),
+            cell("run", "r4", CellKind::Matrix, None),
+            cell("chat", "r1", CellKind::Matrix, Some(SHA)),
+        ];
+        let mut g = Graph::new();
+        let st = emit(&mut g, &subject(), &surface, &cells, Some(&mapping), &[]);
+        assert_eq!(st.verbs, 3, "three leaves, the group is not a verb");
+        assert_eq!(
+            st.mapped_verbs, 1,
+            "chat has no counterpart, serve no entry"
+        );
+        assert_eq!(
+            st.obligations, 2,
+            "a probe, a cell with no model and an unmapped verb owe nothing"
+        );
+        assert_eq!(
+            st.harness_broken,
+            ["a.gguf: no measured positive-control cell"]
         );
     }
 }
