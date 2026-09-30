@@ -1207,16 +1207,14 @@ PY
       # before the list is narrowed.
       #
       # `Skip` (nothing was measured) remains NO-GO below, unchanged. `Fail`
-      # (over the STORED baseline) is re-judged head-vs-last-release in the
-      # `Fail)` arm below — cop ruling 2026-09-29 21:33Z — and is NO-GO unless
+      # and `Warn` (at or under the STORED baseline: a number nothing else pins) are re-judged head-vs-last-release in the
+      # `Warn|Fail)` arm below — cop ruling 2026-09-29 21:33Z — and is NO-GO unless
       # head <= that release; unmeasurable stays NO-GO.
-      Warn)
-        mark pmat-comply PASS "CB-200 at or under its recorded baseline — debt held flat, NOT a clean tree; ${CM_FAIL} other fail(s), ${CM_SKIP} skip(s) of which ${CM_DARK} are Error-severity (#1008). Run \`pmat comply check\` (without --failures-only) for the absolute count." ;;
       Skip)
         mark pmat-comply FAIL "CB-200 (TDG Grade Gate) is UNMEASURED, not passing — run \`pmat query \"x\"\` in this repo to build .pmat/context.db, then re-run. ${CM_DARK} Error-severity checks went dark; comply's own exit code (${PMAT_COMPLY_RC}) cannot see a skip." ;;
       ABSENT)
         mark pmat-comply FAIL "CB-200 absent from comply's check list — this pmat build does not run the TDG grade gate" ;;
-      Fail)
+      Warn|Fail)
         # The stored `[tdg] baseline` is not evidence: a moved scanner or a stale number turns FINAL
         # red with no code change. Judge head vs BASE, one pmat, one run, baseline neutralised in
         # both trees (scripts/check_cb200_head_vs_base.sh). BASE = $DOGFOOD_CB200_BASE, else the

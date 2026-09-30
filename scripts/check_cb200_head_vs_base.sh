@@ -20,8 +20,8 @@ BASE=""; HEAD_REF="HEAD"; MODE=run
 
 while [ $# -gt 0 ]; do
     case "$1" in
-        --base) BASE=${2:-}; shift 2 ;;
-        --head) HEAD_REF=${2:-}; shift 2 ;;
+        --base) [ $# -ge 2 ] || { printf "check_cb200_head_vs_base.sh: --base needs a value\n" >&2; exit 2; }; BASE=$2; shift 2 ;;
+        --head) [ $# -ge 2 ] || { printf "check_cb200_head_vs_base.sh: --head needs a value\n" >&2; exit 2; }; HEAD_REF=$2; shift 2 ;;
         --selftest) MODE=selftest; shift ;;
         --default-base) MODE=defbase; shift ;;
         *) printf 'check_cb200_head_vs_base.sh: unknown argument %s\n' "$1" >&2; exit 2 ;;
@@ -162,6 +162,9 @@ FAKE
         && printf '  ok    %-28s rc=2\n' "no --base is a usage error" \
         || { printf '  FAIL  no --base must be rc 2\n'; bad=$((bad + 1)); }
     check "same commit is vacuous"      equal equal   3
+    ( cd "$d/r" && PMAT_BIN="$pm" timeout 20 bash "$SELF" --base >"$d/out" 2>&1 ); [ $? = 2 ] \
+        && printf '  ok    %-28s rc=2\n' "dangling --base is rc 2" \
+        || { printf '  FAIL  dangling --base must be rc 2\n'; bad=$((bad + 1)); }
     ( cd "$d/r" && git checkout -q garbage && [ "$(bash "$SELF" --default-base)" = v1.1.0 ] ) \
         && printf '  ok    %-28s v1.1.0\n' "default-base skips rc + tag at HEAD" \
         || { printf '  FAIL  default-base want v1.1.0\n'; bad=$((bad + 1)); }
