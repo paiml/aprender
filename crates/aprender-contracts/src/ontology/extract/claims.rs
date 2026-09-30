@@ -82,10 +82,11 @@ fn fence_open(s: &str) -> Option<(char, usize, String)> {
     Some((c, n, info))
 }
 
-/// Does `s` close a fence opened with `n` × `c`?
+/// Does `s` close a fence opened with `n` × `c`? `c` is `` ` `` or `~` (see `fence_open`), one byte each, so
+/// `m` chars are `m` bytes.
 fn fence_close(s: &str, c: char, n: usize) -> bool {
     let m = s.chars().take_while(|x| *x == c).count();
-    m >= n && s[m * c.len_utf8()..].trim().is_empty()
+    m >= n && s[m..].trim().is_empty()
 }
 
 /// Every fenced code block in `text`, in order. An unclosed fence runs to the end of the document.
