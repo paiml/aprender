@@ -466,4 +466,31 @@ mod tests {
             "a longer output is fine"
         );
     }
+
+    /// No tokens or no rows is an empty product: `Ok`, and the output is never written. Either
+    /// alone must return early — a zero `m` would otherwise ask rayon for zero-sized chunks.
+    #[test]
+    fn test_multirow_zero_tokens_or_zero_rows_is_an_untouched_ok() {
+        let in_dim = 256usize;
+        for (m, out_dim) in [(0usize, 3usize), (2, 0), (0, 0)] {
+            let weights = vec![0u8; out_dim * 144];
+            let acts = vec![1.0f32; m * in_dim];
+            let mut out = vec![7.0f32; 4];
+            let r = generic_multirow_matmul_into::<Q4K>(
+                &weights,
+                &acts,
+                m,
+                in_dim,
+                out_dim,
+                &mut out,
+                q4k_scalar_dot,
+            );
+            assert!(r.is_ok(), "m={m} out_dim={out_dim}");
+            assert_eq!(
+                out,
+                vec![7.0f32; 4],
+                "m={m} out_dim={out_dim} wrote the output"
+            );
+        }
+    }
 }
