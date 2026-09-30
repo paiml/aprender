@@ -12,6 +12,8 @@
 #   red     no group rows at all: gated mutants run default, MISSED  -> checker RED (the old false-red stays RED)
 #   red     a group run that writes no outcomes.json                 -> the shard is dead (rc 1)
 #   red     a cuda row                                               -> the shard refuses it (rc 1)
+#   green   a row with NO features (it exists for its test args, #4588) -> measured; `--features ""` is DEAD
+#   red     a row with no test args                                  -> the shard refuses it (rc 1)
 # The fake cargo also dies on any run without --copy-vcs, so dropping it from either call turns all-caught DEAD.
 # It also checks the real groups file parses and names only files that exist.
 set -uo pipefail
@@ -34,6 +36,8 @@ sel = [m for m in U if (m.startswith(opt("--file")) if grp else not any(m.starts
 if opt("--shard"):
     k, n = map(int, opt("--shard").split("/"))
     sel = [m for m in sel if U.index(m) % n == k]
+if "--features" in a and not opt("--features"):
+    sys.exit(5)   # an empty `--features` value: a no-feature row must omit the flag, not pass ""
 if "--list" not in a and "--copy-vcs" not in a:
     sys.exit(4)   # a run without .git in its scratch copy: the real baseline fails (run 36538406766)
 if "--list" in a:
@@ -57,6 +61,8 @@ printf 'diff --git a/x b/x\n' > "$d/pr.diff"
 printf '# test rows\npkg|feat|src/gated.rs|--lib\n' > "$d/groups.txt"
 printf '# none\n' > "$d/nogroups.txt"
 printf 'pkg|cuda|src/gated.rs|--lib\n' > "$d/cuda.txt"
+printf 'pkg||src/gated.rs|--lib --test cli\n' > "$d/nofeat.txt"
+printf 'pkg||src/gated.rs|\n' > "$d/noargs.txt"
 head=$(git -C "$ROOT" rev-parse HEAD) || exit 2
 bad=0
 # case <name> <groups file> <want: GREEN|RED|DEAD> [env...]
@@ -85,10 +91,14 @@ case_ group-tests-nothing "$d/groups.txt"   RED  FAKE_MODE=group-empty
 case_ no-group-rows       "$d/nogroups.txt" RED
 case_ group-no-outcomes   "$d/groups.txt"   DEAD FAKE_MODE=group-no-outcomes
 case_ cuda-row            "$d/cuda.txt"     DEAD
+case_ no-feature-row      "$d/nofeat.txt"   GREEN
+case_ no-feature-survivor "$d/nofeat.txt"   RED  FAKE_MISS=src/gated.rs:1
+case_ row-without-args    "$d/noargs.txt"   DEAD
 echo "=== the real groups file: every row well-formed, every file present, no cuda ==="
+# Features may be empty: such a row exists to run tests that live outside --lib (#4588).
 while IFS='|' read -r p f file t; do
     case "$p" in ''|'#'*) continue ;; esac
-    if [ -n "$f" ] && [ -f "$ROOT/$file" ] && [ -n "$t" ] && [[ "$f" != *cuda* ]]; then printf 'ok    %s --features %s %s\n' "$p" "$f" "$file"
+    if [ -f "$ROOT/$file" ] && [ -n "$t" ] && [[ "$f" != *cuda* ]]; then printf 'ok    %s --features %s %s | %s\n' "$p" "${f:-(none)}" "$file" "$t"
     else printf 'FAIL  bad row %s|%s|%s|%s\n' "$p" "$f" "$file" "$t"; bad=1; fi
 done < "$ROOT/ci/mutants-feature-groups.txt"
 [ "$bad" = 0 ] && { echo PASS; exit 0; }

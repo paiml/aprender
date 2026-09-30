@@ -1438,3 +1438,19 @@ fn lean_scan_grounds_doc_comment_sorry_and_domain_file_form() {
         "a real sorry grounds nothing"
     );
 }
+
+/// `sorry` is a token only with no identifier byte before it; at byte 0 there is nothing before it (#4587).
+#[test]
+fn sorry_token_at_checks_the_byte_before() {
+    assert!(super::sorry_token_at(b"sorry", 0));
+    assert!(super::sorry_token_at(b" sorry", 1));
+    assert!(!super::sorry_token_at(b"xsorry", 1));
+}
+
+/// A nested `/-` advances two bytes past where it starts, not to twice its offset (#4587).
+#[test]
+fn step_block_comment_opens_a_nested_comment_two_bytes_on() {
+    assert_eq!(super::step_block_comment(b"xxx/-", 3, 1), (5, 2));
+    assert_eq!(super::step_block_comment(b"xxx-/", 3, 2), (5, 1));
+    assert_eq!(super::step_block_comment(b"xxxab", 3, 1), (4, 1));
+}

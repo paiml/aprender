@@ -260,3 +260,21 @@ fn an_orphaned_root_is_not_restated() {
     let r = render(&d.path().join("lean"), &d.path().join("contracts")).expect("render");
     assert!(r.files.contains_key("Challenge/gelu-v1.lean"));
 }
+
+/// A hit with an identifier character on only ONE side is not the word; the scan resumes past it (#4587).
+#[test]
+fn find_word_needs_a_boundary_on_both_sides_and_resumes_past_a_miss() {
+    assert_eq!(find_word("xfoo bar", "foo"), None, "ident char before");
+    assert_eq!(find_word("foox bar", "foo"), None, "ident char after");
+    // the first hit is rejected at byte 1 (word len 2): resuming at 1 - 2 underflows
+    assert_eq!(find_word("xab ab", "ab"), Some(4));
+    // the first hit is rejected at byte 3 (word len 3): resuming at 3 * 3 = 9 skips the real one at 7
+    assert_eq!(find_word("xxxabc abc", "abc"), Some(7));
+}
+
+/// An indented, non-blank line continues the command above it (#4587).
+#[test]
+fn preamble_joins_an_indented_continuation_line() {
+    let scope = preamble("open Foo\n  Bar\ntheorem t : True := trivial\n", 3);
+    assert_eq!(scope.top, vec!["open Foo Bar".to_string()]);
+}

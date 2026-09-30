@@ -118,8 +118,15 @@ fn check_contract(root: &Path, rel: &str, src: &mut SrcTree) -> Vec<String> {
         Ok(doc) => doc,
         // A document `serde_yaml` refuses also fails `pv validate`, the script's only
         // report on it when PyYAML finds nothing else; a second line would miscount it.
-        Err(Load::Parse(_)) if !problems.is_empty() => return problems,
-        Err(Load::Parse(why) | Load::Other(why)) => {
+        // An `if`, not a match guard: every validate path parses with the same serde_yaml, so
+        // `problems` is never empty here and a guard's `-> true` mutant was equivalent (#4588).
+        Err(Load::Parse(why)) => {
+            if problems.is_empty() {
+                problems.push(format!("{rel}: {why}"));
+            }
+            return problems;
+        }
+        Err(Load::Other(why)) => {
             problems.push(format!("{rel}: {why}"));
             return problems;
         }
@@ -419,6 +426,41 @@ fn py_list(items: &[String]) -> String {
 mod tests {
     use super::*;
 
+    /// Unparseable YAML is reported ONCE, by the validate line (#4588).
+    #[test]
+    fn unparseable_yaml_is_one_problem() {
+        let d = tempfile::tempdir().expect("tempdir");
+        std::fs::write(d.path().join("bad.yaml"), "a: [\n").expect("write");
+        let mut src = SrcTree::new(d.path().join("src"));
+        assert_eq!(
+            check_contract(d.path(), "bad.yaml", &mut src),
+            ["bad.yaml: pv validate failed"]
+        );
+    }
+
+    /// `yaml.safe_load(...) or {}`: only a FALSY non-mapping becomes `{}`; a truthy one is refused (#4588).
+    #[test]
+    fn load_refuses_a_truthy_non_mapping() {
+        let d = tempfile::tempdir().expect("tempdir");
+        for (text, mapping) in [
+            ("- 1\n", false),
+            ("x\n", false),
+            ("[]\n", true),
+            ("a: 1\n", true),
+        ] {
+            let p = d.path().join("c.yaml");
+            std::fs::write(&p, text).expect("write");
+            match load(&p) {
+                Ok(_) => assert!(mapping, "{text:?} must be refused"),
+                Err(Load::Other(why)) => {
+                    assert!(!mapping, "{text:?}: {why}");
+                    assert_eq!(why, "is not a YAML mapping");
+                }
+                Err(Load::Parse(why)) => panic!("{text:?} parses: {why}"),
+            }
+        }
+    }
+
     #[test]
     fn repr_matches_python() {
         assert_eq!(py_repr("from_score"), "'from_score'");
@@ -430,6 +472,26 @@ mod tests {
             "['src/a.rs', 'src/b.rs']"
         );
         assert_eq!(py_list(&[]), "[]");
+    }
+
+    /// `\bword\b` needs a boundary at BOTH ends, each tested where the word actually starts and ends (#4588).
+    #[test]
+    fn mentions_needs_a_boundary_at_both_ends() {
+        let d = tempfile::tempdir().expect("tempdir");
+        std::fs::create_dir(d.path().join("src")).expect("mkdir");
+        std::fs::write(d.path().join("src/a.rs"), "   abc\n").expect("write");
+        std::fs::write(d.path().join("src/b.rs"), "   ab c\n").expect("write");
+        let mut src = SrcTree::new(d.path().join("src"));
+        assert!(
+            !src.mentions("src/a.rs", "ab"),
+            "`abc` does not mention `ab`"
+        );
+        assert!(src.mentions("src/b.rs", "ab"));
+        assert!(!src.mentions("src/a.rs", "bc"), "no boundary before `bc`");
+        assert!(
+            !src.mentions("src/c.rs", "ab"),
+            "only the named file counts"
+        );
     }
 
     #[test]

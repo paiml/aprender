@@ -16,6 +16,7 @@
 #
 # Feature-gated files (ci/mutants-feature-groups.txt): each row runs as its own `cargo mutants -p PKG --features F
 # --file FILE --shard K-1/N` and FILE is excluded from the default run; the outcomes are merged into outcomes.json.
+# F may be empty: the row then exists for its TEST ARGS (a file whose tests live outside --lib, #4588).
 # The universe (list.txt) is still the default --list of the whole diff, so a row that tests nothing leaves its
 # mutants MISSING in the checker. A row whose --list for this shard is non-empty but wrote no outcomes is a dead shard.
 #
@@ -49,7 +50,7 @@ echo "shard $k/$n of $(grep -c . "$out/list.txt") listed mutant(s), head $head_s
 gx=() rows=()
 while IFS='|' read -r g_pkg g_feat g_file g_args; do
   case "$g_pkg" in ''|'#'*) continue ;; esac
-  [ -n "$g_feat" ] && [ -n "$g_file" ] || { echo "RED   malformed feature-group row: $g_pkg|$g_feat|$g_file"; exit 1; }
+  [ -n "$g_file" ] && [ -n "$g_args" ] || { echo "RED   malformed feature-group row: $g_pkg|$g_feat|$g_file|$g_args"; exit 1; }
   case "$g_feat" in *cuda*) echo "RED   feature group $g_pkg asks for cuda: no runner has a GPU"; exit 1 ;; esac
   gx+=(--exclude "$g_file"); rows+=("$g_pkg|$g_feat|$g_file|$g_args")
 done < "$groups"
@@ -66,7 +67,8 @@ for row in "${rows[@]}"; do
   i=$((i + 1))
   IFS='|' read -r g_pkg g_feat g_file g_args <<< "$row"
   read -r -a targs <<< "$g_args"
-  gsel=(-p "$g_pkg" --features "$g_feat" --file "$g_file" --in-diff "$diff" --shard "$((k - 1))/$n")
+  gsel=(-p "$g_pkg" --file "$g_file" --in-diff "$diff" --shard "$((k - 1))/$n")
+  [ -z "$g_feat" ] || gsel+=(--features "$g_feat")
   "$cargo" mutants "${gsel[@]}" --list > "$out/group-$i.list" 2> "$out/group-$i.err" \
     || { echo "RED   feature group $g_pkg ($g_feat) --list failed -- $(tail -1 "$out/group-$i.err")"; exit 1; }
   gn=$(grep -c . "$out/group-$i.list")

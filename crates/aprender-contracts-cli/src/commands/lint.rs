@@ -342,6 +342,16 @@ fn run_gates(
         .iter()
         .map(|n| run_single_gate(contract_dir, n, shapes_opts, armed_baseline_ref))
         .collect();
+    meet(outcomes, names.len())
+}
+
+/// The MEET of the armed gates' outcomes: a refusal over a reject over a decline over a pass. A reject is
+/// re-stated with how many of the `armed` gates passed. Split out of `run_gates` so the order is testable
+/// without contracts that make real gates decline or reject (#4588).
+fn meet(
+    outcomes: Vec<Result<(), Box<dyn std::error::Error>>>,
+    armed: usize,
+) -> Result<(), Box<dyn std::error::Error>> {
     let rank = |r: &Result<(), Box<dyn std::error::Error>>| match r {
         Ok(()) => 0,
         Err(e) if e.is::<LintDeclined>() => 1,
@@ -354,11 +364,7 @@ fn run_gates(
         .max_by_key(|r| rank(r))
         .unwrap_or(Ok(()));
     match worst {
-        Err(e) if e.is::<LintRejected>() => Err(LintRejected {
-            passed,
-            armed: names.len(),
-        }
-        .into()),
+        Err(e) if e.is::<LintRejected>() => Err(LintRejected { passed, armed }.into()),
         other => other,
     }
 }
@@ -1150,5 +1156,65 @@ fn collect_yaml_files_lint(dir: &std::path::Path, out: &mut Vec<std::path::PathB
         {
             out.push(path);
         }
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use provable_contracts::ontology::verdict::Reason;
+
+    type Outcome = Result<(), Box<dyn std::error::Error>>;
+    fn pass() -> Outcome {
+        Ok(())
+    }
+    fn decline() -> Outcome {
+        Err(LintDeclined {
+            reason: Reason::NotArmed,
+        }
+        .into())
+    }
+    fn reject() -> Outcome {
+        Err(LintRejected {
+            passed: 99,
+            armed: 99,
+        }
+        .into())
+    }
+    fn refuse() -> Outcome {
+        Err(std::io::Error::other("refused").into())
+    }
+
+    /// Refusal over reject over decline over pass, whichever order the gates ran in (#4588).
+    #[test]
+    fn meet_orders_refusal_reject_decline_pass() {
+        assert!(meet(vec![pass(), pass()], 2).is_ok());
+        for outcomes in [vec![pass(), decline()], vec![decline(), pass()]] {
+            assert!(meet(outcomes, 2)
+                .expect_err("a decline")
+                .is::<LintDeclined>());
+        }
+        for outcomes in [vec![reject(), decline()], vec![decline(), reject()]] {
+            assert!(meet(outcomes, 2)
+                .expect_err("a reject")
+                .is::<LintRejected>());
+        }
+        for outcomes in [
+            vec![refuse(), reject()],
+            vec![reject(), refuse()],
+            vec![refuse(), decline()],
+            vec![decline(), refuse()],
+        ] {
+            let e = meet(outcomes, 2).expect_err("a refusal");
+            assert!(e.is::<std::io::Error>(), "{e}");
+        }
+    }
+
+    /// A reject is re-stated with the meet's own counts, not the gate's.
+    #[test]
+    fn meet_restates_a_reject_with_passed_of_armed() {
+        let e = meet(vec![pass(), reject(), decline(), pass(), pass()], 5).expect_err("a reject");
+        let r = e.downcast_ref::<LintRejected>().expect("LintRejected");
+        assert_eq!((r.passed, r.armed), (3, 5));
     }
 }
