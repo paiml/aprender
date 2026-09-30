@@ -8,7 +8,8 @@
 #
 # Rule: each `docker run` whose body runs `cargo mutants` or scripts/mutants_diff_gate.sh must carry
 # --memory=<N>g and --memory-swap=<N>g with the same N (swap = memory, so the cap is not a swap escape),
-# N <= 16.
+# 1 <= N <= 16 (docker reads --memory=0 as unlimited), each flag given exactly once (docker honours the last).
+# Known limit: a tripwire against a cap being dropped by accident, not against an author who hides one.
 #
 #   check_mutants_memory_cap.sh [file...]  default: mutants-nightly.yml and ci/sections.yml
 #   check_mutants_memory_cap.sh --self-test
@@ -18,10 +19,12 @@ ROOT="$(cd "$(dirname "$0")/.." && pwd)" || exit 2
 # runs <file> -> one line per mutation docker run: "<lineno> <ok|BAD> <header flags>"
 runs() {
     awk '
-    function flush() { if (start && mut) { ok = (m != "" && s == m && m + 0 <= 16); print start, (ok ? "ok" : "BAD"), "memory=" m "g swap=" s "g" } start = 0; mut = 0; m = ""; s = "" }
+    function flush() { if (start && mut) { ok = (m != "" && mc == 1 && sc == 1 && s == m && m + 0 >= 1 && m + 0 <= 16); print start, (ok ? "ok" : "BAD"), "memory=" m "g swap=" s "g" } start = 0; mut = 0; m = ""; s = ""; mc = 0; sc = 0 }
     /docker run/ { flush(); start = NR; inhdr = 1 }
-    start && inhdr { if (match($0, /--memory=[0-9]+g/)) m = substr($0, RSTART + 9, RLENGTH - 10)
-                     if (match($0, /--memory-swap=[0-9]+g/)) s = substr($0, RSTART + 14, RLENGTH - 15)
+    start && inhdr { r = $0
+                     while (match(r, /--memory=[0-9]+g/)) { m = substr(r, RSTART + 9, RLENGTH - 10); mc++; r = substr(r, RSTART + RLENGTH) }
+                     r = $0
+                     while (match(r, /--memory-swap=[0-9]+g/)) { s = substr(r, RSTART + 14, RLENGTH - 15); sc++; r = substr(r, RSTART + RLENGTH) }
                      if ($0 ~ /IMAGE/) inhdr = 0 }
     start && ($0 ~ /cargo mutants / && $0 !~ /--version/ || $0 ~ /mutants_diff_gate\.sh/) { mut = 1 }
     /^ *- name:/ { flush() }
@@ -58,6 +61,8 @@ if [ "${1:-}" = "--self-test" ]; then
     row 1 noswap   '--memory=16g'
     row 1 swapmore '--memory=16g --memory-swap=32g'
     row 1 toobig   '--memory=64g --memory-swap=64g'
+    row 1 zero     '--memory=0g --memory-swap=0g'
+    row 1 dupflag  '--memory=16g --memory-swap=16g --memory=128g --memory-swap=128g'
     printf 'x: 1\n' > "$d/none.yml"; rc=0; check "$d/none.yml" > /dev/null 2>&1 || rc=$?
     [ "$rc" = 2 ] && echo "ok    no mutation run is ENV rc=2" || { echo "FAIL  no run gave rc=$rc"; bad=1; }
     [ "$bad" = 0 ] && { echo "SELF-TEST PASSED"; exit 0; }
