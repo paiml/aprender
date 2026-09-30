@@ -198,3 +198,49 @@ fn localization_matches_path_or_last_two_components_after_the_verdict() {
     );
     assert!(!localized("no verdict api/router.rs", &loc));
 }
+
+#[test]
+fn is_hex64_needs_length_and_lowercase_hex() {
+    assert!(is_hex64(&h('a')));
+    assert!(!is_hex64(&h('A')), "uppercase hex is not canonical");
+    assert!(!is_hex64("abc123"), "too short");
+    assert!(!is_hex64(&h('g')), "not hex");
+}
+
+#[test]
+fn output_path_and_sha_are_each_checked() {
+    let problems = |path: &str, sha: String| {
+        let mut r = row("i", Class::P, Verdict::Pass);
+        r.output = Some(Output {
+            path: path.into(),
+            sha256: sha,
+        });
+        let mut bad = Vec::new();
+        execution_problems(&r, &mut bad);
+        bad
+    };
+    assert!(problems("raw/i.txt", h('6')).is_empty());
+    assert_eq!(
+        problems("", h('6')).len(),
+        1,
+        "empty path alone is malformed"
+    );
+    assert_eq!(problems("raw/i.txt", "zz".into()).len(), 1, "bad sha alone");
+    assert_eq!(problems("", "zz".into()).len(), 1);
+}
+
+#[test]
+fn fail_word_followed_by_pass_is_unparsed() {
+    assert_eq!(parse_verdict("VERDICT: FAIL"), Verdict::Fail);
+    assert_eq!(parse_verdict("VERDICT: FAIL (not PASS)"), Verdict::Unparsed);
+    assert_eq!(parse_verdict("VERDICT: PASS"), Verdict::Pass);
+    assert_eq!(parse_verdict("VERDICT: PASS (not FAIL)"), Verdict::Unparsed);
+}
+
+#[test]
+fn spellings_are_the_path_and_its_last_two_components() {
+    assert_eq!(spellings("mod.rs"), vec!["mod.rs"]);
+    assert_eq!(spellings("src/mod.rs"), vec!["src/mod.rs"]);
+    assert_eq!(spellings("a/b/c.rs"), vec!["a/b/c.rs", "b/c.rs"]);
+    assert_eq!(spellings("w/x/y/z.rs"), vec!["w/x/y/z.rs", "y/z.rs"]);
+}

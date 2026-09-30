@@ -270,3 +270,94 @@ fn divergence_pairs_and_mcnemar_by_hand() {
         "missing challenger is wrong"
     );
 }
+
+#[test]
+fn ratio_value_is_k_over_n_and_none_only_for_empty() {
+    assert_eq!(Ratio::new(3, 4).value(), Some(0.75));
+    assert_eq!(Ratio::new(1, 4).value(), Some(0.25));
+    assert_eq!(Ratio::new(0, 4).value(), Some(0.0));
+    assert_eq!(Ratio::new(0, 0).value(), None);
+}
+
+#[test]
+fn rejected_rows_name_their_one_based_line_number() {
+    let (items, raw) = world();
+    let exp: Vec<&crate::corpus::Item> = items.iter().collect();
+    let read = |p: &str| raw.get(p).cloned();
+    let good = receipt_for(&items[0], Verdict::Fail, &raw);
+    let mut bad_sha = receipt_for(&items[1], Verdict::Pass, &raw);
+    bad_sha.item_sha256 = "e".repeat(64);
+    let text = format!(
+        "{}\n\nnot json at all\n{}\n",
+        serde_json::to_string(&good).expect("json"),
+        serde_json::to_string(&bad_sha).expect("json"),
+    );
+    let (_, rej) = collect(&text, EXPECT, &exp, |_| true, read);
+    let at: Vec<usize> = rej.iter().map(|r| r.line).collect();
+    assert_eq!(
+        at,
+        vec![3, 4],
+        "inadmissible line 3, corpus mismatch line 4"
+    );
+}
+
+#[test]
+fn only_a_fail_of_a_defect_item_can_be_localized() {
+    let (items, _) = world();
+    let exp: Vec<&crate::corpus::Item> = items.iter().collect();
+    // A PASS whose text still names the defect file is not a localization.
+    let text = "VERDICT: PASS\n- api/router.rs: looked fine";
+    let raw = BTreeMap::from([("raw/R-pr1.txt".to_string(), text.to_string())]);
+    let r = receipt_for(&items[0], Verdict::Pass, &raw);
+    let (got, rej) = collect(
+        &lines(&[r]),
+        EXPECT,
+        &exp[..1],
+        |_| true,
+        |p| raw.get(p).cloned(),
+    );
+    assert!(rej.is_empty(), "{rej:?}");
+    assert_eq!(got[0].verdict, Verdict::Pass);
+    assert!(!got[0].localized);
+}
+
+#[test]
+fn divergence_counts_a_pair_only_when_both_lanes_ran() {
+    use Verdict::{Pass, Unparsed};
+    let nr = Verdict::NotRun(NotRun::ServeError);
+    let ran = [s("x", true, Pass, false)];
+    let not = [s("x", true, nr, false)];
+    assert_eq!(divergence(&ran, &not), (0, 1));
+    assert_eq!(divergence(&not, &ran), (0, 1));
+    assert_eq!(divergence(&not, &not), (0, 1));
+    assert_eq!(divergence(&ran, &ran), (0, 0));
+    assert_eq!(divergence(&ran, &[s("x", true, Unparsed, false)]), (1, 0));
+}
+
+#[test]
+fn paired_parsed_needs_both_verdicts_parsed_and_keeps_each_side() {
+    use Verdict::{Fail, Pass, Unparsed};
+    let a = [s("x", true, Pass, false), s("y", false, Fail, false)];
+    let b = [s("x", true, Fail, false), s("y", false, Pass, false)];
+    let (p, dropped) = paired_parsed(&a, &b);
+    assert_eq!(dropped, 0);
+    assert_eq!(
+        p,
+        vec![
+            Paired {
+                defect: true,
+                a_fail: false,
+                b_fail: true
+            },
+            Paired {
+                defect: false,
+                a_fail: true,
+                b_fail: false
+            },
+        ]
+    );
+    let u = [s("x", true, Unparsed, false)];
+    let one = [s("x", true, Pass, false)];
+    assert_eq!(paired_parsed(&one, &u), (vec![], 1));
+    assert_eq!(paired_parsed(&u, &one), (vec![], 1));
+}

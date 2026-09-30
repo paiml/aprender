@@ -170,6 +170,7 @@ fn post_talks_http_to_a_loopback_serve() {
         String::from_utf8_lossy(&got).into_owned()
     });
     let body = request_body("m", "P", "d\n");
+    assert_eq!(body["model"], "m", "fail fast before any socket work");
     let rep = post(&format!("http://{addr}/v1/chat/completions"), &body).expect("post");
     let seen = server.join().expect("join");
     assert!(seen.starts_with("POST /v1/chat/completions"), "{seen}");
@@ -187,4 +188,138 @@ fn rfc3339_by_hand() {
     assert_eq!(rfc3339(951_782_400), "2000-02-29T00:00:00Z");
     assert_eq!(rfc3339(1_790_337_600), "2026-09-25T12:00:00Z");
     assert_eq!(rfc3339(4_107_542_399), "2100-02-28T23:59:59Z");
+}
+
+#[test]
+fn request_body_carries_the_fixed_decoding_and_composed_message() {
+    let b = request_body("m", "P\n", "d\n");
+    assert_eq!(b["model"], "m");
+    assert_eq!(b["messages"][0]["role"], "user");
+    assert_eq!(b["messages"][0]["content"], compose("P\n", "d\n"));
+    assert_eq!(b["temperature"], 0.0);
+    assert_eq!(b["seed"], 4354);
+    assert_eq!(b["max_tokens"], 512);
+    assert_eq!(b["stream"], false);
+}
+
+/// Independent Fisher–Yates over the same SplitMix64 stream.
+fn reference_order(ids: &[String], seed: u64) -> Vec<String> {
+    let mut v = ids.to_vec();
+    v.sort();
+    let mut rng = SplitMix64::new(seed);
+    let mut i = v.len();
+    while i > 1 {
+        i -= 1;
+        let j = rng.below(i + 1);
+        v.swap(i, j);
+    }
+    v
+}
+
+#[test]
+fn run_order_pins_the_fisher_yates_draws() {
+    let ids: Vec<String> = (0..20).map(|i| format!("i{i:02}")).collect();
+    for seed in [4354, 1, 99] {
+        assert_eq!(run_order(&ids, seed), reference_order(&ids, seed), "{seed}");
+    }
+}
+
+#[test]
+fn post_wall_ms_is_the_elapsed_time_in_milliseconds() {
+    let listener = std::net::TcpListener::bind("127.0.0.1:0").expect("bind");
+    let addr = listener.local_addr().expect("addr");
+    let server = std::thread::spawn(move || {
+        let (mut s, _) = listener.accept().expect("accept");
+        let mut buf = vec![0u8; 65_536];
+        let mut got = Vec::new();
+        while !String::from_utf8_lossy(&got).contains("\"stream\"") {
+            let n = s.read(&mut buf).expect("read");
+            if n == 0 {
+                break;
+            }
+            got.extend_from_slice(&buf[..n]);
+        }
+        std::thread::sleep(Duration::from_millis(300));
+        let resp = "HTTP/1.1 200 OK\r\nContent-Length: 2\r\nConnection: close\r\n\r\n{}";
+        s.write_all(resp.as_bytes()).expect("write");
+    });
+    let body = request_body("m", "P", "d\n");
+    assert_eq!(body["model"], "m", "fail fast before any socket work");
+    let rep = post(&format!("http://{addr}/v1/chat/completions"), &body).expect("post");
+    server.join().expect("join");
+    assert!(
+        (300.0..1000.0).contains(&rep.wall_ms),
+        "300 ms server delay must read as ~300 ms, got {}",
+        rep.wall_ms
+    );
+}
+
+#[test]
+fn zero_prompt_tokens_is_not_a_token_count() {
+    let body = json!({
+        "choices": [{"message": {"content": "VERDICT: PASS"}}],
+        "usage": {"prompt_tokens": 0, "completion_tokens": 5},
+    })
+    .to_string();
+    let p = classify(&reply(200, &body));
+    assert_eq!(p.verdict, Verdict::Pass);
+    assert_eq!(p.tokens, None);
+    let one = json!({
+        "choices": [{"message": {"content": "VERDICT: PASS"}}],
+        "usage": {"prompt_tokens": 1, "completion_tokens": 0},
+    })
+    .to_string();
+    assert_eq!(
+        classify(&reply(200, &one)).tokens,
+        Some(Tokens {
+            prompt: 1,
+            completion: 0
+        })
+    );
+}
+
+/// Calendar oracle: walk one day at a time from 1970-01-01.
+#[test]
+fn rfc3339_matches_a_day_by_day_calendar_walk() {
+    let leap = |y: u64| y % 4 == 0 && (y % 100 != 0 || y % 400 == 0);
+    let (mut y, mut m, mut d) = (1970u64, 1u64, 1u64);
+    for day in 0..250_000u64 {
+        let secs = day * 86_400 + 12_345;
+        let want = format!("{y:04}-{m:02}-{d:02}T03:25:45Z");
+        assert_eq!(rfc3339(secs), want, "day {day}");
+        let dim = match m {
+            2 if leap(y) => 29,
+            2 => 28,
+            4 | 6 | 9 | 11 => 30,
+            _ => 31,
+        };
+        d += 1;
+        if d > dim {
+            d = 1;
+            m += 1;
+            if m > 12 {
+                m = 1;
+                y += 1;
+            }
+        }
+    }
+}
+
+#[test]
+fn utc_now_is_the_current_rfc3339_instant() {
+    let now = || {
+        std::time::SystemTime::now()
+            .duration_since(std::time::UNIX_EPOCH)
+            .expect("clock")
+            .as_secs()
+    };
+    let before = rfc3339(now());
+    let got = utc_now();
+    let after = rfc3339(now());
+    assert!(
+        before <= got && got <= after,
+        "{before} <= {got} <= {after}"
+    );
+    assert_eq!(got.len(), 20);
+    assert!(got.ends_with('Z') && got.starts_with("20"));
 }

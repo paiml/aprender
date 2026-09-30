@@ -120,6 +120,17 @@ fn manifest_round_trips_and_rejects_garbage() {
     assert!(corpus_version(&m).starts_with("review-corpus-v1@"));
 }
 
+/// `pick_balanced` off-thread with a deadline: a loop that no longer ends when
+/// `n` exceeds the population fails here in seconds instead of hanging the run.
+fn pick_bounded(c: Vec<Item>, n: usize, seed: u64) -> Vec<Item> {
+    let (tx, rx) = std::sync::mpsc::channel();
+    std::thread::spawn(move || {
+        let _ = tx.send(pick_balanced(c, n, seed));
+    });
+    rx.recv_timeout(std::time::Duration::from_secs(10))
+        .expect("pick_balanced must terminate when n exceeds the population")
+}
+
 #[test]
 fn pick_balanced_round_robins_strata() {
     let mut c = items(10, Class::R);
@@ -139,7 +150,7 @@ fn pick_balanced_round_robins_strata() {
     assert_eq!(p.len(), 4);
     assert!(p.iter().any(|i| i.stratum == Stratum::M) && p.iter().any(|i| i.stratum == Stratum::L));
     assert_eq!(p, pick_balanced(c.clone(), 4, 1));
-    assert_eq!(pick_balanced(c, 99, 1).len(), 12);
+    assert_eq!(pick_bounded(c, 99, 1).len(), 12);
 }
 
 #[test]
@@ -161,4 +172,114 @@ fn comment_only_hunks_are_not_the_fix() {
         drop_comment_only_hunks("--- a/s.sh\n+++ b/s.sh\n@@ -1 +1 @@\n-# x\n+# y\n"),
         ""
     );
+}
+
+#[test]
+fn names_the_mutation_fires_on_either_marker_alone() {
+    assert!(names_the_mutation("x /* ~ changed by cargo-mutants ~ */"));
+    assert!(names_the_mutation("+++ replace f -> bool with true"));
+    assert!(!names_the_mutation("plain diff text"));
+}
+
+#[test]
+fn defect_locs_counts_context_and_added_lines_on_the_new_side() {
+    let d = "--- a/f.rs\n+++ b/f.rs\n@@ -10,4 +10,5 @@\n a\n+b\n+c\n d\n+e\n";
+    let lines: Vec<u32> = defect_locs(d).iter().map(|l| l.line).collect();
+    assert_eq!(lines, vec![11, 12, 14]);
+}
+
+#[test]
+fn hash_lines_are_comments_only_in_shell_files() {
+    let rs =
+        "--- a/x.rs\n+++ b/x.rs\n@@ -1,3 +1,3 @@\n a\n-#[derive(Debug)]\n+#[derive(Clone)]\n b\n";
+    assert_eq!(
+        drop_comment_only_hunks(rs),
+        rs,
+        "an attribute is code in .rs"
+    );
+    let sh = "--- a/x.sh\n+++ b/x.sh\n@@ -1,3 +1,3 @@\n a\n-# old\n+# new\n b\n";
+    assert_eq!(
+        drop_comment_only_hunks(sh),
+        "",
+        "a # line is a comment in .sh"
+    );
+    let sh_code = "--- a/x.sh\n+++ b/x.sh\n@@ -1,3 +1,3 @@\n a\n-echo old\n+echo new\n b\n";
+    assert_eq!(drop_comment_only_hunks(sh_code), sh_code);
+}
+
+#[test]
+fn split_cells_are_selected_by_class_and_stratum_together() {
+    // Unequal cell sizes: 10 R and 20 G -> dev = round(0.3 n) = 3 and 6.
+    let mut a = items(10, Class::R);
+    a.extend(items(20, Class::G));
+    a.extend(items(40, Class::P));
+    assign_splits(&mut a, 11);
+    let dev = |c: Class| {
+        a.iter()
+            .filter(|i| i.class == c && i.split == Split::Dev)
+            .count()
+    };
+    assert_eq!((dev(Class::R), dev(Class::G), dev(Class::P)), (3, 6, 12));
+    // Two strata of one class split independently.
+    let mut b = items(10, Class::R);
+    for i in 0..10 {
+        b.push(Item::new(
+            format!("Rm{i:03}"),
+            Class::R,
+            String::new(),
+            &format!("{i}{}", "x".repeat(9000)),
+        ));
+    }
+    assign_splits(&mut b, 11);
+    let dev_in = |s: Stratum| {
+        b.iter()
+            .filter(|i| i.stratum == s && i.split == Split::Dev)
+            .count()
+    };
+    assert_eq!((dev_in(Stratum::S), dev_in(Stratum::M)), (3, 3));
+}
+
+#[test]
+fn hunks_split_at_every_hunk_and_file_header() {
+    let d = "diff --git a/f b/f\n--- a/f\n+++ b/f\n@@ -1,2 +1,2 @@\n a\n-b\n+c\n@@ -9,2 +9,2 @@\n x\n-y\n+z\ndiff --git a/g b/g\n--- a/g\n+++ b/g\n@@ -1,2 +1,2 @@\n p\n-q\n+r\n";
+    assert_eq!(
+        hunks(d),
+        vec![
+            " a\n-b\n+c\n".to_string(),
+            " x\n-y\n+z\n".to_string(),
+            " p\n-q\n+r\n".to_string(),
+        ]
+    );
+}
+
+#[test]
+fn fingerprints_need_a_changed_line_and_min_length() {
+    let all_context = "@@ -1,4 +1,4 @@\n a\n b\n c\n d\n";
+    assert!(hunk_fingerprints(all_context).is_empty(), "no change");
+    let changes_only = "@@ -1,4 +1,4 @@\n-a\n-b\n+c\n+d\n";
+    assert_eq!(hunk_fingerprints(changes_only).len(), 1);
+}
+
+#[test]
+fn pick_balanced_never_exceeds_n_and_stops_when_exhausted() {
+    let mut c = items(3, Class::R);
+    c.push(Item::new(
+        "m1".into(),
+        Class::R,
+        String::new(),
+        &"x".repeat(9000),
+    ));
+    c.push(Item::new(
+        "l1".into(),
+        Class::R,
+        String::new(),
+        &"x".repeat(40000),
+    ));
+    for n in 0..=3 {
+        assert_eq!(pick_balanced(c.clone(), n, 3).len(), n, "n={n}");
+    }
+    // Round-robin S, M, L with n=2 stops mid-round: never a third item.
+    assert_eq!(pick_balanced(c.clone(), 2, 3).len(), 2);
+    // n above the population must terminate (bounded, see `pick_bounded`).
+    assert_eq!(pick_bounded(c, 99, 3).len(), 5);
 }
