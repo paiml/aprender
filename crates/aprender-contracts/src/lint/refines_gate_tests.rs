@@ -186,3 +186,20 @@ fn no_sigma_declines_no_checkable() {
     assert!(matches!(outcome, RefinesOutcome::NoSigma));
     assert_eq!(decline_reason(&outcome), Some(Reason::NoCheckable));
 }
+
+#[test]
+fn a_failed_verdict_explains_each_finding_message() {
+    let dir = fixture("refines-legacy");
+    let b = dir.path().join("b.yaml");
+    let text = std::fs::read_to_string(&b).expect("b.yaml");
+    std::fs::write(
+        &b,
+        format!("{text}requires:\n  - id: PRE-1\n    statement: s\n    formal_status: parsed\n"),
+    )
+    .expect("write");
+    let (r, findings, _) = ran(run_refines_gate(dir.path()));
+    assert_eq!(r.verdict, Verdict::Fail);
+    assert!(!findings.is_empty());
+    let want: Vec<String> = findings.iter().map(|f| f.message.clone()).collect();
+    assert_eq!(explain(&r, &findings), want);
+}

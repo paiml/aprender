@@ -1529,4 +1529,51 @@ mod tests {
         let map = by_entity_type(&x, &implemented).expect("pv_contract types are counted");
         assert_eq!((map.get("study"), map.get("claim")), (Some(&2), Some(&0)));
     }
+
+    #[test]
+    fn collect_shapes_counts_every_document_it_read() {
+        let dir = fixture("shapes-ok");
+        let (shapes, checked) = collect_shapes(&dir).expect("shapes-ok parses");
+        assert!(!shapes.is_empty());
+        assert!(checked > 0, "no document was counted");
+        assert_eq!(checked, pv_contract::documents(&dir).len());
+    }
+
+    #[test]
+    fn focus_of_counts_each_shapes_instances_in_declaration_order() {
+        let mut g = Graph::new();
+        for n in ["k1", "k2"] {
+            g.insert(
+                iri("kernel", n),
+                RDF_TYPE,
+                Term::iri(crate::ontology::rdf::ont("KernelSymbol")),
+            );
+        }
+        let mut other = kernel_shape("other");
+        other.target_class = crate::ontology::rdf::ont("NoSuchClass");
+        let got = focus_of(&g, &[kernel_shape("kern"), other]);
+        assert_eq!(got, vec![("kern".to_string(), 2), ("other".to_string(), 0)]);
+    }
+
+    #[test]
+    fn vacuities_names_zero_focus_shapes_and_flags_only_armed_ones() {
+        let mut empty_ok = kernel_shape("b");
+        empty_ok.allow_empty = Some("by design".into());
+        let shapes = [kernel_shape("a"), empty_ok, kernel_shape("c")];
+        let focus = vec![
+            ("a".to_string(), 0),
+            ("b".to_string(), 0),
+            ("c".to_string(), 3),
+        ];
+        let (list, armed) = vacuities(&focus, &shapes, &ArmedShapes::Listed(vec!["a".into()]));
+        assert_eq!(list, ["a", "b"]);
+        assert!(armed);
+        // Unarmed zero-focus shape is named but does not refuse.
+        let (list, armed) = vacuities(&focus, &shapes, &ArmedShapes::Listed(vec!["c".into()]));
+        assert_eq!(list, ["a", "b"]);
+        assert!(!armed);
+        // Armed but allowEmpty: named, does not refuse.
+        let (_, armed) = vacuities(&focus, &shapes, &ArmedShapes::Listed(vec!["b".into()]));
+        assert!(!armed);
+    }
 }

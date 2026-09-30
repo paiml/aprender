@@ -231,3 +231,27 @@ fn the_repo_stale_examples_are_pinned_shrink_only() {
         stats.stale
     );
 }
+
+#[test]
+fn walk_counts_examples_per_family() {
+    let d = planted();
+    let (_, stats) = walk(d.path());
+    let got: Vec<(&str, usize)> = stats
+        .by_family
+        .iter()
+        .map(|(k, v)| (k.as_str(), *v))
+        .collect();
+    assert_eq!(got, [("qwen2", 1), ("qwen3.5", 1), ("tinyllama", 1)]);
+}
+
+#[test]
+fn extract_returns_the_walk_stats_and_emits_the_examples() {
+    let d = planted();
+    fs::create_dir_all(d.path().join("contracts")).expect("contracts dir");
+    let mut g = Graph::new();
+    let stats = extract(&d.path().join("contracts"), &mut g);
+    assert_eq!((stats.packages, stats.examples), (1, 4));
+    assert_eq!(stats.by_family.len(), 3);
+    let n = iri_path("example", &["crates", "a", "examples", "qwen.rs"]);
+    assert_eq!(g.objects(&n, &ex("crate")).len(), 1);
+}
