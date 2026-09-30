@@ -480,3 +480,128 @@ fn the_positive_control_fires_without_any_release_subject_or_file() {
     // that must still be a node (the mutant that emits only measured cells turns this false; measured)
     assert!(positive_control());
 }
+
+/// `SURFACE` plus one arg no role type claims, so both ratchet counts are 1 (#4587: kills the emit_surface
+/// guard, `!generates_declared` and ratchet_rows mutants).
+fn surface_with_unknown(generates: bool) -> cli_surface::Surface {
+    let mut text = SURFACE.replace(
+        r#"{"id":"prompt","long":"prompt","value_type":"text","role":"prompt"}"#,
+        r#"{"id":"prompt","long":"prompt","value_type":"text","role":"prompt"},
+ {"id":"x","long":"x","value_type":"text","role":"unknown"}"#,
+    );
+    if !generates {
+        text = text.replace(r#""generates":true,"#, "");
+    }
+    cli_surface::parse("s.json", &text).expect("parses")
+}
+
+/// Every string literal `rel(p)` puts on the release-subject node.
+fn subject_lits(g: &Graph, p: &str) -> Vec<String> {
+    let n = iri_path("release-subject", &["0.69.1"]);
+    let mut v: Vec<String> = g
+        .objects(&n, &rel(p))
+        .iter()
+        .map(|t| t.as_literal().map(|(v, _)| v.to_string()).expect("literal"))
+        .collect();
+    v.sort();
+    v
+}
+
+#[test]
+fn ratchet_rows_names_both_counts_with_their_values_and_ceilings() {
+    let st = cli_surface::SurfaceStats {
+        unknown_args: 3,
+        stdin_undeclared: 5,
+        ..Default::default()
+    };
+    let r = crate::ontology::extract::release_inputs::SurfaceRatchet {
+        unknown_args: 7,
+        stdin_undeclared: 11,
+    };
+    assert_eq!(
+        ratchet_rows(&st, Some(r)),
+        [
+            ("unknown_args", 3, Some(7)),
+            ("stdin_undeclared", 5, Some(11))
+        ]
+    );
+    assert_eq!(
+        ratchet_rows(&st, None),
+        [("unknown_args", 3, None), ("stdin_undeclared", 5, None)]
+    );
+}
+
+#[test]
+fn emit_surface_links_the_surface_and_names_an_undeclared_generate() {
+    let s = surface_with_unknown(true);
+    let mut g = Graph::new();
+    let mut stats = ReleaseStats::default();
+    let r = crate::ontology::extract::release_inputs::SurfaceRatchet {
+        unknown_args: 5,
+        stdin_undeclared: 5,
+    };
+    emit_surface(&mut g, &subject(), &s, Some(r), &mut stats);
+    let sn = iri_path("cli-surface", &["t"]);
+    let rel_node = iri_path("release-subject", &["0.69.1"]);
+    assert_eq!(
+        g.objects(&rel_node, &rel("surface"))[0].as_iri(),
+        Some(sn.as_str())
+    );
+    let lit = |p: &str| {
+        g.objects(&sn, &cli_surface::cli(p))[0]
+            .as_literal()
+            .map(|(v, _)| v.to_string())
+            .expect("literal")
+    };
+    assert_eq!(lit("version"), "0.69.1");
+    assert_eq!(lit("file"), "s.json");
+    let st = stats.surface.as_ref().expect("stats recorded");
+    assert_eq!((st.unknown_args, st.stdin_undeclared), (1, 1));
+    assert!(subject_lits(&g, "generatesUndeclared").is_empty());
+    assert!(
+        subject_lits(&g, "ratchetGrew").is_empty(),
+        "below the ceiling"
+    );
+    assert!(subject_lits(&g, "ratchetBaselineMissing").is_empty());
+
+    let mut g2 = Graph::new();
+    let mut stats2 = ReleaseStats::default();
+    emit_surface(
+        &mut g2,
+        &subject(),
+        &surface_with_unknown(false),
+        Some(r),
+        &mut stats2,
+    );
+    assert_eq!(
+        subject_lits(&g2, "generatesUndeclared").len(),
+        1,
+        "a model command that does not say whether it generates is named"
+    );
+}
+
+#[test]
+fn a_count_above_its_ceiling_grows_the_ratchet_and_one_at_it_does_not() {
+    let s = surface_with_unknown(true);
+    let mut g = Graph::new();
+    let mut stats = ReleaseStats::default();
+    // unknown_args 1 == ceiling 1 (holds); stdin_undeclared 1 > ceiling 0 (grew)
+    let r = crate::ontology::extract::release_inputs::SurfaceRatchet {
+        unknown_args: 1,
+        stdin_undeclared: 0,
+    };
+    emit_surface(&mut g, &subject(), &s, Some(r), &mut stats);
+    assert_eq!(
+        subject_lits(&g, "ratchetGrew"),
+        vec!["stdin_undeclared 1 > ceiling 0 (shrink-only)".to_string()]
+    );
+    assert!(subject_lits(&g, "ratchetBaselineMissing").is_empty());
+
+    let mut g2 = Graph::new();
+    emit_surface(&mut g2, &subject(), &s, None, &mut ReleaseStats::default());
+    let missing = subject_lits(&g2, "ratchetBaselineMissing");
+    assert_eq!(missing.len(), 2, "{missing:?}");
+    assert!(missing[0].starts_with("stdin_undeclared: no committed ceiling in "));
+    assert!(missing[1].starts_with("unknown_args: no committed ceiling in "));
+    assert!(subject_lits(&g2, "ratchetGrew").is_empty());
+}
