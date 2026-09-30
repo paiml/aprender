@@ -62,3 +62,6 @@ code change. A stored limit plus a moving scanner is not evidence (never-worse r
 - Clean Pass with baseline neutralised (no count in message) = 0, selftest row added (14/14).
 - Dirty tree in the release arm = FAIL NOT MEASURED (helper measures committed HEAD).
 - Dangling `--base`/`--head` with no value is rc 2 (was an infinite loop); selftest row added.
+
+## Q0 round 9-11 at cebac95d47 — degraded: same-family
+opus-5-5 PASS, haiku-4-5 PASS (neither is the sonnet author id). gpt-oss-120b-medium NO-VERDICT twice (rounds 9, 10); gemini-3.1-pro-high probed once (round 11) also NO-VERDICT. Every non-Claude family is unavailable, so per the operator's same-family rule this is a valid degraded quorum; receipt-lint's R-15a check marks the artifact agreed:false, so pmat-merge will not arm it and the cop arms. gpt-oss did answer PASS in round 7 (bb78aabc18) and FAILed round 6 on a real finding that was fixed.

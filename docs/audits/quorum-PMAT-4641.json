@@ -2,57 +2,50 @@
   "ticket": "PMAT-4641",
   "base": "origin/main",
   "base_resolved": "origin/main",
-  "base_note": "no origin/origin/main exists; judged against the local ref",
-  "head": "bb78aabc18f88ae19b07fc3ef7c8049ce4a70a2f",
-  "diff_sha256": "627afb54367c97612f5e46dd7cecb273cf8cb7fc8a8e7a1bd7196b66673d11c9",
+  "base_note": "no origin/origin/main exists; judged against the local ref; brief_exclude (C45) kept out of the brief: docs/roadmaps/roadmap.yaml",
+  "head": "cebac95d47ad4fae85827e2ffd0e49b4348bf038",
+  "diff_sha256": "6fa3cdeee485384b9d17debc9b77db6616826caa509012937de9f18ea5db380a",
   "width": 3,
   "executor": "agy",
   "prompt_mode": "inline",
-  "prompt_bytes": 42963,
-  "prompt_sha256": "ab0cad73a3fc420f0396989a295838bede24f2fbce0cd8acb6b74549b27be231",
+  "prompt_bytes": 60213,
+  "prompt_sha256": "8678c5b7aef22eaffe7db78f6932b6542903ece5bb597ed64e75a4110c36931e",
   "author": {
     "model": "claude-sonnet-5-5",
     "family": "claude",
     "source": "flag"
   },
-  "agreed": true,
+  "agreed": false,
   "lanes": [
     {
       "lane": 1,
       "status": "SUCCESS",
       "verdict": "PASS",
-      "summary": "The diff does what PMAT-4641 asks, and I found nothing that refutes it; four minor findings are below. The release path's CB-200 check no longer trusts the stored `[tdg] baseline`. Both Warn and Fail now go to scripts/check_cb200_head_vs_base.sh. That script measures head and the newest final tag that does not contain HEAD, with one pmat in one run and the stored baseline set to 0 in both trees. Every case where nothing was measured returns rc 3, and dogfood marks that FAIL. The gate only got stricter where it matters: Warn used to pass on the stored number alone and now also needs head ≤ base. Fail can become PASS only when head ≤ the last release, which is what the cop ruled. PMAT_BIN is exported by verifier_pin_pmat, so the helper runs with the pinned pmat. WORKLOG is a mktemp directory outside the repo, so the dirty-tree check is not polluted by dogfood's own files. I read the four refactors against the diff and they behave the same as before: in check_valid_under, both early `return`s stay in the parent before the two new helpers are called; get_one_patchid keeps the `\\ ` / commit / From precedence and the fall-through order; the coverage_serve_shards solo check is vacuous when there is no solo file; nightly_manifest dispatches through the same argparse. I did not re-run anything; the recorded evidence is 17/17 cargo tests, byte-identical golden diffs and a 14/14 selftest. Tree witness: I could not produce it. /home/noah/src/aprender/.git/worktrees/0d-cb200/paiml-lane-witness does not exist (Read and Glob both found nothing), so I left tree_witness empty rather than make one up.",
+      "summary": "The diff does what PMAT-4641 asks, and nothing I checked refutes it. On the release path, CB-200 `Warn` and `Fail` are no longer settled by the stored `[tdg] baseline`. Both are re-judged in scripts/cb200_head_vs_base.sh, which measures head against the newest final vX.Y.Z tag that does not contain HEAD. It uses one pinned PMAT_BIN in one run, with the baseline set to 0 in both scratch trees. Every NOT MEASURED case is rc 3, and dogfood marks anything other than rc 0 as FAIL.\n\n- **Fails closed.** An empty or unset PMAT_BIN is rc 3; verifier_pin.sh:88,97 can export it empty. A missing base, a dirty tree, Skip or ABSENT are all FAIL.\n- **Only the cop's ruling loosens anything.** `Warn` got stricter: it used to be a GO on the stored number alone. `Fail` can now become PASS, but only when head ≤ the last release, which is exactly the ruling.\n- **The four refactors behave the same.** I read each one against the diff:\n  - `check_valid_under`: both early returns stay before the two new helpers are called.\n  - `get_one_patchid`: moving the `\\\\ ` check ahead of the commit/From check is safe, because those prefixes cannot overlap. The binary, index, `---` and not-alpha precedence is kept, and so is the `st.ctx = flush_one_hunk` reassignment.\n  - `coverage_serve_shards`: the unknown-solo check now always runs, but it is empty when there is no solo file.\n  - `nightly_manifest`: the dispatch table falls back to 2, as before.\n- **Selftest.** I counted 14 rows, which matches the receipt. I did not re-run it.\n- **Tree witness.** None exists: /home/noah/src/aprender/.git/worktrees/0d-cb200/paiml-lane-witness is absent (Glob found nothing), so tree_witness is left empty.",
       "findings": [
+        {
+          "file": "docs/audits/quorum-PMAT-4641.json",
+          "line": 6,
+          "claim": "The committed quorum artifact records head bb78aabc18 and \"agreed\": true. HEAD has since moved through dd4ae46204 and cebac95d47, both of which change the script and dogfood.sh. So the committed verdict does not cover the code under review. The file is also modified but uncommitted in the working tree.",
+          "grounding": "cited",
+          "fix": "Replace the artifact with this round's result for the current HEAD before arming the merge."
+        },
         {
           "file": "docs/audits/impl-PMAT-4641-receipt.md",
           "line": 17,
-          "claim": "The receipt contradicts itself and the diff. Change item 2 says the check runs 'on CB-200 `Fail`' and that 'Pass/Warn unchanged', but the dogfood arm is `Warn|Fail)`, so Warn now changes too (the Round-4 section of the same receipt admits this).",
+          "claim": "Change item 2 says the default base is 'the newest final `vX.Y.Z` tag'. The code actually picks the newest final tag that does NOT contain HEAD (`git tag --no-contains`). Only the Q0 section further down mentions this.",
           "grounding": "cited",
-          "fix": "Update Change item 2 to say Warn and Fail are both re-judged head-vs-release, and only Pass is unchanged."
-        },
-        {
-          "file": "scripts/dogfood.sh",
-          "line": 1197,
-          "claim": "The comment above the case block still says `Warn` 'is a GO — holding debt flat is the entire point'. Warn no longer passes on the stored baseline alone, so the comment is stale.",
-          "grounding": "measured",
-          "fix": "Reword lines 1197-1200 to say Warn is re-judged head-vs-release in the `Warn|Fail)` arm."
+          "fix": "Add 'that does not contain HEAD' to Change item 2."
         },
         {
           "file": "scripts/dogfood.sh",
           "line": 1224,
-          "claim": "When there is no base ref, the message says 'CB-200 = Fail against the stored baseline' even when CM_CB200 is Warn, so the receipt text can misstate what pmat reported.",
-          "grounding": "cited",
-          "fix": "Put $CM_CB200 in the message instead of the literal 'Fail'."
-        },
-        {
-          "file": "scripts/dogfood.sh",
-          "line": 1230,
-          "claim": "The dirty-tree refusal runs only after the helper has run. On a dirty tree the result is still FAIL (it fails closed), but it can first spend up to four 900 s pmat runs measuring before throwing the result away.",
-          "grounding": "cited",
-          "fix": "Check `git status --porcelain` before calling check_cb200_head_vs_base.sh."
+          "claim": "The dirty-tree refusal uses `git status --porcelain --untracked-files=no` in REPO_DIR after the build. If an earlier dogfood step rewrites a tracked file (for example Cargo.lock), the row goes FAIL NOT MEASURED even though the committed tree is fine. It fails closed, so this is a spurious-RED risk, not a loosening.",
+          "grounding": "asserted",
+          "fix": "None required. If it shows up in practice, name the modified paths in the FAIL message."
         }
       ],
-      "raw_bytes": 7236,
+      "raw_bytes": 7124,
       "err_bytes": 0,
       "envelope_status": "SUCCESS",
       "verdict_source": "structured_output",
@@ -63,10 +56,10 @@
       "model_measured": "claude-opus-5-5",
       "model_source": "flag",
       "family": "claude",
-      "brief_sha256": "ab0cad73a3fc420f0396989a295838bede24f2fbce0cd8acb6b74549b27be231",
+      "brief_sha256": "8678c5b7aef22eaffe7db78f6932b6542903ece5bb597ed64e75a4110c36931e",
       "trace": {
-        "input_sha256": "bf62889abb1c2ab5b8a75c2eebe031fc11060595dc77b607fd6a7ba187837fef",
-        "output_sha256": "64739dc2b2847d80c9f56980325926c19ae51263152d8e1944323fba2794ae3f",
+        "input_sha256": "f4c8d8a983da9752b0862d891279565601b5a9c71317e94953ffd3514214a915",
+        "output_sha256": "54d645555c666b69d55ab9cc6f109d0443a01f672d77dcf07a2b7ad093ca7be3",
         "store": null,
         "store_why": "almacen not provisioned yet (infra-27): the blobs stay in the round's gitignored .lanes dir"
       },
@@ -85,36 +78,41 @@
     },
     {
       "lane": 2,
-      "status": "SUCCESS",
-      "verdict": "PASS",
-      "summary": "All changes adhere to PMAT-4641: CB-200 release gate now compares HEAD to the last release tag, stored baseline is neutralised, and the gate logic is tightened without weakening any checks. Refactored lint helpers and script clean‑ups preserve existing behavior. No receipt claims are unsupported and no prohibited behavior is introduced.",
+      "status": "NO-VERDICT",
+      "verdict": "NO-VERDICT",
+      "summary": "",
       "findings": [],
-      "raw_bytes": 4938,
-      "err_bytes": 0,
-      "envelope_status": "SUCCESS",
-      "verdict_source": "structured_output",
-      "grounding_check": "parity",
+      "raw_bytes": 1142,
+      "err_bytes": 418,
+      "envelope_status": "ERROR",
+      "transport_status": "ERROR",
+      "transport_error": "There was a network issue connecting to the server, please try again.",
+      "salvageable": "/home/noah/.gemini/antigravity-cli/brain/7708dc88-aa96-4162-a25e-fd3fc79aa1fe (234498 bytes)",
+      "carried_verdict": "",
+      "blind_reason": "",
+      "agy_exit": "",
       "role": "independent",
-      "model": "gpt-oss-120b-medium",
-      "model_measured": "gpt-oss-120b-medium",
+      "model": "gemini-3.1-pro-high",
+      "model_measured": "gemini-3.1-pro-high",
       "model_source": "measured",
-      "family": "openai",
+      "family": "gemini",
       "executor": "agy",
-      "brief_sha256": "ab0cad73a3fc420f0396989a295838bede24f2fbce0cd8acb6b74549b27be231",
+      "brief_sha256": "8678c5b7aef22eaffe7db78f6932b6542903ece5bb597ed64e75a4110c36931e",
       "trace": {
-        "input_sha256": "c666b5a9519a031f4f431c720e2409b1cb69c2c766262533c86594f49785f1e5",
-        "output_sha256": "997d69acb9481b9118eec102a55835621b1cc10c80174efbfcd7a465a210ce2f",
+        "input_sha256": "61bc47b13d7d1b2f2953892d26d5b13d8b661731cc4b9a0357bd8fb812293f5c",
+        "output_sha256": "9ea2f27af45e5717b4255687a13bc7e23d7a3983e0fd9a2b1b5d757a0d4b9283",
         "store": null,
         "store_why": "almacen not provisioned yet (infra-27): the blobs stay in the round's gitignored .lanes dir"
       },
       "fallback": {
-        "judged_by": "gpt-oss-120b-medium",
+        "judged_by": null,
         "exhausted": false,
         "attempts": [
           {
-            "model": "gpt-oss-120b-medium",
-            "family": "openai",
-            "outcome": "answered"
+            "model": "gemini-3.1-pro-high",
+            "family": "gemini",
+            "outcome": "other",
+            "reason": "agent executor error: generating and executing: stream reading error: read tcp [2a02:9130:8037:6eb8:3a1c:c32e:5ac7:fa08]:47654->[2001:4860:4847:400::]:443: read: network is unreachable"
           }
         ],
         "skipped": []
@@ -124,9 +122,9 @@
       "lane": 3,
       "status": "SUCCESS",
       "verdict": "PASS",
-      "summary": "The diff correctly implements PMAT-4641: a new head-vs-base comparison gate replaces the stored CB-200 baseline for release judgment. The script has comprehensive error handling and selftest; dogfood.sh correctly re-judges Warn/Fail cases; four functions are refactored into behavior-identical helpers. The only dependency (SKILL_DIR variable) is verified by guards per the receipt.",
+      "summary": "Diff correctly implements PMAT-4641: CB-200 gate compares HEAD to the last release tag via one-run head-vs-base measurement (baseline neutralized to 0 in both trees), with Warn/Fail re-judged via integration in dogfood.sh. Four refactors extract helpers for lint/python code (behavior-preserving). Selftest has 14 rows. Lane 1's four findings are all misreadings or incorrect: comment WAS updated, message uses $CM_CB200 variable, dirty-tree check precedes helper call, and receipt correctly says \"Warn or Fail\" not \"Pass/Warn unchanged.\" Receipt evidence (17/17 cargo tests, byte-identical golden diffs, 14/14 selftest, guard rc 0) is consistent with diff.",
       "findings": [],
-      "raw_bytes": 1710,
+      "raw_bytes": 2263,
       "err_bytes": 0,
       "envelope_status": "SUCCESS",
       "verdict_source": "structured_output",
@@ -137,10 +135,10 @@
       "model_measured": "claude-haiku-4-5",
       "model_source": "flag",
       "family": "claude",
-      "brief_sha256": "ab0cad73a3fc420f0396989a295838bede24f2fbce0cd8acb6b74549b27be231",
+      "brief_sha256": "8678c5b7aef22eaffe7db78f6932b6542903ece5bb597ed64e75a4110c36931e",
       "trace": {
-        "input_sha256": "ad86c07ee089053aa7246caa0ba9666cd1925df4f92d6390531c96f75b694e0b",
-        "output_sha256": "65b91848c5062ad07cf0b7637ca2f30d2f8969027bfa35dacd49b1afc5363890",
+        "input_sha256": "afa8e655ec1922fc72f7f6012cc4a1eb80f6f0b9eb7da405dd221de7307e5d34",
+        "output_sha256": "5703eef8c14be075b0e044a91b02ba8e8d56af663cab8c760ba6c7b7a5c4b1c1",
         "store": null,
         "store_why": "almacen not provisioned yet (infra-27): the blobs stay in the round's gitignored .lanes dir"
       },
@@ -158,7 +156,14 @@
       }
     }
   ],
-  "dissent": [],
+  "dissent": [
+    {
+      "lane": 2,
+      "verdict": "NO-VERDICT",
+      "summary": "",
+      "findings": []
+    }
+  ],
   "dedup": [
     {
       "file": "docs/audits/impl-PMAT-4641-receipt.md",
@@ -167,17 +172,17 @@
         1
       ],
       "claims": [
-        "The receipt contradicts itself and the diff. Change item 2 says the check runs 'on CB-200 `Fail`' and that 'Pass/Warn unchanged', but the dogfood arm is `Warn|Fail)`, so Warn now changes too (the Round-4 section of the same receipt admits this)."
+        "Change item 2 says the default base is 'the newest final `vX.Y.Z` tag'. The code actually picks the newest final tag that does NOT contain HEAD (`git tag --no-contains`). Only the Q0 section further down mentions this."
       ]
     },
     {
-      "file": "scripts/dogfood.sh",
-      "line": 1197,
+      "file": "docs/audits/quorum-PMAT-4641.json",
+      "line": 6,
       "lanes_agreeing": [
         1
       ],
       "claims": [
-        "The comment above the case block still says `Warn` 'is a GO — holding debt flat is the entire point'. Warn no longer passes on the stored baseline alone, so the comment is stale."
+        "The committed quorum artifact records head bb78aabc18 and \"agreed\": true. HEAD has since moved through dd4ae46204 and cebac95d47, both of which change the script and dogfood.sh. So the committed verdict does not cover the code under review. The file is also modified but uncommitted in the working tree."
       ]
     },
     {
@@ -187,24 +192,18 @@
         1
       ],
       "claims": [
-        "When there is no base ref, the message says 'CB-200 = Fail against the stored baseline' even when CM_CB200 is Warn, so the receipt text can misstate what pmat reported."
-      ]
-    },
-    {
-      "file": "scripts/dogfood.sh",
-      "line": 1230,
-      "lanes_agreeing": [
-        1
-      ],
-      "claims": [
-        "The dirty-tree refusal runs only after the helper has run. On a dirty tree the result is still FAIL (it fails closed), but it can first spend up to four 900 s pmat runs measuring before throwing the result away."
+        "The dirty-tree refusal uses `git status --porcelain --untracked-files=no` in REPO_DIR after the build. If an earlier dogfood step rewrites a tracked file (for example Cargo.lock), the row goes FAIL NOT MEASURED even though the committed tree is fine. It fails closed, so this is a spurious-RED risk, not a loosening."
       ]
     }
   ],
   "uncovered": [],
   "coverage_source": "lanes",
-  "partial": false,
-  "partial_reasons": [],
+  "partial": true,
+  "partial_reasons": [
+    "lane 2: non-empty .err (418 bytes, 2 line(s) beyond agy-lane's workspace narration)",
+    "lane 2: lane envelope status=ERROR transport_error=There was a network issue connecting to the server, please try again. salvageable=/home/noah/.gemini/antigravity-cli/brain/7708dc88-aa96-4162-a25e-fd3fc79aa1fe (234498 bytes) [UNREVIEWED CLAIM MATERIAL — never a PASS]",
+    "receipt-lint refused the artifact (PMAT-124/#128): FAIL quorum artifact: 2 lanes share the author's family ('claude-sonnet-5-5'/claude) and no lane OUTSIDE it answered — the same-family cap is reachable only behind an independent lane that actually returned a verdict (R-15a answered-third)"
+  ],
   "fallback": {
     "same_family_width": 2,
     "chain": [
@@ -215,8 +214,8 @@
         "why": "run by Claude Code on its own budget: a configured seat runs every round, a fallback step only when every non-Claude family is measured out (PMAT-360, operator standing rule)"
       },
       {
-        "model": "gpt-oss-120b-medium",
-        "family": "openai",
+        "model": "gemini-3.1-pro-high",
+        "family": "gemini",
         "disposition": "configured"
       },
       {
@@ -234,8 +233,8 @@
     ],
     "precheck": [
       {
-        "family": "openai",
-        "model": "gpt-oss-120b-medium",
+        "family": "gemini",
+        "model": "gemini-3.1-pro-high",
         "probe": 1,
         "outcome": "live"
       }
@@ -251,7 +250,7 @@
       "matched": [
         "crates/aprender-contracts/src/lint/valid_under_gate.rs"
       ],
-      "paths": 8,
+      "paths": 11,
       "patterns": [
         "^\\.github/workflows/",
         "(^|/)release[^/]*\\.(ya?ml|sh|rs|toml)$",
@@ -267,18 +266,18 @@
       "window_s": 18000,
       "pace": "off",
       "buckets": {
-        "claude-gpt": {
-          "bucket": "claude-gpt",
+        "gemini": {
+          "bucket": "gemini",
           "budget": 0,
           "basis": "ledger: the calls served before the first 429 of the latest window that reached one",
           "window_start": null,
           "window_calls": 0,
           "window_429": 0,
-          "hour_calls": 4,
+          "hour_calls": 0,
           "share": 1,
           "want": 2,
           "state": "empty",
-          "reason": "agy bucket claude-gpt is empty: 0 calls in this window reach its budget 0 (ledger: the calls served before the first 429 of the latest window that reached one)"
+          "reason": "agy bucket gemini is empty: 0 calls in this window reach its budget 0 (ledger: the calls served before the first 429 of the latest window that reached one)"
         }
       },
       "closed": []
@@ -309,7 +308,7 @@
       "server_holds_gpu": true,
       "used_gpu_source": "completions probe (chat omits used_gpu, aprender#4146)",
       "trace_lines": [
-        "1083089, 309 MiB"
+        "3971288, 309 MiB"
       ]
     },
     "apr": "0.70.0",
@@ -320,39 +319,39 @@
     "model": "/home/noah/data/models/Qwen3.5-4B-Q4_K_M.gguf",
     "model_sha256": "00fe7986ff5f6b463e62455821146049db6f9313603938a70800d1fb69ef11a4",
     "rc": 0,
-    "wall_s": 16,
-    "collected_s": 184,
+    "wall_s": 22,
+    "collected_s": 290,
     "budget_s": 164,
-    "budget_basis": "ledger: 2 x p95 82 s over 113 gx10-cuda Verdict rows",
+    "budget_basis": "ledger: 2 x p95 82 s over 117 gx10-cuda Verdict rows",
     "brief": {
-      "bytes": 42963,
-      "sent_bytes": 43132,
+      "bytes": 60213,
+      "sent_bytes": 60382,
       "max_bytes": 196608
     },
     "trace": {
-      "input_sha256": "fb07477b8cb3048e84d49edd5a872e029c067892db48279b515e4414cecbdceb",
+      "input_sha256": "de86d0f32f99634661cdbe87eb38faed6d495b1ec080c2d15319e054d5c0ad41",
       "raw": "advisory.json"
     },
     "attempts": [
       {
         "host": "gx10",
         "ok": true,
-        "wall_s": 16,
+        "wall_s": 22,
         "used_gpu": true,
-        "ts": "2026-09-30T00:08:17.462Z",
-        "wall_ms": 15798,
-        "request_id": "01a0efa3-ff33-7c04-9ff3-feec0d3699ac",
-        "load1": 54.19,
+        "ts": "2026-09-30T08:34:18.980Z",
+        "wall_ms": 21574,
+        "request_id": "01a0f173-46e2-77ea-9695-ca035bef4fd5",
+        "load1": 66.20,
         "cold": false
       }
     ],
     "ledger": "/home/noah/.local/state/paiml-implement/advisory-ledger.jsonl",
     "raw": "advisory.json",
-    "agrees_with_counted": false,
-    "counted": "PASS"
+    "agrees_with_counted": true,
+    "counted": "NOT-AGREED"
   },
   "lint": {
-    "ok": true,
-    "output": "receipt complete: kind=artifact lanes=3 author=claude-sonnet-5-5/claude same_family=2/2"
+    "ok": false,
+    "output": "FAIL quorum artifact: 2 lanes share the author's family ('claude-sonnet-5-5'/claude) and no lane OUTSIDE it answered — the same-family cap is reachable only behind an independent lane that actually returned a verdict (R-15a answered-third)"
   }
 }
