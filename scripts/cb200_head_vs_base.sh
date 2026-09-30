@@ -115,14 +115,16 @@ selftest() {
 #!/usr/bin/env bash
 case "$1" in
     --version) echo "pmat 0.0.0-fake"; exit 0 ;;
-    query) exit 0 ;;
+    query) : > .indexed; exit 0 ;;
     comply)
         m=$(cat mode 2>/dev/null || echo ok); n=$(cat count 2>/dev/null || echo 0)
         # a pmat that reads the stored baseline: unless the helper zeroed it, there is no count to read
         grep -qE "^baseline = 0$" .pmat-gates.toml || m=garbage
+        # comply reads the index `query` builds: without it CB-200 is Skip (with a count, so only the status can refuse)
+        [ -f .indexed ] || m=skip
         case "$m" in
             ok)   printf '{"summary":{},"checks":[{"name":"CB-200: TDG Grade Gate","status":"Fail","message":"%s definition(s) below minimum grade B - baseline"}]}' "$n" ;;
-            skip) printf '{"summary":{},"checks":[{"name":"CB-200: TDG Grade Gate","status":"Skip","message":"Not measured"}]}' ;;
+            skip) printf '{"summary":{},"checks":[{"name":"CB-200: TDG Grade Gate","status":"Skip","message":"%s definition(s) below minimum grade B - skipped"}]}' "$n" ;;
             nocount) printf '{"summary":{},"checks":[{"name":"CB-200: TDG Grade Gate","status":"Fail","message":"fine"}]}' ;;
             clean) printf '{"summary":{},"checks":[{"name":"CB-200: TDG Grade Gate","status":"Pass","message":"fine"}]}' ;;
             garbage) printf 'not json' ;;
@@ -142,6 +144,7 @@ FAKE
         commit 3  skip skipped
         commit 3  nocount nocount
         commit 3  garbage garbage
+        commit 2  ok low2
         commit 0  clean clean
         git tag v1.0.0 base; git tag v1.1.0 lower; git tag v1.2.0-rc.1 higher; git tag v9.9.9 garbage
     ) || { rm -rf "${d:?}"; return 3; }
@@ -158,6 +161,10 @@ FAKE
     check "no count is not measured"    base nocount  3
     check "garbage is not measured"     base garbage  3
     check "clean Pass counts as zero"   base clean    0
+    check "clean Pass is 0 not 5"       low2 clean    0
+    ( cd "$d/r" && env -u PMAT_BIN bash "$SELF" --base base --head equal >"$d/out" 2>&1 ); [ $? = 3 ] && grep -q "PMAT_BIN unset" "$d/out" \
+        && printf '  ok    %-28s rc=3\n' "PMAT_BIN unset is not measured" \
+        || { printf '  FAIL  PMAT_BIN unset must be rc 3\n'; bad=$((bad + 1)); }
     check "base Skip is not measured"   skipped equal 3
     check "unresolvable base"           no-such-ref equal 3
     ( cd "$d/r" && PMAT_BIN="$pm" bash "$SELF" --head equal >"$d/out" 2>&1 ); [ $? = 2 ] \
