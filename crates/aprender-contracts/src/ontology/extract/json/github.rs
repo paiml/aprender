@@ -650,6 +650,29 @@ mod tests {
     const REPO: &str = r#"{"ref":"paiml/aprender@aa7c6ef03ee7b7f8d8dc09dc393e97619952d95f","nameWithOwner":"paiml/aprender","sha":"aa7c6ef03ee7b7f8d8dc09dc393e97619952d95f"}"#;
     const MILESTONE: &str = r#"{"ref":"paiml/aprender#3@2026-09-24T07:03:22Z","repo":"paiml/aprender","number":3,"state":"CLOSED","updatedAt":"2026-09-24T07:03:22Z"}"#;
 
+    /// #4587: `refused_saying` is true only for exactly one refusal that names the needle.
+    #[test]
+    fn refused_saying_needs_exactly_one_error_naming_the_needle() {
+        let refusal = |what: &str| Refusal {
+            file: "f".to_string(),
+            what: what.to_string(),
+        };
+        let with = |errs: Vec<Refusal>| GithubStats {
+            errors: errs,
+            ..GithubStats::default()
+        };
+        assert!(!refused_saying(&with(vec![]), "disagrees"));
+        assert!(!refused_saying(&with(vec![refusal("other")]), "disagrees"));
+        assert!(!refused_saying(
+            &with(vec![refusal("disagrees"), refusal("disagrees")]),
+            "disagrees"
+        ));
+        assert!(refused_saying(
+            &with(vec![refusal("x disagrees y")]),
+            "disagrees"
+        ));
+    }
+
     fn only_error(s: &GithubStats) -> &str {
         assert_eq!(s.errors.len(), 1, "{:?}", s.errors);
         &s.errors[0].what

@@ -653,6 +653,26 @@ mod tests {
         assert!(f.iter().all(Fence::is_claim));
     }
 
+    /// #4588: the backtick-in-info rule is for BACKTICK fences only (CommonMark 4.5); a tilde fence may carry one.
+    #[test]
+    fn only_a_backtick_fence_refuses_a_backtick_in_its_info() {
+        assert_eq!(fence_open("```a`b"), None);
+        assert_eq!(fence_open("```a b"), Some(('`', 3, "a b".to_string())));
+        assert_eq!(fence_open("~~~ a`b"), Some(('~', 3, "a`b".to_string())));
+        assert!(fences("```a`b\nx\n").is_empty());
+    }
+
+    /// #4588: fence and prose line numbers are 1-based, even on the first line.
+    #[test]
+    fn fence_and_prose_line_numbers_are_one_based() {
+        let f = fences("```bash\nmake\n```\n");
+        assert_eq!(f[0].line, 1);
+        let f = fences("a\n\n~~~\nx\n~~~\n");
+        assert_eq!(f[0].line, 3);
+        let p = prose_lines("one\n```\nx\n```\nfive\n");
+        assert_eq!(p, vec![(1, "one".to_string()), (5, "five".to_string())]);
+    }
+
     #[test]
     fn a_shorter_or_different_run_does_not_close_a_fence() {
         let md = "````bash\n```\n~~~\nmake z\n````\n";
