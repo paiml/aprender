@@ -7,8 +7,8 @@ metadata:
   - 'docs/lookahead/0.73.md R2 — wgpu forward scope (draft: la-73 drafts/R2-wgpu-forward-scope.md)'
   - 'epic aprender#3999 — 0.73 "Runs Everywhere", exit criterion E1 on C1-C3'
   - 'drafts/backend-parity-matrix-v1.yaml — the E1 composed-leg gate this forward must pass'
-  - 'crates/aprender-serve wgsl_forward.rs:943 — rope_theta hardcoded 1e6 [V]'
-  - 'crates/aprender-serve wgpu_adapter.rs:339 — non-Q4_K/F32 qtype refusal [V]'
+  - 'crates/aprender-compute/src/backends/gpu/device/linalg/wgsl_forward.rs:229 and :265 — rope_theta hardcoded as pow(1000000.0, …) in TWO WGSL shaders [V at main 00052c0128, 2026-09-30; the earlier "aprender-serve …:943" cite was stale]'
+  - 'crates/aprender-serve/src/gpu/adapters/wgpu_adapter.rs dequant_tensor_public — Q4_K/Q6_K/Q5_K/F32/F16 (and APR q4/q8) are dequantized to F32 on the host; only other types are refused ("Unsupported quantization type … for WGPU dequant") [V at 00052c0128]'
   description: >
     What the wgpu (WGSL) decoder forward must do before a C1-C3 receipt can pass E1:
     read rope_theta and head_dim from model metadata, apply Qwen3 q/k norm, own a
@@ -25,6 +25,8 @@ equations:
     codomain: bool
     invariants:
     - 'A hardcoded 1e6 matches only models whose freq_base happens to be 1e6; that is a coincidence, not a pass.'
+    - 'Both RoPE shaders read the same theta. Fixing one and not the other is FAIL.'
+    - 'The fixture needs position >= 1 and pos_in_head >= 1. At position 0 the angle is 0, and at pos_in_head 0 the frequency is 1 for every base, so either case makes RoPE blind to theta.'
 
   head_dim_from_metadata:
     formula: |
@@ -44,6 +46,7 @@ equations:
     codomain: bool
     invariants:
     - 'Attribution of the 0.955 end-to-end cosine to q/k norm is UNMEASURED (K14) until the layer-diff trace runs.'
+    - 'The fixture needs norm weights that are not all 1, and q/k whose per-head RMS is not 1. Otherwise RMSNorm is close to identity and a path that skips it still passes.'
 
   qtype_coverage:
     formula: |
@@ -53,6 +56,7 @@ equations:
     codomain: bool
     invariants:
     - 'A refusal is honest; a silent fallback is not (R1 F6).'
+    - 'Today Q6_K and Q5_K are widened to F32 on the host at load (dequant_tensor_public), and the device runs an F32 GEMV. op_placement reads device either way, so the receipt must also carry, for each weight tensor, the qtype as stored on the device. A widen shows as device_qtype = F32 for a file qtype that is not F32.'
 
   device_placement_honesty:
     formula: |
@@ -67,10 +71,10 @@ equations:
 falsification_tests:
 - id: FALSIFY-WGF-001
   rule: rope_theta comes from metadata
-  prediction: 'A synthetic 1-layer fixture with freq_base = 1e4 gives a RoPE output that differs from the 1e6 output and matches the CPU forward.'
+  prediction: 'A synthetic 1-layer fixture with freq_base = 1e4, at position >= 1 and head_dim >= 4, gives a RoPE output that differs from the 1e6 output and matches the CPU forward. This holds for both RoPE shaders.'
   test: 'NOT YET WRITTEN — lands with R2 item 1'
   if_fails: 'every non-1e6 model decodes with the wrong rotation on wgpu'
-  mutation: 'restore the hardcoded 1e6; the fixture must turn RED'
+  mutation: 'restore the hardcoded 1e6 in ONE of the two shaders; the fixture must turn RED. Also move the fixture to position 0; the test must refuse it as blind to theta, not pass it'
 - id: FALSIFY-WGF-002
   rule: head_dim comes from metadata
   prediction: 'A synthetic config with key_length != hidden / n_heads matches the CPU forward (cosine >= 0.9999).'
@@ -82,10 +86,10 @@ falsification_tests:
   prediction: 'On a Qwen3 fixture the per-layer attention cosine vs CPU is >= 0.9999 at every layer.'
   test: 'NOT YET WRITTEN — gated on the K14 layer-diff trace (Next#1, deferred while train-active)'
   if_fails: 'the wgpu Qwen3 path stays near 0.955 end to end and fails E1'
-  mutation: 'skip the q/k norm dispatch; layer 0 cosine must drop below the floor'
+  mutation: 'skip the q/k norm dispatch; layer 0 cosine must drop below the floor. The fixture uses non-unit norm weights and q/k RMS != 1, or skipping the norm cannot move the cosine'
 - id: FALSIFY-WGF-004
   rule: no silent CPU fallback for an unsupported qtype
-  prediction: 'Loading a Q5_K-only model on wgpu is refused with a named error, and a Q6_K/Q8_0/Q4_0 model runs a device GEMV (op_placement shows device).'
+  prediction: 'Every served qtype either has a device GEMV on its native bytes (device_qtype = file qtype in the receipt) or is refused with a named error. A Q6_K or Q5_K model that is widened to F32 at load, as it is today, is FAIL, even though op_placement shows device.'
   test: 'NOT YET WRITTEN — lands with R2 item 4'
   if_fails: 'a receipt labelled wgpu measures CPU work'
   mutation: 'route the refused qtype to the CPU dequant path; the receipt check must turn RED'
@@ -97,8 +101,8 @@ falsification_tests:
   mutation: 'let the harness write hybrid from a flag; the planted receipt must be refused'
 - id: FALSIFY-WGF-006
   rule: the metadata fixes do not regress other models (K13)
-  prediction: 'After items 1-2, every ledger model keeps or improves leg A; none drops below its prior min cosine.'
-  test: 'NOT YET WRITTEN — ledger sweep on C1 once train-inactive'
+  prediction: 'After items 1-2, every ledger model keeps or improves leg A. It is measured head vs base in the SAME run on the same host, never against a stored prior value (never-worse rule).'
+  test: 'NOT YET WRITTEN — ledger sweep on C1 once train-inactive; base and head builds swept in one job'
   if_fails: 'a model that matched 1e6 by coincidence regresses unnoticed'
   mutation: 'run the sweep on one model only; the check must refuse a single-model sweep as incomplete'
 
@@ -125,7 +129,7 @@ proof_obligations:
 qa_gate:
   id: F-WGF-GATE-001
   name: 'the wgpu forward is complete enough for a C1-C3 E1 receipt'
-  description: '0.73 exit (R2): items 1-5 land; E1 >= 0.995 per leg on C1-C3 for the ledger models. Item 6 (gated-delta) may slip to 0.74.'
+  description: '0.73 exit (R2): R2 items 1-5 land; E1 >= 0.995 per leg on C1-C3 for the ledger models. R2 item 6 (the gated-delta WGSL route) may slip to 0.74; it has no equation here. FALSIFY-WGF-006 is the K13 no-regression sweep, which is not R2 item 6.'
   checks:
   - rope_theta_from_metadata
   - head_dim_from_metadata
