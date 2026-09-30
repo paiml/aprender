@@ -9,7 +9,7 @@
   updated: 2026-09-29T22:33:26Z
   spec: null
   acceptance_criteria:
-  - 'dogfood.sh pmat-comply read [tdg] baseline 599 (main 622, FINAL NO-GO). Now scripts/check_cb200_head_vs_base.sh: one pmat, one run, baseline zeroed, head <= newest final tag. Cop ruling 2026-09-29 21:33Z.'
+  - 'dogfood.sh pmat-comply read [tdg] baseline 599 (main 622, FINAL NO-GO). Now scripts/cb200_head_vs_base.sh: one pmat, one run, baseline zeroed, head <= newest final tag. Cop ruling 2026-09-29 21:33Z.'
   phases: []
   subtasks: []
   estimated_effort: null

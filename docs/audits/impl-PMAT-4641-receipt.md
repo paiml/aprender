@@ -11,7 +11,7 @@ code change. A stored limit plus a moving scanner is not evidence (never-worse r
 
 ## Change
 
-1. `scripts/check_cb200_head_vs_base.sh` (new): measures HEAD and BASE with one pinned `$PMAT_BIN` in one run, `[tdg] baseline`
+1. `scripts/cb200_head_vs_base.sh` (new): measures HEAD and BASE with one pinned `$PMAT_BIN` in one run, `[tdg] baseline`
    set to 0 in both scratch trees (the stored value cannot decide anything). Exit 0 head ≤ base, 1 head > base, 2 usage,
    3 NOT MEASURED (Skip, no count, unparsable, unresolvable ref, `PMAT_BIN` unset). Never a pass on 3. `--selftest`: 14 rows.
 2. `scripts/dogfood.sh`: on CB-200 `Fail` (stored baseline exceeded) compares head to `$DOGFOOD_CB200_BASE`, default the newest
@@ -27,7 +27,7 @@ code change. A stored limit plus a moving scanner is not evidence (never-worse r
 |-------|----------|
 | Stored 599 is read on the release path | `dogfood.sh` comply arm; main 622 vs 599 = Fail |
 | Base v0.69.3 = 618, main = 622 (+4, not +2) | real pmat 3.42.0, baseline zeroed, DB diff by (file, fn): the 4 above |
-| GREEN | `check_cb200_head_vs_base.sh --base v0.69.3 --head HEAD` → `head 618 <= base 618`, rc 0 (pmat 3.42.0) |
+| GREEN | `cb200_head_vs_base.sh --base v0.69.3 --head HEAD` → `head 618 <= base 618`, rc 0 (pmat 3.42.0) |
 | RED | same script `--head origin/main` (00052c0128) → `head 622 > base 618`, rc 1 (see PR comment for the run) |
 | Selftest polarities | 14/14: clean Pass = 0; equal/lower green; higher red with stored 999; Skip/no-count/garbage/unresolvable = rc 3; no --base = rc 2 |
 | valid_under refactor | `cargo test -p aprender-contracts --lib valid_under` 17 passed |
