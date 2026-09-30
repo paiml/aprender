@@ -264,12 +264,14 @@ fn an_orphaned_root_is_not_restated() {
 /// A hit with an identifier character on only ONE side is not the word; the scan resumes past it (#4587).
 #[test]
 fn find_word_needs_a_boundary_on_both_sides_and_resumes_past_a_miss() {
+    // These two come first, so a scan that resumes at the wrong offset fails fast here rather than
+    // looping forever on a rejected hit (at byte 0 below, or a resume that lands back on itself).
+    // The first hit is rejected at byte 1, word len 2, so `at - len` = 1 - 2 underflows.
+    assert_eq!(find_word("xab ab", "ab"), Some(4));
+    // The first hit is rejected at byte 3, word len 3, so `at * len` = 9 resumes past the real hit at 7.
+    assert_eq!(find_word("xxxabc abc", "abc"), Some(7));
     assert_eq!(find_word("xfoo bar", "foo"), None, "ident char before");
     assert_eq!(find_word("foox bar", "foo"), None, "ident char after");
-    // the first hit is rejected at byte 1 (word len 2): resuming at 1 - 2 underflows
-    assert_eq!(find_word("xab ab", "ab"), Some(4));
-    // the first hit is rejected at byte 3 (word len 3): resuming at 3 * 3 = 9 skips the real one at 7
-    assert_eq!(find_word("xxxabc abc", "abc"), Some(7));
 }
 
 /// An indented, non-blank line continues the command above it (#4587).
