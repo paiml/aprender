@@ -146,7 +146,7 @@ FAKE
         commit 3  garbage garbage
         commit 2  ok low2
         commit 0  clean clean
-        git tag v1.0.0 base; git tag v1.1.0 lower; git tag v1.2.0-rc.1 higher; git tag v1.9.0 higher; git tag v1.10.0 higher; git tag v9.9.9 garbage
+        git tag v1.0.0 base; git tag v1.1.0 lower; git tag v1.2.0-rc.1 higher; git tag v1.9.0 higher; git tag v1.10.0 higher; git tag v1.11.0-rc.1 higher; git tag v9.9.9 garbage
     ) || { rm -rf "${d:?}"; return 3; }
     check() { # <name> <base> <head> <want-rc> [<rc-source-dir override>]
         local rc
