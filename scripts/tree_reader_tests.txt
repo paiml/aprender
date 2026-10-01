@@ -62,6 +62,7 @@ aprender-contracts	--lib	lint::sigma_gate
 aprender-contracts	--lib	lint::strict_test_binding
 aprender-contracts	--lib	lint::tbox_gate
 aprender-contracts	--lib	lint::valid_under_gate
+aprender-contracts	--lib	ontology::extract
 aprender-contracts	--lib	ontology::extract::apr_model
 aprender-contracts	--lib	ontology::extract::binary
 aprender-contracts	--lib	ontology::extract::claims

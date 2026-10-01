@@ -550,8 +550,8 @@ mod planted {
 #[cfg(kani)]
 mod kani_proofs {
     use super::super::witness_small::{
-        accepted_verdict_is_semantic_u8, core_as, id_u8, model_as, SmallGraph, CORE_BOUND,
-        STEP_CODES,
+        accepted_verdict_is_semantic_u8, check_u8, core_as, id_u8, model_as, SmallGraph,
+        CORE_BOUND, STEP_CODES,
     };
 
     /// KANI-ONT-9-1 (cores of exactly `LEN` steps): a core the checker accepts is contradictory under relation
@@ -570,7 +570,7 @@ mod kani_proofs {
         kani::assume(conflict < 3);
         assert!(accepted_verdict_is_semantic_u8(
             &g,
-            &core_as(&codes, conflict, id_u8)
+            &check_u8(&g, &core_as(&codes, conflict, id_u8))
         ));
     }
 
@@ -610,7 +610,7 @@ mod kani_proofs {
         kani::assume(false_bits < 8);
         assert!(accepted_verdict_is_semantic_u8(
             &g,
-            &model_as(false_bits, id_u8)
+            &check_u8(&g, &model_as(false_bits, id_u8))
         ));
     }
 

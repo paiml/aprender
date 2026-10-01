@@ -264,6 +264,11 @@ fn a_kernel_on_one_hosts_dispatch_path_is_an_obligation_on_every_required_host()
     let mut g = Graph::new();
     let st = extract(&mut g, &c, &subject()).expect("extracts");
     assert_eq!(st.kernel_cells, 2, "one kernel × two required hosts");
+    assert_eq!(
+        (st.kernel_receipts, st.model_receipts, st.context_rungs),
+        (1, 0, 2),
+        "the stats count what was read"
+    );
     let lambda = iri_path("release-kernel", &["0.69.1", "lambda", "q4k_gemv", "q4_k"]);
     let gx10 = iri_path("release-kernel", &["0.69.1", "gx10", "q4k_gemv", "q4_k"]);
     assert!(
@@ -479,4 +484,219 @@ fn the_positive_control_fires_without_any_release_subject_or_file() {
     // PMAT-3704 R-3: drawn on every gate run — a sample cell with one fresh row, and a planted cell with none
     // that must still be a node (the mutant that emits only measured cells turns this false; measured)
     assert!(positive_control());
+}
+
+/// `SURFACE` plus one arg no role type claims, so both ratchet counts are 1 (#4587: kills the emit_surface
+/// guard, `!generates_declared` and ratchet_rows mutants).
+fn surface_with_unknown(generates: bool) -> cli_surface::Surface {
+    let mut text = SURFACE.replace(
+        r#"{"id":"prompt","long":"prompt","value_type":"text","role":"prompt"}"#,
+        r#"{"id":"prompt","long":"prompt","value_type":"text","role":"prompt"},
+ {"id":"x","long":"x","value_type":"text","role":"unknown"}"#,
+    );
+    if !generates {
+        text = text.replace(r#""generates":true,"#, "");
+    }
+    cli_surface::parse("s.json", &text).expect("parses")
+}
+
+/// Every string literal `rel(p)` puts on the release-subject node.
+fn subject_lits(g: &Graph, p: &str) -> Vec<String> {
+    let n = iri_path("release-subject", &["0.69.1"]);
+    let mut v: Vec<String> = g
+        .objects(&n, &rel(p))
+        .iter()
+        .map(|t| t.as_literal().map(|(v, _)| v.to_string()).expect("literal"))
+        .collect();
+    v.sort();
+    v
+}
+
+#[test]
+fn ratchet_rows_names_both_counts_with_their_values_and_ceilings() {
+    let st = cli_surface::SurfaceStats {
+        unknown_args: 3,
+        stdin_undeclared: 5,
+        ..Default::default()
+    };
+    let r = crate::ontology::extract::release_inputs::SurfaceRatchet {
+        unknown_args: 7,
+        stdin_undeclared: 11,
+    };
+    assert_eq!(
+        ratchet_rows(&st, Some(r)),
+        [
+            ("unknown_args", 3, Some(7)),
+            ("stdin_undeclared", 5, Some(11))
+        ]
+    );
+    assert_eq!(
+        ratchet_rows(&st, None),
+        [("unknown_args", 3, None), ("stdin_undeclared", 5, None)]
+    );
+}
+
+#[test]
+fn emit_surface_links_the_surface_and_names_an_undeclared_generate() {
+    let s = surface_with_unknown(true);
+    let mut g = Graph::new();
+    let mut stats = ReleaseStats::default();
+    let r = crate::ontology::extract::release_inputs::SurfaceRatchet {
+        unknown_args: 5,
+        stdin_undeclared: 5,
+    };
+    emit_surface(&mut g, &subject(), &s, Some(r), &mut stats);
+    let sn = iri_path("cli-surface", &["t"]);
+    let rel_node = iri_path("release-subject", &["0.69.1"]);
+    assert_eq!(
+        g.objects(&rel_node, &rel("surface"))[0].as_iri(),
+        Some(sn.as_str())
+    );
+    let lit = |p: &str| {
+        g.objects(&sn, &cli_surface::cli(p))[0]
+            .as_literal()
+            .map(|(v, _)| v.to_string())
+            .expect("literal")
+    };
+    assert_eq!(lit("version"), "0.69.1");
+    assert_eq!(lit("file"), "s.json");
+    let st = stats.surface.as_ref().expect("stats recorded");
+    assert_eq!((st.unknown_args, st.stdin_undeclared), (1, 1));
+    assert!(subject_lits(&g, "generatesUndeclared").is_empty());
+    assert!(
+        subject_lits(&g, "ratchetGrew").is_empty(),
+        "below the ceiling"
+    );
+    assert!(subject_lits(&g, "ratchetBaselineMissing").is_empty());
+
+    let mut g2 = Graph::new();
+    let mut stats2 = ReleaseStats::default();
+    emit_surface(
+        &mut g2,
+        &subject(),
+        &surface_with_unknown(false),
+        Some(r),
+        &mut stats2,
+    );
+    assert_eq!(
+        subject_lits(&g2, "generatesUndeclared").len(),
+        1,
+        "a model command that does not say whether it generates is named"
+    );
+}
+
+#[test]
+fn a_count_above_its_ceiling_grows_the_ratchet_and_one_at_it_does_not() {
+    let s = surface_with_unknown(true);
+    let mut g = Graph::new();
+    let mut stats = ReleaseStats::default();
+    // unknown_args 1 == ceiling 1 (holds); stdin_undeclared 1 > ceiling 0 (grew)
+    let r = crate::ontology::extract::release_inputs::SurfaceRatchet {
+        unknown_args: 1,
+        stdin_undeclared: 0,
+    };
+    emit_surface(&mut g, &subject(), &s, Some(r), &mut stats);
+    assert_eq!(
+        subject_lits(&g, "ratchetGrew"),
+        vec!["stdin_undeclared 1 > ceiling 0 (shrink-only)".to_string()]
+    );
+    assert!(subject_lits(&g, "ratchetBaselineMissing").is_empty());
+
+    let mut g2 = Graph::new();
+    emit_surface(&mut g2, &subject(), &s, None, &mut ReleaseStats::default());
+    let missing = subject_lits(&g2, "ratchetBaselineMissing");
+    assert_eq!(missing.len(), 2, "{missing:?}");
+    assert!(missing[0].starts_with("stdin_undeclared: no committed ceiling in "));
+    assert!(missing[1].starts_with("unknown_args: no committed ceiling in "));
+    assert!(subject_lits(&g2, "ratchetGrew").is_empty());
+}
+
+#[test]
+fn the_projection_costs_each_cell_the_median_wall_time_of_its_class() {
+    let (t, c) = repo(&format!(
+        "    - {{id: a, sha256: {SHA_A}, arch: qwen2, gguf: a.gguf, backends: [cuda], hosts: [lambda], required: true}}\n"
+    ));
+    // four samples of the (gen, golden) class: the median is the upper middle one, 7000 ms
+    let rows = [1000, 9000, 2000, 7000]
+        .iter()
+        .map(|ms| {
+            row(&gen_id("lambda", "a.gguf", "off", "golden"))
+                .replace(r#""rc":0"#, &format!(r#""rc":0,"wall_ms":{ms}"#))
+        })
+        .collect::<Vec<_>>()
+        .join(",");
+    let inv = format!(r#"{{"file":"a.gguf","sha256":"{SHA_A}"}}"#);
+    write_receipt(t.path(), "lambda", &receipt("lambda", MC, &inv, &rows));
+    let mut g = Graph::new();
+    let st = extract(&mut g, &c, &subject_with_surface(t.path())).expect("extracts");
+    assert_eq!(st.model_receipts, 1);
+    let p = &st.projection["lambda"];
+    let golden = st
+        .derived
+        .iter()
+        .filter(|c| c.host == "lambda" && c.rung.as_deref() == Some("golden"))
+        .count();
+    let all = st.derived.iter().filter(|c| c.host == "lambda").count();
+    assert!(
+        golden >= 2 && all > golden,
+        "the case needs measured and unmeasured cells"
+    );
+    assert_eq!(p.cells, all);
+    assert_eq!(p.measured_cells, golden);
+    assert_eq!(p.unmeasured_cells, all - golden);
+    assert_eq!(
+        p.projected_secs,
+        7 * golden as u64,
+        "7000 ms is 7 s per golden cell"
+    );
+}
+
+#[test]
+fn the_dominating_class_is_the_largest_total_and_a_tie_keeps_the_earlier() {
+    let (t, c) = repo(&format!(
+        "    - {{id: a, sha256: {SHA_A}, arch: qwen2, gguf: a.gguf, backends: [cuda], hosts: [lambda], required: true}}\n"
+    ));
+    let inv = format!(r#"{{"file":"a.gguf","sha256":"{SHA_A}"}}"#);
+    let base = extract(&mut Graph::new(), &c, &subject_with_surface(t.path())).expect("extracts");
+    let mine: Vec<&CellSpec> = base.derived.iter().filter(|c| c.host == "lambda").collect();
+    // a class's total is its median times EVERY cell in it, measured row or not
+    let n = |r: &str| mine.iter().filter(|c| c.rung.as_deref() == Some(r)).count() as u64;
+    let has_matrix = |r: &str| {
+        mine.iter()
+            .any(|c| c.kind == CellKind::Matrix && c.rung.as_deref() == Some(r))
+    };
+    let rungs: Vec<&str> = mine
+        .iter()
+        .filter_map(|c| c.rung.as_deref())
+        .collect::<BTreeSet<_>>()
+        .into_iter()
+        .collect();
+    assert!(
+        rungs.len() == 3 && rungs.iter().all(|r| has_matrix(r)),
+        "the case needs three classes with matrix cells: {rungs:?}"
+    );
+    // the first class costs 1 s a cell; the second and third both total f·n1·n2 s,
+    // which outgrows the first — so the second displaces it and the third only ties
+    let f = n(rungs[0]) + 1;
+    let wall = |r: &str| match rungs.iter().position(|x| *x == r) {
+        Some(0) => 1000,
+        Some(1) => 1000 * f * n(rungs[2]),
+        _ => 1000 * f * n(rungs[1]),
+    };
+    let rows = mine
+        .iter()
+        .filter(|c| c.kind == CellKind::Matrix)
+        .map(|c| {
+            let ms = wall(c.rung.as_deref().expect("a matrix cell has a rung"));
+            row(&c.id).replace(r#""rc":0"#, &format!(r#""rc":0,"wall_ms":{ms}"#))
+        })
+        .collect::<Vec<_>>()
+        .join(",");
+    write_receipt(t.path(), "lambda", &receipt("lambda", MC, &inv, &rows));
+    let st = extract(&mut Graph::new(), &c, &subject_with_surface(t.path())).expect("extracts");
+    assert_eq!(
+        st.projection["lambda"].dominating_class,
+        format!("gen @ {} ({} s)", rungs[1], f * n(rungs[1]) * n(rungs[2])),
+        "a larger class displaces the first; a tie keeps the one already chosen"
+    );
 }

@@ -362,3 +362,37 @@ fn the_repo_corpus_has_no_file_path_row_and_every_allowlisted_ghost_has_a_class(
     );
     assert_eq!(k.allowlisted_other, 0, "{k:?}");
 }
+
+/// Kills `+=` -> `*=`/`-=` on `allowlisted_other` in `count_allowlisted`: two unclassified reasons count 2.
+#[test]
+fn count_allowlisted_counts_each_class_exactly() {
+    let mut c = BindingsCounters::default();
+    count_allowlisted(&mut c, "something else entirely");
+    count_allowlisted(&mut c, "another unclassified reason");
+    assert_eq!((c.allowlisted, c.allowlisted_other), (2, 2));
+    count_allowlisted(&mut c, "crate x is not a workspace member");
+    assert_eq!(
+        (c.allowlisted, c.allowlisted_not_member, c.allowlisted_other),
+        (3, 1, 2)
+    );
+}
+
+/// Kills `+=` -> `*=` on `stale_allowlist`, and the deleted `registries`/`files_parsed` counter fields.
+#[test]
+fn stale_entries_and_scan_counters_are_reported() {
+    let (_g, c) = workspace();
+    allow(
+        &c,
+        &format!(
+            r#"{{"entries": [{}, {}, {}]}}"#,
+            entry(GHOST),
+            entry("kern::nn::functional::relu"),
+            entry("kern::nn::functional::softmax")
+        ),
+    );
+    let (r, f) = ran(run_bindings_gate(&c));
+    let k = counters(&r);
+    assert_eq!(k.stale_allowlist, 2, "{f:?}");
+    assert!(k.registries >= 1, "{k:?}");
+    assert!(k.files_parsed >= 1, "{k:?}");
+}

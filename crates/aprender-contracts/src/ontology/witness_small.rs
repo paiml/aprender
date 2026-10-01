@@ -15,6 +15,8 @@
 //! Compiled under `cfg(test)` (the L2 twin runs it) and `cfg(kani)` (the harness in `witness.rs` runs it); never
 //! in a release build.
 
+use std::collections::BTreeSet;
+
 use super::witness::{
     check, check_with, CheckError, Checked, ClauseSet, ClauseView, Core, IdSet, Model, Step,
     WitnessResult,
@@ -240,11 +242,10 @@ pub fn id_u8(i: usize) -> u8 {
 /// Decode a step code (see [`STEP_CODES`]) with the given id map.
 #[must_use]
 pub fn step_as<I>(code: u8, id: fn(usize) -> I) -> Step<I> {
-    let k = usize::from(code);
-    // `checked_sub`, not `k < 3` then `(k - 3) % 6`: that `-` had an equivalent mutant (`(k + 3) % 6` is the
-    // same index for every k >= 3), which no test can kill (#4588).
-    match k.checked_sub(3) {
-        None => Step::Unit(id(k)),
+    // `checked_sub`, not `k - 3`: with `% 6` after it, `k + 3` indexes the same pair, so a `-` here is an
+    // operator no test can pin (an equivalent mutant, #4587).
+    match usize::from(code).checked_sub(3) {
+        None => Step::Unit(id(usize::from(code))),
         Some(j) => {
             let (a, b) = IMPLY_PAIRS[j % 6];
             Step::Implies(id(a), id(b))
@@ -324,20 +325,31 @@ fn semantic<S, E>(
 
 /// `KANI-ONT-9-1`'s property: whatever the checker ACCEPTS is true under relation semantics — an accepted core
 /// means no assignment satisfies the graph, an accepted model means one does, and an accepted core names only
-/// variables the graph has. A refusal is always sound (it claims nothing). `String` instantiation.
+/// variables the graph has. A refusal is always sound (it claims nothing). `String` instantiation; pass it
+/// `check_string(g, r)`. It takes the verdict, not the certificate, so a test can hand it an UNSOUND verdict and
+/// watch it say no — over a sound checker alone it is always true and could not be told from `true` (#4587).
 #[must_use]
-pub fn accepted_verdict_is_semantic(g: &SmallGraph, r: &WitnessResult) -> bool {
-    semantic(g, &check_string(g, r), |core| {
-        !core.is_empty() && core.iter().all(|v| VARS.contains(&v.as_str()))
-    })
+pub fn accepted_verdict_is_semantic(g: &SmallGraph, verdict: &Result<Checked, CheckError>) -> bool {
+    semantic(g, verdict, core_names_known)
 }
 
-/// The same property over the `u8` instantiation — the body `KANI-ONT-9-1` proves.
+/// The same property over the `u8` instantiation — the body `KANI-ONT-9-1` proves, over `check_u8(g, r)`.
 #[must_use]
-pub fn accepted_verdict_is_semantic_u8(g: &SmallGraph, r: &WitnessResult<u8>) -> bool {
-    semantic(g, &check_u8(g, r), |core| {
-        !core.as_slice().is_empty() && core.as_slice().iter().all(|v| usize::from(*v) < VARS.len())
-    })
+pub fn accepted_verdict_is_semantic_u8(
+    g: &SmallGraph,
+    verdict: &Result<Checked<Bounded<3>>, CheckError<u8>>,
+) -> bool {
+    semantic(g, verdict, core_names_known_u8)
+}
+
+/// An accepted core is non-empty and names only variables the graph has (`String` ids).
+fn core_names_known(core: &BTreeSet<String>) -> bool {
+    !core.is_empty() && core.iter().all(|v| VARS.contains(&v.as_str()))
+}
+
+/// An accepted core is non-empty and names only variables the graph has (`u8` ids).
+fn core_names_known_u8(core: &Bounded<3>) -> bool {
+    !core.as_slice().is_empty() && core.as_slice().iter().all(|v| usize::from(*v) < VARS.len())
 }
 
 #[cfg(test)]
@@ -357,7 +369,10 @@ mod tests {
         g.implies[3] = true; // b ⇒ c
         g.conflicts[1] = true; // a ⊥ c
         assert!(!g.satisfiable());
-        assert!(accepted_verdict_is_semantic(&g, &core(&[0, 3, 6], 1)));
+        assert!(accepted_verdict_is_semantic(
+            &g,
+            &check_string(&g, &core(&[0, 3, 6], 1))
+        ));
         assert!(matches!(
             check(&g.clause_set(), &core(&[0, 3, 6], 1)),
             Ok(Checked::Unsat { .. })
@@ -368,6 +383,125 @@ mod tests {
             check(&g.clause_set(), &model(0)),
             Ok(Checked::Sat)
         ));
+    }
+
+    /// `semantic` on hand-built verdicts: each arm is false when only one of its conjuncts holds.
+    #[test]
+    fn semantic_needs_both_halves_of_an_accepted_core() {
+        let unsat = SmallGraph {
+            units: [true, false, false],
+            conflicts: [false; 3],
+            implies: [false; 6],
+        };
+        let mut unsat = unsat;
+        unsat.implies[0] = true;
+        unsat.implies[3] = true;
+        unsat.conflicts[1] = true;
+        assert!(!unsat.satisfiable());
+        let sat = SmallGraph::default();
+        assert!(sat.satisfiable());
+        let core = |c: u8| -> Result<Checked<u8>, ()> { Ok(Checked::Unsat { core: c }) };
+        assert!(semantic(&unsat, &core(0), |_| true));
+        assert!(!semantic(&unsat, &core(0), |_| false));
+        assert!(!semantic(&sat, &core(0), |_| true));
+        assert!(!semantic(&sat, &core(0), |_| false));
+        let ok_sat: Result<Checked<u8>, ()> = Ok(Checked::Sat);
+        assert!(semantic(&sat, &ok_sat, |_| false));
+        assert!(!semantic(&unsat, &ok_sat, |_| true));
+        let refused: Result<Checked<u8>, ()> = Err(());
+        assert!(semantic(&unsat, &refused, |_| false));
+    }
+
+    /// The property is a check, not a constant: handed an UNSOUND verdict — a core for a satisfiable graph, a
+    /// model for an unsatisfiable one, a core that is empty or names a variable the graph lacks — it says no.
+    #[test]
+    fn accepted_verdict_is_semantic_refuses_an_unsound_verdict() {
+        let mut unsat = SmallGraph {
+            units: [true, false, false],
+            ..SmallGraph::default()
+        };
+        unsat.implies[0] = true;
+        unsat.implies[3] = true;
+        unsat.conflicts[1] = true;
+        assert!(!unsat.satisfiable());
+        let sat = SmallGraph::default();
+        let set = |v: &[&str]| {
+            v.iter()
+                .map(|x| (*x).to_string())
+                .collect::<BTreeSet<String>>()
+        };
+        let unsat_core = |c| -> Result<Checked, CheckError> { Ok(Checked::Unsat { core: c }) };
+        assert!(accepted_verdict_is_semantic(
+            &unsat,
+            &unsat_core(set(&["a"]))
+        ));
+        assert!(!accepted_verdict_is_semantic(
+            &sat,
+            &unsat_core(set(&["a"]))
+        ));
+        assert!(!accepted_verdict_is_semantic(&unsat, &Ok(Checked::Sat)));
+        assert!(!accepted_verdict_is_semantic(&unsat, &unsat_core(set(&[]))));
+        assert!(!accepted_verdict_is_semantic(
+            &unsat,
+            &unsat_core(set(&["a", "z"]))
+        ));
+
+        let ids = |v: &[u8]| {
+            let mut b = Bounded::<3>::default();
+            for x in v {
+                b.put(*x);
+            }
+            b
+        };
+        let unsat_u8 =
+            |c| -> Result<Checked<Bounded<3>>, CheckError<u8>> { Ok(Checked::Unsat { core: c }) };
+        assert!(accepted_verdict_is_semantic_u8(
+            &unsat,
+            &unsat_u8(ids(&[0, 2]))
+        ));
+        assert!(!accepted_verdict_is_semantic_u8(&sat, &unsat_u8(ids(&[0]))));
+        assert!(!accepted_verdict_is_semantic_u8(&unsat, &Ok(Checked::Sat)));
+        assert!(!accepted_verdict_is_semantic_u8(
+            &unsat,
+            &unsat_u8(ids(&[]))
+        ));
+        // id 3 == VARS.len(): one past the last variable
+        assert!(!accepted_verdict_is_semantic_u8(
+            &unsat,
+            &unsat_u8(ids(&[0, 3]))
+        ));
+    }
+
+    /// Codes `3..9` are the six implications in order; a code past 9 wraps (`% 6`).
+    #[test]
+    fn step_codes_decode_to_their_implication_pair() {
+        for (j, (a, b)) in IMPLY_PAIRS.iter().enumerate() {
+            let code = u8::try_from(j + 3).unwrap_or(u8::MAX);
+            assert_eq!(step_as(code, id_u8), Step::Implies(id_u8(*a), id_u8(*b)));
+        }
+        assert_eq!(step_as(2, id_u8), Step::Unit(2));
+        assert_eq!(step_as(9, id_u8), step_as(3, id_u8));
+    }
+
+    /// Bit `i` of the mask names variable `i`; the decoded steps land on the exact ids.
+    #[test]
+    fn model_and_step_decode_to_exact_ids() {
+        let WitnessResult::Model(m) = model(0b110) else {
+            panic!("model");
+        };
+        assert_eq!(m.false_vars, ["b", "c"]);
+        let WitnessResult::Model(m) = model(0b001) else {
+            panic!("model");
+        };
+        assert_eq!(m.false_vars, ["a"]);
+        let WitnessResult::Model(m) = model_as(0b101, id_u8) else {
+            panic!("model");
+        };
+        assert_eq!(m.false_vars, [0u8, 2]);
+        assert_eq!(step(0), Step::Unit("a".to_string()));
+        assert_eq!(step(2), Step::Unit("c".to_string()));
+        assert_eq!(step(3), Step::Implies("a".to_string(), "b".to_string()));
+        assert_eq!(step(8), Step::Implies("c".to_string(), "b".to_string()));
     }
 
     /// A `u8` verdict renamed into `String` ids, so the two instantiations can be compared exactly.
@@ -450,10 +584,10 @@ mod tests {
             conflict in 0usize..3,
             false_bits in 0u8..8,
         ) {
-            prop_assert!(accepted_verdict_is_semantic(&g, &core(&codes, conflict)));
-            prop_assert!(accepted_verdict_is_semantic(&g, &model(false_bits)));
-            prop_assert!(accepted_verdict_is_semantic_u8(&g, &core_as(&codes, conflict, id_u8)));
-            prop_assert!(accepted_verdict_is_semantic_u8(&g, &model_as(false_bits, id_u8)));
+            prop_assert!(accepted_verdict_is_semantic(&g, &check_string(&g, &core(&codes, conflict))));
+            prop_assert!(accepted_verdict_is_semantic(&g, &check_string(&g, &model(false_bits))));
+            prop_assert!(accepted_verdict_is_semantic_u8(&g, &check_u8(&g, &core_as(&codes, conflict, id_u8))));
+            prop_assert!(accepted_verdict_is_semantic_u8(&g, &check_u8(&g, &model_as(false_bits, id_u8))));
             prop_assert_eq!(relabel(check_u8(&g, &core_as(&codes, conflict, id_u8))), check_string(&g, &core(&codes, conflict)));
             prop_assert_eq!(relabel(check_u8(&g, &model_as(false_bits, id_u8))), check_string(&g, &model(false_bits)));
         }

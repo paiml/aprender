@@ -1616,6 +1616,81 @@ mod tests {
             .expect("the same layout with a file-backed mod resolves");
     }
 
+    /// An inline `mod foo { }` is not a file-backed child: a `foo.rs` on disk that happens to include `inc.rs`
+    /// must not make `inc` resolvable from the parent.
+    #[test]
+    fn an_inline_mod_is_not_a_file_backed_child_that_includes_a_sibling() {
+        let tmp = tempfile::tempdir().expect("tempdir");
+        let w = tmp.path();
+        std::fs::write(w.join("Cargo.toml"), "[workspace]\nmembers = [\"k\"]\n").expect("write");
+        std::fs::create_dir_all(w.join("k/src")).expect("mkdir");
+        std::fs::write(w.join("k/Cargo.toml"), "[package]\nname = \"k\"\n").expect("write");
+        std::fs::write(w.join("k/src/lib.rs"), "pub mod foo {}\n").expect("write");
+        std::fs::write(w.join("k/src/foo.rs"), "include!(\"inc.rs\");\n").expect("write");
+        std::fs::write(w.join("k/src/inc.rs"), "pub fn f() {}\n").expect("write");
+        let ws = Workspace::scan(w);
+        assert!(Resolver::new(&ws).resolve("k::inc", "f").is_err());
+    }
+
+    #[test]
+    fn join_path_is_exact() {
+        assert_eq!(join_path("a::b", &[]), "a::b");
+        assert_eq!(join_path("a", &["b", "c"]), "a::b::c");
+    }
+
+    #[test]
+    fn defines_type_sees_each_type_item_only_by_its_own_name() {
+        for (src, name) in [
+            ("struct S;", "S"),
+            ("enum E { A }", "E"),
+            ("union U { a: u8 }", "U"),
+            ("trait T {}", "T"),
+            ("type A = u8;", "A"),
+        ] {
+            let ast = syn::parse_file(src).expect("parses");
+            assert!(defines_type(&ast.items, name), "{src}");
+            assert!(!defines_type(&ast.items, "Nope"), "{src}");
+        }
+        let f = syn::parse_file("fn S() {}").expect("parses");
+        assert!(!defines_type(&f.items, "S"));
+    }
+
+    #[test]
+    fn find_trait_fn_matches_the_named_fn_only() {
+        let one: syn::ItemTrait = syn::parse_str("trait T { fn b(); }").expect("parses");
+        assert!(find_trait_fn(&one.items, "b").is_some());
+        assert!(find_trait_fn(&one.items, "c").is_none());
+        let two: syn::ItemTrait = syn::parse_str("trait T { fn a(); fn b() {} }").expect("parses");
+        assert!(find_trait_fn(&two.items, "a").is_some());
+        assert!(find_trait_fn(&two.items, "b").is_some());
+        assert!(find_trait_fn(&two.items, "c").is_none());
+    }
+
+    #[test]
+    fn glob_paths_reads_groups_and_refuses_a_bare_glob() {
+        let globs = |src: &str| {
+            let u: syn::ItemUse = syn::parse_str(src).expect("parses");
+            let mut out = Vec::new();
+            glob_paths(&u.tree, "", &mut out);
+            out
+        };
+        assert_eq!(globs("use a::b::*;"), ["a::b"]);
+        assert_eq!(globs("use a::{b::*, c::d::*, e};"), ["a::b", "a::c::d"]);
+        assert!(globs("use *;").is_empty());
+    }
+
+    #[test]
+    fn item_named_reads_union_and_static_items() {
+        let ast = syn::parse_file("pub union U { a: u8 }\nstatic S: u8 = 0;").expect("parses");
+        let u = item_named(&ast.items[0], "U").expect("union");
+        assert_eq!(u.kind, "union");
+        assert_eq!(u.visibility, "pub");
+        assert!(item_named(&ast.items[0], "Nope").is_none());
+        let s = item_named(&ast.items[1], "S").expect("static");
+        assert_eq!(s.kind, "static");
+        assert!(item_named(&ast.items[1], "Nope").is_none());
+    }
+
     #[test]
     fn the_positive_control_fires() {
         assert!(positive_control());

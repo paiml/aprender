@@ -14,14 +14,16 @@ aprender-common|cli-roles|crates/aprender-common/src/cli_roles.rs|--lib
 # both main.rs mutants measured caught with these args (intel, 2026-09-29; local -- the CI matrix is the evidence).
 aprender-contracts-cli|update-check,build-sha|crates/aprender-contracts-cli/src/main.rs|--test cli_integration binary::
 #
-# Rows with NO features (#4588, C97): the file compiles by default, but its tests live OUTSIDE --lib -- the pv
-# subcommands are tested by exec'ing pv from tests/*.rs, and a proc-macro crate's expansions are only observable from
-# an integration target. Under the default `-- --lib` every such mutant reads MISSED whatever those tests say. Each row
-# runs the targets that exercise the file (lint.rs is driven by 24 of them, so it takes all of --tests).
+# Rows with NO features (#4588/#4587, C97/C127): the file compiles by default, but its tests live OUTSIDE --lib -- the
+# pv subcommands are tested by exec'ing pv from tests/*.rs. Under the default `-- --lib` every such mutant reads
+# MISSED whatever those tests say. Each row runs the targets that exercise the file (lint.rs is driven by 24 of them,
+# so it takes all of --tests).
 aprender-contracts-cli||crates/aprender-contracts-cli/src/commands/obligations.rs|--lib --test pvl_obligations_golden --test ont4e_refines_gate --test ont_release_readiness
-aprender-contracts-cli||crates/aprender-contracts-cli/src/commands/proof_status.rs|--lib --test pvl_ghost_binding --test pvl_zero_contracts
 aprender-contracts-cli||crates/aprender-contracts-cli/src/commands/ontology.rs|--lib --test ont2c_owl_tbox
 aprender-contracts-cli||crates/aprender-contracts-cli/src/commands/lint.rs|--tests
+aprender-contracts-cli||crates/aprender-contracts-cli/src/commands/discharge.rs|--lib --test pvl_discharge_check --test pvl_discharge_leanchecker --test pvl_comparator --test pvl_challenge
+aprender-contracts-cli||crates/aprender-contracts-cli/src/commands/extract_rdf.rs|--lib --test ont_release_readiness --test ont_extract_json --test ont4b_shapes_gate
+aprender-contracts-cli||crates/aprender-contracts-cli/src/commands/proof_status.rs|--lib --test pvl_ghost_binding --test pvl_zero_contracts
 aprender-contracts-macros||crates/aprender-contracts-macros/src/lib.rs|--lib --test contract_macros
 aprender-data||crates/aprender-data/src/cli/quality.rs|--lib --test cli_output
 # hub.rs is behind `#[cfg(feature = "hf-hub")]` AND its observable effect is the binary's stderr.
