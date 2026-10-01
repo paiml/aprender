@@ -22,14 +22,8 @@ fn main() {
     // #4219: stamp APR_GIT_SHA for `--version` before anything can return early.
     build_sha::emit();
 
-    let binding_path = Path::new(env!("CARGO_MANIFEST_DIR"))
-        .join("..")
-        .join("..")
-        .join("..")
-        .join("provable-contracts")
-        .join("contracts")
-        .join("trueno-db")
-        .join("binding.yaml");
+    let binding_path = std::path::Path::new(env!("CARGO_MANIFEST_DIR"))
+        .join("../../contracts/trueno-db/binding.yaml");
 
     println!("cargo:rerun-if-changed={}", binding_path.display());
 
@@ -52,9 +46,10 @@ fn main() {
     let total = bindings.bindings.len() as u32;
 
     for b in &bindings.bindings {
-        let stem = b.contract.trim_end_matches(".yaml").to_uppercase().replace('-', "_");
-        let eq = b.equation.to_uppercase().replace('-', "_");
-        let var = format!("CONTRACT_{stem}_{eq}");
+        let var = provable_contracts::build_helper::env_key(
+            b.contract.trim_end_matches(".yaml"),
+            &b.equation,
+        );
         println!("cargo:rustc-env={var}={}", b.status);
         if b.status == "implemented" {
             implemented += 1;

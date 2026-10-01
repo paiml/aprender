@@ -1,0 +1,25 @@
+# ci/mutants-feature-groups.txt -- files whose mutants only compile under a NON-default feature (#4587 A', M1 FALSE-RED).
+#
+# cargo-mutants tests with default features, so a module behind `#[cfg(feature = "x")]` never compiles and every
+# mutant in it reads MISSED, whatever its tests say. `--features pkg/feat` cannot be passed workspace-wide (cargo
+# refuses it for a selected package that does not own the feature), so mutants_table_shard.sh runs each row below as
+# its own `cargo mutants -p PACKAGE --features FEATURES --file FILE`, excludes FILE from the default run, and merges
+# the outcomes. The --list universe is untouched: every listed mutant must still be tested exactly once, so a row
+# whose run tests nothing is a MISSING gap (RED), never a skip. cuda is never a row: no runner has a GPU.
+#
+# package|features|file|test args (what goes after `--`)
+aprender-common|cli-roles|crates/aprender-common/src/cli_roles.rs|--lib
+# main.rs is the pv BINARY: no --lib test can observe it, and on intel (-j 2) the --lib suite alone ran past the
+# 900 s mutant budget, so `main with ()` read TIMEOUT (= survived). The binary:: tests exec pv and assert on it:
+# both main.rs mutants measured caught with these args (intel, 2026-09-29; local -- the CI matrix is the evidence).
+aprender-contracts-cli|update-check,build-sha|crates/aprender-contracts-cli/src/main.rs|--test cli_integration binary::
+#
+# Rows with NO features (#4588/#4587, C97/C127): the file compiles by default, but its tests live OUTSIDE --lib -- the
+# pv subcommands are tested by exec'ing pv from tests/*.rs. Under the default `-- --lib` every such mutant reads
+# MISSED whatever those tests say. Each row runs the targets that exercise the file (lint.rs is driven by 24 of them,
+# so it takes all of --tests).
+aprender-contracts-cli||crates/aprender-contracts-cli/src/commands/obligations.rs|--lib --test pvl_obligations_golden --test ont4e_refines_gate --test ont_release_readiness
+aprender-contracts-cli||crates/aprender-contracts-cli/src/commands/ontology.rs|--lib --test ont2c_owl_tbox
+aprender-contracts-cli||crates/aprender-contracts-cli/src/commands/lint.rs|--tests
+aprender-contracts-cli||crates/aprender-contracts-cli/src/commands/discharge.rs|--lib --test pvl_discharge_check --test pvl_discharge_leanchecker --test pvl_comparator --test pvl_challenge
+aprender-contracts-cli||crates/aprender-contracts-cli/src/commands/extract_rdf.rs|--lib --test ont_release_readiness --test ont_extract_json --test ont4b_shapes_gate

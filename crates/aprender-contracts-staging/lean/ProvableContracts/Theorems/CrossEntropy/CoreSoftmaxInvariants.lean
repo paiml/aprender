@@ -59,7 +59,7 @@ theorem softmax_num_le_denom (l : List Int) (i : Int)
     the rest of the vector, the head weight is strictly below Z, so
     softmax(z)_i = w_i / Z < 1. -/
 theorem softmax_num_lt_denom (i : Int) (rest : List Int)
-    (hi : 0 ≤ i) (hrest : 0 < lsum rest) : i < lsum (i :: rest) := by
+    (_hi : 0 ≤ i) (hrest : 0 < lsum rest) : i < lsum (i :: rest) := by
   rw [lsum_cons]; omega
 
 /-- SM-INV-001 (partition of unity, Σ softmax_i = 1): the softmax numerators are

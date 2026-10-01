@@ -1,0 +1,20 @@
+# ONT-2c fixture Σ: every mapping the OWL writer has, and every key it refuses to express, declared.
+schema: ont-sigma-v1
+concepts:
+  Contract: {doc: "a contract"}
+  Code: {doc: "code"}
+  Test: {doc: "a test"}
+roles:
+  binds: {domain: Contract, range: Code, doc: "plain role"}
+  refines: {domain: Contract, range: Contract, acyclic: true, doc: "acyclic: must yield NO axiom"}
+  pairs_with: {domain: Test, range: Test, symmetric: true, doc: "symmetric"}
+symbols:
+  - {name: "∀", kind: operator}
+not_expressible:
+  - {key: acyclic, reader: ontology/owl.rs}
+  - {key: symbols, reader: ontology/owl.rs}
+readers:
+  concepts: ontology/sigma.rs
+  roles: ontology/owl.rs
+  symbols: lint/sigma_symbols.rs
+  not_expressible: ontology/owl.rs

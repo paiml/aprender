@@ -245,8 +245,8 @@ minijinja = { version = "2.14", features = ["loader", "serde"] }
 # crates.io compiled a SECOND copy of the contract engine alongside the in-tree
 # one — exactly the duplicate-crate + publish-cycle the consolidation removed.
 provable-contracts = { path = "crates/aprender-contracts", version = "0.69.3", package = "aprender-contracts" }
-provable-contracts-macros = { path = "crates/aprender-contracts-macros", version = "0.69.3", package = "aprender-contracts-macros" }
-aprender-contracts-macros = { path = "crates/aprender-contracts-macros", version = "0.69.3" }
+provable-contracts-macros = { path = "crates/aprender-contracts-macros", version = "0.69.4", package = "aprender-contracts-macros" }
+aprender-contracts-macros = { path = "crates/aprender-contracts-macros", version = "0.69.4" }
 
 # YAML
 serde_yaml = "0.9"
@@ -297,8 +297,8 @@ entrenar = { path = "crates/aprender-train", version = "0.69.3", package = "apre
 aprender-train-common = { path = "crates/aprender-train-common", version = "0.69.3" }
 aprender-train-distill = { path = "crates/aprender-train-distill", version = "0.69.3" }
 aprender-orchestrate = { path = "crates/aprender-orchestrate", version = "0.69.3" }
-aprender-contracts = { path = "crates/aprender-contracts", version = "0.69.3" }
-aprender-build-sha = { path = "crates/aprender-build-sha", version = "0.69.3" }
+aprender-contracts = { path = "crates/aprender-contracts", version = "0.69.4" }
+aprender-build-sha = { path = "crates/aprender-build-sha", version = "0.69.4" }
 aprender-profile = { path = "crates/aprender-profile", version = "0.69.3" }
 aprender-profile-core = { path = "crates/aprender-profile-core", version = "0.69.3" }
 aprender-zram-core = { path = "crates/aprender-zram-core", version = "0.69.3" }
@@ -317,8 +317,8 @@ aprender-rag-cli = { path = "crates/aprender-rag-cli", version = "0.69.3" }
 aprender-qa-cli = { path = "crates/aprender-qa-cli", version = "0.69.3" }
 aprender-cgp = { path = "crates/aprender-cgp", version = "0.69.3" }
 aprender-contrastive-data = { path = "crates/aprender-contrastive-data", version = "0.69.3" }
-aprender-contracts-cli = { path = "crates/aprender-contracts-cli", version = "0.69.3" }
-aprender-update = { path = "crates/aprender-update", version = "0.69.3" }
+aprender-contracts-cli = { path = "crates/aprender-contracts-cli", version = "0.69.4" }
+aprender-update = { path = "crates/aprender-update", version = "0.69.4" }
 aprender-data = { path = "crates/aprender-data", version = "0.69.3" }
 
 # Additional external deps needed by sub-crates
@@ -389,7 +389,7 @@ presentar-yaml = { path = "crates/aprender-present-yaml", version = "0.69.3", pa
 presentar-test = { path = "crates/aprender-present-test", version = "0.69.3", package = "aprender-present-test" }
 presentar-test-macros = { path = "crates/aprender-present-test-macros", version = "0.69.3", package = "aprender-present-test-macros" }
 jugar-probar-derive = { path = "crates/aprender-test-derive", version = "0.69.3", package = "aprender-test-derive" }
-batuta-common = { path = "crates/aprender-common", version = "0.69.3", package = "aprender-common" }
+batuta-common = { path = "crates/aprender-common", version = "0.69.4", package = "aprender-common" }
 # APR-MONO sibling aliases — MUST use workspace refs, NEVER crates.io versions.
 # Hard-pinning these to crates.io creates a diamond: sub-crates pull older
 # aprender versions → multiple `aprender` crates in Cargo.lock = MUDA.

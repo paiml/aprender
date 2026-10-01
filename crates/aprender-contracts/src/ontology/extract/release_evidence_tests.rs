@@ -48,20 +48,37 @@ fn receipt(host: &str, apr_sha: &str, inventory: &str, cells: &str) -> String {
     )
 }
 
-fn cell(sha: &str, verb: &str, ctx: &str) -> String {
-    cell_t(sha, verb, "off", ctx)
-}
-
-fn cell_t(sha: &str, verb: &str, thinking: &str, ctx: &str) -> String {
-    format!(
-        r#"{{"sha256":"{sha}","file":"m.gguf","verb":"{verb}","thinking":"{thinking}","context":"{ctx}",
-             "prompt_tokens":2000,"max_tokens":512,"answer_chars":12,
-             "verdict":"pass","backend":"cuda","fallback":false,"rc":0}}"#
-    )
-}
-
 fn subject() -> Subject {
     Subject::new("0.69.1", MC).expect("subject")
+}
+
+/// A generic surface (#3745 S2): one command that GENERATES from a model and a prompt. Not an apr verb, so the
+/// hand-list guard (S3) has nothing to find here.
+const SURFACE: &str = r#"{"schema":"apr-cli-surface/v1.1","binary":{"version":"0.69.1","git_sha":"t"},"global_args":[],
+"commands":[{"path":["gen"],"key":"gen","leaf":true,"generates":true,"args":[
+ {"id":"model","positional":true,"required":true,"value_type":"path","role":"model"},
+ {"id":"prompt","long":"prompt","value_type":"text","role":"prompt"}]}]}"#;
+
+/// `subject()` with the generic surface written into the repo.
+fn subject_with_surface(root: &Path) -> Subject {
+    let path = root.join("surface.json");
+    std::fs::write(&path, SURFACE).expect("surface");
+    let mut s = subject();
+    s.surface = Some(path);
+    s
+}
+
+/// The matrix cell id of `gen` for (host, file, thinking, rung).
+fn gen_id(host: &str, file: &str, thinking: &str, rung: &str) -> String {
+    format!("gen/{host}/{file}/think-{thinking}/{rung}/--prompt/defaults")
+}
+
+/// A passing row for `id`.
+fn row(id: &str) -> String {
+    format!(
+        r#"{{"cell_id":"{id}","prompt_tokens":2000,"max_tokens":512,"answer_chars":12,
+             "verdict":"pass","backend":"cuda","fallback":false,"rc":0}}"#
+    )
 }
 
 #[test]
@@ -125,25 +142,41 @@ fn the_universe_is_the_inventory_plus_the_cuda_rungs_listed_for_the_host_and_eve
         "c".repeat(64),
         "d".repeat(64)
     ));
-    // lambda holds b (inventory) and an unlisted model e
+    // lambda holds e (inventory) and one file it never hashed
     let inv = format!(r#"{{"file":"e.gguf","sha256":"{SHA_B}"}},{{"file":"nohash.gguf"}}"#);
-    write_receipt(
-        t.path(),
-        "lambda",
-        &receipt("lambda", MC, &inv, &cell(SHA_A, "run", "golden")),
-    );
+    let id = gen_id("lambda", "a.gguf", "off", "golden");
+    write_receipt(t.path(), "lambda", &receipt("lambda", MC, &inv, &row(&id)));
     let mut g = Graph::new();
-    let st = extract(&mut g, &c, &subject()).expect("extracts");
+    let st = extract(&mut g, &c, &subject_with_surface(t.path())).expect("extracts");
     assert_eq!(st.required_hosts, 2, "yoga is not required");
-    // lambda: a (rung) + e (inventory) = 2 · gx10: a + c = 2 (no receipt, but the rungs listed for it stay)
+    // lambda: a (rung) + e (inventory) · gx10: a + c (no receipt, but the rungs listed for it stay)
     assert_eq!(st.models, 4);
-    // no measured length or thinking mode: every rung (golden, consumer-max) + declared, both modes
-    assert_eq!(st.cells, 4 * 4 * 2 * 3, "models × verbs × thinking × rungs");
+    let files: BTreeSet<(&str, &str)> = st
+        .derived
+        .iter()
+        .filter_map(|c| Some((c.host.as_str(), c.model_file.as_deref()?)))
+        .collect();
+    assert!(
+        !files.iter().any(|(_, f)| *f == "b.gguf"),
+        "a cpu-only rung owes no cuda cell"
+    );
+    assert!(files.contains(&("gx10", "c.gguf")) && !files.contains(&("lambda", "c.gguf")));
+    // no measured length or modes: both modes × (golden, consumer-max, declared), pairwise with the one shape
+    let a_lambda = st
+        .derived
+        .iter()
+        .filter(|c| {
+            c.host == "lambda"
+                && c.model_file.as_deref() == Some("a.gguf")
+                && c.kind == CellKind::Matrix
+        })
+        .count();
+    assert_eq!(a_lambda, 6, "every (thinking, rung) pair is a cell");
+    assert_eq!(st.cells, st.derived.len(), "every derived cell is a node");
     assert_eq!(st.cells_with_row, 1);
     let lambda = iri_path("release-host", &["0.69.1", "lambda"]);
-    let unmeasured = g.objects(&lambda, &rel("unmeasuredModel"));
     assert_eq!(
-        unmeasured.len(),
+        g.objects(&lambda, &rel("unmeasuredModel")).len(),
         1,
         "an inventory row with no hash is named, never dropped"
     );
@@ -156,69 +189,57 @@ fn the_universe_is_the_inventory_plus_the_cuda_rungs_listed_for_the_host_and_eve
 }
 
 #[test]
-fn a_row_keys_by_sha_verb_and_rung_and_carries_fresh_and_context_met() {
+fn a_row_keys_by_its_cell_id_alone_and_carries_fresh_and_context_met() {
     let (t, c) = repo(&format!(
         "    - {{id: a, sha256: {SHA_A}, arch: qwen2, gguf: a.gguf, backends: [cuda], hosts: [lambda], required: true}}\n"
     ));
+    let id = gen_id("lambda", "a.gguf", "off", "consumer-max");
     let rows = [
-        cell(SHA_A, "chat", "consumer-max"),
-        cell(SHA_A, "chat", "no-such-rung"),
-        cell(SHA_B, "chat", "golden"),
+        row(&id),
+        row(&gen_id("lambda", "a.gguf", "off", "no-such-rung")),
+        row(&id).replace(&format!(r#""cell_id":"{id}","#), ""),
     ]
     .join(",");
     let inv = format!(r#"{{"file":"a.gguf","sha256":"{SHA_A}"}}"#);
     write_receipt(t.path(), "lambda", &receipt("lambda", BUMP, &inv, &rows));
     let mut g = Graph::new();
-    let st = extract(&mut g, &c, &subject()).expect("extracts");
+    let st = extract(&mut g, &c, &subject_with_surface(t.path())).expect("extracts");
     assert_eq!(st.cells_with_row, 1);
     assert_eq!(
         st.orphan_rows, 2,
-        "an unknown rung and a model outside the universe key onto no cell"
+        "an id the surface does not derive, and a row with no id"
     );
-    let cellnode = iri_path(
-        "release-cell",
-        &[
-            "0.69.1",
-            "lambda",
-            "a.gguf",
-            "chat",
-            "think-off",
-            "consumer-max",
-        ],
-    );
-    let row = g.objects(&cellnode, &rel("row"))[0]
+    let mut segs = vec!["0.69.1"];
+    segs.extend(id.split('/'));
+    let cellnode = iri_path("release-cell", &segs);
+    let row_n = g.objects(&cellnode, &rel("row"))[0]
         .as_iri()
         .expect("iri")
         .to_string();
-    let lit = |p: &str| {
-        g.objects(&row, &rel(p))[0]
+    let lit = |g: &Graph, p: &str| {
+        g.objects(&row_n, &rel(p))[0]
             .as_literal()
             .map(|(v, _)| v.to_string())
             .expect("literal")
     };
     assert_eq!(
-        lit("fresh"),
+        lit(&g, "fresh"),
         "false",
         "measured at BUMP, released at MC, no --receipts-commit"
     );
     assert_eq!(
-        lit("contextMet"),
+        lit(&g, "contextMet"),
         "true",
         "2000 prompt tokens ≥ consumer-max 1000"
     );
     let mut g2 = Graph::new();
-    extract(
-        &mut g2,
-        &c,
-        &subject().with_receipts_commit(BUMP).expect("sha"),
-    )
-    .expect("extracts");
-    let fresh2 = g2.objects(&row, &rel("fresh"))[0]
-        .as_literal()
-        .map(|(v, _)| v.to_string());
+    let s2 = subject_with_surface(t.path())
+        .with_receipts_commit(BUMP)
+        .expect("sha");
+    extract(&mut g2, &c, &s2).expect("extracts");
     assert_eq!(
-        fresh2.as_deref(),
-        Some("true"),
+        lit(&g2, "fresh"),
+        "true",
         "T-4: R7 proved BUMP ≡ MC and said so"
     );
 }
@@ -243,6 +264,11 @@ fn a_kernel_on_one_hosts_dispatch_path_is_an_obligation_on_every_required_host()
     let mut g = Graph::new();
     let st = extract(&mut g, &c, &subject()).expect("extracts");
     assert_eq!(st.kernel_cells, 2, "one kernel × two required hosts");
+    assert_eq!(
+        (st.kernel_receipts, st.model_receipts, st.context_rungs),
+        (1, 0, 2),
+        "the stats count what was read"
+    );
     let lambda = iri_path("release-kernel", &["0.69.1", "lambda", "q4k_gemv", "q4_k"]);
     let gx10 = iri_path("release-kernel", &["0.69.1", "gx10", "q4k_gemv", "q4_k"]);
     assert!(
@@ -277,78 +303,70 @@ fn a_foreign_context_or_kernel_schema_is_refused_by_name() {
 #[test]
 fn a_measured_length_and_thinking_mode_shape_the_cells_and_a_think_on_row_must_close_and_answer() {
     let (t, c) = repo("");
-    // e.gguf: 1500-token context (golden 0 fits, consumer-max 1000 fits), no thinking mode
-    // f.gguf: 800-token context (consumer-max 1000 does NOT fit), thinking mode unmeasured → both modes
+    // e.gguf: 1500-token context (golden 0 and consumer-max 1000 fit), off only
+    // f.gguf: 800-token context (consumer-max 1000 does NOT fit), modes unmeasured → both
     let inv = format!(
         r#"{{"file":"e.gguf","sha256":"{SHA_A}","context_length":1500,"thinking_modes":["off"],"thinking_markers":[]}},
            {{"file":"f.gguf","sha256":"{SHA_B}","context_length":800}}"#
     );
-    let unclosed = cell_t(SHA_B, "chat", "on", "golden").replace(
+    let on = gen_id("lambda", "f.gguf", "on", "golden");
+    let unclosed = row(&on).replace(
         r#""answer_chars":12"#,
         r#""answer_chars":0,"think_closed":false"#,
     );
-    let declared_row = cell_t(SHA_A, "run", "off", "declared"); // 2000 + 512 ≥ 1500
-    let rows = [unclosed, declared_row].join(",");
+    let declared = gen_id("lambda", "e.gguf", "off", "declared"); // 2000 + 512 ≥ 1500
+    let rows = [unclosed, row(&declared)].join(",");
     write_receipt(t.path(), "lambda", &receipt("lambda", MC, &inv, &rows));
     let mut g = Graph::new();
-    let st = extract(&mut g, &c, &subject()).expect("extracts");
-    // lambda: e = 4 verbs × 1 mode × 3 rungs = 12 · f = 4 × 2 × 2 rungs (golden, declared) = 16
-    // gx10: no receipt and no rung listed → no models, no cells (its Host node carries the missing receipt)
-    assert_eq!(st.cells, 12 + 16);
-    let on = |file: &str| {
-        iri_path(
-            "release-cell",
-            &["0.69.1", "lambda", file, "chat", "think-on", "golden"],
-        )
+    let st = extract(&mut g, &c, &subject_with_surface(t.path())).expect("extracts");
+    let m = |f: &str| {
+        st.derived
+            .iter()
+            .filter(|c| c.model_file.as_deref() == Some(f) && c.kind == CellKind::Matrix)
+            .collect::<Vec<_>>()
     };
-    assert!(
-        g.objects(&on("e.gguf"), RDF_TYPE).is_empty(),
-        "no thinking mode measured → no ON cell"
+    assert_eq!(
+        m("e.gguf").len(),
+        3,
+        "off only × (golden, consumer-max, declared)"
     );
-    let row = g.objects(&on("f.gguf"), &rel("row"))[0]
-        .as_iri()
-        .expect("iri")
-        .to_string();
-    let lit = |n: &str, p: &str| {
-        g.objects(n, &rel(p))[0]
+    assert!(m("e.gguf")
+        .iter()
+        .all(|c| c.thinking.as_deref() == Some("off")));
+    assert_eq!(
+        m("f.gguf").len(),
+        4,
+        "both modes × (golden, declared): consumer-max does not fit"
+    );
+    assert!(!m("f.gguf")
+        .iter()
+        .any(|c| c.rung.as_deref() == Some("consumer-max")));
+    let node = |id: &str| {
+        let mut segs = vec!["0.69.1"];
+        segs.extend(id.split('/'));
+        iri_path("release-cell", &segs)
+    };
+    let lit = |id: &str, p: &str| {
+        let r = g.objects(&node(id), &rel("row"))[0]
+            .as_iri()
+            .expect("iri")
+            .to_string();
+        g.objects(&r, &rel(p))[0]
             .as_literal()
             .map(|(v, _)| v.to_string())
     };
     assert_eq!(
-        lit(&row, "thinkOk").as_deref(),
+        lit(&on, "thinkOk").as_deref(),
         Some("false"),
         "an unclosed think block"
     );
     assert_eq!(
-        lit(&row, "answered").as_deref(),
+        lit(&on, "answered").as_deref(),
         Some("false"),
         "an empty answer"
     );
-    let big = iri_path(
-        "release-cell",
-        &[
-            "0.69.1",
-            "lambda",
-            "f.gguf",
-            "chat",
-            "think-off",
-            "consumer-max",
-        ],
-    );
-    assert!(
-        g.objects(&big, &rel("model")).is_empty(),
-        "a rung past the declared length is not owed"
-    );
-    let decl = iri_path(
-        "release-cell",
-        &["0.69.1", "lambda", "e.gguf", "run", "think-off", "declared"],
-    );
-    let drow = g.objects(&decl, &rel("row"))[0]
-        .as_iri()
-        .expect("iri")
-        .to_string();
     assert_eq!(
-        lit(&drow, "contextMet").as_deref(),
+        lit(&declared, "contextMet").as_deref(),
         Some("true"),
         "prompt + budget fill the declared length"
     );
@@ -385,9 +403,24 @@ fn long_rungs_are_owed_per_the_ladders_long_rungs_for_and_an_echo_that_disagrees
     );
     write_receipt(t.path(), "lambda", &receipt("lambda", MC, &inv, ""));
     let mut g = Graph::new();
-    let st = extract(&mut g, &c, &subject()).expect("extracts");
-    // big: 4 verbs × 2 modes × (4k, consumer-max, declared) = 24 · small: 4 × 1 × (4k) = 4
-    assert_eq!(st.cells, 24 + 4);
+    let st = extract(&mut g, &c, &subject_with_surface(t.path())).expect("extracts");
+    let rungs = |f: &str| {
+        st.derived
+            .iter()
+            .filter(|c| c.model_file.as_deref() == Some(f) && c.kind == CellKind::Matrix)
+            .filter_map(|c| c.rung.clone())
+            .collect::<BTreeSet<String>>()
+    };
+    let all: BTreeSet<String> = ["4k", "consumer-max", "declared"]
+        .iter()
+        .map(|s| (*s).to_string())
+        .collect();
+    assert_eq!(rungs("big.gguf"), all, "a qwen35 model owes every rung");
+    assert_eq!(
+        rungs("small.gguf"),
+        BTreeSet::from(["4k".to_string()]),
+        "qwen2, not the representative"
+    );
     let small = iri("model", SHA_B);
     let lit = |p: &str| {
         g.objects(&small, &rel(p))
@@ -395,11 +428,7 @@ fn long_rungs_are_owed_per_the_ladders_long_rungs_for_and_an_echo_that_disagrees
             .and_then(|t| t.as_literal())
             .map(|(v, _)| v.to_string())
     };
-    assert_eq!(
-        lit("owesLongRungs").as_deref(),
-        Some("false"),
-        "qwen2 and not the representative"
-    );
+    assert_eq!(lit("owesLongRungs").as_deref(), Some("false"));
     assert!(
         lit("longRungsMismatch").is_some_and(|m| m.contains("small.gguf")),
         "the echo said true"
@@ -455,4 +484,219 @@ fn the_positive_control_fires_without_any_release_subject_or_file() {
     // PMAT-3704 R-3: drawn on every gate run — a sample cell with one fresh row, and a planted cell with none
     // that must still be a node (the mutant that emits only measured cells turns this false; measured)
     assert!(positive_control());
+}
+
+/// `SURFACE` plus one arg no role type claims, so both ratchet counts are 1 (#4587: kills the emit_surface
+/// guard, `!generates_declared` and ratchet_rows mutants).
+fn surface_with_unknown(generates: bool) -> cli_surface::Surface {
+    let mut text = SURFACE.replace(
+        r#"{"id":"prompt","long":"prompt","value_type":"text","role":"prompt"}"#,
+        r#"{"id":"prompt","long":"prompt","value_type":"text","role":"prompt"},
+ {"id":"x","long":"x","value_type":"text","role":"unknown"}"#,
+    );
+    if !generates {
+        text = text.replace(r#""generates":true,"#, "");
+    }
+    cli_surface::parse("s.json", &text).expect("parses")
+}
+
+/// Every string literal `rel(p)` puts on the release-subject node.
+fn subject_lits(g: &Graph, p: &str) -> Vec<String> {
+    let n = iri_path("release-subject", &["0.69.1"]);
+    let mut v: Vec<String> = g
+        .objects(&n, &rel(p))
+        .iter()
+        .map(|t| t.as_literal().map(|(v, _)| v.to_string()).expect("literal"))
+        .collect();
+    v.sort();
+    v
+}
+
+#[test]
+fn ratchet_rows_names_both_counts_with_their_values_and_ceilings() {
+    let st = cli_surface::SurfaceStats {
+        unknown_args: 3,
+        stdin_undeclared: 5,
+        ..Default::default()
+    };
+    let r = crate::ontology::extract::release_inputs::SurfaceRatchet {
+        unknown_args: 7,
+        stdin_undeclared: 11,
+    };
+    assert_eq!(
+        ratchet_rows(&st, Some(r)),
+        [
+            ("unknown_args", 3, Some(7)),
+            ("stdin_undeclared", 5, Some(11))
+        ]
+    );
+    assert_eq!(
+        ratchet_rows(&st, None),
+        [("unknown_args", 3, None), ("stdin_undeclared", 5, None)]
+    );
+}
+
+#[test]
+fn emit_surface_links_the_surface_and_names_an_undeclared_generate() {
+    let s = surface_with_unknown(true);
+    let mut g = Graph::new();
+    let mut stats = ReleaseStats::default();
+    let r = crate::ontology::extract::release_inputs::SurfaceRatchet {
+        unknown_args: 5,
+        stdin_undeclared: 5,
+    };
+    emit_surface(&mut g, &subject(), &s, Some(r), &mut stats);
+    let sn = iri_path("cli-surface", &["t"]);
+    let rel_node = iri_path("release-subject", &["0.69.1"]);
+    assert_eq!(
+        g.objects(&rel_node, &rel("surface"))[0].as_iri(),
+        Some(sn.as_str())
+    );
+    let lit = |p: &str| {
+        g.objects(&sn, &cli_surface::cli(p))[0]
+            .as_literal()
+            .map(|(v, _)| v.to_string())
+            .expect("literal")
+    };
+    assert_eq!(lit("version"), "0.69.1");
+    assert_eq!(lit("file"), "s.json");
+    let st = stats.surface.as_ref().expect("stats recorded");
+    assert_eq!((st.unknown_args, st.stdin_undeclared), (1, 1));
+    assert!(subject_lits(&g, "generatesUndeclared").is_empty());
+    assert!(
+        subject_lits(&g, "ratchetGrew").is_empty(),
+        "below the ceiling"
+    );
+    assert!(subject_lits(&g, "ratchetBaselineMissing").is_empty());
+
+    let mut g2 = Graph::new();
+    let mut stats2 = ReleaseStats::default();
+    emit_surface(
+        &mut g2,
+        &subject(),
+        &surface_with_unknown(false),
+        Some(r),
+        &mut stats2,
+    );
+    assert_eq!(
+        subject_lits(&g2, "generatesUndeclared").len(),
+        1,
+        "a model command that does not say whether it generates is named"
+    );
+}
+
+#[test]
+fn a_count_above_its_ceiling_grows_the_ratchet_and_one_at_it_does_not() {
+    let s = surface_with_unknown(true);
+    let mut g = Graph::new();
+    let mut stats = ReleaseStats::default();
+    // unknown_args 1 == ceiling 1 (holds); stdin_undeclared 1 > ceiling 0 (grew)
+    let r = crate::ontology::extract::release_inputs::SurfaceRatchet {
+        unknown_args: 1,
+        stdin_undeclared: 0,
+    };
+    emit_surface(&mut g, &subject(), &s, Some(r), &mut stats);
+    assert_eq!(
+        subject_lits(&g, "ratchetGrew"),
+        vec!["stdin_undeclared 1 > ceiling 0 (shrink-only)".to_string()]
+    );
+    assert!(subject_lits(&g, "ratchetBaselineMissing").is_empty());
+
+    let mut g2 = Graph::new();
+    emit_surface(&mut g2, &subject(), &s, None, &mut ReleaseStats::default());
+    let missing = subject_lits(&g2, "ratchetBaselineMissing");
+    assert_eq!(missing.len(), 2, "{missing:?}");
+    assert!(missing[0].starts_with("stdin_undeclared: no committed ceiling in "));
+    assert!(missing[1].starts_with("unknown_args: no committed ceiling in "));
+    assert!(subject_lits(&g2, "ratchetGrew").is_empty());
+}
+
+#[test]
+fn the_projection_costs_each_cell_the_median_wall_time_of_its_class() {
+    let (t, c) = repo(&format!(
+        "    - {{id: a, sha256: {SHA_A}, arch: qwen2, gguf: a.gguf, backends: [cuda], hosts: [lambda], required: true}}\n"
+    ));
+    // four samples of the (gen, golden) class: the median is the upper middle one, 7000 ms
+    let rows = [1000, 9000, 2000, 7000]
+        .iter()
+        .map(|ms| {
+            row(&gen_id("lambda", "a.gguf", "off", "golden"))
+                .replace(r#""rc":0"#, &format!(r#""rc":0,"wall_ms":{ms}"#))
+        })
+        .collect::<Vec<_>>()
+        .join(",");
+    let inv = format!(r#"{{"file":"a.gguf","sha256":"{SHA_A}"}}"#);
+    write_receipt(t.path(), "lambda", &receipt("lambda", MC, &inv, &rows));
+    let mut g = Graph::new();
+    let st = extract(&mut g, &c, &subject_with_surface(t.path())).expect("extracts");
+    assert_eq!(st.model_receipts, 1);
+    let p = &st.projection["lambda"];
+    let golden = st
+        .derived
+        .iter()
+        .filter(|c| c.host == "lambda" && c.rung.as_deref() == Some("golden"))
+        .count();
+    let all = st.derived.iter().filter(|c| c.host == "lambda").count();
+    assert!(
+        golden >= 2 && all > golden,
+        "the case needs measured and unmeasured cells"
+    );
+    assert_eq!(p.cells, all);
+    assert_eq!(p.measured_cells, golden);
+    assert_eq!(p.unmeasured_cells, all - golden);
+    assert_eq!(
+        p.projected_secs,
+        7 * golden as u64,
+        "7000 ms is 7 s per golden cell"
+    );
+}
+
+#[test]
+fn the_dominating_class_is_the_largest_total_and_a_tie_keeps_the_earlier() {
+    let (t, c) = repo(&format!(
+        "    - {{id: a, sha256: {SHA_A}, arch: qwen2, gguf: a.gguf, backends: [cuda], hosts: [lambda], required: true}}\n"
+    ));
+    let inv = format!(r#"{{"file":"a.gguf","sha256":"{SHA_A}"}}"#);
+    let base = extract(&mut Graph::new(), &c, &subject_with_surface(t.path())).expect("extracts");
+    let mine: Vec<&CellSpec> = base.derived.iter().filter(|c| c.host == "lambda").collect();
+    // a class's total is its median times EVERY cell in it, measured row or not
+    let n = |r: &str| mine.iter().filter(|c| c.rung.as_deref() == Some(r)).count() as u64;
+    let has_matrix = |r: &str| {
+        mine.iter()
+            .any(|c| c.kind == CellKind::Matrix && c.rung.as_deref() == Some(r))
+    };
+    let rungs: Vec<&str> = mine
+        .iter()
+        .filter_map(|c| c.rung.as_deref())
+        .collect::<BTreeSet<_>>()
+        .into_iter()
+        .collect();
+    assert!(
+        rungs.len() == 3 && rungs.iter().all(|r| has_matrix(r)),
+        "the case needs three classes with matrix cells: {rungs:?}"
+    );
+    // the first class costs 1 s a cell; the second and third both total f·n1·n2 s,
+    // which outgrows the first — so the second displaces it and the third only ties
+    let f = n(rungs[0]) + 1;
+    let wall = |r: &str| match rungs.iter().position(|x| *x == r) {
+        Some(0) => 1000,
+        Some(1) => 1000 * f * n(rungs[2]),
+        _ => 1000 * f * n(rungs[1]),
+    };
+    let rows = mine
+        .iter()
+        .filter(|c| c.kind == CellKind::Matrix)
+        .map(|c| {
+            let ms = wall(c.rung.as_deref().expect("a matrix cell has a rung"));
+            row(&c.id).replace(r#""rc":0"#, &format!(r#""rc":0,"wall_ms":{ms}"#))
+        })
+        .collect::<Vec<_>>()
+        .join(",");
+    write_receipt(t.path(), "lambda", &receipt("lambda", MC, &inv, &rows));
+    let st = extract(&mut Graph::new(), &c, &subject_with_surface(t.path())).expect("extracts");
+    assert_eq!(
+        st.projection["lambda"].dominating_class,
+        format!("gen @ {} ({} s)", rungs[1], f * n(rungs[1]) * n(rungs[2])),
+        "a larger class displaces the first; a tie keeps the one already chosen"
+    );
 }

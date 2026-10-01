@@ -368,7 +368,7 @@ dependencies = [
 
 [[package]]
 name = "aprender-build-sha"
-version = "0.69.3"
+version = "0.69.4"
 
 [[package]]
 name = "aprender-cbtop"
@@ -419,8 +419,9 @@ dependencies = [
 
 [[package]]
 name = "aprender-common"
-version = "0.69.3"
+version = "0.69.4"
 dependencies = [
+ "clap",
  "lz4_flex 0.11.6",
  "zstd",
 ]
@@ -430,6 +431,7 @@ name = "aprender-compute"
 version = "0.69.3"
 dependencies = [
  "anyhow",
+ "aprender-contracts",
  "aprender-contracts-macros",
  "aprender-core",
  "aprender-cuda-edge",
@@ -491,11 +493,13 @@ dependencies = [
 
 [[package]]
 name = "aprender-contracts"
-version = "0.69.3"
+version = "0.69.4"
 dependencies = [
  "aprender-contracts-macros",
+ "blake3",
  "criterion 0.5.1",
  "half",
+ "proc-macro2",
  "proptest",
  "regex",
  "serde",
@@ -509,9 +513,10 @@ dependencies = [
 
 [[package]]
 name = "aprender-contracts-cli"
-version = "0.69.3"
+version = "0.69.4"
 dependencies = [
  "aprender-build-sha",
+ "aprender-common",
  "aprender-contracts",
  "aprender-update",
  "clap",
@@ -524,7 +529,7 @@ dependencies = [
 
 [[package]]
 name = "aprender-contracts-macros"
-version = "0.69.3"
+version = "0.69.4"
 dependencies = [
  "proc-macro2",
  "quote",
@@ -683,6 +688,7 @@ dependencies = [
  "aprender-build-sha",
  "aprender-common",
  "aprender-compute",
+ "aprender-contracts",
  "arrow 59.2.0",
  "axum 0.7.9",
  "bytemuck",
@@ -944,6 +950,7 @@ name = "aprender-present-cli"
 version = "0.69.3"
 dependencies = [
  "aprender-build-sha",
+ "aprender-contracts",
  "aprender-present-yaml",
  "clap",
  "notify",
@@ -957,6 +964,7 @@ dependencies = [
 name = "aprender-present-core"
 version = "0.69.3"
 dependencies = [
+ "aprender-contracts",
  "aprender-contracts-macros",
  "criterion 0.7.0",
  "proptest",
@@ -1247,6 +1255,7 @@ version = "0.69.3"
 dependencies = [
  "aprender-common",
  "aprender-compute",
+ "aprender-contracts",
  "aprender-serve",
  "async-trait",
  "bincode",
@@ -1800,7 +1809,7 @@ dependencies = [
 
 [[package]]
 name = "aprender-update"
-version = "0.69.3"
+version = "0.69.4"
 dependencies = [
  "flate2",
  "semver",

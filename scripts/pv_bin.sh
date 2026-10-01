@@ -534,9 +534,9 @@ pv_bin_report_wrong_tree() {
         printf '       .cargo/config.toml build.target-dir, and any `cargo`\n'
         printf '       shell function before assuming your build landed here.\n'
         printf '  fix: build in THIS worktree\n'
-        printf '         cargo build -p aprender-contracts-cli --bin pv\n'
+        printf '         cargo build -p aprender-contracts-cli --bin pv --features update-check,build-sha\n'
         printf '       or give this worktree a target dir of its own\n'
-        printf '         CARGO_TARGET_DIR=%s/target cargo build -p aprender-contracts-cli --bin pv\n' "${PV_BIN_WS_ROOT:-.}"
+        printf '         CARGO_TARGET_DIR=%s/target cargo build -p aprender-contracts-cli --bin pv --features update-check,build-sha\n' "${PV_BIN_WS_ROOT:-.}"
         printf '       or point the resolver at the binary you mean\n'
         printf '         PV_BIN=/path/to/pv\n'
     } >&2
@@ -576,11 +576,11 @@ pv_bin_build() {
     pv_bin_build_log=$(mktemp) || pv_bin_build_log=''
     pv_bin_build_rc=0
     if [ -n "$pv_bin_build_log" ]; then
-        ( cd "$pv_bin_build_root" && cargo build -q -p aprender-contracts-cli --bin pv ) \
+        ( cd "$pv_bin_build_root" && cargo build -q -p aprender-contracts-cli --bin pv --features update-check,build-sha ) \
             > "$pv_bin_build_log" 2>&1 || pv_bin_build_rc=$?
         cat "$pv_bin_build_log" >&2
     else
-        ( cd "$pv_bin_build_root" && cargo build -q -p aprender-contracts-cli --bin pv ) >&2 \
+        ( cd "$pv_bin_build_root" && cargo build -q -p aprender-contracts-cli --bin pv --features update-check,build-sha ) >&2 \
             || pv_bin_build_rc=$?
     fi
 

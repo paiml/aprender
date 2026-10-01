@@ -175,19 +175,19 @@ fn compute_proof_depth(contracts: &[(String, &Contract)], bound_stems: &BTreeSet
         }
         for ob in &contract.proof_obligations {
             total_obligations += 1;
-            weighted_sum += 0.1; // L1 (type system)
+            weighted_sum += 0.1; // type system (not a ProofLevel)
             if !contract.falsification_tests.is_empty() {
-                weighted_sum += 0.3; // L3 (probar)
+                weighted_sum += 0.3; // L2 (falsification tests)
             }
             if !contract.kani_harnesses.is_empty() {
-                weighted_sum += 0.4; // L4 (Kani)
+                weighted_sum += 0.4; // L3 (Kani)
             }
             if ob
                 .lean
                 .as_ref()
                 .is_some_and(|l| l.status == LeanStatus::Proved)
             {
-                weighted_sum += 0.2; // L5 (Lean)
+                weighted_sum += 0.2; // L4 (Lean)
             }
         }
     }

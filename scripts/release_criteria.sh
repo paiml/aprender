@@ -82,7 +82,7 @@ c0() { # the spec's §4 C0 command, verbatim, through the analyser pin (I6); eve
     . "$ROOT/scripts/pmat_bin.sh" || { printf 'C0: ENV - no analyser at the pin\n'; return 2; }
     local rc=0 out
     out=$("$PMAT" comply check 2>/dev/null | grep -E 'CB-(1700|1701|2100)' || true); printf '%s\n' "$out"
-    if [ -z "$out" ] || printf '%s' "$out" | grep -q '✗'; then printf 'C0 leg 1 FAIL: CB-1700/1701/2100 not all ✓ in comply check\n'; rc=1; fi
+    if [ -z "$out" ] || grep -q '✗' <<< "$out"; then printf 'C0 leg 1 FAIL: CB-1700/1701/2100 not all ✓ in comply check\n'; rc=1; fi
     if [ "$(gh api repos/paiml/aprender/branches/main/protection --jq .required_status_checks.strict 2>/dev/null)" != true ]; then printf 'C0 leg 2 FAIL: required_status_checks.strict is not true\n'; rc=1; else printf 'C0 leg 2 ok: strict=true\n'; fi
     if bash scripts/perf_gate.sh --selftest >/dev/null 2>&1; then printf 'C0 leg 3 ok: perf_gate.sh --selftest\n'; else printf 'C0 leg 3 FAIL: perf_gate.sh --selftest (#2830 polarity, C0-4)\n'; rc=1; fi
     return "$rc"
