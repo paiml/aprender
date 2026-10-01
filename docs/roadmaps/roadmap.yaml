@@ -23929,6 +23929,26 @@ Not done, pending the ruling: moving the 31 fixture files to an obviously synthe
   labels:
   - kind:code
   notes: null
+- id: PMAT-4616
+  github_issue: 4616
+  item_type: task
+  title: 'D5: serve over device KV (4096) returns 500 — refuse with 400 context exceeds N'
+  status: inprogress
+  priority: critical
+  assigned_to: aprender-2e-serve
+  created: 2026-09-28T20:47:39Z
+  updated: 2026-09-28T20:47:39Z
+  spec: null
+  acceptance_criteria:
+  - 'lambda RTX 4090, 5432-token chat turn: main returns 500, the branch returns 400 context exceeds 4096 (the --context-length 32768 -> 200 case is #4603, not this ticket)'
+  - 'api/tests/serve_context_d5.rs: the refusal fires at prompt_tokens >= serving_context, and serving_context = min(model context, device KV)'
+  - 'Dense GGUF CUDA chat, completions, stream, /generate, /batch/generate and /v1/batch/completions all refuse before generating; every typed generate-error site maps ContextLimitExceeded to 400, never 500 (batch-scheduler channel errors are strings reached only after the pre-flight; the APR Q4K backends are #4625)'
+  - 'The mutants gate can judge this diff: no build script in the aprender-serve test build watches a missing path (build-sha .git-sha, compute/present-core/serve sibling provable-contracts reads), so the test phase after `cargo test --no-run` recompiles nothing (run 36520343459 spent 4m18s of each 300s mutant budget compiling)'
+  phases: []
+  subtasks: []
+  estimated_effort: null
+  labels: []
+  notes: 'OPERATOR ruling D5 (ruling-3715). Child of #3715. The ladder part (--context-length on gate-named rungs) is 0d #4603.'
 - id: PMAT-4621
   github_issue: 4621
   item_type: task

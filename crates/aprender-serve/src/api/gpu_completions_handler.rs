@@ -67,7 +67,7 @@ fn try_gpu_completions(
     })?;
     let generated = gpu_model
         .generate(&prompt, &gpu_config)
-        .map_err(|e| rerr(state, StatusCode::INTERNAL_SERVER_ERROR, e))?;
+        .map_err(|e| rerr(state, crate::api::generation_error_status(&e), e))?;
 
     let token_ids: Vec<u32> = generated
         .iter()
@@ -251,7 +251,7 @@ fn registry_completions(
 
     let generated = model
         .generate(&prompt, &config)
-        .map_err(|e| rerr(state, StatusCode::INTERNAL_SERVER_ERROR, e))?;
+        .map_err(|e| rerr(state, crate::api::generation_error_status(&e), e))?;
     let token_ids: Vec<u32> = generated
         .iter()
         .skip(prompt_tokens)
@@ -388,6 +388,13 @@ async fn try_cuda_gguf_completions(
         return Err(rerr(state, StatusCode::BAD_REQUEST, "Prompt cannot be empty"));
     }
     let prompt_tokens = prompt_ids.len();
+    // D5: a 400 before the batch scheduler sees it (its errors come back as strings).
+    if let Some(msg) = state
+        .serving_context()
+        .and_then(|ctx| super::serve_context_refusal(prompt_tokens, ctx))
+    {
+        return Err(rerr(state, StatusCode::BAD_REQUEST, msg));
+    }
 
     let eos = state.cached_eos_token_id.unwrap_or(151643);
     let q_config = QuantizedGenerateConfig {
@@ -617,7 +624,7 @@ async fn completions_inner(
             model.generate_gpu_resident_logprobs(
                 &prompt_ids.iter().map(|&id| id as u32).collect::<Vec<_>>(),
                 &config,
-            ).map_err(|e| rerr(&state, StatusCode::INTERNAL_SERVER_ERROR, e))?
+            ).map_err(|e| rerr(&state, super::generation_error_status(&e), e))?
         };
         let prompt_len = prompt_ids.len();
         let gen_tokens: Vec<u32> = result.tokens[prompt_len..].to_vec();
@@ -720,7 +727,7 @@ pub async fn logprobs_handler(
         model.generate_gpu_resident_logprobs(
             &prompt_ids.iter().map(|&x| x as u32).collect::<Vec<_>>(),
             &config,
-        ).map_err(|e| rerr(&state, StatusCode::INTERNAL_SERVER_ERROR, e))?
+        ).map_err(|e| rerr(&state, crate::api::generation_error_status(&e), e))?
     };
 
     let prompt_len = prompt_ids.len();
@@ -787,7 +794,7 @@ pub async fn perplexity_handler(
     // realizr#203: Run BOTH paths for comparison during development
     let ppl_sequential = model
         .perplexity_gpu_resident(&token_ids)
-        .map_err(|e| rerr(&state, StatusCode::INTERNAL_SERVER_ERROR, e))?;
+        .map_err(|e| rerr(&state, crate::api::generation_error_status(&e), e))?;
     let ppl_batched = model.perplexity_gpu_batched(&token_ids).ok();
 
     drop(model);

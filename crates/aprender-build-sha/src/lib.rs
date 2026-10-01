@@ -35,8 +35,13 @@ pub fn emit() {
     register_git_rerun_triggers();
 
     println!("cargo:rerun-if-env-changed=APR_GIT_SHA_OVERRIDE");
-    println!("cargo:rerun-if-changed=.git-sha");
-    println!("cargo:rerun-if-changed=.cargo_vcs_info.json");
+    // #4614: watch each file only when it exists; a missing watched path makes Cargo
+    // rerun this script, and rebuild the crate, on every invocation.
+    for watched in [".git-sha", ".cargo_vcs_info.json"] {
+        if std::path::Path::new(watched).exists() {
+            println!("cargo:rerun-if-changed={watched}");
+        }
+    }
 }
 
 /// The pure resolution order. Each argument is the raw result of one source,

@@ -32,6 +32,7 @@ mod tests_09;
 mod tests_10;
 mod tests_11;
 mod completion_request;
+mod serve_context_d5;
 mod completions_invalid;
 mod chat_completion;
 mod tests_15;
