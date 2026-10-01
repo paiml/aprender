@@ -37,7 +37,7 @@ SHELL := /bin/bash
 # Multi-line recipes execute in same shell
 .ONESHELL:
 
-.PHONY: all build test test-smoke test-fast test-quick test-full test-heavy lint lint-current fmt clean doc book book-build book-serve book-test tier1 tier2 tier3 tier4 coverage coverage-fast profile hooks-install hooks-verify lint-scripts bashrs-score bashrs-lint-makefile chaos-test chaos-test-full chaos-test-lite fuzz bench dev pre-push ci gate check run-ci run-bench audit deps-validate deny pmat-score pmat-gates quality-report semantic-search examples mutants mutants-fast property-test install-alsa test-alsa test-audio-full contract-validate contract-test contract-audit contract-regen contract-check dev-setup check-siblings check-wasm32 contrastive-data-boundary contrastive-data-boundary-cases
+.PHONY: all build guards-local test test-smoke test-fast test-quick test-full test-heavy lint lint-current fmt clean doc book book-build book-serve book-test tier1 tier2 tier3 tier4 coverage coverage-fast profile hooks-install hooks-verify lint-scripts bashrs-score bashrs-lint-makefile chaos-test chaos-test-full chaos-test-lite fuzz bench dev pre-push ci gate check run-ci run-bench audit deps-validate deny pmat-score pmat-gates quality-report semantic-search examples mutants mutants-fast property-test install-alsa test-alsa test-audio-full contract-validate contract-test contract-audit contract-regen contract-check dev-setup check-siblings check-wasm32 contrastive-data-boundary contrastive-data-boundary-cases
 
 # Default target
 all: tier2
@@ -568,7 +568,7 @@ COV_CARGO_ENV := $(if $(COV_TARGET_DIR),CARGO_TARGET_DIR=$(COV_TARGET_DIR))
 # DERIVED from `cargo metadata` (scripts/coverage_report_scope.py), the verified alternative
 # above, and scripts/check_coverage_report_scoped.sh refuses any unscoped `llvm-cov report`. profraw
 # survive it (31 present afterwards), so coverage-html still has data to work from.
-.PHONY: coverage-check contracts
+.PHONY: coverage-check contracts census
 
 # BSE-03 phase A (Pmat-Ticket: PMAT-1068). The README's contract count is
 # DERIVED: scripts/readme_sync.sh rewrites the text between the
@@ -592,6 +592,7 @@ readme-sync-check: ## Fail if README.md is not what the generator produces
 # merge-tree measurement READS A FILE ON DISK must turn the hand-edited rows
 # GREEN, which is what makes their RED load-bearing rather than incidental.
 # `--class complexity` and `--class satd` are stubs and exit 3, never 0.
+.PHONY: oracle-owl oracle-owl-check
 .PHONY: roadmap-aggregate roadmap-aggregate-check
 roadmap-aggregate: ## Regenerate docs/roadmaps/roadmap.yaml from docs/roadmaps/entries/ (#3296)
 	@python3 scripts/lib/roadmap_fragments.py aggregate --write
@@ -619,42 +620,32 @@ label-ratchet:
 # CLAUDE.md, and the dogfood protocol looked for a target that did not exist, so
 # it WARNed instead of checking. `pv lint` runs validate + audit + score across
 # contracts/ and is the documented entry point (never hand-rolled bash).
+# The release train's one census writer (#3569). A PR that runs this and commits
+# the result is refused by scripts/check_census_derived.sh; the train runs it on
+# release/X.Y.Z, where the guard exempts the edit.
+census:
+	@. scripts/pv_bin.sh && t=$$(mktemp contracts/census.json.XXXXXX) && "$$PV" census contracts --format json > "$$t" && bash scripts/check_census_derived.sh --census "$$t" && mv "$$t" contracts/census.json || { rm -f "$$t"; exit 1; }
+	@bash scripts/readme_sync.sh --write
 
 # EXIT PROPAGATION (PVL-001 EV-4, aprender#4168). Under .ONESHELL this whole
 # recipe is ONE shell script, so without errexit its status is the LAST line's
 # and every earlier step -- `pv lint` included -- was advisory: a failing lint
-# printed its tail and the gate exited 0. `set -e` stops at a failing step.
-# It is NOT enough on the pv lines: errexit ignores a failure on the LEFT of
-# `&&`, so a pv_bin.sh that REFUSES the binary (stale, wrong identity) would
-# fall through to the next step. Hence `|| exit` there as well, which exits
-# with that list's own status (pv's rc through the pipe, via -o pipefail).
-# Case table + mutants: scripts/tests/make_contracts_propagates.sh.
+# printed its tail and the gate exited 0. So every line that can fail ends in
+# `|| exit`, which ends the recipe with that line's own status.
+# Case table + mutants: scripts/tests/make_contracts_propagates.sh (this recipe)
+# and `scripts/contracts_gate.sh --self-test` (the gate's steps).
 contracts:
-	@set -e
-	@echo "== provable contracts: pv lint contracts/ =="
-# `| tail -5` DISCARDED THE VERDICT: the pipeline's status is tail's, so the armed-meet
-# result was PRINTED and NOT ENFORCED (found by aprender-d8, 0.69.1 tail rehearsal). That
-# is Verification Discipline #1 in the release's own contract gate, and
-# contracts-exit-integrity does not catch it -- it looks for `|| true` and bare for-loops,
-# not for a pipe. The output is kept to a tail for readability by writing it to a file and
-# tailing THAT, so the exit status belongs to pv and nothing else.
-# .ONESHELL: the whole recipe is ONE shell, so an unconditional `exit $$rc` here ended the
-# recipe green after lint -- census, graph, README, provenance and the engine tests never ran.
-# Exit only on failure (#4315, caught by scripts/tests/make_contracts_propagates.sh).
-	@. scripts/pv_bin.sh && { "$$PV" lint contracts/ > /tmp/pv-lint-contracts.$$$$.log 2>&1; rc=$$?; tail -5 /tmp/pv-lint-contracts.$$$$.log; rm -f /tmp/pv-lint-contracts.$$$$.log; [ $$rc -eq 0 ] || exit $$rc; } || exit
-	@echo "== census: tracked contracts/census.json == a fresh one (ONT-001 ONT-1, F-1) =="
-	@git ls-files --error-unmatch contracts/census.json >/dev/null || { echo "FAIL: contracts/census.json is not tracked, so diffing it proves nothing"; exit 1; }
-	@. scripts/pv_bin.sh && "$$PV" census contracts --format json > contracts/census.json || exit
-	@git diff --exit-code contracts/census.json || { echo "FAIL: the tracked census differs from a fresh one — commit the regenerated contracts/census.json"; exit 1; }
-	@echo "== graph: tracked contracts/contracts.nt + shapes.ttl == a fresh extraction (ONT-001 ONT-4b, R-18) =="
-	@. scripts/pv_bin.sh && "$$PV" extract contracts --check >/dev/null || exit
-	@echo "== README states the censused count =="
-	@bash scripts/readme_sync.sh --check
-	@echo "== provenance marks, interim (ONT-001 R-10) =="
-	@bash scripts/lint-provenance.sh --self-test
-	@bash scripts/lint-provenance.sh contracts/external-corpora.yaml
+# #4475: the steps live in scripts/contracts_gate.sh. The recipe used to hold them as lines, and under
+# `.ONESHELL` + `.SHELLFLAGS := -o pipefail -c` (no -e) the whole recipe is ONE bash script: the lint line's
+# unconditional `exit $$rc` ended it on a GREEN lint, so the census diff, `extract --check`, the README sync
+# and provenance never ran — and had they run, a failing middle line would not have failed the recipe. The
+# gate runs EVERY step, prints `N of 8 step(s) RAN, M FAILED` (ONT-10 added the pv-sat consistency step), fails closed on a shapes verdict it cannot
+# measure, and regenerates census.json / contracts.nt / shapes.ttl then asks `git diff --exit-code`.
+	@bash scripts/contracts_gate.sh || exit 1
 	@echo "== contract engine tests =="
-	@cargo test -p aprender-contracts --lib 2>&1 | grep -E "test result" | tail -1
+	@# The old `| grep | tail -1` printed the verdict and
+	@# discarded it (the exit status was tail's), so a failing engine test passed the gate.
+	@t=$$(mktemp) && ( cargo test -p aprender-contracts --lib > "$$t" 2>&1; rc=$$?; grep -E "test result" "$$t" | tail -1; [ $$rc -eq 0 ] || tail -30 "$$t"; rm -f "$${t:?}"; exit $$rc ) || exit
 
 # #3839: skips are EXACT full test paths from scripts/coverage-skips.txt, one reason
 # per entry. They used to be 19 --skip substrings that removed 2,713 tests (2,702 of
@@ -693,7 +684,7 @@ coverage: ## Coverage summary + threshold check (warm: ~3min)
 	@$(COV_CARGO_ENV) cargo llvm-cov test --no-report -p aprender-serve --lib -- --list \
 		> target/coverage/serve-list.txt 2>> target/coverage/test.log || \
 		{ echo "❌ coverage DID NOT MEASURE: could not list aprender-serve's lib tests. No coverage verdict."; exit 1; }
-	@python3 scripts/coverage_serve_shards.py target/coverage/serve-list.txt scripts/coverage-skips.txt \
+	@bash scripts/coverage_serve_shards.sh target/coverage/serve-list.txt scripts/coverage-skips.txt \
 		target/coverage/serve-shards scripts/coverage-solo.txt
 	@# scripts/coverage-solo.txt: run FIRST, each in its OWN process, and print its test binary's peak RSS
 	@# (RUSAGE_CHILDREN.ru_maxrss), so a later skip carries a measured per-test reason.
@@ -871,6 +862,10 @@ dev: tier1
 # Pre-push checks
 pre-push: tier3
 
+# Run CI's guard steps locally, every step, with the SAME script CI runs (#4415, #4416)
+guards-local: ## Run every guard-cargo/guard-tree step CI runs, all of them, streaming
+	@bash scripts/ci_guards.sh --check-coverage
+	@bash scripts/ci_guards.sh
 
 # CI/CD checks
 ci: tier4
@@ -1541,3 +1536,22 @@ oracle:
 oracle-check: oracle
 	@git diff --exit-code tests/oracle/differential.json \
 	  || { echo "FAIL: tests/oracle/differential.json differs from a fresh run — commit it"; exit 1; }
+
+# ONT-001 §3.8 / ONT-2c — the OWL oracle (release gate only, R-13; never per PR). Three arms:
+# horned-owl re-parses the fixture's written .ofn and must equal the HAND-WRITTEN axiom list; every live
+# axiom must be a told-closure-admitted kind; ELK 0.4.3 (pinned by sha256, needs a JVM) must agree with
+# contracts/tbox-report.json, with a planted positive control turning it RED every run. No JVM exits 2 with
+# `decline: NOT MEASURED`, which is RED at the release gate and never a skip. The crate is detached from the
+# workspace AND from tests/oracle's SHACL crate (feature unification breaks horned-owl there).
+oracle-owl:
+	@echo "== OWL oracle: horned-owl round-trip + admitted kinds + ELK TBox differential (out of gate) =="
+	@. scripts/pv_bin.sh && "$$PV" ontology export --owl tests/fixtures/ont/owl/ontology.yaml > "$${TMPDIR:-/tmp}/ont2c-fixture.ofn"
+	@cargo build --release --quiet --manifest-path tests/oracle/owl/Cargo.toml
+	@O="$$(cargo metadata --no-deps --format-version 1 --manifest-path tests/oracle/owl/Cargo.toml | sed -n 's/.*"target_directory":"\([^"]*\)".*/\1/p')/release/owl-oracle"; \
+	"$$O" roundtrip "$${TMPDIR:-/tmp}/ont2c-fixture.ofn" tests/fixtures/ont/owl/axioms.txt && \
+	"$$O" kinds contracts/ontology.ofn && \
+	"$$O" elk .
+
+oracle-owl-check: oracle-owl
+	@git diff --exit-code tests/oracle/tbox-differential.json \
+	  || { echo "FAIL: tests/oracle/tbox-differential.json differs from a fresh run — commit it"; exit 1; }

@@ -1,0 +1,178 @@
+{
+  "ticket": "PMAT-4252",
+  "base": "origin/batch/0.70.0",
+  "base_resolved": "origin/batch/0.70.0",
+  "base_note": "no origin/origin/batch/0.70.0 exists; judged against the local ref",
+  "head": "b5dc531fdf58d7f007e3c1443e81db01e61cb434",
+  "diff_sha256": "c48a73e8d629beefe36a811e1a2ca97bb625d0039b8a8be5ad252dc640c883b8",
+  "width": 3,
+  "executor": "agy",
+  "prompt_mode": "inline",
+  "prompt_bytes": 35531,
+  "author": {
+    "model": "claude-opus-5-5",
+    "family": "claude",
+    "source": "flag"
+  },
+  "agreed": true,
+  "lanes": [
+    {
+      "lane": 1,
+      "status": "SUCCESS",
+      "verdict": "PASS",
+      "summary": "The implementation accurately honors the updated ticket criteria (operator directive from 2026-09-25). The lambda leg logic correctly gates execution behind `--allow-lambda` or `--force-lambda` and strictly enforces `load1 < 24`. The tests were properly updated to validate these conditions with stubbed load values and correct assertions, and the receipt documentation precisely matches the tested and implemented scenarios. No gates were weakened, and no unrequested features were added.",
+      "findings": [],
+      "raw_bytes": 3527,
+      "err_bytes": 103,
+      "envelope_status": "SUCCESS",
+      "verdict_source": "structured_output",
+      "grounding_check": "parity",
+      "model": "gemini-3.1-pro-high",
+      "model_measured": "gemini-3.1-pro-high",
+      "model_source": "measured",
+      "family": "gemini",
+      "role": "independent",
+      "fallback": {
+        "judged_by": "gemini-3.1-pro-high",
+        "exhausted": false,
+        "attempts": [
+          {
+            "model": "gemini-3.1-pro-high",
+            "family": "gemini",
+            "outcome": "answered"
+          }
+        ],
+        "skipped": []
+      }
+    },
+    {
+      "lane": 2,
+      "status": "SUCCESS",
+      "verdict": "PASS",
+      "summary": "The diff satisfies all acceptance criteria of ticket PMAT-4252 as amended by the 2026-09-25 operator directive. Specifically:\n1. In `scripts/apr_dogfood_lane_4252.py`, lambda CPU fallback is now opt-in via `--allow-lambda` (or `--force-lambda`) and strictly gated on `load1 < 24.0` (`LAMBDA_MAX_LOAD1 = 24.0`). When refused, it records the exact refusal reason in the attempt log and returns verdict `unavailable` (exit code 2) without sending an HTTP request.\n2. In `scripts/test_apr_dogfood_lane_4252.py`, test cases verify that the lambda fallback is off by default, refused at `load1 >= 24` even with `--allow-lambda` or `--force-lambda` (with zero POST requests sent to lambda), and executes as expected on the positive control (`load1 = 23.9`). Existing budget/timeout tests are updated to opt-in with load stubbed to 0.0.\n3. Both `docs/roadmaps/entries/PMAT-4252.yaml` and `docs/roadmaps/roadmap.yaml` have been updated with the amended acceptance criteria and ticket title.\n4. `docs/audits/impl-PMAT-4252-receipt.md` documents Round 7, notes historical measurements predating the opt-in amendment, records the live proof on a real GPU lock hold returning unavailable (rc 2), and details mutation verification (M1 and M2).\nNo refuting findings were found. Verdict is PASS.",
+      "findings": [],
+      "raw_bytes": 3865,
+      "err_bytes": 0,
+      "envelope_status": "SUCCESS",
+      "verdict_source": "structured_output",
+      "grounding_check": "parity",
+      "model": "gemini-3.8-flash-high",
+      "model_measured": "gemini-3.8-flash-high",
+      "model_source": "measured",
+      "family": "gemini",
+      "role": "independent",
+      "fallback": {
+        "judged_by": "gemini-3.8-flash-high",
+        "exhausted": false,
+        "attempts": [
+          {
+            "model": "gemini-3.8-flash-high",
+            "family": "gemini",
+            "outcome": "answered"
+          }
+        ],
+        "skipped": []
+      }
+    },
+    {
+      "lane": 3,
+      "status": "SUCCESS",
+      "verdict": "PASS",
+      "summary": "The diff for PMAT-4252 implements the 2026-09-25 operator directive making the lambda CPU fallback opt-in via `--allow-lambda` / `--force-lambda` and strictly gated by load1 < 24.0 (LAMBDA_MAX_LOAD1 = 24.0). All acceptance criteria and receipt claims are verified against the diff:\n1. `scripts/apr_dogfood_lane_4252.py` implements `lambda_refusal` and updates `_ask_legs` and CLI args (`--allow-lambda`), recording refused attempts with explanatory reasons.\n2. `scripts/test_apr_dogfood_lane_4252.py` adds comprehensive test cases covering default off, load1 limit enforcement on both `--allow-lambda` and `--force-lambda`, and a positive control with single POST assertion at load1 < 24.\n3. `docs/roadmaps/entries/PMAT-4252.yaml` and `docs/roadmaps/roadmap.yaml` are updated with the amended acceptance criteria.\n4. `docs/audits/impl-PMAT-4252-receipt.md` accurately records the rationale, implementation, test matrix, mutation results, and live proof.\n\nNo gates are weakened, no tests contradict ticket specifications, and no unauthorized changes are present. Verdict: PASS.",
+      "findings": [],
+      "raw_bytes": 3454,
+      "err_bytes": 0,
+      "envelope_status": "SUCCESS",
+      "verdict_source": "structured_output",
+      "grounding_check": "parity",
+      "model": "gemini-3.7-flash-high",
+      "model_measured": "gemini-3.7-flash-high",
+      "model_source": "measured",
+      "family": "gemini",
+      "role": "independent",
+      "fallback": {
+        "judged_by": "gemini-3.7-flash-high",
+        "exhausted": false,
+        "attempts": [
+          {
+            "model": "gemini-3.7-flash-high",
+            "family": "gemini",
+            "outcome": "answered"
+          }
+        ],
+        "skipped": []
+      }
+    }
+  ],
+  "dissent": [],
+  "dedup": [],
+  "uncovered": [],
+  "coverage_source": "lanes",
+  "partial": false,
+  "partial_reasons": [],
+  "fallback": {
+    "same_family_width": 1,
+    "chain": [
+      {
+        "model": "gemini-3.1-pro-high",
+        "family": "gemini",
+        "disposition": "configured"
+      },
+      {
+        "model": "gemini-3.8-flash-high",
+        "family": "gemini",
+        "disposition": "configured"
+      },
+      {
+        "model": "gemini-3.7-flash-high",
+        "family": "gemini",
+        "disposition": "configured"
+      },
+      {
+        "model": "gpt-oss-120b-medium",
+        "family": "openai",
+        "disposition": "fallback"
+      },
+      {
+        "model": "qwen3.5",
+        "family": "qwen",
+        "disposition": "not-run",
+        "why": "no quorum.local_lane in the config — the aprender lane has no model to load"
+      },
+      {
+        "model": "claude-opus-4-6-thinking",
+        "family": "claude",
+        "disposition": "width",
+        "why": "same family as the author: at most 1 lane, recorded role width, counted toward no floor (R-15a)"
+      },
+      {
+        "model": "claude-sonnet-4-6",
+        "family": "claude",
+        "disposition": "width",
+        "why": "same family as the author: at most 1 lane, recorded role width, counted toward no floor (R-15a)"
+      }
+    ],
+    "precheck": [
+      {
+        "family": "gemini",
+        "model": "gemini-3.1-pro-high",
+        "probe": 1,
+        "outcome": "live"
+      }
+    ],
+    "prah": {
+      "source": "install-receipt",
+      "path": "/home/noah/.claude/skills/paiml-implement/bin/prah"
+    }
+  },
+  "auto_merge": {
+    "checked": true,
+    "was_armed": false,
+    "disarmed": false,
+    "note": "auto-merge not armed"
+  },
+  "lint": {
+    "ok": true,
+    "output": "receipt complete: kind=artifact lanes=3 author=claude-opus-5-5/claude"
+  }
+}

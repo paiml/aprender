@@ -217,6 +217,20 @@ fn diagnose_missing_model_type(path: &Path, content: &str, json: bool) {
     }
 }
 
+/// `name` beside `path`, if it exists. With `inference`, realizar's finder, which also resolves hash-prefixed and
+/// symlinked model paths (CB-510). A minimal build (#4041: `--no-default-features` has no realizar) checks the
+/// literal sibling only, so a hash-prefixed HF-cache path finds nothing there and reports not-found.
+fn sibling_file(path: &Path, name: &str) -> Option<std::path::PathBuf> {
+    #[cfg(feature = "inference")]
+    {
+        realizar::safetensors::find_sibling_file(path, name)
+    }
+    #[cfg(not(feature = "inference"))]
+    {
+        path.parent().map(|d| d.join(name)).filter(|p| p.is_file())
+    }
+}
+
 /// Resolve family from a model file by finding config.json in the same directory.
 fn resolve_family_from_model_file(
     path: &Path,
@@ -228,7 +242,7 @@ fn resolve_family_from_model_file(
     // Companion lookup: find_sibling_file handles hash-prefixed / symlinked
     // model paths robustly (CB-510 / publish-safety) and only returns Some
     // when the file exists — subsuming the prior with_file_name + .exists().
-    if let Some(config_path) = realizar::safetensors::find_sibling_file(&real_path, "config.json") {
+    if let Some(config_path) = sibling_file(&real_path, "config.json") {
         resolve_from_config_json(&config_path)
     } else {
         emit_kernel_error(
@@ -341,7 +355,7 @@ fn resolve_config_mapping(
             // hash-prefixed / symlinked model paths); fall back to the literal
             // sibling dir so extract_config_mapping reports not-found as before
             // (parent().join avoids with_file_name per publish-safety).
-            realizar::safetensors::find_sibling_file(p, "config.json").unwrap_or_else(|| {
+            sibling_file(p, "config.json").unwrap_or_else(|| {
                 p.parent().map_or_else(
                     || std::path::PathBuf::from("config.json"),
                     |d| d.join("config.json"),

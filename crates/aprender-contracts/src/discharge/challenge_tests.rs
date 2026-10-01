@@ -157,8 +157,14 @@ fn diff_names_edits_extras_and_missing_and_write_clears_them() {
     let lines = diff(&lean, &r);
     assert_eq!(lines.len(), 2, "{lines:?}");
     assert!(lines[0].starts_with("extra    Challenge/stray.lean"));
+    // The reported line is the first one that differs (kills `!=` -> `==` in the position search).
+    let edited = 1 + text
+        .lines()
+        .position(|l| l.contains("x ≤ x + 1"))
+        .expect("the fixture states x ≤ x + 1");
+    assert!(edited > 1, "the edit must not be on the first line");
     assert!(
-        lines[1].starts_with("differs  Challenge/gelu-v1.lean:"),
+        lines[1].starts_with(&format!("differs  Challenge/gelu-v1.lean:{edited}:")),
         "{lines:?}"
     );
     write(&lean, &r).expect("rewrite");

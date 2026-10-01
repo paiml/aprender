@@ -1,0 +1,19 @@
+- id: PMAT-3809
+  github_issue: 3809
+  item_type: task
+  title: 'test(serve): wire the dark FALSIFY-SRV/HTTP suite + guard that every src test file is declared'
+  status: inprogress
+  priority: high
+  assigned_to: aprender-tarball
+  created: 2026-09-24T19:05:00Z
+  updated: 2026-09-24T19:05:00Z
+  spec: null
+  acceptance_criteria:
+  - cargo test -p apr-cli --lib -- commands::serve::tests_contract_enforcement runs 25 tests, all pass
+  - scripts/check_src_test_files_wired.sh (guard_tree) exits 1 on a new undeclared src test file and on a stale baseline entry; --self-test case table passes
+  phases: []
+  subtasks: []
+  estimated_effort: null
+  labels:
+  - kind:code
+  notes: null

@@ -1157,3 +1157,116 @@ fn names(v: &serde_json::Value) -> Vec<&str> {
         .map(|a| a.iter().filter_map(serde_json::Value::as_str).collect())
         .unwrap_or_default()
 }
+
+// ── G2 (#4590, operator ruling 2026-09-28 16:15Z): a GB10 dense model is WITHDRAWN, not waived ───────────
+//
+// scripts/model_ladder.sh moves an arch `cells.declaimed` names for the host into the receipt's
+// `declaimed_inventory[]`; pv reads `inventory[]` only, so the withdrawn (host, model) owes nothing. Withdrawn
+// is not waived: every other host that holds the model still owes every cell of it. And a claim of it on GB10
+// (the item back in gx10's `inventory[]`, unmeasured) is RED at the enforce-mode gate.
+
+const DENSE_SHA: &str = "dddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddd";
+
+fn dense_item() -> Value {
+    serde_json::json!({
+        "file": "tiny-qwen2-dense.gguf", "sha256": DENSE_SHA, "bytes": 4, "arch": "qwen2",
+        "quant": "q4_k_m", "context_length": 10000, "owes_long_rungs": false, "thinking_modes": ["off"],
+        "chat_template_sha256": "cccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccc"
+    })
+}
+
+fn dense_cells(t: &Path, host: &str) -> Vec<String> {
+    read(&t.join("cells.json"))["cells"]
+        .as_array()
+        .expect("cells")
+        .iter()
+        .filter(|c| c["host"] == host && c["model_sha256"] == DENSE_SHA)
+        .filter_map(|c| c["id"].as_str().map(str::to_string))
+        .collect()
+}
+
+/// The green base plus a dense model lambda HOLDS and MEASURES (inventory, kernel dispatch, tokenizer parity,
+/// one passing row per derived cell) and gx10 holds WITHDRAWN (`declaimed_inventory[]`, as model_ladder.sh writes it).
+fn withdrawn_on_gx10() -> tempfile::TempDir {
+    let t = green();
+    edit(&models(t.path(), "lambda"), |v| {
+        v["inventory"]
+            .as_array_mut()
+            .expect("inventory")
+            .push(dense_item())
+    });
+    edit(&kernels(t.path(), "lambda"), |v| {
+        let mut d = v["dispatch"][0].clone();
+        d["sha256"] = DENSE_SHA.into();
+        d["file"] = "tiny-qwen2-dense.gguf".into();
+        v["dispatch"].as_array_mut().expect("dispatch").push(d);
+    });
+    edit(&tokenizer(t.path()), |v| {
+        let mut r = v["rows"][0].clone();
+        r["sha256"] = DENSE_SHA.into();
+        r["file"] = "tiny-qwen2-dense.gguf".into();
+        r["family"] = "qwen2".into();
+        v["rows"].as_array_mut().expect("rows").push(r);
+    });
+    edit(&models(t.path(), "gx10"), |v| {
+        v["declaimed_inventory"] = Value::Array(vec![dense_item()])
+    });
+    synthesize(t.path());
+    t
+}
+
+#[test]
+fn a_withdrawn_gb10_dense_model_owes_nothing_there_a_planted_claim_is_red_and_lambda_still_owes_it()
+{
+    let t = withdrawn_on_gx10();
+    let r = gate(t.path(), &[]);
+    assert_eq!(
+        r.code,
+        0,
+        "withdrawn on gx10, measured on lambda: GREEN\n{:#}",
+        json_of(&r)["findings"]
+    );
+    assert!(
+        !dense_cells(t.path(), "lambda").is_empty(),
+        "withdrawn is not waived: lambda owes the dense model's cells"
+    );
+    assert!(
+        dense_cells(t.path(), "gx10").is_empty(),
+        "gx10 owes no cell of a withdrawn model"
+    );
+
+    // PLANTED CLAIM: gx10's receipt claims the dense model (back in inventory[]) with no row measured -> RED.
+    edit(&models(t.path(), "gx10"), |v| {
+        let item = v["declaimed_inventory"]
+            .as_array_mut()
+            .expect("declaimed_inventory")
+            .remove(0);
+        v["inventory"].as_array_mut().expect("inventory").push(item);
+    });
+    let red = gate(t.path(), &[]);
+    assert_eq!(
+        red.code,
+        1,
+        "a planted GB10 dense claim is RED\n{}",
+        show(&red)
+    );
+    let v = json_of(&red);
+    let msgs: Vec<&str> = v["findings"]
+        .as_array()
+        .expect("findings")
+        .iter()
+        .filter_map(|f| f["message"].as_str())
+        .collect();
+    assert!(
+        msgs.iter()
+            .any(|m| m.contains("/gx10") && m.contains("tiny-qwen2-dense")),
+        "the planted GB10 dense claim is what went red:\n{}",
+        msgs.iter().take(40).copied().collect::<Vec<_>>().join("\n")
+    );
+
+    // WITHDRAWN != WAIVED: lambda dropping one dense row is RED naming that cell.
+    let t = withdrawn_on_gx10();
+    let id = dense_cells(t.path(), "lambda").remove(0);
+    drop_row(t.path(), "lambda", &id);
+    assert_red_naming(&gate(t.path(), &[]), &named(&id));
+}

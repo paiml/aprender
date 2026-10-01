@@ -1,0 +1,438 @@
+{
+  "$schema": "https://json.schemastore.org/sarif-2.1.0.json",
+  "version": "2.1.0",
+  "runs": [
+    {
+      "tool": {
+        "driver": {
+          "name": "pmat",
+          "informationUri": "https://github.com/paiml/aprender",
+          "rules": []
+        }
+      },
+      "invocations": [
+        {
+          "executionSuccessful": true,
+          "commandLine": "pmat tdg / pmat analyze complexity --file on base and head copies (CLI); pmat query (index build); pmat MCP pmat_index_stats (answered); scripts/pr_review_duplication_scan.sh with PR_REVIEW_NEEDLE_MIN_LEN=20"
+        }
+      ],
+      "results": [
+        {
+          "ruleId": "pmat.tdg-delta",
+          "level": "note",
+          "message": {
+            "text": "Per-file TDG, base vs head, on the 3 largest changed non-test .rs files (of 515 changed .rs; the rest were not scored): shapes.rs 78.0 (B) -> 77.8 (B); extract/code.rs 80.0 (B+) -> 80.0 (B+); commands/discharge.rs is new, 76.4 (B). No grade fell. Max cyclomatic in code.rs rose 7 -> 9 (max cognitive fell 23 -> 21); shapes.rs max cognitive 23 -> 20. stdout_sha256 below is the head run on shapes.rs; base/head copies were scored with the same command."
+          },
+          "properties": {
+            "grounding": "measured",
+            "command": [
+              "pmat",
+              "tdg",
+              "crates/aprender-contracts/src/ontology/shapes.rs"
+            ],
+            "exit_code": 0,
+            "stdout_sha256": "de4441803781d49dabd6a361edbf28bd2545cdb91bfe5640e56e96b110609c83",
+            "failure_scenario": "A TDG slide on the ontology shapes and extractor modules erodes the B floor across successive PRs; none fell a grade here, and 512 other changed .rs files were not scored.",
+            "precision_class": "advisory"
+          }
+        },
+        {
+          "ruleId": "pmat.cb200-revert-no-dangling-refs",
+          "level": "note",
+          "message": {
+            "text": "The last commit removes scripts/check_cb200_tdg_grade.sh, scripts/cb200_baseline.rebaseline and the one-time re-baseline hooks. A tree-wide search (excluding evidence/, target/, .git/) for the two removed names finds them only in docs/audits/impl-PMAT-4588-receipts.md and docs/findings/cb200-main-green-over-baseline.jsonl: no workflow, script or contract still calls the deleted files."
+          },
+          "properties": {
+            "grounding": "measured",
+            "command": [
+              "grep",
+              "-rIl",
+              "--exclude-dir=evidence",
+              "--exclude-dir=target",
+              "--exclude-dir=.git",
+              "-e",
+              "check_cb200_tdg_grade",
+              "-e",
+              "cb200_baseline.rebaseline",
+              "."
+            ],
+            "exit_code": 0,
+            "stdout_sha256": "113915410f0f6070f3a8df6cf53fd4f832d07f4a6afa7b3f23c498d7438c6080",
+            "failure_scenario": "A caller of the deleted checker would fail closed or, worse, silently skip; none remains outside prose.",
+            "precision_class": "advisory"
+          }
+        },
+        {
+          "ruleId": "pmat.cb200-stored-baseline-below-measured",
+          "level": "note",
+          "message": {
+            "text": "After the revert the stored CB-200 baseline is main's 599 while the author's own same-scanner run measures 622 on base and 621 on head. The PR is never-worse (-1), but a gate that compares to the stored 599 would read RED on base and head alike; that is main's standing state (docs/findings/cb200-main-green-over-baseline.jsonl), not introduced here, and the raise was correctly dropped as a waiver."
+          },
+          "properties": {
+            "grounding": "cited",
+            "source": "docs/audits/impl-PMAT-4588-receipts.md",
+            "excerpt": "head never-worse (-1); the 599->617 was a stored-limit raise, not new findings",
+            "excerpt_sha256": "2e5b0b45521f7f90750410e8848ec4a787bdfe37ec85abc7351d58b1b0ebc0e2",
+            "failure_scenario": "If CB-200 is later enforced against the stored 599 without first clearing main's over-baseline definitions, every PR is RED for a cause none of them introduced.",
+            "precision_class": "advisory"
+          }
+        },
+        {
+          "ruleId": "pmat.duplication-scan",
+          "level": "note",
+          "message": {
+            "text": "Lexical duplication scan over HEAD, all 1148 unmerged sibling branches and merge_base..origin/main (0 files): 1661 needles (needle min length raised to 20 because the default 6 did not finish in over an hour on this 1925-file diff), 71 hits. 25 are HEAD name hits (test names in contracts/tests and doc prose), 46 are sibling-branch filename hits, concentrated on the stacked-split siblings m1/pv-publish-order, m1/shard-4..6, 89/m3-class-judge and 0d/3715-pr2-on-pr1 that carry the same files by construction. None read as an unrelated re-implementation. The scan is exact-name only: a renamed re-implementation is invisible to it."
+          },
+          "properties": {
+            "grounding": "asserted",
+            "rationale": "The scan output was read by the reviewer; the hit attribution (stacked siblings, not rivals) is judgement.",
+            "failure_scenario": "A same-purpose re-implementation under a different name, or a sibling branch that already landed part of this fold, would not be found and would merge as new code.",
+            "precision_class": "advisory"
+          }
+        },
+        {
+          "ruleId": "review.delta-fixture-b13-carried",
+          "level": "note",
+          "message": {
+            "text": "CARRIED from the 1411fe2c51 receipt (delta 331e4865be..1411fe2c51); unchanged at 1993d306cf."
+          },
+          "properties": {
+            "grounding": "cited",
+            "source": "crates/aprender-contracts-cli/tests/ont4c5_capability_cells.rs",
+            "excerpt": "\"qwen2-1.5b-q4km@lambda\", // G2 (#4590, operator 2026-09-28 16:15Z) de-claims qwen2 on gx10 through data",
+            "excerpt_sha256": "09fb6c9ec6c8cee1dd6b188c9ccc27a88cef3559223c3854a92d5c09c2a347e0",
+            "failure_scenario": "If the .nt line were hand-edited rather than generated, or B still listed qwen2-1.5b-q4km@gx10, the capability-cells probe would read RED (or the fixture would assert a cell nobody owes); neither holds at this head by static reading.",
+            "precision_class": "advisory"
+          }
+        },
+        {
+          "ruleId": "review.refactor-preserves-restore-checkpoint",
+          "level": "note",
+          "message": {
+            "text": "Delta 1411fe2c51..1993d306cf, qwen35_session.rs: the old arms `Err(e) if self.on_gpu() => {fall_back_to_cpu(..)?; Ok(false)}` and `Err(e) => Err(e)` become `Err(e) => self.after_failed_restore(self.on_gpu(), e)`. on_gpu() is still evaluated once, after `restored` is computed (the borrow of backend/checkpoint ends with the match on `restored`), and the helper body is the same fall_back_to_cpu(format!(same message))? ; Ok(false) for GPU and Err(e) for CPU. fall_back_to_cpu clears self.checkpoint, so Ok(false) with the checkpoint dropped is preserved; a fall_back_to_cpu error still propagates via `?`. Behaviour is identical by static reading. Not compiled or run by this reviewer (cargo forbidden on this host)."
+          },
+          "properties": {
+            "grounding": "cited",
+            "source": "crates/aprender-serve/src/gguf/inference/forward/qwen35_session.rs:768",
+            "excerpt": "Err(e) => self.after_failed_restore(self.on_gpu(), e),",
+            "excerpt_sha256": "9a7ea87c6bc21bf28a00105b523ef4dce28477f4f43a697a68435f983f46676c",
+            "failure_scenario": "If the helper were given the wrong flag (e.g. evaluated after fall-back, or negated) a GPU restore failure would be returned as Err and abort the turn instead of falling back to CPU; by static reading the flag is self.on_gpu() at the same point as the old guard, so no such change exists.",
+            "precision_class": "advisory"
+          }
+        },
+        {
+          "ruleId": "review.fallback-test-on-flag-not-real-gpu",
+          "level": "note",
+          "message": {
+            "text": "The new test a_failed_restore_falls_back_on_the_device_and_propagates_on_the_cpu can fail on the helper: `f.checkpoint.is_none()` after the on_gpu=true call only holds if fall_back_to_cpu ran (it sets checkpoint = None), the notice assertions need say(fallback_line(..)) with the exact reason text, and the on_gpu=false half asserts the checkpoint and notices are untouched, so swapping the branches fails both halves. Two weaker points: `assert!(!f.on_gpu())` is already true before the call on the synthetic CPU session, so it discriminates nothing; and because the flag is passed in, a mutant of the CALL SITE in restore_checkpoint (`self.on_gpu()` replaced by `true`/`false`) is not killed on a CPU build - only the cuda-gated path would catch it, and no gpu test injects a restore failure."
+          },
+          "properties": {
+            "grounding": "cited",
+            "source": "crates/aprender-serve/src/gguf/inference/forward/qwen35_session_tests.rs:800",
+            "excerpt": "assert!(f.checkpoint.is_none(), \"the device checkpoint is dropped\");",
+            "excerpt_sha256": "c69ac52801a9f1fafe1ed6d4c99002fef80389bffb948512059614b7018b95f3",
+            "failure_scenario": "A mutation of the call-site flag in restore_checkpoint (self.on_gpu() -> false) survives on the CPU build: a GPU restore failure would then abort the turn with Err instead of falling back, and no test in this PR would notice.",
+            "precision_class": "advisory"
+          }
+        },
+        {
+          "ruleId": "review.gpu-alloc-test-skips-without-device",
+          "level": "note",
+          "message": {
+            "text": "gpu_a_second_checkpoint_allocates_nothing_on_the_device counts device allocations (device_allocs_total exists at crates/aprender-gpu/src/driver/memory/buffer.rs:103) and asserts the second save allocates zero while the first allocates more than zero, so a per-turn re-allocation would fail it. It returns early with SKIP when the hybrid GGUF or a CUDA device is absent, so on CI it is not measured (L25: a skip is not_measured, not a pass). Not run by this reviewer."
+          },
+          "properties": {
+            "grounding": "asserted",
+            "rationale": "Static reading of the test body and of the early-return guards; no device available to this reviewer.",
+            "failure_scenario": "On a runner with no CUDA device or no model file the test reports ok without asserting anything, so a regression to per-turn device allocation (#4214) is invisible there.",
+            "precision_class": "advisory"
+          }
+        },
+        {
+          "ruleId": "pmat.tdg-qwen35-session",
+          "level": "note",
+          "message": {
+            "text": "TDG of the refactored file at head: 77.9/100 (B), meets the B floor in .pmat-gates.toml. No base score was taken; the refactor adds a 7-line method and removes an arm, so no grade drop is expected. Other four changed files are test-only or test-module additions and were not scored."
+          },
+          "properties": {
+            "grounding": "measured",
+            "command": [
+              "pmat",
+              "tdg",
+              "crates/aprender-serve/src/gguf/inference/forward/qwen35_session.rs"
+            ],
+            "exit_code": 0,
+            "stdout_sha256": "838e73f24847b92f6554a6c4fff7714d9931f246b1765fa944f62d5183a7ac30",
+            "failure_scenario": "A TDG slide in the session file would break the B floor unnoticed; measured at B (77.9), so none at this head.",
+            "precision_class": "advisory"
+          }
+        },
+        {
+          "ruleId": "review.obligations-parse-arm-preserved",
+          "level": "note",
+          "message": {
+            "text": "Delta 1993d306cf..6beb021e4b, obligations.rs check_contract: old arms were `Err(Load::Parse(_)) if !problems.is_empty() => return problems` and `Err(Load::Parse(why) | Load::Other(why)) => {push; return}`. New: Parse => push `{rel}: {why}` only if problems is empty, then return; Other => push, return. Truth table over (Parse|Other) x (problems empty|non-empty): Parse+non-empty returns problems unchanged (old arm 1, new arm 1); Parse+empty pushes then returns (old arm 2, new arm 1); Other always pushes then returns (old arm 2, new arm 2). Identical in all four cells. The push inside the `if` is unreachable in practice (check_validate reports whenever serde_yaml refuses, and load() parses with the same serde_yaml), which is why the guard-form mutant was equivalent; the new test unparseable_yaml_is_one_problem pins exactly one line and kills a `is_empty -> true` style mutant by count. Read, not run: cargo is forbidden on this host."
+          },
+          "properties": {
+            "grounding": "cited",
+            "source": "crates/aprender-contracts-cli/src/commands/obligations.rs:124",
+            "excerpt": "if problems.is_empty() {",
+            "excerpt_sha256": "596b27564da61fb04b9608dfa319ddbdfc50c796a2fa448ba031667a9f21b958",
+            "failure_scenario": "If Parse+empty or Other lost its push, or Parse+non-empty gained one, `pv obligations` would drop or double-count a problem line for an unparseable contract; by the truth table none of the four cells changed.",
+            "precision_class": "advisory"
+          }
+        },
+        {
+          "ruleId": "review.witness-step-as-equivalent",
+          "level": "note",
+          "message": {
+            "text": "Delta, witness_small.rs step_as: `if k < 3 {Unit(id(k))} else {IMPLY_PAIRS[(k-3)%6]}` became `match k.checked_sub(3) {None => Unit(id(k)), Some(j) => IMPLY_PAIRS[j%6]}`. checked_sub(3) is None exactly when k < 3, and Some(k-3) otherwise, so both branches and the index are the same for every usize (k comes from a u8, so no overflow either way). The new test every_step_code_decodes_as_documented recomputes the expected Step from the documented rule for all 256 codes plus three literal anchors (3, 8, 9), so it does not restate the new code and can fail on a wrong boundary, modulus or pair. Read, not run."
+          },
+          "properties": {
+            "grounding": "cited",
+            "source": "crates/aprender-contracts/src/ontology/witness_small.rs:246",
+            "excerpt": "match k.checked_sub(3) {",
+            "excerpt_sha256": "d929f266616880c575aa28fb805bb930f1ac64821c0065193c9613715a750c87",
+            "failure_scenario": "A changed boundary (k<3 vs k<=3) or a modulus other than 6 would mis-decode step codes and change every witness built from them; equivalence holds by case analysis and the exhaustive test would fail on either.",
+            "precision_class": "advisory"
+          }
+        },
+        {
+          "ruleId": "review.shard-empty-feature-not-silent",
+          "level": "note",
+          "message": {
+            "text": "Delta, mutants_table_shard.sh + check_mutants_feature_groups.sh: an empty features field is now legal (`read` with IFS='|' keeps the empty middle field), the row is still rejected unless file AND args are non-empty (a 3-field row shifts file into features and leaves args empty -> RED), and `--features` is omitted rather than passed as \"\". The empty path cannot silently skip a row: the file is still excluded from the default run, the universe list.txt is the default --list of the whole diff, so any mutant the group does not run stays MISSING in the checker (RED). A 0-mutant row still `continue`s, but only for a legitimate empty shard partition. The checker's new cases (no-feature-row GREEN, no-feature-survivor RED, row-without-args DEAD) ran here: exit 0. What the cases do not prove: that the row's test args reach cargo test (pre-existing gap; the fake cargo ignores them)."
+          },
+          "properties": {
+            "grounding": "cited",
+            "source": "scripts/mutants_table_shard.sh:71",
+            "excerpt": "[ -z \"$g_feat\" ] || gsel+=(--features \"$g_feat\")",
+            "excerpt_sha256": "1ccde6ca1ad7117406a3a66a7e5549032a406ff36f899b49e743a7161f446825",
+            "failure_scenario": "If a no-feature row dropped its mutants without running them, survivors would read as caught; the MISSING backstop in the checker makes that RED instead.",
+            "precision_class": "advisory"
+          }
+        },
+        {
+          "ruleId": "review.matvec-test-doc-overclaims",
+          "level": "note",
+          "message": {
+            "text": "Delta, generic_matvec.rs test_multirow_zero_tokens_or_zero_rows_is_an_untouched_ok: the doc says either of m == 0 / out_dim == 0 alone must return early. Under the `||` -> `&&` mutant at :216 only the (m=0, out_dim=3) row discriminates: par_chunks_mut(tile * 0) panics on a zero chunk size. The (m=2, out_dim=0) row passes under the mutant too, because by_row is empty and the loops do not run. The mutant IS killed (by the m=0 row); the comment is stronger than what the second row proves. Not a defect in the test's ability to fail. Read, not run."
+          },
+          "properties": {
+            "grounding": "cited",
+            "source": "crates/aprender-serve/src/quantize/generic_matvec.rs:216",
+            "excerpt": "if m == 0 || out_dim == 0 {",
+            "excerpt_sha256": "2f624aa5c25b0959bba90535dcc7bd06048544b3e9915dd8bced3f42d3bc95e2",
+            "failure_scenario": "A future edit that turns the m == 0 arm into a no-op would still be caught, but a reader trusting the comment might delete the (0,3) row as redundant with (2,0) and lose the only discriminating case.",
+            "precision_class": "advisory"
+          }
+        },
+        {
+          "ruleId": "review.new-tests-not-run",
+          "level": "note",
+          "message": {
+            "text": "None of the new tests in this delta (aprender-contracts extract/code.rs and witness_small.rs, aprender-contracts-macros lib.rs and tests/contract_macros.rs, aprender-data tests/cli_output.rs, aprender-contracts-cli verify_bindings.rs and obligations.rs, aprender-serve generic_matvec.rs) were executed by this reviewer: cargo, nextest and cargo-mutants are forbidden on this host. Each was read for whether it can fail: every assertion compares against an independently stated expectation (a literal, a documented rule, or a value from the library under test), and each cited mutant has a named distinguishing input. Whether they compile and whether they kill the mutants is not_measured here; the CI matrix is the evidence."
+          },
+          "properties": {
+            "grounding": "asserted",
+            "rationale": "Static reading of the diff and of the callee signatures/messages (Resolver::resolve reasons, condition_assert format, cmd_quality_profiles prints, print_quality_warning lines).",
+            "failure_scenario": "A test that does not compile, or that passes vacuously, would make the C97 row list claim mutants caught that are not.",
+            "precision_class": "advisory"
+          }
+        },
+        {
+          "ruleId": "review.lint-rs-all-tests-row-cost",
+          "level": "note",
+          "message": {
+            "text": "ci/mutants-feature-groups.txt gives lint.rs the row `--tests` (unit plus every integration target of aprender-contracts-cli). The row comment says 24 targets drive lint.rs; every mutant then pays the whole test run against a 900 s mutant timeout. A TIMEOUT reads as a survivor, so this fails RED, never silently green, but it may make that row unmeasurable on a loaded runner."
+          },
+          "properties": {
+            "grounding": "asserted",
+            "rationale": "Reading the shard script: --timeout 900 per mutant, outcomes merged, TIMEOUT counted as not caught by the checker.",
+            "failure_scenario": "The lint.rs mutants time out on the shard and keep the PR red for a cost reason rather than a correctness one.",
+            "precision_class": "advisory"
+          }
+        },
+        {
+          "ruleId": "pmat.tdg-obligations",
+          "level": "note",
+          "message": {
+            "text": "TDG of obligations.rs at head: 82.5/100 (B+), above the B floor. No base score taken."
+          },
+          "properties": {
+            "grounding": "measured",
+            "command": [
+              "pmat",
+              "tdg",
+              "crates/aprender-contracts-cli/src/commands/obligations.rs"
+            ],
+            "exit_code": 0,
+            "stdout_sha256": "152c0a674fcb170ec93d376d8e3da2534b7a766edc490f671fa25ff1c45036e8",
+            "failure_scenario": "A TDG slide below the B floor in a changed source file would trip the pmat gate; measured B+ at head.",
+            "precision_class": "advisory"
+          }
+        },
+        {
+          "ruleId": "pmat.tdg-witness-small",
+          "level": "note",
+          "message": {
+            "text": "TDG of witness_small.rs at head: 96.4/100 (A+). No base score taken."
+          },
+          "properties": {
+            "grounding": "measured",
+            "command": [
+              "pmat",
+              "tdg",
+              "crates/aprender-contracts/src/ontology/witness_small.rs"
+            ],
+            "exit_code": 0,
+            "stdout_sha256": "9a807bf9662d1960b1c8bcd51a5257ae2c904d0a0b3e9c3d282507528e0aabc0",
+            "failure_scenario": "A TDG slide in the refactored step_as would show below B; measured A+.",
+            "precision_class": "advisory"
+          }
+        },
+        {
+          "ruleId": "pmat.duplication-delta",
+          "level": "note",
+          "message": {
+            "text": "Lexical git grep -w of the delta's new test symbols (crate_k, condition_assert_labels_pre_and_post, contract_keeps_the_annotated_function, every_step_code_decodes_as_documented, quality_profiles_lists_every_profile, unparseable_yaml_is_one_problem) over the working tree: each appears in exactly one file (its own). No clone of the new helpers. Exact-name only."
+          },
+          "properties": {
+            "grounding": "measured",
+            "command": [
+              "git",
+              "grep",
+              "-lw",
+              "<each new symbol>"
+            ],
+            "exit_code": 0,
+            "stdout_sha256": "76618389f436a3090ed5a2543ce884990d4d205f9d2b28b6bffd0d2589e36b58",
+            "failure_scenario": "A same-name helper elsewhere would be a duplicate to reuse; none found by name.",
+            "precision_class": "advisory"
+          }
+        }
+      ]
+    },
+    {
+      "tool": {
+        "driver": {
+          "name": "nvidia-cuda-docs",
+          "informationUri": "https://github.com/paiml/aprender",
+          "rules": []
+        }
+      },
+      "invocations": [
+        {
+          "executionSuccessful": true,
+          "commandLine": "mcp__nvidia-cuda-docs__search_cuda_docs x2 (the cuda-docs-reviewer agent could not be dispatched from this session; queries run inline)"
+        }
+      ],
+      "results": [
+        {
+          "ruleId": "cuda.no-authority-found",
+          "level": "note",
+          "message": {
+            "text": "Query 'PTX st.global vector store alignment requirements for scatter of rows into a key-value cache' returned an unrelated cuTile SpMV sample and a cp.async.bulk.tensor excerpt; nothing on plain st.global alignment. The new gdn_kv_row_scatter_indirect kernel (dst[*pos_ptr*row+i]=src[i], one f32 per thread) is not shown to need vector alignment, and the docs neither support nor contradict that."
+          },
+          "properties": {
+            "grounding": "asserted",
+            "rationale": "The server returned unrelated samples; silence is not evidence.",
+            "failure_scenario": "If the scatter is later vectorised to 16-byte stores, an unaligned cache row offset (row not a multiple of 4 floats) would fault; today's scalar stores are unaffected.",
+            "precision_class": "advisory"
+          }
+        },
+        {
+          "ruleId": "cuda.shfl-sync-membermask",
+          "level": "note",
+          "message": {
+            "text": "The docs state shfl.sync is undefined if the executing thread is outside membermask (and results are undefined when sourcing from an inactive thread). The new decode_attention_split kernel scores with a warp-wide shfl.sync.down sum (its test asserts the mnemonic, decode_attention_split.rs:368). The builder helper it goes through (ptx/builder/sync.rs shfl_down_f32) hard-codes an immediate 31 in the clamp/mask position with the comment 'mask for 32 threads'; the reviewer did not verify on a device that every lane of the warp is active at each shuffle."
+          },
+          "properties": {
+            "grounding": "cited",
+            "source": "mcp__nvidia-cuda-docs__search_cuda_docs: warp shuffle reduction shfl.sync.bfly full mask semantics in split-K decode attention (PTX ISA shfl.sync)",
+            "excerpt": "The behavior of `shfl.sync` is undefined if the executing thread is not in the `membermask`.",
+            "excerpt_sha256": "d9f0fafa6f1dec1292e91b552d4cff17a832bdc0833e657eb93aec0f63dcf1f9",
+            "failure_scenario": "If a tail warp of the split kernel has inactive lanes at a shfl.sync.down, the reduction reads undefined values and the attention score for that position is wrong without any fault.",
+            "precision_class": "advisory"
+          }
+        }
+      ]
+    },
+    {
+      "tool": {
+        "driver": {
+          "name": "crux",
+          "informationUri": "https://github.com/paiml/aprender",
+          "rules": []
+        }
+      },
+      "invocations": [
+        {
+          "executionSuccessful": true,
+          "commandLine": "guard predicates --match-comparative; contracts/apr-cli-commands-v1.yaml diff read; grep over contracts/crux-*.yaml"
+        }
+      ],
+      "results": [
+        {
+          "ruleId": "crux.coverage-none",
+          "level": "note",
+          "message": {
+            "text": "Surfaces: the new `apr ptx-debug` subcommand (analyze, gen-fkr, version) and the hidden `apr surface` command added to contracts/apr-cli-commands-v1.yaml, plus 8 further apr-cli registry lines for pv subcommands (challenge, discharge, obligations, ontology). A search of contracts/crux-*.yaml for `ptx-debug` finds no covering contract, so crux_coverage is none for that surface, which is itself a finding. No comparator claim (N x competitor) was added in book/, README or CHANGELOG lines of the diff that this review read by pattern."
+          },
+          "properties": {
+            "grounding": "measured",
+            "command": [
+              "bash",
+              "-c",
+              "grep -l -e ptx-debug contracts/crux-*.yaml"
+            ],
+            "exit_code": 1,
+            "stdout_sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+            "failure_scenario": "A user-facing CLI subcommand ships with no competitive contract, so a regression against the tool users would otherwise reach for cannot be seen by the crux ladder.",
+            "precision_class": "advisory"
+          }
+        }
+      ]
+    },
+    {
+      "tool": {
+        "driver": {
+          "name": "cargo-mutants",
+          "informationUri": "https://github.com/paiml/aprender",
+          "rules": []
+        }
+      },
+      "invocations": [
+        {
+          "executionSuccessful": false,
+          "commandLine": "cargo mutants was not run",
+          "toolExecutionNotifications": [
+            {
+              "level": "error",
+              "message": {
+                "text": "cargo mutants --in-diff was not attempted (attempted=0). The hard rules for this review forbid cargo test, nextest and cargo-mutants on this host (lambda). 515 .rs files are in the diff and the guard's --match-mutation-trigger fires on 667 of the 1925 changed paths, including scripts/check_*.sh guards (a 100% guard-mutation requirement, B3, that this review did not measure). The PR's own CI mutants job and the guard mutation set are the only measurements."
+              }
+            }
+          ]
+        }
+      ],
+      "results": []
+    },
+    {
+      "tool": {
+        "driver": {
+          "name": "antigravity",
+          "informationUri": "https://github.com/paiml/aprender",
+          "rules": []
+        }
+      },
+      "invocations": [
+        {
+          "executionSuccessful": true,
+          "commandLine": "agy -p <prompt file> --output-format json --json-schema .pr-review-schema.json --model gpt-oss-120b-medium --print-timeout 30m --dangerously-skip-permissions --add-dir <disposable tree> (attempts 1 and 2 returned 503 no capacity, attempt 3 succeeded)"
+        }
+      ],
+      "results": []
+    }
+  ]
+}

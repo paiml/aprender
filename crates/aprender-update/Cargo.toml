@@ -1,7 +1,7 @@
 [package]
 name = "aprender-update"
 description = "Update check and self-update for sovereign binaries: newer of release and green nightly, sha256-verified, atomic swap"
-version = "0.69.4"
+version.workspace = true
 edition.workspace = true
 rust-version.workspace = true
 authors.workspace = true

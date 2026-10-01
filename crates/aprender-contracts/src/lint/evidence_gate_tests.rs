@@ -363,6 +363,51 @@ fn a_null_census_binds_verified_claims_to_the_repository() {
     assert_eq!(findings[0].rule_id, "PV-ONT-020");
 }
 
+fn levels_and_unresolved(r: &GateResult) -> (Vec<String>, usize) {
+    match r.extra.as_ref() {
+        Some(GateExtra::Evidence {
+            by_level,
+            unresolved_git_shas,
+            ..
+        }) => (by_level.clone(), *unresolved_git_shas),
+        other => panic!("expected GateExtra::Evidence, got {other:?}"),
+    }
+}
+
+/// Kills `&&` -> `||` on `passed` and `>` -> `<` on the unresolved branch in `run_evidence_gate`: a verified
+/// claim that git cannot look up (no census, no repository) is no finding, yet the gate neither passes nor
+/// reports Pass — it is Unknown.
+#[test]
+fn an_unresolved_git_sha_with_no_findings_is_unknown_and_not_passed() {
+    let v = FULL
+        .replace("mark: C", "mark: V")
+        .replace("}\n", &format!(", git_sha: \"{SHA}\"}}\n"));
+    let tmp = corpus(&[("c-v1.yaml", &contract("code", &v))]);
+    let (r, findings) = ran(run_evidence_gate(tmp.path()));
+    assert!(findings.is_empty(), "{findings:?}");
+    assert_eq!(levels_and_unresolved(&r).1, 1);
+    assert_eq!(r.verdict, Verdict::Unknown(Reason::ToolAbsent));
+    assert!(!r.passed);
+}
+
+/// Kills `==` -> `!=` and `+=` -> `*=` in `Census::observe`: a level is counted once per block that drew no
+/// finding, and a block with a finding is not counted.
+#[test]
+fn by_level_counts_only_clean_blocks() {
+    let bad = FULL.replace(
+        "  wasAttributedTo: pv\n",
+        "  wasAttributedTo: pv\n  author: noah\n",
+    );
+    let tmp = corpus(&[
+        ("a-v1.yaml", &contract("code", FULL)),
+        ("b-v1.yaml", &contract("readme", FULL)),
+        ("c-v1.yaml", &contract("code", &bad)),
+    ]);
+    let (r, findings) = ran(run_evidence_gate(tmp.path()));
+    assert_eq!(findings.len(), 1, "{findings:?}");
+    assert_eq!(levels_and_unresolved(&r).0, vec!["L2=2".to_string()]);
+}
+
 /// Kills `!shallow` -> `true` and `unresolved += 1` -> `*=`/`-=` in `resolve_pending`: in a shallow clone an
 /// absent sha is unresolved (git cannot say), never a PV-ONT-020 finding.
 #[test]

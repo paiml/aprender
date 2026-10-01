@@ -1,7 +1,7 @@
 [package]
 name = "aprender-contracts"
 description = "Papers to Math to Contracts in Code — YAML contract parsing, validation, scaffold generation, and Kani harness codegen for provable Rust kernels"
-version = "0.69.4"
+version.workspace = true
 edition.workspace = true
 rust-version.workspace = true
 authors.workspace = true
@@ -26,7 +26,7 @@ kani = []
 name = "provable_contracts"
 
 [dependencies]
-provable-contracts-macros = { path = "../aprender-contracts-macros", version = "0.69.4", package = "aprender-contracts-macros" }
+provable-contracts-macros = { path = "../aprender-contracts-macros", version = "0.70.0", package = "aprender-contracts-macros" }
 regex = "1"
 sha2 = { workspace = true }
 blake3 = "1"

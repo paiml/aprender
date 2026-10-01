@@ -23,3 +23,8 @@ aprender-contracts-cli||crates/aprender-contracts-cli/src/commands/ontology.rs|-
 aprender-contracts-cli||crates/aprender-contracts-cli/src/commands/lint.rs|--tests
 aprender-contracts-cli||crates/aprender-contracts-cli/src/commands/discharge.rs|--lib --test pvl_discharge_check --test pvl_discharge_leanchecker --test pvl_comparator --test pvl_challenge
 aprender-contracts-cli||crates/aprender-contracts-cli/src/commands/extract_rdf.rs|--lib --test ont_release_readiness --test ont_extract_json --test ont4b_shapes_gate
+aprender-contracts-cli||crates/aprender-contracts-cli/src/commands/proof_status.rs|--lib --test pvl_ghost_binding --test pvl_zero_contracts
+aprender-contracts-macros||crates/aprender-contracts-macros/src/lib.rs|--lib --test contract_macros
+aprender-data||crates/aprender-data/src/cli/quality.rs|--lib --test cli_output
+# hub.rs is behind `#[cfg(feature = "hf-hub")]` AND its observable effect is the binary's stderr.
+aprender-data|hf-hub|crates/aprender-data/src/cli/hub.rs|--lib --test cli_output

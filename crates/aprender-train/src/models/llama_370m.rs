@@ -986,24 +986,13 @@ mod tests {
 
     /// The sovereign contract YAML, read from the workspace at RUN time (#4129). It was an
     /// `include_str!("../../../../contracts/…")`, a path OUTSIDE the crate, so `cargo test` from
-    /// the published aprender-train tarball could not even compile this module. An edit to the
-    /// file is still caught by the next test run. In tree, a missing or renamed file FAILS; only
-    /// a build with no `contracts/` directory beside the crate (the crates.io tarball) skips, and
-    /// names the test it skipped.
+    /// the published aprender-train tarball could not even compile this module. The in-tree
+    /// decision is the shared rule, `provable_contracts::workspace_file_or_skip!` (#4175): in tree
+    /// a missing or renamed file FAILS; out of tree it skips and names the test it skipped.
     fn sovereign_contract_or_skip(test: &str) -> Option<String> {
-        let root = std::path::Path::new(env!("CARGO_MANIFEST_DIR")).join("../..");
-        if !root.join("contracts").is_dir() {
-            eprintln!(
-                "SKIP {test}: out of tree (no {} beside this crate) - the sovereign contract lives \
-                 in the workspace, which a published crate does not carry (#4129)",
-                root.join("contracts").display()
-            );
-            return None;
-        }
-        let path = root.join("contracts/model-families/llama-370m-sovereign-v1.yaml");
-        Some(
-            std::fs::read_to_string(&path)
-                .unwrap_or_else(|e| panic!("in tree, {} must be readable: {e}", path.display())),
+        provable_contracts::workspace_file_or_skip!(
+            test,
+            "contracts/model-families/llama-370m-sovereign-v1.yaml"
         )
     }
 

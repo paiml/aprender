@@ -95,6 +95,7 @@ non_receipt_receivers:
     lane: a parity lane
     side: one side of a parity lane
     bench: the bench sub-block of a host receipt, already covered by the top level
+    accel_absent: a parity block's accel_absent object -- the artifact resolved no accelerator (#3805)
 
 # Mode-dispatch keys: `_bench_of` and `_parity_of` probe these to decide WHICH
 # document they were handed. They are not receipt content and carry no verdict.
@@ -451,6 +452,25 @@ fields:
     required: conditional
     producer: {file: scripts/perf-matrix.yaml, symbol: "hosts:"}
     formula: "the --host argument, which must name a key under hosts: in the matrix"
+
+  # The TOP-LEVEL accelerator of a host dogfood receipt (evidence/dogfood/<ver>/
+  # <host>.json), read by required_parity_lanes to decide whether a cuda or metal
+  # lane is required (#3805). NOT provenance.accelerator below: that one is the
+  # matrix's short id ("rtx-4090", "m4"), and it matches none of the substrings
+  # required_parity_lanes keys on. This one is free text written by hand.
+  accelerator:
+    class: UNMEASURED
+    required: conditional
+    owner: PERF-004
+    spec: "APR-RELEASE-001 §4 (T-2, the host dogfood receipts)"
+    needs: >-
+      No script writes a host dogfood receipt; each evidence/dogfood/<ver>/<host>.json
+      carries a hand-recorded accelerator string ("NVIDIA GeForce RTX 4090 sm_89",
+      "Apple Metal (Apple M4)"), and required_parity_lanes infers the required
+      accel lane by substring from it. A producer must write it from the device the
+      binary actually resolved (the parity block's lane provenance), or derive it
+      from scripts/perf-matrix.yaml hosts[host].accelerator with a lane mapping
+      that replaces the substring match.
 
   provenance.accelerator:
     class: DERIVED

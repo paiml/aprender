@@ -1502,6 +1502,120 @@ mod tests {
         );
     }
 
+    /// Two modules that glob-re-export each other (`a: pub use crate::b::*`, `b: pub use crate::a::*`) cycle when
+    /// a segment neither defines is chased. The cycle is a dead end, not the answer: the refusal names the last
+    /// real miss (`no mod x … in b.rs`), never `re-export cycle` (mutant `code.rs:628` guard → false, #4588).
+    #[test]
+    fn a_glob_re_export_cycle_reports_the_real_miss_not_the_cycle() {
+        let tmp = tempfile::tempdir().unwrap();
+        let w = tmp.path();
+        std::fs::write(w.join("Cargo.toml"), "[workspace]\nmembers = [\"k\"]\n").unwrap();
+        std::fs::create_dir_all(w.join("k/src")).unwrap();
+        std::fs::write(w.join("k/Cargo.toml"), "[package]\nname = \"k\"\n").unwrap();
+        std::fs::write(w.join("k/src/lib.rs"), "pub mod a;\npub mod b;\n").unwrap();
+        std::fs::write(w.join("k/src/a.rs"), "pub use crate::b::*;\n").unwrap();
+        std::fs::write(w.join("k/src/b.rs"), "pub use crate::a::*;\n").unwrap();
+        let ws = Workspace::scan(w);
+        let mut r = Resolver::new(&ws);
+        let e = r.resolve("k::a::x", "f").expect_err("x exists nowhere");
+        assert!(!e.reason.contains("re-export cycle"), "{}", e.reason);
+        assert!(
+            e.reason.contains("no `mod x`") && e.reason.contains("k/src/b.rs"),
+            "{}",
+            e.reason
+        );
+    }
+
+    /// A one-crate workspace `k` with `lib` as `k/src/lib.rs` and `files` as `(path under k/src, text)`.
+    fn crate_k(lib: &str, files: &[(&str, &str)]) -> tempfile::TempDir {
+        let tmp = tempfile::tempdir().unwrap();
+        let w = tmp.path();
+        std::fs::write(w.join("Cargo.toml"), "[workspace]\nmembers = [\"k\"]\n").unwrap();
+        std::fs::create_dir_all(w.join("k/src")).unwrap();
+        std::fs::write(w.join("k/Cargo.toml"), "[package]\nname = \"k\"\n").unwrap();
+        std::fs::write(w.join("k/src/lib.rs"), lib).unwrap();
+        for (path, text) in files {
+            std::fs::write(w.join("k/src").join(path), text).unwrap();
+        }
+        tmp
+    }
+
+    /// A struct, enum, union or type alias with no impl in its module is still a TYPE segment: the refusal
+    /// names the missing method of that type, never a missing `mod` (mutants `code.rs:835-839`, each arm
+    /// deleted, #4588).
+    #[test]
+    fn every_kind_of_type_definition_is_a_type_segment() {
+        let tmp = crate_k(
+            "pub struct S;\npub enum E { A }\npub union U { a: u32 }\npub type T = u8;\n",
+            &[],
+        );
+        let ws = Workspace::scan(tmp.path());
+        for ty in ["S", "E", "U", "T"] {
+            let e = Resolver::new(&ws)
+                .resolve(&format!("k::{ty}"), "f")
+                .expect_err("no impl anywhere");
+            assert!(
+                e.reason.contains(&format!("in an `impl {ty}`")),
+                "{ty}: {}",
+                e.reason
+            );
+        }
+    }
+
+    /// `Type::function` finds a method only in an impl FOR that type or a trait OF that name, and an extra
+    /// segment that is not `<Arg>` is refused as "a type, not a module" (mutants `code.rs:647` guard → true,
+    /// `:659` guard → true, `:662` guard → true and `&&` → `||`, #4588).
+    #[test]
+    fn a_type_member_is_searched_only_in_its_own_impls_and_trait() {
+        let tmp = crate_k(
+            "pub struct T;\npub struct U;\nimpl U { pub fn f() {} }\n\
+             pub trait Other { fn g(); }\npub trait Tr { fn h(); }\n",
+            &[],
+        );
+        let ws = Workspace::scan(tmp.path());
+        let mut r = Resolver::new(&ws);
+        r.resolve("k::U", "f").expect("U's own impl");
+        r.resolve("k::Tr", "h").expect("the trait's own fn");
+        assert!(r.resolve("k::T", "f").is_err(), "f is U's, not T's");
+        assert!(
+            r.resolve("k::T", "g").is_err(),
+            "g is trait Other's, not T's"
+        );
+        assert!(
+            r.resolve("k::Tr::<X>", "h").is_err(),
+            "a trait takes no <Arg> here"
+        );
+        let e = r.resolve("k::U::x", "f").expect_err("x is not a module");
+        assert!(e.reason.contains("is a type, not a module"), "{}", e.reason);
+    }
+
+    /// Only a FILE-backed child `mod x;` can include a sibling file: an inline `mod c { }` that happens to share
+    /// its name with a file `c.rs` including `inc.rs` does not make `k::inc` resolve (mutant `code.rs:766` guard
+    /// → true, #4588).
+    #[test]
+    fn an_inline_module_does_not_include_a_sibling_file() {
+        let tmp = crate_k(
+            "pub mod c {}\n",
+            &[
+                ("c.rs", "include!(\"inc.rs\");\n"),
+                ("inc.rs", "pub fn f() {}\n"),
+            ],
+        );
+        let ws = Workspace::scan(tmp.path());
+        assert!(Resolver::new(&ws).resolve("k::inc", "f").is_err());
+        let file_backed = crate_k(
+            "pub mod c;\n",
+            &[
+                ("c.rs", "include!(\"inc.rs\");\n"),
+                ("inc.rs", "pub fn f() {}\n"),
+            ],
+        );
+        let ws = Workspace::scan(file_backed.path());
+        Resolver::new(&ws)
+            .resolve("k::inc", "f")
+            .expect("the same layout with a file-backed mod resolves");
+    }
+
     /// An inline `mod foo { }` is not a file-backed child: a `foo.rs` on disk that happens to include `inc.rs`
     /// must not make `inc` resolvable from the parent.
     #[test]

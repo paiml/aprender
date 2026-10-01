@@ -10,7 +10,8 @@ repository.workspace = true
 rust-version.workspace = true
 
 [[bin]]
-name = "presentar"
+# #4430: every shipped [[bin]] is aprender-* (was `presentar`)
+name = "aprender-present"
 path = "src/main.rs"
 
 [dependencies]

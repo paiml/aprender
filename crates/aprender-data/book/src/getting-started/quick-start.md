@@ -152,16 +152,16 @@ The alimentar CLI provides quick data inspection:
 
 ```bash
 # View schema
-alimentar schema data.parquet
+aprender-data schema data.parquet
 
 # View first rows
-alimentar head data.parquet -n 10
+aprender-data head data.parquet -n 10
 
 # Get info
-alimentar info data.parquet
+aprender-data info data.parquet
 
 # Convert formats
-alimentar convert data.csv data.parquet
+aprender-data convert data.csv data.parquet
 ```
 
 ## Next Steps

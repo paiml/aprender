@@ -2981,11 +2981,11 @@ impl WgpuBackend {
 
 ```bash
 # TUI target (native binary, like ttop)
-presentar build --target tui --manifest app.prs
+aprender-present build --target tui --manifest app.prs
 # Output: target/release/app (terminal executable)
 
 # WASM target (browser)
-presentar build --target wasm --manifest app.prs
+aprender-present build --target wasm --manifest app.prs
 # Output: generated/
 #   ├── index.html
 #   ├── app_bg.wasm
@@ -2993,7 +2993,7 @@ presentar build --target wasm --manifest app.prs
 #   └── app.prs
 
 # Both targets (generates both)
-presentar build --target all --manifest app.prs
+aprender-present build --target all --manifest app.prs
 ```
 
 ### Feature Matrix
@@ -4317,7 +4317,7 @@ probador build --manifest demos/www-demo/tests/whisper_brick_spec.rs
 cd www-demo && wasm-pack build --target web
 
 # 3. Serve with Presentar CLI (includes COOP/COEP headers)
-presentar serve --manifest app.prs --port 8080
+aprender-present serve --manifest app.prs --port 8080
 
 # 4. Run brick tests (validates generated UI)
 probador test --headless --manifest app.prs

@@ -1,0 +1,17 @@
+- id: PMAT-4080
+  github_issue: 4080
+  item_type: task
+  title: 'PVL-2: proof-status resolves bindings; ghost binding is a reject'
+  status: planned
+  priority: medium
+  assigned_to: null
+  created: 2026-09-23T18:46:02Z
+  updated: 2026-09-23T18:46:02Z
+  spec: null
+  acceptance_criteria: []
+  phases: []
+  subtasks: []
+  estimated_effort: null
+  labels:
+  - kind:code
+  notes: null

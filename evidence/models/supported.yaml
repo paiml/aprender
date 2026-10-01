@@ -51,6 +51,12 @@ models:
   - book/src/tools/mcp-server.md:131
   - book/src/tools/mcp-server.md:214
   - book/src/tools/mcp-server.md:342
+- name: qwen2.5-1.5b-instruct
+  family: qwen2.5
+  size: 1.5b
+  cited_by_count: 1
+  cited_by:
+  - evidence/dogfood/0.68.2/gx10.json:205
 - name: qwen2.5-coder-0.5b
   family: qwen2.5
   size: 0.5b
@@ -98,7 +104,7 @@ models:
 - name: qwen2.5-coder-1.5b-instruct
   family: qwen2.5
   size: 1.5b
-  cited_by_count: 101
+  cited_by_count: 104
   cited_by:
   - README.md:94
   - README.md:95
@@ -112,7 +118,7 @@ models:
   - README.md:187
   - README.md:188
   - README.md:189
-  # … and 89 more
+  # … and 92 more
 - name: qwen2.5-coder-32b
   family: qwen2.5
   size: 32b

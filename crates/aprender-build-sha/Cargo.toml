@@ -1,6 +1,6 @@
 [package]
 name = "aprender-build-sha"
-version = "0.69.4"
+version.workspace = true
 edition.workspace = true
 rust-version.workspace = true
 description = "Build-script helper that stamps APR_GIT_SHA into every aprender binary's --version"
@@ -19,3 +19,6 @@ name = "build_sha"
 
 [lints]
 workspace = true
+
+[dev-dependencies]
+tempfile = { workspace = true }

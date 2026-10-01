@@ -1,0 +1,16 @@
+- id: PMAT-4110
+  github_issue: 4110
+  item_type: task
+  title: apr version names rc tag and commit
+  status: in_progress
+  priority: medium
+  assigned_to: aprender-ea
+  created: 2026-09-24T17:50:47Z
+  updated: 2026-09-24T17:50:47Z
+  spec: null
+  acceptance_criteria: []
+  phases: []
+  subtasks: []
+  estimated_effort: null
+  labels: []
+  notes: null

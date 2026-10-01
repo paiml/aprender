@@ -516,6 +516,27 @@ pub fn select_prefill_path(cc: u32, batched_prefill_env: Option<&str>) -> Prefil
     PrefillPathChoice { path, reason, cc }
 }
 
+/// #4590 — the 0.70 known issue for an architecture on a compute capability.
+///
+/// Qwen3 (`qwen3`, NOT `qwen35` / `qwen3moe`) on the sm_12x family is correct
+/// but 27-34x slower than Qwen3.5 on the same GB10 (8k think-on, 0.70.0
+/// 8d021f61e: Qwen3-1.7B 967 s, Qwen3-8B 2163 s, Qwen3.5-9B 63-80 s), under the
+/// serial prefill that `select_prefill_path` makes the sm_12x default. The
+/// operator DE-CLAIMED it for 0.70 (#3715): apr says so at load instead of
+/// letting a user wait on it silently. PURE, like `select_prefill_path`, so the
+/// predicate is tested on a CPU box. Remove with the 0.70.1 fix.
+#[must_use]
+pub fn known_issue_warning(arch: &str, cc: u32) -> Option<String> {
+    (arch.eq_ignore_ascii_case("qwen3") && cc >= SM12X_MIN_CC).then(|| {
+        format!(
+            "[KNOWN-ISSUE #4590] Qwen3 on this GPU (cc={cc}, sm_12x / GB10) is correct but very \
+             slow in apr 0.70: prefill runs serially here, ~27-34x slower than Qwen3.5. Qwen3 on \
+             sm_12x is not claimed for 0.70; the fix is planned for 0.70.1. \
+             https://github.com/paiml/aprender/issues/4590"
+        )
+    })
+}
+
 /// Compute capability at and above which the batched prefill path is refused
 /// by default: the sm_12x family (RTX 50 sm_120, GB10 sm_121) and anything
 /// numerically above it. Not "Blackwell": sm_100/103/110 are Blackwell too
@@ -746,7 +767,7 @@ pub const KV_LAYOUT: &str = "contiguous_per_slot";
 
 #[cfg(test)]
 mod pmat810_prefill_path_tests {
-    use super::{select_prefill_path, PrefillPath};
+    use super::{known_issue_warning, select_prefill_path, PrefillPath};
 
     /// §9 #1: the whole policy, as a table.
     ///
@@ -754,6 +775,39 @@ mod pmat810_prefill_path_tests {
     /// are the ones that matter, because a `batched` answer there is the
     /// PMAT-810 KV corruption and a coherent-looking receipt over garbage
     /// tokens.
+    /// #4590: the known-issue warning fires for Qwen3 on sm_12x, and ONLY there.
+    /// `qwen35` and `qwen3moe` share the prefix and must stay silent, and so must
+    /// Qwen3 on every cc below the sm_12x line (sm_89, datacenter Blackwell sm_100/110).
+    #[test]
+    fn known_issue_warning_table() {
+        let cases: [(&str, u32, bool); 9] = [
+            ("qwen3", 121, true),
+            ("qwen3", 120, true),
+            ("Qwen3", 121, true),
+            ("qwen35", 121, false),
+            ("qwen3moe", 121, false),
+            ("qwen2", 121, false),
+            ("qwen3", 89, false),
+            ("qwen3", 100, false),
+            ("qwen3", 110, false),
+        ];
+        for (arch, cc, fires) in cases {
+            let w = known_issue_warning(arch, cc);
+            assert_eq!(
+                w.is_some(),
+                fires,
+                "arch={arch} cc={cc} must {}warn",
+                if fires { "" } else { "not " }
+            );
+            if let Some(w) = w {
+                assert!(
+                    w.contains("#4590") && w.contains("0.70.1"),
+                    "the warning names the issue and the fix release: {w}"
+                );
+            }
+        }
+    }
+
     #[test]
     fn select_prefill_path_table() {
         let cases: [(u32, Option<&str>, PrefillPath, &str); 6] = [

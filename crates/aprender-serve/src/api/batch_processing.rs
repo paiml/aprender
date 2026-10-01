@@ -34,7 +34,7 @@ async fn process_batch(
             max_tokens: first.max_tokens,
             temperature: first.temperature,
             top_k: first.top_k,
-            stop_tokens: Vec::new(),
+            stop_tokens: first.stop_tokens.clone(),
             trace: false,
             ..Default::default()
         };
@@ -87,7 +87,7 @@ async fn process_batch(
                     max_tokens: request.max_tokens,
                     temperature: request.temperature,
                     top_k: request.top_k,
-                    stop_tokens: Vec::new(),
+                    stop_tokens: request.stop_tokens.clone(),
                     trace: false,
             ..Default::default()
                 };
@@ -323,7 +323,11 @@ pub async fn gpu_batch_completions_handler(
         max_tokens: request.max_tokens,
         temperature: request.temperature,
         top_k: request.top_k,
-        stop_tokens: vec![],
+        // aprender#4345: was `vec![]`, so every prompt ran to `max_tokens`.
+        stop_tokens: crate::api::realize_handlers::completion_stop_tokens(
+            &tokenizer,
+            state.model_eos_token_id(),
+        ),
         trace: false,
             ..Default::default()
     };
@@ -476,7 +480,10 @@ fn try_cuda_generate(
         } else {
             request.top_k
         },
-        stop_tokens: vec![eos_id(&tokenizer, state.model_eos_token_id())],
+        stop_tokens: crate::api::realize_handlers::completion_stop_tokens(
+            &tokenizer,
+            Some(eos_id(&tokenizer, state.model_eos_token_id())),
+        ), // aprender#4345
         trace: false,
         cancel: cancel.clone(),
         ..Default::default()

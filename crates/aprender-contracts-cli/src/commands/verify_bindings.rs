@@ -247,7 +247,59 @@ fn fn_item_name(line: &str) -> Option<String> {
 
 #[cfg(test)]
 mod tests {
-    use super::fn_item_name;
+    use super::{
+        derive_src_root, extract_fn_names, fn_item_name, parse_expected_functions, short_name,
+    };
+    use std::collections::HashSet;
+
+    /// `function:` values normalize to their last `::` segment, lowercased; empty and
+    /// `N/A` values name nothing (#4588: these helpers had no test at all).
+    #[test]
+    fn short_name_normalizes_or_declines() {
+        assert_eq!(short_name(" a::b::Foo ").as_deref(), Some("foo"));
+        assert_eq!(short_name("\"Bar\"").as_deref(), Some("bar"));
+        assert_eq!(short_name("'q::Baz'").as_deref(), Some("baz"));
+        assert_eq!(short_name(""), None);
+        assert_eq!(short_name("  "), None);
+        assert_eq!(short_name("N/A"), None);
+        assert_eq!(short_name("\"N/A\""), None);
+    }
+
+    #[test]
+    fn expected_functions_come_only_from_function_lines() {
+        let yaml = "bindings:\n  - contract: c\n    function: crate::m::Alpha\n    module: x::Beta\n  - contract: d\n    function: \"N/A\"\n  - contract: e\n    function: ''\n  - contract: f\n    function:   gamma\n";
+        let want: HashSet<String> = ["alpha", "gamma"].map(String::from).into();
+        assert_eq!(parse_expected_functions(yaml), want);
+        assert!(parse_expected_functions("module: m\n").is_empty());
+    }
+
+    #[test]
+    fn extract_fn_names_collects_every_declared_item() {
+        let mut found = HashSet::new();
+        extract_fn_names(
+            "pub fn a() {}\n// fn hidden() {}\nstruct B;\nlet c = 1;\n",
+            &mut found,
+        );
+        let want: HashSet<String> = ["a", "b"].map(String::from).into();
+        assert_eq!(found, want);
+    }
+
+    /// Without the legacy `../../<label>/` tree, the root is the nearest ancestor holding
+    /// `src/` OR `crates/` -- one of the two is enough.
+    #[test]
+    fn src_root_is_the_nearest_ancestor_with_a_tree() {
+        for tree in ["crates", "src"] {
+            let d = tempfile::tempdir().expect("tempdir");
+            let ws = d.path().join("ws");
+            std::fs::create_dir_all(ws.join(tree)).expect("tree");
+            let dir = ws.join("contracts").join("k");
+            std::fs::create_dir_all(&dir).expect("contracts");
+            let binding = dir.join("binding.yaml");
+            std::fs::write(&binding, "").expect("binding");
+            let want = std::fs::canonicalize(&ws).expect("canonical");
+            assert_eq!(derive_src_root(&binding, "absent-label"), want, "{tree}");
+        }
+    }
 
     /// The resolver's case table: every declaration form a binding can name must be
     /// seen (a miss is a false GHOST reject), and non-declarations must not be.

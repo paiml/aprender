@@ -1,0 +1,4 @@
+# tool_version=none (measured by scripts/check_comparator_consumers_resolve.sh: an awk command-position walker + python regexes over tracked+working-tree .sh/.rs; not a versioned analyser)
+# Known comparator-consumer violations (#3740). Format: <rule>TAB<path>TAB#<issue that owns the fix>.
+# SHRINK-ONLY against origin/main: an entry leaves when its fix lands (a stale entry is RED), and none is ever added.
+R2	crates/apr-cli/src/commands/showcase/benchmark_helpers.rs	#3773

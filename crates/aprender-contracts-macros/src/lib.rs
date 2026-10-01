@@ -565,6 +565,25 @@ mod tests {
             );
         }
     }
+    /// The injected message says which side of the contract failed: `PRE` is a
+    /// pre-condition, anything else a post-condition (mutant `lib.rs:315`
+    /// `==` → `!=`, #4588).
+    #[test]
+    fn condition_assert_labels_pre_and_post() {
+        let key = "CONTRACT_TEST_4588_LABEL";
+        std::env::set_var(key, "x > 0");
+        let pre = condition_assert(key, "PRE", "eq").to_string();
+        let post = condition_assert(key, "POST", "eq").to_string();
+        assert!(
+            pre.contains("Contract [eq] Pre-condition violated: x > 0"),
+            "{pre}"
+        );
+        assert!(
+            post.contains("Contract [eq] Post-condition violated: x > 0"),
+            "{post}"
+        );
+    }
+
     /// #4368: with the sentinel at `binding.yaml`, a site the registry has no
     /// row for is a compile error; any one of the three vars makes it known.
     /// Without the sentinel (a crates.io build), or at `none`, it is silent.

@@ -1,7 +1,7 @@
 [package]
 name = "aprender-contracts-cli"
 description = "CLI for provable-contracts — validate, scaffold, verify, status, audit"
-version = "0.69.4"
+version.workspace = true
 edition.workspace = true
 rust-version.workspace = true
 authors.workspace = true
@@ -18,7 +18,7 @@ name = "pv-sat"
 path = "src/bin/pv-sat/main.rs"
 
 [dependencies]
-aprender-contracts = { path = "../aprender-contracts", version = "0.69.4" }
+aprender-contracts = { path = "../aprender-contracts", version = "0.70.0" }
 # #3745 S1: `--model` is declared through the shared role type `ModelPath`, so
 # `apr surface` reads `apr pv verify-structure --model` as a model argument.
 batuta-common = { workspace = true, features = ["cli-roles"] }

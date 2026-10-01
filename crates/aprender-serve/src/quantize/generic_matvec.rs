@@ -175,6 +175,79 @@ pub fn generic_parallel_matvec<F: QuantBlockFormat>(
     Ok(output)
 }
 
+/// Multi-row variant of [`generic_parallel_matvec_into`] (#4228): `input` is `m` token rows of
+/// `in_dim`, `output` is `m` rows of `out_dim`, token-major.
+///
+/// Rayon splits the weight into row tiles sized to stay L2-resident; each tile runs every token
+/// against its rows, so the weight streams from DRAM once per call instead of once per token.
+/// Every output is the same `dot_fn(row, padded_token)` the single-row function computes, so
+/// the result is bit-identical to calling it once per token.
+///
+/// # Errors
+/// Mis-sized weight, input or output buffers.
+pub fn generic_multirow_matmul_into<F: QuantBlockFormat>(
+    weight_data: &[u8],
+    input: &[f32],
+    m: usize,
+    in_dim: usize,
+    out_dim: usize,
+    output: &mut [f32],
+    dot_fn: FusedDotFn,
+) -> Result<()> {
+    use rayon::prelude::*;
+
+    let super_blocks_per_row = in_dim.div_ceil(F::ELEMENTS_PER_SUPERBLOCK);
+    let bytes_per_row = super_blocks_per_row * F::SUPERBLOCK_BYTES;
+    if weight_data.len() < out_dim * bytes_per_row
+        || input.len() != m * in_dim
+        || output.len() < m * out_dim
+    {
+        return Err(RealizarError::InvalidShape {
+            reason: format!(
+                "{} multirow: weight {} < {out_dim}x{bytes_per_row}, input {} != {m}x{in_dim} \
+                 or output {} < {m}x{out_dim}",
+                F::FORMAT_ID,
+                weight_data.len(),
+                input.len(),
+                output.len()
+            ),
+        });
+    }
+    if m == 0 || out_dim == 0 {
+        return Ok(());
+    }
+    let padded = super_blocks_per_row * F::ELEMENTS_PER_SUPERBLOCK;
+    let acts: Vec<Cow<'_, [f32]>> = input
+        .chunks_exact(in_dim)
+        .map(|row| pad_activations_generic(row, padded))
+        .collect();
+
+    // L2-sized row tile, as the Q4_K multi-row kernel: 256 KiB of weight, 4..=64 rows.
+    let tile = ((256 * 1024) / bytes_per_row.max(1)).clamp(4, 64) / 4 * 4;
+    // Row-major [out_dim][m] so each tile owns a contiguous chunk; transposed below.
+    let mut by_row = vec![0.0f32; out_dim * m];
+    by_row
+        .par_chunks_mut(tile * m)
+        .enumerate()
+        .for_each(|(ti, chunk)| {
+            let row0 = ti * tile;
+            let rows = chunk.len() / m;
+            for (t, act) in acts.iter().enumerate() {
+                for r in 0..rows {
+                    let at = (row0 + r) * bytes_per_row;
+                    chunk[r * m + t] =
+                        dot_fn(&weight_data[at..at + bytes_per_row], act).unwrap_or(0.0);
+                }
+            }
+        });
+    for (row, vals) in by_row.chunks_exact(m).enumerate() {
+        for (t, &v) in vals.iter().enumerate() {
+            output[t * out_dim + row] = v;
+        }
+    }
+    Ok(())
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -341,5 +414,83 @@ mod tests {
             q4k_scalar_dot,
         );
         assert!(result.is_ok());
+    }
+
+    /// Each of the three size checks in `generic_multirow_matmul_into` rejects on its own.
+    #[test]
+    fn test_multirow_rejects_each_mis_sized_buffer_alone() {
+        let (m, in_dim, out_dim) = (2usize, 256usize, 3usize);
+        let bytes_per_row = 144;
+        let need = out_dim * bytes_per_row;
+        let acts = vec![1.0f32; m * in_dim];
+        let run = |weight: usize, input: usize, output: usize| {
+            let weights = vec![0u8; weight];
+            let acts = vec![1.0f32; input];
+            let mut out = vec![0.0f32; output];
+            generic_multirow_matmul_into::<Q4K>(
+                &weights,
+                &acts,
+                m,
+                in_dim,
+                out_dim,
+                &mut out,
+                q4k_scalar_dot,
+            )
+        };
+        assert!(
+            run(need, acts.len(), m * out_dim).is_ok(),
+            "exact sizes fit"
+        );
+        assert!(
+            run(need - 1, acts.len(), m * out_dim).is_err(),
+            "weight one byte short"
+        );
+        assert!(
+            run(need + 1, acts.len(), m * out_dim).is_ok(),
+            "a longer weight is fine"
+        );
+        assert!(
+            run(need, acts.len() - 1, m * out_dim).is_err(),
+            "input one short"
+        );
+        assert!(
+            run(need, acts.len() + 1, m * out_dim).is_err(),
+            "input one long"
+        );
+        assert!(
+            run(need, acts.len(), m * out_dim - 1).is_err(),
+            "output one short"
+        );
+        assert!(
+            run(need, acts.len(), m * out_dim + 1).is_ok(),
+            "a longer output is fine"
+        );
+    }
+
+    /// No tokens or no rows is an empty product: `Ok`, and the output is never written. Either
+    /// alone must return early — a zero `m` would otherwise ask rayon for zero-sized chunks.
+    #[test]
+    fn test_multirow_zero_tokens_or_zero_rows_is_an_untouched_ok() {
+        let in_dim = 256usize;
+        for (m, out_dim) in [(0usize, 3usize), (2, 0), (0, 0)] {
+            let weights = vec![0u8; out_dim * 144];
+            let acts = vec![1.0f32; m * in_dim];
+            let mut out = vec![7.0f32; 4];
+            let r = generic_multirow_matmul_into::<Q4K>(
+                &weights,
+                &acts,
+                m,
+                in_dim,
+                out_dim,
+                &mut out,
+                q4k_scalar_dot,
+            );
+            assert!(r.is_ok(), "m={m} out_dim={out_dim}");
+            assert_eq!(
+                out,
+                vec![7.0f32; 4],
+                "m={m} out_dim={out_dim} wrote the output"
+            );
+        }
     }
 }

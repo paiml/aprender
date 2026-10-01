@@ -592,4 +592,26 @@ mod tests {
             prop_assert_eq!(relabel(check_u8(&g, &model_as(false_bits, id_u8))), check_string(&g, &model(false_bits)));
         }
     }
+
+    /// Every step code decodes as [`STEP_CODES`] documents: `0..3` a unit, `3..9` the implication
+    /// `IMPLY_PAIRS[k - 3]`, and a code past the table wraps mod 6 rather than panicking.
+    #[test]
+    fn every_step_code_decodes_as_documented() {
+        let pair = |k: usize| {
+            let (a, b) = IMPLY_PAIRS[k];
+            Step::Implies(id_string(a), id_string(b))
+        };
+        for code in 0..=u8::MAX {
+            let k = usize::from(code);
+            let want = if k < 3 {
+                Step::Unit(id_string(k))
+            } else {
+                pair((k - 3) % 6)
+            };
+            assert_eq!(step(code), want, "code {code}");
+        }
+        assert_eq!(step(3), pair(0));
+        assert_eq!(step(8), pair(5));
+        assert_eq!(step(9), pair(0));
+    }
 }

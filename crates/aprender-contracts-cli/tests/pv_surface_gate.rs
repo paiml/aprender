@@ -417,6 +417,14 @@ const CASES: &[Case] = &[
                 .to_string();
         },
     },
+    Case {
+        // VS-COUNT-001 (#2648): the stated total disagrees with the list it
+        // counts. The fixture carries exactly one obligation, so a stated 5 is
+        // the only swap; `kind: kernel` makes it an Error (schema-kind is Warn).
+        rule: "VS-COUNT-001",
+        sev: Sev::Error,
+        build: |f| f.extra = "verification_summary:\n  total_obligations: 5\n".to_string(),
+    },
     // SCHEMA-021/022/023 (PMAT-3091) — the not-applicable family. An obligation
     // that is not a property of code is declared `applies_to: not_applicable`
     // and must say WHY (`na_reason`) and WHERE the claim is actually verified
@@ -493,16 +501,6 @@ const CASES: &[Case] = &[
         sev: Sev::Error,
         build: |f| {
             f.metadata = format!("{METADATA_OK}  competitor: \"THIS-COMPETITOR-DOES-NOT-EXIST\"\n");
-        },
-    },
-    // VS-COUNT-001 (#2648): kind-independent except for `kind: schema` (a Warning).
-    // The fixture carries ONE obligation, so a stated total of 2 is the single
-    // disagreement; the appended block is the only change.
-    Case {
-        rule: "VS-COUNT-001",
-        sev: Sev::Error,
-        build: |f| {
-            f.extra = "verification_summary:\n  total_obligations: 2\n".to_string();
         },
     },
 ];

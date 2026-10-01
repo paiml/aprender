@@ -53,6 +53,10 @@ name: Binary Release
 #   - `release: published` — fires automatically on each tagged release
 #   - `workflow_dispatch` — manual re-run / backfill, takes a tag input
 #
+# All the other workspace [[bin]]s (G5, #4189): `build-all-bins` ships each one, derived by
+# scripts/nightly_manifest.py bins exactly as nightly.yml does, as <bin>-<tag>-<target>.tar.gz for
+# x86_64/aarch64 gnu, each checked by asset_version_check.sh under its own name before upload.
+#
 # pv targets: 4 Linux (x86_64/aarch64 × musl/gnu), each built natively on
 # the box of its architecture (x86_64 on yoga, aarch64 on gx10): gnu inside
 # rust:1.93.0-bullseye, musl inside rust:1.93.0-bookworm. musl variants are static and ideal for Docker /
@@ -79,6 +83,34 @@ concurrency:
 
 
 jobs:
+  # A release that already carries every asset is NOT rebuilt (#4286). A promoted final
+  # is its rc's exact bytes (scripts/release/promote_rc.sh); publishing it with a
+  # personal token fires `release: published` here, and the upload steps below delete
+  # and replace same-named assets, so an ungated rebuild would silently swap the bytes
+  # that were dogfooded for new ones. With all eighteen present the build jobs skip and
+  # verify + smoke still run, on the promoted bytes. A partial release (a lane died)
+  # still rebuilds. An unreadable release (exit 2) fails this job, so the builds skip:
+  # when in doubt, never overwrite.
+  assets:
+    name: Does the release already carry every asset?
+    runs-on: [self-hosted, Linux, X64, clean-room]
+    timeout-minutes: 5
+    outputs:
+      present: ${{ steps.check.outputs.present }}
+    steps:
+      - uses: actions/checkout@v7
+      - id: check
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          TAG: ${{ github.event.release.tag_name || inputs.tag }}
+        run: |
+          setsid --wait bash scripts/check_release_assets.sh "$TAG"; rc=$?
+          case "$rc" in
+            0) echo "present=true" >> "$GITHUB_OUTPUT"; echo "$TAG already carries every asset: nothing is rebuilt" >> "$GITHUB_STEP_SUMMARY" ;;
+            1) echo "present=false" >> "$GITHUB_OUTPUT" ;;
+            *) echo "::error::could not read release $TAG (rc=$rc); refusing to build over assets that may exist"; exit 1 ;;
+          esac
+
   # The pv lane on the fleet (#3073; operator rule 2026-09-10: no GitHub-hosted runners). It ran on
   # ubuntu-latest, with cross for aarch64. Each target now builds natively on the box of its architecture
   # (x86_64 on yoga, aarch64 on gx10) in a sibling container, the pattern of build-apr-cpu: gnu targets
@@ -86,6 +118,8 @@ jobs:
   # well, so no floor rises), musl targets inside rust:1.93.0-bookworm (static). Asset names unchanged.
   build:
     name: pv ${{ matrix.target }} on ${{ matrix.host }}
+    needs: assets
+    if: needs.assets.outputs.present == 'false'
     runs-on: ${{ fromJSON(matrix.labels) }}
     strategy:
       fail-fast: false
@@ -123,6 +157,20 @@ jobs:
         uses: actions/checkout@v7
         with:
           ref: ${{ steps.tag.outputs.tag }}
+
+      # #4110/#4290: an rc asset's crate version IS its tag. The rc commit's Cargo.toml says
+      # X.Y.Z, so without this every vX.Y.Z-rc.N asset printed bare `X.Y.Z` (v0.69.3-rc.2:
+      # `apr 0.69.3 (v0.69.3+no-git)`). The stamper comes from THIS workflow's commit, not the
+      # tag's tree, which an rc cut from release/X.Y.Z predates. A final tag stamps nothing.
+      # verify-apr-assets then requires `apr --version` to equal the tag exactly.
+      - name: Stamp the rc version into the tag tree (#4110)
+        env:
+          TAG: ${{ steps.tag.outputs.tag }}
+        run: |
+          case "$TAG" in *-rc.*) ;; *) echo "final tag $TAG: nothing to stamp"; exit 0 ;; esac
+          git fetch --no-tags --depth 1 origin "$GITHUB_WORKFLOW_SHA"
+          git show "FETCH_HEAD:scripts/release/stamp_rc_version.sh" > "$RUNNER_TEMP/stamp_rc_version.sh"
+          bash "$RUNNER_TEMP/stamp_rc_version.sh" "$GITHUB_WORKSPACE" "$TAG"
 
       - name: Preflight - this box has the tools this job assumes
         run: bash scripts/ci_self_hosted_preflight.sh --need docker objdump
@@ -220,7 +268,10 @@ jobs:
         run: |
           TAG="${{ steps.tag.outputs.tag }}"
           API="https://api.github.com/repos/${GITHUB_REPOSITORY}"
-          rel=$(curl -sSf -H "Authorization: Bearer $GH_TOKEN" -H "Accept: application/vnd.github+json" "$API/releases/tags/$TAG")
+          # by listing, not releases/tags/: an rc is a DRAFT until every fleet host runs it (#4327),
+          # and releases/tags/ never returns a draft
+          rel=$(curl -sSf -H "Authorization: Bearer $GH_TOKEN" -H "Accept: application/vnd.github+json" "$API/releases?per_page=100" \
+            | python3 -c 'import json,sys; t=sys.argv[1]; print(json.dumps(next(r for r in json.load(sys.stdin) if r["tag_name"]==t)))' "$TAG")
           rid=$(printf '%s' "$rel" | python3 -c 'import json,sys; print(json.load(sys.stdin)["id"])')
           for f in "${{ steps.package.outputs.archive }}" "${{ steps.package.outputs.sha }}"; do
             # --clobber semantics: delete an asset of the same name first
@@ -231,8 +282,182 @@ jobs:
               | python3 -c 'import json,sys; a=json.load(sys.stdin); print("uploaded", a["name"], a["size"], "bytes")'
           done
 
+  # G5 (#4189): every other workspace [[bin]] on every tag. The set is the nightly's, derived by
+  # `scripts/nightly_manifest.py bins` from `cargo metadata` of the TAG tree -- never a hand list, so a
+  # new [[bin]] ships on the next tag with no edit here. apr and pv are the only bins left out: their
+  # dedicated lanes above ship them (cuda/cpu/darwin apr, musl+gnu pv), and a second `pv-<tag>-<target>`
+  # from this lane would clobber the pv lane's asset of the same name. gnu only, inside
+  # rust:1.93.0-bullseye (the 2.31 floor), natively on the box of each architecture as the pv lane.
+  # Each bin must answer `--help`, and its `--version` must print `<bin> <tag version> (<sha>)` --
+  # asset_version_check.sh with the bin's own name, the check verify-apr-assets makes of apr --
+  # before anything is uploaded; nightly_manifest.py smoke then gives the nightly's verdicts on the
+  # same executables. Assets are `<bin>-<tag>-<target>.tar.gz` + .sha256: they carry the tag once, so
+  # promote_rc.sh renames them for a final like every other asset.
+  build-all-bins:
+    name: all [[bin]]s ${{ matrix.target }} on ${{ matrix.host }}
+    needs: assets
+    if: needs.assets.outputs.present == 'false'
+    runs-on: ${{ fromJSON(matrix.labels) }}
+    timeout-minutes: 120
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - target: x86_64-unknown-linux-gnu
+            host: yoga
+            labels: '["self-hosted", "Linux", "X64", "cuda", "yoga"]'
+          - target: aarch64-unknown-linux-gnu
+            host: gx10
+            labels: '["self-hosted", "Linux", "ARM64", "cuda", "gx10"]'
+    steps:
+      - name: Resolve release tag
+        id: tag
+        run: |
+          TAG="${{ github.event.release.tag_name || inputs.tag }}"
+          if [ -z "$TAG" ]; then
+            echo "::error::No tag resolved (release event missing tag_name and no dispatch input)"
+            exit 1
+          fi
+          echo "tag=$TAG" >> "$GITHUB_OUTPUT"
+
+      - name: Checkout at tag
+        uses: actions/checkout@v7
+        with:
+          ref: ${{ steps.tag.outputs.tag }}
+
+      # As every lane: the stamper and the checker come from THIS workflow's commit, not the tag tree.
+      - name: Stamp the rc version into the tag tree (#4110)
+        env:
+          TAG: ${{ steps.tag.outputs.tag }}
+        run: |
+          git fetch --no-tags --depth 1 origin "$GITHUB_WORKFLOW_SHA"
+          git show "FETCH_HEAD:scripts/release/asset_version_check.sh" > "$RUNNER_TEMP/asset_version_check.sh"
+          git show "FETCH_HEAD:scripts/nightly_manifest.py" > "$RUNNER_TEMP/nightly_manifest.py"
+          case "$TAG" in *-rc.*) ;; *) echo "final tag $TAG: nothing to stamp"; exit 0 ;; esac
+          git show "FETCH_HEAD:scripts/release/stamp_rc_version.sh" > "$RUNNER_TEMP/stamp_rc_version.sh"
+          bash "$RUNNER_TEMP/stamp_rc_version.sh" "$GITHUB_WORKSPACE" "$TAG"
+
+      - name: Preflight - this box has the tools this job assumes
+        run: bash scripts/ci_self_hosted_preflight.sh --need docker objdump
+
+      - name: Build every [[bin]] inside rust:1.93.0-bullseye (glibc 2.31 floor)
+        run: |
+          set -euo pipefail
+          DOCKER=docker; docker ps >/dev/null 2>&1 || DOCKER="sudo -n docker"
+          T="${{ matrix.target }}"
+          CACHE="$(cd "$GITHUB_WORKSPACE/../.." && pwd)/cache-allbins/$T"
+          mkdir -p "$CACHE/registry" "$CACHE/target" "$GITHUB_WORKSPACE/target"
+          $DOCKER run --rm \
+            -v "$GITHUB_WORKSPACE:/workspace" \
+            -v "$CACHE/registry:/usr/local/cargo/registry" \
+            -w /workspace \
+            rust:1.93.0-bullseye \
+            cargo metadata --locked --no-deps --format-version 1 > "$RUNNER_TEMP/metadata.json"
+          ALL=$(python3 "$RUNNER_TEMP/nightly_manifest.py" bins --metadata "$RUNNER_TEMP/metadata.json")
+          BINS=$(echo "$ALL" | tr ',' '\n' | grep -vxE 'apr|pv' | paste -sd, -)
+          if [ -z "$BINS" ]; then echo "::error::no [[bin]] derived from the tag tree"; exit 1; fi
+          # the nightly's own cargo selection, verbatim (it builds apr and pv too; they are not packaged)
+          ARGS=$(python3 "$RUNNER_TEMP/nightly_manifest.py" bins --metadata "$RUNNER_TEMP/metadata.json" --format cargo)
+          echo "BINS=$BINS" >> "$GITHUB_ENV"
+          echo "Shipping $(echo "$BINS" | tr ',' '\n' | wc -l) bins (+ apr, pv from their own lanes): $BINS"
+          APR_SHA=$(git rev-parse --short=9 HEAD)
+          $DOCKER run --rm \
+            -v "$GITHUB_WORKSPACE:/workspace" \
+            -v "$CACHE/registry:/usr/local/cargo/registry" \
+            -v "$CACHE/target:/workspace/target" \
+            -w /workspace \
+            -e CARGO_TARGET_DIR=/workspace/target \
+            -e CARGO_INCREMENTAL=0 \
+            -e APR_GIT_SHA_OVERRIDE="$APR_SHA" \
+            -e T="$T" \
+            -e ARGS="$ARGS" \
+            rust:1.93.0-bullseye \
+            sh -c 'set -e; ldd --version | head -1; cargo build --locked --release $ARGS --target "$T"'
+          mkdir -p "target/$T/release"
+          # a bin that did not build fails this cp, which fails the step
+          for b in ${BINS//,/ }; do cp "$CACHE/target/$T/release/$b" "target/$T/release/$b"; done
+
+      # Checks that can fail, on the box that built them (native arch): every bin answers --help, its
+      # --version belongs to the tag (stdout only: aprender-ptx-debug's deprecation notice is stderr),
+      # the nightly's verdicts hold, and no gnu asset imports above GLIBC_2.31.
+      - name: Every bin runs, belongs to the tag, and keeps the 2.31 floor
+        env:
+          TAG: ${{ steps.tag.outputs.tag }}
+        run: |
+          set -uo pipefail
+          T="${{ matrix.target }}"; SHA=$(git rev-parse HEAD); bad=0
+          V=$(awk '/^\[workspace.package\]/{p=1;next} /^\[/{p=0} p&&/^version *=/{gsub(/"/,"",$3);print $3;exit}' Cargo.toml)
+          for b in ${BINS//,/ }; do
+            BIN="target/$T/release/$b"
+            line=$(timeout 30 "$BIN" --version 2>/dev/null | head -1)
+            if ! bash "$RUNNER_TEMP/asset_version_check.sh" "$TAG" "$SHA" "$line" "$b"; then bad=1; fi
+            if ! timeout 30 "$BIN" --help > /dev/null 2>&1; then echo "::error::$b --help failed"; bad=1; fi
+            FLOOR=$(objdump -T "$BIN" | grep -oE 'GLIBC_[0-9]+\.[0-9]+(\.[0-9]+)?' | sort -u -t_ -k2 -V | tail -1)
+            got=${FLOOR#GLIBC_}
+            if [ -n "$got" ] && [ "$(printf '%s\n%s\n' "$got" 2.31 | sort -V | tail -1)" != 2.31 ]; then
+              echo "::error::$b needs $FLOOR, above the GLIBC_2.31 floor"; bad=1
+            fi
+          done
+          python3 "$RUNNER_TEMP/nightly_manifest.py" smoke --sha "$SHA" --bins "$BINS" \
+            --bin-dir "target/$T/release" --version "$V" > "$RUNNER_TEMP/smoke.json" || bad=1
+          { echo "### all [[bin]]s $T: $(echo "$BINS" | tr ',' '\n' | wc -l) bins at $TAG"
+            echo '```json'; cat "$RUNNER_TEMP/smoke.json"; echo '```'; } >> "$GITHUB_STEP_SUMMARY"
+          if [ "$bad" -ne 0 ]; then echo "::error::a [[bin]] does not belong to $TAG; nothing is uploaded"; exit 1; fi
+
+      - name: Package archives
+        env:
+          TAG: ${{ steps.tag.outputs.tag }}
+        run: |
+          set -euo pipefail
+          T="${{ matrix.target }}"
+          mkdir -p dist
+          for b in ${BINS//,/ }; do
+            A="$b-$TAG-$T"
+            mkdir -p "$A"
+            cp "target/$T/release/$b" "$A/"
+            for f in README.md LICENSE LICENSE-MIT LICENSE-APACHE; do
+              if [ -f "$f" ]; then cp "$f" "$A/"; fi
+            done
+            tar czf "dist/$A.tar.gz" "$A"
+            (cd dist && shasum -a 256 "$A.tar.gz" > "$A.tar.gz.sha256")
+          done
+          find dist -type f | wc -l
+
+      # The pv lane's REST upload (these boxes carry no `gh`), then a read-back: every packaged file
+      # must be on the release, or the lane is red.
+      - name: Upload assets to release (REST, no gh)
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          TAG: ${{ steps.tag.outputs.tag }}
+        run: |
+          set -euo pipefail
+          API="https://api.github.com/repos/${GITHUB_REPOSITORY}"
+          rel_json() {
+            curl -sSf -H "Authorization: Bearer $GH_TOKEN" -H "Accept: application/vnd.github+json" "$API/releases?per_page=100" \
+              | python3 -c 'import json,sys; t=sys.argv[1]; print(json.dumps(next(r for r in json.load(sys.stdin) if r["tag_name"]==t)))' "$TAG"
+          }
+          rel=$(rel_json)
+          rid=$(printf '%s' "$rel" | python3 -c 'import json,sys; print(json.load(sys.stdin)["id"])')
+          cd dist
+          for f in *; do
+            aid=$(printf '%s' "$rel" | python3 -c 'import json,sys; n=sys.argv[1]; print(next((a["id"] for a in json.load(sys.stdin)["assets"] if a["name"]==n), ""))' "$f")
+            if [ -n "$aid" ]; then curl -sSf -X DELETE -H "Authorization: Bearer $GH_TOKEN" "$API/releases/assets/$aid" > /dev/null; fi
+            curl -sSf -X POST -H "Authorization: Bearer $GH_TOKEN" -H "Content-Type: application/octet-stream" \
+              --data-binary @"$f" "https://uploads.github.com/repos/${GITHUB_REPOSITORY}/releases/$rid/assets?name=$f" \
+              | python3 -c 'import json,sys; a=json.load(sys.stdin); print("uploaded", a["name"], a["size"], "bytes")'
+          done
+          have=$(rel_json | python3 -c 'import json,sys; print("\n".join(a["name"] for a in json.load(sys.stdin)["assets"]))')
+          missing=0
+          for f in *; do
+            if ! grep -qxF -- "$f" <<< "$have"; then echo "::error::$f is not on $TAG after upload"; missing=1; fi
+          done
+          [ "$missing" -eq 0 ]
+          echo "- $(find . -type f | wc -l) assets on $TAG, read back" >> "$GITHUB_STEP_SUMMARY"
+
   build-apr-cuda:
     name: apr (cuda) ${{ matrix.target }} on ${{ matrix.host }}
+    needs: assets
+    if: needs.assets.outputs.present == 'false'
     runs-on: ${{ fromJSON(matrix.labels) }}
     strategy:
       fail-fast: false
@@ -260,6 +485,20 @@ jobs:
         uses: actions/checkout@v7
         with:
           ref: ${{ steps.tag.outputs.tag }}
+
+      # #4110/#4290: an rc asset's crate version IS its tag. The rc commit's Cargo.toml says
+      # X.Y.Z, so without this every vX.Y.Z-rc.N asset printed bare `X.Y.Z` (v0.69.3-rc.2:
+      # `apr 0.69.3 (v0.69.3+no-git)`). The stamper comes from THIS workflow's commit, not the
+      # tag's tree, which an rc cut from release/X.Y.Z predates. A final tag stamps nothing.
+      # verify-apr-assets then requires `apr --version` to equal the tag exactly.
+      - name: Stamp the rc version into the tag tree (#4110)
+        env:
+          TAG: ${{ steps.tag.outputs.tag }}
+        run: |
+          case "$TAG" in *-rc.*) ;; *) echo "final tag $TAG: nothing to stamp"; exit 0 ;; esac
+          git fetch --no-tags --depth 1 origin "$GITHUB_WORKFLOW_SHA"
+          git show "FETCH_HEAD:scripts/release/stamp_rc_version.sh" > "$RUNNER_TEMP/stamp_rc_version.sh"
+          bash "$RUNNER_TEMP/stamp_rc_version.sh" "$GITHUB_WORKSPACE" "$TAG"
 
       # FIRST thing this box does after it has a working tree. Run 34448908554
       # built a 21 MB CUDA asset here and then died on `gh: command not found`
@@ -291,7 +530,7 @@ jobs:
           # build.rs runs `git rev-parse` INSIDE this container, where the checkout is owned by
           # the runner uid and git refuses it — so every release asset printed `(vX+no-git)` and
           # scripts/apr_bin.sh (STRICT) could not attribute it to its tag. Ask the host checkout.
-          APR_SHA=$(git rev-parse --short HEAD)
+          APR_SHA=$(git rev-parse --short=9 HEAD)
           mkdir -p "$GITHUB_WORKSPACE/target"
           $DOCKER run --rm \
             -v "$GITHUB_WORKSPACE:/workspace" \
@@ -354,7 +593,10 @@ jobs:
         run: |
           TAG="${{ steps.tag.outputs.tag }}"
           API="https://api.github.com/repos/${GITHUB_REPOSITORY}"
-          rel=$(curl -sSf -H "Authorization: Bearer $GH_TOKEN" -H "Accept: application/vnd.github+json" "$API/releases/tags/$TAG")
+          # by listing, not releases/tags/: an rc is a DRAFT until every fleet host runs it (#4327),
+          # and releases/tags/ never returns a draft
+          rel=$(curl -sSf -H "Authorization: Bearer $GH_TOKEN" -H "Accept: application/vnd.github+json" "$API/releases?per_page=100" \
+            | python3 -c 'import json,sys; t=sys.argv[1]; print(json.dumps(next(r for r in json.load(sys.stdin) if r["tag_name"]==t)))' "$TAG")
           rid=$(printf '%s' "$rel" | python3 -c 'import json,sys; print(json.load(sys.stdin)["id"])')
           for f in "${{ steps.package.outputs.archive }}" "${{ steps.package.outputs.sha }}"; do
             # --clobber semantics: delete an asset of the same name first
@@ -385,6 +627,8 @@ jobs:
   # same step, so the merge moves both or neither.
   build-apr-cpu:
     name: apr (cpu) ${{ matrix.target }} on ${{ matrix.host }}
+    needs: assets
+    if: needs.assets.outputs.present == 'false'
     runs-on: ${{ fromJSON(matrix.labels) }}
     strategy:
       fail-fast: false
@@ -412,6 +656,20 @@ jobs:
         uses: actions/checkout@v7
         with:
           ref: ${{ steps.tag.outputs.tag }}
+
+      # #4110/#4290: an rc asset's crate version IS its tag. The rc commit's Cargo.toml says
+      # X.Y.Z, so without this every vX.Y.Z-rc.N asset printed bare `X.Y.Z` (v0.69.3-rc.2:
+      # `apr 0.69.3 (v0.69.3+no-git)`). The stamper comes from THIS workflow's commit, not the
+      # tag's tree, which an rc cut from release/X.Y.Z predates. A final tag stamps nothing.
+      # verify-apr-assets then requires `apr --version` to equal the tag exactly.
+      - name: Stamp the rc version into the tag tree (#4110)
+        env:
+          TAG: ${{ steps.tag.outputs.tag }}
+        run: |
+          case "$TAG" in *-rc.*) ;; *) echo "final tag $TAG: nothing to stamp"; exit 0 ;; esac
+          git fetch --no-tags --depth 1 origin "$GITHUB_WORKFLOW_SHA"
+          git show "FETCH_HEAD:scripts/release/stamp_rc_version.sh" > "$RUNNER_TEMP/stamp_rc_version.sh"
+          bash "$RUNNER_TEMP/stamp_rc_version.sh" "$GITHUB_WORKSPACE" "$TAG"
 
       # 67-C2: the first thing this box does after it has a working tree. No
       # `--cuda` here — a CPU asset must build on a box with no visible device,
@@ -442,7 +700,7 @@ jobs:
           # build.rs runs `git rev-parse` INSIDE this container, where the checkout is owned by
           # the runner uid and git refuses it — so every release asset printed `(vX+no-git)` and
           # scripts/apr_bin.sh (STRICT) could not attribute it to its tag. Ask the host checkout.
-          APR_SHA=$(git rev-parse --short HEAD)
+          APR_SHA=$(git rev-parse --short=9 HEAD)
           mkdir -p "$GITHUB_WORKSPACE/target"
           $DOCKER run --rm \
             -v "$GITHUB_WORKSPACE:/workspace" \
@@ -527,10 +785,108 @@ jobs:
         run: |
           TAG="${{ steps.tag.outputs.tag }}"
           API="https://api.github.com/repos/${GITHUB_REPOSITORY}"
-          rel=$(curl -sSf -H "Authorization: Bearer $GH_TOKEN" -H "Accept: application/vnd.github+json" "$API/releases/tags/$TAG")
+          # by listing, not releases/tags/: an rc is a DRAFT until every fleet host runs it (#4327),
+          # and releases/tags/ never returns a draft
+          rel=$(curl -sSf -H "Authorization: Bearer $GH_TOKEN" -H "Accept: application/vnd.github+json" "$API/releases?per_page=100" \
+            | python3 -c 'import json,sys; t=sys.argv[1]; print(json.dumps(next(r for r in json.load(sys.stdin) if r["tag_name"]==t)))' "$TAG")
           rid=$(printf '%s' "$rel" | python3 -c 'import json,sys; print(json.load(sys.stdin)["id"])')
           for f in "${{ steps.package.outputs.archive }}" "${{ steps.package.outputs.sha }}"; do
             # --clobber semantics: delete an asset of the same name first
+            aid=$(printf '%s' "$rel" | python3 -c 'import json,sys; n=sys.argv[1]; print(next((a["id"] for a in json.load(sys.stdin)["assets"] if a["name"]==n), ""))' "$f")
+            [ -n "$aid" ] && curl -sSf -X DELETE -H "Authorization: Bearer $GH_TOKEN" "$API/releases/assets/$aid" > /dev/null
+            curl -sSf -X POST -H "Authorization: Bearer $GH_TOKEN" -H "Content-Type: application/octet-stream" \
+              --data-binary @"$f" "https://uploads.github.com/repos/${GITHUB_REPOSITORY}/releases/$rid/assets?name=$f" \
+              | python3 -c 'import json,sys; a=json.load(sys.stdin); print("uploaded", a["name"], a["size"], "bytes")'
+          done
+
+  # mini (Darwin arm64) is fleet hardware and could not take v0.69.3-rc.2: the release shipped
+  # no darwin asset, so mini was RED on every rc (#4327, infra-64 evidence/fleet-versions.md).
+  # Native build on the self-hosted mini-m4 runner (no hosted runners, #3073). No container:
+  # macOS has no glibc floor to pin, and the stamped version + the sha are checked below
+  # before anything is uploaded.
+  build-apr-darwin:
+    name: apr (cpu) aarch64-apple-darwin on mini
+    needs: assets
+    if: needs.assets.outputs.present == 'false'
+    # mini-builder (#4292, infra#1042): the mini's dedicated repo-level release runner, used
+    # only through this label so it never joins the general pool.
+    runs-on: [self-hosted, macOS, ARM64, mini-builder]
+    env:
+      # The macOS floor, recorded in the Mach-O load command and read back below (#4292).
+      MACOSX_DEPLOYMENT_TARGET: "11.0"
+    steps:
+      - name: Resolve release tag
+        id: tag
+        run: |
+          TAG="${{ github.event.release.tag_name || inputs.tag }}"
+          [ -n "$TAG" ] || { echo "::error::No tag resolved"; exit 1; }
+          echo "tag=$TAG" >> "$GITHUB_OUTPUT"
+
+      - name: Checkout at tag
+        uses: actions/checkout@v7
+        with:
+          ref: ${{ steps.tag.outputs.tag }}
+
+      # The release scripts come from THIS workflow's commit: the tag tree predates them.
+      - name: Stamp the rc version into the tag tree (#4110)
+        env:
+          TAG: ${{ steps.tag.outputs.tag }}
+        run: |
+          git fetch --no-tags --depth 1 origin "$GITHUB_WORKFLOW_SHA"
+          for f in stamp_rc_version.sh asset_version_check.sh; do
+            git show "FETCH_HEAD:scripts/release/$f" > "$RUNNER_TEMP/$f"
+          done
+          case "$TAG" in *-rc.*) ;; *) echo "final tag $TAG: nothing to stamp"; exit 0 ;; esac
+          bash "$RUNNER_TEMP/stamp_rc_version.sh" "$GITHUB_WORKSPACE" "$TAG"
+
+      - name: Build apr on the default features (no cuda)
+        run: |
+          APR_GIT_SHA_OVERRIDE="$(git rev-parse --short=9 HEAD)" \
+            cargo build --release -p apr-cli --bin apr --target aarch64-apple-darwin --locked
+          strip target/aarch64-apple-darwin/release/apr
+
+      - name: The binary names its tag and commit (#4110)
+        run: |
+          line=$(target/aarch64-apple-darwin/release/apr --version)
+          bash "$RUNNER_TEMP/asset_version_check.sh" "${{ steps.tag.outputs.tag }}" "$(git rev-parse HEAD)" "$line"
+
+      # The same discriminator as the linux cpu lane, plus the arch and the minimum
+      # macOS actually recorded in the binary (#4292).
+      - name: Prove the asset is an arm64 CPU build
+        run: |
+          BIN=target/aarch64-apple-darwin/release/apr
+          n=$(grep -ac 'libcuda.so' "$BIN" || true)
+          if [ "$n" -ne 0 ]; then
+            echo "::error::$BIN carries $n libcuda.so loader string(s) — this is a CUDA build wearing a -cpu name"
+            exit 1
+          fi
+          file "$BIN" | grep -q 'arm64' || { echo "::error::$BIN is not arm64: $(file "$BIN")"; exit 1; }
+          MINOS=$(otool -l "$BIN" | awk '/LC_BUILD_VERSION/{f=1} f&&$1=="minos"{print $2; exit}')
+          echo "- minimum macOS (LC_BUILD_VERSION minos): ${MINOS:-unknown}" >> "$GITHUB_STEP_SUMMARY"
+
+      - name: Package archive
+        id: package
+        run: |
+          ARCHIVE="apr-${{ steps.tag.outputs.tag }}-aarch64-apple-darwin-cpu"
+          mkdir -p "$ARCHIVE"
+          cp target/aarch64-apple-darwin/release/apr "$ARCHIVE/"
+          for f in README.md LICENSE LICENSE-MIT LICENSE-APACHE; do [ -f "$f" ] && cp "$f" "$ARCHIVE/"; done
+          tar czf "${ARCHIVE}.tar.gz" "$ARCHIVE"
+          shasum -a 256 "${ARCHIVE}.tar.gz" > "${ARCHIVE}.tar.gz.sha256"
+          echo "archive=${ARCHIVE}.tar.gz" >> "$GITHUB_OUTPUT"
+          echo "sha=${ARCHIVE}.tar.gz.sha256" >> "$GITHUB_OUTPUT"
+
+      - name: Upload assets to release (REST, no gh)
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          TAG="${{ steps.tag.outputs.tag }}"
+          API="https://api.github.com/repos/${GITHUB_REPOSITORY}"
+          # by listing, not releases/tags/: an rc is a DRAFT until every fleet host runs it (#4327)
+          rel=$(curl -sSf -H "Authorization: Bearer $GH_TOKEN" -H "Accept: application/vnd.github+json" "$API/releases?per_page=100" \
+            | python3 -c 'import json,sys; t=sys.argv[1]; print(json.dumps(next(r for r in json.load(sys.stdin) if r["tag_name"]==t)))' "$TAG")
+          rid=$(printf '%s' "$rel" | python3 -c 'import json,sys; print(json.load(sys.stdin)["id"])')
+          for f in "${{ steps.package.outputs.archive }}" "${{ steps.package.outputs.sha }}"; do
             aid=$(printf '%s' "$rel" | python3 -c 'import json,sys; n=sys.argv[1]; print(next((a["id"] for a in json.load(sys.stdin)["assets"] if a["name"]==n), ""))' "$f")
             [ -n "$aid" ] && curl -sSf -X DELETE -H "Authorization: Bearer $GH_TOKEN" "$API/releases/assets/$aid" > /dev/null
             curl -sSf -X POST -H "Authorization: Bearer $GH_TOKEN" -H "Content-Type: application/octet-stream" \
@@ -550,7 +906,7 @@ jobs:
   # mutation (RED) that this job cannot demonstrate on a real release.
   verify-apr-assets:
     name: All four apr assets are on the release
-    needs: [build, build-apr-cuda, build-apr-cpu]
+    needs: [build, build-apr-cuda, build-apr-cpu, build-apr-darwin]
     runs-on: [self-hosted, Linux, X64, clean-room]
     if: always()
     steps:
@@ -583,6 +939,8 @@ jobs:
   smoke-cuda:
     name: smoke apr (cuda) on ${{ matrix.host }}
     needs: verify-apr-assets
+    # verify runs under always(); a skipped build two levels up must not skip this
+    if: ${{ !cancelled() && needs.verify-apr-assets.result == 'success' }}
     strategy:
       fail-fast: false
       matrix:
@@ -617,16 +975,25 @@ jobs:
           T="${{ matrix.target }}"
           D="$RUNNER_TEMP/apr-cuda-smoke"; rm -rf "$D"; mkdir -p "$D"; cd "$D"
           API="https://api.github.com/repos/${GITHUB_REPOSITORY}"
-          rel=$(curl -sSf -H "Authorization: Bearer $GH_TOKEN" -H "Accept: application/vnd.github+json" "$API/releases/tags/$TAG")
+          # by listing, not releases/tags/: an rc is a DRAFT until every fleet host runs it (#4327),
+          # and releases/tags/ never returns a draft
+          rel=$(curl -sSf -H "Authorization: Bearer $GH_TOKEN" -H "Accept: application/vnd.github+json" "$API/releases?per_page=100" \
+            | python3 -c 'import json,sys; t=sys.argv[1]; print(json.dumps(next(r for r in json.load(sys.stdin) if r["tag_name"]==t)))' "$TAG")
           for f in "apr-${TAG}-${T}-cuda.tar.gz" "apr-${TAG}-${T}-cuda.tar.gz.sha256"; do
             aid=$(printf '%s' "$rel" | python3 -c 'import json,sys; n=sys.argv[1]; print(next(a["id"] for a in json.load(sys.stdin)["assets"] if a["name"]==n))' "$f")
             curl -sSfL -H "Authorization: Bearer $GH_TOKEN" -H "Accept: application/octet-stream" -o "$f" "$API/releases/assets/$aid"
           done
           sha256sum -c "apr-${TAG}-${T}-cuda.tar.gz.sha256"
           tar xzf "apr-${TAG}-${T}-cuda.tar.gz"
-          BIN="$D/apr-${TAG}-${T}-cuda/apr"
-          v=$("$BIN" --version); echo "$v"
-          case "$v" in *"${TAG#v}"*) ;; *) echo "::error::asset reports '$v', not ${TAG#v}"; exit 1 ;; esac
+          # A promoted final (#4286) is its rc's exact bytes, so the archive's top directory
+          # may carry the rc label (apr-vX.Y.Z-rc.N-...). Take the one apr directory it holds.
+          set -- "$D"/apr-v*-"${T}"-cuda/apr
+          if [ "$#" -ne 1 ] || [ ! -f "$1" ]; then echo "::error::expected exactly one apr binary in the archive, found: $*"; exit 1; fi
+          BIN=$1
+          v=$("$BIN" --version | head -1); echo "$v"
+          # #4275: X.Y.Z whole (an rc tag's -rc.N stripped) AND the asset's sha is the tag's commit
+          COMMIT=$(curl -sSf -H "Authorization: Bearer $GH_TOKEN" -H "Accept: application/vnd.github+json" "$API/commits/$TAG" | python3 -c 'import json,sys; print(json.load(sys.stdin)["sha"])')
+          bash "$GITHUB_WORKSPACE/scripts/release/asset_version_check.sh" "$TAG" "$COMMIT" "$v" || { echo "::error::asset reports '$v', which does not belong to $TAG ($COMMIT)"; exit 1; }
           [ "$(grep -ac 'libcuda.so' "$BIN")" -ge 1 ] || { echo "::error::downloaded asset is not a CUDA build"; exit 1; }
           floor=$(objdump -T "$BIN" 2>/dev/null | grep -oE 'GLIBC_[0-9.]+' | sort -Vu | tail -1)
           echo "highest GLIBC symbol version required: $floor"
@@ -645,6 +1012,8 @@ jobs:
   smoke-cpu:
     name: smoke apr (cpu) on ${{ matrix.host }}
     needs: verify-apr-assets
+    # verify runs under always(); a skipped build two levels up must not skip this
+    if: ${{ !cancelled() && needs.verify-apr-assets.result == 'success' }}
     env:
       # The CPU assets build inside rust:1.93.0-bullseye (glibc 2.31) like the cuda lane, so the floor is
       # declared and GATED: an asset whose bytes import a newer GLIBC_* symbol fails here. 0.66.0 shipped a
@@ -684,16 +1053,25 @@ jobs:
           T="${{ matrix.target }}"
           D="$RUNNER_TEMP/apr-cpu-smoke"; rm -rf "$D"; mkdir -p "$D"; cd "$D"
           API="https://api.github.com/repos/${GITHUB_REPOSITORY}"
-          rel=$(curl -sSf -H "Authorization: Bearer $GH_TOKEN" -H "Accept: application/vnd.github+json" "$API/releases/tags/$TAG")
+          # by listing, not releases/tags/: an rc is a DRAFT until every fleet host runs it (#4327),
+          # and releases/tags/ never returns a draft
+          rel=$(curl -sSf -H "Authorization: Bearer $GH_TOKEN" -H "Accept: application/vnd.github+json" "$API/releases?per_page=100" \
+            | python3 -c 'import json,sys; t=sys.argv[1]; print(json.dumps(next(r for r in json.load(sys.stdin) if r["tag_name"]==t)))' "$TAG")
           for f in "apr-${TAG}-${T}-cpu.tar.gz" "apr-${TAG}-${T}-cpu.tar.gz.sha256"; do
             aid=$(printf '%s' "$rel" | python3 -c 'import json,sys; n=sys.argv[1]; print(next(a["id"] for a in json.load(sys.stdin)["assets"] if a["name"]==n))' "$f")
             curl -sSfL -H "Authorization: Bearer $GH_TOKEN" -H "Accept: application/octet-stream" -o "$f" "$API/releases/assets/$aid"
           done
           sha256sum -c "apr-${TAG}-${T}-cpu.tar.gz.sha256"
           tar xzf "apr-${TAG}-${T}-cpu.tar.gz"
-          BIN="$D/apr-${TAG}-${T}-cpu/apr"
-          v=$("$BIN" --version); echo "$v"
-          case "$v" in *"${TAG#v}"*) ;; *) echo "::error::asset reports '$v', not ${TAG#v}"; exit 1 ;; esac
+          # A promoted final (#4286) is its rc's exact bytes, so the archive's top directory
+          # may carry the rc label (apr-vX.Y.Z-rc.N-...). Take the one apr directory it holds.
+          set -- "$D"/apr-v*-"${T}"-cpu/apr
+          if [ "$#" -ne 1 ] || [ ! -f "$1" ]; then echo "::error::expected exactly one apr binary in the archive, found: $*"; exit 1; fi
+          BIN=$1
+          v=$("$BIN" --version | head -1); echo "$v"
+          # #4275: X.Y.Z whole (an rc tag's -rc.N stripped) AND the asset's sha is the tag's commit
+          COMMIT=$(curl -sSf -H "Authorization: Bearer $GH_TOKEN" -H "Accept: application/vnd.github+json" "$API/commits/$TAG" | python3 -c 'import json,sys; print(json.load(sys.stdin)["sha"])')
+          bash "$GITHUB_WORKSPACE/scripts/release/asset_version_check.sh" "$TAG" "$COMMIT" "$v" || { echo "::error::asset reports '$v', which does not belong to $TAG ($COMMIT)"; exit 1; }
           n=$(grep -ac 'libcuda.so' "$BIN" || true)
           [ "$n" -eq 0 ] || { echo "::error::the downloaded -cpu asset carries $n libcuda.so string(s) — it is a CUDA build"; exit 1; }
           # The floor is READ on every row and ASSERTED only where the build was
@@ -716,7 +1094,7 @@ jobs:
 
   summary:
     name: Summary
-    needs: [build, build-apr-cuda, build-apr-cpu, verify-apr-assets, smoke-cuda, smoke-cpu]
+    needs: [assets, build, build-all-bins, build-apr-cuda, build-apr-cpu, build-apr-darwin, verify-apr-assets, smoke-cuda, smoke-cpu]
     runs-on: [self-hosted, Linux, X64, clean-room]
     if: always()
     steps:
@@ -736,9 +1114,12 @@ jobs:
             echo ""
             if [ "$STATUS" = "success" ]; then
               echo "- Build matrix: **4/4 targets succeeded**"
+            elif [ "$STATUS" = "skipped" ] && [ "${{ needs.assets.outputs.present }}" = "true" ]; then
+              echo "- Build matrix: **not rebuilt** — every asset was already on the release (a promoted rc, #4286)"
             else
               echo "- Build matrix: **partial** (status=$STATUS)"
             fi
+            echo "- every other [[bin]] (G5 #4189, x86_64+aarch64 gnu): ${{ needs.build-all-bins.result }}"
             echo "- Targets:"
             echo "  - x86_64-unknown-linux-musl"
             echo "  - x86_64-unknown-linux-gnu"
@@ -746,10 +1127,11 @@ jobs:
             echo "  - aarch64-unknown-linux-gnu"
             echo ""
             echo "### apr Binary Release: $TAG - four assets, {cuda,cpu} x {x86_64,aarch64}"
-            echo "- cuda build: ${{ needs.build-apr-cuda.result }} · cpu build: ${{ needs.build-apr-cpu.result }}"
+            echo "- cuda build: ${{ needs.build-apr-cuda.result }} · cpu build: ${{ needs.build-apr-cpu.result }} · darwin build (mini): ${{ needs.build-apr-darwin.result }}"
             echo "- all four on the release: ${{ needs.verify-apr-assets.result }} · smoke cuda (yoga+gx10): ${{ needs.smoke-cuda.result }} · smoke cpu (clean-room+yoga+gx10): ${{ needs.smoke-cpu.result }}"
             echo "  - apr-$TAG-x86_64-unknown-linux-gnu-cuda.tar.gz (+ .sha256)"
             echo "  - apr-$TAG-aarch64-unknown-linux-gnu-cuda.tar.gz (+ .sha256)"
             echo "  - apr-$TAG-x86_64-unknown-linux-gnu-cpu.tar.gz (+ .sha256)"
             echo "  - apr-$TAG-aarch64-unknown-linux-gnu-cpu.tar.gz (+ .sha256)"
+            echo "  - apr-$TAG-aarch64-apple-darwin-cpu.tar.gz (+ .sha256)"
           } >> "$GITHUB_STEP_SUMMARY"

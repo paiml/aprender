@@ -90,7 +90,23 @@ impl Fx {
         )
     }
 
+    /// Unscoped: the stub `lake` cannot starve anything, and a CI container has no user systemd — scoped, the
+    /// probe declines (#4348) before the stub runs, so neither verdict below would be measured.
     fn check(&self) -> (i32, String) {
+        self.pv(&[
+            "discharge",
+            "check",
+            "lean",
+            "--leanchecker",
+            "--leanchecker-unscoped",
+            "--leanchecker-timeout",
+            "60",
+        ])
+    }
+
+    /// Scoped (the #4348 default): only the row that proves the scope DECLINES uses it, with systemd-run stubbed
+    /// to fail — the merge of 7c418eb75c and e85da1a039 left `check` unscoped, so that row never reached the scope.
+    fn check_scoped(&self) -> (i32, String) {
         self.pv(&[
             "discharge",
             "check",
@@ -159,7 +175,7 @@ fn scoped_without_user_systemd_declines_and_never_runs_the_checker() {
     let fx = Fx::new();
     fx.stub_lake(true, 1);
     fx.stub_no_user_systemd();
-    let r = fx.check();
+    let r = fx.check_scoped();
     assert_rc(&r, 2, "`systemd-run --user --scope` is unavailable here");
     assert!(!r.1.contains("stub leanchecker says"), "{}", r.1);
 }

@@ -190,7 +190,7 @@ strip_ansi() { sed -e 's/\x1b\[[0-9;]*[A-Za-z]//g' -e 's/\x1b([A-Z]//g'; }
 gate() { # gate <name> <cmd...> — runs cmd, records pass/fail
   local name="$1"; shift
   local out rc log
-  # KEEP THE OUTPUT (#3841). This used to discard `out` into a shell variable, so
+  # KEEP THE OUTPUT (#3844; e8c341cca cited #3841 in error). This used to discard `out` into a shell variable, so
   # `gate` was the ONLY row family writing nothing into $WORKLOG -- fmt, clippy, test
   # and bashrs. d8's keep-the-worklog-on-NO-GO fix could not reach them because they
   # never put anything there to keep. A red `test` row's real output was simply gone.
@@ -199,7 +199,7 @@ gate() { # gate <name> <cmd...> — runs cmd, records pass/fail
   out=$(printf '%s' "$out" | strip_ansi)
   printf '%s\n' "$out" > "$log" 2>/dev/null || :
   local note
-  # ANCHORED picker (#3841). The old pattern was an unanchored case-insensitive
+  # ANCHORED picker (#3844). The old pattern was an unanchored case-insensitive
   # 'error|fail|...' and it matched SUBSTRINGS INSIDE DEPENDENCY NAMES, so on a red
   # row the entire visible explanation could be a `Compiling` line emitted minutes
   # before the real diagnostic. Three instances measured on ONE yoga run:
@@ -243,10 +243,18 @@ mark() { # mark <name> <PASS|FAIL|SKIP|REPORT|WARN|MANUAL|OPEN> <note>
 # code and log; returns 1 when the row counts against the declared gates. A function so the
 # rule can be lifted and driven by a case table (scripts/check_dogfood_no_defer.sh).
 classify_declared() {
-  local name="$1" path="$2" rc="$3" log="$4" tail defer obl
+  local name="$1" path="$2" rc="$3" log="$4" tail defer obl scoped
   tail=$(tail -3 "$log" 2>/dev/null | strip_ansi | tr '\n' ' ')
   defer=$(grep -m1 '^DEFERRED: ' "$log" 2>/dev/null | strip_ansi)
   obl=$(grep -m1 '^OPEN-OBLIGATION: ' "$log" 2>/dev/null | strip_ansi)
+  # #4086: a gate that judged a RECORDED scope instead of its full subject says so on a `SCOPED:` line
+  # (check_model_ladder.sh under a release's emergency scope). The row carries it, green or red: a
+  # scoped pass that read `exit=0` would be indistinguishable from the full gate passing. Only the scope's
+  # NAME is carried (the line reads `SCOPED: <name> -- <why>`): mark() keeps 200 chars of a note, and a
+  # long prefix would push a red row's reason out of it.
+  scoped=$(grep -m1 '^SCOPED: ' "$log" 2>/dev/null | strip_ansi | cut -c1-120)
+  scoped=${scoped%% -- *}
+  scoped=${scoped:+ -- $scoped (a recorded scope, not the full gate)}
   if [ -n "$defer" ]; then
     # #3957 F1b: the DEFERRED: hatch is gone. A gate that still says it is a refusal to measure.
     mark "$name" FAIL "$path printed a DEFERRED: line -- DEFER is abolished (#3957 F1b): ${defer#DEFERRED: }"
@@ -256,9 +264,9 @@ classify_declared() {
     mark "$name" OPEN "$path: ${obl#OPEN-OBLIGATION: }"
     [ "${RESULTS[${#RESULTS[@]}-1]}" = OPEN ] || return 1
   elif [ "$rc" -eq 0 ]; then
-    mark "$name" PASS "$path exit=0"
+    mark "$name" PASS "$path exit=0$scoped"
   else
-    mark "$name" FAIL "$path exit=$rc — $tail"
+    mark "$name" FAIL "$path exit=$rc$scoped — $tail"
     return 1
   fi
   return 0
@@ -1314,7 +1322,7 @@ if [ "$DOGFOOD_PHASE" = post-publish ]; then
     RA_RC=$RUN_RC
     RA_MISS=$(grep -c '^MISSING ' "$WORKLOG/release-assets.log" 2>/dev/null || true)
     if [ "$RA_RC" -eq 0 ]; then
-      mark release-assets PASS "v$VERSION carries all 16 assets (4 apr {cuda,cpu}x{x86_64,aarch64} + 4 sha256 + 8 pv)"
+      mark release-assets PASS "v$VERSION carries all 18 assets (4 apr {cuda,cpu}x{x86_64,aarch64} + darwin cpu, each + sha256, + 8 pv)"
     elif [ "$RA_RC" -eq 2 ]; then
       # ENV is a FAIL here on purpose: "the release could not be read" is not
       # evidence that the release is complete.

@@ -1,4 +1,4 @@
-use provable_contracts_macros::{ensures, invariant, requires};
+use provable_contracts_macros::{contract, contract_env_key, ensures, invariant, requires};
 
 #[requires(x > 0.0)]
 fn sqrt_positive(x: f64) -> f64 {
@@ -143,4 +143,40 @@ fn test_invariant_on_trait_impl() {
     c.increment();
     c.increment();
     assert_eq!(c.count(), 2);
+}
+
+/// `#[contract]` keeps the function it annotates. The method is inherent and a trait in scope has a default
+/// method of the same name, so if the attribute dropped the function the call would silently resolve to the
+/// trait's `0` instead of failing to compile (mutant `lib.rs:149` → empty expansion, #4588).
+struct ContractProbe;
+
+// Unused exactly when the attribute works. `allow`, not `expect`: under the mutant the trait IS used, an unmet
+// `expect` would fail the build, and cargo-mutants would file the mutant as unviable instead of caught.
+#[allow(dead_code)]
+trait ContractFallback {
+    fn value(&self) -> u32 {
+        0
+    }
+}
+
+impl ContractFallback for ContractProbe {}
+
+impl ContractProbe {
+    #[contract("macro-probe-v1", equation = "value")]
+    fn value(&self) -> u32 {
+        7
+    }
+}
+
+#[test]
+fn contract_keeps_the_annotated_function() {
+    assert_eq!(ContractProbe.value(), 7);
+}
+
+/// `contract_env_key!` expands to the key string. Inside `vec![…]` an empty expansion still compiles (as an
+/// empty vec), so the mutant is caught at run time (mutant `lib.rs:335` → empty expansion, #4588).
+#[test]
+fn contract_env_key_expands_to_the_key() {
+    let keys: Vec<&str> = vec![contract_env_key!("rmsnorm-kernel-v1", "rmsnorm")];
+    assert_eq!(keys, ["CONTRACT_RMSNORM_KERNEL_V1_RMSNORM"]);
 }
