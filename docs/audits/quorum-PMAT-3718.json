@@ -1,16 +1,17 @@
 {
   "ticket": "PMAT-3718",
-  "base": "225b2a9ab",
-  "base_resolved": "225b2a9ab",
-  "base_note": "no origin/225b2a9ab exists; judged against the local ref",
-  "head": "187b390e1dcfcd6c565d3f27aa779c06a60f8c82",
-  "diff_sha256": "20f9de301805687f8fb0e6c0853636df2b1aa308c0fbc03c28fe5ff343120b8f",
+  "base": "origin/main",
+  "base_resolved": "origin/main",
+  "base_note": "no origin/origin/main exists; judged against the local ref",
+  "head": "42eb448d14e6982756d6eca5a5d1a6cb7e1b4628",
+  "diff_sha256": "6180cac08f8236e7a69e0a5e5610e38f4c28f1449b0cf3c54f6b46f404790a75",
   "width": 3,
   "executor": "agy",
   "prompt_mode": "inline",
-  "prompt_bytes": 65794,
+  "prompt_bytes": 49675,
+  "prompt_sha256": "8479b98ef43cfa5b3d4d5102ec14ff34913c3bc8ad188dd3473c54b5da582b65",
   "author": {
-    "model": "claude-opus-5",
+    "model": "claude-opus-5-5",
     "family": "claude",
     "source": "flag"
   },
@@ -20,50 +21,41 @@
       "lane": 1,
       "status": "SUCCESS",
       "verdict": "PASS",
-      "summary": "The diff successfully implements PMAT-3718, correctly adding `prompt_tokens`, `completion_tokens`, and `finish_reason` to `apr run --json` and fixing `apr serve` endpoints to accurately report truncations. It resolves the silent stream cuts for clamped requests by judging the finish against the actual ran budget, maps unfittable prompts to a proper 400 error, and stops the APR CPU handler from echoing the prompt when no tokens are generated. The implementation conforms to all acceptance criteria and the provided receipt claims.",
+      "summary": "The diff correctly implements the \"serve\" half of PMAT-3718: a new finish_reason_for(generated, max_tokens) rule (\"length\" when generated >= the budget actually run with, else \"stop\") replaces every hardcoded \"stop\" in the SafeTensors chat handler, the wgpu non-streaming/streaming handlers, and the CUDA/CPU-fallback handlers. A new context_token_budget helper clamps max_tokens to the room left in the context window and refuses (400 context_length_exceeded) a prompt that fills it, wired into both the wgpu and SafeTensors paths before generation runs, matching done_when 3. Verified by reading (not running) the code: build_chat_response's finish_reason is judged against the clamped budget actually passed to st_cpu_generate (not the raw request), StCpuForward::context_length() exists and matches the comment's claim, and the tiny_transformer fixture used in the new 400-refusal test does have context_length 64 as asserted. No test asserts the opposite of the ticket, no gate is weakened, and I found no scope creep beyond what the ticket describes.",
       "findings": [
         {
-          "claim": "Adds accurate token counts and finish_reason to CLI usage output using the actual engine count.",
-          "file": "crates/apr-cli/src/commands/inference_output.rs",
-          "grounding": "cited",
-          "line": 184
-        },
-        {
-          "claim": "Shadows max_tokens with clamped budget for correct length evaluation, and maps unfittable prompt errors to a 400 response.",
-          "file": "crates/aprender-serve/src/api/cuda_chat_backend.rs",
-          "grounding": "cited",
-          "line": 322
-        },
-        {
-          "claim": "Implements budget-aware finish reason determination correctly handling clamped runs and intrinsic stop token consumption.",
-          "file": "crates/aprender-serve/src/infer/run_report.rs",
-          "grounding": "cited",
-          "line": 39
-        },
-        {
-          "claim": "Fixes APR CPU fallback to yield empty instead of the prompt when nothing is generated, and uses `from_decode` to determine stop reason accurately.",
-          "file": "crates/apr-cli/src/commands/serve/handlers.rs",
-          "grounding": "cited",
-          "line": 1129
+          "file": "crates/apr-cli/src/commands/serve/handler_gpu_completion.rs",
+          "line": 236,
+          "claim": "Pre-existing, not introduced by this diff: build_gpu_sse_stream's terminal [DONE] SSE event carries no finish_reason field at all (content chunks send finish_reason: null), so a CUDA streaming client never learns length vs stop.",
+          "fix": "Out of scope for this diff (untouched file region) but worth a follow-up ticket if the CUDA streaming path is meant to satisfy the same #3718 guarantee as the wgpu streaming path, which does send a terminal chunk with finish_reason.",
+          "grounding": "cited"
         }
       ],
-      "raw_bytes": 4150,
+      "raw_bytes": 4281,
       "err_bytes": 0,
       "envelope_status": "SUCCESS",
       "verdict_source": "structured_output",
+      "executor": "claude-code",
       "grounding_check": "parity",
-      "model": "gemini-3.1-pro-high",
-      "model_measured": "gemini-3.1-pro-high",
-      "model_source": "measured",
-      "family": "gemini",
-      "role": "independent",
+      "role": "counted",
+      "model": "claude-sonnet-5",
+      "model_measured": "claude-sonnet-5",
+      "model_source": "flag",
+      "family": "claude",
+      "brief_sha256": "8479b98ef43cfa5b3d4d5102ec14ff34913c3bc8ad188dd3473c54b5da582b65",
+      "trace": {
+        "input_sha256": "cddc014e8538193133956da3e3252cb1fddeefe98d8a08941e3d14ac1d1f2859",
+        "output_sha256": "331b524226a250425a582f87c748927dca1bb4a7d0a7780fdc1aa0484df231d0",
+        "store": null,
+        "store_why": "almacen not provisioned yet (infra-27): the blobs stay in the round's gitignored .lanes dir"
+      },
       "fallback": {
-        "judged_by": "gemini-3.1-pro-high",
+        "judged_by": "claude-sonnet-5",
         "exhausted": false,
         "attempts": [
           {
-            "model": "gemini-3.1-pro-high",
-            "family": "gemini",
+            "model": "claude-sonnet-5",
+            "family": "claude",
             "outcome": "answered"
           }
         ],
@@ -74,54 +66,76 @@
       "lane": 2,
       "status": "SUCCESS",
       "verdict": "PASS",
-      "summary": "The diff strictly conforms to the acceptance criteria of PMAT-3718 and makes no unauthorized changes. `RunUsage` is implemented and emitted by `apr run --json` with `null` fallbacks. `FinishReason` correctly distinguishes cuts from stops via `from_decode`, fixing silent cuts in both CPU non-streaming and streaming `serve` paths. The context-clamped budgets are correctly used to evaluate the finish reason for the dense CPU loop, and over-long prompts now return a 400 error. The `a_fixed_text_prompt_counts_the_tokens_the_tokenizer_feeds` test adequately verifies the token count via the newly exposed `build_executable_pygmy_gguf_with` metadata hook. All receipt claims are backed by the code and tests.",
+      "summary": "Diff correctly implements PMAT-3718's serve-side requirement: a new finish_reason_for(generated, max_tokens) rule replaces hardcoded \"stop\" in SafeTensors chat/simple handlers, the CUDA non-streaming path, the CUDA→CPU fallback, and both wgpu streaming/non-streaming paths. A new context_token_budget clamps generation and refuses over-long prompts with 400 context_length_exceeded (SafeTensors via st_context_budget, wgpu via context_token_budget), applied before generation runs so the budget used for generation is the same one finish_reason is judged against. Traced the generated/max_tokens pairing through chat.rs, safetensors.rs, handler_gpu_completion.rs and handlers.rs — all internally consistent, no mismatched variables. New/updated tests match the intended behavior; no test asserts the opposite of the ticket. The \"apr run --json\" half of the ticket is already present on this branch (run.rs, run_tests_usage_3718.rs) from a prior commit, consistent with the 50%-InProgress status. handler_apr_cpu_completion.rs was left untouched but already applies the same length/stop rule inline (pre-existing), so it's not a gap. No gate weakening, no scope creep found.",
       "findings": [],
-      "raw_bytes": 2788,
-      "err_bytes": 100,
+      "raw_bytes": 3288,
+      "err_bytes": 0,
       "envelope_status": "SUCCESS",
       "verdict_source": "structured_output",
+      "executor": "claude-code",
       "grounding_check": "parity",
-      "model": "gemini-3.1-pro-low",
-      "model_measured": "gemini-3.1-pro-low",
-      "model_source": "measured",
-      "family": "gemini",
-      "role": "independent",
+      "role": "counted",
+      "model": "claude-sonnet-5",
+      "model_measured": "claude-sonnet-5",
+      "model_source": "flag",
+      "family": "claude",
+      "brief_sha256": "8479b98ef43cfa5b3d4d5102ec14ff34913c3bc8ad188dd3473c54b5da582b65",
+      "trace": {
+        "input_sha256": "e1f123825b8ff98955b709a499a6fe1b4eb2a8ba60ad9c2de24eae0772d2753b",
+        "output_sha256": "fa75e96bb14b90e3f0693b5f3029a2568d7339241a6ad15a4917b11df8a4157b",
+        "store": null,
+        "store_why": "almacen not provisioned yet (infra-27): the blobs stay in the round's gitignored .lanes dir"
+      },
       "fallback": {
-        "judged_by": "gemini-3.1-pro-low",
+        "judged_by": "claude-sonnet-5",
         "exhausted": false,
         "attempts": [
           {
-            "model": "gemini-3.1-pro-low",
-            "family": "gemini",
+            "model": "claude-sonnet-5",
+            "family": "claude",
             "outcome": "answered"
           }
         ],
-        "skipped": []
-      }
+        "skipped": [
+          {
+            "model": "gemini-3.1-pro-high",
+            "why": "family gemini withheld by policy: the diff is not tier-1 (quorum.agy_tier1_only: none of its paths matches quorum.tier1_paths or the built-in policy paths), and agy is reserved for tier-1 diffs — cop ruling of 2026-09-24"
+          }
+        ]
+      },
+      "repeat_of": 1
     },
     {
       "lane": 3,
       "status": "SUCCESS",
       "verdict": "PASS",
-      "summary": "The diff perfectly implements the requested features from PMAT-3718. It adds `prompt_tokens`, `completion_tokens`, `finish_reason`, and `context_length` to `apr run --json` using the new `RunUsage` structure and the `run_inference_report` hook, returning `null` when a specific backend does not report these metrics. \nFor `apr serve`, it correctly calculates the `finish_reason` in `/v1/chat/completions` against the effective clamped budget rather than the requested one, preventing context-clamped responses from being falsely reported as `stop`. It correctly throws a 400 error (instead of truncating or throwing a 500 after the fact) when the prompt exceeds the context window. \nThe comprehensive test additions and updates enforce these behaviors properly, including the exact `a_fixed_text_prompt_counts_the_tokens_the_tokenizer_feeds` case row required by the ticket's done criteria.",
+      "summary": "Diff correctly implements PMAT-3718's serve half: replaces all hardcoded \"stop\" finish reasons with finish_reason_for(generated, max_tokens)→\"length\" when generated≥max_tokens, else \"stop\". Updates SafeTensors (chat/simple), wgpu (streaming/non-streaming), and CUDA (non-streaming/CPU-fallback) paths. Adds context budget validation that returns 400 context_length_exceeded before prefill when prompt fills window. Tests verify boundary cases and SafeTensors integration. No gates weakened, no unauthorized changes.",
       "findings": [],
-      "raw_bytes": 3040,
+      "raw_bytes": 1969,
       "err_bytes": 0,
       "envelope_status": "SUCCESS",
       "verdict_source": "structured_output",
+      "executor": "claude-code",
       "grounding_check": "parity",
-      "model": "gemini-3.1-pro-high",
-      "model_measured": "gemini-3.1-pro-high",
-      "model_source": "measured",
-      "family": "gemini",
-      "role": "independent",
+      "role": "counted",
+      "model": "claude-haiku-4-5",
+      "model_measured": "claude-haiku-4-5",
+      "model_source": "flag",
+      "family": "claude",
+      "brief_sha256": "8479b98ef43cfa5b3d4d5102ec14ff34913c3bc8ad188dd3473c54b5da582b65",
+      "trace": {
+        "input_sha256": "e090c837b5c14541d2a7899cc36a5f7bca39b8aef258c86b0ec3474fb65032a3",
+        "output_sha256": "7d5caa1c1ea251c78d226a68d9cee94e087b4d4f5ffa9535406729e8d2f29ff2",
+        "store": null,
+        "store_why": "almacen not provisioned yet (infra-27): the blobs stay in the round's gitignored .lanes dir"
+      },
       "fallback": {
-        "judged_by": "gemini-3.1-pro-high",
+        "judged_by": "claude-haiku-4-5",
         "exhausted": false,
         "attempts": [
           {
-            "model": "gemini-3.1-pro-high",
-            "family": "gemini",
+            "model": "claude-haiku-4-5",
+            "family": "claude",
             "outcome": "answered"
           }
         ],
@@ -132,43 +146,13 @@
   "dissent": [],
   "dedup": [
     {
-      "file": "crates/apr-cli/src/commands/inference_output.rs",
-      "line": 184,
+      "file": "crates/apr-cli/src/commands/serve/handler_gpu_completion.rs",
+      "line": 236,
       "lanes_agreeing": [
         1
       ],
       "claims": [
-        "Adds accurate token counts and finish_reason to CLI usage output using the actual engine count."
-      ]
-    },
-    {
-      "file": "crates/apr-cli/src/commands/serve/handlers.rs",
-      "line": 1129,
-      "lanes_agreeing": [
-        1
-      ],
-      "claims": [
-        "Fixes APR CPU fallback to yield empty instead of the prompt when nothing is generated, and uses `from_decode` to determine stop reason accurately."
-      ]
-    },
-    {
-      "file": "crates/aprender-serve/src/api/cuda_chat_backend.rs",
-      "line": 322,
-      "lanes_agreeing": [
-        1
-      ],
-      "claims": [
-        "Shadows max_tokens with clamped budget for correct length evaluation, and maps unfittable prompt errors to a 400 response."
-      ]
-    },
-    {
-      "file": "crates/aprender-serve/src/infer/run_report.rs",
-      "line": 39,
-      "lanes_agreeing": [
-        1
-      ],
-      "claims": [
-        "Implements budget-aware finish reason determination correctly handling clamped runs and intrinsic stop token consumption."
+        "Pre-existing, not introduced by this diff: build_gpu_sse_stream's terminal [DONE] SSE event carries no finish_reason field at all (content chunks send finish_reason: null), so a CUDA streaming client never learns length vs stop."
       ]
     }
   ],
@@ -176,66 +160,178 @@
   "coverage_source": "lanes",
   "partial": false,
   "partial_reasons": [
-    "lane models: only 2 distinct model ids across 3 lanes (gemini-3.1-pro-high, gemini-3.1-pro-low) — lanes sharing an id are resamples, not independent reviewers (PMAT-125)"
+    "lane models: only 2 distinct model ids across 3 lanes (claude-haiku-4-5, claude-sonnet-5) — lanes sharing an id are resamples, not independent reviewers (PMAT-125)",
+    "lane 2: judged by claude-sonnet-5 after falling through gemini-3.1-pro-high (skipped: family gemini withheld by policy: the diff is not tier-1 (quorum.agy_tier1_only: none of its paths matches quorum.tier1_paths or the built-in policy paths), and agy is reserved for tier-1 diffs — cop ruling of 2026-09-24) (PMAT-321)"
   ],
   "fallback": {
-    "same_family_width": 1,
+    "same_family_width": 2,
     "chain": [
+      {
+        "model": "claude-sonnet-5",
+        "family": "claude",
+        "disposition": "claude-code",
+        "why": "run by Claude Code on its own budget: a configured seat runs every round, a fallback step only when every non-Claude family is measured out (PMAT-360, operator standing rule)"
+      },
       {
         "model": "gemini-3.1-pro-high",
         "family": "gemini",
         "disposition": "configured"
       },
       {
-        "model": "gemini-3.1-pro-low",
-        "family": "gemini",
-        "disposition": "configured"
+        "model": "claude-haiku-4-5",
+        "family": "claude",
+        "disposition": "claude-code",
+        "why": "run by Claude Code on its own budget: a configured seat runs every round, a fallback step only when every non-Claude family is measured out (PMAT-360, operator standing rule)"
       },
       {
-        "model": "gpt-oss-120b-medium",
-        "family": "openai",
-        "disposition": "fallback"
+        "model": "claude-opus-5-5",
+        "family": "claude",
+        "disposition": "excluded-self-review",
+        "why": "the author's own model id (claude-opus-5-5) — a model never reviews its own diff, at any width (R-15a identity bar)"
       },
       {
         "model": "qwen3.5",
         "family": "qwen",
         "disposition": "not-run",
         "why": "no quorum.local_lane in the config — the aprender lane has no model to load"
-      },
-      {
-        "model": "claude-opus-4-6-thinking",
-        "family": "claude",
-        "disposition": "width",
-        "why": "same family as the author: at most 1 lane, recorded role width, counted toward no floor (R-15a)"
-      },
-      {
-        "model": "claude-sonnet-4-6",
-        "family": "claude",
-        "disposition": "width",
-        "why": "same family as the author: at most 1 lane, recorded role width, counted toward no floor (R-15a)"
       }
     ],
     "precheck": [
       {
         "family": "gemini",
         "model": "gemini-3.1-pro-high",
-        "probe": 1,
-        "outcome": "live"
+        "probe": 0,
+        "outcome": "policy",
+        "reason": "the diff is not tier-1 (quorum.agy_tier1_only: none of its paths matches quorum.tier1_paths or the built-in policy paths), and agy is reserved for tier-1 diffs — cop ruling of 2026-09-24"
       }
     ],
+    "degraded": {
+      "reason": "same-family (policy: agy reserved for tier-1 diffs)",
+      "lanes": [
+        2
+      ],
+      "families": [
+        {
+          "family": "gemini",
+          "state": "policy",
+          "evidence": "the diff is not tier-1 (quorum.agy_tier1_only: none of its paths matches quorum.tier1_paths or the built-in policy paths), and agy is reserved for tier-1 diffs — cop ruling of 2026-09-24"
+        }
+      ],
+      "rule": "operator standing rule: if agy quota is ever gone, simply use claude code itself (PMAT-360)"
+    },
     "prah": {
       "source": "install-receipt",
       "path": "/home/noah/.claude/skills/paiml-implement/bin/prah"
+    },
+    "tier1": {
+      "agy_tier1_only": true,
+      "tier1": false,
+      "matched": [],
+      "paths": 8,
+      "patterns": [
+        "^\\.github/workflows/",
+        "(^|/)release[^/]*\\.(ya?ml|sh|rs|toml)$",
+        "cuda|kernel|\\.cu$|\\.ptx$",
+        "(^|/)[^/]*(gate|guard)[^/]*\\.(sh|rs|py)$|^hooks/",
+        "security|secret|credential|(^|/)deny\\.toml$",
+        "^skills/quorum-review/|(^|/)(receipt-lint|roadmap-lint|release-lint|kind-gate|model-gate)[^/]*$|^crates/prah-lint/"
+      ],
+      "builtin": "^skills/quorum-review/|(^|/)skills/paiml-implement/config\\.json$|(^|/)(modellib|lane-reduce|lane-fallback|lane-group|agy-lane|cc-lane|receipt-lint|route|quota)\\.sh$|^crates/prah-lint/"
+    },
+    "bucket": {
+      "ledger": "/home/noah/.local/state/paiml-implement/agy-bucket.jsonl",
+      "window_s": 18000,
+      "pace": "off",
+      "buckets": {},
+      "closed": []
     }
   },
   "auto_merge": {
-    "checked": false,
+    "checked": true,
     "was_armed": false,
     "disarmed": false,
-    "note": "no --pr given: nothing to disarm"
+    "note": "auto-merge not armed"
+  },
+  "degraded": {
+    "reason": "same-family (policy: agy reserved for tier-1 diffs)",
+    "lanes": [
+      2
+    ],
+    "families": [
+      {
+        "family": "gemini",
+        "state": "policy",
+        "evidence": "the diff is not tier-1 (quorum.agy_tier1_only: none of its paths matches quorum.tier1_paths or the built-in policy paths), and agy is reserved for tier-1 diffs — cop ruling of 2026-09-24"
+      }
+    ],
+    "rule": "operator standing rule: if agy quota is ever gone, simply use claude code itself (PMAT-360)"
+  },
+  "cheap_seat": "claude-haiku-4-5",
+  "canary": {
+    "skipped": "brief 49675 bytes > 24576"
+  },
+  "advisory_lane": {
+    "state": "answered",
+    "counts": false,
+    "row": {
+      "Verdict": {
+        "verdict": "PASS",
+        "cell": "gx10-cuda",
+        "backend": "cuda"
+      }
+    },
+    "verdict": "PASS",
+    "why": null,
+    "served_by": "gx10-cuda",
+    "gpu_proof": {
+      "used_gpu_probe": true,
+      "server_holds_gpu": true,
+      "used_gpu_source": "completions probe (chat omits used_gpu, aprender#4146)",
+      "trace_lines": [
+        "3340528, 309 MiB"
+      ]
+    },
+    "apr": "0.70.0",
+    "apr_binary_sha256": "6b2a7dc66c38adcca20b315beac70a1a31e7bd0af2a1cc5c2a7730ca6086d417",
+    "apr_tag": "v0.70.0-dev.3990584f0",
+    "apr_commit": "3990584f0bf5af6bca34ea9298df92177f3ef79a",
+    "apr_build_why": null,
+    "model": "/home/noah/data/models/Qwen3.5-4B-Q4_K_M.gguf",
+    "model_sha256": "00fe7986ff5f6b463e62455821146049db6f9313603938a70800d1fb69ef11a4",
+    "rc": 0,
+    "wall_s": 15,
+    "collected_s": 821,
+    "budget_s": 128,
+    "budget_basis": "ledger: 2 x p95 64 s over 27 gx10-cuda Verdict rows",
+    "brief": {
+      "bytes": 49675,
+      "sent_bytes": 49844,
+      "max_bytes": 196608
+    },
+    "trace": {
+      "input_sha256": "568b8499c5f3b47f6bfce98326c10139208625a14c5b0a13ef052244dd0415c0",
+      "raw": "advisory.json"
+    },
+    "attempts": [
+      {
+        "host": "gx10",
+        "ok": true,
+        "wall_s": 15,
+        "used_gpu": true,
+        "ts": "2026-09-27T21:44:23.578Z",
+        "wall_ms": 15010,
+        "request_id": "01a0e4d3-8917-716f-b923-666910d9a5ea",
+        "load1": 12.20,
+        "cold": false
+      }
+    ],
+    "ledger": "/home/noah/.local/state/paiml-implement/advisory-ledger.jsonl",
+    "raw": "advisory.json",
+    "agrees_with_counted": true,
+    "counted": "PASS"
   },
   "lint": {
     "ok": true,
-    "output": "receipt complete: kind=artifact lanes=3 author=claude-opus-5/claude"
+    "output": "receipt complete: kind=artifact lanes=3 author=claude-opus-5-5/claude same_family=3/2 degraded=same-family (policy: agy reserved for tier-1 diffs)"
   }
 }

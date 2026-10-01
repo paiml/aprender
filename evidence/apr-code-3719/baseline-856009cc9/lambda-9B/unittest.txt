@@ -1,0 +1,14 @@
+F.
+======================================================================
+FAIL: test_mean (test_stats.TestStats.test_mean)
+----------------------------------------------------------------------
+Traceback (most recent call last):
+  File "/tmp/claude-1000/-home-noah-src-aprender/f037f0cc-1719-460c-88ec-74b25b6f89a9/scratchpad/3719/cells/lambda-9B/project/test_stats.py", line 8, in test_mean
+    self.assertEqual(mean([2, 4, 6]), 4)
+    ~~~~~~~~~~~~~~~~^^^^^^^^^^^^^^^^^^^^
+AssertionError: 6.0 != 4
+
+----------------------------------------------------------------------
+Ran 2 tests in 0.001s
+
+FAILED (failures=1)

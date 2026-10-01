@@ -1,0 +1,36 @@
+{
+ "verb": "code",
+ "host": "lambda",
+ "file": "Qwen3.5-4B-Q4_K_M.gguf",
+ "sha256": "00fe7986ff5f6b463e62455821146049db6f9313603938a70800d1fb69ef11a4",
+ "apr_version": "apr 0.69.0 (7b161d743)",
+ "hostname": "noah-Lambda-Vector",
+ "started": "2026-09-21T21:50:15Z",
+ "finished": "2026-09-21T21:55:34Z",
+ "rc": 0,
+ "test_rc": 0,
+ "task": "tests/fixtures/apr-code-edit-verify",
+ "backend": "cuda",
+ "fallback": false,
+ "evidence": "Model ready: Qwen3.5 hybrid, 32 layers resident on the GPU, declared context 262144 tokens",
+ "model_layers": 32,
+ "answer_chars": 285,
+ "thinking": "off",
+ "thinking_raw": "off",
+ "prompt_tokens": null,
+ "context": "task",
+ "max_tokens": 1024,
+ "agent_python_calls": [
+  "/tmp/claude-1000/-home-noah-src-aprender/f037f0cc-1719-460c-88ec-74b25b6f89a9/scratchpad/3719/cells-v6/lambda-4B/project\t-m unittest test_stats -v"
+ ],
+ "files_added": [],
+ "files_removed": [],
+ "edit": [
+  "-    return sum(values) / (len(values) - 1)",
+  "+    return sum(values) / len(values)"
+ ],
+ "test_call": "/tmp/claude-1000/-home-noah-src-aprender/f037f0cc-1719-460c-88ec-74b25b6f89a9/scratchpad/3719/cells-v6/lambda-4B/project\t-m unittest test_stats -v",
+ "verdict": "pass",
+ "mechanism": "",
+ "reason": ""
+}

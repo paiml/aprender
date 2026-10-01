@@ -1463,3 +1463,170 @@ fn f3723_think_on_is_no_longer_refused_before_discovery() {
     );
     assert!(msg.contains("apr serve is unavailable") && msg.contains("embedded fallback"), "{msg}");
 }
+
+// ---------------------------------------------------------------------------
+// #3719: a `-p` run must tell the model it has tools
+// ---------------------------------------------------------------------------
+
+/// Records the system prompt of every request, and ends the turn at once.
+///
+/// `run_agent_turn` sends `manifest.model.system_prompt` (plus any recalled
+/// memories) as `request.system`, and `AprServeDriver` forwards it after
+/// cutting only an `## Available Tools` section, which the coding prompt does
+/// not carry. So what this driver records is what the served model reads.
+struct SystemPromptRecorder {
+    systems: std::sync::Mutex<Vec<Option<String>>>,
+}
+
+#[async_trait::async_trait]
+impl LlmDriver for SystemPromptRecorder {
+    async fn complete(
+        &self,
+        request: crate::agent::driver::CompletionRequest,
+    ) -> Result<crate::agent::driver::CompletionResponse, crate::agent::result::AgentError> {
+        self.systems.lock().expect("recorder lock").push(request.system.clone());
+        Ok(crate::agent::driver::CompletionResponse {
+            text: "done".into(),
+            stop_reason: crate::agent::result::StopReason::EndTurn,
+            tool_calls: vec![],
+            usage: crate::agent::result::TokenUsage::default(),
+        })
+    }
+
+    fn context_window(&self) -> usize {
+        32_768
+    }
+
+    fn privacy_tier(&self) -> PrivacyTier {
+        PrivacyTier::Sovereign
+    }
+}
+
+/// FALSIFIER (#3719): a `-p` run sends the model the manifest's tool-bearing
+/// system prompt.
+///
+/// `run_single_prompt` used to replace it, for every model size, with
+/// `COMPACT_SYSTEM_PROMPT` ("Answer the question. Be direct."), which names
+/// no tool and no `<tool_call>` format. Measured on Qwen3.5-4B through
+/// `apr serve` on CUDA: the model answered an edit-and-verify task with
+/// "Without seeing the actual code…" and made no tool call, because nothing
+/// it was sent said it could read or edit a file. RED on that code: the
+/// recorded prompt is the 31-character COMPACT prompt.
+#[test]
+fn falsify_3719_single_prompt_run_tells_the_model_about_its_tools() {
+    let manifest = build_default_manifest();
+    assert!(
+        manifest.model.system_prompt.contains("<tool_call>"),
+        "precondition: the default manifest carries the tool-call format"
+    );
+    let tools = build_code_tools(&manifest);
+    let memory = crate::agent::memory::InMemorySubstrate::new();
+    let driver = SystemPromptRecorder { systems: std::sync::Mutex::new(Vec::new()) };
+    let mut budget = TurnBudget::new(1);
+    let permit = permit_single_prompt(&mut budget, /* non_interactive */ true)
+        .expect("one turn of budget must permit a -p run")
+        .expect("a -p run takes a permit");
+
+    let _ = run_single_prompt(
+        &manifest,
+        &driver,
+        &tools,
+        &memory,
+        "The unit test fails. Fix the bug with a one-line edit and run the test.",
+        None,
+        "text",
+        None,
+        permit,
+    );
+
+    let systems = driver.systems.lock().expect("recorder lock");
+    let sent = systems
+        .first()
+        .and_then(|s| s.as_deref())
+        .expect("the -p run must call the driver with a system prompt");
+    assert_ne!(
+        sent,
+        crate::agent::code_prompts::COMPACT_SYSTEM_PROMPT,
+        "#3719: a -p run sent COMPACT_SYSTEM_PROMPT, which names no tool"
+    );
+    assert!(
+        sent.contains("<tool_call>"),
+        "#3719: the model must be told the <tool_call> format in -p mode, got: {sent:?}"
+    );
+    for tool in ["file_edit", "shell"] {
+        assert!(
+            sent.contains(tool),
+            "#3719: the -p system prompt must name `{tool}`, which the edit-and-verify task needs"
+        );
+    }
+}
+
+// ---------------------------------------------------------------------------
+// #3719: every tool example the system prompt teaches must call the tool right
+// ---------------------------------------------------------------------------
+
+/// Each `(tool name, example input)` the coding prompt shows the model: the
+/// rows of its tool table and the JSON inside its `<tool_call>` examples.
+fn prompt_tool_examples(prompt: &str) -> Vec<(String, serde_json::Value)> {
+    let mut out = Vec::new();
+    for line in prompt.lines() {
+        let cells: Vec<&str> = line.split('|').map(str::trim).collect();
+        if cells.len() >= 5 && cells[3].starts_with('{') {
+            if let Ok(input) = serde_json::from_str::<serde_json::Value>(cells[3]) {
+                out.push((cells[1].to_string(), input));
+            }
+        }
+    }
+    let mut rest = prompt;
+    while let Some(start) = rest.find("<tool_call>") {
+        let after = &rest[start + "<tool_call>".len()..];
+        let Some(end) = after.find("</tool_call>") else { break };
+        if let Ok(call) = serde_json::from_str::<serde_json::Value>(after[..end].trim()) {
+            if let (Some(name), Some(input)) = (call["name"].as_str(), call.get("input")) {
+                out.push((name.to_string(), input.clone()));
+            }
+        }
+        rest = &after[end..];
+    }
+    out
+}
+
+/// FALSIFIER (#3719): the prompt's tool examples must supply every field the
+/// registered tool REQUIRES.
+///
+/// Measured on Qwen3.5-4B (lambda + gx10, CUDA, and on CPU through a logging
+/// proxy): the model read both files, then called
+/// `file_edit {"path": "stats.py", "old": …, "new": …}` exactly as the prompt's
+/// table and Example 2 teach. The tool answered `missing required field
+/// 'old_string'`, and the model repeated the call until the loop guard ended
+/// the run with no answer. `AprServeDriver` strips the JSON schemas from the
+/// prompt, so the table is all a served model sees. RED while the prompt says
+/// `old`/`new`.
+#[test]
+fn falsify_3719_prompt_tool_examples_supply_every_required_field() {
+    let manifest = build_default_manifest();
+    let tools = build_code_tools(&manifest);
+    let examples = prompt_tool_examples(CODE_SYSTEM_PROMPT);
+    assert!(
+        examples.iter().any(|(n, _)| n == "file_edit"),
+        "precondition: the prompt shows a file_edit example; parsed {examples:?}"
+    );
+    let mut drift = Vec::new();
+    for (name, input) in &examples {
+        let Some(tool) = tools.get(name) else {
+            continue; // a tool this build does not register (e.g. rag without its feature)
+        };
+        let schema = tool.definition().input_schema;
+        for field in schema["required"].as_array().into_iter().flatten().filter_map(|f| f.as_str())
+        {
+            if input.get(field).is_none() {
+                drift.push(format!("{name}: example {input} lacks required `{field}`"));
+            }
+        }
+    }
+    assert!(
+        drift.is_empty(),
+        "#3719: the prompt teaches tool calls the tools reject:\n{}",
+        drift.join("\n")
+    );
+}
