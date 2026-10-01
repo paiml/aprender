@@ -11,7 +11,7 @@
 #   - no copy at the merge base                       -> GREEN once: the baseline is being introduced
 #
 # Usage: bash scripts/check_mutants_debt_ratchet.sh            (compare HEAD with merge-base(HEAD, $MUTANTS_DEBT_BASE))
-#        bash scripts/check_mutants_debt_ratchet.sh --self-test (case table R1-R12 in a scratch repo)
+#        bash scripts/check_mutants_debt_ratchet.sh --self-test (case table R1-R13 in a scratch repo)
 # MUTANTS_DEBT_BASE unset = resolve_base (merge-base with origin/main, or the CI-shape fallbacks); set = merge-base(HEAD, it). MUTANTS_DEBT_FILE defaults to ci/mutants-debt.tsv.
 set -euo pipefail
 
@@ -27,6 +27,7 @@ rows() { grep -v '^#' | grep -v '^[[:space:]]*$' || true; }
 
 check_rows() { # stdin = rows; prints each malformed row, returns 1 if any
     awk -F'\t' '
+        NF == 0 { next }  # zero debt rows: <<<"" feeds one empty line, which is not a row
         NF != 5 { print "  malformed (need 5 tab fields): " $0; bad = 1; next }
         $3 != "MissedMutant" && $3 != "Timeout" { print "  bad outcome \"" $3 "\": " $0; bad = 1; next }  # bashrs disable-line=BRS0015 (awk program text, not a command)
         $4 !~ /^[0-9a-f]{40}$/ { print "  bad sha \"" $4 "\": " $0; bad = 1; next }  # bashrs disable-line=BRS0015 (awk program text, not a command)
@@ -100,6 +101,7 @@ self_test() {
     case_row R7 1 "duplicate rows"           "a duplicate row is RED"              "$(printf '%s\n%s\n' "$r1" "$r1")"$'\n'
     case_row R8 1 "unresolvable"             "an unresolvable merge base is RED"   "$r1"$'\n' no-such-ref
     case_row R9 1 "bad outcome"              "a Caught outcome is not debt (RED)"  "${r1/MissedMutant/CaughtMutant}"$'\n'
+    case_row R13 0 "shrink-only: 2 -> 0"     "the last survivor killed (header only) is GREEN" "# header"$'\n'
     # R10: introduction -- the merge base has no copy
     git -C "$tmp" checkout -q --orphan intro; git -C "$tmp" rm -rq --cached . ; rm -rf -- "${tmp:?}/ci"
     : > "$tmp/keep"; git -C "$tmp" add keep; git -C "$tmp" commit -qm intro-base; git -C "$tmp" branch intro-base
@@ -123,7 +125,7 @@ self_test() {
     if [ "$rc" -eq 1 ] && grep -qF "row(s) not in merge base" <<<"$out"; then echo "ok    R12 rc=1  default base (origin/main via resolve_base): grown file is RED"
     else echo "FAIL  R12 rc=$rc want=1  default base grown"; fails=$((fails + 1)); fi
     [ "$fails" -eq 0 ] || { echo "SELF-TEST FAILED: $fails case(s)"; return 1; }  # bashrs disable-line=SC2198 (fails is a scalar counter, not an array)
-    echo "SELF-TEST PASSED (12 cases)"
+    echo "SELF-TEST PASSED (13 cases)"
 }
 
 case "${1:-}" in
