@@ -117,15 +117,17 @@ self_test() {
     }
     case_row_intro
     # R11: no explicit base and no origin/main (a branch commit with no nameable base) -> resolve_base refuses -> RED
+    # Hermetic: the temp repo is not a CI checkout. Under GITHUB_EVENT_NAME=merge_group resolve_base accepts a
+    # single parent as the base, so R11 could never go RED inside the merge queue (#4647 dequeued twice, 2026-10-01).
     local rc=0 out
     git -C "$tmp" checkout -q -B c11 base; printf '%s\n' "$r1" > "$tmp/ci/mutants-debt.tsv"; git -C "$tmp" add -A; git -C "$tmp" commit -qm c11
-    out=$(cd "$tmp" && env -u MUTANTS_DEBT_BASE bash "$me" 2>&1) || rc=$?
+    out=$(cd "$tmp" && env -u MUTANTS_DEBT_BASE -u GITHUB_EVENT_NAME bash "$me" 2>&1) || rc=$?
     if [ "$rc" -eq 1 ] && grep -qF "base unresolvable (resolve_base)" <<<"$out"; then echo "ok    R11 rc=1  no nameable base is RED (resolve_base refuses)"
     else echo "FAIL  R11 rc=$rc want=1  no nameable base"; fails=$((fails + 1)); fi
     # R12: default base via origin/main: a grown file vs origin/main is RED
     rc=0; git -C "$tmp" update-ref refs/remotes/origin/main base
     git -C "$tmp" checkout -q -B c12 base; printf '%s\n%s\n%s\n' "$r1" "$r2" "$r3" > "$tmp/ci/mutants-debt.tsv"; git -C "$tmp" add -A; git -C "$tmp" commit -qm c12
-    out=$(cd "$tmp" && env -u MUTANTS_DEBT_BASE bash "$me" 2>&1) || rc=$?
+    out=$(cd "$tmp" && env -u MUTANTS_DEBT_BASE -u GITHUB_EVENT_NAME bash "$me" 2>&1) || rc=$?
     if [ "$rc" -eq 1 ] && grep -qF "row(s) not in merge base" <<<"$out"; then echo "ok    R12 rc=1  default base (origin/main via resolve_base): grown file is RED"
     else echo "FAIL  R12 rc=$rc want=1  default base grown"; fails=$((fails + 1)); fi
     [ "$fails" -eq 0 ] || { echo "SELF-TEST FAILED: $fails case(s)"; return 1; }  # bashrs disable-line=SC2198 (fails is a scalar counter, not an array)
