@@ -76,7 +76,34 @@ cd "${MODEL_LADDER_ROOT:-$(dirname "$0")/..}" || exit 2
 [ -f "$LADDER" ] || { echo "decline: $LADDER not found" >&2; exit 2; }
 
 # Step 0 — pin the binary. A diagnostic against the wrong apr is worse than none.
-if [ "${DOGFOOD_ALLOW_UNPINNED:-0}" = "1" ] && [ -n "${APR:-}" ]; then
+# A3 (operator 2026-09-28 17:28Z): the RELEASE cells run the artifact UNDER TEST — the rc build —
+# named by ABSOLUTE path and proven twice: its bytes by sha256, and the commit its own `--version`
+# prints against the release commit. PATH is never consulted: a bare or relative $APR is refused
+# before it could resolve, so a different-sha apr planted first on PATH cannot run a single cell.
+# Release mode is on when either variable is set; half a pin is a decline, never a fallback.
+release_pin() {
+  local want="${APR_RELEASE_SHA256:-}" commit="${APR_RELEASE_COMMIT:-}" got ver
+  [[ "$want" =~ ^[0-9a-f]{64}$ ]] || { echo "decline: APR_RELEASE_SHA256 is not a 64-hex sha256: '$want'" >&2; return 2; }
+  [[ "$commit" =~ ^[0-9a-f]{40}$ ]] || { echo "decline: APR_RELEASE_COMMIT is not a 40-hex commit: '$commit'" >&2; return 2; }
+  case "${APR:-}" in
+    /*) ;;
+    *) echo "decline: release mode needs \$APR as an ABSOLUTE path to the rc artifact, got '${APR:-}' (a PATH lookup could run another apr)" >&2; return 2 ;;
+  esac
+  [ -f "$APR" ] && [ -x "$APR" ] || { echo "decline: \$APR is not an executable file: '$APR'" >&2; return 2; }
+  got=$(sha256sum -- "$APR") || { echo "decline: sha256sum of '$APR' failed" >&2; return 2; }
+  got=${got%% *}
+  [ "$got" = "$want" ] || { echo "decline: \$APR sha256 $got != APR_RELEASE_SHA256 $want -- not the artifact under test" >&2; return 2; }
+  ver=$("$APR" --version 2>/dev/null) || { echo "decline: '$APR --version' failed" >&2; return 2; }
+  case "$ver" in
+    *"(${commit:0:9})"*) ;;
+    *) echo "decline: '$APR --version' says '${ver%%$'\n'*}', not built from release commit ${commit:0:9}" >&2; return 2 ;;
+  esac
+}
+APR_PIN=head
+if [ -n "${APR_RELEASE_SHA256:-}${APR_RELEASE_COMMIT:-}" ]; then
+  release_pin || exit 2
+  APR_PIN=release
+elif [ "${DOGFOOD_ALLOW_UNPINNED:-0}" = "1" ] && [ -n "${APR:-}" ]; then
   : # published-crate mode (apr-dogfood G13): caller pinned $APR deliberately
 else
   # shellcheck disable=SC1091
@@ -481,6 +508,8 @@ SHA=$(git rev-parse --short HEAD 2>/dev/null || echo unknown)
 # apr_sha: the full 40-hex HEAD, which scripts/apr_bin.sh proved the binary was built from. The
 # release-readiness shape (#3715) compares it to the release commit by exact equality.
 APR_SHA=$(git rev-parse HEAD 2>/dev/null || echo unknown)
+# A3: in release mode the binary was proven against the release commit, not against this tree's HEAD.
+[ "$APR_PIN" = release ] && APR_SHA="$APR_RELEASE_COMMIT"
 VERSION=$(cargo metadata --no-deps --offline --format-version 1 2>/dev/null | python3 -c '
 import json, os, sys
 m = json.load(sys.stdin)
@@ -1428,8 +1457,14 @@ fi
 CELLS_JSON=""
 if [ "$CELLS" = 1 ]; then
   CELLS_JSON="$WORK/cells.json"
+  # H1/H5 (operator 2026-09-28 17:50Z): every cell runs under a hard timeout (default 10 min; per class from
+  # MODEL_LADDER_TIMEOUT_CLASSES once sampled) and a timeout is a FAIL. MODEL_LADDER_TAKT_PLAN arms the takt
+  # tripwires (+2/+4/+6 h, >= 90% of plan); a miss lands in $OUT_DIR/takt-$HOST.jsonl.andon the moment it happens.
+  pace=()
+  [ -n "${MODEL_LADDER_TIMEOUT_CLASSES:-}" ] && pace+=(--timeout-classes "$MODEL_LADDER_TIMEOUT_CLASSES")
+  [ -n "${MODEL_LADDER_TAKT_PLAN:-}" ] && pace+=(--takt-plan "$MODEL_LADDER_TAKT_PLAN" --takt-log "$OUT_DIR/takt-$HOST.jsonl")
   python3 "$PRODUCE" measure --apr "$APR" --inventory "$INV_RECEIPT" --models "$WORK/models.txt" \
-      --ladder "$LADDER" --rungs evidence/release/context-rungs.json --work "$WORK" \
+      --ladder "$LADDER" --rungs evidence/release/context-rungs.json --work "$WORK" "${pace[@]}" \
       --lock "$GPU_LOCK" --lock-wait "$LOCK_WAIT" --only "$ONLY" --host "$HOST" --out "$CELLS_JSON" > "$WORK/cells.log" 2>&1
   cells_rc=$?
   tail -1 "$WORK/cells.log"
@@ -1439,7 +1474,7 @@ if [ "$CELLS" = 1 ]; then
 fi
 why=$(ladder_disk_probe "$OUT_DIR") || ladder_write_decline "before the receipt: $why"
 python3 - "$ROWS" "$RECEIPT_TMP" "$HOST" "$VERSION" "$SHA" "${GPU_NAME:-}" "${GPU_CC:-}" "$EXECUTED" "$RED" "$APR_VERSION" "$INV_RECEIPT" "$INV_DIRS" "$INV_PATTERNS" "$APR_SHA" "$ONLY" "$GPU_MEM" "$CELLS_JSON" "$LADDER" <<'PY'
-import json, sys, datetime, platform
+import json, os, sys, datetime, platform
 rows = [json.loads(l) for l in open(sys.argv[1]) if l.strip()]
 inv = [json.loads(l) for l in open(sys.argv[11]) if l.strip()]
 # #4590: a (host, arch) the release DE-CLAIMS leaves inventory[] -- the universe released pv owes cells on --
@@ -1454,6 +1489,8 @@ out = {"schema": "apr-model-ladder-receipt/v2", "host": sys.argv[3], "version": 
        "date": datetime.datetime.now(datetime.timezone.utc).strftime("%Y-%m-%dT%H:%MZ"),
        "apr_version": sys.argv[10], "executed": int(sys.argv[8]), "red": int(sys.argv[9]),
        "only": (sys.argv[15] or None),
+       # A3: release mode records the sha256 step 0 verified; absent (not null-faked) otherwise.
+       **({"apr_sha256": os.environ["APR_RELEASE_SHA256"]} if os.environ.get("APR_RELEASE_SHA256") else {}),
        "inventory": inv, "inventory_dirs": sys.argv[12].split(":"), "inventory_patterns": sys.argv[13].split(","),
        "rungs": rows}
 if held:
