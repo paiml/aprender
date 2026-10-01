@@ -3344,6 +3344,111 @@ jobs:
           setsid --wait bash scripts/check_clippy_cuda.sh --self-test
           nice -n 19 setsid --wait bash scripts/check_clippy_cuda.sh
 
+  # #4621 (operator E1): the CUDA mutants shard. cargo-mutants on clean-room builds default features, so a
+  # mutant in `#[cfg(feature = "cuda")]` code is never compiled there: it "survives" without being measured.
+  # The CPU `mutants` section defers that set (not_measured + its sha). This section builds the cuda feature on
+  # the yoga device, mutates exactly the diff's files that the cuda build compiles and the default build does
+  # not (both MEASURED from dep-info), and runs the derived cuda-only lib tests against each mutant. The `gate`
+  # job is RED on a pull_request whose deferred set is non-empty unless this section succeeded AND measured the
+  # same set (measured_sha == not_measured_sha). Local runs never count (E1).
+  #
+  # The GPU lock is taken WITHOUT a wait limit here. cuda-unit's `-w 600 -E 175` turns a busy lock into a
+  # failing test binary, and under cargo-mutants a failing test is a CAUGHT mutant: a lock wait would pass as a
+  # kill. The job timeout bounds the wait instead. A device skip cannot pass a mutant either way: a skipped test
+  # catches nothing, so the mutant survives and the section is RED.
+  mutants-cuda:
+    needs: [gpu-touched]
+    if: github.event_name == 'pull_request' && needs.gpu-touched.outputs.gpu_touched == '1'
+    runs-on: [self-hosted, Linux, X64, cuda, yoga, ephemeral, docker]
+    # 150, estimated, not measured (no history): two dep-info checks and two test listings (~10 min cold), a
+    # cuda lib test build (~10 min), then per mutant an incremental rebuild plus the cuda-only set run one
+    # thread at a time (#4043), ~5 min each at -j 1. #4620 has 7. Refit from this section's own p99.
+    timeout-minutes: 150
+    continue-on-error: false
+    env:
+      CARGO_TERM_COLOR: always
+      CARGO_TARGET_DIR: ${{ github.workspace }}/target
+      CARGO_INCREMENTAL: "0"
+      CARGO_TARGET_X86_64_UNKNOWN_LINUX_GNU_RUNNER: flock /run/lock/fleet-gpu/gpu.lock
+      MUTANTS_MAX_MISSED: ${{ vars.MUTANTS_MAX_MISSED || '0' }}
+      MUTANTS_CAP: ${{ vars.MUTANTS_CAP || '60' }}
+    outputs:
+      measured: ${{ steps.measured.outputs.measured }}
+      measured_sha: ${{ steps.measured.outputs.measured_sha }}
+    steps:
+      - uses: actions/checkout@v7
+        with:
+          fetch-depth: 0
+      - name: Preflight — the self-hosted toolset this job needs (67-C2)
+        run: bash scripts/ci_self_hosted_preflight.sh --cuda
+      - name: Host GPU lock — the host's file, taken with no wait limit
+        run: |
+          set -euo pipefail
+          l=/run/lock/fleet-gpu/gpu.lock
+          mountpoint -q /run/lock/fleet-gpu || { echo "::error::/run/lock/fleet-gpu is not mounted from the host (infra eph-env EXTRA_MOUNTS)"; exit 1; }
+          [ -f "$l" ] || { echo "::error::$l is absent on the host (infra gpu-lock-tmpfiles)"; exit 1; }
+          command -v flock > /dev/null || { echo "::error::no flock in the runner image"; exit 1; }
+          [ "$CARGO_TARGET_X86_64_UNKNOWN_LINUX_GNU_RUNNER" = "flock $l" ] \
+            || { echo "::error::the runner must be 'flock $l' (no -w: a lock timeout would read as a kill): '$CARGO_TARGET_X86_64_UNKNOWN_LINUX_GNU_RUNNER'"; exit 1; }
+          echo "GPU lock: $l; test binaries run under: $CARGO_TARGET_X86_64_UNKNOWN_LINUX_GNU_RUNNER"
+      - name: The PR diff -- the same merge-base diff the CPU mutants section judges
+        run: |
+          set -euo pipefail
+          BASE_REF="${{ github.event.pull_request.base.ref }}"
+          git fetch --no-tags origin "$BASE_REF"
+          MERGE_BASE=$(git merge-base HEAD "origin/$BASE_REF" 2>/dev/null || true)
+          [ -n "$MERGE_BASE" ] || MERGE_BASE="origin/$BASE_REF"
+          git diff "$MERGE_BASE"...HEAD > pr.diff
+          echo "merge-base $MERGE_BASE, diff $(wc -l < pr.diff) lines"
+      - name: Install cargo-mutants 27.1.0 into a private root
+        run: |
+          set -euo pipefail
+          export CARGO_INSTALL_ROOT="$RUNNER_TEMP/cargo-mutants-root"
+          cargo install cargo-mutants --locked --version 27.1.0 > "$RUNNER_TEMP/mi.log" 2>&1 \
+            || { tail -20 "$RUNNER_TEMP/mi.log"; echo "::error::cargo-mutants install failed; the shard cannot run"; exit 1; }
+          "$CARGO_INSTALL_ROOT/bin/cargo-mutants" mutants --version
+          echo "$CARGO_INSTALL_ROOT/bin" >> "$GITHUB_PATH"
+      - name: The cuda-only lib tests (derived, as cuda-unit derives them) and the shard
+        run: |
+          set -euo pipefail
+          export LC_ALL=C
+          t="$RUNNER_TEMP"
+          nice -n 19 cargo test -p aprender-serve --lib -- --list 2> "$t/cpu-list.err" \
+            | sed -n 's/: test$//p' | sort > "$t/cpu-list.txt" || { cat "$t/cpu-list.err"; exit 1; }
+          nice -n 19 cargo test -p aprender-serve --features cuda --lib -- --list 2> "$t/cuda-list.err" \
+            | sed -n 's/: test$//p' | sort > "$t/cuda-list.txt" || { cat "$t/cuda-list.err"; exit 1; }
+          comm -23 "$t/cuda-list.txt" "$t/cpu-list.txt" > "$t/cuda-only.txt"
+          printf 'cuda binary %s tests, default %s, cuda-only %s\n' "$(wc -l < "$t/cuda-list.txt")" \
+            "$(wc -l < "$t/cpu-list.txt")" "$(wc -l < "$t/cuda-only.txt")"
+          [ -s "$t/cuda-only.txt" ] || { echo "::error::the derived cuda-only set is empty: the cuda feature did not engage"; exit 1; }
+          # the crates the CPU section keeps out of mutation, derived from the same line, so both sets agree
+          EXCL=$(grep -m1 -E "^[[:space:]]+cargo nextest run --profile ci --workspace --lib" ci/sections.yml \
+            | grep -oE -- "--exclude [a-z0-9_-]+" | sed "s/^--exclude /--exclude-crate /" | tr "\n" " ")
+          [ -n "$EXCL" ] || { echo "::error::no --exclude list found on the workspace-test nextest line"; exit 1; }
+          # shellcheck disable=SC2086
+          nice -n 19 bash scripts/mutants_diff_gate.sh pr.diff --features aprender-serve/cuda --gated-only \
+            --test-names "$t/cuda-only.txt" --cap "$MUTANTS_CAP" --jobs 1 --timeout 900 \
+            --max-missed "$MUTANTS_MAX_MISSED" --out mutants-cuda-gate $EXCL
+      - name: The measured set -- the gate job compares its sha with the CPU section's deferred set
+        id: measured
+        if: always()
+        run: |
+          set -euo pipefail
+          f=mutants-cuda-gate/measured.txt
+          [ -f "$f" ] || { echo "measured=none" >> "$GITHUB_OUTPUT"; echo "::error::no $f: the shard never ran its scope"; exit 1; }
+          n=$(grep -c . "$f" || true)
+          sha=$(LC_ALL=C sort "$f" | sha256sum | cut -c1-64)
+          echo "measured=${n:-0}" >> "$GITHUB_OUTPUT"
+          echo "measured_sha=$sha" >> "$GITHUB_OUTPUT"
+          echo "measured: ${n:-0} mutant(s), set sha $sha"
+          sed 's/^/  /' "$f"
+      - name: Upload the shard's results
+        if: always()
+        uses: actions/upload-artifact@v7
+        with:
+          name: mutation-results-cuda
+          path: mutants-cuda-gate/
+
   # APEX-001 EV-2a: the same figure, rendered on two architectures, must be the same bytes.
   #
   # WHY A MATRIX AND NOT ONE JOB. A host always agrees with itself, so no single-runner test can
@@ -3675,6 +3780,11 @@ jobs:
       # mutant). mutants-nightly.yml judges main's merges with no cap.
       MUTANTS_CAP: ${{ vars.MUTANTS_CAP || '60' }}
       MUTANTS_JOBS: ${{ vars.MUTANTS_JOBS || '4' }}
+    # #4621 (operator E1): the mutants this build never compiles (cfg feature off by default) are DEFERRED to
+    # mutants-cuda, not passed. The gate job is RED unless mutants-cuda measured exactly this set (sha).
+    outputs:
+      not_measured: ${{ steps.deferred.outputs.not_measured }}
+      not_measured_sha: ${{ steps.deferred.outputs.not_measured_sha }}
     steps:
       - name: Pre-checkout ownership restore (EACCES self-heal)
         # Same guard as workspace-test: a hard-killed docker job leaves
@@ -3849,8 +3959,26 @@ jobs:
               [ -n "$EXCL" ] || { echo "::error::no --exclude list found on the workspace-test nextest line"; exit 1; }
               # shellcheck disable=SC2086
               bash scripts/mutants_diff_gate.sh pr.diff --cap "$MUTANTS_CAP" --jobs "$MUTANTS_JOBS" \
-                --max-missed "$MUTANTS_MAX_MISSED" --out mutants-gate $EXCL
+                --max-missed "$MUTANTS_MAX_MISSED" --out mutants-gate --defer-unbuilt mutants-gate/not_measured.txt $EXCL
             '
+      - name: The deferred NOT_MEASURED set -- the gate job requires mutants-cuda to measure exactly this (#4621)
+        id: deferred
+        if: steps.prdiff.outputs.has_rs == 'true'
+        run: |
+          set -euo pipefail
+          f=mutants-gate/not_measured.txt
+          if [ -s pr.diff ]; then
+            # the gate writes the file before it looks at the diff: absent means it never ran, not "none"
+            [ -f "$f" ] || { echo "::error::the gate wrote no $f"; exit 1; }
+          else
+            mkdir -p mutants-gate && : > "$f"
+          fi
+          n=$(grep -c . "$f" || true)
+          sha=$(LC_ALL=C sort "$f" | sha256sum | cut -c1-64)
+          echo "not_measured=${n:-0}" >> "$GITHUB_OUTPUT"
+          echo "not_measured_sha=$sha" >> "$GITHUB_OUTPUT"
+          echo "deferred to mutants-cuda: ${n:-0} mutant(s), set sha $sha"
+          sed 's/^/  /' "$f"
       - name: Upload mutation results
         if: always() && steps.prdiff.outputs.has_rs == 'true'
         uses: actions/upload-artifact@v7

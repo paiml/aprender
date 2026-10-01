@@ -319,28 +319,44 @@ impl OwnedQuantizedModelCuda {
         let vocab_size = self.model.config.vocab_size;
         let eps = self.model.config.eps;
 
-        let embeddings = self.model.embed(&prompt[..prefill_count]);
-        let positions: Vec<u32> = (0..prefill_count as u32).collect();
-
+        // #3715: the prompt goes through in chunks. One pass allocates a
+        // `num_heads × rows × total` f32 score matrix, so a 26k-token prompt on
+        // Qwen2.5-0.5B asked for 38 GB of a 24 GB card, and its u32 row offsets
+        // wrapped past 2^32. Each chunk appends to the KV cache the one before it
+        // wrote (the cache_len > 0 attention path), so a prompt that fits one
+        // chunk runs exactly as before.
+        let rows = dense_prefill_chunk_rows(
+            self.model.config.num_heads,
+            prefill_count,
+            crate::gguf::cuda::forward_qwen35_cuda::PREFILL_SCORES_BUDGET_BYTES,
+        );
         self.executor
-            .init_prefill_workspace(prefill_count, hidden_dim, intermediate_dim)
+            .init_prefill_workspace(rows, hidden_dim, intermediate_dim)
             .map_err(|e| RealizarError::UnsupportedOperation {
                 operation: "init_prefill_workspace".to_string(),
                 reason: format!("Prefill workspace init failed: {e}"),
             })?;
-        self.executor
-            .prefill_all_layers_gpu(
-                &embeddings,
-                &positions,
-                num_layers,
-                hidden_dim as u32,
-                intermediate_dim as u32,
-                eps,
-            )
-            .map_err(|e| RealizarError::UnsupportedOperation {
-                operation: "prefill_all_layers_gpu".to_string(),
-                reason: format!("Batched prefill failed: {e}"),
-            })?;
+        let mut start = 0;
+        while start < prefill_count {
+            let end = (start + rows).min(prefill_count);
+            let embeddings = self.model.embed(&prompt[start..end]);
+            let positions: Vec<u32> = (start as u32..end as u32).collect();
+            self.executor
+                .prefill_all_layers_gpu(
+                    &embeddings,
+                    &positions,
+                    num_layers,
+                    hidden_dim as u32,
+                    intermediate_dim as u32,
+                    eps,
+                )
+                .map_err(|e| RealizarError::UnsupportedOperation {
+                    operation: "prefill_all_layers_gpu".to_string(),
+                    reason: format!("Batched prefill failed at positions {start}..{end}: {e}"),
+                })?;
+            start = end;
+        }
+        let last_row = (prefill_count - 1) % rows;
 
         // PMAT-083: Extract first predicted token from prefill hidden state.
         // Runs output RMSNorm + LM head GEMV + GPU argmax on the last position.
@@ -350,7 +366,7 @@ impl OwnedQuantizedModelCuda {
             let token = self
                 .executor
                 .prefill_extract_first_token(
-                    prefill_count - 1, // last position index
+                    last_row, // the last position's row in the final chunk
                     hidden_dim as u32,
                     vocab_size as u32,
                     eps,
@@ -404,8 +420,9 @@ impl OwnedQuantizedModelCuda {
         self.last_phase_timings.prefill_ms = Some(elapsed.as_secs_f64() * 1000.0);
         if trace {
             eprintln!(
-                "[TRACE-PREFILL] Batched prefill: {} tokens in {:?} ({:.1} tok/s){}",
+                "[TRACE-PREFILL] Batched prefill: {} tokens ({} per chunk) in {:?} ({:.1} tok/s){}",
                 prefill_count,
+                rows,
                 elapsed,
                 prefill_count as f64 / elapsed.as_secs_f64(),
                 if first_token.is_some() { " [+LM head]" } else { "" },
@@ -1129,4 +1146,45 @@ fn announce_prefill_path(choice: crate::cuda::gpu_profile::PrefillPathChoice) {
             choice.reason
         );
     });
+}
+
+/// #3715: prompt rows per batched-prefill pass, so that one pass's attention scores
+/// (`num_heads × rows × prefill_count` f32, the last chunk being the widest) stay
+/// inside `budget_bytes`. At least one row; never more than the prompt.
+fn dense_prefill_chunk_rows(num_heads: usize, prefill_count: usize, budget_bytes: usize) -> usize {
+    let per_row = 4 * num_heads.max(1) * prefill_count.max(1);
+    (budget_bytes / per_row).clamp(1, prefill_count.max(1))
+}
+
+#[cfg(test)]
+mod dense_prefill_chunk_tests {
+    use super::dense_prefill_chunk_rows;
+
+    const GIB: usize = 1 << 30;
+
+    #[test]
+    fn short_prompt_is_one_chunk() {
+        // Qwen3-1.7B (16 heads) at 2k: 256 MB of scores, one pass as before #3715.
+        assert_eq!(dense_prefill_chunk_rows(16, 2000, GIB), 2000);
+    }
+
+    #[test]
+    fn long_prompt_scores_stay_inside_the_budget() {
+        // The #3715 cells: 26131 tokens, 14 and 16 heads.
+        for heads in [14, 16, 32] {
+            let rows = dense_prefill_chunk_rows(heads, 26131, GIB);
+            assert!(rows < 26131, "heads={heads} must chunk");
+            assert!(4 * heads * rows * 26131 <= GIB, "heads={heads} rows={rows}");
+            // One more row would break the budget: the chunk is as large as it may be.
+            assert!(4 * heads * (rows + 1) * 26131 > GIB, "heads={heads} rows={rows}");
+            // The score kernel indexes with u32: no row offset may reach 2^32.
+            assert!((heads * rows * 26131) < (1usize << 32));
+        }
+    }
+
+    #[test]
+    fn degenerate_inputs_still_make_progress() {
+        assert_eq!(dense_prefill_chunk_rows(64, 1 << 24, 1), 1);
+        assert_eq!(dense_prefill_chunk_rows(0, 0, GIB), 1);
+    }
 }

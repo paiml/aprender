@@ -26,20 +26,57 @@
 #   excludes (aprender-gpu, aprender-cuda-edge, aprender-compute: hardware, or a harness that segfaults at exit on a
 #   clean pass, so cargo-mutants would read its baseline as failed). The exclusion is printed, never silent.
 #
+#   7. (#4621, operator E1) a survivor in a file the build never compiled is NOT_MEASURED: RED, or with
+#      --defer-unbuilt FILE written sorted to FILE for a feature shard (the section passes; the `gate` job is RED
+#      unless that shard measured exactly this set in the same run). No local receipt counts.
+#   Feature shard (mutants-cuda): --features PKG/FEAT[,..] --gated-only mutates only the diff's files that the
+#   feature build compiles and the default build does not (both MEASURED by dep-info) and writes that list, sorted,
+#   to <out>/measured.txt.
+#
 #   bash scripts/mutants_diff_gate.sh <diff> [--cap N] [--jobs J] [--max-missed M] [--out DIR] [--exclude-crate NAME]...
 #   bash scripts/mutants_diff_gate.sh --exempt-ref <head-ref> <head-repo> <base-repo>   # exit 0 exempt . 1 judge it
+#        [--timeout S] [--defer-unbuilt FILE] [--features PKG/FEAT[,..] [--gated-only]] [--test-names FILE]
+#   --test-names FILE runs only the lib tests named in FILE (--exact, one thread): the shard's cuda-only set. A
+#   smaller test set can only leave MORE survivors, so it never makes the gate easier to pass.
 #   bash scripts/mutants_diff_gate.sh --self-test
 # exit 0 judged and within --max-missed . 1 RED . 2 usage
 # Seam (the self-test only): MUTANTS_GATE_CARGO replaces `cargo`.
 set -uo pipefail
+TIMEOUT=300 DEFER="" FEATURES="" GATED_ONLY=0 NAMES=""
 
 gate() { # gate <diff> <cap> <jobs> <max-missed> <out> [excluded crate...]
   local diff=$1 cap=$2 jobs=$3 max=$4 out=$5 cargo=${MUTANTS_GATE_CARGO:-cargo} n rc oc c
   shift 5
   local -a ex=()
   for c in "$@"; do ex+=(--exclude "crates/$c/**"); done
+  # written first: an early pass defers nothing, and says so. Its directory may not exist yet: CI hands
+  # mutants-gate/not_measured.txt to a fresh checkout, and the redirect failed before --out was made (#4620 x86-main)
+  [ -z "$DEFER" ] || { mkdir -p "$(dirname "$DEFER")" && : > "$DEFER"; } || return 1
   [ -s "$diff" ] || { echo "ok    empty diff: nothing to mutate"; return 0; }
   mkdir -p "$out" || return 1
+  local -a ta=(--lib)
+  # Under --features, --lib must reach the BUILD as well. cargo-mutants' baseline is `cargo test --no-run`,
+  # which takes only --cargo-arg; without it every feature-gated integration target is compiled, and one
+  # that does not build fails the baseline (#4621, yoga run 36553822552). Passed once as --cargo-arg it
+  # also reaches `cargo test`, so the test args drop theirs: a second --lib is a cargo usage error and
+  # every mutant "fails" before a test runs (#4621, yoga run 36547274574).
+  [ -z "$FEATURES" ] || { ex+=(--features "$FEATURES" --cargo-arg --lib); ta=(); echo "features: $FEATURES"; }
+  if [ -n "$NAMES" ]; then
+    [ -s "$NAMES" ] || { echo "RED   --test-names $NAMES is empty: a run that selects no test catches nothing"; return 1; }
+    mapfile -t c < "$NAMES"
+    ta+=(-- --exact --test-threads 1 "${c[@]}")
+    echo "tests: the ${#c[@]} named in $NAMES, --exact, one thread"
+  fi
+  if [ "$GATED_ONLY" = 1 ]; then
+    : > "$out/measured.txt" || return 1
+    gated_files "$diff" "$out" || return 1
+    if [ "${#GATED[@]}" -eq 0 ]; then
+      echo "ok    0 feature-gated files in the diff: measured=0"
+      return 0
+    fi
+    echo "gated files: ${GATED[*]}"
+    for c in "${GATED[@]}"; do ex+=(--file "$c"); done
+  fi
   [ "$#" -gt 0 ] && echo "excluded from mutation (judged by their own CI steps): $*"
   "$cargo" mutants --workspace "${ex[@]}" --in-diff "$diff" --list > "$out/list.txt" 2> "$out/list.err"; rc=$?
   if [ "$rc" -ne 0 ]; then
@@ -47,6 +84,7 @@ gate() { # gate <diff> <cap> <jobs> <max-missed> <out> [excluded crate...]
     return 1
   fi
   n=$(grep -c . "$out/list.txt")
+  if [ "$GATED_ONLY" = 1 ]; then LC_ALL=C sort "$out/list.txt" > "$out/measured.txt" || return 1; fi
   if [ "$n" -eq 0 ]; then
     echo "ok    0 mutants in the diff, listed across the workspace"
     return 0
@@ -56,7 +94,7 @@ gate() { # gate <diff> <cap> <jobs> <max-missed> <out> [excluded crate...]
     return 1
   fi
   echo "mutating $n mutant(s) across the workspace, -j $jobs"
-  "$cargo" mutants --workspace "${ex[@]}" --no-times --timeout 300 -j "$jobs" --in-diff "$diff" --output "$out" -- --lib; rc=$?
+  "$cargo" mutants --workspace "${ex[@]}" --no-times --timeout "$TIMEOUT" -j "$jobs" --in-diff "$diff" --output "$out" -- "${ta[@]}"; rc=$?
   oc="$out/mutants.out/outcomes.json"
   if [ ! -f "$oc" ]; then
     echo "RED   cargo mutants exited $rc and wrote no outcomes.json although $n mutant(s) were listed: the run died"
@@ -88,11 +126,98 @@ judge() { # judge <outcomes.json> <listed> <max-missed> <out>
   fi
   echo "judged $total mutant(s): missed=$missed timeout=$timeout (max allowed $max)"
   if [ $((missed + timeout)) -gt "$max" ]; then
-    echo "RED   $((missed + timeout)) mutant(s) survived or timed out on the diff (> $max): add tests that kill them"
-    cat "$out/mutants.out/missed.txt" "$out/mutants.out/timeout.txt" 2> /dev/null | sed 's/^/  /'
-    return 1
+    unbuilt_split "$out" || return 1
+    if [ "$((missed + timeout - UNBUILT_N))" -gt "$max" ] || [ "$UNBUILT_N" -eq 0 ]; then
+      echo "RED   $((missed + timeout)) mutant(s) survived or timed out on the diff (> $max): add tests that kill them"
+      cat "$out/mutants.out/missed.txt" "$out/mutants.out/timeout.txt" 2> /dev/null | sed 's/^/  /'
+      return 1
+    fi
+    if [ -n "$DEFER" ]; then
+      printf '%s' "$UNBUILT" | LC_ALL=C sort > "$DEFER" || return 1
+      echo "DEFERRED $UNBUILT_N NOT_MEASURED mutant(s) to the feature shard ($DEFER); the gate job is RED unless it measures this set"
+      sed 's/^/  NOT_MEASURED  /' "$DEFER"
+      return 0
+    fi
+    not_measured "$out" || return 1
   fi
   echo "ok    every mutant in the diff was caught (or within --max-missed)"
+}
+
+# #4621 (cop ruling 2026-09-29 06:19Z). cargo-mutants tests a mutant with `cargo test -p <pkg> --lib` at the
+# package's DEFAULT features, so a mutant inside `#[cfg(feature = "cuda")]` code is never compiled: its run is the
+# baseline, and it comes back MISSED or, on a slow suite, TIMEOUT (PR #4620: all 7 mutants were in cfg(cuda) code,
+# 0 `cuda::` tests ran of 16149, 1 missed at 292 s and 6 timed out at 300.1 s). Such a mutant was never measured, so it
+# is neither a survivor nor a pass. The compiled set is MEASURED, not guessed from cfg attributes: `cargo check -p
+# <pkg> --lib` in a private target dir writes dep-info (*.d) naming every source file the compiler read.
+unbuilt_split() { # unbuilt_split <out> -> UNBUILT (lines) and UNBUILT_N; RED (1) when it cannot measure
+  local out=$1 cargo=${MUTANTS_GATE_CARGO:-cargo} f d pkg line
+  local -A pkgs=() built=()
+  UNBUILT=""; UNBUILT_N=0
+  while IFS= read -r line; do
+    f=${line%%:*}
+    case "$f" in crates/*/*) d=${f#crates/}; d=crates/${d%%/*} ;; *) d=. ;; esac
+    pkg=$(sed -n 's/^name *= *"\(.*\)"/\1/p' "$d/Cargo.toml" 2> /dev/null | head -1)
+    [ -n "$pkg" ] || { echo "RED   cannot name the package that owns $f: the gate cannot tell whether it was compiled"; return 1; }
+    pkgs[$pkg]=1
+  done < <(cat "$out/mutants.out/missed.txt" "$out/mutants.out/timeout.txt" 2> /dev/null)
+  [ "${#pkgs[@]}" -gt 0 ] || return 0   # counts without named survivors: judged as survivors, never as unbuilt
+  for pkg in "${!pkgs[@]}"; do
+    "$cargo" check -p "$pkg" --lib $(pkg_features "$pkg") --target-dir "$out/depinfo" > "$out/depinfo.log" 2>&1 \
+      || { echo "RED   cargo check -p $pkg --lib failed: the gate cannot measure which files its build compiled -- $(tail -1 "$out/depinfo.log")"; return 1; }
+  done
+  while IFS= read -r f; do built[$f]=1; done < <(cat "$out"/depinfo/debug/deps/*.d 2> /dev/null \
+    | tr ' ' '\n' | sed -n 's/:$//; s|^'"$PWD"'/||; /\.rs$/p' | sort -u)
+  [ "${#built[@]}" -gt 0 ] || { echo "RED   the dep-info under $out/depinfo names no source file: nothing measured is not nothing compiled"; return 1; }
+  while IFS= read -r line; do
+    [ -n "${built[${line%%:*}]:-}" ] && continue
+    UNBUILT+="$line"$'\n'; UNBUILT_N=$((UNBUILT_N + 1))
+  done < <(cat "$out/mutants.out/missed.txt" "$out/mutants.out/timeout.txt" 2> /dev/null)
+  return 0
+}
+
+pkg_features() { # pkg_features <pkg> -> "--features a,b" for the FEATURES entries PKG/FEAT this package owns
+  local f fs=""
+  for f in ${FEATURES//,/ }; do [ "${f%%/*}" = "$1" ] && fs+="${fs:+,}${f#*/}"; done
+  [ -z "$fs" ] || printf -- '--features %s' "$fs"
+}
+
+# The feature shard's scope: files in the diff that `cargo check --features` compiles and the default build does
+# not, each set MEASURED from dep-info in its own private target dir.
+gated_files() { # gated_files <diff> <out> -> GATED (array)
+  local diff=$1 out=$2 cargo=${MUTANTS_GATE_CARGO:-cargo} pkg f
+  local -A dflt=() feat=()
+  GATED=()
+  for pkg in $(for f in ${FEATURES//,/ }; do printf '%s\n' "${f%%/*}"; done | sort -u); do
+    "$cargo" check -p "$pkg" --lib --target-dir "$out/dep-default" > "$out/dep-default.log" 2>&1 \
+      || { echo "RED   cargo check -p $pkg --lib failed -- $(tail -1 "$out/dep-default.log")"; return 1; }
+    "$cargo" check -p "$pkg" --lib $(pkg_features "$pkg") --target-dir "$out/dep-feature" > "$out/dep-feature.log" 2>&1 \
+      || { echo "RED   cargo check -p $pkg --lib $(pkg_features "$pkg") failed -- $(tail -1 "$out/dep-feature.log")"; return 1; }
+  done
+  while IFS= read -r f; do dflt[$f]=1; done < <(depinfo_files "$out/dep-default")
+  while IFS= read -r f; do feat[$f]=1; done < <(depinfo_files "$out/dep-feature")
+  [ "${#feat[@]}" -gt 0 ] || { echo "RED   the feature build's dep-info names no source file: nothing measured is not nothing compiled"; return 1; }
+  while IFS= read -r f; do
+    if [ -n "${feat[$f]:-}" ] && [ -z "${dflt[$f]:-}" ]; then GATED+=("$f"); fi
+  done < <(sed -n 's|^+++ b/||p' "$diff" | sort -u)
+  return 0
+}
+
+depinfo_files() { # depinfo_files <target-dir> -> repo-relative .rs paths its dep-info names
+  cat "$1"/debug/deps/*.d 2> /dev/null | tr ' ' '\n' | sed -n 's/:$//; s|^'"$PWD"'/||; /\.rs$/p' | sort -u
+}
+
+# A never-compiled mutant is NOT_MEASURED (L25): never MISSED, never a pass, and no local receipt turns it green.
+# Operator ruling E1 (2026-09-29 07:55Z): cuda-gated mutants are measured only by a CI shard on a CUDA runner;
+# a not_measured count > 0 on changed gated code is RED. Local evidence does not count.
+not_measured() { # not_measured <out>
+  local line
+  echo "NOT_MEASURED $UNBUILT_N mutant(s) sit in code this build never compiles (a cfg feature off by default):"
+  while IFS= read -r line; do
+    [ -n "$line" ] || continue
+    echo "  NOT_MEASURED  $line"
+  done <<< "$UNBUILT"
+  echo "RED   not_measured=$UNBUILT_N on changed feature-gated code: measure it in a CI shard that builds the feature (a CUDA runner for cuda); local runs do not count"
+  return 1
 }
 
 self_test() {
@@ -107,6 +232,9 @@ self_test() {
 echo "$*" >> "$STUB_ARGS"
 case " $* " in
   *" --list "*) printf '%b' "${STUB_LIST:-}"; exit "${STUB_LIST_RC:-0}" ;;
+  " check "*) td=""; prev=""; for a in "$@"; do [ "$prev" = "--target-dir" ] && td=$a; prev=$a; done
+    di=${STUB_DEPINFO:-}; case " $* " in *" --features "*) di=${STUB_DEPINFO_FEATURE:-$di} ;; esac
+    mkdir -p "$td/debug/deps"; printf '%b' "$di" > "$td/debug/deps/x.d"; exit "${STUB_CHECK_RC:-0}" ;;
 esac
 out=""; prev=""
 for a in "$@"; do [ "$prev" = "--output" ] && out=$a; prev=$a; done
@@ -114,15 +242,23 @@ for a in "$@"; do [ "$prev" = "--output" ] && out=$a; prev=$a; done
 mkdir -p "$out/mutants.out"
 printf '%s' "$STUB_OUTCOMES" > "$out/mutants.out/outcomes.json"
 printf '%b' "${STUB_MISSED:-}" > "$out/mutants.out/missed.txt"
+printf '%b' "${STUB_TIMEOUT:-}" > "$out/mutants.out/timeout.txt"
 exit "${STUB_RUN_RC:-0}"
 STUB
   chmod +x "$T/cargo"
   printf 'diff --git a/x.rs b/x.rs\n+fn f() {}\n' > "$T/pr.diff"
+  # a two-package tree: `root` owns src/, `foo` owns crates/foo/; foo's gated.rs is never in the dep-info
+  mkdir -p "$T/tree/crates/foo/src" "$T/tree/evidence/mutants-local"
+  # a committed local "receipt" must change nothing (operator E1): it is planted so a gate that reads it goes RED
+  printf '[package]\nname = "root"\n' > "$T/tree/Cargo.toml"
+  printf '[package]\nname = "foo"\n' > "$T/tree/crates/foo/Cargo.toml"
+  printf 'CAUGHT crates/foo/src/gated.rs:7:5: replace g -> bool with true\n' > "$T/tree/evidence/mutants-local/r.txt"
   row() { # row <name> <want rc> <needle> [ENV=VAL...] -- runs THIS script's gate against the stub
     local name=$1 want=$2 needle=$3 out rc; shift 3
     : > "$T/args-$name"   # a fresh log per row: a stale one would answer for a mutant that never ran
-    out=$(env MUTANTS_GATE_CARGO="$T/cargo" STUB_ARGS="$T/args-$name" "$@" \
-          bash "$GATE_SCRIPT" "${GATE_DIFF:-$T/pr.diff}" --cap 3 --jobs 2 --max-missed "${MAXM:-0}" --out "$T/out-$name" ${EXCL:-} 2>&1); rc=$?
+    out=$(cd "$T/tree" && env MUTANTS_GATE_CARGO="$T/cargo" STUB_ARGS="$T/args-$name" \
+          STUB_DEPINFO="$T/tree/target/x: $T/tree/src/x.rs $T/tree/crates/foo/src/built.rs\n" "$@" \
+          bash "$GATE_SCRIPT" "${GATE_DIFF:-$T/pr.diff}" --cap 3 --jobs 2 --max-missed "${MAXM:-0}" --out "$T/out-$name" ${EXCL:-} ${GATE_OPTS:-} 2>&1); rc=$?
     if [ "$rc" = "$want" ] && grep -qF -- "$needle" <<< "$out"; then echo "ok    $name"
     else echo "FAIL  $name -- rc $rc (want $want): $(tr '\n' ' ' <<< "$out" | cut -c1-220)"; fi
   }
@@ -155,6 +291,47 @@ STUB
     # phase results, the summary keys AFTER it. The pre-#4142 inline parser read nothing out of this file.
     row real-outcomes-shape-is-parsed 1 "judged 2 mutant(s): missed=1 timeout=0" STUB_LIST='a\nb\n' \
         STUB_OUTCOMES="$(cat "$(dirname "$SELF")/mutants_diff_gate.real-outcomes.json")"
+    # #4621: a survivor in a file the build never compiled is NOT_MEASURED, never MISSED and never a pass
+    row unbuilt-with-local-receipt-is-red 1 "NOT_MEASURED  crates/foo/src/gated.rs:7:5" STUB_LIST='a\nb\n' \
+        STUB_OUTCOMES='{"total_mutants":2,"missed":1,"caught":1,"timeout":0}' STUB_MISSED='crates/foo/src/gated.rs:7:5: replace g -> bool with true\n'
+    row unbuilt-timeout-is-red 1 "RED   not_measured=1 on changed feature-gated code" STUB_LIST='a\nb\n' \
+        STUB_OUTCOMES='{"total_mutants":2,"missed":0,"caught":1,"timeout":1}' STUB_TIMEOUT='crates/foo/src/gated.rs:9:1: replace h with ()\n'
+    row built-survivor-beside-unbuilt-is-red 1 "  crates/foo/src/built.rs:3:1: replace k with ()" STUB_LIST='a\nb\n' \
+        STUB_OUTCOMES='{"total_mutants":2,"missed":2,"caught":0,"timeout":0}' \
+        STUB_MISSED='crates/foo/src/gated.rs:7:5: replace g -> bool with true\ncrates/foo/src/built.rs:3:1: replace k with ()\n'
+    row depinfo-empty-is-red 1 "names no source file" STUB_LIST='a\nb\n' STUB_DEPINFO="" \
+        STUB_OUTCOMES='{"total_mutants":2,"missed":1,"caught":1,"timeout":0}' STUB_MISSED='crates/foo/src/gated.rs:7:5: replace g -> bool with true\n'
+    row check-failure-is-red 1 "cargo check -p foo --lib failed" STUB_LIST='a\nb\n' STUB_CHECK_RC=101 \
+        STUB_OUTCOMES='{"total_mutants":2,"missed":1,"caught":1,"timeout":0}' STUB_MISSED='crates/foo/src/gated.rs:7:5: replace g -> bool with true\n'
+    # the CPU gate hands its NOT_MEASURED set to the feature shard, sorted, and says so; built survivors stay RED
+    GATE_OPTS="--defer-unbuilt $T/defer.txt" row unbuilt-deferred-passes-and-is-written 0 "DEFERRED 1 NOT_MEASURED" STUB_LIST='a\nb\n' \
+        STUB_OUTCOMES='{"total_mutants":2,"missed":1,"caught":1,"timeout":0}' STUB_MISSED='crates/foo/src/gated.rs:7:5: replace g -> bool with true\n'
+    if [ "$(cat "$T/defer.txt" 2> /dev/null)" = "crates/foo/src/gated.rs:7:5: replace g -> bool with true" ]; then echo "ok    deferred-set-written"
+    else echo "FAIL  deferred-set-written -- $(cat "$T/defer.txt" 2> /dev/null)"; fi
+    # the deferred file's directory need not exist: CI passes mutants-gate/not_measured.txt on a fresh checkout
+    rm -rf -- "${T:?}/fresh"   # the table runs once per mutant on one $T: a stale directory would hide the mutant
+    GATE_OPTS="--defer-unbuilt $T/fresh/dir/defer3.txt" row defer-into-a-missing-dir 0 "0 mutants in the diff" STUB_LIST=""
+    [ -f "$T/fresh/dir/defer3.txt" ] && echo "ok    defer-dir-created" || echo "FAIL  defer-dir-created -- no $T/fresh/dir/defer3.txt"
+    GATE_OPTS="--defer-unbuilt $T/defer2.txt" row deferred-built-survivor-is-red 1 "  crates/foo/src/built.rs:3:1: replace k with ()" STUB_LIST='a\nb\n' \
+        STUB_OUTCOMES='{"total_mutants":2,"missed":2,"caught":0,"timeout":0}' \
+        STUB_MISSED='crates/foo/src/gated.rs:7:5: replace g -> bool with true\ncrates/foo/src/built.rs:3:1: replace k with ()\n'
+    # the feature shard mutates only the files the feature build adds, and records what it measured
+    printf 'diff --git a/crates/foo/src/gated.rs b/crates/foo/src/gated.rs\n+++ b/crates/foo/src/gated.rs\n+fn g() {}\n+++ b/crates/foo/src/built.rs\n+fn k() {}\n' > "$T/gated.diff"
+    GATE_DIFF="$T/gated.diff" GATE_OPTS="--features foo/cuda --gated-only" row gated-only-mutates-the-gated-file 0 "gated files: crates/foo/src/gated.rs" \
+        STUB_LIST='z\na\n' STUB_OUTCOMES="$OK2" \
+        STUB_DEPINFO_FEATURE="$T/tree/target/x: $T/tree/crates/foo/src/built.rs $T/tree/crates/foo/src/gated.rs\n"
+    if grep -q -- "--file crates/foo/src/gated.rs" "$T/args-gated-only-mutates-the-gated-file" && ! grep -q -- "--file crates/foo/src/built.rs" "$T/args-gated-only-mutates-the-gated-file" \
+       && grep -q -- "check -p foo --lib --features cuda" "$T/args-gated-only-mutates-the-gated-file" \
+       && ! grep -q -- "--lib.*--lib" "$T/args-gated-only-mutates-the-gated-file" \
+       && grep -q -- "--cargo-arg --lib" "$T/args-gated-only-mutates-the-gated-file" \
+       && [ "$(tr '\n' ' ' < "$T/out-gated-only-mutates-the-gated-file/measured.txt" 2> /dev/null)" = "a z " ]; then echo "ok    gated-scope-and-measured-set"
+    else echo "FAIL  gated-scope-and-measured-set -- $(tr '\n' '|' < "$T/args-gated-only-mutates-the-gated-file" 2> /dev/null)"; fi
+    printf 'm::t_one\nm::t_two\n' > "$T/names.txt"; : > "$T/nonames.txt"
+    GATE_OPTS="--test-names $T/names.txt" row test-names-reach-libtest 0 "tests: the 2 named" STUB_LIST='a\nb\n' STUB_OUTCOMES="$OK2"
+    if grep -q -- "-- --lib -- --exact --test-threads 1 m::t_one m::t_two" "$T/args-test-names-reach-libtest"; then echo "ok    test-names-on-the-run"
+    else echo "FAIL  test-names-on-the-run -- $(tr '\n' '|' < "$T/args-test-names-reach-libtest" 2> /dev/null)"; fi
+    GATE_OPTS="--test-names $T/nonames.txt" row empty-test-names-is-red 1 "is empty: a run that selects no test" STUB_LIST='a\nb\n' STUB_OUTCOMES="$OK2"
+    GATE_DIFF="$T/gated.diff" GATE_OPTS="--features foo/cuda --gated-only" row gated-only-with-nothing-gated-passes 0 "0 feature-gated files in the diff: measured=0"
     : > "$T/empty.diff"
     GATE_DIFF="$T/empty.diff" row empty-diff-passes 0 "empty diff" STUB_LIST='a\n'
     xrow() { # xrow <name> <want rc> <head-ref> <head-repo> <base-repo> -- rule 0, the car exemption
@@ -201,6 +378,21 @@ car-prefix-unanchored~car-prefix-word-is-judged~  [[ $1 == car/?* ]] || return 1
 fork-not-checked~fork-car-is-judged~  [ -n "$2" ] && [ "$2" = "$3" ] || return 1~  :
 empty-repo-accepted~unknown-repo-is-judged~  [ -n "$2" ] && [ "$2" = "$3" ] || return 1~  [ "$2" = "$3" ] || return 1
 exempt-never~car-is-exempt~  [[ $1 == car/?* ]] || return 1~  return 1
+unbuilt-is-a-pass~unbuilt-timeout-is-red~  echo "RED   not_measured=$UNBUILT_N~  return 0; echo "RED   not_measured=$UNBUILT_N
+local-receipt-honoured~unbuilt-with-local-receipt-is-red~    echo "  NOT_MEASURED  $line"~    grep -qxF -- "CAUGHT $line" evidence/mutants-local/*.txt 2> /dev/null && continue; echo "  NOT_MEASURED  $line"
+built-survivor-hidden~built-survivor-beside-unbuilt-is-red~    if [ "$((missed + timeout - UNBUILT_N))" -gt "$max" ] || [ "$UNBUILT_N" -eq 0 ]; then~    if [ "$UNBUILT_N" -eq 0 ]; then
+empty-depinfo-means-all-unbuilt~depinfo-empty-is-red~  [ "${#built[@]}" -gt 0 ] || {~  true || {
+names-dropped~test-names-on-the-run~    ta+=(-- --exact --test-threads 1 "${c[@]}")~    :
+empty-names-accepted~empty-test-names-is-red~    [ -s "$NAMES" ] || { echo "RED   --test-names~    true || { echo "RED   --test-names
+defer-dir-not-made~defer-into-a-missing-dir~{ mkdir -p "$(dirname "$DEFER")" && : > "$DEFER"; }~{ : > "$DEFER"; }
+defer-ignored~unbuilt-deferred-passes-and-is-written~    if [ -n "$DEFER" ]; then~    if false; then
+deferred-set-unsorted~deferred-set-written~      printf '%s' "$UNBUILT" | LC_ALL=C sort > "$DEFER" || return 1~      : > "$DEFER"
+gated-includes-default-built~gated-scope-and-measured-set~    if [ -n "${feat[$f]:-}" ] && [ -z "${dflt[$f]:-}" ]; then GATED+=("$f"); fi~    if [ -n "${feat[$f]:-}" ]; then GATED+=("$f"); fi
+measured-unsorted~gated-scope-and-measured-set~  if [ "$GATED_ONLY" = 1 ]; then LC_ALL=C sort "$out/list.txt" > "$out/measured.txt" || return 1; fi~  if [ "$GATED_ONLY" = 1 ]; then cp "$out/list.txt" "$out/measured.txt" || return 1; fi
+features-dropped-from-check~gated-scope-and-measured-set~      || { echo "RED   cargo check -p $pkg --lib failed -- $(tail -1 "$out/dep-default.log")"; return 1; }~      || { echo "RED   cargo check -p $pkg --lib failed -- $(tail -1 "$out/dep-default.log")"; return 1; }; FEATURES=""
+check-rc-ignored~check-failure-is-red~    "$cargo" check -p "$pkg" --lib $(pkg_features "$pkg") --target-dir "$out/depinfo" > "$out/depinfo.log" 2>&1 \~    true \
+lib-passed-twice~gated-scope-and-measured-set~--cargo-arg --lib); ta=(); echo~--cargo-arg --lib); echo
+lib-missing-from-build~gated-scope-and-measured-set~ex+=(--features "$FEATURES" --cargo-arg --lib); ta=();~ex+=(--features "$FEATURES");
 survivors-unnamed~missed-is-red-and-named~    cat "$out/mutants.out/missed.txt" "$out/mutants.out/timeout.txt" 2> /dev/null | sed 's/^/  /'~    :
 MUT
   echo "mutants_diff_gate self-test: $([ "$bad" = 0 ] && echo PASS || echo FAIL)"
@@ -222,11 +414,17 @@ main() {
       --max-missed) max=$2; shift 2 ;;
       --out) out=$2; shift 2 ;;
       --exclude-crate) excl+=("$2"); shift 2 ;;
+      --timeout) TIMEOUT=$2; shift 2 ;;
+      --defer-unbuilt) DEFER=$2; shift 2 ;;
+      --features) FEATURES=$2; shift 2 ;;
+      --gated-only) GATED_ONLY=1; shift ;;
+      --test-names) NAMES=$2; shift 2 ;;
       -h|--help) sed -n '2,30p' "$0"; exit 0 ;;
       -*) echo "mutants_diff_gate: unknown option $1" >&2; exit 2 ;;
       *) diff=$1; shift ;;
     esac
   done
+  [ "$GATED_ONLY" = 0 ] || [ -n "$FEATURES" ] || { echo "mutants_diff_gate: --gated-only needs --features" >&2; exit 2; }
   [ -n "$diff" ] || { echo "usage: mutants_diff_gate.sh <diff> [--cap N] [--jobs J] [--max-missed M] [--out DIR]" >&2; exit 2; }
   for v in "$cap" "$jobs" "$max"; do [[ "$v" =~ ^[0-9]+$ ]] || { echo "mutants_diff_gate: not a count: $v" >&2; exit 2; }; done
   gate "$diff" "$cap" "$jobs" "$max" "$out" "${excl[@]}"

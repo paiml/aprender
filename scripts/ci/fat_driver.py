@@ -1291,7 +1291,10 @@ def emit_results_output(res: dict) -> None:
     out = os.environ.get("GITHUB_OUTPUT")
     if not out:
         return
-    compact = {n: {"result": r["result"], "continue_on_error": r.get("continue_on_error", False)}
+    # `outputs` rides along: the gate's NOT_MEASURED rule (ci.yml GATE-MUTANTS-CUDA-RULE) reads
+    # .<section>.outputs.<key>. Without it that rule reads "" and passes on every run (#4621).
+    compact = {n: {"result": r["result"], "continue_on_error": r.get("continue_on_error", False),
+                   "outputs": r.get("outputs") or {}}
                for n, r in res.items()}
     # The actions a section staged for the fat job's own steps (codecov, attest).
     kinds = set()
@@ -1667,6 +1670,29 @@ def _st_external(row):
     row("no --external-job: the need is absent (schedule refuses)", x.members("workspace-test"), [])
 
 
+def _st_results_output(row):
+    import tempfile
+
+    # emit_results_output feeds the gate job: a section's `outputs` must survive into the
+    # `results` step output, or the gate's NOT_MEASURED rule reads "" and can never be RED (#4621).
+    with tempfile.TemporaryDirectory() as td:
+        gh_out = Path(td) / "out"
+        old = os.environ.get("GITHUB_OUTPUT")
+        os.environ["GITHUB_OUTPUT"] = str(gh_out)
+        try:
+            emit_results_output({"mutants": {"result": "success", "continue_on_error": False,
+                                             "outputs": {"not_measured": "7", "not_measured_sha": "abc"}}})
+        finally:
+            if old is None:
+                os.environ.pop("GITHUB_OUTPUT", None)
+            else:
+                os.environ["GITHUB_OUTPUT"] = old
+        line = next((l for l in gh_out.read_text().splitlines() if l.startswith("results=")), "results={}")
+        emitted = json.loads(line[len("results="):]).get("mutants", {})
+        row("results output keeps a section's outputs (gate NOT_MEASURED rule reads them)",
+            emitted.get("outputs"), {"not_measured": "7", "not_measured_sha": "abc"})
+
+
 def cmd_self_test(a):
     """Case table: each row names what it would read if the rule it guards were
     deleted (AnyShard, implicit success(), the depth-1 cut, the verdict rule).
@@ -1677,7 +1703,7 @@ def cmd_self_test(a):
         rows.append((label, got == want, got, want))
 
     for section in (_st_vendored, _st_expressions, _st_timeouts, _st_artifact, _st_checkout, _st_aside,
-                    _st_external):
+                    _st_external, _st_results_output):
         section(row)
     bad = 0
     for label, good, got, want in rows:

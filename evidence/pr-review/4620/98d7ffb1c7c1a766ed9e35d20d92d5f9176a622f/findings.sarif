@@ -1,0 +1,454 @@
+{
+  "$schema": "https://raw.githubusercontent.com/oasis-tcs/sarif-spec/master/Schemata/sarif-schema-2.1.0.json",
+  "version": "2.1.0",
+  "runs": [
+    {
+      "tool": {
+        "driver": {
+          "name": "pmat",
+          "informationUri": "https://github.com/paiml/pmat",
+          "rules": [
+            {
+              "id": "pmat.tdg-delta"
+            },
+            {
+              "id": "pmat.duplication-hit"
+            },
+            {
+              "id": "pmat.complexity-delta"
+            },
+            {
+              "id": "gate.mutants-cuda-rule-inert"
+            }
+          ]
+        }
+      },
+      "results": [
+        {
+          "ruleId": "gate.mutants-cuda-rule-inert",
+          "level": "note",
+          "message": {
+            "text": "F1 (RESOLVED IN DIFF, not open). Round 1 (head d07e187b66) found that the gate rule at ci.yml:483-484 read `.outputs.not_measured` / `.outputs.measured_sha` from the results job outputs while scripts/ci/fat_driver.py emit_results_output dropped `outputs`, so the rule read empty and passed on every run. Head fc88268134 (one commit, scripts only) fixes it at the source: emit_results_output now writes `outputs` per section (fat_driver.py:1245-1248), adds a fat_driver self-test row that the emitted results keep a section's outputs, adds scripts/ci/emit_results_sample.py, and adds row 14 to check_ci_gate_mutants_cuda_rule.sh that feeds the gate rule the driver's own emission instead of hand-written JSON. Re-verified independently, by measurement and not by reading the diff: (a) the old driver blob run through the same sample emits {result,continue_on_error} only and the gate reads not_measured='' ; the new driver emits the outputs and the gate reads not_measured='3'; (b) the rule script's new row 14 run against a scratch tree carrying the OLD fat_driver.py FAILS ('driver-emitted results carry no outputs: the rule read them as empty and passed'), and against the new driver passes (RED as required); (c) fat_driver.py self-test 53/53, check_ci_gate_mutants_cuda_rule.sh PASS (14 rows), --self-test PASS; (d) two hand-made mutants of the fix (drop the key; emit a constant {}) are each killed by the new fat_driver self-test row. Both producers exist and feed the keys the rule reads: ci/sections.yml:3437-3439 (not_measured, not_measured_sha) and :3174-3176 (measured_sha). Residual, not blocking: row 14 asserts only the exit status of the rule block, not which branch made it RED; it discriminates here only because the old driver turns it green."
+          },
+          "locations": [
+            {
+              "physicalLocation": {
+                "artifactLocation": {
+                  "uri": ".github/workflows/ci.yml"
+                },
+                "region": {
+                  "startLine": 483,
+                  "endLine": 484
+                }
+              }
+            }
+          ],
+          "relatedLocations": [
+            {
+              "physicalLocation": {
+                "artifactLocation": {
+                  "uri": "scripts/ci/fat_driver.py"
+                },
+                "region": {
+                  "startLine": 1240,
+                  "endLine": 1257
+                }
+              },
+              "message": {
+                "text": "emit_results_output now keeps outputs"
+              }
+            },
+            {
+              "physicalLocation": {
+                "artifactLocation": {
+                  "uri": "scripts/check_ci_gate_mutants_cuda_rule.sh"
+                },
+                "region": {
+                  "startLine": 67,
+                  "endLine": 76
+                }
+              },
+              "message": {
+                "text": "row 14: the rule fed the driver's real emission"
+              }
+            }
+          ],
+          "properties": {
+            "grounding": "measured",
+            "command": [
+              "bash",
+              "/mnt/nvme-raid0/tmp/ec-review-target/w/f1v2.sh"
+            ],
+            "exit_code": 0,
+            "stdout_sha256": "f1d9494f6bf9fa127ace94c18318865d398fef96420ba1f82ee5b4e4dd5eae74",
+            "failure_scenario": "If emit_results_output regressed to dropping `outputs` again, a pull_request whose CPU mutants section defers N>0 cfg(feature=cuda) survivors and whose mutants-cuda shard is skipped or red would leave the gate green; row 14 and the fat_driver self-test row now turn that RED."
+          }
+        },
+        {
+          "ruleId": "pmat.duplication-hit",
+          "level": "note",
+          "message": {
+            "text": "F3 (advisory, verified). Duplication scan (--rust-semantic, 41 needles, 1151/1151 sibling branches) surfaces dense_prefill_chunk_rows (generate_2.rs:1143-1146) next to the pre-existing attention_rows_for (forward_qwen35_cuda_prefill.rs:208-213). The author-flagged difference, num_heads versus heads_per_kv, is CORRECT here rather than merely conservative: the dense path allocates its score scratch as num_heads * rows * total_len (cublas_prefill/attention.rs:361, 542, 776; executor kv_num_heads is the Q-head count per mod.rs:496), so num_heads is the exact multiplier and heads_per_kv would under-budget the buffer by a factor of heads_per_kv. attention_rows_for legitimately uses heads_per_kv because the Qwen3.5 path scores one KV group per pass. prefill_count == 0 returns at generate_2.rs:251 before `(prefill_count - 1) % rows` at 358, so the subtraction cannot underflow. Remaining duplication hits are lexical: half_to_f32 in the new file's test module (f16_iq4xs_dequant.rs:291) mirrors a test-local helper in q5k/dequant.rs and q8_0_dequant.rs, and sibling branches of this same work carry the same new files."
+          },
+          "locations": [
+            {
+              "physicalLocation": {
+                "artifactLocation": {
+                  "uri": "crates/aprender-serve/src/gguf/cuda/generate_2.rs"
+                },
+                "region": {
+                  "startLine": 1143,
+                  "endLine": 1146
+                }
+              }
+            }
+          ],
+          "relatedLocations": [
+            {
+              "physicalLocation": {
+                "artifactLocation": {
+                  "uri": "crates/aprender-serve/src/gguf/cuda/forward_qwen35_cuda_prefill.rs"
+                },
+                "region": {
+                  "startLine": 208,
+                  "endLine": 213
+                }
+              }
+            }
+          ],
+          "properties": {
+            "grounding": "measured",
+            "command": [
+              "scripts/pr_review_duplication_scan.sh",
+              "--base",
+              "00052c01284caa74c70b287088a79c6dee2959b9",
+              "--head",
+              "HEAD",
+              "--rust-semantic",
+              "--json",
+              "dup.json"
+            ],
+            "exit_code": 0,
+            "failure_scenario": "If someone later swaps num_heads for heads_per_kv in dense_prefill_chunk_rows to share the helper, the dense score scratch (num_heads*rows*total f32) exceeds the 1 GiB budget by heads_per_kv times and the 26k-token OOM of #3715 returns on GQA models."
+          }
+        },
+        {
+          "ruleId": "pmat.tdg-delta",
+          "level": "note",
+          "message": {
+            "text": "TDG per file, base 00052c0128 -> head 98d7ffb1c7 (pmat tdg --format json, measured on both sides in round 1 at d07e187b66; the d07e187b66..98d7ffb1c7 delta touches only scripts/ci/fat_driver.py, scripts/ci/emit_results_sample.py, scripts/check_ci_gate_mutants_cuda_rule.sh and scripts/mutants_diff_gate.sh, so every Rust file is byte-identical and the figures carry over; fat_driver.py TDG A on the rebuilt index): prefill.rs B 76.63 -> 76.82; gdn_prefill_ops.rs A 92.09 -> 92.20; generate_2.rs B- 73.70 -> 74.00; kernels/mod.rs A+ 98.0 -> 98.0; quantize/mod.rs A+ 95.45 -> 95.45; f16_iq4xs_dequant.rs (new) A 93.48. No file falls; every changed file is flat or up."
+          },
+          "properties": {
+            "grounding": "measured",
+            "command": [
+              "pmat",
+              "tdg",
+              "<file>",
+              "--format",
+              "json"
+            ],
+            "exit_code": 0,
+            "failure_scenario": "N/A - informational TDG movement; every changed file is flat or up."
+          }
+        },
+        {
+          "ruleId": "pmat.complexity-delta",
+          "level": "note",
+          "message": {
+            "text": "F4. pmat analyze complexity (base vs head): run_prefill (generate_2.rs:243-431) cognitive 17 -> 18 and cyclomatic 10 -> 11 from the chunk loop; .pmat-gates.toml max_complexity = 10, so the function already exceeded it on cognitive and now crosses it on cyclomatic. graph_may_run is 2/1 and dense_prefill_chunk_rows 1/0. prefill_all_layers_gpu is unchanged at cyclomatic 10 / cognitive 29. Extracting the loop body into a helper would return run_prefill to 10."
+          },
+          "locations": [
+            {
+              "physicalLocation": {
+                "artifactLocation": {
+                  "uri": "crates/aprender-serve/src/gguf/cuda/generate_2.rs"
+                },
+                "region": {
+                  "startLine": 243,
+                  "endLine": 431
+                }
+              }
+            }
+          ],
+          "properties": {
+            "grounding": "measured",
+            "command": [
+              "pmat",
+              "analyze",
+              "complexity",
+              "--file",
+              "<file>",
+              "--format",
+              "json"
+            ],
+            "exit_code": 0,
+            "failure_scenario": "Each further branch added to run_prefill raises a function already over the 10 gate; pmat comply on the file reports it as a new cyclomatic violation."
+          }
+        }
+      ],
+      "invocations": [
+        {
+          "executionSuccessful": true
+        }
+      ]
+    },
+    {
+      "tool": {
+        "driver": {
+          "name": "nvidia-cuda-docs",
+          "informationUri": "internal:mcp__nvidia-cuda-docs__search_cuda_docs",
+          "rules": [
+            {
+              "id": "cuda.ptx-isa-confirmed"
+            },
+            {
+              "id": "cuda.graph-param-baking-confirmed"
+            },
+            {
+              "id": "cuda.no-authority-found"
+            }
+          ]
+        }
+      },
+      "results": [
+        {
+          "ruleId": "cuda.ptx-isa-confirmed",
+          "level": "note",
+          "message": {
+            "text": "Queried: PTX bfe.u32 bit field extract zero-extend semantics; selp.u32 conditional select semantics. Result: found for bfe (PTX ISA 9.7.1.20): for .u32 the sign bit is zero, so the extracted field is zero-extended, and a zero length gives zero. Iq4XsDequantKernel in f16_iq4xs_dequant.rs uses bfe.u32 with start and length inside 0..255, and zero-extension is what a 4-bit nibble and 6-bit scale extraction need. The corpus returned no selp section for this query; selp correctness rests on the file's bitwise-parity test against the CPU reader, not on a citation."
+          },
+          "locations": [
+            {
+              "physicalLocation": {
+                "artifactLocation": {
+                  "uri": "crates/aprender-gpu/src/kernels/quantize/f16_iq4xs_dequant.rs"
+                },
+                "region": {
+                  "startLine": 1,
+                  "endLine": 285
+                }
+              }
+            }
+          ],
+          "properties": {
+            "grounding": "cited",
+            "source": "NVIDIA PTX ISA, Integer Arithmetic Instructions: bfe (section 9.7.1.20), via mcp__nvidia-cuda-docs__search_cuda_docs",
+            "excerpt": "Extract bit field from `a` and place the zero or sign-extended result in `d`. Source `b` gives the bit field starting bit position, and source `c` gives the bit field length in bits. The sign bit of the extracted field is defined as: `.u32`, `.u64`: zero. If the bit field length is zero, the result is zero.",
+            "excerpt_sha256": "63076f33f668515991ff2d079daca7852eb7c10da4431beb65523e0a2272aeb3",
+            "failure_scenario": "N/A - confirms instruction semantics; if bfe were sign-extending, scale nibbles would go negative and the dequantized weights would flip sign."
+          }
+        },
+        {
+          "ruleId": "cuda.graph-param-baking-confirmed",
+          "level": "note",
+          "message": {
+            "text": "Queried: CUDA graph replay kernel node parameters baked at capture; updating parameters. Result: found. CUDA Programming Guide 4.2.3: kernel parameters and memory addresses are per-node state of the instantiated graph and change only through the Graph Update mechanism, taking effect on the next launch. That supports graph_may_run (prefill.rs:1598): a graph captured for positions 0..S-1 cannot serve a later chunk whose positions and KV length differ, so only a chunk starting at position 0 may replay it (call site prefill.rs:167)."
+          },
+          "locations": [
+            {
+              "physicalLocation": {
+                "artifactLocation": {
+                  "uri": "crates/aprender-serve/src/cuda/executor/layers/prefill.rs"
+                },
+                "region": {
+                  "startLine": 1598,
+                  "endLine": 1600
+                }
+              }
+            }
+          ],
+          "properties": {
+            "grounding": "cited",
+            "source": "NVIDIA CUDA Programming Guide, section 4.2.3 Updating Instantiated Graphs, via mcp__nvidia-cuda-docs__search_cuda_docs",
+            "excerpt": "It is common for only node parameters (such as kernel parameters and memory addresses) to change while the graph topology remains the same. For this case, CUDA provides a lightweight Graph Update mechanism that allows certain node parameters to be modified in-place without rebuilding the entire graph. Updates take effect the next time the graph is launched.",
+            "excerpt_sha256": "2dfb426eb82917de6afd6249cbbd8828352371aa3d8526c2847d40f244cdfe88",
+            "failure_scenario": "Without graph_may_run, chunk 2 of a multi-chunk prompt with PREFILL_GRAPH=1 replays the chunk-1 graph and overwrites the KV it just extended."
+          }
+        },
+        {
+          "ruleId": "cuda.no-authority-found",
+          "level": "note",
+          "message": {
+            "text": "Queried: IQ4_XS ggml quantization block layout 136 bytes superblock 256 values 6-bit scale. Result: no-authority-found; the corpus returned CUTLASS block-scaled scale-factor layouts, which are unrelated. IQ4_XS is a ggml format, so the docs consultation has no authority over it; the only evidence is the file's own bitwise-parity test against the CPU reader (f16_iq4xs_dequant.rs)."
+          },
+          "properties": {
+            "grounding": "asserted",
+            "precision_class": "advisory",
+            "failure_scenario": "N/A - records a gap in this consultation's authority, not a defect."
+          }
+        }
+      ],
+      "invocations": [
+        {
+          "executionSuccessful": true
+        }
+      ]
+    },
+    {
+      "tool": {
+        "driver": {
+          "name": "cargo-mutants",
+          "informationUri": "https://mutants.rs",
+          "rules": [
+            {
+              "id": "mutation.harness-gap"
+            },
+            {
+              "id": "mutation.vacuous-skip"
+            },
+            {
+              "id": "mutation.defer-dir-missing"
+            }
+          ]
+        }
+      },
+      "results": [
+        {
+          "ruleId": "mutation.defer-dir-missing",
+          "level": "note",
+          "message": {
+            "text": "F6 (RESOLVED IN DIFF, not open; the x86-main CI failure on head fc88268134). scripts/mutants_diff_gate.sh gate() truncated the --defer-unbuilt file (line 47 at fc88268134) before the directory of that file existed. ci/sections.yml:3594 passes --out mutants-gate --defer-unbuilt mutants-gate/not_measured.txt on a fresh checkout, where mutants-gate/ is only made later (mkdir -p on the --out dir), so the redirect failed and the mutants section went RED before any mutant was listed. Reproduced with the pre-fix blob (git show fc88268134:scripts/mutants_diff_gate.sh) in a fresh scratch dir: rc=1, pre.sh line 47: mutants-gate/not_measured.txt: No such file or directory, no file written; --defer-unbuilt nodir/x.txt fails the same way. With head 98d7ffb1c7 (one commit, scripts/mutants_diff_gate.sh only: mkdir -p of the dirname, then the truncate, lines 47-49) the same two invocations return rc=0 and the file exists. It adds self-test rows defer-into-a-missing-dir and defer-dir-created plus the mutant defer-dir-not-made, killed by the former; the self-test is now PASS with 58 ok rows and 27 killed mutants. The earlier self-test never caught it because every row wrote the deferred file into a directory that already existed. This was a defect of the earlier heads that my round 1 and round 2 reviews missed: both exercised the gate only through its self-test and a stub harness whose --out dir already existed."
+          },
+          "locations": [
+            {
+              "physicalLocation": {
+                "artifactLocation": {
+                  "uri": "scripts/mutants_diff_gate.sh"
+                },
+                "region": {
+                  "startLine": 44,
+                  "endLine": 51
+                }
+              }
+            }
+          ],
+          "properties": {
+            "grounding": "measured",
+            "command": [
+              "bash",
+              "/mnt/nvme-raid0/tmp/ec-review-target/w/repro/run.sh"
+            ],
+            "exit_code": 0,
+            "stdout_sha256": "2533a92c2b80ff193abdad49c143dfa4805b38b916e9a8b5a022513b15eb5901",
+            "failure_scenario": "Any CI run of the mutants section on a fresh checkout with --defer-unbuilt mutants-gate/not_measured.txt: the redirect fails, the section is RED before mutation starts, and no PR can pass x86-main."
+          }
+        },
+        {
+          "ruleId": "mutation.harness-gap",
+          "level": "warning",
+          "message": {
+            "text": "F2. mutants_diff_gate.sh judge() (line 115) enters the unbuilt-split branch only when missed+timeout exceeds --max-missed. With --max-missed N>0 a NOT_MEASURED (unbuilt, cfg(feature)) survivor within the tolerance is silently counted as tolerated: it is neither deferred to the shard nor reported RED. Measured with a stub cargo: max 0 -> RED with NOT_MEASURED named; max 1 with the same single unbuilt survivor -> `ok every mutant in the diff was caught (or within --max-missed)`. CI defaults MUTANTS_MAX_MISSED to 0 (sections.yml:3172), so an operator has to raise the variable; and the committed self-test set (26 mutants) has no row for it, which is why it survived. Fix: run unbuilt_split before the threshold test and defer or RED the unbuilt set irrespective of max."
+          },
+          "locations": [
+            {
+              "physicalLocation": {
+                "artifactLocation": {
+                  "uri": "scripts/mutants_diff_gate.sh"
+                },
+                "region": {
+                  "startLine": 115,
+                  "endLine": 134
+                }
+              }
+            }
+          ],
+          "properties": {
+            "grounding": "measured",
+            "command": [
+              "scripts/mutants_diff_gate.sh",
+              "--max-missed",
+              "1",
+              "(stub cargo: /mnt/nvme-raid0/tmp/ec-review-target/loop/cargo)"
+            ],
+            "exit_code": 0,
+            "stdout_sha256": "d1c57976ec4ce3b2f75f32584e0635692119a0d72609640930c456df7e4aa2a2",
+            "failure_scenario": "An operator sets MUTANTS_MAX_MISSED=1 to land a diff with one legitimate surviving CPU mutant; a cfg(feature=cuda) survivor in the same diff is then absorbed into the tolerance and reported as measured-and-tolerated, never deferred to mutants-cuda."
+          }
+        },
+        {
+          "ruleId": "mutation.vacuous-skip",
+          "level": "note",
+          "message": {
+            "text": "F5. prefill_refusal_tests_4621 (prefill.rs:1626-1660) and dequant_dispatch_tests_4621 (gdn_prefill_ops.rs:594-610) return early when no CUDA device exists (`let Some(mut exec) = executor() else { return }`). On the CPU workspace-test job they pass without asserting anything (L25: a skip is not_measured, never pass). The comment states the intent: under the GPU mutants-cuda shard a skip leaves the mutant alive and the shard RED. Acceptable as designed now that F1 is fixed in this head: the gate reads the shard result, so a skip leaves the mutant alive and the shard RED."
+          },
+          "locations": [
+            {
+              "physicalLocation": {
+                "artifactLocation": {
+                  "uri": "crates/aprender-serve/src/cuda/executor/layers/prefill.rs"
+                },
+                "region": {
+                  "startLine": 1626,
+                  "endLine": 1660
+                }
+              }
+            }
+          ],
+          "properties": {
+            "grounding": "asserted",
+            "precision_class": "advisory",
+            "failure_scenario": "workspace-test reports these tests as passed on a runner with no GPU although no assertion ran; the tests count toward the lib-test total without exercising a refusal."
+          }
+        }
+      ],
+      "invocations": [
+        {
+          "executionSuccessful": true,
+          "toolExecutionNotifications": [
+            {
+              "level": "note",
+              "message": {
+                "text": "Guard self-tests ran on head 98d7ffb1c7 (host lambda, bash and python only, no cargo test): mutants_diff_gate.sh --self-test PASS, 58 ok rows, 27 killed mutants (defer-dir-not-made is new); check_ci_gate_mutants_cuda_rule.sh PASS (14 rows) and --self-test PASS (5 weaker rules killed); fat_driver.py self-test 53/53. Extra mutants of the F1 fix (drop the outputs key, emit a constant empty object) re-run against the unchanged fat_driver self-test, both killed; the reverted (old) driver killed by rule-script row 14. Total 35 attempted, 35 killed. ci_gpu_touched_test.sh row 8 (cuda-unit 15-minute cap, timeout-minutes 35) fails at base too and is pre-existing. Rust in-diff cargo-mutants was not run: no GPU or ptxas here and no cargo test on lambda; that half belongs to the mutants-cuda shard."
+              }
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "tool": {
+        "driver": {
+          "name": "antigravity",
+          "informationUri": "internal:agy",
+          "rules": [
+            {
+              "id": "antigravity.unreachable"
+            }
+          ]
+        }
+      },
+      "results": [],
+      "invocations": [
+        {
+          "executionSuccessful": false,
+          "toolExecutionNotifications": [
+            {
+              "level": "error",
+              "message": {
+                "text": "agy 1.2.13 was run twice in a disposable tree made from the tracked files of head 98d7ffb1c7 (git ls-files piped to tar; no .git, 26585 files, 0 tracked symlinks) and both attempts failed before any review: gemini-3.1-pro-high rc 3 after 56 s (RESOURCE_EXHAUSTED, code 429, Individual quota reached, resets in 8h16m13s), then gemini-3.8-flash-high rc 3 immediately (same 429, resets in 8h16m0s). No structured_output, so the arm is unreachable, never no-findings. The previous round (head fc88268134) had this arm consulted with findings [] by the same tree method; that run does not cover this delta. The operator quorum rule for exhausted agy quota (use Claude Code itself with a model other than the author) is left to the coordinator: it would be a same-family lane for this reviewer and was not started here."
+              },
+              "properties": {
+                "grounding": "measured",
+                "precision_class": "advisory",
+                "command": [
+                  "agy",
+                  "-p",
+                  "<prompt file>",
+                  "--output-format",
+                  "json",
+                  "--json-schema",
+                  "<schema file>",
+                  "--model",
+                  "gemini-3.1-pro-high"
+                ],
+                "exit_code": 3,
+                "stdout_sha256": "c6a5e255450a458f23b3c96731291e75538b42bc2751e1a8e064da34a0e08604",
+                "failure_scenario": "N/A - the cross-vendor advisory arm did not run at this head; the verdict is DEGRADED for that reason."
+              }
+            }
+          ]
+        }
+      ]
+    }
+  ]
+}

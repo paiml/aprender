@@ -40,7 +40,8 @@ use trueno_gpu::kernels::gdn::{
     FLASH_HEAD_DIM,
 };
 use trueno_gpu::kernels::{
-    Q4KDequantKernel, Q5KDequantKernel, Q6KDequantKernel, Q8_0DequantKernel,
+    F16DequantKernel, Iq4XsDequantKernel, Q4KDequantKernel, Q5KDequantKernel, Q6KDequantKernel,
+    Q8_0DequantKernel,
 };
 
 impl CudaExecutor {
@@ -135,6 +136,20 @@ impl CudaExecutor {
                 let key = format!("qp_q8_0_dequant_{k}_{n}");
                 self.qp_prepare(&key, &kern)?;
                 (key, "q8_0_dequant_to_f32", (n, k.div_ceil(32)))
+            },
+            // #3715: `Qwen3.5-4B-UD-Q4_K_XL` (F16 ssm_alpha/beta, IQ4_XS FFN) and
+            // `Qwen3.5-0.8B-IQ4_XS` refused the CUDA prefill here and ran on the CPU.
+            WeightQuantType::F16 => {
+                let kern = F16DequantKernel::new(k, n);
+                let key = format!("qp_f16_dequant_{k}_{n}");
+                self.qp_prepare(&key, &kern)?;
+                (key, "f16_dequant_to_f32", (n, k.div_ceil(32)))
+            },
+            WeightQuantType::IQ4XS => {
+                let kern = Iq4XsDequantKernel::new(k, n);
+                let key = format!("qp_iq4xs_dequant_{k}_{n}");
+                self.qp_prepare(&key, &kern)?;
+                (key, "iq4_xs_dequant_to_f32", (n, k.div_ceil(256)))
             },
             other => {
                 return Err(GpuError::InvalidParameter(format!(
@@ -720,4 +735,49 @@ thread_local! {
     /// Tests pin the prefill GEMM; production reads `APR_QWEN35_PREFILL_GEMM`.
     pub(crate) static QWEN35_PREFILL_GEMM_OVERRIDE: std::cell::Cell<Option<Qwen35PrefillGemm>> =
         const { std::cell::Cell::new(None) };
+/// #3715 / #4621: model-free device tests for the dequant dispatch. The mutants-cuda
+/// shard runs on a GPU runner with no model files, so the kill tests for
+/// `qwen35_dequant_f32` cannot live only in the Qwen3.5-0.8B parity suite.
+#[cfg(test)]
+#[allow(clippy::expect_used)]
+mod dequant_dispatch_tests_4621 {
+    use super::*;
+
+    /// No device → the test cannot run; under mutation a skip survives and the
+    /// shard is RED, so it never passes vacuously there.
+    fn executor() -> Option<CudaExecutor> {
+        CudaExecutor::new(0).ok()
+    }
+
+    #[test]
+    fn f32_weight_is_returned_as_it_is() {
+        let Some(mut exec) = executor() else { return };
+        let w = GpuBuffer::from_host(&exec.context, &[1.0f32; 64]).expect("w");
+        let p = exec
+            .qwen35_dequant_f32(WeightQuantType::F32, w.as_ptr(), 2, 32)
+            .expect("f32 is a pass-through");
+        assert_eq!(p, w.as_ptr(), "an f32 weight needs no scratch copy");
+    }
+
+    #[test]
+    fn f16_weight_dequantizes_on_the_device() {
+        let Some(mut exec) = executor() else { return };
+        let (n, k) = (2u32, 64u32);
+        // Exactly representable in f16, distinct per element, signed.
+        let want: Vec<f32> = (0..n * k).map(|i| i as f32 * 0.5 - 16.0).collect();
+        let bytes: Vec<u8> = want
+            .iter()
+            .flat_map(|&v| half::f16::from_f32(v).to_le_bytes())
+            .collect();
+        let w = GpuBuffer::from_host(&exec.context, &bytes).expect("w");
+        let p = exec
+            .qwen35_dequant_f32(WeightQuantType::F16, w.as_ptr(), n, k)
+            .expect("F16 has a dequant kernel (#3715)");
+        exec.stream.synchronize().expect("sync");
+        let scratch = exec.dequant_scratch.as_ref().expect("scratch");
+        assert_eq!(p, scratch.as_ptr(), "the result is the dequant scratch");
+        let mut got = vec![0.0f32; scratch.len()];
+        scratch.copy_to_host(&mut got).expect("readback");
+        assert_eq!(&got[..want.len()], &want[..]);
+    }
 }
