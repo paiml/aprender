@@ -293,6 +293,15 @@ pub mod fixtures;
 /// Per spec §3: Format Support Matrix - auto-detect from magic bytes.
 /// APR is first-class, GGUF and SafeTensors are backwards-compatible.
 pub mod format;
+/// #4369: this crate's `#[contract]` binding registry must load. A producer
+/// that falls back to `CONTRACT_BINDING_SOURCE=none` turns off every binding
+/// check in the crate without a sound -- nine did, for months.
+#[cfg(test)]
+#[test]
+fn contract_binding_registry_is_loaded() {
+    assert_eq!(option_env!("CONTRACT_BINDING_SOURCE"), Some("binding.yaml"));
+}
+
 #[cfg(test)]
 mod fusion_call_site_guard_3985;
 pub mod generate;

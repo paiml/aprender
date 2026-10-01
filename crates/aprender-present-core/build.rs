@@ -116,18 +116,24 @@ fn emit_pre_post_lists(
 }
 
 fn emit_presentar_binding_env() {
-    let binding_path = Path::new(env!("CARGO_MANIFEST_DIR"))
-        .join("..")
-        .join("..")
-        .join("..")
-        .join("..")
-        .join("..")
-        .join("provable-contracts")
-        .join("contracts")
-        .join("presentar")
-        .join("binding.yaml");
+    let binding_path =
+        Path::new(env!("CARGO_MANIFEST_DIR")).join("../../contracts/presentar/binding.yaml");
 
     println!("cargo:rerun-if-changed={}", binding_path.display());
+
+    // #4369: in the monorepo the registry is in-tree, so a missing one is a
+    // defect, never a crates.io build. Only a packaged crate (no workspace
+    // `contracts/` beside it) may fall back to CONTRACT_BINDING_SOURCE=none.
+    if !binding_path.exists()
+        && Path::new(env!("CARGO_MANIFEST_DIR"))
+            .join("../../contracts")
+            .is_dir()
+    {
+        panic!(
+            "contract binding registry missing: {} -- restore it or fix the path (#4369)",
+            binding_path.display()
+        );
+    }
 
     if !binding_path.exists() {
         println!(

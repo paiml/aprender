@@ -35,7 +35,7 @@ use trueno::Vector as TruenoVector;
 ///
 /// # Returns
 /// Normalized output [seq_len * hidden_dim]
-#[contract("forward-pass-v1", equation = "rms_norm")]
+#[contract("rmsnorm-kernel-v1", equation = "rmsnorm")]
 pub fn rms_norm(input: &[f32], weight: &[f32], eps: f32) -> Vec<f32> {
     contract_pre_rmsnorm!(input);
     let hidden_dim = weight.len();
@@ -125,7 +125,7 @@ pub fn rms_norm_into(input: &[f32], weight: &[f32], eps: f32, output: &mut [f32]
 /// Applying it to LLaMA/Qwen/Mistral (whose weights are centered at 1) would add a
 /// spurious +1 and produce wrong output — hence it is a separate function gated at
 /// the call site, never a silent default.
-#[contract("forward-pass-v1", equation = "rms_norm")]
+#[contract("rmsnorm-kernel-v1", equation = "rmsnorm")]
 pub fn rms_norm_unit_offset(input: &[f32], weight: &[f32], eps: f32) -> Vec<f32> {
     contract_pre_rmsnorm!(input);
     let hidden_dim = weight.len();
@@ -344,7 +344,7 @@ pub fn argmax(logits: &[f32]) -> u32 {
 ///
 /// # Arguments
 /// * `logits` - Input logits (modified in-place to probabilities)
-#[contract("sampling-v1", equation = "softmax_inplace")]
+#[contract("softmax-kernel-v1", equation = "softmax")]
 pub fn softmax(logits: &mut [f32]) {
     contract_pre_softmax!(logits);
     // Find max for numerical stability
