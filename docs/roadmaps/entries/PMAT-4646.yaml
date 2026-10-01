@@ -1,0 +1,22 @@
+- id: PMAT-4646
+  github_issue: 4646
+  item_type: task
+  title: 'MUT-RATCHET: mutants gate -> ratchet mode (debt file shrink-only), operator C187/C188'
+  status: inprogress
+  priority: critical
+  assigned_to: aprender-ca
+  created: 2026-10-01T06:50:00Z
+  updated: 2026-10-01T07:20:00Z
+  spec: null
+  acceptance_criteria:
+  - ci/mutants-debt.tsv lists every known survivor of #4587 run 36725778557 and #4588 run 36703131059 as file, mutant, outcome, sha, run id (5 tab fields; outcome MissedMutant or Timeout)
+  - scripts/check_mutants_debt_ratchet.sh is RED on a grown, swapped, malformed, duplicated or missing debt file and on an unresolvable merge base, and GREEN on a shrink or unchanged file; its --self-test passes 10/10
+  - The ci gate job reports the mutants and survivor-table results but does not fail on them; every other required section (WT, guard-tree, guard-cargo, sov.gate, determinism) still fails the gate exactly as before
+  - No ruleset change, no timeout raised, no other gate relaxed; the diff is ci.yml (one marked block), the debt file, the guard script and this roadmap entry only
+  - A RESTORE PR (#4648) deletes the ratchet block after v0.70.0 is on crates.io
+  phases: []
+  subtasks: []
+  estimated_effort: null
+  labels:
+  - kind:code
+  notes: 'Operator C187(a)/C188(a), 2026-10-01: ratchet, not a waiver.'
