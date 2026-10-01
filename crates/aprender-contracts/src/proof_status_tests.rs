@@ -997,7 +997,7 @@ fn lean_scan_in_tree_is_primary_and_self_sufficient() {
                 stack.push(path);
             } else if path.extension().is_some_and(|e| e == "lean") {
                 if let Ok(content) = std::fs::read_to_string(&path) {
-                    if !lean_has_sorry(&content) {
+                    if !guarded(move || lean_has_sorry(&content)) {
                         sorry_free += 1;
                     }
                 }
@@ -1381,7 +1381,7 @@ fn lean_sorry_token_case_table() {
         ("def s := \"unterminated", true, "EOF inside a string"),
     ];
     for (src, want, why) in rows {
-        assert_eq!(lean_has_sorry(src), *want, "{why}: {src:?}");
+        assert_eq!(guarded(|| lean_has_sorry(src)), *want, "{why}: {src:?}");
     }
 }
 
@@ -1402,7 +1402,7 @@ fn lean_scan_grounds_doc_comment_sorry_and_domain_file_form() {
             "{rel}: the byte-level trap this test pins"
         );
         assert!(
-            !lean_has_sorry(&content),
+            !guarded(move || lean_has_sorry(&content)),
             "{rel}: its only sorry is commentary"
         );
     }
@@ -1425,7 +1425,8 @@ fn lean_scan_grounds_doc_comment_sorry_and_domain_file_form() {
     )
     .expect("write");
 
-    let names = scan_theorem_base(base.path().to_str().expect("utf8 path"));
+    let base_str = base.path().to_str().expect("utf8 path").to_string();
+    let names = guarded(move || scan_theorem_base(&base_str));
     assert!(
         names.contains("Theorems.GgufExportSymmetry.Roundtrip"),
         "domain.file form: {names:?}"
@@ -1453,4 +1454,90 @@ fn step_block_comment_opens_a_nested_comment_two_bytes_on() {
     assert_eq!(super::step_block_comment(b"xxx/-", 3, 1), (5, 2));
     assert_eq!(super::step_block_comment(b"xxx-/", 3, 2), (5, 1));
     assert_eq!(super::step_block_comment(b"xxxab", 3, 1), (4, 1));
+}
+
+/// Run `f` on a helper thread with a 60 s deadline. A mutated cursor that never advances would spin
+/// forever; this PANICS (failing only the calling test) instead of hanging the lib binary.
+fn guarded<T: Send + 'static>(f: impl FnOnce() -> T + Send + 'static) -> T {
+    let (tx, rx) = std::sync::mpsc::channel();
+    std::thread::spawn(move || {
+        let _ = tx.send(f());
+    });
+    rx.recv_timeout(std::time::Duration::from_secs(60))
+        .expect("the Lean scan did not finish within 60s: its cursor is not advancing")
+}
+
+/// Collapse a `LeanScan` to (kind, resume byte) so tests can pin the exact cursor (#4587).
+fn show(s: super::LeanScan) -> (u8, usize) {
+    match s {
+        super::LeanScan::Next(j) => (0, j),
+        super::LeanScan::OpenBlock(j) => (1, j),
+        super::LeanScan::Sorry => (2, 0),
+        super::LeanScan::EndsInLineComment => (3, 0),
+    }
+}
+
+/// A `--` comment resumes one byte past its newline; one with no newline ends the scan.
+#[test]
+fn scan_code_at_line_comment_resumes_after_the_newline() {
+    assert_eq!(show(super::scan_code_at(b"ab--c\nd", 2)), (0, 6));
+    assert_eq!(show(super::scan_code_at(b"ab--c", 2)), (3, 0));
+    assert_eq!(show(super::scan_code_at(b"a/-b", 1)), (1, 3));
+}
+
+/// `r"` opens a raw string only when no identifier byte precedes the `r`; a `'` likewise.
+#[test]
+fn scan_code_at_raw_string_and_char_need_a_non_ident_prefix() {
+    assert_eq!(show(super::scan_code_at(b" r\"x\"", 1)), (0, 5));
+    assert_eq!(show(super::scan_code_at(b" r\"sorry\"", 1)), (2, 0));
+    assert_eq!(show(super::scan_code_at(b"xr\"a\"", 1)), (0, 2));
+    assert_eq!(show(super::scan_code_at(b" r#\"x\"#", 1)), (0, 7));
+    assert_eq!(show(super::scan_code_at(b"r\"x\"", 0)), (0, 4));
+    assert_eq!(show(super::scan_code_at(b"a'b", 1)), (0, 2));
+    assert_eq!(show(super::scan_code_at(b" 'a'", 1)), (0, 4));
+    assert_eq!(show(super::scan_code_at(b" sorry", 1)), (2, 0));
+    assert_eq!(show(super::scan_code_at(b"abc", 1)), (0, 2));
+}
+
+/// Raw strings: the cursor lands one past the closing `"` + hashes; a body `sorry` counts.
+#[test]
+fn scan_raw_string_pins_open_close_and_resume() {
+    assert_eq!(show(super::scan_raw_string(b"r\"ab\"", 0)), (0, 5));
+    assert_eq!(show(super::scan_raw_string(b"r##\"a\"#b\"##", 0)), (0, 11));
+    assert_eq!(show(super::scan_raw_string(b" r#\"x\"#", 1)), (0, 7));
+    assert_eq!(show(super::scan_raw_string(b"  r#x", 2)), (0, 3));
+    assert_eq!(show(super::scan_raw_string(b"r#x", 0)), (0, 1));
+    assert_eq!(show(super::scan_raw_string(b"r\"sorry\"", 0)), (2, 0));
+    assert_eq!(show(super::scan_raw_string(b"r\"a\"sorry", 0)), (0, 4));
+    assert_eq!(show(super::scan_raw_string(b"r\"abc", 0)), (2, 0));
+    assert_eq!(show(super::scan_raw_string(b"r\"ab\"x\"", 0)), (0, 5));
+}
+
+/// Strings: `\` skips two bytes, the cursor lands one past the closing quote.
+#[test]
+fn scan_string_pins_escape_and_resume() {
+    assert_eq!(show(super::scan_string(b"\"ab\"", 0)), (0, 4));
+    assert_eq!(show(super::scan_string(b" \"a\\\"b\"c", 1)), (0, 7));
+    assert_eq!(show(super::scan_string(b"\"a\\\"", 0)), (2, 0));
+    assert_eq!(show(super::scan_string(b"\"sorry\"", 0)), (2, 0));
+    assert_eq!(show(super::scan_string(b"\"a\"sorry", 0)), (0, 3));
+    assert_eq!(show(super::scan_string(b"\"abc", 0)), (2, 0));
+    assert_eq!(show(super::scan_string(b"x\"a\\nb\"", 1)), (0, 7));
+}
+
+/// A char literal is skipped to just past its closing `'`; a non-literal advances one byte.
+#[test]
+fn skip_char_literal_pins_each_branch() {
+    assert_eq!(super::skip_char_literal(b" 'a' x", 1), 4);
+    assert_eq!(super::skip_char_literal(b" '\\n' x", 1), 5);
+    assert_eq!(super::skip_char_literal(b" '\\'' x", 1), 5);
+    assert_eq!(super::skip_char_literal(b" 'a", 1), 2);
+    assert_eq!(super::skip_char_literal(b"'a' ", 0), 3);
+    assert_eq!(super::skip_char_literal(b"'\\n'", 0), 4);
+    // the closing quote must lie within i+7: 'é' (2 bytes) fits, a far quote does not
+    assert_eq!(super::skip_char_literal("'é'".as_bytes(), 0), 4);
+    assert_eq!(super::skip_char_literal(b"'abcdefgh'", 0), 1);
+    assert_eq!(super::skip_char_literal(b"'abcde'", 0), 7);
+    assert_eq!(super::skip_char_literal(b"'a' 'b'", 0), 3);
+    assert_eq!(super::skip_char_literal(b"'", 0), 1);
 }

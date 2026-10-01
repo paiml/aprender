@@ -65,7 +65,10 @@ fn a_runaway_statement_is_unrestated() {
 #[test]
 fn the_preamble_is_the_scope_still_open_in_frames() {
     let src = "import X\nopen A\nuniverse u\nnamespace N\nopen B\nsection S\nopen C\nvariable (x : Nat)\n  (y : Nat)\nend S\nnoncomputable section\nset_option maxRecDepth 4000\nopen D in\ntheorem t : True := trivial\n";
-    let scope = preamble(&lex::blank(src), 14);
+    let scope = bounded({
+        let src = src.to_string();
+        move || preamble(&lex::blank(&src), 14)
+    });
     assert_eq!(scope.top, vec!["open A".to_string(), "universe u".into()]);
     let frames: Vec<(&str, &str, Vec<String>)> = scope
         .frames
@@ -115,7 +118,7 @@ fn fixture() -> tempfile::TempDir {
 #[test]
 fn render_restates_each_bound_root_under_pvl_challenge() {
     let d = fixture();
-    let r = render(&d.path().join("lean"), &d.path().join("contracts")).expect("render");
+    let r = render_b(&d.path().join("lean"), &d.path().join("contracts")).expect("render");
     assert!(r.unrestated.is_empty(), "{:?}", r.unrestated);
     let text = &r.files["Challenge/gelu-v1.lean"];
     assert!(
@@ -143,7 +146,7 @@ fn render_restates_each_bound_root_under_pvl_challenge() {
 fn diff_names_edits_extras_and_missing_and_write_clears_them() {
     let d = fixture();
     let lean = d.path().join("lean");
-    let r = render(&lean, &d.path().join("contracts")).expect("render");
+    let r = render_b(&lean, &d.path().join("contracts")).expect("render");
     assert_eq!(
         diff(&lean, &r),
         vec!["missing  Challenge/gelu-v1.lean".to_string()]
@@ -178,7 +181,7 @@ fn a_root_whose_statement_cannot_be_lifted_is_unrestated_not_dropped() {
          end ProvableContracts.Gelu\n",
     )
     .expect("write");
-    let r = render(&d.path().join("lean"), &d.path().join("contracts")).expect("render");
+    let r = render_b(&d.path().join("lean"), &d.path().join("contracts")).expect("render");
     assert!(r.files.is_empty());
     assert_eq!(r.unrestated.len(), 1);
     assert_eq!(r.unrestated[0].1, "ProvableContracts.Gelu.gelu_bound");
@@ -209,7 +212,7 @@ fn a_theorem_declared_in_two_modules_is_restated_once() {
         "equations:\n  e:\n    lean_theorem: Theorems.Gelu\n",
     )
     .expect("write contract");
-    let r = render(&d.path().join("lean"), &d.path().join("contracts")).expect("render");
+    let r = render_b(&d.path().join("lean"), &d.path().join("contracts")).expect("render");
     let text = &r.files["Challenge/gelu-v1.lean"];
     assert_eq!(
         text.matches("theorem _root_.PvlChallenge.ProvableContracts.Gelu.gelu_bound")
@@ -230,7 +233,7 @@ fn a_theorem_bound_by_two_contracts_is_restated_once_across_files() {
         "equations:\n  e:\n    lean_theorem: ProvableContracts.Gelu.gelu_bound\n",
     )
     .expect("write second contract");
-    let r = render(&d.path().join("lean"), &d.path().join("contracts")).expect("render");
+    let r = render_b(&d.path().join("lean"), &d.path().join("contracts")).expect("render");
     let decl = "theorem _root_.PvlChallenge.ProvableContracts.Gelu.gelu_bound";
     let n: usize = r.files.values().map(|t| t.matches(decl).count()).sum();
     assert_eq!(n, 1, "{:#?}", r.files);
@@ -253,11 +256,11 @@ fn an_orphaned_root_is_not_restated() {
     let d = fixture();
     let root = d.path().join("lean/ProvableContracts.lean");
     std::fs::write(&root, "-- nothing imported\n").expect("write");
-    let r = render(&d.path().join("lean"), &d.path().join("contracts")).expect("render");
+    let r = render_b(&d.path().join("lean"), &d.path().join("contracts")).expect("render");
     assert!(r.files.is_empty(), "{:?}", r.files.keys());
     assert!(r.unrestated.is_empty(), "{:?}", r.unrestated);
     std::fs::write(&root, "import ProvableContracts.Theorems.Gelu.Bound\n").expect("write");
-    let r = render(&d.path().join("lean"), &d.path().join("contracts")).expect("render");
+    let r = render_b(&d.path().join("lean"), &d.path().join("contracts")).expect("render");
     assert!(r.files.contains_key("Challenge/gelu-v1.lean"));
 }
 
@@ -267,16 +270,137 @@ fn find_word_needs_a_boundary_on_both_sides_and_resumes_past_a_miss() {
     // These two come first, so a scan that resumes at the wrong offset fails fast here rather than
     // looping forever on a rejected hit (at byte 0 below, or a resume that lands back on itself).
     // The first hit is rejected at byte 1, word len 2, so `at - len` = 1 - 2 underflows.
-    assert_eq!(find_word("xab ab", "ab"), Some(4));
+    assert_eq!(bounded(|| find_word("xab ab", "ab")), Some(4));
     // The first hit is rejected at byte 3, word len 3, so `at * len` = 9 resumes past the real hit at 7.
-    assert_eq!(find_word("xxxabc abc", "abc"), Some(7));
-    assert_eq!(find_word("xfoo bar", "foo"), None, "ident char before");
-    assert_eq!(find_word("foox bar", "foo"), None, "ident char after");
+    assert_eq!(bounded(|| find_word("xxxabc abc", "abc")), Some(7));
+    assert_eq!(
+        bounded(|| find_word("xfoo bar", "foo")),
+        None,
+        "ident char before"
+    );
+    assert_eq!(
+        bounded(|| find_word("foox bar", "foo")),
+        None,
+        "ident char after"
+    );
 }
 
 /// An indented, non-blank line continues the command above it (#4587).
 #[test]
 fn preamble_joins_an_indented_continuation_line() {
-    let scope = preamble("open Foo\n  Bar\ntheorem t : True := trivial\n", 3);
+    let scope = bounded(|| preamble("open Foo\n  Bar\ntheorem t : True := trivial\n", 3));
     assert_eq!(scope.top, vec!["open Foo Bar".to_string()]);
+}
+
+/// Run `f` on a thread. A scan that spins (a mutated cursor that never advances) must fail its test, not hang the
+/// run: past the deadline this test panics and the spinning thread is left detached, so the run ends and the
+/// mutant is caught, not timed out (#4587). The deadline is far above a real scan (microseconds) so a loaded
+/// runner cannot trip it, and far below the mutants timeout (300s).
+fn bounded<T: Send + 'static>(f: impl FnOnce() -> T + Send + 'static) -> T {
+    let (tx, rx) = std::sync::mpsc::channel();
+    std::thread::spawn(move || {
+        let _ = tx.send(f());
+    });
+    match rx.recv_timeout(std::time::Duration::from_secs(60)) {
+        Ok(v) => v,
+        Err(std::sync::mpsc::RecvTimeoutError::Timeout) => {
+            panic!("bounded: the scan did not finish in 60s — it is spinning")
+        }
+        Err(std::sync::mpsc::RecvTimeoutError::Disconnected) => {
+            panic!("bounded: the scan panicked")
+        }
+    }
+}
+
+/// The first hit's boundary is judged at its real byte offset: `bar` sits at 4, not at `from + off` = 0 * 4 (#4587).
+#[test]
+fn find_word_judges_the_hit_at_its_real_offset() {
+    assert_eq!(bounded(|| find_word("foo bar", "bar")), Some(4));
+}
+
+/// An indented first line is still the command; its own continuation scan starts on the NEXT line (#4587).
+#[test]
+fn preamble_scans_for_continuations_from_the_line_after_the_command() {
+    let scope = bounded(|| preamble("  open A\ntheorem t : True := trivial\n", 2));
+    assert_eq!(scope.top, vec!["open A".to_string()]);
+}
+
+/// A command with a continuation consumes exactly its own lines; the scan then resumes on the line after (#4587).
+#[test]
+fn preamble_skips_exactly_the_continuation_lines_it_joined() {
+    let scope = bounded(|| preamble("open A\n  B\n  C\nopen D\ntheorem t : True := trivial\n", 5));
+    assert_eq!(
+        scope.top,
+        vec!["open A B C".to_string(), "open D".to_string()]
+    );
+}
+
+/// A line that is no command moves the scan on by one; the next command is still found (#4587).
+#[test]
+fn preamble_steps_past_a_non_command_line() {
+    let scope = bounded(|| preamble("import X\n-- c\nopen A\ntheorem t : True := trivial\n", 4));
+    assert_eq!(scope.top, vec!["open A".to_string()]);
+}
+
+/// An equation arm is a `|` opening its line; a `=>` that only sits inside brackets is no arm (#4587).
+#[test]
+fn a_bar_line_whose_arrow_is_inside_brackets_is_not_an_arm() {
+    assert_eq!(
+        st(
+            "theorem r (u : ℝ) :\n    |f (fun x => x) u| ≤ u := by\n  simp\n",
+            1,
+            "theorem"
+        ),
+        Some((String::new(), "(u : ℝ) : |f (fun x => x) u| ≤ u".into()))
+    );
+}
+
+/// Only a `|` ends the statement at an arm: an indented line carrying a top-level `=>` does not (#4587).
+#[test]
+fn an_indented_line_with_an_arrow_does_not_end_the_statement() {
+    assert_eq!(
+        st(
+            "theorem f : Nat → Nat\n  fun x => x := by\n  simp\n",
+            1,
+            "theorem"
+        ),
+        Some((String::new(), ": Nat → Nat fun x => x".into()))
+    );
+}
+
+/// A `|` in the middle of a line is not an arm opener, even when an arrow follows it (#4587).
+#[test]
+fn a_bar_mid_line_is_not_an_arm_opener() {
+    assert_eq!(
+        st("theorem f : P | Q => R := by\n  simp\n", 1, "theorem"),
+        Some((String::new(), ": P | Q => R".into()))
+    );
+}
+
+/// A difference is reported at the FIRST line that differs, not the first that matches (#4587).
+#[test]
+fn diff_reports_the_first_differing_line() {
+    let d = tempfile::tempdir().expect("tempdir");
+    let lean = d.path();
+    std::fs::create_dir_all(lean.join("Challenge")).expect("mkdir");
+    std::fs::write(lean.join("Challenge/a.lean"), "one\nX\nthree\n").expect("write");
+    let mut files = BTreeMap::new();
+    files.insert(
+        "Challenge/a.lean".to_string(),
+        "one\ntwo\nthree\n".to_string(),
+    );
+    let r = Rendered {
+        files,
+        unrestated: Vec::new(),
+    };
+    assert_eq!(
+        diff(lean, &r),
+        vec!["differs  Challenge/a.lean:2: want \"two\", got \"X\"".to_string()]
+    );
+}
+
+/// `render` under [`bounded`], so a spinning scan inside it ends the run instead of hanging it (#4587).
+fn render_b(lean: &Path, contracts: &Path) -> Result<Rendered, String> {
+    let (lean, contracts) = (lean.to_path_buf(), contracts.to_path_buf());
+    bounded(move || render(&lean, &contracts))
 }

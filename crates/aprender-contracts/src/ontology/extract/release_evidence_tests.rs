@@ -700,3 +700,451 @@ fn the_dominating_class_is_the_largest_total_and_a_tie_keeps_the_earlier() {
         "a larger class displaces the first; a tie keeps the one already chosen"
     );
 }
+
+// ---- #4587 k4: kill tests for the class_of / emit_derived / count_class / context_met / emit_row /
+// emit_sampling / sampling_check / emit_effects survivors ----
+
+fn spec_of(kind: CellKind, id: &str) -> CellSpec {
+    CellSpec {
+        id: id.into(),
+        host: "h".into(),
+        command: "gen".into(),
+        generates: true,
+        model_sha256: None,
+        model_file: None,
+        args: Vec::new(),
+        shape: None,
+        thinking: None,
+        rung: None,
+        rung_tokens: None,
+        kind,
+    }
+}
+
+/// The one `CellRow` of a v2 receipt from `apr_sha` whose single row is `{row_body}`.
+fn parsed_row(apr_sha: &str, row_body: &str) -> (Receipt, CellRow) {
+    let text = format!(
+        r#"{{"schema":"apr-model-ladder-receipt/v2","host":"h","version":"0.69.1","sha":"x","apr_sha":"{apr_sha}","inventory":[],"cells":[{{{row_body}}}],"rungs":[]}}"#
+    );
+    let r = receipts::parse("dir/h.json", &text).expect("parses");
+    let c = r.cells[0].clone();
+    (r, c)
+}
+
+fn lit_of(g: &Graph, s: &str, p: &str) -> Vec<String> {
+    g.objects(s, &rel(p))
+        .iter()
+        .map(|t| t.as_literal().map(|(v, _)| v.to_string()).expect("literal"))
+        .collect()
+}
+
+fn model_info(mem: Option<(u64, u64, u64)>) -> ModelInfo {
+    ModelInfo {
+        file: "m.gguf".into(),
+        arch: None,
+        quant: None,
+        context_length: None,
+        thinking_modes: None,
+        thinking_markers: None,
+        owes_long_echo: None,
+        owes_long: false,
+        mem,
+        kv_dtype: None,
+    }
+}
+
+#[test]
+fn class_of_grades_a_non_generating_matrix_cell_as_a_model_cell_and_a_misfit_as_a_refusal() {
+    let mut s = spec_of(CellKind::Matrix, "a");
+    s.generates = false;
+    assert_eq!(class_of(&s, None, None), "ModelCell");
+    s.generates = true;
+    assert_eq!(class_of(&s, None, None), "Cell");
+    s.rung_tokens = Some(1000);
+    let m = model_info(Some((100, 1, 0)));
+    assert_eq!(class_of(&s, Some(&m), Some(500)), "RefusalCell");
+    assert_eq!(class_of(&s, Some(&m), Some(5000)), "Cell");
+    assert_eq!(
+        class_of(&spec_of(CellKind::Probe, "p"), None, None),
+        "ProbeCell"
+    );
+    assert_eq!(
+        class_of(&spec_of(CellKind::Base, "b"), None, None),
+        "EffectCell"
+    );
+}
+
+#[test]
+fn count_class_counts_each_class_into_its_own_counter_and_every_cell_into_cells() {
+    let mut st = ReleaseStats::default();
+    count_class(&mut st, "RefusalCell");
+    assert_eq!(
+        (st.cells, st.refusal_cells, st.probe_cells, st.effect_cells),
+        (1, 1, 0, 0)
+    );
+    count_class(&mut st, "ProbeCell");
+    count_class(&mut st, "ProbeCell");
+    assert_eq!(
+        (st.cells, st.refusal_cells, st.probe_cells, st.effect_cells),
+        (3, 1, 2, 0)
+    );
+    count_class(&mut st, "EffectCell");
+    count_class(&mut st, "EffectCell");
+    count_class(&mut st, "EffectCell");
+    count_class(&mut st, "Cell");
+    assert_eq!(
+        (st.cells, st.refusal_cells, st.probe_cells, st.effect_cells),
+        (7, 1, 2, 3)
+    );
+}
+
+#[test]
+fn emit_derived_owes_a_rung_only_on_the_hosts_where_it_fits() {
+    let sha = SHA_A;
+    let decl_small = HostDecl {
+        id: "small".into(),
+        cc: "sm_0".into(),
+    };
+    let decl_big = HostDecl {
+        id: "big".into(),
+        cc: "sm_0".into(),
+    };
+    let s = subject();
+    let view = |d: &'static HostDecl, gpu: u64| HostView {
+        decl: d,
+        node: iri_path("release-host", &["0.69.1", &d.id]),
+        receipts: Vec::new(),
+        kernels: Vec::new(),
+        models: BTreeMap::from([(sha.to_string(), model_info(Some((100, 1, 0))))]),
+        gpu_mem: Some(gpu),
+    };
+    let decl_small: &'static HostDecl = Box::leak(Box::new(decl_small));
+    let decl_big: &'static HostDecl = Box::leak(Box::new(decl_big));
+    let views = [view(decl_small, 500), view(decl_big, 5000)];
+    let cell = |host: &str| {
+        let mut c = spec_of(CellKind::Matrix, &format!("gen/{host}/m.gguf/r"));
+        c.host = host.into();
+        c.model_sha256 = Some(sha.into());
+        c.model_file = Some("m.gguf".into());
+        c.rung = Some("r".into());
+        c.rung_tokens = Some(1000);
+        c
+    };
+    let cells = [cell("small"), cell("big")];
+    let mut g = Graph::new();
+    let mut st = ReleaseStats::default();
+    emit_derived(&mut g, &s, &views, &cells, &mut st);
+    assert_eq!((st.cells, st.refusal_cells), (2, 1));
+    let cov = iri_path("release-coverage", &["0.69.1", "m.gguf", "r"]);
+    let owed: Vec<String> = g
+        .objects(&cov, &rel("owedOn"))
+        .iter()
+        .map(|t| t.as_iri().expect("iri").to_string())
+        .collect();
+    assert_eq!(owed, vec![iri_path("release-host", &["0.69.1", "big"])]);
+}
+
+#[test]
+fn context_met_is_the_prompt_for_a_fixed_rung_and_prompt_plus_budget_for_declared() {
+    let row = |p: Option<u64>, o: Option<u64>| {
+        let mut b = String::from(r#""verdict":"pass","backend":"cuda""#);
+        if let Some(p) = p {
+            b.push_str(&format!(r#","prompt_tokens":{p}"#));
+        }
+        if let Some(o) = o {
+            b.push_str(&format!(r#","max_tokens":{o}"#));
+        }
+        parsed_row(MC, &b).1
+    };
+    let mut fixed = spec_of(CellKind::Matrix, "a");
+    fixed.rung = Some("r".into());
+    fixed.rung_tokens = Some(100);
+    assert!(
+        context_met(&row(Some(100), None), &fixed),
+        "p == t fills a fixed rung"
+    );
+    assert!(context_met(&row(Some(150), Some(0)), &fixed));
+    assert!(
+        !context_met(&row(Some(99), Some(500)), &fixed),
+        "the budget is not counted"
+    );
+    assert!(
+        !context_met(&row(None, Some(500)), &fixed),
+        "an unknown prompt met nothing"
+    );
+    let mut declared = fixed.clone();
+    declared.rung = Some(DECLARED.into());
+    assert!(context_met(&row(Some(60), Some(40)), &declared));
+    assert!(!context_met(&row(Some(60), Some(39)), &declared));
+    assert!(
+        !context_met(&row(Some(200), None), &declared),
+        "no budget → unknown"
+    );
+    assert!(!context_met(&row(None, Some(200)), &declared));
+    let mut none = spec_of(CellKind::Probe, "p");
+    assert!(
+        context_met(&row(None, None), &none),
+        "no rung: nothing to fill"
+    );
+    none.rung = Some("r".into());
+    assert!(
+        !context_met(&row(Some(5), None), &none),
+        "a rung with unknown size met nothing"
+    );
+}
+
+#[test]
+fn emit_row_grades_think_answered_and_f2_from_the_row() {
+    let s = subject();
+    let emit = |apr: &str, body: &str, thinking: Option<&str>| {
+        let (r, c) = parsed_row(apr, &format!(r#""verdict":"Pass","backend":"cuda",{body}"#));
+        let mut sp = spec_of(CellKind::Matrix, "a");
+        sp.thinking = thinking.map(str::to_string);
+        let mut g = Graph::new();
+        let n = emit_row(&mut g, &s, &r, 0, &c, &sp, None);
+        let get = |p: &str| lit_of(&g, &n, p);
+        (
+            get("thinkOk"),
+            get("answered"),
+            get("f2Measured"),
+            get("verdict"),
+        )
+    };
+    let t = |b: bool| vec![b.to_string()];
+    let (think, ans, f2, verdict) = emit(MC, r#""think_closed":true,"answer_chars":3"#, Some("on"));
+    assert_eq!((think, ans, f2), (t(true), t(true), t(false)));
+    assert_eq!(verdict, vec!["pass".to_string()]);
+    let (think, ans, _, _) = emit(MC, r#""answer_chars":0"#, Some("on"));
+    assert_eq!(
+        (think, ans),
+        (t(false), t(false)),
+        "on without a closed block, empty answer"
+    );
+    let (think, _, _, _) = emit(MC, r#""think_closed":false"#, Some("on"));
+    assert_eq!(think, t(false));
+    let (think, _, _, _) = emit(MC, r#""answer_chars":1"#, Some("off"));
+    assert_eq!(think, t(true), "thinking off owes no closed block");
+    let (think, _, _, _) = emit(MC, r#""answer_chars":1"#, None);
+    assert_eq!(think, t(true));
+    let (_, _, f2, _) = emit(MC, r#""f2_source":"fresh""#, None);
+    assert_eq!(f2, t(true));
+    let (_, _, f2, _) = emit(
+        MC,
+        &format!(r#""f2_source":"receipt","f2_receipt_binary_sha":"{MC}""#),
+        None,
+    );
+    assert_eq!(f2, t(true), "a receipt of THIS binary");
+    let (_, _, f2, _) = emit(
+        MC,
+        &format!(r#""f2_source":"receipt","f2_receipt_binary_sha":"{BUMP}""#),
+        None,
+    );
+    assert_eq!(f2, t(false), "a receipt of another binary");
+    let (_, _, f2, _) = emit(MC, r#""f2_source":"receipt""#, None);
+    assert_eq!(f2, t(false), "a receipt naming no binary");
+    let (_, _, f2, _) = emit(
+        MC,
+        &format!(r#""f2_source":"other","f2_receipt_binary_sha":"{MC}""#),
+        None,
+    );
+    assert_eq!(f2, t(false));
+}
+
+#[test]
+fn a_receipt_with_no_apr_sha_and_a_receipt_row_naming_none_is_not_an_f2_measurement() {
+    let s = subject();
+    let text = r#"{"schema":"apr-model-ladder-receipt/v2","host":"h","version":"0.69.1","sha":"x","inventory":[],"cells":[{"verdict":"pass","backend":"cuda","f2_source":"receipt"}],"rungs":[]}"#;
+    let r = receipts::parse("dir/h.json", text).expect("parses");
+    let mut g = Graph::new();
+    let n = emit_row(
+        &mut g,
+        &s,
+        &r,
+        0,
+        &r.cells[0],
+        &spec_of(CellKind::Matrix, "a"),
+        None,
+    );
+    assert_eq!(
+        lit_of(&g, &n, "f2Measured"),
+        vec!["false".to_string()],
+        "None == None is no proof"
+    );
+}
+
+#[test]
+fn emit_row_detail_carries_what_the_row_measured() {
+    let (r, c) = parsed_row(
+        MC,
+        r#""verdict":"pass","backend":"cuda","prompt_tokens":7,"max_tokens":9,"ttft_ms":1.5,"wall_ms":42,"rc":-3,"reason":"why","output_sha256":"ab""#,
+    );
+    let mut g = Graph::new();
+    emit_row_detail(&mut g, "urn:n", &r, &c);
+    let get = |p: &str| lit_of(&g, "urn:n", p);
+    assert_eq!(get("promptTokens"), vec!["7".to_string()]);
+    assert_eq!(get("maxTokens"), vec!["9".to_string()]);
+    assert_eq!(get("wallMs"), vec!["42".to_string()]);
+    assert_eq!(get("rc"), vec!["-3".to_string()]);
+    assert_eq!(get("reason"), vec!["why".to_string()]);
+    assert_eq!(get("aprSha"), vec![MC.to_string()]);
+    assert_eq!(get("receiptFile"), vec!["dir/h.json".to_string()]);
+    assert_eq!(get("ttftMs").len(), 1);
+}
+
+fn sampling_cells(controls: &[&str]) -> Vec<CellSpec> {
+    controls
+        .iter()
+        .map(|c| {
+            let mut s = spec_of(
+                CellKind::Sampling {
+                    control: (*c).to_string(),
+                },
+                &format!("gen/h/m.gguf/{c}"),
+            );
+            s.model_file = Some("m.gguf".into());
+            s
+        })
+        .collect()
+}
+
+fn sampling_lits(cells: &[CellSpec], out: &[(&str, &str)], p: &str) -> (Vec<String>, ReleaseStats) {
+    let mut outputs: BTreeMap<(&str, &str), Option<String>> = BTreeMap::new();
+    for (c, sha) in out {
+        let spec = cells
+            .iter()
+            .find(|s| matches!(&s.kind, CellKind::Sampling { control } if control == c))
+            .expect("spec");
+        outputs.insert(("h", spec.id.as_str()), Some((*sha).to_string()));
+    }
+    let mut g = Graph::new();
+    let mut st = ReleaseStats::default();
+    emit_sampling(&mut g, &subject(), cells, &outputs, &mut st);
+    let n = iri_path("release-sampling", &["0.69.1", "h", "gen", "m.gguf"]);
+    (lit_of(&g, &n, p), st)
+}
+
+fn all<'a>(
+    t0: &'a str,
+    tk: &'a str,
+    a: &'a str,
+    a2: &'a str,
+    b: &'a str,
+) -> [(&'static str, &'a str); 5] {
+    [
+        ("t0", t0),
+        ("topk1", tk),
+        ("seed-a", a),
+        ("seed-a-again", a2),
+        ("seed-b", b),
+    ]
+}
+
+#[test]
+fn emit_sampling_judges_each_control_from_the_output_digests() {
+    let cells = sampling_cells(&["t0", "topk1", "seed-a", "seed-a-again", "seed-b"]);
+    let t = |b: bool| vec![b.to_string()];
+    let ps = [
+        "sampledDiffers",
+        "seedRepeatable",
+        "seedsDiffer",
+        "greedyAgrees",
+    ];
+    let run = |o: [(&str, &str); 5]| -> Vec<Vec<String>> {
+        ps.iter().map(|p| sampling_lits(&cells, &o, p).0).collect()
+    };
+    assert_eq!(
+        run(all("z", "z", "a", "a", "b")),
+        vec![t(true), t(true), t(true), t(true)]
+    );
+    // seed-a differs from greedy, seed-b equals it
+    assert_eq!(run(all("z", "y", "a", "c", "z"))[0], t(true));
+    // seed-a equals greedy, seed-b differs
+    assert_eq!(run(all("z", "y", "z", "c", "b"))[0], t(true));
+    // both equal greedy: sampling changed nothing
+    let none = run(all("z", "y", "z", "c", "z"));
+    assert_eq!(none, vec![t(false), t(false), t(false), t(false)]);
+    let (_, st) = sampling_lits(&cells, &all("z", "z", "a", "a", "b"), "seedsDiffer");
+    assert_eq!(st.sampling_checks, 1);
+    let (u, _) = sampling_lits(&cells, &all("z", "z", "a", "a", "b"), "underivable");
+    assert!(
+        u.is_empty(),
+        "all five controls present: nothing underivable"
+    );
+}
+
+#[test]
+fn emit_sampling_names_a_check_whose_controls_the_command_cannot_express() {
+    let cells = sampling_cells(&["t0", "seed-a"]);
+    let (mut u, st) = sampling_lits(&cells, &[("t0", "z"), ("seed-a", "a")], "underivable");
+    u.sort();
+    assert_eq!(st.sampling_checks, 1);
+    assert_eq!(
+        u,
+        vec![
+            "greedyAgrees: no typed knob for topk1".to_string(),
+            "sampledDiffers: no typed knob for seed-b".to_string(),
+            "seedRepeatable: no typed knob for seed-a-again".to_string(),
+            "seedsDiffer: no typed knob for seed-b".to_string(),
+        ]
+    );
+    let (d, _) = sampling_lits(&cells, &[("t0", "z"), ("seed-a", "a")], "sampledDiffers");
+    assert!(d.is_empty(), "an underivable check carries no verdict");
+}
+
+#[test]
+fn sampling_check_needs_every_control_measured_and_applies_its_own_comparison() {
+    let s = |x: &str| Some(x.to_string());
+    assert!(!sampling_check("seedsDiffer", &[s("a"), None]));
+    assert!(!sampling_check("seedRepeatable", &[None, s("a")]));
+    assert!(sampling_check("sampledDiffers", &[s("z"), s("a"), s("z")]));
+    assert!(sampling_check("sampledDiffers", &[s("z"), s("z"), s("a")]));
+    assert!(!sampling_check("sampledDiffers", &[s("z"), s("z"), s("z")]));
+    assert!(sampling_check("seedRepeatable", &[s("a"), s("a")]));
+    assert!(!sampling_check("seedRepeatable", &[s("a"), s("b")]));
+    assert!(sampling_check("greedyAgrees", &[s("a"), s("a")]));
+    assert!(!sampling_check("greedyAgrees", &[s("a"), s("b")]));
+    assert!(sampling_check("seedsDiffer", &[s("a"), s("b")]));
+    assert!(!sampling_check("seedsDiffer", &[s("a"), s("a")]));
+}
+
+#[test]
+fn emit_effects_observes_a_mode_only_where_the_effect_output_differs_from_its_base() {
+    let eff = |id: &str, host: &str| {
+        let mut c = spec_of(
+            CellKind::Effect {
+                arg: "--mode".into(),
+                level: "on".into(),
+                base: format!("base-{host}"),
+            },
+            id,
+        );
+        c.host = host.into();
+        c
+    };
+    let cells = [eff("e1", "h1"), eff("e2", "h2")];
+    let mut outputs: BTreeMap<(&str, &str), Option<String>> = BTreeMap::new();
+    outputs.insert(("h1", "e1"), Some("x".into()));
+    outputs.insert(("h1", "base-h1"), Some("y".into()));
+    outputs.insert(("h2", "e2"), Some("x".into()));
+    outputs.insert(("h2", "base-h2"), Some("x".into()));
+    let mut g = Graph::new();
+    let mut st = ReleaseStats::default();
+    let s = subject();
+    emit_effects(&mut g, &s, &cells, &outputs, &mut st);
+    assert_eq!(
+        st.mode_effects, 1,
+        "one (command, arg=level) across both hosts"
+    );
+    let n = iri_path("release-effect", &["0.69.1", "gen", "--mode=on"]);
+    assert_eq!(lit_of(&g, &n, "setting"), vec!["--mode=on".to_string()]);
+    let seen: Vec<String> = g
+        .objects(&n, &rel("observedIn"))
+        .iter()
+        .map(|t| t.as_iri().expect("iri").to_string())
+        .collect();
+    assert_eq!(
+        seen,
+        vec![cell_iri(&s, &cells[0])],
+        "only h1's output differs from its base"
+    );
+}

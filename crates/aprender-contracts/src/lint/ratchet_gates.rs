@@ -108,9 +108,13 @@ fn is_ident_char(c: char) -> bool {
 /// deeper module, and a sentence ending in the module name still pairs it.
 #[must_use]
 pub fn mentions_module(text: &str, name: &str) -> bool {
-    let mut from = 0;
-    while let Some(off) = text[from..].find(name) {
-        let start = from + off;
+    // Candidates are the positions of `name`'s first char, so overlapping occurrences are all tried and no
+    // hand-advanced cursor exists that could stop advancing.
+    let head = &name[..name.chars().next().map_or(0, char::len_utf8)];
+    text.match_indices(head).any(|(start, _)| {
+        if !text[start..].starts_with(name) {
+            return false;
+        }
         let end = start + name.len();
         let before_ok = text[..start]
             .chars()
@@ -122,12 +126,8 @@ pub fn mentions_module(text: &str, name: &str) -> bool {
             Some('.') => after.next().is_none_or(|c| !is_ident_char(c)),
             Some(c) => !is_ident_char(c),
         };
-        if before_ok && after_ok {
-            return true;
-        }
-        from = start + name.chars().next().map_or(1, char::len_utf8);
-    }
-    false
+        before_ok && after_ok
+    })
 }
 
 /// PV-RAT-001 / PV-RAT-002: the debt may fall, never rise. No baseline → no finding (the verdict says why).

@@ -198,4 +198,25 @@ mod tests {
             }
         }
     }
+
+    /// `uncovered` reports each allowed pair no row has — and never a forbidden one.
+    #[test]
+    fn uncovered_names_the_allowed_pairs_no_row_holds() {
+        let none = BTreeSet::new();
+        assert_eq!(
+            uncovered(&[2, 2], &none, &[]),
+            vec![(0, 0, 1, 0), (0, 0, 1, 1), (0, 1, 1, 0), (0, 1, 1, 1)]
+        );
+        assert_eq!(
+            uncovered(&[2, 2], &none, &[vec![0, 0], vec![0, 1], vec![1, 0]]),
+            vec![(0, 1, 1, 1)]
+        );
+    }
+
+    #[test]
+    fn uncovered_never_reports_a_forbidden_pair() {
+        let forbidden: BTreeSet<Pair> = [(0, 1, 1, 1)].into_iter().collect();
+        let rows = vec![vec![0, 0], vec![0, 1], vec![1, 0]];
+        assert!(uncovered(&[2, 2], &forbidden, &rows).is_empty());
+    }
 }

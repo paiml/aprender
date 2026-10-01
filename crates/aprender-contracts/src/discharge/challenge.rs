@@ -283,17 +283,11 @@ fn line_is_blank_before(chars: &[(usize, char)], k: usize) -> bool {
 
 /// The byte offset of `word` in `line` as a whole identifier.
 fn find_word(line: &str, word: &str) -> Option<usize> {
-    let mut from = 0;
-    while let Some(off) = line[from..].find(word) {
-        let at = from + off;
+    line.match_indices(word).map(|(at, _)| at).find(|&at| {
         let before = line[..at].chars().next_back();
         let after = line[at + word.len()..].chars().next();
-        if !before.is_some_and(lex::is_ident_char) && !after.is_some_and(lex::is_ident_char) {
-            return Some(at);
-        }
-        from = at + word.len();
-    }
-    None
+        !before.is_some_and(lex::is_ident_char) && !after.is_some_and(lex::is_ident_char)
+    })
 }
 
 fn collapse(s: &str) -> String {
@@ -320,22 +314,23 @@ struct Scope {
 /// indented, joined; `… in` forms skipped) in the frame they were issued in. `namespace`/`section`/
 /// `noncomputable section` open a frame; `end` closes one.
 fn preamble(blanked: &str, line: usize) -> Scope {
-    let lines: Vec<&str> = blanked.lines().take(line.saturating_sub(1)).collect();
     let mut scope = Scope::default();
-    let mut i = 0;
-    while i < lines.len() {
-        let t = lines[i].trim();
+    // An iterator, not an index: no mutated cursor can stop the scan advancing.
+    let mut rest = blanked.lines().take(line.saturating_sub(1));
+    while let Some(first) = rest.next() {
+        let t = first.trim();
         let words: Vec<&str> = t.split_whitespace().collect();
         let head = words.first().copied().unwrap_or("");
+        // Indented, non-blank lines continue the command; they are consumed only when the command is kept below.
+        let cont: Vec<&str> = rest
+            .clone()
+            .take_while(|l| l.starts_with(char::is_whitespace) && !l.trim().is_empty())
+            .map(str::trim)
+            .collect();
         let mut cmd = t.to_string();
-        let mut j = i + 1;
-        while j < lines.len()
-            && lines[j].starts_with(char::is_whitespace)
-            && !lines[j].trim().is_empty()
-        {
+        for c in &cont {
             cmd.push(' ');
-            cmd.push_str(lines[j].trim());
-            j += 1;
+            cmd.push_str(c);
         }
         let opened = match words.as_slice() {
             ["namespace", name, ..] => Some(format!("end {name}")),
@@ -361,10 +356,8 @@ fn preamble(blanked: &str, line: usize) -> Scope {
                 };
                 cmds.push(collapse(&cmd));
             }
-            i = j;
-            continue;
+            rest.by_ref().take(cont.len()).for_each(drop);
         }
-        i += 1;
     }
     scope
 }

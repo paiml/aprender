@@ -1112,6 +1112,97 @@ mod tests {
         }
     }
 
+    /// k9: `measured` carries the extractor's claims, sorted — not the default (empty) set.
+    #[test]
+    fn measured_carries_the_sorted_verified_commands() {
+        let mut stats = extract::claims::DocStats::default();
+        stats.verified_commands.insert("zeta".to_string());
+        stats.verified_commands.insert("alpha".to_string());
+        assert_eq!(
+            measured(&stats).verified_commands,
+            vec!["alpha".to_string(), "zeta".to_string()]
+        );
+    }
+
+    /// k9: F-33 — every difference between the committed and live claim sets is one counted PV-ONT-013 Error.
+    #[test]
+    fn count_freshness_counts_one_violation_per_difference() {
+        let dir = std::env::temp_dir().join(format!("k9-freshness-{}", std::process::id()));
+        std::fs::create_dir_all(&dir).expect("tmp dir");
+        std::fs::write(
+            dir.join("lint-baseline.json"),
+            r#"{"readme":{"verified_commands":[]},"claude_md":{"verified_commands":[]}}"#,
+        )
+        .expect("write baseline");
+        let mut extraction = extract::Extraction::default();
+        extraction
+            .readme
+            .verified_commands
+            .insert("one".to_string());
+        extraction
+            .readme
+            .verified_commands
+            .insert("two".to_string());
+        let mut c = empty_counted();
+        count_freshness(&mut c, &dir, &extraction);
+        std::fs::remove_dir_all(&dir).ok();
+        assert_eq!(c.violations, 2, "{:?}", c.findings);
+        assert_eq!(c.findings.len(), 2);
+        assert!(c
+            .findings
+            .iter()
+            .all(|f| f.severity == RuleSeverity::Error && f.message.contains("F-33")));
+    }
+
+    /// k9: Σ's inheritance is reported (count and rows), not zeroed or replaced.
+    #[test]
+    fn subsumption_of_reports_inherited_shapes() {
+        let dir = fixture("subsumption-inherit");
+        let (shapes, _, _) = prepare(&dir, &ShapesOptions::default()).expect("shapes");
+        let extraction = extract::all_with(&dir, None).expect("extract");
+        let sigma = extract::sigma_of(&dir).expect("Σ");
+        let want = crate::lint::subsumption::inherited(&extraction.graph, &shapes, &sigma);
+        assert!(
+            want.0 > 0 && !want.1.is_empty(),
+            "fixture inherits: {want:?}"
+        );
+        let mut c = empty_counted();
+        let got = subsumption_of(&dir, &extraction.graph, &shapes, &mut c);
+        assert_eq!(got, want);
+        assert!(got.1.iter().all(|r| r.contains(" <- ")), "{got:?}");
+        assert_eq!(c.violations, 0, "{:?}", c.findings);
+    }
+
+    /// k9: R-19 — each weakened component is one counted violation, named by contract.
+    #[test]
+    fn subsumption_of_counts_one_violation_per_weakening() {
+        let dir = fixture("subsumption-weaken");
+        let (shapes, _, _) = prepare(&dir, &ShapesOptions::default()).expect("shapes");
+        let extraction = extract::all_with(&dir, None).expect("extract");
+        let sigma = extract::sigma_of(&dir).expect("Σ");
+        let n = crate::lint::subsumption::weakenings(&shapes, &sigma).len();
+        assert!(n > 0, "fixture weakens");
+        let mut c = empty_counted();
+        let _ = subsumption_of(&dir, &extraction.graph, &shapes, &mut c);
+        assert_eq!(c.violations, n, "{:?}", c.findings);
+        assert_eq!(c.findings.len(), n);
+        assert!(c.findings.iter().all(|f| f.message.contains("R-19")));
+    }
+
+    /// k9: no Σ is no hierarchy — `(0, [])`, and no violation.
+    #[test]
+    fn subsumption_of_without_sigma_is_empty() {
+        let dir = fixture("shapes-ok");
+        let (shapes, _, _) = prepare(&dir, &ShapesOptions::default()).expect("shapes");
+        let extraction = extract::all_with(&dir, None).expect("extract");
+        let mut c = empty_counted();
+        assert_eq!(
+            subsumption_of(&dir, &extraction.graph, &shapes, &mut c),
+            (0, Vec::new())
+        );
+        assert_eq!(c.violations, 0);
+    }
+
     /// ONT-4c4 (#4502): an UNARMED kernel shape over zero `#[kernel]` symbols is named, never in the meet;
     /// an ARMED one is still RED; any kernel symbol clears both.
     #[test]

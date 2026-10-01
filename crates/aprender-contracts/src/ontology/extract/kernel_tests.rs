@@ -250,6 +250,59 @@ fn a_kernel_without_a_reference_is_named() {
     assert!(why[0].contains("k::gated_rmsnorm"), "{why:?}");
 }
 
+fn timing_row(oxide: Option<f64>, ptx: Option<f64>) -> Row {
+    let mut r = row("lambda", 1.0, 0.0, 0.0, 0.0);
+    r.oxide_us = oxide;
+    r.ptx_us = ptx;
+    r
+}
+
+#[test]
+fn within_timing_is_the_ratio_over_a_positive_ptx_time() {
+    assert!(within_timing(&timing_row(Some(5.0), Some(10.0))));
+    assert!(within_timing(&timing_row(Some(10.0), Some(10.0))));
+    assert!(!within_timing(&timing_row(Some(13.0), Some(10.0))));
+    // a remainder would read 0 here; the ratio is 2.0
+    assert!(!within_timing(&timing_row(Some(20.0), Some(10.0))));
+    // a zero or negative ptx time is never a timing witness, whatever the oxide time
+    assert!(!within_timing(&timing_row(Some(-5.0), Some(0.0))));
+    assert!(!within_timing(&timing_row(Some(-5.0), Some(-10.0))));
+    assert!(!within_timing(&timing_row(None, Some(10.0))));
+    assert!(!within_timing(&timing_row(Some(5.0), None)));
+}
+
+#[test]
+fn a_subject_typed_both_symbol_and_contract_is_refused() {
+    let mut g = control_graph(true);
+    assert!(symbol_and_contract(&g).is_ok());
+    g.insert(k(), RDF_TYPE, Term::iri(ont("Contract")));
+    let e = symbol_and_contract(&g).expect_err("both classes");
+    assert_eq!(e.file, k());
+    assert!(
+        e.reason.contains("typed both Symbol and Contract"),
+        "{}",
+        e.reason
+    );
+}
+
+#[test]
+fn emit_witness_writes_the_receipt_and_each_optional_field_only_when_present() {
+    let mut g = Graph::new();
+    emit_witness(&mut g, "r1", &row("lambda", 1.0, 0.0, 10.0, 10.0));
+    assert!(g.instances_of(&kern("Receipt")).contains(&"r1"));
+    assert_eq!(literal(&g, "r1", &kern("ptxasVersion")), ["12.4"]);
+    assert_eq!(literal(&g, "r1", &kern("authoring")), ["oxide"]);
+    assert_eq!(literal(&g, "r1", &kern("host")), ["lambda"]);
+
+    let mut bare = row("lambda", 1.0, 0.0, 10.0, 10.0);
+    bare.ptxas_version = String::new();
+    bare.authoring = String::new();
+    let mut g2 = Graph::new();
+    emit_witness(&mut g2, "r2", &bare);
+    assert!(g2.objects("r2", &kern("ptxasVersion")).is_empty());
+    assert!(g2.objects("r2", &kern("authoring")).is_empty());
+}
+
 #[test]
 fn the_positive_control_fires() {
     assert!(positive_control());
