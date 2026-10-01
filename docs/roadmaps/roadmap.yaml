@@ -22245,7 +22245,7 @@ roadmap:
   spec: null
   acceptance_criteria:
   - ci/mutants-debt.tsv lists every known survivor of #4587 run 36725778557 and #4588 run 36703131059 as file, mutant, outcome, sha, run id (5 tab fields; outcome MissedMutant or Timeout)
-  - scripts/check_mutants_debt_ratchet.sh is RED on a grown, swapped, malformed, duplicated or missing debt file and on an unresolvable merge base, and GREEN on a shrink or unchanged file; its --self-test passes 10/10
+  - scripts/check_mutants_debt_ratchet.sh is RED on a grown, swapped, malformed, duplicated or missing debt file and on an unresolvable merge base, and GREEN on a shrink or unchanged file; and RED when no base is nameable (resolve_base refuses); its --self-test passes 12/12 (R1-R12)
   - The ci gate job reports the mutants and survivor-table results but does not fail on them; every other required section (WT, guard-tree, guard-cargo, sov.gate, determinism) still fails the gate exactly as before
   - No ruleset change, no timeout raised, no other gate relaxed; the diff is ci.yml (one marked block), the debt file, the guard script and this roadmap entry only
   - A RESTORE PR (#4648) deletes the ratchet block after v0.70.0 is on crates.io
