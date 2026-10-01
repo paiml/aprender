@@ -1,0 +1,210 @@
+{
+  "version": "2.1.0",
+  "$schema": "https://raw.githubusercontent.com/oasis-tcs/sarif-spec/master/Schemata/sarif-schema-2.1.0.json",
+  "runs": [
+    {
+      "tool": {
+        "driver": {
+          "name": "pmat",
+          "informationUri": "https://github.com/paiml/pmat",
+          "rules": []
+        }
+      },
+      "invocations": [
+        {
+          "executionSuccessful": true,
+          "commandLine": "pmat query \"ratchet shrink-only debt baseline\" --limit 3; scripts/pr_review_duplication_scan.sh --rust-semantic; plus the measured commands in each result"
+        }
+      ],
+      "results": [
+        {
+          "ruleId": "PRREV-RATCHET-001",
+          "level": "warning",
+          "message": {
+            "text": "The ratchet only holds ci/mutants-debt.tsv shrink-only; nothing in this diff compares a PR's mutation results with the file. With the mutants rules made unreachable by the early `exit 0` in the ci / gate block, a PR that adds code with a surviving mutant is neither blocked nor ledgered, and the debt file stays green because nobody has to add a row. The comment block that says 'The blocking rule is the shrink-only survivor baseline' overstates what blocks: it blocks hand-edits of the file, not new survivors. The ticket and the last commit both say the mutants rules are off on purpose until RESTORE PR #4648, so this is a residual-coverage note for the window, not a defect against the stated scope."
+          },
+          "locations": [
+            {
+              "physicalLocation": {
+                "artifactLocation": {
+                  "uri": ".github/workflows/ci.yml"
+                },
+                "region": {
+                  "startLine": 456
+                }
+              }
+            }
+          ],
+          "properties": {
+            "grounding": "asserted",
+            "rationale": "Reading ci.yml lines 454-464 and scripts/check_mutants_debt_ratchet.sh: the script's only inputs are the debt file at HEAD and at the merge base; no step produces survivors from a run and feeds them to it.",
+            "failure_scenario": "Between this merge and #4648, a PR adds a function whose mutants all survive. ci / gate prints 'mutants (report-only...)' and exits 0, the debt file is unchanged so guard-tree is green, and the new survivor reaches main with no row and no failure anywhere.",
+            "precision_class": "advisory"
+          }
+        },
+        {
+          "ruleId": "PRREV-ROADMAP-001",
+          "level": "note",
+          "message": {
+            "text": "Acceptance criterion 3 in docs/roadmaps/entries/PMAT-4646.yaml says the gate 'reports the mutants and survivor-table results'. ci / gate reports only the mutants section result; the only occurrence of 'survivor' in ci.yml is the comment on line 456, so there is no survivor-table section to report. The criterion names a section the gate does not have."
+          },
+          "properties": {
+            "grounding": "measured",
+            "command": [
+              "bash",
+              "-c",
+              "grep -n survivor .github/workflows/ci.yml"
+            ],
+            "exit_code": 0,
+            "stdout_sha256": "e9c9ac1ec823dc34fa53bf95a5b8f7efd5cb670475116526436ddcf780c83428",
+            "failure_scenario": "A reader of the roadmap entry expects a survivor table in the gate output; none exists, so the acceptance criterion cannot be verified as written and #4648 could delete a block that never reported one.",
+            "precision_class": "advisory"
+          }
+        },
+        {
+          "ruleId": "PRREV-SELFTEST-001",
+          "level": "note",
+          "message": {
+            "text": "scripts/check_mutants_debt_ratchet.sh --self-test: 12 cases R1-R12, 'SELF-TEST PASSED (12 cases)', rc 0. The case table covers grown, missing, shrunk, malformed, swapped, unchanged, duplicate, unresolvable-base, bad-outcome, introduction, no-nameable-base and default-base-via-origin/main."
+          },
+          "properties": {
+            "grounding": "measured",
+            "command": [
+              "bash",
+              "scripts/check_mutants_debt_ratchet.sh",
+              "--self-test"
+            ],
+            "exit_code": 0,
+            "stdout_sha256": "0c78c3f5dc835a024fd921cbf5ff27af5ff4062b1a9ab09b2c90af60c52ca1f3",
+            "failure_scenario": "If a rule in the case table were removed or mis-ordered, a grown or swapped debt file could pass; the table pins each rule's own message so a wrong-reason RED fails.",
+            "precision_class": "advisory"
+          }
+        },
+        {
+          "ruleId": "PRREV-GATE-001",
+          "level": "note",
+          "message": {
+            "text": "scripts/check_ci_gate_mutants_rule.sh (which runs the GATE-MUTANTS-RULE block of ci.yml) still passes with the inserted block, rc 0. Every check above the inserted `exit 0` (workspace-test, guard-tree, guard-cargo, sov.gate, determinism-compare) is unchanged in the diff; the only code after the `exit 0` is the mutants rule and the final echo, so exactly the mutants rule is made unreachable."
+          },
+          "properties": {
+            "grounding": "measured",
+            "command": [
+              "bash",
+              "scripts/check_ci_gate_mutants_rule.sh"
+            ],
+            "exit_code": 0,
+            "stdout_sha256": "dfd1a4117dfd9640a0b35d6a173aaf9a6fdc4f21841d8332841976d8da78d932",
+            "failure_scenario": "An `exit 0` placed above a still-required check would silently disable it; here the gate-rule guard and the diff show only the mutants rule sits below it.",
+            "precision_class": "advisory"
+          }
+        },
+        {
+          "ruleId": "PRREV-WIRING-001",
+          "level": "note",
+          "message": {
+            "text": "scripts/guard_tree.sh --list --no-cargo includes scripts/check_mutants_debt_ratchet.sh (universe is git ls-files 'scripts/check_*.sh'), so the claim in the ci.yml comment that guard-tree runs the ratchet holds, and ci / gate requires guard-tree."
+          },
+          "properties": {
+            "grounding": "measured",
+            "command": [
+              "bash",
+              "scripts/guard_tree.sh",
+              "--list",
+              "--no-cargo"
+            ],
+            "exit_code": 0,
+            "stdout_sha256": "b4052b53a8b9296633ad6057cf64fd0963244700a3b7d7862127a30e17cf0e33",
+            "failure_scenario": "A guard script that guard-tree does not discover would never run, and the ratchet would be a file nobody enforces.",
+            "precision_class": "advisory"
+          }
+        }
+      ]
+    },
+    {
+      "tool": {
+        "driver": {
+          "name": "cargo-mutants",
+          "informationUri": "https://github.com/paiml/aprender",
+          "rules": []
+        }
+      },
+      "invocations": [
+        {
+          "executionSuccessful": true,
+          "commandLine": "scoped guard mutation: 10 sed mutants of scripts/check_mutants_debt_ratchet.sh vs its --self-test"
+        }
+      ],
+      "results": [
+        {
+          "ruleId": "PRREV-MUT-001",
+          "level": "note",
+          "message": {
+            "text": "10 scoped mutants of scripts/check_mutants_debt_ratchet.sh (a /tmp copy, repo untouched) each run through the script's own --self-test: 10 attempted, 10 killed, 0 survived. The mutants are hand-written sed substitutions on the guard's rules, not a cargo-mutants run; the driver name is the receipt vocabulary slot."
+          },
+          "properties": {
+            "grounding": "measured",
+            "command": [
+              "bash",
+              "-c",
+              "for each of 10 sed mutants: sed <mutant> scripts/check_mutants_debt_ratchet.sh > /tmp copy; bash copy --self-test"
+            ],
+            "exit_code": 0,
+            "stdout_sha256": "7be8fd0a3d78df17540a70a7cc4e134b70e6fd68d680eed4556518c001df84bd",
+            "failure_scenario": "A rule the guard states and nothing tests would let a grown or malformed debt file through.",
+            "precision_class": "advisory"
+          }
+        }
+      ]
+    },
+    {
+      "tool": {
+        "driver": {
+          "name": "antigravity",
+          "informationUri": "https://github.com/paiml/aprender",
+          "rules": []
+        }
+      },
+      "invocations": [
+        {
+          "executionSuccessful": true,
+          "commandLine": "agy -p <prompt file> --model gemini-3.1-pro-high --output-format json --json-schema .pr-review-schema.json --print-timeout 20m --dangerously-skip-permissions (disposable git-archive tree)"
+        }
+      ],
+      "results": [
+        {
+          "ruleId": "PRREV-AGY-bashrs_lint_violation",
+          "level": "warning",
+          "message": {
+            "text": "scripts/check_mutants_debt_ratchet.sh is not bashrs lint clean. The PR introduces a shell script that fails the `bashrs lint` check (exiting with code 1 and emitting multiple warnings, such as SC2031, SC2198, and REL002). This violates the mandatory user rule requiring all shell scripts to be `bashrs lint` clean, which risks introducing disallowed formatting or shell scripting pitfalls (like temp files leaking on unexpected exit) to the repository."
+          },
+          "locations": [
+            {
+              "physicalLocation": {
+                "artifactLocation": {
+                  "uri": "scripts/check_mutants_debt_ratchet.sh"
+                },
+                "region": {
+                  "startLine": 1
+                }
+              }
+            }
+          ],
+          "properties": {
+            "grounding": "measured",
+            "command": [
+              "bashrs",
+              "lint",
+              "scripts/check_mutants_debt_ratchet.sh"
+            ],
+            "exit_code": 1,
+            "stdout_sha256": "c7ff57b91964e8dfb450150cb2cfe4ce9c3ebaf9742b0b30bc5bfb532c3a698a",
+            "failure_scenario": "The PR introduces a shell script that fails the `bashrs lint` check (exiting with code 1 and emitting multiple warnings, such as SC2031, SC2198, and REL002). This violates the mandatory user rule requiring all shell scripts to be `bashrs lint` clean, which risks introducing disallowed formatting or shell scripting pitfalls (like temp files leaking on unexpected exit) to the repository.",
+            "precision_class": "advisory",
+            "reverified_by_primary": false,
+            "note": "measured by agy's process, not re-run by this reviewer; exit_code 1 and the digest (of the finding object as returned) are as reported by agy in its failure_scenario text"
+          }
+        }
+      ]
+    }
+  ]
+}
