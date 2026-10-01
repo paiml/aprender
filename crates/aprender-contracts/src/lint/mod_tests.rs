@@ -587,3 +587,98 @@ fn valid_under_is_computed_when_validation_passes_and_skipped_when_it_fails() {
         "{g:?}"
     );
 }
+
+// ---- challenge_result: the fresh / stale / unrestated verdict, on a synthetic Lean tree (#4587) ----
+
+fn challenge_tree(bad: bool) -> tempfile::TempDir {
+    let d = tempfile::tempdir().expect("tempdir");
+    let w = |rel: &str, text: &str| {
+        let p = d.path().join(rel);
+        std::fs::create_dir_all(p.parent().expect("parent")).expect("mkdir");
+        std::fs::write(p, text).expect("write");
+    };
+    let mut root = String::new();
+    if !bad {
+        root.push_str("import ProvableContracts.Theorems.Gelu.Bound\n");
+        w(
+            "lean/ProvableContracts/Theorems/Gelu/Bound.lean",
+            "namespace ProvableContracts.Gelu\n\
+             theorem gelu_bound (x : Nat) : x ≤ x + 1 := Nat.le_succ x\n\
+             end ProvableContracts.Gelu\n",
+        );
+        w(
+            "contracts/gelu-v1.yaml",
+            "equations:\n  e:\n    lean_theorem: ProvableContracts.Gelu.gelu_bound\n",
+        );
+    }
+    root.push_str("import ProvableContracts.Theorems.Bad.Bound\n");
+    w(
+        "lean/ProvableContracts/Theorems/Bad/Bound.lean",
+        "namespace ProvableContracts.Bad\n\
+         theorem bad_bound : True\n\
+         def g := 1\n\
+         end ProvableContracts.Bad\n",
+    );
+    w(
+        "contracts/bad-v1.yaml",
+        "equations:\n  e:\n    lean_theorem: ProvableContracts.Bad.bad_bound\n",
+    );
+    w("lean/ProvableContracts.lean", &root);
+    d
+}
+
+fn challenge_errors(g: &GateResult) -> usize {
+    match g.detail {
+        GateDetail::Validate { errors, .. } => errors,
+        ref other => panic!("challenge-fresh carries a Validate detail: {other:?}"),
+    }
+}
+
+/// A restated challenge that is on disk and unchanged is fresh: measured, not skipped, and green.
+#[test]
+fn challenge_fresh_is_green_when_the_challenge_files_match() {
+    let t = challenge_tree(false);
+    // Only the liftable contract: drop the unliftable one so nothing is unrestated.
+    std::fs::remove_file(t.path().join("contracts/bad-v1.yaml")).expect("rm");
+    let lean = t.path().join("lean");
+    let contracts = t.path().join("contracts");
+    let r = crate::discharge::challenge::render(&lean, &contracts).expect("render");
+    assert!(!r.files.is_empty() && r.unrestated.is_empty());
+    crate::discharge::challenge::write(&lean, &r).expect("write");
+    let g = challenge_result(&contracts);
+    assert!(!g.skipped, "one challenge present is measured: {g:?}");
+    assert!(g.passed, "{g:?}");
+    assert_eq!(challenge_errors(&g), 0);
+}
+
+/// Challenges to write but none on disk: stale only (unrestated empty) must FAIL, not pass on `||`.
+#[test]
+fn challenge_fresh_fails_on_a_stale_file_alone() {
+    let t = challenge_tree(false);
+    std::fs::remove_file(t.path().join("contracts/bad-v1.yaml")).expect("rm");
+    let g = challenge_result(&t.path().join("contracts"));
+    assert!(!g.skipped && !g.passed, "{g:?}");
+    assert_eq!(challenge_errors(&g), 1);
+}
+
+/// Only an unrestated root (no files rendered, none on disk): measured, not skipped, and FAILS.
+#[test]
+fn challenge_fresh_fails_on_an_unrestated_root_alone() {
+    let t = challenge_tree(true);
+    let g = challenge_result(&t.path().join("contracts"));
+    assert!(
+        !g.skipped,
+        "an unrestated root is not zero challenges: {g:?}"
+    );
+    assert!(!g.passed, "{g:?}");
+    assert_eq!(challenge_errors(&g), 1);
+}
+
+/// One stale file AND one unrestated root: the error count is their SUM.
+#[test]
+fn challenge_fresh_counts_stale_plus_unrestated() {
+    let t = challenge_tree(false);
+    let g = challenge_result(&t.path().join("contracts"));
+    assert!(!g.skipped && !g.passed, "{g:?}");
+    assert_eq!(challenge_errors(&g), 2, "{g:?}");
+}

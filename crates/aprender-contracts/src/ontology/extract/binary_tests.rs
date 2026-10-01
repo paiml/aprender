@@ -459,3 +459,95 @@ fn extract_reports_the_workspace_root_and_the_targets() {
     assert!(!s3.at_workspace_root);
     assert_eq!(s3.census, None);
 }
+
+fn good_line() -> serde_json::Value {
+    let l = fixture("snapshot.jsonl");
+    serde_json::from_str(l.lines().next().expect("fixture has a line"))
+        .expect("fixture line is JSON")
+}
+
+/// Kills `hex_of -> true` and `&&` -> `||` in `hex_of`: a git_sha must be exactly 40 lowercase hex.
+#[test]
+fn parse_line_refuses_a_git_sha_that_is_not_40_lowercase_hex() {
+    assert!(parse_line(&good_line().to_string()).is_ok());
+    for bad in [
+        "a".repeat(39),
+        "a".repeat(41),
+        "g".repeat(40),
+        "A".repeat(40),
+        String::new(),
+    ] {
+        let mut v = good_line();
+        v["git_sha"] = bad.clone().into();
+        assert!(parse_line(&v.to_string()).is_err(), "{bad}");
+    }
+    assert!(hex_of("0123456789abcdef", 16));
+    assert!(!hex_of("0123456789abcdeg", 16));
+    assert!(!hex_of("0123456789abcde", 16));
+}
+
+/// Kills both `||` -> `&&` in the non-empty check of `parse_line`: each empty field alone is refused.
+#[test]
+fn parse_line_refuses_each_empty_identity_field_alone() {
+    for k in ["package", "target", "name"] {
+        let mut v = good_line();
+        v[k] = "".into();
+        assert!(parse_line(&v.to_string()).is_err(), "{k}");
+    }
+}
+
+/// Kills the `""` guard and the trailing-record condition mutants in `csv_records`.
+#[test]
+fn csv_records_case_table() {
+    let s = |r: &[&[&str]]| -> Vec<Vec<String>> {
+        r.iter()
+            .map(|x| x.iter().map(|f| (*f).to_string()).collect())
+            .collect()
+    };
+    assert_eq!(csv_records("\"a\"\"b\",c\n"), s(&[&["a\"b", "c"]]));
+    assert_eq!(csv_records("a"), s(&[&["a"]]));
+    assert_eq!(csv_records("x,"), s(&[&["x", ""]]));
+    assert_eq!(csv_records("a\n"), s(&[&["a"]]));
+    assert!(csv_records("").is_empty());
+}
+
+/// Kills `&&` -> `||` in `route_key`: both a known verb and a rooted path are required.
+#[test]
+fn route_key_needs_a_verb_and_a_rooted_path() {
+    assert_eq!(route_key("GET nope"), None);
+    assert_eq!(route_key("FOO /x"), None);
+    assert_eq!(route_key("GET /x").as_deref(), Some("GET /x"));
+}
+
+/// Kills `&&` -> `||` in `declared_bins`: a value line ending in `]` is not a section header.
+#[test]
+fn declared_bins_ignores_a_value_line_ending_in_a_bracket() {
+    let (names, paths, _) =
+        declared_bins("[[bin]]\nname = \"x\"\nfeatures = [\"a\"]\npath = \"src/x.rs\"\n");
+    assert!(names.contains("x"));
+    assert!(paths.contains("src/x.rs"));
+    let (names, _, _) = declared_bins("[[bin]]\n[odd\nname = \"y\"\n");
+    assert!(names.contains("y"));
+}
+
+/// Kills `||` -> `&&` and `==` -> `!=` on the helpFailed test in `emit`.
+#[test]
+fn emit_help_failed_fires_on_either_cause_alone() {
+    let mk = |failed: bool, help: &str| Target {
+        package: "p".into(),
+        target: "t".into(),
+        name: "t".into(),
+        git_sha: "0123456789abcdef0123456789abcdef01234567".into(),
+        help_sha256: help.into(),
+        help_failed: failed,
+        ..Target::default()
+    };
+    let fires = |t: &Target| {
+        let mut g = Graph::default();
+        emit(&mut g, t, None, &[]);
+        has(&g, &node("p", "t"), "helpFailed")
+    };
+    assert!(fires(&mk(true, "real")));
+    assert!(fires(&mk(false, EMPTY_SHA256)));
+    assert!(!fires(&mk(false, "real")));
+}

@@ -535,3 +535,69 @@ pub fn read_surface_ratchet(root: &Path) -> Result<Option<SurfaceRatchet>, Relea
         stdin_undeclared: n("stdin_undeclared")?,
     }))
 }
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    const SHA: &str = "0123456789abcdef0123456789abcdef01234567";
+
+    fn tmp(tag: &str) -> PathBuf {
+        let d =
+            std::env::temp_dir().join(format!("pv-release-inputs-{tag}-{}", std::process::id()));
+        let _ = std::fs::remove_dir_all(&d);
+        std::fs::create_dir_all(&d).expect("mkdir");
+        d
+    }
+
+    /// #4587: `crux_dir` defaults under the root by version, and an explicit dir wins.
+    #[test]
+    fn crux_dir_defaults_to_evidence_crux_version_and_honours_the_override() {
+        let mut s = Subject::new("0.70.0", SHA).expect("subject");
+        let root = Path::new("/r");
+        assert_eq!(s.crux_dir(root), PathBuf::from("/r/evidence/crux/0.70.0"));
+        s.crux_receipts_dir = Some(PathBuf::from("/elsewhere"));
+        assert_eq!(s.crux_dir(root), PathBuf::from("/elsewhere"));
+    }
+
+    /// #4587: `read_surface_ratchet` — absent is `None`, a valid file is read, anything else is refused.
+    #[test]
+    fn read_surface_ratchet_reads_absent_valid_and_refuses_the_rest() {
+        let d = tmp("ratchet");
+        assert_eq!(read_surface_ratchet(&d), Ok(None));
+        let f = d.join(SURFACE_RATCHET_FILE);
+        std::fs::create_dir_all(f.parent().expect("parent")).expect("mkdir");
+        std::fs::write(
+            &f,
+            format!(
+                r#"{{"schema":"{SURFACE_RATCHET_SCHEMA}","unknown_args":4,"stdin_undeclared":9}}"#
+            ),
+        )
+        .expect("write");
+        assert_eq!(
+            read_surface_ratchet(&d),
+            Ok(Some(SurfaceRatchet {
+                unknown_args: 4,
+                stdin_undeclared: 9
+            }))
+        );
+        std::fs::write(
+            &f,
+            format!(r#"{{"schema":"{SURFACE_RATCHET_SCHEMA}","unknown_args":4}}"#),
+        )
+        .expect("write");
+        let e = read_surface_ratchet(&d).expect_err("missing count");
+        assert!(
+            e.to_string().contains("`stdin_undeclared` is not a count"),
+            "{e}"
+        );
+        std::fs::write(
+            &f,
+            r#"{"schema":"other/v1","unknown_args":1,"stdin_undeclared":1}"#,
+        )
+        .expect("write");
+        let e = read_surface_ratchet(&d).expect_err("foreign schema");
+        assert!(e.to_string().contains("refused by name"), "{e}");
+        let _ = std::fs::remove_dir_all(&d);
+    }
+}

@@ -1833,6 +1833,38 @@ mod tests {
         assert_eq!(m.lib_path.as_deref(), Some("src/x.rs"));
     }
 
+    /// ONT-4c4: only a `#[kernel]` item carries `unsafeFree` / `boundsChecked`; any other attribute carries neither.
+    #[test]
+    fn emit_writes_the_body_facts_only_for_a_kernel_attribute() {
+        let b = Bound {
+            contract: "c-v1".into(),
+            equation: "e".into(),
+            module_path: "kern::m".into(),
+            function: "f".into(),
+            status: ImplStatus::Implemented,
+        };
+        let nt_of = |attrs: &[&str]| {
+            let found: Result<Resolved, Unresolved> = Ok(Resolved {
+                file: "src/m.rs".into(),
+                visibility: "pub".into(),
+                kind: "fn".into(),
+                attributes: attrs.iter().map(|a| (*a).to_string()).collect(),
+                unsafe_free: true,
+                bounds_checked: false,
+            });
+            let mut g = Graph::new();
+            emit(&mut g, &b, &found);
+            g.to_ntriples()
+        };
+        let kernel = nt_of(&["kernel"]);
+        assert!(kernel.contains("/sym/unsafeFree> \"true\""), "{kernel}");
+        assert!(kernel.contains("/sym/boundsChecked> \"false\""), "{kernel}");
+        let plain = nt_of(&["inline"]);
+        assert!(!plain.contains("unsafeFree"), "{plain}");
+        assert!(!plain.contains("boundsChecked"), "{plain}");
+        assert!(plain.contains("/sym/attribute> \"inline\""), "{plain}");
+    }
+
     #[test]
     fn the_body_walk_reads_unsafe_and_unchecked_indexing() {
         let src = r"

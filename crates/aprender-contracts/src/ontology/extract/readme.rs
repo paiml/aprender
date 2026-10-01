@@ -262,6 +262,22 @@ mod tests {
     }
 
     #[test]
+    fn extract_counts_each_file_it_reads() {
+        let dir = tempfile::tempdir().expect("tempdir");
+        let cd = dir.path().join("contracts");
+        std::fs::create_dir_all(&cd).expect("mkdir");
+        std::fs::write(
+            cd.join("r.yaml"),
+            "entity:\n  type: readme\n  ref: README.md\n",
+        )
+        .expect("write");
+        std::fs::write(dir.path().join("README.md"), "# T\n").expect("write");
+        let mut g = Graph::new();
+        let st = extract(&cd, &mut g, &BTreeSet::new());
+        assert_eq!(st.files_read, 1, "{:?}", st.errors);
+    }
+
+    #[test]
     fn the_positive_control_fires() {
         assert!(positive_control());
     }

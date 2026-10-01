@@ -650,6 +650,29 @@ mod tests {
     const REPO: &str = r#"{"ref":"paiml/aprender@aa7c6ef03ee7b7f8d8dc09dc393e97619952d95f","nameWithOwner":"paiml/aprender","sha":"aa7c6ef03ee7b7f8d8dc09dc393e97619952d95f"}"#;
     const MILESTONE: &str = r#"{"ref":"paiml/aprender#3@2026-09-24T07:03:22Z","repo":"paiml/aprender","number":3,"state":"CLOSED","updatedAt":"2026-09-24T07:03:22Z"}"#;
 
+    /// #4587: `refused_saying` is true only for exactly one refusal that names the needle.
+    #[test]
+    fn refused_saying_needs_exactly_one_error_naming_the_needle() {
+        let refusal = |what: &str| Refusal {
+            file: "f".to_string(),
+            what: what.to_string(),
+        };
+        let with = |errs: Vec<Refusal>| GithubStats {
+            errors: errs,
+            ..GithubStats::default()
+        };
+        assert!(!refused_saying(&with(vec![]), "disagrees"));
+        assert!(!refused_saying(&with(vec![refusal("other")]), "disagrees"));
+        assert!(!refused_saying(
+            &with(vec![refusal("disagrees"), refusal("disagrees")]),
+            "disagrees"
+        ));
+        assert!(refused_saying(
+            &with(vec![refusal("x disagrees y")]),
+            "disagrees"
+        ));
+    }
+
     fn only_error(s: &GithubStats) -> &str {
         assert_eq!(s.errors.len(), 1, "{:?}", s.errors);
         &s.errors[0].what
@@ -968,5 +991,144 @@ mod tests {
             assert!(positive_control(&t.name), "pc_extract.{}", t.name);
         }
         assert!(!positive_control("discussion"));
+    }
+
+    /// #4587: `snapshot_types` needs BOTH `implemented` and the `json` extractor, plus a vocabulary.
+    #[test]
+    fn snapshot_types_needs_implemented_and_the_json_extractor() {
+        let sigma_path =
+            Path::new(env!("CARGO_MANIFEST_DIR")).join("../../contracts/ontology.yaml");
+        let mut sigma = Sigma::from_yaml(&std::fs::read_to_string(sigma_path).expect("read sigma"))
+            .expect("parse sigma");
+        let vocab = sigma
+            .entity_types
+            .iter()
+            .find_map(|e| e.vocabulary.clone())
+            .expect("a vocabulary-carrying type");
+        let before = snapshot_types(&sigma);
+        for (name, extractor, implemented) in [
+            ("k4-unimplemented", "json", false),
+            ("k4-other-extractor", "yaml", true),
+        ] {
+            sigma
+                .entity_types
+                .push(crate::ontology::sigma::EntityTypeDecl {
+                    name: name.to_string(),
+                    extractor: extractor.to_string(),
+                    implemented,
+                    vocabulary: Some(vocab.clone()),
+                });
+        }
+        assert_eq!(snapshot_types(&sigma), before);
+    }
+
+    #[test]
+    fn refusal_display_is_file_colon_what() {
+        let r = Refusal {
+            file: "evidence/github/repo/a.json".to_string(),
+            what: "because".to_string(),
+        };
+        assert_eq!(r.to_string(), "evidence/github/repo/a.json: because");
+    }
+
+    /// #4587: every name part and the version slot are checked one by one.
+    #[test]
+    fn parse_ref_checks_each_name_and_the_sha_shape() {
+        let ts = types();
+        let repo_t = &ts[0];
+        let issue_t = &ts[1];
+        for bad in [
+            "o w/r#3@t",
+            "/r#3@t",
+            "o/#3@t",
+            "o/r r#3@t",
+            "o/r#3@a b",
+            "o$/r#3@t",
+            "o/r$#3@t",
+        ] {
+            assert!(parse_ref(issue_t, bad).is_err(), "{bad}");
+        }
+        assert!(parse_ref(issue_t, "o-w_n.1/r-p_o.2#3@t").is_ok());
+        let sha = "0123456789abcdef0123456789abcdef01234567";
+        assert!(parse_ref(repo_t, &format!("o/r@{sha}")).is_ok());
+        // short hex, and 40 non-hex bytes, are not a commit sha
+        assert!(parse_ref(repo_t, "o/r@abc123").is_err());
+        assert!(parse_ref(repo_t, &format!("o/r@{}", "z".repeat(40))).is_err());
+        assert!(parse_ref(repo_t, &format!("o/r@{}", "A".repeat(40))).is_err());
+        assert!(parse_ref(repo_t, &format!("o w/r@{sha}")).is_err());
+        assert!(parse_ref(repo_t, &format!("o/r w@{sha}")).is_err());
+        assert!(parse_ref(repo_t, &format!("/r@{sha}")).is_err());
+    }
+
+    /// #4587: a reference key must be a string on ITS OWN type, and only there.
+    #[test]
+    fn a_non_string_reference_key_is_refused_on_its_own_type_only() {
+        let (_, s) = run(&[(
+            "pull-request",
+            "evidence/github/pull-request/o__r__1.json",
+            r#"{"ref":"o/r#1@t","updatedAt":"t","baseRepo":5}"#,
+        )]);
+        assert!(
+            only_error(&s).contains("`baseRepo` must name a snapshot by string"),
+            "{:?}",
+            s.errors
+        );
+        let (_, s) = run(&[(
+            "issue",
+            "evidence/github/issue/o__r__2.json",
+            r#"{"ref":"o/r#2@t","updatedAt":"t","milestone":7}"#,
+        )]);
+        assert!(
+            only_error(&s).contains("`milestone` must name a snapshot by string"),
+            "{:?}",
+            s.errors
+        );
+        // a number under another type's reference key is not this type's business
+        let (_, s) = run(&[(
+            "pull-request",
+            "evidence/github/pull-request/o__r__3.json",
+            r#"{"ref":"o/r#3@t","updatedAt":"t","milestone":7}"#,
+        )]);
+        assert!(s.errors.is_empty(), "{:?}", s.errors);
+    }
+
+    /// #4587: only a regular file named `*.json` is read; the refusal names why.
+    #[test]
+    fn the_walk_reads_only_regular_json_files() {
+        let d = std::env::temp_dir().join(format!("pv-github-walk-k5-{}", std::process::id()));
+        let _ = std::fs::remove_dir_all(&d);
+        let base = d.join(EVIDENCE_DIR).join("repo");
+        std::fs::create_dir_all(base.join("dir.json")).expect("mkdir");
+        std::fs::write(base.join("paiml__aprender.txt"), REPO).expect("write");
+        let s = extract(&d, &types(), &mut Graph::new());
+        let _ = std::fs::remove_dir_all(&d);
+        assert_eq!(s.errors.len(), 2, "{:?}", s.errors);
+        for e in &s.errors {
+            assert_eq!(e.what, "not a `.json` snapshot", "{e}");
+        }
+        assert_eq!(s.by_type["repo"], 0);
+    }
+
+    /// #4587: `insert_edge` resolves the target type by BOTH the type name and the key.
+    #[test]
+    fn insert_edge_matches_the_resolves_row_on_type_and_key() {
+        let ts = types();
+        let issue = &ts[1];
+        let mut g = Graph::new();
+        let mut stats = GithubStats::default();
+        // `baseRepo` belongs to pull-request, not issue: no row, so it cannot resolve
+        insert_edge(
+            &mut g,
+            &ts,
+            issue,
+            "s",
+            "baseRepo",
+            "o/r".to_string(),
+            Some("o/r@x".to_string()),
+            &mut stats,
+        );
+        assert_eq!(stats.unresolved, 1);
+        assert!(g.objects("s", &expand("issue:baseRepo")).is_empty());
+        assert_eq!(g.objects("s", &expand("issue:baseRepoUnresolved")).len(), 1);
     }
 }

@@ -1988,4 +1988,38 @@ mod tests {
             );
         }
     }
+
+    /// Kills the ETXTBSY guard in `Lake::spawn`: a script whose write fd is held open fails exec with 26 until the
+    /// fd closes, and is retried until it does (guard `false` never retries); any other error (a missing bin) is not
+    /// retried (guard `true` would sleep 20 x 25 ms before returning it).
+    #[test]
+    fn spawn_retries_etxtbsy_only() {
+        use std::os::unix::fs::PermissionsExt;
+        let d = tempfile::tempdir().expect("tempdir");
+        let p = d.path().join("lake");
+        let mut f = std::fs::File::create(&p).expect("create");
+        std::io::Write::write_all(&mut f, b"#!/bin/sh\nexit 0\n").expect("write");
+        std::fs::set_permissions(&p, std::fs::Permissions::from_mode(0o755)).expect("chmod");
+        let closer = std::thread::spawn(move || {
+            std::thread::sleep(Duration::from_millis(100));
+            drop(f);
+        });
+        let bin = p.to_string_lossy().to_string();
+        let mut child = lk(&bin)
+            .spawn::<&str>(&[], d.path())
+            .expect("ETXTBSY is retried until the writer closes");
+        child.wait().expect("wait");
+        closer.join().expect("closer");
+
+        let t0 = std::time::Instant::now();
+        let e = lk("/nonexistent/lake-for-spawn-test")
+            .spawn::<&str>(&[], d.path())
+            .expect_err("a missing bin is an error");
+        assert_eq!(e.raw_os_error(), Some(2));
+        assert!(
+            t0.elapsed() < Duration::from_millis(400),
+            "ENOENT must not be retried: {:?}",
+            t0.elapsed()
+        );
+    }
 }

@@ -1,0 +1,24 @@
+- id: PMAT-4646
+  github_issue: 4646
+  item_type: task
+  title: 'MUT-RATCHET: mutants gate -> ratchet mode (debt file shrink-only), operator C187/C188'
+  status: inprogress
+  priority: critical
+  assigned_to: aprender-ca
+  created: 2026-10-01T06:50:00Z
+  updated: 2026-10-01T10:00:00Z
+  spec: null
+  acceptance_criteria:
+  - ci/mutants-debt.tsv lists every known survivor of #4587 run 36725778557 and #4588 run 36703131059 as file, mutant, outcome, sha, run id (5 tab fields; outcome MissedMutant or Timeout)
+  - 'scripts/check_mutants_debt_ratchet.sh is RED on a grown, swapped, malformed, duplicated or missing debt file and on an unresolvable merge base, and GREEN on a shrink, a shrink to zero rows, or an unchanged file; and RED when no base is nameable (resolve_base refuses); its --self-test passes 16/16 (R1-R16: R14-R16 kill the three surviving guard mutants named by the 1f2e3598ea review)'
+  - The ci gate job reports the mutants section result but does not fail on it; every other required section (WT, guard-tree, guard-cargo, sov.gate, determinism) still fails the gate exactly as before
+  - No ruleset change, no timeout raised, no other gate relaxed; the reviewed source diff is ci.yml (one marked block), the debt file, the guard script, this roadmap entry and ONE queue-only fix to .github/workflows/pr-review-quorum.yml (below) only. The PR also carries the generated docs/roadmaps/roadmap.yaml and, once reviewed, its own receipt under evidence/pr-review/4647/ and its quorum verdict; those are outputs of review, not part of the diff under review
+  - '.github/workflows/pr-review-quorum.yml, queue-only fix, operator 2026-09-28 14:52Z (gate-keeping workflow edits with red/green proof are pre-approved): ARM4_PR_HEAD_SHA = github.event.pull_request.head.sha (empty on merge_group, so Arm 4 reads the PR head from the pulls API) and the job permission pull-requests: read. Before, the queue squash was passed as the head and every queued PR read UNSIGNED (runs 36888741583 and 36890960012; #4632 run 36602609576). No gate loosened: the signature must still verify under the repo key and its trusted comment must still name pr=, head= and pid= (the patch-id of the squash diff Arm 4 computes). Red/green on queue sha 79594c8362: old wiring rc 1 UNSIGNED, new rc 0, A3 corrupted-signature control still rejects'
+  - A RESTORE PR (#4648) deletes the ratchet block after v0.70.0 is on crates.io
+  - Out of scope, tracked in #4649 - comparing a PR's own mutants survivors with the debt file (a NEW survivor is RED); until then a new survivor is reported, not blocked
+  phases: []
+  subtasks: []
+  estimated_effort: null
+  labels:
+  - kind:code
+  notes: 'Operator C187(a)/C188(a), 2026-10-01: ratchet, not a waiver.'

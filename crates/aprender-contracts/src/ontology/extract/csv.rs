@@ -243,6 +243,25 @@ mod tests {
     }
 
     #[test]
+    fn extract_counts_each_file_it_reads() {
+        let dir = tempfile::tempdir().expect("tempdir");
+        let cd = dir.path().join("contracts");
+        std::fs::create_dir_all(&cd).expect("mkdir");
+        for n in ["a", "b"] {
+            std::fs::write(
+                cd.join(format!("{n}.yaml")),
+                format!("entity:\n  type: csv\n  ref: {n}.csv\n"),
+            )
+            .expect("write");
+            std::fs::write(dir.path().join(format!("{n}.csv")), "x,y\n1,2\n").expect("write");
+        }
+        let mut g = Graph::new();
+        let st = extract(&cd, &mut g);
+        assert!(st.errors.is_empty(), "{:?}", st.errors);
+        assert_eq!(st.files_read, 2);
+    }
+
+    #[test]
     fn the_positive_control_fires() {
         assert!(positive_control());
     }

@@ -1,0 +1,302 @@
+{
+  "version": "2.1.0",
+  "$schema": "https://raw.githubusercontent.com/oasis-tcs/sarif-spec/master/Schemata/sarif-schema-2.1.0.json",
+  "runs": [
+    {
+      "tool": {
+        "driver": {
+          "name": "pmat",
+          "informationUri": "https://github.com/paiml/pmat",
+          "rules": []
+        }
+      },
+      "invocations": [
+        {
+          "executionSuccessful": true,
+          "commandLine": "pmat query --literal ARM4_PR_HEAD_SHA / pr_head_sha (index at bd851543c6, ancestor of head); scripts/pr_review_duplication_scan.sh (38 s, 1162/1162 branches, 18 needles)"
+        }
+      ],
+      "results": [
+        {
+          "ruleId": "PRREV-R5-001",
+          "level": "note",
+          "message": {
+            "text": "The ARM4_PR_HEAD_SHA change loosens no gate. check_signature (scripts/check_pr_review_arm4.sh:185-227) still requires the signature to verify under the repo key, and its trusted comment to name pr=, head=<the sig head> and pid=<patch-id of the diff Arm 4 itself computed from the queue squash>. The sig head only selects which check run to read; it is not trusted for content."
+          },
+          "locations": [
+            {
+              "physicalLocation": {
+                "artifactLocation": {
+                  "uri": "scripts/check_pr_review_arm4.sh"
+                },
+                "region": {
+                  "startLine": 185
+                }
+              }
+            }
+          ],
+          "properties": {
+            "precision_class": "advisory",
+            "grounding": "cited",
+            "rationale": "Read pr_head_sha (171-178) and check_signature (185-227): the three case-pattern bindings are unchanged by b6ccc0354f, which touches neither file.",
+            "failure_scenario": "If pid were not compared to the squash patch-id, a reviewed signature could ride an unreviewed diff; it is compared, so this does not occur.",
+            "source": "scripts/check_pr_review_arm4.sh:222-224 (pid= trusted-comment case, from this run reading the file at head)",
+            "excerpt": "case \" $tc \" in *\" pid=$pid \"*) ;; *) echo \"  A2b the signature is bound to another diff, not patch-id $pid: '$tc'\" >&2; return 1 ;; ",
+            "excerpt_sha256": "6da038bf447a4451bc203daf8343c66236b1421c149114917d177f5d7ce7311d"
+          }
+        },
+        {
+          "ruleId": "PRREV-R5-002",
+          "level": "note",
+          "message": {
+            "text": "pull-requests: read is the minimum for GET /repos/{r}/pulls/{n}, the only call Arm 4 adds. It is job-scoped, read-only, and adds no write, merge or approval path. contents: read and checks: read are unchanged."
+          },
+          "locations": [
+            {
+              "physicalLocation": {
+                "artifactLocation": {
+                  "uri": ".github/workflows/pr-review-quorum.yml"
+                },
+                "region": {
+                  "startLine": 72
+                }
+              }
+            }
+          ],
+          "properties": {
+            "precision_class": "advisory",
+            "grounding": "asserted",
+            "rationale": "GitHub's documented permission for reading a pull request is pull-requests: read; no narrower scope exposes .head.sha.",
+            "failure_scenario": "A broader scope (write) would let a compromised step edit PR state; none is granted."
+          }
+        },
+        {
+          "ruleId": "PRREV-R5-003",
+          "level": "note",
+          "message": {
+            "text": "The pulls-API head can differ from the queued head only if the PR was pushed after queueing. Then the check run read is on a different head, and Arm 4 still requires its trusted comment pid= to equal the patch-id of the squash diff it computed. An unreviewed diff has no signature whose pid matches, so it fails closed. On pull_request_target the event head is used as before (kind=branch returns the subject itself)."
+          },
+          "locations": [
+            {
+              "physicalLocation": {
+                "artifactLocation": {
+                  "uri": "scripts/check_pr_review_arm4.sh"
+                },
+                "region": {
+                  "startLine": 174
+                }
+              }
+            }
+          ],
+          "properties": {
+            "precision_class": "advisory",
+            "grounding": "cited",
+            "rationale": "Read pr_head_sha: kind=branch short-circuits; the queue falls to ARM4_PR_HEAD_SHA then the API. Then check_signature's pid= case at 222-225.",
+            "failure_scenario": "PR pushed after queueing with a diff nobody reviewed: pid mismatch, A2b rejects.",
+            "source": "scripts/check_pr_review_arm4.sh:174-177 (pr_head_sha, read at head)",
+            "excerpt": "pr_head_sha() { if [ \"$3\" = branch ]; then printf '%s\\n' \"$2\"; return 0; fi if [ -n \"${ARM4_PR_HEAD_SHA:-}\" ]; then printf '%s\\n' \"$ARM4_PR_HEAD_SHA\"; return 0; fi gh api \"repos/${GITHUB_REPOSITORY:?GITHUB_REPOSITORY unset}/pulls/$1\" --jq .head.sha ",
+            "excerpt_sha256": "b5ae11cb6b9f93b83322bf07677dc232af3101dcac6b60423ac1414ba2755c72"
+          }
+        },
+        {
+          "ruleId": "PRREV-R5-004",
+          "level": "note",
+          "message": {
+            "text": "-u GITHUB_EVENT_NAME makes the R11/R12 temp repos hermetic. R11 genuinely needs it (mutant removing it: R11 rc=0 want=1 under GITHUB_EVENT_NAME=merge_group)."
+          },
+          "locations": [
+            {
+              "physicalLocation": {
+                "artifactLocation": {
+                  "uri": "scripts/check_mutants_debt_ratchet.sh"
+                },
+                "region": {
+                  "startLine": 124
+                }
+              }
+            }
+          ],
+          "properties": {
+            "precision_class": "advisory",
+            "grounding": "measured",
+            "rationale": "GITHUB_EVENT_NAME=merge_group bash scripts/check_mutants_debt_ratchet.sh --self-test: rc 0 on head; rc 1 with the -u removed from R11.",
+            "failure_scenario": "Without it R11 reads the CI event and fails only inside the merge queue, the defect this commit fixes.",
+            "command": [
+              "bash",
+              "-c",
+              "GITHUB_EVENT_NAME=merge_group bash scripts/check_mutants_debt_ratchet.sh --self-test 2>&1 | tail -1"
+            ],
+            "exit_code": 0,
+            "stdout_sha256": "a5356e84578245338f0020e61b0a8f53e0263c0dd51ccaf4c954c0c8f1ae28dc"
+          }
+        }
+      ]
+    },
+    {
+      "tool": {
+        "driver": {
+          "name": "cargo-mutants",
+          "informationUri": "https://github.com/paiml/aprender",
+          "rules": []
+        }
+      },
+      "invocations": [
+        {
+          "executionSuccessful": true,
+          "commandLine": "scoped guard mutation: 3 sed mutants of scripts/check_mutants_debt_ratchet.sh (drop -u GITHUB_EVENT_NAME at R11, at R12, at both) vs --self-test under GITHUB_EVENT_NAME=merge_group; 3 attempted, 2 killed"
+        }
+      ],
+      "results": [
+        {
+          "ruleId": "PRREV-R5-005",
+          "level": "note",
+          "message": {
+            "text": "Surviving mutant: dropping -u GITHUB_EVENT_NAME at the R12 call (line 130) is not caught. Equivalent, not a coverage hole: R12 sets refs/remotes/origin/main first, so resolve_base takes origin/main before any merge_group single-parent branch. The -u there is defensive only."
+          },
+          "locations": [
+            {
+              "physicalLocation": {
+                "artifactLocation": {
+                  "uri": "scripts/check_mutants_debt_ratchet.sh"
+                },
+                "region": {
+                  "startLine": 130
+                }
+              }
+            }
+          ],
+          "properties": {
+            "precision_class": "advisory",
+            "grounding": "measured",
+            "rationale": "With -u removed at line 130 alone, GITHUB_EVENT_NAME=merge_group --self-test rc 0, PASSED 16 cases; with it removed at line 124 or both, rc 1.",
+            "failure_scenario": "None: no input distinguishes the mutant from the original.",
+            "command": [
+              "bash",
+              "-c",
+              "sed -i \"130s/ -u GITHUB_EVENT_NAME//\" scripts/check_mutants_debt_ratchet.sh; GITHUB_EVENT_NAME=merge_group bash scripts/check_mutants_debt_ratchet.sh --self-test 2>&1 | tail -1; git checkout-restore (copy of original)"
+            ],
+            "exit_code": 0,
+            "stdout_sha256": "a5356e84578245338f0020e61b0a8f53e0263c0dd51ccaf4c954c0c8f1ae28dc"
+          }
+        }
+      ]
+    },
+    {
+      "tool": {
+        "driver": {
+          "name": "antigravity",
+          "informationUri": "https://github.com/paiml/aprender",
+          "rules": []
+        }
+      },
+      "invocations": [
+        {
+          "executionSuccessful": true,
+          "commandLine": "agy -p <prompt file> --model gemini-3.1-pro-high --output-format json --json-schema .pr-review-schema.json --print-timeout 30m --dangerously-skip-permissions (disposable git-archive tree at b6ccc0354f; diff file omits debt TSV, prior receipts and quorum json)"
+        }
+      ],
+      "results": [
+        {
+          "ruleId": "PRREV-AGY-gate_binding_analysis",
+          "level": "note",
+          "message": {
+            "text": "The change to fall back to the pulls-API head does not loosen key, trusted-comment, or patch-id bindings. The signature's validity is still verified, and its trusted comment `pid` is strictly checked against the patch-id of the queue squash."
+          },
+          "locations": [
+            {
+              "physicalLocation": {
+                "artifactLocation": {
+                  "uri": "scripts/check_pr_review_arm4.sh"
+                },
+                "region": {
+                  "startLine": 1
+                }
+              }
+            }
+          ],
+          "properties": {
+            "precision_class": "advisory",
+            "grounding": "asserted",
+            "rationale": "agy marked this measured; agy ran: grep -n pid= scripts/check_pr_review_arm4.sh. Not re-run by the primary reviewer.",
+            "failure_scenario": "If the signature's trusted comment `pid` were not validated against the queue squash patch-id, an attacker could force-push a reviewed commit to the PR after queuing an unreviewed commit, creating a TOCTOU vulnerability that bypasses the quorum gate."
+          }
+        },
+        {
+          "ruleId": "PRREV-AGY-pull_requests_least_privilege",
+          "level": "note",
+          "message": {
+            "text": "The `pull-requests: read` permission is the least privilege required. It only grants read access to pull request metadata to fetch the PR head via the API, granting no write or approval rights."
+          },
+          "locations": [
+            {
+              "physicalLocation": {
+                "artifactLocation": {
+                  "uri": "scripts/check_pr_review_arm4.sh"
+                },
+                "region": {
+                  "startLine": 1
+                }
+              }
+            }
+          ],
+          "properties": {
+            "precision_class": "advisory",
+            "grounding": "asserted",
+            "rationale": "agy marked this asserted; agy ran: (no command). Not re-run by the primary reviewer.",
+            "failure_scenario": "Granting `pull-requests: write` or a broader scope would violate the principle of least privilege, enabling compromised workflows to modify PR state or merge PRs maliciously."
+          }
+        },
+        {
+          "ruleId": "PRREV-AGY-pulls_api_head_divergence",
+          "level": "note",
+          "message": {
+            "text": "If the pulls-API head differs from the queued PR's head, an unreviewed diff will not pass. The signature returned from the API head will bind a different patch-id, which `check_signature` rejects when compared to the queue squash's patch-id."
+          },
+          "locations": [
+            {
+              "physicalLocation": {
+                "artifactLocation": {
+                  "uri": "scripts/check_pr_review_arm4.sh"
+                },
+                "region": {
+                  "startLine": 1
+                }
+              }
+            }
+          ],
+          "properties": {
+            "precision_class": "advisory",
+            "grounding": "asserted",
+            "rationale": "agy marked this measured; agy ran: sed -n /^check_signature() {/,/^}/p scripts/check_pr_review_arm4.sh. Not re-run by the primary reviewer.",
+            "failure_scenario": "If an unreviewed commit was queued and a reviewed commit later force-pushed, passing the unreviewed commit would result in unauthorized code merging to main. The mismatch between the API head's patch-id and the queue squash's patch-id prevents this."
+          }
+        },
+        {
+          "ruleId": "PRREV-AGY-mutants_ratchet_self_test_hermetic",
+          "level": "note",
+          "message": {
+            "text": "The `-u GITHUB_EVENT_NAME` change in `scripts/check_mutants_debt_ratchet.sh` insulates the self-test from the outer CI environment. This prevents `resolve_base.sh` from mistakenly treating the scratch repository commits as a queue squash during `merge_group` events."
+          },
+          "locations": [
+            {
+              "physicalLocation": {
+                "artifactLocation": {
+                  "uri": "scripts/check_pr_review_arm4.sh"
+                },
+                "region": {
+                  "startLine": 1
+                }
+              }
+            }
+          ],
+          "properties": {
+            "precision_class": "advisory",
+            "grounding": "asserted",
+            "rationale": "agy marked this measured; agy ran: cat scripts/lib/resolve_base.sh. Not re-run by the primary reviewer.",
+            "failure_scenario": "Without this unsetting, test case R11 (testing a branch with no nameable base) would incorrectly succeed inside a `merge_group` CI run because `resolve_base.sh` would fall back to single-parent queue logic, causing the self-test suite to fail."
+          }
+        }
+      ]
+    }
+  ]
+}
