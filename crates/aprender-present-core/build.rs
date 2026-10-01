@@ -127,7 +127,11 @@ fn emit_presentar_binding_env() {
         .join("presentar")
         .join("binding.yaml");
 
-    println!("cargo:rerun-if-changed={}", binding_path.display());
+    // A watched path that does not exist makes Cargo rerun this script on every build,
+    // which rebuilds the crate and everything above it each time (the #4614 mutants timeouts).
+    if binding_path.exists() {
+        println!("cargo:rerun-if-changed={}", binding_path.display());
+    }
 
     if !binding_path.exists() {
         println!(

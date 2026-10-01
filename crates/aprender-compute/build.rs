@@ -64,7 +64,11 @@ fn main() {
         .join("trueno")
         .join("binding.yaml");
 
-    println!("cargo:rerun-if-changed={}", binding_path.display());
+    // A watched path that does not exist makes Cargo rerun this script on every build,
+    // which rebuilds the crate and everything above it each time (the #4614 mutants timeouts).
+    if binding_path.exists() {
+        println!("cargo:rerun-if-changed={}", binding_path.display());
+    }
 
     // Ensure generated_contracts.rs exists (empty stub for crates.io builds)
     let gen_path = Path::new(env!("CARGO_MANIFEST_DIR")).join("src").join("generated_contracts.rs");

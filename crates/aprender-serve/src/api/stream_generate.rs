@@ -40,7 +40,7 @@ fn dense_stream_tokens(
 
     let generated = model
         .generate(&prompt, &config)
-        .map_err(|e| api_err(StatusCode::INTERNAL_SERVER_ERROR, e))?;
+        .map_err(|e| api_err(crate::api::generation_error_status(&e), e))?;
 
     let token_ids: Vec<u32> = generated
         .iter()
@@ -78,6 +78,13 @@ fn try_cuda_stream_tokens(
     let tokenizer = require_tok(state)?;
     let prompt_ids = tokenize_prompt(&tokenizer, &request.prompt)?;
     let prompt_len = prompt_ids.len();
+    // D5: over the serving context is the request's fault, so a 400.
+    if let Some(msg) = state
+        .serving_context()
+        .and_then(|ctx| super::serve_context_refusal(prompt_len, ctx))
+    {
+        return Err(api_err(StatusCode::BAD_REQUEST, msg));
+    }
 
     let q_config = QuantizedGenerateConfig {
         max_tokens: request.max_tokens,
@@ -103,7 +110,7 @@ fn try_cuda_stream_tokens(
         .generate_gpu_resident(&prompt_ids, &q_config)
         .map_err(|e| {
             api_err(
-                StatusCode::INTERNAL_SERVER_ERROR,
+                super::generation_error_status(&e),
                 format!("CUDA generation failed: {e}"),
             )
         })?;

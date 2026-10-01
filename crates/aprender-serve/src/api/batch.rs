@@ -92,6 +92,24 @@ fn generation_err(e: &crate::error::RealizarError) -> ApiErr {
     }
 }
 
+/// D5: refuse a prompt that fills the serving context (model context capped by
+/// the device KV cache) with a 400 before a CUDA path takes the model lock, the
+/// same pre-flight chat and completions run through `fit_serving_context`.
+#[cfg_attr(not(feature = "cuda"), allow(dead_code))]
+pub(crate) fn preflight_serving_context(state: &AppState, prompt_tokens: usize) -> Result<(), ApiErr> {
+    preflight_context(state.serving_context(), prompt_tokens)
+}
+
+/// D5: the 400 "context exceeds N" refusal against an explicit context, for a
+/// route whose model is not the one `AppState::serving_context` describes.
+#[cfg_attr(not(any(feature = "cuda", feature = "gpu")), allow(dead_code))]
+pub(crate) fn preflight_context(context: Option<usize>, prompt_tokens: usize) -> Result<(), ApiErr> {
+    match context.and_then(|ctx| super::serve_context_refusal(prompt_tokens, ctx)) {
+        Some(msg) => Err(api_err(StatusCode::BAD_REQUEST, msg)),
+        None => Ok(()),
+    }
+}
+
 /// Build the quantized engine config shared by `/generate` and `/batch/generate`.
 ///
 /// `cancel` is the request's [`CancelToken`] (aprender#2376(3)). It is a required
@@ -271,7 +289,7 @@ fn try_apr_generate(
         .generate_with_cache(&prompt_ids, &gen_config)
         .map_err(|e| {
             api_err(
-                StatusCode::INTERNAL_SERVER_ERROR,
+                crate::api::generation_error_status(&e),
                 format!("APR generation failed: {e}"),
             )
         })?;
@@ -321,7 +339,7 @@ fn registry_generate(
 
     let generated = model
         .generate(&prompt, &config)
-        .map_err(|e| api_err(StatusCode::INTERNAL_SERVER_ERROR, e))?;
+        .map_err(|e| api_err(crate::api::generation_error_status(&e), e))?;
 
     let token_ids: Vec<u32> = generated
         .iter()
@@ -494,14 +512,9 @@ fn try_cuda_batch_generate(
         ..Default::default()
     };
 
-    let mut results = Vec::with_capacity(request.prompts.len());
-    let mut cuda_model = cuda_model_lock.write().map_err(|_| {
-        api_err(
-            StatusCode::INTERNAL_SERVER_ERROR,
-            "Failed to acquire CUDA model lock",
-        )
-    })?;
-
+    // D5: tokenize and pre-flight every prompt before the write lock, so an
+    // over-context prompt is a 400 with the model untouched and no GPU work spent.
+    let mut encoded = Vec::with_capacity(request.prompts.len());
     for prompt_text in &request.prompts {
         let prompt_ids = tokenizer.encode(prompt_text);
         if prompt_ids.is_empty() {
@@ -510,12 +523,25 @@ fn try_cuda_batch_generate(
                 format!("Prompt '{prompt_text}' tokenizes to empty sequence"),
             ));
         }
+        preflight_serving_context(state, prompt_ids.len())?;
+        encoded.push(prompt_ids);
+    }
+
+    let mut results = Vec::with_capacity(encoded.len());
+    let mut cuda_model = cuda_model_lock.write().map_err(|_| {
+        api_err(
+            StatusCode::INTERNAL_SERVER_ERROR,
+            "Failed to acquire CUDA model lock",
+        )
+    })?;
+
+    for prompt_ids in &encoded {
         let prompt_tokens = prompt_ids.len();
         let generated = cuda_model
-            .generate_gpu_resident(&prompt_ids, &q_config)
+            .generate_gpu_resident(prompt_ids, &q_config)
             .map_err(|e| {
                 api_err(
-                    StatusCode::INTERNAL_SERVER_ERROR,
+                    crate::api::generation_error_status(&e),
                     format!("CUDA generation failed: {e}"),
                 )
             })?;
@@ -622,7 +648,7 @@ fn try_apr_batch_generate(
             .generate_with_cache(&prompt_ids, &gen_config)
             .map_err(|e| {
                 api_err(
-                    StatusCode::INTERNAL_SERVER_ERROR,
+                    crate::api::generation_error_status(&e),
                     format!("APR generation failed: {e}"),
                 )
             })?;
@@ -682,7 +708,7 @@ fn registry_batch_generate(
         let prompt: Vec<usize> = prompt_ids.iter().map(|&id| id as usize).collect();
         let generated = model
             .generate(&prompt, &config)
-            .map_err(|e| api_err(StatusCode::INTERNAL_SERVER_ERROR, e))?;
+            .map_err(|e| api_err(crate::api::generation_error_status(&e), e))?;
         let token_ids: Vec<u32> = generated
             .iter()
             .map(|&id| {
