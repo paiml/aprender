@@ -21026,6 +21026,50 @@
 <https://ont.paiml.dev/v1alpha1/issue/paiml%2Faprender%233022%402026-09-10T03:13:40Z> <https://ont.paiml.dev/v1alpha1/issue/title> "apr chat silently loads the toy Demo model for sharded SafeTensors (.safetensors.index.json) instead of the real model"^^<http://www.w3.org/2001/XMLSchema#string> .
 <https://ont.paiml.dev/v1alpha1/issue/paiml%2Faprender%233022%402026-09-10T03:13:40Z> <https://ont.paiml.dev/v1alpha1/issue/updatedAt> "2026-09-10T03:13:40Z"^^<http://www.w3.org/2001/XMLSchema#string> .
 <https://ont.paiml.dev/v1alpha1/issue/paiml%2Faprender%233022%402026-09-10T03:13:40Z> <https://ont.paiml.dev/v1alpha1/issue/url> "https://github.com/paiml/aprender/issues/3022"^^<http://www.w3.org/2001/XMLSchema#string> .
+<https://ont.paiml.dev/v1alpha1/kernel/evidence%2Fkernels%2Fgated_rmsnorm%2Flambda.json%230> <http://www.w3.org/1999/02/22-rdf-syntax-ns#type> <https://ont.paiml.dev/v1alpha1/kernel/Receipt> .
+<https://ont.paiml.dev/v1alpha1/kernel/evidence%2Fkernels%2Fgated_rmsnorm%2Flambda.json%230> <https://ont.paiml.dev/v1alpha1/kernel/authoring> "oxide"^^<http://www.w3.org/2001/XMLSchema#string> .
+<https://ont.paiml.dev/v1alpha1/kernel/evidence%2Fkernels%2Fgated_rmsnorm%2Flambda.json%230> <https://ont.paiml.dev/v1alpha1/kernel/cc> "8.9"^^<http://www.w3.org/2001/XMLSchema#string> .
+<https://ont.paiml.dev/v1alpha1/kernel/evidence%2Fkernels%2Fgated_rmsnorm%2Flambda.json%230> <https://ont.paiml.dev/v1alpha1/kernel/cos> "1"^^<http://www.w3.org/2001/XMLSchema#double> .
+<https://ont.paiml.dev/v1alpha1/kernel/evidence%2Fkernels%2Fgated_rmsnorm%2Flambda.json%230> <https://ont.paiml.dev/v1alpha1/kernel/host> "lambda"^^<http://www.w3.org/2001/XMLSchema#string> .
+<https://ont.paiml.dev/v1alpha1/kernel/evidence%2Fkernels%2Fgated_rmsnorm%2Flambda.json%230> <https://ont.paiml.dev/v1alpha1/kernel/maxdiff> "0.0000009537"^^<http://www.w3.org/2001/XMLSchema#double> .
+<https://ont.paiml.dev/v1alpha1/kernel/evidence%2Fkernels%2Fgated_rmsnorm%2Flambda.json%230> <https://ont.paiml.dev/v1alpha1/kernel/oxideUs> "2.458"^^<http://www.w3.org/2001/XMLSchema#double> .
+<https://ont.paiml.dev/v1alpha1/kernel/evidence%2Fkernels%2Fgated_rmsnorm%2Flambda.json%230> <https://ont.paiml.dev/v1alpha1/kernel/ptxUs> "2.734"^^<http://www.w3.org/2001/XMLSchema#double> .
+<https://ont.paiml.dev/v1alpha1/kernel/evidence%2Fkernels%2Fgated_rmsnorm%2Flambda.json%230> <https://ont.paiml.dev/v1alpha1/kernel/ptxasVersion> "Cuda compilation tools, release 12.8, V12.8.93"^^<http://www.w3.org/2001/XMLSchema#string> .
+<https://ont.paiml.dev/v1alpha1/kernel/evidence%2Fkernels%2Fgated_rmsnorm%2Flambda.json%230> <https://ont.paiml.dev/v1alpha1/kernel/registerBudget> "21"^^<http://www.w3.org/2001/XMLSchema#integer> .
+<https://ont.paiml.dev/v1alpha1/kernel/evidence%2Fkernels%2Fgated_rmsnorm%2Flambda.json%230> <https://ont.paiml.dev/v1alpha1/kernel/sha> "91969973aac74cf031d14010d0f4a2938c2b1161"^^<http://www.w3.org/2001/XMLSchema#string> .
+<https://ont.paiml.dev/v1alpha1/kernel/evidence%2Fkernels%2Fgated_rmsnorm%2Flambda.json%231> <http://www.w3.org/1999/02/22-rdf-syntax-ns#type> <https://ont.paiml.dev/v1alpha1/kernel/Receipt> .
+<https://ont.paiml.dev/v1alpha1/kernel/evidence%2Fkernels%2Fgated_rmsnorm%2Flambda.json%231> <https://ont.paiml.dev/v1alpha1/kernel/authoring> "oxide"^^<http://www.w3.org/2001/XMLSchema#string> .
+<https://ont.paiml.dev/v1alpha1/kernel/evidence%2Fkernels%2Fgated_rmsnorm%2Flambda.json%231> <https://ont.paiml.dev/v1alpha1/kernel/cc> "8.9"^^<http://www.w3.org/2001/XMLSchema#string> .
+<https://ont.paiml.dev/v1alpha1/kernel/evidence%2Fkernels%2Fgated_rmsnorm%2Flambda.json%231> <https://ont.paiml.dev/v1alpha1/kernel/cos> "1"^^<http://www.w3.org/2001/XMLSchema#double> .
+<https://ont.paiml.dev/v1alpha1/kernel/evidence%2Fkernels%2Fgated_rmsnorm%2Flambda.json%231> <https://ont.paiml.dev/v1alpha1/kernel/host> "lambda"^^<http://www.w3.org/2001/XMLSchema#string> .
+<https://ont.paiml.dev/v1alpha1/kernel/evidence%2Fkernels%2Fgated_rmsnorm%2Flambda.json%231> <https://ont.paiml.dev/v1alpha1/kernel/maxdiff> "0.0000009537"^^<http://www.w3.org/2001/XMLSchema#double> .
+<https://ont.paiml.dev/v1alpha1/kernel/evidence%2Fkernels%2Fgated_rmsnorm%2Flambda.json%231> <https://ont.paiml.dev/v1alpha1/kernel/oxideUs> "2.456"^^<http://www.w3.org/2001/XMLSchema#double> .
+<https://ont.paiml.dev/v1alpha1/kernel/evidence%2Fkernels%2Fgated_rmsnorm%2Flambda.json%231> <https://ont.paiml.dev/v1alpha1/kernel/ptxUs> "2.764"^^<http://www.w3.org/2001/XMLSchema#double> .
+<https://ont.paiml.dev/v1alpha1/kernel/evidence%2Fkernels%2Fgated_rmsnorm%2Flambda.json%231> <https://ont.paiml.dev/v1alpha1/kernel/ptxasVersion> "Cuda compilation tools, release 12.8, V12.8.93"^^<http://www.w3.org/2001/XMLSchema#string> .
+<https://ont.paiml.dev/v1alpha1/kernel/evidence%2Fkernels%2Fgated_rmsnorm%2Flambda.json%231> <https://ont.paiml.dev/v1alpha1/kernel/registerBudget> "21"^^<http://www.w3.org/2001/XMLSchema#integer> .
+<https://ont.paiml.dev/v1alpha1/kernel/evidence%2Fkernels%2Fgated_rmsnorm%2Flambda.json%231> <https://ont.paiml.dev/v1alpha1/kernel/sha> "91969973aac74cf031d14010d0f4a2938c2b1161"^^<http://www.w3.org/2001/XMLSchema#string> .
+<https://ont.paiml.dev/v1alpha1/kernel/evidence%2Fkernels%2Fgated_rmsnorm%2Flambda.json%232> <http://www.w3.org/1999/02/22-rdf-syntax-ns#type> <https://ont.paiml.dev/v1alpha1/kernel/Receipt> .
+<https://ont.paiml.dev/v1alpha1/kernel/evidence%2Fkernels%2Fgated_rmsnorm%2Flambda.json%232> <https://ont.paiml.dev/v1alpha1/kernel/authoring> "oxide"^^<http://www.w3.org/2001/XMLSchema#string> .
+<https://ont.paiml.dev/v1alpha1/kernel/evidence%2Fkernels%2Fgated_rmsnorm%2Flambda.json%232> <https://ont.paiml.dev/v1alpha1/kernel/cc> "8.9"^^<http://www.w3.org/2001/XMLSchema#string> .
+<https://ont.paiml.dev/v1alpha1/kernel/evidence%2Fkernels%2Fgated_rmsnorm%2Flambda.json%232> <https://ont.paiml.dev/v1alpha1/kernel/cos> "1"^^<http://www.w3.org/2001/XMLSchema#double> .
+<https://ont.paiml.dev/v1alpha1/kernel/evidence%2Fkernels%2Fgated_rmsnorm%2Flambda.json%232> <https://ont.paiml.dev/v1alpha1/kernel/host> "lambda"^^<http://www.w3.org/2001/XMLSchema#string> .
+<https://ont.paiml.dev/v1alpha1/kernel/evidence%2Fkernels%2Fgated_rmsnorm%2Flambda.json%232> <https://ont.paiml.dev/v1alpha1/kernel/maxdiff> "0.0000009537"^^<http://www.w3.org/2001/XMLSchema#double> .
+<https://ont.paiml.dev/v1alpha1/kernel/evidence%2Fkernels%2Fgated_rmsnorm%2Flambda.json%232> <https://ont.paiml.dev/v1alpha1/kernel/oxideUs> "2.478"^^<http://www.w3.org/2001/XMLSchema#double> .
+<https://ont.paiml.dev/v1alpha1/kernel/evidence%2Fkernels%2Fgated_rmsnorm%2Flambda.json%232> <https://ont.paiml.dev/v1alpha1/kernel/ptxUs> "2.765"^^<http://www.w3.org/2001/XMLSchema#double> .
+<https://ont.paiml.dev/v1alpha1/kernel/evidence%2Fkernels%2Fgated_rmsnorm%2Flambda.json%232> <https://ont.paiml.dev/v1alpha1/kernel/ptxasVersion> "Cuda compilation tools, release 12.8, V12.8.93"^^<http://www.w3.org/2001/XMLSchema#string> .
+<https://ont.paiml.dev/v1alpha1/kernel/evidence%2Fkernels%2Fgated_rmsnorm%2Flambda.json%232> <https://ont.paiml.dev/v1alpha1/kernel/registerBudget> "21"^^<http://www.w3.org/2001/XMLSchema#integer> .
+<https://ont.paiml.dev/v1alpha1/kernel/evidence%2Fkernels%2Fgated_rmsnorm%2Flambda.json%232> <https://ont.paiml.dev/v1alpha1/kernel/sha> "91969973aac74cf031d14010d0f4a2938c2b1161"^^<http://www.w3.org/2001/XMLSchema#string> .
+<https://ont.paiml.dev/v1alpha1/kernel/evidence%2Fkernels%2Fgated_rmsnorm%2Flambda.json%233> <http://www.w3.org/1999/02/22-rdf-syntax-ns#type> <https://ont.paiml.dev/v1alpha1/kernel/Receipt> .
+<https://ont.paiml.dev/v1alpha1/kernel/evidence%2Fkernels%2Fgated_rmsnorm%2Flambda.json%233> <https://ont.paiml.dev/v1alpha1/kernel/authoring> "oxide"^^<http://www.w3.org/2001/XMLSchema#string> .
+<https://ont.paiml.dev/v1alpha1/kernel/evidence%2Fkernels%2Fgated_rmsnorm%2Flambda.json%233> <https://ont.paiml.dev/v1alpha1/kernel/cc> "8.9"^^<http://www.w3.org/2001/XMLSchema#string> .
+<https://ont.paiml.dev/v1alpha1/kernel/evidence%2Fkernels%2Fgated_rmsnorm%2Flambda.json%233> <https://ont.paiml.dev/v1alpha1/kernel/cos> "1"^^<http://www.w3.org/2001/XMLSchema#double> .
+<https://ont.paiml.dev/v1alpha1/kernel/evidence%2Fkernels%2Fgated_rmsnorm%2Flambda.json%233> <https://ont.paiml.dev/v1alpha1/kernel/host> "lambda"^^<http://www.w3.org/2001/XMLSchema#string> .
+<https://ont.paiml.dev/v1alpha1/kernel/evidence%2Fkernels%2Fgated_rmsnorm%2Flambda.json%233> <https://ont.paiml.dev/v1alpha1/kernel/maxdiff> "0.0000009537"^^<http://www.w3.org/2001/XMLSchema#double> .
+<https://ont.paiml.dev/v1alpha1/kernel/evidence%2Fkernels%2Fgated_rmsnorm%2Flambda.json%233> <https://ont.paiml.dev/v1alpha1/kernel/oxideUs> "2.447"^^<http://www.w3.org/2001/XMLSchema#double> .
+<https://ont.paiml.dev/v1alpha1/kernel/evidence%2Fkernels%2Fgated_rmsnorm%2Flambda.json%233> <https://ont.paiml.dev/v1alpha1/kernel/ptxUs> "2.754"^^<http://www.w3.org/2001/XMLSchema#double> .
+<https://ont.paiml.dev/v1alpha1/kernel/evidence%2Fkernels%2Fgated_rmsnorm%2Flambda.json%233> <https://ont.paiml.dev/v1alpha1/kernel/ptxasVersion> "Cuda compilation tools, release 12.8, V12.8.93"^^<http://www.w3.org/2001/XMLSchema#string> .
+<https://ont.paiml.dev/v1alpha1/kernel/evidence%2Fkernels%2Fgated_rmsnorm%2Flambda.json%233> <https://ont.paiml.dev/v1alpha1/kernel/registerBudget> "21"^^<http://www.w3.org/2001/XMLSchema#integer> .
+<https://ont.paiml.dev/v1alpha1/kernel/evidence%2Fkernels%2Fgated_rmsnorm%2Flambda.json%233> <https://ont.paiml.dev/v1alpha1/kernel/sha> "91969973aac74cf031d14010d0f4a2938c2b1161"^^<http://www.w3.org/2001/XMLSchema#string> .
 <https://ont.paiml.dev/v1alpha1/llm/claude-md> <http://www.w3.org/1999/02/22-rdf-syntax-ns#type> <https://ont.paiml.dev/v1alpha1/llm/LlmContext> .
 <https://ont.paiml.dev/v1alpha1/llm/claude-md> <https://ont.paiml.dev/v1alpha1/llm/command> "bash scripts/check_package_includes.sh"^^<http://www.w3.org/2001/XMLSchema#string> .
 <https://ont.paiml.dev/v1alpha1/llm/claude-md> <https://ont.paiml.dev/v1alpha1/llm/commandsSection> "APR CLI (`cargo install aprender`)"^^<http://www.w3.org/2001/XMLSchema#string> .
@@ -26189,15 +26233,32 @@
 <https://ont.paiml.dev/v1alpha1/symbol/entrenar::update> <https://ont.paiml.dev/v1alpha1/sym/unresolvedReason> "no `fn update` (free or in an impl) or item `update` in `crates/aprender-train/src/lib.rs`"^^<http://www.w3.org/2001/XMLSchema#string> .
 <https://ont.paiml.dev/v1alpha1/symbol/gated_rmsnorm_oxide::kernels::gated_rmsnorm> <http://www.w3.org/1999/02/22-rdf-syntax-ns#type> <http://www.w3.org/ns/prov#Entity> .
 <https://ont.paiml.dev/v1alpha1/symbol/gated_rmsnorm_oxide::kernels::gated_rmsnorm> <http://www.w3.org/1999/02/22-rdf-syntax-ns#type> <https://ont.paiml.dev/v1alpha1/Code> .
+<https://ont.paiml.dev/v1alpha1/symbol/gated_rmsnorm_oxide::kernels::gated_rmsnorm> <http://www.w3.org/1999/02/22-rdf-syntax-ns#type> <https://ont.paiml.dev/v1alpha1/KernelSymbol> .
 <https://ont.paiml.dev/v1alpha1/symbol/gated_rmsnorm_oxide::kernels::gated_rmsnorm> <http://www.w3.org/1999/02/22-rdf-syntax-ns#type> <https://ont.paiml.dev/v1alpha1/Symbol> .
+<https://ont.paiml.dev/v1alpha1/symbol/gated_rmsnorm_oxide::kernels::gated_rmsnorm> <https://ont.paiml.dev/v1alpha1/kernel/authoring> "oxide"^^<http://www.w3.org/2001/XMLSchema#string> .
+<https://ont.paiml.dev/v1alpha1/symbol/gated_rmsnorm_oxide::kernels::gated_rmsnorm> <https://ont.paiml.dev/v1alpha1/kernel/parityOn> "lambda"^^<http://www.w3.org/2001/XMLSchema#string> .
+<https://ont.paiml.dev/v1alpha1/symbol/gated_rmsnorm_oxide::kernels::gated_rmsnorm> <https://ont.paiml.dev/v1alpha1/kernel/parityReceipt> <https://ont.paiml.dev/v1alpha1/kernel/evidence%2Fkernels%2Fgated_rmsnorm%2Flambda.json%230> .
+<https://ont.paiml.dev/v1alpha1/symbol/gated_rmsnorm_oxide::kernels::gated_rmsnorm> <https://ont.paiml.dev/v1alpha1/kernel/parityReceipt> <https://ont.paiml.dev/v1alpha1/kernel/evidence%2Fkernels%2Fgated_rmsnorm%2Flambda.json%231> .
+<https://ont.paiml.dev/v1alpha1/symbol/gated_rmsnorm_oxide::kernels::gated_rmsnorm> <https://ont.paiml.dev/v1alpha1/kernel/parityReceipt> <https://ont.paiml.dev/v1alpha1/kernel/evidence%2Fkernels%2Fgated_rmsnorm%2Flambda.json%232> .
+<https://ont.paiml.dev/v1alpha1/symbol/gated_rmsnorm_oxide::kernels::gated_rmsnorm> <https://ont.paiml.dev/v1alpha1/kernel/parityReceipt> <https://ont.paiml.dev/v1alpha1/kernel/evidence%2Fkernels%2Fgated_rmsnorm%2Flambda.json%233> .
+<https://ont.paiml.dev/v1alpha1/symbol/gated_rmsnorm_oxide::kernels::gated_rmsnorm> <https://ont.paiml.dev/v1alpha1/kernel/reference> <https://ont.paiml.dev/v1alpha1/symbol/realizar::gguf::forward_qwen35::gated_rmsnorm> .
+<https://ont.paiml.dev/v1alpha1/symbol/gated_rmsnorm_oxide::kernels::gated_rmsnorm> <https://ont.paiml.dev/v1alpha1/kernel/registerBudget> "21"^^<http://www.w3.org/2001/XMLSchema#integer> .
+<https://ont.paiml.dev/v1alpha1/symbol/gated_rmsnorm_oxide::kernels::gated_rmsnorm> <https://ont.paiml.dev/v1alpha1/kernel/safety> "true"^^<http://www.w3.org/2001/XMLSchema#string> .
+<https://ont.paiml.dev/v1alpha1/symbol/gated_rmsnorm_oxide::kernels::gated_rmsnorm> <https://ont.paiml.dev/v1alpha1/kernel/timingOn> "lambda"^^<http://www.w3.org/2001/XMLSchema#string> .
+<https://ont.paiml.dev/v1alpha1/symbol/gated_rmsnorm_oxide::kernels::gated_rmsnorm> <https://ont.paiml.dev/v1alpha1/sym/attribute> "doc"^^<http://www.w3.org/2001/XMLSchema#string> .
+<https://ont.paiml.dev/v1alpha1/symbol/gated_rmsnorm_oxide::kernels::gated_rmsnorm> <https://ont.paiml.dev/v1alpha1/sym/attribute> "kernel"^^<http://www.w3.org/2001/XMLSchema#string> .
 <https://ont.paiml.dev/v1alpha1/symbol/gated_rmsnorm_oxide::kernels::gated_rmsnorm> <https://ont.paiml.dev/v1alpha1/sym/bindingStatus> "implemented"^^<http://www.w3.org/2001/XMLSchema#string> .
+<https://ont.paiml.dev/v1alpha1/symbol/gated_rmsnorm_oxide::kernels::gated_rmsnorm> <https://ont.paiml.dev/v1alpha1/sym/boundsChecked> "true"^^<http://www.w3.org/2001/XMLSchema#boolean> .
 <https://ont.paiml.dev/v1alpha1/symbol/gated_rmsnorm_oxide::kernels::gated_rmsnorm> <https://ont.paiml.dev/v1alpha1/sym/crate> "gated_rmsnorm_oxide"^^<http://www.w3.org/2001/XMLSchema#string> .
 <https://ont.paiml.dev/v1alpha1/symbol/gated_rmsnorm_oxide::kernels::gated_rmsnorm> <https://ont.paiml.dev/v1alpha1/sym/equation> "gated_rmsnorm"^^<http://www.w3.org/2001/XMLSchema#string> .
+<https://ont.paiml.dev/v1alpha1/symbol/gated_rmsnorm_oxide::kernels::gated_rmsnorm> <https://ont.paiml.dev/v1alpha1/sym/file> "experiments/cuda-oxide/gated-rmsnorm/src/lib.rs"^^<http://www.w3.org/2001/XMLSchema#string> .
 <https://ont.paiml.dev/v1alpha1/symbol/gated_rmsnorm_oxide::kernels::gated_rmsnorm> <https://ont.paiml.dev/v1alpha1/sym/implements> <https://ont.paiml.dev/v1alpha1/contract/gated-delta-net-v1> .
+<https://ont.paiml.dev/v1alpha1/symbol/gated_rmsnorm_oxide::kernels::gated_rmsnorm> <https://ont.paiml.dev/v1alpha1/sym/kind> "fn"^^<http://www.w3.org/2001/XMLSchema#string> .
 <https://ont.paiml.dev/v1alpha1/symbol/gated_rmsnorm_oxide::kernels::gated_rmsnorm> <https://ont.paiml.dev/v1alpha1/sym/module> "gated_rmsnorm_oxide::kernels"^^<http://www.w3.org/2001/XMLSchema#string> .
 <https://ont.paiml.dev/v1alpha1/symbol/gated_rmsnorm_oxide::kernels::gated_rmsnorm> <https://ont.paiml.dev/v1alpha1/sym/name> "gated_rmsnorm"^^<http://www.w3.org/2001/XMLSchema#string> .
-<https://ont.paiml.dev/v1alpha1/symbol/gated_rmsnorm_oxide::kernels::gated_rmsnorm> <https://ont.paiml.dev/v1alpha1/sym/resolved> "false"^^<http://www.w3.org/2001/XMLSchema#boolean> .
-<https://ont.paiml.dev/v1alpha1/symbol/gated_rmsnorm_oxide::kernels::gated_rmsnorm> <https://ont.paiml.dev/v1alpha1/sym/unresolvedReason> "crate `gated_rmsnorm_oxide` is not a workspace member"^^<http://www.w3.org/2001/XMLSchema#string> .
+<https://ont.paiml.dev/v1alpha1/symbol/gated_rmsnorm_oxide::kernels::gated_rmsnorm> <https://ont.paiml.dev/v1alpha1/sym/resolved> "true"^^<http://www.w3.org/2001/XMLSchema#boolean> .
+<https://ont.paiml.dev/v1alpha1/symbol/gated_rmsnorm_oxide::kernels::gated_rmsnorm> <https://ont.paiml.dev/v1alpha1/sym/unsafeFree> "true"^^<http://www.w3.org/2001/XMLSchema#boolean> .
+<https://ont.paiml.dev/v1alpha1/symbol/gated_rmsnorm_oxide::kernels::gated_rmsnorm> <https://ont.paiml.dev/v1alpha1/sym/visibility> "pub"^^<http://www.w3.org/2001/XMLSchema#string> .
 <https://ont.paiml.dev/v1alpha1/symbol/presentar::crates::presentar-core::src::virtualization::cells_to_render> <http://www.w3.org/1999/02/22-rdf-syntax-ns#type> <http://www.w3.org/ns/prov#Entity> .
 <https://ont.paiml.dev/v1alpha1/symbol/presentar::crates::presentar-core::src::virtualization::cells_to_render> <http://www.w3.org/1999/02/22-rdf-syntax-ns#type> <https://ont.paiml.dev/v1alpha1/Code> .
 <https://ont.paiml.dev/v1alpha1/symbol/presentar::crates::presentar-core::src::virtualization::cells_to_render> <http://www.w3.org/1999/02/22-rdf-syntax-ns#type> <https://ont.paiml.dev/v1alpha1/Symbol> .

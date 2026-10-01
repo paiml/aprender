@@ -211,11 +211,6 @@
       "ticket": "#4502"
     },
     {
-      "symbol": "gated_rmsnorm_oxide::kernels::gated_rmsnorm",
-      "reason": "ghost: crate `gated_rmsnorm_oxide` is not a workspace member",
-      "ticket": "#4502"
-    },
-    {
       "symbol": "presentar::crates::presentar-core::src::virtualization::cells_to_render",
       "reason": "ghost: crate `presentar` is not a workspace member",
       "ticket": "#4502"

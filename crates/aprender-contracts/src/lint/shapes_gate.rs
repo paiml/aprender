@@ -339,6 +339,11 @@ fn run_or_answer(
             .flat_map(|cc| cells_gate::findings(cc, &arming)),
     );
     refuse_vacuous_kernels(&mut counted, &shapes, &arming, extraction.kernel.kernels);
+    refuse_unresolved_kernel_claims(
+        &mut counted,
+        extraction.kernel.kernels,
+        &kernel_claims(contract_dir, extraction.kernel.receipt_files),
+    );
     let passed = counted.violations == 0;
     let verdict = verdict_of(&counted, armed_vacuity);
     let by_shape = by_shape(&focus_of);
@@ -904,6 +909,50 @@ fn refuse_vacuous_kernels(
     }
 }
 
+/// What the repo CLAIMS about kernels, by name: every `kernel: true` binding (`module_path::function`) and the
+/// receipt files under `evidence/kernels/`.
+fn kernel_claims(contract_dir: &Path, receipt_files: usize) -> Vec<String> {
+    let mut out: Vec<String> = extract::code::registries(contract_dir)
+        .iter()
+        .flat_map(|(_, r)| r.bindings.iter().filter(|b| b.kernel))
+        .map(|b| {
+            format!(
+                "binding {}::{}",
+                b.module_path.as_deref().unwrap_or_default(),
+                b.function.as_deref().unwrap_or_default()
+            )
+        })
+        .collect();
+    if receipt_files > 0 {
+        out.push(format!(
+            "{receipt_files} receipt file(s) under {}",
+            kernel::EVIDENCE_DIR
+        ));
+    }
+    out
+}
+
+/// ONT-4c4 (C196, measured): `pv lint --gate shapes` was `Pass` with `by_entity_type.kernel = 0` while
+/// `binding.yaml` bound `gated_rmsnorm` `kernel: true` and its receipt was tracked — the kernel shapes, unarmed,
+/// graded nothing and [`refuse_vacuous_kernels`] only warned. A claimed kernel that resolves to ZERO focus nodes
+/// is a Fail whatever the arming, naming the claim: the extractor lost it, the shapes never saw it.
+fn refuse_unresolved_kernel_claims(c: &mut Counted, kernels: usize, claims: &[String]) {
+    if kernels > 0 || claims.is_empty() {
+        return;
+    }
+    c.violations += 1;
+    c.findings.push(LintFinding::new(
+        "PV-ONT-012",
+        RuleSeverity::Error,
+        format!(
+            "0 #[kernel] focus nodes resolved, yet the repo claims kernel(s): {} — the kernel shapes graded \
+             nothing; vacuous, not a pass",
+            claims.join(", ")
+        ),
+        "contracts/ont-kernel-receipts-v1.yaml".to_string(),
+    ));
+}
+
 fn vacuous_kernel_finding(ids: &[&str], severity: RuleSeverity, note: &str) -> LintFinding {
     LintFinding::new(
         "PV-ONT-012",
@@ -1147,6 +1196,66 @@ mod tests {
             (c.violations, c.unarmed_violations, c.findings.len()),
             (0, 0, 0)
         );
+    }
+
+    /// ONT-4c4 (C196): a kernel binding or receipt with zero resolved kernel focus nodes is RED by name, armed or
+    /// not; no claim, or any resolved kernel, leaves the count untouched.
+    #[test]
+    fn falsify_ont4c4_a_claimed_kernel_with_no_focus_node_fails_by_name() {
+        let claims = vec![
+            "binding ox::kernels::g".to_string(),
+            "1 receipt file(s) under evidence/kernels".to_string(),
+        ];
+        let mut c = empty_counted();
+        refuse_unresolved_kernel_claims(&mut c, 0, &claims);
+        assert_eq!(c.violations, 1);
+        assert_eq!(c.findings.len(), 1);
+        assert_eq!(c.findings[0].severity, RuleSeverity::Error);
+        assert!(
+            c.findings[0].message.contains("ox::kernels::g"),
+            "{}",
+            c.findings[0].message
+        );
+        assert!(
+            c.findings[0].message.contains("evidence/kernels"),
+            "{}",
+            c.findings[0].message
+        );
+        assert_eq!(verdict_of(&c, false), Verdict::Fail);
+
+        let mut c = empty_counted();
+        refuse_unresolved_kernel_claims(&mut c, 1, &claims);
+        assert_eq!((c.violations, c.findings.len()), (0, 0));
+        let mut c = empty_counted();
+        refuse_unresolved_kernel_claims(&mut c, 0, &[]);
+        assert_eq!((c.violations, c.findings.len()), (0, 0));
+    }
+
+    /// The claims are read by name: the `kernel: true` row only (never its CPU reference), plus the receipt count.
+    #[test]
+    fn kernel_claims_names_only_kernel_rows_and_receipts() {
+        let tmp = tempfile::tempdir().unwrap();
+        let d = tmp.path().join("contracts");
+        std::fs::create_dir_all(&d).unwrap();
+        std::fs::write(
+            d.join("binding.yaml"),
+            "version: 1.0.0\ntarget_crate: k\nbindings:\n\
+             - contract: c-v1.yaml\n  equation: g\n  module_path: k::cpu\n  function: g\n  status: implemented\n\
+             - contract: c-v1.yaml\n  equation: g\n  module_path: ox::kernels\n  function: g\n  status: implemented\n  kernel: true\n",
+        )
+        .unwrap();
+        assert_eq!(
+            kernel_claims(&d, 0),
+            vec!["binding ox::kernels::g".to_string()]
+        );
+        assert_eq!(
+            kernel_claims(&d, 2),
+            vec![
+                "binding ox::kernels::g".to_string(),
+                "2 receipt file(s) under evidence/kernels".to_string()
+            ]
+        );
+        assert!(kernel_claims(&tmp.path().join("none"), 0).is_empty());
     }
 
     #[test]
