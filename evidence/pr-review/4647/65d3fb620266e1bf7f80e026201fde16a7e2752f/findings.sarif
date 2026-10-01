@@ -1,0 +1,136 @@
+{
+  "version": "2.1.0",
+  "$schema": "https://raw.githubusercontent.com/oasis-tcs/sarif-spec/master/Schemata/sarif-schema-2.1.0.json",
+  "runs": [
+    {
+      "tool": {
+        "driver": {
+          "name": "pmat",
+          "informationUri": "https://github.com/paiml/pmat",
+          "rules": []
+        }
+      },
+      "invocations": [
+        {
+          "executionSuccessful": true,
+          "commandLine": "pmat query \"shrink-only baseline ratchet guard\" --limit 5; pmat query \"mutants debt baseline survivors\" --limit 5; scripts/pr_review_duplication_scan.sh --rust-semantic; plus the measured commands in each result"
+        }
+      ],
+      "results": [
+        {
+          "ruleId": "PRREV-RATCHET-002",
+          "level": "warning",
+          "message": {
+            "text": "Still present at 65d3fb6202 (reported on the earlier head 1f2e3598ea; no change to the script since): the guard can never reach an empty baseline. A head debt file with zero data rows (header only) is RED as 'malformed (need 5 tab fields)' because `check_rows <<<\"$head\"` feeds awk one empty line (NF=0). Re-measured in a scratch repo: base has one row, head is '# h' only, MUTANTS_DEBT_BASE=base, rc=1, 'malformed rows'. The 12-case self-test has no case for it (R3 shrinks 2->1, never to 0)."
+          },
+          "locations": [
+            {
+              "physicalLocation": {
+                "artifactLocation": {
+                  "uri": "scripts/check_mutants_debt_ratchet.sh"
+                },
+                "region": {
+                  "startLine": 41
+                }
+              }
+            }
+          ],
+          "properties": {
+            "grounding": "measured",
+            "command": [
+              "bash",
+              "scripts/check_mutants_debt_ratchet.sh",
+              "(scratch repo: header-only ci/mutants-debt.tsv at head, one-row copy at base, MUTANTS_DEBT_BASE=base)"
+            ],
+            "exit_code": 1,
+            "stdout_sha256": "d14210eff1a275470894d91edcae22cdb6731fdaa7c042ad4f21222f391ba420",
+            "failure_scenario": "When the last survivor is killed and the PR deletes the last data row, guard-tree fails with 'malformed rows'; the author must edit the guard or keep a dummy row, so the ratchet's goal state (empty debt) is unreachable as written.",
+            "precision_class": "advisory"
+          }
+        },
+        {
+          "ruleId": "PRREV-RATCHET-003",
+          "level": "note",
+          "message": {
+            "text": "Rows key on the cargo-mutants name, which embeds line:col (e.g. liskov.rs:119:5). Any edit to a baselined file that shifts a survivor's line changes its string; the guard reads that as a NEW row (RED) and the only way to turn it green is to DELETE the row, which the shrink-only rule scores as a kill. With mutants report-only meanwhile, a line shift can launder a survivor out of the baseline without a test killing it, and a legitimate edit near a survivor is blocked until someone deletes its row."
+          },
+          "locations": [
+            {
+              "physicalLocation": {
+                "artifactLocation": {
+                  "uri": "scripts/check_mutants_debt_ratchet.sh"
+                },
+                "region": {
+                  "startLine": 63
+                }
+              }
+            }
+          ],
+          "properties": {
+            "grounding": "asserted",
+            "rationale": "Reading the rows format (ci/mutants-debt.tsv header, 590 rows keyed on file:line:col mutant strings) and the comm -23 comparison at lines 62-70 of the guard; not exercised against a real shifted file this run.",
+            "failure_scenario": "A PR reflows a file holding a baselined survivor: the row no longer matches, the guard demands deletion, the author deletes it, and the debt count falls with no test added.",
+            "precision_class": "advisory"
+          }
+        },
+        {
+          "ruleId": "PRREV-CI-COMMENT-001",
+          "level": "note",
+          "message": {
+            "text": "ci.yml:456 still says 'The blocking rule is the shrink-only survivor baseline'. What the guard blocks is only hand-edits that GROW the debt file; a new surviving mutant in a PR is neither blocked nor ledgered while the gate is report-only (new-survivor detection is #4649). The comment reads stronger than the mechanism."
+          },
+          "locations": [
+            {
+              "physicalLocation": {
+                "artifactLocation": {
+                  "uri": ".github/workflows/ci.yml"
+                },
+                "region": {
+                  "startLine": 456
+                }
+              }
+            }
+          ],
+          "properties": {
+            "grounding": "asserted",
+            "rationale": "Reading ci.yml 454-464 and the guard's inputs (the debt file at HEAD and at the merge base only).",
+            "failure_scenario": "A maintainer believes new mutation survivors are blocked and does not notice that between this merge and #4648/#4649 they are neither blocked nor recorded.",
+            "precision_class": "advisory"
+          }
+        }
+      ]
+    },
+    {
+      "tool": {
+        "driver": {
+          "name": "cargo-mutants",
+          "informationUri": "https://github.com/paiml/aprender",
+          "rules": []
+        }
+      },
+      "invocations": [
+        {
+          "executionSuccessful": true,
+          "commandLine": "scoped guard mutation: 10 sed mutants of scripts/check_mutants_debt_ratchet.sh vs its --self-test in a /tmp copy; 10 attempted, 10 killed (driver name is the receipt vocabulary slot; not a cargo-mutants run)"
+        }
+      ],
+      "results": []
+    },
+    {
+      "tool": {
+        "driver": {
+          "name": "antigravity",
+          "informationUri": "https://github.com/paiml/aprender",
+          "rules": []
+        }
+      },
+      "invocations": [
+        {
+          "executionSuccessful": true,
+          "commandLine": "agy -p <prompt file> --model gemini-3.1-pro-high --output-format json --json-schema .pr-review-schema.json --print-timeout 9m --dangerously-skip-permissions (disposable git-archive tree)"
+        }
+      ],
+      "results": []
+    }
+  ]
+}
