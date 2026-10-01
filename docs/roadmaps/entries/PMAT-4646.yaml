@@ -10,7 +10,7 @@
   spec: null
   acceptance_criteria:
   - ci/mutants-debt.tsv lists every known survivor of #4587 run 36725778557 and #4588 run 36703131059 as file, mutant, outcome, sha, run id (5 tab fields; outcome MissedMutant or Timeout)
-  - scripts/check_mutants_debt_ratchet.sh is RED on a grown, swapped, malformed, duplicated or missing debt file and on an unresolvable merge base, and GREEN on a shrink, a shrink to zero rows, or an unchanged file; and RED when no base is nameable (resolve_base refuses); its --self-test passes 16/16 (R1-R16: R14-R16 kill the three surviving guard mutants named by the 1f2e3598ea review)
+  - 'scripts/check_mutants_debt_ratchet.sh is RED on a grown, swapped, malformed, duplicated or missing debt file and on an unresolvable merge base, and GREEN on a shrink, a shrink to zero rows, or an unchanged file; and RED when no base is nameable (resolve_base refuses); its --self-test passes 16/16 (R1-R16: R14-R16 kill the three surviving guard mutants named by the 1f2e3598ea review)'
   - The ci gate job reports the mutants section result but does not fail on it; every other required section (WT, guard-tree, guard-cargo, sov.gate, determinism) still fails the gate exactly as before
   - No ruleset change, no timeout raised, no other gate relaxed; the reviewed source diff is ci.yml (one marked block), the debt file, the guard script and this roadmap entry only. The PR also carries the generated docs/roadmaps/roadmap.yaml and, once reviewed, its own receipt under evidence/pr-review/4647/ and its quorum verdict; those are outputs of review, not part of the diff under review
   - A RESTORE PR (#4648) deletes the ratchet block after v0.70.0 is on crates.io
