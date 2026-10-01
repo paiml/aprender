@@ -735,6 +735,8 @@ thread_local! {
     /// Tests pin the prefill GEMM; production reads `APR_QWEN35_PREFILL_GEMM`.
     pub(crate) static QWEN35_PREFILL_GEMM_OVERRIDE: std::cell::Cell<Option<Qwen35PrefillGemm>> =
         const { std::cell::Cell::new(None) };
+}
+
 /// #3715 / #4621: model-free device tests for the dequant dispatch. The mutants-cuda
 /// shard runs on a GPU runner with no model files, so the kill tests for
 /// `qwen35_dequant_f32` cannot live only in the Qwen3.5-0.8B parity suite.
