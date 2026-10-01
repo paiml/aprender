@@ -204,3 +204,46 @@ fn write_cells(
     std::fs::write(path, serde_json::to_string_pretty(&doc)?)?;
     Ok(())
 }
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    fn subject() -> Subject {
+        Subject::new("0.69.1", "1111111111111111111111111111111111111111").expect("subject")
+    }
+
+    fn refused(r: Result<(), Box<dyn std::error::Error>>) -> String {
+        r.expect_err("refused").to_string()
+    }
+
+    #[test]
+    fn release_only_args_are_refused_by_name_without_a_subject() {
+        let p = Path::new("x");
+        assert!(refuse_release_only_args(None, None).is_ok());
+        assert!(refused(refuse_release_only_args(None, Some(p))).starts_with("--cells-out"));
+        assert!(refused(refuse_release_only_args(Some(p), None)).starts_with("--out"));
+        let dir = tempfile::tempdir().expect("tempdir");
+        assert!(refused(run(dir.path(), false, None, Some(p), None)).starts_with("--out"));
+    }
+
+    #[test]
+    fn a_release_run_refuses_check_and_a_missing_out() {
+        let dir = tempfile::tempdir().expect("tempdir");
+        let s = subject();
+        assert!(refused(run(dir.path(), true, Some(&s), None, None)).starts_with("--check"));
+        assert!(refused(run_release(dir.path(), false, &s, None, None)).starts_with("--release-*"));
+    }
+
+    #[test]
+    fn cells_out_refuses_a_release_with_no_derived_cell() {
+        let dir = tempfile::tempdir().expect("tempdir");
+        let path = dir.path().join("cells.json");
+        let msg = refused(write_cells(&path, &subject(), None));
+        assert!(msg.starts_with("--cells-out: no cell was derived"), "{msg}");
+        let empty =
+            provable_contracts::ontology::extract::release_evidence::ReleaseStats::default();
+        assert!(write_cells(&path, &subject(), Some(&empty)).is_err());
+        assert!(!path.exists(), "nothing is written on a refusal");
+    }
+}

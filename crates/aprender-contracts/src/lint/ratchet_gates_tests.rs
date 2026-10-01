@@ -544,3 +544,11 @@ fn proved_is_derived_declines_on_an_empty_corpus() {
         RatchetOutcome::Declined(_)
     ));
 }
+
+/// Kills the `repo_root` guard -> `true`: a bare relative name has an empty parent, which must become `.`.
+#[test]
+fn repo_root_of_a_bare_name_is_dot() {
+    assert_eq!(repo_root(Path::new("contracts")), PathBuf::from("."));
+    assert_eq!(repo_root(Path::new("")), PathBuf::from("."));
+    assert_eq!(repo_root(Path::new("a/contracts")), PathBuf::from("a"));
+}

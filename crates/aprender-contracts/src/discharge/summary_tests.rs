@@ -107,6 +107,8 @@ fn the_summary_sits_beside_the_lean_dir_never_inside_it() {
         Path::new("crates/aprender-contracts-staging/discharge-summary.json")
     );
     assert_eq!(summary_path(Path::new("lean")), Path::new(SUMMARY_FILE));
+    assert_eq!(summary_path(Path::new("/")), Path::new(SUMMARY_FILE));
+    assert_eq!(summary_path(Path::new("")), Path::new(SUMMARY_FILE));
 }
 
 /// Root → Gelu/Bound (one clean theorem, one sorry'd, one private); Orphan is outside the cone.

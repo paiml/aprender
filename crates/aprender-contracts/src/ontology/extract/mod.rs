@@ -225,3 +225,54 @@ pub fn repo_root(contract_dir: &Path) -> std::path::PathBuf {
         _ => std::path::PathBuf::from("."),
     }
 }
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use crate::ontology::rdf::{ont, Term, RDF_TYPE};
+
+    fn sigma() -> crate::ontology::sigma::Sigma {
+        let text = std::fs::read_to_string(
+            Path::new(env!("CARGO_MANIFEST_DIR")).join("../../contracts/ontology.yaml"),
+        )
+        .expect("the repo's Σ is readable");
+        crate::ontology::sigma::Sigma::from_yaml(&text).expect("the repo's Σ parses")
+    }
+
+    #[test]
+    fn the_type_closure_counts_exactly_the_super_types_it_adds_and_a_second_pass_adds_none() {
+        let s = sigma();
+        let supers = s.supers("Kernel");
+        assert!(!supers.is_empty(), "Kernel has a super-concept");
+        let mut g = Graph::new();
+        for i in 0..5 {
+            g.insert(format!("urn:other:{i}"), "urn:p", Term::string("v"));
+        }
+        // two instances, so the count is >= 2 whatever the depth of Kernel's chain
+        for k in ["urn:k", "urn:k2"] {
+            g.insert(k.to_string(), RDF_TYPE, Term::iri(ont("Kernel")));
+        }
+        let before = g.len();
+        let added = materialize_type_closure(&mut g, &s);
+        assert_eq!(added, 2 * supers.len());
+        assert_eq!(g.len(), before + added);
+        for sup in &supers {
+            let xs = g.instances_of(&ont(sup));
+            assert!(xs.contains(&"urn:k") && xs.contains(&"urn:k2"), "{sup}");
+        }
+        assert_eq!(materialize_type_closure(&mut g, &s), 0, "idempotent");
+    }
+
+    #[test]
+    fn an_extract_failure_displays_its_cause() {
+        let e = ExtractFailure::ReservedEntityType {
+            contract: "c.yaml".into(),
+        };
+        let msg = e.to_string();
+        assert!(
+            msg.starts_with("contract `c.yaml` declares entity.type `"),
+            "{msg}"
+        );
+        assert!(msg.ends_with("(PMAT-4160)"), "{msg}");
+    }
+}

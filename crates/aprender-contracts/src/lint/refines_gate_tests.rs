@@ -88,6 +88,10 @@ fn a_liskov_pair_with_an_honest_witness_passes() {
     assert_eq!(r.verdict, Verdict::Pass);
     assert!(r.passed, "a Pass verdict is a passed gate");
     assert_eq!(c.liskov_pairs_checked, 1);
+    assert_eq!(
+        c.refines_pairs, 1,
+        "the one refines edge of the fixture is counted"
+    );
     assert_eq!(c.pc_checker, FIRED);
     assert_eq!((c.requires_n, c.ensures_n, c.invariants_n), (2, 3, 2));
     assert_eq!(c.refines_pairs, 1, "the one refines edge is counted");
@@ -134,6 +138,7 @@ fn a_legacy_pair_is_pass_with_nothing_checked_and_needs_no_witness() {
     assert!(findings.is_empty(), "{findings:?}");
     assert_eq!(r.verdict, Verdict::Pass);
     assert_eq!((c.liskov_pairs_checked, c.liskov_pairs_legacy), (0, 1));
+    assert_eq!(c.refines_pairs, 1, "a legacy pair is still a refines edge");
     assert!(c.witness.is_none());
     assert_eq!(c.refines_pairs, 1, "a legacy pair is still a refines edge");
 }
@@ -206,4 +211,19 @@ fn a_failed_verdict_explains_each_finding_message() {
     assert!(!findings.is_empty());
     let want: Vec<String> = findings.iter().map(|f| f.message.clone()).collect();
     assert_eq!(explain(&r, &findings), want);
+}
+
+#[test]
+fn explain_on_fail_is_each_findings_message_verbatim() {
+    let dir = fixture("refines-prose");
+    std::fs::write(
+        dir.path().join("lint-baseline.json"),
+        r#"{"ont": {"liskov_prose": 0}}"#,
+    )
+    .expect("write");
+    let (r, findings, _) = ran(run_refines_gate(dir.path()));
+    assert_eq!(r.verdict, Verdict::Fail);
+    assert!(!findings.is_empty());
+    let expected: Vec<String> = findings.iter().map(|f| f.message.clone()).collect();
+    assert_eq!(explain(&r, &findings), expected);
 }

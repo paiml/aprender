@@ -156,6 +156,10 @@ pub struct Workspace {
     /// `exclude` are crates — a stray manifest under the root (a test fixture, an excluded canary) is not a
     /// workspace member and a binding into it does not resolve (ONT-3a).
     pub is_workspace_root: bool,
+    /// Non-member manifests that declare their OWN `[workspace]` — a standalone cargo workspace under the root
+    /// (`experiments/cuda-oxide/gated-rmsnorm`: its own toolchain and `Cargo.lock`). Indexed, NOT admitted: only
+    /// a `kernel: true` binding naming one admits it ([`Workspace::admit_standalone`], ONT-4c4).
+    pub standalone: BTreeMap<String, Vec<PathBuf>>,
 }
 
 impl Workspace {
@@ -170,6 +174,7 @@ impl Workspace {
             root: root.to_path_buf(),
             crates: BTreeMap::new(),
             is_workspace_root: membership.is_some(),
+            standalone: BTreeMap::new(),
         };
         let mut stack = vec![root.to_path_buf()];
         while let Some(dir) = stack.pop() {
@@ -187,12 +192,13 @@ impl Workspace {
                     if !skip {
                         stack.push(path);
                     }
-                } else if path.file_name().is_some_and(|n| n == "Cargo.toml")
-                    && membership
-                        .as_ref()
-                        .is_none_or(|m| m.admits(root, path.parent().unwrap_or(root)))
-                {
-                    ws.index_manifest(&path);
+                } else if path.file_name().is_some_and(|n| n == "Cargo.toml") {
+                    let dir = path.parent().unwrap_or(root);
+                    if membership.as_ref().is_none_or(|m| m.admits(root, dir)) {
+                        ws.index_manifest(&path);
+                    } else if dir != root {
+                        ws.index_standalone(&path);
+                    }
                 }
             }
         }
@@ -200,19 +206,48 @@ impl Workspace {
     }
 
     fn index_manifest(&mut self, manifest: &Path) {
-        let Ok(text) = std::fs::read_to_string(manifest) else {
-            return;
-        };
-        let m = manifest_names(&text);
-        let dir = manifest.parent().unwrap_or(manifest);
-        let lib_path = m
-            .lib_path
-            .map_or_else(|| dir.join("src/lib.rs"), |p| dir.join(p));
-        for name in [m.package, m.lib].into_iter().flatten() {
-            let roots = self.crates.entry(name.replace('-', "_")).or_default();
-            if !roots.contains(&lib_path) {
-                roots.push(lib_path.clone());
+        if let Ok(text) = std::fs::read_to_string(manifest) {
+            index_names(&mut self.crates, manifest, &text);
+        }
+    }
+
+    /// A non-member manifest is recorded only when it is its own workspace root; a stray manifest (a test
+    /// fixture, an excluded canary) stays invisible, as ONT-3a requires.
+    fn index_standalone(&mut self, manifest: &Path) {
+        if let Ok(text) = std::fs::read_to_string(manifest) {
+            if workspace_membership(&text).is_some() {
+                index_names(&mut self.standalone, manifest, &text);
             }
+        }
+    }
+
+    /// Admit the standalone crate `krate` (a `kernel: true` binding names it) unless a member already owns the
+    /// name. Returns whether anything was admitted.
+    pub fn admit_standalone(&mut self, krate: &str) -> bool {
+        if self.crates.contains_key(krate) {
+            return false;
+        }
+        match self.standalone.get(krate) {
+            Some(roots) => {
+                self.crates.insert(krate.to_string(), roots.clone());
+                true
+            }
+            None => false,
+        }
+    }
+}
+
+/// Key `manifest`'s package and `[lib]` names (`-` spelled `_`) to its crate root in `map`.
+fn index_names(map: &mut BTreeMap<String, Vec<PathBuf>>, manifest: &Path, text: &str) {
+    let m = manifest_names(text);
+    let dir = manifest.parent().unwrap_or(manifest);
+    let lib_path = m
+        .lib_path
+        .map_or_else(|| dir.join("src/lib.rs"), |p| dir.join(p));
+    for name in [m.package, m.lib].into_iter().flatten() {
+        let roots = map.entry(name.replace('-', "_")).or_default();
+        if !roots.contains(&lib_path) {
+            roots.push(lib_path.clone());
         }
     }
 }
@@ -1253,13 +1288,24 @@ pub struct Resolution {
 #[must_use]
 pub fn resolve_all(contract_dir: &Path) -> Resolution {
     let root_buf = super::repo_root(contract_dir);
-    let ws = Workspace::scan(root_buf.as_path());
+    let mut ws = Workspace::scan(root_buf.as_path());
+    let regs = registries(contract_dir);
+    // ONT-4c4: a cuda-oxide `#[kernel]` lives in its own cargo workspace (pinned nightly), never a member; the
+    // `kernel: true` binding that names its crate is what admits it — nothing else does.
+    for (_file, registry) in &regs {
+        for b in registry.bindings.iter().filter(|b| b.kernel) {
+            let path = b.module_path.as_deref().unwrap_or(&registry.target_crate);
+            if let Some(krate) = path.split("::").next() {
+                ws.admit_standalone(krate);
+            }
+        }
+    }
     let mut resolver = Resolver::new(&ws);
     let mut out = Resolution {
         at_workspace_root: ws.is_workspace_root,
         ..Resolution::default()
     };
-    for (_file, registry) in registries(contract_dir) {
+    for (_file, registry) in regs {
         out.stats.registries += 1;
         for b in bound_of(&registry) {
             let found = resolver.resolve(&b.module_path, &b.function);
@@ -1446,6 +1492,71 @@ mod tests {
         );
     }
 
+    /// ONT-4c4 (C196): a cuda-oxide `#[kernel]` lives in its own cargo workspace, never a root member. A
+    /// `kernel: true` binding naming that crate admits it and the kernel resolves, attribute and all; the same
+    /// row without `kernel: true` stays unresolved (ONT-3a), and a stray non-member manifest with no
+    /// `[workspace]` of its own is never indexed.
+    #[test]
+    fn a_kernel_binding_admits_its_standalone_workspace_and_nothing_else_does() {
+        let tmp = tempfile::tempdir().unwrap();
+        let w = tmp.path();
+        std::fs::write(w.join("Cargo.toml"), "[workspace]\nmembers = [\"k\"]\n").unwrap();
+        std::fs::create_dir_all(w.join("k/src")).unwrap();
+        std::fs::write(w.join("k/Cargo.toml"), "[package]\nname = \"k\"\n").unwrap();
+        std::fs::write(w.join("k/src/lib.rs"), "pub fn r() {}\n").unwrap();
+        std::fs::create_dir_all(w.join("exp/ox/src")).unwrap();
+        std::fs::write(
+            w.join("exp/ox/Cargo.toml"),
+            "[package]\nname = \"ox_kern\"\n\n[workspace]\n",
+        )
+        .unwrap();
+        std::fs::write(
+            w.join("exp/ox/src/lib.rs"),
+            "pub mod kernels {\n    #[kernel]\n    pub fn g() {}\n}\n",
+        )
+        .unwrap();
+        std::fs::create_dir_all(w.join("fx/src")).unwrap();
+        std::fs::write(w.join("fx/Cargo.toml"), "[package]\nname = \"stray\"\n").unwrap();
+        std::fs::write(w.join("fx/src/lib.rs"), "pub fn s() {}\n").unwrap();
+
+        let mut ws = Workspace::scan(w);
+        assert!(!ws.crates.contains_key("ox_kern"), "{:?}", ws.crates);
+        assert!(ws.standalone.contains_key("ox_kern"), "{:?}", ws.standalone);
+        assert!(!ws.standalone.contains_key("stray"), "{:?}", ws.standalone);
+        assert!(!ws.admit_standalone("k"), "a member is never re-admitted");
+        assert!(!ws.admit_standalone("stray"));
+        assert!(ws.admit_standalone("ox_kern"));
+        assert!(!ws.admit_standalone("ox_kern"), "admitted once");
+        let g = Resolver::new(&ws)
+            .resolve("ox_kern::kernels", "g")
+            .expect("admitted kernel resolves");
+        assert_eq!(g.attributes, vec!["kernel".to_string()]);
+
+        let row = |kernel: &str| {
+            format!(
+                "version: 1.0.0\ntarget_crate: k\nbindings:\n- contract: c-v1.yaml\n  equation: g\n  \
+                 module_path: ox_kern::kernels\n  function: g\n  status: implemented\n{kernel}"
+            )
+        };
+        std::fs::create_dir_all(w.join("contracts")).unwrap();
+        std::fs::write(w.join("contracts/binding.yaml"), row("  kernel: true\n")).unwrap();
+        let r = resolve_all(&w.join("contracts"));
+        assert_eq!(
+            (r.stats.resolved, r.stats.unresolved),
+            (1, 0),
+            "{:?}",
+            r.symbols
+        );
+        std::fs::write(w.join("contracts/binding.yaml"), row("")).unwrap();
+        let r = resolve_all(&w.join("contracts"));
+        assert_eq!(
+            (r.stats.resolved, r.stats.unresolved),
+            (0, 1),
+            "{:?}",
+            r.symbols
+        );
+    }
+
     /// #4502: a binding row names the file an `include!()`d item is written in (`ops::activation::matmul`, with
     /// `ops/mod.rs` `include!`-ing `activation.rs`; `cmaes::cmaes_include_01::optimize` for a method in a file
     /// the sibling `cmaes.rs` includes). The item exists, so the row resolves; an item of a DIFFERENT included file,
@@ -1614,6 +1725,81 @@ mod tests {
         Resolver::new(&ws)
             .resolve("k::inc", "f")
             .expect("the same layout with a file-backed mod resolves");
+    }
+
+    /// An inline `mod foo { }` is not a file-backed child: a `foo.rs` on disk that happens to include `inc.rs`
+    /// must not make `inc` resolvable from the parent.
+    #[test]
+    fn an_inline_mod_is_not_a_file_backed_child_that_includes_a_sibling() {
+        let tmp = tempfile::tempdir().expect("tempdir");
+        let w = tmp.path();
+        std::fs::write(w.join("Cargo.toml"), "[workspace]\nmembers = [\"k\"]\n").expect("write");
+        std::fs::create_dir_all(w.join("k/src")).expect("mkdir");
+        std::fs::write(w.join("k/Cargo.toml"), "[package]\nname = \"k\"\n").expect("write");
+        std::fs::write(w.join("k/src/lib.rs"), "pub mod foo {}\n").expect("write");
+        std::fs::write(w.join("k/src/foo.rs"), "include!(\"inc.rs\");\n").expect("write");
+        std::fs::write(w.join("k/src/inc.rs"), "pub fn f() {}\n").expect("write");
+        let ws = Workspace::scan(w);
+        assert!(Resolver::new(&ws).resolve("k::inc", "f").is_err());
+    }
+
+    #[test]
+    fn join_path_is_exact() {
+        assert_eq!(join_path("a::b", &[]), "a::b");
+        assert_eq!(join_path("a", &["b", "c"]), "a::b::c");
+    }
+
+    #[test]
+    fn defines_type_sees_each_type_item_only_by_its_own_name() {
+        for (src, name) in [
+            ("struct S;", "S"),
+            ("enum E { A }", "E"),
+            ("union U { a: u8 }", "U"),
+            ("trait T {}", "T"),
+            ("type A = u8;", "A"),
+        ] {
+            let ast = syn::parse_file(src).expect("parses");
+            assert!(defines_type(&ast.items, name), "{src}");
+            assert!(!defines_type(&ast.items, "Nope"), "{src}");
+        }
+        let f = syn::parse_file("fn S() {}").expect("parses");
+        assert!(!defines_type(&f.items, "S"));
+    }
+
+    #[test]
+    fn find_trait_fn_matches_the_named_fn_only() {
+        let one: syn::ItemTrait = syn::parse_str("trait T { fn b(); }").expect("parses");
+        assert!(find_trait_fn(&one.items, "b").is_some());
+        assert!(find_trait_fn(&one.items, "c").is_none());
+        let two: syn::ItemTrait = syn::parse_str("trait T { fn a(); fn b() {} }").expect("parses");
+        assert!(find_trait_fn(&two.items, "a").is_some());
+        assert!(find_trait_fn(&two.items, "b").is_some());
+        assert!(find_trait_fn(&two.items, "c").is_none());
+    }
+
+    #[test]
+    fn glob_paths_reads_groups_and_refuses_a_bare_glob() {
+        let globs = |src: &str| {
+            let u: syn::ItemUse = syn::parse_str(src).expect("parses");
+            let mut out = Vec::new();
+            glob_paths(&u.tree, "", &mut out);
+            out
+        };
+        assert_eq!(globs("use a::b::*;"), ["a::b"]);
+        assert_eq!(globs("use a::{b::*, c::d::*, e};"), ["a::b", "a::c::d"]);
+        assert!(globs("use *;").is_empty());
+    }
+
+    #[test]
+    fn item_named_reads_union_and_static_items() {
+        let ast = syn::parse_file("pub union U { a: u8 }\nstatic S: u8 = 0;").expect("parses");
+        let u = item_named(&ast.items[0], "U").expect("union");
+        assert_eq!(u.kind, "union");
+        assert_eq!(u.visibility, "pub");
+        assert!(item_named(&ast.items[0], "Nope").is_none());
+        let s = item_named(&ast.items[1], "S").expect("static");
+        assert_eq!(s.kind, "static");
+        assert!(item_named(&ast.items[1], "Nope").is_none());
     }
 
     #[test]

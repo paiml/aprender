@@ -407,3 +407,34 @@ fn by_level_counts_only_clean_blocks() {
     assert_eq!(findings.len(), 1, "{findings:?}");
     assert_eq!(levels_and_unresolved(&r).0, vec!["L2=2".to_string()]);
 }
+
+/// Kills `!shallow` -> `true` and `unresolved += 1` -> `*=`/`-=` in `resolve_pending`: in a shallow clone an
+/// absent sha is unresolved (git cannot say), never a PV-ONT-020 finding.
+#[test]
+fn a_shallow_repository_leaves_an_absent_sha_unresolved() {
+    let src = corpus(&[]);
+    git(src.path(), &["init", "-q"]);
+    git(src.path(), &["commit", "-q", "--allow-empty", "-m", "one"]);
+    git(src.path(), &["commit", "-q", "--allow-empty", "-m", "two"]);
+    let dst = tempfile::tempdir().unwrap();
+    let clone = dst.path().join("shallow");
+    let o = Command::new("git")
+        .args(["clone", "-q", "--depth", "1"])
+        .arg(format!("file://{}", src.path().display()))
+        .arg(&clone)
+        .output()
+        .expect("git runs");
+    assert!(o.status.success(), "{}", String::from_utf8_lossy(&o.stderr));
+    assert_eq!(
+        git(&clone, &["rev-parse", "--is-shallow-repository"]),
+        "true"
+    );
+    let pending = vec![PendingSha {
+        sha: "a".repeat(40),
+        stem: "case".into(),
+        file: "case.yaml".into(),
+    }];
+    let mut out = Vec::new();
+    let unresolved = resolve_pending(&clone, pending, &mut out);
+    assert_eq!((unresolved, out.len()), (1, 0));
+}

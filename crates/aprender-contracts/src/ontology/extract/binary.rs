@@ -588,11 +588,10 @@ pub fn extract(contract_dir: &Path, g: &mut Graph) -> BinaryStats {
     extract_at(&super::repo_root(contract_dir), g)
 }
 
-/// A planted apr pair fires, this run: two packages declaring `apr` are two nodes; one whose help differs puts
-/// `bin:namePairMismatch` on both; a version without the commit puts `bin:versionLacksSha` on its node; and a
-/// ledger row for a command the snapshot lacks is an orphan.
+/// The planted apr pair [`positive_control`] runs on: two packages declaring `apr`, whose help differs and one of
+/// whose versions lacks the commit.
 #[must_use]
-pub fn positive_control() -> bool {
+pub fn control_sample() -> Vec<Target> {
     let sha = "0123456789abcdef0123456789abcdef01234567";
     let base = Target {
         name: "apr".into(),
@@ -615,13 +614,22 @@ pub fn positive_control() -> bool {
         help_sha256: "c".repeat(64),
         ..base
     };
+    vec![cli, facade]
+}
+
+/// A planted apr pair fires, this run: exactly two `Binary` nodes; one whose help differs puts
+/// `bin:namePairMismatch` on both; a version without the commit puts `bin:versionLacksSha` on its node; and the
+/// one ledger row for a command the snapshot lacks is the only orphan. It takes the pair ([`control_sample`]) so a
+/// test can hand it a sample that must NOT fire — over the planted pair alone it is always true (#4587).
+#[must_use]
+pub fn positive_control(targets: &[Target]) -> bool {
     let ledger = parse_ledger(&format!(
         "{LEDGER_HEADER}\napr,apr run,,,,,,,,\napr,apr gone,,,,,,,,\n"
     ))
     .unwrap_or_default();
     let mut g = Graph::default();
     let mut stats = BinaryStats::default();
-    emit_all(&mut g, &[cli, facade], &ledger, &mut stats);
+    emit_all(&mut g, targets, &ledger, &mut stats);
     let a = node("apr-cli", "apr");
     let b = node("aprender", "apr");
     g.instances_of(&ont("Binary")).len() == 2
@@ -629,7 +637,7 @@ pub fn positive_control() -> bool {
         && !g.objects(&b, &bin("namePairMismatch")).is_empty()
         && !g.objects(&a, &bin("versionLacksSha")).is_empty()
         && g.objects(&b, &bin("versionLacksSha")).is_empty()
-        && !g.objects(&b, &bin("ledgerOrphan")).is_empty()
+        && g.objects(&b, &bin("ledgerOrphan")).len() == 1
 }
 
 #[cfg(test)]

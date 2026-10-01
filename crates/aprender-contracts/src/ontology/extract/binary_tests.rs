@@ -278,7 +278,41 @@ fn a_quoted_ledger_field_keeps_its_comma() {
 
 #[test]
 fn the_positive_control_fires() {
-    assert!(positive_control());
+    assert!(positive_control(&control_sample()));
+}
+
+/// The control is a check, not a constant: a third `apr` package makes three nodes where it wants two, and every
+/// other conjunct still holds, so only the node count can say no.
+#[test]
+fn the_positive_control_refuses_a_third_apr() {
+    let mut targets = control_sample();
+    let extra = Target {
+        package: "apr-extra".into(),
+        ..targets[1].clone()
+    };
+    targets.push(extra);
+    assert!(!positive_control(&targets));
+    // …and with the snapshot's commands gone, "apr run" is a second orphan
+    let mut bare = control_sample();
+    for t in &mut bare {
+        t.commands.clear();
+    }
+    assert!(!positive_control(&bare));
+}
+
+/// The planted pair looks like a `snapshot` row: 64-hex help and version digests, and the command the ledger has.
+#[test]
+fn the_control_sample_looks_like_a_snapshot_row() {
+    for t in control_sample() {
+        for d in [&t.help_sha256, &t.version_sha256] {
+            assert!(
+                d.len() == 64 && d.bytes().all(|c| c.is_ascii_hexdigit()),
+                "{}: {d:?}",
+                t.package
+            );
+        }
+        assert!(t.commands.contains("run"), "{}", t.package);
+    }
 }
 
 /// The repo's own census reads the bin targets `cargo metadata --no-deps` lists (29 on 2026-09-26, 28 names):
@@ -297,4 +331,131 @@ fn the_repo_census_has_both_aprs_and_pv() {
             "{key:?} in {c:?}"
         );
     }
+}
+
+fn set(items: &[&str]) -> BTreeSet<String> {
+    items.iter().map(|s| (*s).to_string()).collect()
+}
+
+/// Kills the `emit_all` counter mutants (`+=` -> `*=`/`-=`, `||` -> `&&`, `+` -> `*`/`-`): every counter takes an
+/// exact, distinct, non-zero value from hand-built targets and ledger.
+#[test]
+fn emit_all_counts_are_exact() {
+    let sha = "0123456789abcdef0123456789abcdef01234567";
+    let snapshot_sets = |t: &mut Target| {
+        t.commands = set(&["run", "x"]);
+        t.routes = set(&["GET /a", "GET /b"]);
+        t.tools = set(&["t1", "t2", "t3", "t4"]);
+    };
+    // lacks the commit in its version, and help_failed set with a real help sha
+    let mut t1 = Target {
+        package: "p1".into(),
+        target: "apr".into(),
+        name: "apr".into(),
+        git_sha: sha.into(),
+        version: "apr 1.0".into(),
+        help_sha256: "h1".into(),
+        version_sha256: "v".into(),
+        help_failed: true,
+        ..Target::default()
+    };
+    snapshot_sets(&mut t1);
+    // names the commit, differs from t1 in help
+    let mut t2 = Target {
+        package: "p2".into(),
+        target: "apr".into(),
+        name: "apr".into(),
+        git_sha: sha.into(),
+        version: "apr 1.0 (012345678)".into(),
+        help_sha256: "h2".into(),
+        version_sha256: "v".into(),
+        ..Target::default()
+    };
+    snapshot_sets(&mut t2);
+    // its own name, no ledger entry, help_failed unset but help sha is the empty digest
+    let t3 = Target {
+        package: "p3".into(),
+        target: "pv".into(),
+        name: "pv".into(),
+        git_sha: sha.into(),
+        version: "pv (012345678)".into(),
+        help_sha256: EMPTY_SHA256.into(),
+        commands: set(&["a", "b"]),
+        ..Target::default()
+    };
+    let mut ledger = BTreeMap::new();
+    ledger.insert(
+        "apr".to_string(),
+        LedgerEntry {
+            rows: set(&["r"]),
+            commands: set(&["run", "g1", "g2"]),
+            routes: set(&["GET /c", "GET /d", "GET /e"]),
+            tools: BTreeSet::new(),
+        },
+    );
+    let mut stats = BinaryStats::default();
+    emit_all(&mut Graph::default(), &[t1, t2, t3], &ledger, &mut stats);
+    assert_eq!(stats.version_lacks_sha, 1);
+    assert_eq!(stats.name_pair_mismatch, 2);
+    assert_eq!(stats.help_failed, 2);
+    assert_eq!(stats.no_audit_row, 1);
+    // per apr target: commands 1 + routes 2 + tools 4 = 7; pv: commands 2
+    assert_eq!(stats.unledgered, 7 + 7 + 2);
+    // per apr target: ledger-only commands 2 + routes 3 = 5
+    assert_eq!(stats.orphans, 5 + 5);
+    assert_eq!((stats.targets, stats.names), (3, 2));
+}
+
+/// Kills `==` -> `!=` on the name test in `pair_mismatches`: targets with different names never pair, even when
+/// their help differs; same-named targets that differ do.
+#[test]
+fn pair_mismatches_only_pairs_same_named_targets() {
+    let mk = |package: &str, name: &str, help: &str| Target {
+        package: package.into(),
+        target: name.into(),
+        name: name.into(),
+        help_sha256: help.into(),
+        ..Target::default()
+    };
+    let ts = [mk("p1", "a", "h1"), mk("p2", "b", "h2")];
+    assert!(pair_mismatches(&ts).iter().all(Vec::is_empty));
+    let ts = [mk("p1", "a", "h1"), mk("p2", "a", "h2")];
+    let m = pair_mismatches(&ts);
+    assert_eq!((m[0].len(), m[1].len()), (1, 1));
+    assert_eq!(m[0][0].package, "p2");
+}
+
+/// Kills `==` -> `!=` on the target test in `pair_mismatches`: two targets of one package with the same
+/// name but different target ids are distinct binaries, so differing help pairs them.
+#[test]
+fn pair_mismatches_pairs_same_package_different_targets() {
+    let mk = |target: &str, help: &str| Target {
+        package: "p1".into(),
+        target: target.into(),
+        name: "a".into(),
+        help_sha256: help.into(),
+        ..Target::default()
+    };
+    let ts = [mk("t1", "h1"), mk("t2", "h2")];
+    let m = pair_mismatches(&ts);
+    assert_eq!((m[0].len(), m[1].len()), (1, 1));
+    assert_eq!(m[0][0].target, "t2");
+}
+
+/// Kills `delete field at_workspace_root` in `extract_at` and `extract -> Default::default()`.
+#[test]
+fn extract_reports_the_workspace_root_and_the_targets() {
+    let d = planted(&fixture("snapshot.jsonl"));
+    let mut g = Graph::default();
+    let s = extract_at(d.path(), &mut g);
+    assert!(s.at_workspace_root);
+    let mut g2 = Graph::default();
+    let s2 = extract(&d.path().join("contracts"), &mut g2);
+    assert!(s2.at_workspace_root);
+    assert_eq!((s2.targets, s2.names, s2.census), (3, 2, Some(3)));
+    assert_eq!(g2.instances_of(&ont("Binary")).len(), 3);
+    let bare = tempfile::tempdir().unwrap();
+    let s3 = extract_at(bare.path(), &mut Graph::default());
+    assert!(!s3.at_workspace_root);
+    assert_eq!(s3.census, None);
 }

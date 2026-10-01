@@ -339,6 +339,11 @@ fn run_or_answer(
             .flat_map(|cc| cells_gate::findings(cc, &arming)),
     );
     refuse_vacuous_kernels(&mut counted, &shapes, &arming, extraction.kernel.kernels);
+    refuse_unresolved_kernel_claims(
+        &mut counted,
+        extraction.kernel.kernels,
+        &kernel_claims(contract_dir, extraction.kernel.receipt_files),
+    );
     let passed = counted.violations == 0;
     let verdict = verdict_of(&counted, armed_vacuity);
     let by_shape = by_shape(&focus_of);
@@ -785,7 +790,10 @@ fn extract_controls() -> BTreeMap<String, String> {
         ("code", code::positive_control()),
         ("lean", lean::positive_control()),
         ("example", example::positive_control()),
-        ("binary", binary::positive_control()),
+        (
+            "binary",
+            binary::positive_control(&binary::control_sample()),
+        ),
         ("kernel", kernel::positive_control()),
         (
             "parity-receipt",
@@ -899,6 +907,50 @@ fn refuse_vacuous_kernels(
             " [not armed]",
         ));
     }
+}
+
+/// What the repo CLAIMS about kernels, by name: every `kernel: true` binding (`module_path::function`) and the
+/// receipt files under `evidence/kernels/`.
+fn kernel_claims(contract_dir: &Path, receipt_files: usize) -> Vec<String> {
+    let mut out: Vec<String> = extract::code::registries(contract_dir)
+        .iter()
+        .flat_map(|(_, r)| r.bindings.iter().filter(|b| b.kernel))
+        .map(|b| {
+            format!(
+                "binding {}::{}",
+                b.module_path.as_deref().unwrap_or_default(),
+                b.function.as_deref().unwrap_or_default()
+            )
+        })
+        .collect();
+    if receipt_files > 0 {
+        out.push(format!(
+            "{receipt_files} receipt file(s) under {}",
+            kernel::EVIDENCE_DIR
+        ));
+    }
+    out
+}
+
+/// ONT-4c4 (C196, measured): `pv lint --gate shapes` was `Pass` with `by_entity_type.kernel = 0` while
+/// `binding.yaml` bound `gated_rmsnorm` `kernel: true` and its receipt was tracked — the kernel shapes, unarmed,
+/// graded nothing and [`refuse_vacuous_kernels`] only warned. A claimed kernel that resolves to ZERO focus nodes
+/// is a Fail whatever the arming, naming the claim: the extractor lost it, the shapes never saw it.
+fn refuse_unresolved_kernel_claims(c: &mut Counted, kernels: usize, claims: &[String]) {
+    if kernels > 0 || claims.is_empty() {
+        return;
+    }
+    c.violations += 1;
+    c.findings.push(LintFinding::new(
+        "PV-ONT-012",
+        RuleSeverity::Error,
+        format!(
+            "0 #[kernel] focus nodes resolved, yet the repo claims kernel(s): {} — the kernel shapes graded \
+             nothing; vacuous, not a pass",
+            claims.join(", ")
+        ),
+        "contracts/ont-kernel-receipts-v1.yaml".to_string(),
+    ));
 }
 
 fn vacuous_kernel_finding(ids: &[&str], severity: RuleSeverity, note: &str) -> LintFinding {
@@ -1144,6 +1196,66 @@ mod tests {
             (c.violations, c.unarmed_violations, c.findings.len()),
             (0, 0, 0)
         );
+    }
+
+    /// ONT-4c4 (C196): a kernel binding or receipt with zero resolved kernel focus nodes is RED by name, armed or
+    /// not; no claim, or any resolved kernel, leaves the count untouched.
+    #[test]
+    fn falsify_ont4c4_a_claimed_kernel_with_no_focus_node_fails_by_name() {
+        let claims = vec![
+            "binding ox::kernels::g".to_string(),
+            "1 receipt file(s) under evidence/kernels".to_string(),
+        ];
+        let mut c = empty_counted();
+        refuse_unresolved_kernel_claims(&mut c, 0, &claims);
+        assert_eq!(c.violations, 1);
+        assert_eq!(c.findings.len(), 1);
+        assert_eq!(c.findings[0].severity, RuleSeverity::Error);
+        assert!(
+            c.findings[0].message.contains("ox::kernels::g"),
+            "{}",
+            c.findings[0].message
+        );
+        assert!(
+            c.findings[0].message.contains("evidence/kernels"),
+            "{}",
+            c.findings[0].message
+        );
+        assert_eq!(verdict_of(&c, false), Verdict::Fail);
+
+        let mut c = empty_counted();
+        refuse_unresolved_kernel_claims(&mut c, 1, &claims);
+        assert_eq!((c.violations, c.findings.len()), (0, 0));
+        let mut c = empty_counted();
+        refuse_unresolved_kernel_claims(&mut c, 0, &[]);
+        assert_eq!((c.violations, c.findings.len()), (0, 0));
+    }
+
+    /// The claims are read by name: the `kernel: true` row only (never its CPU reference), plus the receipt count.
+    #[test]
+    fn kernel_claims_names_only_kernel_rows_and_receipts() {
+        let tmp = tempfile::tempdir().unwrap();
+        let d = tmp.path().join("contracts");
+        std::fs::create_dir_all(&d).unwrap();
+        std::fs::write(
+            d.join("binding.yaml"),
+            "version: 1.0.0\ntarget_crate: k\nbindings:\n\
+             - contract: c-v1.yaml\n  equation: g\n  module_path: k::cpu\n  function: g\n  status: implemented\n\
+             - contract: c-v1.yaml\n  equation: g\n  module_path: ox::kernels\n  function: g\n  status: implemented\n  kernel: true\n",
+        )
+        .unwrap();
+        assert_eq!(
+            kernel_claims(&d, 0),
+            vec!["binding ox::kernels::g".to_string()]
+        );
+        assert_eq!(
+            kernel_claims(&d, 2),
+            vec![
+                "binding ox::kernels::g".to_string(),
+                "2 receipt file(s) under evidence/kernels".to_string()
+            ]
+        );
+        assert!(kernel_claims(&tmp.path().join("none"), 0).is_empty());
     }
 
     #[test]
@@ -1530,50 +1642,123 @@ mod tests {
         assert_eq!((map.get("study"), map.get("claim")), (Some(&2), Some(&0)));
     }
 
+    fn shape_over(id: &str, class: &str, allow_empty: Option<&str>) -> NodeShape {
+        NodeShape {
+            target_class: crate::ontology::rdf::ont(class),
+            allow_empty: allow_empty.map(str::to_string),
+            ..kernel_shape(id)
+        }
+    }
+
     #[test]
     fn collect_shapes_counts_every_document_it_read() {
         let dir = fixture("shapes-ok");
         let (shapes, checked) = collect_shapes(&dir).expect("shapes-ok parses");
-        assert!(!shapes.is_empty());
-        assert!(checked > 0, "no document was counted");
-        assert_eq!(checked, pv_contract::documents(&dir).len());
+        assert_eq!(shapes.len(), 1);
+        assert_eq!(shapes[0].0.id, "shape-holder");
+        let documents = crate::ontology::extract::pv_contract::documents(&dir).len();
+        assert!(documents >= 2, "the fixture must have several documents");
+        assert_eq!(checked, documents);
     }
 
     #[test]
     fn focus_of_counts_each_shapes_instances_in_declaration_order() {
         let mut g = Graph::new();
-        for n in ["k1", "k2"] {
-            g.insert(
-                iri("kernel", n),
-                RDF_TYPE,
-                Term::iri(crate::ontology::rdf::ont("KernelSymbol")),
-            );
+        let kernel = Term::iri(crate::ontology::rdf::ont("KernelSymbol"));
+        for id in ["k1", "k2"] {
+            g.insert(format!("urn:t:{id}"), RDF_TYPE, kernel.clone());
         }
-        let mut other = kernel_shape("other");
-        other.target_class = crate::ontology::rdf::ont("NoSuchClass");
-        let got = focus_of(&g, &[kernel_shape("kern"), other]);
-        assert_eq!(got, vec![("kern".to_string(), 2), ("other".to_string(), 0)]);
+        let shapes = [
+            shape_over("kernels", "KernelSymbol", None),
+            shape_over("nothing", "NoSuchClassXyz", None),
+        ];
+        assert_eq!(
+            focus_of(&g, &shapes),
+            vec![("kernels".to_string(), 2), ("nothing".to_string(), 0)]
+        );
     }
 
     #[test]
-    fn vacuities_names_zero_focus_shapes_and_flags_only_armed_ones() {
-        let mut empty_ok = kernel_shape("b");
-        empty_ok.allow_empty = Some("by design".into());
-        let shapes = [kernel_shape("a"), empty_ok, kernel_shape("c")];
+    fn vacuities_names_zero_focus_shapes_and_flags_only_armed_non_empty_ones() {
         let focus = vec![
             ("a".to_string(), 0),
-            ("b".to_string(), 0),
-            ("c".to_string(), 3),
+            ("b".to_string(), 3),
+            ("c".to_string(), 0),
         ];
-        let (list, armed) = vacuities(&focus, &shapes, &ArmedShapes::Listed(vec!["a".into()]));
-        assert_eq!(list, ["a", "b"]);
-        assert!(armed);
-        // Unarmed zero-focus shape is named but does not refuse.
-        let (list, armed) = vacuities(&focus, &shapes, &ArmedShapes::Listed(vec!["c".into()]));
-        assert_eq!(list, ["a", "b"]);
-        assert!(!armed);
-        // Armed but allowEmpty: named, does not refuse.
-        let (_, armed) = vacuities(&focus, &shapes, &ArmedShapes::Listed(vec!["b".into()]));
-        assert!(!armed);
+        let shapes = [
+            shape_over("a", "KernelSymbol", None),
+            shape_over("b", "KernelSymbol", None),
+            shape_over("c", "KernelSymbol", Some("empty by design")),
+        ];
+        let names = vec!["a".to_string(), "c".to_string()];
+        // `a` is armed and may not be empty: the verdict-bearing flag is set.
+        let (v, armed) = vacuities(&focus, &shapes, &ArmedShapes::Listed(vec!["a".to_string()]));
+        assert_eq!((v, armed), (names.clone(), true));
+        // `c` is armed but declares allowEmpty: named, does not refuse.
+        let (v, armed) = vacuities(&focus, &shapes, &ArmedShapes::Listed(vec!["c".to_string()]));
+        assert_eq!((v, armed), (names.clone(), false));
+        // Nothing armed: named, no refusal.
+        let (v, armed) = vacuities(&focus, &shapes, &ArmedShapes::Listed(Vec::new()));
+        assert_eq!((v, armed), (names, false));
+        // No zero-focus shape at all, even with everything armed.
+        let live = vec![("b".to_string(), 3)];
+        assert_eq!(
+            vacuities(&live, &shapes, &ArmedShapes::All),
+            (vec![], false)
+        );
+    }
+
+    #[test]
+    fn by_shape_is_sorted_shape_equals_count() {
+        let focus = vec![("zeta".to_string(), 2), ("alpha".to_string(), 0)];
+        assert_eq!(by_shape(&focus), vec!["alpha=0", "zeta=2"]);
+    }
+
+    #[test]
+    fn entity_count_gguf_is_rungs_plus_files_read() {
+        let rung = |id: &str| extract::gguf::Rung {
+            id: id.to_string(),
+            sha256: String::new(),
+            arch: String::new(),
+            gguf: String::new(),
+            backends: Vec::new(),
+            hosts: Vec::new(),
+            required: true,
+            contract: String::new(),
+        };
+        let mut x = extract::Extraction::default();
+        x.gguf.rungs = vec![rung("r1"), rung("r2")];
+        x.gguf.files_read = 3;
+        assert_eq!(entity_count("gguf", &x), Some(5));
+    }
+
+    #[test]
+    fn harness_broken_declines_only_when_a_cause_is_named() {
+        assert!(harness_broken(&extract::Extraction::default()).is_none());
+
+        let mut x = extract::Extraction {
+            release: Some(extract::release_evidence::ReleaseStats {
+                crux: Some(extract::release_crux::CruxStats::default()),
+                ..Default::default()
+            }),
+            ..Default::default()
+        };
+        assert!(
+            harness_broken(&x).is_none(),
+            "a measured harness with no cause is not broken"
+        );
+
+        let cause = "model-x: positive control ALL_WRONG".to_string();
+        x.release = Some(extract::release_evidence::ReleaseStats {
+            crux: Some(extract::release_crux::CruxStats {
+                harness_broken: vec![cause.clone()],
+                ..Default::default()
+            }),
+            ..Default::default()
+        });
+        match harness_broken(&x) {
+            Some(ShapesOutcome::HarnessBroken { causes }) => assert_eq!(causes, vec![cause]),
+            other => panic!("expected HarnessBroken, got {other:?}"),
+        }
     }
 }

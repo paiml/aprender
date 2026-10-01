@@ -1168,11 +1168,27 @@ fn names(v: &serde_json::Value) -> Vec<&str> {
 const DENSE_SHA: &str = "dddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddd";
 
 fn dense_item() -> Value {
-    serde_json::json!({
-        "file": "tiny-qwen2-dense.gguf", "sha256": DENSE_SHA, "bytes": 4, "arch": "qwen2",
-        "quant": "q4_k_m", "context_length": 10000, "owes_long_rungs": false, "thinking_modes": ["off"],
-        "chat_template_sha256": "cccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccc"
-    })
+    // Built field by field: `json!` expands every scalar to `to_value(..).unwrap()`, which GH-41 bans.
+    let fields: [(&str, Value); 9] = [
+        ("file", "tiny-qwen2-dense.gguf".into()),
+        ("sha256", DENSE_SHA.into()),
+        ("bytes", 4.into()),
+        ("arch", "qwen2".into()),
+        ("quant", "q4_k_m".into()),
+        ("context_length", 10000.into()),
+        ("owes_long_rungs", false.into()),
+        ("thinking_modes", vec![Value::from("off")].into()),
+        (
+            "chat_template_sha256",
+            "cccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccc".into(),
+        ),
+    ];
+    Value::Object(
+        fields
+            .into_iter()
+            .map(|(k, v)| (k.to_string(), v))
+            .collect(),
+    )
 }
 
 fn dense_cells(t: &Path, host: &str) -> Vec<String> {
