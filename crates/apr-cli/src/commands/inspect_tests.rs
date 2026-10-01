@@ -101,6 +101,7 @@ mod inspect_tests {
                 architecture: Some("llama".to_string()),
                 ..MetadataInfo::default()
             },
+            setfit: None,
         };
         let json = serde_json::to_string(&result).expect("serialize");
         assert!(json.contains("model.apr"));
@@ -135,6 +136,7 @@ mod inspect_tests {
                 has_vocab: false,
             },
             metadata: MetadataInfo::default(),
+            setfit: None,
         };
         let json = serde_json::to_string(&result).expect("serialize");
         // Top-level architecture (on InspectResult) has skip_serializing_if
@@ -434,5 +436,125 @@ mod inspect_tests {
                 "breakdown MUST include `{key}` so operators can debug a sub-90 score"
             );
         }
+    }
+
+    // ========================================================================
+    // WR-09 / T-04-70: read_metadata's ABSOLUTE cap
+    // ========================================================================
+
+    /// A file whose length satisfies the file-length bound, so the CAP is what fires.
+    ///
+    /// `set_len` and not a zero buffer: the extension is sparse, so it is instant and
+    /// costs no disk even at 16 MiB + 1. A test that actually wrote those bytes would
+    /// put a 16 MiB write in every `cargo test` for no additional evidence — the
+    /// declared size is the whole subject, and nothing reads past it.
+    fn write_sparse_file_of_len(dir: &Path, name: &str, len: u64) -> std::path::PathBuf {
+        let path = dir.join(name);
+        let file = std::fs::File::create(&path).expect("the sparse fixture is creatable");
+        file.set_len(len).expect("sparse extension needs no buffer");
+        file.sync_all().expect("the sparse fixture syncs");
+        path
+    }
+
+    fn header_declaring(metadata_size: u64) -> HeaderData {
+        HeaderData {
+            version: (2, 0),
+            flags: AprV2Flags::default(),
+            tensor_count: 0,
+            metadata_offset: HEADER_SIZE_V2 as u64,
+            metadata_size: u32::try_from(metadata_size)
+                .expect("a declared size under test must fit the u32 header field"),
+            tensor_index_offset: 0,
+            data_offset: 0,
+            checksum_valid: true,
+        }
+    }
+
+    /// T-04-70. A hostile header must be refused BEFORE the allocation it asks for.
+    ///
+    /// The declared size is `MAX_TAG_METADATA_BYTES + 1` and NOT `0xFFFF_FFFF`, which
+    /// is the only value that exercises the cap. Measured at HEAD: the pre-existing
+    /// file-length check runs FIRST, so a 4 GiB declaration on any reasonably-sized
+    /// temp file is refused by the OLD bound and the cap is never reached — that test
+    /// would have passed before the fix and proved nothing. So the file is padded past
+    /// `metadata_offset + 16 MiB` to make the length check pass, leaving the cap as
+    /// the only thing that can refuse it.
+    #[test]
+    fn read_metadata_refuses_a_block_over_the_absolute_cap() {
+        let dir = tempfile::tempdir().expect("create temp dir");
+        let declared = crate::setfit_tag::MAX_TAG_METADATA_BYTES + 1;
+        let path = write_sparse_file_of_len(
+            dir.path(),
+            "hostile.apr",
+            HEADER_SIZE_V2 as u64 + declared + 1,
+        );
+        let header = header_declaring(declared);
+
+        let mut reader = BufReader::new(File::open(&path).expect("the sparse fixture is readable"));
+        let info = read_metadata(&mut reader, &header);
+
+        assert_eq!(
+            info.metadata_over_cap_bytes,
+            Some(declared),
+            "an over-cap block must be DISCLOSED, not silently defaulted — the fact that it \
+             was refused is the whole diagnosis (WR-08's inspect half)"
+        );
+        assert_eq!(
+            info.model_type, None,
+            "nothing may be derived from a block that was never read"
+        );
+    }
+
+    /// The cap is `>`, not `>=`, pinned in the SAME direction as `setfit_tag.rs`'s arm.
+    ///
+    /// Exactly the cap is admitted, so the read proceeds and then fails to parse a
+    /// sparse block as JSON — a `MetadataInfo::default()` whose
+    /// `metadata_over_cap_bytes` is `None`. That `None` is the assertion: it is what
+    /// distinguishes "the cap did not fire" from "the cap fired".
+    #[test]
+    fn read_metadata_admits_a_block_of_exactly_the_absolute_cap() {
+        let dir = tempfile::tempdir().expect("create temp dir");
+        let declared = crate::setfit_tag::MAX_TAG_METADATA_BYTES;
+        let path =
+            write_sparse_file_of_len(dir.path(), "at-cap.apr", HEADER_SIZE_V2 as u64 + declared);
+        let header = header_declaring(declared);
+
+        let mut reader = BufReader::new(File::open(&path).expect("the sparse fixture is readable"));
+        let info = read_metadata(&mut reader, &header);
+
+        assert_eq!(
+            info.metadata_over_cap_bytes, None,
+            "a block of exactly the cap is not OVER it; the boundary must sit where \
+             `setfit_tag.rs`'s does, or the two readers disagree by one byte"
+        );
+    }
+
+    /// NON-VACUITY. The cap must not pass by refusing everything.
+    ///
+    /// A container written by the production writer still parses and still yields its
+    /// `model_type`, and reports no over-cap fact.
+    #[test]
+    fn read_metadata_still_parses_a_legitimate_artifact_under_the_cap() {
+        let dir = tempfile::tempdir().expect("create temp dir");
+        let path = crate::setfit_tag::test_support::write_setfit_shaped_apr(
+            dir.path(),
+            "honest.apr",
+            crate::setfit_tag::SETFIT_MODEL_TYPE,
+            Some(r#"{"schema":"setfit-apr-v1","schema_version":1}"#),
+        );
+
+        let mut reader = BufReader::new(File::open(&path).expect("the fixture is readable"));
+        let header = read_and_parse_header(&mut reader).expect("the fixture is an APR v2");
+        let info = read_metadata(&mut reader, &header);
+
+        assert_eq!(
+            info.model_type.as_deref(),
+            Some(crate::setfit_tag::SETFIT_MODEL_TYPE),
+            "non-vacuity: a legitimate artifact must still parse, or the cap proves nothing"
+        );
+        assert_eq!(
+            info.metadata_over_cap_bytes, None,
+            "a legitimate artifact must never be disclosed as over-cap"
+        );
     }
 }

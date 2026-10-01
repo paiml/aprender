@@ -110,9 +110,29 @@ wgpu = ["inference"]
 visualization = ["renacer", "trueno-viz"]
 zram = ["trueno-zram-core"]
 training = ["dep:entrenar", "dep:entrenar-lora", "dep:aprender-train-distill", "dep:aprender-train-common", "aprender-train-distill?/shard-batch-source"]
+# Native SetFit classifier training — `apr setfit train` (Phase 4, D-05/D-07).
+#
+# `training` is what pulls `dep:entrenar`; the WEAK `entrenar?/setfit` then turns on
+# that crate's own setfit feature without naming the dependency a second time. Both
+# halves are required: `aprender/setfit` supplies the encoder/tokenizer/artifact
+# surface and `entrenar/setfit` supplies the lifecycle, and the feature is
+# dependency-CLOSED (enabling `setfit` alone must build).
+#
+# 04-08 appended `realizar?/setfit`: `realizar` (aprender-serve) is the OPTIONAL dep
+# behind `inference`, so the weak form turns on its classify surface without naming
+# the dependency a second time and without dragging axum into a `--features setfit`
+# build that did not also ask for `inference`. Serving a SetFit artifact therefore
+# needs BOTH: `--features setfit,inference` — and `inference` is default-on, so in
+# practice `--features setfit` is enough unless the caller passed
+# `--no-default-features`.
+#
+# Deliberately NOT in `default`: CR-01's discipline (Phase 3 code that runs in no tier
+# and no CI job) is satisfied by the named tier/CI legs 04-10 and 04-11 wire, not by
+# defaulting a training path into every `cargo install aprender`.
+setfit = ["training", "aprender/setfit", "entrenar?/setfit", "realizar?/setfit"]
 training-gpu = ["training"]
 dhat-heap = ["dep:dhat"]
-full = ["inference", "cuda", "cuda-batch", "visualization", "zram", "training", "training-gpu", "code", "xet", "trueno-explain"]
+full = ["inference", "cuda", "cuda-batch", "visualization", "zram", "training", "training-gpu", "code", "xet", "trueno-explain", "setfit"]
 
 [target.'cfg(unix)'.dependencies]
 libc = "0.2"
@@ -253,6 +273,8 @@ dhat = { version = "0.3", optional = true }
 # Data loading, splitting, imbalance detection (apr data subcommands)
 # GH-344: path dep via .cargo/config.toml.dev-overrides; CI uses checkout+symlink
 alimentar = { workspace = true }
+# Phase 2: contrastive data protocol — apr data select/pairs + TweetEval adapter core
+aprender-contrastive-data = { workspace = true }
 # APR-MONO: the ONE binary must reach every capability. These two crates each
 # shipped their whole command surface behind a separate binary (trueno-rag,
 # trueno-zram) that nothing could import; apr now dispatches into the SAME
@@ -266,6 +288,22 @@ aprender-contracts-cli = { workspace = true }
 half = "2.4.1"
 # YAML config parsing (distillation configs, ALB-011)
 serde_yaml = { package = "serde_yaml_ng", version = "0.10" }
+
+# TOML config parsing — `apr setfit train --config <FILE>.toml` (D-07).
+# Already a workspace dependency (root Cargo.toml), so this resolves no new package:
+# T-04-SC's "no new registry package" disposition is satisfied by construction.
+toml = { workspace = true }
+
+# Process RSS sampling — the `sysinfo_sampled_<hz>` FALLBACK mechanism of the
+# EVAL-05 resource protocol (`apr setfit bench run`, 05-09). Inherited from the
+# workspace rather than pinned here so no version literal can drift, and it is the
+# same reasoning `toml` above records: T-05-09-SC's "no new registry package"
+# disposition holds because `sysinfo` is already a workspace dependency.
+#
+# It is the fallback and never the headline: a poll at any finite rate can only
+# UNDERSTATE a peak, so the contract labels it a sampled lower bound and forbids
+# comparing it against a `child_max_rss_*` figure.
+sysinfo = { workspace = true }
 
 # Unicode normalization (NFC) for BPE corpus preprocessing (MODEL-2).
 unicode-normalization = "0.1"
@@ -302,10 +340,61 @@ proptest = "1.6"
 regex = "1.10"
 tokio = { version = "1", features = ["rt-multi-thread", "macros", "time"] }
 axum-test = "16"
-tower = "0.5"
+# `util` supplies `ServiceExt::oneshot`, the in-process HTTP leg of the 04-09
+# three-surface parity gate (`tests/setfit_parity.rs`). `tower` is dev-only here,
+# so this feature reaches no shipped build.
+tower = { version = "0.5", features = ["util"] }
 # FALSIFY-SHIP-012 — NFC normalization for tokenizer round-trip harness
 unicode-normalization = "0.1"
 # FALSIFY-APR-DISTILL-TRAIN-001 — SafeTensors fixture for §35 wire-up integration test
 safetensors = "0.4"
 bytemuck = { version = "1.24", features = ["derive"] }
+
+# NOTE: NO `realizar` dev-dependency is declared here, and that is a DELIBERATE
+# departure from plan 04-09's Task 1 step 1 — see the SUMMARY's deviation 1.
+#
+# The plan expected the parity harness to need `realizar = { workspace = true,
+# features = ["setfit"] }` in dev-dependencies, and recorded the consequence:
+# Cargo does not permit an OPTIONAL dev-dependency, so such an entry would be
+# unconditional and its features would UNIFY with the normal `realizar`
+# dependency for every build that includes test targets. Under
+# `cargo test -p apr-cli --no-default-features`, aprender-serve would then still
+# be built with `setfit` (pulling `aprender/setfit`), so that RUN leg would prove
+# apr-cli's own gated code absent WITHOUT proving the setfit surface absent from
+# the dependency graph.
+#
+# It is not needed. `realizar` is already the optional normal dependency behind
+# `inference` (line ~126) and `setfit` already carries the weak `realizar?/setfit`,
+# so `--features setfit,inference` — the parity test target's `required-features`
+# — makes `realizar::api` reachable from an integration test WITH its setfit
+# surface, with no dev-dep and therefore no unification.
+#
+# The RULE survives anyway, because 04-10's feature matrix and 04-11's audit must
+# not overclaim in either direction: adding ANY unconditional dev-dep on a crate
+# that also appears as a normal dep weakens the corresponding `cargo test`
+# gating-by-absence leg, because dev-dep features unify. Do not add one here
+# without re-reading this.
+#
+# MEASURED, and NOT what plan 04-09 assumed: SAFE-02's gating evidence cannot be
+# read off `cargo check -p apr-cli --no-default-features`. That leg does not
+# compile, and did not compile at this plan's base commit f2824611a either
+# (measured with the base manifest restored) — 4 pre-existing errors, none in a
+# file this plan touches:
+#   src/commands/explain.rs:231,344          `realizar::safetensors::...`
+#   src/commands/diff_05_aprt_stage.rs:100   `realizar::inference_trace::...`
+#   src/lib.rs:63  re-exports `serve::auth::apply`, itself `cfg(feature="inference")`
+# i.e. `inference`-gated code that is not `cfg`-gated. The leg that IS green, and
+# the one 04-06/04-07 actually used, is `cargo check -p apr-cli --all-targets`
+# with DEFAULT features (setfit OFF, inference ON): the ungated build is what
+# proves the setfit gating. Recorded in deferred-items.md as D-04-09-A.
+
+# The three-surface parity gate (04-09, D-13/D-14). Declared so the target is
+# skipped rather than broken when the features are off. ONLY this target is
+# declared: plan 04-15 runs in the same wave and deliberately owns no Cargo.toml
+# entry (its file carries its own module-level cfg guard and is auto-discovered),
+# so a second [[test]] here would name a file this worktree may not have.
+[[test]]
+name = "setfit_parity"
+path = "tests/setfit_parity.rs"
+required-features = ["setfit", "inference"]
 

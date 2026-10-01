@@ -18,8 +18,11 @@ use crate::error::TruenoError;
 
 #[cfg(target_arch = "x86_64")]
 use super::microkernels::microkernel_16x8_avx512;
+#[cfg(target_arch = "aarch64")]
+use super::microkernels::microkernel_8x6_neon;
 #[cfg(target_arch = "x86_64")]
 use super::microkernels::microkernel_8x6_true_asm;
+#[cfg(not(target_arch = "aarch64"))]
 use super::microkernels::microkernel_scalar;
 use super::packing::{pack_a_block, pack_b_block, packed_a_size, packed_b_size};
 #[cfg(target_arch = "x86_64")]
@@ -84,7 +87,7 @@ fn store_c_tile(
     }
 }
 
-/// Dispatch to the best available microkernel (AVX2 ASM or scalar fallback).
+/// Dispatch to the best available microkernel (AVX2 ASM, NEON 8×6 on aarch64, or scalar fallback).
 #[inline(always)]
 fn dispatch_microkernel(
     kc: usize,
@@ -114,6 +117,21 @@ fn dispatch_microkernel(
             return;
         }
     }
+    #[cfg(target_arch = "aarch64")]
+    {
+        // Contract: neon-blis-v1.yaml (C-NEON-BLIS-001..003). Packed panels and the C
+        // micro-tile are zero-padded to a full MR×NR tile (`pack_a_block`, `pack_b_block`,
+        // `load_c_tile`), so the full-tile kernel is exact for remainder tiles as well;
+        // `store_c_tile` writes back only the live `mr_block × nr_block` part.
+        let _ = (mr_block, nr_block);
+        // SAFETY: NEON is baseline on aarch64. `a_panel` holds at least `MR * kc` floats
+        // and `b_panel` at least `NR * kc` (packed panel sizes), and `c_micro` is the
+        // `MR * NR` workspace addressed with `ldc = MR`.
+        unsafe {
+            microkernel_8x6_neon(kc, a_panel.as_ptr(), b_panel.as_ptr(), c_micro.as_mut_ptr(), MR);
+        }
+    }
+    #[cfg(not(target_arch = "aarch64"))]
     microkernel_scalar(kc, a_panel, b_panel, c_micro, MR);
 }
 

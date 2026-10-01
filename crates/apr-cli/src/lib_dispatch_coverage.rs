@@ -555,6 +555,12 @@
             device: "cpu".to_string(),
             samples: 1,
             temperature: 0.0,
+            selection: None,
+            split: "validation".to_string(),
+            lock_out: None,
+            selection_lock: None,
+            candidate: Vec::new(),
+            force: false,
         }));
         let result = dispatch_profiling_commands(&cli);
         assert!(result.is_some(), "Eval should be handled by profiling dispatcher");

@@ -1,0 +1,13 @@
+error[E0451]: fields `model`, `head`, `doc` and `artifact_sha256` of struct `VerifiedSetFitModel` are private
+  --> tests/ui/setfit_verified_model_constructed.rs:45:9
+   |
+44 |     VerifiedSetFitModel {
+   |     ------------------- in this type
+45 |         model: unimplemented!(),
+   |         ^^^^^ private field
+46 |         head: unimplemented!(),
+   |         ^^^^ private field
+47 |         doc: unimplemented!(),
+   |         ^^^ private field
+48 |         artifact_sha256: unimplemented!(),
+   |         ^^^^^^^^^^^^^^^ private field

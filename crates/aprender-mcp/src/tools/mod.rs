@@ -17,6 +17,8 @@ pub mod finetune;
 #[cfg(feature = "apr-tools")]
 pub mod port_owner;
 #[cfg(feature = "apr-tools")]
+pub mod predict;
+#[cfg(feature = "apr-tools")]
 pub mod qa;
 pub mod registry;
 #[cfg(feature = "apr-tools")]
@@ -42,6 +44,8 @@ pub use registry::{DispatchFn, ToolIndex};
 pub use bench::bench_tool_definition;
 #[cfg(feature = "apr-tools")]
 pub use finetune::finetune_tool_definition;
+#[cfg(feature = "apr-tools")]
+pub use predict::predict_tool_definition;
 #[cfg(feature = "apr-tools")]
 pub use qa::qa_tool_definition;
 #[cfg(feature = "apr-tools")]

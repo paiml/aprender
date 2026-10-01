@@ -63,6 +63,23 @@ fn apr_package_spec() -> String {
 /// Panics with the cargo failure surfaced on stderr if the build fails — a
 /// broken `apr` is a real failure these falsifiers must report, not skip.
 pub fn apr_binary() -> PathBuf {
+    build_apr(&[])
+}
+
+/// Same as [`apr_binary`], but with `--features <features>` on the build.
+///
+/// The SetFit surface is gated: `apr predict` refuses to route a
+/// `setfit-apr-v1` artifact in a default-features binary, with an error that
+/// reads like a model defect rather than a missing feature. A test that
+/// exercises that surface has to state the feature, and has to take the path
+/// cargo reports for THAT build — a feature-gated binary lands in the same
+/// place, but `.cargo/config.toml` redirects the target dir here, so guessing
+/// the path from the profile directory is what breaks.
+pub fn apr_binary_with_features(features: &str) -> PathBuf {
+    build_apr(&["--features", features])
+}
+
+fn build_apr(extra_args: &[&str]) -> PathBuf {
     let cargo = std::env::var("CARGO").unwrap_or_else(|_| "cargo".to_string());
     let pkg_spec = apr_package_spec();
 
@@ -78,6 +95,7 @@ pub fn apr_binary() -> PathBuf {
             &pkg_spec,
             "--message-format=json-render-diagnostics",
         ])
+        .args(extra_args)
         .stderr(Stdio::inherit())
         .output()
         .unwrap_or_else(|e| panic!("invoke `{cargo} build --bin apr -p {pkg_spec}`: {e}"));

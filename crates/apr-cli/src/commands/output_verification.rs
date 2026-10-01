@@ -1186,7 +1186,7 @@ fn golden_output_apr(path: &Path, prompt: &str, max_tokens: usize) -> Result<(Ve
         .map_err(|e| CliError::ValidationFailed(format!("Failed to load APR: {e}")))?;
     let tokenizer = apr_model
         .load_embedded_bpe_tokenizer()
-        .ok_or_else(|| CliError::ValidationFailed("APR missing embedded tokenizer".to_string()))?;
+        .ok_or_else(|| CliError::ValidationFailed(ENCODER_ONLY_QA_REFUSAL.to_string()))?;
     let prompt_tokens = tokenizer.encode(prompt);
 
     let config = InferenceConfig::new(path)
@@ -1460,5 +1460,116 @@ mod loud_truncation_3904 {
             !code.contains("THINKING_ON_BUDGET)"),
             "no ON-leg site may pass the old THINKING_ON_BUDGET const — it is deleted (#3907)"
         );
+    }
+}
+
+/// Why `apr qa` refuses an APR with no embedded tokenizer, and which doors DO cover it.
+///
+/// # This is a statement about the GATE's scope, never about the model (D-11)
+///
+/// `apr qa`'s first check loads an embedded BPE tokenizer and then generates with a token
+/// budget and a top-k. It is a GENERATIVE-model gate, so an encoder or classifier APR has no
+/// generative path for it to gate. Phase 4's closing audit item 7 established this with a
+/// CONTROL rather than an anecdote: the SetFit-shaped container and a committed plain-BERT
+/// `slice_model.apr` — no SetFit tag, no `setfit.head.*` entries, no U8 blob — receive the
+/// IDENTICAL exit code and the IDENTICAL message. The cause is therefore the gate's scope and
+/// not anything about the SetFit entries.
+///
+/// # Why the wording is constrained
+///
+/// The refusal must not suggest the artifact is unfit in any way. A well-formed classifier
+/// meeting a gate that does not apply to it is an out-of-scope result, and an operator who
+/// reads it as a verdict on their model will go looking for a defect that is not there. So the
+/// message names the doors that DO cover the model — the quality-validation door, the
+/// evaluation door and this phase's benchmark door — and says plainly that qa's own coverage
+/// of encoder-only APRs is deferred.
+///
+/// # It EXTENDS rather than replaces
+///
+/// The leading sentence keeps the exact `APR missing embedded tokenizer` phrase the Phase 4
+/// lifecycle control asserts on both fixtures, so this change cannot silently retire that
+/// control. The exit code and the detection logic are untouched: no capability path is added
+/// here, and D-11's capability half stays a deferred ticket.
+pub(crate) const ENCODER_ONLY_QA_REFUSAL: &str = "APR missing embedded tokenizer. \
+     `apr qa` is a GENERATIVE-model gate: its first check loads an embedded BPE tokenizer and \
+     then generates with a token budget, so it has nothing to gate on an encoder or classifier \
+     APR. This is a statement about the GATE's scope, not about the model. Encoder and \
+     classifier APRs are covered by `apr validate --quality` for format and quality \
+     validation, by `apr eval` for task metrics, and by `apr setfit bench run` / \
+     `apr setfit bench report` for the benchmark door. Extending qa itself to cover \
+     encoder-only APRs is deferred to its own ticket (D-11).";
+
+#[cfg(test)]
+mod encoder_only_qa_refusal_tests {
+    use super::ENCODER_ONLY_QA_REFUSAL;
+
+    /// The message says what a reader needs, in a MUST-MATCH / MUST-NOT-MATCH table.
+    ///
+    /// The must-not-match half is the half that matters. Every row is wording that would tell
+    /// an operator their ARTIFACT is at fault, which is the one thing this refusal does not
+    /// mean — the model is well formed and the gate simply does not apply to it. A refusal
+    /// that reads as a verdict on the file sends someone hunting a defect that is not there.
+    #[test]
+    fn qa_encoder_only_refusal_names_the_doors_and_never_impugns_the_artifact() {
+        for (label, needle) in [
+            ("the phrase the Phase 4 control asserts", "APR missing embedded tokenizer"),
+            ("the gate's own scope", "GENERATIVE-model gate"),
+            ("the quality-validation door", "apr validate --quality"),
+            ("the evaluation door", "apr eval"),
+            ("the benchmark door", "apr setfit bench report"),
+            ("the scope-not-model statement", "not about the model"),
+            ("the deferred ticket", "D-11"),
+        ] {
+            assert!(
+                ENCODER_ONLY_QA_REFUSAL.contains(needle),
+                "{label} is MISSING from the encoder-only qa refusal: {ENCODER_ONLY_QA_REFUSAL}"
+            );
+        }
+
+        let lowered = ENCODER_ONLY_QA_REFUSAL.to_lowercase();
+        for (label, needle) in [
+            ("invalidity", "invalid"),
+            ("corruption", "corrupt"),
+            ("malformation", "malformed"),
+            ("unsupportedness", "unsupported"),
+            ("brokenness", "broken"),
+            ("damage", "damaged"),
+            ("badness", "bad "),
+            ("failure of the model", "the model failed"),
+            ("a verdict on the file", "not a valid"),
+        ] {
+            assert!(
+                !lowered.contains(needle),
+                "the refusal used `{label}` wording ({needle:?}); it is out-of-scope, not a \
+                 verdict on the artifact: {ENCODER_ONLY_QA_REFUSAL}"
+            );
+        }
+    }
+
+    /// NON-VACUITY. Every must-not-match row above must be capable of matching SOMETHING, or
+    /// the loop proves nothing — a list of words no message would ever carry passes forever.
+    #[test]
+    fn qa_encoder_only_refusal_must_not_match_rows_can_actually_fire() {
+        let doctored = format!("{ENCODER_ONLY_QA_REFUSAL} The APR is invalid and corrupt: \
+             a malformed, unsupported, broken, damaged file, and a bad one. \
+             the model failed and is not a valid APR.");
+        let lowered = doctored.to_lowercase();
+        for needle in [
+            "invalid",
+            "corrupt",
+            "malformed",
+            "unsupported",
+            "broken",
+            "damaged",
+            "bad ",
+            "the model failed",
+            "not a valid",
+        ] {
+            assert!(
+                lowered.contains(needle),
+                "must-not-match row {needle:?} cannot match any string, so asserting its \
+                 absence from the refusal is vacuous"
+            );
+        }
     }
 }

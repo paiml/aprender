@@ -1,0 +1,46 @@
+[package]
+name = "aprender-mcp-forecast"
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+repository.workspace = true
+authors.workspace = true
+rust-version.workspace = true
+description = "Thin single-purpose MCP server: stateless time-series forecasting over the pmcp SDK"
+keywords = ["mcp", "forecasting", "prophet", "aprender", "pmcp"]
+categories = ["science", "web-programming"]
+readme = "README.md"
+# Same reason as aprender-mcp-setfit: a deployment unit, not a library other
+# crates should depend on.
+publish = false
+
+[lib]
+name = "aprender_mcp_forecast"
+path = "src/lib.rs"
+
+[[bin]]
+name = "aprender-mcp-forecast"
+path = "src/main.rs"
+
+[dependencies]
+# The one implementation of the forecast door (OPS-03). This server is a TRANSPORT:
+# it re-implements no numerics and re-checks no bound.
+aprender-forecast = { path = "../aprender-forecast" }
+# PAIML's Rust MCP SDK, on the 2.19 line aprender-mcp-setfit-train already resolves
+# (2.19.3 in Cargo.lock — no new duplicate). `streamable-http` brings
+# `pmcp::axum::router_with_config`; `schema-generation` powers
+# `tool_typed_with_description`.
+pmcp = { version = "2.19", features = ["streamable-http", "schema-generation"] }
+# The JsonSchema derive on ForecastArgs — same major pmcp's schema-generation uses.
+schemars = "1.0"
+serde = { workspace = true }
+serde_json = { workspace = true }
+tokio = { workspace = true }
+axum = { workspace = true }
+tower = { workspace = true }
+
+[dev-dependencies]
+reqwest = { workspace = true, features = ["json", "rustls-tls"] }
+
+[lints]
+workspace = true

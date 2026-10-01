@@ -1,0 +1,141 @@
+{
+  "outcome": "gate_pass",
+  "decided_by": "gate",
+  "human_option": null,
+  "declaration_commits": {
+    "08-13": [
+      "fc0c1dd30",
+      "a3e155170",
+      "56f888d62"
+    ],
+    "08-15-contract-text": [
+      "c99761825"
+    ]
+  },
+  "code_commits": {
+    "08-14": [
+      "4f5ada981",
+      "de58feea6",
+      "24cea2a63",
+      "4f4674fbd"
+    ],
+    "08-15": [
+      "3cfa83e1b",
+      "6389ec3d5",
+      "3ef728427"
+    ]
+  },
+  "run_commit": "39be66265055c1fd8de9d1b0b97caf54fc8128b4",
+  "recipe_id": "6a5489afa3462f566b8b12e932a0e35f93d384bea6f37e3154d06ebc186d6f3b",
+  "run_dir": "models/decide/laya-stance-64",
+  "data_dir": "data/decide/tweet-stance-64",
+  "data_sha256": {
+    "task_json": "041c4e38aadae98e3e62ecf77c7ace23616449cbab45439a4cf10cbb4a956b94",
+    "train_jsonl": "12a4301e5f0fcd50415e8eb237cbf2e5090f9e01f1edfa591dd5270f6df63351",
+    "eval_jsonl": "5250218f30686fe47482dbc1d2785d8eaa0a388a3aaf43ecc2c43b03f790e3bb",
+    "shift_jsonl": "e326952585d57b14ecc45f817efbb6994d6464ae07ec9190e0782547b5b20288"
+  },
+  "seeds": {
+    "policy": "median_ece",
+    "shipped": 17,
+    "per_seed": [
+      {
+        "seed": 13,
+        "macro_f1": 0.5530491638375455,
+        "ece_post": 0.08497409908859817,
+        "margin": 0.14388969585454808,
+        "t_applied": 1.6897854727120853,
+        "pass": true,
+        "rank_key": 849,
+        "model_safetensors_sha256": "de5f2a798bb9090ff5caf6dd826b92eb318621360287825bb0a2549573f9cf2a",
+        "eval_probs_sha256": "49ecc9fa7d86766eb75f96d23e1c0bdc365ec02c05c03e49a168607a27acf071"
+      },
+      {
+        "seed": 17,
+        "macro_f1": 0.6308225530950676,
+        "ece_post": 0.044250346606593244,
+        "margin": 0.22166308511207017,
+        "t_applied": 3.4278388080139597,
+        "pass": true,
+        "rank_key": 442,
+        "model_safetensors_sha256": "10264ea00d9e38ef39bd72143f21a6df62e4168c672a6fa670504a42fc774284",
+        "eval_probs_sha256": "bd72224042d00e901751f1ec88855aa76cdc5118587034d845152209a0a813a0"
+      },
+      {
+        "seed": 23,
+        "macro_f1": 0.657004176066817,
+        "ece_post": 0.03715086230005836,
+        "margin": 0.2478447080838196,
+        "t_applied": 4.780707112249848,
+        "pass": true,
+        "rank_key": 371,
+        "model_safetensors_sha256": "535fca03630d9bd78c3dbb74d7ad335b9a216726cc73ff7b04feb42394c28799",
+        "eval_probs_sha256": "fd685e9dc2e074eda8c60ed6442eef76621ed6b9cad069f4b01ebf2519b798de"
+      }
+    ]
+  },
+  "gate": {
+    "pass": true,
+    "zero_shot_macro_f1": 0.40915946798299746,
+    "ft_macro_f1": 0.6308225530950676,
+    "margin": 0.22166308511207017,
+    "ece_post": 0.044250346606593244,
+    "t_applied": 3.4278388080139597,
+    "clamp_hit": false,
+    "thresholds": {
+      "min_macro_f1_margin": 0.05,
+      "max_ece": 0.1,
+      "ece_bins": 15
+    },
+    "rust_recomputed": {
+      "ece_post": 0.04425034672021866,
+      "ft_macro_f1": 0.6308225393295288,
+      "margin": 0.22166302800178528,
+      "zs_macro_f1": 0.40915951132774353
+    }
+  },
+  "noise": {
+    "fine_tuned": {
+      "max_abs": 8.33931784072206e-06,
+      "bound": 3.335727136288824e-05,
+      "argmax_agree": 459,
+      "n": 459
+    },
+    "zero_shot": {
+      "max_abs": 1.495515496430233e-05,
+      "bound": 5.982061985720932e-05,
+      "argmax_agree": 459,
+      "n": 459
+    }
+  },
+  "pack": {
+    "exit": 0,
+    "rescore_max_abs": 1.1324882507324219e-05,
+    "zs_rescore_max_abs": 7.3462724685668945e-06,
+    "rescore_bound": 3.335727136288824e-05,
+    "zs_rescore_bound": 5.982061985720932e-05,
+    "argmax": "459/459"
+  },
+  "artifact": {
+    "path": "models/decide/laya-stance-64.apr",
+    "sha256": "24a44d7e050166c9b64e2716f2bcb3ce91747f7a3b927d03d6eeae5f89b6275a",
+    "bytes": 846196868
+  },
+  "deploy_eligible": true,
+  "e2e_stdio": {
+    "passed": true,
+    "identity_sha256": "24a44d7e050166c9b64e2716f2bcb3ce91747f7a3b927d03d6eeae5f89b6275a"
+  },
+  "shift_probe": {
+    "gate_clause": false,
+    "n": 280,
+    "ft_macro_f1": 0.5174913481736713,
+    "ft_ece_post": 0.18961836482797348,
+    "zs_macro_f1": 0.34021730836081837,
+    "zs_ece": 0.26894948855042455,
+    "margin": 0.1772740398128529
+  },
+  "device_used": "mps:0",
+  "torch_version": "2.14.0",
+  "wall_seconds": 684
+}

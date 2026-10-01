@@ -1,0 +1,17 @@
+version: 0.2
+env:
+  variables:
+    REPO: AWS_ACCOUNT_ID.dkr.ecr.us-east-1.amazonaws.com/kev-spike
+    BUCKET: kev-spike-021-AWS_ACCOUNT_ID
+phases:
+  pre_build:
+    commands:
+      - aws ecr get-login-password --region us-east-1 | docker login --username AWS --password-stdin AWS_ACCOUNT_ID.dkr.ecr.us-east-1.amazonaws.com
+      - T0=$(date +%s); aws s3 cp s3://$BUCKET/kev-0.8b-merged-f32.gguf kev.gguf --only-show-errors; echo "S3_PULL_SECS=$(( $(date +%s)-T0 ))"
+      - chmod +x bootstrap server && ls -la
+  build:
+    commands:
+      - for v in lambda-baked fargate-baked fargate-s3; do docker build -f $v.Dockerfile -t $REPO:$v . || exit 1; done
+  post_build:
+    commands:
+      - for v in lambda-baked fargate-baked fargate-s3; do T0=$(date +%s); docker push $REPO:$v || exit 1; echo "PUSH_$v=$(( $(date +%s)-T0 ))s"; done

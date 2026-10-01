@@ -1,0 +1,12 @@
+[package]
+name = "spike-011-prophet-regressor-parity"
+version = "0.0.0"
+edition = "2021"
+publish = false
+
+# Standalone: not a member of the aprender workspace, but built against it by path.
+[workspace]
+
+[dependencies]
+aprender_forecast = { path = "../../../crates/aprender-forecast", package = "aprender-forecast" }
+serde_json = "1"

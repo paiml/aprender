@@ -1,0 +1,1706 @@
+contract: setfit-train-lifecycle
+metadata:
+  # 3.0.0 (plan 05-03), and MAJOR is `pv diff`'s own suggestion rather than a judgement call:
+  #   git show HEAD:contracts/setfit-train-lifecycle-v1.yaml > /tmp/setfit-train-lifecycle-old.yaml
+  #   cargo run --release -p aprender-contracts-cli --bin pv -- diff \
+  #     /tmp/setfit-train-lifecycle-old.yaml contracts/setfit-train-lifecycle-v1.yaml
+  #   -> "Contract diff: v2.0.0 -> v2.0.0 / Suggested bump: major"
+  #      "~ calibration_regime: invariants changed
+  #       ~ evidence_gate: invariants changed
+  #       ~ gradient_free_parameters: invariants changed"
+  # (`pv diff` takes TWO FILESYSTEM PATHS — see crates/aprender-contracts-cli/src/cli.rs:73-78 —
+  # so the old revision is materialized with `git show <rev>:<path> > /tmp/...` first.)
+  #
+  # MAJOR is also right on the merits, which is worth stating because a tool's suggestion is easy
+  # to accept for the wrong reason. The DATA half of this edit is purely additive — a second
+  # calibrated_regimes entry, a per_regime_thresholds map, and production-scoped invariants — and
+  # the fixture entry plus its entire frozen_thresholds block are BYTE-UNTOUCHED, proven by a
+  # `git diff -U0` control in which no fixture value line and no fixture entry line appears in
+  # any deletion hunk. What genuinely breaks a 2.x reader is the CLAIM, in two places:
+  #
+  #   1. The production regime's epsilons are NOT frozen under the 2.x derivation rule. Plan
+  #      05-01 measured `10 x worst_near_null <= eps <= best_real / 10` COLLAPSING at 1536
+  #      optimizer steps — five of six classes have no legal epsilon — so that regime's lower
+  #      bound is the contract's OTHER recorded bound, the f32 rounding-noise clearance
+  #      condition, at a factor this edit CHOOSES rather than cites. A consumer that assumed one
+  #      derivation rule across all calibrated regimes is wrong as of 3.0.0. See the PRODUCTION
+  #      REGIME invariants under evidence_gate, which state the weakened claim explicitly rather
+  #      than substituting one bound for the other silently.
+  #   2. Two prose claims about `attention_key_bias` are CORRECTED, not merely extended: "those
+  #      deltas are f32 cancellation residue", and the unqualified form of "softmax
+  #      shift-invariance makes dL/db_k exactly zero" in the description above. Both are refuted
+  #      by measurement (grad_norm_max 8.084e-10 / 7.298e-10; deltas scaling with the learning
+  #      rate). `dL/db_k = 0` IN EXACT ARITHMETIC survives and is retained verbatim in THE
+  #      MECHANISM invariant.
+  #
+  # The FILENAME stays `-v1.yaml`, per the 2.0.0 note below and the tweet-eval precedent.
+  #
+  # This edit is the D-10(c) deliberate contract edit the 2.x "CONSEQUENCE FOR PHASE 5" clause
+  # anticipated. It was prepared by an executor, presented with its measured basis and this diff,
+  # and committed only after a human selected the lower bound at a blocking checkpoint (D-04).
+  version: 3.0.0
+  created: '2026-08-09'
+  updated: '2026-08-11'
+  author: PAIML Engineering
+  kind: kernel
+  # ONT-7 (plan 08-33): `kind: kernel` was the schema default and is now written out; the lifecycle
+  # rules hold in the committed tree, so the one declared world and no qualifier.
+  valid_under:
+    world: committed
+  version_note: >
+    2.0.0 — `pv diff` suggested MAJOR and this takes it. Two amendments from the phase-3 cleanup
+    review, both narrowing what the lifecycle admits, so existing callers can break:
+    `CanonicalTestAccess::grant` now takes `&PreparedDataset<Canonical>` instead of a bare
+    `&Split<Test>` and returns the grant over that dataset's own test split (a bare split carries
+    no provenance, so the corpus half of the substitution TRN-07 blocks was open); and
+    `from_candidates` refuses a non-finite metric value, because `f64::total_cmp` orders +NaN
+    ABOVE +infinity and an unfiltered NaN candidate would therefore be SELECTED rather than
+    ignored.
+    The FILENAME stays `-v1.yaml`: in this repo the `-vN` suffix is a stable identifier and
+    `metadata.version` carries semver independently — see `tweet-eval-stance-benchmark-v1.yaml`,
+    which is at 2.0.0 under a `-v1` name. Renaming would churn every `include_str!` path, every
+    binding entry and every plan reference to rename nothing that is actually a different
+    contract. Nothing user-reachable consumes this mechanism yet (TRN-07 is deliberately
+    UNCHECKED in REQUIREMENTS.md precisely because no CLI surface reaches it), so the major bump
+    records the break for the next reader rather than paying off an external consumer.
+  description: >
+    The SetFit stage-one training lifecycle: the evidence gate that a run must pass before
+    it may identify as SetFit, the calibration regime those thresholds were measured in, the
+    dropout and epoch-shuffle RNG derivations, the loss-trace and in-band execution digests,
+    and the twelve-knob default provenance. Covers TRN-03 (a run cannot claim SetFit until
+    named gradients and parameter deltas demonstrate the encoder moved) and SAFE-03 (a
+    non-updating baseline stays labeled as one).
+
+    Implemented by crates/aprender-train (train::setfit). The frozen numbers below were
+    measured by plan 03-05's calibration matrix and are restated here BEFORE any pass/fail
+    comparison runs against them; the Rust constants are PARSED from this file by a test, so
+    a one-sided edit to either is red.
+
+    WHY THIS CONTRACT EXISTS. The central claim -- "the encoder demonstrably moved" -- is
+    trivially fakeable. A frozen encoder, a centroid baseline and a 1e-30-learning-rate run
+    all produce a plausible-looking loss trace and a completed run object, and a test suite
+    that only ever runs the honest path accepts all three. The gate is therefore written
+    here as a property that in-band NEGATIVE runs must violate: an all-frozen run, a
+    1e-30-LR run and an out-of-regime run are compiled into every test run and must be RED
+    under the same gate that accepts the reference run. A gate that has only ever been
+    observed passing is not evidence.
+
+    THRESHOLDS ARE MEASURED, NOT CHOSEN. Every epsilon below sits inside a two-sided band
+    whose edges are measurements: at least 10x above the worst relative delta any
+    not-really-training control produced, and at least 10x below the smallest relative delta
+    any real run produced, across the WHOLE matrix rather than one cell. Both edges are
+    reproduced in the evidence_gate derivation. An epsilon cannot be loosened after a
+    failing comparison without editing this file, which `pv diff` flags.
+
+    ONE CLASS IS DELIBERATELY NOT GATED, AND THAT IS A MEASUREMENT. `attention_key_bias`
+    carries no epsilon and no movement predicate, in BOTH calibrated regimes. This is not an
+    exemption of convenience -- see calibration_regime and the gradient_free_parameters
+    equation, which record the mechanism (softmax shift-invariance makes dL/db_k exactly zero
+    IN EXACT ARITHMETIC; the encoder executes f32, where the invariance is only approximate and
+    a residual gradient at the ~1e-10 level is measured), the measured gradient magnitudes on
+    both sides of the class boundary, and the reason its movement cannot testify in EITHER
+    direction. The exact-arithmetic qualifier is load-bearing and was ADDED 2026-08-17: plan
+    05-01 measured grad_norm_max 8.084e-10 on the production encoder, so the unqualified form of
+    this sentence was refuted by the repository''s own evidence. A reader looking for permission
+    to re-arm the class will find the numbers that say why it must not be -- for the production
+    regime, a usable margin an order of magnitude narrower than any other class''s.
+
+    ONE RUN-LEVEL STATISTIC IS DELIBERATELY OMITTED. `pair_loss_endpoint` -- a last-k versus
+    first-k loss-margin gate -- is NOT armed. Plan 03-05 measured a cross-seed spread of
+    0.4933 in `(last_k - first_k)` with the SIGN FLIPPING between seeds. See the
+    pair_loss_endpoint equation, which records the numbers and states the exclusion so that
+    its absence reads as an evidenced decision rather than an oversight.
+
+    PROVABILITY HONESTY. `cargo-kani` is not installed in this repository and there is not
+    one `#[kani::proof]` harness anywhere under `crates/`. The `kani_harnesses:` entries
+    below are DECLARED and NOT EXECUTED; each names the runnable, identically bounded test
+    that is the actual evidence. Nothing here should be read as a machine-checked proof.
+
+    ANNOTATION HONESTY. The `#[contract]` attribute in this repository is METADATA-ONLY:
+    aprender-core's build.rs looks for a binding.yaml at a sibling provable-contracts/ path
+    that the APR-MONO merge deleted, so CONTRACT_* environment variables are never set and
+    no preconditions or postconditions are injected into the annotated function. The
+    enforcement mechanism for everything below is the named test, never the annotation.
+  references:
+    - 'Tunstall et al. (2022) Efficient Few-Shot Learning Without Prompts (SetFit)'
+    - 'setfit==1.1.3 -> SentenceTransformerTrainer -> transformers TrainingArguments'
+    - 'Loshchilov & Hutter (2019) Decoupled Weight Decay Regularization (AdamW)'
+    - 'crates/aprender-train/src/train/setfit/'
+    - 'crates/aprender-core/src/setfit/dropout_rng.rs'
+    - 'contracts/contrastive-pair-protocol-v1.yaml — the upstream pair protocol'
+    - 'contracts/linear-probe-classifier-v1.yaml — the SAFE-03 baseline sibling'
+  depends_on:
+    - contrastive-pair-protocol-v1
+    - multinomial-head-v1
+
+equations:
+
+  # ==========================================================================
+  # 1. The evidence gate — the per-parameter predicate and the frozen table
+  # ==========================================================================
+
+  evidence_gate:
+    formula: 'relative_delta(p) = ||theta_final(p) - theta_init(p)||_2 / max(denom(p), s_class(p)) ; denom(p) = ||theta_init(p)||_2 restricted to the delta support if class(p) is sparse, else ||theta_init(p)||_2 over the whole tensor ; PASS(p) <=> is_finite(grad_norm_max(p)) AND ||dTheta(p)||_2 > 0 AND relative_delta(p) > eps_class(p) ; PASS(run) <=> gated_set != {} AND for all p in gated_set: PASS(p)'
+    domain: 'p in the trainable parameter set (all encoder parameters minus FreezeGroup exemptions), class(p) in {embedding, layer_norm_weight, layer_norm_bias, projection_weight, projection_bias, attention_key_bias}'
+    codomain: 'PassedEvidence on pass; SetFitTrainError::EvidenceRejected carrying the COMPLETE UpdateEvidence table, its EvidenceSummary and the worst-offending parameter on fail'
+    # THE MACHINE-READABLE FORM of the table restated in the first invariant below.
+    # Both exist on purpose: the markdown table is what a reader checks, this is what the
+    # Rust constants are PARSED from by thresholds_match_the_contract. Keeping them adjacent
+    # means a one-sided edit is visible here as well as red in the test.
+    frozen_thresholds:
+      embedding:
+        eps: 1.1e-5
+        scale_floor: 1.0
+        sparse: true
+        gated: true
+      layer_norm_weight:
+        eps: 2.9e-6
+        scale_floor: 1.0
+        sparse: false
+        gated: true
+      layer_norm_bias:
+        eps: 1.1e-5
+        scale_floor: 1.0
+        sparse: false
+        gated: true
+      projection_weight:
+        eps: 1.8e-5
+        scale_floor: 1.0
+        sparse: false
+        gated: true
+      projection_bias:
+        eps: 8.3e-6
+        scale_floor: 1.0
+        sparse: false
+        gated: true
+      attention_key_bias:
+        eps: null
+        scale_floor: 1.0
+        sparse: false
+        gated: false
+    embedding_delta_floor_value: 2.7e-5
+    invariants:
+      - 'THE FROZEN PER-CLASS TABLE. Five gated classes, each with an epsilon and a positive
+        scale floor. `attention_key_bias` is the sixth class and is NOT gated — it appears in
+        the table with a null epsilon and is excluded from `gated_set` (see
+        gradient_free_parameters for the mechanism and the measurement).
+
+        | class             | eps_class | s_class | sparse |
+        |-------------------|-----------|---------|--------|
+        | embedding         | 1.1e-5    | 1.0     | yes    |
+        | layer_norm_weight | 2.9e-6    | 1.0     | no     |
+        | layer_norm_bias   | 1.1e-5    | 1.0     | no     |
+        | projection_weight | 1.8e-5    | 1.0     | no     |
+        | projection_bias   | 8.3e-6    | 1.0     | no     |
+        | attention_key_bias| null      | 1.0     | no     |'
+      - 'DERIVATION, stated inline so the numbers can be checked without re-running anything.
+        Measured by `calibration_matrix_epsilon_basis` over 6 cells (seeds {1,7,42} x boundary
+        configurations {s8e1b4, s16e2b8}) x 3 conditions (real at encoder_lr 2e-5, null control
+        at 1e-30, near-null control at 1e-8) = 18 complete run_tuning passes. Each epsilon must
+        satisfy 10 * worst_control_delta <= eps <= best_real_delta / 10, across ALL cells:
+
+        | class             | worst 1e-30 | worst 1e-8 | best real | lower edge | upper edge | frozen  |
+        |-------------------|-------------|------------|-----------|------------|------------|---------|
+        | embedding         | 0.000e0     | 4.206e-7   | 1.198e-4  | 4.206e-6   | 1.198e-5   | 1.1e-5  |
+        | layer_norm_weight | 0.000e0     | 0.000e0    | 2.930e-5  | 0.000e0    | 2.930e-6   | 2.9e-6  |
+        | layer_norm_bias   | 0.000e0     | 1.548e-7   | 1.161e-4  | 1.548e-6   | 1.161e-5   | 1.1e-5  |
+        | projection_weight | 0.000e0     | 4.092e-7   | 1.875e-4  | 4.092e-6   | 1.875e-5   | 1.8e-5  |
+        | projection_bias   | 0.000e0     | 1.460e-7   | 8.394e-5  | 1.460e-6   | 8.394e-6   | 8.3e-6  |
+
+        Each frozen value is the upper edge rounded DOWN to two significant figures. Rounding
+        down rather than to nearest: rounding up would erode the 10x false-rejection margin,
+        which is the margin protecting legitimate runs.'
+      - 'THE LOWER EDGE IS A REAL MEASUREMENT, NOT A FORMALITY. The 1e-30 control is exactly
+        0.000e0 for every parameter in every cell — at that rate every per-element update
+        underflows the parameter ULP and the delta is bit-for-bit zero — so on its own it
+        bounds epsilon from ABOVE only. The 1e-8 near-null control supplies the missing lower
+        bound: 2000x below the reference rate, so not meaningfully training, but large enough
+        that AdamW writes back a different f32. Every frozen epsilon sits at least 2.8x above
+        10x that control (embedding, the tightest: 1.1e-5 against a 4.206e-6 lower edge).'
+      - 'THE EPSILONS ARE NOT DECORATION, AND THIS IS THE MEASUREMENT THAT SHOWS IT. Under the
+        1e-8 near-null control EVERY member of embedding, layer_norm_bias, projection_weight
+        and projection_bias still satisfies the strict `||dTheta|| > 0` predicate. The strict
+        predicate ALONE therefore does not separate a not-really-training run; the epsilon is
+        what separates it, by margins of 28x (embedding), 46x (projection_weight), 57x
+        (projection_bias) and 75x (layer_norm_bias) between the worst near-null delta and the
+        frozen threshold.'
+      - 'EVERY FROZEN EPSILON CLEARS f32 ROUNDING NOISE. The largest relative delta pure
+        representation rounding can produce for a row is bounded by
+        `(f32::EPSILON/2) * ||theta_init|| / max(denom, s_class)`, since rounding each element
+        perturbs it by at most half a ULP. Measured per class as the worst row: 9.398e-8
+        (embedding), 5.960e-8 (layer_norm_weight), 5.290e-8 (layer_norm_bias), 5.960e-8
+        (projection_weight), 5.960e-8 (projection_bias). Every frozen epsilon is 49x to 315x
+        above its own class floor, so no parameter can satisfy its threshold by rounding alone.
+        NOTE ON WHAT THIS STATES: a CONDITION (no parameter may satisfy its threshold by
+        rounding alone) plus a RECORD of the clearance the fixture epsilons happened to have. It
+        is NOT a `lower = k x floor` formula. Any multiplier applied to the noise floor as a
+        lower BOUND is chosen by the plan that applies it, and must be recorded there as chosen —
+        see the PRODUCTION REGIME invariants below, which do exactly that.'
+      - 'PRODUCTION REGIME — THE NEAR-NULL LOWER BOUND IS UNSATISFIABLE AT THIS ENVELOPE. Scoped
+        to `minilm-slice-h384-l6-a12-i1536-v30522@1110a243`; nothing here changes the fixture
+        derivation above. Plan 05-01 measured the boundary matrix on the production encoder at
+        the frozen production hyperparameters (epochs 1, batch 16, pinned setfit 1.1.3 body
+        defaults), 12 passes over four cells (`s8:{13,31,53}` and `s64:13`). At s64 the pair
+        budget is `2 x max(pos_cap, neg_cap)` with `neg_cap = 3n^2`, so a cell is 1536 optimizer
+        steps — 64x the s8 cell. Under `10 x worst_near_null <= eps <= best_real / 10`, FIVE OF
+        SIX CLASSES HAVE NO LEGAL EPSILON:
+
+        | class             | lower 10x nnull | upper best_real/10 | window | lower exceeds upper by |
+        |-------------------|-----------------|--------------------|--------|------------------------|
+        | embedding         | 1.553e-3        | 1.813e-4           | EMPTY  | 8.56x                  |
+        | layer_norm_weight | 4.802e-6        | 1.891e-5           | EXISTS | --                     |
+        | layer_norm_bias   | 9.844e-4        | 7.112e-5           | EMPTY  | 13.84x                 |
+        | projection_weight | 1.051e-3        | 1.231e-4           | EMPTY  | 8.54x                  |
+        | projection_bias   | 1.101e-3        | 3.447e-5           | EMPTY  | 31.94x                 |
+        | attention_key_bias| 9.278e-8        | 1.714e-8           | EMPTY  | 5.41x                  |
+
+        The cause is the NEAR-NULL leg, not the control: the 1e-30 control writes back
+        bit-identical weights even at 1536 steps (101 rows, max relative_delta 0.0, zero rows
+        moved), so worst_control is pinned at exactly 0.000e0 and the 1e-8 leg alone sets every
+        lower bound. It is NOT an artifact of mixing cells — within s64 alone
+        `3.683e-7 / 9.278e-9 = 39.7`, against a rule needing `> 100`.
+        RELAXING THE FACTORS IS REFUTED BY ARITHMETIC, not by preference: the largest admissible
+        near-null factor is 0.313 and the largest admissible factor PRODUCT is 3.131 against the
+        contracted 100 (`projection_bias` binding). A factor below 1 puts epsilon UNDER the
+        near-null delta it must exceed, so a near-null run would PASS. That is an inverted margin,
+        not a reduced one.'
+      - 'PRODUCTION REGIME — WHICH BOUND BINDS, AND THE FACTOR IS CHOSEN. **THE VALUES BELOW ARE
+        FROZEN FROM A PROVISIONAL, FOUR-OF-SIX-CELL BASIS** (`s64:31` and `s64:53` were never
+        measured) — stated here, beside the numbers, so a reader cannot take this for a complete
+        boundary matrix without also reading the MEASURED-versus-COVERED invariant below.
+        The bound that binds is the OTHER lower bound this contract already records: the f32
+        rounding-noise clearance condition. That bound is CITED. The MULTIPLIER on it is CHOSEN BY
+        THIS EDIT and is not inherited from the fixture derivation, which states a condition and
+        records 49x-315x as measured rather than as a required formula. The chosen factor is TEN
+        (`lower = 10 x noise_floor`), for two stated reasons: it mirrors the near-null leg''s own
+        factor, so the two bounds are stated at comparable strength, and it is strictly stricter
+        than bare clearance, so it cannot be weaker than what this contract literally requires.
+        THE SELECTION IS A HUMAN''S, RECORDED VERBATIM at plan 05-03''s blocking D-04 checkpoint,
+        which was presented with all three candidate bounds and both factor columns:
+        option "A — L2, freeze now (provisional)", factor "10x noise_floor". An executor prepared
+        this edit; it did not choose the rule.
+        Both windows are printed so a reader can see what the factor bought:
+
+        | class             | noise_floor | upper     | width at 10x floor | width at bare floor |
+        |-------------------|-------------|-----------|--------------------|---------------------|
+        | embedding         | 1.779e-6    | 1.813e-4  | 10.19x             | 101.94x             |
+        | layer_norm_weight | 5.960e-8    | 1.891e-5  | 31.72x             | 317.24x             |
+        | layer_norm_bias   | 5.960e-8    | 7.112e-5  | 119.32x            | 1193.23x            |
+        | projection_weight | 5.960e-8    | 1.231e-4  | 206.56x            | 2065.56x            |
+        | projection_bias   | 5.960e-8    | 3.447e-5  | 57.83x             | 578.27x             |
+        | attention_key_bias| 1.133e-9    | 1.714e-8  | 1.51x              | 15.12x              |
+
+        The frozen values are the upper edge rounded DOWN to two significant figures, the same
+        rule the fixture derivation uses — the change of lower bound does not touch the upper
+        edge, which remains `best_real / 10`. Each frozen value clears 10x its own class floor by
+        10.1x to 201x, and the bare floor by 101x to 2013x, a band comparable to the fixture''s
+        recorded 49x-315x. The run-level embedding_delta_floor 2.6e-4 is the smallest embedding
+        MEDIAN across measured cells (2.611e-3) divided by ten and rounded down, and sits 14.6x
+        above 10x the sparse class''s floor.'
+      - 'PRODUCTION REGIME — THIS IS A WEAKENING OF THE CLAIM, AND IT IS RECORDED AS ONE. Stated
+        plainly rather than left to be inferred from the substitution. WHAT IS GIVEN UP: the gate
+        no longer refuses a genuinely-executed but 2000x-underpowered contrastive run. A run at
+        encoder_lr 1e-8 moves projection_bias by 1.101e-4 at s64, and the frozen 3.4e-5 sits below
+        that, so such a run PASSES this gate.
+        WHAT IS RETAINED, with its margin: all three of the adversaries this contract NAMES —
+        a frozen encoder, a centroid baseline, and a 1e-30-learning-rate run — produce exactly
+        0.000e0 at 1536 steps (measured: ctrl_max = 0.000e0 for all six classes in every cell),
+        so all three remain refused with the widest possible margin. The 1e-8 near-null run was
+        never a named adversary; plan 03-05 introduced it to obtain a non-degenerate lower bound
+        because the 1e-30 control bounds epsilon from ABOVE only. The clearance condition supplies
+        a different non-degenerate lower bound. The claim this gate now makes for the production
+        regime is: THE ENCODER MOVED BEYOND f32 ROUNDING NOISE BY AT LEAST AN ORDER OF MAGNITUDE,
+        AND A RUN THAT DOES NOT TRAIN PRODUCES EXACTLY ZERO. It is not: the encoder moved more
+        than a 2000x-underpowered run would.
+        PRECEDENT, NARROWED TO WHAT IS TRUE: the noise floor was ALREADY this contract''s
+        operative lower bound for one class — the fixture derivation table records
+        layer_norm_weight with `worst 1e-8` = 0.000e0 and `lower edge` = 0.000e0, so its near-null
+        leg was degenerate and the clearance condition was doing the work. That does not mean the
+        whole rule pre-exists, and it does not make the multiplier inherited.'
+      - 'PRODUCTION REGIME — MEASURED versus COVERED. MEASURED: four of the forty contracted
+        cells — `s8e1b16` at seeds 13, 31 and 53, and `s64e1b16` at seed 13 — 12 complete passes,
+        each persisted with a verified evidence_sha256 and committed as a reviewable artifact.
+        The boundary matrix''s remaining two cells (`s64:31`, `s64:53`) were NOT run; the basis is
+        therefore PROVISIONAL and is recorded as such. COVERED: contract membership covers all 40
+        (seed, cell) pairs, so no benchmark cell can hit UncalibratedRegime mid-matrix (D-02).
+        THAT IS A MEMBERSHIP CLAIM, NOT AN EMPIRICAL ONE. Nothing here asserts that an unmeasured
+        cell will clear its epsilon; empirical threshold success on the other thirty-six cells
+        remains a per-run invariant enforced at judgement time, and the benchmark driver halts on
+        the first evidence failure rather than continuing the matrix.
+        WHAT THE UNMEASURED CELLS COULD STILL DO: under this lower bound an unmeasured cell moves
+        the window by raising the worst noise floor or lowering best_real. The factor required to
+        close each window is its width above: 1.51x for attention_key_bias (which is UNGATED, so
+        it cannot change the verdict), 10.19x for embedding, and 31.72x-206.56x for the rest. The
+        floors have been stable across four cells spanning a 64x range in optimizer steps
+        (5.960e-8 for every dense class in every cell; 1.741e-6-1.779e-6 for embedding).
+        PROSPECTIVE VALIDATION (cells s16 seed 41 and s32 seed 29): NOT RUN — compute budget.'
+      - 'THE SCALE FLOOR IS WHY THE RATIO IS DEFINED AT ZERO INIT. Without `max(denom, s_class)`
+        the ratio has two failure modes that fail in OPPOSITE directions: with a zero
+        initialization and a nonzero delta it is +inf, which is GREATER than every threshold
+        and therefore ACCEPTS any movement however small; with a zero delta as well it is NaN,
+        and `NaN > eps` is false, so it rejects for a reason no diagnosis can state. s_class is
+        1.0 for every class: the floor only engages when the (possibly support-restricted)
+        initial norm is below unit scale, which is exactly where the ratio stops meaning
+        "fraction of the initial magnitude" and starts meaning "absolute movement".'
+      - 'THE SPARSE DENOMINATOR IS RESTRICTED TO THE SUPPORT, and only for the embedding tables.
+        A few-shot batch touches roughly a third of the fixture slice vocabulary (measured
+        support fraction 0.3196 to 0.3505) while every dense class has support fraction exactly
+        1.0000 in every cell — a batch that touches a dense block touches all of it, so
+        restricting there would be a no-op dressed up as a policy.'
+      - 'ORDER INSIDE THE GATE IS LOAD-BEARING. The calibration-regime check runs FIRST, before
+        any threshold comparison, so a run outside the regime fails closed rather than being
+        judged by numbers that were never measured for it.'
+      - 'AN EMPTY GATED SET IS UNPASSABLE. If the trainable set is empty the run fails with
+        NoTrainableParameters; if the trainable set is non-empty but contains ONLY ungated
+        (gradient-free) parameters the run fails with NoTestifyingParameters. Without the
+        second, freezing everything except the key biases would leave a gate with nothing to
+        check and a vacuous pass — SAFE-03 is structural only if both holes are closed.'
+    preconditions:
+      - 'every parameter name classifies; an unmatched name is EvidenceError::UnclassifiedParameter, never a default bucket'
+      - 'the run''s calibration_regime_id names an architecture, seed and cell that a calibrated entry COVERS (component-wise membership, not string equality — see calibration_regime)'
+    postconditions:
+      - 'a rejection carries the COMPLETE UpdateEvidence table and its EvidenceSummary, with one row per trainable parameter'
+      - 'SetFitRun<EncoderTuned> is constructible ONLY from a PassedEvidence value'
+    lean_theorem: Theorems.SetFit_Evidence_Gate
+
+  # ==========================================================================
+  # 2. The gradient-free class — recorded, never gated
+  # ==========================================================================
+
+  gradient_free_parameters:
+    formula: 'gated_set = trainable_set \ {p : class(p) = attention_key_bias} ; attention_key_bias = {p : name(p) matches "*.attention.self.key.bias"}'
+    domain: 'p in the trainable parameter set'
+    codomain: 'the subset of parameters whose movement is admitted as evidence'
+    invariants:
+      - 'THESE PARAMETERS CANNOT SERVE AS ENCODER-UPDATE EVIDENCE. Stated plainly and first,
+        because their movement is recorded in the evidence table and a later reader will see
+        nonzero deltas there. Those deltas are a REAL but vanishingly small gradient signal, and
+        they are not proof that tuning occurred: the class carries no usable margin at which a
+        threshold could separate training from not-training (see the two invariants below, and
+        the PRODUCTION REGIME invariant that measures it). No downstream consumer may treat them
+        as such.
+        CORRECTED 2026-08-17 (plan 05-01 measurement, D-17). This sentence previously read
+        "Those deltas are f32 cancellation residue." That is REFUTED: plan 05-01 measured
+        grad_norm_max 8.084e-10 (s8) and 7.298e-10 (s64) on the binding key-bias row, and the
+        deltas SCALE WITH THE LEARNING RATE (2e-5 -> 1.714e-7; 1e-8 -> 3.105e-11), which a
+        parameter receiving no gradient cannot do. The conclusion the sentence supported survives;
+        the mechanism it asserted does not.'
+      - 'THE MECHANISM. Softmax is invariant to a constant shift of its inputs. The key bias
+        b_k enters the pre-softmax logit of every key j for a given query i as the same
+        quantity q_i . b_k, so the shift cancels and dL/db_k = 0 in EXACT arithmetic. This is a
+        property of dot-product attention, not of SetFit or of this implementation.'
+      - 'THE BOUNDARY IS THE KEY BIAS ALONE. The key WEIGHT is an ordinary projection weight
+        (W_k x is not constant in x). The QUERY bias has no such invariance, since (q + b_q).k_j
+        varies with j. The VALUE bias adds a constant to the attention output, which downstream
+        layers see. Only the key bias is split out, and widening the split to "attention biases"
+        is a measurable error, not a judgement call.'
+      - 'MEASURED, on the fixture slice, seed 7, cell s8e1b4:
+        `encoder.layer.1.attention.self.key.bias` grad_norm_max 2.290e-10 and grad_norm_mean
+        1.402e-10, against `encoder.layer.0.attention.self.query.bias` grad_norm_max 3.444e-3
+        and `encoder.layer.0.attention.self.query.weight` grad_norm_max 8.007e-3 in the same
+        block — 1.5e7x and 3.5e7x larger respectively. The separation was also observed from
+        the other side of the classifier by induced mutation (see FALSIFY-STL-002).'
+      - 'WHY NO EPSILON. Even measured in isolation the class cannot carry one. Its best real
+        relative delta across the matrix is 3.361e-9, so a 10x-margin epsilon would be
+        3.361e-10 — 0.49x of the class''s OWN f32 rounding-noise floor of 6.880e-10. A threshold
+        below the rounding floor cannot reject any parameter that moved by even one ULP, so it
+        would restate the strict movement predicate while wearing a threshold''s name.'
+      - 'WHY NO MOVEMENT PREDICATE EITHER. `||dTheta|| > 0` does not testify here in either
+        direction. It PASSES on runs that are not training: under the 1e-8 near-null control
+        key biases still moved in 5 of the 6 cells (worst relative delta 9.095e-13). And it is
+        not reliable on runs that ARE training: the measured element support fraction for key
+        biases is 0.9219 to 0.9922 across cells, never the 1.0000 that every real-gradient class
+        shows, so whether a given key bias tensor moves at all is decided by whether its
+        cancellation residue happened to round to zero. Arming it would risk rejecting
+        legitimate runs for a reason unrelated to training. The same reasoning that excluded
+        pair_loss_endpoint applies, and it is applied here for consistency rather than
+        selectively.'
+      - 'EXCLUSION DOES NOT WEAKEN THE GATE. The five gated classes must ALL pass for every
+        trainable parameter, and a run whose gated set is empty fails with
+        NoTestifyingParameters. Removing parameters that cannot testify narrows what the gate
+        asserts to what it can actually demonstrate; it does not create a path through it.'
+      - 'RE-DERIVATION, NOT RELAXATION. If a future encoder, kernel or reduction order gives
+        the key bias a real gradient, this class loses its basis and must be re-derived rather
+        than quietly retained. That is enforced by a test that runs in every `cargo test`, not
+        behind --ignored (see FALSIFY-STL-002). THIS CLAUSE FIRED: the production encoder DOES
+        give the key bias a real (tiny) gradient, and the class was re-derived rather than
+        retained — see the PRODUCTION REGIME invariant below.'
+      - 'PRODUCTION REGIME — THE EXCLUSION IS RE-DERIVED ON A MEASURED MARGIN, NOT ON THE
+        GRADIENT-FREE ARGUMENT. Scoped to
+        `minilm-slice-h384-l6-a12-i1536-v30522@1110a243`. Plan 05-01 measured, over 12 passes on
+        four cells: grad_norm_max 8.084e-10 (s8, binding row
+        `encoder.layer.4.attention.self.key.bias`) and 7.298e-10 (s64,
+        `encoder.layer.1...`) — NON-ZERO — and deltas that SCALE WITH THE LEARNING RATE
+        (real 2e-5 -> 1.714e-7; near-null 1e-8 -> 3.105e-11). A parameter receiving no gradient
+        cannot do that, so at production scale `dL/db_k = 0` does not describe the executing code.
+        WHAT SURVIVES, UNCHANGED: `dL/db_k = 0` in EXACT arithmetic, as THE MECHANISM invariant
+        above states it. The encoder executes f32, in which softmax shift-invariance is only
+        approximate, so a residual gradient at the ~1e-10 level is the expected numerical
+        consequence rather than a bug. The physics explains why the gradient is TINY; it does not
+        establish that it is ZERO.
+        THE DISPOSITION AND ITS MARGIN. The class stays UNGATED, now on a measured argument of
+        the same kind as WHY NO EPSILON above. Three quantities, kept separate because conflating
+        them credits the epsilon with a margin it does not have: the RAW class separation
+        `best_real / noise_floor` is 151x (1.714e-7 / 1.133e-9) against 1019x-20654x for the other
+        five; the candidate epsilon''s own clearance `upper / noise_floor` is 15.12x against
+        101x-2065x; and its window WIDTH under the chosen lower bound is 1.51x against
+        10.19x-206.56x. On every one of the three the class is an order of magnitude or more
+        narrower than any other, so a frozen value there would be dominated by rounding rather
+        than by training — the same reasoning that excluded pair_loss_endpoint, applied for
+        consistency rather than selectively. The basis is also PROVISIONAL (4 of 6 boundary
+        cells), and a 1.51x window is the one window two more cells could plausibly close.
+        NOT LOAD-BEARING: the five gated classes already refuse all three named adversaries at
+        ctrl_max 0.000e0, and an empty gated set remains unpassable via NoTestifyingParameters.
+        WHAT MUST NOT BE CARRIED FORWARD: the previously tracked `eps/noise = 15.1` as a MARGIN
+        for this class under the near-null rule. That column is `upper / noise_floor` and was
+        computed whether or not `lower < upper`; with an empty window the quantity it divides is
+        not a legal epsilon, so the number was meaningless rather than merely small. Under the
+        clearance bound the window is non-empty, so `upper` IS a legal epsilon and `upper / lower`
+        is a WIDTH — arithmetic on two measured quantities, which is a different use and a legal
+        one.'
+    preconditions:
+      - 'the classifier maps "*.attention.self.key.bias" and nothing else into this class'
+    postconditions:
+      - 'no member of this class contributes a pass or a fail to the run verdict'
+    lean_theorem: Theorems.SetFit_Gradient_Free_Exclusion
+
+  # ==========================================================================
+  # 3. The calibration regime — the numbers above are valid HERE and nowhere else
+  # ==========================================================================
+
+  calibration_regime:
+    formula: 'regime_id(x) = arch_fingerprint(x) || "@" || slice_revision || "|seeds=" || sorted(seed_set(x)) || "|cells=" || sorted(cell_labels(x)) ; for a RUN both sets are SINGLETONS -- seed_set(run) = {config.root_seed}, cell_labels(run) = {cell_label(run)} -- and cell_label(run) = "s" || shots_per_class(selection) || "e" || config.epochs || "b" || config.batch_size ; JUDGE(run) <=> EXISTS c in CALIBRATED_REGIMES : arch(c) = arch(run) AND seed_set(run) SUBSETEQ seed_set(c) AND cell_labels(run) SUBSETEQ cell_labels(c), else UncalibratedRegime{observed, calibrated}'
+    domain: 'a completed run''s recorded calibration_regime_id'
+    codomain: 'permission to apply the evidence_gate thresholds, or a typed refusal'
+    # Machine-readable form of the calibrated set; CALIBRATED_REGIMES is parsed from here.
+    calibrated_regimes:
+      - 'minilm-slice-h64-l2-a2-i256-v97@1110a243|seeds=1,42,7|cells=s16e2b8,s8e1b4'
+      - 'minilm-slice-h384-l6-a12-i1536-v30522@1110a243|seeds=13,17,23,29,31,37,41,43,47,53|cells=s8e1b16,s16e1b16,s32e1b16,s64e1b16'
+    # Per-regime measured tables. The FIXTURE regime's numbers also live in
+    # evidence_gate.frozen_thresholds above and are compared there; they are restated here so the
+    # per-regime association test is TWO-SIDED — a loop carrying only the production block would
+    # never notice the fixture's numbers drifting. The two copies are compared against the same
+    # Rust table, so they cannot disagree silently.
+    per_regime_thresholds:
+      'minilm-slice-h64-l2-a2-i256-v97@1110a243|seeds=1,42,7|cells=s16e2b8,s8e1b4':
+        frozen_thresholds:
+          embedding:
+            eps: 1.1e-5
+            scale_floor: 1.0
+            sparse: true
+            gated: true
+          layer_norm_weight:
+            eps: 2.9e-6
+            scale_floor: 1.0
+            sparse: false
+            gated: true
+          layer_norm_bias:
+            eps: 1.1e-5
+            scale_floor: 1.0
+            sparse: false
+            gated: true
+          projection_weight:
+            eps: 1.8e-5
+            scale_floor: 1.0
+            sparse: false
+            gated: true
+          projection_bias:
+            eps: 8.3e-6
+            scale_floor: 1.0
+            sparse: false
+            gated: true
+          attention_key_bias:
+            eps: null
+            scale_floor: 1.0
+            sparse: false
+            gated: false
+        embedding_delta_floor_value: 2.7e-5
+      'minilm-slice-h384-l6-a12-i1536-v30522@1110a243|seeds=13,17,23,29,31,37,41,43,47,53|cells=s8e1b16,s16e1b16,s32e1b16,s64e1b16':
+        frozen_thresholds:
+          embedding:
+            eps: 1.8e-4
+            scale_floor: 1.0
+            sparse: true
+            gated: true
+          layer_norm_weight:
+            eps: 1.8e-5
+            scale_floor: 1.0
+            sparse: false
+            gated: true
+          layer_norm_bias:
+            eps: 7.1e-5
+            scale_floor: 1.0
+            sparse: false
+            gated: true
+          projection_weight:
+            eps: 1.2e-4
+            scale_floor: 1.0
+            sparse: false
+            gated: true
+          projection_bias:
+            eps: 3.4e-5
+            scale_floor: 1.0
+            sparse: false
+            gated: true
+          attention_key_bias:
+            eps: null
+            scale_floor: 1.0
+            sparse: false
+            gated: false
+        embedding_delta_floor_value: 2.6e-4
+    invariants:
+      - 'THE CALIBRATED SET CONTAINS EXACTLY TWO FINGERPRINTS, EACH MEASURED ON ITS OWN
+        ARCHITECTURE:
+        `minilm-slice-h64-l2-a2-i256-v97@1110a243|seeds=1,42,7|cells=s16e2b8,s8e1b4` (the Phase 3
+        fixture slice) and
+        `minilm-slice-h384-l6-a12-i1536-v30522@1110a243|seeds=13,17,23,29,31,37,41,43,47,53|cells=s8e1b16,s16e1b16,s32e1b16,s64e1b16`
+        (the Phase 5 production encoder). CROSS-APPLICATION REMAINS FORBIDDEN. Each entry carries
+        its own measured table in per_regime_thresholds above, membership stays component-wise
+        via `covers`, and a run resolves at most one table. Two entries is not a relaxation of
+        the one-entry rule; it is two independent calibrations, and adding a third requires the
+        same D-10(c) procedure — a measurement on the target encoder and a human-approved,
+        `pv diff`-flagged edit.'
+      - 'ARCHITECTURE FINGERPRINT PROVENANCE — why the production entry says `minilm-slice-`.
+        That prefix is emitted UNCONDITIONALLY by
+        `BertSentenceEncoder::architecture_fingerprint()` and renders for the FULL production
+        checkout exactly as it does for the 97-token fixture slice. The entry string is a
+        rendered-verbatim IDENTITY TOKEN copied from an id plan 05-01''s run actually emitted;
+        it is not a semantic claim that the production encoder is sliced. What distinguishes the
+        two architectures is the DIMENSIONAL component: `h384-l6-a12-i1536-v30522` (6 layers,
+        hidden 384, 12 heads, intermediate 1536, vocabulary 30522 — the full 22M-parameter
+        all-MiniLM-L6-v2) against `h64-l2-a2-i256-v97`. Any change to that rendering is a
+        CONTRACT-BREAKING change requiring a new, separately measured regime entry through this
+        same procedure — NEVER a prefix alias, a family match, or a normalization rule in
+        `RegimeCoordinates::covers`. A normalization rule was proposed in cross-AI review and is
+        REJECTED for exactly this reason: it would make two architectures interchangeable by
+        spelling.'
+      - 'THE RECORDED ID STATES THE RUN''S OWN COORDINATES, and only those. The architecture
+        comes from the encoder, the seed from the resolved configuration, and the cell label
+        from the SELECTION (shots per class) crossed with the configuration (epochs, batch
+        size). A run therefore records `...@1110a243|seeds=1|cells=s8e1b4` — one seed, one
+        cell — never the enumerated calibrated string, which names coordinates the CALIBRATION
+        swept rather than any coordinates a single run executed. A run that stamped the
+        enumerated string would be claiming to have executed six cells it never ran, and the
+        membership test below would then be comparing the gate against itself.'
+      - 'MEMBERSHIP IS COMPONENT-WISE, NOT STRING EQUALITY, AND IT HAS TO BE. A run''s id
+        carries one seed and one cell; a calibrated entry enumerates three seeds and two cells.
+        They can never be string-equal, so `id(run) in CALIBRATED_REGIMES` read as string
+        containment has exactly two possible behaviours: refuse every honest run, or be
+        satisfied by stamping the enumerated string onto runs that never executed those
+        coordinates. Both sides are therefore PARSED into (architecture, seed set, cell set)
+        and the calibrated entry must COVER the run: same architecture, and the run''s seed and
+        cell each a member of the measured sets. The seed and cell fields are SETS — the
+        `1,42,7` ordering in the entry above is a rendering detail and carries no meaning.'
+      - 'THE TWO SIDES FAIL IN OPPOSITE DIRECTIONS, DELIBERATELY. An id the parser cannot read
+        is NOT calibrated: unknown coordinates are exactly what this gate exists to refuse. A
+        malformed CALIBRATED ENTRY instead ABORTS. Treating a malformed entry as "matches
+        nothing" would turn a typo into a gate that refuses every run while still reporting the
+        entry as calibrated — fail-closed in appearance, broken in fact, and green in every
+        test that only checks that bad runs are refused.'
+      - 'A NON-UNIFORM SELECTION IS LABELLED AS SUCH, NEVER AS ONE OF ITS CLASSES. FewShotSelector
+        draws the same count for every class, so every calibrated cell takes the uniform branch
+        `s{n}`. A selection whose classes disagree is labelled `smixed{min}-{max}` and one that
+        drew nothing `sempty`; neither is a member of any calibrated cell set, so both fail
+        closed. Naming one class''s count would mint the label of a cell the run did not
+        execute, which is the substitution this equation exists to prevent.'
+      - 'The architecture component denotes the pinned MiniLM slice: hidden 64, 2 layers, 2
+        heads, intermediate 256, vocabulary 97, source revision
+        1110a243fdf4706b3f48f1d95db1a4f5529b4d41. Its WEIGHT VALUES are the real pretrained
+        all-MiniLM-L6-v2 values for the retained rows, columns and layers; only the dimensions
+        are reduced. A randomly initialized toy would have a different gradient scale and a
+        different initial-norm scale, and the epsilons above would be calibrated against
+        neither.'
+      - 'Seed set {1, 7, 42}. Boundary configurations: s8e1b4 (8 shots/class, 1 epoch, batch 4,
+        pair budget 12) and s16e2b8 (16 shots/class, 2 epochs, batch 8, pair budget 16). The
+        two differ in shots AND epochs AND batch size, so the second genuinely straddles an
+        epoch boundary and doubles the selected rows.'
+      - 'A RUN OUTSIDE THIS SET FAILS CLOSED with UncalibratedRegime, BEFORE any threshold
+        comparison. It does not receive a lenient verdict, a warning, or a default epsilon.'
+      - 'CONSEQUENCE FOR PHASE 5 — DISCHARGED 2026-08-17, and the procedure is recorded because
+        the NEXT encoder will need it. Phase 5''s benchmark cells run the production
+        all-MiniLM-L6-v2 encoder, whose fingerprint was NOT in the set above and whose cells were
+        therefore BLOCKED by this gate. They were unblocked the only admissible way: plan 05-01
+        RAN a calibration on the production encoder (12 persisted passes over four boundary
+        cells, each with a verified evidence_sha256, committed as reviewable artifacts), plan
+        05-03 derived the candidate lower bounds by running the shipped combine over those
+        passes, and the entry above was added as a deliberate D-10(c) contract edit which
+        `pv diff` flagged and a human approved at a blocking checkpoint. It was NOT a code change
+        that widened membership, NOT a threshold relaxation, and NOT something an executor did
+        inline to unblock a benchmark run. Any future encoder takes the same route.'
+      - 'THE INVARIANCE ARGUMENT, AND ITS LIMIT. The support-restricted denominator makes the
+        sparse class''s ratio independent of vocabulary size: a few-shot batch touches roughly
+        the same ABSOLUTE number of rows whether the table has 97 or 30522, and dividing by the
+        norm over exactly those rows removes the dimension. That is the reason a calibration on
+        the production encoder is EXPECTED to succeed, and therefore the motivation for running
+        one. It is NOT sufficient on its own to extend the calibrated set (N-02). An argument is
+        not a measurement. Extending the set requires measured evidence on the target encoder
+        per D-10(c), and this clause must never be read as in-contract permission to add the
+        production fingerprint inline.'
+    preconditions:
+      - 'the run recorded a calibration_regime_id at evidence-construction time, not at judgement time'
+    postconditions:
+      - 'UncalibratedRegime names BOTH the observed id and the calibrated set, so the diagnosis does not require reading this file'
+      - 'the observed id in that refusal is the run''s REAL architecture, seed and cell — never a placeholder and never the enumerated calibrated string'
+    lean_theorem: Theorems.SetFit_Regime_Fail_Closed
+
+  # ==========================================================================
+  # 4. The endpoint statistic — computed, recorded, NOT armed
+  # ==========================================================================
+
+  pair_loss_endpoint:
+    formula: 'first_k_mean = mean(loss[0..k]) ; last_k_mean = mean(loss[n-k..n]) ; k = min(5, max(1, n / 4)) ; endpoint_delta = last_k_mean - first_k_mean'
+    domain: 'the recorded loss trace of a completed run'
+    codomain: 'two means and a window size, RECORDED in the evidence table and used by NO gate'
+    invariants:
+      - 'THIS STATISTIC IS DELIBERATELY NOT ARMED. There is no threshold, no margin and no
+        pass/fail rule attached to it anywhere in this contract. It is computed and recorded
+        because a reader of an evidence table should be able to see the loss endpoints; it is
+        excluded from the verdict because it was measured and found unable to discriminate.'
+      - 'THE MEASUREMENT. Plan 03-05 recorded `(last_k - first_k)` across the six calibration
+        cells: +0.116461024, -0.005940050, +0.184580689, -0.009587534, -0.308734834,
+        +0.027505890. Minimum -0.3087, maximum +0.1846, CROSS-SEED SPREAD 0.4933. The sign
+        FLIPS with the seed and FOUR of the six cells show the loss going UP between endpoints.'
+      - 'WHY IT CANNOT WORK AT THIS SCALE. At 3 steps the window is k = 1, so `first_k` is a
+        single loss value on one arbitrary batch, and step 0 runs at learning rate exactly 0.0
+        by reference construction (HF''s LambdaLR lambda(0) is 0) — making `first_k` the
+        UNTRAINED loss on that batch. A gate calibrated on one trace would reject correct runs
+        on other seeds.'
+      - 'AND WHY A WIDE MARGIN WOULD BE WORSE, NOT SAFER. A margin loose enough to tolerate a
+        0.4933 spread could not fail any real run, which is precisely the vacuous-gate failure
+        mode T-3-21 is written against. A gate that cannot fail is not a weaker gate; it is a
+        false claim about what was checked.'
+      - 'THIS IS NOT PERMISSION TO RE-ARM A LOOSER VERSION. Arming any endpoint predicate
+        requires first showing, by measurement on the target regime, that the statistic
+        separates real runs from non-training runs with a margin that survives the cross-seed
+        spread. Until that measurement exists, absence is the evidenced position.'
+    preconditions:
+      - 'the loss trace is non-empty and every entry is finite'
+    postconditions:
+      - 'no verdict arm anywhere in the implementation reads first_k_mean or last_k_mean'
+
+  # ==========================================================================
+  # 5. The embedding delta floor
+  # ==========================================================================
+
+  embedding_delta_floor:
+    formula: 'PASS_embedding_aggregate(run) <=> embedding_delta_median(run) > EMBEDDING_DELTA_FLOOR ; EMBEDDING_DELTA_FLOOR = 2.7e-5'
+    domain: 'the median relative delta over the sparse (embedding-table) rows of a run'
+    codomain: 'a run-level boolean, evaluated after the per-parameter predicates'
+    invariants:
+      - 'FROZEN VALUE 2.7e-5. Derived by the same two-sided rule as the per-class epsilons: the
+        smallest embedding-class MEDIAN across all six cells is 2.748e-4 (seed 7, cell s8e1b4),
+        so the upper edge is 2.748e-5, rounded DOWN to 2.7e-5.'
+      - 'The lower edge holds with room: the worst 1e-8 near-null embedding delta is 4.206e-7,
+        so 10x that is 4.206e-6 and the frozen floor sits 6.4x above it.'
+      - 'This is a RUN-LEVEL aggregate over the class, deliberately stated on the MEDIAN rather
+        than the minimum. The minimum is already gated per-parameter by eps_embedding; the
+        median asks a different question — whether the table moved as a body — and a statistic
+        that merely restated the per-parameter minimum would add nothing.'
+    preconditions:
+      - 'the run has at least one sparse-class parameter'
+    postconditions:
+      - 'the floor is compared only after every per-parameter predicate has been evaluated, so a failure names the parameter first'
+
+  # ==========================================================================
+  # 6. Dropout mask derivation (frozen inline, from plan 03-02)
+  # ==========================================================================
+
+  dropout_mask_derivation:
+    formula: 'key = trunc64_le(SHA256(b"apr-setfit-dropout-v1\0" || root_seed.to_le_bytes() || site.as_bytes())) ; counter = [element as u32, (element >> 32) as u32, forward_ordinal, 0] ; forward_ordinal = 2 * step + branch ; keep(i) <=> u64_of(Philox4x32_10(key, counter)) < threshold ; threshold = clamp(floor(p * 2^64), 0, 2^64) as u128'
+    domain: 'root_seed in u64, site in the encoder''s dropout-site names, step in u64, branch in {0, 1}, element in u64, p in [0, 1]'
+    codomain: 'a keep/drop decision per element, a pure function of its coordinates'
+    invariants:
+      - 'DOMAIN TAG is b"apr-setfit-dropout-v1\0" — 21 ASCII bytes plus one NUL terminator. It
+        is deliberately NOT Phase 2''s tag: sharing a tag across protocols makes two unrelated
+        streams correlated in a way nothing would detect.'
+      - 'trunc64_le takes digest bytes 0..8 and forms the two Philox key lanes as
+        [u32::from_le_bytes(d[0..4]), u32::from_le_bytes(d[4..8])] — LITTLE-ENDIAN in both
+        lanes. Digest bytes 8..32 are discarded.'
+      - 'THE FORWARD ORDINAL IS `2 * step + branch`, D-15''s branch coordinate, and it occupies
+        Philox counter lane 2. THE TWO PAIR BRANCHES THEREFORE DRAW FROM DIFFERENT STREAMS:
+        branch 0 and branch 1 of the same step differ in the ordinal, so the two sentences of a
+        contrastive pair never share a dropout mask. Without this the two branches would be
+        masked identically and the pair loss would be measuring a degenerate comparison while
+        looking entirely deterministic.'
+      - 'ELEMENT ordinal occupies counter lanes 0 and 1 as a little-endian u64 split; lane 3 is
+        zero.'
+      - 'THE THRESHOLD RULE IS `floor(p * 2^64)` clamped to [0, 2^64], evaluated as u128. The
+        `.floor()` is not observable at p = 0.1 or p = 0.5 because f64 has no fractional
+        resolution at that magnitude — floor, ceil and round return the same value — which was
+        MEASURED by replacing floor with ceil and observing the goldens unchanged, then adding
+        a rate below 2^-12 at which they do differ. The rule is frozen as floor so the
+        unobservable case has a specified answer.'
+      - 'GOLDEN CONSTANTS, restated inline byte-for-byte from plan 03-02 (site
+        "embeddings.dropout" unless stated):
+        key(seed 13) = [0xa5baf332, 0x7e6561f9] ;
+        key(seed 13, site "encoder.layer.0.attention.self.dropout") = [0xd0cf7225, 0x1ade02c9] ;
+        key(seed 14) = [0x3a40a784, 0x1322f43f] ;
+        draw(key(13), ordinal 0, element 0) = [3836206948, 4227518855, 1470901809, 3372378841] ;
+        draw(key(13), ordinal 7, element 3) = [2242403448, 2398921103, 4169238919, 3718170778].
+        The second and third pin SITE separation and SEED separation respectively.'
+    preconditions:
+      - 'forward_ordinal fits in u32; an overflowing step is a typed error, never a wrap'
+    postconditions:
+      - 'the mask at (root_seed, site, forward_ordinal, element) is reproducible from those four coordinates and nothing else'
+
+  # ==========================================================================
+  # 7. Epoch shuffle derivation (frozen inline, from plan 03-03)
+  # ==========================================================================
+
+  epoch_shuffle_derivation:
+    formula: 'key = trunc64_le(SHA256(b"apr-setfit-train-v1\0" || root_seed.to_le_bytes() || "epoch-shuffle")) ; order = FisherYates(n) with bounded draws j in [0, i] taken from Philox4x32_10(key, counter(epoch, i))'
+    domain: 'root_seed in u64, epoch in u32, n in u64'
+    codomain: 'a permutation of 0..n — the pair consumption order for that epoch'
+    invariants:
+      - 'DOMAIN TAG is b"apr-setfit-train-v1\0" — 19 ASCII bytes plus one NUL terminator, 20
+        bytes total, and deliberately NOT the dropout tag or Phase 2''s tag.'
+      - 'The draw is BOUNDED (rejection-free modulo-bias-free selection in [0, i]), so the
+        permutation is uniform and worker-count independent.'
+      - 'GOLDEN CONSTANTS, restated inline from plan 03-03:
+        key(42, "epoch-shuffle") = [0x01270e6e, 0x0c648cc6] ;
+        epoch_pair_order(42, 0, 8) = [2, 3, 0, 7, 1, 5, 6, 4] ;
+        epoch_pair_order(42, 1, 8) = [7, 2, 5, 1, 3, 4, 0, 6] ;
+        epoch_pair_order(43, 0, 8) = [7, 2, 1, 4, 3, 0, 6, 5].
+        The second pins EPOCH separation and the third SEED separation, so a derivation that
+        ignored either coordinate would be red.'
+    preconditions:
+      - 'n > 0'
+    postconditions:
+      - 'the result is a permutation: every index in 0..n appears exactly once'
+
+  # ==========================================================================
+  # 8. Loss trace hash
+  # ==========================================================================
+
+  loss_trace_hash:
+    formula: 'loss_trace_hash = SHA256( concat_{s in 0..step_count} loss[s].to_le_bytes() )  where loss[s] is f32'
+    domain: 'the recorded per-step loss values, in step order'
+    codomain: 'a 32-byte digest, rendered lowercase hex'
+    invariants:
+      - 'The absorbed unit is the f32 LITTLE-ENDIAN bit pattern, in STEP ORDER. Not the decimal
+        rendering: a decimal round-trip is not injective on f32 and two different runs could
+        render identically.'
+      - 'NO WALL-CLOCK FIELD IS ABSORBED, anywhere. Duration, Instant, SystemTime and chrono do
+        not appear in the evidence module at all, so a rerun of the same inputs produces the
+        same digest by construction rather than by care.'
+    preconditions:
+      - 'every loss value is finite; a NaN or infinite step is a typed failure before hashing'
+    postconditions:
+      - 'two runs with identical inputs produce identical digests'
+
+  # ==========================================================================
+  # 9. In-band execution digests — absorbed AT CONSUMPTION
+  # ==========================================================================
+
+  execution_digests:
+    formula: 'consumed_pair_digest = SHA256( concat_{each pair AT THE DRAW} epoch:u32 || batch_index:u32 || position_in_batch:u32 || pair_ordinal:u64 || a:u32 || b:u32 || target.to_bits():u32 ) ; batch_boundary_digest = SHA256( concat_{each batch AT BATCH OPEN} epoch:u32 || batch_index:u32 || global_step:u64 || batch_start_ordinal:u64 || batch_len:u32 )'
+    domain: 'the pairs and batch boundaries a run actually consumed'
+    codomain: 'two 32-byte digests, rendered lowercase hex'
+    invariants:
+      - 'ALL FIELDS LITTLE-ENDIAN, in exactly the order written above. `target` is absorbed as
+        its f32 BIT PATTERN via to_bits(), not as a rendered number.'
+      - 'THE CENTRAL OBLIGATION: these digests are absorbed AT CONSUMPTION and MUST NEVER be
+        recomputed from configuration. `consumed_pair_digest` is absorbed inside the pair-pull
+        loop at the moment each pair is drawn; `batch_boundary_digest` is absorbed at batch
+        open. A digest reconstructed afterwards from the config describes what the run WAS
+        CONFIGURED to consume, which is precisely the claim under test and therefore useless as
+        evidence for it.'
+      - 'This obligation exists as an equation because a later refactor to "just recompute it,
+        it is the same thing" would otherwise have nothing to violate. It was falsified before
+        being trusted: absorbing the CONFIGURED ordinal instead of the DRAWN one turns
+        `tune_digest_is_recorded_not_recomputed` red with the two digests printed identical —
+        the exact false-green the in-band design removes.'
+      - 'The readable `Vec<(epoch, start_ordinal, len)>` survives into
+        UpdateEvidence.batch_boundary_list so a downstream accessor has a RECORDED source and
+        does not have to recompute the boundaries either.'
+    preconditions:
+      - 'absorption happens inside the loop that consumes the item, not in the caller'
+    postconditions:
+      - 'a run that consumed a different pair order cannot produce a matching digest'
+
+  # ==========================================================================
+  # 10. Twelve-knob default provenance
+  # ==========================================================================
+
+  knob_defaults:
+    formula: 'ResolvedSetFitConfig = validate(twelve knobs) ; every default traces to setfit 1.1.3 -> SentenceTransformerTrainer -> transformers TrainingArguments'
+    domain: 'a SetFitTrainRequest'
+    codomain: 'a validated configuration, mintable only through the single validating constructor'
+    invariants:
+      - 'THE DEFAULTS ARE REFERENCE-CITED (A1 UNCONFIRMED). "Reference-cited" is the whole
+        claim. The stronger word, the one that would assert these values are what the SetFit
+        path ACTUALLY RUNS, is deliberately absent from this equation, and a grep asserts its
+        absence rather than trusting the prose. The distinction is load-bearing — see the A1
+        note below.
+
+        | knob                | default                       | reference |
+        |---------------------|-------------------------------|-----------|
+        | encoder_lr          | 2e-5                          | SetFit body learning rate |
+        | epochs              | 1                             | SetFit contrastive epochs |
+        | batch_size          | 16                            | SetFit pair batch size |
+        | warmup_ratio        | 0.1                           | HF TrainingArguments.warmup_ratio |
+        | grad_clip_max_norm  | 1.0                           | HF TrainingArguments.max_grad_norm |
+        | max_length          | 256                           | pinned sequence bound |
+        | pair_config         | contrastive-pair-protocol-v1  | upstream contract |
+        | freeze_policy       | empty (nothing frozen)        | SetFit tunes the whole body |
+        | head_regularization | sklearn C = 1.0               | sklearn LogisticRegression default |
+        | root_seed           | caller-supplied               | no default; determinism input |
+        | device              | "cpu"                         | Phase 3 scope |
+        | lr_schedule         | WarmupLinearDecay             | HF get_linear_schedule_with_warmup |'
+      - 'AdamW sub-constants are FIXED, not knobs: beta1 0.9, beta2 0.999, epsilon 1e-8, weight
+        decay 0.0. Exposing weight decay as a knob would invite a silent deviation from the
+        recipe that no gate in this milestone would catch. Its value 0.0 is also why an
+        analytically gradient-free parameter receives no decay-driven movement — see
+        gradient_free_parameters.'
+      - 'ASSUMPTION A1, RECORDED AS UNCONFIRMED: that the setfit path does not override these
+        HF defaults before they reach the trainer. Confirmation was ATTEMPTED and could not be
+        completed offline — `import setfit` fails in this environment, and the pinned reference
+        fixtures under crates/aprender-contrastive-data/tests/setfit_reference/ record
+        measurements from setfit/sampler.py only, with nothing about TrainingArguments.'
+      - 'CHEAP CONFIRMATION RECIPE, so this does not stay unconfirmed by default: reconstruct
+        the pinned environment with `uv` against the recorded uv.lock digest (setfit 1.1.3,
+        uv 0.9.5), then dump the constructed arguments rather than the class defaults —
+        `from setfit import TrainingArguments; print(vars(TrainingArguments()))` — and compare
+        against the table above. Reading the class defaults alone would not settle A1, because
+        A1 is about whether the SetFit path OVERRIDES them.'
+      - 'UNTIL A1 IS CONFIRMED, no document may claim these defaults are what SetFit actually
+        runs. They are cited to a reference that has not been executed for this purpose; the
+        difference between citing a reference and having run it is the entire content of A1.'
+    preconditions:
+      - 'the validating constructor is the only path to a ResolvedSetFitConfig'
+    postconditions:
+      - 'a configuration that fails any knob rule is a typed error, never a clamped value'
+
+  # ==========================================================================
+  # 11. Verify by reload — the persistence boundary and who owns which half
+  # ==========================================================================
+
+  reload_verify_roundtrip:
+    formula: 'bytes = codec.serialize(bundle(run)) ; h = SHA256(bytes) ; DROP(live encoder, live head) ; reloaded = codec.deserialize(bytes) ; REQUIRE codec.serialize(reloaded) == bytes ; (encoder'', head'') = rebuild(reloaded) ; VERIFIED <=> for all probe rows r: |embed''(r) - embed(r)| <= eps_emb AND |proba''(r) - proba(r)| <= eps_prob AND label''(r) == label(r)'
+    domain: 'a SetFitRun<HeadFitted> and any SetFitCodec implementation'
+    codomain: 'SetFitRun<ArtifactReloadedAndVerified> carrying h, the format id and the verify report; otherwise a typed SetFitTrainError naming what failed'
+    invariants:
+      - 'THE CODEC IS A PURE CODEC AND THE POLICY IS TRUSTED. `SetFitCodec` has exactly three
+        methods -- `format_id`, `serialize`, `deserialize` -- and no other. It has NO hashing
+        method, NO tolerance parameter, NO comparison method and NO way to construct a
+        lifecycle state. Hashing (`artifact_hash`, a FREE FUNCTION), the drop, the rebuild,
+        the comparison and the minting of `ArtifactReloadedAndVerified` are TRUSTED
+        crate-internal obligations that an implementor cannot override. A future refactor
+        that pushed any of them into the trait would violate this equation, which is the
+        reason it is written as an equation rather than left as a code shape.'
+      - 'THE TRAIT IS SEALED. `SetFitCodec: sealed::Sealed` with `Sealed` in a private module,
+        so no out-of-crate type can implement it. Phase 4''s APR codec therefore lands as a
+        thin ADAPTER module inside aprender-train (`impl Sealed for AprCodec` plus the codec
+        impl) that calls aprender-core''s APR format code; the FORMAT stays in aprender-core.
+        Sealing later would be a breaking change and un-sealing later is not, which is why
+        phase 3 seals. D-07 records the amendment.'
+      - 'CANONICAL-SERIALIZATION CLAUSE. Every implementor MUST satisfy
+        `serialize(deserialize(b)) == b` byte for byte. This is not a free property: it holds
+        for SerdeJsonCodec because the bundle uses BTreeMap ordering, declaration-order fields
+        and bit-pattern floats, and even then it required serde_json''s `float_roundtrip`
+        feature -- without it the fast float parser lands one ULP from the value ryu wrote and
+        the check fails on every honest bundle (measured: 0.00009142675446597625 -> ...624, a
+        difference at byte offset 936,551 of the fixture artifact). A phase-4 writer with
+        padding, unordered metadata or a trailing checksum is therefore a CONTRACT-VISIBLE
+        INCOMPATIBILITY that must be amended here deliberately, rather than discovered as a
+        mysterious `ReloadNotFromBytes` failure.'
+      - 'THE ROUND-TRIP CLOSURE CHECK RUNS BEFORE THE REBUILD. The policy re-serializes the
+        reloaded bundle and requires the bytes to equal the ones it hashed. Placing it after
+        the probe comparison would not work: a codec whose cache described a behaviourally
+        identical model passes that comparison, so the substitution would never be seen. What
+        the check establishes is that the reloaded value is a FUNCTION OF THE HASHED BYTES.
+        What it does NOT establish is durability -- an in-process codec round-tripping through
+        a buffer it never writes anywhere satisfies it and is indistinguishable from one that
+        wrote a file, because nothing in this crate observes the filesystem.'
+      - 'THE CLOSE IS STRUCTURAL. The policy takes the live encoder and head BY VALUE into its
+        close step and never returns them, so after that call there is no binding to the
+        pre-close model at all and the comparison object cannot accidentally be built from it.
+        The borrow checker enforces what a `drop(...)` call would only document.'
+      - 'THE SERDE CODEC VERIFIES AT EXACT-ZERO TOLERANCE. eps_emb = 0.0 and eps_prob = 0.0.
+        The `Tolerance` type is crate-internal and exists because phase 4''s format may need
+        contracted non-zero values; a tolerance that arrived then with nowhere to live would
+        arrive as a parameter on the trait, which is exactly the power this split removed. A
+        NaN difference counts as OUTSIDE any tolerance, checked through `partial_cmp` rather
+        than a negated comparison, because every comparison with NaN is false.'
+      - 'THE NEGATIVE IS IN BAND AND WAS MEASURED RED. A test-only `EchoCodec` whose
+        `deserialize` ignores its input and returns a bundle cached at CONSTRUCTION (and whose
+        `serialize` must not refresh that cache) returns
+        `SetFitTrainError::ReloadNotFromBytes`. Before the closure check existed it returned
+        `Ok` and minted the final state -- observed, not assumed. The cache differs in
+        `source_revision` only, which is pure provenance: no rebuild step reads it and no
+        comparison touches it, so the closure check is the only thing that can catch it. Two
+        earlier cheats were rejected as unattributable -- an extra label is caught by the
+        head''s coefficient-arity check and a perturbed tensor by the probe comparison, and
+        either would have left the negative green after the closure check was removed.'
+      - 'EVERY FAILURE IS TYPED AND NAMES WHAT DIVERGED. `ReloadDiverged` carries the field
+        (`embedding`, `probability`, `label`, `probe_id`, `probe_row_count`,
+        `embedding_width`, `class_count`), the row, the element index, the expected and
+        observed values and the tolerance in force. `ReloadNotFromBytes` carries both byte
+        lengths and the offset of the first difference.'
+    preconditions:
+      - 'the run has reached HeadFitted, so a fitted head and a passed evidence chain exist'
+      - 'the probe is taken through the SAME encode-once path stage two used (eval mode, inside no_grad, every result detached), not through a second encode written for verification'
+    postconditions:
+      - 'SetFitRun<ArtifactReloadedAndVerified> exists only after the live model was dropped and the comparison object was built from reload() output'
+      - 'a corrupted, truncated, oversized or version-bumped byte stream fails typed BEFORE any comparison runs'
+
+  # ==========================================================================
+  # 12. Bundle completeness — the normative field list
+  # ==========================================================================
+
+  bundle_completeness:
+    formula: 'SetFitBundle = (schema_version, format_id, architecture, tokenizer_bytes, pooling, normalization, l2_epsilon, truncation_max_sequence_length, padding_mode, max_length, root_seed, tensors, head_weights, head_intercepts, head_n_features, ordered_labels, requested_config, resolved_config, evidence)'
+    domain: 'a finished SetFitRun<HeadFitted>'
+    codomain: 'a bundle sufficient to rebuild an encoder producing BIT-IDENTICAL embeddings'
+    invariants:
+      - 'THE OBLIGATION IS SUFFICIENCY, NOT PRESENCE. The bundle must be enough to rebuild a
+        working model from bytes alone, and the proof is
+        `bundle_rebuilds_a_bit_identical_encoder_from_bytes_alone`, which rebuilds through the
+        wire form and compares raw f32 BIT PATTERNS on the fixture probe rows. A bundle that
+        merely lists the right field names is not a reload.'
+      - 'THE NORMATIVE FIELD LIST, in wire (declaration) order. A field missing from an
+        implementation is a finding, not a simplification:
+        (1) schema_version:u32 ;
+        (2) format_id:string, the codec''s own -- never the project''s shipped container name ;
+        (3) architecture: hidden, heads, head_dim, num_layers, intermediate, vocab, positions,
+            type_vocab_size, layer_norm_eps, pad_token_id, hidden_act, source_revision,
+            tokenizer_sha256, vocab_remap ;
+        (4) tokenizer_bytes: the EXACT tokenizer.json bytes, lowercase hex ;
+        (5) pooling:string ; (6) normalization:string ; (7) l2_epsilon:f32 ;
+        (8) truncation_max_sequence_length:u32 ; (9) padding_mode:string ;
+        (10) max_length:u32, the run''s requested value ;
+        (11) root_seed:u64, read off the ENCODER not the configuration ;
+        (12) tensors: name -> (shape, f32 data) for EVERY named encoder parameter, BTreeMap
+             name order, data as lowercase hex of the little-endian bit patterns ;
+        (13) head_weights ; (14) head_intercepts ; (15) head_n_features ;
+        (16) ordered_labels ; (17) requested_config: the full SetFitTrainConfig ;
+        (18) resolved_config: a bundle-local RECORD ; (19) evidence: the EvidenceSummary
+             including its table_hash.'
+      - 'sha256(tokenizer_bytes) == architecture.tokenizer_sha256, and the reload path checks
+        it BEFORE a tensor is installed. The tokenizer RETAINS its source bytes for this
+        reason: an artifact carrying only the digest can DETECT a substituted tokenizer and
+        cannot REBUILD the right one, so a reload from it could not re-encode a single string.
+        The retained bytes are 466,247 for the pinned tokenizer.json.'
+      - 'THE VOCABULARY REMAP IS PART OF THE ARCHITECTURE RECORD. `SliceConfig`''s field set
+        alone is NOT sufficient: a slice encoder gathers through `slice_to_orig`, so a record
+        without it rebuilds an encoder that reads the wrong embedding row for every token and
+        still looks structurally valid. Only `slice_to_orig` travels; the reverse direction is
+        DERIVED at rebuild, so the two cannot be transported inconsistently.'
+      - 'THE RESOLVED CONFIG IS A PROVENANCE RECORD, NOT A RUNTIME TYPE. `ResolvedSetFitConfig`
+        is Serialize-but-NOT-Deserialize by decision (T-3-50: a probed device must never
+        arrive from a file). The bundle therefore carries a separate bundle-local record with
+        a one-way conversion INTO it, and there is no conversion back and no other path from
+        bytes to a runtime resolved configuration. `from_bundle_parts` takes the architecture,
+        the tokenizer bytes and the tensors and never a reconstructed resolved config; a
+        reload path that needs a device re-resolves it from the live environment.'
+      - 'POLICY IDENTIFIERS COME FROM THE CODE THAT APPLIES THEM. `pooling`, `normalization`,
+        `l2_epsilon`, `padding_mode` and `truncation_max_sequence_length` are constants
+        exported by aprender-core beside the call sites that apply them, not literals the
+        persistence layer believes to be true. An artifact writer with its own copies records
+        what it believes rather than what ran.'
+      - 'THE FORMAT NEVER CLAIMS TO BE THE SHIPPED CONTAINER. `format_id` is
+        "setfit-serde-json-v1". The phase-3 serde form is an interim implementation of the
+        seam; phase 4 replaces the FORMAT behind the same trait. Measured amplification on the
+        fixture: 908,359 raw bytes (110,528 f32 plus the 466,247-byte tokenizer) serialize to
+        1,823,868 bytes, 2.01x -- and the full pin projects to roughly 182 MB. That is the
+        reason phase 4 replaces it, stated as a number rather than an opinion.'
+    preconditions:
+      - 'the head has fitted, so head_n_features is Some and the coefficients exist'
+    postconditions:
+      - 'a model rebuilt from the bundle produces bit-identical embeddings and identical probabilities on the probe rows'
+
+  # ==========================================================================
+  # 13. Bounded deserialization — the four numeric limits
+  # ==========================================================================
+
+  bundle_limits:
+    formula: 'REJECT unless len(bytes) <= max_bundle_bytes AND tensor_count <= max_tensor_count AND for all t: elements(t) <= max_elements_per_tensor AND sum_t elements(t) <= max_total_elements'
+    domain: 'a byte stream presented to SetFitBundle::from_canonical_bytes'
+    codomain: 'a parsed bundle, or BundleLimitExceeded{what, limit, observed}'
+    limits:
+      max_bundle_bytes: 536870912
+      max_tensor_count: 4096
+      max_elements_per_tensor: 134217728
+      max_total_elements: 268435456
+    full_minilm_figures:
+      serialized_bytes: 182455502
+      tensor_count: 101
+      largest_tensor_elements: 11720448
+      total_elements: 22565376
+    invariants:
+      - 'THE FOUR LIMITS ARE ENFORCED BEFORE THE ALLOCATION THEY BOUND. The input length is
+        checked on the raw slice before serde is handed anything. Tensor data travels as hex,
+        so a tensor''s element count is `len(hex)/8` and is known from a STRING LENGTH -- the
+        per-tensor and cumulative checks therefore run before any Vec<f32> is allocated. A
+        limit checked after the allocation is a report, not a bound.'
+      - 'THE NUMBERS, and the full-pin figures they clear. 536,870,912 bytes (512 MiB) against
+        a projected 182,455,502 for the full pin, 2.94x. 4,096 tensors against 101, 40.6x.
+        134,217,728 elements per tensor against the 30522x384 word-embedding table''s
+        11,720,448, 11.45x. 268,435,456 total elements against 22,565,376, 11.90x. The
+        projection is `total_elements * 8` (eight hex characters per f32) plus twice the
+        466,247-byte tokenizer plus 1 MB of JSON structure, and every full-pin figure is
+        COMPUTED from the pinned architecture by `bundle_limits_clear_the_full_minilm_figures`
+        rather than quoted, so a change to the pin moves the comparison with it.'
+      - 'THE TOTAL IS A SEPARATE LIMIT, not an implication of the other two: the product of the
+        tensor-count and per-tensor limits is about 5.5e11 elements, which is not a bound.'
+      - 'EACH LIMIT IS SHOWN BITING, and the VALUES and the MECHANISM are falsified separately.
+        Proving the input-length bound by materializing 512 MiB in a unit test would make the
+        suite pay half a gigabyte to learn that a comparison compares, so the four tests run
+        against deliberately tiny bounds on a real bundle -- each with a CONTROL at exactly
+        the bound that must be accepted -- while the values are pinned against this file by
+        `bundle_limits_match_the_contract`. The shrinking constructor is `#[cfg(test)]` and
+        the only value a shipped build can name is the contracted one.'
+    preconditions:
+      - 'the input-length check precedes the parse'
+    postconditions:
+      - 'a payload exceeding any limit is refused with the limit named, before the allocation it would have requested'
+
+  # ==========================================================================
+  # 14. The validation evaluation — a metric is COMPUTED, never asserted
+  # ==========================================================================
+
+  validation_evaluation_provenance:
+    formula: 'evaluate_validation(run: &SetFitRun<ArtifactReloadedAndVerified>, dataset: &PreparedDataset<Canonical>, kind: ValidationMetricKind) -> ValidationEvaluation{metric_kind, value, artifact_hash, validation_split_fingerprint, dataset_fingerprint, n_rows} ; accuracy = (sum_i [truth_i == pred_i]) / n ; macro_f1 = (1/K) * sum_{c<K} f1_c ; f1_c = 2*TP_c / (2*TP_c + FP_c + FN_c), and f1_c = 0.0 when 2*TP_c + FP_c + FN_c == 0'
+    domain: 'a verified run, the canonical dataset it was prepared from, and one member of the closed metric enum'
+    codomain: 'a ValidationEvaluation bound to the artifact and the split, or a typed SetFitTrainError'
+    invariants:
+      - 'NO API ACCEPTS A METRIC VALUE. There is no public constructor on `ValidationEvaluation`
+        and no public function in `evaluate.rs` takes a float PARAMETER at all. The shape this
+        replaces was `ValidationMetric::new(&Split<Validation>, name, value)`, which the phase-3
+        review marked as leaving TRN-07 unsatisfied: possessing a validation split does not prove
+        a number came out of it, and does not prove it was computed with the artifact whose test
+        access it unlocks. The scan that enforces this reads each `pub fn`''s PARAMETER LIST, not
+        whole lines -- a line-wise search reports the type''s own private `value: f64` FIELD as
+        the violation, and misses a parameter on a wrapped signature. The ONE float-taking door
+        is `evaluation_for_tests`, which is `#[cfg(test)] pub(super)` and is NAMED by the guard
+        rather than silently unmatched.'
+      - 'THE ARTIFACT HASH IS READ OFF THE RUN. `artifact_hash` is `run.artifact_hash()`,
+        taken inside the evaluator. Nothing in the signature could carry one.'
+      - 'THE SPLIT IS `&Split<Validation>` BY TYPE. The rows come from
+        `PreparedDataset<Canonical>::validation()`, and `PreparedDataset<Compatibility>` has no
+        such method (Ph2 D-19) -- so a compatibility-selected evaluation is not rejected at
+        runtime, it is non-constructible at the call site. The evaluation additionally commits
+        `validation_witness().fingerprint_hex()`, which digests the VALIDATION SPLIT ALONE and is
+        deliberately distinct from `dataset_fingerprint_hex()`. Both travel, because which of the
+        two disagrees is the difference between "a different corpus" and "the same corpus whose
+        validation rows changed"; a test asserts they differ, so committing one twice cannot pass
+        unnoticed.'
+      - 'A DATASET THE RUN WAS NOT PREPARED FROM IS REFUSED, before a row is encoded, with BOTH
+        fingerprint pairs named (`ValidationDatasetMismatch`).'
+      - 'THE METRIC KIND IS A CLOSED ENUM: `Accuracy | MacroF1`, no `String` variant and no
+        `#[non_exhaustive]`. A free-form name lets two evaluations that measured different
+        quantities present the same label, and the selection lock''s metric-kind check would then
+        be comparing spellings instead of quantities.'
+      - 'THE EMPTY-CLASS F1 CONVENTION IS 0.0, AND IT IS A CONTRACTED CHOICE. For a class with no
+        actual and no predicted positives both precision and recall are 0/0; this contract defines
+        `f1_c = 0.0` there, matching `sklearn`''s `zero_division` default. The two alternatives are
+        rejected for stated reasons: NaN would make the selection rule''s ordering meaningless
+        while every candidate still appeared to have a score, and EXCLUDING the class from the
+        mean would reward a candidate for declaring a class it never predicts. Changing this
+        convention is an edit to THIS FILE, which `pv diff` flags.'
+      - 'DETERMINISM IS STRUCTURAL. Every reduction runs through `reduce::*_in_index_order`
+        (sequential, f64 accumulation, D-13); the encode goes through the ONE encode-once path
+        the trainer itself uses, at a shared borrow that OBSERVES the isolation witness rather
+        than setting eval mode; and no wall-clock type appears in the module. Two evaluations of
+        the same run are equal down to the value''s bit pattern.'
+      - 'THE WIRE FORM CARRIES BITS, NOT A RENDERING. `ValidationEvaluation` is Serialize and
+        deliberately NOT Deserialize (the 03-03 one-way discipline), and its private wire type
+        carries `value_bits: u64`. A JSON float binds the digest to a formatting library''s
+        shortest-representation choice, and `serde_json` writes every non-finite f64 as `null` --
+        which would make a NaN and an infinity indistinguishable inside a hash whose job is to
+        distinguish things.'
+    preconditions:
+      - 'the run reached ArtifactReloadedAndVerified, so an artifact hash exists'
+      - 'the supplied dataset agrees with the run on BOTH fingerprints'
+      - 'the validation split is non-empty'
+    postconditions:
+      - 'the evaluation commits the artifact hash, the validation-split fingerprint, the dataset fingerprint and the row count'
+      - 'no code path produced the value except the evaluator'
+
+  # ==========================================================================
+  # 15. The selection lock — the whole candidate history, and the rule APPLIED
+  # ==========================================================================
+
+  selection_lock_commitment:
+    formula: 'lock = (schema_version, rule, [(config_hash_i, artifact_hash_i, evaluation_i)]_{i<N}, chosen_index, dataset_fingerprint, validation_split_fingerprint, selection_semantic_hash, ledger_hash) ; forall i < N: is_finite(value_i) ; chosen_index = rule(candidates) ; MaxMetricLowestIndexTieBreak: argmax_i value_i with total_cmp, ties to the LOWEST i ; lock_hash = SHA-256(canonical_bytes(lock))'
+    domain: 'a non-empty, mutually comparable candidate set with finite metric values, and a verified run that is one of them'
+    codomain: 'a SelectionLock bound to a hash, or a typed LockError naming the offending candidate index'
+    invariants:
+      - 'THE WHOLE CANDIDATE HISTORY IS COMMITTED, AND THERE IS NO `chosen` PARAMETER. The phase-3
+        review found the earlier lock recorded only the winner. A single chosen metric cannot
+        prove validation-only selection: it is exactly as consistent with having tried ten
+        configurations, peeked at test, and reported the one that won THERE. So the lock takes the
+        candidate SET plus a `SelectionRule` and DERIVES the index; `from_candidates` has no
+        parameter a caller could use to name a winner, and a source assertion pins that.'
+      - 'THE RULE IS CLOSED AND DETERMINISTIC IN BOTH HALVES. `MaxMetricLowestIndexTieBreak` is
+        the only member. The comparison is `f64::total_cmp`, a total order over every bit pattern,
+        so the outcome cannot depend on the order candidates happened to arrive in even for values
+        `partial_cmp` refuses to order; an exact tie keeps the LOWEST index.'
+      - 'A NON-FINITE METRIC IS REFUSED AT ADMISSION, BECAUSE UNDER `total_cmp` IT WOULD WIN.
+        This corrects a rationale the phase-3 cleanup review found stated backwards. The earlier
+        text argued the empty-class convention could not be NaN because "every comparison against
+        a NaN is false, so the ordering would be meaningless" -- that is `partial_cmp` semantics,
+        and this rule does not use `partial_cmp`. `f64::total_cmp` orders +NaN ABOVE +infinity, so
+        a NaN candidate is not ignored by the ordering: it is DETERMINISTICALLY SELECTED, and the
+        lock then commits it as the winner. The failure is worse than the one the doc described
+        and in the opposite direction. The rule is therefore not the place to fix it -- a total
+        order cannot both be total and reject a value -- so `from_candidates` refuses any
+        candidate whose value is not finite (`NonFiniteMetric { index, value }`), before the
+        comparability checks, and the rule only ever sees finite values.
+        THIS IS DEFENCE IN DEPTH, NOT A LIVE HOLE: the trusted evaluator cannot currently emit a
+        non-finite value (macro-F1''s empty-class branch returns 0.0 by this contract, and
+        accuracy is a ratio of finite counts over a non-empty split), so the only reachable
+        producer today is the `#[cfg(test)]` door. The guard exists because the rule must stay
+        correct under a future metric, and because a defence whose only argument is "no caller
+        currently does this" is the kind that stops being true silently.'
+      - 'FOUR CANDIDATE-CONSISTENCY REJECTIONS, EACH NAMING THE OFFENDING INDEX: an empty list
+        (`NoCandidates`); a candidate whose `metric_kind` differs from the first; a candidate
+        whose `validation_split_fingerprint` differs; a candidate whose `dataset_fingerprint`
+        differs; and a repeated `artifact_hash`, which also names where it first appeared. The
+        fingerprint checks are what stop a ranking of SPLITS from being presented as a ranking of
+        MODELS; the duplicate check is what stops one model occupying two places in a tie-break.'
+      - 'A CANDIDATE''S ARTIFACT HASH IS READ OUT OF ITS EVALUATION. `SelectionCandidate` is built
+        from `(config_hash, evaluation)` and copies the hash out, so the field cannot disagree
+        with the artifact the metric was computed on. `config_hash` IS caller-supplied and the
+        contract says so: it is a LABEL naming the configuration, not the identity that gates
+        access -- a sweep does not keep N verified runs alive, and the evaluation is the portable
+        evidence.'
+      - 'THE PROVENANCE IS READ OFF THE RUN. `SetFitRun<ArtifactReloadedAndVerified>::create_selection_lock`
+        is the only PUBLIC door; `from_candidates` is `pub(super)`. The selection semantic hash
+        and the access ledger hash come from the run, because a public constructor taking
+        provenance strings would let a caller mint a lock describing a run that never executed.
+        The creating run must also be AMONG the candidates (`ChosenModelNotACandidate`): a lock
+        that omits the model that created it is not the record of that model''s selection.'
+      - 'THE LOCK IS THE COMPLEMENT OF THE ACCESS LEDGER, NOT A RESTATEMENT OF IT (D-14). Phase 2''s
+        ledger records WHICH splits were touched; a ledger showing only train and validation
+        accesses is equally consistent with an honest run and with a run that peeked at test in an
+        earlier process. Conflating the two would leave the requirement unevidenced.'
+      - 'CANONICAL BYTES, THEN SHA-256 -- one convention, repo-wide. Compact JSON over structs with
+        a fixed field order, no map to iterate, no wall-clock value, and the metric as BITS.
+        `lock_hash` is deliberately absent from the bytes it digests. `verify_integrity`
+        recomputes and compares, and `mint_test_token` runs it FIRST, so a rewritten record cannot
+        open the door. APPEND-ONLY, like the ledger: no removal API, no edit API, and the single
+        `&mut self` method in the type is the `#[cfg(test)]` forgery that proves the check bites.'
+    preconditions:
+      - 'every candidate carries an evaluation produced by the trusted evaluator'
+    postconditions:
+      - 'chosen_index is a function of the candidate set and the rule alone'
+      - 'changing any committed field changes lock_hash'
+
+  # ==========================================================================
+  # 16. Canonical test access — minted from an OBJECT, re-checked at the door
+  # ==========================================================================
+
+  canonical_test_token_minting:
+    formula: 'mint_test_token(lock, model: &SetFitRun<ArtifactReloadedAndVerified>) -> CanonicalTestToken <=> verify_integrity(lock) AND lock.chosen_artifact_hash == model.artifact_hash() ; grant(token, model, dataset: &PreparedDataset<Canonical>) -> CanonicalTestGrant<''a> admitting dataset.test() <=> token.artifact_hash == model.artifact_hash() AND token.dataset_fingerprint == dataset.validation_witness().dataset_fingerprint_hex()'
+    domain: 'a lock whose record still hashes to its digest, a verified run, and the canonical dataset the lock was taken over'
+    codomain: 'a token and then a typed test-access witness, or LockError::StaleLock / TokenModelMismatch / TokenDatasetMismatch naming BOTH values'
+    invariants:
+      - 'MINTING TAKES THE RUN OBJECT, NOT HASH BYTES. The phase-3 review found
+        `mint_test_token(&self, candidate: [u8; 32])`, which trusts a caller-supplied hash: a
+        caller can submit the LOCKED hash and then evaluate an entirely different artifact, and
+        nothing downstream ever sees the substitution. The parameter is now the verified run and
+        the function reads `artifact_hash()` off it. A source assertion pins BOTH halves -- that
+        the signature contains `&SetFitRun<ArtifactReloadedAndVerified>` and that it contains no
+        `[u8; 32]`.'
+      - 'LOCK, KEEP TUNING, THEN TEST INVALIDATES. A token minted against a re-tuned run returns
+        `StaleLock { locked, observed }` naming both hashes. The falsification walks exactly that
+        sequence with run B produced from the SAME configuration and seed under a reversed
+        intra-batch pull order, so a lock keyed on configuration would still match and ONLY the
+        artifact differs.'
+      - 'THE GRANT RE-CHECKS AT ACCESS TIME. Minting checks identity at one instant; a token is a
+        value that can be moved, cloned into a struct and used against whatever model is in scope
+        later. `CanonicalTestAccess::grant` takes the token, the model AND the canonical dataset,
+        and refuses a token paired with a different model (`TokenModelMismatch`, both hashes
+        named).'
+      - 'THE GRANT BINDS THE CORPUS, NOT ONLY THE MODEL. The phase-3 cleanup review found the
+        grant took a bare `&Split<Test>` and checked only the ARTIFACT: a valid token therefore
+        admitted test rows from ANY dataset, while the resulting grant''s `lock_hash()` went on
+        claiming the corpus the lock was taken over. Both halves of the substitution TRN-07 exists
+        to block were available -- the model was pinned and the data was not. The token already
+        carried `dataset_fingerprint` for exactly this comparison and the grant read neither
+        fingerprint.
+        The repair is at the ARGUMENT, not in an added assertion: a bare split carries no
+        provenance, so no check written against it could have been sound. `grant` now takes
+        `&PreparedDataset<Canonical>`, compares `dataset.validation_witness().dataset_fingerprint_hex()`
+        against the token''s (`TokenDatasetMismatch`, both digests named), and RETURNS the grant
+        over `dataset.test()` -- so the rows admitted are the ones whose provenance was just
+        checked, rather than rows supplied alongside a dataset that was merely shown.
+        This strengthens rather than weakens the compatibility-profile property below: the
+        parameter is now the Canonical-profile type itself, so a compatibility dataset is refused
+        by the type system one step earlier than before.'
+      - 'THE TOKEN IS PROOF OF PROVENANCE, NOT A RECORD OF IT. Every field is private and there is
+        no public constructor; reading a token cannot mint one. This is the `SelectedId` pattern
+        from Phase 2''s `select.rs` applied to test access.'
+      - '`Split<CompatibilityTest>` IS UNEXPRESSIBLE ON THIS PATH. It is a different type
+        (Ph2 D-16/D-19), so a compatibility profile cannot reach the grant at all -- the refusal
+        is a type error rather than a runtime check.'
+    preconditions:
+      - 'the lock was created before any canonical test access'
+    postconditions:
+      - 'a CanonicalTestGrant exists only for the model the lock chose'
+      - 'a stale lock or a travelled token refuses, naming both hashes'
+
+proof_obligations:
+
+- type: soundness
+  property: >
+    OBLIG-STL-EVIDENCE-GATE: SetFitRun<EncoderTuned> cannot be constructed without a
+    PassedEvidence value, and PassedEvidence is returned only by validate_evidence when every
+    gated parameter satisfies finite gradients, strict movement and its class epsilon, and the
+    run-level embedding floor holds. There is exactly ONE validating function in the tree, so
+    a future caller cannot route around the gate by adding a second door.
+  formal: >
+    ∃! validate_evidence ∧ (SetFitRun<EncoderTuned> constructible ⇒ ∃ PassedEvidence)
+  applies_to: all
+
+- type: safety
+  property: >
+    OBLIG-STL-UNPASSABLE-EMPTY: a run with no trainable parameters fails with
+    NoTrainableParameters, and a run whose trainable parameters are ALL ungated fails with
+    NoTestifyingParameters. SAFE-03 is therefore automatic under D-09 rather than dependent on
+    a caller remembering to check, and the gradient-free exclusion cannot be used to
+    manufacture a vacuous pass.
+  formal: 'trainable_set == {} ⇒ Err(NoTrainableParameters) ∧ gated_set == {} ⇒ Err(NoTestifyingParameters)'
+  applies_to: all
+
+- type: invariant
+  property: >
+    OBLIG-STL-THRESHOLDS-PARSED: the Rust threshold constants are PARSED from this YAML by a
+    test using serde_yaml, not duplicated as literals and compared by substring search.
+    Editing either side alone turns the test red, which is what makes T-3-21 (loosening an
+    epsilon after a failing comparison) require a contract edit that `pv diff` flags.
+  formal: '∀ c in classes: Thresholds::eps(c) == parse(this_file).evidence_gate.table[c].eps'
+  applies_to: all
+
+- type: soundness
+  property: >
+    OBLIG-STL-REGIME-FAIL-CLOSED: the calibration-regime membership check is the FIRST
+    statement of validate_evidence, so a run outside the calibrated set is refused before any
+    threshold measured elsewhere is applied to it.
+  formal: 'calibration_regime_id not in CALIBRATED_REGIMES ⇒ Err(UncalibratedRegime) before any per-parameter comparison'
+  applies_to: all
+
+- type: invariant
+  property: >
+    OBLIG-STL-AUDITABLE-REJECTION: a rejection carries the COMPLETE UpdateEvidence table and
+    its EvidenceSummary, with one row per trainable parameter, plus the worst-offending
+    parameter's name, class, measured relative delta and contracted epsilon. Nothing is
+    discarded into a string, so a rejection is investigable rather than merely reported.
+  formal: 'EvidenceRejected{summary, table, worst} && table.rows.len() == trainable_set.len()'
+  applies_to: all
+
+- type: invariant
+  property: >
+    OBLIG-STL-GRADIENT-FREE-RECORDED-NOT-GATED: members of attention_key_bias appear in the
+    evidence table and contribute to no verdict. The class boundary is pinned by a measurement
+    that runs in every cargo test, so it degrades into folklore only if that test is deleted.
+  formal: '∀ p in attention_key_bias: p in table.rows ∧ p not in gated_set'
+  applies_to: all
+
+- type: invariant
+  property: >
+    OBLIG-STL-DIGESTS-IN-BAND: consumed_pair_digest and batch_boundary_digest are absorbed at
+    consumption and never recomputed from configuration.
+  formal: 'absorb_batch_digests ∈ the pair-pull loop ∧ absorb_batch_digests ∉ run_tuning''s body'
+  applies_to: all
+
+- type: soundness
+  property: >
+    OBLIG-STL-CODEC-IS-POWERLESS: SetFitCodec has exactly three methods and none of them
+    hashes, compares, carries a tolerance or constructs a lifecycle state. artifact_hash is a
+    free function, not a trait method, and the trait is sealed by a private-module supertrait.
+    An implementor can therefore change the FORMAT and cannot change the VERDICT.
+  formal: 'methods(SetFitCodec) == {format_id, serialize, deserialize} ∧ artifact_hash not in methods(SetFitCodec) ∧ SetFitCodec: sealed::Sealed'
+  applies_to: all
+
+- type: soundness
+  property: >
+    OBLIG-STL-RELOAD-FROM-BYTES: SetFitRun<ArtifactReloadedAndVerified> is constructible only
+    through verify_artifact, which drops the live encoder and head by value, reloads from
+    bytes, requires serialize(deserialize(b)) == b, and rebuilds the comparison object from the
+    reloaded bundle alone. A codec that returns an object it was not handed is refused by the
+    closure check before the rebuild runs.
+  formal: 'SetFitRun<ArtifactReloadedAndVerified> constructible ⇒ codec.serialize(codec.deserialize(b)) == b ∧ comparison_object == rebuild(codec.deserialize(b))'
+  applies_to: all
+
+- type: invariant
+  property: >
+    OBLIG-STL-BUNDLE-COMPLETE: the bundle carries every field of the normative list, and the
+    obligation is SUFFICIENCY: a model rebuilt from its bytes alone produces bit-identical
+    embeddings and identical probabilities on the probe rows. In particular it carries the
+    exact tokenizer bytes with sha256(bytes) == architecture.tokenizer_sha256, and the
+    vocabulary remap without which a slice encoder gathers the wrong embedding row for every
+    token.
+  formal: '∀ r in probe_rows: bits(embed(rebuild(bytes), r)) == bits(embed(original, r))'
+  applies_to: all
+
+- type: safety
+  property: >
+    OBLIG-STL-BUNDLE-BOUNDED: four numeric deserialization limits -- input length, tensor
+    count, per-tensor elements and total elements -- are enforced BEFORE the allocation each
+    bounds, each with a typed BundleLimitExceeded naming the limit and the observation. Tensor
+    data travels as hex, so an element count is known from a string length rather than from a
+    decoded vector.
+  formal: 'len(bytes) > max_bundle_bytes => Err before parse; elements(t) > max_elements_per_tensor => Err before any Vec<f32> allocation'
+  applies_to: all
+
+- type: invariant
+  property: >
+    OBLIG-STL-ACCESSORS-RECORDED: the ten reproducibility accessors on
+    SetFitRun<ArtifactReloadedAndVerified> return values RECORDED during execution.
+    pair_order_digest and batch_boundaries move 03-05's in-band recordings through the states
+    and are never recomputed from configuration; none of the ten returns &mut, and none
+    consumes the run into another state.
+  formal: 'pair_order_digest() == evidence.table.consumed_pair_digest ∧ batch_boundaries() == evidence.table.batch_boundary_list'
+  applies_to: all
+
+- type: invariant
+  property: >
+    OBLIG-STL-RESOLVED-CONFIG-ONE-WAY: ResolvedSetFitConfig stays Serialize-but-not-Deserialize
+    (T-3-50), the bundle carries a separate provenance record, and there is no conversion from
+    that record back into a runtime resolved configuration.
+  formal: 'not ∃ TryFrom<ResolvedConfigRecord> for ResolvedSetFitConfig ∧ Deserialize not in derives(ResolvedSetFitConfig)'
+  applies_to: all
+
+- type: soundness
+  property: >
+    OBLIG-STL-METRIC-COMPUTED-NOT-ASSERTED: a ValidationEvaluation is produced only by
+    evaluate_validation, which takes the verified run and the canonical dataset and computes the
+    value itself. No public constructor exists, no public function in evaluate.rs takes a float
+    parameter, and the artifact hash is read off the run rather than accepted. The single
+    float-taking door is #[cfg(test)] pub(super) and is named by the guard.
+  formal: 'ValidationEvaluation constructible ⇒ produced by evaluate_validation ∧ not ∃ pub fn in evaluate.rs with a float parameter'
+  applies_to: all
+
+- type: invariant
+  property: >
+    OBLIG-STL-LOCK-COMMITS-HISTORY: the lock commits every candidate in order together with the
+    rule, and derives chosen_index by applying the rule. from_candidates has no `chosen`
+    parameter, so a lock recording only a winner is not expressible. Changing any committed field
+    changes lock_hash, and mint_test_token verifies integrity before it compares anything. Every
+    admitted candidate carries a FINITE value: total_cmp orders +NaN above +infinity, so an
+    unfiltered non-finite candidate would be selected rather than ignored, and the rule can only
+    stay a total order if the refusal happens at admission instead.
+  formal: 'chosen_index == rule(candidates) ∧ (∀ i: is_finite(value_i)) ∧ lock_hash == sha256(canonical_bytes(lock)) ∧ not ∃ parameter `chosen` in from_candidates'
+  applies_to: all
+
+- type: safety
+  property: >
+    OBLIG-STL-TOKEN-FROM-OBJECT: mint_test_token reads the artifact hash off the supplied verified
+    run; no [u8; 32] parameter exists on the minting path. The grant re-checks the token's artifact
+    identity against the model at access time AND binds the corpus by comparing the token's
+    dataset fingerprint against the supplied canonical dataset's, returning the test split out of
+    that same dataset so the rows admitted are the rows whose provenance was checked.
+    Split<CompatibilityTest> is a different type that cannot reach the grant.
+  formal: 'mint(lock, model) = Ok ⇒ lock.chosen_artifact_hash == model.artifact_hash() ∧ grant(t, m, d) = Ok ⇒ t.artifact_hash == m.artifact_hash() ∧ t.dataset_fingerprint == d.dataset_fingerprint() ∧ result.test == d.test()'
+  applies_to: all
+
+falsification_tests:
+
+- id: FALSIFY-STL-001
+  rule: 'OBLIG-STL-EVIDENCE-GATE and OBLIG-STL-UNPASSABLE-EMPTY — the gate bites, and it is not merely never exercised'
+  prediction: >
+    Three negatives are RED under the same gate that accepts the reference run. An all-frozen
+    fixture run returns NoTrainableParameters naming trainable_count 0. A fixture run at
+    encoder_lr 1e-30 returns EvidenceRejected whose payload names the worst-offending dotted
+    parameter, its class, its measured relative delta and the contracted epsilon for that
+    class. A run tagged with a calibration_regime_id absent from the calibrated set returns
+    UncalibratedRegime BEFORE any threshold comparison. The CONTROL — the same fixture at
+    reference defaults — passes, so none of the three is "the gate always fails".
+  test: cargo test -p aprender-train --lib --features setfit negative_
+  test_harness: cargo test -p aprender-train --lib --features setfit negative_
+  expected_output: 'test result: ok.'
+  if_fails: >
+    The gate is not reached from tune_encoder, or the transition can be minted without it.
+
+- id: FALSIFY-STL-002
+  rule: 'OBLIG-STL-GRADIENT-FREE-RECORDED-NOT-GATED — the class boundary rests on a mechanism, not on convenience'
+  prediction: >
+    The key bias gradient is at least 1e4x below the smallest ordinary projection-bias gradient
+    in the same fixture run, and the key WEIGHT and the query/value biases remain ordinary
+    classes. Misclassifying the QUERY bias as gradient-free instead makes the test RED with
+    both magnitudes printed — observed at 3.446e-3 against 1.824e-10.
+  test: cargo test -p aprender-train --lib --features setfit evidence_attention_key_bias
+  test_harness: cargo test -p aprender-train --lib --features setfit evidence_attention_key_bias
+  expected_output: 'test result: ok.'
+  if_fails: >
+    Softmax shift-invariance no longer holds for this encoder, kernel or reduction order; the
+    class must be re-derived rather than retained.
+
+- id: FALSIFY-STL-003
+  rule: 'OBLIG-STL-THRESHOLDS-PARSED — the frozen numbers are mechanically tied to this file'
+  prediction: >
+    Every Rust threshold constant equals the value parsed from this YAML for the same class.
+    Editing either side alone — the contract table or the Rust constant — turns the test red.
+  test: cargo test -p aprender-train --lib --features setfit thresholds_
+  test_harness: cargo test -p aprender-train --lib --features setfit thresholds_
+  expected_output: 'test result: ok.'
+  if_fails: >
+    An epsilon was changed on one side only, which is how T-3-21 (post-hoc loosening) begins.
+
+- id: FALSIFY-STL-004
+  rule: 'OBLIG-STL-AUDITABLE-REJECTION — a rejection is investigable'
+  prediction: >
+    The error returned by the 1e-30 negative carries the complete UpdateEvidence table; a test
+    walks that table and asserts it has exactly one row per trainable parameter.
+  test: cargo test -p aprender-train --lib --features setfit evidence_gate
+  test_harness: cargo test -p aprender-train --lib --features setfit evidence_gate
+  expected_output: 'test result: ok.'
+  if_fails: >
+    The evidence was discarded into a message and the rejection cannot be audited.
+
+- id: FALSIFY-STL-005
+  rule: 'OBLIG-STL-DIGESTS-IN-BAND — the digests record what was consumed'
+  prediction: >
+    Two identical runs produce equal loss-trace hashes, equal consumed_pair_digest and equal
+    batch_boundary_digest. Absorbing the CONFIGURED ordinal instead of the DRAWN one makes the
+    recorded-not-recomputed test red with the two digests printed identical.
+  test: cargo test -p aprender-train --lib --features setfit tune_digest
+  test_harness: cargo test -p aprender-train --lib --features setfit tune_digest
+  expected_output: 'test result: ok.'
+  if_fails: >
+    A digest is being reconstructed from configuration, which cannot evidence consumption.
+
+- id: FALSIFY-STL-006
+  rule: 'dropout_mask_derivation — the mask is keyed on all four coordinates, including the branch'
+  prediction: >
+    The frozen golden keys and blocks reproduce exactly: key(seed 13, "embeddings.dropout"),
+    the same seed at a DIFFERENT site, and a DIFFERENT seed at the same site all differ, and
+    the two named Philox blocks match at (ordinal 0, element 0) and (ordinal 7, element 3). A
+    derivation that dropped the site, the seed, the forward ordinal or the element from the
+    key or counter turns this red. The `--features setfit` flag is load-bearing: without it
+    the filter matches ZERO tests and reports `ok`, which is a vacuous pass rather than
+    evidence.
+  test: cargo test -p aprender-core --lib --features setfit dropout_rng_byte_encoding
+  test_harness: cargo test -p aprender-core --lib --features setfit dropout_rng_byte_encoding
+  expected_output: 'test result: ok. 1 passed'
+  if_fails: >
+    The dropout stream mapping drifted; the two pair branches may share a mask, which makes
+    the contrastive comparison degenerate while still looking deterministic.
+
+- id: FALSIFY-STL-007
+  rule: 'epoch_shuffle_derivation — the epoch order is keyed on seed AND epoch'
+  prediction: >
+    key(42, "epoch-shuffle") and the three frozen permutations reproduce exactly. The second
+    golden pins EPOCH separation and the third SEED separation, so a derivation that ignored
+    either coordinate is red even though it would still emit a valid-looking permutation.
+  test: cargo test -p aprender-train --lib --features setfit epoch_byte_encoding
+  test_harness: cargo test -p aprender-train --lib --features setfit epoch_byte_encoding
+  expected_output: 'test result: ok. 1 passed'
+  if_fails: >
+    Pair consumption order is not reproducible from (root_seed, epoch), so the in-band
+    consumed-pair digest cannot be replayed.
+
+- id: FALSIFY-STL-008
+  rule: 'reload_verify_roundtrip — an arbitrary codec cannot decide that verification passed'
+  prediction: >
+    An in-band EchoCodec whose deserialize IGNORES its input bytes and returns a bundle cached
+    at construction is refused with SetFitTrainError::ReloadNotFromBytes, while the faithful
+    SerdeJsonCodec on the same run reaches ArtifactReloadedAndVerified with round_trip_closed
+    true and both measured maxima exactly 0.0. Removing the round-trip closure check makes the
+    negative GREEN — measured, not assumed: before the check existed EchoCodec returned Ok and
+    minted the final state. The cache differs only in source_revision, which is pure
+    provenance, so nothing else in the pipeline can catch it; an extra label is caught by the
+    head's coefficient-arity check and a perturbed tensor by the probe comparison, and either
+    would have made this test green for the wrong reason. A deliberately corrupted byte stream
+    fails typed at the codec with the parse position named, and no lifecycle state is minted.
+  test: cargo test -p aprender-train --lib --features setfit verify_
+  test_harness: cargo test -p aprender-train --lib --features setfit verify_
+  expected_output: 'test result: ok.'
+  if_fails: >
+    Either the codec seam has regained a power the policy split removed, or the closure check
+    no longer precedes the rebuild and a behaviourally identical substitute passes unseen.
+
+- id: FALSIFY-STL-009
+  rule: 'bundle_completeness — the bundle is sufficient to rebuild a working model, not merely to describe one'
+  prediction: >
+    A model rebuilt from the bundle's WIRE FORM alone produces BIT-IDENTICAL embeddings to the
+    original on the fixture probe rows, and a head rebuilt from its stored coefficients produces
+    identical probabilities. Dropping the tokenizer bytes makes the rebuild impossible; dropping
+    the vocabulary remap makes it gather the wrong embedding row for every token while still
+    returning plausible floats; a tokenizer-hash mismatch and a missing tensor are each typed
+    rejections naming the digest or the tensor.
+  test: cargo test -p aprender-train --lib --features setfit bundle_
+  test_harness: cargo test -p aprender-train --lib --features setfit bundle_
+  expected_output: 'test result: ok.'
+  if_fails: >
+    A field of the normative list is absent or is not populated from the encoder that would be
+    rebuilt, and "reload" no longer means the artifact is the model.
+
+- id: FALSIFY-STL-010
+  rule: 'bundle_limits — the four bounds bite before the allocation each bounds'
+  prediction: >
+    Each of the four limits refuses a real fixture bundle when set one below the observed
+    figure, naming the limit in BundleLimitExceeded{what, limit, observed}, and ACCEPTS the same
+    payload when set exactly at it — so none of the four is a refusal of everything. The
+    contracted values are parsed from this file and compared against the Rust constants, so a
+    one-sided edit is red, and the full-pin figures they clear are computed from the pinned
+    architecture rather than quoted.
+  test: cargo test -p aprender-train --lib --features setfit bundle_limit
+  test_harness: cargo test -p aprender-train --lib --features setfit bundle_limit
+  expected_output: 'test result: ok.'
+  if_fails: >
+    A bound is checked after the allocation it is supposed to prevent, or a contracted number
+    was changed on one side only.
+
+- id: FALSIFY-STL-011
+  rule: 'reload_verify_roundtrip — the reproducibility accessors report EXECUTION, not intent'
+  prediction: >
+    pair_order_digest() equals the consumed_pair_digest the tuning loop absorbed at the draw,
+    and a run whose intra-batch pull order was reversed reports a DIFFERENT one through the same
+    accessor — while agreeing on the batch boundaries, the step count and the selection hash,
+    which the perturbation does not touch. An accessor that recomputed the digest from
+    configuration would report the SAME value for both runs and this test is what would notice.
+  test: cargo test -p aprender-train --lib --features setfit verify_pair_order_digest
+  test_harness: cargo test -p aprender-train --lib --features setfit verify_pair_order_digest
+  expected_output: 'test result: ok.'
+  if_fails: >
+    A reproducibility accessor is restating configuration, so two runs that consumed different
+    orders would reproduce each other perfectly.
+
+- id: FALSIFY-STL-012
+  rule: 'bundle_completeness — the tokenizer''s retained bytes and its recorded digest cannot drift'
+  prediction: >
+    The sha256 re-derived from MiniLmTokenizer::source_bytes() equals the recorded
+    tokenizer_sha256, and a tokenizer rebuilt from those bytes reproduces input ids, token type
+    ids, attention masks and truncation facts on EVERY frozen case. A from_bytes that hashed one
+    buffer and retained another would pass an identity check against a hash it does not have.
+  test: cargo test -p aprender-core --lib --features setfit tokenizer_bytes
+  test_harness: cargo test -p aprender-core --lib --features setfit tokenizer_bytes
+  expected_output: 'test result: ok.'
+  if_fails: >
+    The retained bytes and the recorded digest describe different tokenizers, so an artifact
+    carrying both is internally inconsistent.
+
+- id: FALSIFY-STL-013
+  rule: 'bundle_completeness — the resolved configuration travels one way only (T-3-50)'
+  prediction: >
+    ResolvedSetFitConfig's derive attributes contain Serialize and NOT Deserialize, the bundle
+    carries the provenance RECORD rather than the runtime type, and no conversion exists from
+    that record back into a runtime resolved configuration. The scan reads the ATTRIBUTE lines
+    above the declaration rather than the surrounding text, because the doc comment there says
+    the words "NOT Deserialize, deliberately" and a naive substring search matches the sentence
+    that documents the invariant and reports it as the violation. The forbidden conversion is
+    assembled at runtime in the test rather than written out, so the same scan can be run as a
+    grep over the whole directory without the test being a file in that directory containing
+    the forbidden token.
+  test: cargo test -p aprender-train --lib --features setfit bundle_resolved_config
+  test_harness: cargo test -p aprender-train --lib --features setfit bundle_resolved_config
+  expected_output: 'test result: ok.'
+  if_fails: >
+    A probed device can arrive from a file, which retires an acceptance criterion plan 03-03
+    already passed and makes a resolved runtime fact restorable from an artifact.
+
+- id: FALSIFY-STL-014
+  rule: 'validation_evaluation_provenance — a metric is COMPUTED by trusted code, never asserted'
+  prediction: >
+    No public function in evaluate.rs takes a float PARAMETER, ValidationEvaluation has no public
+    constructor and no public field, and ValidationMetricKind carries no String variant. The
+    evaluator commits the artifact hash read off the run and the validation-split fingerprint read
+    off the witness, and the two fingerprints it records are DIFFERENT values. A dataset whose
+    fingerprints disagree with the run is refused before a row is encoded, naming all four
+    hex digests. Two evaluations of the same run are equal down to the value's bit pattern.
+    Macro-F1 scores a class with no actual and no predicted positives as 0.0 and the alternative
+    is visibly different: the same rows under a 3-class map score 2/3 where a 2-class map scores
+    1.0. The parameter-list scan is the load-bearing detail — a line-wise search was MEASURED red
+    here for the wrong reason, matching the type's own private `value: f64` field, and a scan for
+    `pub fn ` alone saw 5 of the 9 public functions because `pub const fn` does not contain it.
+  test: cargo test -p aprender-train --lib --features setfit evaluate_
+  test_harness: cargo test -p aprender-train --lib --features setfit evaluate_
+  expected_output: 'test result: ok.'
+  if_fails: >
+    A door exists that turns a caller's number into an evaluation, or the evaluation no longer
+    binds itself to the artifact and split it was computed on.
+
+- id: FALSIFY-STL-015
+  rule: 'selection_lock_commitment — the lock applies the rule and binds the whole record'
+  prediction: >
+    All four candidate-consistency rejections fire and each names the offending index: an empty
+    list, a differing metric kind at index 2, a differing validation-split fingerprint at index 1,
+    a differing dataset fingerprint at index 3, and a duplicate artifact hash at index 2 naming
+    index 0. The rule selects the highest value and an exact tie keeps the LOWEST index. Six
+    one-field variations — config hash, artifact hash, metric value, candidate ORDER, selection
+    semantic hash, ledger hash — each move lock_hash. A #[cfg(test)] forgery of chosen_index makes
+    verify_integrity red with both digests printed, and mint_test_token then refuses with the same
+    error, so the check is where it matters rather than merely present. from_candidates has no
+    `chosen` parameter, and the lock exposes no removal or edit API.
+    A candidate carrying NaN, +infinity or -infinity is refused with NonFiniteMetric naming the
+    index, and the refusal is shown to BITE rather than merely exist: the same candidate list
+    with the NaN admitted selects the NaN — asserted directly against the rule — because
+    total_cmp orders +NaN above every finite value. That two-sided pair is the whole point of
+    the check; a test that only asserted the rejection would be equally green if the rule had
+    ignored NaN, which is what the superseded rationale claimed it did.
+  test: cargo test -p aprender-train --lib --features setfit lock_
+  test_harness: cargo test -p aprender-train --lib --features setfit lock_
+  expected_output: 'test result: ok.'
+  if_fails: >
+    The lock records a caller's winner rather than deriving one, or a committed field is outside
+    the digest and can be edited without detection.
+
+- id: FALSIFY-STL-016
+  rule: 'canonical_test_token_minting — lock, keep tuning, then test INVALIDATES'
+  prediction: >
+    A lock taken on run A mints a token for run A and grants access to its &Split<Test>. Run B is
+    the SAME configuration and seed with the intra-batch pull order reversed, so a lock keyed on
+    configuration would still match and only the artifact differs; minting against run B returns
+    StaleLock with BOTH hashes in the rendered message, and the token minted for A is refused at
+    grant against B with TokenModelMismatch naming both. The test asserts the two artifact hashes
+    differ FIRST, so none of it can hold vacuously. mint_test_token's signature contains
+    &SetFitRun<ArtifactReloadedAndVerified> and contains no [u8; 32]; CanonicalTestToken has no
+    public constructor and no public field; grant takes the token, the model and
+    &PreparedDataset<Canonical>, and its signature contains no &Split<Test> parameter.
+    A token valid for its own model but presented with a DIFFERENT canonical corpus is refused
+    with TokenDatasetMismatch naming both digests — the corpus substitution that the earlier
+    bare-&Split<Test> signature admitted silently. The test asserts the two dataset fingerprints
+    differ FIRST, and separately asserts that the grant's rows come out of the dataset that was
+    checked rather than out of a split handed in beside it.
+    The command below is the WHOLE `lock_` filter rather than a narrower one, because the three
+    source assertions live in their own named tests and a filter that did not reach them would
+    leave two thirds of this prediction unbacked by the command that claims it. The sequence
+    itself is `lock_then_tune_then_test_invalidates_and_a_travelled_token_cannot_be_repaired`.
+  test: cargo test -p aprender-train --lib --features setfit lock_
+  test_harness: cargo test -p aprender-train --lib --features setfit lock_
+  expected_output: 'test result: ok.'
+  if_fails: >
+    A caller-supplied hash has returned to the minting path, or the grant no longer re-checks
+    identity and a token that travelled can be paired with a different model — or with a
+    different corpus, which is the half the bare-&Split<Test> signature left open.
+
+kani_harnesses:
+
+- id: KANI-STL-001
+  obligation: OBLIG-STL-UNPASSABLE-EMPTY
+  property: An empty gated set can never yield a passing verdict
+  bound: 4
+  strategy: bounded_int
+  solver: cadical
+  harness: verify_empty_gated_set_unpassable
+  status: DECLARED_NOT_EXECUTED
+  actual_evidence: >
+    cargo-kani is not installed in this repository and no #[kani::proof] harness exists under
+    crates/. The runnable, identically bounded evidence is the frozen-run negative in
+    FALSIFY-STL-001.
+
+- id: KANI-STL-002
+  obligation: OBLIG-STL-REGIME-FAIL-CLOSED
+  property: An out-of-regime run is refused before any threshold comparison
+  bound: 4
+  strategy: bounded_int
+  solver: cadical
+  harness: verify_regime_checked_first
+  status: DECLARED_NOT_EXECUTED
+  actual_evidence: >
+    Not executed. The runnable evidence is the UncalibratedRegime negative in FALSIFY-STL-001,
+    together with the source assertion that the regime check is the first statement of
+    validate_evidence.
+
+qa_gate:
+  id: F-STLV-001
+  name: setfit-train-lifecycle-v1 Contract
+  description: >
+    Quality gate for the SetFit stage-one training lifecycle: evidence gate, calibration
+    regime, gradient-free exclusion, RNG derivations, execution digests and knob provenance.
+  checks:
+    - validation
+    - falsification

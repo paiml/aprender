@@ -1,0 +1,11 @@
+[package]
+name = "spike-014-np-gap-imputation-regressors"
+version = "0.0.0"
+edition = "2021"
+publish = false
+
+[workspace]
+
+[dependencies]
+aprender_forecast = { path = "../../../crates/aprender-forecast", package = "aprender-forecast" }
+aprender = { path = "../../../crates/aprender-core", package = "aprender-core", default-features = false }

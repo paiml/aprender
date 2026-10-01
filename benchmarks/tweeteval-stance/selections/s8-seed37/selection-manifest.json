@@ -1,0 +1,225 @@
+{
+  "semantic_hash": "b1bcee2f238239fdccb65a2e670dbfd20dbc60b7276c9d21cee966200cecf3dd",
+  "volatile": {
+    "created_at": "2026-09-08T21:12:17.574779+00:00",
+    "tool_version": "0.63.0"
+  },
+  "payload": {
+    "schema_version": 1,
+    "algorithm_version": 1,
+    "profile": "canonical",
+    "dataset_fingerprint": "082ad5b09088436923681dc9fb1cdc026982d82f1395c823b0991f986a8f7f84",
+    "validation_fingerprint": "8410bbd1f45d3e6ded56fdbbd6948b1a584d4d0afa7836b36bddec459575da4e",
+    "label_names": [
+      "none",
+      "against",
+      "favor"
+    ],
+    "normalization_version": "nfc-trim-ws-v1",
+    "root_seed": 37,
+    "shots_per_class": 8,
+    "ordered_examples": [
+      {
+        "id": "train:11",
+        "label": 0,
+        "exact_hash": "7e7e0d90de67e8df0fcfa4d163b26b6635dcc368a5a1c12dd7205812111293f6",
+        "normalized_hash": "fa0bc96fd8bbbb87af8d5db096b35604866336b284dbfd6bdb32c59397143f90"
+      },
+      {
+        "id": "train:303",
+        "label": 0,
+        "exact_hash": "ec5f4d87a963a66e068e76ed75a39751577ea67720eb32862e26e3983acb45ef",
+        "normalized_hash": "754655663be8a2d17efc51bfd7e5a25ac3be9c603459615ffd922c2bc6ad4077"
+      },
+      {
+        "id": "train:412",
+        "label": 0,
+        "exact_hash": "c51dd7560911e7fc831c6e907f357a0d3defbd283647273816f3c722c47721b5",
+        "normalized_hash": "38d3c39d8530c54b8e3251c606b3b66fd4f5311ffcf5f4d952692643494ff08b"
+      },
+      {
+        "id": "train:561",
+        "label": 0,
+        "exact_hash": "1213a77564c85a69cd476898e1a617d2903e8894512fc157bc575b6798937568",
+        "normalized_hash": "db1c96521dc47cb537c107ed689ea87b23744e4f701b6eadd28313be3cf5f54a"
+      },
+      {
+        "id": "train:488",
+        "label": 0,
+        "exact_hash": "72ee7698297dcc968aaf3464917d731ec552809ceaa3d75357d03ee090b2fa8e",
+        "normalized_hash": "74ad695a20368cbbcbf888d12da7e4b378055359f32790252316e94cbacff4e8"
+      },
+      {
+        "id": "train:99",
+        "label": 0,
+        "exact_hash": "d16e4413fcb5276816bd019a7f292a0b1eab3ce378bb8daebd304e308b25fcf6",
+        "normalized_hash": "2e9d336b66d989ae6d76ecec6e5f402bb40d22f6662fdfd75a0efb8f685059e6"
+      },
+      {
+        "id": "train:271",
+        "label": 0,
+        "exact_hash": "043368cc4530f9c23d73bdae5f586fc449c2f2f1c24e22dbfd6300290a8cf657",
+        "normalized_hash": "03577baf61babb44ab61eb5abf5e08e5e626e54ae9298cbfe1f422a51ba86885"
+      },
+      {
+        "id": "train:207",
+        "label": 0,
+        "exact_hash": "b7cd54c0532c411cc028f8ddc1b161e0dcc4c5a0e83fd689c44adbdd072812e3",
+        "normalized_hash": "5cc41f707952b9da4e6a4bf0ec93ef537a0071bffaa727e319e62b4ae53e66c5"
+      },
+      {
+        "id": "train:402",
+        "label": 1,
+        "exact_hash": "7fc7b44447840a88da87ded6920859b11697d41c48ebade01157a2724042c518",
+        "normalized_hash": "8228f757e670f7c35450da69bb639f4e06674d6eec3296b51d3f80d1a5c7955d"
+      },
+      {
+        "id": "train:272",
+        "label": 1,
+        "exact_hash": "db6b0b9680b31378fb268a73bb2ed7deb466d5d5e61a737b761ef6535d99f0a2",
+        "normalized_hash": "ae3d64dfbd80febfb9a99430b6ba9fb557c51ca7da4a340ff7850460d3c66e06"
+      },
+      {
+        "id": "train:294",
+        "label": 1,
+        "exact_hash": "ceddf515678166f90a07c05d5a8774c52aaef27c3c91db581775b6d2c05f6918",
+        "normalized_hash": "2ef1efa34bf69ab0314ae28251b3292065188f395478fd70706532fed2cb8b26"
+      },
+      {
+        "id": "train:252",
+        "label": 1,
+        "exact_hash": "d99d4193183bcd5e94215b0366f341dd8d42eaee42fcd94329d986062aa538ec",
+        "normalized_hash": "4f7badcbdf1d6df3edaab1c8387572ca46a1eff94b45aa7347f0cd77ce8c1d80"
+      },
+      {
+        "id": "train:394",
+        "label": 1,
+        "exact_hash": "073bdbff6aeaa5527d693be0d4e1479d06736a4019af565cda86f8d158e9137a",
+        "normalized_hash": "83884192694dfa486f7ee50758c046a4e497f3a852d57e8eb6035402d02bd350"
+      },
+      {
+        "id": "train:415",
+        "label": 1,
+        "exact_hash": "c86f2af969c3a099c2f4a0d50bcde4053e143f346cb23556bf767ad29182eaf0",
+        "normalized_hash": "3360fac008c6164f09606b0752affaf6574b7f1367c81588938b354d695cf428"
+      },
+      {
+        "id": "train:336",
+        "label": 1,
+        "exact_hash": "5214a6988021456f72b3b1c4ea3f0fad64e8a1f201695c381ce50d2854bbc49d",
+        "normalized_hash": "cad20b05e15e656649639ba91bb0d00259f742e2a263f1f5fbbb840afb0fa343"
+      },
+      {
+        "id": "train:504",
+        "label": 1,
+        "exact_hash": "2f19b2bc6adc8cb7ed601851ce465ef772a9e38b5e0c291c691990cf423d6869",
+        "normalized_hash": "87ac63a4c3a29bce1a22bff6d70d82ebffe8d8ae35160eb1d445efc5f2d4586a"
+      },
+      {
+        "id": "train:258",
+        "label": 2,
+        "exact_hash": "3090cdc6fb511f8db6ee98d9062d76ab6c4ad3698b59193a87eedc3a416545af",
+        "normalized_hash": "cb76df414d1fe09021ed56c2f08403773d694f48f79f3ea5239b9c7e2430da3c"
+      },
+      {
+        "id": "train:15",
+        "label": 2,
+        "exact_hash": "f46070a80aaf4f45cd606ed801ab04c721eae55335a3a315f20e22231337ea63",
+        "normalized_hash": "6452d905d4ed6aca60c55590d65e57665e02d23acf95c22bca5b328b26a1d286"
+      },
+      {
+        "id": "train:490",
+        "label": 2,
+        "exact_hash": "3630bb93ae7d65449be63ae6103ac629b3552b8b99c74e16dc9db779da3e08ba",
+        "normalized_hash": "455c5bb945396472c4819d1f41b5fa26e66203a17ec92ecc3d699443211b59aa"
+      },
+      {
+        "id": "train:241",
+        "label": 2,
+        "exact_hash": "1f45f131b74457206fe16f5bb4a46519961148e85295149245278be85371a0c1",
+        "normalized_hash": "518ac7897e1a3e944e5671e0f526ae9059c873a8dbfdfadef0d501d0fc1a1340"
+      },
+      {
+        "id": "train:33",
+        "label": 2,
+        "exact_hash": "f39d98b9093628aa9d2b9050938e79e4cede6d52ff246ef3fa756d028732399c",
+        "normalized_hash": "b23e2b78bfbde80dea10447d5abfd042d0e815d4b9a3d24f4afde76a884482f1"
+      },
+      {
+        "id": "train:471",
+        "label": 2,
+        "exact_hash": "c905efcb73ebe9d57186ffcd9156c2ca6f356ab58e2c21c29a55a4ce61450839",
+        "normalized_hash": "ef382db0ffdaf6dfff9547426195cd506eea63bcb46d3ba65839013b49a53e16"
+      },
+      {
+        "id": "train:233",
+        "label": 2,
+        "exact_hash": "022cbe9400a545776ac89ea83d39d0e52320ad79b6f80661f923ee8060a12f92",
+        "normalized_hash": "74c0bd9f67e2fb13e8aa2c7b337341e78afbd471e769649aaec1b276bd0735e7"
+      },
+      {
+        "id": "train:364",
+        "label": 2,
+        "exact_hash": "aeb6a17d8e5a599aefda8de06d73c7977c85ebb73b79ac25e4e9e7f3908da3d8",
+        "normalized_hash": "8d2e24a5df41b095e255b8195995e75b88b5809e6e7a66222beb53c89613b06e"
+      }
+    ],
+    "exclusions": {
+      "excluded_train_ids": [
+        "train:70"
+      ],
+      "groups": [
+        {
+          "members": [
+            [
+              "train",
+              "train:70"
+            ],
+            [
+              "validation",
+              "validation:3"
+            ]
+          ],
+          "detected_by": {
+            "exact": true,
+            "normalized": true
+          },
+          "label_conflict": false
+        }
+      ],
+      "reduced_pools": {
+        "0": 158,
+        "1": 319,
+        "2": 109
+      },
+      "normalization_version": "nfc-trim-ws-v1"
+    },
+    "access_ledger": [
+      {
+        "role": "train",
+        "profile": "canonical",
+        "purpose": "ingest",
+        "fingerprint_hex": "082ad5b09088436923681dc9fb1cdc026982d82f1395c823b0991f986a8f7f84"
+      },
+      {
+        "role": "validation",
+        "profile": "canonical",
+        "purpose": "ingest",
+        "fingerprint_hex": "082ad5b09088436923681dc9fb1cdc026982d82f1395c823b0991f986a8f7f84"
+      },
+      {
+        "role": "test",
+        "profile": "canonical",
+        "purpose": "ingest",
+        "fingerprint_hex": "082ad5b09088436923681dc9fb1cdc026982d82f1395c823b0991f986a8f7f84"
+      },
+      {
+        "role": "train",
+        "profile": "canonical",
+        "purpose": "select",
+        "fingerprint_hex": "082ad5b09088436923681dc9fb1cdc026982d82f1395c823b0991f986a8f7f84"
+      }
+    ],
+    "ledger_hash": "a44f6d821f4e276ed1d803c129223688abf48774fe31e887cdc0cf52c7476116"
+  }
+}

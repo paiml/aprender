@@ -936,3 +936,46 @@ To force full reindex: `batuta oracle --rag-index --force`
 - **When the SSC model ships**: realizar loads the LoRA adapter via standard PEFT/safetensors path — no special Blackwell handling needed
 - **Trained model (LoRA adapter)**: Architecture-independent — works on any GPU or CPU
 - **Key tickets**: trueno#200 (Blackwell JIT), trueno#203 (pre-compiled kernels), entrenar#300 (cuBLAS backward)
+
+---
+
+## Moved here from the root CLAUDE.md
+
+These sections describe this crate specifically, so they live here and cost context
+only when working under `crates/aprender-serve/`.
+
+
+### Realizar Inference Tracing
+
+**There is no `realizar` binary.** `realizar` is the *library* name of the
+`aprender-serve` package (`[lib] name = "realizar"`, `crates/aprender-serve/Cargo.toml`);
+that package ships no `[[bin]]`. Tracing is driven through `apr run`:
+
+```bash
+"$APR" run model.safetensors --prompt "2+2?" --trace
+"$APR" run model.gguf --prompt "Hi" --trace --trace-steps tokenize,sample,decode
+"$APR" run model.gguf --prompt "Hi" --trace --trace-level payload   # or --trace-payload
+```
+
+The flag is `--trace-steps <a,b,c>` (comma-delimited), not `--trace=<...>`.
+`--trace-level` accepts `none|basic|layer|payload|chrome` and defaults to `basic`.
+
+Implementation: `crates/aprender-serve/src/inference_trace/` (a DIRECTORY — `mod.rs`
+plus `save_tensor*.rs`, `gpu_stage_dump.rs`, `tracer_contracts.rs`, …).
+
+TraceSteps (`TraceStep` in `crates/aprender-serve/src/inference_trace/mod.rs`): `Tokenize`, `Embed`, `LayerNorm`,
+`Attention`, `FFN`, `TransformerBlock`, `LmHead`, `Sample`, `Decode`, `KernelLaunch`
+(PTX-level, GH-219), `BrickProfile` (trueno `BrickProfiler`).
+
+### FFN Gate+Up Kernel Fusion (PMAT-FFN-FUSION)
+
+The SwiGLU FFN block fuses gate and up projections into a single rayon dispatch via
+`generic_fused_gate_up_matvec_into<F>` (`crates/aprender-serve/src/quantize/fused_gate_up.rs:63`). This halves
+rayon spawn overhead (56→28 dispatches/token on 28-layer models) and improves L1/L2 cache
+reuse by loading the activation vector once per midi-tile instead of twice.
+
+- **Fused path**: Q4K, Q5K, Q6K when both gate+up weights share the same qtype and dims
+- **Fallback**: `rayon::join` with two separate `fused_matmul_into` for mixed types
+- **Q8K path**: Existing `fused_q4k_q8k_ffn_up_gate_into` still used when Q8K activations available
+- **Key files**: `crates/aprender-serve/src/quantize/fused_gate_up.rs`,
+  `crates/aprender-serve/src/gguf/inference/fused_matmul_into.rs` (`fused_gate_up_matmul_into`)

@@ -73,6 +73,11 @@ hub-publish = ["hub", "dep:reqwest"]  # HuggingFace Hub publishing + leaderboard
 # Inference-path explainability visualization (re-homed from aprender-viz, APR-MONO §S #1978).
 # train→viz is the correct DAG direction; the dropped viz→entrenar edge had closed a cycle.
 viz = ["dep:batuta-common"]
+# Phase 3 D-05: the two-stage SetFit trainer's home. The feature must be dependency
+# CLOSED — enabling it pulls in the encoder (`aprender/setfit`), the Phase 2 data
+# protocol and the Philox RNG, and NOTHING ELSE. It must also compose with every
+# CPU-buildable feature above; `make setfit-feature-matrix` checks all three legs.
+setfit = ["aprender/setfit", "dep:aprender-contrastive-data", "dep:aprender-rand"]
 
 [dependencies]
 # Contract macros for pre/post-condition enforcement (zero cost in release)
@@ -83,6 +88,13 @@ trueno = { workspace = true, features = ["parallel"] }
 trueno-gpu = { version = "0.69.3", path = "../aprender-gpu", package = "aprender-gpu", optional = true }  # CUDA compute (APR-MONO single-source-of-truth)
 realizar = { workspace = true, optional = true }
 aprender = { path = "../aprender-core", version = "0.69.3", package = "aprender-core" }  # ML interpret module + .apr format + tokenizers
+# Phase 3 D-05: the single new dependency edge, aprender-train -> aprender-contrastive-data.
+# Verified acyclic — aprender-contrastive-data has NO edge to aprender-core.
+# Both use the `workspace = true` form because root Cargo.toml already carries
+# [workspace.dependencies] entries for them (path + version 0.69.3); re-declaring the
+# path here would create a second place a version bump has to be remembered.
+aprender-contrastive-data = { workspace = true, optional = true }
+aprender-rand = { workspace = true, optional = true }  # Philox (lib name `trueno_rand`) — epoch shuffle
 trueno-viz = { workspace = true, features = ["terminal"] }
 batuta-common = { workspace = true, optional = true }  # WithDimensions trait for `viz` feature (APR-MONO §S #1978)
 presentar-terminal = { workspace = true, optional = true }
@@ -95,7 +107,17 @@ getrandom = { version = "0.3", features = ["wasm_js"], optional = true }  # WASM
 js-sys = { version = "0.3", optional = true }  # JavaScript types for WASM
 serde = { version = "1.0", features = ["derive"] }
 serde_yaml = "0.9"
-serde_json = "1.0"
+# `float_roundtrip` is REQUIRED, not an optimization. Without it serde_json's fast
+# float parser can land one ULP away from the value ryu wrote, so
+# `serialize(parse(bytes)) != bytes` for ordinary f64 statistics. Plan 03-08's
+# verify policy hashes a bundle's bytes and then asserts that re-serializing the
+# reloaded bundle reproduces them, so a one-ULP parse would make every honest
+# codec fail its own round-trip closure check. Measured on the fixture's evidence
+# summary: `0.00009142675446597625` round-tripped to `...624`. The feature adds no
+# dependency (`float_roundtrip = []` in serde_json's manifest); it only selects the
+# correctly-rounding parse path. `bundle_serde_json_parses_floats_round_trip_exactly`
+# is the runnable proof that it is engaged.
+serde_json = { version = "1.0", features = ["float_roundtrip"] }
 toml = "0.8"
 thiserror = "2.0"
 rand = "0.9"
@@ -141,6 +163,9 @@ serde_yaml_ng = "0.10"
 [dev-dependencies]
 proptest = "1.4"
 approx = "0.5"
+# Phase 3 (03-10 T1): the seven compile-fail proofs in `tests/ui/`. Same form as
+# `aprender-contrastive-data`'s, which is where the harness pattern comes from.
+trybuild = { workspace = true }
 tempfile = "3.8"
 criterion = { workspace = true }
 arrow = { version = "59", default-features = false }  # For MNIST example array access
@@ -149,6 +174,22 @@ insta = { version = "1.42", features = ["json", "yaml"] }  # Snapshot testing fo
 dirs = "5.0"  # Cache directory detection for examples
 jugar-probar = { path = "../aprender-test-lib", package = "aprender-test-lib" }  # TUI snapshot testing (ENT-140); PMAT-955: path-only dev-dep
 provable-contracts = { path = "../aprender-contracts", package = "aprender-contracts" }  # PMAT-955: path-only dev-dep (no version)
+# Phase 3 (03-05): the deterministic SetFit trainer fixture loads a REAL MiniLM slice via
+# `SetFitMiniLm::from_slice_fixture`, which aprender-core gates behind
+# `conformance-fixtures` — NOT behind `setfit`. Measured, not assumed: the constructor is
+# `#[cfg(feature = "conformance-fixtures")]` (aprender-core/src/setfit/mod.rs:237), so the
+# plan's "it is `pub`, so cross-crate reuse needs no new door" is true of its VISIBILITY and
+# false of its REACHABILITY.
+#
+# A dev-dependency is the only mechanism that enables a dependency's feature for TEST builds
+# alone: cargo rejects optional dev-dependencies, and adding `aprender/conformance-fixtures`
+# to the `setfit` feature would hand PRODUCTION builds a test-only constructor plus the
+# `encoder()`/`tokenize()` conformance accessors — the test-support backdoor 03-10 exists to
+# reject. The D-05 closure guards in `make setfit-feature-matrix` traverse `-e normal`, which
+# does not follow dev edges, so the shipped dependency set is unchanged.
+aprender = { path = "../aprender-core", package = "aprender-core", features = [  # PMAT-955: path-only dev-dep (no version)
+    "conformance-fixtures",
+] }
 
 [[bench]]
 name = "monitor_bench"

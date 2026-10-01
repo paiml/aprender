@@ -125,7 +125,7 @@ pub enum ExtendedCommands {
         /// Path to model file or checkpoint directory
         #[arg(value_name = "FILE")]
         file: PathBuf,
-        /// Dataset: wikitext-2, lambada, or custom
+        /// Dataset: wikitext-2, lambada, or custom (perplexity tasks); tweet-eval-stance (--task classify only)
         #[arg(long, default_value = "wikitext-2")]
         dataset: String,
         /// Custom text (when dataset=custom)
@@ -163,6 +163,38 @@ pub enum ExtendedCommands {
         /// Sampling temperature (0.0 = greedy, 0.8 = standard for pass@k>1)
         #[arg(long, default_value = "0.0")]
         temperature: f32,
+        /// SetFit only: the selection-manifest.json `apr data select` wrote
+        ///
+        /// The artifact records the selection's hashes; this is what they are compared
+        /// against. Reached only when --task classify names a setfit-apr-v1 artifact.
+        #[arg(long, value_name = "FILE")]
+        selection: Option<PathBuf>,
+        /// SetFit only: which canonical split to measure (`validation` or `test`)
+        ///
+        /// `validation` may COMMIT a selection by writing --lock-out. `test` REQUIRES a lock
+        /// a prior validation run committed, because canonical test rows are reachable only
+        /// through a selection decision that was recorded before the test command ran.
+        #[arg(long, default_value = "validation")]
+        split: String,
+        /// SetFit only, `--split validation`: where to write the durable selection lock
+        ///
+        /// Omitting it measures and reports but COMMITS NOTHING, and the report says so: a
+        /// validation run that did not commit a selection cannot later unlock test access.
+        #[arg(long = "lock-out", value_name = "FILE")]
+        lock_out: Option<PathBuf>,
+        /// SetFit only, `--split test`: the lock a prior validation run committed
+        #[arg(long = "selection-lock", value_name = "FILE")]
+        selection_lock: Option<PathBuf>,
+        /// SetFit only, `--split validation`: another artifact to consider (repeatable)
+        ///
+        /// Each is reloaded and evaluated through the SAME door as the primary artifact, so a
+        /// candidate trained on a different corpus or selection is refused rather than
+        /// silently compared against ones that were not.
+        #[arg(long, value_name = "APR")]
+        candidate: Vec<PathBuf>,
+        /// SetFit only: replace an existing --lock-out
+        #[arg(long)]
+        force: bool,
     },
     /// Deep profiling with Roofline analysis
     Profile {
@@ -833,6 +865,32 @@ pub enum ExtendedCommands {
         #[arg(long, value_name = "DIR")]
         val_shard: Option<PathBuf>,
     },
+    /// Classify text with a model — auto-detects the family from the artifact's tag
+    ///
+    /// GENERIC by decision (D-06): a `setfit-apr-v1` classifier is an APR, so it is
+    /// predicted with the same command as any other model. Routing reads the typed
+    /// `model_type` tag and NEVER tensor names, so a file that merely looks like a
+    /// classifier stays a plain APR.
+    Predict {
+        /// Path to the model file
+        #[arg(value_name = "FILE")]
+        file: PathBuf,
+        /// A text to classify; repeat for a batch, order is response order
+        #[arg(long, value_name = "STR")]
+        text: Vec<String>,
+        /// A classify request document: `{"texts": [...], "include_logits": false}`
+        ///
+        /// This is the SAME document `POST /v1/classify` accepts, and deliberately
+        /// NOT one text per line: a line-delimited file cannot carry a text that
+        /// contains a newline, so the CLI and the HTTP surface would receive
+        /// different ordered inputs while appearing to agree. Unknown keys are
+        /// refused, and the file is bounded before it is parsed.
+        #[arg(long, value_name = "FILE", conflicts_with = "text")]
+        input: Option<PathBuf>,
+        /// Include per-class logits in the response
+        #[arg(long)]
+        logits: bool,
+    },
     /// Tokenizer training pipeline (plan/apply) — BPE vocabulary learning
     Tokenize {
         #[command(subcommand)]
@@ -842,6 +900,16 @@ pub enum ExtendedCommands {
     Data {
         #[command(subcommand)]
         command: DataCommands,
+    },
+    /// Native SetFit classifier training — consumes `apr data` artifacts, emits APR
+    ///
+    /// Feature-gated (`--features setfit`) and training-only by decision (D-06):
+    /// prediction, evaluation and inspection of a `setfit-apr-v1` artifact are the
+    /// generic `apr` commands, because the artifact is an APR like any other.
+    #[cfg(feature = "setfit")]
+    Setfit {
+        #[command(subcommand)]
+        command: SetfitCommands,
     },
     /// Pipeline orchestration (plan/apply/status) — wraps forjar DAG engine
     Pipeline {

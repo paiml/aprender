@@ -17,10 +17,10 @@ here disagrees with its command, the command wins.
 
 | Fact | Derive with | Sample (2026-08-13) |
 |------|-------------|---------------------|
-| Workspace crates | `cargo metadata --no-deps --format-version 1 \| python3 -c "import json,sys;print(len(json.load(sys.stdin)['packages']))"` | 78 — 77 under `crates/` plus the root facade |
-| Dirs under `crates/` | `ls -1d crates/*/ \| wc -l` | 82. **This is not the crate count**: 4 are `exclude`d in the root `Cargo.toml`, and `aprender-contracts-staging` has no manifest. A directory is not a crate |
+| Workspace crates | `cargo metadata --no-deps --format-version 1 \| python3 -c "import json,sys;print(len(json.load(sys.stdin)['packages']))"` | 86 — 85 under `crates/` plus the root facade (re-derived 2026-09-06) |
+| Dirs under `crates/` | `ls -1d crates/*/ \| wc -l` | 92 (2026-09-06). **This is not the crate count**: 5 are `exclude`d in the root `Cargo.toml` (`aprender-present`, `aprender-test`, `aprender-train-canary`, `aprender-viz-ttop`, `facades`) and 2 have no manifest (`aprender-contracts-staging`, `deploy`), so 92 - 7 = the 85 members under `crates/`. A directory is not a crate |
 | `apr` subcommands | `apr --help`; registry is `contracts/apr-cli-commands-v1.yaml` §`commands`, mirrored by `crates/apr-cli/tests/cli_commands.rs::registered_commands` | 111, in 10 categories |
-| Provable contracts | `find contracts -name '*.yaml' \| wc -l` | 1768 |
+| Provable contracts | `find contracts -name '*.yaml' \| wc -l` | 1790 (re-derived 2026-09-06) |
 | Workspace lib tests | the `Summary` line of CI's `workspace-test` job (see Build Commands for the exact nextest invocation) | **80,604 passed**, 130 skipped, across 69 binaries — CI run `31631488466`, `main` @ `d40756541`, 2026-08-12 |
 | Released version | `git tag --sort=-creatordate \| head -1` · `gh release list` | **v0.63.0**, 2026-08-01 ("provenance") |
 
@@ -58,7 +58,7 @@ and `src/format/…` paths this file still advertised. Counts it cannot check, y
 - Pivot strategies (e.g. when P0-A blocks, immediately try P0-B; when P0-B blocks, surface §81-class amendment and continue to next prereq)
 
 ### Check in BEFORE acting (real escalations only)
-- Compute spend > 1hr on non-lambda-vector hosts (lambda-vector is pre-authorized per `feedback_compute_pre_authorized.md`)
+- Compute spend > 1hr on non-lambda-vector hosts (lambda-vector is pre-authorized)
 - Destructive ops: `git push --force`, `gh release delete`, dropping branches/tags on main, `cargo yank`
 - Modifying CI workflows (`.github/workflows/*.yml`)
 - ~~Crates.io publish cascade (always ask before `make publish`)~~ **WITHDRAWN** — T-4 is unattended under standing operator authorization (APR-RELEASE-001 rev. 2026-09-17 §T-4; 0.68.1 and 0.68.2 both shipped that way with `attended_min 0`; operator, 2026-09-20, verbatim: *"tell agent to auto-publish and never wait for me"*). The pre-publish gates ARE the authorization: dogfood GO on the release commit, release assets verified, clean-room green on the tag, publish preflight R1–R6, and the `--check` dry-run, which is a receipt and not a stop. `cargo yank` remains a check-in.
@@ -162,27 +162,11 @@ than no diagnostic: it produces a confident answer about code you are not runnin
 
 All tools support GGUF, APR, and SafeTensors formats. If a tool says "format not supported", that's a BUG.
 
-### Realizar Inference Tracing
+### Realizar Inference Tracing / FFN kernel fusion
 
-**There is no `realizar` binary.** `realizar` is the *library* name of the
-`aprender-serve` package (`[lib] name = "realizar"`, `crates/aprender-serve/Cargo.toml`);
-that package ships no `[[bin]]`. Tracing is driven through `apr run`:
-
-```bash
-"$APR" run model.safetensors --prompt "2+2?" --trace
-"$APR" run model.gguf --prompt "Hi" --trace --trace-steps tokenize,sample,decode
-"$APR" run model.gguf --prompt "Hi" --trace --trace-level payload   # or --trace-payload
-```
-
-The flag is `--trace-steps <a,b,c>` (comma-delimited), not `--trace=<...>`.
-`--trace-level` accepts `none|basic|layer|payload|chrome` and defaults to `basic`.
-
-Implementation: `crates/aprender-serve/src/inference_trace/` (a DIRECTORY — `mod.rs`
-plus `save_tensor*.rs`, `gpu_stage_dump.rs`, `tracer_contracts.rs`, …).
-
-TraceSteps (`TraceStep` in `crates/aprender-serve/src/inference_trace/mod.rs`): `Tokenize`, `Embed`, `LayerNorm`,
-`Attention`, `FFN`, `TransformerBlock`, `LmHead`, `Sample`, `Decode`, `KernelLaunch`
-(PTX-level, GH-219), `BrickProfile` (trueno `BrickProfiler`).
+Both live in `crates/aprender-serve/CLAUDE.md`, which loads automatically when you
+work under that crate. **There is no `realizar` binary** — `realizar` is the [lib]
+name of the `aprender-serve` package; tracing is driven through `apr run --trace`.
 
 ## Architecture
 
@@ -213,6 +197,79 @@ the crate count run the command in the Project Overview table, don't trust a num
 | Model Serving / HTTP / KV Cache | **FORBIDDEN** | Primary | Compute/Storage |
 | GGUF/SafeTensors Loading | Never | Primary | - |
 | CUDA/GPU Inference | Never | Primary | Kernels |
+| SetFit Classification Inference | **Primary** (aprender-core: loader + `VerifiedSetFitModel::classify`) | HTTP transport ONLY (route/`AppState`/readiness — calls core) | Compute |
+| Time-Series Forecasting (Prophet / NeuralProphet fit+predict, Chronos-Bolt zero-shot) | **Primary** (`crates/aprender-forecast`; thin pmcp servers `crates/aprender-mcp-forecast` and `crates/aprender-mcp-chronos` are transport only) | Never | Compute (`blis::gemm_blis`, NEON 8x6 kernel) |
+| Decision-Model Classification (Laya on a ModernBERT encoder; Kev/Jev later) | **Primary** (`crates/aprender-decide` on `crates/aprender-core/src/models/modernbert`; thin servers `crates/aprender-mcp-decide` and `crates/aprender-mcp-decide-lambda` are transport only) | Never | Compute (`blis::gemm_blis`) |
+
+**The SetFit row is a deliberate, documented EXCEPTION (Phase 4 D-09), not drift.**
+Realizar-first exists because core's LLM inference was ~750x slower than realizar's
+kernels — a performance argument. It does not apply here: SetFit is a 22M-param encoder
+whose ONLY conformance-proven implementation is core's fixture-verified graph path, so the
+evidence lives in core. `aprender-serve` owns the route, `AppState` and readiness and calls
+core's verified model; it does not reimplement the tokenizer, pooling or head. Serving a
+second, unproven port would violate OPS-03 (one implementation per operation) and re-open
+every Phase 1 conformance fixture. Schema and load rules: `contracts/setfit-apr-v1.yaml`.
+
+**The Forecasting row is a second deliberate EXCEPTION (Phase 6 D-07), for a different
+reason.** It follows SetFit deliberately rather than inventing a second precedent, but
+the realizar-first rule — a *performance* argument, core's LLM inference being ~750x
+slower than realizar's kernels — does not reach here at all. Prophet and NeuralProphet
+"inference" IS a fit: L-BFGS on a Stan-shaped objective and AdamW on the autograd, which
+is training-side machinery by this table's own first row, and the fit runs inside every
+stateless `forecast` call (D-01). They have no realizar path to be slower than.
+Chronos-Bolt is an 8.65M-parameter T5 with no tokenizer, no KV cache and no LLM kernels;
+its ONLY parity-proven implementation is the spike-005/007 port in
+`crates/aprender-forecast/src/bolt.rs`, at 9.5e-7 against `chronos-forecasting` 2.3.1
+(`contracts/chronos-bolt-parity-v1.yaml`) — so, exactly as with SetFit, the evidence lives
+where the code is, and serving a second, unproven port through realizar would violate
+OPS-03 (one implementation per operation) and re-open every parity fixture.
+
+The SafeTensors carve-out is scoped to that one loader, not a general licence: it reads a
+single pinned Chronos checkpoint and nothing else. The GGUF row is untouched — forecasting
+never loads GGUF.
+
+The thin servers own the tool boundary and transport only; `aprender-serve` is untouched.
+That boundary is enforced rather than asserted: `contracts/forecast-tool-boundary-v1.yaml`
+holds every bound and refusal for both servers, and the library door re-checks nothing the
+transport already validated. A server that grew its own numerics would be the drift this
+row does not licence. `crates/aprender-mcp-setfit/` is the template both follow. Tolerances
+and the tool boundary: `contracts/forecast-tool-boundary-v1.yaml`,
+`contracts/chronos-bolt-parity-v1.yaml`.
+
+**The Decision-model row is a third deliberate EXCEPTION (Phase 8 D-16), argued like the
+two above.** Realizar-first is a performance argument about LLM kernels (core's LLM inference
+~750x slower than realizar's). It does not reach here: Laya is a 421M-parameter bidirectional
+ModernBERT encoder with a small scoring head, with no generation, no KV cache and no LLM
+kernels. Its ONLY parity-proven implementation is the in-tree port of spike 025
+(`crates/aprender-decide` on the reusable encoder in `crates/aprender-core/src/models/modernbert`),
+so serving a second port through realizar would violate OPS-03 (one implementation per
+operation) and re-open the parity fixtures. `contracts/laya-parity-v1.yaml` holds two bars,
+and both are stated here: the FIXTURE bar keeps served probabilities within 1e-5 of torch fp32
+on the spike-025 rows (measured 3.841e-6 through the `.apr` path, plan 08-09); the PACK/VERIFY
+re-score bar is max(1e-5, 4 x the per-checkpoint float64-referenced torch noise) (amendment A1,
+plan 08-13). Every one of those numbers is aarch64; x86_64 is unmeasured.
+
+What this row may claim is read from two records and nothing else. The one declared gate run
+passed: a TweetEval abortion-stance model (`demo_s64` in `contracts/laya-finetune-gate-v1.yaml`,
+plan 08-16) beat zero-shot macro-F1 by 0.222 with post-calibration ECE 0.044 against the 0.10
+bar, the median of three seeds. Claim scope, quoted from that contract's `eval_set.claim`: "The
+gate now certifies margin and calibration on held-out data drawn like the tenant's shots. It
+does NOT certify robustness to a shifted input population." It is in-distribution calibration,
+not shift robustness: this eval set was chosen after the SemEval-2016 test split failed the gate
+(spike 027), and that split is kept as a reported shift probe, where the same model's ECE is
+0.1896. The model is live on pmcp.run as `aprender-mcp-decide` on the 10,240 MB tier (plan
+08-30, deployed-passed): at most 8 texts and 800 built tokens per call. Eight proven-cold samples
+of the two maximal requests took 22.6-27.0 s at the client against the 30 s gateway cap, so the
+worst left 2.99 s; ten warm calls took 0.87-0.98 s. Records: `08-GATE-RUN-EVIDENCE.json` and
+`08-LIVE-REDEPLOY-EVIDENCE.json` in the Phase 8 planning directory.
+
+The served artifact is `.apr` (`contracts/decide-apr-v1.yaml`), so the SafeTensors carve-out
+above is NOT widened: safetensors is read only by the back-office packer (`aprender_decide::pack`,
+driven by `crates/aprender-decide/examples/pack_laya.rs`), never by a server. The thin servers
+own transport and the boundary in `contracts/decide-tool-boundary-v1.yaml`, exactly as the
+forecast servers do. Training stays in Python (`scripts/laya_train`, gated by
+`contracts/laya-finetune-gate-v1.yaml`), and Rust re-derives that gate from the packed bytes
+before anything is deployable.
 
 ```rust
 // WRONG - bypasses realizar, 0.3 tok/s
@@ -252,19 +309,6 @@ see `docs/BEATS.md`: GPU decode on RTX 4090 sm_89 is at **parity** (1.015–1.10
 — a no-collapse floor. The old "apr beats Ollama 1.371×" headline is **withdrawn**.
 
 Architecture: Trueno SIMD backend, realizar fused dequant+matmul kernels, PagedAttention KV cache, optional wgpu/CUDA.
-
-### FFN Gate+Up Kernel Fusion (PMAT-FFN-FUSION)
-
-The SwiGLU FFN block fuses gate and up projections into a single rayon dispatch via
-`generic_fused_gate_up_matvec_into<F>` (`crates/aprender-serve/src/quantize/fused_gate_up.rs:63`). This halves
-rayon spawn overhead (56→28 dispatches/token on 28-layer models) and improves L1/L2 cache
-reuse by loading the activation vector once per midi-tile instead of twice.
-
-- **Fused path**: Q4K, Q5K, Q6K when both gate+up weights share the same qtype and dims
-- **Fallback**: `rayon::join` with two separate `fused_matmul_into` for mixed types
-- **Q8K path**: Existing `fused_q4k_q8k_ffn_up_gate_into` still used when Q8K activations available
-- **Key files**: `crates/aprender-serve/src/quantize/fused_gate_up.rs`,
-  `crates/aprender-serve/src/gguf/inference/fused_matmul_into.rs` (`fused_gate_up_matmul_into`)
 
 ## LAYOUT-001/002: Tensor Layout Safety
 
@@ -481,6 +525,21 @@ Clippy's lint set is **not monotonic**: the #2370 tree is clean on 1.93/1.96/1.9
 - `docs/BEATS.md` - the public beat scoreboard. Gated against `contracts/` by
   `crates/aprender-core/tests/readme_contract.rs`
 
+## Spike Findings (forecasting stack, LLM decision classifier)
+
+- **Spike findings for aprender** (implementation patterns, constraints, gotchas) → `Skill("spike-findings-aprender")`
+
+Spikes on the forecasting stack (Prophet / NeuralProphet ports, stateless `forecast` MCP servers,
+Chronos zero-shot ports and server, NEON GEMM kernel, and exogenous inputs — external regressors,
+events, and the no-argument bitwise-invariance release gate) and on the Kev / Qwen3.5 decision
+classifier (few-shot vs SetFit, upstream sync, Python→GGUF→Rust handoff, batched prefill, Lambda and
+Lambda Managed Instances deployment, and the Laya ModernBERT decision model) and on measured AWS hosting for
+Rust model MCP servers (default Lambda, Fargate scale-to-zero, Lambda Managed Instances) are packaged as implementation blueprints in
+`.claude/skills/spike-findings-aprender/`. The wrapped spike list is the skill's own
+`## Processed Spikes` section — re-derive the count from there, don't trust this sentence. Load the
+skill before building any of that; the raw experiments stay in `.planning/spikes/` (`MANIFEST.md`,
+`CONVENTIONS.md`, `WRAP-UP-SUMMARY.md`).
+
 ## APR CLI (`cargo install aprender`)
 
 111 commands across 10 categories as of 2026-08-15; the registry is
@@ -552,9 +611,18 @@ pv validate contracts/apr-code-parity-v1.yaml    # schema + falsification gates
 pv lint contracts/                               # validate + audit + score on all
 pv status contracts/tensor-layout-v1.yaml        # equations, obligations, coverage
 pv query "tensor layout" --limit 5               # search contracts by intent
-pv diff contracts/apr-mcp-server-v1.yaml HEAD~3  # semver bump suggestion
 pv coverage                                      # cross-contract obligation coverage
+
+# `pv diff` takes TWO FILESYSTEM PATHS, never a git revision
+# (`Diff { old: PathBuf, new: PathBuf }` — crates/aprender-contracts-cli/src/cli.rs:73-78).
+# Materialize the old revision with `git show` first, then diff two real files:
+git show HEAD~3:contracts/apr-mcp-server-v1.yaml > /tmp/apr-mcp-server-old.yaml
+pv diff /tmp/apr-mcp-server-old.yaml contracts/apr-mcp-server-v1.yaml  # semver bump suggestion
 ```
+
+Passing a revision where a path is expected does not error usefully — `pv` tries to
+open `HEAD~3` as a file and reports `Failed to read contract file: No such file or
+directory`, which reads like a missing contract rather than a misused flag.
 
 `pv --help` lists the full set (42 subcommands + `help` in pv 0.49.0): `explain,
 validate, check-parity, scaffold, extract-pytorch, codegen, kani, probar, status,
@@ -590,48 +658,6 @@ verify-bindings, migrate`.
 # BAD - Raw text search returns 500+ noisy matches with no context
 # GOOD - Semantic search returns 10 ranked functions with quality metrics
 pmat query "error handling" --limit 10
-```
-
-### Cross-Project Search
-
-The index automatically includes sibling projects (aprender, trueno, realizar).
-Query from any project to search 60k+ functions across all three codebases.
-
-```bash
-# Build index in each project first (one-time setup)
-cd ~/src/aprender && pmat query "init" --rebuild-index --limit 1
-cd ~/src/trueno && pmat query "init" --rebuild-index --limit 1
-cd ~/src/realizar && pmat query "init" --rebuild-index --limit 1
-
-# Now query from any project - siblings auto-merge
-pmat query "matrix multiplication" --limit 5
-```
-
-### Output Formats
-
-- Default (text): Human-readable with signatures and metrics
-- `--format json`: For parsing/scripting
-- `--format markdown`: For documentation
-- `--include-source`: Include full source code in results
-
-### Quick Reference
-
-```bash
-pmat query "<intent>"                    # Basic search
-pmat query "<intent>" --rank-by pagerank # Most important functions
-pmat query "<intent>" --format json      # Machine-readable
-pmat query "<intent>" --include-source   # Include full source code
-pmat query "<intent>" --exclude-tests    # Skip test functions
-
-# Git history search (find code by commit intent via RRF fusion)
-pmat query "fix serialization" -G
-pmat query "apr format" --git-history
-
-# Enrichment flags (combine freely)
-pmat query "ml algorithm" --churn                  # git volatility (commit count, churn score)
-pmat query "tensor operation" --duplicates          # code clone detection (MinHash+LSH)
-pmat query "loss function" --entropy                # pattern diversity (repetitive vs unique)
-pmat query "model training" --churn --duplicates --entropy --faults -G  # full audit
 ```
 
 ### Coverage-Guided Search (pmat 3.0.0+)

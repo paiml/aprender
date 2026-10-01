@@ -32,6 +32,11 @@ pub use hypothesis::{
     chisquare, f_oneway, ttest_1samp, ttest_ind, ttest_rel, AnovaResult, ChiSquareResult,
     TTestResult,
 };
+// Claims-layer f64 paired statistics (plan 05-04, D-05/D-06).
+pub use hypothesis::{
+    mean_f64, min_max_f64, paired_ci, paired_ci95_df9, sample_std_f64, ttest_1samp_f64,
+    ttest_rel_f64, PairedCi, TTestResultF64, PAIRED_DESIGN_N, T_CRIT_975_DF9,
+};
 
 use trueno::Vector;
 

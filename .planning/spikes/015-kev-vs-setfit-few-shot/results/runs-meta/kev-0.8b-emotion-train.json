@@ -1,0 +1,14 @@
+{
+ "run": "jaredpalmer/kev-0.8b",
+ "task": "emotion",
+ "split": "train",
+ "n": 3000,
+ "names_only": false,
+ "backend": "MLXDecisionModel",
+ "dtype": "bfloat16",
+ "load_s": 1.762776457995642,
+ "accuracy": 0.568,
+ "latency_ms_p50": 31.774708499142434,
+ "tokens_p50": 49.0,
+ "head_temperature": 2.406050072164233
+}

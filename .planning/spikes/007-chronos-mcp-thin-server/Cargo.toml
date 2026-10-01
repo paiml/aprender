@@ -1,0 +1,29 @@
+[package]
+name = "spike-007-chronos-mcp-thin-server"
+version = "0.0.0"
+edition = "2021"
+publish = false
+build = "build.rs"
+
+[workspace]
+
+[lib]
+name = "chronos_mcp"
+path = "src/lib.rs"
+
+[[bin]]
+name = "chronos-mcp"
+path = "src/main.rs"
+
+[dependencies]
+trueno = { path = "../../../crates/aprender-compute", package = "aprender-compute", features = ["parallel"] }
+half = "2.7"
+pmcp = { version = "2.19", features = ["streamable-http", "schema-generation"] }
+schemars = "1.0"
+serde = { version = "1", features = ["derive"] }
+serde_json = "1"
+tokio = { version = "1", features = ["full"] }
+axum = "0.8"
+
+[dev-dependencies]
+reqwest = { version = "0.12", features = ["json"] }

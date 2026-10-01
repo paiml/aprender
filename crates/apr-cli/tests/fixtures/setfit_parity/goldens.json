@@ -1,0 +1,256 @@
+{
+  "note": "Frozen library-leg answers for the 04-09 three-surface parity gate. Blessing is deliberate: set APR_BLESS_SETFIT_PARITY_GOLDENS=1 and the goldens.json + goldens.sha256 pair is rewritten together. Reviewing the resulting git diff is the control; the manifest is what makes an edit to goldens.json ALONE fail loudly.",
+  "schema_version": 1,
+  "artifact_sha256": "a704f0e0836e5b993babbcc2f4b6d55254ad39514b1e980709892ed6e3bc80c7",
+  "backend": "cpu:setfit-core:autograd-trueno-matmul",
+  "documents": [
+    {
+      "id": "batch",
+      "text_count": 8,
+      "include_logits": false,
+      "results": [
+        {
+          "label": "neutral",
+          "probabilities": [
+            0.18897816249762542,
+            0.38519725919164577,
+            0.4258245783107288
+          ],
+          "margin": 0.040627319119083016,
+          "token_count": 3,
+          "truncated": false
+        },
+        {
+          "label": "neutral",
+          "probabilities": [
+            0.1882488884459906,
+            0.3870755503693775,
+            0.42467556118463184
+          ],
+          "margin": 0.037600010815254326,
+          "token_count": 11,
+          "truncated": false
+        },
+        {
+          "label": "neutral",
+          "probabilities": [
+            0.18933835926591602,
+            0.38651146261854696,
+            0.42415017811553707
+          ],
+          "margin": 0.037638715496990105,
+          "token_count": 20,
+          "truncated": false
+        },
+        {
+          "label": "neutral",
+          "probabilities": [
+            0.18714998825852971,
+            0.3873917847330904,
+            0.4254582270083798
+          ],
+          "margin": 0.038066442275289436,
+          "token_count": 256,
+          "truncated": true
+        },
+        {
+          "label": "neutral",
+          "probabilities": [
+            0.188674129378152,
+            0.3866423676896865,
+            0.4246835029321615
+          ],
+          "margin": 0.03804113524247499,
+          "token_count": 24,
+          "truncated": false
+        },
+        {
+          "label": "neutral",
+          "probabilities": [
+            0.19127616756483448,
+            0.3851893743934076,
+            0.4235344580417579
+          ],
+          "margin": 0.038345083648350264,
+          "token_count": 8,
+          "truncated": false
+        },
+        {
+          "label": "neutral",
+          "probabilities": [
+            0.18835157601992095,
+            0.3864798842825632,
+            0.4251685396975159
+          ],
+          "margin": 0.0386886554149527,
+          "token_count": 2,
+          "truncated": false
+        },
+        {
+          "label": "neutral",
+          "probabilities": [
+            0.1885219021812737,
+            0.38607941255117123,
+            0.4253986852675549
+          ],
+          "margin": 0.03931927271638369,
+          "token_count": 7,
+          "truncated": false
+        }
+      ]
+    },
+    {
+      "id": "single",
+      "text_count": 1,
+      "include_logits": false,
+      "results": [
+        {
+          "label": "neutral",
+          "probabilities": [
+            0.19127616756483448,
+            0.3851893743934076,
+            0.4235344580417579
+          ],
+          "margin": 0.038345083648350264,
+          "token_count": 8,
+          "truncated": false
+        }
+      ]
+    },
+    {
+      "id": "batch_with_logits",
+      "text_count": 8,
+      "include_logits": true,
+      "results": [
+        {
+          "label": "neutral",
+          "probabilities": [
+            0.18897816249762542,
+            0.38519725919164577,
+            0.4258245783107288
+          ],
+          "logits": [
+            -0.7799354760481947,
+            -0.06781137747952926,
+            0.032460531366723444
+          ],
+          "margin": 0.040627319119083016,
+          "token_count": 3,
+          "truncated": false
+        },
+        {
+          "label": "neutral",
+          "probabilities": [
+            0.1882488884459906,
+            0.3870755503693775,
+            0.42467556118463184
+          ],
+          "logits": [
+            -0.7797567813399837,
+            -0.05890184876375315,
+            0.033803748616264784
+          ],
+          "margin": 0.037600010815254326,
+          "token_count": 11,
+          "truncated": false
+        },
+        {
+          "label": "neutral",
+          "probabilities": [
+            0.18933835926591602,
+            0.38651146261854696,
+            0.42415017811553707
+          ],
+          "logits": [
+            -0.7912920778466059,
+            -0.07766622789165467,
+            0.01525983322301272
+          ],
+          "margin": 0.037638715496990105,
+          "token_count": 20,
+          "truncated": false
+        },
+        {
+          "label": "neutral",
+          "probabilities": [
+            0.18714998825852971,
+            0.3873917847330904,
+            0.4254582270083798
+          ],
+          "logits": [
+            -0.7849358976731082,
+            -0.05740972469857297,
+            0.0363205000154494
+          ],
+          "margin": 0.038066442275289436,
+          "token_count": 256,
+          "truncated": true
+        },
+        {
+          "label": "neutral",
+          "probabilities": [
+            0.188674129378152,
+            0.3866423676896865,
+            0.4246835029321615
+          ],
+          "logits": [
+            -0.7791990704299678,
+            -0.06172026291483235,
+            0.032123778324603336
+          ],
+          "margin": 0.03804113524247499,
+          "token_count": 24,
+          "truncated": false
+        },
+        {
+          "label": "neutral",
+          "probabilities": [
+            0.19127616756483448,
+            0.3851893743934076,
+            0.4235344580417579
+          ],
+          "logits": [
+            -0.7699679586329466,
+            -0.06995115095344318,
+            0.024948629849291137
+          ],
+          "margin": 0.038345083648350264,
+          "token_count": 8,
+          "truncated": false
+        },
+        {
+          "label": "neutral",
+          "probabilities": [
+            0.18835157601992095,
+            0.3864798842825632,
+            0.4251685396975159
+          ],
+          "logits": [
+            -0.7630399843856139,
+            -0.04427046516320843,
+            0.05113536831231613
+          ],
+          "margin": 0.0386886554149527,
+          "token_count": 2,
+          "truncated": false
+        },
+        {
+          "label": "neutral",
+          "probabilities": [
+            0.1885219021812737,
+            0.38607941255117123,
+            0.4253986852675549
+          ],
+          "logits": [
+            -0.8111800131772497,
+            -0.09435112495589237,
+            0.0026326069233846283
+          ],
+          "margin": 0.03931927271638369,
+          "token_count": 7,
+          "truncated": false
+        }
+      ]
+    }
+  ]
+}

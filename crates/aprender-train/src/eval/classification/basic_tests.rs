@@ -88,6 +88,25 @@ mod tests {
     }
 
     #[test]
+    fn test_f1_average_for_explicit_classes() {
+        let y_pred = vec![0, 0, 1, 1, 2, 2];
+        let y_true = vec![0, 1, 1, 1, 2, 0];
+        let metrics = MultiClassMetrics::from_predictions(&y_pred, &y_true);
+
+        // Official TweetEval stance score includes against (1) and favor (2),
+        // while excluding none (0) from the final average.
+        let expected = (metrics.f1[1] + metrics.f1[2]) / 2.0;
+        assert_eq!(metrics.f1_avg_for_classes(&[1, 2]), Some(expected));
+    }
+
+    #[test]
+    fn test_f1_average_for_explicit_classes_rejects_invalid_input() {
+        let metrics = MultiClassMetrics::from_predictions(&[0, 1], &[0, 1]);
+        assert_eq!(metrics.f1_avg_for_classes(&[]), None);
+        assert_eq!(metrics.f1_avg_for_classes(&[1, 2]), None);
+    }
+
+    #[test]
     fn test_weighted_average() {
         let y_pred = vec![0, 1, 1, 2, 0];
         let y_true = vec![0, 1, 0, 2, 1];

@@ -456,6 +456,11 @@ fn test_health_response_serde() {
         compute_mode: "cpu".to_string(),
         model_loaded: true,
         uptime_sec: 1.0,
+        // Phase 4 OPS-05: absent when no SetFit classifier is resident. They are
+        // `#[serde(default)]`, so this round trip recovers `None` from a body
+        // that carries neither key.
+        classifier_artifact_sha256: None,
+        classifier_verified: None,
     };
     let json = serde_json::to_string(&health).expect("JSON serialization failed");
     let deserialized: crate::api::HealthResponse = serde_json::from_str(&json).expect("JSON deserialization failed");

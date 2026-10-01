@@ -264,6 +264,29 @@ tools:
     required:
       - base_model
 
+  - name: apr.predict
+    shipped_in: 'M4 slice 1 (SetFit classification over MCP)'
+    source: crates/aprender-mcp/src/tools/predict.rs
+    description: "Classify text with a model, auto-detecting the family from the artifact's typed tag. Wraps `apr predict <model> --input <request-document> --json`. Routing reads the artifact's `model_type` tag and NEVER tensor names, so a non-classifier APR is refused rather than silently scored."
+    cli_mapping: "apr predict <model_path> --input <request-document> --json"
+    args:
+      - name: model_path
+        type: string
+        required: true
+        description: "Path to the classifier artifact (a `setfit-apr-v1` .apr)"
+      - name: texts
+        type: array
+        items_type: string
+        required: true
+        description: "Texts to classify. Order is response order; a batch is one call, not one call per text."
+      - name: include_logits
+        type: boolean
+        required: false
+        description: "Include per-class logits in the response. Mapped to `apr predict --logits`."
+    required:
+      - model_path
+      - texts
+
 # ── Falsification gates ──
 # FALSIFY-MCP-008 is the flagship gate this contract unblocks. It landed in M3
 # (2026-04-18) alongside `build.rs` + `tests/falsify_mcp_008.rs` and is now

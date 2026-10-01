@@ -1,0 +1,8 @@
+error[E0599]: no method named `fit_head` found for struct `SetFitRun<Prepared>` in the current scope
+  --> tests/ui/setfit_fit_head_before_tune.rs:18:17
+   |
+18 |     let _ = run.fit_head();
+   |                 ^^^^^^^^ method not found in `SetFitRun<Prepared>`
+   |
+   = note: the method was found for
+           - `SetFitRun<EncoderTuned>`

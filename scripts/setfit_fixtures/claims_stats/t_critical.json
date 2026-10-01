@@ -1,0 +1,36 @@
+{
+  "generator": "gen_claims_fixtures.py",
+  "versions": {
+    "python": "3.13.7",
+    "numpy": "2.5.1",
+    "scipy": "1.18.0",
+    "scikit_learn": "1.9.0"
+  },
+  "formula": "t_crit = scipy.stats.t.ppf(0.975, df)",
+  "note": "A1 VERIFIED IN THE PINNED ENV. df is fixed at 9 by the ten-seed benchmark design, so the Rust side freezes ONE constant and implements no inverse CDF. The df=5 and df=19 rows are context only -- nothing consumes them.",
+  "cross_checks": [
+    "scipy.stats.t.cdf(value, df) == 0.975 to 1e-12 for every row"
+  ],
+  "primary": {
+    "df": 9,
+    "q": 0.975,
+    "value": 2.262157162798205
+  },
+  "context": [
+    {
+      "df": 5,
+      "q": 0.975,
+      "value": 2.5705818356363146
+    },
+    {
+      "df": 9,
+      "q": 0.975,
+      "value": 2.262157162798205
+    },
+    {
+      "df": 19,
+      "q": 0.975,
+      "value": 2.0930240544083087
+    }
+  ]
+}

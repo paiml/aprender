@@ -1,0 +1,64 @@
+[package]
+name = "aprender-mcp-decide-lambda"
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+repository.workspace = true
+authors.workspace = true
+rust-version.workspace = true
+description = "AWS Lambda loopback wrapper for the thin Laya decide MCP server (pmcp.run deployment, weights from S3)"
+readme = "README.md"
+# A deployment unit (Phase 8 D-15), never a library: registered in FALSIFY-MONO-011's
+# deployment_unit_bins, which requires publish = false.
+publish = false
+
+# AWS Lambda's Custom Runtime API requires the binary to be named `bootstrap`
+# exactly — a platform constant, not a choice. `cargo pmcp deploy` finds the
+# deployable by this name.
+[[bin]]
+name = "bootstrap"
+path = "src/main.rs"
+
+[lib]
+name = "aprender_mcp_decide_lambda"
+path = "src/lib.rs"
+
+[dependencies]
+# The server crate owns the tool surface, the bounds and the load doors; this crate is
+# a transport shim over build_server + load_model_from_bytes (the chronos-lambda shape).
+aprender-mcp-decide = { path = "../aprender-mcp-decide" }
+# A NORMAL dependency, not a dev one: the local-file source reads through
+# `artifact::read_decide_apr_bytes_bounded` and the S3 loader caps on
+# `ArtifactLimits::CONTRACTED` in library code.
+aprender-decide = { path = "../aprender-decide" }
+pmcp = { version = "2.19", features = ["streamable-http", "schema-generation"] }
+
+# The cold-start S3 fetch (D-18). `= "1"` resolves to the ALREADY-LOCKED 1.8.18 /
+# 1.137.0 that aprender-setfit-train-lambda uses. Never `cargo update` these: newer
+# aws-sdk-s3 needs rustc 1.94.1 and rust-toolchain.toml pins 1.93.0.
+aws-config = "1"
+aws-sdk-s3 = "1"
+# Bounded concurrency (a FuturesUnordered) over disjoint BORROWED slices of the one
+# pre-sized buffer — no 'static spawn, so no per-part copy.
+futures = { workspace = true }
+
+lambda_http = "0.13"
+tokio = { workspace = true }
+reqwest = { version = "0.12", default-features = false, features = ["json", "rustls-tls"] }
+once_cell = "1.19"
+
+serde = { workspace = true }
+serde_json = { workspace = true }
+tracing = "0.1"
+tracing-subscriber = { version = "0.3", features = ["env-filter"] }
+
+[dev-dependencies]
+tempfile = { workspace = true }
+# tests::lambda_request_rows_are_swept reads decide-tool-boundary-v1's untrusted_input_bounds
+# (the same workspace serde_yaml aprender-mcp-decide's sweep uses; already in Cargo.lock).
+serde_yaml = { workspace = true }
+# `start_paused` clocks for the ATTEMPT_TIMEOUT / DOWNLOAD_DEADLINE tests.
+tokio = { workspace = true, features = ["test-util"] }
+
+[lints]
+workspace = true

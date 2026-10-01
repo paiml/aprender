@@ -1,0 +1,88 @@
+# Deployment config for the thin SetFit MCP server (pmcp.run).
+# The deploy ROOT is the repo root: cargo-pmcp discovers the Lambda wrapper
+# crate (crates/aprender-mcp-setfit-lambda, bin `bootstrap`) by scanning the
+# workspace, and `cargo pmcp configure use <target>` anchors its active-target
+# state here. Deploy from the repo root:
+#   cargo pmcp deploy --target <named-target> --no-color
+# Do NOT set APRENDER_SETFIT_MODEL in the BUILD environment for pmcp.run
+# deploys: that embeds the model into the binary, and the resulting ~95MB
+# bootstrap OOM-kills the platform's deployment-creation backend. The model
+# ships as an asset instead (see [assets] / [environment] below).
+# The named target (~/.pmcp/config.toml) supplies the account/region binding.
+
+[target]
+type = "pmcp-run"
+version = "1.0.0"
+
+[aws]
+region = "us-east-1"
+
+[server]
+name = "aprender-setfit-predict"
+# The 22M-param MiniLM encoder plus a 256-text batch's activations need real
+# headroom; 512MB (the scaffold default) OOMs a full-batch classify.
+memory_mb = 2048
+timeout_seconds = 60
+
+[environment]
+RUST_LOG = "info"
+# The model rides as a deployment-package ASSET (see [assets]); the runtime
+# resolves this path against $LAMBDA_TASK_ROOT. Embedding it in the binary
+# instead produced a 95MB bootstrap that OOM-killed pmcp.run's
+# deployment-creation backend ("signal: killed", 2x reproduced 2026-08-18).
+# The artifact ships under its true .apr name: the platform allowlist admits
+# .apr/.safetensors/.gguf as of dev Amplify build #1114 (2026-08-19), closing
+# pilot finding #2. The path resolves against $LAMBDA_TASK_ROOT.
+APRENDER_SETFIT_MODEL = "assets/models/setfit-abortion-s17x8.apr"
+
+[secrets]
+
+[auth]
+enabled = false
+provider = "none"
+callback_urls = []
+
+[auth.dcr]
+enabled = true
+public_client_patterns = [
+    "claude",
+    "desktop",
+    "cursor",
+    "mcp-inspector",
+    "chatgpt",
+]
+default_scopes = [
+    "openid",
+    "email",
+    "mcp/read",
+]
+allowed_scopes = [
+    "openid",
+    "email",
+    "profile",
+    "mcp/read",
+    "mcp/write",
+]
+
+[auth.scopes.custom]
+
+[observability]
+log_retention_days = 30
+enable_xray = true
+create_dashboard = true
+
+[observability.alarms]
+error_threshold = 10
+latency_threshold_ms = 15000
+
+[assets]
+include = ["models/setfit-abortion-s17x8.apr"]
+exclude = [
+    "**/*.tmp",
+    "**/.DS_Store",
+]
+
+[composition]
+tier = "foundation"
+allow_composition = true
+internal_only = false

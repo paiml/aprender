@@ -259,6 +259,49 @@ fn test_gemm_parallel_shared_b_non_aligned() {
     assert!(max_diff < 1e-1, "FALSIFY-SHARED-B-002: max diff {max_diff} >= 1e-1");
 }
 
+/// Falsifier for [`shared_b_has_microkernel`]: on a target with no 8x32 microkernel the
+/// shared-B entry point must FALL BACK and still produce the reference answer, rather than
+/// entering a hot loop whose full-tile branch is an empty `#[cfg]` block and returning an
+/// all-zero C.
+///
+/// The bug this guards reported "max diff 39.2" against a 1e-1 tolerance, which read as an
+/// accuracy problem; the output was in fact 0 of 65536 cells written, and the 39.2 was
+/// simply max(reference). So this asserts the thing that actually distinguishes the two:
+/// C must not come back untouched. It is deliberately NOT gated on `target_arch`, so it is
+/// meaningful on x86_64 (where it proves the microkernel path writes) and on aarch64 (where
+/// it proves the fallback writes).
+/// Refs `.planning/debug/gemm-shared-b-parallel.md` (FALSIFY-SHARED-B-001).
+#[cfg(feature = "parallel")]
+#[test]
+fn shared_b_falls_back_without_the_8x32_microkernel() {
+    use super::super::parallel::shared_b_has_microkernel;
+
+    // 256^3 = 16.7M flops, above the 8M single-thread bailout, and mr/nr-aligned — the
+    // exact shape that was returning all zeros.
+    let n = 256;
+    let a: Vec<f32> = (0..n * n).map(|i| ((i % 11) as f32) * 0.1).collect();
+    let b: Vec<f32> = (0..n * n).map(|i| ((i % 7) as f32) * 0.1).collect();
+    let mut c = vec![0.0f32; n * n];
+    super::super::parallel::gemm_blis_parallel_shared_b(n, n, n, &a, &b, &mut c).unwrap();
+
+    let nonzero = c.iter().filter(|&&v| v != 0.0).count();
+    assert!(
+        nonzero > 0,
+        "shared-B wrote 0 of {} cells: the full-tile branch computed nothing and C was \
+         returned at its zero initial value (has_microkernel = {})",
+        c.len(),
+        shared_b_has_microkernel()
+    );
+
+    // The predicate must agree with the architecture it describes: there is no 8x32
+    // microkernel anywhere but x86_64, so a `true` off x86_64 means the guard has been
+    // widened without a kernel behind it.
+    assert!(
+        !shared_b_has_microkernel() || cfg!(target_arch = "x86_64"),
+        "shared_b_has_microkernel() must never be true off x86_64"
+    );
+}
+
 /// Falsifier for the 2026-06-13 thin-NN-GEMM serial routing fix: the dispatch
 /// MUST run thin NN-scale GEMMs serially (rayon was measured 2.2x slower) while
 /// still parallelizing square sub-64M and large GEMMs. Guards

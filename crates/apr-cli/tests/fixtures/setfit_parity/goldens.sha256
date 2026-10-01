@@ -1,0 +1,5 @@
+# SHA-256 manifest for the 04-09 parity goldens (Ph1 D-13).
+# Regenerate together with goldens.json:
+#   APR_BLESS_SETFIT_PARITY_GOLDENS=1 cargo test -p apr-cli \
+#     --features setfit,inference --test setfit_parity golden
+ee942f6c8dd6e8049d4c99dca5df4dade6363f3591b7d7f1f63a4ef7d6125331  goldens.json

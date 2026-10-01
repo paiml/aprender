@@ -62,6 +62,7 @@ fn falsify_mcp_002_tools_list_schema_shape() {
         "apr.run",
         "apr.serve",
         "apr.finetune",
+        "apr.predict",
     ] {
         assert!(names.contains(&expected), "{expected} registered");
     }

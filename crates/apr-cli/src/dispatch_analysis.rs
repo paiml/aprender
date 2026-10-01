@@ -413,8 +413,61 @@ fn dispatch_alimentar_passthrough(
     }
 }
 
-fn dispatch_data_command(command: &DataCommands, json: bool) -> std::result::Result<(), CliError> {
+fn dispatch_data_command(command: &DataCommands, cli: &Cli) -> std::result::Result<(), CliError> {
+    let json = cli.json;
     match command {
+        DataCommands::TweetEvalStance {
+            output,
+            profile,
+            source,
+            revision,
+            force,
+        } => commands::data_tweeteval::run(
+            output,
+            *profile,
+            source.as_deref(),
+            revision,
+            *force,
+            cli.offline,
+            json,
+        ),
+        // `cli.offline` is deliberately NOT passed to these two arms. Neither command
+        // opens a socket — `aprender-contrastive-data` cannot (the D-04 bytes boundary is
+        // enforced by `make contrastive-data-boundary`) and the adapter only reads local
+        // files. Threading `offline` through so it could be ignored would advertise a
+        // network switch on a command that has no network to switch off.
+        DataCommands::Select {
+            data,
+            shots,
+            seed,
+            any_seed,
+            output,
+            force,
+        } => commands::data_contrastive::run_select(
+            data,
+            *shots,
+            *seed,
+            *any_seed,
+            output.as_deref(),
+            *force,
+            json,
+        ),
+        DataCommands::Pairs {
+            selection,
+            data,
+            budget,
+            hard_cap,
+            dump,
+            force,
+        } => commands::data_contrastive::run_pairs(
+            selection,
+            data,
+            *budget,
+            *hard_cap,
+            dump.as_deref(),
+            *force,
+            json,
+        ),
         DataCommands::Alimentar(cmd) => dispatch_alimentar_passthrough(cmd),
         DataCommands::Audit {
             file,
@@ -759,8 +812,16 @@ fn dispatch_analysis_commands_rest(cli: &Cli) -> Option<Result<(), CliError>> {
             val_shard.as_deref(),
             cli.json,
         ),
+        ExtendedCommands::Predict {
+            file,
+            text,
+            input,
+            logits,
+        } => commands::predict::run(file, text, input.as_deref(), *logits, cli.json),
         ExtendedCommands::Tokenize { command } => dispatch_tokenize_command(command, cli),
-        ExtendedCommands::Data { command } => dispatch_data_command(command, cli.json),
+        ExtendedCommands::Data { command } => dispatch_data_command(command, cli),
+        #[cfg(feature = "setfit")]
+        ExtendedCommands::Setfit { command } => dispatch_setfit_command(command, cli),
         ExtendedCommands::Pipeline { command } => dispatch_pipeline_command(command, cli),
         ExtendedCommands::Ppl { log_probs_file } => commands::ppl::run(log_probs_file, cli.json),
 
@@ -927,7 +988,200 @@ fn dispatch_experiment_command(
     }
 }
 
-/// Dispatch `apr data` subcommands to alimentar-backed implementations.
+/// Route `apr eval --task classify` by the artifact's OWN typed tag (D-04, OPS-03).
+///
+/// A `setfit-apr-v1` artifact goes to the SetFit branch; everything else goes to the LoRA
+/// classification path exactly as before. Detection reads the metadata record, never a tensor
+/// name, so a checkpoint that merely looks like a classifier keeps its existing behaviour.
+///
+/// The SetFit-only flags are REFUSED on the non-SetFit path rather than ignored. An operator
+/// who passes `--selection-lock` and gets a green report has every reason to believe the lock
+/// gated something; it would have gated nothing.
+// `pub(crate)` solely so the four-consumer agreement table in `setfit_tag_tests.rs` can
+// reach this decision surface; nothing else about this function changes (WR-08).
+#[cfg(feature = "training")]
+#[allow(clippy::too_many_arguments, clippy::fn_params_excessive_bools)]
+pub(crate) fn dispatch_classify_eval(
+    resolved: &std::path::Path,
+    dataset: &str,
+    data: Option<&std::path::Path>,
+    model_size: Option<&str>,
+    num_classes: usize,
+    generate_card: bool,
+    json: bool,
+    selection: Option<&std::path::Path>,
+    split: &str,
+    lock_out: Option<&std::path::Path>,
+    selection_lock: Option<&std::path::Path>,
+    candidate: &[std::path::PathBuf],
+    force: bool,
+) -> std::result::Result<(), CliError> {
+    let tagged = crate::setfit_tag::read_setfit_tag(resolved)?.is_some();
+
+    if tagged {
+        #[cfg(feature = "setfit")]
+        {
+            let split = split.parse::<commands::eval::setfit::Split>()?;
+            return commands::eval::setfit::run(&commands::eval::setfit::SetFitEvalArgs {
+                artifact: resolved,
+                data,
+                selection,
+                split,
+                lock_out,
+                selection_lock,
+                candidates: candidate,
+                force,
+                json,
+            });
+        }
+        #[cfg(not(feature = "setfit"))]
+        {
+            let _ = (selection, split, lock_out, selection_lock, candidate, force);
+            return Err(CliError::FeatureDisabled(format!(
+                "{} is a setfit-apr-v1 classifier, but this binary was built without the \
+                 `setfit` feature. Rebuild with `--features setfit` to evaluate it.",
+                resolved.display()
+            )));
+        }
+    }
+
+    for (flag, given) in [
+        ("--selection", selection.is_some()),
+        ("--lock-out", lock_out.is_some()),
+        ("--selection-lock", selection_lock.is_some()),
+        ("--candidate", !candidate.is_empty()),
+    ] {
+        if given {
+            return Err(CliError::ValidationFailed(format!(
+                "{flag} applies only to a setfit-apr-v1 artifact, and {} does not carry the \
+                 SetFit tag. Accepting it here would let a flag that gates canonical test \
+                 access appear to have done so on a path where it gates nothing.",
+                resolved.display()
+            )));
+        }
+    }
+    if split != "validation" {
+        return Err(CliError::ValidationFailed(format!(
+            "--split applies only to a setfit-apr-v1 artifact, and {} does not carry the \
+             SetFit tag.",
+            resolved.display()
+        )));
+    }
+
+    eval::run_classify_eval(
+        resolved,
+        dataset,
+        data,
+        model_size,
+        num_classes,
+        generate_card,
+        json,
+    )
+}
+
+/// Dispatch `apr setfit` subcommands to the training adapter.
+///
+/// `cli.offline` is deliberately NOT threaded through, for the same reason
+/// `dispatch_data_command` records for `apr data select` / `apr data pairs`: this
+/// command opens no socket. `--model-dir` names a local directory the operator
+/// obtained beforehand, and every other input is a file `apr data` already wrote.
+/// An offline switch here would advertise a network capability that does not exist.
+#[cfg(feature = "setfit")]
+fn dispatch_setfit_command(
+    command: &SetfitCommands,
+    cli: &Cli,
+) -> std::result::Result<(), CliError> {
+    match command {
+        SetfitCommands::Train {
+            config,
+            data,
+            selection,
+            model_dir,
+            output,
+            seed,
+            device,
+            force,
+            dry_run,
+        } => commands::setfit_train::run(
+            config,
+            data,
+            selection,
+            model_dir,
+            output,
+            *seed,
+            device.as_deref(),
+            *force,
+            *dry_run,
+            cli.json,
+        ),
+        // `cli.offline` is deliberately NOT threaded here either, for the reason the
+        // `Train` arm records: `bench run` opens no socket. It reads a prepared
+        // dataset directory, a selection manifest and an offline `--model-dir`, and
+        // it spawns exactly one child — this same binary, resolved through
+        // `current_exe`. An `--offline` switch would advertise a capability that does
+        // not exist.
+        SetfitCommands::Bench { command } => dispatch_setfit_bench_command(command, cli),
+    }
+}
+
+/// Dispatch `apr setfit bench` subcommands.
+#[cfg(feature = "setfit")]
+fn dispatch_setfit_bench_command(
+    command: &BenchCommands,
+    cli: &Cli,
+) -> std::result::Result<(), CliError> {
+    match command {
+        BenchCommands::Run {
+            method,
+            shots,
+            seed,
+            data,
+            selection,
+            bench_dir,
+            model_dir,
+            base_model,
+            config,
+            force,
+            record,
+            cold_probe,
+            cold_probe_base,
+            probe_text,
+        } => commands::setfit_bench::run(&commands::setfit_bench::BenchRunArgs {
+            method: method.as_deref(),
+            shots: *shots,
+            seed: *seed,
+            data: data.as_deref(),
+            selection: selection.as_deref(),
+            bench_dir: bench_dir.as_deref(),
+            model_dir: model_dir.as_deref(),
+            base_model: base_model.as_deref(),
+            config: config.as_deref(),
+            force: *force,
+            record: record.as_deref(),
+            cold_probe: cold_probe.as_deref(),
+            cold_probe_base: cold_probe_base.as_deref(),
+            probe_text: probe_text.as_deref(),
+            json: cli.json,
+        }),
+        BenchCommands::Report { bench_dir, out } => {
+            commands::setfit_bench::report::run(&commands::setfit_bench::report::BenchReportArgs {
+                bench_dir,
+                json: cli.json,
+                out: out.as_deref(),
+            })
+        }
+        BenchCommands::VerifyCell { bench_dir, method, shots, seed, .. } => {
+            commands::setfit_bench::verify_cell::run(
+                &commands::setfit_bench::verify_cell::BenchVerifyCellArgs {
+                    bench_dir,
+                    method,
+                    shots: *shots,
+                    seed: *seed,
+                },
+            )
+        }
+    }
+}
 #[cfg(feature = "training")]
 /// Dispatch `apr train` subcommands to entrenar-backed implementations.
 #[provable_contracts_macros::contract(
@@ -1401,15 +1655,28 @@ fn dispatch_profiling_commands(cli: &Cli) -> Option<Result<(), CliError>> {
             device,
             samples,
             temperature,
+            selection,
+            split,
+            lock_out,
+            selection_lock,
+            candidate,
+            force,
         } => crate::error::resolve_model_path(file).and_then(|r| match task.as_deref() {
             #[cfg(feature = "training")]
-            Some("classify") => eval::run_classify_eval(
+            Some("classify") => dispatch_classify_eval(
                 &r,
+                dataset,
                 data.as_deref(),
                 model_size.as_deref(),
                 *num_classes,
                 *generate_card,
                 cli.json,
+                selection.as_deref(),
+                split,
+                lock_out.as_deref(),
+                selection_lock.as_deref(),
+                candidate,
+                *force,
             ),
             Some("code") => {
                 eval::run_code_eval(&r, data.as_deref(), *max_tokens, *threshold, cli.json)

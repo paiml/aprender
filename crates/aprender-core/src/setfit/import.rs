@@ -54,6 +54,7 @@ use crate::format::v2::AprV2Reader;
 use crate::models::bert::config::BertConfig;
 use crate::models::bert::load::{detect_bert_prefix, read_tensor};
 
+use super::artifact::MAX_ENCODER_LAYERS;
 use super::error::SetFitError;
 use super::tokenizer::sha256_hex;
 
@@ -663,6 +664,420 @@ impl MiniLmImport {
 }
 
 // ---------------------------------------------------------------------------
+// General BERT Import
+// ---------------------------------------------------------------------------
+
+/// `config.json` as a GENERAL BERT checkout writes it.
+///
+/// Deliberately a second struct rather than a `#[serde(default)]`-relaxed
+/// [`HfBertConfig`]: that one is the PIN's parser and a field missing from it is
+/// a refusal. What differs here is only which fields may be absent, and the rule
+/// for that is narrow — a field may default ONLY when its absence cannot change
+/// which model this is. `model_type` and the dimensions decide the model, so
+/// they are required; `type_vocab_size` and `max_position_embeddings` are
+/// structural facts the tensor-set check re-derives from the weights anyway.
+///
+/// `architectures` stays optional because plenty of legitimate checkouts omit
+/// it, but `model_type` does NOT: defaulting it to `"bert"` would mean a RoBERTa
+/// or DeBERTa config that merely omits the field is loaded as a BERT and its
+/// weights reinterpreted under BERT semantics.
+#[derive(Debug, Clone, serde::Deserialize)]
+struct GeneralBertConfig {
+    #[serde(default)]
+    architectures: Vec<String>,
+    #[serde(default = "default_dropout")]
+    attention_probs_dropout_prob: f64,
+    #[serde(default = "default_activation")]
+    hidden_act: String,
+    #[serde(default = "default_dropout")]
+    hidden_dropout_prob: f64,
+    hidden_size: usize,
+    intermediate_size: usize,
+    #[serde(default = "default_layer_norm_eps")]
+    layer_norm_eps: f64,
+    #[serde(default = "default_max_positions")]
+    max_position_embeddings: usize,
+    model_type: String,
+    num_attention_heads: usize,
+    num_hidden_layers: usize,
+    #[serde(default)]
+    pad_token_id: u32,
+    #[serde(default = "default_position_embedding_type")]
+    position_embedding_type: String,
+    #[serde(default = "default_type_vocab_size")]
+    type_vocab_size: usize,
+    vocab_size: usize,
+}
+
+fn default_dropout() -> f64 {
+    PINNED_HIDDEN_DROPOUT_PROB
+}
+fn default_activation() -> String {
+    PINNED_ACTIVATION.to_string()
+}
+fn default_layer_norm_eps() -> f64 {
+    f64::from(BertConfig::minilm_l6().layer_norm_eps)
+}
+fn default_max_positions() -> usize {
+    BertConfig::minilm_l6().max_position_embeddings
+}
+fn default_position_embedding_type() -> String {
+    PINNED_POSITION_EMBEDDING_TYPE.to_string()
+}
+fn default_type_vocab_size() -> usize {
+    BertConfig::minilm_l6().type_vocab_size
+}
+
+/// The provenance string a general (non-pinned) checkout is recorded under.
+///
+/// Not a revision — there is no upstream revision to pin for a directory the
+/// caller supplied — so it is a fixed sentinel the reload path can recognise as
+/// "not the pin" rather than a hash that would look checkable and is not.
+const GENERAL_BERT_REVISION: &str = "general-bert";
+
+/// A validated general BERT checkpoint: dimensions, weights reader, and provenance.
+pub struct BertImport {
+    dims: ModelDims,
+    layer_norm_eps: f32,
+    reader: AprV2Reader,
+    tensor_prefix: &'static str,
+    tokenizer_bytes: Vec<u8>,
+    tokenizer_sha256: String,
+}
+
+impl std::fmt::Debug for BertImport {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        // Hand-written, not derived: `AprV2Reader` owns the whole container, so a
+        // derived Debug would print the entire weights buffer.
+        f.debug_struct("BertImport")
+            .field("dims", &self.dims)
+            .field("revision", &GENERAL_BERT_REVISION)
+            .field("tokenizer_sha256", &self.tokenizer_sha256)
+            .finish()
+    }
+}
+
+/// Does this directory CLAIM to be the pinned all-MiniLM-L6-v2 checkout?
+///
+/// The dispatch input for [`super::SetFitBert::from_pretrained_dir`]. It reads
+/// the identity the checkout declares about itself — never whether the strict
+/// loader happened to succeed — so a directory that says it is the pin is held
+/// to the pin and its refusal is the one the caller sees. Keying the choice on
+/// pin FAILURE instead would let a tampered pinned checkout (a substituted
+/// `tokenizer.json`, a mutated dropout) fall through to the general loader,
+/// which re-checks none of it.
+///
+/// A config that will not parse is NOT the pin: the general loader reports the
+/// parse error, which is the message the operator needs.
+pub(super) fn declares_the_minilm_pin(dir: &Path) -> bool {
+    let Ok(bytes) = std::fs::read(dir.join("config.json")) else {
+        return false;
+    };
+    let Ok(cfg) = serde_json::from_slice::<GeneralBertConfig>(&bytes) else {
+        return false;
+    };
+    let pin = BertConfig::minilm_l6();
+    cfg.model_type == PINNED_MODEL_TYPE
+        && cfg.hidden_size == pin.hidden_dim
+        && cfg.num_hidden_layers == pin.num_layers
+        && cfg.num_attention_heads == pin.num_heads
+        && cfg.intermediate_size == pin.intermediate_dim
+        && cfg.vocab_size == pin.vocab_size
+}
+
+/// Reject a dimension that is zero or above its ceiling, naming both.
+fn check_bound(field: &str, got: usize, ceiling: usize) -> Result<(), SetFitError> {
+    if got == 0 || got > ceiling {
+        return Err(mismatch(field, format!("1..={ceiling}"), got));
+    }
+    Ok(())
+}
+
+impl BertImport {
+    /// Open a general BERT model directory (e.g. AlephBERT, DictaBERT, or multilingual BERT).
+    ///
+    /// SEALED (D-08): `pub(crate)`. The public door is
+    /// [`super::SetFitBert::from_bert_dir`], which pairs this import with the
+    /// tokenizer bytes IT read, so the two halves cannot disagree.
+    ///
+    /// # Errors
+    ///
+    /// A typed [`SetFitError`] naming the field, file or tensor that failed.
+    pub(crate) fn open(dir: &Path) -> Result<Self, SetFitError> {
+        // A directory that CLAIMS to be the pin never loads through here, from
+        // any caller. Routing it to `MiniLmImport::open` is not a courtesy: this
+        // loader hashes `tokenizer.json` and compares it to nothing, so admitting
+        // a pinned checkout would let a swapped vocabulary in through the side
+        // door that `from_pretrained_dir`'s dispatch closes at the front. It
+        // would also mint an encoder whose architecture fingerprint is
+        // byte-identical to the calibrated production regime, so the
+        // `UncalibratedRegime` gate would apply all-MiniLM-L6-v2's epsilons to a
+        // different model.
+        if declares_the_minilm_pin(dir) {
+            return Err(mismatch(
+                "config.json",
+                "a checkout that does not declare the pinned all-MiniLM-L6-v2 \
+                 architecture (load that one through from_pretrained_dir, which \
+                 enforces the tokenizer pin)",
+                "the pinned architecture",
+            ));
+        }
+
+        let config_bytes = read_required(dir, "config.json")?;
+        let cfg: GeneralBertConfig =
+            serde_json::from_slice(&config_bytes).map_err(|e| SetFitError::ImportIo {
+                path: "config.json".to_string(),
+                reason: format!("cannot parse BERT config.json: {e}"),
+            })?;
+
+        // HF class names are CamelCase and family-prefixed, so a PREFIX test is
+        // the sound one. `contains("bert")` is not: it admits
+        // `AlbertForMaskedLM`, `RobertaForMaskedLM`, `DebertaV2Model` and
+        // `DistilBertModel`, none of which this encoder computes correctly
+        // (RoBERTa offsets position ids, DistilBERT has no token_type table,
+        // ALBERT shares parameters across layers).
+        if let Some(foreign) = cfg
+            .architectures
+            .iter()
+            .find(|arch| !arch.starts_with("Bert"))
+        {
+            return Err(SetFitError::UnsupportedArchitecture {
+                got: foreign.clone(),
+            });
+        }
+
+        if cfg.model_type != PINNED_MODEL_TYPE {
+            return Err(mismatch("model_type", PINNED_MODEL_TYPE, &cfg.model_type));
+        }
+
+        if cfg.hidden_act != PINNED_ACTIVATION {
+            return Err(SetFitError::UnsupportedActivation {
+                got: cfg.hidden_act.clone(),
+            });
+        }
+
+        if cfg.position_embedding_type != PINNED_POSITION_EMBEDDING_TYPE {
+            return Err(mismatch(
+                "position_embedding_type",
+                PINNED_POSITION_EMBEDDING_TYPE,
+                &cfg.position_embedding_type,
+            ));
+        }
+
+        // Dropout is inference-inert but TRAINING-critical, and the encoder
+        // places it at the four HF-verified sites with one compiled-in
+        // probability. Parsing a different rate and ignoring it would fine-tune
+        // the checkpoint under a regime it does not declare, with nothing in the
+        // artifact recording the disagreement — so it is refused, exactly as the
+        // pin refuses it.
+        if cfg.hidden_dropout_prob != PINNED_HIDDEN_DROPOUT_PROB {
+            return Err(mismatch(
+                "hidden_dropout_prob",
+                PINNED_HIDDEN_DROPOUT_PROB,
+                cfg.hidden_dropout_prob,
+            ));
+        }
+        if cfg.attention_probs_dropout_prob != PINNED_ATTENTION_DROPOUT_PROB {
+            return Err(mismatch(
+                "attention_probs_dropout_prob",
+                PINNED_ATTENTION_DROPOUT_PROB,
+                cfg.attention_probs_dropout_prob,
+            ));
+        }
+
+        // EVERY dimension gets a CEILING, not just a non-zero check. These
+        // arrive from a `config.json` the caller supplied, and
+        // `expected_tensor_specs` expands `5 + 16 * layers` owned names BEFORE a
+        // tensor is read — so an unbounded `num_hidden_layers` makes the name
+        // EXPANSION the allocation attack, which is the very thing
+        // `MAX_ENCODER_LAYERS` was added for on the artifact path. The width
+        // ceilings additionally keep `product(shape)` from wrapping `usize`,
+        // which would let a declared shape outrun its own backing store.
+        check_bound(
+            "num_hidden_layers",
+            cfg.num_hidden_layers,
+            MAX_ENCODER_LAYERS,
+        )?;
+        check_bound("hidden_size", cfg.hidden_size, MAX_DIMENSION)?;
+        check_bound(
+            "num_attention_heads",
+            cfg.num_attention_heads,
+            MAX_DIMENSION,
+        )?;
+        check_bound("intermediate_size", cfg.intermediate_size, MAX_DIMENSION)?;
+        check_bound("vocab_size", cfg.vocab_size, MAX_VOCAB)?;
+        check_bound(
+            "max_position_embeddings",
+            cfg.max_position_embeddings,
+            MAX_DIMENSION,
+        )?;
+        check_bound("type_vocab_size", cfg.type_vocab_size, MAX_DIMENSION)?;
+
+        if !cfg.hidden_size.is_multiple_of(cfg.num_attention_heads) {
+            return Err(mismatch(
+                "hidden_size",
+                format!(
+                    "divisible by num_attention_heads ({})",
+                    cfg.num_attention_heads
+                ),
+                cfg.hidden_size,
+            ));
+        }
+
+        // A pad id outside the embedding table is loadable and then fails on the
+        // FIRST mixed-length batch, because padded rows are gathered before the
+        // mask is applied. Refuse it here, where the field that is wrong can be
+        // named.
+        if cfg.pad_token_id as usize >= cfg.vocab_size {
+            return Err(mismatch(
+                "pad_token_id",
+                format!("less than vocab_size ({})", cfg.vocab_size),
+                cfg.pad_token_id,
+            ));
+        }
+
+        // `narrow_eps` only rejects non-finite and non-positive, which was enough
+        // while every caller went on to compare the result against the pin's
+        // 1e-12. This path ADOPTS the value, so it needs a sanity band of its
+        // own: published BERT families use 1e-12 through 1e-5, and an eps of 1.0
+        // — a plausible typo for 1e-12 — makes every LayerNorm divide by
+        // sqrt(var + 1), collapsing all inputs onto nearly the same embedding and
+        // training a confident-looking head on constant features.
+        let layer_norm_eps = narrow_eps(cfg.layer_norm_eps)?;
+        if !(f32::MIN_POSITIVE..=MAX_LAYER_NORM_EPS).contains(&layer_norm_eps) {
+            return Err(mismatch(
+                "layer_norm_eps",
+                format!("within (0, {MAX_LAYER_NORM_EPS:e}] and not subnormal"),
+                cfg.layer_norm_eps,
+            ));
+        }
+
+        let dims = ModelDims {
+            hidden: cfg.hidden_size,
+            layers: cfg.num_hidden_layers,
+            heads: cfg.num_attention_heads,
+            intermediate: cfg.intermediate_size,
+            vocab: cfg.vocab_size,
+            max_positions: cfg.max_position_embeddings,
+            type_vocab: cfg.type_vocab_size,
+            pad_token_id: cfg.pad_token_id,
+        };
+
+        // Both files are OPTIONAL here and REQUIRED on the pin: a raw HF BERT
+        // ships neither, and demanding them would reject the checkouts this door
+        // exists for. Present-but-wrong is still a refusal.
+        if let Some(bytes) = read_optional(dir, "modules.json")? {
+            validate_module_stack(&bytes)?;
+        }
+        if let Some(bytes) = read_optional(dir, "1_Pooling/config.json")? {
+            validate_pooling(&bytes, dims.hidden)?;
+        }
+
+        // The truncation bound is NOT read from the checkout. It is
+        // `MAX_SEQUENCE_LENGTH` in this crate's own code — the same rule the pin
+        // states at `MiniLmImport::open` — for two reasons the general path makes
+        // sharper. Adopting `sentence_bert_config.json`'s 512 would configure the
+        // tokenizer to emit rows the encoder REFUSES, since
+        // `BertSentenceEncoder::max_seq()` is still `min(MAX_SEQUENCE_LENGTH,
+        // max_positions)`: `OversizeInput` at encode time, after the whole model
+        // has loaded. And it would not survive a round trip, because the artifact
+        // has no field for it — `SetFitBundle` writes
+        // `truncation_max_sequence_length: MAX_SEQUENCE_LENGTH` and
+        // `check_policy_matches_this_build` REFUSES any other value, so an
+        // honestly-recorded 128 is not even writable. A present-but-inconsistent
+        // file is still a real disagreement and is rejected.
+        //
+        // Honouring a per-checkout bound needs that field carried through
+        // `EncoderArchitecture`, the bundle and the contract first.
+        if let Some(bytes) = read_optional(dir, "sentence_bert_config.json")? {
+            let sbert: SentenceBertConfig =
+                serde_json::from_slice(&bytes).map_err(|e| SetFitError::ImportIo {
+                    path: "sentence_bert_config.json".to_string(),
+                    reason: e.to_string(),
+                })?;
+            if sbert.max_seq_length > cfg.max_position_embeddings {
+                return Err(mismatch(
+                    "max_seq_length",
+                    format!(
+                        "at most max_position_embeddings ({})",
+                        cfg.max_position_embeddings
+                    ),
+                    sbert.max_seq_length,
+                ));
+            }
+        }
+
+        // RETAINED, not merely hashed: the tokenizer the caller ends up with must
+        // be built from THESE bytes, not from a second read of the same path that
+        // could see different content.
+        let tokenizer_bytes = read_required(dir, "tokenizer.json")?;
+        let tokenizer_sha256 = sha256_hex(&tokenizer_bytes);
+
+        let (weights_name, weights) = read_weights(dir)?;
+        let reader = parse_apr(&weights, &weights_name)?;
+        // `AprV2Reader` owns its own copy, so holding the raw file buffer across
+        // the tensor scan would keep two copies of a ~500 MB checkpoint resident.
+        drop(weights);
+        let tensor_prefix = detect_bert_prefix(&reader);
+        load_and_check_tensors(&reader, tensor_prefix, &dims)?;
+
+        Ok(Self {
+            dims,
+            layer_norm_eps,
+            reader,
+            tensor_prefix,
+            tokenizer_bytes,
+            tokenizer_sha256,
+        })
+    }
+
+    /// The loaded dimensions.
+    #[must_use]
+    pub fn dims(&self) -> &ModelDims {
+        &self.dims
+    }
+
+    /// LayerNorm epsilon.
+    #[must_use]
+    pub fn layer_norm_eps(&self) -> f32 {
+        self.layer_norm_eps
+    }
+
+    /// Provenance recorded for a general checkout — see [`GENERAL_BERT_REVISION`].
+    #[must_use]
+    pub fn revision(&self) -> &str {
+        GENERAL_BERT_REVISION
+    }
+
+    /// Sha256 of the tokenizer paired with this model.
+    #[must_use]
+    pub fn tokenizer_sha256(&self) -> &str {
+        &self.tokenizer_sha256
+    }
+
+    /// The exact `tokenizer.json` bytes this import hashed.
+    pub(crate) fn tokenizer_bytes(&self) -> &[u8] {
+        &self.tokenizer_bytes
+    }
+
+    /// Pad token id, already checked to be inside the embedding table.
+    #[must_use]
+    pub fn pad_token_id(&self) -> u32 {
+        self.dims.pad_token_id
+    }
+
+    /// The weights reader, for the encoder.
+    pub(crate) fn reader(&self) -> &AprV2Reader {
+        &self.reader
+    }
+
+    /// The `bert.` / `` prefix the checkpoint uses.
+    pub(crate) fn tensor_prefix(&self) -> &'static str {
+        self.tensor_prefix
+    }
+}
+
+// ---------------------------------------------------------------------------
 // Validation helpers
 // ---------------------------------------------------------------------------
 
@@ -688,6 +1103,22 @@ const PINNED_POSITION_EMBEDDING_TYPE: &str = "absolute";
 const PINNED_ARCHITECTURE: &str = "BertModel";
 /// The pinned `model_type`.
 const PINNED_MODEL_TYPE: &str = "bert";
+/// Ceiling on any single width a general `config.json` may declare.
+///
+/// Chosen to clear every published BERT-family width by an order of magnitude
+/// (BERT-large's 4096 intermediate is the widest in circulation) while keeping
+/// `product(shape)` — which `read_tensor` and `Tensor::from_vec` both compute
+/// with a plain `iter().product()` — far from wrapping `usize`. Without it a
+/// declared `vocab_size` of `2^56 + n` wraps to a small product, and a tensor
+/// whose declared shape is astronomically larger than its backing store passes
+/// the element-count check.
+const MAX_DIMENSION: usize = 65_536;
+/// Ceiling on `vocab_size`, the one width that legitimately runs to six figures
+/// (XLM-R is 250k). `MAX_VOCAB * MAX_DIMENSION` is `2^36`, which cannot wrap.
+const MAX_VOCAB: usize = 1_048_576;
+/// Ceiling on an adopted `layer_norm_eps`. Published BERT families sit between
+/// 1e-12 and 1e-5; anything at or above this is a typo, not a hyperparameter.
+const MAX_LAYER_NORM_EPS: f32 = 1e-3;
 /// Weight-file names an open() checkout may carry, most specific first.
 const WEIGHT_FILE_CANDIDATES: [&str; 2] = ["full_model.apr", "model.apr"];
 

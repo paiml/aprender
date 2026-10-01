@@ -1,0 +1,41 @@
+Driving the case table through /tmp/p06-16/naive_assert_measurement_under.sh
+
+MUST_PASS - a well-formed non-negative decimal strictly under the bar:
+  ok    under    [0]            bar=2.0    MUST_PASS
+  ok    under    [0.0]          bar=2.0    MUST_PASS
+  ok    under    [1.999]        bar=2.0    MUST_PASS
+  ok    under    [.5]           bar=2.0    MUST_PASS
+  ok    under    [1]            bar=2.0    MUST_PASS
+  ok    under    [42.5]         bar=100    MUST_PASS
+
+MUST_FAIL - malformed, or at/over the bar. Every one of these printed OK
+            under the inline 'awk -v v=$x { exit (v + 0 < BAR) }' coercion:
+  BAD   under    []             bar=2.0    wanted MUST_FAIL, got MUST_PASS (rc=0):   case-table OK:  < 2.0
+  BAD   under    [abc]          bar=2.0    wanted MUST_FAIL, got MUST_PASS (rc=0):   case-table OK: abc < 2.0
+  ok    under    [2.0]          bar=2.0    MUST_FAIL
+  ok    under    [2.5]          bar=2.0    MUST_FAIL
+  BAD   under    [1.2.3]        bar=2.0    wanted MUST_FAIL, got MUST_PASS (rc=0):   case-table OK: 1.2.3 < 2.0
+  BAD   under    [.]            bar=2.0    wanted MUST_FAIL, got MUST_PASS (rc=0):   case-table OK: . < 2.0
+  BAD   under    [-1]           bar=2.0    wanted MUST_FAIL, got MUST_PASS (rc=0):   case-table OK: -1 < 2.0
+  ok    under    [1e3]          bar=2.0    MUST_FAIL
+  BAD   under    [1 2]          bar=2.0    wanted MUST_FAIL, got MUST_PASS (rc=0):   case-table OK: 1 2 < 2.0
+  BAD   under    [1.5\r]         bar=2.0    wanted MUST_FAIL, got MUST_PASS (rc=0):   case-table OK: 1.5\r < 2.0
+
+The OTHER direction. forecast-pool-ratio's bar is 'best >= 2.0', not
+'< 2.0'; reusing the under-mode there would INVERT a gate, so the mode is
+explicit at every call site and both directions are tabled:
+  ok    atleast  [2.0]          bar=2.0    MUST_PASS
+  ok    atleast  [5.162]        bar=2.0    MUST_PASS
+  ok    atleast  [1.999]        bar=2.0    MUST_FAIL
+  ok    atleast  [0]            bar=2.0    MUST_FAIL
+  ok    atleast  [abc]          bar=2.0    MUST_FAIL
+  ok    atleast  []             bar=2.0    MUST_FAIL
+
+An unknown mode is a REFUSAL, never a silent fall-through to one direction:
+  ok    sideways [1.0]          bar=2.0    MUST_FAIL
+
+FAIL: 7 of 23 case-table rows behaved the other way.
+      A MUST_FAIL row that passes is the IN-01 coercion defect still
+      present in the validator; a MUST_PASS row that fails means every
+      real gate now fails closed and will be re-loosened by whoever
+      debugs it next.

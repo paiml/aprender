@@ -1,0 +1,13 @@
+{
+ "run": "laya/en@55cf4c4e",
+ "task": "emotion",
+ "split": "test",
+ "n": 1000,
+ "names_only": false,
+ "device": "mps",
+ "load_s": 1.5774592919915449,
+ "accuracy": 0.565,
+ "latency_ms_p50": 20.92747899587266,
+ "temperature": 1.0000158548355103,
+ "recomputed_probs_max_abs_diff": 4.997316328808664e-05
+}

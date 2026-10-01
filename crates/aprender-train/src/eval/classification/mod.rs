@@ -19,5 +19,5 @@ mod sklearn_parity_tests;
 // Re-export all public types and functions
 pub use average::Average;
 pub use confusion::ConfusionMatrix;
-pub use metrics::MultiClassMetrics;
+pub use metrics::{f1_average_for_classes, MultiClassMetrics};
 pub use report::{classification_report, confusion_matrix};

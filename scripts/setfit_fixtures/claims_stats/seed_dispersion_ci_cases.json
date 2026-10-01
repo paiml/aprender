@@ -1,0 +1,118 @@
+{
+  "generator": "gen_claims_fixtures.py",
+  "versions": {
+    "python": "3.13.7",
+    "numpy": "2.5.1",
+    "scipy": "1.18.0",
+    "scikit_learn": "1.9.0"
+  },
+  "formula": "x_bar = mean(x); s = std(x, ddof=1); se = s / sqrt(n); df = n - 1; CI95 = x_bar +/- t_crit * se",
+  "t_crit_source": "scipy.stats.t.ppf(0.975, 9), see t_critical.json",
+  "t_crit": 2.262157162798205,
+  "scope": "ACTIVE scope of setfit-benchmark-claims-v1 2.0.0 (equations.claims_statistics.seed_dispersion_ci95). A seed-dispersion interval at fixed data and protocol -- NOT a population interval and NOT a comparison.",
+  "degenerate_policy": "A case whose ten values are all identical has no dispersion. It carries kind=degenerate_zero_variance and expect=ZeroVarianceDifferences and records no interval. ci95_one_sample_df9 must return that typed error rather than a non-finite f64.",
+  "cross_checks": [
+    "mean: closed form vs numpy.mean to 1e-12",
+    "std: closed form vs numpy.std(ddof=1) to 1e-12",
+    "std_err: s/sqrt(n) vs scipy.stats.sem(ddof=1) to 1e-12",
+    "endpoints: closed form vs scipy.stats.t.interval(0.95, df, loc, scale) to 1e-12"
+  ],
+  "cases": [
+    {
+      "id": "seed_spread_typical",
+      "kind": "finite",
+      "note": "Ten seeds with the dispersion a few-shot run actually shows; the interval is wide enough that quoting the mean alone would overstate precision, which is the whole reason EVAL-04 asks for uncertainty and not just a mean.",
+      "values": [
+        0.612,
+        0.64,
+        0.598,
+        0.671,
+        0.655,
+        0.603,
+        0.688,
+        0.629,
+        0.647,
+        0.618
+      ],
+      "n": 10,
+      "df": 9,
+      "mean": 0.6361000000000001,
+      "std": 0.029643998830567158,
+      "std_err": 0.009374255525996009,
+      "half_width": 0.021206039284032526,
+      "ci95_low": 0.6148939607159676,
+      "ci95_high": 0.6573060392840326
+    },
+    {
+      "id": "seed_spread_tight",
+      "kind": "finite",
+      "note": "Barely-varying seeds. The interval is narrow but PRESENT -- narrowness is a measurement, not a licence to drop the interval.",
+      "values": [
+        0.7031,
+        0.7028,
+        0.7034,
+        0.7029,
+        0.7033,
+        0.703,
+        0.7035,
+        0.7027,
+        0.7032,
+        0.7031
+      ],
+      "n": 10,
+      "df": 9,
+      "mean": 0.7031,
+      "std": 0.00025819888974718046,
+      "std_err": 8.164965809277871e-05,
+      "half_width": 0.00018470435889460376,
+      "ci95_low": 0.7029152956411053,
+      "ci95_high": 0.7032847043588946
+    },
+    {
+      "id": "seed_spread_wide_low_scores",
+      "kind": "finite",
+      "note": "Low scores with large seed-to-seed swing: at 8 shots the sampled subset is a larger source of variation than anything else, which is PF-007's point.",
+      "values": [
+        0.311,
+        0.289,
+        0.402,
+        0.256,
+        0.377,
+        0.298,
+        0.341,
+        0.266,
+        0.388,
+        0.303
+      ],
+      "n": 10,
+      "df": 9,
+      "mean": 0.3231,
+      "std": 0.05139055252562371,
+      "std_err": 0.01625111961954895,
+      "half_width": 0.0367625866508531,
+      "ci95_low": 0.2863374133491469,
+      "ci95_high": 0.3598625866508531
+    },
+    {
+      "id": "all_seeds_identical",
+      "kind": "degenerate_zero_variance",
+      "note": "All ten seeds scored exactly the same. There is no dispersion to interval over, so the contracted result is the typed ZeroVarianceDifferences refusal with the constant reported -- never a NaN and never a serde null that reads as a missing measurement (CR-03).",
+      "values": [
+        0.6875,
+        0.6875,
+        0.6875,
+        0.6875,
+        0.6875,
+        0.6875,
+        0.6875,
+        0.6875,
+        0.6875,
+        0.6875
+      ],
+      "n": 10,
+      "df": 9,
+      "expect": "ZeroVarianceDifferences",
+      "constant_value": 0.6875
+    }
+  ]
+}

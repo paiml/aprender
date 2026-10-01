@@ -1,0 +1,13 @@
+{
+ "run": "laya/typed-decisions@55cf4c4e",
+ "task": "stance-abortion",
+ "split": "train",
+ "n": 587,
+ "names_only": false,
+ "device": "mps",
+ "load_s": 1.5630345410027076,
+ "accuracy": 0.5059625212947189,
+ "latency_ms_p50": 26.644208992365748,
+ "temperature": 1.7601518630981445,
+ "recomputed_probs_max_abs_diff": 4.993195533753436e-05
+}

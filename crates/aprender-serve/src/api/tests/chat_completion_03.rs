@@ -411,6 +411,9 @@ fn test_health_response_serialize_cov() {
         compute_mode: "cpu".to_string(),
         model_loaded: true,
         uptime_sec: 2.5,
+        // Phase 4 OPS-05: absent when no SetFit classifier is resident.
+        classifier_artifact_sha256: None,
+        classifier_verified: None,
     };
     let json = serde_json::to_string(&resp).expect("serialize");
     assert!(json.contains("\"ok\""));

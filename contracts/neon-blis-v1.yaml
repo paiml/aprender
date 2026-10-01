@@ -1,0 +1,54 @@
+metadata:
+  version: "1.0.0"
+  created: "2026-09-05"
+  author: Guy Ernest (contribution)
+  registry: true
+  references:
+    - "Van Zee & van de Geijn (2015). BLIS: A Framework for Rapidly Instantiating BLAS Functionality. ACM TOMS."
+    - "Goto & Van De Geijn (2008). Anatomy of High-Performance Matrix Multiplication. ACM TOMS."
+    - "Arm Ltd. Arm Architecture Reference Manual for A-profile, FMLA (by element)."
+  description: |
+    NEON microkernel contract for the BLIS-style GEMM on aarch64. Before this contract,
+    `gemm_blis` on aarch64 compiled out every x86 fast path and ran `microkernel_scalar`
+    for every shape (7.4 GFLOP/s on an Apple M4 Pro against 100+ for faer). The 8x6 NEON
+    kernel honours the existing packing contract, so no packing or blocking constant changes.
+
+name: neon-blis
+version: "1.0.0"
+scope: "crates/aprender-compute/src/blis/"
+
+description: |
+  BLIS-style tiled GEMM microkernel using NEON on aarch64. Register blocking: 8x6
+  micro-tile (MR=8 rows in two float32x4 halves, NR=6 columns), twelve accumulators,
+  B consumed by lane-indexed FMA (one q-load + one d-load per K step, no broadcast).
+  Panel layout is shared with `microkernel_scalar` and the AVX2 8x6 kernels.
+
+equations:
+  C-NEON-BLIS-001:
+    description: "GEMM output matches naive O(n^3) reference"
+    formula: "forall i,j: |C_blis[i,j] - C_naive[i,j]| < eps * max(|C_naive|) where eps = 1e-5"
+    note: "Fused multiply-add rounds once per product; the scalar kernel rounds twice"
+
+  C-NEON-BLIS-002:
+    description: "Tile boundary correctness - remainder tiles are exact and never read or write out of bounds"
+    formula: "forall M,N,K: output shape = [M,N] regardless of MR/NR alignment; K = 0 leaves C unchanged"
+    note: "pack_a_block / pack_b_block / load_c_tile zero-pad to a full MR x NR tile; store_c_tile writes back mr x nr"
+
+  C-NEON-BLIS-003:
+    description: "Packing contract shared with the scalar kernel"
+    formula: "A panel: a[p*MR + i]; B panel: b[p*NR + j]; C tile: c[j*ldc + i], ldc >= MR"
+    note: "Any kernel that reads B with a stride other than NR (the unused 8x8 kernel) violates this and must not be dispatched"
+
+falsification:
+  - id: FALSIFY-NEON-BLIS-001
+    description: "NEON 8x6 kernel matches the scalar kernel for K in {0,1,2,3,4,5,7,9,255,256,257}, accumulating into a non-zero C"
+    test: "test_microkernel_neon_8x6_matches_scalar, test_microkernel_neon_8x6_short_k_and_accumulate"
+    evidence: "cargo test -p aprender-compute --lib microkernel_neon"
+  - id: FALSIFY-NEON-BLIS-002
+    description: "gemm_blis on odd shapes (remainders in M, N and K; K below the unroll width; 129x256x256) matches gemm_reference"
+    test: "test_gemm_blis_neon_odd_shapes_match_reference"
+    evidence: "cargo test -p aprender-compute --lib gemm_blis_neon"
+  - id: FALSIFY-NEON-BLIS-003
+    description: "Performance: on aarch64 gemm_blis is at least 5x the scalar-kernel build on 129x256x1024 and 1024^3, measured with the same driver before and after"
+    test: "before/after table in .planning/spikes/008-neon-gemm-microkernel-upstream/README.md; benches/gemm_comparison.rs gemm/trueno vs gemm/faer"
+    evidence: "cargo bench -p aprender-compute --bench gemm_comparison -- gemm/"

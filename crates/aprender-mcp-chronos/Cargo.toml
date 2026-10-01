@@ -1,0 +1,49 @@
+[package]
+name = "aprender-mcp-chronos"
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+repository.workspace = true
+authors.workspace = true
+rust-version.workspace = true
+description = "Thin single-model MCP server: Chronos-Bolt zero-shot forecasting with embedded weights over the pmcp SDK"
+keywords = ["mcp", "forecasting", "chronos", "zero-shot", "aprender"]
+categories = ["science", "web-programming"]
+readme = "README.md"
+# Same reason as aprender-mcp-forecast and aprender-mcp-setfit: a deployment unit,
+# not a library other crates should depend on.
+publish = false
+
+[lib]
+name = "aprender_mcp_chronos"
+path = "src/lib.rs"
+
+[[bin]]
+name = "aprender-mcp-chronos"
+path = "src/main.rs"
+
+[dependencies]
+# The one implementation of the Chronos door (OPS-03). This server is a TRANSPORT:
+# it re-implements no numerics and re-checks no bound.
+aprender-forecast = { path = "../aprender-forecast" }
+# PAIML's Rust MCP SDK, the same 2.19 line the sibling servers resolve.
+pmcp = { version = "2.19", features = ["streamable-http", "schema-generation"] }
+# The JsonSchema derive on ChronosArgs — same major pmcp's schema-generation uses.
+schemars = "1.0"
+serde = { workspace = true }
+serde_json = { workspace = true }
+tokio = { workspace = true }
+axum = { workspace = true }
+# NO `tower`: aprender-mcp-forecast needs a router POOL because a Prophet fit holds
+# pmcp's server mutex for seconds. A Chronos call is ~18 ms against an immutable
+# `Arc<Model>`, so one router is not a bottleneck and a pool would be dead weight.
+
+[dev-dependencies]
+reqwest = { workspace = true, features = ["json", "rustls-tls"] }
+# The contract bars are READ from `contracts/*.yaml`, never written as literals
+# (D-15). `aprender-forecast::test_support` is `pub(crate)`, so this crate carries
+# its own small reader over the same parser.
+serde_yaml = { workspace = true }
+
+[lints]
+workspace = true

@@ -1,0 +1,217 @@
+# 08-32 history scrub (owner decision "Scrub, then push", 2026-09-29): git filter-repo --replace-text over a0163010a..gsd/phase-2-contract-gate.
+# SHAs cited in 08-01..08-32 SUMMARY/evidence files written before this scrub are PRE-SCRUB; resolve them here. Pre-scrub tip is local branch backup/pre-scrub-08-32 (never pushed).
+# 213 rows, ordered as git rev-list --reverse. Commit signatures were stripped by the rewrite.
+old_sha	new_sha	subject
+de64a914feeacef7da6c62516cc5f33630303c79	98bb5cc4de0839c723c925d345cb8066343f8f68	docs(spike-015): PARTIAL — Kev wins 0–16 shots, Kev-4B zero-shot beats SetFit@64 on stance; SetFit wins emotion at 32+ shots
+2127b7d8913599970f790964d3e2062e49bb0c0b	1569107840023b75307a60e343d63ec1e3c9881d	docs(spike-016): VALIDATED — upstream sync is 34 conflicts/5 rules, suites green; stale SetFit golden is pre-existing
+c498fc42346f3e663c2bd208bec6861de05964d0	2b8a38f6b3ac8ed8ee14bdff999cc9224683bac8	docs(spike-017): VALIDATED — Kev in Rust matches Python to 1.5e-6 via PEFT merge → GGUF → upstream Qwen35; token-at-a-time is 5–7 s/decision, batched prefill required
+cf78ee835e49be1d2608a805ab8e09f978694cdf	8cc878a0e73ddec9421a95e2477067361c42e98f	docs(spike-020): VALIDATED — batched Qwen3.5 prefill, Kev-0.8B decision 6.6 s → 0.36 s on 6 threads, parity unchanged
+559f848a09896a1e021554cb76097bf96927f205	c211ce00015c2d51d91532f95a292037310f56ca	docs(spike-019): PARTIAL — Kev-0.8B fits Lambda (3.9 GB, ~0.37 s/decision on 6 M4 threads); Kev-4B does not as built
+7898e48dd70019b09699e953e457d36dd67fdd8e	f17dec1a5f7c1838e42e25a6882db2388bbbce3e	docs(spikes): update conventions
+73fa4bd5021f20b9f5e600aee780356b7e5f11c6	0fab8858006845f3bc51d8691be3821f5d829ffb	docs(spike-wrap-up): package 5 llm-decision-classifier spike findings into project skill
+c81463489aeebd12b7462a1bdcfda067cd9d77e4	997508d9ce72e9c8560bfadc118cbb04273c6cd9	docs(spike-021-023): Kev MCP server measured on default Lambda, Fargate and Lambda Managed Instances
+a8d9393c5e50ab2040ed681c359a679759662e0f	a3bf30a3f3d4dbb0f7bf44532314942e6db548d2	docs(spike-024): VALIDATED — fully fine-tuned Laya beats SetFit on stance, ties emotion; 65 ms CPU vs Rust Kev 360 ms
+283e93aad528fd136fa51798c0c9b5d0ebcaa677	52c5edb79098d47660c4481fa8d366edc3b77ea4	docs(spike-025): VALIDATED — Laya in Rust matches torch fp32 to 3.8e-6, ids 14/14; 1.6x faster than Rust Kev-0.8B
+5f185420a2a058b9ba8d7e0b283300f14ecd1c49	3b7dad0372c8ddc0646aaf6e12cf61788d047625	docs(spike-026): VALIDATED — Laya MCP on default Lambda: 12 s cold vs Kev 43 s, 0.75 s warm on Graviton2 vs 1.15 s
+86d7c873e43bc4dd3d4a4b49447bbd26149f2c1a	8c03ad00bf2b2a7e686a3ef63b4d72064afbeda7	docs(spike-wrap-up): package 6 spike findings (021-026) into project skill
+bb732af13c15c3cfc2bda64649244fabf8628d6b	04a4cb982f35a5d3d956adfd592ac03d21fa59c0	docs(08): capture phase context
+64b895b28d74828504f9277d2e49fa5dacf80c63	89c8aa3789fa9b015d431405a2e14dda7603983d	docs(state): record phase 8 context session
+1ffe03f781154343c6674f6ee0911b337eb82196	5a73eaff06d8e6ad0f88493aeb954195b906432b	docs(08): research phase domain
+981ce24d0b0b923e404bd9c484aad9031918e2d2	c5af694e2f70ad1d4f9d06e2f3568f60d62ccede	docs(phase-8): add validation strategy
+643501f4fe54e71f3d995645c9dc9283a01a695f	3764ee7460053a2c5dc3049f974f47b3899bf72e	docs(08): create phase plan — 12 plans in 9 waves
+ed820c958effbc5bc0f15a29b1eb49132437b3d0	43980f041995ccdb09e00c7ef2c482de5abaa0c9	docs(08): record phase 8 planned
+798373df33e6a9bf965ccaf01ab0fe4869b90fd7	f664c35e40f1f9f0ee3d43c7197130826ba37665	docs: cross-AI review for phase 8
+59d9ed07fc7b79b331e423d3091d0638fdc14dd0	e22b234f04fd89f3aac0604b860cbcade7e313c7	docs(08): replan phase 8 incorporating cross-AI review (round 1, f664c35e4)
+12ede1872c5bcf2f67cdfa1860aaaea55e4e899f	bb3307c0d982d3b12b0626c274a17c653370bde0	feat(08-01): declare decide-tool-boundary-v1 and a blocking contract-audit-phase8
+b9402f82588b3bab38f5c3fc77f3a33a05b1a9c7	75f945a975741ef7356b7c7e48da433ca4ad8451	feat(08-01): declare laya-finetune-gate-v1 and laya-parity-v1 before any run
+e6c11902b54f210ebb697c791edad606f96856d5	9ced219f0e0a48895b0b7badbb7d553dc4df6e6b	feat(08-01): declare decide-apr-v1 — artifact schema, load ladder, probes, D-05 task schema
+c254e2d4bcbb8adbf37fc8f99b2c755af3b643f8	d1ea4bb1b81ece391da5868d54e907212dda36e2	docs(08-01): complete phase 8 contracts plan — summary and deferred items
+c916e0879035c4db97bbb383bc6908a06b031212	d17194961f20cb89525c38bb407ab74dc6da8c2a	docs(08-01): record plan 08-01 completion in STATE and ROADMAP
+d8030eab6078e27b5ab12f3263b7704d0a74008d	6ccf7346dc2d9a0c3957bde0ef4339efdc7bcffe	feat(08-02): pinned laya_train uv project and tiny ModernBERT/Laya CI fixtures
+e031eec8ef96ca95b10704a1c73e12b7acf9b5df	8851945307bd5022acc6b40457a7f431d4b15b6a	docs(08-02): complete laya back office and tiny fixtures plan - summary
+db2f820cc92e92aee2d649cd398549369bf98daa	8c13a253607cefe02cecd865bb796c072c1837c6	docs(08-02): record plan 08-02 completion in STATE and ROADMAP
+06b5a34d0abda4c7cc430642de1099dc4639e9ea	46dd505c9868ae830ccc5838cbbdd25a2c90bd74	feat(08-03): ModernBERT encoder in aprender-core with tiny transformers parity
+3437afdc19dfd545548c2ee2815f9e9d003eb546	f1934ad05c6f46b94c1c28cec36e60dbc52281a4	test(08-03): pin window, prefix reuse, loader refusals and config domain
+42a901d7d57e5272ee3db3b6a64aabd22ccbcbf2	306e232ece5658dc30cabdcf6c90f36a62e29c9b	docs(08-03): complete modernbert encoder plan - summary and deferred items
+06802c0ad0bbddc7b5d9cf33da7988a0a1f45b5c	a94747b706d3e1a3d6131cef66b3c39931e615ee	docs(08-03): record plan 08-03 completion in STATE and ROADMAP
+6afdc73f129cd0677a96ea70e559f6be2e7dfa3a	8b84f45cebdb1bf399fccf64f4fa0bab29cfc4e0	feat(08-08): Laya fine-tune, calibrate and gate pipeline with tiny-fixture lifecycle
+04a4fda8c7e3f97d4846d2d8dcb4198b5e4ea0aa	e8746193eba2b7dd101b8b3c70cb637d31bc984d	docs(08-08): halted at the tracer gate - stance demo fails ECE ceiling
+b60927862fa5261e35ecb1fb62403db55d4b17e9	cede0d59bd8ef40c3d1b1c7ed93a42ca3dd94452	docs(08-08): record halt blocker in STATE and self-check
+08dca8371a842f1b702f8a03386d1ad19fef8842	849fccc172ef0ac4ea8588e7bcff60be40dd77c3	feat(08-04): aprender-decide crate with the Laya method on core ModernBERT
+70cd1d4fa34c31fe04eda848800e3f6bbf5cc94b	c2187d5331cefa3d658ce1590d74478c7f317b47	test(08-04): pin task order under both serde_json backings, refusals, buckets, nhead and builder budget
+7e9a93fe083d10bec6e1d766b04f07b1881378e5	5e9ae7b88dc893f23f1d0ec0ef244fcc5c454876	fix(08-04): bind decide-apr-v1 FALSIFY-007/-010 to named tests the guard resolves
+a5580be41b2b68a715359a6a193a2d671621fc8a	fdff85b5dca839b9f7c09e9b04d7267f1d3bd9b0	docs(08-04): complete aprender-decide Laya method plan - summary and deferred items
+be99340288cb8863973002c21ddcbb99cf78929d	b344491da4428b5ab084acfb2af63331f50d11fe	docs(08-04): record plan 08-04 completion in STATE and ROADMAP
+c44397cfb02bea4336a554e555fbf5afcd1f432b	54bfde6b9458d18a954e78a7ff8b7783ae63bca0	feat(08-05): decide-apr-v1 artifact, packer and ladder-only Decider
+73e0be235485bacc5482285e0de41e90db876563	68c3c3bd010a21b301dbe36e6a42c4b0de37c636	test(08-05): ladder negatives, determinism and forged-header tests (RED)
+2243664685d142f6c3bf60a6536fe88446956b0d	1c6e10c3eb5a99c398eff43b1220bc8ce0afcfc1	feat(08-05): cap the APR index reservation, exact size rule, golden and bindings (GREEN)
+392aa131b5521333c0706aede8e4b2ed45b44e8f	2152699e663b21cf542ea6ad64e4b6e00543396b	test(08-05): trybuild proof that Decider has no second minting path
+f8a12af614c28acc37468c23acdfb24f1c2044d6	b76308822207161ec5c9414de5654f7c488af966	style(08-05): rustfmt the artifact, pack and apr-format test code
+6acb90553144b155be837183fd3ae2b19e32a0ae	4a10d73b48f7941450a9fa2b7d36a2fef05832c5	docs(08-05): complete decide-apr-v1 artifact plan - summary and deferred items
+c076fb0f54bd3f5e170ae5ee9de0ce12b987bdc4	db8954ccef4cb7064e489bdd5ec026b0a889de1e	docs(08-05): record plan 08-05 completion in STATE and ROADMAP
+48562aaa8a2041937c48d122f237c66c99b93800	586ff8f2e0a5323b86c60715bacbae9f7cd56445	refactor(08): select FALSIFY-DECIDE-APR-007's preserve_order leg by a test-only feature
+cb3c6d2768e409e997492e48b74b63fbe20ed3ba	f50c4341126d9d87d43ddba613900e5f0cfe4c91	refactor(08): one torch-free helper module for the Laya back office
+a726f05389f7868cec3d67add3166ae863c1b4e2	eb3c8501eda15068dadd510ef4d6df3a51538f46	refactor(08): one canned recipe for the pending-tolerant phase 4/8 binding audits
+badb74bbbc8e8ea649bfe0b325d6afdb92831685	c4b182407bf2604271d5ecff81535d22cbb54247	refactor(08): collapse aprender-decide's duplicated loaders, checks and helpers
+71e2306e5e70e1d5c792bfccb43fadc3a5b63116	66087af1bf451e988f379c91c7e8fbd51751bd79	refactor(08): hoist RoPE tables, read fused qkv in place, cache Laya's row prefix
+3b009ad68240d90f9c6e82ecc31222d9245d611d	50fb46114eeb4a89e06c4d322f85efd74de5b3fe	feat(08-06): thin stdio MCP server aprender-mcp-decide with one task-bound classify tool
+4eb91e840e15b92a67412c1284abb748580745da	9b251993352d10929852cbb19189ae4256f23da5	test(08-06): classify boundary tests and FALSIFY-DECIDE-TOOL-001..008 bindings
+c9a63981603bc33d7703c16fe8a5416b938e9851	8c3250b7e8910a2a54c822d12ee380f621f097a9	docs(08-06): complete aprender-mcp-decide thin stdio server plan
+df46a1c5cfba01c39ae75a1508ac070c459bb0f9	36a9b9c033cf1209a336c3343a5740aad857c256	feat(08-07): tracer - decide Lambda bootstrap over a stateless loopback server
+56c7f819cebc12d770aac8efb94c0b5e8d3378ad	282380f715d0b0f1d0071acc68136d9209892c16	test(08-07): add failing tests for the in-memory S3 cold-start loader
+b893166211227650a7549848d0c63cd1ff4bfa1d	4bf44885bf39adaccdf018e5cd9cfc12854a1c60	feat(08-07): in-memory S3 cold-start loader with the sha256 pin
+b05d44b0c029855702e0e9fc02687aa153ea5d0b	a57a339641015cb8286acc1b4b461fbe35a378c0	fix(08-07): keep the bootstrap handler future Send across the S3 download
+14f2622caadbf27ff7fef31d729c0f53e20eefe7	590543359e609fbd32eb1c4e77ac66219d9b2c31	feat(08-07): maximal-request probe CLI and the pmcp.run deploy config template
+b90139a7913ab8bc5396c5b4159ee3d23ccaa30f	c07b176badecc53af13fd05debc84fe430710722	docs(08-07): complete aprender-mcp-decide-lambda deployment unit plan
+469988b14f1ce786e4c592895b7f703c057b46f9	cb2511cd6c9aff9a593b82cddca7ad27ab33d7cc	docs(08-07): record plan 08-07 completion in STATE and ROADMAP
+ed19f783abc9a9c2db5ab20c4a073f2e6828f90d	be0c6d39f99bf495a4685a15ef26b745f1f0286c	feat(08-08): declare the early-stopping recipe before re-running the stance demo
+d787f0e817cb4afa565e9f853af9636a45e643e5	7f4a1e728a4f6f78116f7a1a94231c4a587dac92	feat(08-08): early stopping on the calibration slice, best epoch restored before any eval score
+7ae45bb6964b8d413323ee0fb4dd565c4fd08ca0	4ef50ce393e0feac8961ce1790b389a5f261d568	docs(08-08): halted again - early-stopping recipe also fails the ECE ceiling
+ad5a04bf8587b25ca78dd3ceea699ae2465bfec1	9c69cd098e1f10e99d2239b4f6a9897464b401b3	docs(08): queue the Laya calibration spike (slice size x temperature cap) before any third gate attempt
+37d66510b4b741f36e24d75ea4e4c0566b637f42	709e482a89b918a696f7ea8c0a2bc9cfeecd5b22	docs(08-08): record the D-19 demo outcome of record - GATE FAIL under both declared recipes, kept as fail-closed vectors
+a7657a4984619d71edc581c93f6325f3afa68365	6bde89c3728796449359a20ce1a268ec84ede8c9	test(08-08): data/gate self-tests and the --seeds lifecycle assertions (RED)
+465aa40d51b09cbb9c7a4f1714423a9c554370d5	80852df3aab903d7657e59cde213e2e1891b260f	feat(08-08): --seeds N variance report, gate verify_report, just laya-train-selftest
+a0ba4b7d82a0f9fac70fd2d80e2273a93848285b	01c91c0b29a84753981e7c4df6deeb11de8a8930	docs(08-08): complete Laya fine-tune/calibration/gate plan - demo GATE FAIL recorded as fail-closed vectors (option 3)
+618b420931a59a443c9a5f395d56c091f68422b8	039e09db0b5cda2ecaa8a9051da127873737d5fd	docs(08-08): record plan 08-08 completion (option 3) in STATE and ROADMAP
+2b75c14dc298d52c58c1c25d5d1d91682ee52817	b840417e1b131c5d1bf310e3f78bc8bd9eafdc6e	docs(08): revise plans 08-09..08-12 for option 3 (demo gate FAIL as fail-closed vectors, D-18 deferred)
+aad9a795107b88c1c5375fc1f953ae3a8eb58f5d	70d47d41d0dad8ddf675d28442036e4637254eca	docs(08): align ROADMAP, STATE and VALIDATION with the option-3 plan revision (b840417e1)
+d7031c319a67de01262ad5a9f1b6c2b189de0bd4	1e2507c9c9c2b929a270fdd10a43dfa52d78a795	feat(08-09): Rust gate verifier and pack_laya pack (tracer HALTED on real-weights re-score drift)
+d4980e1b997e2e969ceb5263d6e75b712c16ef4b	57f063a1d7612d45d3793ce2d626349f4c6cc81f	docs(08-09): halted at the tracer - real-weights re-score drift refuses the vector before the ece_post clause
+4ff5b02e47dcfe5d1d557641fca460721401297c	eb7f2d9db2cac00ba8ff67aa90a3aeb57d9bdcb4	docs(08-09): record tracer halt blocker in STATE (completed_plans kept at 100)
+8e55e0bed66f5e3eb54ebfd862f7085bf3c49be7	e69fe76a38784b916b90e9351ba21b89c91cd05d	fix(08): compute ModernBERT RoPE inv_freq with torch's f32 rounding
+eee452b2a9a69165f98e0962d8409f29336764bb	98a17aa7808c0b32f68bf653dd9078fb87ab539c	docs(08): resolve laya-rescore-drift debug session
+f3e9c8087fe7eb92ef1b3291b97cf49f2ea09d6b	be1e35e4ee88ac93cdf4dc80a8977b9e41e0254a	docs(08): add the 1e-5 re-score bar vs fp32 noise question to the calibration spike
+1ed27cc9574c41442fcb4f37d64cb38c76c86818	57a48d60db83ad5112b8e810b66ed64a63fe9ff6	docs(08-09): apply option A to the plan's fixed_epochs outcomes
+9bdaebb952a144f858725d865be61355bcfc8c29	78bc93b09e7926309b0f4d184798bad4b5c0776b	feat(08-09): verify/inspect/pack-fixture subcommands, every verify refusal tested, concrete bindings
+42bf7c47f3e06f0b64234c42fa0d156f2ebb8a1e	763183032549b89904cad20501a9f736a5ee4d52	test(08-09): full-model spike-025 parity and both fail-closed vectors refused by pack and verify
+87c957bfff37e80df29f25df344da7b1bdb7fa64	9b6e36190848167a1a4b9c5037e839225ddc8cc2	docs(08-09): complete Rust gate verifier and fail-closed pack plan (option A)
+d24ea8086e80e80e32aa9bc830fe59a24a4b5df2	3057ab2457d8d9175f4bb9dfb64ec75d7466e82f	docs(08-09): record plan 08-09 completion (option A) in STATE and ROADMAP
+dccc37e76037b0d4c4808ff60f7e99ecc20f38ca	2455c6d5f6dcbcac45564d7f03e2639e6c9c0a73	feat(08-10): fail-closed decide deploy flow from the shared crates root, resolver proven, refusals selftested offline
+81137329c0e46a72bba158c6d8661c8217ef7f2f	5a0631b736858dc2493edb2dedf0bb6fab6a76b1	feat(08-10): live-side decide recipes (bucket, gated upload, scoped grant, cold verify, containment teardown)
+09b048a7ac8811dc874fdba06639357355391752	8fe38a6e1a9377669f33237fb51b7d6b321f59b6	docs(08-10): complete fail-closed decide deploy recipes plan (shared-crates-root, resolver executed, refusals offline)
+77e0dc32b0f94a4877dab97555362cea5aecbd96	84115bfc2a34f8575134f0289c1553bb06a99f01	docs(08-10): record plan 08-10 completion (shared-crates-root) in STATE and ROADMAP
+278fdf02d94e1239eb1873284cffe22977ad7e9a	360204e71bcd8e73b4f6a3c6cc6196da5eda84ab	docs(08-11): record the D-18 go/no-go as a human-decided HOLD (hold-no-aws), preserve the live-deploy procedure
+14b463614a1c7ec06a4ef949b054245312a74403	ce892466b9df3f7f951d19f2a71607e5ad6b3e18	docs(08-11): complete D-18 go/no-go plan (outcome: hold, hold-no-aws, zero AWS contact)
+e1a4f9c7d9ae984c6556a292c43db3cbbffcb2e2	58946e5ad4d3bb9309f3ae1472651990e8a52410	docs(08-11): record plan 08-11 completion (HOLD, hold-no-aws) in STATE and ROADMAP
+01fe93afb58f81d25175399f6603676be0dde071	e04c60f82bb957c72597ac7378ee9e668157ffb3	docs(spike-027): PARTIAL — Laya stance ECE fails on SemEval split shift, not the T cap
+423f38bb47da6858512c1000d2eb4fcc11f6ce2f	590643e98936ce479832155cad6ee2f905e85467	docs(spike-028): INVALIDATED — 1e-5 pack bar refuses the only gate-passing Laya checkpoint (torch fp32 itself 6.3e-5 from f64)
+279e1364490e0f46b0f2a1d77546ba85a7a964ea	56353ebd2411e84e5338e07dbc87466c03e5b6fd	docs(08): add gap-closure plans for a deployable stance model (spikes 027/028, option 1)
+fc0c1dd300e31325d7612cf5ea0792b94440f362	9b155b66e539877fd4dbd2fb67fed85d440ac4ca	feat(08-13): declare laya-parity-v1 A1 — noise-referenced pack/verify re-score bar (2.0.0)
+a3e15517038e1d4cadaa7bc1481c70d8c04d5ff4	74f0dd0b3517ed1f98fdf5347a6fe16b8aba9e7f	feat(08-13): declare laya-finetune-gate-v1 AMENDMENT 1.4.0 (A2 eval set, A3 median seed; published 2.0.0)
+56f888d623504f83dabd4e193618608ab461b194	1d9ba6fcde72b3d81318a1d83944bd6d09480c93	docs(08-13): record the 2026-09-27 amendments in 08-CONTEXT and deferred items
+dd02a9b8486728476119790179095d7af0ffcd6b	6e1d4899418ce1ad3f88fb45a2b27d255cd9b0d9	docs(08-13): complete amendment-declaration plan (A1/A2/A3 declared before any s64 run)
+e74c1fa38973ba8e9a61f6e66676b88d4b3a5ea4	cae41e208e856bbdbfc3b03b09c3b3c26d490e94	docs(08-13): record plan 08-13 completion in STATE and ROADMAP (12/18)
+4f5ada98126143b4ceef4969133e6943d61a53ed	ce6dd871f87c8deb77be53468b71a150007b2899	feat(08-14): median-ECE seed selection and float64 rescore-noise record in the Laya trainer (A3, A1)
+de58feea6041c2e0a9a38792e56fd3e876c81017	ee05bacdd407fadead7d140b23b5acdf2e781ac4	feat(08-14): s64 demo data by rule and the shift probe reported outside the gate (A2)
+24cea2a63532f0aceef77d011bae557a4fafff35	aef853cea0b36659a3ba7504e593d2936677c813	test(08-14): pin the median rule, the held-out rule and the noise record in the Laya self-tests; bind them
+4f4674fbd639fb7408811ee65446c16ce793cb8c	445b72e9e7d541fb91901b35adc9aa0df7604728	docs(08-14): log the seeds-label and GATE-006 legacy-clause questions as deferred items
+e2b69877a5c45bac676d0d949266613307464d67	8981d33d30dd1ce934f6a61de0feb752035feae1	docs(08-14): complete A1/A2/A3 back-office plan (median seed, float64 noise record, s64 data by rule, shift probe)
+cc17395a950bca07c167007dc5914043613e20cf	3deca8d7d27403da101017437209e5149c3ce7c9	docs(08-14): record plan 08-14 completion in STATE and ROADMAP (13/18)
+c997618259a5950a76966414a2a289c90e3715ca	e6da0ee7eb1c3ea2f033579bbcda1ce37497e2b4	fix(08-15): settle the seeds label and retire GATE-006's legacy multi-seed clause
+3cfa83e1b5301c1587556b12e512da8f08521176	e8d76621eaa2e6ca923862f7f9e17c3d65f3c428	feat(08-15): derive each re-score bound from the float64 noise record (A1 tracer)
+6389ec3d5c318fd8f62900396108ca675eb6f33d	f3de0fc50ea1caf3187b92f35bbf67abb5f6cafc	feat(08-15): re-derive the median seed, recompute the shift probe, refuse legacy runs after the gate
+3ef7284275c34ec040fe0f6c317d61f1add77475	a62e968de1dacd84b9ddd18fbab5781debc4a926	test(08-15): re-derive the 1.x vectors on real weights, add FALSIFY-LAYA-GATE-014, bind the new rules
+755df9bdd4aa19e49a2573030b952889ffef262d	d4b9c192448489e4aa852306d6b3342cd71626f7	docs(08-15): complete the Rust A1/A2/A3 verifier plan (noise-referenced bound, median re-derivation, shift probe, legacy order)
+39be66265055c1fd8de9d1b0b97caf54fc8128b4	b2ba2b4481e937c812acf89f3cc71249cc6a7162	docs(08-15): record plan 08-15 completion in STATE and ROADMAP (14/18)
+820d82732746a6d433e06892804d68c8935d32fc	cca59a4eeed383280d9b0694f7ae63edf7180d01	feat(08-16): record the one declared s64 gate run as gate_pass (deploy_eligible, sha 24a44d7e)
+07cfaee06cfa04ebd5dd13026520985f89d631bc	a59a143ffdd78acae6bb18b3af9c07964cce98fb	docs(08-16): complete the one declared s64 gate run plan (gate_pass, deploy_eligible, H 24a44d7e)
+a90a5cd41e91a3d1b153da91d104e5fba6e3822f	a61b5becfcc403f43e40772a02e8fbaf0ba60b3f	docs(08-16): record plan 08-16 completion in STATE and ROADMAP (15/18)
+968d73e99be9ec79690eed211fd37ce11cfc1263	dd1a7a81368adec818cf8bd78f1083a9f423942d	feat(08-17): re-price decide-tool-boundary for the 3,008 MB Lambda tier (v2.0.0)
+b30f437daca12cef32556c7c00f224794627397a	69c73a9211ab2bec965d37399ecb46740452e16c	fix(08-17): laya-deploy skips cargo-pmcp's pre-grant suite and waits out IAM propagation
+371c6bfe79918bffbeefdc35338debbe16040106	04299224c8b9d64eff28aab1cdf03571e6f873aa	feat(08-17): record the first live decide deploy as deploy-refused (contained)
+0349200a86e4cee9c336664ab7c41e4796e6bc8c	0cdcab9f06407cebd1017f14767d70bfbc623426	docs(08-17): halt the live decide deploy plan at deploy-refused (contained; 3 GB tier amended)
+1179cf76b64c8d1fa9455057138229fbd7d113ee	a3f6e72fd1a2371aecfbe67298554d0eb6721c51	docs(08-17): record the 08-17 halt in STATE and ROADMAP (15/18, blocker: resume decision)
+3115c690e5a12ccd4fa764f9aaa6567a02634d66	0b9fc106f1912d4d4a64006815cc3b8c96f39b63	fix(08-17): laya-deploy checks the pmcp.run edge /health serverId, not a GET on /mcp
+f8073e5f56af8e9d0be9a3ed01c85127b1dbce5d	6c455338f41855a4ecd31289ddc84dc18812a414	docs(08-17): record the resume attempt, blocked on a pmcp.run login gate
+ad57c6ec37ca3bd31994c8248657a72d0473b46c	050d9c2fdb989755591363e77bd80a30c43df10d	docs(08-17): record resume attempt 2, refused at the pmcp.run edge and re-contained
+52a12d777b03b5d4a42bb9f56f53186ffc2a84b5	18f3c0774e08b180e46aa2e7d02574cefa0bb455	fix(08-17): declare the decide weights read in the stack ([[iam.statements]]), laya-grant becomes read-only
+743eb02ed243b2bff1b854042098d5d17e33c957	cb01d7155c0951a500162b6ed465d8a9b94c5c17	fix(08-17): laya-deploy retries only the pmcp.run edge's transient 503 error-state refusal (bounded)
+4f79d157c8f627a1390789fbcd082f43f5da6a18	b8d10516d249f639e9b1411e801e3db3d4440079	docs(08-17): complete the live decide deploy plan, deployed-passed on the option-1 resume
+b3ace9a3d1ef7fe65b3667d14a9b4acffe5fa1d8	7a3580df7920e135d10ad177ea1b142d2d978736	feat(08-18): final live record deployed-passed, deferred items, README Deployed section
+de7d649d54ca553928d4fdfe9444d994d722c3a8	01f6550baee03c07e63aef4eb2d7a775b57e7173	docs(08-18): complete final live outcome record plan (deployed-passed, final)
+363a26fecd71c2cbf6c7b83dd1be072acf0c9f8a	940dd37654b2fce81293816104f77ee1849d52a8	docs(08-18): STATE and ROADMAP to 17/18, next 08-12 close-out
+f1226a4d5c7c6ed97ff2d43b6ffb093492a4873f	1e96756dce80b439207178434a594407d3a730e9	feat(08-12): D-16 row, Phase 8 bindings implemented from source, strict contract-audit-phase8
+57e18b54178197bf060e91bb4f0efaeca742e3cf	399c2fba2af521ad11a011fd1879f9afa64ef66d	chore(08-12): wire the two pure-Rust Phase 8 targets into CI's integration step
+57423ef6be9b21421d54aa3f9c78f1a8760f67a1	97662937e5ea1a0a8227b96998380ad7a6dbcdda	feat(08-12): just laya-verify-suite keeps the Python-parity surface local, behind its flags
+7d5c65f4b39c0b60eec4d0e1323286fb2c26cfe9	59f60fc249321d0aa4e3b2fefc3da5e4d3ace5a3	fix(08-12): drop laya-parity-v1's back-edge to decide-apr-v1 (contract dependency cycle)
+ea091df732455be8708f9e39eb8f7688ed954a47	61ba8b29c3949c6034ce7e956de3b1d49ca24dde	docs(08-12): complete the Phase 8 close-out plan (18/18)
+8e758f538b621871c237d3e4f981d66a78680121	387c905ea280d385d336ddc263acd9468d1fa386	docs(08): code review — 1 critical, 9 warnings, 8 info
+61bab4cdc510aff718ab0eada9eb050c0fe11e95	84a9265e885cb96dacb18a31fefcf80d8eaa5686	docs(08): phase verification — gaps_found (CR-01 manifest binding; CI unobserved)
+ea940faecc7f6be8696abc063c034a06f3588b11	b67a83684dea036bd021fbcf8efed4252a72100b	fix(08): code-review hardening + /simplify dedups on the Phase 8 decide stack
+e190deec0ab59d1e32b8d117a7ae56e377660ac2	f8de03b3268990b5595e30b41179fc240930d0b4	docs(08): plan the class-wide gap round 08-19..08-32 (provenance, input bounds, gate honesty, claim honesty, Rust-Python agreement)
+6fc05264a60dea45250a7d412ca28863fc8f7321	d671a6bbe04ec13d3c8495044ec9b318f81bca48	docs(08): track the /code-review max findings the gap-round plans read
+1367c40abf19d871a761b072ff7b94c912e69e6d	ea086f5a0341cd833f5d885e8206819df1adcd51	docs(08): revise gap-round plans 08-19..08-32 per plan-checker findings
+d6d3157c7b7977c3a34ccbf0c23d78bea91f7cfe	9cd887280167e1eaf0f651c2b0321dc39b66d518	docs(08): gap-round plans 08-19..08-32 verified (checker pass after 1 revision)
+b2e66dc7fa28739d5ab0dcbe0e5d6f0020d7e9c9	85dde2af11193cfb0280c9c8e2468aa499bf326f	feat(08-19): bind manifest base and variant to the recipe blob at rung 4 on every load door
+602db2edadaa01b66628d01a57993f5363e65c8d	643019ee35d3b4c1f98af25042dd8055422e4f94	feat(08-19): bind every decide-apr-v1 manifest leaf at rung 4 and sweep all leaves against the contract table
+ae7de80b4513a1dcf58cb23793867abf7cff3ce4	b6d9eb3d140db74f9645fc468fd251f1562c52ac	docs(08-19): complete manifest-to-blob provenance binding plan (summary)
+70125a6b1ded90c1d67d71e23b0babac5e589b5c	1d23b8009f380591cb7ce6535f2186ef571ddeb6	docs(08-19): record plan 08-19 completion in STATE and ROADMAP
+fa46bebf0e5e30ddac10cad9430297d7be9e79da	64e2cd1ad371fcc84d90681515bd15b5958ee257	fix(08-20): refuse duplicate tensor names in both APR v2 readers (strictly increasing index)
+36d3725a252df7d35d8c184481d0c251a0e89cfd	e91db6da9d85a7d4f04eb251a303005dc1950381	fix(08-20): bound the APR v2 index reservation in in-memory units and guard ModernBertLayer rows
+65398e4cbaf6a2f8a69980957014bd13d2407e16	231fea2d8a9cebc07c242fec9585d5a7322091cd	test(08-20): mutation-prove every shared-reader bound; real-weights parity unchanged
+3cd90fa385b4719070ef02aac64159c91780563c	32d924344dd919c1e1b7d83baabbdc8e9483dd7c	docs(08-20): complete class-B shared-reader bounds plan (summary)
+23daf2f2a60dc35bf2face534f0472387cfe3a37	4d4025a09822c58b2c1a2cb03aab5853fb6b6d7b	docs(08-20): record plan 08-20 completion in STATE and ROADMAP
+25d9ead18183c38aa7e001318e0e259c24c78036	45ba41e0300aaee979dd32b99d51a2c4eea0b084	feat(08-21): one typed contract-to-policy mapping and check_base over every base identity field
+2b7149fa086dae3da7fe8dc215c0a47bd08cf6eb	90c9279df6559d9e032fb8db1423322a89f86258	feat(08-21): pin the base dir's config files, bind the recipe block, enforce the slice fraction
+78a3683ec218d50654278398f0dafd9dab0f9bb8	82941207169187349aef42a5c117e5ea1ab780ba	test(08-21): run_field_bindings table and the class-A verify-side sweep; mutation-proved; real evidence unchanged
+19a3224e09205496f6e2edbb93d6f4cbc7e246e0	afedd6c14211aac07c6e2043ac321087dc40c863	docs(08-21): complete class-A run-dir binding at verify plan (summary)
+9b013771ebaae6e39a035ad624368635ed0e8abe	47867d96471836ac1573324b600a22ae9b292050	docs(08-21): record plan 08-21 completion in STATE and ROADMAP
+778417a86c052e9fb28dccc8aea7c5dd5e22cbe2	65fe8f9f321a83dbcabd0a11b9243540e672e42d	feat(08-22): leg verdict requires positive evidence; the real ladder rung runs in laya-verify-suite
+47494e1c6355e0be91342077a9c70bbb2300e56e	c7927013d62a56b11846045dc7fe966297dfe5a1	fix(08-22): IAM/teardown failures named honestly, grant check scoped to what it reads, one hash helper
+4e6894882defea9f7c2cf6393a57c7abf1957de1	1b674f85152c691016020b929b42e5f267aeac7b	feat(08-22): laya-gates-selftest sweeps every Phase 8 gate; resolver ERE case table; honest skip line; bootstrap intent
+4ae7219e4bdcf61edd80b83b62a65f84527d33bd	cf41079dcae8ad1df8f6ff88e893d9b9be5e580b	docs(08-22): complete class-C gate honesty plan (summary)
+444d7be00510884dc9999e8b2b1b785019a28505	e1d276abeae0e2c42bd19f74bc3b6fc8f0cb6f54	docs(08-22): record plan 08-22 completion in STATE and ROADMAP
+43d57f5f2c9fbdc8d587245cd4585e35de651606	5119aa18871c789b96fd1827f933338720d48bf6	feat(08-23): classify count checked on the JSON array before any text is materialised
+787014203d7c7f6b2210a2ac76835c3ecbaf9088	2254afd5595d75730041b1a65a32bd5c0ff3e361	feat(08-23): clap argv, unwrap ban back in force, served_fields table with its sweep
+da00143ff499848a33618eb9d31091d21601c455	9c8a95bca689bf5a00ada67e00e4a7a0934cbf61	feat(08-23): untrusted_input_bounds request table swept per row, each bound mutation-proven
+00938dac130a236f038fef50badc9a5ee004a4d2	b7ad4af5392cf98d40a1a9d20bd151709f9815f2	docs(08-23): complete class A served fields / class B request bounds plan (summary)
+99e72f1f958071f75e3576f4321503ce825b09b7	72b13067916c211109bfe01c28d171f5641a52ee	docs(08-23): record plan 08-23 completion in STATE and ROADMAP
+4f03998eeeb66166999e0a40e2ba0de927bfde97	f11732e2d51cda2be83b0570dc42d4324e435a76	feat(08-25): identity probe compares the response labels with the artifact's; ok() over all four checks
+305ae8226d6384c1fc1a815926963a6c29abdc86	7ffb4f9ce16fa4f2ee60d7dd10e6243e99284b54	feat(08-25): exact labels-segment parse, the server's budget function, args_os, current template comments
+6f82bdab8e82ef75a067807c20e9b7663bf260f3	64330f50f7ec1c6d8bc0857c84de7c2f448b7464	test(08-25): probe_fails_when_identity_differs; every probe check mutation-verified
+c30e1e8e66cf1bd89961c08721793c0bac2dea96	246e89941cb5281d41a159dd982f8b221c9bee87	docs(08-25): complete probe identity checks against the artifact plan (summary)
+4d00f50e17116e4a6d4ed25481b864d7b32da062	115d7b57082cb61f6d86d284d17dc9eb904f65ab	docs(08-25): record plan 08-25 completion in STATE and ROADMAP
+c82158de01595299d9ffe5d5309e678db3760c07	7829fe70d06caba71e744af1594159fb21717c78	feat(08-24): a dead loopback ends the process (WR-06), proven on a real loopback server
+99a2499a7ca291db8c911d23202d8138808f50bb	8b7fc64cfe537ea67dc514c2d6377a9dec5ded64	style(08-24): rustfmt the loopback watcher test
+64813d0e5bc2afc447c261462a65ee3f8fcb21a9	70a8d121fa5fb470bbe41c456faff1f6b55c49ca	feat(08-24): POST-only loads, config-checked health, one CORS origin, too_large local reads, item-scoped lint allows
+4309a816d205a94508dad20078db84a49d0d5d9d	80939b5f295b715266d4c8741e084d349e76c4c3	test(08-24): sweep the Lambda-owned request rows; frame_http requires exactly 413
+951c2b4d12958b2ac153620a0068d5374ec90c6f	0c8903fcce5e377d524c6134e36d0a972a00941c	docs(08-24): complete Lambda runtime shim hardening plan (summary)
+6eb5453c1d3f8e5377c42a8cef2d64a737a1c2f3	e9c05828ba0bcacc6a6307d1b0f2cbc82805168e	docs(08-24): record plan 08-24 completion in STATE and ROADMAP
+38824c6e136107313bdbacfc036497bf174aa8de	9f1936172f33522e4fba764d98bae2bf91fff8f9	fix(08-26): refuse a repeated tensor name at rung 4; inspect runs rungs 1-4 on a bounded read
+a986f22303b876e9be1f9baf267b602b441cb954	ffe052e6dd81a36b76aab00bf36554f433738857	fix(08-26): bound criteria while reading; disable tokenizer truncation/padding; rung-2 version; rung-7 replay refusals
+161909525556e7c00f6061cc0686ecc4284f586f	314fe070349e336a2e51b5c0ca2eb5aa640a4a39	test(08-26): the artifact-side class-B bounds table, swept; probe rows bounded before the replay forward
+0f6a021d81fb2ee36a05d48605e9c5104033a266	7ac55c4dec6e7f20b9deb23ca9065b9f333a96d5	docs(08-26): complete artifact-side class-B bounds plan (summary)
+bb5ddda1c1c3769f79995c828c8ad57a861b894e	dc947e61a480f08f608186572c25b25ae4a9bc5f	docs(08-26): record plan 08-26 completion in STATE and ROADMAP
+dd67df1bcfe8d5711553a396c43963d66f9cddf2	3dc69ad7ef31c5fb0002573558318b25190b2675	docs(08-26): sync state.json after plan 08-26
+e5edfef6a4df42071597362e2c5a38ab58692c07	bdeaadeca571e802920b893b8737afce201e976d	test(08-27): freeze to_bits() snapshot of the shared f32 f1_score / top-label ECE
+90a53178c832c111dcd2ac698ee0ea62848eb4a7	5eddde97d965f349b62f6755d1e1a612f968d72c	feat(08-27): exact summation and f64 macro-F1 in both languages; the 9-row 1/20 margin case agrees through check_gate
+221556654f582bf333b283f242c175aff588e2bd	ec4b15840168fed945eaebed17fff0eec13967f6	feat(08-27): f64 ECE and rank key, f_avg recomputed in verify, numeric_agreement and the full case file
+6aed5c59f1a88a46626d2c1ef55fe33cbcd183f4	fea004fda2d80b4cdc0f63cc5da8c897856b7718	test(08-27): mutation-proved agreement on both sides; real evidence unchanged; equivalence guard for ECE bin sums
+97034f84b284917d0cfa8a0cdb886f9ef2d67899	b7865a5e070b8b5a3fd96af0196e2df9ea6eabbc	docs(08-27): complete Rust-Python numeric agreement plan (summary)
+6ea8d0cc6ca0d1fa4a473db28ed079a72c2a1406	d3682567b6ae60e11a71748946c812dbd2d79316	docs(08-27): record plan 08-27 completion in STATE and ROADMAP
+21716c494c0a55ac073459ca130ec74a78bb717e	2f89f924ceba8954ce8fd0df0168f1f5c137904c	feat(08-29): one typed contract-number reader, carried into the noise record Rust verifies
+438b6c1feb01eed728e8d518974005b472ea4593	64e718840e26c5f804cdf87a92ced36b0679be84	fix(08-29): rows split like Rust, typed refusals not tracebacks, one early-stopping rule
+97ed5342559848d52066e795bef9d35a27bc72e2	59d2b0aaf717b6ac3fcbac2b66bcce654420adbd	test(08-29): python_refusals table and its sweep; every refusal mutation-proved
+1c8ff55f00a85d2ed788693571ed4aeafc41b4c5	ea62071839cb414d83f522f07ba17cf6cd0b3aa0	docs(08-29): complete Python back-office class E plan (summary)
+b4fdd08b1285e3601a922022ee9daee070baa869	fcfdb0e00fb9c5626fbe19b121279edf98426866	docs(08-29): record plan 08-29 completion in STATE and ROADMAP
+890b769e9d95d16c5f3535fff41435b654e06c7d	5a55cc811e99f2b414b8d187722abbf9af8ba88b	test(08-28): pin pmcp's serial dispatch over live stdio; restate classify_admission
+5e91d2b10d7514d686d005e7a4b9dc0a1091d649	74c32d32e3e220f39ec02b448f2a8c80bedf2c23	docs(08-28): record the owner's A-derive B-iserror decision as a dated D-09 amendment
+d3de3e741dead962fd8ddf45f24665956895c2d1	6489113919c00ed3cab55d9940c66e9b3dd22157	feat(08-28): derive the truncation sentence, send bound refusals as isError results
+dfc682dc6effe388a5a002559041a686a85eff91	47e68cfa7649fb6d684a411d8527b6db6313dfc6	docs(08-28): complete classify tool claim-honesty plan (summary)
+e0be0262b6e31a3e55d6ada7a79f39d8d3a555be	7283cc5d9293d04bd15d6afb7290a7e8383cc458	docs(08-28): record plan 08-28 completion in STATE and ROADMAP
+defe91e09e41c851043678d5ac6914e74644f3d3	80d8e6a1fdc2de6ecfeb3cdba560dd758bce0161	test(08-30): offline positive dry run accepts the deployed artifact on HEAD
+6f7d9569c04f0d276cadfbc03ba5cc5f1ccf6f91	19dc88d858ba87a3c662de5825c01dbda13bdd2f	docs(08-30): record the owner's redeploy-and-measure decision (Task 2)
+26b1ebf443fcc1d5067ad0b7b107d54dea7f485c	56c8ba87df070b502897ef474c047813a6af5491	feat(08-30): re-price decide-tool-boundary-v1 for the 10,240 MB tier (7.0.0)
+98f4187fe1c49d0f602049bb5340b9baddbe9a99	1c96fd99bd1e620c05844a648b1ef288a0239176	docs(08-30): record the owner's restore-10240-tier decision (D-18 amendment)
+5fa0e7df9e3566137e5b2f30058c5b529def0dd1	80b177eece4d6a242b0900ba31085797948e8814	docs(08-30): record the refused 10,240 MB deploy (pmcp.run caps MemorySize at 3008)
+007edcb6f0713cd33aa0e05335409f0c89087ce7	87eae56b104d40930bc285f2538d4ebb066a9161	docs(08-30): record the second refused 10,240 MB deploy after raise-pmcp-run-cap
+6291fb116e586354eda1bde8d1b36d8d63b3eee0	a6a8ff6c10025f8bb007353bd5e2833303f93ad8	docs(08-30): record the accepted 10,240 MB deploy and its 4 cold samples
+b615d8244d7e9c350e8b74fadc230f1852d80820	522307f58d48447511e821207eabd2db0fad3cc1	feat(08-30): apply keep-800-apply-10739 (DOWNLOAD_DEADLINE 10739 ms, invocation-deadline budget, contract 8.0.0)
+f76a8b2fcb1fd03c73a204319409c40485aa969a	4315dc8e249e3c3b02986964290105690d4a8bf4	docs(08-30): record the re-measured 10,240 MB deploy; accepted_region_cold implemented (contract 9.0.0)
+8473ea04d28eecce4f154c52dba7e5950f7b3a2e	a73cfaaeba70715b3d82cf48b5e5ab9fa2919b64	docs(08-30): CLAUDE.md decision row and lambda README state the measured 10,240 MB tier
+17dae066151a33aa8896a93756bce381c20f9c37	7f60f7668b04c8b61f1ffaec45e1643bbd18b940	docs(08-30): complete live redeploy and measured download deadline plan
+c4a6db7c591404b76253a2ea7efe016f96343717	35d247e3da90a6f1bd55f925c0c9e0271d5f9b23	feat(08-31): one digest module, a pack-free load path proven by a test, and the claims ledger gate
+23a640e6ad264679e9a90d3e8b25d9330a87d0df	93a22305f1212ed26546959ed4adf72a20f3a73b	feat(08-31): D-14 publish-false, the class-D claims ledger (133 rows), argmax NaN fix, gap-round final statuses
+0077a9db27718f541a85fcafbd8c93fce6f94fe4	f982cc2f42e3724324463a7e7a4005c9db350d09	docs(08-31): complete class D claim honesty, D-14 publish-false and gap-round deferrals plan
+4a3a8d6c38d7c5495840ac2264999a58ec9bbc93	68397e1bab8ff4323c2a5bb8b8099c792df344d5	docs(08-31): sync state.json after plan 08-31
+7f1cd6c36f5fea70f414e8b92ce1c6b500cec3c8	c5b3d89d0194523b80832e2cd3373b74c4fada8a	feat(08-32): laya-gap-regression, one command that re-proves classes A-E and the phase regression

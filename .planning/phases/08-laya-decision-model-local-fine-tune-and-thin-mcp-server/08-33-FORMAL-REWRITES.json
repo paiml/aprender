@@ -1,0 +1,812 @@
+{
+ "schema": "laya-formal-rewrites-v1",
+ "base": "3c0f2cf00312756edb6810b888c8cbeecaafc9be",
+ "rules": [
+  [
+   "\\bfor all\\b",
+   "∀"
+  ],
+  [
+   "\\bforall\\b",
+   "∀"
+  ],
+  [
+   "\\bexists!",
+   "∃!"
+  ],
+  [
+   "\\bexists\\b",
+   "∃"
+  ],
+  [
+   "\\bimplies\\b",
+   "⇒"
+  ],
+  [
+   "=>",
+   "⇒"
+  ],
+  [
+   "<=",
+   "≤"
+  ],
+  [
+   ">=",
+   "≥"
+  ],
+  [
+   "!=",
+   "≠"
+  ],
+  [
+   "&&",
+   "∧"
+  ],
+  [
+   "\\bAND\\b",
+   "∧"
+  ],
+  [
+   "\\|\\|",
+   "∨"
+  ],
+  [
+   "\\bOR\\b",
+   "∨"
+  ],
+  [
+   "\\bnot_in\\b",
+   "∉"
+  ],
+  [
+   "\\biff\\b",
+   "↔"
+  ]
+ ],
+ "entries": [
+  {
+   "contract": "laya-parity-v1",
+   "path": "proof_obligations[0]",
+   "old": "forall r in fixtures: ids_rust(r) == ids_oracle(r) AND markers_rust(r) == markers_oracle(r)",
+   "new": "∀ r in fixtures: ids_rust(r) == ids_oracle(r) ∧ markers_rust(r) == markers_oracle(r)",
+   "method": "substitution"
+  },
+  {
+   "contract": "laya-parity-v1",
+   "path": "proof_obligations[1]",
+   "old": "forall r: max_k |p_rust - p_oracle| <= 1.0e-5 AND argmax equal",
+   "new": "∀ r: max_k |p_rust - p_oracle| ≤ 1.0e-5 ∧ argmax equal",
+   "method": "substitution"
+  },
+  {
+   "contract": "laya-parity-v1",
+   "path": "proof_obligations[2]",
+   "old": "forall l: rel_rms(l) <= 1.0e-3",
+   "new": "∀ l: rel_rms(l) ≤ 1.0e-3",
+   "method": "substitution"
+  },
+  {
+   "contract": "laya-parity-v1",
+   "path": "proof_obligations[3]",
+   "old": "window in {63, 65} implies rel_rms(first_local) > 1.0e-3 AND rel_rms(first_global) <= 1.0e-3",
+   "new": "window in {63, 65} ⇒ rel_rms(first_local) > 1.0e-3 ∧ rel_rms(first_global) ≤ 1.0e-3",
+   "method": "substitution"
+  },
+  {
+   "contract": "decide-apr-v1",
+   "path": "proof_obligations[0]",
+   "old": "forall bytes, backing in {preserve_order, sorted}: labels(parse_task_backing(bytes)) == document_order(bytes)",
+   "new": "∀ bytes, backing in {preserve_order, sorted}: labels(parse_task_backing(bytes)) == document_order(bytes)",
+   "method": "substitution"
+  },
+  {
+   "contract": "decide-apr-v1",
+   "path": "proof_obligations[1]",
+   "old": "forall header h accepted at rung 2: h.tensor_count <= max_tensor_count AND h.tensor_count * 20 <= h.data_offset - h.tensor_index_offset",
+   "new": "∀ header h accepted at rung 2: h.tensor_count ≤ max_tensor_count ∧ h.tensor_count * 20 ≤ h.data_offset - h.tensor_index_offset",
+   "method": "substitution"
+  },
+  {
+   "contract": "decide-apr-v1",
+   "path": "proof_obligations[2]",
+   "old": "forall stream: bytes_read <= max_artifact_bytes + 1",
+   "new": "∀ stream: bytes_read ≤ max_artifact_bytes + 1",
+   "method": "substitution"
+  },
+  {
+   "contract": "decide-apr-v1",
+   "path": "proof_obligations[3]",
+   "old": "forall inputs: pack_A(inputs) == pack_B(inputs)",
+   "new": "∀ inputs: pack_A(inputs) == pack_B(inputs)",
+   "method": "substitution"
+  },
+  {
+   "contract": "decide-apr-v1",
+   "path": "proof_obligations[4]",
+   "old": "forall run: unpack(pack(run)).tensors == run.tensors AND unpack(pack(run)).blobs == run.blobs",
+   "new": "∀ run: unpack(pack(run)).tensors == run.tensors ∧ unpack(pack(run)).blobs == run.blobs",
+   "method": "substitution"
+  },
+  {
+   "contract": "decide-apr-v1",
+   "path": "proof_obligations[5]",
+   "old": "forall d: VerifiedDecider => rungs_1_to_7_passed(d)",
+   "new": "∀ d: VerifiedDecider ⇒ rungs_1_to_7_passed(d)",
+   "method": "substitution"
+  },
+  {
+   "contract": "decide-tool-boundary-v1",
+   "path": "proof_obligations[0]",
+   "old": "MIN_TEXTS == constants.classify_min_texts AND MAX_TEXTS == constants.classify_max_texts AND MAX_TEXT_BYTES == constants.classify_max_text_bytes AND MAX_TOTAL_TOKENS == constants.classify_max_total_tokens AND MAX_IN_FLIGHT == constants.classify_max_in_flight AND MAX_PENDING == constants.classify_max_pending",
+   "new": "MIN_TEXTS == constants.classify_min_texts ∧ MAX_TEXTS == constants.classify_max_texts ∧ MAX_TEXT_BYTES == constants.classify_max_text_bytes ∧ MAX_TOTAL_TOKENS == constants.classify_max_total_tokens ∧ MAX_IN_FLIGHT == constants.classify_max_in_flight ∧ MAX_PENDING == constants.classify_max_pending",
+   "method": "substitution"
+  },
+  {
+   "contract": "decide-tool-boundary-v1",
+   "path": "proof_obligations[1]",
+   "old": "classify_max_total_tokens * tier_ms_per_token_at_512 + cold_start_budget_ms + probe_budget_ms + margin_ms <= api_gateway_timeout_ms (at 10 240 MB: 800 x 12 + 15000 + 1100 + 4000 = 29700 <= 30000)",
+   "new": "classify_max_total_tokens * tier_ms_per_token_at_512 + cold_start_budget_ms + probe_budget_ms + margin_ms ≤ api_gateway_timeout_ms (at 10 240 MB: 800 x 12 + 15000 + 1100 + 4000 = 29700 ≤ 30000)",
+   "method": "substitution"
+  },
+  {
+   "contract": "decide-tool-boundary-v1",
+   "path": "proof_obligations[2]",
+   "old": "forall req: accepted(req) implies classify_count_bound(req) AND classify_text_bytes_bound(req) AND classify_token_budget(req)",
+   "new": "∀ req: accepted(req) ⇒ classify_count_bound(req) ∧ classify_text_bytes_bound(req) ∧ classify_token_budget(req)",
+   "method": "substitution"
+  },
+  {
+   "contract": "decide-tool-boundary-v1",
+   "path": "proof_obligations[3]",
+   "old": "forall resp, i: resp.results[i].probabilities[k] is the probability of resp.labels[k], and resp.labels == task.criteria in document order",
+   "new": "∀ resp, i: resp.results[i].probabilities[k] is the probability of resp.labels[k], and resp.labels == task.criteria in document order",
+   "method": "substitution"
+  },
+  {
+   "contract": "decide-tool-boundary-v1",
+   "path": "proof_obligations[4]",
+   "old": "forall t: running(t) + waiting(t) <= classify_max_pending AND running(t) <= classify_max_in_flight",
+   "new": "∀ t: running(t) + waiting(t) ≤ classify_max_pending ∧ running(t) ≤ classify_max_in_flight",
+   "method": "substitution"
+  },
+  {
+   "contract": "decide-tool-boundary-v1",
+   "path": "proof_obligations[5]",
+   "old": "forall req, e = refuse(req): forall t in req.texts, len_chars(t) >= refusal_echo_min_chars AND t distinctive: not substring(t, e.message)",
+   "new": "∀ req, e = refuse(req): ∀ t in req.texts, len_chars(t) ≥ refusal_echo_min_chars ∧ t distinctive: not substring(t, e.message)",
+   "method": "substitution"
+  },
+  {
+   "contract": "laya-finetune-gate-v1",
+   "path": "proof_obligations[0]",
+   "old": "forall report r: r.thresholds != (gate_min_macro_f1_margin, gate_max_ece, ece_bins) implies refuse(r)",
+   "new": "∀ report r: r.thresholds ≠ (gate_min_macro_f1_margin, gate_max_ece, ece_bins) ⇒ refuse(r)",
+   "method": "substitution"
+  },
+  {
+   "contract": "laya-finetune-gate-v1",
+   "path": "proof_obligations[1]",
+   "old": "forall run: accepted_pass(run) == gate(recompute(verified(eval_probs)), recompute(verified(zero_shot_probs)))",
+   "new": "∀ run: accepted_pass(run) == gate(recompute(verified(eval_probs)), recompute(verified(zero_shot_probs)))",
+   "method": "substitution"
+  },
+  {
+   "contract": "laya-finetune-gate-v1",
+   "path": "proof_obligations[2]",
+   "old": "calibration_temp_min <= T_applied <= calibration_temp_max",
+   "new": "calibration_temp_min ≤ T_applied ≤ calibration_temp_max",
+   "method": "substitution"
+  },
+  {
+   "contract": "laya-finetune-gate-v1",
+   "path": "proof_obligations[4]",
+   "old": "no seed_selection implies shipped.seed == declared_seed",
+   "new": "no seed_selection ⇒ shipped.seed == declared_seed",
+   "method": "substitution"
+  },
+  {
+   "contract": "laya-finetune-gate-v1",
+   "path": "proof_obligations[5]",
+   "old": "seed_selection implies shipped == sort_by((floor(ece_post(s) x rank_scale), s), variance_seeds)[1] AND pass == gate(ft_shipped, zs) AND sha256(checkpoint) == per_seed[shipped].model_safetensors_sha256",
+   "new": "seed_selection ⇒ shipped == sort_by((floor(ece_post(s) x rank_scale), s), variance_seeds)[1] ∧ pass == gate(ft_shipped, zs) ∧ sha256(checkpoint) == per_seed[shipped].model_safetensors_sha256",
+   "method": "substitution"
+  },
+  {
+   "contract": "laya-finetune-gate-v1",
+   "path": "proof_obligations[6]",
+   "old": "gate_pass(run) == gate_pass(run without shift.jsonl) AND shift_probe.gate_clause == false",
+   "new": "gate_pass(run) == gate_pass(run without shift.jsonl) ∧ shift_probe.gate_clause == false",
+   "method": "substitution"
+  },
+  {
+   "contract": "laya-finetune-gate-v1",
+   "path": "proof_obligations[7]",
+   "old": "no seed_selection implies not deploy_eligible (SeedPolicyMissing, decided after the re-scores and the gate)",
+   "new": "no seed_selection ⇒ not deploy_eligible (SeedPolicyMissing, decided after the re-scores and the gate)",
+   "method": "substitution"
+  },
+  {
+   "contract": "laya-finetune-gate-v1",
+   "path": "proof_obligations[8]",
+   "old": "best_epoch, t_applied = f(train fit rows, calibration slice) AND eval-probs computed after the checkpoint is fixed",
+   "new": "best_epoch, t_applied = f(train fit rows, calibration slice) ∧ eval-probs computed after the checkpoint is fixed",
+   "method": "substitution"
+  },
+  {
+   "contract": "laya-finetune-gate-v1",
+   "path": "proof_obligations[9]",
+   "old": "variant == synthetic-fixture implies not deploy_eligible",
+   "new": "variant == synthetic-fixture ⇒ not deploy_eligible",
+   "method": "substitution"
+  },
+  {
+   "contract": "chronos-bolt-parity-v1",
+   "path": "proof_obligations[9]",
+   "old": "validate is Err(Validation) iff h = 0 or h > constants.max_horizon or (h > constants.native_horizon and not allow_long_horizon); the third message contains \"allow_long_horizon\"",
+   "new": "validate is Err(Validation) ↔ h = 0 or h > constants.max_horizon or (h > constants.native_horizon and not allow_long_horizon); the third message contains \"allow_long_horizon\"",
+   "method": "substitution"
+  },
+  {
+   "contract": "chronos-bolt-parity-v1",
+   "path": "proof_obligations[10]",
+   "old": "warning.is_some() iff h > constants.native_horizon; at h = 365: diagnostics.forwards = constants.rollout_forwards_for_365 && diagnostics.rollouts = 5",
+   "new": "warning.is_some() ↔ h > constants.native_horizon; at h = 365: diagnostics.forwards = constants.rollout_forwards_for_365 ∧ diagnostics.rollouts = 5",
+   "method": "substitution"
+  },
+  {
+   "contract": "chronos-bolt-parity-v1",
+   "path": "proof_obligations[11]",
+   "old": "delta_nine_path <= equations.rollout_365_abs.float_tolerance && delta_median_only > 0.1 against the same oracle",
+   "new": "delta_nine_path ≤ equations.rollout_365_abs.float_tolerance ∧ delta_median_only > 0.1 against the same oracle",
+   "method": "substitution"
+  },
+  {
+   "contract": "chronos-bolt-parity-v1",
+   "path": "proof_obligations[12]",
+   "old": "resident_elements = 2 * matrix_elements + non_matrix_elements, and matrix_elements + non_matrix_elements = 8652672 for chronos-bolt-tiny",
+   "new": "resident_elements = 2 * matrix_elements + non_matrix_elements ∧ matrix_elements + non_matrix_elements = 8652672 for chronos-bolt-tiny",
+   "method": "hand",
+   "why": "Two equations were joined by a comma and the English word 'and', which no unambiguous-operator rule covers; the comma-and is replaced by the conjunction glyph and every other token is kept, so both equations and the 8652672 count are unchanged."
+  },
+  {
+   "contract": "chronos-bolt-parity-v1",
+   "path": "proof_obligations[13]",
+   "old": "forall rows > 1: proj(fast = true, ...) = linear_fast(...) bitwise, and != linear(...) for at least one seeded input",
+   "new": "∀ rows > 1: proj(fast = true, ...) = linear_fast(...) bitwise, and ≠ linear(...) for at least one seeded input",
+   "method": "substitution"
+  },
+  {
+   "contract": "chronos-bolt-parity-v1",
+   "path": "proof_obligations[14]",
+   "old": "proj(fast = true, row1_gemv = false, rows = 1, ...) = linear(...) bitwise, and != linear_fast(...) for at least one of 20 seeded inputs",
+   "new": "proj(fast = true, row1_gemv = false, rows = 1, ...) = linear(...) bitwise, and ≠ linear_fast(...) for at least one of 20 seeded inputs",
+   "method": "substitution"
+  },
+  {
+   "contract": "chronos-bolt-parity-v1",
+   "path": "proof_obligations[15]",
+   "old": "git status --porcelain -- models/ is empty && git check-ignore -q models/chronos-bolt-tiny/f32/model.safetensors",
+   "new": "git status --porcelain -- models/ is empty ∧ git check-ignore -q models/chronos-bolt-tiny/f32/model.safetensors",
+   "method": "substitution"
+  },
+  {
+   "contract": "chronos-bolt-parity-v1",
+   "path": "proof_obligations[16]",
+   "old": "a second, all-files-present run exits 0 and echoes all three sha256 pins without downloading; a one-byte flip in the f32 model makes it exit non-zero naming a sha256 mismatch",
+   "new": "a second, all-files-present run exits 0 ∧ echoes all three sha256 pins without downloading; a one-byte flip in the f32 model makes it exit non-zero naming a sha256 mismatch",
+   "method": "hand",
+   "why": "Two behavioural clauses of the second run (exits 0, echoes the three sha256 pins) were joined by the English word 'and'; only that word becomes the conjunction glyph and every other word is kept, so the second run's behaviour and the one-byte-flip clause are unchanged."
+  },
+  {
+   "contract": "chronos-bolt-parity-v1",
+   "path": "proof_obligations[17]",
+   "old": "unarmed: ignored >= 1 with the arming reason; armed: ignored = 0 and matching test lines >= 8",
+   "new": "unarmed: ignored ≥ 1 with the arming reason; armed: ignored = 0 and matching test lines ≥ 8",
+   "method": "substitution"
+  },
+  {
+   "contract": "forecast-tool-boundary-v1",
+   "path": "proof_obligations[0]",
+   "old": "types::MIN_POINTS == constants.fit_min_points AND types::MAX_POINTS == constants.fit_max_points AND types::MAX_HORIZON == constants.fit_max_horizon",
+   "new": "types::MIN_POINTS == constants.fit_min_points ∧ types::MAX_POINTS == constants.fit_max_points ∧ types::MAX_HORIZON == constants.fit_max_horizon",
+   "method": "substitution"
+  },
+  {
+   "contract": "forecast-tool-boundary-v1",
+   "path": "proof_obligations[1]",
+   "old": "chronos::CHRONOS_MIN_POINTS == constants.chronos_min_points AND chronos::CHRONOS_MAX_POINTS == constants.chronos_max_points AND chronos::CHRONOS_MAX_HORIZON == constants.chronos_max_horizon",
+   "new": "chronos::CHRONOS_MIN_POINTS == constants.chronos_min_points ∧ chronos::CHRONOS_MAX_POINTS == constants.chronos_max_points ∧ chronos::CHRONOS_MAX_HORIZON == constants.chronos_max_horizon",
+   "method": "substitution"
+  },
+  {
+   "contract": "forecast-tool-boundary-v1",
+   "path": "proof_obligations[2]",
+   "old": "forall ds: not(strictly_ascending(ds) and all_calendar_dates(ds)) implies result is Validation",
+   "new": "∀ ds: not(strictly_ascending(ds) and all_calendar_dates(ds)) ⇒ result is Validation",
+   "method": "substitution"
+  },
+  {
+   "contract": "forecast-tool-boundary-v1",
+   "path": "proof_obligations[4]",
+   "old": "forall f: future_days(_, _, f) = Ok(_) iff f in {D, W, MS}",
+   "new": "∀ f: future_days(_, _, f) = Ok(_) ↔ f in {D, W, MS}",
+   "method": "substitution"
+  },
+  {
+   "contract": "forecast-tool-boundary-v1",
+   "path": "proof_obligations[5]",
+   "old": "forall w: accept(w) iff 0.0 < w and w < 1.0",
+   "new": "∀ w: accept(w) ↔ 0.0 < w and w < 1.0",
+   "method": "substitution"
+  },
+  {
+   "contract": "forecast-tool-boundary-v1",
+   "path": "proof_obligations[6]",
+   "old": "forall args: args.cap is Some and args.growth != logistic implies result is Validation",
+   "new": "∀ args: args.cap is Some and args.growth ≠ logistic ⇒ result is Validation",
+   "method": "substitution"
+  },
+  {
+   "contract": "forecast-tool-boundary-v1",
+   "path": "proof_obligations[9]",
+   "old": "schema_for!(ForecastArgs).additionalProperties == false and required == {ds, y, horizon}",
+   "new": "schema_for!(ForecastArgs).additionalProperties == false ∧ required == {ds, y, horizon}",
+   "method": "hand",
+   "why": "The schema claim joins additionalProperties == false and the required set with the English word 'and'; that word alone becomes the conjunction glyph, the required set {ds, y, horizon} is untouched."
+  },
+  {
+   "contract": "forecast-tool-boundary-v1",
+   "path": "proof_obligations[10]",
+   "old": "forall v not in accepted(field): result is Validation and message contains accepted(field)",
+   "new": "∀ v not in accepted(field): result is Validation and message contains accepted(field)",
+   "method": "substitution"
+  },
+  {
+   "contract": "forecast-tool-boundary-v1",
+   "path": "proof_obligations[11]",
+   "old": "forall args, forall h in args.holidays: result is Ok implies len_bytes(h.name) <= constants.fit_max_holiday_name_len",
+   "new": "∀ args, ∀ h in args.holidays: result is Ok ⇒ len_bytes(h.name) ≤ constants.fit_max_holiday_name_len",
+   "method": "substitution"
+  },
+  {
+   "contract": "forecast-tool-boundary-v1",
+   "path": "proof_obligations[12]",
+   "old": "forall h with len_bytes(h.name) > constants.fit_max_holiday_name_len: result is Validation and message contains index(h) and len_bytes(h.name) and not contains h.name",
+   "new": "∀ h with len_bytes(h.name) > constants.fit_max_holiday_name_len: result is Validation and message contains index(h) and len_bytes(h.name) and not contains h.name",
+   "method": "substitution"
+  },
+  {
+   "contract": "forecast-tool-boundary-v1",
+   "path": "proof_obligations[13]",
+   "old": "forall args: running_sum(k) > constants.fit_max_holiday_dates_total implies result is Validation and forall j > k: h_j.dates were never parsed",
+   "new": "∀ args: running_sum(k) > constants.fit_max_holiday_dates_total ⇒ result is Validation and ∀ j > k: h_j.dates were never parsed",
+   "method": "substitution"
+  },
+  {
+   "contract": "forecast-tool-boundary-v1",
+   "path": "proof_obligations[14]",
+   "old": "forall args with model == neuralprophet: result is Ok implies request_train_cost(args) <= constants.fit_max_np_train_cost",
+   "new": "∀ args with model == neuralprophet: result is Ok ⇒ request_train_cost(args) ≤ constants.fit_max_np_train_cost",
+   "method": "substitution"
+  },
+  {
+   "contract": "forecast-tool-boundary-v1",
+   "path": "proof_obligations[16]",
+   "old": "horizon > constants.chronos_native_horizon implies (allow_long_horizon or result is Validation) and (allow_long_horizon implies response.warning.is_some())",
+   "new": "horizon > constants.chronos_native_horizon ⇒ (allow_long_horizon or result is Validation) and (allow_long_horizon ⇒ response.warning.is_some())",
+   "method": "substitution"
+  },
+  {
+   "contract": "forecast-tool-boundary-v1",
+   "path": "proof_obligations[18]",
+   "old": "forall refusal r in this contract: code(r) == code(pmcp::Error::validation)",
+   "new": "∀ refusal r in this contract: code(r) == code(pmcp::Error::validation)",
+   "method": "substitution"
+  },
+  {
+   "contract": "forecast-tool-boundary-v1",
+   "path": "proof_obligations[19]",
+   "old": "forall req: signature(concurrent(req)) == signature(sequential(req)) and max_abs_diff == 0.0",
+   "new": "∀ req: signature(concurrent(req)) == signature(sequential(req)) and max_abs_diff == 0.0",
+   "method": "substitution"
+  },
+  {
+   "contract": "forecast-tool-boundary-v1",
+   "path": "proof_obligations[20]",
+   "old": "best_of(constants.pool_speedup_best_of, sequential_wall / concurrent_wall) >= constants.pool_speedup_min_x10 / 10 (evaluated by `just forecast-pool-ratio`, aarch64 release only)",
+   "new": "best_of(constants.pool_speedup_best_of, sequential_wall / concurrent_wall) ≥ constants.pool_speedup_min_x10 / 10 (evaluated by `just forecast-pool-ratio`, aarch64 release only)",
+   "method": "substitution"
+  },
+  {
+   "contract": "forecast-tool-boundary-v1",
+   "path": "proof_obligations[21]",
+   "old": "forall req: seed(req) == req.seed.unwrap_or(constants.default_seed) and forall req1 req2: result(req1) is independent of order(req1, req2)",
+   "new": "∀ req: seed(req) == req.seed.unwrap_or(constants.default_seed) and ∀ req1 req2: result(req1) is independent of order(req1, req2)",
+   "method": "substitution"
+  },
+  {
+   "contract": "forecast-tool-boundary-v1",
+   "path": "proof_obligations[23]",
+   "old": "knobs(door_surface) == properties(schema_for!(ForecastArgs)) union properties(schema_for!(HolidayArg)) and forall a in cost_axes: a.bound in keys(constants) or (a.bound == measured_at_structural_maximum and a.measured_seconds < 2.0) or a.bound matches unbounded_pending_*",
+   "new": "knobs(door_surface) == properties(schema_for!(ForecastArgs)) union properties(schema_for!(HolidayArg)) and ∀ a in cost_axes: a.bound in keys(constants) or (a.bound == measured_at_structural_maximum and a.measured_seconds < 2.0) or a.bound matches unbounded_pending_*",
+   "method": "substitution"
+  },
+  {
+   "contract": "forecast-tool-boundary-v1",
+   "path": "proof_obligations[25]",
+   "old": "forall c in freq x growth x holiday_shape: accept(request(c)) and wall_release(request(c)) < sc1_wall_seconds",
+   "new": "∀ c in freq x growth x holiday_shape: accept(request(c)) and wall_release(request(c)) < sc1_wall_seconds",
+   "method": "substitution"
+  },
+  {
+   "contract": "neuralprophet-parity-v1",
+   "path": "proof_obligations[0]",
+   "old": "max_abs_diff(NpData::new(ds, y, n_train, 10, 0.8), oracle.trend_seasonality.data_params + changepoints_t) <= equations.data_prep_vs_oracle_abs.float_tolerance",
+   "new": "max_abs_diff(NpData::new(ds, y, n_train, 10, 0.8), oracle.trend_seasonality.data_params + changepoints_t) ≤ equations.data_prep_vs_oracle_abs.float_tolerance",
+   "method": "substitution"
+  },
+  {
+   "contract": "neuralprophet-parity-v1",
+   "path": "proof_obligations[1]",
+   "old": "auto_batch(n_train) == constants.np_peyton_batch && auto_epochs(n_train) == constants.np_peyton_epochs",
+   "new": "auto_batch(n_train) == constants.np_peyton_batch ∧ auto_epochs(n_train) == constants.np_peyton_epochs",
+   "method": "substitution"
+  },
+  {
+   "contract": "neuralprophet-parity-v1",
+   "path": "proof_obligations[2]",
+   "old": "mae_365ahead <= equations.lag_free_holdout_mae.float_tolerance",
+   "new": "mae_365ahead ≤ equations.lag_free_holdout_mae.float_tolerance",
+   "method": "substitution"
+  },
+  {
+   "contract": "neuralprophet-parity-v1",
+   "path": "proof_obligations[3]",
+   "old": "mae_1step_rust < oracle.naive_1step_mae_test - equations.ar_net_vs_naive_margin.float_tolerance",
+   "new": "mae_1step_rust < oracle.naive_1step_mae_test − equations.ar_net_vs_naive_margin.float_tolerance",
+   "method": "hand",
+   "why": "A spaced ASCII minus inside a strict inequality; only the minus becomes the declared minus glyph (U+2212), the inequality's operands and the margin tolerance are unchanged."
+  },
+  {
+   "contract": "neuralprophet-parity-v1",
+   "path": "proof_obligations[4]",
+   "old": "forall p in model.parameters(): p.grad() = Some(g) && max_i |g_i| > equations.huber_grad_min_abs.float_tolerance",
+   "new": "∀ p in model.parameters(): p.grad() = Some(g) ∧ max_i |g_i| > equations.huber_grad_min_abs.float_tolerance",
+   "method": "substitution"
+  },
+  {
+   "contract": "neuralprophet-parity-v1",
+   "path": "proof_obligations[5]",
+   "old": "weighted_huber has no `Tensor::new(raw_data)` on the value path; the mask tensor carries no requires_grad",
+   "new": "weighted_huber: ¬∃ `Tensor::new(raw_data)` on the value path ∧ ¬ requires_grad on the mask tensor",
+   "method": "hand",
+   "why": "The claim was prose with two negative clauses (no Tensor::new on the value path; the mask carries no requires_grad); it is restated as a negated existence over the value path conjoined with a negated requires_grad on the mask tensor, keeping the same two clauses and the same identifiers."
+  },
+  {
+   "contract": "neuralprophet-parity-v1",
+   "path": "proof_obligations[6]",
+   "old": "forall n in [constants.min_rows_for_mini_batch, types::MAX_POINTS]: auto_batch(n) < n && constants.auto_batch_min <= auto_batch(n) <= constants.auto_batch_max",
+   "new": "∀ n in [constants.min_rows_for_mini_batch, types::MAX_POINTS]: auto_batch(n) < n ∧ constants.auto_batch_min ≤ auto_batch(n) ≤ constants.auto_batch_max",
+   "method": "substitution"
+  },
+  {
+   "contract": "neuralprophet-parity-v1",
+   "path": "proof_obligations[7]",
+   "old": "graph_tape_len() == 0 after train() and after a completed forecast(model = neuralprophet)",
+   "new": "graph_tape_len() after train() == 0 ∧ graph_tape_len() after a completed forecast(model = neuralprophet) == 0",
+   "method": "hand",
+   "why": "The same tape length (0) was claimed 'after train() and after a completed forecast(...)'; the length is now stated after each event and the two statements are conjoined, so the claim (length 0 after both) is identical."
+  },
+  {
+   "contract": "neuralprophet-parity-v1",
+   "path": "proof_obligations[9]",
+   "old": "fourier_feats(day, ..) depends on day only through (day - days_from_civil(constants.fourier_epoch_year, 1, 1))",
+   "new": "∃ f: fourier_feats(day, ..) = f(day − days_from_civil(constants.fourier_epoch_year, 1, 1))",
+   "method": "hand",
+   "why": "'depends on day only through X' is restated as an existential function of the shifted day f(day - X), using the declared minus glyph; X (days_from_civil(constants.fourier_epoch_year, 1, 1)) is untouched."
+  },
+  {
+   "contract": "neuralprophet-parity-v1",
+   "path": "proof_obligations[10]",
+   "old": "forall j in event columns: |w_j * NpData::scale - effect| / |effect| <= equations.event_effect_recovery_rel.float_tolerance, for n_lags in {0, 7}",
+   "new": "∀ j in event columns: |w_j * NpData::scale - effect| / |effect| ≤ equations.event_effect_recovery_rel.float_tolerance, for n_lags in {0, 7}",
+   "method": "substitution"
+  },
+  {
+   "contract": "neuralprophet-parity-v1",
+   "path": "proof_obligations[11]",
+   "old": "bits(train(d, cfg_E, s).event_weights()) == bits(train(d, cfg_E, s).event_weights()) AND bits(train(d, cfg_E, s).event_weights()) != bits(train(d, cfg_E, s2).event_weights()) for s2 != s, both at equations.event_training_determinism_bitwise.float_tolerance = 0.0; AND tape_len_per_step(E1) - tape_len_per_step(0) == tape_len_per_step(E2) - tape_len_per_step(0) for any two E1, E2 > 0, at equations.event_tape_length_flat_in_columns.float_tolerance = 0.0",
+   "new": "bits(train(d, cfg_E, s).event_weights()) == bits(train(d, cfg_E, s).event_weights()) ∧ bits(train(d, cfg_E, s).event_weights()) ≠ bits(train(d, cfg_E, s2).event_weights()) for s2 ≠ s, both at equations.event_training_determinism_bitwise.float_tolerance = 0.0; ∧ tape_len_per_step(E1) - tape_len_per_step(0) == tape_len_per_step(E2) - tape_len_per_step(0) for any two E1, E2 > 0, at equations.event_tape_length_flat_in_columns.float_tolerance = 0.0",
+   "method": "substitution"
+  },
+  {
+   "contract": "prophet-parity-v1",
+   "path": "proof_obligations[0]",
+   "old": "forall fixture: max_abs_diff(design, stan_data) <= equations.data_prep_exact.float_tolerance",
+   "new": "∀ fixture: max_abs_diff(design, stan_data) ≤ equations.data_prep_exact.float_tolerance",
+   "method": "substitution"
+  },
+  {
+   "contract": "prophet-parity-v1",
+   "path": "proof_obligations[1]",
+   "old": "forall fixture with lp: |f_rust(theta_py) + log_posterior_at_map_unnormalized| <= equations.objective_at_python_map_abs.float_tolerance",
+   "new": "∀ fixture with lp: |f_rust(theta_py) + log_posterior_at_map_unnormalized| ≤ equations.objective_at_python_map_abs.float_tolerance",
+   "method": "substitution"
+  },
+  {
+   "contract": "prophet-parity-v1",
+   "path": "proof_obligations[5]",
+   "old": "forall fixture: f_rust(theta_fit) - f_python <= equations.fitted_objective_slack.float_tolerance",
+   "new": "∀ fixture: f_rust(theta_fit) - f_python ≤ equations.fitted_objective_slack.float_tolerance",
+   "method": "substitution"
+  },
+  {
+   "contract": "prophet-parity-v1",
+   "path": "proof_obligations[8]",
+   "old": "forall i: |trend_i*(1+mul_i) + add_i - yhat_i| <= equations.components_rebuild_yhat_abs.float_tolerance",
+   "new": "∀ i: |trend_i*(1+mul_i) + add_i - yhat_i| ≤ equations.components_rebuild_yhat_abs.float_tolerance",
+   "method": "substitution"
+  },
+  {
+   "contract": "prophet-parity-v1",
+   "path": "proof_obligations[9]",
+   "old": "forall fixture: |w_rust - w_py| <= equations.band_width_rel.float_tolerance * w_py",
+   "new": "∀ fixture: |w_rust - w_py| ≤ equations.band_width_rel.float_tolerance * w_py",
+   "method": "substitution"
+  },
+  {
+   "contract": "prophet-parity-v1",
+   "path": "proof_obligations[10]",
+   "old": "forall spike003 fixture: |w30_rust - w30_py| <= equations.band_width_last30_rel.float_tolerance * w30_py",
+   "new": "∀ spike003 fixture: |w30_rust - w30_py| ≤ equations.band_width_last30_rel.float_tolerance * w30_py",
+   "method": "substitution"
+  },
+  {
+   "contract": "prophet-parity-v1",
+   "path": "proof_obligations[11]",
+   "old": "forall spike003 fixture: |wt_rust - wt_py| <= equations.trend_band_width_rel.float_tolerance * wt_py",
+   "new": "∀ spike003 fixture: |wt_rust - wt_py| ≤ equations.trend_band_width_rel.float_tolerance * wt_py",
+   "method": "substitution"
+  },
+  {
+   "contract": "prophet-parity-v1",
+   "path": "proof_obligations[12]",
+   "old": "forall fixture: info.rounds <= constants.max_rounds && info.status in {Stalled, Converged} && info.budget_hit == false",
+   "new": "∀ fixture: info.rounds ≤ constants.max_rounds ∧ info.status in {Stalled, Converged} ∧ info.budget_hit == false",
+   "method": "substitution"
+  },
+  {
+   "contract": "setfit-benchmark-claims-v1",
+   "path": "proof_obligations[0]",
+   "old": "expectation_set.expected_cells == |methods| * |shots| * |seeds| == 40 && set(RunManifest::expectation()) == set(methods x shots x seeds) && |RunManifest::expectation()| == 40 && no_duplicates(methods) && no_duplicates(shots) && no_duplicates(seeds) && expectation_set.deferred_two_method_scope.deferred_expected_cells\n  == |deferred_methods| * |shots| * |seeds| == 80 &&\nset(expectation_set.methods) subset_of set(expectation_set.deferred_two_method_scope.deferred_methods)\n",
+   "new": "expectation_set.expected_cells == |methods| * |shots| * |seeds| == 40 ∧ set(RunManifest::expectation()) == set(methods x shots x seeds) ∧ |RunManifest::expectation()| == 40 ∧ no_duplicates(methods) ∧ no_duplicates(shots) ∧ no_duplicates(seeds) ∧ expectation_set.deferred_two_method_scope.deferred_expected_cells\n  == |deferred_methods| * |shots| * |seeds| == 80 ∧\nset(expectation_set.methods) subset_of set(expectation_set.deferred_two_method_scope.deferred_methods)\n",
+   "method": "substitution"
+  },
+  {
+   "contract": "setfit-benchmark-claims-v1",
+   "path": "proof_obligations[1]",
+   "old": "from_bytes(b) == Ok(v) => sha256(canonical_compact(v.payload)) == v.semantic_hash && digest_check precedes return\n",
+   "new": "from_bytes(b) == Ok(v) ⇒ sha256(canonical_compact(v.payload)) == v.semantic_hash ∧ digest_check precedes return\n",
+   "method": "substitution"
+  },
+  {
+   "contract": "setfit-benchmark-claims-v1",
+   "path": "proof_obligations[2]",
+   "old": "forall f in fields(BenchRow): f not_in forbidden_field_name_substrings && deny_unknown_fields(every struct in BenchRow)\n",
+   "new": "∀ f in fields(BenchRow): f ∉ forbidden_field_name_substrings ∧ deny_unknown_fields(every struct in BenchRow)\n",
+   "method": "substitution"
+  },
+  {
+   "contract": "setfit-benchmark-claims-v1",
+   "path": "proof_obligations[3]",
+   "old": "MethodEvidence = Setfit{evidence_table_hash, apr_artifact_sha256, lock{lock_hash, role, rule, lock_record_path}}\n               | Lora{base_model_sha256, base_model_bytes, adapter_sha256, epochs_requested,\n                      epochs_completed, early_stopping_disabled, val_split, no_selection_attestation,\n                      candidate_ledger_sha256, candidates_trained, candidate_ledger_path} &&\nforall field f in either variant: type(f) is not Option\n",
+   "new": "MethodEvidence = Setfit{evidence_table_hash, apr_artifact_sha256, lock{lock_hash, role, rule, lock_record_path}}\n               | Lora{base_model_sha256, base_model_bytes, adapter_sha256, epochs_requested,\n                      epochs_completed, early_stopping_disabled, val_split, no_selection_attestation,\n                      candidate_ledger_sha256, candidates_trained, candidate_ledger_path} ∧\n∀ field f in either variant: type(f) is not Option\n",
+   "method": "substitution"
+  },
+  {
+   "contract": "setfit-benchmark-claims-v1",
+   "path": "proof_obligations[4]",
+   "old": "record(m, c, h) == Ok(idempotent) iff status(c) == complete && row_sha256(c) == h ; record(m, c, h') == Err(CellAlreadyRecorded{c, existing, incoming: h'}) iff status(c) == complete && row_sha256(c) != h'\n",
+   "new": "record(m, c, h) == Ok(idempotent) ↔ status(c) == complete ∧ row_sha256(c) == h ; record(m, c, h') == Err(CellAlreadyRecorded{c, existing, incoming: h'}) ↔ status(c) == complete ∧ row_sha256(c) ≠ h'\n",
+   "method": "substitution"
+  },
+  {
+   "contract": "setfit-benchmark-claims-v1",
+   "path": "proof_obligations[5]",
+   "old": "expectation() == sort_by(method_index asc, shots asc, seed asc) && forall listings L in manifest, report: order(L) == order(expectation())\n",
+   "new": "expectation() == sort_by(method_index asc, shots asc, seed asc) ∧ ∀ listings L in manifest, report: order(L) == order(expectation())\n",
+   "method": "substitution"
+  },
+  {
+   "contract": "setfit-benchmark-claims-v1",
+   "path": "proof_obligations[6]",
+   "old": "report(dir) == Ok => |complete_cells| == 40 &&\n  forall c: sha256(bytes(row_file(c))) == manifest.row_sha256(c) && row(c).cell == c ;\nDEFERRED: forall (s, d): row(setfit, s, d).selection_manifest_hash == row(lora, s, d).selection_manifest_hash ; |cells(manifest)| == 0 => Err ; set(cells(manifest)) != expectation_set => Err\n",
+   "new": "report(dir) == Ok ⇒ |complete_cells| == 40 ∧\n  ∀ c: sha256(bytes(row_file(c))) == manifest.row_sha256(c) ∧ row(c).cell == c ;\nDEFERRED: ∀ (s, d): row(setfit, s, d).selection_manifest_hash == row(lora, s, d).selection_manifest_hash ; |cells(manifest)| == 0 ⇒ Err ; set(cells(manifest)) ≠ expectation_set ⇒ Err\n",
+   "method": "substitution"
+  },
+  {
+   "contract": "setfit-benchmark-claims-v1",
+   "path": "proof_obligations[7]",
+   "old": "setfit_row valid => sha256(read(lock.lock_record_path)) == lock.lock_hash ; lora_row valid => sha256(read(candidate_ledger_path)) == candidate_ledger_sha256 &&\n                  line_count(candidate_ledger) == candidates_trained == 1\n",
+   "new": "setfit_row valid ⇒ sha256(read(lock.lock_record_path)) == lock.lock_hash ; lora_row valid ⇒ sha256(read(candidate_ledger_path)) == candidate_ledger_sha256 ∧\n                  line_count(candidate_ledger) == candidates_trained == 1\n",
+   "method": "substitution"
+  },
+  {
+   "contract": "setfit-benchmark-claims-v1",
+   "path": "proof_obligations[8]",
+   "old": "report(dir) == Ok => forall c in ACTIVE expectation set:\n  let m = selection_manifest(dir, c) in\n    sha256(m.payload.to_canonical_bytes()) == m.semantic_hash &&\n    m.semantic_hash == row(c).selection_manifest_hash &&\n    m.payload.shots_per_class == c.shots && m.payload.root_seed == c.seed ;\npath(m) is a function of c alone, NOT of row(c)\n",
+   "new": "report(dir) == Ok ⇒ ∀ c in ACTIVE expectation set:\n  let m = selection_manifest(dir, c) in\n    sha256(m.payload.to_canonical_bytes()) == m.semantic_hash ∧\n    m.semantic_hash == row(c).selection_manifest_hash ∧\n    m.payload.shots_per_class == c.shots ∧ m.payload.root_seed == c.seed ;\npath(m) is a function of c alone, NOT of row(c)\n",
+   "method": "substitution"
+  },
+  {
+   "contract": "setfit-benchmark-claims-v1",
+   "path": "proof_obligations[9]",
+   "old": "report(dir) == Ok => forall c in ACTIVE expectation set:\n  let q = row(c).quality, R = recompute(q.confusion_matrix, q.ordered_labels) in\n    q.n_test_rows == R.n_rows &&\n    to_bits(q.f_avg) == to_bits(R.f_avg) &&\n    to_bits(q.macro_f1) == to_bits(R.macro_f1) &&\n    to_bits(q.mcc) == to_bits(R.mcc) &&\n    map(to_bits, q.per_class_precision) == map(to_bits, R.per_class_precision) &&\n    map(to_bits, q.per_class_recall) == map(to_bits, R.per_class_recall) &&\n    map(to_bits, q.per_class_f1) == map(to_bits, R.per_class_f1) &&\n    q.f_avg_bits == to_bits(q.f_avg) && q.macro_f1_bits == to_bits(q.macro_f1) &&\n    q.mcc_bits == to_bits(q.mcc) &&\n    q.ece_top_label_validation_bits == to_bits(q.ece_top_label_validation) &&\n    q.brier_multiclass_validation_bits == to_bits(q.brier_multiclass_validation) ;\nrecompute opens NO file: its entire input is row(c) itself\n",
+   "new": "report(dir) == Ok ⇒ ∀ c in ACTIVE expectation set:\n  let q = row(c).quality, R = recompute(q.confusion_matrix, q.ordered_labels) in\n    q.n_test_rows == R.n_rows ∧\n    to_bits(q.f_avg) == to_bits(R.f_avg) ∧\n    to_bits(q.macro_f1) == to_bits(R.macro_f1) ∧\n    to_bits(q.mcc) == to_bits(R.mcc) ∧\n    map(to_bits, q.per_class_precision) == map(to_bits, R.per_class_precision) ∧\n    map(to_bits, q.per_class_recall) == map(to_bits, R.per_class_recall) ∧\n    map(to_bits, q.per_class_f1) == map(to_bits, R.per_class_f1) ∧\n    q.f_avg_bits == to_bits(q.f_avg) ∧ q.macro_f1_bits == to_bits(q.macro_f1) ∧\n    q.mcc_bits == to_bits(q.mcc) ∧\n    q.ece_top_label_validation_bits == to_bits(q.ece_top_label_validation) ∧\n    q.brier_multiclass_validation_bits == to_bits(q.brier_multiclass_validation) ;\nrecompute opens NO file: its entire input is row(c) itself\n",
+   "method": "substitution"
+  },
+  {
+   "contract": "setfit-benchmark-claims-v1",
+   "path": "proof_obligations[10]",
+   "old": "row.cold_measured_in_child_process == true && row.warmup_count == 3 && row.throughput_batch_size present && train_peak_rss_bytes != inference_peak_rss_bytes as FIELDS (two distinct fields, always both present) && mechanism(m) in {child_max_rss_time_l, child_max_rss_vm_hwm, sysinfo_sampled_<hz>} && mechanism(m) == sysinfo_sampled_<hz> => peak_rss_sample_interval_hz present\n",
+   "new": "row.cold_measured_in_child_process == true ∧ row.warmup_count == 3 ∧ row.throughput_batch_size present ∧ train_peak_rss_bytes ≠ inference_peak_rss_bytes as FIELDS (two distinct fields, always both present) ∧ mechanism(m) in {child_max_rss_time_l, child_max_rss_vm_hwm, sysinfo_sampled_<hz>} ∧ mechanism(m) == sysinfo_sampled_<hz> ⇒ peak_rss_sample_interval_hz present\n",
+   "method": "substitution"
+  },
+  {
+   "contract": "setfit-train-lifecycle-v1",
+   "path": "proof_obligations[0]",
+   "old": "exists! validate_evidence && (SetFitRun<EncoderTuned> constructible => exists PassedEvidence)\n",
+   "new": "∃! validate_evidence ∧ (SetFitRun<EncoderTuned> constructible ⇒ ∃ PassedEvidence)\n",
+   "method": "substitution"
+  },
+  {
+   "contract": "setfit-train-lifecycle-v1",
+   "path": "proof_obligations[1]",
+   "old": "trainable_set == {} => Err(NoTrainableParameters) && gated_set == {} => Err(NoTestifyingParameters)",
+   "new": "trainable_set == {} ⇒ Err(NoTrainableParameters) ∧ gated_set == {} ⇒ Err(NoTestifyingParameters)",
+   "method": "substitution"
+  },
+  {
+   "contract": "setfit-train-lifecycle-v1",
+   "path": "proof_obligations[2]",
+   "old": "for all c in classes: Thresholds::eps(c) == parse(this_file).evidence_gate.table[c].eps",
+   "new": "∀ c in classes: Thresholds::eps(c) == parse(this_file).evidence_gate.table[c].eps",
+   "method": "substitution"
+  },
+  {
+   "contract": "setfit-train-lifecycle-v1",
+   "path": "proof_obligations[3]",
+   "old": "calibration_regime_id not in CALIBRATED_REGIMES => Err(UncalibratedRegime) before any per-parameter comparison",
+   "new": "calibration_regime_id not in CALIBRATED_REGIMES ⇒ Err(UncalibratedRegime) before any per-parameter comparison",
+   "method": "substitution"
+  },
+  {
+   "contract": "setfit-train-lifecycle-v1",
+   "path": "proof_obligations[5]",
+   "old": "for all p in attention_key_bias: p in table.rows && p not in gated_set",
+   "new": "∀ p in attention_key_bias: p in table.rows ∧ p not in gated_set",
+   "method": "substitution"
+  },
+  {
+   "contract": "setfit-train-lifecycle-v1",
+   "path": "proof_obligations[6]",
+   "old": "absorb_batch_digests occurs within the pair-pull loop and not in run_tuning's body",
+   "new": "absorb_batch_digests ∈ the pair-pull loop ∧ absorb_batch_digests ∉ run_tuning's body",
+   "method": "hand",
+   "why": "'occurs within the loop and not in run_tuning's body' is restated as membership in the pair-pull loop and non-membership in run_tuning's body; the identifiers and the two places are unchanged."
+  },
+  {
+   "contract": "setfit-train-lifecycle-v1",
+   "path": "proof_obligations[7]",
+   "old": "methods(SetFitCodec) == {format_id, serialize, deserialize} && artifact_hash not in methods(SetFitCodec) && SetFitCodec: sealed::Sealed",
+   "new": "methods(SetFitCodec) == {format_id, serialize, deserialize} ∧ artifact_hash not in methods(SetFitCodec) ∧ SetFitCodec: sealed::Sealed",
+   "method": "substitution"
+  },
+  {
+   "contract": "setfit-train-lifecycle-v1",
+   "path": "proof_obligations[8]",
+   "old": "SetFitRun<ArtifactReloadedAndVerified> constructible => codec.serialize(codec.deserialize(b)) == b && comparison_object == rebuild(codec.deserialize(b))",
+   "new": "SetFitRun<ArtifactReloadedAndVerified> constructible ⇒ codec.serialize(codec.deserialize(b)) == b ∧ comparison_object == rebuild(codec.deserialize(b))",
+   "method": "substitution"
+  },
+  {
+   "contract": "setfit-train-lifecycle-v1",
+   "path": "proof_obligations[9]",
+   "old": "for all r in probe_rows: bits(embed(rebuild(bytes), r)) == bits(embed(original, r))",
+   "new": "∀ r in probe_rows: bits(embed(rebuild(bytes), r)) == bits(embed(original, r))",
+   "method": "substitution"
+  },
+  {
+   "contract": "setfit-train-lifecycle-v1",
+   "path": "proof_obligations[11]",
+   "old": "pair_order_digest() == evidence.table.consumed_pair_digest && batch_boundaries() == evidence.table.batch_boundary_list",
+   "new": "pair_order_digest() == evidence.table.consumed_pair_digest ∧ batch_boundaries() == evidence.table.batch_boundary_list",
+   "method": "substitution"
+  },
+  {
+   "contract": "setfit-train-lifecycle-v1",
+   "path": "proof_obligations[12]",
+   "old": "not exists TryFrom<ResolvedConfigRecord> for ResolvedSetFitConfig && Deserialize not in derives(ResolvedSetFitConfig)",
+   "new": "not ∃ TryFrom<ResolvedConfigRecord> for ResolvedSetFitConfig ∧ Deserialize not in derives(ResolvedSetFitConfig)",
+   "method": "substitution"
+  },
+  {
+   "contract": "setfit-train-lifecycle-v1",
+   "path": "proof_obligations[13]",
+   "old": "ValidationEvaluation constructible => produced by evaluate_validation && not exists pub fn in evaluate.rs with a float parameter",
+   "new": "ValidationEvaluation constructible ⇒ produced by evaluate_validation ∧ not ∃ pub fn in evaluate.rs with a float parameter",
+   "method": "substitution"
+  },
+  {
+   "contract": "setfit-train-lifecycle-v1",
+   "path": "proof_obligations[14]",
+   "old": "chosen_index == rule(candidates) && (forall i: is_finite(value_i)) && lock_hash == sha256(canonical_bytes(lock)) && not exists parameter `chosen` in from_candidates",
+   "new": "chosen_index == rule(candidates) ∧ (∀ i: is_finite(value_i)) ∧ lock_hash == sha256(canonical_bytes(lock)) ∧ not ∃ parameter `chosen` in from_candidates",
+   "method": "substitution"
+  },
+  {
+   "contract": "setfit-train-lifecycle-v1",
+   "path": "proof_obligations[15]",
+   "old": "mint(lock, model) = Ok => lock.chosen_artifact_hash == model.artifact_hash() && grant(t, m, d) = Ok => t.artifact_hash == m.artifact_hash() && t.dataset_fingerprint == d.dataset_fingerprint() && result.test == d.test()",
+   "new": "mint(lock, model) = Ok ⇒ lock.chosen_artifact_hash == model.artifact_hash() ∧ grant(t, m, d) = Ok ⇒ t.artifact_hash == m.artifact_hash() ∧ t.dataset_fingerprint == d.dataset_fingerprint() ∧ result.test == d.test()",
+   "method": "substitution"
+  },
+  {
+   "contract": "tweet-eval-stance-benchmark-v1",
+   "path": "proof_obligations[0]",
+   "old": "rows(train) == 587 && rows(validation) == 66 && rows(test) == 280 && class_counts(train) == [159, 319, 109] && class_counts(validation) == [18, 36, 12] && class_counts(test) == [45, 189, 46]\n",
+   "new": "rows(train) == 587 ∧ rows(validation) == 66 ∧ rows(test) == 280 ∧ class_counts(train) == [159, 319, 109] ∧ class_counts(validation) == [18, 36, 12] ∧ class_counts(test) == [45, 189, 46]\n",
+   "method": "substitution"
+  },
+  {
+   "contract": "tweet-eval-stance-benchmark-v1",
+   "path": "proof_obligations[1]",
+   "old": "manifest.source.revision_verified == run_downloaded_from_pinned_revision",
+   "new": "manifest.source.revision_verified ≡ run_downloaded_from_pinned_revision",
+   "method": "hand",
+   "why": "Two identifiers asserted equal with '==' and no declared symbol; the equality is restated with the declared identical-to glyph between the same two identifiers."
+  },
+  {
+   "contract": "tweet-eval-stance-benchmark-v1",
+   "path": "proof_obligations[2]",
+   "old": "for every source file f: recorded_sha256[f] == sha256(buffer[f]) && parsed_rows[f] == parse(buffer[f])\n",
+   "new": "for every source file f: recorded_sha256[f] == sha256(buffer[f]) ∧ parsed_rows[f] == parse(buffer[f])\n",
+   "method": "substitution"
+  },
+  {
+   "contract": "tweet-eval-stance-benchmark-v1",
+   "path": "proof_obligations[3]",
+   "old": "contracted_seeds == [13, 17, 23, 29, 31, 37, 41, 43, 47, 53] && manifest.few_shot.seeds == contracted_seeds && 42 not_in contracted_seeds\n",
+   "new": "contracted_seeds == [13, 17, 23, 29, 31, 37, 41, 43, 47, 53] ∧ manifest.few_shot.seeds == contracted_seeds ∧ 42 ∉ contracted_seeds\n",
+   "method": "substitution"
+  },
+  {
+   "contract": "tweet-eval-stance-benchmark-v1",
+   "path": "proof_obligations[4]",
+   "old": "for every accepted row r: 0 <= r.label && r.label < 3 && r.label_text == LABEL_NAMES[r.label]\n",
+   "new": "for every accepted row r: 0 ≤ r.label ∧ r.label < 3 ∧ r.label_text == LABEL_NAMES[r.label]\n",
+   "method": "substitution"
+  },
+  {
+   "contract": "tweet-eval-stance-benchmark-v1",
+   "path": "proof_obligations[6]",
+   "old": "forall rows r in split(role R): r.source_split == R else SplitRoleMismatch(R, r.source_split) && forall roles k in attestation.splits union buffers: k in profile.ROLES else ConflictingSourceRole(profile, k)\n",
+   "new": "∀ rows r in split(role R): r.source_split == R else SplitRoleMismatch(R, r.source_split) ∧ ∀ roles k in attestation.splits union buffers: k in profile.ROLES else ConflictingSourceRole(profile, k)\n",
+   "method": "substitution"
+  },
+  {
+   "contract": "tweet-eval-stance-benchmark-v1",
+   "path": "proof_obligations[7]",
+   "old": "manifest.schema_version == DATASET_ATTESTATION_SCHEMA_VERSION == 2 && SUPPORTED_DATASET_ATTESTATION_SCHEMA_VERSIONS == [2] && read(manifest with schema_version != 2) == Err naming [2] and \"--force\" && no field of a rejected manifest is inferred, defaulted, or upgraded\n",
+   "new": "manifest.schema_version == DATASET_ATTESTATION_SCHEMA_VERSION == 2 ∧ SUPPORTED_DATASET_ATTESTATION_SCHEMA_VERSIONS == [2] ∧ read(manifest with schema_version ≠ 2) == Err naming [2] and \"--force\" ∧ no field of a rejected manifest is inferred, defaulted, or upgraded\n",
+   "method": "substitution"
+  },
+  {
+   "contract": "tweet-eval-stance-benchmark-v1",
+   "path": "proof_obligations[8]",
+   "old": "exposes(Split<R>) => from_attested_bytes returned Ok && split_hash_check precedes parse(buffer) && forall attested fields f: recomputed(f) == attested(f) && prepare writes D => from_attested_bytes(D) == Ok\n",
+   "new": "exposes(Split<R>) ⇒ from_attested_bytes returned Ok ∧ split_hash_check precedes parse(buffer) ∧ ∀ attested fields f: recomputed(f) == attested(f) ∧ prepare writes D ⇒ from_attested_bytes(D) == Ok\n",
+   "method": "substitution"
+  }
+ ]
+}

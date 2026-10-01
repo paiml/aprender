@@ -25,12 +25,24 @@
 //! SPEC-057: ptop Deep Tracing Integration
 //! docs/specifications/ptop-presentar-tracing-support.md
 
+// `process_tracer` is gated behind `#[cfg(target_os = "linux")]` in lib.rs — it is a
+// ptrace-based syscall tracer with no non-Linux implementation. Without the matching gate
+// here this example fails to compile on macOS, which breaks `cargo test --workspace`
+// (examples are built as test targets) for the whole workspace on a supported dev platform.
+#[cfg(target_os = "linux")]
 use renacer::process_tracer::{
     compute_baseline, is_available, syscall_name, zscore, ProcessTraceConfig, SyscallBreakdown,
     SyscallEvent, TraceResult,
 };
+#[cfg(target_os = "linux")]
 use std::time::Duration;
 
+#[cfg(not(target_os = "linux"))]
+fn main() {
+    eprintln!("process_tracer_demo requires Linux — process_tracer is ptrace-based (SPEC-057).");
+}
+
+#[cfg(target_os = "linux")]
 fn main() {
     println!("=== Renacer Process Tracer Demo ===\n");
 

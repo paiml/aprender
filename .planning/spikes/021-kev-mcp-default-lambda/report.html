@@ -1,0 +1,65 @@
+<!doctype html><html lang="en"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1">
+<title>Kev MCP Cold Starts</title><style>
+:root{--bg:#fbfbfa;--fg:#1d1f21;--mute:#5f6b76;--grid:#e3e6e8;--card:#fff}
+@media (prefers-color-scheme:dark){:root{--bg:#16181a;--fg:#e6e8ea;--mute:#9aa5b1;--grid:#2c3034;--card:#1e2124}}
+body{background:var(--bg);color:var(--fg);font:15px/1.5 system-ui,sans-serif;margin:0;padding:24px 16px} main{max-width:960px;margin:auto}
+h1{font-size:22px;margin:0 0 4px} p{color:var(--mute);margin:4px 0 16px} .card{background:var(--card);border:1px solid var(--grid);border-radius:10px;padding:16px;margin:16px 0}
+.grid{stroke:var(--grid)} .tick,.note{fill:var(--mute);font-size:11px} .tick{text-anchor:middle} .lbl{fill:var(--fg);font-size:13px;text-anchor:end} .tot{fill:var(--fg);font-size:12px;font-weight:600}
+.legend span{display:inline-flex;align-items:center;gap:6px;margin:0 14px 6px 0;font-size:12px;color:var(--mute)} .legend i{width:12px;height:12px;border-radius:2px;display:inline-block}
+table{border-collapse:collapse;width:100%;font-size:14px} td,th{text-align:left;padding:6px 8px;border-bottom:1px solid var(--grid)}
+</style></head><body><main>
+<h1>Kev-0.8B as an MCP server on AWS: where a cold start goes</h1>
+<p>From a request reaching a cold host to the first <code>tools/call decide</code> answer. 3 GB f32 GGUF, us-east-1, measured 2026-09-24 (spikes 021-023). Parity vs Python fp32: 4.8e-7 on every host.</p>
+<div class="card"><div class="legend"><span><i style="background:#9aa5b1"></i>platform init</span><span><i style="background:#c98a2b"></i>image pull + unpack</span><span><i style="background:#3b82c4"></i>weights: S3 -> /tmp</span><span><i style="background:#c0392b"></i>weights: read via lazy image FS</span><span><i style="background:#5aa469"></i>model build</span><span><i style="background:#7e57c2"></i>first decision</span></div><svg viewBox="0 0 880 280" width="100%" role="img">
+<line x1="250.0" y1="20" x2="250.0" y2="270" class="grid"/><text x="250.0" y="14" class="tick">0s</text>
+<line x1="372.0" y1="20" x2="372.0" y2="270" class="grid"/><text x="372.0" y="14" class="tick">10s</text>
+<line x1="494.0" y1="20" x2="494.0" y2="270" class="grid"/><text x="494.0" y="14" class="tick">20s</text>
+<line x1="616.0" y1="20" x2="616.0" y2="270" class="grid"/><text x="616.0" y="14" class="tick">30s</text>
+<line x1="738.0" y1="20" x2="738.0" y2="270" class="grid"/><text x="738.0" y="14" class="tick">40s</text>
+<line x1="860.0" y1="20" x2="860.0" y2="270" class="grid"/><text x="860.0" y="14" class="tick">50s</text>
+<text x="240" y="45" class="lbl">Default Lambda · S3 weights</text>
+<rect x="250.0" y="28" width="0.8" height="26" fill="#9aa5b1"><title>platform init: 0.07 s</title></rect>
+<rect x="250.8" y="28" width="467.1" height="26" fill="#3b82c4"><title>weights: S3 -> /tmp: 38.29 s</title></rect>
+<rect x="718.0" y="28" width="37.8" height="26" fill="#5aa469"><title>model build: 3.10 s</title></rect>
+<rect x="755.7" y="28" width="14.2" height="26" fill="#7e57c2"><title>first decision: 1.17 s</title></rect>
+<text x="775.9" y="45" class="tot" text-anchor="start">42.6 s</text>
+<text x="250" y="67" class="note">4 cold starts: 42.8-43.2 s · Graviton2 6 vCPU · 80 MB/s S3 cap</text>
+<text x="240" y="105" class="lbl">Fargate · S3 weights</text>
+<rect x="250.0" y="88" width="207.2" height="26" fill="#9aa5b1"><title>provisioning + ENI: 16.98 s</title></rect>
+<rect x="457.2" y="88" width="24.6" height="26" fill="#c98a2b"><title>image pull + unpack: 2.02 s</title></rect>
+<rect x="481.8" y="88" width="54.9" height="26" fill="#3b82c4"><title>weights: S3 -> disk: 4.50 s</title></rect>
+<rect x="536.7" y="88" width="17.4" height="26" fill="#5aa469"><title>model build: 1.43 s</title></rect>
+<rect x="554.1" y="88" width="24.6" height="26" fill="#7e57c2"><title>first decision: 2.02 s</title></rect>
+<text x="584.7" y="105" class="tot" text-anchor="start">26.9 s</text>
+<text x="250" y="127" class="note">3 scale-from-zero runs: 22-30 s · Graviton3/4 8 vCPU</text>
+<text x="240" y="165" class="lbl">Fargate · baked image</text>
+<rect x="250.0" y="148" width="225.3" height="26" fill="#9aa5b1"><title>provisioning + ENI: 18.47 s</title></rect>
+<rect x="475.3" y="148" width="610.0" height="26" fill="#c98a2b"><title>image pull + unpack: 81.30 s</title></rect>
+<rect x="1085.3" y="148" width="13.6" height="26" fill="#5aa469"><title>model build: 1.11 s</title></rect>
+<rect x="1098.9" y="148" width="29.4" height="26" fill="#7e57c2"><title>first decision: 2.41 s</title></rect>
+<text x="872.0" y="165" class="tot" text-anchor="end">103.3 s ▶ (off scale)</text>
+<text x="250" y="187" class="note">3 scale-from-zero runs: 95-105 s · Graviton3/4 8 vCPU</text>
+<text x="240" y="225" class="lbl">Managed Instances · S3 weights</text>
+<rect x="250.0" y="208" width="42.3" height="26" fill="#3b82c4"><title>weights: S3 -> /tmp: 3.47 s</title></rect>
+<rect x="292.3" y="208" width="11.5" height="26" fill="#5aa469"><title>model build: 0.94 s</title></rect>
+<rect x="303.8" y="208" width="4.2" height="26" fill="#7e57c2"><title>first decision: 0.35 s</title></rect>
+<text x="314.0" y="225" class="tot" text-anchor="start">4.8 s</text>
+<text x="250" y="247" class="note">no request-path cold start: environments pre-provisioned (version Active in 48-88 s); this is the lazy first call per env · c9g 8 vCPU</text>
+</svg></div>
+<div class="card"><p>Off the first chart's scale: weights baked into a Lambda container image.</p><svg viewBox="0 0 880 100" width="100%" role="img">
+<line x1="250.0" y1="20" x2="250.0" y2="90" class="grid"/><text x="250.0" y="14" class="tick">0s</text>
+<line x1="364.4" y1="20" x2="364.4" y2="90" class="grid"/><text x="364.4" y="14" class="tick">60s</text>
+<line x1="478.8" y1="20" x2="478.8" y2="90" class="grid"/><text x="478.8" y="14" class="tick">120s</text>
+<line x1="593.1" y1="20" x2="593.1" y2="90" class="grid"/><text x="593.1" y="14" class="tick">180s</text>
+<line x1="707.5" y1="20" x2="707.5" y2="90" class="grid"/><text x="707.5" y="14" class="tick">240s</text>
+<line x1="821.9" y1="20" x2="821.9" y2="90" class="grid"/><text x="821.9" y="14" class="tick">300s</text>
+<text x="240" y="45" class="lbl">Default Lambda · baked image</text>
+<rect x="250.0" y="28" width="0.8" height="26" fill="#9aa5b1"><title>platform init: 0.39 s</title></rect>
+<rect x="250.7" y="28" width="579.5" height="26" fill="#c0392b"><title>weights: read via lazy image FS: 304.00 s</title></rect>
+<rect x="830.2" y="28" width="7.8" height="26" fill="#5aa469"><title>model build: 4.10 s</title></rect>
+<rect x="838.1" y="28" width="2.3" height="26" fill="#7e57c2"><title>first decision: 1.20 s</title></rect>
+<text x="846.3" y="45" class="tot" text-anchor="start">309.7 s</text>
+<text x="250" y="67" class="note">2nd cold start 309 s; 1st ever 800 s (794 s reading 3 GB through the image store)</text>
+</svg></div>
+<div class="card"><table><tr><th>Warm decision, 81-token row</th><th>p50</th></tr><tr><td>Default Lambda (Graviton2, 6 vCPU)</td><td>1.13-1.16 s</td></tr><tr><td>Fargate (Graviton3 / Graviton4, 8 vCPU)</td><td>0.63 s / 0.52 s</td></tr><tr><td>Managed Instances (c9g, Neoverse-V3, 8 vCPU)</td><td>0.34 s</td></tr><tr><td>M4 Pro laptop (6 threads)</td><td>0.36 s</td></tr></table></div>
+</main></body></html>

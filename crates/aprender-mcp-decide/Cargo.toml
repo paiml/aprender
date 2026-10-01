@@ -1,0 +1,56 @@
+[package]
+name = "aprender-mcp-decide"
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+repository.workspace = true
+authors.workspace = true
+rust-version.workspace = true
+description = "Thin single-model MCP server: one task-bound classify tool over a verified decide .apr (Laya)"
+keywords = ["mcp", "classification", "laya", "aprender", "pmcp"]
+categories = ["science", "web-programming"]
+readme = "README.md"
+# Not published: a deployment unit (Phase 8 D-15), not a library other crates should
+# depend on. The Lambda crate (aprender-mcp-decide-lambda) is the one exception — it is
+# a thin shim over build_server and the from-bytes load door.
+publish = false
+
+[lib]
+name = "aprender_mcp_decide"
+path = "src/lib.rs"
+
+[[bin]]
+name = "aprender-mcp-decide"
+path = "src/main.rs"
+
+[dependencies]
+# The verified decision path: Decider (minted only by the decide-apr-v1 load ladder),
+# prepare / classify_prepared and the model identity. This server is a TRANSPORT over
+# that one implementation — it re-implements nothing (OPS-03).
+aprender-decide = { path = "../aprender-decide", version = "0.69.3" }
+# PAIML's Rust MCP SDK, on the line the workspace already resolves (2.19.3 in
+# Cargo.lock, the version decide-tool-boundary-v1 cites for its transport ceilings).
+# `schema-generation` powers `tool_typed_with_description`; `streamable-http` is what
+# the pmcp.run Lambda loopback serves and is unused but harmless on stdio.
+pmcp = { version = "2.19", features = ["streamable-http", "schema-generation"] }
+# The JsonSchema derive on ClassifyArgs — same major pmcp's schema-generation uses.
+schemars = "1.0"
+# argv is declarative (clap derive), never hand-rolled: scripts/check_no_hand_rolled_parsers.sh.
+clap = { workspace = true }
+serde = { workspace = true }
+serde_json = { workspace = true }
+tokio = { workspace = true }
+
+[dev-dependencies]
+# An INDEPENDENT sha256 of the served file, so the e2e identity check does not trust
+# the code under test to hash its own input.
+sha2 = { workspace = true }
+# The e2e test packs the tiny fixture into a real file on disk.
+tempfile = { workspace = true }
+# Contract constants and tolerances read at test time, never duplicated as literals.
+serde_yaml = { workspace = true }
+# KANI-DECIDE-TOOL-001's runnable evidence: the bound predicate across each boundary.
+proptest = { workspace = true }
+
+[lints]
+workspace = true

@@ -173,6 +173,47 @@ pub async fn apply(
 /// post-startup env-var changes.
 #[cfg(feature = "inference")]
 #[must_use]
+/// Gate everything except CORS preflight and the operational health endpoints.
+///
+/// [`layer`] gates every route, which is right for the APR server. The SetFit server mounts the
+/// SHARED router, and that router carries `/health`, `/health/live` and `/health/ready` — the
+/// last of which exists so an orchestrator can admit a classifier — plus it sits behind
+/// `CorsLayer::permissive()`. Wrapping all of it produced two operational breaks (WR-07): a
+/// browser's `OPTIONS /v1/classify` preflight was answered 401 with no `Access-Control-Allow-Origin`
+/// before CORS ever saw it, and every liveness/readiness probe 401'd.
+///
+/// The two exemptions are narrow and carry no model data:
+/// - `OPTIONS` is the CORS preflight. It is defined to travel WITHOUT credentials, so requiring a
+///   bearer token on it cannot be satisfied by any conforming client; it returns headers, no body.
+/// - `/health*` is the probe surface. Note `/health/ready` reports `classifier_artifact_sha256`
+///   and `classifier_verified`; both were fully public before the classify surface was gated at
+///   all, so this is not a widening.
+///
+/// `POST /v1/classify` — the only route that runs a model — is gated exactly as before.
+pub fn layer_public_ops<S>(gate: AuthGate, router: axum::Router<S>) -> axum::Router<S>
+where
+    S: Clone + Send + Sync + 'static,
+{
+    router.layer(axum::middleware::from_fn_with_state(
+        std::sync::Arc::new(gate),
+        apply_except_public_ops,
+    ))
+}
+
+/// [`apply`], with the two exemptions [`layer_public_ops`] documents.
+pub async fn apply_except_public_ops(
+    state: axum::extract::State<std::sync::Arc<AuthGate>>,
+    req: axum::extract::Request,
+    next: axum::middleware::Next,
+) -> axum::response::Response {
+    let is_preflight = req.method() == axum::http::Method::OPTIONS;
+    let is_health = req.uri().path() == "/health" || req.uri().path().starts_with("/health/");
+    if is_preflight || is_health {
+        return next.run(req).await;
+    }
+    apply(state, req, next).await
+}
+
 pub fn layer<S>(gate: AuthGate, router: axum::Router<S>) -> axum::Router<S>
 where
     S: Clone + Send + Sync + 'static,
@@ -250,5 +291,71 @@ mod tests {
         let mut bad = "0".repeat(64);
         bad.replace_range(0..1, "Z");
         assert!(decode_hex_32(&bad).is_err());
+    }
+
+    /// WR-07: the SetFit gate must let CORS preflight and health probes through, and must still
+    /// refuse an unauthenticated request to a model route.
+    ///
+    /// These drive the REAL middleware through a real router, not `check_bearer` in isolation —
+    /// the defect being guarded against was entirely about layer position and route scope, which
+    /// a unit test on the gate could not have seen.
+    mod public_ops {
+        use super::super::{layer_public_ops, AuthGate};
+        use axum::body::Body;
+        use axum::http::{Method, Request, StatusCode};
+        use tower::ServiceExt as _;
+
+        fn gated_router() -> axum::Router {
+            let router = axum::Router::new()
+                .route("/v1/classify", axum::routing::post(|| async { "ok" }))
+                .route("/health", axum::routing::get(|| async { "ok" }))
+                .route("/health/ready", axum::routing::get(|| async { "ok" }));
+            layer_public_ops(AuthGate::from_hash([7_u8; 32]), router)
+        }
+
+        async fn status(method: Method, path: &str) -> StatusCode {
+            let request = Request::builder()
+                .method(method)
+                .uri(path)
+                .body(Body::empty())
+                .expect("request builds");
+            gated_router()
+                .oneshot(request)
+                .await
+                .expect("router answers")
+                .status()
+        }
+
+        #[tokio::test]
+        async fn an_unauthenticated_classify_is_still_refused() {
+            assert_eq!(
+                status(Method::POST, "/v1/classify").await,
+                StatusCode::UNAUTHORIZED,
+                "the only route that runs a model must stay gated — that is the whole point of \
+                 the gate, and the exemptions must not have widened it"
+            );
+        }
+
+        #[tokio::test]
+        async fn a_cors_preflight_reaches_the_cors_layer() {
+            assert_ne!(
+                status(Method::OPTIONS, "/v1/classify").await,
+                StatusCode::UNAUTHORIZED,
+                "a preflight travels WITHOUT credentials by definition, so gating it makes the \
+                 route unreachable from any conforming browser"
+            );
+        }
+
+        #[tokio::test]
+        async fn health_probes_are_not_gated() {
+            for path in ["/health", "/health/ready"] {
+                assert_eq!(
+                    status(Method::GET, path).await,
+                    StatusCode::OK,
+                    "{path} must answer an orchestrator: /health/ready exists so a classifier \
+                     can be admitted, and a 401 there stalls the rollout"
+                );
+            }
+        }
     }
 }

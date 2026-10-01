@@ -1,0 +1,9 @@
+{"text": "The box is two weeks late and nobody answers.", "label": "shipping"}
+{"text": "Tracking says delivered but the porch is empty.", "label": "shipping"}
+{"text": "Can you ship the replacement to my office instead?", "label": "shipping"}
+{"text": "There is a charge I do not recognise on my card.", "label": "billing"}
+{"text": "My invoice shows the wrong tax amount.", "label": "billing"}
+{"text": "I returned the shoes, where is my money?", "label": "billing"}
+{"text": "The password reset link has expired.", "label": "account"}
+{"text": "I want to update my phone number in settings.", "label": "account"}
+{"text": "Two step login keeps rejecting my code.", "label": "account"}

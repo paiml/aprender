@@ -1,0 +1,115 @@
+{
+  "by_arch": {
+    "aarch64": {
+      "air/prophet/multiplicative": {
+        "arch": "aarch64",
+        "captured_at_commit": "c850e62aaffa5e42e9ed644f9c1c81547cca562f",
+        "profile": "debug",
+        "signature": "3053244dcb27492c"
+      },
+      "peyton/neuralprophet/lag0": {
+        "arch": "aarch64",
+        "captured_at_commit": "c850e62aaffa5e42e9ed644f9c1c81547cca562f",
+        "profile": "debug",
+        "signature": "d5a583795591a3db"
+      },
+      "peyton/neuralprophet/lag7": {
+        "arch": "aarch64",
+        "captured_at_commit": "c850e62aaffa5e42e9ed644f9c1c81547cca562f",
+        "profile": "debug",
+        "signature": "726043759dde45dc"
+      },
+      "peyton/prophet/default": {
+        "arch": "aarch64",
+        "captured_at_commit": "c850e62aaffa5e42e9ed644f9c1c81547cca562f",
+        "profile": "debug",
+        "signature": "aa669c2352dd376a"
+      },
+      "peyton/prophet/holidays+windows": {
+        "arch": "aarch64",
+        "captured_at_commit": "c850e62aaffa5e42e9ed644f9c1c81547cca562f",
+        "profile": "debug",
+        "signature": "e0a13f9a10e3c3cc"
+      },
+      "retail/prophet/default": {
+        "arch": "aarch64",
+        "captured_at_commit": "c850e62aaffa5e42e9ed644f9c1c81547cca562f",
+        "profile": "debug",
+        "signature": "73b171523eb3fa3b"
+      },
+      "wp_log_R/neuralprophet/lag0": {
+        "arch": "aarch64",
+        "captured_at_commit": "c850e62aaffa5e42e9ed644f9c1c81547cca562f",
+        "profile": "debug",
+        "signature": "72528357591ad4d6"
+      },
+      "wp_log_R/prophet/logistic": {
+        "arch": "aarch64",
+        "captured_at_commit": "c850e62aaffa5e42e9ed644f9c1c81547cca562f",
+        "profile": "debug",
+        "signature": "331d67a8f8c924bb"
+      }
+    },
+    "x86_64": {
+      "air/prophet/multiplicative": {
+        "arch": "x86_64",
+        "captured_at_commit": "63a4bdb15e20e3f9fa96209015e6bede9e3db918",
+        "measured_by": "IMPORTED, not computed on the recording host (plan 06.1-05 Task 3). Produced by invariance::capture_baseline's printed INVARIANCE CAPTURE lines on THREE independent x86_64 environments, all eight cases identical in every one: (1) native EC2 c7i.2xlarge, Amazon Linux 2023, us-east-1, at this captured_at_commit, run by the operator; (2) Debian 12 / glibc 2.36 and (3) Debian 13 / glibc 2.41 emulated linux/amd64 containers at 7a982a370 and bfc21cbd9, run by the phase orchestrator. CONTROLS: libc varied across 2.36 and 2.41 with no change; commit varied across bfc21cbd9 (pre-splice capture state), 7a982a370 (after waves 1 and 2) and 63a4bdb1 (after wave 3 tasks 1 and 2) with no change; rustc held constant at the repo-pinned 1.93.0-x86_64-unknown-linux-gnu; no RUSTFLAGS and no target-cpu/target-feature in ci.yml or .cargo/config.toml. The aarch64 half of this file reproduces bit-for-bit at 63a4bdb1 (every_baseline_case_reproduces_its_signature, green), so both halves describe one computation. NOT CLAIMED: these were not produced on [self-hosted, X64, Linux, clean-room] nor in sovereign-ci:stable. The controls are evidence that should not matter, not proof that it does not; if upstream CI disagrees, this entry is wrong and the gate will say so on the first x86_64 host that runs it. Full write-up: .planning/phases/06.1-.../06.1-x64-baseline-measurement.md at 58492debb.",
+        "profile": "debug",
+        "signature": "49dce7683ee97166"
+      },
+      "peyton/neuralprophet/lag0": {
+        "arch": "x86_64",
+        "captured_at_commit": "63a4bdb15e20e3f9fa96209015e6bede9e3db918",
+        "measured_by": "IMPORTED, not computed on the recording host (plan 06.1-05 Task 3). Produced by invariance::capture_baseline's printed INVARIANCE CAPTURE lines on THREE independent x86_64 environments, all eight cases identical in every one: (1) native EC2 c7i.2xlarge, Amazon Linux 2023, us-east-1, at this captured_at_commit, run by the operator; (2) Debian 12 / glibc 2.36 and (3) Debian 13 / glibc 2.41 emulated linux/amd64 containers at 7a982a370 and bfc21cbd9, run by the phase orchestrator. CONTROLS: libc varied across 2.36 and 2.41 with no change; commit varied across bfc21cbd9 (pre-splice capture state), 7a982a370 (after waves 1 and 2) and 63a4bdb1 (after wave 3 tasks 1 and 2) with no change; rustc held constant at the repo-pinned 1.93.0-x86_64-unknown-linux-gnu; no RUSTFLAGS and no target-cpu/target-feature in ci.yml or .cargo/config.toml. The aarch64 half of this file reproduces bit-for-bit at 63a4bdb1 (every_baseline_case_reproduces_its_signature, green), so both halves describe one computation. NOT CLAIMED: these were not produced on [self-hosted, X64, Linux, clean-room] nor in sovereign-ci:stable. The controls are evidence that should not matter, not proof that it does not; if upstream CI disagrees, this entry is wrong and the gate will say so on the first x86_64 host that runs it. Full write-up: .planning/phases/06.1-.../06.1-x64-baseline-measurement.md at 58492debb.",
+        "profile": "debug",
+        "signature": "2154b61e0265d7a7"
+      },
+      "peyton/neuralprophet/lag7": {
+        "arch": "x86_64",
+        "captured_at_commit": "63a4bdb15e20e3f9fa96209015e6bede9e3db918",
+        "measured_by": "IMPORTED, not computed on the recording host (plan 06.1-05 Task 3). Produced by invariance::capture_baseline's printed INVARIANCE CAPTURE lines on THREE independent x86_64 environments, all eight cases identical in every one: (1) native EC2 c7i.2xlarge, Amazon Linux 2023, us-east-1, at this captured_at_commit, run by the operator; (2) Debian 12 / glibc 2.36 and (3) Debian 13 / glibc 2.41 emulated linux/amd64 containers at 7a982a370 and bfc21cbd9, run by the phase orchestrator. CONTROLS: libc varied across 2.36 and 2.41 with no change; commit varied across bfc21cbd9 (pre-splice capture state), 7a982a370 (after waves 1 and 2) and 63a4bdb1 (after wave 3 tasks 1 and 2) with no change; rustc held constant at the repo-pinned 1.93.0-x86_64-unknown-linux-gnu; no RUSTFLAGS and no target-cpu/target-feature in ci.yml or .cargo/config.toml. The aarch64 half of this file reproduces bit-for-bit at 63a4bdb1 (every_baseline_case_reproduces_its_signature, green), so both halves describe one computation. NOT CLAIMED: these were not produced on [self-hosted, X64, Linux, clean-room] nor in sovereign-ci:stable. The controls are evidence that should not matter, not proof that it does not; if upstream CI disagrees, this entry is wrong and the gate will say so on the first x86_64 host that runs it. Full write-up: .planning/phases/06.1-.../06.1-x64-baseline-measurement.md at 58492debb.",
+        "profile": "debug",
+        "signature": "4089c7fa42e6e594"
+      },
+      "peyton/prophet/default": {
+        "arch": "x86_64",
+        "captured_at_commit": "63a4bdb15e20e3f9fa96209015e6bede9e3db918",
+        "measured_by": "IMPORTED, not computed on the recording host (plan 06.1-05 Task 3). Produced by invariance::capture_baseline's printed INVARIANCE CAPTURE lines on THREE independent x86_64 environments, all eight cases identical in every one: (1) native EC2 c7i.2xlarge, Amazon Linux 2023, us-east-1, at this captured_at_commit, run by the operator; (2) Debian 12 / glibc 2.36 and (3) Debian 13 / glibc 2.41 emulated linux/amd64 containers at 7a982a370 and bfc21cbd9, run by the phase orchestrator. CONTROLS: libc varied across 2.36 and 2.41 with no change; commit varied across bfc21cbd9 (pre-splice capture state), 7a982a370 (after waves 1 and 2) and 63a4bdb1 (after wave 3 tasks 1 and 2) with no change; rustc held constant at the repo-pinned 1.93.0-x86_64-unknown-linux-gnu; no RUSTFLAGS and no target-cpu/target-feature in ci.yml or .cargo/config.toml. The aarch64 half of this file reproduces bit-for-bit at 63a4bdb1 (every_baseline_case_reproduces_its_signature, green), so both halves describe one computation. NOT CLAIMED: these were not produced on [self-hosted, X64, Linux, clean-room] nor in sovereign-ci:stable. The controls are evidence that should not matter, not proof that it does not; if upstream CI disagrees, this entry is wrong and the gate will say so on the first x86_64 host that runs it. Full write-up: .planning/phases/06.1-.../06.1-x64-baseline-measurement.md at 58492debb.",
+        "profile": "debug",
+        "signature": "b6a24a79f9824100"
+      },
+      "peyton/prophet/holidays+windows": {
+        "arch": "x86_64",
+        "captured_at_commit": "63a4bdb15e20e3f9fa96209015e6bede9e3db918",
+        "measured_by": "IMPORTED, not computed on the recording host (plan 06.1-05 Task 3). Produced by invariance::capture_baseline's printed INVARIANCE CAPTURE lines on THREE independent x86_64 environments, all eight cases identical in every one: (1) native EC2 c7i.2xlarge, Amazon Linux 2023, us-east-1, at this captured_at_commit, run by the operator; (2) Debian 12 / glibc 2.36 and (3) Debian 13 / glibc 2.41 emulated linux/amd64 containers at 7a982a370 and bfc21cbd9, run by the phase orchestrator. CONTROLS: libc varied across 2.36 and 2.41 with no change; commit varied across bfc21cbd9 (pre-splice capture state), 7a982a370 (after waves 1 and 2) and 63a4bdb1 (after wave 3 tasks 1 and 2) with no change; rustc held constant at the repo-pinned 1.93.0-x86_64-unknown-linux-gnu; no RUSTFLAGS and no target-cpu/target-feature in ci.yml or .cargo/config.toml. The aarch64 half of this file reproduces bit-for-bit at 63a4bdb1 (every_baseline_case_reproduces_its_signature, green), so both halves describe one computation. NOT CLAIMED: these were not produced on [self-hosted, X64, Linux, clean-room] nor in sovereign-ci:stable. The controls are evidence that should not matter, not proof that it does not; if upstream CI disagrees, this entry is wrong and the gate will say so on the first x86_64 host that runs it. Full write-up: .planning/phases/06.1-.../06.1-x64-baseline-measurement.md at 58492debb.",
+        "profile": "debug",
+        "signature": "44890b620f130bdf"
+      },
+      "retail/prophet/default": {
+        "arch": "x86_64",
+        "captured_at_commit": "63a4bdb15e20e3f9fa96209015e6bede9e3db918",
+        "measured_by": "IMPORTED, not computed on the recording host (plan 06.1-05 Task 3). Produced by invariance::capture_baseline's printed INVARIANCE CAPTURE lines on THREE independent x86_64 environments, all eight cases identical in every one: (1) native EC2 c7i.2xlarge, Amazon Linux 2023, us-east-1, at this captured_at_commit, run by the operator; (2) Debian 12 / glibc 2.36 and (3) Debian 13 / glibc 2.41 emulated linux/amd64 containers at 7a982a370 and bfc21cbd9, run by the phase orchestrator. CONTROLS: libc varied across 2.36 and 2.41 with no change; commit varied across bfc21cbd9 (pre-splice capture state), 7a982a370 (after waves 1 and 2) and 63a4bdb1 (after wave 3 tasks 1 and 2) with no change; rustc held constant at the repo-pinned 1.93.0-x86_64-unknown-linux-gnu; no RUSTFLAGS and no target-cpu/target-feature in ci.yml or .cargo/config.toml. The aarch64 half of this file reproduces bit-for-bit at 63a4bdb1 (every_baseline_case_reproduces_its_signature, green), so both halves describe one computation. NOT CLAIMED: these were not produced on [self-hosted, X64, Linux, clean-room] nor in sovereign-ci:stable. The controls are evidence that should not matter, not proof that it does not; if upstream CI disagrees, this entry is wrong and the gate will say so on the first x86_64 host that runs it. Full write-up: .planning/phases/06.1-.../06.1-x64-baseline-measurement.md at 58492debb.",
+        "profile": "debug",
+        "signature": "a10e7fc4a8e76615"
+      },
+      "wp_log_R/neuralprophet/lag0": {
+        "arch": "x86_64",
+        "captured_at_commit": "63a4bdb15e20e3f9fa96209015e6bede9e3db918",
+        "measured_by": "IMPORTED, not computed on the recording host (plan 06.1-05 Task 3). Produced by invariance::capture_baseline's printed INVARIANCE CAPTURE lines on THREE independent x86_64 environments, all eight cases identical in every one: (1) native EC2 c7i.2xlarge, Amazon Linux 2023, us-east-1, at this captured_at_commit, run by the operator; (2) Debian 12 / glibc 2.36 and (3) Debian 13 / glibc 2.41 emulated linux/amd64 containers at 7a982a370 and bfc21cbd9, run by the phase orchestrator. CONTROLS: libc varied across 2.36 and 2.41 with no change; commit varied across bfc21cbd9 (pre-splice capture state), 7a982a370 (after waves 1 and 2) and 63a4bdb1 (after wave 3 tasks 1 and 2) with no change; rustc held constant at the repo-pinned 1.93.0-x86_64-unknown-linux-gnu; no RUSTFLAGS and no target-cpu/target-feature in ci.yml or .cargo/config.toml. The aarch64 half of this file reproduces bit-for-bit at 63a4bdb1 (every_baseline_case_reproduces_its_signature, green), so both halves describe one computation. NOT CLAIMED: these were not produced on [self-hosted, X64, Linux, clean-room] nor in sovereign-ci:stable. The controls are evidence that should not matter, not proof that it does not; if upstream CI disagrees, this entry is wrong and the gate will say so on the first x86_64 host that runs it. Full write-up: .planning/phases/06.1-.../06.1-x64-baseline-measurement.md at 58492debb.",
+        "profile": "debug",
+        "signature": "18aa3adb2543db4f"
+      },
+      "wp_log_R/prophet/logistic": {
+        "arch": "x86_64",
+        "captured_at_commit": "63a4bdb15e20e3f9fa96209015e6bede9e3db918",
+        "measured_by": "IMPORTED, not computed on the recording host (plan 06.1-05 Task 3). Produced by invariance::capture_baseline's printed INVARIANCE CAPTURE lines on THREE independent x86_64 environments, all eight cases identical in every one: (1) native EC2 c7i.2xlarge, Amazon Linux 2023, us-east-1, at this captured_at_commit, run by the operator; (2) Debian 12 / glibc 2.36 and (3) Debian 13 / glibc 2.41 emulated linux/amd64 containers at 7a982a370 and bfc21cbd9, run by the phase orchestrator. CONTROLS: libc varied across 2.36 and 2.41 with no change; commit varied across bfc21cbd9 (pre-splice capture state), 7a982a370 (after waves 1 and 2) and 63a4bdb1 (after wave 3 tasks 1 and 2) with no change; rustc held constant at the repo-pinned 1.93.0-x86_64-unknown-linux-gnu; no RUSTFLAGS and no target-cpu/target-feature in ci.yml or .cargo/config.toml. The aarch64 half of this file reproduces bit-for-bit at 63a4bdb1 (every_baseline_case_reproduces_its_signature, green), so both halves describe one computation. NOT CLAIMED: these were not produced on [self-hosted, X64, Linux, clean-room] nor in sovereign-ci:stable. The controls are evidence that should not matter, not proof that it does not; if upstream CI disagrees, this entry is wrong and the gate will say so on the first x86_64 host that runs it. Full write-up: .planning/phases/06.1-.../06.1-x64-baseline-measurement.md at 58492debb.",
+        "profile": "debug",
+        "signature": "f04542776f2bcb28"
+      }
+    }
+  },
+  "captured_at_commit": "c850e62aaffa5e42e9ed644f9c1c81547cca562f",
+  "captured_on": "2026-09-21",
+  "note": "Evidence for ONE tag bump, not a permanent certificate. These signatures describe the tree at `captured_at_commit`; a later intentional behaviour change re-captures them at its own pre-change commit. Keyed by std::env::consts::ARCH because libm and the f32 GEMM routing differ bitwise across architectures."
+}

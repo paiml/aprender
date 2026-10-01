@@ -504,7 +504,24 @@ impl ClassifyPipeline {
     /// * `model_config` - Transformer configuration (e.g., `TransformerConfig::qwen2_0_5b()`)
     /// * `classify_config` - Classification pipeline configuration
     pub fn new(model_config: &TransformerConfig, classify_config: ClassifyConfig) -> Self {
-        let model = Transformer::new(model_config);
+        Self::from_model(Transformer::new(model_config), model_config, classify_config)
+    }
+
+    /// Build a pipeline around a transformer the caller already has.
+    ///
+    /// [`Self::new`] is exactly this with a freshly initialized transformer — the body
+    /// moved here rather than being duplicated (OPS-03), so the CUDA/wgpu/NF4
+    /// initialization ladder has ONE implementation.
+    ///
+    /// Phase 5 uses it to attach a classifier head to a base loaded with
+    /// `Transformer::from_apr`, without `from_apr`'s requirement of a sibling
+    /// `tokenizer.json`: the byte-level fallback is what the toy reload preflight needs,
+    /// and demanding a BPE tokenizer there would prove nothing about the adapter.
+    pub fn from_model(
+        model: Transformer,
+        model_config: &TransformerConfig,
+        classify_config: ClassifyConfig,
+    ) -> Self {
         let classifier =
             ClassificationHead::new(model_config.hidden_size, classify_config.num_classes);
         let mut lora_layers = Self::build_lora_layers(&model, model_config, &classify_config);
@@ -1146,6 +1163,186 @@ impl ClassifyPipeline {
     /// Used for validation where we need loss + prediction without backward pass.
     pub fn forward_only_tokenized(&mut self, token_ids: &[u32], label: usize) -> (f32, usize) {
         self.forward_only(token_ids, label)
+    }
+
+    /// Install trained adapter weights from a `model.adapter.apr` written by
+    /// [`crate::finetune::ClassifyTrainer::save_checkpoint`].
+    ///
+    /// # The gap this closes (Phase 5 tracer, plan 05-06)
+    ///
+    /// `ClassifyPipeline::from_apr` loads the BASE transformer and then calls
+    /// `build_lora_layers`, which produces FRESH adapters — the trained ones are never
+    /// read. Nothing else on this type could read them either: the only reader of the
+    /// classify adapter format was `ClassifyTrainer::resume_from_apr_checkpoint`, which
+    /// needs a corpus to construct a trainer, verifies the checkpoint's `data_hash`
+    /// against that corpus, and — the reason it could not simply be reused — installs
+    /// LoRA tensors through `if let Ok(..)`, so a checkpoint missing half its adapters
+    /// loads silently and half-applied.
+    ///
+    /// # Never a partial load (T-05-06-05)
+    ///
+    /// Every tensor is READ and shape-checked before ANY is installed. A partially
+    /// applied adapter is the failure mode that produces plausible-but-wrong numbers in
+    /// every benchmark cell: the model still classifies, still reports confident
+    /// probabilities, and is simply not the model that was trained. Refusing is the only
+    /// safe answer, so this returns `Err` and leaves `self` untouched.
+    ///
+    /// # Errors
+    ///
+    /// [`crate::Error::Serialization`] if the file cannot be opened or a tensor is
+    /// missing/unreadable; [`crate::Error::ConfigError`] if the adapter's class count,
+    /// rank, layer count or any tensor shape disagrees with this pipeline.
+    pub fn load_adapter(&mut self, path: &Path) -> crate::Result<()> {
+        use aprender::serialization::apr::AprReader;
+
+        let reader = AprReader::open(path).map_err(|e| {
+            crate::Error::Serialization(format!(
+                "failed to open adapter APR '{}': {e}",
+                path.display()
+            ))
+        })?;
+
+        // ── 1. Declared structure, from the metadata the writer recorded ──────────
+        let declared = |key: &str| reader.get_metadata(key).and_then(serde_json::Value::as_u64);
+        if let Some(classes) = declared("num_classes") {
+            if classes as usize != self.config.num_classes {
+                return Err(crate::Error::ConfigError(format!(
+                    "adapter '{}' was trained for {classes} classes, this pipeline has {}",
+                    path.display(),
+                    self.config.num_classes,
+                )));
+            }
+        }
+        if let Some(rank) = declared("lora_rank") {
+            if rank as usize != self.config.lora_rank {
+                return Err(crate::Error::ConfigError(format!(
+                    "adapter '{}' has LoRA rank {rank}, this pipeline has {}",
+                    path.display(),
+                    self.config.lora_rank,
+                )));
+            }
+        }
+
+        // ── 2. READ EVERYTHING FIRST. Nothing is installed until all of it is here ──
+        let read = |name: &str, expected: usize| -> crate::Result<Vec<f32>> {
+            let data = reader.read_tensor_f32(name).map_err(|e| {
+                crate::Error::Serialization(format!(
+                    "adapter '{}' is missing tensor '{name}': {e}. A partially applied \
+                     adapter classifies confidently and is not the model that was \
+                     trained, so this is a refusal, not a warning.",
+                    path.display(),
+                ))
+            })?;
+            if data.len() != expected {
+                return Err(crate::Error::ConfigError(format!(
+                    "adapter '{}' tensor '{name}' has {} elements, expected {expected}",
+                    path.display(),
+                    data.len(),
+                )));
+            }
+            Ok(data)
+        };
+
+        let hidden = self.classifier.hidden_size();
+        let num_classes = self.config.num_classes;
+        let weight = read("classifier.weight", hidden * num_classes)?;
+        let bias = read("classifier.bias", num_classes)?;
+
+        let mut adapters: Vec<(Vec<f32>, Vec<f32>)> = Vec::with_capacity(self.lora_layers.len());
+        for (idx, lora) in self.lora_layers.iter().enumerate() {
+            let layer = idx / 2;
+            let proj = if idx % 2 == 0 { "q" } else { "v" };
+            let a = read(&format!("lora.{layer}.{proj}_proj.lora_a"), lora.rank() * lora.d_in())?;
+            let b = read(&format!("lora.{layer}.{proj}_proj.lora_b"), lora.d_out() * lora.rank())?;
+            adapters.push((a, b));
+        }
+
+        // A layer-count disagreement shows up as an extra tensor the loop never asked
+        // for. Catching it here keeps "the adapter has more layers than the model" from
+        // looking like a clean load of the first N.
+        // `lora_layers` holds TWO entries per transformer layer (q and v — see `layer = idx / 2`
+        // above), so the layer count is half its length. Naming it explicitly keeps the refusal
+        // message from reporting double the real number.
+        let num_lora_layers = self.lora_layers.len() / 2;
+        let extra = format!("lora.{num_lora_layers}.q_proj.lora_a");
+        if reader.read_tensor_f32(&extra).is_ok() {
+            return Err(crate::Error::ConfigError(format!(
+                "adapter '{}' carries adapters for MORE layers than this pipeline has \
+                 ({num_lora_layers} LoRA layers); refusing rather than loading a \
+                 prefix of it",
+                path.display(),
+            )));
+        }
+
+        // ── 3. Install. Every read above succeeded, so this cannot leave a half state ─
+        self.classifier
+            .weight
+            .data_mut()
+            .as_slice_mut()
+            .ok_or_else(|| {
+                crate::Error::Serialization("classifier.weight is not contiguous".to_string())
+            })?
+            .copy_from_slice(&weight);
+        self.classifier
+            .bias
+            .data_mut()
+            .as_slice_mut()
+            .ok_or_else(|| {
+                crate::Error::Serialization("classifier.bias is not contiguous".to_string())
+            })?
+            .copy_from_slice(&bias);
+
+        for (lora, (a, b)) in self.lora_layers.iter_mut().zip(adapters) {
+            lora.lora_a_mut()
+                .data_mut()
+                .as_slice_mut()
+                .ok_or_else(|| crate::Error::Serialization("lora_a is not contiguous".to_string()))?
+                .copy_from_slice(&a);
+            lora.lora_b_mut()
+                .data_mut()
+                .as_slice_mut()
+                .ok_or_else(|| crate::Error::Serialization("lora_b is not contiguous".to_string()))?
+                .copy_from_slice(&b);
+        }
+
+        Ok(())
+    }
+
+    /// Full ordered class-probability vector for one pre-tokenized input.
+    ///
+    /// Returns `num_classes` softmax probabilities in the SAME class-index order the
+    /// trainer was given. No argmax, no label, no loss — a benchmark row needs the whole
+    /// distribution (calibration, Brier, ECE), and `forward_only_tokenized` returns
+    /// `(loss, predicted_class)`, which throws all of it away and additionally requires a
+    /// ground-truth label the evaluator is not supposed to hand the model.
+    ///
+    /// Shares [`Self::head_logits`] with `forward_only`, so there is one forward pass in
+    /// this file, not two that can drift (OPS-03).
+    pub fn predict_proba_tokenized(&mut self, token_ids: &[u32]) -> Vec<f32> {
+        let logits = self.head_logits(token_ids);
+        softmax_stable(&logits)
+    }
+}
+
+/// Numerically stable softmax over an ordered logit vector.
+///
+/// Max-shifted before exponentiating: the raw form overflows to `inf/inf = NaN` on
+/// logits a diverged run really does produce, and a NaN probability vector would be
+/// silently averaged into a benchmark cell.
+fn softmax_stable(logits: &[f32]) -> Vec<f32> {
+    if logits.is_empty() {
+        return Vec::new();
+    }
+    let max_val = logits.iter().copied().fold(f32::NEG_INFINITY, f32::max);
+    let exps: Vec<f32> = logits.iter().map(|&v| (v - max_val).exp()).collect();
+    let sum: f32 = exps.iter().sum();
+    if sum > 0.0 && sum.is_finite() {
+        exps.iter().map(|&e| e / sum).collect()
+    } else {
+        // Degenerate input (all -inf, or NaN): a uniform vector is the only honest
+        // answer that still sums to 1.0.
+        let uniform = 1.0 / logits.len() as f32;
+        vec![uniform; logits.len()]
     }
 }
 

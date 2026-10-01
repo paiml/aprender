@@ -62,11 +62,11 @@ pub use jidoka::{JidokaError, JidokaGuard};
 pub use profiler::{BlisLevelStats, BlisProfileLevel, BlisProfiler, KaizenMetrics};
 
 // Re-export microkernel functions
-#[cfg(target_arch = "aarch64")]
-pub use microkernels::microkernel_8x8_neon;
 pub use microkernels::microkernel_scalar;
 #[cfg(target_arch = "x86_64")]
 pub use microkernels::{microkernel_8x6_avx2, microkernel_8x6_avx2_asm, microkernel_8x6_true_asm};
+#[cfg(target_arch = "aarch64")]
+pub use microkernels::{microkernel_8x6_neon, microkernel_8x8_neon};
 
 // Re-export backend selection types
 pub use backend_selection::{
@@ -88,6 +88,11 @@ pub use compute::{gemm_blis, gemm_blis_with_prepacked_b};
 // Re-export parallel
 #[cfg(feature = "parallel")]
 pub use parallel::gemm_blis_parallel_shared_b;
+/// Exported beside the function it guards so callers can ask the SAME question the
+/// dispatch asks, instead of re-deriving it. `examples/blis_benchmark.rs` does exactly
+/// that; before it existed, the example re-derived only half the condition.
+#[cfg(feature = "parallel")]
+pub use parallel::shared_b_has_microkernel;
 pub use parallel::{gemm_blis_parallel, gemm_blis_parallel_with_prepacked_b, HeijunkaScheduler};
 
 // Re-export prepacked

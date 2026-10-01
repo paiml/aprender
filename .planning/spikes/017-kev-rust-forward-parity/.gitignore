@@ -1,0 +1,5 @@
+vendor/
+models/
+*.log
+__pycache__/
+target/

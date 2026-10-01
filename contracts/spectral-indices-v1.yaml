@@ -1,0 +1,110 @@
+metadata:
+  version: 1.1.0
+  created: '2026-09-10'
+  author: PAIML Engineering
+  kind: kernel
+  # ONT-7 (plan 08-33): `kind: kernel` was the schema default and is now written out; the index formulas
+  # hold in the committed tree, so the one declared world and no qualifier.
+  valid_under:
+    world: committed
+  description: Multispectral satellite and drone indices (NDVI, NDWI, EVI, SAVI)
+  references:
+  - Rouse et al. (1974) Monitoring vegetation systems in the Great Plains with ERTS (NDVI)
+  - Gao (1996) NDWI - A normalized difference water index for remote sensing of vegetation liquid water
+  - McFeeters (1996) The use of the Normalized Difference Water Index (NDWI) in the delineation of open water features
+  - Huete et al. (2002) Overview of the radiometric and biophysical performance of the MODIS vegetation indices (EVI)
+  - Huete (1988) A soil-adjusted vegetation index (SAVI)
+equations:
+  ndvi:
+    formula: NDVI = (NIR - RED) / (NIR + RED)
+    domain: NIR, RED ∈ [0, 1]
+    codomain: '[-1, 1] ∪ {NaN}'
+    invariants:
+    - NDVI(x, x) = 0 for x > 0
+    - NDVI(x, 0) = 1 for x > 0
+    - NDVI(0, x) = -1 for x > 0
+    - NDVI bounded in [-1, 1] for all non-negative inputs
+  ndwi_gao:
+    formula: NDWI = (NIR - SWIR) / (NIR + SWIR)
+    domain: NIR, SWIR ∈ [0, 1]
+    codomain: '[-1, 1] ∪ {NaN}'
+  evi:
+    formula: EVI = 2.5 * (NIR - RED) / (NIR + 6*RED - 7.5*BLUE + 1.0)
+    domain: NIR, RED, BLUE ∈ [0, 1]
+    codomain: '[-1, 1] ∪ {NaN}'
+  savi:
+    formula: SAVI = (1 + L) * (NIR - RED) / (NIR + RED + L)
+    domain: NIR, RED ∈ [0, 1], L ≥ 0
+    codomain: '[-1, 1] ∪ {NaN}'
+proof_obligations:
+- type: bound
+  property: NDVI bounded
+  formal: ∀ nir, red ≥ 0, nir + red > 0 ⟹ -1 ≤ NDVI(nir, red) ≤ 1
+- type: invariant
+  property: NDVI identity
+  formal: ∀ x > 0, NDVI(x, x) = 0
+- type: invariant
+  property: Zero division safety
+  formal: nir + red = 0 ⟹ NDVI is NaN
+- type: monotonicity
+  property: Percentile ordering
+  formal: min ≤ p25 ≤ p50 ≤ p75 ≤ max
+falsification_tests:
+- id: FALSIFY-SPECTRAL-001
+  rule: Spectral index bounds
+  prediction: All valid index values lie within [-1.0, 1.0]
+  test: test_falsify_spectral_001_bounds
+  if_fails: Index formula clamping or denominator calculation error
+- id: FALSIFY-SPECTRAL-002
+  rule: NDVI identity
+  prediction: Identical bands yield zero
+  test: test_falsify_spectral_002_identity
+  if_fails: Subtraction or symmetry error
+- id: FALSIFY-SPECTRAL-003
+  rule: Division by zero safety
+  prediction: Zero and NaN inputs return NaN without panic
+  test: test_falsify_spectral_003_division_by_zero_safety
+  if_fails: Missing denominator guard
+- id: FALSIFY-SPECTRAL-004
+  rule: Statistics monotonicity
+  prediction: Percentiles are strictly non-decreasing
+  test: test_falsify_spectral_004_stats_monotonicity
+  if_fails: Sorting or quartile interpolation bug
+- id: FALSIFY-SPECTRAL-005
+  rule: Transparent nodata overlay
+  prediction: NaN values produce zero alpha channel
+  test: test_falsify_spectral_005_colormap_overlay
+  if_fails: Colormap NaN handling defect
+
+kani_harnesses:
+
+  # DECLARED, NOT EXECUTED (plan 08-33, the branch convention of laya-parity-v1). cargo-kani is not
+  # installed in this repository, so nothing here claims a proof: each entry names the existing
+  # falsification test that is the evidence for its obligation.
+  - id: KANI-SPECTRAL-001
+    obligation: NDVI bounded
+    property: 'for all non-negative nir, red with nir + red > 0: -1 <= NDVI(nir, red) <= 1'
+    bound: 8
+    strategy: stub_float
+    harness: 'NOT EXECUTED — the evidence is `cargo test -p aprender-image --lib test_falsify_spectral_001_bounds` (crates/aprender-image/src/tests.rs). Kani cannot reason about f32 semantics without stubbing, which would prove a property about the stub'
+
+  - id: KANI-SPECTRAL-002
+    obligation: NDVI identity
+    property: 'for all x > 0: NDVI(x, x) = 0'
+    bound: 8
+    strategy: stub_float
+    harness: 'NOT EXECUTED — the evidence is `cargo test -p aprender-image --lib test_falsify_spectral_002_identity` (crates/aprender-image/src/tests.rs)'
+
+  - id: KANI-SPECTRAL-003
+    obligation: Zero division safety
+    property: 'nir + red = 0 implies NDVI is NaN, and the computation does not panic'
+    bound: 8
+    strategy: stub_float
+    harness: 'NOT EXECUTED — the evidence is `cargo test -p aprender-image --lib test_falsify_spectral_003_division_by_zero_safety` (crates/aprender-image/src/tests.rs)'
+
+  - id: KANI-SPECTRAL-004
+    obligation: Percentile ordering
+    property: 'min <= p25 <= p50 <= p75 <= max for every non-empty finite input'
+    bound: 16
+    strategy: bounded_int
+    harness: 'NOT EXECUTED — the evidence is `cargo test -p aprender-image --lib test_falsify_spectral_004_stats_monotonicity` (crates/aprender-image/src/tests.rs)'

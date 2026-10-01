@@ -626,18 +626,15 @@ impl ClassifyPipeline {
         total_norm_sq.sqrt()
     }
 
-    /// Forward-only pass for a single sample (no backward, no optimizer step).
+    /// The forward pass through the base + adapters + classification head, stopping at
+    /// the ORDERED logits.
     ///
-    /// Computes cross-entropy loss and predicted class without accumulating
-    /// gradients. Used for validation/evaluation.
-    ///
-    /// # Arguments
-    /// * `token_ids` - Tokenized input
-    /// * `label` - Target class index
-    ///
-    /// # Returns
-    /// `(loss, predicted_class)` tuple
-    pub fn forward_only(&mut self, token_ids: &[u32], label: usize) -> (f32, usize) {
+    /// Everything after this point — argmax, cross-entropy, softmax — is a different
+    /// question asked of the same numbers. Extracted so `forward_only` and
+    /// `predict_proba_tokenized` cannot drift apart (OPS-03): a second copy of the
+    /// padding rule alone would be enough to make the reloaded model's probabilities
+    /// disagree with the trainer's on a GPU build.
+    pub(crate) fn head_logits(&mut self, token_ids: &[u32]) -> Vec<f32> {
         let num_classes = self.config.num_classes;
 
         // Pad to max_seq_len for deterministic GPU kernel shapes (matches forward_backward_single)
@@ -665,14 +662,29 @@ impl ClassifyPipeline {
         let logits =
             matmul(&pooled, &self.classifier.weight, 1, self.classifier.hidden_size(), num_classes);
 
-        let logits_with_bias: Vec<f32> = logits
+        logits
             .data()
             .as_slice()
             .expect("contiguous logits")
             .iter()
             .zip(self.classifier.bias.data().as_slice().expect("contiguous bias").iter())
             .map(|(&l, &b)| l + b)
-            .collect();
+            .collect()
+    }
+
+    /// Forward-only pass for a single sample (no backward, no optimizer step).
+    ///
+    /// Computes cross-entropy loss and predicted class without accumulating
+    /// gradients. Used for validation/evaluation.
+    ///
+    /// # Arguments
+    /// * `token_ids` - Tokenized input
+    /// * `label` - Target class index
+    ///
+    /// # Returns
+    /// `(loss, predicted_class)` tuple
+    pub fn forward_only(&mut self, token_ids: &[u32], label: usize) -> (f32, usize) {
+        let logits_with_bias = self.head_logits(token_ids);
 
         // Predicted class (argmax)
         let predicted = logits_with_bias

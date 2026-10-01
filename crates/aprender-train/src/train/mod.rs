@@ -45,6 +45,11 @@ pub mod pretrain;
 pub mod pretrain_real;
 #[cfg(feature = "cuda")]
 pub mod pretrain_real_cuda;
+// Phase 3 D-05: the two-stage SetFit trainer. Feature-gated because it is the only
+// module here that depends on `aprender/setfit` and `aprender-contrastive-data`; a
+// default build must not pull either in.
+#[cfg(feature = "setfit")]
+pub mod setfit;
 pub mod shard_reader;
 mod trainer;
 pub mod transformer_trainer;

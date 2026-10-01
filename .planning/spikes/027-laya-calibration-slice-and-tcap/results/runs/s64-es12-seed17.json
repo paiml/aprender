@@ -1,0 +1,94 @@
+{
+ "EVAL_ORACLE": {
+  "best_ece_T_le_10": 0.038449133440879336,
+  "best_ece_T_le_5": 0.038449133440879336,
+  "ece_at_t_min_ece": 0.038449133440879336,
+  "ece_at_t_min_nll": 0.08759723503073069,
+  "note": "reads eval labels: a diagnostic of the cap, never a selection rule",
+  "t_min_ece": 3.8541314796730894,
+  "t_min_nll": 3.4811104221161577
+ },
+ "best_epoch": 2,
+ "calib_acc": 0.7083333333333334,
+ "calib_nll_at_t5": 0.7308849214516405,
+ "calib_slice_size": 48,
+ "ce_last": 0.7273,
+ "check_prod_ece_post": 0.1437862784734794,
+ "check_prod_t_applied": 2.325982323824914,
+ "clamp_hit_10": false,
+ "clamp_hit_5": false,
+ "device_used": "mps:0",
+ "ece_curve": {
+  "1.0": 0.30448424963395615,
+  "1.76": 0.2120545694164766,
+  "10.0": 0.14528569248862522,
+  "15.0": 0.1758576709331721,
+  "2.0": 0.17671793788564688,
+  "20.0": 0.19089702804480868,
+  "3.0": 0.09824385568213345,
+  "30.0": 0.2057139342911008,
+  "5.0": 0.0753506649831597,
+  "7.5": 0.1143657693423728
+ },
+ "ece_post_10": 0.1437862767808721,
+ "ece_post_5": 0.1437862767808721,
+ "ece_post_unclamped": 0.1437862767808721,
+ "ece_pre": 0.21203641586806973,
+ "epochs_max": 12,
+ "epochs_run": 5,
+ "es_trace": [
+  {
+   "epoch": 1,
+   "monitor": 0.7652492181551301,
+   "t_star": 1.4629168087593525
+  },
+  {
+   "epoch": 2,
+   "monitor": 0.7308097889505895,
+   "t_star": 2.3271579128168063
+  },
+  {
+   "epoch": 3,
+   "monitor": 1.0827341080772612,
+   "t_star": 5.0
+  },
+  {
+   "epoch": 4,
+   "monitor": 1.4041403195649726,
+   "t_star": 5.0
+  },
+  {
+   "epoch": 5,
+   "monitor": 1.531441836975661,
+   "t_star": 5.0
+  }
+ ],
+ "eval_acc": 0.5678571428571428,
+ "fit_rows": 144,
+ "ft_f_avg": 0.6012044161927066,
+ "ft_macro_f1": 0.5535807219062489,
+ "gate_report_pass_at_contract_T": false,
+ "margin": 0.21336341354543048,
+ "margin_ok": true,
+ "monitor_tmax": 5.0,
+ "nll_eval_10": 0.9598395834710065,
+ "nll_eval_5": 0.9598395834710065,
+ "pass_10": false,
+ "pass_5": false,
+ "pass_unclamped": false,
+ "recipe": "es12",
+ "recipe_id": "ccc5c233f6c0c0de78e752129349586929f2dc19fd2d3539617afac400b4f129",
+ "run_dir": "models/decide/spike-027/s64-es12-seed17",
+ "seed": 17,
+ "size": "s64",
+ "split_seed": 13,
+ "stop_reason": "patience",
+ "stopping": "early_stopping",
+ "t_fitted_10": 2.325982323824914,
+ "t_fitted_5": 2.325982323824914,
+ "t_fitted_unclamped": 2.325982323824914,
+ "t_pre": 1.7601518630981445,
+ "train_seconds": 105.7,
+ "wall_seconds": 141.1,
+ "zs_macro_f1": 0.34021730836081837
+}

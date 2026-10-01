@@ -75,32 +75,56 @@ pub(crate) fn gemm_should_run_serial(m: usize, n: usize, k: usize) -> bool {
     flops < 8_000_000 || (flops < 64_000_000 && n < 192)
 }
 
-/// Parallel BLIS GEMM using Rayon
+/// Whether this target and CPU actually have the 8x32 microkernel that
+/// [`gemm_blis_parallel_shared_b`]'s hot loop requires.
+///
+/// It exists ONLY as an x86_64 AVX-512 path. The full-tile branch of that loop
+/// (`if mr_block == 8 && nr_block == 32`) contains a single
+/// `#[cfg(target_arch = "x86_64")]` statement, so on every other target it compiles to an
+/// EMPTY block: the loop runs to completion having written nothing for the aligned tiles
+/// and C is returned at its `vec![0.0; ...]` initial value — silently ZERO, not merely
+/// inaccurate. Edge tiles take the scalar `else` arm, which is why a shape not aligned to
+/// mr/nr came out partially correct rather than wholly zero.
+///
+/// Pure + named + `pub` for the same reason as [`gemm_should_run_serial`]: the dispatch
+/// policy must be one testable statement rather than a condition re-derived at each site.
+/// `examples/blis_benchmark.rs` calls it too — it previously re-derived HALF of this
+/// (`target_arch` only, missing the runtime `avx512f` half) and so mislabelled its own
+/// output on an x86_64 host without AVX-512.
+/// Falsifier: `tests::shared_b_falls_back_without_the_8x32_microkernel`.
+/// Refs `.planning/debug/gemm-shared-b-parallel.md` (FALSIFY-SHARED-B-001).
 #[cfg(feature = "parallel")]
-pub fn gemm_blis_parallel(
-    m: usize,
-    n: usize,
-    k: usize,
-    a: &[f32],
-    b: &[f32],
-    c: &mut [f32],
-) -> Result<(), TruenoError> {
-    use rayon::prelude::*;
-    contract_pre_amdahl_speedup!();
-
-    // Dimension validation
-    if a.len() != m * k || b.len() != k * n || c.len() != m * n {
-        return Err(TruenoError::InvalidInput("Dimension mismatch".to_string()));
+#[must_use]
+pub fn shared_b_has_microkernel() -> bool {
+    #[cfg(target_arch = "x86_64")]
+    {
+        std::arch::is_x86_feature_detected!("avx512f")
     }
-
-    // Single-threaded threshold: 8M FLOPs ≈ 200³.
-    // Rayon dispatch costs ~3µs. For GEMM ≤128 (~4M FLOP, ~35µs compute),
-    // rayon overhead dominates. GEMM 256+ (33M FLOP, ~300µs) benefits.
-    let flops = m * n * k;
-    if gemm_should_run_serial(m, n, k) {
-        return gemm_blis(m, n, k, a, b, c, None);
+    #[cfg(not(target_arch = "x86_64"))]
+    {
+        false
     }
+}
 
+/// THE M-partitioning decision of [`gemm_blis_parallel`], in one place.
+///
+/// Extracted (not copied) so the determinism-gate accessor below and the GEMM
+/// itself cannot disagree. A hand-mirrored second implementation would drift,
+/// and a drifted copy makes the gate's evidence unreliable in exactly the way
+/// it exists to prevent — it would report a partitioning the kernel never used.
+///
+/// Pure and side-effect free apart from reading `rayon::current_num_threads()`
+/// and the physical core count, which is precisely the environment dependence
+/// the gate measures.
+///
+/// # Behaviour is unchanged
+///
+/// This is a lift of the existing statements, verbatim and in order: the
+/// `max_threads` FLOP ladder, `HeijunkaScheduler::default()`, the
+/// `num_threads.min(max_threads)` cap, the partition-size choice and the
+/// `partition_m` call.
+#[cfg(feature = "parallel")]
+fn gemm_m_partitions(m: usize, n: usize, k: usize) -> Vec<std::ops::Range<usize>> {
     // Scale thread count to problem size and cache topology.
     // cgp profile scaling measurements (2026-04-05, Threadripper 7960X 24C/48T):
     //
@@ -112,6 +136,7 @@ pub fn gemm_blis_parallel(
     // overhead (~40µs per thread::scope) dominate when compute < 1ms.
     // Root cause for 1024 12T regression: cross-CCD L3 thrashing. 8T fits
     // in a single CCD (12 cores, 32MB L3). 12+ threads span both CCDs.
+    let flops = m * n * k;
     let phys_cores = num_cpus::get_physical();
     let max_threads = if flops < 64_000_000 {
         // 256³ and below: barely benefits from parallelism
@@ -135,7 +160,82 @@ pub fn gemm_blis_parallel(
     let mut scheduler = HeijunkaScheduler::default();
     scheduler.num_threads = scheduler.num_threads.min(max_threads);
     let ps = if m <= MC { MR.max(m / scheduler.num_threads) } else { MC };
-    let partitions = scheduler.partition_m(m, ps);
+    scheduler.partition_m(m, ps)
+}
+
+/// How many M-partitions `gemm_blis_parallel` would use for these dimensions.
+///
+/// # Internal determinism-gate observation hook — NOT public API
+///
+/// `#[doc(hidden)]` and **exempt from semver**: it may change or disappear in any
+/// release. Its sole consumer is
+/// `crates/aprender-core/tests/gemm_thread_determinism.rs`, which proves that
+/// `Tensor::matmul` is byte-identical across rayon pool sizes.
+///
+/// It CANNOT be `pub(crate)` — the caller is a different crate, so a crate-private
+/// item is unreachable and the gate would not compile. That is stated here so the
+/// next reader does not "tighten" the visibility and turn a passing gate into a
+/// build failure.
+///
+/// # Why the gate needs it
+///
+/// Identical hashes across pool sizes prove nothing about the hazard if every
+/// pool size partitioned the work identically — the parallel path would simply
+/// never have been exercised differently. This is the mechanism-engaged evidence
+/// (CLAUDE.md verification discipline 2): a run that cannot show the partitioning
+/// MOVED cannot claim to have falsified a partitioning hazard.
+///
+/// Returns `1` for a GEMM the dispatcher sends down the serial path, which is
+/// what that path effectively does with M.
+#[doc(hidden)]
+#[cfg(feature = "parallel")]
+pub fn gemm_partition_count_for(m: usize, n: usize, k: usize) -> usize {
+    if gemm_should_run_serial(m, n, k) {
+        return 1;
+    }
+    gemm_m_partitions(m, n, k).len()
+}
+
+/// Non-parallel fallback for the determinism-gate accessor.
+///
+/// Without `parallel` there is no rayon pool and no M-partitioning at all, so the
+/// answer is a constant `1`. The gate then observes an unchanging partition count
+/// and reports SKIPPED-WITH-EVIDENCE rather than claiming a falsification.
+#[doc(hidden)]
+#[cfg(not(feature = "parallel"))]
+pub fn gemm_partition_count_for(_m: usize, _n: usize, _k: usize) -> usize {
+    1
+}
+
+/// Parallel BLIS GEMM using Rayon
+#[cfg(feature = "parallel")]
+pub fn gemm_blis_parallel(
+    m: usize,
+    n: usize,
+    k: usize,
+    a: &[f32],
+    b: &[f32],
+    c: &mut [f32],
+) -> Result<(), TruenoError> {
+    use rayon::prelude::*;
+    contract_pre_amdahl_speedup!();
+
+    // Dimension validation
+    if a.len() != m * k || b.len() != k * n || c.len() != m * n {
+        return Err(TruenoError::InvalidInput("Dimension mismatch".to_string()));
+    }
+
+    // Single-threaded threshold: 8M FLOPs ≈ 200³.
+    // Rayon dispatch costs ~3µs. For GEMM ≤128 (~4M FLOP, ~35µs compute),
+    // rayon overhead dominates. GEMM 256+ (33M FLOP, ~300µs) benefits.
+    if gemm_should_run_serial(m, n, k) {
+        return gemm_blis(m, n, k, a, b, c, None);
+    }
+
+    // The thread cap and the M-partitioning both live in `gemm_m_partitions`, so
+    // `gemm_partition_count_for` reports the partitioning this call ACTUALLY uses
+    // rather than a second implementation of it.
+    let partitions = gemm_m_partitions(m, n, k);
 
     // NEGATIVE RESULT (2026-04-06): shared-B per (jc,pc) block REGRESSED 597→318 GFLOPS.
     // Root cause: Rayon barrier after each K-tile pack forces thread synchronization.
@@ -267,17 +367,10 @@ pub fn gemm_blis_parallel_shared_b(
 /// BLIS path a no-AVX-512 x86 box takes.
 #[cfg(feature = "parallel")]
 fn shared_b_path_available(flops: usize) -> bool {
-    if flops < 8_000_000 {
-        return false;
-    }
-    #[cfg(target_arch = "x86_64")]
-    {
-        std::arch::is_x86_feature_detected!("avx512f")
-    }
-    #[cfg(not(target_arch = "x86_64"))]
-    {
-        false
-    }
+    // The microkernel half is the one public statement of that policy,
+    // [`shared_b_has_microkernel`] (also read by examples/blis_benchmark.rs),
+    // so the two cannot drift apart.
+    flops >= 8_000_000 && shared_b_has_microkernel()
 }
 
 /// Thread budget by problem size. Shared-B means less L3 pressure per thread

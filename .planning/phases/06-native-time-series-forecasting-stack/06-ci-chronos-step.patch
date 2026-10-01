@@ -1,0 +1,121 @@
+PROPOSAL ONLY - NOT APPLIED. Decision input for plan 06-08 Task 3.
+
+This file is a unified diff against .github/workflows/ci.yml as of the commit
+recorded below. No task in plan 06-08 edits ci.yml; CLAUDE.md makes modifying a
+CI workflow a check-in-before-acting item. Plan 06-09 applies exactly the hunks
+the human approves, and nothing if the answer is `defer`.
+
+  git apply --check .planning/phases/06-native-time-series-forecasting-stack/06-ci-chronos-step.patch
+
+HUNK (a) - a new `Chronos embedded-weights gate` step, placed immediately after
+the `cargo nextest run --profile ci --workspace --lib` leg. Runs
+`just chronos-gate` in the same docker invocation pattern the neighbouring legs
+use. D-18 clause 2 ("at least one CI leg actually exercises the embedded-weights
+build") is met by this hunk and by nothing else in the file.
+
+HUNK (b) - `cargo test -p aprender-mcp-forecast --test e2e_stdio` appended to
+the single physical Integration-tests line, immediately before the trailing
+`cargo build --examples --workspace --keep-going`. ci.yml's own comment at that
+step says a `tests/*.rs` file "does nothing until its name appears HERE, and
+only one PR at a time may edit this single physical line without hitting a
+merge-queue conflict" - so this hunk is the merge-conflict-prone half and can be
+taken independently of hunk (a).
+
+WHAT THE EXECUTOR CANNOT DO FOR YOU. Hunk (a) needs two things provisioned on
+the runner that a workflow edit cannot create:
+  1. a weights mount. `/srv/models` in the diff is a PLACEHOLDER; name the real
+     path in your reply and 06-09 substitutes it.
+  2. a way for `uv run --with huggingface_hub --with safetensors --with numpy`
+     to resolve without network inside `sovereign-ci:stable` - a warm uv cache
+     mount (the diff proposes `/srv/uv-cache`) or those packages baked into the
+     image.
+Neither was verified by the executor; both are stated so the decision is made
+with them visible rather than discovered in a red CI run.
+
+THE NUMERICAL RISK (REVIEW-06-02). Every CI job is
+`[self-hosted, X64, Linux, clean-room]` (ci.yml:96,516,988,1039). The f32
+quantile bar `quantiles_abs_f32 = 1.0e-6` was frozen on 9.54e-7 measured on
+aarch64 WITH the spike-008 NEON microkernel, ~4.6 % of headroom; on x86_64
+`gemm_blis` does not dispatch that microkernel, so accumulation order through a
+12-layer T5 differs and the divergence has never been measured. 06-05 added the
+PROVISIONAL `quantiles_abs_f32_nonaarch64 = 5.0e-6` which the parity tests
+select on `!cfg!(target_arch = "aarch64")`, and every parity test prints the bar
+and arch it used - so the first x86_64 run yields the measurement that bar is
+waiting for. A red leg is unlikely but possible, and the number it would print
+is the number the phase wants.
+
+diff --git a/.github/workflows/ci.yml b/.github/workflows/ci.yml
+--- a/.github/workflows/ci.yml
++++ b/.github/workflows/ci.yml
+@@ -287,6 +287,62 @@
+             -e CARGO_PROFILE_DEV_DEBUG=line-tables-only \
+             "$IMAGE" \
+             cargo nextest run --profile ci --workspace --lib --exclude aprender-gpu --exclude aprender-cuda-edge --exclude aprender-compute
++      - name: Chronos embedded-weights gate (D-18 clause 2)
++        # Phase 6 / D-18: "at least one CI leg actually exercises the embedded-weights
++        # build". `just chronos-gate` is that leg. It (1) re-verifies the pinned
++        # Chronos-Bolt-tiny sha256s, (2) runs the aprender-forecast bolt::parity +
++        # chronos::parity ladders against the f32 weights, (3) runs the
++        # aprender-mcp-chronos suite with the weights EMBEDDED, and fails unless both
++        # summaries report `0 ignored` with at least one passing test. Its exit status
++        # is captured on its own line inside the recipe, never through a pipe
++        # (CLAUDE.md verification rule 1) — same reason the SetFit step above avoids
++        # the `| tee ...; grep -q` shape.
++        #
++        # NO NETWORK IS ASSUMED. `just fetch-chronos-tiny` downloads only files that
++        # are ABSENT and hashes unconditionally (REVIEW-06-03, verify-always), so with
++        # the weights mounted it performs integrity checks and nothing else. That is
++        # deliberate: a cached or pre-mounted weights directory crossing a trust
++        # boundary is exactly what an unconditional re-hash is for.
++        #
++        # TWO RUNNER PREREQUISITES, both for the human to confirm before this merges:
++        #   1. /srv/models must hold `chronos-bolt-tiny/{f32,f16}` (~50 MB, Apache-2.0,
++        #      amazon/chronos-bolt-tiny @ a0e552de83495b5c28c14c71c374f3e33280b340).
++        #      `/srv/models` is a PLACEHOLDER; substitute the real path.
++        #   2. `fetch-chronos-tiny` shells out to `uv run --with huggingface_hub --with
++        #      safetensors --with numpy`. Inside a network-less clean-room container
++        #      that resolves only from a warm uv cache, so either mount one
++        #      (`-v /srv/uv-cache:/root/.cache/uv`) or bake the three packages into
++        #      `sovereign-ci:stable`. Without one of those this step fails at the hash
++        #      check, not at the tests.
++        #
++        # The mount is checked BEFORE docker runs and the job FAILS if it is absent —
++        # deliberately not an `if:` guard, which would turn a missing mount into a
++        # silently skipped gate, i.e. exactly the dark-leg failure this step exists to
++        # end.
++        timeout-minutes: 30
++        run: |
++          test -d /srv/models/chronos-bolt-tiny/f32 || {
++            echo "::error::Chronos weights mount is absent (/srv/models/chronos-bolt-tiny/f32)."
++            echo "::error::This gate does not skip: provision the runner mount or revert this step."
++            exit 1
++          }
++          docker run --rm \
++          -e CI -e GITHUB_ACTIONS -e GITHUB_REF -e GITHUB_SHA -e GITHUB_REPOSITORY -e GITHUB_RUN_ID -e GITHUB_EVENT_NAME -e GITHUB_WORKFLOW \
++            -v "${GITHUB_WORKSPACE}:/workspace" \
++            -v "/mnt/nvme-raid0/cargo-ci/registry/${PR_OR_REF}:/usr/local/cargo/registry" \
++            -v "/mnt/nvme-raid0/targets/aprender-ci/${PR_OR_REF}/run-${GITHUB_RUN_ID}:/workspace/target" \
++            -v "/home/noah/data/sccache:/sccache" \
++            -v "/srv/models:/workspace/models:ro" \
++            -v "/srv/uv-cache:/root/.cache/uv" \
++            -w /workspace \
++            -e CARGO_TARGET_DIR=/workspace/target \
++            -e RUSTC_WRAPPER=rustc-sccache \
++            -e SCCACHE_DIR=/sccache \
++            -e SCCACHE_CACHE_SIZE=50G \
++            -e CARGO_INCREMENTAL=0 \
++            -e CARGO_BUILD_JOBS=8 \
++            "$IMAGE" \
++            just chronos-gate
+       - name: Phase 3 + Phase 4 SetFit tests (feature-gated — NOT reached by --workspace --lib above)
+         # REVIEW CR-01. `setfit` is declared but not default (aprender-train/Cargo.toml:79,
+         # `default = ["tui"]`); the module is `#[cfg(feature = "setfit")]` (train/mod.rs:51) and
+@@ -468,7 +524,7 @@
+             -e CARGO_INCREMENTAL=0 \
+             -e CARGO_BUILD_JOBS=8 \
+             "$IMAGE" \
+-            bash -c 'cargo test -p aprender-core --test monorepo_invariants && cargo test -p aprender-core --test readme_contract && cargo test -p apr-cli --test cli_commands && cargo test -p aprender-train-inspect --test falsify_no_fabricated_metadata_2519 && cargo test -p aprender-train-bench --test falsify_no_fabricated_benchmarks_2519 && cargo test -p aprender-train-shell --test falsify_no_fabricated_fetch_2519 && cargo test -p aprender-core --test beat_sklearn_iris && cargo test -p aprender-core --test beat_sklearn_nmi && cargo test -p aprender-core --test beat_sklearn_metrics_parity && cargo test -p aprender-core --test beat_sklearn_gaussiannb_accuracy && cargo test -p aprender-core --test beat_sklearn_svc_accuracy && cargo test -p aprender-core --test beat_sklearn_pipeline_encoder && cargo test -p aprender-serve --test beat_fail_closed_garbage && cargo test -p aprender-compute --lib beat_nf4_bitsandbytes_equivalence && cargo test -p aprender-core --test beat_pytorch_autograd_grad && cargo test -p aprender-train-lora --lib beat_lora_merge_forward_equivalence && cargo test -p apr-cli --release --test beat_pytorch_deploy_footprint && cargo test -p aprender-serve --test beat_fail_closed_structural && cargo test -p aprender-serve --test ollama_http_compat && cargo test -p apr-cli --test ollama_ndjson_streaming && cargo test -p apr-cli --test falsification_chat_http_cli && cargo test -p aprender-contracts --test apr_serve_api_key_auth_contract && cargo test -p apr-cli --test falsify_auth_001 --test falsify_auth_002 --test falsify_auth_003 --no-fail-fast && cargo test -p apr-cli --test beat_apr_data_alimentar_reach && cargo test -p apr-cli --test beat_apr_sibling_cli_reach && cargo build --examples --workspace --keep-going'
++            bash -c 'cargo test -p aprender-core --test monorepo_invariants && cargo test -p aprender-core --test readme_contract && cargo test -p apr-cli --test cli_commands && cargo test -p aprender-train-inspect --test falsify_no_fabricated_metadata_2519 && cargo test -p aprender-train-bench --test falsify_no_fabricated_benchmarks_2519 && cargo test -p aprender-train-shell --test falsify_no_fabricated_fetch_2519 && cargo test -p aprender-core --test beat_sklearn_iris && cargo test -p aprender-core --test beat_sklearn_nmi && cargo test -p aprender-core --test beat_sklearn_metrics_parity && cargo test -p aprender-core --test beat_sklearn_gaussiannb_accuracy && cargo test -p aprender-core --test beat_sklearn_svc_accuracy && cargo test -p aprender-core --test beat_sklearn_pipeline_encoder && cargo test -p aprender-serve --test beat_fail_closed_garbage && cargo test -p aprender-compute --lib beat_nf4_bitsandbytes_equivalence && cargo test -p aprender-core --test beat_pytorch_autograd_grad && cargo test -p aprender-train-lora --lib beat_lora_merge_forward_equivalence && cargo test -p apr-cli --release --test beat_pytorch_deploy_footprint && cargo test -p aprender-serve --test beat_fail_closed_structural && cargo test -p aprender-serve --test ollama_http_compat && cargo test -p apr-cli --test ollama_ndjson_streaming && cargo test -p apr-cli --test falsification_chat_http_cli && cargo test -p aprender-contracts --test apr_serve_api_key_auth_contract && cargo test -p apr-cli --test falsify_auth_001 --test falsify_auth_002 --test falsify_auth_003 --no-fail-fast && cargo test -p apr-cli --test beat_apr_data_alimentar_reach && cargo test -p apr-cli --test beat_apr_sibling_cli_reach && cargo test -p aprender-mcp-forecast --test e2e_stdio && cargo build --examples --workspace --keep-going'
+       - name: Build.rs crate-root escape check (v0.31.1 yank guard)
+         # Static Poka-Yoke: flags build.rs files that panic on files outside
+         # CARGO_MANIFEST_DIR, which break `cargo install` from crates.io.

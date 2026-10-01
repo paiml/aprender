@@ -1,0 +1,543 @@
+contract: chronos-bolt-parity
+metadata:
+  version: 2.0.0
+  created: '2026-09-06'
+  author: PAIML Engineering
+  kind: kernel
+  # ONT-7 (plan 08-33): the parity bars are asserted in the committed tree; the contract states no
+  # host restriction of its own (its qa_gate records what was measured where), so no qualifier.
+  valid_under:
+    world: committed
+  description: >
+    The FROZEN correctness bar for `crates/aprender-forecast`'s Chronos-Bolt zero-shot forward
+    (`src/bolt.rs`), its safetensors decoder (`src/safetensors.rs`) and its tool door
+    (`src/chronos.rs`) — SC4. Every number the `bolt::parity` and `chronos::parity` ladders assert
+    lives HERE, once, and is read at test time rather than written as a Rust literal: a test that
+    hardcodes a tolerance can be loosened without the contract ever noticing, while a tolerance
+    that lives here can only move as a `pv diff`-visible edit. D-15.
+
+    THE ORACLE. Python `chronos-forecasting==2.3.1` running `amazon/chronos-bolt-tiny`, captured in
+    three committed fixtures: `chronos_bolt_tiny_fixture.json` (the config plus, per series
+    {peyton, air, short100}, `loc`, `scale`, the boolean `attention_mask`, `n_patches_plus_reg`,
+    the first/last/REG `input_embeds`, the first/REG encoder hidden states, the decoder hidden
+    state, `quantiles_64` and — for peyton — `quantiles_365`), `chronos_probes.json` (six edge
+    cases: nan_gaps, five_points, constant, huge_scale, tiny_len_130_rollout, air_rollout_24) and
+    `peyton_tiny_oracle.json` (the same peyton quantiles plus torch's own wall times). Oracle
+    outputs ARE committed; model weights are NEVER committed (D-18).
+
+    THE WEIGHTS PIN. Repo `amazon/chronos-bolt-tiny`, revision
+    `a0e552de83495b5c28c14c71c374f3e33280b340`, Apache-2.0. `model.safetensors` (F32, 33.0 MB)
+    sha256 `75068728d376d2bec670379eeef4bfb4d24c0cfe24d957451f8d19b447030a32`; `config.json`
+    (1.1 KB) sha256 `278f0086733031635fb1c861cb01c1bad6477420c7fcb19381a2993e335785e0`. The f16
+    copy is DERIVED locally by `just fetch-chronos-tiny`, never downloaded, so its sha256
+    `f5dc2ef53533c8896bcb120a754c52c39d8917c15750a9e845192014dfa74a67` proves LOCAL INTEGRITY, not
+    upstream provenance — the f32 sha is what pins upstream. (RESEARCH assumption A3, which
+    predicted the spike's `f9a033b42bc516e17ae5756317cb946121afdb59c94b4acfcd30fef93317cd4c`,
+    FAILED: `safetensors` 0.8.0 emits the two `__metadata__` keys in a different order than the
+    spike's writer did, so the header bytes differ while the 17,305,344-byte tensor body is
+    byte-identical. Both values are printed and documented in the justfile header; the enforced
+    pin is the one this toolchain reproduces, which keeps the check fail-closed.)
+
+    THE HORIZON POLICY (spike 006, D-13). Horizons up to the model's native 64 steps are ONE direct
+    forward and are accepted unconditionally. Beyond 64 the model rolls its own forecast forward,
+    so the door refuses unless the caller passes `allow_long_horizon: true`, and the response then
+    carries a `warning` naming the rollout count. The refusal is not decoration: spike 006 measured
+    MASE 1.7 past step 64 against 1.1 within it on daily data. The hard ceiling is 1024.
+
+    THE EMBEDDING MODES (D-13). The default embedded build is Bolt-tiny f16 (a ~24 MB binary,
+    52 ms cold start; f16 costs 0.11 % of the series std, measured). Bolt-small f16 (~103 MB) is a
+    build option for S3/container deployment, not a Lambda zip. A runtime path via
+    `CHRONOS_MODEL_DIR` is the fallback for both. Embedding itself lives in the SERVER crate
+    (plan 06-07); this library takes bytes.
+
+    EMPIRICAL COVERAGE, NOT NOMINAL (D-16). The q10-q90 band is nominally 80 %. Measured on rolling
+    origins in spike 006 it covered 0.65. Documentation and tool descriptions say so. Do NOT add a
+    coverage bar here on the strength of the nominal number.
+
+    THE X86_64 TOLERANCE ASSUMPTION (REVIEW-06-02). `quantiles_abs_f32` = 1.0e-6 is the SC4 literal
+    and was measured at 9.54e-7 — about 4.6 % of headroom — on AARCH64, where `gemm_blis` dispatches
+    the spike-008 NEON 8x6 microkernel. Every CI job in this repository is
+    `[self-hosted, X64, Linux, clean-room]` (`.github/workflows/ci.yml:96,516,988,1039`), where that
+    microkernel does not run and inner-product accumulation order through a 12-layer T5 differs. The
+    aarch64 bar is NOT loosened. A SECOND equation, `quantiles_abs_f32_nonaarch64`, carries a
+    MEASURED 2.0e-6 that the tests select on `!cfg!(target_arch = "aarch64")`. It was provisional headroom until the first x86_64 run on 2026-09-07 measured 9.5367e-7 and discharged the obligation below,
+    not evidence — see its own description and FALSIFY-CHRONOS-002.
+  references:
+    - 'Ansari, A. F., Stella, L., Turkmen, C., Zhang, X., Mercado, P., Shen, H., Shchur, O., Rangapuram, S. S., Pineda Arango, S., Kapoor, S., Zschiegner, J., Maddix, D. C., Mahoney, M. W., Torkkola, K., Gordon Wilson, A., Bohlke-Schneider, M. & Wang, Y. (2024). Chronos: Learning the Language of Time Series. arXiv:2403.07815.'
+    - 'amazon-science/chronos-forecasting 2.3.1 — `ChronosBoltPipeline.predict` (the instance norm, patch embedding, T5 encoder/decoder and the batched re-quantiled rollout this port reproduces), and the model card for amazon/chronos-bolt-tiny (Apache-2.0, 8.65M parameters).'
+    - '.claude/skills/spike-findings-aprender/references/chronos-zero-shot-port.md (the validated implementation blueprint: the forward, the rollout scheme, the parity ladder shape).'
+    - '.claude/skills/spike-findings-aprender/references/chronos-mcp-server.md (embedding, f16 sizing, the horizon gate and cold-start numbers).'
+    - '.claude/skills/spike-findings-aprender/sources/005-chronos-bolt-tiny-parity/RUN-OUTPUT.md (the measured table behind EVERY tolerance in this file: the three-series ladder, the 365-step rollout with its median-only control, the six edge probes and the cost table).'
+
+# Machine-readable mirror of the Chronos bounds and the rollout arithmetic. Not part of the
+# `Contract` struct (the parser drops unknown top-level keys), and deliberately so: these are read
+# by the parity modules at test time so the door's bounds and the rollout's forward count are
+# asserted FROM THE CONTRACT rather than from a test literal, exactly as the tolerances are read
+# from `equations.*.float_tolerance`.
+constants:
+  # D-11's Chronos-side bounds (the fit server's are different: 10 / 20000 / 3650).
+  min_points: 4
+  max_points: 20000
+  max_horizon: 1024
+  # The model's DIRECT horizon. Above this the rollout starts and the door needs the flag.
+  native_horizon: 64
+  # The longest history the model looks at; anything longer is truncated from the left.
+  context_length: 2048
+  quantile_levels: 9
+  # 1 direct forward + 5 rollout blocks x 9 quantile paths = 46 forwards for a 365-step horizon.
+  # ceil((365 - 64) / 64) = 5 blocks, so rollouts = 5 and forwards = 1 + 5 * 9.
+  rollout_forwards_for_365: 46
+
+equations:
+
+  quantiles_abs_f32:
+    formula: 'max_{q,t} |quantiles_rust[q][t] - quantiles_py[q][t]| <= 1.0e-6 on the Peyton Manning 64-step direct forecast, f32 both sides'
+    domain: 'the 2905-point Peyton Manning log page-view series through `Bolt::forward` at the production routing defaults (fast = true, attn_gemm = true, row1_gemv = false), weights amazon/chronos-bolt-tiny f32 at the pinned revision'
+    codomain: '`chronos_bolt_tiny_fixture.json` series.peyton.quantiles_64 and `peyton_tiny_oracle.json` quantiles_64, both from chronos-forecasting 2.3.1'
+    float_tolerance: 1.0e-6
+    invariants:
+      - 'THIS IS THE SC4 LITERAL and it is ASSERTED ONLY WHERE IT WAS MEASURED. Spike 005 measured 9.54e-7 on aarch64 (Apple M4 Pro) with the spike-008 NEON 8x6 microkernel live, and spike 007 measured the same 9.54e-7 through the server; the bar therefore carries ~4.6 % of headroom'
+      - 'short100 (the last 100 Peyton points) measured the same 9.54e-7, so the number is not a property of the 2905-point length'
+      - 'the test PRINTS the equation name, the value and `std::env::consts::ARCH` it selected, so a green run always says where it ran and against which bar'
+      - 'on any non-aarch64 target the tests select `quantiles_abs_f32_nonaarch64` instead — this equation is never silently applied to a machine it was not measured on'
+
+  quantiles_abs_f32_nonaarch64:
+    formula: 'max_{q,t} |quantiles_rust[q][t] - quantiles_py[q][t]| <= 2.0e-6 on the Peyton Manning 64-step direct forecast, on any target_arch other than aarch64'
+    domain: 'the same Peyton Manning forward, on a target where `trueno::blis::gemm_blis` does NOT dispatch the spike-008 NEON microkernel (x86_64 scalar/AVX2 paths in particular)'
+    codomain: 'the same chronos-forecasting 2.3.1 fixture quantiles'
+    float_tolerance: 2.0e-6
+    invariants:
+      - 'MEASURED 2026-09-07 on x86_64 (AWS EC2, Amazon Linux 2023, rustc 1.93.0), discharging the first-x86_64-run obligation below. `peyton_ladder_matches_oracle_f32` printed `quantiles_abs_f32_nonaarch64 = 5e-6 (ARCH=x86_64)` and `max|delta| 9.5367e-7`, so the arch branch is PROVEN to have engaged rather than assumed (CLAUDE.md rule 2). The bar is tightened 5.0e-6 -> 2.0e-6, which is 2.1x the measurement'
+      - 'THE PREMISE FOR 5.0e-6 WAS FALSIFIED, and that is why this tightening is well-founded rather than a lucky sample. The headroom existed for a DIFFERENT GEMM ACCUMULATION ORDER on x86_64, where gemm_blis does not dispatch the spike-008 NEON microkernel. The x86_64 delta is not larger — it is IDENTICAL to the aarch64 value spike 005 measured WITH that microkernel live (9.54e-7), and identical again to spike 007 through the server. 9.5367431640625e-7 is exactly 2^-20: a QUANTIZATION QUANTUM of the f32 output representation, not accumulated arithmetic error. A quantum does not vary with accumulation order, which is why the two architectures agree exactly'
+      - 'WHY 2.0e-6 AND NOT 1.0e-6 (the aarch64 bar, which the measurement also clears at 95.4%): one run on one instance type is one sample. Narrowing to the measured value would repeat the CR-01 error in this milestone — a bound fitted from one side whose ACCEPTED region was never explored. 2.0e-6 removes the 5.24x unstated slack the previous invariant warned about while leaving room for AVX2-vs-AVX-512 codegen differences no run has yet covered. It also declines to assert that x86_64 is better-validated than aarch64 on a single observation'
+      - 'NOT THE TIGHTEST THING IN THIS LADDER. The same x86_64 run put `probe five_points` at 3.815e-6 against its 4.0258e-6 bar — 94.8% — and `probe tiny_len_130_rollout` at 80.6%. The peyton quantile bar this equation governs ran at 19.1% of 5.0e-6. If an x86_64 microarchitecture ever moves these numbers, five_points fails first and this equation fails last'
+      - 'every CI job in this repository is `[self-hosted, X64, Linux, clean-room]` (.github/workflows/ci.yml:96, 516, 988, 1039), so this is the bar CI will actually select once the ladder is armed there'
+      - 'the aarch64 bar `quantiles_abs_f32` is NOT loosened by this equation existing. SC4 names 1e-6 and 1e-6 is what aarch64 asserts'
+      - 'OBLIGATION ON THE FIRST X86_64 RUN: record the measured max|delta| the test prints and TIGHTEN this bar to that measurement plus margin, in a `pv diff`-visible edit to this file. Leaving 5.0e-6 in place after a measurement exists converts a stated unknown into an unstated slack'
+
+  quantiles_rel_scale:
+    formula: 'max_{q,t} |quantiles_rust[q][t] - quantiles_py[q][t]| <= 4.0e-6 * series_scale, for the non-Peyton committed series'
+    domain: 'air (144 monthly points) and short100 (the last 100 Peyton points) through `Bolt::forward`'
+    codomain: 'chronos_bolt_tiny_fixture.json series.{air,short100}.quantiles_64'
+    float_tolerance: 4.0e-6
+    invariants:
+      - 'air measured 1.83e-4 absolute at scale 119.0 = 1.54e-6 relative; short100 measured 9.54e-7 absolute at scale 0.85 = 1.1e-6 relative'
+      - 'a series whose values are ~119 cannot hold an ABSOLUTE 1e-6 bar in f32 — 119 has ~1e-5 of ULP — so the bar for non-Peyton series is relative to the series scale by construction, not as a loosening'
+      - 'the same rung also asserts the attention mask is EQUAL (a boolean vector, no tolerance) and n_patches_plus_reg matches the fixture'
+
+  loc_scale_rel:
+    formula: '|loc_rust - loc_py| / max(|loc_py|, 1) <= 2.0e-6 and |scale_rust - scale_py| / max(scale_py, 1e-5) <= 2.0e-6'
+    domain: 'the instance normalisation at the head of every forward: loc = nanmean(context), scale = population std of the finite values, floored at 1e-5'
+    codomain: 'the fixture and probe `loc` / `scale` fields'
+    float_tolerance: 2.0e-6
+    invariants:
+      - 'measured peyton 9.5e-7 / 1.8e-7, air 0.0 / 1.5e-5 at scale 119 (1.3e-7 relative), short100 0.0 / 6.0e-8'
+      - 'NaN entries are excluded from both statistics (nan_to_num semantics), which is what nan_gaps probes: it measured a loc difference of 2.9e-6 absolute against a loc of ~8.2, i.e. 3.5e-7 relative'
+      - 'a constant series floors scale at 1e-5 rather than dividing by zero'
+
+  hidden_states_abs:
+    formula: 'max_i |h_rust[i] - h_py[i]| <= 2.0e-5 for the patch embeddings and the encoder/decoder last hidden states'
+    domain: 'input_embeds first patch, input_embeds last patch, the REG embedding, encoder_last_hidden first token, encoder_last_hidden REG token, decoder_last_hidden — all on the normalised scale'
+    codomain: 'the six per-series hidden-state arrays in chronos_bolt_tiny_fixture.json'
+    float_tolerance: 2.0e-5
+    invariants:
+      - 'measured: input_embeds <= 6.0e-7, encoder <= 1.4e-6, decoder hidden <= 7.6e-6 (the worst rung, on short100)'
+      - 'the REG embedding is compared EXACTLY as 0.0e0 in the spike on all three series — it is a slice of `shared.weight`, not a computed value — so a non-zero difference there means the REG token index moved, not that a kernel drifted'
+      - 'these rungs are what makes a quantile failure diagnosable: if the encoder rung is green and the quantile rung is red, the defect is in the head or the rollout, not in the transformer'
+
+  probe_quantiles_rel_scale:
+    formula: 'max_{q,t} |quantiles_rust[q][t] - quantiles_py[q][t]| <= 5.0e-6 * max(scale, 1e-12) for each edge probe except `constant`'
+    domain: 'the five non-constant probes: nan_gaps (300 points with NaN holes), five_points (the minimum accepted length), huge_scale (values ~1e6), tiny_len_130_rollout (130 steps, so one rollout block), air_rollout_24'
+    codomain: 'chronos_probes.json cases.*.quantiles, chronos-forecasting 2.3.1'
+    float_tolerance: 5.0e-6
+    invariants:
+      - 'measured relative to scale: five_points 3.81e-6 abs at scale ~1 ; huge_scale 1.00 abs at scale ~1e6 = 1.0e-6 ; nan_gaps 1.91e-6 ; tiny_len_130_rollout 2.86e-6 ; air_rollout_24 1.22e-4 at scale 119 = 1.0e-6'
+      - 'huge_scale is the reason this bar is relative: an absolute bar there would have to be 1.0, which would be meaningless for every other probe'
+      - 'every probe also asserts its attention mask is EQUAL — the mask is where a NaN-handling or padding regression shows up first, and it carries no tolerance'
+
+  probe_constant_abs:
+    formula: 'max_{q,t} |quantiles_rust[q][t] - quantiles_py[q][t]| <= 1.0e-5 for the `constant` probe'
+    domain: 'a constant 64-point series, whose population std is exactly 0 and whose scale therefore FLOORS at 1e-5'
+    codomain: 'chronos_probes.json cases.constant.quantiles'
+    float_tolerance: 1.0e-5
+    invariants:
+      - 'measured 9.54e-7 ABSOLUTE. A relative-to-scale bar is meaningless here: the scale is the 1e-5 floor rather than a property of the data, so 9.54e-7 reads as 9.5 % of "scale" while being a perfectly ordinary f32 rounding difference'
+      - 'this probe exists because dividing by a zero scale is the obvious way to write this forward wrong, and it fails loudly (NaN everywhere) rather than subtly'
+
+  rollout_365_abs:
+    formula: 'max_{q,t} |quantiles_rust[q][t] - quantiles_py[q][t]| <= 5.0e-5 over all 365 steps of the Peyton Manning rollout'
+    domain: '`Bolt::predict(context, 365)`: one direct 64-step block, then 5 blocks in which all 9 quantile paths are each fed forward and the 81 resulting values per step are re-quantiled with torch quantile linear interpolation'
+    codomain: 'peyton_tiny_oracle.json quantiles_365 / chronos_bolt_tiny_fixture.json series.peyton.quantiles_365'
+    float_tolerance: 5.0e-5
+    invariants:
+      - 'measured 1.72e-5 in spike 005 and 1.91e-5 through the spike-007 server, against a y range of about 7.6. The bar is deliberately ~2.6x the worst measurement because error compounds across 5 rollout blocks and the margin should not be a hair'
+      - 'the first 64 steps of the 365-step run measured 9.54e-7 — identical to the direct forecast — so the divergence is entirely in the rolled-forward steps, as it should be'
+      - 'the rung is only meaningful WITH its control: the pre-2025 median-only rollout differs from the same Python output by 5.11e-1, four orders of magnitude worse. See rollout_scheme_nine_path_requantiled'
+
+  f16_rel_std:
+    formula: 'max_{q,t} |quantiles_f16[q][t] - quantiles_f32[q][t]| <= 0.02 * series_std'
+    domain: 'the same Peyton Manning 64-step forecast run twice: once from the pinned f32 weights and once from the locally derived f16 weights, series std 0.8718'
+    codomain: 'the f32 run is the reference; this is a WEIGHT-PRECISION bar, not an oracle-parity bar'
+    float_tolerance: 0.02
+    invariants:
+      - 'THIS IS THE SC4 LITERAL (f16 within 2 % of the series std). Measured 9.55e-4 = 0.11 % of std — a factor of 18 of headroom'
+      - 'the f16 weights are DERIVED from the verified f32 weights by `just fetch-chronos-tiny`, never downloaded, so this rung also proves the derivation did not corrupt a tensor'
+      - 'the decoder reports the dtype it read: the f32 model must report "F32" and the f16 model "F16", so a test cannot pass by accidentally loading the same file twice'
+      - 'this is why the default embedded build is f16: 0.11 % of std buys a 24 MB binary instead of a 41 MB one'
+
+  horizon_gate_native_64:
+    formula: 'validate(cfg, args) is Err(Validation) iff horizon = 0, or horizon > constants.max_horizon, or (horizon > constants.native_horizon and not allow_long_horizon)'
+    domain: 'the Chronos door `chronos::validate`, with NO weights loaded — it takes a `Config`, which the committed 1.1 KB config.json fixture provides'
+    codomain: 'D-11 and D-13: the boundary refuses, never defaults'
+    invariants:
+      - 'the refusal message for a long horizon NAMES THE FIX — it contains the literal `allow_long_horizon` — because a refusal the caller cannot act on is a bug report addressed to the wrong person'
+      - 'refusals are Validation-class, never Internal: an Internal error tells a client to retry, and retrying a 65-step horizon will fail forever'
+      - 'this equation is asserted UNARMED as well as armed. That is the point of extracting `validate` out of `forecast` (the recorded D-08 seam): D-18 forbids a claim that only ever passed because weights were absent, and the converse — a door claim that needs weights to be checked at all — is the same failure wearing the other hat'
+
+  warning_beyond_native:
+    formula: 'forecast(...).warning is Some(w) iff horizon > constants.native_horizon, and w names the rollout count; diagnostics.forwards = constants.rollout_forwards_for_365 and diagnostics.rollouts = 5 at horizon 365'
+    domain: 'a completed `chronos::forecast` call with allow_long_horizon = true and horizon 365'
+    codomain: 'the spike-004/007 response shape shared by every forecast server'
+    invariants:
+      - 'the warning carries the spike-006 measurement (MASE 1.7 past step 64 vs 1.1 within it) rather than a vague caution, so a caller can decide rather than guess'
+      - 'a horizon <= 64 carries NO warning key at all (`skip_serializing_if = "Option::is_none"`), so its presence is itself the signal'
+      - 'forwards and rollouts are ARITHMETIC, not observations: 1 + ceil((365-64)/64) * 9 = 46 and 5. If they drift, the rollout loop changed shape and rollout_365_abs is no longer measuring what it was measured on'
+
+  rollout_scheme_nine_path_requantiled:
+    formula: 'max|delta| (nine-path re-quantiled rollout, Python) <= rollout_365_abs.float_tolerance AND max|delta| (median-only rollout, Python) > 0.1'
+    domain: 'the same 365-step Peyton Manning horizon computed two ways: the shipped scheme, and the pre-2025 median-only control from spike 005'
+    codomain: 'the SAME Python fixture for both'
+    # Read by the test as the MINIMUM separation the control must show — not an upper bound.
+    # A tolerance is a number a test must not exceed; this one is a number it must exceed, and it
+    # lives here for the same reason every other bar does (D-15): so it can only move visibly.
+    float_tolerance: 0.1
+    invariants:
+      - 'this is the CONTROL that pins which pipeline the fixture came from. The shipped scheme measures 1.72e-5; the median-only scheme measures 5.11e-1 against the identical oracle — a 30000x separation'
+      - 'without the control, a rollout rung proves only that SOME rollout was implemented. With it, the rung proves it is the one chronos-forecasting 2.3.1 actually runs'
+      - 'the control bar is 0.1, two orders of magnitude below the measured 0.511 and four above the shipped 1.7e-5, so neither side is a hair'
+
+  weights_dual_layout_documented:
+    formula: 'resident_f32_elements = 2 * matrix_elements + non_matrix_elements, i.e. every projection matrix is held in BOTH the row-major [out, in] and the transposed [in, out] layout'
+    domain: 'a loaded `bolt::Bolt` — `Attn` holds q/k/v/o AND qt/kt/vt/ot, `Block` holds wi/wo AND wit/wot, `Residual` holds wh/wo/wr AND wht/wot/wrt'
+    codomain: 'the arithmetic is recomputed from the committed config alone by `bolt::tests::weight_layout_is_dual_and_its_cost_is_stated`, which PRINTS the implied MB'
+    invariants:
+      - 'D-13 AMENDED. D-13 says "Only transposed [in, out] weights are kept in memory". That sentence is amended, by a blocking human decision recorded in plan 06-05 (`amend-memory-clause`), because it is incompatible with D-14: `dot8` reads a contiguous [out, in] row and D-14 mandates `dot8` for single rows'
+      - 'this equation REPLACES the transposed-weights-only invariant an earlier draft of this contract carried (its key is deliberately not written here, so a grep for it stays a real ban). That invariant was false of the code being ported and would have been satisfiable only by deleting the untransposed copies, which forces single rows onto `gemv` and changes the float accumulation order the 9.54e-7 parity was measured under'
+      - 'THE COST IS STATED, NOT HIDDEN: 8,642,560 of the tiny model 8,652,672 f32 parameters are matrices held twice, so residency is 17,295,232 f32 = 69.18 MB rather than 34.61 MB — 2.00x'
+      - 'that is RESIDENT MEMORY. SC4 "< 30 MB" is a BINARY-SIZE bar (the release binary carrying embedded f16 bytes) and an in-memory duplicate does not touch it. Conflating the two is the mistake this invariant exists to prevent'
+
+  gemm_routing_blis:
+    formula: 'every product with rows > 1 goes through `trueno::blis::gemm_blis`; the rayon parallel-GEMM path is absent from the source'
+    domain: 'src/bolt.rs `proj` / `linear_fast` at the production defaults, and the attention score/context products under attn_gemm'
+    codomain: 'D-14 first clause, and D-05 (aprender-compute is assumed, never modified)'
+    invariants:
+      - 'proved behaviourally, not by grep: for rows > 1 the routed result is BIT-IDENTICAL to `linear_fast` (the gemm_blis path) and DIFFERS from `linear` (the dot8 path) on at least one of 20 seeded inputs'
+      - 'the rayon toggle the spike carried behind its `parallel` feature is deleted, and its identifier is never written in src/bolt.rs, so `! grep -q` on it is a real file-wide ban rather than a reviewer memory'
+      - '`trueno::Matrix::matmul` is never called (measured 4x slower than plain loops before the spike-008 kernel landed)'
+
+  single_row_routing_dot8:
+    formula: 'proj(fast = true, row1_gemv = false, rows = 1, ...) == linear(...) bitwise, and != linear_fast(...) for at least one seeded input'
+    domain: 'src/bolt.rs at the production defaults `Bolt::load` sets (fast = true, attn_gemm = true, row1_gemv = false)'
+    codomain: 'D-14 second clause: single rows through the 8-accumulator dot'
+    invariants:
+      - 'a grep showing `dot8` EXISTS does not prove EXCLUSIVE routing (REVIEW-06-04); the toggle survives in the shipped struct precisely so `--bench` can A/B it, so only a behavioural test can say which kernel a single row reaches'
+      - 'the bit-identity is asserted on all 20 seeds; the DIFFERENCE from the gemv path is asserted as "at least one of 20 differs" and the count is printed, because if the two kernels agreed everywhere the first assertion would be vacuous rather than reassuring. Measured: 20/20 differ'
+      - 'the decoder runs on ONE token, so this is the routing the whole decoder stack and the quantile head take on every single call'
+
+  weights_never_committed:
+    formula: 'no weight file is tracked by git: `*.safetensors` is globally ignored and `/models/` is ROOT-ANCHORED ignored; only the 1.1 KB config.json is committed, as a test fixture'
+    domain: 'the repository working tree after `just fetch-chronos-tiny` has run'
+    codomain: 'D-18, and CB-510 (a non-anchored `models/` pattern would also hide `src/models/`)'
+    invariants:
+      - '`git status --porcelain -- models/` is EMPTY after a fetch, and `git check-ignore -q models/chronos-bolt-tiny/f32/model.safetensors` exits 0'
+      - 'the committed `tests/fixtures/chronos_bolt_tiny_config.json` is hyper-parameters, not weights — 1.1 KB of d_model/d_ff/quantiles — and D-18 permits it. Its sha256 is the same 278f0086... pinned above, so it cannot silently diverge from the model it describes'
+      - 'oracle OUTPUTS are committed and weights are not: that asymmetry is what lets the parity claim be checked without shipping 33 MB'
+
+  weights_verified_on_every_gate_run:
+    formula: '`just fetch-chronos-tiny` re-hashes the f32 model, the f32 config AND the derived f16 on EVERY invocation, download or not; exit is non-zero naming the offending file on any mismatch'
+    domain: 'the fetch recipe, and `just chronos-gate` (plan 06-08) which invokes it UNCONDITIONALLY rather than only when the f32 model is missing'
+    codomain: 'REVIEW-06-03 and threat T-06-06 (model-weight supply chain)'
+    invariants:
+      - 'VERIFY-ALWAYS, not fetch-if-missing: the download is conditional, the hashing is not. A pre-existing, cached or CI-mounted weight file is verified rather than trusted'
+      - 'the failing direction is proven by a TAMPER CONTROL, not assumed: flipping one byte at offset 4096 of an already-present f32 model in a copy directory makes the recipe exit non-zero naming a sha256 mismatch'
+      - 'a mismatch is a supply-chain event, not a cache miss: the recipe never warns-and-continues, never silently overwrites and never re-downloads over a mismatching f32 file'
+      - 'the f16 is the one exception and deliberately so — it is DERIVED, so a mismatch there is re-derived from the already-verified f32 and re-hashed, and only then is a still-differing hash fatal'
+
+  counted_skip_when_unarmed:
+    formula: 'unarmed (CHRONOS_MODEL_DIR unset): the parity run reports N >= 1 IGNORED with the arming reason printed; armed: the same tests report 0 ignored and all pass'
+    domain: '`cargo test -p aprender-forecast --lib -- bolt::parity chronos::parity`, run twice'
+    codomain: 'D-18 second constraint, and threat T-06-13 (a parity claim that only ever passed because weights were absent)'
+    invariants:
+      - 'the mechanism is `build.rs` emitting `cargo:rustc-cfg=chronos_weights` only when CHRONOS_MODEL_DIR holds a model.safetensors, plus `#[cfg_attr(not(chronos_weights), ignore = "...run `just fetch-chronos-tiny` to arm")]` on every weight-dependent test'
+      - 'the `println!("SKIP"); return;` style is FORBIDDEN: it reports `0 ignored`, which is a silent green and exactly the claim D-18 exists to prevent'
+      - 'BOTH directions must be observed. An unarmed run showing 0 ignored means a weight test ran without weights (or was deleted); an armed run showing any ignored means the cfg did not arm and the ladder proved nothing'
+      - 'the armed run additionally asserts a MINIMUM COUNT of matching `test (bolt|chronos)::parity::` lines, so a filter that silently matched nothing would go red rather than green'
+
+proof_obligations:
+
+  - type: bound
+    property: 'On aarch64 the Peyton Manning 64-step f32 quantiles reproduce chronos-forecasting 2.3.1 within the SC4 bar'
+    formal: 'max|q_rust - q_py| <= equations.quantiles_abs_f32.float_tolerance when cfg!(target_arch = "aarch64")'
+    applies_to: all
+
+  - type: bound
+    property: 'On any non-aarch64 target the same quantiles hold the MEASURED 2.0e-6 bar (provisional until 2026-09-07), and the run records the measured value'
+    formal: 'max|q_rust - q_py| <= equations.quantiles_abs_f32_nonaarch64.float_tolerance when !cfg!(target_arch = "aarch64")'
+    applies_to: all
+
+  - type: bound
+    property: 'The non-Peyton committed series reproduce the oracle relative to their own scale'
+    formal: 'forall s in {air, short100}: max|q_rust - q_py| <= equations.quantiles_rel_scale.float_tolerance * scale_s'
+    applies_to: all
+
+  - type: bound
+    property: 'The instance normalisation reproduces the oracle loc and scale'
+    formal: 'forall series: |loc_r - loc_p| / max(|loc_p|, 1) <= T && |scale_r - scale_p| / max(scale_p, 1e-5) <= T, T = equations.loc_scale_rel.float_tolerance'
+    applies_to: all
+
+  - type: bound
+    property: 'Patch embeddings and encoder/decoder hidden states reproduce the oracle'
+    formal: 'forall rung in {embeds_first, embeds_last, reg, enc_first, enc_reg, dec}: max|h_r - h_p| <= equations.hidden_states_abs.float_tolerance'
+    applies_to: all
+
+  - type: bound
+    property: 'The five non-constant edge probes reproduce the oracle relative to their own scale, with identical attention masks'
+    formal: 'forall probe != constant: mask_r = mask_p && max|q_r - q_p| <= equations.probe_quantiles_rel_scale.float_tolerance * max(scale, 1e-12)'
+    applies_to: all
+
+  - type: bound
+    property: 'The constant-series probe reproduces the oracle on an ABSOLUTE bar, because its scale is a floor and not a datum'
+    formal: 'max|q_r - q_p| <= equations.probe_constant_abs.float_tolerance for the constant probe'
+    applies_to: all
+
+  - type: bound
+    property: 'The 365-step rollout reproduces the oracle across all 365 steps'
+    formal: 'max|q_r - q_p| <= equations.rollout_365_abs.float_tolerance over t in [0, 365)'
+    applies_to: all
+
+  - type: bound
+    property: 'The locally derived f16 weights forecast within 2 % of the series standard deviation of the f32 weights'
+    formal: 'max|q_f16 - q_f32| <= equations.f16_rel_std.float_tolerance * std(series) && dtype_f32 = "F32" && dtype_f16 = "F16"'
+    applies_to: all
+
+  - type: invariant
+    property: 'The Chronos door refuses horizon 0, horizon above the ceiling, and a horizon past the native window without the flag — as Validation, with the fix named'
+    formal: 'validate is Err(Validation) ↔ h = 0 or h > constants.max_horizon or (h > constants.native_horizon and not allow_long_horizon); the third message contains "allow_long_horizon"'
+    applies_to: all
+
+  - type: invariant
+    property: 'A rolled-forward horizon carries a warning naming the rollout, and the forward/rollout counts are the documented arithmetic'
+    formal: 'warning.is_some() ↔ h > constants.native_horizon; at h = 365: diagnostics.forwards = constants.rollout_forwards_for_365 ∧ diagnostics.rollouts = 5'
+    applies_to: all
+
+  - type: invariant
+    property: 'The shipped rollout is the nine-path re-quantiled scheme, and the pre-2025 median-only scheme is NOT what the oracle ran'
+    formal: 'delta_nine_path ≤ equations.rollout_365_abs.float_tolerance ∧ delta_median_only > 0.1 against the same oracle'
+    applies_to: all
+
+  - type: invariant
+    property: 'Both weight layouts are resident, deliberately, and the memory cost is an asserted printed number rather than a comment'
+    formal: 'resident_elements = 2 * matrix_elements + non_matrix_elements ∧ matrix_elements + non_matrix_elements = 8652672 for chronos-bolt-tiny'
+    applies_to: all
+
+  - type: invariant
+    property: 'Multi-row products route to the packed BLIS GEMM and not to the plain-loop path'
+    formal: '∀ rows > 1: proj(fast = true, ...) = linear_fast(...) bitwise, and ≠ linear(...) for at least one seeded input'
+    applies_to: all
+
+  - type: invariant
+    property: 'Single-row products route to the 8-accumulator dot and not to gemv'
+    formal: 'proj(fast = true, row1_gemv = false, rows = 1, ...) = linear(...) bitwise, and ≠ linear_fast(...) for at least one of 20 seeded inputs'
+    applies_to: all
+
+  - type: invariant
+    property: 'No model weight is committable: the ignore rules cover the fetched tree and git reports nothing under models/'
+    formal: 'git status --porcelain -- models/ is empty ∧ git check-ignore -q models/chronos-bolt-tiny/f32/model.safetensors'
+    applies_to: all
+
+  - type: determinism
+    property: 'The fetch recipe verifies all three files on every invocation, and a tampered file makes it fail'
+    formal: 'a second, all-files-present run exits 0 ∧ echoes all three sha256 pins without downloading; a one-byte flip in the f32 model makes it exit non-zero naming a sha256 mismatch'
+    applies_to: all
+
+  - type: invariant
+    property: 'Weight-dependent tests are COUNTED skips when unarmed and real tests when armed'
+    formal: 'unarmed: ignored ≥ 1 with the arming reason; armed: ignored = 0 and matching test lines ≥ 8'
+    applies_to: all
+
+falsification_tests:
+
+  - id: FALSIFY-CHRONOS-001
+    rule: 'Peyton Manning 64-step f32 quantile parity against chronos-forecasting 2.3.1'
+    prediction: 'On aarch64 the max absolute quantile difference is <= 1.0e-6 (measured 9.54e-7); on any other target it is <= 2.0e-6 (measured 9.5367e-7 on x86_64, 2026-09-07). The test prints which equation and which ARCH it selected, and the measured max|delta|.'
+    test: 'cargo test -p aprender-forecast --lib bolt::parity::peyton_ladder_matches_oracle_f32'
+    if_fails: 'Either a kernel drifted or the routing changed. Read the hidden-state rungs in the SAME test first: if input_embeds and the encoder are green and only the quantiles are red, the defect is in the output head or the instance-norm rescale, not in the transformer. If the encoder rung is also red, suspect the relative-position bias or the attention mask.'
+
+  - id: FALSIFY-CHRONOS-002
+    rule: 'The non-aarch64 bar is PROVISIONAL and must be replaced by a measurement — DISCHARGED 2026-09-07'
+    prediction: 'The first x86_64 run of peyton_ladder_matches_oracle_f32 prints `quantiles_abs_f32_nonaarch64` together with its measured max|delta|. That number, plus margin, then REPLACES 5.0e-6 in this file. DISCHARGED: the first x86_64 run (AWS EC2, Amazon Linux 2023) printed `quantiles_abs_f32_nonaarch64 = 5e-6 (ARCH=x86_64)` and `max|delta| 9.5367e-7`; the bar is now 2.0e-6 and this file is at version 2.0.0 on pv diff''s MAJOR verdict.'
+    test: 'cargo test -p aprender-forecast --lib bolt::parity::peyton_ladder_matches_oracle_f32 (on an x86_64 host; every CI job in this repo is one)'
+    if_fails: 'If the measured value EXCEEDS 5.0e-6, the x86_64 accumulation order costs more than a 5x allowance and the phase owes a real investigation before loosening anything further — do not raise the bar to fit the observation. If it is far BELOW 5.0e-6 and the bar is left at 5.0e-6, this obligation has failed in the other direction: a stated unknown has been converted into unstated slack. WHAT HAPPENED: it measured 9.5367e-7, far below — and rather than narrow to the measurement (1.0e-6 would also have passed, at 95.4%), the bar was set to 2.0e-6. One run on one instance type is one sample; fitting a bound from one side is the CR-01 error. The premise was also FALSIFIED: 9.5367431640625e-7 is exactly 2^-20, a quantization quantum of the f32 output, identical to the aarch64 value — so the different x86_64 GEMM accumulation order the headroom existed for does not move it at all.'
+
+  - id: FALSIFY-CHRONOS-003
+    rule: 'The air and short100 ladders reproduce the oracle relative to scale'
+    prediction: 'air (144 points, scale 119.0) and short100 (100 points, scale 0.85) both hold max|delta| <= 4.0e-6 * scale, with attention masks EQUAL and n_patches_plus_reg matching the fixture. Measured 1.54e-6 and 1.1e-6 relative.'
+    test: 'cargo test -p aprender-forecast --lib bolt::parity::air_and_short100_ladders_match_oracle'
+    if_fails: 'air is 10 patches and short100 is 8 — both far below Peyton 129 — so a failure here with Peyton green points at short-context handling: the left NaN padding, the patch count, or the REG token placement.'
+
+  - id: FALSIFY-CHRONOS-004
+    rule: 'The instance normalisation reproduces the oracle loc and scale'
+    prediction: 'All three series hold |dloc| / max(|loc|, 1) and |dscale| / max(scale, 1e-5) <= 2.0e-6. Measured 9.5e-7 / 1.8e-7 (peyton), 0.0 / 1.3e-7 relative (air), 0.0 / 6.0e-8 (short100).'
+    test: 'cargo test -p aprender-forecast --lib bolt::parity::peyton_ladder_matches_oracle_f32 and bolt::parity::air_and_short100_ladders_match_oracle'
+    if_fails: 'The nanmean/population-std pair diverged — most likely by using a sample (n-1) std, by including NaN entries, or by not flooring a zero scale at 1e-5. Nothing downstream means anything until this rung is green: every hidden state and every quantile is computed on this normalisation.'
+
+  - id: FALSIFY-CHRONOS-005
+    rule: 'Patch embeddings and encoder/decoder hidden states reproduce the oracle'
+    prediction: 'input_embeds first/last/REG, encoder first/REG and the decoder hidden state all hold max|delta| <= 2.0e-5. Measured <= 6.0e-7, <= 1.4e-6 and <= 7.6e-6 respectively.'
+    test: 'cargo test -p aprender-forecast --lib bolt::parity::peyton_ladder_matches_oracle_f32'
+    if_fails: 'A red REG-embedding rung is the cheapest signal: it is a slice of shared.weight, so a difference there means the REG index moved rather than that a kernel drifted. A red encoder rung with green embeddings points at the relative-position bucket table or the layer-norm epsilon.'
+
+  - id: FALSIFY-CHRONOS-006
+    rule: 'The five non-constant edge probes reproduce the oracle'
+    prediction: 'nan_gaps, five_points, huge_scale, tiny_len_130_rollout and air_rollout_24 each hold max|delta| <= 5.0e-6 * max(scale, 1e-12) with attention masks EQUAL. Measured 1.91e-6, 3.81e-6, 1.0e-6, 2.86e-6 and 1.0e-6 relative.'
+    test: 'cargo test -p aprender-forecast --lib bolt::parity::edge_probes_match_oracle'
+    if_fails: 'five_points is the minimum accepted length and tiny_len_130_rollout is the shortest series that triggers a rollout block; a failure on either with the main ladder green is a boundary defect, not a numeric one. nan_gaps failing means NaN entries reached a statistic they should have been excluded from.'
+
+  - id: FALSIFY-CHRONOS-007
+    rule: 'The constant-series probe holds an ABSOLUTE bar'
+    prediction: 'The constant 64-point probe holds max|delta| <= 1.0e-5 absolute (measured 9.54e-7). Its scale is the 1e-5 floor, so no relative bar applies.'
+    test: 'cargo test -p aprender-forecast --lib bolt::parity::edge_probes_match_oracle'
+    if_fails: 'The zero-scale floor was removed or changed, and the forward is dividing by (near) zero. This fails loudly — NaN quantiles — rather than subtly, which is why the probe exists.'
+
+  - id: FALSIFY-CHRONOS-008
+    rule: 'The 365-step rollout reproduces the oracle'
+    prediction: 'max|delta| over all 365 steps <= 5.0e-5 (measured 1.72e-5 in the spike, 1.91e-5 through the spike-007 server), and the first 64 steps match the direct forecast at 9.54e-7.'
+    test: 'cargo test -p aprender-forecast --lib bolt::parity::rollout_365_matches_oracle_and_median_only_does_not'
+    if_fails: 'Error compounds across 5 rollout blocks, so a small direct-forecast regression shows up here first and magnified. Check FALSIFY-CHRONOS-001 before touching this bar: if the direct forecast moved, this is a symptom.'
+
+  - id: FALSIFY-CHRONOS-009
+    rule: 'The rollout is the nine-path re-quantiled scheme, and the median-only control proves it'
+    prediction: 'The shipped scheme differs from the Python fixture by <= 5.0e-5 while the pre-2025 median-only rollout differs from the SAME fixture by more than 0.1 (measured 5.11e-1), and forwards = 46 with rollouts = 5.'
+    test: 'cargo test -p aprender-forecast --lib bolt::parity::rollout_365_matches_oracle_and_median_only_does_not'
+    if_fails: 'If the control ALSO passes, the fixture is no longer discriminating between the two schemes and the rollout rung has stopped being evidence — regenerate the oracle before trusting anything downstream. If forwards or rollouts drift, the loop changed shape and rollout_365_abs was measured on a different computation.'
+
+  - id: FALSIFY-CHRONOS-010
+    rule: 'The f16 weights forecast within 2 % of the series standard deviation'
+    prediction: 'The f32 and f16 models both load (dtypes "F32" and "F16") and their 64-step Peyton quantiles differ by <= 0.02 * 0.8718. Measured 9.55e-4, i.e. 0.11 % of std.'
+    test: 'cargo test -p aprender-forecast --lib chronos::parity::f16_weights_within_two_percent_of_std'
+    if_fails: 'Either the f16 derivation corrupted a tensor (re-run `just fetch-chronos-tiny`, which re-derives and re-hashes) or the F16 decode path in src/safetensors.rs regressed. The dtype assertions rule out the third possibility, which is the test accidentally loading the same file twice and comparing it to itself.'
+
+  - id: FALSIFY-CHRONOS-011
+    rule: 'The horizon gate refuses at the documented boundaries, with the fix named'
+    prediction: 'validate refuses horizon 0 ("horizon must be at least 1"), horizon 1025 ("1024") and horizon 65 without the flag (message contains "allow_long_horizon"); horizon 365 WITH the flag is accepted. All Validation, never Internal, and all with NO weights present.'
+    test: 'cargo test -p aprender-forecast --lib chronos::tests::validate_'
+    if_fails: 'The door defaults where D-11 says it must refuse. The long-horizon case is the dangerous one: silently accepting it ships a forecast whose steps past 64 have MASE 1.7 with nothing in the response saying so.'
+
+  - id: FALSIFY-CHRONOS-012
+    rule: 'A rolled-forward horizon carries a warning and the documented forward count'
+    prediction: 'forecast with allow_long_horizon = true and horizon 365 returns warning containing "rollout", diagnostics.forwards = 46 and diagnostics.rollouts = 5; the same call at horizon <= 64 has no warning key at all.'
+    test: 'cargo test -p aprender-forecast --lib chronos::parity::door_reports_warning_and_forwards_for_365'
+    if_fails: 'Either the warning was dropped (a caller now gets a degraded forecast with no signal) or the rollout loop changed shape. 46 and 5 are arithmetic, not observations, so a different value means the loop is not doing what rollout_365_abs was measured on.'
+
+  - id: FALSIFY-CHRONOS-013
+    rule: 'Both weight layouts are resident and the cost is stated'
+    prediction: 'The config-derived count is 8,652,672 f32 parameters (the model card and the safetensors header agree), of which 8,642,560 are matrices held in BOTH layouts, so residency is 17,295,232 f32 = 69.18 MB — exactly 2.00x. The test PRINTS the figure.'
+    test: 'cargo test -p aprender-forecast --lib bolt::tests::weight_layout_is_dual_and_its_cost_is_stated'
+    if_fails: 'If the ratio drops toward 1.0 someone deleted a layout. Deleting the untransposed copies forces every single-row product onto gemv (violating D-14) and changes the float accumulation order the 9.54e-7 parity was measured under — so FALSIFY-CHRONOS-001 is no longer evidence and must be re-measured before anything here is believed.'
+
+  - id: FALSIFY-CHRONOS-014
+    rule: 'Multi-row products route to the packed BLIS GEMM'
+    prediction: 'For rows > 1 at the production defaults the routed result is bit-identical to linear_fast (gemm_blis) and differs from linear (dot8) on at least one of 20 seeded inputs; the count is printed. The rayon toggle identifier does not appear anywhere in src/bolt.rs.'
+    test: 'cargo test -p aprender-forecast --lib bolt::tests::multi_row_routing_is_gemm_blis_at_production_defaults'
+    if_fails: 'D-14 first clause broken. If the routed result matches `linear` instead, `fast` was defaulted off; if it matches neither, a third path appeared. Note the companion assertion: if gemm_blis and dot8 agreed on all 20 seeds the bit-identity would be vacuous, which is why the difference count is asserted and printed.'
+
+  - id: FALSIFY-CHRONOS-015
+    rule: 'Single-row products route to the 8-accumulator dot'
+    prediction: 'proj(fast = true, row1_gemv = false) on ONE row is bit-identical to linear on 20/20 seeds and differs from the gemv path on at least one; measured 20/20 differ.'
+    test: 'cargo test -p aprender-forecast --lib bolt::tests::single_row_routing_is_dot8_at_production_defaults'
+    if_fails: 'D-14 second clause broken, and worse than a performance regression: the decoder runs on ONE token, so this is the routing the entire decoder stack and the quantile head take on every call, and a change here moves the accumulation order the parity bar was measured under.'
+
+  - id: FALSIFY-CHRONOS-016
+    rule: 'No model weight is committable'
+    prediction: 'After `just fetch-chronos-tiny`, `git status --porcelain -- models/` is empty and `git check-ignore -q models/chronos-bolt-tiny/f32/model.safetensors` exits 0. Only the 1.1 KB config.json is tracked, as tests/fixtures/chronos_bolt_tiny_config.json with sha256 278f0086733031635fb1c861cb01c1bad6477420c7fcb19381a2993e335785e0.'
+    test: 'just fetch-chronos-tiny && git status --porcelain -- models/ && git check-ignore -q models/chronos-bolt-tiny/f32/model.safetensors'
+    if_fails: 'D-18 broken, and in the CB-510 shape: the `/models/` pattern must stay ROOT-ANCHORED, because a bare `models/` would also swallow `src/models/`. Note that both `check_include_files.sh` guards are vacuous on macOS (BSD grep has no -oP), so the `git check-ignore` here must be run by hand rather than trusted to the script.'
+
+  - id: FALSIFY-CHRONOS-017
+    rule: 'The fetch recipe verifies on every run, and a tampered file makes it fail'
+    prediction: 'A SECOND, all-files-present invocation exits 0, echoes the f32 and f16 sha256 pins, and does not download. A copy directory with one byte flipped at offset 4096 of the f32 model makes the recipe exit non-zero naming a sha256 mismatch.'
+    test: 'just fetch-chronos-tiny (twice) and the tamper control in plan 06-05 Task 1 verify: `just chronos_dir=$TMPCOPY fetch-chronos-tiny` on a copy with a flipped byte'
+    if_fails: 'REVIEW-06-03 exactly: a cached, pre-existing or CI-mounted weight file is being used unverified. The download must stay conditional and the hashing unconditional; `just chronos-gate` (plan 06-08) invokes this recipe unconditionally for the same reason.'
+
+  - id: FALSIFY-CHRONOS-018
+    rule: 'Weight-dependent tests are counted skips unarmed and real tests armed — BOTH directions observed'
+    prediction: 'Unarmed (`env -u CHRONOS_MODEL_DIR`): `test result: ok. N passed; 0 failed; M ignored` with M >= 1 and each ignored line printing "CHRONOS_MODEL_DIR unset or has no model.safetensors — run `just fetch-chronos-tiny` to arm". Armed: `0 ignored`, with at least 8 matching `test (bolt|chronos)::parity::` lines.'
+    test: 'env -u CHRONOS_MODEL_DIR cargo test -p aprender-forecast --lib -- bolt::parity chronos::parity ; then CHRONOS_MODEL_DIR=$PWD/models/chronos-bolt-tiny/f32 cargo test -p aprender-forecast --lib -- bolt::parity chronos::parity'
+    if_fails: 'An unarmed run showing 0 ignored is the D-18 failure mode — a parity claim that only ever passed because weights were absent (T-06-13). An armed run showing any ignored means build.rs did not re-run or CHRONOS_MODEL_DIR points at a directory with no model.safetensors, so the ladder proved nothing while reporting green.'
+
+kani_harnesses:
+
+  # DECLARED, NOT EXECUTED. cargo-kani is not installed in this repository and no
+  # #[kani::proof] harness exists anywhere under crates/. Each entry names the
+  # runnable, identically bounded test that is the ACTUAL evidence.
+  - id: KANI-CHRONOS-001
+    obligation: 'The relative-position bucket is always a valid index into the bias table, for every offset the model can see'
+    property: 'forall rel in [-context_length, context_length], forall mode in {bidirectional, causal}: relative_bucket(rel, mode, 32, 128) < 32'
+    bound: 2048
+    strategy: bounded_int
+    harness: 'NOT EXECUTED — the evidence is the runnable, identically bounded test `bolt::parity::relative_buckets_match_fixture_over_grid` in crates/aprender-forecast/src/bolt.rs, which enumerates every offset in [-2048, 2048] in both modes, asserts the index bound and monotonicity in |rel|, and additionally pins the 18 offsets whose bucket values spike 005 recorded in RUN-OUTPUT.md section 1.'
+
+  - id: KANI-CHRONOS-002
+    obligation: 'A horizon the door accepts always produces exactly that many future timestamps'
+    property: 'forall h in [1, constants.max_horizon] with allow_long_horizon: validate(...).fut.len() == h and fut is strictly increasing'
+    bound: 1024
+    strategy: bounded_int
+    harness: 'NOT EXECUTED — the evidence is `chronos::tests::validate_accepts_long_horizon_with_flag` (which checks the length at the h = 365 case) together with the strictly-increasing property already proven over D/W/MS by `dates::tests` from plan 06-01. No exhaustive enumeration over [1, 1024] is claimed here, and that gap is recorded rather than papered over.'
+
+qa_gate:
+  id: F-FORECAST-CHRONOS-001
+  name: 'Chronos-Bolt zero-shot parity, weights-integrity and counted-skip gate'
+  description: >
+    The blocking gate for the Chronos-Bolt correctness claim (SC4), for D-18's two weight
+    constraints and for D-14's routing. Every check below is a test in
+    `crates/aprender-forecast/src/bolt.rs` / `src/chronos.rs` or a shell run of the fetch recipe,
+    and every numeric bar it asserts is read from THIS file at test time. A rung that has only ever
+    been observed passing is not evidence: each numeric FALSIFY-CHRONOS test must have been seen
+    RED under an induced change to this file alone, and the two non-numeric ones (the tamper
+    control and the counted skip) have observed failing directions of their own.
+  checks:
+    - 'contract schema validity (pv validate, zero errors) and non-zero pv status counts'
+    - 'Peyton 64-step f32 quantiles within the ARCH-SELECTED bar, with the equation name, the value and the ARCH printed'
+    - 'air and short100 quantiles within the relative bar, attention masks equal, patch counts matching'
+    - 'loc/scale and all six hidden-state rungs within contract'
+    - 'the six edge probes within contract (constant on the absolute bar), masks equal'
+    - 'the 365-step rollout within contract AND the median-only control failing by more than 0.1'
+    - 'f16 weights within 2 % of the series std, with both dtypes asserted'
+    - 'the horizon gate refuses 0, 1025 and 65-without-the-flag as Validation, naming allow_long_horizon'
+    - 'a 365-step call carries a warning naming the rollout, with forwards 46 and rollouts 5'
+    - 'single rows route to dot8 and multi-row products route to gemm_blis, both proven behaviourally'
+    - 'both weight layouts resident, with the 69.18 MB residency figure printed'
+    - '`git status --porcelain -- models/` empty and the weights git-ignored'
+    - 'the fetch recipe re-hashes all three files on a files-present re-run, and a flipped byte makes it exit non-zero'
+    - 'unarmed run prints >= 1 ignored WITH the arming reason'
+    - 'armed run prints 0 ignored, with >= 8 matching parity test lines'
+    - 'no tolerance literal inside the bolt/chronos parity modules — every bar is contract-read'
+  pass_criteria: 'All FALSIFY-CHRONOS tests pass; the unarmed and armed runs BOTH show what they must; and each numeric bar was observed RED under an induced tolerance change made in this file alone.'
+  falsification: >
+    Two independent falsifications, both to be OBSERVED rather than prescribed.
+
+    (1) THE TOLERANCE PATH. Change ONLY this file — `quantiles_abs_f32.float_tolerance` from 1.0e-6
+    to 1.0e-9 (below the measured 9.54e-7) — with not one line of Rust touched, and the armed
+    `bolt::parity` run must go RED with the failure QUOTING THE NEW BAR. A byte-identical
+    `git checkout` of this file must restore green. That is the proof the ladder reads its bars
+    from here at test time rather than duplicating them as literals (D-15).
+
+    (2) THE ARMING PATH. `counted_skip_when_unarmed` cannot be induced-RED by a tolerance change at
+    all — it is a property of the build, not of a number. Its two failing directions are observed
+    directly instead: running the parity filters with `CHRONOS_MODEL_DIR` unset must report a
+    NON-ZERO ignored count (a zero there means a weight test ran without weights, the T-06-13
+    failure mode), and running them armed must report ZERO ignored (a non-zero there means the cfg
+    never armed and the green run proved nothing). Likewise `weights_verified_on_every_gate_run` is
+    falsified by the TAMPER CONTROL — one flipped byte in a copy of an already-present f32 weight
+    file must make `just fetch-chronos-tiny` exit non-zero naming a sha256 mismatch — and not by
+    any edit to this file.

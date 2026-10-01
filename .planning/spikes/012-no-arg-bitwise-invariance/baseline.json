@@ -1,0 +1,38 @@
+{
+ "captured_at_commit": "32b9e989dfa68546f2a38c3ab0beef97b8fa3baf",
+ "note": "Bit-exact signature over model/freq/n_history/ds/yhat/bands/trend/components/diagnostics. fit_seconds and predict_seconds are EXCLUDED (wall-clock). Compare after any delivery that adds optional arguments, with no new argument passed.",
+ "cases": [
+  {
+   "case": "peyton/prophet/default",
+   "signature": "aa669c2352dd376a"
+  },
+  {
+   "case": "air/prophet/multiplicative",
+   "signature": "3053244dcb27492c"
+  },
+  {
+   "case": "retail/prophet/default",
+   "signature": "73b171523eb3fa3b"
+  },
+  {
+   "case": "wp_log_R/prophet/logistic",
+   "signature": "331d67a8f8c924bb"
+  },
+  {
+   "case": "peyton/prophet/holidays+windows",
+   "signature": "e0a13f9a10e3c3cc"
+  },
+  {
+   "case": "peyton/neuralprophet/lag0",
+   "signature": "d5a583795591a3db"
+  },
+  {
+   "case": "peyton/neuralprophet/lag7",
+   "signature": "726043759dde45dc"
+  },
+  {
+   "case": "wp_log_R/neuralprophet/lag0",
+   "signature": "72528357591ad4d6"
+  }
+ ]
+}

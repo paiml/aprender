@@ -1,0 +1,54 @@
+[package]
+name = "aprender-forecast"
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+repository.workspace = true
+authors.workspace = true
+rust-version.workspace = true
+description = "Pure-Rust time-series forecasting: Prophet 1.4.0 and NeuralProphet-lite ports, Chronos-Bolt zero-shot forward"
+keywords = ["forecasting", "prophet", "chronos", "time-series", "aprender"]
+categories = ["science", "mathematics"]
+readme = "README.md"
+# Same reason as aprender-mcp-setfit: a deployment unit under the Phase 6 gate,
+# not a published API yet.
+publish = false
+
+[lib]
+name = "aprender_forecast"
+path = "src/lib.rs"
+
+[dependencies]
+# The MAP fit runs on core's L-BFGS (D-07: forecasting numerics live here, not
+# in realizar — this crate is training-side).
+aprender = { path = "../aprender-core", version = "0.69.3", package = "aprender-core", default-features = false }
+trueno = { path = "../aprender-compute", version = "0.69.3", package = "aprender-compute" }
+serde = { workspace = true }
+serde_json = { workspace = true }
+# JsonSchema on ForecastArgs so the MCP server advertises one strict schema.
+schemars = "1.0"
+# F16/BF16 decode in the safetensors reader (Chronos-Bolt ships f32; the default
+# embedded build is the derived f16).
+half = { workspace = true }
+
+[dev-dependencies]
+# Test-side reader for contracts/*.yaml equation tolerances (test_support).
+serde_yaml = { workspace = true }
+# Make the HOSTILE configuration the TESTED one.
+#
+# `serde_json::Map` is a BTreeMap (key-sorted iteration) by default and an IndexMap
+# (insertion-ordered) under `preserve_order`. The invariance signature hashes maps, so its
+# answer depended on which backing store the build happened to compile — and this crate's
+# own dependencies enable neither, so `cargo test -p aprender-forecast --lib`, the command
+# CLAUDE.md tells you to run while working, could not observe the bug at all. It was red
+# only in a package selection wide enough to unify `pmcp`'s `serde_json/preserve_order` in.
+#
+# A dev-dependency feature unifies into test targets only, so this flips the narrowest
+# invocation to the store that used to break it: `invariance::` now proves order
+# independence on the developer's own command instead of on a CI shape nobody runs locally.
+# It does NOT change the shipped build — dev-dependencies do not affect the lib target.
+# Refs `.planning/debug/resolved/feature-unification-divergence.md`.
+serde_json = { workspace = true, features = ["preserve_order"] }
+
+[lints]
+workspace = true

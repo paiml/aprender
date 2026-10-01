@@ -1,0 +1,162 @@
+[
+ {
+  "variant": "setfit",
+  "shots": 8,
+  "seed": 13,
+  "acc": 0.392,
+  "macro_f1": 0.3667067328583351,
+  "train_s": 13.314481291003176
+ },
+ {
+  "variant": "setfit",
+  "shots": 8,
+  "seed": 17,
+  "acc": 0.334,
+  "macro_f1": 0.3234669814012327,
+  "train_s": 7.396951457994874
+ },
+ {
+  "variant": "setfit",
+  "shots": 8,
+  "seed": 23,
+  "acc": 0.366,
+  "macro_f1": 0.3441872602563705,
+  "train_s": 7.639010999992024
+ },
+ {
+  "variant": "setfit",
+  "shots": 8,
+  "seed": 29,
+  "acc": 0.31,
+  "macro_f1": 0.3064227808930569,
+  "train_s": 6.869583957988652
+ },
+ {
+  "variant": "setfit",
+  "shots": 8,
+  "seed": 31,
+  "acc": 0.396,
+  "macro_f1": 0.37401119704161206,
+  "train_s": 6.675743832995067
+ },
+ {
+  "variant": "setfit",
+  "shots": 16,
+  "seed": 13,
+  "acc": 0.503,
+  "macro_f1": 0.465913164432103,
+  "train_s": 30.197667000000365
+ },
+ {
+  "variant": "setfit",
+  "shots": 16,
+  "seed": 17,
+  "acc": 0.456,
+  "macro_f1": 0.4153054047825718,
+  "train_s": 27.644233290993725
+ },
+ {
+  "variant": "setfit",
+  "shots": 16,
+  "seed": 23,
+  "acc": 0.516,
+  "macro_f1": 0.4842271559856171,
+  "train_s": 30.51641316700261
+ },
+ {
+  "variant": "setfit",
+  "shots": 16,
+  "seed": 29,
+  "acc": 0.419,
+  "macro_f1": 0.39197116729310477,
+  "train_s": 27.43186933301331
+ },
+ {
+  "variant": "setfit",
+  "shots": 16,
+  "seed": 31,
+  "acc": 0.453,
+  "macro_f1": 0.42642012680294444,
+  "train_s": 27.508787375001702
+ },
+ {
+  "variant": "setfit",
+  "shots": 32,
+  "seed": 13,
+  "acc": 0.618,
+  "macro_f1": 0.5905108145224187,
+  "train_s": 118.71242237499973
+ },
+ {
+  "variant": "setfit",
+  "shots": 32,
+  "seed": 17,
+  "acc": 0.59,
+  "macro_f1": 0.5473576487004593,
+  "train_s": 116.64444158300466
+ },
+ {
+  "variant": "setfit",
+  "shots": 32,
+  "seed": 23,
+  "acc": 0.654,
+  "macro_f1": 0.6161675277570334,
+  "train_s": 118.48764691600809
+ },
+ {
+  "variant": "setfit",
+  "shots": 32,
+  "seed": 29,
+  "acc": 0.624,
+  "macro_f1": 0.5726771548074568,
+  "train_s": 115.92581054200127
+ },
+ {
+  "variant": "setfit",
+  "shots": 32,
+  "seed": 31,
+  "acc": 0.607,
+  "macro_f1": 0.566990275979132,
+  "train_s": 114.45186333298625
+ },
+ {
+  "variant": "setfit",
+  "shots": 64,
+  "seed": 13,
+  "acc": 0.733,
+  "macro_f1": 0.7023959452446239,
+  "train_s": 465.10607116699975
+ },
+ {
+  "variant": "setfit",
+  "shots": 64,
+  "seed": 17,
+  "acc": 0.738,
+  "macro_f1": 0.7012776535779793,
+  "train_s": 464.5464667920023
+ },
+ {
+  "variant": "setfit",
+  "shots": 64,
+  "seed": 23,
+  "acc": 0.743,
+  "macro_f1": 0.7126097890872205,
+  "train_s": 465.7729785410047
+ },
+ {
+  "variant": "setfit",
+  "shots": 64,
+  "seed": 29,
+  "acc": 0.743,
+  "macro_f1": 0.7143402585560263,
+  "train_s": 488.94109199999366
+ },
+ {
+  "variant": "setfit",
+  "shots": 64,
+  "seed": 31,
+  "acc": 0.72,
+  "macro_f1": 0.6948216346331025,
+  "train_s": 425.2199541250011
+ }
+]

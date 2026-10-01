@@ -1,0 +1,167 @@
+{
+  "datasets": [
+    {
+      "dataset": "peyton_manning",
+      "rows": 2905,
+      "runs": [
+        {
+          "evals": 3,
+          "iterations": 0,
+          "label": "exact, raw, m=5, tol 1e-5",
+          "objective_exact": 19.468483043760536,
+          "python_objective": -8004.797952932481,
+          "seconds": 0.000341208,
+          "status": "NumericalError",
+          "yhat_future_max_abs": 2.6839855735731444,
+          "yhat_future_rmse": 1.5823553954294518,
+          "yhat_hist_max_abs": 3.035580883113882
+        },
+        {
+          "evals": 2677,
+          "iterations": 726,
+          "label": "exact, f/T, guard, m=20, tol 1e-7",
+          "objective_exact": -8004.929477802141,
+          "python_objective": -8004.797952932481,
+          "seconds": 0.258536791,
+          "status": "Stalled",
+          "yhat_future_max_abs": 0.004938436295921278,
+          "yhat_future_rmse": 0.003571287847721627,
+          "yhat_hist_max_abs": 0.008225003734205316
+        },
+        {
+          "evals": 3324,
+          "iterations": 815,
+          "label": "exact, f/T, guard, m=5, tol 1e-7",
+          "objective_exact": -8004.480137452432,
+          "python_objective": -8004.797952932481,
+          "seconds": 0.305246625,
+          "status": "Stalled",
+          "yhat_future_max_abs": 0.013100925952389986,
+          "yhat_future_rmse": 0.010184498841445393,
+          "yhat_hist_max_abs": 0.013024373302705783
+        },
+        {
+          "evals": 146220,
+          "iterations": 8321,
+          "label": "smooth 1e-4, raw, guard, m=5, tol 1e-5",
+          "objective_exact": -8005.153592387981,
+          "python_objective": -8004.797952932481,
+          "seconds": 13.504053833,
+          "status": "Stalled",
+          "yhat_future_max_abs": 0.007968964341200646,
+          "yhat_future_rmse": 0.005318023331209329,
+          "yhat_hist_max_abs": 0.02242087441292906
+        }
+      ]
+    },
+    {
+      "dataset": "air_passengers",
+      "rows": 144,
+      "runs": [
+        {
+          "evals": 633,
+          "iterations": 141,
+          "label": "exact, raw, m=5, tol 1e-5",
+          "objective_exact": -401.92914845184737,
+          "python_objective": -401.9799516465918,
+          "seconds": 0.002059959,
+          "status": "Stalled",
+          "yhat_future_max_abs": 4.532749611223153,
+          "yhat_future_rmse": 1.5682998506527857,
+          "yhat_hist_max_abs": 1.7584030016222414
+        },
+        {
+          "evals": 298,
+          "iterations": 55,
+          "label": "exact, f/T, guard, m=20, tol 1e-7",
+          "objective_exact": -401.5665596313223,
+          "python_objective": -401.9799516465918,
+          "seconds": 0.000942292,
+          "status": "Stalled",
+          "yhat_future_max_abs": 35.38308999618414,
+          "yhat_future_rmse": 11.452893808476052,
+          "yhat_hist_max_abs": 2.114464241688964
+        },
+        {
+          "evals": 931,
+          "iterations": 226,
+          "label": "exact, f/T, guard, m=5, tol 1e-7",
+          "objective_exact": -401.9678327305243,
+          "python_objective": -401.9799516465918,
+          "seconds": 0.002950166,
+          "status": "Stalled",
+          "yhat_future_max_abs": 2.212707735893332,
+          "yhat_future_rmse": 0.7972621195706997,
+          "yhat_hist_max_abs": 0.7627964214872662
+        },
+        {
+          "evals": 18564,
+          "iterations": 2215,
+          "label": "smooth 1e-4, raw, guard, m=5, tol 1e-5",
+          "objective_exact": -402.38589671965576,
+          "python_objective": -401.9799516465918,
+          "seconds": 0.057041959,
+          "status": "Converged",
+          "yhat_future_max_abs": 58.28095743801339,
+          "yhat_future_rmse": 21.17237286262519,
+          "yhat_hist_max_abs": 2.9998486549885683
+        }
+      ]
+    },
+    {
+      "dataset": "retail_sales",
+      "rows": 293,
+      "runs": [
+        {
+          "evals": 1433,
+          "iterations": 387,
+          "label": "exact, raw, m=5, tol 1e-5",
+          "objective_exact": -1019.7274809012321,
+          "python_objective": -1020.9469635841506,
+          "seconds": 0.009103625,
+          "status": "Stalled",
+          "yhat_future_max_abs": 5565.803724892903,
+          "yhat_future_rmse": 1607.5986695066183,
+          "yhat_hist_max_abs": 603.4714922808926
+        },
+        {
+          "evals": 1510,
+          "iterations": 413,
+          "label": "exact, f/T, guard, m=20, tol 1e-7",
+          "objective_exact": -1020.9277114360584,
+          "python_objective": -1020.9469635841506,
+          "seconds": 0.010572542,
+          "status": "Stalled",
+          "yhat_future_max_abs": 1702.2071632014122,
+          "yhat_future_rmse": 1083.870378998792,
+          "yhat_hist_max_abs": 2139.1919741322636
+        },
+        {
+          "evals": 1185,
+          "iterations": 318,
+          "label": "exact, f/T, guard, m=5, tol 1e-7",
+          "objective_exact": -1016.1393780374897,
+          "python_objective": -1020.9469635841506,
+          "seconds": 0.00783725,
+          "status": "Stalled",
+          "yhat_future_max_abs": 2855.0578923593275,
+          "yhat_future_rmse": 1073.6034854647326,
+          "yhat_hist_max_abs": 2220.5242608789704
+        },
+        {
+          "evals": 39968,
+          "iterations": 10000,
+          "label": "smooth 1e-4, raw, guard, m=5, tol 1e-5",
+          "objective_exact": -1023.4371515027542,
+          "python_objective": -1020.9469635841506,
+          "seconds": 0.254848125,
+          "status": "MaxIterations",
+          "yhat_future_max_abs": 5703.1170906702755,
+          "yhat_future_rmse": 2166.3357836548375,
+          "yhat_hist_max_abs": 4417.896110385715
+        }
+      ]
+    }
+  ],
+  "recommended": "exact, f/T, guard, m=20, tol 1e-7"
+}

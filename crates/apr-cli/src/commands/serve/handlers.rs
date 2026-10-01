@@ -991,6 +991,27 @@ pub(crate) fn start_realizar_server(model_path: &Path, config: &ServerConfig) ->
 
     match format {
         ModelFormat::Apr => {
+            // D-10: ONE detection point, no second `apr serve setfit` command.
+            // A `setfit-apr-v1` IS an APR container; what distinguishes it is the
+            // typed `model_type` tag its writer stamps, so the branch lives INSIDE
+            // the arm that already knows the file is an APR. Reading the tag costs
+            // a 64-byte header plus one bounded metadata block — never the tensors.
+            // THE ONE detection point (D-04/D-10): `crate::setfit_tag::read_setfit_tag`,
+            // the same door `apr predict`, `apr inspect` and `apr eval --task classify`
+            // route through. This arm used to carry its own header-read/seek/parse copy
+            // with its own 16 MiB bound, so `apr serve` and `apr predict` could answer
+            // differently for one file; the bound has moved into the shared reader and the
+            // copy is gone. `.ok().flatten()` preserves the copy's semantics exactly —
+            // EVERY failure falls through to the pre-existing APR path, which has the
+            // better diagnosis for a broken container.
+            #[cfg(all(feature = "setfit", feature = "inference"))]
+            if crate::setfit_tag::read_setfit_tag(model_path)
+                .ok()
+                .flatten()
+                .is_some()
+            {
+                return start_setfit_server(model_path, config);
+            }
             println!("{}", "Starting APR model server...".cyan());
             start_apr_server(model_path, config)
         }
@@ -1713,6 +1734,325 @@ pub fn build_demo_streaming_apr_cpu_router_for_test() -> axum::Router {
         ]),
     };
     build_apr_cpu_router(state, super::auth::AuthGate::disabled())
+}
+
+// ============================================================================
+// SetFit classifier serving (Phase 4, D-09 / D-10 / OPS-05)
+// ============================================================================
+
+/// Serve a `setfit-apr-v1` artifact over `POST /v1/classify` (D-09, OPS-05).
+///
+/// # The server never comes up around an unverified model
+///
+/// The order below is the whole guarantee, and every step of it can refuse:
+///
+/// 1. **bounded read** through `setfit_io::read_setfit_apr_file_bounded` — NEVER
+///    `fs::read`. A hostile multi-gigabyte file is refused from its declared length
+///    before a byte is allocated (review B5, T-04-50);
+/// 2. **`load_setfit_apr`** — the whole load ladder, including probe replay. A
+///    failure at any rung returns a typed error and this function returns `Err`,
+///    so no listener is ever bound (APR-04). There is no permissive mode and no
+///    flag that skips a rung;
+/// 3. only then is the socket bound.
+///
+/// # It reimplements nothing
+///
+/// The router is `realizar::api::create_router_with_config` — the same one every
+/// other `apr serve` path mounts — and the model in its state is core's verified
+/// object. This function contains no tokenizer, no pooling, no head and no bespoke
+/// server loop (D-09, OPS-03).
+#[cfg(all(feature = "setfit", feature = "inference"))]
+fn start_setfit_server(model_path: &Path, config: &ServerConfig) -> Result<()> {
+    use aprender::setfit::load_setfit_apr;
+    use realizar::api::{create_router_with_config, AppState, RouterConfig};
+
+    println!("{}", "Starting SetFit classification server...".cyan());
+
+    // (1) BOUNDED. The one door apr-cli reads artifact bytes through.
+    let bytes = crate::setfit_io::read_setfit_apr_file_bounded(model_path)?;
+
+    // (2) THE LADDER. Typed refusal on any rung; nothing is bound if this fails.
+    let model = load_setfit_apr(&bytes).map_err(|error| {
+        CliError::ModelLoadFailed(format!(
+            "{}: the SetFit artifact did not pass verification — {error}. The server was \
+             NOT started: a verified model is the only thing this path will serve.",
+            model_path.display()
+        ))
+    })?;
+
+    // (3) The report reads the LOADED MODEL, never the file name and never a
+    //     config: this is the same value `/health/ready` and every classify
+    //     response carry, because it is the same object (D-12 spirit).
+    println!(
+        "{}",
+        format!(
+            "SetFit classifier verified — artifact_sha256={} labels={}",
+            model.artifact_sha256(),
+            model.ordered_labels().len()
+        )
+        .green()
+        .bold()
+    );
+
+    // The rebuilt model is the only thing the server needs; the raw artifact is dead from
+    // here. `bytes` is a function-scope local and this fn does not return until shutdown, so
+    // without an explicit drop the whole artifact stays resident for the process lifetime —
+    // up to MAX_ARTIFACT_BYTES (1 GiB) by contract, ~90 MB for a pinned MiniLM. For scale,
+    // 04-17 measured and justified a 1.8 MB retention in verify.rs; this is the same class of
+    // cost, one to two orders larger, and it buys nothing.
+    drop(bytes);
+
+    let state = AppState::default().with_setfit_model(Arc::new(model));
+    // CR-01 (04-REVIEW): the classifier surface gets the SAME AuthGate as the APR
+    // routes. Mounting the router bare left `POST /v1/classify` unauthenticated even
+    // with APR_API_KEY set, behind `CorsLayer::permissive()` — and because
+    // `AuthGate::from_env()` was never CALLED, its "routes are unauthenticated"
+    // warning never printed either, so the hole was silent from both ends.
+    let app = super::auth::layer_public_ops(
+        super::auth::AuthGate::from_env(),
+        create_router_with_config(state, RouterConfig::default()),
+    );
+
+    let bind_addr = config.bind_addr();
+    let runtime = tokio::runtime::Runtime::new()
+        .map_err(|e| CliError::InferenceFailed(format!("Runtime: {e}")))?;
+    runtime.block_on(async move {
+        let listener = tokio::net::TcpListener::bind(&bind_addr)
+            .await
+            .map_err(|e| CliError::InferenceFailed(format!("Bind: {e}")))?;
+        println!(
+            "{}",
+            format!("SetFit classification server listening on http://{bind_addr}")
+                .green()
+                .bold()
+        );
+        println!("  POST /v1/classify - Classify a batch of texts");
+        println!("  GET  /health/ready - Readiness (reports the artifact hash)");
+        axum::serve(listener, app)
+            .await
+            .map_err(|e| CliError::InferenceFailed(format!("Serve: {e}")))?;
+        Ok::<(), CliError>(())
+    })
+}
+
+#[cfg(all(test, feature = "setfit", feature = "inference"))]
+mod setfit_serve_tests {
+    //! Startup behaviour, driven through the real functions.
+    //!
+    //! Every test here asserts that a bad artifact produces a typed refusal and
+    //! that NO listener is bound — which is observable because `start_setfit_server`
+    //! returns `Err` strictly before the `TcpListener::bind` call. None of these
+    //! tests binds a port, so they are safe under parallel `cargo test`.
+
+    use super::*;
+    use aprender::format::v2::{AprV2Metadata, AprV2Writer};
+    use aprender::setfit::artifact::MODEL_TYPE_TAG;
+    use aprender::setfit::MAX_ARTIFACT_BYTES;
+    use std::collections::HashMap;
+    use std::io::Write;
+    use tempfile::TempDir;
+
+    /// A syntactically valid APR v2 container carrying `model_type`, one tiny
+    /// tensor and NO `setfit` custom document.
+    ///
+    /// It is deliberately NOT a valid artifact: the point of the corruption tests
+    /// is that a file which LOOKS like a SetFit APR at the tag is still refused by
+    /// the ladder, so the tag can never be the thing that admits a model.
+    fn container_tagged(model_type: &str) -> Vec<u8> {
+        let metadata = AprV2Metadata {
+            model_type: model_type.to_string(),
+            created_at: None,
+            custom: HashMap::new(),
+            ..Default::default()
+        };
+        let mut writer = AprV2Writer::new(metadata);
+        writer.add_f32_tensor("probe".to_string(), vec![2], &[0.0_f32, 1.0]);
+        writer.write().expect("the v2 writer emits a container")
+    }
+
+    fn write_file(dir: &Path, name: &str, bytes: &[u8]) -> std::path::PathBuf {
+        let path = dir.join(name);
+        let mut file = std::fs::File::create(&path).expect("fixture file is creatable");
+        file.write_all(bytes).expect("fixture file is writable");
+        file.sync_all().expect("fixture file syncs");
+        path
+    }
+
+    /// Port 0 is an EPHEMERAL bind, and that is the point: if any of these tests
+    /// ever reached the bind it would succeed and then block in `axum::serve`
+    /// forever, so "the server was not started" fails loudly as a hung test rather
+    /// than passing quietly on a refusal that happened for some other reason.
+    fn ephemeral_config() -> ServerConfig {
+        ServerConfig::default().with_host("127.0.0.1").with_port(0)
+    }
+
+    #[test]
+    fn setfit_serve_tag_read_identifies_a_setfit_container() {
+        let temp = TempDir::new().expect("tempdir");
+        let path = write_file(temp.path(), "tagged.apr", &container_tagged(MODEL_TYPE_TAG));
+        // Through THE SHARED DOOR, the same one `apr predict`/`inspect`/`eval` use.
+        // This test used to exercise a serve-local copy, so it could pass while the
+        // two detectors disagreed about this very file.
+        assert!(
+            crate::setfit_tag::read_setfit_tag(&path)
+                .ok()
+                .flatten()
+                .is_some(),
+            "a container stamped by the setfit writer must be recognised from its tag"
+        );
+    }
+
+    #[test]
+    fn setfit_serve_tag_read_does_not_divert_a_plain_apr() {
+        let temp = TempDir::new().expect("tempdir");
+        let path = write_file(temp.path(), "plain.apr", &container_tagged("qwen2"));
+        assert!(
+            crate::setfit_tag::read_setfit_tag(&path)
+                .ok()
+                .flatten()
+                .is_none(),
+            "a non-setfit APR must keep going down the pre-existing path byte-unchanged"
+        );
+    }
+
+    #[test]
+    fn setfit_serve_tag_read_is_none_for_a_file_that_is_not_an_apr_container() {
+        let temp = TempDir::new().expect("tempdir");
+        let path = write_file(
+            temp.path(),
+            "garbage.apr",
+            &[0x7f, b'E', b'L', b'F', 0, 0, 0, 0],
+        );
+        assert!(
+            crate::setfit_tag::read_setfit_tag(&path)
+                .ok()
+                .flatten()
+                .is_none(),
+            "an unidentifiable file must fall through, not raise a diagnosis this \
+             function is not qualified to make"
+        );
+    }
+
+    #[test]
+    fn setfit_serve_refuses_a_corrupted_artifact_before_binding_a_socket() {
+        let temp = TempDir::new().expect("tempdir");
+        // Tagged `setfit`, so the branch DOES take it — and then the ladder refuses
+        // it, which is the claim: the tag routes, the ladder admits.
+        let path = write_file(
+            temp.path(),
+            "corrupt.apr",
+            &container_tagged(MODEL_TYPE_TAG),
+        );
+        let config = ephemeral_config();
+
+        let error = start_setfit_server(&path, &config)
+            .expect_err("a container with no setfit document is not a verified model");
+        let rendered = error.to_string();
+        assert!(
+            matches!(error, CliError::ModelLoadFailed(_)),
+            "the loader's refusal must surface as ModelLoadFailed; got: {error}"
+        );
+        assert!(
+            rendered.contains("did not pass verification"),
+            "the refusal must say the model was not verified; got: {rendered}"
+        );
+        assert!(
+            rendered.contains("was\n             NOT started")
+                || rendered.contains("was NOT started"),
+            "the refusal must say the server did not start; got: {rendered}"
+        );
+    }
+
+    #[test]
+    fn setfit_serve_refuses_an_over_cap_artifact_through_the_bounded_door() {
+        let temp = TempDir::new().expect("tempdir");
+        // A REAL setfit-tagged header followed by sparse emptiness past the cap.
+        // The tag read still succeeds (it touches only the head of the file), so
+        // this exercises the case the bounded door exists for: a file that has
+        // already been routed to the SetFit path and is too large to read.
+        let path = write_file(temp.path(), "huge.apr", &container_tagged(MODEL_TYPE_TAG));
+        let file = std::fs::OpenOptions::new()
+            .write(true)
+            .open(&path)
+            .expect("fixture file is reopenable");
+        file.set_len(MAX_ARTIFACT_BYTES + 1)
+            .expect("a sparse over-cap file is creatable");
+        drop(file);
+
+        assert!(
+            crate::setfit_tag::read_setfit_tag(&path)
+                .ok()
+                .flatten()
+                .is_some(),
+            "the tag read must still succeed — otherwise this test would prove \
+             nothing about the bounded door"
+        );
+
+        let error = start_setfit_server(&path, &ephemeral_config())
+            .expect_err("a file past the contracted cap must be refused");
+        let rendered = error.to_string();
+        assert!(
+            rendered.contains("declared_length"),
+            "the refusal must name the check that fired, proving NO byte was read; \
+             got: {rendered}"
+        );
+        assert!(
+            rendered.contains(&(MAX_ARTIFACT_BYTES + 1).to_string()),
+            "the refusal must name the observed length; got: {rendered}"
+        );
+    }
+
+    /// Assemble a search needle from fragments at RUNTIME.
+    ///
+    /// These scans read the file they live in, so a whole literal needle would
+    /// appear IN the scanned text and every count would come back one too high —
+    /// a `contains` assertion would then be satisfied by its own source and could
+    /// never fail. `setfit_io.rs` adopted this discipline after 04-14 committed
+    /// exactly that defect; it extends to the doc comments, which is why none of
+    /// the needles below is spelled out in prose either.
+    fn needle(fragments: &[&str]) -> String {
+        fragments.concat()
+    }
+
+    #[test]
+    fn setfit_serve_startup_reads_bounded_loads_through_the_one_door_and_builds_the_real_router() {
+        // Source assertions: none of these is observable from outside — a caller
+        // cannot tell a bounded read from `fs::read`, nor the shared router from a
+        // hand-rolled one — and each names a specific way this path could stop
+        // being the shared one.
+        const SOURCE: &str = include_str!("handlers.rs");
+
+        // EXACTLY ONE occurrence each, because the needles are assembled at runtime
+        // and therefore do NOT appear in the scanned source: the single match is
+        // the production call site. A count of 2 would mean a second call site grew.
+        for fragments in [
+            ["read_setfit_apr_file_", "bounded(model_path)?"].as_slice(),
+            ["load_setfit_", "apr(&bytes)"].as_slice(),
+            [
+                "create_router_with_",
+                "config(state, RouterConfig::default())",
+            ]
+            .as_slice(),
+            ["with_setfit_", "model(Arc::new(model))"].as_slice(),
+        ] {
+            let needle = needle(fragments);
+            assert_eq!(
+                SOURCE.matches(&needle).count(),
+                1,
+                "the setfit startup path must contain exactly one `{needle}` — zero \
+                 means a second read, a second loader or a bespoke server replaced \
+                 the shared one; two means a second call site grew beside it"
+            );
+        }
+
+        // And the ban that makes the bounded door the ONLY door on this path.
+        let banned = needle(&["fs::", "read(model_path)"]);
+        assert_eq!(
+            SOURCE.matches(&banned).count(),
+            0,
+            "no unbounded whole-file read of the model path may exist in this module"
+        );
+    }
 }
 
 include!("handler_apr_cpu_completion.rs");

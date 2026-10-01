@@ -1,0 +1,11 @@
+in-distribution held-out rows: 459, classes [111, 291, 57]
+zero-shot macro-F1 0.4092
+s16-es12-seed23        in-dist: margin 0.091 acc 0.549 ECE@T5 0.055 ECE@T10 0.055 oracle-T 3.43 | gate eval: margin 0.095 ECE@T5 0.119
+s16-r1-seed13          in-dist: margin 0.161 acc 0.638 ECE@T5 0.114 ECE@T10 0.114 oracle-T 1.79 | gate eval: margin 0.140 ECE@T5 0.100
+s64-es12-seed13-rep    in-dist: margin 0.313 acc 0.763 ECE@T5 0.069 ECE@T10 0.075 oracle-T 3.99 | gate eval: margin 0.226 ECE@T5 0.139
+s64-es12-seed17-rep    in-dist: margin 0.229 acc 0.697 ECE@T5 0.052 ECE@T10 0.052 oracle-T 1.30 | gate eval: margin 0.206 ECE@T5 0.096
+s64-es12-seed23-rep    in-dist: margin 0.263 acc 0.719 ECE@T5 0.051 ECE@T10 0.051 oracle-T 3.04 | gate eval: margin 0.203 ECE@T5 0.139
+s64-es12m10-seed23     in-dist: margin 0.275 acc 0.723 ECE@T5 0.063 ECE@T10 0.063 oracle-T 3.85 | gate eval: margin 0.218 ECE@T5 0.122
+s64-r1-seed13          in-dist: margin 0.323 acc 0.771 ECE@T5 0.092 ECE@T10 0.080 oracle-T 7.21 | gate eval: margin 0.235 ECE@T5 0.230
+s64-r1-seed17          in-dist: margin 0.281 acc 0.730 ECE@T5 0.100 ECE@T10 0.064 oracle-T 7.28 | gate eval: margin 0.216 ECE@T5 0.259
+s64-r1-seed23-rep      in-dist: margin 0.295 acc 0.745 ECE@T5 0.141 ECE@T10 0.075 oracle-T 10.00 | gate eval: margin 0.219 ECE@T5 0.312

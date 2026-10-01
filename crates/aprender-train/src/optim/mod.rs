@@ -25,7 +25,8 @@ pub use hpo::{
 };
 pub use optimizer::Optimizer;
 pub use scheduler::{
-    CosineAnnealingLR, LRScheduler, LinearWarmupLR, StepDecayLR, WarmupCosineDecayLR,
+    warmup_steps_from_ratio, CosineAnnealingLR, LRScheduler, LinearWarmupLR, StepDecayLR,
+    WarmupCosineDecayLR, WarmupLinearDecayLR,
 };
 pub use sgd::SGD;
 pub use simd::{simd_adam_update, simd_adamw_update, simd_axpy};

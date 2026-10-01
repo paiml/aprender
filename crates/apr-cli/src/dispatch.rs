@@ -1037,10 +1037,20 @@ fn dispatch_model_commands(cli: &Cli) -> Option<Result<(), CliError>> {
             experimental_mps,
             gpu_share,
             profile,
+            selection_manifest,
+            seed,
+            val_split,
+            early_stopping_patience,
         }) => {
             if *profile {
                 eprintln!("StepProfiler enabled for finetune (PMAT-486)");
             }
+            let classify_overrides = finetune::ClassifyOverrides {
+                selection_manifest: selection_manifest.as_deref(),
+                seed: *seed,
+                val_split: *val_split,
+                early_stopping_patience: *early_stopping_patience,
+            };
             finetune::run(
                 file.as_deref(),
                 method,
@@ -1072,6 +1082,7 @@ fn dispatch_model_commands(cli: &Cli) -> Option<Result<(), CliError>> {
                 cli.json,
                 *experimental_mps,
                 *gpu_share,
+                &classify_overrides,
             )
         }
         Commands::ModelOps(ModelOpsCommands::Prune {

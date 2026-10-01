@@ -1,0 +1,628 @@
+diff --git a/contracts/setfit-benchmark-claims-v1.yaml b/contracts/setfit-benchmark-claims-v1.yaml
+index dd87c86ea..dc7b1713a 100644
+--- a/contracts/setfit-benchmark-claims-v1.yaml
++++ b/contracts/setfit-benchmark-claims-v1.yaml
+@@ -9,7 +9,35 @@ metadata:
+   # (`pv diff` takes TWO FILESYSTEM PATHS — crates/aprender-contracts-cli/src/cli.rs:73-78
+   # — so the old revision is materialized with `git show` first), its suggested bump, and
+   # the reasoning, in the file rather than in a commit message nobody reads again.
+-  version: 1.0.0
++  #
++  # 2.0.0 (2026-09-08, plan 05-11 Task 1, APPROVED at a blocking human checkpoint) — THE
++  # ACTIVE EXPECTATION SET IS NARROWED FROM 80 TWO-METHOD CELLS TO 40 SETFIT CELLS.
++  #   git show HEAD:contracts/setfit-benchmark-claims-v1.yaml > /tmp/p11/claims-old.yaml
++  #   target/release/pv diff /tmp/p11/claims-old.yaml contracts/setfit-benchmark-claims-v1.yaml
++  # MAJOR, not minor and not patch. `pv diff`'s own suggestion is recorded in the plan
++  # 05-11 SUMMARY verbatim; the bump taken here is MAJOR on the reasoning that a consumer
++  # who previously read `expectation_set` as a two-method 80-cell guarantee gets a
++  # DIFFERENT answer from the same key after this edit. A narrowed declared guarantee is a
++  # breaking change to every reader of it, whatever a structural differ scores it as.
++  #
++  # WHAT WAS NARROWED, AND WHAT WAS NOT. `equations.expectation_set` — the ACTIVE scope —
++  # now enumerates ONE method and yields 40 as a product. NOTHING describing the two-method
++  # design was deleted: the two-method product moves, intact, to
++  # `equations.expectation_set.deferred_two_method_scope`; `pairing_rule`, the paired-delta half of
++  # `claims_statistics`, `no_selection_attestation` and the cross-method clauses of
++  # `model_size_comparability` are RETAINED and marked `status: deferred` with a pointer to
++  # D-ITEM-05-15. Deleting them would turn a scope amendment into a silent loss of
++  # contracted guarantees, and would make the restoration ticket a re-derivation.
++  #
++  # WHY. Decision D-19 (.planning/phases/05-benchmark-and-claims-gate/05-CONTEXT.md,
++  # 2026-09-07): the 9B LoRA arm is not buildable in this phase. Two independent causes,
++  # either fatal alone — (a) no reachable GPU host, 12 enumerated candidates, 12 measured
++  # failures, AWS fallback enumerated and refuted; (b) the Qwen3.5-9B hybrid architecture
++  # is unimplemented (`layer_types`, `attn_output_gate`, `text_config` nesting have no
++  # field in `TransformerConfig`). No LoRA cell was ever run. (b) is an inference from
++  # STRUCTURAL ABSENCE, not an observed loader failure — Verification Discipline rule 6 —
++  # and its cheap falsifier is named and NOT run; it is recorded that way in D-ITEM-05-15.
++  version: 2.0.0
+   created: '2026-08-17'
+   author: PAIML Engineering
+   kind: kernel
+@@ -26,15 +54,32 @@ metadata:
+     Every constant below is committed BEFORE the code that compares against it exists
+     (Ph1 D-14), so a threshold cannot be chosen after seeing a result.
+ 
+-    WHY THIS CONTRACT EXISTS. This phase's whole output is a CLAIM — "SetFit compares thus
+-    with the 9B LoRA baseline". A claim is only worth the evidence a reader can recompute,
+-    and the failure modes are not arithmetic errors: they are a quietly omitted cell, a
+-    pair compared across different sampled IDs, an adapter's bytes presented as a
+-    deployable model size, a "peak memory" that is really a training peak, a "cold" latency
+-    measured in a process that had just finished training, and a "no model selection
+-    happened" assertion that is a boolean nobody can check. Each of those passes every test
+-    an implementation would naturally write. This file is where each one is named and given
+-    a mechanism.
++    TWO SCOPES SINCE 2.0.0. The ACTIVE scope (`equations.expectation_set`) is 40 SetFit
++    cells and is the ONLY scope this repository's shipped doors verify against. The
++    DEFERRED scope (`equations.expectation_set.deferred_two_method_scope`, plus every clause marked
++    `status: deferred` below) is the two-method SetFit-versus-LoRA design, retained
++    verbatim and unexercised so that D-ITEM-05-15 restores it rather than re-derives it.
++    Read every `status: deferred` block as a SPECIFICATION OF FUTURE WORK, never as
++    evidence that anything two-method has been measured. No report produced under the
++    active scope may state or imply a SetFit-versus-LoRA result.
++
++    WHY THIS CONTRACT EXISTS. This phase's whole output is a CLAIM — under the active scope,
++    "SetFit measured thus across shot levels and seeds", and under the deferred scope,
++    "SetFit compares thus with the 9B LoRA baseline". A claim is only worth the evidence a
++    reader can recompute, and the failure modes are not arithmetic errors: they are a
++    quietly omitted cell, a pair compared across different sampled IDs, an adapter's bytes
++    presented as a deployable model size, a "peak memory" that is really a training peak, a
++    "cold" latency measured in a process that had just finished training, and a "no model
++    selection happened" assertion that is a boolean nobody can check. Each of those passes
++    every test an implementation would naturally write. This file is where each one is
++    named and given a mechanism.
++
++    NARROWING IS ITSELF A NAMED THREAT HERE. `completeness_rule` says in its own words that
++    a producer could declare a twelve-cell expectation, satisfy it completely, and publish a
++    "complete" run. The 2.0.0 narrowing is that same act performed by the party this
++    contract constrains, which is why it was prepared, diffed against the previous revision
++    as two filesystem paths, presented with a retained-versus-narrowed inventory, and
++    committed only after an explicit human approval — never taken by an executor alone.
+ 
+     THIS CONTRACT REFERENCES RATHER THAN RESTATES. Dataset identity, the label map, the
+     canonical split sizes, the official `F_avg` definition and the contracted seed set are
+@@ -43,7 +88,7 @@ metadata:
+     `contrastive-pair-protocol-v1`. The calibration metrics and the paired statistics are
+     owned by `calibration-v1`. A schema restated in two places is a schema that disagrees
+     with itself; only the seed set is enumerated here, and it is enumerated because the
+-    80-cell expectation set must be derivable CLOSED-FORM from this file alone (see
++    40-cell ACTIVE expectation set must be derivable CLOSED-FORM from this file alone (see
+     `expectation_set`) — that enumeration is asserted equal to the upstream contract's by
+     test, not by hope.
+ 
+@@ -78,12 +123,19 @@ equations:
+ 
+   # ==========================================================================
+   # 1. THE EXPECTATION SET — the anti-omission mechanism (D-14, EVAL-04)
++  #
++  # THIS IS THE ACTIVE SCOPE. Since 2.0.0 it enumerates ONE method and yields 40
++  # cells. The two-method 80-cell product is NOT deleted — it lives, intact and
++  # marked deferred, in this equation's own `deferred_two_method_scope` sub-block.
++  # Every shipped door in this repository verifies against the ACTIVE lists and
++  # never against the deferred ones.
+   # ==========================================================================
+ 
+   expectation_set:
+-    formula: 'expectation = methods x shots x seeds ; |expectation| = 2 * 4 * 10 = 80 ; cell_key(m, s, d) = "<method>/s<shots>/seed<seed>"'
++    scope: active
++    formula: 'expectation = methods x shots x seeds ; |expectation| = 1 * 4 * 10 = 40 ; cell_key(m, s, d) = "<method>/s<shots>/seed<seed>"'
+     domain: 'the three enumerated lists below, and nothing else'
+-    codomain: 'exactly 80 UNIQUE cell keys, in the deterministic order declared by `ordering`'
++    codomain: 'exactly 40 UNIQUE cell keys, in the deterministic order declared by `ordering`'
+     # THE THREE LISTS ARE MACHINE-READABLE AND ARE THE SINGLE SOURCE OF TRUTH.
+     # `RunManifest::expectation()` in crates/aprender-train/src/train/setfit/bench_row.rs
+     # derives the same product from Rust constants, and a test deserializes THIS FILE with
+@@ -94,7 +146,6 @@ equations:
+     # produce a different benchmark.
+     methods:
+       - setfit
+-      - lora
+     shots:
+       - 8
+       - 16
+@@ -111,23 +162,80 @@ equations:
+       - 43
+       - 47
+       - 53
+-    expected_cells: 80
++    expected_cells: 40
+     ordering: 'method in the order declared above, then shots ASCENDING, then seed ASCENDING. Cell keys are unique, so no tie can arise and no tiebreak is needed.'
+     invariants:
+       - 'THE SEED SET IS THE CONTRACTED ONE, NOT A COPY THAT DRIFTED. It is byte-equal to
+         `few_shot_protocol.seeds` in tweet-eval-stance-benchmark-v1.yaml, and
+         OBLIG-TWEET-EVAL-SEED-SET already states that 42 is NOT a contracted seed. It is
+-        enumerated HERE anyway because the 80-cell expectation must be closed-form from this
++        enumerated HERE anyway because the 40-cell expectation must be closed-form from this
+         one file — a completeness rule that requires reading a second contract to know what
+         complete means is a completeness rule an omission can hide behind. The duplication is
+         made safe by assertion, not by discipline: a test compares the two lists.'
+-      - 'EIGHTY IS A PRODUCT, NEVER A COUNT OF FILES. `expected_cells` is asserted equal to
+-        `|methods| * |shots| * |seeds|` by the same test that checks the product, so editing
+-        one list without the other is red rather than silently re-defining completeness.'
++      - 'FORTY IS A PRODUCT, NEVER A COUNT OF FILES AND NEVER A HAND-WRITTEN LITERAL.
++        `expected_cells` is asserted equal to `|methods| * |shots| * |seeds|` by the same test
++        that checks the product, so editing one list without the other is red rather than
++        silently re-defining completeness. The narrowing to 40 was performed by REMOVING an
++        element from `methods`, so the arithmetic followed; a 40 typed in beside an unchanged
++        two-element method list would be the same defect in the other direction, and the
++        product assertion is what makes that unrepresentable.'
+       - 'DUPLICATES ARE A CONTRACT VIOLATION, not a set that happens to deduplicate. Each of
+         the three lists must have no repeated element; a duplicated seed would leave the
+-        Cartesian SET at 80 while the LIST product reads 88, and the cardinality half of the
++        Cartesian SET at 40 while the LIST product reads 44, and the cardinality half of the
+         parity test is what catches it.'
++      - 'THE ACTIVE METHOD LIST IS A DIFFERENT QUESTION FROM THE SET OF REPRESENTABLE METHODS,
++        AND THE TWO MUST NOT COLLAPSE. This list answers "which cells does a complete run have
++        to contain". `bench_row_schema.shared_core.method` answers "which method tags is a row
++        allowed to carry at all", and it still admits both, because the deferred-scope
++        negatives doctor rows a narrowed row-validity domain could not construct. In the Rust
++        implementation these are two constants — `ACTIVE_METHODS` and `BENCH_METHODS` — and
++        conflating them would delete two shipped negatives while appearing to tighten a gate.'
++      - 'A CELL OUTSIDE THIS ACTIVE SET IS A REFUSAL, NOT AN EXTRA. It is refused twice over,
++        on the two paths an out-of-scope cell can take through a production door: a manifest
++        that DECLARES such a cell fails the expectation-set equality check before any row byte
++        is read, and a row FILED IN a declared SetFit slot whose payload names another method
++        fails the slot-agreement check. No third refusal is minted for this, because a third
++        one would be reachable only from a test-only constructor.'
++
++    # ----------------------------------------------------------------------
++    # THE DEFERRED TWO-METHOD SCOPE - retained, unexercised, restorable.
++    #
++    # The 80-cell product `expectation_set` carried up to 1.0.0, preserved
++    # rather than deleted, and NESTED inside this equation rather than promoted
++    # to a sibling one on purpose: it is the deferred COUNTERPART of this
++    # equation, not a second equation, and a top-level key would acquire its own
++    # binding row and read as an eleventh IMPLEMENTED equation in
++    # `make contract-audit-phase5`. Nothing verifies against it.
++    # D-ITEM-05-15 is the ticket that restores it.
++    # ----------------------------------------------------------------------
++    deferred_two_method_scope:
++      status: deferred
++      deferred_ticket: D-ITEM-05-15
++      deferred_decision: D-19
++      formula: 'deferred_expectation = deferred_methods x shots x seeds ; |deferred_expectation| = 2 * 4 * 10 = 80 ; cell_key(m, s, d) = "<method>/s<shots>/seed<seed>"'
++      domain: 'the deferred method list below, crossed with `expectation_set.shots` and `expectation_set.seeds` — the shot and seed axes are UNCHANGED by the narrowing and are not restated here, because a restated axis is an axis that can drift'
++      codomain: 'exactly 80 UNIQUE cell keys, in the same deterministic order — the scope a restored two-method run must satisfy'
++      deferred_methods:
++        - setfit
++        - lora
++      deferred_expected_cells: 80
++      exercised_by: 'NOTHING IN THIS REPOSITORY TODAY. In the Rust implementation the constructor for this scope is `#[cfg(test)]`-gated, so production code cannot reach it at all rather than merely not calling it, and the only callers are the two deferred-scope negatives named in `falsification_tests`.'
++      invariants:
++        - 'RETAINED, NOT ACTIVE. Nothing in this block licenses a claim. A run verified against
++          the ACTIVE scope has measured one method; a reader who mistakes this block for
++          evidence has been given the exact false impression D-19 forbids, which is why every
++          deferred clause in this file carries `status: deferred` on its own line rather than
++          relying on a paragraph elsewhere.'
++        - 'RESTORATION IS AN EDIT TO `expectation_set.methods`, NOT A RE-DERIVATION. Restoring
++          the arm means adding `lora` back to the active method list and re-running the same
++          parity test; the pairing rule, the paired-delta statistics and the cross-method
++          comparability rules are all still here, unchanged, and did not have to be
++          rediscovered. That is the whole reason deletion was rejected.'
++        - 'THE PAIRING KEY IS RECORDED BY EVERY ACTIVE CELL SO RESTORATION NEED NOT RE-RUN THE
++          SETFIT HALF. Each SetFit row carries its `selection_manifest_hash` under the active
++          scope exactly as it would under the deferred one, so a future second method binds to
++          the identical sampled-ID set. The mechanism is retained even though the comparison is
++          not performed — that is what makes this a deferral rather than a cancellation.'
+ 
+   # ==========================================================================
+   # 2. THE ROW SCHEMA (D-12, EVAL-03)
+@@ -145,7 +253,7 @@ equations:
+       - 'the row is `deny_unknown_fields` at every level, so no field can ride along that this schema does not name'
+     schema_version: 1
+     shared_core:
+-      method: 'exactly "setfit" or "lora" — the tag that selects the evidence block; no third value and no absent value'
++      method: 'exactly "setfit" or "lora" — the tag that selects the evidence block; no third value and no absent value. THIS IS THE ROW-VALIDITY DOMAIN AND IT IS DELIBERATELY UNCHANGED BY THE 2.0.0 NARROWING: both tags stay REPRESENTABLE so the deferred-scope negatives can still construct the rows they doctor. Which cells a COMPLETE RUN must contain is a different question, answered by `expectation_set.methods`, and a `lora` row is valid as a row while its cell is out of scope for the active expectation set.'
+       shots: 'one of 8, 16, 32, 64'
+       seed: 'one of the ten contracted seeds'
+       dataset_revision: 'the pinned upstream git revision the splits came from'
+@@ -245,18 +353,28 @@ equations:
+     invariants:
+       - 'COMPLETENESS IS DEFINED BY THE MANIFEST AND THIS CONTRACT, NEVER BY A DIRECTORY
+         LISTING. A directory listing can only report what is present; it cannot report what is
+-        missing, because nothing tells it what was expected. The manifest declares all 80 cells
+-        BEFORE any cell runs, so a selectively omitted cell is a `pending` entry in a
+-        pre-declared table rather than an absence nobody can see (EVAL-04, PF-007
++        missing, because nothing tells it what was expected. The manifest declares all 40
++        active cells BEFORE any cell runs, so a selectively omitted cell is a `pending` entry
++        in a pre-declared table rather than an absence nobody can see (EVAL-04, PF-007
+         falsification 3).'
+       - 'AN EMPTY OR ZERO-CELL BENCHMARK DIRECTORY IS A TYPED REFUSAL BEFORE ANY ROW BYTE IS
+         READ. A gate whose input is empty and which therefore finds no failures is the vacuous
+         gate this repository has now been bitten by more than once (CR-02, and the repo-wide
+         `contract-audit` that prints 132 errors and exits 0). Zero complete cells is a failure,
+         not a clean run.'
+-      - 'A MANIFEST WHOSE EXPECTATION SET IS NOT EXACTLY THE 80 CONTRACT-DERIVED CELLS IS A
+-        TYPED REFUSAL, ALSO BEFORE ANY ROW BYTE IS READ. Otherwise a producer could declare a
+-        12-cell expectation, satisfy it completely, and publish a "complete" run.'
++      - 'A MANIFEST WHOSE EXPECTATION SET IS NOT EXACTLY THE 40 CONTRACT-DERIVED ACTIVE CELLS
++        IS A TYPED REFUSAL, ALSO BEFORE ANY ROW BYTE IS READ. Otherwise a producer could
++        declare a 12-cell expectation, satisfy it completely, and publish a "complete" run.
++        THE 2.0.0 NARROWING IS THAT SAME ACT, PERFORMED BY US, WHICH IS WHY IT REQUIRED AN
++        EXPLICIT HUMAN APPROVAL AGAINST A DIFF AND AN ITEMISED RETAINED-VERSUS-NARROWED
++        INVENTORY, AND WHY NO EXECUTOR, FALLBACK, RETRY OR CONVENIENCE PATH MAY REDUCE THIS
++        SET FURTHER. A gate weakened by the party it constrains is not a gate.'
++      - 'THE ACTIVE SCOPE PUBLISHES NO CROSS-METHOD RESULT. A report produced under the active
++        scope may not state or imply a SetFit-versus-LoRA outcome — not as a delta, not as a
++        comparison table, and not as an empty section header, because a header with no rows
++        still tells a reader a comparison was attempted. Absence of a second method is
++        reported as absence, with the decision id and the restoration ticket, never as parity
++        and never as a null.'
+       - 'THE ROW MUST AGREE WITH ITS SLOT. A row filed under (setfit, 16, 29) whose payload
+         says (setfit, 16, 31) is a refusal, not a relabelling: the manifest entry and the row
+         payload are two independent statements of the same fact and they must agree.'
+@@ -269,11 +387,22 @@ equations:
+ 
+   # ==========================================================================
+   # 4. PAIRING (EVAL-02, PF-007) — comparability is not an assumption
++  #
++  # RETAINED AND DEFERRED since 2.0.0. The RULE below is unchanged. What changed
++  # is that the active scope contains one method, so there is no pair to check
++  # and this rule is not exercised by any run this phase produces. The pairing
++  # MECHANISM — every SetFit row recording its selection-manifest hash — is
++  # fully active, and is exactly what lets D-ITEM-05-15 add the second arm later
++  # without re-running the SetFit half.
+   # ==========================================================================
+ 
+   pairing_rule:
++    status: deferred
++    deferred_ticket: D-ITEM-05-15
++    deferred_decision: D-19
++    mechanism_status: active
+     formula: 'forall (s, d) in shots x seeds: row(setfit, s, d).selection_manifest_hash == row(lora, s, d).selection_manifest_hash'
+-    domain: 'the 40 (shots, seed) pairs of the completed expectation set'
++    domain: 'the 40 (shots, seed) pairs of the completed DEFERRED two-method expectation set. Under the active scope this domain is empty, and an empty domain is reported as "not exercised", never as "satisfied" — a vacuously-true pairing check is precisely the green-gate-over-no-input defect CR-02 recorded.'
+     codomain: 'a paired delta per pair, or a typed refusal naming the mismatched pair and both hashes'
+     invariants:
+       - 'A DELTA IS COMPUTED ONLY OVER A MATCHED PAIR. PF-007''s fourth falsification test is
+@@ -286,6 +415,12 @@ equations:
+         different exclusion record, a different sampler version. The hash is the only field
+         that can tell them apart, and D-10 makes both methods read that one artifact through
+         the same code path so the guarantee is structural rather than clerical.'
++      - 'THE RULE IS DEFERRED; THE KEY IS NOT. Every ACTIVE SetFit cell still records its
++        `selection_manifest_hash`, and the selection manifest itself is still generated once
++        per (shots, seed) and consumed by whatever runs against it. So the 40 active cells are
++        already pair-ready: restoring the second arm requires running the second arm, not
++        re-running SetFit. A deferral that dropped the key would have made D-ITEM-05-15 a
++        re-run of the whole matrix rather than of half of it.'
+ 
+   # ==========================================================================
+   # 5. SELECTION SAFETY AS RECOMPUTABLE EVIDENCE (EVAL-04)
+@@ -299,6 +434,9 @@ equations:
+       rule: 'The SetFit lock record is COMMITTED as a file at `lock.lock_record_path`, and the report reads those bytes and recomputes their SHA-256, comparing it to the row''s `lock.lock_hash`. The row field is a CLAIM about a file; the file is the evidence. A row whose lock record is absent, or whose bytes hash to something else, is refused.'
+       why: 'The alternative — trusting `lock_hash` because the row says so — makes the whole selection-safety story a string a producer typed. The lock machinery itself (lock.rs, the typestate token minted from a verified run object, Ph3 D-14) is unchanged and is not reimplemented here; what this contract adds is that the benchmark directory carries the bytes, so a reader can check without re-running anything.'
+     lora_side:
++      status: deferred
++      deferred_ticket: D-ITEM-05-15
++      deferred_note: 'RETAINED VERBATIM AND UNEXERCISED since 2.0.0. No LoRA row exists, so nothing below has ever been recomputed against real bytes; the two deferred-scope negatives in `falsification_tests` are the only things that construct this shape, and they construct it in tests. Read this block as the specification a restored arm must satisfy.'
+       rule: 'An APPEND-ONLY candidate ledger at `candidate_ledger_path`, one JSONL line per training invocation for that (method, shots, seed) cell, each line written BEFORE that invocation''s test evaluation, each carrying {timestamp, selection_manifest_hash, epochs_requested, seed, config_hash}. `candidate_ledger_sha256` is over the ledger file''s bytes; `candidates_trained` is its line count; this contract requires that count to be EXACTLY 1.'
+       why: 'The LoRA path has no selection-lock machinery (that is a real gap, recorded in the phase context, not a thing this plan invents). Without a ledger, "exactly one candidate was trained" is a boolean the producer asserts about itself. With one, the claim has a recomputable digest and a countable line count, and the ordering — ledger line written before test evaluation — is what makes a second, better candidate visible rather than deletable.'
+       why_before_evaluation: 'A ledger written AFTER evaluation records only the candidates the producer chose to keep. Written before, a discarded candidate has already left a line, so discarding it makes `candidates_trained` read 2 and the row refuse. The ordering IS the property.'
+@@ -312,6 +450,10 @@ equations:
+   # ==========================================================================
+ 
+   no_selection_attestation:
++    status: deferred
++    deferred_ticket: D-ITEM-05-15
++    deferred_decision: D-19
++    deferred_note: 'RETAINED VERBATIM AND UNEXERCISED since 2.0.0. This entire equation is about the LoRA side, which the active scope does not contain. Nothing is weakened and nothing is deleted: the six conjuncts, the ordering argument and the residual-risk statement all stand as the specification a restored arm must meet.'
+     formula: 'lora_row valid iff epochs_completed == epochs_requested AND early_stopping_disabled AND val_split == 0.0 AND no_selection_attestation AND candidates_trained == 1 AND sha256(ledger_bytes) == candidate_ledger_sha256'
+     domain: 'a LoRA row and its committed candidate ledger'
+     codomain: 'accepted, or a typed refusal naming the failing conjunct'
+@@ -334,6 +476,10 @@ equations:
+   # ==========================================================================
+ 
+   model_size_comparability:
++    field_status: active
++    cross_method_claim_status: deferred
++    deferred_ticket: D-ITEM-05-15
++    deferred_note: 'SPLIT BY 2.0.0, NOT NARROWED. The FIELDS stay mandatory on every active row — `artifact_bytes` and `deployable_total_bytes` are both recorded, and for SetFit they are equal because the APR is standalone. What is deferred is the CROSS-METHOD SIZE CLAIM those fields exist to make safe: with one method there is nothing to compare against, so the active report presents sizes across shot levels and states no cross-method size result at all. The rule that any future cross-method claim MUST use `deployable_total_bytes` is retained below, unchanged.'
+     formula: 'deployable_total_bytes(setfit) = artifact_bytes ; deployable_total_bytes(lora) = base_model_bytes + artifact_bytes'
+     domain: 'a completed row'
+     codomain: 'the one figure a cross-method size claim may be built on'
+@@ -358,9 +504,19 @@ equations:
+   # ==========================================================================
+ 
+   claims_statistics:
+-    formula: 'per (method, shots): mean = sum(x_i)/n, s = sqrt(sum((x_i - mean)^2)/(n-1)), min, max over the n=10 seeds ; per shots: d_i = x_setfit(i) - x_lora(i) on the same selection_manifest_hash, d_bar = mean(d), CI95 = d_bar +/- t_crit * s_d / sqrt(10)'
+-    domain: 'the 80 completed, hash-verified, pair-matched rows'
+-    codomain: 'point estimates, dispersion and paired intervals — never a significance verdict'
++    formula: 'per (method, shots): mean = sum(x_i)/n, s = sqrt(sum((x_i - mean)^2)/(n-1)), min, max over the n=10 seeds ; ACTIVE per (method, shots): CI95_seed = mean +/- t_crit * s / sqrt(10) ; DEFERRED per shots: d_i = x_setfit(i) - x_lora(i) on the same selection_manifest_hash, d_bar = mean(d), CI95 = d_bar +/- t_crit * s_d / sqrt(10)'
++    domain: 'ACTIVE: the 40 completed, hash-verified SetFit rows. DEFERRED: the 80 completed, hash-verified, pair-matched rows of the two-method scope.'
++    codomain: 'point estimates, dispersion and closed-form intervals — never a significance verdict'
++    active_statistic: seed_dispersion_ci95
++    deferred_statistic: paired_delta_ci95
++    deferred_ticket: D-ITEM-05-15
++    seed_dispersion_ci95:
++      status: active
++      formula: 'per (method, shots): CI95_seed = mean +/- t_crit_975_df9 * s / sqrt(10), where mean and s are the SAME mean and (n-1) std declared above, over exactly the ten contracted seeds'
++      label: 'A SEED-DISPERSION INTERVAL AT FIXED DATA AND PROTOCOL — NOT A POPULATION INTERVAL AND NOT A COMPARISON. It describes how much this method''s score moves when only the sampling seed moves, holding the dataset, the split, the shot level and the protocol fixed. It says nothing about a second method, nothing about a wider population of datasets, and nothing about significance. The label travels with the number at the point of presentation, never in a methods paragraph the reader may not reach.'
++      one_definition_of_the_moments: 'THE MEAN AND THE (n-1) STD HAVE EXACTLY ONE IMPLEMENTATION (OPS-03). The active interval reuses the existing moments path rather than introducing a second mean or a second std; a one-sample interval computed from independently-written moments is two definitions of the same quantity, and two definitions drift. The degrees of freedom are 9 for both the active and the deferred interval, because both are over the same ten contracted seeds, so ONE frozen critical value serves both and no inverse CDF is implemented.'
++      zero_variance: 'TEN IDENTICAL SEED SCORES YIELD THE TYPED ZERO-VARIANCE SHAPE WITH AN EXPLICIT NO-INTERVAL REASON — never a NaN, and never a serde null that a reader would read as a missing measurement. This is the same rule the deferred paired interval carries, and for the same reason (CR-03).'
++      reference_case: 'The endpoints are pinned against a scipy reference case computed in the pinned uv environment and recorded under scripts/setfit_fixtures/claims_stats/, covered by that directory''s SHA-256 manifest. A closed-form interval whose only check is its own implementation is not checked.'
+     n_seeds: 10
+     degrees_of_freedom: 9
+     t_crit_975_df9: 2.262157162798205
+@@ -388,6 +544,17 @@ equations:
+         `AprenderError::ZeroVarianceDifferences` is the outcome, and the report must render it
+         as a refusal — a non-finite f64 would serialize to `null` and become a MISSING number
+         rather than a visible failure (CR-03).'
++      - 'THE PAIRED-DELTA HALF IS DEFERRED, RETAINED AND UNEXERCISED (2.0.0, D-19). The active
++        scope has one method, so no delta is computed and none is rendered. The formula, the
++        pairing precondition and the frozen critical value all stand; the machinery is shipped
++        code with shipped tests, exactly as 05-04''s paired-t is. A report produced under the
++        active scope emits NO delta section — not an empty one — because an empty section
++        header still tells a reader a comparison was attempted.'
++      - 'UNCERTAINTY SURVIVES THE DESCOPE, IT IS NOT DROPPED WITH THE DELTA. EVAL-04 requires
++        dispersion AND uncertainty, and a single-method report that quoted only a mean and a
++        std would have quietly dropped the second half under cover of a scope amendment. The
++        active answer is `seed_dispersion_ci95` above: closed-form, on the same frozen t, over
++        the same ten seeds, through the same moments.'
+       - 'THE MULTICLASS BRIER IS ON A [0, 2] SCALE. It is the unnormalised Brier 1950 form and
+         at K=2 it is EXACTLY twice the binary score. Any column, threshold or axis assuming
+         [0, 1] is wrong.'
+@@ -433,16 +600,21 @@ equations:
+       not_comparable:
+         rule: 'A `sysinfo_sampled_<hz>` figure is a SAMPLED LOWER BOUND and is NOT comparable to a `child_max_rss_*` figure. A poll at any finite rate can miss the peak entirely; the bias is one-directional (it can only understate), and its magnitude depends on the allocation pattern, so it cannot be corrected for. It remains permitted as a FALLBACK only.'
+         enforcement: 'A cross-method memory comparison between two different mechanism CLASSES must be labelled at the point of comparison — the 05-10 renderer enforces this, so the label travels with the number rather than living in a methods paragraph.'
++        within_row_asymmetry: 'THE ASYMMETRY IS WITHIN A SINGLE ROW, NOT ONLY BETWEEN METHODS, AND 2.0.0 MAKES THAT EXPLICIT BECAUSE THE ACTIVE SCOPE HAS NO SECOND METHOD TO COMPARE ACROSS. One row''s `train_peak_rss_mechanism` and `inference_peak_rss_mechanism` can be in DIFFERENT mechanism CLASSES — an exact kernel high-water mark for the child that was spawned under `/usr/bin/time`, a sampled lower bound for the process that was polled — and on the host this phase runs on they will be. Three presentation rules follow, and they bind the ACTIVE report: (1) the train peak and the inference peak NEVER share a column and are never collapsed into a single "peak memory" figure; (2) each prints its mechanism string beside its number; (3) a `sysinfo_sampled_*` figure carries its lower-bound label EVERYWHERE it is rendered, including the per-shot summary, not only in a methods paragraph. Dropping the cross-method comparison did not remove the need for the label — it moved the only place the asymmetry can be seen into the single row.'
+       no_unsafe: 'Gemini''s review proposed `mach_task_basic_info` on macOS. REJECTED: this workspace sets `unsafe_code = "forbid"`, and the child-process route above yields the same true-HWM semantics with no unsafe and the SAME SHAPE on both platforms — which is what makes the SetFit and LoRA numbers comparable at all.'
+     train_time: 'wall-clock of the training invocation, recorded in `train_wall_ms`.'
+     sizes: 'per `model_size_comparability` — `artifact_bytes` and `deployable_total_bytes`, both mandatory.'
+     invariants:
+-      - 'RESOURCE METRICS ARE NEVER POOLED ACROSS HOSTS (D-09). SetFit cells run CPU and LoRA
+-        cells run on the lambda-vector GPU host; every row records its true host and backend
+-        identity, read from execution. These are AS-DEPLOYED METHOD COSTS — which is the
+-        milestone''s actual question, cheap CPU SetFit against GPU-hungry 9B LoRA — and they are
+-        never framed as same-hardware kernel comparisons. A report that averages across hosts as
+-        if they were one host is stating something no measurement supports.'
++      - 'RESOURCE METRICS ARE NEVER POOLED ACROSS HOSTS (D-09). Every row records its true host
++        and backend identity, read from execution, and a report that averages across hosts as
++        if they were one host is stating something no measurement supports. UNDER THE ACTIVE
++        SCOPE THE SECOND HALF OF THIS INVARIANT IS DEFERRED, NOT SATISFIED: the two-host design
++        it described — CPU SetFit cells against lambda-vector GPU LoRA cells, framed as
++        AS-DEPLOYED METHOD COSTS rather than same-hardware kernel comparisons — does not exist,
++        because the second host and the second method do not exist. The active report is
++        single-host, and a rendered note that claimed hosts differ by design would be
++        describing a design that was not run. The no-pooling rule itself stands unchanged and
++        governs the restored arm.'
+       - 'EVERY METRIC CARRIES ITS MECHANISM. A number without its measurement boundary is not a
+         measurement; it is a number. This is why the mechanism strings are mandatory fields
+         rather than a line in a methods section.'
+@@ -462,7 +634,7 @@ equations:
+     pf_007:
+       id: PF-007
+       title: 'Few-Shot Statistics Hide Seed Sensitivity'
+-      answered_by: 'the complete 80-cell expectation set (no best-seed selection, no missing seed), the shared selection-manifest hash per cell (no comparison across different sampled IDs), per-seed rows plus mean / (n-1) std / min / max / paired deltas (no lone point estimate), and D-08''s estimation-first rule (no binary verdict for a reversal to hide behind).'
++      answered_by: 'the complete 40-cell ACTIVE expectation set (no best-seed selection, no missing seed), the recorded selection-manifest hash per cell (which under the deferred scope also forbids comparison across different sampled IDs), per-seed rows plus mean / (n-1) std / min / max and the active seed-dispersion CI95 — with paired deltas retained as deferred — so a lone point estimate is never the published figure, and D-08''s estimation-first rule (no binary verdict for a reversal to hide behind).'
+     pf_008:
+       id: PF-008
+       title: 'Performance Claims Use the Wrong Metric or an Unequal Comparison'
+@@ -472,11 +644,15 @@ proof_obligations:
+ 
+   - type: completeness
+     property: >
+-      OBLIG-CLAIMS-EXPECTATION-CLOSED-FORM: the 80-cell expectation set is derivable from
+-      THIS FILE alone — `equations.expectation_set.methods` x `.shots` x `.seeds` — and the
+-      Rust derivation in `RunManifest::expectation()` equals it as a SET and in CARDINALITY.
+-      The comparison is a TYPED one: the test deserializes the `include_str!`-ed contract
+-      with serde_yaml into `Vec<String>` / `Vec<u32>` fields and compares parsed values.
++      OBLIG-CLAIMS-EXPECTATION-CLOSED-FORM: the 40-cell ACTIVE expectation set is derivable
++      from THIS FILE alone — `equations.expectation_set.methods` x `.shots` x `.seeds` — and
++      the Rust derivation in `RunManifest::expectation()` equals it as a SET and in
++      CARDINALITY. The comparison is a TYPED one: the test deserializes the `include_str!`-ed
++      contract with serde_yaml into `Vec<String>` / `Vec<u32>` fields and compares parsed
++      values. The Rust side derives from `ACTIVE_METHODS`, which is the expectation-set
++      domain; `BENCH_METHODS` is the row-validity domain and still carries both methods, and
++      the obligation binds the FORMER. `equations.expectation_set.deferred_two_method_scope` is NOT part of
++      this obligation and no shipped door derives from it.
+ 
+       A SUBSTRING COMPARISON DOES NOT DISCHARGE THIS OBLIGATION and is forbidden. A
+       `contract_text.contains("29")` check is satisfied by the digit sequence appearing in a
+@@ -486,10 +662,13 @@ proof_obligations:
+       rule means something other than what this contract says.
+       Discharged by FALSIFY-CLAIMS-001.
+     formal: >
+-      expectation_set.expected_cells == |methods| * |shots| * |seeds| == 80 &&
++      expectation_set.expected_cells == |methods| * |shots| * |seeds| == 40 &&
+       set(RunManifest::expectation()) == set(methods x shots x seeds) &&
+-      |RunManifest::expectation()| == 80 &&
+-      no_duplicates(methods) && no_duplicates(shots) && no_duplicates(seeds)
++      |RunManifest::expectation()| == 40 &&
++      no_duplicates(methods) && no_duplicates(shots) && no_duplicates(seeds) &&
++      expectation_set.deferred_two_method_scope.deferred_expected_cells
++        == |deferred_methods| * |shots| * |seeds| == 80 &&
++      set(expectation_set.methods) subset_of set(expectation_set.deferred_two_method_scope.deferred_methods)
+     applies_to: all
+ 
+   - type: soundness
+@@ -582,20 +761,26 @@ proof_obligations:
+     property: >
+       OBLIG-CLAIMS-COMPLETENESS-FAIL-CLOSED: `bench report` refuses, with a typed error
+       naming every failing cell, when any expected cell is missing or `pending`, when a row
+-      file's bytes do not hash to the manifest's recorded digest, when a row's payload
+-      disagrees with the slot it was filed under, or when a (shots, seed) pair's two rows
+-      carry different `selection_manifest_hash` values.
++      file's bytes do not hash to the manifest's recorded digest, or when a row's payload
++      disagrees with the slot it was filed under. The pairing clause — a (shots, seed) pair
++      whose two rows carry different `selection_manifest_hash` values is a refusal — is
++      RETAINED and DEFERRED with `pairing_rule`; under the active scope its domain is empty
++      and it is reported as not exercised, never as satisfied.
+ 
+       TWO BACKSTOPS RUN FIRST, BEFORE ANY ROW BYTE IS READ: an empty or zero-cell benchmark
+-      directory is a refusal, and a manifest whose expectation set is not exactly the 80
+-      contract-derived cells is a refusal. Without them a producer can satisfy completeness
+-      by declaring almost nothing, and a gate with no input reports success — the vacuity
+-      failure this repository has already shipped twice.
++      directory is a refusal, and a manifest whose expectation set is not exactly the 40
++      contract-derived ACTIVE cells is a refusal. Without them a producer can satisfy
++      completeness by declaring almost nothing, and a gate with no input reports success —
++      the vacuity failure this repository has already shipped twice. The second backstop is
++      also what refuses an out-of-scope cell DECLARED in a manifest; a second method's row
++      placed in a declared SetFit slot is refused instead by the slot-agreement clause above.
++      Neither path mints a new refusal, because a third variant would be reachable only from
++      a test-only constructor.
+       Discharged by FALSIFY-CLAIMS-007 and FALSIFY-CLAIMS-008.
+     formal: >
+-      report(dir) == Ok => |complete_cells| == 80 &&
+-        forall c: sha256(bytes(row_file(c))) == manifest.row_sha256(c) && row(c).cell == c &&
+-        forall (s, d): row(setfit, s, d).selection_manifest_hash == row(lora, s, d).selection_manifest_hash ;
++      report(dir) == Ok => |complete_cells| == 40 &&
++        forall c: sha256(bytes(row_file(c))) == manifest.row_sha256(c) && row(c).cell == c ;
++      DEFERRED: forall (s, d): row(setfit, s, d).selection_manifest_hash == row(lora, s, d).selection_manifest_hash ;
+       |cells(manifest)| == 0 => Err ; set(cells(manifest)) != expectation_set => Err
+     applies_to: all
+ 
+@@ -607,6 +792,12 @@ proof_obligations:
+       file at `candidate_ledger_path` must equal `candidate_ledger_sha256` and its line
+       count must equal `candidates_trained`, which must be exactly 1.
+ 
++      THE SETFIT HALF IS ACTIVE; THE LoRA HALF IS DEFERRED WITH `selection_safety_evidence.
++      lora_side` (2.0.0, D-19). No LoRA row exists, so the ledger half has never been
++      recomputed against real bytes and must not be reported as discharged evidence; it is
++      retained as the specification a restored arm must satisfy, and its only exerciser is a
++      deferred-scope negative in `falsification_tests`.
++
+       THE RESIDUAL IS PART OF THE OBLIGATION, not a caveat outside it: a producer that
+       controls both the ledger and the rows can still emit a mutually consistent forgery.
+       What this obligation establishes is that the claim is RECOMPUTABLE and APPEND-ONLY,
+@@ -632,6 +823,15 @@ proof_obligations:
+       `child_max_rss_vm_hwm` are declared MUTUALLY COMPARABLE; `sysinfo_sampled_<hz>` is a
+       SAMPLED LOWER BOUND, must record its interval, and is NOT comparable to either.
+       Resource metrics are never pooled across hosts (D-09).
++
++      SINCE 2.0.0 THE MECHANISM ASYMMETRY IS ALSO A PRESENTATION OBLIGATION, WITHIN A SINGLE
++      ROW. The active scope has no second method, so the only place the asymmetry can be seen
++      is one row's two peak figures — and on this phase's host they will be in different
++      mechanism CLASSES. The train peak and the inference peak therefore never share a column
++      and are never collapsed into one "peak memory" number; each prints its mechanism string
++      beside its value; and a `sysinfo_sampled_*` figure carries its lower-bound label
++      everywhere it is rendered, the per-shot summary included, not only in a methods
++      paragraph a reader may never reach.
+       Discharged by FALSIFY-CLAIMS-010.
+     formal: >
+       row.cold_measured_in_child_process == true &&
+@@ -658,10 +858,15 @@ falsification_tests:
+     prediction: >
+       `expectation_matches_the_contract_as_a_typed_set` deserializes the `include_str!`-ed
+       contract with serde_yaml into typed `Vec<String>` / `Vec<u32>` fields, builds the
+-      Cartesian product, and asserts SET equality AND cardinality equality (80) against
+-      `RunManifest::expectation()`. Two in-test MUTATED COPIES of the contract string — one
+-      with an EXTRA seed, one with a DUPLICATED seed — each make the assertion FAIL, proving
+-      the comparison rejects extras and duplicates rather than only detecting absence.
++      Cartesian product, and asserts SET equality AND cardinality equality (40, the ACTIVE
++      scope) against `RunManifest::expectation()`. THREE in-test MUTATED COPIES of the
++      contract string each make the assertion FAIL: one with an EXTRA seed, one with a
++      DUPLICATED seed, and — added at 2.0.0, because the narrowing made the method axis the
++      one that moved — one with an EXTRA METHOD restored to `expectation_set.methods`. The
++      first two prove the comparison rejects extras and duplicates rather than only detecting
++      absence; the third proves it would go red if the active scope were silently widened back
++      to two methods, which is the only direction this contract's own narrowing can be undone
++      in without anyone noticing.
+     test: cargo test -p aprender-train --lib --features setfit bench_row
+     test_harness: cargo test -p aprender-train --lib --features setfit bench_row
+     expected_output: 'test result: ok'
+@@ -741,10 +946,14 @@ falsification_tests:
+     rule: OBLIG-CLAIMS-DETERMINISTIC-ORDER — the key sequence is pinned, not incidental
+     prediction: >
+       An ordering test asserts the EXACT first five and last five cell keys of
+-      `RunManifest::expectation()`: `setfit/s8/seed13, setfit/s8/seed17, setfit/s8/seed23,
+-      setfit/s8/seed29, setfit/s8/seed31` and `lora/s64/seed37, lora/s64/seed41,
+-      lora/s64/seed43, lora/s64/seed47, lora/s64/seed53`. Iterating a hash-ordered map
+-      instead of the contract order changes those sequences and turns the test red.
++      `RunManifest::expectation()` under the ACTIVE scope: `setfit/s8/seed13,
++      setfit/s8/seed17, setfit/s8/seed23, setfit/s8/seed29, setfit/s8/seed31` and
++      `setfit/s64/seed37, setfit/s64/seed41, setfit/s64/seed43, setfit/s64/seed47,
++      setfit/s64/seed53`. Iterating a hash-ordered map instead of the contract order changes
++      those sequences and turns the test red. The tail moved at 2.0.0 from the `lora/s64/*`
++      keys to the `setfit/s64/*` ones; that is the narrowing showing up in a pinned sequence,
++      and a tail still reading `lora/...` after the narrowing would mean the derivation had
++      not followed the contract.
+     test: cargo test -p aprender-train --lib --features setfit bench_row
+     test_harness: cargo test -p aprender-train --lib --features setfit bench_row
+     expected_output: 'test result: ok'
+@@ -760,6 +969,19 @@ falsification_tests:
+       `pending`; a row whose bytes were edited so its digest no longer matches the manifest; a
+       row filed under one cell whose payload names another; and a (shots, seed) pair whose two
+       rows carry different `selection_manifest_hash` values. Each names the failing cell.
++
++      SCOPE DISCIPLINE AT 2.0.0 (CLAUDE.md Verification Discipline rule 4 — extending a
++      guard's SCOPE requires re-mutating in the new scope; the old proof does not transfer).
++      The first three shapes are RE-MUTATED under the ACTIVE 40-cell expectation and asserted
++      to refuse there with the SAME variant tags, in addition to the existing deferred-scope
++      cases. The fourth — the unpaired selection hash — has no active-scope form, because the
++      active scope contains no pair; it runs under the DEFERRED scope only, whose constructor
++      production code cannot reach. Two further ACTIVE-scope negatives cover the routes an
++      out-of-scope cell can take: a manifest DECLARING a second method's cell is refused by
++      the expectation-set equality check before any row byte is read, and a second method's
++      row placed in a declared SetFit slot is refused by the slot-agreement check. Both reuse
++      EXISTING variants; no new one is minted, because a variant reachable only from a
++      test-only constructor is a guard over a path production cannot take.
+     test: cargo test -p aprender-train --lib --features setfit bench_row
+     test_harness: cargo test -p aprender-train --lib --features setfit bench_row
+     expected_output: 'test result: ok'
+@@ -774,8 +996,11 @@ falsification_tests:
+     rule: OBLIG-CLAIMS-COMPLETENESS-FAIL-CLOSED — the two vacuity backstops fire first
+     prediction: >
+       An empty (zero-cell) manifest is a typed refusal, and a manifest whose expectation set is
+-      not exactly the 80 contract-derived cells is a typed refusal — BOTH before any row byte is
+-      read. The zero-cell case is asserted to be an ERROR, not an Ok over an empty aggregate.
++      not exactly the 40 contract-derived ACTIVE cells is a typed refusal — BOTH before any row
++      byte is read. The zero-cell case is asserted to be an ERROR, not an Ok over an empty
++      aggregate. The second backstop is also the door that refuses a DECLARED out-of-scope
++      cell, so the narrowing did not add a refusal path; it changed which set the existing
++      one compares against, which is why the negative is re-mutated at the new scope.
+     test: cargo test -p aprender-train --lib --features setfit bench_row
+     test_harness: cargo test -p aprender-train --lib --features setfit bench_row
+     expected_output: 'test result: ok'
+@@ -794,6 +1019,14 @@ falsification_tests:
+       `candidates_trained` says 1 is refused; and a LoRA row whose ledger digest does not match
+       `candidate_ledger_sha256` is refused. Each recomputes from the file rather than reading
+       the row field.
++
++      SINCE 2.0.0 THE THREE ARE SPLIT BY SCOPE. The SetFit lock-record negative is RE-MUTATED
++      under the ACTIVE 40-cell expectation and refuses there with the same variant tag. The
++      two LoRA ledger negatives are DEFERRED-SCOPE ONLY and are the forged-provenance shape:
++      a ledger carrying two candidate lines against a row claiming one, plus an edited lock
++      file. They remain runnable in a default test run and keep their variant tags; what they
++      do not have is an active-scope form, because production code cannot construct a LoRA
++      cell inside the active expectation set.
+     test: cargo test -p aprender-train --lib --features setfit bench_row
+     test_harness: cargo test -p aprender-train --lib --features setfit bench_row
+     expected_output: 'test result: ok'
+@@ -840,7 +1073,7 @@ kani_harnesses:
+       together with FALSIFY-CLAIMS-006 (the pinned key sequence). Those are concrete rather
+       than exhaustive over the bound, which is exactly the gap a real Kani run would close. If
+       either test is deleted or skipped, this harness has no backing at all.
+-    bound: 80
++    bound: 40
+     strategy: bounded_int
+     solver: cadical
+     harness: verify_expectation_is_the_unique_ordered_product
+@@ -849,7 +1082,8 @@ qa_gate:
+   id: F-CLAIMS-001
+   name: SetFit Benchmark Claims Gate
+   description: >
+-    The claims gate: a closed-form 80-cell expectation set, digest-verified rows and manifest,
++    The claims gate: a closed-form 40-cell ACTIVE expectation set (with the two-method 80-cell
++    scope retained as deferred), digest-verified rows and manifest,
+     method-tagged evidence that cannot be null-padded, cell identity that collides rather than
+     merges, fail-closed completeness with two vacuity backstops, selection safety recomputed
+     from committed bytes, contracted resource boundaries with mandatory mechanism strings, and
+@@ -872,6 +1106,16 @@ qa_gate:
+     because a single mutation does not turn all three gates red, and saying otherwise would be
+     the "labelled by intent rather than by measurement" error this repository keeps paying for.
+ 
++    THE THREE TRANSCRIPTS BELOW WERE MEASURED AT 1.0.0, AGAINST THE 80-CELL EXPECTATION SET,
++    AND ARE PRESERVED AS THE HISTORICAL RECORD RATHER THAN RESTATED AS IF THEY HAD BEEN RE-RUN
++    AT 2.0.0. Their SHAPE carries over — the same three gates, the same three mutations, the
++    same "each mutation against the gate it actually exercises" discipline — but the literal
++    counts in (1) are the 1.0.0 ones (80 -> 88 on an eleventh seed). The 2.0.0 re-measurement
++    at the active scope, including the added-method mutation the narrowing makes necessary,
++    is recorded in the plan 05-11 SUMMARY with its own rc values. Quoting a 1.0.0 transcript
++    as evidence about a 2.0.0 gate would be precisely the "labelled by intent rather than by
++    measurement" error the paragraph below already warns about.
++
+     (1) THE include_str! PIN. Add an eleventh seed to `equations.expectation_set.seeds`. The
+     typed parity test must turn RED. MEASURED (plan 05-05, status captured directly, never
+     through a pipe): `cargo test -p aprender-train --lib --features setfit bench_row` -> rc=101,

@@ -7,15 +7,18 @@
 use super::state::{TrainingSnapshot, TrainingState, TrainingStatus};
 use std::io;
 use std::path::Path;
+#[cfg(feature = "tui")]
 use std::time::Duration;
 
 /// Default TUI refresh interval in milliseconds
+#[cfg(feature = "tui")]
 const DEFAULT_REFRESH_MS: u64 = 500;
 
 /// Maximum number of loss values retained in the chart history
 const LOSS_HISTORY_MAX: usize = 200;
 
 /// TUI Monitor configuration
+#[cfg(feature = "tui")]
 #[derive(Debug, Clone)]
 pub struct TuiMonitorConfig {
     /// Refresh interval in milliseconds
@@ -30,6 +33,7 @@ pub struct TuiMonitorConfig {
     pub exit_on_complete: bool,
 }
 
+#[cfg(feature = "tui")]
 impl Default for TuiMonitorConfig {
     fn default() -> Self {
         Self {
@@ -47,11 +51,13 @@ impl Default for TuiMonitorConfig {
 /// Reads training state from the metric store and renders via presentar's
 /// TuiApp framework. Gets terminal resize, Ctrl+C, cursor management,
 /// and smart diffing for free from the sovereign stack.
+#[cfg(feature = "tui")]
 pub struct TuiMonitor {
     config: TuiMonitorConfig,
     state: TrainingState,
 }
 
+#[cfg(feature = "tui")]
 impl TuiMonitor {
     /// Create a new TUI monitor for an experiment
     pub fn new<P: AsRef<Path>>(experiment_dir: P, config: TuiMonitorConfig) -> Self {
@@ -125,6 +131,7 @@ mod tests {
         }
     }
 
+    #[cfg(feature = "tui")]
     #[test]
     fn test_tui_monitor_config_default() {
         let config = TuiMonitorConfig::default();
@@ -134,6 +141,7 @@ mod tests {
         assert!(!config.compact);
         assert!(config.exit_on_complete);
     }
+    #[cfg(feature = "tui")]
     #[test]
     fn test_tui_monitor_config_custom() {
         let config = TuiMonitorConfig {
@@ -150,6 +158,7 @@ mod tests {
         assert!(!config.exit_on_complete);
     }
 
+    #[cfg(feature = "tui")]
     #[test]
     fn test_tui_monitor_config_clone() {
         let config = TuiMonitorConfig::default();
@@ -159,6 +168,7 @@ mod tests {
         assert_eq!(config.compact, cloned.compact);
     }
 
+    #[cfg(feature = "tui")]
     #[test]
     fn test_tui_monitor_config_debug() {
         let config = TuiMonitorConfig::default();
@@ -167,6 +177,7 @@ mod tests {
         assert!(debug.contains("500"));
     }
 
+    #[cfg(feature = "tui")]
     #[test]
     fn test_default_refresh_constant() {
         assert_eq!(DEFAULT_REFRESH_MS, 500);

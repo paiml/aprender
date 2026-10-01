@@ -1,0 +1,43 @@
+{
+  "contract": "1.0.0",
+  "flavor": "core",
+  "milestone": "v1.0",
+  "phases": [
+    {
+      "number": "1",
+      "name": "Differentiable MiniLM Conformance",
+      "status": "complete"
+    },
+    {
+      "number": "2",
+      "name": "Deterministic Pair and Data Protocol",
+      "status": "complete"
+    },
+    {
+      "number": "3",
+      "name": "Faithful Two-Stage Trainer and Head",
+      "status": "complete"
+    },
+    {
+      "number": "4",
+      "name": "APR Artifact and Production Parity",
+      "status": "pending"
+    },
+    {
+      "number": "5",
+      "name": "Benchmark and Claims Gate",
+      "status": "in_progress"
+    },
+    {
+      "number": "6",
+      "name": "Native Time-Series Forecasting Stack",
+      "status": "in_progress"
+    }
+  ],
+  "next": {
+    "command": "/gsd:progress --next",
+    "label": "Advance to the next step",
+    "reason": "Phase 08 of 9 · executing"
+  },
+  "updated_at": "2026-09-29T21:46:00.541Z"
+}

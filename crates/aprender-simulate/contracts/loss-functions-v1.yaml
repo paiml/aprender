@@ -1,94 +1,234 @@
 metadata:
-  version: "1.0.0"
-  author: "Sovereign AI Stack"
-  description: "Loss function contract for simulation objective computation"
-  crate: "simular"
+  version: 1.0.0
+  created: '2026-02-19'
+  author: PAIML Engineering
+  description: Loss functions — differentiable objective functions for neural network training
   references:
-    - "Goodfellow, Bengio & Courville (2016) Deep Learning, Ch. 6.2"
-    - "Huber (1964) Robust Estimation of a Location Parameter"
-
+  - Bishop (2006) Pattern Recognition and Machine Learning
+  - Goodfellow, Bengio & Courville (2016) Deep Learning
 equations:
+  bce:
+    formula: BCE = -(1/n) Σ[yᵢ·log(ŷᵢ) + (1-yᵢ)·log(1-ŷᵢ)]
+    domain: y ∈ {0,1}ⁿ, ŷ ∈ (0,1)ⁿ, n ≥ 1
+    codomain: BCE ∈ [0, ∞)
+    invariants:
+    - BCE ≥ 0 (non-negativity from -log on (0,1))
+    - BCE = 0 iff ŷᵢ = yᵢ for all i (perfect prediction)
+    - BCE → ∞ as ŷ → 0 for y=1, or ŷ → 1 for y=0
+    preconditions:
+    - predicted.len() == target.len()
+    - predicted.len() > 0
+    lean_theorem: Theorems.Bce
+  nll:
+    formula: NLL = -(1/n) Σ log(p_{yᵢ}) where p = softmax(logits)
+    domain: logits ∈ ℝ^{n×C}, y ∈ {0..C-1}ⁿ
+    codomain: NLL ∈ [0, ∞)
+    invariants:
+    - NLL ≥ 0 (non-negativity from -log of probability)
+    - NLL = 0 iff predicted probability of true class = 1
+    - NLL ≥ -log(1/C) for uniform predictions
+    preconditions:
+    - predicted.len() == target.len()
+    - predicted.len() > 0
+    lean_theorem: Theorems.Nll
+  huber:
+    formula: L_δ(a) = ½a² if |a| ≤ δ, else δ(|a| - ½δ)
+    domain: a = y - ŷ ∈ ℝ, δ > 0
+    codomain: L_δ ∈ [0, ∞)
+    invariants:
+    - L_δ ≥ 0 (non-negativity)
+    - L_δ = 0 iff a = 0
+    - L_δ is differentiable everywhere (C¹ smooth)
+    - L_δ → ½a² as δ → ∞ (approaches MSE)
+    - L_δ → δ|a| as δ → 0 (approaches MAE)
+    preconditions:
+    - predicted.len() == target.len()
+    - predicted.len() > 0
+    lean_theorem: Theorems.Huber
+  smooth_l1:
+    formula: SL1(a) = ½a²/β if |a| < β, else |a| - ½β
+    domain: a = y - ŷ ∈ ℝ, β > 0
+    codomain: SL1 ∈ [0, ∞)
+    invariants:
+    - SL1 ≥ 0
+    - SL1 = 0 iff a = 0
+    - SL1 is C¹ smooth
+    preconditions:
+    - predicted.len() == target.len()
+    - predicted.len() > 0
+    lean_theorem: Theorems.Smooth_L1
+  l1_loss:
+    formula: L1 = (1/n) Σ|yᵢ - ŷᵢ|
+    domain: y, ŷ ∈ ℝⁿ, n ≥ 1
+    codomain: L1 ∈ [0, ∞)
+    invariants:
+    - L1 ≥ 0
+    - L1 = 0 iff ŷ = y
+    - L1(y, ŷ) = L1(ŷ, y) (symmetry)
+    - L1 = MAE (identical function)
+    - 'gradient: ∂L1/∂ŷ = sign(ŷ-y)/n (mean), sign(ŷ-y) (sum); sign(0)=0'
+    - 'autograd: loss.backward() yields get_grad(pred.id()) = Some (graph not severed)'
+    preconditions:
+    - predicted.len() == target.len()
+    - predicted.len() > 0
+    lean_theorem: Theorems.L1_Loss
   mse_loss:
-    formula: "L_mse(y, pred) = (1/n) * Sum_i (y_i - pred_i)^2"
-    domain: "y in R^n, pred in R^n, n >= 1"
+    formula: MSE = (1/n) Σ(yᵢ - ŷᵢ)²
+    domain: y, ŷ ∈ ℝⁿ, n ≥ 1
+    codomain: MSE ∈ [0, ∞)
     invariants:
-      - "L_mse >= 0"
-      - "L_mse = 0 iff y == pred"
-  huber_loss:
-    formula: "L_huber(a) = 0.5*a^2 if |a| <= delta, else delta*(|a| - 0.5*delta)"
-    domain: "a in R, delta > 0"
-    invariants:
-      - "L_huber >= 0"
-      - "L_huber is continuous and differentiable"
-      - "Quadratic for small errors, linear for large errors"
-  gradient_of_loss:
-    formula: "dL/dpred_i = (2/n) * (pred_i - y_i) for MSE"
-    domain: "y in R^n, pred in R^n"
-    invariants:
-      - "Gradient is zero at loss minimum"
-      - "Gradient direction points away from target"
-
+    - MSE ≥ 0
+    - MSE = 0 iff ŷ = y
+    - 'gradient: ∂MSE/∂ŷ = 2(ŷ-y)/n'
+    preconditions:
+    - predicted.len() == target.len()
+    - predicted.len() > 0
+    lean_theorem: Theorems.Mse_Loss
 proof_obligations:
-  - type: bound
-    property: "Loss non-negativity"
-    formal: "L(y, pred) >= 0 for all valid inputs"
-    applies_to: all
-  - type: invariant
-    property: "Zero loss at perfect prediction"
-    formal: "y == pred implies L(y, pred) == 0"
-    applies_to: all
-  - type: invariant
-    property: "Gradient zero at minimum"
-    formal: "y == pred implies dL/dpred == 0"
-    applies_to: all
-  - type: bound
-    property: "Huber loss bounded by MSE for small errors"
-    formal: "|a| <= delta implies L_huber(a) == 0.5*a^2"
-    applies_to: all
-
+- id: LF-BND-001
+  type: bound
+  property: All losses non-negative
+  formal: L(y, ŷ) ≥ 0 for all loss functions
+  applies_to: all
+- id: LF-EQ-002
+  type: equivalence
+  property: Zero loss at perfect prediction
+  formal: L(y, y) = 0 for all y
+  applies_to: all
+- id: LF-INV-003
+  type: invariant
+  property: BCE monotonicity
+  formal: BCE increases as predictions diverge from targets
+  applies_to: bce
+- id: LF-INV-004
+  type: invariant
+  property: Huber smoothness
+  formal: Huber loss is C¹ at transition point |a| = δ
+  applies_to: huber
+- id: LF-INV-005
+  type: invariant
+  property: L1 symmetry
+  formal: L1(y, ŷ) = L1(ŷ, y)
+  applies_to: l1_loss
+- id: LF-EQ-006
+  type: equivalence
+  property: F-L1LOSS-BACKWARD-GRAD-001 L1 backward propagates gradient
+  formal: 'after loss.backward(): get_grad(pred.id()) = Some, and equals sign(pred-target)/n
+    for mean reduction (sign(pred-target) for sum); sign(0)=0. abs() must register an
+    AbsBackward grad_fn so the autograd graph is not severed (PMAT-896).'
+  applies_to: l1_loss
+- id: LF-BND-007
+  type: bound
+  property: NLL lower bound
+  formal: NLL ≥ 0
+  applies_to: nll
+- id: LF-EQ-008
+  type: equivalence
+  property: OBLIG-BCE-POSWEIGHT-PYTORCH-PARITY BCEWithLogits pos_weight weights only the positive term
+  formal: 'BCEWithLogitsLoss::with_pos_weight(w).forward(logits, y) matches torch.nn.functional.binary_cross_entropy_with_logits(logits, y, pos_weight=w)
+    within 1e-5. PyTorch applies pos_weight ONLY to the positive (log σ(x)) term: log_weight = 1 + (w-1)·y;
+    loss = (1-y)·x + log_weight·(log(1+exp(-|x|)) + max(-x,0)). The previous whole-loss scaling base·(y·(w-1)+1)
+    coincides only for hard y ∈ {0,1}; it diverges for soft targets 0 < y < 1.'
+  applies_to: bce
 falsification_tests:
-  - id: FALSIFY-SIMLOSS-001
-    rule: "Loss non-negativity"
-    test: "test_anomaly_detector_loss_spike"
-    prediction: "verified"
-    if_fails: "Loss function returns negative value"
-  - id: FALSIFY-SIMLOSS-002
-    rule: "Zero at minimum"
-    test: "test_trajectory_best_val_loss"
-    prediction: "verified"
-    if_fails: "Nonzero loss for identical inputs"
-  - id: FALSIFY-SIMLOSS-003
-    rule: "Gradient zero at minimum"
-    test: "test_anomaly_detector_gradient_vanishing"
-    prediction: "verified"
-    if_fails: "Gradient nonzero when pred == target"
-  - id: FALSIFY-SIMLOSS-004
-    rule: "Huber quadratic regime"
-    test: "test_self_healing_loss_spike_auto_correct"
-    prediction: "verified"
-    if_fails: "Huber loss wrong in quadratic regime"
-
+- id: FALSIFY-LF-001
+  rule: Non-negativity
+  prediction: All loss values ≥ 0 for random inputs
+  test: proptest with random predictions and targets
+  if_fails: Sign error in loss formula
+- id: FALSIFY-LF-002
+  rule: Zero at perfect prediction
+  prediction: L(y, y) = 0 for all loss functions
+  test: proptest with identical prediction and target
+  if_fails: Floating-point accumulation error
+- id: FALSIFY-LF-003
+  rule: BCE non-negativity
+  prediction: BCE ≥ 0 for y ∈ {0,1}, ŷ ∈ (0.001, 0.999)
+  test: proptest with clamped predictions
+  if_fails: Log of value outside (0,1)
+- id: FALSIFY-LF-004
+  rule: Huber transition continuity
+  prediction: '|L_δ(δ+ε) - L_δ(δ-ε)| < 2ε for small ε'
+  test: proptest testing both sides of transition
+  if_fails: Discontinuity at Huber transition point
+- id: FALSIFY-LF-005
+  rule: L1 symmetry
+  prediction: L1(y, ŷ) = L1(ŷ, y) for random inputs
+  test: proptest comparing both argument orders
+  if_fails: Argument-order dependence
+- id: FALSIFY-LF-006
+  rule: NLL lower bound
+  prediction: NLL ≥ 0 for random logits and valid class indices
+  test: proptest with random logits and uniform class labels
+  if_fails: Softmax normalization error or log of non-positive value
+- id: F-L1LOSS-BACKWARD-GRAD-001
+  rule: L1 backward propagates gradient (PMAT-896)
+  prediction: 'L1Loss(mean).forward(pred,target).backward() => get_grad(pred.id()) = Some([-1/3,0,1/3]) for pred=[1,2,3], target=[2,2,2]'
+  test: cargo test -p aprender-core --lib test_l1_loss_gradient
+  if_fails: abs() severs autograd (no AbsBackward grad_fn) so L1Loss yields no input gradient and trains silently to zero
+- id: OBLIG-BCE-POSWEIGHT-PYTORCH-PARITY
+  rule: BCEWithLogits pos_weight weights only the positive term (PyTorch parity, PMAT-915)
+  prediction: 'BCEWithLogitsLoss::with_pos_weight(3.0).forward([0.5,-1.2,2.0,0.1], soft=[0.7,0.2,0.9,0.4]) mean == torch 1.0379231 within 1e-5'
+  test: cargo test -p aprender-core --lib falsify_lf_007_bce_pos_weight_pytorch_parity
+  if_fails: pos_weight scales the whole loss instead of only the positive log-sigmoid term, diverging from PyTorch for soft targets
 kani_harnesses:
-  - id: KANI-SIMLOSS-001
-    obligation: PO-SIMLOSS-001
-    property: "Loss non-negativity"
-    bound: 8
-    strategy: bounded_int
-    harness: verify_loss_non_negative
-  - id: KANI-SIMLOSS-002
-    obligation: PO-SIMLOSS-002
-    property: "Zero at minimum"
-    bound: 8
-    strategy: bounded_int
-    harness: verify_loss_zero_minimum
-
+- id: KANI-LF-001
+  obligation: '1'
+  bound: 4
+  strategy: stub_float
+- id: KANI-LF-002
+  obligation: '2'
+  bound: 4
+  strategy: stub_float
+- id: KANI-LOSS_F-003
+  obligation: All losses non-negative
+  property: All losses non-negative
+  bound: 8
+  strategy: exhaustive
+- id: KANI-LOSS_F-004
+  obligation: Zero loss at perfect prediction
+  property: Zero loss at perfect prediction
+  bound: 8
+  strategy: exhaustive
+- id: KANI-LOSS_F-005
+  obligation: BCE monotonicity
+  property: BCE monotonicity
+  bound: 8
+  strategy: exhaustive
+- id: KANI-LOSS_F-006
+  obligation: Huber smoothness
+  property: Huber smoothness
+  bound: 8
+  strategy: exhaustive
+- id: KANI-LOSS_F-007
+  obligation: L1 symmetry
+  property: L1 symmetry
+  bound: 8
+  strategy: exhaustive
+- id: KANI-LOSS_F-008
+  obligation: NLL lower bound
+  property: NLL lower bound
+  bound: 8
+  strategy: stub_float
+enforcement:
+  non_negativity:
+    description: All losses must be non-negative
+    check: contract_tests::FALSIFY-LF-001
+    severity: ERROR
+  zero_at_perfect:
+    description: Loss = 0 at perfect prediction
+    check: contract_tests::FALSIFY-LF-002
+    severity: ERROR
 qa_gate:
-  id: QA-SIMLOSS
-  name: "loss functions contract"
-  min_coverage: 0.90
-  max_complexity: 20
-  required_tests:
-    - test_anomaly_detector_loss_spike
-    - test_trajectory_best_val_loss
-    - test_gradient_zero_at_minimum
-    - test_huber_quadratic_small_error
+  id: F-LF-001
+  name: Loss Functions Contract
+  description: Loss function correctness quality gate
+  checks:
+  - non_negativity
+  - zero_at_perfect
+  - bce_non_negativity
+  - huber_continuity
+  - l1_symmetry
+  - nll_lower_bound
+  pass_criteria: All 8 falsification tests pass
+  falsification: Remove log-sum-exp trick from BCE

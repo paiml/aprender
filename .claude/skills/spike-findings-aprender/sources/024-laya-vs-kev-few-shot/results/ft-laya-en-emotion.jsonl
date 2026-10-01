@@ -1,0 +1,6 @@
+{"variant": "ft-r1", "shots": 64, "seed": 13, "epochs": 4, "steps": 192, "train_s": 191.6, "ce_first": 2.072, "ce_last": 0.0006, "acc": 0.752, "macro_f1": 0.712000012165697, "ece": 0.18743990000000005, "nll": 1.9105171217806673}
+{"variant": "ft-r1", "shots": 64, "seed": 17, "epochs": 4, "steps": 192, "train_s": 189.9, "ce_first": 2.2226, "ce_last": 0.0003, "acc": 0.747, "macro_f1": 0.7094898845050516, "ece": 0.19520530000000014, "nll": 1.6407191210777097}
+{"variant": "ft-r1", "shots": 64, "seed": 23, "epochs": 4, "steps": 192, "train_s": 188.7, "ce_first": 1.0706, "ce_last": 0.0004, "acc": 0.703, "macro_f1": 0.6690141710986257, "ece": 0.23708559999999995, "nll": 2.4657152608825728}
+{"variant": "ft-r2", "shots": 64, "seed": 13, "epochs": 12, "steps": 576, "train_s": 567.7, "ce_first": 2.072, "ce_last": 0.0, "acc": 0.701, "macro_f1": 0.6653617211422764, "ece": 0.26638779999999995, "nll": 4.198962309102238}
+{"variant": "ft-r2", "shots": 64, "seed": 17, "epochs": 12, "steps": 576, "train_s": 571.2, "ce_first": 2.2226, "ce_last": 0.0, "acc": 0.724, "macro_f1": 0.6875693894823166, "ece": 0.2457676, "nll": 3.6521460430082464}
+{"variant": "ft-r2", "shots": 64, "seed": 23, "epochs": 12, "steps": 576, "train_s": 568.2, "ce_first": 1.0706, "ce_last": 0.0, "acc": 0.692, "macro_f1": 0.6634210142268837, "ece": 0.2747106999999999, "nll": 4.562846109641059}

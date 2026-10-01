@@ -31,7 +31,13 @@
 //! - Vaswani et al. (2017). "Attention Is All You Need"
 
 pub mod bert;
+// ModernBERT (D-13) needs rayon; gating on the DEFAULT `parallel` feature keeps its
+// tests in CI's `--workspace --lib` run and keeps `--no-default-features` building.
+#[cfg(feature = "parallel")]
+pub mod modernbert;
 pub mod qwen2;
 
 pub use bert::{BertConfig, BertEncoder, CrossEncoder};
+#[cfg(feature = "parallel")]
+pub use modernbert::{ModernBertConfig, ModernBertEncoder};
 pub use qwen2::Qwen2Model;

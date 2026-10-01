@@ -80,40 +80,13 @@ AVX2 SIMD (4 f64 values at once):
 
 ## Run the Example
 
-```bash
-cargo run --example simd_visualization --release
-```
-
-**Example output:**
-```text
-SIMD-Accelerated Visualization Demo
-====================================
-
-Buffer filled with 1000 simulated latency values
-
-SIMD-Accelerated Statistics:
------------------------------
-  Sum:    99875.32 (1.234µs)
-  Avg:    99.88 (1.456µs)
-  Min:    20.12
-  Max:    179.88
-  Mean:   99.88
-  Stddev: 35.67 (2.345µs)
-  Stats:  (890ns for min/max/mean combined)
-
-SIMD-Accelerated Sparkline:
----------------------------
-  ▃▅▇█▇▆▄▂▁▂▄▆▇█▇▅▃▁▂▃▅▇█▇▆▄▂▁▂▄▆▇█▇▅▃▁▂▃▅▇█▇▆▄▂▁▂▄
-  (Generated in 234ns)
-
-Performance Scaling:
---------------------
-  Size   100: 0.12 us/op (1000 iterations)
-  Size  1000: 0.45 us/op (1000 iterations)
-  Size 10000: 3.21 us/op (1000 iterations)
-
-SIMD acceleration powered by trueno-viz monitor::simd::kernels
-```
+> **Removed.** The `simd_visualization` example and the `visualization_simd`
+> benchmark were deleted because the `visualize` module they demonstrated
+> (`ring_buffer`, `theme`) was itself removed in Sprint 52-57 as ratatui-only.
+> Both targets had not compiled since then — invisible because CI's
+> `workspace-test` does not build examples or benches. The sample output and
+> benchmark figures below are retained as a record of what the module did;
+> they are not reproducible from this tree.
 
 ## Benchmark Results
 

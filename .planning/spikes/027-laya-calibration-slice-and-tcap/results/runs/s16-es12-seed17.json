@@ -1,0 +1,104 @@
+{
+ "EVAL_ORACLE": {
+  "best_ece_T_le_10": 0.17125057631677365,
+  "best_ece_T_le_5": 0.3190112329391396,
+  "ece_at_t_min_ece": 0.05827196909802569,
+  "ece_at_t_min_nll": 0.08697201980943,
+  "note": "reads eval labels: a diagnostic of the cap, never a selection rule",
+  "t_min_ece": 23.13062648473144,
+  "t_min_nll": 19.41073285799688
+ },
+ "best_epoch": 4,
+ "calib_acc": 0.6666666666666666,
+ "calib_nll_at_t5": 0.5288569422150223,
+ "calib_slice_size": 12,
+ "ce_last": 0.0,
+ "check_prod_ece_post": 0.34570421885166847,
+ "check_prod_t_applied": 4.170156612640223,
+ "clamp_hit_10": false,
+ "clamp_hit_5": false,
+ "device_used": "mps:0",
+ "ece_curve": {
+  "1.0": 0.43917909106598835,
+  "1.76": 0.4164318345987303,
+  "10.0": 0.17072982517859625,
+  "15.0": 0.10045394159337591,
+  "2.0": 0.4151992934264876,
+  "20.0": 0.08338362966612602,
+  "3.0": 0.3845604909275826,
+  "30.0": 0.0862646454026584,
+  "5.0": 0.31901123293913947,
+  "7.5": 0.23606422381393094
+ },
+ "ece_post_10": 0.3457042135301957,
+ "ece_post_5": 0.3457042135301957,
+ "ece_post_unclamped": 0.3457042135301957,
+ "ece_pre": 0.4164277560462134,
+ "epochs_max": 12,
+ "epochs_run": 7,
+ "es_trace": [
+  {
+   "epoch": 1,
+   "monitor": 0.7702302475806246,
+   "t_star": 1.2605606392155562
+  },
+  {
+   "epoch": 2,
+   "monitor": 0.6940023051894698,
+   "t_star": 1.362165104361219
+  },
+  {
+   "epoch": 3,
+   "monitor": 0.5376722977703201,
+   "t_star": 1.9155540650560379
+  },
+  {
+   "epoch": 4,
+   "monitor": 0.5296091156792498,
+   "t_star": 4.184699260659018
+  },
+  {
+   "epoch": 5,
+   "monitor": 0.9372502033703642,
+   "t_star": 5.0
+  },
+  {
+   "epoch": 6,
+   "monitor": 1.1123798875608377,
+   "t_star": 5.0
+  },
+  {
+   "epoch": 7,
+   "monitor": 1.1459603290010854,
+   "t_star": 5.0
+  }
+ ],
+ "eval_acc": 0.525,
+ "fit_rows": 36,
+ "ft_f_avg": 0.5085362079636889,
+ "ft_macro_f1": 0.5044376724770457,
+ "gate_report_pass_at_contract_T": false,
+ "margin": 0.16422036411622737,
+ "margin_ok": true,
+ "monitor_tmax": 5.0,
+ "nll_eval_10": 1.6638416651693584,
+ "nll_eval_5": 1.6638416651693584,
+ "pass_10": false,
+ "pass_5": false,
+ "pass_unclamped": false,
+ "recipe": "es12",
+ "recipe_id": "93198a1b540d9f901f53794476414fe460d95edf1df4ba4dd50cd2f60399fdf3",
+ "run_dir": "models/decide/spike-027/s16-es12-seed17",
+ "seed": 17,
+ "size": "s16",
+ "split_seed": 13,
+ "stop_reason": "patience",
+ "stopping": "early_stopping",
+ "t_fitted_10": 4.170156612640223,
+ "t_fitted_5": 4.170156612640223,
+ "t_fitted_unclamped": 4.170156612640223,
+ "t_pre": 1.7601518630981445,
+ "train_seconds": 41.1,
+ "wall_seconds": 67.0,
+ "zs_macro_f1": 0.34021730836081837
+}

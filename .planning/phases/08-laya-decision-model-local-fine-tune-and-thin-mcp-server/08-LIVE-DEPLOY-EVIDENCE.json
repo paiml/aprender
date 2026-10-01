@@ -1,0 +1,565 @@
+{
+  "outcome": "deployed-passed",
+  "decided_by": "human",
+  "decided_by_who": "the user (project owner), answering the 08-17 Task 1 blocking-human go/no-go",
+  "decided_on": "2026-09-27",
+  "option": "deploy-auth-off-accept-risk",
+  "auth": {
+    "enabled": false,
+    "provider": "none",
+    "mechanism": "[auth] enabled = false from `just laya-deploy-config <apr> off`, and `--no-oauth` on the cargo pmcp deploy command line; pmcp.run reported oauthEnabled=false and 'No authentication required'",
+    "risk_acceptance": "The user explicitly accepts the cost-amplification risk of an open function (RESEARCH Security Domain V2: any caller can buy a cold start and seconds of multi-vCPU compute). Matches the live chronos precedent, which also ships auth off."
+  },
+  "memory_decision": {
+    "memory_mb": 3008,
+    "why": "the account is capped at 3 GB; AWS Support has not approved more. 10,240 MB (the plan's original setting) remains the target tier",
+    "contract_amendment": "decide-tool-boundary-v1 2.0.0 (commit 968d73e99): lambda_memory_mb 3008, classify_max_total_tokens 120, classify_max_texts 2, cold_start_budget_ms 17000, probe_budget_ms 3900, tier_ms_per_token_at_512 40; margin_ms 4000 and api_gateway_timeout_ms 30000 unchanged. Committed before any AWS call."
+  },
+  "server": "aprender-mcp-decide",
+  "endpoint": "https://aprender-mcp-decide.us-east.true-mcp.com/mcp",
+  "s3_key": "decide/aprender-mcp-decide/24a44d7e050166c9b64e2716f2bcb3ce91747f7a3b927d03d6eeae5f89b6275a.apr",
+  "s3_object_bytes": 846196868,
+  "artifact_sha256": "24a44d7e050166c9b64e2716f2bcb3ce91747f7a3b927d03d6eeae5f89b6275a",
+  "gate_run_evidence": ".planning/phases/08-laya-decision-model-local-fine-tune-and-thin-mcp-server/08-GATE-RUN-EVIDENCE.json",
+  "memory_mb": 3008,
+  "function_configuration": {
+    "memory_size_mb": 3008,
+    "timeout_s": 30,
+    "architecture": "arm64",
+    "runtime": "provided.al2023",
+    "ephemeral_storage_mb": 512,
+    "sha256_pin_equals_artifact": true,
+    "log_group": "/aws/lambda/aprender-mcp-decide"
+  },
+  "cargo_pmcp_version": "0.24.3",
+  "resolver_proof": "models/decide/resolver-proof.txt (gitignored; crates/aprender-mcp-decide-lambda, cargo-pmcp 0.24.3, sdk e0561f8c9086)",
+  "readiness": {
+    "measured_on": "2026-09-27, read-only, before the first write",
+    "A10": {
+      "status": "confirmed",
+      "fact": "profile ze-kasher-dev resolves (an IAM user principal; the account id was shown in the session only and is not recorded here), and pmcp.run functions are visible in it (228 functions, e.g. chronos-forecaster, pmcp-server). cargo pmcp resolves the shared `crates` root to target `dev` = profile ze-kasher-dev, us-east-1"
+    },
+    "A2": {
+      "status": "3008 confirmed; 10240 not available",
+      "fact": "the largest MemorySize of any existing function is 3008 (2 functions); get-account-settings reports no memory ceiling field (AccountLimit: code sizes and ConcurrentExecutions 1000 only). The deploy created aprender-mcp-decide at MemorySize 3008 and it reads back Active / Successful: a 3,008 MB function is accepted"
+    },
+    "decide_function_absent": {
+      "status": "confirmed",
+      "fact": "no function whose name contains decide or laya existed before the deploy"
+    }
+  },
+  "precondition_gates": {
+    "commit": "968d73e99 (the tier amendment); the deploy itself ran on b30f437da, which changes only justfile's laya-deploy",
+    "make_contract_audit_phase8": 0,
+    "strict_binding_guard": "VACUOUS as-is (D-ITEM-08-01-A); lifted copy rc 0: Resolved 684 test references, only chronos-bolt-parity-v1 (9) and setfit-encoder-conformance-v1 (8) dangle",
+    "cargo_test_decide_three_crates_lib": 0,
+    "laya_deploy_selftest": "0 (DEPLOY SELFTEST OK, AWS CALLS: 0), re-run on b30f437da also 0",
+    "laya_verify": "0, deploy_eligible true, sha256 24a44d7e050166c9b64e2716f2bcb3ce91747f7a3b927d03d6eeae5f89b6275a",
+    "pv_validate_decide_tool_boundary": "0 errors; pv diff suggested major, applied (2.0.0)"
+  },
+  "sequence": [
+    {
+      "step": "just laya-weights-bucket dev ze-kasher-dev",
+      "rc": 0,
+      "at": "2026-09-27T20:57:33Z",
+      "result": "bucket created: private (all public access blocked), SSE-S3, tagged"
+    },
+    {
+      "step": "just laya-upload <apr> <run> <data> <base> aprender-mcp-decide dev ze-kasher-dev",
+      "rc": 0,
+      "result": "laya-verify accepted first; uploaded 846196868 bytes to the content-addressed key, head-object size checked"
+    },
+    {
+      "step": "just laya-deploy-config <apr> off aprender-mcp-decide dev ze-kasher-dev",
+      "rc": 0,
+      "result": "memory_mb 3008, timeout 30, auth enabled false, provider none"
+    },
+    {
+      "step": "just laya-deploy <apr> <run> <data> <base> aprender-mcp-decide dev ze-kasher-dev",
+      "rc": 1,
+      "at": "2026-09-27T21:05:30Z..21:12:41Z",
+      "result": "eligibility ok; resolver proof ok; cargo pmcp deploy --regenerate-stack --no-post-deploy-test --no-oauth rc 0; compile log ok; grant applied; GET health failed with HTTP 405; contained"
+    },
+    {
+      "step": "just laya-deploy <apr> <run> <data> <base> aprender-mcp-decide dev ze-kasher-dev (resume attempt 2, after the pmcp.run login)",
+      "rc": 1,
+      "at": "2026-09-27T22:10:50Z..22:17:41Z",
+      "result": "eligibility ok; deploy rc 0; compile log ok; grant applied; edge /health serverId ok; identity probe refused by the edge (503 -32004 'Server is in error state', set by pmcp.run's pre-grant post-deploy call); contained"
+    }
+  ],
+  "compile_log_identity": {
+    "ok": true,
+    "fact": "exactly one `Compiling aprender-mcp-decide-lambda` line and no other `*-lambda` package in models/decide/deploy-aprender-mcp-decide.log"
+  },
+  "health_body_ok": false,
+  "identity_matches": true,
+  "labels": [
+    "none",
+    "against",
+    "favor"
+  ],
+  "live_assumptions": {
+    "function_name_equals_server_id": "confirmed (laya-grant and get-function found aprender-mcp-decide)",
+    "deployment_toml_endpoint": "confirmed (models/decide/deploy-aprender-mcp-decide.state/deployment.toml carries [deployment] endpoint)",
+    "get_on_endpoint_reaches_bootstrap_health": "REFUTED: the edge answers GET /mcp with 405 and /health with platform JSON; no GET reaches the bootstrap",
+    "compile_lines_in_redirected_log": "confirmed",
+    "logging_config_names_log_group": "confirmed (/aws/lambda/aprender-mcp-decide)"
+  },
+  "shared_root_restored": "RESTORED crates byte-identical (state sha256 7c6f25eb46e83347d66e32a9e0cfae39c5556c58383dab2c109b3c061773aa03); git status --porcelain crates/.pmcp crates/deploy empty",
+  "resume": {
+    "decided_by": "human",
+    "decided_on": "2026-09-27",
+    "decision": "option 1: replace the GET health body with the edge /health serverId check; the identity probe carries package identity. Lifting the containment approved explicitly",
+    "recipe_change_commit": "3115c690e (committed before any AWS write of the resume; laya-deploy-selftest: DEPLOY SELFTEST OK, AWS CALLS: 0)",
+    "edge_health_now": "GET https://aprender-mcp-decide.us-east.true-mcp.com/health -> 200 {\"status\":\"healthy\",\"serverId\":\"aprender-mcp-decide\",\"serverName\":\"aprender-mcp-decide\",\"hasDeployment\":true} (2026-09-27T21:59Z)",
+    "containment_lifted": {
+      "at": "2026-09-27T21:54:40Z",
+      "by": "the profile's own IAM user, before this continuation started (CloudTrail DeleteFunctionConcurrency20171031 on aprender-mcp-decide); the continuation read it back rather than re-running it",
+      "reserved_concurrency_now": "unset (get-function-concurrency returns none)",
+      "grant_now": "absent (list-role-policies: pmcp-declared, PmcpCompositionPolicy only), so any invocation fails the S3 load fast; no invocation logged between the lift and 22:08Z"
+    },
+    "redeploy_attempt": {
+      "at": "2026-09-27T22:01:33Z..22:06:03Z",
+      "rc": 1,
+      "reached": "eligibility ok (laya-verify, sha256 H); compile ok (aprender-mcp-decide-lambda only); CloudFormation rendered with MemorySize 3008",
+      "stopped_at": "cargo pmcp deploy: 'Failed to get upload URLs' -- pmcp.run GraphQL UnauthorizedException 'Valid authorization header not provided.' Nothing was uploaded and no AWS resource changed; the grant, health and identity steps never ran",
+      "confirm": "a read-only `cargo pmcp deploy outputs` got the same UnauthorizedException, so the cached pmcp.run login no longer refreshes on its own (it did on the first run)",
+      "shared_root_restored": "RESTORED crates byte-identical (state sha256 7c6f25eb46e83347d66e32a9e0cfae39c5556c58383dab2c109b3c061773aa03) on both calls"
+    },
+    "blocked_on": "a human decision (blocking-human): how to get the weights grant in place BEFORE pmcp.run's post-deploy call (see the SUMMARY checkpoint options), plus approval to lift the containment again",
+    "auth_gate_cleared": "the user ran `cargo pmcp deploy login --target-type pmcp-run` at about 22:10Z (token valid to 23:10:14Z); active target dev = profile ze-kasher-dev, us-east-1",
+    "redeploy_attempt_2": {
+      "at": "2026-09-27T22:10:50Z..22:17:41Z",
+      "command": "just laya-deploy models/decide/laya-stance-64.apr models/decide/laya-stance-64 data/decide/tweet-stance-64 <base> aprender-mcp-decide dev ze-kasher-dev",
+      "rc": 1,
+      "reached": [
+        "eligibility ok: laya-verify accepted the artifact, sha256 H",
+        "cargo pmcp deploy --regenerate-stack --no-post-deploy-test --no-oauth rc 0: 'Deployment completed successfully', deployment_id dep_1790547363088_a3d2572f, oauth_enabled false; function LastModified 22:16:34Z, MemorySize 3008, arm64, Active/Successful",
+        "compile log identity ok (the recipe's check passed: aprender-mcp-decide-lambda and no other *-lambda package)",
+        "laya-grant applied the decide-weights policy on the execution role, then the 20 s IAM propagation wait",
+        "edge health ok: GET https://aprender-mcp-decide.us-east.true-mcp.com/health -> serverId aprender-mcp-decide (the 3115c690e check, first live pass)"
+      ],
+      "refusal": "IDENTITY FAILURE: the identity probe failed (log: models/decide/deploy-probe-aprender-mcp-decide.log) -- containing (reserved concurrency 0, grant removed)",
+      "probe_error": "probe_id=probe-18d94d6c898037b8-125d1: initialize: HTTP 503: {\"jsonrpc\":\"2.0\",\"error\":{\"code\":-32004,\"message\":\"Server is in error state\"},\"id\":null}",
+      "diagnosis": {
+        "what_failed": "the pmcp.run EDGE refused the probe's first POST; the request never reached the function, so this is not an identity mismatch, an OOM or a probe-replay refusal -- no model load has happened on Lambda yet",
+        "evidence": [
+          "CloudWatch (/aws/lambda/aprender-mcp-decide, 22:14Z onward) holds exactly ONE invocation: 22:16:47Z, 13 s after the function update and BEFORE laya-grant. It is pmcp.run's own post-deploy call (the recipe passes --no-post-deploy-test). The load failed at the S3 object-length lookup after 5 attempts (no policy yet): 'bootstrap: decide.load failed probe_id=none'. REPORT: durationMs 170.883, maxMemoryUsedMB 37, initDurationMs 66.656, memorySizeMB 3008",
+          "no invocation for the probe's initialize: the edge answered 503 -32004 'Server is in error state' itself",
+          "the state is sticky: one diagnostic POST initialize at 22:18:34Z (function already contained) got the same 503 -32004 body, with no invocation",
+          "the edge /health still returns 200 {status healthy, serverId aprender-mcp-decide, hasDeployment true} at 22:18:08Z: /health does not reflect the MCP route's error state"
+        ],
+        "root_cause": "D-ITEM-08-17-B, now proven decisive: pmcp.run calls the function once right after every deploy, before any out-of-band grant can exist, records the failed model load as the server's state, and then refuses every MCP POST at the edge. The grant-after-deploy order in laya-deploy can therefore never reach the identity probe on pmcp.run",
+        "execution_role": "the redeploy kept the SAME execution role name as the 21:12Z deploy (read from both deploys' grant output), so a grant applied BEFORE `cargo pmcp deploy` would exist when the platform's post-deploy call runs (untested)"
+      },
+      "containment": {
+        "reserved_concurrent_executions": 0,
+        "verified_at": "2026-09-27T22:18:08Z (get-function-concurrency read 0; list-role-policies: pmcp-declared, PmcpCompositionPolicy only -- the decide-weights policy is removed)"
+      },
+      "shared_root_restored": "RESTORED crates byte-identical (state sha256 7c6f25eb46e83347d66e32a9e0cfae39c5556c58383dab2c109b3c061773aa03, exit 0); git status --porcelain crates/.pmcp crates/deploy empty",
+      "not_run": "the warm identity classify, Task 3 (just laya-deploy-verify ... 2) and the admin-UI call: each needs a server the edge will route to. FALSIFY-DECIDE-TOOL-009 stays LIVE-PENDING; no cold sample, Max Memory Used under load, or probe-replay evidence exists yet",
+      "teardown_commands": {
+        "note": "printed by laya-teardown and run by NONE of this plan's steps; the bucket name carries the account id and is written here as <weights-bucket>",
+        "remove_deployment": "just _laya-crates-root-swap crates crates/aprender-mcp-decide-lambda/.pmcp/deploy.toml models/decide/destroy-aprender-mcp-decide.state cargo pmcp deploy destroy --manifest-path crates",
+        "remove_weights": "aws s3 rm --profile ze-kasher-dev --recursive s3://<weights-bucket>/decide/aprender-mcp-decide/",
+        "resume_serving_instead": "aws lambda delete-function-concurrency --profile ze-kasher-dev --function-name aprender-mcp-decide"
+      }
+    },
+    "option1": {
+      "decided_by": "human",
+      "decided_on": "2026-09-27",
+      "decision": "option 1: declare the S3 read in the deploy config's [iam] so it is part of the stack; lift containment; redeploy; identity; cold samples",
+      "verified_from_source": "cargo-pmcp 0.24.3 at the resolver-proof sdk commit e0561f8c9086 (and the working tree read read-only): deploy_to_pmcp_run runs validate_and_regenerate_stack_ts (fail-closed IAM validation, stack.ts rewritten from [iam] under --regenerate-stack) before any network call; the renderer appends [[iam.statements]] to the execution role's default AWS::IAM::Policy (PolicyName pmcp-declared) and the Lambda function DependsOn that policy and the role, so the grant exists before the function's first invocation. The installed binary carries the same strings ('IAM validation failed', 'Operator-declared IAM')",
+      "recipe_commits": [
+        "52a12d777 (stack-declared [[iam.statements]], read-only laya-grant, teardown leaves the stack policy, selftest IAM/GRANT tables)",
+        "743eb02ed (bounded retry of the edge's transient 503 error-state refusal only)"
+      ],
+      "iam_statement": {
+        "effect": "Allow",
+        "actions": [
+          "s3:GetObject"
+        ],
+        "resources": [
+          "arn:aws:s3:::<weights-bucket>/decide/aprender-mcp-decide/*"
+        ]
+      },
+      "selftest": "just laya-deploy-selftest: DEPLOY SELFTEST OK, AWS CALLS: 0 (IAM config accept as-generated + literal; refuse s3-star, list-too, bucket-wide, star-resource, other-server, two-statements, bucket-sugar, no-iam; laya-deploy refuses a broadened config; GRANT accept stack-declared, refuse absent/no-policies/s3-star/bucket-wide/legacy-still-on/not-json; wiring checks)",
+      "containment_lifted": "aws lambda delete-function-concurrency at 22:48Z (before the redeploy) and again at 22:56:22Z",
+      "redeploy": {
+        "at": "2026-09-27T22:48:35Z..22:55:28Z",
+        "deployment_id": "dep_<id>_ccf8a817",
+        "synth_path": "pmcp-cfn-renderer (not legacy cdk)",
+        "grant_check": "grant ok: policy pmcp-declared (stack-declared) allows s3:GetObject on arn:aws:s3:::<weights-bucket>/decide/aprender-mcp-decide/* and nothing broader; no legacy out-of-band policy on the role",
+        "edge_health": "serverId aprender-mcp-decide",
+        "rc": 1,
+        "refusal": "the identity probe's initialize got HTTP 503 -32004 'Server is in error state' at ~22:55:25Z, AFTER the platform's post-deploy invocations had succeeded; the recipe contained (reserved concurrency 0)"
+      },
+      "edge_error_state_was_transient": {
+        "evidence": [
+          "22:56:09Z: one read-only POST initialize while contained returned HTTP 500 {\"message\":\"Internal Server Error\"} in 2.6 s -- a forwarded, throttled invocation, NOT the edge's 503 error state",
+          "22:56:22Z: containment lifted; the identity probe (no redeploy) passed at 22:56:52Z"
+        ],
+        "meaning": "unlike attempt 2 (failed load -> sticky 503 for >= 8 minutes), a successful post-deploy load leaves the edge refusing for under a minute. Fixed in the recipe by 743eb02ed (bounded retry of exactly that refusal)"
+      },
+      "identity_through_edge": {
+        "at": "2026-09-27T22:56:52Z",
+        "probe_id": "probe-18d94f907c392e90-ae08",
+        "one_tool_named_classify": true,
+        "description_has_labels_in_order": true,
+        "identity_matches": true,
+        "artifact_sha256": "24a44d7e050166c9b64e2716f2bcb3ce91747f7a3b927d03d6eeae5f89b6275a",
+        "labels": [
+          "none",
+          "against",
+          "favor"
+        ],
+        "tokens_total": 65,
+        "elapsed_ms": [
+          1648,
+          177,
+          1919
+        ],
+        "load_header": "warm",
+        "within_3gb_budget": "1 text, 65 built tokens (<= 2 texts, <= 120 tokens)"
+      },
+      "config_bump_reinit": "each laya-deploy-verify sample bumped DECIDE_COLD_BUMP via update-function-configuration (LastUpdateStatus Successful); every re-initialised environment loaded from S3 under the stack policy and answered through the edge -- nothing broke",
+      "final_state": "RUNNING (no reserved concurrency) for the user's pmcp.run admin UI; the DECIDE_COLD_BUMP env drift is reset by the next laya-deploy"
+    }
+  },
+  "history_deploy_refused": {
+    "refusal": "IDENTITY FAILURE: GET https://aprender-mcp-decide.us-east.true-mcp.com/mcp failed -- containing (reserved concurrency 0, grant removed); curl: (56) The requested URL returned error: 405",
+    "refusal_diagnosis": {
+      "what_failed": "the recipe's health-body check, not the served model: the GET never reached the function",
+      "evidence": [
+        "the bootstrap answers EVERY GET with 200 and a body naming its package, so a 405 cannot come from it",
+        "the pmcp.run edge answers GET /mcp itself: {\"jsonrpc\":\"2.0\",\"error\":{\"code\":-32600,\"message\":\"SSE streams are not offered at this endpoint. Use POST /mcp.\"},\"id\":null} with 405, identically for the live chronos-forecaster endpoint",
+        "the edge's separate /health URL (printed by cargo pmcp) is also answered by the platform, not the bootstrap: chronos-forecaster /health returns 200 {\"status\":\"healthy\",\"serverId\":\"chronos-forecaster\",\"serverName\":\"chronos-forecaster\",\"hasDeployment\":true}, with no package field",
+        "CloudWatch shows one invocation only (21:12:10Z), a POST made by pmcp.run itself right after the deploy and before the grant; the GET health request produced no invocation"
+      ],
+      "consequence": "the package-naming health-body check is unrealizable through the pmcp.run edge on either path; the live identity probe (a POST tools/call returning artifact_sha256 == H) and the compile log remain realizable"
+    },
+    "identity_not_reached": "the live identity probe runs after the health check and never ran",
+    "containment": {
+      "reserved_concurrent_executions": 0,
+      "verified": "aws lambda get-function-concurrency read 0 after the recipe's own check (21:12Z run) and again at 22:18:08Z (resume attempt 2)",
+      "grant_removed": "the inline decide-weights policy (env dev) is absent from the execution role (list-role-policies: pmcp-declared, PmcpCompositionPolicy only)",
+      "left_in_place_for_the_human": "the pmcp.run deployment, the function and the S3 object; laya-teardown prints destroy / s3 rm / resume commands and runs none of them"
+    },
+    "pre_grant_platform_invocation": {
+      "at": "2026-09-27T21:12:10Z",
+      "fact": "pmcp.run invoked the function once right after the deploy, before laya-grant ran; the load failed at the S3 object-length lookup (5 attempts; the policy did not exist yet) and LoadOnce re-armed. Lambda REPORT: durationMs 159, maxMemoryUsedMB 37, initDurationMs 67, memorySizeMB 3008",
+      "implication": "whatever the platform learns from that call (schema discovery or health) saw a load failure; a redeploy re-triggers it before any grant"
+    },
+    "cold_samples_status": "not taken: Task 3 runs only after an identity-ok deploy (plan 08-17); accepted_region_cold stays LIVE-PENDING",
+    "resume_requires_human": [
+      "choose how the S3 read exists before pmcp.run's post-deploy call (SUMMARY checkpoint: pre-grant in laya-deploy, [iam] in the deploy config, or a model-free initialize/tools/list in the bootstrap), or stop at deploy-refused",
+      "approve lifting the containment again: aws lambda delete-function-concurrency --profile ze-kasher-dev --function-name aprender-mcp-decide",
+      "then re-run just laya-deploy (needs a live pmcp.run login), the warm identity classify and Task 3 (just laya-deploy-verify ... 2)"
+    ],
+    "outcome_then": "deploy-refused"
+  },
+  "cold_samples": [
+    {
+      "shape": "concentrated",
+      "tokens_total": 120,
+      "elapsed_ms": 28527,
+      "load_ms": 24550,
+      "download_ms": 13519,
+      "sha_ms": 3499,
+      "build_ms": 7444,
+      "peak_rss_mb": 2453,
+      "probe_id": "4a29ffef-e610-4558-b4ed-d6af14785d8e",
+      "load_header": "cold;load_ms=24550",
+      "cold_evidence": "cloudwatch",
+      "graviton": "graviton2",
+      "lambda_report": {
+        "duration_ms": 27767.31,
+        "billed_ms": 27834,
+        "max_memory_used_mb": 2481,
+        "memory_size_mb": 3008,
+        "init_duration_ms": 66.221
+      },
+      "classify_ms_after_load": 3217.3,
+      "ms_per_token_after_load": 26.8
+    },
+    {
+      "shape": "distributed",
+      "tokens_total": 120,
+      "elapsed_ms": 29350,
+      "load_ms": 25460,
+      "download_ms": 14324,
+      "sha_ms": 3511,
+      "build_ms": 7538,
+      "peak_rss_mb": 2453,
+      "probe_id": "87f33236-bd17-447d-899f-f62363eaef3d",
+      "load_header": "cold;load_ms=25460",
+      "cold_evidence": "cloudwatch",
+      "graviton": "graviton2",
+      "lambda_report": {
+        "duration_ms": 28565.274,
+        "billed_ms": 28631,
+        "max_memory_used_mb": 2481,
+        "memory_size_mb": 3008,
+        "init_duration_ms": 65.166
+      },
+      "classify_ms_after_load": 3105.3,
+      "ms_per_token_after_load": 25.9
+    },
+    {
+      "shape": "concentrated",
+      "tokens_total": 120,
+      "elapsed_ms": 28501,
+      "load_ms": 25813,
+      "download_ms": 17831,
+      "sha_ms": 2685,
+      "build_ms": 5225,
+      "peak_rss_mb": 2453,
+      "probe_id": "957c1809-a2f4-4561-8d6f-9571bc3f23ef",
+      "load_header": "cold;load_ms=25813",
+      "cold_evidence": "cloudwatch",
+      "graviton": "graviton3",
+      "lambda_report": {
+        "duration_ms": 27722.942,
+        "billed_ms": 27780,
+        "max_memory_used_mb": 2483,
+        "memory_size_mb": 3008,
+        "init_duration_ms": 56.343
+      },
+      "classify_ms_after_load": 1909.9,
+      "ms_per_token_after_load": 15.9
+    },
+    {
+      "shape": "distributed",
+      "tokens_total": 120,
+      "elapsed_ms": 24168,
+      "load_ms": 21411,
+      "download_ms": 13494,
+      "sha_ms": 2655,
+      "build_ms": 5193,
+      "peak_rss_mb": 2453,
+      "probe_id": "bdd1289e-ea63-474a-ae3a-803c4f526d7f",
+      "load_header": "cold;load_ms=21411",
+      "cold_evidence": "cloudwatch",
+      "graviton": "graviton3",
+      "lambda_report": {
+        "duration_ms": 23414.952,
+        "billed_ms": 23481,
+        "max_memory_used_mb": 2481,
+        "memory_size_mb": 3008,
+        "init_duration_ms": 65.609
+      },
+      "classify_ms_after_load": 2004.0,
+      "ms_per_token_after_load": 16.7
+    }
+  ],
+  "warm": {
+    "p50_ms": 1418,
+    "max_ms": 1491,
+    "calls_ms": [
+      1418,
+      1435,
+      1491,
+      1394,
+      1390
+    ],
+    "shape": "single identity text, --cold-first (tools/call without initialize), warm instance"
+  },
+  "warm_identity_after_samples": {
+    "probe": "identity",
+    "probe_id": "probe-18d94fcd0d4ee4d8-10122",
+    "one_tool_named_classify": true,
+    "description_has_labels_in_order": true,
+    "identity_matches": true,
+    "artifact_sha256": "24a44d7e050166c9b64e2716f2bcb3ce91747f7a3b927d03d6eeae5f89b6275a",
+    "elapsed_ms": [
+      432,
+      130,
+      1329
+    ],
+    "tokens_total": 65,
+    "shape": "identity",
+    "load_header": "warm"
+  },
+  "cold_vs_contract_3gb_extrapolation": {
+    "cap_ms": 30000,
+    "max_elapsed_ms": 29350,
+    "min_margin_to_cap_ms": 650,
+    "cold_start_budget_ms_extrapolated": 17000,
+    "load_ms_range": [
+      21411,
+      25813
+    ],
+    "load_vs_extrapolation": "MEASURED load 21411-25813 ms is 4411-8813 ms OVER the 17000 ms extrapolation; download_ms 13494-17831 dominates (sha 2655-3511, build 5193-7538)",
+    "tier_ms_per_token_extrapolated": 40,
+    "ms_per_token_measured": [
+      26.8,
+      25.9,
+      15.9,
+      16.7
+    ],
+    "ms_per_token_verdict": "UNDER the 40 ms/token extrapolation on both Graviton parts (graviton2 ~26, graviton3 ~16-17), measured as REPORT duration minus load_ms over 120 tokens; includes JSON/transport inside the function",
+    "headroom_mb_extrapolated": 350,
+    "max_memory_used_mb": 2483,
+    "headroom_mb_measured": 525,
+    "verdict": "deployed-passed on the plan's rule (every judged sample < 30000 ms), with a thin margin: worst 29350 ms (650 ms under the gateway cap). The cold load, not classify compute, eats the budget; the 17000 ms cold extrapolation does not hold on this tier"
+  },
+  "post_deploy_platform_invocation_option1": {
+    "at": "2026-09-27T22:54:52Z (initStart) .. 22:55:16.913Z (REPORT)",
+    "load": "decide.load performed_load=true probe_id=none load_ms=24554 download_ms=13433 sha_ms=3509 build_ms=7523 bytes=846196868 peak_rss_mb=2453 graviton=graviton2 source=s3; 6 S3 part attempts timed out at 8000 ms and were retried",
+    "report": {
+      "duration_ms": 24569.332,
+      "billed_ms": 24636,
+      "max_memory_used_mb": 2482,
+      "init_duration_ms": 66.571,
+      "status": "success"
+    },
+    "followups": "5 more invocations 22:55:16.95..22:55:19.57, performed_load=false, 1.5-3.0 ms each, all status success (same xray root as the load for the first two)",
+    "meaning": "with the read in the stack, pmcp.run's own post-deploy call LOADS the model; D-ITEM-08-17-B is closed"
+  },
+  "admin_ui_call": {
+    "at": "2026-09-27T23:02:25Z",
+    "http": 200,
+    "elapsed_s": 1.74,
+    "x_decide_load": "warm",
+    "request": {
+      "method": "POST",
+      "url": "https://aprender-mcp-decide.us-east.true-mcp.com/mcp",
+      "headers": {
+        "content-type": "application/json",
+        "accept": "application/json, text/event-stream"
+      },
+      "body": {
+        "jsonrpc": "2.0",
+        "id": 1,
+        "method": "tools/call",
+        "params": {
+          "name": "classify",
+          "arguments": {
+            "texts": [
+              "We need to stop pretending climate change is a hoax. Act now."
+            ]
+          }
+        }
+      }
+    },
+    "response_text_json": {
+      "model": {
+        "artifact_sha256": "24a44d7e050166c9b64e2716f2bcb3ce91747f7a3b927d03d6eeae5f89b6275a",
+        "recipe_id": "6a5489afa3462f566b8b12e932a0e35f93d384bea6f37e3154d06ebc186d6f3b",
+        "method": "laya",
+        "base": "laya-en-root@55cf4c4e"
+      },
+      "labels": [
+        "none",
+        "against",
+        "favor"
+      ],
+      "results": [
+        {
+          "label": "none",
+          "probabilities": [
+            0.821747899055481,
+            0.10293354094028473,
+            0.07531856000423431
+          ],
+          "tokens": 72,
+          "truncated": false
+        }
+      ]
+    },
+    "note": "the tool asks the abortion-stance question; an off-topic climate tweet reading `none` is the expected label. No initialize is needed (the server answers a bare tools/call); a WASM MCP client that does initialize -> notifications/initialized -> tools/list -> tools/call also works (the identity probe does exactly that). Budget on this tier: <= 2 texts, <= 120 built tokens per call; one short tweet builds ~65-72 tokens"
+  },
+  "teardown_commands_not_run": [
+    "contain: just laya-teardown aprender-mcp-decide dev ze-kasher-dev   (reserved concurrency 0; leaves the stack-declared read, inert while contained)",
+    "remove the deployment: just _laya-crates-root-swap crates crates/aprender-mcp-decide-lambda/.pmcp/deploy.toml models/decide/destroy-aprender-mcp-decide.state cargo pmcp deploy destroy --manifest-path crates",
+    "remove the weights: aws s3 rm --profile ze-kasher-dev --recursive s3://<weights-bucket>/decide/aprender-mcp-decide/"
+  ],
+  "resume_requires_human": [],
+  "final": true,
+  "final_record": {
+    "recorded_by_plan": "08-18",
+    "recorded_on": "2026-09-27",
+    "start_sha": "4f79d157c8f627a1390789fbcd082f43f5da6a18",
+    "outcome": "deployed-passed",
+    "label_rule": "the plan's rule, applied unchanged: every cold sample taken by `just laya-deploy-verify` (CloudWatch performed_load=true for its own probe id, maximal legal request as the first POST) is < 30000 ms. 4 of 4 were (max 29350). No sample was altered, re-taken or dropped",
+    "exceeded_decision": "not applicable: 08-18 Task 1 (blocking-human) fires only on deployed-exceeded with exceeded_resolution pending-human; this record carries neither, so no exceeded_resolution key exists",
+    "label_not_changed_by": "the external observation below. It is additional RISK evidence, not a relabel: it is not one of the rule's samples (a 67-token non-maximal request, no probe id, curl rather than the probe), and its in-function duration (28008 ms) is itself under the cap",
+    "measurement_note": "the rule's elapsed_ms is CLIENT-side too: laya-deploy-verify runs the probe locally and POSTs through the pmcp.run edge, then proves coldness from CloudWatch. The samples' elapsed_ms exceeds their Lambda REPORT duration by 753-785 ms; the external curl below exceeds its REPORT duration by about 3042 ms. So client-side overhead is not a constant ~0.8 s, and the contract's 895 ms gateway+client term is not a bound on it (cause of the difference unmeasured)"
+  },
+  "external_observation": {
+    "observed_by": "the orchestrating agent, from the user's laptop (outside AWS), through the public pmcp.run edge",
+    "observed_on": "2026-09-27, about 23:10Z (the client's own clock; the exact seconds below are CloudWatch's)",
+    "cold_call": {
+      "request": "POST https://aprender-mcp-decide.us-east.true-mcp.com/mcp, a tools/call classify of one stance tweet (no initialize)",
+      "http": 200,
+      "client_time_total_s": 31.05,
+      "identity": "model.artifact_sha256 24a44d7e050166c9b64e2716f2bcb3ce91747f7a3b927d03d6eeae5f89b6275a == H",
+      "meaning": "the end-to-end client time exceeded 30 s and the edge still answered 200. The edge's effective cutoff is therefore not a strict 30.000 s measured from the client, and a real remote client can see a cold call land at or over 30 s"
+    },
+    "warm_call": {
+      "http": 200,
+      "client_time_total_s": 2.16,
+      "text": "Every life deserves protection from conception. #prolife",
+      "label": "against",
+      "probabilities": {
+        "none": 0.072,
+        "against": 0.835,
+        "favor": 0.094
+      },
+      "correct": "yes: the served task is the TweetEval abortion target (legalization of abortion), and this tweet opposes it"
+    },
+    "cloudwatch_correlation": {
+      "read_by": "08-18, read-only (aws logs filter-log-events on /aws/lambda/aprender-mcp-decide, 23:10:00-23:11:30Z)",
+      "matched_by": "time window only: the calls sent no x-decide-probe-id, so the load line reads probe_id=none",
+      "cold_invocation": {
+        "init_start": "2026-09-27T23:10:11.113Z (initializationType on-demand)",
+        "load_line": "decide.load performed_load=true probe_id=none load_ms=26202 download_ms=15125 sha_ms=3521 build_ms=7468 bytes=846196868 peak_rss_mb=2455 graviton=graviton2 source=s3",
+        "s3_retries": "8 part attempts timed out at 8000 ms (23:10:19Z) and were retried",
+        "classify": "texts=1 tokens=67 ms=1791",
+        "report": {
+          "duration_ms": 28008.462,
+          "billed_ms": 28073,
+          "max_memory_used_mb": 2482,
+          "memory_size_mb": 3008,
+          "init_duration_ms": 64.075,
+          "status": "success"
+        },
+        "client_minus_report_ms": 3042
+      },
+      "warm_invocations": [
+        {
+          "at": "2026-09-27T23:10:47.746Z",
+          "classify_tokens": 67,
+          "duration_ms": 1802.75,
+          "performed_load": false
+        },
+        {
+          "at": "2026-09-27T23:10:55.311Z",
+          "classify_tokens": 67,
+          "duration_ms": 1798.465,
+          "performed_load": false
+        }
+      ],
+      "slowest_load_measured": "load_ms 26202 is above all four rule samples (21411-25813), and download_ms 15125 is the second highest measured"
+    },
+    "risk_arithmetic_not_a_measurement": "a MAXIMAL (120-token) cold call on the same graviton2 environment would add about 120 x 26.8 = 3216 ms of classify to the 26202 ms load: about 29418 ms in-function against the function's own 30 s timeout (about 580 ms spare), and about 32.5 s at the client with this call's 3042 ms overhead. Shown as arithmetic only; nothing is changed on it"
+  },
+  "posture": {
+    "state": "RUNNING, by the user's explicit decision (left serving for the pmcp.run admin UI)",
+    "verified_at": "2026-09-27T23:12:15Z, read-only",
+    "reserved_concurrency": "unset (get-function-concurrency returns no ReservedConcurrentExecutions)",
+    "function_configuration": "MemorySize 3008, Timeout 30, arm64, EphemeralStorage 512, State Active, LastUpdateStatus Successful, LastModified 2026-09-27T23:00:20Z, APRENDER_DECIDE_SHA256 == H",
+    "edge_health": "GET https://aprender-mcp-decide.us-east.true-mcp.com/health -> 200 {status healthy, serverId aprender-mcp-decide, hasDeployment true} at 23:12:23Z (the platform's answer; it does not reflect the MCP route's state, D-ITEM-08-17-D)",
+    "auth": "off (user-accepted cost-amplification risk); every cold call buys about 25-28 s of 3 GB compute",
+    "containment_would_be": "just laya-teardown aprender-mcp-decide dev ze-kasher-dev: put-function-concurrency 0, verified by get-function-concurrency reading 0 (every invocation refused, warm instances included); the stack-declared weights read stays attached and inert; resume with aws lambda delete-function-concurrency. NOT run: the user asked to keep the function running",
+    "teardown_commands": "teardown_commands_not_run above (contain, destroy the deployment, remove the weights); none was run by 08-18",
+    "aws_writes_by_08_18": 0
+  },
+  "recommendations_not_acted_on": [
+    "the S3 download: 13494-17831 ms at 3,008 MB (15125 ms on the external cold call), against about 9 s at 10,240 MB (spike 026), with 8 s part attempts timing out and retrying; part size, part concurrency and the attempt timeout are the first lever",
+    "sha2 asm (D-ITEM-08-17-C): the software sha256 costs 2655-3521 ms per cold load; about 4.5 s is priced in the 3 GB budget",
+    "restore the 10,240 MB tier when AWS approves the account limit: the recorded target tier is classify budget 1024 built tokens and 8 texts (a re-derivation plus a memory change, per decide-tool-boundary-v1)",
+    "a warm floor (provisioned or scheduled keep-warm) or an async MCP Task front door, so no caller waits on a 25-31 s cold load",
+    "pmcp.run platform finding D-ITEM-08-17-D (the edge error state /health cannot see); add that the edge forwarded a 31.05 s client-time call, so its effective cutoff should be documented. Recommend a platform issue; no action taken"
+  ]
+}

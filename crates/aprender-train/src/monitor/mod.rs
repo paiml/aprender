@@ -61,8 +61,10 @@ pub use report::{
 pub use storage::{InMemoryStore, JsonFileStore, MetricsStore, StorageError, StorageResult};
 pub use tui::{
     BrailleChart, GpuTelemetry, SamplePeek, TrainingSnapshot, TrainingState, TrainingStateWriter,
-    TrainingStatus, TuiMonitor, TuiMonitorConfig,
+    TrainingStatus,
 };
+#[cfg(feature = "tui")]
+pub use tui::{TuiMonitor, TuiMonitorConfig};
 pub use wasm::{WasmDashboard, WasmDashboardOptions, WasmMetricsCollector};
 
 #[cfg(test)]

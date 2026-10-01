@@ -1,0 +1,13 @@
+{
+ "run": "laya/en@55cf4c4e",
+ "task": "stance-abortion",
+ "split": "test",
+ "n": 280,
+ "names_only": false,
+ "device": "mps",
+ "load_s": 1.4747237499977928,
+ "accuracy": 0.3392857142857143,
+ "latency_ms_p50": 26.45202049461659,
+ "temperature": 1.7601518630981445,
+ "recomputed_probs_max_abs_diff": 4.9959826469409e-05
+}

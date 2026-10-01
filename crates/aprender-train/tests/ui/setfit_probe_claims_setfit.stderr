@@ -1,0 +1,7 @@
+error[E0277]: the trait bound `SetFitRun<EncoderTuned>: From<FrozenProbeRun>` is not satisfied
+  --> tests/ui/setfit_probe_claims_setfit.rs:20:11
+   |
+20 |     probe.into()
+   |           ^^^^ the trait `From<FrozenProbeRun>` is not implemented for `SetFitRun<EncoderTuned>`
+   |
+   = note: required for `FrozenProbeRun` to implement `Into<SetFitRun<EncoderTuned>>`

@@ -297,6 +297,31 @@ fn test_no_unauthorized_binaries() {
     ]
     .into();
 
+    // A SECOND category, ratcheted separately, decided by a human at plan
+    // 06-02 Task 1 (option `deployment-unit-class`; RESEARCH Open Question 1).
+    //
+    // Policy: publish = false thin MCP servers whose capability IS a protocol
+    // surface; adding one requires a CONTEXT decision, never a same-PR edit.
+    //
+    // These are NOT migration debt and must not be folded into `allowed_bins`.
+    // An entry there is a capability awaiting `apr <subcommand>`; an entry here
+    // has no `apr` destination to await, because the capability is the MCP
+    // protocol surface itself and the binary IS the deployment unit
+    // (pmcp.run process / Lambda `bootstrap`). Keeping the two registers apart
+    // is what lets the sentence above `allowed_bins` stay literally true.
+    let deployment_unit_bins: HashSet<&str> = [
+        "aprender-mcp-setfit",          // the thin pmcp server template (Phase 4)
+        "aprender-mcp-setfit-lambda",   // its AWS Lambda custom runtime (bootstrap)
+        "aprender-mcp-setfit-train",    // the SetFit training server
+        "aprender-setfit-train-lambda", // the training server's Lambda runtime
+        "aprender-mcp-forecast",        // Prophet/NeuralProphet forecast server (Phase 6 D-06)
+        "aprender-mcp-chronos",         // Chronos-Bolt server (Phase 6 D-06; created in plan 06-07)
+        "aprender-mcp-chronos-lambda",  // Chronos-Bolt AWS Lambda custom runtime (bootstrap)
+        "aprender-mcp-decide",          // Laya decision server (Phase 8 D-15)
+        "aprender-mcp-decide-lambda",   // its AWS Lambda custom runtime (bootstrap) (Phase 8 D-15)
+    ]
+    .into();
+
     // Ask cargo what binaries the workspace actually BUILDS, rather than
     // grepping manifests for `[[bin]]`. Cargo auto-discovers `src/main.rs` with
     // no `[[bin]]` section at all, and six packages rely on that —
@@ -317,6 +342,12 @@ fn test_no_unauthorized_binaries() {
 
     let mut violations = Vec::new();
     let mut with_bins: Vec<String> = Vec::new();
+    // The deployment-unit register's DEFINING property is `publish = false`: that is what
+    // makes "the binary IS the deployment unit" true rather than "a second user-facing
+    // binary on crates.io". Until now that property lived only in the prose above, and the
+    // scan read `targets` alone — so flipping any of these crates to `publish = true` would
+    // ship a non-`apr` binary to crates.io with this gate fully green.
+    let mut publishable_units = Vec::new();
     for pkg in packages {
         let name = pkg["name"].as_str().unwrap_or_default().to_string();
         let ships_bin = pkg["targets"].as_array().into_iter().flatten().any(|t| {
@@ -327,8 +358,17 @@ fn test_no_unauthorized_binaries() {
                 .any(|k| k == "bin")
         });
         if ships_bin {
-            if !allowed_bins.contains(name.as_str()) {
+            if !allowed_bins.contains(name.as_str())
+                && !deployment_unit_bins.contains(name.as_str())
+            {
                 violations.push(name.clone());
+            }
+            // cargo metadata reports `publish = false` as an EMPTY array and an
+            // unrestricted package as `null`, so "not publishable" is `Some(empty)`.
+            if deployment_unit_bins.contains(name.as_str())
+                && !pkg["publish"].as_array().is_some_and(|a| a.is_empty())
+            {
+                publishable_units.push(name.clone());
             }
             with_bins.push(name);
         }
@@ -353,8 +393,21 @@ fn test_no_unauthorized_binaries() {
     assert!(
         violations.is_empty(),
         "FALSIFY-MONO-011: Unauthorized [[bin]] sections found in: {:?}\n\
-         Only apr-cli should produce user-facing binaries.",
+         Binaries are authorized in exactly two registers: `allowed_bins` (migration\n\
+         debt, awaiting an `apr <subcommand>`) and `deployment_unit_bins` (publish = false\n\
+         thin MCP servers whose capability IS a protocol surface). Adding a name to either\n\
+         is a policy decision, never a same-PR edit.",
         violations
+    );
+
+    assert!(
+        publishable_units.is_empty(),
+        "FALSIFY-MONO-011: {:?} are registered as deployment units but are NOT\n\
+         `publish = false`. The register's whole justification is that the binary is a\n\
+         deployment unit (pmcp.run process / Lambda bootstrap) and never a user-facing\n\
+         crates.io binary — set `publish = false`, or move the crate to `allowed_bins`\n\
+         with a recorded CONTEXT decision.",
+        publishable_units
     );
 
     // RATCHET: the allowlist is a migration debt register, not a permanent
@@ -372,6 +425,28 @@ fn test_no_unauthorized_binaries() {
         allowed_bins.len()
     );
 
+    // RATCHET 2: the deployment-unit register is shrink-only for a different
+    // reason. There is no `apr` subcommand to migrate a protocol surface into,
+    // so growth here is not debt being paid down — it is a new user-facing
+    // binary being minted. Raising this number is a phase-CONTEXT decision
+    // (the human gate at 06-02 Task 1), never an edit made alongside the crate
+    // that needs it.
+    //
+    // 7 -> 8: `aprender-mcp-decide`, authorized by Phase 8 CONTEXT D-15 (recorded at
+    // discuss-phase, before the crate existed).
+    // 8 -> 9: `aprender-mcp-decide-lambda` (plan 08-07), its Lambda `bootstrap`, which
+    // the same D-15 decision names as the pmcp.run deployment unit.
+    const DEPLOYMENT_UNIT_BASELINE: usize = 9;
+    assert!(
+        deployment_unit_bins.len() <= DEPLOYMENT_UNIT_BASELINE,
+        "FALSIFY-MONO-011: the thin-MCP deployment-unit register grew to {} \
+         (baseline {DEPLOYMENT_UNIT_BASELINE}). It is shrink-only: a new \
+         publish = false MCP server binary requires a recorded CONTEXT decision \
+         (a `gate=\"blocking-human\"` checkpoint), never a same-PR edit to this \
+         list.",
+        deployment_unit_bins.len()
+    );
+
     // And it must not rot: an allowlisted crate that no longer ships a [[bin]]
     // is a stale exemption hiding the fact that the migration already happened.
     let stale: Vec<&str> = allowed_bins
@@ -383,6 +458,25 @@ fn test_no_unauthorized_binaries() {
         stale.is_empty(),
         "FALSIFY-MONO-011: these crates are allowlisted but ship no [[bin]] — the \
          exemption is stale and must be deleted so the ratchet reflects real debt: {stale:?}"
+    );
+
+    // Same rot check for the deployment-unit register. A thin MCP server that
+    // stopped shipping a binary is no longer a deployment unit, and leaving it
+    // named here inflates the baseline that guards the category.
+    //
+    // `crates_dir.join(c).exists()` is load-bearing for a FORWARD-LOOKING entry:
+    // `aprender-mcp-chronos` is decided but not yet created (plan 06-07), and a
+    // missing directory is not stale.
+    let stale_units: Vec<&str> = deployment_unit_bins
+        .iter()
+        .filter(|c| !with_bins.iter().any(|b| b == *c) && crates_dir.join(c).exists())
+        .copied()
+        .collect();
+    assert!(
+        stale_units.is_empty(),
+        "FALSIFY-MONO-011: these crates are registered as thin-MCP deployment \
+         units but ship no [[bin]] — the entry is stale and must be deleted so \
+         the baseline reflects real deployment units: {stale_units:?}"
     );
 }
 
@@ -715,6 +809,17 @@ const PROFILE_SPEC_ALLOWLIST: &[(&str, &str)] = &[
     // 1.8.0..=1.11.0 apart from the f16 feature). The cost-free fix is structural —
     // split the facade out of the workspace root — and is tracked in #2571.
     ("dev", "proptest"),
+    // Phase 6 (RESEARCH Pitfall 9): the Prophet MAP fit is ~5x slower unoptimised.
+    // Measured 2026-09-05 (M4 Pro, warm, `cargo test -p aprender-mcp-forecast --lib e2e`,
+    // one real 2905-point Peyton fit): 64 s wall without this block, 13 s with it, so the
+    // 06-03 seven-fixture ladder projects 448 s vs 91 s. Removing it is RED against the
+    // rule the block was added under — 7 x single-fit wall > 60 s, the VALIDATION.md
+    // feedback-latency target and nextest's slow-timeout period — a LATENCY red, not a
+    // correctness one; the root manifest comment carries the full measurement and the
+    // `-v` proof that the override reaches `cargo test`. Same structural fix as
+    // proptest (#2571). Excused when this branch met FALSIFY-INSTALL-001 in the 08-32
+    // upstream merge.
+    ("dev", "aprender-forecast"),
 ];
 
 /// Parse `[profile.<profile>.package.<spec>]` headers out of the root manifest.

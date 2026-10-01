@@ -407,3 +407,121 @@ fn test_microkernel_true_asm_accumulates_into_c() {
         );
     }
 }
+
+// ========================================================================
+// NEON 8x6 Microkernel Tests (aarch64) — contract neon-blis-v1.yaml
+// ========================================================================
+
+/// Deterministic pseudo-random values in [-1, 1) (LCG; no dev-dependency needed).
+#[cfg(target_arch = "aarch64")]
+fn neon_test_values(n: usize, seed: u64) -> Vec<f32> {
+    let mut state = seed;
+    (0..n)
+        .map(|_| {
+            state = state.wrapping_mul(6364136223846793005).wrapping_add(1442695040888963407);
+            ((state >> 40) as f32 / (1u64 << 24) as f32) * 2.0 - 1.0
+        })
+        .collect()
+}
+
+/// FALSIFY-NEON-BLIS-001: the NEON 8×6 kernel matches the scalar reference kernel.
+#[test]
+#[cfg(target_arch = "aarch64")]
+fn test_microkernel_neon_8x6_matches_scalar() {
+    let k = 64;
+    let a: Vec<f32> = (0..MR * k).map(|i| (i as f32) * 0.1).collect();
+    let b: Vec<f32> = (0..k * NR).map(|i| (i as f32) * 0.01).collect();
+
+    let mut c_scalar = vec![0.0; MR * NR];
+    let mut c_neon = vec![0.0; MR * NR];
+
+    microkernel_scalar(k, &a, &b, &mut c_scalar, MR);
+
+    // SAFETY: test-only usage with controlled inputs
+    unsafe {
+        microkernel_8x6_neon(k, a.as_ptr(), b.as_ptr(), c_neon.as_mut_ptr(), MR);
+    }
+
+    for i in 0..MR * NR {
+        let diff = (c_scalar[i] - c_neon[i]).abs();
+        let rel_diff = diff / c_scalar[i].abs().max(1e-10);
+        assert!(
+            rel_diff < 1e-5,
+            "Mismatch at {}: scalar={}, neon={}, rel_diff={}",
+            i,
+            c_scalar[i],
+            c_neon[i],
+            rel_diff
+        );
+    }
+}
+
+/// FALSIFY-NEON-BLIS-001 (edge K): every K including 0, the unrolled-remainder sizes and
+/// the KC block size, accumulating into a non-zero C exactly like the scalar kernel.
+#[test]
+#[cfg(target_arch = "aarch64")]
+fn test_microkernel_neon_8x6_short_k_and_accumulate() {
+    for k in [0usize, 1, 2, 3, 4, 5, 7, 9, 255, 256, 257] {
+        let a = neon_test_values(MR * k, 11 + k as u64);
+        let b = neon_test_values(k * NR, 29 + k as u64);
+        let c0 = neon_test_values(MR * NR, 47 + k as u64);
+
+        let mut c_scalar = c0.clone();
+        let mut c_neon = c0;
+
+        microkernel_scalar(k, &a, &b, &mut c_scalar, MR);
+        // SAFETY: test-only usage with controlled inputs
+        unsafe {
+            microkernel_8x6_neon(k, a.as_ptr(), b.as_ptr(), c_neon.as_mut_ptr(), MR);
+        }
+
+        let scale = c_scalar.iter().fold(1.0f32, |m, v| m.max(v.abs()));
+        for i in 0..MR * NR {
+            let diff = (c_scalar[i] - c_neon[i]).abs();
+            assert!(
+                diff <= 1e-5 * scale,
+                "k={k}: mismatch at {i}: scalar={}, neon={}, diff={diff}",
+                c_scalar[i],
+                c_neon[i]
+            );
+        }
+    }
+}
+
+/// FALSIFY-NEON-BLIS-002: through `gemm_blis`, shapes with remainder tiles in M, N and K,
+/// K below the unroll width, and a transformer-shaped GEMM all match the naive reference.
+#[test]
+#[cfg(target_arch = "aarch64")]
+fn test_gemm_blis_neon_odd_shapes_match_reference() {
+    // All above the `m * n * k < 4096` reference cutoff so the BLIS path is exercised.
+    for (m, n, k) in [
+        (129usize, 131usize, 67usize),
+        (33, 50, 100),
+        (7, 5, 300),
+        (64, 64, 1),
+        (64, 48, 3),
+        (8, 6, 256),
+        (17, 9, 257),
+        (129, 256, 256),
+        (200, 300, 17),
+    ] {
+        let a = neon_test_values(m * k, 3 + m as u64);
+        let b = neon_test_values(k * n, 5 + n as u64);
+        let mut c_blis = vec![0.0f32; m * n];
+        let mut c_ref = vec![0.0f32; m * n];
+
+        gemm_blis(m, n, k, &a, &b, &mut c_blis, None).expect("gemm_blis");
+        gemm_reference(m, n, k, &a, &b, &mut c_ref).expect("gemm_reference");
+
+        let scale = c_ref.iter().fold(1.0f32, |acc, v| acc.max(v.abs()));
+        for i in 0..m * n {
+            let diff = (c_blis[i] - c_ref[i]).abs();
+            assert!(
+                diff <= 1e-5 * scale,
+                "{m}x{n}x{k}: mismatch at {i}: blis={}, ref={}, diff={diff}",
+                c_blis[i],
+                c_ref[i]
+            );
+        }
+    }
+}

@@ -174,8 +174,7 @@ pub const PADDING_MODE: &str = "batch_longest";
 
 /// The pinned MiniLM WordPiece tokenizer.
 pub struct MiniLmTokenizer {
-    /// Configured with truncation at [`MAX_SEQUENCE_LENGTH`] and
-    /// batch-longest padding.
+    /// Configured with truncation and batch-longest padding.
     inner: tokenizers::Tokenizer,
     /// Same vocabulary, no truncation and no padding. Used only to recover the
     /// true length of rows that the truncating pass actually cut.
@@ -190,6 +189,15 @@ pub struct MiniLmTokenizer {
     source_bytes: Vec<u8>,
     /// Lowercase-hex sha256 of the bytes this tokenizer was built from.
     tokenizer_sha256: String,
+    /// The truncation bound this instance was configured with.
+    ///
+    /// Per-instance rather than [`MAX_SEQUENCE_LENGTH`] because a general BERT
+    /// checkout may carry fewer position rows than the constant. Every
+    /// constructor derives it the same way `BertSentenceEncoder::max_seq()`
+    /// does — `min(MAX_SEQUENCE_LENGTH, max_position_embeddings)` — so the
+    /// tokenizer can never emit a row the encoder refuses, and a reload that
+    /// re-derives it from the architecture record lands on the same number.
+    max_sequence_length: usize,
 }
 
 impl std::fmt::Debug for MiniLmTokenizer {
@@ -197,7 +205,7 @@ impl std::fmt::Debug for MiniLmTokenizer {
         f.debug_struct("MiniLmTokenizer")
             .field("tokenizer_sha256", &self.tokenizer_sha256)
             .field("source_bytes_len", &self.source_bytes.len())
-            .field("max_sequence_length", &MAX_SEQUENCE_LENGTH)
+            .field("max_sequence_length", &self.max_sequence_length)
             .finish()
     }
 }
@@ -210,7 +218,7 @@ pub(crate) fn sha256_hex(bytes: &[u8]) -> String {
 }
 
 impl MiniLmTokenizer {
-    /// Build a tokenizer from `tokenizer.json` bytes.
+    /// Build a tokenizer from `tokenizer.json` bytes using pinned MiniLM defaults.
     ///
     /// SEALED (D-08): `pub(crate)`. Out-of-crate callers reach a tokenizer only
     /// via `SetFitMiniLm`, which constructs the tokenizer and the encoder
@@ -222,18 +230,68 @@ impl MiniLmTokenizer {
     /// `tokenizers` serialization, or if truncation/padding cannot be
     /// configured on it.
     pub(crate) fn from_bytes(bytes: &[u8]) -> Result<Self, SetFitError> {
+        Self::from_bytes_with_config(bytes, MAX_SEQUENCE_LENGTH, 0)
+    }
+
+    /// Build a tokenizer with an explicit truncation bound and padding id.
+    ///
+    /// The padding TOKEN is resolved from `pad_id` against this tokenizer's own
+    /// vocabulary rather than taken as a literal. `tokenizers` never reconciles
+    /// the two — `Encoding::pad` fills `ids` from `pad_id` and pushes the
+    /// `pad_token` string into `tokens` unchecked — so a hardcoded `"[PAD]"`
+    /// alongside a `pad_id` read from `config.json` produces an id stream and a
+    /// token stream that describe different tokens, with nothing to notice. An id
+    /// the vocabulary does not contain is refused here instead of surfacing as an
+    /// out-of-vocabulary gather on the first mixed-length batch.
+    ///
+    /// # Errors
+    ///
+    /// [`SetFitError::TokenizerLoad`] if the bytes do not parse, if
+    /// truncation/padding cannot be configured, or if `pad_id` is not in the
+    /// vocabulary.
+    pub(crate) fn from_bytes_with_config(
+        bytes: &[u8],
+        max_length: usize,
+        pad_id: u32,
+    ) -> Result<Self, SetFitError> {
         let mut inner =
             tokenizers::Tokenizer::from_bytes(bytes).map_err(|e| SetFitError::TokenizerLoad {
                 reason: e.to_string(),
             })?;
 
+        // `with_truncation` computes `max_length - n_added_tokens` in `usize`, and
+        // n_added_tokens is 2 for any BERT post-processor ([CLS] and [SEP]). A
+        // bound below that UNDERFLOWS: it panics under overflow checks and, in a
+        // release build, wraps to ~usize::MAX and silently disables truncation.
+        // The bound reaches here from an architecture record and from a
+        // `config.json`, so it is refused rather than trusted.
+        const MIN_TRUNCATION_BOUND: usize = 3;
+        if max_length < MIN_TRUNCATION_BOUND {
+            return Err(SetFitError::TokenizerLoad {
+                reason: format!(
+                    "truncation bound {max_length} leaves no room for [CLS] and [SEP]; \
+                     at least {MIN_TRUNCATION_BOUND} is required"
+                ),
+            });
+        }
+
+        let pad_token = inner
+            .id_to_token(pad_id)
+            .ok_or_else(|| SetFitError::TokenizerLoad {
+                reason: format!(
+                    "pad_token_id {pad_id} is not in this tokenizer's vocabulary \
+                     ({} entries)",
+                    inner.get_vocab_size(true)
+                ),
+            })?;
+
         // Truncation and padding come from the tokenizers API, never from
         // hand-rolled slicing: the library reserves room for the post-processor's
-        // special tokens, so the padded row is exactly MAX_SEQUENCE_LENGTH with
+        // special tokens, so the padded row is exactly `max_length` with
         // [CLS]/[SEP] intact. Hand-rolling would silently drop [SEP].
         inner
             .with_truncation(Some(tokenizers::TruncationParams {
-                max_length: MAX_SEQUENCE_LENGTH,
+                max_length,
                 strategy: tokenizers::TruncationStrategy::LongestFirst,
                 stride: 0,
                 direction: tokenizers::TruncationDirection::Right,
@@ -248,9 +306,9 @@ impl MiniLmTokenizer {
             strategy: tokenizers::PaddingStrategy::BatchLongest,
             direction: tokenizers::PaddingDirection::Right,
             pad_to_multiple_of: None,
-            pad_id: 0,
+            pad_id,
             pad_type_id: 0,
-            pad_token: "[PAD]".to_string(),
+            pad_token,
         }));
 
         // Second view over the SAME bytes with neither truncation nor padding.
@@ -272,7 +330,23 @@ impl MiniLmTokenizer {
             untruncated,
             source_bytes: bytes.to_vec(),
             tokenizer_sha256: sha256_hex(bytes),
+            max_sequence_length: max_length,
         })
+    }
+
+    /// Configured maximum sequence length.
+    #[must_use]
+    pub fn max_sequence_length(&self) -> usize {
+        self.max_sequence_length
+    }
+
+    /// Entries in this tokenizer's vocabulary, added tokens included.
+    ///
+    /// The number an encoder's embedding table must cover: an id this tokenizer
+    /// can emit that the table does not have is an out-of-vocabulary gather, and
+    /// the only place the two can be compared is where both are in hand.
+    pub(crate) fn vocab_size(&self) -> usize {
+        self.inner.get_vocab_size(true)
     }
 
     /// Sha256 of the bytes this tokenizer was built from.

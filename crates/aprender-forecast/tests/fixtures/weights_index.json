@@ -1,0 +1,681 @@
+{
+ "decoder.block.0.layer.0.SelfAttention.k.weight": {
+  "shape": [
+   256,
+   256
+  ],
+  "dtype": "torch.float32"
+ },
+ "decoder.block.0.layer.0.SelfAttention.o.weight": {
+  "shape": [
+   256,
+   256
+  ],
+  "dtype": "torch.float32"
+ },
+ "decoder.block.0.layer.0.SelfAttention.q.weight": {
+  "shape": [
+   256,
+   256
+  ],
+  "dtype": "torch.float32"
+ },
+ "decoder.block.0.layer.0.SelfAttention.relative_attention_bias.weight": {
+  "shape": [
+   32,
+   4
+  ],
+  "dtype": "torch.float32"
+ },
+ "decoder.block.0.layer.0.SelfAttention.v.weight": {
+  "shape": [
+   256,
+   256
+  ],
+  "dtype": "torch.float32"
+ },
+ "decoder.block.0.layer.0.layer_norm.weight": {
+  "shape": [
+   256
+  ],
+  "dtype": "torch.float32"
+ },
+ "decoder.block.0.layer.1.EncDecAttention.k.weight": {
+  "shape": [
+   256,
+   256
+  ],
+  "dtype": "torch.float32"
+ },
+ "decoder.block.0.layer.1.EncDecAttention.o.weight": {
+  "shape": [
+   256,
+   256
+  ],
+  "dtype": "torch.float32"
+ },
+ "decoder.block.0.layer.1.EncDecAttention.q.weight": {
+  "shape": [
+   256,
+   256
+  ],
+  "dtype": "torch.float32"
+ },
+ "decoder.block.0.layer.1.EncDecAttention.v.weight": {
+  "shape": [
+   256,
+   256
+  ],
+  "dtype": "torch.float32"
+ },
+ "decoder.block.0.layer.1.layer_norm.weight": {
+  "shape": [
+   256
+  ],
+  "dtype": "torch.float32"
+ },
+ "decoder.block.0.layer.2.DenseReluDense.wi.weight": {
+  "shape": [
+   1024,
+   256
+  ],
+  "dtype": "torch.float32"
+ },
+ "decoder.block.0.layer.2.DenseReluDense.wo.weight": {
+  "shape": [
+   256,
+   1024
+  ],
+  "dtype": "torch.float32"
+ },
+ "decoder.block.0.layer.2.layer_norm.weight": {
+  "shape": [
+   256
+  ],
+  "dtype": "torch.float32"
+ },
+ "decoder.block.1.layer.0.SelfAttention.k.weight": {
+  "shape": [
+   256,
+   256
+  ],
+  "dtype": "torch.float32"
+ },
+ "decoder.block.1.layer.0.SelfAttention.o.weight": {
+  "shape": [
+   256,
+   256
+  ],
+  "dtype": "torch.float32"
+ },
+ "decoder.block.1.layer.0.SelfAttention.q.weight": {
+  "shape": [
+   256,
+   256
+  ],
+  "dtype": "torch.float32"
+ },
+ "decoder.block.1.layer.0.SelfAttention.v.weight": {
+  "shape": [
+   256,
+   256
+  ],
+  "dtype": "torch.float32"
+ },
+ "decoder.block.1.layer.0.layer_norm.weight": {
+  "shape": [
+   256
+  ],
+  "dtype": "torch.float32"
+ },
+ "decoder.block.1.layer.1.EncDecAttention.k.weight": {
+  "shape": [
+   256,
+   256
+  ],
+  "dtype": "torch.float32"
+ },
+ "decoder.block.1.layer.1.EncDecAttention.o.weight": {
+  "shape": [
+   256,
+   256
+  ],
+  "dtype": "torch.float32"
+ },
+ "decoder.block.1.layer.1.EncDecAttention.q.weight": {
+  "shape": [
+   256,
+   256
+  ],
+  "dtype": "torch.float32"
+ },
+ "decoder.block.1.layer.1.EncDecAttention.v.weight": {
+  "shape": [
+   256,
+   256
+  ],
+  "dtype": "torch.float32"
+ },
+ "decoder.block.1.layer.1.layer_norm.weight": {
+  "shape": [
+   256
+  ],
+  "dtype": "torch.float32"
+ },
+ "decoder.block.1.layer.2.DenseReluDense.wi.weight": {
+  "shape": [
+   1024,
+   256
+  ],
+  "dtype": "torch.float32"
+ },
+ "decoder.block.1.layer.2.DenseReluDense.wo.weight": {
+  "shape": [
+   256,
+   1024
+  ],
+  "dtype": "torch.float32"
+ },
+ "decoder.block.1.layer.2.layer_norm.weight": {
+  "shape": [
+   256
+  ],
+  "dtype": "torch.float32"
+ },
+ "decoder.block.2.layer.0.SelfAttention.k.weight": {
+  "shape": [
+   256,
+   256
+  ],
+  "dtype": "torch.float32"
+ },
+ "decoder.block.2.layer.0.SelfAttention.o.weight": {
+  "shape": [
+   256,
+   256
+  ],
+  "dtype": "torch.float32"
+ },
+ "decoder.block.2.layer.0.SelfAttention.q.weight": {
+  "shape": [
+   256,
+   256
+  ],
+  "dtype": "torch.float32"
+ },
+ "decoder.block.2.layer.0.SelfAttention.v.weight": {
+  "shape": [
+   256,
+   256
+  ],
+  "dtype": "torch.float32"
+ },
+ "decoder.block.2.layer.0.layer_norm.weight": {
+  "shape": [
+   256
+  ],
+  "dtype": "torch.float32"
+ },
+ "decoder.block.2.layer.1.EncDecAttention.k.weight": {
+  "shape": [
+   256,
+   256
+  ],
+  "dtype": "torch.float32"
+ },
+ "decoder.block.2.layer.1.EncDecAttention.o.weight": {
+  "shape": [
+   256,
+   256
+  ],
+  "dtype": "torch.float32"
+ },
+ "decoder.block.2.layer.1.EncDecAttention.q.weight": {
+  "shape": [
+   256,
+   256
+  ],
+  "dtype": "torch.float32"
+ },
+ "decoder.block.2.layer.1.EncDecAttention.v.weight": {
+  "shape": [
+   256,
+   256
+  ],
+  "dtype": "torch.float32"
+ },
+ "decoder.block.2.layer.1.layer_norm.weight": {
+  "shape": [
+   256
+  ],
+  "dtype": "torch.float32"
+ },
+ "decoder.block.2.layer.2.DenseReluDense.wi.weight": {
+  "shape": [
+   1024,
+   256
+  ],
+  "dtype": "torch.float32"
+ },
+ "decoder.block.2.layer.2.DenseReluDense.wo.weight": {
+  "shape": [
+   256,
+   1024
+  ],
+  "dtype": "torch.float32"
+ },
+ "decoder.block.2.layer.2.layer_norm.weight": {
+  "shape": [
+   256
+  ],
+  "dtype": "torch.float32"
+ },
+ "decoder.block.3.layer.0.SelfAttention.k.weight": {
+  "shape": [
+   256,
+   256
+  ],
+  "dtype": "torch.float32"
+ },
+ "decoder.block.3.layer.0.SelfAttention.o.weight": {
+  "shape": [
+   256,
+   256
+  ],
+  "dtype": "torch.float32"
+ },
+ "decoder.block.3.layer.0.SelfAttention.q.weight": {
+  "shape": [
+   256,
+   256
+  ],
+  "dtype": "torch.float32"
+ },
+ "decoder.block.3.layer.0.SelfAttention.v.weight": {
+  "shape": [
+   256,
+   256
+  ],
+  "dtype": "torch.float32"
+ },
+ "decoder.block.3.layer.0.layer_norm.weight": {
+  "shape": [
+   256
+  ],
+  "dtype": "torch.float32"
+ },
+ "decoder.block.3.layer.1.EncDecAttention.k.weight": {
+  "shape": [
+   256,
+   256
+  ],
+  "dtype": "torch.float32"
+ },
+ "decoder.block.3.layer.1.EncDecAttention.o.weight": {
+  "shape": [
+   256,
+   256
+  ],
+  "dtype": "torch.float32"
+ },
+ "decoder.block.3.layer.1.EncDecAttention.q.weight": {
+  "shape": [
+   256,
+   256
+  ],
+  "dtype": "torch.float32"
+ },
+ "decoder.block.3.layer.1.EncDecAttention.v.weight": {
+  "shape": [
+   256,
+   256
+  ],
+  "dtype": "torch.float32"
+ },
+ "decoder.block.3.layer.1.layer_norm.weight": {
+  "shape": [
+   256
+  ],
+  "dtype": "torch.float32"
+ },
+ "decoder.block.3.layer.2.DenseReluDense.wi.weight": {
+  "shape": [
+   1024,
+   256
+  ],
+  "dtype": "torch.float32"
+ },
+ "decoder.block.3.layer.2.DenseReluDense.wo.weight": {
+  "shape": [
+   256,
+   1024
+  ],
+  "dtype": "torch.float32"
+ },
+ "decoder.block.3.layer.2.layer_norm.weight": {
+  "shape": [
+   256
+  ],
+  "dtype": "torch.float32"
+ },
+ "decoder.final_layer_norm.weight": {
+  "shape": [
+   256
+  ],
+  "dtype": "torch.float32"
+ },
+ "encoder.block.0.layer.0.SelfAttention.k.weight": {
+  "shape": [
+   256,
+   256
+  ],
+  "dtype": "torch.float32"
+ },
+ "encoder.block.0.layer.0.SelfAttention.o.weight": {
+  "shape": [
+   256,
+   256
+  ],
+  "dtype": "torch.float32"
+ },
+ "encoder.block.0.layer.0.SelfAttention.q.weight": {
+  "shape": [
+   256,
+   256
+  ],
+  "dtype": "torch.float32"
+ },
+ "encoder.block.0.layer.0.SelfAttention.relative_attention_bias.weight": {
+  "shape": [
+   32,
+   4
+  ],
+  "dtype": "torch.float32"
+ },
+ "encoder.block.0.layer.0.SelfAttention.v.weight": {
+  "shape": [
+   256,
+   256
+  ],
+  "dtype": "torch.float32"
+ },
+ "encoder.block.0.layer.0.layer_norm.weight": {
+  "shape": [
+   256
+  ],
+  "dtype": "torch.float32"
+ },
+ "encoder.block.0.layer.1.DenseReluDense.wi.weight": {
+  "shape": [
+   1024,
+   256
+  ],
+  "dtype": "torch.float32"
+ },
+ "encoder.block.0.layer.1.DenseReluDense.wo.weight": {
+  "shape": [
+   256,
+   1024
+  ],
+  "dtype": "torch.float32"
+ },
+ "encoder.block.0.layer.1.layer_norm.weight": {
+  "shape": [
+   256
+  ],
+  "dtype": "torch.float32"
+ },
+ "encoder.block.1.layer.0.SelfAttention.k.weight": {
+  "shape": [
+   256,
+   256
+  ],
+  "dtype": "torch.float32"
+ },
+ "encoder.block.1.layer.0.SelfAttention.o.weight": {
+  "shape": [
+   256,
+   256
+  ],
+  "dtype": "torch.float32"
+ },
+ "encoder.block.1.layer.0.SelfAttention.q.weight": {
+  "shape": [
+   256,
+   256
+  ],
+  "dtype": "torch.float32"
+ },
+ "encoder.block.1.layer.0.SelfAttention.v.weight": {
+  "shape": [
+   256,
+   256
+  ],
+  "dtype": "torch.float32"
+ },
+ "encoder.block.1.layer.0.layer_norm.weight": {
+  "shape": [
+   256
+  ],
+  "dtype": "torch.float32"
+ },
+ "encoder.block.1.layer.1.DenseReluDense.wi.weight": {
+  "shape": [
+   1024,
+   256
+  ],
+  "dtype": "torch.float32"
+ },
+ "encoder.block.1.layer.1.DenseReluDense.wo.weight": {
+  "shape": [
+   256,
+   1024
+  ],
+  "dtype": "torch.float32"
+ },
+ "encoder.block.1.layer.1.layer_norm.weight": {
+  "shape": [
+   256
+  ],
+  "dtype": "torch.float32"
+ },
+ "encoder.block.2.layer.0.SelfAttention.k.weight": {
+  "shape": [
+   256,
+   256
+  ],
+  "dtype": "torch.float32"
+ },
+ "encoder.block.2.layer.0.SelfAttention.o.weight": {
+  "shape": [
+   256,
+   256
+  ],
+  "dtype": "torch.float32"
+ },
+ "encoder.block.2.layer.0.SelfAttention.q.weight": {
+  "shape": [
+   256,
+   256
+  ],
+  "dtype": "torch.float32"
+ },
+ "encoder.block.2.layer.0.SelfAttention.v.weight": {
+  "shape": [
+   256,
+   256
+  ],
+  "dtype": "torch.float32"
+ },
+ "encoder.block.2.layer.0.layer_norm.weight": {
+  "shape": [
+   256
+  ],
+  "dtype": "torch.float32"
+ },
+ "encoder.block.2.layer.1.DenseReluDense.wi.weight": {
+  "shape": [
+   1024,
+   256
+  ],
+  "dtype": "torch.float32"
+ },
+ "encoder.block.2.layer.1.DenseReluDense.wo.weight": {
+  "shape": [
+   256,
+   1024
+  ],
+  "dtype": "torch.float32"
+ },
+ "encoder.block.2.layer.1.layer_norm.weight": {
+  "shape": [
+   256
+  ],
+  "dtype": "torch.float32"
+ },
+ "encoder.block.3.layer.0.SelfAttention.k.weight": {
+  "shape": [
+   256,
+   256
+  ],
+  "dtype": "torch.float32"
+ },
+ "encoder.block.3.layer.0.SelfAttention.o.weight": {
+  "shape": [
+   256,
+   256
+  ],
+  "dtype": "torch.float32"
+ },
+ "encoder.block.3.layer.0.SelfAttention.q.weight": {
+  "shape": [
+   256,
+   256
+  ],
+  "dtype": "torch.float32"
+ },
+ "encoder.block.3.layer.0.SelfAttention.v.weight": {
+  "shape": [
+   256,
+   256
+  ],
+  "dtype": "torch.float32"
+ },
+ "encoder.block.3.layer.0.layer_norm.weight": {
+  "shape": [
+   256
+  ],
+  "dtype": "torch.float32"
+ },
+ "encoder.block.3.layer.1.DenseReluDense.wi.weight": {
+  "shape": [
+   1024,
+   256
+  ],
+  "dtype": "torch.float32"
+ },
+ "encoder.block.3.layer.1.DenseReluDense.wo.weight": {
+  "shape": [
+   256,
+   1024
+  ],
+  "dtype": "torch.float32"
+ },
+ "encoder.block.3.layer.1.layer_norm.weight": {
+  "shape": [
+   256
+  ],
+  "dtype": "torch.float32"
+ },
+ "encoder.final_layer_norm.weight": {
+  "shape": [
+   256
+  ],
+  "dtype": "torch.float32"
+ },
+ "input_patch_embedding.hidden_layer.bias": {
+  "shape": [
+   1024
+  ],
+  "dtype": "torch.float32"
+ },
+ "input_patch_embedding.hidden_layer.weight": {
+  "shape": [
+   1024,
+   32
+  ],
+  "dtype": "torch.float32"
+ },
+ "input_patch_embedding.output_layer.bias": {
+  "shape": [
+   256
+  ],
+  "dtype": "torch.float32"
+ },
+ "input_patch_embedding.output_layer.weight": {
+  "shape": [
+   256,
+   1024
+  ],
+  "dtype": "torch.float32"
+ },
+ "input_patch_embedding.residual_layer.bias": {
+  "shape": [
+   256
+  ],
+  "dtype": "torch.float32"
+ },
+ "input_patch_embedding.residual_layer.weight": {
+  "shape": [
+   256,
+   32
+  ],
+  "dtype": "torch.float32"
+ },
+ "output_patch_embedding.hidden_layer.bias": {
+  "shape": [
+   1024
+  ],
+  "dtype": "torch.float32"
+ },
+ "output_patch_embedding.hidden_layer.weight": {
+  "shape": [
+   1024,
+   256
+  ],
+  "dtype": "torch.float32"
+ },
+ "output_patch_embedding.output_layer.bias": {
+  "shape": [
+   576
+  ],
+  "dtype": "torch.float32"
+ },
+ "output_patch_embedding.output_layer.weight": {
+  "shape": [
+   576,
+   1024
+  ],
+  "dtype": "torch.float32"
+ },
+ "output_patch_embedding.residual_layer.bias": {
+  "shape": [
+   576
+  ],
+  "dtype": "torch.float32"
+ },
+ "output_patch_embedding.residual_layer.weight": {
+  "shape": [
+   576,
+   256
+  ],
+  "dtype": "torch.float32"
+ },
+ "shared.weight": {
+  "shape": [
+   2,
+   256
+  ],
+  "dtype": "torch.float32"
+ }
+}

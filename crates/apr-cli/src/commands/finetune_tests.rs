@@ -79,6 +79,7 @@ fn test_run_no_model() {
         false,
         false,
         0,
+        &ClassifyOverrides::default(),
     );
     assert!(result.is_err());
 }
@@ -116,6 +117,7 @@ fn test_run_plan_with_model_size() {
         false,
         false,
         0,
+        &ClassifyOverrides::default(),
     );
     assert!(result.is_ok());
 }
@@ -153,6 +155,7 @@ fn test_run_plan_json() {
         true,
         false,
         0,
+        &ClassifyOverrides::default(),
     );
     assert!(result.is_ok());
 }
@@ -192,6 +195,7 @@ fn test_run_with_model_file() {
         false,
         false,
         0,
+        &ClassifyOverrides::default(),
     );
     assert!(result.is_ok());
 }
@@ -322,6 +326,7 @@ fn test_run_training_creates_adapter() {
         true,
         false,
         0,
+        &ClassifyOverrides::default(),
     );
     // Training fails with a minimal model (missing norm weights, etc.)
     // but the pipeline should get past config resolution and data parsing.
@@ -1313,6 +1318,7 @@ fn run_with_missing_model_file_errors() {
         true,          // json_output
         false,         // experimental_mps
         0,             // gpu_share
+        &ClassifyOverrides::default(),
     );
     assert!(result.is_err());
 }

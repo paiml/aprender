@@ -27,8 +27,23 @@ use crate::autograd::{self};
 // The D-08 seal, scanned in Rust so it runs on every platform and in CI
 // ---------------------------------------------------------------------------
 
-/// The four constructors 01-05/01-06 sealed to `pub(crate)`.
-const SEALED_CONSTRUCTORS: [&str; 4] = ["from_bytes", "open", "open_slice_fixture", "from_import"];
+/// Every constructor sealed to `pub(crate)`.
+///
+/// EXTENDED when the general-BERT door landed. `from_bytes_with_config` and
+/// `from_bert_import` are the general twins of `from_bytes` and `from_import`,
+/// and the scan is word-bounded — so `from_bytes` does NOT match
+/// `from_bytes_with_config`, and leaving them off would let either be promoted
+/// to `pub` with this gate still green. CLAUDE.md rule 4: extending a guard's
+/// scope means re-running its case table in the new scope, which the rows added
+/// to `setfit_model_seal_scan_case_table` do.
+const SEALED_CONSTRUCTORS: [&str; 6] = [
+    "from_bytes",
+    "from_bytes_with_config",
+    "open",
+    "open_slice_fixture",
+    "from_import",
+    "from_bert_import",
+];
 
 /// `\b` on both sides of a literal, ASCII-word semantics.
 fn word_bounded(haystack: &str, needle: &str) -> bool {
@@ -51,7 +66,7 @@ fn word_bounded(haystack: &str, needle: &str) -> bool {
 }
 
 /// The declaration scan:
-/// `^[^/]*\bpub fn (from_bytes|open|open_slice_fixture|from_import)\b`.
+/// `^[^/]*\bpub fn (from_bytes|from_bytes_with_config|open|open_slice_fixture|from_import|from_bert_import)\b`.
 ///
 /// The `^[^/]*` prefix is load-bearing and is why this takes only the part of
 /// the line BEFORE the first `/`: doc comments in 01-05/01-06 that literally
@@ -115,7 +130,7 @@ fn setfit_model_seal_scan_case_table() {
     // RE-RUN rather than the pattern re-read. Every one of the five historical
     // `apr`-invocation pattern defects was caught by a table like this and none
     // by review. These rows are the plan's, verbatim.
-    let table: [(String, bool); 9] = [
+    let table: [(String, bool); 11] = [
         (
             format!("    {PUB_FN}open(dir: &Path) -> Result<Self, SetFitError> {{"),
             true,
@@ -130,6 +145,16 @@ fn setfit_model_seal_scan_case_table() {
         ),
         (
             format!("    {PUB_FN}from_import(import: &MiniLmImport, seed: u64) -> ... {{"),
+            true,
+        ),
+        // The general-BERT twins. Word-bounded, so these are NOT covered by the
+        // `from_bytes` / `from_import` rows above — they are why the list grew.
+        (
+            format!("    {PUB_FN}from_bytes_with_config(bytes: &[u8], max_length: usize) {{"),
+            true,
+        ),
+        (
+            format!("    {PUB_FN}from_bert_import(import: &BertImport, seed: u64) -> ... {{"),
             true,
         ),
         (
@@ -248,7 +273,13 @@ fn mod_source() -> String {
 /// that shape is the thing the gate exists to stop: a constructor that takes a
 /// tokenizer and an encoder from two places reopens the seal no matter how it is
 /// named.
-const PUBLIC_CONSTRUCTORS: [&str; 3] = [
+const PUBLIC_CONSTRUCTORS: [&str; 4] = [
+    // ONE source for both halves: `BertImport::open` reads and hashes
+    // `tokenizer.json`, and `from_bert_dir` builds the tokenizer from those very
+    // bytes (`import.tokenizer_bytes()`) rather than re-reading the path — so the
+    // recorded digest always describes the tokenizer that was built, and a
+    // mismatched pair is not constructible.
+    "from_bert_dir",
     "from_bundle_parts",
     "from_pretrained_dir",
     "from_slice_fixture",

@@ -1,0 +1,937 @@
+{
+ "schema": "laya-ci-audit-v1",
+ "plan": "08-34",
+ "audited_code": {
+  "head": "236ab5e543b6f64ad8301219f14b942735ec811b",
+  "fixes_before_audit": {
+   "f901e613b": "050: data subcommands declared in the CLI contract",
+   "0b3ef0164": "D-ITEM-08-34-B: SetFit artifact canonicalised (bytes independent of serde_json preserve_order)",
+   "236ab5e54": "setfit-apr-v1 prose"
+  }
+ },
+ "fragments": [
+  {
+   "k": 1,
+   "name": "010-aprender-core-lib-setfit",
+   "shard": 1,
+   "rc": 0,
+   "class": "pass"
+  },
+  {
+   "k": 2,
+   "name": "020-aprender-core-setfit-conformance",
+   "shard": 2,
+   "rc": 0,
+   "class": "pass"
+  },
+  {
+   "k": 3,
+   "name": "030-aprender-core-monorepo-invariants",
+   "shard": 3,
+   "rc": 0,
+   "class": "pass"
+  },
+  {
+   "k": 4,
+   "name": "040-aprender-core-readme-contract",
+   "shard": 1,
+   "rc": 0,
+   "class": "pass"
+  },
+  {
+   "k": 5,
+   "name": "050-apr-cli-cli-commands",
+   "shard": 2,
+   "rc": 0,
+   "class": "pass",
+   "note": "rc 101 before commit f901e613b (FALSIFY-CLI-006: data pairs/select/tweet-eval-stance undeclared in contracts/apr-cli-commands-v1.yaml; commands added by the branch, absent at 2817c6d97); rc 0 after"
+  },
+  {
+   "k": 6,
+   "name": "060-apr-cli-reg15-admission",
+   "shard": 3,
+   "rc": 0,
+   "class": "pass"
+  },
+  {
+   "k": 7,
+   "name": "070-aprender-train-inspect-falsify-no-fabricated-metadata-2519",
+   "shard": 1,
+   "rc": 0,
+   "class": "pass"
+  },
+  {
+   "k": 8,
+   "name": "080-aprender-train-bench-falsify-no-fabricated-benchmarks-2519",
+   "shard": 2,
+   "rc": 0,
+   "class": "pass"
+  },
+  {
+   "k": 9,
+   "name": "090-aprender-train-shell-falsify-no-fabricated-fetch-2519",
+   "shard": 3,
+   "rc": 0,
+   "class": "pass"
+  },
+  {
+   "k": 10,
+   "name": "100-aprender-core-beat-sklearn-iris",
+   "shard": 1,
+   "rc": 0,
+   "class": "pass"
+  },
+  {
+   "k": 11,
+   "name": "110-aprender-core-beat-sklearn-nmi",
+   "shard": 2,
+   "rc": 0,
+   "class": "pass"
+  },
+  {
+   "k": 12,
+   "name": "120-aprender-core-beat-sklearn-metrics-parity",
+   "shard": 3,
+   "rc": 0,
+   "class": "pass"
+  },
+  {
+   "k": 13,
+   "name": "130-aprender-core-beat-sklearn-gaussiannb-accuracy",
+   "shard": 1,
+   "rc": 0,
+   "class": "pass"
+  },
+  {
+   "k": 14,
+   "name": "140-aprender-core-beat-sklearn-svc-accuracy",
+   "shard": 2,
+   "rc": 0,
+   "class": "pass"
+  },
+  {
+   "k": 15,
+   "name": "150-aprender-core-beat-sklearn-pipeline-encoder",
+   "shard": 3,
+   "rc": 0,
+   "class": "pass"
+  },
+  {
+   "k": 16,
+   "name": "160-aprender-serve-beat-fail-closed-garbage",
+   "shard": 1,
+   "rc": 0,
+   "class": "pass"
+  },
+  {
+   "k": 17,
+   "name": "170-aprender-compute-lib-beat-nf4-bitsandbytes-equivalence",
+   "shard": 2,
+   "rc": 0,
+   "class": "pass"
+  },
+  {
+   "k": 18,
+   "name": "180-aprender-core-beat-pytorch-autograd-grad",
+   "shard": 3,
+   "rc": 0,
+   "class": "pass"
+  },
+  {
+   "k": 19,
+   "name": "190-aprender-train-lora-lib-beat-lora-merge-forward-equivalence",
+   "shard": 1,
+   "rc": 0,
+   "class": "pass"
+  },
+  {
+   "k": 20,
+   "name": "200-apr-cli-beat-pytorch-deploy-footprint",
+   "shard": 2,
+   "rc": 0,
+   "class": "pass"
+  },
+  {
+   "k": 21,
+   "name": "210-aprender-serve-beat-fail-closed-structural",
+   "shard": 3,
+   "rc": 0,
+   "class": "pass"
+  },
+  {
+   "k": 22,
+   "name": "220-aprender-serve-ollama-http-compat",
+   "shard": 1,
+   "rc": 0,
+   "class": "pass"
+  },
+  {
+   "k": 23,
+   "name": "230-apr-cli-ollama-ndjson-streaming",
+   "shard": 2,
+   "rc": 0,
+   "class": "pass"
+  },
+  {
+   "k": 24,
+   "name": "240-apr-cli-falsification-chat-http-cli",
+   "shard": 3,
+   "rc": 0,
+   "class": "pass"
+  },
+  {
+   "k": 25,
+   "name": "250-aprender-contracts-apr-serve-api-key-auth-contract",
+   "shard": 1,
+   "rc": 0,
+   "class": "pass"
+  },
+  {
+   "k": 26,
+   "name": "260-apr-cli-falsify-auth-001-002-003",
+   "shard": 2,
+   "rc": 0,
+   "class": "pass"
+  },
+  {
+   "k": 27,
+   "name": "270-apr-cli-beat-apr-data-alimentar-reach",
+   "shard": 3,
+   "rc": 0,
+   "class": "pass"
+  },
+  {
+   "k": 28,
+   "name": "280-apr-cli-beat-apr-sibling-cli-reach",
+   "shard": 1,
+   "rc": 0,
+   "class": "pass"
+  },
+  {
+   "k": 29,
+   "name": "290-aprender-contracts-cli-pv-surface-gate",
+   "shard": 2,
+   "rc": 0,
+   "class": "pass"
+  },
+  {
+   "k": 30,
+   "name": "300-aprender-contracts-cli-pvl-zero-contracts",
+   "shard": 3,
+   "rc": 0,
+   "class": "pass"
+  },
+  {
+   "k": 31,
+   "name": "310-aprender-contracts-cli-cli-integration",
+   "shard": 1,
+   "rc": 0,
+   "class": "pass"
+  },
+  {
+   "k": 32,
+   "name": "320-aprender-contracts-cli-ground-truth",
+   "shard": 2,
+   "rc": 0,
+   "class": "pass"
+  },
+  {
+   "k": 33,
+   "name": "330-aprender-contracts-cli-version-identity",
+   "shard": 3,
+   "rc": 0,
+   "class": "pass"
+  },
+  {
+   "k": 34,
+   "name": "335-aprender-contracts-cli-ont6-lint-verdict",
+   "shard": 1,
+   "rc": 0,
+   "class": "pass"
+  },
+  {
+   "k": 35,
+   "name": "336-aprender-contracts-cli-ont2b-sigma-gate",
+   "shard": 2,
+   "rc": 0,
+   "class": "pass"
+  },
+  {
+   "k": 36,
+   "name": "337-aprender-contracts-cli-ont4-relations-gate",
+   "shard": 3,
+   "rc": 0,
+   "class": "pass"
+  },
+  {
+   "k": 37,
+   "name": "338-aprender-contracts-cli-ont4b-shapes-gate",
+   "shard": 1,
+   "rc": 0,
+   "class": "pass",
+   "rc_working_tree": 101,
+   "note": "rc 101 in this working tree BY CONSTRUCTION (pv extract walks the untracked .claude/worktrees checkouts); rc 0 with them moved out of the tree, as in CI's clean checkout"
+  },
+  {
+   "k": 38,
+   "name": "339-aprender-contracts-cli-ont-extract-json",
+   "shard": 2,
+   "rc": 0,
+   "class": "pass"
+  },
+  {
+   "k": 39,
+   "name": "340-apr-cli-pixel-regression",
+   "shard": 3,
+   "rc": 0,
+   "class": "pass"
+  },
+  {
+   "k": 40,
+   "name": "341-aprender-contracts-cli-ont-entity-properties",
+   "shard": 1,
+   "rc": 0,
+   "class": "pass"
+  },
+  {
+   "k": 41,
+   "name": "342-aprender-contracts-cli-ont4c1-model-receipts",
+   "shard": 2,
+   "rc": 0,
+   "class": "pass"
+  },
+  {
+   "k": 42,
+   "name": "343-aprender-contracts-cli-ont4b2-code-lean-w3c",
+   "shard": 3,
+   "rc": 0,
+   "class": "pass"
+  },
+  {
+   "k": 43,
+   "name": "344-aprender-contracts-cli-ont6b-kind-default",
+   "shard": 1,
+   "rc": 0,
+   "class": "pass"
+  },
+  {
+   "k": 44,
+   "name": "350-aprender-quant-ggml-traits-fixture",
+   "shard": 2,
+   "rc": 0,
+   "class": "pass"
+  },
+  {
+   "k": 45,
+   "name": "360-workspace-check-benches",
+   "shard": 3,
+   "rc": 101,
+   "class": "red-platform",
+   "linux_expected": "green",
+   "deferred_id": "D-ITEM-08-32-E",
+   "note": "aprender-profile: compile_error!(\"renacer requires Linux (ptrace syscall tracing)\") on macOS; control: cargo check --workspace --benches --locked --exclude aprender-profile rc 0"
+  },
+  {
+   "k": 46,
+   "name": "370-apr-cli-registry-failure-catalogue",
+   "shard": 1,
+   "rc": 0,
+   "class": "pass"
+  },
+  {
+   "k": 47,
+   "name": "380-aprender-compute-registry-case-table",
+   "shard": 2,
+   "rc": 0,
+   "class": "pass"
+  },
+  {
+   "k": 48,
+   "name": "390-aprender-core-contract-tests",
+   "shard": 3,
+   "rc": 0,
+   "class": "pass"
+  },
+  {
+   "k": 49,
+   "name": "400-apr-cli-backend-refusal-case-table",
+   "shard": 1,
+   "rc": 0,
+   "class": "pass"
+  },
+  {
+   "k": 50,
+   "name": "410-aprender-test-showcase-probar-tests",
+   "shard": 2,
+   "rc": 0,
+   "class": "pass"
+  },
+  {
+   "k": 51,
+   "name": "420-aprender-contracts-cli-ont4c3-parity-receipts",
+   "shard": 3,
+   "rc": 0,
+   "class": "pass"
+  },
+  {
+   "k": 52,
+   "name": "430-aprender-contracts-cli-ont-refusal-receipt",
+   "shard": 1,
+   "rc": 0,
+   "class": "pass"
+  },
+  {
+   "k": 53,
+   "name": "440-apr-cli-devices-reports-its-own-build",
+   "shard": 2,
+   "rc": 0,
+   "class": "pass"
+  },
+  {
+   "k": 54,
+   "name": "450-aprender-contracts-cli-ont-release-readiness",
+   "shard": 3,
+   "rc": 0,
+   "class": "pass"
+  },
+  {
+   "k": 55,
+   "name": "455-aprender-contracts-cli-ont7-valid-under-gate",
+   "shard": 1,
+   "rc": 0,
+   "class": "pass"
+  },
+  {
+   "k": 56,
+   "name": "457-apr-format-golden-fixtures",
+   "shard": 2,
+   "rc": 0,
+   "class": "pass"
+  },
+  {
+   "k": 57,
+   "name": "460-apr-cli-thinking-budgets-mirror",
+   "shard": 3,
+   "rc": 0,
+   "class": "pass"
+  },
+  {
+   "k": 58,
+   "name": "465-apr-cli-command-coverage",
+   "shard": 1,
+   "rc": 0,
+   "class": "pass"
+  },
+  {
+   "k": 59,
+   "name": "470-apr-cli-capability-mirror",
+   "shard": 2,
+   "rc": 0,
+   "class": "pass"
+  },
+  {
+   "k": 60,
+   "name": "475-apr-cli-kept-cli-tests",
+   "shard": 3,
+   "rc": 0,
+   "class": "pass"
+  },
+  {
+   "k": 61,
+   "name": "480-aprender-facade-e2e",
+   "shard": 1,
+   "rc": 0,
+   "class": "pass"
+  },
+  {
+   "k": 62,
+   "name": "490-aprender-profile-cli-tests",
+   "shard": 2,
+   "rc": 101,
+   "class": "red-platform",
+   "linux_expected": "green",
+   "deferred_id": "D-ITEM-08-32-E",
+   "note": "aprender-profile: compile_error!(\"renacer requires Linux (ptrace syscall tracing)\") on macOS; a single cargo command, nothing after it is measurable here"
+  },
+  {
+   "k": 63,
+   "name": "500-aprender-orchestrate-integration",
+   "shard": 3,
+   "rc": 0,
+   "class": "pass"
+  },
+  {
+   "k": 64,
+   "name": "510-aprender-decide-ui",
+   "shard": 1,
+   "rc": 0,
+   "class": "pass"
+  },
+  {
+   "k": 65,
+   "name": "520-aprender-mcp-decide-e2e-stdio",
+   "shard": 2,
+   "rc": 0,
+   "class": "pass"
+  }
+ ],
+ "lib_universe": {
+  "partitions": 3,
+  "command": "cargo nextest run --profile ci --workspace --lib --no-fail-fast --exclude aprender-gpu --exclude aprender-cuda-edge --exclude aprender-compute --partition hash:N/3",
+  "counts": [
+   {
+    "partition": 1,
+    "tests": 27862,
+    "passed": 27853,
+    "failed": 9
+   },
+   {
+    "partition": 2,
+    "tests": 27947,
+    "passed": 27939,
+    "failed": 8
+   },
+   {
+    "partition": 3,
+    "tests": 27907,
+    "passed": 27899,
+    "failed": 8
+   }
+  ],
+  "failed": [
+   {
+    "partition": 1,
+    "crate": "aprender-train",
+    "test": "gpu::guard::tests::test_guard_available_mb_after_reserve",
+    "class": "red-platform",
+    "linux_expected": "green",
+    "deferred_id": "D-ITEM-08-33-E",
+    "note": "VramLedger::is_alive reads /proc/<pid>/stat (ledger.rs:77-79); crates/aprender-train byte-identical to 3c0f2cf00; the 21 of 08-33"
+   },
+   {
+    "partition": 1,
+    "crate": "aprender-train",
+    "test": "gpu::guard::tests::test_guard_direct_acquire",
+    "class": "red-platform",
+    "linux_expected": "green",
+    "deferred_id": "D-ITEM-08-33-E",
+    "note": "VramLedger::is_alive reads /proc/<pid>/stat (ledger.rs:77-79); crates/aprender-train byte-identical to 3c0f2cf00; the 21 of 08-33"
+   },
+   {
+    "partition": 1,
+    "crate": "aprender-train",
+    "test": "gpu::guard::tests::test_guard_multiple_sequential_reserve_release",
+    "class": "red-platform",
+    "linux_expected": "green",
+    "deferred_id": "D-ITEM-08-33-E",
+    "note": "VramLedger::is_alive reads /proc/<pid>/stat (ledger.rs:77-79); crates/aprender-train byte-identical to 3c0f2cf00; the 21 of 08-33"
+   },
+   {
+    "partition": 1,
+    "crate": "aprender-train",
+    "test": "gpu::guard::tests::test_guard_small_gpu",
+    "class": "red-platform",
+    "linux_expected": "green",
+    "deferred_id": "D-ITEM-08-33-E",
+    "note": "VramLedger::is_alive reads /proc/<pid>/stat (ledger.rs:77-79); crates/aprender-train byte-identical to 3c0f2cf00; the 21 of 08-33"
+   },
+   {
+    "partition": 1,
+    "crate": "aprender-train",
+    "test": "gpu::guard::tests::test_guard_status_returns_string",
+    "class": "red-platform",
+    "linux_expected": "green",
+    "deferred_id": "D-ITEM-08-33-E",
+    "note": "VramLedger::is_alive reads /proc/<pid>/stat (ledger.rs:77-79); crates/aprender-train byte-identical to 3c0f2cf00; the 21 of 08-33"
+   },
+   {
+    "partition": 1,
+    "crate": "aprender-train",
+    "test": "gpu::guard::tests::test_guard_update_actual_reduces_reserved",
+    "class": "red-platform",
+    "linux_expected": "green",
+    "deferred_id": "D-ITEM-08-33-E",
+    "note": "VramLedger::is_alive reads /proc/<pid>/stat (ledger.rs:77-79); crates/aprender-train byte-identical to 3c0f2cf00; the 21 of 08-33"
+   },
+   {
+    "partition": 1,
+    "crate": "aprender-train",
+    "test": "gpu::ledger::tests::test_gpu_status_display",
+    "class": "red-platform",
+    "linux_expected": "green",
+    "deferred_id": "D-ITEM-08-33-E",
+    "note": "VramLedger::is_alive reads /proc/<pid>/stat (ledger.rs:77-79); crates/aprender-train byte-identical to 3c0f2cf00; the 21 of 08-33"
+   },
+   {
+    "partition": 1,
+    "crate": "aprender-train",
+    "test": "gpu::ledger::tests::test_multiple_reservations_same_gpu",
+    "class": "red-platform",
+    "linux_expected": "green",
+    "deferred_id": "D-ITEM-08-33-E",
+    "note": "VramLedger::is_alive reads /proc/<pid>/stat (ledger.rs:77-79); crates/aprender-train byte-identical to 3c0f2cf00; the 21 of 08-33"
+   },
+   {
+    "partition": 1,
+    "crate": "aprender-train",
+    "test": "gpu::ledger::tests::test_update_actual",
+    "class": "red-platform",
+    "linux_expected": "green",
+    "deferred_id": "D-ITEM-08-33-E",
+    "note": "VramLedger::is_alive reads /proc/<pid>/stat (ledger.rs:77-79); crates/aprender-train byte-identical to 3c0f2cf00; the 21 of 08-33"
+   },
+   {
+    "partition": 2,
+    "crate": "aprender-orchestrate",
+    "test": "agent::driver::apr_serve::tests::test_find_apr_binary",
+    "class": "red-platform",
+    "linux_expected": "green",
+    "deferred_id": "D-ITEM-08-34-A",
+    "note": "needs an `apr` on PATH; this host pins its binary (CLAUDE.md Step 0) and has none; crate byte-identical to 2817c6d97, upstream CI green on the same bytes"
+   },
+   {
+    "partition": 2,
+    "crate": "aprender-train",
+    "test": "gpu::guard::tests::test_guard_update_actual",
+    "class": "red-platform",
+    "linux_expected": "green",
+    "deferred_id": "D-ITEM-08-33-E",
+    "note": "VramLedger::is_alive reads /proc/<pid>/stat (ledger.rs:77-79); crates/aprender-train byte-identical to 3c0f2cf00; the 21 of 08-33"
+   },
+   {
+    "partition": 2,
+    "crate": "aprender-train",
+    "test": "gpu::ledger::tests::test_capacity_invariant_prevents_overallocation",
+    "class": "red-platform",
+    "linux_expected": "green",
+    "deferred_id": "D-ITEM-08-33-E",
+    "note": "VramLedger::is_alive reads /proc/<pid>/stat (ledger.rs:77-79); crates/aprender-train byte-identical to 3c0f2cf00; the 21 of 08-33"
+   },
+   {
+    "partition": 2,
+    "crate": "aprender-train",
+    "test": "gpu::ledger::tests::test_read_reservations_returns_our_gpu_only",
+    "class": "red-platform",
+    "linux_expected": "green",
+    "deferred_id": "D-ITEM-08-33-E",
+    "note": "VramLedger::is_alive reads /proc/<pid>/stat (ledger.rs:77-79); crates/aprender-train byte-identical to 3c0f2cf00; the 21 of 08-33"
+   },
+   {
+    "partition": 2,
+    "crate": "aprender-train",
+    "test": "gpu::ledger::tests::test_reserve_and_release",
+    "class": "red-platform",
+    "linux_expected": "green",
+    "deferred_id": "D-ITEM-08-33-E",
+    "note": "VramLedger::is_alive reads /proc/<pid>/stat (ledger.rs:77-79); crates/aprender-train byte-identical to 3c0f2cf00; the 21 of 08-33"
+   },
+   {
+    "partition": 2,
+    "crate": "aprender-train",
+    "test": "gpu::ledger::tests::test_reserve_exact_capacity",
+    "class": "red-platform",
+    "linux_expected": "green",
+    "deferred_id": "D-ITEM-08-33-E",
+    "note": "VramLedger::is_alive reads /proc/<pid>/stat (ledger.rs:77-79); crates/aprender-train byte-identical to 3c0f2cf00; the 21 of 08-33"
+   },
+   {
+    "partition": 2,
+    "crate": "aprender-train",
+    "test": "gpu::ledger::tests::test_with_lease_hours_custom",
+    "class": "red-platform",
+    "linux_expected": "green",
+    "deferred_id": "D-ITEM-08-33-E",
+    "note": "VramLedger::is_alive reads /proc/<pid>/stat (ledger.rs:77-79); crates/aprender-train byte-identical to 3c0f2cf00; the 21 of 08-33"
+   },
+   {
+    "partition": 2,
+    "crate": "aprender-train",
+    "test": "gpu::wait::tests::test_timeout_when_full",
+    "class": "red-platform",
+    "linux_expected": "green",
+    "deferred_id": "D-ITEM-08-33-E",
+    "note": "VramLedger::is_alive reads /proc/<pid>/stat (ledger.rs:77-79); crates/aprender-train byte-identical to 3c0f2cf00; the 21 of 08-33"
+   },
+   {
+    "partition": 3,
+    "crate": "aprender-cgp",
+    "test": "profilers::system::tests::test_read_system_memory_total_mb",
+    "class": "red-platform",
+    "linux_expected": "green",
+    "deferred_id": "D-ITEM-08-34-A",
+    "note": "reads /proc/meminfo (the test says 'On Linux'); crate byte-identical to 2817c6d97"
+   },
+   {
+    "partition": 3,
+    "crate": "aprender-mcp",
+    "test": "apr_bin::tests::exec_marker_bin_survives_a_transient_etxtbsy",
+    "class": "red-platform",
+    "linux_expected": "green",
+    "deferred_id": "D-ITEM-08-32-E",
+    "note": "Linux-only (ETXTBSY) test, the file is identical to upstream"
+   },
+   {
+    "partition": 3,
+    "crate": "aprender-test-lib",
+    "test": "brick::pipeline::tests::test_uuid_v4_generates_unique_ids",
+    "class": "red-platform",
+    "linux_expected": "green",
+    "deferred_id": "D-ITEM-08-34-A",
+    "note": "run_id is SystemTime nanos; macOS clock granularity gives fewer than 90 unique of 100, 3 of 3 reruns red here; crate byte-identical to 2817c6d97"
+   },
+   {
+    "partition": 3,
+    "crate": "aprender-train",
+    "test": "gpu::guard::tests::test_guard_multiple_reservations_sequential",
+    "class": "red-platform",
+    "linux_expected": "green",
+    "deferred_id": "D-ITEM-08-33-E",
+    "note": "VramLedger::is_alive reads /proc/<pid>/stat (ledger.rs:77-79); crates/aprender-train byte-identical to 3c0f2cf00; the 21 of 08-33"
+   },
+   {
+    "partition": 3,
+    "crate": "aprender-train",
+    "test": "gpu::ledger::tests::test_drop_releases_reservation",
+    "class": "red-platform",
+    "linux_expected": "green",
+    "deferred_id": "D-ITEM-08-33-E",
+    "note": "VramLedger::is_alive reads /proc/<pid>/stat (ledger.rs:77-79); crates/aprender-train byte-identical to 3c0f2cf00; the 21 of 08-33"
+   },
+   {
+    "partition": 3,
+    "crate": "aprender-train",
+    "test": "gpu::ledger::tests::test_gpu_status_display_with_actual_mb",
+    "class": "red-platform",
+    "linux_expected": "green",
+    "deferred_id": "D-ITEM-08-33-E",
+    "note": "VramLedger::is_alive reads /proc/<pid>/stat (ledger.rs:77-79); crates/aprender-train byte-identical to 3c0f2cf00; the 21 of 08-33"
+   },
+   {
+    "partition": 3,
+    "crate": "aprender-train",
+    "test": "gpu::ledger::tests::test_ledger_data_prune_dead",
+    "class": "red-platform",
+    "linux_expected": "green",
+    "deferred_id": "D-ITEM-08-33-E",
+    "note": "VramLedger::is_alive reads /proc/<pid>/stat (ledger.rs:77-79); crates/aprender-train byte-identical to 3c0f2cf00; the 21 of 08-33"
+   },
+   {
+    "partition": 3,
+    "crate": "aprender-train",
+    "test": "gpu::ledger::tests::test_reservation_is_alive_current_process",
+    "class": "red-platform",
+    "linux_expected": "green",
+    "deferred_id": "D-ITEM-08-33-E",
+    "note": "VramLedger::is_alive reads /proc/<pid>/stat (ledger.rs:77-79); crates/aprender-train byte-identical to 3c0f2cf00; the 21 of 08-33"
+   }
+  ],
+  "compute": "cargo test -p aprender-compute --lib: test result: ok. 3332 passed; 4 ignored",
+  "examples": "cargo build --examples --workspace --keep-going: only the aprender-profile example validate_golden_trace fails (renacer, Linux-only); with --exclude aprender-profile rc 0",
+  "prior_red_closed": "aprender-core setfit determinism golden (D-ITEM-08-34-B): red in the first pass (26 failures), green after 0b3ef0164 (25 failures, all red-platform)"
+ },
+ "guards": [
+  {
+   "name": "check_contract_test_binding",
+   "result": "pass",
+   "note": "27 dangling = baseline 27 against comparand 00052c012; the VACUOUS state is gone"
+  },
+  {
+   "name": "check_contract_test_binding --self-test",
+   "result": "pass"
+  },
+  {
+   "name": "check_readme_claims",
+   "result": "pass"
+  },
+  {
+   "name": "check_contract_enforcement",
+   "result": "pass"
+  },
+  {
+   "name": "check_publish_safety",
+   "result": "pass",
+   "note": "11 checks, 13 mirrors"
+  },
+  {
+   "name": "check_build_rs_paths",
+   "result": "pass"
+  },
+  {
+   "name": "check_format_sovereignty",
+   "result": "pass"
+  },
+  {
+   "name": "sigma_executed.py --self-test",
+   "result": "pass",
+   "note": "17/17"
+  },
+  {
+   "name": "check_baseline_ratchets",
+   "result": "red-platform",
+   "deferred_id": "D-ITEM-08-34-C",
+   "note": "3 tool_version FAIL rows only (pmat recorded 3.41.1 vs runner 3.15.0, twice; bashrs 7.4.1 vs 6.66.3) plus the vacuity row they cause; every ratchet row is ok"
+  }
+ ],
+ "unverifiable_locally": [
+  "the Sigma-executed fan-in (the workspace-test verdict job)",
+  "the GPU crates step (aprender-gpu, aprender-cuda-edge)",
+  "the sccache/docker image",
+  "Linux x86_64 differences",
+  "scripts/lint-provenance.sh (the provenance step of make contracts; needs ripgrep as a binary)",
+  "scripts/guard_tree.sh (needs GNU xargs -a; the ci job's cargo-free guard universe cannot run on macOS)",
+  "scripts/ci_run_explicit_test_commands.sh itself (BSD find has no -printf; its loop was replicated in a scratch script, no fail-fast)"
+ ],
+ "expected_ci_reds": [
+  {
+   "what": "pr-review-quorum: missing signed review receipt for #4634 (pull_request_target)",
+   "deferred_id": "D-ITEM-08-32-F"
+  },
+  {
+   "what": "check_no_hand_rolled_parsers: four hand-rolled argv parsers (aprender-mcp-chronos, -forecast, -setfit, -setfit-train)",
+   "deferred_id": "D-ITEM-08-33-C"
+  },
+  {
+   "what": "check_cascade_covers_all_crates: aprender-contrastive-data absent from TIERS",
+   "deferred_id": "D-ITEM-08-33-D"
+  },
+  {
+   "what": "Linux-only tests (expected GREEN on Linux; registered so a red there is attributable)",
+   "deferred_id": "D-ITEM-08-32-E"
+  }
+ ],
+ "registered_ids": [
+  "D-ITEM-08-32-E",
+  "D-ITEM-08-32-F",
+  "D-ITEM-08-33-C",
+  "D-ITEM-08-33-D",
+  "D-ITEM-08-33-E",
+  "D-ITEM-08-34-A",
+  "D-ITEM-08-34-C"
+ ],
+ "linux_reachability": {
+  "status": "reachable-as-measured",
+  "deciding_rows": [],
+  "note": "no row is expected red or unknown on Linux; every red is a host limit of this macOS machine. Upstream's own tree is green in CI at 2817c6d97 (run 36508491125) and 00052c012 (run 36605332310). CI job names are 'workspace-test-shard (1)', '(2)', '(3)' and 'workspace-test'."
+ },
+ "refs": {
+  "origin_main_before": "d37f2fefc2533bca237a1c5680e5f3cb26ec6e62",
+  "origin_main_after": "d37f2fefc2533bca237a1c5680e5f3cb26ec6e62",
+  "comparand_used_for_guards": "00052c01284caa74c70b287088a79c6dee2959b9 (upstream/main) in a scratch clone; the real refs were never moved"
+ },
+ "preserve_order_sweep": [
+  {
+   "site": "aprender-core setfit::artifact::write_setfit_apr (doc Map, nested to_value of architecture/evidence/provenance)",
+   "dependent": true,
+   "evidence_or_fix": "FIXED 0b3ef0164: canonical_sorted_map before serialising; determinism module 24 tests green with preserve_order OFF and ON; golden unchanged (no golden file in the diff); mutation-checked"
+  },
+  {
+   "site": "apr-format AprV2Metadata.custom (HashMap<String, Value>, flatten) and the metadata JSON",
+   "dependent": false,
+   "evidence_or_fix": "HashMap iteration order is random per process whatever the serde_json backing, so it is not a preserve_order dependence (the single-custom-key rule, Pitfall 1, is what site 1 relies on); apr-format tests green with preserve_order ON (unified nextest run, 2878 tests)"
+  },
+  {
+   "site": "aprender-train train/setfit (apr_codec.rs, evidence.rs, bundle) and classify_trainer data hash",
+   "dependent": false,
+   "evidence_or_fix": "their to_value output lands inside site 1's document, which is canonicalised there; compute_data_hash hashes sorted (input,label) pairs, no JSON; aprender-train lib green under the workspace (preserve_order ON) apart from the 21 macOS /proc tests"
+  },
+  {
+   "site": "aprender-decide pack, manifest, task (artifact/determinism.rs, task.rs)",
+   "dependent": false,
+   "evidence_or_fix": "criteria are read with an order-preserving visitor and the pack golden is proven in both backings by design (serde-preserve-order feature, FALSIFY-DECIDE-APR-002); unified nextest run green"
+  },
+  {
+   "site": "aprender-mcp-decide, aprender-mcp-decide-lambda responses",
+   "dependent": false,
+   "evidence_or_fix": "probabilities are an ARRAY in label order, never a map (decide-tool-boundary-v1); unified nextest run green"
+  },
+  {
+   "site": "aprender-forecast invariance signature",
+   "dependent": false,
+   "evidence_or_fix": "json_map hashes entries in KEY ORDER (invariance.rs:142); its dev-dependency turns preserve_order on so the hostile mode is the tested one; invariance:: tests green in the unified run"
+  },
+  {
+   "site": "aprender-contracts / aprender-contracts-cli (census.json, graph, lint baseline)",
+   "dependent": false,
+   "evidence_or_fix": "outputs are typed structs or sorted by construction (N-Triples sorted); the whole of aprender-contracts-cli (394 tests, incl. the graph and census gates, run on a tree free of worktrees) and aprender-contracts pass with preserve_order ON"
+  },
+  {
+   "site": "aprender-serve convert/mod.rs GgufToAprConverter::to_apr_bytes (json! header metadata)",
+   "dependent": true,
+   "evidence_or_fix": "NOT FIXED: insertion-ordered under preserve_order, but no hash, golden or signature bears on those bytes (git grep: no pinned digest of to_apr_bytes output; the reader is order-insensitive); recorded as sweep residue in D-ITEM-08-34-B"
+  },
+  {
+   "site": "apr-cli reports (train.rs, eval, tokenize, data.rs, data_tweeteval, inspect_setfit), aprender-registry remote card, orchestrate/verify-ml audit, hf_hub upload",
+   "dependent": false,
+   "evidence_or_fix": "hash inputs are file bytes, sorted pairs or BTreeMap-typed structs (data_tweeteval); JSON maps are printed or sent, never hashed; DefaultHasher uses are over strings"
+  },
+  {
+   "method": "discovery: git grep of the 35 non-test source files that hold both serde_json map constructs (json!, Value::Object, serde_json::Map, to_value, HashMap<String, Value>) and hashing (Sha256, blake3, crc32, DefaultHasher), plus pmat query 'serde_json Map key order canonical sorted hash golden', plus a unified-mode nextest run (preserve_order confirmed engaged by cargo tree -f) of aprender-contracts-cli, aprender-contracts, apr-format, aprender-decide, aprender-mcp-decide(-lambda), aprender-forecast: 2878 passed, 0 failed. NOT run in unified mode: apr-cli's setfit_parity and setfit_cli_lifecycle integration targets (they need the setfit+inference features and the disk headroom was not there); they build their artifact through site 1."
+  }
+ ],
+ "regression": {
+  "head_sha": "524c80203d9fac763c3f22f243d4d80d49e1686d",
+  "command": "lockf -k /tmp/aprender-laya-real-weights.lock just laya-gap-regression (background, logged)",
+  "lines": [
+   "PASS CLASS A",
+   "PASS CLASS B",
+   "PASS CLASS C",
+   "PASS CLASS D",
+   "PASS CLASS E",
+   "PASS HYGIENE",
+   "PASS REGRESSION",
+   "LAYA GAP REGRESSION OK"
+  ],
+  "stage_evidence": [
+   "ok manifest-and-run-fields: 4 passed",
+   "ok served-fields: 1 passed",
+   "ok lambda-probe: 12 passed",
+   "ok artifact-bounds: 1 passed",
+   "ok request-bounds: 1 passed",
+   "ok lambda-request-rows: 1 passed",
+   "ok apr-format: 104 passed",
+   "skipped apr-format: golden_v2_f32_writer_is_byte_identical (deferred-items 08-20, pre-existing writer/fixture drift)",
+   "ok modernbert: 24 passed",
+   "ok gates-selftest: LAYA GATES SELFTEST OK 29 rows (FULL-tier must-pass cases SKIPPED: upload-eligibility (the DRY_RUN upload of the deployed artifact (laya-verify, multi",
+   "ok contract-audit-phase8: Phase 8 binding audit: 4 contract(s) audited, no binding finding outside PHASE8_LIVE_EXEMPT=''",
+   "ok claims-check: LAYA CLAIMS OK 133 rows",
+   "ok numeric-replay: 1 passed",
+   "ok train-selftest: METRICS SELFTEST OK (5 frozen cases replayed within 1e-06; 23 numeric cases bit for bit)",
+   "ok pv-lint: Result: PASS",
+   "ok graph-fresh: \"check\": []",
+   "ok contracts-lib: 1671 passed",
+   "ok contracts-corpus: 10 passed",
+   "ok decide-crates: 254 passed",
+   "ok clippy: -D warnings clean on the three decide crates and apr-format",
+   "ok fmt: rustfmt --check clean",
+   "ok pv-decide-tool-boundary-v1: 0 error(s), 0 warning(s)",
+   "ok pv-laya-finetune-gate-v1: 0 error(s), 0 warning(s)",
+   "ok pv-laya-parity-v1: 0 error(s), 0 warning(s)",
+   "ok pv-decide-apr-v1: 0 error(s), 0 warning(s)",
+   "ok invariants: 31 passed",
+   "ok contract-cycle: 3 passed",
+   "ok contracts-cli: 394 passed",
+   "ok verify-suite: LAYA VERIFY SUITE OK",
+   "ok laya-verify: deploy_eligible true, sha256 24a44d7e050166c9b64e2716f2bcb3ce91747f7a3b927d03d6eeae5f89b6275a, shipped_seed 17"
+  ],
+  "claims": "LAYA CLAIMS OK 133 rows",
+  "host_note": "run on macOS; the aprender-contracts-cli suite ran on a clean clone at HEAD (394 passed, 0 failed) because untracked .claude/worktrees falsify the tracked-graph freshness test in a working tree; HYGIENE's graph-fresh ran on the same clone; a planted stale graph turned HYGIENE red (FAIL HYGIENE graph-fresh: exit 1) with pv lint still PASS",
+  "skipped_by_name": [
+   "apr-format golden_v2_f32_writer_is_byte_identical (CLASS B, deferred-items 08-20; it passed in this round's unified-mode apr-format run, so the skip may be stale: not changed here)"
+  ]
+ },
+ "push": {
+  "remote_before": "3c0f2cf00312756edb6810b888c8cbeecaafc9be",
+  "code_head": "524c80203d9fac763c3f22f243d4d80d49e1686d",
+  "pushed_head": "cb084692a222e5a2b821d4d92a01a604893a6fb3",
+  "method": "git push origin gsd/phase-2-contract-gate, fast-forward, no force",
+  "remote_after": "cb084692a222e5a2b821d4d92a01a604893a6fb3",
+  "pr": "https://github.com/paiml/aprender/pull/4634",
+  "pr_state": {
+   "isDraft": true,
+   "mergeStateStatus": "BEHIND",
+   "headRefOid": "cb084692a222e5a2b821d4d92a01a604893a6fb3"
+  },
+  "scan": "derived 5 identifier tokens from the local scrub history, positive control matched 34 pre-scrub lines, 5223 added lines over 19 commits scanned: 0 derived-identifier hits, 0 generic identifier/credential hits, 0 unexpected e-mail addresses, no workflow/ci/baseline path in the range; the token file was a temp file outside the repository and was deleted",
+  "evidence_commits_local_only": "this record's push object (E2) and Task 3's record (E3) stay local: pushing a docs-only commit restarts the ~90 minute CI and voids the maintainer approval for P"
+ }
+}

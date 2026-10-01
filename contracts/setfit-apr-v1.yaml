@@ -141,8 +141,10 @@ equations:
         `#[serde(flatten)]` (header_impl.rs:297-299), and HashMap iteration order is not specified.
         N top-level custom keys therefore serialize in an unspecified order and the container
         checksum over them is not reproducible across processes. ONE key holding one
-        `serde_json::Map` object is reproducible, because serde_json::Map is BTreeMap-backed and no
-        workspace crate enables `preserve_order`.'
+        `serde_json::Map` object is reproducible because the writer canonicalises that document
+        (every object, at every depth, rebuilt with its keys sorted) before serialising it, so its
+        bytes are the same whether serde_json is BTreeMap-backed or `preserve_order` is unified in
+        (pmcp enables it for any build that links it).'
       - 'THE TOKENIZER BYTES TRAVEL, NOT JUST THEIR DIGEST. An artifact carrying only
         `tokenizer_sha256` can DETECT a substituted tokenizer and cannot REBUILD the right one, so a
         reload from it could not re-encode a single string. This restates
@@ -165,7 +167,7 @@ equations:
     codomain: 'a deny_unknown_fields struct that parses fail-closed or not at all'
     preconditions:
       - 'aprender-core owns this type and CANNOT name the aprender-train types behind four of the five sub-documents, so each arrives already reduced to a serde_json::Value by the writer'
-      - 'no workspace crate enables serde_json''s preserve_order feature, so serde_json::Map is BTreeMap-backed and key order is sorted'
+      - 'the writer canonicalises the document (recursively sorted keys) before serialising, so key order is sorted whether or not serde_json''s preserve_order feature is unified into the build'
     postconditions:
       - 'an unknown key is a typed parse refusal, never a silently ignored field'
       - 'schema and schema_version are checked before any other field is read, so a future schema cannot be partially interpreted by this build'
@@ -205,9 +207,10 @@ equations:
         — which owns the doc — CANNOT NAME those types: train depends on core, never the reverse.
         `EncoderArchitecture` is the one exception that core does own, and it is carried the same
         way so the five are handled uniformly by one walk.'
-      - 'THEIR KEY ORDER IS DETERMINISTIC. `serde_json::Map` is BTreeMap-backed by default and no
-        workspace crate enables `preserve_order`, so `to_value` over a struct yields sorted keys and
-        the same struct value always yields the same bytes.'
+      - 'THEIR KEY ORDER IS DETERMINISTIC. `to_value` over a struct yields keys in declaration order
+        under `preserve_order` and sorted otherwise, so the writer canonicalises the whole document
+        (recursively sorted keys) before serialising, and the same struct value always yields the same
+        bytes under either backing.'
       - '`provenance` IS ONE OF THE FIVE AND NOT AN EXCEPTION. It is `to_value(bundle.provenance)`
         exactly like the other four, so the null walk of `nullable_path_allowlist` covers it on the
         same terms. Recording this explicitly because a reader who treats provenance as "just
@@ -621,31 +624,38 @@ equations:
       - 'a refusal names the bound AND the observed value, so an operator can distinguish a too-large artifact from a malformed one'
       - 'no allocation proportional to the declared size occurred before the bound was applied'
     constants:
-      max_artifact_bytes: 268435456
-      max_artifact_bytes_note: '256 MiB'
+      max_artifact_bytes: 1073741824
+      max_artifact_bytes_note: '1 GiB — raised from 256 MiB when the loader admitted general BERT-base checkouts; see the derivation block, which was moved with it'
       metadata_bound: 16777216
       metadata_bound_note: 'the container''s existing MAX_METADATA_SIZE (apr-format/src/v2/mod.rs:80) — reused, not re-derived'
       f32_dtype_width: 4
       u8_dtype_width: 1
     derivation:
-      encoder_payload_bytes: 90261504
-      encoder_payload_note: '22565376 f32 elements x 4 bytes, computed from the reference architecture'
-      tokenizer_blob_bytes: 466247
-      tokenizer_blob_note: 'the pinned tokenizer.json, byte count restated from setfit-train-lifecycle-v1 bundle_completeness'
-      head_payload_bytes_at_k3: 4620
-      head_payload_note: '(3*384 + 3) f32 x 4 bytes for a three-label head'
-      legitimate_artifact_bytes_approx: 90800000
+      derived_for: 'the WIDEST architecture the loader admits, not the pinned one — a general BERT-base at a 52k vocabulary (AlephBERT, DictaBERT, multilingual BERT)'
+      pinned_encoder_payload_bytes: 90261504
+      pinned_encoder_payload_note: '22565376 f32 elements x 4 bytes, computed from the reference (all-MiniLM-L6-v2) architecture; retained because the fixtures are still this model'
+      widest_encoder_payload_bytes: 501547008
+      widest_encoder_payload_note: '125386752 f32 x 4 bytes: embeddings 52000x768 + 512x768 + 2x768 + 2x768, and 12 layers x (4x768^2 + 2x768x3072 + biases)'
+      tokenizer_blob_bytes_approx: 1500000
+      tokenizer_blob_note: 'a 52k-entry WordPiece tokenizer.json; the pinned 30522-entry file is 466247 bytes (setfit-train-lifecycle-v1 bundle_completeness)'
+      head_payload_bytes_at_k3: 9228
+      head_payload_note: '(3*768 + 3) f32 x 4 bytes for a three-label head on a 768-wide encoder'
+      legitimate_artifact_bytes_approx: 503100000
       legitimate_artifact_note: 'payload + tokenizer + head + index/header/one-key doc overhead, rounded up'
-      headroom_factor: 2.9
-      headroom_note: '268435456 / ~90.8e6 ~= 2.96, mirroring the BundleLimits precedent (MAX_BUNDLE_BYTES 536870912 over the ~182 MB hex-encoded bundle, ~2.9x)'
+      headroom_factor: 2.1
+      headroom_note: '1073741824 / ~503.1e6 ~= 2.13. This is BELOW the BundleLimits precedent (MAX_BUNDLE_BYTES 536870912 over the ~182 MB hex-encoded bundle, ~2.9x): the cap is the tighter of "clears the widest supported model" and "a round power of two", and admitting a wider architecture moves this block rather than being absorbed silently.'
     invariants:
       - 'THE CAP IS AN OUTER RESOURCE BOUND, NOT A CORRECTNESS CHECK. Correctness is the structural
         per-entry size rule and the architecture-derived tensor set; the cap exists so a hostile
         input cannot exhaust memory before either of those can run.'
-      - 'THE HEADROOM IS DERIVED FROM A COMPUTED ARTIFACT SIZE, not chosen for roundness. Both
-        inputs to the derivation — 22565376 elements and 466247 tokenizer bytes — are figures the
-        Phase 3 code already computes and records, so a future architecture change moves the
-        derivation rather than invalidating it silently.'
+      - 'THE HEADROOM IS DERIVED FROM A COMPUTED ARTIFACT SIZE, not chosen for roundness. Every
+        input to the derivation — the element counts above and the tokenizer byte count — is a
+        figure the Phase 3 code already computes and records, so a future architecture change moves
+        the derivation rather than invalidating it silently.'
+      - 'RAISING THE CAP RAISES THE RESIDUAL. `bounded_read` reserves min(declared_len, cap) before
+        it reads, so a source that lies about its length can commit the WHOLE cap. The 4x raise
+        from 256 MiB to 1 GiB is a 4x raise in that pre-read reservation, and is accepted as the
+        price of admitting BERT-base — not overlooked.'
       - 'THE METADATA BOUND IS THE CONTAINER''S OWN. A second, SetFit-specific metadata limit would
         be a number that could drift from the limit the container actually enforces.'
       - 'A CAP THAT ONLY EXISTS IN MEMORY IS NOT A CAP — see `bounded_read`.'
@@ -666,13 +676,13 @@ equations:
     invariants:
       - 'THE CAP MUST BITE BEFORE THE CALLER ALLOCATES. A loader taking `&[u8]` enforces its cap
         AFTER the caller has already read the file, so `fs::read` on a multi-gigabyte hostile file
-        exhausts memory before the 256 MiB check ever executes. Review B5. The cap belongs at the
+        exhausts memory before the max_artifact_bytes check ever executes. Review B5. The cap belongs at the
         read, not only after it.'
       - 'TWO CHECKS, BECAUSE ONE IS NOT ENOUGH. (a) Consult the declared file length and refuse
         over-cap BEFORE reading a byte. (b) Read through a reader bounded at
         `max_artifact_bytes + 1` anyway, so a length that LIES — a FIFO, a growing file, a
         filesystem that reports zero — still cannot exhaust memory. Check (a) alone trusts metadata
-        an attacker controls; check (b) alone reads 256 MiB of garbage before refusing.'
+        an attacker controls; check (b) alone reads max_artifact_bytes of garbage before refusing.'
       - 'THE `+ 1` IS LOAD-BEARING. Reading exactly `max_artifact_bytes` cannot distinguish "a
         legal artifact of exactly the cap size" from "a larger stream truncated at the cap". Reading
         one byte more makes the distinction observable.'
@@ -1066,7 +1076,7 @@ proof_obligations:
   - id: SA996B-BND-010
     type: bound
     property: 'An artifact larger than max_artifact_bytes is refused before the reader allocates it, both by declared length and by a bounded read of cap+1'
-    formal: 'declared_len > 268435456 => Err(TooLarge) before any read; bytes_read <= 268435457 always'
+    formal: 'declared_len > 1073741824 => Err(TooLarge) before any read; bytes_read <= 1073741825 always'
     applies_to: all
 
   - id: SA996B-INV-011
@@ -1164,7 +1174,7 @@ falsification_tests:
 
   - id: FALSIFY-APR-008
     rule: 'The size cap bites before allocation'
-    prediction: 'A source declaring a length above 268435456 is refused before a byte is read, and a source that lies about its length still reads at most 268435457 bytes.'
+    prediction: 'A source declaring a length above 1073741824 is refused before a byte is read, and a source that lies about its length still reads at most 1073741825 bytes.'
     test: 'Call read_setfit_apr_bytes_bounded with an over-cap declared length (assert no read occurred) and with an understated length over a longer stream (assert the read stopped at cap+1).'
     if_fails: 'Review B5 is re-opened: a multi-gigabyte hostile file exhausts memory before the loader cap executes.'
 
@@ -1275,7 +1285,7 @@ kani_harnesses:
     property: 'For every declared_len and every stream length, bytes_read <= max_artifact_bytes + 1'
     bound: 16
     strategy: bounded_int
-    harness: 'NOT EXECUTED — the evidence is `bounded_read_never_exceeds_cap_plus_one` (FALSIFY-APR-008), run against a limit-injected helper so the test does not allocate 256 MiB to learn that a comparison compares'
+    harness: 'NOT EXECUTED — the evidence is `bounded_read_never_exceeds_cap_plus_one` (FALSIFY-APR-008), run against a limit-injected helper so the test does not allocate max_artifact_bytes to learn that a comparison compares'
 
   - id: KANI-APR-003
     obligation: 'Every TensorIndexEntry size equals product(shape) * dtype_width for its declared dtype'

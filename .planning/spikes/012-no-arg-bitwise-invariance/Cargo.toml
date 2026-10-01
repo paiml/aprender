@@ -1,0 +1,11 @@
+[package]
+name = "spike-012-no-arg-bitwise-invariance"
+version = "0.0.0"
+edition = "2021"
+publish = false
+
+[workspace]
+
+[dependencies]
+aprender_forecast = { path = "../../../crates/aprender-forecast", package = "aprender-forecast" }
+serde_json = "1"

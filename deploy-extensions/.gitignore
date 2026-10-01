@@ -1,0 +1,7 @@
+node_modules/
+cdk.out/
+*.js
+*.d.ts
+# The worker package is BUILT (a 147 MB binary + encoder + dataset), never
+# committed: `just build-trainer-asset` produces it.
+assets/

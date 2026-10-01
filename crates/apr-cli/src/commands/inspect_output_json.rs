@@ -3,7 +3,13 @@
 // Output Formatting
 // ============================================================================
 
-fn output_json(path: &Path, file_size: u64, header: &HeaderData, metadata: MetadataInfo) {
+fn output_json(
+    path: &Path,
+    file_size: u64,
+    header: &HeaderData,
+    metadata: MetadataInfo,
+    setfit: Option<serde_json::Value>,
+) {
     let (v_maj, v_min) = header.version;
     // GH-249: Promote key metadata fields to top level for parity checker compatibility
     let architecture = metadata.architecture.clone();
@@ -26,6 +32,7 @@ fn output_json(path: &Path, file_size: u64, header: &HeaderData, metadata: Metad
         vocab_size,
         flags: flags_from_header(header),
         metadata,
+        setfit,
     };
     if let Ok(json) = serde_json::to_string_pretty(&result) {
         println!("{json}");
@@ -46,9 +53,10 @@ fn output_json_with_quality(
     header: &HeaderData,
     metadata: MetadataInfo,
     show_quality: bool,
+    setfit: Option<serde_json::Value>,
 ) {
     if !show_quality {
-        return output_json(path, file_size, header, metadata);
+        return output_json(path, file_size, header, metadata, setfit);
     }
 
     let quality = compute_quality_score(&metadata, header);
@@ -73,6 +81,7 @@ fn output_json_with_quality(
         vocab_size,
         flags: flags_from_header(header),
         metadata,
+        setfit,
     };
     if let Ok(mut json) = serde_json::to_value(&result) {
         if let Some(obj) = json.as_object_mut() {

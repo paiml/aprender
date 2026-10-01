@@ -241,12 +241,17 @@ serde_yaml = "0.9"  # YAML contract binding in tests (FALSIFY-SHIP-009 GATE-APR-
 # gone and the setfit conformance harness uses `provable_contracts::` directly — still
 # the SAME deserializer `pv validate` uses, so the generator cannot drift from pv.
 half = { workspace = true }  # IEEE f16 oracle for the convert_report f32_to_f16 RNE falsifier (PMAT-905)
-# `tests/setfit_conformance.rs` hashes fixture bytes to pin what it compared against.
-# `sha2` is already an OPTIONAL runtime dep (setfit/format-encryption/hf-hub), and an
-# optional runtime dep is NOT available to `tests/` unless that feature is on — so a
-# plain `cargo test --test setfit_conformance` build needs this dev-dependency.
-# Workspace-pinned: no new external package enters the tree.
+# Phase 3 (03-02): the `gemm_thread_determinism` integration test hashes each
+# GEMM output's LE f32 bytes so the parent can compare children byte-for-byte.
+# `sha2` is already an OPTIONAL runtime dep (setfit/format-encryption/hf-hub), and
+# an optional runtime dep is NOT available to `tests/` unless the feature is on —
+# so the plain `cargo test --test gemm_thread_determinism` build needs this
+# dev-dependency. Workspace-pinned: no new external package enters the tree.
 sha2 = { workspace = true }
+# Plan 08-03: the modernbert tests read the tiny fixture's raw F16 bytes from
+# model.safetensors (already locked at 0.4.5; the runtime dep is optional).
+# Workspace-pinned (IN-07, plan 08-20): the root pins the same "0.4".
+safetensors = { workspace = true }
 
 [features]
 default = ["parallel"]

@@ -1,0 +1,17 @@
+error[E0451]: fields `encoder`, `dataset`, `selection`, `config`, `evidence` and `_state` of struct `SetFitRun` are private
+  --> tests/ui/setfit_direct_state_construction.rs:31:9
+   |
+30 |     SetFitRun {
+   |     --------- in this type
+31 |         encoder: unimplemented!(),
+   |         ^^^^^^^ private field
+32 |         dataset: unimplemented!(),
+   |         ^^^^^^^ private field
+33 |         selection: unimplemented!(),
+   |         ^^^^^^^^^ private field
+34 |         config: unimplemented!(),
+   |         ^^^^^^ private field
+35 |         evidence: unimplemented!(),
+   |         ^^^^^^^^ private field
+36 |         _state: unimplemented!(),
+   |         ^^^^^^ private field

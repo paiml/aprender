@@ -1,0 +1,116 @@
+diff --git a/.github/workflows/ci.yml b/.github/workflows/ci.yml
+--- a/.github/workflows/ci.yml
++++ b/.github/workflows/ci.yml
+@@ -270,7 +270,7 @@
+             -e CARGO_PROFILE_DEV_DEBUG=line-tables-only \
+             "$IMAGE" \
+             cargo nextest run --profile ci --workspace --lib --exclude aprender-gpu --exclude aprender-cuda-edge --exclude aprender-compute
+-      - name: Phase 3 SetFit tests (feature-gated — NOT reached by --workspace --lib above)
++      - name: Phase 3 + Phase 4 SetFit tests (feature-gated — NOT reached by --workspace --lib above)
+         # REVIEW CR-01. `setfit` is declared but not default (aprender-train/Cargo.toml:79,
+         # `default = ["tui"]`); the module is `#[cfg(feature = "setfit")]` (train/mod.rs:51) and
+         # aprender-core's is gated the same way (lib.rs:165). No workspace member enables either,
+@@ -289,6 +289,78 @@
+         # `set -e` and no pipes: a non-zero cargo exit fails the step directly. Deliberately NOT
+         # the `| tee ... ; grep -q` shape used below — that reads grep's status, not cargo's
+         # (CLAUDE.md verification rule 1).
++        #
++        # --- PHASE 4 EXTENSION (plan 04-11) ---------------------------------------
++        # Phase 4 added apr-cli, aprender-serve, and two INTEGRATION targets. A
++        # `--lib` run never reaches an integration target, so until this change
++        # `crates/aprender-train/tests/setfit_apr_lifecycle.rs` — OPS-01's only
++        # proof — and `crates/apr-cli/tests/setfit_parity.rs` ran in NO CI job.
++        # That is the same CR-01 shape this step was created to remove, one phase
++        # later.
++        #
++        # Every command added below is COPIED VERBATIM from the Make target of the
++        # same name (04-10), one positional filter per invocation. The COUNT FLOORS
++        # live in the Make targets (`assert_tests_ran`); this step's job is that the
++        # surface RUNS at all. Target -> leg:
++        #   setfit-lifecycle-tests   -> aprender-train --test setfit_apr_lifecycle
++        #   setfit-cli-train-tests   -> apr-cli --lib setfit_train  (both legs)
++        #   setfit-cli-predict-tests -> apr-cli --lib predict
++        #   setfit-cli-inspect-tests -> apr-cli --lib inspect
++        #   setfit-cli-eval-tests    -> apr-cli --lib eval::setfit
++        #   setfit-cli-io-tests      -> apr-cli --lib setfit_io
++        #   setfit-cli-serve-tests   -> apr-cli --lib serve
++        #   setfit-serve-tests       -> aprender-serve --lib setfit  (SCOPED)
++        #   setfit-parity            -> apr-cli --test setfit_parity
++        #   setfit-feature-matrix    -> the apr-cli / aprender-serve check cells
++        # NINE targets need no new leg — the two EXISTING `--lib setfit::` legs
++        # above are their prefix supersets, so they already run in this step:
++        #   setfit-apr-tests setfit-classify-tests            (core setfit::*)
++        #   setfit-bundle-tests setfit-config-tests           (train setfit::*)
++        #   setfit-evaluate-tests setfit-codec-tests          (train setfit::*)
++        #   setfit-reload-tests setfit-lock-tests             (train setfit::*)
++        #   setfit-verify-tests                               (train setfit::*)
++        # setfit-ui-tests is the existing `--test ui` leg. setfit-all-tests is an
++        # aggregate of the 18 suites and has no command of its own. That accounts
++        # for all 23 targets 04-10 created, plus setfit-feature-matrix which it grew
++        # from two crates to four.
++        #
++        # TWO legs are deliberately NOT wired, both spawned-binary tier3 targets:
++        #  1. setfit-serve-smoke   (`-- --ignored spawned_serve_smoke`) spawns a
++        #     real server on a loopback port; a CI loopback-spawn is a NEW flake
++        #     surface (port races, bind permission, startup timing). tier3-local.
++        #  2. setfit-cli-lifecycle (`-- --ignored lifecycle` / `tooling`) spawns the
++        #     real `apr` binary. Same rationale. Promoting either is the human's
++        #     call at the 04-11 checkpoint, not the executor's.
++        #
++        # A THIRD target is absent and this is a DEVIATION the reviewer must rule on:
++        #  3. setfit-api-boundary is not a cargo test target at all — it is a
++        #     `cargo tree` graph gate written as a Make `for` loop with $$-escaped
++        #     variables and single-quoted `grep`/`tr` patterns. It cannot be pasted
++        #     into this step's single-quoted `bash -c '...'` without being REWRITTEN,
++        #     and rewriting is transcription — the drift this step's comment above
++        #     exists to prevent. Excluded on QUOTING grounds, NOT on value grounds:
++        #     unlike (1) and (2) it has genuine CI-only value, because a Linux
++        #     dependency closure can differ from the macOS dev host via
++        #     cfg(target_os) deps. See 04-11-SUMMARY.md.
++        #
++        # The `-- --ignored` setfit_train leg IS wired and the spawn rationale does
++        # NOT cover it: that test calls `commands::setfit_train::run` in-process over
++        # an in-repo fixture directory and spawns nothing (the W-5 reasoning that put
++        # setfit_apr_lifecycle back into this step). Its wall-clock was NOT measured
++        # by 04-11 — it tunes a real encoder over the slice fixture. If it proves
++        # slow in CI, drop THAT leg; never the OPS-01 one.
++        #
++        # TWO legs must NEVER appear here, both pre-existing standing reds. The
++        # command strings below are written EXACTLY as they would be invoked, so a
++        # future `grep` for either finds this warning:
++        #   cargo test -p aprender-serve --lib
++        #     D-04-08-A: 51 failures, all ONE overflow at contract_gate.rs:428:21.
++        #     Red on arrival — it cannot tell a regression from the standing red.
++        #     The wired leg is scoped: `--features setfit --lib setfit`.
++        #   cargo check -p apr-cli --no-default-features
++        #     D-04-09-A: rc=101 for BOTH minimal cells, since `setfit` does not
++        #     imply `inference`. The green gating leg is `--all-targets` (default
++        #     features), which is what is wired below.
+         run: |
+           docker run --rm \
+           -e CI -e GITHUB_ACTIONS -e GITHUB_REF -e GITHUB_SHA -e GITHUB_REPOSITORY -e GITHUB_RUN_ID -e GITHUB_EVENT_NAME -e GITHUB_WORKFLOW \
+@@ -306,7 +378,23 @@
+             bash -c 'set -e; \
+               cargo test -p aprender-core  --features setfit --lib setfit::; \
+               cargo test -p aprender-train --features setfit --lib setfit::; \
+-              cargo test -p aprender-train --features setfit --test ui'
++              cargo test -p aprender-train --features setfit --test ui; \
++              cargo test -p aprender-train --features setfit --test setfit_apr_lifecycle; \
++              cargo test -p apr-cli --features setfit --lib setfit_train; \
++              cargo test -p apr-cli --features setfit --lib setfit_train -- --ignored; \
++              cargo test -p apr-cli --features setfit --lib predict; \
++              cargo test -p apr-cli --features setfit --lib inspect; \
++              cargo test -p apr-cli --features setfit --lib eval::setfit; \
++              cargo test -p apr-cli --features setfit --lib setfit_io; \
++              cargo test -p apr-cli --features setfit --lib serve; \
++              cargo test -p aprender-serve --features setfit --lib setfit; \
++              cargo test -p apr-cli --features setfit,inference --test setfit_parity; \
++              cargo check -p apr-cli --all-targets; \
++              cargo check -p apr-cli --features setfit; \
++              cargo check -p apr-cli --features setfit,inference --all-targets; \
++              cargo check -p aprender-serve --no-default-features; \
++              cargo check -p aprender-serve --no-default-features --features setfit; \
++              cargo check -p aprender-serve --features setfit'
+       - name: Compute tests (tolerate SIGSEGV at exit — all tests pass but harness crashes on cleanup)
+         run: |
+           docker run --rm \

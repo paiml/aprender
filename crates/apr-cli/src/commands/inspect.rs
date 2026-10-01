@@ -42,6 +42,13 @@ struct InspectResult {
     vocab_size: Option<usize>,
     flags: FlagsInfo,
     metadata: MetadataInfo,
+    /// APR-05: everything a `setfit-apr-v1` artifact records about itself.
+    ///
+    /// `skip_serializing_if` so a plain APR's output is BYTE-UNCHANGED from before
+    /// this branch existed — asserted by a golden comparison, because a new key that
+    /// appeared on every model would break every downstream `jq` in the fleet.
+    #[serde(skip_serializing_if = "Option::is_none")]
+    setfit: Option<serde_json::Value>,
 }
 
 #[derive(Serialize)]
@@ -55,10 +62,19 @@ struct FlagsInfo {
     has_vocab: bool,
 }
 
+/// What `apr inspect` derived from a file's metadata block.
+///
+/// `pub(crate)`, along with `HeaderData`, `read_and_parse_header` and the three fields
+/// marked below, for ONE reason: the four-consumer agreement table in
+/// `setfit_tag_tests.rs` drives this reader directly. The plan for this change budgeted
+/// a single `pub(crate)` keyword on `read_metadata`; the compiler disagreed, because
+/// that function's signature names two module-private types and the facts the table
+/// must assert live in private fields. Everything not needed by the table stays private.
 #[derive(Serialize, Default)]
-struct MetadataInfo {
+pub(crate) struct MetadataInfo {
+    /// `pub(crate)`: the table asserts nothing is derived from an unread block.
     #[serde(skip_serializing_if = "Option::is_none")]
-    model_type: Option<String>,
+    pub(crate) model_type: Option<String>,
     #[serde(skip_serializing_if = "Option::is_none")]
     name: Option<String>,
     #[serde(skip_serializing_if = "Option::is_none")]
@@ -115,10 +131,38 @@ struct MetadataInfo {
     special_tokens: Option<serde_json::Value>,
     #[serde(skip_serializing_if = "Option::is_none")]
     source_metadata: Option<serde_json::Value>,
+    /// The declared metadata length the ABSOLUTE cap refused, when it refused one.
+    ///
+    /// Present ONLY on a container whose header declares more metadata than
+    /// [`crate::setfit_tag::MAX_TAG_METADATA_BYTES`]. `skip_serializing_if` so every
+    /// legitimate artifact's `--json` output is byte-identical to what it was before
+    /// the cap existed, and no `output_json` / `output_json_with_quality` call site
+    /// changes.
+    ///
+    /// It exists because the alternative is silence: without it an over-cap container
+    /// renders as a model with no `model_type` and no APR-05 section, which is
+    /// indistinguishable from a plain APR that genuinely has neither. That is the
+    /// `inspect` half of WR-08 — the fact that the block was REFUSED is the whole
+    /// diagnosis, and defaulting throws it away.
+    /// `pub(crate)`: the table asserts the refusal is DISCLOSED, not defaulted.
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub(crate) metadata_over_cap_bytes: Option<u64>,
+    /// The raw value at custom key `setfit`, present only on a TAGGED artifact.
+    ///
+    /// `#[serde(skip)]`: this is an INPUT to the APR-05 section built below, not a
+    /// field of the metadata block. Serializing it here would publish the artifact
+    /// document twice under two different keys — two copies of one fact, which is
+    /// two values that can disagree.
+    /// `pub(crate)`: the table asserts NO APR-05 section is rendered for these bytes.
+    #[serde(skip)]
+    pub(crate) setfit_doc: Option<serde_json::Value>,
 }
 
 /// Parsed v2 header data
-struct HeaderData {
+///
+/// `pub(crate)` only because `read_metadata` and `read_and_parse_header` name it and
+/// both are now `pub(crate)`; the fields stay private.
+pub(crate) struct HeaderData {
     version: (u8, u8),
     flags: AprV2Flags,
     tensor_count: u32,
@@ -191,8 +235,23 @@ pub(crate) fn run(
             check_header_fits_file(&header, file_size)?;
             let metadata_info = read_metadata(&mut reader, &header);
 
+            // APR-05. Built ONCE, from the document the metadata read already
+            // recovered, and consumed by whichever renderer runs. Inspection is
+            // READ-ONLY metadata work: no tensor is loaded and no probe is replayed,
+            // because `inspect` does not classify and therefore does not need the
+            // verified state APR-04 gates prediction behind. The whole file is read
+            // only for the artifact's SHA-256, and only through the ONE bounded door.
+            let setfit = build_setfit_inspection(path, metadata_info.setfit_doc.as_ref());
+
             if json_output {
-                output_json_with_quality(path, file_size, &header, metadata_info, show_quality);
+                output_json_with_quality(
+                    path,
+                    file_size,
+                    &header,
+                    metadata_info,
+                    show_quality,
+                    setfit,
+                );
             } else {
                 output_text(
                     path,
@@ -203,6 +262,8 @@ pub(crate) fn run(
                     show_filters,
                     show_weights,
                 );
+                output_metadata_over_cap_text(&metadata_info);
+                output_setfit_text(setfit.as_ref());
                 if show_quality {
                     output_quality_text(&metadata_info, &header);
                 }
@@ -471,7 +532,9 @@ fn validate_path(path: &Path) -> Result<(), CliError> {
     Ok(())
 }
 
-fn read_and_parse_header(reader: &mut BufReader<File>) -> Result<HeaderData, CliError> {
+/// `pub(crate)`: the agreement table needs a real header to drive `read_metadata`
+/// with, and constructing one by hand would test a header this code never produced.
+pub(crate) fn read_and_parse_header(reader: &mut BufReader<File>) -> Result<HeaderData, CliError> {
     let mut header_bytes = [0u8; HEADER_SIZE_V2];
     reader.read_exact(&mut header_bytes).map_err(|_| {
         CliError::InvalidFormat(
@@ -520,6 +583,43 @@ fn read_and_parse_header(reader: &mut BufReader<File>) -> Result<HeaderData, Cli
     })
 }
 
+/// Disclose, in the HUMAN output, a metadata block the absolute cap refused.
+///
+/// Printed only when the cap fired, so every legitimate artifact's text output is
+/// unchanged — the `None` arm returns before printing anything.
+///
+/// It lives here rather than inside `output_metadata_text` because that function is
+/// in `inspect_output_json.rs`, and this disclosure must not perturb that file: the
+/// `skip_serializing_if` field it reports was designed to need no call-site change,
+/// and a diff there would undercut the claim.
+///
+/// Without this line `apr inspect` renders a hostile container as a model with no
+/// `model_type` and no APR-05 section — byte-identical to a plain APR that genuinely
+/// has neither. The operator cannot tell "this file says nothing" from "I refused to
+/// read what it says", and only the second is actionable.
+fn output_metadata_over_cap_text(metadata: &MetadataInfo) {
+    let Some(declared) = metadata.metadata_over_cap_bytes else {
+        return;
+    };
+    println!("\n  Metadata: NOT READ");
+    println!(
+        "    The header declares {declared} bytes, over the {} byte (16 MiB) cap.",
+        crate::setfit_tag::MAX_TAG_METADATA_BYTES
+    );
+    println!(
+        "    The block was NOT read, so no model type, no identity fields and no \
+         SetFit section could be derived from it."
+    );
+}
+
+/// Read the metadata block, or report why it was not read.
+///
+/// `pub(crate)` for ONE reason: the four-consumer agreement table in
+/// `setfit_tag_tests.rs` must drive `inspect`'s OWN reader — the surface where
+/// `inspect`'s decision about a file is actually made — rather than a re-implementation
+/// of it. A table that exercised only the two already-reachable consumers would be
+/// precisely the "guard that does not scan the surface where the DECISION is made"
+/// that CLAUDE.md rule 5 calls theater.
 /// Refuse a header whose own offsets do not fit inside the file.
 ///
 /// Every offset here is read from the 64-byte header and is attacker- or
@@ -549,7 +649,7 @@ fn check_header_fits_file(header: &HeaderData, file_size: u64) -> Result<(), Cli
     Ok(())
 }
 
-fn read_metadata(reader: &mut BufReader<File>, header: &HeaderData) -> MetadataInfo {
+pub(crate) fn read_metadata(reader: &mut BufReader<File>, header: &HeaderData) -> MetadataInfo {
     if header.metadata_size == 0 {
         return MetadataInfo::default();
     }
@@ -562,6 +662,46 @@ fn read_metadata(reader: &mut BufReader<File>, header: &HeaderData) -> MetadataI
         return MetadataInfo::default();
     }
 
+    // TWO BOUNDS BEFORE THE ALLOCATION, and NEITHER SUBSUMES THE OTHER.
+    // `metadata_size` is a u32 read out of the file under inspection, so a hostile
+    // container can declare up to 4 GiB and make this allocate it before `read_exact`
+    // discovers there is nothing to fill it with.
+    //
+    // (a) THE FILE LENGTH is tighter for a SMALL file: a block cannot be longer than
+    //     the file that contains it.
+    // (b) THE ABSOLUTE CAP is tighter for a LARGE one.
+    //
+    // This comment previously claimed the stat'd length was "a sound bound that needs
+    // no invented constant", and that is the claim T-04-70 refutes. `setfit_tag.rs`'s
+    // own module header names the counter-example: a 30 GB APR whose metadata block
+    // declares 20 MiB passes (a) and is then read in full to answer one question. The
+    // hostile version of that is cheaper still — on a sparse filesystem `truncate -s
+    // 4297M` costs nothing, so (a) can be SATISFIED by a 4 GiB declaration for free
+    // and `apr inspect` — the tool CLAUDE.md mandates as diagnostic step 1 — allocates
+    // it and then reports success. Under a memory-limited container it is OOM-killed.
+    //
+    // The cap is `crate::setfit_tag::MAX_TAG_METADATA_BYTES`, REFERENCED and never
+    // re-declared, so this reader and the tag detector cannot answer differently about
+    // one block. The comparison is `>` in both places, so the boundary agrees too.
+    //
+    // Over-cap is DISCLOSED, not silently defaulted. Defaulting would render a hostile
+    // container as a model with no `model_type` and no APR-05 section — the same
+    // output as a plain APR that genuinely has neither — and the fact that the block
+    // was REFUSED is the entire diagnosis (WR-08's `inspect` half).
+    let declared = u64::from(header.metadata_size);
+    let fits = reader
+        .get_ref()
+        .metadata()
+        .is_ok_and(|m| header.metadata_offset.saturating_add(declared) <= m.len());
+    if !fits {
+        return MetadataInfo::default();
+    }
+    if declared > crate::setfit_tag::MAX_TAG_METADATA_BYTES {
+        return MetadataInfo {
+            metadata_over_cap_bytes: Some(declared),
+            ..MetadataInfo::default()
+        };
+    }
     let mut metadata_bytes = vec![0u8; header.metadata_size as usize];
     if reader.read_exact(&mut metadata_bytes).is_err() {
         return MetadataInfo::default();
@@ -569,10 +709,23 @@ fn read_metadata(reader: &mut BufReader<File>, header: &HeaderData) -> MetadataI
 
     // Parse JSON metadata (v2 uses JSON, not msgpack)
     match AprV2Metadata::from_json(&metadata_bytes) {
-        Ok(meta) => {
-            let source_metadata = meta.custom.get("source_metadata").cloned();
+        Ok(mut meta) => {
+            let source_metadata = meta.custom.remove("source_metadata");
+            // The TYPED TAG decides, never a tensor name and never the mere presence
+            // of the custom key (D-04): an untagged APR that happens to carry a
+            // `setfit` key is a plain APR here, exactly as it is to `apr predict`.
+            // `remove`, not `get(..).cloned()`: `meta.custom` is owned and is not read again,
+            // so the document moves out instead of being deep-copied.
+            let setfit_doc = if meta.model_type == crate::setfit_tag::SETFIT_MODEL_TYPE {
+                meta.custom.remove(crate::setfit_tag::SETFIT_CUSTOM_KEY)
+            } else {
+                None
+            };
 
             MetadataInfo {
+                setfit_doc,
+                // The block was READ, so there is no over-cap fact to disclose.
+                metadata_over_cap_bytes: None,
                 model_type: if meta.model_type.is_empty() {
                     None
                 } else {
@@ -626,5 +779,7 @@ fn read_metadata(reader: &mut BufReader<File>, header: &HeaderData) -> MetadataI
 }
 
 include!("inspect_output_json.rs");
+include!("inspect_setfit.rs");
 include!("inspect_03.rs");
 include!("inspect_tests.rs");
+include!("inspect_setfit_tests.rs");

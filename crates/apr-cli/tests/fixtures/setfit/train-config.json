@@ -1,0 +1,22 @@
+{
+  "encoder_lr": 0.00002,
+  "epochs": 1,
+  "batch_size": 16,
+  "warmup_ratio": 0.1,
+  "grad_clip_max_norm": 1.0,
+  "max_length": 256,
+  "pair_config": {
+    "strategy": "oversampling",
+    "singleton_policy": "negatives_only",
+    "budget": null,
+    "hard_cap": null
+  },
+  "freeze_policy": [],
+  "head_regularization": {
+    "kind": "sklearn_equivalent_c",
+    "c": 1.0
+  },
+  "root_seed": 17,
+  "device": "cpu",
+  "lr_schedule": "warmup_linear_decay"
+}

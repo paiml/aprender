@@ -42,6 +42,13 @@ pub mod tune_searchers;
 pub mod wgpu_pipeline;
 pub mod worker_client;
 
+/// Phase 5 tracer: the save -> fresh-process reload -> ordered probability vector
+/// preflight, plus the refusals that make a silent partial adapter load impossible.
+#[cfg(test)]
+#[allow(clippy::unwrap_used)]
+#[path = "classify_reload_tests.rs"]
+mod classify_reload_tests;
+
 #[cfg(test)]
 mod tests;
 #[cfg(test)]

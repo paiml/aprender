@@ -1,0 +1,9 @@
+{
+  "cell": "s8e1b16",
+  "seed": 13,
+  "condition": "near-null",
+  "device": "Cpu",
+  "elapsed_secs": 49.528051875,
+  "steps": 24,
+  "evidence_sha256": "fbf280aade5136fda35c2ab219ddb14c2c5de0fc2c4a506355af1b07f676b90d"
+}

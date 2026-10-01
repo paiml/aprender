@@ -21,6 +21,11 @@
 pub(crate) mod code_eval;
 pub(crate) mod inference;
 mod perplexity;
+/// The `setfit-apr-v1` branch: validation + the durable selection lock, and gated test
+/// access (D-16, TRN-07). Reached only when `--task classify` names an artifact carrying
+/// the typed SetFit tag; the LoRA `--task classify` path is untouched.
+#[cfg(feature = "setfit")]
+pub(crate) mod setfit;
 
 use crate::error::{CliError, Result};
 use crate::output;
@@ -285,12 +290,14 @@ fn resolve_checkpoint_dir(dir: &Path) -> Option<std::path::PathBuf> {
 #[allow(clippy::too_many_arguments)]
 pub(crate) fn run_classify_eval(
     checkpoint_dir: &Path,
+    dataset: &str,
     data_path: Option<&Path>,
     model_size: Option<&str>,
     num_classes: usize,
     generate_card: bool,
     json_output: bool,
 ) -> Result<()> {
+    use crate::commands::data_tweeteval::{DATASET_ID, F_AVG_CLASSES, F_AVG_FORMULA, LABEL_NAMES};
     use entrenar::finetune::classify_pipeline::ClassifyConfig;
     use entrenar::finetune::{evaluate_checkpoint, SSC_LABELS};
     let data_path = data_path.ok_or_else(|| {
@@ -321,8 +328,20 @@ pub(crate) fn run_classify_eval(
         ..ClassifyConfig::default()
     };
 
+    let tweet_eval_stance = is_tweet_eval_stance_dataset(dataset);
+    if tweet_eval_stance && num_classes != 3 {
+        return Err(CliError::ValidationFailed(format!(
+            "TweetEval stance requires --num-classes 3, got {num_classes}"
+        )));
+    }
+
     // Build label names
-    let label_names: Vec<String> = if num_classes == 5 {
+    let label_names: Vec<String> = if tweet_eval_stance {
+        LABEL_NAMES
+            .iter()
+            .map(|label| (*label).to_string())
+            .collect()
+    } else if num_classes == 5 {
         SSC_LABELS.iter().map(|s| (*s).to_string()).collect()
     } else {
         (0..num_classes).map(|i| format!("class_{i}")).collect()
@@ -333,6 +352,12 @@ pub(crate) fn run_classify_eval(
         println!();
         output::kv("Checkpoint", checkpoint_dir.display());
         output::kv("Test data", data_path.display());
+        // `--dataset` defaults to the perplexity dataset (wikitext-2), which
+        // means nothing to the classify path — only report it when it actually
+        // selected a benchmark.
+        if tweet_eval_stance {
+            output::kv("Benchmark", dataset);
+        }
         output::kv(
             "Model",
             format!(
@@ -355,18 +380,75 @@ pub(crate) fn run_classify_eval(
     )
     .map_err(|e| CliError::ValidationFailed(format!("Evaluation failed: {e}")))?;
 
+    let stance_f_avg = if tweet_eval_stance {
+        let value = entrenar::eval::classification::f1_average_for_classes(
+            &report.per_class_f1,
+            &F_AVG_CLASSES,
+        )
+        .ok_or_else(|| {
+            CliError::ValidationFailed(
+                "TweetEval stance F_avg requires against and favor class metrics".to_string(),
+            )
+        })?;
+        Some(value)
+    } else {
+        None
+    };
+
     // Output results
     if json_output {
-        println!("{}", report.to_json());
+        match stance_f_avg {
+            // `to_json` is infallible and already pretty-printed; only pay for
+            // a parse + re-serialize when there is a benchmark block to splice.
+            None => println!("{}", report.to_json()),
+            Some(f_avg) => {
+                let mut value: serde_json::Value = serde_json::from_str(&report.to_json())
+                    .map_err(|e| {
+                        CliError::ValidationFailed(format!(
+                            "Failed to encode evaluation report: {e}"
+                        ))
+                    })?;
+                value["benchmark"] = serde_json::json!({
+                    "dataset": DATASET_ID,
+                    "primary_metric": "f_avg",
+                    "value": f_avg,
+                    "formula": F_AVG_FORMULA,
+                });
+                println!(
+                    "{}",
+                    serde_json::to_string_pretty(&value).map_err(|e| {
+                        CliError::ValidationFailed(format!(
+                            "Failed to encode evaluation report: {e}"
+                        ))
+                    })?
+                );
+            }
+        }
     } else {
         println!("{}", report.to_report());
+        if let Some(f_avg) = stance_f_avg {
+            println!();
+            output::section("TweetEval Stance Benchmark");
+            output::kv("F_avg", format!("{f_avg:.4}"));
+            output::kv("Formula", F_AVG_FORMULA);
+        }
     }
 
     // Generate model card if requested
     if generate_card {
-        let model_name = "paiml/shell-safety-classifier";
-        let base_model = Some("Qwen/Qwen2.5-Coder-0.5B");
-        let card = report.to_model_card(model_name, base_model);
+        // `ClassifyEvalReport::to_model_card` is a shell-safety-specific
+        // generator: its YAML tags, `model-index` task name, prose and label
+        // descriptions all describe the SSC classifier. Reusing it for another
+        // benchmark under a different model name would publish a factually
+        // false card, so the stance benchmark gets its own.
+        let card = if let Some(f_avg) = stance_f_avg {
+            stance_model_card(&report, model_size, f_avg)
+        } else {
+            report.to_model_card(
+                "paiml/shell-safety-classifier",
+                Some("Qwen/Qwen2.5-Coder-0.5B"),
+            )
+        };
         let card_path = checkpoint_dir.join("README.md");
         std::fs::write(&card_path, &card).map_err(|e| {
             CliError::ValidationFailed(format!(
@@ -385,6 +467,118 @@ pub(crate) fn run_classify_eval(
     }
 
     Ok(())
+}
+
+// Only `run_classify_eval` (feature = "training") calls this outside tests.
+#[cfg(any(feature = "training", test))]
+fn is_tweet_eval_stance_dataset(dataset: &str) -> bool {
+    matches!(
+        dataset.to_ascii_lowercase().as_str(),
+        "tweet-eval-stance"
+            | "tweet_eval_stance"
+            | "tweet-eval-stance-abortion"
+            | "tweet_eval_stance_abortion"
+    )
+}
+
+/// Build a HuggingFace model card that actually describes the TweetEval stance
+/// benchmark, with F_avg carried in the `model-index` front matter where the
+/// Hub reads leaderboard metrics from.
+#[cfg(feature = "training")]
+fn stance_model_card(
+    report: &entrenar::finetune::ClassifyEvalReport,
+    model_size: Option<&str>,
+    f_avg: f64,
+) -> String {
+    use crate::commands::data_tweeteval::{DATASET_ID, F_AVG_FORMULA};
+
+    const MODEL_NAME: &str = "paiml/tweet-eval-stance-abortion-classifier";
+    let macro_f1 = if report.per_class_f1.is_empty() {
+        0.0
+    } else {
+        report.per_class_f1.iter().sum::<f64>() / report.per_class_f1.len() as f64
+    };
+
+    let mut out = String::new();
+    out.push_str("---\n");
+    out.push_str("license: apache-2.0\n");
+    out.push_str("language:\n- en\n");
+    out.push_str("tags:\n- stance-detection\n- tweet-eval\n- text-classification\n- entrenar\n");
+    out.push_str("pipeline_tag: text-classification\n");
+    out.push_str("model-index:\n");
+    out.push_str(&format!("- name: {MODEL_NAME}\n"));
+    out.push_str("  results:\n");
+    out.push_str("  - task:\n");
+    out.push_str("      type: text-classification\n");
+    out.push_str("      name: Stance Detection (TweetEval, Legalization of Abortion)\n");
+    out.push_str("    dataset:\n");
+    out.push_str(&format!("      name: {DATASET_ID}\n"));
+    out.push_str("      type: tweet_eval\n");
+    out.push_str("    metrics:\n");
+    out.push_str(&format!(
+        "    - type: f1\n      value: {f_avg:.4}\n      name: F_avg (official TweetEval stance score)\n"
+    ));
+    out.push_str(&format!(
+        "    - type: f1\n      value: {macro_f1:.4}\n      name: Macro F1\n"
+    ));
+    out.push_str(&format!(
+        "    - type: accuracy\n      value: {:.4}\n",
+        report.accuracy
+    ));
+    out.push_str(&format!(
+        "    - type: mcc\n      value: {:.4}\n",
+        report.mcc
+    ));
+    out.push_str("---\n\n");
+
+    out.push_str(&format!("# {MODEL_NAME}\n\n"));
+    out.push_str(
+        "A three-class stance classifier for tweets about the legalization of abortion, \
+         evaluated on the canonical TweetEval stance/abortion split.\n\n",
+    );
+
+    out.push_str("## Benchmark\n\n");
+    out.push_str("| Metric | Value |\n|--------|-------|\n");
+    out.push_str(&format!("| F_avg (primary) | {f_avg:.4} |\n"));
+    out.push_str(&format!("| Formula | `{F_AVG_FORMULA}` |\n"));
+    out.push_str(&format!("| Macro F1 | {macro_f1:.4} |\n"));
+    out.push_str(&format!("| Accuracy | {:.4} |\n", report.accuracy));
+    out.push_str(&format!("| MCC | {:.4} |\n", report.mcc));
+    out.push_str(&format!("| Eval samples | {} |\n", report.total_samples));
+    if let Some(size) = model_size {
+        out.push_str(&format!("| Architecture | {size} |\n"));
+    }
+    out.push('\n');
+    out.push_str(
+        "Accuracy is supplemental: the canonical test split is dominated by the \
+         `against` class, so the official score excludes `none`.\n\n",
+    );
+
+    out.push_str("## Labels\n\n");
+    out.push_str("| ID | Label |\n|----|-------|\n");
+    for (i, name) in report.label_names.iter().enumerate() {
+        out.push_str(&format!("| {i} | {name} |\n"));
+    }
+    out.push('\n');
+
+    out.push_str("## Per-class metrics\n\n");
+    out.push_str("| Label | F1 | Support |\n|-------|----|---------|\n");
+    for (i, name) in report.label_names.iter().enumerate() {
+        let f1 = report.per_class_f1.get(i).copied().unwrap_or(0.0);
+        let support = report.per_class_support.get(i).copied().unwrap_or(0);
+        out.push_str(&format!("| {name} | {f1:.4} | {support} |\n"));
+    }
+    out.push('\n');
+
+    out.push_str("## Limitations\n\n");
+    out.push_str("- Single target (`Legalization of Abortion`); it does not generalize to other SemEval-2016 Task 6 targets\n");
+    out.push_str("- Trained and evaluated on English tweets from the TweetEval distribution\n");
+    out.push_str(
+        "- The test split is class-imbalanced; report F_avg, not accuracy, for comparisons\n\n",
+    );
+
+    out.push_str("---\n*Generated by [entrenar](https://github.com/paiml/entrenar)*\n");
+    out
 }
 
 /// Run eval plan (dry-run validation).

@@ -1,0 +1,103 @@
+{
+  "semantic_hash": "a9ba23f99088e77bc021efb9fcb8b365a287cf7a4e1daf3c05eb60a28bce4d7f",
+  "volatile": {
+    "created_at": "",
+    "tool_version": "0.63.0"
+  },
+  "payload": {
+    "schema_version": 1,
+    "contract_id": "setfit-benchmark-claims-v1",
+    "method": "setfit",
+    "shots": 8,
+    "seed": 23,
+    "dataset_revision": "4fbd22cd78421f05b1ecdb4fc5725bc7a7bd8f66",
+    "dataset_fingerprint": "082ad5b09088436923681dc9fb1cdc026982d82f1395c823b0991f986a8f7f84",
+    "model_revision": "1110a243fdf4706b3f48f1d95db1a4f5529b4d41",
+    "selection_manifest_hash": "41eeb5ad63074a4de4df6531fe1d19c6f6f346cf7892284487e4f8865b31c933",
+    "backend_identity": "cpu:setfit-core:autograd-trueno-matmul",
+    "host": {
+      "hostname": "MacBook-Pro-7.local",
+      "os": "macos",
+      "arch": "aarch64"
+    },
+    "quality": {
+      "f_avg": 0.5069694784907475,
+      "f_avg_bits": 4602741594654114706,
+      "macro_f1": 0.4938238081713208,
+      "macro_f1_bits": 4602567558791774079,
+      "per_class_precision": [
+        0.3302752293577982,
+        0.8155339805825242,
+        0.36764705882352944
+      ],
+      "per_class_recall": [
+        0.8,
+        0.4444444444444444,
+        0.5434782608695652
+      ],
+      "per_class_f1": [
+        0.4675324675324675,
+        0.5753424657534247,
+        0.4385964912280702
+      ],
+      "mcc": 0.2946641445159912,
+      "mcc_bits": 4598979817243672576,
+      "confusion_matrix": [
+        [
+          36,
+          4,
+          5
+        ],
+        [
+          67,
+          84,
+          38
+        ],
+        [
+          6,
+          15,
+          25
+        ]
+      ],
+      "n_test_rows": 280,
+      "ordered_labels": [
+        "none",
+        "against",
+        "favor"
+      ],
+      "ece_top_label_validation": 0.3159223198890686,
+      "ece_top_label_validation_bits": 4599362770486427648,
+      "brier_multiclass_validation": 0.5461850166320801,
+      "brier_multiclass_validation_bits": 4603094816820035584,
+      "calibration_split": "validation"
+    },
+    "resource": {
+      "train_wall_ms": 33066,
+      "cold_latency_ms": 701.600167,
+      "cold_measured_in_child_process": true,
+      "warm_latency_ms_median": 32.034354,
+      "throughput_rows_per_sec": 83.76198614502202,
+      "throughput_batch_size": 32,
+      "warmup_count": 3,
+      "train_peak_rss_bytes": 5992398848,
+      "train_peak_rss_mechanism": "sysinfo_sampled_19",
+      "inference_peak_rss_bytes": 1555120128,
+      "inference_peak_rss_mechanism": "child_max_rss_time_l",
+      "peak_rss_sample_interval_hz": 19,
+      "artifact_bytes": 90777156,
+      "deployable_total_bytes": 90777156
+    },
+    "evidence": {
+      "setfit": {
+        "evidence_table_hash": "28807bc70b68b7d3a9e22ec79dee621c0f97c378559792698d1fd3d2d16c99de",
+        "apr_artifact_sha256": "9b96290304a24cb8b9e1a7a629a34674f7da8f9202db544efc2ba9d21c552ba8",
+        "lock": {
+          "lock_hash": "bc4cd9607bc4f279d2f8f8cef080252e8915d4e702f20a14abfd420d78cfb431",
+          "role": "written",
+          "rule": "max_metric_lowest_index_tie_break",
+          "lock_record_path": "locks/setfit-s8-seed23.lock.json"
+        }
+      }
+    }
+  }
+}

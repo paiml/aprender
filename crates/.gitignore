@@ -1,0 +1,5 @@
+# cargo-pmcp writes its build output under the deploy root, which is this
+# directory: `deploy/.build/bootstrap` is the ~19 MB Lambda binary it uploads
+# and `deploy/lib/stack.ts` is a rendered stack. Products of `cargo pmcp
+# deploy`, never sources.
+deploy/

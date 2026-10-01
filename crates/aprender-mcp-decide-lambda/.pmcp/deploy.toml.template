@@ -1,0 +1,126 @@
+# TEMPLATE for the Laya decide MCP server's pmcp.run deploy config (Phase 8 D-15, D-18).
+#
+# This file is tracked. The `deploy.toml` beside it is GENERATED from it by
+# `just laya-deploy-config` and is gitignored, because the artifact bucket's name
+# embeds the AWS account id. cargo-pmcp reads the generated file.
+#
+# THE PACKAGE-RESOLUTION TRAP. cargo-pmcp picks the package to build in
+# `find_lambda_package_dir`: first `<deploy-root>/{server_name}-lambda`, then the FIRST
+# `*-lambda` workspace package with a `bootstrap` binary. With this crate's own
+# directory as the deploy root the first branch cannot match, and the fallback's first
+# hit is NOT this crate in either plausible order (workspace-member order puts
+# aprender-mcp-setfit-lambda first, alphabetical order aprender-mcp-chronos-lambda), so
+# a plain `cargo pmcp deploy --manifest-path crates/aprender-mcp-decide-lambda` would
+# build and ship ANOTHER server's binary under this name without a warning. Plan 08-10
+# settled the deploy root: the SHARED crates root, `--manifest-path crates` with server
+# name `aprender-mcp-decide`, so the resolver's first branch finds
+# `crates/aprender-mcp-decide-lambda` (`just laya-resolver-proof` executes that resolver).
+# `crates/.pmcp/` and `crates/deploy/` belong to the setfit training server, so
+# `just laya-deploy` swaps them out and restores them byte-identically around the deploy
+# (`_laya-crates-root-swap`; one decide model per workspace, D-ITEM-08-10-A).
+#
+# THE TELL that the right binary shipped is the identity probe over POST
+# (examples/probe.rs): `tools/call classify` answers `model.artifact_sha256` equal to
+# the pinned sha256 below, with the artifact's labels in order. No GET can be the tell:
+# on pmcp.run the edge answers GET `/mcp` and `/health` itself, so no GET reaches the
+# bootstrap (D-ITEM-08-17-A).
+#
+# THE DEPLOY FLOW (plan 08-10; nothing in plan 08-07 touches AWS):
+#   1. pack the trained artifact and upload it content-addressed:
+#        s3://<bucket>/decide/<server>/<sha256>.apr
+#   2. just laya-deploy-config   # fills the UNSET values below into ./deploy.toml
+#   3. cargo pmcp deploy --manifest-path crates   # the shared crates root, run by
+#      `just laya-deploy` inside `_laya-crates-root-swap` (plan 08-10, D-ITEM-08-10-A)
+#   4. verify the stack-declared s3:GetObject below is on the function's role (read-only)
+#   5. probe the endpoint (examples/probe.rs): the identity probe over POST (sha256 and
+#      labels), then the cold maximal requests
+#
+# The weights are NEVER baked into the package (spikes 021/026: 7-18x worse cold start).
+# They are fetched from S3 at cold start straight into memory: Lambda's /tmp is 512 MB
+# and cargo-pmcp cannot raise it, so a 0.85 GB artifact cannot be staged there.
+
+[target]
+type = "pmcp-run"
+version = "1.0.0"
+
+[aws]
+region = "us-east-1"
+
+[server]
+# Replaced by `just laya-deploy-config`. The pmcp.run server id is also the name the
+# bootstrap reports (PMCP_SERVER_ID).
+name = "UNSET-run-just-laya-deploy-config"
+# THE TIER. contracts/decide-tool-boundary-v1.yaml prices its token budget for ONE
+# memory size, `lambda_memory_mb`, and a test asserts this value equals it
+# (FALSIFY-DECIDE-TOOL-007): Lambda sells CPU in proportion to memory, so another size
+# silently re-prices every request. Change the contract first, then this line.
+# 10240 MB (6 vCPU) since decide-tool-boundary-v1 7.0.0 (plan 08-30, the owner's
+# restore-10240-tier decision): D-18's tier, because memory buys vCPUs and the cost per
+# request is flat (aws-mcp-model-hosting.md); the budget there is 8 texts / 800 built
+# tokens. The superseded 3008 MB tier (the account's former ceiling) was 2 texts / 120.
+# Peak memory measured live at 3008 MB was 2481-2483 MB (Lambda Max Memory Used, 08-17).
+memory_mb = 10240
+# Matches the API Gateway HTTP API's own 30-second integration timeout, which cannot be
+# raised. A larger number would only be a longer wait for a response the gateway has
+# already given up on. The loader's DOWNLOAD_DEADLINE (10.739 s, derived from the 10,240 MB
+# cold samples of plan 08-30) sits inside it, and the handler also caps the download at the
+# invocation's remaining time minus the post-download reserve (19.261 s).
+timeout_seconds = 30
+
+# `just laya-deploy-config` replaces the UNSET values with the uploaded object's URI and
+# its sha256. The sha256 is the pin: the bootstrap refuses any bytes that do not hash to
+# it BEFORE the load ladder parses them, and every classify response reports it as
+# `model.artifact_sha256`. Hand-editing the generated file is how the pin and the object
+# drift apart; regenerate instead.
+[environment]
+RUST_LOG = "info"
+APRENDER_DECIDE_S3_URI = "UNSET-run-just-laya-deploy-config"
+APRENDER_DECIDE_SHA256 = "UNSET-run-just-laya-deploy-config"
+
+[secrets]
+
+# The value here is a placeholder: `just laya-deploy-config` sets it from the decision
+# taken at plan 08-11's checkpoint. Do not deploy an open function by default without
+# that decision (ASVS V2): an unauthenticated multi-GB function is a cost-amplification
+# vector, since every call can buy a cold start and seconds of multi-vCPU compute.
+[auth]
+enabled = false
+provider = "none"
+callback_urls = []
+
+[auth.dcr]
+enabled = true
+public_client_patterns = ["claude", "desktop", "cursor", "mcp-inspector", "chatgpt"]
+default_scopes = ["openid", "email", "mcp/read"]
+allowed_scopes = ["openid", "email", "profile", "mcp/read", "mcp/write"]
+
+[observability]
+log_retention_days = 30
+enable_xray = true
+create_dashboard = true
+
+[observability.alarms]
+error_threshold = 10
+# A warm classify of the maximal request is seconds; a cold one pays the download and
+# the ladder inside the same request. Past this the request is near the gateway cap.
+latency_threshold_ms = 20000
+
+# No [assets]: the function carries no model. The artifact is the S3 object named above.
+
+[composition]
+tier = "foundation"
+allow_composition = true
+internal_only = false
+
+# THE WEIGHTS READ, declared IN THE STACK (plan 08-17, option 1). cargo-pmcp renders
+# `[[iam.statements]]` into the execution role's default policy, and the Lambda function
+# DependsOn that policy, so the grant exists before the function's FIRST invocation --
+# including pmcp.run's own post-deploy call, which ran before the old out-of-band
+# `put-role-policy` grant, failed the S3 load, and left the edge refusing MCP POSTs
+# ("Server is in error state"). s3:GetObject ONLY, on this server's content-addressed
+# prefix ONLY: no s3:*, no ListBucket, no bucket-wide `*`. `just laya-deploy-config` fills
+# the ARN; `_laya-iam-check` refuses any config that carries anything broader.
+[[iam.statements]]
+effect = "Allow"
+actions = ["s3:GetObject"]
+resources = ["UNSET-run-just-laya-deploy-config"]

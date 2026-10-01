@@ -1,0 +1,72 @@
+diff --git a/crates/aprender-serve/src/gguf/inference/forward/forward_qwen35.rs b/crates/aprender-serve/src/gguf/inference/forward/forward_qwen35.rs
+index ec870db61..dc41808f7 100644
+--- a/crates/aprender-serve/src/gguf/inference/forward/forward_qwen35.rs
++++ b/crates/aprender-serve/src/gguf/inference/forward/forward_qwen35.rs
+@@ -901,6 +901,26 @@ impl<'a> Qwen35Model<'a> {
+         token_id: u32,
+         cache: &mut Qwen35State,
+         position: usize,
++    ) -> Result<Vec<f32>> {
++        let out_normed = self.forward_single_qwen35_hidden(token_id, cache, position)?;
++        let mut logits = vec![0.0; self.base.config.vocab_size];
++        self.base
++            .fused_matmul_into(&out_normed, self.base.lm_head_weight(), &mut logits)?;
++        Ok(logits)
++    }
++
++    /// The same step as [`Self::forward_single_qwen35`], stopping at the final RMS norm: the
++    /// `[hidden_dim]` state a readout head consumes (a decision model's pointer head, a
++    /// pooled encoder) instead of the `lm_head` logits. Advances `cache` exactly as the
++    /// logits path does, so the two can be interleaved on one state.
++    ///
++    /// # Errors
++    /// A matmul or shape failure in any layer.
++    pub fn forward_single_qwen35_hidden(
++        &self,
++        token_id: u32,
++        cache: &mut Qwen35State,
++        position: usize,
+     ) -> Result<Vec<f32>> {
+         let mut hidden = self.base.token_embedding()[(token_id as usize)
+             * self.base.config.hidden_dim
+@@ -952,13 +972,9 @@ impl<'a> Qwen35Model<'a> {
+             &mut out_normed,
+         );
+ 
+-        let mut logits = vec![0.0; self.base.config.vocab_size];
+-        self.base
+-            .fused_matmul_into(&out_normed, self.base.lm_head_weight(), &mut logits)?;
+-
+         cache.kv_cache.advance();
+ 
+-        Ok(logits)
++        Ok(out_normed)
+     }
+ 
+     /// One Gated `DeltaNet` layer, in place on `hidden`.
+diff --git a/crates/aprender-serve/src/gguf/qwen35_load.rs b/crates/aprender-serve/src/gguf/qwen35_load.rs
+index 8f724d7e8..9eeacb2a5 100644
+--- a/crates/aprender-serve/src/gguf/qwen35_load.rs
++++ b/crates/aprender-serve/src/gguf/qwen35_load.rs
+@@ -83,6 +83,21 @@ pub fn load_qwen35_layers(model: &GGUFModel, data: &[u8]) -> Result<Vec<Qwen35La
+                 model.architecture().unwrap_or("<no architecture>")
+             ),
+         })? as usize;
++    // llama.cpp's converter counts the multi-token-prediction block(s) in `block_count`
++    // (Qwen3.5 `mtp_num_hidden_layers` -> `{arch}.nextn_predict_layers`) and llama.cpp's
++    // own loader subtracts them (`n_layer - nextn_predict_layers`) before building the
++    // decoder stack. A file converted from HF weights reports 25 blocks for the 24-layer
++    // 0.8B while carrying tensors only up to `blk.23`. The MTP block is a speculative-
++    // decoding head, not part of the forward, so it is excluded the same way here.
++    let nextn = arch_u32(model, "nextn_predict_layers").unwrap_or(0) as usize;
++    let num_layers = num_layers.checked_sub(nextn).filter(|&n| n > 0).ok_or_else(|| {
++        crate::error::RealizarError::InvalidShape {
++            reason: format!(
++                "Qwen3.5 loader: nextn_predict_layers {nextn} leaves no decoder layers of \
++                 block_count {num_layers}"
++            ),
++        }
++    })?;
+ 
+     let interval = arch_u32(model, "full_attention_interval").unwrap_or(4) as usize;
+ 

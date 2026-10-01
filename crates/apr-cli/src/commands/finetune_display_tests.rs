@@ -26,6 +26,7 @@ fn make_train_result(epochs: usize) -> TrainResult {
     let best_epoch = epochs.saturating_sub(1);
     let best_val_loss = epoch_metrics.last().map_or(0.0, |m| m.val_loss);
     TrainResult {
+        epochs_completed: epoch_metrics.len(),
         epoch_metrics,
         best_epoch,
         best_val_loss,
@@ -46,6 +47,7 @@ fn test_display_train_result_json_basic() {
 #[test]
 fn test_display_train_result_json_empty_epochs() {
     let result = TrainResult {
+        epochs_completed: 0,
         epoch_metrics: vec![],
         best_epoch: 0,
         best_val_loss: 0.0,
@@ -83,6 +85,7 @@ fn test_display_train_result_text_basic() {
 #[test]
 fn test_display_train_result_text_empty_epochs() {
     let result = TrainResult {
+        epochs_completed: 0,
         epoch_metrics: vec![],
         best_epoch: 0,
         best_val_loss: 0.0,
@@ -120,6 +123,7 @@ fn test_display_train_result_text_many_epochs() {
 #[test]
 fn test_display_train_result_zero_time() {
     let result = TrainResult {
+        epochs_completed: 1,
         epoch_metrics: vec![make_epoch(0, 1.0, 1.5)],
         best_epoch: 0,
         best_val_loss: 1.5,

@@ -26,11 +26,17 @@ use std::path::{Path, PathBuf};
 pub struct TrainingConfig {
     /// Number of training epochs (default: 50)
     pub epochs: usize,
-    /// Fraction of data reserved for validation (default: 0.2)
+    /// Fraction of data reserved for validation (default: 0.2).
+    ///
+    /// `0.0` DISABLES validation: no rows are held out, no validation pass runs, and no
+    /// best-epoch checkpoint is written. Phase 5's frozen-defaults benchmark regime uses
+    /// this so that nothing selects an epoch on a metric.
     pub val_split: f32,
     /// Save checkpoint every N epochs (default: 5)
     pub save_every: usize,
-    /// Early stopping patience in epochs (default: 10)
+    /// Early stopping patience in epochs (default: 10).
+    ///
+    /// `0` DISABLES early stopping — the loop runs every requested epoch.
     pub early_stopping_patience: usize,
     /// Directory for checkpoint files
     pub checkpoint_dir: PathBuf,
@@ -112,6 +118,12 @@ pub struct TrainResult {
     pub stopped_early: bool,
     /// Total wall-clock training time in milliseconds
     pub total_time_ms: u64,
+    /// Epochs the loop actually completed.
+    ///
+    /// Phase 5 rows attest `epochs_completed == epochs_requested` — that equality is what
+    /// makes "no epoch was selected on a metric" checkable from the row alone, rather than
+    /// something the reader has to take on trust from a `stopped_early: false`.
+    pub epochs_completed: usize,
 }
 
 /// Production training loop for classification fine-tuning.
@@ -169,8 +181,11 @@ impl ClassifyTrainer {
     /// * `config` - Training configuration
     ///
     /// # Errors
-    /// Returns error if corpus is empty, val_split is out of (0.0, 0.5],
+    /// Returns error if corpus is empty, val_split is outside `[0.0, 0.5]`,
     /// or epochs is 0.
+    ///
+    /// `val_split == 0.0` is a SUPPORTED value (Phase 5 A6): validation is disabled and
+    /// every row trains. A NEGATIVE split is still nonsense and still refused.
     pub fn new(
         mut pipeline: ClassifyPipeline,
         corpus: Vec<SafetySample>,
@@ -179,9 +194,9 @@ impl ClassifyTrainer {
         if corpus.is_empty() {
             return Err(crate::Error::ConfigError("SSC-026: corpus must not be empty".to_string()));
         }
-        if config.val_split <= 0.0 || config.val_split > 0.5 {
+        if config.val_split < 0.0 || config.val_split > 0.5 {
             return Err(crate::Error::ConfigError(format!(
-                "SSC-026: val_split must be in (0.0, 0.5], got {}",
+                "SSC-026: val_split must be in [0.0, 0.5] (0.0 disables validation), got {}",
                 config.val_split,
             )));
         }
@@ -202,7 +217,11 @@ impl ClassifyTrainer {
             Self::oversample_training_data(&mut train_data, config.seed);
         }
 
-        if train_data.is_empty() || val_data.is_empty() {
+        // An empty VAL set is a failure only when one was asked for. Under `val_split
+        // 0.0` it is the requested outcome, and refusing it here was what made A6's
+        // "trainer tolerates 0.0" assumption false.
+        let validation_requested = config.val_split > 0.0;
+        if train_data.is_empty() || (validation_requested && val_data.is_empty()) {
             return Err(crate::Error::ConfigError(format!(
                 "SSC-026: split produced empty set (train={}, val={}). Need more samples.",
                 train_data.len(),
@@ -394,6 +413,18 @@ impl ClassifyTrainer {
         let mut stopped_early = false;
         let mut training_failed = false;
 
+        // Phase 5 A6. Two independent switches, both OFF in the frozen-defaults regime:
+        //
+        // - `validating`: with no validation rows there is no held-out metric, so the
+        //   validation pass is skipped and — crucially — no `best/` checkpoint is written.
+        //   The best-epoch checkpoint is the actual model-selection surface; leaving it in
+        //   while feeding it a constant 0.0 "loss" would select epoch 0 every time.
+        // - `early_stopping_enabled`: patience 0 means DISABLED. Read literally, the old
+        //   `epochs_without_improvement >= 0` test is true at the end of the first epoch,
+        //   so patience 0 used to mean "stop after one epoch" — the opposite of the intent.
+        let validating = !self.val_tokens.is_empty();
+        let early_stopping_enabled = self.config.early_stopping_patience > 0;
+
         for epoch in 0..self.config.epochs {
             let epoch_start = std::time::Instant::now();
 
@@ -403,8 +434,10 @@ impl ClassifyTrainer {
             // Train one epoch
             let (train_loss, train_accuracy) = self.train_epoch(&mut scheduler, epoch);
 
-            // F-LOOP-002: Validate every epoch
-            let (val_loss, val_accuracy) = self.validate();
+            // F-LOOP-002: Validate every epoch — unless validation is disabled, in which
+            // case there is nothing to validate ON and the reported figures are 0.0
+            // placeholders that nothing selects against.
+            let (val_loss, val_accuracy) = if validating { self.validate() } else { (0.0, 0.0) };
 
             let epoch_time = epoch_start.elapsed();
             let epoch_time_ms = epoch_time.as_millis() as u64;
@@ -443,8 +476,11 @@ impl ClassifyTrainer {
                 );
             }
 
-            // Track best validation loss
-            if val_loss < best_val_loss {
+            // Track best validation loss. With validation disabled the "best" epoch is
+            // simply the last one completed — no checkpoint is selected on a metric.
+            if !validating {
+                best_epoch = epoch;
+            } else if val_loss < best_val_loss {
                 best_val_loss = val_loss;
                 best_epoch = epoch;
                 epochs_without_improvement = 0;
@@ -477,8 +513,10 @@ impl ClassifyTrainer {
                 break;
             }
 
-            // F-LOOP-010: Early stopping
-            if epochs_without_improvement >= self.config.early_stopping_patience {
+            // F-LOOP-010: Early stopping (patience 0 = disabled)
+            if early_stopping_enabled
+                && epochs_without_improvement >= self.config.early_stopping_patience
+            {
                 stopped_early = true;
                 break;
             }
@@ -494,6 +532,7 @@ impl ClassifyTrainer {
         let total_time_ms = total_start.elapsed().as_millis() as u64;
 
         TrainResult {
+            epochs_completed: epoch_metrics_vec.len(),
             epoch_metrics: epoch_metrics_vec,
             best_epoch,
             best_val_loss,
@@ -533,6 +572,7 @@ impl ClassifyTrainer {
                     best_val_loss: f32::INFINITY,
                     stopped_early: true,
                     total_time_ms: total_start.elapsed().as_millis() as u64,
+                    epochs_completed: 0,
                 };
             }
         };
@@ -546,6 +586,7 @@ impl ClassifyTrainer {
                 best_val_loss: f32::INFINITY,
                 stopped_early: true,
                 total_time_ms: total_start.elapsed().as_millis() as u64,
+                epochs_completed: 0,
             };
         }
 
@@ -666,6 +707,7 @@ impl ClassifyTrainer {
         server.shutdown_workers();
 
         TrainResult {
+            epochs_completed: epoch_metrics_vec.len(),
             epoch_metrics: epoch_metrics_vec,
             best_epoch,
             best_val_loss,
@@ -1392,7 +1434,9 @@ impl ClassifyTrainer {
     ///
     /// # Arguments
     /// * `data` - Full dataset
-    /// * `val_ratio` - Fraction for validation (0.0, 0.5]
+    /// * `val_ratio` - Fraction for validation, `[0.0, 0.5]`. `0.0` means NO validation
+    ///   rows: the whole dataset trains. Rounding a 0.0 request up to one row would hold
+    ///   an example out of every benchmark cell that asked for none.
     /// * `seed` - Random seed for deterministic shuffling
     pub fn split_dataset(
         data: &[SafetySample],
@@ -1401,6 +1445,9 @@ impl ClassifyTrainer {
     ) -> (Vec<SafetySample>, Vec<SafetySample>) {
         if data.is_empty() {
             return (Vec::new(), Vec::new());
+        }
+        if val_ratio <= 0.0 {
+            return (data.to_vec(), Vec::new());
         }
 
         let mut indices: Vec<usize> = (0..data.len()).collect();
@@ -1551,6 +1598,7 @@ impl ClassifyTrainer {
         }
 
         Ok(TrainResult {
+            epochs_completed: epoch_metrics_vec.len(),
             epoch_metrics: epoch_metrics_vec,
             best_epoch,
             best_val_loss,

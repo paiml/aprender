@@ -318,14 +318,33 @@ fn test_ssc026_empty_corpus_error() {
     );
 }
 
+/// DELIBERATE CONTRACT CHANGE (Phase 5 A6, plan 05-06).
+///
+/// `val_split = 0.0` used to be an error. It is now the SUPPORTED way to disable
+/// validation, because the benchmark's frozen-defaults regime must be able to say "hold
+/// nothing out and select no epoch". The refusal this test used to assert moved DOWN to
+/// negative splits, which are still nonsense — so the bound is still guarded, at the value
+/// that is actually invalid.
 #[test]
-fn test_ssc026_invalid_val_split_zero() {
+fn test_ssc026_val_split_zero_is_supported_and_disables_validation() {
     let pipeline = tiny_pipeline(3);
     let corpus = make_corpus(10, 3);
     let config = TrainingConfig { val_split: 0.0, ..TrainingConfig::default() };
 
+    let trainer = ClassifyTrainer::new(pipeline, corpus, config)
+        .expect("val_split=0.0 disables validation; it is not a config error");
+    assert!(trainer.val_data().is_empty());
+    assert_eq!(trainer.train_data().len(), 10);
+}
+
+#[test]
+fn test_ssc026_invalid_val_split_negative() {
+    let pipeline = tiny_pipeline(3);
+    let corpus = make_corpus(10, 3);
+    let config = TrainingConfig { val_split: -0.01, ..TrainingConfig::default() };
+
     let result = ClassifyTrainer::new(pipeline, corpus, config);
-    assert!(result.is_err(), "val_split=0.0 should return an error");
+    assert!(result.is_err(), "a negative val_split should return an error");
 }
 
 #[test]
@@ -542,6 +561,7 @@ fn test_epoch_metrics_clone_and_debug() {
 #[test]
 fn test_train_result_clone_and_debug() {
     let result = TrainResult {
+        epochs_completed: 0,
         epoch_metrics: vec![],
         best_epoch: 3,
         best_val_loss: 0.25,
@@ -2568,6 +2588,7 @@ fn test_train_result_with_metrics() {
         },
     ];
     let result = TrainResult {
+        epochs_completed: 2,
         epoch_metrics: metrics,
         best_epoch: 1,
         best_val_loss: 0.9,
@@ -3271,6 +3292,7 @@ fn test_compute_mcc_zero_total() {
 #[test]
 fn test_train_result_empty_metrics() {
     let result = TrainResult {
+        epochs_completed: 0,
         epoch_metrics: vec![],
         best_epoch: 0,
         best_val_loss: f32::INFINITY,
@@ -3286,6 +3308,7 @@ fn test_train_result_empty_metrics() {
 #[test]
 fn test_train_result_stopped_early() {
     let result = TrainResult {
+        epochs_completed: 1,
         epoch_metrics: vec![EpochMetrics {
             epoch: 0,
             train_loss: 0.5,
@@ -3397,11 +3420,22 @@ fn test_trainer_new_zero_epochs() {
     assert!(result.is_err());
 }
 
+/// See `test_ssc026_val_split_zero_is_supported_and_disables_validation` — same
+/// deliberate A6 contract change, asserted from the constructor's other test cluster.
 #[test]
-fn test_trainer_new_val_split_zero() {
+fn test_trainer_new_val_split_zero_constructs() {
     let p = tiny_pipeline(2);
     let corpus = make_corpus(20, 2);
     let cfg = TrainingConfig { epochs: 1, val_split: 0.0, ..TrainingConfig::default() };
+    let trainer = ClassifyTrainer::new(p, corpus, cfg).expect("0.0 disables validation");
+    assert!(trainer.val_data().is_empty());
+}
+
+#[test]
+fn test_trainer_new_val_split_negative_is_refused() {
+    let p = tiny_pipeline(2);
+    let corpus = make_corpus(20, 2);
+    let cfg = TrainingConfig { epochs: 1, val_split: -0.5, ..TrainingConfig::default() };
     let result = ClassifyTrainer::new(p, corpus, cfg);
     assert!(result.is_err());
 }
@@ -4603,6 +4637,7 @@ fn test_coverage_train_result_full_debug() {
         },
     ];
     let result = TrainResult {
+        epochs_completed: 3,
         epoch_metrics: metrics,
         best_epoch: 2,
         best_val_loss: 1.0,
@@ -5098,4 +5133,132 @@ fn test_coverage_card_confusion_raw_formatting() {
     assert!(out.contains("### Raw Counts"));
     assert!(out.contains("```"));
     assert!(out.contains("Predicted"));
+}
+
+// =========================================================================
+// Phase 5 A6: val_split 0.0 with early stopping disabled
+//
+// The assumption A6 recorded was "the trainer probably tolerates val_split
+// 0.0". It did not: `ClassifyTrainer::new` refused `val_split <= 0.0`,
+// `split_dataset` forced at least one validation row, and patience 0 made
+// `epochs_without_improvement >= patience` true after the FIRST epoch — so a
+// benchmark cell asking for "no held-out split, no early stopping" would have
+// silently trained for exactly one epoch. These tests are the measurement.
+// =========================================================================
+
+/// The A6 probe: no validation rows, no early stop, every requested epoch runs.
+#[test]
+fn a6_probe_val_split_zero_and_patience_zero_trains_every_requested_epoch() {
+    let corpus = make_corpus(8, 2);
+    let config = TrainingConfig {
+        epochs: 3,
+        val_split: 0.0,
+        save_every: 3,
+        early_stopping_patience: 0,
+        checkpoint_dir: std::env::temp_dir().join("a6-probe-epochs"),
+        seed: 13,
+        ..TrainingConfig::default()
+    };
+
+    let mut trainer = ClassifyTrainer::new(tiny_pipeline(2), corpus.clone(), config)
+        .expect("val_split 0.0 is a supported value, not a config error");
+
+    assert_eq!(
+        trainer.train_data().len(),
+        corpus.len(),
+        "with val_split 0.0 every row must be a TRAINING row"
+    );
+    assert!(
+        trainer.val_data().is_empty(),
+        "with val_split 0.0 there is no validation set to build batches from"
+    );
+
+    let result = trainer.train();
+
+    assert_eq!(
+        result.epochs_completed, 3,
+        "early stopping is DISABLED at patience 0; a run that stopped short would be \
+         unlocked model selection under a different name"
+    );
+    assert_eq!(result.epoch_metrics.len(), 3);
+    assert!(!result.stopped_early);
+}
+
+/// `split_dataset` must not manufacture a validation row out of a 0.0 request.
+#[test]
+fn a6_split_dataset_with_zero_ratio_yields_no_validation_rows() {
+    let corpus = make_corpus(20, 2);
+    let (train, val) = ClassifyTrainer::split_dataset(&corpus, 0.0, 42);
+    assert_eq!(train.len(), 20);
+    assert!(
+        val.is_empty(),
+        "a 0.0 ratio that still produced a val row would silently hold one example out \
+         of every benchmark cell"
+    );
+}
+
+/// A negative split is still a config error — 0.0 is supported, nonsense is not.
+#[test]
+fn a6_negative_val_split_is_still_refused() {
+    let config = TrainingConfig {
+        epochs: 1,
+        val_split: -0.1,
+        checkpoint_dir: std::env::temp_dir().join("a6-probe-negative"),
+        ..TrainingConfig::default()
+    };
+    assert!(ClassifyTrainer::new(tiny_pipeline(2), make_corpus(8, 2), config).is_err());
+}
+
+/// With validation disabled no `best/` checkpoint is written: there is no metric to
+/// select an epoch on, and a directory named `best` would imply there was.
+#[test]
+fn a6_validation_disabled_writes_no_best_checkpoint() {
+    let dir = std::env::temp_dir().join(format!(
+        "a6-probe-best-{}",
+        std::time::SystemTime::now()
+            .duration_since(std::time::UNIX_EPOCH)
+            .map(|d| d.as_nanos())
+            .unwrap_or(0)
+    ));
+    let config = TrainingConfig {
+        epochs: 2,
+        val_split: 0.0,
+        save_every: 2,
+        early_stopping_patience: 0,
+        checkpoint_dir: dir.clone(),
+        seed: 17,
+        ..TrainingConfig::default()
+    };
+
+    let mut trainer = ClassifyTrainer::new(tiny_pipeline(2), make_corpus(8, 2), config)
+        .expect("val_split 0.0 constructs");
+    let result = trainer.train();
+
+    assert_eq!(result.epochs_completed, 2);
+    assert!(
+        !dir.join("best").exists(),
+        "a `best` checkpoint under val_split 0.0 would be an epoch selected on nothing"
+    );
+
+    let _ = std::fs::remove_dir_all(&dir);
+}
+
+/// Default (validating) runs still expose `epochs_completed`, and it agrees with the
+/// per-epoch metric count.
+#[test]
+fn epochs_completed_agrees_with_the_epoch_metric_count_on_a_validating_run() {
+    let config = TrainingConfig {
+        epochs: 2,
+        val_split: 0.25,
+        save_every: 2,
+        early_stopping_patience: 10,
+        checkpoint_dir: std::env::temp_dir().join("a6-probe-validating"),
+        seed: 23,
+        ..TrainingConfig::default()
+    };
+    let mut trainer = ClassifyTrainer::new(tiny_pipeline(2), make_corpus(12, 2), config)
+        .expect("the historical configuration still constructs");
+    let result = trainer.train();
+    assert_eq!(result.epochs_completed, result.epoch_metrics.len());
+    assert_eq!(result.epochs_completed, 2);
 }

@@ -1,0 +1,12 @@
+{
+  "s16": {
+    "eval.jsonl": "e326952585d57b14ecc45f817efbb6994d6464ae07ec9190e0782547b5b20288",
+    "task.json": "041c4e38aadae98e3e62ecf77c7ace23616449cbab45439a4cf10cbb4a956b94",
+    "train.jsonl": "c665236066e0501f71f402a5c6c05a2124cf649963bce353043ff66a4b171a87"
+  },
+  "s64": {
+    "eval.jsonl": "e326952585d57b14ecc45f817efbb6994d6464ae07ec9190e0782547b5b20288",
+    "task.json": "041c4e38aadae98e3e62ecf77c7ace23616449cbab45439a4cf10cbb4a956b94",
+    "train.jsonl": "12a4301e5f0fcd50415e8eb237cbf2e5090f9e01f1edfa591dd5270f6df63351"
+  }
+}

@@ -1,0 +1,65 @@
+<!doctype html><html><head><meta charset="utf-8"><title>aprender forecast — MCP demo</title>
+<style>
+body{font:14px system-ui;margin:0;background:#fafafa;color:#222} header{padding:14px 24px;background:#fff;border-bottom:1px solid #ddd} main{padding:16px 24px;display:grid;grid-template-columns:340px 1fr;gap:16px}
+.card{background:#fff;border:1px solid #ddd;border-radius:8px;padding:14px;margin-bottom:14px} label{display:block;font-size:12px;color:#555;margin-top:8px} input,select,textarea{width:100%;box-sizing:border-box;font:13px system-ui;padding:4px 6px;border:1px solid #ccc;border-radius:4px}
+textarea{height:140px;font-family:ui-monospace,monospace;font-size:11px} button{font:14px system-ui;padding:7px 14px;border-radius:6px;border:1px solid #888;background:#fff;cursor:pointer;margin-right:6px;margin-top:8px} button.primary{background:#d62728;color:#fff;border-color:#d62728}
+.stat{display:inline-block;margin-right:18px;font-size:13px} .stat b{font-size:16px} #log{font-family:ui-monospace,monospace;font-size:11px;max-height:180px;overflow:auto;white-space:pre} .legend span{display:inline-block;margin-right:14px;font-size:12px} .sw{display:inline-block;width:20px;height:3px;vertical-align:middle;margin-right:5px} .err{color:#b00020;font-weight:600}
+</style></head><body>
+<header><b>aprender forecast</b> — one stateless MCP tool (<code>forecast</code>) over the Rust Prophet / NeuralProphet ports. This page is an MCP client: it POSTs JSON-RPC to <code>/mcp</code>.</header>
+<main>
+<div>
+ <div class="card">
+  <b>Series</b> (CSV: <code>ds,y</code>)
+  <div><button onclick="loadSample('peyton')">Load Peyton Manning</button><button onclick="loadSample('air')">Load air passengers</button></div>
+  <textarea id="csv" placeholder="ds,y&#10;2020-01-01,12.3&#10;..."></textarea>
+  <label>Model <select id="model"><option value="prophet">prophet</option><option value="neuralprophet">neuralprophet</option></select></label>
+  <label>Horizon <input id="horizon" type="number" value="365" min="1" max="3650"></label>
+  <label>Freq <select id="freq"><option>D</option><option>W</option><option>MS</option></select></label>
+  <label>Growth <select id="growth"><option>linear</option><option>logistic</option><option>flat</option></select></label>
+  <label>Cap (logistic) <input id="cap" type="number" step="any" placeholder="e.g. 8.5"></label>
+  <label>Seasonality mode <select id="mode"><option>additive</option><option>multiplicative</option></select></label>
+  <label>Interval width <input id="iw" type="number" step="0.05" value="0.8" min="0.05" max="0.99"></label>
+  <label>n_lags (neuralprophet) <input id="nlags" type="number" value="0" min="0" max="365"></label>
+  <label>Holidays JSON (optional) <input id="hol" placeholder='[{"name":"superbowl","dates":["2010-02-07"],"upper_window":1}]'></label>
+  <button class="primary" onclick="run()">Forecast</button>
+  <div id="error" class="err"></div>
+ </div>
+ <div class="card"><b>Event log</b> <button onclick="exportLog()">Export JSON</button><div id="log"></div></div>
+</div>
+<div>
+ <div class="card"><div id="stats">No forecast yet.</div>
+  <div class="legend" style="margin-top:6px"><span><i class="sw" style="background:#999"></i>y (history)</span><span><i class="sw" style="background:#d62728"></i>yhat</span><span><i class="sw" style="background:#f4b6b6;height:10px"></i>band</span><span><i class="sw" style="background:#ff9896"></i>trend</span></div>
+  <svg id="chart" width="100%" height="420" viewBox="0 0 1100 420" style="display:block;margin-top:6px"></svg></div>
+ <div class="card"><b>Response</b> (diagnostics + first rows)<pre id="resp" style="font-size:11px;max-height:260px;overflow:auto"></pre></div>
+</div></main>
+<script>
+const LOG=[]; let rpcId=0, initialized=false;
+function log(cat,msg,extra){const e={ts:new Date().toISOString(),cat,msg,...(extra||{})};LOG.push(e);const el=document.getElementById('log');el.textContent+=`${e.ts} [${cat}] ${msg}${extra?' '+JSON.stringify(extra):''}\n`;el.scrollTop=el.scrollHeight;}
+function exportLog(){const b=new Blob([JSON.stringify({events:LOG,summary:summary()},null,1)],{type:'application/json'});const a=document.createElement('a');a.href=URL.createObjectURL(b);a.download='forecast-mcp-log.json';a.click();}
+function summary(){const c={};for(const e of LOG)c[e.cat]=(c[e.cat]||0)+1;return{events:LOG.length,by_category:c,first:LOG[0]&&LOG[0].ts,last:LOG.length&&LOG[LOG.length-1].ts};}
+async function rpc(method,params){const id=++rpcId;const t0=performance.now();const body={jsonrpc:'2.0',id,method,params:params||{}};
+ const r=await fetch('/mcp',{method:'POST',headers:{'content-type':'application/json','accept':'application/json, text/event-stream'},body:JSON.stringify(body)});
+ const text=await r.text();const ms=Math.round(performance.now()-t0);let payload=text;if(text.startsWith('event:')||text.includes('\ndata: ')||text.startsWith('data: ')){const l=text.split('\n').find(x=>x.startsWith('data: '));payload=l?l.slice(6):text;}
+ let j;try{j=JSON.parse(payload)}catch(e){log('rpc.error',`${method} non-JSON (${r.status})`,{ms,snippet:text.slice(0,120)});throw new Error('non-JSON response: '+text.slice(0,200));}
+ log('rpc',`${method} → HTTP ${r.status} in ${ms} ms`,{id,ms,status:r.status,bytes:text.length});if(j.error){throw new Error(`${j.error.message||JSON.stringify(j.error)}`);}return j.result;}
+async function ensureInit(){if(initialized)return;const res=await rpc('initialize',{protocolVersion:'2025-06-18',capabilities:{},clientInfo:{name:'forecast-demo-page',version:'0.0.0'}});log('mcp','initialized',{server:res&&res.serverInfo});await fetch('/mcp',{method:'POST',headers:{'content-type':'application/json','accept':'application/json, text/event-stream'},body:JSON.stringify({jsonrpc:'2.0',method:'notifications/initialized'})});const tools=await rpc('tools/list',{});log('mcp','tools/list',{tools:(tools.tools||[]).map(t=>t.name)});initialized=true;}
+async function loadSample(n){const r=await fetch('/sample/'+n);document.getElementById('csv').value=await r.text();log('ui','loaded sample '+n);if(n==='air'){document.getElementById('freq').value='MS';document.getElementById('horizon').value='24';document.getElementById('mode').value='multiplicative';}else{document.getElementById('freq').value='D';document.getElementById('horizon').value='365';document.getElementById('mode').value='additive';}}
+function parseCsv(t){const ds=[],y=[];for(const line of t.split(/\r?\n/)){const p=line.split(',');if(p.length<2)continue;const v=parseFloat(p[1].replace(/"/g,''));const d=p[0].replace(/"/g,'').trim();if(!/^\d{4}-\d{2}-\d{2}/.test(d)||isNaN(v))continue;ds.push(d.slice(0,10));y.push(v);}return{ds,y};}
+async function run(){const err=document.getElementById('error');err.textContent='';try{await ensureInit();const {ds,y}=parseCsv(document.getElementById('csv').value);if(ds.length<10)throw new Error('need at least 10 rows of ds,y');
+ const args={ds,y,horizon:+document.getElementById('horizon').value,freq:document.getElementById('freq').value,model:document.getElementById('model').value,growth:document.getElementById('growth').value,seasonality_mode:document.getElementById('mode').value,interval_width:+document.getElementById('iw').value,n_lags:+document.getElementById('nlags').value};
+ const cap=document.getElementById('cap').value;if(cap!=='')args.cap=+cap;const hol=document.getElementById('hol').value.trim();if(hol)args.holidays=JSON.parse(hol);
+ log('ui','forecast requested',{points:ds.length,horizon:args.horizon,model:args.model,freq:args.freq});
+ const t0=performance.now();const res=await rpc('tools/call',{name:'forecast',arguments:args});const ms=Math.round(performance.now()-t0);
+ let out=res.structuredContent;if(!out){const c=(res.content||[]).find(x=>x.type==='text');out=JSON.parse(c.text);}if(res.isError)throw new Error(out.error||JSON.stringify(out));
+ log('forecast','done',{round_trip_ms:ms,fit_s:out.fit_seconds,predict_s:out.predict_seconds,n_history:out.n_history,horizon:out.ds.length});
+ document.getElementById('stats').innerHTML=`<span class="stat">model <b>${out.model}</b></span><span class="stat">history <b>${out.n_history}</b> pts</span><span class="stat">horizon <b>${out.ds.length}</b> ${out.freq}</span><span class="stat">fit <b>${(out.fit_seconds*1000).toFixed(0)} ms</b></span><span class="stat">predict <b>${(out.predict_seconds*1000).toFixed(0)} ms</b></span><span class="stat">round trip <b>${ms} ms</b></span>`;
+ draw(ds,y,out);const show={...out};for(const k of ['ds','yhat','yhat_lower','yhat_upper','trend'])show[k]=out[k].slice(0,5).map(v=>typeof v==='number'?+v.toFixed(4):v).concat(['…']);show.components=Object.fromEntries(Object.entries(out.components||{}).map(([k,v])=>[k,v.slice(0,3).map(x=>+x.toFixed(4)).concat(['…'])]));document.getElementById('resp').textContent=JSON.stringify(show,null,1);
+ }catch(e){err.textContent=String(e.message||e);log('error',String(e.message||e));}}
+function dayNum(s){const [y,m,d]=s.split('-').map(Number);return Date.UTC(y,m-1,d)/86400000;}
+function draw(ds,y,out){const svg=document.getElementById('chart');const W=1100,H=420,P=40;const keep=Math.max(0,ds.length-730);const hx=ds.slice(keep).map(dayNum),hy=y.slice(keep);const fx=out.ds.map(dayNum);
+ const xs=hx.concat(fx);const allY=hy.concat(out.yhat_lower,out.yhat_upper,out.trend);const x0=Math.min(...xs),x1=Math.max(...xs);let y0=Math.min(...allY),y1=Math.max(...allY);const pad=(y1-y0)*0.05;y0-=pad;y1+=pad;
+ const X=v=>P+(v-x0)/(x1-x0)*(W-2*P),Y=v=>H-P-(v-y0)/(y1-y0)*(H-2*P);const pl=(xa,ya)=>xa.map((v,i)=>X(v).toFixed(1)+','+Y(ya[i]).toFixed(1)).join(' ');
+ const band=pl(fx,out.yhat_upper)+' '+pl(fx.slice().reverse(),out.yhat_lower.slice().reverse());const split=X(fx[0]);
+ svg.innerHTML=`<rect x="${split.toFixed(1)}" y="${P}" width="${(W-P-split).toFixed(1)}" height="${H-2*P}" fill="#f0f4ff"/><polygon points="${band}" fill="#f4b6b6" opacity="0.8"/><polyline points="${pl(hx,hy)}" fill="none" stroke="#999" stroke-width="1"/><polyline points="${pl(fx,out.trend)}" fill="none" stroke="#ff9896" stroke-width="1.5"/><polyline points="${pl(fx,out.yhat)}" fill="none" stroke="#d62728" stroke-width="1.8"/><text x="${P}" y="${H-P+16}" font-size="11" fill="#666">${ds[keep]}</text><text x="${W-P}" y="${H-P+16}" font-size="11" fill="#666" text-anchor="end">${out.ds[out.ds.length-1]}</text><text x="${P}" y="${P-8}" font-size="11" fill="#666">${y1.toFixed(2)}</text><text x="${P}" y="${H-P-2}" font-size="11" fill="#666">${y0.toFixed(2)}</text>`;}
+log('ui','page loaded');
+</script></body></html>

@@ -248,6 +248,110 @@ impl Transformer {
         model
     }
 
+    /// Write the model's weights to an APR file, under the HuggingFace names
+    /// [`Self::from_apr`] reads.
+    ///
+    /// The exact inverse of `from_apr`: every tensor `from_params` looks up is written,
+    /// and the optional ones (attention biases, QK-norms, an untied `lm_head`) are written
+    /// only when this model carries them — writing a zero placeholder for an absent bias
+    /// would change the reloaded model's behaviour while looking like a faithful save.
+    ///
+    /// # Why this exists
+    ///
+    /// Phase 5 needs to reload a trained classifier in a FRESH PROCESS from artifacts on
+    /// disk, and to report `base_model_bytes` for it. Both require the base to BE a file.
+    /// Until now the only way to obtain a `Transformer` without a pretrained checkpoint
+    /// was `Transformer::new`, whose weights live only in that process's memory.
+    ///
+    /// # Errors
+    ///
+    /// [`Error::Serialization`] if the APR writer cannot serialize or write the file.
+    pub fn save_apr(&self, apr_path: impl AsRef<Path>) -> Result<()> {
+        use aprender::serialization::apr::AprWriter;
+
+        let path = apr_path.as_ref();
+        let cfg = &self.config;
+        let hidden = cfg.hidden_size;
+        let q_dim = cfg.q_dim();
+        let kv_hidden = cfg.num_kv_heads * cfg.head_dim();
+
+        let mut writer = AprWriter::new();
+        writer.set_metadata("model_type".to_string(), serde_json::json!("transformer"));
+        writer.set_metadata("hidden_size".to_string(), serde_json::json!(hidden));
+        writer.set_metadata(
+            "num_hidden_layers".to_string(),
+            serde_json::json!(cfg.num_hidden_layers),
+        );
+        writer.set_metadata("vocab_size".to_string(), serde_json::json!(cfg.vocab_size));
+
+        // A local helper so every tensor goes through one contiguity check.
+        fn slice_of(tensor: &Tensor, name: &str) -> Result<Vec<f32>> {
+            tensor
+                .data()
+                .as_slice()
+                .map(<[f32]>::to_vec)
+                .ok_or_else(|| Error::Serialization(format!("tensor '{name}' is not contiguous")))
+        }
+
+        let embed = slice_of(&self.embed_tokens.weight, "model.embed_tokens.weight")?;
+        writer.add_tensor_f32_owned(
+            "model.embed_tokens.weight",
+            vec![cfg.vocab_size, hidden],
+            embed,
+        );
+
+        for (i, layer) in self.layers.iter().enumerate() {
+            let prefix = format!("model.layers.{i}");
+
+            let mut put = |suffix: &str, shape: Vec<usize>, tensor: &Tensor| -> Result<()> {
+                let name = format!("{prefix}.{suffix}");
+                let data = slice_of(tensor, &name)?;
+                writer.add_tensor_f32_owned(name, shape, data);
+                Ok(())
+            };
+
+            put("input_layernorm.weight", vec![hidden], &layer.input_norm.weight)?;
+            put("self_attn.q_proj.weight", vec![q_dim, hidden], &layer.self_attn.w_q)?;
+            put("self_attn.k_proj.weight", vec![kv_hidden, hidden], &layer.self_attn.w_k)?;
+            put("self_attn.v_proj.weight", vec![kv_hidden, hidden], &layer.self_attn.w_v)?;
+            put("self_attn.o_proj.weight", vec![hidden, q_dim], &layer.self_attn.w_o)?;
+            if let Some(ref b) = layer.self_attn.b_q {
+                put("self_attn.q_proj.bias", vec![q_dim], b)?;
+            }
+            if let Some(ref b) = layer.self_attn.b_k {
+                put("self_attn.k_proj.bias", vec![kv_hidden], b)?;
+            }
+            if let Some(ref b) = layer.self_attn.b_v {
+                put("self_attn.v_proj.bias", vec![kv_hidden], b)?;
+            }
+            if let Some(ref n) = layer.self_attn.q_norm {
+                put("self_attn.q_norm.weight", vec![cfg.head_dim()], n)?;
+            }
+            if let Some(ref n) = layer.self_attn.k_norm {
+                put("self_attn.k_norm.weight", vec![cfg.head_dim()], n)?;
+            }
+            put("post_attention_layernorm.weight", vec![hidden], &layer.post_attn_norm.weight)?;
+            put("mlp.gate_proj.weight", vec![cfg.intermediate_size, hidden], &layer.ffn.w_gate)?;
+            put("mlp.up_proj.weight", vec![cfg.intermediate_size, hidden], &layer.ffn.w_up)?;
+            put("mlp.down_proj.weight", vec![hidden, cfg.intermediate_size], &layer.ffn.w_down)?;
+        }
+
+        let norm = slice_of(&self.norm.weight, "model.norm.weight")?;
+        writer.add_tensor_f32_owned("model.norm.weight", vec![hidden], norm);
+
+        if let Some(ref head) = self.lm_head {
+            let data = slice_of(head, "lm_head.weight")?;
+            writer.add_tensor_f32_owned("lm_head.weight", vec![cfg.vocab_size, hidden], data);
+        }
+
+        writer.write(path).map_err(|e| {
+            Error::Serialization(format!(
+                "failed to write base model APR to '{}': {e}",
+                path.display()
+            ))
+        })
+    }
+
     /// Resolve a tied-word-embedding `lm_head.weight` placeholder (#2441, #2309).
     ///
     /// APR files written from a `tie_word_embeddings=true` checkpoint record

@@ -30,14 +30,18 @@
 
 pub mod app;
 pub mod color;
+#[cfg(feature = "tui")]
 pub mod dashboard;
 pub mod headless;
 pub mod panel;
 pub mod render;
 pub mod state;
 
-pub use app::{TrainingStateWriter, TuiMonitor, TuiMonitorConfig};
+pub use app::TrainingStateWriter;
+#[cfg(feature = "tui")]
+pub use app::{TuiMonitor, TuiMonitorConfig};
 pub use color::{colored_bar, colored_value, ColorMode, Rgb, Styled, TrainingPalette};
+#[cfg(feature = "tui")]
 pub use dashboard::TrainingDashboard;
 pub use headless::{
     HeadlessGpu, HeadlessMonitor, HeadlessOutput, HeadlessSample, HeadlessWriter, OutputFormat,

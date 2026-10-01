@@ -17,9 +17,10 @@
 //!    transport contract — anything else means MCP clients can't connect).
 //! 2. `initialize` returns `protocolVersion = "2024-11-05"` and
 //!    `serverInfo.name = "aprender-mcp"`.
-//! 3. `tools/list` returns the 9 registered Phase-1 tools with valid object
-//!    schemas (one per `crates/aprender-mcp/src/tools/mod.rs`).
-//! 4. `tools/call` works for every one of those 9 tools — either succeeding
+//! 3. `tools/list` returns every registered tool — `EXPECTED_TOOLS` below is
+//!    the golden set — with valid object schemas (one per
+//!    `crates/aprender-mcp/src/tools/mod.rs`).
+//! 4. `tools/call` works for every one of those tools — either succeeding
 //!    via a mock subprocess (for tools that shell out to `apr <cmd> --json`)
 //!    or returning `isError:true` via the argument-validation branch (the
 //!    same path a real client would hit on a malformed request). Either
@@ -36,12 +37,20 @@
 //!   (`tests/common/mod.rs`). This package declares no `[[bin]]`, so cargo
 //!   does NOT build `apr` before running these tests and does not set
 //!   `CARGO_BIN_EXE_apr` — the dependency has to be stated, not assumed.
-//! - Drop a mock `apr` shell shim into a tempdir and PREPEND it to the
-//!   spawned process's `PATH`. The mock handles `validate`, `tensors`,
-//!   `bench`, `qa`, `trace`, `run`, `serve`, `finetune` — every subcommand
-//!   the 8 wrapper tools spawn via `Command::new("apr")` from inside the
-//!   server. The real binary is only invoked once, at the top of the
-//!   process tree, so there is no recursion.
+//! - Drop a mock `apr` shell shim into a tempdir and point the spawned
+//!   process's `APR_BIN` at it (PATH is prepended too, as a backstop). The
+//!   mock handles `validate`, `tensors`, `bench`, `qa`, `trace`, `run`,
+//!   `serve`, `finetune`, `predict` — every subcommand the wrapper tools
+//!   spawn from inside the server. The real binary is only invoked once, at
+//!   the top of the process tree, so there is no recursion.
+//!
+//!   `APR_BIN` is what actually pins it. `apr_bin::apr_binary()` resolves
+//!   `APR_BIN` → `current_exe()`-if-it-is-an-`apr` → PATH, and it prefers
+//!   `current_exe()` when the running executable is itself named `apr` —
+//!   which it is here — so a PATH-only override silently stopped
+//!   redirecting anything and the session ran against the real CLI. The
+//!   `apr.validate` response is asserted to carry the shim's marker so that
+//!   regression cannot come back unnoticed.
 //! - Spawn the binary with `apr mcp` and pipe one JSON-RPC request per line.
 //! - Read responses on a bounded channel; fail loudly on a 2-second timeout.
 //! - Close stdin → wait for clean exit → assert exit code 0.
@@ -76,6 +85,7 @@ const EXPECTED_TOOLS: &[&str] = &[
     "apr.run",
     "apr.serve",
     "apr.finetune",
+    "apr.predict",
 ];
 
 /// Hard cap on how long a single stdout read may block. Anything longer is
@@ -180,6 +190,17 @@ fn write_mock_apr_shim(dir: &Path) {
         writeln!(f, "  serve)").expect("serve open");
         writeln!(f, "    exit 0 ;;").expect("serve close");
 
+        // apr.predict — wraps `apr predict <model> --input <doc> --json`. The batch
+        // rides in the request document, not argv, so the shim sees a fixed argv
+        // whatever the batch size (see the tool module's ARG_MAX note).
+        writeln!(f, "  predict)").expect("predict open");
+        writeln!(
+            f,
+            "    printf '{{\"predictions\":[{{\"label\":\"mock\",\"score\":1.0}}]}}\\n'"
+        )
+        .expect("predict body");
+        writeln!(f, "    exit 0 ;;").expect("predict close");
+
         // apr.finetune — wraps `apr finetune <base> --json [...]`.
         writeln!(f, "  finetune)").expect("finetune open");
         writeln!(
@@ -215,10 +236,27 @@ fn write_mock_apr_shim(dir: &Path) {
     }
 }
 
+/// Absolute path of the mock `apr` shim, for `APR_BIN`.
+///
+/// PATH alone is NOT enough any more, and this is the whole reason the shim
+/// was silently bypassed once. `apr_bin::apr_binary()` resolves
+/// `APR_BIN` → `current_exe()`-if-it-is-an-`apr` → PATH. The process under
+/// test here IS the real `apr` binary, so without an explicit `APR_BIN` it
+/// resolves to ITSELF and every subprocess tool runs the real CLI while this
+/// test believes it is hermetic. `APR_BIN` is the documented override and it
+/// wins over `current_exe()`, so it is what pins the shim.
+fn mock_apr_bin(mock_dir: &Path) -> PathBuf {
+    mock_dir.join("apr")
+}
+
 /// Build a `$PATH` value with `mock_dir` prepended. Caller passes this into
 /// `Command::env` so only the spawned process sees the override — the
 /// parent test process keeps its own PATH untouched, which keeps tests
 /// hermetic and avoids the `set_var` cross-test race.
+///
+/// Kept alongside `APR_BIN` as belt-and-braces: `APR_BIN` is what actually
+/// pins the shim today, PATH is what catches any spawn site that ever forgets
+/// to route through `apr_binary()`.
 fn path_with_mock_first(mock_dir: &Path) -> String {
     let existing = std::env::var("PATH").unwrap_or_default();
     if existing.is_empty() {
@@ -285,6 +323,7 @@ fn minimal_args(tool: &str) -> serde_json::Value {
         "apr.version" => serde_json::json!({}),
         "apr.serve" => serde_json::json!({ "model_path": "/dev/null", "port": 18080 }),
         "apr.finetune" => serde_json::json!({ "base_model": "/dev/null" }),
+        "apr.predict" => serde_json::json!({ "model_path": "/dev/null", "texts": ["hello"] }),
         // Every other tool takes a single required `model_path`.
         _ => serde_json::json!({ "model_path": "/dev/null" }),
     }
@@ -314,6 +353,7 @@ fn falsify_mcp_dogfood_001_full_client_session() {
     let mut cmd = Command::new(&bin_path);
     cmd.arg("mcp")
         .env("PATH", &path_value)
+        .env("APR_BIN", mock_apr_bin(&tmp))
         // Keep the binary's stderr visible for postmortem if the test fails;
         // inheriting it is fine because we never assert on stderr content.
         .stdin(Stdio::piped())
@@ -428,6 +468,23 @@ fn falsify_mcp_dogfood_001_full_client_session() {
             content[0]["type"], "text",
             "tools/call {tool} content[0].type must be \"text\""
         );
+
+        // HERMETICITY, asserted rather than assumed. Every other check here
+        // passes identically whether the wrapper reached the shim or the REAL
+        // `apr` — `isError` may legitimately be either — so nothing above can
+        // tell the two apart. That is how the shim came to be silently bypassed
+        // once: `apr_binary()` resolves `current_exe()` when it is named `apr`,
+        // and the process under test IS `apr`, so PATH alone stopped pinning
+        // anything. `apr.validate`'s shim body is the only response in this
+        // session with a value no real `apr validate /dev/null` can produce.
+        if *tool == "apr.validate" {
+            let text = content[0]["text"].as_str().unwrap_or_default();
+            assert!(
+                text.contains("\"model\":\"mock\""),
+                "apr.validate did not reach the mock shim — this session is NOT hermetic. \
+                 Check that APR_BIN is passed to the spawned server. got: {text}"
+            );
+        }
         assert!(
             content[0]["text"].is_string(),
             "tools/call {tool} content[0].text must be a string"
@@ -565,6 +622,7 @@ fn falsify_mcp_009_no_reply_to_notification() {
     let mut cmd = Command::new(&bin_path);
     cmd.arg("mcp")
         .env("PATH", &path_value)
+        .env("APR_BIN", mock_apr_bin(&tmp))
         .stdin(Stdio::piped())
         .stdout(Stdio::piped())
         .stderr(Stdio::inherit());

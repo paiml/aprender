@@ -982,3 +982,335 @@ mod slice {
         );
     }
 }
+
+mod general_bert_tests {
+    use super::*;
+    use crate::format::v2::{AprV2Metadata, AprV2Writer};
+    use crate::setfit::SetFitBert;
+
+    /// A BERT that is NOT the pin, sized so the suite can afford it.
+    ///
+    /// `vocab` is the fixture tokenizer's real vocabulary, not a rounded-up
+    /// number: a mock whose `vocab_size` exceeds the tokenizer's would exercise
+    /// only the safe direction of the config/tokenizer pairing. Every other width
+    /// is small on purpose — a 768x52000 embedding table is 160 MB of f32 per
+    /// copy, and this module runs inside `--lib`, alongside 68 other binaries.
+    const MOCK_VOCAB: usize = 30522;
+
+    fn mock_dims() -> ModelDims {
+        ModelDims {
+            hidden: 32,
+            layers: 2,
+            heads: 4,
+            intermediate: 64,
+            vocab: MOCK_VOCAB,
+            max_positions: 64,
+            type_vocab: 2,
+            pad_token_id: 0,
+        }
+    }
+
+    /// Write exactly the tensor set the loader will ask for.
+    ///
+    /// Driven by `expected_tensor_specs`, the library's own manifest, so the mock
+    /// cannot drift from it: a tensor added there starts being written here, and
+    /// a tensor removed there stops being written, without anyone remembering to
+    /// edit a second list.
+    fn build_mock_bert_apr(dims: &ModelDims) -> Vec<u8> {
+        let mut w = AprV2Writer::new(AprV2Metadata::default());
+        for (name, shape) in expected_tensor_specs("", dims) {
+            let numel: usize = shape.iter().product();
+            w.add_f32_tensor(&name, shape, &vec![0.01f32; numel]);
+        }
+        w.write().expect("apr serializes")
+    }
+
+    /// A general-BERT directory: config as given, fixture tokenizer, mock weights.
+    fn write_general_bert_dir(dir: &Path, config_json: &str, dims: &ModelDims) {
+        std::fs::write(dir.join("config.json"), config_json).expect("write config");
+        std::fs::write(dir.join("tokenizer.json"), read_fixture("tokenizer.json"))
+            .expect("write tokenizer");
+        std::fs::write(dir.join("model.apr"), build_mock_bert_apr(dims)).expect("write model.apr");
+    }
+
+    fn accepted_config() -> String {
+        let d = mock_dims();
+        format!(
+            r#"{{
+            "architectures": ["BertForMaskedLM"],
+            "hidden_size": {}, "num_hidden_layers": {}, "num_attention_heads": {},
+            "intermediate_size": {}, "vocab_size": {}, "max_position_embeddings": {},
+            "type_vocab_size": {}, "model_type": "bert", "hidden_act": "gelu"
+        }}"#,
+            d.hidden, d.layers, d.heads, d.intermediate, d.vocab, d.max_positions, d.type_vocab
+        )
+    }
+
+    #[test]
+    fn general_bert_loads_and_encodes_through_the_public_door() {
+        let tmp = tempfile::TempDir::new().expect("tempdir");
+        let dir = tmp.path();
+        let dims = mock_dims();
+        write_general_bert_dir(dir, &accepted_config(), &dims);
+
+        let import = BertImport::open(dir).expect("BertImport must open a general BERT checkout");
+        assert_eq!(import.dims(), &dims);
+        assert_eq!(import.revision(), "general-bert");
+
+        let model =
+            SetFitBert::from_pretrained_dir(dir, 42).expect("the public door must dispatch here");
+        let arch = model.architecture();
+        assert_eq!(arch.hidden, dims.hidden);
+        assert_eq!(arch.num_layers, dims.layers);
+        assert_eq!(arch.vocab, dims.vocab);
+        assert_eq!(arch.source_revision, "general-bert");
+
+        let embeddings = model
+            .encode_texts(&["שלום עולם, בדיקת מודל בעברית"])
+            .expect("encodes");
+        assert_eq!(embeddings.shape(), &[1, dims.hidden]);
+    }
+
+    /// `from_bert_dir` and the dispatched `from_pretrained_dir` must agree.
+    ///
+    /// They are two doors onto one loader; a copied second body is how they come
+    /// to build differently-configured tokenizers from the same directory.
+    #[test]
+    fn the_explicit_door_and_the_dispatched_door_agree() {
+        let tmp = tempfile::TempDir::new().expect("tempdir");
+        let dir = tmp.path();
+        write_general_bert_dir(dir, &accepted_config(), &mock_dims());
+
+        let explicit = SetFitBert::from_bert_dir(dir, 7).expect("explicit door");
+        let dispatched = SetFitBert::from_pretrained_dir(dir, 7).expect("dispatched door");
+        assert_eq!(explicit.architecture(), dispatched.architecture());
+        assert_eq!(explicit.tokenizer_sha256(), dispatched.tokenizer_sha256());
+    }
+
+    /// Every refusal `BertImport::open` adds, with the variant PINNED.
+    ///
+    /// One row per branch, each mutating exactly one field of an otherwise
+    /// accepted config (the positive control is
+    /// `general_bert_loads_and_encodes_through_the_public_door`). A disjunctive
+    /// assertion — "either of these two variants" — would stay green with the
+    /// guard it names deleted, because control would fall through to the other
+    /// one; these name the variant AND the field.
+    #[test]
+    fn general_bert_refusals_each_name_their_own_field() {
+        #[allow(clippy::type_complexity)]
+        let table: Vec<(&str, String, Box<dyn Fn(&SetFitError) -> bool>)> = vec![
+            (
+                "a non-BERT architecture",
+                accepted_config().replace("BertForMaskedLM", "RobertaForMaskedLM"),
+                Box::new(|e| matches!(e, SetFitError::UnsupportedArchitecture { .. })),
+            ),
+            (
+                "a BERT-lookalike family (the substring test admitted these)",
+                accepted_config().replace("BertForMaskedLM", "DistilBertModel"),
+                Box::new(|e| matches!(e, SetFitError::UnsupportedArchitecture { .. })),
+            ),
+            (
+                "a non-BERT model_type",
+                accepted_config().replace("\"model_type\": \"bert\"", "\"model_type\": \"llama\""),
+                Box::new(
+                    |e| matches!(e, SetFitError::ImportConfigMismatch { field, .. } if field == "model_type"),
+                ),
+            ),
+            (
+                "an absent model_type — it must NOT default to bert",
+                accepted_config().replace("\"model_type\": \"bert\",", ""),
+                Box::new(
+                    |e| matches!(e, SetFitError::ImportIo { path, .. } if path == "config.json"),
+                ),
+            ),
+            (
+                "an activation the encoder does not implement",
+                accepted_config()
+                    .replace("\"hidden_act\": \"gelu\"", "\"hidden_act\": \"gelu_new\""),
+                Box::new(|e| matches!(e, SetFitError::UnsupportedActivation { .. })),
+            ),
+            (
+                "a relative position scheme",
+                accepted_config().replace(
+                    "\"model_type\": \"bert\"",
+                    "\"position_embedding_type\": \"relative_key\", \"model_type\": \"bert\"",
+                ),
+                Box::new(
+                    |e| matches!(e, SetFitError::ImportConfigMismatch { field, .. } if field == "position_embedding_type"),
+                ),
+            ),
+            (
+                "a dropout rate the encoder does not apply",
+                accepted_config().replace(
+                    "\"model_type\": \"bert\"",
+                    "\"hidden_dropout_prob\": 0.2, \"model_type\": \"bert\"",
+                ),
+                Box::new(
+                    |e| matches!(e, SetFitError::ImportConfigMismatch { field, .. } if field == "hidden_dropout_prob"),
+                ),
+            ),
+            (
+                "an attention dropout rate the encoder does not apply",
+                accepted_config().replace(
+                    "\"model_type\": \"bert\"",
+                    "\"attention_probs_dropout_prob\": 0.0, \"model_type\": \"bert\"",
+                ),
+                Box::new(
+                    |e| matches!(e, SetFitError::ImportConfigMismatch { field, .. } if field == "attention_probs_dropout_prob"),
+                ),
+            ),
+            (
+                "zero layers",
+                accepted_config().replace("\"num_hidden_layers\": 2", "\"num_hidden_layers\": 0"),
+                Box::new(
+                    |e| matches!(e, SetFitError::ImportConfigMismatch { field, .. } if field == "num_hidden_layers"),
+                ),
+            ),
+            (
+                "a depth above MAX_ENCODER_LAYERS — the name expansion is the attack",
+                accepted_config().replace(
+                    "\"num_hidden_layers\": 2",
+                    &format!("\"num_hidden_layers\": {}", MAX_ENCODER_LAYERS + 1),
+                ),
+                Box::new(
+                    |e| matches!(e, SetFitError::ImportConfigMismatch { field, .. } if field == "num_hidden_layers"),
+                ),
+            ),
+            (
+                "a vocab_size that would wrap product(shape)",
+                accepted_config()
+                    .replace("\"vocab_size\": 30522", "\"vocab_size\": 72057594037928936"),
+                Box::new(
+                    |e| matches!(e, SetFitError::ImportConfigMismatch { field, .. } if field == "vocab_size"),
+                ),
+            ),
+            (
+                "zero width",
+                accepted_config().replace("\"hidden_size\": 32", "\"hidden_size\": 0"),
+                Box::new(
+                    |e| matches!(e, SetFitError::ImportConfigMismatch { field, .. } if field == "hidden_size"),
+                ),
+            ),
+            (
+                "zero heads",
+                accepted_config()
+                    .replace("\"num_attention_heads\": 4", "\"num_attention_heads\": 0"),
+                Box::new(
+                    |e| matches!(e, SetFitError::ImportConfigMismatch { field, .. } if field == "num_attention_heads"),
+                ),
+            ),
+            (
+                "zero intermediate width",
+                accepted_config().replace("\"intermediate_size\": 64", "\"intermediate_size\": 0"),
+                Box::new(
+                    |e| matches!(e, SetFitError::ImportConfigMismatch { field, .. } if field == "intermediate_size"),
+                ),
+            ),
+            (
+                "zero position rows",
+                accepted_config().replace(
+                    "\"max_position_embeddings\": 64",
+                    "\"max_position_embeddings\": 0",
+                ),
+                Box::new(
+                    |e| matches!(e, SetFitError::ImportConfigMismatch { field, .. } if field == "max_position_embeddings"),
+                ),
+            ),
+            (
+                "zero token-type rows",
+                accepted_config().replace("\"type_vocab_size\": 2", "\"type_vocab_size\": 0"),
+                Box::new(
+                    |e| matches!(e, SetFitError::ImportConfigMismatch { field, .. } if field == "type_vocab_size"),
+                ),
+            ),
+            (
+                "a width that does not divide into the heads",
+                accepted_config().replace("\"hidden_size\": 32", "\"hidden_size\": 34"),
+                Box::new(
+                    |e| matches!(e, SetFitError::ImportConfigMismatch { field, .. } if field == "hidden_size"),
+                ),
+            ),
+            (
+                "a pad id outside the embedding table",
+                accepted_config().replace(
+                    "\"model_type\": \"bert\"",
+                    "\"pad_token_id\": 999999, \"model_type\": \"bert\"",
+                ),
+                Box::new(
+                    |e| matches!(e, SetFitError::ImportConfigMismatch { field, .. } if field == "pad_token_id"),
+                ),
+            ),
+        ];
+
+        for (what, config_json, expected) in table {
+            let tmp = tempfile::TempDir::new().expect("tempdir");
+            let dir = tmp.path();
+            write_general_bert_dir(dir, &config_json, &mock_dims());
+            let Err(err) = BertImport::open(dir) else {
+                panic!("{what} must be refused, but the import succeeded");
+            };
+            assert!(expected(&err), "{what}: wrong refusal — got {err}");
+        }
+    }
+
+    /// A tampered PINNED checkout must NOT reach the general loader.
+    ///
+    /// This is the property the dispatch exists for. When the choice was keyed on
+    /// pin FAILURE, substituting `tokenizer.json` in a real all-MiniLM-L6-v2
+    /// checkout made `MiniLmImport::open` return `TokenizerHashMismatch`, and that
+    /// error was caught and the same directory handed to `BertImport::open`, which
+    /// hashes the tokenizer and compares it to nothing — so the one defence
+    /// against a swapped vocabulary was bypassed by swapping the vocabulary.
+    #[test]
+    fn a_directory_claiming_the_pin_is_held_to_the_pin() {
+        // The pinned checkout in every respect but one: a tokenizer.json that
+        // still PARSES and still has the pinned vocabulary, and hashes to
+        // something else. Under the general loader this directory is perfectly
+        // acceptable, which is precisely why it must never reach it.
+        let mut substituted = read_fixture("tokenizer.json");
+        substituted.push(b' ');
+        let checkout = CheckoutSpec {
+            tokenizer: substituted,
+            ..CheckoutSpec::pinned()
+        }
+        .write();
+
+        assert!(
+            declares_the_minilm_pin(&checkout.dir),
+            "the config declares the pin's identity, so the pin is what must be enforced"
+        );
+        let err = SetFitBert::from_pretrained_dir(&checkout.dir, 1)
+            .expect_err("a tampered pinned checkout must be refused, not downgraded");
+        assert!(
+            matches!(err, SetFitError::TokenizerHashMismatch { .. }),
+            "the refusal must be the PIN's, not a general-loader error: got {err}"
+        );
+
+        // The EXPLICIT door is the same hole one call further along: a guard that
+        // only `from_pretrained_dir` consults is a guard `from_bert_dir` walks
+        // past. It lives in `BertImport::open`, so every caller is covered.
+        let err = SetFitBert::from_bert_dir(&checkout.dir, 1)
+            .expect_err("the general door must not accept a checkout that declares the pin");
+        assert!(
+            matches!(&err, SetFitError::ImportConfigMismatch { field, .. } if field == "config.json"),
+            "got {err}"
+        );
+    }
+
+    /// A general checkout is NOT mistaken for the pin, and vice versa.
+    #[test]
+    fn the_dispatch_reads_the_declared_identity() {
+        let tmp = tempfile::TempDir::new().expect("tempdir");
+        write_general_bert_dir(tmp.path(), &accepted_config(), &mock_dims());
+        assert!(!declares_the_minilm_pin(tmp.path()));
+
+        assert!(declares_the_minilm_pin(&CheckoutSpec::pinned().write().dir));
+
+        // A directory with no parseable config is not the pin — the general
+        // loader reports the parse failure, which is the actionable message.
+        let empty = tempfile::TempDir::new().expect("tempdir");
+        assert!(!declares_the_minilm_pin(empty.path()));
+        std::fs::write(empty.path().join("config.json"), b"{ not json }").expect("write");
+        assert!(!declares_the_minilm_pin(empty.path()));
+    }
+}

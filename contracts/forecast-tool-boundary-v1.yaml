@@ -1,0 +1,1612 @@
+contract: forecast-tool-boundary
+metadata:
+  version: 1.10.0
+  created: '2026-09-06'
+  author: PAIML Engineering
+  kind: kernel
+  # ONT-7 (plan 08-33): the bounds and refusals hold in the committed tree. Only obligation [20]
+  # (the pool speed-up ratio) names a host (aarch64 release) and that is where it is EVALUATED, an
+  # evidence note on one obligation and not a restriction of the contract, so no host_class qualifier.
+  valid_under:
+    world: committed
+  description: >
+    THE TOOL BOUNDARY both forecasting MCP servers are held to. One `forecast` tool, stateless
+    (D-01: the request carries the series, the fit or the zero-shot forward runs inside the call,
+    there is no fit -> artifact -> forecast round-trip), and ONE response shape shared by every
+    server so a client switches models by switching ENDPOINT and nothing else (D-03: one model per
+    server). This file pins the numbers and the rules; the Rust constants are asserted equal to it
+    at test time via `test_support::constant_u64`, never duplicated as literals (D-15).
+
+    REFUSE, NEVER DEFAULT (D-11). Every knob this boundary does not understand is a refusal that
+    NAMES THE FIX, never a silent coercion: an unknown argument key, an unknown `freq`, `model`,
+    `growth` or `seasonality_mode`, a malformed date, an out-of-range `interval_width`, a logistic
+    request with no usable `cap`, a constant `y`, a horizon of 0 or past the maximum. A client that
+    passes `freq: "H"` and receives a DAILY forecast has been lied to; a client that receives
+    `unsupported freq "H": use D, W or MS` has been told exactly what to change. Every refusal is
+    `pmcp::Error::validation` — the caller's fault stays the caller's fault, and an `internal` code
+    on any of them is a defect, not a formatting preference.
+
+    THE TWO SERVERS AND WHY THEIR BOUNDS DIFFER. `aprender-mcp-forecast` FITS (Prophet 1.4.0 port /
+    NeuralProphet-lite): it needs at least 10 points to have something to fit and reaches 3 650
+    periods ahead. `aprender-mcp-chronos` is ZERO-SHOT (Chronos-Bolt T5, no fit): 4 points are
+    enough to form a context, `y` may carry nulls, and the horizon is capped at 1 024 with a gate
+    at the model's NATIVE 64 steps — past 64 the model rolls its own forecast forward, so the
+    caller must opt in with `allow_long_horizon` and the response carries a `warning` saying how
+    many autoregressive rollouts produced it (D-13). Both sets of bounds live here so a client
+    reading ONE file knows what either endpoint will accept.
+
+    THE POOL (D-12), AND WHY ITS TWO CLAIMS ARE SPLIT. pmcp 2.19.3's streamable-HTTP router holds a
+    single `Arc<tokio::sync::Mutex<Server>>` across the WHOLE tool future
+    (`streamable_http_server.rs:2094` and `:2122`), so eight concurrent fits against one router
+    measured 1.0x sequential — the fits serialise behind the router lock, not behind CPU. K
+    independent routers behind a round-robin fallback (default 8) measured 3.9x. That gives two
+    claims of DIFFERENT kinds and this contract keeps them apart: `pool_equality_under_load` is a
+    CORRECTNESS claim (a response computed under load is bit-identical to the same response
+    computed alone — falsified by a unit test, in CI, always), and `pool_speedup_host_gated` is a
+    BENCHMARK claim (a wall-clock ratio — falsified by `just forecast-pool-ratio` on a release
+    build, best-of-3, NEVER by a libtest assertion). REVIEW-06-04: with four Tokio workers, eight
+    heterogeneous `spawn_blocking` fits and BLAS work, that ratio moves with CPU throttling and
+    background load independently of router serialisation, so a hard `assert!(speedup >= 2.0)`
+    inside the correctness suite is a flake that buys nothing the host-gated recipe does not buy
+    honestly. The unit test PRINTS the ratio with its provenance and asserts only equality.
+
+    EMPIRICAL COVERAGE, NOT NOMINAL (D-16). The fit server's `interval_width` defaults to 0.8, and
+    the nominal 80% band covered 0.60 (Prophet) and 0.66 (NeuralProphet-lite) of held-out points
+    across 17 rolling-origin windows. The tool description says so. A band that advertises 80% and
+    delivers 60% is a measurement the caller is entitled to, not a footnote.
+  references:
+    - 'Model Context Protocol specification 2025-06-18, `tools/call` and `tools/list` (the JSON-RPC shapes every case in this contract is asserted through).'
+    - 'pmcp 2.19.3 `src/server/streamable_http_server.rs:2094` and `:2122` — the single `Arc<tokio::sync::Mutex<Server>>` held across the whole tool future; the lock the router pool works around.'
+    - '.claude/skills/spike-findings-aprender/references/forecast-mcp-thin-server.md (the validated thin-server blueprint: one tool, per-request seed, no shared fit state).'
+    - '.claude/skills/spike-findings-aprender/sources/010-forecast-server-concurrency/RUN-OUTPUT.md (the measured 1.0x with one router, 3.9x with eight, 8/8 and 16/16 bit-identical responses).'
+    - 'contracts/prophet-parity-v1.yaml and contracts/chronos-bolt-parity-v1.yaml — the numeric parity bars behind the two doors this boundary fronts.'
+
+# Machine-readable mirror of the boundary numbers. Not part of the `Contract` struct (the
+# parser drops unknown top-level keys), and deliberately so: these are read at test time by
+# `test_support::constant_u64("forecast-tool-boundary-v1", ...)` so `types::MIN_POINTS`,
+# `types::MAX_POINTS`, `types::MAX_HORIZON` and `chronos::CHRONOS_*` are ASSERTED EQUAL to
+# this file rather than the file merely describing them (D-15).
+constants:
+  # aprender-mcp-forecast (fits: Prophet 1.4.0 port / NeuralProphet-lite)
+  fit_min_points: 10
+  fit_max_points: 20000
+  fit_max_horizon: 3650
+  # `fit_max_points` bounds how MANY points arrive; these bound the work each one can
+  # BUY. Every entry below closed a request whose payload was inside the three bounds
+  # above and whose cost was not: a span-based daily grid, and holiday windows that are
+  # a per-request design-column multiplier.
+  # The last two close the PRODUCT the four before them leave open: each of
+  # fit_max_points, fit_max_horizon, fit_max_holiday_columns and fit_max_holiday_dates
+  # is checked in isolation, so a request inside all four still bought
+  # (20000 + 3650) x 1000 = 23 650 000 design feature cells and 1 000 000 holiday dates.
+  # fit_max_holiday_design_cost bounds (points + horizon) x holiday_columns across
+  # make_design AND predict; fit_max_holiday_dates_total bounds sum(len(dates)).
+  fit_max_span_days: 20000
+  fit_max_holiday_window: 365
+  fit_max_holiday_columns: 1000
+  fit_max_holiday_dates: 1000
+  fit_max_holiday_design_cost: 50000
+  fit_max_holiday_dates_total: 10000
+  # ---- RegressorArg.prior_scale, the REPRESENTABLE-DOMAIN range (plan 06.1-01 Task 2) ----
+  # DERIVED, not chosen. `Model::objective` computes `b * b / (2.0 * sc * sc)`
+  # (prophet.rs:536) and the gradient computes `p.beta[c] / (sc * sc)` (prophet.rs:685), so
+  # the prior scale is SQUARED into a denominator, and `f64::MIN_POSITIVE` squares to
+  # EXACTLY 0.0. "Greater than zero" is therefore not a sufficient bound.
+  #   LOWER: the smallest value whose SQUARE is still normal, rounded up to a round decade.
+  #     sqrt(f64::MIN_POSITIVE) = 1.4916681462400413e-154, so the round decade above it is
+  #     1e-153. Measured: (1e-153)^2 = 1e-306, which IS normal; the decade below,
+  #     (1e-154)^2 = 1e-308, is SUBNORMAL.
+  #   UPPER: the largest whose square stays well inside f64::MAX.
+  #     sqrt(f64::MAX) = 1.3407807929942596e154; backed off to the round decade 1e150, whose
+  #     square is ~1e300 — about 1.8e8 below f64::MAX.
+  #
+  # WHAT THIS BOUND DOES NOT DO, MEASURED RATHER THAN ASSUMED (2026-09-21).
+  # The bound was introduced on the stated theory that MIN_POSITIVE yields "a NaN that
+  # propagates through L-BFGS into every response field and serialises as JSON null". That
+  # theory is REFUTED by measurement. With the range check removed and MIN_POSITIVE passed
+  # through the door, across 18 configurations spanning three series shapes:
+  #   - NO response field is ever non-finite: non_finite_yhat = 0 in every configuration.
+  #   - `Model::objective`'s existing `if self.guard && !f.is_finite() { return 1e300 }`
+  #     absorbs the 0/0, so the optimiser sees a saturated constant, not a NaN.
+  # The ACTUAL failure is quieter and arguably worse: L-BFGS performs ZERO iterations and
+  # `extra_regressors_additive` comes back exactly 0 everywhere, while the door returns a
+  # normal-looking forecast. The regressor is silently ignored — the D-21 class.
+  #
+  # THE "USABILITY FLOOR" FOLLOW-UP WAS RUN, AND IT REFUTED ITS OWN HYPOTHESIS.
+  # The proposal was to raise this floor to a measured usability value of ~1e-7. A campaign
+  # across FIVE series shapes (60- and 300-point ramps, a 300-point {0,1} indicator, a
+  # 400-point seasonal series and a 200-point series at scale 5e5), sweeping prior_scale over
+  # twelve decades on a release build, measured the regressor's contribution relative to yhat:
+  #   prior_scale  ramp60    ramp300   indicator300  seasonal400  bigscale200
+  #   1e-30        0         0         0             0            0
+  #   1e-10        1.1e-16   5.2e-14   3.5e-12       0            1.5e-11
+  #   1e-7         5.4e-9    1.6e-7    2.9e-8        2.8e-12      3.4e-8
+  #   1e-4         1.2e-3    8.2e-4    6.0e-6        2.0e-6       6.3e-5
+  #   1e-2         2.7e-3    8.2e-4    1.5e-5        4.6e-4       9.1e-5
+  #   1e0          2.6e-3    8.3e-4    1.4e-5        4.7e-4       9.3e-5
+  # Two findings, and both say a FLOOR is the wrong instrument:
+  #   1. 1e-7 is not a usability floor on every shape — on the seasonal series the
+  #      contribution there is 2.8e-12, as negligible as at 1e-9. A floor at 1e-7 would
+  #      refuse requests that behave exactly like ones it accepts.
+  #   2. There is no cliff to put a floor at. The contribution decays CONTINUOUSLY and
+  #      saturates only between 1e-4 and 1e-2, and where it saturates is shape-dependent.
+  #      That is not a degeneracy: prior_scale is a regularisation STRENGTH and shrinking the
+  #      coefficient toward zero is precisely what it is for. Any floor would refuse
+  #      legitimate strong-regularisation requests on one shape while still admitting
+  #      zero-contribution requests on another.
+  # DECISION: the floor STAYS at the representability bound, which is what it correctly is,
+  # and the D-21 silent-ignore class is closed at the OUTCOME instead. When a regressor's
+  # fitted coefficient is EXACTLY zero — the optimiser starts every coefficient at zero, so
+  # a coefficient still exactly zero is one L-BFGS never moved — the response says so in
+  # diagnostics.regressors[].warning. That check is shape-independent by construction because
+  # it reports what happened rather than guessing from the knob, and it needs no constant of
+  # its own. `regressors::flag_unfitted` carries the campaign table; the pinning test is
+  # `regressors::identifiability_tests::a_regressor_that_was_silently_ignored_says_so_identifiability`,
+  # with a positive control at the default prior scale so the warning cannot fire on
+  # everything.
+  #
+  # NOT COST CEILINGS. Like the identifiability warning thresholds below, these are NUMERIC
+  # DOMAIN bounds and must not be pulled into
+  # `every_cost_ceiling_constant_is_named_by_an_axis`'s prefix filter (`fit_max_` /
+  # `chronos_max_`), which is why they are named `regressor_`. A larger prior scale buys no
+  # work; it only weakens a penalty term.
+  regressor_prior_scale_min: 1.0e-153
+  regressor_prior_scale_max: 1.0e150
+  # ---- The REGRESSOR COST CEILINGS (cost axis C-17) ----
+  # DERIVED BY MEASUREMENT IN TWO STAGES, and FINALISED against the completed door. C-17
+  # prices the design cells AND the identifiability Gram plus its factorisation
+  # (len(ds) * K^2 + K^3); the second did not exist when the first sweep ran, so the whole
+  # sweep was re-run once the diagnostic landed. A ceiling certified against incomplete work
+  # is certified against the wrong request.
+  #
+  # fit_max_regressor_design_cost bounds (len(ds) + horizon) * n_regressors, the regressor
+  # design feature cells one request buys across regressors::splice (history rows) and
+  # prophet::predict (horizon rows). Same shape as fit_max_holiday_design_cost, one column
+  # family over: fit_max_points, fit_max_horizon and fit_max_regressors are each checked in
+  # ISOLATION and their product was not.
+  #
+  # SWEEP 1 (design build only) and SWEEP 2 (whole request, diagnostic live), release,
+  # aarch64, total_s over five compositions of the SAME product differing in every factor:
+  #   cost   many/4      balanced/20  few/200  maxwidth/200  combined/200  verdict
+  #   50000  1.391       2.817        0.070    0.199         0.360         REJECTED (s1)
+  #   40000  1.132/1.369 2.182/3.021  0.055    4.735/6.024   0.190         REJECTED (s1)
+  #   40000  1.130       2.164        0.050    4.242         0.205         REJECTED (s2)
+  #   30000  1.695/1.836 0.254        0.070    0.084         0.382         clears, 1.09x
+  #   25000  0.681/0.683 1.268/1.226  0.036    0.051         0.145         ACCEPTED (s1)
+  #   25000  0.665       1.157        0.032    0.053         0.144         ACCEPTED (s2)
+  # 50 000 and 40 000 were each RE-RUN, so the failures are reproducible rather than
+  # scheduler noise, and 40 000 was re-rejected against the completed door. 30 000 CLEARS and
+  # was still not taken: an 8 % margin is a coin flip, not a ceiling.
+  #
+  # THE DELTA between the sweeps is the diagnostic's measured share, and it is the number
+  # Phase 7 needs when it re-prices this per tier. On total_s it is within run-to-run noise
+  # (-0.019, -0.031, +0.001, +0.002, -0.002). It IS visible in total_s - fit_s - predict_s,
+  # which rose from <= 1 ms to 3-4 ms at R = 200 — 0.2 % of the 2 s bar, measured rather than
+  # assumed. That is the evidence C-17's N*K^2 + K^3 term is bounded and not merely asserted.
+  #
+  # THE WALL IS DOMINATED BY THE L-BFGS ITERATION COUNT, which is data-dependent and
+  # NON-MONOTONIC in the payload: every wall above is >= 97 % fit time, and the max-width
+  # composition at 199 points measures 4.735 s while the SAME shape at 249 points measures
+  # 0.199 s — a 24x swing across a 50-point change with the product held constant. This
+  # bound therefore bounds WORK, not WALL, exactly as fit_max_holiday_design_cost records,
+  # and it is why the sweep is five compositions rather than one.
+  #
+  # fit_max_regressors is NOT a derived consequence of that product and is deliberately its
+  # own ceiling, because the only cost that is a function of the COUNT alone is the
+  # diagnostic's O(K^3) factorisation. MEASURED against the stage-1 door (no diagnostic), a
+  # request at 800 regressors walled at 0.063 s — so nothing in the fit, the design build or
+  # predict constrains the count at all.
+  #
+  # THE COUNT LADDER, diagnostic live, at cost 25000. diag_s = total_s - fit_s - predict_s:
+  #   R      K      K^3     diag_s        worst total_s  verdict
+  #   200    207    8.9e6   0.003-0.004   1.157          ACCEPTED
+  #   400    407    6.7e7   0.017-0.018   1.203          clears
+  #   800    807    5.3e8   0.127-0.132   1.262          clears
+  #   2000   2001   8.0e9   1.902-1.951   2.038          REJECTED (3 of 5 at/over the bar)
+  # The cubic law is CONFIRMED by the ladder, not asserted by the formula: the diag_s ratios
+  # are 5.0x / 7.4x / 15x against K^3 ratios of 8.0x / 7.9x / 15x. At R = 2 000 the
+  # diagnostic is 96 % of the whole request.
+  #
+  # 200 IS DELIBERATELY NOT THE LARGEST THAT CLEARS. 800 clears and was not taken: there the
+  # diagnostic (0.130 s) costs MORE than the fit it describes (0.040-0.124 s), which is the
+  # wrong trade, and this is published refusal surface where raising a ceiling later is cheap
+  # while lowering one refuses requests that previously succeeded. 200 is 50x the largest
+  # regressor count in any committed fixture (4). Phase 7 can raise it per tier against the
+  # measured cubic law above.
+  # Mirrored by types::MAX_REGRESSORS and types::MAX_REGRESSOR_DESIGN_COST via
+  # types::tests::cost_bounds_match_contract.
+  fit_max_regressors: 200
+  fit_max_regressor_design_cost: 25000
+  # ---- The IDENTIFIABILITY WARNING THRESHOLDS (D-35) ----
+  # NOT COST CEILINGS, and the naming is deliberate: a warning threshold bounds no work and
+  # refuses nothing, so it must NOT match the `fit_max_` / `chronos_max_` prefix filter that
+  # `types::tests::every_cost_ceiling_constant_is_named_by_an_axis` derives its ceiling list
+  # from. Do not "fix" the filter to capture them — a threshold pulled into that enumeration
+  # would demand a cost axis for a number that prices nothing.
+  #
+  # DERIVED from the committed spike-011 fixture retail_regressors_prophet140.json rather
+  # than chosen: the diagnostic was run over its four regressor columns against the 24-column
+  # design and the measured VIFs are recorded in types::REGRESSOR_VIF_WARN. The threshold is
+  # so the known-bad column (`discount`, a cosine of period six months and a harmonic of the
+  # yearly seasonality at r = 0.999 against yearly_delim_4) WARNS, and the two known-good
+  # columns (`promo`, `weather`) do NOT. `price` is labelled MARGINAL by the spike (r = 0.759,
+  # beta still 5x off) and is deliberately UNASSERTED — it is the column that proves a
+  # pairwise cutoff is the wrong test (D-35), not a control for this threshold.
+  # Mirrored by types::REGRESSOR_VIF_WARN and types::REGRESSOR_CONDITION_NUMBER_WARN via
+  # types::tests::cost_bounds_match_contract's real-valued table (constant_f64).
+  regressor_vif_warn: 10.0
+  regressor_condition_number_warn: 30.0
+  # The ONE caller-settable field that had NO enforcement of any kind at the close of
+  # 06-14 (door_surface.knobs, field: name, enforced_by: NOTHING) — found by that plan's
+  # enumeration and by no review finding. prophet::columns turns ONE payload occurrence of
+  # holidays[].name into TWO owned Strings per design column (the column name and the
+  # component), then makes it the sort key of an O(C log C) byte-wise comparison sort, and
+  # predict's component-name dedup compares it again. At fit_max_holiday_columns (1 000)
+  # that is ~2 000 derived copies plus ~10 000 comparisons from a single occurrence — a
+  # ~2 000:1 amplification. BYTES, because bytes are what the clone and the comparison cost.
+  # 200 against a committed maximum of 9 ("superbowl", Prophet 1.4.0's own peyton_holidays).
+  # There is no structural maximum to measure instead: neither transport caps the body.
+  # Mirrored by types::MAX_HOLIDAY_NAME_LEN via types::tests::cost_bounds_match_contract.
+  fit_max_holiday_name_len: 200
+  # Cost axis C-08: the NeuralProphet TRAINING path, the ONE axis in this door with no
+  # budget of any kind on it. FIT_BUDGET_SECS is read at exactly one place, inside
+  # fit::fit_prophet, and the "neuralprophet" arm never enters that function. n_lags <= 365,
+  # n_samples <= n_train_grid <= fit_max_span_days and epochs <= 500 are each enforced ALONE;
+  # their PRODUCT was not, and the door's learning-rate sweep multiplies it by 2 (lags) or
+  # 3 (lag-free). Bounded on the door-computable proxy np::request_train_cost =
+  # sweep_width * epochs * n_samples * (n_lags + 1).
+  # MEASURED, release: the worst LEGAL request (20 000 contiguous daily points, n_lags 365,
+  # horizon 3650) prices at 718 641 000 and walls at 47.924 s — 24x SC1's 2 s bar. A first
+  # candidate of 20 000 000 was REJECTED by its own wall (19 991 000 -> 2.089 s, over the
+  # bar). At 15 000 000 three compositions differing in every factor clear it: 13 995 800 ->
+  # 1.642 s, 14 384 160 -> 1.541 s, 14 810 040 -> 1.402 s. It is also the smallest round
+  # value that does not refuse np::parity's own Peyton n_lags=30 geometry (14 552 640).
+  # Mirrored by types::MAX_NP_TRAIN_COST via types::tests::cost_bounds_match_contract.
+  fit_max_np_train_cost: 15000000
+  # The event-column term of cost axis C-08, in PROXY WIDTH UNITS per event column
+  # (SC4, D-32, D-34). Mirrored by types::FIT_NP_EVENT_COST_PER_COLUMN via
+  # types::tests::cost_bounds_match_contract, read with constant_f64 because a per-column
+  # slope is conceptually REAL and rounding it to fit the integer reader would make the
+  # mirror assert something weaker than the constant.
+  #
+  # IT IS A COEFFICIENT, NOT A CEILING, and the naming is deliberate rather than an
+  # oversight. Nothing is ever refused for EXCEEDING this number: it is multiplied into the
+  # priced quantity, which is THEN compared against fit_max_np_train_cost. So it is correctly
+  # NOT captured by every_cost_ceiling_constant_is_named_by_an_axis, whose filter is
+  # fit_max_* / chronos_max_* and whose contract is "every cost CEILING is named by an axis".
+  # Capturing a coefficient there would make that test assert a coefficient is a bound, and
+  # would force inventing an axis whose bound: is a number no door check compares against -
+  # a dangling claim in exactly the direction every_cost_axis_names_a_real_bound refuses.
+  #
+  # The obligation a coefficient DOES carry is that some priced formula READS it, and that is
+  # enforced by the sibling every_cost_coefficient_constant_is_named_by_an_axis_formula: it
+  # derives its list from constants: keys containing _cost_per_ and asserts each name appears
+  # verbatim inside some cost_axes formula: string, with a vacuity guard so the filter cannot
+  # silently stop matching.
+  #
+  # NAMED FOLLOW-UP, recorded rather than claimed closed: the COMPLETE closure is the general
+  # form - every key in constants: falls into exactly one named category (ceiling,
+  # coefficient, deployment default, warning threshold) and each category carries its own
+  # obligation. That form would immediately have to categorise pool_default,
+  # poisson_normal_branch_lambda, chronos_native_horizon, fit_min_points, default_seed,
+  # default_interval_width_x100 and the two regressor warning thresholds. It is NOT built
+  # here, and the two enumerations above must not be read as covering it.
+  #
+  # The value, its provenance and its safety factor live in the C-08 calibration: mapping
+  # below, which is the single source. Phase 7 re-prices the CONSTANT per tier without
+  # re-deriving the SHAPE (D-34).
+  fit_np_event_cost_per_column: 0.0126
+  # The NUMERIC-REGRESSOR term of cost axis C-08, in PROXY WIDTH UNITS per regressor column
+  # (SC4, D-34). Mirrored by types::FIT_NP_REGRESSOR_COST_PER_COLUMN via
+  # types::tests::cost_bounds_match_contract, read with constant_f64 for the same reason the
+  # event coefficient is. A COEFFICIENT, not a ceiling: every paragraph above applies to it
+  # unchanged, and its name contains _cost_per_ so the coefficient enumeration captures it
+  # while the fit_max_ ceiling filter correctly does not.
+  #
+  # A SECOND coefficient and not a reuse of the event one. fit_max_regressor_design_cost
+  # bounds the design CELLS, built once; on the neuralprophet arm a regressor column is also
+  # read on every batch of every epoch of every learning rate in the sweep, exactly as an
+  # event column is, and plan 06.1-05 priced event columns and only event columns. A request
+  # AT the regressor design-cost ceiling could therefore buy training work C-08 never saw.
+  #
+  # A regressor column is a dense f32 multiply-accumulate and an event column is a 0/1
+  # indicator through the same Linear, so the two slopes are plausibly close - and that is
+  # the kind of claim this project withdraws. MEASURED on its own sweep: the regressor basis
+  # (0.005264) is 15.3 per cent BELOW the event basis (0.006213) on the same host, same
+  # geometry, same recipe shape. Close, and not equal; reusing one constant for two axes
+  # would still have been a decision needing its own evidence, and this is that evidence.
+  #
+  # The value, its provenance and its safety factor live in the C-08 calibration: mapping
+  # below, which is the single source.
+  fit_np_regressor_cost_per_column: 0.0106
+  # The Poisson mean the LOGISTIC uncertainty simulation draws on each of its 1 000 rows:
+  # lambda = changepoint_count(len(ds)) x (t_max - 1), t_max = future_span_days /
+  # history_span_days. fit_max_points, fit_max_span_days and fit_max_horizon are each
+  # satisfied by a request whose RATIO is not, and fit_max_horizon bounds the COUNT of
+  # future steps while dates::future_days multiplies that count by 7 for "W" and ~30.44 for
+  # "MS" — so three isolated bounds left this product open. The structural maximum is
+  # 86 789.8 (33 daily points, horizon 3650, freq MS), which is exactly the 1 132-byte
+  # request 06-REVIEW.md CR-01 measured at 2.334 s against SC1's 2 s bar. Mirrored by
+  # types::MAX_LOGISTIC_CHANGEPOINT_LAMBDA via test_support::constant_f64.
+  fit_max_logistic_changepoint_lambda: 20000
+  # The EXACT/APPROXIMATE branch point of prophet::poisson: at or below this mean the draw
+  # takes Knuth's product method, above it a normal approximation with mean and variance both
+  # exactly lambda. It decides which algorithm a caller's request gets, so it is behavioural
+  # and belongs here rather than only in Rust (WR-01) — prophet::POISSON_NORMAL_BRANCH_LAMBDA
+  # is its mirror, asserted by types::tests::cost_bounds_match_contract via constant_f64.
+  # Not a COST ceiling: it selects an algorithm, it does not bound an amount of work.
+  poisson_normal_branch_lambda: 30
+  # aprender-mcp-chronos (zero-shot: Chronos-Bolt T5, no fit)
+  chronos_min_points: 4
+  chronos_max_points: 20000
+  chronos_max_horizon: 1024
+  chronos_native_horizon: 64
+  # Shared defaults
+  default_seed: 42
+  default_interval_width_x100: 80
+  # Router pool (D-12)
+  pool_default: 8
+  concurrency_requests: 8
+  # 2.0x, expressed x10 because `constant_u64` reads integers. Asserted by
+  # `just forecast-pool-ratio` on the aarch64 release host, NEVER by a unit test.
+  pool_speedup_min_x10: 20
+  pool_speedup_best_of: 3
+
+# THE DOOR'S WHOLE SURFACE, ENUMERATED BY INSPECTION AND CHECKED BY TEST.
+#
+# Same shape and same reason as `constants:` above — not part of the `Contract` struct (the
+# parser drops unknown top-level keys), and deliberately so: this block is READ AT TEST TIME
+# by `types::tests::every_request_knob_is_enumerated` and
+# `types::tests::every_cost_axis_names_a_real_bound`, so it is a CHECKED claim about the code
+# rather than a document that describes it.
+#
+# WHY IT EXISTS. Three consecutive gap-closure rounds each closed exactly the ONE measured
+# probe an adversarial pass had found, and each time the next pass found the next instance of
+# the same class: "the door accepts a request whose cost or whose semantics it never checks".
+# 06-11 closed the holiday design PRODUCT, 06-12 proved it through the transport, 06-13 fixed
+# the sampler — and 06-13's own correct fix un-bounded the simulated changepoint count, which
+# is CR-01. A fourth point fix would be a fourth round of the same mistake. The enumeration is
+# the structural answer: `knobs:` is checked against `schemars::schema_for!` output in BOTH
+# directions, so a field added to `ForecastArgs` or `HolidayArg` with no entry here turns a
+# test red, and an entry here for a field that no longer exists turns the same test red.
+#
+# `cost_axes[].bound` must be one of: a key that exists in `constants:` above; the literal
+# `measured_at_structural_maximum`, which additionally requires a `measured_seconds` strictly
+# below 2.0 (SC1's bar); or an `unbounded_pending_<plan>` marker. Pending entries are OUT OF
+# SCOPE for `every_cost_axis_names_a_real_bound` and are the thing
+# `types::tests::no_cost_axis_is_pending` fails on. As of plan 06-15 NO entry carries a
+# pending marker: C-07 and C-08, the two 06-14 shipped with `unbounded_pending_06_15` (and
+# a DELIBERATELY RED `no_cost_axis_is_pending` holding them open), now name
+# `fit_max_holiday_name_len` and `fit_max_np_train_cost`. Both halves of the class invariant
+# are therefore satisfied rather than promised. A NEW pending marker turns that test red
+# again — that is the mechanism working, not a defect.
+door_surface:
+
+  # ---- (a) every caller-settable field reachable through `aprender_forecast::forecast` ----
+  # 13 `ForecastArgs` fields + 4 `HolidayArg` fields + 5 `RegressorArg` fields = 22, plus
+  # the 5 `ChronosArgs` fields of the SECOND door below. Derived from
+  # `schemars::schema_for!`, never hand-kept: the test walks `schema["properties"]` for every
+  # owner struct and asserts SET EQUALITY against the `field` + `owner` pairs below. Re-derive
+  # this total from the file rather than adding one to the sentence — a count in a comment
+  # that drifts is the defect the enumeration test exists to replace.
+  knobs:
+    - field: ds
+      owner: ForecastArgs
+      arms: 'both models, all three growth arms'
+      enforced_by: 'len(ds) == len(y); fit_min_points <= len(ds) <= fit_max_points; parse_date per entry (ten ASCII bytes + calendar round trip); strictly ascending with no duplicates; (last - first + 1) <= fit_max_span_days'
+    - field: y
+      owner: ForecastArgs
+      arms: 'both models'
+      enforced_by: 'length tied to ds; every value finite; min(y) != max(y) (a constant series is refused before any design is built)'
+    - field: horizon
+      owner: ForecastArgs
+      arms: 'both models'
+      enforced_by: '1 <= horizon <= fit_max_horizon. This bounds the COUNT of future steps ONLY; the SPAN those steps cover is cost axis C-05 and is a function of freq'
+    - field: freq
+      owner: ForecastArgs
+      arms: 'prophet (via dates::future_days); neuralprophet refuses anything but "D"'
+      enforced_by: 'closed allowlist {D, W, MS}, refused by name otherwise; neuralprophet narrows it to {D}. Enforced as an ENUM — its COST effect is the 1 / 7 / ~30.44 day-span multiplier of C-05, which feeds C-06'
+    - field: model
+      owner: ForecastArgs
+      arms: 'dispatch'
+      enforced_by: 'closed allowlist {prophet, neuralprophet}, refused by name otherwise; default prophet'
+    - field: growth
+      owner: ForecastArgs
+      arms: 'prophet only (refused on the neuralprophet arm)'
+      enforced_by: 'closed allowlist {linear, logistic, flat}, refused by name otherwise; default linear. Selects which of C-06 / C-09 the request pays'
+    - field: cap
+      owner: ForecastArgs
+      arms: 'prophet, logistic growth only'
+      enforced_by: 'logistic-only (06-10: refused on linear, flat AND the defaulted arm); must be finite; must exceed max(y). The Spec-borne value is bound inside the logistic branch (checked_cap), so a Spec carrying an unvalidated cap is unreachable'
+    - field: seasonality_mode
+      owner: ForecastArgs
+      arms: 'prophet only'
+      enforced_by: 'closed allowlist {additive, multiplicative}, refused by name otherwise; default additive'
+    - field: interval_width
+      owner: ForecastArgs
+      arms: 'both models'
+      enforced_by: 'strictly inside the open interval (0, 1); default default_interval_width_x100 / 100. No cost axis — it selects two percentiles from a simulation whose size it does not change'
+    - field: holidays
+      owner: ForecastArgs
+      arms: 'both models (D-29, plan 06.1-06). On neuralprophet, accepted at n_lags = 0 and REFUSED together with n_lags > 0, naming the limitation: at n_lags > 0 the event block and the autoregressive term are jointly identified only once the fit converges, and the per-column effect recovery that needs is NOT established at the epoch budget the door configures (measured worst per-column error 0.2191-0.4660 against the 0.10 event_effect_recovery_rel bar, one run negative)'
+      enforced_by: 'per-holiday windows, dates and column count (see the HolidayArg entries below), then the aggregate fit_max_holiday_columns, fit_max_holiday_dates_total and fit_max_holiday_design_cost product bounds. ALL FOUR are enforced at ONE site ABOVE the model dispatch (D-33, plan 06.1-06 T1), so both arms pay them, and fit_max_holiday_design_cost is OPERAND-AWARE by arm (cost axis C-04: the point count on prophet, the imputed-grid span in days on neuralprophet). On neuralprophet the expanded column count is ALSO priced into cost axis C-08 through fit_np_event_cost_per_column BEFORE the first np::train, and the response publishes one component per event NAME plus a holidays roll-up, in RESPONSE units (D-31)'
+    - field: n_lags
+      owner: ForecastArgs
+      arms: 'neuralprophet only (refused on the prophet arm)'
+      enforced_by: 'n_lags <= 365 and n_lags < n_train_grid as a RANGE, and then its COST effect (axis C-08) against fit_max_np_train_cost, checked at the door before the first np::train (06-15). Before that this path had no budget of any kind: FIT_BUDGET_SECS is read only inside fit::fit_prophet, which this arm never enters'
+    - field: seed
+      owner: ForecastArgs
+      arms: 'both models'
+      enforced_by: 'any u64 is legal by construction; default default_seed. No cost axis — the seed selects an RNG stream, not an amount of work. It is the mechanism behind pool_equality_under_load'
+    - field: name
+      owner: HolidayArg
+      arms: 'both models (D-29, plan 06.1-06). On neuralprophet, accepted at n_lags = 0 and REFUSED together with n_lags > 0, naming the limitation: at n_lags > 0 the event block and the autoregressive term are jointly identified only once the fit converges, and the per-column effect recovery that needs is NOT established at the epoch budget the door configures (measured worst per-column error 0.2191-0.4660 against the 0.10 event_effect_recovery_rel bar, one run negative)'
+      enforced_by: 'len(name) in BYTES <= fit_max_holiday_name_len, refused FIRST in the holiday loop (06-15 T2). Before that it was enforced by NOTHING: an arbitrary-length String, cloned TWICE per design column by prophet::columns (as `name` and as `component`), used as the sort key of hcols.sort_by, and compared again per column by predict''s component-name dedup. Cost axis C-07'
+    - field: dates
+      owner: HolidayArg
+      arms: 'both models (D-29, plan 06.1-06). On neuralprophet, accepted at n_lags = 0 and REFUSED together with n_lags > 0, naming the limitation: at n_lags > 0 the event block and the autoregressive term are jointly identified only once the fit converges, and the per-column effect recovery that needs is NOT established at the epoch budget the door configures (measured worst per-column error 0.2191-0.4660 against the 0.10 event_effect_recovery_rel bar, one run negative)'
+      enforced_by: 'len(dates) <= fit_max_holiday_dates per holiday; the running sum is refused against fit_max_holiday_dates_total INSIDE the loop (WR-03 closed by 06-15 T1), with the post-loop check kept because only it has seen every holiday and can report the request''s EXACT total; parse_date per entry, now only for holidays the door has not already refused'
+    - field: lower_window
+      owner: HolidayArg
+      arms: 'both models (D-29, plan 06.1-06). On neuralprophet, accepted at n_lags = 0 and REFUSED together with n_lags > 0, naming the limitation: at n_lags > 0 the event block and the autoregressive term are jointly identified only once the fit converges, and the per-column effect recovery that needs is NOT established at the epoch budget the door configures (measured worst per-column error 0.2191-0.4660 against the 0.10 event_effect_recovery_rel bar, one run negative)'
+      enforced_by: 'must be <= 0 and >= -fit_max_holiday_window; contributes (upper - lower + 1) to the running column count, refused past fit_max_holiday_columns'
+    - field: upper_window
+      owner: HolidayArg
+      arms: 'both models (D-29, plan 06.1-06). On neuralprophet, accepted at n_lags = 0 and REFUSED together with n_lags > 0, naming the limitation: at n_lags > 0 the event block and the autoregressive term are jointly identified only once the fit converges, and the per-column effect recovery that needs is NOT established at the epoch budget the door configures (measured worst per-column error 0.2191-0.4660 against the 0.10 event_effect_recovery_rel bar, one run negative)'
+      enforced_by: 'must be >= 0 and <= fit_max_holiday_window; contributes (upper - lower + 1) to the running column count, refused past fit_max_holiday_columns'
+    # ---- RegressorArg: external regressors (D-22) ----
+    # The third design column family, after seasonalities and holidays. Columns APPEND at
+    # the trailing index range base_k..k, so no existing column index moves — which is what
+    # makes the D-19 no-argument invariance gate free rather than expensive.
+    #
+    # Every `enforced_by` below names checks that EXIST, in the order forecast::forecast runs
+    # them, and the ceiling or cost axis that bounds each one. None points forward at an
+    # unimplemented plan: a row that describes a future check is a row a reader mistakes for
+    # coverage.
+    - field: regressors
+      owner: ForecastArgs
+      arms: 'both models'
+      enforced_by: 'optional with a serde default, so it introduces NO required argument (D-20); absent means None, never an empty list. ACCEPTED ON BOTH ARMS since plan 06.1-07; the temporary neuralprophet refusal plan 06.1-01 left there is gone and every knob row below describes shipped behaviour. EVERY SHARED CHECK — the name byte bound, the count ceiling, the design-cost product, all three parts of the name-collision set, duplicate names, the length tie, input finiteness, the mode allowlist, the prior-scale range, zero spread and the three post-arithmetic finiteness checks — is enforced at ONE site ABOVE the model dispatch (D-33''s pattern, plan 06.1-07 T2), so both arms pay all of them; the_shared_regressor_validation_reaches_the_neuralprophet_arm is a table-driven test with one row per hoisted check that asserts its own row count, so a check added without a row goes red rather than leaving the second arm silently uncovered. The COUNT is bounded by fit_max_regressors and the product by fit_max_regressor_design_cost, both checked at the door BEFORE any regressor value is copied and both named by cost axis C-17. fit_max_regressor_design_cost is OPERAND-AWARE by arm, exactly as fit_max_holiday_design_cost is: (len(ds) + horizon) x n_regressors on prophet, (span_days + horizon) x n_regressors on neuralprophet, because with lags the NP regressor design is read over the imputed daily grid NpData::new materialises over first..=last. The message STATES the operand it used. TWO ARM RULES scope the neuralprophet acceptance, in a DECIDED precedence (multiplicative, then prior_scale, then the gap predicate — cheapest and most unconditional first, pinned by the_refusal_precedence_is_stable_when_several_rules_apply, because the messages are verbatim contracts that e2e cases string-match): a regressor whose resolved mode is multiplicative is refused (D-28), and a regressor sent with n_lags > 0 on a series with missing days between its first and last date is refused naming the missing-day count, the first missing date and the fix (D-26). At n_lags = 0 no refusal applies at all: D-27 makes the imputed-day value unread BY CONSTRUCTION, because no grid-shaped regressor array is materialised and the lag-free sample list indexes regressors by the CALLER''s row. The two are separate ceilings on purpose: the product is satisfiable by trading rows for columns, while the identifiability diagnostic''s O(K^3) factorisation is a function of the COUNT alone — measured at 0.0035 / 0.130 / 1.95 s of diagnostic time at 200 / 800 / 2 000 regressors'
+    - field: name
+      owner: RegressorArg
+      arms: 'both models'
+      enforced_by: 'checked in this order. (1) LENGTH IN BYTES against fit_max_holiday_name_len, FIRST in the block, because every other refusal here formats caller data and this is what bounds their messages; the same ceiling as the holiday name because the amplification argument is the same one cost axis C-07 records, and the message names the INDEX and the LENGTH and NEVER the name (T-06.1-14). (2) COLLISION against a reserved set with THREE parts — the generated design column names from prophet::columns, the per-component names behind them (every seasonality name and every DECLARED holiday name), and an explicitly enumerated slice of eleven aggregate and top-level response keys; the response component map is a MAP INSERT, so a collision silently OVERWRITES and the operator sees one component where two were computed, MEASURED as 5 component keys instead of 6 with the check disabled (T-06.1-13). (3) DUPLICATES within the request, via a BTreeSet, O(R log R), for the same overwrite reason. ALL THREE run at the ONE hoisted site above the model dispatch, so the neuralprophet arm pays them too (plan 06.1-07 T2). The reserved set is built from the SAME assembled Spec both arms now share, deliberately as a UNION rule rather than per arm: a name accepted on one arm and refused on the other would make D-22''s one-shape claim unprovable in general'
+    - field: values
+      owner: RegressorArg
+      arms: 'both models'
+      enforced_by: 'len(values) must equal len(ds) + horizon EXACTLY, refused before anything is copied, so the per-regressor payload is tied to the already-bounded point and horizon counts; every value must be finite, mirroring the y and cap finiteness refusals that closed the JSON 1e400 class. Separately, every DERIVED quantity (mu, the variance, std and each standardised cell) is re-checked for finiteness after the arithmetic, because finite inputs are not sufficient: 1e300 values overflow the sum of squares. The AGGREGATE cost of the arrays — (len(ds) + horizon) x n_regressors design feature cells across regressors::splice and prophet::predict — is bounded by fit_max_regressor_design_cost under cost axis C-17; the per-array length tie alone would leave the PRODUCT open, which is the defect class this door has closed four times. `prophet::predict` re-checks the channel length at the call boundary and returns a typed error, never a panic, because forecast.rs passes `fut` of length horizon and an off-by-one would silently offset every future feature. THE LENGTH CONTRACT IS IDENTICAL ON BOTH ARMS and that is D-22''s substance, not a coincidence: the_same_regressor_payload_is_accepted_by_both_arms builds ONE payload literal and sends it to model prophet and to model neuralprophet on a gap-free daily series, and asserts both succeed. It stays identical because of D-26 rather than in spite of it: on neuralprophet with n_lags > 0 the training sample list is EVERY grid row of the imputed daily grid, imputed rows included, so a gappy series would need a value for a day the caller never sent — and that request is REFUSED by name rather than filled in. Spike 014 measured why: two DEFENSIBLE fill rules 10.48 apart on a series of scale 35.32 (~30 per cent), with a deliberate garbage probe moving the lagged forecast by 192 units and flipping the sign of BOTH coefficients. Every ACCEPTED neuralprophet case therefore has grid == caller rows, which is asserted in RELEASE by regressors::NpRegressors::new returning ForecastError::Internal naming both lengths — NOT by a debug_assert!, which --release compiles out of the profile the door ships in'
+    - field: mode
+      owner: RegressorArg
+      arms: 'both models; multiplicative is prophet-only (refused on the neuralprophet arm)'
+      enforced_by: 'closed two-element allowlist {additive, multiplicative}, refused BY NAME otherwise, copying seasonality_mode''s message shape; absent defaults to additive. The accepted value is echoed back in diagnostics.regressors[].mode as the wire spelling the caller used, never the Rust enum spelling. ON NEURALPROPHET the allowlist is the same one (it is hoisted above the dispatch) and a RESOLVED multiplicative mode is then refused by the arm, FIRST among the arm rules because it is unconditional and a single field read: NP-lite composes exogenous terms with one additive .add() on NpModel::forward and has no multiplicative path, which was never built or measured. The refusal keys on the RESOLVED mode, so an absent field is additive there by exactly the rule prophet uses, and an ADDITIVE control on the same series is accepted at both lag settings. Accepting the field and ignoring it would violate D-21 outright; a field may be arm-restricted the way cap is growth-restricted without breaking D-22''s one-shape requirement'
+    - field: prior_scale
+      owner: RegressorArg
+      arms: 'both models; an explicitly PRESENT prior_scale is prophet-only (refused on the neuralprophet arm, where an ABSENT one is accepted)'
+      enforced_by: 'when present, must be FINITE and POSITIVE within the closed range [regressor_prior_scale_min, regressor_prior_scale_max] — a REPRESENTABLE range, not merely "greater than zero" and not a usability guarantee. The objective and gradient SQUARE the prior scale into a denominator (prophet.rs:536, :685), so f64::MIN_POSITIVE squares to exactly 0.0 and the initial zero coefficients then meet 0.0/0.0. MEASURED (plan 06.1-01, 2026-09-21), correcting the theory this field previously stated: that 0/0 does NOT surface as a NaN — Model::objective''s `!f.is_finite()` guard absorbs it, so no response field is ever non-finite. It makes L-BFGS run ZERO iterations and the regressor contribute exactly nothing while the door returns a normal-looking forecast: the D-21 silent-ignore class. See the MEASURED block above regressor_prior_scale_min for the 18-configuration sweep and for the residual this bound leaves open — the collapse region reaches ~1e-9, roughly 145 decades above this floor, so a USABILITY floor is still UNOWNED and is closed at the OUTCOME rather than by a floor: when a regressor''s fitted coefficient is EXACTLY zero the response says so in diagnostics.regressors[].warning, which is shape-independent because it reports what the fit did rather than guessing from the knob. See the MEASURED block above regressor_prior_scale_min for the five-shape campaign that refuted the floor proposal. Absent defaults to 10.0, Prophet''s holidays_prior_scale. ON NEURALPROPHET the range check above is the same hoisted one, and a PRESENT field is then REFUSED by the arm, second in the precedence: the NP trainer applies ONE global weight_decay and has no per-parameter prior, so there is no mechanism by which a per-regressor prior scale could take effect and no measurement anywhere for what it should mean. Accepting it and dropping it is the D-21 silent-ignore class this phase exists to close. The check keys on Some(_) and NEVER on the defaulted value — a check keyed on the default would refuse every neuralprophet regressor request, which is a different bug with the same green test, so the refusal ships with the positive control a_neuralprophet_regressor_carrying_a_prior_scale_is_refused_but_an_absent_one_is_not'
+    - field: standardize
+      owner: RegressorArg
+      arms: 'both models'
+      enforced_by: 'an optional boolean; ABSENT means Prophet''s auto rule — do not standardise a column whose unique HISTORY values are exactly the two-element set {0, 1}, both present. A single-valued column is therefore NOT exempt, is standardised, and comes out at std = 0.0, which is refused as a constant column carrying no information rather than divided by inside splice. The resolved mu and std are echoed back in diagnostics.regressors[] beside that column''s VIF, so the constants the fit actually used are visible to the caller rather than inferred. ON NEURALPROPHET the SAME regressors::standardize_one is called — one definition in the crate, not a second copy of the ddof-1 spread arithmetic — over the OBSERVED TRAIN rows, which on that arm are exactly the caller''s rows. the_neuralprophet_standardisation_matches_the_prophet_rule_bitwise compares mu and std with to_bits (and the cells against the prophet arithmetic narrowed to f32), and carries its own discriminator: standardising over the IMPUTED GRID instead gives a different mu, so the test can tell the two rules apart. There is no diagnostics.regressors[] block on that arm (D-37), so the constants are not echoed there; the identifiability diagnostic is a property of the design matrix Prophet builds and a green VIF on the NP arm would reassure about the wrong thing'
+
+  # ---- (b) every cost axis whose magnitude is a function of caller input ----
+  # `spent_outside_fit_budget` is the column that matters. `fit::FIT_BUDGET_SECS` is entered
+  # INSIDE `fit::fit_prophet`; `make_design` runs before it and `predict` runs after it, which
+  # is the STRUCTURAL reason 13 of these 14 axes are outside it and why every bound this phase
+  # has added had to go at the door. Exactly ONE axis is inside.
+    # ---- ChronosArgs: the SECOND door (aprender-mcp-chronos), added closing T-06-32 ----
+    # Absent from this enumeration entirely until 2026-09-07, while the header above called
+    # it THE DOOR'S WHOLE SURFACE. A live, unauthenticated `tools/call` surface with its own
+    # bounds; the four `chronos_*` keys in `constants:` existed the whole time with nothing
+    # in door_surface naming them.
+    - field: ds
+      owner: ChronosArgs
+      arms: 'the zero-shot Chronos-Bolt door'
+      enforced_by: 'len(ds) == len(y) (chronos.rs:206); chronos_min_points <= len(ds) <= chronos_max_points (:213, :219); parse_date per entry; strictly ascending with no duplicates (:254)'
+    - field: y
+      owner: ChronosArgs
+      arms: 'the zero-shot Chronos-Bolt door'
+      enforced_by: 'len(y) == len(ds) (:206); every non-null value is_finite (:243); at least 2 observed (non-null) values (:246). `null` is legal and marks a gap the model handles'
+    - field: horizon
+      owner: ChronosArgs
+      arms: 'the zero-shot Chronos-Bolt door'
+      enforced_by: 'horizon >= 1 (:225); horizon <= chronos_max_horizon (:228); beyond chronos_native_horizon it additionally requires allow_long_horizon (:234)'
+    - field: freq
+      owner: ChronosArgs
+      arms: 'the zero-shot Chronos-Bolt door'
+      enforced_by: 'parsed to the D / W / MS enum by the same parser the forecast door uses; an unknown value is refused. Bounded set, no cost axis'
+    - field: allow_long_horizon
+      owner: ChronosArgs
+      arms: 'the zero-shot Chronos-Bolt door'
+      enforced_by: 'a bool gate, not a bound: it UNLOCKS horizon in (chronos_native_horizon, chronos_max_horizon] (:234) and is therefore the opt-in multiplier on cost axis C-15. The response carries a measured-accuracy warning when it is used'
+  cost_axes:
+    - axis: C-01
+      name: 'history date parse'
+      formula: 'len(ds)'
+      spent_in: 'forecast::forecast, the parse_date loop'
+      spent_outside_fit_budget: true
+      bound: fit_max_points
+      checked_at: 'the door, before any date is parsed'
+    - axis: C-02
+      name: 'NeuralProphet imputed daily grid'
+      formula: 'span_days = ds.last - ds.first + 1'
+      spent_in: 'np::NpData::new'
+      spent_outside_fit_budget: true
+      bound: fit_max_span_days
+      checked_at: 'the door, before the model arms are entered'
+    - axis: C-03
+      name: 'holiday date parse and membership sets'
+      formula: 'sum(len(h.dates))'
+      spent_in: 'forecast::forecast holiday loop, then prophet::holiday_day_sets'
+      spent_outside_fit_budget: true
+      bound: fit_max_holiday_dates_total
+      checked_at: 'the door, INSIDE the holiday loop the moment the running sum passes the ceiling (WR-03 closed by 06-15 T1), with the post-loop exact-total refusal retained'
+    - axis: C-04
+      name: 'holiday design feature cells'
+      formula: 'OPERAND-AWARE BY ARM, one ceiling: on model=prophet, (len(ds) + horizon) * holiday_columns; on model=neuralprophet, (span_days + horizon) * holiday_columns'
+      spent_in: 'prophet::make_design (points rows) and prophet::predict (horizon rows); on the neuralprophet arm, events::EventDesign::rows over the imputed daily grid np::NpData::new materialises'
+      spent_outside_fit_budget: true
+      bound: fit_max_holiday_design_cost
+      checked_at: 'the door, at ONE site ABOVE the model dispatch so both arms pay it, before make_design and before np::NpData::new (D-33, plan 06.1-06 T1)'
+      note: 'predict additionally runs comp_of ONCE PER DISTINCT COMPONENT NAME, so the cells are re-swept (1 + distinct_components) times. distinct_components <= fit_max_holiday_columns, so the product stays bounded (<= 5e7 float ops at the ceiling) — but the multiplier was not part of this bound''s original derivation and is recorded here rather than left implicit. SECOND note (D-33): the operand differs by ARM and the refusal message names the one it used. Prophet materialises one design row per SUPPLIED ds entry, so a gap costs nothing; the neuralprophet event design is built over the IMPUTED DAILY GRID spanning first..=last, so its row count is span_days, which is >= len(ds) and strictly greater on every gappy series. Inheriting the prophet operand verbatim would knowingly under-price the gappy NP case by exactly span/len(ds) — closing one under-pricing while opening another. There is deliberately NO second constant: fit_max_holiday_design_cost is one ceiling with two operands, because a fit_max_np_event_design_cost would be a second row and a second re-derivation whenever either moves. Both operands are bounded by 20 000 (fit_max_points and fit_max_span_days are the same number), so the product is <= 2.365e7 under either arm.'
+    - axis: C-05
+      name: 'future grid span in days'
+      formula: 'horizon * freq_step, where freq_step is 1 (D), 7 (W) or ~30.44 (MS)'
+      spent_in: 'dates::future_days, then as t_max in prophet::predict'
+      spent_outside_fit_budget: true
+      bound: fit_max_horizon
+      checked_at: 'the door, as a COUNT only'
+      note: 'The allocation itself is len(fut) == horizon and is bounded by fit_max_horizon. What fit_max_horizon does NOT bound is the SPAN that count buys — 30.44x more days on "MS" than on "D" for the same legal horizon. That span is t_max, and its only cost consumer is C-06, bounded by fit_max_logistic_changepoint_lambda since 06-14. This axis is the reason that bound is on the PRODUCT and not on the horizon.'
+    - axis: C-06
+      name: 'logistic simulated changepoints'
+      formula: 'uncertainty_samples * changepoint_count(len(ds)) * (t_max - 1)'
+      spent_in: 'prophet::predict, the Growth::Logistic uncertainty arm'
+      spent_outside_fit_budget: true
+      bound: fit_max_logistic_changepoint_lambda
+      checked_at: 'the door, after Spec assembly and before make_design (06-14)'
+      note: '06-REVIEW.md CR-01. uncertainty_samples (1 000) is a Spec field, NOT a ForecastArgs field — it is a fixed multiplier here, not a knob.'
+    - axis: C-07
+      name: 'holiday column name bytes'
+      formula: 'holiday_columns * 2 * len(name), plus an O(C log C) string sort and predict''s O(C * distinct_components) name dedup'
+      spent_in: 'prophet::columns and prophet::predict''s component-name dedup'
+      spent_outside_fit_budget: true
+      bound: fit_max_holiday_name_len
+      checked_at: 'the door, FIRST in the holiday loop, before the name is cloned into any Column (06-15)'
+      note: 'CLOSED BY A BOUND, never by a measurement. 06-14 shipped this axis with no_structural_maximum: true because holidays[].name is an unbounded String with no structural maximum to measure: crates/aprender-mcp-forecast/src/lib.rs''s router construction (http_app / pooled_app) applies no DefaultBodyLimit of its own — though pmcp 2.19.3 StreamableHttpServerConfig::stateless() does set max_request_bytes = 4 MiB, enforced with a 413 (limits.rs:46, streamable_http_server.rs:4571), so HTTP DOES have a structural maximum and only stdio genuinely lacks one; the 200-byte bound stands on its own amplification argument rather than on the absence of a transport cap, no max_body and no content-length layer, and the stdio transport has no framing cap at all — so any measured_seconds would have described an arbitrarily CHOSEN name length rather than a maximum. 1 000 columns x an N-byte name is a ~2 000:1 amplification off one payload occurrence; at the bound that is ~400 KB of String and ~10 000 comparisons of <= 200 bytes. The bound is on BYTES because bytes are what the clone and the byte-wise comparison cost. The check is FIRST in the loop, which also bounds every other refusal message in that loop — each formats h.name back to the caller.'
+    - axis: C-08
+      name: 'NeuralProphet training work'
+      formula: 'n_lrs * epochs * n_samples * ((n_lags + 1) + fit_np_event_cost_per_column * E + fit_np_regressor_cost_per_column * R), with n_lrs in {2, 3}, epochs = auto_epochs(n) <= 500 (or <= 320 with lags), n_samples <= n_train_grid, E the event-column count and R the NUMERIC-REGRESSOR column count. R was added by plan 06.1-07 when regressors were opened on the neuralprophet arm: a regressor column is read on every batch of every epoch of every learning rate exactly as an event column is, so the design-cell ceiling fit_max_regressor_design_cost alone left the repeated per-epoch work unpriced. The two terms ADD rather than mask each other, because a caller can send both; np::tests::the_regressor_column_underpricing_is_observed_closed carries a COMBINED E > 0, R > 0 case for that. At R = 0 and E = 0 the priced cost is BIT-IDENTICAL to plan 06.1-05''s, asserted rather than argued. THE SHAPE: the event term is LINEAR in E and sits INSIDE the per-sample feature width, additive to (n_lags + 1) and NOT to the product. (n_lags + 1) is the per-sample width the optimiser sweeps and the event block adds work to that width, so the added work is paid once per sample per epoch - which is what the measured PER-STEP slope says. The rejected reading, product + c * E, scales with NEITHER epochs NOR samples: it can be tuned to pass an observation at one geometry and under-price every larger series, and np::tests::the_event_cost_shape_scales_with_geometry discriminates the two by evaluating priced(E)/priced(0) at two geometries differing ~10x in samples - identical under the width form, collapsing toward 1 under the additive-outside form. The event contribution to the width is rounded UP before the saturating multiplications, so the door never under-prices by a fractional column, and at E = 0 the ceil of zero is zero and the priced cost is BIT-IDENTICAL to the pre-event arithmetic.'
+      spent_in: 'np::train'
+      spent_outside_fit_budget: true
+      bound: fit_max_np_train_cost
+      checked_at: 'the door, after NpData::new and the n_lags range checks and BEFORE the first np::train (06-15)'
+      measured_seconds: 47.924
+      # The DERIVATION of fit_np_event_cost_per_column, as a MAPPING and never as a prose
+      # string, so a later check reads its provenance field by field rather than
+      # pattern-matching English. np::tests::the_event_column_underpricing_is_observed_closed
+      # READS the three measured_* keys through test_support::contract_value and computes
+      # measured(E)/measured(0) from them: they are the committed source that makes the SC4
+      # observation an observation rather than a restatement of the formula.
+      calibration:
+        host: 'Mac16,7 Apple M4 Pro, Darwin 25.6.0 (the plan executor dev box)'
+        arch: aarch64
+        date: '2026-09-21'
+        commit: 610f5301a
+        method: 'just forecast-np-event-calibration -> sc1_wall::np_event_calibration, release profile. Seven event-column counts (0, 7, 28, 84, 210, 504, 1000) spanning zero to fit_max_holiday_columns, 1200 contiguous daily points, 30 epochs, seed 42, through np::train - the exact function C-08 prices. Least squares over the seven points gives an intercept a (us/step at E = 0) and a slope b (us/step per event column); the coefficient in PROXY WIDTH UNITS is b * (n_lags_cal + 1) / a, which reduces to b / a only because this calibration is LAG-FREE. The batch size divides a and b identically and cancels out of the ratio, which is why the coefficient is a ratio of two measurements at one geometry and never an absolute microsecond figure - an absolute number would need a batch, a step count and a sample count to convert, none of which the door knows at check time. D-32 requires the per-column SLOPE rather than the 47.924 s structural maximum, because the slope is cheap enough to live in CI. THREE runs at this commit (CLAUDE.md rule 6 - one input is an anecdote) fitted raw coefficients 0.006213, 0.005815 and 0.005723, an 8.6 per cent spread; the LARGEST is the basis, rounded UP to the next multiple of 1e-4 (0.0063) and multiplied by the safety factor. np_event_calibration re-asserts shipped >= freshly fitted on every run, so the sweep is itself a live one-sided guard against under-pricing on any host it is run on.'
+        status: final
+        confirmed_on_x86_64: 'MEASURED 2026-09-21 on an ephemeral EC2 c7i.2xlarge, Amazon Linux 2023, NATIVE x86_64, us-east-1, at commit 63a4bdb15, by the same `just forecast-np-event-calibration` recipe on release. Seven points: us/step 24.456 / 29.339 / 33.629 / 37.764 / 45.310 / 86.500 / 136.433 at E = 0 / 7 / 28 / 84 / 210 / 504 / 1000; fit intercept 27.4070 us/step, slope 0.109974 us/column, r^2 0.993785, raw coefficient 0.004013. The harness ASSERTED the shipped value rather than a reader inferring it: np_event_calibration re-checks shipped >= freshly fitted on every run and exited 0, so 0.0126 >= 0.004013 is a test result. THE COUNTER-INTUITIVE PART, and the reason the aarch64-derived constant is the CONSERVATIVE one: x86_64 has a HIGHER absolute slope (0.109974 against 0.089836) and yet a LOWER coefficient, because the coefficient is the ratio b/a and the c7i core is slower per step than the M4 Pro (intercept 27.41 against 14.46 us). So the shipped constant OVER-prices on x86_64 rather than under-pricing, and closure holds on both with more headroom on the architecture that gates the repo: aarch64 7.9122x <= 14.0x, x86_64 5.5787x <= 14.0x. The x86_64 measurement CONFIRMS 0.0126; it does not move it.'
+        host_substitution: 'SC4 says the constant is measured on the deployment target rather than inherited from the spike dev box, and D-32 resolves that target to the self-hosted X64 CI runner [self-hosted, X64, Linux, clean-room] on image localhost:5000/sovereign-ci:stable. THAT RUNNER WAS UNAVAILABLE, measured rather than assumed: `gh api repos/guyernest/aprender/actions/runners` returns total_count 0, the only runs-on in ci.yml is that runner, and its container image lives in a registry local to it, so the CI container cannot be reproduced on any other host either. The operator authorised and accepted an ephemeral EC2 c7i.2xlarge running Amazon Linux 2023 as the substitute, and ruled SC4 MET: the clause substance is that the constant is measured off the spike dev box, on the deployment ARCHITECTURE, with the under-pricing observed closed, and all three now hold on native x86_64 with the closure asserted by the harness own guard. STATED PLAINLY SO THE SUBSTITUTION IS LEGIBLE: this is NOT the self-hosted runner and NOT sovereign-ci:stable. The residual gap is WHICH x86_64 box, and the measurement above shows that does not change the verdict - the substitute is the slower core of the two and still leaves more headroom than aarch64. Phase 7 re-prices C-08 per tier regardless, which is where a per-host number would belong if one is ever wanted.'
+        safety_factor: 2
+        safety_factor_reason: 'A door must never under-price. When the factor was chosen the relative speed of the deriving host against an x86_64 deployment host was UNKNOWN in direction as well as magnitude, so a bare local number could have under-priced there. D-34 leaves the multiplier and its size to discretion; it is stated here rather than folded silently into the value so a later measurement can replace the number and the factor independently. It is KEPT at 2 now that x86_64 has been measured, and deliberately so: the x86_64 raw coefficient came in LOWER (0.004013 against the 0.006213 basis), so the factor is no longer covering an unknown - it is covering the 8.6 per cent run-to-run spread on the deriving host, the 2.1x spread BETWEEN the two architectures measured so far, and the fact that only two of the four envelopes Phase 7 will serve have been measured at all. Lowering it on a two-host sample would be fitting a bound to the hosts that happen to have been tried.'
+        n_lags_cal: 0
+        # The DERIVING measurement (aarch64). These three are READ by
+        # np::tests::the_event_column_underpricing_is_observed_closed.
+        measured_us_per_step_at_e0: 13.327
+        measured_us_per_step_at_e_max: 105.446
+        measured_at_e_max: 1000
+        measured_slope_us_per_column: 0.089836
+        fit_r_squared: 0.998067
+        # The CONFIRMING measurement (native x86_64, EC2 c7i.2xlarge, same recipe, same
+        # measured_at_e_max). Suffixed rather than nested so the same contract reader serves
+        # both, and READ by the same closure test - which asserts the closure on EVERY
+        # architecture recorded here rather than only on the one the constant came from. A
+        # confirmation nothing tests is a sentence, not a confirmation.
+        measured_us_per_step_at_e0_x86_64: 24.456
+        measured_us_per_step_at_e_max_x86_64: 136.433
+        measured_slope_us_per_column_x86_64: 0.109974
+        fit_r_squared_x86_64: 0.993785
+        # The SECONDARY item D-32 asked for while measuring, recorded as OUTSTANDING rather
+        # than inferred: C-08's measured_seconds: 47.924 was taken on aarch64 release and has
+        # NOT been re-checked on x86_64. The EC2 run produced no matching output and its
+        # console log hit a 64 KB cap, so nothing is known either way. It is independent of
+        # the coefficient: measured_seconds records the structural maximum that FORCED the
+        # bound, not a number any door check compares against.
+        structural_maximum_recheck_x86_64: outstanding
+        # ---- the NUMERIC-REGRESSOR sweep (plan 06.1-07, SC4) ----
+        # Its own measurement, on its own recipe, NOT inherited from the event slope.
+        # np::tests::the_regressor_column_underpricing_is_observed_closed READS the three
+        # measured_*_regressor keys through test_support::contract_value and computes
+        # measured(R)/measured(0) from them.
+        regressor_method: 'just forecast-np-regressor-calibration -> sc1_wall::np_regressor_calibration, release profile. Seven regressor-column counts (0, 5, 12, 25, 50, 100, 200) spanning zero to fit_max_regressors, 1200 contiguous daily points, 30 epochs, seed 42, through np::train - the exact function C-08 prices. Each column is a distinct continuous driver standardised by the SAME regressors::standardize_one the door calls, so the measured work is the work the shipped path does. Least squares over the seven points gives an intercept a (us/step at R = 0) and a slope b (us/step per regressor column); the coefficient in PROXY WIDTH UNITS is b * (n_lags_cal + 1) / a, which reduces to b / a only because this calibration is LAG-FREE - identical in form to the event derivation above. THREE runs at commit 5187a2aff (CLAUDE.md rule 6 - one input is an anecdote) fitted raw coefficients 0.005093, 0.005264 and 0.005096, a 3.4 per cent spread; the LARGEST is the basis, rounded UP to the next multiple of 1e-4 (0.0053) and multiplied by the safety factor 2. np_regressor_calibration re-asserts shipped >= freshly fitted on every run, so the sweep is itself a live one-sided guard against under-pricing on any host it is run on. STATED PLAINLY: at THIS geometry (1200 points) fit_max_regressor_design_cost would cap a DOOR request at 25000 / 1200 = 20 regressors, so the upper half of the ladder is reachable through the door only at a shorter history. That is sound for a coefficient defined as a RATIO at one geometry - the point count divides intercept and slope identically and cancels - but a reader must not infer that a 1200-point request may carry 200 regressors.'
+        regressor_host: 'Mac16,7 Apple M4 Pro, Darwin 25.6.0 (the plan executor dev box)'
+        regressor_arch: aarch64
+        regressor_date: '2026-09-21'
+        regressor_commit: 5187a2aff
+        regressor_status: final
+        regressor_safety_factor: 2
+        regressor_safety_factor_reason: 'Kept at 2, the same factor the event coefficient carries, and for the same reason rather than by analogy: it covers the 3.4 per cent run-to-run spread on the deriving host, the fact that only ONE architecture has been measured for this axis (the event axis has two), and the fact that none of the four envelopes Phase 7 will serve has been measured for it. UNLIKE the event coefficient, this one has NO x86_64 confirmation yet - that is recorded as outstanding below rather than inferred from the event axis agreeing on two hosts.'
+        regressor_n_lags_cal: 0
+        # The DERIVING measurement (aarch64), run 2 of 3 - the run whose fitted coefficient
+        # is the basis, so the recorded per-point numbers and the shipped constant come from
+        # the SAME run rather than from two different ones.
+        measured_us_per_step_at_r0: 13.708
+        measured_us_per_step_at_r_max: 31.621
+        measured_at_r_max: 200
+        measured_slope_us_per_column_regressor: 0.081875
+        fit_r_squared_regressor: 0.938818
+        # OUTSTANDING, recorded rather than inferred: the regressor axis has not been
+        # measured on x86_64. The event axis was confirmed there and came in LOWER (a slower
+        # core raises the intercept more than the slope), which is a reason to expect the
+        # same direction here and NOT evidence that it happens. Phase 7 re-prices per tier.
+        regressor_confirmed_on_x86_64: outstanding
+      note: 'CLOSED BY A BOUND, and the MEASUREMENT is what decided that. There is no budget of ANY kind on this path: FIT_BUDGET_SECS lives in fit::fit_prophet, which the neuralprophet arm never enters. Every factor is individually bounded (n_lags <= 365, n_samples <= n_train_grid <= fit_max_span_days, epochs <= 500) but their product is not, and the lr sweep multiplies the whole thing by 2 or 3. It is NOT that n_train_grid is bounded by a larger constant than fit_max_points — fit_max_span_days == fit_max_points — the drivers are the missing budget, the 2-3x sweep and n_lags. The structural maximum (20 000 contiguous daily points, n_lags 365, horizon 3650) prices at 718 641 000 and walls at 47.924 s on release, 24x SC1''s 2 s bar, so measured_at_structural_maximum was NOT an available disposition: the measurement is recorded here as the number that forced the bound rather than as a closure. The lag-free arm''s own structural maximum is 3 000 000 (0.508 s) and can never reach the bound; C-08 is entirely about the lagged arm.'
+    - axis: C-09
+      name: 'linear / flat uncertainty simulation'
+      formula: 'uncertainty_samples * n_future'
+      spent_in: 'prophet::predict, the Growth::Linear arm'
+      spent_outside_fit_budget: true
+      bound: fit_max_horizon
+      checked_at: 'the door, as the horizon count'
+      note: 'Linear in n_future with no t_max amplification, which is why 06-REVIEW.md measured this arm FLAT at 0.149 s across the same geometries where the logistic arm went to 2.334 s.'
+    - axis: C-10
+      name: 'percentile sorts over the simulation'
+      formula: 'n_rows * uncertainty_samples * log(uncertainty_samples)'
+      spent_in: 'prophet::predict, the band assembly'
+      spent_outside_fit_budget: true
+      bound: fit_max_horizon
+      checked_at: 'the door, as the horizon count'
+    - axis: C-11
+      name: 'seasonality design cells'
+      formula: '(len(ds) + horizon) * seasonality_columns, seasonality_columns <= 34'
+      spent_in: 'prophet::make_design and prophet::predict'
+      spent_outside_fit_budget: true
+      bound: fit_max_points
+      checked_at: 'the door, as the point count'
+      note: 'auto_seasonalities is NOT caller-settable: the ceiling of 34 columns (yearly order 10, weekly 3, daily 4, x2 for the sin/cos pair) is a property of the code, not of the request. Recorded as a fixed multiplier rather than as a knob.'
+    - axis: C-12
+      name: 'NeuralProphet recursive AR predict'
+      formula: 'horizon * n_lags'
+      spent_in: 'np::predict_ar_recursive'
+      spent_outside_fit_budget: true
+      bound: fit_max_horizon
+      checked_at: 'the door (horizon), plus n_lags <= 365'
+    - axis: C-13
+      name: 'response serialization'
+      formula: 'horizon * (5 + n_components)'
+      spent_in: 'forecast::forecast, building the ForecastResponse'
+      spent_outside_fit_budget: true
+      bound: fit_max_horizon
+      checked_at: 'the door, as the horizon count'
+    - axis: C-14
+      name: 'L-BFGS MAP fit'
+      formula: 'iterations * rows * K'
+      spent_in: 'fit::fit_prophet'
+      spent_outside_fit_budget: false
+      bound: fit_max_points
+      checked_at: 'inside the fit, by MAX_ITERS_PER_ROUND and the cooperative FIT_BUDGET_SECS round-boundary budget'
+      note: 'The ONLY axis inside the budget. It is also the only one FIT_BUDGET_SECS could ever have covered, which is the structural fact behind every door bound this phase has added — and the budget is COOPERATIVE, so it overshoots by up to one full round (a 20 000-point / 1 000-column request measured 70.089 s against a 15 s budget).'
+    # ---- The Chronos door's own cost axes, added closing T-06-32 (06-SECURITY.md) ----
+    # Both `chronos_max_*` ceilings sat in `constants:` from the start with NOTHING in
+    # door_surface naming them. They are here because `every_cost_ceiling_constant_is_named_by_an_axis`
+    # now derives the ceiling list from `constants:` itself and goes red on an unreferenced one.
+    - axis: C-15
+      name: 'Chronos rolling long-horizon forward passes'
+      formula: 'ceil(horizon / chronos_native_horizon)'
+      spent_in: 'chronos::forecast, the rollout loop past the model native 64 steps'
+      spent_outside_fit_budget: true
+      bound: chronos_max_horizon
+      checked_at: 'the door, chronos.rs:228, before a single weight is touched; and beyond chronos_native_horizon the caller must additionally pass allow_long_horizon (:234), so the multiplier is opt-in as well as bounded'
+    - axis: C-16
+      name: 'Chronos history parse and context fill'
+      formula: 'len(ds)'
+      spent_in: 'chronos::validate parse loop and the context window fill in chronos::forecast'
+      spent_outside_fit_budget: true
+      bound: chronos_max_points
+      checked_at: 'the door, chronos.rs:219. The MODEL cost is flat in len(ds) because the context is capped at cfg.context_length (2048) at :287, so this axis bounds the parse and the copy rather than the forward pass'
+
+    # ---- The REGRESSOR door's own cost axis ----
+    - axis: C-17
+      name: 'external regressor design feature cells and the identifiability diagnostic'
+      formula: '(len(ds) + horizon) * n_regressors for the design cells, plus len(ds) * K^2 + K^3 for the identifiability Gram and its factorisation, where K = 1 + seasonality_columns + n_regressors and seasonality_columns <= 34'
+      spent_in: 'regressors::splice, prophet::predict and regressors::identifiability'
+      spent_outside_fit_budget: true
+      bound: fit_max_regressor_design_cost
+      checked_at: 'the door, before make_design and before any regressor value is copied'
+      note: 'DERIVED BY MEASUREMENT IN TWO STAGES and FINALISED in the second. Stage 1 timed the public door at five compositions of the SAME product with no diagnostic in the tree; stage 2 re-timed the identical five with the diagnostic live, because the K^3 term this formula prices did not exist when stage 1 ran and a fixed feature-cell product fixes neither the N*K^2 nor the K^3 term. FINALISED at 25 000 and 200. Rejected candidates: 50 000 and 40 000 for the product (40 000 re-rejected against the completed door), 2 000 for the count (its diagnostic alone is 1.95 s, 96 % of the request). The count ladder measured diag_s of 0.0035 / 0.0175 / 0.130 / 1.95 s at R = 200 / 400 / 800 / 2 000, whose ratios track K^3 within 7 % — so the cubic term is CONFIRMED by measurement rather than asserted by this formula. Both sweeps, the delta and the full ladder are recorded in types::MAX_REGRESSOR_DESIGN_COST and types::MAX_REGRESSORS. HOLIDAY indicator columns are EXCLUDED from the diagnostic column set, and that exclusion is what keeps this axis to ONE ceiling: the holiday block can reach fit_max_holiday_columns (1 000) design columns, which would make K^3 the dominant cost of the entire request and would force a second, much larger bound here. K is therefore bounded by the at-most-34 seasonality columns (a property of auto_seasonalities, not of the request — see C-11) plus fit_max_regressors, so the cubic term cannot be driven by fit_max_holiday_columns at all. The exclusion is surfaced in the response''s own `scope` note as well as here, so it is a STATED scope rather than a silent one (threat T-06.1-11). Every collinearity spike 011 measured was regressor-against-seasonality or regressor-against-trend, so the excluded family is also the one with no measured evidence behind it.'
+
+  # ---- Ceilings whose work is bounded by another axis PRODUCT ----
+  # Checked in BOTH directions: an entry naming a constant that is not a ceiling here is a
+  # phantom, and an entry whose subsumed_by is not itself a real axis bound is a dangling
+  # claim. An exemption with a stated, checked reason - not a licence to leave a ceiling
+  # unreasoned.
+  ceilings_subsumed:
+    - constant: fit_max_holiday_columns
+      subsumed_by: fit_max_holiday_design_cost
+      why: 'C-04 bounds (len(ds) + horizon) * holiday_columns, the PRODUCT this ceiling is one factor of. holiday_columns is accumulated at forecast.rs:253 and separately capped at :254; the product bound is the tighter of the two for every request that reaches make_design'
+    - constant: fit_max_holiday_window
+      subsumed_by: fit_max_holiday_design_cost
+      why: 'the window buys no work directly - it is the multiplier that BECOMES holiday_columns at forecast.rs:253 (holiday_columns += upper_window - lower_window + 1). Bounding the window alone would leave the column count unbounded across many holidays; C-04 bounds what the expansion actually costs'
+    - constant: fit_max_holiday_dates
+      subsumed_by: fit_max_holiday_dates_total
+      why: 'the per-holiday date count is one term of C-03 sum(len(h.dates)), refused INSIDE the loop at forecast.rs:241-250. The aggregate is the axis that bounds the parse work; this per-item ceiling only caps a single list'
+    - constant: fit_max_regressors
+      subsumed_by: fit_max_regressor_design_cost
+      why: 'the regressor COUNT is one factor of the product C-17 bounds, exactly as fit_max_holiday_columns is one factor of C-04 — the count is accumulated from regs.len() and the product (len(ds) + horizon) * n_regressors is refused separately at the door. The exemption records the PRODUCT relation and deliberately does NOT claim the count is redundant: the product is satisfiable by trading rows for columns, and the K^3 term of C-17 is a function of the count ALONE, which is why fit_max_regressors is enforced in its own right and measured in its own right'
+
+equations:
+
+  fit_server_bounds:
+    formula: 'accept(args) requires fit_min_points <= len(ds) <= fit_max_points AND len(ds) == len(y) AND 1 <= horizon <= fit_max_horizon'
+    domain: 'untrusted JSON-RPC `tools/call` arguments to `aprender-mcp-forecast`'
+    codomain: 'either a ForecastResponse or a pmcp::Error::validation naming the violated bound and the observed value'
+    invariants:
+      - 'the Rust constants are asserted EQUAL to constants.fit_min_points / fit_max_points / fit_max_horizon by types::tests::bounds_match_contract — the contract is the source, the code is the mirror'
+      - 'a length mismatch is refused with "ds has N entries but y has M" BEFORE any bound is checked, so the caller learns the shape error rather than a derived one'
+      - 'these bounds are the HARD ceiling on the work one request can buy (T-06-02); FIT_BUDGET_SECS is a cooperative round-boundary budget and is NOT a cap (REVIEW-06-U1)'
+      - 'horizon 0 and horizon fit_max_horizon+1 are both refused by the same message "horizon must be 1..=3650, got N"'
+    preconditions:
+      - 'the arguments deserialized, i.e. every key was known (see unknown_field_refused)'
+
+  # The completion of fit_server_bounds' third invariant: that entry CLAIMS a HARD
+  # ceiling on the work one request can buy, and until this equation existed the claim
+  # rested on four bounds checked in ISOLATION whose PRODUCT was unbounded.
+  holiday_design_cost_bounded:
+    formula: 'accept(args) requires (len(ds) + horizon) * holiday_columns(args) <= fit_max_holiday_design_cost AND sum(len(h.dates) for h in args.holidays) <= fit_max_holiday_dates_total, where holiday_columns(args) = sum(h.upper_window - h.lower_window + 1)'
+    domain: 'the holidays argument of the fit server together with len(ds) and horizon — untrusted, unauthenticated JSON-RPC `tools/call` input'
+    codomain: 'either a design build (make_design, then the L-BFGS fit) or a validation refusal naming the OBSERVED cost, how it was computed, the bound it exceeded, and which of the holiday windows / holiday count / history length / horizon to reduce'
+    invariants:
+      - 'the Rust constants are asserted EQUAL to constants.fit_max_holiday_design_cost and constants.fit_max_holiday_dates_total by types::tests::cost_bounds_match_contract — the contract is the source, the code is the mirror'
+      - 'the check runs BEFORE make_design, which is the only place it CAN run: FIT_BUDGET_SECS is a cooperative ROUND-BOUNDARY budget entered inside fit_prophet, and the design build happens before that — so no setting of FIT_BUDGET_SECS could ever have seen this cost. It also overshoots inside the fit: a 20 000-point / 1 000-column request measured 70.089 s against a 15 s budget'
+      - 'the MEASURED breach this closes: 3 000 points x 181 holiday columns x 84 holiday dates walled at 16.113 s against SC1 s 2 s bar (reproduced at 16.081 s on the aarch64 release host at HEAD ce3e5a8ea), with 2 000 x 121 x 84 at 8.926 s and 1 000 x 61 x 84 at 2.664 s; the in-bounds maximum extrapolates to roughly 85 minutes for ONE request against a default pool of K=8 (constants.pool_default)'
+      - 'fit_max_points, fit_max_holiday_columns and fit_max_holiday_dates each remain enforced ON THEIR OWN — this equation bounds their COMPOSITION, so an accepted request satisfies all of them AND this'
+      - 'the bounded statistic is (points + horizon) x holiday_columns — the DESIGN CELL COUNT, not the literal points x columns x dates triple — because the triple cannot separate the shapes: 20 000 x 1 000 x 2 (triple 4.00e7, cells 2.04e7) walls at 70.089 s while 3 000 x 181 x 84 (triple 4.56e7, the LARGER, cells 6.09e5) walls at 16.216 s, so no single threshold on the triple both refuses the 70 s request and accepts the cheap ones. The wall is monotone in cells, not in the triple. The third factor is closed additively by fit_max_holiday_dates_total instead'
+      - 'this bounds WORK, not WALL, and says so: the L-BFGS iteration count is data-dependent, so a 25 000-cell request (half the bound) reproducibly walls at 4.2 s. The arithmetic ceiling per iteration is what is guaranteed; the residual wall-clock exposure is FIT_BUDGET_SECS, a separate knob'
+    preconditions:
+      - 'every per-holiday bound has already fired with its own message, so holiday_columns <= fit_max_holiday_columns and each len(h.dates) <= fit_max_holiday_dates — what remains unchecked is only what they multiply and sum to'
+
+  # The THIRD instance of door_surface_is_complete, and the only bound in this file whose
+  # subject is a STRING rather than a count: the one caller-settable field the enumeration
+  # found with `enforced_by: NOTHING`, which no review finding had pointed at.
+  holiday_name_cost_bounded:
+    formula: 'accept(args) requires forall h in args.holidays: len_bytes(h.name) <= fit_max_holiday_name_len'
+    domain: 'the name field of every element of the holidays argument of the fit server — untrusted, unauthenticated JSON-RPC `tools/call` input, an arbitrary-length String on both transports'
+    codomain: 'either a design build, or a validation refusal naming the holiday''s INDEX, the OBSERVED byte length, the bound key max_holiday_name_len and its value — and never the name itself'
+    invariants:
+      - 'the Rust constant is asserted EQUAL to constants.fit_max_holiday_name_len by types::tests::cost_bounds_match_contract — the contract is the source, the code is the mirror (D-15). OBSERVED RED by changing the YAML value ALONE and observing the test fail naming the key'
+      - 'the bound is on BYTES, and that is load-bearing rather than incidental: String::len is bytes, and bytes are exactly what the two clones per column and the byte-wise sort comparison cost. forecast::tests::a_holiday_name_whose_char_count_fits_but_whose_byte_length_does_not_is_refused sends 101 multi-byte characters (101 chars, under the bound; 202 bytes, over it) and is the ONLY test in the suite that a rewrite to chars().count() turns red'
+      - 'the AMPLIFICATION this bounds: prophet::columns turns ONE payload occurrence of the name into TWO owned Strings per design column — the column name (format!("{}_delim_{}{}", h.name, sign, off)) and the component (h.name.clone()) — then makes it the key of hcols.sort_by, an O(C log C) byte-wise comparison sort; prophet::predict''s component-name dedup compares it again O(C * distinct_components) times; and it reaches the serialized reply as a key of the components map. At fit_max_holiday_columns (1 000) that is ~2 000 copies plus ~10 000 comparisons, each LINEAR in the length — ~2 000:1'
+      - 'this axis had NO structural maximum, so measured_at_structural_maximum was never an available disposition and only a bound could close it: neither transport caps the request body (no DefaultBodyLimit, no max_body, no content-length layer on http_app / pooled_app; no framing cap on stdio). Any wall written for it would have measured an arbitrarily CHOSEN length. That is why 06-14 held it open with a red test rather than measuring it'
+      - 'the VALUE is derived from what is COMMITTED: the longest holiday name in any fixture, example or test in this repository is 9 bytes — "superbowl", from Prophet 1.4.0''s own canonical peyton_holidays frame, whose other label is "playoff" (7 bytes). 200 is 22x that and two orders of magnitude past any human label, bounding the worst case at 1 000 x 2 x 200 = ~400 KB of String. The same arithmetic on the UNBOUNDED field with a 1 MB name — which nothing at HEAD refused — is ~2 GB from a single request'
+      - 'the refusal names the POSITION and the LENGTH and NEVER the name (T-06-38): echoing an oversized string back re-materialises the very bytes the bound refuses and reflects attacker-controlled content into logs. OBSERVED RED through the live streamable-HTTP router: with the constant and the contract key raised, the server ACCEPTED a 201-byte name and returned a full-shape forecast whose components map carried that name as a key; restored, the same request is refused'
+      - 'the check is FIRST in the holiday loop, before the name is cloned into any Column — which additionally bounds every OTHER refusal message in that loop, each of which formats h.name back to the caller'
+      - 'the bound is ONE-SIDED by design. An empty name is a separate question this plan does not open, and forecast::tests::an_empty_holiday_name_is_not_refused_by_the_length_bound pins that so a later "tidy-up" cannot answer it by accident'
+    preconditions:
+      - 'args deserialized under deny_unknown_fields, so holidays is a well-formed array of HolidayArg; nothing about the name has been read yet, which is why this check can be first'
+
+  # The second completion of fit_server_bounds' third invariant, and the FIRST instance of
+  # door_surface_is_complete below: the bound's existence is derivable from the door_surface
+  # entry for cost axis C-06 rather than being a standalone patch.
+  logistic_changepoint_cost_bounded:
+    formula: 'accept(args) requires args.growth != logistic OR changepoint_count(len(args.ds)) * (t_max(args) - 1) <= fit_max_logistic_changepoint_lambda, where t_max(args) = (last(future_days(freq, horizon, last(ds))) - first(ds)) / (last(ds) - first(ds))'
+    domain: 'the growth / freq / horizon arguments of the fit server together with the SPACING of ds — untrusted, unauthenticated JSON-RPC `tools/call` input'
+    codomain: 'either a forecast, or a validation refusal naming the OBSERVED Poisson mean, BOTH factors that produced it (the changepoint count and t_max, with the two spans t_max is a ratio of), the bound key max_logistic_changepoint_lambda and its value, and three concrete fixes — shorten the horizon, use freq "D" instead of "W" or "MS", or send a longer history'
+    invariants:
+      - 'the Rust constant is asserted EQUAL to constants.fit_max_logistic_changepoint_lambda by types::tests::cost_bounds_match_contract through test_support::constant_f64 — the contract is the source, the code the mirror (D-15). It is an f64 because lambda is one, which is why constant_f64 exists'
+      - 'the check runs BEFORE make_design, and it could NOT have been a FIT_BUDGET_SECS setting: that budget is entered inside fit::fit_prophet, and this cost is spent in prophet::predict, which forecast::forecast calls AFTER the fit returns with no budget of any kind. 13 of the 14 axes enumerated in door_surface.cost_axes are outside that budget, which is the structural fact behind every door bound this phase has added'
+      - 'fit_max_horizon bounds the COUNT of future steps while dates::future_days multiplies that count by 7 for "W" and ~30.44 for "MS", and fit_max_points / fit_max_span_days bound the HISTORY independently — so three isolated bounds left this RATIO open. A high-lambda request is necessarily a SHORT-history request, which is exactly why every headline bound is satisfied while the product is not'
+      - 'the pre-06-13 saturation near 745.13 was an ACCIDENTAL cap, not a bound: Knuth''s product method compares against exp(-lambda), which is exactly 0.0 above lambda 745.13, so the loop could only end on subnormal underflow. Removing it was CORRECT (the sampler now tracks lambda across its whole domain) and this bound is its REPLACEMENT — not a re-clamp. Clamping inside prophet::poisson is prohibited: it would remove the wall and silently reintroduce the truncation 06-13 exists to delete'
+      - 'the door and the sampler cannot disagree about the changepoint count: prophet::changepoint_count is the single implementation, make_design is tied to it by a debug_assert and by prophet::changepoints::changepoint_count_equals_the_design_it_describes (a sweep over n and n_changepoints), and the door calls the same function. A bound computed from a second inline copy of that arithmetic would be evadable at any point count where the two drifted'
+      - 'the VALUE is derived from measurement, not chosen: three at-the-bound compositions at the tightest legal history span (33 daily points) on a release build — freq D horizon 3650 (lambda 2 851.6) 0.244 s, freq W horizon 3650 (lambda 19 960.9) 0.711 s, freq MS horizon 840 (lambda 19 974.2) 0.582 s — all under SC1''s 2 s bar, worst case 2.8x headroom. freq D cannot reach this bound at all: 2 851.6 is its OWN structural maximum at 33 points'
+      - 'the structural maximum of the axis is 86 790 (33 daily points, horizon 3650, freq MS) and it is EXACTLY the review''s measured request. OBSERVED RED through the live streamable-HTTP router: with the constant and the contract key raised to 200 000, the server ACCEPTED that request and returned a full-shape forecast, walling at 2.579 s; restored to 20 000, the same request is refused'
+    preconditions:
+      - 'the growth enum has been parsed and the logistic cap rules have already fired with their own messages, and ds is strictly ascending with len >= fit_min_points — so the history span is strictly positive and t_max needs no division guard'
+
+  # The FOURTH instance of door_surface_is_complete, and the only axis in this door that had
+  # no budget of ANY kind on its path — so the only one whose disposition was decided by a
+  # measurement taken for that purpose rather than by an existing review finding.
+  np_train_cost_bounded:
+    formula: 'accept(args) requires args.model != neuralprophet OR sweep_width(n_lags) * door_epochs(len(ds), n_samples, n_lags) * n_samples * (n_lags + 1) <= fit_max_np_train_cost, where n_samples = n_training_samples(NpData(ds, y), n_lags) and sweep_width = 2 if n_lags > 0 else 3'
+    domain: 'the n_lags argument of the fit server together with len(ds) and the SPAN of ds — untrusted, unauthenticated JSON-RPC `tools/call` input'
+    codomain: 'either a NeuralProphet fit and forecast, or a validation refusal naming the OBSERVED cost, all four factors that produced it (sweep width, epochs, samples, n_lags + 1), the bound key max_np_train_cost and its value, and three concrete fixes — reduce n_lags, shorten the history, narrow the span'
+    invariants:
+      - 'the Rust constant is asserted EQUAL to constants.fit_max_np_train_cost by types::tests::cost_bounds_match_contract — the contract is the source, the code the mirror (D-15). OBSERVED RED by changing the YAML value ALONE and observing the test fail naming the key'
+      - 'this path had NO budget of any kind, which is what distinguishes it from every other axis: fit::FIT_BUDGET_SECS is read at exactly ONE place, inside fit::fit_prophet, and the neuralprophet arm never enters that function. n_lags <= 365, n_samples <= n_train_grid <= fit_max_span_days and epochs <= 500 are each enforced ALONE and their product was not, with the door''s learning-rate sweep multiplying it by 2 or 3. It is NOT that n_train_grid is bounded by a larger constant than fit_max_points: fit_max_span_days == fit_max_points, so the two are numerically identical'
+      - 'the VALUE is derived from measurement, and the measurement REJECTED the first candidate. Release build, worst LEGAL request (20 000 contiguous daily points so the span is also at fit_max_span_days, n_lags 365, horizon 3650, freq D): cost 718 641 000, wall 47.924 s — 24x SC1''s 2 s bar. A candidate of 20 000 000 measured 2.089 s on the long-history composition, OVER the bar, and was discarded. At 15 000 000 three compositions differing in every factor the proxy multiplies all clear it: 20 000 points / 6 lags / 3 650 horizon -> 13 995 800 -> 1.642 s; 10 000 / 11 / 3 650 -> 14 384 160 -> 1.541 s; 2 000 / 41 / 365 -> 14 810 040 -> 1.402 s'
+      - 'measured_at_structural_maximum was NOT an available disposition for this axis, and the measurement is what established that rather than an argument: at its structural maximum the axis is 24x over the bar, so recording the wall as a closure would have recorded a breach as a bound'
+      - '15 000 000 is additionally the SMALLEST round value that does not refuse np::parity''s own geometry: the ladder validates correctness on Peyton Manning (2 905 rows, 2 964-day span) at n_lags 0 and 30, which price at 697 200 and 14 552 640 through the door — so 14 000 000, which the walls would equally have allowed, would refuse the very request the ladder proves the model correct on. Pinned by forecast::tests::the_np_parity_ladder_geometry_prices_under_the_train_cost_bound'
+      - 'the lag-free arm can NEVER reach this bound: its cost is 3 * auto_epochs(n) * n * 1, whose maximum over the legal range is 3 000 000, measured at 0.508 s. C-08 is entirely about the lagged arm, and the bound therefore cannot refuse a lag-free request at all'
+      - 'the door and np::train cannot disagree about the work a request buys. np::request_train_cost is built out of the SAME three functions the door then uses to CONFIGURE the sweep — np::door_lr_sweep, np::door_epochs and np::n_training_samples — and np::train carries a debug_assert that its own sample count equals np::n_training_samples. A second inline copy of that arithmetic in forecast.rs is exactly the drift hazard prophet::changepoint_count was extracted to avoid in 06-14'
+      - 'the comparison is `>` and not `>=`, so a request pricing EXACTLY at the bound is accepted. No near-miss this crate can afford to RUN reaches the boundary — at the bound one request costs 45.619 s on a debug profile, measured — so forecast::tests::the_np_train_cost_bound_is_exclusive_not_inclusive pins the door''s own comparison instead, and the at-the-bound positive controls live in the #[ignore]d release harness np::wall::np_train_wall'
+    preconditions:
+      - 'the freq allowlist has refused everything but "D", n_lags <= 365 and n_lags < n_train_grid have both fired with their own messages, and NpData::new has run — so n_train_grid exists and n_samples is well defined before anything is priced'
+
+  # The equation the OTHER equations in this file are instances of. Every bound above closes
+  # one axis; this one says the SET of axes and the SET of knobs are both accounted for.
+  door_surface_is_complete:
+    formula: 'knobs(door_surface) == properties(schema_for!(ForecastArgs)) union properties(schema_for!(HolidayArg)) union properties(schema_for!(ChronosArgs)) AND forall c in keys(constants) matching ^(fit|chronos)_max_: c in bounds(cost_axes) or c in constants(ceilings_subsumed) AND forall a in cost_axes(door_surface): a.bound in keys(constants) or (a.bound == measured_at_structural_maximum and a.measured_seconds < 2.0) or a.bound matches unbounded_pending_*'
+    domain: 'the enumeration in this file''s door_surface block, against the Rust structs and constants it claims to describe'
+    codomain: 'green, or a named field / named axis on one side of a symmetric difference'
+    invariants:
+      - 'WHY THIS EXISTS, and it is a measured history rather than a principle: three consecutive gap-closure rounds each closed exactly the ONE probe an adversarial pass had measured, and each time the next pass found the next instance of the same class — "the door accepts a request whose cost or whose semantics it never checks". 06-11 closed the holiday design PRODUCT, 06-12 proved it through the transport, 06-13 corrected the Poisson sampler, and 06-13''s own correct fix un-bounded the simulated changepoint count (CR-01). A fourth point fix would be a fourth round of the same mistake, so the door''s WHOLE surface is enumerated and the enumeration is machine-checked.'
+      - 'the knob list is derived from schemars::schema_for! — the SAME generator that produces the advertised MCP tool schema — never from a hand-kept copy, so it cannot silently fall behind the struct. A hand-kept list is exactly the aspirational invariant this equation replaces'
+      - 'BOTH directions are checked, because a one-directional check lets the list rot in the other one. MISSING (a field exists with no entry) is how CR-01''s cost axis got in; PHANTOM (an entry for a field that exists on neither struct) is how an enumeration silently stops describing the code while still looking complete. Both were OBSERVED RED by mutation, not merely asserted'
+      - 'the cost-axis check is SPLIT IN TWO on purpose. every_cost_axis_names_a_real_bound validates only the NON-pending entries, so a regression toward a phantom bound key is visible; no_cost_axis_is_pending asserts the pending set is EMPTY. The second SHIPPED RED at the close of plan 06-14, naming C-07 and C-08, and plan 06-15 turned it green by replacing both markers with real bounds — not by editing it. A plan whose thesis is that a guard which cannot fail is theater must not make its own open items invisible, and the RED-to-GREEN transition across those two plans is the observable form of that'
+      - 'C-07 (holidays[].name byte amplification) could be closed ONLY by a bound, never by a measurement: the field is an unbounded String, the router construction in crates/aprender-mcp-forecast/src/lib.rs applies no DefaultBodyLimit / max_body / content-length layer, and the stdio transport has no framing cap — so it has NO structural maximum and any measured_seconds for it would have measured an arbitrarily CHOSEN length. 06-14 recorded that with no_structural_maximum: true; 06-15 closed it with fit_max_holiday_name_len. C-08 is the OTHER shape: it HAS a structural maximum, the maximum was measured at 47.924 s on release, and the measurement is what forced a bound rather than a measured_at_structural_maximum record'
+      - '15 of the 16 enumerated cost axes are spent OUTSIDE fit::FIT_BUDGET_SECS. That is the structural fact behind every door bound this phase has added: the budget is entered inside fit::fit_prophet, make_design runs before it and predict runs after it, so no setting of it could ever have seen those costs'
+    preconditions:
+      - 'the door_surface block is present and parseable; pv drops it as an unknown top-level key exactly as it drops constants:, so it is read at TEST time rather than by the contract engine'
+
+  chronos_server_bounds:
+    formula: 'accept(args) requires chronos_min_points <= len(ds) <= chronos_max_points AND len(ds) == len(y) AND 1 <= horizon <= chronos_max_horizon AND at least 2 non-null y'
+    domain: 'untrusted JSON-RPC `tools/call` arguments to `aprender-mcp-chronos`'
+    codomain: 'either a ChronosResponse or a pmcp::Error::validation naming the violated bound'
+    invariants:
+      - 'the Rust constants are asserted EQUAL to constants.chronos_min_points / chronos_max_points / chronos_max_horizon by types::tests::chronos_bounds_match_contract'
+      - 'the floor is 4, not 10: Chronos is ZERO-SHOT, so four points are a context, not a training set'
+      - 'y is Vec<Option<f64>> here — nulls are legal context gaps, but fewer than 2 observed values is refused with "y needs at least 2 observed (non-null) values"'
+      - 'chronos::validate is a weights-FREE seam (D-18), so every refusal above is asserted on an unarmed run with no model directory present'
+
+  date_validity:
+    formula: 'ds parses as YYYY-MM-DD, every entry is a real calendar date, and ds is strictly ascending with no duplicates'
+    domain: 'the ds array of either server'
+    codomain: 'Vec<i64> days since 1970-01-01, or a validation refusal'
+    invariants:
+      - 'an impossible date such as "2008-02-30" is refused by a civil-date ROUND TRIP (days_from_civil then civil_from_days must return the same fields), with the message "not a calendar date" — never by a hardcoded month-length table'
+      - 'unsorted and duplicate ds share one refusal, "ds must be strictly ascending with no duplicates", because both break the same downstream assumption'
+      - 'D-17: no calendar library is a dependency of any Phase 6 crate; dates are i64 day counts'
+    preconditions:
+      - 'date_shape_exactly_ten_ascii_bytes holds for every entry — the shape is checked before any field is read'
+
+  date_shape_exactly_ten_ascii_bytes:
+    formula: 'parse_date(s) requires len(s) == 10 AND s.is_ascii() AND s[4] == "-" AND s[7] == "-" AND the other eight bytes are ASCII digits'
+    domain: 'any string offered as a ds entry or a holiday date'
+    codomain: 'i64 days, or a validation refusal naming YYYY-MM-DD'
+    invariants:
+      - 'REVIEW-06-U2. The spike took a ten-byte PREFIX and never inspected what followed, so "2008-02-01garbage" and "2008-02-01T00:00:00" both parsed as 2008-02-01. That is defaulting, and D-11 forbids it at this boundary.'
+      - 'four distinct malformed shapes are each their own e2e case: trailing content, empty string, surrounding whitespace, non-ASCII — all refused with a message containing YYYY-MM-DD'
+      - 'the calendar round-trip message is UNCHANGED by this rule, so "2008-02-30" still refuses with "not a calendar date" rather than with the shape message'
+      - 'every committed fixture and CSV carries a bare YYYY-MM-DD, so tightening the shape cannot move a parity number'
+
+  freq_allowlist:
+    formula: 'freq in {D, W, MS}; anything else is refused. Default is D.'
+    domain: 'the optional freq argument of either server'
+    codomain: 'the future date grid, or a validation refusal naming the allowed set'
+    invariants:
+      - 'H is refused BY NAME with "unsupported freq \"H\": use D, W or MS" — sub-daily steps were never spiked and a silent daily fallback would be a wrong answer, not a degraded one'
+      - 'the allowlist is closed: a new frequency is a contract edit, visible to `pv diff`, never an inline match arm'
+      - 'MS lands on the first of each month; W steps 7 days; D steps 1 day'
+      - 'neuralprophet additionally supports D ONLY and refuses W/MS with "neuralprophet supports freq D only" — a narrower allowlist inside the wider one, still a refusal and still naming the fix'
+
+  interval_width_open_unit:
+    formula: '0 < interval_width < 1, default default_interval_width_x100 / 100 = 0.8'
+    domain: 'the optional interval_width argument of the fit server'
+    codomain: 'the band z-score, or a validation refusal'
+    invariants:
+      - 'the interval is OPEN at both ends: 0.0 and 1.0 are both refused with "interval_width must be in (0, 1)" — a 100% band is not a number this model can produce'
+      - 'D-16: the band is reported at its MEASURED empirical coverage (0.60 Prophet, 0.66 NeuralProphet-lite over 17 rolling-origin windows), which the tool description states; the nominal width is an input, not a guarantee'
+
+  logistic_requires_cap_above_max_y:
+    formula: 'growth == logistic implies cap is present AND cap > max(y)'
+    domain: 'the fit server growth / cap arguments'
+    codomain: 'a logistic Prophet spec, or a validation refusal'
+    invariants:
+      - 'a missing cap is refused with "logistic growth needs cap"; a cap at or below max(y) with "cap C must exceed max(y) = M" — two distinct messages because they have two distinct fixes'
+      - 'the check runs BEFORE the design is built, so a saturating logistic curve can never be fitted to data that already exceeds its own ceiling'
+
+  cap_is_logistic_only:
+    formula: 'cap is present implies growth == logistic; on any other growth arm the request is refused'
+    domain: 'the fit server growth / cap arguments, including the DEFAULTED growth arm where no growth key is sent at all'
+    codomain: 'a validation refusal "cap is logistic-only; set growth to \"logistic\""'
+    preconditions:
+      - 'model resolves to prophet — a cap aimed at the neuralprophet arm is already refused earlier with the cross-MODEL message "cap is prophet-only; set model to \"prophet\"", which this rule does not touch'
+    invariants:
+      - 'the message NAMES THE FIX ("set growth to \"logistic\"") rather than merely reporting that the input was wrong, which is the D-11 shape every refusal at this door takes'
+      - 'the DEFAULTED arm is covered, not only the explicitly-linear one: a request carrying `cap` and no `growth` key is the shape a real caller hits, and a check keyed on the PRESENCE of `growth` would miss it — asserted by a separate case for exactly that reason'
+      - 'the check runs AFTER the growth enum is parsed, so an unknown growth string still refuses first with its own message "growth \"exponential\": linear, logistic or flat"; the three logistic-arm messages ("logistic growth needs cap", "cap must be a finite number", "cap C must exceed max(y) = M") also keep their own distinct texts — four fixes, four messages, never one merged refusal'
+      - 'it does not OVER-refuse: growth == logistic with a finite cap above max(y) still fits and returns a band, pinned by a positive control in the same unit test and by the e2e case prophet_logistic_with_holidays_happy_path'
+      - 'STRUCTURAL, not merely guarded: the cap that reaches Spec is bound inside the logistic branch (`checked_cap`, set only after the finiteness and cap > max(y) checks pass), so a Spec carrying a cap the door did not validate is unreachable rather than merely unreached'
+      - 'the MEASURED breach this closes, at HEAD ce3e5a8ea on gsd/phase-2-contract-gate: five probes — baseline-no-cap, linear+cap100, bare-cap100, linear+cap0.5 (BELOW max(y) = 28.9) and flat+cap100 — all returned yhat_max 35.8994 with a BYTE-IDENTICAL diagnostics object, while the two logistic controls refused; that is the refusal machinery existing and simply never being reached, and the caller had no way to discover their cap was dropped'
+      - 'prophet::make_design matches only (Growth::Logistic, Some(c)) and falls to `_ => None` for every other pair, which is why a cap off the logistic arm was provably INERT rather than approximately honoured'
+
+  constant_y_refused_before_fit:
+    formula: 'min(y) != max(y), checked before any design is built or any optimiser is entered'
+    domain: 'the y array of the fit server'
+    codomain: 'a validation refusal "y is constant; nothing to fit (Prophet special-cases this too)"'
+    invariants:
+      - 'Prophet 1.4.0 special-cases this too; refusing is the honest form of the same decision'
+      - 'the refusal is BEFORE the fit: a constant series would otherwise reach L-BFGS with a degenerate scale and burn the budget producing a meaningless answer'
+      - 'non-finite y is refused by the neighbouring rule "y contains a non-finite value"'
+
+  unknown_field_refused:
+    formula: 'the advertised inputSchema carries additionalProperties == false, and deserialization refuses any key not in the schema'
+    domain: 'the arguments object of a tools/call'
+    codomain: 'a validation refusal naming the offending key'
+    invariants:
+      - 'the refusal is structural (serde deny_unknown_fields), not a hand-written key list that could drift from the struct'
+      - 'the strictness is ADVERTISED: `tools/list` reports additionalProperties == false, so a client can see the rule before sending anything'
+      - 'required is exactly {ds, y, horizon}; every other property is optional with a documented default'
+      - 'a typo such as `horizen` is therefore a refusal that names `horizen`, never a request silently missing its horizon'
+
+  unknown_enum_refused:
+    formula: 'model in {prophet, neuralprophet}, growth in {linear, logistic, flat}, seasonality_mode in {additive, multiplicative}; anything else refuses'
+    domain: 'the string-valued option arguments of the fit server'
+    codomain: 'a validation refusal listing the accepted values'
+    invariants:
+      - 'each message ENDS with the accepted set — "model \"arima\": prophet or neuralprophet" — so the fix is in the refusal'
+      - 'these are the D-11 cases most likely to be silently coerced by a permissive implementation, which is exactly why each has its own e2e case'
+      - 'the None case is the DEFAULT (prophet / linear / additive); only an explicit unknown value refuses'
+
+  horizon_gate_with_warning:
+    formula: 'chronos: horizon > chronos_native_horizon requires allow_long_horizon == true; the response then carries a non-null warning naming the rollout count'
+    domain: 'the Chronos server horizon and allow_long_horizon arguments'
+    codomain: 'a ChronosResponse with warning: Some(..), or a validation refusal'
+    invariants:
+      - 'D-13. Past the native 64 steps the model rolls its own forecast forward as context, so accuracy degrades in a way the caller must consent to — the gate is informed consent, not a bound'
+      - 'chronos_max_horizon (1024) still applies ABOVE the gate: allow_long_horizon does not unlock an unbounded horizon'
+      - 'the warning is serialized only when it is present (skip_serializing_if), so a within-native response carries no warning key at all'
+
+  shared_response_shape:
+    formula: 'every server response carries {model, freq, n_history, predict_seconds, ds, yhat, yhat_lower, yhat_upper, diagnostics}; the fit server adds {fit_seconds, trend, components}; Chronos adds {context_used, quantiles, warning?}'
+    domain: 'a successful tools/call against either server'
+    codomain: 'the JSON object the client parses'
+    invariants:
+      - 'D-03: the SHARED core is what lets a client switch models by switching endpoint; the extras are what makes each server honest about what it actually did'
+      - 'len(ds) == len(yhat) == len(yhat_lower) == len(yhat_upper) == horizon on both servers, and == len(trend) on the fit server'
+      - 'the band brackets the point forecast pointwise: yhat_lower[i] <= yhat[i] <= yhat_upper[i] for every i'
+      - 'timings are finite f64 seconds; a NaN there would make the diagnostics unusable for the sizing guidance the README gives'
+      - 'components is a named map (yearly, weekly, trend, holiday names, multiplicative_terms), never a positional array'
+
+  refusals_are_validation_errors:
+    formula: 'every refusal in this contract maps to pmcp::Error::validation; only a genuine server-side failure maps to pmcp::Error::internal'
+    domain: 'the error path of either server'
+    codomain: 'the JSON-RPC error object the client receives'
+    invariants:
+      - 'the mapping is one function, `map_error`, over the two ForecastError variants — there is no second place a refusal can be classified'
+      - 'an internal classification on a caller-fixable input is a DEFECT: it tells a client to retry or page an operator when the fix is in the request'
+      - >
+        MEASURED, AND NOT WHAT IT LOOKS LIKE. The JSON-RPC code pmcp 2.19.3 emits for
+        `Error::validation` is -32603 — the JSON-RPC INTERNAL ERROR code. `Error::error_code()`
+        returns None for BOTH the `Validation` and `Internal` variants (only `Protocol` carries an
+        explicit code), so the transport falls back to -32603 for either. The numeric code alone
+        therefore CANNOT distinguish a caller fault from a server fault on this SDK version. The
+        discriminator pmcp actually ships is the message PREFIX thiserror renders from the variant:
+        "Validation error: " versus "Internal error: ". The e2e suite pins BOTH — the code -32603
+        and the "Validation error: " prefix — so a pmcp upgrade that changes either turns the suite
+        red instead of silently reclassifying every refusal.
+      - 'ForecastError::Internal is reserved for cases like "training diverged for every learning rate" — nothing the caller could have written differently'
+      - 'the unknown-FIELD refusal is the one case that never reaches map_error: pmcp refuses it during argument deserialization and renders its own "Validation error: Invalid arguments for tool ..." message. It is still validation-class and still names the offending key.'
+
+  pool_equality_under_load:
+    formula: 'signature(response_under_load) == signature(response_alone) for every request in a concurrency_requests-wide burst, where signature = JSON of {ds, yhat, yhat_lower, yhat_upper, trend, components}'
+    domain: 'concurrency_requests distinct requests issued against a pooled_app(pool_default) server, first sequentially and then all at once'
+    codomain: 'the identical-count and max_abs_diff over the two runs'
+    float_tolerance: 0.0
+    invariants:
+      - 'A CORRECTNESS CLAIM, falsified by a unit test, in CI, on every run and every host. Identical must be 8/8 in the mixed burst and 16/16 in the NeuralProphet stress, and max_abs_diff must be EXACTLY 0.0.'
+      - 'what makes it hold is that there is NEVER a shared fit across requests: every request seeds its own simulation from constants.default_seed (or its own explicit seed) and owns its own model state'
+      - 'this is the T-06-07 repudiation mitigation: a response is reproducible regardless of what else the server was doing when it was produced'
+      - 'bit-identical, not close: the bar is 0.0 because a per-request-seeded deterministic pipeline has no legitimate source of variation under concurrency'
+
+  pool_speedup_host_gated:
+    formula: 'sequential_wall / concurrent_wall >= pool_speedup_min_x10 / 10, best of pool_speedup_best_of runs, on an aarch64 release build'
+    domain: 'the same concurrency_requests-wide burst as pool_equality_under_load, timed'
+    codomain: 'a wall-clock ratio'
+    invariants:
+      - 'A BENCHMARK CLAIM, NOT A CORRECTNESS CLAIM. It is falsified by `just forecast-pool-ratio` (plan 06-08) on a release build, best-of-3, and NEVER by a libtest assertion.'
+      - >
+        REVIEW-06-04, reached independently by both cross-AI reviewers. The unit test runs four Tokio
+        workers over eight heterogeneous `spawn_blocking` fits with BLAS underneath; that ratio moves
+        with CPU throttling and unrelated background load INDEPENDENTLY of the router serialisation the
+        pool exists to remove. A hard `assert!(speedup >= 2.0)` inside the correctness suite is
+        therefore a flake that fails for reasons the pool does not control, and a suite that cries wolf
+        gets its failures ignored — including the equality failure that would actually matter.
+      - 'the unit test instead PRINTS exactly one machine-parsable line, `POOL SPEEDUP: <r>x seq=<ms>ms conc=<ms>ms arch=<arch> profile=<debug|release> workers=4 cpus=<n>`, carrying its own provenance so a later comparison means something'
+      - 'the measurement that motivates the pool: 1.0x with ONE router (the fits serialise behind pmcp streamable_http_server.rs:2094/:2122) and 3.9x with eight, on the spike-010 host'
+      - 'a debug-profile or x86_64 run of the unit test is EXPECTED to print a low ratio and is not a failure of anything'
+
+  sc1_wall_swept:
+    formula: 'forall c in freq {D, W, MS} x growth {linear, logistic, flat} x holidays {none, at_design_cost_bound}, plus the neuralprophet row: accept(request(c)) and wall(request(c)) < sc1_wall_seconds, at the tightest legal history span, on an aarch64 release build'
+    domain: 'the 18-composition Prophet cross product at the tightest legal history span for the point count, each at the WIDEST horizon its own composition can legally ask for, plus one NeuralProphet row at its at-the-bound train-cost geometry'
+    codomain: 'a pass, or the NAME of every composition at or above the bar'
+    invariants:
+      - 'A BENCHMARK CLAIM, NOT A CORRECTNESS CLAIM. It is falsified by `just forecast-sc1-sweep` (plan 06-16) on a release build, and NEVER by a libtest assertion — the same split `pool_speedup_host_gated` already makes, for the same reason: a wall-clock assertion inside libtest moves with CPU throttling and background load independently of the code it claims to measure. The harness PRINTS under any profile and ASSERTS the bar only when cfg!(debug_assertions) is false, with profile= on every line so a reader can tell which run they are looking at.'
+      - >
+        WHY A SWEEP AND NOT A THIRD BENCH (06-REVIEW.md WR-04). Three benches each covered ONE
+        axis and the axis CR-01 actually lived on was covered by none of them: forecast-bench
+        sweeps point count with no holidays, forecast-holiday-bench sweeps the holiday axis, and
+        logistic_band_wall was #[ignore]d with no recipe and no bar. At the same points and
+        horizon the review measured 0.231 s on freq "D" and 2.334 s on freq "MS", because
+        dates::future_days multiplies the horizon COUNT by 1 / 7 / ~30.44 and so multiplies t_max
+        and the Poisson mean. Nothing in the phase could have caught it.
+      - >
+        OBSERVED FAILING ON THE DEFECT IT EXISTS FOR (CLAUDE.md rule 5). With
+        fit_max_logistic_changepoint_lambda and its Rust mirror raised to 200000 — past the
+        86 789.8 structural maximum, so the CR-01 configuration is accepted again — the sweep
+        goes RED naming two compositions: freq=MS growth=logistic holidays=none at 2.443 s and
+        holidays=at_bound at 2.536 s, against freq=D passing at 0.219 s on the same run. Restored
+        to 20000, all 19 compositions pass, worst 1.433 s. A gate that cannot be shown failing on
+        the defect it exists for is theater.
+      - 'the matrix SHRINKS BY POINTS AND HORIZON, never by an axis: dropping an axis is the defect this equation exists to prevent, so a sweep that no longer covers all three freq values and all three growth arms is a violation even if every remaining composition is fast'
+      - 'each composition is ASSERTED ACCEPTED by the door before it is timed, because a refused request walls at ~0.001 s and would otherwise read as the fastest pass in the matrix'
+      - 'the bar is asserted TWICE — inside the harness, where the message names the failing composition, and again in the recipe over the re-parsed SC1 WALL: lines, which is what catches a harness that silently stopped emitting them. The recipe prints the count it checked, so a run that checked zero compositions cannot report success.'
+      - 'every bar in the recipe goes through scripts/assert_measurement_under.sh, whose 23-row case table runs BEFORE any measurement is taken (06-REVIEW.md IN-01)'
+
+  default_seed_42:
+    formula: 'seed defaults to constants.default_seed = 42 per request; no state is carried between requests'
+    domain: 'the optional seed argument of the fit server'
+    codomain: 'the uncertainty simulation and the NeuralProphet training RNG'
+    invariants:
+      - 'PER REQUEST, never per server: the seed is read from the arguments inside the call, so two concurrent requests with the same arguments produce the same answer and a request cannot observe another request s RNG position'
+      - 'this is the mechanism behind pool_equality_under_load — remove it and the equality assertion is what goes red first'
+      - 'an explicit seed overrides the default, so a caller who wants a different simulation asks for one rather than discovering one'
+
+proof_obligations:
+
+  - type: bound
+    property: 'The fit server Rust bounds are equal to the contract constants, not merely similar to them'
+    formal: 'types::MIN_POINTS == constants.fit_min_points ∧ types::MAX_POINTS == constants.fit_max_points ∧ types::MAX_HORIZON == constants.fit_max_horizon'
+    applies_to: all
+
+  - type: bound
+    property: 'The Chronos door Rust bounds are equal to the contract constants'
+    formal: 'chronos::CHRONOS_MIN_POINTS == constants.chronos_min_points ∧ chronos::CHRONOS_MAX_POINTS == constants.chronos_max_points ∧ chronos::CHRONOS_MAX_HORIZON == constants.chronos_max_horizon'
+    applies_to: all
+
+  - type: invariant
+    property: 'A ds array that is unsorted, duplicated or contains an impossible calendar date is refused before any fit is entered'
+    formal: '∀ ds: not(strictly_ascending(ds) and all_calendar_dates(ds)) ⇒ result is Validation'
+    applies_to: all
+
+  - type: invariant
+    property: 'A date string is accepted only at exactly ten ASCII bytes of YYYY-MM-DD shape'
+    formal: 'forall s: parse_date(s) = Ok(_) implies len(s) == 10 and s.is_ascii() and s[4] == s[7] == "-"'
+    applies_to: all
+
+  - type: completeness
+    property: 'The frequency allowlist is closed: exactly D, W and MS are accepted and every other value refuses by name'
+    formal: '∀ f: future_days(_, _, f) = Ok(_) ↔ f in {D, W, MS}'
+    applies_to: all
+
+  - type: bound
+    property: 'interval_width is accepted only strictly inside the open unit interval'
+    formal: '∀ w: accept(w) ↔ 0.0 < w and w < 1.0'
+    applies_to: all
+
+  - type: invariant
+    property: 'A cap is accepted only on the logistic growth arm; on every other arm — explicit linear, explicit flat, or the defaulted arm carrying no growth key — it is a validation refusal, never an accepted-and-dropped knob'
+    formal: '∀ args: args.cap is Some and args.growth ≠ logistic ⇒ result is Validation'
+    applies_to: all
+
+  - type: invariant
+    property: 'Logistic growth is never fitted without a cap that exceeds the observed maximum'
+    formal: 'growth == logistic and result is Ok implies cap.is_some() and cap > max(y)'
+    applies_to: all
+
+  - type: invariant
+    property: 'A constant series is refused before the optimiser is entered'
+    formal: 'min(y) == max(y) implies result is Validation and no design was built'
+    applies_to: all
+
+  - type: completeness
+    property: 'The advertised schema is strict and names exactly the three required fields'
+    formal: 'schema_for!(ForecastArgs).additionalProperties == false ∧ required == {ds, y, horizon}'
+    applies_to: all
+
+  - type: completeness
+    property: 'Every unknown enum value for model, growth or seasonality_mode refuses with a message listing the accepted set'
+    formal: '∀ v not in accepted(field): result is Validation and message contains accepted(field)'
+    applies_to: all
+
+  - type: bound
+    property: 'Every holiday name is bounded in BYTES at the door, before it is cloned into any design column'
+    formal: '∀ args, ∀ h in args.holidays: result is Ok ⇒ len_bytes(h.name) ≤ constants.fit_max_holiday_name_len'
+    applies_to: fit
+
+  - type: invariant
+    property: 'The refusal for an oversized holiday name names the holiday index and the observed byte length and never the name itself'
+    formal: '∀ h with len_bytes(h.name) > constants.fit_max_holiday_name_len: result is Validation and message contains index(h) and len_bytes(h.name) and not contains h.name'
+    applies_to: fit
+
+  - type: invariant
+    property: 'The aggregate holiday-date ceiling is enforced INSIDE the loop, so a request already known to be over it never parses the remaining holidays'
+    formal: '∀ args: running_sum(k) > constants.fit_max_holiday_dates_total ⇒ result is Validation and ∀ j > k: h_j.dates were never parsed'
+    applies_to: fit
+
+  - type: bound
+    property: 'The NeuralProphet training work one request may buy is bounded at the door, before the first np::train, on a contract-owned value'
+    formal: '∀ args with model == neuralprophet: result is Ok ⇒ request_train_cost(args) ≤ constants.fit_max_np_train_cost'
+    applies_to: fit
+
+  - type: invariant
+    property: 'The door prices a NeuralProphet request at exactly the work it then configures the sweep to spend'
+    formal: 'forall d, n_points, n_lags: request_train_cost(d, n_points, n_lags) == len(door_lr_sweep(n_lags)) * train_cost(n_training_samples(d, n_lags), door_epochs(n_points, n_training_samples(d, n_lags), n_lags), n_lags)'
+    applies_to: fit
+
+  - type: invariant
+    property: 'A Chronos horizon past the native window is refused without opt-in, and warned about with it'
+    formal: 'horizon > constants.chronos_native_horizon ⇒ (allow_long_horizon or result is Validation) and (allow_long_horizon ⇒ response.warning.is_some())'
+    applies_to: all
+
+  - type: invariant
+    property: 'Every successful response carries the shared field set with equal-length, pointwise-bracketing arrays'
+    formal: 'len(ds) == len(yhat) == len(yhat_lower) == len(yhat_upper) == horizon and forall i: yhat_lower[i] <= yhat[i] <= yhat_upper[i]'
+    applies_to: all
+
+  - type: soundness
+    property: 'Every refusal in this contract reaches the client as a validation-class JSON-RPC error, never an internal one'
+    formal: '∀ refusal r in this contract: code(r) == code(pmcp::Error::validation)'
+    applies_to: all
+
+  - type: determinism
+    property: 'A response computed under a concurrency_requests-wide burst is bit-identical to the same response computed alone'
+    formal: '∀ req: signature(concurrent(req)) == signature(sequential(req)) and max_abs_diff == 0.0'
+    applies_to: all
+
+  - type: bound
+    property: 'On the gated host, the pooled server clears the speed-up floor; the ratio is measured by a benchmark recipe and never asserted by a unit test'
+    formal: 'best_of(constants.pool_speedup_best_of, sequential_wall / concurrent_wall) ≥ constants.pool_speedup_min_x10 / 10 (evaluated by `just forecast-pool-ratio`, aarch64 release only)'
+    applies_to: all
+
+  - type: determinism
+    property: 'The seed is per request and defaults to 42; no RNG state is carried between requests'
+    formal: '∀ req: seed(req) == req.seed.unwrap_or(constants.default_seed) and ∀ req1 req2: result(req1) is independent of order(req1, req2)'
+    applies_to: all
+
+  - type: bound
+    property: 'The work one holiday-carrying request can buy is bounded by a constant this file names, not merely by four factors checked in isolation'
+    formal: 'forall args: accept(args) implies (len(args.ds) + args.horizon) * holiday_columns(args) <= constants.fit_max_holiday_design_cost'
+    applies_to: all
+
+  - type: completeness
+    property: 'The door surface is fully enumerated: every caller-settable field has a knobs entry and every knobs entry names a field that exists, and every non-pending cost axis names a bound that exists'
+    formal: 'knobs(door_surface) == properties(schema_for!(ForecastArgs)) union properties(schema_for!(HolidayArg)) and ∀ a in cost_axes: a.bound in keys(constants) or (a.bound == measured_at_structural_maximum and a.measured_seconds < 2.0) or a.bound matches unbounded_pending_*'
+    applies_to: all
+
+  - type: bound
+    property: 'The Poisson mean the logistic uncertainty simulation draws is bounded at the door, before the design is built'
+    formal: 'forall args: accept(args) and args.growth == logistic implies changepoint_count(len(args.ds)) * (t_max(args) - 1) <= constants.fit_max_logistic_changepoint_lambda'
+    applies_to: all
+
+  - type: bound
+    property: 'The SC1 wall holds across the whole surface where the cost is decided — every accepted composition of frequency, growth arm and holiday shape — and not only on the two shapes the phase happened to bench'
+    formal: '∀ c in freq x growth x holiday_shape: accept(request(c)) and wall_release(request(c)) < sc1_wall_seconds'
+    applies_to: fit
+
+falsification_tests:
+
+  - id: FALSIFY-BOUNDARY-001
+    rule: 'The fit server bounds in Rust equal the contract constants'
+    prediction: '`types::tests::bounds_match_contract` reads constants.fit_min_points, fit_max_points and fit_max_horizon out of THIS file and finds them equal to MIN_POINTS (10), MAX_POINTS (20000) and MAX_HORIZON (3650).'
+    test: 'cargo test -p aprender-forecast --lib types::tests::bounds_match_contract'
+    if_fails: 'A bound was changed in exactly one of the two places. Whichever moved, the client-visible boundary and the document describing it now disagree, and any client written against this contract is wrong about what the endpoint accepts.'
+
+  - id: FALSIFY-BOUNDARY-002
+    rule: 'The Chronos door bounds in Rust equal the contract constants'
+    prediction: '`types::tests::chronos_bounds_match_contract` finds CHRONOS_MIN_POINTS == 4, CHRONOS_MAX_POINTS == 20000 and CHRONOS_MAX_HORIZON == 1024 equal to constants.chronos_*.'
+    test: 'cargo test -p aprender-forecast --lib types::tests::chronos_bounds_match_contract'
+    if_fails: 'The zero-shot door drifted from the boundary document. chronos_native_horizon (64) is asserted separately in 06-07 against the shipped config fixture, because it is a property of the WEIGHTS rather than of the code.'
+
+  - id: FALSIFY-BOUNDARY-003
+    rule: 'Every shape violation of the fit server is a refusal, not a coercion'
+    prediction: 'The e2e refusal suite drives a live streamable-HTTP server and observes a refusal for: fewer than 10 points ("at least"), more than 20000 ("exceeds max_points"), a ds/y length mismatch ("ds has"), horizon 0 and horizon 3651 ("horizon must be").'
+    test: 'cargo test -p aprender-mcp-forecast --lib e2e::refuses_'
+    if_fails: 'A bound is checked in the transport rather than in the door, or a bound was dropped. Either way an unbounded request can now reach the optimiser (T-06-02).'
+
+  - id: FALSIFY-BOUNDARY-004
+    rule: 'Date validity is enforced by shape AND by calendar round trip'
+    prediction: '`refuses_unsorted_ds` and `refuses_duplicate_ds` report "strictly ascending"; `refuses_impossible_date` ("2008-02-30") reports "calendar"; and the four REVIEW-06-U2 shape cases — refuses_date_with_trailing_content ("2008-02-01garbage"), refuses_empty_date, refuses_date_with_whitespace, refuses_non_ascii_date — each report YYYY-MM-DD.'
+    test: 'cargo test -p aprender-mcp-forecast --lib e2e::refuses_'
+    if_fails: 'parse_date is back to taking a ten-byte prefix (in which case "2008-02-01garbage" silently becomes 2008-02-01), or the calendar round trip was replaced by a month-length table that accepts 2008-02-30 in a leap year check.'
+
+  - id: FALSIFY-BOUNDARY-005
+    rule: 'Unknown fields and unknown enum values refuse by name'
+    prediction: '`refuses_unknown_field` (a `bogus` key merged into otherwise valid arguments), `refuses_unknown_freq` ("use D, W or MS"), `refuses_unknown_model` ("prophet or neuralprophet"), `refuses_unknown_growth` ("linear, logistic or flat") and `refuses_unknown_seasonality_mode` ("additive or multiplicative") each observe a refusal quoting the accepted set.'
+    test: 'cargo test -p aprender-mcp-forecast --lib e2e::refuses_'
+    if_fails: 'D-11 is broken: a knob the caller set is being ignored. This is the worst failure class in this contract because the caller gets a plausible answer to a question they did not ask.'
+
+  - id: FALSIFY-BOUNDARY-006
+    rule: 'The advertised tool schema is strict'
+    prediction: '`the_tool_schema_is_strict_and_requires_ds_y_horizon` finds additionalProperties == false and required exactly {ds, y, horizon} in `schema_for!(ForecastArgs)`, with freq, model, n_lags, seed and holidays present as optional properties.'
+    test: 'cargo test -p aprender-mcp-forecast --lib the_tool_schema_is_strict'
+    if_fails: 'The strictness is no longer ADVERTISED, so a client cannot discover the rule from tools/list even if the server still enforces it — or a previously required field became optional and requests are now silently under-specified.'
+
+  - id: FALSIFY-BOUNDARY-007
+    rule: 'Model-specific option refusals fire before any fit'
+    prediction: '`refuses_interval_width_out_of_range` (1.0), `refuses_logistic_without_cap`, `refuses_logistic_cap_below_max_y` and `refuses_constant_y` each observe a refusal naming the fix, with no fit_seconds in the reply.'
+    test: 'cargo test -p aprender-mcp-forecast --lib e2e::refuses_'
+    if_fails: 'An unfittable configuration now reaches L-BFGS. Best case it burns the cooperative budget; worst case it returns a saturating logistic curve fitted below data that already exceeds the cap.'
+
+  - id: FALSIFY-BOUNDARY-008
+    rule: 'Every refusal is validation-class'
+    prediction: >
+      The e2e module pins the numeric JSON-RPC code pmcp 2.19.3 emits for a refusal (-32603, read
+      off a live reply) AND the message prefix "Validation error: ", and asserts both on every
+      refusal case. The prefix is the load-bearing half: -32603 is the JSON-RPC INTERNAL ERROR code
+      and pmcp falls back to it for `Validation` and `Internal` alike, so the code alone proves
+      nothing about the class. OBSERVED RED, not merely prescribed: rewriting `map_error` to route
+      `ForecastError::Validation` to `pmcp::Error::internal` turns 20 of the 21 refusal cases red,
+      each quoting "got: Internal error: ...". The one case that stays green is
+      `refuses_unknown_field`, which pmcp refuses during argument deserialization and never routes
+      through `map_error` at all.
+    test: 'cargo test -p aprender-mcp-forecast --lib e2e::'
+    if_fails: 'Clients are being told to retry or escalate for a mistake they made in the request. Check `map_error`: a caller-fixable ForecastError must never be routed to pmcp::Error::internal.'
+
+  - id: FALSIFY-BOUNDARY-009
+    rule: 'The shared response shape holds on the fit server happy paths'
+    prediction: '`neuralprophet_lag_free_happy_path`, `prophet_ms_multiplicative_happy_path` and `prophet_logistic_with_holidays_happy_path` each observe horizon-length ds/yhat/bands/trend, a pointwise-bracketing band, the named components the configuration implies (multiplicative_terms, the holiday name) and finite timings.'
+    test: 'cargo test -p aprender-mcp-forecast --lib e2e::happy_path'
+    if_fails: 'The shared shape D-03 promises is not shared: a client that switches models by switching endpoint would have to switch parsers too.'
+
+  - id: FALSIFY-BOUNDARY-010
+    rule: 'Responses under load are bit-identical to responses computed alone'
+    prediction: '`pool_equality::eight_concurrent_requests_are_bit_identical_to_sequential` reports 8/8 identical signatures with max_abs_diff exactly 0.0, and `pool_equality::sixteen_concurrent_neuralprophet_fits_stay_identical` reports 16/16 with zero errors.'
+    test: 'cargo test -p aprender-mcp-forecast --lib pool_equality'
+    if_fails: 'Fit state is shared across requests, or an RNG is seeded from something other than the per-request seed. A response that depends on what else the server was doing cannot be reproduced from its request, which is exactly the repudiation T-06-07 registers.'
+
+  - id: FALSIFY-BOUNDARY-011
+    status: deferred
+    rule: 'HOST-GATED, NOT ARMED IN CI (Phase 6): the pooled server clears the speed-up floor on the gated host. `just forecast-pool-ratio` EXISTS as of 06-08 and PASSES on aarch64 release (three attempts 5.150 / 5.162 / 5.146, best 5.162x against a 2.0 bar — 06-EVIDENCE.md §3). It stays out of the guarantee below because every CI job here is [self-hosted, X64, Linux] and builds debug, so CI would be asked to assert a ratio nobody has measured on that host. Arming it means measuring on X64 release first, then adding the recipe to a CI leg. Corrects the earlier wording, which said the recipe was NOT implemented; that was true when written and false from 06-08 onward. See D-ITEM-06-07-a and the 06-08 close-out.'
+    prediction: '`just forecast-pool-ratio` builds in release on aarch64, runs the pool_equality burst three times, parses the single `POOL SPEEDUP:` line from each and asserts the BEST ratio >= 2.0.'
+    test: 'just forecast-pool-ratio'
+    if_fails: 'Either the router pool is not engaged (check that pooled_app is dispatching round-robin across K routers rather than returning a single http_app), or the host is throttled and the run is not evidence. NOTE (REVIEW-06-04): this bar is deliberately NOT a cargo test filter. The unit test prints the ratio and asserts only equality; a wall-clock ratio measured under four Tokio workers and eight heterogeneous blocking fits is a benchmark claim, and putting it in the correctness suite makes the suite flaky without making the pool faster.'
+
+  - id: FALSIFY-BOUNDARY-012
+    rule: 'The POOL SPEEDUP line carries its own provenance'
+    prediction: 'Exactly one line matching `^POOL SPEEDUP: [0-9]+\.[0-9]{3}x seq=[0-9]+ms conc=[0-9]+ms arch=[a-z0-9_]+ profile=(debug|release) workers=4 cpus=[0-9]+$` is printed by the pool_equality module.'
+    test: 'cargo test -p aprender-mcp-forecast --lib pool_equality -- --nocapture'
+    if_fails: 'The format drifted and `just forecast-pool-ratio` silently parses nothing, disarming the phase only speed-up gate while still reporting green. The arch/profile/cpus fields exist so a recorded ratio can be compared to a later one; a ratio without them is not a measurement, it is a number.'
+
+  - id: FALSIFY-BOUNDARY-013
+    rule: 'The same one tool answers over stdio, from a spawned binary'
+    prediction: '`tests/e2e_stdio.rs` spawns the built binary with no arguments, completes initialize -> notifications/initialized -> tools/list (exactly one tool named forecast, inputSchema.additionalProperties == false) -> tools/call (60 daily points, horizon 7 -> seven ds and finite yhat) -> tools/call with an unknown key -> error.'
+    test: 'cargo test -p aprender-mcp-forecast --test e2e_stdio'
+    if_fails: 'The transport MCP clients actually spawn (stdio) diverged from the one the in-process suite drives (streamable-HTTP), or something is writing to stdout that is not protocol. This target is DARK IN CI until .github/workflows/ci.yml lists it, which is plan 06-08 human check-in.'
+
+  - id: FALSIFY-BOUNDARY-014
+    rule: 'The Chronos door refuses without weights, and gates the long horizon'
+    prediction: '`chronos::tests` drives `validate` with no model directory present and observes: fewer than 4 points ("at least"), horizon 0 ("horizon must be at least 1"), horizon 1025 ("exceeds the maximum 1024"), horizon 65 without allow_long_horizon ("exceeds the model native 64 steps ... pass allow_long_horizon: true") and the same horizon ACCEPTED with the flag, an all-null y ("at least 2 observed"), an impossible date, an unsorted ds, freq H, and trailing content in a ds entry.'
+    test: 'cargo test -p aprender-forecast --lib chronos::tests'
+    if_fails: 'Either a Chronos bound moved, or the D-18 weights-free `validate` seam was folded back into `forecast` — in which case the refusal behaviour can only be tested on an armed host and an unarmed CI run proves nothing while reporting green. The `warning` half of horizon_gate_with_warning is asserted by 06-07 server e2e, which needs weights.'
+
+  - id: FALSIFY-BOUNDARY-015
+    rule: 'A model narrower allowlist is still a refusal that names the fix'
+    prediction: '`forecast::tests::neuralprophet_refuses_non_daily_freq` observes a Validation refusal containing "supports freq D only" for `model: neuralprophet, freq: W`, and `neuralprophet_refuses_n_lags_above_365` / `neuralprophet_refuses_n_lags_at_or_above_span` observe refusals naming their own bounds.'
+    test: 'cargo test -p aprender-forecast --lib forecast::tests'
+    if_fails: 'The narrower allowlist inside the wider one silently coerced instead of refusing — a NeuralProphet request with freq W would be answered with a DAILY forecast the caller never asked for, the D-11 failure mode this contract exists to prevent.'
+
+  - id: FALSIFY-BOUNDARY-016
+    rule: 'The seed is per request and the default reproduces'
+    prediction: 'Every request in the pool_equality burst is issued twice — once alone, once inside the burst — and both runs produce the identical signature, including the requests that carry no explicit seed and therefore ran at the default 42.'
+    test: 'cargo test -p aprender-mcp-forecast --lib pool_equality::eight_concurrent_requests_are_bit_identical_to_sequential'
+    if_fails: 'The RNG is seeded from something outside the request (a clock, a server-lifetime counter, a thread id), so the same arguments no longer produce the same answer. That breaks reproducibility for a single client before it breaks anything about concurrency.'
+
+  - id: FALSIFY-BOUNDARY-017
+    rule: 'A cap off the logistic growth arm is refused, never accepted and dropped'
+    prediction: >
+      Four assertions falsify this rule. In the library, `forecast::tests::an_option_belonging_to_the_other_model_is_refused_not_dropped`
+      carries the explicit-linear case ({growth: "linear", cap: 100.0}), the bare-cap case on the
+      DEFAULTED arm ({cap: 100.0} with no growth key), the explicit-flat case, a linear case whose
+      cap sits BELOW max(y), and the logistic POSITIVE CONTROL (cap = max(y) + 1.0) which must still
+      fit and return a 7-point band — plus a case pinning the older cross-MODEL message `cap is
+      prophet-only` as unchanged. Through the server, `refuses_cap_without_logistic_growth` and
+      `refuses_cap_with_explicit_linear_growth` each drive a live streamable-HTTP router and observe
+      a validation-class refusal quoting `logistic-only`; two cases, not one, because the first
+      alone would still pass if the check were keyed on the ABSENCE of a growth key.
+    test: 'cargo test -p aprender-forecast --lib forecast::tests::an_option_belonging AND cargo test -p aprender-mcp-forecast --lib e2e::refuses_cap_'
+    if_fails: 'The door is back to accepting a knob it does not use — the class FALSIFY-BOUNDARY-005 already calls the worst failure class in this contract. `make_design` matches only (Growth::Logistic, Some(c)), so the cap is silently dropped and the caller receives a plausible linear forecast in answer to a saturating-growth question they did believe they asked.'
+
+  - id: FALSIFY-BOUNDARY-018
+    rule: 'The PRODUCT of the separately-bounded holiday factors is itself bounded, at the door and before make_design'
+    prediction: >
+      Five assertions falsify this rule, at three layers. The CONSTANTS layer:
+      `types::tests::cost_bounds_match_contract` asserts types::MAX_HOLIDAY_DESIGN_COST ==
+      constants.fit_max_holiday_design_cost and types::MAX_HOLIDAY_DATES_TOTAL ==
+      constants.fit_max_holiday_dates_total, so perturbing either value HERE — touching no Rust —
+      turns it red naming the key it read. The LIBRARY door, two-sided:
+      `forecast::tests::an_in_bounds_holiday_spec_whose_product_is_not_is_refused` observes a
+      Validation refusal for a spec inside every individual bound whose product is not, and
+      `forecast::tests::a_holiday_spec_just_under_the_design_cost_bound_is_accepted` observes the
+      near-miss still fitting — the positive control that keeps the bound from over-refusing. The
+      SERVER, the same two sides through a live streamable-HTTP router:
+      `e2e::refuses_holiday_design_cost_over_bound` sends 62 points + horizon 7 with one holiday at
+      the widest legal window (731 columns) = 50 439 design cells and observes a validation-class
+      refusal quoting `max_holiday_design_cost`, while
+      `e2e::accepts_holiday_design_cost_just_under_bound` sends ONE point fewer — 49 708 cells — and
+      observes a full response shape. The pair differs by a single history point and straddles the
+      bound, so it proves the bound is where this file says it is rather than somewhere an order of
+      magnitude away. The e2e refusal was OBSERVED RED: with fit_max_holiday_design_cost raised, the
+      server ACCEPTED the request and returned a forecast.
+    test: 'cargo test -p aprender-forecast --lib types::tests::cost_bounds_match_contract forecast::tests AND cargo test -p aprender-mcp-forecast --lib e2e::'
+    if_fails: 'The boundary is back to checking three factors in isolation while their PRODUCT buys unbounded CPU from an unauthenticated caller — (20 000 + 3 650) x 1 000 = 23 650 000 design feature cells and 1 000 000 holiday dates from one ~200-byte request, roughly 85 minutes of fit against a K=8 pool. The HARD-ceiling claim in fit_server_bounds third invariant is false again, and the SC1 2 s bar is unreachable for any holiday-carrying request.'
+
+  - id: FALSIFY-BOUNDARY-019
+    rule: 'The door''s caller-settable surface and its cost surface are both ENUMERATED, and the enumeration is checked in both directions rather than believed'
+    prediction: >
+      Three assertions falsify this rule. `types::tests::every_request_knob_is_enumerated`
+      derives the field list from `schemars::schema_for!(ForecastArgs)` and
+      `schema_for!(HolidayArg)` — the same generator that produces the advertised MCP tool
+      schema — and asserts SET EQUALITY against the `field` + `owner` pairs in
+      `door_surface.knobs` (16 entries: 12 + 4), printing the symmetric difference in BOTH
+      directions. OBSERVED RED IN BOTH: deleting the `cap` entry from the YAML alone turns it
+      red naming `cap` as MISSING, and adding an entry for a field on neither struct turns it
+      red naming that field as PHANTOM; a byte-identical revert restores green each time.
+      `types::tests::every_cost_axis_names_a_real_bound` requires every NON-pending
+      `cost_axes[].bound` to be a key present in `constants:`, or
+      `measured_at_structural_maximum` with a numeric `measured_seconds` under 2.0.
+      `types::tests::no_cost_axis_is_pending` asserts the pending set is EMPTY. It was
+      DECLARED RED at the close of plan 06-14, naming C-07 and C-08, and plan 06-15 turned it
+      GREEN by replacing both markers with real bounds — the only repair its own doc comment
+      permits.
+    test: 'cargo test -p aprender-forecast --lib types::tests::every_request_knob_is_enumerated types::tests::every_cost_axis_names_a_real_bound'
+    if_fails: >
+      The door surface has grown a knob or a cost axis that nothing enumerates, or has kept an
+      entry for a field that no longer exists. That is the state that produced CR-01: 06-13
+      correctly removed an accidental saturation, the simulated changepoint count began
+      tracking lambda, and no enumeration existed that would have flagged the newly unbounded
+      axis. A phantom bound key is the worse direction — the axis LOOKS closed and is not.
+
+  - id: FALSIFY-BOUNDARY-020
+    rule: 'The Poisson mean of the logistic uncertainty simulation is bounded at the door, before make_design, on a contract-owned value'
+    prediction: >
+      Assertions at three layers falsify this rule. The CONSTANTS layer:
+      `types::tests::cost_bounds_match_contract` asserts
+      `types::MAX_LOGISTIC_CHANGEPOINT_LAMBDA == constants.fit_max_logistic_changepoint_lambda`
+      through `test_support::constant_f64`, so perturbing the value HERE — touching no Rust —
+      turns it red naming the key it read. The LIBRARY door, three-sided:
+      `forecast::tests::a_logistic_request_over_the_changepoint_lambda_bound_is_refused` sends
+      the review's exact geometry (33 daily points, horizon 3650, freq MS, growth logistic,
+      cap 50 — lambda 86 789.8) and observes a Validation refusal quoting
+      `max_logistic_changepoint_lambda`;
+      `..._just_under_the_changepoint_lambda_bound_is_accepted` sends horizon 840 (lambda
+      19 974.2, asserted within 10% of the bound) and observes a full-length band; and
+      `the_linear_arm_at_the_same_geometry_is_still_accepted` proves the refusal is keyed on
+      `Growth::Logistic` rather than firing for everyone. Each computes its own lambda from
+      `prophet::changepoint_count` and asserts its geometry is on the side its name claims.
+      The SERVER, the same two sides through a live streamable-HTTP router:
+      `e2e::refuses_logistic_changepoint_lambda_over_bound` and
+      `e2e::accepts_logistic_changepoint_lambda_just_under_bound`. The server refusal was
+      OBSERVED RED: with `fit_max_logistic_changepoint_lambda` and the Rust constant raised
+      past the structural maximum, the server ACCEPTED the same request and returned a
+      forecast. Finally `prophet::changepoints::changepoint_count_equals_the_design_it_describes`
+      sweeps the point count and pins the door's changepoint count to `make_design`'s, so the
+      bound cannot be evaded by the door and the sampler disagreeing.
+    test: 'cargo test -p aprender-forecast --lib types::tests::cost_bounds_match_contract forecast::tests changepoint_count_equals AND cargo test -p aprender-mcp-forecast --lib e2e::'
+    if_fails: >
+      A 1 132-byte unauthenticated request that satisfies every existing bound
+      (fit_max_points, fit_max_span_days, fit_max_horizon) buys 2.334 s of CPU against a
+      default pool of K=8 — eight such requests saturate it — because those three bounds are
+      checked in ISOLATION and it is their RATIO that sizes this cost, with
+      dates::future_days multiplying the horizon COUNT by ~30.44 for "MS". FIT_BUDGET_SECS
+      cannot substitute: this cost is spent in predict, which runs AFTER the fit returns with
+      no budget at all. NOTE: do not "fix" this by clamping inside prophet::poisson — that
+      removes the wall and silently reintroduces the truncation 06-13 exists to delete. The
+      refusal belongs at the door (D-11).
+
+  - id: FALSIFY-BOUNDARY-021
+    rule: 'holidays[].name is bounded in BYTES at the door, first in the holiday loop, on a contract-owned value'
+    prediction: >
+      Assertions at three layers falsify this rule. The CONSTANTS layer:
+      `types::tests::cost_bounds_match_contract` asserts
+      `types::MAX_HOLIDAY_NAME_LEN == constants.fit_max_holiday_name_len`, so perturbing the
+      value HERE — touching no Rust — turns it red naming the key it read (OBSERVED). The
+      LIBRARY door, four-sided:
+      `forecast::tests::a_holiday_name_over_the_length_bound_is_refused` (one byte over),
+      `..._at_the_length_bound_is_accepted` (exactly at the bound, full response),
+      `a_holiday_name_whose_char_count_fits_but_whose_byte_length_does_not_is_refused`
+      (101 multi-byte characters — 101 chars UNDER the bound, 202 bytes OVER it, the case a
+      `chars().count()` rewrite silently breaks, and the only test in the suite that such a
+      rewrite turns red), and
+      `an_empty_holiday_name_is_not_refused_by_the_length_bound` (the bound is one-sided by
+      design, so a later tidy-up cannot answer the empty-name question by accident). The
+      SERVER, both sides through a live streamable-HTTP router:
+      `e2e::refuses_holiday_name_over_length_bound` and
+      `e2e::accepts_holiday_name_at_length_bound`. The server refusal was OBSERVED RED:
+      before the door check existed, the server ACCEPTED a 201-byte name and returned a
+      full-shape forecast whose `components` map carried that name as a key.
+    test: 'cargo test -p aprender-forecast --lib -- types::tests::cost_bounds_match_contract forecast::tests AND cargo test -p aprender-mcp-forecast --lib e2e::'
+    if_fails: >
+      An unauthenticated request turns ONE occurrence of an arbitrary-length string into
+      ~2 000 owned copies plus ~10 000 byte-wise sort comparisons — a ~2 000:1 amplification
+      off a field that, at the close of plan 06-14, was enforced by NOTHING. Do not "fix" it
+      by measuring instead: this axis has NO structural maximum (neither transport caps the
+      body), so a wall written for an arbitrarily chosen length would look like evidence and
+      be none. That is why 06-14 held it open with a red test rather than a measurement.
+
+  - id: FALSIFY-BOUNDARY-022
+    rule: 'The refusal for an oversized holiday name names the index and the observed byte length and never the name itself'
+    prediction: >
+      `forecast::tests::the_oversized_name_refusal_names_the_length_and_not_the_name` sends a
+      holiday whose name is a distinctive repeated token one byte over the bound and asserts
+      the refusal message contains the holiday's INDEX and the observed BYTE LENGTH and does
+      NOT contain the oversized name. The assertion is non-vacuous by construction: the token
+      is a string the message would contain if `h.name` were interpolated, and every OTHER
+      refusal in the same loop does interpolate `h.name` — which is precisely why the length
+      check is FIRST in the loop, so those messages can only ever carry a bounded name.
+    test: 'cargo test -p aprender-forecast --lib -- forecast::tests::the_oversized_name_refusal_names_the_length_and_not_the_name'
+    if_fails: >
+      T-06-38. Echoing an oversized attacker-controlled string back into an error message
+      re-materialises the very bytes the bound refuses, and reflects that content into every
+      log and trace the refusal reaches. The caller needs to know WHICH holiday and HOW LONG;
+      they already have the name.
+
+  - id: FALSIFY-BOUNDARY-023
+    rule: 'The aggregate holiday-date ceiling is enforced INSIDE the holiday loop, so a request already known to be over it never parses the remaining holidays'
+    prediction: >
+      `forecast::tests::the_aggregate_dates_refusal_fires_inside_the_holiday_loop` and
+      `e2e::refuses_holiday_dates_total_before_parsing_the_rest` cross the aggregate ceiling
+      at the ELEVENTH holiday while every LATER holiday carries `"2020-1-01"` — nine bytes,
+      which `parse_date`'s SHAPE gate rejects. If the check moved back after the loop the
+      caller would receive the DATE-SHAPE refusal instead of the aggregate one, so these
+      discriminate POSITION and not merely presence; a grep for the constant cannot make that
+      claim. Both were OBSERVED RED against the unmoved check, reporting
+      `bad date "2020-1-01": want YYYY-MM-DD`.
+      `holidays_carrying_exactly_the_total_bound_are_accepted` is the two-sided control that
+      catches an in-loop comparison written as `>=` instead of `>`, and
+      `refuses_holiday_dates_total_over_bound` still pins the post-loop refusal, which is
+      KEPT because only it has seen every holiday and can report the request's EXACT total.
+    test: 'cargo test -p aprender-forecast --lib -- forecast::tests AND cargo test -p aprender-mcp-forecast --lib e2e::'
+    if_fails: >
+      1 000 holidays of 1 000 dates run ~1 000 000 `parse_date` calls and allocate ~8 MB of
+      `Vec<i64>` AFTER the door already has the information to refuse the request (WR-03).
+      The amplification is roughly 1:1 with the payload, so this is a hygiene defect rather
+      than a second CR-01 — but it is unbounded work performed on a request already known to
+      be bad, on exactly the surface this phase exists to bound, and the comment above the
+      accumulation claimed the property the code lacked.
+
+
+  - id: FALSIFY-BOUNDARY-024
+    rule: 'The NeuralProphet training work one request may buy is bounded at the door, before the first np::train, on a contract-owned value derived from measurement'
+    prediction: >
+      The CONSTANTS layer: `types::tests::cost_bounds_match_contract` asserts
+      `types::MAX_NP_TRAIN_COST == constants.fit_max_np_train_cost`, so perturbing the value
+      HERE — touching no Rust — turns it red naming the key (OBSERVED). The LIBRARY door:
+      `forecast::tests::a_neuralprophet_request_over_the_train_cost_bound_is_refused` observes
+      a Validation refusal quoting `max_np_train_cost`, and
+      `..._under_the_train_cost_bound_is_accepted` observes a full-length band on the same arm
+      with lags on. `the_np_train_cost_bound_is_exclusive_not_inclusive` pins the comparison at
+      the boundary itself (`>` not `>=`), which no runnable near-miss reaches: at the bound one
+      request costs 45.619 s on a debug profile. `the_np_parity_ladder_geometry_prices_under_the_train_cost_bound`
+      is the OVER-refusal control — it turns red the moment the bound drops below the Peyton
+      geometry `np::parity` proves correctness on (14 552 640, 97% of the bound). The SERVER,
+      both sides through a live streamable-HTTP router:
+      `e2e::refuses_np_train_cost_over_bound` and `e2e::accepts_np_train_cost_under_bound`; the
+      refusal was OBSERVED RED with the constant and the contract key raised, where the same
+      request was ACCEPTED. The MEASUREMENTS are `np::wall::np_train_wall`, `#[ignore]`d and
+      release-only, printing one machine-parsable `NP TRAIN WALL:` line carrying
+      `profile=`, `train_cost=`, `outcome=` and `total_s=`; `outcome=` is what lets the
+      post-condition gate distinguish "refused at the door" from "ran fast".
+    test: 'NP_WALL_MODE=structural_max cargo test --release -p aprender-forecast --lib np_train_wall -- --ignored --nocapture (outcome=refused, or total_s < 2.0) AND cargo test -p aprender-forecast --lib -- forecast::tests types::tests::cost_bounds_match_contract'
+    if_fails: >
+      An unauthenticated request inside every existing bound buys 47.924 s of CPU on a release
+      build — 24x SC1's 2 s bar — against a default pool of K=8, because this path has NO
+      budget of any kind: FIT_BUDGET_SECS is read only inside fit::fit_prophet, which the
+      neuralprophet arm never enters. Do NOT "fix" it by setting FIT_BUDGET_SECS: no value of
+      that knob has ever been able to see this cost. Do NOT lower the bound below 14 552 640
+      either — that refuses the Peyton geometry np::parity proves the model correct on.
+
+  - id: FALSIFY-BOUNDARY-025
+    rule: 'The door prices a NeuralProphet request at exactly the work it then configures the sweep to spend'
+    prediction: >
+      `forecast::tests::the_door_prices_a_request_at_exactly_the_work_it_configures` asserts
+      `np::request_train_cost(d, n_points, n_lags)` equals
+      `len(door_lr_sweep(n_lags)) * train_cost(n_training_samples(d, n_lags), door_epochs(...), n_lags)`
+      across `n_lags` in {0, 7, 30} — the lag-free arm (3-point sweep, observed rows,
+      `auto_epochs(n_samples)`) and two lagged arms (2-point sweep, imputed grid,
+      `auto_epochs(n_points).min(320)`). `np::train` additionally carries a `debug_assert`
+      that its own sample count equals `np::n_training_samples`, so the trainer cannot step
+      over rows the door did not price. The door builds its `TrainConfig` from
+      `door_lr_sweep` and `door_epochs` rather than from literals, so there is one
+      implementation of each rule and not two.
+    test: 'cargo test -p aprender-forecast --lib -- forecast::tests::the_door_prices_a_request_at_exactly_the_work_it_configures np::'
+    if_fails: >
+      A bound the door computes differently from the work that is then spent is evadable
+      wherever the two disagree — the same class as a door and a design build disagreeing
+      about the changepoint count, which is why prophet::changepoint_count was extracted in
+      plan 06-14. A second inline copy of the sweep width or the epoch rule in forecast.rs is
+      how that drift starts.
+
+  - id: FALSIFY-BOUNDARY-026
+    rule: 'The SC1 bar is asserted across the surface where the cost is decided — freq x growth x holiday shape — and not only on the two shapes the phase happened to bench'
+    prediction: >
+      `just forecast-sc1-sweep` runs `sc1_wall::sc1_wall_sweep` on a RELEASE build over the
+      18-composition Prophet cross product at the tightest legal history span plus the
+      NeuralProphet row at its at-the-bound train-cost geometry, and every composition walls
+      under 2.0 s. MEASURED, all 19 accepted: the worst is the NeuralProphet row at
+      train_cost 14 810 040 and 1.433 s; the worst Prophet composition is
+      freq=W growth=logistic holidays=at_bound at 0.791 s with lambda 19 960.9. The bar is
+      asserted TWICE and neither is redundant — inside the harness, where the message names
+      every failing composition (all compositions are measured and printed BEFORE anything is
+      asserted, so a failure does not hide the shape of the rest of the matrix), and again in
+      the recipe over the re-parsed `SC1 WALL:` lines, which is what catches a harness that
+      stopped emitting them. The recipe prints the count it checked, so a run that checked
+      zero compositions cannot report success. It is NOT `#[ignore]`d: a plain
+      `cargo test -p aprender-forecast --lib sc1_wall::` reports a non-zero passed count with
+      no `--ignored` flag, which is the exact state `logistic_band_wall` lacked.
+      OBSERVED RED on the CR-01 configuration: with `fit_max_logistic_changepoint_lambda` and
+      `types::MAX_LOGISTIC_CHANGEPOINT_LAMBDA` raised to 200000, past the 86 789.8 structural
+      maximum, `freq=MS growth=logistic` walls at 2.443 s (holidays=none) and 2.536 s
+      (holidays=at_bound) and the gate goes red naming both, while `freq=D` passes at 0.219 s
+      on the same run. Restoring both to 20000 restores green.
+    test: 'just forecast-sc1-sweep'
+    if_fails: >
+      Either a composition crossed the 2 s bar — the log names which, and its `lambda=` and
+      `cells=` tokens say which axis it is loaded on — or the sweep lost an axis. NEVER close
+      this by shrinking the matrix to the compositions that still pass: shrink
+      SC1_SWEEP_POINTS and SC1_SWEEP_HORIZON, or the NeuralProphet row, and never an axis.
+      Dropping an axis is the WR-04 defect this gate replaced, and it is how a green gate
+      shipped a resource-exhaustion breach (CR-01) that three separate benches could not see.
+
+kani_harnesses:
+
+  # DECLARED, NOT EXECUTED. cargo-kani is not installed in this repository and no
+  # #[kani::proof] harness exists anywhere under crates/. Each entry names the
+  # runnable, identically bounded test that is the ACTUAL evidence.
+  - id: KANI-BOUNDARY-001
+    obligation: 'The future date grid this boundary produces is strictly increasing for every allowed frequency, up to the maximum horizon'
+    property: 'forall freq in {D, W, MS}, forall start day, forall horizon <= constants.fit_max_horizon: future_days(start, horizon, freq) is strictly increasing, and for MS every element is the 1st of some month'
+    bound: 3650
+    strategy: bounded_int
+    harness: 'NOT EXECUTED — the evidence is the runnable, identically bounded grid test `prophet::parity::future_days_strictly_increasing_bounded` in crates/aprender-forecast/src/prophet.rs, which enumerates 3 frequencies x 20 start days spanning leap years and month ends x horizons {1, 28, 365, 3650}'
+
+  - id: KANI-BOUNDARY-002
+    obligation: 'Only a ten-ASCII-byte YYYY-MM-DD string is accepted as a date'
+    property: 'forall s: parse_date(s) = Ok(_) implies len(s) == 10 and s.is_ascii() and s[4] == "-" and s[7] == "-" and the other eight bytes are ASCII digits'
+    bound: 10
+    strategy: bounded_int
+    harness: 'NOT EXECUTED — a model checker over arbitrary UTF-8 strings would need a string theory the harness cannot bound usefully; the evidence is the nine `dates::tests` refusal cases (trailing content, T-suffix, leading and trailing whitespace, empty, non-ASCII prefix, nine-byte, impossible calendar date, out-of-range month) plus the four e2e shape cases driven through a live server'
+
+  - id: KANI-BOUNDARY-003
+    obligation: 'A response under concurrency equals the response computed alone'
+    property: 'forall req: signature(concurrent(req)) == signature(sequential(req))'
+    bound: 16
+    strategy: bounded_int
+    harness: 'NOT EXECUTED — the property is about a Tokio runtime, a router pool and a blocking thread pool; a bounded checker would have to stub all three and would then prove a property about the stubs. The evidence is `pool_equality::eight_concurrent_requests_are_bit_identical_to_sequential` (8/8, max_abs_diff 0.0) and `pool_equality::sixteen_concurrent_neuralprophet_fits_stay_identical` (16/16)'
+
+qa_gate:
+  id: F-FORECAST-BOUNDARY-001
+  name: 'Forecast tool boundary gate'
+  description: >
+    The blocking gate for the tool-boundary claims (SC1 refusals, SC5 equality under load). Every
+    check below is a runnable test named in the FALSIFY-BOUNDARY entries above, and every bound it
+    asserts is READ from this file at test time rather than duplicated as a Rust literal. The gate
+    is deliberately split by claim KIND: the correctness checks are unit-falsifiable and run in CI
+    on every host, while the single benchmark check is host-gated and runs under
+    `just forecast-pool-ratio` (REVIEW-06-04). Mixing them would put a wall-clock ratio measured
+    under four Tokio workers into the suite that has to be trusted when it goes red.
+  checks:
+    - 'contract schema validity (pv validate, zero errors) and non-zero pv status counts'
+    - 'the fit server and Chronos door Rust bounds are asserted EQUAL to the contract constants'
+    - 'every SC1 malformed input is refused through a live streamable-HTTP server, each with its own e2e case (>= 18 refusal cases)'
+    - 'the four REVIEW-06-U2 malformed-date shapes are refused: trailing content, empty, whitespace, non-ASCII'
+    - 'every refusal is validation-class, with the numeric code pinned'
+    - 'the advertised inputSchema has additionalProperties false and requires exactly ds, y, horizon'
+    - 'the shared response shape holds on four happy paths spanning both models, MS + multiplicative, and logistic + holidays'
+    - 'responses under an 8-wide and a 16-wide burst are bit-identical to their sequential twins (max_abs_diff 0.0)'
+    - 'exactly one well-formed POOL SPEEDUP line is printed, carrying ratio, both walls, arch, profile, workers and cpus'
+    - 'the spawned binary answers the same one tool over stdio and refuses an unknown key (local; dark in CI pending 06-08)'
+    - 'HOST-GATED, NOT IN CI: best-of-3 pool speed-up >= 2.0 on an aarch64 release build, via `just forecast-pool-ratio`'
+  pass_criteria: >
+    All FALSIFY-BOUNDARY correctness tests pass on every host. FALSIFY-BOUNDARY-011 is HOST-GATED
+    and is NOT part of this guarantee: `just forecast-pool-ratio` exists and passes on aarch64
+    release (best 5.162x against a 2.0 bar, 06-EVIDENCE.md §3), but every CI job here is X64 and
+    builds debug, so that number is evidence on ONE host and not a claim this guarantee can make
+    everywhere. Measured on one arch is not measured. FALSIFY-BOUNDARY-012 still holds — the `POOL SPEEDUP`
+    line and its provenance fields are printed and format-checked by the unit test today, so the
+    deferred gate can be armed later without re-deriving the format. A refusal case that has only ever been observed passing is not
+    evidence: each refusal message asserted here must have been seen RED under an induced change
+    (edit the needle, observe the named case fail, restore).
+  falsification: >
+    The bound checks are induced-RED from THIS FILE alone: change `constants.fit_max_horizon` from
+    3650 to 3651 — touching no Rust — and `types::tests::bounds_match_contract` goes red naming the
+    contract value it read, proving the assertion reads its bar from here at test time rather than
+    duplicating it. A byte-identical revert restores green. The same holds for every
+    `constants.chronos_*` value against `chronos_bounds_match_contract`.

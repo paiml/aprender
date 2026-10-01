@@ -1,0 +1,62 @@
+# Deployment config for Chronos-Bolt Forecasting MCP server (pmcp.run).
+# The deploy ROOT is crates/aprender-mcp-chronos-lambda:
+#   cargo pmcp deploy --manifest-path crates/aprender-mcp-chronos-lambda --no-color
+
+[target]
+type = "pmcp-run"
+version = "1.0.0"
+
+[aws]
+region = "us-east-1"
+
+[server]
+name = "chronos-forecaster"
+# Chronos-Bolt tiny f16 fits in 512MB RAM comfortably (~52ms cold start, ~18ms inference)
+memory_mb = 512
+timeout_seconds = 30
+
+[environment]
+RUST_LOG = "info"
+
+[secrets]
+
+[auth]
+enabled = false
+provider = "none"
+callback_urls = []
+
+[auth.dcr]
+enabled = true
+public_client_patterns = [
+    "claude",
+    "desktop",
+    "cursor",
+    "mcp-inspector",
+    "chatgpt",
+]
+default_scopes = [
+    "openid",
+    "email",
+    "mcp/read",
+]
+allowed_scopes = [
+    "openid",
+    "email",
+    "profile",
+    "mcp/read",
+    "mcp/write",
+]
+
+[observability]
+log_retention_days = 30
+enable_xray = true
+create_dashboard = true
+
+[observability.alarms]
+error_threshold = 10
+latency_threshold_ms = 5000
+
+[composition]
+tier = "foundation"
+allow_composition = true
+internal_only = false

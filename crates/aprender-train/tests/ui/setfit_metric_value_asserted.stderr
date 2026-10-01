@@ -1,0 +1,17 @@
+error[E0451]: fields `metric_kind`, `value`, `artifact_hash`, `validation_split_fingerprint`, `dataset_fingerprint` and `n_rows` of struct `ValidationEvaluation` are private
+  --> tests/ui/setfit_metric_value_asserted.rs:34:9
+   |
+33 |     ValidationEvaluation {
+   |     -------------------- in this type
+34 |         metric_kind: ValidationMetricKind::Accuracy,
+   |         ^^^^^^^^^^^ private field
+35 |         value: 0.99,
+   |         ^^^^^ private field
+36 |         artifact_hash: String::new(),
+   |         ^^^^^^^^^^^^^ private field
+37 |         validation_split_fingerprint: String::new(),
+   |         ^^^^^^^^^^^^^^^^^^^^^^^^^^^^ private field
+38 |         dataset_fingerprint: String::new(),
+   |         ^^^^^^^^^^^^^^^^^^^ private field
+39 |         n_rows: 1,
+   |         ^^^^^^ private field

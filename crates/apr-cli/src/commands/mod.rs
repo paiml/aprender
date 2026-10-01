@@ -48,6 +48,8 @@ pub mod modelfile;
 pub(crate) mod rm_gc_lint;
 
 pub(crate) mod data;
+pub(crate) mod data_contrastive;
+pub(crate) mod data_tweeteval;
 pub(crate) mod diagnose;
 
 #[cfg(feature = "inference")]
@@ -140,6 +142,10 @@ pub(crate) mod parity_per_op_table;
 pub(crate) mod pipeline;
 pub(crate) mod png_encode;
 pub(crate) mod ppl;
+// GENERIC prediction (D-06). Not feature-gated: the command must be able to say
+// "this is a SetFit classifier and this binary cannot classify it" (exit 9) rather
+// than "unsupported format", which is a different and misleading answer.
+pub(crate) mod predict;
 #[cfg(feature = "training")]
 pub(crate) mod pretrain;
 pub(crate) mod probar;
@@ -190,6 +196,10 @@ pub(crate) mod search_merge;
 pub(crate) mod serve;
 pub(crate) mod serve_plan;
 pub(crate) mod serve_plan_output;
+#[cfg(feature = "setfit")]
+pub(crate) mod setfit_bench;
+#[cfg(feature = "setfit")]
+pub(crate) mod setfit_train;
 pub(crate) mod shard;
 pub(crate) mod shared_cache;
 pub(crate) mod shared_cache_lint;

@@ -34,7 +34,7 @@
             model_type: Some("Qwen2".to_string()),
             ..Default::default()
         };
-        output_json(Path::new("test.apr"), 1024, &header, metadata);
+        output_json(Path::new("test.apr"), 1024, &header, metadata, None);
     }
 
     #[test]

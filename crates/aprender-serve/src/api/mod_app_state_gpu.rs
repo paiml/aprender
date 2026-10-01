@@ -64,6 +64,8 @@ impl AppState {
             moe_no_gpu: true,
             qwen35_session: None,
             cached_eos_token_id: None,
+            #[cfg(feature = "setfit")]
+            setfit_model: None,
             verbose: false,
             trace: false,
             model_source: None,
@@ -123,6 +125,8 @@ impl AppState {
             moe_no_gpu: true,
             qwen35_session: None,
             cached_eos_token_id: None,
+            #[cfg(feature = "setfit")]
+            setfit_model: None,
             verbose: false,
             trace: false,
             model_source: None,
@@ -190,6 +194,8 @@ impl AppState {
             moe_no_gpu: true,
             qwen35_session: None,
             cached_eos_token_id: None,
+            #[cfg(feature = "setfit")]
+            setfit_model: None,
             verbose: false,
             trace: false,
             model_source: None,
@@ -261,6 +267,8 @@ impl AppState {
             moe_no_gpu: true,
             qwen35_session: None,
             cached_eos_token_id: eos,
+            #[cfg(feature = "setfit")]
+            setfit_model: None,
             verbose: false,
             trace: false,
             model_source: None,
@@ -320,6 +328,8 @@ impl AppState {
             moe_no_gpu: true,
             qwen35_session: None,
             cached_eos_token_id: eos,
+            #[cfg(feature = "setfit")]
+            setfit_model: None,
             verbose: false,
             trace: false,
             model_source: None,
@@ -384,6 +394,8 @@ impl AppState {
             moe_no_gpu: true,
             qwen35_session: None,
             cached_eos_token_id: None,
+            #[cfg(feature = "setfit")]
+            setfit_model: None,
             verbose: false,
             trace: false,
             model_source: None,
@@ -434,6 +446,16 @@ impl AppState {
             || self.safetensors_cuda_model.is_some()
             || self.apr_q4k_tx.is_some()
         {
+            return true;
+        }
+        // Phase 4 OPS-05: a resident SetFit classifier IS a loaded model. The
+        // question "is this server ready to do inference work" is answered HERE
+        // and nowhere else, so a server whose only model is a classifier must
+        // answer it the same way — otherwise `/health/ready` would report 503
+        // for a process that answers `/v1/classify` with 200, and a k8s rollout
+        // would never admit a classifier deployment.
+        #[cfg(feature = "setfit")]
+        if self.setfit_model.is_some() {
             return true;
         }
         false
@@ -617,6 +639,8 @@ impl AppState {
             moe_no_gpu: true,
             qwen35_session: None,
             cached_eos_token_id: eos_id,
+            #[cfg(feature = "setfit")]
+            setfit_model: None,
             verbose: false,
             trace: false,
             model_source: None,
@@ -679,6 +703,8 @@ impl AppState {
             moe_no_gpu: true,
             qwen35_session: None,
             cached_eos_token_id: None,
+            #[cfg(feature = "setfit")]
+            setfit_model: None,
             verbose: false,
             trace: false,
             model_source: None,

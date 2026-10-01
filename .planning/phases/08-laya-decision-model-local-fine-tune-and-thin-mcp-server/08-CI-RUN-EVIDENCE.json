@@ -1,0 +1,157 @@
+{
+  "schema": "laya-ci-run-v1",
+  "plan": "08-32",
+  "recorded": "2026-09-29",
+  "verdict": "UNMET: workspace-test has not run on any head of this branch. The plan's must-have 'workspace-test = success on the pushed head' is NOT met.",
+  "event": "pull_request",
+  "event_note": "The plan said workflow_dispatch. That is not available: the fork carries no workflows/runners, and paiml/aprender's ci.yml jobs need paiml's self-hosted runners, which only a pull request from the fork can reach. The owner chose 'Yes, draft PR'. This record therefore describes pull_request runs, and no workflow_dispatch run exists.",
+  "pr_url": "https://github.com/paiml/aprender/pull/4634",
+  "pr_state": {
+    "state": "OPEN",
+    "isDraft": true,
+    "mergeable": "MERGEABLE",
+    "mergeStateStatus": "BEHIND",
+    "observed": "2026-09-29, at close-out"
+  },
+  "head_sha": "30bc2baaa2b7a4cf7bc06bb8830a6f42d97f6fa6",
+  "head_note": "This is the head the runs below executed on. The close-out commits of plan 08-32 are docs-only and land after it; pushing them re-triggers the pull_request workflows. The exact head the maintainers should approve is stated in 08-32-SUMMARY.md.",
+  "runs": [
+    {"workflow": "CI", "run_id": 36614147889, "event": "pull_request", "head_sha": "30bc2baaa2b7a4cf7bc06bb8830a6f42d97f6fa6", "status": "completed", "conclusion": "action_required"},
+    {"workflow": "mdBook CI", "run_id": 36614148038, "event": "pull_request", "head_sha": "30bc2baaa2b7a4cf7bc06bb8830a6f42d97f6fa6", "status": "completed", "conclusion": "action_required"},
+    {"workflow": "Book Contract Enforcement", "run_id": 36614148073, "event": "pull_request", "head_sha": "30bc2baaa2b7a4cf7bc06bb8830a6f42d97f6fa6", "status": "completed", "conclusion": "action_required"},
+    {"workflow": "pr-review-quorum", "run_id": 36614144178, "event": "pull_request_target", "head_sha": "30bc2baaa2b7a4cf7bc06bb8830a6f42d97f6fa6", "status": "completed", "conclusion": "failure", "reason": "missing signed review receipt for #4634"},
+    {"workflow": "CI", "run_id": 36607358541, "event": "pull_request", "head_sha": "05de396d0fa4234f48ea48ecf0ac75698c55ec3f", "status": "completed", "conclusion": "action_required", "note": "earlier head"}
+  ],
+  "action_required_meaning": "A fork pull request's workflow runs wait for a paiml maintainer to approve them. The branch owner has pull-only access on paiml/aprender and cannot approve. No job of any of these workflows has started.",
+  "jobs": [],
+  "jobs_note": "No job exists to list: every workflow run above is completed/action_required with zero jobs started.",
+  "workspace_test": {
+    "conclusion": null,
+    "reason": "not run: awaiting maintainer approval; and it would stop before fragments 510/520 at upstream's contract-hygiene gates until plan 08-33 lands",
+    "decide_lib_tests_seen": false,
+    "ui_seen": false,
+    "e2e_stdio_seen": false
+  },
+  "red_steps": [
+    {
+      "job": "pr-review-quorum (pull_request_target)",
+      "step": "review receipt check",
+      "attributed_to": "paiml process: a signed pr-review receipt for #4634 does not exist; not Phase 8 code. See deferred-items.md 'pr-review-quorum missing receipt'."
+    }
+  ],
+  "predicted_red_steps": {
+    "note": "Measured LOCALLY, not observed in CI. Upstream's new shrink-only contract-hygiene gates run in the CI Integration-tests step via explicit-test-command fragments 336/338/455. The runner stops at the first failing command, so fragments 510 (aprender-decide --test ui) and 520 (aprender-mcp-decide --test e2e_stdio) never run and workspace-test cannot go green.",
+    "local_result": {"passed": 389, "failed": 5},
+    "blockers": [
+      {
+        "id": "B1",
+        "gate": "formal: entries outside the declared vocabulary (shrink-only baseline)",
+        "baseline": 1464,
+        "measured": 1569,
+        "delta": 105,
+        "by_contract": {
+          "forecast-tool-boundary": 19,
+          "setfit-train-lifecycle": 14,
+          "neuralprophet-parity": 11,
+          "setfit-benchmark-claims": 11,
+          "chronos-bolt-parity": 9,
+          "laya-finetune-gate": 9,
+          "prophet-parity": 8,
+          "tweet-eval-stance": 8,
+          "decide-apr": 6,
+          "decide-tool-boundary": 6,
+          "laya-parity": 4
+        },
+        "phase_8_share": 25,
+        "attributed_to": "PHASE 8 (25 of 105; the rest Phases 3-6). Repair decided, planned as 08-33."
+      },
+      {
+        "id": "B2",
+        "gate": "kernel-kind contracts without metadata.valid_under (shrink-only baseline)",
+        "baseline": 386,
+        "measured": 398,
+        "delta": 12,
+        "attributed_to": "this branch's contracts (Phases 3-8). Repair decided, planned as 08-33."
+      },
+      {
+        "id": "B3",
+        "gate": "pv validate errors",
+        "detail": ["neon-blis-v1: 'kind:' at top level instead of under metadata:", "spectral-indices-v1: no kani_harnesses"],
+        "attributed_to": "neon-blis-v1 and spectral-indices-v1 are not Phase 8 contracts; folded into 08-33 by the owner's 'Repair all'."
+      },
+      {
+        "id": "B4",
+        "gate": "the_tracked_repo_graph_is_fresh",
+        "detail": "the tracked contract graph needs regenerating after the merge and the contract edits",
+        "attributed_to": "regenerate after B1-B3; part of 08-33."
+      },
+      {
+        "id": "B5",
+        "gate": "aprender-contracts-cli every_contract_generates_book_page",
+        "detail": "contracts/binding.yaml has no metadata: field; fails identically on origin/main before any Phase 8 commit",
+        "attributed_to": "D-ITEM-08-32-A (pre-Phase-8)"
+      }
+    ]
+  },
+  "not_phase_8": [
+    "contract-audit-phase6 fails identically before the merge: 9 Phase 6.1 equations unbound (deferred-items.md)",
+    "aprender-mcp exec_marker_bin_survives_a_transient_etxtbsy is Linux-only; fails on macOS; the file is identical to upstream",
+    "aprender-profile is Linux-only"
+  ],
+  "local_gates": {
+    "task_1": {
+      "recipe": "just laya-gap-regression",
+      "commit": "c5b3d89d0 (post-scrub; 7f1cd6c36 pre-scrub)",
+      "pre_merge_result": "PASS: PASS CLASS A..E, PASS REGRESSION, LAYA GAP REGRESSION OK",
+      "on_merged_tree": {
+        "classes_A_to_E": "PASS (apr-format now 104 tests)",
+        "regression_stage": "FAILED, only inside aprender-contracts-cli: upstream's contract-hygiene gates and every_contract_generates_book_page (B1-B5 above)",
+        "real_artifact_legs_run_separately_under_the_lock": {
+          "laya_verify_suite": "LAYA VERIFY SUITE OK: 4 legs, ladder 32 blocks, max_abs 3.841e-6",
+          "laya_verify": "deploy_eligible true, sha 24a44d7e (artifact sha256 prefix), shipped_seed 17, argmax 459/459"
+        }
+      }
+    }
+  },
+  "scrub": {
+    "decision": "Scrub, then push",
+    "method": "git filter-repo --replace-text over a0163010a..gsd/phase-2-contract-gate",
+    "categories": ["AWS account id", "ECR repository ids", "instance ids"],
+    "verified": "0 hits of those categories in a0163010a..HEAD",
+    "backup_ref": "backup/pre-scrub-08-32",
+    "backup_sha": "7f1cd6c36f5fea70f414e8b92ce1c6b500cec3c8",
+    "backup_ref_scope": "local only, never pushed",
+    "commit_map": ".planning/phases/08-laya-decision-model-local-fine-tune-and-thin-mcp-server/08-SCRUB-COMMIT-MAP.tsv",
+    "commit_map_note": "213 old->new rows. SHAs cited in 08-01..08-32 SUMMARY and evidence files written before the scrub are PRE-SCRUB; resolve them through the map. The merge commit and everything after it are post-scrub."
+  },
+  "merge": {
+    "decision": "Merge upstream main in",
+    "pre_merge_head": "c5b3d89d0194523b80832e2cd3373b74c4fada8a",
+    "pre_merge_backup_ref": "backup/pre-merge-08-32 (local only)",
+    "upstream_main": "2817c6d97",
+    "upstream_commits_past_base": 301,
+    "merge_base": "4bbfeb07f",
+    "merge_commit": "0d24db9c5",
+    "conflicted_files": 46,
+    "follow_up_commits": [
+      {"sha": "5f9191622", "what": "cargo fmt on aprender-image and aprender-mcp-chronos (the merged fmt gate reads them)"},
+      {"sha": "519dc4125", "what": "pmcp kept at 2.19.3 (upstream is 2.21.0): Phase 8's request_bounds_table_is_swept tripwire; the tool-boundary contract is verified on 2.19.3"},
+      {"sha": "7749baef0", "what": "Phase 6's profile.dev.package.aprender-forecast added to FALSIFY-INSTALL-001's PROFILE_SPEC_ALLOWLIST (64 s vs 13 s measured)"},
+      {"sha": "05de396d0", "what": "Makefile PV_BIN -> PV_CARGO_RUN, 12 uses (upstream renamed the pv variable)"},
+      {"sha": "30bc2baaa", "what": "two laya_claims.tsv rows and the tests/ui.rs header re-anchored to ci/explicit-test-commands.d/510-aprender-decide-ui.cmd and 520-aprender-mcp-decide-e2e-stdio.cmd"}
+    ]
+  },
+  "not_rehomed": {
+    "what": "17 of the 19 Phase 3/4 'SetFit tests (feature-gated)' legs of the old ci.yml",
+    "why": "upstream restructured ci.yml (ci/sections.yml); upstream fragments 010 and 020 already run the aprender-core setfit lib tests and the conformance target",
+    "disposition": "deferred to deferred-items.md (status open)"
+  },
+  "owner_decisions": [
+    {"question": "history scrub", "decision": "Scrub, then push"},
+    {"question": "open a PR", "decision": "Yes, draft PR"},
+    {"question": "upstream divergence", "decision": "Merge upstream main in"},
+    {"question": "contract-hygiene gates (B1-B4)", "decision": "Repair all (new gap plan)", "status": "decided; planned as 08-33"},
+    {"question": "the 17 SetFit CI legs", "decision": "Defer to deferred-items"},
+    {"question": "PR shape", "decision": "Keep one draft for CI", "detail": "#4634 stays one draft PR purely to get CI evidence; the user arranges maintainer approval upstream; splitting into reviewable PRs (serving and contracts first, training code for upstream's .71-.75 window) is planned after phase verification"}
+  ]
+}

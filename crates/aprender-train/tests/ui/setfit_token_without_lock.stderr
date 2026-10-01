@@ -1,0 +1,13 @@
+error[E0451]: fields `lock_hash`, `artifact_hash`, `dataset_fingerprint` and `validation_split_fingerprint` of struct `CanonicalTestToken` are private
+  --> tests/ui/setfit_token_without_lock.rs:20:9
+   |
+19 |     CanonicalTestToken {
+   |     ------------------ in this type
+20 |         lock_hash: String::new(),
+   |         ^^^^^^^^^ private field
+21 |         artifact_hash: String::new(),
+   |         ^^^^^^^^^^^^^ private field
+22 |         dataset_fingerprint: String::new(),
+   |         ^^^^^^^^^^^^^^^^^^^ private field
+23 |         validation_split_fingerprint: String::new(),
+   |         ^^^^^^^^^^^^^^^^^^^^^^^^^^^^ private field

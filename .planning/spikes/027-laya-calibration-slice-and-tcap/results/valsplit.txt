@@ -1,0 +1,5 @@
+s16-es12-seed23        acc cal/val/eval 0.583/0.530/0.489 | T slice 3.05  val 3.35  eval-oracle(NLL) 5.11 | ECE eval @T_slice 0.119 @T_val 0.092
+s16-r1-seed13          acc cal/val/eval 0.583/0.636/0.532 | T slice 1.84  val 1.73  eval-oracle(NLL) 2.85 | ECE eval @T_slice 0.100 @T_val 0.117
+s64-es12m10-seed23     acc cal/val/eval 0.667/0.773/0.579 | T slice 4.51  val 3.11  eval-oracle(NLL) 6.48 | ECE eval @T_slice 0.122 @T_val 0.215
+s64-r1-seed13          acc cal/val/eval 0.729/0.803/0.611 | T slice 8.76  val 4.89  eval-oracle(NLL) 11.96 | ECE eval @T_slice 0.098 @T_val 0.234
+s64-r1-seed17          acc cal/val/eval 0.708/0.697/0.575 | T slice 8.93  val 6.03  eval-oracle(NLL) 12.55 | ECE eval @T_slice 0.123 @T_val 0.215

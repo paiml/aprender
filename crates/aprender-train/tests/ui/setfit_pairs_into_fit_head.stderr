@@ -1,0 +1,16 @@
+error[E0061]: this method takes 0 arguments but 1 argument was supplied
+  --> tests/ui/setfit_pairs_into_fit_head.rs:24:17
+   |
+24 |     let _ = run.fit_head(pairs);
+   |                 ^^^^^^^^ ----- unexpected argument of type `Vec<LabeledPair>`
+   |
+note: method defined here
+  --> src/train/setfit/mod.rs
+   |
+   |     pub fn fit_head(self) -> Result<SetFitRun<HeadFitted>, SetFitTrainError> {
+   |            ^^^^^^^^
+help: remove the extra argument
+   |
+24 -     let _ = run.fit_head(pairs);
+24 +     let _ = run.fit_head();
+   |

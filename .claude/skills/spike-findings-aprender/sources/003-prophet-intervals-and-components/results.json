@@ -1,0 +1,54 @@
+[
+  {
+    "band_future_python": 1.2935658725228076,
+    "band_future_rust": 1.2907203566814727,
+    "band_hist_python": 1.2376218410379818,
+    "band_hist_rust": 1.2376954530698807,
+    "coverage_in_sample": 0.8822719449225473,
+    "delta_f_vs_python": -0.13073657857694343,
+    "fit_secs": 3.105881833,
+    "fixture": "peyton_default",
+    "holdout": "6. Holdout (train 2540 / test 365): Rust coverage [\"0.816\", \"0.833\", \"0.811\"] (mean width [\"1.309\", \"1.309\", \"1.316\"], MAE 0.4131) vs Python coverage [\"0.827\", \"0.825\", \"0.814\"] (mean width [\"1.317\", \"1.310\", \"1.317\"], MAE 0.4125)",
+    "status": "6 restarts, 1312 iters [r0:Stalled/203→-7999.572618 r1:Stalled/187→-8004.137545 r2:Stalled/176→-8004.806819 r3:Stalled/230→-8004.925279 r4:Stalled/516→-8004.928690 r5:Stalled/0→-8004.928690]",
+    "yhat_future_max_abs": 0.0029927019135662647
+  },
+  {
+    "band_future_python": 1.2353128753504208,
+    "band_future_rust": 1.2352329404620346,
+    "band_hist_python": 1.1748004066556008,
+    "band_hist_rust": 1.172516199525279,
+    "coverage_in_sample": 0.8726333907056799,
+    "delta_f_vs_python": -0.5351823806486209,
+    "fit_secs": 1.808082167,
+    "fixture": "peyton_holidays",
+    "holdout": "",
+    "status": "4 restarts, 1193 iters [r0:Stalled/665→-8155.635077 r1:Stalled/357→-8155.755699 r2:Stalled/171→-8155.755729 r3:Stalled/0→-8155.755729]",
+    "yhat_future_max_abs": 0.02069439064891654
+  },
+  {
+    "band_future_python": 0.6003774931573598,
+    "band_future_rust": 0.5980365296034247,
+    "band_hist_python": 0.59829886413545,
+    "band_hist_rust": 0.5978799132745313,
+    "coverage_in_sample": 0.9179182675515194,
+    "delta_f_vs_python": -0.19579586931649828,
+    "fit_secs": 0.929080916,
+    "fixture": "wp_log_R_logistic",
+    "holdout": "",
+    "status": "8 restarts, 815 iters [r0:Stalled/38→-9004.135721 r1:Stalled/209→-9019.576143 r2:Stalled/50→-9019.672735 r3:Stalled/166→-9019.828262 r4:Stalled/74→-9019.855823 r5:Stalled/130→-9019.862670 r6:Stalled/58→-9019.864538 r7:Stalled/90→-9019.865960]",
+    "yhat_future_max_abs": 0.0017565742586835853
+  },
+  {
+    "band_future_python": 26.377305502295375,
+    "band_future_rust": 26.306411328149913,
+    "band_hist_python": 26.306660653655683,
+    "band_hist_rust": 26.211909840382443,
+    "coverage_in_sample": 0.7708333333333334,
+    "delta_f_vs_python": -0.04351815378163337,
+    "fit_secs": 0.041879667,
+    "fixture": "air_multiplicative",
+    "holdout": "",
+    "status": "8 restarts, 678 iters [r0:Stalled/99→-502.678107 r1:Stalled/103→-503.397108 r2:Stalled/110→-503.427815 r3:Stalled/85→-503.438685 r4:Stalled/52→-503.439112 r5:Stalled/79→-503.439292 r6:Stalled/41→-503.439293 r7:Stalled/109→-503.439293]",
+    "yhat_future_max_abs": 26.25414014460887
+  }
+]

@@ -276,6 +276,12 @@
             device: "cpu".to_string(),
             samples: 1,
             temperature: 0.0,
+            selection: None,
+            split: "validation".to_string(),
+            lock_out: None,
+            selection_lock: None,
+            candidate: Vec::new(),
+            force: false,
         });
         let paths = extract_model_paths(&cmd);
         assert_eq!(paths, vec![PathBuf::from("model.gguf")]);

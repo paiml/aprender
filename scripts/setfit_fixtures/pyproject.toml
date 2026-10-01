@@ -1,0 +1,30 @@
+[project]
+name = "setfit-fixtures"
+version = "0.1.0"
+description = "Hash-locked reference environment that generates the frozen SetFit/MiniLM conformance fixtures (D-12). Dev workflow only -- never run in CI."
+readme = "README.md"
+# Upper-bounded on purpose. transformers 4.x (see the pin below) has no wheels for
+# Python 3.14+, and an unbounded `>=3.13` makes uv resolve a 3.14 split that cannot
+# be solved. The interpreter is pinned exactly in .python-version (3.13.7).
+requires-python = ">=3.13,<3.14"
+dependencies = [
+    # The four D-12 reference pins. Exact `==` by design: every committed fixture
+    # is a numerical artifact of these versions.
+    "setfit==1.1.3",
+    "sentence-transformers==5.7.0",
+    "torch==2.13.0",
+    "scikit-learn==1.9.0",
+    # Constraint, not a 5th reference pin. setfit 1.1.3 declares an UNBOUNDED
+    # `transformers>=4.41.0`, so a fresh resolve picks transformers 5.x, where
+    # `default_logdir` was removed from transformers.training_args and
+    # `import setfit` dies with ImportError. sentence-transformers 5.7.0 already
+    # caps at <6.0.0; setfit is the one missing the cap. 4.57.x is also the exact
+    # series 01-RESEARCH.md verified BERT dropout placement against.
+    "transformers>=4.41.0,<5",
+    # Used directly by the generator/slicer for tensor IO and the pinned download.
+    # Deliberately unbounded: transformers 4.x caps huggingface-hub at <1.0, so an
+    # explicit `>=1.x` here makes the resolution unsatisfiable. The exact resolved
+    # version is frozen in uv.lock, which is the artifact that matters for D-12.
+    "safetensors>=0.8.0",
+    "huggingface-hub",
+]

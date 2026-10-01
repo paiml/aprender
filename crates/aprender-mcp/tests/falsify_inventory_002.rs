@@ -111,7 +111,7 @@ fn duplicate_tool_name_panics_at_index_build() {
 fn live_inventory_has_no_duplicates() {
     // Sanity: the production inventory at HEAD does NOT panic — every
     // shipped tool registers exactly once. Equivalent to the lib-level
-    // `live_inventory_yields_phase_one_tool_set` test but reachable from
+    // `live_inventory_yields_shipped_tool_set` test but reachable from
     // an integration target so a regression is caught at the same layer
     // production code runs at.
     use aprender_mcp::tools::ToolIndex;

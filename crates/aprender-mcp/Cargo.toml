@@ -37,7 +37,7 @@ native = []
 # subprocess signals (nix) and the contract-driven schema codegen (serde_yaml, build.rs).
 # A caller serving its own tools (ToolIndex::from_entries + AprMcpServer::with_tools)
 # builds with default-features = false, features = ["native"]: serde + serde_json only.
-apr-tools = ["dep:inventory", "dep:nix", "dep:serde_yaml"]
+apr-tools = ["dep:inventory", "dep:nix", "dep:serde_yaml", "dep:tempfile"]
 # M5 scaffold: enables the pmcp v2.3 dispatcher path alongside the hand-rolled
 # stdio loop. Off by default — PR 1 wires the dep, PR 2 lands the parity test
 # (FALSIFY-MCP-009), PR 3 extends cancellation, PR 4/5 add SSE/WebSocket
@@ -52,6 +52,14 @@ serde_json = { workspace = true }
 # iterates `inventory::iter::<McpToolEntry>` at startup. See
 # contracts/apr-mcp-tool-inventory-v1.yaml.
 inventory = { version = "0.3", optional = true }
+# `apr.predict` hands its batch to the CLI through `--input <FILE>`, the shared
+# `ClassifyRequestDocument`, rather than one `--text=` per text: argv is capped
+# by the OS (`ARG_MAX` is 1 MiB here — the SAME number as the contract's
+# `max_request_body_bytes`, minus the environment), so a contract-legal batch
+# did not fit through it. Already a workspace dep at 3.27 in the lockfile, so
+# this adds no transitive cost. Optional under `apr-tools` (PMAT-3954): only
+# apr's own `apr.predict` tool uses it.
+tempfile = { workspace = true, optional = true }
 # M5 prep: pmcp 2.3 is PAIML's Rust MCP SDK, already pinned in
 # aprender-orchestrate for the MCP client side. Pulled in here as an optional
 # dep so PR 1 is a zero-behaviour-change patch — the dispatcher still runs on

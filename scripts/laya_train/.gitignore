@@ -1,0 +1,4 @@
+# uv virtualenv and Python bytecode produced by running the generator / trainer.
+.venv/
+__pycache__/
+*.py[cod]

@@ -63,6 +63,11 @@ mod codegen {
         #[allow(dead_code)]
         // YAML also encodes `required`; authoritative source is ToolEntry.required
         required: bool,
+        /// Element type for `type: array` args, emitted as JSON Schema `items`.
+        /// A JSON Schema array without `items` leaves the element type undefined,
+        /// so a client cannot validate or usefully prompt for the value.
+        #[serde(default)]
+        items_type: Option<String>,
     }
 
     pub fn main() {
@@ -187,6 +192,21 @@ mod codegen {
                     "description".to_string(),
                     Value::String(arg.description.clone()),
                 );
+                // Insertion order is irrelevant here: without serde_json's
+                // `preserve_order` feature a `Map` IS a BTreeMap, so keys come out
+                // sorted, and FALSIFY-MCP-008 compares parsed `Value`s rather than
+                // bytes either way. Placed after `description` for readability only.
+                if let Some(items_type) = &arg.items_type {
+                    let mut items = Map::new();
+                    items.insert("type".to_string(), Value::String(items_type.clone()));
+                    prop.insert("items".to_string(), Value::Object(items));
+                } else {
+                    assert!(
+                        arg.arg_type != "array",
+                        "FALSIFY-MCP-008: arg `{name}` is type: array but declares no `items_type`; \
+                         an array schema without `items` leaves the element type undefined"
+                    );
+                }
                 props.insert(name.to_string(), Value::Object(prop));
             }
             schema.insert("properties".to_string(), Value::Object(props));

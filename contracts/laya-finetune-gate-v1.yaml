@@ -1,0 +1,1039 @@
+contract: laya-finetune-gate
+metadata:
+  version: 5.0.0
+  created: '2026-09-25'
+  author: PAIML Engineering
+  kind: kernel
+  # ONT-7 (plan 08-33): the fail-closed gate's claims hold in the committed tree; no backend, host or
+  # feature qualifies the claim.
+  valid_under:
+    world: committed
+  description: >
+    THE TRAINING-SIDE CLAIMS of the Laya decision model (Phase 8, D-03..D-08) and the D-19 demo
+    cell: the device rule, the declared base, the fine-tune recipe, the task and training-row
+    inputs, the calibration fit, the pre-declared quality gate and the seed policy — plus the
+    schemas of every file a training run writes, so the Python writer (`scripts/laya_train`) and
+    the Rust reader/verifier (`aprender-decide`, `deny_unknown_fields`) implement ONE schema.
+
+    DECLARED BEFORE ANY RUN IS READ (D-07). Every threshold here is committed in plan 08-01, before
+    any `models/decide/` run directory exists; the trainer and the verifier READ them from this
+    file at run time and never write them as literals. A threshold chosen after seeing a result is
+    not a gate. Moving one after a run has been read is a `pv diff`-visible claims change that
+    invalidates the recorded evidence.
+
+    AMENDMENT 1.1.0 (2026-09-25, after the D-19 fixed_epochs demo FAILED the gate on ECE). Additive
+    only: a second declared stopping rule (`early_stopping`), the optional recipe.json field that
+    names it, and the equation / test that bind it. No threshold, calibration bound, seed, data
+    rule or schema field of 1.0.0 moved; the failing fixed_epochs run remains valid evidence.
+
+    AMENDMENT 1.2.0 (2026-09-26, after the D-19 early_stopping demo ALSO failed the gate on ECE).
+    Records the demo's outcome of record, nothing else: the D-19 demo FAILED the unchanged gate under
+    both declared recipe_ids, and by user decision (2026-09-26, option 3) both runs are kept as
+    FAIL-CLOSED TEST VECTORS that pack/verify must refuse (`demo.fail_closed_vectors`). The D-18 live
+    deploy of the stance model is DEFERRED until a declared run passes this gate. No threshold,
+    calibration bound, seed, recipe value, data rule or schema field moved; `gate_max_ece` stays 0.10.
+
+    AMENDMENT 1.4.0 (2026-09-27, user decision option 1 from spikes 027/028; declared BEFORE any s64
+    gate run). NAMING: the approved plan set calls this amendment "1.4.0" and every "1.4.0" in this
+    file, laya-parity-v1 and decide-apr-v1 means it; `pv diff` classified it MAJOR (amended
+    gate_pass / declared_seed_ships formulas), so it is published as metadata.version 2.0.0. Three changes, taken together by the user, each visible in `pv diff` before a run is
+    read. (A2, the claim) The gate now certifies margin and calibration on held-out data drawn like
+    the tenant's shots. It does NOT certify robustness to a shifted input population. This eval set
+    was chosen AFTER the SemEval-2016 test split failed the gate under both 1.x recipes; spike 027
+    measured the cause as the SemEval train-to-test shift (the same s64 early-stopping checkpoints
+    at their own slice T: ECE 0.051 to 0.069 on 459 in-distribution rows, 0.096 to 0.139 on the
+    test split). The test split is kept as a REPORTED shift probe so the shift stays visible
+    (`eval_set`). (A3, the seeds) Production runs train seeds 13/17/23 on the same data, split and
+    recipe; the median-ECE seed ships, ranked by floor(ece_post x 10000) with ties to the smaller
+    seed, and the gate passes only if that seed's run passes BOTH clauses; all three runs are
+    reported; the median is selected WITH eval labels and says so (`seed_policy`). (A1, the
+    re-score bar) The pack/verify re-score of `gate_pass`'s domain is now laya-parity-v1 2.0.0's
+    noise-referenced bound(c, s), recomputed in Rust from the hash-bound `rescore-noise.json`
+    (`rescore_noise_schema`). The amended D-19 cell is the NEW `demo_s64` block; the `demo` block
+    stays the s16 record of 1.2.0 with every value unchanged. NO threshold, calibration bound,
+    recipe value or early-stopping value moved: gate_max_ece 0.10, gate_min_macro_f1_margin 0.05,
+    T in [0.5, 5.0]. Every key an existing reader consumes keeps its name and 1.x meaning; the
+    amendments are added beside them.
+
+    TEXT ALIGNMENT 3.0.0 (plan 08-12, 2026-09-27, AFTER the 08-16 gate run; no value moved). The
+    `seed_policy.why_quantized` text and one `seed_selection_median` invariant said an ece_post
+    "within the recompute tolerance of a grid line" is refused. Plan 08-15 implemented the rule the
+    rationale actually needs: a seed is refused when its rank_key recomputed from the Rust ece_post
+    differs from the rank_key Python reported. The text now says that. No threshold, formula, seed,
+    schema field or recorded outcome changed; `pv diff` classifies any invariant edit MAJOR, so this
+    is published as 3.0.0, and the 1.4.0 naming above is unchanged.
+
+    NUMERIC AGREEMENT (plan 08-27, 2026-09-28, class E; no threshold, formula meaning, seed,
+    schema field or recorded outcome moved). Until this plan Rust recomputed macro-F1 and the ECE
+    in f32 while the Python trainer used f64 with numpy sums, so at an exact threshold the two
+    could decide differently (V7-a: a 9-row set whose margin is exactly 1/20 PASSED in Python and
+    FAILED in Rust; V7-b: about 1 in 2000 random 459-row sets moved a rank key), and the
+    `why_quantized` premise "the same ECE to well under 1e-12" was false. Every gate quantity is
+    now ONE declared f64 computation with exactly-rounded sums in both languages
+    (`numeric_agreement`), met bit for bit on a frozen case file both languages replay, and
+    `f_avg` is recomputed (check_f_avg). The gate's ECE and macro-F1 are aprender-core's new f64
+    paths; the f32 functions other phases use are unchanged, frozen bit for bit. `pv diff`
+    classifies the amended ece_top_label formula and invariants MAJOR, so this is published as
+    4.0.0; the 1.4.0 naming above is unchanged.
+
+    TEXT ALIGNMENT 5.0.0 (plan 08-29, 2026-09-28, class E and V13-c; no threshold, constant, recipe
+    value, seed, early_stopping value, schema field or recorded outcome moved). The contract stated
+    three different early-stopping rules: `early_stopping.improvement_rule` the best-anchored one the
+    trainer implements (m_e < m_best - min_delta), the `early_stopping_train_side` formula a
+    running minimum, and FALSIFY-LAYA-GATE-009 and `tie_break_rule` "the earliest epoch within
+    min_delta of the minimum". On m = [1.0, 0.9993, 0.9988] they pick epochs 3, 1 and 2. The rule of
+    record is the one the 08-16 run trained under (gate.py at 24cea2a63, best-anchored; its seed-17
+    trace replays to the recorded best_epoch 2 under it, although that trace alone does not separate
+    the three), so the formula, its tie invariant, FALSIFY-LAYA-GATE-009 and the `tie_break_rule`
+    description now state that rule. Text corrected to the code, never the reverse. Additively,
+    `python_refusals` enumerates every refusal the Python back office raises and data.py --selftest
+    sweeps it, and `rescore_noise_schema.k` now says what both readers do: a float64 compared bit for
+    bit (the trainer used to write int(k)). `pv diff` classifies the formula and invariant edit
+    MAJOR, so this is published as 5.0.0; the 1.4.0 naming above is unchanged.
+
+    THE GATE IS DECIDED ON RECOMPUTED METRICS, NOT REPORTED ONES. A gate report is a file a
+    training run wrote; an edited report must not pass. So the metrics that DECIDE pass are
+    recomputed in Rust (plan 08-09) from `eval-probs.json` and `zero-shot-probs.json`, after every
+    probability in those files has been verified within laya-parity-v1 `pack_rescore_probs_abs` of
+    the Rust re-score of the packed artifact and of the declared base respectively (argmax exact).
+    A reported metric further than `gate_metric_recompute_abs` from its recomputation, or a reported
+    `pass` that disagrees with the recomputed one, is refused. The zero-shot probabilities are
+    RETAINED as a file for exactly this reason: a baseline that exists only as a reported number can
+    be edited.
+
+    THE ECE IS THE HOUSE ECE (OPS-03). `ece_top_label` is aprender-core's
+    `calibration::expected_calibration_error_top_label_f64` — the f64, exactly-summed companion of
+    `expected_calibration_error_top_label` (contracts/calibration-v1.yaml), with the same floor
+    binning and top-bin clamp (plan 08-27, `numeric_agreement`). Recorded deviation: spike 024's `fewshot015.metrics` bins
+    right-closed, `(lo, hi]`; the two differ only for a confidence exactly on a bin edge. One Rust
+    ECE implementation outweighs byte-matching an informational spike number.
+
+    TWO RECIPE VARIANTS, ONE DEPLOYABLE. `production` is the only variant that can be packed for
+    serving, verified or deployed. `synthetic-fixture` exists so the lifecycle can be exercised on a
+    tiny synthetic base in tests; it is structurally loadable and REFUSED by every
+    pack-for-serving, verify and deploy path (`synthetic_not_deployable`).
+
+    PROVABILITY HONESTY. `cargo-kani` is not installed in this repository and there is not one
+    `#[kani::proof]` harness anywhere under `crates/`. The `kani_harnesses:` entries are DECLARED and
+    NOT EXECUTED; each names the runnable test that is the actual evidence.
+
+    ANNOTATION HONESTY. `#[contract]` is METADATA-ONLY in this repository (see setfit-apr-v1). The
+    enforcement mechanism for everything below is the named test, never the annotation.
+
+    BINDING HONESTY, AND STAGED TEST REFERENCES. Every equation Rust can re-verify is bound to the
+    RUST verifier (`aprender_decide::verify`), because Rust lib tests are what CI runs; the
+    Python-only training equations are bound to the `laya-train-selftest` justfile recipe and say in
+    their binding notes that the recipe runs locally, not in CI. All are `status: pending` except
+    `ece_top_label`, whose implementation already exists. No falsification test below cites a test
+    that does not exist yet (CI's strict-binding gate starts a new contract at zero): each carries a
+    prose `implemented_by:`, and the implementing plan adds the `test:` / `test_harness:` line in the
+    same commit as the test.
+  references:
+    - '.claude/skills/spike-findings-aprender/references/laya-decision-model.md — full fine-tune quality (spike 024) and the recipe this contract fixes.'
+    - '.claude/skills/spike-findings-aprender/sources/024-laya-vs-kev-few-shot/tools/ft_laya.py — the recipe (AdamW 2.5e-5 / 1.0e-4, cosine to 1e-6, batch 8, clip 1.0, proper reward 0.75 / 1.0).'
+    - '.claude/skills/spike-findings-aprender/sources/024-laya-vs-kev-few-shot/tools/fewshot015.py — the spike metrics (macro-F1, F_avg over against/favor, 15-bin ECE).'
+    - 'contracts/calibration-v1.yaml and crates/aprender-core/src/calibration.rs — expected_calibration_error_top_label, the house ECE; frozen cases scripts/setfit_fixtures/claims_stats/ece_top_label_cases.json.'
+    - 'contracts/tweet-eval-stance-benchmark-v1.yaml — dataset identity, F_avg and the seed set the demo cell uses.'
+    - 'benchmarks/tweeteval-stance/selections/s16-seed13/selection-manifest.json — the D-19 demo selection (label_names none, against, favor; 16 shots/class; root_seed 13).'
+    - 'Laya @ 4066d5d laya/common.py:376-377 — TEMP_MIN 0.5 / TEMP_MAX 5.0, applied by clamp_temperature at every load (RESEARCH Pitfall 6).'
+    - 'Guo et al. (2017), On Calibration of Modern Neural Networks — temperature scaling by NLL.'
+  depends_on:
+    - calibration-v1
+    - tweet-eval-stance-benchmark-v1
+    - laya-parity-v1
+
+# FLAT scalars only (the decide-tool-boundary-v1 rule): every value here is read by one key
+# lookup, and no nested value exists that nothing validates. Every structured declaration is a
+# TOP-LEVEL key beside this block (the `door_surface:` precedent in forecast-tool-boundary-v1).
+constants:
+  # ---- the gate (D-07), RESEARCH A6 / A7 ----
+  gate_min_macro_f1_margin: 0.05
+  gate_max_ece: 0.10
+  # How far a REPORTED metric may differ from the one Rust recomputes (plan 08-09).
+  gate_metric_recompute_abs: 1.0e-5
+  ece_bins: 15
+  # ---- calibration (D-06), Laya's TEMP_MIN / TEMP_MAX (Pitfall 6) and RESEARCH A9 ----
+  calibration_temp_min: 0.5
+  calibration_temp_max: 5.0
+  calibration_slice_fraction: 0.25
+  calibration_slice_min_per_class: 2
+  # ---- seeds (D-08) ----
+  declared_seed: 13
+
+# ---------------------------------------------------------------------------------------------
+# Structured declarations. Top-level keys: pv's `Contract` is not deny_unknown_fields, so these
+# validate and are read by the trainer and the Rust verifier by name.
+# ---------------------------------------------------------------------------------------------
+
+seed_policy:
+  declared_seed: 13
+  variance_seeds: [13, 17, 23]
+  rule: 'TWO RULES (1.4.0; D-08 as amended 2026-09-27). (1) SEED SELECTION, required for production: when recipe.json carries `seed_selection`, the seeds variance_seeds (13, 17, 23) all train on the same data, split and recipe, the MEDIAN-ECE seed ships per rank_rule, and the gate passes per pass_rule. (2) LEGACY (1.x), when recipe.json carries no `seed_selection`: the shipped checkpoint is ALWAYS the declared seed; other seeds are run only to report variance (`variance-report.json`), never to select a checkpoint; such a run is never deploy-eligible under 1.4.0 (legacy_rule). Gate-report `seeds.label` is a literal naming WHAT SHIPS: "single seed" when one seed ran; under seed selection "median-ECE seed of N seeds" (the shipped run is ONE seed, the median, never a mean); a legacy (1.x) multi-seed run keeps its 1.x literal "mean ± sd over N seeds". variance-report.json `label` stays "mean ± sd over N seeds" under both rules, because that file does report the mean and sd (label settled 2026-09-27, before any s64 gate run; D-ITEM-08-14-A).'
+  # ---- A3 (1.4.0, 2026-09-27): median-ECE seed selection. Read by scripts/laya_train/gate.py
+  # select_median_seed (plan 08-14) and aprender_decide::verify check_seed_selection (plan 08-15,
+  # authoritative): one declared rule implemented twice.
+  selection: median_ece
+  rank_scale: 10000
+  tie_break: smaller_seed
+  production_seeds_required: 3
+  rank_rule: 'for each seed s, rank_key(s) = floor(ece_post(s) x rank_scale) as an integer, ece_post(s) being that seed''s post-calibration house ECE on the gate eval set at its own applied T; order the seeds by (rank_key ascending, seed ascending); the SHIPPED seed is the element at 0-based index (N - 1) / 2 = 1 for N = 3'
+  pass_rule: 'the gate PASSES only if the shipped (median) seed''s run passes BOTH clauses: ft.macro_f1 - zs.macro_f1 >= gate_min_macro_f1_margin with the shared zero-shot baseline, and ece_post <= gate_max_ece'
+  report_rule: 'all three runs are reported, in gate-report `seeds.per_seed` (seed order) and in variance-report.json; a non-median seed''s numbers never enter gate_pass'
+  retention_rule: 'every seed trains in `seeds/seed-<s>/`; after selection the median seed''s checkpoint becomes `checkpoint/` and the others'' checkpoints are deleted; every seed''s `seeds/seed-<s>/eval-probs.json` is kept and hash-bound (per_seed eval_probs_sha256); the non-shipped seeds are RECOMPUTED in Rust from those files but NOT re-scored'
+  honesty: 'the median is selected WITH eval labels. Median-of-3 is not best-of-3: the shipped run''s ECE is the middle draw, not the minimum, so the report is not optimistically biased the way a best-seed choice is — but it IS a selection on the gate eval set and is recorded as one. Chosen because spike 027 measured MPS training as not bitwise reproducible: one replicate turned a FAIL into a PASS, ECE moving by up to 0.048'
+  why_quantized: 'Python and Rust compute the same ECE from the same probabilities BIT FOR BIT by construction (`numeric_agreement`: one f64 formula, exactly-rounded sums, the same order, replayed on the frozen case file scripts/laya_train/numeric_cases.json by both languages; plan 08-27), so both sides order the seeds identically, including an ECE that sits exactly on a 1e-4 grid line. Rust still recomputes rank_key(s) from its own ece_post and refuses any seed whose recomputed rank_key differs from the rank_key Python reported (gate-report seeds.per_seed[].rank_key) rather than guessing: with the two computations identical, that refusal fires only on a report whose rank_key or probabilities were edited. A value merely near a grid line whose two keys agree is accepted, because reading "near" as within gate_metric_recompute_abs (1e-5) of a 1e-4 grid line would refuse about 20 % of honest seeds (verify::check_seed_selection)'
+  legacy_rule: 'a recipe.json without `seed_selection` is judged under the 1.x rule — the declared seed ships — and is NEVER deploy-eligible under 1.4.0: verify refuses it with SeedPolicyMissing, but only AFTER the re-scores and the gate, so a legacy run whose gate fails still reports GateFailed'
+
+eval_set:
+  # ---- A2 (1.4.0, 2026-09-27, user decision option 1): what the gate's eval set is, and what a
+  # passing gate therefore claims. Declared BEFORE any s64 data dir or run exists (D-07).
+  claim: 'The gate now certifies margin and calibration on held-out data drawn like the tenant''s shots. It does NOT certify robustness to a shifted input population.'
+  history: 'This eval set was chosen AFTER the SemEval-2016 test split failed the gate twice (1.x: fixed_epochs d0f4e40d… ece_post 0.3773; early_stopping 3d4b91da… ece_post 0.2224). Spike 027 (.planning/spikes/027-laya-calibration-slice-and-tcap) measured the cause as the SemEval train-to-test shift, not the recipe: the same s64 early-stopping checkpoints at their own slice-fitted T score ECE 0.051 to 0.069 on 459 in-distribution held-out rows and 0.096 to 0.139 on the test split. The choice is therefore informed by those failures and is recorded as a claims change, not as a tuning step.'
+  generic_rule: 'eval.jsonl is REQUIRED (D-06) and must be held-out data drawn like train.jsonl; the trainer cannot check the distribution, so the claim is only as good as the tenant''s split. Every criterion must have at least one eval row (REFUSED otherwise, by the trainer as eval-class-coverage and by the Rust verifier): macro-F1 averages over the labels present in y and pred, so a criterion absent from eval would let the margin be decided by which model happens to predict it'
+  demo_rule: 'the demo_s64 eval set, as a rule: TweetEval stance_abortion `validation` rows followed by `train` rows (file order), keeping every row whose id is NOT a shot of the s64-seed13 manifest (payload.ordered_examples), NOT in payload.exclusions.excluded_train_ids, and NOT a member of any payload.exclusions.groups[*].members (each member a [split, id] pair, e.g. [validation, validation:3]); text overlap with the shots under nfc-trim-ws-v1 is REFUSED; duplicates by nfc-trim-ws-v1 are dropped keeping the first occurrence in that order. Expected: 459 rows with class counts [111, 291, 57] in criteria order [none, against, favor], as spikes 027 (diagnose_indist.py) and 028 (build_heldout.py) both measured'
+  shift_probe_rule: 'an OPTIONAL data-dir file `shift.jsonl` with the train_row schema, scored with the shipped checkpoint and the declared base AFTER the gate is decided; reported in gate-report `shift_probe` with `gate_clause: false`; RECOMPUTED in Rust from its hash-bound probability files but never re-scored and never a gate clause; text overlap with train.jsonl is refused'
+  demo_shift_probe: 'the TweetEval stance_abortion test split (SemEval-2016 test), 280 rows — the 1.x gate eval set, kept visible as the shift probe'
+
+recipe:
+  # D-04: fixed to the spike-024 values. Any change is a new recipe_id.
+  optimizer: adamw
+  encoder_lr: 2.5e-5
+  head_lr: 1.0e-4
+  eta_min: 1.0e-6
+  weight_decay: 0.01
+  grad_clip: 1.0
+  batch_size: 8
+  proper_reward_w_sph: 0.75
+  proper_reward_w_rps: 1.0
+  loss: 'cross_entropy + (-proper_reward(softmax(z / T), onehot, w_sph, w_rps)).mean()'
+  epochs_at_most_16_per_class: 12
+  epochs_above_16_min: 4
+  epochs_above_16_max: 12
+  schedule: 'cosine annealing from each group lr to eta_min over epochs * ceil(n_fit / batch_size) steps'
+  # The recipe.json `schedule` value (recipe_json_schema.schedule), as a machine literal the Rust
+  # verifier compares (verify::check_recipe_block, plan 08-21). Additive: the prose above is unchanged.
+  schedule_literal: cosine
+  epoch_rule: 'shots_per_class <= 16 -> 12 epochs; above 16 -> an epoch count in [4, 12] declared in recipe.json before training'
+  # How training stops. Two declared stopping rules over the SAME loop and values above:
+  #   fixed_epochs    run exactly `epochs` epochs and ship the last (the spike-024 recipe; recipe.json
+  #                   carries no `early_stopping` key). D-19 demo run with it: recipe_id
+  #                   d0f4e40d39425e68d503f557f4f660eb9a73a4fb258da01f777b6f49362bcf20, GATE FAIL
+  #                   (margin 0.1299 passes; ece_post 0.3773 > gate_max_ece, T clamped at 5.0).
+  #   early_stopping  the `early_stopping:` block below; `epochs` becomes the MAXIMUM.
+  # The default for production runs is early_stopping (declared 2026-09-25, see that block's history).
+  stopping_rules: [fixed_epochs, early_stopping]
+  stopping_default: early_stopping
+
+early_stopping:
+  # D-04 / D-07 discipline. DECLARED 2026-09-25, AFTER the fixed_epochs demo run's gate report was read
+  # (recipe_id d0f4e40d…: GATE FAIL on ECE because 12 epochs memorise the shots, ce_last 0.0) and
+  # BEFORE any early-stopping run existed. It is therefore informed by that one result and is recorded
+  # as a NEW declared recipe (a new recipe_id), never as a tweak of the old one. The gate thresholds,
+  # the calibration bounds, the seeds and the data are UNCHANGED; the fixed_epochs run stays a valid,
+  # identifiable fail-closed test vector. One declared attempt: if this recipe also fails the gate,
+  # the run halts for a human decision rather than trying another rule.
+  name: early-stopping-calibration-nll-v1
+  max_epochs: 'the recipe epoch count (epochs_at_most_16_per_class = 12 at <= 16 shots/class; the declared --epochs above 16); recipe.json `epochs` records this MAXIMUM'
+  monitor: calibration_nll_at_fitted_t
+  monitor_formula: 'm_e = mean_i -log softmax(z_i / T*_e)[y_i] over the CALIBRATION slice rows i, where z are the model''s logits after epoch e and T*_e = fit_temperature(z, y, calibration_temp_min, calibration_temp_max) (equation calibration_fit_bounded) — the NLL the served, bounded temperature can reach'
+  monitor_why: 'The gate fails a model the bounded temperature cannot calibrate (T capped at 5.0). NLL at the best servable T measures exactly that, and it is a proper score; ECE over 12 rows in 15 bins is too coarse to rank epochs.'
+  mode: min
+  eval_every_epochs: 1
+  eval_point: 'after the last optimizer and scheduler step of each epoch'
+  first_candidate_epoch: 1
+  first_candidate_why: 'epoch 0 is the untrained base, which is the zero-shot baseline itself (margin 0); it is never a candidate'
+  patience_epochs: 3
+  min_delta: 0.001
+  improvement_rule: 'epoch e improves iff m_e < m_best - min_delta (strict); a non-finite m_e never improves'
+  stop_rule: 'stop after epoch e when e - best_epoch >= patience_epochs, or at max_epochs'
+  restore: best
+  restore_rule: 'the weights after best_epoch are restored (an exact copy taken when that epoch improved), then saved F16 as the shipped checkpoint'
+  tie_break: earliest
+  # plan 08-29 (V13-c): tie_break_rule's text is corrected TO THE CODE, never the reverse. The best-anchored
+  # rule below is what gate.EarlyStopper implemented when the 08-16 run of record trained (gate.py at
+  # 24cea2a63; that run's per-epoch trace is checkpoint/rl_agent_config.json `training.stopping`, replayed
+  # by gate.py --selftest RUN_OF_RECORD_STOPPING). The old text, 'among epochs within min_delta of each
+  # other the earliest is kept', is false on m = [1.0, 0.9993, 0.9988]. `tie_break: earliest` and every
+  # other key of this block are unchanged, and recipe.json copies `tie_break`, not this text, so no
+  # recipe_id moves.
+  tie_break_rule: 'best-anchored: a later epoch replaces the best only when it beats m_best (the monitor of the current best epoch) by MORE than min_delta, so an epoch within min_delta of the CURRENT BEST never replaces it and the earlier best is kept; two epochs within min_delta of EACH OTHER need not keep the earlier: on m = [1.0, 0.9993, 0.9988] (min_delta 0.001) epoch 2 does not beat 1.0 by more than min_delta and epoch 3 does, so epoch 3 is kept'
+  schedule: 'UNCHANGED: cosine over max_epochs * ceil(n_fit / batch_size) steps, as fixed_epochs; stopping truncates it, it is never re-planned'
+  monitor_precision: 'fp32 weights in eval mode on the training device, no grad, batched by recipe.batch_size with the training collate — a SELECTION signal only. Every REPORTED score (calibration fit, gate metrics, eval / zero-shot / probe files) is still computed on the F16 reload (f16_reload_scoring); T*_e is not the reported t_fitted.'
+  data_rule: 'The calibration slice is the SAME text-group-disjoint slice (split_disjointness, declared_seed) used for the temperature fit, and the ONLY data the monitor reads. It is used twice (stopping and T); both uses are train-side. eval.jsonl NEVER influences stopping, the restored epoch or T: the trainer never passes eval rows to training, and no eval probability is computed before the checkpoint is fixed (enforced by an ordering assertion in train.py: the stopping record and checkpoint/model.safetensors precede eval-probs.json).'
+  record: 'checkpoint/rl_agent_config.json `training.stopping` {rule, monitor, per_epoch [{epoch, monitor, t_star}], best_epoch, epochs_run, reason} — provenance Laya and the Rust AgentConfig reader ignore; the gate-report schema is unchanged'
+  recipe_json_field: 'recipe.json `early_stopping` {monitor, mode, eval_every_epochs, first_candidate_epoch, patience_epochs, min_delta, restore, tie_break}, copied from this block before training — so the recipe_id differs from every fixed_epochs recipe_id'
+
+recipe_variants:
+  production:
+    base: 'must equal the base: block below (repo, revision, checkpoint, sha256)'
+    shots_epochs_seed: 'per the recipe rules; seed == declared_seed for the shipped checkpoint'
+    deployable: true
+    note: 'The ONLY variant that can be packed for serving, verified by pack_laya verify, or deployed.'
+  synthetic-fixture:
+    base: 'checkpoint `tiny-synthetic` with its own sha256 recorded in recipe.json'
+    shots_epochs_seed: 'shots and epochs may be 0 (or 1 for the lifecycle self-test); any seed'
+    deployable: false
+    note: 'Structurally loadable for tests (plan 08-02 fixtures); REFUSED by every pack-for-serving, verify and deploy path (equation synthetic_not_deployable).'
+
+base:
+  # D-04: the declared base, pinned.
+  family: laya
+  repo: convaiinnovations/laya
+  revision: 55cf4c4ebb4ebe31b2550e8bdf3bd21b99753851
+  checkpoint: en-root
+  model_safetensors_sha256: 891102d372688fc2a094dac56a384bc537b87c63f21f9f3dac0be2b7cbc8d86c
+  laya_git: 4066d5d5fbf08b66c6757ddeedbd797bd7655bc0
+  # ---- the base dir's other files, pinned (plan 08-21, V6-c). Read with `shasum -a 256` (HF cache
+  # symlinks followed) from the snapshot at revision 55cf4c4e on 2026-09-28. The Rust verifier reads
+  # each of these files ONCE, hashes those bytes against these pins and builds the zero-shot baseline
+  # from exactly them (verify::load_declared_base); the tokenizer is also bound to the run's
+  # gate-report inputs_sha256.tokenizer_json.
+  encoder_config_sha256: bf3ab80598fdccf414855a2ce80f22859e4492d06ca8a62ddd1cfb63972f8979
+  rl_agent_config_sha256: ae287b56bbcf5f8c4f4541ae9dfd00c914c4c48b940b8398c3058af37ba92bbd
+  tokenizer_json_sha256: 6c8aaa9a542084f2457eab775d4eeb51f92a70c0fd9de28d5edb0ddec3c08d30
+
+# D-03: the first available device in this order is used; the device actually used is read back
+# from the model parameters (equation device_recorded). CPU is allowed and FLAGGED.
+device_order: [mps, cuda, cpu]
+
+demo:
+  # D-19, RESEARCH Open Q4 resolution.
+  dataset: 'TweetEval stance_abortion'
+  criteria_order: [none, against, favor]
+  shots_per_class: 16
+  epochs: 12
+  # The demo's stopping rule. fixed_epochs was run first (recipe_id d0f4e40d…, GATE FAIL, kept as a
+  # fail-closed test vector); the second declared attempt used early_stopping (the early_stopping
+  # block, max 12) and also FAILED (recipe_id 3d4b91da…). See `outcome` below (1.2.0).
+  stopping: early_stopping
+  superseded_run: 'fixed_epochs, recipe_id d0f4e40d39425e68d503f557f4f660eb9a73a4fb258da01f777b6f49362bcf20: margin 0.1299, ece_post 0.3773, t_applied 5.0 (clamp_hit) — GATE FAIL'
+  declared_seed: 13
+  variance_seeds: [13, 17, 23]
+  selection: benchmarks/tweeteval-stance/selections/s16-seed13/selection-manifest.json
+  eval_split: test
+  eval_rows: 280
+  spike_baseline_f_avg: '0.538 ± 0.017 (spike 024, 16 shots/class) — INFORMATIONAL, explicitly NOT a gate'
+  note: 'The 25 % calibration slice leaves 12 fit shots/class (16 - 4), so an F_avg below the spike''s is expected (RESEARCH A9). The gate is gate_pass, not this number.'
+  # ---- D-19 OUTCOME OF RECORD (1.2.0; user decision 2026-09-26, option 3: re-scope D-07/D-18 for the demo) ----
+  # Recorded AFTER both runs were read. It changes no threshold: it states what the unchanged gate
+  # decided and what downstream plans must do with those runs.
+  outcome: gate_fail
+  outcome_rule: 'The D-19 demo FAILED gate_pass under BOTH declared recipe_ids on the same data (task/train/eval sha256 identical), seed 13, base above. In both runs the margin clause passes and the ece_post clause fails. There is NO passing demo run; a passing demo is PENDING the calibration spike (pass_pending).'
+  fail_closed_vectors:
+    - 'fixed_epochs: recipe_id d0f4e40d39425e68d503f557f4f660eb9a73a4fb258da01f777b6f49362bcf20, run dir models/decide/tweet-stance-16-fixed-epochs/ (gitignored) — zs macro_f1 0.3402, ft macro_f1 0.4701, margin 0.1299 (pass), ece_post 0.3773 (FAIL > 0.10), t_fitted = t_applied = 5.0, clamp_hit true'
+    - 'early_stopping: recipe_id 3d4b91daf86772bcb23e5342c2dff4bb6467f5d9f254f7833ac7f61a8f2f5375, run dir models/decide/tweet-stance-16/ (gitignored) — best epoch 4 of 12 (stopped at 7), zs macro_f1 0.3402, ft macro_f1 0.4458, margin 0.1056 (pass), ece_post 0.2224 (FAIL > 0.10), t_fitted = t_applied = 3.1436, clamp_hit false'
+  fail_closed_rule: 'Both runs stay FAIL-CLOSED TEST VECTORS OF THE VERIFIER (rewritten 1.4.0 to agree with FALSIFY-LAYA-GATE-010; resolves D-ITEM-08-09-C under the user''s 2026-09-27 instruction on the vectors). pack-for-serving and `pack_laya verify` MUST refuse each on its exact bytes with its documented refusal and write nothing: early_stopping 3d4b91da… refuses GateFailed naming ONLY the ece_post clause (exit 3), the gate recomputed in Rust from eval-probs.json / zero-shot-probs.json; fixed_epochs d0f4e40d… refuses RescoreDrift on the fine-tuned re-score (exit 2), before its gate is reached. Under 1.4.0 both run dirs carry no rescore-noise record and no seed_selection, so they are held to the 1.0e-5 floor (laya-parity-v1 A1 absent-record rule) and to the legacy seed rule (seed_policy.legacy_rule), and their documented refusals are UNCHANGED (plan 08-15 re-derives them on the real run dirs). Nothing is packed for serving, uploaded or deployed from either. The Python gate self-test (just laya-train-selftest) decides FAIL on both reports'' numbers.'
+  vectors_scope: 'Their FAIL was measured on their declared 1.x eval set, the SemEval test split. They were never scored on the 1.4.0 in-distribution set, and spike 027 measured one s16 early-stopping checkpoint (seed 23) there at ECE 0.055 and margin 0.091, so they must not be read as models that fail the 1.4.0 gate. Under a noise record fixed_epochs'' bound would be max(1e-5, 4 x 3.71e-5) = 1.48e-4, above its measured 4.667e-5 drift, so its RescoreDrift refusal now demonstrates the absent-record floor rule; it would otherwise reach the gate and fail on ece_post 0.3773. Re-scoring either on the held-out set would create new run dirs of old checkpoints, which is neither a declared run nor evidence the gate needs, so it is not done.'
+  superseded_by: demo_s64
+  deploy: 'DEFERRED. The D-18 live pmcp.run deploy of the stance model does not happen until a DECLARED run passes this gate unchanged. Plan 08-11 needs a scope decision at its go/no-go checkpoint.'
+  pass_pending: '.planning/todos/pending/spike-laya-calibration-slice-and-temperature-cap.md — measures calibration slice size (e.g. the s64-seed13 cell) and the served temperature cap before any third attempt. Whatever it recommends is declared in this file BEFORE that run is read (D-07); gate_max_ece does not move.'
+
+demo_s64:
+  # ---- D-19 AMENDED (1.4.0, 2026-09-27, user decision option 1 from spikes 027/028). The amended demo
+  # cell, declared BEFORE its data dir or any run exists (D-07). The `demo` block above stays the s16
+  # record of 1.2.0, every value unchanged. Read by crates/aprender-decide/tests/demo_run.rs (plan 08-15)
+  # and written ONCE by plan 08-16 (outcome, outcome_record).
+  supersedes: demo
+  declared_on: '2026-09-27, before any s64 gate run'
+  dataset: 'TweetEval stance_abortion'
+  criteria_order: [none, against, favor]
+  shots_per_class: 64
+  selection: benchmarks/tweeteval-stance/selections/s64-seed13/selection-manifest.json
+  epochs: 12
+  epochs_note: 'the declared MAXIMUM under early_stopping (recipe.epoch_rule: above 16 shots/class an epoch count in [4, 12] declared in recipe.json before training)'
+  stopping: early_stopping
+  seeds: 3
+  seeds_rule: 'seed_policy selection median_ece over variance_seeds 13/17/23; recipe.json carries seed_selection'
+  data_dir: data/decide/tweet-stance-64
+  run_dir: models/decide/laya-stance-64
+  eval_set: eval_set.demo_rule
+  eval_rows: 459
+  eval_class_counts: [111, 291, 57]
+  shift_probe: 'TweetEval stance_abortion test split (SemEval-2016 test), 280 rows, written as shift.jsonl; REPORTED, not a gate clause'
+  shift_rows: 280
+  spike_baseline_f_avg: '0.608 ± 0.050 (spike 024, 64 shots/class, on the TEST split) — INFORMATIONAL'
+  spike_expectation: 'spike 027, same recipe family on the in-distribution set: margin about 0.27 ± 0.04, ECE about 0.057 ± 0.010 — measured on non-gate runs; INFORMATIONAL, never a gate'
+  stop_rule: 'ONE declared run under this declaration. A GATE FAIL halts for a human decision; no retuning and no second attempt'
+  outcome: gate_pass
+  outcome_values: [pending, gate_pass, gate_fail, pack_refused, aborted]
+  outcome_values_note: 'pack_refused = the gate passed but pack/verify refused the exact bytes; aborted = the run ended before gate-report.json existed, so no score was read'
+  # ---- OUTCOME OF RECORD (written 2026-09-27 by plan 08-16, AFTER the one declared run was read).
+  # A record only: it copies what the unchanged gate decided. No threshold, bound, seed, recipe or
+  # data value moved (gate_max_ece 0.10, gate_min_macro_f1_margin 0.05, k 4, floor 1.0e-5).
+  outcome_rule: 'The one declared demo_s64 run PASSED the unchanged gate: the shipped (median-ECE) seed 17 has margin 0.2217 (>= 0.05) and ece_post 0.0443 (<= 0.10) on the 459-row in-distribution held-out set, and pack-for-serving and pack_laya verify accepted its exact bytes (deploy_eligible true). CLAIM SCOPE (eval_set.claim): this certifies margin and calibration on held-out data drawn like the tenant''s shots; it does NOT certify robustness to a shifted input population. Beside it, the reported shift probe (SemEval-2016 test split, 280 rows, not a gate clause): ft macro_f1 0.5175, ece_post 0.1896, margin 0.1773 - an ece_post that would fail the 0.10 clause if it were one.'
+  outcome_record:
+    recipe_id: 6a5489afa3462f566b8b12e932a0e35f93d384bea6f37e3154d06ebc186d6f3b
+    run_dir: models/decide/laya-stance-64
+    data_dir: data/decide/tweet-stance-64
+    device_used: 'mps:0'
+    torch_version: 2.14.0
+    shipped_seed: 17
+    per_seed:
+      - {seed: 13, margin: 0.14388969585454808, ece_post: 0.08497409908859817, t_applied: 1.6897854727120853, pass: true}
+      - {seed: 17, margin: 0.22166308511207017, ece_post: 0.044250346606593244, t_applied: 3.4278388080139597, pass: true}
+      - {seed: 23, margin: 0.2478447080838196, ece_post: 0.03715086230005836, t_applied: 4.780707112249848, pass: true}
+    zero_shot_macro_f1: 0.40915946798299746
+    ft_macro_f1: 0.6308225530950676
+    margin: 0.22166308511207017
+    ece_post: 0.044250346606593244
+    failed_clauses: []
+    noise:
+      fine_tuned: {max_abs: 8.33931784072206e-06, bound: 3.335727136288824e-05}
+      zero_shot: {max_abs: 1.495515496430233e-05, bound: 5.982061985720932e-05}
+    rescore_max_abs: 1.1324882507324219e-05
+    zs_rescore_max_abs: 7.3462724685668945e-06
+    rescore_note: 'the fine-tuned re-score max_abs 1.13e-5 is ABOVE the 1.0e-5 absent-record floor and within the noise-referenced bound 3.34e-5 (laya-parity-v1 2.0.0 A1, declared in 08-13 before this run): under the 1.x bar this run would have been refused RescoreDrift'
+    artifact_sha256: 24a44d7e050166c9b64e2716f2bcb3ce91747f7a3b927d03d6eeae5f89b6275a
+    artifact_bytes: 846196868
+    shift_probe: {n: 280, ft_macro_f1: 0.5174913481736713, ece_post: 0.18961836482797348, margin: 0.1772740398128529, gate_clause: false}
+    decided_by: gate
+    recorded_on: '2026-09-27'
+  outcome_writer: 'plan 08-16 writes outcome and outcome_record after the one declared run; pack/verify must then decide exactly that outcome on the run''s exact bytes (FALSIFY-LAYA-GATE-014)'
+
+run_dir_layout:
+  # The ONE layout the fixture generator (08-02), the trainer (08-08) and the packer
+  # (08-05 / 08-09) all use.
+  data_dir:
+    - task.json
+    - train.jsonl
+    - eval.jsonl
+    - 'shift.jsonl (OPTIONAL shift probe, 1.4.0)'
+  run_dir:
+    - 'checkpoint/model.safetensors (F16 weights; the `temperature` buffer F32)'
+    - 'checkpoint/rl_agent_config.json (calibrated T written into temperature_by_options[bucket])'
+    - checkpoint/encoder/config.json
+    - checkpoint/tokenizer/tokenizer.json
+    - 'checkpoint/tokenizer/tokenizer_config.json (written ALREADY in the form Laya''s _fix_tokenizer_config produces — tokenizer_class: PreTrainedTokenizerFast — because Laya''s loader otherwise REWRITES it in place, changing a hashed input after the fact)'
+    - 'task.json (byte copy of the data dir''s)'
+    - recipe.json
+    - gate-report.json
+    - eval-probs.json
+    - zero-shot-probs.json
+    - probes.json
+    - 'variance-report.json (only when more than one seed ran)'
+    # ---- 1.4.0 additions (every entry above is byte-identical to 1.3.0) ----
+    - 'rescore-noise.json (the float64 re-score noise record, rescore_noise_schema; laya-parity-v1 A1)'
+    - 'seeds/seed-<s>/eval-probs.json (every gate seed, 1.4.0)'
+    - 'shift-probs.json (only with shift.jsonl)'
+    - 'shift-zero-shot-probs.json (only with shift.jsonl)'
+  run_dir_notes:
+    variance_report: 'variance-report.json is written always for production (three seeds) under seed_selection (1.4.0); the entry above keeps its 1.x wording for legacy runs'
+
+recipe_json_schema:
+  # Written BEFORE any eval score exists (equation recipe_before_scores). recipe_id is the sha256
+  # of the exact recipe.json file bytes — one definition; the Rust side never re-serializes.
+  variant: 'string: "production" | "synthetic-fixture"'
+  optimizer: 'string: "adamw"'
+  encoder_lr: 'number: recipe.encoder_lr'
+  head_lr: 'number: recipe.head_lr'
+  eta_min: 'number: recipe.eta_min'
+  weight_decay: 'number: recipe.weight_decay'
+  grad_clip: 'number: recipe.grad_clip'
+  batch_size: 'integer: recipe.batch_size'
+  proper_reward_w_sph: 'number: recipe.proper_reward_w_sph'
+  proper_reward_w_rps: 'number: recipe.proper_reward_w_rps'
+  schedule: 'string: "cosine"'
+  shots_per_class: 'integer >= 0 (production: >= 1)'
+  epochs: 'integer >= 0 (production: per recipe.epoch_rule; under early_stopping this is the MAXIMUM)'
+  seed: 'integer: the declared seed (split seed and first gate seed); under the legacy rule (no seed_selection) the production shipped checkpoint is this seed; under seed_selection the SHIPPED seed is gate-report seeds.shipped'
+  base: 'object {family, repo, revision, checkpoint, sha256} (production: == base block)'
+  early_stopping: 'OPTIONAL object {monitor, mode, eval_every_epochs, first_candidate_epoch, patience_epochs, min_delta, restore, tie_break} equal to the early_stopping block; ABSENT = fixed_epochs. Since 1.4.0 the only other optional key is seed_selection.'
+  seed_selection: 'OPTIONAL (1.4.0) object {policy, seeds, rank_scale, tie_break} equal to seed_policy (selection, variance_seeds, rank_scale, tie_break), written before training; REQUIRED for production under 1.4.0 (train.py always writes it); ABSENT = the 1.x declared-seed rule (seed_policy.legacy_rule)'
+
+gate_report_schema:
+  schema: 'string: "laya-gate-report-v1" — UNCHANGED under 1.4.0: every 1.4.0 addition (seeds.policy / shipped / per_seed, rescore_noise_sha256, shift_probe, inputs_sha256.shift_jsonl) is OPTIONAL, so every 1.x report still parses'
+  pass: 'boolean — must equal the Rust recomputation (gate_pass)'
+  thresholds: 'object {min_macro_f1_margin, max_ece, ece_bins} — must equal this file''s constants, else the report is refused (D-07 fail-closed)'
+  zero_shot: 'object {macro_f1, f_avg, ece, n}'
+  fine_tuned: 'object {macro_f1, f_avg, ece_pre, ece_post, nll, n}'
+  margin: 'number: fine_tuned.macro_f1 - zero_shot.macro_f1'
+  calibration: 'object {bucket, t_fitted, t_applied, clamp_hit, slice_size, slice_ids, slice_ids_sha256} — slice_ids is the SORTED list of 0-based train.jsonl row indices in the calibration slice (indices only, never text), so the Rust verifier re-derives disjointness from it'
+  seeds: 'object {declared, n, label} — label is the literal "single seed" when n == 1; else "median-ECE seed of N seeds" when policy is "median_ece" (1.4.0), else (a legacy 1.x multi-seed run) "mean ± sd over N seeds" (seed_policy.rule). 1.4.0 adds OPTIONAL policy ("median_ece"), shipped (integer: the median seed) and per_seed (array in seed order of {seed, macro_f1, f_avg, ece_post, margin, pass, t_applied, rank_key, eval_probs_sha256, model_safetensors_sha256}); present exactly when recipe.json carries seed_selection'
+  device_used: 'string: read from the model parameters after the move'
+  device_is_cpu: boolean
+  torch_version: string
+  recipe_id: 'string: sha256 hex of recipe.json bytes'
+  inputs_sha256: 'object {task_json, train_jsonl, eval_jsonl, base_model, tokenizer_json}; 1.4.0 adds OPTIONAL shift_jsonl (present exactly when the data dir carries shift.jsonl)'
+  eval_probs_sha256: string
+  zero_shot_probs_sha256: string
+  probes_sha256: string
+  rescore_noise_sha256: 'OPTIONAL (1.4.0) string: sha256 of rescore-noise.json; ABSENT = the laya-parity-v1 A1 floor rule (bound 1.0e-5 for both sets)'
+  shift_probe: 'OPTIONAL (1.4.0) object {gate_clause: false, n, zero_shot {macro_f1, f_avg, ece}, fine_tuned {macro_f1, f_avg, ece_post}, margin, probs_sha256, zero_shot_probs_sha256} — present exactly when the data dir carries shift.jsonl; REPORTED, never in gate_pass'
+  f_avg_rule: 'f_avg may be null for non-stance tasks'
+
+eval_probs_schema:
+  # The SAME schema serves eval-probs.json (fine-tuned, calibrated) and zero-shot-probs.json (the
+  # declared base on the same rows). No eval TEXT is ever written, so no tweet text reaches an
+  # artifact.
+  rows: 'array of {row: integer (0-based eval.jsonl index), text_sha256: string, probabilities: array of K numbers in criteria order}'
+  labels: 'array of criteria names in task.json order'
+
+rescore_noise_schema:
+  # 1.4.0 (laya-parity-v1 A1): rescore-noise.json, written by train.py at scoring time and hash-bound by
+  # gate-report rescore_noise_sha256. Rust RECOMPUTES max_abs and bound from `rows` and the scored
+  # files; the reported values are cross-checked only (laya-parity-v1 rescore_noise_reference).
+  schema: 'string: "laya-rescore-noise-v1"'
+  reference: 'string: "float64"'
+  # plan 08-29 (WR-09): k is read through contract.number as a FLOAT and written as one (4.0), because the Rust
+  # verifier compares it with the contract's f64 bit for bit; a record of 1.4.0..4.0.0 carrying the integer 4
+  # is the same f64 and still verifies.
+  k: 'number (float64): copy of laya-parity-v1 constants.pack_rescore_noise_k; must equal it bit for bit'
+  floor_abs: 'number: copy of laya-parity-v1 equations.pack_rescore_probs_abs.float_tolerance; must equal it'
+  control_max_abs: 'number: max |dz| of the manual fp32 forward against the Scorer''s logits on control_rows; must be 0.0'
+  control_rows: 'array of integers: the first min(5, n) eval row indices the control forwarded'
+  sets: 'array of EXACTLY two objects, `which` "fine_tuned" (the shipped checkpoint) and "zero_shot" (the declared base), each {which, scored: "eval", t_applied, n, argmax_agree, max_abs, bound, rows: [{row: integer, probabilities_f64: array of K numbers in criteria order}] covering every eval row once, in order}'
+
+probes_json_schema:
+  # For each decide-apr-v1 probe input, in order, computed by Laya's OWN predict path on the F16
+  # reload, through the decide-apr-v1 synthetic probe task.
+  probes: 'array of {input_index: integer, tokens: integer (built-row length), label: string, probabilities_f32_hex: array of K strings (f32 bit patterns, 8 hex digits each)}'
+
+# ---------------------------------------------------------------------------------------------
+# CLASS A, VERIFY SIDE (plan 08-21): every leaf of a production run dir's recipe.json and
+# gate-report.json, as a leaf pattern (array indices as [*], optional fields included), is either
+# BOUND — equal to this contract, to a hash of a data-dir / base-dir / probability file, or to a
+# Rust recomputation, refused by the named check with a Display containing `names` — or
+# REPORT_ONLY, with the reason it cannot decide eligibility. A `bound_by` naming a later plan is
+# EXPECTED-OPEN until that plan lands. Enforced by crates/aprender-decide/src/verify/tests.rs
+# `every_run_field_is_bound_or_report_only` (each leaf mutated alone — hex digit flipped, integer
+# +1, float x2+1, bool flipped, string appended, null -> 0.5 — every recorded hash resealed, then
+# verified: a bound row must be refused naming it, a report_only row must still verify) and
+# `run_field_bindings_table_matches_fixture_leaves` (this table's patterns == the fullest run
+# copy's leaves). `only: shipped_seed_row` binds the shipped seed's row and treats the others per
+# `report_only_otherwise`; `membership_report_only` binds a list's structure and states why its
+# membership decides nothing.
+# ---------------------------------------------------------------------------------------------
+# ---- plan 08-27 (class E): ONE f64 computation per gate quantity, met bit for bit by the Python
+# trainer and the Rust verifier. Structured, so a top-level key (the constants block stays flat).
+numeric_agreement:
+  rule: 'every gate quantity is computed in f64 with exactly-rounded summation, in the order stated, by aprender-core (Rust, the ONE implementation per operation, OPS-03) and by scripts/laya_train/metrics.py (Python math.fsum); an exactly-rounded sum does not depend on term order or summation tree, so both languages return bit-identical values and identical verdicts on every input, including an exact 0.05 margin and an ECE on a 1e-4 rank grid line. aprender-core''s f32 f1_score and expected_calibration_error_top_label are NOT these computations and are unchanged (frozen by metrics::f32_bits_tests::f32_metrics_are_bit_identical_to_the_frozen_snapshot)'
+  summation: 'exactly-rounded (Python math.fsum / aprender_core metrics::fsum, a safe port of CPython math_fsum: Shewchuk partials plus the half-way correct-rounding step)'
+  inputs: 'the probability files'' float32 values widened exactly to f64 (train.py as64); pred = the first argmax; labels the eval (or shift) rows'' true labels'
+  case_file: scripts/laya_train/numeric_cases.json
+  case_schema: laya-numeric-cases-v1
+  case_generator: 'uv run --project scripts/laya_train --frozen python scripts/laya_train/metrics.py --write-numeric-cases (byte-reproducible): the reviewers'' constructed boundary cases (a 9-row and a 30-row exact-1/20 margin, a 459-row rank grid-line ECE, each one HEAD''s f32 path decided differently) and 20 seeded random cases (N 3..600, K 2..6, 15 bins), expected values as f64 bit patterns'
+  replayed_by:
+    - 'Python: scripts/laya_train/metrics.py --selftest (inside just laya-train-selftest)'
+    - 'Rust: cargo test -p aprender-decide --lib verify::tests::gate_numeric_cases_agree_bit_for_bit'
+  quantities:
+    macro_f1:
+      formula: 'L = sorted(labels present in y UNION pred); F1_c = 2 tp_c / (2 tp_c + fp_c + fn_c), 0 when the denominator is 0; macro_f1 = fsum(F1_c for c in L) / |L|'
+      precision: f64
+      summation: exactly-rounded
+      order: 'per-class F1 by one division each, then one fsum over L, then one division by |L|'
+      python: 'metrics.py macro_f1'
+      rust: 'aprender-core metrics::classification::macro_f1_f64, called by aprender_decide::verify::recompute_metrics'
+    f_avg:
+      formula: 'f_avg = fsum(F1_c for c in S) / |S|, F1_c as in macro_f1; S = [index(against), index(favor)] exactly when the task''s labels are demo.criteria_order, else f_avg is null'
+      precision: f64
+      summation: exactly-rounded
+      order: 'per-label F1, one fsum over S in the given order, one division'
+      python: 'metrics.py f_avg with train.py f_avg_labels'
+      rust: 'aprender-core metrics::classification::mean_f1_over_labels_f64, called by aprender_decide::verify::check_f_avg (zero_shot, fine_tuned, every per_seed row, both shift sets; the null rule is verify::f_avg_labels)'
+    ece_top_label:
+      formula: 'the ece_top_label equation: acc_b = fsum(correct in b) / n_b, conf_b = fsum(conf in b) / n_b, ECE = fsum((n_b / N) * |acc_b - conf_b|) over occupied bins'
+      precision: f64
+      summation: exactly-rounded
+      order: 'bin index floor(conf x ece_bins) in f64 clamped to ece_bins - 1; per bin one fsum of correct and one of conf, each divided by n_b; one term per occupied bin in bin order; one fsum of the terms'
+      python: 'metrics.py ece_top_label'
+      rust: 'aprender-core calibration::expected_calibration_error_top_label_f64, called by aprender_decide::verify::recompute_metrics'
+    margin:
+      formula: 'margin = macro_f1(fine_tuned) - macro_f1(zero_shot); PASS clause margin >= gate_min_macro_f1_margin'
+      precision: f64
+      summation: 'one f64 subtraction of the two exactly-summed macro-F1s'
+      order: 'fine-tuned minus zero-shot'
+      python: 'gate.py evaluate_gate (and train.py per seed / shift probe)'
+      rust: 'aprender_decide::verify::recompute_gate (Recomputed.margin), judged by check_gate; per seed in check_seed_selection'
+    rank_key:
+      formula: 'rank_key = floor(ece_post x rank_scale) as an integer, rank_scale the integer seed_policy.rank_scale multiplied in'
+      precision: f64
+      summation: 'one f64 multiplication of the exactly-summed ECE, then floor'
+      order: 'multiply, then floor'
+      python: 'metrics.py rank_key (gate.rank_key refuses a non-finite ECE, then calls it)'
+      rust: 'aprender_decide::verify::rank_key on recompute_metrics'' ECE (check_seed_selection, select_median_seed)'
+
+# ---- plan 08-29 (class E, refusal half): every refusal the Python back office (scripts/laya_train)
+# documents, as a table a self-test SWEEPS. Each row: `rule` (the id after REFUSED; `<role>` expands over
+# `roles`), `entry` (the module.function that raises it), `hostile_input` (one line), `rust_counterpart`
+# (the VerifyError the Rust verifier refuses the same input with, or "none: back-office only"), and
+# `sweep`: in_process (a torch-free case in data.py --selftest must raise it) or lifecycle (it needs torch
+# or the train.py CLI; `case` names the lifecycle.py function that exercises it).
+python_refusals:
+  rule: 'every back-office input refusal is ONE `REFUSED <rule>: <detail>` line and exit 2 at the CLI boundary (train.py refuse(), prepare_stance.py main), never a traceback; the table lists every rule id the back-office sources raise, and data.py --selftest fails on a rule id in the sources with no row, a row with no case, or a case whose refusal names another rule'
+  swept_by: 'scripts/laya_train/data.py --selftest `python_refusals` sweep (inside just laya-train-selftest); prints PYTHON REFUSALS swept=<n> lifecycle=<m>'
+  cli_boundary: 'prepare_stance.py run as a subprocess on a source split with an invalid UTF-8 byte exits 2 with REFUSED source-row-encoding and no Traceback (data.py --selftest); train.py on a train.jsonl with an invalid UTF-8 byte exits 2 with REFUSED train-row-encoding (lifecycle.py check_train_cli_refusals)'
+  not_refusals: 'prepare_stance.fail() (PREPARE FAILED, exit 1) is a consistency check of the pinned public TweetEval dataset against the committed selection manifest and the contract counts, not a tenant-input refusal; Laya''s own ValueError on a wrong --base-sha256 and train.py RuntimeError invariants (ordering, reload hashes) are internal assertions, not documented refusals'
+  rows:
+    - {rule: task-missing, entry: data.load_task, sweep: in_process, hostile_input: 'the data dir holds no task.json', rust_counterpart: 'Read (task.json)'}
+    - {rule: task-schema, entry: data.load_task, sweep: in_process, hostile_input: 'task.json is not UTF-8 JSON, repeats a key, misses a key, or has an empty instructions / criterion name', rust_counterpart: 'Pack(PackError::Schema) on task.json'}
+    - {rule: task-unknown-key, entry: data.load_task, sweep: in_process, hostile_input: 'task.json carries a key outside {type, instructions, criteria}', rust_counterpart: 'Pack(PackError::Schema) on task.json'}
+    - {rule: task-type, entry: data.load_task, sweep: in_process, hostile_input: 'task.json type is not "choice"', rust_counterpart: 'Pack(PackError::Schema) on task.json'}
+    - {rule: task-duplicate-criterion, entry: data.load_task, sweep: in_process, hostile_input: 'a criterion name appears twice in task.json', rust_counterpart: 'Pack(PackError::Schema) on task.json'}
+    - {rule: task-too-few-criteria, entry: data.load_task, sweep: in_process, hostile_input: 'task.json declares one criterion', rust_counterpart: 'Pack(PackError::Schema) on task.json'}
+    - {rule: '<role>-missing', roles: [train, eval], entry: data.load_rows, sweep: in_process, hostile_input: 'the data dir holds no <role>.jsonl', rust_counterpart: 'Read (<role>.jsonl)'}
+    - {rule: '<role>-row-encoding', roles: [train, eval, shift], entry: data.load_rows, sweep: in_process, hostile_input: 'an invalid UTF-8 byte in the file, or a text / label holding a lone surrogate escape (\ud800)', rust_counterpart: 'DataInvalid (str::from_utf8 / serde_json refuse the same bytes)'}
+    - {rule: '<role>-row-schema', roles: [train, eval, shift], entry: data.load_rows, sweep: in_process, hostile_input: 'a blank line, a line that is not a JSON object, a missing key or an empty text', rust_counterpart: 'DataInvalid'}
+    - {rule: '<role>-row-unknown-key', roles: [train, eval, shift], entry: data.load_rows, sweep: in_process, hostile_input: 'a row carrying a key outside {text, label}', rust_counterpart: 'DataInvalid (RowJson deny_unknown_fields)'}
+    - {rule: '<role>-row-label', roles: [train, eval, shift], entry: data.load_rows, sweep: in_process, hostile_input: 'a label that is not a criterion NAME (an unknown name, or an index)', rust_counterpart: 'DataInvalid'}
+    - {rule: '<role>-empty', roles: [train, eval, shift], entry: data.load_rows, sweep: in_process, hostile_input: 'an empty <role>.jsonl', rust_counterpart: 'DataInvalid (no rows)'}
+    - {rule: eval-class-coverage, entry: data.load_rows, sweep: in_process, hostile_input: 'eval.jsonl holds no row of one criterion', rust_counterpart: 'DataInvalid (check_eval_coverage)'}
+    - {rule: '<role>-train-overlap', roles: [eval, shift], entry: data.refuse_overlap, sweep: in_process, hostile_input: 'a <role> text equal to a train text after NFC / trim / whitespace collapse', rust_counterpart: 'SplitOverlap for eval; none for shift: Rust recomputes the shift probe but does not re-check its overlap'}
+    - {rule: heldout-shot-overlap, entry: data.in_distribution_heldout, sweep: in_process, hostile_input: 'a held-out row whose normalized text equals a shot', rust_counterpart: 'none: back-office only (prepare_stance builds the demo eval set)'}
+    - {rule: train-conflicting-labels, entry: data.group_train, sweep: in_process, hostile_input: 'two train rows with the same normalized text under different labels', rust_counterpart: 'ConflictingLabels'}
+    - {rule: train-class-too-small, entry: data.calibration_split, sweep: in_process, hostile_input: 'a class with no more rows than the calibration slice needs', rust_counterpart: 'SliceInvalid'}
+    - {rule: contract-value, entry: contract.number, sweep: in_process, hostile_input: 'a contract number given as a string ("1e-6"), a bool, or a float where an integer is declared (15.0)', rust_counterpart: 'none: back-office only (the Rust verifier deserializes the contract into typed f64 / integer fields)'}
+    - {rule: epochs, entry: contract.resolve_epochs, sweep: in_process, hostile_input: '--epochs at <= 16 shots/class, outside [4, 12] above 16, or missing above 16', rust_counterpart: 'RecipeMismatch'}
+    - {rule: variant, entry: contract.resolve_epochs, sweep: in_process, hostile_input: 'a variant that is neither production nor synthetic-fixture', rust_counterpart: 'RecipeMismatch (and SyntheticNotDeployable for synthetic-fixture)'}
+    - {rule: stopping, entry: contract.resolve_stopping, sweep: in_process, hostile_input: 'a --stopping value outside recipe.stopping_rules', rust_counterpart: 'RecipeMismatch'}
+    - {rule: seeds, entry: contract.resolve_seeds, sweep: in_process, hostile_input: 'production --seeds other than 3, or synthetic --seeds other than 1 or 3', rust_counterpart: 'SeedPolicyViolated / SeedPolicyMissing'}
+    - {rule: seeds, entry: gate.select_median_seed, sweep: in_process, hostile_input: 'an even or empty seed list, a repeated seed, or a non-finite ece_post', rust_counterpart: 'SeedPolicyViolated'}
+    - {rule: seeds, entry: gate.verify_report, sweep: in_process, hostile_input: 'a median-rule report shipping a seed that is not the median of its per_seed rows', rust_counterpart: 'SeedPolicyMismatch'}
+    - {rule: thresholds, entry: gate.verify_report, sweep: in_process, hostile_input: 'a gate report whose thresholds differ from the contract', rust_counterpart: 'ThresholdMismatch'}
+    - {rule: pass, entry: gate.verify_report, sweep: in_process, hostile_input: 'a gate report whose pass disagrees with its metrics', rust_counterpart: 'PassDisagrees'}
+    - {rule: early-stopping, entry: gate.EarlyStopper.record, sweep: in_process, hostile_input: 'an early-stopping run whose calibration monitor was never finite (nothing to restore)', rust_counterpart: 'none: back-office only (training time; Rust reads the stopping record as provenance)'}
+    - {rule: early-stopping, entry: train.stopping_record_or_refuse, sweep: lifecycle, case: check_early_stopping_refusal, hostile_input: 'the same, at the train.py boundary: REFUSED early-stopping, exit 2', rust_counterpart: 'none: back-office only'}
+    - {rule: source-row-encoding, entry: prepare_stance.read_jsonl, sweep: in_process, hostile_input: 'a TweetEval source split with an invalid UTF-8 byte or a lone-surrogate input', rust_counterpart: 'none: back-office only (the public source dataset)'}
+    - {rule: source-row-schema, entry: prepare_stance.read_jsonl, sweep: in_process, hostile_input: 'a source split line that is not a JSON object with an id', rust_counterpart: 'none: back-office only (the public source dataset)'}
+    - {rule: prepare-out-dir, entry: prepare_stance.write_once, sweep: in_process, hostile_input: 'an existing --out holding a differing written file or a foreign non-dot file (a stale shift.jsonl)', rust_counterpart: 'none: back-office only'}
+    - {rule: base, entry: train.Base, sweep: lifecycle, case: check_train_cli_refusals, hostile_input: '--base with the production variant, or synthetic-fixture without --base / --base-sha256', rust_counterpart: 'BaseMismatch'}
+    - {rule: out-dir, entry: train.main, sweep: lifecycle, case: check_train_cli_refusals, hostile_input: 'a non-empty --out (a run dir is written once)', rust_counterpart: 'none: back-office only'}
+    - {rule: noise-control, entry: train.write_noise_record, sweep: lifecycle, case: check_noise_control_refusal, hostile_input: 'the manual fp32 forward differs from the Scorer''s logits on a control row', rust_counterpart: 'RescoreNoiseInvalid (control_max_abs must be 0.0)'}
+    - {rule: data-changed, entry: train.refuse_if_data_changed, sweep: lifecycle, case: check_data_changed_refusal, hostile_input: 'task.json / train / eval / shift edited, added or removed during the run', rust_counterpart: 'InputHashMismatch'}
+
+run_field_bindings:
+  rule: 'a new recipe.json or gate-report.json field needs a row here before any run dir carrying it verifies: the sweep fails on an unlisted leaf, and on a listed pattern no fixture leaf has'
+  rows:
+    - {file: recipe.json, leaf: '/variant', bound_by: 'check_variant', names: 'is not deployable'}
+    - {file: recipe.json, leaf: '/optimizer', bound_by: 'check_recipe_block', names: 'recipe.json optimizer is'}
+    - {file: recipe.json, leaf: '/encoder_lr', bound_by: 'check_recipe_block', names: 'recipe.json encoder_lr is'}
+    - {file: recipe.json, leaf: '/head_lr', bound_by: 'check_recipe_block', names: 'recipe.json head_lr is'}
+    - {file: recipe.json, leaf: '/eta_min', bound_by: 'check_recipe_block', names: 'recipe.json eta_min is'}
+    - {file: recipe.json, leaf: '/weight_decay', bound_by: 'check_recipe_block', names: 'recipe.json weight_decay is'}
+    - {file: recipe.json, leaf: '/grad_clip', bound_by: 'check_recipe_block', names: 'recipe.json grad_clip is'}
+    - {file: recipe.json, leaf: '/batch_size', bound_by: 'check_recipe_block', names: 'recipe.json batch_size is'}
+    - {file: recipe.json, leaf: '/proper_reward_w_sph', bound_by: 'check_recipe_block', names: 'recipe.json proper_reward_w_sph is'}
+    - {file: recipe.json, leaf: '/proper_reward_w_rps', bound_by: 'check_recipe_block', names: 'recipe.json proper_reward_w_rps is'}
+    - {file: recipe.json, leaf: '/schedule', bound_by: 'check_recipe_block', names: 'recipe.json schedule is'}
+    - {file: recipe.json, leaf: '/shots_per_class', bound_by: 'check_recipe_shots (the largest train.jsonl class count)', names: 'recipe.json shots_per_class is'}
+    - {file: recipe.json, leaf: '/epochs', bound_by: 'check_recipe_block (recipe.epoch_rule)', names: 'recipe.json epochs is'}
+    - {file: recipe.json, leaf: '/seed', bound_by: 'check_recipe_block (seed_policy.declared_seed)', names: 'recipe.json seed is'}
+    - {file: recipe.json, leaf: '/base/family', bound_by: 'check_base', names: 'which=family'}
+    - {file: recipe.json, leaf: '/base/checkpoint', bound_by: 'check_base', names: 'which=checkpoint'}
+    - {file: recipe.json, leaf: '/base/repo', bound_by: 'check_base', names: 'which=repo'}
+    - {file: recipe.json, leaf: '/base/revision', bound_by: 'check_base', names: 'which=revision'}
+    - {file: recipe.json, leaf: '/base/sha256', bound_by: 'PackInputs::from_run_dir (== inputs_sha256.base_model), then check_base (== base.model_safetensors_sha256)', names: 'file=base_model'}
+    - {file: recipe.json, leaf: '/early_stopping/monitor', bound_by: 'check_recipe_block', names: 'recipe.json early_stopping.monitor is'}
+    - {file: recipe.json, leaf: '/early_stopping/mode', bound_by: 'check_recipe_block', names: 'recipe.json early_stopping.mode is'}
+    - {file: recipe.json, leaf: '/early_stopping/eval_every_epochs', bound_by: 'check_recipe_block', names: 'recipe.json early_stopping.eval_every_epochs is'}
+    - {file: recipe.json, leaf: '/early_stopping/first_candidate_epoch', bound_by: 'check_recipe_block', names: 'recipe.json early_stopping.first_candidate_epoch is'}
+    - {file: recipe.json, leaf: '/early_stopping/patience_epochs', bound_by: 'check_recipe_block', names: 'recipe.json early_stopping.patience_epochs is'}
+    - {file: recipe.json, leaf: '/early_stopping/min_delta', bound_by: 'check_recipe_block', names: 'recipe.json early_stopping.min_delta is'}
+    - {file: recipe.json, leaf: '/early_stopping/restore', bound_by: 'check_recipe_block', names: 'recipe.json early_stopping.restore is'}
+    - {file: recipe.json, leaf: '/early_stopping/tie_break', bound_by: 'check_recipe_block', names: 'recipe.json early_stopping.tie_break is'}
+    - {file: recipe.json, leaf: '/seed_selection/policy', bound_by: 'check_seed_decl', names: 'seed_selection.policy is'}
+    - {file: recipe.json, leaf: '/seed_selection/seeds/[*]', bound_by: 'check_seed_decl', names: 'seed_selection.seeds is'}
+    - {file: recipe.json, leaf: '/seed_selection/rank_scale', bound_by: 'check_seed_decl', names: 'seed_selection.rank_scale is'}
+    - {file: recipe.json, leaf: '/seed_selection/tie_break', bound_by: 'check_seed_decl', names: 'seed_selection.tie_break is'}
+    - {file: gate-report.json, leaf: '/schema', bound_by: 'PackInputs::from_run_dir (GATE_REPORT_SCHEMA)', names: 'schema is'}
+    - {file: gate-report.json, leaf: '/pass', bound_by: 'check_gate (recomputed pass)', names: 'reported pass='}
+    - {file: gate-report.json, leaf: '/thresholds/min_macro_f1_margin', bound_by: 'check_thresholds', names: 'field=min_macro_f1_margin'}
+    - {file: gate-report.json, leaf: '/thresholds/max_ece', bound_by: 'check_thresholds', names: 'field=max_ece'}
+    - {file: gate-report.json, leaf: '/thresholds/ece_bins', bound_by: 'check_thresholds', names: 'field=ece_bins'}
+    - {file: gate-report.json, leaf: '/zero_shot/macro_f1', bound_by: 'check_gate (recomputed)', names: 'field=zero_shot.macro_f1'}
+    - {file: gate-report.json, leaf: '/zero_shot/ece', bound_by: 'check_gate (recomputed)', names: 'field=zero_shot.ece'}
+    - {file: gate-report.json, leaf: '/zero_shot/n', bound_by: 'check_gate (recomputed)', names: 'field=zero_shot.n'}
+    - {file: gate-report.json, leaf: '/zero_shot/f_avg', bound_by: 'check_f_avg (the trainer''s null rule, then the recomputed f64 mean)', names: 'field=zero_shot.f_avg'}
+    - {file: gate-report.json, leaf: '/fine_tuned/macro_f1', bound_by: 'check_gate (recomputed)', names: 'field=fine_tuned.macro_f1'}
+    - {file: gate-report.json, leaf: '/fine_tuned/ece_post', bound_by: 'check_gate (recomputed)', names: 'field=fine_tuned.ece_post'}
+    - {file: gate-report.json, leaf: '/fine_tuned/nll', bound_by: 'check_gate (recomputed)', names: 'field=fine_tuned.nll'}
+    - {file: gate-report.json, leaf: '/fine_tuned/n', bound_by: 'check_gate (recomputed)', names: 'field=fine_tuned.n'}
+    - {file: gate-report.json, leaf: '/fine_tuned/ece_pre', report_only: 'the pre-calibration ECE is computed by train.py from the T = 1 probabilities, which the run dir does not hold; rebuilding them from the calibrated float32 file as softmax(T x ln p) is not exact, and ECE jumps at bin edges, so a recomputation could refuse an honest run. It is in no gate clause and not in the artifact manifest'}
+    - {file: gate-report.json, leaf: '/fine_tuned/f_avg', bound_by: 'check_f_avg (the trainer''s null rule, then the recomputed f64 mean)', names: 'field=fine_tuned.f_avg'}
+    - {file: gate-report.json, leaf: '/margin', bound_by: 'check_gate (recomputed)', names: 'field=margin'}
+    - {file: gate-report.json, leaf: '/calibration/bucket', bound_by: 'decide-apr-v1 rung 4 (check_manifest_bindings: bucket_key of the task)', names: 'calibration.bucket'}
+    - {file: gate-report.json, leaf: '/calibration/t_fitted', bound_by: 'check_report_record (t_applied == clamp(t_fitted), calibration_fit_bounded)', names: 'calibration_fit_bounded'}
+    - {file: gate-report.json, leaf: '/calibration/t_applied', bound_by: 'check_report_record (clamp relation), and decide-apr-v1 rung 4 (the checkpoint agent config)', names: 'calibration.t_applied'}
+    - {file: gate-report.json, leaf: '/calibration/clamp_hit', bound_by: 'check_report_record (t_fitted at a bound)', names: 'calibration.clamp_hit'}
+    - {file: gate-report.json, leaf: '/calibration/slice_size', bound_by: 'check_split (check_slice_ids)', names: 'slice_size'}
+    - {file: gate-report.json, leaf: '/calibration/slice_ids/[*]', bound_by: 'check_split (structure: sorted, unique, in range, per-class need, group-disjoint, hash)', names: 'slice_ids', membership_report_only: 'which structurally valid rows form the slice is not re-derived: data.py draws it with numpy RandomState(declared_seed).permutation, and verify does not re-fit T from it (the slice logits are not in the run dir), so any slice passing check_split decides nothing verify recomputes; the sweep proves both halves (a duplicate id is refused, a same-class swap is accepted)'}
+    - {file: gate-report.json, leaf: '/calibration/slice_ids_sha256', bound_by: 'check_split (check_slice_ids)', names: 'slice_ids hash to'}
+    - {file: gate-report.json, leaf: '/seeds/declared', bound_by: 'check_seeds_block', names: 'field=declared'}
+    - {file: gate-report.json, leaf: '/seeds/n', bound_by: 'check_seeds_block', names: 'field=per_seed'}
+    - {file: gate-report.json, leaf: '/seeds/label', bound_by: 'check_seeds_block (the seed_policy.rule literal)', names: 'field=seeds.label'}
+    - {file: gate-report.json, leaf: '/seeds/policy', bound_by: 'check_seeds_block', names: 'field=seeds.policy'}
+    - {file: gate-report.json, leaf: '/seeds/shipped', bound_by: 'check_seeds_block, check_seed_selection (the median)', names: 'field=shipped'}
+    - {file: gate-report.json, leaf: '/seeds/per_seed/[*]/seed', bound_by: 'PackInputs::from_run_dir (reads seeds/seed-<s>/), check_seeds_block', names: 'seeds/seed-'}
+    - {file: gate-report.json, leaf: '/seeds/per_seed/[*]/macro_f1', bound_by: 'check_seed_selection (recomputed)', names: 'field=per_seed.macro_f1'}
+    - {file: gate-report.json, leaf: '/seeds/per_seed/[*]/ece_post', bound_by: 'check_seed_selection (recomputed)', names: 'field=per_seed.ece_post'}
+    - {file: gate-report.json, leaf: '/seeds/per_seed/[*]/margin', bound_by: 'check_seed_selection (recomputed)', names: 'field=per_seed.margin'}
+    - {file: gate-report.json, leaf: '/seeds/per_seed/[*]/f_avg', bound_by: 'check_f_avg (the trainer''s null rule, then the recomputed f64 mean)', names: 'field=per_seed.f_avg'}
+    - {file: gate-report.json, leaf: '/seeds/per_seed/[*]/pass', bound_by: 'check_seed_selection (recomputed)', names: 'field=per_seed.pass'}
+    - {file: gate-report.json, leaf: '/seeds/per_seed/[*]/t_applied', bound_by: 'check_seeds_block (the shipped row == calibration.t_applied)', names: 'field=per_seed.t_applied', only: 'shipped_seed_row', report_only_otherwise: 'a non-shipped seed''s checkpoint is deleted after selection (seed_policy.retention_rule) and its T is not recorded anywhere else, so no file verify holds can bind it; it enters no verdict'}
+    - {file: gate-report.json, leaf: '/seeds/per_seed/[*]/rank_key', bound_by: 'check_seed_selection (recomputed)', names: 'field=per_seed.rank_key'}
+    - {file: gate-report.json, leaf: '/seeds/per_seed/[*]/eval_probs_sha256', bound_by: 'PackInputs::from_run_dir (the seed file hash)', names: 'its per_seed row records'}
+    - {file: gate-report.json, leaf: '/seeds/per_seed/[*]/model_safetensors_sha256', bound_by: 'check_seeds_block (the shipped row == checkpoint/model.safetensors)', names: 'field=model_safetensors_sha256', only: 'shipped_seed_row', report_only_otherwise: 'a non-shipped seed''s checkpoint is deleted after selection (seed_policy.retention_rule), so its hash names bytes no run dir holds; it enters no verdict'}
+    - {file: gate-report.json, leaf: '/device_used', report_only: 'provenance (D-03): read back from the parameters by the trainer, which verify cannot re-observe. Its CPU-ness is bound through device_is_cpu (device_recorded); the string enters no verdict, and the artifact manifest copies it from this report (decide-apr-v1 rung 4)'}
+    - {file: gate-report.json, leaf: '/device_is_cpu', bound_by: 'check_report_record (device_recorded)', names: 'field=device_is_cpu'}
+    - {file: gate-report.json, leaf: '/torch_version', report_only: 'provenance (D-03): the trainer''s torch version, which verify cannot re-observe; it enters no verdict'}
+    - {file: gate-report.json, leaf: '/recipe_id', bound_by: 'PackInputs::from_run_dir (sha256 of recipe.json)', names: 'file=recipe_json'}
+    - {file: gate-report.json, leaf: '/inputs_sha256/task_json', bound_by: 'check_inputs (the data dir)', names: 'file=task_json'}
+    - {file: gate-report.json, leaf: '/inputs_sha256/train_jsonl', bound_by: 'check_inputs (the data dir)', names: 'file=train_jsonl'}
+    - {file: gate-report.json, leaf: '/inputs_sha256/eval_jsonl', bound_by: 'check_inputs (the data dir)', names: 'file=eval_jsonl'}
+    - {file: gate-report.json, leaf: '/inputs_sha256/base_model', bound_by: 'PackInputs::from_run_dir (== recipe base.sha256, itself == the contract pin and the base dir)', names: 'file=base_model'}
+    - {file: gate-report.json, leaf: '/inputs_sha256/tokenizer_json', bound_by: 'PackInputs::from_run_dir (the checkpoint tokenizer), and the base tokenizer at the zero-shot load', names: 'file=tokenizer_json'}
+    - {file: gate-report.json, leaf: '/inputs_sha256/shift_jsonl', bound_by: 'check_shift_probe (the data dir shift.jsonl)', names: 'field=shift_jsonl'}
+    - {file: gate-report.json, leaf: '/eval_probs_sha256', bound_by: 'check_inputs', names: 'file=eval_probs_json'}
+    - {file: gate-report.json, leaf: '/zero_shot_probs_sha256', bound_by: 'check_inputs', names: 'file=zero_shot_probs_json'}
+    - {file: gate-report.json, leaf: '/probes_sha256', bound_by: 'PackInputs::from_run_dir', names: 'file=probes_json'}
+    - {file: gate-report.json, leaf: '/rescore_noise_sha256', bound_by: 'check_inputs', names: 'file=rescore_noise_json'}
+    - {file: gate-report.json, leaf: '/shift_probe/gate_clause', bound_by: 'check_shift_probe', names: 'field=shift_probe.gate_clause'}
+    - {file: gate-report.json, leaf: '/shift_probe/n', bound_by: 'check_shift_probe', names: 'field=shift_probe.n'}
+    - {file: gate-report.json, leaf: '/shift_probe/zero_shot/macro_f1', bound_by: 'check_shift_probe (recomputed)', names: 'field=shift_probe.zero_shot.macro_f1'}
+    - {file: gate-report.json, leaf: '/shift_probe/zero_shot/ece', bound_by: 'check_shift_probe (recomputed)', names: 'field=shift_probe.zero_shot.ece'}
+    - {file: gate-report.json, leaf: '/shift_probe/zero_shot/f_avg', bound_by: 'check_f_avg (the trainer''s null rule, then the recomputed f64 mean)', names: 'field=shift_probe.zero_shot.f_avg'}
+    - {file: gate-report.json, leaf: '/shift_probe/fine_tuned/macro_f1', bound_by: 'check_shift_probe (recomputed)', names: 'field=shift_probe.fine_tuned.macro_f1'}
+    - {file: gate-report.json, leaf: '/shift_probe/fine_tuned/ece_post', bound_by: 'check_shift_probe (recomputed)', names: 'field=shift_probe.fine_tuned.ece_post'}
+    - {file: gate-report.json, leaf: '/shift_probe/fine_tuned/f_avg', bound_by: 'check_f_avg (the trainer''s null rule, then the recomputed f64 mean)', names: 'field=shift_probe.fine_tuned.f_avg'}
+    - {file: gate-report.json, leaf: '/shift_probe/margin', bound_by: 'check_shift_probe (recomputed)', names: 'field=shift_probe.margin'}
+    - {file: gate-report.json, leaf: '/shift_probe/probs_sha256', bound_by: 'PackInputs::from_run_dir', names: 'file=shift_probs_json'}
+    - {file: gate-report.json, leaf: '/shift_probe/zero_shot_probs_sha256', bound_by: 'PackInputs::from_run_dir', names: 'file=shift_zero_shot_probs_json'}
+
+equations:
+
+  gate_pass:
+    formula: 'pass == ((ft.macro_f1 - zs.macro_f1 >= gate_min_macro_f1_margin) AND (ft.ece_post <= gate_max_ece)), where ft and zs are RECOMPUTED in Rust from eval-probs.json and zero-shot-probs.json against the eval labels; when recipe.json carries seed_selection (1.4.0) ft is the SHIPPED (median) seed''s run, selected per seed_selection_median'
+    domain: 'a run dir whose eval-probs.json and zero-shot-probs.json have each been verified within the per-set bound(c, s) of laya-parity-v1 2.0.0 A1 (pack_rescore_probs_abs floor 1.0e-5, noise-referenced when the run carries rescore-noise.json) of the Rust re-score of the packed artifact and of the declared base (argmax exact)'
+    codomain: 'accept (pass recorded) or a typed refusal naming the failed clause'
+    invariants:
+      - 'thresholds are READ from this file; a report whose `thresholds` differ from the constants is refused (D-07, fail-closed)'
+      - 'a reported metric further than gate_metric_recompute_abs from its Rust recomputation is refused; a reported `pass` disagreeing with the recomputed one is refused — recomputing pass from REPORTED metrics would let an edited report pass'
+      - 'the gate compares against the zero-shot DECLARED BASE on the SAME eval rows, not against a remembered number'
+      - 'the ECE is ece_post, computed with the APPLIED temperature (calibration_fit_bounded)'
+      - 'macro_f1, ece_post and the margin are the numeric_agreement f64 computations, bit-identical in the trainer and the verifier, so an honest run at an exact threshold (a margin of exactly 0.05, an ECE of exactly 0.10) is decided the same way on both sides and never refused PassDisagrees'
+    preconditions:
+      - 'split_disjointness holds for the run'
+
+  ece_top_label:
+    formula: 'conf_i = max_k p_ik (float32 widened to f64); pred_i = argmax_k p_ik (first max); bin(i) = min(floor(conf_i * ece_bins), ece_bins - 1) in f64; acc_b = fsum(correct_i in b) / n_b; conf_b = fsum(conf_i in b) / n_b; ECE = fsum over occupied bins in bin order of (n_b / N) * |acc_b - conf_b|, fsum exactly rounded (numeric_agreement)'
+    domain: 'N rows of K probabilities (rows sum to 1) with true labels'
+    codomain: 'ECE in [0, 1]'
+    invariants:
+      - 'THE HOUSE DEFINITION: aprender-core calibration::expected_calibration_error_top_label_f64, the f64 exactly-summed companion of expected_calibration_error_top_label (contracts/calibration-v1.yaml); frozen cases scripts/setfit_fixtures/claims_stats/ece_top_label_cases.json (within 1e-6) and scripts/laya_train/numeric_cases.json (bit for bit)'
+      - 'recorded deviation: spike 024 binned right-closed (lo, hi]; the two differ only for a confidence exactly on a bin edge. One Rust ECE implementation (OPS-03) outweighs byte-matching an informational spike number'
+      - 'the Python trainer (metrics.py ece_top_label, math.fsum) returns the SAME BITS as the Rust verifier on every input (numeric_agreement); the Rust verifier is the authority'
+
+  calibration_fit_bounded:
+    formula: 'T_fitted = argmin_{T in [calibration_temp_min, calibration_temp_max]} NLL(softmax(z / T), y) over the calibration slice; T_applied = clamp(T_fitted, calibration_temp_min, calibration_temp_max); clamp_hit = (T_fitted at a bound)'
+    domain: 'the fine-tuned model''s logits on the calibration slice (F16 reload)'
+    codomain: 'T_applied written into rl_agent_config.json temperature_by_options[bucket]; clamp_hit recorded'
+    invariants:
+      - 'Laya''s loader clamps T to [0.5, 5.0] at every load (Pitfall 6), so a T outside the range would be served as the bound; fitting within the range makes the reported and served T identical'
+      - 'ece_post is computed with T_APPLIED; if the clamp is hit and ECE still fails, the gate fails — the fail-closed design'
+      - 'the calibration slice is stratified, seeded, at least calibration_slice_fraction of the shots and at least calibration_slice_min_per_class rows per class (D-06, RESEARCH A9)'
+
+  split_disjointness:
+    formula: 'normsha(eval) ∩ normsha(train) = ∅ AND calib ⊂ train AND fit = train \ calib AND forall group g of train rows with equal normsha: g ⊂ fit OR g ⊂ calib AND forall g: |labels(g)| == 1, where normsha(t) = sha256(collapse_ws(trim(NFC(t))))'
+    domain: 'data dir train.jsonl / eval.jsonl and gate-report calibration.slice_ids'
+    codomain: 'accept, or a typed refusal naming the overlap or the conflicting group'
+    invariants:
+      - 'text-disjoint, not merely row-disjoint: duplicates in the shots form ONE group that lands wholly in fit or wholly in calibration'
+      - 'a group whose copies carry different labels is REFUSED, not resolved'
+      - 'the calibration slice is stratified and seeded (declared_seed), per D-06'
+      - 'the Rust verifier re-derives all of this from slice_ids (row indices only) and the data dir, plan 08-09'
+
+  declared_seed_ships:
+    formula: 'under the legacy rule (recipe.json has no seed_selection): shipped_checkpoint.seed == seed_policy.declared_seed'
+    domain: 'a legacy (1.x) run dir, possibly with variance seeds'
+    codomain: 'the declared-seed checkpoint in run_dir/checkpoint'
+    invariants:
+      - 'never the best seed on eval: choosing the best of N on the eval split is selection on the test set (D-08)'
+      - 'variance seeds produce variance-report.json only'
+      - 'since 1.4.0 production runs carry seed_selection and ship the median seed per seed_selection_median; a legacy run is judged under this equation and is never deploy-eligible (seed_policy.legacy_rule)'
+
+  seed_selection_median:
+    formula: 'for recipe.json carrying seed_selection: rank_key(s) = floor(ece_post(s) x rank_scale) for s in variance_seeds; order = sort by (rank_key ascending, seed ascending); shipped = order[(N - 1) / 2] (= order[1] for N = 3); pass == ((ft_shipped.macro_f1 - zs.macro_f1 >= gate_min_macro_f1_margin) AND (ft_shipped.ece_post <= gate_max_ece)), zs the shared zero-shot baseline'
+    domain: 'a production run dir with seeds/seed-<s>/eval-probs.json for every s in variance_seeds, a shared zero-shot-probs.json and gate-report seeds.per_seed'
+    codomain: 'the shipped seed and pass, or a typed refusal naming the field'
+    invariants:
+      - 'Rust RE-DERIVES the selection from the per-seed eval-probs files (recomputed ece_post per seed) and refuses a report whose `shipped` differs, whose shipped seed''s eval_probs_sha256 differs from the top-level eval_probs_sha256, or whose checkpoint/model.safetensors sha256 differs from the shipped seed''s model_safetensors_sha256'
+      - 'production requires EXACTLY the three seeds of variance_seeds (production_seeds_required)'
+      - 'a seed whose rank_key recomputed from the Rust ece_post differs from its reported per_seed rank_key is refused rather than guessed; agreeing keys are accepted however close the value sits to a rank_scale grid line (why_quantized)'
+      - 'the median is selected WITH eval labels and is recorded as a selection on the gate eval set (seed_policy.honesty); median, never best'
+      - 'the non-shipped seeds are recomputed but never re-scored (seed_policy.retention_rule)'
+
+  eval_set_in_distribution:
+    formula: 'E = dedup_first_nfc_trim_ws( [r in validation ++ train (file order) : r.id not in shots(s64-seed13) AND r.id not in exclusions.excluded_train_ids AND (split(r), r.id) not in union(exclusions.groups[*].members)] ), with normsha(E) ∩ normsha(shots) = ∅ REQUIRED (overlap refused, not dropped); |E| == demo_s64.eval_rows (459) AND class_counts(E) == demo_s64.eval_class_counts ([111, 291, 57])'
+    domain: 'the TweetEval stance_abortion validation and train splits, the s64-seed13 selection manifest'
+    codomain: 'the demo_s64 eval.jsonl, or a refusal naming the overlapping text or the count mismatch'
+    invariants:
+      - 'CLAIM: a gate passed on this set certifies margin and calibration on held-out data drawn like the shots, NOT robustness to a shifted input population (eval_set.claim)'
+      - 'the set was chosen AFTER the SemEval test split failed the gate twice; spike 027 is the evidence (eval_set.history)'
+      - 'order and dedup rule are part of the definition: first occurrence kept in validation-then-train file order'
+
+  shift_probe_reported:
+    formula: 'shift metrics (zs and ft macro_f1, f_avg, ece) = recompute(shift-probs.json, shift-zero-shot-probs.json, shift.jsonl labels), each file hash-bound in gate-report shift_probe; gate_clause == false; shift metrics never appear in gate_pass'
+    domain: 'a run dir whose data dir carries the optional shift.jsonl'
+    codomain: 'reported shift metrics, or a refusal naming an edited field'
+    invariants:
+      - 'RECOMPUTED in Rust from the hash-bound files; a reported shift metric further than gate_metric_recompute_abs from its recomputation is refused'
+      - 'NEVER re-scored (no laya-parity-v1 bound applies to it) and NEVER a gate clause: gate_pass is identical with and without shift.jsonl'
+      - 'shift.jsonl text overlapping train.jsonl is refused'
+
+  recipe_before_scores:
+    formula: 'mtime_order: write(recipe.json) precedes every eval score; recipe_id = sha256(recipe.json bytes)'
+    domain: 'a training run'
+    codomain: 'recipe.json on disk and its recipe_id, before any score exists'
+    invariants:
+      - 'D-04: the recipe is fixed before the run is judged, so it cannot be tuned against eval'
+      - 'recipe_id is the sha256 of the exact file bytes; the Rust side never re-serializes to compute it'
+
+  device_recorded:
+    formula: 'device_used = device_of(next(model.parameters())) AFTER the move; device_is_cpu = (device_used == "cpu")'
+    domain: 'a training run on the first available device of device_order'
+    codomain: 'gate-report device_used and device_is_cpu'
+    invariants:
+      - 'read from the model parameters, NEVER from an env var or from the requested device (D-03, CLAUDE.md Verification #2: prove the mechanism engaged)'
+      - 'CPU is allowed and FLAGGED'
+
+  f16_reload_scoring:
+    formula: 'forall artefact a in {gate metrics, calibration fit, eval-probs.json, zero-shot-probs.json, probes.json}: a is computed on a checkpoint saved as F16 and RELOADED in fp32'
+    domain: 'a training run after fine-tuning'
+    codomain: 'every scored file describes the model that is served'
+    invariants:
+      - 'Pitfall 5: training leaves fp32 weights while D-17 serves F16; scoring the fp32 weights would describe a model that is never served'
+      - 'the zero-shot baseline is the declared base loaded the same way'
+
+  early_stopping_train_side:
+    # plan 08-29 (V13-c): the formula used to state a RUNNING-MINIMUM rule (m_e < min_{j < e} m_j -
+    # min_delta), which disagrees with early_stopping.improvement_rule and with the trainer on traces
+    # such as [1.0, 0.9993, 0.9988]. It now states the best-anchored rule verbatim from improvement_rule,
+    # the rule the 08-16 run of record used: a description fix to the rule of record, not a rule change.
+    formula: 'BEST-ANCHORED (early_stopping.improvement_rule, implemented by gate.EarlyStopper): m_best := +inf and best_epoch := none; for each evaluated epoch e >= first_candidate_epoch in order, epoch e improves iff m_e is finite AND m_e < m_best - min_delta (strict), and only then m_best := m_e and best_epoch := e (m_best is updated ONLY on improvement, so best_epoch is the last improving epoch and an epoch within min_delta of the current m_best never replaces it); m_e = calibration_nll_at_fitted_t on the CALIBRATION slice; epoch 0 (the untrained base) is never a candidate; a non-finite m_e never improves; stop after epoch e when e - best_epoch >= patience_epochs (best_epoch read as first_candidate_epoch - 1 before any improvement) or e == max_epochs; shipped weights = weights after best_epoch; no finite m_e at all is REFUSED early-stopping (nothing to restore)'
+    domain: 'a training run whose recipe.json carries the `early_stopping` object (the early_stopping block)'
+    codomain: 'the restored best-epoch weights and the training.stopping record in rl_agent_config.json, both fixed BEFORE any eval probability exists'
+    invariants:
+      - 'the monitor reads the calibration slice only; eval.jsonl rows never reach the training function, the monitor, the restored epoch or the temperature fit'
+      - 'no eval probability is computed before the stopping record and the checkpoint are on disk (ordering assertion in train.py; mtime(checkpoint/model.safetensors) <= mtime(eval-probs.json))'
+      - 'epoch 0 (the untrained base) is never a candidate; an epoch within min_delta of the current best (an exact tie included) never replaces it, so the earlier best is kept; a non-finite monitor never improves'
+      - 'the cosine schedule is the fixed_epochs one over max_epochs; stopping truncates it'
+    preconditions:
+      - 'split_disjointness holds for the run (the calibration slice is text-group-disjoint from fit)'
+
+  synthetic_not_deployable:
+    formula: 'recipe.variant == "synthetic-fixture" implies refuse(pack_for_serving) AND refuse(verify) AND refuse(deploy)'
+    domain: 'any run dir or artifact'
+    codomain: 'a typed refusal naming the variant'
+    invariants:
+      - 'the synthetic variant is structurally loadable for tests and never eligible for serving'
+      - 'a production recipe whose base differs from the base block is refused the same way'
+
+proof_obligations:
+
+  - type: bound
+    property: 'Gate thresholds are read from this contract and a report carrying other thresholds is refused'
+    formal: '∀ report r: r.thresholds ≠ (gate_min_macro_f1_margin, gate_max_ece, ece_bins) ⇒ refuse(r)'
+    applies_to: all
+
+  - type: soundness
+    property: 'pass is decided on recomputed metrics from verified probabilities'
+    formal: '∀ run: accepted_pass(run) == gate(recompute(verified(eval_probs)), recompute(verified(zero_shot_probs)))'
+    applies_to: all
+
+  - type: bound
+    property: 'The applied temperature is within Laya''s clamp range'
+    formal: 'calibration_temp_min ≤ T_applied ≤ calibration_temp_max'
+    applies_to: all
+
+  - type: independence
+    property: 'Eval, fit and calibration are text-disjoint'
+    formal: 'normsha(eval) ∩ normsha(train) = ∅ AND no normsha group spans fit and calib'
+    applies_to: all
+
+  - type: invariant
+    property: 'The shipped checkpoint is the declared seed (legacy rule: recipe.json without seed_selection)'
+    formal: 'no seed_selection ⇒ shipped.seed == declared_seed'
+    applies_to: all
+
+  - type: invariant
+    property: 'Under seed_selection the shipped checkpoint is the median-ECE seed by the declared rank key and tie-break, and pass is that seed''s pass (1.4.0)'
+    formal: 'seed_selection ⇒ shipped == sort_by((floor(ece_post(s) x rank_scale), s), variance_seeds)[1] ∧ pass == gate(ft_shipped, zs) ∧ sha256(checkpoint) == per_seed[shipped].model_safetensors_sha256'
+    applies_to: all
+
+  - type: independence
+    property: 'The shift probe never enters the gate (1.4.0)'
+    formal: 'gate_pass(run) == gate_pass(run without shift.jsonl) ∧ shift_probe.gate_clause == false'
+    applies_to: all
+
+  - type: safety
+    property: 'No legacy run is deploy-eligible under 1.4.0'
+    formal: 'no seed_selection ⇒ not deploy_eligible (SeedPolicyMissing, decided after the re-scores and the gate)'
+    applies_to: all
+
+  - type: independence
+    property: 'Early stopping, the restored epoch and the temperature are chosen without eval data'
+    formal: 'best_epoch, t_applied = f(train fit rows, calibration slice) ∧ eval-probs computed after the checkpoint is fixed'
+    applies_to: all
+
+  - type: safety
+    property: 'A synthetic-fixture run is never deployable'
+    formal: 'variant == synthetic-fixture ⇒ not deploy_eligible'
+    applies_to: all
+
+falsification_tests:
+
+  - id: FALSIFY-LAYA-GATE-001
+    rule: 'The gate is recomputed from verified probabilities and an edited report is refused'
+    prediction: 'Editing fine_tuned.macro_f1 in gate-report.json by more than gate_metric_recompute_abs, or flipping `pass`, makes the Rust verifier refuse the run naming the field; the untouched report is accepted.'
+    implemented_by: 'plan 08-09 (aprender_decide::verify gate tests: an edited fine-tuned F1, a flipped pass, and a forged zero-shot baseline)'
+    test: 'cargo test -p aprender-decide --lib verify::tests::forged_report && cargo test -p aprender-decide --lib verify::tests::pass_disagrees && cargo test -p aprender-decide --lib verify::tests::forged_baseline'
+    if_fails: 'The gate trusts reported numbers: an edited report can make an undeployable model deployable.'
+
+  - id: FALSIFY-LAYA-GATE-002
+    rule: 'A report whose thresholds differ from this contract is refused'
+    prediction: 'A gate-report.json with thresholds.max_ece = 0.2 is refused naming thresholds, even though every metric is otherwise consistent.'
+    implemented_by: 'plan 08-09 (aprender_decide::verify gate tests)'
+    test: 'cargo test -p aprender-decide --lib verify::tests::threshold_mismatch'
+    if_fails: 'The thresholds are no longer the contract''s: a gate chosen after seeing a result can pass (D-07).'
+
+  - id: FALSIFY-LAYA-GATE-003
+    rule: 'The ECE matches the house definition on the frozen cases'
+    prediction: 'The verifier''s ECE equals aprender::calibration::expected_calibration_error_top_label_f64 bit for bit on every case of scripts/setfit_fixtures/claims_stats/ece_top_label_cases.json and lies within gate_metric_recompute_abs of the frozen reference; the Python trainer''s ECE equals it bit for bit (FALSIFY-LAYA-GATE-015).'
+    implemented_by: 'plans 08-08 (Python half: metrics.py --selftest replays every frozen house case to 1e-6, inside just laya-train-selftest) and 08-09 (Rust verifier: recompute_metrics is bit-identical to the house ECE on every frozen case, and within gate_metric_recompute_abs of the frozen reference)'
+    test_harness: 'just laya-train-selftest'
+    test: 'cargo test -p aprender-decide --lib verify::tests::recompute_matches_house_ece_cases'
+    if_fails: 'Two ECE implementations disagree, so the reported and recomputed gate can differ on the same probabilities.'
+
+  - id: FALSIFY-LAYA-GATE-004
+    rule: 'The calibration fit stays in [0.5, 5.0] and records the clamp'
+    prediction: 'On a synthetic memorised model whose NLL-optimal T exceeds 5, t_fitted == 5.0, clamp_hit == true and ece_post is computed with T = 5.0.'
+    implemented_by: 'plan 08-08 (gate.py --selftest bounded-fit cases, inside just laya-train-selftest)'
+    test_harness: 'just laya-train-selftest'
+    if_fails: 'The reported T is not the served T (Pitfall 6): the gate ECE describes a different model.'
+
+  - id: FALSIFY-LAYA-GATE-005
+    rule: 'Split disjointness is text-level and conflicting duplicates are refused'
+    prediction: 'A train.jsonl with the same normalized text under two labels is refused; one with duplicate same-label rows keeps them in one side; an eval row equal to a train row after NFC/trim/whitespace collapse is refused.'
+    implemented_by: 'plans 08-08 (Python half: data.py --selftest, inside just laya-train-selftest) and 08-09 (aprender_decide::verify check_split)'
+    test_harness: 'just laya-train-selftest'
+    test: 'cargo test -p aprender-decide --lib verify::tests::split_overlap && cargo test -p aprender-decide --lib verify::tests::conflicting_labels && cargo test -p aprender-decide --lib verify::tests::slice_splits_group'
+    if_fails: 'Calibration or eval leaks training text, so the measured calibration and gate are optimistic.'
+
+  - id: FALSIFY-LAYA-GATE-006
+    rule: 'recipe.json is written before any score, and the declared seed ships under the legacy rule while the median seed ships under seed_selection'
+    prediction: 'The self-test observes recipe.json on disk before the first eval score is computed. A LEGACY single-seed run (no seed_selection) ships seed 13. A --seeds 3 run under seed_selection (1.4.0) ships the median seed by seed_policy.rank_rule, its checkpoint/model.safetensors byte-identical to that seed''s recorded per_seed model_safetensors_sha256. RETIRED CLAUSE (2026-09-27, before any s64 gate run; D-ITEM-08-14-B): the 1.x clause "with legacy variance seeds 13/17/23 the shipped checkpoint is seed 13 even when another seed scores higher" is no longer predicted. No code path can exercise it: since 1.4.0 the trainer never writes a legacy MULTI-seed run (every three-seed run carries seed_selection), and a legacy run carries no per-seed record from which a verifier could tell which seed it shipped. It also decides nothing a verifier accepts: every legacy run is refused SeedPolicyMissing once its gate passes (FALSIFY-LAYA-GATE-012). The 1.x runs that exercised it (plan 08-08) remain recorded evidence of the 1.x rule; the legacy rule itself stays declared (declared_seed_ships).'
+    implemented_by: 'plan 08-08 (lifecycle.py: log + mtime order, and the LEGACY single-seed runs shipping seed 13 with no seed_selection, inside just laya-train-selftest) and plan 08-14 (lifecycle.py check_median_run, same harness: a --seeds 3 run under seed_selection ships gate.select_median_seed of its own per_seed rows, exactly one model.safetensors whose sha256 is that seed''s model_safetensors_sha256, seed 13 trained bit-identically to the single-seed run, and — when 13 is the median — the single-seed run''s checkpoint tree). The retired legacy multi-seed clause (see the prediction) has no leg; the legacy rule''s verifier side is FALSIFY-LAYA-GATE-012 (plan 08-15)'
+    test_harness: 'just laya-train-selftest'
+    if_fails: 'The recipe or the shipped seed was chosen after reading eval (D-04 / D-08).'
+
+  - id: FALSIFY-LAYA-GATE-007
+    rule: 'The device is read from the parameters and every score comes from the F16 reload'
+    prediction: 'Forcing the CPU path yields device_used == "cpu" and device_is_cpu == true regardless of any env var; the eval probabilities equal those of a separate F16 reload within pack_rescore_probs_abs.'
+    implemented_by: 'plan 08-08 (lifecycle.py: forced --device cpu recorded as cpu, and eval-probs.json re-scored by a separate F16 reload within pack_rescore_probs_abs, inside just laya-train-selftest)'
+    test_harness: 'just laya-train-selftest'
+    if_fails: 'The report labels a run by intent rather than mechanism, or scores a model that is never served (Pitfall 5).'
+
+  - id: FALSIFY-LAYA-GATE-008
+    rule: 'A synthetic-fixture run is refused by pack-for-serving, verify and deploy'
+    prediction: 'pack_laya verify on a synthetic-fixture run dir refuses naming the variant; the same run is accepted by the structural loader used in tests.'
+    implemented_by: 'plan 08-09 (aprender_decide::verify verify_run)'
+    test: 'cargo test -p aprender-decide --lib verify::tests::synthetic_refused'
+    if_fails: 'A zero-epoch fixture on a tiny synthetic base can be served as a decision model.'
+
+  - id: FALSIFY-LAYA-GATE-009
+    rule: 'Early stopping is decided on the calibration slice alone, before any eval score, and restores the best epoch'
+    prediction: 'On synthetic monitor traces the best-anchored rule picks the epoch the early_stopping_train_side formula names (epoch e improves iff m_e < m_best - min_delta): on [1.0, 0.9993, 0.9988] with min_delta 0.001 it picks epoch 3, where a running-minimum rule would pick epoch 1 and an earliest-within-min_delta-of-the-minimum rule epoch 2; it stops patience_epochs after the best epoch, never picks epoch 0 or a non-finite epoch, refuses a run with no finite monitor (REFUSED early-stopping), and replays the 08-16 run of record''s seed-17 trace to its recorded best_epoch 2, epochs_run 5, reason patience; a real early-stopping run logs its STOP line before CHECKPOINT COMPLETE and SCORING START, and checkpoint/model.safetensors is not newer than eval-probs.json.'
+    implemented_by: 'plan 08-08 (gate.py --selftest synthetic monitor trace; lifecycle.py STOP-before-SCORING and mtime order; inside just laya-train-selftest)'
+    test_harness: 'just laya-train-selftest'
+    if_fails: 'The shipped epoch was chosen with eval data or after eval was scored (D-04 / D-07), or the restored weights are not the best epoch.'
+
+  - id: FALSIFY-LAYA-GATE-010
+    rule: 'The D-19 demo runs are refused by pack and by verify on the exact bytes, each with its documented refusal, writing nothing'
+    prediction: 'For each demo.fail_closed_vectors entry, identified by sha256(recipe.json): pack-for-serving and pack_laya verify on a transient low-level pack of the same run refuse with the SAME documented refusal and write nothing. early_stopping 3d4b91daf86772bcb23e5342c2dff4bb6467f5d9f254f7833ac7f61a8f2f5375: GateFailed naming ONLY the ece_post clause (exit 3), after all 280 eval rows of the packed bytes and of the base re-score within pack_rescore_probs_abs with argmax 280/280, the recomputed ece_post within gate_metric_recompute_abs of the reported 0.2224 and the margin clause passing; the verify-side artifact sha256 equals the pack-side one. fixed_epochs d0f4e40d39425e68d503f557f4f660eb9a73a4fb258da01f777b6f49362bcf20: RescoreDrift on the FINE-TUNED re-score (exit 2), the same first row and max_abs on both paths; its gate is not reached. User decision option A (2026-09-26, debug session laya-rescore-drift): pack_rescore_probs_abs stays 1.0e-5, and torch''s own fp32 probabilities for this checkpoint are up to 3.7e-5 from a float64 reference, so no fp32 port meets the bar on it; the refusal is still fail-closed. A vector with no declared refusal fails the test. UNDER 1.4.0 THE REFUSALS ARE UNCHANGED: neither run dir carries rescore-noise.json, so both re-scores are held to the laya-parity-v1 A1 absent-record floor (1.0e-5); neither recipe.json carries seed_selection, so both are judged under seed_policy.legacy_rule, whose SeedPolicyMissing refusal comes only after the re-scores and the gate and is therefore never reached by either vector (demo.fail_closed_rule, demo.vectors_scope).'
+    implemented_by: 'plan 08-09 (tests/fail_closed_vectors.rs; armed by LAYA_MODEL_DIR + LAYA_FAIL_CLOSED_VECTORS=1 with the gitignored run dirs, SKIP elsewhere, so CI compiles it only)'
+    test: 'cargo test -p aprender-decide --release --test fail_closed_vectors demo_vectors_are_refused_fail_closed'
+    if_fails: 'A demo run that failed the gate could be packed, verified as eligible or served; or it is refused for a reason nobody declared (for example a re-score bar that a 1-ULP toolchain change moved), which is fail-closed but no longer demonstrates the rule. Never widen a tolerance to restore the expected refusal: record the new refusal and decide it (see the calibration spike todo).'
+
+  - id: FALSIFY-LAYA-GATE-011
+    rule: 'The shipped seed is the median-ECE seed by the declared rank key and tie-break, re-derived in Rust'
+    prediction: 'With three distinct ece_post values the seed of the middle one ships; with two seeds sharing floor(ece_post x 10000) the smaller seed ranks first and the median follows from that order; a gate report whose seeds.shipped names a non-median seed is refused naming `shipped`; a per_seed metric (ece_post, macro_f1) edited beyond gate_metric_recompute_abs of its recomputation from seeds/seed-<s>/eval-probs.json is refused naming the seed and field; a checkpoint whose sha256 differs from the shipped seed''s model_safetensors_sha256 is refused.'
+    implemented_by: 'Python half, plan 08-14, inside just laya-train-selftest: gate.py --selftest median-ECE cases (distinct ECEs 0.15 / 0.05 / 0.12 ship the 0.12 seed; 0.10009 / 0.10001 share rank key 1000 and the smaller seed ranks first; an exact tie; the declared seed as median; a non-finite ece_post, N = 2, N = 0 and a repeated seed refused; a failing median fails the gate while another seed passes; verify_report refuses a report shipping a non-median seed, an edited seeds.shipped, or a shipped row whose pass disagrees with the top-level gate) and lifecycle.py check_median_run (a tiny three-seed run ships select_median_seed of its own per_seed rows; its checkpoint sha256 and eval-probs.json bytes are that row''s). Rust half, plan 08-15: aprender_decide::verify check_seed_selection / select_median_seed lib tests (a three-seed copy shipping its median verifies; files consistent with shipping the lowest-ECE seed refused naming it and the median; shared rank keys ordered by the smaller seed, and an even, empty, repeated or non-finite seed set refused; a per_seed ece_post edited by 1e-3 refused naming the seed; a shipped row whose model sha256 is not checkpoint/model.safetensors refused), each guard shown to discriminate by mutation; tests/python_records.rs requires Rust''s median of its own recomputed ECEs to equal a Python-written run''s shipped seed.'
+    test_harness: 'just laya-train-selftest'
+    test: 'cargo test -p aprender-decide --lib verify::tests::seed_median_ships && cargo test -p aprender-decide --lib verify::tests::seed_shipped_not_median && cargo test -p aprender-decide --lib verify::tests::seed_tie_break_smaller_seed && cargo test -p aprender-decide --lib verify::tests::seed_metric_forged && cargo test -p aprender-decide --lib verify::tests::seed_checkpoint_not_shipped'
+    if_fails: 'The shipped seed can be chosen by something other than the declared rule (for example the best draw), or a report can name a seed the probabilities do not support.'
+
+  - id: FALSIFY-LAYA-GATE-012
+    rule: 'A legacy run (no seed_selection) is never deploy-eligible, and its gate outcome is still reported first'
+    prediction: 'A run dir whose gate passes but whose recipe.json carries no seed_selection is refused SeedPolicyMissing; a legacy run whose gate fails is still refused GateFailed naming its clauses (the seed-policy check comes after the re-scores and the gate).'
+    implemented_by: 'plan 08-15 (aprender_decide::verify lib tests: a legacy copy whose gate passes is refused SeedPolicyMissing, exit 2, and the same copy with a drifted probability is refused RescoreDrift instead, so the policy refusal follows the re-scores; a legacy copy whose gate fails is refused GateFailed, exit 3; moving the refusal before the gate turns the second test RED)'
+    test: 'cargo test -p aprender-decide --lib verify::tests::legacy_policy_refused_after_gate_pass && cargo test -p aprender-decide --lib verify::tests::legacy_gate_fail_keeps_gate_failed'
+    if_fails: 'A single-seed MPS draw — which spike 027 showed can flip FAIL to PASS — could be deployed without the median rule, or the refusal order hides a failed gate behind a policy error.'
+
+  - id: FALSIFY-LAYA-GATE-013
+    rule: 'The held-out eval set is reproduced by rule and the shift probe is reported, recomputed and never a gate clause'
+    prediction: 'The demo_rule rebuilds exactly 459 rows with class counts [111, 291, 57] from the pinned TweetEval splits and the s64-seed13 manifest, and refuses an input in which a held-out row''s text overlaps a shot; a gate report whose shift_probe metric is edited beyond gate_metric_recompute_abs is refused naming the field; gate_pass is identical with and without shift.jsonl.'
+    implemented_by: 'Python half, plan 08-14, inside just laya-train-selftest: data.py --selftest held-out cases on a synthetic manifest (a shot, an excluded train id and a validation exclusion-group member dropped; a normalized-text overlap with a shot REFUSED; a duplicate kept once with validation order winning; the class counts) and, when the gitignored TweetEval splits are present, the demo_rule rebuilt from them through prepare_stance.py --cell s64 (459 rows, [111, 291, 57]; an explicit SKIP otherwise); lifecycle.py check_shift_probe (a tiny three-seed run with and without shift.jsonl decides an identical gate — pass, margin, zero_shot, fine_tuned, calibration, seeds —, only the shift run carries shift_probe with gate_clause false and the two hash-bound shift files, and a shift row equal to a train row is refused before anything is written). Rust half, plan 08-15: aprender_decide::verify check_shift_probe lib tests (a copy with a shift probe verifies with recomputed gate metrics identical to the same copy without it; shift_probe.fine_tuned.ece_post edited by 0.01 refused ShiftProbeMismatch; a report naming a probe whose data dir has no shift.jsonl refused).'
+    test_harness: 'just laya-train-selftest'
+    test: 'cargo test -p aprender-decide --lib verify::tests::shift_probe_metric_forged && cargo test -p aprender-decide --lib verify::tests::shift_file_missing'
+    if_fails: 'The eval set is not the declared one (a post-hoc choice could slip in), or the shift probe silently became a gate clause or an unverified number.'
+
+  - id: FALSIFY-LAYA-GATE-014
+    rule: 'Pack and verify decide exactly the recorded outcome of the one declared s64 run, on its exact bytes'
+    prediction: 'On the run dir of the one declared demo_s64 run, pack-for-serving and pack_laya verify decide exactly demo_s64.outcome: deploy_eligible true on gate_pass; GateFailed naming the recorded clauses on gate_fail; the recorded refusal on pack_refused. A mismatch between the verifier''s decision and the recorded outcome fails the test.'
+    implemented_by: 'plan 08-15 wrote the env-gated test (crates/aprender-decide/tests/demo_run.rs: armed by LAYA_MODEL_DIR + LAYA_DEMO_RUN=1, SKIP otherwise, so CI compiles it only; it reads demo_s64 and, while outcome is pending, prints that SKIP and passes); plan 08-16 arms it after writing demo_s64.outcome and outcome_record.'
+    test: 'cargo test -p aprender-decide --release --test demo_run declared_demo_run_matches_its_outcome_of_record'
+    if_fails: 'The recorded outcome of the declared run and what the shipped bytes actually do disagree: the record describes something that is not deployed.'
+
+  - id: FALSIFY-LAYA-GATE-015
+    rule: 'The trainer and the verifier compute every gate quantity bit for bit (numeric_agreement), and f_avg is recomputed'
+    prediction: 'On every case of scripts/laya_train/numeric_cases.json — the exact-1/20 margin cases, the rank grid-line case and the seeded random cases — Rust macro_f1, ece, f_avg, margin and rank_key equal metrics.py''s bit patterns and check_gate decides the margin clause as Python does; a forged f_avg in any of the five report locations, a null stance f_avg, or a non-null non-stance f_avg is refused naming the field.'
+    implemented_by: 'plan 08-27 (aprender-core metrics::fsum, macro_f1_f64, mean_f1_over_labels_f64, expected_calibration_error_top_label_f64; metrics.py on math.fsum; verify::check_f_avg)'
+    test_harness: 'just laya-train-selftest'
+    test: 'cargo test -p aprender-decide --lib verify::tests::gate_numeric_cases_agree_bit_for_bit && cargo test -p aprender-decide --lib verify::tests::f_avg_forged_refused && cargo test -p aprender-decide --lib verify::tests::f_avg_null_rule_enforced'
+    if_fails: 'Two implementations of one number: an honest run at an exact threshold can be refused (or a rank key can move), and a report can carry an f_avg no one checked.'
+
+kani_harnesses:
+
+  # DECLARED, NOT EXECUTED. cargo-kani is not installed in this repository and no
+  # #[kani::proof] harness exists anywhere under crates/.
+  - id: KANI-LAYA-GATE-001
+    obligation: 'The ECE bin index is always in range'
+    property: 'forall conf in [0, 1], forall n_bins in 1..=ece_bins: 0 <= min(floor(conf * n_bins), n_bins - 1) < n_bins'
+    bound: 15
+    strategy: stub_float
+    harness: 'NOT EXECUTED — the evidence is the frozen-case suite of aprender-core calibration (expected_calibration_error_top_label against scripts/setfit_fixtures/claims_stats/ece_top_label_cases.json), including the saturated conf = 1 row'
+
+  - id: KANI-LAYA-GATE-002
+    obligation: 'The applied temperature is within Laya''s clamp range'
+    property: 'forall T_fitted: calibration_temp_min <= clamp(T_fitted) <= calibration_temp_max'
+    bound: 8
+    strategy: stub_float
+    harness: 'NOT EXECUTED — the evidence is the calibration clamp cases in just laya-train-selftest (gate.py --selftest, plan 08-08) and will also be the Rust verifier''s t_applied range check (plan 08-09)'
+
+qa_gate:
+  id: F-LAYA-GATE-001
+  name: 'Laya fine-tune gate and recipe contract'
+  description: >
+    The blocking gate for the training-side claims. The Rust-reverifiable equations (gate_pass,
+    split_disjointness, synthetic_not_deployable, ece_top_label) run in CI through aprender-decide
+    lib tests once plan 08-09 lands them; the Python-only equations run LOCALLY through
+    `just laya-train-selftest` (plan 08-08) and are marked so in their binding rows.
+  checks:
+    - 'contract schema validity (pv validate, zero errors) and non-zero pv status counts'
+    - 'constants flat; seed_policy, eval_set, recipe, recipe_variants, base, demo, demo_s64, run_dir_layout and the five schemas (1.4.0 adds rescore_noise_schema) are top-level keys'
+    - 'gate thresholds read from this file; mismatching thresholds refused'
+    - 'pass decided on recomputed metrics from verified probabilities; edited reports refused'
+    - 'house ECE on the frozen cases'
+    - 'calibration clamp recorded and applied'
+    - 'text-disjoint split with conflicting duplicates refused'
+    - 'declared seed ships under the legacy rule; recipe before scores; device from parameters; F16-reload scoring'
+    - 'early stopping decided on the calibration slice before any eval score; best epoch restored'
+    - 'synthetic-fixture refused by pack-for-serving, verify and deploy'
+    - 'A2 (1.4.0): the gate eval set is in-distribution held-out data defined by eval_set.demo_rule (459 rows, [111, 291, 57]); the claim excludes shift robustness in plain words; the SemEval test split is a reported, recomputed, never-gating shift probe'
+    - 'A3 (1.4.0): production trains seeds 13/17/23; the median-ECE seed ships by floor(ece_post x 10000), ties to the smaller seed; pass is the shipped seed''s pass on both clauses; all three reported; Rust re-derives the median; a legacy run is never deploy-eligible'
+    - 'A1 (laya-parity-v1 2.0.0): gate_pass''s probabilities verified within the noise-referenced bound(c, s), floor 1.0e-5 without a rescore-noise.json record'
+    - 'demo_s64 declared (outcome pending, one run, stop rule) before its data dir or run exists; the s16 demo record and both fail-closed vectors unchanged'
+  pass_criteria: 'FALSIFY-LAYA-GATE-001..014 pass, each observed RED under its induced negative; this file is committed before any models/decide/ run directory exists, and its 1.4.0 amendment before any models/decide/laya-stance-64 run directory exists.'
+  falsification: >
+    Change constants.gate_max_ece alone and every recorded gate report must be refused by the
+    verifier for carrying the old thresholds — the thresholds are read from here, never from the
+    report.

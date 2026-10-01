@@ -82,6 +82,8 @@ impl AppState {
                 session: std::sync::Mutex::new(session),
             })),
             cached_eos_token_id: eos_token_id,
+            #[cfg(feature = "setfit")]
+            setfit_model: None,
             verbose: false,
             trace: false,
             model_source: None,

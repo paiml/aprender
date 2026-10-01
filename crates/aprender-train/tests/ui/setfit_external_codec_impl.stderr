@@ -1,0 +1,31 @@
+error[E0277]: the trait bound `MyCodec: verify::sealed::Sealed` is not satisfied
+  --> tests/ui/setfit_external_codec_impl.rs:24:22
+   |
+24 | impl SetFitCodec for MyCodec {
+   |                      ^^^^^^^ unsatisfied trait bound
+   |
+help: the trait `verify::sealed::Sealed` is not implemented for `MyCodec`
+  --> tests/ui/setfit_external_codec_impl.rs:22:1
+   |
+22 | struct MyCodec;
+   | ^^^^^^^^^^^^^^
+   = note: `MyCodec` implements similarly named trait `unicode_width::private::Sealed`, but not `verify::sealed::Sealed`
+help: the following other types implement trait `verify::sealed::Sealed`
+  --> src/train/setfit/verify.rs
+   |
+   | impl sealed::Sealed for SerdeJsonCodec {}
+   | ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^ `SerdeJsonCodec`
+   |
+  ::: src/train/setfit/apr_codec.rs
+   |
+   | impl sealed::Sealed for AprCodec {}
+   | ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^ `AprCodec`
+note: required by a bound in `SetFitCodec`
+  --> src/train/setfit/verify.rs
+   |
+   | pub trait SetFitCodec: sealed::Sealed {
+   |                        ^^^^^^^^^^^^^^ required by this bound in `SetFitCodec`
+   = note: `SetFitCodec` is a "sealed trait", because to implement it you also need to implement `entrenar::train::setfit::verify::sealed::Sealed`, which is not accessible; this is usually done to force you to use one of the provided types that already implement it
+   = help: the following types implement the trait:
+             entrenar::train::setfit::apr_codec::AprCodec
+             entrenar::train::setfit::verify::SerdeJsonCodec

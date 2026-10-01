@@ -60,7 +60,9 @@ use crate::nn::{LayerNorm, Linear, Module, MultiHeadAttention};
 
 use super::dropout_rng::{self, SiteDropout};
 use super::error::SetFitError;
-use super::import::{MiniLmImport, ModelDims, VocabRemap, PINNED_ACTIVATION};
+use crate::format::v2::AprV2Reader;
+
+use super::import::{BertImport, MiniLmImport, ModelDims, VocabRemap, PINNED_ACTIVATION};
 use super::tokenizer::{SentenceBatch, MAX_SEQUENCE_LENGTH};
 use super::EncoderArchitecture;
 
@@ -341,14 +343,66 @@ impl BertSentenceEncoder {
     /// every tensor read here, so this is defense in depth rather than the
     /// primary gate.
     pub(crate) fn from_import(import: &MiniLmImport, root_seed: u64) -> Result<Self, SetFitError> {
-        let reader = import.reader();
-        let prefix = import.tensor_prefix();
-        Self::assemble(
+        Self::from_prefixed_reader(
             import.dims().clone(),
             import.layer_norm_eps(),
             import.vocab_remap().cloned(),
             import.revision().to_string(),
             import.tokenizer_sha256().to_string(),
+            import.reader(),
+            import.tensor_prefix(),
+            root_seed,
+        )
+    }
+
+    /// Load from a validated general BERT import.
+    ///
+    /// The same construction sequence as [`Self::from_import`], and deliberately
+    /// routed through the same private helper: `assemble` is the single body, and
+    /// a copied second read closure is how one constructor silently stops doing
+    /// what the other does (dropping `.requires_grad()`, skipping a re-check).
+    ///
+    /// SEALED (D-08): `pub(crate)`. Returns an encoder in eval mode.
+    ///
+    /// # Errors
+    ///
+    /// [`SetFitError::ImportTensor`] if a tensor is missing or the wrong size.
+    /// `BertImport` has already validated presence, shape and finiteness, so this
+    /// is defense in depth rather than the primary gate.
+    pub(crate) fn from_bert_import(
+        import: &BertImport,
+        root_seed: u64,
+    ) -> Result<Self, SetFitError> {
+        Self::from_prefixed_reader(
+            import.dims().clone(),
+            import.layer_norm_eps(),
+            None,
+            import.revision().to_string(),
+            import.tokenizer_sha256().to_string(),
+            import.reader(),
+            import.tensor_prefix(),
+            root_seed,
+        )
+    }
+
+    /// The one read sequence both directory importers share.
+    #[allow(clippy::too_many_arguments)]
+    fn from_prefixed_reader(
+        dims: ModelDims,
+        layer_norm_eps: f32,
+        vocab_remap: Option<VocabRemap>,
+        source_revision: String,
+        tokenizer_sha256: String,
+        reader: &AprV2Reader,
+        prefix: &str,
+        root_seed: u64,
+    ) -> Result<Self, SetFitError> {
+        Self::assemble(
+            dims,
+            layer_norm_eps,
+            vocab_remap,
+            source_revision,
+            tokenizer_sha256,
             root_seed,
             &|name: &str, shape: &[usize]| -> Result<Tensor, SetFitError> {
                 // A-01 reuse: the checked-read semantics (presence, dtype path,

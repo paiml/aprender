@@ -1,0 +1,14 @@
+{
+ "run": "jaredpalmer/kev-0.8b",
+ "task": "stance-abortion",
+ "split": "train",
+ "n": 587,
+ "names_only": false,
+ "backend": "MLXDecisionModel",
+ "dtype": "bfloat16",
+ "load_s": 1.773072541996953,
+ "accuracy": 0.4395229982964225,
+ "latency_ms_p50": 39.86183300730772,
+ "tokens_p50": 81.0,
+ "head_temperature": 2.406050072164233
+}

@@ -1,0 +1,10 @@
+probs  rust_vs_torch32  max 2.980e-05 (row 247) p99 5.06e-06 median 4.77e-07 over 1e-05:   2
+probs  rust_vs_f64      max 3.480e-05 (row 198) p99 6.55e-06 median 4.61e-07 over 1e-05:   4
+probs  torch32_vs_f64   max 4.660e-05 (row 198) p99 4.65e-06 median 4.74e-07 over 1e-05:   2
+logits rust_vs_torch32  max 1.376e-04 (row 247) p99 2.48e-05 median 3.43e-06 over 1e-04:   1
+logits rust_vs_f64      max 1.954e-04 (row 198) p99 3.08e-05 median 3.65e-06 over 1e-04:   2
+logits torch32_vs_f64   max 2.653e-04 (row 198) p99 2.30e-05 median 3.69e-06 over 1e-04:   2
+final  rust_vs_torch32  max 2.128e-02 (row  50) p99 6.49e-03 median 7.25e-05 over 1e-04: 147
+final  rust_vs_f64      max 1.710e-02 (row 407) p99 8.61e-03 median 8.52e-05 over 1e-04: 199
+final  torch32_vs_f64   max 1.857e-02 (row 407) p99 1.06e-02 median 8.58e-05 over 1e-04: 192
+ids_equal 459/459 ctrl 0.00e+00 stored-bitwise None wall {'torch_fp32': 76.13588809967041, 'f64': 89.59758806228638}

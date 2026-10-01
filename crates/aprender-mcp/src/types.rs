@@ -151,6 +151,25 @@ pub struct PropertySchema {
     pub description: String,
     #[serde(skip_serializing_if = "Option::is_none")]
     pub r#enum: Option<Vec<String>>,
+    /// Element schema for `type: array` properties.
+    ///
+    /// Required for FALSIFY-MCP-008 round-tripping: without this field serde
+    /// silently DROPS `items` on deserialize, so `tools/list` would emit an
+    /// array schema with no element type while the YAML-derived side has one —
+    /// the byte-exact comparison fails, and any client loses the element type.
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub items: Option<ItemsSchema>,
+}
+
+/// JSON Schema `items` body for an array property.
+///
+/// Only the element type is modelled; the array property's own `description`
+/// documents what an element means, so a nested description would be redundant
+/// (and `PropertySchema` requires one, so it cannot be reused here).
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct ItemsSchema {
+    #[serde(rename = "type")]
+    pub item_type: String,
 }
 
 /// Result returned by `tools/call`.

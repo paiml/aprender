@@ -234,6 +234,143 @@ else
     echo "OK ($aprender_count files)"
 fi
 
+# Check 10: every apr-cli feature that GATES A SUBCOMMAND must have a root-facade
+# passthrough. The published crate is `aprender`, not `apr-cli`, so a feature with
+# no passthrough cannot be enabled by any `cargo install aprender` invocation —
+# `--features <name>` errors out and `--features full` silently omits it. Found by
+# `cargo install aprender --features setfit` failing while every CI SetFit test
+# passed, because CI tests `-p <crate> --features setfit` and never the facade.
+# The decision surface is the facade's [features] table, so that is what is scanned.
+echo -n "  Facade feature passthrough check... "
+checked=$((checked + 1))
+# The scanned set is apr-cli's [features] TABLE — the closed set cargo itself
+# reads — not `#[cfg(feature = ...)]` occurrences in dispatch*.rs. Scanning source
+# was wrong twice over: it missed `hf-hub` and `safetensors-compare` (they gate
+# `apr publish` / `apr compare-hf` from commands/*.rs, never dispatch*.rs), and it
+# caught `setfit` — the defect that motivated this check — only by luck, because
+# its cfgs happened to also appear there. A source regex also cannot see
+# `all(...)`/`any(...)` wrappers, and `[a-z-]+` silently skips any feature name
+# containing a digit or underscore. The table has none of those failure modes.
+#
+# A feature is reachable by a `cargo install aprender` user if it has a facade
+# passthrough OR is in apr-cli's `default` (which the facade inherits).
+# Exempt, with reasons:
+#   default   — the meta-feature itself, not a capability.
+#   full      — the aggregate; it IS a passthrough.
+#   dev       — `apr mono` internal maintenance subcommands.
+#   dhat-heap — heap-profiling build, not a shipped capability.
+#   code      — retained for backwards-compat; the subcommand is no longer gated.
+passthrough_exempt="default full dev dhat-heap code"
+missing_passthrough=""
+apr_cli_features=$(awk '/^\[features\]/{f=1;next} /^\[/{f=0} f && /^[a-zA-Z0-9_-]+ *=/{sub(/ *=.*/,""); print}' \
+    crates/apr-cli/Cargo.toml 2>/dev/null | sort -u)
+# The WHOLE `default = [...]` array, which may wrap across lines. `grep -m1`
+# read only the first line, so the day someone reformats that array every
+# feature in it turns into a bogus "missing passthrough" FAIL. awk collects
+# from `default = [` to the closing `]` instead.
+apr_cli_default=$(awk '/^default *= *\[/{c=1} c{printf "%s", $0; if (/\]/) exit}' \
+    crates/apr-cli/Cargo.toml 2>/dev/null)
+# Here-string, not a pipe: a piped `while read` runs in a subshell and
+# `missing_passthrough` would not survive the loop, silently passing the gate.
+while IFS= read -r feat; do
+    [ -n "$feat" ] || continue
+    case " $passthrough_exempt " in
+        *" $feat "*) continue ;;
+        *) ;;
+    esac
+    # Reachable because the facade inherits apr-cli's default feature set.
+    case "$apr_cli_default" in
+        *"\"$feat\""*) continue ;;
+        *) ;;
+    esac
+    # The passthrough must both exist AND forward to apr-cli/<feat>; a bare
+    # `feat = []` would satisfy `cargo --features feat` while enabling nothing.
+    if ! grep -qE "^${feat} = \[.*\"apr-cli/${feat}\".*\]" Cargo.toml; then
+        missing_passthrough="$missing_passthrough $feat"
+    fi
+done <<< "$apr_cli_features"
+if [ -n "$missing_passthrough" ]; then
+    echo "FAIL"
+    echo "FAIL: apr-cli features gate subcommands but have no root-facade passthrough:$missing_passthrough"
+    echo "  Effect: 'cargo install aprender --features <name>' errors; '--features full' silently omits it."
+    echo "  Fix: add the feature to the root Cargo.toml features table, forwarding to cli and apr-cli/<name>."
+    errors=$((errors + 1))
+else
+    echo "OK"
+fi
+
+# Check 11: mirrored contracts must match the repo-root catalog byte-for-byte.
+#
+# A handful of contracts are tracked TWICE: once under the crate that consumes them
+# at build time, once in the repo-root contracts/ catalog that `pv` and humans read.
+# The duplication is forced — a published crate cannot reach ../../contracts/ (cargo
+# package only includes files under the crate dir), and a tracked symlink is rejected
+# by check 1 (PMAT-SQI). So both copies stay and this check keeps them equal.
+#
+# The failure it prevents is silent: the two files are indistinguishable by name and
+# only the crate-local one has any effect, so editing the repo-root copy changes
+# nothing while every gate stays green against the stale file.
+#
+# Scoped by BASENAME COLLISION, not by an allowlist: a crate-local contract is a
+# mirror exactly when a file of the same basename exists in the root catalog.
+# Crate-local contracts with no root counterpart (three unrelated matmul-v1.yaml
+# among them) are genuinely distinct documents and are ignored.
+echo -n "  Mirrored contract sync check... "
+checked=$((checked + 1))
+# DERIVED, not hand-listed: a crate-local contract is a mirror exactly when a
+# file of the same basename exists in the root catalog. An allowlist would fail
+# the same silent way the thing it guards fails — add a 12th mirror, forget the
+# script, nothing goes red. Deriving cannot go stale.
+#
+# Measured over the tree when this was written: 11 mirrors, 0 drift, 49
+# crate-local contracts with no root counterpart (correctly ignored). The
+# staging crate is the vendored provable-contracts UPSTREAM corpus — a different
+# project whose ~43 files merely share basenames — so it is skipped wholesale.
+#
+# MIRROR_FLOOR is the vacuity guard. Everything below is relative to the CWD,
+# and `find` on a missing tree prints nothing and exits quietly, so without a
+# floor a wrong CWD or a renamed directory reports `OK (0 mirrors)` — the exact
+# shape of CR-02 (a zero-match filter exiting 0 while printing "ok"). The floor
+# is a LOWER bound, not the exact count, so adding a 12th mirror does not turn
+# this red for the wrong reason.
+MIRROR_FLOOR=11
+mirrored_contracts=$(find crates -maxdepth 3 -path '*/contracts/*.yaml' \
+    -not -path '*/aprender-contracts-staging/*' -not -path '*/target/*' 2>/dev/null | sort)
+mirror_drift=""
+# Here-string, not a pipe: a piped `while read` runs in a subshell and
+# `mirror_drift` would not survive the loop, silently passing the gate.
+mirror_count=0
+while IFS= read -r mirror; do
+    [ -n "$mirror" ] || continue
+    # Parameter expansion, not $(basename): one fork per file for nothing.
+    root_copy="contracts/${mirror##*/}"
+    # No root counterpart => a crate-local-only contract, not a mirror.
+    [ -f "$root_copy" ] || continue
+    mirror_count=$((mirror_count + 1))
+    # Accumulate with a '|' separator rather than embedded newlines, then expand
+    # at print time: a multi-line string assignment trips the shell linter here.
+    if ! cmp -s "$mirror" "$root_copy"; then
+        mirror_drift="${mirror_drift}|    DRIFTED: $mirror != $root_copy"
+    fi
+done <<< "$mirrored_contracts"
+if [ -n "$mirror_drift" ]; then
+    echo "FAIL"
+    echo "FAIL: mirrored contracts out of sync with the repo-root catalog:"
+    printf '%s\n' "$mirror_drift" | tr '|' '\n' | grep -v '^$'
+    echo "  Only the crate-local copy is read at build time, so a repo-root-only edit has NO effect."
+    echo "  Fix: copy whichever side you edited over the other, then rebuild so codegen re-runs."
+    errors=$((errors + 1))
+elif [ "$mirror_count" -lt "$MIRROR_FLOOR" ]; then
+    echo "FAIL"
+    echo "FAIL: only $mirror_count mirrored contracts found, expected at least $MIRROR_FLOOR."
+    echo "  A comparison that compared nothing passes for free. Either this ran from the wrong"
+    echo "  directory (every path here is CWD-relative), or mirrors were genuinely removed."
+    echo "  If they were removed on purpose, lower MIRROR_FLOOR in this script deliberately."
+    errors=$((errors + 1))
+else
+    echo "OK ($mirror_count mirrors)"
+fi
+
 # Summary
 echo ""
 if [ "$errors" -gt 0 ]; then

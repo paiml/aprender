@@ -57,6 +57,7 @@ const CODEGEN_CONSTANTS: &[(&str, &str)] = &[
     ("apr.run", aprender_mcp::schemas::APR_RUN_SCHEMA),
     ("apr.serve", aprender_mcp::schemas::APR_SERVE_SCHEMA),
     ("apr.finetune", aprender_mcp::schemas::APR_FINETUNE_SCHEMA),
+    ("apr.predict", aprender_mcp::schemas::APR_PREDICT_SCHEMA),
 ];
 
 /// Per-tool codegen DESCRIPTION constants (PMAT-514). Verifies the build-time
@@ -83,6 +84,10 @@ const CODEGEN_DESCRIPTIONS: &[(&str, &str)] = &[
     (
         "apr.finetune",
         aprender_mcp::schemas::APR_FINETUNE_DESCRIPTION,
+    ),
+    (
+        "apr.predict",
+        aprender_mcp::schemas::APR_PREDICT_DESCRIPTION,
     ),
 ];
 
@@ -179,6 +184,22 @@ fn expected_schema_from_yaml(tool: &serde_yaml::Value) -> Value {
                 let mut prop = Map::new();
                 prop.insert("type".to_string(), Value::String(ty.to_string()));
                 prop.insert("description".to_string(), Value::String(desc.to_string()));
+                // `items_type` on an array arg becomes JSON Schema `items`.
+                // This mirrors `render_schema_json` in build.rs; the duplication
+                // is deliberate — the harness must derive the expected schema
+                // from the YAML independently rather than reuse the code under
+                // test, or the comparison would be vacuously true.
+                if let Some(items_ty) = arg.get("items_type").and_then(|v| v.as_str()) {
+                    let mut items = Map::new();
+                    items.insert("type".to_string(), Value::String(items_ty.to_string()));
+                    prop.insert("items".to_string(), Value::Object(items));
+                } else {
+                    assert_ne!(
+                        ty, "array",
+                        "arg {name} is type: array but declares no `items_type`; \
+                         an array schema without `items` leaves the element type undefined"
+                    );
+                }
                 props.insert(name.to_string(), Value::Object(prop));
             }
             schema.insert("properties".to_string(), Value::Object(props));

@@ -1,4 +1,3 @@
-
 #[derive(Subcommand, Debug)]
 pub enum ModelOpsCommands {
     /// Fine-tune model with LoRA/QLoRA (GH-244)
@@ -108,6 +107,45 @@ pub enum ModelOpsCommands {
         /// PMAT-486: Enable StepProfiler for per-phase wall-clock timing
         #[arg(long)]
         profile: bool,
+
+        /// Phase 5 D-10: resolve the training rows through a Phase 2
+        /// `selection-manifest.json` instead of reading `--data` as a corpus file.
+        ///
+        /// `--data` must then be the ATTESTED CANONICAL dataset directory (the one
+        /// `apr data tweet-eval-stance` prepared), and the manifest is replayed against it
+        /// through the same `read_attested_canonical` + `read_selection_manifest` +
+        /// `Selection::replay` door `apr setfit train` and `apr eval --setfit` use. The run
+        /// REFUSES to start if the manifest digest does not verify or the replay disagrees
+        /// with the data, so both methods in the benchmark read one artifact rather than
+        /// trusting an exporter to have materialized identical subsets (EVAL-02).
+        ///
+        /// Requires `--seed`: a selection-manifest cell that did not pin its seed is not
+        /// reproducible, and the pairing gate cannot accept it.
+        #[arg(long, value_name = "FILE")]
+        selection_manifest: Option<PathBuf>,
+
+        /// Random seed for the classification training run (default: 42).
+        ///
+        /// REQUIRED with `--selection-manifest`.
+        #[arg(long, value_name = "SEED")]
+        seed: Option<u64>,
+
+        /// Fraction of the training rows held out for validation (default: 0.2).
+        ///
+        /// `0.0` disables validation entirely: no validation batches are built, no
+        /// best-epoch checkpoint is written, and no epoch is selected on a held-out
+        /// metric. That is the frozen-defaults benchmark regime — every cell trains for
+        /// exactly `--epochs` epochs.
+        #[arg(long, value_name = "FRACTION")]
+        val_split: Option<f32>,
+
+        /// Early-stopping patience in epochs (default: 10).
+        ///
+        /// `0` DISABLES early stopping. Under the frozen-defaults benchmark policy this is
+        /// mandatory: an early stop is unlocked model selection, and a row whose
+        /// `epochs_completed` differs from `epochs_requested` is refused by the claims gate.
+        #[arg(long, value_name = "EPOCHS")]
+        early_stopping_patience: Option<usize>,
     },
     /// Prune model (structured/unstructured pruning) (GH-247)
     Prune {

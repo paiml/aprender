@@ -1,0 +1,13 @@
+[package]
+name = "spike-006-chronos-vs-prophet-holdout"
+version = "0.0.0"
+edition = "2021"
+publish = false
+
+[workspace]
+
+[dependencies]
+aprender = { path = "../../../crates/aprender-core", package = "aprender-core", default-features = false }
+trueno = { path = "../../../crates/aprender-compute", package = "aprender-compute" }
+serde = { version = "1", features = ["derive"] }
+serde_json = "1"

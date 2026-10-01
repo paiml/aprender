@@ -1112,3 +1112,148 @@ fn test_falsify_hsv_extreme_saturation() -> Result<(), Box<dyn std::error::Error
     }
     Ok(())
 }
+
+// ============================================================================
+// Spectral Index Falsification Claims (FALSIFY-SPECTRAL-001..005)
+// ============================================================================
+
+#[test]
+fn test_falsify_spectral_001_bounds() {
+    use crate::spectral::*;
+
+    let nir = vec![0.0, 0.1, 0.5, 0.8, 1.0, 0.05, 0.9];
+    let red = vec![0.0, 0.2, 0.1, 0.2, 0.05, 0.8, 0.9];
+    let blue = vec![0.0, 0.05, 0.05, 0.1, 0.02, 0.2, 0.1];
+    let mut ndvi = vec![0.0; 7];
+    let mut evi = vec![0.0; 7];
+    let mut savi = vec![0.0; 7];
+
+    compute_ndvi(&nir, &red, &mut ndvi).expect("ndvi ok");
+    compute_evi(&nir, &red, &blue, &mut evi).expect("evi ok");
+    compute_savi(&nir, &red, 0.5, &mut savi).expect("savi ok");
+
+    for (i, &v) in ndvi.iter().enumerate() {
+        if !v.is_nan() {
+            assert!((-1.0..=1.0).contains(&v), "NDVI out of bounds at {i}: {v}");
+        }
+    }
+
+    for (i, &v) in evi.iter().enumerate() {
+        if !v.is_nan() {
+            assert!((-1.0..=1.0).contains(&v), "EVI out of bounds at {i}: {v}");
+        }
+    }
+
+    for (i, &v) in savi.iter().enumerate() {
+        if !v.is_nan() {
+            assert!((-1.0..=1.0).contains(&v), "SAVI out of bounds at {i}: {v}");
+        }
+    }
+}
+
+#[test]
+fn test_falsify_spectral_002_identity() {
+    use crate::spectral::*;
+
+    let bands = vec![0.1, 0.3, 0.5, 0.75, 0.9];
+    let mut out = vec![0.0; bands.len()];
+
+    compute_ndvi(&bands, &bands, &mut out).expect("ndvi ok");
+    for (i, &v) in out.iter().enumerate() {
+        assert!(
+            v.abs() < 1e-6,
+            "NDVI identity violated at {i}: expected 0.0, got {v}"
+        );
+    }
+}
+
+#[test]
+fn test_falsify_spectral_003_division_by_zero_safety() {
+    use crate::spectral::*;
+
+    let nir = vec![0.0, f32::NAN, 0.5];
+    let red = vec![0.0, 0.5, f32::NAN];
+    let mut out = vec![999.0; 3];
+
+    compute_ndvi(&nir, &red, &mut out).expect("ndvi handles zero safely");
+    assert!(out[0].is_nan(), "0/0 should be NaN: {}", out[0]);
+    assert!(out[1].is_nan(), "NaN/x should be NaN: {}", out[1]);
+    assert!(out[2].is_nan(), "x/NaN should be NaN: {}", out[2]);
+}
+
+#[test]
+fn test_falsify_spectral_004_stats_monotonicity() {
+    use crate::spectral::*;
+
+    let values = vec![
+        f32::NAN,
+        0.05,
+        0.12,
+        0.34,
+        0.45,
+        0.55,
+        0.65,
+        0.72,
+        0.81,
+        0.95,
+        f32::NAN,
+    ];
+
+    let stats = compute_stats(&values);
+    assert_eq!(stats.valid_pixels, 9);
+    assert_eq!(stats.total_pixels, 11);
+    assert!(stats.min <= stats.p25, "min <= p25");
+    assert!(stats.p25 <= stats.p50, "p25 <= p50");
+    assert!(stats.p50 <= stats.p75, "p50 <= p75");
+    assert!(stats.p75 <= stats.max, "p75 <= max");
+    assert!((stats.mean - 0.5144).abs() < 1e-2);
+    assert_eq!(stats.health_category, "Dense vegetation");
+    assert_eq!(stats.health_category_key, "dense");
+}
+
+#[test]
+fn test_falsify_spectral_005_colormap_overlay() {
+    use crate::spectral::*;
+
+    let cm = ColorMap::ndvi_rdylgn();
+
+    // NaN maps to transparent [0, 0, 0, 0]
+    assert_eq!(cm.map_value(f32::NAN), [0, 0, 0, 0]);
+
+    // -0.2 maps to stop 0 [165, 0, 38, 255]
+    assert_eq!(cm.map_value(-0.2), [165, 0, 38, 255]);
+
+    // 0.9 maps to stop 5 [0, 104, 55, 255]
+    assert_eq!(cm.map_value(0.9), [0, 104, 55, 255]);
+
+    let values = vec![-0.2, 0.9, f32::NAN, 0.4];
+    let overlay = render_overlay_rgba(&values, 2, 2, &cm).expect("overlay ok");
+    assert_eq!(overlay.width(), 2);
+    assert_eq!(overlay.height(), 2);
+    assert_eq!(overlay.channels(), 4);
+
+    let data = overlay.data();
+    // Pixel 2 is NaN -> transparent
+    assert_eq!(data[8], 0.0);
+    assert_eq!(data[9], 0.0);
+    assert_eq!(data[10], 0.0);
+    assert_eq!(data[11], 0.0);
+}
+
+#[test]
+fn test_imagebuf_spectral_extensions() {
+    use crate::buf::ImageBuf;
+
+    let nir = ImageBuf::new(vec![0.8, 0.7, 0.2, 0.9], 2, 2, 1).expect("nir ok");
+    let red = ImageBuf::new(vec![0.1, 0.2, 0.2, 0.1], 2, 2, 1).expect("red ok");
+
+    let ndvi = nir.ndvi(&red).expect("ndvi buf ok");
+    assert_eq!(ndvi.width(), 2);
+    assert_eq!(ndvi.height(), 2);
+    assert_eq!(ndvi.channels(), 1);
+
+    // Pixel (0,0): (0.8 - 0.1) / (0.8 + 0.1) = 0.7 / 0.9 = 0.777...
+    assert!((ndvi.data()[0] - 0.7777).abs() < 1e-3);
+    // Pixel (1,0): (0.2 - 0.2) / 0.4 = 0.0
+    assert!(ndvi.data()[2].abs() < 1e-6);
+}

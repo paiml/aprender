@@ -1,159 +1,35 @@
-# Softmax Kernel Contract v1.0.0
-# THE SOURCE OF TRUTH for softmax correctness and performance
-#
-# STATUS: Authoritative — all Tensor-based softmax MUST follow this contract
-# CONSUMERS:
-#   - src/nn/functional.rs (softmax, log_softmax, softmax_1d)
-#   - src/autograd/ops/activation.rs (Tensor::softmax)
-#   - tests/contracts/softmax_contract.rs
-#
-# ENFORCEMENT: provable_contracts_macros::contract("softmax-kernel-v1", equation = "softmax")
-#
-# Mathematical Foundation:
-#   softmax(x)_i = exp(x_i - max(x)) / Σ_j exp(x_j - max(x))
-#   The max subtraction is essential for numerical stability (no NaN/Inf).
-
 metadata:
-  version: "1.0.0"
-  created: "2026-03-02"
-  author: "PAIML Engineering"
-  description: "Correctness and performance specification for softmax kernels"
+  version: 1.0.0
+  created: '2026-02-18'
+  author: PAIML Engineering
+  description: Softmax kernel — numerically stable exponential normalization
   references:
-    - "GH-384: Softmax 1.6x slower than ndarray"
-    - "Bridle (1990). Training Stochastic Model Recognition Algorithms as Networks can Lead to Maximum Mutual Information Estimation of Parameters"
-    - "Milakov & Gimelshein (2018). Online normalizer calculation for softmax. arXiv:1805.02867"
-  issues:
-    - "https://github.com/paiml/aprender/issues/384"
-
-# =============================================================================
-# KERNEL EQUATIONS
-# =============================================================================
-
+  - Bridle (1990) Training Stochastic Model Recognition Algorithms as Networks
+  - Milakov & Gimelshein (2018) Online normalizer calculation for softmax
 equations:
   softmax:
-    formula: "softmax(x)_i = exp(x_i - max(x)) / Σ_j exp(x_j - max(x))"
-    domain: "x ∈ R^n, n ≥ 1"
-    properties:
-      - probability_simplex: "Σ_i softmax(x)_i = 1.0"
-      - non_negative: "softmax(x)_i >= 0 ∀i"
-      - monotone: "x_i > x_j → softmax(x)_i > softmax(x)_j"
-      - shift_invariant: "softmax(x + c) == softmax(x) ∀c ∈ R"
-      - max_dominance: "as x_i → ∞, softmax(x)_i → 1.0"
-
-  log_softmax:
-    formula: "log_softmax(x)_i = x_i - max(x) - log(Σ_j exp(x_j - max(x)))"
-    domain: "x ∈ R^n, n ≥ 1"
-    properties:
-      - negative: "log_softmax(x)_i ≤ 0 ∀i"
-      - log_sum_one: "Σ_i exp(log_softmax(x)_i) = 1.0"
-      - consistency: "log_softmax(x) == log(softmax(x)) (to float precision)"
-
-# =============================================================================
-# IMPLEMENTATION MANDATES
-# =============================================================================
-
-implementation:
-  three_pass_inline:
-    description: "Tensor softmax MUST use 3-pass inline pattern (no per-row allocation)"
-    pattern: |
-      // Pass 1: max — auto-vectorizable
-      let mut max_val = f32::NEG_INFINITY;
-      for &v in row { max_val = max_val.max(v); }
-      // Pass 2: exp + sum — auto-vectorizable
-      let mut sum = 0.0f32;
-      for i in 0..n { let e = (row[i] - max_val).exp(); out[i] = e; sum += e; }
-      // Pass 3: normalize — auto-vectorizable
-      let inv_sum = 1.0 / sum;
-      for i in 0..n { out[i] *= inv_sum; }
-    rationale: "Avoids 2 intermediate Vec allocations per row that softmax_1d creates"
-
-  numerical_stability:
-    description: "MUST subtract max before exp to prevent overflow"
-    assertion: "No intermediate value exceeds exp(88.7) ≈ f32::MAX"
-
-  one_path_rule:
-    description: "All Tensor softmax delegates to nn::functional::softmax (UCBD §4)"
-    canonical_source: "src/nn/functional.rs::softmax"
-
-# =============================================================================
-# PERFORMANCE BOUNDS
-# =============================================================================
-
-performance:
-  benchmark_crate: "aprender-bench-compute"
-  benchmark_file: "benches/softmax.rs"
-  reference: "ndarray 3-pass scalar implementation"
-
-  bounds:
-    softmax_32000:
-      min_ratio_vs_ndarray: 0.55
-      target_ratio: 0.75
-      measured_ratio: 0.64
-      measured_date: "2026-03-02"
-
-    softmax_128256:
-      min_ratio_vs_ndarray: 0.70
-      target_ratio: 0.90
-      measured_ratio: 0.87
-      measured_date: "2026-03-02"
-
-    softmax_1d_4096:
-      min_ratio_vs_ndarray: 0.70
-      target_ratio: 0.90
-      measured_ratio: 0.87
-      measured_date: "2026-03-02"
-
-# =============================================================================
-# FALSIFICATION TESTS
-# =============================================================================
-
-falsification:
-
-  FALSIFY-SM-001:
-    name: "Probability simplex"
-    assertion: "sum(softmax(x)) ≈ 1.0 (within 1e-5)"
-    status: "PASS"
-
-  FALSIFY-SM-002:
-    name: "Non-negativity"
-    assertion: "∀i: softmax(x)[i] >= 0"
-    status: "PASS"
-
-  FALSIFY-SM-003:
-    name: "Shift invariance"
-    assertion: "softmax(x + c) ≈ softmax(x) (within 1e-5)"
-    status: "PASS"
-
-  FALSIFY-SM-004:
-    name: "Numerical stability"
-    assertion: "softmax([1000, 1001, 1002]) produces valid probabilities (no NaN/Inf)"
-    status: "PASS"
-
-  FALSIFY-SM-005:
-    name: "Log-softmax consistency"
-    assertion: "exp(log_softmax(x)) ≈ softmax(x) (within 1e-5)"
-    status: "PASS"
-
-  FALSIFY-SM-006:
-    name: "Monotonicity"
-    assertion: "x[i] > x[j] → softmax(x)[i] > softmax(x)[j]"
-    status: "PASS"
-
-# =============================================================================
-# QA GATE
-# =============================================================================
-
-qa_gate:
-  id: "F-SOFTMAX-001"
-  name: "Softmax Kernel Contract"
-  description: "Validates softmax correctness and performance bounds"
-  checks:
-    - "Tensor softmax uses 3-pass inline pattern (no softmax_1d delegation)"
-    - "Max subtraction before exp in all paths"
-    - "Benchmark ratio >= min_ratio for all measured bounds"
-    - "All FALSIFY tests pass"
-  pass_criteria: "All checks pass"
-
+    formula: σ(x)_i = exp(x_i - max(x)) / Σ_j exp(x_j - max(x))
+    domain: x ∈ ℝ^n, n ≥ 1
+    codomain: σ(x) ∈ (0,1)^n
+    invariants:
+    - Σ σ(x)_i = 1.0 (normalization)
+    - σ(x)_i > 0 for all i (strict positivity)
+    - argmax(σ(x)) = argmax(x) (order preservation)
+    preconditions:
+    - x.len() > 0
+    - x.iter().all(|v| v.is_finite())
+    lean_theorem: Theorems.Softmax
+    float_tolerance: 1.0e-7
+    postconditions:
+    - result.len() == x.len()
+    - result.iter().all(|v| *v >= 0.0)
+    - (result.iter().sum::<f32>() - 1.0).abs() < 1e-5
+    guarantees:
+      shapes:
+        output: { dims: ["x.len()"] }
+      constraints:
+      - "output.iter().all(|v| v > 0.0 && v < 1.0)"
+      - "output.iter().sum::<f32>() ≈ 1.0"
 proof_obligations:
 - id: SM54B5-PRE-001
   type: precondition
@@ -250,7 +126,87 @@ proof_obligations:
     mathlib_imports:
     - Mathlib.Analysis.SpecialFunctions.ExpDeriv
     notes: Key for numerical stability; exp(x-c)/Σexp(x-c) = exp(x)/Σexp(x)
-
+verification_summary:
+  total_obligations: 9
+  l2_property_tested: 9
+  l3_kani_proved: 3
+  l4_lean_proved: 5
+  l4_sorry_count: 0
+  l4_not_applicable: 4
+kernel_structure:
+  phases:
+  - name: find_max
+    description: Compute max(x) for numerical stability
+    invariant: max >= x_i for all i
+  - name: exp_subtract
+    description: Compute exp(x_i - max) for each element
+    invariant: result_i ∈ (0, 1] for all i
+  - name: sum_exp
+    description: Compute Σ exp(x_i - max)
+    invariant: sum > 0
+  - name: normalize
+    description: Divide each exp by sum
+    invariant: output_i = exp_i / sum
+simd_dispatch:
+  softmax:
+    scalar: softmax_scalar
+    avx2: softmax_avx2
+    ptx: softmax_ptx
+enforcement:
+  normalization:
+    description: Output must sum to 1.0
+    check: contract_tests::FALSIFY-SM-001
+    severity: ERROR
+  positivity:
+    description: All outputs must be positive
+    check: contract_tests::FALSIFY-SM-002
+    severity: ERROR
+falsification_tests:
+- id: FALSIFY-SM-001
+  rule: Normalization
+  prediction: sum(softmax(x)) ≈ 1.0 for random x ∈ [-1000, 1000]^n
+  test: proptest with 10000 random vectors, dim 1..128
+  if_fails: Missing or incorrect max-subtraction trick
+- id: FALSIFY-SM-002
+  rule: Positivity
+  prediction: softmax(x)_i > 0 for all i
+  test: proptest with extreme values near f32::MIN/MAX
+  if_fails: exp underflow not handled
+- id: FALSIFY-SM-003
+  rule: Order preservation
+  prediction: argmax(softmax(x)) = argmax(x)
+  test: proptest with distinct-element vectors
+  if_fails: Numerical instability in subtraction
+- id: FALSIFY-SM-004
+  rule: SIMD equivalence
+  prediction: '|softmax_avx2(x) - softmax_scalar(x)| < 8 ULP'
+  test: proptest comparing scalar vs SIMD output
+  if_fails: SIMD reduction order differs from scalar
+- id: FALSIFY-SM-005
+  rule: Boundary - single element
+  prediction: softmax([x]) = [1.0] for any x
+  test: proptest with single-element vectors
+  if_fails: Edge case in loop bounds
+- id: FALSIFY-SM-006
+  rule: Boundary - identical elements
+  prediction: softmax([c,c,...,c]) = [1/n, 1/n, ..., 1/n]
+  test: proptest with constant vectors
+  if_fails: Rounding error accumulation
+- id: FALSIFY-SM-007
+  rule: Precondition violation
+  prediction: softmax([]) panics or returns Err; softmax([NaN]) returns NaN
+  test: proptest with empty vectors and NaN/Inf inputs
+  if_fails: Missing input validation — kernel silently produces garbage
+- id: FALSIFY-SM-008
+  rule: Postcondition completeness
+  prediction: len(softmax(x)) = len(x) for all valid inputs
+  test: 'proptest: verify output length equals input length'
+  if_fails: Output buffer allocation mismatch
+- id: FALSIFY-SM-009
+  rule: Frame condition
+  prediction: Input vector byte-identical before and after softmax call
+  test: 'proptest: clone input, call softmax, assert clone == original'
+  if_fails: Kernel corrupts input buffer (in-place mutation bug)
 kani_harnesses:
 - id: KANI-SM-001
   obligation: SM-INV-001
@@ -318,50 +274,14 @@ kani_harnesses:
   property: Translation invariance
   bound: 8
   strategy: exhaustive
-
-falsification_tests:
-- id: FALSIFY-SM-001
-  rule: Normalization
-  prediction: sum(softmax(x)) ≈ 1.0 for random x ∈ [-1000, 1000]^n
-  test: proptest with 10000 random vectors, dim 1..128
-  if_fails: Missing or incorrect max-subtraction trick
-- id: FALSIFY-SM-002
-  rule: Positivity
-  prediction: softmax(x)_i > 0 for all i
-  test: proptest with extreme values near f32::MIN/MAX
-  if_fails: exp underflow not handled
-- id: FALSIFY-SM-003
-  rule: Order preservation
-  prediction: argmax(softmax(x)) = argmax(x)
-  test: proptest with distinct-element vectors
-  if_fails: Numerical instability in subtraction
-- id: FALSIFY-SM-004
-  rule: SIMD equivalence
-  prediction: '|softmax_avx2(x) - softmax_scalar(x)| < 8 ULP'
-  test: proptest comparing scalar vs SIMD output
-  if_fails: SIMD reduction order differs from scalar
-- id: FALSIFY-SM-005
-  rule: Boundary - single element
-  prediction: softmax([x]) = [1.0] for any x
-  test: proptest with single-element vectors
-  if_fails: Edge case in loop bounds
-- id: FALSIFY-SM-006
-  rule: Boundary - identical elements
-  prediction: softmax([c,c,...,c]) = [1/n, 1/n, ..., 1/n]
-  test: proptest with constant vectors
-  if_fails: Rounding error accumulation
-- id: FALSIFY-SM-007
-  rule: Precondition violation
-  prediction: softmax([]) panics or returns Err; softmax([NaN]) returns NaN
-  test: proptest with empty vectors and NaN/Inf inputs
-  if_fails: Missing input validation — kernel silently produces garbage
-- id: FALSIFY-SM-008
-  rule: Postcondition completeness
-  prediction: len(softmax(x)) = len(x) for all valid inputs
-  test: 'proptest: verify output length equals input length'
-  if_fails: Output buffer allocation mismatch
-- id: FALSIFY-SM-009
-  rule: Frame condition
-  prediction: Input vector byte-identical before and after softmax call
-  test: 'proptest: clone input, call softmax, assert clone == original'
-  if_fails: Kernel corrupts input buffer (in-place mutation bug)
+qa_gate:
+  id: F-SM-001
+  name: Softmax Contract
+  description: Numerically stable softmax kernel quality gate
+  checks:
+  - normalization
+  - positivity
+  - order_preservation
+  - simd_equivalence
+  pass_criteria: All 9 falsification tests pass + Kani harnesses verify
+  falsification: Introduce off-by-one in max reduction loop

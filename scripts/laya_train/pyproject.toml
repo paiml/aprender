@@ -1,0 +1,46 @@
+[project]
+name = "laya-train"
+version = "0.1.0"
+description = "Hash-locked back office for the Laya decision model (phase 8, D-01/D-02): the tiny CI fixture generator now, the fine-tune and gate later. Dev workflow only -- CI never installs this torch stack."
+readme = "README.md"
+# Upper-bounded on purpose, the scripts/setfit_fixtures precedent: an unbounded `>=3.13`
+# makes uv solve a 3.14 split this stack was never verified on. The interpreter is pinned
+# exactly in .python-version (3.13.7).
+requires-python = ">=3.13,<3.14"
+dependencies = [
+    # Every pin below was verified by a human (plan 08-02 Task 1, package-legitimacy
+    # checkpoint, approved 2026-09-25) BEFORE the first `uv lock`. Exact `==` by design:
+    # every committed fixture is a numerical artifact of these versions.
+    #
+    # torch: the forward the oracle records and the trainer runs; 2.14.0 is the wheel
+    # spike 024 resolved (RESEARCH A1) and has a cp313 macOS-arm64 wheel.
+    "torch==2.14.0",
+    # transformers: ModernBERT (SDPA) -- the exact version spike 025's semantics table was
+    # read against (laya-rust-inference.md §2) and whose `rope_parameters` layout the
+    # fixture config uses.
+    "transformers==5.17.0",
+    # tokenizers: the fixture generator trains its tiny byte-level BPE with it, and it is
+    # the version the Rust side's workspace pin (Cargo.toml tokenizers 0.23.1) matches.
+    "tokenizers==0.23.1",
+    # safetensors: F16 save and reload of every fixture checkpoint.
+    "safetensors==0.8.0",
+    # huggingface-hub: the pinned base-weights download (plan 08-08) and a transformers
+    # dependency; pinned so the lock cannot drift under it.
+    "huggingface-hub==1.32.0",
+    # numpy: metrics.py is numpy-only so its self-test runs without the ML stack.
+    "numpy==2.5.3",
+    # pyyaml: the 08-08 gate reads its thresholds from contracts/laya-finetune-gate-v1.yaml
+    # (never literals); also a transformers dependency.
+    "pyyaml==6.0.3",
+    # laya: NOT on PyPI. Pinned by FULL commit SHA (D-02), the commit spike 024 vendored
+    # (verified with `rtk proxy git rev-parse HEAD`, RESEARCH Pitfall 11). Every oracle
+    # number comes from this code path (D-01), never from a re-implementation.
+    "laya @ git+https://github.com/NandhaKishorM/laya@4066d5d5fbf08b66c6757ddeedbd797bd7655bc0",
+]
+
+[tool.uv]
+# The approved lock is macOS-arm64 only (the laptop back office, plan 08-02 Task 1). CI
+# never installs this project, so a Linux/x86 split would be an unverified resolution.
+environments = ["sys_platform == 'darwin' and platform_machine == 'arm64'"]
+# This is a script collection, not a distributable package.
+package = false

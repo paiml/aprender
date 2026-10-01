@@ -1,0 +1,61 @@
+[package]
+name = "aprender-mcp-setfit-train"
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+repository.workspace = true
+authors.workspace = true
+rust-version.workspace = true
+description = "Thin single-algorithm MCP training server: SetFit few-shot training as an async MCP Task over the pmcp SDK"
+keywords = ["mcp", "setfit", "training", "aprender", "pmcp"]
+categories = ["science", "web-programming"]
+readme = "README.md"
+# Not published until the pmcp.run pilot proves the pattern — same policy as
+# aprender-mcp-setfit. The crate is a deployment unit, not a library.
+publish = false
+
+[lib]
+name = "aprender_mcp_setfit_train"
+path = "src/lib.rs"
+
+[[bin]]
+name = "aprender-mcp-setfit-train"
+path = "src/main.rs"
+
+[dependencies]
+# PAIML's Rust MCP SDK. 2.19 is where MCP Tasks matured (typed `tasks/*`
+# dispatch, `ServerBuilder::task_store`, the s45/s50 lifecycle examples).
+# NOTE: this pin raises the whole workspace's resolved `pmcp` from 2.9 to 2.19,
+# including the already-shipping predict crates whose manifests still say "2.9".
+# They compile unchanged, but "the servers ship on ONE SDK" is currently only
+# semver unification in Cargo.lock, not a declared invariant — promoting pmcp to
+# `[workspace.dependencies]` is the real fix and is deliberately left to its own
+# change, since it edits crates with a PR in flight.
+#
+# `streamable-http` is REQUIRED, not optional: a remote MCP server is the
+# default deployment for this org, and stdio is the local-development opt-in.
+# An earlier revision dropped this feature on the argument that the crate was
+# "stdio only" — that was reasoning from the wrong premise, and the saving it
+# claimed was never bankable anyway (resolver-2 unifies features per package
+# across one invocation, and the predict crates already request it).
+pmcp = { version = "2.19", features = ["streamable-http", "schema-generation"] }
+schemars = "1.0"
+serde = { workspace = true }
+serde_json = { workspace = true }
+tokio = { workspace = true }
+# NO `async-trait` dependency: `pmcp::async_trait` re-exports the same macro,
+# so the store's trait impls use that instead — the dependency note chess-mcp
+# records for the same reason.
+thiserror = { workspace = true }
+
+[dev-dependencies]
+# The streamable-HTTP E2E needs a client; `blocking` because the test is a
+# linear transcript, not an async one. `default-features = false` drops
+# reqwest's own default set (its TLS backend selection, charset, http2) — the
+# test talks plain HTTP to 127.0.0.1. NOTE it does NOT save a TLS stack:
+# `cargo tree -i rustls` shows rustls arriving through pmcp's `streamable-http`
+# feature in the NORMAL graph either way.
+reqwest = { version = "0.12", default-features = false, features = ["blocking"] }
+
+[lints]
+workspace = true

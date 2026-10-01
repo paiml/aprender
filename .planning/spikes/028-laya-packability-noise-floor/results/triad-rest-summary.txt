@@ -1,0 +1,10 @@
+test-s64-es12-seed23-rep rust exit=0
+test-s64-es12-seed23-rep triad exit=0
+indist-base rust exit=0
+indist-base triad exit=0
+indist-s64-es12-seed17-rep rust exit=0
+indist-s64-es12-seed17-rep triad exit=0
+indist-s64-es12-seed23-rep rust exit=0
+indist-s64-es12-seed23-rep triad exit=0
+indist-s64-r1-seed13 rust exit=0
+indist-s64-r1-seed13 triad exit=0

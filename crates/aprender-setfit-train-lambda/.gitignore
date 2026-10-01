@@ -1,0 +1,8 @@
+# cargo-pmcp's build output. `deploy/.build/bootstrap` is the ~19 MB Lambda
+# binary it uploads, and `deploy/lib/stack.ts` is a stack it renders — both are
+# products of `cargo pmcp deploy`, not sources.
+#
+# It writes them under the DEPLOY ROOT, which is `crates/`, so the sibling
+# crates/.gitignore covers the live path; this entry covers the copies left
+# behind by earlier runs whose deploy root was this directory.
+deploy/

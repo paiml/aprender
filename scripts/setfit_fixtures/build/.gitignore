@@ -1,0 +1,4 @@
+# Intermediate slice artifacts. Only the converted slice_model.apr is committed,
+# into crates/aprender-core/tests/fixtures/setfit/.
+*
+!.gitignore

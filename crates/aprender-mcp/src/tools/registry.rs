@@ -203,15 +203,17 @@ macro_rules! register_mcp_tool {
 mod tests {
     use super::*;
 
-    /// Sanity: building the index from the live inventory does not panic
-    /// and yields the 9 Phase-1 tool names in alphabetical order.
+    /// Sanity: building the index from the live inventory does not panic and
+    /// yields the shipped tool names in alphabetical order — the 9 Phase-1
+    /// tools plus `apr.predict` (M4 slice 1: SetFit classification over MCP).
     #[test]
-    fn live_inventory_yields_phase_one_tool_set() {
+    fn live_inventory_yields_shipped_tool_set() {
         let index = ToolIndex::from_inventory();
         let names = index.names();
         let expected = [
             "apr.bench",
             "apr.finetune",
+            "apr.predict",
             "apr.qa",
             "apr.run",
             "apr.serve",
@@ -221,7 +223,7 @@ mod tests {
             "apr.version",
         ];
         assert_eq!(names, expected);
-        assert_eq!(index.definitions().len(), 9);
+        assert_eq!(index.definitions().len(), 10);
     }
 
     #[test]

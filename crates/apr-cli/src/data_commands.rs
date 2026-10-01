@@ -37,6 +37,87 @@ fn parse_ngram_size(raw: &str) -> Result<usize, String> {
 /// Thin CLI wrappers around alimentar's data utilities.
 #[derive(Subcommand, Debug)]
 pub enum DataCommands {
+    /// Prepare the TweetEval abortion stance benchmark as aprender JSONL
+    TweetEvalStance {
+        /// Output directory for JSONL splits and benchmark-manifest.json
+        #[arg(short, long, value_name = "DIR")]
+        output: PathBuf,
+        /// Split layout: canonical (train/validation/test) or setfit (train/test)
+        #[arg(long, value_enum, default_value_t = TweetEvalStanceProfile::Canonical)]
+        profile: TweetEvalStanceProfile,
+        /// Existing canonical TweetEval abortion directory (disables download)
+        #[arg(long, value_name = "DIR")]
+        source: Option<PathBuf>,
+        /// Pinned TweetEval git revision used for provenance and downloads
+        #[arg(long, default_value = crate::commands::data_tweeteval::CANONICAL_REVISION)]
+        revision: String,
+        /// Replace benchmark files already present in the output directory
+        #[arg(long)]
+        force: bool,
+    },
+    /// Select a balanced few-shot training subset and write its replayable manifest
+    ///
+    /// Reads an ATTESTED benchmark directory: the label map, per-class counts, split
+    /// digests, exclusion record and profile all come from the `dataset_attestation`
+    /// section of its `benchmark-manifest.json`, never from hardcoded constants. A
+    /// compatibility-profile, mixed, stale-schema or forged directory is a typed error
+    /// before a single row is selected.
+    Select {
+        /// Attested benchmark directory: canonical train/validation/test JSONL plus
+        /// benchmark-manifest.json, as written by `apr data tweet-eval-stance`
+        #[arg(long, value_name = "DIR")]
+        data: PathBuf,
+        /// Examples per class — one of the contracted few-shot sizes 8, 16, 32, 64
+        #[arg(long, value_name = "N")]
+        shots: u32,
+        /// Root seed. REQUIRED, with no default: it must be one of the ten contracted
+        /// benchmark seeds 13, 17, 23, 29, 31, 37, 41, 43, 47, 53 unless --any-seed is
+        /// given. 42 is deliberately NOT one of them, which is why there is no default:
+        /// a defaulted seed would quietly produce an off-protocol selection
+        #[arg(long, value_name = "SEED")]
+        seed: u64,
+        /// Accept a seed outside the ten contracted benchmark seeds. The mode is
+        /// recorded in the manifest and in --json output, so an experimental selection
+        /// cannot later be mistaken for a benchmark cell
+        #[arg(long = "any-seed")]
+        any_seed: bool,
+        /// Directory to write selection-manifest.json into (default: --data)
+        #[arg(short, long, value_name = "DIR")]
+        output: Option<PathBuf>,
+        /// Replace an existing selection-manifest.json
+        #[arg(long)]
+        force: bool,
+    },
+    /// Replay a selection into a bounded, deterministic contrastive pair stream
+    ///
+    /// There is deliberately no --seed here: the root seed is part of the selection
+    /// manifest, and re-supplying it at the pair stage would create two sources of truth
+    /// for one replay tuple. Pairs are regenerated from that tuple rather than stored —
+    /// only the pair-manifest hash is persisted, and `--dump` is the explicit audit path.
+    Pairs {
+        /// The selection-manifest.json written by `apr data select`
+        #[arg(long, value_name = "FILE")]
+        selection: PathBuf,
+        /// The same attested canonical directory the selection was drawn from; the
+        /// manifest is strictly replayed against it before any pair is emitted
+        #[arg(long, value_name = "DIR")]
+        data: PathBuf,
+        /// Pairs per epoch. Omit for the contracted default — the closed-form
+        /// oversampling count clamped by --hard-cap. A value ABOVE --hard-cap is an
+        /// ERROR naming both numbers, never a silent clamp
+        #[arg(long, value_name = "N")]
+        budget: Option<u64>,
+        /// Upper bound on the per-epoch budget (default: the crate's contracted hard
+        /// cap). It clamps the DEFAULT budget and BINDS an explicit --budget
+        #[arg(long = "hard-cap", value_name = "N")]
+        hard_cap: Option<u64>,
+        /// Write one JSON line per pair, in stream order, to this path (audit only)
+        #[arg(long, value_name = "FILE")]
+        dump: Option<PathBuf>,
+        /// Replace an existing --dump file
+        #[arg(long)]
+        force: bool,
+    },
     /// Every alimentar data command: convert, info, head, schema, mix, fim,
     /// filter-text, view, import, hub, registry, drift, quality, fed, doctest,
     /// extract, merge.
@@ -143,4 +224,13 @@ pub enum DataCommands {
         #[arg(short, long)]
         output: Option<PathBuf>,
     },
+}
+
+/// Supported layouts for the TweetEval abortion stance benchmark.
+#[derive(ValueEnum, Debug, Clone, Copy, PartialEq, Eq)]
+pub enum TweetEvalStanceProfile {
+    /// Original TweetEval train/validation/test splits (recommended).
+    Canonical,
+    /// SetFit wrapper layout: train plus validation+test merged as test.
+    Setfit,
 }

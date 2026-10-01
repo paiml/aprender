@@ -1,0 +1,8 @@
+{
+  "command": "CARGO_INCREMENTAL=0 cargo test --release -p aprender-forecast --lib sc1_wall:: -- --nocapture",
+  "exitCode": 101,
+  "targetTest": "sc1_wall::sc1_wall_sweep",
+  "output": "not ok 1 - sc1_wall::sc1_wall_sweep\n# tests 1\n# pass 0\n# fail 1\n",
+  "expected": "every composition of freq x growth x holiday shape is ACCEPTED by the door, timed, and printed as one SC1 WALL: line",
+  "actual": "sc1_wall.rs:224 assertion fired - the door REFUSED [model=prophet freq=MS growth=logistic holidays=none points=33 horizon=3650]: lambda 86789.8 exceeds max_logistic_changepoint_lambda 20000. 14 of 19 compositions printed a line first."
+}

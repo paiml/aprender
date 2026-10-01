@@ -1,0 +1,169 @@
+{
+  "schema": "laya-hygiene-evidence-v1",
+  "plan": "08-33",
+  "base": "3c0f2cf00312756edb6810b888c8cbeecaafc9be",
+  "before": {
+    "measured_on": "HEAD c028b4eec (tracked tree identical to 3c0f2cf00 for contracts/ and crates/), aarch64 macOS, rustc 1.93.0, pv built from this tree",
+    "fragments_run_verbatim": {
+      "336-aprender-contracts-cli-ont2b-sigma-gate": {
+        "result": "6 passed; 2 failed",
+        "failed": [
+          "the_repo_corpus_passes_the_sigma_gate",
+          "the_gate_mode_reports_only_the_named_gate"
+        ],
+        "rule": "PV-ONT-004 formal_prose rose 1464 -> 1569"
+      },
+      "338-aprender-contracts-cli-ont4b-shapes-gate": {
+        "result": "10 passed; 1 failed",
+        "failed": [
+          "the_tracked_repo_graph_is_fresh"
+        ],
+        "rule": "contracts/contracts.nt differs from a fresh extraction"
+      },
+      "455-aprender-contracts-cli-ont7-valid-under-gate": {
+        "result": "11 passed; 2 failed",
+        "failed": [
+          "the_row_probe_passes_on_the_repo_corpus",
+          "the_full_lint_run_computes_valid_under"
+        ],
+        "rule": "PV-ONT-016 contracts_without_valid_under 398 > baseline 386"
+      }
+    },
+    "the_five_reds_of_08_32": [
+      "ont2b: the_repo_corpus_passes_the_sigma_gate",
+      "ont2b: the_gate_mode_reports_only_the_named_gate",
+      "ont4b: the_tracked_repo_graph_is_fresh",
+      "ont7: the_row_probe_passes_on_the_repo_corpus",
+      "ont7: the_full_lint_run_computes_valid_under"
+    ],
+    "hidden_reds": {
+      "aprender_contracts_lib": {
+        "result": "1665 passed; 6 failed; 5 ignored",
+        "failed": [
+          "lint::gates::tests::validate_gate_passes",
+          "lint::tests::lint_passes_on_real_contracts",
+          "lint::tests::lint_findings_on_failure",
+          "lint::tests::every_gate_verdict_agrees_with_passed_and_skipped_on_the_real_corpus",
+          "lint::tests::valid_under_is_computed_when_validation_passes_and_skipped_when_it_fails",
+          "lint::strict_test_binding::tests::no_contract_cites_more_nonexistent_tests_than_its_baseline"
+        ]
+      },
+      "aprender_contracts_validate_contracts": {
+        "result": "8 passed; 2 failed",
+        "failed": [
+          "validate_all_contracts",
+          "contract_data_integrity"
+        ],
+        "detail": "contract_data_integrity 445 against its shrink-only ceiling 444"
+      },
+      "pv_validate": "2 of 1850 artifacts fail: SCHEMA-018 neon-blis-v1 (top-level kind), PROVABILITY-001 spectral-indices-v1 (kernel by default, no kani_harnesses)",
+      "pv_lint_contracts": "stops at the validate gate (passed=false); every later gate is skipped",
+      "check_contract_test_binding": "prints 'VACUOUS: strict-test-binding gate was SKIPPED (contract validation failed); nothing was measured.'",
+      "book_coverage": "PASSING (1 passed; 0 failed): D-ITEM-08-32-A was resolved by the upstream merge"
+    },
+    "gate_numbers": {
+      "formal_prose": 1569,
+      "formal_prose_baseline": 1464,
+      "contracts_without_valid_under": 398,
+      "contracts_without_valid_under_baseline": 386,
+      "contract_data_integrity": 445,
+      "contract_data_integrity_ceiling": 444,
+      "strict_binding_chronos_bolt_parity_dangling": 9,
+      "strict_binding_chronos_bolt_parity_baseline": 0
+    }
+  },
+  "after": {
+    "measured_on": "repaired tree; graph and cli tests measured in a clean `git clone` of 01b4d9f8d (see graph_environment_note), the rest in the working tree",
+    "gate_numbers": {
+      "formal_prose": 1464,
+      "formal_prose_baseline": 1464,
+      "contracts_without_valid_under": 386,
+      "contracts_without_valid_under_baseline": 386,
+      "contract_data_integrity": 444,
+      "contract_data_integrity_ceiling": 444,
+      "strict_binding_dangling_total": 27,
+      "strict_binding_baseline_sum": 27,
+      "strict_binding_chronos_bolt_parity_dangling": 0
+    },
+    "pv_validate_contracts": "1850 artifact(s), 0 failed",
+    "pv_lint_contracts": "exit 0, verdict Pass; every armed gate ran and passed (validate audit score verify enforce enforcement-level duplicate-stems composition sigma relations shapes valid-under); only the unarmed reverse-coverage is skipped",
+    "aprender_contracts_cli": "394 passed, 0 failed (clean clone); 389 + the five reds of 08-32",
+    "aprender_contracts": "--lib, --test validate_contracts, --test kani_harness_generation, --test probar_test_generation: 0 failures",
+    "pv_extract_check": "exit 0 in a clean clone; graph regenerated (shapes.ttl unchanged, shapes_n 18)",
+    "census_json": "byte-identical to a fresh `pv census contracts --format json`",
+    "ratchet_and_readme": "scripts/check_ont_ratchet.sh --check exit 0; scripts/readme_sync.sh --check exit 0",
+    "not_runnable_locally": [
+      "Makefile `contracts:` provenance step needs ripgrep (`rg`), which this host lacks as a binary; its last step hides the engine tests' status behind a grep pipe, so the engine tests were run individually with their own status"
+    ],
+    "contract_audits": "contract-audit-phase 2,3,4,5,8 exit 0; phase 6 reads exactly its nine unbound BIND-001 equations (D-ITEM-08-32-D), unchanged",
+    "claims_ledger": "just laya-claims-check: LAYA CLAIMS OK 133 rows",
+    "owner_crate_tests": "aprender-forecast lib 239 passed 0 failed 15 ignored (the five cited tests are still tests, ignored with the unarmed reason); aprender-mcp-chronos, aprender-decide, aprender-mcp-decide, aprender-mcp-decide-lambda, apr-format lib green; aprender-train lib 7647 passed, 21 failed, all in gpu::guard/ledger/wait and all Linux /proc (D-ITEM-08-33-E; crates/aprender-train is byte-identical to the base)",
+    "planted_violations": {
+      "method": "a scratch export of HEAD; a copy of contracts/ with ONE planted violation in laya-parity-v1.yaml; the working tree is never mutated; every planted case is paired with an untouched control that must pass",
+      "controls_pass": [
+        "sigma gate on the untouched copy (Pass)",
+        "valid-under gate on the untouched copy (Pass)",
+        "pv extract --check on the untouched copy (exit 0)"
+      ],
+      "must_fail": [
+        {
+          "category": "formal vocabulary",
+          "plant": "a prose formal on one obligation",
+          "result": "sigma gate Fail with PV-ONT-004"
+        },
+        {
+          "category": "world",
+          "plant": "removing a kernel's valid_under",
+          "result": "valid-under gate Fail with PV-ONT-016"
+        },
+        {
+          "category": "schema",
+          "plant": "a top-level `kind: KernelContract`",
+          "result": "pv validate non-zero with SCHEMA-018"
+        },
+        {
+          "category": "graph",
+          "plant": "changing a contract's metadata.kind",
+          "result": "pv extract --check exit 1"
+        }
+      ],
+      "verify_run": "the Task 4 verify payload of 08-33-PLAN.md run to exit 0 (two lines adapted, see the SUMMARY deviations)"
+    }
+  },
+  "premise_corrections": [
+    "The fragment runner is NO FAIL-FAST (scripts/ci_run_explicit_test_commands.sh, PMAT-3587; ci/sections.yml does not pass --fail-fast): fragments 510 (shard 1) and 520 (shard 2) run on their shards whatever else is red, so the reds of 336/338/455 do not by themselves 'block' them; 08-32's blocking premise was too strong.",
+    "book_coverage is GREEN on HEAD: the upstream merge brought upstream's fix (the walker now uses is_contract_yaml), so D-ITEM-08-32-A is resolved; 08-32's 'refreshed after the merge: unchanged' was wrong.",
+    "The class is larger than the five tests of 08-32: two more contracts fail pv validate (which masks every later pv lint gate and the strict test-binding guard), aprender-contracts --lib has six reds and --test validate_contracts two, none of which 08-32's regression could see because it never ran -p aprender-contracts, and once validate passes a further red appears (nine dangling test citations in chronos-bolt-parity-v1 against a baseline of 0)."
+  ],
+  "baseline_integrity": {
+    "gate_surface_identical_to_2817c6d97": [
+      "contracts/lint-baseline.json",
+      "contracts/ontology.yaml",
+      "scripts/contract_test_binding_baseline.txt",
+      "crates/aprender-contracts",
+      "crates/aprender-contracts-cli",
+      "tests/fixtures/ont",
+      "scripts/check_ont_ratchet.sh",
+      "scripts/check_contract_test_binding.sh",
+      "scripts/ci_run_explicit_test_commands.sh",
+      "ci/sections.yml",
+      ".github/workflows"
+    ],
+    "git_diff_quiet_rc": 0,
+    "fragment_dir_vs_upstream": "exactly two additions: 510-aprender-decide-ui.cmd and 520-aprender-mcp-decide-e2e-stdio.cmd",
+    "numbers": {
+      "formal_prose": "1464 (baseline 1464)",
+      "contracts_without_valid_under": "386 (baseline 386)",
+      "strict_binding_dangling": "27 (baseline sum 27)",
+      "contract_data_integrity": "444 (ceiling 444)"
+    },
+    "baseline_or_gate_touched": false,
+    "reclassified_away_from_kernel": false
+  },
+  "refs": {
+    "origin_branch_at_start": "3c0f2cf00312756edb6810b888c8cbeecaafc9be",
+    "head_at_start": "c028b4eec24c2c023d3f6ed249022342f128b2b8",
+    "upstream_tip": "2817c6d97bcb2b5a295cef76a98fe5d5844883a9"
+  },
+  "graph_environment_note": "pv extract contracts embeds filesystem paths in unresolved-symbol reasons and walks untracked .claude/worktrees agent checkouts, so a graph generated in THIS working tree carries 76 `.claude/worktrees/...` lines that CI's clean checkout cannot reproduce. contracts/contracts.nt was therefore generated from a clean export of the repaired HEAD and committed; in this working tree `pv extract --check` and ont4b_shapes_gate::the_tracked_repo_graph_is_fresh report a diff by construction (environment), and pass in a clean clone."
+}

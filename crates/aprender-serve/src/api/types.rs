@@ -30,6 +30,30 @@ pub struct HealthResponse {
     pub model_loaded: bool,
     /// Seconds since the server process first bound a router.
     pub uptime_sec: f64,
+    /// The resident SetFit classifier's artifact SHA-256 (Phase 4, OPS-05).
+    ///
+    /// Read off the LOADED MODEL — `VerifiedSetFitModel::artifact_sha256()`,
+    /// minted by the loader from the bytes it verified. It is never recomputed
+    /// from a config, a filename or a caller-supplied value, so a readiness probe
+    /// cannot report a hash the served model does not have (T-04-25).
+    ///
+    /// `None` (and, on the wire, ABSENT) when no classifier is resident. Absence
+    /// rather than `null` keeps the health body of every non-classifier build
+    /// byte-identical to what it was before this field existed — the CRUX-C-34
+    /// schema is shared with vLLM/llama.cpp-parity consumers, and a new always-
+    /// present key would be a wire change for every one of them.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub classifier_artifact_sha256: Option<String>,
+    /// Whether the resident classifier passed the full load ladder.
+    ///
+    /// Present exactly when [`Self::classifier_artifact_sha256`] is, and `true`
+    /// whenever present. That is not a tautology worth hiding: it is TRUE BY THE
+    /// SLOT'S TYPE, because `VerifiedSetFitModel` is not constructible without
+    /// `load_setfit_apr` having run every rung including probe replay. Read it as
+    /// "the thing in the slot is of the verified kind", NOT as "a verification
+    /// was re-run at probe time" — no re-verification happens per request.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub classifier_verified: Option<bool>,
 }
 
 /// Tokenize request

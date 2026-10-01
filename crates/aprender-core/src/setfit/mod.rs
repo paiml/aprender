@@ -51,9 +51,9 @@ pub use artifact::{
     artifact_sha256_hex, load_setfit_apr, read_setfit_apr_bytes_bounded, read_setfit_apr_parts,
     write_setfit_apr, ProbeReplayDivergence, SetFitAprParts, SetFitArtifactDoc,
     SetFitArtifactError, SetFitArtifactView, SetFitHeadDoc, SetFitPreprocessingDoc,
-    SetFitProbeRecord, VerifiedSetFitModel, MAX_ARTIFACT_BYTES, MAX_ENCODER_LAYERS,
-    NULLABLE_PATH_ALLOWLIST, PROBE_EMBEDDING_ABS_TOLERANCE, PROBE_LOGITS_ABS_TOLERANCE,
-    PROBE_PROBABILITIES_ABS_TOLERANCE, WALKED_SUBDOCUMENTS,
+    SetFitProbeRecord, VerifiedSetFitModel, AWS_LAMBDA_ZIP_LIMIT_BYTES, MAX_ARTIFACT_BYTES,
+    MAX_ENCODER_LAYERS, NULLABLE_PATH_ALLOWLIST, PROBE_EMBEDDING_ABS_TOLERANCE,
+    PROBE_LOGITS_ABS_TOLERANCE, PROBE_PROBABILITIES_ABS_TOLERANCE, WALKED_SUBDOCUMENTS,
 };
 pub use classify::{
     ClassifyError, ClassifyRequestDocument, ClassifyResponse, ClassifyResult,
@@ -66,8 +66,8 @@ pub use encoder::{
 };
 pub use error::SetFitError;
 pub use import::{
-    MiniLmImport, ModelDims, SliceConfig, VocabRemap, PINNED_ACTIVATION, PINNED_MAX_SEQ_LENGTH,
-    PINNED_REVISION, PINNED_TOKENIZER_SHA256,
+    BertImport, MiniLmImport, ModelDims, SliceConfig, VocabRemap, PINNED_ACTIVATION,
+    PINNED_MAX_SEQ_LENGTH, PINNED_REVISION, PINNED_TOKENIZER_SHA256,
 };
 pub use loss::pair_cosine_mse;
 pub use tokenizer::{
@@ -266,7 +266,7 @@ impl FreezeGroup {
 /// [`Self::trainable_parameters_mut`] — the set an optimizer is built from — and
 /// additionally has `requires_grad` cleared. The exclusion is the load-bearing
 /// half; the flag is the belt to its braces.
-pub struct SetFitMiniLm {
+pub struct SetFitBert {
     tokenizer: MiniLmTokenizer,
     encoder: BertSentenceEncoder,
     /// Normalized (sorted, deduplicated) freeze policy. Empty means D-20's
@@ -274,28 +274,46 @@ pub struct SetFitMiniLm {
     freeze: Vec<FreezeGroup>,
 }
 
-impl std::fmt::Debug for SetFitMiniLm {
+/// Backward-compatible type alias for [`SetFitBert`].
+pub type SetFitMiniLm = SetFitBert;
+
+impl std::fmt::Debug for SetFitBert {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
-        f.debug_struct("SetFitMiniLm")
+        f.debug_struct("SetFitBert")
             .field("encoder", &self.encoder)
             .field("freeze", &self.freeze)
             .finish_non_exhaustive()
     }
 }
 
-impl SetFitMiniLm {
-    /// Load a pinned all-MiniLM-L6-v2 checkout: tokenizer and encoder together.
+impl SetFitBert {
+    /// Load a pretrained checkout: the pinned all-MiniLM-L6-v2, or a general BERT
+    /// (AlephBERT, DictaBERT, multilingual BERT).
     ///
-    /// Returns a model in **eval** mode, matching HuggingFace
-    /// `from_pretrained`, which is also the mode the frozen fixtures were
-    /// generated in (D-16). Training callers flip it with
-    /// [`Self::set_training`].
+    /// Returns a model in **eval** mode, matching HuggingFace `from_pretrained`,
+    /// which is also the mode the frozen fixtures were generated in (D-16).
+    /// Training callers flip it with [`Self::set_training`].
+    ///
+    /// # Which loader runs
+    ///
+    /// The choice is made from the identity the directory DECLARES — its
+    /// `config.json` — and never from "the strict loader complained". A fallback
+    /// keyed on pin FAILURE would be a silent downgrade: `MiniLmImport::open`
+    /// refuses a substituted `tokenizer.json` with `TokenizerHashMismatch`, and
+    /// handing that same directory to the general loader, which hashes the
+    /// tokenizer and compares it to nothing, means the one defence against a
+    /// swapped vocabulary is bypassed by swapping the vocabulary. Deciding first
+    /// also means the error the caller sees is the error of the loader that was
+    /// actually asked to run.
     ///
     /// # Errors
     ///
-    /// Any typed [`SetFitError`] the ENC-01 pin, the tokenizer load or the
+    /// Any typed [`SetFitError`] the chosen loader, the tokenizer load or the
     /// tensor read produces, naming the field/file/tensor that failed.
     pub fn from_pretrained_dir(dir: &Path, root_seed: u64) -> Result<Self, SetFitError> {
+        if !import::declares_the_minilm_pin(dir) {
+            return Self::from_bert_dir(dir, root_seed);
+        }
         // ONE source for both halves. `MiniLmImport::open` additionally requires
         // these very bytes to hash to `PINNED_TOKENIZER_SHA256`, so the pairing
         // is correct by construction and not by a check that could be skipped.
@@ -303,6 +321,59 @@ impl SetFitMiniLm {
             MiniLmTokenizer::from_bytes(&import::read_required(dir, "tokenizer.json")?)?;
         let import = MiniLmImport::open(dir)?;
         let encoder = BertSentenceEncoder::from_import(&import, root_seed)?;
+        Ok(Self {
+            tokenizer,
+            encoder,
+            freeze: Vec::new(),
+        })
+    }
+
+    /// Load a general BERT checkout (AlephBERT, DictaBERT, multilingual BERT).
+    ///
+    /// ONE source for both halves, like every other door here: the tokenizer is
+    /// built from the exact bytes [`BertImport`] read and hashed, not from a
+    /// second read of the same path, so the recorded `tokenizer_sha256` always
+    /// describes the tokenizer that was actually built.
+    ///
+    /// Returns a model in **eval** mode.
+    ///
+    /// # Errors
+    ///
+    /// Any typed [`SetFitError`] the import, the tokenizer load or the tensor
+    /// read produces, naming the field/file/tensor that failed.
+    pub fn from_bert_dir(dir: &Path, root_seed: u64) -> Result<Self, SetFitError> {
+        let import = BertImport::open(dir)?;
+        // `min(..)`, not the bare constant. A general BERT checkout may carry FEWER
+        // position rows than this crate's bound — `BertImport::open` only caps
+        // `max_position_embeddings` from above — and `BertSentenceEncoder::max_seq()` is
+        // `MAX_SEQUENCE_LENGTH.min(dims.max_positions)`. Configuring the tokenizer at the
+        // bare constant lets it emit a row the encoder then REFUSES with `OversizeInput`,
+        // at encode time, after the whole model has loaded: a data-dependent failure on
+        // whichever input happens to be long, which is exactly what the sibling
+        // `vocab_size` check below exists to prevent for the other half of the pair.
+        // The `max_sequence_length` field's own doc states this derivation as the
+        // invariant every constructor holds.
+        let tokenizer = MiniLmTokenizer::from_bytes_with_config(
+            import.tokenizer_bytes(),
+            tokenizer::MAX_SEQUENCE_LENGTH.min(import.dims().max_positions),
+            import.pad_token_id(),
+        )?;
+        // The two halves came from one directory; this is what makes them one
+        // MODEL. An id the tokenizer can emit that the embedding table does not
+        // have is an `OutOfVocabulary` gather at encode time, on whichever input
+        // first reaches a high id — a data-dependent failure hours into a run,
+        // where the field that is wrong can no longer be named.
+        if tokenizer.vocab_size() > import.dims().vocab {
+            return Err(SetFitError::ImportConfigMismatch {
+                field: "vocab_size".to_string(),
+                expected: format!(
+                    "at least the paired tokenizer's vocabulary ({})",
+                    tokenizer.vocab_size()
+                ),
+                got: import.dims().vocab.to_string(),
+            });
+        }
+        let encoder = BertSentenceEncoder::from_bert_import(&import, root_seed)?;
         Ok(Self {
             tokenizer,
             encoder,
@@ -381,7 +452,22 @@ impl SetFitMiniLm {
                 got: observed,
             });
         }
-        let tokenizer = MiniLmTokenizer::from_bytes(tokenizer_bytes)?;
+        // The pad id is RE-DERIVED from the architecture record rather than
+        // defaulted to 0. `from_bytes` would rebuild every model padding with id
+        // 0, so a checkout with a different pad token would tokenize differently
+        // at serve time than it did at fit time — a train/serve skew the
+        // tokenizer hash cannot detect, because the BYTES are identical and only
+        // the runtime params differ. The truncation bound is derived the same way
+        // `BertSentenceEncoder::max_seq()` derives it — `min(MAX_SEQUENCE_LENGTH,
+        // positions)` — and NOT from the bare constant: a bundle can now carry a
+        // general BERT whose position table is shorter than this crate's bound, in
+        // which case the constant alone would configure the tokenizer to emit rows
+        // the encoder refuses with `OversizeInput` at encode time.
+        let tokenizer = MiniLmTokenizer::from_bytes_with_config(
+            tokenizer_bytes,
+            tokenizer::MAX_SEQUENCE_LENGTH.min(arch.positions),
+            arch.pad_token_id,
+        )?;
         let encoder = BertSentenceEncoder::from_named_tensors(arch, tensors, root_seed)?;
         Ok(Self {
             tokenizer,

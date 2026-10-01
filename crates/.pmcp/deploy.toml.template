@@ -1,0 +1,112 @@
+# TEMPLATE for the SetFit TRAINING MCP server's pmcp.run deploy config.
+#
+# This file is tracked; the `deploy.toml` beside it is GENERATED from it by
+# `just pmcp-train-config <env>` and is gitignored. cargo-pmcp reads the
+# generated one.
+#
+# The deploy ROOT is `crates/`, and the crate is named `aprender-setfit-train-lambda`
+# to match. Neither is cosmetic — together they are the ONLY thing that makes
+# cargo-pmcp build this server rather than the predict one.
+#
+# cargo-pmcp resolves the package to build in `find_lambda_package_dir`
+# (builder.rs): it first looks for a directory `<deploy-root>/{server_name}-lambda`
+# and, failing that, takes the FIRST `*-lambda` workspace package exposing a
+# `bootstrap` binary. This workspace has two such packages, and the predict one
+# sorts first — so the fallback silently builds `aprender-mcp-setfit-lambda` and
+# deploys it under THIS server's name and URL. That happened: the endpoint came
+# up healthy and answered every MCP request with "no embedded model in this
+# build", which is the predict binary's error.
+#
+# With `[server] name = "aprender-setfit-train"` and this file at `crates/`, the
+# first branch resolves `crates/aprender-setfit-train-lambda/` and matches by
+# construction. `[server] binary` exists in cargo-pmcp's schema but the Lambda
+# path never reads it, so the directory name is the only lever.
+#
+# Deploy with:  just pmcp-train-deploy
+#
+# ORDER MATTERS. This function invokes a worker and writes to a table that
+# neither it nor pmcp.run creates:
+#
+#   1. just deploy-training dev          # CDK: table, bucket, worker
+#   2. just pmcp-train-config dev        # fills [environment] from the stack
+#   3. attach the RequestLambdaPolicy output to this function's role
+#   4. cargo pmcp deploy --manifest-path ... --target <t>
+#
+# Step 2 is not a convenience: the artifact bucket carries the account id for
+# global uniqueness, so its name cannot be written down ahead of the deploy.
+
+[target]
+type = "pmcp-run"
+version = "1.0.0"
+
+[aws]
+region = "us-east-1"
+
+[server]
+name = "aprender-setfit-train"
+# This function trains NOTHING — it mints a task, writes an envelope and fires
+# an async invoke. 1024 MB is for the pmcp server's cold start, not for work.
+# The 6 GB is on the worker, in deploy-extensions/lib/setfit-training-stack.ts.
+memory_mb = 1024
+# Matches the API Gateway HTTP API's own 30-second integration timeout, which
+# cannot be raised. A larger number here would only be a longer wait for a
+# response the gateway has already given up on — and is the reason training
+# runs on a second function at all.
+timeout_seconds = 30
+
+# `just pmcp-train-config <env>` replaces the three UNSET values below, reading
+# them from the SSM parameters the CDK stack publishes under
+# /aprender/setfit-train/<env>/, and writes the result to the SIBLING
+# `deploy.toml` — which is gitignored, because the artifact bucket's name
+# embeds the AWS account id.
+#
+# Hand-editing the generated file is how the request side and the worker end up
+# pointed at different tables, which presents as a client polling a task nobody
+# ever finishes. Regenerate instead; it is one command against the stack that
+# is the actual source of truth.
+[environment]
+RUST_LOG = "info"
+APRENDER_SETFIT_TASKS_TABLE = "UNSET-run-just-pmcp-train-config"
+APRENDER_SETFIT_ARTIFACT_BUCKET = "UNSET-run-just-pmcp-train-config"
+APRENDER_SETFIT_TRAINER_FUNCTION = "UNSET-run-just-pmcp-train-config"
+
+[secrets]
+
+# Unauthenticated, like the predict pilot — and see the crate docs' note on what
+# that costs: every caller shares the `local` owner bucket, so `tasks/list`
+# enumerates everyone's tasks. Task ids stay unguessable, so no result leaks by
+# accident, but this is a single-tenant posture and turning `enabled` on is what
+# makes it a multi-tenant one (both this crate and pmcp's create gate then scope
+# to the authenticated subject with no code change).
+[auth]
+enabled = false
+provider = "none"
+callback_urls = []
+
+[auth.dcr]
+enabled = true
+public_client_patterns = ["claude", "desktop", "cursor", "mcp-inspector", "chatgpt"]
+default_scopes = ["openid", "email", "mcp/read"]
+allowed_scopes = ["openid", "email", "profile", "mcp/read", "mcp/write"]
+
+[auth.scopes.custom]
+
+[observability]
+log_retention_days = 30
+enable_xray = true
+create_dashboard = true
+
+[observability.alarms]
+error_threshold = 10
+# The request path is milliseconds; anything near the gateway's own ceiling is
+# already a failure the client saw.
+latency_threshold_ms = 5000
+
+# No [assets]: this function carries no model, no dataset and no encoder. That
+# is the whole reason it fits — an oversized bootstrap has OOM-killed pmcp.run's
+# deployment-creation backend before.
+
+[composition]
+tier = "foundation"
+allow_composition = true
+internal_only = false

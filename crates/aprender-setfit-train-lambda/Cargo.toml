@@ -1,0 +1,75 @@
+[package]
+name = "aprender-setfit-train-lambda"
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+repository.workspace = true
+authors.workspace = true
+rust-version.workspace = true
+description = "AWS Lambda deployment of the SetFit training MCP server: the request function and the training worker"
+publish = false
+
+# ONE crate, TWO Lambda entry points — because they are the two halves of one
+# distributed transaction and share its vocabulary: the DynamoDB task backend,
+# the run envelope, and the status payload shape. Splitting them would put that
+# vocabulary in a third crate for no other reader, and every field added on one
+# side would have to be chased across two manifests.
+#
+# They are still two FUNCTIONS with irreconcilable configurations: the request
+# function is small and answers in milliseconds under an API Gateway with a
+# 30-second cap; the worker is 6 GB and runs for minutes. Cargo builds each
+# binary independently, so one package does not mean one deployment package.
+
+# AWS Lambda's Custom Runtime API requires the handler binary to be named
+# `bootstrap` exactly — a platform constant, not a choice. `cargo pmcp deploy`
+# also finds the deployable by this name, which is why ONLY the request
+# function may carry it.
+[[bin]]
+name = "bootstrap"
+path = "src/bin/bootstrap.rs"
+
+# The worker is deployed by our own CDK stack, which renames the binary to
+# `bootstrap` inside the package. It keeps a descriptive name in the workspace
+# so `cargo build` produces something identifiable and cargo-pmcp does not
+# mistake it for a second deployable.
+[[bin]]
+name = "aprender-setfit-trainer"
+path = "src/bin/aprender-setfit-trainer.rs"
+
+[lib]
+name = "aprender_setfit_train_lambda"
+path = "src/lib.rs"
+
+[dependencies]
+# The server crate owns the tool surface, the task store, the TaskBackend seam
+# and the ONE implementation of "run `apr setfit train`". This crate supplies
+# the AWS ends of those seams and two transports; it re-implements none of them.
+aprender-mcp-setfit-train = { path = "../aprender-mcp-setfit-train" }
+pmcp = { version = "2.19", features = ["streamable-http", "schema-generation"] }
+
+# `= "1"` matches aprender-data's existing pin, so the whole smithy stack
+# resolves to one version across the workspace rather than two.
+aws-config = "1"
+aws-sdk-dynamodb = "1"
+aws-sdk-lambda = "1"
+aws-sdk-s3 = "1"
+
+lambda_http = "0.13"
+lambda_runtime = "0.13"
+tokio = { workspace = true }
+reqwest = { version = "0.12", default-features = false, features = ["json", "rustls-tls"] }
+once_cell = "1.19"
+
+serde = { workspace = true }
+serde_json = { workspace = true }
+# A client-supplied dataset arrives as ONE object — a .tar.gz — because a
+# presigned URL addresses one key, and an attested benchmark directory is five
+# files. `tar` refuses entries that would escape the destination; the test
+# `a_traversal_entry_never_escapes` holds it to that.
+tar = "0.4"
+flate2 = "1"
+tracing = "0.1"
+tracing-subscriber = { version = "0.3", features = ["env-filter"] }
+
+[lints]
+workspace = true

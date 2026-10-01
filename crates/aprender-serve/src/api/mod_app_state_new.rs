@@ -1,3 +1,64 @@
+/// The EMPTY state: every model slot vacant.
+///
+/// Added in Phase 4 (plan 04-08) because `apr serve` must be able to build a
+/// state that holds ONLY a SetFit classifier, and every other constructor here
+/// mints a placeholder LLM (`with_cache`, `demo`) or requires one (`new`,
+/// `with_registry`). Composing `AppState::default().with_setfit_model(..)` says
+/// exactly what such a server is: no generator, one classifier.
+///
+/// `model_loaded()` is `false` for this value, so `/health` reports `loading`
+/// and `/health/ready` answers 503 until something is installed — which is the
+/// honest reading of a server with nothing resident, and is what the
+/// missing-model readiness test pins.
+impl Default for AppState {
+    fn default() -> Self {
+        let (audit_logger, audit_sink) = create_audit_state();
+        Self {
+            model: None,
+            tokenizer: None,
+            cache: None,
+            cache_key: None,
+            metrics: Arc::new(MetricsCollector::new()),
+            registry: None,
+            default_model_id: None,
+            apr_model: None,
+            audit_logger,
+            audit_sink,
+            #[cfg(feature = "gpu")]
+            gpu_model: None,
+            quantized_model: None,
+            #[cfg(feature = "gpu")]
+            cached_model: None,
+            #[cfg(feature = "gpu")]
+            dispatch_metrics: None,
+            #[cfg(feature = "gpu")]
+            batch_request_tx: None,
+            #[cfg(feature = "gpu")]
+            batch_config: None,
+            #[cfg(feature = "cuda")]
+            cuda_model: None,
+            #[cfg(feature = "cuda")]
+            safetensors_cuda_model: None,
+            #[cfg(feature = "cuda")]
+            cuda_batch_tx: None,
+            #[cfg(feature = "cuda")]
+            apr_q4k_tx: None,
+            apr_transformer: None,
+            cached_architecture: None,
+            mapped_gguf_model: None,
+            moe_no_gpu: true,
+            qwen35_session: None,
+            cached_eos_token_id: None,
+            #[cfg(feature = "setfit")]
+            setfit_model: None,
+            verbose: false,
+            trace: false,
+            model_source: None,
+            effective: EffectiveConfigState::new(),
+        }
+    }
+}
+
 impl AppState {
     /// Create new application state
     ///
@@ -44,6 +105,8 @@ impl AppState {
             moe_no_gpu: true,
             qwen35_session: None,
             cached_eos_token_id: None,
+            #[cfg(feature = "setfit")]
+            setfit_model: None,
             verbose: false,
             trace: false,
             model_source: None,
@@ -107,6 +170,8 @@ impl AppState {
             moe_no_gpu: true,
             qwen35_session: None,
             cached_eos_token_id: None,
+            #[cfg(feature = "setfit")]
+            setfit_model: None,
             verbose: false,
             trace: false,
             model_source: None,
@@ -272,6 +337,8 @@ impl AppState {
             moe_no_gpu: true,
             qwen35_session: None,
             cached_eos_token_id: None,
+            #[cfg(feature = "setfit")]
+            setfit_model: None,
             verbose: false,
             trace: false,
             model_source: None,
@@ -349,6 +416,8 @@ impl AppState {
             moe_no_gpu: true,
             qwen35_session: None,
             cached_eos_token_id: None,
+            #[cfg(feature = "setfit")]
+            setfit_model: None,
             verbose: false,
             trace: false,
             model_source: None,
@@ -407,6 +476,8 @@ impl AppState {
             moe_no_gpu: true,
             qwen35_session: None,
             cached_eos_token_id: None,
+            #[cfg(feature = "setfit")]
+            setfit_model: None,
             verbose: false,
             trace: false,
             model_source: None,
@@ -471,6 +542,8 @@ impl AppState {
             moe_no_gpu: true,
             qwen35_session: None,
             cached_eos_token_id: None,
+            #[cfg(feature = "setfit")]
+            setfit_model: None,
             verbose: false,
             trace: false,
             model_source: None,
@@ -530,6 +603,8 @@ impl AppState {
             moe_no_gpu: true,
             qwen35_session: None,
             cached_eos_token_id: None,
+            #[cfg(feature = "setfit")]
+            setfit_model: None,
             verbose: false,
             trace: false,
             model_source: None,
@@ -603,6 +678,8 @@ impl AppState {
             moe_no_gpu: true,
             qwen35_session: None,
             cached_eos_token_id: None,
+            #[cfg(feature = "setfit")]
+            setfit_model: None,
             verbose: false,
             trace: false,
             model_source: None,

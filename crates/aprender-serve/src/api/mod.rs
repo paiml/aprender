@@ -136,6 +136,12 @@ pub use realize_handlers::{
 };
 mod apr_handlers;
 pub(crate) use apr_handlers::{apr_audit_handler, apr_explain_handler, apr_predict_handler};
+// Phase 4 D-09: SetFit classification transport. Registered on the same pattern
+// as the handler modules above.
+#[cfg(feature = "setfit")]
+mod setfit_handlers;
+#[cfg(feature = "setfit")]
+pub(crate) use setfit_handlers::{classify_body_limit_bytes, setfit_classify_handler};
 mod types;
 pub use crate::registry::ModelInfo;
 pub use types::{default_max_tokens, default_top_k};
@@ -235,6 +241,15 @@ pub struct AppState {
     qwen35_session: Option<Arc<Qwen35Served>>,
     /// GH-330: Cached EOS token ID (avoids RwLock in hot path)
     cached_eos_token_id: Option<u32>,
+    /// Phase 4 D-09: the verified SetFit classifier `POST /v1/classify` serves.
+    ///
+    /// The slot's TYPE is the guarantee. `aprender::setfit::VerifiedSetFitModel`
+    /// has no public constructor, no `Default` and no `Deserialize`: the only way
+    /// to obtain one is `load_setfit_apr`, which runs the whole load ladder
+    /// including probe replay. So an unverified classifier is not merely rejected
+    /// here — it is not representable in this field (T-04-24, APR-04).
+    #[cfg(feature = "setfit")]
+    setfit_model: Option<Arc<aprender::setfit::VerifiedSetFitModel>>,
     /// GH-152: Enable verbose request/response logging
     verbose: bool,
     /// GH-103: Enable inference tracing (propagates into QuantizedGenerateConfig.trace)

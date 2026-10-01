@@ -55,6 +55,22 @@ members = [
     "crates/aprender-orchestrate",
     # --- MCP server (Model Context Protocol) ---
     "crates/aprender-mcp",
+    # Thin single-model MCP server: SetFit classification via pmcp (pmcp.run template)
+    "crates/aprender-mcp-setfit",
+    "crates/aprender-mcp-setfit-lambda",
+    # Thin single-algorithm MCP TRAINING server: SetFit training as an async MCP Task
+    "crates/aprender-mcp-setfit-train",
+    # Its AWS deployment: the request function and the training worker
+    "crates/aprender-setfit-train-lambda",
+    # Phase 6: pure-Rust forecasting library + two thin stateless forecast MCP servers
+    "crates/aprender-forecast",
+    "crates/aprender-mcp-forecast",
+    "crates/aprender-mcp-chronos",
+    "crates/aprender-mcp-chronos-lambda",
+    # Phase 8: method-neutral decision models (Laya on ModernBERT) + the thin decide MCP server and its Lambda runtime (D-15)
+    "crates/aprender-decide",
+    "crates/aprender-mcp-decide",
+    "crates/aprender-mcp-decide-lambda",
     # --- APR-MONO Phase 2f: satellite repos (main crates) ---
     "crates/aprender-profile",
     "crates/aprender-profile-core",
@@ -748,6 +764,12 @@ training-gpu = ["cli", "apr-cli/training-gpu"]
 visualization = ["cli", "apr-cli/visualization"]
 zram = ["cli", "apr-cli/zram"]
 xet = ["cli", "apr-cli/xet"]
+# Native SetFit classifier training + `apr setfit` / SetFit `apr predict` routing.
+# Without this passthrough `cargo install aprender --features setfit` fails with
+# "the package 'aprender' does not contain this feature" — the milestone's headline
+# capability is unreachable from the only published install path. Guarded by
+# scripts/check_publish_safety.sh (subcommand-gating features must be forwarded).
+setfit = ["cli", "apr-cli/setfit"]
 # `apr ptx` (PTX analysis). Advertised in --help on every build, so the remedy
 # for a default install has to exist and has to be cheap: this pulls only the
 # analyzer + PTX emitter, not the CUDA/training stack that `full` implies (#2399).
@@ -887,5 +909,29 @@ debug = "line-tables-only"
 # workspace root so dev-only profiles stop being published. Tracked in #2571.
 [profile.dev.package.proptest]
 debug-assertions = false
+
+# Phase 6 / RESEARCH Pitfall 9 — the Prophet MAP fit is 35x slower unoptimised, and the
+# feedback loop is what pays. MEASURED on this branch (2026-09-05, M4 Pro, warm build,
+# `cargo test -p aprender-mcp-forecast --lib e2e` = ONE real Peyton fit, 2905 points):
+#   before (no override): 64 s wall  ->  the 06-03 seven-fixture ladder projects 448 s
+#   after  (opt-level 3): 13 s wall  ->  the same ladder projects  91 s  (4.9x faster)
+# 91 s still exceeds 60 s on this one-fit proxy, but the 06-03 ladder's six other
+# fixtures are far smaller than Peyton's 2905 points, so 7 x the LARGEST fit is a
+# deliberate upper bound, not a prediction; 06-03 Task 2 re-measures the real ladder.
+# The rule this plan applied: add the override iff 7 x single-fit wall > 60 s (the
+# VALIDATION.md feedback-latency target, and nextest's `slow-timeout` threshold).
+# 448 > 60, so it is added, here in Wave 1, so every Wave 2 plan reads a stable manifest.
+#
+# ONE table, not two, and that is evidence-backed. Both cross-AI reviewers claimed
+# `[profile.dev.package.X]` does not reach `cargo test` and demanded a
+# `[profile.test.package.aprender-forecast]` twin; the claim was REFUTED by a throwaway
+# two-crate workspace carrying only the `dev` override, where `cargo test -p outer -v`
+# still compiled the inner crate with `-C opt-level=3`. `profile.test` inherits `dev`,
+# package overrides included, so CI's nextest `--lib` leg gets the optimised fits too.
+# Proof the mechanism engaged here, not just the intent (CLAUDE.md Verification
+# Discipline #2): `cargo test -p aprender-forecast --lib -v 2>&1 | grep -o 'opt-level=[0-9]'`
+# reports opt-level=3 for the aprender-forecast unit.
+[profile.dev.package.aprender-forecast]
+opt-level = 3
 
 

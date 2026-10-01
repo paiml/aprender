@@ -1,0 +1,3 @@
+# Python bytecode cache produced by running the generators.
+__pycache__/
+*.py[cod]

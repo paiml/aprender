@@ -1,0 +1,108 @@
+# aprender-setfit-predict — classify behavioral contract.
+#
+# Deeper than the smoke test: batch semantics (one result per texts element,
+# in input order), the include_logits knob both ways, and the strictness the
+# first real-world use taught us — an MCP client split one tweet into three
+# elements and got three degraded fragment classifications, because the server
+# faithfully returns one result PER ELEMENT. Callers send one COMPLETE
+# document per element; the tool description states this explicitly.
+#
+# Refusal steps use the runner's real `failure` assertion (mcp-tester
+# scenario.rs: "Check if response indicates failure"). stop_on_failure is
+# false so every behavior is measured even when one regresses.
+# RUN WITH:  cargo pmcp test run <url> --scenarios tests/scenarios/ --transport jsonrpc
+# `--transport jsonrpc` is REQUIRED, not a preference: cargo-pmcp's `test run`
+# calls mcp-tester's run_scenario_with_transport, which (unlike mcp-tester's
+# own CLI) never runs the initialize step, so the default http transport fails
+# every tool_call with "Client not initialized" (cargo-pmcp finding, 2026-08-18).
+# jsonrpc posts each request statelessly — which is also what this stateless
+# server speaks.
+name: aprender-setfit-predict classify behavior
+description: Batch order, per-element results, the logits knob, and strict arguments.
+timeout: 90
+stop_on_failure: false
+
+steps:
+  # A batch of three complete documents returns exactly three results, one
+  # per element, each independently classified.
+  - name: Batch of three documents — one result each, in order
+    operation:
+      type: tool_call
+      tool: classify
+      arguments:
+        texts:
+          - "Life is #precious & so are babies, mothers, & fathers. Please support the sanctity of Human Life. Think #SemST"
+          - "Anti choice laws are sexist because they only effect women."
+          - "It's a lovely day in Lisbon and the coffee is excellent."
+    assertions:
+      - type: success
+      - type: array_length
+        path: parsed.results
+        equals: 3
+      - type: exists
+        path: parsed.results[0].label
+      - type: exists
+        path: parsed.results[1].label
+      - type: exists
+        path: parsed.results[2].label
+      - type: numeric
+        path: parsed.results[0].token_count
+        greater_than: 0
+      - type: numeric
+        path: parsed.results[2].token_count
+        greater_than: 0
+
+  # include_logits=true adds per-class logits to every row. Only presence is
+  # asserted — values belong to the artifact, not the transport.
+  - name: include_logits=true surfaces per-class logits
+    operation:
+      type: tool_call
+      tool: classify
+      arguments:
+        texts:
+          - "Support the sanctity of Human Life."
+        include_logits: true
+    assertions:
+      - type: success
+      - type: exists
+        path: parsed.results[0].logits
+      - type: exists
+        path: parsed.results[0].probabilities
+
+  # The default omits logits (serialized null — not_exists treats null as
+  # absent, per mcp-tester's "does not exist (is null/undefined)").
+  - name: Logits stay off by default
+    operation:
+      type: tool_call
+      tool: classify
+      arguments:
+        texts:
+          - "Support the sanctity of Human Life."
+    assertions:
+      - type: success
+      - type: not_exists
+        path: parsed.results[0].logits
+
+  # deny_unknown_fields end to end: an unmodeled argument key is refused, not
+  # silently ignored (temperature is not a knob this tool has).
+  - name: An unknown argument key is refused
+    operation:
+      type: tool_call
+      tool: classify
+      arguments:
+        texts:
+          - "a"
+        temperature: 0.7
+    assertions:
+      - type: failure
+
+  # Core's bound, observed through the transport: an empty batch is a
+  # validation refusal before any work happens.
+  - name: An empty texts array is refused
+    operation:
+      type: tool_call
+      tool: classify
+      arguments:
+        texts: []
+    assertions:
+      - type: failure

@@ -39,6 +39,9 @@ fn test_health_response_serialization() {
         compute_mode: "cpu".to_string(),
         model_loaded: true,
         uptime_sec: 1.0,
+        // Phase 4 OPS-05: absent when no SetFit classifier is resident.
+        classifier_artifact_sha256: None,
+        classifier_verified: None,
     };
 
     let json = serde_json::to_string(&response).expect("should serialize");
@@ -3037,6 +3040,9 @@ fn test_health_response_custom_status() {
         compute_mode: "cpu".to_string(),
         model_loaded: false,
         uptime_sec: 0.5,
+        // Phase 4 OPS-05: absent when no SetFit classifier is resident.
+        classifier_artifact_sha256: None,
+        classifier_verified: None,
     };
 
     let json = serde_json::to_string(&response).expect("should serialize");
@@ -4978,6 +4984,9 @@ fn test_health_response_roundtrip() {
         compute_mode: "cpu".to_string(),
         model_loaded: true,
         uptime_sec: 42.0,
+        // Phase 4 OPS-05: absent when no SetFit classifier is resident.
+        classifier_artifact_sha256: None,
+        classifier_verified: None,
     };
     let json = serde_json::to_string(&original).expect("serialize");
     let restored: HealthResponse = serde_json::from_str(&json).expect("deserialize");

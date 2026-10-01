@@ -877,6 +877,200 @@ bindings:
 # it: cross-crate module paths are ACCEPTED (Bound 0 -> 1, BIND-001 24 -> 23,
 # no namespace complaint). Both are workspace members of this monorepo.
 # --- contrastive-pair-protocol-v1: determinism primitives (D-20/D-21) ---
+- contract: contrastive-pair-protocol-v1.yaml
+  equation: rng_key_derivation
+  module_path: aprender_contrastive_data::rng
+  function: derive_key
+  signature: 'fn derive_key(root_seed: u64, domain: &str) -> DomainKey'
+  status: implemented
+  notes: SHA-256(DOMAIN_TAG || root_seed.to_le_bytes() || domain), truncated little-endian in both Philox key lanes
+- contract: contrastive-pair-protocol-v1.yaml
+  equation: rng_domain_strings
+  module_path: aprender_contrastive_data::rng::domains
+  function: select
+  signature: 'fn select(label: usize) -> String'
+  status: implemented
+  notes: The one FORMATTED domain string; the other five are `pub const &str` in the same module, frozen at six total
+- contract: contrastive-pair-protocol-v1.yaml
+  equation: bounded_draw
+  module_path: aprender_contrastive_data::rng
+  function: bounded
+  signature: 'fn bounded(key: &DomainKey, stream_id: u32, ordinal: u64, n: NonZeroU64) -> u64'
+  status: implemented
+  notes: Lemire multiply-shift; NonZeroU64 makes a zero bound unrepresentable rather than misbehaving
+- contract: contrastive-pair-protocol-v1.yaml
+  equation: normalized_content_hash
+  module_path: aprender_contrastive_data::hash
+  function: normalized_hash
+  signature: 'fn normalized_hash(input: &str) -> [u8; 32]'
+  status: implemented
+  notes: NFC then whitespace collapse then SHA-256; versioned by CONTENT_NORMALIZATION_VERSION
+# --- contrastive-pair-protocol-v1: ingest and typestate (D-16/D-19/D-27) ---
+- contract: contrastive-pair-protocol-v1.yaml
+  equation: split_ingest_boundary
+  module_path: aprender_contrastive_data::split
+  function: validate_ingest_ladder
+  signature: 'fn validate_ingest_ladder(rows: &[LabeledExample], role: &str, decl: &SplitDeclaration) -> Result<(),
+    ContrastiveDataError>'
+  status: implemented
+  notes: Module-private, deliberately — it is the SINGLE ladder both `Split` constructors call, and both constructors are themselves pub(crate)
+- contract: contrastive-pair-protocol-v1.yaml
+  equation: prepared_dataset_typestate
+  module_path: aprender_contrastive_data::prepared
+  function: PreparedDataset::<Canonical>::from_labeled_rows
+  signature: 'fn from_labeled_rows(train: Vec<LabeledExample>, validation: Vec<LabeledExample>, test: Vec<LabeledExample>,
+    decls: &CanonicalDeclarations, ledger: &mut AccessLedger) -> Result<Self, ContrastiveDataError>'
+  status: implemented
+  notes: Profile is a TYPE PARAMETER; the Compatibility twin has its own constructor and no validation_witness. Compile-fail evidence in tests/ui/
+- contract: contrastive-pair-protocol-v1.yaml
+  equation: dataset_attestation
+  module_path: aprender_contrastive_data::attestation
+  function: PreparedDataset::<Canonical>::from_attested_bytes
+  signature: 'fn from_attested_bytes(attestation_bytes: &[u8], splits: &BTreeMap<String, Vec<u8>>, ledger: &mut AccessLedger)
+    -> Result<Self, ContrastiveDataError>'
+  status: implemented
+  notes: One annotated impl per profile; the Compatibility twin has the identical signature. Per-split digests are compared BEFORE the buffers are parsed
+- contract: contrastive-pair-protocol-v1.yaml
+  equation: cross_split_exclusion
+  module_path: aprender_contrastive_data::dedup
+  function: coalesced_exclusions
+  signature: 'fn coalesced_exclusions(splits: &[(&''static str, &[LabeledExample])]) -> ExclusionRecord'
+  status: implemented
+  notes: pub(crate); connected components over the UNION of exact- and normalized-hash edges, so a doubly-duplicated row decrements its pool once
+- contract: contrastive-pair-protocol-v1.yaml
+  equation: split_span_fail_closed
+  module_path: aprender_contrastive_data::pairs
+  function: validate_pair_records
+  signature: 'fn validate_pair_records(recs: &[UntrustedPairRecord], sel: &Selection) -> Result<Vec<LabeledPair>,
+    ContrastiveDataError>'
+  status: implemented
+  notes: The TYPED half. The structural half is SelectedId's private constructor — a type, not a function, so it has no binding. Negative in tests/negative_leaky.rs
+# --- contrastive-pair-protocol-v1: selection and manifest (D-03/D-18) ---
+- contract: contrastive-pair-protocol-v1.yaml
+  equation: few_shot_selection
+  module_path: aprender_contrastive_data::select
+  function: FewShotSelector::select
+  signature: 'fn select(dataset: &PreparedDataset<Canonical>, cfg: &SelectionConfig, ledger: &mut AccessLedger) ->
+    Result<Selection, ContrastiveDataError>'
+  status: implemented
+  notes: Partial Fisher-Yates per class in ascending label order; fail-closed on shots outside {8,16,32,64} and on an exhausted pool
+- contract: contrastive-pair-protocol-v1.yaml
+  equation: selection_canonical_payload
+  module_path: aprender_contrastive_data::manifest
+  function: SelectionPayload::to_canonical_bytes
+  signature: 'fn to_canonical_bytes(&self) -> Result<Vec<u8>, ContrastiveDataError>'
+  status: implemented
+  notes: Non-circular — the payload excludes its own semantic_hash, which lives in the outer envelope with the volatile metadata
+- contract: contrastive-pair-protocol-v1.yaml
+  equation: selection_replay
+  module_path: aprender_contrastive_data::select
+  function: Selection::replay
+  signature: 'fn replay(manifest: &SelectionManifest, dataset: &PreparedDataset<Canonical>, ledger: &mut AccessLedger)
+    -> Result<Self, ContrastiveDataError>'
+  status: implemented
+  notes: Step 5 re-derives the ordered list from (dataset, seed, shots); an internally consistent hand-edited manifest is still refused
+- contract: contrastive-pair-protocol-v1.yaml
+  equation: access_ledger_persistence
+  module_path: aprender_contrastive_data::ledger
+  function: AccessLedger::to_canonical_bytes
+  signature: 'fn to_canonical_bytes(&self) -> Result<Vec<u8>, ContrastiveDataError>'
+  status: implemented
+  notes: The ledger hash rides inside the HASHED payload region, so it cannot be desynchronized from the selection it describes
+# --- contrastive-pair-protocol-v1: pair identity and capacity (D-12/D-14) ---
+- contract: contrastive-pair-protocol-v1.yaml
+  equation: canonical_pair
+  module_path: aprender_contrastive_data::pairs
+  function: CanonicalPair::new
+  signature: 'fn new(a: SelectedId, b: SelectedId) -> Result<Self, ContrastiveDataError>'
+  status: implemented
+  notes: Sole constructor, private fields — both orientations are one value and (x, x) is a typed SelfPair rather than a representable pair
+- contract: contrastive-pair-protocol-v1.yaml
+  equation: positive_capacity
+  module_path: aprender_contrastive_data::pairs
+  function: positive_capacity
+  signature: 'fn positive_capacity(class_sizes: &[u64]) -> Result<u64, ContrastiveDataError>'
+  status: implemented
+  notes: Checked throughout; sum of C(n_k, 2)
+- contract: contrastive-pair-protocol-v1.yaml
+  equation: negative_capacity
+  module_path: aprender_contrastive_data::pairs
+  function: negative_capacity
+  signature: 'fn negative_capacity(class_sizes: &[u64]) -> Result<u64, ContrastiveDataError>'
+  status: implemented
+  notes: Running-prefix accumulation, NOT (S^2 - sum n^2)/2 — same O(K) quantity, but it overflows exactly when the RESULT does. Two derivations pinned against each other in the tests
+- contract: contrastive-pair-protocol-v1.yaml
+  equation: default_epoch_budget
+  module_path: aprender_contrastive_data::pairs
+  function: effective_default_budget
+  signature: 'fn effective_default_budget(class_sizes: &[u64], hard_cap: u64) -> Result<u64, ContrastiveDataError>'
+  status: implemented
+  notes: Bound to the CLAMPING form because the contracted equation includes the clamp; the unclamped closed form is `default_epoch_budget` in the same module
+- contract: contrastive-pair-protocol-v1.yaml
+  equation: budget_resolution
+  module_path: aprender_contrastive_data::pairs
+  function: resolve_budget
+  signature: 'fn resolve_budget(cfg: &PairConfig, class_sizes: &[u64]) -> Result<(u64, bool), ContrastiveDataError>'
+  status: implemented
+  notes: The hard cap BINDS explicit budgets — BudgetExceedsHardCap, never a silent clamp. Mutation-verified in plan 02-07
+# --- contrastive-pair-protocol-v1: the O(K) pair stream (D-11/D-14/D-15) ---
+- contract: contrastive-pair-protocol-v1.yaml
+  equation: pair_stream
+  module_path: aprender_contrastive_data::pairs
+  function: PairLayout::raw_pair_at
+  signature: 'fn raw_pair_at(&self, ordinal: u64) -> Result<RawPair, ContrastiveDataError>'
+  status: implemented
+  notes: Per-class weights n_c*(S-n_c) and a block-skipping map over the class-offset array. No array indexed by class PAIRS exists; evidenced at K = N in tests/negative_materializing.rs
+- contract: contrastive-pair-protocol-v1.yaml
+  equation: pair_stream_degenerate_policy
+  module_path: aprender_contrastive_data::pairs
+  function: classify_degenerate
+  signature: 'fn classify_degenerate(pos: u64, neg: u64) -> Result<EmittedKinds, ContrastiveDataError>'
+  status: implemented
+  notes: Total over the four cases; (0, 0) is NoPairCapacity, following the equation's INVARIANT prose rather than its formula ordering
+- contract: contrastive-pair-protocol-v1.yaml
+  equation: singleton_policy
+  module_path: aprender_contrastive_data::pairs
+  function: PairSampler::new
+  signature: 'fn new(sel: &''a Selection, cfg: &PairConfig) -> Result<Self, ContrastiveDataError>'
+  status: implemented
+  notes: Records the policy, its version and the affected class count; NegativesOnly falls out of C(1,2) = 0 rather than being special-cased
+- contract: contrastive-pair-protocol-v1.yaml
+  equation: untrusted_pair_ingest
+  module_path: aprender_contrastive_data::pairs
+  function: validate_pair_records
+  signature: 'fn validate_pair_records(recs: &[UntrustedPairRecord], sel: &Selection) -> Result<Vec<LabeledPair>,
+    ContrastiveDataError>'
+  status: implemented
+  notes: Second of TWO equations on one function — the macro accepts stacked #[contract] attributes (verified by compiling both forms). Re-derives the target and refuses PairTargetMismatch
+# --- contrastive-pair-protocol-v1: replay attestation (D-09/D-18) ---
+- contract: contrastive-pair-protocol-v1.yaml
+  equation: pair_manifest_replay
+  module_path: aprender_contrastive_data::manifest
+  function: PairReplayRecord::to_config
+  signature: 'fn to_config(&self) -> Result<PairConfig, ContrastiveDataError>'
+  status: implemented
+  notes: The only sanctioned way back from a persisted record to a runnable configuration; refuses unsupported schema, strategy and policy versions
+- contract: contrastive-pair-protocol-v1.yaml
+  equation: pair_manifest_hash
+  module_path: aprender_contrastive_data::manifest
+  function: pair_manifest_hash
+  signature: 'fn pair_manifest_hash(sampler: &PairSampler<''_>, record: &PairReplayRecord) -> Result<[u8; 32],
+    ContrastiveDataError>'
+  status: implemented
+  notes: SHA-256(record_bytes || 0x1E || streamed pairs) — the header is INSIDE the digest, and a record that does not describe the sampler is refused
+# --- tweet-eval-stance-benchmark-v1 ---
+- contract: tweet-eval-stance-benchmark-v1.yaml
+  equation: official_f_avg
+  module_path: entrenar::eval::classification::metrics
+  function: f1_average_for_classes
+  signature: 'fn f1_average_for_classes(f1: &[f64], classes: &[usize]) -> Option<f64>'
+  status: implemented
+  notes: 'Pre-existing baseline metrics code in crates/aprender-train (lib name `entrenar`), re-exported at entrenar::eval::classification.
+    Caller-facing surface is the method MultiClassMetrics::f1_avg_for_classes(&self, classes: &[usize]) -> Option<f64>,
+    which delegates here; passing [against, favor] computes (F1_against + F1_favor) / 2 verbatim. NO #[contract] attribute
+    was added — aprender-train is outside plan 02-08''s files_modified and a source edit there is not sanctioned by this plan.
+    NOTE: plan 02-08 named the method holder `ClassificationMetrics`; the type is actually `MultiClassMetrics`, read from
+    crates/aprender-train/src/eval/classification/metrics.rs.'
 - contract: lbfgs-kernel-v1.yaml
   equation: two_loop_recursion
   module_path: aprender::optim::lbfgs
@@ -954,6 +1148,189 @@ bindings:
     instead witnesses the property, returning finite probabilities where the f32 accumulation
     is +inf.'
 # --- setfit-train-lifecycle-v1: the stage-one evidence gate (plan 03-06) ---
+- contract: setfit-train-lifecycle-v1.yaml
+  equation: evidence_gate
+  module_path: entrenar::train::setfit::tune
+  function: validate_evidence
+  signature: 'fn validate_evidence(evidence: &UpdateEvidence, thresholds: &Thresholds) -> Result<PassedEvidence, SetFitTrainError>'
+  status: implemented
+  notes: 'THE single validating function; every future door calls it. Flipped to implemented by
+    plan 03-06 task 2, which arms it. Recorded as not_implemented here deliberately: task 1
+    freezes the thresholds and task 2 arms the comparison, and the contract must be committed
+    BEFORE the first pass/fail comparison runs against it. The #[contract] annotation is
+    metadata-only in this repo (build.rs cannot find its binding.yaml, so CONTRACT_* env vars
+    are never set), which is why the enforcement is the named test and not the attribute.'
+- contract: setfit-train-lifecycle-v1.yaml
+  equation: calibration_regime
+  module_path: entrenar::train::setfit::tune
+  function: validate_evidence
+  signature: 'fn validate_evidence(evidence: &UpdateEvidence, thresholds: &Thresholds) -> Result<PassedEvidence, SetFitTrainError>'
+  status: implemented
+  notes: 'The regime membership check is the FIRST statement of validate_evidence, so an
+    out-of-regime run is refused before any threshold measured elsewhere is applied to it. Same
+    task-2 flip as evidence_gate.'
+- contract: setfit-train-lifecycle-v1.yaml
+  equation: embedding_delta_floor
+  module_path: entrenar::train::setfit::tune
+  function: validate_evidence
+  signature: 'fn validate_evidence(evidence: &UpdateEvidence, thresholds: &Thresholds) -> Result<PassedEvidence, SetFitTrainError>'
+  status: implemented
+  notes: 'Run-level aggregate, evaluated after every per-parameter predicate so a failure names
+    the offending parameter first. Same task-2 flip.'
+- contract: setfit-train-lifecycle-v1.yaml
+  equation: gradient_free_parameters
+  module_path: entrenar::train::setfit::evidence
+  function: classify_parameter
+  signature: 'fn classify_parameter(name: &str) -> Result<ParameterClass, EvidenceError>'
+  status: implemented
+  notes: 'ParameterClass::AttentionKeyBias plus the fail-closed mapping. The class boundary
+    rests on softmax shift-invariance (dL/db_k = 0 in exact arithmetic) and is pinned by
+    evidence_attention_key_bias_is_gradient_free_relative_to_its_own_block, which runs in every
+    cargo test rather than behind --ignored. Its failure mode was induced (classify the QUERY
+    bias as gradient-free instead) and observed RED at 3.446e-3 against 1.824e-10.'
+- contract: setfit-train-lifecycle-v1.yaml
+  equation: pair_loss_endpoint
+  module_path: entrenar::train::setfit::evidence
+  function: from_tune_output
+  signature: 'fn from_tune_output(out: &TuneOutput, calibration_regime_id: &str) -> Result<UpdateEvidence, EvidenceError>'
+  status: implemented
+  notes: 'RECORDED ONLY, and deliberately not armed. first_k_mean, last_k_mean and k are carried
+    in the evidence table so a reader can see the loss endpoints; no verdict arm reads them. The
+    measured cross-seed spread of (last_k - first_k) is 0.4933 with the sign flipping between
+    seeds, so any threshold wide enough to tolerate it could not fail a real run.'
+- contract: setfit-train-lifecycle-v1.yaml
+  equation: execution_digests
+  module_path: entrenar::train::setfit::tune
+  function: run_batch
+  signature: 'fn run_batch(...) -> Result<(), SetFitTrainError>'
+  status: implemented
+  notes: 'consumed_pair_digest is absorbed inside the pair-pull loop AT THE DRAW and
+    batch_boundary_digest at batch open, never recomputed from configuration. Falsified by
+    inducing the recomputation (absorb the configured ordinal instead of the drawn one), which
+    turns tune_digest_is_recorded_not_recomputed red with the two digests printed identical.'
+- contract: setfit-train-lifecycle-v1.yaml
+  equation: loss_trace_hash
+  module_path: entrenar::train::setfit::evidence
+  function: from_tune_output
+  signature: 'fn from_tune_output(out: &TuneOutput, calibration_regime_id: &str) -> Result<UpdateEvidence, EvidenceError>'
+  status: implemented
+  notes: 'SHA-256 over the f32 little-endian bit patterns in step order. The digest is MOVED
+    from the recorded TuneOutput; nothing here recomputes one. No wall-clock type appears in
+    the evidence module at all, so reproducibility is structural rather than maintained by care.'
+- contract: setfit-train-lifecycle-v1.yaml
+  equation: dropout_mask_derivation
+  module_path: aprender::setfit::dropout_rng
+  function: derive_key
+  signature: 'fn derive_key(root_seed: u64, site: &str) -> DomainKey'
+  status: implemented
+  notes: 'Cross-crate into aprender-core. Domain tag apr-setfit-dropout-v1 with a NUL
+    terminator, forward ordinal 2*step+branch in Philox counter lane 2 so the two pair branches
+    draw from different streams. Goldens frozen inline in the contract and pinned by
+    dropout_rng_byte_encoding_golden_is_frozen, which requires --features setfit; without that
+    flag the filter matches zero tests and still reports ok, which is a vacuous pass.'
+- contract: setfit-train-lifecycle-v1.yaml
+  equation: epoch_shuffle_derivation
+  module_path: entrenar::train::setfit::epoch
+  function: epoch_pair_order
+  signature: 'fn epoch_pair_order(root_seed: u64, epoch: u32, n: u64) -> Vec<u64>'
+  status: implemented
+  notes: 'Domain tag apr-setfit-train-v1 with a NUL terminator, Fisher-Yates with bounded
+    draws. The goldens pin epoch separation and seed separation, so a derivation that ignored
+    either coordinate is red even though it would still emit a valid-looking permutation.'
+- contract: setfit-train-lifecycle-v1.yaml
+  equation: knob_defaults
+  module_path: entrenar::train::setfit::config
+  function: reference_defaults
+  signature: 'fn reference_defaults(root_seed: u64) -> Self'
+  status: implemented
+  notes: 'The twelve-knob reference recipe. The defaults are REFERENCE-CITED, not faithful:
+    assumption A1 (that the setfit path does not override the HF defaults) is UNCONFIRMED.
+    Confirmation was attempted and could not be completed offline, since `import setfit` fails
+    in this environment and the pinned reference fixtures record sampler.py measurements only.
+    The contract carries the cheap confirmation recipe.'
+- contract: setfit-train-lifecycle-v1.yaml
+  equation: reload_verify_roundtrip
+  module_path: entrenar::train::setfit::verify
+  function: run_verify_policy
+  signature: 'fn run_verify_policy<C: SetFitCodec>(codec: &C, encoder: SetFitMiniLm, head: MultinomialLogisticRegression, ...) -> Result<VerifiedOutcome, SetFitTrainError>'
+  status: implemented
+  notes: 'THE trusted policy. It is bound here rather than to `verify_artifact` because this is
+    where the decisions live: hashing (`artifact_hash`, a free function), the close, the
+    round-trip closure check, the rebuild and the comparison. `SetFitCodec` is a sealed pure
+    codec with exactly three methods and no power to hash, compare, set a tolerance or mint a
+    state. The close is STRUCTURAL: the policy takes the live encoder and head by value into
+    its close step and never returns them, so the borrow checker enforces what a drop() call
+    would only document. Falsified in band by EchoCodec, which was MEASURED green before the
+    closure check existed.'
+- contract: setfit-train-lifecycle-v1.yaml
+  equation: bundle_completeness
+  module_path: entrenar::train::setfit::bundle
+  function: from_run_parts
+  signature: 'fn from_run_parts(format_id: &str, encoder: &SetFitMiniLm, head: &MultinomialLogisticRegression, ordered_labels: &[String], config: &ResolvedSetFitConfig, evidence: &EvidenceSummary) -> Result<SetFitBundle, BundleError>'
+  status: implemented
+  notes: 'Every architectural and policy value is READ OFF the encoder that is about to be
+    serialized, never restated from the configuration that asked for it. The obligation is
+    SUFFICIENCY rather than presence, and the proof is
+    bundle_rebuilds_a_bit_identical_encoder_from_bytes_alone, which rebuilds through the wire
+    form and compares raw f32 bit patterns. The vocabulary remap is part of the architecture
+    record: without it a rebuilt slice gathers the wrong embedding row for every token and
+    still looks structurally valid.'
+- contract: setfit-train-lifecycle-v1.yaml
+  equation: bundle_limits
+  module_path: entrenar::train::setfit::bundle
+  function: from_canonical_bytes
+  signature: 'fn from_canonical_bytes(bytes: &[u8]) -> Result<SetFitBundle, BundleError>'
+  status: implemented
+  notes: 'Four bounds enforced BEFORE the allocation each bounds. Tensor data travels as hex of
+    the little-endian f32 bit patterns, so an element count is len(hex)/8 and is known from a
+    string length rather than from a decoded vector — which is what makes the per-tensor and
+    cumulative checks pre-allocation rather than post-hoc reports. The VALUES are parsed from
+    the contract by bundle_limits_match_the_contract; the MECHANISM is falsified separately
+    against deliberately tiny bounds, each with a control at exactly the bound.'
+# --- setfit-train-lifecycle-v1: canonical-validation selection and its lock (plan 03-09) ---
+- contract: setfit-train-lifecycle-v1.yaml
+  equation: validation_evaluation_provenance
+  module_path: entrenar::train::setfit::evaluate
+  function: evaluate_validation
+  signature: 'fn evaluate_validation(run: &SetFitRun<ArtifactReloadedAndVerified>, dataset: &PreparedDataset<Canonical>, metric: ValidationMetricKind) -> Result<ValidationEvaluation, SetFitTrainError>'
+  status: implemented
+  notes: 'THE only production path to a ValidationEvaluation. Bound to the evaluator rather than to
+    the type, because this is where the decisions are: the fingerprint agreement check, the encode
+    through the ONE encode-once path, the prediction with the run''s own head, and the metric
+    arithmetic. The phase-3 review marked TRN-07 unsatisfied because the previous shape,
+    ValidationMetric::new(&Split<Validation>, name, value), accepted an arbitrary f64 — possessing
+    a split does not prove a number came out of it. There is now no public function in evaluate.rs
+    taking a float parameter at all; the guard reads each pub fn''s PARAMETER LIST, because a
+    line-wise scan was measured red for the wrong reason (it matched the type''s own private
+    `value: f64` field) and a scan for `pub fn ` alone saw 5 of the 9 public functions.'
+- contract: setfit-train-lifecycle-v1.yaml
+  equation: selection_lock_commitment
+  module_path: entrenar::train::setfit::lock
+  function: from_candidates
+  signature: 'fn from_candidates(candidates: Vec<SelectionCandidate>, rule: SelectionRule, selection_semantic_hash: &str, ledger_hash: &str) -> Result<SelectionLock, LockError>'
+  status: implemented
+  notes: 'The rule is APPLIED here; there is no `chosen` parameter, which is review fix 3 — a lock
+    recording only the winner is as consistent with a test peek followed by back-filling as it is
+    with honest selection. pub(super) on purpose: the semantic and ledger hashes are provenance and
+    the only honest source is a run that executed, so the public door is
+    SetFitRun::create_selection_lock, which reads both off the run and additionally requires the
+    creating run to be among the candidates. The four consistency rejections each name the
+    offending index, and lock_hash covers every committed field — falsified by six one-field
+    variations plus a #[cfg(test)] forgery of chosen_index that mint_test_token then refuses.'
+- contract: setfit-train-lifecycle-v1.yaml
+  equation: canonical_test_token_minting
+  module_path: entrenar::train::setfit::lock
+  function: mint_test_token
+  signature: 'fn mint_test_token(&self, model: &SetFitRun<ArtifactReloadedAndVerified>) -> Result<CanonicalTestToken, LockError>'
+  status: implemented
+  notes: 'Review fix 2: the parameter is the verified run OBJECT and the function reads
+    artifact_hash() off it. The previous form took a caller-supplied [u8; 32], which lets a caller
+    submit the locked hash and then evaluate a different artifact — the exact sequence TRN-07
+    exists to block. Falsified by the full lock-then-tune-then-test walk, where run B is the SAME
+    configuration and seed under a reversed intra-batch pull order so only the artifact differs;
+    StaleLock names both hashes, and CanonicalTestAccess::grant re-checks identity at access time
+    so a token that travelled cannot be re-paired.'
+# --- linear-probe-classifier-v1: the SAFE-03 frozen baseline (plan 03-06 task 3) ---
 - contract: linear-probe-classifier-v1.yaml
   equation: linear_probe
   module_path: entrenar::train::setfit::baseline
@@ -1169,188 +1546,892 @@ bindings:
 # contract-audit-phase5` passes while the modules are still being written and fails the moment
 # an equation is dropped or renamed out from under its entry. That before/after pair IS the
 # gate's induced failure mode; a gate seen only passing is not evidence.
-- contract: contrastive-pair-protocol-v1.yaml
-  equation: rng_key_derivation
-  module_path: aprender_contrastive_data::rng
-  function: derive_key
-  signature: 'fn derive_key(root_seed: u64, domain: &str) -> DomainKey'
+- contract: setfit-benchmark-claims-v1.yaml
+  equation: expectation_set
+  module_path: entrenar::train::setfit::bench_row
+  function: RunManifest::expectation
   status: implemented
-  notes: SHA-256(DOMAIN_TAG || root_seed.to_le_bytes() || domain), truncated little-endian in both Philox key lanes
-- contract: contrastive-pair-protocol-v1.yaml
-  equation: rng_domain_strings
-  module_path: aprender_contrastive_data::rng::domains
-  function: select
-  signature: 'fn select(label: usize) -> String'
+  notes: 'Landed with plan 05-05 task 2. The 80-cell Cartesian product derived in code from the same methods/shots/seeds constants the contract enumerates, emitted in the deterministic contract order; pinned to the contract by an include_str! TYPED SET parity test, never a substring check. Flipped to implemented by plan 05-10 after resolving the symbol against bench_row.rs.'
+- contract: setfit-benchmark-claims-v1.yaml
+  equation: bench_row_schema
+  module_path: entrenar::train::setfit::bench_row
+  function: BenchRow::from_bytes
   status: implemented
-  notes: The one FORMATTED domain string; the other five are `pub const &str` in the same module, frozen at six total
-- contract: contrastive-pair-protocol-v1.yaml
-  equation: bounded_draw
-  module_path: aprender_contrastive_data::rng
-  function: bounded
-  signature: 'fn bounded(key: &DomainKey, stream_id: u32, ordinal: u64, n: NonZeroU64) -> u64'
+  notes: 'Landed with plan 05-05 task 2. The digest-verify-before-return door: deny_unknown_fields at every level, schema_version checked on parse, SHA-256 over the payload''s canonical compact bytes compared BEFORE any value is returned. Flipped by plan 05-10 after resolving the symbol.'
+- contract: setfit-benchmark-claims-v1.yaml
+  equation: completeness_rule
+  module_path: entrenar::train::setfit::bench_gate
+  function: verify_run
   status: implemented
-  notes: Lemire multiply-shift; NonZeroU64 makes a zero bound unrepresentable rather than misbehaving
-- contract: contrastive-pair-protocol-v1.yaml
-  equation: normalized_content_hash
-  module_path: aprender_contrastive_data::hash
-  function: normalized_hash
-  signature: 'fn normalized_hash(input: &str) -> [u8; 32]'
+  notes: 'Landed with plan 05-10. The manifest-defined 80-cell gate and its two vacuity backstops (zero cells; an expectation set that is not exactly the contract-derived 80), both checked BEFORE any row byte is read. Sited in the LIBRARY, not the adapter: aggregate() takes a VerifiedRunSet that only verify_run can construct, so a partial-data report cannot be expressed. The manifest half — record()''s idempotent-vs-colliding transition — landed earlier with bench_row.rs. Row corrected from the non-existent `apr_cli::commands::setfit_bench::bench_report`.'
+- contract: setfit-benchmark-claims-v1.yaml
+  equation: pairing_rule
+  module_path: entrenar::train::setfit::bench_gate
+  function: verify_run
   status: implemented
-  notes: NFC then whitespace collapse then SHA-256; versioned by CONTENT_NORMALIZATION_VERSION
-# --- contrastive-pair-protocol-v1: ingest and typestate (D-16/D-19/D-27) ---
-- contract: contrastive-pair-protocol-v1.yaml
-  equation: split_ingest_boundary
-  module_path: aprender_contrastive_data::split
-  function: validate_ingest_ladder
-  signature: 'fn validate_ingest_ladder(rows: &[LabeledExample], role: &str, decl: &SplitDeclaration) -> Result<(),
-    ContrastiveDataError>'
+  notes: 'Landed with plan 05-10. Per (shots, seed) the two rows must carry an identical selection_manifest_hash; an unpaired pair is the typed UnpairedSelection refusal naming both hashes, not a delta computed anyway. Doctored negative 3 pins it. Row corrected from the non-existent `bench_report`.'
+- contract: setfit-benchmark-claims-v1.yaml
+  equation: selection_safety_evidence
+  module_path: entrenar::train::setfit::bench_gate
+  function: verify_run
   status: implemented
-  notes: Module-private, deliberately — it is the SINGLE ladder both `Split` constructors call, and both constructors are themselves pub(crate)
-- contract: contrastive-pair-protocol-v1.yaml
-  equation: prepared_dataset_typestate
-  module_path: aprender_contrastive_data::prepared
-  function: PreparedDataset::<Canonical>::from_labeled_rows
-  signature: 'fn from_labeled_rows(train: Vec<LabeledExample>, validation: Vec<LabeledExample>, test: Vec<LabeledExample>,
-    decls: &CanonicalDeclarations, ledger: &mut AccessLedger) -> Result<Self, ContrastiveDataError>'
+  notes: 'Landed with plan 05-10. The lock digest and the candidate-ledger digest plus line count are RECOMPUTED from the committed bytes; the row fields are claims about files, and the files are the evidence. Doctored negative 6 covers both forgery sub-cases (a two-line ledger whose digest field was updated to match, and an edited lock record). The residual — a producer controlling both can forge consistently — is stated in the module doc and in-contract. Row corrected from the non-existent `bench_report`.'
+- contract: setfit-benchmark-claims-v1.yaml
+  equation: no_selection_attestation
+  module_path: entrenar::train::setfit::bench_gate
+  function: verify_run
   status: implemented
-  notes: Profile is a TYPE PARAMETER; the Compatibility twin has its own constructor and no validation_witness. Compile-fail evidence in tests/ui/
-- contract: contrastive-pair-protocol-v1.yaml
-  equation: dataset_attestation
-  module_path: aprender_contrastive_data::attestation
-  function: PreparedDataset::<Canonical>::from_attested_bytes
-  signature: 'fn from_attested_bytes(attestation_bytes: &[u8], splits: &BTreeMap<String, Vec<u8>>, ledger: &mut AccessLedger)
-    -> Result<Self, ContrastiveDataError>'
+  notes: 'Landed with plan 05-10. All six conjuncts, of which the last two (ledger digest, line count == 1) are what make the first four more than a self-report; each is exercised by its own negative rather than one standing in for the set. Row corrected from the non-existent `bench_report`.'
+- contract: setfit-benchmark-claims-v1.yaml
+  equation: model_size_comparability
+  module_path: apr_cli::commands::setfit_bench::report
+  function: render_sizes
   status: implemented
-  notes: One annotated impl per profile; the Compatibility twin has the identical signature. Per-split digests are compared BEFORE the buffers are parsed
-- contract: contrastive-pair-protocol-v1.yaml
-  equation: cross_split_exclusion
-  module_path: aprender_contrastive_data::dedup
-  function: coalesced_exclusions
-  signature: 'fn coalesced_exclusions(splits: &[(&''static str, &[LabeledExample])]) -> ExclusionRecord'
+  notes: 'Landed with plan 05-10. The cross-method size table uses deployable_total_bytes and names that field in its header; LoRA''s adapter-only artifact_bytes appears only in render_resource_detail, labelled "adapter only". A test asserts the adapter figure''s decimal is ABSENT from the size table (with byte constants chosen so neither figure is a substring of the other). Row corrected from the non-existent `bench_report`.'
+- contract: setfit-benchmark-claims-v1.yaml
+  equation: claims_statistics
+  module_path: aprender::stats::hypothesis
+  function: paired_ci95_df9
   status: implemented
-  notes: pub(crate); connected components over the UNION of exact- and normalized-hash edges, so a doubly-duplicated row decrements its pool once
-- contract: contrastive-pair-protocol-v1.yaml
-  equation: split_span_fail_closed
-  module_path: aprender_contrastive_data::pairs
-  function: validate_pair_records
-  signature: 'fn validate_pair_records(recs: &[UntrustedPairRecord], sel: &Selection) -> Result<Vec<LabeledPair>,
-    ContrastiveDataError>'
+  notes: 'Landed with plan 05-04 and consumed by 05-10''s bench_gate::aggregate, which reimplements nothing: mean_f64, sample_std_f64, min_max_f64, paired_ci95_df9 and ttest_rel_f64 are the only arithmetic in the claims path, and there is no RNG import (a source scan enforces it). Bound to the OWNER of the closed form rather than to its caller. The frozen t literal in the contract and aprender::stats::hypothesis::T_CRIT_975_DF9 are two pinned copies compared by BIT equality in bench_gate_tests.rs. Row corrected from the non-existent `bench_report`.'
+- contract: setfit-benchmark-claims-v1.yaml
+  equation: resource_protocol
+  module_path: apr_cli::commands::setfit_bench::resource
+  function: measure_cold
   status: implemented
-  notes: The TYPED half. The structural half is SelectedId's private constructor — a type, not a function, so it has no binding. Negative in tests/negative_leaky.rs
-# --- contrastive-pair-protocol-v1: selection and manifest (D-03/D-18) ---
-- contract: contrastive-pair-protocol-v1.yaml
-  equation: few_shot_selection
-  module_path: aprender_contrastive_data::select
-  function: FewShotSelector::select
-  signature: 'fn select(dataset: &PreparedDataset<Canonical>, cfg: &SelectionConfig, ledger: &mut AccessLedger) ->
-    Result<Selection, ContrastiveDataError>'
+  notes: 'Landed with plan 05-09, which measures the cells: cold latency and inference peak RSS in a DEDICATED FRESH CHILD spawned under /usr/bin/time, warm as median-of-10-after-3 against the reloaded model, and two separate peak-RSS fields with two separate mechanism strings derived from the FORM that parsed rather than from cfg!(target_os). The ResourceBlock the numbers land in is defined by bench_row.rs. Row corrected from the non-existent `bench_run`; `measure_cold` is the function the contract''s cold_latency and peak_rss rules are actually about.'
+- contract: setfit-benchmark-claims-v1.yaml
+  equation: pitfall_bindings
+  module_path: apr_cli::commands::setfit_bench::report
+  function: render_human
   status: implemented
-  notes: Partial Fisher-Yates per class in ascending label order; fail-closed on shots outside {8,16,32,64} and on an exhausted pool
-- contract: contrastive-pair-protocol-v1.yaml
-  equation: selection_canonical_payload
-  module_path: aprender_contrastive_data::manifest
-  function: SelectionPayload::to_canonical_bytes
-  signature: 'fn to_canonical_bytes(&self) -> Result<Vec<u8>, ContrastiveDataError>'
+  notes: 'Landed with plan 05-10. DECLARATIVE equation: it maps PF-007 and PF-008 onto the mechanisms that answer them, and the RENDERER is where a violation would surface (a best-seed headline, an unlabelled F1, an adapter-only size comparison, a verdict word). render_human composes every table, and its tests scan the whole output for verdict vocabulary and pair every absence assertion with a non-vacuity one. Row corrected from the non-existent `bench_report`.'
+# --- ADDED BY GAP-CLOSURE ROUND (plans 05-16 / 05-17) ----------------------------------
+# TWELVE rows now, not ten. Plans 05-16 and 05-17 each added an ACTIVE equation to
+# setfit-benchmark-claims-v1.yaml (4.0.0) without adding its binding row, and
+# `make contract-audit-phase5` said so: captured directly, not through a pipe,
+#   make contract-audit-phase5 > /tmp/phase5-audit.log 2>&1; rc=$?
+# returned rc=2 with exactly two lines --
+#   [ERROR] BIND-001: Equation 'quality_closed_form_crosscheck' ... has no binding entry
+#   [ERROR] BIND-001: Equation 'selection_binding_rule' ... has no binding entry
+# That rc=2 IS this gate's induced failure mode for the "new equation, no row" case the
+# target's own FAIL message names; the two rows below are what turns it green.
+#
+# THE SYMBOLS WERE RESOLVED AGAINST THE SHIPPED SOURCE, NOT INFERRED FROM THE FILE PATH,
+# for the reason the block above records: `pv audit` reads `status` and CANNOT resolve a
+# symbol, so a wrong module_path/function pair is a claim nothing checks, and
+# contract-audit-phase5 (unlike contract-audit-phase6) has NO resolver step to catch it.
+# Both are private `fn`s in crates/aprender-train/src/train/setfit/bench_gate.rs --
+# verify_selection_binding at :1683 and verify_quality_closed_form at :1770 -- reached
+# per-cell from verify_run. `entrenar` is the [lib] name of the aprender-train package,
+# matching the module_path form the ten rows above already use.
+- contract: setfit-benchmark-claims-v1.yaml
+  equation: selection_binding_rule
+  module_path: entrenar::train::setfit::bench_gate
+  function: verify_selection_binding
+  signature: 'fn verify_selection_binding(cell: CellKey, row: &BenchRow, bench_dir: &Path) -> Result<(), BenchGateError>'
   status: implemented
-  notes: Non-circular — the payload excludes its own semantic_hash, which lives in the outer envelope with the volatile metadata
-- contract: contrastive-pair-protocol-v1.yaml
-  equation: selection_replay
-  module_path: aprender_contrastive_data::select
-  function: Selection::replay
-  signature: 'fn replay(manifest: &SelectionManifest, dataset: &PreparedDataset<Canonical>, ledger: &mut AccessLedger)
-    -> Result<Self, ContrastiveDataError>'
+  notes: 'Landed with plan 05-16 (contract 3.0.0). The intra-cell selection door: the manifest path is DERIVED from the cell key (selections/s{shots}-seed{seed}/selection-manifest.json), never taken from a row field, so the recomputation compares a file against a claim rather than a producer against itself. The digest is verified by SelectionManifest::from_bytes'' own seal check (OPS-03: one definition of a manifest''s identity), and the manifest''s payload.shots_per_class / payload.root_seed are compared against the cell key as the independent second statement that refuses a transplanted manifest. Sited in the LIBRARY beside verify_run, not in the report adapter, for the same reason completeness_rule is. Bound here rather than to verify_run because the per-cell door is the thing the equation is about.'
+- contract: setfit-benchmark-claims-v1.yaml
+  equation: quality_closed_form_crosscheck
+  module_path: entrenar::train::setfit::bench_gate
+  function: verify_quality_closed_form
+  signature: 'fn verify_quality_closed_form(cell: CellKey, row: &BenchRow, bench_dir: &Path) -> Result<(), BenchGateError>'
   status: implemented
-  notes: Step 5 re-derives the ordered list from (dataset, seed, shots); an internally consistent hand-edited manifest is still refused
-- contract: contrastive-pair-protocol-v1.yaml
-  equation: access_ledger_persistence
-  module_path: aprender_contrastive_data::ledger
-  function: AccessLedger::to_canonical_bytes
-  signature: 'fn to_canonical_bytes(&self) -> Result<Vec<u8>, ContrastiveDataError>'
+  notes: 'Landed with plan 05-17 (contract 4.0.0). Recomputes every published quality figure from the row''s OWN confusion_matrix and ordered_labels and compares by exact IEEE-754 bit equality -- no epsilon, because the band was measured before it was chosen and all forty committed rows agree bit-identically (bench_metrics_the_forty_committed_rows_agree_with_their_own_confusion_matrices). It authors no second metric implementation: it expands the counts back into (y_pred, y_true) index vectors and calls the SAME entry points assemble_quality_block called. A degenerate matrix -- ragged, mis-dimensioned, zero-total, or over the expansion cap -- is a typed RowSchemaRefused before any metric is computed, never a NaN that serde_json would render as a null. The two calibration diagnostics stay producer-declared and out of domain; only their _bits siblings are held.'
+# ---------------------------------------------------------------------------
+# Phase 6 (native time-series forecasting stack). 63 rows, one per equation of
+# the four Phase 6 contracts — COUNTED, not incremented. Four plans in gap-closure
+# round 3 each added rows and each bumped this number by hand, which is how the
+# Phase 5 header drifted by 3 without anything noticing (06-14 deviation 5). Plan
+# 06-17 re-counted the block for real at close of round: 63 rows, split 23
+# forecast-tool-boundary-v1 / 18 chronos-bolt-parity-v1 / 13 prophet-parity-v1 /
+# 9 neuralprophet-parity-v1. Reproduce with:
+#   awk 'NR>1610' contracts/aprender/binding.yaml | grep -c '^- contract:'
+# 06-17 itself added NO row: it strengthened the existing poisson_sampler_domain
+# equation (two tolerance keys, a widened obligation, FALSIFY-PROPHET-014) rather
+# than declaring a new one, and rows here are per EQUATION.
+# Audited as a BLOCKING tier3 gate by the Makefile's
+# `contract-audit-phase6`. That target does MORE than `pv audit`: it also resolves
+# every row below to a definition site in the file its `module_path` names, because
+# `pv audit` matches filename + equation and trusts `status`, so zero BIND- findings
+# proves REGISTRY completeness and not implementation linkage (REVIEW-06-U3; the
+# measurement is in contract-audit-phase5's own comment block).
+#
+# `module_path` here is a CRATE path, not an `aprender::` path: these three crates
+# are workspace members outside the `aprender` facade, following the Phase 2
+# `aprender_contrastive_data` precedent. THREE rows bind to `justfile` recipes rather
+# than to Rust — a benchmark ratio, a working-tree ignore claim and a swept wall-clock
+# bar are falsified by recipes, and no function can be any of them
+# (REVIEW-06-03 / REVIEW-06-04 / 06-REVIEW.md WR-04).
+# ---------------------------------------------------------------------------
+- contract: prophet-parity-v1.yaml
+  equation: data_prep_exact
+  module_path: aprender_forecast::prophet
+  function: make_design
+  signature: 'fn make_design(ds_days: &[i64], y: &[f64], spec: &Spec) -> Design'
   status: implemented
-  notes: The ledger hash rides inside the HASHED payload region, so it cannot be desynchronized from the selection it describes
-# --- contrastive-pair-protocol-v1: pair identity and capacity (D-12/D-14) ---
-- contract: contrastive-pair-protocol-v1.yaml
-  equation: canonical_pair
-  module_path: aprender_contrastive_data::pairs
-  function: CanonicalPair::new
-  signature: 'fn new(a: SelectedId, b: SelectedId) -> Result<Self, ContrastiveDataError>'
+  notes: 'Rung 1 of the ladder: t, y_scaled, changepoints and the seasonality design matrix are built here, and the fixture compares this output column for column against Prophet 1.1.7.'
+- contract: prophet-parity-v1.yaml
+  equation: objective_at_python_map_abs
+  module_path: aprender_forecast::prophet
+  function: Model::value_and_grad
+  signature: 'fn value_and_grad(&self, th: &[f64]) -> (f64, Vec<f64>)'
   status: implemented
-  notes: Sole constructor, private fields — both orientations are one value and (x, x) is a typed SelfPair rather than a representable pair
-- contract: contrastive-pair-protocol-v1.yaml
-  equation: positive_capacity
-  module_path: aprender_contrastive_data::pairs
-  function: positive_capacity
-  signature: 'fn positive_capacity(class_sizes: &[u64]) -> Result<u64, ContrastiveDataError>'
+  notes: 'Rung 2: the unnormalised log posterior evaluated AT Python MAP. value_and_grad is the single evaluator both objective() and gradient() delegate to, so binding the pair here is binding the thing the fixture measures.'
+- contract: prophet-parity-v1.yaml
+  equation: predict_path_abs_peyton
+  module_path: aprender_forecast::prophet
+  function: predict
+  signature: 'fn predict(d: &Design, p: &Params, ds_days: &[i64], seed: u64) -> Forecast'
   status: implemented
-  notes: Checked throughout; sum of C(n_k, 2)
-- contract: contrastive-pair-protocol-v1.yaml
-  equation: negative_capacity
-  module_path: aprender_contrastive_data::pairs
-  function: negative_capacity
-  signature: 'fn negative_capacity(class_sizes: &[u64]) -> Result<u64, ContrastiveDataError>'
+  notes: 'Rung 4: yhat over the in-sample path.'
+- contract: prophet-parity-v1.yaml
+  equation: predict_path_rel_yscale
+  module_path: aprender_forecast::prophet
+  function: predict
+  signature: 'fn predict(d: &Design, p: &Params, ds_days: &[i64], seed: u64) -> Forecast'
   status: implemented
-  notes: Running-prefix accumulation, NOT (S^2 - sum n^2)/2 — same O(K) quantity, but it overflows exactly when the RESULT does. Two derivations pinned against each other in the tests
-- contract: contrastive-pair-protocol-v1.yaml
-  equation: default_epoch_budget
-  module_path: aprender_contrastive_data::pairs
-  function: effective_default_budget
-  signature: 'fn effective_default_budget(class_sizes: &[u64], hard_cap: u64) -> Result<u64, ContrastiveDataError>'
+  notes: 'Same function as predict_path_abs_peyton, different tolerance form (relative to y-scale) for the fixtures whose series are not on Peytons scale.'
+- contract: prophet-parity-v1.yaml
+  equation: fitted_objective_slack
+  module_path: aprender_forecast::fit
+  function: fit_prophet
+  signature: 'fn fit_prophet(design: &Design, max_rounds: usize) -> (Params, FitInfo)'
   status: implemented
-  notes: Bound to the CLAMPING form because the contracted equation includes the clamp; the unclamped closed form is `default_epoch_budget` in the same module
-- contract: contrastive-pair-protocol-v1.yaml
-  equation: budget_resolution
-  module_path: aprender_contrastive_data::pairs
-  function: resolve_budget
-  signature: 'fn resolve_budget(cfg: &PairConfig, class_sizes: &[u64]) -> Result<(u64, bool), ContrastiveDataError>'
+  notes: 'Rung 3: the L-BFGS fit is allowed to land at a SLIGHTLY better objective than Pythons MAP, never a worse one. The slack is a property of the optimiser, so it binds to the fit, not to the evaluator.'
+- contract: prophet-parity-v1.yaml
+  equation: future_yhat_band_peyton_abs
+  module_path: aprender_forecast::prophet
+  function: predict
+  signature: 'fn predict(d: &Design, p: &Params, ds_days: &[i64], seed: u64) -> Forecast'
   status: implemented
-  notes: The hard cap BINDS explicit budgets — BudgetExceedsHardCap, never a silent clamp. Mutation-verified in plan 02-07
-# --- contrastive-pair-protocol-v1: the O(K) pair stream (D-11/D-14/D-15) ---
-- contract: contrastive-pair-protocol-v1.yaml
-  equation: pair_stream
-  module_path: aprender_contrastive_data::pairs
-  function: PairLayout::raw_pair_at
-  signature: 'fn raw_pair_at(&self, ordinal: u64) -> Result<RawPair, ContrastiveDataError>'
+  notes: 'Rung 5: the out-of-sample path and its uncertainty band, both produced by predict from the same seeded Rng.'
+- contract: prophet-parity-v1.yaml
+  equation: components_via_python_params_abs
+  module_path: aprender_forecast::prophet
+  function: predict
+  signature: 'fn predict(d: &Design, p: &Params, ds_days: &[i64], seed: u64) -> Forecast'
   status: implemented
-  notes: Per-class weights n_c*(S-n_c) and a block-skipping map over the class-offset array. No array indexed by class PAIRS exists; evidenced at K = N in tests/negative_materializing.rs
-- contract: contrastive-pair-protocol-v1.yaml
-  equation: pair_stream_degenerate_policy
-  module_path: aprender_contrastive_data::pairs
-  function: classify_degenerate
-  signature: 'fn classify_degenerate(pos: u64, neg: u64) -> Result<EmittedKinds, ContrastiveDataError>'
+  notes: 'Rung 6: trend / weekly / yearly / holidays components, emitted by predict alongside yhat.'
+- contract: prophet-parity-v1.yaml
+  equation: components_rebuild_yhat_abs
+  module_path: aprender_forecast::prophet
+  function: predict
+  signature: 'fn predict(d: &Design, p: &Params, ds_days: &[i64], seed: u64) -> Forecast'
   status: implemented
-  notes: Total over the four cases; (0, 0) is NoPairCapacity, following the equation's INVARIANT prose rather than its formula ordering
-- contract: contrastive-pair-protocol-v1.yaml
-  equation: singleton_policy
-  module_path: aprender_contrastive_data::pairs
-  function: PairSampler::new
-  signature: 'fn new(sel: &''a Selection, cfg: &PairConfig) -> Result<Self, ContrastiveDataError>'
+  notes: 'Rung 7: the components must SUM back to yhat, which is a self-consistency property of the one function that emits both.'
+- contract: prophet-parity-v1.yaml
+  equation: band_width_rel
+  module_path: aprender_forecast::prophet
+  function: percentile
+  signature: 'fn percentile(sorted: &[f64], q: f64) -> f64'
   status: implemented
-  notes: Records the policy, its version and the affected class count; NegativesOnly falls out of C(1,2) = 0 rather than being special-cased
-- contract: contrastive-pair-protocol-v1.yaml
-  equation: untrusted_pair_ingest
-  module_path: aprender_contrastive_data::pairs
-  function: validate_pair_records
-  signature: 'fn validate_pair_records(recs: &[UntrustedPairRecord], sel: &Selection) -> Result<Vec<LabeledPair>,
-    ContrastiveDataError>'
+  notes: 'The band edges are order statistics of the posterior-predictive draws; percentile is the estimator whose interpolation convention has to match Pythons.'
+- contract: prophet-parity-v1.yaml
+  equation: poisson_sampler_domain
+  module_path: aprender_forecast::prophet
+  function: poisson
+  signature: 'fn poisson(rng: &mut Rng, lambda: f64) -> usize'
   status: implemented
-  notes: Second of TWO equations on one function — the macro accepts stacked #[contract] attributes (verified by compiling both forms). Re-derives the target and refuses PairTargetMismatch
-# --- contrastive-pair-protocol-v1: replay attestation (D-09/D-18) ---
-- contract: contrastive-pair-protocol-v1.yaml
-  equation: pair_manifest_replay
-  module_path: aprender_contrastive_data::manifest
-  function: PairReplayRecord::to_config
-  signature: 'fn to_config(&self) -> Result<PairConfig, ContrastiveDataError>'
+  notes: 'The sampler was EXTRACTED from predicts logistic uncertainty arm precisely so its domain could be asserted directly - before the extraction the only path to it was a full logistic forecast, which is why the 32-rung ladder never saw it saturate. STRENGTHENED by plan 06-17 (WR-02 and WR-01 second half): the equation now carries variance_tolerance (0.05) and zero_mass_tolerance (0.22) beside its original float_tolerance (0.01), and FALSIFY-PROPHET-014 falsifies the SPREAD and the LOW TAIL that FALSIFY-PROPHET-013 left unbarred. `poisson` is still the ONE definition site this row binds to; what changed is how much of its codomain the falsification test can actually see. Two implementations that passed the mean-only bar - a zero-variance stub and a branch threshold lowered to 3.2 - were each observed turning the strengthened sweep red and then restored.'
+- contract: prophet-parity-v1.yaml
+  equation: band_width_last30_rel
+  module_path: aprender_forecast::prophet
+  function: percentile
+  signature: 'fn percentile(sorted: &[f64], q: f64) -> f64'
   status: implemented
-  notes: The only sanctioned way back from a persisted record to a runnable configuration; refuses unsupported schema, strategy and policy versions
-- contract: contrastive-pair-protocol-v1.yaml
-  equation: pair_manifest_hash
-  module_path: aprender_contrastive_data::manifest
-  function: pair_manifest_hash
-  signature: 'fn pair_manifest_hash(sampler: &PairSampler<''_>, record: &PairReplayRecord) -> Result<[u8; 32],
-    ContrastiveDataError>'
+  notes: 'Same estimator, restricted to the final 30 points where the band is widest and a convention mismatch shows first.'
+- contract: prophet-parity-v1.yaml
+  equation: trend_band_width_rel
+  module_path: aprender_forecast::prophet
+  function: Model::trend
+  signature: 'fn trend(&self, p: &Params, t: &[f64], cap: Option<&[f64]>) -> Vec<f64>'
   status: implemented
-  notes: SHA-256(record_bytes || 0x1E || streamed pairs) — the header is INSIDE the digest, and a record that does not describe the sampler is refused
-# --- tweet-eval-stance-benchmark-v1 ---
+  notes: 'The trend band is the piecewise trend evaluated over sampled deltas; Model::trend is that evaluation.'
+- contract: prophet-parity-v1.yaml
+  equation: fit_recipe
+  module_path: aprender_forecast::fit
+  function: fit_prophet
+  signature: 'fn fit_prophet(design: &Design, max_rounds: usize) -> (Params, FitInfo)'
+  status: implemented
+  notes: 'The recipe IS this function: init, L-BFGS rounds, and the restart schedule.'
+- contract: neuralprophet-parity-v1.yaml
+  equation: data_prep_vs_oracle_abs
+  module_path: aprender_forecast::np
+  function: NpData::new
+  signature: 'fn new(seed: u64) -> Self'
+  status: implemented
+  notes: 'NpData::new imputes the daily grid, normalises y and selects the auto seasonalities; the oracle compares that whole product.'
+- contract: neuralprophet-parity-v1.yaml
+  equation: lag_free_holdout_mae
+  module_path: aprender_forecast::np
+  function: train
+  signature: 'fn train(d: &NpData, cfg: &TrainConfig, verbose: bool) -> (NpModel, TrainLog)'
+  status: implemented
+  notes: 'The lag-free (n_lags = 0) holdout MAE is a property of the trained model, so it binds to the training loop.'
+- contract: neuralprophet-parity-v1.yaml
+  equation: ar_net_vs_naive_margin
+  module_path: aprender_forecast::np
+  function: predict_ar_recursive
+  signature: 'fn predict_ar_recursive(d: &NpData, m: &NpModel, days: &[i64]) -> Vec<f64>'
+  status: implemented
+  notes: 'The AR-Net margin over seasonal-naive is measured on the recursive multi-step path, which is the path a horizon > 1 request actually takes.'
+- contract: neuralprophet-parity-v1.yaml
+  equation: huber_grad_min_abs
+  module_path: aprender_forecast::np
+  function: weighted_huber
+  signature: 'fn weighted_huber(pred: &Tensor, target: &Tensor, w: &Tensor, beta: f32) -> Tensor'
+  status: implemented
+  notes: 'The gradient minimum of the weighted Huber against NeuralProphets own.'
+- contract: neuralprophet-parity-v1.yaml
+  equation: fourier_epoch_1900
+  module_path: aprender_forecast::np
+  function: fourier_feats
+  signature: 'fn fourier_feats(day: i64, seasons: &[NpSeason], out: &mut Vec<f32>)'
+  status: implemented
+  notes: 'NP phases its Fourier terms on the 1900 epoch, not on the series start; fourier_feats is where that constant lives.'
+- contract: neuralprophet-parity-v1.yaml
+  equation: mini_batch_never_full
+  module_path: aprender_forecast::np
+  function: auto_batch
+  signature: 'fn auto_batch(n: usize) -> usize'
+  status: implemented
+  notes: 'The batch-size rule that must never degenerate to full-batch.'
+- contract: neuralprophet-parity-v1.yaml
+  equation: lr_selected_by_train_loss
+  module_path: aprender_forecast::np
+  function: one_cycle_lr
+  signature: 'fn one_cycle_lr(p: f64, max_lr: f64) -> f64'
+  status: implemented
+  notes: 'The one-cycle schedule the selected lr feeds; selection is by TRAIN loss, never by the holdout the margin is later measured on.'
+- contract: neuralprophet-parity-v1.yaml
+  equation: tape_cleared_per_step
+  module_path: aprender_forecast::np
+  function: train
+  signature: 'fn train(d: &NpData, cfg: &TrainConfig, verbose: bool) -> (NpModel, TrainLog)'
+  status: implemented
+  notes: 'An autograd-hygiene property of the training loop: the tape is cleared every step, so a long fit does not accumulate a graph.'
+- contract: neuralprophet-parity-v1.yaml
+  equation: huber_built_from_ops
+  module_path: aprender_forecast::np
+  function: weighted_huber
+  signature: 'fn weighted_huber(pred: &Tensor, target: &Tensor, w: &Tensor, beta: f32) -> Tensor'
+  status: implemented
+  notes: 'Composed from differentiable ops so it stays CONNECTED to the graph — the defect cores nn::loss::SmoothL1Loss still has (D-ITEM-06-02).'
+- contract: chronos-bolt-parity-v1.yaml
+  equation: quantiles_abs_f32
+  module_path: aprender_forecast::bolt
+  function: Bolt::predict
+  signature: 'fn predict(&self, context: &[f32], prediction_length: usize) -> (Vec<Vec<f32>>, usize)'
+  status: implemented
+  notes: 'The headline parity claim: quantile outputs against chronos-forecasting 2.3.1, f32 weights. Bar frozen on aarch64 + NEON.'
+- contract: chronos-bolt-parity-v1.yaml
+  equation: quantiles_abs_f32_nonaarch64
+  module_path: aprender_forecast::bolt
+  function: Bolt::predict
+  signature: 'fn predict(&self, context: &[f32], prediction_length: usize) -> (Vec<Vec<f32>>, usize)'
+  status: implemented
+  notes: 'Same function, the arch-keyed bar for every non-aarch64 host. PROVISIONAL and UNMEASURED at 5.0e-6 — see D-ITEM-06-04 for the one command that turns it into a measurement.'
+- contract: chronos-bolt-parity-v1.yaml
+  equation: quantiles_rel_scale
+  module_path: aprender_forecast::bolt
+  function: Bolt::predict
+  signature: 'fn predict(&self, context: &[f32], prediction_length: usize) -> (Vec<Vec<f32>>, usize)'
+  status: implemented
+  notes: 'The scale-relative form of the same comparison, for series whose magnitude makes an absolute bar meaningless.'
+- contract: chronos-bolt-parity-v1.yaml
+  equation: loc_scale_rel
+  module_path: aprender_forecast::bolt
+  function: Bolt::forward_ladder
+  signature: 'fn forward_ladder(&self, context: &[f32]) -> Forward'
+  status: implemented
+  notes: 'Instance normalisations loc/scale, exposed as a ladder rung so a parity break can be localised before the quantile head.'
+- contract: chronos-bolt-parity-v1.yaml
+  equation: hidden_states_abs
+  module_path: aprender_forecast::bolt
+  function: Bolt::forward
+  signature: 'fn forward(&self, x: &[f32], rows: usize, fast: bool, row1_gemv: bool) -> Vec<f32>'
+  status: implemented
+  notes: 'Encoder hidden states — the rung between loc/scale and the head.'
+- contract: chronos-bolt-parity-v1.yaml
+  equation: probe_quantiles_rel_scale
+  module_path: aprender_forecast::bolt
+  function: Bolt::predict
+  signature: 'fn predict(&self, context: &[f32], prediction_length: usize) -> (Vec<Vec<f32>>, usize)'
+  status: implemented
+  notes: 'The synthetic probe series, which exercises the same path without the pinned fixture.'
+- contract: chronos-bolt-parity-v1.yaml
+  equation: probe_constant_abs
+  module_path: aprender_forecast::bolt
+  function: Bolt::predict
+  signature: 'fn predict(&self, context: &[f32], prediction_length: usize) -> (Vec<Vec<f32>>, usize)'
+  status: implemented
+  notes: 'A constant series: scale is degenerate, so this is the case where an instance-norm epsilon convention shows.'
+- contract: chronos-bolt-parity-v1.yaml
+  equation: rollout_365_abs
+  module_path: aprender_forecast::chronos
+  function: forecast
+  signature: 'fn forecast(model: &Model, args: &ChronosArgs) -> Result<ChronosResponse, ForecastError>'
+  status: implemented
+  notes: 'Horizons past the native 64 are produced by rollout, which is the doors job, not the models.'
+- contract: chronos-bolt-parity-v1.yaml
+  equation: f16_rel_std
+  module_path: aprender_forecast::safetensors
+  function: load_bytes
+  signature: 'fn load_bytes(bytes: &[u8]) -> Result<(Weights, String), String>'
+  status: implemented
+  notes: 'The f16 checkpoint differs from f32 only in the loaders dtype branch, so the widened bar binds to the loader.'
+- contract: chronos-bolt-parity-v1.yaml
+  equation: horizon_gate_native_64
+  module_path: aprender_forecast::chronos
+  function: validate
+  signature: 'fn validate(cfg: &Config, args: &ChronosArgs) -> Result<Validated, ForecastError>'
+  status: implemented
+  notes: 'The refusal/gate decision, taken before any compute.'
+- contract: chronos-bolt-parity-v1.yaml
+  equation: warning_beyond_native
+  module_path: aprender_forecast::chronos
+  function: forecast
+  signature: 'fn forecast(model: &Model, args: &ChronosArgs) -> Result<ChronosResponse, ForecastError>'
+  status: implemented
+  notes: 'The response carries a WARNING rather than a refusal past the native length; the warning is attached here.'
+- contract: chronos-bolt-parity-v1.yaml
+  equation: rollout_scheme_nine_path_requantiled
+  module_path: aprender_forecast::bolt
+  function: torch_quantile
+  signature: 'fn torch_quantile(sorted: &[f32], q: f32) -> f32'
+  status: implemented
+  notes: 'The nine-path rollout is re-quantiled with torchs interpolation convention; that convention is this function.'
+- contract: chronos-bolt-parity-v1.yaml
+  equation: weights_dual_layout_documented
+  module_path: aprender_forecast::bolt
+  function: Bolt::load
+  signature: 'fn load(w: &Weights, cfg: Config) -> Bolt'
+  status: implemented
+  notes: 'REPLACES weights_transposed_only (REVIEW-06-01). D-13s memory clause was AMENDED (D-ITEM-06-08): both layouts stay resident because dot8 reads contiguous [out, in] rows.'
+- contract: chronos-bolt-parity-v1.yaml
+  equation: gemm_routing_blis
+  module_path: aprender_forecast::bolt
+  function: linear_fast
+  signature: 'fn linear_fast(..)'
+  status: implemented
+  notes: 'D-14 clause 1: every product with rows > 1 goes through trueno::blis::gemm_blis, which is what linear_fast calls.'
+- contract: chronos-bolt-parity-v1.yaml
+  equation: single_row_routing_dot8
+  module_path: aprender_forecast::bolt
+  function: proj
+  signature: 'fn proj(..)'
+  status: implemented
+  notes: 'D-14 clause 2 (REVIEW-06-01): proj is the router — single rows take the 8-accumulator dot, rows > 1 take gemm_blis.'
+- contract: chronos-bolt-parity-v1.yaml
+  equation: weights_never_committed
+  module_path: justfile
+  function: fetch-chronos-tiny
+  signature: 'just recipe: fetch-chronos-tiny'
+  status: implemented
+  notes: 'D-18 clause 1. Binds to the RECIPE, not to Rust: the claim is about the repository working tree after a fetch (git check-ignore on the .safetensors, an empty `git status --porcelain -- models/`), and no function can be that claim.'
+- contract: chronos-bolt-parity-v1.yaml
+  equation: weights_verified_on_every_gate_run
+  module_path: justfile
+  function: fetch-chronos-tiny
+  signature: 'just recipe: fetch-chronos-tiny'
+  status: implemented
+  notes: 'REVIEW-06-03. The recipe re-verifies the pinned sha256 on EVERY run, including when the file is already present, so a corrupted or swapped checkpoint cannot ride a cache into a green gate.'
+- contract: chronos-bolt-parity-v1.yaml
+  equation: counted_skip_when_unarmed
+  module_path: aprender_forecast::build
+  function: main
+  signature: 'fn main()'
+  status: implemented
+  notes: 'D-18 clause 2. Bound to build.rss main, which is the mechanism: it emits cargo:rustc-cfg=chronos_weights only when CHRONOS_MODEL_DIR holds a model.safetensors, and the cfg_attr(not(chronos_weights), ignore) on the parity tests is what makes an unarmed run report COUNTED skips instead of a silent green. DEVIATION from 06-09s plan text, which proposed function `build_rs_cfg_emission`: no such function exists, so that row would have tripped this phases own RESOLVE- gate.'
+- contract: forecast-tool-boundary-v1.yaml
+  equation: fit_server_bounds
+  module_path: aprender_forecast::forecast
+  function: forecast
+  signature: 'fn forecast(args: &ForecastArgs) -> Result<ForecastResponse, ForecastError>'
+  status: implemented
+  notes: 'The fit doors bounds — min/max points, max horizon, and the four cost bounds (span, holiday window/columns/dates) — all enforced here and pinned to constants: by types.rss tests.'
+- contract: forecast-tool-boundary-v1.yaml
+  equation: holiday_design_cost_bounded
+  module_path: aprender_forecast::forecast
+  function: forecast
+  signature: 'fn forecast(args: &ForecastArgs) -> Result<ForecastResponse, ForecastError>'
+  status: implemented
+  notes: 'The PRODUCT bound the four isolated factors above leave open. Refused AT THE DOOR, after the holiday loop and BEFORE make_design — which is the only place it can be: FIT_BUDGET_SECS is a cooperative round-boundary budget entered inside fit_prophet, so it is structurally blind to the design build and it overshoots inside the fit besides (70.089 s measured against a 15 s budget). Two-sided at both layers: refused / accepted in forecast::tests, and the same pair through a live server in aprender-mcp-forecast e2e.'
+- contract: forecast-tool-boundary-v1.yaml
+  equation: chronos_server_bounds
+  module_path: aprender_forecast::chronos
+  function: validate
+  signature: 'fn validate(cfg: &Config, args: &ChronosArgs) -> Result<Validated, ForecastError>'
+  status: implemented
+  notes: 'The zero-shot doors bounds, enforced before any tensor is touched.'
+- contract: forecast-tool-boundary-v1.yaml
+  equation: date_validity
+  module_path: aprender_forecast::dates
+  function: parse_date
+  signature: 'fn parse_date(s: &str) -> Result<i64, ForecastError>'
+  status: implemented
+  notes: 'Calendar validity, not just shape: 2021-02-30 is refused.'
+- contract: forecast-tool-boundary-v1.yaml
+  equation: date_shape_exactly_ten_ascii_bytes
+  module_path: aprender_forecast::dates
+  function: parse_date
+  signature: 'fn parse_date(s: &str) -> Result<i64, ForecastError>'
+  status: implemented
+  notes: 'REVIEW-06-U2. The shape check is byte-exact, so a multi-byte character cannot slip through a char-count check.'
+- contract: forecast-tool-boundary-v1.yaml
+  equation: freq_allowlist
+  module_path: aprender_forecast::dates
+  function: future_days
+  signature: 'fn future_days(last: i64, horizon: usize, freq: &str) -> Result<Vec<i64>, ForecastError>'
+  status: implemented
+  notes: 'The future grid is the only consumer of freq, so the allowlist is enforced where it is used rather than in a separate validator that could drift from it.'
+- contract: forecast-tool-boundary-v1.yaml
+  equation: interval_width_open_unit
+  module_path: aprender_forecast::forecast
+  function: forecast
+  signature: 'fn forecast(args: &ForecastArgs) -> Result<ForecastResponse, ForecastError>'
+  status: implemented
+  notes: 'The OPEN interval (0, 1): 1.0 is refused, and the largest accepted value still yields a finite band z after normal_quantiles tail clamp.'
+- contract: forecast-tool-boundary-v1.yaml
+  equation: logistic_requires_cap_above_max_y
+  module_path: aprender_forecast::forecast
+  function: forecast
+  signature: 'fn forecast(args: &ForecastArgs) -> Result<ForecastResponse, ForecastError>'
+  status: implemented
+  notes: 'Also refuses a non-finite cap: JSON 1e400 parses to f64::INFINITY, for which `cap <= y_max` is false.'
+- contract: forecast-tool-boundary-v1.yaml
+  equation: cap_is_logistic_only
+  module_path: aprender_forecast::forecast
+  function: forecast
+  signature: 'fn forecast(args: &ForecastArgs) -> Result<ForecastResponse, ForecastError>'
+  status: implemented
+  notes: 'The refusal is at THE door, before make_design, so no parity rung can move: a cap on the linear, flat or DEFAULTED growth arm is refused rather than accepted and dropped, and the validated cap is bound inside the logistic branch so Spec cannot carry one the door did not check.'
+- contract: forecast-tool-boundary-v1.yaml
+  equation: constant_y_refused_before_fit
+  module_path: aprender_forecast::forecast
+  function: forecast
+  signature: 'fn forecast(args: &ForecastArgs) -> Result<ForecastResponse, ForecastError>'
+  status: implemented
+  notes: 'Refused BEFORE the fit, so a degenerate series costs a validation error rather than an L-BFGS run.'
+- contract: forecast-tool-boundary-v1.yaml
+  equation: unknown_field_refused
+  module_path: aprender_mcp_forecast
+  function: build_server
+  signature: 'fn build_server(name: &str, version: &str) -> pmcp::Result<Server>'
+  status: implemented
+  notes: 'serde deny_unknown_fields on the typed tool argument; build_server is where that type becomes the tool schema, so this is the transport-side half of D-11.'
+- contract: forecast-tool-boundary-v1.yaml
+  equation: unknown_enum_refused
+  module_path: aprender_forecast::forecast
+  function: forecast
+  signature: 'fn forecast(args: &ForecastArgs) -> Result<ForecastResponse, ForecastError>'
+  status: implemented
+  notes: 'The match arms on model / growth / seasonality_mode refuse rather than default — and an option belonging to the OTHER model is refused, never silently dropped.'
+- contract: forecast-tool-boundary-v1.yaml
+  equation: horizon_gate_with_warning
+  module_path: aprender_forecast::chronos
+  function: forecast
+  signature: 'fn forecast(model: &Model, args: &ChronosArgs) -> Result<ChronosResponse, ForecastError>'
+  status: implemented
+  notes: 'The shared gate-and-warn shape, seen from the boundary contract rather than from the parity contract.'
+- contract: forecast-tool-boundary-v1.yaml
+  equation: shared_response_shape
+  module_path: aprender_forecast::forecast
+  function: forecast
+  signature: 'fn forecast(args: &ForecastArgs) -> Result<ForecastResponse, ForecastError>'
+  status: implemented
+  notes: 'Both doors return the same envelope; forecast() defines it and chronos::forecast mirrors it.'
+- contract: forecast-tool-boundary-v1.yaml
+  equation: refusals_are_validation_errors
+  module_path: aprender_mcp_forecast
+  function: map_error
+  signature: 'fn map_error(e: ForecastError) -> pmcp::Error'
+  status: implemented
+  notes: 'Every caller-fixable refusal maps to a protocol validation error, never to Internal — an Internal for a caller-fixable input is the failure this equation exists to prevent.'
+- contract: forecast-tool-boundary-v1.yaml
+  equation: pool_equality_under_load
+  module_path: aprender_mcp_forecast
+  function: pooled_app
+  signature: 'fn pooled_app(pool: usize, name: &str, version: &str) -> pmcp::Result<axum::Router>'
+  status: implemented
+  notes: 'Determinism under concurrent load. NOTE, recorded rather than glossed: this asserts equality, NOT engagement — a pool collapsed to one router is trivially deterministic (D-ITEM-06-07-a).'
+- contract: forecast-tool-boundary-v1.yaml
+  equation: pool_speedup_host_gated
+  module_path: justfile
+  function: forecast-pool-ratio
+  signature: 'just recipe: forecast-pool-ratio'
+  status: implemented
+  notes: 'REVIEW-06-04. Binds to the RECIPE, not to a unit test: a wall-clock ratio is a benchmark claim, and putting it in the correctness suite makes the suite flaky without making the pool faster. Host-gated (aarch64 release); measured 5.162x against a 2.0 bar in 06-EVIDENCE.md §3.'
+- contract: forecast-tool-boundary-v1.yaml
+  equation: sc1_wall_swept
+  module_path: justfile
+  function: forecast-sc1-sweep
+  signature: 'just recipe: forecast-sc1-sweep'
+  status: implemented
+  notes: '06-REVIEW.md WR-04. Binds to the RECIPE and not to the libtest, following pool_speedup_host_gated and for the same reason: a wall-clock bar inside the correctness suite moves with CPU throttling. The harness (sc1_wall::sc1_wall_sweep) prints under any profile and asserts the bar only on release; the recipe forces --release, widens the NeuralProphet row to its at-the-bound geometry, and re-checks every printed line. Landed with plan 06-16, which also DELETED prophet::sampler::logistic_band_wall (#[ignore]d, no recipe, no bar, all four recorded lines freq="D") and folded design_cost::holiday_design_wall onto this sweep composition builder, so there is one geometry builder rather than three. OBSERVED failing on the CR-01 configuration with the lambda bound raised. WHERE IT RUNS (UAT item 5, decided 2026-09-07): `make tier3` via the `forecast-sc1-gate` target — 25 s wall warm, inside tier3''s 1-5 minute budget. It is NOT in CI: UAT item 3 decided Phase 6''s release-profile gates stay MANUAL/pre-push, and .github/ contains no reference to it. READ `status: implemented` AS "the gate exists and passes when run", NEVER as "the gate runs on every push" — that conflation is the specific defect this note exists to prevent.'
+- contract: forecast-tool-boundary-v1.yaml
+  equation: logistic_changepoint_cost_bounded
+  module_path: aprender_forecast::forecast
+  function: forecast
+  signature: 'fn forecast(args: &ForecastArgs) -> Result<ForecastResponse, ForecastError>'
+  status: implemented
+  notes: 'The refusal is IN the door, in the prophet arm, after Spec assembly and before make_design — the only place it can be, because the cost is spent in predict, which runs after the fit returns with no budget. It computes its lambda through prophet::changepoint_count, the same function make_design is tied to, so the door cannot disagree with the sampler about the count. Landed with plan 06-14 (06-REVIEW.md CR-01).'
+- contract: forecast-tool-boundary-v1.yaml
+  equation: door_surface_is_complete
+  module_path: aprender_forecast::types
+  function: every_request_knob_is_enumerated
+  signature: 'fn every_request_knob_is_enumerated()'
+  status: implemented
+  notes: 'A COMPLETENESS equation, so its definition site is the assertion rather than a production function: the claim is about the enumeration in door_surface: matching the structs, and the thing that can be violated is the test. Binds to the knobs half (set equality against schemars::schema_for! in both directions, both mutated), which since 2026-09-07 covers BOTH doors - ForecastArgs + HolidayArg + ChronosArgs. The cost-axis half is now TWO tests: every_cost_axis_names_a_real_bound (listed axis -> real constant) and every_cost_ceiling_constant_is_named_by_an_axis (the INVERSE: every fit_max_*/chronos_max_* ceiling -> an axis or a checked ceilings_subsumed exemption). The known-open axes are held by no_cost_axis_is_pending. All four are in the same file. T-06-32 (06-SECURITY.md) is why the second and third exist: until then the enumeration covered ONE door and the axis half could only check axes somebody had already listed. RESIDUAL, stated: an expensive path introducing NO constant and NO axis entry is still invisible to all four - that is C-06''s shape, and its detector is just forecast-sc1-sweep (make tier3), not a test here. Landed with plans 06-14 and 06-18(T-06-32 closure).'
+- contract: forecast-tool-boundary-v1.yaml
+  equation: holiday_name_cost_bounded
+  module_path: aprender_forecast::forecast
+  function: forecast
+  signature: 'fn forecast(args: &ForecastArgs) -> Result<ForecastResponse, ForecastError>'
+  status: implemented
+  notes: 'The refusal is FIRST in the holiday loop, before the name is cloned into any Column — which also bounds every other refusal message in that loop, each of which formats h.name back to the caller. On BYTES, because String::len is bytes and bytes are what the two clones per column and the byte-wise sort comparison cost. Landed with plan 06-15 (cost axis C-07, found by 06-14''s enumeration and by no review finding — the one caller-settable field whose knobs entry read enforced_by: NOTHING).'
+- contract: forecast-tool-boundary-v1.yaml
+  equation: np_train_cost_bounded
+  module_path: aprender_forecast::np
+  function: request_train_cost
+  signature: 'fn request_train_cost(d: &NpData, n_points: usize, n_lags: usize) -> u64'
+  status: implemented
+  notes: 'Binds to the PRICING function rather than to the door, because the equation''s content is that the door prices a request at exactly the work it then configures: request_train_cost is built from door_lr_sweep, door_epochs and n_training_samples, the same three the door uses to build its TrainConfig, and np::train debug_asserts its own sample count against n_training_samples. forecast::forecast calls it after NpData::new and the n_lags range checks and before the first np::train. Landed with plan 06-15 (cost axis C-08 — the only axis in this door with no budget of any kind on its path; the structural maximum measured 47.924 s on release against SC1''s 2 s bar, which is what forced a bound rather than a measured_at_structural_maximum record).'
+- contract: forecast-tool-boundary-v1.yaml
+  equation: default_seed_42
+  module_path: aprender_forecast::forecast
+  function: forecast
+  signature: 'fn forecast(args: &ForecastArgs) -> Result<ForecastResponse, ForecastError>'
+  status: implemented
+  notes: 'The default seed is a CONTRACT value, so an unseeded request is still reproducible.'
+# ---- Phase 8: decide-tool-boundary-v1 (the classify tool boundary) ----
+# Plan 08-01 registered every Phase 8 row `status: pending` BEFORE the code existed (D-07).
+# Plan 08-12 (the close-out) flipped every row to `implemented` with module_path, function and
+# signature COPIED FROM SOURCE (not 08-01's pre-code guesses: the code says `Decider` /
+# `ArtifactError`, and `read_decide_apr_bytes_bounded` takes `declared_len: Option<u64>`).
+# `make contract-audit-phase8` refuses any BIND- line and resolves every row below to a
+# definition site in the file its module_path names. The live row `accepted_region_cold` was
+# `implemented` on the FINAL 3 008 MB record (08-LIVE-DEPLOY-EVIDENCE.json, `final: true`,
+# deployed-passed). decide-tool-boundary-v1 7.0.0 moved the tier to 10 240 MB, which re-opened it
+# (`partial`); plan 08-30's live record at 10 240 MB (08-LIVE-REDEPLOY-EVIDENCE.json `live`,
+# final: true, 8 proven-cold samples all under the cap) passed, so it is `implemented` again and
+# `make contract-audit-phase8` runs with PHASE8_LIVE_EXEMPT unset.
+- contract: decide-tool-boundary-v1.yaml
+  equation: classify_count_bound
+  module_path: aprender_mcp_decide
+  function: precheck
+  signature: 'fn precheck(limits: &ClassifyLimits, args: &ClassifyArgs) -> pmcp::Result<()>'
+  status: implemented
+  notes: 'First of the request bounds (classify_min_texts / classify_max_texts), checked on the async handler path before any text is read and before admission. Implemented by plan 08-06 (FALSIFY-DECIDE-TOOL-001).'
+- contract: decide-tool-boundary-v1.yaml
+  equation: classify_text_bytes_bound
+  module_path: aprender_mcp_decide
+  function: precheck
+  signature: 'fn precheck(limits: &ClassifyLimits, args: &ClassifyArgs) -> pmcp::Result<()>'
+  status: implemented
+  notes: 'Per-text UTF-8 byte bound (classify_max_text_bytes), checked in precheck BEFORE tokenization. Implemented by plan 08-06 (FALSIFY-DECIDE-TOOL-002).'
+- contract: decide-tool-boundary-v1.yaml
+  equation: classify_token_budget
+  module_path: aprender_mcp_decide
+  function: check_token_budget
+  signature: 'fn check_token_budget(limits: &ClassifyLimits, per_text: &[usize]) -> Result<(), ClassifyFailure>'
+  status: implemented
+  notes: 'Sum of BUILT Laya row lengths <= classify_max_total_tokens (120 at the 3 008 MB tier since v2.0.0; 1024 at 10 240 MB). classify_blocking tokenizes once (Decider::prepare), calls check_token_budget, and only then runs the forward. Implemented by plan 08-06 (FALSIFY-DECIDE-TOOL-003); the 08-01 row named precheck, which takes no model and cannot tokenize.'
+- contract: decide-tool-boundary-v1.yaml
+  equation: classify_admission
+  module_path: aprender_mcp_decide
+  function: Admission::try_admit
+  signature: 'fn try_admit(&self) -> Result<Ticket, Busy>'
+  status: implemented
+  notes: 'In-flight 1 / pending 4 per process; the Ticket is released only when the blocking work ends. Implemented by plan 08-06 (FALSIFY-DECIDE-TOOL-008).'
+- contract: decide-tool-boundary-v1.yaml
+  equation: classify_response_shape
+  module_path: aprender_mcp_decide
+  function: ClassifyResponse::from_decisions
+  signature: 'fn from_decisions(model: &Model, decisions: &[Decision]) -> Result<Self, ClassifyFailure>'
+  status: implemented
+  notes: 'labels ARRAY in task.json order, one result per text with probabilities in that order, model identity (D-11). Model is aprender_decide::Decider re-exported. Implemented by plan 08-06 (FALSIFY-DECIDE-TOOL-004).'
+- contract: decide-tool-boundary-v1.yaml
+  equation: truncation_flag
+  module_path: aprender_decide::laya::builder
+  function: Builder::finish
+  signature: 'fn finish(&self, prefix: &RowPrefix, state: &str) -> Result<BuiltRow, LayaError>'
+  status: implemented
+  notes: 'truncated == prefix + state + [SEP] exceeded max_len, i.e. the state overran the room Laya''s builder leaves (D-12). Computed here; ClassifyResponse::from_decisions surfaces it unchanged per result. Implemented by plans 08-04 / 08-06 (FALSIFY-DECIDE-TOOL-005).'
+- contract: decide-tool-boundary-v1.yaml
+  equation: refusal_names_bound
+  module_path: aprender_mcp_decide
+  function: precheck
+  signature: 'fn precheck(limits: &ClassifyLimits, args: &ClassifyArgs) -> pmcp::Result<()>'
+  status: implemented
+  notes: 'Every bound refusal is pmcp::Error::validation naming the contract file and key and the observed value, never echoing caller text: precheck for count and bytes, ClassifyFailure::into_pmcp for the token budget, Busy::into_pmcp for admission. Implemented by plan 08-06 (FALSIFY-DECIDE-TOOL-006).'
+- contract: decide-tool-boundary-v1.yaml
+  equation: accepted_region_cold
+  module_path: aprender_mcp_decide_lambda::probe
+  function: build_maximal_request
+  signature: 'fn build_maximal_request(model: &crate::Model, limits: &aprender_mcp_decide::ClassifyLimits, shape: MaximalShape) -> Result<(Vec<String>, usize), MaximalError>'
+  status: implemented
+  notes: 'LIVE at 10 240 MB, deployed-passed (plan 08-30; decide-tool-boundary-v1 9.0.0; FINAL record .planning/phases/08-laya-decision-model-local-fine-tune-and-thin-mcp-server/08-LIVE-REDEPLOY-EVIDENCE.json `live`, final: true). `just laya-deploy-verify` over two deploys took 8 cold samples, each proven cold by its CloudWatch load line (performed_load=true for its own probe id) and its invocation''s platform.report init duration, each the maximal request this builder produced as the instance''s first POST: 4 CONCENTRATED (2 texts, 800 built tokens) at 27015, 25076, 25092 and 25305 ms and 4 DISTRIBUTED (8 texts, 800 built tokens) at 22922, 22647, 22855 and 23116 ms, client-side through the edge; max 27015 ms < api_gateway_timeout_ms 30000 (2985 ms slack). Re-opened by 7.0.0 (tier move) and flipped back to implemented on that record. SUPERSEDED TIER: LIVE, deployed-passed (plans 08-17/08-18; FINAL record .planning/phases/08-laya-decision-model-local-fine-tune-and-thin-mcp-server/08-LIVE-DEPLOY-EVIDENCE.json, final: true). At lambda_memory_mb 3008 on pmcp.run, `just laya-deploy-verify` took 4 cold samples, each proven cold by its CloudWatch load line (performed_load=true for its own probe id) and each the maximal request this builder produced as the instance''s first POST: 2 CONCENTRATED (1 text, 120 built tokens) at 28527 and 28501 ms and 2 DISTRIBUTED (2 texts, 120 built tokens) at 29350 and 24168 ms, client-side through the edge; max 29350 ms < api_gateway_timeout_ms 30000. Thin margin (650 ms), the S3 download dominating the load, and a 31.05 s external cold call are recorded as D-ITEM-08-17-E. The builder landed in plan 08-07; plan 08-12 flipped this row from pending on the record (FALSIFY-DECIDE-TOOL-009).'
+# ---- Phase 8: laya-finetune-gate-v1 (training-side claims D-03..D-08) ----
+# Equations Rust can re-verify bind to the RUST verifier (aprender_decide::verify), because Rust
+# lib tests are what CI runs; the Python-only training equations bind to the justfile recipe
+# laya-train-selftest, which runs LOCALLY, not in CI.
+- contract: laya-finetune-gate-v1.yaml
+  equation: gate_pass
+  module_path: aprender_decide::verify
+  function: check_gate
+  signature: 'fn check_gate(report: &GateReport, recomputed: &Recomputed, n: usize, policy: &VerifyPolicy) -> Result<Vec<GateClause>, VerifyError>'
+  status: implemented
+  notes: 'Pass decided on metrics RECOMPUTED in Rust (recompute_metrics) from probabilities verified against the Rust re-score of the artifact and of the declared base; thresholds read from the contract; a report whose pass disagrees is refused. Implemented by plan 08-09; the median seed''s run since plan 08-15.'
+- contract: laya-finetune-gate-v1.yaml
+  equation: ece_top_label
+  module_path: aprender::calibration
+  function: expected_calibration_error_top_label
+  signature: 'fn expected_calibration_error_top_label(probabilities: &[f32], n_classes: usize, labels: &[usize], n_bins: usize) -> f32'
+  status: implemented
+  notes: 'The house ECE (contracts/calibration-v1.yaml), already implemented in aprender-core crates/aprender-core/src/calibration.rs with frozen cases scripts/setfit_fixtures/claims_stats/ece_top_label_cases.json. The Phase 8 gate declares it rather than re-implementing it (OPS-03); aprender_decide::verify::recompute_metrics calls it.'
+- contract: laya-finetune-gate-v1.yaml
+  equation: calibration_fit_bounded
+  module_path: justfile
+  function: laya-train-selftest
+  signature: 'just recipe: laya-train-selftest'
+  status: implemented
+  notes: 'Python-only (scripts/laya_train): NLL temperature fit within [0.5, 5.0], clamp_hit recorded, ECE with the applied T; pinned by metrics.py --selftest and the lifecycle. The recipe runs LOCALLY (just laya-train-selftest), not in CI. Implemented by plan 08-08.'
+- contract: laya-finetune-gate-v1.yaml
+  equation: split_disjointness
+  module_path: aprender_decide::verify
+  function: check_split
+  signature: 'fn check_split(train: &[DataRow], eval: &[DataRow], calib: &GateCalibration, k: usize, min_per_class: u64) -> Result<(), VerifyError>'
+  status: implemented
+  notes: 'Rust re-derives text-level disjointness (NFC/trim/collapse sha256 groups, conflicting labels refused) from gate-report calibration slice_ids and the data dir. Implemented by plan 08-09 (the Python split landed in 08-08).'
+- contract: laya-finetune-gate-v1.yaml
+  equation: declared_seed_ships
+  module_path: justfile
+  function: laya-train-selftest
+  signature: 'just recipe: laya-train-selftest'
+  status: implemented
+  notes: 'Python-only, LEGACY scope since laya-finetune-gate-v1 1.4.0 (published 2.0.0): a recipe.json without seed_selection ships the declared seed; production runs ship the median seed (seed_selection_median). Legacy single-seed rule + the median rule are both exercised by the lifecycle (plan 08-14): lifecycle.py run_one asserts seed 13 ships with no seed_selection on the single-seed runs, check_median_run the median on the three-seed run. The recipe runs LOCALLY (just laya-train-selftest), not in CI. Implemented by plan 08-08; status flipped by plan 08-12.'
+- contract: laya-finetune-gate-v1.yaml
+  equation: seed_selection_median
+  module_path: aprender_decide::verify
+  function: check_seed_selection
+  signature: 'fn check_seed_selection(inputs: &PackInputs, data: &DataDir, policy: &VerifyPolicy) -> Result<Option<i64>, VerifyError>'
+  status: implemented
+  notes: 'A3 (1.4.0, 2026-09-27): the median-ECE seed ships by floor(ece_post x 10000), ties to the smaller seed; pass is the shipped seed''s pass. Rust re-derives it from seeds/seed-<s>/eval-probs.json (plan 08-15, authoritative: every seed recomputed, the median of the RECOMPUTED ECEs via select_median_seed, the shipped checkpoint and eval file bound by sha256, and any seed whose recomputed rank_key differs from the reported one refused; FALSIFY-LAYA-GATE-011 lib tests); the Python selection is scripts/laya_train/gate.py select_median_seed (plan 08-14).'
+- contract: laya-finetune-gate-v1.yaml
+  equation: eval_set_in_distribution
+  module_path: justfile
+  function: laya-train-selftest
+  signature: 'just recipe: laya-train-selftest'
+  status: implemented
+  notes: 'A2 (1.4.0, 2026-09-27): Python-only rule, implemented by plan 08-14 as scripts/laya_train/data.py in_distribution_heldout (the demo_s64 held-out set: validation then train rows minus shots, excluded ids and exclusion-group members; shot overlap refused; first duplicate kept; 459 rows, [111, 291, 57]), used by prepare_stance.py --cell s64 and pinned by data.py --selftest (synthetic-manifest cases plus the rebuild from the pinned splits when present). The recipe runs LOCALLY (just laya-train-selftest), not in CI.'
+- contract: laya-finetune-gate-v1.yaml
+  equation: shift_probe_reported
+  module_path: aprender_decide::verify
+  function: check_shift_probe
+  signature: 'fn check_shift_probe(inputs: &PackInputs, data: &DataDir, policy: &VerifyPolicy) -> Result<(), VerifyError>'
+  status: implemented
+  notes: 'A2 (1.4.0, 2026-09-27): shift-probe metrics recomputed in Rust from hash-bound files, never re-scored, never a gate clause. Implemented by plan 08-15 (FALSIFY-LAYA-GATE-013 lib tests; the Python writer landed in 08-14).'
+- contract: laya-finetune-gate-v1.yaml
+  equation: recipe_before_scores
+  module_path: justfile
+  function: laya-train-selftest
+  signature: 'just recipe: laya-train-selftest'
+  status: implemented
+  notes: 'Python-only: recipe.json and recipe_id written before any eval score. The recipe runs LOCALLY (just laya-train-selftest), not in CI. Implemented by plan 08-08.'
+- contract: laya-finetune-gate-v1.yaml
+  equation: device_recorded
+  module_path: justfile
+  function: laya-train-selftest
+  signature: 'just recipe: laya-train-selftest'
+  status: implemented
+  notes: 'Python-only: device_used read from the model parameters after the move, CPU flagged. The recipe runs LOCALLY (just laya-train-selftest), not in CI. Implemented by plan 08-08.'
+- contract: laya-finetune-gate-v1.yaml
+  equation: f16_reload_scoring
+  module_path: justfile
+  function: laya-train-selftest
+  signature: 'just recipe: laya-train-selftest'
+  status: implemented
+  notes: 'Python-only: every scored file computed on the F16-saved checkpoint reloaded in fp32 (Pitfall 5). The recipe runs LOCALLY (just laya-train-selftest), not in CI. Implemented by plan 08-08.'
+- contract: laya-finetune-gate-v1.yaml
+  equation: early_stopping_train_side
+  module_path: justfile
+  function: laya-train-selftest
+  signature: 'just recipe: laya-train-selftest'
+  status: implemented
+  notes: 'Python-only: early stopping on calibration-slice NLL at the bounded fitted T, best epoch restored, decided before any eval score (declared 2026-09-25 after the fixed_epochs demo gate failure). The recipe runs LOCALLY (just laya-train-selftest), not in CI. Implemented by plan 08-08.'
+- contract: laya-finetune-gate-v1.yaml
+  equation: synthetic_not_deployable
+  module_path: aprender_decide::verify
+  function: check_variant
+  signature: 'fn check_variant(recipe: &Recipe) -> Result<(), VerifyError>'
+  status: implemented
+  notes: 'Any variant other than production (a synthetic-fixture recipe) is refused with SyntheticNotDeployable; it is the first step of verify.rs cheap_checks, which pack_for_serving, verify_run and verify_path all run before any model is built, and the deploy recipes gate on verify. Implemented by plan 08-09; the 08-01 row named verify_run.'
+# ---- Phase 8: laya-parity-v1 (torch -> .apr -> Rust bars) ----
+- contract: laya-parity-v1.yaml
+  equation: ids_exact
+  module_path: aprender_decide::laya::builder
+  function: Builder::build
+  signature: 'fn build(&self, state: &str, t: &str, ins: &str, options: &[String]) -> Result<BuiltRow, LayaError>'
+  status: implemented
+  notes: 'Laya builder ids EXACT on every fixture row (spike-025 English root: 14/14). Implemented by plan 08-04.'
+- contract: laya-parity-v1.yaml
+  equation: markers_exact
+  module_path: aprender_decide::laya::builder
+  function: Builder::build
+  signature: 'fn build(&self, state: &str, t: &str, ins: &str, options: &[String]) -> Result<BuiltRow, LayaError>'
+  status: implemented
+  notes: '[MASK] marker positions EXACT, option shrink reproduced. Implemented by plan 08-04.'
+- contract: laya-parity-v1.yaml
+  equation: argmax_exact
+  module_path: aprender_decide::laya
+  function: Laya::classify_prepared
+  signature: 'fn classify_prepared(&self, rows: &[PreparedRow]) -> Result<Vec<Decision>, DecideError>'
+  status: implemented
+  notes: 'Argmax label EXACT on every fixture row (English root 14/14). The served path: forward_row, softmax at the bucket temperature, argmax. Implemented by plans 08-04 / 08-09.'
+- contract: laya-parity-v1.yaml
+  equation: probs_abs
+  module_path: aprender_decide::laya
+  function: Laya::classify_prepared
+  signature: 'fn classify_prepared(&self, rows: &[PreparedRow]) -> Result<Vec<Decision>, DecideError>'
+  status: implemented
+  notes: 'D-17 literal 1e-5 on served (temperature-scaled) probabilities; measured max |dp| 3.841e-6 on the spike-025 English root through the .apr path (plan 08-09, aarch64; spike 025: 3.8e-6). Implemented by plans 08-04 / 08-09.'
+- contract: laya-parity-v1.yaml
+  equation: logits_abs
+  module_path: aprender_decide::laya
+  function: Laya::forward_row
+  signature: 'fn forward_row(&self, ids: &[u32], markers: &[usize], qtype: QType, mut tap: impl FnMut(&str, &[f32])) -> Result<Vec<f32>, DecideError>'
+  status: implemented
+  notes: 'Scorer logits before temperature, 1e-4 (measured max |dlogit| 2.146e-5 in plan 08-09). Implemented by plan 08-04.'
+- contract: laya-parity-v1.yaml
+  equation: final_norm_abs
+  module_path: aprender::models::modernbert
+  function: ModernBertEncoder::forward
+  signature: 'fn forward(&self, ids: &[u32], mut tap: impl FnMut(&str, &[f32])) -> Result<Vec<f32>, ModernBertError>'
+  status: implemented
+  notes: 'Encoder final LayerNorm on the 158-token ladder row, 1e-4 (the `final` tap). Implemented by plan 08-03; ladder final measured 9.155e-5 in plan 08-09.'
+- contract: laya-parity-v1.yaml
+  equation: embeddings_abs
+  module_path: aprender::models::modernbert
+  function: ModernBertEmbeddings::forward
+  signature: 'fn forward(&self, ids: &[u32], eps: f64) -> Result<Vec<f32>, ModernBertError>'
+  status: implemented
+  notes: 'Embedding block LayerNorm(tok_embeddings(ids)), no bias, no position embedding, 1e-5 (the `emb` tap; ladder emb measured 9.537e-7 in plan 08-09). The #[contract] attribute for this equation sits on ModernBertEncoder::from_apr, which loads exactly that tensor set. Implemented by plan 08-03.'
+- contract: laya-parity-v1.yaml
+  equation: per_layer_rel_rms
+  module_path: aprender::models::modernbert
+  function: ModernBertEncoder::forward
+  signature: 'fn forward(&self, ids: &[u32], mut tap: impl FnMut(&str, &[f32])) -> Result<Vec<f32>, ModernBertError>'
+  status: implemented
+  notes: 'Every encoder layer within 1e-3 relative rms (the `layer{i}` taps; layer 27 measured 2.145e-6 in plan 08-09, spike 025: 4.4e-4 before the RoPE fix). Implemented by plan 08-03.'
+- contract: laya-parity-v1.yaml
+  equation: pack_rescore_probs_abs
+  module_path: aprender_decide::verify
+  function: rescore
+  signature: 'fn rescore<F>(which: ProbsWhich, classify: F, texts: &[String], probs: &[Vec<f32>], tol: f64) -> Result<RescoreStats, VerifyError> where F: FnOnce(&[String]) -> Result<Vec<Decision>, DecideError>'
+  status: implemented
+  notes: 'Rust re-score of every eval row of the PACKED artifact (and of the base on the zero-shot rows) at pack and verify time, argmax exact. Since plan 08-15 each set is held to ITS OWN bound(c, s) = max(1e-5, pack_rescore_noise_k x noise(c, s)) from verify::rescore_bounds (laya-parity-v1 A1), the floor 1e-5 for both sets when the run carries no rescore-noise.json; RescoreDrift names the bound used. verify.rs verify_loaded (reached from pack_for_serving, verify_run and verify_path) calls it once per set. Implemented by plan 08-09; bound per set by plan 08-15.'
+- contract: laya-parity-v1.yaml
+  equation: rescore_noise_reference
+  module_path: aprender_decide::verify
+  function: rescore_bounds
+  signature: 'fn rescore_bounds(inputs: &PackInputs, ft_probs: &[Vec<f32>], zs_probs: &[Vec<f32>], policy: &VerifyPolicy) -> Result<[RescoreBound; 2], VerifyError>'
+  status: implemented
+  notes: 'A1 (2026-09-27): noise(c, s) = max |p_torch32 - p_f64| per checkpoint and set, from the hash-bound rescore-noise.json record. Plan 08-14 writes the record (train.py float64 forward, control 0.0, every row); plan 08-15 RECOMPUTES it in Rust (bit-for-bit equal to Python''s on a lifecycle run dir, tests/python_records.rs) and derives bound(c, s) = max(floor, k x noise), refusing an edited, mismatched, over-ceiling or argmax-flipping record; no record = the floor. Evidence: FALSIFY-LAYA-PARITY-006 lib tests.'
+- contract: laya-parity-v1.yaml
+  equation: window_mutation
+  module_path: aprender::models::modernbert
+  function: ModernBertEncoder::forward
+  signature: 'fn forward(&self, ids: &[u32], mut tap: impl FnMut(&str, &[f32])) -> Result<Vec<f32>, ModernBertError>'
+  status: implemented
+  notes: 'Window 63/65 (the test-only set_window_override) must fail the first local layer while the first global layer passes. Implemented by plan 08-03.'
+# ---- Phase 8: decide-apr-v1 (the decision-model artifact and the D-05 task schema) ----
+- contract: decide-apr-v1.yaml
+  equation: task_order_is_label_index
+  module_path: aprender_decide::task
+  function: Task::from_slice
+  signature: 'fn from_slice(bytes: &[u8]) -> Result<Self, TaskError>'
+  status: implemented
+  notes: 'Order-preserving map visitor (OrderedCriteria); labels in document order under both serde_json backings. Implemented by plan 08-04 (FALSIFY-DECIDE-APR-007).'
+- contract: decide-apr-v1.yaml
+  equation: marker_preservation
+  module_path: aprender_decide::laya
+  function: Laya::from_parts
+  signature: 'fn from_parts(reader: &AprV2ReaderRef<''_>, prefix: &str, encoder_config_bytes: &[u8], agent_config_bytes: &[u8], tokenizer_bytes: &[u8], task: Task) -> Result<Self, LayaError>'
+  status: implemented
+  notes: 'Refuse only marker LOSS after Laya''s option shrink (LayaError::MarkersLost), checked once at task load. Implemented by plan 08-04.'
+- contract: decide-apr-v1.yaml
+  equation: single_manifest_key
+  module_path: aprender_decide::artifact
+  function: load_verified
+  signature: 'fn load_verified(bytes: &[u8]) -> Result<Decider, ArtifactError>'
+  status: implemented
+  notes: 'Ladder rung 3. load_verified is pub(crate), the only constructor of Decider; Decider::load_bytes / load_path reach it. Implemented by plan 08-05.'
+- contract: decide-apr-v1.yaml
+  equation: blob_integrity
+  module_path: aprender_decide::artifact
+  function: load_verified
+  signature: 'fn load_verified(bytes: &[u8]) -> Result<Decider, ArtifactError>'
+  status: implemented
+  notes: 'Ladder rung 4 (blob sha256 before any weight is installed). Implemented by plan 08-05.'
+- contract: decide-apr-v1.yaml
+  equation: tensor_set_derived
+  module_path: aprender_decide::artifact
+  function: load_verified
+  signature: 'fn load_verified(bytes: &[u8]) -> Result<Decider, ArtifactError>'
+  status: implemented
+  notes: 'Ladder rung 4 (architecture-derived tensor set, per-entry size). Implemented by plan 08-05.'
+- contract: decide-apr-v1.yaml
+  equation: bounded_read_and_index_extent
+  module_path: aprender_decide::artifact
+  function: check_index_extent
+  signature: 'fn check_index_extent(tensor_count: u32, tensor_index_offset: u64, data_offset: u64, file_len: u64) -> Result<(), ArtifactError>'
+  status: implemented
+  notes: 'Ladder rungs 1-2: the bounded read at cap + 1 is read_decide_apr_bytes_bounded (the size_cap row); then tensor_count <= max_tensor_count and the index-extent bound in checked arithmetic before any index allocation (reader_impl.rs:95 finding). Implemented by plan 08-05; the 08-01 row named read_decide_apr_bytes_bounded for both halves.'
+- contract: decide-apr-v1.yaml
+  equation: probe_replay
+  module_path: aprender_decide::artifact
+  function: load_verified
+  signature: 'fn load_verified(bytes: &[u8]) -> Result<Decider, ArtifactError>'
+  status: implemented
+  notes: 'Ladder rung 7: replay against the stored PYTHON probe values (probes.json), NaN-visible. Implemented by plan 08-05.'
+- contract: decide-apr-v1.yaml
+  equation: artifact_identity
+  module_path: aprender_decide::artifact
+  function: load_verified
+  signature: 'fn load_verified(bytes: &[u8]) -> Result<Decider, ArtifactError>'
+  status: implemented
+  notes: 'D-11: artifact_sha256 = whole-file sha256 (artifact_sha256_hex), recipe_id = recipe blob sha256; carried as Decider::identity. Implemented by plan 08-05.'
+- contract: decide-apr-v1.yaml
+  equation: determinism
+  module_path: aprender_decide::pack
+  function: pack_run_dir
+  signature: 'fn pack_run_dir(run_dir: &Path, data_dir: &Path) -> Result<Vec<u8>, PackError>'
+  status: implemented
+  notes: 'Byte-identical packs across processes and serde_json backings; no timestamp (the writer is artifact::write_decide_apr). Implemented by plan 08-05.'
+- contract: decide-apr-v1.yaml
+  equation: size_cap
+  module_path: aprender_decide::artifact
+  function: read_decide_apr_bytes_bounded
+  signature: 'fn read_decide_apr_bytes_bounded<R: std::io::Read>(reader: R, declared_len: Option<u64>) -> Result<Vec<u8>, ArtifactError>'
+  status: implemented
+  notes: 'max_artifact_bytes = 1.25 GiB: a declared length over the cap is refused before reading, and the read stops at cap + 1. Implemented by plan 08-05.'
+- contract: decide-apr-v1.yaml
+  equation: private_mint
+  module_path: aprender_decide::artifact
+  function: load_verified
+  signature: 'fn load_verified(bytes: &[u8]) -> Result<Decider, ArtifactError>'
+  status: implemented
+  notes: 'The only minting path (pub(crate)); the trybuild compile-fail target `cargo test -p aprender-decide --test ui` proves no second one. Implemented by plan 08-05.'
+- contract: decide-apr-v1.yaml
+  equation: deploy_eligible
+  module_path: aprender_decide::verify
+  function: verify_path
+  signature: 'fn verify_path(apr: &Path, run_dir: &Path, data_dir: &Path, base_dir: &Path, policy: &VerifyPolicy) -> Result<VerifyReport, VerifyError>'
+  status: implemented
+  notes: 'Deployable only when pack_laya verify (verify_path over the exact file: full ladder, production variant, base and input hashes, split, full re-score, recomputed gate, seed selection) accepts it; laya-upload and laya-deploy run it before any AWS call. Implemented by plan 08-09; accepted models/decide/laya-stance-64.apr (sha256 24a44d7e...) in plan 08-16.'
 critical_path:
 - softmax
 - rmsnorm

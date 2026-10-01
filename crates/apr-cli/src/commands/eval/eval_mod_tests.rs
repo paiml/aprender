@@ -25,6 +25,14 @@ fn dataset_rejects_unknown() {
     assert!(err.contains("Unknown dataset"));
 }
 
+#[test]
+fn tweet_eval_stance_dataset_aliases_are_detected() {
+    assert!(is_tweet_eval_stance_dataset("tweet-eval-stance"));
+    assert!(is_tweet_eval_stance_dataset("tweet_eval_stance_abortion"));
+    assert!(is_tweet_eval_stance_dataset("TWEET-EVAL-STANCE"));
+    assert!(!is_tweet_eval_stance_dataset("wikitext-2"));
+}
+
 // ── extract_ngrams + compute_ngram_overlap ─────────────────────────────────
 
 #[test]

@@ -1,0 +1,13 @@
+{
+ "6": {
+  "p50_ms": 64.9,
+  "p95_ms": 72.9,
+  "tokens_p50": 86
+ },
+ "14": {
+  "p50_ms": 80.4,
+  "p95_ms": 89.1,
+  "tokens_p50": 86
+ },
+ "kev-0.8b torch fp32 CPU (spike 017 fixture, same 6 tweets), ms per question": 4214.1
+}

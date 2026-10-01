@@ -240,6 +240,13 @@ apr-compression = ["dep:lz4_flex", "dep:zstd"]  # LZ4/ZSTD decompression for APR
 server = ["dep:axum", "dep:tokio", "dep:tokio-stream", "dep:tower", "dep:tower-http", "dep:futures", "dep:async-stream", "dep:arc-swap"]  # HTTP server support
 cli = ["dep:clap", "dep:presentar-terminal", "server"]  # CLI binary (requires server, with Ollama-style progress)
 aprender-serve = ["dep:aprender", "server"]  # Aprender ML model serving (requires server)
+# SetFit classification serving (Phase 4, D-09 / OPS-05). HTTP TRANSPORT ONLY:
+# the route, the `AppState` slot and readiness live here; the tokenizer, pooling
+# and head stay in aprender-core, whose `VerifiedSetFitModel::classify` is the one
+# conformance-proven implementation (CLAUDE.md's SetFit row, OPS-03). Enabling
+# `aprender/setfit` is what makes that door reachable; `server` because a route
+# without axum is not a route.
+setfit = ["dep:aprender", "aprender/setfit", "server"]
 lambda = ["dep:ureq"]  # AWS Lambda handler (lightweight HTTP runtime)
 alimentar-data = ["dep:alimentar"]  # Data loading with alimentar
 visualization = ["dep:trueno-viz"]  # Terminal/PNG benchmark visualization

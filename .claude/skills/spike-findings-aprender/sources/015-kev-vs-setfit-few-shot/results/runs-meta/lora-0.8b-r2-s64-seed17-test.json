@@ -1,0 +1,15 @@
+{
+ "run": "../../runs/lora-0.8b-r2-s64-seed17",
+ "task": "stance-abortion",
+ "split": "test",
+ "n": 280,
+ "names_only": false,
+ "backend": "MLXDecisionModel",
+ "dtype": "bfloat16",
+ "load_s": 1.3944209170003887,
+ "accuracy": 0.5535714285714286,
+ "latency_ms_p50": 46.891708007024135,
+ "tokens_p50": 82.0,
+ "head_temperature": 1.0,
+ "train_wall_s": 373
+}

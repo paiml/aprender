@@ -108,6 +108,24 @@ pub enum AprenderError {
         /// Validation failure message
         message: String,
     },
+
+    /// Paired statistics requested on a zero-variance difference vector.
+    ///
+    /// Every difference is identical, so the (n-1) sample standard deviation is exactly
+    /// zero and the t statistic `d̄ / (s_d / √n)` is undefined — `x/0` for a non-zero
+    /// mean difference, `0/0` for an all-zero one. Neither has a finite confidence
+    /// interval.
+    ///
+    /// This is a typed refusal rather than a non-finite `f64` on purpose: `serde_json`
+    /// renders `NaN`/`Infinity` as `null`, so a non-finite statistic would become a
+    /// silently MISSING number in a published benchmark row instead of a visible failure
+    /// (plan 05-04, D-06).
+    ZeroVarianceDifferences {
+        /// Number of paired observations
+        n: usize,
+        /// The single value every difference takes
+        constant_value: f64,
+    },
 }
 
 impl fmt::Display for AprenderError {
@@ -174,6 +192,14 @@ impl fmt::Display for AprenderError {
             }
             AprenderError::ValidationError { message } => {
                 write!(f, "Validation failed: {message}")
+            }
+            AprenderError::ZeroVarianceDifferences { n, constant_value } => {
+                write!(
+                    f,
+                    "Zero-variance paired differences: all {n} differences equal \
+                     {constant_value}, so the t statistic and its confidence interval are \
+                     undefined"
+                )
             }
         }
     }
