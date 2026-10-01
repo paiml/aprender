@@ -257,6 +257,9 @@ pub struct ContinuousBatchRequest {
     pub temperature: f32,
     /// Top-k sampling parameter
     pub top_k: usize,
+    /// Token ids that end generation (aprender#4339: EOS + EOG markers). Empty
+    /// means "run to `max_tokens`".
+    pub stop_tokens: Vec<u32>,
     /// Channel to send response back to handler
     pub response_tx: tokio::sync::oneshot::Sender<ContinuousBatchResponse>,
     /// Request timestamp for latency tracking

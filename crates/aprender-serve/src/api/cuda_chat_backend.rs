@@ -61,7 +61,7 @@ fn try_safetensors_cuda_backend(
             let msg = format!("SafeTensors CUDA generation failed: {e}");
             return Some(
                 (
-                    axum::http::StatusCode::INTERNAL_SERVER_ERROR,
+                    crate::api::generation_error_status(&e),
                     axum::Json(serde_json::json!({"error": msg})),
                 )
                     .into_response(),
@@ -118,8 +118,12 @@ async fn try_cuda_backend(
     };
     // GH-319: Use actual model architecture for chat template detection
     let arch_hint = state.model_architecture();
+    // D5: refused before any path (streaming, batch scheduler, direct) takes the
+    // model, so the client gets a 400 rather than a 500 or a mid-stream error.
+    let tokenized =
+        tokenize_chat_prompt(&tokenizer, &request.messages, arch_hint.as_deref(), request.thinking(), state);
     let prompt_ids =
-        match tokenize_chat_prompt(&tokenizer, &request.messages, arch_hint.as_deref(), request.thinking(), state) {
+        match fit_serving_context(state, tokenized) {
             Ok(ids) => ids,
             Err(r) => return Some(r),
         };
@@ -203,6 +207,7 @@ async fn try_cuda_backend(
             max_tokens,
             prompt_tokens,
             Some(timing_rx),
+            request.stop.as_deref(),
         ));
     }
 
@@ -234,6 +239,9 @@ async fn try_cuda_backend(
         while let Some(result) = rx.recv().await {
             match result {
                 Ok(token_id) => tokens.push(token_id),
+                // D5: `fit_serving_context` above already refused an over-context
+                // prompt with a 400; the scheduler's errors are strings, and what
+                // reaches here is a server fault.
                 Err(e) => return Some(fail_response(state, StatusCode::INTERNAL_SERVER_ERROR, e)),
             }
         }
@@ -246,7 +254,7 @@ async fn try_cuda_backend(
         let generate_start = std::time::Instant::now();
         let generated = match dense_cuda_turn(&mut cuda_model, &prompt_ids, &q_config, |_| true) {
             Ok(g) => g,
-            Err(e) => return Some(fail_response(state, StatusCode::INTERNAL_SERVER_ERROR, e)),
+            Err(e) => return Some(fail_response(state, crate::api::generation_error_status(&e), e)),
         };
         let _ = timing_tx.send(phase_split(&mut cuda_model, generate_start));
         let tokens: Vec<u32> = generated.iter().skip(prompt_tokens).copied().collect();
@@ -418,6 +426,7 @@ fn try_quantized_backend(
             // The CPU quantized decode loop does not separate prefill from
             // decode, so §3 timings are absent rather than zero.
             None,
+            request.stop.as_deref(),
         ));
     }
 
@@ -1188,6 +1197,7 @@ fn moe_stream_cpu(
         prompt_token_count,
         // The MoE generator reports no phase split; §3 timings are absent.
         None,
+        request.stop.as_deref(),
     )
 }
 

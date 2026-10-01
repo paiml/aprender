@@ -1,0 +1,198 @@
+{
+  "version": "2.1.0",
+  "$schema": "https://raw.githubusercontent.com/oasis-tcs/sarif-spec/master/Schemata/sarif-schema-2.1.0.json",
+  "runs": [
+    {
+      "tool": {
+        "driver": {
+          "name": "pmat",
+          "informationUri": "https://github.com/paiml/pmat",
+          "rules": []
+        }
+      },
+      "invocations": [
+        {
+          "executionSuccessful": true,
+          "commandLine": "pmat query \"shrink-only debt ratchet baseline\" --limit 5 (index in this worktree, 2.6 s); scripts/pr_review_duplication_scan.sh (36 s, 1159/1159 branches); plus the measured commands in each result"
+        }
+      ],
+      "results": [
+        {
+          "ruleId": "PRREV-RATCHET-003",
+          "level": "note",
+          "message": {
+            "text": "Rows key on the cargo-mutants name, which embeds line:col. A line shift in a baselined file reads as a NEW row (RED) and the only way to green is deleting the row, which the shrink-only rule scores as a kill. The author now states this limit in the script header and ci.yml comment (#4653); it is not fixed."
+          },
+          "locations": [
+            {
+              "physicalLocation": {
+                "artifactLocation": {
+                  "uri": "scripts/check_mutants_debt_ratchet.sh"
+                },
+                "region": {
+                  "startLine": 12
+                }
+              }
+            }
+          ],
+          "properties": {
+            "precision_class": "advisory",
+            "grounding": "asserted",
+            "rationale": "Reading the row format and the comm -23 comparison; not exercised against a shifted file this run. Known limit named by the author (#4653).",
+            "failure_scenario": "A PR reflows a file holding a baselined survivor; the author deletes the unmatched row and the debt count falls with no test added."
+          }
+        },
+        {
+          "ruleId": "PRREV-RATCHET-004",
+          "level": "note",
+          "message": {
+            "text": "A NEW surviving mutant is reported but neither blocked nor recorded until #4649: the ci.yml MUTANTS-RATCHET block echoes the mutants section and exits 0. This is the operator's C187(a)/C188(a) ruling, recorded so the receipt is not read as enforcement of new survivors."
+          },
+          "locations": [
+            {
+              "physicalLocation": {
+                "artifactLocation": {
+                  "uri": ".github/workflows/ci.yml"
+                },
+                "region": {
+                  "startLine": 454
+                }
+              }
+            }
+          ],
+          "properties": {
+            "precision_class": "advisory",
+            "grounding": "asserted",
+            "rationale": "Reading the block; check_ci_gate_mutants_rule.sh still PASSes (its marked block is untouched) and check_mutants_debt_ratchet.sh is in guard_tree's git-ls-files universe and its cargo-free subset (--list shows it in both).",
+            "failure_scenario": "A PR adds code whose mutant survives; nothing goes red until #4649 lands."
+          }
+        },
+        {
+          "ruleId": "PRREV-RATCHET-005",
+          "level": "note",
+          "message": {
+            "text": "No committed mutation set exists for check_mutants_debt_ratchet.sh (mutate-guard.sh covers only the receipt guard), so \u00a73.D's 100%-kill requirement cannot be read from a committed artifact; this review's own 12 hand mutants were all killed by --self-test (16 cases)."
+          },
+          "locations": [
+            {
+              "physicalLocation": {
+                "artifactLocation": {
+                  "uri": "scripts/check_mutants_debt_ratchet.sh"
+                },
+                "region": {
+                  "startLine": 1
+                }
+              }
+            }
+          ],
+          "properties": {
+            "precision_class": "advisory",
+            "grounding": "asserted",
+            "rationale": "ls scripts | grep mutat lists four mutate scripts, none for this guard. The 12/12 figure is a review-run count whose output was not hashed, hence asserted, not measured.",
+            "failure_scenario": "A later edit weakens a guard rule that no self-test case pins; with no derived mutation set nothing rescans it, so the survivor is found only by a human."
+          }
+        },
+        {
+          "ruleId": "PRREV-DUP-001",
+          "level": "note",
+          "message": {
+            "text": "The duplication scan found no re-implementation. Its only non-name-collision hits are the filenames of this guard and its debt file on origin/fix/4646-mutants-restore (RESTORE PR #4648), which carries the same two files by design. Remaining hits are the identifier check_rows in unrelated python/rust experiments."
+          },
+          "locations": [
+            {
+              "physicalLocation": {
+                "artifactLocation": {
+                  "uri": "scripts/check_mutants_debt_ratchet.sh"
+                },
+                "region": {
+                  "startLine": 1
+                }
+              }
+            }
+          ],
+          "properties": {
+            "precision_class": "advisory",
+            "grounding": "measured",
+            "command": [
+              "scripts/pr_review_duplication_scan.sh",
+              "--base",
+              "00052c01284caa74c70b287088a79c6dee2959b9",
+              "--head",
+              "bd851543c6d65fb6b09d46425669afa944fddc3c",
+              "--json",
+              "/tmp/dup4647k.json"
+            ],
+            "exit_code": 0,
+            "stdout_sha256": "9c12f96738a6427e56a7899c856f8021c96a64b2888e8ed253a0eba4a32422c7",
+            "rationale_note": "stdout_sha256 is over the scan's JSON output file",
+            "failure_scenario": "If #4648 merged first with divergent copies of these two files, #4647's rebase would conflict on both; expected, as the restore branch deletes the ratchet."
+          }
+        },
+        {
+          "ruleId": "PMAT-4651-VERIFY",
+          "level": "note",
+          "message": {
+            "text": "PMAT-4651 verified: exactly five 'expires' lines move 2026-09-30 -> 2026-10-15 in derived_expiries.json (rows 13,15,18,19,21); scripts/lib/spec_conformance.py untouched; spec_conformance.sh exits 0 today; with SPEC_CONFORMANCE_TODAY=2026-10-16 it exits 1 with D6 for rows 13,15,18,19,21 and 22 (row 22 was already 2026-10-15 at the base, not moved). Cosmetic: row 21's prose runs 'impl-PMAT-3556-receipt.md` Re-dated by...' with no sentence break."
+          },
+          "locations": [
+            {
+              "physicalLocation": {
+                "artifactLocation": {
+                  "uri": "evidence/parity/derived_expiries.json"
+                },
+                "region": {
+                  "startLine": 72
+                }
+              }
+            }
+          ],
+          "properties": {
+            "precision_class": "advisory",
+            "grounding": "measured",
+            "command": [
+              "env",
+              "SPEC_CONFORMANCE_TODAY=2026-10-16",
+              "bash",
+              "scripts/spec_conformance.sh"
+            ],
+            "exit_code": 1,
+            "stdout_sha256": "0af21075b85114ed4ea5f0119ae3265e7311c6a0ef0270299cd14922347a247f",
+            "failure_scenario": "If a sixth row had moved or the andon were weakened, the 2026-10-16 run would not show D6 for exactly the expired rows; it does."
+          }
+        }
+      ]
+    },
+    {
+      "tool": {
+        "driver": {
+          "name": "cargo-mutants",
+          "informationUri": "https://github.com/paiml/aprender",
+          "rules": []
+        }
+      },
+      "invocations": [
+        {
+          "executionSuccessful": true,
+          "commandLine": "scoped guard mutation: 12 sed mutants of scripts/check_mutants_debt_ratchet.sh vs its --self-test, run from scratch copies in /tmp/mutscratch; 12 attempted, 12 killed"
+        }
+      ],
+      "results": []
+    },
+    {
+      "tool": {
+        "driver": {
+          "name": "antigravity",
+          "informationUri": "https://github.com/paiml/aprender",
+          "rules": []
+        }
+      },
+      "invocations": [
+        {
+          "executionSuccessful": true,
+          "commandLine": "agy -p <prompt file> --model gemini-3.1-pro-high --output-format json --json-schema .pr-review-schema.json --print-timeout 20m --dangerously-skip-permissions (disposable git-archive tree at bd851543c6; diff file omits the debt TSV and prior receipts)"
+        }
+      ],
+      "results": []
+    }
+  ]
+}

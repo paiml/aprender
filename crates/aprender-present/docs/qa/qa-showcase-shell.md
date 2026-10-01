@@ -2,7 +2,7 @@
 
 **Date:** November 30, 2025
 **Subject:** `examples/showcase_shell.rs`
-**Command:** `cargo run -p presentar --example showcase_shell`
+**Command:** `cargo run -p aprender-present-lib --example showcase_shell`
 
 ## 1. Execution Verification
 

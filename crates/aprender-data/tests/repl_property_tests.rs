@@ -238,7 +238,7 @@ proptest! {
         }
         let export = session.export_history();
         // Export should contain the session export header
-        prop_assert!(export.contains("alimentar session export"));
+        prop_assert!(export.contains("aprender-data session export"));
     }
 }
 

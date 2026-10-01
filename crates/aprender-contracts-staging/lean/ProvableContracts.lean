@@ -19,18 +19,22 @@ import ProvableContracts.Defs.Elementwise
 import ProvableContracts.Defs.Embedding
 import ProvableContracts.Defs.FFT
 import ProvableContracts.Defs.GEMV
+import ProvableContracts.Defs.GPU
 import ProvableContracts.Defs.Gelu
+import ProvableContracts.Defs.Image
 import ProvableContracts.Defs.LU
 import ProvableContracts.Defs.LayerNorm
 import ProvableContracts.Defs.MatMul
 import ProvableContracts.Defs.QR
 import ProvableContracts.Defs.Quantization
 import ProvableContracts.Defs.RMSNorm
+import ProvableContracts.Defs.Rand
 import ProvableContracts.Defs.SVD
 import ProvableContracts.Defs.Sampling
 import ProvableContracts.Defs.Sigmoid
 import ProvableContracts.Defs.Softmax
 import ProvableContracts.Defs.Sparse
+import ProvableContracts.Defs.Tensor
 import ProvableContracts.Defs.Transpose
 import ProvableContracts.Theorems.AbsolutePosition.Core
 import ProvableContracts.Theorems.AdamW.WeightDecay
@@ -43,10 +47,10 @@ import ProvableContracts.Theorems.BatchNorm.Centering
 import ProvableContracts.Theorems.BatchNorm.DenominatorPositive
 import ProvableContracts.Theorems.BatchNorm.EvalUsesRunning
 import ProvableContracts.Theorems.BatchNorm.RunningVariance
+import ProvableContracts.Theorems.CMAES.CovariancePositiveDefinite
+import ProvableContracts.Theorems.CMAES.CovarianceSymmetry
 import ProvableContracts.Theorems.CMAES.StepSizePositive
 import ProvableContracts.Theorems.CMAES.WeightsNormalized
-import ProvableContracts.Theorems.CMAES.CovarianceSymmetry
-import ProvableContracts.Theorems.CMAES.CovariancePositiveDefinite
 import ProvableContracts.Theorems.Cholesky.SPD
 import ProvableContracts.Theorems.Conv1D.Bound
 import ProvableContracts.Theorems.Conv1D.Linearity
@@ -60,18 +64,18 @@ import ProvableContracts.Theorems.Elementwise.AddCommutative
 import ProvableContracts.Theorems.Elementwise.LeakyReLU
 import ProvableContracts.Theorems.Elementwise.MulScalarAssoc
 import ProvableContracts.Theorems.Elementwise.ReLUNonNeg
+import ProvableContracts.Theorems.Embedding.Algebra
 import ProvableContracts.Theorems.Embedding.Bounds
 import ProvableContracts.Theorems.Embedding.Determinism
 import ProvableContracts.Theorems.Embedding.Finite
 import ProvableContracts.Theorems.Embedding.Rows
 import ProvableContracts.Theorems.Embedding.Shape
-import ProvableContracts.Theorems.Embedding.Algebra
 import ProvableContracts.Theorems.FFT.Parseval
 import ProvableContracts.Theorems.FP8.Interchange
 import ProvableContracts.Theorems.GEMV.Correctness
+import ProvableContracts.Theorems.Gelu.GeluBounds
 import ProvableContracts.Theorems.Gelu.GeluMono
 import ProvableContracts.Theorems.Gelu.GeluSign
-import ProvableContracts.Theorems.Gelu.GeluBounds
 import ProvableContracts.Theorems.Gelu.GeluZero
 import ProvableContracts.Theorems.Gqa.ConvexBound
 import ProvableContracts.Theorems.Gqa.Distribution
@@ -96,11 +100,11 @@ import ProvableContracts.Theorems.Sampling.TemperatureScaling
 import ProvableContracts.Theorems.Sampling.TopK
 import ProvableContracts.Theorems.Sigmoid.SigmoidBounded
 import ProvableContracts.Theorems.Sigmoid.SigmoidSymmetry
-import ProvableContracts.Theorems.Sigmoid.SiluZero
-import ProvableContracts.Theorems.Sigmoid.SwigluZero
 import ProvableContracts.Theorems.Sigmoid.SiluLowerBound
 import ProvableContracts.Theorems.Sigmoid.SiluMonotone
+import ProvableContracts.Theorems.Sigmoid.SiluZero
 import ProvableContracts.Theorems.Sigmoid.SwigluGating
+import ProvableContracts.Theorems.Sigmoid.SwigluZero
 import ProvableContracts.Theorems.Softmax.Bounded
 import ProvableContracts.Theorems.Softmax.Monotonicity
 import ProvableContracts.Theorems.Softmax.NonNegativity
@@ -108,3 +112,11 @@ import ProvableContracts.Theorems.Softmax.PartitionOfUnity
 import ProvableContracts.Theorems.Softmax.ShiftInvariance
 import ProvableContracts.Theorems.Sparse.SpMVLinear
 import ProvableContracts.Theorems.Transpose.Involution
+
+-- Modules nothing imported, so `lake build` never compiled them and leanchecker never
+-- re-checked their theorems (#4244). scripts/check_lean_modules_reachable.sh keeps every
+-- module under ProvableContracts/ reachable from here.
+import ProvableContracts.Defs.GPU
+import ProvableContracts.Defs.Image
+import ProvableContracts.Defs.Rand
+import ProvableContracts.Defs.Tensor

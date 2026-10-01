@@ -224,7 +224,7 @@ This checklist applies the Toyota Way principles to software quality assurance, 
 | 74 | **S3 compatibility**: Works with AWS, MinIO, R2 | ☐ | Test all S3-compatible backends |
 | 75 | **API stability**: Public API versioned, deprecations warned | ☐ | Check for `#[deprecated]` usage |
 | 76 | **Error messages helpful**: Errors guide users to solutions | ☐ | Review error message quality |
-| 77 | **CLI user-friendly**: Help text clear, examples provided | ☐ | Test `alimentar --help` output |
+| 77 | **CLI user-friendly**: Help text clear, examples provided | ☐ | Test `aprender-data --help` output |
 
 ---
 

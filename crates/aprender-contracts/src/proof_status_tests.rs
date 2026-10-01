@@ -997,7 +997,7 @@ fn lean_scan_in_tree_is_primary_and_self_sufficient() {
                 stack.push(path);
             } else if path.extension().is_some_and(|e| e == "lean") {
                 if let Ok(content) = std::fs::read_to_string(&path) {
-                    if !content.contains("sorry") {
+                    if !lean_has_sorry(&content) {
                         sorry_free += 1;
                     }
                 }
@@ -1130,4 +1130,327 @@ fn na_obligations_grant_no_lean_credit() {
     assert!(!is_lean_proved_with_grounding(&c, 0));
     let one = contract_with_na_obligations(1, 3, 4, 4);
     assert!(!is_lean_proved_with_grounding(&one, 1));
+}
+
+/// PVL-001 EV-3 (quorum round 4, measured): "every obligation is proved or not
+/// applicable" must not be satisfied VACUOUSLY. All obligations not applicable and none
+/// grounded is not L4 (ONT-2a: `grounded > 0`); with Kani and full falsification
+/// coverage it is L3. ProofLevel::L4's method says "with at least one proved".
+#[test]
+fn level_all_not_applicable_is_not_l4() {
+    let c = contract_with_lean_na(5, 0, 5);
+    assert_eq!(
+        compute_proof_level_with_grounding(&c, None, 0),
+        ProofLevel::L3
+    );
+}
+
+/// PVL-001 EV-3 (quorum round 4, measured): L5 needs at least one binding. A fully
+/// grounded contract with ZERO bindings is L4, not L5 (`is_fully_bound` requires a
+/// non-zero total). ProofLevel::L5's method says "at least one binding".
+#[test]
+fn level_l5_needs_at_least_one_binding() {
+    let c = contract_with_lean(3, 3);
+    assert_eq!(
+        compute_proof_level_with_grounding(&c, Some((0, 0)), 3),
+        ProofLevel::L4
+    );
+    assert_eq!(
+        compute_proof_level_with_grounding(&c, Some((1, 1)), 3),
+        ProofLevel::L5
+    );
+}
+
+// ── EV-8b (#4082): L4 credit from the discharge summary, not the YAML ──
+
+fn discharged_of(theorems: &[&str]) -> crate::discharge::summary::Discharged {
+    crate::discharge::summary::Discharged {
+        theorems: theorems.iter().map(|t| (*t).to_string()).collect(),
+        withheld: None,
+        ..Default::default()
+    }
+}
+
+fn contract_naming_theorems(total: u32) -> Contract {
+    let mut c = contract_with_lean(total, total);
+    for (i, eq) in c.equations.values_mut().enumerate() {
+        eq.lean_theorem = Some(format!("Gelu.t{i}"));
+    }
+    c
+}
+
+#[test]
+fn ev8b_a_yaml_claim_the_summary_does_not_list_is_not_l4() {
+    let c = contract_naming_theorems(1);
+    let none = count_discharged_for_contract(&c, &discharged_of(&[]));
+    assert_eq!(none, 0);
+    assert!(!is_lean_proved_with_grounding(&c, none));
+    assert!(is_l4_self_declared_with_grounding(&c, none));
+}
+
+#[test]
+fn ev8b_a_summary_listing_every_named_theorem_grounds_l4() {
+    let c = contract_naming_theorems(1);
+    let names: Vec<String> = (0..c.equations.len())
+        .map(|i| format!("ProvableContracts.Gelu.t{i}"))
+        .collect();
+    let refs: Vec<&str> = names.iter().map(String::as_str).collect();
+    let n = count_discharged_for_contract(&c, &discharged_of(&refs));
+    assert_eq!(n as usize, c.equations.len());
+    assert!(is_lean_proved_with_grounding(&c, n));
+    assert!(!is_l4_self_declared_with_grounding(&c, n));
+}
+
+#[test]
+fn ev8b_a_withheld_summary_grants_nothing() {
+    let c = contract_naming_theorems(1);
+    let d = crate::discharge::summary::Discharged {
+        theorems: std::collections::BTreeSet::new(),
+        withheld: Some("stale discharge".into()),
+        ..Default::default()
+    };
+    assert_eq!(count_discharged_for_contract(&c, &d), 0);
+}
+
+// ── ONT-3b (#4073): the refinement filter on the discharge grant ──
+
+#[test]
+fn refine_without_a_formalization_record_grants_nothing_l4() {
+    let dir = tempfile::tempdir().expect("tempdir");
+    let mut d = discharged_of(&["ProvableContracts.Softmax.sum_one"]);
+    d.module_of.insert(
+        "ProvableContracts.Softmax.sum_one".into(),
+        "ProvableContracts/Softmax.lean".into(),
+    );
+    super::refine(dir.path(), &mut d);
+    assert!(d.theorems.is_empty(), "no model covers the module: not L4");
+    assert!(d.unrefined.contains("ProvableContracts.Softmax.sum_one"));
+}
+
+#[test]
+fn refine_leaves_an_empty_grant_untouched() {
+    let dir = tempfile::tempdir().expect("tempdir");
+    let mut d = discharged_of(&[]);
+    super::refine(dir.path(), &mut d);
+    assert!(d.theorems.is_empty() && d.unrefined.is_empty());
+}
+
+#[test]
+fn workspace_root_is_the_nearest_workspace_manifest() {
+    let dir = tempfile::tempdir().expect("tempdir");
+    let ws = dir.path().join("ws");
+    let inner = ws.join("crates/c/lean");
+    std::fs::create_dir_all(&inner).expect("mkdir");
+    std::fs::write(ws.join("Cargo.toml"), "[workspace]\nmembers = []\n").expect("write");
+    std::fs::write(ws.join("crates/c/Cargo.toml"), "[package]\nname = \"c\"\n").expect("write");
+    let got = super::workspace_root(&inner);
+    assert_eq!(got, std::fs::canonicalize(&ws).expect("canon"));
+}
+
+/// ONT-3b (#4073) falsifier for the call site: a green, fresh, closed discharge beside a Lean dir that has no
+/// formalization record must reach the caller with NOTHING granted. If `grounding_from` skipped `refine`, the
+/// summary's theorem would come back as L4 credit.
+#[test]
+fn grounding_applies_refinement_to_a_green_discharge() {
+    use crate::discharge::summary::{Module, Summary, SUMMARY_FILE};
+    let root = tempfile::tempdir().expect("tempdir");
+    let lean = root.path().join("lean");
+    std::fs::create_dir_all(&lean).expect("mkdir");
+    let s = Summary {
+        tree_sha: Some("t".into()),
+        build_exit: Some(0),
+        lake_exit: Some(0),
+        leanchecker_exit: Some(0),
+        axioms_ok: true,
+        escapes_ok: true,
+        challenges_closed: Some("1/1".into()),
+        modules: vec![Module {
+            path: "ProvableContracts/Softmax.lean".into(),
+            blake3: "b".into(),
+            theorems: vec!["ProvableContracts.Softmax.sum_one".into()],
+        }],
+        ..Summary::default()
+    };
+    std::fs::write(
+        root.path().join(SUMMARY_FILE),
+        serde_json::to_string(&s).expect("json"),
+    )
+    .expect("write summary");
+    let g = super::grounding_from(&[lean.as_path()], |_| Some("t".into()));
+    assert!(matches!(g.source, super::L4Source::Discharge));
+    assert!(
+        g.discharged.withheld.is_none(),
+        "fixture must be a granting discharge, else the test proves nothing: {:?}",
+        g.discharged.withheld
+    );
+    assert!(
+        !g.discharged.grants("ProvableContracts.Softmax.sum_one"),
+        "no model covers the module, so the call site must drop its credit"
+    );
+    assert!(g
+        .discharged
+        .unrefined
+        .contains("ProvableContracts.Softmax.sum_one"));
+}
+
+// ── #4351: the sorry scan reads TOKENS, not bytes ─────────────────
+
+/// The case table for `lean_has_sorry`. A comment that only mentions `sorry` grounds; every other
+/// row either admits a hole or is shaped to HIDE one from a scanner that gets comments wrong.
+#[test]
+fn lean_sorry_token_case_table() {
+    let rows: &[(&str, bool, &str)] = &[
+        // grounds (false): the word is commentary only
+        ("theorem t : True := trivial", false, "no sorry at all"),
+        (
+            "-- sorry here\ntheorem t : True := trivial",
+            false,
+            "line comment",
+        ),
+        (
+            "/-- compiles sorry-free -/\ntheorem t : True := trivial",
+            false,
+            "doc comment (#4351)",
+        ),
+        (
+            "/-! module: sorry-free -/\ntheorem t : True := trivial",
+            false,
+            "module doc comment",
+        ),
+        (
+            "/- a /- b -/ sorry -/\ntheorem t : True := trivial",
+            false,
+            "sorry inside a NESTED comment",
+        ),
+        (
+            "theorem sorry_free : True := trivial",
+            false,
+            "identifier sorry_free",
+        ),
+        (
+            "theorem t' : True := trivial -- no sorry",
+            false,
+            "trailing line comment at EOF",
+        ),
+        // denies (true): a real hole
+        ("theorem t : False := sorry", true, "term sorry"),
+        ("theorem t : False := by\n  sorry", true, "tactic sorry"),
+        (
+            "theorem t : False := by sorry -- ok",
+            true,
+            "sorry before a comment",
+        ),
+        (
+            "/- a /- b -/ -/ theorem t : False := sorry",
+            true,
+            "sorry after a nested comment closes",
+        ),
+        (
+            "def s := \"sorry\"",
+            true,
+            "sorry in a string counts (code, not commentary)",
+        ),
+        ("def s := r#\"x \" sorry\"#", true, "sorry in a raw string"),
+        // denies (true): a real hole a naive comment stripper would hide
+        (
+            "def s := \"--\"\ntheorem t : False := by sorry",
+            true,
+            "string holding -- is not a comment",
+        ),
+        (
+            "def s := \"/-\" theorem t : False := sorry",
+            true,
+            "string holding /- is not a comment",
+        ),
+        (
+            "def c := '\"' theorem t : False := sorry -- \"",
+            true,
+            "char literal '\"' opens no string",
+        ),
+        (
+            "def s := \"a\\\" -- b\" theorem t : False := sorry",
+            true,
+            "escaped quote keeps the string open",
+        ),
+        // denies (true): does not compile, so proves nothing
+        (
+            "/- unterminated\ntheorem t : True := trivial",
+            true,
+            "EOF inside a block comment",
+        ),
+        ("def s := \"unterminated", true, "EOF inside a string"),
+    ];
+    for (src, want, why) in rows {
+        assert_eq!(lean_has_sorry(src), *want, "{why}: {src:?}");
+    }
+}
+
+/// The three in-tree files #4351 names are sorry-free except in their doc comments, and each now
+/// grounds; `Theorems.<Domain>.<Stem>` is registered for the domain.file citation form.
+#[test]
+fn lean_scan_grounds_doc_comment_sorry_and_domain_file_form() {
+    let root = std::path::Path::new(env!("CARGO_MANIFEST_DIR"))
+        .join("../../crates/aprender-contracts-staging/lean/ProvableContracts/Theorems");
+    for rel in [
+        "TensorTranspose/Roundtrip.lean",
+        "Metrics/RegressionAnalytic.lean",
+        "AbsolutePosition/Core.lean",
+    ] {
+        let content = std::fs::read_to_string(root.join(rel)).expect("in-tree lean file");
+        assert!(
+            content.contains("sorry"),
+            "{rel}: the byte-level trap this test pins"
+        );
+        assert!(
+            !lean_has_sorry(&content),
+            "{rel}: its only sorry is commentary"
+        );
+    }
+
+    let base = tempfile::tempdir().expect("tempdir");
+    let dom = base
+        .path()
+        .join("ProvableContracts/Theorems/GgufExportSymmetry");
+    std::fs::create_dir_all(&dom).expect("mkdir");
+    std::fs::write(
+        dom.join("Roundtrip.lean"),
+        "/-- sorry-free -/\ntheorem dtype_roundtrip : True := trivial\n",
+    )
+    .expect("write");
+    let holed = base.path().join("ProvableContracts/Theorems/Holed");
+    std::fs::create_dir_all(&holed).expect("mkdir");
+    std::fs::write(
+        holed.join("Open.lean"),
+        "theorem open_goal : False := by sorry\n",
+    )
+    .expect("write");
+
+    let names = scan_theorem_base(base.path().to_str().expect("utf8 path"));
+    assert!(
+        names.contains("Theorems.GgufExportSymmetry.Roundtrip"),
+        "domain.file form: {names:?}"
+    );
+    assert!(names.contains("Theorems.DtypeRoundtrip"));
+    assert!(
+        !names
+            .iter()
+            .any(|n| n.contains("Holed") || n.contains("OpenGoal")),
+        "a real sorry grounds nothing"
+    );
+}
+
+/// `sorry` is a token only with no identifier byte before it; at byte 0 there is nothing before it (#4587).
+#[test]
+fn sorry_token_at_checks_the_byte_before() {
+    assert!(super::sorry_token_at(b"sorry", 0));
+    assert!(super::sorry_token_at(b" sorry", 1));
+    assert!(!super::sorry_token_at(b"xsorry", 1));
+}
+
+/// A nested `/-` advances two bytes past where it starts, not to twice its offset (#4587).
+#[test]
+fn step_block_comment_opens_a_nested_comment_two_bytes_on() {
+    assert_eq!(super::step_block_comment(b"xxx/-", 3, 1), (5, 2));
+    assert_eq!(super::step_block_comment(b"xxx-/", 3, 2), (5, 1));
+    assert_eq!(super::step_block_comment(b"xxxab", 3, 1), (4, 1));
 }

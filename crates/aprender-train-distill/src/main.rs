@@ -11,7 +11,7 @@ use entrenar_distill::{config::DistillConfig, estimate_memory, run, validation::
 use std::path::PathBuf;
 
 #[derive(Parser)]
-#[command(name = "entrenar-distill")]
+#[command(name = "aprender-train-distill")]
 #[command(about = "End-to-end knowledge distillation CLI")]
 #[command(version = concat!(env!("CARGO_PKG_VERSION"), " (", env!("APR_GIT_SHA"), ")"))]
 struct Cli {
@@ -132,7 +132,7 @@ fn run_command(
     if !cli.is_quiet() {
         println!(
             "{}",
-            entrenar_common::cli::styles::header("entrenar-distill")
+            entrenar_common::cli::styles::header("aprender-train-distill")
         );
     }
 
@@ -396,7 +396,7 @@ fn export_gguf(
         let _ = (weights, shapes, output, quantize);
         Err(entrenar_common::EntrenarError::HuggingFace {
             message: "GGUF export requires the 'hub' feature. \
-                      Rebuild with: cargo build -p entrenar-distill --features hub"
+                      Rebuild with: cargo build -p aprender-train-distill --features hub"
                 .to_string(),
         })
     }

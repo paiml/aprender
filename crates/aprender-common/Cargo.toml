@@ -12,7 +12,14 @@ categories = ["command-line-utilities", "text-processing"]
 [lib]
 name = "batuta_common"
 
+[features]
+default = []
+# #3745 S1: typed CLI argument roles (`batuta_common::cli_roles`). Optional so the
+# default build of this crate stays clap-free.
+cli-roles = ["dep:clap"]
+
 [dependencies]
+clap = { workspace = true, optional = true }
 lz4_flex = { version = "0.11", default-features = false, features = ["safe-encode", "safe-decode"] }
 zstd = { version = "0.13", default-features = false }
 

@@ -173,7 +173,7 @@ The TUI Viewer MUST be accessible via the standard CLI.
 
 **Command:**
 ```bash
-alimentar view <PATH> [OPTIONS]
+aprender-data view <PATH> [OPTIONS]
 ```
 
 **Options:**
@@ -183,7 +183,7 @@ alimentar view <PATH> [OPTIONS]
 
 **Example:**
 ```bash
-alimentar view ./data.parquet --search "PathCompleter"
+aprender-data view ./data.parquet --search "PathCompleter"
 ```
 
 ## 2. Design Principles

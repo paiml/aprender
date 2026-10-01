@@ -1,10 +1,10 @@
 {
   "cc": "89",
-  "commit": "49fe9155a3672776d53b53bd9432636e2156f779",
+  "commit": "f6fa4cf0cf2424a6e69940a457af5fe8fd057ebc",
   "exit": 0,
   "host": "noah-Lambda-Vector",
-  "max_m": 16,
-  "sha256": "e74c63f31b753e18fdee1e6ba3d1dce3a1282d73d62bf61cb70b29bb58919cd1",
-  "started_utc": "2026-09-17T02:10:15Z",
+  "max_m": 14,
+  "sha256": "9fde772f14bceafefae2fb53fdfa8c471d9ad7b54127bbfacd193b5b7cbb9f7b",
+  "started_utc": "2026-09-27T05:50:00Z",
   "status": "PASS"
 }

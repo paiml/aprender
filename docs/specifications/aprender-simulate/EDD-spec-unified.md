@@ -97,7 +97,7 @@ Every YAML file MUST validate against the authoritative simular schema defined i
 
 ```bash
 # Validation is MANDATORY before any simulation runs
-simular validate experiment.yaml
+aprender-simulate validate experiment.yaml
 ```
 
 ---
@@ -382,9 +382,9 @@ jobs:
     steps:
       - uses: actions/checkout@v4
       - name: Validate all YAML experiments
-        run: simular validate examples/experiments/*.yaml
+        run: aprender-simulate validate examples/experiments/*.yaml
       - name: Validate all EMCs
-        run: simular emc-check docs/emc/*.emc.yaml
+        run: aprender-simulate emc-check docs/emc/*.emc.yaml
 
   probar-tests:
     runs-on: ubuntu-latest
@@ -423,7 +423,7 @@ jobs:
     steps:
       - uses: actions/checkout@v4
       - name: Run all experiments with falsification checks
-        run: simular run examples/experiments/*.yaml --verify-falsification
+        run: aprender-simulate run examples/experiments/*.yaml --verify-falsification
 ```
 
 ### 5.4 Quality Grades
@@ -483,13 +483,13 @@ governing_equation:
 
 ```bash
 # Validate YAML
-simular validate examples/experiments/my_simulation.yaml
+aprender-simulate validate examples/experiments/my_simulation.yaml
 
 # Run simulation
-simular run examples/experiments/my_simulation.yaml
+aprender-simulate run examples/experiments/my_simulation.yaml
 
 # Export replay
-simular run examples/experiments/my_simulation.yaml --export-replay
+aprender-simulate run examples/experiments/my_simulation.yaml --export-replay
 
 # Generate shareable outputs
 probar export --wasm --mp4 examples/experiments/my_simulation.yaml

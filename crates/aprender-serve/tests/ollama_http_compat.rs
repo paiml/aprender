@@ -49,7 +49,8 @@ async fn api_chat_is_routed_and_returns_ollama_shape() {
         serde_json::json!({
             "model": "apr",
             "messages": [{"role": "user", "content": "hi"}],
-            "stream": false
+            "stream": false,
+            "options": {"num_predict": 1}
         }),
     );
 
@@ -90,7 +91,8 @@ async fn api_generate_is_routed_and_returns_ollama_shape() {
         serde_json::json!({
             "model": "apr",
             "prompt": "2+2=",
-            "stream": false
+            "stream": false,
+            "options": {"num_predict": 1}
         }),
     );
 
@@ -140,10 +142,13 @@ async fn api_generate_is_routed_and_returns_ollama_shape() {
 /// roadmap names.
 #[tokio::test]
 async fn api_chat_three_turn_conversation_reaches_the_model_in_full() {
+    // num_predict 1: the oracle is PROMPT tokens, so decode length adds nothing
+    // but debug-build seconds (this test was >120s on x86-main).
     let last_turn_only = serde_json::json!({
         "model": "apr",
         "messages": [{"role": "user", "content": "And what is the third?"}],
-        "stream": false
+        "stream": false,
+        "options": {"num_predict": 1}
     });
     let three_turns = serde_json::json!({
         "model": "apr",
@@ -152,7 +157,8 @@ async fn api_chat_three_turn_conversation_reaches_the_model_in_full() {
             {"role": "assistant", "content": "The first letter of the alphabet is A."},
             {"role": "user",      "content": "And what is the third?"}
         ],
-        "stream": false
+        "stream": false,
+        "options": {"num_predict": 1}
     });
 
     async fn prompt_tokens(body: serde_json::Value) -> (u64, serde_json::Value) {

@@ -507,7 +507,10 @@ mod iq4_nl_device_ab_tests {
         let mut worst_row = 0usize;
         for (row, (g, e)) in got.iter().zip(expected.iter()).enumerate() {
             let rel = (g - e).abs() / e.abs().max(1.0);
-            if !(rel <= worst) {
+            if !matches!(
+                rel.partial_cmp(&worst),
+                Some(std::cmp::Ordering::Less | std::cmp::Ordering::Equal)
+            ) {
                 worst = rel;
                 worst_row = row;
             }
@@ -828,7 +831,10 @@ mod iq4_nl_device_ab_tests {
             let mut worst = (0.0f32, 0usize);
             for (row, (g, e)) in got.iter().zip(expected.iter()).enumerate() {
                 let rel = (g - e).abs() / e.abs().max(1.0);
-                if !(rel <= worst.0) {
+                if !matches!(
+                    rel.partial_cmp(&worst.0),
+                    Some(std::cmp::Ordering::Less | std::cmp::Ordering::Equal)
+                ) {
                     worst = (rel, row);
                 }
             }

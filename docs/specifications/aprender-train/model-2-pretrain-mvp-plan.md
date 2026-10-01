@@ -22,7 +22,7 @@ forward+backward step + one real `.apr` checkpoint on disk".
 ## Non-goals (explicitly deferred)
 
 - Async H2D down-weight streaming (task #24)
-- Full `apr-corpus-ingest run`: HF pull, license-detector, PII scrub, MinHash-LSH
+- Full `aprender-corpus-ingest run`: HF pull, license-detector, PII scrub, MinHash-LSH
   dedup, deterministic train/val split, provenance manifest
 - Mixed-precision `GradScaler` tuning
 - Distributed / tensor-parallel / ZeRO (the crates exist but are not wired)
@@ -68,7 +68,7 @@ forward+backward step + one real `.apr` checkpoint on disk".
 - Yields fixed-length `seq_length+1` sequences.
 - Wraps in `LMBatch::from_sequences`.
 - No MinHash, no license filter, no PII scrub — those belong to
-  `apr-corpus-ingest run`.
+  `aprender-corpus-ingest run`.
 
 ### 4. Swap checkpoint format to APR
 - File: `crates/aprender-train/src/train/transformer_trainer/trainer.rs:519`

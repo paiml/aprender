@@ -1,0 +1,38 @@
+{
+  "ticket": "GH-4175 (shared in-tree helper + dev-dep)",
+  "head": "375e9f157514f19fb1b924b55846f2522acfab06",
+  "diff_sha256": "aca5665cb65c8830d5938a9c6da4fe3b6b445b33154c0ba8f4e48466b80480d0",
+  "brief_sha256": "ad189ecea22be17a3681994e5574be4e41bebc24dd4731f6889ba4c1f83431e5",
+  "brief_bytes": 25116,
+  "brief_note": "brief rebuilt byte-for-byte from quorum-review.sh lines 241-313 (width 1); its byte count equals the agy artifact prompt_bytes; both Claude lanes sha256-ed the file they read",
+  "composition": "cop ruling 2026-09-24: sonnet-5 + 1 agy (gemini-3.1-pro-high) + haiku-4-5; author claude-opus-5-5",
+  "lanes": [
+    {
+      "seat": "agy",
+      "model": "gemini-3.1-pro-high",
+      "verdict": "PASS",
+      "artifact": "quorum-GH-4175.json"
+    },
+    {
+      "seat": "claude",
+      "model": "claude-sonnet-5",
+      "verdict": "PASS",
+      "brief_sha256_reported": "ad189ecea22be17a3681994e5574be4e41bebc24dd4731f6889ba4c1f83431e5",
+      "agent": "a4aeabad6ca7c5493",
+      "nits": [
+        "tree.rs:231 the macro test calls the macro from inside aprender-contracts, so it cannot distinguish caller-capture from a plain fn; the cross-crate case is first exercised when the #4129/#4140/#4149 sites move onto it",
+        "GH-4175.yaml the delivered criterion checkbox is left [ ] (umbrella owner 3a ticks it)"
+      ]
+    },
+    {
+      "seat": "claude",
+      "model": "claude-haiku-4-5",
+      "verdict": "PASS",
+      "brief_sha256_reported": "ad189ecea22be17a3681994e5574be4e41bebc24dd4731f6889ba4c1f83431e5",
+      "agent": "a0344f5000b6362f9",
+      "findings": [],
+      "note": "its commands_run lists cargo test/clippy on lambda although told not to build; its verdict does not rest on them beyond what the receipt measured on gx10"
+    }
+  ],
+  "result": "3/3 PASS"
+}

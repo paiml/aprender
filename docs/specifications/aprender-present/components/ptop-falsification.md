@@ -132,11 +132,11 @@ Both ttop and ptop support `--deterministic` flag (frozen timestamps, fixed seed
 
 ```bash
 # CORRECT: Always use cargo run --release
-cargo run -p presentar-terminal --bin ptop --features ptop --release -- \
+cargo run -p aprender-present-terminal --bin aprender-ptop --features ptop --release -- \
   --render-once --width 120 --height 40
 
 # Deterministic mode (no /proc scan)
-cargo run -p presentar-terminal --bin ptop --features ptop --release -- \
+cargo run -p aprender-present-terminal --bin aprender-ptop --features ptop --release -- \
   --deterministic --render-once --width 120 --height 40
 ```
 

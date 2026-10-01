@@ -1,0 +1,93 @@
+{
+  "ticket": "PMAT-4080",
+  "base": "origin/main",
+  "base_resolved": "aa7c6ef03ee7b7f8d8dc09dc393e97619952d95f",
+  "head": "b4b8759c58cca37e738bce0a40bfe55f9f5ceca9",
+  "diff_sha256": "686e1b2b87a151ff11805ef41dd2f262f8299f45ada3348a93b288a3754f12b5",
+  "brief_sha256": "858a15d1ba9d71eb9ae0af5d3c0e95715ea84cb5aac6a9939c417491d93511a6",
+  "width": 3,
+  "executor": "claude-code",
+  "prompt_mode": "inline",
+  "prompt_bytes": 73639,
+  "author": {
+    "model": "claude-opus-5-5",
+    "family": "claude",
+    "source": "flag"
+  },
+  "agreed": false,
+  "lanes": [
+    {
+      "lane": 1,
+      "status": "SUCCESS",
+      "verdict": "PASS",
+      "summary": "Diff implements PMAT-4080/PVL-001 EV-2 faithfully: pv proof-status --binding now resolves every implemented binding via the verify-bindings resolver, downgrades and lists ghosts under 'GHOST BINDINGS (n)', and rejects (exit 1); --verify-bindings is a true no-op alias. Independently rebuilt the tree and ran it: contracts/binding.yaml -> 1 ghost (rc=1), contracts/aprender/binding.yaml -> exactly the 5 claimed ghosts (rc=1), JSON mode emits valid JSON on stdout with the ghost block/error on stderr. cargo test -p aprender-contracts-cli --test pvl_ghost_binding (4/4) and --lib (98/98) pass, clippy -D warnings clean, fmt clean, pv lint 0 errors, tree_reader_tests registry matches. The dispatch_proof_status_with_binding test change strengthens rather than weakens the assertion (was a vacuous is_ok() on the same 5-ghost fixture, now asserts the specific reject). surface_audit.csv line citations spot-checked accurate against cli.rs. Investigated a theoretical CWD-collision in derive_src_root's legacy 3-parent path (a sibling checkout named 'aprender' exists at /home/noah/src/aprender) but path-arithmetic plus an empirical run from the parent directory show it cannot collide for this repo's actual binding-file layout — not a live defect.",
+      "findings": [],
+      "raw_bytes": 1295,
+      "err_bytes": 0,
+      "envelope_status": "absent",
+      "verdict_source": "walk",
+      "model": "claude-sonnet-5",
+      "model_measured": "claude-sonnet-5",
+      "model_source": "flag",
+      "family": "claude",
+      "role": null
+    },
+    {
+      "lane": 2,
+      "status": "SUCCESS",
+      "verdict": "PASS",
+      "summary": "The diff fully implements PMAT-4080 requirements. `proof-status --binding` now unconditionally resolves all implemented bindings against source via the `verify_bindings` resolver, downgrades and rejects ghost bindings (exit 1, GHOST BINDINGS block printed), and treats `--verify-bindings` as a no-op alias. Three resolver defects fixed: visibility handling (pub(super), pub(in...), etc.), item kinds (struct/enum/type/trait, not just fn), and source root derivation (monorepo fallback to nearest src/ or crates/ ancestor, no longer CWD-sensitive). Comprehensive tests, fixtures, contract, and mutation table verify the fix. All gates pass; no contradictions with ticket.",
+      "findings": [],
+      "raw_bytes": 716,
+      "err_bytes": 0,
+      "envelope_status": "absent",
+      "verdict_source": "walk",
+      "model": "claude-haiku-4-5",
+      "model_measured": "claude-haiku-4-5",
+      "model_source": "flag",
+      "family": "claude",
+      "role": null
+    },
+    {
+      "lane": 3,
+      "status": "SUCCESS",
+      "verdict": "PASS",
+      "summary": "The diff implements exactly what PMAT-4080/PVL-001 EV-2 asks: `pv proof-status --binding` now resolves every implemented binding via the shared verify-bindings resolver, downgrades and lists ghosts under `GHOST BINDINGS (n)`, and exits 1; `--verify-bindings` is a disclosed no-op alias. I rebuilt the tree, ran the new pvl_ghost_binding suite (4/4 pass), the full contracts-cli lib suite (98/0), applied the PR's own claimed bypass mutation (`unresolved = false && …`) and reproduced its exact RED result (2 passed/2 failed on a_ghost_binding_is_a_reject and verify_bindings_is_a_noop_alias), then restored to green. I independently verified the five 'ghost' functions named in dispatch_proof_status_with_binding truly don't exist in source while genuinely being marked status:implemented in contracts/aprender/binding.yaml, and that the control fixture's `main` genuinely exists. `pv lint contracts/`, `cargo fmt --all -- --check`, `check_readme_claims.sh`, and `check_tree_reader_tests.sh` (39 unwired baseline unchanged, new target registered) all reproduce the PR's claims. Spot-checked several of the 54 re-derived cli.rs line citations in the G2.1 audit commit and they are accurate. No CI workflow file touched, no gate weakened, no unrequested behavior found.",
+      "findings": [],
+      "raw_bytes": 1315,
+      "err_bytes": 0,
+      "envelope_status": "absent",
+      "verdict_source": "walk",
+      "model": "claude-sonnet-5",
+      "model_measured": "claude-sonnet-5",
+      "model_source": "flag",
+      "family": "claude",
+      "role": "width"
+    }
+  ],
+  "dissent": [],
+  "dedup": [],
+  "uncovered": [],
+  "coverage_source": "lanes",
+  "partial": true,
+  "partial_reasons": [
+    "lane models: only 2 distinct model ids across 3 lanes (claude-haiku-4-5, claude-sonnet-5) — lanes sharing an id are resamples, not independent reviewers (PMAT-125)",
+    "receipt-lint: same-family lanes refused (PR-REVIEW-SKILL-002) — degraded same-family quorum, 3/3 PASS; arming is the cop's recorded override, never pmat-merge"
+  ],
+  "degraded": "same-family",
+  "round": 3,
+  "fallback": {
+    "why": "agy gemini-3.1-pro-high lane: \"Individual quota reached. Please upgrade your subscription to increase your limits. Resets in 3h3m3s.\" (conversation eca2306d-defb-4fe5-b5a8-f53d5f82c30a, BLIND, 124s)",
+    "rule": "operator via cop 2026-09-24: agy 429 -> sonnet-5 + haiku-4-5 + opus-5.5; author is claude-opus-5-5 so the opus seat is a 2nd independent claude-sonnet-5 sample (lane 3, role width)"
+  },
+  "supersedes": "round 2 (head 4bffbaedf, 3/3 gemini PASS) judged a different diff; this round judges b4b8759c5 after main merge + roadmap aggregate + G2.1 re-audit",
+  "auto_merge": {
+    "checked": false,
+    "note": "cop arms by recorded override; no --pr round was run"
+  },
+  "lanes_all_pass": true,
+  "lint": {
+    "ok": false,
+    "output": "FAIL quorum artifact: lane 1 model 'claude-sonnet-5' is family claude, the SAME family as the author ('claude-opus-5-5'/claude) — a review by the author's own model family is not an independent review (PR-REVIEW-SKILL-002)\nFAIL quorum artifact: lane 2 model 'claude-haiku-4-5' is family claude, the SAME family as the author ('claude-opus-5-5'/claude) — a review by the author's own model family is not an independent review (PR-REVIEW-SKILL-002)\nFAIL quorum artifact: lane 3 model 'claude-sonnet-5' is family claude, the SAME family as the author ('claude-opus-5-5'/claude) — a review by the author's own model family is not an independent review (PR-REVIEW-SKILL-002)"
+  }
+}

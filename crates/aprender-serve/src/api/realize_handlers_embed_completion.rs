@@ -538,6 +538,7 @@ async fn try_batch_completion(
         max_tokens,
         temperature,
         top_k: crate::infer::sampling_top_k(temperature, None),
+        stop_tokens: completion_stop_tokens(tokenizer, state.model_eos_token_id()),
         response_tx,
         submitted_at: std::time::Instant::now(),
     };
@@ -567,6 +568,44 @@ async fn try_batch_completion(
         // The batch arm's response carries no backend flag.
         None,
     )))
+}
+
+/// Special-token markers that end a generation when a model spells them out as
+/// ordinary text tokens (`"<|im"`, `"_end|>"`), so the EOS stop token never fires
+/// (aprender#4344). A whole special token decodes to `""` and never needs this.
+///
+/// These are the special-token half of `clean_chat_output`'s list, and only that
+/// half: the native routes are RAW completions, where `"\nUser:"` can be
+/// legitimate text.
+pub(crate) const SPECIAL_TOKEN_MARKERS: &[&str] =
+    &["<|im_end|>", "<|endoftext|>", "<|end|>", "</s>", "<|im_start|>"];
+
+/// Byte offset of the earliest [`SPECIAL_TOKEN_MARKERS`] match in `text`.
+pub(crate) fn first_special_marker(text: &str) -> Option<usize> {
+    SPECIAL_TOKEN_MARKERS.iter().filter_map(|m| text.find(m)).min()
+}
+
+/// Cut `text` (prompt echo + completion) at the first special-token marker
+/// that begins AFTER the prompt (aprender#4344).
+///
+/// The native routes return `decode(prompt ++ generated)`, and a
+/// chat-templated prompt carries markers of its own, so the search starts
+/// where `text` stops agreeing with `prompt_text`, the prompt's own decode.
+/// That is normally its full length; it is shorter only when BPE merges
+/// across the boundary.
+pub(crate) fn cut_completion_at_marker(mut text: String, prompt_text: &str) -> String {
+    let mut from = text
+        .bytes()
+        .zip(prompt_text.bytes())
+        .take_while(|(a, b)| a == b)
+        .count();
+    while !text.is_char_boundary(from) {
+        from -= 1;
+    }
+    if let Some(pos) = first_special_marker(&text[from..]) {
+        text.truncate(from + pos);
+    }
+    text
 }
 
 /// PMAT-754: truncate `text` at the EARLIEST occurrence of any stop string (OpenAI
@@ -732,7 +771,7 @@ async fn try_cached_completions(
         max_tokens,
         temperature,
         top_k: crate::infer::sampling_top_k(temperature, None),
-        stop_tokens: Vec::new(),
+        stop_tokens: completion_stop_tokens(&tokenizer, state.model_eos_token_id()),
         trace: state.is_trace_enabled(),
         cancel: cancel.clone(),
         ..Default::default()
@@ -775,6 +814,37 @@ async fn try_cached_completions(
     )))
 }
 
+/// aprender#4339: token ids a raw `/v1/completions` decode stops on.
+///
+/// Both CPU GGUF completion backends passed `stop_tokens: Vec::new()`, so a raw
+/// completion never stopped on a token: on Qwen2.5-coder-1.5b-instruct every one
+/// of 13 CRUX prompts ran past `<answer>…</answer>` into invented `\nHuman:` turns
+/// until `max_tokens`, while llama-server stopped. llama.cpp stops on every
+/// end-of-generation token, not just the one `eos_token_id` names: a Qwen instruct
+/// GGUF declares `<|im_end|>` (151645) as EOS, yet a raw completion ends with
+/// `<|endoftext|>` (151643). So the set is the model's EOS plus every EOG marker
+/// the vocabulary actually has (the GH-373 ChatML pair, and the Llama-3/Gemma
+/// turn ends). A marker absent from the vocabulary adds nothing.
+pub(crate) fn completion_stop_tokens(
+    tokenizer: &crate::tokenizer::BPETokenizer,
+    model_eos: Option<u32>,
+) -> Vec<u32> {
+    const EOG_MARKERS: [&str; 5] = [
+        "<|im_end|>",
+        "<|endoftext|>",
+        "<|eot_id|>",
+        "<|end_of_text|>",
+        "<end_of_turn>",
+    ];
+    let mut ids: Vec<u32> = model_eos.into_iter().collect();
+    for id in EOG_MARKERS.iter().filter_map(|m| tokenizer.get_token_id(m)) {
+        if !ids.contains(&id) {
+            ids.push(id);
+        }
+    }
+    ids
+}
+
 /// Quantized model (CPU GGUF) backend.
 fn try_quantized_completions(
     state: &AppState,
@@ -811,7 +881,7 @@ fn try_quantized_completions(
         max_tokens,
         temperature,
         top_k: crate::infer::sampling_top_k(temperature, None),
-        stop_tokens: Vec::new(),
+        stop_tokens: completion_stop_tokens(&tokenizer, state.model_eos_token_id()),
         trace: state.is_trace_enabled(),
         cancel: cancel.clone(),
         ..Default::default()

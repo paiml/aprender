@@ -39,7 +39,7 @@ The `--deterministic` flag enables fully reproducible output:
 
 ```bash
 # Run ptop with deterministic data (for testing/screenshots)
-ptop --deterministic
+aprender-ptop --deterministic
 
 # Run tests with fixed seed
 PRESENTAR_TEST_SEED=42 cargo test
@@ -77,7 +77,7 @@ max_shrink_iters = 10000
 ```bash
 # Verify deterministic mode produces identical output
 for i in {1..10}; do
-  ptop --deterministic --once > /tmp/out$i.txt
+  aprender-ptop --deterministic --once > /tmp/out$i.txt
 done
 md5sum /tmp/out*.txt  # All should match
 ```

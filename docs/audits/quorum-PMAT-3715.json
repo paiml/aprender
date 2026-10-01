@@ -1,16 +1,17 @@
 {
   "ticket": "PMAT-3715",
-  "base": "origin/main",
-  "base_resolved": "origin/main",
-  "base_note": "no origin/origin/main exists; judged against the local ref",
-  "head": "84289cb7ba38adf96c0a1c5f836eb84ccb8d0646",
-  "diff_sha256": "9df958d287befbf36a6b50be55984468291262bf8a3cf2cf9507b584e2f5676b",
+  "base": "origin/split/ont10-rest-0.70",
+  "base_resolved": "origin/split/ont10-rest-0.70",
+  "base_note": "no origin/origin/split/ont10-rest-0.70 exists; judged against the local ref",
+  "head": "33b032506af6cb0300815e499ba9109dbda76a2c",
+  "diff_sha256": "d69e5fbd0a41da0b3f37e0f695a547ee58cf4e3ae8a4c4fed92015668801d74a",
   "width": 3,
   "executor": "agy",
   "prompt_mode": "file",
-  "prompt_bytes": 291117,
+  "prompt_bytes": 103770,
+  "prompt_sha256": "8fbdb9ff2c4381dca7e69a1b7fc21d58116ff831bb58f14d08dcc66f5284a975",
   "author": {
-    "model": "claude-opus-5",
+    "model": "claude-sonnet-5-5",
     "family": "claude",
     "source": "flag"
   },
@@ -20,18 +21,115 @@
       "lane": 1,
       "status": "SUCCESS",
       "verdict": "PASS",
-      "summary": "The PR accurately and completely implements the PMAT-3715 release-readiness shape and its requested scope additions. I verified the graph extraction logic, the generation of KernelDiffReceipt and TokenizerParityReceipt nodes, the parsing of the GGUF `context_length` for declared rungs, and the correct verification of thinking mode consistency against `enable_thinking` and `thinking_markers`. The release-readiness-v1 shape rigorously checks for missing, skipped, or stale receipts and requires `fallback=false` without providing any waiver path. Furthermore, the `positive_control()` has been successfully added to `extract_controls()` to ensure the gate cannot ship without its control, perfectly fulfilling the ticket requirements without introducing any forbidden behavior.",
+      "summary": "Lane 1 verdict: PASS. I read the whole brief in slices (the ticket, the receipt with its §8 for this diff, and the full diff) and nothing in it refutes the change.\n\nWhat the diff does:\n- **Report-only mode is gone.** `release_readiness.sh` no longer has a report arm. `resolve_mode` refuses `report` whether it comes from the environment or from the committed default. A grep of the script finds no leftover REPORT-ONLY path.\n- **Both decision points refuse a WARN row.** At T-4, `check_publish_preflight.sh` R8 refuses a `WARN R8` row. It also refuses an exit code of 0 that comes without the `#3715 ENFORCE PASS version=V commit=HEAD` line. At T-1, `autopilot.sh` now dies on a WARN row. The receipt says `cut_tag()` requires the ENFORCE PASS line. That check is already in `autopilot.sh` (lines 205-207); this diff does not add it.\n- **Self-tests now expect refusals.** The rows that expected a WARN to pass or continue now expect a refusal: `r8_report_mode_warn_refuses`, the new `r8_rc0_without_enforce_pass_refuses`, and `readiness-warn-stops`. None of them asserts the opposite of the ticket.\n- **The GB10 dense withdrawal is data, not a waiver.** `cells.declaimed` gains entries for qwen2 and qwen3moe on gx10 (qwen3 was already there). The new `declaim_still_claimed` check turns the ladder RED when a rung or long-rung representative still claims a withdrawn (host, arch). It has a planted-RED case and a mutant (`declaim-claimed`). The committed evidence shows rc=0 on the real contract and rc=1 on the planted cases.\n- **The new Rust test proves \"withdrawn is not waived\".** A withdrawn gx10 model is green and owes no gx10 cells, while lambda still owes its cells. Putting the model back in gx10's inventory unmeasured turns it RED naming `/gx10`. Dropping one lambda row turns it RED naming that cell.\n\nThe ticket's \"every model × {lambda, gx10}\" universe is narrowed only through the operator ruling the receipt quotes. There is still no waiver input.\n\nI found two minor issues, neither of which refutes the diff. I did not find the lane-witness token: `paiml-lane-witness` does not exist in this worktree's git dir, so `tree_witness` is left out.",
+      "findings": [
+        {
+          "file": "contracts/model-capability-ladder-v1.yaml",
+          "line": 256,
+          "claim": "The new qwen2/gx10 de-claim `why` text says \"fixed in 0.70.1 (#4590)\". Receipt §8 says the wording is \"planned for 0.70.1\", not \"fixed\". That claim is only true of README and CHANGELOG, not of the contract data.",
+          "grounding": "cited",
+          "fix": "Change \"fixed in 0.70.1\" to \"planned for 0.70.1\" in the declaimed[].why for qwen2/gx10."
+        },
+        {
+          "file": "docs/audits/impl-PMAT-3715-receipt.md",
+          "line": 445,
+          "claim": "The receipt gives no measured result for the one Rust change, the new test in `ont_release_readiness.rs` (\"see the PR thread (re-run at the final head)\"). The test's green status is therefore asserted, not recorded; CI's required checks must supply it.",
+          "grounding": "cited",
+          "fix": "Record the `cargo test -p aprender-contracts-cli --test ont_release_readiness` pass count at the final head in §8."
+        }
+      ],
+      "raw_bytes": 7103,
+      "err_bytes": 0,
+      "envelope_status": "SUCCESS",
+      "verdict_source": "structured_output",
+      "executor": "claude-code",
+      "grounding_check": "parity",
+      "role": "counted",
+      "model": "claude-opus-5-5",
+      "model_measured": "claude-opus-5-5",
+      "model_source": "flag",
+      "family": "claude",
+      "brief_sha256": "8fbdb9ff2c4381dca7e69a1b7fc21d58116ff831bb58f14d08dcc66f5284a975",
+      "trace": {
+        "input_sha256": "0e7fd102e6601d03555c0dd0dd479ae66e33f7d73865e94027506da22bb8e039",
+        "output_sha256": "eed9e065d60dd14fe4e730e43a18bda087f9b47c0febffa1ce9518446e6064fe",
+        "store": null,
+        "store_why": "almacen not provisioned yet (infra-27): the blobs stay in the round's gitignored .lanes dir"
+      },
+      "fallback": {
+        "judged_by": "claude-opus-5-5",
+        "exhausted": false,
+        "attempts": [
+          {
+            "model": "claude-opus-5-5",
+            "family": "claude",
+            "outcome": "answered"
+          }
+        ],
+        "skipped": []
+      }
+    },
+    {
+      "lane": 2,
+      "status": "SUCCESS",
+      "verdict": "PASS",
+      "summary": "The diff implements all ticketed requirements and receipt claims. Report-only mode is deleted from release_readiness.sh; R8 correctly refuses WARN rows and rc=0 without the enforced-pass marker; the ladder gate detects de-claimed models still being claimed; and GB10 dense withdrawals are documented and data-gated. Test coverage is comprehensive, including the critical withdrawn-model scenario.",
       "findings": [],
-      "raw_bytes": 2809,
-      "err_bytes": 100,
+      "raw_bytes": 1701,
+      "err_bytes": 0,
+      "envelope_status": "SUCCESS",
+      "verdict_source": "structured_output",
+      "executor": "claude-code",
+      "grounding_check": "parity",
+      "role": "counted",
+      "model": "claude-haiku-4-5",
+      "model_measured": "claude-haiku-4-5",
+      "model_source": "flag",
+      "family": "claude",
+      "brief_sha256": "8fbdb9ff2c4381dca7e69a1b7fc21d58116ff831bb58f14d08dcc66f5284a975",
+      "trace": {
+        "input_sha256": "8dbcedc3d329baf75e449ad348da55f205b0310f5e6da7a911731175e0e36b9f",
+        "output_sha256": "c3f4c48b7882720bac05ac60e82a15f697e10bf2e8f95e7ae172ed93a62284b4",
+        "store": null,
+        "store_why": "almacen not provisioned yet (infra-27): the blobs stay in the round's gitignored .lanes dir"
+      },
+      "fallback": {
+        "judged_by": "claude-haiku-4-5",
+        "exhausted": false,
+        "attempts": [
+          {
+            "model": "claude-haiku-4-5",
+            "family": "claude",
+            "outcome": "answered"
+          }
+        ],
+        "skipped": []
+      }
+    },
+    {
+      "lane": 3,
+      "status": "SUCCESS",
+      "verdict": "PASS",
+      "summary": "The diff accurately implements the receipt claims. It strictly strengthens the gating logic by enforcing release readiness without waiver or report mode, verifying the enforcement string, properly recording withdrawn cells in data, and adding strict verification to ensure a declaimed arch/host combination is not contradictorily claimed elsewhere. No claims were unbacked, no scope exceeded, and no gates weakened.",
+      "findings": [],
+      "raw_bytes": 3816,
+      "err_bytes": 62,
       "envelope_status": "SUCCESS",
       "verdict_source": "structured_output",
       "grounding_check": "parity",
+      "role": "independent",
       "model": "gemini-3.1-pro-high",
       "model_measured": "gemini-3.1-pro-high",
       "model_source": "measured",
       "family": "gemini",
-      "role": "independent",
+      "executor": "agy",
+      "brief_sha256": "8fbdb9ff2c4381dca7e69a1b7fc21d58116ff831bb58f14d08dcc66f5284a975",
+      "trace": {
+        "input_sha256": "8f0c8a19747d3ab36e8922570d4b4ffad8e8752e98101af16c1431c32fa71289",
+        "output_sha256": "3725796da773be5d66b50f7bc4b631e3858458a0797382e0ffb5067df099cb6a",
+        "store": null,
+        "store_why": "almacen not provisioned yet (infra-27): the blobs stay in the round's gitignored .lanes dir"
+      },
       "fallback": {
         "judged_by": "gemini-3.1-pro-high",
         "exhausted": false,
@@ -44,96 +142,53 @@
         ],
         "skipped": []
       }
-    },
-    {
-      "lane": 2,
-      "status": "SUCCESS",
-      "verdict": "PASS",
-      "summary": "The diff perfectly implements the requirements of PMAT-3715 and the receipt claims. The SHACL shape enforces the required matrix of cells, and all edge cases (missing, skipped, fallback, stale receipts, kernel architecture mismatches, tokenizer parity) are verified in the test suite to turn the gate red and name the cell. There are no doctrinal violations, weakened gates, or unauthorized scopes. The gate works exactly as requested.",
-      "findings": [],
-      "raw_bytes": 3819,
-      "err_bytes": 100,
-      "envelope_status": "SUCCESS",
-      "verdict_source": "structured_output",
-      "grounding_check": "parity",
-      "model": "gemini-3.1-pro-low",
-      "model_measured": "gemini-3.1-pro-low",
-      "model_source": "measured",
-      "family": "gemini",
-      "role": "independent",
-      "fallback": {
-        "judged_by": "gemini-3.1-pro-low",
-        "exhausted": false,
-        "attempts": [
-          {
-            "model": "gemini-3.1-pro-low",
-            "family": "gemini",
-            "outcome": "answered"
-          }
-        ],
-        "skipped": []
-      }
-    },
-    {
-      "lane": 3,
-      "status": "SUCCESS",
-      "verdict": "PASS",
-      "summary": "The audit prompt file was fully read, the repository builds, and all tests pass. No issues found.",
-      "findings": [],
-      "raw_bytes": 1862,
-      "err_bytes": 100,
-      "envelope_status": "SUCCESS",
-      "verdict_source": "structured_output",
-      "model": "gpt-oss-120b-medium",
-      "model_measured": "gpt-oss-120b-medium",
-      "model_source": "measured",
-      "family": "openai",
-      "role": "independent",
-      "fallback": {
-        "judged_by": "gpt-oss-120b-medium",
-        "exhausted": false,
-        "attempts": [
-          {
-            "model": "gpt-oss-120b-medium",
-            "family": "openai",
-            "outcome": "capacity",
-            "reason": "Our servers are experiencing high traffic right now, please try again in a minute. (UNAVAILABLE (code 503): No capacity available for model gpt-oss-120b-medium on the server)"
-          },
-          {
-            "model": "gpt-oss-120b-medium",
-            "family": "openai",
-            "outcome": "answered"
-          }
-        ],
-        "skipped": []
-      }
     }
   ],
   "dissent": [],
-  "dedup": [],
+  "dedup": [
+    {
+      "file": "contracts/model-capability-ladder-v1.yaml",
+      "line": 256,
+      "lanes_agreeing": [
+        1
+      ],
+      "claims": [
+        "The new qwen2/gx10 de-claim `why` text says \"fixed in 0.70.1 (#4590)\". Receipt §8 says the wording is \"planned for 0.70.1\", not \"fixed\". That claim is only true of README and CHANGELOG, not of the contract data."
+      ]
+    },
+    {
+      "file": "docs/audits/impl-PMAT-3715-receipt.md",
+      "line": 445,
+      "lanes_agreeing": [
+        1
+      ],
+      "claims": [
+        "The receipt gives no measured result for the one Rust change, the new test in `ont_release_readiness.rs` (\"see the PR thread (re-run at the final head)\"). The test's green status is therefore asserted, not recorded; CI's required checks must supply it."
+      ]
+    }
+  ],
   "uncovered": [],
   "coverage_source": "lanes",
   "partial": false,
-  "partial_reasons": [
-    "lane 3: grounding NOT COMPARED — structured_output holds a verdict but no single verdict object could be read out of .response (1862 raw bytes), so agy's labels stand unchecked for this lane (PMAT-082)",
-    "lane 3: judged by gpt-oss-120b-medium after falling through gpt-oss-120b-medium (capacity: Our servers are experiencing high traffic right now, please try again in a minute. (UNAVAILABLE (code 503): No capacity available for model gpt-oss-120b-medium on the server)) (PMAT-321)"
-  ],
+  "partial_reasons": [],
   "fallback": {
-    "same_family_width": 1,
+    "same_family_width": 2,
     "chain": [
+      {
+        "model": "claude-opus-5-5",
+        "family": "claude",
+        "disposition": "claude-code",
+        "why": "run by Claude Code on its own budget: a configured seat runs every round, a fallback step only when every non-Claude family is measured out (PMAT-360, operator standing rule)"
+      },
+      {
+        "model": "claude-haiku-4-5",
+        "family": "claude",
+        "disposition": "claude-code",
+        "why": "run by Claude Code on its own budget: a configured seat runs every round, a fallback step only when every non-Claude family is measured out (PMAT-360, operator standing rule)"
+      },
       {
         "model": "gemini-3.1-pro-high",
         "family": "gemini",
-        "disposition": "configured"
-      },
-      {
-        "model": "gemini-3.1-pro-low",
-        "family": "gemini",
-        "disposition": "configured"
-      },
-      {
-        "model": "gpt-oss-120b-medium",
-        "family": "openai",
         "disposition": "configured"
       },
       {
@@ -141,18 +196,6 @@
         "family": "qwen",
         "disposition": "not-run",
         "why": "no quorum.local_lane in the config — the aprender lane has no model to load"
-      },
-      {
-        "model": "claude-opus-4-6-thinking",
-        "family": "claude",
-        "disposition": "width",
-        "why": "same family as the author: at most 1 lane, recorded role width, counted toward no floor (R-15a)"
-      },
-      {
-        "model": "claude-sonnet-4-6",
-        "family": "claude",
-        "disposition": "width",
-        "why": "same family as the author: at most 1 lane, recorded role width, counted toward no floor (R-15a)"
       }
     ],
     "precheck": [
@@ -161,17 +204,50 @@
         "model": "gemini-3.1-pro-high",
         "probe": 1,
         "outcome": "live"
-      },
-      {
-        "family": "openai",
-        "model": "gpt-oss-120b-medium",
-        "probe": 1,
-        "outcome": "live"
       }
     ],
+    "degraded": null,
     "prah": {
       "source": "install-receipt",
       "path": "/home/noah/.claude/skills/paiml-implement/bin/prah"
+    },
+    "tier1": {
+      "agy_tier1_only": true,
+      "tier1": true,
+      "matched": [
+        "scripts/release/release_readiness.sh"
+      ],
+      "paths": 26,
+      "patterns": [
+        "^\\.github/workflows/",
+        "(^|/)release[^/]*\\.(ya?ml|sh|rs|toml)$",
+        "cuda|kernel|\\.cu$|\\.ptx$",
+        "(^|/)[^/]*(gate|guard)[^/]*\\.(sh|rs|py)$|^hooks/",
+        "security|secret|credential|(^|/)deny\\.toml$",
+        "^skills/quorum-review/|(^|/)(receipt-lint|roadmap-lint|release-lint|kind-gate|model-gate)[^/]*$|^crates/prah-lint/"
+      ],
+      "builtin": "^skills/quorum-review/|(^|/)skills/paiml-implement/config\\.json$|(^|/)(modellib|lane-reduce|lane-fallback|lane-group|agy-lane|cc-lane|receipt-lint|route|quota)\\.sh$|^crates/prah-lint/"
+    },
+    "bucket": {
+      "ledger": "/home/noah/.local/state/paiml-implement/agy-bucket.jsonl",
+      "window_s": 18000,
+      "pace": "off",
+      "buckets": {
+        "gemini": {
+          "bucket": "gemini",
+          "budget": 86,
+          "basis": "[U] default 30, raised to the 86 calls a window has made without a 429; no window reached one",
+          "window_start": 1790702669,
+          "window_calls": 16,
+          "window_429": 0,
+          "hour_calls": 6,
+          "share": 17,
+          "want": 2,
+          "state": "open",
+          "reason": ""
+        }
+      },
+      "closed": []
     }
   },
   "auto_merge": {
@@ -180,8 +256,69 @@
     "disarmed": false,
     "note": "auto-merge not armed"
   },
+  "cheap_seat": "claude-haiku-4-5",
+  "advisory_lane": {
+    "state": "answered",
+    "counts": false,
+    "row": {
+      "Verdict": {
+        "verdict": "PASS",
+        "cell": "gx10-cuda",
+        "backend": "cuda"
+      }
+    },
+    "verdict": "PASS",
+    "why": null,
+    "served_by": "gx10-cuda",
+    "gpu_proof": {
+      "used_gpu_probe": true,
+      "server_holds_gpu": true,
+      "used_gpu_source": "completions probe (chat omits used_gpu, aprender#4146)",
+      "trace_lines": [
+        "1083089, 309 MiB"
+      ]
+    },
+    "apr": "0.70.0",
+    "apr_binary_sha256": "6b2a7dc66c38adcca20b315beac70a1a31e7bd0af2a1cc5c2a7730ca6086d417",
+    "apr_tag": "v0.70.0-dev.3990584f0",
+    "apr_commit": "3990584f0bf5af6bca34ea9298df92177f3ef79a",
+    "apr_build_why": null,
+    "model": "/home/noah/data/models/Qwen3.5-4B-Q4_K_M.gguf",
+    "model_sha256": "00fe7986ff5f6b463e62455821146049db6f9313603938a70800d1fb69ef11a4",
+    "rc": 0,
+    "wall_s": 50,
+    "collected_s": 856,
+    "budget_s": 164,
+    "budget_basis": "ledger: 2 x p95 82 s over 103 gx10-cuda Verdict rows",
+    "brief": {
+      "bytes": 103770,
+      "sent_bytes": 103939,
+      "max_bytes": 196608
+    },
+    "trace": {
+      "input_sha256": "33fd5dbbbda8f82260fc4419cf55f44cebaaa6f28de772dcc4a432281008a1bc",
+      "raw": "advisory.json"
+    },
+    "attempts": [
+      {
+        "host": "gx10",
+        "ok": true,
+        "wall_s": 50,
+        "used_gpu": true,
+        "ts": "2026-09-29T18:58:48.387Z",
+        "wall_ms": 50419,
+        "request_id": "01a0ee88-a7c0-70d0-93a5-91affb567af0",
+        "load1": 58.64,
+        "cold": true
+      }
+    ],
+    "ledger": "/home/noah/.local/state/paiml-implement/advisory-ledger.jsonl",
+    "raw": "advisory.json",
+    "agrees_with_counted": true,
+    "counted": "PASS"
+  },
   "lint": {
     "ok": true,
-    "output": "receipt complete: kind=artifact lanes=3 author=claude-opus-5/claude"
+    "output": "receipt complete: kind=artifact lanes=3 author=claude-sonnet-5-5/claude same_family=2/2"
   }
 }

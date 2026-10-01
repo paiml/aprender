@@ -4,7 +4,7 @@
 //! Demonstrates monitoring an ML inference server with request
 //! latency, throughput, and model performance metrics.
 //!
-//! Run with: cargo run -p presentar-terminal --example `inference_server`
+//! Run with: cargo run -p aprender-present-terminal --example `inference_server`
 
 use presentar_core::{Canvas, Color, Point, Rect, TextStyle, Widget};
 use presentar_terminal::direct::{CellBuffer, DiffRenderer, DirectTerminalCanvas};

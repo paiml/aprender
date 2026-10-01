@@ -1,0 +1,161 @@
+# ──────────────────────────────────────────────
+# RENAMED 2026-09-27 (untangle, #4430 bin renames): bin `simular` -> `aprender-simulate`. Measurements quoted below
+# were taken on the old name and are re-taken by the next snapshot.
+# bin-aprender-simulate--aprender-simulate-v1 — the `aprender-simulate` bin target of package aprender-simulate (ONT-10 slice S13 (1/2))
+#
+# Drafted to the exemplar contracts/bin-aprender-contracts-cli--pv-v1.yaml. The shared shapes (sha, helpSha,
+# gitSha, …) live in binary-surface-v1 and are not restated. Moved from docs/ont-10/binary-contracts/ (aprender-bb).
+#
+# binary-aprender-simulate-v1 — ONT-10 slice S13 (1/2): the `aprender-simulate` target of package `aprender-simulate` as an entity
+# (ONT-001 v4.17 ONT-4g; #4476, #4079)
+#
+# MEASURED (2026-09-26, batch/ont-10 @ b6cf6d2ed, release build, default features (none), private
+# CARGO_TARGET_DIR):
+#   `aprender-simulate --version` = "aprender-simulate 0.69.3". Name right; no git sha, so G0.1 (warning) is RED today.
+#   FIXED 2026-09-27 on batch/ont-10: `aprender-simulate 0.69.3 (<sha9>)`, the semver still field 2 (G0.1 GREEN, now a violation).
+#   Recursive --help walk (S9's convention): 9 commands, all top-level leaves. Two of them are user-defined
+#   `help` ("Show help") and `version` ("Show version") subcommands, not clap's auto help: both are members.
+#   surface_audit.csv holds 12 rows with binary=aprender-simulate (ledger at cf038d37f): 9 CLI rows, one per command, and 3
+#   HTTP rows — GET /, GET /health, GET /ws — cited at crates/aprender-simulate/src/visualization/web.rs:82-89.
+#   Those routes belong to the library module `visualization::web`, compiled only under feature `web` (not
+#   default), and no command of the aprender-simulate CLI starts that server under any feature: nothing in src/cli
+#   references it. So the binary serves no route and the 3 rows are bin:ledgerOrphan — RED today. The fix is
+#   in the ledger (attribute the rows to the library, or to a command that serves them), not in this shape.
+#   RULED 2026-09-27 (cop, for 0.70): no new command and no new row kind. The 3 rows keep the ledger's existing
+#   unjoinable kind: their feature now opens `unserved: GET …`, which is neither a route row (`VERB /path`) nor a
+#   command row (`aprender-simulate …`), so the extractor counts them in bin:auditRow and joins them to nothing
+#   (crates/aprender-contracts/src/ontology/extract/binary.rs parse_ledger). A web serve command is post-0.70
+#   scope, under its own ticket.
+#
+# KIND: pattern (one binary's surface over the binary-surface-v1 vocabulary).
+# ──────────────────────────────────────────────
+name: bin-aprender-simulate--aprender-simulate-v1
+version: "1.0.0"
+scope: >
+  The built `aprender-simulate` target of package `aprender-simulate` (default features) as the focus node binary/aprender-simulate/aprender-simulate: its identity, its exact command set, and the surface_audit.csv rows that must resolve to it.
+status: active
+
+metadata:
+  version: "1.0.0"
+  kind: pattern
+  created: '2026-09-26'
+  last_modified: '2026-09-27'
+  author: PAIML Engineering
+  description: >
+    ONT-10 binary slice S13 (1/2) (aprender-simulate). Per-binary shapes over the node extract:binary (ONT-4g, #4476) draws
+    for binary/aprender-simulate/aprender-simulate, on the binary-surface-v1 vocabulary.
+  references:
+    - 'contracts/binary-surface-v1.yaml — the shared shapes and vocabulary'
+    - 'paiml/infra docs/specifications/paiml-ontology.md v4.17 §5 ONT-4g, ONT-10'
+    - 'docs/audits/surface_audit.csv (the ledger; binary column = aprender-simulate)'
+    - 'scripts/dogfood_surfaces.sh (the snapshot extract:binary reads)'
+    - 'crates/aprender-simulate/src/visualization/mod.rs (web is cfg(feature = "web"))'
+    - 'aprender#4502 — ONT-10'
+
+entity:
+  type: binary
+  ref: binary/aprender-simulate/aprender-simulate
+
+relations:
+  depends_on: [binary-surface-v1]
+
+shapes:
+  - id: binary-aprender-simulate-surface
+    targetClass: bin:target/aprender-simulate/aprender-simulate
+    properties:
+      - {path: bin:name, minCount: 1, maxCount: 1, in: ["aprender-simulate"]}
+      - {path: bin:package, minCount: 1, maxCount: 1, in: ["aprender-simulate"]}
+      - {path: "bin:versionString", minCount: 1, maxCount: 1, pattern: "^aprender-simulate [0-9]+\\.[0-9]+\\.[0-9]+"}
+      # G0.1 — a violation since batch/ont-10 2026-09-27 (build.rs embeds APR_GIT_SHA); was a warning while RED
+      - {path: "bin:versionString", minCount: 1, maxCount: 1, pattern: "[0-9a-f]{9}"}
+      - path: bin:command
+        minCount: 9
+        maxCount: 9
+        in:
+          - "emc-check"
+          - "emc-validate"
+          - "help"
+          - "list-emc"
+          - "render"
+          - "run"
+          - "validate"
+          - "verify"
+          - "version"
+      - {path: "bin:route", maxCount: 0}
+      - {path: "bin:ledgerOrphan", maxCount: 0}
+      - {path: "bin:unledgeredCommand", maxCount: 0}
+
+equations:
+  surface_equals_snapshot:
+    formula: "commands(binary/aprender-simulate/aprender-simulate) = C, |C| = 9, C = the leaves of the --help walk of the default-feature build ∪ user-defined `help` subcommands; routes(aprender-simulate) = ∅ ∧ ledgerOrphan = { r ∈ csv : r.binary = aprender-simulate ∧ key(r) ∉ C ∪ routes(aprender-simulate) }; key(r) = the command after 'aprender-simulate ', or 'METHOD /path' for an HTTP row"
+    domain: "the snapshot record dogfood_surfaces.sh writes for this target; docs/audits/surface_audit.csv rows whose binary column is aprender-simulate (12 on 2026-09-26: 9 CLI, 3 HTTP; since 2026-09-27 the 3 HTTP rows are `unserved:` rows, joined to nothing)"
+    codomain: "set equality, or a Fail naming each member of the symmetric difference; literals on the focus node, one per orphan row or unledgered command"
+    invariants:
+      - "in + minCount 9 + maxCount 9 is set equality: an added, dropped or renamed command is a violation naming it"
+      - "a route the binary starts serving is a violation until this contract is re-measured"
+      - "a ledger row for a surface the built binary does not serve is a violation, never a silent skip"
+    preconditions:
+      - "the snapshot was written at this commit, default features"
+    postconditions:
+      - "help_sha256 in the snapshot is the sha256 of `aprender-simulate --help` at this commit"
+    lean_theorem: none — L4 not declared
+
+invariants:
+  - id: BIN-SIMULAR-INV-001
+    property: every aprender-simulate surface member has an audited ledger row, and every ledger row names one
+    formal: '∀ c ∈ surface(aprender-simulate): ∃ r ∈ surface_audit : r.binary = aprender-simulate ∧ path(r) = c; ∀ r with r.binary = aprender-simulate: path(r) ∈ surface(aprender-simulate)'
+    prose: false
+  - id: BIN-SIMULAR-INV-002
+    property: unusable input is a clean rejection, never a success and never a panic
+    formal: '∀ a ∈ rejection_rows(crates/aprender-simulate/tests/cli_surface_gate.rs): exit(a) ∉ {0, 101} ∧ "panicked" ∉ stderr(a)'
+    prose: false
+
+falsification_tests:
+  - id: FALSIFY-BIN-SIMULAR-001
+    rule: 'G1.2 help answers'
+    prediction: '`aprender-simulate --help` exits 0 with non-empty stdout'
+    test: 'cargo test -p aprender-simulate --test cli_surface_gate every_advertised_subcommand_is_reachable'
+    if_fails: 'the binary cannot describe its own surface (observed 2026-09-27: exit 0, GREEN)'
+    mutation: 'make the top-level --help return an error; must turn RED'
+  - id: FALSIFY-BIN-SIMULAR-002
+    rule: 'G1.2 an unknown flag is a usage error'
+    prediction: '`aprender-simulate --no-such-flag` exits 2'
+    test: 'cargo test -p aprender-simulate --test cli_surface_gate unknown_'
+    if_fails: 'a typo is silently ignored (observed 2026-09-27: exit 2, GREEN)'
+    mutation: 'add #[arg(allow_hyphen_values)] catch-all at the top level; must turn RED'
+  - id: FALSIFY-BIN-SIMULAR-003
+    rule: 'G0.1 the version names the commit'
+    prediction: '`aprender-simulate --version` contains the first 9 hex of the git sha it was built from'
+    test: 'crates/aprender-simulate/src/cli/tests.rs test_version_flag_names_the_commit; the shape: bin:versionLacksSha, once extract:binary lands'
+    if_fails: 'a stale aprender-simulate reads as HEAD (observed 2026-09-26 at b6cf6d2ed: "aprender-simulate 0.69.3", no sha; fixed on batch/ont-10: build.rs embeds APR_GIT_SHA, same resolver as pv)'
+    mutation: 'set VERSION back to CARGO_PKG_VERSION alone; the unit test turns RED (field 3 missing)'
+  - id: FALSIFY-BIN-SIMULAR-004
+    rule: 'G1.3/G1.4 the surface set equals the snapshot'
+    prediction: '`aprender-simulate render --domain nosuch` and `render --format nosuch` exit 2, and the surface literals in the shape above = the snapshot''s, set-equal'
+    test: 'cargo test -p aprender-simulate --test cli_surface_gate -- advertised_subcommands_are_the_pinned_surface malformed_arguments_are_usage_errors'
+    if_fails: 'an added, dropped or renamed surface member ships with the ontology green ; an unknown render --domain parsed and failed at run time with exit 1 after printing the render header (observed 2026-09-26 at b6cf6d2ed; fixed on batch/ont-10 by a clap value_parser, exit 2)'
+    mutation: 'remove the --domain value_parser; the unit test turns RED (checked 2026-09-27). Remove `emc-check` from the snapshot; must turn RED on bin:command and bin:ledgerOrphan naming it'
+  - id: FALSIFY-BIN-SIMULAR-005
+    rule: 'ledger rows exist'
+    prediction: 'docs/audits/surface_audit.csv has ≥1 row per surface member with binary = aprender-simulate (12 rows on 2026-09-27)'
+    test: 'scripts/check_surface_audit_bins.sh (aprender#4476)'
+    if_fails: 'the dogfood coverage ratio is computed over a ledger that silently omits a shipped surface member'
+    mutation: 'delete every aprender-simulate row; must turn RED naming aprender-simulate'
+  - id: FALSIFY-BIN-SIMULAR-006
+    rule: 'a library route is never credited to the binary'
+    prediction: 'the 3 visualization rows open `unserved: GET …`: parse_ledger puts them in bin:auditRow only, so aprender-simulate has 0 bin:ledgerOrphanRoute and 0 bin:ledgerOrphan (observed RED 2026-09-26 at b6cf6d2ed with 3 results, while the rows read `GET / …`)'
+    test: 'pv lint contracts/ --gate shapes --format json (after ONT-4g); parse_ledger in crates/aprender-contracts/src/ontology/extract/binary.rs'
+    if_fails: 'The ledger would credit the aprender-simulate binary with a web UI no user of it can reach.'
+    mutation: 'restore any one row to `GET /health (visualization)`; must turn RED, verdict Fail on binary/aprender-simulate/aprender-simulate path bin:ledgerOrphanRoute naming GET /health'
+  - id: FALSIFY-BIN-SIMULAR-007
+    rule: 'user defined help counts'
+    prediction: 'an extractor that drops every subcommand named help (not only clap''s auto one) makes aprender-simulate-commands RED on minCount 9 and the `aprender-simulate help` ledger row an orphan'
+    test: 'pv lint contracts/ --gate shapes --format json (after ONT-4g), on a snapshot from a walk that drops all help'
+    if_fails: 'A real, ledgered command would sit outside the modelled surface.'
+    mutation: 'the edit in the prediction; must turn RED — verdict Fail naming help'
+  - id: FALSIFY-BIN-SIMULAR-008
+    rule: 'unusable input is rejected cleanly'
+    prediction: '`run`, `validate`, `verify`, `emc-check` and `emc-validate` on a missing, empty and garbage file and on `foo: 1`: each exits non-zero, not 101, with no "panicked" on stderr'
+    test: 'cargo test -p aprender-simulate --test cli_surface_gate unusable_input_is_rejected'
+    if_fails: 'MEASURED 2026-09-27 (aprender-01): before the fix `validate` on an empty file or `foo: 1` printed "Schema validation PASSED" and exited 0 — without the (never-enabled) schema-validation feature the check was a stub returning Ok; with the fix reverted this test is RED; fixed (a structural check of the embedded schema), GREEN'
+    mutation: 'make a rejection path return Ok(()) or unwrap the read; must turn RED on that row'

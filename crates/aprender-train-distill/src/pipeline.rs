@@ -996,7 +996,7 @@ fn resolve_model_path(model_id: &str) -> Result<PathBuf> {
             return Err(EntrenarError::HuggingFace {
                 message: format!(
                     "'{model_id}' looks like a HuggingFace model ID, but the 'hub' feature is not enabled. \
-                     Rebuild with: cargo build -p entrenar-distill --features hub"
+                     Rebuild with: cargo build -p aprender-train-distill --features hub"
                 ),
             });
         }
