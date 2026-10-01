@@ -57,6 +57,9 @@ pub struct CodeStats {
     pub resolved: usize,
     pub unresolved: usize,
     pub files_parsed: usize,
+    /// #4538: crate-local bindings whose contract file is a refused crate copy (PV-DUP-001), as
+    /// `<registry>: <contract> -> <module_path>::<function>`. Refused by name; never resolved to the top-level node.
+    pub refused_bindings: Vec<String>,
 }
 
 /// One bound symbol as a registry states it.
@@ -69,13 +72,15 @@ pub struct Bound {
     pub status: ImplStatus,
 }
 
-/// Every `binding.yaml` under `contract_dir` (any depth, byte order), parsed. Walked here, not through
+/// Every `binding.yaml` under `contract_dir` and every crate contract dir (any depth, byte order), parsed. Walked here, not through
 /// `collect_yaml_files`, which excludes registries by name because they are not contracts. A file that does not
 /// parse as a registry is skipped: registries are validated by `pv validate` (BINDING-001..006), not here.
 #[must_use]
 pub fn registries(contract_dir: &Path) -> Vec<(PathBuf, BindingRegistry)> {
     let mut files = Vec::new();
     let mut stack = vec![contract_dir.to_path_buf()];
+    // #4538: the crate-local contract trees are part of the corpus, so their registries are too.
+    stack.extend(super::pv_contract::crate_contract_dirs(contract_dir));
     while let Some(dir) = stack.pop() {
         let Ok(entries) = std::fs::read_dir(&dir) else {
             continue;
@@ -662,9 +667,38 @@ pub fn extract(contract_dir: &Path, g: &mut Graph) -> CodeStats {
     let ws = Workspace::scan(root);
     let mut resolver = Resolver::new(&ws);
     let mut stats = CodeStats::default();
-    for (_file, registry) in registries(contract_dir) {
+    let crates_dir = lexical(&root.join("crates"));
+    let refused: std::collections::BTreeSet<PathBuf> = super::pv_contract::corpus(contract_dir)
+        .refused
+        .iter()
+        .flat_map(|r| r.paths.iter().map(|p| lexical(&root.join(p))))
+        // Only the dropped crate copies: a refused stem's top-level file stays in the graph, so a binding to it is
+        // kept (#4538 quorum r2 — `contracts/binding.yaml` → `softmax-kernel-v1.yaml`).
+        .filter(|p| p.starts_with(&crates_dir))
+        .collect();
+    for (file, registry) in registries(contract_dir) {
         stats.registries += 1;
-        for b in bound_of(&registry) {
+        let dir = file.parent().unwrap_or(root);
+        for mut b in bound_of(&registry) {
+            if let Some(hit) = ["yaml", "yml"]
+                .iter()
+                .map(|ext| lexical(&dir.join(format!("{}.{ext}", b.contract))))
+                .find(|p| refused.contains(p))
+            {
+                stats.refused_bindings.push(format!(
+                    "{}: {} -> {}::{}",
+                    file.strip_prefix(root).unwrap_or(&file).display(),
+                    hit.strip_prefix(root).unwrap_or(&hit).display(),
+                    b.module_path,
+                    b.function
+                ));
+                continue;
+            }
+            // #4538: contract nodes are keyed by stem, so a registry that names its contract by relative path
+            // (`../format-parity-v1.yaml`) binds the stem, not an IRI no node carries (`contract/../format-parity-v1`).
+            if let Some(stem) = Path::new(&b.contract).file_name().and_then(|n| n.to_str()) {
+                b.contract = stem.to_string();
+            }
             let found = resolver.resolve(&b.module_path, &b.function);
             if found.is_ok() {
                 stats.resolved += 1;
@@ -700,6 +734,25 @@ pub fn positive_control() -> bool {
         find_item(&ast.items, "absent").is_none() && use_target(&ast.items, "absent").is_none();
     let aliased = use_target(&ast.items, "alias").as_deref() == Some("m::present");
     present && ghost && aliased
+}
+
+/// `a/b/../c` → `a/c`, `./` dropped, without touching the filesystem: a binding that reaches a refused copy through
+/// `../` must compare equal to the refused path, and `Path` equality is component-wise, not resolved (#4538 quorum).
+fn lexical(p: &Path) -> PathBuf {
+    use std::path::Component;
+    let mut out = PathBuf::new();
+    for c in p.components() {
+        match c {
+            Component::CurDir => {}
+            Component::ParentDir => {
+                if !out.pop() {
+                    out.push("..");
+                }
+            }
+            other => out.push(other.as_os_str()),
+        }
+    }
+    out
 }
 
 #[cfg(test)]

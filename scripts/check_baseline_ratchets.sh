@@ -80,6 +80,7 @@ classify() { # classify <basename> -> "<kind>[<TAB>reason]", rc 1 if unclassifie
         bin_cli_unwired_baseline.txt)            printf 'set\n' ;;   # spawning test targets no lane runs (scripts/check_bin_cli_tests_wired.sh, #4059): may only shrink
         claim_literal_baseline.txt)              printf 'set-aperture\tscripts/check_no_claim_literals.sh\n' ;;
         contract_duplicate_stem_baseline.txt)    printf 'set\n' ;;
+        contract_crate_stem_refused_baseline.txt) printf 'set\n' ;;   # crates/*/contracts copies Σ refuses (PV-DUP-001, #4538): may only shrink
         contract_test_binding_baseline.txt)      printf 'keyed\n' ;;
         complexity_baseline.txt)                 printf 'keyed2\n' ;;
         fabricated_baseline_rust_sites.txt)      printf 'set\n' ;;
