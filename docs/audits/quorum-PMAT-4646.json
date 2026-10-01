@@ -3,13 +3,13 @@
   "base": "origin/main",
   "base_resolved": "origin/main",
   "base_note": "no origin/origin/main exists; judged against the local ref; brief_exclude (C45) kept out of the brief: docs/roadmaps/roadmap.yaml",
-  "head": "bd851543c6d65fb6b09d46425669afa944fddc3c",
-  "diff_sha256": "cf71b2c0535d103b51038c28d192fb9f4aac37a608bd7f17171eb82cb2eb5eb9",
+  "head": "ce8036ebc14c1d54f90507c8b2686f993897a699",
+  "diff_sha256": "0c24a2f8e6681b31e8e7e5bfbe83edadb3c74f0d0879b70a29622e1ad74370f6",
   "width": 3,
   "executor": "agy",
   "prompt_mode": "file",
-  "prompt_bytes": 207751,
-  "prompt_sha256": "9278eae9ae09b1790165ab556f556cd6e73d696537e56bb4f4d9b5f9c0e65646",
+  "prompt_bytes": 238989,
+  "prompt_sha256": "164ada2b7f8e85a203342ec3fcb8b0573e270ee4cd2d5a1988aaa5f455efc14c",
   "author": {
     "model": "claude-opus-5-5",
     "family": "claude",
@@ -21,9 +21,9 @@
       "lane": 1,
       "status": "SUCCESS",
       "verdict": "PASS",
-      "summary": "Diff implements both PMAT-4646 and PMAT-4651 as specified. The ci.yml \"gate\" step still exit-1s on every other required section (WT, guard-tree, guard-cargo, sov.gate, determinism-compare) before reaching the new MUTANTS-RATCHET block, which then reports (not blocks) mutants and exits 0 — matching AC \"every other required section still fails exactly as before.\" scripts/check_mutants_debt_ratchet.sh correctly enforces shrink-only semantics (confirmed its NF==0 zero-row path, run-id, file-prefix and NF!=5 checks), auto-wires into guard-tree via `git ls-files 'scripts/check_*.sh'` with no further ci.yml change needed, and its --self-test exercises 16 cases (R1-R16) including R14-R16, which I traced and confirmed actually exercise the three specific guard weaknesses named in the embedded 1f2e3598ea review (empty run id, mid-string file match, 6-field row) — these are real regression tests, not vacuous ones. ci/mutants-debt.tsv's committed rows match the documented 5-tab-field schema and the two cited CI run shas. For PMAT-4651, PP-LLAMA-001-MASTER.md and evidence/parity/derived_expiries.json move exactly rows 13, 15 (18 derived), 19, 21 from 2026-09-30 to 2026-10-15 with an Appendix D row citing operator Noah / ruling C197, and the roadmap entries for both tickets are consistent with their acceptance criteria. No gate was weakened beyond what the ticket explicitly authorizes (mutants ratchet, not a waiver), no timeout changed, and no test asserts the opposite of either ticket.",
+      "summary": "Diff correctly implements PMAT-4646 (mutants gate -> report-only ratchet, shrink-only debt file) and PMAT-4651 (re-date PP-LLAMA-001 rows 13/15/18/19/21 to 2026-10-15). Verified directly against the live tree: the ci.yml MUTANTS-RATCHET block's `exit 0` sits after WT/guard-tree/guard-cargo/sov.gate/determinism-compare are already enforced (lines 445-466 of .github/workflows/ci.yml), so no other required section is bypassed; only the now-dead GATE-MUTANTS-RULE block below it is skipped, exactly as the ticket requires. scripts/check_mutants_debt_ratchet.sh correctly implements shrink-only semantics including the zero-row edge case (command-substitution newline stripping makes the \"added\" comparison correctly empty when head shrinks to 0 rows), and its --self-test case table (R1-R16) matches the claimed regression coverage, including R14/R15/R16 targeting the three specific guard weaknesses (empty run id, mid-string file match, 6-field row) named by the embedded prior review. check_mutants_debt_ratchet.sh matches the `scripts/check_*.sh` glob that guard_tree.sh's `guard_universe()` enumerates, so it auto-wires with no further ci.yml change, confirming the roadmap AC. The pr-review-quorum.yml Arm 4 fix (pull-requests: read + ARM4_PR_HEAD_SHA falling back to the pulls API on merge_group) is correctly consumed by check_pr_review_arm4.sh's documented fallback (line 176-177), addressing the real defect that queued PRs read UNSIGNED. ci/mutants-debt.tsv (590 data rows) cites both source CI runs (36703131059 and 36725778557) as the roadmap claims. derived_expiries.json changes exactly the five entries keyed 13, 15, 18, 19, 21 (confirmed by tracing JSON key context around each hunk, including the lexicographic \"19\" < \"2\" < \"20\" < \"21\" ordering that made the last hunk's target non-obvious from the diff alone). No gate was weakened beyond what the ticket authorizes, no other section's behavior changed, and the diff's file set matches the AC's stated scope (ci.yml, debt file, guard script, roadmap entries, and the one queue-only pr-review-quorum.yml fix, plus generated evidence/roadmap outputs).",
       "findings": [],
-      "raw_bytes": 3950,
+      "raw_bytes": 5206,
       "err_bytes": 0,
       "envelope_status": "SUCCESS",
       "verdict_source": "structured_output",
@@ -34,10 +34,10 @@
       "model_measured": "claude-sonnet-5",
       "model_source": "flag",
       "family": "claude",
-      "brief_sha256": "9278eae9ae09b1790165ab556f556cd6e73d696537e56bb4f4d9b5f9c0e65646",
+      "brief_sha256": "164ada2b7f8e85a203342ec3fcb8b0573e270ee4cd2d5a1988aaa5f455efc14c",
       "trace": {
-        "input_sha256": "4f3d6043fa7c1727aa82bfa0f82f939b2f3c2c9e826be9afdbc16da366303790",
-        "output_sha256": "e29a2c032a211c745a5ec1b7c90d1d51d1351d8ff3d5d2135d9478d4c2fbfb7d",
+        "input_sha256": "9fc965b78c82c51a89aca2e97e9439408285eb392131c6759d3c91969e6a09ef",
+        "output_sha256": "012418627691494566b80f7a0794a60b428363bfeb05947ef41725ee91a53059",
         "store": null,
         "store_why": "almacen not provisioned yet (infra-27): the blobs stay in the round's gitignored .lanes dir"
       },
@@ -58,9 +58,9 @@
       "lane": 2,
       "status": "SUCCESS",
       "verdict": "PASS",
-      "summary": "Diff implements both PMAT-4646 and PMAT-4651 perfectly as specified. The `ci.yml` `gate` step still exit-1s on every other required section (WT, guard-tree, guard-cargo, sov.gate, determinism-compare) before reaching the new MUTANTS-RATCHET block, which then reports mutants and exits 0 instead of blocking. `scripts/check_mutants_debt_ratchet.sh` correctly enforces shrink-only semantics and its `--self-test` exercises all 16 cases successfully. For PMAT-4651, `PP-LLAMA-001-MASTER.md` and `evidence/parity/derived_expiries.json` move exactly rows 13, 15, 18 (derived), 19, and 21 from 2026-09-30 to 2026-10-15 with an Appendix D row citing operator Noah. No gates were weakened beyond the mutants ratchet, and no test asserts the opposite of the ticket.",
+      "summary": "The diff correctly implements both tickets. It converts the mutants gate to a ratchet mode backed by a shrink-only `ci/mutants-debt.tsv` and `check_mutants_debt_ratchet.sh` (as requested by PMAT-4646), without affecting other gates. It applies the explicitly requested `pr-review-quorum.yml` queue-only fix. It also redates the five specified speed rows (13, 15, 18, 19, 21) in `PP-LLAMA-001-MASTER.md` to 2026-10-15 and updates `derived_expiries.json` and Appendix D accordingly (as requested by PMAT-4651). No contradictions, unauthorized weakening, or unrequested changes were found.",
       "findings": [],
-      "raw_bytes": 2871,
+      "raw_bytes": 2487,
       "err_bytes": 0,
       "envelope_status": "SUCCESS",
       "verdict_source": "structured_output",
@@ -71,10 +71,10 @@
       "model_source": "measured",
       "family": "gemini",
       "executor": "agy",
-      "brief_sha256": "9278eae9ae09b1790165ab556f556cd6e73d696537e56bb4f4d9b5f9c0e65646",
+      "brief_sha256": "164ada2b7f8e85a203342ec3fcb8b0573e270ee4cd2d5a1988aaa5f455efc14c",
       "trace": {
-        "input_sha256": "189abd868393c0931ccf01b346068ccaa2a715e20a11255dded73149800be596",
-        "output_sha256": "680aafd737064b4d8590d6b1a0ef96e9e26fef8fa29de938961d75ed5b2156c1",
+        "input_sha256": "7a35960478869a956b536cad6296722a614bc3f1a0db6604bdad62482f958e82",
+        "output_sha256": "67efbd6ff463feae3b4e653be236b4846338bfafdb729bcaa32695cae9a88949",
         "store": null,
         "store_why": "almacen not provisioned yet (infra-27): the blobs stay in the round's gitignored .lanes dir"
       },
@@ -95,9 +95,9 @@
       "lane": 3,
       "status": "SUCCESS",
       "verdict": "PASS",
-      "summary": "The diff correctly implements PMAT-4646 and PMAT-4651. The mutants ratchet gate is properly converted to report-only mode with shrink-only baseline enforcement via ci/mutants-debt.tsv and scripts/check_mutants_debt_ratchet.sh. The critical empty-baseline defect is fixed (NF == 0 { next }), and 16 comprehensive self-test cases validate the guard, including R13 for zero-row scenarios (verified by PR #4647 review). PMAT-4651 date re-mapping (rows 13, 15, 18, 19, 21 to 2026-10-15) is complete in both derived_expiries.json and roadmap spec.",
+      "summary": "The diff correctly implements PMAT-4646 (mutants ratchet mode with shrink-only debt file) and PMAT-4651 (spec re-dating). The ratchet logic is sound: ci/mutants-debt.tsv establishes a baseline of known survivors, check_mutants_debt_ratchet.sh enforces shrink-only semantics with 16 self-test cases, and ci.yml makes mutants report-only until RESTORE PR #4648. The receipt shows proper attestation and evidence collection. No refuting findings.",
       "findings": [],
-      "raw_bytes": 2024,
+      "raw_bytes": 1828,
       "err_bytes": 0,
       "envelope_status": "SUCCESS",
       "verdict_source": "structured_output",
@@ -108,10 +108,10 @@
       "model_measured": "claude-haiku-4-5",
       "model_source": "flag",
       "family": "claude",
-      "brief_sha256": "9278eae9ae09b1790165ab556f556cd6e73d696537e56bb4f4d9b5f9c0e65646",
+      "brief_sha256": "164ada2b7f8e85a203342ec3fcb8b0573e270ee4cd2d5a1988aaa5f455efc14c",
       "trace": {
-        "input_sha256": "babe04039f5c694c0538ad73b4946f1f2f52597e7b15ef03c24ead9f8abc025f",
-        "output_sha256": "c4cdfaa95e4013b1f2d0c1bb023b8a1c6f9b16c9bf93ba8d7650fb7ea5c6ab7f",
+        "input_sha256": "1961d8432a8f3d7fd5893e1d9fa2ef99b7f213280286d40c357dd0fd68442c1a",
+        "output_sha256": "3bc3a6423130c921c12c186412da2ba8f2f42a99acbc07fbea08349dd4e7b53e",
         "store": null,
         "store_why": "almacen not provisioned yet (infra-27): the blobs stay in the round's gitignored .lanes dir"
       },
@@ -185,9 +185,10 @@
       "agy_tier1_only": true,
       "tier1": true,
       "matched": [
-        ".github/workflows/ci.yml"
+        ".github/workflows/ci.yml",
+        ".github/workflows/pr-review-quorum.yml"
       ],
-      "paths": 14,
+      "paths": 18,
       "patterns": [
         "^\\.github/workflows/",
         "(^|/)release[^/]*\\.(ya?ml|sh|rs|toml)$",
@@ -208,13 +209,13 @@
           "budget": 0,
           "basis": "ledger: the calls served before the first 429 of the latest window that reached one",
           "window_start": 1790861697,
-          "window_calls": 2,
+          "window_calls": 10,
           "window_429": 0,
           "hour_calls": 2,
           "share": 1,
           "want": 2,
           "state": "empty",
-          "reason": "agy bucket gemini is empty: 2 calls in this window reach its budget 0 (ledger: the calls served before the first 429 of the latest window that reached one)"
+          "reason": "agy bucket gemini is empty: 10 calls in this window reach its budget 0 (ledger: the calls served before the first 429 of the latest window that reached one)"
         }
       },
       "closed": []
@@ -228,7 +229,7 @@
   },
   "cheap_seat": "claude-haiku-4-5",
   "canary": {
-    "skipped": "brief 207751 bytes > 24576"
+    "skipped": "brief 238989 bytes > 24576"
   },
   "advisory_lane": {
     "state": "not-run",
@@ -237,7 +238,7 @@
       "NotRun": "ContextOverflow"
     },
     "verdict": "unavailable",
-    "why": "the brief is 207751 bytes, over quorum.advisory_lane.max_brief_bytes=196608; a cut brief is a different question, so the lane was not launched",
+    "why": "the brief is 238989 bytes, over quorum.advisory_lane.max_brief_bytes=196608; a cut brief is a different question, so the lane was not launched",
     "served_by": null,
     "gpu_proof": null,
     "apr": null,
@@ -250,10 +251,10 @@
     "rc": 0,
     "wall_s": 0,
     "collected_s": 0,
-    "budget_s": 184,
-    "budget_basis": "ledger: 2 x p95 92 s over 124 gx10-cuda Verdict rows",
+    "budget_s": 196,
+    "budget_basis": "ledger: 2 x p95 98 s over 126 gx10-cuda Verdict rows",
     "brief": {
-      "bytes": 207751,
+      "bytes": 238989,
       "sent_bytes": 0,
       "max_bytes": 196608
     },
