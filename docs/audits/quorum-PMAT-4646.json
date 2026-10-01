@@ -1,0 +1,271 @@
+{
+  "ticket": "PMAT-4646,PMAT-4651",
+  "base": "origin/main",
+  "base_resolved": "origin/main",
+  "base_note": "no origin/origin/main exists; judged against the local ref; brief_exclude (C45) kept out of the brief: docs/roadmaps/roadmap.yaml",
+  "head": "bd851543c6d65fb6b09d46425669afa944fddc3c",
+  "diff_sha256": "cf71b2c0535d103b51038c28d192fb9f4aac37a608bd7f17171eb82cb2eb5eb9",
+  "width": 3,
+  "executor": "agy",
+  "prompt_mode": "file",
+  "prompt_bytes": 207751,
+  "prompt_sha256": "9278eae9ae09b1790165ab556f556cd6e73d696537e56bb4f4d9b5f9c0e65646",
+  "author": {
+    "model": "claude-opus-5-5",
+    "family": "claude",
+    "source": "flag"
+  },
+  "agreed": true,
+  "lanes": [
+    {
+      "lane": 1,
+      "status": "SUCCESS",
+      "verdict": "PASS",
+      "summary": "Diff implements both PMAT-4646 and PMAT-4651 as specified. The ci.yml \"gate\" step still exit-1s on every other required section (WT, guard-tree, guard-cargo, sov.gate, determinism-compare) before reaching the new MUTANTS-RATCHET block, which then reports (not blocks) mutants and exits 0 — matching AC \"every other required section still fails exactly as before.\" scripts/check_mutants_debt_ratchet.sh correctly enforces shrink-only semantics (confirmed its NF==0 zero-row path, run-id, file-prefix and NF!=5 checks), auto-wires into guard-tree via `git ls-files 'scripts/check_*.sh'` with no further ci.yml change needed, and its --self-test exercises 16 cases (R1-R16) including R14-R16, which I traced and confirmed actually exercise the three specific guard weaknesses named in the embedded 1f2e3598ea review (empty run id, mid-string file match, 6-field row) — these are real regression tests, not vacuous ones. ci/mutants-debt.tsv's committed rows match the documented 5-tab-field schema and the two cited CI run shas. For PMAT-4651, PP-LLAMA-001-MASTER.md and evidence/parity/derived_expiries.json move exactly rows 13, 15 (18 derived), 19, 21 from 2026-09-30 to 2026-10-15 with an Appendix D row citing operator Noah / ruling C197, and the roadmap entries for both tickets are consistent with their acceptance criteria. No gate was weakened beyond what the ticket explicitly authorizes (mutants ratchet, not a waiver), no timeout changed, and no test asserts the opposite of either ticket.",
+      "findings": [],
+      "raw_bytes": 3950,
+      "err_bytes": 0,
+      "envelope_status": "SUCCESS",
+      "verdict_source": "structured_output",
+      "executor": "claude-code",
+      "grounding_check": "parity",
+      "role": "counted",
+      "model": "claude-sonnet-5",
+      "model_measured": "claude-sonnet-5",
+      "model_source": "flag",
+      "family": "claude",
+      "brief_sha256": "9278eae9ae09b1790165ab556f556cd6e73d696537e56bb4f4d9b5f9c0e65646",
+      "trace": {
+        "input_sha256": "4f3d6043fa7c1727aa82bfa0f82f939b2f3c2c9e826be9afdbc16da366303790",
+        "output_sha256": "e29a2c032a211c745a5ec1b7c90d1d51d1351d8ff3d5d2135d9478d4c2fbfb7d",
+        "store": null,
+        "store_why": "almacen not provisioned yet (infra-27): the blobs stay in the round's gitignored .lanes dir"
+      },
+      "fallback": {
+        "judged_by": "claude-sonnet-5",
+        "exhausted": false,
+        "attempts": [
+          {
+            "model": "claude-sonnet-5",
+            "family": "claude",
+            "outcome": "answered"
+          }
+        ],
+        "skipped": []
+      }
+    },
+    {
+      "lane": 2,
+      "status": "SUCCESS",
+      "verdict": "PASS",
+      "summary": "Diff implements both PMAT-4646 and PMAT-4651 perfectly as specified. The `ci.yml` `gate` step still exit-1s on every other required section (WT, guard-tree, guard-cargo, sov.gate, determinism-compare) before reaching the new MUTANTS-RATCHET block, which then reports mutants and exits 0 instead of blocking. `scripts/check_mutants_debt_ratchet.sh` correctly enforces shrink-only semantics and its `--self-test` exercises all 16 cases successfully. For PMAT-4651, `PP-LLAMA-001-MASTER.md` and `evidence/parity/derived_expiries.json` move exactly rows 13, 15, 18 (derived), 19, and 21 from 2026-09-30 to 2026-10-15 with an Appendix D row citing operator Noah. No gates were weakened beyond the mutants ratchet, and no test asserts the opposite of the ticket.",
+      "findings": [],
+      "raw_bytes": 2871,
+      "err_bytes": 0,
+      "envelope_status": "SUCCESS",
+      "verdict_source": "structured_output",
+      "grounding_check": "parity",
+      "role": "independent",
+      "model": "gemini-3.1-pro-high",
+      "model_measured": "gemini-3.1-pro-high",
+      "model_source": "measured",
+      "family": "gemini",
+      "executor": "agy",
+      "brief_sha256": "9278eae9ae09b1790165ab556f556cd6e73d696537e56bb4f4d9b5f9c0e65646",
+      "trace": {
+        "input_sha256": "189abd868393c0931ccf01b346068ccaa2a715e20a11255dded73149800be596",
+        "output_sha256": "680aafd737064b4d8590d6b1a0ef96e9e26fef8fa29de938961d75ed5b2156c1",
+        "store": null,
+        "store_why": "almacen not provisioned yet (infra-27): the blobs stay in the round's gitignored .lanes dir"
+      },
+      "fallback": {
+        "judged_by": "gemini-3.1-pro-high",
+        "exhausted": false,
+        "attempts": [
+          {
+            "model": "gemini-3.1-pro-high",
+            "family": "gemini",
+            "outcome": "answered"
+          }
+        ],
+        "skipped": []
+      }
+    },
+    {
+      "lane": 3,
+      "status": "SUCCESS",
+      "verdict": "PASS",
+      "summary": "The diff correctly implements PMAT-4646 and PMAT-4651. The mutants ratchet gate is properly converted to report-only mode with shrink-only baseline enforcement via ci/mutants-debt.tsv and scripts/check_mutants_debt_ratchet.sh. The critical empty-baseline defect is fixed (NF == 0 { next }), and 16 comprehensive self-test cases validate the guard, including R13 for zero-row scenarios (verified by PR #4647 review). PMAT-4651 date re-mapping (rows 13, 15, 18, 19, 21 to 2026-10-15) is complete in both derived_expiries.json and roadmap spec.",
+      "findings": [],
+      "raw_bytes": 2024,
+      "err_bytes": 0,
+      "envelope_status": "SUCCESS",
+      "verdict_source": "structured_output",
+      "executor": "claude-code",
+      "grounding_check": "parity",
+      "role": "counted",
+      "model": "claude-haiku-4-5",
+      "model_measured": "claude-haiku-4-5",
+      "model_source": "flag",
+      "family": "claude",
+      "brief_sha256": "9278eae9ae09b1790165ab556f556cd6e73d696537e56bb4f4d9b5f9c0e65646",
+      "trace": {
+        "input_sha256": "babe04039f5c694c0538ad73b4946f1f2f52597e7b15ef03c24ead9f8abc025f",
+        "output_sha256": "c4cdfaa95e4013b1f2d0c1bb023b8a1c6f9b16c9bf93ba8d7650fb7ea5c6ab7f",
+        "store": null,
+        "store_why": "almacen not provisioned yet (infra-27): the blobs stay in the round's gitignored .lanes dir"
+      },
+      "fallback": {
+        "judged_by": "claude-haiku-4-5",
+        "exhausted": false,
+        "attempts": [
+          {
+            "model": "claude-haiku-4-5",
+            "family": "claude",
+            "outcome": "answered"
+          }
+        ],
+        "skipped": []
+      }
+    }
+  ],
+  "dissent": [],
+  "dedup": [],
+  "uncovered": [],
+  "coverage_source": "lanes",
+  "partial": false,
+  "partial_reasons": [],
+  "fallback": {
+    "same_family_width": 2,
+    "chain": [
+      {
+        "model": "claude-sonnet-5",
+        "family": "claude",
+        "disposition": "claude-code",
+        "why": "run by Claude Code on its own budget: a configured seat runs every round, a fallback step only when every non-Claude family is measured out (PMAT-360, operator standing rule)"
+      },
+      {
+        "model": "gemini-3.1-pro-high",
+        "family": "gemini",
+        "disposition": "configured"
+      },
+      {
+        "model": "claude-haiku-4-5",
+        "family": "claude",
+        "disposition": "claude-code",
+        "why": "run by Claude Code on its own budget: a configured seat runs every round, a fallback step only when every non-Claude family is measured out (PMAT-360, operator standing rule)"
+      },
+      {
+        "model": "claude-opus-5-5",
+        "family": "claude",
+        "disposition": "excluded-self-review",
+        "why": "the author's own model id (claude-opus-5-5) — a model never reviews its own diff, at any width (R-15a identity bar)"
+      },
+      {
+        "model": "qwen3.5",
+        "family": "qwen",
+        "disposition": "not-run",
+        "why": "no quorum.local_lane in the config — the aprender lane has no model to load"
+      }
+    ],
+    "precheck": [
+      {
+        "family": "gemini",
+        "model": "gemini-3.1-pro-high",
+        "probe": 1,
+        "outcome": "live"
+      }
+    ],
+    "degraded": null,
+    "prah": {
+      "source": "install-receipt",
+      "path": "/home/noah/.claude/skills/paiml-implement/bin/prah"
+    },
+    "tier1": {
+      "agy_tier1_only": true,
+      "tier1": true,
+      "matched": [
+        ".github/workflows/ci.yml"
+      ],
+      "paths": 14,
+      "patterns": [
+        "^\\.github/workflows/",
+        "(^|/)release[^/]*\\.(ya?ml|sh|rs|toml)$",
+        "cuda|kernel|\\.cu$|\\.ptx$",
+        "(^|/)[^/]*(gate|guard)[^/]*\\.(sh|rs|py)$|^hooks/",
+        "security|secret|credential|(^|/)deny\\.toml$",
+        "^skills/quorum-review/|(^|/)(receipt-lint|roadmap-lint|release-lint|kind-gate|model-gate)[^/]*$|^crates/prah-lint/"
+      ],
+      "builtin": "^skills/quorum-review/|(^|/)skills/paiml-implement/config\\.json$|(^|/)(modellib|lane-reduce|lane-fallback|lane-group|agy-lane|cc-lane|receipt-lint|route|quota)\\.sh$|^crates/prah-lint/"
+    },
+    "bucket": {
+      "ledger": "/home/noah/.local/state/paiml-implement/agy-bucket.jsonl",
+      "window_s": 18000,
+      "pace": "off",
+      "buckets": {
+        "gemini": {
+          "bucket": "gemini",
+          "budget": 0,
+          "basis": "ledger: the calls served before the first 429 of the latest window that reached one",
+          "window_start": 1790861697,
+          "window_calls": 2,
+          "window_429": 0,
+          "hour_calls": 2,
+          "share": 1,
+          "want": 2,
+          "state": "empty",
+          "reason": "agy bucket gemini is empty: 2 calls in this window reach its budget 0 (ledger: the calls served before the first 429 of the latest window that reached one)"
+        }
+      },
+      "closed": []
+    }
+  },
+  "auto_merge": {
+    "checked": true,
+    "was_armed": false,
+    "disarmed": false,
+    "note": "auto-merge not armed"
+  },
+  "cheap_seat": "claude-haiku-4-5",
+  "canary": {
+    "skipped": "brief 207751 bytes > 24576"
+  },
+  "advisory_lane": {
+    "state": "not-run",
+    "counts": false,
+    "row": {
+      "NotRun": "ContextOverflow"
+    },
+    "verdict": "unavailable",
+    "why": "the brief is 207751 bytes, over quorum.advisory_lane.max_brief_bytes=196608; a cut brief is a different question, so the lane was not launched",
+    "served_by": null,
+    "gpu_proof": null,
+    "apr": null,
+    "apr_binary_sha256": null,
+    "apr_tag": null,
+    "apr_commit": null,
+    "apr_build_why": null,
+    "model": null,
+    "model_sha256": null,
+    "rc": 0,
+    "wall_s": 0,
+    "collected_s": 0,
+    "budget_s": 184,
+    "budget_basis": "ledger: 2 x p95 92 s over 124 gx10-cuda Verdict rows",
+    "brief": {
+      "bytes": 207751,
+      "sent_bytes": 0,
+      "max_bytes": 196608
+    },
+    "trace": null,
+    "attempts": [],
+    "ledger": "/home/noah/.local/state/paiml-implement/advisory-ledger.jsonl",
+    "raw": "advisory.json",
+    "agrees_with_counted": null,
+    "counted": "PASS"
+  },
+  "lint": {
+    "ok": true,
+    "output": "receipt complete: kind=artifact lanes=3 author=claude-opus-5-5/claude same_family=2/2"
+  }
+}
