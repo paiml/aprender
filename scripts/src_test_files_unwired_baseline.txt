@@ -35,7 +35,6 @@ crates/aprender-serve/src/generate/make.rs
 crates/aprender-serve/src/generate/mock_model.rs
 crates/aprender-serve/src/gguf/loader_tests.rs
 crates/aprender-serve/src/gguf/tests/loader_tests_02.rs
-crates/aprender-serve/src/gguf/tests/tests_12b.rs
 crates/aprender-serve/src/gpu/diagnostics_tests.rs
 crates/aprender-serve/src/gpu/executor_tests.rs
 crates/aprender-serve/src/gpu/metrics_tests.rs
