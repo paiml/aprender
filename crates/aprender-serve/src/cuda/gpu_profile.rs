@@ -519,8 +519,8 @@ pub fn select_prefill_path(cc: u32, batched_prefill_env: Option<&str>) -> Prefil
 /// #4590 — the 0.70 known issue for an architecture on a compute capability.
 ///
 /// Qwen3 (`qwen3`, NOT `qwen35` / `qwen3moe`) on the sm_12x family is correct
-/// but 27-34x slower than Qwen3.5 on the same GB10 (8k think-on, 0.70.0
-/// 8d021f61e: Qwen3-1.7B 967 s, Qwen3-8B 2163 s, Qwen3.5-9B 63-80 s), under the
+/// but far slower than Qwen3.5 on the same GB10 (no committed receipt; the
+/// runs are on #4590), under the
 /// serial prefill that `select_prefill_path` makes the sm_12x default. The
 /// operator DE-CLAIMED it for 0.70 (#3715): apr says so at load instead of
 /// letting a user wait on it silently. PURE, like `select_prefill_path`, so the
