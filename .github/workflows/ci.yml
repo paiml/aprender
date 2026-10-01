@@ -456,7 +456,7 @@ jobs:
           # instant absolute bar. The blocking rule is the shrink-only survivor baseline ci/mutants-debt.tsv
           # (scripts/check_mutants_debt_ratchet.sh, run by guard-tree, which this gate requires above).
           # Every check above this line is unchanged. The RESTORE PR deletes this block (re-arms the rules below).
-          echo "mutants (report-only, ratchet #4646): event=$EVT section=$(res "$X86" mutants) table=${TABLE:-n/a} scope=${SCOPE:-n/a} in_scope=${IN_SCOPE:-n/a}"
+          echo "mutants (report-only, ratchet #4646): event=$EVT section=$(res "$X86" mutants)"
           echo "All required sections passed (mutants: ratchet mode, #4646)"
           exit 0
           # --- MUTANTS-RATCHET-END ---

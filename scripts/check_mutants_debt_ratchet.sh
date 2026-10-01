@@ -11,12 +11,17 @@
 #   - no copy at the merge base                       -> GREEN once: the baseline is being introduced
 #
 # Usage: bash scripts/check_mutants_debt_ratchet.sh            (compare HEAD with merge-base(HEAD, $MUTANTS_DEBT_BASE))
-#        bash scripts/check_mutants_debt_ratchet.sh --self-test (case table R1-R8 in a scratch repo)
-# MUTANTS_DEBT_BASE defaults to origin/main. MUTANTS_DEBT_FILE defaults to ci/mutants-debt.tsv.
+#        bash scripts/check_mutants_debt_ratchet.sh --self-test (case table R1-R12 in a scratch repo)
+# MUTANTS_DEBT_BASE unset = resolve_base (merge-base with origin/main, or the CI-shape fallbacks); set = merge-base(HEAD, it). MUTANTS_DEBT_FILE defaults to ci/mutants-debt.tsv.
 set -euo pipefail
 
 FILE=${MUTANTS_DEBT_FILE:-ci/mutants-debt.tsv}
-BASE=${MUTANTS_DEBT_BASE:-origin/main}
+BASE=${MUTANTS_DEBT_BASE:-}
+# Default base = scripts/lib/resolve_base.sh, the base every differential guard uses on every CI checkout shape
+# (depth-1 pull_request merge commit, merge_group squash head, push to main). It refuses rather than judge HEAD vs HEAD.
+REPO_ROOT=$(git rev-parse --show-toplevel 2>/dev/null || pwd); PROG=check_mutants_debt_ratchet
+# shellcheck source=scripts/lib/resolve_base.sh
+. "$(dirname -- "${BASH_SOURCE[0]}")/lib/resolve_base.sh" || exit 1
 
 rows() { grep -v '^#' | grep -v '^[[:space:]]*$' || true; }
 
@@ -37,7 +42,12 @@ run() {
     if ! bad=$(check_rows <<<"$head"); then echo "FAIL  $FILE has malformed rows:"; echo "$bad"; return 1; fi
     dup=$(sort <<<"$head" | uniq -d)
     [ -z "$dup" ] || { echo "FAIL  $FILE has duplicate rows:"; sed 's/^/  /' <<<"$dup"; return 1; }
-    mb=$(git merge-base HEAD "$BASE" 2>/dev/null) || { echo "FAIL  merge-base(HEAD, $BASE) unresolvable -- NOT_MEASURED is not a pass"; return 1; }
+    if [ -n "$BASE" ]; then
+        mb=$(git merge-base HEAD "$BASE" 2>/dev/null) || { echo "FAIL  merge-base(HEAD, $BASE) unresolvable -- NOT_MEASURED is not a pass"; return 1; }
+    else
+        resolve_base HEAD 2>&1 || { echo "FAIL  base unresolvable (resolve_base) -- NOT_MEASURED is not a pass"; return 1; }
+        mb=$BASE_REF; echo "base: ${mb:0:10} ($BASE_HOW)"
+    fi
     if ! git cat-file -e "$mb:$FILE" 2>/dev/null; then
         echo "PASS  $FILE introduced: $(grep -c . <<<"$head") row(s), no copy at merge base ${mb:0:10}"
         return 0
@@ -100,8 +110,20 @@ self_test() {
         if [ "$rc" -eq 0 ]; then echo "ok    R10 rc=0  the first introduction is GREEN"; else echo "FAIL  R10 rc=$rc want=0  introduction"; fails=$((fails + 1)); fi
     }
     case_row_intro
+    # R11: no explicit base and no origin/main (a branch commit with no nameable base) -> resolve_base refuses -> RED
+    local rc=0 out
+    git -C "$tmp" checkout -q -B c11 base; printf '%s\n' "$r1" > "$tmp/ci/mutants-debt.tsv"; git -C "$tmp" add -A; git -C "$tmp" commit -qm c11
+    out=$(cd "$tmp" && env -u MUTANTS_DEBT_BASE bash "$me" 2>&1) || rc=$?
+    if [ "$rc" -eq 1 ] && grep -qF "base unresolvable (resolve_base)" <<<"$out"; then echo "ok    R11 rc=1  no nameable base is RED (resolve_base refuses)"
+    else echo "FAIL  R11 rc=$rc want=1  no nameable base"; fails=$((fails + 1)); fi
+    # R12: default base via origin/main: a grown file vs origin/main is RED
+    rc=0; git -C "$tmp" update-ref refs/remotes/origin/main base
+    git -C "$tmp" checkout -q -B c12 base; printf '%s\n%s\n%s\n' "$r1" "$r2" "$r3" > "$tmp/ci/mutants-debt.tsv"; git -C "$tmp" add -A; git -C "$tmp" commit -qm c12
+    out=$(cd "$tmp" && env -u MUTANTS_DEBT_BASE bash "$me" 2>&1) || rc=$?
+    if [ "$rc" -eq 1 ] && grep -qF "row(s) not in merge base" <<<"$out"; then echo "ok    R12 rc=1  default base (origin/main via resolve_base): grown file is RED"
+    else echo "FAIL  R12 rc=$rc want=1  default base grown"; fails=$((fails + 1)); fi
     [ "$fails" -eq 0 ] || { echo "SELF-TEST FAILED: $fails case(s)"; return 1; }
-    echo "SELF-TEST PASSED (10 cases)"
+    echo "SELF-TEST PASSED (12 cases)"
 }
 
 case "${1:-}" in
