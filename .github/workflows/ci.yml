@@ -641,8 +641,10 @@ jobs:
           # --- MUTANTS-RATCHET (#4646; operator C187(a)/C188(a), 2026-10-01) ---
           # Mutation results are REPORTED here, not blocking: a new gate is adopted as a ratchet, never as an
           # instant absolute bar. The blocking rule is the shrink-only survivor baseline ci/mutants-debt.tsv
-          # (scripts/check_mutants_debt_ratchet.sh, run by guard-tree, which this gate requires above).
-          # Every check above this line is unchanged. The RESTORE PR deletes this block (re-arms the rules below).
+          # (scripts/check_mutants_debt_ratchet.sh, run by guard-tree, which this gate requires above); both land
+          # with PR #4647. A branch that carries this block before #4647 merges is report-only for mutants until it does.
+          # Every check above this line is unchanged. The mutants rules below are unreachable ON PURPOSE (C188: mutants
+          # off the release path) until RESTORE PR #4648 deletes this block and re-arms them.
           echo "mutants (report-only, ratchet #4646): event=$EVT section=$(res "$X86" mutants)"
           echo "All required sections passed (mutants: ratchet mode, #4646)"
           exit 0
