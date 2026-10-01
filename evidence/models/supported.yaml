@@ -77,7 +77,7 @@ models:
   cited_by:
   - README.md:93
   - README.md:107
-  - README.md:172
+  - README.md:181
   - book/src/cli/pull.md:17
   - book/src/cli/pull.md:19
   - book/src/examples/apr-cli-commands.md:221
@@ -112,12 +112,12 @@ models:
   - README.md:97
   - README.md:108
   - README.md:109
-  - README.md:179
-  - README.md:180
-  - README.md:181
-  - README.md:187
   - README.md:188
   - README.md:189
+  - README.md:190
+  - README.md:196
+  - README.md:197
+  - README.md:198
   # … and 92 more
 - name: qwen2.5-coder-32b
   family: qwen2.5
@@ -143,8 +143,8 @@ models:
   cited_by_count: 4
   cited_by:
   - README.md:99
-  - README.md:221
-  - README.md:223
+  - README.md:230
+  - README.md:232
   - book/src/lib/text.md:48
 - name: qwen3-1.7b
   family: qwen3
@@ -158,7 +158,7 @@ models:
   cited_by_count: 3
   cited_by:
   - README.md:91
-  - README.md:234
+  - README.md:243
   - docs/BEATS.md:201
 - name: qwen3-4b
   family: qwen3
@@ -179,9 +179,9 @@ models:
   cited_by_count: 4
   cited_by:
   - README.md:92
-  - README.md:229
-  - README.md:230
-  - README.md:234
+  - README.md:238
+  - README.md:239
+  - README.md:243
 - name: qwen3.5-0.8b
   family: qwen3.5
   size: 0.8b
