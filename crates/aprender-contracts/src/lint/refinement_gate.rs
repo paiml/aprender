@@ -68,6 +68,9 @@ pub struct RefinementCounters {
     pub base: String,
     pub base_theorem_modules: usize,
     pub base_unrefined: usize,
+    /// Same measured value as `base_unrefined`, under the name the ONT-3b spec probe reads. Measured at the
+    /// merge-base in this run; never a stored count.
+    pub unrefined_baseline: usize,
     pub base_orphaned_roots: usize,
     /// Unrefined at HEAD, not at BASE (PV-ONT-033).
     pub new_unrefined: usize,
@@ -213,6 +216,7 @@ pub fn run_with(
         base: base_label.to_string(),
         base_theorem_modules: base.theorem_modules.len(),
         base_unrefined: base.unrefined.len(),
+        unrefined_baseline: base.unrefined.len(),
         base_orphaned_roots: base.orphaned.len(),
         pc_resolver: crate::ontology::witness::FIRED.to_string(),
         ..RefinementCounters::default()

@@ -369,3 +369,15 @@ fn archive_fails_when_tar_cannot_write() {
     let r = b.archive(d.path(), &commit, &[LEAN_DIR]);
     assert!(r.is_err(), "{r:?}");
 }
+
+/// The ONT-3b spec probe reads `.unrefined_baseline`; the gate measures it at the merge-base in the same run
+/// (never a stored count), so the JSON carries it beside `base_unrefined`.
+#[test]
+fn the_json_names_the_measured_baseline_unrefined_baseline() {
+    let base = side(&[SM, GELU], None);
+    let head = side(&[SM, GELU], Some(&models("extraction", "real", &[SM])));
+    let (_, _, c) = ran(gate(&head, &base));
+    let j = serde_json::to_value(&c).expect("counters serialize");
+    assert_eq!(j["base_unrefined"], 2);
+    assert_eq!(j["unrefined_baseline"], j["base_unrefined"], "{j}");
+}
