@@ -11,7 +11,8 @@
 #   - no copy at the merge base                       -> GREEN once: the baseline is being introduced
 #
 # Usage: bash scripts/check_mutants_debt_ratchet.sh            (compare HEAD with merge-base(HEAD, $MUTANTS_DEBT_BASE))
-#        bash scripts/check_mutants_debt_ratchet.sh --self-test (case table R1-R13 in a scratch repo)
+#        bash scripts/check_mutants_debt_ratchet.sh --self-test (case table R1-R16 in a scratch repo)
+#        Known limit: rows key on file:line:col, so a line shift reads as a new row (#4653); new survivors are not yet blocked (#4649).
 # MUTANTS_DEBT_BASE unset = resolve_base (merge-base with origin/main, or the CI-shape fallbacks); set = merge-base(HEAD, it). MUTANTS_DEBT_FILE defaults to ci/mutants-debt.tsv.
 set -euo pipefail
 
@@ -102,6 +103,9 @@ self_test() {
     case_row R8 1 "unresolvable"             "an unresolvable merge base is RED"   "$r1"$'\n' no-such-ref
     case_row R9 1 "bad outcome"              "a Caught outcome is not debt (RED)"  "${r1/MissedMutant/CaughtMutant}"$'\n'
     case_row R13 0 "shrink-only: 2 -> 0"     "the last survivor killed (header only) is GREEN" "# header"$'\n'
+    case_row R14 1 "bad run id"               "an empty run id is RED"              "${r1%	*}	"$'\n'
+    case_row R15 1 "does not name its file"   "a mutant naming its file mid-string is RED" "${r1/	src\/a.rs:/	x\/src\/a.rs:}"$'\n'
+    case_row R16 1 "need 5 tab fields"        "a 6-field row is RED"                "$r1	extra"$'\n'
     # R10: introduction -- the merge base has no copy
     git -C "$tmp" checkout -q --orphan intro; git -C "$tmp" rm -rq --cached . ; rm -rf -- "${tmp:?}/ci"
     : > "$tmp/keep"; git -C "$tmp" add keep; git -C "$tmp" commit -qm intro-base; git -C "$tmp" branch intro-base
@@ -125,7 +129,7 @@ self_test() {
     if [ "$rc" -eq 1 ] && grep -qF "row(s) not in merge base" <<<"$out"; then echo "ok    R12 rc=1  default base (origin/main via resolve_base): grown file is RED"
     else echo "FAIL  R12 rc=$rc want=1  default base grown"; fails=$((fails + 1)); fi
     [ "$fails" -eq 0 ] || { echo "SELF-TEST FAILED: $fails case(s)"; return 1; }  # bashrs disable-line=SC2198 (fails is a scalar counter, not an array)
-    echo "SELF-TEST PASSED (13 cases)"
+    echo "SELF-TEST PASSED (16 cases)"
 }
 
 case "${1:-}" in

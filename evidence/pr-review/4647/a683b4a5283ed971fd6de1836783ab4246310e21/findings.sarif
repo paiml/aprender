@@ -1,0 +1,105 @@
+{
+  "version": "2.1.0",
+  "$schema": "https://raw.githubusercontent.com/oasis-tcs/sarif-spec/master/Schemata/sarif-schema-2.1.0.json",
+  "runs": [
+    {
+      "tool": {
+        "driver": {
+          "name": "pmat",
+          "informationUri": "https://github.com/paiml/pmat",
+          "rules": []
+        }
+      },
+      "invocations": [
+        {
+          "executionSuccessful": true,
+          "commandLine": "pmat query \"shrink-only mutants debt ratchet\" --limit 5 (index rebuilt at HEAD, 103 s); scripts/pr_review_duplication_scan.sh --rust-semantic; plus the measured commands in each result"
+        }
+      ],
+      "results": [
+        {
+          "ruleId": "PRREV-RATCHET-003",
+          "level": "note",
+          "message": {
+            "text": "Rows key on the cargo-mutants name, which embeds line:col (e.g. liskov.rs:119:5). Any edit to a baselined file that shifts a survivor's line changes its string; the guard reads that as a NEW row (RED) and the only way to turn it green is to DELETE the row, which the shrink-only rule scores as a kill. With mutants report-only meanwhile, a line shift can launder a survivor out of the baseline without a test killing it, and a legitimate edit near a survivor is blocked until someone deletes its row."
+          },
+          "locations": [
+            {
+              "physicalLocation": {
+                "artifactLocation": {
+                  "uri": "scripts/check_mutants_debt_ratchet.sh"
+                },
+                "region": {
+                  "startLine": 57
+                }
+              }
+            }
+          ],
+          "properties": {
+            "grounding": "asserted",
+            "rationale": "Reading the rows format (ci/mutants-debt.tsv header, 590 rows keyed on file:line:col mutant strings) and the comm -23 comparison at lines 62-70 of the guard; not exercised against a real shifted file this run.",
+            "failure_scenario": "A PR reflows a file holding a baselined survivor: the row no longer matches, the guard demands deletion, the author deletes it, and the debt count falls with no test added.",
+            "precision_class": "advisory"
+          }
+        },
+        {
+          "ruleId": "PRREV-CI-COMMENT-001",
+          "level": "note",
+          "message": {
+            "text": "ci.yml:456 still says 'The blocking rule is the shrink-only survivor baseline'. What the guard blocks is only hand-edits that GROW the debt file; a new surviving mutant in a PR is neither blocked nor ledgered while the gate is report-only (new-survivor detection is #4649). The comment reads stronger than the mechanism."
+          },
+          "locations": [
+            {
+              "physicalLocation": {
+                "artifactLocation": {
+                  "uri": ".github/workflows/ci.yml"
+                },
+                "region": {
+                  "startLine": 456
+                }
+              }
+            }
+          ],
+          "properties": {
+            "grounding": "asserted",
+            "rationale": "Reading ci.yml 454-464 and the guard's inputs (the debt file at HEAD and at the merge base only).",
+            "failure_scenario": "A maintainer believes new mutation survivors are blocked and does not notice that between this merge and #4648/#4649 they are neither blocked nor recorded.",
+            "precision_class": "advisory"
+          }
+        }
+      ]
+    },
+    {
+      "tool": {
+        "driver": {
+          "name": "cargo-mutants",
+          "informationUri": "https://github.com/paiml/aprender",
+          "rules": []
+        }
+      },
+      "invocations": [
+        {
+          "executionSuccessful": true,
+          "commandLine": "scoped guard mutation: 7 sed mutants of scripts/check_mutants_debt_ratchet.sh vs its --self-test (scratch copy under scripts/, removed afterwards); 7 attempted, 7 killed (driver name is the receipt vocabulary slot; not a cargo-mutants run)"
+        }
+      ],
+      "results": []
+    },
+    {
+      "tool": {
+        "driver": {
+          "name": "antigravity",
+          "informationUri": "https://github.com/paiml/aprender",
+          "rules": []
+        }
+      },
+      "invocations": [
+        {
+          "executionSuccessful": true,
+          "commandLine": "agy -p <prompt file> --model gemini-3.1-pro-high --output-format json --json-schema .pr-review-schema.json --print-timeout 15m --dangerously-skip-permissions (disposable git-archive tree at a683b4a528; diff file omits the debt TSV and prior receipts)"
+        }
+      ],
+      "results": []
+    }
+  ]
+}
