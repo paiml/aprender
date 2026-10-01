@@ -28,9 +28,9 @@ rows() { grep -v '^#' | grep -v '^[[:space:]]*$' || true; }
 check_rows() { # stdin = rows; prints each malformed row, returns 1 if any
     awk -F'\t' '
         NF != 5 { print "  malformed (need 5 tab fields): " $0; bad = 1; next }
-        $3 != "MissedMutant" && $3 != "Timeout" { print "  bad outcome \"" $3 "\": " $0; bad = 1; next }
-        $4 !~ /^[0-9a-f]{40}$/ { print "  bad sha \"" $4 "\": " $0; bad = 1; next }
-        $5 !~ /^[0-9]+$/ { print "  bad run id \"" $5 "\": " $0; bad = 1; next }
+        $3 != "MissedMutant" && $3 != "Timeout" { print "  bad outcome \"" $3 "\": " $0; bad = 1; next }  # bashrs disable-line=BRS0015 (awk program text, not a command)
+        $4 !~ /^[0-9a-f]{40}$/ { print "  bad sha \"" $4 "\": " $0; bad = 1; next }  # bashrs disable-line=BRS0015 (awk program text, not a command)
+        $5 !~ /^[0-9]+$/ { print "  bad run id \"" $5 "\": " $0; bad = 1; next }  # bashrs disable-line=BRS0015 (awk program text, not a command)
         index($2, $1) != 1 { print "  mutant does not name its file: " $0; bad = 1; next }
         END { exit bad }'
 }
@@ -46,7 +46,7 @@ run() {
         mb=$(git merge-base HEAD "$BASE" 2>/dev/null) || { echo "FAIL  merge-base(HEAD, $BASE) unresolvable -- NOT_MEASURED is not a pass"; return 1; }
     else
         resolve_base HEAD 2>&1 || { echo "FAIL  base unresolvable (resolve_base) -- NOT_MEASURED is not a pass"; return 1; }
-        mb=$BASE_REF; echo "base: ${mb:0:10} ($BASE_HOW)"
+        mb="$BASE_REF"; echo "base: ${mb:0:10} ($BASE_HOW)"
     fi
     if ! git cat-file -e "$mb:$FILE" 2>/dev/null; then
         echo "PASS  $FILE introduced: $(grep -c . <<<"$head") row(s), no copy at merge base ${mb:0:10}"
@@ -54,8 +54,8 @@ run() {
     fi
     base=$(git show "$mb:$FILE" | rows)
     added=$(comm -23 <(sort <<<"$head") <(sort <<<"$base"))
-    if [ -n "$added" ]; then
-        echo "FAIL  $FILE is shrink-only; $(grep -c . <<<"$added") row(s) not in merge base ${mb:0:10}:"
+    if [ -n "$added" ]; then  # bashrs disable-line=SC2031 (added is assigned in this shell; the subshells are the process substitutions)
+        echo "FAIL  $FILE is shrink-only; $(grep -c . <<<"$added") row(s) not in merge base ${mb:0:10}:"  # bashrs disable-line=SC2031,SC2091 (echo argument, not an executed command)
         sed 's/^/  + /' <<<"$added"
         echo "  A new survivor is fixed by a test that kills it, never by adding it to the debt file."
         return 1
@@ -68,7 +68,7 @@ self_test() {
     me=$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)/$(basename "${BASH_SOURCE[0]}")
     tmp=$(mktemp -d)
     case "$tmp" in /tmp/*|"${TMPDIR:-/tmp}"/*) ;; *) echo "SELF-TEST: refusing scratch dir '$tmp'"; return 1;; esac
-    trap 'rm -rf -- "${tmp:?}"' RETURN
+    trap 'rm -rf -- "${tmp:?}"; trap - EXIT' RETURN; trap 'rm -rf -- "${tmp:?}"' EXIT
     local sha=0123456789abcdef0123456789abcdef01234567
     local r1="src/a.rs	src/a.rs:1:1: replace + with -	MissedMutant	$sha	1"
     local r2="src/b.rs	src/b.rs:2:2: replace > with <	Timeout	$sha	2"
@@ -87,7 +87,7 @@ self_test() {
         if [ "$content" = __MISSING__ ]; then git -C "$tmp" rm -q ci/mutants-debt.tsv
         else printf '%s' "$content" > "$tmp/ci/mutants-debt.tsv"; git -C "$tmp" add -A; fi
         git -C "$tmp" commit -qm "case $id" --allow-empty
-        out=$(cd "$tmp" && MUTANTS_DEBT_BASE=$b bash "$me" 2>&1) || rc=$?
+        out=$(cd "$tmp" && MUTANTS_DEBT_BASE="$b" bash "$me" 2>&1) || rc=$?
         if [ "$rc" -eq "$want" ] && grep -qF -- "$pat" <<<"$out"; then echo "ok    $id rc=$rc  $what"
         else echo "FAIL  $id rc=$rc want=$want '$pat'  $what"; fails=$((fails + 1)); fi
     }
@@ -122,7 +122,7 @@ self_test() {
     out=$(cd "$tmp" && env -u MUTANTS_DEBT_BASE bash "$me" 2>&1) || rc=$?
     if [ "$rc" -eq 1 ] && grep -qF "row(s) not in merge base" <<<"$out"; then echo "ok    R12 rc=1  default base (origin/main via resolve_base): grown file is RED"
     else echo "FAIL  R12 rc=$rc want=1  default base grown"; fails=$((fails + 1)); fi
-    [ "$fails" -eq 0 ] || { echo "SELF-TEST FAILED: $fails case(s)"; return 1; }
+    [ "$fails" -eq 0 ] || { echo "SELF-TEST FAILED: $fails case(s)"; return 1; }  # bashrs disable-line=SC2198 (fails is a scalar counter, not an array)
     echo "SELF-TEST PASSED (12 cases)"
 }
 
