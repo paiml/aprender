@@ -734,9 +734,11 @@ fn collect(rx: &Drained, deadline: Instant) -> Option<[Vec<u8>; 2]> {
 }
 
 /// SIGKILL the whole process group by the child's own PID (pgid == pid) -- never by pattern -- then reap the child.
+/// Through `sh`'s builtin `kill`, not a `kill` executable: a slim image (rust:*-slim, the clean-room) ships no
+/// procps, so `Command::new("kill")` was ENOENT, the group survived and only the direct child died.
 fn kill_group(child: &mut std::process::Child, pgid: u32) -> Bounded {
-    let _ = Command::new("kill")
-        .args(["-s", "KILL", "--", &format!("-{pgid}")])
+    let _ = Command::new("sh")
+        .args(["-c", "kill -s KILL -- \"-$1\"", "sh", &pgid.to_string()])
         .status();
     let _ = child.kill();
     let _ = child.wait();
