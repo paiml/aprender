@@ -1,6 +1,6 @@
 //! ptop: System monitor using presentar-terminal widget composition
 //!
-//! Run: cargo run -p presentar-terminal --features ptop --bin ptop
+//! Run: cargo run -p aprender-present-terminal --features ptop --bin aprender-ptop
 
 #![allow(clippy::struct_excessive_bools)]
 #![allow(clippy::unnecessary_debug_formatting)]
@@ -20,9 +20,14 @@ use presentar_terminal::direct::{CellBuffer, DiffRenderer};
 use presentar_terminal::ptop::{config::PtopConfig, ui, App, PanelType};
 use presentar_terminal::ColorMode;
 
+/// `ptop --version`: the semver and the first 9 hex of the commit it was built from
+/// (G0.1, #4476) — the semver is a workspace version shared by every worktree, so
+/// without the sha a stale ptop reads as HEAD.
+const VERSION: &str = concat!(env!("CARGO_PKG_VERSION"), " (", env!("APR_GIT_SHA"), ")");
+
 /// Presentar System Monitor - widget composition demo
 #[derive(Parser)]
-#[command(name = "ptop", version = concat!(env!("CARGO_PKG_VERSION"), " (", env!("APR_GIT_SHA"), ")"), about, long_about = None)]
+#[command(name = "aprender-ptop", version = VERSION, about, long_about = None)]
 struct Cli {
     /// Refresh interval in milliseconds
     #[arg(short, long, default_value = "1000")]
@@ -61,8 +66,8 @@ struct Cli {
     qa_timing: bool,
 
     /// Explode a specific panel for QA (cpu, memory, disk, network, process, gpu, sensors, connections, psi, files, battery, containers)
-    #[arg(long, value_name = "PANEL")]
-    explode: Option<String>,
+    #[arg(long, value_name = "PANEL", value_parser = parse_panel_type)]
+    explode: Option<PanelType>,
 }
 
 /// Load configuration from file or default location.
@@ -85,8 +90,8 @@ fn handle_render_once(cli: &Cli, config: PtopConfig) -> io::Result<()> {
         std::thread::sleep(Duration::from_millis(100));
         app.collect_metrics();
     }
-    if let Some(ref panel_name) = cli.explode {
-        app.exploded_panel = parse_panel_type(panel_name);
+    if cli.explode.is_some() {
+        app.exploded_panel = cli.explode;
     }
     render_once(&app, cli.width, cli.height)
 }
@@ -400,24 +405,81 @@ fn run_app(
     Ok(())
 }
 
-/// Parse panel type from string for --explode flag
-fn parse_panel_type(name: &str) -> Option<PanelType> {
+/// Parse panel type from string for --explode flag. A clap value_parser, so an unknown panel is a usage
+/// error (exit 2) instead of a warning followed by the normal view and exit 0 (ONT-4g G1.4, #4476).
+fn parse_panel_type(name: &str) -> Result<PanelType, String> {
     match name.to_lowercase().as_str() {
-        "cpu" => Some(PanelType::Cpu),
-        "memory" | "mem" => Some(PanelType::Memory),
-        "disk" => Some(PanelType::Disk),
-        "network" | "net" => Some(PanelType::Network),
-        "process" | "proc" | "processes" => Some(PanelType::Process),
-        "gpu" => Some(PanelType::Gpu),
-        "sensors" | "sensor" => Some(PanelType::Sensors),
-        "connections" | "conn" => Some(PanelType::Connections),
-        "psi" | "pressure" => Some(PanelType::Psi),
-        "files" | "file" => Some(PanelType::Files),
-        "battery" | "bat" => Some(PanelType::Battery),
-        "containers" | "container" | "docker" => Some(PanelType::Containers),
-        _ => {
-            eprintln!("[ptop] Unknown panel: {name}. Valid: cpu, memory, disk, network, process, gpu, sensors, connections, psi, files, battery, containers");
-            None
+        "cpu" => Ok(PanelType::Cpu),
+        "memory" | "mem" => Ok(PanelType::Memory),
+        "disk" => Ok(PanelType::Disk),
+        "network" | "net" => Ok(PanelType::Network),
+        "process" | "proc" | "processes" => Ok(PanelType::Process),
+        "gpu" => Ok(PanelType::Gpu),
+        "sensors" | "sensor" => Ok(PanelType::Sensors),
+        "connections" | "conn" => Ok(PanelType::Connections),
+        "psi" | "pressure" => Ok(PanelType::Psi),
+        "files" | "file" => Ok(PanelType::Files),
+        "battery" | "bat" => Ok(PanelType::Battery),
+        "containers" | "container" | "docker" => Ok(PanelType::Containers),
+        _ => Err(format!("unknown panel `{name}`; valid: cpu, memory, disk, network, process, gpu, sensors, connections, psi, files, battery, containers")),
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn explode_unknown_panel_is_a_usage_error() {
+        let err = Cli::try_parse_from(["ptop", "--explode", "nosuch"])
+            .err()
+            .expect("an unknown panel must not parse");
+        assert_eq!(err.kind(), clap::error::ErrorKind::ValueValidation);
+        assert_eq!(err.exit_code(), 2);
+    }
+
+    /// G0.1 (#4476, FALSIFY-BIN-PTOP-003): `ptop --version` names the commit, so a
+    /// stale ptop can no longer read as HEAD. The semver stays field 2.
+    #[test]
+    fn version_flag_names_the_commit() {
+        let err = Cli::try_parse_from(["ptop", "--version"])
+            .err()
+            .expect("--version short-circuits parsing");
+        assert_eq!(err.kind(), clap::error::ErrorKind::DisplayVersion);
+        let line = err.to_string();
+        let sha = env!("APR_GIT_SHA");
+        let fields: Vec<&str> = line.split_whitespace().collect();
+        // #4430 renamed the bin; clap prints `#[command(name)]`, not argv[0].
+        assert_eq!(fields.first(), Some(&"aprender-ptop"), "got `{line}`");
+        assert_eq!(
+            fields.get(1),
+            Some(&env!("CARGO_PKG_VERSION")),
+            "got `{line}`"
+        );
+        assert_eq!(
+            fields.get(2).copied(),
+            Some(format!("({sha})").as_str()),
+            "got `{line}`"
+        );
+        // git's --short grows with the repo (9 hex until 2026-09, 10 after), so accept any
+        // abbreviation git can print (7..=40 hex), never one fixed length.
+        let short_sha = (7..=40).contains(&sha.len()) && sha.chars().all(|c| c.is_ascii_hexdigit());
+        assert!(
+            short_sha || sha.ends_with("+no-git"),
+            "APR_GIT_SHA must be 7-40 hex or v<ver>+no-git; got `{sha}`"
+        );
+    }
+
+    #[test]
+    fn explode_accepts_panel_names_and_aliases() {
+        for (arg, want) in [
+            ("cpu", PanelType::Cpu),
+            ("MEM", PanelType::Memory),
+            ("docker", PanelType::Containers),
+        ] {
+            let cli =
+                Cli::try_parse_from(["ptop", "--explode", arg]).expect("a known panel parses");
+            assert_eq!(cli.explode, Some(want), "{arg}");
         }
     }
 }

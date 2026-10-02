@@ -1,0 +1,106 @@
+{
+  "ticket": "PMAT-4207",
+  "pr": 4227,
+  "round": 2,
+  "base": "origin/main",
+  "base_resolved": "aa7c6ef03ee7b7f8d8dc09dc393e97619952d95f",
+  "head": "b4ef7f3580423c8fd8d026858141c47ac5ac6706",
+  "diff_sha256": "47ce77527492a891e55464f06ef76c75378ab67539d1213babf0a6616fe38bae",
+  "brief_sha256": "8abc9c752884c18454f453d6e928aef6b5b36b73a57c09c5c61b7b1d8a279b52",
+  "prompt_bytes": 17278,
+  "prompt_mode": "file",
+  "width": 3,
+  "executor": "claude-sequential",
+  "author": {
+    "model": "claude-opus-5-5",
+    "family": "claude",
+    "source": "flag"
+  },
+  "lane_rule": "cop relay 2026-09-24 of OPERATOR verbatim \"if gemini returns 429 I want fallback sonnet + haiku + opus5.5\": agy gemini-3.1-pro-high returned 429 in round 1 (quota, resets ~2h36m); author is opus-5.5, so the opus seat is a second claude-sonnet-5 sample",
+  "degraded": "same-family",
+  "agreed": true,
+  "verdict_counts": {
+    "PASS": 3,
+    "FAIL": 0
+  },
+  "lanes": [
+    {
+      "model": "claude-sonnet-5",
+      "model_source": "flag",
+      "family": "claude",
+      "verdict": "PASS",
+      "findings": [
+        {
+          "file": "docs/audits/impl-PMAT-4207-receipt.md",
+          "line": 10,
+          "claim": "red/green counts not re-measurable in a no-cargo lane",
+          "grounding": "asserted"
+        }
+      ]
+    },
+    {
+      "model": "claude-haiku-4-5",
+      "model_source": "flag",
+      "family": "claude",
+      "verdict": "PASS",
+      "findings": []
+    },
+    {
+      "model": "claude-sonnet-5",
+      "model_source": "flag",
+      "family": "claude",
+      "role": "opus seat (author is opus-5.5)",
+      "verdict": "PASS",
+      "findings": [
+        {
+          "file": "crates/aprender-contracts-cli/tests/ont6_lint_verdict.rs",
+          "line": 52,
+          "claim": "receipt says d.path() appears 10 times; it is 9",
+          "grounding": "measured"
+        },
+        {
+          "file": "docs/audits/impl-PMAT-4207-receipt.md",
+          "line": 71,
+          "claim": "killed-mutant panic cited at :135, but the assert_eq is at :139",
+          "grounding": "measured"
+        }
+      ]
+    }
+  ],
+  "errata": [
+    "receipt: `d.path()` appears 9 times in ont6_lint_verdict.rs at the judged head, not 10. The count was taken at 32956c165, before the round-1 fix (ce4dcba91) removed the fixture copy call. Verified: grep -o gives 9.",
+    "receipt: the killed mutant panicked at ont6_lint_verdict.rs:135 IN THE MUTATED FILE, where deleting the fixture write shifted the lines up. At the judged head the assertion is `assert_eq!(r.code, 1, …)` at :139. The mutant log is the source of 135."
+  ],
+  "prior_rounds": [
+    {
+      "round": 1,
+      "head": "868d0fe4e",
+      "lanes_run": 3,
+      "counted": false,
+      "lanes": [
+        {
+          "model": "claude-sonnet-5",
+          "verdict": "PASS",
+          "findings": 1
+        },
+        {
+          "model": "gemini-3.1-pro-high",
+          "model_measured": "gemini-3.1-pro-high",
+          "verdict": "NO-VERDICT",
+          "reason": "AGY_ERROR 429 RESOURCE_EXHAUSTED, Individual quota reached"
+        },
+        {
+          "model": "claude-haiku-4-5",
+          "verdict": "PASS",
+          "findings": 0
+        }
+      ],
+      "resolution": "sonnet finding (a_failing_armed_gate_rejects_at_exit_1 on a bare tempdir, could pass for the wrong reason) verified and fixed in ce4dcba91; mutant proves it (pre-fix form vacuously green, fixed form RED); receipt b4ef7f358"
+    }
+  ],
+  "partial_reasons": [
+    "degraded: same-family: all three lanes are claude family (author claude-opus-5-5, never the author id); receipt-lint refuses author-family lanes, so arming needs the cop override",
+    "all lanes model_source flag (Agent-tool subagents write no agy log)",
+    "lanes were read-only and ran no cargo (host load rule); the red/green numbers are the author's measurements, as stated in the receipt"
+  ]
+}

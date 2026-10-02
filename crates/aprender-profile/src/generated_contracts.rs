@@ -4846,9 +4846,6 @@ macro_rules! contract_pre_quality_gate {
     }};
 }
 
-// Auto-generated from contracts/cooperative-matrix-gemm-v1.yaml — DO NOT EDIT
-// Contract: cooperative-matrix-gemm-v1
-
 // Auto-generated from contracts/copia-delta-v1.yaml — DO NOT EDIT
 // Contract: copia-delta-v1
 

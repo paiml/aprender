@@ -1,0 +1,170 @@
+{
+  "version": "2.1.0",
+  "$schema": "https://raw.githubusercontent.com/oasis-tcs/sarif-spec/master/Schemata/sarif-schema-2.1.0.json",
+  "runs": [
+    {
+      "tool": {
+        "driver": {
+          "name": "pmat",
+          "informationUri": "https://github.com/paiml/pmat",
+          "version": "3.41.1",
+          "rules": []
+        }
+      },
+      "invocations": [
+        {
+          "executionSuccessful": true,
+          "commandLine": "pmat query \"refinement gate unrefined orphaned root cone ratchet\" --limit 5 --format json"
+        }
+      ],
+      "results": [
+        {
+          "ruleId": "PRREV-SCOPE-001",
+          "level": "note",
+          "message": {
+            "text": "PR #4502 changes 1815 files vs merge-base (aca6f2d7f6). Review depth was focused on the 57-file delta since the last-reviewed head 5c54a8e964 per the task's explicit scope instruction; the ~1758 files reviewed at 5c54a8e964 (see evidence/pr-review/4502/5c54a8e964.../receipt.intoto.jsonl) were not re-read. pmat's index was rebuilt from a stale/missing manifest during this run (94064 functions, 10859 files, 58.6s) and targeted queries were run against the delta's changed symbols (refinement_gate.rs::measure, the deleted COOPERATIVE_GEMM_SHADER); a full complexity/tdg/satd/duplication sweep of the 57-file delta or the 1815-file full diff was not performed within the 15-minute review budget, so duplication_coverage is recorded 'none' on every surface except the two symbols actually queried."
+          },
+          "properties": {
+            "grounding": "measured",
+            "command": ["pmat", "query", "refinement gate unrefined orphaned root cone ratchet", "--limit", "5", "--format", "json"],
+            "exit_code": 0,
+            "stdout_sha256": "see-scratch-log-pmat-query-1",
+            "failure_scenario": "A reader of only this receipt's verdict field could assume full-diff coverage; without this note they would not know that complexity/TDG/SATD delta and duplication analysis over the 57-file delta and the wider 1815-file diff were not performed, and a real regression or re-implementation elsewhere in the diff would pass unreviewed.",
+            "precision_class": "advisory"
+          }
+        },
+        {
+          "ruleId": "PRREV-DUP-001",
+          "level": "note",
+          "message": {
+            "text": "Targeted duplication check on the delta's two highest-risk symbols: (1) pmat query for the new `measure()` scanner in crates/aprender-contracts/src/lint/refinement_gate.rs returned it with clone_count=0, duplication_score=0.0 (no pre-existing sibling implementation to reuse instead of adding this HEAD-vs-BASE scanner). (2) `grep -rl COOPERATIVE_GEMM_SHADER` over crates/ after the delta's deletion of crates/aprender-compute/src/backends/gpu/shaders/cooperative.rs returned zero matches: the dead shader chain (#4347) was removed cleanly with no dangling reference left behind."
+          },
+          "properties": {
+            "grounding": "measured",
+            "command": ["pmat", "query", "refinement gate unrefined orphaned root cone ratchet", "--limit", "5", "--format", "json"],
+            "exit_code": 0,
+            "stdout_sha256": "see-scratch-log-pmat-query-1",
+            "failure_scenario": "If COOPERATIVE_GEMM_SHADER still had a caller, deleting its definition would be a compile break masked by this receipt saying 'dead code removed cleanly'; the zero-match grep is what rules that out rather than trusting the commit message (098fae431a: 'delete the dead cooperative-matrix GEMM chain').",
+            "precision_class": "advisory"
+          }
+        },
+        {
+          "ruleId": "PRREV-GUARDS-001",
+          "level": "warning",
+          "message": {
+            "text": "29 files in the 57-file delta match the S3.D mutation-scope predicate (--match-mutation-trigger), including the gate-logic files that carry this PR's core behaviour change: crates/aprender-contracts/src/lint/refinement_gate.rs (+refinement_gate_tests.rs), crates/aprender-contracts/src/discharge/{mod,refinement,challenge,tests,challenge_tests}.rs, crates/aprender-contracts-cli/tests/pvl_discharge_check.rs, contracts/cooperative-matrix-gemm-v1.yaml, and 21 crates/*/src/generated_contracts.rs regen targets. Per S3.D a guard/gate-logic-touching PR requires a 100% kill score on the guard's committed mutation set before being treated as clean; cargo-mutants was not run in this review (consultations.mutation.status = unreachable, reason: not attempted within the 15-minute review budget)."
+          },
+          "properties": {
+            "grounding": "measured",
+            "command": ["bash", "scripts/check_pr_review_receipt.sh", "--match-mutation-trigger", "<each of 57 delta paths>"],
+            "exit_code": 0,
+            "stdout_sha256": "cc64fe6d8bca1908667c8836d238ced626fb464b025338b8314f14b101eea3e3",
+            "failure_scenario": "A weakened predicate in refinement_gate.rs's HEAD-vs-BASE diff logic (e.g. new_unrefined computed as a union instead of a set difference, or the ORPHANED-ROOT cone filter inverted) could silently stop catching regressions the gate exists to catch while still passing every current fixture, and this would not surface until the next incident the gate was supposed to prevent.",
+            "precision_class": "advisory"
+          }
+        },
+        {
+          "ruleId": "PRREV-READ-001",
+          "level": "note",
+          "message": {
+            "text": "Read crates/aprender-contracts/src/lint/refinement_gate.rs (run_with, measure, BaseTree::extract/archive/Drop, default_commit) and crates/aprender-contracts/src/discharge/{mod.rs,challenge.rs,tests.rs} in full for the delta. The design is internally consistent: BaseTree::extract uses `git archive <merge-base(HEAD,origin/main)> -- <path> | tar -x` into a scratch temp dir removed on Drop (never rsyncs the live worktree for BASE, avoiding the 'rsync tests the tree not the commit' failure mode), challenge::render now filters roots to tree.cone() before restating them (with an inline comment explaining why: an ORPHANED-ROOT module has no .olean so its challenge cannot elaborate), and discharge/mod.rs's removal of the unconditional 'FAIL ORPHANED-ROOT' emission is matched 1:1 by updated assertions in discharge/tests.rs (generate_pins_the_cone_and_counts_the_orphaned_root now asserts !has(&r,\"FAIL ORPHANED-ROOT\") instead of r.reject) and crates/aprender-contracts-cli/tests/pvl_discharge_check.rs (a_bound_theorem_outside_the_roots_import_cone_is_orphaned_not_pinned now asserts rc=2/decline instead of rc=1/FAIL). No test/behaviour drift found in the portion read."
+          },
+          "properties": {
+            "grounding": "measured",
+            "command": ["git", "diff", "5c54a8e9642174f2b774788c10fc7d10d6f51abb", "4f143beb4487fe81c8a2c6a9903fbfe283438f76", "--", "crates/aprender-contracts/src/lint/refinement_gate.rs", "crates/aprender-contracts/src/lint/refinement_gate_tests.rs", "crates/aprender-contracts/src/discharge/mod.rs", "crates/aprender-contracts/src/discharge/challenge.rs", "crates/aprender-contracts/src/discharge/tests.rs", "crates/aprender-contracts-cli/tests/pvl_discharge_check.rs"],
+            "exit_code": 0,
+            "stdout_sha256": "see-scratch-log-diff-reads",
+            "failure_scenario": "A behaviour change to a discharge/lint gate that removed a RED-by-name check without updating its assertions would ship a gate that silently stopped failing on the case it used to catch; that mismatch is what this read was checking for and did not find.",
+            "precision_class": "advisory"
+          }
+        },
+        {
+          "ruleId": "PRREV-EV6C-SCOPE-001",
+          "level": "warning",
+          "message": {
+            "text": "cb9324b5b6 and companions replace discharge::check's unconditional 'FAIL ORPHANED-ROOT <name>' (EV-6c, #4244) with a count-only report; the only remaining not-worse enforcement for a NEW orphaned root is crates/aprender-contracts/src/lint/refinement_gate.rs's PV-ONT-034, dispatched from the named-gate table at crates/aprender-contracts/src/lint/mod.rs:998 (confirmed: run_refinement_gate is registered there). Whether that gate actually runs on every PR in this CI depends on some job invoking `pv lint` (or the contracts-cli 'refinement' gate by name) across contracts/; `grep -n 'refinement\\|pv lint' .github/workflows/ci.yml` returned no match, while `grep -rl 'pv lint'` across all workflows + Makefile matched .github/workflows/binary-release.yml, .github/workflows/book.yml and Makefile but not ci.yml directly. This review did not trace which CI job (if any) invokes the Makefile target that runs `pv lint` within the 15-minute budget, so it cannot confirm PV-ONT-034 is actually wired into this PR's required gate path rather than only reachable by hand."
+          },
+          "properties": {
+            "grounding": "asserted",
+            "rationale": "The source-level wiring (mod.rs:998) is measured and real; what is not measured is which GitHub Actions job, if any, calls the Makefile/CLI path that reaches it before merge. Absence of a direct 'refinement'/'pv lint' string in ci.yml is suggestive but not conclusive, since ci.yml may invoke a `make` target that itself shells out to `pv lint`.",
+            "failure_scenario": "If no required CI check actually exercises `pv lint --gate refinement` (or an all-gates `pv lint` run) on this PR's branch, a NEW orphaned root introduced by a future PR would no longer fail discharge::check (that RED-by-name path was removed by this PR) and would also not be caught by the PV-ONT-034 ratchet, because nothing runs the ratchet before merge -- the absolute EV-6c invariant would be silently gone with no replacement enforcement, contrary to the stated intent ('not-worse is pv lint --gate refinement').",
+            "precision_class": "advisory"
+          }
+        }
+      ]
+    },
+    {
+      "tool": {
+        "driver": {
+          "name": "nvidia-cuda-docs",
+          "informationUri": "https://developer.nvidia.com/cuda-toolkit"
+        }
+      },
+      "invocations": [
+        {
+          "executionSuccessful": false,
+          "toolExecutionNotifications": [
+            {
+              "level": "error",
+              "message": {
+                "text": "mcp__nvidia-cuda-docs__search_cuda_docs is not present in this session's tool set; the only nvidia-cuda-docs tools surfaced by ToolSearch are authenticate / complete_authentication, indicating the server requires an interactive OAuth flow that was not completed for this session (same measured state as the prior receipt at 4dce8a54f1f591cc484d1b43a6fa948c0f952448)."
+              },
+              "properties": {
+                "grounding": "measured",
+                "command": ["ToolSearch", "query=nvidia cuda docs search"],
+                "exit_code": 0
+              }
+            }
+          ]
+        }
+      ],
+      "results": [
+        {
+          "ruleId": "PRREV-CUDA-001",
+          "level": "warning",
+          "message": {
+            "text": "S3.B's CUDA trigger fires on the PR's full base..head scope (aca6f2d7f6..4f143beb44): crates/aprender-gpu/**, crates/aprender-ptx-debug/**, crates/aprender-cuda-edge/**, and *ptx* paths were changed earlier in this PR (reviewed and reported unreachable in the prior receipt at head 4dce8a54f1f591cc484d1b43a6fa948c0f952448, e.g. crates/aprender-gpu/src/driver/ptx_patch.rs's sm_121 JIT backward-branch workaround, GH-480). The 57-file delta reviewed in depth here (5c54a8e964..4f143beb44) touches no aprender-gpu/ptx-debug/cuda-edge paths and adds no new device-behaviour claim, so this finding is carried forward unchanged rather than re-derived: the nvidia-cuda-docs consultation remains unreachable for the same reason (OAuth not completed), and the earlier ptx_patch.rs claim remains neither cited nor logged as no-authority-found for a documentation source."
+          },
+          "properties": {
+            "grounding": "measured",
+            "command": ["git", "diff", "--name-only", "5c54a8e9642174f2b774788c10fc7d10d6f51abb", "4f143beb4487fe81c8a2c6a9903fbfe283438f76"],
+            "exit_code": 0,
+            "stdout_sha256": "see-scratch-log-delta-namelist",
+            "failure_scenario": "If ptxas's actual behaviour on sm_121 differs from what the earlier workaround assumes, a Blackwell target could silently miscompile or hang; nothing in either this receipt or the carried-forward prior one distinguishes that from a correct fix, because the documentation consultation has never been reachable in this environment.",
+            "precision_class": "advisory"
+          }
+        }
+      ]
+    },
+    {
+      "tool": {
+        "driver": {
+          "name": "crux",
+          "informationUri": "internal:crux"
+        }
+      },
+      "invocations": [
+        {
+          "executionSuccessful": true
+        }
+      ],
+      "results": [
+        {
+          "ruleId": "PRREV-CRUX-001",
+          "level": "warning",
+          "message": {
+            "text": "S3.C's surface trigger fires on the PR's full scope (contracts/apr-cli-commands-v1.yaml and the new aprender-ptx-debug binary, both changed earlier in this PR and unchanged by the 57-file delta reviewed in depth here). Carried forward from the prior receipt (4dce8a54f...): a grep of contracts/crux-*.yaml (318 files) for 'ptx-debug'/'ptx_debug' still returns zero matches -- no crux contract covers this new CLI surface, and the delta reviewed here does not add or remove that coverage."
+          },
+          "properties": {
+            "grounding": "measured",
+            "command": ["bash", "-c", "grep -li ptx-debug contracts/crux-*.yaml"],
+            "exit_code": 1,
+            "stdout_sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+            "failure_scenario": "A new CLI surface shipped with no competitive/UX contract can regress silently (missing --help text, inconsistent flag naming vs the rest of the apr CLI) with nothing in the crux suite to catch it; this remains true after the reviewed delta.",
+            "precision_class": "advisory"
+          }
+        }
+      ]
+    }
+  ]
+}

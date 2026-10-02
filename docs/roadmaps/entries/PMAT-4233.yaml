@@ -1,0 +1,17 @@
+- id: PMAT-4233
+  github_issue: 4233
+  item_type: task
+  title: Qwen3.5 CUDA decode step as a CUDA graph
+  status: planned
+  priority: high
+  assigned_to: null
+  created: 2026-09-24T17:12:39Z
+  updated: 2026-09-24T17:12:39Z
+  spec: null
+  acceptance_criteria:
+  - Indirect rope/attention/KV-scatter kernels + manual graph capture of Qwen35CudaModel::forward_single behind QWEN35_CUDA_GRAPH=1.
+  phases: []
+  subtasks: []
+  estimated_effort: null
+  labels: []
+  notes: null

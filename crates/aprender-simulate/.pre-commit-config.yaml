@@ -41,7 +41,7 @@ repos:
       # EDD Compliance Hooks
       - id: edd-check
         name: EDD Compliance Check
-        entry: cargo run --bin simular -- emc-check
+        entry: cargo run --bin aprender-simulate -- emc-check
         language: system
         files: 'examples/experiments/.*\.yaml$'
         pass_filenames: true

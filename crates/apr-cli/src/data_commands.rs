@@ -54,25 +54,25 @@ pub enum DataCommands {
     Audit {
         /// Path to JSONL data file
         #[arg(value_name = "FILE")]
-        file: PathBuf,
+        file: InputFile,
         /// Number of output classes (for label range validation)
         #[arg(long, default_value = "5")]
         num_classes: usize,
         /// Input text column name
         #[arg(long, default_value = "input")]
-        input_column: String,
+        input_column: FreeText,
         /// Label column name
         #[arg(long, default_value = "label")]
-        label_column: String,
+        label_column: FreeText,
         /// Preamble prefix to detect (e.g., "#!/")
         #[arg(long, default_value = "#!/")]
-        preamble_prefix: Option<String>,
+        preamble_prefix: Option<FreeText>,
     },
     /// Stratified train/val/test split preserving class proportions
     Split {
         /// Path to JSONL data file
         #[arg(value_name = "FILE")]
-        file: PathBuf,
+        file: InputFile,
         /// Training set fraction
         #[arg(long, default_value = "0.8")]
         train: f64,
@@ -84,22 +84,22 @@ pub enum DataCommands {
         test: f64,
         /// Label column name for stratification
         #[arg(long, default_value = "label")]
-        label_column: String,
+        label_column: FreeText,
         /// Random seed for deterministic split
         #[arg(long, default_value = "42")]
         seed: u64,
         /// Output directory for split files
         #[arg(short, long)]
-        output: PathBuf,
+        output: OutputPath,
     },
     /// Check training data for benchmark contamination via n-gram overlap
     Decontaminate {
         /// Path to training JSONL data file
         #[arg(value_name = "FILE")]
-        file: PathBuf,
+        file: InputFile,
         /// Reference benchmark JSONL files to check against
         #[arg(long, required = true, num_args = 1..)]
-        reference: Vec<PathBuf>,
+        reference: Vec<InputFile>,
         /// N-gram size for overlap detection (must be >= 1)
         #[arg(long, default_value = "10", value_parser = parse_ngram_size)]
         ngram: usize,
@@ -114,10 +114,10 @@ pub enum DataCommands {
     Dedup {
         /// Path to JSONL data file
         #[arg(value_name = "FILE")]
-        file: PathBuf,
+        file: InputFile,
         /// Output file path for the deduplicated dataset
         #[arg(short, long)]
-        output: PathBuf,
+        output: OutputPath,
         /// Output as JSON
         #[arg(long)]
         json: bool,
@@ -126,13 +126,13 @@ pub enum DataCommands {
     Balance {
         /// Path to JSONL data file
         #[arg(value_name = "FILE")]
-        file: PathBuf,
+        file: InputFile,
         /// Rebalancing strategy: oversample, undersample, sqrt-inverse
         #[arg(long, default_value = "oversample")]
-        strategy: String,
+        strategy: FreeText,
         /// Label column name
         #[arg(long, default_value = "label")]
-        label_column: String,
+        label_column: FreeText,
         /// Number of classes (for sqrt-inverse weight computation)
         #[arg(long)]
         num_classes: Option<usize>,
@@ -141,6 +141,6 @@ pub enum DataCommands {
         seed: u64,
         /// Output file path (required for oversample/undersample)
         #[arg(short, long)]
-        output: Option<PathBuf>,
+        output: Option<OutputPath>,
     },
 }

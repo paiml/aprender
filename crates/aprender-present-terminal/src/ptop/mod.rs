@@ -63,16 +63,16 @@ mod enforced_interface_suites {
 
     #[test]
     fn every_enforced_ptop_interface_suite_exists() {
-        let manifest = std::path::Path::new(env!("CARGO_MANIFEST_DIR"));
-        if !manifest.join("../../contracts").is_dir() {
-            eprintln!(
-                "SKIP every_enforced_ptop_interface_suite_exists: out of tree (no workspace \
-                 contracts/ beside this crate) - a published crate ships no tests/ (#4129)"
-            );
+        // The shared in-tree rule (#4175): in tree the tests/ dir must exist and every suite is
+        // checked; out of tree (a published crate ships no tests/) the test skips by name.
+        let Some(tests) = provable_contracts::workspace_path_or_skip!(
+            "every_enforced_ptop_interface_suite_exists",
+            "crates/aprender-present-terminal/tests",
+        ) else {
             return;
-        }
+        };
         for name in SUITES {
-            let suite = manifest.join("tests").join(name);
+            let suite = tests.join(name);
             let src = std::fs::read_to_string(&suite)
                 .unwrap_or_else(|e| panic!("enforced suite {} missing: {e}", suite.display()));
             // Existence is what the old include_str! enforced; some suites are harnesses

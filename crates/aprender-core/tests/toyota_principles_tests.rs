@@ -35,7 +35,12 @@ fn crate_root() -> &'static Path {
 /// FALSIFICATION: No mention of sovereign AI or long-term vision in docs
 #[test]
 fn p1_long_term_philosophy_documented() {
-    let claude_md = include_str!("../../../CLAUDE.md");
+    let Some(claude_md) = provable_contracts::workspace_file_or_skip!(
+        "p1_long_term_philosophy_documented",
+        "CLAUDE.md"
+    ) else {
+        return;
+    };
 
     // Should mention sovereign AI or long-term architecture decisions
     let has_architecture_docs = claude_md.contains("Sovereign")
@@ -209,7 +214,11 @@ fn p6_standardized_tasks_makefile() {
 /// FALSIFICATION: No build commands in CLAUDE.md
 #[test]
 fn p6b_cargo_workflows_documented() {
-    let claude_md = include_str!("../../../CLAUDE.md");
+    let Some(claude_md) =
+        provable_contracts::workspace_file_or_skip!("p6b_cargo_workflows_documented", "CLAUDE.md")
+    else {
+        return;
+    };
 
     let has_cargo_docs = claude_md.contains("cargo build")
         || claude_md.contains("cargo test")
@@ -275,10 +284,14 @@ fn p8b_no_unsafe_code() {
     // The crate manifest inherits `[lints] workspace = true`; the lint itself lives in the
     // workspace root manifest (`[workspace.lints.rust] unsafe_code = …`). Judge both.
     let crate_toml = include_str!("../Cargo.toml");
-    let root_toml = include_str!("../../../Cargo.toml");
+    let Some(root_toml) =
+        provable_contracts::workspace_file_or_skip!("p8b_no_unsafe_code", "Cargo.toml")
+    else {
+        return;
+    };
     let forbids =
         |t: &str| t.contains("unsafe_code") && (t.contains("forbid") || t.contains("deny"));
-    let forbids_unsafe = forbids(crate_toml) || forbids(root_toml);
+    let forbids_unsafe = forbids(crate_toml) || forbids(&root_toml);
 
     assert!(
         forbids_unsafe,

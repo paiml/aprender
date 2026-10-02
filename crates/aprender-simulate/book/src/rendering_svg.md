@@ -20,7 +20,7 @@ All renderers (TUI, WASM, SVG) consume the same `RenderCommand` enum, ensuring v
 ### SVG Keyframes (Template + Animation Data)
 
 ```bash
-simular render --domain orbit --format svg-keyframes \
+aprender-simulate render --domain orbit --format svg-keyframes \
   --output /tmp/orbit --fps 60 --duration 10 --seed 42
 ```
 
@@ -31,7 +31,7 @@ Produces:
 ### SVG Frames (One File Per Frame)
 
 ```bash
-simular render --domain orbit --format svg-frames \
+aprender-simulate render --domain orbit --format svg-frames \
   --output /tmp/frames --fps 30 --duration 5 --seed 42
 ```
 
@@ -167,7 +167,7 @@ The keyframes output is designed for direct consumption by rmedia's SVG producer
 
 ```bash
 # 1. Generate keyframes from simulation
-simular render --domain orbit --format svg-keyframes --output /tmp/orbit
+aprender-simulate render --domain orbit --format svg-keyframes --output /tmp/orbit
 
 # 2. Use in MLT XML via rmedia SVG producer
 #    template.svg provides the base, keyframes.json drives animation

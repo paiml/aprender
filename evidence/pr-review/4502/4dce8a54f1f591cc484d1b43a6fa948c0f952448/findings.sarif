@@ -1,0 +1,55 @@
+{
+  "version": "2.1.0",
+  "$schema": "https://raw.githubusercontent.com/oasis-tcs/sarif-spec/master/Schemata/sarif-schema-2.1.0.json",
+  "runs": [
+    {
+      "tool": { "driver": { "name": "pmat", "informationUri": "https://github.com/paiml/pmat", "version": "3.41.1", "rules": [] } },
+      "invocations": [ { "executionSuccessful": true, "commandLine": "pmat query \"receipt guard\" --limit 3" } ],
+      "results": [
+        {
+          "ruleId": "PRREV-SCOPE-001",
+          "level": "note",
+          "message": { "text": "PR #4502 changes 1793 files vs merge-base (aca6f2d7f). This review sampled scripts/, crates/**/src, .github/workflows and contracts/ gates rather than reading every file; pmat's deep per-file analyze complexity/tdg/satd and the duplication-scan script (scripts/pr_review_duplication_scan.sh) were not run over the full diff within the review's time budget, so duplication_coverage is honestly recorded as 'none' on every surface rather than implying a sweep that did not happen." },
+          "properties": { "grounding": "measured", "command": ["pmat", "query", "receipt guard", "--limit", "3"], "exit_code": 0, "stdout_sha256": "measured-not-hashed-see-scratch-log", "failure_scenario": "A reviewer reading only this receipt's verdict field could assume full-diff coverage; without this note they would not know complexity/TDG/SATD/duplication analysis over the 1793-file diff was not performed, and a real regression or a re-implementation of existing code in one of the ~1750 unsampled files would pass unreviewed.", "precision_class": "advisory" }
+        },
+        {
+          "ruleId": "PRREV-GUARDS-001",
+          "level": "warning",
+          "message": { "text": "The diff modifies 63 files under scripts/check_*.sh plus scripts/dogfood.sh and .github/workflows/ci.yml (gate logic). Per the pr-review skill S3.D, a guard-touching PR requires a 100% kill score on the guard's own committed mutation set before it can be treated as clean; that mutation run was not performed in this review (see consultations.mutation.status = unreachable, reason: full-suite/mutation execution was out of scope per the review's explicit instructions and time budget)." },
+          "properties": { "grounding": "measured", "command": ["git", "diff", "--name-only", "aca6f2d7f6c436426ab3d78721474853f82a8448", "4dce8a54f1f591cc484d1b43a6fa948c0f952448"], "exit_code": 0, "stdout_sha256": "see-diff_files.txt", "failure_scenario": "A guard script edited without its mutation set re-run could silently stop catching the defect class it exists to catch (weakened predicate, inverted condition, off-by-one in a threshold) while still exiting 0 on every current fixture, and this would not surface until the next unrelated incident the guard was supposed to prevent.", "precision_class": "advisory" }
+        }
+      ]
+    },
+    {
+      "tool": { "driver": { "name": "nvidia-cuda-docs", "informationUri": "https://developer.nvidia.com/cuda-toolkit" } },
+      "invocations": [
+        {
+          "executionSuccessful": false,
+          "toolExecutionNotifications": [
+            { "level": "error", "message": { "text": "The nvidia-cuda-docs MCP server's search_cuda_docs tool is not present in this session's tool set; ToolSearch for it returned only mcp__nvidia-cuda-docs__authenticate / complete_authentication, indicating the server requires an interactive OAuth flow that was not completed for this session." }, "properties": { "grounding": "measured", "command": ["ToolSearch", "select:mcp__nvidia-cuda-docs__search_cuda_docs"], "exit_code": 0 } }
+          ]
+        }
+      ],
+      "results": [
+        {
+          "ruleId": "PRREV-CUDA-001",
+          "level": "warning",
+          "message": { "text": "S3.B triggers on this diff: 59 changed paths match the CUDA path predicate (crates/aprender-gpu/**, crates/aprender-ptx-debug/**, crates/aprender-cuda-edge/**, *ptx*), including a device-behaviour claim: driver/ptx_patch.rs patches backward branches with an explicit 'sm_121 JIT workaround' comment (GH-480), and test fixtures embed .target sm_70 / sm_90 PTX. The nvidia-cuda-docs consultation could not run (server unauthenticated/unreachable in this session), so this device-behaviour claim is neither cited nor logged as no-authority-found; it is unverified by documentation." },
+          "properties": { "grounding": "measured", "command": ["git", "diff", "aca6f2d7f6c436426ab3d78721474853f82a8448", "4dce8a54f1f591cc484d1b43a6fa948c0f952448", "--", "crates/aprender-gpu", "crates/aprender-ptx-debug", "crates/aprender-cuda-edge"], "exit_code": 0, "stdout_sha256": "see-scratch-grep-output", "failure_scenario": "If ptxas's actual behaviour on sm_121 differs from what the workaround assumes (e.g. the backward-branch patch is unnecessary on a later ptxas, or insufficient on a different sm_12x variant), a Blackwell target would silently miscompile or hang, and nothing in this review's evidence distinguishes that from a correct fix.", "precision_class": "advisory" }
+        }
+      ]
+    },
+    {
+      "tool": { "driver": { "name": "crux", "informationUri": "internal:crux" } },
+      "invocations": [ { "executionSuccessful": true } ],
+      "results": [
+        {
+          "ruleId": "PRREV-CRUX-001",
+          "level": "warning",
+          "message": { "text": "S3.C triggers: contracts/apr-cli-commands-v1.yaml (the CLI subcommand registry) and crates/apr-cli/tests/cli_commands.rs are both changed, and the diff adds a new binary surface, crates/aprender-ptx-debug (src/bin/main.rs, cli.rs), backed by contracts/bin-aprender-ptx-debug--aprender-ptx-debug-v1.yaml and ci/explicit-test-commands.d/750-aprender-ptx-debug-cli-surface-gate.cmd. A grep of contracts/crux-*.yaml (318 files) for 'ptx-debug'/'ptx_debug' returned zero matches: no crux contract currently covers this new CLI surface." },
+          "properties": { "grounding": "measured", "command": ["bash", "-c", "grep -li ptx-debug contracts/crux-*.yaml"], "exit_code": 1, "stdout_sha256": "empty-no-match", "failure_scenario": "A new CLI surface shipped with no competitive/UX contract can regress silently (missing --help text, inconsistent flag naming vs the rest of the apr CLI, no output-format contract) with nothing in the crux suite to catch it.", "precision_class": "advisory" }
+        }
+      ]
+    }
+  ]
+}

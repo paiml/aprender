@@ -458,8 +458,15 @@ validate_receipt() {
   if [ "$records" -ne 1 ]; then
     reject B1 "receipt.intoto.jsonl holds $records JSON record/s; the in-toto Statement must be exactly one" || return 1
   fi
-  jq -e . "$rcpt"  >/dev/null 2>&1 || reject B1 "receipt.intoto.jsonl is not parseable JSON" || return 1
-  jq -e . "$sarif" >/dev/null 2>&1 || reject B1 "findings.sarif is not parseable JSON" || return 1
+  # Parse by COUNTING DOCUMENTS, never `jq -e .` (#3594): `-e` reports the last value's
+  # truthiness, so jq 1.6 passes a whitespace-only file (one newline = one "record"
+  # above) and every version refuses the valid document `null`. The count is the same
+  # on 1.6/1.7/1.8: blank -> 0, garbage -> non-zero exit.
+  local ndocs
+  ndocs=$(jq -n '[inputs] | length' "$rcpt" 2>/dev/null) || reject B1 "receipt.intoto.jsonl is not parseable JSON" || return 1
+  [ "$ndocs" = 1 ] || reject B1 "receipt.intoto.jsonl holds ${ndocs:-0} JSON document/s; the in-toto Statement must be exactly one" || return 1
+  ndocs=$(jq -n '[inputs] | length' "$sarif" 2>/dev/null) || reject B1 "findings.sarif is not parseable JSON" || return 1
+  [ "$ndocs" = 1 ] || reject B1 "findings.sarif holds ${ndocs:-0} JSON document/s, not exactly one" || return 1
 
   # --- B1: schema gate, offline, against the vendored copies (S6.2). ---------
   local sout

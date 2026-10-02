@@ -8937,18 +8937,6 @@ macro_rules! contract_inv_quality_gate {
     }};
 }
 
-// Auto-generated from contracts/cooperative-matrix-gemm-v1.yaml — DO NOT EDIT
-// Contract: cooperative-matrix-gemm-v1
-
-/// Invariants for equation `cooperative_gemm`.
-/// Check after computation: `contract_inv_cooperative_gemm!(result_expr)`
-macro_rules! contract_inv_cooperative_gemm {
-    () => {{}};
-    ($result:expr) => {{
-        let _contract_result = &$result;
-    }};
-}
-
 // Auto-generated from contracts/copia-delta-v1.yaml — DO NOT EDIT
 // Contract: copia-delta-v1
 

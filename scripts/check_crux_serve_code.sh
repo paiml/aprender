@@ -192,6 +192,23 @@ manifest_assert "R3 MUST-RED no route index is a RED row per verb" none \
 sweep_rows normal nosweep skip "the GPU lock was not had"
 manifest_assert "R4 MUST-RED a sweep that never ran is a refused row per verb, never a gap" nosweep \
   'len(gen) == 2 and all(r["refused"] == "the GPU lock was not had" and r["rc"] is None for r in gen)'
+# #4341: a sweep its timeout kills keeps every cell it finished; only the cells never driven are
+# refused, each naming the kill. Before, plan.json was written at the end, so a killed sweep lost all.
+killed_sweep() { # <routes py>: sweep a 1 s-late server under `timeout 6` (11 cells, ~11 s), then rows; the assertion is the status
+  start normal slow
+  rm -rf "$TMP/killed"; mkdir -p "$TMP/killed"
+  timeout 6 python3 "$1" sweep --url "$URL" --prompt-list "$TMP/list.jsonl" --prompt-dir "$TMP" \
+    --out-dir "$TMP/killed" --render-url "$URL" --timeout 20 > /dev/null 2>&1
+  python3 "$1" rows --out-dir "$TMP/killed" --prompt-list "$TMP/list.jsonl" --manifest "$TMP/killed/manifest.jsonl" \
+    --engine apr --sha abc --host h --backend gpu > /dev/null 2>&1
+  python3 -c 'import json,sys
+g = [r for r in (json.loads(l) for l in open(sys.argv[1]) if l.strip()) if r["kind"] == "gen"]
+done = [r for r in g if r["rc"] == 0 and json.load(open(r["stdout"]))["text"]]
+left = [r for r in g if r["rc"] is None and "killed before this cell ran" in (r["refused"] or "")]
+assert len(g) == 11 and done and left and len(done) + len(left) == 11' "$TMP/killed/manifest.jsonl" 2> /dev/null
+}
+if killed_sweep "$ROUTES_PY"; then ok "R5 a killed sweep keeps its finished cells; the rest are refused rows naming the kill"
+else bad "R5 killed sweep: $(head -c 300 "$TMP/killed/manifest.jsonl" 2> /dev/null)"; fi
 
 printf -- '--- %s: the code verb (apr code -p) ---\n' "$PROG"
 FAKE_APR="$TMP/fake-apr"
@@ -381,6 +398,9 @@ m_t3() { sleep 30 > /dev/null 2>&1 & printf '%s\n' "$!" > "$TMP/srv3.pid"; cp "$
 mutant "M11 T3 vs no nvidia-smi check" "$TD" 'if [ "${#pids[@]}" -gt 0 ] && command -v "$SMI" > /dev/null 2>&1; then' 'if false; then' m_t3
 m_t4() { : > "$TMP/tdrows/manifest.jsonl"; python3 "$1" rows --out-dir "$TMP/ok" --prompt-list "$TMP/list.jsonl" --manifest "$TMP/tdrows/manifest.jsonl" --engine apr --sha abc --host h --backend gpu --cell-fault "cell teardown FAILED: x" > /dev/null 2>&1; python3 -c 'import json,sys; g=[json.loads(l) for l in open(sys.argv[1]) if l.strip()]; g=[r for r in g if r["kind"]=="gen"]; assert g and all(r["refused"] for r in g)' "$TMP/tdrows/manifest.jsonl" 2> /dev/null; }
 mutant "M12 T4 vs a teardown fault that does not reach the rows" "$ROUTES_PY" '        if a.cell_fault:' '        if False:' m_t4
+mutant "M18 R5 vs plan.json written only at the end" "$ROUTES_PY" '                save_plan(a.out_dir, p, cells, not_applicable)
+' '' killed_sweep
+mutant "M19 R5 vs undriven cells dropped from the rows" "$ROUTES_PY" '        if p.get("complete") is False:' '        if False:' killed_sweep
 
 m_o3() { oracle_assert "$1" "$O3"; }
 mutant "M15 O3 vs an unmapped kind silently judged as chat" "$ROUTES_PY" 'return ORACLE_ROUTE_BY_KIND.get(spec["kind"]) if spec else None' 'return ORACLE_ROUTE_BY_KIND.get(spec["kind"], "POST /v1/chat/completions") if spec else None' m_o3

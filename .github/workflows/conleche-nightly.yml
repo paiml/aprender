@@ -1,0 +1,79 @@
+# conleche-nightly.yml -- PVL-F7 (#3142): an independent kernel re-checks the Lean tree once a day. ADVISORY.
+#
+# Every other verdict on crates/aprender-contracts-staging/lean comes from Lean's own C++ kernel (lake build,
+# leanchecker via `pv discharge check`). con-leche is a second checker that shares no code with it or with pv,
+# and it rejects every axiom beyond propext / Classical.choice / Quot.sound -- so it also re-proves that the
+# escape allowlist is empty (#4347). The whole procedure, its pins and its controls live in conleche.sh; this
+# file only provisions elan and runs it.
+#
+# ADVISORY. Nothing requires this job; a red run blocks no PR and no release. It is a finding to file, not a
+# gate: exit 1 = RED (a rejected declaration or an escape axiom), exit 2 = NOT A VERDICT (unsupported feature,
+# OOM, unpinned toolchain, or a control that failed). Both turn the run red, with an annotation naming which --
+# "not a verdict" is never shown green.
+#
+# Measured on lambda 2026-09-25 at 9018366cf (warm pins): controls ok, 402163 declarations accepted, 7:11 wall,
+# 5.7 GB max RSS. Cold adds the con-leche build (395 s) and two toolchain downloads.
+#
+# RUNNER. [self-hosted, Linux, X64, clean-room] -- the sovereign-ci pool, never a hosted runner (operator rule,
+# 2026-09-10). elan is not part of the pool image, so the job installs a PINNED, sha256-checked elan into its
+# own directory and touches nothing else on the host. Toolchains, pins and the Mathlib cache persist there
+# between runs; the concurrency group keeps two runs from sharing them at once.
+name: conleche-nightly
+
+on:
+  schedule:
+    # 21:23 UTC -> lands ~02:23 UTC. GitHub dispatches schedules ~5h late on this account (#3292); the slot is
+    # free and clear of guards-nightly (21:47) and cuda-nightly (20:30).
+    - cron: '23 21 * * *'
+  workflow_dispatch:
+
+concurrency:
+  group: conleche-nightly
+  cancel-in-progress: false
+
+permissions:
+  contents: read
+
+jobs:
+  conleche:
+    runs-on: [self-hosted, Linux, X64, clean-room]
+    # 90: BSE-05 T = max(15, ceil(1.5*p99), p99+20) with p99 taken as a cold ~45 min (no history yet: con-leche
+    # build 6.6 min, toolchains + Mathlib cache, a from-scratch ProvableContracts build, export 4 min, check
+    # 2.6 min) -> T = max(15, 68, 65) = 68, rounded up for a shared host. The first three runs replace this basis.
+    timeout-minutes: 90
+    env:
+      CI_CACHE: /mnt/nvme-raid0/ci-cache/pvl-conleche
+      ELAN_VERSION: v4.2.4
+      ELAN_SHA256: 42b94d4244e8353142c456ec0e4ca6528fd898a6c604d4059f494e706e431f63
+      LEAN_NUM_THREADS: '8'
+    steps:
+      - uses: actions/checkout@v7
+        with:
+          fetch-depth: 1
+      - name: Verdict case table (the classifier this job trusts)
+        run: bash crates/aprender-contracts-staging/lean/conleche.sh --self-test
+      - name: Pinned elan in the job's own directory (sha256-checked, never a host install)
+        run: |
+          set -euo pipefail
+          export ELAN_HOME="$CI_CACHE/elan"
+          mkdir -p "$CI_CACHE"
+          if [ ! -x "$ELAN_HOME/bin/elan" ] || ! "$ELAN_HOME/bin/elan" --version | grep -q "${ELAN_VERSION#v}"; then
+            tgz="$RUNNER_TEMP/elan.tgz"
+            curl -fsSL -o "$tgz" "https://github.com/leanprover/elan/releases/download/$ELAN_VERSION/elan-x86_64-unknown-linux-gnu.tar.gz"
+            echo "$ELAN_SHA256  $tgz" | sha256sum -c -
+            tar xzf "$tgz" -C "$RUNNER_TEMP"
+            "$RUNNER_TEMP/elan-init" -y --no-modify-path --default-toolchain none
+          fi
+          echo "ELAN_HOME=$ELAN_HOME" >> "$GITHUB_ENV"
+          echo "$ELAN_HOME/bin" >> "$GITHUB_PATH"
+      - name: con-leche re-check (advisory)
+        run: |
+          set -uo pipefail
+          rc=0
+          PVL_CONLECHE_CACHE="$CI_CACHE/pins" bash crates/aprender-contracts-staging/lean/conleche.sh || rc=$?
+          case "$rc" in
+            0) ;;
+            1) echo "::error title=con-leche RED::a declaration was rejected or an escape axiom is present -- file it against #3142" ;;
+            *) echo "::warning title=con-leche NOT A VERDICT::exit $rc -- the tree was not checked (see the log above); not a pass" ;;
+          esac
+          exit "$rc"

@@ -1,0 +1,18 @@
+- id: PMAT-4166
+  github_issue: 4166
+  item_type: task
+  title: 'PVL-11: pv lint ratchets — theorem pairing and depends_on'
+  status: planned
+  priority: high
+  assigned_to: null
+  created: 2026-09-24T07:10:50Z
+  updated: 2026-09-24T07:10:50Z
+  spec: null
+  acceptance_criteria:
+  - paiml/infra PVL-001 EV-11 (00553b0b). Cop (aprender-cf) assignment 2026-09-24.
+  phases: []
+  subtasks: []
+  estimated_effort: null
+  labels:
+  - kind:code
+  notes: null

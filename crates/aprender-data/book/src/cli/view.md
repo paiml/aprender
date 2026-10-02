@@ -1,11 +1,11 @@
-# alimentar view
+# aprender-data view
 
 Interactive TUI viewer for exploring datasets in the terminal.
 
 ## Synopsis
 
 ```bash
-alimentar view [OPTIONS] <PATH>
+aprender-data view [OPTIONS] <PATH>
 ```
 
 ## Description
@@ -64,38 +64,38 @@ The viewer automatically selects between two modes based on dataset size:
 
 ```bash
 # View a Parquet file
-alimentar view data.parquet
+aprender-data view data.parquet
 
 # View a CSV file
-alimentar view data.csv
+aprender-data view data.csv
 
 # View an Arrow IPC file
-alimentar view data.arrow
+aprender-data view data.arrow
 
 # View a JSON file
-alimentar view data.json
+aprender-data view data.json
 ```
 
 ### Search on Open
 
 ```bash
 # Open viewer and jump to first row containing "error"
-alimentar view logs.parquet --search "error"
+aprender-data view logs.parquet --search "error"
 
 # Search for a specific ID
-alimentar view users.csv --search "user_12345"
+aprender-data view users.csv --search "user_12345"
 ```
 
 ### Workflow Integration
 
 ```bash
 # Quick inspection workflow
-alimentar info data.parquet      # Check schema and stats
-alimentar head data.parquet -n 5 # Preview first rows
-alimentar view data.parquet      # Interactive exploration
+aprender-data info data.parquet      # Check schema and stats
+aprender-data head data.parquet -n 5 # Preview first rows
+aprender-data view data.parquet      # Interactive exploration
 
 # Quality check then explore
-alimentar quality check data.csv && alimentar view data.csv
+aprender-data quality check data.csv && aprender-data view data.csv
 ```
 
 ## Display
@@ -146,6 +146,6 @@ for line in viewer.render_lines() {
 
 ## See Also
 
-- [alimentar info](./info.md) - Display dataset information
-- [alimentar head](./head.md) - Display first N rows
-- [alimentar schema](./schema.md) - Display dataset schema
+- [aprender-data info](./info.md) - Display dataset information
+- [aprender-data head](./head.md) - Display first N rows
+- [aprender-data schema](./schema.md) - Display dataset schema

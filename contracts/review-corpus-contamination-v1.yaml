@@ -1,0 +1,38 @@
+metadata:
+  version: 1.0.0
+  kind: schema
+  description: |
+    PROMETHEUS (PRM-001) sealed-test contamination check, spec §2.2 and rule R-2. A sealed
+    test item leaks when a training file carries its diff sha256 literally, or any of
+    its hunks (header stripped, >= 4 lines, at least one change) — including inside
+    JSON string values, so a diff stored in a JSONL field is seen unescaped. Training
+    roots: docs/audits/review-corpus/train/ (contamination::TRAIN_ROOTS). Any hit is
+    a hard FAIL (S-3).
+  references:
+    - "docs/specifications/review-experiment-protocol.md"
+    - "docs/audits/review-corpus/test-manifest-v1.txt"
+    - "https://github.com/paiml/aprender/issues/4357"
+
+equations:
+  leak:
+    formula: "leak(f) = exists t in sealed: t.diff_sha256 in text(f) or hunks(t) ∩ hunks(text(f) ∪ json_strings(f)) != {}"
+
+falsification_tests:
+  - id: FALSIFY-RCC-001
+    name: planted_jsonl_leak_is_caught
+    prediction: "a sealed diff inside a JSONL training record is a hit"
+    test_harness: "cargo test -p aprender-review-experiment --lib falsify_rcc_001"
+    expected_output: "exit 0"
+    if_fails: "Escaped diffs in JSONL pass the check; B2 teacher sets could train on test items."
+  - id: FALSIFY-RCC-002
+    name: rebased_copy_and_sha_literal_leak
+    prediction: "a copy with other hunk line numbers, and a bare diff sha, are hits; an unrelated diff is not"
+    test_harness: "cargo test -p aprender-review-experiment --lib falsify_rcc_002"
+    expected_output: "exit 0"
+    if_fails: "The check keys on line numbers or misses sha references."
+  - id: FALSIFY-RCC-003
+    name: train_roots_are_clean
+    prediction: "no file under the training roots carries a sealed test item"
+    test_harness: "cargo test -p aprender-review-experiment --lib falsify_rcc_003"
+    expected_output: "exit 0"
+    if_fails: "S-3: a sealed test item is in training data. STOP; rotate the leaked items out."

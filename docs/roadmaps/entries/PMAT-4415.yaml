@@ -1,0 +1,20 @@
+- id: PMAT-4415
+  github_issue: 4415
+  item_type: task
+  title: 'Lever 0: guard-cargo/guard-tree stop at the first red step — run every guard and report every failure in one pass (RC #4318: 1 failure per run, 15–71 steps dark)'
+  status: inprogress
+  priority: high
+  assigned_to: aprender-5d
+  created: 2026-09-26T12:00:00+00:00
+  updated: 2026-09-26T12:00:00+00:00
+  spec: null
+  acceptance_criteria:
+  - 'each guard section (guard-tree, guard-cargo) in ci/sections.yml runs its guards through ONE step, bash scripts/ci_guards.sh <job>, under if: !cancelled() && steps.guard-setup.outcome == success; every guard step that can run outside a pull_request event lives in the <job>-steps manifest (if: false) and the runner executes all of them past a red step, one ::error per failure and one SUMMARY. The only steps left in the section are the ones that need the pull_request payload (both already !cancelled()) and the always() target-watch report — the same three #4457 kept — and check_guard_steps_run_all.sh refuses any other fail-fast step over the baseline'
+  - 'make guards-local and .githooks/pre-push run the same script and print the same ci_guards: sha256 line CI prints'
+  - 'the guard jobs are the guard-* sections the gate in .github/workflows/ci.yml reads; a gate that reads none, or an unreadable file, fails closed (rc 2)'
+  - 'scripts/guard_fail_fast_baseline.txt (shrink-only) and scripts/ci_guards_uncovered.txt name real car sections; check_guard_steps_run_all.sh --self-test goes RED on each planted mutant and is itself wired into CI'
+  phases: []
+  subtasks: []
+  estimated_effort: null
+  labels: []
+  notes: 'Port of #4457 (PMAT-4415-guards-run-all, written against the pre-#4433 ci.yml) onto car/0.70.0 fat-job CI, as fold item from aprender-59. Workflow-surface change: 3/3 non-Claude-author quorum required; no push by the author.'

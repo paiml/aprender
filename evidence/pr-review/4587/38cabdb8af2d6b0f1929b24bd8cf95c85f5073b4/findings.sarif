@@ -1,0 +1,16 @@
+{
+ "version": "2.1.0",
+ "$schema": "https://raw.githubusercontent.com/oasis-tcs/sarif-spec/master/Schemata/sarif-schema-2.1.0.json",
+ "runs": [
+  {
+   "tool": {"driver": {"name": "pmat", "informationUri": "https://github.com/paiml/pmat", "version": "3.30.0", "rules": []}},
+   "invocations": [{"executionSuccessful": true, "commandLine": "git diff 05c9e6f2d9 38cabdb8af -- . ':!evidence/pr-review'"}],
+   "results": [
+    {"ruleId": "PRREV-SCOPE-001", "level": "note", "message": {"text": "This run reads IN FULL the 2-commit delta 05c9e6f2d9..38cabdb8af (1 file changed, 22 insertions(+), 1 deletion(-) net, excluding evidence/pr-review): 69050e6446 (kill CellsError::file -> String::new() survivor) and 38cabdb8af (kill version_key || -> && and v_star > -> >= survivors, both M1 shard-5, cherry-picked from aprender-27), all in crates/aprender-contracts/src/ontology/capability_cells_tests.rs. Evidence commit 1c3c23728a (the prior receipt) is excluded from the reviewed delta."}},
+    {"ruleId": "PR1-MUTANTS", "level": "error", "message": {"text": "Carried unchanged from the 05c9e6f2d9 receipt on this same PR: the required mutants-table job (GATE-MUTANTS-TABLE-RULE) must judge all listed mutants on this exact head sha + diff hash, GREEN. Not observed this run (6-minute hard limit; no gh polling per fleet GH-1)."}},
+    {"ruleId": "REV-KILLTEST-002", "level": "note", "message": {"text": "Both new/extended tests assert real, non-tautological behaviour: a_version_key_tie_keeps_the_first_spelling checks v_star resolves to the FIRST-read receipt's spelling ('0.69.1' over '0.069.1') on a tie, directly targeting the described '>' -> '>=' mutant; the '0.+69' case is added to the existing refused-by-name table, targeting the described '||' -> '&&' mutant (u64::from_str accepts a leading '+', so only the digit-shape check refuses it); err.file() assertions in both commits check the concrete file path / joined contract names an error names, not a placeholder. No module-level #[cfg(feature=...)] gate found on this file, so it is not a candidate for ci/mutants-feature-groups.txt (unlike cli_roles.rs in the prior commit)."}},
+    {"ruleId": "REV-DELTA-002", "level": "note", "message": {"text": "No script, workflow, or gate file touched by this delta; it is test-only. No weakening surface (exclude globs, rc handling, empty-group logic) applies."}}
+   ]
+  }
+ ]
+}
