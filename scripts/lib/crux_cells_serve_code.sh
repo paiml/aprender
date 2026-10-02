@@ -152,17 +152,20 @@ serve_routes_cell() {
   fi
   local common=(--prompt-list "$WORK/serve-prompts.jsonl" --prompt-dir "$WORK" --temperature "$TEMP" --seed "$SEED"
     --thinking "$THINK" --timeout "$TMO")
-  cell_add "$cell" "$d/apr-sweep" python3 scripts/lib/crux_serve_routes.py sweep --url "http://127.0.0.1:$pa" \
+  # #4341: each request is bounded by --timeout $TMO inside the sweep; the sweep's own bound is a hang
+  # backstop sized to its request count (prompts x modes x at most SWEEP_ROUTES_MAX generation routes).
+  local sweep_tmo=$(( TMO * (${#pids[@]} + ${#spids[@]} + 1) * ${SWEEP_ROUTES_MAX:-12} ))
+  CELL_TMO=$sweep_tmo cell_add "$cell" "$d/apr-sweep" python3 scripts/lib/crux_serve_routes.py sweep --url "http://127.0.0.1:$pa" \
     --out-dir "$d/apr" --device "apr serve $APR_BE" "${render[@]}" "${common[@]}"
   if [ "$HAVE_LLAMA" = 1 ]; then
     # #3962 B4: every oracle route, not only chat -- apr's raw routes are judged against llama's
     # /v1/completions on the byte-identical rendered prompt (--render-url: llama renders for itself).
-    cell_add "$cell" "$d/llama-sweep" python3 scripts/lib/crux_serve_routes.py sweep --url "http://127.0.0.1:$CRUX_PL" \
+    CELL_TMO=$sweep_tmo cell_add "$cell" "$d/llama-sweep" python3 scripts/lib/crux_serve_routes.py sweep --url "http://127.0.0.1:$CRUX_PL" \
       --routes "$(python3 scripts/lib/crux_serve_routes.py oracle-routes)" --model gguf --extra "$(crux_think_extra)" \
       --out-dir "$d/llama" --device "$LLAMA_DEVICE" "${render[@]}" "${common[@]}"
   fi
   if [ "$HAVE_OLLAMA" = 1 ] && [ -z "$OL_REFUSED" ]; then
-    cell_add "$cell" "$d/ollama-sweep" python3 scripts/lib/crux_serve_routes.py sweep --url "$OLLAMA_HOST_URL" \
+    CELL_TMO=$sweep_tmo cell_add "$cell" "$d/ollama-sweep" python3 scripts/lib/crux_serve_routes.py sweep --url "$OLLAMA_HOST_URL" \
       --routes "POST /v1/chat/completions" --model "$OL_NAME" --extra '{"keep_alive": 0}' \
       --out-dir "$d/ollama" --device "$OL_DEVICE" "${common[@]}"
   fi

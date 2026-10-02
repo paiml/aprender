@@ -85,7 +85,7 @@ jobs:
         run: |
           ARCHIVE="alimentar-${{ matrix.target }}"
           mkdir -p "$ARCHIVE"
-          cp "target/${{ matrix.target }}/release/alimentar" "$ARCHIVE/"
+          cp "target/${{ matrix.target }}/release/aprender-data" "$ARCHIVE/"
           for f in README.md LICENSE LICENSE-MIT COPYING UNLICENSE; do
             [ -f "$f" ] && cp "$f" "$ARCHIVE/"
           done
@@ -99,7 +99,7 @@ jobs:
         run: |
           $archive = "alimentar-${{ matrix.target }}"
           New-Item -ItemType Directory -Force -Path $archive
-          Copy-Item "target/${{ matrix.target }}/release/alimentar.exe" "$archive/"
+          Copy-Item "target/${{ matrix.target }}/release/aprender-data.exe" "$archive/"
           foreach ($f in @("README.md", "LICENSE", "LICENSE-MIT", "COPYING", "UNLICENSE")) {
             if (Test-Path $f) { Copy-Item $f "$archive/" }
           }

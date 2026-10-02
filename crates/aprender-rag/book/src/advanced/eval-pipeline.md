@@ -27,7 +27,7 @@ Steps 2 and 4 require an `ANTHROPIC_API_KEY`. The remaining steps run entirely o
 Stratified sampling from an index. Groups chunks by source directory and samples 2-3 from each, filtering out navigational boilerplate (min 50 words, min 15 unique words).
 
 ```bash
-trueno-rag eval sample \
+aprender-rag eval sample \
   --index /path/to/index \
   --output sampled-chunks.jsonl \
   --sample-size 250 --seed 42
@@ -44,7 +44,7 @@ Output format (`sampled-chunks.jsonl`):
 Generate one evaluation question per sampled chunk. Questions are designed to be answerable only from the chunk text.
 
 ```bash
-trueno-rag eval generate \
+aprender-rag eval generate \
   --index /path/to/index \
   --output ground-truth.jsonl \
   --sample-size 250 --seed 42
@@ -62,21 +62,21 @@ Run each ground-truth query against the index. Supports three retrieval modes:
 
 ```bash
 # Dense: TF-IDF cosine similarity
-trueno-rag eval retrieve \
+aprender-rag eval retrieve \
   --index /path/to/index \
   --ground-truth ground-truth.jsonl \
   --output retrieval-dense.jsonl \
   --mode dense --top-k 10
 
 # Sparse: BM25 term matching
-trueno-rag eval retrieve \
+aprender-rag eval retrieve \
   --index /path/to/index \
   --ground-truth ground-truth.jsonl \
   --output retrieval-sparse.jsonl \
   --mode sparse --top-k 10
 
 # Hybrid: BM25 + TF-IDF with fusion
-trueno-rag eval retrieve \
+aprender-rag eval retrieve \
   --index /path/to/index \
   --ground-truth ground-truth.jsonl \
   --output retrieval-hybrid.jsonl \
@@ -98,7 +98,7 @@ Dense and hybrid modes **auto-detect** the index's embedder type. If the index w
 Optional post-retrieval reranking fetches 3x candidates and re-orders by the reranker's scoring:
 
 ```bash
-trueno-rag eval retrieve \
+aprender-rag eval retrieve \
   --index /path/to/index \
   --ground-truth ground-truth.jsonl \
   --output retrieval-reranked.jsonl \
@@ -123,7 +123,7 @@ trueno-rag eval retrieve \
 Judge each (query, retrieved chunk) pair for content relevance using an LLM.
 
 ```bash
-trueno-rag eval judge \
+aprender-rag eval judge \
   --retrieval-results retrieval-hybrid.jsonl \
   --ground-truth ground-truth.jsonl \
   --output results.json \
@@ -137,7 +137,7 @@ Judgments are cached by SHA256 hash of (query, chunk content), so re-runs are fr
 Compute IR metrics from retrieval results and judgments.
 
 ```bash
-trueno-rag eval metrics \
+aprender-rag eval metrics \
   --retrieval-results retrieval-hybrid.jsonl \
   --judgments judgments.jsonl \
   --output results.json
@@ -161,7 +161,7 @@ Metrics are computed at k=5 and k=10, reported both in aggregate and by domain.
 Compare two evaluation runs to measure improvement.
 
 ```bash
-trueno-rag eval compare \
+aprender-rag eval compare \
   --baseline results-dense.json \
   --candidate results-hybrid.json
 ```
@@ -173,7 +173,7 @@ Prints metric deltas with directional arrows showing improvement or regression.
 CI-friendly gate that exits non-zero if metrics fall below thresholds.
 
 ```bash
-trueno-rag eval gate \
+aprender-rag eval gate \
   --results results.json \
   --min-mrr 0.50 --min-hit5 0.70
 ```

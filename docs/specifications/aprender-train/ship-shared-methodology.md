@@ -717,7 +717,7 @@ P0 blockers identified in the v2.14.0 readiness audit:
    `with_min_frequency()` AND has the NFC plumbing task #89 added).
    Documented in memory `project_ship_two_001_nfc_bpe_patch.md`.
 
-3. **Task #91 — `apr-corpus-ingest` binary SHIPPED (commit
+3. **Task #91 — `aprender-corpus-ingest` binary SHIPPED (commit
    `512ea51a6`):** new `crates/apr-cli/src/bin/apr-corpus-ingest.rs`
    (+517 LOC) with `plan` and `validate-contract` subcommands over
    `C-DATA-THESTACK-PYTHON` v1.0.0. `plan` reads the contract,

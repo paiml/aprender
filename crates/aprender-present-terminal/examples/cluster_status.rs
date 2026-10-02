@@ -4,7 +4,7 @@
 //! Demonstrates monitoring a Kubernetes cluster with node status,
 //! pod health, and resource utilization.
 //!
-//! Run with: cargo run -p presentar-terminal --example `cluster_status`
+//! Run with: cargo run -p aprender-present-terminal --example `cluster_status`
 
 use presentar_core::{Canvas, Color, Point, Rect, TextStyle, Widget};
 use presentar_terminal::direct::{CellBuffer, DiffRenderer, DirectTerminalCanvas};

@@ -103,27 +103,33 @@ measured_crate_count() {
 }
 
 measured_contract_count() {
-  # ONT-001 ONT-1 (F-1): the count is the census's `n_files` — the number the
-  # gate actually validates — not a `find`, which counts 51 files `pv lint`
-  # never walks (kaizen/, legacy/, pipelines/, publish-manifests/, binding.yaml,
-  # external-corpora.yaml). A README printing a number no gate measures is the
-  # drift this script exists to end; the generator and the guard now read the
-  # same file.
-  local census="$REPO_ROOT/contracts/census.json" n
-  [ -s "$census" ] || {
-      printf 'FAIL readme_sync: %s is missing or empty — run `make contracts`. The count is UNMEASURED, which is a failure, not a zero.\n' "$census" >&2
+  # The count is a property of the WORKING TREE, measured with the one definition
+  # of "a contract file" that `pv census` (ONT-001 ONT-1) and the lint walker
+  # apply (contract_files_only). It used to be read out of the tracked
+  # contracts/census.json, but since #3569 that file is a release-train snapshot
+  # that no PR may edit, so it lags by design. A README generated from it would
+  # lag the tree it describes, and FALSIFY-README-002 holds the block EQUAL to the
+  # tree. CENSUS_JSON=<a fresh pv census> reads that census instead; `make
+  # contracts` uses it to prove this listing and `pv census` still agree.
+  local n
+  if [ -n "${CENSUS_JSON:-}" ]; then
+    [ -s "$CENSUS_JSON" ] || {
+      printf 'FAIL readme_sync: CENSUS_JSON=%s is missing or empty. The count is UNMEASURED, which is a failure, not a zero.\n' "$CENSUS_JSON" >&2
       return 1
-  }
-  n=$(jq -r '.n_files // empty' "$census" 2>/dev/null || true)
+    }
+    n=$(jq -r '.n_files // empty' "$CENSUS_JSON" 2>/dev/null || true)
+  else
+    n=$(cd "$REPO_ROOT" && { find contracts -type f -name '*.yaml' 2>/dev/null || true; } | contract_files_only | grep -c .) || true
+  fi
   case "$n" in
-      '' | *[!0-9]*)
-          printf 'FAIL readme_sync: %s carries no numeric .n_files\n' "$census" >&2
-          return 1
-          ;;
+    '' | *[!0-9]*)
+      printf 'FAIL readme_sync: the contract count read %q, not a number\n' "$n" >&2
+      return 1
+      ;;
   esac
   [ "$n" -gt 0 ] || {
-      printf 'FAIL readme_sync: the census reports 0 contracts. A zero count is a broken measurement, not a README to regenerate.\n' >&2
-      return 1
+    printf 'FAIL readme_sync: the contract count is 0. A zero count is a broken measurement, not a README to regenerate.\n' >&2
+    return 1
   }
   printf '%s' "$n"
 }
@@ -338,7 +344,7 @@ measure_contract_count_rev() { # measure_contract_count_rev <rev>
   n=$(git -C "$REPO_ROOT" archive --format=tar "$rev" -- contracts 2>/dev/null \
         | tar -tf - 2>/dev/null \
         | contract_files_only \
-        | grep -c .) || n=""
+        | grep -c .) || true
   # 0 is a FAILED measurement, never a count. The preflight has already proved
   # the revision carries contracts/, so an empty listing means the instrument
   # broke -- and "0 violations over 0 files" is this fleet's signature defect.
@@ -593,13 +599,14 @@ case "$mode" in
     # aprender#3516, 2026-09-19: census 1796, tree 1797, row 6 rc=0 (wanted 1).
     # One number, one instrument; the census's own lag is reported by name.
     cc=$(measure_contract_count_rev HEAD) || { echo "FAIL self-test: cannot measure the contract count of HEAD" >&2; exit 1; }
-    census_cc=$(measured_contract_count) || census_cc=""
+    # The tracked census is a release-train snapshot since #3569 (no PR may edit
+    # it), so a lag here is expected and reported, never RED.
+    census_cc=$(jq -r '.n_files // empty' "$REPO_ROOT/contracts/census.json" 2>/dev/null) || census_cc=""
     if [ "$census_cc" != "$cc" ]; then
-      printf 'FAIL  contracts/census.json .n_files=%s but HEAD carries %s contract file(s): the census is stale — run `make contracts` (pv census) and commit it. The rows below still measure the tree.\n' "${census_cc:-<unreadable>}" "$cc"
-      census_red=1
+      printf 'info  contracts/census.json .n_files=%s, HEAD carries %s contract file(s): the train snapshot lags, as designed (make census on release/X.Y.Z)\n' "${census_cc:-<unreadable>}" "$cc"
     fi
     fx() { printf '# apr\n\n**%s** workspace crates, **%s** provable contracts.\n%s\n' "$1" "$2" "${3:-}" > "$TD/README.md"; }
-    n=0; red=${census_red:-0}
+    n=0; red=0
     row() { # row <want rc> <label> <claim> [<extra env>]
       local want=$1 label=$2 claim=$3 env=${4:-} rc=0
       n=$((n + 1))

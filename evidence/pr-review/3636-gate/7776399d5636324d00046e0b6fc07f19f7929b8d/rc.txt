@@ -1,0 +1,3 @@
+agy rc=0
+haiku rc=0
+sonnet rc=0

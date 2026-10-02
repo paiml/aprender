@@ -125,7 +125,7 @@ Follows Mitchell et al. (2019) Model Cards and Gebru et al. (2021) Datasheets st
 
 ## Build & Deployment
 
-Two modes: `presentar --serve ./app/` (dev) and `presentar --bundle ./app/ -o app.wasm` (production).
+Two modes: `aprender-present --serve ./app/` (dev) and `aprender-present --bundle ./app/ -o app.wasm` (production).
 
 Bundle contents (~300KB base): trueno-viz runtime (150KB), presentar widgets (100KB), embedded YAML (2KB), schemas only (not weights/rows).
 

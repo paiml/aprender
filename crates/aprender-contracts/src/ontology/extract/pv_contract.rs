@@ -76,8 +76,15 @@ pub fn extract_one(g: &mut Graph, stem: &str, file: &str, doc: &serde_yaml::Valu
             g.insert(s.clone(), ont(pred), Term::string(v));
         }
     }
-    if let Some(kind) = scalar(doc.get("metadata").and_then(|m| m.get("kind"))) {
-        g.insert(s.clone(), ont("kind"), Term::string(kind));
+    let kind = scalar(doc.get("metadata").and_then(|m| m.get("kind")));
+    if let Some(kind) = &kind {
+        g.insert(s.clone(), ont("kind"), Term::string(kind.as_str()));
+    }
+    // ONT-4d: Σ's `Kernel` concept is "a contract whose kind is kernel". An absent kind IS kernel
+    // (`schema::kind::ContractKind`'s default, ONT-6b), so both are typed `ont:Kernel`. `ont:Contract` stays
+    // asserted as well: an extraction with no Σ (and so no closure) must not lose it.
+    if kind.as_deref().is_none_or(|k| k == "kernel") {
+        g.insert(s.clone(), RDF_TYPE, Term::iri(ont("Kernel")));
     }
     if let Some(level) = scalar(doc.get("evidence").and_then(|e| e.get("level"))) {
         g.insert(s.clone(), ont("evidenceLevel"), Term::string(level));
@@ -261,6 +268,19 @@ mod tests {
     /// The prefixed form and the IRI are the SAME predicate — §3.6's rule maps any unregistered `p:name` into
     /// `<ONT_BASE>p/name`. Pinned here because a shape writes `path: study:scale` while the extractor writes the
     /// IRI, and a reader who does not know the rule sees two different things (quorum PMAT-3529, rounds 2/3).
+    #[test]
+    fn only_an_absent_or_kernel_kind_is_typed_ont_kernel() {
+        let typed = |yaml: &str| {
+            let doc: serde_yaml::Value = serde_yaml::from_str(yaml).expect("yaml");
+            let mut g = Graph::new();
+            extract_one(&mut g, "a", "contracts/a.yaml", &doc);
+            g.instances_of(&ont("Kernel")).len()
+        };
+        assert_eq!(typed("name: n\n"), 1);
+        assert_eq!(typed("metadata:\n  kind: kernel\n"), 1);
+        assert_eq!(typed("metadata:\n  kind: pattern\n"), 0);
+    }
+
     #[test]
     fn the_predicate_is_the_expansion_of_the_prefixed_form() {
         assert_eq!(

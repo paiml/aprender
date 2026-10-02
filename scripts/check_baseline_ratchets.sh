@@ -80,6 +80,8 @@ classify() { # classify <basename> -> "<kind>[<TAB>reason]", rc 1 if unclassifie
         bin_cli_unwired_baseline.txt)            printf 'set\n' ;;   # spawning test targets no lane runs (scripts/check_bin_cli_tests_wired.sh, #4059): may only shrink
         claim_literal_baseline.txt)              printf 'set-aperture\tscripts/check_no_claim_literals.sh\n' ;;
         contract_duplicate_stem_baseline.txt)    printf 'set\n' ;;
+        comparator_consumer_baseline.txt)        printf 'set\n' ;;   # known llama.cpp consumers not resolving through llama_bin.sh, each owned by an issue (scripts/check_comparator_consumers_resolve.sh, #3740)
+        comparator_pin_citations.txt)            printf 'set\n' ;;   # files citing a SUPERSEDED llama.cpp pin as dated history / fixture, one line each (scripts/check_comparator_pin_citations.sh, #3741)
         contract_test_binding_baseline.txt)      printf 'keyed\n' ;;
         complexity_baseline.txt)                 printf 'keyed2\n' ;;
         fabricated_baseline_rust_sites.txt)      printf 'set\n' ;;
@@ -143,6 +145,9 @@ classify() { # classify <basename> -> "<kind>[<TAB>reason]", rc 1 if unclassifie
         # an author one conversation, a wrong `set-aperture` costs a hole.
         silent_truncation_baseline.txt)          printf 'set\n' ;;
         shell_lint_baseline.txt)                 printf 'count\n' ;;
+        guard_fail_fast_baseline.txt)            printf 'keyed\n' ;;   # #4415: <guard section><TAB><fail-fast steps>; no section may rise, none may appear (scripts/check_guard_steps_run_all.sh)
+        ci_guards_uncovered.txt)                 printf 'set\n' ;;   # #4415: guard scripts ci_guards.sh cannot reach, one <section> <script> row each; may only shrink (scripts/ci_guards.sh --check-coverage)
+        src_test_files_unwired_baseline.txt)     printf 'set\n' ;;   # dark src test files, SHRINK-ONLY exact set (scripts/check_src_test_files_wired.sh, #3809)
         cb200_baseline.txt)                      printf 'count\n' ;;   # mirrors .pmat-gates.toml [tdg] baseline (PMAT-937)
         test_fixture_path_baseline.txt)          printf 'count\n' ;;
         tracked_ignored_baseline.txt)            printf 'count\n' ;;
@@ -171,6 +176,14 @@ classify() { # classify <basename> -> "<kind>[<TAB>reason]", rc 1 if unclassifie
         # is a decision, not a leak — the distinction this guard exists to keep.
         guards_nightly_manifest.txt)
             printf 'none\tledger of steps moved to guards-nightly.yml; exact-match against that workflow, a name that is not a step FAILS there\n' ;;
+        # #4430. Neither is a ratchet against main: both are new with the bin-name rename,
+        # and each is exact-matched by its own guard instead.
+        bin_names_pending_fold.txt)
+            printf 'none\tfold ledger (#4430); exact-match against the observed [[bin]] set, a row whose bin is gone FAILS (scripts/check_bin_names_aprender.sh)\n' ;;
+        bin_renames.txt)
+            printf 'none\tdeclared [[bin]] renames <old> <new> (#4430); read by the dogfood ledger gate to map comparand rows (scripts/lib/dogfood_coverage_gate.py)\n' ;;
+        feature_renames.txt)
+            printf 'none\tdeclared dogfood feature renames <bin>TAB<old>TAB<new> (#4502 ruling b); a stale <old> or missing <new> FAILS in scripts/lib/dogfood_coverage_gate.py\n' ;;
         duplicate_bin_names_allowlist.txt)
             printf 'none\tintent model, exact-match against the observed set (stale entries FAIL)\n' ;;
         # #4023. coverage-solo.txt EXCLUDES NOTHING: its tests still run and are still
@@ -561,12 +574,120 @@ if [ "${1:-}" = "--self-test" ] || [ "${1:-}" = "--selftest" ]; then
         bad=1
     fi
 
+    # -- the INSTRUMENT is CI's pinned bashrs, never the ambient one (tools.toml).
+    # The fleet runs nightly bashrs (7.4.2) while CI pins 7.4.1; a probe that read
+    # PATH measured a different instrument on every box. Fixtures: a fake
+    # tools.toml pinning 9.9.1 and mock binaries whose version is an argument, so
+    # the same mock drives the match and the MISMATCH rows. Nothing here installs.
+    PT="$TD/pin"
+    mkbashrs() { # mkbashrs <dir> <reported-version> -> <dir>/bashrs
+        mkdir -p "$1"
+        printf '#!/bin/sh\nprintf "bashrs %s\\n"\n' "$2" > "$1/bashrs"
+        chmod +x "$1/bashrs"
+    }
+    mkdir -p "$PT"
+    printf '[pmat]\nversion = "0.0.1"\n\n[bashrs]\nversion = "9.9.1"\n' > "$PT/tools.toml"
+    printf '[pmat]\nversion = "0.0.1"\n' > "$PT/nobashrs.toml"
+    printf '# tool_version=bashrs 9.9.1\n3\n' > "$PT/base.txt"
+    printf '# tool_version=bashrs 9.9.0\n3\n' > "$PT/base_old.txt"
+    # restamped by `--update` on a box whose bashrs drifted: header and binary AGREE,
+    # and only the pin comparison can see that neither is CI's instrument.
+    printf '# tool_version=bashrs 9.9.2\n3\n' > "$PT/base_drift.txt"
+    mkbashrs "$PT/root-ok/bin" 9.9.1
+    mkbashrs "$PT/root-bad/bin" 9.9.2
+    mkbashrs "$PT/path-match" 9.9.1
+    mkbashrs "$PT/path-drift" 9.9.2
+    pin_row() { # pin_row <label> <want-rc> <must-match> <lib> <toml> <root> <PATH-dir> <baseline>
+        local out got
+        out=$(env TOOL_PIN_TOML="$5" BASHRS_PIN_ROOT="$6" BASHRS_PIN_NO_INSTALL=1 PATH="$7:$PATH" \
+            bash -c '. "$1" || exit 9; baseline_require_tool_version "$2"' _ "$4" "$8" 2>&1); got=$?
+        say_row "$1" "$2" "$got"
+        if [ "$got" = "$2" ] && ! grep -qE -- "$3" <<< "$out"; then
+            printf 'FAIL  %-46s rc ok but output lacks /%s/: %s\n' "$1" "$3" "$out"
+            bad=1
+        fi
+    }
+    LIB="$REPO_ROOT/scripts/lib_baseline_ratchet.sh"
+    pin_row 'pin   pinned 9.9.1, PATH drifted to 9.9.2'   0 '^$' \
+        "$LIB" "$PT/tools.toml" "$PT/root-ok" "$PT/path-drift" "$PT/base.txt"
+    pin_row 'pin   MISMATCH: pinned root + header at 9.9.2' 4 'reports "bashrs 9\.9\.2", tools\.toml pins bashrs 9\.9\.1' \
+        "$LIB" "$PT/tools.toml" "$PT/root-bad" "$PT/path-match" "$PT/base_drift.txt"
+    pin_row 'pin   pin absent, PATH matches: no fallback' 4 'not installed at .*no PATH fallback' \
+        "$LIB" "$PT/tools.toml" "$PT/root-none" "$PT/path-match" "$PT/base.txt"
+    pin_row 'pin   baseline 9.9.0 vs pinned 9.9.1'        4 'recorded under bashrs 9\.9\.0, runner has bashrs 9\.9\.1' \
+        "$LIB" "$PT/tools.toml" "$PT/root-ok" "$PT/path-match" "$PT/base_old.txt"
+    pin_row 'pin   tools.toml names no [bashrs]'          4 'names no \[bashrs\] version' \
+        "$LIB" "$PT/nobashrs.toml" "$PT/root-ok" "$PT/path-match" "$PT/base.txt"
+    # -- WHERE the pin lives: the default base is lambda's layout, and a clean-room
+    # runner without it must fall back to RUNNER_TEMP -- still the pinned binary,
+    # never a skip (aprender#4429: both ratchets red with "cannot create").
+    # $PT/blocked is a regular FILE, so mkdir under it fails even as root.
+    : > "$PT/blocked"
+    mkbashrs "$PT/rt/tool-pins/bashrs-9.9.1/bin" 9.9.1
+    mkdir -p "$PT/rt-empty"
+    fb_row() { # fb_row <label> <want-rc> <must-match> <bashrs_pin.sh> <RUNNER_TEMP or ->
+        local out got rt=()
+        [ "$5" = - ] && rt=(-u RUNNER_TEMP) || rt=(RUNNER_TEMP="$5")
+        out=$(env -u BASHRS_PIN_ROOT "${rt[@]}" TOOL_PIN_TOML="$PT/tools.toml" TOOL_PIN_BASE="$PT/blocked/base" \
+            BASHRS_PIN_NO_INSTALL=1 bash -c '. "$1" || exit 9; bashrs_pin_resolve || exit $?; printf "BASHRS=%s\n" "$BASHRS"' \
+            _ "$4" 2>&1); got=$?
+        say_row "$1" "$2" "$got"
+        if [ "$got" = "$2" ] && ! grep -qE -- "$3" <<< "$out"; then
+            printf 'FAIL  %-46s rc ok but output lacks /%s/: %s\n' "$1" "$3" "$out"
+            bad=1
+        fi
+    }
+    PIN="$REPO_ROOT/scripts/bashrs_pin.sh"
+    fb_row 'pin   base unwritable, pin in RUNNER_TEMP'    0 "^BASHRS=$PT/rt/tool-pins/bashrs-9\.9\.1/bin/bashrs$" "$PIN" "$PT/rt"
+    fb_row 'pin   base unwritable, RUNNER_TEMP empty'     4 "not installed at $PT/rt-empty/tool-pins/bashrs-9\.9\.1/bin/bashrs" "$PIN" "$PT/rt-empty"
+    fb_row 'pin   base unwritable, no RUNNER_TEMP'        4 'no writable root for pinned bashrs 9\.9\.1' "$PIN" -
+    # MUTANT C: the fallback deleted -> the first row must go RED, or it proves nothing.
+    mkdir -p "$PT/mutC"
+    sed '/# --- TOOLPIN-FALLBACK-BEGIN ---/,/# --- TOOLPIN-FALLBACK-END ---/d' "$PIN" > "$PT/mutC/bashrs_pin.sh"
+    rows=$((rows + 1))
+    if cmp -s "$PIN" "$PT/mutC/bashrs_pin.sh"; then
+        printf 'FAIL  pin mutant C not built: its markers moved\n'
+        bad=1
+    elif env -u BASHRS_PIN_ROOT RUNNER_TEMP="$PT/rt" TOOL_PIN_TOML="$PT/tools.toml" TOOL_PIN_BASE="$PT/blocked/base" \
+            BASHRS_PIN_NO_INSTALL=1 bash -c '. "$1" || exit 9; bashrs_pin_resolve' _ "$PT/mutC/bashrs_pin.sh" >/dev/null 2>&1; then
+        printf 'FAIL  pin mutant C (no RUNNER_TEMP fallback) still resolves: the fallback row does not discriminate\n'
+        bad=1
+    fi
+
+    # MUTANTS. Each must turn its row GREEN, or that row proves nothing.
+    #   A: the resolver swapped back to PATH -> "pin absent, PATH matches" passes.
+    #   B: the pin comparison deleted       -> "MISMATCH" passes.
+    for m in A B; do
+        mkdir -p "$PT/mut$m"
+        cp "$REPO_ROOT/scripts/lib_baseline_ratchet.sh" "$REPO_ROOT/scripts/bashrs_pin.sh" "$PT/mut$m/"
+        case $m in
+            A) sed -i '/# --- TOOLPIN-RESOLVE-BEGIN ---/,/# --- TOOLPIN-RESOLVE-END ---/c\    bin=$(command -v "$tool" 2>/dev/null) || bin=""' "$PT/mutA/lib_baseline_ratchet.sh"
+               f=lib_baseline_ratchet.sh root="$PT/root-none" base="$PT/base.txt" ;;
+            B) sed -i '/# --- BASHRS-PIN-CMP-BEGIN ---/,/# --- BASHRS-PIN-CMP-END ---/d' "$PT/mutB/bashrs_pin.sh"
+               f=bashrs_pin.sh root="$PT/root-bad" base="$PT/base_drift.txt" ;;
+        esac
+        rows=$((rows + 1))
+        if cmp -s "$REPO_ROOT/scripts/$f" "$PT/mut$m/$f"; then
+            printf 'FAIL  pin mutant %s not built: its markers moved\n' "$m"
+            bad=1
+            continue
+        fi
+        env TOOL_PIN_TOML="$PT/tools.toml" BASHRS_PIN_ROOT="$root" BASHRS_PIN_NO_INSTALL=1 PATH="$PT/path-match:$PATH" \
+            bash -c '. "$1" || exit 9; baseline_require_tool_version "$2"' _ "$PT/mut$m/lib_baseline_ratchet.sh" "$base" \
+            >/dev/null 2>&1
+        m_rc=$?
+        if [ "$m_rc" != 0 ]; then
+            printf 'FAIL  pin mutant %s still refuses (rc=%s): its row does not discriminate\n' "$m" "$m_rc"
+            bad=1
+        fi
+    done
+
     if [ "$bad" -ne 0 ]; then
         printf '\nSELF-TEST FAILED\n'
         exit 1
     fi
     printf 'PASS  case table only: %s rows (set, count, keyed, keyed2, comparand resolver,\n' "$rows"
-    printf '      end-to-end, classification totality). NO baseline in this tree was\n'
+    printf '      end-to-end, classification totality, bashrs pin + root fallback + 3 mutants). NO baseline in this tree was\n'
     printf '      compared — run with no arguments for that.\n'
     exit 0
 fi

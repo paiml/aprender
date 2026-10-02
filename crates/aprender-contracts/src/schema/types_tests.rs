@@ -50,6 +50,7 @@ fn kani_strategy_display() {
     assert_eq!(KaniStrategy::StubFloat.to_string(), "stub_float");
     assert_eq!(KaniStrategy::Compositional.to_string(), "compositional");
     assert_eq!(KaniStrategy::BoundedInt.to_string(), "bounded_int");
+    assert_eq!(KaniStrategy::BoundedFloat.to_string(), "bounded_float");
 }
 
 #[test]

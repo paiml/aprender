@@ -162,6 +162,41 @@ pub(super) fn generate_bounded_int_body(out: &mut String, harness: &KaniHarness)
     out.push_str("        unimplemented!(\"Wire up kernel under test\")\n");
 }
 
+pub(super) fn generate_bounded_float_body(out: &mut String, harness: &KaniHarness) {
+    let bound = harness.bound.unwrap_or(16);
+    out.push_str(
+        "        // Strategy: bounded_float — symbolic IEEE-754 f32, \
+         finite and magnitude-bounded.\n",
+    );
+    out.push_str(
+        "        // Transcendentals are NOT stubbed: the proof \
+         discharges real float arithmetic.\n",
+    );
+    out.push_str(&format!("        // Bound: {bound} elements\n\n"));
+
+    out.push_str("        // Set per kernel: the largest magnitude the kernel is specified for.\n");
+    out.push_str("        const MAG: f32 = 1.0;\n");
+    out.push_str("        let n: usize = kani::any();\n");
+    out.push_str(&format!(
+        "        kani::assume(n >= 1 && n <= {bound});\n\n"
+    ));
+
+    out.push_str(
+        "        let input: Vec<f32> = (0..n)\
+         .map(|_| kani::any()).collect();\n",
+    );
+    out.push_str(
+        "        kani::assume(input.iter()\
+         .all(|x| x.is_finite() && x.abs() <= MAG));\n\n",
+    );
+
+    if let Some(ref property) = harness.property {
+        out.push_str(&format!("        // Verify: {property}\n"));
+    }
+    out.push_str(&format!("        // Obligation: {}\n", harness.obligation));
+    out.push_str("        unimplemented!(\"Wire up kernel under test\")\n");
+}
+
 pub(super) fn generate_default_body(out: &mut String, harness: &KaniHarness) {
     let bound = harness.bound.unwrap_or(16);
     out.push_str(

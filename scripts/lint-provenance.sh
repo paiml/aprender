@@ -26,13 +26,13 @@ lint_file() {
     while IFS= read -r line; do
         case "$line" in \#*|'') continue ;; esac
         key=$(printf '%s' "$line" | sed -n 's/^[[:space:]]*\([A-Za-z_][A-Za-z0-9_]*\)[[:space:]]*:.*/\1/p')
-        if [ -n "$key" ] && printf '%s' "$key" | rg -q "$EXEMPT"; then continue; fi
-        printf '%s' "$line" | rg -q '[0-9]' || continue
+        if [ -n "$key" ] && grep -Eq "$EXEMPT" <<<"$key"; then continue; fi
+        grep -q '[0-9]' <<<"$line" || continue
         scanned=$((scanned + 1))
-        printf '%s' "$line" | rg -q "$MARKS" && continue
+        grep -Eq "$MARKS" <<<"$line" && continue
         printf 'unmarked: %s: %s\n' "$f" "$(printf '%s' "$line" | cut -c1-90)"
         n=$((n + 1))
-    done < <(rg -N -e '^\s*(-|\|)\s*\S' -e '^\s*[A-Za-z_][A-Za-z0-9_]*[[:space:]]*:[[:space:]]*\S' "$f" || true)
+    done < <(grep -E -e '^\s*(-|\|)\s*\S' -e '^\s*[A-Za-z_][A-Za-z0-9_]*[[:space:]]*:[[:space:]]*\S' "$f" || true)
     printf 'lint-provenance: %s: %d numeric claim(s) examined, %d unmarked\n' "$f" "$scanned" "$n"
     SCANNED=$scanned
     [ "$n" -eq 0 ]

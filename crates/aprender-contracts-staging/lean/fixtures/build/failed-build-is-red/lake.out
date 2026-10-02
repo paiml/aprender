@@ -1,0 +1,3 @@
+ℹ [2346/2512] Replayed ProvableContracts.Theorems.AbsolutePosition.Core
+error: ProvableContracts.lean:8:0: import ProvableContracts.Theorems.Alibi.Slopes failed, environment already contains 'ProvableContracts.Alibi.alibi_slope_pos' from ProvableContracts.Theorems.Alibi.Basic
+error: build failed

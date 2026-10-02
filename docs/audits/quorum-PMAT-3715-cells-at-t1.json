@@ -1,0 +1,434 @@
+{
+  "ticket": "PMAT-3715,PMAT-3712",
+  "base": "origin/ont/0.70-c2",
+  "base_resolved": "origin/ont/0.70-c2",
+  "base_note": "no origin/origin/ont/0.70-c2 exists; judged against the local ref",
+  "head": "5b0b82270c2c13f0eed68e7a42720c1c103803f6",
+  "diff_sha256": "4d698b742d110857e84e32970efbc95fbfb67210fd2ab00ef377e5c17bcc1d2e",
+  "width": 3,
+  "executor": "agy",
+  "prompt_mode": "inline",
+  "prompt_bytes": 67207,
+  "prompt_sha256": "23cbf81d6130cdd7e5ff78eee4689649cdd66cd6e796d8539d3206eada2f5ac0",
+  "author": {
+    "model": "claude-opus-5-5",
+    "family": "claude",
+    "source": "flag"
+  },
+  "agreed": false,
+  "lanes": [
+    {
+      "lane": 1,
+      "status": "SUCCESS",
+      "verdict": "FAIL",
+      "summary": "Diff (scripts-only: model_ladder cells producer + T-1 --cells wiring) is internally consistent with PMAT-3712/3715's producer/wiring scope, but the receipt's entire verification evidence table cites Rust/contracts tests and gates that touch none of the files actually in this diff, and never shows a run of the new check_ladder_cells_producer.sh or the changed check_release_models_t1.sh. Two secondary, lower-severity script issues (silent rungs-load failure swallowing, and thinking-budget sizing applied uniformly across modes) are also noted.",
+      "findings": [
+        {
+          "file": "receipt (section 4/6, 'Measured at the PR head' / 'Measured on this delta')",
+          "line": 1,
+          "claim": "The receipt's entire verification evidence (cargo test -p aprender-contracts, cargo clippy on aprender-contracts, pv lint contracts, pv extract, the mutant kills on 'cell verdict'/'fresh()', check_complexity_ratchet.sh on shapes_gate.rs) is presented as evidence for this diff, but the diff under review contains zero Rust/contracts files — it touches only scripts/check_ladder_cells_producer.sh (new), scripts/lib/model_ladder_cells.py, scripts/lib/model_ladder_cells_produce.py (new), scripts/lib/model_ladder_cells_produce_cases/fake_apr.py (new), scripts/model_ladder.sh, scripts/release/models_t1.sh, and scripts/check_release_models_t1.sh. None of these files are mentioned in any 'Measured' table in the receipt.",
+          "grounding": "cited",
+          "fix": "Re-run and cite the actual self-tests for this diff — `bash scripts/check_ladder_cells_producer.sh` (the new producer's own case/mutant harness) and `bash scripts/check_release_models_t1.sh` (whose row count floor changed 37→40 and gained the cells-measured row/mutants) — and drop or clearly separate the unrelated aprender-contracts/Rust evidence, which belongs to a different PR."
+        },
+        {
+          "file": "scripts/lib/model_ladder_cells_produce.py",
+          "line": 217,
+          "claim": "`cells_for()` calls `J.load_rungs(rungs_doc, lambda _m: None)`, discarding every failure message `load_rungs` would normally report; if rungs.json is malformed or empty, the producer silently measures zero cells for that model instead of surfacing why, unlike the judge which prints the failure via its `out` callback.",
+          "grounding": "cited",
+          "fix": "Pass a real sink (e.g. append to a producer-visible log / return code) so a broken rungs file is reported by the producer itself rather than only showing up later as '0 cells' in the judge."
+        },
+        {
+          "file": "scripts/lib/model_ladder_cells_produce.py",
+          "line": 336,
+          "claim": "`target = min(tok, int(ctx) - a.max_tokens_thinking - 1) if ctx else tok` always subtracts the larger `max_tokens_thinking` budget when sizing the prompt for a rung, even for jobs in that same rung group whose mode is 'off' (smaller `max_tokens` budget) — so off-mode prompts near the declared context length are built smaller than they need to be, understating how close to the model's true declared limit the cell was actually exercised.",
+          "grounding": "cited",
+          "fix": "Compute `target` per (mode, budget) rather than once per rung group, or explicitly note in the receipt that off-mode declared-rung cells are deliberately under-sized (the comment only discusses the on-mode/judge conflict)."
+        }
+      ],
+      "raw_bytes": 7309,
+      "err_bytes": 0,
+      "envelope_status": "SUCCESS",
+      "verdict_source": "structured_output",
+      "executor": "claude-code",
+      "grounding_check": "parity",
+      "role": "counted",
+      "model": "claude-sonnet-5",
+      "model_measured": "claude-sonnet-5",
+      "model_source": "flag",
+      "family": "claude",
+      "brief_sha256": "23cbf81d6130cdd7e5ff78eee4689649cdd66cd6e796d8539d3206eada2f5ac0",
+      "trace": {
+        "input_sha256": "9dfdd2bcc0caf0dd4b04424d2a0ab6cb2465c5a8ae8bb73c15c301768016e6bf",
+        "output_sha256": "99e3b3a23b4ee4550217dcf3d52a561607be6372e403c998854e572c0497510c",
+        "store": null,
+        "store_why": "almacen not provisioned yet (infra-27): the blobs stay in the round's gitignored .lanes dir"
+      },
+      "fallback": {
+        "judged_by": "claude-sonnet-5",
+        "exhausted": false,
+        "attempts": [
+          {
+            "model": "claude-sonnet-5",
+            "family": "claude",
+            "outcome": "answered"
+          }
+        ],
+        "skipped": []
+      }
+    },
+    {
+      "lane": 2,
+      "status": "SUCCESS",
+      "verdict": "FAIL",
+      "summary": "The cells-producer wiring is otherwise consistent with PMAT-3712/3715 (owed_rungs refactor is behavior-preserving, --cells flag correctly threaded through models_t1.sh, tests/mutants added), but the new `--only` forwarding from model_ladder.sh into the cells producer silently reintroduces the exact \"empty-universe vacuity\" the file explicitly forbids for its own --only path.",
+      "findings": [
+        {
+          "file": "scripts/model_ladder.sh",
+          "line": 1357,
+          "claim": "`--only \"$ONLY\"` is forwarded from model_ladder.sh straight into `model_ladder_cells_produce.py measure`, but the two `--only` flags have incompatible semantics: model_ladder.sh's own $ONLY may be a bare rung id (e.g. \"148k\") or `inv:<file>`, validated against the union of rung ids + `inv:<file>` (scripts/model_ladder.sh:507-514,521-530); the producer's `--only` (scripts/lib/model_ladder_cells_produce.py:416) only ever filters by `it[\"file\"]`/`\"inv:\"+it[\"file\"]` — it has no rung-id branch at all.",
+          "failure_scenario": "`bash scripts/model_ladder.sh --cells --only 148k --host lambda` passes the top-level only_selected() check (148k is a legitimate rung id, scripts/model_ladder.sh:521-530), so the script proceeds and calls the cells producer's `measure --only 148k`. Since no inventory file is literally named \"148k\", cmd_measure's loop (model_ladder_cells_produce.py:413-418) skips every inventory row, and cmd_measure returns 0 with `cells: 0 row(s), 0 pass, 0 refused` written to cells.json and printed to cells.log — no error, no decline, exit 0. The ladder's own comment two lines above this exact call site (scripts/model_ladder.sh:517-520) names this precise failure mode as 'the worst possible instrument for the job --only exists to do,' yet the new --cells path has no equivalent guard: an operator using --only to reproduce/isolate one rung's cell failure (the documented purpose of --only, #3936) gets a receipt that silently claims zero cells for that host instead of measuring the requested rung, and cells_rc=0 so scripts/model_ladder.sh does not increment RED or flag anything wrong.",
+          "grounding": "measured",
+          "fix": "Either refuse to combine `--cells` with a rung-id-form `--only` (or pass an actual rung filter through to the producer), or have cmd_measure decline (non-zero exit, or at minimum a printed refusal) when the selection filters out every inventory row instead of writing an empty cells.json and returning 0."
+        }
+      ],
+      "raw_bytes": 5753,
+      "err_bytes": 0,
+      "envelope_status": "SUCCESS",
+      "verdict_source": "structured_output",
+      "executor": "claude-code",
+      "grounding_check": "parity",
+      "role": "counted",
+      "model": "claude-sonnet-5",
+      "model_measured": "claude-sonnet-5",
+      "model_source": "flag",
+      "family": "claude",
+      "brief_sha256": "23cbf81d6130cdd7e5ff78eee4689649cdd66cd6e796d8539d3206eada2f5ac0",
+      "trace": {
+        "input_sha256": "b180895dae4a5a332f907ce806458ae97e95a8debd56b04e1195ef5d91e672be",
+        "output_sha256": "a9efda448450c10d4e887a1655d3c5368206ae6268712026cf0ab941f9a2d9c9",
+        "store": null,
+        "store_why": "almacen not provisioned yet (infra-27): the blobs stay in the round's gitignored .lanes dir"
+      },
+      "fallback": {
+        "judged_by": "claude-sonnet-5",
+        "exhausted": false,
+        "attempts": [
+          {
+            "model": "claude-sonnet-5",
+            "family": "claude",
+            "outcome": "answered"
+          }
+        ],
+        "skipped": [
+          {
+            "model": "gemini-3.1-pro-high",
+            "why": "family gemini withheld by policy: the diff is not tier-1 (quorum.agy_tier1_only: none of its paths matches quorum.tier1_paths or the built-in policy paths), and agy is reserved for tier-1 diffs — cop ruling of 2026-09-24"
+          }
+        ]
+      },
+      "repeat_of": 1
+    },
+    {
+      "lane": 3,
+      "status": "SUCCESS",
+      "verdict": "PASS",
+      "summary": "The diff implements PMAT-3712 row B (cells[] producer) and integrates it into the release pipeline. The owed set is correctly shared with the judge (one enumeration, no drift). Test harness covers all expected failure modes with kill-proof mutants. Integration into model_ladder.sh and release/models_t1.sh correctly uses --cells flag. All vacuity checks passed (37→40 rows). Kernel differential and tokenizer parity grading are explicitly documented as follow-up work in aprender-f0 (#3717/#3708), not missing scope.",
+      "findings": [],
+      "raw_bytes": 1951,
+      "err_bytes": 0,
+      "envelope_status": "SUCCESS",
+      "verdict_source": "structured_output",
+      "executor": "claude-code",
+      "grounding_check": "parity",
+      "role": "counted",
+      "model": "claude-haiku-4-5",
+      "model_measured": "claude-haiku-4-5",
+      "model_source": "flag",
+      "family": "claude",
+      "brief_sha256": "23cbf81d6130cdd7e5ff78eee4689649cdd66cd6e796d8539d3206eada2f5ac0",
+      "trace": {
+        "input_sha256": "665992d6c0eb7f800331d43d6ec05b2660b1eb160db08a227f5bbbcf8077aa1d",
+        "output_sha256": "57d97fb903862d6a10957abda76efee9def6801c2acfdde8b32ccbf281f3e330",
+        "store": null,
+        "store_why": "almacen not provisioned yet (infra-27): the blobs stay in the round's gitignored .lanes dir"
+      },
+      "fallback": {
+        "judged_by": "claude-haiku-4-5",
+        "exhausted": false,
+        "attempts": [
+          {
+            "model": "claude-haiku-4-5",
+            "family": "claude",
+            "outcome": "answered"
+          }
+        ],
+        "skipped": []
+      }
+    }
+  ],
+  "dissent": [
+    {
+      "lane": 1,
+      "verdict": "FAIL",
+      "summary": "Diff (scripts-only: model_ladder cells producer + T-1 --cells wiring) is internally consistent with PMAT-3712/3715's producer/wiring scope, but the receipt's entire verification evidence table cites Rust/contracts tests and gates that touch none of the files actually in this diff, and never shows a run of the new check_ladder_cells_producer.sh or the changed check_release_models_t1.sh. Two secondary, lower-severity script issues (silent rungs-load failure swallowing, and thinking-budget sizing applied uniformly across modes) are also noted.",
+      "findings": [
+        {
+          "file": "receipt (section 4/6, 'Measured at the PR head' / 'Measured on this delta')",
+          "line": 1,
+          "claim": "The receipt's entire verification evidence (cargo test -p aprender-contracts, cargo clippy on aprender-contracts, pv lint contracts, pv extract, the mutant kills on 'cell verdict'/'fresh()', check_complexity_ratchet.sh on shapes_gate.rs) is presented as evidence for this diff, but the diff under review contains zero Rust/contracts files — it touches only scripts/check_ladder_cells_producer.sh (new), scripts/lib/model_ladder_cells.py, scripts/lib/model_ladder_cells_produce.py (new), scripts/lib/model_ladder_cells_produce_cases/fake_apr.py (new), scripts/model_ladder.sh, scripts/release/models_t1.sh, and scripts/check_release_models_t1.sh. None of these files are mentioned in any 'Measured' table in the receipt.",
+          "grounding": "cited",
+          "fix": "Re-run and cite the actual self-tests for this diff — `bash scripts/check_ladder_cells_producer.sh` (the new producer's own case/mutant harness) and `bash scripts/check_release_models_t1.sh` (whose row count floor changed 37→40 and gained the cells-measured row/mutants) — and drop or clearly separate the unrelated aprender-contracts/Rust evidence, which belongs to a different PR."
+        },
+        {
+          "file": "scripts/lib/model_ladder_cells_produce.py",
+          "line": 217,
+          "claim": "`cells_for()` calls `J.load_rungs(rungs_doc, lambda _m: None)`, discarding every failure message `load_rungs` would normally report; if rungs.json is malformed or empty, the producer silently measures zero cells for that model instead of surfacing why, unlike the judge which prints the failure via its `out` callback.",
+          "grounding": "cited",
+          "fix": "Pass a real sink (e.g. append to a producer-visible log / return code) so a broken rungs file is reported by the producer itself rather than only showing up later as '0 cells' in the judge."
+        },
+        {
+          "file": "scripts/lib/model_ladder_cells_produce.py",
+          "line": 336,
+          "claim": "`target = min(tok, int(ctx) - a.max_tokens_thinking - 1) if ctx else tok` always subtracts the larger `max_tokens_thinking` budget when sizing the prompt for a rung, even for jobs in that same rung group whose mode is 'off' (smaller `max_tokens` budget) — so off-mode prompts near the declared context length are built smaller than they need to be, understating how close to the model's true declared limit the cell was actually exercised.",
+          "grounding": "cited",
+          "fix": "Compute `target` per (mode, budget) rather than once per rung group, or explicitly note in the receipt that off-mode declared-rung cells are deliberately under-sized (the comment only discusses the on-mode/judge conflict)."
+        }
+      ]
+    },
+    {
+      "lane": 2,
+      "verdict": "FAIL",
+      "summary": "The cells-producer wiring is otherwise consistent with PMAT-3712/3715 (owed_rungs refactor is behavior-preserving, --cells flag correctly threaded through models_t1.sh, tests/mutants added), but the new `--only` forwarding from model_ladder.sh into the cells producer silently reintroduces the exact \"empty-universe vacuity\" the file explicitly forbids for its own --only path.",
+      "findings": [
+        {
+          "file": "scripts/model_ladder.sh",
+          "line": 1357,
+          "claim": "`--only \"$ONLY\"` is forwarded from model_ladder.sh straight into `model_ladder_cells_produce.py measure`, but the two `--only` flags have incompatible semantics: model_ladder.sh's own $ONLY may be a bare rung id (e.g. \"148k\") or `inv:<file>`, validated against the union of rung ids + `inv:<file>` (scripts/model_ladder.sh:507-514,521-530); the producer's `--only` (scripts/lib/model_ladder_cells_produce.py:416) only ever filters by `it[\"file\"]`/`\"inv:\"+it[\"file\"]` — it has no rung-id branch at all.",
+          "failure_scenario": "`bash scripts/model_ladder.sh --cells --only 148k --host lambda` passes the top-level only_selected() check (148k is a legitimate rung id, scripts/model_ladder.sh:521-530), so the script proceeds and calls the cells producer's `measure --only 148k`. Since no inventory file is literally named \"148k\", cmd_measure's loop (model_ladder_cells_produce.py:413-418) skips every inventory row, and cmd_measure returns 0 with `cells: 0 row(s), 0 pass, 0 refused` written to cells.json and printed to cells.log — no error, no decline, exit 0. The ladder's own comment two lines above this exact call site (scripts/model_ladder.sh:517-520) names this precise failure mode as 'the worst possible instrument for the job --only exists to do,' yet the new --cells path has no equivalent guard: an operator using --only to reproduce/isolate one rung's cell failure (the documented purpose of --only, #3936) gets a receipt that silently claims zero cells for that host instead of measuring the requested rung, and cells_rc=0 so scripts/model_ladder.sh does not increment RED or flag anything wrong.",
+          "grounding": "measured",
+          "fix": "Either refuse to combine `--cells` with a rung-id-form `--only` (or pass an actual rung filter through to the producer), or have cmd_measure decline (non-zero exit, or at minimum a printed refusal) when the selection filters out every inventory row instead of writing an empty cells.json and returning 0."
+        }
+      ]
+    }
+  ],
+  "dedup": [
+    {
+      "file": "receipt (section 4/6, 'Measured at the PR head' / 'Measured on this delta')",
+      "line": 1,
+      "lanes_agreeing": [
+        1
+      ],
+      "claims": [
+        "The receipt's entire verification evidence (cargo test -p aprender-contracts, cargo clippy on aprender-contracts, pv lint contracts, pv extract, the mutant kills on 'cell verdict'/'fresh()', check_complexity_ratchet.sh on shapes_gate.rs) is presented as evidence for this diff, but the diff under review contains zero Rust/contracts files — it touches only scripts/check_ladder_cells_producer.sh (new), scripts/lib/model_ladder_cells.py, scripts/lib/model_ladder_cells_produce.py (new), scripts/lib/model_ladder_cells_produce_cases/fake_apr.py (new), scripts/model_ladder.sh, scripts/release/models_t1.sh, and scripts/check_release_models_t1.sh. None of these files are mentioned in any 'Measured' table in the receipt."
+      ]
+    },
+    {
+      "file": "scripts/lib/model_ladder_cells_produce.py",
+      "line": 217,
+      "lanes_agreeing": [
+        1
+      ],
+      "claims": [
+        "`cells_for()` calls `J.load_rungs(rungs_doc, lambda _m: None)`, discarding every failure message `load_rungs` would normally report; if rungs.json is malformed or empty, the producer silently measures zero cells for that model instead of surfacing why, unlike the judge which prints the failure via its `out` callback."
+      ]
+    },
+    {
+      "file": "scripts/lib/model_ladder_cells_produce.py",
+      "line": 336,
+      "lanes_agreeing": [
+        1
+      ],
+      "claims": [
+        "`target = min(tok, int(ctx) - a.max_tokens_thinking - 1) if ctx else tok` always subtracts the larger `max_tokens_thinking` budget when sizing the prompt for a rung, even for jobs in that same rung group whose mode is 'off' (smaller `max_tokens` budget) — so off-mode prompts near the declared context length are built smaller than they need to be, understating how close to the model's true declared limit the cell was actually exercised."
+      ]
+    },
+    {
+      "file": "scripts/model_ladder.sh",
+      "line": 1357,
+      "lanes_agreeing": [
+        2
+      ],
+      "claims": [
+        "`--only \"$ONLY\"` is forwarded from model_ladder.sh straight into `model_ladder_cells_produce.py measure`, but the two `--only` flags have incompatible semantics: model_ladder.sh's own $ONLY may be a bare rung id (e.g. \"148k\") or `inv:<file>`, validated against the union of rung ids + `inv:<file>` (scripts/model_ladder.sh:507-514,521-530); the producer's `--only` (scripts/lib/model_ladder_cells_produce.py:416) only ever filters by `it[\"file\"]`/`\"inv:\"+it[\"file\"]` — it has no rung-id branch at all."
+      ]
+    }
+  ],
+  "uncovered": [],
+  "coverage_source": "lanes",
+  "partial": false,
+  "partial_reasons": [
+    "lane models: only 2 distinct model ids across 3 lanes (claude-haiku-4-5, claude-sonnet-5) — lanes sharing an id are resamples, not independent reviewers (PMAT-125)",
+    "lane 2: judged by claude-sonnet-5 after falling through gemini-3.1-pro-high (skipped: family gemini withheld by policy: the diff is not tier-1 (quorum.agy_tier1_only: none of its paths matches quorum.tier1_paths or the built-in policy paths), and agy is reserved for tier-1 diffs — cop ruling of 2026-09-24) (PMAT-321)"
+  ],
+  "fallback": {
+    "same_family_width": 2,
+    "chain": [
+      {
+        "model": "claude-sonnet-5",
+        "family": "claude",
+        "disposition": "claude-code",
+        "why": "run by Claude Code on its own budget: a configured seat runs every round, a fallback step only when every non-Claude family is measured out (PMAT-360, operator standing rule)"
+      },
+      {
+        "model": "gemini-3.1-pro-high",
+        "family": "gemini",
+        "disposition": "configured"
+      },
+      {
+        "model": "claude-haiku-4-5",
+        "family": "claude",
+        "disposition": "claude-code",
+        "why": "run by Claude Code on its own budget: a configured seat runs every round, a fallback step only when every non-Claude family is measured out (PMAT-360, operator standing rule)"
+      },
+      {
+        "model": "claude-opus-5-5",
+        "family": "claude",
+        "disposition": "excluded-self-review",
+        "why": "the author's own model id (claude-opus-5-5) — a model never reviews its own diff, at any width (R-15a identity bar)"
+      },
+      {
+        "model": "qwen3.5",
+        "family": "qwen",
+        "disposition": "not-run",
+        "why": "no quorum.local_lane in the config — the aprender lane has no model to load"
+      }
+    ],
+    "precheck": [
+      {
+        "family": "gemini",
+        "model": "gemini-3.1-pro-high",
+        "probe": 0,
+        "outcome": "policy",
+        "reason": "the diff is not tier-1 (quorum.agy_tier1_only: none of its paths matches quorum.tier1_paths or the built-in policy paths), and agy is reserved for tier-1 diffs — cop ruling of 2026-09-24"
+      }
+    ],
+    "degraded": {
+      "reason": "same-family (policy: agy reserved for tier-1 diffs)",
+      "lanes": [
+        2
+      ],
+      "families": [
+        {
+          "family": "gemini",
+          "state": "policy",
+          "evidence": "the diff is not tier-1 (quorum.agy_tier1_only: none of its paths matches quorum.tier1_paths or the built-in policy paths), and agy is reserved for tier-1 diffs — cop ruling of 2026-09-24"
+        }
+      ],
+      "rule": "operator standing rule: if agy quota is ever gone, simply use claude code itself (PMAT-360)"
+    },
+    "prah": {
+      "source": "install-receipt",
+      "path": "/home/noah/.claude/skills/paiml-implement/bin/prah"
+    },
+    "tier1": {
+      "agy_tier1_only": true,
+      "tier1": false,
+      "matched": [],
+      "paths": 7,
+      "patterns": [
+        "^\\.github/workflows/",
+        "(^|/)release[^/]*\\.(ya?ml|sh|rs|toml)$",
+        "cuda|kernel|\\.cu$|\\.ptx$",
+        "(^|/)[^/]*(gate|guard)[^/]*\\.(sh|rs|py)$|^hooks/",
+        "security|secret|credential|(^|/)deny\\.toml$",
+        "^skills/quorum-review/|(^|/)(receipt-lint|roadmap-lint|release-lint|kind-gate|model-gate)[^/]*$|^crates/prah-lint/"
+      ],
+      "builtin": "^skills/quorum-review/|(^|/)skills/paiml-implement/config\\.json$|(^|/)(modellib|lane-reduce|lane-fallback|lane-group|agy-lane|cc-lane|receipt-lint|route|quota)\\.sh$|^crates/prah-lint/"
+    },
+    "bucket": {
+      "ledger": "/home/noah/.local/state/paiml-implement/agy-bucket.jsonl",
+      "window_s": 18000,
+      "pace": "off",
+      "buckets": {},
+      "closed": []
+    }
+  },
+  "auto_merge": {
+    "checked": false,
+    "was_armed": false,
+    "disarmed": false,
+    "note": "no --pr given: nothing to disarm"
+  },
+  "degraded": {
+    "reason": "same-family (policy: agy reserved for tier-1 diffs)",
+    "lanes": [
+      2
+    ],
+    "families": [
+      {
+        "family": "gemini",
+        "state": "policy",
+        "evidence": "the diff is not tier-1 (quorum.agy_tier1_only: none of its paths matches quorum.tier1_paths or the built-in policy paths), and agy is reserved for tier-1 diffs — cop ruling of 2026-09-24"
+      }
+    ],
+    "rule": "operator standing rule: if agy quota is ever gone, simply use claude code itself (PMAT-360)"
+  },
+  "cheap_seat": "claude-haiku-4-5",
+  "canary": {
+    "skipped": "brief 67207 bytes > 24576"
+  },
+  "advisory_lane": {
+    "state": "answered",
+    "counts": false,
+    "row": {
+      "Verdict": {
+        "verdict": "PASS",
+        "cell": "gx10-cuda",
+        "backend": "cuda"
+      }
+    },
+    "verdict": "PASS",
+    "why": null,
+    "served_by": "gx10-cuda",
+    "gpu_proof": {
+      "used_gpu_probe": true,
+      "server_holds_gpu": true,
+      "used_gpu_source": "completions probe (chat omits used_gpu, aprender#4146)",
+      "trace_lines": [
+        "1463624, 309 MiB"
+      ]
+    },
+    "apr": "0.70.0",
+    "apr_binary_sha256": "6b2a7dc66c38adcca20b315beac70a1a31e7bd0af2a1cc5c2a7730ca6086d417",
+    "apr_tag": "v0.70.0-dev.3990584f0",
+    "apr_commit": "3990584f0bf5af6bca34ea9298df92177f3ef79a",
+    "apr_build_why": null,
+    "model": "/home/noah/data/models/Qwen3.5-4B-Q4_K_M.gguf",
+    "model_sha256": "00fe7986ff5f6b463e62455821146049db6f9313603938a70800d1fb69ef11a4",
+    "rc": 0,
+    "wall_s": 21,
+    "collected_s": 841,
+    "budget_s": 170,
+    "budget_basis": "ledger: 2 x p95 85 s over 51 gx10-cuda Verdict rows",
+    "brief": {
+      "bytes": 67207,
+      "sent_bytes": 67376,
+      "max_bytes": 196608
+    },
+    "trace": {
+      "input_sha256": "778e427586963b6920aff6c8038eedf5c637945b9200a564319cd5a4c147a80e",
+      "raw": "advisory.json"
+    },
+    "attempts": [
+      {
+        "host": "gx10",
+        "ok": true,
+        "wall_s": 21,
+        "used_gpu": true,
+        "ts": "2026-09-28T06:07:54.065Z",
+        "wall_ms": 21615,
+        "request_id": "01a0e6a0-82ce-7169-90cb-6c857953ca07",
+        "load1": 30.42,
+        "cold": false
+      }
+    ],
+    "ledger": "/home/noah/.local/state/paiml-implement/advisory-ledger.jsonl",
+    "raw": "advisory.json",
+    "agrees_with_counted": false,
+    "counted": "NOT-AGREED"
+  },
+  "lint": {
+    "ok": true,
+    "output": "receipt complete: kind=artifact lanes=3 author=claude-opus-5-5/claude same_family=3/2 degraded=same-family (policy: agy reserved for tier-1 diffs)"
+  }
+}

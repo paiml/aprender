@@ -88,6 +88,8 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
         head_dim,
         intermediate_dim,
     );
+    // #4056: match the CPU reference's eps (the shader used to hardcode 1e-6).
+    fwd.set_rms_norm_eps(eps);
 
     // Dequantize weights
     println!("Dequantizing weights...");

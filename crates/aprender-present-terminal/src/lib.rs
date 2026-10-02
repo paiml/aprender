@@ -70,21 +70,19 @@
 /// The design-principles suite must exist (#4129). This was a compile-time
 /// `include_str!("../tests/design_principles_interface.rs")`, but the package excludes `tests/`,
 /// so `cargo test` from the published tarball could not compile this crate at all. It is now a
-/// run-time check: in tree (the workspace's `contracts/` beside the crate), a missing suite FAILS.
-/// Out of tree (the crates.io tarball, which ships no `tests/`) it skips and names itself.
+/// run-time check on the shared in-tree rule (`provable_contracts::workspace_path_or_skip!`): in
+/// tree a missing suite FAILS; out of tree (the crates.io tarball, which ships no `tests/`) it
+/// skips and names itself.
 #[cfg(test)]
 mod design_principles_suite {
     #[test]
     fn the_design_principles_test_suite_exists() {
-        let manifest = std::path::Path::new(env!("CARGO_MANIFEST_DIR"));
-        if !manifest.join("../../contracts").is_dir() {
-            eprintln!(
-                "SKIP the_design_principles_test_suite_exists: out of tree (no workspace \
-                 contracts/ beside this crate) - a published crate ships no tests/ (#4129)"
-            );
+        let Some(suite) = provable_contracts::workspace_path_or_skip!(
+            "the_design_principles_test_suite_exists",
+            "crates/aprender-present-terminal/tests/design_principles_interface.rs",
+        ) else {
             return;
-        }
-        let suite = manifest.join("tests/design_principles_interface.rs");
+        };
         let text = std::fs::read_to_string(&suite)
             .unwrap_or_else(|e| panic!("in tree, {} must exist: {e}", suite.display()));
         assert!(

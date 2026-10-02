@@ -16,7 +16,7 @@ use trueno_gpu::kernels::{
 };
 
 #[derive(Parser)]
-#[command(name = "trueno-explain")]
+#[command(name = "aprender-explain")]
 #[command(author, version = concat!(env!("CARGO_PKG_VERSION"), " (", env!("APR_GIT_SHA"), ")"), about = "PTX/SIMD/wgpu Visualization and Tracing CLI")]
 #[command(long_about = "
 Implements the Toyota Way principle of Genchi Genbutsu (Go and See)
@@ -37,7 +37,7 @@ enum Commands {
     /// Analyze PTX code generation
     Ptx {
         /// Kernel to analyze (see --help for list)
-        #[arg(short = 'K', long, value_name = "NAME")]
+        #[arg(short = 'K', long, value_name = "NAME", value_parser = kernel_names(), ignore_case = true)]
         kernel: String,
 
         /// Matrix M dimension (rows)
@@ -68,7 +68,7 @@ enum Commands {
     /// Interactive TUI mode (Genchi Genbutsu)
     Tui {
         /// Kernel to explore
-        #[arg(short = 'K', long, value_name = "NAME")]
+        #[arg(short = 'K', long, value_name = "NAME", value_parser = kernel_names(), ignore_case = true)]
         kernel: String,
 
         /// Matrix M dimension (rows)
@@ -113,11 +113,11 @@ enum Commands {
     /// Compare two kernel configurations
     Compare {
         /// First kernel to compare
-        #[arg(short = 'a', long)]
+        #[arg(short = 'a', long, value_parser = kernel_names(), ignore_case = true)]
         kernel_a: String,
 
         /// Second kernel to compare
-        #[arg(short = 'b', long)]
+        #[arg(short = 'b', long, value_parser = kernel_names(), ignore_case = true)]
         kernel_b: String,
 
         /// Output as JSON
@@ -128,7 +128,7 @@ enum Commands {
     /// Compare two analyses (git diff integration)
     Diff {
         /// Kernel to analyze for comparison
-        #[arg(short = 'K', long)]
+        #[arg(short = 'K', long, value_parser = kernel_names(), ignore_case = true)]
         kernel: String,
 
         /// Baseline analysis JSON file
@@ -147,7 +147,7 @@ enum Commands {
     /// Hunt for PTX bugs (probar-style static analysis)
     Bugs {
         /// Kernel to analyze for bugs
-        #[arg(short = 'K', long, value_name = "NAME")]
+        #[arg(short = 'K', long, value_name = "NAME", value_parser = kernel_names(), ignore_case = true)]
         kernel: String,
 
         /// Matrix M dimension (rows)
@@ -406,6 +406,21 @@ fn run_bugs(
         }
     }
     Ok(())
+}
+
+/// The kernels `generate_kernel_ptx` can emit. Every `-K`/`-a`/`-b` flag parses through this, so an unknown
+/// name is a clap usage error (exit 2) and `--help` lists the values (ONT-10 S18, G1.3).
+fn kernel_names() -> clap::builder::PossibleValuesParser {
+    use clap::builder::PossibleValue;
+    clap::builder::PossibleValuesParser::new([
+        PossibleValue::new("vector_add"),
+        PossibleValue::new("gemm_naive"),
+        PossibleValue::new("gemm_tiled"),
+        PossibleValue::new("softmax"),
+        PossibleValue::new("q4k_gemm").alias("q4k"),
+        PossibleValue::new("q5k_gemm").alias("q5k"),
+        PossibleValue::new("q6k_gemm").alias("q6k"),
+    ])
 }
 
 fn generate_kernel_ptx(

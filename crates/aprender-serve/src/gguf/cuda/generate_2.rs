@@ -293,6 +293,7 @@ impl OwnedQuantizedModelCuda {
         let choice = self.executor.gpu_profile.prefill_path();
         let use_batched = choice.path == crate::cuda::gpu_profile::PrefillPath::Batched;
         announce_prefill_path(choice);
+        announce_known_issue(&self.model.config.architecture, choice.cc);
 
         let prefill_start = std::time::Instant::now();
 
@@ -1098,6 +1099,16 @@ impl OwnedQuantizedModelCuda {
             0.0
         };
         Ok(ppl)
+    }
+}
+
+/// #4590: warn, once per process, when this model on this GPU is a 0.70 known
+/// issue (Qwen3 on sm_12x: correct but very slow). Unconditional like the
+/// prefill line, so a user sees why the run is slow before waiting on it.
+fn announce_known_issue(arch: &str, cc: u32) {
+    static ANNOUNCED: std::sync::OnceLock<()> = std::sync::OnceLock::new();
+    if let Some(w) = crate::cuda::gpu_profile::known_issue_warning(arch, cc) {
+        ANNOUNCED.get_or_init(|| eprintln!("{w}"));
     }
 }
 

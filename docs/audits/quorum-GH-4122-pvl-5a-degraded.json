@@ -1,0 +1,38 @@
+{
+  "ticket": "GH-4122",
+  "branch": "feat/4122-pvl-5a-mathlib-pin",
+  "base": "49fe19c28",
+  "head": "d18e411aac8c24cadf025661abec91e6b915738b",
+  "executor": "claude-code-subagents",
+  "degraded": "same-family",
+  "degraded_because": "agy quota exhausted; operator rule: Claude Code lanes, never the author's model id (\"no wait, fall back fast\")",
+  "author": {"model": "claude-opus-5-5", "family": "claude"},
+  "lanes": [
+    {
+      "model": "claude-sonnet-5",
+      "verdict": "PASS",
+      "head": "d18e411aa",
+      "findings": 0,
+      "history": "FAIL 0d52d619c (./././. prefix escaped the warning scope; measured on Lean 4.15, the pinned 4.29 prints the bare path) -> fixed 5a27364c2 -> FAIL 5a27364c2 (every fixtures/build/*/build.log was gitignored by *.log: self-test failed from a fresh clone) -> fixed 3a594a44e -> PASS 3a594a44e -> PASS d18e411aa (own fresh clone; cold checkout + cache unpack + full lake build rc 0; planted sorry on the pinned toolchain gated RED)"
+    },
+    {
+      "model": "claude-fable-5-1",
+      "verdict": "PASS",
+      "head": "d18e411aa",
+      "findings": 0,
+      "history": "FAIL 3a594a44e (6: cold-cache decline masked a failed build; root-module warnings out of scope; clean-cache reproducibility unshown; doc-comment imports counted; crash counted as a mutant kill; --gate args unchecked) -> fixed 89bd11be0 + 4312eb0cc (the clean-cache run exposed `cache get` never unpacking on a fresh checkout) -> PASS 4312eb0cc with 1 low residual (-- comment containing /-) -> fixed d18e411aa -> PASS d18e411aa"
+    }
+  ],
+  "agreed": "degraded: 2 of 2 non-author Claude lanes PASS on the same head",
+  "no_self_review": true,
+  "acceptance": {
+    "fresh_checkout_build": "lambda, no .lake, ~/.cache/mathlib warm: Decompressing 8101 file(s), 0 Mathlib modules elaborated, Build completed successfully (16435 jobs), ./build.sh rc 0 in 804 s",
+    "orphans": "modules=162 in-cone=103 orphans=59 allowlisted=59 rc 0",
+    "self_tests": "build.sh 10 fixtures / 8 mutants + crash control; check-orphans 10 fixtures / 6 mutants + crash control",
+    "must_red": "origin/main unfixed: lake build fails on the duplicate alibi_slope_pos, gate rc 1; planted sorry on the pinned toolchain gates rc 1"
+  },
+  "open": [
+    "infra PVL-001 EV-5a probe greps the lakefile for `inputRev := \"<40-hex>\"`, a syntax lakefile.lean does not have; needs an infra spec amendment",
+    "#4124, #4125: the 59 allowlisted orphans (EV-5c drains them)"
+  ]
+}

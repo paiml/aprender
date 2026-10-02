@@ -102,3 +102,28 @@ fn semver_stays_the_second_field_of_the_first_line() {
 fn short_and_long_agree_on_the_first_line() {
     assert_eq!(long().lines().next(), short().lines().next());
 }
+
+/// G0.1 (#4476): the version names the commit it was built from, as the third
+/// field `(<9 hex>)`. Two worktrees share one workspace semver, so without the
+/// sha a stale pv reads as HEAD. `v<ver>+no-git` is the only other allowed value, and
+/// it never passes for a sha.
+#[test]
+fn g0_1_the_version_names_the_commit() {
+    let first = long().lines().next().unwrap_or_default().to_string();
+    let sha = env!("APR_GIT_SHA");
+    assert!(
+        first.contains(&format!("({sha})")),
+        "pv --version must carry the build sha; got `{first}`"
+    );
+    // git's --short grows with the repo (9 hex until 2026-09, 10 after), so accept any
+    // abbreviation git can print (7..=40 hex), never one fixed length.
+    let short_sha = (7..=40).contains(&sha.len()) && sha.chars().all(|c| c.is_ascii_hexdigit());
+    assert!(
+        short_sha || sha.ends_with("+no-git"),
+        "APR_GIT_SHA must be 7-40 hex or v<ver>+no-git; got `{sha}`"
+    );
+    assert_eq!(
+        first.split_whitespace().nth(2),
+        Some(format!("({sha})").as_str())
+    );
+}

@@ -44,7 +44,7 @@ Input validation must occur character-by-character or token-by-token.
 - **Schema Awareness:** Column names validated against loaded dataset schema [13].
 
 ### 3.3 Standard Work (Hyojun)
-REPL commands must mirror the batch CLI commands exactly (`alimentar > drift detect` == `alimentar drift detect`). This maintains cognitive continuity and standardizes the workflow [4].
+REPL commands must mirror the batch CLI commands exactly (`alimentar > drift detect` == `aprender-data drift detect`). This maintains cognitive continuity and standardizes the workflow [4].
 
 ### 3.4 Heijunka (Level Loading)
 The REPL should support lazy evaluation and streaming for large datasets, distributing computational load rather than peak-loading memory on startup [14].
@@ -55,7 +55,7 @@ The REPL should support lazy evaluation and streaming for large datasets, distri
 
 ### 4.1 Interactive Mode (Genchi Genbutsu)
 **Requirement:** ALIM-REPL-001
-The `alimentar repl` command shall launch a stateful session.
+The `aprender-data repl` command shall launch a stateful session.
 - **State:** Holds loaded datasets in memory (eliminating re-load waste).
 - **Context:** Maintains "current" dataset reference.
 
@@ -116,13 +116,13 @@ alimentar > quality score data.parquet --suggest --json --badge  # Advanced
 | REPL Command | Batch Equivalent | Description |
 |--------------|------------------|-------------|
 | `load <file>` | N/A (implicit) | Load dataset into session |
-| `info` | `alimentar info <file>` | Display dataset metadata |
-| `head [n]` | `alimentar head <file>` | Show first n rows |
-| `schema` | `alimentar schema <file>` | Display column schema |
-| `quality check` | `alimentar quality check <file>` | Run quality checks |
-| `quality score` | `alimentar quality score <file>` | 100-point quality score |
-| `drift detect <ref>` | `alimentar drift detect` | Compare to reference |
-| `convert <format>` | `alimentar convert` | Export to format |
+| `info` | `aprender-data info <file>` | Display dataset metadata |
+| `head [n]` | `aprender-data head <file>` | Show first n rows |
+| `schema` | `aprender-data schema <file>` | Display column schema |
+| `quality check` | `aprender-data quality check <file>` | Run quality checks |
+| `quality score` | `aprender-data quality score <file>` | 100-point quality score |
+| `drift detect <ref>` | `aprender-data drift detect` | Compare to reference |
+| `convert <format>` | `aprender-data convert` | Export to format |
 
 ### 5.2 Session Commands
 

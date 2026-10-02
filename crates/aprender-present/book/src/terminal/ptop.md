@@ -11,11 +11,11 @@
 cargo install ttop
 
 # Or build ptop directly from presentar-terminal
-cargo run -p presentar-terminal --features ptop --bin ptop
+cargo run -p aprender-present-terminal --features ptop --bin aprender-ptop
 
 # Or build in release mode for best performance
-cargo build -p presentar-terminal --features ptop --bin ptop --release
-./target/release/ptop
+cargo build -p aprender-present-terminal --features ptop --bin aprender-ptop --release
+./target/release/aprender-ptop
 ```
 
 ## Features
@@ -114,21 +114,21 @@ panels:
 ### Command-Line Flags
 
 ```bash
-ptop --help
-ptop --refresh 500        # 500ms refresh
-ptop --deterministic      # Predictable data (for testing)
-ptop --config ~/my.yaml   # Custom config file
-ptop --render-once        # Single frame then exit (CI/screenshots)
+aprender-ptop --help
+aprender-ptop --refresh 500        # 500ms refresh
+aprender-ptop --deterministic      # Predictable data (for testing)
+aprender-ptop --config ~/my.yaml   # Custom config file
+aprender-ptop --render-once        # Single frame then exit (CI/screenshots)
 ```
 
 ## Testing Examples
 
 ```bash
 # Test connections analyzer
-cargo run -p presentar-terminal --features ptop --example test_connections
+cargo run -p aprender-present-terminal --features ptop --example test_connections
 
 # Test display rules
-cargo run -p presentar-terminal --features ptop --example test_display_rules
+cargo run -p aprender-present-terminal --features ptop --example test_display_rules
 ```
 
 ## Performance

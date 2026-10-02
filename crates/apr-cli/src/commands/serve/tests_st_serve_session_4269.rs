@@ -2,6 +2,7 @@
 //! `realizar::session::Session`, which leaves a witness entry per turn.
 
 use super::st_cpu_generate;
+use crate::commands::serve::handlers::apr_cpu_generate_config;
 use realizar::apr_transformer::{AprTransformer, AprTransformerConfig, AprTransformerLayer};
 use realizar::session::{entries_for, EntryKind};
 
@@ -40,7 +41,12 @@ fn st_serve_generate_runs_through_session_and_leaves_a_safetensors_witness() {
     let model = tiny_transformer();
     // A prompt no other test in this binary uses, so the witness is this call's.
     let prompt = [7_u32, 5, 3, 9, 4269 % 12];
-    let out = st_cpu_generate(&model, &prompt, 2, 0.0).expect("tiny model generates");
+    let out = st_cpu_generate(
+        &model,
+        &prompt,
+        &apr_cpu_generate_config(2, 0.0, None, vec![]),
+    )
+    .expect("tiny model generates");
     assert_eq!(&out[..prompt.len()], &prompt, "prompt is echoed first");
     assert!(out.len() > prompt.len(), "at least one token was generated");
     let entries = entries_for(&prompt);

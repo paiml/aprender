@@ -1,0 +1,20 @@
+- id: PMAT-4073
+  github_issue: 4073
+  item_type: task
+  title: 'ONT-3b: formalization.yaml gains model_of; no model earns no L4'
+  status: completed
+  priority: medium
+  assigned_to: pvl-b
+  created: 2026-09-24T17:12:12Z
+  updated: 2026-09-28T08:40:00Z
+  spec: infra docs/specifications/PVL-001-pv-lean-gate.md
+  acceptance_criteria:
+  - pv lint contracts/ --gate refinement --format json reports verdict Pass, models 3 resolved 3, unrefined_baseline 76
+  - proof-status L4 from the discharge requires a resolving extraction/simulation model_of for the theorem's module
+  phases: []
+  subtasks: []
+  estimated_effort: null
+  labels:
+  - kind:code
+  notes: Ported from feat/4082-4073-ev8b-ont3b@202d5c51d onto B3 (#4317); EV-8b half superseded by B3's 69ed3ac0e. proof:crates/aprender-contracts-staging/lean/formalization.yaml proof:crates/aprender-contracts/src/lint/refinement_gate.rs
+  evidence: 'Verified 2026-09-28 by aprender-6b on intel at PR-2 head 035b019866: pv lint contracts/ --gate refinement --format json -> verdict Pass, models 3 resolved 3, ghosts 0, unrefined 76 (= acceptance baseline 76). First measured 2026-09-26 by aprender-5d at fold/b3-onto-main @7061eb6dd.'
