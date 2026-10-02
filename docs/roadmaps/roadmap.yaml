@@ -23713,7 +23713,7 @@ Not done, pending the ruling: moving the 31 fixture files to an obviously synthe
 - id: PMAT-4445
   github_issue: 4445
   item_type: task
-  title: 'apr bench (qwen35 --fast) prefills every timed turn whole: bench_qwen35 calls Session::forget_prefix before each warmup and timed turn, so warmup+iterations > 1 is measured, not refused'
+  title: 'apr bench (qwen35 --fast) refuses every run with warmup+iterations > 1: one session reuses its own prefix cache'
   status: inprogress
   priority: high
   assigned_to: aprender-bb
