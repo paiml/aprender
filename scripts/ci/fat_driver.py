@@ -491,6 +491,13 @@ def clear_dir(d: Path, log, rmtree=shutil.rmtree):
     aside = bucket / str(time.time_ns())
     os.rename(d, aside)  # no fallback: if even this fails the section is RED, loudly
     log.write(f"setup: {d} could not be removed ({err!r}); moved aside to {aside}\n")
+    _sweep_asides(bucket, aside, log, rmtree)
+    return aside
+
+
+def _sweep_asides(bucket: Path, aside: Path, log, rmtree):
+    """Retry every older aside in `bucket` (all but `aside`), logging each outcome;
+    past ASIDE_KEEP undeletable ones, write a ::warning:: naming the bucket."""
     for old in sorted(bucket.iterdir()):
         if old == aside:
             continue
@@ -504,7 +511,6 @@ def clear_dir(d: Path, log, rmtree=shutil.rmtree):
         log.write(f"::warning::{len(left)} undeletable leftovers under {bucket} "
                   f"(limit {ASIDE_KEEP}): root-owned files from a container section; "
                   f"chown or remove them on the runner\n")
-    return aside
 
 
 def make_section_dirs(d: Path, log, rmtree=shutil.rmtree):
