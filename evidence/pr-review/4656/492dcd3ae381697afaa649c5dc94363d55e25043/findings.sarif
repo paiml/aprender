@@ -1,371 +1,261 @@
 {
-  "$schema": "https://docs.oasis-open.org/sarif/sarif/v2.1.0/errata01/os/schemas/sarif-schema-2.1.0.json",
-  "version": "2.1.0",
-  "runs": [
-    {
-      "tool": {
-        "driver": {
-          "name": "pmat"
-        }
-      },
-      "invocations": [
-        {
-          "executionSuccessful": true,
-          "toolExecutionNotifications": []
-        }
-      ],
-      "results": [
-        {
-          "ruleId": "blob_identical_to_4655",
-          "level": "note",
-          "message": {
-            "text": "PASS: discharge-summary.json blob at head equals the blob reviewed in #4655 (045e2ee93c)"
-          },
-          "properties": {
-            "grounding": "measured",
-            "command": [
-              "bash",
-              "-c",
-              "test \"$(git rev-parse HEAD:crates/aprender-contracts-staging/discharge-summary.json)\" = \"$(git -C /mnt/nvme-raid0/agent-wt/w268-summary rev-parse 045e2ee93c:crates/aprender-contracts-staging/discharge-summary.json)\""
-            ],
-            "exit_code": 0,
-            "stdout_sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
-            "failure_scenario": "If this check failed, the committed summary would not match the lean tree or what was reproduced, so the discharge gate would attest a state nobody ran.",
-            "precision_class": "advisory"
-          }
-        },
-        {
-          "ruleId": "sha256_matches_reproduction",
-          "level": "note",
-          "message": {
-            "text": "PASS: file sha256 equals 6fab0bee704be06e45e4805d5fb913fb0ddef7108c3d8918b28be1075a777f1d (independent pv discharge reproduction)"
-          },
-          "properties": {
-            "grounding": "measured",
-            "command": [
-              "bash",
-              "-c",
-              "test \"$(sha256sum crates/aprender-contracts-staging/discharge-summary.json | cut -d' ' -f1)\" = 6fab0bee704be06e45e4805d5fb913fb0ddef7108c3d8918b28be1075a777f1d"
-            ],
-            "exit_code": 0,
-            "stdout_sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
-            "failure_scenario": "If this check failed, the committed summary would not match the lean tree or what was reproduced, so the discharge gate would attest a state nobody ran.",
-            "precision_class": "advisory"
-          }
-        },
-        {
-          "ruleId": "lean_tree_matches_summary",
-          "level": "note",
-          "message": {
-            "text": "PASS: lean tree hash at head equals bed17c8db6bd548d5b72aa58ab08b4ba65690629, the tree_sha now in the summary"
-          },
-          "properties": {
-            "grounding": "measured",
-            "command": [
-              "bash",
-              "-c",
-              "test \"$(git rev-parse HEAD:crates/aprender-contracts-staging/lean)\" = bed17c8db6bd548d5b72aa58ab08b4ba65690629"
-            ],
-            "exit_code": 0,
-            "stdout_sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
-            "failure_scenario": "If this check failed, the committed summary would not match the lean tree or what was reproduced, so the discharge gate would attest a state nobody ran.",
-            "precision_class": "advisory"
-          }
-        },
-        {
-          "ruleId": "diff_is_one_file",
-          "level": "note",
-          "message": {
-            "text": "PASS: diff 989cb012e5..HEAD touches only discharge-summary.json"
-          },
-          "properties": {
-            "grounding": "measured",
-            "command": [
-              "bash",
-              "-c",
-              "test \"$(git diff --name-only 989cb012e5..HEAD)\" = crates/aprender-contracts-staging/discharge-summary.json"
-            ],
-            "exit_code": 0,
-            "stdout_sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
-            "failure_scenario": "If this check failed, the committed summary would not match the lean tree or what was reproduced, so the discharge gate would attest a state nobody ran.",
-            "precision_class": "advisory"
-          }
-        },
-        {
-          "ruleId": "c269_confirmations",
-          "level": "note",
-          "message": {
-            "text": "Idempotence of a second pv discharge run (git diff exit 0) and the main-summary tree_sha mismatch (a31602f8 vs bed17c8d) are cited from c269-confirmations.json; this PR is the fix for the latter."
-          },
-          "properties": {
-            "grounding": "cited",
-            "source": "c269-confirmations.json (copied alongside)",
-            "failure_scenario": "Without this PR main's summary tree_sha a31602f8 does not match its lean tree bed17c8d.",
-            "precision_class": "advisory"
-          }
-        }
-      ]
-    },
-    {
-      "tool": {
-        "driver": {
-          "name": "nvidia-cuda-docs"
-        }
-      },
-      "invocations": [
-        {
-          "executionSuccessful": true,
-          "toolExecutionNotifications": []
-        }
-      ],
-      "results": []
-    },
-    {
-      "tool": {
-        "driver": {
-          "name": "crux"
-        }
-      },
-      "invocations": [
-        {
-          "executionSuccessful": true,
-          "toolExecutionNotifications": []
-        }
-      ],
-      "results": [
-        {
-          "ruleId": "crux_coverage_none",
-          "level": "note",
-          "message": {
-            "text": "The diff adds CLI subcommands `ptx-debug` and `surface` to contracts/apr-cli-commands-v1.yaml; no contracts/crux-*.yaml names ptx-debug (crux_coverage: none, itself a finding per \u00a73.C)."
-          },
-          "properties": {
-            "grounding": "asserted",
-            "rationale": "grep over contracts/crux-*.yaml for ptx-debug/ptx_debug returned no file; competitor behaviour for these surfaces was not compared.",
-            "failure_scenario": "A user-facing ptx-debug CLI ships with no CRUX comparison, so a competitive-gap regression on that surface would not be detected by the crux ladder.",
-            "precision_class": "advisory"
-          }
-        }
-      ]
-    },
-    {
-      "tool": {
-        "driver": {
-          "name": "cargo-mutants"
-        }
-      },
-      "invocations": [
-        {
-          "executionSuccessful": true,
-          "toolExecutionNotifications": []
-        }
-      ],
-      "results": [
-        {
-          "ruleId": "ont_selftest_merge_group_green",
-          "level": "note",
-          "message": {
-            "text": "check_ont_ratchet.sh --self-test under GITHUB_EVENT_NAME=merge_group at b08cfbda50: 56 passed, 0 failed (the delta's fix)."
-          },
-          "properties": {
-            "grounding": "measured",
-            "command": [
-              "env",
-              "GITHUB_EVENT_NAME=merge_group",
-              "bash",
-              "scripts/check_ont_ratchet.sh",
-              "--self-test"
-            ],
-            "exit_code": 0,
-            "stdout_sha256": "f0165018c7b12e399e9ed780cb05d3e1b13c346adc9f41b436b2cf82ef54be3a",
-            "failure_scenario": "Without the env clear, resolve_base.sh falls back to the single parent under merge_group and the no-comparand row reports 0, turning ci / gate (X86 guard-tree) red in the queue (merge_group run 37034947646).",
-            "precision_class": "advisory"
-          }
-        },
-        {
-          "ruleId": "ont_selftest_merge_group_red_before",
-          "level": "note",
-          "message": {
-            "text": "Same command at 4f57a19fe0 (before the delta): 55 passed, 1 failed, i.e. the defect reproduces locally and the fix is what turns it green (a mutant of the fix is killed)."
-          },
-          "properties": {
-            "grounding": "measured",
-            "command": [
-              "env",
-              "GITHUB_EVENT_NAME=merge_group",
-              "bash",
-              "scripts/check_ont_ratchet.sh",
-              "--self-test"
-            ],
-            "exit_code": 1,
-            "stdout_sha256": "a1694ffc4740103f1d58f2c13ea344c55258a0ca22895fad1d90246cb4e3c34e",
-            "failure_scenario": "If the env clear were reverted, the self-test goes red again under the merge queue.",
-            "precision_class": "advisory"
-          }
-        },
-        {
-          "ruleId": "guard_tree_parallel_table_green",
-          "level": "note",
-          "message": {
-            "text": "scripts/tests/guard_tree_parallel_test.sh at b08cfbda50: 6/6 rows pass, (d) included."
-          },
-          "properties": {
-            "grounding": "measured",
-            "command": [
-              "bash",
-              "scripts/tests/guard_tree_parallel_test.sh"
-            ],
-            "exit_code": 0,
-            "stdout_sha256": "b458a7823f7ce70d59c4060bdacf22bfc26f00788c96be40c43d49b2b4f1bbb6",
-            "failure_scenario": "Case (d) compared wall-clock `slowest:` rows between two runs, so 1s vs 0s jitter failed the determinism row in the queue.",
-            "precision_class": "advisory"
-          }
-        }
-      ]
-    },
-    {
-      "tool": {
-        "driver": {
-          "name": "antigravity"
-        }
-      },
-      "invocations": [
-        {
-          "executionSuccessful": true,
-          "toolExecutionNotifications": []
-        }
-      ],
-      "results": []
-    },
-    {
-      "tool": {
-        "driver": {
-          "name": "pv"
-        }
-      },
-      "invocations": [
-        {
-          "executionSuccessful": true,
-          "toolExecutionNotifications": []
-        }
-      ],
-      "results": [
-        {
-          "ruleId": "author_pv_build",
-          "level": "note",
-          "message": {
-            "text": "Author (w268) built in-tree pv at db86acf021: CARGO_TARGET_DIR=/mnt/nvme-raid0/targets/w268 cargo build --locked -p aprender-contracts-cli --bin pv, rc 0."
-          },
-          "properties": {
-            "grounding": "measured",
-            "command": [
-              "cargo",
-              "build",
-              "--locked",
-              "-p",
-              "aprender-contracts-cli",
-              "--bin",
-              "pv"
-            ],
-            "exit_code": 0,
-            "stdout_sha256": "b75f1ebeec4ec242faaa8414f76c71e15ee65ee84fb74e3baa6aae3b88040db7",
-            "failure_scenario": "A pv built from another tree would regenerate a summary for code that is not this head.",
-            "precision_class": "advisory"
-          }
-        },
-        {
-          "ruleId": "author_discharge_run",
-          "level": "note",
-          "message": {
-            "text": "Author run: pv discharge run at db86acf021 under MemoryMax=24G: rc 0, 423 s, memory.peak 25769803776 (= the cap, memory.events max 6645), oom_kill 0. Summary sha256 6fab0bee704be06e45e4805d5fb913fb0ddef7108c3d8918b28be1075a777f1d; only tree_sha moves (a31602f8 -> bed17c8d); cmp-equal to 14a3b1b3a4's file."
-          },
-          "properties": {
-            "grounding": "measured",
-            "command": [
-              "systemd-run",
-              "--user",
-              "--scope",
-              "--unit=w268-discharge",
-              "-p",
-              "MemoryMax=24G",
-              "flock",
-              "/mnt/nvme-raid0/lean-cache/bfbabfa35e3e25aa.lock",
-              "/mnt/nvme-raid0/targets/w268/debug/pv",
-              "discharge",
-              "run",
-              "crates/aprender-contracts-staging/lean"
-            ],
-            "exit_code": 0,
-            "stdout_sha256": "978b5f8af1fe6b0a39e709a66aaf60df17b65c954b027524620defefb35f759f",
-            "failure_scenario": "A hand-edited or stale summary keeps provable-ladder summary-fresh red (git diff --exit-code).",
-            "precision_class": "advisory"
-          }
-        },
-        {
-          "ruleId": "repro_pv_build",
-          "level": "note",
-          "message": {
-            "text": "Independent reviewer (claude-sonnet-5-5) built pv in a fresh worktree /mnt/nvme-raid0/agent-wt/w268-repro at db86acf021 with its own CARGO_TARGET_DIR=/mnt/nvme-raid0/targets/w268-repro, rc 0."
-          },
-          "properties": {
-            "grounding": "measured",
-            "command": [
-              "cargo",
-              "build",
-              "--locked",
-              "-p",
-              "aprender-contracts-cli",
-              "--bin",
-              "pv"
-            ],
-            "exit_code": 0,
-            "stdout_sha256": "2e355ea3f109acacf445afd3b9cbc5a84d60586b72ee3f14d29decaf938e351a",
-            "failure_scenario": "Reusing the author's binary would make the reproduction non-independent.",
-            "precision_class": "advisory"
-          }
-        },
-        {
-          "ruleId": "repro_discharge_byte_identical",
-          "level": "note",
-          "message": {
-            "text": "Independent reviewer run: rc 0, 379 s, memory.peak 25769803776, oom_kill 0. Repro summary sha256 6fab0bee704be06e45e4805d5fb913fb0ddef7108c3d8918b28be1075a777f1d == author sha256 6fab0bee704be06e45e4805d5fb913fb0ddef7108c3d8918b28be1075a777f1d; cmp equal."
-          },
-          "properties": {
-            "grounding": "measured",
-            "command": [
-              "systemd-run",
-              "--user",
-              "--scope",
-              "--unit=w268-repro-discharge",
-              "-p",
-              "MemoryMax=24G",
-              "flock",
-              "/mnt/nvme-raid0/lean-cache/bfbabfa35e3e25aa.lock",
-              "/mnt/nvme-raid0/targets/w268-repro/debug/pv",
-              "discharge",
-              "run",
-              "crates/aprender-contracts-staging/lean"
-            ],
-            "exit_code": 0,
-            "stdout_sha256": "978b5f8af1fe6b0a39e709a66aaf60df17b65c954b027524620defefb35f759f",
-            "failure_scenario": "If the summary were not a deterministic function of the tree, two runs would disagree and the committed file could not be trusted.",
-            "precision_class": "advisory"
-          }
-        },
-        {
-          "ruleId": "memory_peak_at_cap",
-          "level": "note",
-          "message": {
-            "text": "Both runs report memory.peak exactly at MemoryMax=24G with memory.events max>0 (throttled, not killed); true unconstrained demand may exceed 24G."
-          },
-          "properties": {
-            "grounding": "measured",
-            "rationale": "memory.peak/memory.events read from each scope's own cgroup",
-            "failure_scenario": "A lower cap or a heavier proof tree could turn throttling into oom_kill and a red ladder.",
-            "precision_class": "advisory"
-          }
-        }
-      ]
+ "$schema": "https://docs.oasis-open.org/sarif/sarif/v2.1.0/errata01/os/schemas/sarif-schema-2.1.0.json",
+ "version": "2.1.0",
+ "runs": [
+  {
+   "tool": {
+    "driver": {
+     "name": "pmat"
     }
-  ]
+   },
+   "invocations": [
+    {
+     "executionSuccessful": true,
+     "toolExecutionNotifications": []
+    }
+   ],
+   "results": [
+    {
+     "ruleId": "blob_identical_to_4655",
+     "level": "note",
+     "message": {
+      "text": "PASS: discharge-summary.json blob at head equals the blob reviewed in #4655 (045e2ee93c)"
+     },
+     "properties": {
+      "grounding": "measured",
+      "command": [
+       "bash",
+       "-c",
+       "test \"$(git rev-parse HEAD:crates/aprender-contracts-staging/discharge-summary.json)\" = \"$(git -C /mnt/nvme-raid0/agent-wt/w268-summary rev-parse 045e2ee93c:crates/aprender-contracts-staging/discharge-summary.json)\""
+      ],
+      "exit_code": 0,
+      "stdout_sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+      "failure_scenario": "If this check failed, the committed summary would not match the lean tree or what was reproduced, so the discharge gate would attest a state nobody ran.",
+      "precision_class": "advisory"
+     }
+    },
+    {
+     "ruleId": "sha256_matches_reproduction",
+     "level": "note",
+     "message": {
+      "text": "PASS: file sha256 equals 6fab0bee704be06e45e4805d5fb913fb0ddef7108c3d8918b28be1075a777f1d (independent pv discharge reproduction)"
+     },
+     "properties": {
+      "grounding": "measured",
+      "command": [
+       "bash",
+       "-c",
+       "test \"$(sha256sum crates/aprender-contracts-staging/discharge-summary.json | cut -d' ' -f1)\" = 6fab0bee704be06e45e4805d5fb913fb0ddef7108c3d8918b28be1075a777f1d"
+      ],
+      "exit_code": 0,
+      "stdout_sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+      "failure_scenario": "If this check failed, the committed summary would not match the lean tree or what was reproduced, so the discharge gate would attest a state nobody ran.",
+      "precision_class": "advisory"
+     }
+    },
+    {
+     "ruleId": "lean_tree_matches_summary",
+     "level": "note",
+     "message": {
+      "text": "PASS: lean tree hash at head equals bed17c8db6bd548d5b72aa58ab08b4ba65690629, the tree_sha now in the summary"
+     },
+     "properties": {
+      "grounding": "measured",
+      "command": [
+       "bash",
+       "-c",
+       "test \"$(git rev-parse HEAD:crates/aprender-contracts-staging/lean)\" = bed17c8db6bd548d5b72aa58ab08b4ba65690629"
+      ],
+      "exit_code": 0,
+      "stdout_sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+      "failure_scenario": "If this check failed, the committed summary would not match the lean tree or what was reproduced, so the discharge gate would attest a state nobody ran.",
+      "precision_class": "advisory"
+     }
+    },
+    {
+     "ruleId": "diff_is_one_file",
+     "level": "note",
+     "message": {
+      "text": "PASS: diff 989cb012e5..HEAD touches only discharge-summary.json"
+     },
+     "properties": {
+      "grounding": "measured",
+      "command": [
+       "bash",
+       "-c",
+       "test \"$(git diff --name-only 989cb012e5..HEAD)\" = crates/aprender-contracts-staging/discharge-summary.json"
+      ],
+      "exit_code": 0,
+      "stdout_sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+      "failure_scenario": "If this check failed, the committed summary would not match the lean tree or what was reproduced, so the discharge gate would attest a state nobody ran.",
+      "precision_class": "advisory"
+     }
+    },
+    {
+     "ruleId": "c269_confirmations",
+     "level": "note",
+     "message": {
+      "text": "Idempotence of a second pv discharge run (git diff exit 0) and the main-summary tree_sha mismatch (a31602f8 vs bed17c8d) are cited from c269-confirmations.json; this PR is the fix for the latter."
+     },
+     "properties": {
+      "grounding": "cited",
+      "source": "evidence/pr-review/4656/492dcd3ae381697afaa649c5dc94363d55e25043/c269-confirmations.json",
+      "failure_scenario": "Without this PR main's summary tree_sha a31602f8 does not match its lean tree bed17c8d.",
+      "precision_class": "advisory",
+      "excerpt": "\"main_summary_tree_sha\": \"a31602f85dba036712115f5f89776086e988b178\"",
+      "excerpt_sha256": "7bb74adef8d3765a5eff2c79de52bc77a430e1fe94e2afa9284f38946466d54e"
+     }
+    },
+    {
+     "ruleId": "author_pv_build",
+     "level": "note",
+     "message": {
+      "text": "Author (w268) built in-tree pv at db86acf021: CARGO_TARGET_DIR=/mnt/nvme-raid0/targets/w268 cargo build --locked -p aprender-contracts-cli --bin pv, rc 0."
+     },
+     "properties": {
+      "grounding": "measured",
+      "command": [
+       "cargo",
+       "build",
+       "--locked",
+       "-p",
+       "aprender-contracts-cli",
+       "--bin",
+       "pv"
+      ],
+      "exit_code": 0,
+      "stdout_sha256": "b75f1ebeec4ec242faaa8414f76c71e15ee65ee84fb74e3baa6aae3b88040db7",
+      "failure_scenario": "A pv built from another tree would regenerate a summary for code that is not this head.",
+      "precision_class": "advisory"
+     }
+    },
+    {
+     "ruleId": "author_discharge_run",
+     "level": "note",
+     "message": {
+      "text": "Author run: pv discharge run at db86acf021 under MemoryMax=24G: rc 0, 423 s, memory.peak 25769803776 (= the cap, memory.events max 6645), oom_kill 0. Summary sha256 6fab0bee704be06e45e4805d5fb913fb0ddef7108c3d8918b28be1075a777f1d; only tree_sha moves (a31602f8 -> bed17c8d); cmp-equal to 14a3b1b3a4's file."
+     },
+     "properties": {
+      "grounding": "measured",
+      "command": [
+       "systemd-run",
+       "--user",
+       "--scope",
+       "--unit=w268-discharge",
+       "-p",
+       "MemoryMax=24G",
+       "flock",
+       "/mnt/nvme-raid0/lean-cache/bfbabfa35e3e25aa.lock",
+       "/mnt/nvme-raid0/targets/w268/debug/pv",
+       "discharge",
+       "run",
+       "crates/aprender-contracts-staging/lean"
+      ],
+      "exit_code": 0,
+      "stdout_sha256": "978b5f8af1fe6b0a39e709a66aaf60df17b65c954b027524620defefb35f759f",
+      "failure_scenario": "A hand-edited or stale summary keeps provable-ladder summary-fresh red (git diff --exit-code).",
+      "precision_class": "advisory"
+     }
+    },
+    {
+     "ruleId": "repro_pv_build",
+     "level": "note",
+     "message": {
+      "text": "Independent reviewer (claude-sonnet-5-5) built pv in a fresh worktree /mnt/nvme-raid0/agent-wt/w268-repro at db86acf021 with its own CARGO_TARGET_DIR=/mnt/nvme-raid0/targets/w268-repro, rc 0."
+     },
+     "properties": {
+      "grounding": "measured",
+      "command": [
+       "cargo",
+       "build",
+       "--locked",
+       "-p",
+       "aprender-contracts-cli",
+       "--bin",
+       "pv"
+      ],
+      "exit_code": 0,
+      "stdout_sha256": "2e355ea3f109acacf445afd3b9cbc5a84d60586b72ee3f14d29decaf938e351a",
+      "failure_scenario": "Reusing the author's binary would make the reproduction non-independent.",
+      "precision_class": "advisory"
+     }
+    },
+    {
+     "ruleId": "repro_discharge_byte_identical",
+     "level": "note",
+     "message": {
+      "text": "Independent reviewer run: rc 0, 379 s, memory.peak 25769803776, oom_kill 0. Repro summary sha256 6fab0bee704be06e45e4805d5fb913fb0ddef7108c3d8918b28be1075a777f1d == author sha256 6fab0bee704be06e45e4805d5fb913fb0ddef7108c3d8918b28be1075a777f1d; cmp equal."
+     },
+     "properties": {
+      "grounding": "measured",
+      "command": [
+       "systemd-run",
+       "--user",
+       "--scope",
+       "--unit=w268-repro-discharge",
+       "-p",
+       "MemoryMax=24G",
+       "flock",
+       "/mnt/nvme-raid0/lean-cache/bfbabfa35e3e25aa.lock",
+       "/mnt/nvme-raid0/targets/w268-repro/debug/pv",
+       "discharge",
+       "run",
+       "crates/aprender-contracts-staging/lean"
+      ],
+      "exit_code": 0,
+      "stdout_sha256": "978b5f8af1fe6b0a39e709a66aaf60df17b65c954b027524620defefb35f759f",
+      "failure_scenario": "If the summary were not a deterministic function of the tree, two runs would disagree and the committed file could not be trusted.",
+      "precision_class": "advisory"
+     }
+    },
+    {
+     "ruleId": "memory_peak_at_cap",
+     "level": "note",
+     "message": {
+      "text": "Both runs report memory.peak exactly at MemoryMax=24G with memory.events max>0 (throttled, not killed); true unconstrained demand may exceed 24G."
+     },
+     "properties": {
+      "grounding": "measured",
+      "rationale": "memory.peak/memory.events read from each scope's own cgroup",
+      "failure_scenario": "A lower cap or a heavier proof tree could turn throttling into oom_kill and a red ladder.",
+      "precision_class": "advisory"
+     }
+    }
+   ],
+   "properties": {
+    "note": "primary-reviewer measured/cited checks of the discharge-summary delta; guard driver vocabulary has no slot for pv, so they ride on the pmat run"
+   }
+  },
+  {
+   "tool": {
+    "driver": {
+     "name": "antigravity"
+    }
+   },
+   "invocations": [
+    {
+     "executionSuccessful": true,
+     "toolExecutionNotifications": []
+    }
+   ],
+   "results": [
+    {
+     "ruleId": "stale-discharge-mismatched-tree-sha",
+     "level": "note",
+     "message": {
+      "text": "agy claimed the lean/ tree is unchanged so tree_sha bed17c8d cannot match; contradicted by the primary: lean tree at head == bed17c8d (see lean_tree_matches_summary)"
+     },
+     "properties": {
+      "grounding": "cited",
+      "classification": "contradicted",
+      "failure_scenario": "If agy were right the discharge gate would fail with a stale-discharge error on tree_sha mismatch.",
+      "precision_class": "advisory",
+      "source": "crates/aprender-contracts/src/discharge/summary.rs:260 (discharged(): tree_sha must equal the current lean tree)",
+      "excerpt": "let withheld = if s.tree_sha.is_none() || s.tree_sha.as_deref() != current_tree_sha {",
+      "excerpt_sha256": "8fae62546015da065affe9bf57606852359eaf545d0332ae8f8874363a9ef288"
+     }
+    }
+   ]
+  }
+ ]
 }
