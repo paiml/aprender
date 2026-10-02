@@ -71,7 +71,7 @@ pub fn ladder_block() -> String {
 ///
 /// Each tool mention (`kani`, `lean`) is paired with the NEAREST level token on its line
 /// (`L1`..`L5`, `Level 1`..`Level 5`), in either direction, and flagged when that level
-/// is wrong for the tool: Kani paired with L4/L5 (Kani is L3), or Lean paired with L5
+/// does not match the tool: Kani paired with L4/L5 (Kani is L3), or Lean paired with L5
 /// on a line that says nothing about bindings (Lean alone is L4). Nearest-in-either-
 /// direction catches "Level 4 (Kani)" and "Kani is used at Level 4" alike, and leaves
 /// "How Kani (L3) and Lean (L4) Compose" alone. Quorum lanes on PR #4092 found both
