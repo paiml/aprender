@@ -758,6 +758,7 @@ jobs:
           pkgs=""; for c in "${crates[@]}"; do pkgs="$pkgs -p $c"; done
           printf 'quick tier crates: %s\n' "$CRATES"
           docker run --rm \
+          -e GIT_CONFIG_COUNT=1 -e GIT_CONFIG_KEY_0=safe.directory -e GIT_CONFIG_VALUE_0=/workspace \
           -e CI -e GITHUB_ACTIONS -e GITHUB_REF -e GITHUB_SHA -e GITHUB_REPOSITORY -e GITHUB_RUN_ID -e GITHUB_EVENT_NAME -e GITHUB_WORKFLOW \
             -v "${GITHUB_WORKSPACE}:/workspace" \
             -v "/mnt/nvme-raid0/cargo-ci/registry/${PR_OR_REF}:/usr/local/cargo/registry" \
@@ -841,6 +842,7 @@ jobs:
           printf 'nextest filterset (%s clause(s)):\n' "$(printf '%s' "$EXPR" | tr '|' '\n' | wc -l)"
           printf '%s\n' "$EXPR" | tr '|' '\n' | sed 's/^ *//; s/ *$//; s/^/  + /'
           docker run --rm \
+          -e GIT_CONFIG_COUNT=1 -e GIT_CONFIG_KEY_0=safe.directory -e GIT_CONFIG_VALUE_0=/workspace \
           -e CI -e GITHUB_ACTIONS -e GITHUB_REF -e GITHUB_SHA -e GITHUB_REPOSITORY -e GITHUB_RUN_ID -e GITHUB_EVENT_NAME -e GITHUB_WORKFLOW \
             -v "${GITHUB_WORKSPACE}:/workspace" \
             -v "/mnt/nvme-raid0/cargo-ci/registry/${PR_OR_REF}:/usr/local/cargo/registry" \
