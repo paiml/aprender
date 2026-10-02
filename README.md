@@ -2,7 +2,7 @@
 schema_version: "1.0"
 kind: library
 entrypoints: [crates/aprender-contracts-cli]
-contract_count: 1860
+contract_count: 1889
 ---
 
 <p align="center">
@@ -119,7 +119,7 @@ A non-`pass` cell names the gates the receipt records, which is not always the c
 > times out at 600 s on the 20k-token rung on GB10 (sm_121), so qwen3moe on GB10 is withdrawn from this
 > release's claims (`cells.declaimed`).
 
-> **Known issue — GB10 dense models: prompt processing unbatched (11.4 tok/s); planned for 0.70.1 (#4590).** Output is correct; only prefill speed is affected. On GB10 (sm_121) every dense
+> **Known issue — GB10 dense models: prompt processing unbatched; planned for 0.70.1 (#4590).** Output is correct; only prefill speed is affected. On GB10 (sm_121) every dense
 > model (Qwen2.5, Qwen3) is withdrawn from this release's claims (`cells.declaimed` in
 > [`contracts/model-capability-ladder-v1.yaml`](contracts/model-capability-ladder-v1.yaml)); Qwen3.5 on
 > GB10 and every model on other hosts are still claimed and gated.

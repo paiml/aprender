@@ -396,3 +396,49 @@ mod entry_point_is_shared {
         assert!(violations(clean).is_empty());
     }
 }
+
+/// `cli_main` is the whole `apr` binary; judge its return value in a child
+/// process, because `Cli::parse` on a bad command line exits the process.
+#[cfg(test)]
+mod cli_main_exit {
+    /// Child half: only acts when re-executed by the parent test below. The
+    /// child's argv is the libtest one, which `Cli` rejects as a usage error, so
+    /// `cli_main` must exit 2 itself and never return here.
+    #[test]
+    fn cli_main_child_entry() {
+        if std::env::var_os("APR_CLI_MAIN_CHILD").is_none() {
+            return;
+        }
+        // The real `main` runs on the 8 MiB main-thread stack; a libtest worker thread's
+        // 2 MiB is too small for the full `Cli` parse, so give the child the same room.
+        let rc = std::thread::Builder::new()
+            .stack_size(64 * 1024 * 1024)
+            .spawn(super::cli_main)
+            .expect("spawn cli_main thread")
+            .join()
+            .expect("cli_main thread panicked");
+        println!("CLI_MAIN_RETURNED {rc:?}");
+        std::process::exit(0);
+    }
+
+    #[test]
+    fn cli_main_on_a_usage_error_exits_two_and_does_not_return() {
+        let out = std::process::Command::new(std::env::current_exe().expect("current_exe"))
+            .args([
+                "--exact",
+                "cli_main_exit::cli_main_child_entry",
+                "--nocapture",
+                "--test-threads=1",
+            ])
+            .env("APR_CLI_MAIN_CHILD", "1")
+            .env("NO_COLOR", "1")
+            .output()
+            .expect("spawn child test binary");
+        let stdout = String::from_utf8_lossy(&out.stdout);
+        assert!(
+            !stdout.contains("CLI_MAIN_RETURNED"),
+            "cli_main returned on a usage error: {stdout}"
+        );
+        assert_eq!(out.status.code(), Some(2), "{stdout}");
+    }
+}

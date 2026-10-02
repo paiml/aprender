@@ -203,4 +203,21 @@ mod tests {
         assert!(PROMPT_V1.ends_with("Be concrete.\n\n"));
         assert_eq!(locked_prereg_sha().map(str::len), Some(64));
     }
+
+    #[test]
+    fn render_lock_writes_every_component_and_round_trips() {
+        let c = Components::of("## §2 a\nb\n## §6 c\n", "stats", "plan", "prompt").expect("span");
+        let lock = c.render_lock();
+        assert!(lock.starts_with("# REX-001 pre-registration lock (rex-prereg-v1)."));
+        assert!(lock.contains(&format!("spec_s2_s5={}\n", c.spec_s2_s5)));
+        assert!(lock.contains(&format!("stats_rs={}\n", c.stats_rs)));
+        assert!(lock.contains(&format!("analysis_plan={}\n", c.analysis_plan)));
+        assert!(lock.contains(&format!("prompt_v1={}\n", c.prompt_v1)));
+        assert!(lock.ends_with(&format!("prereg_sha={}\n", c.prereg_sha())));
+        assert_eq!(
+            lock_value(&lock, "prereg_sha"),
+            Some(c.prereg_sha().as_str())
+        );
+        assert!(verify(&lock, &c).is_empty());
+    }
 }

@@ -449,3 +449,136 @@ fn forget_prefix_makes_the_same_prompt_prefill_whole_again() {
     }
     assert_eq!(s.engine().restores, 0);
 }
+
+/// A forward that implements only the required methods, so every checkpoint
+/// hook is the trait default.
+struct Bare;
+
+impl ArchForward for Bare {
+    fn arch(&self) -> &'static str {
+        "bare"
+    }
+    fn on_gpu(&self) -> bool {
+        false
+    }
+    fn context_length(&self) -> usize {
+        100
+    }
+    fn batched_prefills(&self) -> usize {
+        0
+    }
+    fn notices(&self) -> &[String] {
+        &[]
+    }
+    fn reserve(&mut self, _positions: usize) -> Result<bool> {
+        Ok(false)
+    }
+    fn forward(&mut self, tokens: &[u32], _start: usize) -> Result<Vec<f32>> {
+        let mut logits = vec![0.0; 8];
+        logits[tokens.len() % 8] = 1.0;
+        Ok(logits)
+    }
+}
+
+#[test]
+fn the_default_forward_keeps_no_checkpoint() {
+    let mut b = Bare;
+    assert_eq!(b.checkpoint_at(&[1, 2, 3]), None);
+    assert_eq!(b.checkpoint_at(&[]), None);
+    assert!(b.save_checkpoint().is_ok());
+    assert!(
+        !b.restore_checkpoint().expect("default restore"),
+        "the default has nothing to return to"
+    );
+}
+
+/// A forward that names a fixed checkpoint position whatever the prompt.
+struct FixedCheckpoint {
+    inner: Scripted,
+    at: usize,
+}
+
+impl ArchForward for FixedCheckpoint {
+    fn arch(&self) -> &'static str {
+        "fixed"
+    }
+    fn on_gpu(&self) -> bool {
+        false
+    }
+    fn context_length(&self) -> usize {
+        self.inner.context
+    }
+    fn batched_prefills(&self) -> usize {
+        0
+    }
+    fn notices(&self) -> &[String] {
+        &[]
+    }
+    fn reserve(&mut self, positions: usize) -> Result<bool> {
+        self.inner.reserve(positions)
+    }
+    fn forward(&mut self, tokens: &[u32], start: usize) -> Result<Vec<f32>> {
+        self.inner.forward(tokens, start)
+    }
+    fn checkpoint_at(&self, _prompt: &[u32]) -> Option<usize> {
+        Some(self.at)
+    }
+    fn save_checkpoint(&mut self) -> Result<()> {
+        self.inner.saved = Some(self.inner.held);
+        Ok(())
+    }
+}
+
+#[test]
+fn a_prompt_equal_to_the_checkpoint_does_not_restore_it() {
+    let mut s = Session::new(Scripted::checkpointing(3, 100, MARK));
+    s.generate(&[7851, MARK, 7852], &greedy(1), &mut |_| true)
+        .expect("t1");
+    assert_eq!(s.checkpoint, Some(vec![7851]));
+    // Exactly the checkpoint: nothing beyond it to resume into.
+    let reused = s.prepare_prompt(&[7851]).expect("prepare");
+    assert_eq!(reused, 0);
+    assert_eq!(s.engine().restores, 0);
+    assert_eq!(s.checkpoint, Some(vec![7851]), "kept, not restored");
+}
+
+#[test]
+fn a_checkpoint_at_the_resume_point_is_not_taken() {
+    let mut s = Session::new(Scripted::checkpointing(3, 100, MARK));
+    // The marker is the first token: k == start == 0.
+    let reused = s.prepare_prompt(&[MARK, 7861, 7862]).expect("prepare");
+    assert_eq!(reused, 0);
+    assert!(
+        s.engine().calls.is_empty(),
+        "no prefill span for k == start"
+    );
+    assert_eq!(s.engine().saved, None);
+    assert_eq!(s.checkpoint, None);
+}
+
+#[test]
+fn a_checkpoint_at_the_prompt_end_is_not_taken() {
+    let mut s = Session::new(FixedCheckpoint {
+        inner: Scripted::new(3, 100),
+        at: 3,
+    });
+    let reused = s.prepare_prompt(&[7871, 7872, 7873]).expect("prepare");
+    assert_eq!(reused, 0);
+    assert!(
+        s.engine().inner.calls.is_empty(),
+        "k == prompt.len() is no checkpoint"
+    );
+    assert_eq!(s.engine().inner.saved, None);
+    assert_eq!(s.checkpoint, None);
+}
+
+#[test]
+fn a_checkpoint_inside_the_prompt_is_taken() {
+    let mut s = Session::new(FixedCheckpoint {
+        inner: Scripted::new(3, 100),
+        at: 2,
+    });
+    s.prepare_prompt(&[7881, 7882, 7883]).expect("prepare");
+    assert_eq!(s.engine().inner.calls, vec![(2, 0)]);
+    assert_eq!(s.checkpoint, Some(vec![7881, 7882]));
+}

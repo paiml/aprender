@@ -231,8 +231,8 @@ exit "${FX_PV_RC:-1}"
 STUB
     chmod +x "$tmp/pv"
     g() { git -C "$1" -c core.hooksPath=/dev/null -c user.name=t -c user.email=t@t -c commit.gpgsign=false "${@:2}"; }
-    mk() { # dir: a repo with src/ at commit A, receipts naming A committed on top (HEAD = B)
-        mkdir -p "$1/src" "$1/evidence/dogfood/models/1.2.3"; printf 'a\n' > "$1/src/f"
+    mk() { # dir [subdir]: a repo with src/ (and an empty subdir) at commit A, receipts naming A committed on top (HEAD = B)
+        mkdir -p "$1/src" "$1/evidence/dogfood/models/1.2.3" "$1/${2:-src}"; printf 'a\n' > "$1/src/f"
         git init -q -b main "$1"; g "$1" add -A; g "$1" commit -qm A
         local a; a="$(git -C "$1" rev-parse HEAD)"
         printf '{"apr_sha":"%s"}\n' "$a" > "$1/evidence/dogfood/models/1.2.3/lambda.json"
@@ -262,11 +262,11 @@ STUB
     argrow pass_asks_the_shape                   "--gate shapes --shape release-readiness-v1 --release-version 1.2.3 --release-commit $c"
     argrow receipts_commit_earned_is_passed      "--receipts-commit $x"
     argrow no_surface_is_not_invented            "!--surface"
-    d="$tmp/v"; mk "$d"; mkdir -p "$d/evidence/release/surface"; printf '{}\n' > "$d/evidence/release/surface/1.2.3.json"
+    d="$tmp/v"; mk "$d" evidence/release/surface; printf '{}\n' > "$d/evidence/release/surface/1.2.3.json"
     row committed_surface_runs                   0 "ok    R8 release-readiness-v1 for 1.2.3" "$d" FX_PV_RC=0 FX_PV_BODY=pass
     argrow committed_surface_is_passed           "--surface $d/evidence/release/surface/1.2.3.json"
     argrow no_certification_keeps_pv_crux_default "!--crux-receipts"
-    d="$tmp/c"; mk "$d"; mkdir -p "$d/evidence/crux/1.2.3"
+    d="$tmp/c"; mk "$d" evidence/crux/1.2.3
     printf '{}\n' > "$d/evidence/crux/1.2.3/r.json"; printf '[]\n' > "$d/evidence/crux/1.2.3/prompt-certification-inventory.json"
     row certification_beside_crux_runs           0 "ok    R8 release-readiness-v1 for 1.2.3" "$d" FX_PV_RC=0 FX_PV_BODY=pass
     cx="$(sed -n 's/.*--crux-receipts \([^ ]*\).*/\1/p' "$tmp/args")"

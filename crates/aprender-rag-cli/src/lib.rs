@@ -1678,4 +1678,29 @@ mod tests {
         assert_eq!(deleted.len(), 1);
         assert_eq!(deleted[0], "/a.md");
     }
+
+    #[test]
+    fn dispatch_propagates_a_command_failure() {
+        let missing =
+            std::env::temp_dir().join(format!("rag-dispatch-none-{}", std::process::id()));
+        let err = dispatch(Commands::Query {
+            query: "q".to_string(),
+            index: missing.to_string_lossy().into_owned(),
+            top_k: 1,
+            format: "text".to_string(),
+            mode: "sparse".to_string(),
+            fusion: "rrf".to_string(),
+            fusion_k: None,
+            candidates: 1,
+            rerank: "none".to_string(),
+            hyde: false,
+        })
+        .expect_err("a missing index must surface as Err");
+        assert!(err.to_string().contains("Index not found"), "{err}");
+    }
+
+    #[test]
+    fn dispatch_info_succeeds() {
+        assert!(dispatch(Commands::Info).is_ok());
+    }
 }

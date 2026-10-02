@@ -96,3 +96,41 @@ fn falsify_rcc_003_train_roots_are_clean() {
         "sealed test items leaked into training data: {hits:#?}"
     );
 }
+
+/// `len` counts sealed shas; `is_empty` is true only for an index with none.
+#[test]
+fn len_and_is_empty_track_the_sealed_shas() {
+    let two = Index::new(&[
+        Sealed {
+            id: "A".into(),
+            diff_sha256: sha256_hex(b"a"),
+            hunks: vec![],
+        },
+        Sealed {
+            id: "B".into(),
+            diff_sha256: sha256_hex(b"b"),
+            hunks: vec![],
+        },
+    ]);
+    assert_eq!(two.len(), 2);
+    assert!(!two.is_empty());
+    let none = Index::new(&[]);
+    assert_eq!(none.len(), 0);
+    assert!(none.is_empty());
+    assert_eq!(index().len(), 1);
+}
+
+/// A diff hidden inside a JSON array of strings is still found.
+#[test]
+fn leak_inside_a_json_array_is_caught() {
+    let rec = serde_json::json!({"diffs": ["harmless", TEST_DIFF]});
+    let hits = index().scan(&format!("{rec}\n"), "t.jsonl");
+    assert_eq!(
+        hits,
+        vec![Hit {
+            item: "R007".into(),
+            file: "t.jsonl".into(),
+            how: "hunk"
+        }]
+    );
+}

@@ -116,3 +116,32 @@ pub fn exit_code_for_parse_error(err: &clap::Error) -> i32 {
         _ => 2,
     }
 }
+
+#[cfg(test)]
+mod exit_code_tests {
+    use super::*;
+
+    fn code_for(args: &[&str]) -> i32 {
+        let err = Cli::try_parse_from(args).expect_err("must not parse to a Cli");
+        exit_code_for_parse_error(&err)
+    }
+
+    #[test]
+    fn help_and_version_are_success() {
+        assert_eq!(code_for(&["aprender-ptx-debug", "--help"]), 0);
+        assert_eq!(code_for(&["aprender-ptx-debug", "--version"]), 0);
+    }
+
+    #[test]
+    fn version_string_names_the_package_version() {
+        let v = version_string();
+        assert!(v.contains(env!("CARGO_PKG_VERSION")), "{v}");
+        assert!(v.contains("aprender-ptx-debug"), "{v}");
+    }
+
+    #[test]
+    fn usage_errors_exit_two() {
+        assert_eq!(code_for(&["aprender-ptx-debug", "bogus-subcommand"]), 2);
+        assert_eq!(code_for(&["aprender-ptx-debug", "analyze"]), 2);
+    }
+}

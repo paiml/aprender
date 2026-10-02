@@ -186,4 +186,14 @@ mod tests {
         dequantize_iq2_xxs_block(&[0u8; IQ2_XXS_BLOCK_BYTES], &mut got);
         assert!(got.iter().all(|v| *v == 0.0), "zero scale must give zeros");
     }
+
+    /// Fail fast: a non-empty run must yield a non-empty, correctly sized result.
+    #[test]
+    fn iq2_xxs_single_block_run_is_not_empty() {
+        let out = dequantize_iq2_xxs(&IQ2_XXS_BLOCK).expect("one whole block");
+        assert!(!out.is_empty(), "a block must dequantize to elements");
+        assert_eq!(out.len(), IQ2_XXS_BLOCK_ELEMS);
+        assert_eq!(out[1], IQ2_XXS_EXPECTED[1]);
+        assert!(dequantize_iq2_xxs(&[]).expect("empty run").is_empty());
+    }
 }

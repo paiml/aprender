@@ -231,3 +231,35 @@ fn the_witness_serializes_in_the_spec_shape() {
         serde_json::json!({"kind": "model", "payload": {"false": []}})
     );
 }
+
+fn pair(a: &str, b: &str) -> (String, String) {
+    (a.to_string(), b.to_string())
+}
+
+#[test]
+fn variables_collects_units_and_both_ends_of_every_clause() {
+    let cs = ClauseSet {
+        units: ["U".to_string()].into_iter().collect(),
+        implies: [pair("A", "B")].into_iter().collect(),
+        conflicts: [pair("C", "D")].into_iter().collect(),
+    };
+    let got: Vec<String> = variables(&cs).into_iter().collect();
+    assert_eq!(got, vec!["A", "B", "C", "D", "U"]);
+    assert!(variables(&ClauseSet::default()).is_empty());
+}
+
+#[test]
+fn implication_adjacency_groups_targets_by_source() {
+    let cs = ClauseSet {
+        units: BTreeSet::new(),
+        implies: [pair("A", "B"), pair("A", "C"), pair("B", "C")]
+            .into_iter()
+            .collect(),
+        conflicts: [pair("X", "Y")].into_iter().collect(),
+    };
+    let adj = implication_adjacency(&cs);
+    assert_eq!(adj.len(), 2);
+    assert_eq!(adj["A"], vec!["B", "C"]);
+    assert_eq!(adj["B"], vec!["C"]);
+    assert!(implication_adjacency(&ClauseSet::default()).is_empty());
+}
