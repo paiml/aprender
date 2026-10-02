@@ -1,0 +1,130 @@
+{
+  "$schema": "https://docs.oasis-open.org/sarif/sarif/v2.1.0/errata01/os/schemas/sarif-schema-2.1.0.json",
+  "version": "2.1.0",
+  "runs": [
+    {
+      "tool": {
+        "driver": {
+          "name": "pmat"
+        }
+      },
+      "invocations": [
+        {
+          "executionSuccessful": true,
+          "toolExecutionNotifications": []
+        }
+      ],
+      "results": [
+        {
+          "ruleId": "complexity_not_measurable",
+          "level": "note",
+          "message": {
+            "text": "pmat analyze complexity cannot score the changed file: it has no analyzer for .yml (35 of 35 files under .github skipped), so complexity_delta is empty because nothing was measured, not because it is zero."
+          },
+          "properties": {
+            "grounding": "measured",
+            "command": [
+              "pmat",
+              "analyze",
+              "complexity",
+              "--path",
+              ".github"
+            ],
+            "exit_code": 1,
+            "stdout_sha256": "dc9302f4f0f5e682e607e351bf184e2fe55f619259df0a5398a68dd2a1b9ce89",
+            "failure_scenario": "A reader could take an empty complexity_delta as a measured zero; for a workflow-only diff it is unmeasured.",
+            "precision_class": "advisory"
+          }
+        },
+        {
+          "ruleId": "rc_capture_under_bash_e",
+          "level": "note",
+          "message": {
+            "text": "The `rc=0; cmd || rc=$?` form keeps a non-zero exit of check_release_assets.sh out of bash -e: demonstrated that rc=1 reaches the case (present=false) instead of killing the step."
+          },
+          "properties": {
+            "grounding": "measured",
+            "command": [
+              "bash",
+              "-ec",
+              "rc=0; bash -c 'exit 1' || rc=$?; echo rc=$rc"
+            ],
+            "exit_code": 0,
+            "stdout_sha256": "91d957f8f2748a950526d4d21e0d5cd3bf5518e6c60b1beb470a13be1f978b1d",
+            "failure_scenario": "With the old `; rc=$?` form a missing-assets exit 1 aborts the step under bash -e before the case runs, so present is never set, the job is red and every build lane skips (v0.70.0-rc.1: zero assets).",
+            "precision_class": "advisory"
+          }
+        },
+        {
+          "ruleId": "exit2_still_fails_closed",
+          "level": "note",
+          "message": {
+            "text": "Exit 2 (unreadable release) still reaches the `*)` arm and exits 1, so the build lanes skip and nothing is rebuilt over assets that may exist; exit 0 and 1 arms are unchanged."
+          },
+          "properties": {
+            "grounding": "asserted",
+            "rationale": "Read of the step body at head: rc initialised to 0, so a successful checker leaves rc=0 and takes arm 0; no other line changed.",
+            "failure_scenario": "If rc were not initialised, a set -u shell or a skipped assignment could leave it unset; it is initialised on the line before the call.",
+            "precision_class": "advisory"
+          }
+        }
+      ]
+    },
+    {
+      "tool": {
+        "driver": {
+          "name": "nvidia-cuda-docs"
+        }
+      },
+      "invocations": [
+        {
+          "executionSuccessful": true,
+          "toolExecutionNotifications": []
+        }
+      ],
+      "results": []
+    },
+    {
+      "tool": {
+        "driver": {
+          "name": "crux"
+        }
+      },
+      "invocations": [
+        {
+          "executionSuccessful": true,
+          "toolExecutionNotifications": []
+        }
+      ],
+      "results": []
+    },
+    {
+      "tool": {
+        "driver": {
+          "name": "cargo-mutants"
+        }
+      },
+      "invocations": [
+        {
+          "executionSuccessful": true,
+          "toolExecutionNotifications": []
+        }
+      ],
+      "results": []
+    },
+    {
+      "tool": {
+        "driver": {
+          "name": "antigravity"
+        }
+      },
+      "invocations": [
+        {
+          "executionSuccessful": true,
+          "toolExecutionNotifications": []
+        }
+      ],
+      "results": []
+    }
+  ]
+}
