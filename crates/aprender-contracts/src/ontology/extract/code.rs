@@ -1833,6 +1833,38 @@ mod tests {
         assert_eq!(m.lib_path.as_deref(), Some("src/x.rs"));
     }
 
+    /// ONT-4c4: only a `#[kernel]` item carries `unsafeFree` / `boundsChecked`; any other attribute carries neither.
+    #[test]
+    fn emit_writes_the_body_facts_only_for_a_kernel_attribute() {
+        let b = Bound {
+            contract: "c-v1".into(),
+            equation: "e".into(),
+            module_path: "kern::m".into(),
+            function: "f".into(),
+            status: ImplStatus::Implemented,
+        };
+        let nt_of = |attrs: &[&str]| {
+            let found: Result<Resolved, Unresolved> = Ok(Resolved {
+                file: "src/m.rs".into(),
+                visibility: "pub".into(),
+                kind: "fn".into(),
+                attributes: attrs.iter().map(|a| (*a).to_string()).collect(),
+                unsafe_free: true,
+                bounds_checked: false,
+            });
+            let mut g = Graph::new();
+            emit(&mut g, &b, &found);
+            g.to_ntriples()
+        };
+        let kernel = nt_of(&["kernel"]);
+        assert!(kernel.contains("/sym/unsafeFree> \"true\""), "{kernel}");
+        assert!(kernel.contains("/sym/boundsChecked> \"false\""), "{kernel}");
+        let plain = nt_of(&["inline"]);
+        assert!(!plain.contains("unsafeFree"), "{plain}");
+        assert!(!plain.contains("boundsChecked"), "{plain}");
+        assert!(plain.contains("/sym/attribute> \"inline\""), "{plain}");
+    }
+
     #[test]
     fn the_body_walk_reads_unsafe_and_unchecked_indexing() {
         let src = r"
@@ -1849,5 +1881,244 @@ mod tests {
         assert!(!r("signed").unsafe_free);
         assert!(r("method").unsafe_free && !r("method").bounds_checked);
         assert!(!r("path").bounds_checked);
+    }
+
+    /// A one-crate workspace `k` under a tempdir: `files` are `(path under k/src, text)`, `lib` is `lib.rs`.
+    fn one_crate(lib: &str, files: &[(&str, &str)]) -> tempfile::TempDir {
+        let tmp = tempfile::tempdir().expect("tempdir");
+        let w = tmp.path();
+        std::fs::write(w.join("Cargo.toml"), "[workspace]\nmembers = [\"k\"]\n").expect("write");
+        std::fs::create_dir_all(w.join("k/src")).expect("mkdir");
+        std::fs::write(w.join("k/Cargo.toml"), "[package]\nname = \"k\"\n").expect("write");
+        std::fs::write(w.join("k/src/lib.rs"), lib).expect("write");
+        for (p, t) in files {
+            std::fs::write(w.join("k/src").join(p), t).expect("write");
+        }
+        tmp
+    }
+
+    /// #4587: only a member's own `Cargo.toml` is indexed — an excluded crate's manifest and a non-manifest
+    /// `.toml` file in a member directory are not.
+    #[test]
+    fn scan_indexes_member_manifests_only() {
+        let tmp = tempfile::tempdir().expect("tempdir");
+        let w = tmp.path();
+        std::fs::write(
+            w.join("Cargo.toml"),
+            "[workspace]\nmembers = [\"crates/*\"]\nexclude = [\"crates/skip\"]\n",
+        )
+        .expect("write");
+        for c in ["keep", "skip"] {
+            std::fs::create_dir_all(w.join("crates").join(c)).expect("mkdir");
+            std::fs::write(
+                w.join("crates").join(c).join("Cargo.toml"),
+                format!("[package]\nname = \"{c}\"\n"),
+            )
+            .expect("write");
+        }
+        std::fs::write(
+            w.join("crates/keep/other.toml"),
+            "[package]\nname = \"sneak\"\n",
+        )
+        .expect("write");
+        let ws = Workspace::scan(w);
+        assert!(ws.is_workspace_root);
+        assert!(ws.crates.contains_key("keep"), "{:?}", ws.crates);
+        assert!(!ws.crates.contains_key("skip"), "{:?}", ws.crates);
+        assert!(!ws.crates.contains_key("sneak"), "{:?}", ws.crates);
+    }
+
+    /// The root directory is a member only as a root `[package]` or as an explicit `"."` member.
+    #[test]
+    fn admits_the_root_only_as_a_package_or_a_dot_member() {
+        let root = Path::new("/r");
+        let ws_only = workspace_membership("[workspace]\nmembers = [\"crates/a\"]\n").expect("ws");
+        assert!(!ws_only.root_package, "no [package] table");
+        assert!(!ws_only.admits(root, root), "no `.` member, no package");
+        let dot = workspace_membership("[workspace]\nmembers = [\".\"]\n").expect("ws");
+        assert!(dot.admits(root, root));
+        assert!(!dot.admits(root, Path::new("/r/crates/a")));
+    }
+
+    #[test]
+    fn section_name_reads_a_bracketed_header_line_only() {
+        assert_eq!(section_name("[workspace]").as_deref(), Some("workspace"));
+        assert_eq!(section_name("[ a.b ]").as_deref(), Some("a.b"));
+        assert_eq!(section_name("[open"), None, "no closing bracket");
+        assert_eq!(section_name("close]"), None, "no opening bracket");
+        assert_eq!(section_name("plain"), None);
+        assert_eq!(section_name("[a = b]"), None, "a key line");
+        assert_eq!(section_name("x = [\"a\"]"), None);
+    }
+
+    #[test]
+    fn quoted_reads_every_string_on_the_line() {
+        assert_eq!(quoted(r#""a", "b""#), ["a", "b"]);
+        assert_eq!(quoted(r#"'a/' , "b" 'c'"#), ["a", "b", "c"]);
+        assert!(quoted("none here").is_empty());
+    }
+
+    #[test]
+    fn glob_match_needs_room_for_both_prefix_and_suffix() {
+        assert!(glob_match("crates/apr-*", "crates/apr-cli"));
+        assert!(glob_match("ab*bc", "abxbc"));
+        assert!(!glob_match("ab*bc", "abc"), "prefix and suffix overlap");
+        assert!(!glob_match("ab*b", "ab"), "too short for ab + b");
+        assert!(!glob_match("a*c", "xc"), "suffix only");
+        assert!(!glob_match("a*c", "ax"), "prefix only");
+        assert!(glob_match("a*", "a"));
+        assert!(!glob_match("crates/*", "crates/a/b"));
+    }
+
+    /// `include!` recurses to a bound: a file written at depth 8 is still spliced, one included from it is not,
+    /// and a file that includes itself terminates.
+    #[test]
+    fn include_nesting_stops_at_the_bound_and_a_cycle_terminates() {
+        let mut files: Vec<(String, String)> = Vec::new();
+        for i in 1..=9 {
+            let next = if i < 9 {
+                format!("include!(\"f{}.rs\");\n", i + 1)
+            } else {
+                String::new()
+            };
+            files.push((format!("f{i}.rs"), format!("pub fn at_{i}() {{}}\n{next}")));
+        }
+        files.push((
+            "cyc.rs".into(),
+            "include!(\"cyc.rs\");\npub fn cyc_fn() {}\n".into(),
+        ));
+        let refs: Vec<(&str, &str)> = files
+            .iter()
+            .map(|(a, b)| (a.as_str(), b.as_str()))
+            .collect();
+        let tmp = one_crate("include!(\"f1.rs\");\ninclude!(\"cyc.rs\");\n", &refs);
+        let ws = Workspace::scan(tmp.path());
+        let mut r = Resolver::new(&ws);
+        r.resolve("k", "at_1").expect("depth 1");
+        r.resolve("k", "at_8").expect("a file spliced at depth 8");
+        assert!(
+            r.resolve("k", "at_9").is_err(),
+            "an include written at depth 8 is refused"
+        );
+        r.resolve("k", "cyc_fn")
+            .expect("a self-including file still terminates");
+    }
+
+    /// A re-export chain longer than the bound is refused; a short one resolves.
+    #[test]
+    fn a_long_re_export_chain_is_refused() {
+        let mut lib = String::from("pub mod real { pub fn f() {} }\n");
+        for i in 0..10 {
+            let to = if i == 9 {
+                "real".to_string()
+            } else {
+                format!("n{}", i + 1)
+            };
+            lib.push_str(&format!("pub use crate::{to} as n{i};\n"));
+        }
+        let tmp = one_crate(&lib, &[]);
+        let ws = Workspace::scan(tmp.path());
+        let mut r = Resolver::new(&ws);
+        r.resolve("k::n8", "f").expect("two hops resolve");
+        let e = r
+            .resolve("k::n0", "f")
+            .expect_err("ten hops exceed the bound");
+        assert!(e.reason.contains("deeper than 8"), "{}", e.reason);
+    }
+
+    /// A chain of `pub use …::*` globs longer than the bound is refused; a short one resolves.
+    #[test]
+    fn a_long_glob_chain_is_refused() {
+        let mut lib = String::from("pub use crate::g1::*;\n");
+        for i in 1..=10 {
+            if i == 10 {
+                lib.push_str("pub mod g10 { pub fn f() {} }\n");
+            } else {
+                lib.push_str(&format!(
+                    "pub mod g{i} {{ pub use crate::g{}::*; }}\n",
+                    i + 1
+                ));
+            }
+        }
+        let tmp = one_crate(&lib, &[]);
+        let ws = Workspace::scan(tmp.path());
+        let mut r = Resolver::new(&ws);
+        r.resolve("k::g7", "f").expect("three glob hops resolve");
+        let e = r
+            .resolve("k", "f")
+            .expect_err("ten glob hops exceed the bound");
+        assert!(e.reason.contains("deeper than 8"), "{}", e.reason);
+    }
+
+    /// Under several globs the error reported is the last NON-cycle one: a cycle on a later glob neither
+    /// replaces it nor is it dropped in favour of the generic message.
+    #[test]
+    fn first_of_reports_the_last_non_cycle_error() {
+        let tmp = one_crate(
+            "pub mod a;\npub mod b;\npub use crate::a::*;\npub use crate::b::*;\n",
+            &[
+                ("a.rs", "pub use crate::b::*;\n"),
+                ("b.rs", "pub fn other() {}\n"),
+            ],
+        );
+        let ws = Workspace::scan(tmp.path());
+        let e = Resolver::new(&ws)
+            .resolve("k::seg", "f")
+            .expect_err("no such module");
+        assert!(e.reason.contains("k/src/b.rs"), "{}", e.reason);
+        assert!(!e.reason.contains("re-export cycle"), "{}", e.reason);
+        assert!(!e.reason.contains("nor under"), "{}", e.reason);
+    }
+
+    /// `Type::seg::f` — a non-generic segment after a type is not a generic argument.
+    #[test]
+    fn a_plain_segment_after_a_type_is_not_a_module() {
+        let tmp = one_crate("pub struct T;\nimpl T { pub fn f() {} }\n", &[]);
+        let ws = Workspace::scan(tmp.path());
+        let e = Resolver::new(&ws)
+            .resolve("k::T::x", "f")
+            .expect_err("T is a type");
+        assert!(e.reason.contains("is a type, not a module"), "{}", e.reason);
+    }
+
+    /// #4587: `Type::f` is found only in an `impl` for `Type` — another type's `impl` with an `f` is no hit.
+    #[test]
+    fn type_member_ignores_an_impl_for_another_type() {
+        let tmp = one_crate(
+            "pub struct T;\npub struct U;\nimpl U { pub fn f() {} }\n",
+            &[],
+        );
+        let ws = Workspace::scan(tmp.path());
+        let e = Resolver::new(&ws)
+            .resolve("k::T", "f")
+            .expect_err("T has no f; only U does");
+        assert!(
+            e.reason.contains("no `fn f` in an `impl T`"),
+            "{}",
+            e.reason
+        );
+    }
+
+    /// #4587: `Type::f` is found in `trait Type` only — another trait's `f`, or a generic-qualified path
+    /// to a trait, is no hit.
+    #[test]
+    fn type_member_matches_the_named_non_generic_trait_only() {
+        let tmp = one_crate(
+            "pub struct T;\npub trait Other { fn f(); }\npub trait G { fn g(); }\n",
+            &[],
+        );
+        let ws = Workspace::scan(tmp.path());
+        let e = Resolver::new(&ws)
+            .resolve("k::T", "f")
+            .expect_err("Other::f is not T::f");
+        assert!(e.reason.contains("no `fn f`"), "{}", e.reason);
+        assert!(
+            Resolver::new(&ws).resolve("k::G", "g").is_ok(),
+            "trait G::g resolves"
+        );
+        assert!(
+            Resolver::new(&ws).resolve("k::G::<u8>", "g").is_err(),
+            "a trait is not generic-qualified"
+        );
     }
 }

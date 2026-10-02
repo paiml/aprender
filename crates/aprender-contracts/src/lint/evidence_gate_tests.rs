@@ -438,3 +438,54 @@ fn a_shallow_repository_leaves_an_absent_sha_unresolved() {
     let unresolved = resolve_pending(&clone, pending, &mut out);
     assert_eq!((unresolved, out.len()), (1, 0));
 }
+
+fn by_level_of(r: &GateResult) -> Vec<String> {
+    match r.extra.as_ref() {
+        Some(GateExtra::Evidence { by_level, .. }) => by_level.clone(),
+        other => panic!("expected GateExtra::Evidence, got {other:?}"),
+    }
+}
+
+/// k9: only a contract that drew NO finding is counted at its level; the count is a running sum.
+#[test]
+fn by_level_counts_clean_contracts_only_and_sums_them() {
+    let bad = FULL.replace(
+        "  wasAttributedTo: pv\n",
+        "  wasAttributedTo: pv\n  author: noah\n",
+    );
+    let tmp = corpus(&[
+        ("a-v1.yaml", &contract("code", FULL)),
+        ("b-v1.yaml", &contract("code", FULL)),
+        ("c-v1.yaml", &contract("code", &bad)),
+    ]);
+    let (r, findings) = ran(run_evidence_gate(tmp.path()));
+    assert_eq!(findings.len(), 1, "{findings:?}");
+    assert_eq!(by_level_of(&r), vec!["L2=2".to_string()]);
+}
+
+/// k9: a sha git cannot look up (shallow clone) with no other finding is Unknown, never Pass.
+#[test]
+fn an_unresolved_sha_without_findings_is_unknown_not_pass() {
+    let src = corpus(&[]);
+    git(src.path(), &["init", "-q"]);
+    git(src.path(), &["commit", "-q", "--allow-empty", "-m", "one"]);
+    git(src.path(), &["commit", "-q", "--allow-empty", "-m", "two"]);
+    let dst = tempfile::tempdir().unwrap();
+    let clone = dst.path().join("shallow");
+    let o = Command::new("git")
+        .args(["clone", "-q", "--depth", "1"])
+        .arg(format!("file://{}", src.path().display()))
+        .arg(&clone)
+        .output()
+        .expect("git runs");
+    assert!(o.status.success(), "{}", String::from_utf8_lossy(&o.stderr));
+    std::fs::write(clone.join("ontology.yaml"), sigma_text()).unwrap();
+    let v = FULL
+        .replace("mark: C", "mark: V")
+        .replace("}\n", &format!(", git_sha: \"{}\"}}\n", "a".repeat(40)));
+    std::fs::write(clone.join("c-v1.yaml"), contract("code", &v)).unwrap();
+    let (r, findings) = ran(run_evidence_gate(&clone));
+    assert!(findings.is_empty(), "{findings:?}");
+    assert_eq!(r.verdict, Verdict::Unknown(Reason::ToolAbsent));
+    assert!(!r.passed);
+}

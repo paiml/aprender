@@ -295,4 +295,59 @@ mod tests {
         sub.min_count = Some(1);
         assert!(weakened(&sup, &sub).is_empty());
     }
+
+    fn shape(id: &str, target: &str) -> NodeShape {
+        NodeShape {
+            id: id.into(),
+            target_class: target.into(),
+            closed: false,
+            ignored_properties: vec![],
+            properties: vec![],
+            allow_empty: None,
+        }
+    }
+
+    fn sigma_of(concepts: &[&str], edges: &[(&str, &str)]) -> Sigma {
+        let mut y = String::from("schema: ont-test\nconcepts:\n");
+        for c in concepts {
+            y.push_str(&format!("  {c}:\n    doc: d\n"));
+        }
+        y.push_str("subsumes:\n");
+        for (sub, sup) in edges {
+            y.push_str(&format!("  - sub: {sub}\n    sup: {sup}\n"));
+        }
+        serde_yaml::from_str(&y).expect("sigma yaml")
+    }
+
+    /// `concept_of` names the concept whose IRI is the target and no other; `inherited` totals the instances of
+    /// every strict sub-concept per shape (empty sub-concepts are not rows) and sorts its rows.
+    #[test]
+    fn ont4d_inherited_counts_instances_of_strict_sub_concepts() {
+        use crate::ontology::rdf::{Term, RDF_TYPE};
+        let sigma = sigma_of(
+            &["A", "B", "C", "D", "E", "F"],
+            &[("B", "A"), ("C", "A"), ("D", "A"), ("F", "E")],
+        );
+        assert_eq!(concept_of(&sigma, &ont("A")), Some("A"));
+        assert_eq!(concept_of(&sigma, &ont("F")), Some("F"));
+        assert_eq!(concept_of(&sigma, "http://example.org/Other"), None);
+        assert_eq!(concept_of(&sigma, ""), None);
+        let mut g = Graph::new();
+        for (subj, class) in [("x1", "B"), ("x2", "B"), ("x3", "C"), ("x4", "F")] {
+            g.insert(subj, RDF_TYPE, Term::iri(ont(class)));
+        }
+        let shapes = [
+            shape("s-e", &ont("E")),
+            shape("s-a", &ont("A")),
+            shape("s-none", "http://example.org/Other"),
+        ];
+        let (total, rows) = inherited(&g, &shapes, &sigma);
+        assert_eq!(total, 4);
+        assert_eq!(rows, ["s-a <- B=2", "s-a <- C=1", "s-e <- F=1"]);
+        assert_eq!(inherited(&g, &shapes[2..], &sigma), (0, vec![]));
+        assert_eq!(
+            inherited(&g, &[shape("s-d", &ont("D"))], &sigma),
+            (0, vec![])
+        );
+    }
 }

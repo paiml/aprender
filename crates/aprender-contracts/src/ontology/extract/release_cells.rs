@@ -543,4 +543,181 @@ mod tests {
         let ids: BTreeSet<&str> = cells.iter().map(|c| c.id.as_str()).collect();
         assert_eq!(ids.len(), cells.len(), "every id names one cell");
     }
+    const KNOBS: &str = r#"{"schema":"apr-cli-surface/v1","binary":{"version":"0.0.0","git_sha":"t"},
+"global_args":[],
+"commands":[
+ {"path":["samp"],"key":"samp","leaf":true,"generates":true,"args":[
+   {"id":"model","positional":true,"required":true,"value_type":"path","role":"model"},
+   {"id":"decoy","long":"decoy","value_type":"text","role":"mode","sampling_kind":"temperature"},
+   {"id":"topk","long":"top-k","value_type":"int","role":"sampling","sampling_kind":"top_k"},
+   {"id":"temp","long":"temp","value_type":"float","role":"sampling","sampling_kind":"temperature"},
+   {"id":"seed","long":"seed","value_type":"int","role":"sampling","sampling_kind":"seed"}]},
+ {"path":["only"],"key":"only","leaf":true,"generates":true,"args":[
+   {"id":"topk","long":"top-k","value_type":"int","role":"sampling","sampling_kind":"top_k"},
+   {"id":"temp","long":"temp","value_type":"float","role":"sampling","sampling_kind":"temperature"},
+   {"id":"seed","long":"seed","value_type":"int","role":"sampling","sampling_kind":"seed"}]},
+ {"path":["quiet"],"key":"quiet","leaf":true,"generates":false,"args":[
+   {"id":"temp","long":"temp","value_type":"float","role":"sampling","sampling_kind":"temperature"}]},
+ {"path":["plain"],"key":"plain","leaf":true,"generates":true,"args":[
+   {"id":"model","positional":true,"required":true,"value_type":"path","role":"model"}]},
+ {"path":["oneside"],"key":"oneside","leaf":true,"generates":false,"args":[
+   {"id":"a","long":"a","value_type":"flag","values":["true","false"],"role":"mode","conflicts_with":["b","a"]},
+   {"id":"b","long":"b","value_type":"flag","values":["true","false"],"role":"mode"},
+   {"id":"c","long":"c","value_type":"flag","values":["true","false"],"role":"mode"},
+   {"id":"d","long":"d","value_type":"flag","values":["true","false"],"role":"mode","conflicts_with":["c"]}]}]}"#;
+
+    fn host_one() -> HostModels<'static> {
+        hosts().remove(0)
+    }
+
+    fn command<'s>(s: &'s Surface, key: &str) -> &'s Command {
+        s.commands
+            .iter()
+            .find(|c| c.key == key)
+            .expect("command present")
+    }
+
+    fn flag_levels() -> Vec<Factor> {
+        (0..4)
+            .map(|_| Factor {
+                kind: FactorKind::Shape,
+                levels: vec!["unset".into(), "true".into()],
+            })
+            .collect()
+    }
+
+    #[test]
+    fn forbidden_takes_a_conflict_declared_on_either_side_and_never_a_self_pair() {
+        let s = cli_surface::parse("t.json", KNOBS).expect("parses");
+        let c = command(&s, "oneside");
+        let args: Vec<&Arg> = c.args.iter().collect();
+        let fb = forbidden(&args, &flag_levels());
+        // a (declared a->b and a->a): the pair (a, b) is forbidden, from a's side only
+        assert!(fb.contains(&(0, 1, 1, 1)), "a declares b, b does not");
+        // d declares c, c does not: the pair is (c, d) = indices (2, 3), from the later side only
+        assert!(fb.contains(&(2, 1, 3, 1)), "d declares c, c does not");
+        // a conflicts with itself in the data, but an arg never forbids itself: exactly the two pairs
+        assert_eq!(fb.len(), 2, "no self pair, no unset pair: {fb:?}");
+    }
+
+    #[test]
+    fn effect_base_owes_thinking_off_and_the_smallest_rung_only_when_the_command_generates() {
+        let s = cli_surface::parse("t.json", KNOBS).expect("parses");
+        let cells = derive(&s, &hosts());
+        let base = |cmd: &str| {
+            cells
+                .iter()
+                .find(|c| c.command == cmd && c.kind == CellKind::Base)
+                .unwrap_or_else(|| panic!("{cmd} has a base"))
+        };
+        let g = base("samp");
+        assert_eq!(
+            g.thinking.as_deref(),
+            Some("off"),
+            "off, not the first mode"
+        );
+        assert_eq!(g.rung.as_deref(), Some("4k"));
+        assert_eq!(g.rung_tokens, Some(4096));
+        let mut modes_no_off = hosts();
+        modes_no_off[0].models[0].modes = vec!["on", "auto"];
+        let first = derive(&s, &modes_no_off);
+        let b = first
+            .iter()
+            .find(|c| c.command == "samp" && c.kind == CellKind::Base)
+            .expect("base");
+        assert_eq!(b.thinking.as_deref(), Some("on"), "no off: the first mode");
+        let p = base("plain");
+        assert_eq!(p.thinking.as_deref(), Some("off"));
+    }
+
+    #[test]
+    fn effect_base_of_a_non_generating_command_owes_no_thinking_or_rung() {
+        let s = cli_surface::parse("t.json", KNOBS).expect("parses");
+        let h = host_one();
+        let mut with_model = s.clone();
+        let q = with_model
+            .commands
+            .iter_mut()
+            .find(|c| c.key == "quiet")
+            .expect("quiet");
+        q.args.push(Arg {
+            id: "m".into(),
+            long: None,
+            short: None,
+            positional: true,
+            required: true,
+            value_type: "path".into(),
+            values: Vec::new(),
+            role: "model".into(),
+            marker: None,
+            hidden: false,
+            conflicts_with: Vec::new(),
+            sampling_kind: None,
+        });
+        let cells = effects(&with_model, command(&with_model, "quiet"), &h);
+        let base = cells
+            .iter()
+            .find(|c| c.kind == CellKind::Base)
+            .expect("base");
+        assert!(base.thinking.is_none() && base.rung.is_none() && base.rung_tokens.is_none());
+    }
+
+    #[test]
+    fn sampling_controls_pick_each_knob_by_role_and_kind_on_the_off_small_base() {
+        let s = cli_surface::parse("t.json", KNOBS).expect("parses");
+        let cells = sampling(command(&s, "samp"), &host_one());
+        // one representative (both models are qwen35) × five controls
+        assert_eq!(cells.len(), 5, "{cells:?}");
+        let by = |control: &str| {
+            cells
+                .iter()
+                .find(|c| matches!(&c.kind, CellKind::Sampling { control: k } if k == control))
+                .unwrap_or_else(|| panic!("control {control}"))
+        };
+        assert_eq!(
+            by("t0").args,
+            vec![("--temp".to_string(), "0".to_string())],
+            "the sampling-role temperature knob, not the decoy mode arg or another kind"
+        );
+        assert_eq!(
+            by("topk1").args,
+            vec![("--top-k".to_string(), "1".to_string())]
+        );
+        assert_eq!(
+            by("seed-b").args,
+            vec![
+                ("--temp".to_string(), "0.8".to_string()),
+                ("--seed".to_string(), "2".to_string())
+            ]
+        );
+        let t0 = by("t0");
+        assert_eq!(
+            t0.thinking.as_deref(),
+            Some("off"),
+            "off, not the first mode"
+        );
+        assert_eq!(t0.rung.as_deref(), Some("4k"));
+        assert_eq!(t0.rung_tokens, Some(4096));
+        assert_eq!(t0.model_file.as_deref(), Some("a.gguf"));
+        assert!(t0.id.ends_with("#t0") && t0.id.starts_with("sampling:samp/"));
+    }
+
+    #[test]
+    fn sampling_is_owed_by_generating_commands_with_sampling_args_only() {
+        let s = cli_surface::parse("t.json", KNOBS).expect("parses");
+        let h = host_one();
+        assert!(
+            sampling(command(&s, "quiet"), &h).is_empty(),
+            "a non-generating command owes none"
+        );
+        assert!(
+            sampling(command(&s, "plain"), &h).is_empty(),
+            "a generating command with no sampling args owes none"
+        );
+        assert_eq!(
+            sampling(command(&s, "only"), &h).len(),
+            5,
+            "a command whose every arg is a sampling arg still owes its controls"
+        );
+    }
 }

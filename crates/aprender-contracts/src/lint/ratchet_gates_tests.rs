@@ -36,7 +36,16 @@ fn pairing_repo() -> tempfile::TempDir {
 }
 
 fn pairing(root: &Path) -> (GateResult, Vec<String>) {
-    match run_theorem_pairing_gate(&root.join("contracts")) {
+    let dir = root.join("contracts");
+    // A scan cursor that stops advancing must fail this test, not spin the run into the mutant timeout.
+    let (tx, rx) = std::sync::mpsc::channel();
+    std::thread::spawn(move || {
+        let _ = tx.send(run_theorem_pairing_gate(&dir));
+    });
+    let out = rx
+        .recv_timeout(std::time::Duration::from_secs(20))
+        .expect("theorem-pairing gate did not terminate");
+    match out {
         RatchetOutcome::Ran { result, findings } => {
             (*result, findings.into_iter().map(|f| f.rule_id).collect())
         }
@@ -53,6 +62,17 @@ fn unpaired_of(r: &GateResult) -> (usize, Vec<String>) {
         }) => (*unpaired_theorem_modules, unpaired.clone()),
         other => panic!("expected TheoremPairing, got {other:?}"),
     }
+}
+
+/// Runs `mentions_module` on a worker thread and fails fast if it does not answer: a cursor that stops
+/// advancing would otherwise spin the whole test run into the mutant timeout.
+fn mentions_fail_fast(text: &'static str, name: &'static str) -> bool {
+    let (tx, rx) = std::sync::mpsc::channel();
+    std::thread::spawn(move || {
+        let _ = tx.send(mentions_module(text, name));
+    });
+    rx.recv_timeout(std::time::Duration::from_secs(10))
+        .expect("mentions_module did not terminate: the scan cursor does not advance")
 }
 
 // ── mentions_module: identifier boundaries ────────────────────────────────────────────────────────────────
@@ -78,10 +98,10 @@ fn a_module_is_mentioned_only_on_identifier_boundaries() {
         ("Partition", false),
         ("", false),
     ] {
-        assert_eq!(mentions_module(text, m), want, "{text:?}");
+        assert_eq!(mentions_fail_fast(text, m), want, "{text:?}");
     }
     // a bad first occurrence does not hide a good later one
-    assert!(mentions_module(
+    assert!(mentions_fail_fast(
         "P.T.Softmax.PartitionX and P.T.Softmax.Partition",
         m
     ));
@@ -337,7 +357,7 @@ fn neither_gate_writes_the_baseline() {
 const SUMMARY: &str = "crates/aprender-contracts-staging/discharge-summary.json";
 
 /// A contract with one `lean.status: <status>` obligation on `theorem`.
-fn claim(theorem: &str, status: &str) -> String {
+fn claim(theorem: &'static str, status: &str) -> String {
     format!(
         "metadata:\n  version: \"1.0.0\"\n  description: EV-8a fixture\n\
          equations:\n  identity:\n    formula: \"y = x\"\n\
@@ -551,4 +571,63 @@ fn repo_root_of_a_bare_name_is_dot() {
     assert_eq!(repo_root(Path::new("contracts")), PathBuf::from("."));
     assert_eq!(repo_root(Path::new("")), PathBuf::from("."));
     assert_eq!(repo_root(Path::new("a/contracts")), PathBuf::from("a"));
+}
+
+// ── kill tests: arithmetic in mentions_module / theorem pairing / depends-on ─────────────────────────────
+
+#[test]
+fn mentions_module_terminates_and_resumes_after_a_rejected_occurrence() {
+    let m = "P.T.Softmax.Partition";
+    // rejected at 0 (longer module), accepted later: the resume offset must move past the first hit
+    assert!(mentions_fail_fast(
+        "P.T.Softmax.PartitionX and P.T.Softmax.Partition",
+        m
+    ));
+    // rejected prefix at a non-zero offset, then a good hit
+    assert!(mentions_fail_fast(
+        "XP.T.Softmax.Partition then P.T.Softmax.Partition",
+        m
+    ));
+    // every occurrence rejected: must terminate with false
+    assert!(!mentions_fail_fast(
+        "P.T.Softmax.PartitionX P.T.Softmax.Partition_",
+        m
+    ));
+    // the end offset is start + len: a hit at a non-zero start with a boundary char right after it
+    // an overlapping repeat: a rejected hit at 0 resumes at 1 and the repeat is rejected too
+    assert!(!mentions_fail_fast("aaa", "aa"));
+    assert!(mentions_fail_fast("see (P.T.Softmax.Partition) ok", m));
+    assert!(!mentions_fail_fast("see (P.T.Softmax.PartitionZ) ok", m));
+}
+
+#[test]
+fn theorem_pairing_reports_paired_as_modules_minus_unpaired() {
+    let t = pairing_repo();
+    baseline(t.path(), r#"{"unpaired_theorem_modules": 1}"#);
+    let (r, _) = pairing(t.path());
+    match r.extra.as_ref() {
+        Some(GateExtra::TheoremPairing {
+            theorem_modules,
+            paired,
+            unpaired_theorem_modules,
+            ..
+        }) => {
+            assert_eq!(
+                (*theorem_modules, *paired, *unpaired_theorem_modules),
+                (2, 1, 1)
+            );
+        }
+        other => panic!("expected TheoremPairing, got {other:?}"),
+    }
+}
+
+#[test]
+fn depends_on_decline_names_how_many_contracts_were_checked() {
+    let t = tempfile::tempdir().expect("tempdir");
+    write(t.path(), "contracts/p1-v1.yaml", &contract("pattern", "[]"));
+    write(t.path(), "contracts/p2-v1.yaml", &contract("pattern", "[]"));
+    match run_depends_on_present_gate(&t.path().join("contracts")) {
+        RatchetOutcome::Declined(why) => assert!(why.contains("in 2 contract(s)"), "{why}"),
+        RatchetOutcome::Ran { .. } => panic!("no kernel contract is a decline"),
+    }
 }

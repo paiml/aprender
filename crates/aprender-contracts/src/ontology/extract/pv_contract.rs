@@ -269,6 +269,19 @@ mod tests {
     /// `<ONT_BASE>p/name`. Pinned here because a shape writes `path: study:scale` while the extractor writes the
     /// IRI, and a reader who does not know the rule sees two different things (quorum PMAT-3529, rounds 2/3).
     #[test]
+    fn only_an_absent_or_kernel_kind_is_typed_ont_kernel() {
+        let typed = |yaml: &str| {
+            let doc: serde_yaml::Value = serde_yaml::from_str(yaml).expect("yaml");
+            let mut g = Graph::new();
+            extract_one(&mut g, "a", "contracts/a.yaml", &doc);
+            g.instances_of(&ont("Kernel")).len()
+        };
+        assert_eq!(typed("name: n\n"), 1);
+        assert_eq!(typed("metadata:\n  kind: kernel\n"), 1);
+        assert_eq!(typed("metadata:\n  kind: pattern\n"), 0);
+    }
+
+    #[test]
     fn the_predicate_is_the_expansion_of_the_prefixed_form() {
         assert_eq!(
             entity_predicate("study", "scale"),

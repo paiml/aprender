@@ -461,4 +461,74 @@ mod tests {
             "a model command that does not say is named"
         );
     }
+
+    const COUNT_SURFACE: &str = r#"{"schema":"apr-cli-surface/v1","binary":{},
+"global_args":[],
+"commands":[
+ {"path":["a"],"key":"a","leaf":true,"hidden":false,"foreign":false,"args":[
+   {"id":"u1","long":"u1","value_type":"text","role":"unknown"},
+   {"id":"p","long":"p","value_type":"text","role":"prompt"},
+   {"id":"f","long":"f","value_type":"path","role":"input-file"},
+   {"id":"o","long":"o","value_type":"text","role":"other"},
+   {"id":"m","positional":true,"value_type":"path","role":"model"}]},
+ {"path":["b"],"key":"b","leaf":false,"hidden":false,"foreign":true,"args":[
+   {"id":"u2","long":"u2","value_type":"text","role":"unknown"},
+   {"id":"u3","long":"u3","value_type":"text","role":"unknown"},
+   {"id":"u5","long":"u5","value_type":"text","role":"unknown"}]},
+ {"path":["c"],"key":"c","leaf":true,"hidden":false,"foreign":false,"args":[
+   {"id":"u4","long":"u4","value_type":"text","role":"unknown"}]}]}"#;
+
+    #[test]
+    fn emit_counts_commands_leaves_roles_and_unknowns_exactly() {
+        let s = parse("c.json", COUNT_SURFACE).expect("parses");
+        let mut g = Graph::new();
+        let st = emit(&mut g, &s);
+        assert_eq!(st.commands, 3);
+        assert_eq!(st.leaves, 2);
+        assert_eq!(st.model_commands, 1);
+        assert_eq!(st.by_role.get("unknown"), Some(&5));
+        assert_eq!(st.by_role.get("prompt"), Some(&1));
+        assert_eq!(st.by_role.get("model"), Some(&1));
+        assert_eq!(st.unknown_args, 5);
+        assert_eq!(st.unknown_outside_foreign, 2, "a and c are not foreign");
+    }
+
+    #[test]
+    fn emit_arg_returns_its_node_and_types_only_prompt_and_input_file_as_shapes() {
+        let s = parse("c.json", COUNT_SURFACE).expect("parses");
+        let mut g = Graph::new();
+        let _ = emit(&mut g, &s);
+        let shape_of = |g: &Graph, id: &str| {
+            g.objects(&iri_path("cli-arg", &["a", id]), &cli("inputShape"))
+                .len()
+        };
+        assert_eq!(shape_of(&g, "p"), 1);
+        assert_eq!(shape_of(&g, "f"), 1);
+        assert_eq!(shape_of(&g, "o"), 0);
+        assert_eq!(shape_of(&g, "m"), 0);
+        let arg = &s.commands[0].args[1];
+        let mut g2 = Graph::new();
+        let n = emit_arg(&mut g2, &["a"], arg);
+        assert_eq!(n, iri_path("cli-arg", &["a", "p"]));
+        assert!(!g2.is_empty());
+    }
+
+    #[test]
+    fn mode_args_drops_a_mode_arg_with_no_levels_and_display_names_file_and_what() {
+        let text = r#"{"schema":"apr-cli-surface/v1","binary":{},"global_args":[],
+"commands":[{"path":["x"],"key":"x","leaf":true,"hidden":false,"foreign":false,"args":[
+ {"id":"empty","long":"empty","required":true,"value_type":"enum","values":[],"role":"mode"},
+ {"id":"ok","long":"ok","value_type":"flag","role":"mode"}]}]}"#;
+        let s = parse("m.json", text).expect("parses");
+        let ids: Vec<&str> = s.commands[0]
+            .mode_args(&s.global_args)
+            .map(|a| a.id.as_str())
+            .collect();
+        assert_eq!(ids, vec!["ok"]);
+        let e = SurfaceError {
+            file: "f.json".into(),
+            what: "broken".into(),
+        };
+        assert_eq!(e.to_string(), "f.json: broken");
+    }
 }

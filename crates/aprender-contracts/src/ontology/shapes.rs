@@ -1397,15 +1397,18 @@ mod tests {
         for bad in ["\"  \"", "true", "[a]"] {
             let doc: serde_yaml::Value = serde_yaml::from_str(&with(bad)).unwrap();
             assert!(
-                matches!(parse_shape("t", &doc), Err(ShapeError::Malformed { .. })),
-                "allowEmpty: {bad} must be refused"
+                matches!(
+                    parse_shape_with("t", &doc, &pv_map()),
+                    Err(ShapeError::Malformed { what, .. }) if what.contains("non-empty reason")
+                ),
+                "allowEmpty: {bad} must be refused for its reason"
             );
         }
         let nested = "entity: {type: pv-contract}\nshape:\n  properties:\n    - {path: ont:id, node: {allowEmpty: x, properties: []}}\n";
         let doc: serde_yaml::Value = serde_yaml::from_str(nested).unwrap();
         assert!(matches!(
-            parse_shape("t", &doc),
-            Err(ShapeError::Malformed { .. })
+            parse_shape_with("t", &doc, &pv_map()),
+            Err(ShapeError::Malformed { what, .. }) if what.contains("nested node shape")
         ));
     }
 
@@ -1685,6 +1688,109 @@ mod tests {
             "sh:in ( \"kernel\" \"pattern\" )",
         ] {
             assert!(t1.contains(want), "{want}\n{t1}");
+        }
+    }
+
+    #[test]
+    fn in_entry_types_each_yaml_scalar_by_its_own_kind() {
+        let e = |y: &str| {
+            let v: serde_yaml::Value = serde_yaml::from_str(y).expect("yaml");
+            let x = in_entry(&v);
+            (x.lexical, x.datatype)
+        };
+        let xsd = |t: &str| format!("{XSD_NS}{t}");
+        assert_eq!(e("7"), ("7".to_string(), xsd("integer")));
+        assert_eq!(e("1.5"), ("1.5".to_string(), xsd("double")));
+        assert_eq!(e("true"), ("true".to_string(), xsd("boolean")));
+        assert_eq!(e("false"), ("false".to_string(), xsd("boolean")));
+        assert_eq!(e("a"), ("a".to_string(), XSD_STRING_IRI.to_string()));
+        assert_eq!(e("[1]"), (String::new(), XSD_STRING_IRI.to_string()));
+    }
+
+    #[test]
+    fn well_formed_checks_each_xsd_type_it_names() {
+        let wf = |v: &str, t: &str| well_formed(v, &format!("{XSD_NS}{t}"));
+        // boolean
+        assert!(wf("true", "boolean") && wf("0", "boolean"));
+        assert!(!wf("yes", "boolean"));
+        // decimal
+        assert!(wf("1.5", "decimal") && wf("-2", "decimal"));
+        assert!(!wf("abc", "decimal"));
+        // double / float
+        for t in ["double", "float"] {
+            assert!(wf("1.5e3", t) && wf("INF", t) && wf("-INF", t) && wf("NaN", t));
+            assert!(!wf("abc", t) && !wf("", t));
+        }
+        // date / dateTime
+        assert!(wf("2026-01-02", "date"));
+        assert!(!wf("nope", "date"));
+        assert!(wf("2026-01-02T10:11:12", "dateTime"));
+        assert!(!wf("nope", "dateTime"));
+        // non-xsd datatype and unknown local names are taken as well-formed
+        assert!(well_formed("x", "http://example.org/t"));
+        assert!(wf("anything", "anyURI"));
+    }
+
+    #[test]
+    fn integer_types_enforce_their_exact_bounds() {
+        let wf = |v: &str, t: &str| well_formed(v, &format!("{XSD_NS}{t}"));
+        let cases: [(&str, &str, &str); 14] = [
+            ("integer", "170141183460469231731687303715884105727", "x"),
+            ("long", "9223372036854775807", "9223372036854775808"),
+            ("int", "2147483647", "2147483648"),
+            ("short", "32767", "32768"),
+            ("byte", "127", "128"),
+            ("nonNegativeInteger", "0", "-1"),
+            ("positiveInteger", "1", "0"),
+            ("nonPositiveInteger", "0", "1"),
+            ("negativeInteger", "-1", "0"),
+            (
+                "unsignedLong",
+                "18446744073709551615",
+                "18446744073709551616",
+            ),
+            ("unsignedInt", "4294967295", "4294967296"),
+            ("unsignedShort", "65535", "65536"),
+            ("unsignedByte", "255", "256"),
+            ("unsignedByte", "0", "-1"),
+        ];
+        for (t, ok, bad) in cases {
+            assert!(wf(ok, t), "{ok} is a valid xsd:{t}");
+            assert!(!wf(bad, t), "{bad} is not a valid xsd:{t}");
+        }
+        assert!(wf("-32768", "short") && !wf("-32769", "short"));
+        assert!(wf("-128", "byte") && !wf("-129", "byte"));
+        assert!(wf("-9223372036854775808", "long") && !wf("-9223372036854775809", "long"));
+        assert!(wf("-2147483648", "int") && !wf("-2147483649", "int"));
+        assert!(wf("-5", "negativeInteger") && wf("-5", "nonPositiveInteger"));
+        assert!(wf("-170141183460469231731687303715884105728", "integer"));
+        assert!(wf(
+            "170141183460469231731687303715884105727",
+            "nonNegativeInteger"
+        ));
+        assert!(wf(
+            "170141183460469231731687303715884105727",
+            "positiveInteger"
+        ));
+        assert!(wf(
+            "-170141183460469231731687303715884105728",
+            "nonPositiveInteger"
+        ));
+        assert!(wf(
+            "-170141183460469231731687303715884105728",
+            "negativeInteger"
+        ));
+    }
+
+    #[test]
+    fn is_decimal_requires_digits_one_dot_and_only_digits() {
+        for ok in ["1", "1.5", ".5", "5.", "+1", "-1.25"] {
+            assert!(is_decimal(ok), "{ok}");
+        }
+        for bad in [
+            "", ".", "+", "-", "1.2.3", "a", "1a", "1.a", "--1", "a.5", "1,5",
+        ] {
+            assert!(!is_decimal(bad), "{bad}");
         }
     }
 
