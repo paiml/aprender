@@ -77,8 +77,7 @@ pub fn ladder_block() -> String {
 /// "How Kani (L3) and Lean (L4) Compose" alone. Quorum lanes on PR #4092 found both
 /// gaps: prose below the block still teaching "Level 4 (Kani)" (round 1), and a
 /// detector that only looked forward from the level token (round 3).
-#[cfg(test)]
-fn stale_level_pairings(doc: &str) -> Vec<String> {
+pub fn stale_level_pairings(doc: &str) -> Vec<String> {
     let outside: String = match (doc.find(MARKER), doc.find(END_MARKER)) {
         (Some(a), Some(b)) if a < b => format!("{}{}", &doc[..a], &doc[b + END_MARKER.len()..]),
         _ => doc.to_string(),
@@ -114,7 +113,6 @@ fn stale_level_pairings(doc: &str) -> Vec<String> {
 }
 
 /// Byte offsets where `needle` starts a word in `hay`.
-#[cfg(test)]
 fn word_starts<'a>(hay: &'a str, needle: &'a str) -> impl Iterator<Item = usize> + 'a {
     hay.match_indices(needle)
         .map(|(i, _)| i)
@@ -122,7 +120,6 @@ fn word_starts<'a>(hay: &'a str, needle: &'a str) -> impl Iterator<Item = usize>
 }
 
 /// `(start, end, n)` for every whole-word level token `lN` / `level N` (N in 1..=5).
-#[cfg(test)]
 fn level_tokens(low: &str) -> Vec<(usize, usize, u8)> {
     let mut out = Vec::new();
     for n in 1u8..=5 {
@@ -143,24 +140,6 @@ fn level_tokens(low: &str) -> Vec<(usize, usize, u8)> {
 // libtest's filter is a substring of the full path, so under `levels::tests::` that accept
 // command ran ZERO tests and passed.
 
-/// The three copies of the ladder doc (PVL-001 EV-3 names exactly these), relative to the
-/// workspace root. Read from disk, not `include_str!`: two live outside this crate, and an
-/// `include!` target outside the crate fails check_package_includes.sh even under `cfg(test)`.
-#[cfg(test)]
-const LADDER_COPIES: [&str; 3] = [
-    "crates/aprender-contracts-staging/docs/specifications/sub/verification-ladder.md",
-    "crates/aprender-contracts-staging/book/src/verification-ladder.md",
-    "docs/specifications/aprender-contracts-staging/sub/verification-ladder.md",
-];
-
-/// A ladder copy's text. A copy that cannot be read fails the test: "could not check" is never "matches".
-#[cfg(test)]
-fn ladder_copy(path: &str) -> String {
-    let root = std::path::Path::new(env!("CARGO_MANIFEST_DIR")).join("../..");
-    std::fs::read_to_string(root.join(path))
-        .unwrap_or_else(|e| panic!("{path}: {e} (PVL-001 EV-3 reads all three copies)"))
-}
-
 /// PVL-001 EV-3's accept test: `levels::readme_and_ladder_docs_match_enum`.
 #[test]
 fn readme_and_ladder_docs_match_enum() {
@@ -180,24 +159,9 @@ fn readme_and_ladder_docs_match_enum() {
     // ::level_l5_needs_at_least_one_binding.
     assert!(ProofLevel::L4.method().contains("at least one proved"));
     assert!(ProofLevel::L5.method().contains("at least one binding"));
-    // 2. Every ladder doc copy carries the generated block, byte for byte.
-    let block = ladder_block();
-    for path in LADDER_COPIES {
-        let text = ladder_copy(path);
-        let text = text.as_str();
-        let stale = stale_level_pairings(text);
-        assert!(
-            stale.is_empty(),
-            "{path} still pairs a level with the wrong tool outside the generated block \
-             (Kani is L3, Lean alone is L4):\n{}",
-            stale.join("\n")
-        );
-        assert!(
-            text.contains(&block),
-            "{path} does not carry the block generated from ProofLevel. Replace its \
-             proof-level table with:\n{block}"
-        );
-    }
+    // 2. The doc copies are read by `readme_contract::ladder_doc_copies_carry_the_enum_block`
+    // (aprender-core): a crate test must not read files outside its crate, and the clean-room
+    // copy of the tree drops every `book/` directory, so the book copy cannot be read here.
 }
 
 /// The block itself names every level exactly once, in order: a regression in

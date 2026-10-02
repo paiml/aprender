@@ -73,8 +73,8 @@ falsification_tests:
     rule: "PVL-3-DOCS-ARE-ENUM"
     prediction: >
       Editing one row of one ladder copy's generated block (the book copy's L3
-      row) turns levels::readme_and_ladder_docs_match_enum RED, naming that file.
-    test_harness: "cargo test -p aprender-contracts --lib -- levels::readme_and_ladder_docs_match_enum"
+      row) turns readme_contract::ladder_doc_copies_carry_the_enum_block RED, naming that file.
+    test_harness: "cargo test -p aprender-core --test readme_contract -- ladder_doc_copies_carry_the_enum_block"
     expected_output: "exit 0 on an unmutated tree"
     if_fails: >
       MEASURED 2026-09-23: mutation engaged -> FAILED. 0 passed; 1 failed ("…book/src/
