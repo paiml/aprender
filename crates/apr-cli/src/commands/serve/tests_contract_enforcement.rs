@@ -13,14 +13,16 @@ use std::sync::Arc;
 
 fn create_test_model_file() -> tempfile::NamedTempFile {
     let mut file = tempfile::NamedTempFile::new().expect("tempfile::NamedTempFile::new()");
-    file.write_all(b"test model data").expect("write_all(b'test model data'");
+    file.write_all(b"test model data")
+        .expect("write_all(b'test model data'");
     file
 }
 
 fn create_test_state() -> Arc<ServerState> {
     let model = create_test_model_file();
     let config = ServerConfig::default();
-    let state = ServerState::new(model.path().to_path_buf(), config).expect("to_path_buf(), config");
+    let state =
+        ServerState::new(model.path().to_path_buf(), config).expect("to_path_buf(), config");
     // Keep the temp file alive by leaking the path
     std::mem::forget(model);
     Arc::new(state)
@@ -34,7 +36,8 @@ fn falsify_srv_001_health_returns_503_when_not_ready() {
     // ServerState starts with ready=false. health_check() must return Unhealthy.
     let model = create_test_model_file();
     let config = ServerConfig::default();
-    let state = ServerState::new(model.path().to_path_buf(), config).expect("to_path_buf(), config");
+    let state =
+        ServerState::new(model.path().to_path_buf(), config).expect("to_path_buf(), config");
     // State starts not ready
     assert!(
         !state.is_ready(),
@@ -53,7 +56,8 @@ fn falsify_srv_001b_health_returns_200_when_ready() {
     // FALSIFY-SRV-001b: /health returns Healthy once ready=true.
     let model = create_test_model_file();
     let config = ServerConfig::default();
-    let state = ServerState::new(model.path().to_path_buf(), config).expect("to_path_buf(), config");
+    let state =
+        ServerState::new(model.path().to_path_buf(), config).expect("to_path_buf(), config");
     state.ready.store(true, Ordering::Release);
     assert!(state.is_ready());
     let health = health_check(&state);
@@ -182,7 +186,8 @@ fn falsify_srv_006_health_response_fields() {
     // FALSIFY-SRV-006: HealthResponse has all required fields per contract.
     let model = create_test_model_file();
     let config = ServerConfig::default();
-    let state = ServerState::new(model.path().to_path_buf(), config).expect("to_path_buf(), config");
+    let state =
+        ServerState::new(model.path().to_path_buf(), config).expect("to_path_buf(), config");
     state.ready.store(true, Ordering::Release);
     let health = health_check(&state);
     // All fields must be present and valid
@@ -205,14 +210,17 @@ fn falsify_srv_006_health_response_fields() {
 fn falsify_srv_007_health_status_serde() {
     // FALSIFY-SRV-007: HealthStatus enum serializes to lowercase strings.
     // Contract: "healthy", "degraded", "unhealthy" — not "Healthy", etc.
-    let json = serde_json::to_string(&HealthStatus::Healthy).expect("serde_json::to_string(&HealthS");
+    let json =
+        serde_json::to_string(&HealthStatus::Healthy).expect("serde_json::to_string(&HealthS");
     assert_eq!(json, "\"healthy\"", "FALSIFY-SRV-007: Healthy → lowercase");
-    let json = serde_json::to_string(&HealthStatus::Degraded).expect("serde_json::to_string(&HealthS");
+    let json =
+        serde_json::to_string(&HealthStatus::Degraded).expect("serde_json::to_string(&HealthS");
     assert_eq!(
         json, "\"degraded\"",
         "FALSIFY-SRV-007: Degraded → lowercase"
     );
-    let json = serde_json::to_string(&HealthStatus::Unhealthy).expect("serde_json::to_string(&HealthS");
+    let json =
+        serde_json::to_string(&HealthStatus::Unhealthy).expect("serde_json::to_string(&HealthS");
     assert_eq!(
         json, "\"unhealthy\"",
         "FALSIFY-SRV-007: Unhealthy → lowercase"
@@ -380,7 +388,8 @@ fn falsify_srv_010_graceful_shutdown_ready_flag() {
     // When shutdown is initiated, health endpoint must return 503.
     let model = create_test_model_file();
     let config = ServerConfig::default();
-    let state = ServerState::new(model.path().to_path_buf(), config).expect("to_path_buf(), config");
+    let state =
+        ServerState::new(model.path().to_path_buf(), config).expect("to_path_buf(), config");
 
     // Simulate Ready → Draining transition
     state.ready.store(true, Ordering::Release);
@@ -405,7 +414,8 @@ fn falsify_srv_011_degraded_health_on_high_latency() {
     // Contract: server_lifecycle invariant — Degraded when p99 > 1s.
     let model = create_test_model_file();
     let config = ServerConfig::default();
-    let state = ServerState::new(model.path().to_path_buf(), config).expect("to_path_buf(), config");
+    let state =
+        ServerState::new(model.path().to_path_buf(), config).expect("to_path_buf(), config");
     state.ready.store(true, Ordering::Release);
 
     // Record 10 requests with 2000ms average latency
@@ -462,7 +472,8 @@ fn falsify_srv_013_mmap_threshold() {
     // Contract: ServerState determines mmap based on 50MB threshold.
     let model = create_test_model_file();
     let config = ServerConfig::default();
-    let state = ServerState::new(model.path().to_path_buf(), config).expect("to_path_buf(), config");
+    let state =
+        ServerState::new(model.path().to_path_buf(), config).expect("to_path_buf(), config");
 
     // Test file is small — should NOT use mmap
     assert!(

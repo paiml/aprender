@@ -1,0 +1,20 @@
+metadata:
+  version: "1.0.0"
+  kind: pattern
+  created: '2026-09-24'
+  last_modified: '2026-09-24'
+  author: fixture
+  description: fixture a (ONT-4e)
+name: a
+version: "1.0.0"
+scope: fixture
+status: active
+relations:
+  refines: [b]
+requires:
+  - { id: PRE-1, statement: "input is non-empty", formal: "len(x) > 0", formal_status: parsed }
+ensures:
+  - { id: POST-1, statement: "output sums to one", formal: "|Σ σ(x)_i - 1| < ε", formal_status: parsed }
+  - { id: POST-2, statement: "order preserving", formal: "x_i > x_j ⟹ σ(x)_i > σ(x)_j", formal_status: parsed }
+invariants:
+  - { id: INV-1, statement: "output is non-negative", formal: "∀i: σ(x)_i ≥ 0", formal_status: parsed }

@@ -1,0 +1,149 @@
+{
+ "version": "2.1.0",
+ "$schema": "https://raw.githubusercontent.com/oasis-tcs/sarif-spec/master/Schemata/sarif-schema-2.1.0.json",
+ "runs": [
+  {
+   "tool": {
+    "driver": {
+     "name": "pmat",
+     "informationUri": "https://github.com/paiml/pmat",
+     "version": "3.30.0",
+     "rules": []
+    }
+   },
+   "invocations": [
+    {
+     "executionSuccessful": true,
+     "commandLine": "git diff d7b36adff0 b132bf3c34 -- . ':!evidence/pr-review'"
+    }
+   ],
+   "results": [
+    {
+     "ruleId": "PRREV-SCOPE-001",
+     "level": "note",
+     "message": {
+      "text": "This run reads IN FULL the 3-commit delta d7b36adff0..b132bf3c34 (9 files changed, 728 insertions(+), 1 deletion(-)); the prior receipt's sampled scope is carried forward unchanged."
+     }
+    },
+    {
+     "ruleId": "PR1-MUTANTS",
+     "level": "error",
+     "message": {
+      "text": "Carried: the diff's mutants are not yet judged on this head. Enforcement moved to the CI survivor table (mutants-table, required via gate GATE-MUTANTS-TABLE-RULE): complete table GREEN, missing mutant / wrong sha / wrong diff RED."
+     }
+    },
+    {
+     "ruleId": "REV-A79-F1",
+     "level": "note",
+     "message": {
+      "text": "FIXED in 0a5c1325c7: an equivalents row was accepted when ANY repo file named the mutant id; the receipt must now be evidence/pr-review/<pr>/<sha>/receipt.intoto.jsonl and an in-toto pr-review Statement (2 new RED rows)."
+     }
+    },
+    {
+     "ruleId": "REV-0A5-F2",
+     "level": "note",
+     "message": {
+      "text": "FIXED in b132bf3c34: a hand-written receipt could pass; now reviewer != author and <receipt>.minisig must verify against the BASE branch .github/pr-review.pub (git show origin/<base>), no key / no minisign RED (4 new RED rows). Re-review APPROVE."
+     }
+    },
+    {
+     "ruleId": "REV-A79-F2",
+     "level": "note",
+     "message": {
+      "text": "Accepted (availability, not correctness): shards and verifier each compute merge-base against live origin/<base>; a base rewrite in the window yields a diff_sha256 mismatch = RED, never a silent pass. main is protected (no force-push)."
+     }
+    },
+    {
+     "ruleId": "REV-A79-F3",
+     "level": "note",
+     "message": {
+      "text": "Accepted nit: the refs file is read by x86-main (merge checkout) and mutants-table-scope (head checkout); any disagreement fails closed in the gate's independent SCOPE/IN_SCOPE/TABLE rule."
+     }
+    },
+    {
+     "ruleId": "REV-B13-GAP",
+     "level": "warning",
+     "message": {
+      "text": "Pre-existing, out of this PR's scope, flagged to the cop: mutants-table runs the checker from the PR head (pull_request), so a PR that edits the checker can weaken it; the same holds for every pull_request job here. The repo's fix pattern is pull_request_target (pr-review-quorum present). Proposed follow-up: move the table verifier to a base-defined workflow."
+     }
+    }
+   ]
+  },
+  {
+   "tool": {
+    "driver": {
+     "name": "nvidia-cuda-docs",
+     "informationUri": "https://developer.nvidia.com/cuda-toolkit"
+    }
+   },
+   "invocations": [
+    {
+     "executionSuccessful": false,
+     "toolExecutionNotifications": [
+      {
+       "level": "error",
+       "message": {
+        "text": "cuda consultation status is unreachable, not consulted: mcp__nvidia-cuda-docs__search_cuda_docs was unavailable (server not authenticated) in this reviewing session. No query ran. This delta (two shell scripts) does not itself touch either previously-triggering fixture file; the trigger is path-based and repo-wide, and the tool's authentication state carries forward unchanged from the 7218961ef9 receipt."
+       },
+       "properties": {
+        "grounding": "measured",
+        "rationale": "The path trigger fires repo-wide on cuda_simd_scores.rs.txt and fp8-interchange-v1.lean (unchanged by this delta); the tool being unreachable means those device claims are still not checked against docs this run either.",
+        "exit_code": 1
+       }
+      }
+     ]
+    }
+   ],
+   "results": [
+    {
+     "ruleId": "PRREV-CUDA-001",
+     "level": "note",
+     "message": {
+      "text": "CUDA docs consulted for real (nvidia-cuda-docs MCP signed in 2026-09-29 06:04Z; headless claude-sonnet-5 lane). 5 named queries on the FP8 E4M3/E5M2 claims in crates/aprender-contracts-staging/lean/Challenge/fp8-interchange-v1.lean and the cuda_simd_scores.rs.txt fixture: 4 found, 1 no-authority-found (exact MAXNORM constants 448/57344 not verbatim in the docs). 0 contradicted. Supersedes the prior 'unreachable' record."
+     },
+     "properties": {
+      "grounding": "measured",
+      "command": [
+       "git",
+       "diff",
+       "--stat",
+       "54b99dfdc7",
+       "92aac9b4e329fdf6c7907602761aeaa9d4186330"
+      ],
+      "exit_code": 0,
+      "failure_scenario": "If the delta had touched either fixture file, the disposition would need re-checking; it does not.",
+      "precision_class": "advisory"
+     }
+    }
+   ]
+  },
+  {
+   "tool": {
+    "driver": {
+     "name": "crux",
+     "informationUri": "internal:crux"
+    }
+   },
+   "invocations": [
+    {
+     "executionSuccessful": true
+    }
+   ],
+   "results": [
+    {
+     "ruleId": "PRREV-CRUX-001",
+     "level": "note",
+     "message": {
+      "text": "Carried forward unchanged: this delta (scripts/check_release_assets.sh, scripts/release_criteria.sh) adds no new CLI-facing command surface, so the prior crux_coverage='none' disposition is unaffected and carried forward rather than re-swept."
+     },
+     "properties": {
+      "grounding": "asserted",
+      "rationale": "Neither changed file is a contracts/apr-cli-commands-v1.yaml or crux-adjacent surface.",
+      "failure_scenario": "If the delta had added a new CLI-facing command, the crux disposition would need re-checking; it does not.",
+      "precision_class": "advisory"
+     }
+    }
+   ]
+  }
+ ]
+}

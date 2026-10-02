@@ -250,11 +250,7 @@ mod gemv_entry_name_tests_3477 {
             // MY comments did to the F16 and IQ4_XS kernels (#3477, caught by
             // aprender-45's A/B on its first real run, not by this guard).
             if let Some(bad) = ptx.chars().find(|c| !c.is_ascii()) {
-                let line = ptx
-                    .lines()
-                    .find(|l| l.chars().any(|c| !c.is_ascii()))
-                    .unwrap_or("")
-                    .trim();
+                let line = ptx.lines().find(|l| !l.is_ascii()).unwrap_or("").trim();
                 broken.push(format!(
                     "\n  - {kt:?}: emitted PTX contains U+{:04X}, which ptxas refuses \
                      even inside a comment, so the module never assembles: {line:?}",
@@ -655,8 +651,8 @@ mod gemv_entry_name_tests_3477 {
 
         let expected = crate::quantize::dequantize_q5_1(&block).expect("one whole block");
 
-        let d = f32::from(half_from_le(block[0], block[1]));
-        let m = f32::from(half_from_le(block[2], block[3]));
+        let d = half_from_le(block[0], block[1]);
+        let m = half_from_le(block[2], block[3]);
         let qh = u32::from_le_bytes([block[4], block[5], block[6], block[7]]);
         let mut got = [0f32; 32];
         for tid in 0..32usize {
@@ -824,7 +820,7 @@ mod gemv_entry_name_tests_3477 {
         dequantize_iq2_xxs_block(&block, &mut expected);
 
         // ---- exactly what the PTX does, one lane at a time ----
-        let d = f32::from(half_from_le(block[0], block[1]));
+        let d = half_from_le(block[0], block[1]);
         let grid_u32: Vec<u32> = IQ2XXS_GRID
             .iter()
             .flat_map(|&v| [(v & 0xffff_ffff) as u32, (v >> 32) as u32])
@@ -904,7 +900,7 @@ mod gemv_entry_name_tests_3477 {
         let mut expected = [0f32; IQ3_XXS_BLOCK_ELEMS];
         dequantize_iq3_xxs_block(&block, &mut expected);
 
-        let d = f32::from(half_from_le(block[0], block[1]));
+        let d = half_from_le(block[0], block[1]);
         let u16_at = |o: usize| u32::from(u16::from_le_bytes([block[o], block[o + 1]]));
         let mut scales = std::collections::BTreeSet::new();
         let mut got = [0f32; IQ3_XXS_BLOCK_ELEMS];
@@ -977,7 +973,7 @@ mod gemv_entry_name_tests_3477 {
         dequantize_iq3_s_block(&block, &mut expected);
 
         // ---- exactly what the PTX does, one lane at a time ----
-        let d = f32::from(half_from_le(block[0], block[1]));
+        let d = half_from_le(block[0], block[1]);
         let mut got = [0f32; IQ3_S_BLOCK_ELEMS];
         for tid in 0..32usize {
             let ib = tid >> 2;
@@ -1052,7 +1048,7 @@ mod gemv_entry_name_tests_3477 {
         // jlow = tid & 15 (byte index), jhalf = tid >> 4 (nibble select),
         // element index = tid. There is no sub-block loop and no scale
         // reassembly: one f16 d covers all 32 elements.
-        let d = f32::from(half_from_le(block[0], block[1]));
+        let d = half_from_le(block[0], block[1]);
         let mut got = [0f32; IQ4_NL_BLOCK_ELEMS];
         for tid in 0..IQ4_NL_BLOCK_ELEMS {
             let jhalf = tid >> 4;
@@ -1117,7 +1113,7 @@ mod gemv_entry_name_tests_3477 {
         dequantize_iq4_xs_block(&block, &mut expected);
 
         // ---- exactly what the PTX does, one lane at a time ----
-        let d = f32::from(half_from_le(block[0], block[1]));
+        let d = half_from_le(block[0], block[1]);
         let scales_h = u32::from(u16::from_le_bytes([block[2], block[3]]));
         let mut got = [0f32; 256];
         for tid in 0..32usize {

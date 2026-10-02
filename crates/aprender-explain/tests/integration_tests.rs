@@ -352,3 +352,37 @@ fn test_all_kernels_no_critical_bugs() {
         );
     }
 }
+
+/// ONT-10 S18 (FALSIFY-BIN-APRENDER-EXPLAIN-003/004): the binary names itself, and an unknown kernel is a clap
+/// usage error (exit 2) while the aliases and any case still parse.
+#[test]
+fn ont10_s18_version_name_and_kernel_value_parser() {
+    let version = run_explain(&["--version"]);
+    let stdout = String::from_utf8_lossy(&version.stdout);
+    assert!(
+        stdout.starts_with("aprender-explain "),
+        "version names the binary: {stdout}"
+    );
+
+    for args in [
+        &["ptx", "-K", "nosuch"][..],
+        &["bugs", "-K", "nosuch"][..],
+        &["compare", "-a", "nosuch", "-b", "softmax"][..],
+    ] {
+        let out = run_explain(args);
+        assert_eq!(out.status.code(), Some(2), "{args:?} must be a usage error");
+        assert!(
+            String::from_utf8_lossy(&out.stderr).contains("q6k_gemm"),
+            "{args:?} lists the kernels"
+        );
+    }
+
+    for kernel in ["q4k", "VECTOR_ADD", "softmax"] {
+        let out = run_explain(&["ptx", "-K", kernel, "-m", "64", "-n", "64", "-k", "256"]);
+        assert!(
+            out.status.success(),
+            "ptx -K {kernel}: {}",
+            String::from_utf8_lossy(&out.stderr)
+        );
+    }
+}

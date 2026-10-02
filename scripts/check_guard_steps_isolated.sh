@@ -109,8 +109,8 @@ self_test() {
     row "wrapped after elif"                0 $'          if false; then :; elif setsid --wait bash scripts/check_a.sh; then :; fi\n'
     row "a path argument is not an invocation" 0 $'          cat scripts/check_a.sh && echo scripts/check_b.sh\n'
     # the MUTANT the ticket names: the real guard steps with ONE wrapper removed must go RED.
-    # #4441 moved every ci.yml job into ci/sections.yml; ci.yml itself calls no guard now,
-    # so the mutant targets the section file (absent = FAIL, not a silent skip).
+    # #4441 moved the ci.yml guard jobs into ci/sections.yml; ci.yml keeps only a few
+    # self-test calls, so the mutant targets the section file (absent = FAIL, not a silent skip).
     real=ci/sections.yml
     if [ ! -f "$real" ]; then
         printf 'FAIL  mutant: %s is absent (where do the guard steps live now?)\n' "$real"; fails=$((fails + 1))

@@ -54,6 +54,9 @@ PRE_2559_EXTRACTOR='{print $NF}'
 #
 # Rows are separated by a line of four dashes so the outputs can be multi-line.
 read -r -d '' CASES <<'TABLE' || true
+0.70.0 :: pv 0.70.0 (817d63361) (aprender provable-contracts verifier)
+crate aprender-contracts-cli — https://github.com/paiml/aprender
+----
 0.63.0 :: pv 0.63.0 (aprender provable-contracts verifier)
 crate aprender-contracts-cli — https://github.com/paiml/aprender
 Verifies YAML contracts under contracts/; run `pv --help` for the command surface.

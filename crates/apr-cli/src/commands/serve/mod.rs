@@ -21,6 +21,11 @@ pub use types::*;
 // Test modules
 #[cfg(test)]
 mod tests;
+// #3809: the apr-serve-v1 / http-api-v1 FALSIFY-SRV/HTTP enforcement suite. It sat
+// beside `tests.rs` unwired, so its 25 tests never compiled and the contract's ids
+// pointed at code that never ran.
+#[cfg(test)]
+mod tests_contract_enforcement;
 #[cfg(all(test, feature = "inference"))]
 mod tests_route_index_3979;
 // PP-LLAMA-001 PP-14/PP-15/§9 #8: the offload report the served process

@@ -551,6 +551,52 @@ fn grow_or_build(
     true
 }
 
+/// Positions a serve turn can reach: the model's context, capped by the device
+/// KV cache it was built with (`device_kv`, 0 when there is none) (D5,
+/// ruling-3715-2010).
+///
+/// Serve has no CPU copy to fall back to, so the device cache is the real
+/// window. Reporting the model's context instead let a 27k-token turn through to
+/// `reserve`, which failed as a GPU fault and reached the client as a 500. With
+/// the cap as the session's context, a prompt past it is refused as
+/// [`RealizarError::ContextLimitExceeded`] (a 400) and a large `max_tokens` is
+/// clamped to what is left, the same rule as every other context window.
+/// CUDA-free on purpose, so the rule is tested on every build.
+#[must_use]
+pub fn cap_context(context_length: usize, device_kv: usize) -> usize {
+    let context = context_length.max(1);
+    match device_kv {
+        0 => context,
+        device => context.min(device),
+    }
+}
+
 #[cfg(test)]
 #[path = "dense_session_tests.rs"]
 mod tests;
+
+#[cfg(test)]
+mod cap_context_tests {
+    use super::cap_context;
+
+    #[test]
+    fn d5_the_device_kv_caps_a_longer_model_context() {
+        assert_eq!(cap_context(32768, 4096), 4096);
+    }
+
+    #[test]
+    fn d5_a_shorter_model_context_is_kept() {
+        assert_eq!(cap_context(2048, 4096), 2048);
+    }
+
+    #[test]
+    fn d5_no_device_cache_means_the_model_context() {
+        assert_eq!(cap_context(32768, 0), 32768);
+    }
+
+    #[test]
+    fn d5_a_zero_model_context_still_holds_one_position() {
+        assert_eq!(cap_context(0, 0), 1);
+        assert_eq!(cap_context(0, 4096), 1);
+    }
+}

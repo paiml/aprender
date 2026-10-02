@@ -19,4 +19,14 @@ cargo doc --no-deps -q 2>/dev/null || echo "WARN: cargo doc failed"
 echo "── ComputeBrick Compliance ──"
 pmat comply check --failures-only 2>/dev/null || true
 
+echo "── #4415/#4416: CI guard steps (scripts/ci_guards.sh, the script CI runs) ──"
+# The drift check is a YAML parse, so it always runs. The full guard run takes
+# many minutes; opt in with APR_PREPUSH_GUARDS=1 (or run `make guards-local`).
+rc=0; bash scripts/ci_guards.sh --check-coverage || rc=$?
+[ "$rc" -eq 1 ] && exit 1
+[ "$rc" -eq 0 ] || echo "WARN: guard drift check could not run (rc=$rc)"
+if [ "${APR_PREPUSH_GUARDS:-0}" = 1 ]; then
+    bash scripts/ci_guards.sh || exit 1
+fi
+
 echo "✅ Pre-push passed"

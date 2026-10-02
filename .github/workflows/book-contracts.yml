@@ -39,6 +39,15 @@ on:
   schedule:
     - cron: '45 22 * * *'
 
+
+# #3676: no concurrency group meant every superseded PR push ran the ~18 min
+# chapter suite to completion. Sampled 24 h to 2026-09-24 19:15Z: ~1650 of ~3700
+# wall-minutes of this workflow's pull_request runs came after a newer push
+# to the same PR had already started. Same shape as ci.yml: one group per PR, a
+# new push cancels the old run, and push/schedule runs are never cancelled.
+concurrency:
+  group: book-contracts-${{ github.event.pull_request.number || github.ref }}
+  cancel-in-progress: ${{ github.event_name == 'pull_request' }}
 permissions:
   contents: read
 

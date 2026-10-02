@@ -487,6 +487,7 @@ fn execute_help(topic: Option<&str>) -> Result<String> {
   distill            Run distillation
   export <fmt> <path> Export model
   history            Show command history
+  clear              Clear the screen
   help [topic]       Show help
   quit               Exit shell"
             .to_string()),
@@ -859,6 +860,29 @@ mod tests {
         assert!(general_help.contains("Available commands"));
     }
 
+    /// ONT-10 S14: general help must list every canonical command the parser accepts,
+    /// or a help-walk extractor reads the missing one as a ledger orphan (`clear` was).
+    #[test]
+    fn test_general_help_lists_every_parsed_command() {
+        let general_help = execute_help(None).expect("operation should succeed");
+        let listed: Vec<&str> = general_help
+            .lines()
+            .skip(1)
+            .filter_map(|l| l.split_whitespace().next())
+            .collect();
+        for name in [
+            "fetch", "inspect", "memory", "set", "distill", "export", "history", "help", "clear",
+            "quit",
+        ] {
+            assert!(
+                !matches!(parse(name), Ok(Command::Unknown { .. })),
+                "{name} must be a parsed command"
+            );
+            assert!(listed.contains(&name), "general help omits `{name}`");
+        }
+        assert_eq!(listed.len(), 10, "help lists {listed:?}");
+    }
+
     #[test]
     fn test_detect_architecture_variants() {
         assert_eq!(detect_architecture("meta-llama/Llama-2-7b"), "llama");
@@ -1010,7 +1034,11 @@ mod tests {
         let state = SessionState::new();
         let path = std::env::temp_dir().join("apr-2519-export-probe.st");
         let _ = std::fs::remove_file(&path);
-        let _ = execute_export("safetensors", path.to_str().unwrap(), &state);
+        let _ = execute_export(
+            "safetensors",
+            path.to_str().expect("utf-8 temp path"),
+            &state,
+        );
         assert!(!path.exists(), "export refused but still created {path:?}");
     }
 

@@ -1,0 +1,13 @@
+metadata:
+  version: "1.0.0"
+  kind: pattern
+  created: '2026-09-24'
+  last_modified: '2026-09-24'
+  author: fixture
+  description: fixture b (ONT-4e)
+name: b
+version: "1.0.0"
+scope: fixture
+status: active
+invariants:
+  - { id: INV-1, property: "output is non-negative", formal: "∀i: σ(x)_i ≥ 0" }

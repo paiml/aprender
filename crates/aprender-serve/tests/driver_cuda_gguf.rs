@@ -85,6 +85,8 @@ fn create_test_model(config: &GGUFConfig) -> OwnedQuantizedModel {
             ffn_norm_bias: None,
             attn_q_norm_weight: None,
             attn_k_norm_weight: None,
+            post_attn_norm_weight: None,
+            post_ffw_norm_weight: None,
         });
     }
 
@@ -144,6 +146,7 @@ fn test_driver_cuda_model_creation() {
         bos_token_id: None,
         eos_token_id: None,
         explicit_head_dim: None,
+        query_pre_attn_scalar: None,
     };
 
     let model = create_test_model(&config);
@@ -184,6 +187,7 @@ fn test_driver_cuda_model_with_max_seq_len() {
         bos_token_id: None,
         eos_token_id: None,
         explicit_head_dim: None,
+        query_pre_attn_scalar: None,
     };
 
     let model = create_test_model(&config);
@@ -225,6 +229,7 @@ fn test_driver_cuda_forward_basic() {
         bos_token_id: None,
         eos_token_id: None,
         explicit_head_dim: None,
+        query_pre_attn_scalar: None,
     };
 
     let model = create_test_model(&config);
@@ -269,6 +274,7 @@ fn test_driver_cuda_forward_multi_token() {
         bos_token_id: None,
         eos_token_id: None,
         explicit_head_dim: None,
+        query_pre_attn_scalar: None,
     };
 
     let model = create_test_model(&config);
@@ -306,6 +312,7 @@ fn test_driver_cuda_generate() {
         bos_token_id: None,
         eos_token_id: None,
         explicit_head_dim: None,
+        query_pre_attn_scalar: None,
     };
 
     let model = create_test_model(&config);
@@ -349,6 +356,7 @@ fn test_driver_cuda_generate_greedy() {
         bos_token_id: None,
         eos_token_id: None,
         explicit_head_dim: None,
+        query_pre_attn_scalar: None,
     };
 
     let model = create_test_model(&config);
@@ -391,6 +399,7 @@ fn test_driver_cuda_generate_with_stop_token() {
         bos_token_id: None,
         eos_token_id: None,
         explicit_head_dim: None,
+        query_pre_attn_scalar: None,
     };
 
     let model = create_test_model(&config);
@@ -436,6 +445,7 @@ fn test_driver_cuda_gqa_forward() {
         bos_token_id: None,
         eos_token_id: None,
         explicit_head_dim: None,
+        query_pre_attn_scalar: None,
     };
 
     let model = create_test_model(&config);
@@ -491,6 +501,7 @@ fn test_driver_cuda_multi_layer() {
         bos_token_id: None,
         eos_token_id: None,
         explicit_head_dim: None,
+        query_pre_attn_scalar: None,
     };
 
     let model = create_test_model(&config);

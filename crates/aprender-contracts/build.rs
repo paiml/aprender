@@ -3,6 +3,9 @@ use serde::Deserialize;
 use std::collections::BTreeMap;
 use std::path::{Path, PathBuf};
 
+// The one key builder, shared with `build_helper::env_key` (#4369).
+include!("src/env_key.rs");
+
 #[derive(Deserialize)]
 struct BindingFile {
     #[allow(dead_code)]
@@ -78,13 +81,7 @@ fn load_binding_file(binding_path: &Path) -> Option<BindingFile> {
 
 fn emit_binding_vars(bindings: &BindingFile, total: &mut u32, implemented: &mut u32) {
     for b in &bindings.bindings {
-        let stem = b
-            .contract
-            .trim_end_matches(".yaml")
-            .to_uppercase()
-            .replace('-', "_");
-        let eq = b.equation.to_uppercase().replace('-', "_");
-        let var = format!("CONTRACT_{stem}_{eq}");
+        let var = env_key(b.contract.trim_end_matches(".yaml"), &b.equation);
         println!("cargo:rustc-env={var}={}", b.status);
         *total += 1;
         if b.status == "implemented" {
@@ -134,11 +131,7 @@ fn emit_contract_file_pre_post(path: &PathBuf, total_pre: &mut usize, total_post
         return;
     };
     for (eq_name, eq) in &parsed.equations {
-        let key = format!(
-            "CONTRACT_{}_{}",
-            stem,
-            eq_name.to_uppercase().replace('-', "_")
-        );
+        let key = env_key(&stem, eq_name);
         emit_pre_post_lists(&key, eq, total_pre, total_post);
     }
 }

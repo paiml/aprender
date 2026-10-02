@@ -1742,7 +1742,12 @@ pub fn execute_llm_experiment(args: &ExperimentArgs) -> CliResult<()> {
     use crate::ExperimentSubcommand;
     use jugar_probar::llm::experiment::{BudgetConfig, Experiment};
 
-    match &args.subcommand {
+    // A bare `llm experiment` is `status`: the ledger names the group as a
+    // command (ONT-10 S2), so it must run, not exit 2 asking for a subcommand.
+    let Some(subcommand) = &args.subcommand else {
+        return experiment_status(&args.status);
+    };
+    match subcommand {
         ExperimentSubcommand::Init(init_args) => {
             let mut exp = Experiment::new(&init_args.name);
             exp.description = init_args.description.clone();

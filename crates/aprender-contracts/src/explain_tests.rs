@@ -238,6 +238,7 @@ fn strategy_explanation_all_variants() {
     assert!(strategy_explanation("stub_float").contains("transcendentals"));
     assert!(strategy_explanation("compositional").contains("sub-kernels"));
     assert!(strategy_explanation("bounded_int").contains("integer-only"));
+    assert!(strategy_explanation("bounded_float").contains("no stubs"));
     assert!(strategy_explanation("unknown_strategy").contains("bounded model check"));
     assert!(strategy_explanation("").contains("bounded model check"));
 }
@@ -694,7 +695,8 @@ falsification_tests:
     .unwrap();
 
     let output = explain_contract(&contract, "kani-xref-v1", None);
-    assert!(output.contains("L4 (KANI-BND-001)"));
+    // PVL-001 EV-3: a Kani harness is L3 (ProofLevel), not L4.
+    assert!(output.contains("L3 (KANI-BND-001)"));
 }
 
 #[test]
@@ -726,8 +728,8 @@ kani_harnesses:
     .unwrap();
 
     let output = explain_contract(&contract, "vs-v1", None);
-    // Verification ladder should show L5 lean proved
-    assert!(output.contains("L5 (Lean):  1/1 proved (100%)"));
+    // Verification ladder shows the Lean proof at L4 (PVL-001 EV-3: Lean alone is L4).
+    assert!(output.contains("L4 (Lean):  1/1 proved (100%)"));
 }
 
 #[test]
@@ -999,6 +1001,7 @@ falsification_tests: []
                 signature: None,
                 status: crate::binding::ImplStatus::Implemented,
                 notes: None,
+                kernel: false,
             },
             crate::binding::KernelBinding {
                 contract: "bind-md-v1.yaml".to_string(),
@@ -1008,6 +1011,7 @@ falsification_tests: []
                 signature: None,
                 status: crate::binding::ImplStatus::Partial,
                 notes: None,
+                kernel: false,
             },
         ],
     };
@@ -1045,6 +1049,7 @@ falsification_tests: []
             signature: None,
             status: crate::binding::ImplStatus::Implemented,
             notes: None,
+            kernel: false,
         }],
     };
 
@@ -1142,6 +1147,7 @@ falsification_tests: []
             signature: None,
             status: crate::binding::ImplStatus::Implemented,
             notes: None,
+            kernel: false,
         }],
     };
 
@@ -1235,6 +1241,7 @@ falsification_tests: []
                 signature: None,
                 status: crate::binding::ImplStatus::Implemented,
                 notes: None,
+                kernel: false,
             },
             crate::binding::KernelBinding {
                 contract: "bind-status-v1.yaml".to_string(),
@@ -1244,6 +1251,7 @@ falsification_tests: []
                 signature: None,
                 status: crate::binding::ImplStatus::NotImplemented,
                 notes: None,
+                kernel: false,
             },
         ],
     };
@@ -1300,7 +1308,7 @@ falsification_tests: []
 }
 
 #[test]
-fn explain_lean_proved_shows_l5_in_cross_ref() {
+fn explain_lean_proved_shows_l4_in_cross_ref() {
     let contract = parse_contract_str(
         r#"
 metadata:
@@ -1322,7 +1330,9 @@ falsification_tests:
     .unwrap();
 
     let output = explain_contract(&contract, "l5-v1", None);
-    assert!(output.contains("L5 (Lean)"));
+    // PVL-001 EV-3: a proved Lean theorem is L4 (ProofLevel), not L5.
+    assert!(output.contains("L4 (Lean)"));
+    assert!(!output.contains("L5 (Lean)"));
     assert!(output.contains("L2 (FALSIFY-001)"));
 }
 

@@ -504,3 +504,47 @@ async fn an_uninstrumented_scheduler_reports_null_not_zero() {
     assert!(body["scheduler"]["peak_in_flight"].is_null(), "{body}");
     assert_eq!(body["scheduler"]["prefill_chunk_size"].as_u64(), Some(256));
 }
+
+/// #4254: on the v0.69.1 CPU asset serving Qwen3.5-4B, `/health` said
+/// `compute_mode: "cpu"` while `/v1/effective-config` said
+/// `compute_class: "unknown"` and `backend_loaded: []` — the hybrid session
+/// was the one resident backend `backend_loaded` never asked about. Both
+/// routes now read the same session, so they must agree on the same state.
+#[tokio::test(flavor = "multi_thread")]
+async fn qwen35_cpu_session_reports_cpu_on_both_routes_4254() {
+    use crate::gguf::qwen35_session::Qwen35Session;
+    use crate::gguf::MappedGGUFModel;
+    use std::sync::Arc;
+
+    // A per-machine model path comes from the environment, never a literal
+    // (check_test_fixture_paths.sh): e.g. ~/models/Qwen3.5-0.8B-Q4_K_M.gguf.
+    let Ok(model_path) = std::env::var("APR_QWEN35_08B_GGUF") else {
+        eprintln!("SKIP: set APR_QWEN35_08B_GGUF to a Qwen3.5-0.8B Q4_K_M GGUF");
+        return;
+    };
+    if !std::path::Path::new(&model_path).exists() {
+        eprintln!("SKIP: APR_QWEN35_08B_GGUF={model_path} is absent");
+        return;
+    }
+    let mapped = Arc::new(MappedGGUFModel::from_path(&model_path).expect("map the GGUF"));
+    let vocab = mapped.model.vocabulary().expect("vocabulary");
+    // `no_gpu = true`: the CPU path, which is what the v0.69.1 CPU asset ran.
+    let session = Qwen35Session::load(&mapped, true).expect("load the hybrid");
+    let state = AppState::with_qwen35_session(session, mapped, vocab).expect("app state");
+
+    let (status, cfg) = get_json(state.clone(), "/v1/effective-config").await;
+    assert_eq!(status, StatusCode::OK);
+    let (status, health) = get_json(state, "/health").await;
+    assert_eq!(status, StatusCode::OK);
+
+    assert_eq!(
+        cfg["backend_loaded"],
+        serde_json::json!(["cpu"]),
+        "the CPU hybrid session is a resident CPU backend: {cfg}"
+    );
+    assert_eq!(cfg["compute_class"].as_str(), Some("cpu"));
+    assert_eq!(
+        cfg["compute_class"], health["compute_mode"],
+        "/v1/effective-config and /health disagree on one state"
+    );
+}

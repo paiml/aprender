@@ -6,10 +6,10 @@ This section covers the command-line interface and REPL.
 
 ```bash
 # Show help
-alimentar --help
+aprender-data --help
 
 # Dataset info
-alimentar info data.parquet
+aprender-data info data.parquet
 # Output:
 # Format: Parquet
 # Rows: 1000
@@ -21,24 +21,24 @@ alimentar info data.parquet
 
 ```bash
 # Show first N rows
-alimentar head data.parquet --rows 10
+aprender-data head data.parquet --rows 10
 
 # Format conversion
-alimentar convert input.csv output.parquet
-alimentar convert data.parquet data.json
+aprender-data convert input.csv output.parquet
+aprender-data convert data.parquet data.json
 ```
 
 ## Example 90: Quality Command
 
 ```bash
 # Quality report
-alimentar quality data.parquet
+aprender-data quality data.parquet
 
 # JSON output
-alimentar quality data.parquet --format json
+aprender-data quality data.parquet --format json
 
 # Quality score only
-alimentar quality score data.parquet
+aprender-data quality score data.parquet
 # Output: Quality Score: 0.92 (A)
 ```
 
@@ -65,7 +65,7 @@ let suggestions = completer.complete("loa", 3);
 
 ```bash
 # REPL commands
-alimentar repl
+aprender-data repl
 
 > load data.parquet
 Loaded: 1000 rows, 3 columns
@@ -105,10 +105,10 @@ quality
 convert data.parquet output.json
 
 # Execute batch
-alimentar batch commands.txt
+aprender-data batch commands.txt
 
 # Or via stdin
-cat commands.txt | alimentar batch -
+cat commands.txt | aprender-data batch -
 ```
 
 ## REPL Commands Reference

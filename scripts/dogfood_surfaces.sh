@@ -19,7 +19,7 @@
 # -- a shrunken universe reports "all passed".
 #
 # Grepping the source is no better: a regex over clap `Subcommand` enums reports
-# 0 subcommands for `simular`, which is a clap-derive CLI. The binary is the
+# 0 subcommands for `aprender-simulate` (was `simular`), which is a clap-derive CLI. The binary is the
 # only thing that knows what the binary accepts.
 #
 # So: binaries come from `cargo metadata`, commands from `<bin> --help`, routes
@@ -304,7 +304,7 @@ probe_help() {
 
 # The outcome-excluding half: an unknown flag must be REJECTED. A CLI that
 # accepts anything is the hand-rolled-parser defect that silently dropped
-# --seed in simular.
+# --seed in aprender-simulate (then `simular`).
 probe_rejects_garbage() {
     local bin="$1" label="$2" out rc
     out=$("$bin" --definitely-not-a-real-flag-xyz 2>&1); rc=$?
@@ -631,9 +631,9 @@ emit_features() {
     # feature gets them. Measured on 2026-08-22 a default build hides 26 ledger
     # entries behind four features:
     #   dev      -> apr mono {publish,shims,audit,archive}
-    #   hf-hub   -> alimentar {hub push, import hf}     (+ the apr data x mirror)
-    #   doctest  -> alimentar doctest {extract,merge}   (+ the apr data x mirror)
-    #   `eval`   -> trueno-rag eval {7 verbs}           (+ the apr rag mirror)
+    #   hf-hub   -> aprender-data {hub push, import hf}     (+ the apr data x mirror)
+    #   doctest  -> aprender-data doctest {extract,merge}   (+ the apr data x mirror)
+    #   `eval`   -> aprender-rag eval {7 verbs}           (+ the apr rag mirror)
     # Proven by rebuilding with the feature and watching them appear, not
     # inferred from the cfg attribute. Consumers MUST compare against a run with
     # the same feature set or treat those rows as a declared allowance.
@@ -658,7 +658,7 @@ for line in sys.stdin:
     vacuity_guard "built executables" "$an" "$MIN_BINARIES"
 
     # A binary cargo DECLARES but does not BUILD is unprobed, and silence here
-    # would let it read as a surface that shrank. `ptop` and `score` are exactly
+    # would let it read as a surface that shrank. `aprender-ptop` and `aprender-score` are exactly
     # this: both carry required-features outside `default`, so `--bins
     # --workspace` skips them and surface_cli never probes them either.
     local built_names
@@ -702,9 +702,198 @@ for r in sorted(set(d.get("routes",[]))): print(r.strip())
 '
 }
 
+# --- snapshot (ONT-4g, contracts/binary-surface-v1.yaml) ----------------------
+#
+# `--snapshot [FILE]` writes the record extract:binary reads: one JSON line per
+# cargo bin target, LC_ALL=C sorted by package then target, no timestamps, so two
+# runs at one commit are byte-identical (`--snapshot --twice` proves it). Default
+# FILE is evidence/binary/snapshot.jsonl. Keys, in this order (schema first):
+#
+#   schema          "binary-snapshot/v1"
+#   package target  as cargo metadata spells them -- the node key, never the name
+#                   alone: two packages declare `apr`
+#   name src_path   the executable name, the target's src_path relative to the repo
+#   git_sha         HEAD, 40 hex -- the commit every binary here was built from
+#   version         `--version` stdout, trailing newline stripped
+#   version_sha256 binary_sha256 help_sha256
+#   help_exit       `--help` exit status (G1.2: non-zero or empty help is RED)
+#   commands        every command path under the binary, space-joined, without the
+#                   binary name: each leaf, plus each non-leaf whose Usage shows
+#                   `[COMMAND]` (it runs on its own). clap's auto `help` is not a
+#                   command; a user-defined `help` is (S9 convention)
+#   options         the top-level long options, --help and --version excluded
+#   positionals     the top-level `Arguments:` names, brackets and `...` stripped
+#   routes          "METHOD /path" from the router source the target serves
+#   tools           MCP tool names the binary answers on tools/list
+#
+# An empty surface is [], never an omitted key. Each target is built with its
+# required-features and HASHED BEFORE THE NEXT BUILD: apr-cli and the aprender
+# facade both write target/<profile>/apr, so building both first would hash one
+# file twice.
+SNAP_PROFILE="${DOGFOOD_SNAPSHOT_PROFILE:-release}"
+
+# One subcommand block of `$@ --help`: "name<TAB>description", clap indent 2.
+snap_subcommands() {
+    timeout 20 "$@" --help 2>/dev/null | awk '
+        /^[Cc]ommands:/ { inb=1; next }
+        /^[A-Za-z]/     { inb=0 }
+        inb && /^  [a-z][a-z0-9._-]*([[:space:]]|$)/ {
+            n=$1; sub(/^  [^ ]+[ ]*/, ""); print n "\t" $0 }'
+}
+
+# $1 executable, $2 depth, $3.. command path. Prints command paths.
+snap_walk() {
+    local exe="$1" depth="$2"; shift 2
+    local line sub desc kids usage
+    [ "$depth" -gt "$EMIT_MAX_DEPTH" ] && return 0
+    while IFS=$'\t' read -r sub desc; do
+        [ -n "$sub" ] || continue
+        # clap's auto-generated help, not a command
+        if [ "$sub" = help ] && [[ "$desc" == "Print this message or the help"* ]]; then
+            continue
+        fi
+        kids=$(snap_subcommands "$exe" "$@" "$sub" | grep -c .)
+        if [ "$kids" -eq 0 ]; then
+            printf '%s\n' "${*:+$* }$sub"
+        else
+            usage=$(timeout 20 "$exe" "$@" "$sub" --help 2>/dev/null | grep -m1 '^Usage:')
+            [[ "$usage" == *"[COMMAND]"* ]] && printf '%s\n' "${*:+$* }$sub"
+            snap_walk "$exe" "$((depth + 1))" "$@" "$sub"
+        fi
+    done < <(snap_subcommands "$exe" "$@")
+}
+
+snap_options() {
+    timeout 20 "$1" --help 2>/dev/null \
+        | grep -oE '^ +(-[A-Za-z0-9], )?--[a-z0-9][a-z0-9-]*' \
+        | grep -oE -- '--[a-z0-9][a-z0-9-]*$' \
+        | grep -vxE -- '--(help|version)'
+}
+
+# Route tables by target. A new HTTP binary adds a case. The source scan also
+# counts #[cfg(feature)]-gated routes; the per-binary contract says which.
+snap_routes() {
+    case "$1/$2" in
+        apr-cli/apr|aprender/apr)
+            # ("METHOD", "/path", h) tuples and .route("METHOD", "/path", h) calls. rustfmt splits long
+            # ones over lines, so each file is flattened first. Test files are skipped, and so is
+            # every #[cfg(feature = "cuda")] item: the snapshot is the default-feature build.
+            printf 'GET /\n'
+            find "$REPO_ROOT"/crates/aprender-serve/src/api "$REPO_ROOT"/crates/apr-cli/src/commands/serve \
+                -name '*.rs' ! -path '*/tests/*' ! -name 'tests*.rs' ! -name '*_tests.rs' -print0 \
+                | LC_ALL=C sort -z \
+                | while IFS= read -r -d '' f; do
+                    tr '\n' ' ' < "$f" \
+                        | sed -E 's/#\[cfg\(feature = "cuda"\)\][^}]*\}//g' \
+                        | grep -oE '"(GET|POST|PUT|DELETE|PATCH|HEAD)"[[:space:]]*,[[:space:]]*"/[A-Za-z0-9_/{}.:-]*"' \
+                        | sed -E 's/^"([A-Z]+)"[[:space:]]*,[[:space:]]*"([^"]*)"$/\1 \2/'
+                  done
+            ;;
+        aprender-orchestrate/aprender-orchestrate)
+            # axum `.route("/p", get(h).post(h))` chains, joined onto one line per route
+            tr '\n' ' ' < "$REPO_ROOT"/crates/aprender-orchestrate/src/serve/banco/router.rs \
+                | grep -oE '\.route\([[:space:]]*"[^"]+"[[:space:]]*,[^;]*' \
+                | sed -E 's/\.route\(/\n.route(/g' \
+                | awk 'match($0, /"[^"]+"/) { p=substr($0, RSTART+1, RLENGTH-2); rest=substr($0, RSTART+RLENGTH);
+                        while (match(rest, /(^|[^a-z_])(get|post|put|delete|patch|head)\(/)) {
+                            m=substr(rest, RSTART, RLENGTH); gsub(/[^a-z]/, "", m);
+                            print toupper(m) " " p; rest=substr(rest, RSTART+RLENGTH) } }'
+            ;;
+    esac
+}
+
+# MCP tools, asked of the binary over stdio.
+snap_tools() {
+    case "$1/$2" in
+        apr-cli/apr|aprender/apr)
+            printf '%s\n' \
+                '{"jsonrpc":"2.0","id":1,"method":"initialize","params":{"protocolVersion":"2024-11-05","capabilities":{},"clientInfo":{"name":"snapshot","version":"1"}}}' \
+                '{"jsonrpc":"2.0","method":"notifications/initialized"}' \
+                '{"jsonrpc":"2.0","id":2,"method":"tools/list"}' \
+                | timeout 30 "$3" mcp 2>/dev/null | jq -r 'select(.id==2) | .result.tools[].name' 2>/dev/null
+            ;;
+    esac
+}
+
+snap_positionals() {
+    timeout 20 "$1" --help 2>/dev/null | awk '
+        /^Arguments:/ { inb=1; next }
+        /^[A-Za-z]/   { inb=0 }
+        inb && /^  [<\[]/ { a=$1; gsub(/[<>\[\]]|\.\.\./, "", a); print a }'
+}
+
+snap_arr() { LC_ALL=C sort -u | jq -R . | jq -sc .; }
+
+snapshot() {
+    local out="$1" sha targets n tmp pkg tgt src req exe ver help hrc feat
+    sha=$(git -C "$REPO_ROOT" rev-parse HEAD) || return 1
+    targets=$(cargo metadata --no-deps --format-version 1 --manifest-path "$REPO_ROOT/Cargo.toml" 2>/dev/null \
+        | jq -r --arg r "$REPO_ROOT/" '.packages[] as $p | $p.targets[] | select(.kind | index("bin"))
+              | [$p.name, .name, (.src_path | ltrimstr($r)), ((.["required-features"] // []) | join(","))] | @tsv' \
+        | LC_ALL=C sort)
+    n=$(printf '%s\n' "$targets" | grep -c .)
+    vacuity_guard "declared bin targets" "$n" "$MIN_BINARIES"
+    mkdir -p "$(dirname "$out")"
+    tmp="$out.tmp"; : > "$tmp"
+    while IFS=$'\t' read -r pkg tgt src req; do
+        feat=(); [ -n "$req" ] && feat=(--features "$req")
+        exe=$(cargo build -p "$pkg" --bin "$tgt" "${feat[@]}" --profile "$SNAP_PROFILE" \
+                --manifest-path "$REPO_ROOT/Cargo.toml" --message-format=json 2>/dev/null \
+            | jq -r --arg t "$tgt" 'select(.reason=="compiler-artifact" and .target.name==$t and .executable) | .executable' \
+            | tail -1)
+        if [ -z "$exe" ] || [ ! -x "$exe" ]; then
+            printf 'FAIL (snapshot): %s/%s did not build\n' "$pkg" "$tgt" >&2; return 1
+        fi
+        ver=$(timeout 20 "$exe" --version 2>/dev/null)
+        help=$(timeout 20 "$exe" --help 2>/dev/null); hrc=$?
+        jq -nc --arg package "$pkg" --arg target "$tgt" --arg name "$(basename "$exe")" --arg src "$src" \
+            --arg sha "$sha" --arg ver "$ver" \
+            --arg vs "$(printf '%s' "$ver" | sha256sum | cut -d' ' -f1)" \
+            --arg bs "$(sha256sum "$exe" | cut -d' ' -f1)" \
+            --arg hs "$(printf '%s' "$help" | sha256sum | cut -d' ' -f1)" \
+            --argjson hrc "$hrc" \
+            --argjson commands "$(snap_walk "$exe" 1 | snap_arr)" \
+            --argjson options "$(snap_options "$exe" | snap_arr)" \
+            --argjson positionals "$(snap_positionals "$exe" | snap_arr)" \
+            --argjson routes "$(snap_routes "$pkg" "$tgt" | snap_arr)" \
+            --argjson tools "$(snap_tools "$pkg" "$tgt" "$exe" | snap_arr)" \
+            '{schema: "binary-snapshot/v1", package: $package, target: $target, name: $name, src_path: $src,
+              git_sha: $sha, version: $ver, version_sha256: $vs, binary_sha256: $bs, help_sha256: $hs,
+              help_exit: $hrc, commands: $commands, options: $options, positionals: $positionals, routes: $routes, tools: $tools}' >> "$tmp"
+        printf '  snap  %s/%s\n' "$pkg" "$tgt" >&2
+    done <<< "$targets"
+    [ "$(grep -c . "$tmp")" -eq "$n" ] || { printf 'FAIL (snapshot): %s lines for %s targets\n' "$(grep -c . "$tmp")" "$n" >&2; return 1; }
+    mv -f "$tmp" "$out"
+    printf 'snapshot: %s bin targets -> %s (HEAD %s)\n' "$n" "${out#"$REPO_ROOT"/}" "${sha:0:9}"
+}
+
+if [ "${1:-}" = "--snapshot" ]; then
+    command -v jq > /dev/null || { printf "FAIL: jq missing\n" >&2; exit 1; }
+    snap_out="$REPO_ROOT/evidence/binary/snapshot.jsonl"
+    if [ "${2:-}" = "--twice" ]; then
+        a=$(mktemp); b=$(mktemp)
+        snapshot "$a" > /dev/null || exit 1
+        snapshot "$b" > /dev/null || exit 1
+        if cmp -s "$a" "$b"; then
+            printf 'DETERMINISTIC: two snapshots byte-identical (%s lines).\n' "$(grep -c . "$a")"
+            rm -f "${a:?}" "${b:?}"; exit 0
+        fi
+        printf 'NON-DETERMINISTIC: snapshots differ.\n'; diff "$a" "$b" | head -20
+        rm -f "${a:?}" "${b:?}"; exit 1
+    fi
+    [ -n "${2:-}" ] && snap_out="$2"
+    snapshot "$snap_out"; exit $?
+fi
+
 if [ "${1:-}" = "--emit-features" ]; then
-    emit_features
-    exit 0
+    # #4476 ONT-4g: 0 emitted feature rows is a FAILURE. This used to `exit 0`
+    # whatever emit_features printed, so a broken --help parse handed the
+    # reconciler an empty denominator and a green exit. The row count lives in
+    # surface_audit_bins_gate.sh --require-rows, so the case table can drive it.
+    emit_features | bash "$(dirname "${BASH_SOURCE[0]}")/surface_audit_bins_gate.sh" --require-rows
+    ef_rc=("${PIPESTATUS[@]}")
+    [ "${ef_rc[0]}" -eq 0 ] || exit "${ef_rc[0]}"
+    exit "${ef_rc[1]}"
 fi
 
 # --- driver ----------------------------------------------------------------

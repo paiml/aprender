@@ -1,0 +1,155 @@
+# ──────────────────────────────────────────────
+# bin-aprender-train-shell--aprender-train-shell-v1 — the `aprender-train-shell` bin target of package aprender-train-shell (ONT-10 slice S14 (1/2))
+#
+# Drafted to the exemplar contracts/bin-aprender-contracts-cli--pv-v1.yaml. The shared shapes (sha, helpSha,
+# gitSha, …) live in binary-surface-v1 and are not restated. Moved from docs/ont-10/binary-contracts/ (aprender-bb).
+#
+# binary-aprender-train-shell-v1 — ONT-10 slice S14 (1/2): the `aprender-train-shell` binary as an entity (ONT-001 v4.17 ONT-4g; #4476, #4079)
+#
+# MEASURED (2026-09-26, batch/ont-10 @ ff9587b596, release build, default features, LC_ALL=C recursive --help walk):
+#   - `aprender-train-shell --version` printed "entrenar-shell 0.69.3", the pre-monorepo name. FIXED 2026-09-27
+#     (clap name; tests/cli_version_name.rs). G0.1 (git sha) is a warning and RED until rc.1.
+#   - no clap subcommands: the surface is the bare REPL, two flags (-c <COMMAND>, -s <SESSION>; -h/-V excluded) and
+#     the REPL's own commands. `-c help` lists 9 REPL commands; the parser (crates/aprender-train-shell/src/
+#     commands.rs:71) also accepts `clear`/`cls`, which help omitted. C_repl below is the parser's 10 canonical names;
+#     FIXED 2026-09-27: help lists `clear` (test_general_help_lists_every_parsed_command pins help == parser).
+#   - surface_audit.csv: 13 rows = bare REPL + 2 flag rows + 10 `repl: <cmd>` rows.
+#
+# KIND: pattern (one binary's surface over the binary-surface-v1 vocabulary).
+# ──────────────────────────────────────────────
+name: bin-aprender-train-shell--aprender-train-shell-v1
+version: "1.0.0"
+scope: >
+  The built `aprender-train-shell` target of package `aprender-train-shell` (default features) as the focus node binary/aprender-train-shell/aprender-train-shell: its identity and its exact command surface, and the surface_audit.csv rows that must resolve to it.
+status: active
+
+metadata:
+  version: "1.0.0"
+  kind: pattern
+  created: '2026-09-26'
+  last_modified: '2026-09-27'
+  author: PAIML Engineering
+  description: >
+    ONT-10 binary slice S14 (1/2) (aprender-train-shell). Per-binary shapes over the node extract:binary (ONT-4g, #4476) draws
+    for binary/aprender-train-shell/aprender-train-shell, on the binary-surface-v1 vocabulary.
+  references:
+    - 'contracts/binary-surface-v1.yaml — the shared shapes and vocabulary'
+    - 'paiml/infra docs/specifications/paiml-ontology.md v4.17 §5 ONT-4g, ONT-10'
+    - 'docs/audits/surface_audit.csv (the ledger)'
+    - 'scripts/dogfood_surfaces.sh (the snapshot extract:binary reads)'
+    - 'crates/aprender-train-shell/src/commands.rs'
+    - 'aprender#4502 — ONT-10'
+
+entity:
+  type: binary
+  ref: binary/aprender-train-shell/aprender-train-shell
+
+relations:
+  depends_on: [binary-surface-v1]
+
+shapes:
+  - id: binary-aprender-train-shell-surface
+    targetClass: bin:target/aprender-train-shell/aprender-train-shell
+    properties:
+      - {path: bin:name, minCount: 1, maxCount: 1, in: ["aprender-train-shell"]}
+      - {path: bin:package, minCount: 1, maxCount: 1, in: ["aprender-train-shell"]}
+      - {path: "bin:versionString", minCount: 1, maxCount: 1, pattern: "^aprender-train-shell [0-9]+\\.[0-9]+\\.[0-9]+"}
+      # G0.1 — LIVE RED 2026-09-27 (no sha); a warning until the version string carries it
+      - {path: "bin:versionString", minCount: 1, maxCount: 1, pattern: "[0-9a-f]{9}", severity: "warning"}
+      - path: bin:replCommand
+        minCount: 10
+        maxCount: 10
+        in:
+          - "clear"
+          - "distill"
+          - "export"
+          - "fetch"
+          - "help"
+          - "history"
+          - "inspect"
+          - "memory"
+          - "quit"
+          - "set"
+      - {path: "bin:command", maxCount: 0}
+      - path: bin:flag
+        minCount: 2
+        maxCount: 2
+        in:
+          - "-c"
+          - "-s"
+      - {path: "bin:ledgerOrphan", maxCount: 0}
+      - {path: "bin:unledgeredCommand", maxCount: 0}
+
+equations:
+  surface_equals_snapshot:
+    formula: "replCommands(binary/aprender-train-shell/aprender-train-shell) = R, |R| = 10; flags = {-c, -s}; commands = ∅ ∧ ledgerOrphan = ledger rows for this binary whose REPL command or flag is not on the node; unledgeredCommand = (R ∪ flags) ∖ ledger"
+    domain: "the snapshot record dogfood_surfaces.sh writes for this target, plus `<bin> -c help`; docs/audits/surface_audit.csv rows whose binary column is aprender-train-shell"
+    codomain: "set equality, or a Fail naming each member of the symmetric difference; literals on the focus node, one per orphan row or unledgered command"
+    invariants:
+      - "in + minCount + maxCount over distinct literals is set equality: an added, dropped or renamed REPL command or flag is a violation naming it"
+      - "a ledger row for a REPL command the built binary does not expose is a violation, never a silent skip"
+    preconditions:
+      - "the snapshot was written at this commit, default features"
+    postconditions:
+      - "help_sha256 in the snapshot is the sha256 of `aprender-train-shell --help` at this commit"
+    lean_theorem: none — L4 not declared
+
+invariants:
+  - id: BIN-APRENDER-TRAIN-SHELL-INV-001
+    property: every aprender-train-shell surface member has an audited ledger row, and every ledger row names one
+    formal: '∀ c ∈ surface(aprender-train-shell): ∃ r ∈ surface_audit : r.binary = aprender-train-shell ∧ path(r) = c; ∀ r with r.binary = aprender-train-shell: path(r) ∈ surface(aprender-train-shell)'
+    prose: false
+  - id: BIN-APRENDER-TRAIN-SHELL-INV-002
+    property: unusable input is a clean rejection, never a success and never a panic
+    formal: '∀ a ∈ rejection_rows(crates/aprender-train-shell/tests/cli_surface_gate.rs): exit(a) ∉ {0, 101} ∧ "panicked" ∉ stderr(a)'
+    prose: false
+
+falsification_tests:
+  - id: FALSIFY-BIN-APRENDER-TRAIN-SHELL-001
+    rule: 'G1.2 help answers'
+    prediction: '`aprender-train-shell --help` exits 0 with non-empty stdout'
+    test: 'cargo test -p aprender-train-shell --test cli_surface_gate advertised_options_are_the_pinned_surface'
+    if_fails: 'the binary cannot describe its own surface (observed 2026-09-27: exit 0, GREEN)'
+    mutation: 'make the top-level --help return an error; must turn RED'
+  - id: FALSIFY-BIN-APRENDER-TRAIN-SHELL-002
+    rule: 'G1.2 an unknown flag is a usage error'
+    prediction: '`aprender-train-shell --no-such-flag` exits 2'
+    test: 'cargo test -p aprender-train-shell --test cli_surface_gate unknown_'
+    if_fails: 'a typo is silently ignored (observed 2026-09-27: exit 2, GREEN)'
+    mutation: 'add #[arg(allow_hyphen_values)] catch-all at the top level; must turn RED'
+  - id: FALSIFY-BIN-APRENDER-TRAIN-SHELL-003
+    rule: 'G0.1 the version names the commit'
+    prediction: '`aprender-train-shell --version` contains the first 9 hex of the git sha it was built from'
+    test: 'NOT YET WRITTEN — the binary-target shape bin:versionLacksSha, once extract:binary lands'
+    if_fails: 'LIVE RED 2026-09-27: "aprender-train-shell 0.69.3" — no sha; a stale aprender-train-shell reads as HEAD'
+    mutation: 'drop the sha from the version string; must turn RED'
+  - id: FALSIFY-BIN-APRENDER-TRAIN-SHELL-004
+    rule: 'G1.3/G1.4 the surface set equals the snapshot'
+    prediction: 'the surface literals in the shape above = the snapshot''s, set-equal'
+    test: 'cargo test -p aprender-train-shell --test cli_surface_gate -- advertised_options_are_the_pinned_surface'
+    if_fails: 'an added, dropped or renamed surface member ships with the ontology green (enumerated-value parsing not probed for this binary)'
+    mutation: 'remove one surface literal from the snapshot; must turn RED naming it'
+  - id: FALSIFY-BIN-APRENDER-TRAIN-SHELL-005
+    rule: 'ledger rows exist'
+    prediction: 'docs/audits/surface_audit.csv has ≥1 row per surface member with binary = aprender-train-shell (13 rows on 2026-09-27)'
+    test: 'scripts/check_surface_audit_bins.sh (aprender#4476)'
+    if_fails: 'the dogfood coverage ratio is computed over a ledger that silently omits a shipped surface member'
+    mutation: 'delete every aprender-train-shell row; must turn RED naming aprender-train-shell'
+  - id: FALSIFY-BIN-APRENDER-TRAIN-SHELL-006
+    rule: 'dropped repl command is red'
+    prediction: 'deleting one REPL command from the snapshot makes aprender-train-shell-surface RED naming it (minCount 10)'
+    test: 'pv lint contracts/ --gate shapes --format json (after ONT-4g), on the snapshot with one REPL command removed'
+    if_fails: 'A REPL command could vanish from the shipped shell with the ontology green.'
+    mutation: 'the edit in the prediction; must turn RED — verdict Fail on binary/aprender-train-shell/aprender-train-shell path bin:replCommand'
+  - id: FALSIFY-BIN-APRENDER-TRAIN-SHELL-007
+    rule: 'stray subcommand is red'
+    prediction: 'a snapshot that records any clap subcommand for this binary makes bin:command maxCount 0 RED'
+    test: 'pv lint contracts/ --gate shapes --format json (after ONT-4g), on a snapshot with one bin:command added'
+    if_fails: 'A subcommand surface could be added to the REPL binary without a ledger row or a contract change.'
+    mutation: 'the edit in the prediction; must turn RED — verdict Fail on path bin:command'
+  - id: FALSIFY-BIN-APRENDER-TRAIN-SHELL-008
+    rule: 'unusable input is rejected cleanly'
+    prediction: '`--session <b> --command help` on a missing, empty and garbage session file: each exits non-zero, not 101, with no "panicked" on stderr'
+    test: 'cargo test -p aprender-train-shell --test cli_surface_gate unusable_input_is_rejected'
+    if_fails: 'MEASURED 2026-09-27 (aprender-01): each exits 1 with no panic, GREEN; no source mutation was run for this binary'
+    mutation: 'make a rejection path return Ok(()) or unwrap the read; must turn RED on that row'

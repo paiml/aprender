@@ -543,9 +543,6 @@ mod tests {
     #[test]
     #[cfg(unix)]
     fn falsify_2384_run_apr_executes_the_resolved_binary() {
-        use std::io::Write;
-        use std::os::unix::fs::PermissionsExt;
-
         // Unique per process: a fixed path lets two concurrent runs of this
         // test binary delete each other's shim mid-flight.
         let dir =
@@ -553,19 +550,26 @@ mod tests {
         let _ = std::fs::remove_dir_all(&dir);
         std::fs::create_dir_all(&dir).expect("mkdir scratch");
         let shim = dir.join("apr");
-        {
-            let mut f = std::fs::File::create(&shim).expect("create shim");
-            writeln!(f, "#!/bin/sh").expect("shebang");
-            writeln!(f, "if [ \"$1\" = \"validate\" ]; then").expect("if");
-            writeln!(f, "  echo '{{\"marker\":\"APR-BIN-RESOLVED-SHIM\"}}'").expect("body");
-            writeln!(f, "  exit 0").expect("ok");
-            writeln!(f, "fi").expect("fi");
-            writeln!(f, "exit 2").expect("unknown subcommand");
-            f.sync_all().expect("sync");
-        }
-        let mut perms = std::fs::metadata(&shim).expect("stat").permissions();
-        perms.set_mode(0o755);
-        std::fs::set_permissions(&shim, perms).expect("chmod");
+        // #4020: the shim is written by a child `sh`, never through a write
+        // fd in THIS process. Another test thread that forks while such an fd
+        // is open hands it to its child until that child's exec (O_CLOEXEC
+        // closes it at exec, not at fork), and our exec of the shim then fails
+        // with ETXTBSY. A child's fds are not inherited by our later forks, so
+        // once `sh` exits no writable fd to the shim exists anywhere. The exec
+        // goes through `run_apr` itself, so a retry in the test cannot help.
+        let script = "#!/bin/sh\n\
+                      if [ \"$1\" = \"validate\" ]; then\n\
+                      \x20 echo '{\"marker\":\"APR-BIN-RESOLVED-SHIM\"}'\n\
+                      \x20 exit 0\n\
+                      fi\n\
+                      exit 2\n";
+        let wrote = Command::new("sh")
+            .args(["-c", "printf '%s' \"$1\" > \"$0\" && chmod 755 \"$0\""])
+            .arg(&shim)
+            .arg(script)
+            .status()
+            .expect("spawn sh to write the shim");
+        assert!(wrote.success(), "sh failed to write the shim: {wrote}");
 
         // Edition 2021 — `set_var` is safe here.
         std::env::set_var(crate::apr_bin::APR_BIN_ENV, &shim);

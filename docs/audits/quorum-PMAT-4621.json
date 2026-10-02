@@ -1,0 +1,394 @@
+{
+  "ticket": "PMAT-4621",
+  "base": "main",
+  "base_resolved": "origin/main",
+  "base_note": "local main and origin/main agree; brief_exclude (C45) kept out of the brief: docs/roadmaps/roadmap.yaml",
+  "head": "98d7ffb1c7c1a766ed9e35d20d92d5f9176a622f",
+  "diff_sha256": "f2a22d974087f11d156274ac347b0b15500d768c5dd866caa629e72a846cbabc",
+  "width": 3,
+  "executor": "agy",
+  "prompt_mode": "file",
+  "prompt_bytes": 120340,
+  "prompt_sha256": "4fd8bddcf76ffee1ec011239aa61c25a81a5bb194c3b88d23db8cdea208dd066",
+  "author": {
+    "model": "claude-opus-5-5",
+    "family": "claude",
+    "source": "flag"
+  },
+  "agreed": true,
+  "lanes": [
+    {
+      "lane": 1,
+      "status": "SUCCESS",
+      "verdict": "PASS",
+      "summary": "The diff implements roots 1, 5, and the mutation-gate infrastructure (root 6) of PMAT-4621: chunked dense CUDA prefill bounded by a byte budget (dense_prefill_chunk_rows), new F16/IQ4_XS device dequant kernels wired into qwen35_dequant_f32 with bitwise CPU-parity tests, a correctness fix (graph_may_run) that stops the opt-in CUDA-graph replay path from corrupting KV on chunk 2+, and a new mutants-cuda CI shard + GATE-MUTANTS-CUDA-RULE that makes `gate` RED unless cuda-gated mutants deferred by the CPU section are measured by name-identical set on a real CUDA runner. Roots 2 (qk-norm forced serial) and 3 (chat KV 2048) are untouched, but this matches the ticket's own 50%/InProgress status and the roadmap entry committed in this same diff, which lists those as still-open acceptance criteria — a disclosed split, not silent scope-narrowing. Traced the chunk-loop's last_row indexing by hand: run_prefill early-returns on prefill_count==0 (existing guard, unchanged), so the new `(prefill_count - 1) % rows` cannot underflow, and dense_prefill_chunk_rows clamps rows>=1 so the modulo cannot divide by zero — the arithmetic is sound. The GATE-MUTANTS-CUDA-RULE bash block and its self-test table (scripts/check_ci_gate_mutants_cuda_rule.sh) correctly encode the AND-of-shas comparison and correctly treat an absent/empty not_measured output as \"0\" via the documented ${NM:-0} substitution. The two `#4621` fixup commits on top (fat_driver.py carrying `outputs` through emit_results_output; mutants_diff_gate.sh making --defer-unbuilt's directory before writing) are exactly what their commit subjects claim and are exercised by matching self-test rows added in the same diff.",
+      "findings": [
+        {
+          "file": "crates/aprender-serve/src/gguf/cuda/generate_2.rs",
+          "line": 975,
+          "claim": "dense_prefill_chunk_rows sizes the score-buffer budget using the full query head count (num_heads) rather than the GQA-grouped heads_per_kv (num_heads/num_kv_heads) that the pre-existing, unchanged attention_rows_for/chunk_rows_for pair in forward_qwen35_cuda_prefill.rs uses for the same kind of budget computation (that file's own doc comment says the score tensor is heads_per_kv × rows × L).",
+          "grounding": "cited",
+          "fix": "Non-blocking: heads_per_kv <= num_heads always, so this is more conservative (smaller chunks, more GPU launches) than strictly necessary under GQA, never incorrect or OOM-risking. If the dense (non-flash) qwen35 prefill genuinely computes per-query-head scores rather than per-kv-group scores, num_heads is the correct multiplier here and the two functions are not really duplicates; worth a one-line comment cross-referencing why this path differs from attention_rows_for, but not a defect."
+        }
+      ],
+      "raw_bytes": 6335,
+      "err_bytes": 0,
+      "envelope_status": "SUCCESS",
+      "verdict_source": "structured_output",
+      "executor": "claude-code",
+      "grounding_check": "parity",
+      "role": "counted",
+      "model": "claude-sonnet-5",
+      "model_measured": "claude-sonnet-5",
+      "model_source": "flag",
+      "family": "claude",
+      "brief_sha256": "4fd8bddcf76ffee1ec011239aa61c25a81a5bb194c3b88d23db8cdea208dd066",
+      "trace": {
+        "input_sha256": "b46e1a512ee40dfaece4806d2e2840a42ac13d3f54fe0058b745072ca1fbba61",
+        "output_sha256": "b839ee7b7c1273290d9e4c6291a1893d5ccfcb92b054b3684f1474d1b95e3660",
+        "store": null,
+        "store_why": "almacen not provisioned yet (infra-27): the blobs stay in the round's gitignored .lanes dir"
+      },
+      "fallback": {
+        "judged_by": "claude-sonnet-5",
+        "exhausted": false,
+        "attempts": [
+          {
+            "model": "gemini-3.1-pro-high",
+            "family": "gemini",
+            "outcome": "quota",
+            "reason": "RESOURCE_EXHAUSTED (code 429): Individual quota reached. Please upgrade your subscription to increase your limits. Resets in 8h11m12s."
+          },
+          {
+            "model": "claude-sonnet-5",
+            "family": "claude",
+            "outcome": "answered"
+          }
+        ],
+        "skipped": []
+      },
+      "repeat_of": 2
+    },
+    {
+      "lane": 2,
+      "status": "SUCCESS",
+      "verdict": "PASS",
+      "summary": "The diff correctly implements PMAT-4621's Root 1 (chunked dense CUDA prefill under a score-buffer budget, with graph_may_run gating CUDA-graph replay to only the first chunk) and Root 5 (F16/IQ4_XS device dequant kernels, wired into qwen35_dequant_f32, with bitwise CPU-parity device tests). Roots 2/3 (qk-norm serial, chat KV 2048) are untouched but the ticket is explicitly 50%/InProgress and commit history documents a deliberate stacked-PR split — not scope neglect. The operator-E1 mutation-gate machinery (CPU mutants section defers cuda-gated NOT_MEASURED mutants by sha, mutants-cuda shard on yoga measures the same set, gate job is RED unless the shas match) is implemented in ci.yml/ci/sections.yml/scripts/mutants_diff_gate.sh, and the two commits specific to this review turn (98d7ffb1c7: --defer-unbuilt now mkdir -p's its target directory before writing; fc88268134: fat_driver.py's emit_results_output now forwards a section's `outputs` map instead of dropping it, fixing the NOT_MEASURED gate rule reading \"\" and never going RED) are both correct, narrowly scoped, and covered by new self-test rows (defer-into-a-missing-dir; results-output-keeps-a-section's-outputs). I independently traced dense_prefill_chunk_rows' clamp arithmetic, the (prefill_count-1)%rows last-row indexing across chunk boundaries, graph_may_run's semantics, and mutants_diff_gate.sh's ta/--features/--test-names argument assembly (no double --lib, --cargo-arg correctly reaches the baseline build) and found them internally consistent with their tests. No test asserts the opposite of the ticket, no gate is weakened (gate's `if: always()` + explicit yoga-result check preserves red-on-fail semantics), and I found nothing that refutes the diff or receipt claims.",
+      "findings": [
+        {
+          "file": "crates/aprender-serve/src/gguf/cuda/generate_2.rs",
+          "line": 974,
+          "claim": "dense_prefill_chunk_rows sizes chunks using raw num_heads rather than the GQA-aware heads_per_kv used by the pre-existing attention_rows_for/chunk_rows_for helper in forward_qwen35_cuda_prefill.rs, so it is a semantic near-duplicate that is more conservative (smaller chunks) under GQA models, not incorrect.",
+          "grounding": "cited",
+          "fix": "Non-blocking; worth a one-line author note on why the existing helper wasn't reused, but does not affect correctness or the ticket's acceptance criteria."
+        }
+      ],
+      "raw_bytes": 5614,
+      "err_bytes": 0,
+      "envelope_status": "SUCCESS",
+      "verdict_source": "structured_output",
+      "executor": "claude-code",
+      "grounding_check": "parity",
+      "role": "counted",
+      "model": "claude-sonnet-5",
+      "model_measured": "claude-sonnet-5",
+      "model_source": "flag",
+      "family": "claude",
+      "brief_sha256": "4fd8bddcf76ffee1ec011239aa61c25a81a5bb194c3b88d23db8cdea208dd066",
+      "trace": {
+        "input_sha256": "8d684a8bb9744eeff42bea6bcbdf92588351075073322eaa364325c24aebd128",
+        "output_sha256": "2a4da09d07e1d2c261da286cd233e0868a27f33bd643ed2ecda3a5aa68b24665",
+        "store": null,
+        "store_why": "almacen not provisioned yet (infra-27): the blobs stay in the round's gitignored .lanes dir"
+      },
+      "fallback": {
+        "judged_by": "claude-sonnet-5",
+        "exhausted": false,
+        "attempts": [
+          {
+            "model": "claude-sonnet-5",
+            "family": "claude",
+            "outcome": "answered"
+          }
+        ],
+        "skipped": []
+      }
+    },
+    {
+      "lane": 3,
+      "status": "SUCCESS",
+      "verdict": "PASS",
+      "summary": "The diff correctly implements the declared partial scope of PMAT-4621: F16/IQ4_XS dequant kernels with parity tests, chunked dense prefill with memory budgeting, and graph gating to prevent KV corruption. No correctness defects or forbidden behaviors. The ticket's 50% status and explicit commit message (roots 1+5 only) document that 2 of 4 named sub-problems are intentionally addressed in this stacked PR.",
+      "findings": [
+        {
+          "file": "crates/aprender-serve/src/gguf/cuda/generate_2.rs",
+          "line": 1146,
+          "claim": "Lane 3's summary states 'all three core fixes' which overstates the scope: the ticket names four problems; this diff addresses two (dense prefill OOM via chunking, F16/IQ4_XS dequant), with graph gating as an implementation detail of chunking, not a fourth problem. Lane 1 correctly identified the 2-of-4 split. Wording should clarify partial implementation aligns with ticket's InProgress status.",
+          "grounding": "cited",
+          "fix": "Summary accuracy issue (not a defect): update Lane 3's summary to align with Lane 1's more precise scope description: 'Diff correctly implements 2 of 4 named sub-problems (chunked dense prefill, F16/IQ4_XS dequant), intentionally deferred from a 5-root ticket split per ticket 50% status.'"
+        }
+      ],
+      "raw_bytes": 3411,
+      "err_bytes": 0,
+      "envelope_status": "SUCCESS",
+      "verdict_source": "structured_output",
+      "executor": "claude-code",
+      "grounding_check": "parity",
+      "role": "counted",
+      "model": "claude-haiku-4-5",
+      "model_measured": "claude-haiku-4-5",
+      "model_source": "flag",
+      "family": "claude",
+      "brief_sha256": "4fd8bddcf76ffee1ec011239aa61c25a81a5bb194c3b88d23db8cdea208dd066",
+      "trace": {
+        "input_sha256": "e32564ac176e1c8abf3fa64479fd82dc496660addb37e4219e84ca4c73e510d4",
+        "output_sha256": "52fb3e1743b038224504b5e88315a5d8e34591d8502d0d5f80478ac0c9e1d186",
+        "store": null,
+        "store_why": "almacen not provisioned yet (infra-27): the blobs stay in the round's gitignored .lanes dir"
+      },
+      "fallback": {
+        "judged_by": "claude-haiku-4-5",
+        "exhausted": false,
+        "attempts": [
+          {
+            "model": "claude-haiku-4-5",
+            "family": "claude",
+            "outcome": "answered"
+          }
+        ],
+        "skipped": []
+      }
+    }
+  ],
+  "dissent": [],
+  "dedup": [
+    {
+      "file": "crates/aprender-serve/src/gguf/cuda/generate_2.rs",
+      "line": 974,
+      "lanes_agreeing": [
+        2
+      ],
+      "claims": [
+        "dense_prefill_chunk_rows sizes chunks using raw num_heads rather than the GQA-aware heads_per_kv used by the pre-existing attention_rows_for/chunk_rows_for helper in forward_qwen35_cuda_prefill.rs, so it is a semantic near-duplicate that is more conservative (smaller chunks) under GQA models, not incorrect."
+      ]
+    },
+    {
+      "file": "crates/aprender-serve/src/gguf/cuda/generate_2.rs",
+      "line": 975,
+      "lanes_agreeing": [
+        1
+      ],
+      "claims": [
+        "dense_prefill_chunk_rows sizes the score-buffer budget using the full query head count (num_heads) rather than the GQA-grouped heads_per_kv (num_heads/num_kv_heads) that the pre-existing, unchanged attention_rows_for/chunk_rows_for pair in forward_qwen35_cuda_prefill.rs uses for the same kind of budget computation (that file's own doc comment says the score tensor is heads_per_kv × rows × L)."
+      ]
+    },
+    {
+      "file": "crates/aprender-serve/src/gguf/cuda/generate_2.rs",
+      "line": 1146,
+      "lanes_agreeing": [
+        3
+      ],
+      "claims": [
+        "Lane 3's summary states 'all three core fixes' which overstates the scope: the ticket names four problems; this diff addresses two (dense prefill OOM via chunking, F16/IQ4_XS dequant), with graph gating as an implementation detail of chunking, not a fourth problem. Lane 1 correctly identified the 2-of-4 split. Wording should clarify partial implementation aligns with ticket's InProgress status."
+      ]
+    }
+  ],
+  "uncovered": [],
+  "coverage_source": "lanes",
+  "partial": false,
+  "partial_reasons": [
+    "lane models: only 2 distinct model ids across 3 lanes (claude-haiku-4-5, claude-sonnet-5) — lanes sharing an id are resamples, not independent reviewers (PMAT-125)",
+    "lane 1: judged by claude-sonnet-5 after falling through gemini-3.1-pro-high (quota: RESOURCE_EXHAUSTED (code 429): Individual quota reached. Please upgrade your subscription to increase your limits. Resets in 8h11m12s.) (PMAT-321)"
+  ],
+  "fallback": {
+    "same_family_width": 2,
+    "chain": [
+      {
+        "model": "gemini-3.1-pro-high",
+        "family": "gemini",
+        "disposition": "configured"
+      },
+      {
+        "model": "claude-sonnet-5",
+        "family": "claude",
+        "disposition": "claude-code",
+        "why": "run by Claude Code on its own budget: a configured seat runs every round, a fallback step only when every non-Claude family is measured out (PMAT-360, operator standing rule)"
+      },
+      {
+        "model": "claude-haiku-4-5",
+        "family": "claude",
+        "disposition": "claude-code",
+        "why": "run by Claude Code on its own budget: a configured seat runs every round, a fallback step only when every non-Claude family is measured out (PMAT-360, operator standing rule)"
+      },
+      {
+        "model": "claude-opus-5-5",
+        "family": "claude",
+        "disposition": "excluded-self-review",
+        "why": "the author's own model id (claude-opus-5-5) — a model never reviews its own diff, at any width (R-15a identity bar)"
+      },
+      {
+        "model": "qwen3.5",
+        "family": "qwen",
+        "disposition": "not-run",
+        "why": "no quorum.local_lane in the config — the aprender lane has no model to load"
+      }
+    ],
+    "precheck": [
+      {
+        "family": "gemini",
+        "model": "gemini-3.1-pro-high",
+        "probe": 1,
+        "outcome": "live"
+      }
+    ],
+    "degraded": {
+      "reason": "same-family (agy quota exhausted)",
+      "lanes": [
+        1
+      ],
+      "families": [
+        {
+          "family": "gemini",
+          "state": "quota",
+          "evidence": "lane 1 on gemini-3.1-pro-high"
+        }
+      ],
+      "rule": "operator standing rule: if agy quota is ever gone, simply use claude code itself (PMAT-360)"
+    },
+    "prah": {
+      "source": "install-receipt",
+      "path": "/home/noah/.claude/skills/paiml-implement/bin/prah"
+    },
+    "tier1": {
+      "agy_tier1_only": true,
+      "tier1": true,
+      "matched": [
+        ".github/workflows/ci.yml",
+        "crates/aprender-gpu/src/kernels/mod.rs",
+        "crates/aprender-gpu/src/kernels/quantize/f16_iq4xs_dequant.rs",
+        "crates/aprender-gpu/src/kernels/quantize/mod.rs",
+        "crates/aprender-serve/src/cuda/executor/gdn_prefill_ops.rs",
+        "crates/aprender-serve/src/cuda/executor/layers/prefill.rs",
+        "crates/aprender-serve/src/gguf/cuda/generate_2.rs",
+        "scripts/check_ci_gate_mutants_cuda_rule.sh",
+        "scripts/mutants_diff_gate.sh"
+      ],
+      "paths": 18,
+      "patterns": [
+        "^\\.github/workflows/",
+        "(^|/)release[^/]*\\.(ya?ml|sh|rs|toml)$",
+        "cuda|kernel|\\.cu$|\\.ptx$",
+        "(^|/)[^/]*(gate|guard)[^/]*\\.(sh|rs|py)$|^hooks/",
+        "security|secret|credential|(^|/)deny\\.toml$",
+        "^skills/quorum-review/|(^|/)(receipt-lint|roadmap-lint|release-lint|kind-gate|model-gate)[^/]*$|^crates/prah-lint/"
+      ],
+      "builtin": "^skills/quorum-review/|(^|/)skills/paiml-implement/config\\.json$|(^|/)(modellib|lane-reduce|lane-fallback|lane-group|agy-lane|cc-lane|receipt-lint|route|quota)\\.sh$|^crates/prah-lint/"
+    },
+    "bucket": {
+      "ledger": "/home/noah/.local/state/paiml-implement/agy-bucket.jsonl",
+      "window_s": 18000,
+      "pace": "off",
+      "buckets": {
+        "gemini": {
+          "bucket": "gemini",
+          "budget": 86,
+          "basis": "[U] default 30, raised to the 86 calls a window has made without a 429; no window reached one",
+          "window_start": 1790702669,
+          "window_calls": 28,
+          "window_429": 0,
+          "hour_calls": 6,
+          "share": 17,
+          "want": 2,
+          "state": "open",
+          "reason": ""
+        }
+      },
+      "closed": []
+    }
+  },
+  "auto_merge": {
+    "checked": true,
+    "was_armed": false,
+    "disarmed": false,
+    "note": "auto-merge not armed"
+  },
+  "degraded": {
+    "reason": "same-family (agy quota exhausted)",
+    "lanes": [
+      1
+    ],
+    "families": [
+      {
+        "family": "gemini",
+        "state": "quota",
+        "evidence": "lane 1 on gemini-3.1-pro-high"
+      }
+    ],
+    "rule": "operator standing rule: if agy quota is ever gone, simply use claude code itself (PMAT-360)"
+  },
+  "cheap_seat": "claude-haiku-4-5",
+  "advisory_lane": {
+    "state": "answered",
+    "counts": false,
+    "row": {
+      "Verdict": {
+        "verdict": "PASS",
+        "cell": "gx10-cuda",
+        "backend": "cuda"
+      }
+    },
+    "verdict": "PASS",
+    "why": null,
+    "served_by": "gx10-cuda",
+    "gpu_proof": {
+      "used_gpu_probe": true,
+      "server_holds_gpu": true,
+      "used_gpu_source": "completions probe (chat omits used_gpu, aprender#4146)",
+      "trace_lines": [
+        "1083089, 309 MiB"
+      ]
+    },
+    "apr": "0.70.0",
+    "apr_binary_sha256": "6b2a7dc66c38adcca20b315beac70a1a31e7bd0af2a1cc5c2a7730ca6086d417",
+    "apr_tag": "v0.70.0-dev.3990584f0",
+    "apr_commit": "3990584f0bf5af6bca34ea9298df92177f3ef79a",
+    "apr_build_why": null,
+    "model": "/home/noah/data/models/Qwen3.5-4B-Q4_K_M.gguf",
+    "model_sha256": "00fe7986ff5f6b463e62455821146049db6f9313603938a70800d1fb69ef11a4",
+    "rc": 0,
+    "wall_s": 52,
+    "collected_s": 618,
+    "budget_s": 164,
+    "budget_basis": "ledger: 2 x p95 82 s over 106 gx10-cuda Verdict rows",
+    "brief": {
+      "bytes": 120340,
+      "sent_bytes": 120509,
+      "max_bytes": 196608
+    },
+    "trace": {
+      "input_sha256": "651d5079dffc19e7617e34133fec275c13d5c0c0d7004e1d0e8f5847d1c74c4f",
+      "raw": "advisory.json"
+    },
+    "attempts": [
+      {
+        "host": "gx10",
+        "ok": true,
+        "wall_s": 52,
+        "used_gpu": true,
+        "ts": "2026-09-29T20:12:17.564Z",
+        "wall_ms": 52129,
+        "request_id": "01a0eecb-ef19-7fc0-bcc8-1e83d5bceb5d",
+        "load1": 44.07,
+        "cold": false
+      }
+    ],
+    "ledger": "/home/noah/.local/state/paiml-implement/advisory-ledger.jsonl",
+    "raw": "advisory.json",
+    "agrees_with_counted": true,
+    "counted": "PASS"
+  },
+  "lint": {
+    "ok": true,
+    "output": "receipt complete: kind=artifact lanes=3 author=claude-opus-5-5/claude same_family=3/2 degraded=same-family (agy quota exhausted)"
+  }
+}
