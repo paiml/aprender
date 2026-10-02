@@ -1,0 +1,232 @@
+{
+  "version": "2.1.0",
+  "$schema": "https://raw.githubusercontent.com/oasis-tcs/sarif-spec/master/Schemata/sarif-schema-2.1.0.json",
+  "runs": [
+    {
+      "tool": {
+        "driver": {
+          "name": "pmat",
+          "informationUri": "https://github.com/paiml/pmat",
+          "version": "3.30.0",
+          "rules": []
+        }
+      },
+      "invocations": [
+        {
+          "executionSuccessful": true,
+          "commandLine": "git diff 54b99dfdc7 92aac9b4e3 -- . ':!evidence/pr-review'"
+        }
+      ],
+      "results": [
+        {
+          "ruleId": "PRREV-SCOPE-001",
+          "level": "note",
+          "message": {
+            "text": "Carried forward, updated for the new head 92aac9b4e3: this run reads IN FULL the 1-commit delta since 54b99dfdc7 (92aac9b4e3 fix(guard): C13 read a present release asset as MISSING) -- 2 files changed outside evidence/pr-review (scripts/check_release_assets.sh, scripts/release_criteria.sh), 6 insertions/3 deletions. Everything the prior receipt (7218961ef9) already sampled or carried forward retains that disposition and is NOT re-read this run except where explicitly re-checked below."
+          },
+          "properties": {
+            "grounding": "measured",
+            "command": [
+              "git",
+              "diff",
+              "--stat",
+              "54b99dfdc7",
+              "92aac9b4e329fdf6c7907602761aeaa9d4186330",
+              "--",
+              ".",
+              ":!evidence/pr-review"
+            ],
+            "exit_code": 0,
+            "failure_scenario": "A reader could assume this receipt re-reviewed the full PR; it reviewed the 1-commit/2-file delta plus everything the prior receipts already sampled, not the whole diff again.",
+            "precision_class": "advisory"
+          }
+        },
+        {
+          "ruleId": "PRREV-ASSETGUARD-001",
+          "level": "note",
+          "message": {
+            "text": "RESOLVED this run: 92aac9b4e3 fixes scripts/check_release_assets.sh:113 (check_tag's per-asset membership test) and scripts/release_criteria.sh:85 (the C0 leg-1 '✗' check) -- both were `printf ... | grep -q ...` under the file's own `set -uo pipefail`. grep -q exits on its first match; the still-writing printf/upstream side of the pipe then takes SIGPIPE (rc 141), pipefail propagates that as the pipeline's exit status, and the `if` reads a PRESENT asset (or a matched '✗') as absent. Both are replaced with a here-string (`grep -qxF -- \"$want\" <<< \"$have\"` / `grep -q '✗' <<< \"$out\"`), which removes the pipeline and the SIGPIPE race entirely. Independently reproduced the defect on the OLD code and the fix on the NEW code: built a 20016-line asset list (the 16 real names + `seq -f 'extra-asset-%06g.tar.gz' 1 20000`, exceeding the 64 KiB pipe buffer so the race is deterministic) and ran `check_tag` against it 3x each -- old script rc=1 (false MISSING) all 3 runs, new script rc=0 (correctly credited) all 3 runs. Also independently ran `bash scripts/check_release_assets.sh --selftest` (12/12, including new row 6, the 20000-extra-asset regression row) and `bash scripts/release_criteria.sh --self-test` (10/10, including row 6, C13 credited on a complete release) against the live tree: both green. Also checked the empty-$have edge case by hand (`grep -qxF -- \"foo\" <<< \"\"`): correctly reports no match / MISSING, so the here-string does not introduce a new false-positive path for an empty release. No defect found in this delta; the fix is correct and does not weaken either guard -- a genuinely MISSING asset or a genuinely unmatched '✗' still reports as such (verified via existing selftest rows 2-5, 7 and C13's row 7)."
+          },
+          "properties": {
+            "grounding": "measured",
+            "command": [
+              "bash",
+              "scripts/check_release_assets.sh",
+              "--selftest"
+            ],
+            "exit_code": 0,
+            "failure_scenario": "Without this fix, any release asset list large enough to fill the pipe buffer before grep's first match (or any run that loses the race under load) reads a complete release as missing its apr binaries -- the exact CI red this delta closes (run 36510076745, guard-tree step 26, release_criteria.sh --self-test row 6).",
+            "precision_class": "advisory"
+          }
+        },
+        {
+          "ruleId": "PRREV-GUARDSTEP-ISO-001",
+          "level": "note",
+          "message": {
+            "text": "Carried forward unchanged from the 7218961ef9 receipt: 7cc5f7d4f3's setsid-wrap fix for check_guard_steps_isolated (#4133) is untouched by this delta (git diff --stat 54b99dfdc7..92aac9b4e3 lists only scripts/check_release_assets.sh and scripts/release_criteria.sh). Prior verification (check_guard_steps_isolated.sh PASS, its own --self-test 14/14) stands without re-running."
+          },
+          "properties": {
+            "grounding": "asserted",
+            "rationale": "Not in this delta's changed-file list; no re-check needed.",
+            "failure_scenario": "n/a -- unchanged file since the prior receipt.",
+            "precision_class": "advisory"
+          }
+        },
+        {
+          "ruleId": "PRREV-MODELS-YAML-001",
+          "level": "note",
+          "message": {
+            "text": "Carried forward unchanged from the 7218961ef9 receipt: evidence/models/supported.yaml's citation-line re-derive is untouched by this delta. Prior verification (`bash scripts/derive_model_manifest.sh --check`, 24 models) stands without re-running."
+          },
+          "properties": {
+            "grounding": "asserted",
+            "rationale": "Not in this delta's changed-file list; no re-check needed.",
+            "failure_scenario": "n/a -- unchanged file since the prior receipt.",
+            "precision_class": "advisory"
+          }
+        },
+        {
+          "ruleId": "PRREV-SIG-001",
+          "level": "note",
+          "message": {
+            "text": "Carried forward unchanged from the 7218961ef9 receipt: the ba09f72af5 receipt's committed .minisig is untouched by this delta. Prior verification (minisign -V exit 0; pr_review_sign_receipt.sh --self-test 14/14) stands without re-running."
+          },
+          "properties": {
+            "grounding": "asserted",
+            "rationale": "Not in this delta's changed-file list; no re-check needed.",
+            "failure_scenario": "n/a -- unchanged file since the prior receipt.",
+            "precision_class": "advisory"
+          }
+        },
+        {
+          "ruleId": "PRREV-GUARD-MUTSET-001",
+          "level": "note",
+          "message": {
+            "text": "Carried forward, disposition unaffected by this delta: the 3 committed mutation sets (facade_compat, lean_modules_reachable, leanchecker_scoped) verified at ba09f72a are not in git diff --stat 54b99dfdc7..92aac9b4e3 and are unaffected by a 2-file shell fix to release-asset checking. Not re-run this session -- no change to their content."
+          },
+          "properties": {
+            "grounding": "asserted",
+            "rationale": "git diff --stat shows only scripts/check_release_assets.sh and scripts/release_criteria.sh; the 3 mutation-set scripts are not in the delta.",
+            "failure_scenario": "If any mutation-set script had been touched by this delta, its prior measurement would need re-running; it was not touched.",
+            "precision_class": "advisory"
+          }
+        },
+        {
+          "ruleId": "PRREV-VERSION-001",
+          "level": "note",
+          "message": {
+            "text": "Carried forward, unaffected: ba09f72af5's bump-version.sh facade-pin fix is not touched by this delta (bump-version.sh does not appear in git diff --stat 54b99dfdc7..92aac9b4e3)."
+          },
+          "properties": {
+            "grounding": "asserted",
+            "rationale": "Not in the delta's changed-file list; no re-check needed.",
+            "failure_scenario": "n/a -- unchanged file.",
+            "precision_class": "advisory"
+          }
+        },
+        {
+          "ruleId": "PRREV-MUTANTS-001",
+          "level": "error",
+          "message": {
+            "text": "PR1-MUTANTS HARD-STOP CARRIED FORWARD, UNCHANGED and NOT RE-MEASURED against this head: the base_sha is unchanged (ef72c05809) and this 1-commit/2-file delta (a SIGPIPE/pipefail fix confined to scripts/check_release_assets.sh and scripts/release_criteria.sh) touches no application logic in the 3555-in-diff-mutant surface measured at d57f897 and carried at ba09f72a/7218961ef9. It remains an operator-declared, non-waivable HARD-STOP escalated to the operator, not a fix target on this branch, and the 60-mutant cap must not be raised. This finding alone continues to force the verdict to something other than a clean approve, regardless of every other finding on this delta being resolved or clean."
+          },
+          "properties": {
+            "grounding": "asserted",
+            "rationale": "Carried forward from the prior receipts' own measured cargo-mutants --in-diff --list run (3555 in-diff mutants vs cap 60); not re-run this session -- this delta's two shell scripts are guard/CI-scaffolding, not part of the measured mutant surface, and the standing BLOCK is unaffected either way.",
+            "failure_scenario": "Merging this PR while the mutation gate's cap (60) covers under 2% of the diff's in-diff mutant surface (3555) means most changed application logic ships with zero mutation coverage in CI.",
+            "precision_class": "advisory"
+          }
+        },
+        {
+          "ruleId": "PRREV-DUP-001",
+          "level": "note",
+          "message": {
+            "text": "Carried forward unchanged: the full duplication horizon sweep (siblings + merge_base_to_main) was not run this session either. duplication_coverage remains 'none' across every surface. This delta (a here-string fix to two shell guard scripts) presents no plausible new duplication surface, but the sweep itself was not executed."
+          },
+          "properties": {
+            "grounding": "asserted",
+            "rationale": "No new duplication sweep was performed this run; restating the prior honest gap rather than dropping it.",
+            "failure_scenario": "A near-duplicate re-implementation anywhere in the wider diff would go undetected without this sweep.",
+            "precision_class": "advisory"
+          }
+        }
+      ]
+    },
+    {
+      "tool": {
+        "driver": {
+          "name": "nvidia-cuda-docs",
+          "informationUri": "https://developer.nvidia.com/cuda-toolkit"
+        }
+      },
+      "invocations": [
+        {
+          "executionSuccessful": false,
+          "toolExecutionNotifications": [
+            {
+              "level": "error",
+              "message": {
+                "text": "cuda consultation status is unreachable, not consulted: mcp__nvidia-cuda-docs__search_cuda_docs was unavailable (server not authenticated) in this reviewing session. No query ran. This delta (two shell scripts) does not itself touch either previously-triggering fixture file; the trigger is path-based and repo-wide, and the tool's authentication state carries forward unchanged from the 7218961ef9 receipt."
+              },
+              "properties": {
+                "grounding": "measured",
+                "rationale": "The path trigger fires repo-wide on cuda_simd_scores.rs.txt and fp8-interchange-v1.lean (unchanged by this delta); the tool being unreachable means those device claims are still not checked against docs this run either.",
+                "exit_code": 1
+              }
+            }
+          ]
+        }
+      ],
+      "results": [
+        {
+          "ruleId": "PRREV-CUDA-001",
+          "level": "note",
+          "message": {
+            "text": "CUDA docs consulted for real (nvidia-cuda-docs MCP signed in 2026-09-29 06:04Z; headless claude-sonnet-5 lane). 5 named queries on the FP8 E4M3/E5M2 claims in crates/aprender-contracts-staging/lean/Challenge/fp8-interchange-v1.lean and the cuda_simd_scores.rs.txt fixture: 4 found, 1 no-authority-found (exact MAXNORM constants 448/57344 not verbatim in the docs). 0 contradicted. Supersedes the prior 'unreachable' record."
+          },
+          "properties": {
+            "grounding": "measured",
+            "command": [
+              "git",
+              "diff",
+              "--stat",
+              "54b99dfdc7",
+              "92aac9b4e329fdf6c7907602761aeaa9d4186330"
+            ],
+            "exit_code": 0,
+            "failure_scenario": "If the delta had touched either fixture file, the disposition would need re-checking; it does not.",
+            "precision_class": "advisory"
+          }
+        }
+      ]
+    },
+    {
+      "tool": {
+        "driver": {
+          "name": "crux",
+          "informationUri": "internal:crux"
+        }
+      },
+      "invocations": [
+        {
+          "executionSuccessful": true
+        }
+      ],
+      "results": [
+        {
+          "ruleId": "PRREV-CRUX-001",
+          "level": "note",
+          "message": {
+            "text": "Carried forward unchanged: this delta (scripts/check_release_assets.sh, scripts/release_criteria.sh) adds no new CLI-facing command surface, so the prior crux_coverage='none' disposition is unaffected and carried forward rather than re-swept."
+          },
+          "properties": {
+            "grounding": "asserted",
+            "rationale": "Neither changed file is a contracts/apr-cli-commands-v1.yaml or crux-adjacent surface.",
+            "failure_scenario": "If the delta had added a new CLI-facing command, the crux disposition would need re-checking; it does not.",
+            "precision_class": "advisory"
+          }
+        }
+      ]
+    }
+  ]
+}

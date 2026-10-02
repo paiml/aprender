@@ -1,0 +1,33 @@
+metadata:
+  version: "1.0.0"
+  kind: pattern
+  references:
+    - "PVL-001 EV-10 golden fixture"
+  description: "CHECK 2 through a YAML merge key: F-1 merges a test from F-0's template, F-2 merges it through a merge that itself merges; the script (PyYAML) counts both, F-0 is not counted"
+equations:
+  relu:
+    formula: "y_i = max(0, x_i)"
+    invariants:
+      - "y_i >= 0"
+
+proof_obligations:
+  - type: invariant
+    property: "Non-negativity"
+    applies_to: all
+falsification:
+  - id: F-0
+    action: "page on-call"
+    template: &hidden
+      test: "relu_nonneg"
+    chained: &chained
+      <<: *hidden
+      note: "merges the template in turn"
+  - <<: *hidden
+    id: F-1
+  - <<: *chained
+    id: F-2
+falsification_tests:
+  - id: FALSIFY-OBL-001
+    rule: "Non-negativity"
+    prediction: "relu(x)_i >= 0"
+    if_fails: "Comparison inverted"

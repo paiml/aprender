@@ -493,10 +493,14 @@ COV_REFUSE_GLOBAL_MOLD = @if [ -f "$${CARGO_HOME:-$$HOME/.cargo}/config.toml" ] 
 #   Test infrastructure:
 #     - test_factory      : Test code, not production
 #     - demo/             : Demo/example code
-# NOTE: Coverage tracks the main aprender library only.
-# Subcrate tests still RUN (--workspace), exercising main lib code paths,
-# but subcrate source files are excluded from the coverage REPORT.
-# External deps (trueno, realizar, .cargo) also excluded.
+# NOTE (#3839): coverage measures the MONOREPO. #4023 scopes every report by a derived
+# `-p` list, so aprender-serve/-train/-compute (formerly realizar/entrenar/trueno) are
+# measured. The pre-monorepo `trueno|realizar/|entrenar/` alternatives were removed: in-tree
+# `entrenar/` matched 0 files, `realizar/` 7 unrelated aprender-train files, and `trueno`
+# 54/56 of aprender-zram while missing aprender-compute entirely.
+#   aprender-compute/src/backends/gpu/ : no coverage runner executes it (no GPU lane), so it
+#   is kept out of the denominator until one exists - excluded AND unrun, never "measured 0%".
+# Named subcrates below (apr-cli, aprender-shell, ...) and .cargo stay excluded.
 # Subcrate code, external deps, and modules requiring external model files for coverage.
 # models/ = dead code per UCBD §9.1 (scheduled for deletion).
 # serialization/ = SafeTensors IO (needs actual .safetensors files).
@@ -506,7 +510,7 @@ COV_REFUSE_GLOBAL_MOLD = @if [ -f "$${CARGO_HOME:-$$HOME/.cargo}/config.toml" ] 
 # format/rosetta = cross-format parity (needs model files).
 # transfer/ = transfer learning (needs pretrained models).
 # bench/ = benchmark visualization (non-core).
-COVERAGE_EXCLUDE_REGEX := \.cargo/|trueno|realizar/|entrenar/|fuzz/|golden_traces/|hf_hub/|demo/|test_factory|pacha/|showcase/|apr-cli/|aprender-shell/|aprender-tsp/|aprender-monte-carlo/|chaos\.rs|audio/|format/quantize\.rs|format/signing\.rs|voice/|playback\.rs|rustlib/src/rust|models/|serialization/|speech/|format/onnx|format/converter|format/rosetta|transfer/|bench_viz/
+COVERAGE_EXCLUDE_REGEX := \.cargo/|aprender-compute/src/backends/gpu/|fuzz/|golden_traces/|hf_hub/|demo/|test_factory|pacha/|showcase/|apr-cli/|aprender-shell/|aprender-tsp/|aprender-monte-carlo/|chaos\.rs|audio/|format/quantize\.rs|format/signing\.rs|voice/|playback\.rs|rustlib/src/rust|models/|serialization/|speech/|format/onnx|format/converter|format/rosetta|transfer/|bench_viz/
 
 # Coverage threshold (enforced: fail if below)
 COV_THRESHOLD := 95
@@ -605,10 +609,17 @@ ratchet-semantics-test: ## BSE-03: D2 ratchet polarity rows (--class readme)
 # enforces COV_FLOOR, so this is a name, not a new policy.
 coverage-check: coverage
 
+# PVL-001 EV-6a (#4139): the ONLY writer of the Lean label ratchet. `pv discharge check` never writes
+# unresolved-labels.json; this rewrites it DOWNWARD (a label that resolves now leaves; a new one is never added).
+.PHONY: label-ratchet
+label-ratchet:
+	@. scripts/pv_bin.sh && "$$PV" discharge label-ratchet crates/aprender-contracts-staging/lean --contracts contracts
+
 # Ditto for `contracts`. The provable-contract tier is a HARD release gate per
 # CLAUDE.md, and the dogfood protocol looked for a target that did not exist, so
 # it WARNed instead of checking. `pv lint` runs validate + audit + score across
 # contracts/ and is the documented entry point (never hand-rolled bash).
+
 # EXIT PROPAGATION (PVL-001 EV-4, aprender#4168). Under .ONESHELL this whole
 # recipe is ONE shell script, so without errexit its status is the LAST line's
 # and every earlier step -- `pv lint` included -- was advisory: a failing lint
@@ -859,6 +870,7 @@ dev: tier1
 
 # Pre-push checks
 pre-push: tier3
+
 
 # CI/CD checks
 ci: tier4
@@ -1257,7 +1269,7 @@ test-audio-full: ## Run all audio tests including ALSA (if available)
 # run ...` handed scripts/pv_bin.sh the string "cargo run ..." whenever a caller
 # exported PV_BIN=/path/to/pv -- the one override pv_bin.sh honours -- and every
 # `. scripts/pv_bin.sh` step refused with `not executable: cargo run ...`.
-PV_CARGO_RUN := cargo run --release -p aprender-contracts-cli --bin pv --
+PV_CARGO_RUN := cargo run --release -p aprender-contracts-cli --bin pv --features update-check,build-sha --
 BINDING := contracts/aprender/binding.yaml
 CONTRACTS := contracts/softmax-kernel-v1.yaml \
              contracts/rmsnorm-kernel-v1.yaml \
@@ -1488,15 +1500,27 @@ check-siblings: ## Verify sibling repos exist and versions are compatible
 		echo "  Remove [patch.crates-io] from .cargo/config.toml"; \
 	fi
 
-# APR-RELEASE-001 §11.2 (ONT R-6): the five ontology counters move ONLY through
-# this target. `--check` is what guard_tree.sh runs on every PR; `--write` is the
-# deliberate restamp, and it is the only way a counter is allowed to change.
+# APR-RELEASE-001 §11.2 (ONT R-6). Since #3569 the ontology counters are MEASURED,
+# never committed: `--check` (guard_tree.sh, every PR) measures them at the
+# comparand tree and at the working tree and refuses any move the wrong way.
+# `--write` stores DECISIONS only (armed_gates, armed_shapes + the Rust gates'
+# foreign keys); it can no longer restamp a counter to hide a regression.
 .PHONY: ont-ratchet ont-ratchet-check
 ont-ratchet:
 	@bash scripts/check_ont_ratchet.sh --write
 
 ont-ratchet-check:
 	@bash scripts/check_ont_ratchet.sh --check
+
+# PVL-001 EV-11 (PMAT-4166): the two `pv lint` ratchets (theorem-pairing, depends-on-present) move ONLY
+# through this target, and only DOWN. The gates read contracts/lint-baseline.json and never write it.
+# NEVER in CI: a CI job that could rewrite the baseline is a ratchet that turns both ways.
+.PHONY: lint-ratchet lint-ratchet-self-test
+lint-ratchet:
+	@bash scripts/lint_ratchet.sh
+
+lint-ratchet-self-test:
+	@bash scripts/lint_ratchet.sh --self-test
 
 # ONT-001 §5 ONT-4b2 / R-13 — the out-of-gate SHACL differential oracle.
 #

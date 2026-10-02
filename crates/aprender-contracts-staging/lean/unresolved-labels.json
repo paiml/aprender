@@ -1,0 +1,4517 @@
+{
+  "command": "make label-ratchet",
+  "labels": [
+    {
+      "contract": "absolute-position-v1",
+      "label": "Theorems.AbsolutePosition.Core"
+    },
+    {
+      "contract": "active-learning-v1",
+      "label": "Theorems.Entropy_Score"
+    },
+    {
+      "contract": "active-learning-v1",
+      "label": "Theorems.Margin_Score"
+    },
+    {
+      "contract": "active-learning-v1",
+      "label": "Theorems.Qbc_Score"
+    },
+    {
+      "contract": "active-learning-v1",
+      "label": "Theorems.Uncertainty_Score"
+    },
+    {
+      "contract": "agent-loop-v1",
+      "label": "Theorems.Agent_State_Machine"
+    },
+    {
+      "contract": "agent-loop-v1",
+      "label": "Theorems.Context_Compaction"
+    },
+    {
+      "contract": "agent-loop-v1",
+      "label": "Theorems.Crash_Recovery"
+    },
+    {
+      "contract": "agent-loop-v1",
+      "label": "Theorems.Hook_Ordering"
+    },
+    {
+      "contract": "agent-loop-v1",
+      "label": "Theorems.Loop_Termination"
+    },
+    {
+      "contract": "agent-loop-v1",
+      "label": "Theorems.Parallel_Tool_Safety"
+    },
+    {
+      "contract": "agent-loop-v1",
+      "label": "Theorems.Sandbox_Enforcement"
+    },
+    {
+      "contract": "agent-orchestration-v1",
+      "label": "Theorems.Daemon_Lifecycle"
+    },
+    {
+      "contract": "agent-orchestration-v1",
+      "label": "Theorems.Error_Classification"
+    },
+    {
+      "contract": "agent-orchestration-v1",
+      "label": "Theorems.Manager_Registration"
+    },
+    {
+      "contract": "agent-orchestration-v1",
+      "label": "Theorems.RED_Metrics"
+    },
+    {
+      "contract": "agent-orchestration-v1",
+      "label": "Theorems.Restart_Policy"
+    },
+    {
+      "contract": "agent-orchestration-v1",
+      "label": "Theorems.Signal_Handling"
+    },
+    {
+      "contract": "agent-ux-v1",
+      "label": "Theorems.Brick_Verification"
+    },
+    {
+      "contract": "agent-ux-v1",
+      "label": "Theorems.Contrast_Accessibility"
+    },
+    {
+      "contract": "agent-ux-v1",
+      "label": "Theorems.Cost_Display_Accuracy"
+    },
+    {
+      "contract": "agent-ux-v1",
+      "label": "Theorems.Frame_Budget"
+    },
+    {
+      "contract": "agent-ux-v1",
+      "label": "Theorems.Layout_Correctness"
+    },
+    {
+      "contract": "agent-ux-v1",
+      "label": "Theorems.Pixel_Coverage"
+    },
+    {
+      "contract": "agent-ux-v1",
+      "label": "Theorems.State_Machine_Validity"
+    },
+    {
+      "contract": "agent-ux-v1",
+      "label": "Theorems.Streaming_Responsiveness"
+    },
+    {
+      "contract": "alibi-slopes-v1",
+      "label": "Theorems.Alibi_Slope_Exponent"
+    },
+    {
+      "contract": "apr-architecture-schema-v1",
+      "label": "Theorems.ArchitectureConfigInvariants"
+    },
+    {
+      "contract": "apr-architecture-schema-v1",
+      "label": "Theorems.ArchitectureOracleDetection"
+    },
+    {
+      "contract": "apr-architecture-schema-v1",
+      "label": "Theorems.AttentionTensorShapes"
+    },
+    {
+      "contract": "apr-architecture-schema-v1",
+      "label": "Theorems.EmbeddingTensorShapes"
+    },
+    {
+      "contract": "apr-architecture-schema-v1",
+      "label": "Theorems.FfnTensorShapes"
+    },
+    {
+      "contract": "apr-architecture-schema-v1",
+      "label": "Theorems.LayerCountConsistency"
+    },
+    {
+      "contract": "apr-architecture-schema-v1",
+      "label": "Theorems.NormalizationTensorShapes"
+    },
+    {
+      "contract": "apr-architecture-schema-v1",
+      "label": "Theorems.RopePositionEncoding"
+    },
+    {
+      "contract": "apr-architecture-schema-v1",
+      "label": "Theorems.TensorNameRecognition"
+    },
+    {
+      "contract": "apr-architecture-schema-v1",
+      "label": "Theorems.TotalTensorCount"
+    },
+    {
+      "contract": "apr-chat-session-v1",
+      "label": "Theorems.ChatTemplateApplication"
+    },
+    {
+      "contract": "apr-chat-session-v1",
+      "label": "Theorems.KvCacheManagement"
+    },
+    {
+      "contract": "apr-chat-session-v1",
+      "label": "Theorems.SessionPersistence"
+    },
+    {
+      "contract": "apr-chat-session-v1",
+      "label": "Theorems.SessionStateMachine"
+    },
+    {
+      "contract": "apr-checkpoint-v1",
+      "label": "Theorems.LoadCheckpoint"
+    },
+    {
+      "contract": "apr-checkpoint-v1",
+      "label": "Theorems.SaveCheckpoint"
+    },
+    {
+      "contract": "apr-cli-longrunning-v1",
+      "label": "Theorems.Concurrent_Isolation"
+    },
+    {
+      "contract": "apr-cli-longrunning-v1",
+      "label": "Theorems.Graceful_Shutdown"
+    },
+    {
+      "contract": "apr-cli-longrunning-v1",
+      "label": "Theorems.Resource_Cleanup"
+    },
+    {
+      "contract": "apr-cli-mutating-v1",
+      "label": "Theorems.Atomic_Write_Safety"
+    },
+    {
+      "contract": "apr-cli-mutating-v1",
+      "label": "Theorems.Exit_Code_On_Error"
+    },
+    {
+      "contract": "apr-cli-mutating-v1",
+      "label": "Theorems.Output_Path_Validation"
+    },
+    {
+      "contract": "apr-cli-mutating-v1",
+      "label": "Theorems.Rm_Confirmation_Gate"
+    },
+    {
+      "contract": "apr-cli-operations-v1",
+      "label": "Theorems.Concurrent_Model_Access"
+    },
+    {
+      "contract": "apr-cli-operations-v1",
+      "label": "Theorems.Inference_Determinism"
+    },
+    {
+      "contract": "apr-cli-operations-v1",
+      "label": "Theorems.Progress_Reporting"
+    },
+    {
+      "contract": "apr-cli-operations-v1",
+      "label": "Theorems.Resource_Cleanup"
+    },
+    {
+      "contract": "apr-cli-operations-v1",
+      "label": "Theorems.Side_Effect_Classification"
+    },
+    {
+      "contract": "apr-cli-operations-v1",
+      "label": "Theorems.Tokenizer_Consistency"
+    },
+    {
+      "contract": "apr-cli-readonly-v1",
+      "label": "Theorems.Idempotent_Output"
+    },
+    {
+      "contract": "apr-cli-readonly-v1",
+      "label": "Theorems.No_Side_Effects"
+    },
+    {
+      "contract": "apr-cli-readonly-v1",
+      "label": "Theorems.ReadOnly_Exit_Code"
+    },
+    {
+      "contract": "apr-cli-safety-v1",
+      "label": "Theorems.Encrypt_Idempotency"
+    },
+    {
+      "contract": "apr-cli-safety-v1",
+      "label": "Theorems.Gpu_Inference_Path_Correctness"
+    },
+    {
+      "contract": "apr-cli-safety-v1",
+      "label": "Theorems.Offline_Network_Guard"
+    },
+    {
+      "contract": "apr-cli-safety-v1",
+      "label": "Theorems.Validate_Exit_Monotonic"
+    },
+    {
+      "contract": "apr-cli-sampling-v1",
+      "label": "Theorems.ExitCodeOnFailure"
+    },
+    {
+      "contract": "apr-cli-sampling-v1",
+      "label": "Theorems.SeedDeterminism"
+    },
+    {
+      "contract": "apr-cli-v1",
+      "label": "Theorems.Command_Parse_Determinism"
+    },
+    {
+      "contract": "apr-cli-v1",
+      "label": "Theorems.Contract_Gate_Enforcement"
+    },
+    {
+      "contract": "apr-cli-v1",
+      "label": "Theorems.ExitCodeSemantics"
+    },
+    {
+      "contract": "apr-cli-v1",
+      "label": "Theorems.Model_Path_Resolution"
+    },
+    {
+      "contract": "apr-cli-v1",
+      "label": "Theorems.Pipe_Stdin_Support"
+    },
+    {
+      "contract": "apr-cli-v1",
+      "label": "Theorems.SigpipeHandling"
+    },
+    {
+      "contract": "apr-cli-v1",
+      "label": "Theorems.Tokenizer_Training_Correctness"
+    },
+    {
+      "contract": "apr-cli-v1",
+      "label": "Theorems.Training_Plan_Apply_Semantics"
+    },
+    {
+      "contract": "apr-cli-v1",
+      "label": "Theorems.TtyDetection"
+    },
+    {
+      "contract": "apr-code-no-arg-startup-v1",
+      "label": "Theorems.Apr_Code_No_Arg_Startup_Policy"
+    },
+    {
+      "contract": "apr-code-no-arg-startup-v1",
+      "label": "Theorems.Apr_Code_Serve_Child_Reaped_Before_Exit"
+    },
+    {
+      "contract": "apr-code-toolcall-retention-v1",
+      "label": "Theorems.Apr_Code_Toolcall_Salvage_Recovery"
+    },
+    {
+      "contract": "apr-code-toolcall-retention-v1",
+      "label": "Theorems.Apr_Code_Toolcall_Structural_Retention"
+    },
+    {
+      "contract": "apr-code-v1",
+      "label": "Theorems.Apr_Md_Compliance"
+    },
+    {
+      "contract": "apr-code-v1",
+      "label": "Theorems.Apr_Model_Validity"
+    },
+    {
+      "contract": "apr-code-v1",
+      "label": "Theorems.Model_Fallback"
+    },
+    {
+      "contract": "apr-code-v1",
+      "label": "Theorems.Session_Integrity"
+    },
+    {
+      "contract": "apr-code-v1",
+      "label": "Theorems.Single_Binary"
+    },
+    {
+      "contract": "apr-code-v1",
+      "label": "Theorems.Sovereignty_Guarantee"
+    },
+    {
+      "contract": "apr-code-v1",
+      "label": "Theorems.Startup_Latency"
+    },
+    {
+      "contract": "apr-code-v1",
+      "label": "Theorems.Tool_Safety"
+    },
+    {
+      "contract": "apr-compare-hf-nonvacuous-v1",
+      "label": "Theorems.NonVacuousVerdict"
+    },
+    {
+      "contract": "apr-data-pipeline-v1",
+      "label": "Theorems.DataSplitDeterminism"
+    },
+    {
+      "contract": "apr-data-pipeline-v1",
+      "label": "Theorems.DataValidation"
+    },
+    {
+      "contract": "apr-data-pipeline-v1",
+      "label": "Theorems.PreprocessingIdempotency"
+    },
+    {
+      "contract": "apr-data-pipeline-v1",
+      "label": "Theorems.StreamingDataLoader"
+    },
+    {
+      "contract": "apr-distill-smoke-validation-v1",
+      "label": "Theorems.Early_Break_Condition"
+    },
+    {
+      "contract": "apr-distill-smoke-validation-v1",
+      "label": "Theorems.No_Side_Effects"
+    },
+    {
+      "contract": "apr-distill-smoke-validation-v1",
+      "label": "Theorems.Smoke_Summary_Format"
+    },
+    {
+      "contract": "apr-distill-teacher-backend-selection-v1",
+      "label": "Theorems.Backend_Dispatch"
+    },
+    {
+      "contract": "apr-distill-teacher-backend-selection-v1",
+      "label": "Theorems.Bug_B_Demotion"
+    },
+    {
+      "contract": "apr-distill-teacher-backend-selection-v1",
+      "label": "Theorems.Forward_Latency_Invariant"
+    },
+    {
+      "contract": "apr-distill-teacher-vocab-alignment-v1",
+      "label": "Theorems.Cli_Dispatch_Passes_Student_Vocab"
+    },
+    {
+      "contract": "apr-distill-teacher-vocab-alignment-v1",
+      "label": "Theorems.Kd_Loss_Invariance_Under_Truncation"
+    },
+    {
+      "contract": "apr-distill-teacher-vocab-alignment-v1",
+      "label": "Theorems.Vocab_Alignment_Dispatch"
+    },
+    {
+      "contract": "apr-eval-humaneval-inference-failure-handling-v1",
+      "label": "Theorems.Inference_Failure_Signal"
+    },
+    {
+      "contract": "apr-eval-humaneval-inference-failure-handling-v1",
+      "label": "Theorems.Pass_At_K_Definition"
+    },
+    {
+      "contract": "apr-eval-humaneval-inference-failure-handling-v1",
+      "label": "Theorems.Per_Problem_Pass_Counter_Invariant"
+    },
+    {
+      "contract": "apr-finetune-v1",
+      "label": "Theorems.AlphaRankRatio"
+    },
+    {
+      "contract": "apr-finetune-v1",
+      "label": "Theorems.CheckpointRoundtrip"
+    },
+    {
+      "contract": "apr-finetune-v1",
+      "label": "Theorems.MergeTensorShape"
+    },
+    {
+      "contract": "apr-finetune-v1",
+      "label": "Theorems.RankBoundsSafety"
+    },
+    {
+      "contract": "apr-finetune-v1",
+      "label": "Theorems.VramEstimationTolerance"
+    },
+    {
+      "contract": "apr-finetune-v1",
+      "label": "Theorems.VramFeasibility"
+    },
+    {
+      "contract": "apr-format-invariants-v1",
+      "label": "Theorems.Detect_Regression"
+    },
+    {
+      "contract": "apr-format-invariants-v1",
+      "label": "Theorems.Format_Report"
+    },
+    {
+      "contract": "apr-format-invariants-v1",
+      "label": "Theorems.Parse_Playbook"
+    },
+    {
+      "contract": "apr-format-invariants-v1",
+      "label": "Theorems.Serialize_Roundtrip"
+    },
+    {
+      "contract": "apr-format-invariants-v1",
+      "label": "Theorems.Validate_Schema"
+    },
+    {
+      "contract": "apr-format-safety-v1",
+      "label": "Theorems.DtypeCoercionSafety"
+    },
+    {
+      "contract": "apr-format-safety-v1",
+      "label": "Theorems.FlagIntegrity"
+    },
+    {
+      "contract": "apr-format-safety-v1",
+      "label": "Theorems.HeaderIntegrity"
+    },
+    {
+      "contract": "apr-format-safety-v1",
+      "label": "Theorems.MagicByteValidation"
+    },
+    {
+      "contract": "apr-format-safety-v1",
+      "label": "Theorems.MetadataCompleteness"
+    },
+    {
+      "contract": "apr-format-safety-v1",
+      "label": "Theorems.ProvenanceEnforcement"
+    },
+    {
+      "contract": "apr-format-safety-v1",
+      "label": "Theorems.StrictImportValidation"
+    },
+    {
+      "contract": "apr-format-safety-v1",
+      "label": "Theorems.TruncationDetection"
+    },
+    {
+      "contract": "apr-format-safety-v1",
+      "label": "Theorems.ValidateExitCodeConsistency"
+    },
+    {
+      "contract": "apr-gguf-export-symmetry-v1",
+      "label": "Theorems.GgufExportSymmetry.Roundtrip"
+    },
+    {
+      "contract": "apr-gpu-backend-v1",
+      "label": "Theorems.BackendSelection"
+    },
+    {
+      "contract": "apr-gpu-backend-v1",
+      "label": "Theorems.GenerationTemperatureZero"
+    },
+    {
+      "contract": "apr-gpu-backend-v1",
+      "label": "Theorems.GpuDetectionAccuracy"
+    },
+    {
+      "contract": "apr-gpu-backend-v1",
+      "label": "Theorems.JsonOutputConsistency"
+    },
+    {
+      "contract": "apr-gpu-diagnostics-v1",
+      "label": "Theorems.Cbtop_Measurement_Accuracy"
+    },
+    {
+      "contract": "apr-gpu-diagnostics-v1",
+      "label": "Theorems.Cbtop_Monitoring"
+    },
+    {
+      "contract": "apr-gpu-diagnostics-v1",
+      "label": "Theorems.Ptx_Code_Generation"
+    },
+    {
+      "contract": "apr-gpu-diagnostics-v1",
+      "label": "Theorems.Ptx_Kernel_Mapping"
+    },
+    {
+      "contract": "apr-inspect-dtype-naming-v1",
+      "label": "Theorems.DtypeNaming"
+    },
+    {
+      "contract": "apr-inspect-flags-v1",
+      "label": "Theorems.FlagMateriality"
+    },
+    {
+      "contract": "apr-list-disk-reconciliation-v1",
+      "label": "Theorems.DiskReconciliation"
+    },
+    {
+      "contract": "apr-model-diagnostics-v1",
+      "label": "Theorems.Diagnose_Fault_Isolation"
+    },
+    {
+      "contract": "apr-model-diagnostics-v1",
+      "label": "Theorems.Hex_Display_Fidelity"
+    },
+    {
+      "contract": "apr-model-diagnostics-v1",
+      "label": "Theorems.Oracle_Compatibility_Matrix"
+    },
+    {
+      "contract": "apr-model-diagnostics-v1",
+      "label": "Theorems.Oracle_Family_Detection"
+    },
+    {
+      "contract": "apr-model-diagnostics-v1",
+      "label": "Theorems.Rosetta_Fingerprint_Determinism"
+    },
+    {
+      "contract": "apr-model-discovery-v1",
+      "label": "Theorems.Architecture_Extraction"
+    },
+    {
+      "contract": "apr-model-discovery-v1",
+      "label": "Theorems.Jidoka_Validation"
+    },
+    {
+      "contract": "apr-model-discovery-v1",
+      "label": "Theorems.No_Model_UX"
+    },
+    {
+      "contract": "apr-model-discovery-v1",
+      "label": "Theorems.Search_Order"
+    },
+    {
+      "contract": "apr-model-discovery-v1",
+      "label": "Theorems.Sort_Priority"
+    },
+    {
+      "contract": "apr-model-graph-v1",
+      "label": "Theorems.Attention_Mechanism"
+    },
+    {
+      "contract": "apr-model-graph-v1",
+      "label": "Theorems.FFN_Computation"
+    },
+    {
+      "contract": "apr-model-graph-v1",
+      "label": "Theorems.Forward_Pass_Completeness"
+    },
+    {
+      "contract": "apr-model-graph-v1",
+      "label": "Theorems.KV_Cache_Management"
+    },
+    {
+      "contract": "apr-model-graph-v1",
+      "label": "Theorems.Quantization_Precision"
+    },
+    {
+      "contract": "apr-model-graph-v1",
+      "label": "Theorems.Residual_Stream"
+    },
+    {
+      "contract": "apr-model-graph-v1",
+      "label": "Theorems.Tensor_Name_Resolution"
+    },
+    {
+      "contract": "apr-model-lifecycle-v1",
+      "label": "Theorems.ExportRoundtrip"
+    },
+    {
+      "contract": "apr-model-lifecycle-v1",
+      "label": "Theorems.ImportFormatDetection"
+    },
+    {
+      "contract": "apr-model-lifecycle-v1",
+      "label": "Theorems.MergeWeightConservation"
+    },
+    {
+      "contract": "apr-model-lifecycle-v1",
+      "label": "Theorems.PullCacheIntegrity"
+    },
+    {
+      "contract": "apr-model-lifecycle-v1",
+      "label": "Theorems.QuantizePrecisionBound"
+    },
+    {
+      "contract": "apr-model-optimization-v1",
+      "label": "Theorems.DistillKnowledgeTransfer"
+    },
+    {
+      "contract": "apr-model-optimization-v1",
+      "label": "Theorems.FinetuneCheckpointDeterminism"
+    },
+    {
+      "contract": "apr-model-optimization-v1",
+      "label": "Theorems.FinetuneLora_RankCorrectness"
+    },
+    {
+      "contract": "apr-model-optimization-v1",
+      "label": "Theorems.PruneArchitecturePreservation"
+    },
+    {
+      "contract": "apr-model-optimization-v1",
+      "label": "Theorems.PruneSparsityTarget"
+    },
+    {
+      "contract": "apr-model-qa-v1",
+      "label": "Theorems.CanaryRegressionDetection"
+    },
+    {
+      "contract": "apr-model-qa-v1",
+      "label": "Theorems.GoldenOutputShipBlocker"
+    },
+    {
+      "contract": "apr-model-qa-v1",
+      "label": "Theorems.LintModelConventions"
+    },
+    {
+      "contract": "apr-model-qa-v1",
+      "label": "Theorems.ModelIntegrityCheck"
+    },
+    {
+      "contract": "apr-model-qa-v1",
+      "label": "Theorems.ProbarPropertyTests"
+    },
+    {
+      "contract": "apr-model-qa-v1",
+      "label": "Theorems.QaGateComposition"
+    },
+    {
+      "contract": "apr-model-security-v1",
+      "label": "Theorems.AuthenticationIntegrity"
+    },
+    {
+      "contract": "apr-model-security-v1",
+      "label": "Theorems.EncryptionRoundtrip"
+    },
+    {
+      "contract": "apr-model-security-v1",
+      "label": "Theorems.KeyDerivationCorrectness"
+    },
+    {
+      "contract": "apr-model-security-v1",
+      "label": "Theorems.PublishManifestIntegrity"
+    },
+    {
+      "contract": "apr-serve-v1",
+      "label": "Theorems.ChatTemplateDispatch"
+    },
+    {
+      "contract": "apr-serve-v1",
+      "label": "Theorems.ConcurrentInferenceIsolation"
+    },
+    {
+      "contract": "apr-serve-v1",
+      "label": "Theorems.CorsPreflight"
+    },
+    {
+      "contract": "apr-serve-v1",
+      "label": "Theorems.ErrorSanitization"
+    },
+    {
+      "contract": "apr-serve-v1",
+      "label": "Theorems.FormatDetection"
+    },
+    {
+      "contract": "apr-serve-v1",
+      "label": "Theorems.GpuTokenIntegrity"
+    },
+    {
+      "contract": "apr-serve-v1",
+      "label": "Theorems.GracefulShutdown"
+    },
+    {
+      "contract": "apr-serve-v1",
+      "label": "Theorems.MaxTokensBound"
+    },
+    {
+      "contract": "apr-serve-v1",
+      "label": "Theorems.RequestRouting"
+    },
+    {
+      "contract": "apr-serve-v1",
+      "label": "Theorems.ServerLifecycle"
+    },
+    {
+      "contract": "apr-serve-v1",
+      "label": "Theorems.UnknownRouteJson404"
+    },
+    {
+      "contract": "apr-training-parity-v1",
+      "label": "Theorems.GPU_Utilization_Gate"
+    },
+    {
+      "contract": "apr-training-parity-v1",
+      "label": "Theorems.Parity_Ratio"
+    },
+    {
+      "contract": "apr-version-traceability-v1",
+      "label": "Theorems.NonSentinelVersion"
+    },
+    {
+      "contract": "arch-constraints-v1",
+      "label": "Theorems.Arch_Constraint_Lookup"
+    },
+    {
+      "contract": "architecture-requirements-v1",
+      "label": "Theorems.Constraint_Matrix_Exhaustiveness"
+    },
+    {
+      "contract": "architecture-requirements-v1",
+      "label": "Theorems.Role_Mapping"
+    },
+    {
+      "contract": "architecture-requirements-v1",
+      "label": "Theorems.Weight_Completeness"
+    },
+    {
+      "contract": "arima-v1",
+      "label": "Theorems.Ar_Forecast"
+    },
+    {
+      "contract": "arima-v1",
+      "label": "Theorems.Differencing"
+    },
+    {
+      "contract": "arima-v1",
+      "label": "Theorems.Forecast_Finite"
+    },
+    {
+      "contract": "arima-v1",
+      "label": "Theorems.Ma_Filter"
+    },
+    {
+      "contract": "async-safety-v1",
+      "label": "Theorems.CancellationSafe"
+    },
+    {
+      "contract": "async-safety-v1",
+      "label": "Theorems.ChannelLossless"
+    },
+    {
+      "contract": "async-safety-v1",
+      "label": "Theorems.StructuredSpawn"
+    },
+    {
+      "contract": "attention-backward-v1",
+      "label": "Theorems.Attention_backward_grad_qk"
+    },
+    {
+      "contract": "attention-backward-v1",
+      "label": "Theorems.Attention_backward_grad_scores"
+    },
+    {
+      "contract": "attention-backward-v1",
+      "label": "Theorems.Attention_backward_grad_v"
+    },
+    {
+      "contract": "attention-backward-v1",
+      "label": "Theorems.Softmax_backward"
+    },
+    {
+      "contract": "attention-head-extraction-v1",
+      "label": "Theorems.ExtractHeads"
+    },
+    {
+      "contract": "attention-kernel-v1",
+      "label": "Theorems.RoPE_Rotation"
+    },
+    {
+      "contract": "attention-kernel-v1",
+      "label": "Theorems.Scaled_Dot_Product"
+    },
+    {
+      "contract": "attention-scaling-v1",
+      "label": "Theorems.Softmax_Saturation"
+    },
+    {
+      "contract": "avx2-fma-dot-v1",
+      "label": "Theorems.Dot_Product"
+    },
+    {
+      "contract": "avx2-fma-dot-v1",
+      "label": "Theorems.Fma_Accumulation"
+    },
+    {
+      "contract": "avx512-blis-v1",
+      "label": "Theorems.FlopsPerTile"
+    },
+    {
+      "contract": "avx512-blis-v1",
+      "label": "Theorems.NumericalEquivalence"
+    },
+    {
+      "contract": "avx512-blis-v1",
+      "label": "Theorems.PeakThroughput"
+    },
+    {
+      "contract": "avx512-q4k-v1",
+      "label": "Theorems.Q4kDequant"
+    },
+    {
+      "contract": "avx512-q4k-v1",
+      "label": "Theorems.Q4kThroughput"
+    },
+    {
+      "contract": "backend-dispatch-v1",
+      "label": "Theorems.Garbage_Oracle"
+    },
+    {
+      "contract": "backend-dispatch-v1",
+      "label": "Theorems.Gpu_Threshold"
+    },
+    {
+      "contract": "backend-dispatch-v1",
+      "label": "Theorems.Qk_Norm_Score_Bound"
+    },
+    {
+      "contract": "backend-dispatch-v1",
+      "label": "Theorems.Simd_Only_Threshold"
+    },
+    {
+      "contract": "batch-training-v1",
+      "label": "Theorems.Batch_Loss"
+    },
+    {
+      "contract": "batch-training-v1",
+      "label": "Theorems.Gradient_Accumulation"
+    },
+    {
+      "contract": "batch-training-v1",
+      "label": "Theorems.Gradient_Clipping"
+    },
+    {
+      "contract": "batched-beam-search-v1",
+      "label": "Theorems.Batched_Beam_Projection"
+    },
+    {
+      "contract": "batched-beam-search-v1",
+      "label": "Theorems.Beam_Selection"
+    },
+    {
+      "contract": "batched-beam-search-v1",
+      "label": "Theorems.Sequential_Beam_Projection"
+    },
+    {
+      "contract": "batched-beam-search-v1",
+      "label": "Theorems.Termination"
+    },
+    {
+      "contract": "batchnorm-kernel-v1",
+      "label": "Theorems.Batchnorm_Eval"
+    },
+    {
+      "contract": "batchnorm-kernel-v1",
+      "label": "Theorems.Batchnorm_Train"
+    },
+    {
+      "contract": "batchnorm-kernel-v1",
+      "label": "Theorems.Running_Stats"
+    },
+    {
+      "contract": "batchnorm-running-stats-v1",
+      "label": "Theorems.Running_Mean_Ema"
+    },
+    {
+      "contract": "batchnorm-running-stats-v1",
+      "label": "Theorems.Running_Var_Ema"
+    },
+    {
+      "contract": "bayesian-logistic-map-v1",
+      "label": "Theorems.HessianSamePosterior"
+    },
+    {
+      "contract": "bayesian-logistic-map-v1",
+      "label": "Theorems.LogPostGradient"
+    },
+    {
+      "contract": "bayesian-logistic-map-v1",
+      "label": "Theorems.MapPrecision"
+    },
+    {
+      "contract": "bayesian-v1",
+      "label": "Theorems.Blr_Predict"
+    },
+    {
+      "contract": "bayesian-v1",
+      "label": "Theorems.Conjugate_Update"
+    },
+    {
+      "contract": "bayesian-v1",
+      "label": "Theorems.Posterior_Predictive"
+    },
+    {
+      "contract": "bayesian-v1",
+      "label": "Theorems.Posterior_Valid"
+    },
+    {
+      "contract": "beacon-dispatch-v1",
+      "label": "Theorems.BM25_Ranking"
+    },
+    {
+      "contract": "beacon-dispatch-v1",
+      "label": "Theorems.Index_Insert_Retrieve"
+    },
+    {
+      "contract": "beacon-dispatch-v1",
+      "label": "Theorems.Robots_Compliance"
+    },
+    {
+      "contract": "beacon-dispatch-v1",
+      "label": "Theorems.Tokenize_Normalization"
+    },
+    {
+      "contract": "bf16-dequant-v1",
+      "label": "Theorems.BF16_Block_Layout"
+    },
+    {
+      "contract": "bf16-dequant-v1",
+      "label": "Theorems.BF16_Dequant_Formula"
+    },
+    {
+      "contract": "bias-add-v1",
+      "label": "Theorems.Bias_Add"
+    },
+    {
+      "contract": "bidirectional-attention-v1",
+      "label": "Theorems.Bidirectional_Attention"
+    },
+    {
+      "contract": "blake3-state-v1",
+      "label": "Theorems.Composite_Hash"
+    },
+    {
+      "contract": "blake3-state-v1",
+      "label": "Theorems.Hash_File"
+    },
+    {
+      "contract": "blake3-state-v1",
+      "label": "Theorems.Hash_String"
+    },
+    {
+      "contract": "blis-gemm-v1",
+      "label": "Theorems.ElementwiseParity"
+    },
+    {
+      "contract": "blis-gemm-v1",
+      "label": "Theorems.GemmCorrectness"
+    },
+    {
+      "contract": "blis-thread-cap-v1",
+      "label": "Theorems.AmdahlSpeedup"
+    },
+    {
+      "contract": "blis-thread-cap-v1",
+      "label": "Theorems.ThreadCapPolicy"
+    },
+    {
+      "contract": "blis-thread-cap-v1",
+      "label": "Theorems.WorkingSet"
+    },
+    {
+      "contract": "bpe-tokenization-v1",
+      "label": "Theorems.Encode"
+    },
+    {
+      "contract": "bpe-tokenization-v1",
+      "label": "Theorems.Merge_Rule"
+    },
+    {
+      "contract": "bpe-training-perf-v1",
+      "label": "Theorems.Bpe_Train_Priority_Queue"
+    },
+    {
+      "contract": "builder-pattern-v1",
+      "label": "Theorems.Build_Valid"
+    },
+    {
+      "contract": "builder-pattern-v1",
+      "label": "Theorems.Builder_Fresh"
+    },
+    {
+      "contract": "builder-pattern-v1",
+      "label": "Theorems.Builder_Pattern"
+    },
+    {
+      "contract": "calibration-v1",
+      "label": "Theorems.Expected_Calibration_Error"
+    },
+    {
+      "contract": "calibration-v1",
+      "label": "Theorems.Isotonic_Regression"
+    },
+    {
+      "contract": "calibration-v1",
+      "label": "Theorems.Maximum_Calibration_Error"
+    },
+    {
+      "contract": "calibration-v1",
+      "label": "Theorems.Platt_Scaling"
+    },
+    {
+      "contract": "calibration-v1",
+      "label": "Theorems.Reliability_Diagram"
+    },
+    {
+      "contract": "canary-metrics-schema-v1",
+      "label": "Theorems.Domain_Loss"
+    },
+    {
+      "contract": "canary-metrics-schema-v1",
+      "label": "Theorems.Domain_Throughput"
+    },
+    {
+      "contract": "canary-metrics-schema-v1",
+      "label": "Theorems.Schema_Completeness"
+    },
+    {
+      "contract": "canary-score-gate-v1",
+      "label": "Theorems.Parity_Gate"
+    },
+    {
+      "contract": "canary-score-gate-v1",
+      "label": "Theorems.Throughput_Gate"
+    },
+    {
+      "contract": "canary-score-gate-v1",
+      "label": "Theorems.Vram_Gate"
+    },
+    {
+      "contract": "chat-template-v1",
+      "label": "Theorems.AppState_Architecture_Cache"
+    },
+    {
+      "contract": "chat-template-v1",
+      "label": "Theorems.Architecture_Aware_Selection"
+    },
+    {
+      "contract": "chat-template-v1",
+      "label": "Theorems.Thinking_Block_Suppression"
+    },
+    {
+      "contract": "chat-template-v1",
+      "label": "Theorems.Trait_Completeness"
+    },
+    {
+      "contract": "classification-finetune-v1",
+      "label": "Theorems.Classifier_Weight_Shape"
+    },
+    {
+      "contract": "classification-finetune-v1",
+      "label": "Theorems.Label_Bounds"
+    },
+    {
+      "contract": "classification-finetune-v1",
+      "label": "Theorems.Logit_Shape"
+    },
+    {
+      "contract": "classification-finetune-v1",
+      "label": "Theorems.Softmax_Sum"
+    },
+    {
+      "contract": "classifier-pipeline-v1",
+      "label": "Theorems.Embedding_Extraction"
+    },
+    {
+      "contract": "classifier-pipeline-v1",
+      "label": "Theorems.Evaluation"
+    },
+    {
+      "contract": "classifier-pipeline-v1",
+      "label": "Theorems.Linear_Probe"
+    },
+    {
+      "contract": "cleanup-safety-v1",
+      "label": "Theorems.Duplicate_Detection"
+    },
+    {
+      "contract": "cleanup-safety-v1",
+      "label": "Theorems.Outlier_Detection"
+    },
+    {
+      "contract": "cleanup-safety-v1",
+      "label": "Theorems.Scan_Completeness"
+    },
+    {
+      "contract": "cli-dispatch-v1",
+      "label": "Theorems.Dispatch_Completeness"
+    },
+    {
+      "contract": "cli-dispatch-v1",
+      "label": "Theorems.Exit_Code_Semantics"
+    },
+    {
+      "contract": "cli-dispatch-v1",
+      "label": "Theorems.Feature_Gated_Dispatch"
+    },
+    {
+      "contract": "cli-dispatch-v1",
+      "label": "Theorems.Idempotent_Inspection"
+    },
+    {
+      "contract": "cli-dispatch-v1",
+      "label": "Theorems.Output_Format_Fidelity"
+    },
+    {
+      "contract": "cli-interface-v1",
+      "label": "Theorems.ExitCodeSemantics"
+    },
+    {
+      "contract": "cli-interface-v1",
+      "label": "Theorems.OutputFormatFidelity"
+    },
+    {
+      "contract": "cli-interface-v1",
+      "label": "Theorems.ResultCardinality"
+    },
+    {
+      "contract": "cli-interface-v1",
+      "label": "Theorems.TimeoutHonoring"
+    },
+    {
+      "contract": "cli-lint-v1",
+      "label": "Theorems.Exit_Code_Dispatch"
+    },
+    {
+      "contract": "cli-lint-v1",
+      "label": "Theorems.Finding_Determinism"
+    },
+    {
+      "contract": "cli-lint-v1",
+      "label": "Theorems.Output_Format_Validity"
+    },
+    {
+      "contract": "cli-lint-v1",
+      "label": "Theorems.Severity_Ordering"
+    },
+    {
+      "contract": "cli-oracle-v1",
+      "label": "Theorems.Dispatch_Correctness"
+    },
+    {
+      "contract": "cli-oracle-v1",
+      "label": "Theorems.Index_Freshness"
+    },
+    {
+      "contract": "cli-oracle-v1",
+      "label": "Theorems.RAG_Query_Correctness"
+    },
+    {
+      "contract": "cli-transpile-v1",
+      "label": "Theorems.Exit_Code_Dispatch"
+    },
+    {
+      "contract": "cli-transpile-v1",
+      "label": "Theorems.Input_Validation"
+    },
+    {
+      "contract": "cli-transpile-v1",
+      "label": "Theorems.Output_Validity"
+    },
+    {
+      "contract": "cli-transpile-v1",
+      "label": "Theorems.Transpilation_Determinism"
+    },
+    {
+      "contract": "cma-es-kernel-v1",
+      "label": "Theorems.CMAES.CovarianceSymmetry"
+    },
+    {
+      "contract": "cma-es-kernel-v1",
+      "label": "Theorems.CMAES.StepSizePositive"
+    },
+    {
+      "contract": "cma-es-kernel-v1",
+      "label": "Theorems.CMAES.WeightsNormalized"
+    },
+    {
+      "contract": "codebert-tokenizer-validation-v1",
+      "label": "Theorems.Tokenizer_Adequacy"
+    },
+    {
+      "contract": "codegen-dispatch-v1",
+      "label": "Theorems.Apply_Script"
+    },
+    {
+      "contract": "codegen-dispatch-v1",
+      "label": "Theorems.Check_Script"
+    },
+    {
+      "contract": "codegen-dispatch-v1",
+      "label": "Theorems.State_Query_Script"
+    },
+    {
+      "contract": "columnar-storage-v1",
+      "label": "Theorems.Insert_Get_Consistency"
+    },
+    {
+      "contract": "columnar-storage-v1",
+      "label": "Theorems.Query_Correctness"
+    },
+    {
+      "contract": "columnar-storage-v1",
+      "label": "Theorems.WASM_Parity"
+    },
+    {
+      "contract": "comply-check-v1",
+      "label": "Theorems.Aggregate_Score"
+    },
+    {
+      "contract": "comply-check-v1",
+      "label": "Theorems.Run_Checks"
+    },
+    {
+      "contract": "compression-codec-v1",
+      "label": "Theorems.Batch_Correctness"
+    },
+    {
+      "contract": "compression-codec-v1",
+      "label": "Theorems.Roundtrip_Identity"
+    },
+    {
+      "contract": "compression-codec-v1",
+      "label": "Theorems.SIMD_Scalar_Parity"
+    },
+    {
+      "contract": "compression-roundtrip-v1",
+      "label": "Theorems.Compression_Ratio"
+    },
+    {
+      "contract": "compression-roundtrip-v1",
+      "label": "Theorems.Lz4Roundtrip"
+    },
+    {
+      "contract": "compression-roundtrip-v1",
+      "label": "Theorems.Page_State"
+    },
+    {
+      "contract": "compression-roundtrip-v1",
+      "label": "Theorems.Roundtrip_Identity"
+    },
+    {
+      "contract": "compression-roundtrip-v1",
+      "label": "Theorems.SqliteMigration"
+    },
+    {
+      "contract": "compute-parity-v1",
+      "label": "Theorems.BackendDispatchComplete"
+    },
+    {
+      "contract": "compute-parity-v1",
+      "label": "Theorems.SimdScalarParity"
+    },
+    {
+      "contract": "concurrency-safety-v1",
+      "label": "Theorems.ChannelLossless"
+    },
+    {
+      "contract": "concurrency-safety-v1",
+      "label": "Theorems.ParallelDeterminism"
+    },
+    {
+      "contract": "concurrency-safety-v1",
+      "label": "Theorems.TaskCancellationCleanup"
+    },
+    {
+      "contract": "configuration-schema-v1",
+      "label": "Theorems.ThresholdInvariants"
+    },
+    {
+      "contract": "configuration-schema-v1",
+      "label": "Theorems.UnknownKeyRejection"
+    },
+    {
+      "contract": "configuration-v1",
+      "label": "Theorems.BFS_Level_Map"
+    },
+    {
+      "contract": "configuration-v1",
+      "label": "Theorems.Config_Factory"
+    },
+    {
+      "contract": "configuration-v1",
+      "label": "Theorems.Config_Valid"
+    },
+    {
+      "contract": "configuration-v1",
+      "label": "Theorems.Configuration"
+    },
+    {
+      "contract": "configuration-v1",
+      "label": "Theorems.Connect_Lifecycle"
+    },
+    {
+      "contract": "configuration-v1",
+      "label": "Theorems.Connection_Count"
+    },
+    {
+      "contract": "configuration-v1",
+      "label": "Theorems.Insert_Idempotent"
+    },
+    {
+      "contract": "configuration-v1",
+      "label": "Theorems.Query_Correct"
+    },
+    {
+      "contract": "configuration-v1",
+      "label": "Theorems.Validate_Index"
+    },
+    {
+      "contract": "configuration-v1",
+      "label": "Theorems.Validate_Size"
+    },
+    {
+      "contract": "context-generation-v1",
+      "label": "Theorems.Generate_Context"
+    },
+    {
+      "contract": "context-generation-v1",
+      "label": "Theorems.Index_Persistence"
+    },
+    {
+      "contract": "continuous-batching-v1",
+      "label": "Theorems.Chunked_Prefill"
+    },
+    {
+      "contract": "continuous-batching-v1",
+      "label": "Theorems.Correctness_Under_Batching"
+    },
+    {
+      "contract": "continuous-batching-v1",
+      "label": "Theorems.Decode_Degradation"
+    },
+    {
+      "contract": "continuous-batching-v1",
+      "label": "Theorems.Request_State"
+    },
+    {
+      "contract": "continuous-batching-v1",
+      "label": "Theorems.Scheduling_Fairness"
+    },
+    {
+      "contract": "continuous-batching-v1",
+      "label": "Theorems.Throughput_Scaling"
+    },
+    {
+      "contract": "continuous-batching-v1",
+      "label": "Theorems.Token_Budget"
+    },
+    {
+      "contract": "conversation-generation-v1",
+      "label": "Theorems.Chatml_Format"
+    },
+    {
+      "contract": "conversation-generation-v1",
+      "label": "Theorems.Conversation_Types"
+    },
+    {
+      "contract": "conversation-generation-v1",
+      "label": "Theorems.Quality_Gate"
+    },
+    {
+      "contract": "copia-delta-v1",
+      "label": "Theorems.Block_Reuse"
+    },
+    {
+      "contract": "copia-delta-v1",
+      "label": "Theorems.Delta_Correctness"
+    },
+    {
+      "contract": "copia-delta-v1",
+      "label": "Theorems.Identity_Sync"
+    },
+    {
+      "contract": "copia-delta-v1",
+      "label": "Theorems.Transfer_Minimality"
+    },
+    {
+      "contract": "cpp-type-preservation-v1",
+      "label": "Theorems.Class_To_Struct"
+    },
+    {
+      "contract": "cpp-type-preservation-v1",
+      "label": "Theorems.Inheritance_To_Composition"
+    },
+    {
+      "contract": "cpp-type-preservation-v1",
+      "label": "Theorems.Namespace_To_Mod"
+    },
+    {
+      "contract": "cpp-type-preservation-v1",
+      "label": "Theorems.Operator_To_Trait"
+    },
+    {
+      "contract": "cpu-q4k-activation-quant-v1",
+      "label": "Theorems.Current_Path"
+    },
+    {
+      "contract": "cpu-q4k-activation-quant-v1",
+      "label": "Theorems.Speedup_Bound"
+    },
+    {
+      "contract": "cpu-q4k-activation-quant-v1",
+      "label": "Theorems.Target_Path"
+    },
+    {
+      "contract": "cpu-work-stealing-v1",
+      "label": "Theorems.L1_Tiling"
+    },
+    {
+      "contract": "cpu-work-stealing-v1",
+      "label": "Theorems.Rayon_Overhead"
+    },
+    {
+      "contract": "cross-entropy-kernel-v1",
+      "label": "Theorems.Cross_Entropy"
+    },
+    {
+      "contract": "cross-entropy-kernel-v1",
+      "label": "Theorems.Log_Softmax"
+    },
+    {
+      "contract": "cuda-classify-training-v1",
+      "label": "Theorems.Device_Dispatch"
+    },
+    {
+      "contract": "cuda-classify-training-v1",
+      "label": "Theorems.Gpu_Forward"
+    },
+    {
+      "contract": "cuda-classify-training-v1",
+      "label": "Theorems.Weight_Roundtrip"
+    },
+    {
+      "contract": "cuda-graph-batched-inference-v1",
+      "label": "Theorems.Bucket_Selection"
+    },
+    {
+      "contract": "cuda-graph-batched-inference-v1",
+      "label": "Theorems.Dispatch_Overhead"
+    },
+    {
+      "contract": "cuda-graph-batched-inference-v1",
+      "label": "Theorems.Efficiency_Target"
+    },
+    {
+      "contract": "cuda-graph-batched-inference-v1",
+      "label": "Theorems.Graph_Correctness"
+    },
+    {
+      "contract": "cuda-graph-batched-inference-v1",
+      "label": "Theorems.Memory_Overhead"
+    },
+    {
+      "contract": "cuda-graph-batched-inference-v1",
+      "label": "Theorems.Throughput_Scaling"
+    },
+    {
+      "contract": "cuda-kernel-safety-v1",
+      "label": "Theorems.Host_Transpilation"
+    },
+    {
+      "contract": "cuda-kernel-safety-v1",
+      "label": "Theorems.Kernel_Ffi"
+    },
+    {
+      "contract": "cuda-kernel-safety-v1",
+      "label": "Theorems.Qualifier_Preservation"
+    },
+    {
+      "contract": "cuda-q4k-frozen-teacher-v1",
+      "label": "Theorems.Forward_Kernel_Dispatch"
+    },
+    {
+      "contract": "cuda-q4k-frozen-teacher-v1",
+      "label": "Theorems.No_Grad_Invariant"
+    },
+    {
+      "contract": "cuda-q4k-frozen-teacher-v1",
+      "label": "Theorems.Parity_With_Realizar_Inference"
+    },
+    {
+      "contract": "cuda-q4k-frozen-teacher-v1",
+      "label": "Theorems.Teacher_Residency_Invariant"
+    },
+    {
+      "contract": "cuda-unified-memory-allocator-v1",
+      "label": "Theorems.Allocator_Dispatch"
+    },
+    {
+      "contract": "cuda-unified-memory-allocator-v1",
+      "label": "Theorems.Budget_Invariant"
+    },
+    {
+      "contract": "cuda-unified-memory-allocator-v1",
+      "label": "Theorems.Device_Class_Classification"
+    },
+    {
+      "contract": "dag-ordering-v1",
+      "label": "Theorems.Kahn_Sort"
+    },
+    {
+      "contract": "dag-ordering-v1",
+      "label": "Theorems.Topological_Sort"
+    },
+    {
+      "contract": "data-feed-v1",
+      "label": "Theorems.Config_Validity"
+    },
+    {
+      "contract": "data-feed-v1",
+      "label": "Theorems.Serialize_Roundtrip"
+    },
+    {
+      "contract": "decision-engine-v1",
+      "label": "Theorems.Include_Resolution"
+    },
+    {
+      "contract": "decision-engine-v1",
+      "label": "Theorems.Transpile_Dispatch"
+    },
+    {
+      "contract": "decision-engine-v1",
+      "label": "Theorems.Type_Preservation"
+    },
+    {
+      "contract": "decision-tree-v1",
+      "label": "Theorems.Gini_Impurity"
+    },
+    {
+      "contract": "decision-tree-v1",
+      "label": "Theorems.Gini_Split"
+    },
+    {
+      "contract": "decision-tree-v1",
+      "label": "Theorems.Mse_Split"
+    },
+    {
+      "contract": "decision-tree-v1",
+      "label": "Theorems.Prediction"
+    },
+    {
+      "contract": "delta-sync-v1",
+      "label": "Theorems.Delta_Computation"
+    },
+    {
+      "contract": "delta-sync-v1",
+      "label": "Theorems.Patch_Apply"
+    },
+    {
+      "contract": "delta-sync-v1",
+      "label": "Theorems.Rolling_Checksum"
+    },
+    {
+      "contract": "discriminant-analysis-v1",
+      "label": "Theorems.Lda_Decision_Function"
+    },
+    {
+      "contract": "discriminant-analysis-v1",
+      "label": "Theorems.Qda_Class_Covariance"
+    },
+    {
+      "contract": "discriminant-analysis-v1",
+      "label": "Theorems.Qda_Log_Likelihood"
+    },
+    {
+      "contract": "display-format-v1",
+      "label": "Theorems.Display_Format"
+    },
+    {
+      "contract": "display-format-v1",
+      "label": "Theorems.Render"
+    },
+    {
+      "contract": "distill-per-position-kd-v1",
+      "label": "Theorems.Additive_Safety"
+    },
+    {
+      "contract": "distill-per-position-kd-v1",
+      "label": "Theorems.Per_Position_Signal"
+    },
+    {
+      "contract": "distill-pipeline-observability-v1",
+      "label": "Theorems.Callback_Lifecycle"
+    },
+    {
+      "contract": "distill-pipeline-observability-v1",
+      "label": "Theorems.Default_Attachment"
+    },
+    {
+      "contract": "distill-pipeline-observability-v1",
+      "label": "Theorems.Progress_Log_Format"
+    },
+    {
+      "contract": "distributed-training-v1",
+      "label": "Theorems.Gradient_Allreduce"
+    },
+    {
+      "contract": "distributed-training-v1",
+      "label": "Theorems.Lora_Gradient_Size"
+    },
+    {
+      "contract": "distributed-training-v1",
+      "label": "Theorems.Sharding"
+    },
+    {
+      "contract": "distributed-training-v1",
+      "label": "Theorems.Swiglu_Ffn"
+    },
+    {
+      "contract": "distributed-training-v1",
+      "label": "Theorems.Weighted_Loss"
+    },
+    {
+      "contract": "distribution-v1",
+      "label": "Theorems.Build_Integrity"
+    },
+    {
+      "contract": "distribution-v1",
+      "label": "Theorems.Distribution_Delivery"
+    },
+    {
+      "contract": "document-integrity-v1",
+      "label": "Theorems.AnimationBounds"
+    },
+    {
+      "contract": "document-integrity-v1",
+      "label": "Theorems.BadgeFormat"
+    },
+    {
+      "contract": "document-integrity-v1",
+      "label": "Theorems.CodeFenceLanguage"
+    },
+    {
+      "contract": "document-integrity-v1",
+      "label": "Theorems.HeadingHierarchy"
+    },
+    {
+      "contract": "document-integrity-v1",
+      "label": "Theorems.LinkWellformedness"
+    },
+    {
+      "contract": "document-integrity-v1",
+      "label": "Theorems.MediaDimensionBounds"
+    },
+    {
+      "contract": "document-integrity-v1",
+      "label": "Theorems.MediaMagicBytes"
+    },
+    {
+      "contract": "document-integrity-v1",
+      "label": "Theorems.MediaMetadataPresent"
+    },
+    {
+      "contract": "document-integrity-v1",
+      "label": "Theorems.ReadmeDrift"
+    },
+    {
+      "contract": "document-integrity-v1",
+      "label": "Theorems.RequiredSections"
+    },
+    {
+      "contract": "document-integrity-v1",
+      "label": "Theorems.SvgStructuralSafety"
+    },
+    {
+      "contract": "document-integrity-v1",
+      "label": "Theorems.TableColumnParity"
+    },
+    {
+      "contract": "document-integrity-v1",
+      "label": "Theorems.YamlFrontmatter"
+    },
+    {
+      "contract": "document-integrity-v1",
+      "label": "Theorems.YamlKeyConvention"
+    },
+    {
+      "contract": "document-integrity-v1",
+      "label": "Theorems.YamlStructuralValidity"
+    },
+    {
+      "contract": "dpo-loss-v1",
+      "label": "Theorems.Dpo_Loss"
+    },
+    {
+      "contract": "dpo-loss-v1",
+      "label": "Theorems.Implicit_Reward"
+    },
+    {
+      "contract": "dpo-loss-v1",
+      "label": "Theorems.Log_Ratio"
+    },
+    {
+      "contract": "drift-detection-v1",
+      "label": "Theorems.Classify_Drift"
+    },
+    {
+      "contract": "drift-detection-v1",
+      "label": "Theorems.Min_Samples_Guard"
+    },
+    {
+      "contract": "drift-detection-v1",
+      "label": "Theorems.Performance_Drift"
+    },
+    {
+      "contract": "drift-detection-v1",
+      "label": "Theorems.Univariate_Drift"
+    },
+    {
+      "contract": "dropout-v1",
+      "label": "Theorems.Dropout_Eval"
+    },
+    {
+      "contract": "dropout-v1",
+      "label": "Theorems.Dropout_Train"
+    },
+    {
+      "contract": "embedding-algebra-v1",
+      "label": "N/A — non-degeneracy is a loaded-weight property, not an analytic identity"
+    },
+    {
+      "contract": "embedding-algebra-v1",
+      "label": "Theorems.Embedding.onehot_select"
+    },
+    {
+      "contract": "embedding-algebra-v1",
+      "label": "Theorems.Embedding.temp_identity"
+    },
+    {
+      "contract": "embedding-algebra-v1",
+      "label": "Theorems.Embedding.tied_row_eq"
+    },
+    {
+      "contract": "embedding-algebra-v1",
+      "label": "Theorems.Embedding.token_lt_vocab"
+    },
+    {
+      "contract": "embedding-algebra-v1",
+      "label": "Theorems.Embedding.unembed_apply"
+    },
+    {
+      "contract": "encoder-forward-v1",
+      "label": "Theorems.Cls_Pooling"
+    },
+    {
+      "contract": "encoder-forward-v1",
+      "label": "Theorems.Encoder_Layer"
+    },
+    {
+      "contract": "encoder-roundtrip-v1",
+      "label": "Theorems.Decode_Frame"
+    },
+    {
+      "contract": "encoder-roundtrip-v1",
+      "label": "Theorems.Emit_Posix"
+    },
+    {
+      "contract": "encoder-roundtrip-v1",
+      "label": "Theorems.Emit_Purified"
+    },
+    {
+      "contract": "encoder-roundtrip-v1",
+      "label": "Theorems.Encode_Roundtrip"
+    },
+    {
+      "contract": "encoder-roundtrip-v1",
+      "label": "Theorems.Encoder_Resolution"
+    },
+    {
+      "contract": "error-handling-v1",
+      "label": "Theorems.Error_Categorized"
+    },
+    {
+      "contract": "error-handling-v1",
+      "label": "Theorems.Error_Handling"
+    },
+    {
+      "contract": "error-handling-v1",
+      "label": "Theorems.Send_Complete"
+    },
+    {
+      "contract": "eval-sharding-v1",
+      "label": "Theorems.EvalShardMergeIdentity"
+    },
+    {
+      "contract": "event-rulebook-v1",
+      "label": "Theorems.Action_Ordering"
+    },
+    {
+      "contract": "event-rulebook-v1",
+      "label": "Theorems.Cooldown_Deduplication"
+    },
+    {
+      "contract": "event-rulebook-v1",
+      "label": "Theorems.Trigger_Dispatch_Completeness"
+    },
+    {
+      "contract": "execution-safety-v1",
+      "label": "Theorems.Atomic_Write"
+    },
+    {
+      "contract": "execution-safety-v1",
+      "label": "Theorems.Jidoka_Stop"
+    },
+    {
+      "contract": "f16-conversion-v1",
+      "label": "Theorems.F16.bias_trick_correct"
+    },
+    {
+      "contract": "f16-conversion-v1",
+      "label": "Theorems.F16.roundtrip_identity"
+    },
+    {
+      "contract": "flash-attention-v1",
+      "label": "Theorems.Flash_Attention"
+    },
+    {
+      "contract": "format-parity-v1",
+      "label": "Theorems.Element_Count"
+    },
+    {
+      "contract": "format-parity-v1",
+      "label": "Theorems.Identity_1D"
+    },
+    {
+      "contract": "format-parity-v1",
+      "label": "Theorems.Name_Bijection"
+    },
+    {
+      "contract": "format-parity-v1",
+      "label": "Theorems.Transpose_Involution"
+    },
+    {
+      "contract": "fused-qkv-projection-v1",
+      "label": "Theorems.Fused_Qkv"
+    },
+    {
+      "contract": "fused-qkv-projection-v1",
+      "label": "Theorems.Separate_Qkv"
+    },
+    {
+      "contract": "fused-qkv-projection-v1",
+      "label": "Theorems.Shared_Q8_Qkv"
+    },
+    {
+      "contract": "gated-delta-net-v1",
+      "label": "Theorems.Delta"
+    },
+    {
+      "contract": "gated-delta-net-v1",
+      "label": "Theorems.Output"
+    },
+    {
+      "contract": "gated-delta-net-v1",
+      "label": "Theorems.Read"
+    },
+    {
+      "contract": "gbm-v1",
+      "label": "Theorems.Gradient_Boost"
+    },
+    {
+      "contract": "gbm-v1",
+      "label": "Theorems.Negative_Gradient"
+    },
+    {
+      "contract": "gbm-v1",
+      "label": "Theorems.Predict"
+    },
+    {
+      "contract": "gbm-v1",
+      "label": "Theorems.Training_Loss"
+    },
+    {
+      "contract": "gelu-kernel-v1",
+      "label": "Theorems.Gelu_Tanh_Approx"
+    },
+    {
+      "contract": "gemm-backward-tiled-v1",
+      "label": "Theorems.Backward_A_Gemm"
+    },
+    {
+      "contract": "gemm-backward-tiled-v1",
+      "label": "Theorems.Backward_B_Gemm"
+    },
+    {
+      "contract": "gemm-backward-tiled-v1",
+      "label": "Theorems.Shared_Memory_Per_Tile"
+    },
+    {
+      "contract": "gemm-backward-tiled-v1",
+      "label": "Theorems.Tiled_Gemm_Arithmetic_Intensity"
+    },
+    {
+      "contract": "gemm-backward-tiled-v1",
+      "label": "Theorems.Unrolled_Instruction_Ratio"
+    },
+    {
+      "contract": "ggml-type-v1",
+      "label": "Theorems.Ggml_Block_Geometry"
+    },
+    {
+      "contract": "ggml-type-v1",
+      "label": "Theorems.Ggml_Tensor_Bytes"
+    },
+    {
+      "contract": "gguf-cpu-cache-v1",
+      "label": "Theorems.Autoregressive_Generation"
+    },
+    {
+      "contract": "gguf-format-safety-v1",
+      "label": "Theorems.Alignment_Enforcement"
+    },
+    {
+      "contract": "gguf-format-safety-v1",
+      "label": "Theorems.Magic_Validation"
+    },
+    {
+      "contract": "gguf-format-safety-v1",
+      "label": "Theorems.Metadata_KV_Safety"
+    },
+    {
+      "contract": "gguf-format-safety-v1",
+      "label": "Theorems.Tensor_Metadata_Integrity"
+    },
+    {
+      "contract": "gguf-format-safety-v1",
+      "label": "Theorems.Version_Compatibility"
+    },
+    {
+      "contract": "gguf-kquant-element-size-v1",
+      "label": "Theorems.KQuant_Element_Size"
+    },
+    {
+      "contract": "gguf-kquant-element-size-v1",
+      "label": "Theorems.Total_Tensor_Bytes"
+    },
+    {
+      "contract": "glm-v1",
+      "label": "Theorems.Binomial_Link"
+    },
+    {
+      "contract": "glm-v1",
+      "label": "Theorems.Gamma_Link"
+    },
+    {
+      "contract": "glm-v1",
+      "label": "Theorems.Irls_Fit"
+    },
+    {
+      "contract": "glm-v1",
+      "label": "Theorems.Poisson_Link"
+    },
+    {
+      "contract": "gnn-v1",
+      "label": "Theorems.Gcn_Aggregate"
+    },
+    {
+      "contract": "gnn-v1",
+      "label": "Theorems.Global_Max_Pool"
+    },
+    {
+      "contract": "gnn-v1",
+      "label": "Theorems.Global_Mean_Pool"
+    },
+    {
+      "contract": "gnn-v1",
+      "label": "Theorems.Message_Passing"
+    },
+    {
+      "contract": "golden-trace-v1",
+      "label": "Theorems.Adaptive_Sampling"
+    },
+    {
+      "contract": "golden-trace-v1",
+      "label": "Theorems.Trace_Capture"
+    },
+    {
+      "contract": "golden-trace-v1",
+      "label": "Theorems.Trace_Validate"
+    },
+    {
+      "contract": "gpu-context-health-v1",
+      "label": "Theorems.Context_Health"
+    },
+    {
+      "contract": "gpu-context-health-v1",
+      "label": "Theorems.Cuda_Graph_Guard"
+    },
+    {
+      "contract": "gpu-context-health-v1",
+      "label": "Theorems.Culink_Skip"
+    },
+    {
+      "contract": "gpu-context-health-v1",
+      "label": "Theorems.Fp8_Architecture_Guard"
+    },
+    {
+      "contract": "gpu-decode-profiling-v1",
+      "label": "Theorems.Brick_Ordering"
+    },
+    {
+      "contract": "gpu-decode-profiling-v1",
+      "label": "Theorems.Decode_Audio"
+    },
+    {
+      "contract": "gpu-decode-profiling-v1",
+      "label": "Theorems.Decode_Video"
+    },
+    {
+      "contract": "gpu-decode-profiling-v1",
+      "label": "Theorems.Graph_Disable"
+    },
+    {
+      "contract": "gpu-decode-profiling-v1",
+      "label": "Theorems.Report_Completeness"
+    },
+    {
+      "contract": "gpu-decode-profiling-v1",
+      "label": "Theorems.Report_Denominator"
+    },
+    {
+      "contract": "gpu-decode-profiling-v1",
+      "label": "Theorems.Report_Fidelity"
+    },
+    {
+      "contract": "gpu-decode-profiling-v1",
+      "label": "Theorems.Report_Metadata"
+    },
+    {
+      "contract": "gpu-decode-profiling-v1",
+      "label": "Theorems.Sync_Verification"
+    },
+    {
+      "contract": "gpu-decode-profiling-v1",
+      "label": "Theorems.Token_Accounting"
+    },
+    {
+      "contract": "gpu-decode-profiling-v1",
+      "label": "Theorems.Wall_Coverage"
+    },
+    {
+      "contract": "gpu-multi-backend-parity-v1",
+      "label": "Theorems.Backend_Priority"
+    },
+    {
+      "contract": "gpu-multi-backend-parity-v1",
+      "label": "Theorems.Bandwidth_Bound_Theorem"
+    },
+    {
+      "contract": "gpu-multi-backend-parity-v1",
+      "label": "Theorems.Jit_Compilation_Correctness"
+    },
+    {
+      "contract": "gpu-multi-backend-parity-v1",
+      "label": "Theorems.Multi_Backend_Parity"
+    },
+    {
+      "contract": "gpu-weight-residency-v1",
+      "label": "Theorems.Pcie_Overhead"
+    },
+    {
+      "contract": "gpu-weight-residency-v1",
+      "label": "Theorems.Throughput_Target"
+    },
+    {
+      "contract": "gqa-kv-dim-fail-closed-v1",
+      "label": "Theorems.Gqa_Kv_Dim_Consistency"
+    },
+    {
+      "contract": "graph-centrality-v1",
+      "label": "Theorems.Betweenness"
+    },
+    {
+      "contract": "graph-centrality-v1",
+      "label": "Theorems.Closeness"
+    },
+    {
+      "contract": "graph-centrality-v1",
+      "label": "Theorems.Degree"
+    },
+    {
+      "contract": "graph-centrality-v1",
+      "label": "Theorems.Eigenvector"
+    },
+    {
+      "contract": "graph-centrality-v1",
+      "label": "Theorems.Harmonic"
+    },
+    {
+      "contract": "graph-centrality-v1",
+      "label": "Theorems.Katz"
+    },
+    {
+      "contract": "graph-index-v1",
+      "label": "Theorems.Bm25Scoring"
+    },
+    {
+      "contract": "graph-index-v1",
+      "label": "Theorems.CsrConstruction"
+    },
+    {
+      "contract": "graph-index-v1",
+      "label": "Theorems.Fts5Consistency"
+    },
+    {
+      "contract": "graph-index-v1",
+      "label": "Theorems.PageRankConvergence"
+    },
+    {
+      "contract": "graph-index-v1",
+      "label": "Theorems.SqliteRoundtrip"
+    },
+    {
+      "contract": "graph-query-v1",
+      "label": "Theorems.BFS_Correctness"
+    },
+    {
+      "contract": "graph-query-v1",
+      "label": "Theorems.PageRank_Convergence"
+    },
+    {
+      "contract": "http-api-v1",
+      "label": "Theorems.Body_Schema_Compliance"
+    },
+    {
+      "contract": "http-api-v1",
+      "label": "Theorems.CORS_Negotiation"
+    },
+    {
+      "contract": "http-api-v1",
+      "label": "Theorems.Error_Envelope"
+    },
+    {
+      "contract": "http-api-v1",
+      "label": "Theorems.Max_Tokens_Cap"
+    },
+    {
+      "contract": "http-api-v1",
+      "label": "Theorems.Request_Response_Schema"
+    },
+    {
+      "contract": "http-api-v1",
+      "label": "Theorems.Response_Schema"
+    },
+    {
+      "contract": "http-api-v1",
+      "label": "Theorems.Thinking_Block_Strip"
+    },
+    {
+      "contract": "http-api-v1",
+      "label": "Theorems.Timeout_Honoring"
+    },
+    {
+      "contract": "http-api-v1",
+      "label": "Theorems.Tool_Format_Fidelity"
+    },
+    {
+      "contract": "http-client-v1",
+      "label": "Theorems.ErrorPropagation"
+    },
+    {
+      "contract": "http-client-v1",
+      "label": "Theorems.LruCacheEviction"
+    },
+    {
+      "contract": "http-client-v1",
+      "label": "Theorems.MultiTierRouting"
+    },
+    {
+      "contract": "http-client-v1",
+      "label": "Theorems.RequestConstruction"
+    },
+    {
+      "contract": "http-client-v1",
+      "label": "Theorems.ResponseParsing"
+    },
+    {
+      "contract": "http-client-v1",
+      "label": "Theorems.SsrfPrevention"
+    },
+    {
+      "contract": "http-client-v1",
+      "label": "Theorems.UrlValidation"
+    },
+    {
+      "contract": "hybrid-layer-dispatch-v1",
+      "label": "Theorems.Conv1D_Causal"
+    },
+    {
+      "contract": "hybrid-layer-dispatch-v1",
+      "label": "Theorems.Head_Grouping"
+    },
+    {
+      "contract": "hybrid-layer-dispatch-v1",
+      "label": "Theorems.Hybrid_Dispatch"
+    },
+    {
+      "contract": "hybrid-layer-dispatch-v1",
+      "label": "Theorems.Linear_Associativity"
+    },
+    {
+      "contract": "hybrid-layer-dispatch-v1",
+      "label": "Theorems.Linear_No_Softmax"
+    },
+    {
+      "contract": "hybrid-layer-dispatch-v1",
+      "label": "Theorems.Linear_Shapes"
+    },
+    {
+      "contract": "ica-v1",
+      "label": "Theorems.Fastica"
+    },
+    {
+      "contract": "ica-v1",
+      "label": "Theorems.Mixing"
+    },
+    {
+      "contract": "ica-v1",
+      "label": "Theorems.Unmixing"
+    },
+    {
+      "contract": "ica-whitening-v1",
+      "label": "Theorems.IcaWhitening"
+    },
+    {
+      "contract": "inference-pipeline-v1",
+      "label": "Theorems.Decode_Step"
+    },
+    {
+      "contract": "inference-pipeline-v1",
+      "label": "Theorems.Hybrid_Layer_Schedule"
+    },
+    {
+      "contract": "inference-pipeline-v1",
+      "label": "Theorems.Kv_Cache_Growth"
+    },
+    {
+      "contract": "inference-pipeline-v1",
+      "label": "Theorems.Layer_Composition"
+    },
+    {
+      "contract": "inference-pipeline-v1",
+      "label": "Theorems.Prefill_Phase"
+    },
+    {
+      "contract": "inference-pipeline-v1",
+      "label": "Theorems.Residual_Stream"
+    },
+    {
+      "contract": "inference-pipeline-v1",
+      "label": "Theorems.Sampling_Temperature"
+    },
+    {
+      "contract": "int8-symmetric-quant-v1",
+      "label": "Theorems.Dequant_Dot"
+    },
+    {
+      "contract": "int8-symmetric-quant-v1",
+      "label": "Theorems.Per_Row_Scale"
+    },
+    {
+      "contract": "int8-symmetric-quant-v1",
+      "label": "Theorems.Quantize"
+    },
+    {
+      "contract": "iterator-v1",
+      "label": "Theorems.Iterator"
+    },
+    {
+      "contract": "kernel-fusion-v1",
+      "label": "Theorems.FusionDecisionRegistry"
+    },
+    {
+      "contract": "kernel-fusion-v1",
+      "label": "Theorems.FusionPerformance"
+    },
+    {
+      "contract": "kernel-launch-budget-v1",
+      "label": "Theorems.Bsum_Budget"
+    },
+    {
+      "contract": "kernel-launch-budget-v1",
+      "label": "Theorems.Per_Layer_Decomposition"
+    },
+    {
+      "contract": "kernel-launch-budget-v1",
+      "label": "Theorems.Per_Token_Launches"
+    },
+    {
+      "contract": "kmeans-kernel-v1",
+      "label": "Theorems.Assignment"
+    },
+    {
+      "contract": "kmeans-kernel-v1",
+      "label": "Theorems.Objective"
+    },
+    {
+      "contract": "kmeans-kernel-v1",
+      "label": "Theorems.Update"
+    },
+    {
+      "contract": "kv-cache-equivalence-v1",
+      "label": "Theorems.Batched_Serial_Equivalence"
+    },
+    {
+      "contract": "kv-cache-equivalence-v1",
+      "label": "Theorems.Fused_Kernel"
+    },
+    {
+      "contract": "kv-cache-equivalence-v1",
+      "label": "Theorems.Page_Shape"
+    },
+    {
+      "contract": "kv-cache-equivalence-v1",
+      "label": "Theorems.Prefill_Incremental"
+    },
+    {
+      "contract": "kv-cache-sizing-v1",
+      "label": "Theorems.Bias_Absence"
+    },
+    {
+      "contract": "kv-cache-sizing-v1",
+      "label": "Theorems.Hybrid_Accounting"
+    },
+    {
+      "contract": "kv-cache-sizing-v1",
+      "label": "Theorems.Per_Token_Per_Layer"
+    },
+    {
+      "contract": "kv-cache-sizing-v1",
+      "label": "Theorems.Total_Kv_Memory"
+    },
+    {
+      "contract": "kv-cache-sizing-v1",
+      "label": "Theorems.Zero_Input_Identity"
+    },
+    {
+      "contract": "layer-parity-v1",
+      "label": "Theorems.CosineParityGate"
+    },
+    {
+      "contract": "layer-parity-v1",
+      "label": "Theorems.LayerParity"
+    },
+    {
+      "contract": "lbfgs-kernel-v1",
+      "label": "Theorems.Line_Search"
+    },
+    {
+      "contract": "lbfgs-kernel-v1",
+      "label": "Theorems.Secant_Condition"
+    },
+    {
+      "contract": "lbfgs-kernel-v1",
+      "label": "Theorems.Two_Loop_Recursion"
+    },
+    {
+      "contract": "learned-position-embedding-v1",
+      "label": "Theorems.Position_Embedding"
+    },
+    {
+      "contract": "linear-bias-init-v1",
+      "label": "Theorems.Linear_Bias_Init"
+    },
+    {
+      "contract": "linear-models-v1",
+      "label": "Theorems.Logistic_Predict_Proba"
+    },
+    {
+      "contract": "linear-models-v1",
+      "label": "Theorems.Ols_Fit"
+    },
+    {
+      "contract": "linear-models-v1",
+      "label": "Theorems.Ols_Predict"
+    },
+    {
+      "contract": "linear-models-v1",
+      "label": "Theorems.R_Squared_Training"
+    },
+    {
+      "contract": "linear-probe-classifier-v1",
+      "label": "Theorems.Linear_Probe"
+    },
+    {
+      "contract": "linear-projection-v1",
+      "label": "Theorems.Linear_Forward"
+    },
+    {
+      "contract": "linear-projection-v1",
+      "label": "Theorems.Linear_No_Bias"
+    },
+    {
+      "contract": "lora-dropout-placement-v1",
+      "label": "Theorems.Inverted_Dropout"
+    },
+    {
+      "contract": "lora-dropout-placement-v1",
+      "label": "Theorems.LoRA_Dropout_Placement"
+    },
+    {
+      "contract": "lora-gradient-flow-v1",
+      "label": "Theorems.LoraForward"
+    },
+    {
+      "contract": "lora-merge-peft-layout-v1",
+      "label": "Theorems.Delta_Weight_Peft"
+    },
+    {
+      "contract": "lora-merge-peft-layout-v1",
+      "label": "Theorems.Forward_Equivalence"
+    },
+    {
+      "contract": "lora-target-selection-v1",
+      "label": "Theorems.Lora_Contribution"
+    },
+    {
+      "contract": "loss-functions-v1",
+      "label": "Theorems.Bce"
+    },
+    {
+      "contract": "loss-functions-v1",
+      "label": "Theorems.Huber"
+    },
+    {
+      "contract": "loss-functions-v1",
+      "label": "Theorems.L1_Loss"
+    },
+    {
+      "contract": "loss-functions-v1",
+      "label": "Theorems.Mse_Loss"
+    },
+    {
+      "contract": "loss-functions-v1",
+      "label": "Theorems.Nll"
+    },
+    {
+      "contract": "loss-functions-v1",
+      "label": "Theorems.Smooth_L1"
+    },
+    {
+      "contract": "matmul-kernel-v1",
+      "label": "Theorems.Quantized_Dot"
+    },
+    {
+      "contract": "mcp-protocol-sdk-v1",
+      "label": "Theorems.BatchRequestOrdering"
+    },
+    {
+      "contract": "mcp-protocol-sdk-v1",
+      "label": "Theorems.CancellationSafety"
+    },
+    {
+      "contract": "mcp-protocol-sdk-v1",
+      "label": "Theorems.ErrorCodeMapping"
+    },
+    {
+      "contract": "mcp-protocol-sdk-v1",
+      "label": "Theorems.JsonRpcFraming"
+    },
+    {
+      "contract": "mcp-protocol-sdk-v1",
+      "label": "Theorems.PayloadLimits"
+    },
+    {
+      "contract": "mcp-protocol-sdk-v1",
+      "label": "Theorems.ProtocolVersionNegotiation"
+    },
+    {
+      "contract": "mcp-protocol-sdk-v1",
+      "label": "Theorems.SessionLifecycle"
+    },
+    {
+      "contract": "mcp-protocol-sdk-v1",
+      "label": "Theorems.ToolDispatchIntegrity"
+    },
+    {
+      "contract": "mcp-protocol-sdk-v1",
+      "label": "Theorems.TransportAbstraction"
+    },
+    {
+      "contract": "mcp-protocol-v1",
+      "label": "Theorems.ErrorMappingLossless"
+    },
+    {
+      "contract": "mcp-protocol-v1",
+      "label": "Theorems.SessionLifecycle"
+    },
+    {
+      "contract": "mcp-protocol-v1",
+      "label": "Theorems.ToolIdempotency"
+    },
+    {
+      "contract": "mcp-protocol-v1",
+      "label": "Theorems.ToolSchemaFidelity"
+    },
+    {
+      "contract": "mcp-tool-schema-v1",
+      "label": "Theorems.Error_Mapping"
+    },
+    {
+      "contract": "mcp-tool-schema-v1",
+      "label": "Theorems.Idempotency_Classification"
+    },
+    {
+      "contract": "mcp-tool-schema-v1",
+      "label": "Theorems.Session_State_Machine"
+    },
+    {
+      "contract": "mcp-tool-schema-v1",
+      "label": "Theorems.Tool_Schema_Fidelity"
+    },
+    {
+      "contract": "media-pipeline-v1",
+      "label": "Theorems.Codec_Dispatch"
+    },
+    {
+      "contract": "media-pipeline-v1",
+      "label": "Theorems.Encode_Decode_Roundtrip"
+    },
+    {
+      "contract": "media-pipeline-v1",
+      "label": "Theorems.Frame_Integrity"
+    },
+    {
+      "contract": "memory-safety-v1",
+      "label": "Theorems.ArenaLifecycle"
+    },
+    {
+      "contract": "memory-safety-v1",
+      "label": "Theorems.Bounds_Safety"
+    },
+    {
+      "contract": "memory-safety-v1",
+      "label": "Theorems.Drop_Safety"
+    },
+    {
+      "contract": "memory-safety-v1",
+      "label": "Theorems.Escape_Analysis"
+    },
+    {
+      "contract": "memory-safety-v1",
+      "label": "Theorems.IndexMemoryBudget"
+    },
+    {
+      "contract": "memory-safety-v1",
+      "label": "Theorems.Lifetime_Safety"
+    },
+    {
+      "contract": "memory-safety-v1",
+      "label": "Theorems.LruEvictionCorrectness"
+    },
+    {
+      "contract": "memory-safety-v1",
+      "label": "Theorems.Ownership_Invariant"
+    },
+    {
+      "contract": "memory-safety-v1",
+      "label": "Theorems.Use_After_Move"
+    },
+    {
+      "contract": "metaheuristics-v1",
+      "label": "Theorems.Best_Monotone"
+    },
+    {
+      "contract": "metaheuristics-v1",
+      "label": "Theorems.Ga_Crossover"
+    },
+    {
+      "contract": "metaheuristics-v1",
+      "label": "Theorems.Pso_Velocity"
+    },
+    {
+      "contract": "metaheuristics-v1",
+      "label": "Theorems.Sa_Acceptance"
+    },
+    {
+      "contract": "metrics-classification-v1",
+      "label": "Theorems.Accuracy"
+    },
+    {
+      "contract": "metrics-classification-v1",
+      "label": "Theorems.Confusion_Matrix"
+    },
+    {
+      "contract": "metrics-classification-v1",
+      "label": "Theorems.F1_Score"
+    },
+    {
+      "contract": "metrics-classification-v1",
+      "label": "Theorems.Precision"
+    },
+    {
+      "contract": "metrics-classification-v1",
+      "label": "Theorems.Recall"
+    },
+    {
+      "contract": "metrics-clustering-v1",
+      "label": "Theorems.Inertia"
+    },
+    {
+      "contract": "metrics-clustering-v1",
+      "label": "Theorems.Silhouette_Coefficient"
+    },
+    {
+      "contract": "metrics-clustering-v1",
+      "label": "Theorems.Silhouette_Score"
+    },
+    {
+      "contract": "metrics-ranking-v1",
+      "label": "Theorems.Hit_At_K"
+    },
+    {
+      "contract": "metrics-ranking-v1",
+      "label": "Theorems.Mrr"
+    },
+    {
+      "contract": "metrics-ranking-v1",
+      "label": "Theorems.Ndcg_At_K"
+    },
+    {
+      "contract": "metrics-ranking-v1",
+      "label": "Theorems.Reciprocal_Rank"
+    },
+    {
+      "contract": "metrics-regression-v1",
+      "label": "Theorems.R_Squared"
+    },
+    {
+      "contract": "mirostat-bits-v1",
+      "label": "Theorems.Mirostat_Mu_Update_Bits"
+    },
+    {
+      "contract": "mirostat-bits-v1",
+      "label": "Theorems.Mirostat_Surprise_Bits"
+    },
+    {
+      "contract": "model-config-algebra-v1",
+      "label": "Theorems.Cross_Constraint"
+    },
+    {
+      "contract": "model-config-algebra-v1",
+      "label": "Theorems.Divisibility"
+    },
+    {
+      "contract": "model-config-algebra-v1",
+      "label": "Theorems.Non_Degeneracy"
+    },
+    {
+      "contract": "model-config-algebra-v1",
+      "label": "Theorems.Ordering"
+    },
+    {
+      "contract": "model-format-conversion-v1",
+      "label": "Theorems.Apr_Tokenizer_Embedding"
+    },
+    {
+      "contract": "model-format-conversion-v1",
+      "label": "Theorems.Export_Fidelity"
+    },
+    {
+      "contract": "model-format-conversion-v1",
+      "label": "Theorems.Format_Conversion_Roundtrip"
+    },
+    {
+      "contract": "model-format-conversion-v1",
+      "label": "Theorems.Import_Integrity"
+    },
+    {
+      "contract": "model-format-conversion-v1",
+      "label": "Theorems.Merge_Weight_Algebra"
+    },
+    {
+      "contract": "model-format-conversion-v1",
+      "label": "Theorems.Quantization_Bounds"
+    },
+    {
+      "contract": "model-metadata-bounds-v1",
+      "label": "Theorems.Gqa_Ratio"
+    },
+    {
+      "contract": "model-metadata-bounds-v1",
+      "label": "Theorems.Head_Dim"
+    },
+    {
+      "contract": "model-qa-v1",
+      "label": "Theorems.Grade_Assignment"
+    },
+    {
+      "contract": "model-qa-v1",
+      "label": "Theorems.MQS_Scoring"
+    },
+    {
+      "contract": "model-qa-v1",
+      "label": "Theorems.Regression_Detection"
+    },
+    {
+      "contract": "moe-load-balance-loss-v1",
+      "label": "Theorems.Switch_Load_Balance_Loss"
+    },
+    {
+      "contract": "monitor-metrics-v1",
+      "label": "Theorems.CPU_Utilization"
+    },
+    {
+      "contract": "monitor-metrics-v1",
+      "label": "Theorems.History_Persistence"
+    },
+    {
+      "contract": "monitor-metrics-v1",
+      "label": "Theorems.Memory_Usage"
+    },
+    {
+      "contract": "mqs-scoring-v1",
+      "label": "Theorems.MqsComposite"
+    },
+    {
+      "contract": "mqs-scoring-v1",
+      "label": "Theorems.MqsDeterministic"
+    },
+    {
+      "contract": "mqs-scoring-v1",
+      "label": "Theorems.MqsGrade"
+    },
+    {
+      "contract": "mqs-scoring-v1",
+      "label": "Theorems.Mqs_Composite"
+    },
+    {
+      "contract": "mqs-scoring-v1",
+      "label": "Theorems.Mqs_Deterministic"
+    },
+    {
+      "contract": "mqs-scoring-v1",
+      "label": "Theorems.Mqs_Grade"
+    },
+    {
+      "contract": "mqs-scoring-v1",
+      "label": "Theorems.Mqs_Pass_Rate"
+    },
+    {
+      "contract": "multinomial-head-v1",
+      "label": "Theorems.Analytic_Gradient"
+    },
+    {
+      "contract": "multinomial-head-v1",
+      "label": "Theorems.Convergence_Error_Mapping"
+    },
+    {
+      "contract": "multinomial-head-v1",
+      "label": "Theorems.Label_Order_Semantics"
+    },
+    {
+      "contract": "multinomial-head-v1",
+      "label": "Theorems.Logit_Finiteness"
+    },
+    {
+      "contract": "multinomial-head-v1",
+      "label": "Theorems.Softmax_Nll_Objective"
+    },
+    {
+      "contract": "naive-bayes-v1",
+      "label": "Theorems.Class_Prior"
+    },
+    {
+      "contract": "naive-bayes-v1",
+      "label": "Theorems.Gaussian_Likelihood"
+    },
+    {
+      "contract": "naive-bayes-v1",
+      "label": "Theorems.Log_Posterior"
+    },
+    {
+      "contract": "namespace-isolation-v1",
+      "label": "Theorems.Connect_Lifecycle"
+    },
+    {
+      "contract": "namespace-isolation-v1",
+      "label": "Theorems.Send_Isolation"
+    },
+    {
+      "contract": "neon-dequant-v1",
+      "label": "Theorems.NeonQ4kDequant"
+    },
+    {
+      "contract": "neon-dequant-v1",
+      "label": "Theorems.NeonQ6kDequant"
+    },
+    {
+      "contract": "neon-dequant-v1",
+      "label": "Theorems.NeonScalarEquivalence"
+    },
+    {
+      "contract": "nf4-fused-gate-up-swiglu-v1",
+      "label": "Theorems.Bandwidth_savings"
+    },
+    {
+      "contract": "nf4-fused-gate-up-swiglu-v1",
+      "label": "Theorems.Fused_rmsnorm_gate_up_swiglu_nf4"
+    },
+    {
+      "contract": "nf4-fused-gate-up-swiglu-v1",
+      "label": "Theorems.Separate_ffn"
+    },
+    {
+      "contract": "nf4-fused-qkv-gemm-v1",
+      "label": "Theorems.Bandwidth_savings"
+    },
+    {
+      "contract": "nf4-fused-qkv-gemm-v1",
+      "label": "Theorems.Fused_qkv"
+    },
+    {
+      "contract": "nf4-fused-qkv-gemm-v1",
+      "label": "Theorems.Separate_qkv"
+    },
+    {
+      "contract": "nn-softmax-dim-v1",
+      "label": "Theorems.Softmax_Over_Dim"
+    },
+    {
+      "contract": "oci-manifest-v1",
+      "label": "Theorems.Layer_Cache_Hit"
+    },
+    {
+      "contract": "oci-manifest-v1",
+      "label": "Theorems.Layer_Ordering"
+    },
+    {
+      "contract": "oci-manifest-v1",
+      "label": "Theorems.Manifest_Digest_Consistency"
+    },
+    {
+      "contract": "oci-manifest-v1",
+      "label": "Theorems.Reproducible_Build"
+    },
+    {
+      "contract": "online-softmax-v1",
+      "label": "Theorems.Online_Normalizer"
+    },
+    {
+      "contract": "online-softmax-v1",
+      "label": "Theorems.Standard_Softmax"
+    },
+    {
+      "contract": "optimization-v1",
+      "label": "Theorems.Cg_Minimize"
+    },
+    {
+      "contract": "optimization-v1",
+      "label": "Theorems.Convergence"
+    },
+    {
+      "contract": "optimization-v1",
+      "label": "Theorems.Line_Search"
+    },
+    {
+      "contract": "package-resolve-v1",
+      "label": "Theorems.Pull_Resolve"
+    },
+    {
+      "contract": "package-resolve-v1",
+      "label": "Theorems.Registry_List"
+    },
+    {
+      "contract": "package-resolve-v1",
+      "label": "Theorems.Run_Tracking"
+    },
+    {
+      "contract": "paged-attention-v1",
+      "label": "Theorems.Block_Allocation"
+    },
+    {
+      "contract": "paged-attention-v1",
+      "label": "Theorems.Block_Table_Lookup"
+    },
+    {
+      "contract": "paged-attention-v1",
+      "label": "Theorems.Copy_On_Write"
+    },
+    {
+      "contract": "paged-kv-cache-v1",
+      "label": "Theorems.Block_Allocation"
+    },
+    {
+      "contract": "paged-kv-cache-v1",
+      "label": "Theorems.Block_Table_Invariant"
+    },
+    {
+      "contract": "paged-kv-cache-v1",
+      "label": "Theorems.Fragmentation_Free"
+    },
+    {
+      "contract": "paged-kv-cache-v1",
+      "label": "Theorems.Graph_Compatibility"
+    },
+    {
+      "contract": "paged-kv-cache-v1",
+      "label": "Theorems.Paged_Contiguous_Equivalence"
+    },
+    {
+      "contract": "paged-kv-cache-v1",
+      "label": "Theorems.Slot_Mapping"
+    },
+    {
+      "contract": "pagerank-kernel-v1",
+      "label": "Theorems.BFS_Shortest_Path"
+    },
+    {
+      "contract": "pagerank-kernel-v1",
+      "label": "Theorems.PageRank_Stochastic"
+    },
+    {
+      "contract": "pagerank-kernel-v1",
+      "label": "Theorems.Pagerank"
+    },
+    {
+      "contract": "pagerank-kernel-v1",
+      "label": "Theorems.Power_Iteration"
+    },
+    {
+      "contract": "parity-profiling-system-v1",
+      "label": "Theorems.Cupti_kernel_timing"
+    },
+    {
+      "contract": "parity-profiling-system-v1",
+      "label": "Theorems.Parity_delta"
+    },
+    {
+      "contract": "parity-profiling-system-v1",
+      "label": "Theorems.Parity_profile_schema"
+    },
+    {
+      "contract": "parity-profiling-system-v1",
+      "label": "Theorems.Torch_profiler_integration"
+    },
+    {
+      "contract": "parser-soundness-v1",
+      "label": "Theorems.Block_Scoping"
+    },
+    {
+      "contract": "parser-soundness-v1",
+      "label": "Theorems.Lex"
+    },
+    {
+      "contract": "parser-soundness-v1",
+      "label": "Theorems.Parse"
+    },
+    {
+      "contract": "parser-soundness-v1",
+      "label": "Theorems.Parse_Correctness"
+    },
+    {
+      "contract": "parser-soundness-v1",
+      "label": "Theorems.Semantic_Analyze"
+    },
+    {
+      "contract": "parser-soundness-v1",
+      "label": "Theorems.Transpile_Roundtrip"
+    },
+    {
+      "contract": "pca-v1",
+      "label": "Theorems.Explained_Variance"
+    },
+    {
+      "contract": "pca-v1",
+      "label": "Theorems.Pca_Transform"
+    },
+    {
+      "contract": "pca-v1",
+      "label": "Theorems.Reconstruction"
+    },
+    {
+      "contract": "per-operation-training-profiling-v1",
+      "label": "Theorems.Bottleneck_classification"
+    },
+    {
+      "contract": "per-operation-training-profiling-v1",
+      "label": "Theorems.Json_profiling_output"
+    },
+    {
+      "contract": "per-operation-training-profiling-v1",
+      "label": "Theorems.Layer_backward_decomposition"
+    },
+    {
+      "contract": "per-operation-training-profiling-v1",
+      "label": "Theorems.Layer_forward_decomposition"
+    },
+    {
+      "contract": "performance-grading-v1",
+      "label": "Theorems.Concrete_Instance"
+    },
+    {
+      "contract": "performance-grading-v1",
+      "label": "Theorems.Efficiency_Grade"
+    },
+    {
+      "contract": "performance-grading-v1",
+      "label": "Theorems.Llamacpp_Parity"
+    },
+    {
+      "contract": "performance-grading-v1",
+      "label": "Theorems.Ollama_Parity"
+    },
+    {
+      "contract": "performance-grading-v1",
+      "label": "Theorems.Vllm_Parity"
+    },
+    {
+      "contract": "pipeline-cache-v1",
+      "label": "Theorems.CacheHitNoRecompile"
+    },
+    {
+      "contract": "pipeline-cache-v1",
+      "label": "Theorems.SingleEncoderBatch"
+    },
+    {
+      "contract": "plugin-lifecycle-v1",
+      "label": "Theorems.Lifecycle_State_Machine"
+    },
+    {
+      "contract": "plugin-lifecycle-v1",
+      "label": "Theorems.Permission_Scoping"
+    },
+    {
+      "contract": "plugin-lifecycle-v1",
+      "label": "Theorems.Schema_Validation"
+    },
+    {
+      "contract": "pmat-work-lifecycle-v1",
+      "label": "Theorems.BaselineIntegrity"
+    },
+    {
+      "contract": "pmat-work-lifecycle-v1",
+      "label": "Theorems.ContractImmutability"
+    },
+    {
+      "contract": "pmat-work-lifecycle-v1",
+      "label": "Theorems.FalsificationCompleteness"
+    },
+    {
+      "contract": "pmat-work-lifecycle-v1",
+      "label": "Theorems.MonotonicLedger"
+    },
+    {
+      "contract": "pmat-work-lifecycle-v1",
+      "label": "Theorems.ProfileDeterminism"
+    },
+    {
+      "contract": "pmat-work-lifecycle-v1",
+      "label": "Theorems.RescueBound"
+    },
+    {
+      "contract": "pmat-work-lifecycle-v1",
+      "label": "Theorems.SubcontractingSoundness"
+    },
+    {
+      "contract": "preprocessing-normalization-v1",
+      "label": "Theorems.Minmax_Scaler"
+    },
+    {
+      "contract": "preprocessing-normalization-v1",
+      "label": "Theorems.Robust_Scaler"
+    },
+    {
+      "contract": "preprocessing-normalization-v1",
+      "label": "Theorems.Standard_Scaler"
+    },
+    {
+      "contract": "projected-gradient-armijo-v1",
+      "label": "Theorems.Armijo_Backtracking"
+    },
+    {
+      "contract": "projected-gradient-armijo-v1",
+      "label": "Theorems.Monotone_Non_Increase"
+    },
+    {
+      "contract": "projected-gradient-armijo-v1",
+      "label": "Theorems.Projected_Gradient_Step"
+    },
+    {
+      "contract": "property-testing-v1",
+      "label": "Theorems.Assertion_Evaluation"
+    },
+    {
+      "contract": "property-testing-v1",
+      "label": "Theorems.Coverage_Collection"
+    },
+    {
+      "contract": "property-testing-v1",
+      "label": "Theorems.Playbook_State_Machine"
+    },
+    {
+      "contract": "property-testing-v1",
+      "label": "Theorems.Retry_Assertion"
+    },
+    {
+      "contract": "property-testing-v1",
+      "label": "Theorems.Soft_Assertion_Collection"
+    },
+    {
+      "contract": "property-testing-v1",
+      "label": "Theorems.Test_Result_Reporting"
+    },
+    {
+      "contract": "provider-routing-v1",
+      "label": "Theorems.Backoff_Jitter"
+    },
+    {
+      "contract": "provider-routing-v1",
+      "label": "Theorems.Cost_Budget"
+    },
+    {
+      "contract": "provider-routing-v1",
+      "label": "Theorems.Failover_Cascade"
+    },
+    {
+      "contract": "provider-routing-v1",
+      "label": "Theorems.Format_Translation"
+    },
+    {
+      "contract": "provider-routing-v1",
+      "label": "Theorems.Privacy_Enforcement"
+    },
+    {
+      "contract": "ptx-codegen-safety-v1",
+      "label": "Theorems.InstructionValidity"
+    },
+    {
+      "contract": "ptx-codegen-safety-v1",
+      "label": "Theorems.RegisterBudget"
+    },
+    {
+      "contract": "ptx-codegen-safety-v1",
+      "label": "Theorems.TargetDirectivePresent"
+    },
+    {
+      "contract": "ptx-target-parity-v1",
+      "label": "Theorems.Jit_Compilation_Success"
+    },
+    {
+      "contract": "ptx-target-parity-v1",
+      "label": "Theorems.No_Hardcoded_Targets"
+    },
+    {
+      "contract": "ptx-target-parity-v1",
+      "label": "Theorems.Target_Parity"
+    },
+    {
+      "contract": "q2k-dequant-parity-v1",
+      "label": "Theorems.Q2K_Dequant_Ordering"
+    },
+    {
+      "contract": "q3k-dequant-v1",
+      "label": "Theorems.Q3K_Block_Layout"
+    },
+    {
+      "contract": "q3k-dequant-v1",
+      "label": "Theorems.Q3K_Dequant_Formula"
+    },
+    {
+      "contract": "q4k-interleaved-scale-min-v1",
+      "label": "Theorems.Q4K_GetScaleMinK4"
+    },
+    {
+      "contract": "q4k-interleaved-scale-min-v1",
+      "label": "Theorems.Q4K_Interleaved_Dot_Parity"
+    },
+    {
+      "contract": "q4k-q6k-superblock-v1",
+      "label": "Theorems.Dequantization"
+    },
+    {
+      "contract": "q4k-q6k-superblock-v1",
+      "label": "Theorems.Q4K_Superblock"
+    },
+    {
+      "contract": "q4k-q6k-superblock-v1",
+      "label": "Theorems.Q6K_Superblock"
+    },
+    {
+      "contract": "q4k-q6k-superblock-v1",
+      "label": "Theorems.Total_Bytes"
+    },
+    {
+      "contract": "qk-norm-apr-loader-v1",
+      "label": "Theorems.Qk_Norm_Load"
+    },
+    {
+      "contract": "qk-norm-v1",
+      "label": "Theorems.Qk_Rmsnorm"
+    },
+    {
+      "contract": "qlora-hyperparameters-v1",
+      "label": "Theorems.Effective_Batch_Size"
+    },
+    {
+      "contract": "qlora-hyperparameters-v1",
+      "label": "Theorems.Epoch_Count_Imbalanced"
+    },
+    {
+      "contract": "qlora-hyperparameters-v1",
+      "label": "Theorems.Gradient_Clip_Bound"
+    },
+    {
+      "contract": "qlora-hyperparameters-v1",
+      "label": "Theorems.Learning_Rate_Scaling"
+    },
+    {
+      "contract": "qlora-hyperparameters-v1",
+      "label": "Theorems.Lora_Alpha_Ratio"
+    },
+    {
+      "contract": "qlora-hyperparameters-v1",
+      "label": "Theorems.Seq_Len_From_Data"
+    },
+    {
+      "contract": "qlora-hyperparameters-v1",
+      "label": "Theorems.Warmup_Fraction"
+    },
+    {
+      "contract": "quality-validation-v1",
+      "label": "Theorems.Gate_Composition"
+    },
+    {
+      "contract": "quality-validation-v1",
+      "label": "Theorems.Validate_Index"
+    },
+    {
+      "contract": "quality-validation-v1",
+      "label": "Theorems.Validate_Size"
+    },
+    {
+      "contract": "quant-roundtrip-fidelity-v1",
+      "label": "Theorems.Quant_Bitwidth_Monotonic"
+    },
+    {
+      "contract": "quant-roundtrip-fidelity-v1",
+      "label": "Theorems.Quant_Roundtrip_Fidelity"
+    },
+    {
+      "contract": "quantization-ordering-v1",
+      "label": "Theorems.Alpha_Scaling"
+    },
+    {
+      "contract": "quantization-ordering-v1",
+      "label": "Theorems.Bytes_Per_Param"
+    },
+    {
+      "contract": "quantization-ordering-v1",
+      "label": "Theorems.Dropout_Expectation"
+    },
+    {
+      "contract": "quantization-ordering-v1",
+      "label": "Theorems.Size_Ordering"
+    },
+    {
+      "contract": "quantize-dequant-roundtrip-v1",
+      "label": "Theorems.Nf4CodebookBijectivity"
+    },
+    {
+      "contract": "quantize-dequant-roundtrip-v1",
+      "label": "Theorems.Q4_0Roundtrip"
+    },
+    {
+      "contract": "quantize-dequant-roundtrip-v1",
+      "label": "Theorems.Q4kRoundtrip"
+    },
+    {
+      "contract": "quantize-dequant-roundtrip-v1",
+      "label": "Theorems.Q6kRoundtrip"
+    },
+    {
+      "contract": "quantized-dot-product-v1",
+      "label": "Theorems.FormatIsolation"
+    },
+    {
+      "contract": "quantized-dot-product-v1",
+      "label": "Theorems.SimdScalarEquivalence"
+    },
+    {
+      "contract": "qwen2-e2e-verification-v1",
+      "label": "Theorems.Contract_Composition"
+    },
+    {
+      "contract": "qwen2-e2e-verification-v1",
+      "label": "Theorems.Flops_Per_Token"
+    },
+    {
+      "contract": "qwen2-e2e-verification-v1",
+      "label": "Theorems.Memory_Breakdown"
+    },
+    {
+      "contract": "qwen2-e2e-verification-v1",
+      "label": "Theorems.Model_Parameter_Count"
+    },
+    {
+      "contract": "qwen2-e2e-verification-v1",
+      "label": "Theorems.Throughput_Model"
+    },
+    {
+      "contract": "qwen2-e2e-verification-v1",
+      "label": "Theorems.Verification_Ladder"
+    },
+    {
+      "contract": "qwen2-shapes-v1",
+      "label": "Theorems.Head_Dim_Consistency"
+    },
+    {
+      "contract": "qwen2-shapes-v1",
+      "label": "Theorems.Kv_Projection_Shape"
+    },
+    {
+      "contract": "qwen2-shapes-v1",
+      "label": "Theorems.O_Projection_Transpose"
+    },
+    {
+      "contract": "qwen2-shapes-v1",
+      "label": "Theorems.Q_Projection_Shape"
+    },
+    {
+      "contract": "qwen2-shapes-v1",
+      "label": "Theorems.Rope_Frequency"
+    },
+    {
+      "contract": "qwen2-shapes-v1",
+      "label": "Theorems.Swiglu_Ratio"
+    },
+    {
+      "contract": "qwen2-weight-loading-v1",
+      "label": "Theorems.Kv_Projection"
+    },
+    {
+      "contract": "qwen2-weight-loading-v1",
+      "label": "Theorems.Q_Projection"
+    },
+    {
+      "contract": "qwen2-weight-loading-v1",
+      "label": "Theorems.Swiglu_Expansion"
+    },
+    {
+      "contract": "qwen2-weight-loading-v1",
+      "label": "Theorems.Total_Parameters"
+    },
+    {
+      "contract": "qwen3-e2e-verification-v1",
+      "label": "Theorems.Contract_Composition"
+    },
+    {
+      "contract": "qwen3-e2e-verification-v1",
+      "label": "Theorems.Flops_Per_Token"
+    },
+    {
+      "contract": "qwen3-e2e-verification-v1",
+      "label": "Theorems.Memory_Breakdown"
+    },
+    {
+      "contract": "qwen3-e2e-verification-v1",
+      "label": "Theorems.Model_Parameter_Count"
+    },
+    {
+      "contract": "qwen3-e2e-verification-v1",
+      "label": "Theorems.Throughput_Model"
+    },
+    {
+      "contract": "qwen3-e2e-verification-v1",
+      "label": "Theorems.Verification_Ladder"
+    },
+    {
+      "contract": "qwen3-moe-forward-v1",
+      "label": "Theorems.Qwen3_Coder_30b_a3b_Shape_Algebra"
+    },
+    {
+      "contract": "qwen3-moe-forward-v1",
+      "label": "Theorems.Qwen3_Moe_Forward_One_Layer"
+    },
+    {
+      "contract": "qwen3-shapes-v1",
+      "label": "Theorems.Head_Dim_Consistency"
+    },
+    {
+      "contract": "qwen3-shapes-v1",
+      "label": "Theorems.Kv_Projection_Shape"
+    },
+    {
+      "contract": "qwen3-shapes-v1",
+      "label": "Theorems.O_Projection_Transpose"
+    },
+    {
+      "contract": "qwen3-shapes-v1",
+      "label": "Theorems.Q_Projection_Shape"
+    },
+    {
+      "contract": "qwen3-shapes-v1",
+      "label": "Theorems.Rope_Frequency"
+    },
+    {
+      "contract": "qwen3-shapes-v1",
+      "label": "Theorems.Swiglu_Ratio"
+    },
+    {
+      "contract": "qwen35-e2e-verification-v1",
+      "label": "Theorems.Contract_Composition"
+    },
+    {
+      "contract": "qwen35-e2e-verification-v1",
+      "label": "Theorems.Flops_Per_Token"
+    },
+    {
+      "contract": "qwen35-e2e-verification-v1",
+      "label": "Theorems.Memory_Breakdown"
+    },
+    {
+      "contract": "qwen35-e2e-verification-v1",
+      "label": "Theorems.Model_Parameter_Count"
+    },
+    {
+      "contract": "qwen35-e2e-verification-v1",
+      "label": "Theorems.Throughput_Model"
+    },
+    {
+      "contract": "qwen35-e2e-verification-v1",
+      "label": "Theorems.Verification_Ladder"
+    },
+    {
+      "contract": "qwen35-hybrid-forward-v1",
+      "label": "Theorems.Activation_Magnitude"
+    },
+    {
+      "contract": "qwen35-hybrid-forward-v1",
+      "label": "Theorems.Attention_Sublayer"
+    },
+    {
+      "contract": "qwen35-hybrid-forward-v1",
+      "label": "Theorems.Ffn_Sublayer"
+    },
+    {
+      "contract": "qwen35-hybrid-forward-v1",
+      "label": "Theorems.Gdn_Sublayer"
+    },
+    {
+      "contract": "qwen35-hybrid-forward-v1",
+      "label": "Theorems.Gradient_Flow"
+    },
+    {
+      "contract": "qwen35-hybrid-forward-v1",
+      "label": "Theorems.Hybrid_Block"
+    },
+    {
+      "contract": "qwen35-shapes-v1",
+      "label": "Theorems.Kv_Projection_Shape"
+    },
+    {
+      "contract": "qwen35-shapes-v1",
+      "label": "Theorems.O_Projection_Transpose"
+    },
+    {
+      "contract": "qwen35-shapes-v1",
+      "label": "Theorems.Q_Projection_Shape"
+    },
+    {
+      "contract": "qwen35-shapes-v1",
+      "label": "Theorems.Rope_Frequency"
+    },
+    {
+      "contract": "qwen35-shapes-v1",
+      "label": "Theorems.Swiglu_Ratio"
+    },
+    {
+      "contract": "qwen3moe-e2e-verification-v1",
+      "label": "Theorems.Active_Parameter_Count"
+    },
+    {
+      "contract": "qwen3moe-e2e-verification-v1",
+      "label": "Theorems.Contract_Composition"
+    },
+    {
+      "contract": "qwen3moe-e2e-verification-v1",
+      "label": "Theorems.Flops_Per_Token"
+    },
+    {
+      "contract": "qwen3moe-e2e-verification-v1",
+      "label": "Theorems.Memory_Breakdown"
+    },
+    {
+      "contract": "qwen3moe-e2e-verification-v1",
+      "label": "Theorems.Model_Parameter_Count"
+    },
+    {
+      "contract": "qwen3moe-e2e-verification-v1",
+      "label": "Theorems.Throughput_Model"
+    },
+    {
+      "contract": "qwen3moe-e2e-verification-v1",
+      "label": "Theorems.Verification_Ladder"
+    },
+    {
+      "contract": "qwen3moe-shapes-v1",
+      "label": "Theorems.Kv_Projection_Shape"
+    },
+    {
+      "contract": "qwen3moe-shapes-v1",
+      "label": "Theorems.Moe_Expert_Shape"
+    },
+    {
+      "contract": "qwen3moe-shapes-v1",
+      "label": "Theorems.Moe_Router_Shape"
+    },
+    {
+      "contract": "qwen3moe-shapes-v1",
+      "label": "Theorems.O_Projection_Transpose"
+    },
+    {
+      "contract": "qwen3moe-shapes-v1",
+      "label": "Theorems.Q_Projection_Shape"
+    },
+    {
+      "contract": "qwen3moe-shapes-v1",
+      "label": "Theorems.Rope_Frequency"
+    },
+    {
+      "contract": "qwen3moe-shapes-v1",
+      "label": "Theorems.Swiglu_Ratio"
+    },
+    {
+      "contract": "rag-pipeline-v1",
+      "label": "Theorems.Embed_Insert"
+    },
+    {
+      "contract": "rag-pipeline-v1",
+      "label": "Theorems.Metric_Correctness"
+    },
+    {
+      "contract": "rag-pipeline-v1",
+      "label": "Theorems.Retrieve_Rank"
+    },
+    {
+      "contract": "random-forest-v1",
+      "label": "Theorems.Bootstrap_Sample"
+    },
+    {
+      "contract": "random-forest-v1",
+      "label": "Theorems.Ensemble_Size"
+    },
+    {
+      "contract": "random-forest-v1",
+      "label": "Theorems.Majority_Vote"
+    },
+    {
+      "contract": "random-forest-v1",
+      "label": "Theorems.Predict"
+    },
+    {
+      "contract": "recipe-determinism-v1",
+      "label": "Theorems.Expand_Recipe"
+    },
+    {
+      "contract": "recipe-determinism-v1",
+      "label": "Theorems.Validate_Input_Type"
+    },
+    {
+      "contract": "recipe-determinism-v1",
+      "label": "Theorems.Validate_Inputs"
+    },
+    {
+      "contract": "reduce-lr-plateau-v1",
+      "label": "Theorems.ReduceLROnPlateau_Patience_Strict"
+    },
+    {
+      "contract": "registry-integrity-v1",
+      "label": "Theorems.List_Completeness"
+    },
+    {
+      "contract": "registry-integrity-v1",
+      "label": "Theorems.Pull_Idempotency"
+    },
+    {
+      "contract": "registry-integrity-v1",
+      "label": "Theorems.Run_Lifecycle"
+    },
+    {
+      "contract": "render-primitives-v1",
+      "label": "Theorems.Draw_Bounds"
+    },
+    {
+      "contract": "render-primitives-v1",
+      "label": "Theorems.Layout_Area_Conservation"
+    },
+    {
+      "contract": "render-primitives-v1",
+      "label": "Theorems.Line_Connectivity"
+    },
+    {
+      "contract": "retrieval-quality-v1",
+      "label": "Theorems.Embedding_Insert"
+    },
+    {
+      "contract": "retrieval-quality-v1",
+      "label": "Theorems.Metric_Bounds"
+    },
+    {
+      "contract": "retrieval-quality-v1",
+      "label": "Theorems.Retrieval_Ranking"
+    },
+    {
+      "contract": "roofline-model-v1",
+      "label": "Theorems.Bandwidth_Ceiling"
+    },
+    {
+      "contract": "roofline-model-v1",
+      "label": "Theorems.Compute_Ceiling"
+    },
+    {
+      "contract": "roofline-model-v1",
+      "label": "Theorems.Model_Bytes"
+    },
+    {
+      "contract": "roofline-model-v1",
+      "label": "Theorems.Throughput_Bound"
+    },
+    {
+      "contract": "rope-extrapolation-v1",
+      "label": "Theorems.Base_Frequency"
+    },
+    {
+      "contract": "rope-extrapolation-v1",
+      "label": "Theorems.Linear_Interpolation"
+    },
+    {
+      "contract": "rope-extrapolation-v1",
+      "label": "Theorems.Ntk_Scaled_Base"
+    },
+    {
+      "contract": "rope-extrapolation-v1",
+      "label": "Theorems.Rotation_Matrix"
+    },
+    {
+      "contract": "rope-extrapolation-v1",
+      "label": "Theorems.Yarn_Mixed_Frequency"
+    },
+    {
+      "contract": "rope-extrapolation-v1",
+      "label": "Theorems.Yarn_Ramp"
+    },
+    {
+      "contract": "safetensors-cpu-dispatch-v1",
+      "label": "Theorems.Format_Parity"
+    },
+    {
+      "contract": "safetensors-format-safety-v1",
+      "label": "Theorems.DType_Consistency"
+    },
+    {
+      "contract": "safetensors-format-safety-v1",
+      "label": "Theorems.Header_Size_Validation"
+    },
+    {
+      "contract": "safetensors-format-safety-v1",
+      "label": "Theorems.Mmap_Zero_Copy"
+    },
+    {
+      "contract": "safetensors-format-safety-v1",
+      "label": "Theorems.No_Overlap_Invariant"
+    },
+    {
+      "contract": "safetensors-format-safety-v1",
+      "label": "Theorems.Tensor_Offset_Bounds"
+    },
+    {
+      "contract": "safety-classifier-v1",
+      "label": "Theorems.Classify_Filesystem"
+    },
+    {
+      "contract": "safety-classifier-v1",
+      "label": "Theorems.Classify_Injection"
+    },
+    {
+      "contract": "safety-classifier-v1",
+      "label": "Theorems.Classify_Secrets"
+    },
+    {
+      "contract": "safety-classifier-v1",
+      "label": "Theorems.Lint_Shell"
+    },
+    {
+      "contract": "sampling-algorithms-v1",
+      "label": "Theorems.Greedy"
+    },
+    {
+      "contract": "sampling-algorithms-v1",
+      "label": "Theorems.Temperature"
+    },
+    {
+      "contract": "sampling-algorithms-v1",
+      "label": "Theorems.Top_K"
+    },
+    {
+      "contract": "sampling-algorithms-v1",
+      "label": "Theorems.Top_P"
+    },
+    {
+      "contract": "sandbox-isolation-v1",
+      "label": "Theorems.Filesystem_Isolation"
+    },
+    {
+      "contract": "sandbox-isolation-v1",
+      "label": "Theorems.Network_Isolation"
+    },
+    {
+      "contract": "sandbox-isolation-v1",
+      "label": "Theorems.Overlay_Capture"
+    },
+    {
+      "contract": "score-composite-v1",
+      "label": "Theorems.Geometric_Mean"
+    },
+    {
+      "contract": "score-composite-v1",
+      "label": "Theorems.Grade_From_Score"
+    },
+    {
+      "contract": "secret-provider-v1",
+      "label": "Theorems.Drift_Detection"
+    },
+    {
+      "contract": "secret-provider-v1",
+      "label": "Theorems.Ephemeral_Cleanup"
+    },
+    {
+      "contract": "secret-provider-v1",
+      "label": "Theorems.Provider_Dispatch"
+    },
+    {
+      "contract": "semantic-equivalence-v1",
+      "label": "Theorems.Comprehension_Equivalence"
+    },
+    {
+      "contract": "semantic-equivalence-v1",
+      "label": "Theorems.Control_Flow_Equivalence"
+    },
+    {
+      "contract": "semantic-equivalence-v1",
+      "label": "Theorems.Expression_Equivalence"
+    },
+    {
+      "contract": "semantic-equivalence-v1",
+      "label": "Theorems.Observational_Equivalence"
+    },
+    {
+      "contract": "semantic-equivalence-v1",
+      "label": "Theorems.Statement_Equivalence"
+    },
+    {
+      "contract": "serialization-v1",
+      "label": "Theorems.Deserialize"
+    },
+    {
+      "contract": "serialization-v1",
+      "label": "Theorems.Serialization"
+    },
+    {
+      "contract": "serialization-v1",
+      "label": "Theorems.Serialize"
+    },
+    {
+      "contract": "session-v1",
+      "label": "Theorems.Age_Filter"
+    },
+    {
+      "contract": "session-v1",
+      "label": "Theorems.Append_Only"
+    },
+    {
+      "contract": "session-v1",
+      "label": "Theorems.Jsonl_Roundtrip"
+    },
+    {
+      "contract": "session-v1",
+      "label": "Theorems.Manifest_Serde"
+    },
+    {
+      "contract": "sgd-momentum-lrsched-v1",
+      "label": "Theorems.Sgd_Momentum_Buffer_Update"
+    },
+    {
+      "contract": "sgd-momentum-lrsched-v1",
+      "label": "Theorems.Sgd_Parameter_Update_Fresh_Lr"
+    },
+    {
+      "contract": "shannon-entropy-v1",
+      "label": "Theorems.Entropy"
+    },
+    {
+      "contract": "shannon-entropy-v1",
+      "label": "Theorems.Uniform_Entropy"
+    },
+    {
+      "contract": "sharded-gguf-merge-v1",
+      "label": "Theorems.Bounded_Memory"
+    },
+    {
+      "contract": "sharded-gguf-merge-v1",
+      "label": "Theorems.Lossless_Merge"
+    },
+    {
+      "contract": "sharded-gguf-pull-v1",
+      "label": "Theorems.No_Index_Download"
+    },
+    {
+      "contract": "sharded-gguf-pull-v1",
+      "label": "Theorems.Shard_Set_Completeness"
+    },
+    {
+      "contract": "shell-execution-v1",
+      "label": "Theorems.Config_Validation"
+    },
+    {
+      "contract": "shell-execution-v1",
+      "label": "Theorems.Parser_Correctness"
+    },
+    {
+      "contract": "shell-execution-v1",
+      "label": "Theorems.Startup_Budget"
+    },
+    {
+      "contract": "silhouette-singleton-v1",
+      "label": "Theorems.Silhouette_Singleton_Zero"
+    },
+    {
+      "contract": "simd-scalar-parity-v1",
+      "label": "Theorems.ActivationParity"
+    },
+    {
+      "contract": "simd-scalar-parity-v1",
+      "label": "Theorems.DotProductParity"
+    },
+    {
+      "contract": "simd-scalar-parity-v1",
+      "label": "Theorems.ElementwiseParity"
+    },
+    {
+      "contract": "simd-scalar-parity-v1",
+      "label": "Theorems.RmsnormParity"
+    },
+    {
+      "contract": "simd-scalar-parity-v1",
+      "label": "Theorems.SoftmaxParity"
+    },
+    {
+      "contract": "simulation-determinism-v1",
+      "label": "Theorems.Audit_Trail"
+    },
+    {
+      "contract": "simulation-determinism-v1",
+      "label": "Theorems.Step_Determinism"
+    },
+    {
+      "contract": "simulation-determinism-v1",
+      "label": "Theorems.Time_Advancement"
+    },
+    {
+      "contract": "simulation-step-v1",
+      "label": "Theorems.Audit_Completeness"
+    },
+    {
+      "contract": "simulation-step-v1",
+      "label": "Theorems.Simulate_Convergence"
+    },
+    {
+      "contract": "simulation-step-v1",
+      "label": "Theorems.Step_Monotonicity"
+    },
+    {
+      "contract": "sliding-window-attention-v1",
+      "label": "Theorems.Attention_Sparsity"
+    },
+    {
+      "contract": "sliding-window-attention-v1",
+      "label": "Theorems.Causal_Window_Mask"
+    },
+    {
+      "contract": "sliding-window-attention-v1",
+      "label": "Theorems.Effective_Context"
+    },
+    {
+      "contract": "sliding-window-attention-v1",
+      "label": "Theorems.Multi_Layer_Receptive_Field"
+    },
+    {
+      "contract": "sliding-window-attention-v1",
+      "label": "Theorems.Window_Mask"
+    },
+    {
+      "contract": "sovereign-tensor-v1",
+      "label": "Theorems.Dot_Product"
+    },
+    {
+      "contract": "sovereign-tensor-v1",
+      "label": "Theorems.Elementwise_Binary"
+    },
+    {
+      "contract": "sovereign-tensor-v1",
+      "label": "Theorems.Scalar_Mul"
+    },
+    {
+      "contract": "special-tokens-registry-v1",
+      "label": "Theorems.Token_Id_Bound"
+    },
+    {
+      "contract": "speculative-decoding-v1",
+      "label": "Theorems.Acceptance_Probability"
+    },
+    {
+      "contract": "speculative-decoding-v1",
+      "label": "Theorems.Output_Equivalence"
+    },
+    {
+      "contract": "speculative-decoding-v1",
+      "label": "Theorems.Token_Acceptance"
+    },
+    {
+      "contract": "ssm-kernel-v1",
+      "label": "Theorems.Selective_Gate"
+    },
+    {
+      "contract": "ssm-kernel-v1",
+      "label": "Theorems.Ssm_Discretize"
+    },
+    {
+      "contract": "ssm-kernel-v1",
+      "label": "Theorems.Ssm_Scan"
+    },
+    {
+      "contract": "state-machine-v1",
+      "label": "Theorems.EventStoreAppendOnly"
+    },
+    {
+      "contract": "state-machine-v1",
+      "label": "Theorems.RefactorTransitions"
+    },
+    {
+      "contract": "state-machine-v1",
+      "label": "Theorems.SnapshotRecovery"
+    },
+    {
+      "contract": "store-cas-v1",
+      "label": "Theorems.Closure_Completeness"
+    },
+    {
+      "contract": "store-cas-v1",
+      "label": "Theorems.Derivation_Determinism"
+    },
+    {
+      "contract": "store-cas-v1",
+      "label": "Theorems.Far_Archive_Roundtrip"
+    },
+    {
+      "contract": "store-cas-v1",
+      "label": "Theorems.GC_Safety"
+    },
+    {
+      "contract": "store-cas-v1",
+      "label": "Theorems.Purity_Monotonicity"
+    },
+    {
+      "contract": "stratified-kfold-balance-v1",
+      "label": "Theorems.StratifiedKFold_Balance"
+    },
+    {
+      "contract": "stratified-kfold-balance-v1",
+      "label": "Theorems.StratifiedKFold_Coverage"
+    },
+    {
+      "contract": "streaming-tpot-v1",
+      "label": "Theorems.Tpot_Definition"
+    },
+    {
+      "contract": "svc-rbf-v1",
+      "label": "Theorems.Decision_Function"
+    },
+    {
+      "contract": "svc-rbf-v1",
+      "label": "Theorems.Dual_Objective"
+    },
+    {
+      "contract": "svc-rbf-v1",
+      "label": "Theorems.Rbf_Kernel"
+    },
+    {
+      "contract": "svc-rbf-v1",
+      "label": "Theorems.Svc_Predict"
+    },
+    {
+      "contract": "svm-v1",
+      "label": "Theorems.Decision_Function"
+    },
+    {
+      "contract": "svm-v1",
+      "label": "Theorems.Hinge_Loss"
+    },
+    {
+      "contract": "svm-v1",
+      "label": "Theorems.Margin"
+    },
+    {
+      "contract": "svm-v1",
+      "label": "Theorems.Svm_Predict"
+    },
+    {
+      "contract": "task-pipeline-v1",
+      "label": "Theorems.Health_Check_Retry"
+    },
+    {
+      "contract": "task-pipeline-v1",
+      "label": "Theorems.Pipeline_Dag_Execution"
+    },
+    {
+      "contract": "task-pipeline-v1",
+      "label": "Theorems.Quality_Gate_Enforcement"
+    },
+    {
+      "contract": "task-pipeline-v1",
+      "label": "Theorems.Task_Status_Terminal"
+    },
+    {
+      "contract": "tdg-scoring-v1",
+      "label": "Theorems.Calculate_Tdg"
+    },
+    {
+      "contract": "tdg-scoring-v1",
+      "label": "Theorems.Letter_Grade"
+    },
+    {
+      "contract": "tensor-inventory-v1",
+      "label": "Theorems.Architecture_Delta"
+    },
+    {
+      "contract": "tensor-inventory-v1",
+      "label": "Theorems.Parameter_Decomposition"
+    },
+    {
+      "contract": "tensor-inventory-v1",
+      "label": "Theorems.Quantization_Bytes"
+    },
+    {
+      "contract": "tensor-inventory-v1",
+      "label": "Theorems.Tensor_Count"
+    },
+    {
+      "contract": "tensor-inventory-v1",
+      "label": "Theorems.Tied_Embeddings"
+    },
+    {
+      "contract": "tensor-layout-v1",
+      "label": "Theorems.QuantDispatchExhaustiveness"
+    },
+    {
+      "contract": "tensor-layout-v1",
+      "label": "Theorems.TransposeInvariant"
+    },
+    {
+      "contract": "tensor-layout-v1",
+      "label": "Theorems.ValidatedTensorConstruction"
+    },
+    {
+      "contract": "tensor-names-v1",
+      "label": "Theorems.Architecture_Normalization"
+    },
+    {
+      "contract": "tensor-names-v1",
+      "label": "Theorems.Name_Resolution"
+    },
+    {
+      "contract": "tensor-shape-flow-v1",
+      "label": "Theorems.Gqa_Grouping"
+    },
+    {
+      "contract": "tensor-shape-flow-v1",
+      "label": "Theorems.Lm_Head"
+    },
+    {
+      "contract": "tensor-shape-flow-v1",
+      "label": "Theorems.Qkv_Projection"
+    },
+    {
+      "contract": "tensor-shape-flow-v1",
+      "label": "Theorems.Residual"
+    },
+    {
+      "contract": "tensor-shape-flow-v1",
+      "label": "Theorems.Swiglu_Shape"
+    },
+    {
+      "contract": "tensor-transpose-roundtrip-v1",
+      "label": "Theorems.TensorTranspose.Roundtrip"
+    },
+    {
+      "contract": "threading-safety-v1",
+      "label": "Theorems.LockOrderInvariant"
+    },
+    {
+      "contract": "threading-safety-v1",
+      "label": "Theorems.RaceFreedom"
+    },
+    {
+      "contract": "tied-embeddings-v1",
+      "label": "Theorems.Tied_Lm_Head"
+    },
+    {
+      "contract": "tiled-matmul-shader-v1",
+      "label": "Theorems.BarrierCorrectness"
+    },
+    {
+      "contract": "tiled-matmul-shader-v1",
+      "label": "Theorems.TiledNaiveEquivalence"
+    },
+    {
+      "contract": "tokenizer-loading-v1",
+      "label": "Theorems.ByteEncoderCoverage"
+    },
+    {
+      "contract": "tokenizer-loading-v1",
+      "label": "Theorems.RoundtripEncoding"
+    },
+    {
+      "contract": "tokenizer-v1",
+      "label": "Theorems.Deterministic_Encode"
+    },
+    {
+      "contract": "tokenizer-v1",
+      "label": "Theorems.Empty_Input"
+    },
+    {
+      "contract": "tokenizer-v1",
+      "label": "Theorems.Thread_Safety"
+    },
+    {
+      "contract": "tokenizer-v1",
+      "label": "Theorems.Tokenizer"
+    },
+    {
+      "contract": "tokenizer-v1",
+      "label": "Theorems.Vocab_Size_Bound"
+    },
+    {
+      "contract": "tokenizer-vocab-v1",
+      "label": "Theorems.Vocab_Size_Consistency"
+    },
+    {
+      "contract": "trace-integrity-v1",
+      "label": "Theorems.OTel_Format"
+    },
+    {
+      "contract": "trace-integrity-v1",
+      "label": "Theorems.Trace_Capture"
+    },
+    {
+      "contract": "trace-integrity-v1",
+      "label": "Theorems.Trace_Comparison"
+    },
+    {
+      "contract": "tracing-observability-v1",
+      "label": "Theorems.MetricMonotonicity"
+    },
+    {
+      "contract": "tracing-observability-v1",
+      "label": "Theorems.RenacerBackwardCompat"
+    },
+    {
+      "contract": "tracing-observability-v1",
+      "label": "Theorems.SpanParentage"
+    },
+    {
+      "contract": "training-loop-v1",
+      "label": "Theorems.Ema_Loss"
+    },
+    {
+      "contract": "training-loop-v1",
+      "label": "Theorems.Val_Split"
+    },
+    {
+      "contract": "training-loop-v1",
+      "label": "Theorems.Warmup_Lr"
+    },
+    {
+      "contract": "training-step-profiling-v1",
+      "label": "Theorems.Compute_roofline"
+    },
+    {
+      "contract": "training-step-profiling-v1",
+      "label": "Theorems.Kernel_launch_overhead"
+    },
+    {
+      "contract": "training-step-profiling-v1",
+      "label": "Theorems.Memory_bandwidth_saturation"
+    },
+    {
+      "contract": "training-step-profiling-v1",
+      "label": "Theorems.Training_step_decomposition"
+    },
+    {
+      "contract": "training-step-scorecard-v1",
+      "label": "Theorems.Bottleneck_classification"
+    },
+    {
+      "contract": "training-step-scorecard-v1",
+      "label": "Theorems.Forward_backward_ratio"
+    },
+    {
+      "contract": "training-step-scorecard-v1",
+      "label": "Theorems.Regression_detection"
+    },
+    {
+      "contract": "training-step-scorecard-v1",
+      "label": "Theorems.Scorecard_output"
+    },
+    {
+      "contract": "training-step-scorecard-v1",
+      "label": "Theorems.Training_efficiency_grade"
+    },
+    {
+      "contract": "transpile-pipeline-v1",
+      "label": "Theorems.Parse_Soundness"
+    },
+    {
+      "contract": "transpile-pipeline-v1",
+      "label": "Theorems.Transpile_Determinism"
+    },
+    {
+      "contract": "transpile-pipeline-v1",
+      "label": "Theorems.Type_Preservation"
+    },
+    {
+      "contract": "transpile-soundness-v1",
+      "label": "Theorems.AST_To_Program"
+    },
+    {
+      "contract": "transpile-soundness-v1",
+      "label": "Theorems.Pipeline_Composition"
+    },
+    {
+      "contract": "transpile-soundness-v1",
+      "label": "Theorems.Transpile_Determinism"
+    },
+    {
+      "contract": "transpiler-correctness-v1",
+      "label": "Theorems.SemanticEquivalence"
+    },
+    {
+      "contract": "transpiler-correctness-v1",
+      "label": "Theorems.TranspileDeterminism"
+    },
+    {
+      "contract": "transpiler-correctness-v1",
+      "label": "Theorems.TypePreservation"
+    },
+    {
+      "contract": "trueno-f16-rne-v1",
+      "label": "Theorems.F32_To_F16_RNE"
+    },
+    {
+      "contract": "tui-lifecycle-v1",
+      "label": "Theorems.Event_Dispatch"
+    },
+    {
+      "contract": "tui-lifecycle-v1",
+      "label": "Theorems.Render_Cycle_Correctness"
+    },
+    {
+      "contract": "tui-lifecycle-v1",
+      "label": "Theorems.Terminal_Restore"
+    },
+    {
+      "contract": "tui-lifecycle-v1",
+      "label": "Theorems.Widget_Lifecycle"
+    },
+    {
+      "contract": "tui-panels-v1",
+      "label": "Theorems.Adaptive_Degradation"
+    },
+    {
+      "contract": "tui-panels-v1",
+      "label": "Theorems.Brick_Budget_Enforcement"
+    },
+    {
+      "contract": "tui-panels-v1",
+      "label": "Theorems.Cost_Display_Invariants"
+    },
+    {
+      "contract": "tui-panels-v1",
+      "label": "Theorems.Panel_Layout_Nonoverlap"
+    },
+    {
+      "contract": "tui-panels-v1",
+      "label": "Theorems.Sandbox_Violation_Visibility"
+    },
+    {
+      "contract": "tui-panels-v1",
+      "label": "Theorems.StatusBar_State_Display"
+    },
+    {
+      "contract": "tui-panels-v1",
+      "label": "Theorems.Streaming_Token_Ordering"
+    },
+    {
+      "contract": "tui-panels-v1",
+      "label": "Theorems.Tool_Progress_Monotonic"
+    },
+    {
+      "contract": "tui-rendering-v1",
+      "label": "Theorems.CellBuffer_Bounds"
+    },
+    {
+      "contract": "tui-rendering-v1",
+      "label": "Theorems.Color_Mode_Fallback"
+    },
+    {
+      "contract": "tui-rendering-v1",
+      "label": "Theorems.DiffRenderer_Correctness"
+    },
+    {
+      "contract": "tui-rendering-v1",
+      "label": "Theorems.Dirty_Tracking"
+    },
+    {
+      "contract": "tui-rendering-v1",
+      "label": "Theorems.Resize_Safety"
+    },
+    {
+      "contract": "tui-rendering-v1",
+      "label": "Theorems.Unicode_Width"
+    },
+    {
+      "contract": "tui-rendering-v1",
+      "label": "Theorems.Zero_Alloc_Render"
+    },
+    {
+      "contract": "type-preservation-v1",
+      "label": "Theorems.Container_Preservation"
+    },
+    {
+      "contract": "type-preservation-v1",
+      "label": "Theorems.Copy_Semantics"
+    },
+    {
+      "contract": "type-preservation-v1",
+      "label": "Theorems.Numeric_Semantics"
+    },
+    {
+      "contract": "type-preservation-v1",
+      "label": "Theorems.Type_Inference"
+    },
+    {
+      "contract": "type-preservation-v1",
+      "label": "Theorems.Type_Map"
+    },
+    {
+      "contract": "validated-tensor-v1",
+      "label": "Theorems.Density_Gate"
+    },
+    {
+      "contract": "validated-tensor-v1",
+      "label": "Theorems.L2_Norm_Nondegeneracy"
+    },
+    {
+      "contract": "validated-tensor-v1",
+      "label": "Theorems.Nan_Inf_Rejection"
+    },
+    {
+      "contract": "verification-engine-v1",
+      "label": "Theorems.Generator_Coverage"
+    },
+    {
+      "contract": "verification-engine-v1",
+      "label": "Theorems.Mutation_Soundness"
+    },
+    {
+      "contract": "verification-engine-v1",
+      "label": "Theorems.Oracle_Verdict"
+    },
+    {
+      "contract": "visualization-render-v1",
+      "label": "Theorems.Layout_Treemap"
+    },
+    {
+      "contract": "visualization-render-v1",
+      "label": "Theorems.Primitive_Bounds"
+    },
+    {
+      "contract": "visualization-render-v1",
+      "label": "Theorems.Render_Output"
+    },
+    {
+      "contract": "wgpu-production-training-v1",
+      "label": "Theorems.Attn_Grad_Q"
+    },
+    {
+      "contract": "wgpu-production-training-v1",
+      "label": "Theorems.Attn_Grad_V"
+    },
+    {
+      "contract": "wgpu-production-training-v1",
+      "label": "Theorems.Grad_Accumulation"
+    },
+    {
+      "contract": "wgpu-production-training-v1",
+      "label": "Theorems.Lora_Grad_A"
+    },
+    {
+      "contract": "wgpu-production-training-v1",
+      "label": "Theorems.Lora_Grad_B"
+    },
+    {
+      "contract": "work-dbc-v1",
+      "label": "Theorems.CheckpointVerification"
+    },
+    {
+      "contract": "work-dbc-v1",
+      "label": "Theorems.ContractProfile"
+    },
+    {
+      "contract": "work-dbc-v1",
+      "label": "Theorems.EnsureClauseEvaluation"
+    },
+    {
+      "contract": "work-dbc-v1",
+      "label": "Theorems.FalsifiableClaim"
+    },
+    {
+      "contract": "work-dbc-v1",
+      "label": "Theorems.FalsificationProtocol"
+    },
+    {
+      "contract": "work-dbc-v1",
+      "label": "Theorems.LifecycleStateMachine"
+    },
+    {
+      "contract": "work-dbc-v1",
+      "label": "Theorems.MeyerTriad"
+    },
+    {
+      "contract": "work-dbc-v1",
+      "label": "Theorems.OverrideAccountability"
+    },
+    {
+      "contract": "work-dbc-v1",
+      "label": "Theorems.RequireClauseEvaluation"
+    },
+    {
+      "contract": "work-dbc-v1",
+      "label": "Theorems.RescueEscalation"
+    },
+    {
+      "contract": "work-dbc-v1",
+      "label": "Theorems.RescueProtocol"
+    },
+    {
+      "contract": "work-dbc-v1",
+      "label": "Theorems.WorkLifecycle"
+    },
+    {
+      "contract": "yarn-rope-original-base-v1",
+      "label": "Theorems.Yarn_Extrap_Original_Base"
+    },
+    {
+      "contract": "yarn-rope-original-base-v1",
+      "label": "Theorems.Yarn_Interp_Base_Over_Scale"
+    }
+  ]
+}

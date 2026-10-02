@@ -1,4 +1,6 @@
+import Mathlib.Data.Real.Basic
 import Mathlib.Data.Matrix.Basic
+import Mathlib.Data.Real.Basic
 
 /-!
 # SpGEMM — Sparse Matrix-Matrix Multiply Associativity

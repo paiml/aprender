@@ -1,0 +1,21 @@
+- id: PMAT-4200
+  github_issue: 4200
+  item_type: task
+  title: 'PVL-001 EV-7a: pv challenge gen/check -- pin each contract-bound statement apart from its proof'
+  status: in_progress
+  priority: high
+  assigned_to: aprender-dd
+  created: 2026-09-24T00:00:00Z
+  updated: 2026-09-24T00:00:00Z
+  spec: null
+  acceptance_criteria:
+  - '`pv challenge gen contracts $LEAN` writes $LEAN/Challenge/<contract>.lean: every bound root X restated as `theorem _root_.PvlChallenge.X <statement> := sorry` inside the scope frames still open at its declaration'
+  - '`pv challenge check contracts $LEAN` rc 0 when fresh; rc 1 on an extra, missing or differing file or an unrestated root; rc 2 on zero challenges or an unloadable tree'
+  - 'lint gate 13 `challenge-fresh` = check; skipped when no lean base or no challenge exists'
+  - 'mutation: a hand-edited challenge statement turns check RED (`cargo test -p aprender-contracts-cli --test pvl_challenge`)'
+  phases: []
+  subtasks: []
+  estimated_effort: null
+  labels:
+  - kind:code
+  notes: 'Stacked on EV-6a (#4139). Consumed by EV-7b (aprender-98). Frames, not `open`: an opened namespace loses the current-namespace priority (alibi `dist` was ambiguous, Alibi.dist vs Dist.dist); a `_root_.` decl inside the reopened namespace resolves as the source does, and a sibling name reads the solution (lean v4.29.0-rc4 core probe). challenge-fresh is NOT armed in lint-baseline.json; it moves only via make ont-ratchet.'

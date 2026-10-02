@@ -236,6 +236,8 @@ pub fn rungs_of(stem: &str, doc: &serde_yaml::Value) -> Vec<Rung> {
 pub fn emit_rung(g: &mut Graph, rung: &Rung) {
     let s = iri("model", &rung.sha256);
     g.insert(s.clone(), RDF_TYPE, Term::iri(model("Model")));
+    // v4.16 D-T2 (qd4c4): rung-only — the file-level path below stays `model:Model` only.
+    g.insert(s.clone(), RDF_TYPE, Term::iri(model("LadderRung")));
     if rung.required {
         g.insert(s.clone(), RDF_TYPE, Term::iri(model("RequiredModel")));
     }

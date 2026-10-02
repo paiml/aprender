@@ -18,6 +18,9 @@ pub const KERNEL_SCHEMA: &str = "apr-kernel-diff-receipt/v1";
 /// The tokenizer-parity receipts (aprender#3726): apr's token ids against the pinned llama.cpp comparator.
 pub const TOKENIZER_EVIDENCE_DIR: &str = "evidence/dogfood/tokenizer";
 pub const TOKENIZER_SCHEMA: &str = "apr-tokenizer-parity-receipt/v1";
+/// The shrink-only ratchet baseline for what the v1 surface cannot declare (#3745 S2).
+pub const SURFACE_RATCHET_FILE: &str = "evidence/release/surface-ratchet.json";
+pub const SURFACE_RATCHET_SCHEMA: &str = "apr-release-surface-ratchet/v1";
 /// The rung whose token count is DERIVED as the max over the consumer records, never written down.
 pub const CONSUMER_MAX: &str = "consumer-max";
 /// Reserved: the per-model rung whose size is the model's own GGUF `context_length` (added by the extractor).
@@ -40,6 +43,11 @@ pub struct Subject {
     pub dogfood_receipt: Option<PathBuf>,
     /// `--tokenizer-receipts`: `None` → `evidence/dogfood/tokenizer/<version>/`.
     pub tokenizer_receipts_dir: Option<PathBuf>,
+    /// `--surface`: the release candidate's `apr surface --json` (#3745 S1). `None` → no cell can be derived,
+    /// which the `.release` shape names.
+    pub surface: Option<PathBuf>,
+    /// `--crux-receipts`: `None` → `evidence/crux/<version>/` (#3739's harness, S2.4).
+    pub crux_receipts_dir: Option<PathBuf>,
 }
 
 impl Subject {
@@ -57,6 +65,8 @@ impl Subject {
             kernel_receipts_dir: None,
             dogfood_receipt: None,
             tokenizer_receipts_dir: None,
+            surface: None,
+            crux_receipts_dir: None,
         })
     }
 
@@ -85,6 +95,13 @@ impl Subject {
         self.tokenizer_receipts_dir
             .clone()
             .unwrap_or_else(|| root.join(TOKENIZER_EVIDENCE_DIR).join(&self.version))
+    }
+
+    #[must_use]
+    pub fn crux_dir(&self, root: &Path) -> PathBuf {
+        self.crux_receipts_dir
+            .clone()
+            .unwrap_or_else(|| root.join("evidence/crux").join(&self.version))
     }
 
     #[must_use]
@@ -490,5 +507,97 @@ fn parse_tok_row(r: &serde_json::Value) -> TokRow {
             .unwrap_or_default()
             .to_ascii_lowercase(),
         reason: str_of(r, "reason").unwrap_or_default(),
+    }
+}
+
+/// The committed ceilings for the two counts v1 cannot shrink by itself: args no role type claims, and
+/// stdin-capable positionals whose stdin form v1 cannot declare. May only FALL (#3745, cop).
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub struct SurfaceRatchet {
+    pub unknown_args: u64,
+    pub stdin_undeclared: u64,
+}
+
+/// `Ok(None)` when the file is absent (the release then names the missing baseline); a foreign schema is exit 3.
+pub fn read_surface_ratchet(root: &Path) -> Result<Option<SurfaceRatchet>, ReleaseError> {
+    let path = root.join(SURFACE_RATCHET_FILE);
+    if !path.exists() {
+        return Ok(None);
+    }
+    let v = read_json(&path, SURFACE_RATCHET_FILE, SURFACE_RATCHET_SCHEMA)?;
+    let n = |k: &str| {
+        v.get(k)
+            .and_then(serde_json::Value::as_u64)
+            .ok_or_else(|| input_err(SURFACE_RATCHET_FILE, format!("`{k}` is not a count")))
+    };
+    Ok(Some(SurfaceRatchet {
+        unknown_args: n("unknown_args")?,
+        stdin_undeclared: n("stdin_undeclared")?,
+    }))
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    const SHA: &str = "0123456789abcdef0123456789abcdef01234567";
+
+    fn tmp(tag: &str) -> PathBuf {
+        let d =
+            std::env::temp_dir().join(format!("pv-release-inputs-{tag}-{}", std::process::id()));
+        let _ = std::fs::remove_dir_all(&d);
+        std::fs::create_dir_all(&d).expect("mkdir");
+        d
+    }
+
+    /// #4587: `crux_dir` defaults under the root by version, and an explicit dir wins.
+    #[test]
+    fn crux_dir_defaults_to_evidence_crux_version_and_honours_the_override() {
+        let mut s = Subject::new("0.70.0", SHA).expect("subject");
+        let root = Path::new("/r");
+        assert_eq!(s.crux_dir(root), PathBuf::from("/r/evidence/crux/0.70.0"));
+        s.crux_receipts_dir = Some(PathBuf::from("/elsewhere"));
+        assert_eq!(s.crux_dir(root), PathBuf::from("/elsewhere"));
+    }
+
+    /// #4587: `read_surface_ratchet` — absent is `None`, a valid file is read, anything else is refused.
+    #[test]
+    fn read_surface_ratchet_reads_absent_valid_and_refuses_the_rest() {
+        let d = tmp("ratchet");
+        assert_eq!(read_surface_ratchet(&d), Ok(None));
+        let f = d.join(SURFACE_RATCHET_FILE);
+        std::fs::create_dir_all(f.parent().expect("parent")).expect("mkdir");
+        std::fs::write(
+            &f,
+            format!(
+                r#"{{"schema":"{SURFACE_RATCHET_SCHEMA}","unknown_args":4,"stdin_undeclared":9}}"#
+            ),
+        )
+        .expect("write");
+        assert_eq!(
+            read_surface_ratchet(&d),
+            Ok(Some(SurfaceRatchet {
+                unknown_args: 4,
+                stdin_undeclared: 9
+            }))
+        );
+        std::fs::write(
+            &f,
+            format!(r#"{{"schema":"{SURFACE_RATCHET_SCHEMA}","unknown_args":4}}"#),
+        )
+        .expect("write");
+        let e = read_surface_ratchet(&d).expect_err("missing count");
+        assert!(
+            e.to_string().contains("`stdin_undeclared` is not a count"),
+            "{e}"
+        );
+        std::fs::write(
+            &f,
+            r#"{"schema":"other/v1","unknown_args":1,"stdin_undeclared":1}"#,
+        )
+        .expect("write");
+        let e = read_surface_ratchet(&d).expect_err("foreign schema");
+        assert!(e.to_string().contains("refused by name"), "{e}");
+        let _ = std::fs::remove_dir_all(&d);
     }
 }

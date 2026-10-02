@@ -1,0 +1,20 @@
+# ONT-4d fixture Σ: a subsumption CYCLE, Kernel ⊑ Code ⊑ Contract ⊑ Kernel. R-19: `subsumes` is acyclic, so this is
+# the declaration's fault, exit 3 `error: subsumes cycle <path>`.
+schema: ont-sigma-v1
+concepts:
+  Contract: {doc: "a pv contract file"}
+  Code: {doc: "a code item"}
+  Kernel: {doc: "a contract whose kind is kernel"}
+subsumes:
+  - {sub: Kernel, sup: Code}
+  - {sub: Code, sup: Contract}
+  - {sub: Contract, sup: Kernel}
+entity_types:
+  - {name: pv-contract, extractor: pv_contract, implemented: true}
+extractors:
+  - {name: pv_contract, reader: ontology/extract/pv_contract.rs, implemented: true}
+readers:
+  concepts: ontology/sigma.rs
+  subsumes: ontology/sigma.rs
+  entity_types: lint/sigma_gate.rs
+  extractors: ontology/sigma.rs
