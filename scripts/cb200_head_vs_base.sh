@@ -11,7 +11,12 @@
 # Usage:
 #   scripts/cb200_head_vs_base.sh --base <ref> [--head <ref>]    # head defaults to HEAD
 #   scripts/cb200_head_vs_base.sh --default-base   # newest final vX.Y.Z tag that does not contain HEAD
-#   scripts/cb200_head_vs_base.sh --selftest
+#   scripts/cb200_head_vs_base.sh --case-table   # run by scripts/check_cb200_head_vs_base.sh
+#
+# The case table is reached through --case-table, not a `--selftest)` arm, on purpose
+# (same rule as scripts/cargo_classify.sh): a script shipping one of those claims to be a
+# guard, and check_guards_are_wired.sh then wants a workflow to invoke THIS file. The guard
+# is check_cb200_head_vs_base.sh, which guard_tree.sh --no-cargo dispatches from ci.yml.
 # Env: PMAT_BIN (REQUIRED: the pinned pmat, from scripts/verifier_pin.sh; unset = rc 3).
 # Exit: 0 head <= base | 1 head > base (new debt) | 2 usage | 3 NOT MEASURED (never a pass).
 set -uo pipefail
@@ -22,7 +27,7 @@ while [ $# -gt 0 ]; do
     case "$1" in
         --base) [ $# -ge 2 ] || { printf "cb200_head_vs_base.sh: --base needs a value\n" >&2; exit 2; }; BASE=$2; shift 2 ;;
         --head) [ $# -ge 2 ] || { printf "cb200_head_vs_base.sh: --head needs a value\n" >&2; exit 2; }; HEAD_REF=$2; shift 2 ;;
-        --selftest) MODE=selftest; shift ;;
+        --case-table) MODE=selftest; shift ;;
         --default-base) MODE=defbase; shift ;;
         *) printf 'cb200_head_vs_base.sh: unknown argument %s\n' "$1" >&2; exit 2 ;;
     esac
