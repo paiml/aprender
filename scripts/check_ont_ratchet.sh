@@ -666,7 +666,10 @@ compare_against() { # compare_against BASELINE_FILE -> 0 ok, 1 violation
 
 main() {
     case "${1:---check}" in
-        --self-test) self_test; return $? ;;
+        # Hermetic to the CI event env: resolve_base.sh falls back to the commit's single parent when
+        # GITHUB_EVENT_NAME=merge_group, so the fixture repo would still get a comparand after
+        # `update-ref -d refs/remotes/origin/main` and the "no comparand" row went 0 under the queue.
+        --self-test) GITHUB_EVENT_NAME= ROADMAP_DIFF_NO_DEEPEN= ROADMAP_DIFF_FORCE_SHALLOW= self_test; return $? ;;
         --print) measure; return $? ;;
         --write)
             mkdir -p "$(dirname "$BASELINE")"
