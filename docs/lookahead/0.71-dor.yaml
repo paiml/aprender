@@ -1,0 +1,130 @@
+# 0.71 "Verbs Are Fast" (#3598) — Definition of Ready, top 10 rows by EV.
+# APR-LOOKAHEAD-001 §4 L1 item 2. Data only; scripts/lookahead/dor_check.py renders it.
+# A row is READY only when spec, contract, falsifier, baseline and owner are all present
+# AND every path claimed `on_main: true` exists at the checked ref (claims are verified,
+# never trusted). Audit: 2026-10-03 against origin/main 316dee2cd4, by la-0.71 (L1).
+schema: lookahead-dor-v1
+train: "0.71"
+epic: 3598
+audited_ref: 316dee2cd4
+rows:
+  - id: OBS-09
+    ev_rank: 1
+    exit_criterion: V6
+    title: per-layer serve tracing (X-Trace-Level step|layer), first row of the 0.71 serve epic
+    ticket: null            # not minted; APR-OBS-001 §7 row OBS-09 (K̂ 240)
+    spec: {path: docs/specifications/APR-OBS-001-dogfood-observability.md, section: "§7 OBS-09, §5.2", on_main: false,
+           staged_at: cop-inbox/handoff/APR-OBS-001-dogfood-observability.md}
+    contract: {id: apr-trace-v1, path: null, on_main: false}
+    falsifier: ["provenance Measured when tracer did not run", "per-layer sum > request wall"]
+    baseline: null
+    owner_proposed: L1 (la-0.71)
+    blocks: [V1, V3]        # §5.2: every 0.71 perf PR carries an apr-trace-v1 diff
+  - id: KREG-001
+    ev_rank: 2
+    exit_criterion: V5
+    title: kernel registry live — unregistered kernels refused, 0 unregistered dispatches
+    ticket: 4539
+    spec: {path: docs/specifications/KTEST-001-kernel-testing-gpu-cpu-hardware.md, section: "§5.1, §8", on_main: false,
+           staged_at: origin/la-71/ktest-001}
+    contract: {id: kernel-registry-v1, path: contracts/kernel-registry-v1.yaml, on_main: false,
+               staged_at: origin/la-71/3715-kernel-cells}
+    falsifier: [FALSIFY-KREG-001, FALSIFY-KREG-002, FALSIFY-KREG-003, FALSIFY-KREG-004, FALSIFY-KREG-005]
+    baseline: {path: crates/aprender-serve/kernel-registry-receipts.json, on_main: false,
+               note: "unreceipted_max 41 on branch; CPU rows reduced to 26 per kreg 09-29; unregistered-dispatch count not yet measured"}
+    owner_proposed: L1 (la-0.71, ex-kreg)
+  - id: SRV-LOAD-TTFT
+    ev_rank: 3
+    exit_criterion: V2
+    title: apr serve resident; load + TTFT reported beside pp512/tg128
+    ticket: 3596
+    spec: {path: docs/specifications/APR-EPIC-001-themed-epics-and-issue-cap.md, section: "§2 E2 goal line (one line, no section)", on_main: true}
+    contract: {id: null, path: null, on_main: false}
+    falsifier: []
+    baseline: null
+    owner_proposed: L1
+    related: [PMAT-3718]
+  - id: TTFT-RATIO
+    ev_rank: 4
+    exit_criterion: V1
+    title: TTFT <= 2x llama.cpp d1d3c3396 on Qwen3.5-4B, APR-OBS identity
+    ticket: null
+    spec: {path: docs/specifications/APR-EPIC-001-themed-epics-and-issue-cap.md, section: "§2 E2 goal line", on_main: true}
+    contract: {id: null, path: null, on_main: false}
+    falsifier: []          # APR-OBS-001 §8 S-4: ratio across mismatched identity must be refused
+    baseline: {path: evidence/parity/pin-bump-d1d3c3396/llamacpp-d1d3c3396.json, on_main: true,
+               note: "llama.cpp arm only; no apr-side Qwen3.5-4B TTFT receipt"}
+    owner_proposed: L1
+    depends_on: [OBS-05, OBS-09]
+  - id: OBS-05
+    ev_rank: 5
+    exit_criterion: V1
+    title: nightly perf ledger with §2.1 identity block (raw samples)
+    ticket: 4551
+    spec: {path: docs/specifications/APR-OBS-001-dogfood-observability.md, section: "§2.1, §2.4", on_main: false,
+           staged_at: cop-inbox/handoff/APR-OBS-001-dogfood-observability.md}
+    contract: {id: apr-raw-samples-v1, path: contracts/apr-raw-samples-v1.yaml, on_main: false,
+               staged_at: origin/la-71/4551-raw-samples}
+    falsifier: ["missing host row", "empty ledger", "ratio across mismatched identity"]
+    baseline: null
+    owner_proposed: L1
+  - id: BATCH-DECODE-PARITY
+    ev_rank: 6
+    exit_criterion: V3
+    title: batched decode with a serving-shape parity receipt
+    ticket: null
+    spec: {path: null, section: null, on_main: false}
+    contract: {id: continuous-batching-v1, path: contracts/continuous-batching-v1.yaml, on_main: true}
+    falsifier: [FALSIFY-CB-001, FALSIFY-CB-008]
+    baseline: {path: evidence/parity-http/bands/apr-c4.json, on_main: true,
+               note: "concurrency bands exist; nothing defines 'serving-shape parity receipt'"}
+    owner_proposed: L1
+  - id: EXT-24-25
+    ev_rank: 7
+    exit_criterion: V7
+    title: EXT-001 CRUX bind + per-surface crux contracts (EXT-25 must-carry, D-8)
+    ticket: null           # EXT-001 §11: the cop mints the epic and children
+    spec: {path: docs/specifications/EXT-001-dogfood-model-lifecycle.md, section: "§10, §10.1, §11", on_main: false,
+           staged_at: cop-inbox/handoff/EXT-001-dogfood-model-lifecycle.md}
+    contract: {id: crux-competitive-research-ux-v1, path: contracts/crux-competitive-research-ux-v1.yaml, on_main: true}
+    falsifier: [FALSIFY-CRUX-001]
+    baseline: {path: evidence/crux/0.69.1, on_main: true, note: "0.69.1 run; no 0.71 run"}
+    owner_proposed: EXT lane (E4 #4381), L1 tracks
+  - id: KTEST-04
+    ev_rank: 8
+    exit_criterion: V5
+    title: APR_FORCE_ISA forcing + per-ISA receipts (registry rows per ISA path)
+    ticket: null           # staged in cop-inbox/handoff/0.71-ktest-rows.md
+    spec: {path: docs/specifications/KTEST-001-kernel-testing-gpu-cpu-hardware.md, section: "§6.1.1", on_main: false,
+           staged_at: origin/la-71/ktest-001}
+    contract: {id: kernel-registry-v1, path: contracts/kernel-registry-v1.yaml, on_main: false,
+               staged_at: origin/la-71/ktest-04-force-isa}
+    falsifier: [F-11]
+    baseline: {path: null, on_main: false, note: "lambda receipts @f0a74a9e67 local-only per kreg 09-30"}
+    owner_proposed: L1
+  - id: JSON-SCHEMA
+    ev_rank: 9
+    exit_criterion: V4
+    title: --json-schema constrained decoding
+    ticket: null
+    spec: {path: docs/specifications/APR-EPIC-001-themed-epics-and-issue-cap.md, section: "§2 E5 (places it in 0.72)", on_main: true}
+    contract: {id: null, path: null, on_main: false}
+    falsifier: []
+    baseline: null
+    owner_proposed: null   # RULING R-71-1: §2a puts V4 in 0.71, APR-EPIC-001 E5 puts it in 0.72
+  - id: OBS-00
+    ev_rank: 10
+    exit_criterion: [V1, V6]
+    title: fold APR-OBS-001 + EXT-001 specs and the §2.1 identity schemas into the repo
+    ticket: null
+    spec: {path: docs/specifications/APR-OBS-001-dogfood-observability.md, section: "§7 OBS-00", on_main: false,
+           staged_at: cop-inbox/handoff/APR-OBS-001-dogfood-observability.md}
+    contract: {id: apr-perf-ledger-v1, path: null, on_main: false}
+    falsifier: ["schemas lint", "R-2 empty is RED"]
+    baseline: null
+    owner_proposed: L1
+rulings_needed:
+  - id: R-71-1
+    question: "V4 --json-schema: 0.71 (APR-LOOKAHEAD §2a) or 0.72 (APR-EPIC-001 E5 'Agent Ready')?"
+  - id: R-71-2
+    question: "docs/roadmaps/epics.yaml has three 0.71 epics (E2 #3598, E3 #3994, E4 #4381) and 0.72/0.73 epics named 'Agent Ready'/'llama.cpp Parity', not the 09-27 themes. Re-theme or re-train E3/E4/E5/E6?"

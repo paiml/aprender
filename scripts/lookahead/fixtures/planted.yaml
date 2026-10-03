@@ -1,0 +1,18 @@
+# Planted: NO-CONTRACT must render NOT READY (contract) only; ALL-PRESENT is the READY control.
+schema: lookahead-dor-v1
+train: "0.00"
+rows:
+  - id: NO-CONTRACT
+    ev_rank: 1
+    spec: {path: docs/specifications/APR-EPIC-001-themed-epics-and-issue-cap.md, on_main: true}
+    contract: {id: null, path: null, on_main: false}
+    falsifier: [FALSIFY-CB-001]
+    baseline: {path: evidence/parity-http/bands/apr-c4.json, on_main: true}
+    owner_proposed: L1
+  - id: ALL-PRESENT
+    ev_rank: 2
+    spec: {path: docs/specifications/APR-EPIC-001-themed-epics-and-issue-cap.md, on_main: true}
+    contract: {id: continuous-batching-v1, path: contracts/continuous-batching-v1.yaml, on_main: true}
+    falsifier: [FALSIFY-CB-001]
+    baseline: {path: evidence/parity-http/bands/apr-c4.json, on_main: true}
+    owner_proposed: L1

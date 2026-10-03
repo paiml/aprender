@@ -1,0 +1,44 @@
+# DRAFT (branch-only during S-1). Moves to contracts/ with a strict test binding once
+# 0.70.1 is live and a ticket is minted; proposed as the input contract for LA-05
+# (lookahead-readiness-v1), which renders it into the cop's hourly report.
+metadata:
+  id: lookahead-dor-v1
+  version: "0.1.0"
+  created: "2026-10-03"
+  author: la-0.71 (L1)
+  status: draft
+  description: >
+    Definition of Ready ledger for look-ahead train N+1 (APR-LOOKAHEAD-001 §4 L1.2).
+    A row is READY iff spec, contract, falsifier, baseline and a proposed owner are
+    present and every on_main claim exists at the checked ref.
+  references:
+    - 'docs/lookahead/0.71-dor.yaml'
+    - 'scripts/lookahead/dor_check.py'
+equations:
+  ready:
+    formula: |
+      ready(r) := on_main(r.spec) ∧ on_main(r.contract) ∧ |r.falsifier| ≥ 1
+                  ∧ on_main(r.baseline) ∧ r.owner_proposed ≠ null
+      on_main(x) := x.path ≠ null ∧ x.on_main ∧ exists(ref, x.path)
+    invariants:
+      - "a claim on_main=true whose path is absent at ref is RED, never NOT READY"
+      - "an empty ledger is RED (APR-OBS-001 R-2)"
+      - "|rows| ≤ 10 and ev_rank is a permutation of 1..|rows|"
+falsification_tests:
+  - id: FALSIFY-LADOR-001
+    rule: "a planted row with contract=null renders NOT READY (contract) only"
+    fixture: scripts/lookahead/fixtures/planted.yaml#NO-CONTRACT
+    if_fails: "a row without a contract counts toward top10_ready"
+  - id: FALSIFY-LADOR-002
+    rule: "a planted on_main claim to an absent path exits 2"
+    fixture: scripts/lookahead/fixtures/false-claim.yaml
+    if_fails: "the ledger can claim artifacts that are not on main"
+  - id: FALSIFY-LADOR-003
+    rule: "an empty ledger exits 2"
+    fixture: scripts/lookahead/fixtures/empty.yaml
+    if_fails: "an empty ledger reads as 0/0 ready instead of RED"
+  - id: FALSIFY-LADOR-004
+    rule: "control row with all five present renders READY"
+    fixture: scripts/lookahead/fixtures/planted.yaml#ALL-PRESENT
+    if_fails: "the checker is vacuously NOT READY"
+verification: "python3 scripts/lookahead/dor_check.py --self-test --ref origin/main  # each falsifier killed its mutant, 2026-10-03"
