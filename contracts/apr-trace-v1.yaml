@@ -75,7 +75,7 @@ falsification_tests:
 proof_obligations:
   - type: invariant
     property: 'Measured iff the tracer ran'
-    formal: 'r.provenance = Measured ⇔ tracer_ran(r.request_id)'
+    formal: 'r.provenance = Measured ⟺ tracer_ran(r.request_id)'
     applies_to: all
   - type: invariant
     property: 'step durations never exceed wall'
@@ -83,7 +83,7 @@ proof_obligations:
     applies_to: all
   - type: invariant
     property: 'the row pins its payload'
-    formal: 'sha256(r.payload_path) = r.payload_sha256'
+    formal: 'sha256(r.payload_path) ≡ r.payload_sha256'
     applies_to: all
 
 verification_summary:

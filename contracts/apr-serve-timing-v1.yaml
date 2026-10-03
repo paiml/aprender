@@ -82,7 +82,7 @@ proof_obligations:
     applies_to: all
   - type: invariant
     property: 'the join key is the client request id, never a server-generated one'
-    formal: 'r.request_id = r.client_request_id'
+    formal: 'r.request_id ≡ r.client_request_id'
     applies_to: all
 
 verification_summary:
