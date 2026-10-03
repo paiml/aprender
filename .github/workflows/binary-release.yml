@@ -845,6 +845,9 @@ jobs:
 
       - name: Build apr on the default features (no cuda)
         run: |
+          # Every later step reads ./target. The mini's runner env redirects cargo's
+          # target dir, so cargo built elsewhere and strip found nothing (run 37084403773).
+          export CARGO_TARGET_DIR="$GITHUB_WORKSPACE/target"
           APR_GIT_SHA_OVERRIDE="$(git rev-parse --short=9 HEAD)" \
             cargo build --release -p apr-cli --bin apr --target aarch64-apple-darwin --locked
           strip target/aarch64-apple-darwin/release/apr
