@@ -29,7 +29,8 @@ R1 honesty gate ─► R2 GDN forward (= serve) ─► R3 GDN backward ─► R4
                                                   #4418 GGUF name map (0.71) ───┴─► R10 round-trip ─► R13 HF rc
 ```
 This is the shaping-time path. The current one is §3's critical path v3 (2026-10-03): R21 (GDN on CUDA) follows R3 and
-feeds both R4 and T2, R15a and R12 join before R4, and T2 needs R15b.
+feeds both R4 and T2, and so does row 4b (the HF-convention loader, on #4418's transforms). R15a and R12 join before
+R4, and T2 needs R15b.
 
 ## §2 Rows
 
@@ -402,7 +403,9 @@ up, a new size changes its place, and a row already held on a branch drops out o
   `[A]` for bf16 on T2's path. It also widened the row to the whole hybrid block: the CUDA trainer has neither the
   attention output gate nor the partial RoPE that the 4B's 8 full-attention layers need. Its falsifiers are
   `qwen35-train-cuda-v1` QTC-001..005. The spike also found that GGUF and HF order Qwen3.5's value heads
-  differently and nothing converts between them, which R4's PEFT export must handle (QQE-007/008).
+  differently and that nothing on main converts between them. #4418's branch has the converter. `apr finetune`
+  trains from .apr only and `apr import` refuses every real Qwen3.5 GGUF, so R4's and T2's bases are HF-sourced and
+  need a load-time conversion (row 4b, QQE-008). R4's PEFT export also needs the permutation back (QQE-007).
 
 State is read from the branch tips on 2026-10-03. origin/main is `316dee2cd4` and no la-72 branch has landed. K̂ is
 minutes of worker time still left; `[A]` marks an assumption.
@@ -414,8 +417,9 @@ minutes of worker time still left; `[A]` marks an assumption.
 | 3 | R2 GDN forward | QTG-001 parity vs serve | 90 | `fold-r2r3` @5a837dfa3b; one-line Cargo.toml conflict with main |
 | 4 | R3 GDN backward | QTG-003/006 gradcheck | 120 | in `fold-r2r3` (`r3-backward` @8a9f4f0104) |
 | 4a | R21 GDN on CUDA (the hybrid block) | QTC-001 training forward = the R2 CPU forward | 400 `[A]`, +25 bf16 on T2's path | S-R21 desk spike done 2026-10-03 (`r21-cuda-qwen35-hybrid-block.md`); no branch; oracle `fold-r2r3`; LoRA wiring needs R15a's C1; cargo after LIVE 0.70.1 |
+| 4b | HF-convention loader | QQE-008: the HF copy's step-1 loss = the GGUF copy's, or a refusal | 25 `[A]`, +20 if #4418 has not landed | new 2026-10-03, no branch; calls #4418's `transform_qwen35_tensor` (`m0694/4418-qwen35-gguf-main` @1af0e3cc11); on R4's path and T2's; cargo after LIVE 0.70.1 |
 | 5 | R15a CUDA LoRA, C1–C4 | C1 `lora_backward` extraction (FALSIFY-LORA_GRADIENT_FLOW_V1_004) | 210 `[A]` | cells and falsifiers on `la-72/r15-receipt-ext`; cargo after LIVE 0.70.1 |
-| 6 | R4 QLoRA 4B end to end | QQE-001..006 | 90 | blocked on R2, R3, R21, R15a; contract 1.1.0 pins the QQE-004 reference's precision and device |
+| 6 | R4 QLoRA 4B end to end | QQE-001..007 | 90 + 15 `[A]` | blocked on R2, R3, R21, R15a, 4b; contract 1.1.0 pins the QQE-004 reference's precision and device and adds QQE-007, the export permutation (the +15) |
 | 7 | R5 Unsloth harness | Unsloth-side runs (`r5-unsloth-ft-runbook.md`) | GPU only | desk-done, `r5-apr-adapter` @7aeb557271; needs train-idle |
 | 8 | R15b CUDA LoRA, C5–C7 | C6 flags and receipt (with R12), C7 timed window; C5 bf16 per RQ-5 | 240 `[A]` | contracts apr-finetune-canonical-task-v1 1.1.0, TRR 1.1.0 |
 | 9 | R10 round-trip | QFR-003 self-describing export | 40 `[A]` | `fold-r10-qfr` @6b13da980f (QFR-001/002/003/005); QFR-004 is #4418 |
@@ -423,7 +427,7 @@ minutes of worker time still left; `[A]` marks an assumption.
 | 11 | R11 sealed ingress | TIS-002 planted perturbed item | 40 `[A]` + the TDD normaliser | `fold-tis` @9fed5c27db (TIS-001/003/004/005); TIS-002 waits on a foreign branch |
 | 12 | R6 distill batch | DBH refusal, then real batching | 15 + 90 | `fold-dbh-a` @2cfe655b98, `fold-dbh-b` @df5e4d74f6, GPU halves `gpu-falsifiers` @e890928f4e; 3 Definition-of-Ready tests, plus R18's 3 |
 | 13 | R7 merge | MOF-002/003 APR writer | 30 `[A]` | `fold-mof` @17fbe022eb; Definition of Ready: FWD-001's path, FWD-002..004 unwritten |
-| 14 | R9 #4418 GGUF name map | — | owned by 0.71 | fix not on main at `316dee2cd4`; if it slips, R10's GGUF legs and T4/T5 slip with it |
+| 14 | R9 #4418 GGUF name map | — | owned by 0.71 | fix not on main at `316dee2cd4`; if it slips, R10's GGUF legs and T4/T5 slip with it, and row 4b copies its transforms (+20 `[A]`) |
 | 15 | R8 GDN quantize policy | — | — | `79/r8-gdn-quant-policy` |
 | 16 | R17 memory, measured | peak-memory run on the 4090 | 30 `[A]` | needs GPU at train-idle |
 | 17 | R18 vocab alignment | — | — | `76/0.72-r18-vocab-cell`; 3 Definition-of-Ready tests shared with R6 |
@@ -436,13 +440,16 @@ minutes of worker time still left; `[A]` marks an assumption.
 ```
 R1 ─► R2 ─► R3 ─► R21 GDN on CUDA ─┐
 R15a C1–C4 ────────────────────────┼─► R4 ─┬─► R6 (DBH refusal lands with R1), R7 (MOF)
+#4418 transforms ─► 4b HF loader ──┤       │
 R12 receipts ──────────────────────┤       └─► R13 HF rc ◄── R10 QFR-003 export ◄── #4418 (GGUF legs only)
                                    └─► R15b C5–C7 (C5 = RQ-5) ─► R5 T2 verdict ─► R14
 R11 TIS ◄── TDD normaliser (PRM C7–C9) ─────► gates every R4/R6 run counted for 0.72
 ```
-T2 trains Qwen3.5-4B, so its apr side needs R2, R3 and R21 as well as R15a and R15b. It does not need R4. R21
+T2 trains Qwen3.5-4B, so its apr side needs R2, R3, R21 and 4b as well as R15a and R15b. It does not need R4. R21
 (400 + 25 `[A]`) is the largest row on both R4's path and T2's. Its LoRA wiring calls R15a's C1 helper, so C1
-lands before R21's projection cell.
+lands before R21's projection cell. The value-head work splits in two. The load-time conversion (4b) is on both
+paths, because `apr finetune` trains from .apr only and the only Qwen3.5 .apr today is HF-sourced. The export
+permutation (QQE-007) is R4's alone, because T2's canonical cell targets no GDN projection.
 
 ## §4 Rulings (S-4)
 Ruled by the cop on 2026-09-27 at 12:11Z (full text in the handoff file):
@@ -532,7 +539,7 @@ as a refusal. It is honest, but it is not T1-green.
 - **Measured by:** `beat-unsloth-finetune-throughput-v1` 1.3.0. The command is `scripts/bench/unsloth_finetune_throughput.sh
   --model Qwen3.5-4B --gpu 0 --out evidence/beat-unsloth-ft/<version>/`, on the `la-72/r5-*` branches (R5, done on the
   desk). The apr side stays NOT MEASURED until `apr finetune` has the canonical flags and receipt fields (R15b, built on
-  R2, R3 and R15a). Before that, the apr adapter exits 4 and lists every missing key.
+  R2, R3, R21, 4b and R15a). Before that, the apr adapter exits 4 and lists every missing key.
 - **Cell:** the canonical task, the same on both sides:
   - bf16 LoRA, not QLoRA (S-R5). Precision is pinned to bf16 on both sides (1.3.0).
   - r16, alpha 32, on the 7 targets q, k, v, o, gate, up and down.

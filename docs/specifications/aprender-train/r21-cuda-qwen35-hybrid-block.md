@@ -19,8 +19,8 @@ cargo (and, for the CUDA rows, a GPU) is allowed after LIVE 0.70.1.
   recomputes each layer during its backward and checkpoints the scan state every 8 steps: 0.5 GiB at batch 4, for
   the one layer in flight (§Memory).
 - **Out of R21:** a chunked (WY) scan fast enough to race fla is R14's. The value-head order that differs between
-  GGUF and HF is a boundary defect for R4's PEFT export and for any HF-sourced base, not a kernel cost (§Value-head
-  order).
+  GGUF and HF is a boundary cost, not a kernel cost (§Value-head order): a load-time conversion on both R4's path and
+  T2's (spec §3 row 4b, 25 `[A]`), and a PEFT-export permutation on R4's alone (10–15 `[A]`).
 
 ## Qwen3.5-4B, the shapes that size this `[V]`
 
@@ -163,9 +163,20 @@ At 4B the 32 value heads share 16 key heads, and the two file formats order them
 - **HF is grouped:** value head h reads key head h / 2, because HF expands q and k with `repeat_interleave`. Serving's
   safetensors path keeps that order (`aprender-serve/src/gpu/scheduler/linear_attn.rs:218-233`,
   `vh = kh * heads_ratio + r`) and reads A_log raw.
-- **Nothing converts between them.** `apr import` from HF safetensors keeps the grouped order and A_log as they are
-  (`aprender-core/src/format/tensor_expectation.rs:12`, `:267`). PEFT export writes lora_A and lora_B byte for byte
-  (`aprender-train/src/lora/adapter/peft_export.rs:100-110`).
+- **Nothing on main converts between them.** `apr import` from HF safetensors keeps the grouped order and A_log as
+  they are (`aprender-core/src/format/tensor_expectation.rs:12`, `:267`). PEFT export writes lora_A and lora_B byte
+  for byte (`aprender-train/src/lora/adapter/peft_export.rs:100-110`).
+- **#4418's branch has the conversion** (`m0694/4418-qwen35-gguf-main` @1af0e3cc11, 0.71's R9, not on main at
+  `316dee2cd4`). `transform_qwen35_tensor` (`aprender-core/src/format/converter/qwen35_gguf.rs:212-259`) is
+  llama.cpp's HF → GGUF value transform, checked element-wise against llama.cpp `d1d3c3396` on a seeded tiny
+  checkpoint (:9-18). It passes every attention and MLP projection through unchanged (:256) and changes four things:
+  - +1 on the RMSNorm weights that HF stores zero-centred: input, post-attention, q_norm, k_norm and the final norm,
+    never `linear_attn.norm` (:203-208);
+  - A_log → −exp(A_log), which is ssm_a;
+  - conv1d squeezed from [C, 1, K] to [C, K];
+  - every value-head-indexed axis regrouped from key-head-major to value-head-major by `reorder_v_heads` (:149-168):
+    A_log, dt_bias, the rows of in_proj_a, in_proj_b and in_proj_z, the value rows of in_proj_qkv and conv1d, and
+    the columns of out_proj (:172-185).
 
 Two consequences sit outside the kernels:
 
@@ -173,12 +184,21 @@ Two consequences sit outside the kernels:
   B, all rows of attn_gate's B and all columns of ssm_out's A permuted from tiled back to grouped. Without that, HF,
   vLLM and serving's own safetensors path apply 30 of the 32 value heads' deltas to the wrong head (heads 0 and 31 are
   the only fixed points). QQE's adapter_serve_identity check cannot see the fault, because the trainer and the GGUF
-  server share the tiled order. Proposed as FALSIFY-QQE-007.
-- **Load.** The oracle reads GGUF. A Qwen3.5 base imported from HF safetensors carries grouped heads, A_log, and
-  possibly HF's zero-centred RMSNorm weights (applied as 1 + w; `[A]`, unverified). QQE's base is "a .apr imported by
-  a released apr" without saying from what. Until a loader normalises the conventions, the trainer should refuse a
-  GDN layer that carries A_log and no ssm_a, rather than train on it. Proposed as FALSIFY-QQE-008, a cheap refusal in
-  the same family as DBH-001 and MOF-002.
+  server share the tiled order. Proposed as FALSIFY-QQE-007. The permutation back is `reorder_v_heads` itself with
+  nk and nv/nk exchanged (checked in Python on four shapes, the 4B's among them), so QQE-007 costs 10–15 `[A]` with
+  its test. It is R4's alone: T2's canonical cell targets no GDN projection
+  (`beat-unsloth-finetune-throughput-v1` :29-32), and its seven targets have one layout in both conventions (:256).
+- **Load.** The oracle reads GGUF conventions, and neither R4's base nor T2's can be a GGUF today. `apr finetune -m
+  lora|qlora` trains from .apr only (`apr-cli/src/commands/finetune.rs:354-364`), and `apr import` refuses every
+  real Qwen3.5 GGUF (spec §2 S-R10, QFR-005). So the only Qwen3.5 base either row can train is a .apr imported from
+  HF safetensors, in HF conventions: grouped heads, A_log, zero-centred norms and a [C, 1, K] conv. A qwen35 GGUF
+  import path would change that, and no row holds one (S-R10). The trainer therefore needs a load-time conversion:
+  `qwen35_gguf_name` for each name and `transform_qwen35_tensor` for each value, in memory, so that no file format
+  and no serve path changes. The norm weights stay f32 after the +1, as #4418's GGUF writer keeps them (:316-318).
+  bf16's spacing at 1.0 is 2⁻⁷, so a bf16 copy would round every norm of T2's bf16 base in a way the served model
+  does not. Until the conversion lands, the trainer must refuse a GDN layer that carries A_log and no ssm_a rather
+  than train on it. FALSIFY-QQE-008 covers both outcomes: the conversion, or the refusal, which is a cheap one in the
+  same family as DBH-001 and MOF-002.
 
 ## Open items
 
@@ -187,9 +207,11 @@ Two consequences sit outside the kernels:
    for the 4090's 128 SMs, 512 dependent steps per layer `[A]`. R5 measures its share of T2's step rather than
    assuming it.
 3. **The 4B shapes** come from an AWQ repack's config. R4 confirms them on the checkpoint it trains.
-4. **An HF-sourced loader** (permute the value heads, A_log to ssm_a, squeeze conv1d to [C, K], and fold the norm
-   offset if HF has one) is sized nowhere. T2 needs it only if apr's side loads the HF checkpoint rather than the
-   GGUF.
+4. **The HF-convention loader is sized** as spec §3 row 4b: 25 `[A]` (20–30) with QQE-008, calling #4418's
+   `qwen35_gguf_name` and `transform_qwen35_tensor`. Both are `pub(crate)` in aprender-core, which aprender-train
+   already depends on (`aprender-train/Cargo.toml:85`), so the change is a visibility change plus the loader. Add 20
+   `[A]` if #4418 has not landed by then and the transforms must first move to a shared module. It is on R4's path
+   and T2's (§Value-head order, Load).
 5. **Contract text on `fold-r2r3`.** `qwen35-train-gdn-v1` (:26-27) still states the old recurrence: α = sigmoid(·)
    and o = (Sᵀq) ⊙ z. The code decays by e^g (`gdn.rs:291`) and applies z only in the gated norm. That contract's
    note at :96 already records the right decay, so this is a text fix in that PR, not a defect in the code.
