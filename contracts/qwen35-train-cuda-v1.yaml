@@ -12,6 +12,8 @@ metadata:
     the full head with no output gate, so Qwen3.5's partial RoPE and gated attention are missing
     too. PROPOSED from the S-R21 desk spike
     (docs/specifications/aprender-train/r21-cuda-qwen35-hybrid-block.md). Nothing is built or run.
+    The GDN fixtures have 3 key heads and 6 value heads. With 2 and 4 the key-head count equals the ratio, so a
+    kernel that uses one for the other passes, and the 0.8B (16 and 16) cannot see the head order at all.
   references:
   - docs/specifications/aprender-train/r21-cuda-qwen35-hybrid-block.md
   - docs/specifications/aprender-train/train-what-you-serve-0.72.md §3 (row 4a, R21)
@@ -74,12 +76,12 @@ proof_obligations:
 falsification_tests:
 - id: FALSIFY-QTC-001
   rule: The CUDA GDN mixer's training forward equals the CPU oracle
-  prediction: 'tiny fixture (2 key heads, 4 value heads, d_k = d_v = 8, conv kernel 4, T = 13, batch 2, random weights, fixed seed), zero state per sequence: max abs diff to gdn_mixer_forward ≤ 1e-5·max(scale, 1). Planted: carrying the state from sequence 0 into sequence 1 turns it RED, and so does reading key head h / 2 (grouped) instead of h mod 2 (tiled)'
+  prediction: 'tiny fixture (3 key heads, 6 value heads, d_k = d_v = 8, conv kernel 4, T = 13, batch 2, random weights, fixed seed), zero state per sequence: max abs diff to gdn_mixer_forward ≤ 1e-5·max(scale, 1). Planted: carrying the state from sequence 0 into sequence 1 turns it RED, and so does reading key head h / 2 (grouped) instead of h mod 3 (tiled), and so does h mod 2 (the ratio in place of the key-head count, which a 2-key, 4-value fixture cannot tell apart)'
   test: '[U] not written; needs cargo + CUDA after LIVE 0.70.1, GPU lock around the test binary only'
   if_fails: 'the training forward differs from the oracle that R2 proved against serving: fix the CUDA side before any backward work'
 - id: FALSIFY-QTC-002
   rule: The CUDA GDN mixer backward equals the CPU oracle
-  prediction: 'same fixture: dX and the LoRA gradients of attn_qkv, attn_gate and ssm_out match gdn_mixer_backward within relative L2 1e-4 in f32. Planted: dropping the −β_t·S̃_tᵀ·dδ term of dk turns it RED, and so does summing dq and dk over the grouped value-head pairs (0,1),(2,3) instead of the tiled pairs (0,2),(1,3)'
+  prediction: 'same fixture: dX and the LoRA gradients of attn_qkv, attn_gate and ssm_out match gdn_mixer_backward within relative L2 1e-4 in f32. Planted: dropping the −β_t·S̃_tᵀ·dδ term of dk turns it RED, and so does summing dq and dk over the grouped value-head pairs (0,1),(2,3),(4,5) instead of the tiled pairs (0,3),(1,4),(2,5)'
   test: '[U] not written; needs cargo + CUDA after LIVE 0.70.1, GPU lock around the test binary only'
   if_fails: 'the reverse scan or a pointwise backward is wrong; bisect by comparing dq, dk, dv, dβ and dg per step against gated_delta_scan_backward'
 - id: FALSIFY-QTC-003

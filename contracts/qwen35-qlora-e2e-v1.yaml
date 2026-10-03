@@ -19,6 +19,9 @@ metadata:
     §Value-head order). #4418's branch (0.71's R9, not on main) has the full HF-to-GGUF transform,
     transform_qwen35_tensor. apr finetune trains from .apr only and apr import refuses every real
     Qwen3.5 GGUF, so the base R4 trains is HF-sourced and must be converted at load (QQE-008).
+    QQE-007/008 use 3 key heads and 6 value heads. With 2 and 4 the value-head permutation is its own inverse,
+    so neither row could catch it applied backwards. The 0.8B and the 2B have 16 key and 16 value heads, so the
+    permutation is the identity there, and the 0.8B rows (QQE-005/006) cannot see the head order at all.
   references:
   - docs/specifications/aprender-train/train-what-you-serve-0.72.md §R4
   - contracts/qwen35-train-gdn-v1.yaml
@@ -87,7 +90,7 @@ falsification_tests:
 - id: FALSIFY-QQE-003
   rule: Trained adapter is served identically
   prediction: 'apr serve base+adapter matches the training-side merged forward (cos ≥ 0.999, argmax equal)'
-  test: 'post-train parity check on 3 prompts'
+  test: 'post-train parity check on 3 prompts. At 316dee2cd4 nothing can run the serve side: apr run, chat and serve take no adapter (commands_enum.rs and serve_commands.rs have no adapter or LoRA flag), the Modelfile ADAPTER directive is parsed and only printed (modelfile/mod.rs:121-123), and every caller of realizar::gguf::hybrid_forward_handles asks a mapped GGUF, so a qwen35 GGUF is the only Qwen3.5 model apr serves. Until an adapter path exists, the serve side is the merged model exported as a GGUF, which needs #4418'
   if_fails: 'adapter layout, scaling (alpha/r) or GDN-projection target naming differs between train and serve'
 - id: FALSIFY-QQE-004
   rule: NF4 quantization does not silently cost quality on Qwen3.5
@@ -109,12 +112,12 @@ falsification_tests:
   if_fails: 'a regression in the backward, the merge or the optimiser: fix it on CPU before spending GPU time'
 - id: FALSIFY-QQE-007
   rule: The PEFT adapter stores the GDN targets in HF's grouped value-head order
-  prediction: 'tiny Qwen3.5-shaped fixture (2 key heads, 4 value heads, random weights, fixed seed): random LoRA A and B on attn_qkv, attn_gate and ssm_out in the trainer''s tiled order, exported as PEFT. A grouped-order reference forward (key head h / 2, as HF repeat_interleave) on the base permuted into HF order plus the exported adapter equals the trainer''s merged forward within 1e-5. Planted: exporting the tiled rows unpermuted, which is what peft_export.rs:100-110 does at 316dee2cd4, turns it RED while adapter_serve_identity stays green'
+  prediction: 'tiny Qwen3.5-shaped fixture (3 key heads, 6 value heads, random weights, fixed seed; not 2 and 4, where the permutation is its own inverse): random LoRA A and B on attn_qkv, attn_gate and ssm_out in the trainer''s tiled order, exported as PEFT. A grouped-order reference forward (key head h / 2, as HF repeat_interleave) on the base permuted into HF order plus the exported adapter equals the trainer''s merged forward within 1e-5. Planted: exporting the tiled rows unpermuted, which is what peft_export.rs:100-110 does at 316dee2cd4, turns it RED while adapter_serve_identity stays green, and so does exporting with the permutation applied backwards (nk and nv/nk exchanged)'
   test: '[U] not written; CPU only, needs cargo after LIVE 0.70.1'
   if_fails: 'HF, vLLM and apr''s own safetensors path (grouped, linear_attn.rs:218-233) apply 30 of the 4B''s 32 value heads'' adapter deltas to the wrong head'
 - id: FALSIFY-QQE-008
   rule: A Qwen3.5 base in HF conventions is converted or refused before training, never trained as it is
-  prediction: 'the same tiny random checkpoint written twice, once in GGUF conventions (tiled value heads, ssm_a, norms with the +1, conv [C,K]) and once in HF conventions (grouped value heads, A_log, zero-centred norms, conv [C,1,K], as apr import of HF safetensors writes it at 316dee2cd4): either the step-1 loss of the HF copy equals the GGUF copy''s within 1e-6 relative, or the HF copy is refused before step 1 with exit ≠ 0, a message naming the convention, and no adapter written. Planted: a loader that maps the names but skips the value-head permutation trains with a different step-1 loss, which turns it RED, and so does one that skips the +1 on the zero-centred norms'
+  prediction: 'the same tiny random checkpoint (3 key heads, 6 value heads) written twice, once in GGUF conventions (tiled value heads, ssm_a, norms with the +1, conv [C,K]) and once in HF conventions (grouped value heads, A_log, zero-centred norms, conv [C,1,K], as apr import of HF safetensors writes it at 316dee2cd4): either the step-1 loss of the HF copy equals the GGUF copy''s within 1e-6 relative, or the HF copy is refused before step 1 with exit ≠ 0, a message naming the convention, and no adapter written. Planted: a loader that maps the names but skips the value-head permutation trains with a different step-1 loss, which turns it RED, and so does one that applies the permutation backwards or skips the +1 on the zero-centred norms'
   test: '[U] not written; CPU only, needs cargo after LIVE 0.70.1'
   if_fails: 'R4 or T2 trains against the wrong head map, or with every zero-centred norm near zero, without any error'
 qa_gate:

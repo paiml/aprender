@@ -142,12 +142,13 @@ per row (block 2·d_v), with a pair shuffle for the row dot products.
 
 ## Falsifiers in `qwen35-train-cuda-v1` (PROPOSED, `[U]`)
 
-Each runs on a tiny fixture against the CPU oracle above: 2 key heads, 4 value heads, d_k = d_v = 8, conv kernel 4,
-T ≥ 9, batch 2, random weights and a fixed seed.
+Each runs on a tiny fixture against the CPU oracle above: 3 key heads, 6 value heads, d_k = d_v = 8, conv kernel 4,
+T ≥ 9, batch 2, random weights and a fixed seed. Not 2 and 4: there the key-head count equals the ratio, so a kernel
+that uses one for the other still passes (§Value-head order).
 
 | ID | Claim | Planted mutation that must turn it RED |
 |---|---|---|
-| QTC-001 | the CUDA GDN mixer's training forward equals `gdn_mixer_forward`, max abs diff ≤ 1e-5·max(scale, 1), from a zero state per sequence | state carried from one sequence to the next; the grouped head map in place of the tiled one |
+| QTC-001 | the CUDA GDN mixer's training forward equals `gdn_mixer_forward`, max abs diff ≤ 1e-5·max(scale, 1), from a zero state per sequence | state carried from one sequence to the next; the grouped head map in place of the tiled one; h mod 2 (the ratio) in place of h mod 3 |
 | QTC-002 | the CUDA mixer backward equals `gdn_mixer_backward`: dX and the LoRA gradients of attn_qkv, attn_gate and ssm_out, relative L2 ≤ 1e-4 in f32 | drop the −β_t S̃ᵀdδ term of dk; reduce dq and dk over the grouped pairs |
 | QTC-003 | the checkpointed reverse scan (c ∈ {1, 8, T}, T = 13) is bit-identical to full history | the chunk replay restarts one step late |
 | QTC-004 | gated full attention on CUDA (query/gate split, sigmoid output gate, q/k norm, partial NeoX RoPE over head_dim/4) equals the CPU layer, forward and backward | full-width RoPE, which is today's kernel; the gate dropped |
@@ -177,6 +178,17 @@ At 4B the 32 value heads share 16 key heads, and the two file formats order them
   - every value-head-indexed axis regrouped from key-head-major to value-head-major by `reorder_v_heads` (:149-168):
     A_log, dt_bias, the rows of in_proj_a, in_proj_b and in_proj_z, the value rows of in_proj_qkv and conv1d, and
     the columns of out_proj (:172-185).
+- **Which checkpoints and fixtures can see the order.** The GGUF metadata of the local checkpoints
+  (`qwen35.ssm.group_count` and `qwen35.ssm.time_step_rank`, read 2026-10-03) gives 16 key heads and 16 value heads
+  for the 0.8B and the 2B, 16 and 32 for the 4B and the 9B, and 16 and 48 for the 27B. With equal counts the
+  permutation is the identity, so the 4B is the smallest Qwen3.5 on which the order matters, and no 0.8B or 2B cell
+  can catch a fault in it. A fixture with 2 key heads and 4 value heads is blind in another way: the key-head count
+  equals the ratio, so the permutation is its own inverse and h mod nk = h mod ratio. Code that applies the
+  permutation backwards, or uses one count for the other, passes there. That is the fixture of #4418's
+  `reorder_v_heads` test (`qwen35_gguf_tests.rs:141-168`). The fixtures in this document, QQE-007/008 and QFR-006
+  therefore use 3 key heads and 6 value heads: the ratio is the 4B's, and the fixed points are 0 and 5, as the 4B's
+  are 0 and 31. For [0, 1, 2, 3, 4, 5], `reorder_v_heads` returns [0, 2, 4, 1, 3, 5] and the backwards version
+  [0, 3, 1, 4, 2, 5] (a Python port that passes #4418's own asserts).
 
 Two consequences sit outside the kernels:
 
@@ -206,7 +218,10 @@ Two consequences sit outside the kernels:
 2. **Speed is R14's.** R21 is a sequential scan for correctness, and it is latency-bound: 128 blocks of 128 threads
    for the 4090's 128 SMs, 512 dependent steps per layer `[A]`. R5 measures its share of T2's step rather than
    assuming it.
-3. **The 4B shapes** come from an AWQ repack's config. R4 confirms them on the checkpoint it trains.
+3. **The 4B shapes are confirmed.** Every row of the table above matches `~/models/Qwen3.5-4B-Q4_K_M.gguf`, read
+   2026-10-03 with python `gguf`: hidden 2560, 32 blocks, interval 4; 16 key and 32 value heads, d_k 128, inner size
+   4096, conv 4 × 8192; 16 query and 4 KV heads of 256, 64 rotary dims, theta 1e7; FFN 9216, vocab 248320, and no
+   output.weight, so tied. R4 re-checks them on the HF snapshot it imports.
 4. **The HF-convention loader is sized** as spec §3 row 4b: 25 `[A]` (20–30) with QQE-008, calling #4418's
    `qwen35_gguf_name` and `transform_qwen35_tensor`. Both are `pub(crate)` in aprender-core, which aprender-train
    already depends on (`aprender-train/Cargo.toml:85`), so the change is a visibility change plus the loader. Add 20
