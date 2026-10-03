@@ -567,8 +567,8 @@ def _join_key(raw, c, ctx):
             "n_predict": ctx["n_predict"]}
 
 
-def _nonconformance(raw, band, ctx):
-    """Every §7.4 reason this band may be cited but may not arm a threshold."""
+def _protocol_nonconformance(raw, ctx):
+    """§7.4's protocol reasons: a sweep, or too few replicates to bound anything."""
     out = []
     if raw.get("interleaved") is not True:
         out.append("protocol.interleaved=%r -- a sweep is not a paired "
@@ -578,6 +578,12 @@ def _nonconformance(raw, band, ctx):
         out.append("replicates=%r is below perf-matrix.yaml protocol."
                    "replicates_min=%d, which bounds no variance"
                    % (n, ctx["replicates_min"]))
+    return out
+
+
+def _completion_nonconformance(band):
+    """§7.4's per-request reasons: no live stream, early stops, timeouts."""
+    out = []
     if band.get("stream_mode") != "live":
         out.append("stream_mode=%r -- ttft, itl and decode are undefined "
                    "without a live stream (PP-27)" % (band.get("stream_mode"),))
@@ -595,6 +601,12 @@ def _nonconformance(raw, band, ctx):
                    "appears")
     elif timeouts:
         out.append("timeouts=%d" % timeouts)
+    return out
+
+
+def _nonconformance(raw, band, ctx):
+    """Every §7.4 reason this band may be cited but may not arm a threshold."""
+    out = _protocol_nonconformance(raw, ctx) + _completion_nonconformance(band)
     isolation = raw.get("isolation") or {}
     if isolation.get("contended"):
         out.append("the band shared the device with foreign compute pid(s) %s "
@@ -773,31 +785,36 @@ def _provenance_from_args(args, errors):
     return prov
 
 
+def _table_row(b, base):
+    """One band's line of the derived table."""
+    c = b["concurrency"]
+    agg = b.get("aggregate_tok_per_sec")
+    eff = (agg / base) / c if base and agg else float("nan")
+    # v2 spells the comparator's counts on the band; v3 puts the whole
+    # comparator band under `baseline`. Read whichever is there.
+    baseline = b.get("baseline") or {}
+    cr = b.get("comparator_requested", baseline.get("requested"))
+    cc = b.get("comparator_completed", baseline.get("completed"))
+    comp = "%s/%s" % (cc, cr) if cr is not None else "-"
+    # A v3 band carries NO bare scalar ratio (PP-3): the ratio lives in
+    # `ratios` beside the baseline it was taken against. The table reads
+    # whichever spelling the receipt actually has rather than requiring the
+    # one the rules forbid.
+    ratios = b.get("ratios") or {}
+    agg_r = b.get("agg_ratio", (ratios.get("agg") or {}).get("point"))
+    dec_r = b.get("decode_ratio", (ratios.get("dec") or {}).get("point"))
+    return ("%3d  %10s  %11.4f  %10s  %12s  %14s"
+            % (c, "-" if agg is None else "%.2f" % agg, eff,
+               "-" if agg_r is None else "%.4f" % agg_r,
+               "-" if dec_r is None else "%.4f" % dec_r, comp))
+
+
 def _print_table(bands, requested, completed):
     base = next((b["aggregate_tok_per_sec"] for b in bands
                  if b["concurrency"] == 1), None)
     print("  c   agg_tok_s  scaling_eff   agg_ratio  decode_ratio   cmp completed")
     for b in bands:
-        c = b["concurrency"]
-        agg = b.get("aggregate_tok_per_sec")
-        eff = (agg / base) / c if base and agg else float("nan")
-        # v2 spells the comparator's counts on the band; v3 puts the whole
-        # comparator band under `baseline`. Read whichever is there.
-        baseline = b.get("baseline") or {}
-        cr = b.get("comparator_requested", baseline.get("requested"))
-        cc = b.get("comparator_completed", baseline.get("completed"))
-        comp = "%s/%s" % (cc, cr) if cr is not None else "-"
-        # A v3 band carries NO bare scalar ratio (PP-3): the ratio lives in
-        # `ratios` beside the baseline it was taken against. The table reads
-        # whichever spelling the receipt actually has rather than requiring the
-        # one the rules forbid.
-        ratios = b.get("ratios") or {}
-        agg_r = b.get("agg_ratio", (ratios.get("agg") or {}).get("point"))
-        dec_r = b.get("decode_ratio", (ratios.get("dec") or {}).get("point"))
-        print("%3d  %10s  %11.4f  %10s  %12s  %14s"
-              % (c, "-" if agg is None else "%.2f" % agg, eff,
-                 "-" if agg_r is None else "%.4f" % agg_r,
-                 "-" if dec_r is None else "%.4f" % dec_r, comp))
+        print(_table_row(b, base))
     if requested is not None:
         print("  subject completed/requested: %d/%d" % (completed, requested))
 
@@ -855,8 +872,8 @@ def _every(bands, key):
     return total
 
 
-def _fill_from_parity_v3(args, receipt, block, errors):
-    """A v3 receipt from an executor-layout parity block."""
+def _v3_lane(block, args, errors):
+    """The lane to convert, or None when it is absent or may not arm anything."""
     lane = _lane_of(block, args.lane, errors)
     if lane is None:
         return None
@@ -865,12 +882,22 @@ def _fill_from_parity_v3(args, receipt, block, errors):
                       "cannot arm a threshold and must not be converted into a "
                       "receipt that Arm A would gate happily." % lane.get("lane"))
         return None
-    bands, ctx, unproduced = bands_from_parity_v3(block, lane, args, errors)
-    if bands is None:
-        return None
+    return lane
 
-    subject = lane.get("subject") or {}
+
+def _v3_comparator_provenance(lane, first, ctx):
     comparator = lane.get("comparator") or {}
+    return {
+        "commit": comparator.get("build_commit"),
+        "cmake": None,
+        "sha256": (comparator.get("provenance") or {}).get("binary_sha256"),
+        "pin_expiry": ctx["pin_expiry"],
+        "props": (first.get("comparator_admission") or {}).get("props")}
+
+
+def _v3_provenance(args, lane, ctx):
+    """The receipt's provenance, and the subject's effective-config answer."""
+    subject = lane.get("subject") or {}
     prov = dict(subject.get("provenance") or {})
     for key, value in (("host", args.host), ("accelerator", args.accelerator),
                        ("model", args.model), ("quantization", args.quantization)):
@@ -879,12 +906,13 @@ def _fill_from_parity_v3(args, receipt, block, errors):
     first = (lane.get("bands") or [{}])[0]
     config = (first.get("subject_effective_config") or {})
     body = config.get("body") or {}
+    server = body.get("server") or {}
     _reconcile_join_key(prov)
     prov["started_utc"] = ctx["started_utc"]
-    prov["clock_source"] = ((body.get("server") or {}).get("clock_source"))
+    prov["clock_source"] = server.get("clock_source")
     prov["subject"] = {"path": prov.get("binary_path"),
                        "sha256": prov.get("binary_sha256"),
-                       "commit": (body.get("server") or {}).get("build_commit"),
+                       "commit": server.get("build_commit"),
                        "feature_set": prov.get("feature_set")}
     # PP-25: ONE client drove both lanes, and here that is a structural fact
     # rather than a claim -- the executor runs `$APR test llm bench` against
@@ -892,14 +920,14 @@ def _fill_from_parity_v3(args, receipt, block, errors):
     # artifact, so it is null and named below.
     prov["client"] = {"path": prov.get("binary_path"),
                       "sha256": prov.get("binary_sha256"), "commit": None}
-    prov["comparator"] = {
-        "commit": comparator.get("build_commit"),
-        "cmake": None,
-        "sha256": (comparator.get("provenance") or {}).get("binary_sha256"),
-        "pin_expiry": ctx["pin_expiry"],
-        "props": (first.get("comparator_admission") or {}).get("props")}
+    prov["comparator"] = _v3_comparator_provenance(lane, first, ctx)
     prov["server_config"] = body or None
     prov["model_file"] = None
+    return prov, config
+
+
+def _v3_unproduced(unproduced, prov, config):
+    """Name each receipt field the executor layout does not produce, and why."""
     for name, why in (
             ("provenance.client.commit", "the executor records the client "
              "binary's digest but not the commit it was built from (PP-25)"),
@@ -917,30 +945,51 @@ def _fill_from_parity_v3(args, receipt, block, errors):
                           "returned %r, so the subject never stated its own "
                           "resolved configuration (PP-2)" % (config.get("state"),))
 
+
+def _v3_subject_totals(lane):
+    """The subject's raw samples and request counts, summed over its bands."""
     samples, requested, completed = [], 0, 0
     for raw in lane.get("bands") or []:
         side = raw.get("subject") or {}
         samples.extend(side.get("samples_ms") or [])
         requested += side.get("requested") or 0
         completed += side.get("completed") or 0
+    return samples, requested, completed
 
+
+def _v3_protocol(ctx, bands):
+    declared = ctx["protocol"]
+    return {
+        "window_ms": declared["window_ms"],
+        "warmup_requests_per_worker": declared["warmup_requests_per_worker"],
+        "quiesce_ms": declared["quiesce_ms"],
+        "cooldown_ms": declared["cooldown_ms"],
+        "n_predict": declared["n_predict"],
+        # OBSERVED, not declared: these two are what the run did, and §7.4
+        # reads them to decide whether a band may arm anything.
+        "replicates": min(b.get("replicates") or 0 for b in bands),
+        "interleaved": all(b.get("interleaved") is True for b in bands),
+        "sampler": dict(declared["sampler"]),
+    }
+
+
+def _fill_from_parity_v3(args, receipt, block, errors):
+    """A v3 receipt from an executor-layout parity block."""
+    lane = _v3_lane(block, args, errors)
+    if lane is None:
+        return None
+    bands, ctx, unproduced = bands_from_parity_v3(block, lane, args, errors)
+    if bands is None:
+        return None
+    prov, config = _v3_provenance(args, lane, ctx)
+    _v3_unproduced(unproduced, prov, config)
+    samples, requested, completed = _v3_subject_totals(lane)
     receipt.update({
         "spec": SPEC_VERSION,
         "schema_version": WIRE_SCHEMA_VERSION_V3,
         "run_id": ctx["run_id"],
         "client_model": "closed_loop",
-        "protocol": {
-            "window_ms": ctx["protocol"]["window_ms"],
-            "warmup_requests_per_worker": ctx["protocol"]["warmup_requests_per_worker"],
-            "quiesce_ms": ctx["protocol"]["quiesce_ms"],
-            "cooldown_ms": ctx["protocol"]["cooldown_ms"],
-            "n_predict": ctx["protocol"]["n_predict"],
-            # OBSERVED, not declared: these two are what the run did, and §7.4
-            # reads them to decide whether a band may arm anything.
-            "replicates": min(b.get("replicates") or 0 for b in bands),
-            "interleaved": all(b.get("interleaved") is True for b in bands),
-            "sampler": dict(ctx["protocol"]["sampler"]),
-        },
+        "protocol": _v3_protocol(ctx, bands),
         "ladder": _ladder_v3(lane, unproduced),
         "bands": bands,
         "provenance": prov,
@@ -954,15 +1003,15 @@ def _fill_from_parity_v3(args, receipt, block, errors):
     return receipt
 
 
-def _fill_from_parity(args, receipt, errors):
-    with open(args.from_parity, encoding="utf-8") as handle:
+def _parity_block_of(path):
+    """The parity block in `path`: the document itself, or its `parity` member."""
+    with open(path, encoding="utf-8") as handle:
         doc = json.load(handle)
-    block = doc.get("parity") if isinstance(doc.get("parity"), dict) else doc
-    # THE LAYOUT IS READ OFF THE BLOCK, never selected by a flag: the producer
-    # states which of its two shapes it wrote, and a flag would let a caller
-    # declare the shape its file is not in.
-    if isinstance(block, dict) and block.get("layout") == "executor":
-        return _fill_from_parity_v3(args, receipt, block, errors)
+    return doc.get("parity") if isinstance(doc.get("parity"), dict) else doc
+
+
+def _fill_from_parity_v2(args, receipt, errors):
+    """A receipt from a parity block in the historical layout."""
     bands, subject, _lane = bands_from_parity(args.from_parity, args.lane, errors)
     if bands is None:
         return None
@@ -989,6 +1038,16 @@ def _fill_from_parity(args, receipt, errors):
         receipt["requested"] = subject["requested"]
         receipt["completed"] = subject.get("completed")
     return receipt
+
+
+def _fill_from_parity(args, receipt, errors):
+    block = _parity_block_of(args.from_parity)
+    # THE LAYOUT IS READ OFF THE BLOCK, never selected by a flag: the producer
+    # states which of its two shapes it wrote, and a flag would let a caller
+    # declare the shape its file is not in.
+    if isinstance(block, dict) and block.get("layout") == "executor":
+        return _fill_from_parity_v3(args, receipt, block, errors)
+    return _fill_from_parity_v2(args, receipt, errors)
 
 
 def _fill_from_bands(args, receipt, errors):
@@ -1409,72 +1468,85 @@ def _selftest_p1_witness_rows(root):
     return rows
 
 
-def _selftest_p1_chain_rows(root):
-    rows = []
-
-    # ---- must-not-fire: the tree as it stands reaches MEASURED --------------
+def _selftest_p1_chain_ok_rows(root):
+    """The must-not-fire rows, and the receipt they read (None if it refused)."""
     receipt, why = _p1_receipt(_p1_work(root, "p1-ok"))
     if receipt is None:
-        rows.append(("p1_chain_reads_the_restructured_executor: " + why, False))
-        return rows
+        return [("p1_chain_reads_the_restructured_executor: " + why, False)], None
     bands = receipt["bands"]
     lcb = [(b.get("ratios") or {}).get(m, {}).get("lcb95")
            for b in bands for m in ("agg", "prefill")]
     ns = [(b.get("ratios") or {}).get("agg", {}).get("n") for b in bands]
-    rows.append(("p1_chain_reads_the_restructured_executor",
-                 receipt.get("schema_version") == WIRE_SCHEMA_VERSION_V3
-                 and len(bands) == 2
-                 and _p1_statuses(receipt) == ["MEASURED", "MEASURED"]
-                 and all(v is not None for v in lcb)
-                 and ns == [5, 5]))
+    rows = [("p1_chain_reads_the_restructured_executor",
+             receipt.get("schema_version") == WIRE_SCHEMA_VERSION_V3
+             and len(bands) == 2
+             and _p1_statuses(receipt) == ["MEASURED", "MEASURED"]
+             and all(v is not None for v in lcb)
+             and ns == [5, 5])]
     # A LOWER BOUND EQUAL TO ITS POINT ESTIMATE is not a bound; it is what a
     # zero-variance sample produces, and it would pass the row above.
     rows.append(("p1_chain_lcb95_sits_below_the_point_estimate",
                  all(b["ratios"][m]["lcb95"] < b["ratios"][m]["point"]
                      for b in bands for m in ("agg", "dec", "prefill"))))
+    return rows, receipt
 
-    # ---- must-fire: a sweep is not a paired measurement (§4.3) --------------
+
+def _selftest_p1_sweep_row(root):
+    """must-fire: a sweep is not a paired measurement (§4.3)."""
     def _sweep(work):
         for name in ("band-cpu-c1.json", "band-cpu-c4.json"):
             _p1_edit(work, name, _p1_set("interleaved", False))
 
-    receipt, why = _p1_receipt(_p1_work(root, "p1-sweep", _sweep))
-    rows.append(("p1_chain_non_interleaved_is_nonconformant",
-                 receipt is not None
-                 and set(_p1_statuses(receipt)) == {"NONCONFORMANT-VALID"}
-                 and any("interleaved" in r for b in receipt["bands"]
-                         for r in b["status_reasons"])))
+    receipt, _why = _p1_receipt(_p1_work(root, "p1-sweep", _sweep))
+    return ("p1_chain_non_interleaved_is_nonconformant",
+            receipt is not None
+            and set(_p1_statuses(receipt)) == {"NONCONFORMANT-VALID"}
+            and any("interleaved" in r for b in receipt["bands"]
+                    for r in b["status_reasons"]))
 
-    # ---- must-fire: somebody else was on the device (§5.4, PP-19) ----------
+
+def _selftest_p1_contended_row(root):
+    """must-fire: somebody else was on the device (§5.4, PP-19)."""
     def _contend(work):
         _p1_edit(work, "iso-cpu-c1-before.json", lambda d: d.update({
             "compute_pids": [{"pid": 4242, "used_memory_mib": 5120},
                              {"pid": 9999, "used_memory_mib": 8192}],
             "foreign_pids": [9999]}))
 
-    receipt, why = _p1_receipt(_p1_work(root, "p1-contended", _contend))
+    receipt, _why = _p1_receipt(_p1_work(root, "p1-contended", _contend))
     named = ""
     if receipt is not None:
         named = " ".join([r for b in receipt["bands"] for r in b["status_reasons"]]
                          + receipt.get("unproduced_fields", []))
-    rows.append(("p1_chain_contended_band_is_named",
-                 receipt is not None
-                 and _p1_statuses(receipt)[0] == "NONCONFORMANT-VALID"
-                 and "9999" in named))
+    return ("p1_chain_contended_band_is_named",
+            receipt is not None
+            and _p1_statuses(receipt)[0] == "NONCONFORMANT-VALID"
+            and "9999" in named)
 
-    # ---- must-fire: three replicates bound nothing (§4.3) ------------------
+
+def _selftest_p1_short_row(root):
+    """must-fire: three replicates bound nothing (§4.3)."""
     def _short(work):
         for name in ("band-cpu-c1.json", "band-cpu-c4.json"):
             _p1_edit(work, name, _p1_set("replicates", 3))
 
-    receipt, why = _p1_receipt(_p1_work(root, "p1-short", _short))
-    rows.append(("p1_chain_short_replicates_have_no_bound",
-                 receipt is not None
-                 and "MEASURED" not in _p1_statuses(receipt)
-                 and all(b["ratios"]["agg"]["lcb95"] is None
-                         and b["ratios"]["agg"]["n"] == 3
-                         for b in receipt["bands"])))
-    return rows
+    receipt, _why = _p1_receipt(_p1_work(root, "p1-short", _short))
+    return ("p1_chain_short_replicates_have_no_bound",
+            receipt is not None
+            and "MEASURED" not in _p1_statuses(receipt)
+            and all(b["ratios"]["agg"]["lcb95"] is None
+                    and b["ratios"]["agg"]["n"] == 3
+                    for b in receipt["bands"]))
+
+
+def _selftest_p1_chain_rows(root):
+    # ---- must-not-fire: the tree as it stands reaches MEASURED --------------
+    rows, receipt = _selftest_p1_chain_ok_rows(root)
+    if receipt is None:
+        return rows
+    return rows + [_selftest_p1_sweep_row(root),
+                   _selftest_p1_contended_row(root),
+                   _selftest_p1_short_row(root)]
 
 
 # ------------------------------------------------------- the JOIN fixture ---
@@ -1496,32 +1568,45 @@ JOIN_FIXTURE_AGG = ("0.5341", "0.2308", "0.1685", "0.0967")
 JOIN_FIXTURE_DEC = ("0.5873", "0.9231", "1.3525", "1.5540")
 
 
-def fixture_check(work=None, quiet=False):
-    """Re-derive the eight committed JOIN digits. 0 when every one reproduces."""
-    work = work or JOIN_FIXTURE_DIR
+def _fixture_bands(work):
+    """The JOIN fixture's bands, or None once stderr says why they cannot be read."""
     errors = []
     bands, _samples, _req, _comp = bands_from_dir(work, "apr", "llamacpp", errors)
     if errors:
         for e in errors:
             sys.stderr.write("fixture-check: %s\n" % e)
-        return 1
+        return None
     got_bands = tuple(b["concurrency"] for b in bands)
     if got_bands != JOIN_FIXTURE_BANDS:
         sys.stderr.write("fixture-check: bands %s, expected %s -- the fixture lost a "
                          "band, so the four-decimal assertions below would be checking "
                          "the wrong quotients\n" % (got_bands, JOIN_FIXTURE_BANDS))
-        return 1
+        return None
+    return bands
+
+
+def _fixture_misses(bands, quiet):
+    """How many of the eight committed digits the bands did not reproduce."""
     bad = 0
     for i, band in enumerate(bands):
         for metric, key, want in (("agg", "agg_ratio", JOIN_FIXTURE_AGG[i]),
                                   ("dec", "decode_ratio", JOIN_FIXTURE_DEC[i])):
             got = "%.4f" % band[key]
-            mark = "ok  " if got == want else "BAD "
             if got != want:
                 bad += 1
             if not quiet:
                 print("  %s c=%-2d %-3s %s (expected %s)"
-                      % (mark, band["concurrency"], metric, got, want))
+                      % ("ok  " if got == want else "BAD ", band["concurrency"],
+                         metric, got, want))
+    return bad
+
+
+def fixture_check(work=None, quiet=False):
+    """Re-derive the eight committed JOIN digits. 0 when every one reproduces."""
+    bands = _fixture_bands(work or JOIN_FIXTURE_DIR)
+    if bands is None:
+        return 1
+    bad = _fixture_misses(bands, quiet)
     if bad and quiet:
         sys.stderr.write("fixture-check: %d of 8 committed digits did not reproduce\n" % bad)
     return 1 if bad else 0
