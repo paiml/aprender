@@ -1,5 +1,5 @@
 metadata:
-  version: 1.0.0
+  version: 2.0.0
   created: '2026-02-18'
   author: PAIML Engineering
   description: Gated Delta Net — Qwen3.5 linear attention with decay, delta rule, and causal conv1d
@@ -7,57 +7,65 @@ metadata:
   - 'Yang et al. (2024) Gated Delta Networks: Improving Mamba2 with Delta Rule'
   - Qwen3.5 Technical Report — Qwen3_5GatedDeltaNet layer
   - GH-278 implementation notes
+  - aprender-serve gguf/inference/forward/forward_qwen35.rs (deltanet_prep_token, delta_rule_head), the served recurrence these equations state
   depends_on:
   - conv1d-kernel-v1
 equations:
   decay:
-    formula: α_t = sigmoid(A_log.exp() × dt + dt_bias)
-    domain: A_log ∈ ℝ, dt ∈ ℝ, dt_bias ∈ ℝ
-    codomain: α_t ∈ (0, 1)
+    formula: α_t = exp(g_t),  g_t = softplus(a_t + dt_bias) × ssm_a,  ssm_a = −exp(A_log)
+    domain: a_t ∈ ℝ (the alpha projection of x_t, one per value head), dt_bias ∈ ℝ, A_log ∈ ℝ
+    codomain: α_t ∈ (0, 1) over ℝ; α_t ∈ [0, 1] in f32
     invariants:
-    - sigmoid output strictly in (0,1)
+    - Over ℝ, g_t < 0 because softplus > 0 and ssm_a < 0, so the state decays and never grows
     - Decay controls information retention
+    - GGUF stores ssm_a, which is already −exp(A_log); APR and SafeTensors store A_log
+    - Version 1.0.0 stated α_t = sigmoid(exp(A_log) × dt + dt_bias), which no crate computes
     preconditions:
     - x.iter().all(|v| v.is_finite())
     - x.len() > 0
     lean_theorem: Theorems.Decay
   read:
-    formula: r_t = state^T @ k_t
-    domain: state ∈ ℝ^{k_dim × v_dim}, k_t ∈ ℝ^{k_dim}
+    formula: r_t = S̃_tᵀ k_t,  S̃_t = α_t S_{t−1}
+    domain: per value head, S_{t−1} ∈ ℝ^{k_dim × v_dim} with S_0 = 0, k_t ∈ ℝ^{k_dim} L2-normalised
     codomain: r_t ∈ ℝ^{v_dim}
     invariants:
     - Read is linear projection from state
+    - The read sees the decayed state, because serve multiplies S by α_t before it reads (delta_rule_head step 1). Version 1.0.0 read the state before the decay
+    - Value head h reads key head h mod H_k (GGUF order, as ggml_repeat tiles)
     preconditions:
     - input.len() > 0
     - input.iter().all(|v| v.is_finite())
     lean_theorem: Theorems.Read
   delta:
     formula: δ_t = β_t × (v_t - r_t)
-    domain: β_t ∈ ℝ, v_t ∈ ℝ^{v_dim}, r_t ∈ ℝ^{v_dim}
+    domain: β_t = sigmoid(b_t) ∈ (0, 1) with b_t the beta projection of x_t, v_t ∈ ℝ^{v_dim}, r_t ∈ ℝ^{v_dim}
     codomain: δ_t ∈ ℝ^{v_dim}
     invariants:
     - Delta rule corrects toward target v_t
+    - sigmoid is applied to b_t once
     preconditions:
     - input.len() > 0
     - input.iter().all(|v| v.is_finite())
     lean_theorem: Theorems.Delta
   write:
-    formula: state_{t+1} = α_t × state_t + k_t ⊗ δ_t
-    domain: state_t ∈ ℝ^{k_dim × v_dim}, k_t ∈ ℝ^{k_dim}, δ_t ∈ ℝ^{v_dim}
-    codomain: state_{t+1} ∈ ℝ^{k_dim × v_dim}
+    formula: S_t = S̃_t + k_t ⊗ δ_t,  S̃_t = α_t S_{t−1}
+    domain: S̃_t ∈ ℝ^{k_dim × v_dim}, k_t ∈ ℝ^{k_dim}, δ_t ∈ ℝ^{v_dim}
+    codomain: S_t ∈ ℝ^{k_dim × v_dim}
     invariants:
     - State shape preserved across timesteps
     - Outer product k_t ⊗ δ_t has shape [k_dim, v_dim]
+    - Written out, S_t = α_t S_{t−1} + β_t k_t ⊗ (v_t − α_t S_{t−1}ᵀ k_t)
     preconditions:
     - input.len() > 0
     - input.iter().all(|v| v.is_finite())
     lean_theorem: Theorems.Write
   output:
-    formula: o_t = state_t^T @ q_t × z_t
-    domain: state_t ∈ ℝ^{k_dim × v_dim}, q_t ∈ ℝ^{k_dim}, z_t ∈ ℝ^{v_dim}
+    formula: o_t = S_tᵀ q_t / √d_k
+    domain: S_t ∈ ℝ^{k_dim × v_dim} after this step's write, q_t ∈ ℝ^{k_dim} L2-normalised, d_k = k_dim
     codomain: o_t ∈ ℝ^{v_dim}
     invariants:
-    - Output gated by z_t element-wise
+    - z_t is not applied here. It gates once, as silu(z_t) inside gated_rmsnorm. Version 1.0.0 also multiplied o_t by z_t
+    - gated_rmsnorm normalises per head, so a constant factor c on o_t changes the layer only through ε (as if ε were ε/c²). A test of the layer output cannot see a missing 1/√d_k, so test o_t directly
     preconditions:
     - input.len() > 0
     - input.iter().all(|v| v.is_finite())
@@ -77,22 +85,28 @@ proof_obligations:
 - id: GDN-BND-001
   type: bound
   property: Decay in unit interval
-  formal: α_t ∈ (0, 1) since sigmoid maps ℝ → (0, 1)
+  formal: α_t = exp(g_t) ∈ (0, 1) since g_t = softplus(a_t + dt_bias) × ssm_a < 0 (softplus > 0, ssm_a = −exp(A_log) < 0)
   applies_to: all
   lean:
     theorem: GatedDeltaNet.decay_mem_unit_interval
     module: ProvableContracts.GatedDeltaNet
     file: lean/ProvableContracts/Theorems/GatedDeltaNet/Recurrence.lean
-    status: proved
+    status: wip
     depends_on:
-    - ProvableContracts.Sigmoid.sigmoid_bounded
     - Real.exp_pos
+    - Real.exp_lt_one
+    - Real.log_pos
     mathlib_imports:
     - Mathlib.Analysis.SpecialFunctions.ExpDeriv
+    - Mathlib.Analysis.SpecialFunctions.Log.Basic
     notes: >-
-      α = σ(exp(A_log)·dt + dt_bias); strict (0,1) bound follows from
-      sigmoid_bounded applied to the real pre-activation, for ANY finite
-      A_log/dt/dt_bias. Proof over ℝ.
+      Open again in 2.0.0. The theorem now in Recurrence.lean proves the bound
+      for the 1.0.0 decay, σ(exp(A_log)·dt + dt_bias), which no crate computes.
+      The served decay needs: softplus(x) = log(1 + exp x) > 0 (Real.log_pos,
+      since 1 + exp x > 1); −exp(A_log) < 0 (Real.exp_pos); so g < 0 and
+      0 < exp(g) < 1 (Real.exp_pos, Real.exp_lt_one). The bound holds over ℝ.
+      In f32, softplus rounds to 0 once a + dt_bias is below about −17 (α = 1),
+      and exp(g) underflows to 0.
 - id: GDN-INV-002
   type: invariant
   property: State shape preserved
@@ -154,30 +168,36 @@ proof_obligations:
   applies_to: simd
 verification_summary:
   total_obligations: 5
-  l2_property_tested: 5
+  l2_property_tested: 4
   l3_kani_proved: 0
-  l4_lean_proved: 4
+  l4_lean_proved: 3
   l4_sorry_count: 0
   l4_not_applicable: 1
   lean_file: crates/aprender-contracts-staging/lean/ProvableContracts/Theorems/GatedDeltaNet/Recurrence.lean
   lean_standalone_verified: false
   notes: >-
-    4 of 5 obligations proved sorry-free in Lean 4 (Mathlib), verified by
+    3 of 5 obligations proved sorry-free in Lean 4 (Mathlib), verified by
     `lake env lean ProvableContracts/Theorems/GatedDeltaNet/Recurrence.lean`
-    (exit 0, 0 sorry): decay∈(0,1) [GDN-BND-001], write preserves [k_dim,v_dim]
-    shape for n steps [GDN-INV-002], causal conv1d finite-support independence
-    of future inputs [GDN-INV-003], L2-normalize is a positive scalar multiple
-    hence direction-preserving [GDN-INV-004]. 4 proved + 1 N/A == 5 → L4.
+    (exit 0, 0 sorry): write preserves [k_dim,v_dim] shape for n steps
+    [GDN-INV-002], causal conv1d finite-support independence of future inputs
+    [GDN-INV-003], L2-normalize is a positive scalar multiple hence
+    direction-preserving [GDN-INV-004]. GDN-BND-001 is wip in 2.0.0: its Lean
+    theorem and its property test (FALSIFY-GDN-001) both cover the 1.0.0
+    sigmoid decay, so neither counts until it covers
+    exp(softplus(a + dt_bias)·ssm_a). 3 proved + 1 wip + 1 N/A == 5.
     GDN-EQ-005 (SIMD==scalar within 8 ULP) is a runtime floating-point
     reduction-order property with NO exact algebraic identity — genuinely
     l4_not_applicable, verified empirically at L2 by FALSIFY-GDN-005, not faked
-    to force L4.
+    to force L4. No obligation yet covers the recurrence's values: the scalar
+    reference the tests call, gdn_recurrence_scalar, computes S ← αS + β k⊗v
+    and o = qᵀS, with no v − Sᵀk term and no 1/√d_k. FALSIFY-GDN-006 states
+    the check that would catch that.
 falsification_tests:
 - id: FALSIFY-GDN-001
   rule: Decay bound
-  prediction: sigmoid(x) ∈ (0, 1) for all finite x
+  prediction: α = exp(softplus(a + dt_bias) × ssm_a) is finite and in [0, 1] for all finite a and dt_bias and every ssm_a < 0
   test: proptest with extreme values
-  if_fails: Sigmoid implementation not numerically stable
+  if_fails: Decay sign or softplus wrong; α > 1 makes the state grow without bound
 - id: FALSIFY-GDN-002
   rule: State shape
   prediction: State [k_dim, v_dim] after any number of updates
@@ -198,10 +218,15 @@ falsification_tests:
   prediction: SIMD and scalar give same result within ULP
   test: proptest comparing backends
   if_fails: SIMD reduction order differs
+- id: FALSIFY-GDN-006
+  rule: Delta rule
+  prediction: The scalar reference matches serve's delta_rule_head step by step, including the v − S̃ᵀk correction and the 1/√d_k output scale
+  test: proptest over random q, k, v, β, g and up to 8 timesteps, comparing S_t and o_t
+  if_fails: The reference is not the served recurrence (at 1.0.0 it computed S ← αS + β k⊗v)
 kani_harnesses:
 - id: KANI-GDN-001
   obligation: GDN-BND-001
-  property: Sigmoid output in (0,1) for bounded inputs
+  property: Decay exp(softplus(a + dt_bias) × ssm_a) in [0, 1] for bounded inputs with ssm_a < 0
   bound: 8
   strategy: stub_float
   solver: cadical
@@ -247,8 +272,9 @@ qa_gate:
   - state_shape
   - causal_conv
   - l2_direction
-  pass_criteria: All 5 falsification tests pass
-  falsification: Set A_log to extreme value to trigger sigmoid saturation
+  - delta_rule
+  pass_criteria: All 6 falsification tests pass
+  falsification: Drop the minus sign in ssm_a = −exp(A_log), so α exceeds 1; FALSIFY-GDN-001 must fail
 simd_dispatch:
   gated_delta_net:
     scalar: gdn_recurrence_scalar

@@ -1,5 +1,5 @@
 metadata:
-  version: 1.0.0
+  version: 2.0.0
   created: '2026-02-18'
   author: PAIML Engineering
   description: Qwen3.5 hybrid forward pass — attention/GDN layer interleaving with
@@ -17,23 +17,30 @@ metadata:
   - hybrid-layer-dispatch-v1
 equations:
   attention_sublayer:
-    formula: y = x + attn(qk_norm(q_proj(rmsnorm(x))), kv_proj(rmsnorm(x)))
-    domain: x ∈ R^{seq_len × d_model}, attention layer with QK-norm
+    formula: y = x + o_proj(sigmoid(g) ⊙ attn(rope(q_norm(q)), rope(k_norm(k)), v)),  [q | g] = q_proj(rmsnorm(x)) per head,  k = k_proj(rmsnorm(x)),  v = v_proj(rmsnorm(x))
+    domain: x ∈ R^{seq_len × d_model}, gated attention layer with per-head Q and K norms
     invariants:
     - shape(y) = shape(x)
     - QK-norm applied before attention score computation
     - Residual connection preserves gradient flow
+    - q_proj emits 2 × head_dim per head, the query and then its output gate g; sigmoid(g) multiplies the attention output before o_proj
+    - RoPE is partial NEOX over the first n_rot = 2 × Σ rope.dimension_sections dimensions of each head (64 of 256), applied after the norms
+    - Version 1.0.0 left out the output gate, partial RoPE and o_proj
     preconditions:
     - q.len() > 0
     - k.len() == v.len()
     lean_theorem: Theorems.Attention_Sublayer
   gdn_sublayer:
-    formula: y = x + gdn(conv1d(rmsnorm(x)))
+    formula: y = x + out_proj(gated_rmsnorm(gdn(l2(q), l2(k), v, a, b), z)),  [q | k | v] = silu(conv1d(qkv_proj(h))),  a = alpha_proj(h),  b = beta_proj(h),  z = z_proj(h),  h = rmsnorm(x)
     domain: x ∈ R^{seq_len × d_model}, linear attention layer
     invariants:
     - shape(y) = shape(x)
     - Causal conv1d before GDN recurrence
     - Residual connection preserves gradient flow
+    - Only the qkv projection goes through conv1d and SiLU (conv_dim = 2 × key_dim + value_dim); a, b and z bypass it
+    - gdn, l2 and gated_rmsnorm are gated-delta-net-v1's recurrence, per-head L2 norm and gated_rmsnorm; z gates once, inside gated_rmsnorm
+    - The linear attention layer applies no RoPE; position comes from the causal conv
+    - Version 1.0.0 sent every projection through the conv
     preconditions:
     - 'input.len() > 0'
     - hidden_size > 0

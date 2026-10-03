@@ -69,39 +69,46 @@ bindings:
   notes: GQA with head broadcasting (num_heads/num_kv_heads grouping)
 - contract: gated-delta-net-v1.yaml
   equation: decay
-  module_path: realizar::gpu::scheduler::linear_attn
-  function: gated_delta_net_decay
-  signature: 'fn gated_delta_net_decay(a_log: &[f32], dt: &[f32]) -> Vec<f32>'
+  module_path: realizar::gguf::forward_qwen35
+  function: Qwen35Model::deltanet_prep_token
+  signature: 'fn deltanet_prep_token(&self, d: &Qwen35OwnedDeltaNetLayer, cache: &mut Qwen35State, il: usize, conv_in: &[f32], dt_raw: &[f32], beta: &mut [f32]) -> [Vec<f32>; 4]'
   status: implemented
-  notes: decay = exp(g_h), S *= decay
+  notes: 'g = softplus(a + dt_bias) * ssm_a per value head; delta_rule_head applies S *= exp(g) (step 1)'
 - contract: gated-delta-net-v1.yaml
   equation: read
-  module_path: realizar::gpu::scheduler::linear_attn
-  function: gated_delta_net_read
-  signature: 'fn gated_delta_net_read(state: &[f32], q: &[f32]) -> Vec<f32>'
+  module_path: realizar::gguf::forward_qwen35
+  function: delta_rule_head
+  signature: 'pub(crate) fn delta_rule_head(q_h: &[f32], k_h: &[f32], v_h: &[f32], beta_val: f32, gate_val: f32, s_h: &mut [f32], out_h: &mut [f32], head_k_dim: usize, scale: f32)'
   status: implemented
-  notes: 'State read: mem = S^T @ k_norm'
+  notes: 'Step 2 reads the decayed state: S^T k after S *= exp(g)'
 - contract: gated-delta-net-v1.yaml
   equation: write
-  module_path: realizar::gpu::scheduler::linear_attn
-  function: gated_delta_net_write
-  signature: 'fn gated_delta_net_write(state: &mut [f32], k: &[f32], delta: &[f32], decay: &[f32])'
+  module_path: realizar::gguf::forward_qwen35
+  function: delta_rule_head
+  signature: 'pub(crate) fn delta_rule_head(q_h: &[f32], k_h: &[f32], v_h: &[f32], beta_val: f32, gate_val: f32, s_h: &mut [f32], out_h: &mut [f32], head_k_dim: usize, scale: f32)'
   status: implemented
-  notes: 'State write: S += k (x) delta'
+  notes: 'Step 3: S += k (x) delta'
 - contract: gated-delta-net-v1.yaml
   equation: delta
-  module_path: realizar::gpu::scheduler::linear_attn
-  function: gated_delta_net_delta
-  signature: 'fn gated_delta_net_delta(v: &[f32], read: &[f32], beta: &[f32]) -> Vec<f32>'
+  module_path: realizar::gguf::forward_qwen35
+  function: delta_rule_head
+  signature: 'pub(crate) fn delta_rule_head(q_h: &[f32], k_h: &[f32], v_h: &[f32], beta_val: f32, gate_val: f32, s_h: &mut [f32], out_h: &mut [f32], head_k_dim: usize, scale: f32)'
   status: implemented
-  notes: 'Delta rule: delta = beta * (v - mem)'
+  notes: 'Step 2: delta = beta * (v - S^T k)'
 - contract: gated-delta-net-v1.yaml
   equation: output
-  module_path: realizar::gpu::scheduler::linear_attn
-  function: gated_delta_net_output
-  signature: 'fn gated_delta_net_output(y: &[f32], z: &[f32]) -> Vec<f32>'
+  module_path: realizar::gguf::forward_qwen35
+  function: delta_rule_head
+  signature: 'pub(crate) fn delta_rule_head(q_h: &[f32], k_h: &[f32], v_h: &[f32], beta_val: f32, gate_val: f32, s_h: &mut [f32], out_h: &mut [f32], head_k_dim: usize, scale: f32)'
   status: implemented
-  notes: 'Output: o = S^T @ q, then rms_norm_gated'
+  notes: 'Step 4: o = S^T q * scale, scale = 1/sqrt(head_k_dim) from delta_rule_recurrence_gqa; no z here'
+- contract: gated-delta-net-v1.yaml
+  equation: gated_rmsnorm
+  module_path: realizar::gguf::forward_qwen35
+  function: gated_rmsnorm
+  signature: 'pub fn gated_rmsnorm(input: &[f32], gate: &[f32], weight: &[f32], eps: f32, head_v_dim: usize, output: &mut [f32])'
+  status: implemented
+  notes: 'Per head of head_v_dim: x / rms(x) * w * silu(z); w shared across heads'
 - contract: rope-extrapolation-v1.yaml
   equation: ntk_scaled_base
   module_path: realizar::layers::position
@@ -167,11 +174,11 @@ bindings:
   notes: CUDA flash attention with fused KV cache read
 - contract: qwen35-hybrid-forward-v1.yaml
   equation: gdn_sublayer
-  module_path: realizar::gpu::scheduler::linear_attn
-  function: gated_delta_net_forward
-  signature: 'fn gated_delta_net_forward(input: &[f32], weights: &GdnWeights, state: &mut GdnState) -> Vec<f32>'
+  module_path: realizar::gguf::forward_qwen35
+  function: Qwen35Model::forward_deltanet
+  signature: 'pub(crate) fn forward_deltanet(&self, d: &Qwen35OwnedDeltaNetLayer, hidden: &mut [f32], cache: &mut Qwen35State, il: usize, position: usize, normed: &mut [f32], post_attn_normed: &mut [f32]) -> Result<()>'
   status: implemented
-  notes: pre-norm -> projections -> causal Conv1D -> SiLU -> gated_delta_rule_step -> RMSNorm_gated -> out_proj -> residual
+  notes: 'pre-norm -> qkv, alpha, beta, z projections -> conv1d + SiLU on qkv only -> per-head L2 of q, k -> delta_rule_recurrence_gqa -> gated_rmsnorm(z) -> ssm_out -> residual; the rest of the fn is the FFN sublayer'
 - contract: qwen35-shapes-v1.yaml
   equation: o_projection_transpose
   module_path: realizar::gguf::config
@@ -469,11 +476,11 @@ bindings:
   notes: 'PMAT-414: 4 exhaustive arms for (has_qk_norm, has_bias) boolean pairs'
 - contract: qwen35-hybrid-forward-v1.yaml
   equation: attention_sublayer
-  module_path: realizar::gpu::scheduler::forward_from_model
-  function: forward_block_traced
-  signature: 'fn forward_block_traced(&mut self, input: &[f32], seq_len: usize, block_idx: usize) -> Result<(Vec<f32>, LayerActivation)>'
+  module_path: realizar::gguf::forward_qwen35
+  function: Qwen35Model::forward_attention
+  signature: 'pub(crate) fn forward_attention(&self, a: &Qwen35OwnedAttentionLayer, hidden: &mut [f32], cache: &mut Qwen35State, il: usize, position: usize, normed: &mut [f32], post_attn_normed: &mut [f32]) -> Result<()>'
   status: implemented
-  notes: 'PMAT-414: Full attention sublayer: pre-norm, QKV, RoPE, attention, O proj, residual'
+  notes: 'pre-norm -> q|gate split per head -> q, k norms -> partial NEOX RoPE -> causal GQA attention -> sigmoid(gate) -> o_proj -> residual. Was forward_block_traced (PMAT-414), the GpuModel block; Qwen3.5 serves through Qwen35Model'
 - contract: qwen35-hybrid-forward-v1.yaml
   equation: ffn_sublayer
   module_path: realizar::quantize::quantize_rmsnorm_into
