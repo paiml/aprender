@@ -531,9 +531,10 @@ up, a new size changes its place, and a row already held on a branch drops out o
   - **Earlier work.** `origin/PMAT-3803-trainer-apr-tokenizer` @5116cbc28b (2026-09-22) is not on main, and no PR head
     matches its last 12 commits. It builds a byte-level vocabulary with realizar's canonical BPE, under
     `feature = "realizar"` (#3742). It does not touch the template.
-  - **Falsifiers (proposed `train-serve-chat-format-v1`, TSC):**
-    - TSC-001: the tokenizer `from_apr` builds from an embedded vocabulary that holds `<|im_end|>`, `<think>` and
-      `</think>` encodes each as one id. It is RED at `316dee2cd4`. Planted: `"added_tokens": []` restored.
+  - **Falsifiers (TSC, PROPOSED in `train-serve-chat-format-v1` on `la-72/k39-k40-contracts` @ae7a75b7f0):**
+    - TSC-001: the tokenizer `from_apr` builds from an embedded vocabulary that holds `<|im_start|>`, `<|im_end|>`,
+      `<think>` and `</think>` encodes each as one id. It is RED at `316dee2cd4`: on the Qwen3.5 vocabulary
+      `<|im_end|>` alone is six pieces and `<think>` three (HF tokenizers). Planted: `"added_tokens": []` restored.
     - TSC-002: for a one-turn sample on the Qwen3.5 vocabulary (CPU), the ids `prepare_samples` gives (prompt, then
       response) equal serve's ids for the same messages: the model's own template with thinking off, then the
       answer, then 248046. It is RED today on the system turn, the think block and the pieces. Planted: the default
@@ -579,9 +580,13 @@ up, a new size changes its place, and a row already held on a branch drops out o
       apr-cli or aprender-serve implements it.
     - `bpe-tokenization-v1.yaml:98-99` says `pre_tokenize` splits at whitespace and punctuation. The code splits at
       whitespace only.
-    - PMAT-3803's branch (K39) moves train onto realizar's `apr::BpeTokenizer` (`hf.rs:35,67` there). That would make
-      train match .apr serve, with no split, and still not match the regex.
-  - **Falsifiers (proposed `tokenizer-pretokenize-parity-v1`, TPP).** Each runs on CPU against frozen reference ids.
+    - PMAT-3803's branch (K39) moves train onto realizar's `apr::BpeTokenizer` (`hf.rs:35,67` there). On that branch
+      the .apr tokenizer uses the regex only when `canonical_for_apr` can name a pre-tokenizer: `tokenizer.pre_type`,
+      else the architecture, where `for_architecture` knows `qwen35` but not `qwen3_5`. An HF-sourced Qwen3.5 .apr
+      carries neither (S-R10's `hf.apr`), so for 0.72's model train would match .apr serve, with no split, and still
+      not match the regex. Qwen2 and Qwen3 .apr files would get the regex.
+  - **Falsifiers (TPP, PROPOSED in `tokenizer-pretokenize-parity-v1` on the same branch).** Each runs on CPU against
+    frozen reference ids.
     The ids come from the shipped `tokenizer.json`, pinned by its sha256. The fixture covers indented Python and
     Rust, blank lines, space runs before a newline, digits, punctuation runs, contractions and combining marks.
     - TPP-001: train's tokenizer, built by `from_apr` from a Qwen3.5 .apr, gives the reference ids. It is RED at
@@ -634,7 +639,7 @@ up, a new size changes its place, and a row already held on a branch drops out o
     values, names and the architecture, not the rope base. QQE-003 compares two forwards that read the same file
     (fold-r2r3's training model takes `rope.freq_base` from the GGUF, `qwen35_model.rs:294`). QFR-006 compares the
     `qwen35.*` keys with llama.cpp's conversion, but on a fresh import only, never on a merge or an older .apr.
-  - **Falsifiers (proposed for `qwen35-format-roundtrip-v1`).**
+  - **Falsifiers (PROPOSED in `qwen35-format-roundtrip-v1` 1.1.0 on `la-72/fold-r10-qfr` @e6ea295728).**
     - QFR-007: the .apr that `apr import` writes from an HF Qwen3.5 snapshot, and the GGUF that `apr export` writes
       from `apr finetune merge`'s output of it, carry the dims and rope base the source config states. In the GGUF
       that is `freq_base`, the head counts, `key_length`, `context_length` and `dimension_sections`. It runs on
@@ -681,9 +686,9 @@ minutes of worker time still left; `[A]` marks an assumption.
 | 21 | K36 GDN contract text | restate `gated-delta-net-v1`'s decay, read and output; point its tests at the shipped decay; re-prove GDN-BND-001 | 60 `[A]` | contracts on `la-72/k36-gdn-contract` @e8834d7711: both at 2.0.0, bindings point at the served fns, allowlist 163→156. The tests and the Lean re-proof come at PR time, after LIVE 0.70.1. `qwen35-train-gdn-v1` @80723cf206 already states the served GDN |
 | 22 | K37 phantom bindings | fold into #4502: make `pv audit --binding` agree with the `bindings` gate; arm the gate once the `gated_rmsnorm_oxide` ghost is fixed or allowlisted | 10 `[A]` (was 30; the gate exists) | comment on #4502 posted; the K36 branch fixes 6 of the 9 phantoms at `316dee2cd4` |
 | 23 | K38 Qwen3.5 norm convention | serve's safetensors conversion refuses a hybrid `layer_types`; R13's builder inverts #4418's value transforms, norm −1 included | 15 `[A]` + R13's builder | desk read plus a CPU measurement on the 4B; GGUF serve, train and #4418 agree |
-| 24 | K39 train/serve chat format | the HF importer writes the added tokens and the chat template into the .apr; TSC-001: `from_apr`'s tokenizer keeps `<\|im_end\|>`, `<think>` and `</think>` whole; TSC-002: train renders the model's own template, thinking off, no default system turn, target ends in the eos id; TSC-003: serve's built-in `Qwen3NoThink` renders as the model's own template does; TSC-004: the GGUF exported from a merged HF-sourced base carries the model's template, pre `qwen35`, the eos and the token types | 110 `[A]` | desk read at `316dee2cd4` plus a header read of S-R10's .apr (17 keys, no template, no added tokens) and of its GGUF export (18 keys: pre `default`, no eos, token types or template); #4418's branch fixes all but the template; PMAT-3803's branch has part of the tokenizer half, unmerged; must be green before R4's 200-step cell and any T4 run |
-| 25 | K40 pre-tokenizer split | one regex pre-tokenizer shared by train, `apr chat` and .apr serve; TPP-001/002: train's tokenizer and `encode_text` give the HF reference ids on a frozen code fixture; TPP-003 keeps GGUF serve on them, on the file apr exports too | 80 `[A]` | desk read at `316dee2cd4` plus a simulation on the Qwen3.5 vocabulary: 5 samples are 193 tokens in train against 160 under the regex, and .apr serve has the same count with different ids on indented code; CRUX-M-05 (draft) states the check and nothing implements it; T2 is unaffected because its count is fixed by shape; must be green before R4's 200-step cell and any T4 run |
-| 26 | K41 Qwen3.5 rope base and dims | QFR-007: the imported .apr and the GGUF exported from its merge carry the source config's dims and rope base (1e7); QFR-008: `apr export` refuses a qwen35 .apr that disagrees with its source config; QFR-009: the qwen35 rope fallbacks, the 9B preset and the family contract say 1e7 | 40 `[A]` | desk read at `316dee2cd4` and on #4418's branch, plus header reads: S-R10's `hf.apr` says 10000 with no dims, and its GGUF says 10000, heads 16/8, ctx 0; the published 0.8B to 27B say 1e7; #4418 fixes a fresh import but exports an older .apr at 1e4 with no warning; QFR-006 checks fresh imports only, and QQE-003 cannot see it; re-import S-R10's base after #4418, never reuse it; must be green before R4's 200-step cell and any T4 run |
+| 24 | K39 train/serve chat format | the HF importer writes the added tokens and the chat template into the .apr; TSC-001: `from_apr`'s tokenizer keeps `<\|im_start\|>`, `<\|im_end\|>`, `<think>` and `</think>` whole; TSC-002: train renders the model's own template, thinking off, no default system turn, target ends in the eos id; TSC-003: serve's built-in `Qwen3NoThink` renders as the model's own template does; TSC-004: the GGUF exported from a merged HF-sourced base carries the model's template, pre `qwen35`, the eos and the token types | 110 `[A]` | contract PROPOSED @ae7a75b7f0 (pv 0/0); desk read at `316dee2cd4` plus a header read of S-R10's .apr (17 keys, no template, no added tokens) and of its GGUF export (18 keys: pre `default`, no eos, token types or template); #4418's branch fixes all but the template; PMAT-3803's branch has part of the tokenizer half, unmerged; must be green before R4's 200-step cell and any T4 run |
+| 25 | K40 pre-tokenizer split | one regex pre-tokenizer shared by train, `apr chat` and .apr serve; TPP-001/002: train's tokenizer and `encode_text` give the HF reference ids on a frozen code fixture; TPP-003 keeps GGUF serve on them, on the file apr exports too | 80 `[A]` | contract PROPOSED @ae7a75b7f0 (pv 0/0); desk read at `316dee2cd4` plus a simulation on the Qwen3.5 vocabulary: 5 samples are 193 tokens in train against 160 under the regex, and .apr serve has the same count with different ids on indented code; CRUX-M-05 (draft) states the check and nothing implements it; PMAT-3803's branch moves Qwen3.5 training to .apr serve's no-split path, not the regex (the HF-sourced .apr has no `pre_type` and says `qwen3_5`); T2 is unaffected because its count is fixed by shape; must be green before R4's 200-step cell and any T4 run |
+| 26 | K41 Qwen3.5 rope base and dims | QFR-007: the imported .apr and the GGUF exported from its merge carry the source config's dims and rope base (1e7); QFR-008: `apr export` refuses a qwen35 .apr that disagrees with its source config; QFR-009: the qwen35 rope fallbacks, the 9B preset and the family contract say 1e7 | 40 `[A]` | QFR-007..009 PROPOSED @e6ea295728; desk read at `316dee2cd4` and on #4418's branch, plus header reads: S-R10's `hf.apr` says 10000 with no dims, and its GGUF says 10000, heads 16/8, ctx 0; the published 0.8B to 27B say 1e7; #4418 fixes a fresh import but exports an older .apr at 1e4 with no warning; QFR-006 checks fresh imports only, and QQE-003 cannot see it; re-import S-R10's base after #4418, never reuse it; must be green before R4's 200-step cell and any T4 run |
 | — | R19 ROADMAP PMAT-711 stale | — | done | shaping @378ec8e920 |
 | — | R20 declarative recipe | — | out | RQ-3: stays in #4002 (E8, 0.75) |
 
