@@ -44,7 +44,9 @@ R4, and T2 needs R15b.
 
 ### R2 — GDN forward in aprender-train, identical to serve · contract `qwen35-train-gdn-v1` (QTG-001/002/005) · K̂ 90 `[A]`
 - **Change:** add a GDN layer (causal conv1d, gated delta recurrence, gated RMSNorm, per-head L2 norm) and a hybrid
-  layer schedule to the training transformer. Reuse the `gated-delta-net-v1` equations; don't re-derive them.
+  layer schedule to the training transformer. Take the recurrence from serve's code, not from `gated-delta-net-v1`
+  1.0.0, which states a different GDN (K36, row 21). `qwen35-train-gdn-v1` 1.1.0 on `fold-r2r3` states the one serve
+  computes.
 - **Gate:** per-position cosine ≥ 0.9999 and equal argmax between aprender-train and aprender-serve logits on Qwen3.5-4B,
   both loading the same .apr bytes (CPU, dequantized f32). This check runs on CPU, so it may run while train-active.
 - **Planted:** the sigmoid-gate mutant turns it RED. The same mutant scores 0.7656 on the serving side (qwen35-hybrid-forward-v1).
@@ -436,6 +438,22 @@ up, a new size changes its place, and a row already held on a branch drops out o
   Only `apr train` reaches this writer (`train_from_yaml`); `apr finetune`, which R4 and T2 use, does not. The
   contract is `apr-train-output-config-v1` (TOC-001..003) on its own branch, and the fix writes the saved model's
   own state from both save paths.
+- **Rows 21 and 22, K36 and K37, make main's GDN contracts state and test the shipped function. Both are off the
+  critical path.** R2's gate is QTG-001, which runs serve's code as the oracle, so neither row blocks a training cell.
+  Read at `316dee2cd4`:
+  - **K36.** `gated-delta-net-v1` 1.0.0 states a decay, a read and an output that neither crate computes: a sigmoid
+    decay, a read before the decay, and z applied twice. Its tests run against
+    `provable_contracts::kernels::gated_delta_net::gdn_recurrence_scalar`, which is not a delta rule. It computes
+    `S ← αS + β k⊗v`, with no `v − Sᵀk` term (`gated_delta_net.rs:52`). The decay test checks the contract's sigmoid
+    formula verbatim (`gated_delta_net_contract.rs:80`), and GDN-BND-001's Lean proof is about the same sigmoid
+    (`Recurrence.lean:58`). `qwen35-hybrid-forward-v1` 1.0.0 leaves out four things that serve and the training layer
+    both compute in attention: the sigmoid output gate, the K norm, partial RoPE and the output projection. Its GDN
+    sublayer sends every projection through the conv, but only q, k and v go through it (`forward_qwen35.rs:1508`).
+  - **K37.** pv's binding audit takes `status: implemented` on trust. Six realizar bindings for these two contracts
+    name functions that exist nowhere under `crates/` (`gated_delta_net_{decay,read,write,delta,output,forward}`), and
+    `pv audit --binding` still counts them as implemented. Two more realizar bindings and one entrenar binding are the
+    same. A strict binding gate would close this: each implemented binding's function must be defined in the tree, as
+    PV-VER-002 already requires for tests. It should land before 0.72's training contracts add bindings of their own.
 
 State is read from the branch tips on 2026-10-03. origin/main is `316dee2cd4` and no la-72 branch has landed. K̂ is
 minutes of worker time still left; `[A]` marks an assumption.
@@ -464,6 +482,8 @@ minutes of worker time still left; `[A]` marks an assumption.
 | 18 | R16 dangling `qlora-training-loop-v1` | — | — | `la/r16-qlora-loop-contract` |
 | 19 | R14 throughput work | sized from the R5 gap | — | after R5 and R15b |
 | 20 | K30 `apr train` tie flag | TOC-001/002: config.json says tied exactly when the saved model has no head | 15 `[A]` | `la-72/k30-train-tie-flag` @687554a60a (`apr-train-output-config-v1`); off the critical path; opens with the cheap refusals after LIVE 0.70.1 |
+| 21 | K36 GDN contract text | restate `gated-delta-net-v1`'s decay, read and output; point its tests at the shipped decay; re-prove GDN-BND-001 | 60 `[A]` | desk; `qwen35-train-gdn-v1` @80723cf206 already states the served GDN |
+| 22 | K37 phantom bindings | strict binding gate: every implemented binding names a function defined in the tree | 30 `[A]` | desk; 9 phantoms at `316dee2cd4` (8 realizar, 1 entrenar) |
 | — | R19 ROADMAP PMAT-711 stale | — | done | shaping @378ec8e920 |
 | — | R20 declarative recipe | — | out | RQ-3: stays in #4002 (E8, 0.75) |
 
