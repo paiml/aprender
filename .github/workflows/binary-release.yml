@@ -103,8 +103,12 @@ jobs:
         env:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
           TAG: ${{ github.event.release.tag_name || inputs.tag }}
+        # `|| rc=$?`, never `; rc=$?`: the step shell is `bash -e`, so a bare exit 1 (assets
+        # missing -- every fresh release) killed the step before the case below, the job went
+        # red and every build lane skipped (v0.70.0-rc.1, run 37034899163: zero assets).
         run: |
-          setsid --wait bash scripts/check_release_assets.sh "$TAG"; rc=$?
+          rc=0
+          setsid --wait bash scripts/check_release_assets.sh "$TAG" || rc=$?
           case "$rc" in
             0) echo "present=true" >> "$GITHUB_OUTPUT"; echo "$TAG already carries every asset: nothing is rebuilt" >> "$GITHUB_STEP_SUMMARY" ;;
             1) echo "present=false" >> "$GITHUB_OUTPUT" ;;
