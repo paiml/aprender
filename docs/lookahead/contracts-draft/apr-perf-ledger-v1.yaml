@@ -1,0 +1,60 @@
+# DRAFT (branch-only during S-1). Moves to contracts/ once 0.70.1 is live and OBS-05 is minted.
+# scripts/lookahead/perf_ledger_check.py is the executable reference for these rules.
+# Layering: apr-raw-samples-v1 (#4551, la-71/4551-raw-samples) is the SUBJECT's document and
+# carries no derived statistic. This contract is the RECORDER's row built from two such
+# documents (apr arm, llama.cpp arm). It references them by sha256 and does not restate their schema.
+metadata:
+  id: apr-perf-ledger-v1
+  version: "0.1.0"
+  created: "2026-10-03"
+  author: la-0.71 (L1)
+  status: draft
+  description: >
+    One nightly row per host × backend (APR-OBS-001 OBS-05, closes infra#1057 when live).
+    Feeds the 0.71 V2 baselines (load + TTFT beside pp512/tg128) and the V1 ratio series,
+    and is the input to OBS-06 RED rules and the OBS-07 release-tag baseline.
+  references:
+    - 'APR-OBS-001 §2.1 identity, §2.2 Nightly ledger, §2.4 workload, §2.5 GPU proof, §3 falsifier row, §4 signal'
+    - 'contracts/apr-raw-samples-v1.yaml (on la-71/4551-raw-samples; #4551): the per-arm input'
+    - 'scripts/llama_pin.toml build_commit: the comparator pin, read at check time, never restated'
+equations:
+  night_complete:
+    formula: |
+      rows ≠ ∅                                                          # L1, R-2
+      ∀ (h, b) ∈ expect: ∃ row: row.host = h ∧ row.backend = b ∧ admissible(row) ∧ gpu_proven(row)   # L3
+      gpu_proven(row) := row.backend = cpu ∨ (row.gpu_proof.on_gpu = true ∧ row.gpu_proof.source ≠ ∅)
+  row_admissible:
+    formula: |
+      §2.1 identity complete                                            # L2
+      ∀ arm ∈ {apr, llamacpp}: ∀k ∈ {host, model_sha256, backend, prompt_sha256, run_id}: arm.k = row.k   # same run
+      llamacpp.build_commit = llama_pin.toml.build_commit
+      workload = §2.4 (prompt_tokens 512±8, ≥8 prompts × 5 reps, max_tokens 128, ctx 4096, greedy, seed 0, ignore-EOS)
+      ∀ arm, m ∈ {load_ms, ttft_ms, pp512_tok_s, tg128_tok_s, wall_ms}: arm.stats[m].n = prompts × reps ∧ median > 0
+      arm.raw_samples_sha256 = sha256(apr-raw-samples-v1 document)      # L4
+  ratio_derived:
+    formula: |
+      ∀ m: row.ratio[m] = apr.stats[m].median / llamacpp.stats[m].median   (rel. ε 1e-9)   # L5
+    invariants:
+      - "a ratio across mismatched identity is REFUSED, never recorded (S-4)"
+      - "a GPU claim without proof is backend_unproven: excluded from the GPU series, so the cell is missing"
+      - "raw apr ms are reported, never used for regression (§4); only the same-run ratio is a signal"
+reserved:
+  - "APR-OBS-001 v1.3 §2.7 recorder-only identity (tier, band, order, epoch, lease, hash chain) is cited by apr-raw-samples-v1 but is not in the staged spec copy (2026-09-26). These fields are left unspecified here: Q-OBS05-1."
+open_questions:
+  - "Q-OBS05-1: where is APR-OBS-001 v1.3 (§2.7)? The staged cop-inbox copy predates it. Fold the newest text, then extend this draft with the recorder fields."
+  - "Q-OBS05-2: does lambda run CPU only, or also CUDA on the 4090 (§7 OBS-05: 'only if R-9 of PRM-001 does not apply')? The default --expect is gx10:cuda,lambda:cpu."
+falsification_tests:
+  - {id: FALSIFY-LEDGER-001, fixture: ledger/green.jsonl, expect: 0, rule: "control: gx10:cuda + lambda:cpu, one run each"}
+  - {id: FALSIFY-LEDGER-002, fixture: ledger/empty.jsonl, expect: 2, rule: "§3: empty ledger (also with --expect '')"}
+  - {id: FALSIFY-LEDGER-003, fixture: ledger/missing-host.jsonl, expect: 2, rule: "§3: missing host row"}
+  - {id: FALSIFY-LEDGER-004, fixture: ledger/missing-version.jsonl, expect: 2, rule: "§3: missing version/sha"}
+  - {id: FALSIFY-LEDGER-005, fixture: ledger/gpu-no-proof.jsonl, expect: 2, rule: "§3: GPU row without gpu_proof (CUDA_VISIBLE_DEVICES is not proof)"}
+  - {id: FALSIFY-LEDGER-006, fixture: ledger/arm-identity-mismatch.jsonl, expect: 2, rule: "§3: ratio across mismatched identity"}
+  - {id: FALSIFY-LEDGER-007, fixture: ledger/asserted-ratio.jsonl, expect: 2, rule: "ratio not derived from the arms' medians"}
+  - {id: FALSIFY-LEDGER-008, fixture: ledger/wrong-pin.jsonl, expect: 2, rule: "comparator at a superseded llama.cpp commit"}
+  - {id: FALSIFY-LEDGER-009, fixture: ledger/short-workload.jsonl, expect: 2, rule: "prompt_tokens outside 512±8"}
+  - {id: FALSIFY-LEDGER-010, fixture: ledger/wrong-seed.jsonl, expect: 2, rule: "workload not §2.4 (seed 42)"}
+  - {id: FALSIFY-LEDGER-011, fixture: ledger/no-raw-sha.jsonl, expect: 2, rule: "an arm without its raw-samples sha cannot be resampled"}
+  - {id: FALSIFY-LEDGER-012, fixture: ledger/n-mismatch.jsonl, expect: 2, rule: "stat n ≠ prompts × reps"}
+  - {id: FALSIFY-LEDGER-013, fixture: ledger/zero-median.jsonl, expect: 2, rule: "zero median with a consistent ratio still RED"}
+verification: "python3 scripts/lookahead/perf_ledger_check.py --self-test  # 14/14 cases; 12/12 sed mutants killed against the final code, 2026-10-03"

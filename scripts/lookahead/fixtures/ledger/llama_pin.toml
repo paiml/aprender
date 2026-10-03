@@ -1,0 +1,2 @@
+# Frozen fixture copy for the self-test; the live pin is scripts/llama_pin.toml.
+build_commit = "d1d3c3396"
