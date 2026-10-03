@@ -438,6 +438,11 @@ slower, so P-5 passes the regressions the bound exists to catch. Orientation is 
 invariant of the producer, tested where the quotient is formed (the Rust receipt governs), and not
 a convention the gate trusts. The other ratios all share `x_apr / x_llama` and carry no such row.
 
+The second hazard is the name. `apr qa`'s F-OLLAMA-003 prints a "TTFT ratio" that is whole-run
+time (`parse_timing_ms` reads the `Completed in` line), divided APR over Ollama and held to 3.0×.
+It has the same name and the un-inverted orientation, and it measures a different quantity, so
+the row names it as a source no producer may copy.
+
 ---
 
 ## §5.1 — the protocol decision
