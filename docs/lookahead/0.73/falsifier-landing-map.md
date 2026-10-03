@@ -1,10 +1,10 @@
 # 0.73 L3 falsifier landing map (draft, la-73, 2026-10-03)
 
-There are 38 falsifiers marked "NOT YET WRITTEN": 17 in backend-parity-matrix-v1 (BPM), 8 in neon-q4k-q6k-v1 (NEON),
+There are 39 falsifiers marked "NOT YET WRITTEN": 17 in backend-parity-matrix-v1 (BPM), 9 in neon-q4k-q6k-v1 (NEON),
 10 in wgpu-forward-v1 (WGF) and 3 in R4-moe-gpu-wiring.md (R4). This map assigns each one to one landing bundle.
 The bundles are ticket PROPOSALS for the mint after LIVE 0.70.1. Nothing here is minted (C277).
 
-**Main finding:** 19 of the 38 need no GPU, no model and no aarch64 host. They are checks on planted receipt JSON,
+**Main finding:** 19 of the 39 need no GPU, no model and no aarch64 host. They are checks on planted receipt JSON,
 so they can land first and run on x86 CI. The contracts said "lands with the R1 harness" for several of them. That
 blocked them on the harness and GPU access for no reason. Only the checker is needed.
 
@@ -14,7 +14,7 @@ blocked them on the harness and GPU access for no reason. Only the checker is ne
 |---|---|---|---|
 | **P1 receipt checker** | a pure function `check_receipt(json) -> Verdict` plus planted receipts under `tests/fixtures/bpm/` | x86 CI, no model | nothing (first to land) |
 | **P2 trace fields** | aprender-serve trace emits `kernel_path`, the per-op `backend`, a total `op_placement`, `device_qtype`, `head_dim_source`, and a wgpu MoE banner | x86 CI (schema test) | nothing for the fields; their values need P3/P4 |
-| **P3 R3 NEON kernels** | Q4_K/Q6_K NEON dots, `kernel_path`, the widen test entry | aarch64 CI or gx10; 000/006 cross-check on x86 | R3 mint |
+| **P3 R3 NEON kernels** | Q4_K/Q6_K NEON dots, `kernel_path`, the widen test entry, the matvec row test | aarch64 CI or gx10; 000/006 cross-check on x86 | R3 mint |
 | **P4 R2 wgpu fixes** | theta and head_dim from metadata, q/k norm, Q6_K/Q8_0/Q4_0 WGSL | C1 (wgpu adapter); CI has no GPU | R2 mint; WGF-003 also on the K14 trace |
 | **P5 R4 MoE dispatch** | the streaming variant of the dispatch; the wgpu MoE forward (R4 item 2) | C0 for streaming; C1-C3 for wgpu | R4 mint; item 2 after P4 |
 | **M measurement runs** | receipts only, no code | GPU hosts, train-inactive | P1 + the bundle that is measured |
@@ -50,6 +50,7 @@ blocked them on the harness and GPU access for no reason. Only the checker is ne
 | NEON-005 C4 E1 leg | M (C4) | P1 + P3 |
 | NEON-006 compile-site probe | P3 | x86 with the aarch64 target, scratch tree |
 | NEON-007 widen entry | P3 | gx10 |
+| NEON-008 matvec rows | P3 | gx10 |
 | WGF-001 theta | P4 | synthetic fixture on C1 |
 | WGF-002 head_dim | P4 | synthetic fixture on C1 |
 | WGF-003 q/k norm | P4 | after the K14 layer-diff trace |
@@ -59,8 +60,8 @@ blocked them on the harness and GPU access for no reason. Only the checker is ne
 | R4-001 stream = non-stream | P5 + M (C0) | `used_gpu = true` and the banner on both runs |
 | R4-002 wgpu MoE leg A | P5 + M (C1-C3) | after P4 and R4 item 2 |
 
-Count (38): 19 in P1 (BPM-001..006, 008..017, WGF-005, WGF-009, R4-003). BPM-006, 012, 016 and WGF-009 also need P2
-for the real field, but their planted receipts carry it already. Then 7 in P3, 5 in P4 (WGF-003 gated on K14),
+Count (39): 19 in P1 (BPM-001..006, 008..017, WGF-005, WGF-009, R4-003). BPM-006, 012, 016 and WGF-009 also need P2
+for the real field, but their planted receipts carry it already. Then 8 in P3, 5 in P4 (WGF-003 gated on K14),
 5 in M alone (BPM-007, NEON-005, WGF-006/007/010) and 2 in P5 + M (R4-001, R4-002).
 
 ## Order

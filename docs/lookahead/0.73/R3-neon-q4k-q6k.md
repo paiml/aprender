@@ -77,7 +77,7 @@ The NEON kernels go into three aprender-serve dispatchers. Each has the same sha
 - Q5_K (`fused_q5k_q6k.rs`) has the same shape and is a cheap follow-on. Q4_0 and Q8_0 (`fused_q4_0_q8_0.rs:6`, `fused_q8_0_q8_0.rs:15/208`) are x86-only too. They are listed for the R5 census, not added to R3.
 
 ## 10. Contract draft (2026-09-27)
-- The contract draft is drafts/neon-q4k-q6k-v1.yaml, `kind: kernel`: 4 equations, FALSIFY-NEON-Q4K-000..005, 5 obligations, and KANI-NEON-Q4K-001..003.
+- The contract draft is drafts/neon-q4k-q6k-v1.yaml, `kind: kernel`: 4 equations, FALSIFY-NEON-Q4K-000..005, 5 obligations, and KANI-NEON-Q4K-001..003. Current state (2026-10-03): contracts-draft/neon-q4k-q6k-v1.yaml, 5 equations, FALSIFY-NEON-Q4K-000..008, 8 obligations and the same three Kani harnesses.
 - The Kani harnesses cover only integer decode steps (nibble split, 6-bit recombine, scale-unpack bounds), because those are exhaustively provable.
 - pv validate: rc 0. The first try failed PROVABILITY-001 because a kernel contract must have kani_harnesses.
 - pv score: **0.57 (D)**. By dimension: D1 0.70, D2 1.00, D3 0.60, D4 Lean 0.00, D5 Binding 0.00. There is no binding registry for a draft outside the tree; the binding lands with the code.
@@ -117,7 +117,7 @@ R3 is a **FINDING, not a minted row**. The mint is deferred (only the cop mints,
 | 7 | A golden regenerated in the run is a self-comparison | Committed golden with a pinned sha256 | NEON-Q4K-003 |
 | 8 | The C4 leg used prefill-final only and an unnamed reference path, and listed its gate as a postcondition | Decode positions, same `cpu_ref_path`; the gate stays in the formula | R1 BPM-008/-013 |
 | 9 | **Second orphan.** `quantize/fused_q.rs` is an older copy of `q5k_q6k_matvec.rs`, the file `parallel_k.rs:498` includes. No `mod` or `include!` names it, yet four falsify tests cite it as the CPU side (falsify_q6k_fp_accumulator_order_001.rs:101 and three others; R1 §11a). It holds matvec wrappers, not dots, so it is never a NEON site | Delete it and fix the four cites (PROPOSE-TICKET, after LIVE). The contract's site list already leaves it out | none (cleanup) |
-| 10 | **A dot Err becomes a 0.0 row.** Every CPU matvec writes 0.0 for a row whose dot returns Err (generic_matvec.rs:126, :143, :239; parallel_k.rs:320; q5k_q6k_matvec.rs, 12 sites from :249 to :448; bsum_precompute.rs:296, :312). The fixtures use rows of 1, 2, 3 and 7 blocks, while a 2048-wide row has 8. A NEON arm that errs only on longer rows passes every dot test and zeroes rows in the forward. A few zero rows can pass the C4 cosine gate | The NEON arm has exactly the scalar oracle's Err conditions (shape only). A matvec-level check at a production shape compares every row with the oracle | NEON-Q4K-008 (proposed) |
+| 10 | **A dot Err becomes a 0.0 row.** Every CPU matvec writes 0.0 for a row whose dot returns Err (generic_matvec.rs:126, :143, :239; parallel_k.rs:320; direct_f32.rs:63; q5k_q6k_matvec.rs, 12 sites from :249 to :448; bsum_precompute.rs:296, :312; fused_gate_up.rs:134, :137, :160, :163). The fixtures use rows of 1, 2, 3 and 7 blocks, while a 2048-wide row has 8. A NEON arm that errs only on longer rows passes every dot test and zeroes rows in the forward. A few zero rows can pass the C4 cosine gate | The NEON arm has exactly the scalar oracle's Err conditions (shape only). A matvec-level check at production row lengths (8 and 36 blocks) calls each row's dot directly, so a NEON Err fails the test, and checks that the matvec wrote that value to that row | NEON-Q4K-008 |
 
 Cleanup candidates (PROPOSE-TICKET, not done here):
 - Delete the orphan `quantize/fused_q4k.rs`. It shows up in `.pmat-baseline.json` and in code search as a live twin of `q4k_dot_avx2.rs`.
@@ -134,3 +134,16 @@ Route on gx10 (verified at 316dee2cd4). It shows that the three cited dispatcher
 - **Inside `with_fp32_activations`.** Each Q4_K row calls `fused_q4k_dot_simd` (parallel_k.rs:320 → fused_k.rs:193).
 - **Q6_K, either way.** `generic_parallel_matvec_into` calls `fused_q6k_dot_simd` (fused_q5k_q6k.rs:118).
 pv 0.70.0: validate 0/0; lint 0 errors, the same 4 lean_theorem warnings. Obligations went from 5 to 7.
+
+NEON-Q4K-008 (2026-10-03, row 10) checks five decode matvec entries. Each one turns a dot Err into a 0.0 row:
+- (A) `fused_q4k_parallel_matvec_into` inside `with_fp32_activations` (parallel_k.rs:320).
+- (B) `fused_q4k_parallel_matvec_f32_into`, the crushed-block route of `matvec_honest` (direct_f32.rs:63; ffn_block.rs:790, :799).
+- (C) The default path above (q5k_q6k_matvec.rs:331-350).
+- (D) `fused_q4k_q8k_ffn_up_gate_into`. The scratch and traced forwards call it through `scratch_q8k_up_gate` (results.rs:33; rows at q5k_q6k_matvec.rs:437-448).
+- (E) The Q6_K route (generic_matvec.rs:126, :143).
+
+The shapes are in_dim 2048 and 9216 (8 and 36 blocks per row) and out_dim 48 and 300. At 9216, C quantizes into heap buffers instead of stack ones (MAX_STACK_DIM 8960, parallel_k.rs:328). Out_dim 48 takes the sequential branches. 300 takes the parallel ones and ends in a 44-row tail tile.
+
+The reference is each row's own dot, called directly, and not the scalar oracle. The oracle bound is relative to the dot, while f32 summation-order error grows with the row's sum of |w·x|. So a long row whose terms cancel could fail with no kernel defect. On aarch64 the bsums dot falls through to `fused_q4k_q8k_dot_simd` (bsum_precompute.rs:237), so C and D reach that one dispatcher whether bsums is set or not.
+
+pv 0.70.0 after 008: validate 0/0; lint 0 errors and 5 lean_theorem warnings (the new one is `matvec_row_parity`). Obligations went from 7 to 8.
