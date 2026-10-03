@@ -56,4 +56,4 @@ falsification_tests:
   - {id: FALSIFY-TRACE-013, fixture: trace/diff-pass.json, expect: 0, mode: diff, rule: "control: OBS-11 pair on one identity"}
   - {id: FALSIFY-TRACE-014, fixture: trace/diff-identity-mismatch.json, expect: 2, mode: diff, rule: "before/after on different hosts is REFUSED"}
   - {id: FALSIFY-TRACE-015, fixture: trace/diff-same-binary.json, expect: 2, mode: diff, rule: "before and after are the same binary"}
-verification: "python3 scripts/lookahead/trace_receipt_check.py --self-test  # 15/15; 13/13 sed mutants killed, 2026-10-03"
+verification: "python3 scripts/lookahead/trace_receipt_check.py --self-test  # 15/15; 11/11 sed mutants killed (against the final code), 2026-10-03"
