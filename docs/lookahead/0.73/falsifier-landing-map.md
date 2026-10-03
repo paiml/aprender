@@ -33,7 +33,7 @@ blocked them on the harness and GPU access for no reason. Only the checker is ne
 | BPM-008 shared, pinned cpu_ref_path | P1 | mixed legs (f008a/b); equal legs off the pin (f008c); a label the trace contradicts (f008d). Pin: provisional fp32_act (RQ-5) |
 | BPM-009 non-finite cosine | P1 | one NaN cosine among 16 prompts |
 | BPM-010/011 same inputs | P1 | prompt_set_sha256, n or model_sha256 mismatch |
-| BPM-012 CPU cell not self-compared | P1 + P2 | f012 (one equal tensor among differing ones), f012c (one kernel_id on two arches), f012d (OBS slot collision); control f012b; value from P3 |
+| BPM-012 CPU cell not self-compared | P1 + P2 | f012 (one equal tensor among differing ones), f012c (one kernel_id on two arches), f012d (OBS slot collision), f012e (a tensor with two routes); control f012b; value from P3 |
 | BPM-013 decode positions | P1 | prefill 1.0, decode pos 4 at 0.90 |
 | BPM-014 unlisted software adapter | P1 | "FooSoft Renderer", device_type Cpu |
 | BPM-015 equal n_gen | P1 | 37 vs 128 decoded tokens |

@@ -154,10 +154,10 @@ pv 0.70.0 after 008: validate 0/0; lint 0 errors and 5 lean_theorem warnings (th
 
 pv 0.70.0 after F and G: validate 0/0; lint 0 errors and the same 5 lean_theorem warnings. Obligations stay at 8; the 008 obligation now ranges over tokens too.
 
-BPM-012 and the C4 leg (2026-10-03). R1 FALSIFY-BPM-012 now compares `kernel_id` per (tensor, op) and ignores `arch`. So a second machine alone does not meet it: one scalar kernel on both hosts is a self-comparison (P1 f012c).
+BPM-012 and the C4 leg (2026-10-03). R1 FALSIFY-BPM-012 now compares, per (tensor, op), every `kernel_id` each run reached, and ignores `arch`. So a second machine alone does not meet it: one scalar kernel on both hosts is a self-comparison (P1 f012c).
 - This leg meets it through the c4_e1_leg precondition that every C4 Q4_K and Q6_K GEMV entry names a `/neon` kernel. dispatch_honesty forbids an x86 run to name one.
 - At 316dee2cd4 the f32 Q4_K and Q6_K dots have no aarch64 arm (fused_k.rs:201, fused_q5k_q6k.rs:123). The C4 entries are scalar, so the leg is not_measured until R3 lands.
-- The gap: on fp32_act, run token by token like the R1 reference, the C4 run reaches entries A, B and E only. The default Q8_K route C (parallel_k.rs:303-304, where `DIRECT_FP32_GEMV=1` also selects f32), D, F and G are never part of the leg. Their NEON kernel, q4k-q8k, is checked per kernel only (neon_scalar_parity, NEON-Q4K-007, -008).
+- The gap: on fp32_act, run token by token like the R1 reference, the C4 run reaches entries A, B and E only. The default Q8_K route C (parallel_k.rs:303-304, where `DIRECT_FP32_GEMV=1` also selects f32) and D, and the prefill entries F and G, are never part of the leg. The NEON kernel of C, D and G, q4k-q8k, is checked per kernel only (neon_scalar_parity, NEON-Q4K-007, -008). F runs the Q6_K dot that E covers (generic_matvec.rs:188), so only its multirow row loop is outside the leg, and NEON-Q4K-008 checks that loop.
 - A C4 leg on the default route, against the C0 fp32_act reference the way a GPU cell runs, is the next draft (handoff Next, item e).
 
 pv 0.70.0 after this: validate 0/0; lint 0 errors and the same 5 lean_theorem warnings. Counts unchanged (5 equations, 9 falsifiers, 3 KANI, 8 obligations).

@@ -390,8 +390,8 @@ reference is each token's own Q8_K dot. `fused_q5k_multirow_matmul_into` is left
 
 | Need | State |
 |------|-------|
-| `kernel_path(k)` API | R3 code (not written; mint deferred, cop 10:20Z 09-28). It is also emitted in the forward trace, because the R1 receipt checker reads it: FALSIFY-BPM-012 refuses a C4 receipt in which one quantized matmul tensor has the same `kernel_id` in the backend and reference runs |
-| `kernel_path` shape | reuse `apr-kernel-path-v1` (OBS-15, unmerged #4574): `kernel_path(k)` becomes the entry's `kernel_id`, with `arch = aarch64`. On x86 it names the x86 arm (e.g. `q4k-f32/avx2`), because the C0 reference is read too. Each trace entry also carries `tensor`, the GGUF name, since BPM-012 compares per tensor. See P1 spec §3a |
+| `kernel_path(k)` API | R3 code (not written; mint deferred, cop 10:20Z 09-28). It is also emitted in the forward trace, because the R1 receipt checker reads it: FALSIFY-BPM-012 refuses a C4 receipt in which one quantized matmul tensor shares a `kernel_id` between the backend and reference runs |
+| `kernel_path` shape | reuse `apr-kernel-path-v1` (OBS-15, unmerged #4574): `kernel_path(k)` becomes the entry's `kernel_id`, with `arch = aarch64`. On x86 it names the x86 arm (e.g. `q4k-f32/avx2`), because the C0 reference is read too. Each trace entry also carries `tensor`, the GGUF name, since BPM-012 compares per tensor, and a tensor gets one entry per kernel it reached (a crushed activation block switches one Q4_K call to f32). See P1 spec §3a |
 | `fused_q4k_q8k_dot_neon_widen` test entry | R3 code (NEON-Q4K-007) |
 | The seven matvec entries (five decode, two prefill), `with_fp32_activations` and `quantize_activations_q8k_into` in reach of a `quantize/` test (NEON-Q4K-008) | exist at 316dee2cd4: re-exported at quantize/mod.rs:132 and :140-146 (the multirow ones at :141 and :145); the quantizer is at mod.rs:241 |
 | Orphan `quantize/fused_q4k.rs` deleted | PROPOSE-TICKET 07:49Z; NEON-Q4K-006 keeps it as a control until then |

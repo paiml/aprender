@@ -35,7 +35,7 @@ pre-push checklist and in CI.
 | `e2` | {record path, sha256, `n_gen_apr`, `n_gen_llamacpp`, decode/prefill {r, ci_lo, ci_hi, n}} | 005, 015 |
 | `llamacpp_sha` | string | 004 |
 | `adapter` | {name, `device_type` ∈ wgpu DeviceType, banner line} | 003, 006, 014 |
-| `kernel_path` | {backend, reference}: one `apr-kernel-path-v1` path per run, whose entries also carry `tensor` (the GGUF name), keyed (tensor, op) | 012 |
+| `kernel_path` | {backend, reference}: one `apr-kernel-path-v1` path per run, whose entries also carry `tensor` (the GGUF name); a (tensor, op) has one entry per kernel it reached | 012 |
 | `op_placement` | map op → {device, host}; keys = DECODE_OPS | 016, WGF-005, WGF-009 |
 | `gemv_backend` | map qtype → {wgpu, cpu} | 016 |
 | `hybrid` | bool | WGF-005 |
@@ -52,7 +52,8 @@ which `origin/a01/4574-obs15-kernel-path` (b1244f6fb7) carries with a Rust check
   - `model_sha256` there is the same field BPM-011 compares across the three runs.
 - **kernel_path.** The `kernel_path` field of §3 uses the `apr-kernel-path-v1` shape, one per run (backend, reference). Each entry is `{op, kernel_id, qtype, layout, arch, shape_class, precision}`, plus `tensor`, the GGUF tensor name (added 2026-10-03; OBS entries do not carry it).
   - R3's `kernel_path(k)` string, e.g. `q4k-q8k/neon-sdot`, becomes `kernel_id`, with `arch = aarch64`. The C0 x86 reference names its arms the same way, e.g. `q4k-f32/avx2` (fused_k.rs:201).
-  - BPM-012 compares `(tensor, op) -> kernel_id` between the backend and reference paths, over the quantized matmul tensors (a quantized qtype on a GEMV or matmul op; the embedding gather is not one). One equal tensor REFUSES a CPU cell, whatever the others do.
+  - BPM-012 compares, per `(tensor, op)`, the sets of `kernel_id`s the backend and reference runs reached, over the quantized matmul tensors (a quantized qtype on a GEMV or matmul op; the embedding gather is not one). One shared `kernel_id` on one tensor REFUSES a CPU cell, whatever the others do.
+  - A set, because the route can switch per call. On the default route a crushed activation block sends that one Q4_K call to f32 (ffn_block.rs:790-792), so one tensor runs q4k-q8k and q4k-f32 in one run (f012e).
   - BPM-012 does not reuse `kernel_diff`, because each of its three choices lets a self-comparison pass (R1 contract L25, 2026-10-03):
     - it compares whole paths, so only an empty diff refuses. A same-host reference differs from a default-route backend on Q4_K (q4k-q8k against q4k-f32) while every Q6_K tensor meets itself (f012);
     - it keys by the slot `(op, shape_class)` and keeps one entry per slot (`slots()`, obs_kernel_path.rs:118, last wins). A Q4_K_M file mixes qtypes in one slot: in Qwen3.5-0.8B-Q4_K_M, ffn_down (3584, 1024) is Q6_K in 12 layers and Q4_K in 12 (f012d);
@@ -72,7 +73,7 @@ Every fixture is `base.json` plus one edit. `base.json` is a C0 CUDA cell with:
 
 **Control:** `base.json` must be `Pass`. A checker that refuses everything fails this row.
 
-**C4 control:** f012b (`base_c4.json`) must be `Pass`. f012, f012c and f012d are `base_c4.json` plus one edit, and f012b fixes which GPU-only fields a CPU cell omits. A checker that refuses every CPU cell fails this row.
+**C4 control:** f012b (`base_c4.json`) must be `Pass`. f012, f012c, f012d and f012e are `base_c4.json` plus one edit, and f012b fixes which GPU-only fields a CPU cell omits. A checker that refuses every CPU cell fails this row.
 
 | Fixture | Edit to base | Expected | Falsifier |
 |---|---|---|---|
@@ -93,6 +94,7 @@ Every fixture is `base.json` plus one edit. `base.json` is a C0 CUDA cell with:
 | f012b | `base_c4.json`, the C4 control: cell C4, backend cpu, no adapter, banner, `gpu_proof` or F2 guard line, `op_placement` on the host; the reference run is on the C0 host; every Q4_K and Q6_K entry is `/neon` on aarch64 in the backend and `/avx2` on x86_64 in the reference | Pass | BPM-012 (control) |
 | f012c | blk.0.ffn_down is q6k-f32/scalar in both runs (aarch64 and x86_64); every other entry as f012b | Refused | BPM-012 |
 | f012d | `kernel_path` replaced by a same-host pair of three entries per run, blk.4, blk.5 and blk.6.ffn_down at one shape_class (the layer pattern of a 24- or 28-layer Q4_K_M file): Q4_K q4k-q8k/neon-sdot against q4k-f32/neon, Q6_K q6k-f32/neon in both, Q4_K as blk.4 | Refused | BPM-012 |
+| f012e | `kernel_path` replaced by a same-host pair for blk.0.attn_q Q4_K: the backend entries are q4k-f32/neon (one crushed call), then q4k-q8k/neon-sdot; the reference entry is q4k-f32/neon; and a second fixture with the two backend entries in the other order | Refused | BPM-012 |
 | f013 | prefill-final 1.0, decode position 4 = 0.90; and a second fixture with only 7 decode positions | Fail / Refused | BPM-013 |
 | f014 | adapter "FooSoft Renderer", device_type Cpu | Fail(FALLBACK) | BPM-014 |
 | f015 | n_gen_apr 37, n_gen_llamacpp 128 | Refused | BPM-015 |
@@ -118,6 +120,7 @@ Every fixture is `base.json` plus one edit. `base.json` is a C0 CUDA cell with:
 | compare whole paths (refuse only an empty `kernel_diff`) | f012 |
 | compare whole entries (`arch` included) | f012c |
 | key by the OBS slot `(op, shape_class)`, first or last entry | f012d |
+| keep one `kernel_id` per (tensor, op), first or last entry | f012e (both orders) |
 | refuse every CPU cell | f012b (control) |
 | refuse everything | base (control) |
 

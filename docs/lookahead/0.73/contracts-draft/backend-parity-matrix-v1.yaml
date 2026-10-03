@@ -35,7 +35,7 @@ equations:
                  OR len(logits) differs between any two runs
                  OR leg_a.cpu_ref_path != leg_b.cpu_ref_path OR either differs from bpm.cpu_ref_path
                  OR act_path(ref, t) != cpu_ref_path for some tensor t whose qtype is not in bpm.ref_mixed_qtypes
-                 OR (CPU cell) kernel_id(backend, t) == kernel_id(ref, t) for some quantized matmul tensor t
+                 OR (CPU cell) kernel_ids(backend, t) ∩ kernel_ids(ref, t) ≠ ∅ for some quantized matmul tensor t
       positions = the prefill-final position AND >= 8 teacher-forced decode positions per prompt
                   AND total positions per leg >= thresholds.min_positions (64 at 316dee2cd4)
       floors    = resolved from evidence/parity/thresholds.yaml under a bpm: key, never typed in the checker
@@ -55,7 +55,7 @@ equations:
     - 'L25: the triangle bound is per prompt. Leg A over prompt set P and leg B over Q != P bounds nothing on the prompts outside P ∩ Q, so both legs carry prompt_set_sha256 and n, and they must match (FALSIFY-BPM-010).'
     - 'L25: all three runs read ONE model file (model_sha256 equal). Leg B over a different GGUF (re-quantized, or apr-converted) measures the file difference, not the engine (FALSIFY-BPM-011).'
     - 'L25: on a CPU cell (C4) the backend IS the CPU. If the reference runs the same kernels, leg A is a self-comparison and reads 1.0 for free. Q5K/Q6K have one CPU activation path, f32, under either label (§11a, corrected 2026-10-03), so R3''s NEON Q6K dot would be compared with itself. The reference must run a different kernel_id for every quantized matmul tensor, or the receipt is REFUSED (FALSIFY-BPM-012). The C4 reference is the C0 x86 run (R3 c4_e1_leg). A same-host scalar reference would need a force-scalar switch, and none exists at 316dee2cd4: the f32 Q4_K and Q6_K dispatchers test only CPU features (fused_k.rs:201, fused_q5k_q6k.rs:123).'
-    - 'L25 (2026-10-03): BPM-012 compares per (tensor, op) on kernel_id alone. Three weaker forms pass vacuously. (i) Whole-path equality, or an empty kernel_diff: a same-host reference differs from a default-route backend on Q4_K (q4k-q8k against q4k-f32) while every Q6_K tensor meets itself (f012). (ii) The OBS slot (op, shape_class): slots() keeps one entry per slot, the last (obs_kernel_path.rs:118 on #4574), and a Q4_K_M file mixes qtypes in one slot. In Qwen3.5-0.8B-Q4_K_M, ffn_down (3584, 1024) is Q6_K in 12 layers and Q4_K in 12, so an equal Q6_K layer hides behind a differing Q4_K one (f012d). (iii) Whole-entry comparison: arch differs on every C0-against-C4 entry, so one scalar kernel on both hosts reads as different (f012c). P1 reads the per-tensor map and does not reuse kernel_diff.'
+    - 'L25 (2026-10-03): BPM-012 compares, per (tensor, op), the sets of kernel_ids the two runs reached, on kernel_id alone, and refuses on any overlap. Four weaker forms pass vacuously. (i) Whole-path equality, or an empty kernel_diff: a same-host reference differs from a default-route backend on Q4_K (q4k-q8k against q4k-f32) while every Q6_K tensor meets itself (f012). (ii) The OBS slot (op, shape_class): slots() keeps one entry per slot, the last (obs_kernel_path.rs:118 on #4574), and a Q4_K_M file mixes qtypes in one slot. In Qwen3.5-0.8B-Q4_K_M, ffn_down (3584, 1024) is Q6_K in 12 layers and Q4_K in 12, so an equal Q6_K layer hides behind a differing Q4_K one (f012d). (iii) Whole-entry comparison: arch differs on every C0-against-C4 entry, so one scalar kernel on both hosts reads as different (f012c). (iv) One kernel_id per tensor: on the default route a crushed activation block sends that one Q4_K call to f32 (ffn_block.rs:790-792), so one tensor runs q4k-q8k and q4k-f32 in one run, and keeping either one hides the other (f012e). P1 reads the per-tensor sets and does not reuse kernel_diff.'
     - 'L25: final-position-of-prefill logits never exercise the KV cache or the decode kernels (M=1 GEMV). The known-bad 0.955 (FALSIFY-BPM-007) is a decode measurement. The gate reads prefill-final plus >= 8 teacher-forced decode positions per prompt, all fed the same token ids (FALSIFY-BPM-013).'
 
   speed_ratio_ci:
@@ -171,10 +171,10 @@ falsification_tests:
   mutation: 'compare only the apr runs'' sha; the planted receipt must turn GREEN'
 - id: FALSIFY-BPM-012
   rule: a CPU cell's leg A is never a self-comparison (L25)
-  prediction: 'A CPU-cell receipt in which any quantized matmul tensor has the same kernel_id in the backend and reference runs is REFUSED, even at leg_a = 1.0 and even when every other tensor differs (f012). The comparison is per tensor, not per OBS slot (f012d), and ignores arch: one kernel_id on two arches is REFUSED (f012c), and a C4 /neon run against the C0 /avx2 reference is admitted (f012b).'
-  test: 'NOT YET WRITTEN — lands with P1, planted fixtures f012, f012b (control), f012c and f012d (kernel_path from the R3 skeletons)'
+  prediction: 'A CPU-cell receipt in which the backend and reference runs share a kernel_id on any quantized matmul tensor is REFUSED, even at leg_a = 1.0 and even when every other tensor differs (f012). The comparison is per tensor, not per OBS slot (f012d), over every kernel_id the tensor reached (f012e), and ignores arch: one kernel_id on two arches is REFUSED (f012c), and a C4 /neon run against the C0 /avx2 reference is admitted (f012b).'
+  test: 'NOT YET WRITTEN — lands with P1, planted fixtures f012, f012b (control), f012c, f012d and f012e (kernel_path from the R3 skeletons)'
   if_fails: 'a wrong NEON Q6K dot is compared with itself and passes E1 at 1.0'
-  mutation: 'drop the kernel_id inequality, or compare whole paths: f012 must turn GREEN. Compare whole entries (arch included): f012c. Key by the OBS slot (op, shape_class): f012d'
+  mutation: 'drop the disjointness check, or compare whole paths: f012 must turn GREEN. Compare whole entries (arch included): f012c. Key by the OBS slot (op, shape_class): f012d. Keep one kernel_id per tensor, first or last: f012e'
 - id: FALSIFY-BPM-013
   rule: E1 covers decode positions, not only prefill-final (L25)
   prediction: 'A fixture with prefill-final cos 1.0 and decode position 4 cos 0.90 FAILS E1.'
@@ -233,7 +233,7 @@ proof_obligations:
   formal: 'forall r: r.leg_a.prompt_set_sha256 = r.leg_b.prompt_set_sha256 and r.leg_a.n = r.leg_b.n and model_sha256 equal over the three runs'
 - type: invariant
   property: 'A CPU cell is never its own reference, on any quantized matmul tensor (FALSIFY-BPM-012)'
-  formal: 'cpu_cell(r) => forall t in quantized_matmul_tensors(r): kernel_id(r.backend, t) != kernel_id(r.ref, t)'
+  formal: 'cpu_cell(r) => forall t in quantized_matmul_tensors(r): kernel_ids(r.backend, t) ∩ kernel_ids(r.ref, t) = ∅'
 - type: invariant
   property: 'E1 reads decode positions (FALSIFY-BPM-013)'
   formal: 'PASS_E1 => forall p: |decode_positions(p)| >= 8 and sum_p (1 + |decode_positions(p)|) >= thresholds.min_positions'
@@ -260,4 +260,4 @@ verification_summary:
   proven: 0
   tested: 0
   status: proposed
-  notes: 'Draft by la-73 (L3). No ticket yet; the harness and the tests land with R1. L25 review 2026-10-03 at main 316dee2cd4 added BPM-009..015 (7 vacuous-pass holes). L25 on R4/R5 2026-10-03 at main 316dee2cd4 added BPM-016 (per-op hybrid) and BPM-017 (skipped F2 guard). C293.3 2026-10-03: RQ-3, RQ-4 and RQ-5 run on provisional S-4 defaults; BPM-008 now pins the value and checks the trace act path (f008c, f008d). Item (c) 2026-10-03: BPM-012 compares kernel_id per (tensor, op), not per path, OBS slot or entry (f012b, f012c, f012d).'
+  notes: 'Draft by la-73 (L3). No ticket yet; the harness and the tests land with R1. L25 review 2026-10-03 at main 316dee2cd4 added BPM-009..015 (7 vacuous-pass holes). L25 on R4/R5 2026-10-03 at main 316dee2cd4 added BPM-016 (per-op hybrid) and BPM-017 (skipped F2 guard). C293.3 2026-10-03: RQ-3, RQ-4 and RQ-5 run on provisional S-4 defaults; BPM-008 now pins the value and checks the trace act path (f008c, f008d). Item (c) 2026-10-03: BPM-012 compares kernel_id per (tensor, op), not per path, OBS slot or entry, over the set each tensor reached (f012b..f012e).'
