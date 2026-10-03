@@ -3,32 +3,77 @@
  "_planted": "FIXTURE: not a measurement",
  "arms": {
   "apr": {
-   "host": "lambda",
    "model_sha256": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
-   "backend": "cuda",
    "prompt_sha256": "bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb",
    "prompt_n": 512,
    "completion_n": 128,
    "ts": "2026-10-03T00:00:00Z",
    "apr_version": "0.70.1",
-   "binary_sha256": "cccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccc",
    "build_identity": "planted fixture",
    "model_id": "Qwen3.5-4B-Q4_K_M",
-   "n": 10,
-   "load_ms": 1800.0,
+   "provenance": {
+    "binary_path": "target/release/apr",
+    "binary_sha256": "cccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccc",
+    "resolution": "scripts/apr_bin.sh",
+    "compute_class": "cuda",
+    "feature_set": [
+     "cuda"
+    ],
+    "host": "lambda",
+    "accelerator": "rtx4090",
+    "model": "Qwen3.5-4B",
+    "quantization": "Q4_K_M"
+   },
+   "failed": 0,
+   "ttft_ms": [
+    17.0,
+    17.5,
+    18.0,
+    18.5,
+    19.0,
+    18.0,
+    17.8,
+    18.2,
+    18.1,
+    17.9
+   ],
    "ttft_ms_p50": 18.0,
+   "load_ms": 1800.0,
    "pp512_tok_s": 9000.0,
    "tg128_tok_s": 150.0
   },
   "llamacpp": {
-   "host": "lambda",
    "model_sha256": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
-   "backend": "cuda",
    "prompt_sha256": "bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb",
    "prompt_n": 512,
    "completion_n": 128,
-   "pin": "b5000",
-   "n": 10,
+   "provenance": {
+    "binary_path": "llama.cpp-d1d3c3396/build/bin/llama-server",
+    "binary_sha256": "dddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddd",
+    "resolution": "scripts/llama_bin.sh",
+    "compute_class": "cuda",
+    "feature_set": [
+     "cuda"
+    ],
+    "host": "lambda",
+    "accelerator": "rtx4090",
+    "model": "Qwen3.5-4B",
+    "quantization": "Q4_K_M"
+   },
+   "build_commit": "39173bcac",
+   "failed": 0,
+   "ttft_ms": [
+    9.6,
+    9.8,
+    10.0,
+    10.2,
+    10.4,
+    10.0,
+    9.9,
+    10.1,
+    10.0,
+    10.0
+   ],
    "ttft_ms_p50": 10.0
   }
  }

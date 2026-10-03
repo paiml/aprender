@@ -1,6 +1,7 @@
 # DRAFT (branch-only during S-1). Moves to contracts/ with a strict test binding and a
 # Rust receipt emitter once 0.70.1 is live and a ticket is minted (0.71 rows V1 + V2, #3596).
-# scripts/lookahead/ttft_receipt_check.py is the executable reference for these rules.
+# scripts/lookahead/ttft_receipt_check.py is the executable reference for these rules. It is not a second
+# schema: arm provenance and the raw-sample median come from scripts/lib/bench_receipt.py (14/14 fixtures, 11/11 mutants killed).
 metadata:
   id: apr-serve-ttft-v1
   version: "0.1.0"
@@ -21,9 +22,12 @@ equations:
       report(apr) ⊇ {load_ms, ttft_ms_p50, pp512_tok_s, tg128_tok_s}, each > 0
   v1_ttft_ratio:
     formula: |
-      same_identity(a, l) := ∀k ∈ {host, model_sha256, backend, prompt_sha256, prompt_n, completion_n}: a.k = l.k
-      precondition: same_identity(apr, llamacpp) ∧ llamacpp.pin = d1d3c3396 ∧ n_apr, n_llamacpp ≥ 5
-      ratio := apr.ttft_ms_p50 / llamacpp.ttft_ms_p50
+      same_identity(a, l) := ∀k ∈ {model_sha256, prompt_sha256, prompt_n, completion_n}: a.k = l.k
+                             ∧ ∀k ∈ {host, accelerator, model, quantization, compute_class}: a.provenance.k = l.provenance.k
+      precondition: same_identity(apr, llamacpp) ∧ llamacpp.build_commit ⊒ d1d3c3396 ∧ |ttft_ms| ≥ 5 ∧ failed = 0 (both arms)
+                    ∧ provenance valid per scripts/lib/bench_receipt.py ∧ compute_class ≠ unknown
+      p50(x) := median(x.ttft_ms)   -- recomputed from raw samples; a stated ttft_ms_p50 must agree within derivation.ratio_tolerance
+      ratio := p50(apr) / p50(llamacpp)
       pass  := ratio ≤ 2.0
     invariants:
       - "a ratio is never computed when the precondition fails: REFUSED (exit 2), never FAIL"
@@ -41,4 +45,11 @@ falsification_tests:
   - {id: FALSIFY-TTFT-005, fixture: ttft/wrong-pin.json, expect: 2, rule: "comparator not at d1d3c3396 is RED"}
   - {id: FALSIFY-TTFT-006, fixture: ttft/few-samples.json, expect: 2, rule: "n < 5 is RED"}
   - {id: FALSIFY-TTFT-007, fixture: ttft/empty.json, expect: 2, rule: "empty receipt is RED"}
+  - {id: FALSIFY-TTFT-008, fixture: ttft/fabricated-p50.json, expect: 2, rule: "a stated p50 not derivable from the raw samples is RED"}
+  - {id: FALSIFY-TTFT-009, fixture: ttft/failed-requests.json, expect: 2, rule: "failed != 0 on either arm is RED"}
+  - {id: FALSIFY-TTFT-010, fixture: ttft/no-backend-proof.json, expect: 2, rule: "compute_class unknown on both arms is RED (no backend proof)"}
+  - {id: FALSIFY-TTFT-011, fixture: ttft/class-mismatch.json, expect: 2, rule: "cuda vs cpu is REFUSED (EXT R-17)"}
+  - {id: FALSIFY-TTFT-012, fixture: ttft/summary-only.json, expect: 2, rule: "no raw ttft_ms samples is RED"}
+  - {id: FALSIFY-TTFT-013, fixture: ttft/bad-binary-sha.json, expect: 2, rule: "bench_receipt provenance rule (binary_sha256 not a digest) is RED"}
+  - {id: FALSIFY-TTFT-014, fixture: ttft/unpinned.json, expect: 2, rule: "comparator with no build_commit is RED, not a crash"}
 verification: "python3 scripts/lookahead/ttft_receipt_check.py --self-test  # 5/6 mutants killed; the 6th (missing-arm guard) is equivalent, 2026-10-03"

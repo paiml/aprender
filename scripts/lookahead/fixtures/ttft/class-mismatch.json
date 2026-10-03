@@ -51,10 +51,8 @@
     "binary_path": "llama.cpp-d1d3c3396/build/bin/llama-server",
     "binary_sha256": "dddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddd",
     "resolution": "scripts/llama_bin.sh",
-    "compute_class": "cuda",
-    "feature_set": [
-     "cuda"
-    ],
+    "compute_class": "cpu",
+    "feature_set": [],
     "host": "lambda",
     "accelerator": "rtx4090",
     "model": "Qwen3.5-4B",

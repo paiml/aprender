@@ -60,7 +60,6 @@
     "model": "Qwen3.5-4B",
     "quantization": "Q4_K_M"
    },
-   "build_commit": "d1d3c3396",
    "failed": 0,
    "ttft_ms": [
     9.6,

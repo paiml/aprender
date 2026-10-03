@@ -13,7 +13,7 @@
    "model_id": "Qwen3.5-4B-Q4_K_M",
    "provenance": {
     "binary_path": "target/release/apr",
-    "binary_sha256": "cccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccc",
+    "binary_sha256": "planted",
     "resolution": "scripts/apr_bin.sh",
     "compute_class": "cuda",
     "feature_set": [

@@ -61,7 +61,7 @@
     "quantization": "Q4_K_M"
    },
    "build_commit": "d1d3c3396",
-   "failed": 0,
+   "failed": 1,
    "ttft_ms": [
     9.6,
     9.8,
