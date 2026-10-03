@@ -18,8 +18,8 @@ These are bodies ready to file, one per bundle in `falsifier-landing-map.md`.
 
 **Acceptance**
 - **Control:** the planted `base.json` passes. Without this, a checker that refuses everything would pass.
-- **Planted receipts:** 24 under `tests/fixtures/bpm/` give their spec §4 verdicts. They cover BPM-001..006 and 008..017, plus WGF-005, WGF-009, R4-003 and the uncaptured-stderr case.
-- **Mutations:** the 10 checker mutations in spec §5 each flip their named receipt. The run is recorded in the PR body.
+- **Planted receipts:** 32 files under `tests/fixtures/bpm/` (`base.json`, the 26 rows of spec §4 with the second fixtures of f010 and f013 and the three of f017, and f002b) give their spec §4 verdicts. They cover BPM-001..006 and 008..017, plus WGF-005, WGF-009, R4-003 and the uncaptured-stderr case.
+- **Mutations:** the 14 checker mutations in spec §5 each flip their named receipt. The run is recorded in the PR body.
 - **Composed bound:** a const test checks 2·acos(0.995) ≤ acos(0.98).
 - **Command:** `cargo test -p aprender-contracts --lib` runs all of it.
 
@@ -36,7 +36,7 @@ These are bodies ready to file, one per bundle in `falsifier-landing-map.md`.
 **Refs** #3999. Depends on P1 for the consumer. Shapes reuse `apr-kernel-path-v1` (OBS-15, #4574).
 
 **Scope:** aprender-serve emits these fields in the forward trace:
-- `kernel_path` entries `{op, kernel_id, qtype, layout, arch, shape_class, precision}` on every backend, CPU included. This is stricter than OBS `trace_cut`, which exempts CPU rows; BPM-012 needs CPU entries.
+- `kernel_path` entries `{op, kernel_id, qtype, layout, arch, shape_class, precision}` plus `tensor` (the GGUF name) on every backend, CPU included. This is stricter than OBS `trace_cut`, which exempts CPU rows; BPM-012 needs CPU entries. It compares per tensor because the OBS slot `(op, shape_class)` merges the Q4_K and Q6_K layers of one role in a Q4_K_M file.
 - per-op `op_placement` over the full DECODE_OPS set.
 - `qtype_path` per qtype: device-kernel, host-widen or refused-cpu.
 - `head_dim_source`: key_length or fallback.

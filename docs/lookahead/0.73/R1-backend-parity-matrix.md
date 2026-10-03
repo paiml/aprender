@@ -200,10 +200,17 @@ The draft gated the right quantities, but seven inputs could make a cell PASS wi
 | 1 | NaN in one prompt | `f32::min` returns the non-NaN operand, so a fold drops the NaN prompt. apr's cosine helpers (parity_per_op_table.rs:61, forward_error.rs:254) return 0.0 on a length mismatch or zero norm, but NaN on NaN logits [V] | A non-finite cosine REFUSES the receipt | BPM-009 |
 | 2 | Legs over different prompt sets | The triangle bound holds per prompt | Both legs carry `prompt_set_sha256` and `n`, which must match | BPM-010 |
 | 3 | Legs over different model files | Leg B then measures the file, not the engine | `model_sha256` is equal across all 3 runs | BPM-011 |
-| 4 | CPU cell C4 is its own reference | Same kernels on both sides read 1.0. Q5K/Q6K have one CPU activation path (f32) under either label (§11a), so the R3 NEON Q6K dot would meet itself | The reference `kernel_path` must differ per quantized tensor | BPM-012 |
+| 4 | CPU cell C4 is its own reference | Same kernels on both sides read 1.0. Q5K/Q6K have one CPU activation path (f32) under either label (§11a), so the R3 NEON Q6K dot would meet itself | The reference `kernel_id` must differ on every quantized matmul tensor, compared per tensor: not per path, not per OBS slot, not on `arch` (below) | BPM-012 |
 | 5 | Prefill-final logits only | Never touches the KV cache or the M=1 decode GEMV, which is where the known 0.955 sits | Gate on prefill-final plus ≥ 8 teacher-forced decode positions | BPM-013 |
 | 6 | Adapter name denylist | An unlisted software adapter passes | `AdapterInfo.device_type = Cpu` ⇒ FALLBACK; names stay as a second check. Banner from `AdapterInfo.backend` (F3) | BPM-014 |
 | 7 | E2 over unequal token counts | An early EOS decodes fewer, shorter-context tokens | One `host_id`, fixed `n_gen`, EOS ignored on both engines | BPM-015 |
 
 Reuse note: origin/main has at least 8 cosine copies (`git grep 'fn cosine'`). The R1 checker uses `parity_per_op_table::cosine`, which already fails closed on length and zero norm, and adds no ninth copy.
 pv 0.70.0: validate 0 errors / 0 warnings; `pv lint contracts-draft/` PASS. Obligations went from 6 to 10.
+
+BPM-012 per tensor (2026-10-03). The first form compared whole kernel paths, and a mixed run evades that. A same-host reference differs from a default-route backend on Q4_K (q4k-q8k against q4k-f32), while every Q6_K tensor meets itself. The OBS-15 `kernel_diff` (#4574, unmerged) would not help:
+- it keys by `(op, shape_class)` and keeps one entry per slot (obs_kernel_path.rs:118, last wins). A Q4_K_M file mixes Q4_K and Q6_K in one slot: in Qwen3.5-0.8B-Q4_K_M, ffn_down (3584, 1024) is Q6_K in 12 layers and Q4_K in 12 [V];
+- it compares whole entries, and `arch` differs on every C0-against-C4 entry, so one scalar kernel on both hosts reads as different.
+
+BPM-012 now compares `kernel_id` per (tensor, op) over the quantized matmul tensors. P1 plants f012 (one equal tensor among differing ones), f012b (the C4 control), f012c (one kernel_id on two arches) and f012d (a slot collision). The C4 leg meets the rule through R3's dispatch-honesty precondition, not through the second machine (R3 §13).
+pv 0.70.0 after this: validate 0/0 on both contracts; lint 0 errors and the same 5 lean_theorem warnings. Counts unchanged (BPM: 4 equations, 17 falsifiers, 12 obligations).
