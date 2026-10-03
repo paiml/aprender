@@ -55,8 +55,10 @@ rows:
     contract: {id: apr-serve-ttft-v1, path: null, on_main: false, staged_at: origin/la-71/serve-ttft-v1,
                staged_path: docs/lookahead/contracts-draft/apr-serve-ttft-v1.yaml}
     falsifier: [FALSIFY-TTFT-001, FALSIFY-TTFT-002, FALSIFY-TTFT-003, FALSIFY-TTFT-005, FALSIFY-TTFT-006, FALSIFY-TTFT-007]
-    baseline: {path: evidence/parity/pin-bump-d1d3c3396/llamacpp-d1d3c3396.json, on_main: true,
-               note: "llama.cpp arm only; no apr-side Qwen3.5-4B TTFT receipt"}
+    baseline: null   # INADMISSIBLE (13:55Z): evidence/parity/pin-bump-d1d3c3396/llamacpp-d1d3c3396{,-r2}.json is
+      # qwen2.5-coder-7b-instruct-q4_k_m (lane.sh), not Qwen3.5-4B, and both runs fail the harness's own
+      # validation (server-startup.txt: "Validation failed: run 1 had 1 failed request(s)..."; r2: 2+1). No load_ms.
+      # Run plan: docs/lookahead/0.71-baseline-plan.md B-1.
     owner_proposed: L1
     depends_on: [OBS-05, OBS-09]
   - id: OBS-05
