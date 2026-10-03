@@ -34,7 +34,12 @@ def load_module(path, name):
     return mod
 
 
-def run(side, tokens, seconds=10.0):
+FULL = 200 * 4 * 1 * 511  # timed_steps * batch * grad_accum * (seq_len - 1)
+
+
+def run(side, rate, seconds=None):
+    """One receipt doing the full window at `rate` tokens per (arbitrary) unit."""
+    tokens = FULL
     r = dict(
         side=side, gpu_name="NVIDIA GeForce RTX 4090", gpu_uuid="GPU-4090-a",
         device_trace_line="[TRACE] device=cuda:0 RTX 4090", model="Qwen/Qwen3.5-4B",
@@ -42,7 +47,7 @@ def run(side, tokens, seconds=10.0):
         trainable_params=23_592_960, optimizer="adamw_fp32",
         grad_checkpointing=False, packing=False, seq_len=512, batch=4,
         grad_accum=1, warmup_steps=50, timed_steps=200, timed_after_compile=True,
-        label_tokens_timed=tokens, timed_seconds=seconds,
+        label_tokens_timed=tokens, timed_seconds=FULL / rate if seconds is None else seconds,
     )
     if side == "apr":
         r["apr_version"] = "0.72.0-dev"
@@ -127,6 +132,10 @@ CASES = [
      "device_trace_line", None),
     ("empty timed window", edit("incumbent", "timed_seconds", 0.0, runs=(1,)), 2,
      "NOT_MEASURED", "empty timed window", None),
+    ("short rows padded", edit("incumbent", "label_tokens_timed", FULL - 800), 1, "FAIL",
+     "label_tokens_timed", None),
+    ("apr counts differently", edit("apr", "label_tokens_timed", 200 * 4 * 512, runs=(1,)), 1,
+     "FAIL", "full window", None),
     ("side mislabelled", edit("apr", "side", "incumbent", runs=(0,)), 2, "NOT_MEASURED",
      "side=", None),
 ]
@@ -141,7 +150,8 @@ MUTANTS = [
     ("min runs 1", "MIN_RUNS = 3", "MIN_RUNS = 1"),
     ("param tolerance 5%", "PARAM_TOLERANCE = 0.01", "PARAM_TOLERANCE = 0.05"),
     ("gpu check dropped", "if len(gpus) != 1:", "if False:"),
-    ("targets check dropped", 'if sorted(r["targets"]) != sorted(a0["targets"]):', "if False:"),
+    ("full-window check dropped", 'if r["label_tokens_timed"] != full_window(r):', "if False:"),
+    ("targets check dropped", 'if sorted(r["targets"]) != want:', "if False:"),
 ]
 
 
@@ -160,61 +170,71 @@ def case_errors(mod):
     return errors
 
 
-def cli_errors():
-    """The CLI prints one JSON line and exits with decide()'s code."""
+def write_receipts(d):
+    apr, inc = sides()
+    paths = dict(apr=[], incumbent=[])
+    for side, runs in (("apr", apr), ("incumbent", inc)):
+        for i, r in enumerate(runs):
+            p = pathlib.Path(d) / ("%s-%d.json" % (side, i))
+            p.write_text(json.dumps(r))
+            paths[side].append(str(p))
+    return ["--apr"] + paths["apr"] + ["--incumbent"] + paths["incumbent"]
+
+
+def cli_check(label, args, want_code, want_verdict):
+    p = subprocess.run([sys.executable, str(SCRIPT)] + args, capture_output=True, text=True)
+    try:
+        out = json.loads(p.stdout)
+    except ValueError:
+        out = dict()
     errors = []
-    with tempfile.TemporaryDirectory() as d:
-        apr, inc = sides()
-        paths = dict(apr=[], incumbent=[])
-        for side, runs in (("apr", apr), ("incumbent", inc)):
-            for i, r in enumerate(runs):
-                p = pathlib.Path(d) / ("%s-%d.json" % (side, i))
-                p.write_text(json.dumps(r))
-                paths[side].append(str(p))
-        for label, args, want_code, want_verdict in (
-            ("cli pass", ["--apr"] + paths["apr"] + ["--incumbent"] + paths["incumbent"], 0, "PASS"),
-            ("cli threshold 0.95", ["--apr"] + paths["apr"] + ["--incumbent"] + paths["incumbent"]
-             + ["--threshold", "0.95"], 1, "FAIL"),
-            ("cli unreadable", ["--apr", str(pathlib.Path(d) / "absent.json")], 2, "NOT_MEASURED"),
-            ("cli no receipts", [], 2, "NOT_MEASURED"),
-        ):
-            p = subprocess.run([sys.executable, str(SCRIPT)] + args, capture_output=True, text=True)
-            try:
-                out = json.loads(p.stdout)
-            except ValueError:
-                out = dict()
-            if p.returncode != want_code or out.get("verdict") != want_verdict:
-                errors.append("%s: rc=%d stdout=%r" % (label, p.returncode, p.stdout))
-            if want_verdict == "NOT_MEASURED" and "ratio" in out:
-                errors.append("%s: NOT_MEASURED carries a ratio" % label)
+    if p.returncode != want_code or out.get("verdict") != want_verdict:
+        errors.append("%s: rc=%d stdout=%r" % (label, p.returncode, p.stdout))
+    if want_verdict == "NOT_MEASURED" and "ratio" in out:
+        errors.append("%s: NOT_MEASURED carries a ratio" % label)
     return errors
 
 
+def cli_errors():
+    """The CLI prints one JSON line and exits with decide()'s code."""
+    with tempfile.TemporaryDirectory() as d:
+        both = write_receipts(d)
+        table = (
+            ("cli pass", both, 0, "PASS"),
+            ("cli threshold 0.95", both + ["--threshold", "0.95"], 1, "FAIL"),
+            ("cli unreadable", ["--apr", str(pathlib.Path(d) / "absent.json")], 2, "NOT_MEASURED"),
+            ("cli no receipts", [], 2, "NOT_MEASURED"),
+        )
+        return [e for row in table for e in cli_check(*row)]
+
+
+def mutant_error(d, i, text, name, old, new):
+    """None if the mutant is killed, else what went wrong."""
+    if text.count(old) != 1:
+        return "mutant %s: PATCH_FAILED (pattern found %d times)" % (name, text.count(old))
+    path = pathlib.Path(d) / ("mutant_%d.py" % i)
+    path.write_text(text.replace(old, new))
+    killed_by = case_errors(load_module(path, "verdict_mutant_%d" % i))
+    if not killed_by:
+        return "mutant %s: SURVIVED" % name
+    print("ok    mutant %s: KILLED (%d cases)" % (name, len(killed_by)))
+    return None
+
+
 def main():
-    checks, failed = 0, 0
     real = load_module(SCRIPT, "verdict_real")
-    for e in case_errors(real) + cli_errors():
-        print("FAIL  " + e)
-        failed += 1
-    checks += len(CASES) + 4
+    errors = case_errors(real) + cli_errors()
     text = SCRIPT.read_text()
     with tempfile.TemporaryDirectory() as d:
         for i, (name, old, new) in enumerate(MUTANTS):
-            checks += 1
-            if text.count(old) != 1:
-                print("FAIL  mutant %s: PATCH_FAILED (pattern found %d times)" % (name, text.count(old)))
-                failed += 1
-                continue
-            path = pathlib.Path(d) / ("mutant_%d.py" % i)
-            path.write_text(text.replace(old, new))
-            killed_by = case_errors(load_module(path, "verdict_mutant_%d" % i))
-            if killed_by:
-                print("ok    mutant %s: KILLED (%d cases)" % (name, len(killed_by)))
-            else:
-                print("FAIL  mutant %s: SURVIVED" % name)
-                failed += 1
-    print("%d checks, %d failed" % (checks, failed))
-    return 1 if failed else 0
+            err = mutant_error(d, i, text, name, old, new)
+            if err:
+                errors.append(err)
+    for e in errors:
+        print("FAIL  " + e)
+    checks = len(CASES) + 4 + len(MUTANTS)
+    print("%d checks, %d failed" % (checks, len(errors)))
+    return 1 if errors else 0
 
 
 if __name__ == "__main__":

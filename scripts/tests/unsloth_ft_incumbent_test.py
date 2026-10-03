@@ -36,7 +36,7 @@ def load(src):
     return m
 
 
-def measured(after=True, tokens=400000, seconds=10.0):
+def measured(after=True, tokens=200 * 4 * 511, seconds=10.0):
     return dict(trainable_params=23592960, label_tokens_timed=tokens,
                 timed_seconds=seconds, timed_after_compile=after)
 
@@ -46,15 +46,15 @@ def receipt(m, extra=(), vers=None, **kw):
     return m.build_receipt(args, "ab" * 32, GPU, measured(**kw), dict(vers or FULL))
 
 
-def apr_twin(r, tokens):
+def apr_twin(r, seconds):
     a = {k: v for k, v in r.items() if k != "versions"}
-    a.update(side="apr", apr_version="0.72.0", apr_git_sha="deadbeef", label_tokens_timed=tokens)
+    a.update(side="apr", apr_version="0.72.0", apr_git_sha="deadbeef", timed_seconds=seconds)
     return a
 
 
 def verdict(m, extra=(), vers=None, **kw):
     inc = receipt(m, extra, vers, **kw)
-    return V.decide([apr_twin(inc, 360000)] * 3, [inc] * 3)
+    return V.decide([apr_twin(inc, inc["timed_seconds"] / 0.9)] * 3, [inc] * 3)
 
 
 def refuses(fn):

@@ -1,7 +1,7 @@
 contract: beat-unsloth-finetune-throughput
 metadata:
   kind: beat-benchmark
-  version: "1.1.0"
+  version: "1.2.0"
   description: >
     0.72 exit criterion T2 (APR-LOOKAHEAD-001 §2a): `apr finetune -m lora` (bf16, CUDA) training
     throughput on Qwen3.5-4B is at least 0.8x Unsloth's on the SAME GPU, same model, same recipe.
@@ -29,8 +29,12 @@ beat:
     bf16 LoRA fine-tune of Qwen3.5-4B (frozen bf16 base; Unsloth lists 10 GB for 4B, so it fits
     the 24 GB card), rank 16, alpha 32, targets = Unsloth's documented default
     q_proj,k_proj,v_proj,o_proj,gate_proj,up_proj,down_proj on BOTH sides (the GDN in_proj/out_proj
-    projections are not targeted; a second, optional cell adds them on both sides), seq 512, batch 4, grad-accum 1, bf16 compute, 50 warmup + 200 timed steps, same 1,000-sample
-    data (sha pinned), same RTX 4090 (lambda), same run, exclusive GPU. Optimizer = torch AdamW
+    projections are not targeted; a second, optional cell adds them on both sides), seq 512, batch 4, grad-accum 1, bf16 compute, 50 warmup + 200 timed steps, same 1,000-row
+    data (1.2.0: built by scripts/bench/unsloth_ft_data.py from this repo's own MIT crates/**/*.rs
+    at a pinned commit, 8192 characters per row so every row fills seq 512 and nothing is padded;
+    at 316dee2cd4 its sha256 is 49cf2844d99d6195feeb0ae3e91fd7498817c823ef7d08e7142b13e01b3d0a65,
+    and the measuring run re-pins rev + sha in its evidence; 1,000 rows = 250 steps x batch 4, each
+    row trained once), same RTX 4090 (lambda), same run, exclusive GPU. Optimizer = torch AdamW
     with fp32 states on both sides (never adamw_8bit, Unsloth's benchmark default); gradient
     checkpointing OFF on both sides (not Unsloth's "unsloth" CPU-offload mode); packing OFF on
     both sides. Metric = non-pad label tokens trained per second over the timed steps, counted
@@ -55,6 +59,13 @@ proof_obligations:
     Both sides train the same number of tokens with the same targets and rank; the receipt
     records trainable-parameter counts for both and they differ by < 1%.
   type: invariant
+- id: OBLIG-UNSLOTH-FT-FULL-WINDOW
+  statement: >
+    (1.2.0) Every timed row is full, so both sides count exactly
+    timed_steps x batch x grad_accum x (seq_len - 1) = 408,800 label tokens per run. A run that
+    counts any other number trained padded rows or counted differently, and is a SAME-WORK FAIL;
+    tokens/s from different counting rules are not comparable.
+  type: invariant
 - id: OBLIG-UNSLOTH-FT-INCUMBENT-FAST-PATH
   statement: >
     The incumbent runs its fastest supported path for Qwen3.5 GDN: fla is importable in the
@@ -69,7 +80,8 @@ falsification_tests:
     task, same GPU, same run.
   command: >
     scripts/bench/unsloth_finetune_throughput.sh --model Qwen3.5-4B --gpu 0 --out
-    evidence/beat-unsloth-ft/<version>/  (to be written with the R5 ticket)
+    evidence/beat-unsloth-ft/<version>/  with APR_FT_DATA built by scripts/bench/unsloth_ft_data.py
+    (the script refuses, exit 3, without it)
   expected: "ratio >= 0.80"
   if_fails: >
     Profile the apr step (apr profile / trace) against Unsloth's fused LoRA kernels; the gap
@@ -97,3 +109,18 @@ falsification_tests:
   command: "same script with --planted-incumbent-adamw8bit; expect SAME-WORK FAIL"
   expected: "SAME-WORK check exits non-zero naming the optimizer"
   if_fails: "an optimizer or checkpointing mismatch silently moves the ratio"
+- id: FALSIFY-BEAT-UNSLOTH-FT-FULL-WINDOW
+  description: >
+    (1.2.0) Planted falsifier: one side's receipt counts fewer label tokens than the full window
+    (short rows padded, or a different counting rule) and the verdict must not compute a ratio.
+  command: "python3 scripts/tests/unsloth_ft_verdict_test.py (cases 'short rows padded', 'apr counts differently')"
+  expected: "SAME-WORK FAIL naming label_tokens_timed; mutant 'full-window check dropped' KILLED"
+  if_fails: "a side that pads, or counts tokens its own way, can move the ratio without doing more work"
+- id: FALSIFY-BEAT-UNSLOTH-FT-DATA-PINNED
+  description: >
+    (1.2.0) The canonical data is reproducible from a commit: two builds at the same --rev are
+    byte-identical, the commit (not the working tree) is what is read, only crates/**/*.rs is
+    used, and too little source refuses instead of emitting a short set.
+  command: "python3 scripts/tests/unsloth_ft_data_test.py"
+  expected: "7 cases pass, 7/7 mutants KILLED"
+  if_fails: "the data sha in the receipts cannot be rebuilt, so same-data cannot be checked by anyone else"

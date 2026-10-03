@@ -46,8 +46,9 @@ r = dict(side=side, gpu_name="NVIDIA GeForce RTX 4090", gpu_uuid="GPU-4090-a",
          data_sha256="d" * 64, rank=16, alpha=32, targets=targets,
          trainable_params=23592960, optimizer="adamw_fp32", grad_checkpointing=False,
          packing=False, seq_len=512, batch=4, grad_accum=1, warmup_steps=50,
-         timed_steps=200, timed_after_compile=True, timed_seconds=10.0,
-         label_tokens_timed=int(os.environ.get("STUB_TOK_" + side.upper(), "1000")))
+         timed_steps=200, timed_after_compile=True, label_tokens_timed=408800,
+         # STUB_TOK_<SIDE> is the side's rate; every run trains the full window.
+         timed_seconds=408800 / float(os.environ.get("STUB_TOK_" + side.upper(), "1000")))
 if side == "apr":
     r["apr_version"] = "0.72.0-dev"
     r["apr_" + "g" + "it_sha"] = "0123456789"
@@ -91,6 +92,8 @@ class Env:
         self.stub_log = tmp / "side.log"
         self.gpuq_log = tmp / "gpuq.log"
         self.active = tmp / "train-active"
+        self.data = tmp / "data.jsonl"
+        self.data.write_text('{"text": "x"}\n')
 
 
 def lines(path):
@@ -114,7 +117,8 @@ def case_env(e, extra_env):
     env = dict(os.environ)
     env.update(APR_FT_SIDE_CMD=str(e.side), INCUMBENT_FT_SIDE_CMD=str(e.side),
                GPUQ=str(e.gpuq), GPUQ_LOG=str(e.gpuq_log), STUB_LOG=str(e.stub_log),
-               APR_TRAIN_ACTIVE_MARKER=str(e.active), VERDICT=str(VERDICT), RUN_TIMEOUT="60")
+               APR_TRAIN_ACTIVE_MARKER=str(e.active), VERDICT=str(VERDICT), RUN_TIMEOUT="60",
+               APR_FT_DATA=str(e.data))
     env.update(extra_env or {})
     return env
 
@@ -174,6 +178,10 @@ CASES = [
      lambda r: r["rc"] == 3 and r["calls"] == []),
     ("missing side runner: refused exit 3", [], dict(INCUMBENT_FT_SIDE_CMD="/nonexistent/side"), False,
      lambda r: r["rc"] == 3 and r["calls"] == []),
+    ("no APR_FT_DATA: refused exit 3", [], dict(APR_FT_DATA=""), False,
+     lambda r: r["rc"] == 3 and r["calls"] == [] and "APR_FT_DATA" in r["err"]),
+    ("APR_FT_DATA not a file: refused exit 3", [], dict(APR_FT_DATA="/nonexistent/d.jsonl"), False,
+     lambda r: r["rc"] == 3 and r["calls"] == []),
     ("dry-run: prints 6 queued commands, runs nothing", ["--dry-run"], None, False,
      lambda r: r["rc"] == 0 and r["calls"] == [] and r["gpuq"] == []
      and r["out"].count("dry-run: ") == 6 and r["out"].count(" -- timeout ") == 6),
@@ -200,6 +208,7 @@ MUTANTS = [
     ("M7 empty GPUQ allowed", '[ -n "$gpuq" ] || {', 'true || {'),
     ("M8 planted flag to both sides", 'case "$1:$planted" in', 'case "apr:$planted" in'),
     ("M9 two planted flags allowed", 'if [ -n "$planted" ]; then echo', 'if false; then echo'),
+    ("M11 data check dropped", '[ -n "$data" ] && [ -f "$data" ] || {', 'true || {'),
     ("M10 dry-run executes", 'if [ "$dry" -eq 1 ]; then\n  if', 'if false; then\n  if'),
 ]
 

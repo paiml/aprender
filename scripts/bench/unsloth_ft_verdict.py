@@ -38,7 +38,7 @@ COMMON_FIELDS = (
 APR_FIELDS = ("apr_version", "apr_git_sha")
 INCUMBENT_VERSIONS = ("unsloth", "unsloth_zoo", "torch", "transformers", "fla", "causal_conv1d")
 
-# contract 1.1.0 canonical_task pins these on BOTH sides.
+# contract 1.2.0 canonical_task pins these on BOTH sides.
 PINNED = dict(
     optimizer="adamw_fp32",
     grad_checkpointing=False,
@@ -50,6 +50,14 @@ SAME_WORK_FIELDS = (
     "model", "data_sha256", "rank", "alpha", "seq_len", "batch", "grad_accum",
     "warmup_steps", "timed_steps",
 )
+
+
+
+
+def full_window(r):
+    """Label tokens in a timed window of full rows (contract 1.2.0: every row
+    fills seq_len, so nothing is padded and both sides count the same number)."""
+    return r["timed_steps"] * r["batch"] * r["grad_accum"] * (r["seq_len"] - 1)
 
 
 class Verdict(Exception):
@@ -68,21 +76,25 @@ def same_work_fail(reason):
     return Verdict(1, "FAIL", "SAME-WORK FAIL: " + reason)
 
 
+def check_versions(r, where):
+    v = r["versions"]
+    if not isinstance(v, dict):
+        raise not_measured("%s: versions is not a map" % where)
+    if not v.get("fla"):
+        raise Verdict(2, "INCUMBENT_SLOW_PATH",
+                      "%s: fla absent, HF GDN runs its fp32 torch fallback" % where)
+    absent = [k for k in INCUMBENT_VERSIONS if not v.get(k)]
+    if absent:
+        raise not_measured("%s: versions missing %s" % (where, ",".join(absent)))
+
+
 def check_fields(r, where):
     need = COMMON_FIELDS + (APR_FIELDS if r.get("side") == "apr" else ("versions",))
     missing = [f for f in need if f not in r or r[f] is None]
     if missing:
         raise not_measured("%s: missing %s" % (where, ",".join(missing)))
     if r["side"] == "incumbent":
-        v = r["versions"]
-        if not isinstance(v, dict):
-            raise not_measured("%s: versions is not a map" % where)
-        if not v.get("fla"):
-            raise Verdict(2, "INCUMBENT_SLOW_PATH",
-                          "%s: fla absent, HF GDN runs its fp32 torch fallback" % where)
-        absent = [k for k in INCUMBENT_VERSIONS if not v.get(k)]
-        if absent:
-            raise not_measured("%s: versions missing %s" % (where, ",".join(absent)))
+        check_versions(r, where)
     if r["timed_seconds"] <= 0 or r["label_tokens_timed"] <= 0:
         raise not_measured("%s: empty timed window" % where)
 
@@ -91,43 +103,74 @@ def check_pins(r, where):
     for k, want in PINNED.items():
         if r[k] != want:
             raise same_work_fail("%s: %s=%r, canonical task pins %r" % (where, k, r[k], want))
+    if r["label_tokens_timed"] != full_window(r):
+        raise same_work_fail("%s: label_tokens_timed=%d, full window is %d (padded rows or a "
+                             "different count)" % (where, r["label_tokens_timed"], full_window(r)))
 
 
 def tok_s(r):
     return r["label_tokens_timed"] / r["timed_seconds"]
 
 
+def each_run(apr, inc):
+    """(where, side, receipt) for every run of both sides, apr first."""
+    for side, runs in (("apr", apr), ("incumbent", inc)):
+        for i, r in enumerate(runs):
+            yield "%s run %d" % (side, i + 1), side, r
+
+
+def check_runs(apr, inc):
+    for side, runs in (("apr", apr), ("incumbent", inc)):
+        if len(runs) < MIN_RUNS:
+            raise not_measured("%s: %d runs, need %d" % (side, len(runs), MIN_RUNS))
+    for where, side, r in each_run(apr, inc):
+        if r.get("side") != side:
+            raise not_measured("%s: side=%r" % (where, r.get("side")))
+        check_fields(r, where)
+
+
+def check_one_gpu(every):
+    gpus = set(r["gpu_uuid"] for r in every)
+    if len(gpus) != 1:
+        raise not_measured("runs span %d GPUs: %s" % (len(gpus), ",".join(sorted(gpus))))
+
+
+def check_same_fields(every):
+    a0 = every[0]
+    for k in SAME_WORK_FIELDS:
+        for r in every:
+            if r[k] != a0[k]:
+                raise same_work_fail("%s differs (%r vs %r)" % (k, a0[k], r[k]))
+
+
+def check_targets(every):
+    want = sorted(every[0]["targets"])
+    for r in every:
+        if sorted(r["targets"]) != want:
+            raise same_work_fail("targets differ (%s vs %s)" % (
+                ",".join(want), ",".join(sorted(r["targets"]))))
+
+
+def check_params(pa, pu):
+    if pa <= 0 or pu <= 0 or abs(pa - pu) / max(pa, pu) >= PARAM_TOLERANCE:
+        raise same_work_fail("trainable_params %d vs %d (tolerance %.0f%%)" % (
+            pa, pu, PARAM_TOLERANCE * 100))
+
+
+def check_same_work(apr, inc):
+    check_same_fields(apr + inc)
+    check_targets(apr + inc)
+    check_params(apr[0]["trainable_params"], inc[0]["trainable_params"])
+
+
 def decide(apr, inc, threshold=THRESHOLD):
     """Return (exit code, verdict, reason, ratio or None)."""
     try:
-        for side, runs in (("apr", apr), ("incumbent", inc)):
-            if len(runs) < MIN_RUNS:
-                raise not_measured("%s: %d runs, need %d" % (side, len(runs), MIN_RUNS))
-            for i, r in enumerate(runs):
-                where = "%s run %d" % (side, i + 1)
-                if r.get("side") != side:
-                    raise not_measured("%s: side=%r" % (where, r.get("side")))
-                check_fields(r, where)
-        every = apr + inc
-        gpus = set(r["gpu_uuid"] for r in every)
-        if len(gpus) != 1:
-            raise not_measured("runs span %d GPUs: %s" % (len(gpus), ",".join(sorted(gpus))))
-        for side, runs in (("apr", apr), ("incumbent", inc)):
-            for i, r in enumerate(runs):
-                check_pins(r, "%s run %d" % (side, i + 1))
-        a0, u0 = apr[0], inc[0]
-        for k in SAME_WORK_FIELDS:
-            for r in every:
-                if r[k] != a0[k]:
-                    raise same_work_fail("%s differs (%r vs %r)" % (k, a0[k], r[k]))
-        for r in every:
-            if sorted(r["targets"]) != sorted(a0["targets"]):
-                raise same_work_fail("targets differ (%s vs %s)" % (
-                    ",".join(sorted(a0["targets"])), ",".join(sorted(r["targets"]))))
-        pa, pu = a0["trainable_params"], u0["trainable_params"]
-        if pa <= 0 or pu <= 0 or abs(pa - pu) / max(pa, pu) >= PARAM_TOLERANCE:
-            raise same_work_fail("trainable_params %d vs %d (tolerance %.0f%%)" % (
-                pa, pu, PARAM_TOLERANCE * 100))
+        check_runs(apr, inc)
+        check_one_gpu(apr + inc)
+        for where, _, r in each_run(apr, inc):
+            check_pins(r, where)
+        check_same_work(apr, inc)
         ratio = statistics.median(tok_s(r) for r in apr) / statistics.median(tok_s(r) for r in inc)
     except Verdict as v:
         return v.code, v.verdict, v.reason, None

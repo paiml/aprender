@@ -33,9 +33,11 @@
 #   APR_TRAIN_ACTIVE_MARKER if this file exists the train is active and nothing runs
 #                          (default /tmp/apr-train-active [A]; a fleet-wide marker is a ticket after 0.70.1)
 #   VERDICT                verdict script           (default scripts/bench/unsloth_ft_verdict.py)
+#   APR_FT_DATA            the canonical JSONL both sides train on (no default; build it with
+#                          unsloth_ft_data.py). Both sides inherit it; each receipt records its sha256.
 #
 # Exit: 0 PASS, 1 FAIL, 2 NOT_MEASURED (the verdict's codes), 3 refused (train active,
-# a side runner missing, or no GPU queue), 64 usage. --dry-run writes plan.txt, prints
+# a side runner missing, no GPU queue, or no APR_FT_DATA file), 64 usage. --dry-run writes plan.txt, prints
 # the commands, runs nothing and exits 0.
 # No -e: a failed run must be logged and skipped, not end the session; every status
 # that matters is read explicitly (rc, PIPESTATUS).
@@ -75,6 +77,7 @@ prio=${GPUQ_PRIO:-5}
 run_timeout=${RUN_TIMEOUT:-3600}
 train_active=${APR_TRAIN_ACTIVE_MARKER:-/tmp/apr-train-active}
 verdict=${VERDICT:-$root/scripts/bench/unsloth_ft_verdict.py}
+data=${APR_FT_DATA:-}
 
 # The planted flag a side receives, or nothing.
 planted_for() {
@@ -113,6 +116,9 @@ if [ -e "$train_active" ]; then
   exit 3
 fi
 [ -n "$gpuq" ] || { echo "$0: REFUSED: GPUQ is empty; no unlocked GPU run" >&2; exit 3; }
+[ -n "$data" ] && [ -f "$data" ] || { echo "$0: REFUSED: APR_FT_DATA is not a file: '$data'" >&2; exit 3; }
+export APR_FT_DATA="$data"
+echo "data=$data sha256=$(sha256sum "$data" | cut -d' ' -f1)" >> "$out/plan.txt"
 for c in "$apr_cmd" "$inc_cmd"; do
   [ -x "$c" ] || { echo "$0: REFUSED: side runner $c is missing or not executable" >&2; exit 3; }
 done
