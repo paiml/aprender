@@ -77,7 +77,7 @@ These are bodies ready to file, one per bundle in `falsifier-landing-map.md`.
 **Refs** #3999 (C1–C3 E1). Contract: `wgpu-forward-v1` (draft). Scope doc: `R2-wgpu-forward-scope.md`.
 
 **Scope**
-- rope_theta from metadata in both WGSL RoPE shaders (`wgsl_forward.rs:229` and `:265` at 00052c0128).
+- rope_theta from metadata in both WGSL RoPE shaders (`wgsl_forward.rs:242` and `:278` at 316dee2cd4).
 - head_dim from `key_length`.
 - Q6_K, Q8_0 and Q4_0 WGSL GEMVs, so the exit model's Q6_K tensors stop being widened on the host.
 - Qwen3 q/k norm, only after the K14 layer-diff trace has attributed the 0.955 gap.
@@ -99,8 +99,8 @@ These are bodies ready to file, one per bundle in `falsifier-landing-map.md`.
 **Refs** #3999 (E3). Scope doc: `R4-moe-gpu-wiring.md`.
 
 **Scope**
-- **(a)** A streaming variant of `run_qwen3_moe_generate_dispatch`, so a `stream: true` request takes the same path as non-streaming. Today it goes through `cuda_chat_backend.rs:1167`, bypassing the dispatch.
-- **(b)** The wgpu MoE forward, which is stubbed today at `wgpu_backend/mod.rs:196`. (b) waits for P4.
+- **(a)** A streaming variant of `run_qwen3_moe_generate_dispatch`, so a `stream: true` request takes the same path as non-streaming. Today it goes through `cuda_chat_backend.rs:1176`, bypassing the dispatch.
+- **(b)** The wgpu MoE forward, which is stubbed today at `wgpu_backend/mod.rs:197`. (b) waits for P4.
 
 **Acceptance**
 - **(a)** R4-001 holds on C0: `used_gpu = true`, the CUDA banner and a judged F2 guard on both runs. A planted `SKIP_PARITY_GATE=1` run is refused by P1 (BPM-017).

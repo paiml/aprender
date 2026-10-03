@@ -7,7 +7,7 @@ metadata:
   - 'docs/lookahead/0.73.md R2 — wgpu forward scope (draft: la-73 drafts/R2-wgpu-forward-scope.md)'
   - 'epic aprender#3999 — 0.73 "Runs Everywhere", exit criterion E1 on C1-C3'
   - 'drafts/backend-parity-matrix-v1.yaml — the E1 composed-leg gate this forward must pass'
-  - 'crates/aprender-compute/src/backends/gpu/device/linalg/wgsl_forward.rs:229 and :265 — rope_theta hardcoded as pow(1000000.0, …) in TWO WGSL shaders [V at main 00052c0128, 2026-09-30; the earlier "aprender-serve …:943" cite was stale]'
+  - 'crates/aprender-compute/src/backends/gpu/device/linalg/wgsl_forward.rs:242 and :278 (316dee2cd4; :229/:265 at 00052c0128) — rope_theta hardcoded as pow(1000000.0, …) in TWO WGSL shaders [V at main 00052c0128, 2026-09-30; the earlier "aprender-serve …:943" cite was stale]'
   - 'crates/aprender-serve/src/gpu/adapters/wgpu_adapter.rs dequant_tensor_public — Q4_K/Q6_K/Q5_K/F32/F16 (and APR q4/q8) are dequantized to F32 on the host; only other types are refused ("Unsupported quantization type … for WGPU dequant") [V at 00052c0128]'
   description: >
     What the wgpu (WGSL) decoder forward must do before a C1-C3 receipt can pass E1:

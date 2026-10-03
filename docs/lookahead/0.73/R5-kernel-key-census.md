@@ -14,7 +14,7 @@ Key = (qtype, op, layout, precision). Paths are relative to crates/.
 | rmsnorm | layer_norm_gpu.rs:149 | WGSL wf:115 | gguf/ops.rs:39 | scalar [inferred] |
 | rope | fused_ffn.rs:360, rope_indirect.rs:8 | CPU, theta **hardcoded 1e6** (wf:943) [V] | q/rope.rs:62 AVX2/512 | scalar |
 | qk-norm (Qwen3) | layer_norm_gpu.rs:303 | **absent** | scalar gguf/ops.rs:379 | scalar |
-| gated-delta (Qwen3.5) | gdn_ops.rs:445 (+conv1d, l2norm, gates) | **absent** (forward_qwen35.rs:1351 no wgpu arm) | scalar | scalar |
+| gated-delta (Qwen3.5) | gdn_ops.rs:445 (+conv1d, l2norm, gates) | **absent** (forward_qwen35.rs:1341 no wgpu arm) | scalar | scalar |
 | lm-head + argmax/sampling | reduces.rs:144 | CPU (gg:340; sampling gg:68) | AVX2 softmax | scalar |
 
 ## Findings
