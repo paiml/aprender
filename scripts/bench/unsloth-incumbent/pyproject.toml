@@ -1,0 +1,22 @@
+# Pinned environment for the incumbent (Unsloth) side of beat-unsloth-finetune-throughput-v1.
+# Pins follow unsloth 2026.9.12's own bounds (transformers<=5.5.0, trl<=0.24.0).
+# fla is required: without it HF GDN runs its torch fallback and the verdict
+# refuses INCUMBENT_SLOW_PATH. uv.lock is generated on the measuring host at
+# train-idle (`uv lock`), committed with the evidence, and every receipt records
+# the resolved versions.
+[project]
+name = "unsloth-incumbent"
+version = "0.0.0"
+requires-python = ">=3.10,<3.14"
+dependencies = [
+  "unsloth==2026.9.12",
+  "transformers==5.5.0",
+  "trl==0.24.0",
+  "peft>=0.18.0",
+  "bitsandbytes>=0.45.5",
+  "flash-linear-attention",
+  "causal-conv1d",
+]
+
+[tool.uv]
+package = false
