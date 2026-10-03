@@ -449,11 +449,15 @@ up, a new size changes its place, and a row already held on a branch drops out o
     (`Recurrence.lean:58`). `qwen35-hybrid-forward-v1` 1.0.0 leaves out four things that serve and the training layer
     both compute in attention: the sigmoid output gate, the K norm, partial RoPE and the output projection. Its GDN
     sublayer sends every projection through the conv, but only q, k and v go through it (`forward_qwen35.rs:1508`).
-  - **K37.** pv's binding audit takes `status: implemented` on trust. Six realizar bindings for these two contracts
+  - **K37.** `pv audit --binding` takes `status: implemented` on trust. Six realizar bindings for these two contracts
     name functions that exist nowhere under `crates/` (`gated_delta_net_{decay,read,write,delta,output,forward}`), and
-    `pv audit --binding` still counts them as implemented. Two more realizar bindings and one entrenar binding are the
-    same. A strict binding gate would close this: each implemented binding's function must be defined in the tree, as
-    PV-VER-002 already requires for tests. It should land before 0.72's training contracts add bindings of their own.
+    the audit still counts them as implemented. Two more realizar bindings and one entrenar binding are the same. The
+    strict gate already exists: pv lint's `bindings` gate (PV-ONT-028/029, `lint/bindings_gate.rs`) resolves every
+    implemented binding, and `binding-allowlist.json` lists all 9 under #4502. It does not yet protect 0.72's training
+    contracts, for two reasons. First, `bindings` is not in `lint-baseline.json`'s `armed_gates`. Second, the allowlist
+    misses one ghost, `gated_rmsnorm_oxide::kernels::gated_rmsnorm` (`contracts/binding.yaml:817`), which would turn
+    the gate red once armed. K37 is a comment on #4502, not a ticket. The K36 branch removes the 7 allowlist entries
+    that its rebinding resolves.
 
 State is read from the branch tips on 2026-10-03. origin/main is `316dee2cd4` and no la-72 branch has landed. K̂ is
 minutes of worker time still left; `[A]` marks an assumption.
@@ -482,8 +486,8 @@ minutes of worker time still left; `[A]` marks an assumption.
 | 18 | R16 dangling `qlora-training-loop-v1` | — | — | `la/r16-qlora-loop-contract` |
 | 19 | R14 throughput work | sized from the R5 gap | — | after R5 and R15b |
 | 20 | K30 `apr train` tie flag | TOC-001/002: config.json says tied exactly when the saved model has no head | 15 `[A]` | `la-72/k30-train-tie-flag` @687554a60a (`apr-train-output-config-v1`); off the critical path; opens with the cheap refusals after LIVE 0.70.1 |
-| 21 | K36 GDN contract text | restate `gated-delta-net-v1`'s decay, read and output; point its tests at the shipped decay; re-prove GDN-BND-001 | 60 `[A]` | desk; `qwen35-train-gdn-v1` @80723cf206 already states the served GDN |
-| 22 | K37 phantom bindings | strict binding gate: every implemented binding names a function defined in the tree | 30 `[A]` | desk; 9 phantoms at `316dee2cd4` (8 realizar, 1 entrenar) |
+| 21 | K36 GDN contract text | restate `gated-delta-net-v1`'s decay, read and output; point its tests at the shipped decay; re-prove GDN-BND-001 | 60 `[A]` | contracts on `la-72/k36-gdn-contract` @e8834d7711: both at 2.0.0, bindings point at the served fns, allowlist 163→156. The tests and the Lean re-proof come at PR time, after LIVE 0.70.1. `qwen35-train-gdn-v1` @80723cf206 already states the served GDN |
+| 22 | K37 phantom bindings | fold into #4502: make `pv audit --binding` agree with the `bindings` gate; arm the gate once the `gated_rmsnorm_oxide` ghost is fixed or allowlisted | 10 `[A]` (was 30; the gate exists) | comment on #4502 posted; the K36 branch fixes 6 of the 9 phantoms at `316dee2cd4` |
 | — | R19 ROADMAP PMAT-711 stale | — | done | shaping @378ec8e920 |
 | — | R20 declarative recipe | — | out | RQ-3: stays in #4002 (E8, 0.75) |
 
