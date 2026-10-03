@@ -42,6 +42,24 @@ pre-push checklist and in CI.
 | `stderr_lines` | captured lines of the serving process; `stderr_captured: true` | 003, 017, R4-003 |
 | `used_gpu`, `no_gpu_flag` | bool | R4-003 |
 
+## 3a. Alignment with the OBS stack (found 2026-10-03; unmerged, #4487 / #4574)
+`apr-obs-row-identity-v1` and `apr-kernel-path-v1` are not on main. They sit on the unmerged OBS-00 commit 96d2fe4aa1,
+which `origin/a01/4574-obs15-kernel-path` (b1244f6fb7) carries with a Rust checker in
+`crates/aprender-qa-report/src/obs_kernel_path.rs` (`check_kernel_path`, `kernel_diff`, `admit_kreg_entry`).
+- **Identity.** The cell receipt carries the OBS IDENTITY block unchanged:
+  - the fields are schema, ts, host, apr_version, apr_tag, crate_tarball_sha256, binary_sha256, build_identity, model_id, model_sha256, backend and request_id, plus `gpu_proof`;
+  - P1 calls the OBS-01 shared lint and does not copy the list;
+  - `model_sha256` there is the same field BPM-011 compares across the three runs.
+- **kernel_path.** The `kernel_path` field of §3 uses the `apr-kernel-path-v1` shape, one per run (backend, reference). Each entry is `{op, kernel_id, qtype, layout, arch, shape_class, precision}`.
+  - R3's `kernel_path(k)` string, e.g. `q4k-q8k/neon-sdot`, becomes `kernel_id`, with `arch = aarch64`.
+  - BPM-012 compares `(op, shape_class) -> kernel_id` between the backend and reference paths, using `kernel_diff` semantics. An empty diff on a CPU cell is REFUSED.
+- **Conflict to resolve.** `apr-kernel-path-v1` `trace_cut` says "CPU rows name no GPU kernel and are outside the rule", so a CPU row may carry `kernel_path = null`.
+  - BPM-012 needs a non-null kernel_path on every CPU cell, C4 above all, or the self-comparison guard has nothing to read.
+  - P1 adds this as its own REQUIRE for cell receipts. It does not change the OBS rule, which governs perf-ledger rows.
+  - Flag it to the OBS-15 owner when the stack merges; do not edit their branch.
+- **KREG link.** OBS `kreg_admission` admits a kernel only with a `parity = pass` receipt for the same (arch, backend, kernel_id). A BPM cell receipt with E1 PASS is that receipt. It names its kernel_ids, so one artifact serves E1 and E5.
+- **Order.** P1 depends on the OBS stack merging. If it has not merged when P1 is minted, P1 lands the cell checker with the identity check as `NotRun(identity lint absent)`, never as a pass.
+
 ## 4. Planted fixtures (`tests/fixtures/bpm/`)
 Every fixture is `base.json` plus one edit. `base.json` is a C0 CUDA cell with:
 - both legs ≥ 0.999 at every position, and E2 r = 0.7 with ci_lo = 0.6;

@@ -263,6 +263,7 @@ The entry follows the AVX2 precedent (`unsafe fn` plus a SAFETY comment at the c
 | Need | State |
 |------|-------|
 | `kernel_path(k)` API | R3 code (not written; mint deferred, cop 10:20Z 09-28). It is also emitted in the forward trace, because the R1 receipt checker reads it: FALSIFY-BPM-012 refuses a C4 receipt whose backend and reference `kernel_path` match |
+| `kernel_path` shape | reuse `apr-kernel-path-v1` (OBS-15, unmerged #4574): `kernel_path(k)` becomes the entry's `kernel_id`, with `arch = aarch64`. See P1 spec §3a |
 | `fused_q4k_q8k_dot_neon_widen` test entry | R3 code (NEON-Q4K-007) |
 | Orphan `quantize/fused_q4k.rs` deleted | PROPOSE-TICKET 07:49Z; NEON-Q4K-006 keeps it as a control until then |
 | An aarch64 run (gx10) | GPU-deferred while a train is active; runs on CPU only, so it may be admissible earlier. Cop to rule |
