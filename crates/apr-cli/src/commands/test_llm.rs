@@ -49,8 +49,12 @@ pub struct BenchArgs<'a> {
     pub model: &'a str,
     /// Command that starts the runtime, if the harness owns its lifecycle.
     pub start: Option<&'a str>,
+    /// Where the started runtime's stdout and stderr go.
+    pub start_log: Option<&'a Path>,
     /// Seconds to wait for readiness.
     pub health_timeout: u64,
+    /// Milliseconds between readiness probes.
+    pub health_poll_ms: u64,
     /// Warm-up seconds, discarded.
     pub warmup: u64,
     /// Measured seconds per run.
@@ -87,7 +91,9 @@ pub async fn run_bench(args: BenchArgs<'_>) -> Result<()> {
         url: args.url.to_string(),
         model: args.model.to_string(),
         start_command: args.start.map(str::to_string),
+        start_log: args.start_log.map(Path::to_path_buf),
         health_timeout: Duration::from_secs(args.health_timeout),
+        health_poll: Duration::from_millis(args.health_poll_ms),
         warmup: Duration::from_secs(args.warmup),
         duration: Duration::from_secs(args.duration),
         concurrency: args.concurrency,
@@ -533,7 +539,9 @@ async fn dispatch_legacy(command: &LlmSubcommand) -> Result<()> {
         url,
         model,
         start,
+        start_log,
         health_timeout,
+        health_poll_ms,
         warmup,
         duration,
         concurrency,
@@ -552,7 +560,9 @@ async fn dispatch_legacy(command: &LlmSubcommand) -> Result<()> {
         url,
         model,
         start: start.as_deref(),
+        start_log: start_log.as_deref(),
         health_timeout: *health_timeout,
+        health_poll_ms: *health_poll_ms,
         warmup: *warmup,
         duration: *duration,
         concurrency: *concurrency,

@@ -281,6 +281,7 @@ mod tests {
             gpu_telemetry: None,
             dataset_stats: None,
             cold_start_ms: None,
+            cold_start_resolution_ms: None,
         }
     }
 

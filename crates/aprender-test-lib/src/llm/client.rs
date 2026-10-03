@@ -652,14 +652,31 @@ impl LlmClient {
         })
     }
 
-    /// Check if the server is reachable by hitting common health endpoints.
+    /// Check whether the server is ready, probing `/health`, then
+    /// `/v1/models`, then `/`.
+    ///
+    /// The first path that answers with a verdict decides: 2xx is ready and
+    /// 5xx is not ready, and the later paths are not consulted. A path that
+    /// answers 4xx (absent) or cannot be reached gives no verdict, so the
+    /// next one is tried. This matters while a server loads. llama-server (at
+    /// d1d3c3396) and `apr serve` both answer `/health` with 503 until the
+    /// model is resident, but llama-server serves its web UI at `/` with 200
+    /// from the moment it binds. Taking any 2xx from any path called it ready
+    /// before it could serve a completion.
+    ///
+    /// Not ready is an `Err`, never `Ok(false)`: callers test `is_ok()`.
     pub async fn health_check(&self) -> Result<bool, LlmClientError> {
-        // Try /health, /v1/models, then root
         for path in &["/health", "/v1/models", "/"] {
             let url = format!("{}{path}", self.base_url);
             if let Ok(resp) = self.client.get(&url).send().await {
-                if resp.status().is_success() {
+                let status = resp.status();
+                if status.is_success() {
                     return Ok(true);
+                }
+                if status.is_server_error() {
+                    return Err(LlmClientError::HealthCheckFailed(format!(
+                        "{url} answered {status}: not ready"
+                    )));
                 }
             }
         }
@@ -1437,6 +1454,97 @@ mod tests {
             }
         });
         format!("http://{addr}")
+    }
+
+    /// A loopback endpoint that answers each GET with the status line `routes`
+    /// gives its path, and 404 for a path it does not list.
+    #[cfg(feature = "llm")]
+    async fn spawn_routed_endpoint(routes: &'static [(&'static str, &'static str)]) -> String {
+        use tokio::io::{AsyncReadExt, AsyncWriteExt};
+        let listener = tokio::net::TcpListener::bind("127.0.0.1:0")
+            .await
+            .expect("bind loopback");
+        let addr = listener.local_addr().expect("local addr");
+        tokio::spawn(async move {
+            while let Ok((mut sock, _)) = listener.accept().await {
+                tokio::spawn(async move {
+                    let mut head = Vec::new();
+                    let mut chunk = [0_u8; 1024];
+                    while !head.windows(4).any(|w| w == b"\r\n\r\n") {
+                        match sock.read(&mut chunk).await {
+                            Ok(0) | Err(_) => break,
+                            Ok(n) => head.extend_from_slice(&chunk[..n]),
+                        }
+                    }
+                    let request = String::from_utf8_lossy(&head);
+                    let path = request.split_whitespace().nth(1).unwrap_or_default();
+                    let status_line = routes
+                        .iter()
+                        .find(|(route, _)| *route == path)
+                        .map_or("404 Not Found", |(_, status)| *status);
+                    let response = format!(
+                        "HTTP/1.1 {status_line}\r\nContent-Type: application/json\r\n\
+                         Content-Length: 2\r\nConnection: close\r\n\r\n{{}}"
+                    );
+                    let _ = sock.write_all(response.as_bytes()).await;
+                    let _ = sock.flush().await;
+                    let _ = sock.shutdown().await;
+                });
+            }
+        });
+        format!("http://{addr}")
+    }
+
+    /// One `health_check` against an endpoint routed as `routes`.
+    #[cfg(feature = "llm")]
+    async fn probe_routed(
+        routes: &'static [(&'static str, &'static str)],
+    ) -> Result<bool, LlmClientError> {
+        let base = spawn_routed_endpoint(routes).await;
+        LlmClient::new(&base, "m").health_check().await
+    }
+
+    /// llama-server at d1d3c3396 while it loads: `/health` says 503 and the web
+    /// UI at `/` says 200. Accepting any 2xx called it ready mid-load, so a
+    /// `--start` bench measured time-to-listen and warmed up against 503s.
+    #[cfg(feature = "llm")]
+    #[tokio::test]
+    async fn health_check_loading_llama_server_is_not_ready() {
+        let err = probe_routed(&[("/health", "503 Service Unavailable"), ("/", "200 OK")])
+            .await
+            .expect_err("a server whose /health says 503 is not ready");
+        assert!(err.to_string().contains("503"), "{err}");
+    }
+
+    /// The first path that answers 2xx or 5xx decides; 4xx falls through.
+    #[cfg(feature = "llm")]
+    #[tokio::test]
+    async fn health_check_first_verdict_decides() {
+        assert!(probe_routed(&[("/health", "200 OK")]).await.is_ok());
+        assert!(
+            probe_routed(&[("/v1/models", "200 OK")]).await.is_ok(),
+            "no /health: /v1/models decides"
+        );
+        assert!(
+            probe_routed(&[("/", "200 OK")]).await.is_ok(),
+            "only a root page"
+        );
+        assert!(
+            probe_routed(&[
+                ("/health", "500 Internal Server Error"),
+                ("/v1/models", "200 OK")
+            ])
+            .await
+            .is_err(),
+            "/health's 5xx is not overruled by /v1/models"
+        );
+        assert!(
+            probe_routed(&[("/v1/models", "503 Service Unavailable"), ("/", "200 OK")])
+                .await
+                .is_err(),
+            "a 5xx from a fallback is a verdict too"
+        );
+        assert!(probe_routed(&[]).await.is_err(), "every path 404");
     }
 
     /// PP-2 MUST-FIRE: only **404** means "this build does not route the path".

@@ -1704,9 +1704,17 @@ pub enum LlmSubcommand {
         /// running.
         #[arg(long)]
         start: Option<FreeText>,
+        /// File that receives the --start command's stdout and stderr. A start
+        /// that fails or times out cites the last line written here.
+        #[arg(long, requires = "start")]
+        start_log: Option<OutputPath>,
         /// Seconds to wait for the endpoint to become healthy.
         #[arg(long, default_value = "120")]
         health_timeout: u64,
+        /// Milliseconds between readiness probes. A --start run records its
+        /// server's cold start to within about one interval.
+        #[arg(long, default_value = "50")]
+        health_poll_ms: u64,
         /// Warm-up seconds, discarded from the measurement.
         ///
         /// NOT decoration. A first measurement of apr on GB10 with two warmups
@@ -1805,7 +1813,13 @@ pub enum LlmSubcommand {
         #[arg(
             long,
             requires_all = ["receipt", "stream", "commit"],
-            conflicts_with_all = ["start", "output", "baseline", "fail_on_regression"]
+            conflicts_with_all = [
+                "start",
+                "output",
+                "baseline",
+                "fail_on_regression",
+                "health_poll_ms"
+            ]
         )]
         band: bool,
         /// Directory receiving `receipt.rN.json` and the gzipped JSONL samples.

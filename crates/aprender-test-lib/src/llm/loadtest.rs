@@ -242,10 +242,16 @@ pub struct LoadTestResult {
     /// Dataset statistics when --dataset was used (Feature 4).
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub dataset_stats: Option<DatasetStats>,
-    /// Time from process launch to first successful health check (ms).
-    /// Present when benchmark was run with --start-command.
+    /// Time from process launch to the first passing readiness probe (ms),
+    /// an upper bound on the server's load time. Present when the benchmark
+    /// started the server itself (`--start`).
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub cold_start_ms: Option<f64>,
+    /// How far below `cold_start_ms` the true ready time can lie (ms): back
+    /// to when the last failing probe was sent, or to launch when the first
+    /// probe passed. The cold start is known to no better than this.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub cold_start_resolution_ms: Option<f64>,
 }
 
 /// Per-request timing for distribution analysis and debugging.
@@ -1009,6 +1015,7 @@ fn aggregate_results(
         gpu_telemetry: None,
         dataset_stats: None,
         cold_start_ms: None,
+        cold_start_resolution_ms: None,
     }
 }
 
@@ -1675,6 +1682,7 @@ mod tests {
             gpu_telemetry: None,
             dataset_stats: None,
             cold_start_ms: None,
+            cold_start_resolution_ms: None,
         };
         let json = serde_json::to_string(&result).unwrap();
         let back: LoadTestResult = serde_json::from_str(&json).unwrap();

@@ -557,9 +557,19 @@ pub struct LlmBenchArgs {
     #[arg(long)]
     pub start: Option<String>,
 
+    /// File that receives the started server's stdout and stderr; a start
+    /// that fails or times out cites its last line
+    #[arg(long, requires = "start")]
+    pub start_log: Option<PathBuf>,
+
     /// Maximum time to wait for server readiness (e.g., 120s)
     #[arg(long, default_value = "120s")]
     pub health_timeout: String,
+
+    /// Milliseconds between readiness probes; a started server's cold start
+    /// is recorded to within about one interval
+    #[arg(long, default_value = "50")]
+    pub health_poll_ms: u64,
 
     /// Prompt profile: micro, short, medium, long
     #[arg(long, default_value = "medium")]
