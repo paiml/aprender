@@ -1,0 +1,62 @@
+{
+ "schema": "apr-trace-v1",
+ "ts": "2026-10-03T09:00:00Z",
+ "host": "lambda",
+ "apr_version": "0.71.0-dev",
+ "apr_tag": "v0.70.1",
+ "crate_tarball_sha256": "cccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccc",
+ "binary_sha256": "bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb",
+ "build_identity": {
+  "rustc": "1.93.0",
+  "features": [
+   "cuda"
+  ]
+ },
+ "model_id": "Qwen3.5-4B-Q4_K_M",
+ "model_sha256": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+ "backend": "cuda",
+ "gpu_proof": "trace: KernelLaunch q4k_gemv sm_89",
+ "request_id": "0192f0aa-0000-7000-8000-000000000001",
+ "prompt_sha256": "pppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppp",
+ "provenance": "Measured",
+ "tracer": {
+  "ran": true,
+  "events": 412
+ },
+ "wall_ms": 100.0,
+ "trace_level": "step",
+ "steps": [
+  {
+   "step": "tokenize",
+   "ms": 1.0
+  },
+  {
+   "step": "embed",
+   "ms": 0.5
+  },
+  {
+   "step": "transformer_block",
+   "ms": 80.0
+  },
+  {
+   "step": "attention",
+   "ms": 45.0
+  },
+  {
+   "step": "ffn",
+   "ms": 30.0
+  },
+  {
+   "step": "lm_head",
+   "ms": 6.0
+  },
+  {
+   "step": "sample",
+   "ms": 0.4
+  },
+  {
+   "step": "decode",
+   "ms": 0.1
+  }
+ ]
+}

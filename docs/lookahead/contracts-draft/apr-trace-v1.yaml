@@ -1,0 +1,59 @@
+# DRAFT (branch-only during S-1). Moves to contracts/ with a strict test binding and a
+# Rust emitter (apr serve, X-Trace-Level) once 0.70.1 is live and OBS-09 is minted.
+# scripts/lookahead/trace_receipt_check.py is the executable reference for these rules.
+metadata:
+  id: apr-trace-v1
+  version: "0.1.0"
+  created: "2026-10-03"
+  author: la-0.71 (L1)
+  status: draft
+  description: >
+    0.71 "Verbs Are Fast" exit criterion V6 (APR-OBS-001 OBS-09, first row of the 0.71
+    serve epic). `apr serve` runs the existing inference_trace tracer for a request sent
+    with X-Trace-Level: step|layer and returns per-step or per-layer timings. The same
+    receipt is the before/after unit of OBS-11 (every 0.71 perf PR carries a trace diff).
+  references:
+    - '#3598 (epic); APR-OBS-001 §2.1 identity, §2.2 Trace ledger, §3 row 5, §4 falsifier row, §5.2'
+    - 'crates/aprender-serve/src/inference_trace/mod.rs (TraceStep: the step vocabulary)'
+equations:
+  provenance_honest:
+    formula: |
+      provenance = Measured  ⇔  tracer.ran = true ∧ tracer.events > 0
+      provenance ≠ Measured  ⇒  receipt is RED (no timings without a measurement)
+  layer_sum_bounded:
+    formula: |
+      trace_level = layer:  {layer_i} = {0 .. n_layers-1}, each once;  Σ_i ms(layer_i) ≤ wall_ms
+  step_sum_bounded:
+    formula: |
+      TOP    = {tokenize, embed, transformer_block, lm_head, sample, decode}
+      NESTED = {layer_norm, attention, ffn, kernel_launch, brick_profile}   # inside transformer_block
+      trace_level = step:  names ⊆ TOP ∪ NESTED;  Σ_{s ∈ TOP} ms(s) ≤ wall_ms
+  diff_comparable:
+    formula: |
+      OBS-11 pair (before, after): both admissible;
+      ∀k ∈ {host, model_sha256, backend, prompt_sha256, trace_level}: before.k = after.k;
+      before.binary_sha256 ≠ after.binary_sha256
+    invariants:
+      - "identity block per APR-OBS-001 §2.1; 'unknown' counts as missing; backend != cpu needs gpu_proof"
+      - "a diff across mismatched identity is REFUSED, never reported as a speed-up"
+      - "X-Trace-Level absent: no trace is produced and serve timing is unchanged (off by default)"
+open_questions:
+  - "Q-OBS09-1: does wall_ms include tokenization and HTTP framing? Proposed: server-side request wall from accept to last byte; the step sum covers a subset, so ≤ holds by construction."
+  - "Q-OBS09-2: decode traces span N tokens. Proposed: layer ms are summed over all forward passes of the request, against the same request wall."
+falsification_tests:
+  - {id: FALSIFY-TRACE-001, fixture: trace/pass-layer.json, expect: 0, rule: "control: 4 layers × 20 ms under a 100 ms wall"}
+  - {id: FALSIFY-TRACE-002, fixture: trace/pass-step.json, expect: 0, rule: "control: nested attention/ffn are not double-counted"}
+  - {id: FALSIFY-TRACE-003, fixture: trace/measured-not-run.json, expect: 2, rule: "§4: Measured when the tracer did not run (stale event count)"}
+  - {id: FALSIFY-TRACE-004, fixture: trace/measured-zero-events.json, expect: 2, rule: "Measured with 0 tracer events"}
+  - {id: FALSIFY-TRACE-005, fixture: trace/layer-sum-over-wall.json, expect: 2, rule: "§4: per-layer sum > request wall"}
+  - {id: FALSIFY-TRACE-006, fixture: trace/step-sum-over-wall.json, expect: 2, rule: "top-level step sum > request wall"}
+  - {id: FALSIFY-TRACE-007, fixture: trace/sparse-layers.json, expect: 2, rule: "a missing layer is RED"}
+  - {id: FALSIFY-TRACE-008, fixture: trace/unknown-step.json, expect: 2, rule: "step name not in TraceStep is RED"}
+  - {id: FALSIFY-TRACE-009, fixture: trace/unmeasured-timings.json, expect: 2, rule: "timings with provenance != Measured"}
+  - {id: FALSIFY-TRACE-010, fixture: trace/missing-identity.json, expect: 2, rule: "§2.1 field missing"}
+  - {id: FALSIFY-TRACE-011, fixture: trace/gpu-no-proof.json, expect: 2, rule: "cuda without gpu_proof"}
+  - {id: FALSIFY-TRACE-012, fixture: trace/empty.json, expect: 2, rule: "empty receipt is RED"}
+  - {id: FALSIFY-TRACE-013, fixture: trace/diff-pass.json, expect: 0, mode: diff, rule: "control: OBS-11 pair on one identity"}
+  - {id: FALSIFY-TRACE-014, fixture: trace/diff-identity-mismatch.json, expect: 2, mode: diff, rule: "before/after on different hosts is REFUSED"}
+  - {id: FALSIFY-TRACE-015, fixture: trace/diff-same-binary.json, expect: 2, mode: diff, rule: "before and after are the same binary"}
+verification: "python3 scripts/lookahead/trace_receipt_check.py --self-test  # 15/15; 13/13 sed mutants killed, 2026-10-03"
