@@ -40,7 +40,7 @@ rows:
     title: apr serve resident; load + TTFT reported beside pp512/tg128
     ticket: 3596
     spec: {path: docs/specifications/APR-EPIC-001-themed-epics-and-issue-cap.md, section: "§2 E2 goal line (one line, no section)", on_main: true}
-    # 17:30Z CORRECTION: apr-serve-ttft-v1 (la-71/serve-ttft-v1) WITHDRAWN, as a second definition of a metric
+    # 17:11Z CORRECTION: apr-serve-ttft-v1 (la-71/serve-ttft-v1) WITHDRAWN, as a second definition of a metric
     # PP-LLAMA-001 already owns. See docs/lookahead/0.71-v1-ttft-home.md. V2 = a proposed §3 `load_ms` row (REPORTED).
     contract: {id: PP-LLAMA-001-s3-load_ms, path: null, on_main: false,
                proposed: "PP-LLAMA-001 §3 row load_ms (spawn -> first passing readiness probe, upper bound + resolution), R-71-6"}
@@ -54,7 +54,7 @@ rows:
     title: TTFT <= 2x llama.cpp d1d3c3396 on Qwen3.5-4B, APR-OBS identity
     ticket: null
     spec: {path: docs/specifications/APR-EPIC-001-themed-epics-and-issue-cap.md, section: "§2 E2 goal line", on_main: true}
-    # 17:30Z CORRECTION: apr-serve-ttft-v1 + ttft_receipt_check.py WITHDRAWN (own estimator, hardcoded BOUND 2.0 =
+    # 17:11Z CORRECTION: apr-serve-ttft-v1 + ttft_receipt_check.py WITHDRAWN (own estimator, hardcoded BOUND 2.0 =
     # PP-33 violation). Home: PP-LLAMA-001 §4 P-8 ("No latency bound is set in this version") + perf-matrix.yaml
     # arm parity (ttft is `reported`) + Rust perf_gate paired_ratio_lcb(ttft_p50_ms). docs/lookahead/0.71-v1-ttft-home.md
     contract: {id: PP-LLAMA-001-P-8-ttft-bound, path: null, on_main: false,
