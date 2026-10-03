@@ -1,7 +1,9 @@
 # 0.73 L3 falsifier landing map (draft, la-73, 2026-10-03)
 
-There are 41 falsifiers marked "NOT YET WRITTEN": 18 in backend-parity-matrix-v1 (BPM), 10 in neon-q4k-q6k-v1 (NEON),
-10 in wgpu-forward-v1 (WGF) and 3 in R4-moe-gpu-wiring.md (R4). This map assigns each one to one landing bundle.
+There are 41 falsifiers not yet written: 18 in backend-parity-matrix-v1 (BPM), 10 in neon-q4k-q6k-v1 (NEON),
+10 in wgpu-forward-v1 (WGF) and 3 in R4-moe-gpu-wiring.md (R4). The contract ones carry `test: NOT YET WRITTEN`.
+R4 has no contract, so its three exist only as lines in that note. This map assigns each one to one landing bundle.
+`count_audit.py` derives every count stated here and in the P1..P5 drafts from its source, and checks each one.
 The bundles are ticket PROPOSALS for the mint after LIVE 0.70.1. Nothing here is minted (C277).
 
 **Main finding:** 21 of the 41 need no GPU, no model and no aarch64 host. They are checks on planted receipt JSON,
