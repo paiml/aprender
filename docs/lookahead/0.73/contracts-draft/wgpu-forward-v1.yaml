@@ -61,7 +61,7 @@ equations:
     invariants:
     - 'A refusal is honest; a silent fallback is not (R1 F6).'
     - 'L25: refusing every qtype satisfies the implication. The required set is {Q4_K, Q6_K}, because a Q4_K_M file stores some tensors (e.g. output, ffn_down) as Q6_K, so refusing Q6_K refuses the exit model. A required qtype that is refused is FAIL, not honest (FALSIFY-WGF-008).'
-    - 'Today Q6_K and Q5_K are widened to F32 on the host at load (dequant_tensor_public), and the device runs an F32 GEMV. op_placement reads device either way, so the receipt must also carry, for each weight tensor, the qtype as stored on the device. A widen shows as device_qtype = F32 for a file qtype that is not F32.'
+    - 'Today Q6_K and Q5_K are widened to F32 on the host at load (dequant_tensor_public), and the device runs an F32 GEMV. op_placement reads device either way, so the receipt must also carry, for each weight tensor, the qtype as stored on the device. A widen shows as device_qtype = F32 for a file qtype that is not F32. (2026-10-03: the receipt field is R1 §6 qtype_path {device-kernel, host-widen, refused-cpu}; device_qtype is derived from it, not a second field.)'
 
   device_placement_honesty:
     formula: |

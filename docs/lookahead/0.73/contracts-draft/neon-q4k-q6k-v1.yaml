@@ -60,22 +60,25 @@ equations:
   c4_e1_leg:
     formula: |
       leg = min over E1 prompts of cos(logits_apr_c4_neon, logits_apr_c0_x86)
-      PASS  <=>  leg >= 0.995   (Qwen3-dense Q4_K_M, n_prompts >= 16)
-    domain: 'final-position logits'
+      PASS  <=>  leg >= bpm.leg_floor   (0.995, resolved from evidence/parity/thresholds.yaml; Qwen3-dense Q4_K_M, n_prompts >= 16)
+    domain: 'prefill-final and teacher-forced decode logits (the earlier "final-position logits" was stale after the BPM-013 positions precondition, 2026-10-03)'
     codomain: bool
     preconditions:
     - n_prompts >= 16
     - logits_apr_c4_neon.len() == logits_apr_c0_x86.len()
     - 'both runs use the same GGUF sha256 and the same token ids'
-    - 'every kernel_path in the C4 run contains "/neon" (dispatch_honesty holds), otherwise the leg is not_measured'
+    - 'every kernel_path entry of a Q4_K or Q6_K GEMV in the C4 run has a kernel_id containing "/neon" (dispatch_honesty holds); otherwise the leg is not_measured. The rule covers quantized GEMV entries only. F32 ops (norms, rope) carry no NEON quant kernel, and a rule over every entry could never hold. Shape: apr-kernel-path-v1 entries (P1 spec §3a)'
     - 'the C0 reference and the C4 run use the same cpu_ref_path (R1 FALSIFY-BPM-008; RQ-5), otherwise the leg measures activation quantization, not NEON'
-    - 'positions = prefill-final plus >= 8 teacher-forced decode positions (R1 FALSIFY-BPM-013)'
+    - 'positions = prefill-final plus >= 8 teacher-forced decode positions per prompt, and >= thresholds.min_positions (64) in total (R1 FALSIFY-BPM-013)'
+    - 'L25 (2026-10-03): an equal cpu_ref_path LABEL is necessary, not sufficient. Per R1 §11a only the Q4K kernel honours fp32_act, so under the same label the C0 x86 Q6K and the C4 NEON Q6K can still quantize activations differently. The C0 and C4 kernel_path entries must agree on precision for every (op, shape_class); otherwise not_measured.'
     postconditions:
     - every per-position cosine is finite
     invariants:
     - 'The gate reads the per-prompt minimum. It is one leg of the R1 composed bound.'
     - 'L25: leg >= 0.995 was listed as a postcondition. It is the gate decision, and a postcondition that a FAIL violates is not a property of the computation. It now lives only in the formula.'
     - 'The C0 x86 reference makes this leg a cross-machine comparison, so it meets R1 FALSIFY-BPM-012 (no self-comparison).'
+    - 'Leg B of the C4 cell is cos(logits_apr_c0_x86, logits_llamacpp_cpu). The triangle bound needs leg B on the same reference vector as leg A, so it is the C0 cell''s leg B. It is reused only if the prompt_set_sha256, model_sha256 and cpu_ref_path all match, and the receipt cites it by sha256. llama.cpp on aarch64 is then measured only for E2 speed, not for correctness, which the bound does not need.'
+    - 'The receipt spans two hosts (C0 for the reference, C4 for the backend). The P1 identity block is per run, not per receipt, so a host mismatch between runs is expected here and is not a BPM refusal.'
   c4_e2_speed:
     formula: |
       r = tok_s_apr_c4 / tok_s_llamacpp_ggml_cpu   (llama.cpp d1d3c3396)

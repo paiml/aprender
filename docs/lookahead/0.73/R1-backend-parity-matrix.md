@@ -55,6 +55,13 @@ ci_lo, ci_hi, n}, forward_trace_line, op_placement {op: device|host} and qtype_p
 device-kernel|host-widen|refused-cpu}, both read from the trace (R5 census F-R5-2/F-R5-4), and the
 APR-OBS identity (model_sha256, binary_sha256, …).
 The receipt is refused unless it has every identity field (FALSIFY-OBS-ID-001, shared lint).
+**Superseded in detail by `P1-receipt-checker-spec.md` §3/§3a (2026-10-03).** That spec is authoritative for the field list:
+- leg A and leg B are `parity-receipt-v2` records, cited by sha256;
+- `forward_trace_line` becomes the `apr-kernel-path-v1` entries;
+- identity is per run, from the unmerged OBS-00 contract.
+
+`qtype_path` here and `device_qtype` in wgpu-forward-v1 (WGF-004) name one fact. Keep `qtype_path`, which has the three
+states device-kernel, host-widen and refused-cpu. WGF-004 FAILs on any host-widen or refused-cpu for a required qtype.
 
 ## 7. Falsifiers (for the `backend-parity-matrix-v1` contract, Next #2)
 - F1: a perturbed-logits fixture (leg A min 0.990) must FAIL the cell even when the median is ≥ 0.995.
