@@ -2,8 +2,8 @@
 
 **Status:** plan for operator review. Nothing is applied: no tickets minted, no PRs opened, no CI runs started, no
 gate changed. Branch-only until 0.70.1 is on crates.io (operator ruling C277 item 3, 2026-10-03).
-**Ticket:** proposed to the cop, not yet minted · **kind:** docs · **Train:** 0.70.2 "build" (C277 items 2, 5, 6) ·
-**Owner:** aprender-a7 (build-kaizen)
+**Ticket:** proposed to the cop, not yet minted · **kind:** docs · **Train:** 0.70.2 "build" (C277 items 2, 5, 6;
+C280 item 12) · **Owner:** aprender-a7 (build-kaizen)
 
 Baselines come from §6's commands, run 2026-10-03 10:15–10:35Z on `origin/main` @ `316dee2cd4`, unless a cell says
 otherwise. Reads that need the GitHub API wait until §0 reads S1 (C277 item 3 keeps the API budget for the release);
@@ -19,12 +19,22 @@ The operator's exit bar for this train, verbatim (C277 item 6, 2026-10-03):
 > - tag to crates.io for 0.70.2 itself is under 2 hours;
 > - the known-failure P0 tickets from 0.70.1 are closed or re-ruled.
 
-And the 0.70.2 P0s named in operator ruling C279 (2026-10-03), verbatim:
+And the 0.70.2 P0 named in operator ruling C280 (2026-10-03, 10:00Z), verbatim:
 
-> 6. … P0 ticket for 0.70.2: restore the red_model entry, and fix the fallback or refuse the file by name.
->
-> 11. P0 for 0.70.2: rulings and known-failure marks must not void measured results, and the two checks use one
-> definition of "same code".
+> 12. P0 for 0.70.2: no check may be enforced at publish until its inputs have been produced green on main,
+> nightly, three times. The full CRUX lanes and the readiness check go nightly. CRUX gets the GPU to itself.
+
+C280's header says "Replaces C279.", and its item 6 withdraws C279's option B, verbatim:
+
+> 6. C279's B is withdrawn: no change to release_readiness.sh, no known_red additions, no UD-IQ2_XXS swap, no
+> hotfix_scope record. If written, leave them out. The old failures stay red in the printed evidence, in the release
+> notes and in their P0 tickets.
+
+C279 had named two 0.70.2 P0s: item 6 ("restore the red_model entry, and fix the fallback or refuse the file by
+name") and item 11 (marks must not void measured results; the two checks use one definition of "same code"). C280
+restates neither. The plan treats them as having no operator mandate and keeps them out of the exit bar: rows 7 and 8
+are carried as measured defects, and row 9 is folded into row 6 (decision D4). Whether C279 item 11 still stands is
+§4 Q7.
 
 ## 0. Live state: which part of this plan applies now
 
@@ -53,10 +63,11 @@ Read 2026-10-03 10:15Z: `max_stable_version` = `0.69.1` → **S0**.
 | E3 | "a version-only bump reuses the saved results: bump to tag under 30 minutes" | (a) a diff of version lines only is judged the same code and the saved receipts are reused; (b) bump commit → tag < 30 min | (a) **No.** `scripts/release/release_readiness.sh:58-97` (`receipts_commit`) withholds the receipts when the measured and release commits differ anywhere outside `evidence/` (:91), and a bump changes `Cargo.toml` and `Cargo.lock`. (b) 0.66.0 2.42 h · 0.67.0 15.78 h · 0.68.1 1.80 h · 0.68.2 0.93 h · 0.69.1 31.80 h → **0 of 5** under 30 min (§6 C2) | Bump SHA, tag time, and the check's reuse line |
 | E4 | ""required to merge, to tag, to publish" is one list in code: one definition of release-ready, zero contradictions" | Requirements stated outside the one list = 0; contradictions = 0 | **151** gate definitions, **93** contradictions (build-kaizen baseline, 2026-10-02/03: 76 of the 151 are in this repo @ `989cb012e5`, 75 outside it — operator rulings 31, agent memory 23, the fleet infra repo 21). The 2 required checks on `main` (`ci / gate`, `workspace-test`) live in GitHub settings, not in code | Row 4's checker: 0 unlisted, 0 orphaned, 0 contradictions |
 | E5 | "tag to crates.io for 0.70.2 itself is under 2 hours" | crates.io `created_at` of 0.70.2 − tag creator date < 2 h | 0.66.0 0.65 h · 0.67.0 1.02 h · 0.68.1 7.57 h · 0.68.2 10.17 h · 0.69.1 4.01 h → **2 of 5** under 2 h (§6 C1, C2) | Tag time and crates.io `created_at` |
-| E6 | "the known-failure P0 tickets from 0.70.1 are closed or re-ruled" | Every `known_red` ticket on the `v0.70.1` tag is closed with a red→green receipt, or carries a new operator ruling | 6 tickets from the 2026-10-03 classification, #4661–#4666 (row 6). States not re-read (S0). The full set is fixed by the tag, which does not exist yet (§6 C8) | One line per ticket: the closing PR and its receipt, or the ruling id |
-| P1 | "rulings and known-failure marks must not void measured results" (C279 item 11) | Editing a mark (`hotfix_scope`, `known_red`, `red_model`, `red_unsupported`) leaves the measured receipts valid | The marks live in `contracts/model-capability-ladder-v1.yaml` (`hotfix_scope:` :75, `known_red:` :111, `red_model:` :187, `red_unsupported:` :200; §6 C7). `crates/aprender-contracts/build.rs:93-120` reads every `contracts/*.yaml` whose name lacks `binding` and emits `rerun-if-changed` for each, so a mark is a build input (§6 C6). For 0.70.1 this voided the scoped exception (C279 item 7), and the train ran the re-measure path (item 10) | Row 7's falsifier, green |
-| P2 | "the two checks use one definition of "same code"" (C279 item 11) | Implementations of "same code" = 1, called by both checks | **2**: `scripts/lib/ladder_equiv.py:79` `classify()`, used by `scripts/check_model_ladder.sh`, and `release_readiness.sh:58-97` `receipts_commit()`, a plain path diff with `evidence/` excluded (§6 C4, C5) | Row 8's structure test, green |
-| P3 | "restore the red_model entry, and fix the fallback or refuse the file by name" (C279 item 6) | On the 0.70.2 tag: `red_model` names `Qwen3.5-0.8B-UD-IQ2_XXS.gguf` → #4004, and its GPU-to-CPU fallback is fixed or the file is refused by name | Present on `main` @ `316dee2cd4` (:187-190). Swapped for a `known_red` entry for 0.70.1 only (C279 item 6) | The ladder on the tag, and a trace of the file on a pinned binary |
+| E6 | "the known-failure P0 tickets from 0.70.1 are closed or re-ruled" | Every P0 ticket of a failure that 0.70.1 ships red is closed with a red→green receipt, or carries a new operator ruling. The set: the tickets the `v0.70.1` release notes name for its old failures (C280 item 6), plus each `known_red` ticket on the tag | 6 tickets from the 2026-10-03 classification, #4661–#4666 (row 6); states not re-read (S0). C280 item 6 adds no `known_red` entry: the ladder at the measured commit `cc4463f` is identical to the one at `316dee2cd4`, and its `known_red` holds one entry, rung `qwen35-0.8b-q4km`, ticket #4030 (§6 C7). The release notes do not exist yet (§6 C8) | One line per ticket: the closing PR and its receipt, or the ruling id |
+| P4 | "no check may be enforced at publish until its inputs have been produced green on main, nightly, three times" (C280 item 12) | Checks the publish preflight enforces whose inputs have not been produced green on `main` by a nightly run three times = 0 (whether the three must be consecutive is §4 Q8) | The preflight's verdict is the AND of R1–R8 (`scripts/check_publish_preflight.sh:12-45`). Three of them judge an input that an earlier run produced: R5 the dogfood receipt (:32-34), R7 the per-host model-matrix receipts (:35-39), R8 the committed evidence graded through `release_readiness.sh` (:40-45). Of the 17 scheduled workflows, **0** run `scripts/dogfood.sh`, `check_model_ladder.sh`, `release_readiness.sh` or the preflight (§6 C10); timers outside this repo are not measured here | Row 10's table at the 0.70.2 tag: per check, the run IDs of its three nightly greens, or the operator's sign-off |
+
+P1–P3 (C279 items 6 and 11) left this table when C280 replaced C279 (decision D4): rows 7 and 8 are carried
+outside the exit bar, and row 9 is folded into row 6. P4 is C280 item 12 (decision D5).
 
 ## 2. Rows
 
@@ -90,11 +101,17 @@ checker follows CHECKER-BOOTSTRAP.
   #4287, which drops `--no-verify` so cargo unpacks and builds each tarball), and `publish_strict.sh` in
   `scripts/release/publish-order.txt` order — with only the upload call replaced. A structure test pins that the
   rehearsal and the release share one entry and differ in that one flag.
+- **Inputs.** A nightly `main` head has no tag and no release ref, so R3 (the tag `v<version>` points at HEAD) and R4
+  (HEAD is an ancestor of `origin/release/<version>`; a missing release ref refuses) can hold only against a tag and a
+  release ref that the rehearsal makes in its own clone and never pushes (`scripts/check_publish_preflight.sh:18-23`).
+  R5, R7 and R8 need receipts for that head, which row 10's nightly producers make. A rule the rehearsal cannot run
+  prints `not_measured`, never pass, and E1 counts only nights on which all eight ran.
 - **Prior art.** K5, its nightly half.
 - **Falsifier.** Plant a CB-510-class defect (an `include!()` file left out of the package) on a fixture branch: the
   rehearsal goes red at the compile step; remove it: green. Second plant: a crate missing from `publish-order.txt` → red.
 - **First green.** The first scheduled run on `main` after merge. E1 needs three nights in a row.
 - **Gate impact.** Adds a scheduled workflow; keeps every gate, with its red/green proof in the PR. Not a required check.
+  Depends on row 10 for the receipts R5, R7 and R8 judge.
 
 ### Row 2 — E2: a red-age meter with a 24 h andon
 
@@ -132,11 +149,12 @@ checker follows CHECKER-BOOTSTRAP.
 - **Why it fails today.** 151 definitions across scripts, workflows, contracts, specs, docs, rulings and memory, with
   93 contradictions (E4 baseline). The required checks live in GitHub settings. `release_readiness.sh` exists because
   two hand-copied call sites "would drift" (:11-13); the same holds for the whole list.
-- **Mechanism.** One `pv`-validated contract (working name `contracts/release-ready-v1.yaml`). Each requirement has
-  an id, its checker, `applies_to` (a subset of merge, tag, publish) and its provenance (ruling, ticket or spec
-  section). Every consumer reads the list. A checker fails on a requirement found outside the list (unlisted), a
-  listed requirement with no checker (orphaned), and two entries that disagree (contradiction). A read-only probe
-  compares the merge set with GitHub's required checks; changing those stays with the operator.
+- **Mechanism.** One `pv`-validated contract (working name `contracts/release-ready-v1.yaml`). Each requirement has an
+  id, its checker, `applies_to` (a subset of merge, tag, publish), its provenance (ruling, ticket or spec section)
+  and, when it applies to publish, its nightly producer (row 10). Every consumer reads the list. A checker fails on a
+  requirement found outside the list (unlisted), a listed requirement with no checker (orphaned), and two entries that
+  disagree (contradiction). A read-only probe compares the merge set with GitHub's required checks; changing those
+  stays with the operator.
 - **Prior art.** K3 (admission as code), the 151-row inventory, `release_readiness.sh` (one wrapper for two call sites).
 - **Falsifier.** Plant a requirement in a script that the list lacks → red; delete a listed checker → red; plant two
   entries with conflicting thresholds → red.
@@ -164,58 +182,102 @@ checker follows CHECKER-BOOTSTRAP.
 | #4661 | `Qwen2.5-0.5B-Instruct-f16.gguf` | `serve` `/api/chat` answers gibberish, with `stream` false and true |
 | #4662 | `Qwen3-Coder-30B-A3B-Q4_K_M.gguf` | gibberish |
 | #4663 | `Qwen3.5-0.8B-IQ4_XS.gguf` | GPU fell back to CPU; `qa` exit 5, `run` rc 14; no measured thinking budget |
-| #4664 | `Qwen3.5-0.8B-UD-IQ2_XXS.gguf` | wrong answer (`red_model` #4004) and a GPU-to-CPU fallback; row 9 |
+| #4664 | `Qwen3.5-0.8B-UD-IQ2_XXS.gguf` | wrong answer (`red_model` #4004, kept: C280 item 6 withdrew the swap) and a GPU-to-CPU fallback; folded from row 9 |
 | #4665 | `Qwen3.5-35B-A3B-UD-IQ4_XS.gguf` | `red_unsupported` #3977: a refusal, re-proven, not blocking |
-| #4666 | `qwen35-0.8b-q4km` | the think block (C279 item 5) |
+| #4666 | `qwen35-0.8b-q4km` | the think block; the one `known_red` entry on the measured commit is this rung's, ticket #4030 (E6) |
 
-- **Why it fails today.** Each is a known red that ships with 0.70.1 under rulings C272 5b / C276.
+- **Why it fails today.** Each is an old failure (classified under rulings C272 5b / C276) that ships red with
+  0.70.1. Under C280 item 6 it stays red in the printed evidence, in the release notes and in its P0 ticket, and no
+  `known_red` entry is added for it.
 - **Mechanism.** One defect = one ticket = one PR, each with a red→green test on the named file (a pinned binary,
-  the file's sha256), or a new operator ruling. The set is re-read from the `v0.70.1` tag (§6 C8); a ticket found
-  there and missing here joins this table.
+  the file's sha256), or a new operator ruling. The set is re-read from the `v0.70.1` release notes and tag (§6 C8);
+  a ticket found there and missing here joins this table. #4664 (folded from row 9, decision D4) closes by fixing
+  the fallback, or by refusing the file by name with an error that names the file and #4664, the two remedies C279
+  item 6 named; the decision quorum picks at row start (§4 Q5).
 - **Prior art.** None of K1–K7. The `known_red` schema at `scripts/check_model_ladder.sh:349-363`: each entry names a
   model, its sha256, a clause, a ticket and a ruling, and an entry that covers nothing is refused as stale.
 - **Falsifier.** Per ticket, the named file's failing row on the pinned binary: red before, green after.
 - **First green.** Per ticket.
-- **Gate impact.** Removes `known_red` entries only (tightens). Needs the model files and a GPU host, so S1 only.
+- **Gate impact.** No gate changes: a fix turns a printed red green, and no mark is added. Fixing the think block also
+  retires its `known_red` entry (#4030), because the ladder refuses an entry that covers nothing as STALE
+  (`scripts/check_model_ladder.sh:353-354`). Needs the model files and a GPU host, so S1 only.
 
-### Row 7 — P1: rulings and marks do not void measurements
+### Row 7 — carried, not in the exit bar: rulings and marks do not void measurements
 
-- **Why it fails today.** The marks are build inputs (P1 baseline), and the release check treats any diff outside
-  `evidence/` as different code.
+No operator mandate since C280 replaced C279 (decision D4); a measured defect. A yes to §4 Q7 moves it back into §1
+unchanged.
+
+- **Why it fails today.** The marks live in `contracts/model-capability-ladder-v1.yaml` (`hotfix_scope:` :75,
+  `emergency_scopes:` :99, `known_red:` :111, `red_model:` :187, `red_unsupported:` :200; §6 C7), and
+  `crates/aprender-contracts/build.rs:93-120` reads every `contracts/*.yaml` whose name lacks `binding` and emits
+  `rerun-if-changed` for each, so a mark is a build input (§6 C6). The release check treats any diff outside
+  `evidence/` as different code (`release_readiness.sh:91`). For 0.70.1 this ruled out C279's scoped exception by its
+  own condition (C279 item 7). C280 instead records an emergency scope: outside `evidence/`, the final commit differs
+  from the measured commit `cc4463f` only in one ladder entry and in the preflight script and its self-test, and the
+  binary measured is the one built at `cc4463f` (C280 items 2, 4, 5, 9).
 - **Mechanism.** One of three options, decided by the decision quorum when the row starts (§4 Q4): (a) move the marks
   to a file no build reads, which row 8 classifies as marks; (b) keep the file and make the build script skip it,
   with a test that nothing compiled reads it; (c) define "same code" by cargo's dep-info build inputs, not by paths.
-- **Prior art.** The ladder's hotfix arm (#3710 r3, #4022) and C279 items 1–4, the one scoped exception for 0.70.1.
+- **Prior art.** The ladder's hotfix arm (#3710 r3, #4022); the recorded emergency scopes (0.69.1, and 0.70.1 under
+  C280 items 2–5); C279 items 1–4, withdrawn by C280 item 6.
 - **Falsifier.** Edit a `known_red` entry after a measured commit → the receipts stay valid; edit a source line →
   withheld. Plus a test that fails when any compiled code reads the marks file.
 - **First green.** The first mark edit after the merge keeps its receipts.
 - **Gate impact.** Changes what a release check accepts (§4 Q3). Depends on row 8.
 
-### Row 8 — P2: one definition of "same code"
+### Row 8 — carried, not in the exit bar: one definition of "same code"
 
-- **Why it fails today.** Two implementations (P2 baseline) can disagree about the same diff.
-- **Mechanism.** One function returns one of `same`, `evidence-only`, `version-only`, `marks-only`, `scoped-hotfix`
-  or `not-same`, with a proof line naming the paths that decided it. `check_model_ladder.sh` and
-  `release_readiness.sh` both call it. New code is bash (the build-kaizen rule); whether `classify()` is ported or
-  called is decided when the row starts.
+Carried as row 7 is (decision D4, §4 Q7). Row 3 (E3) depends on it: the version-only class is one of its classes,
+so it lands before row 3 whatever the answer to Q7.
+
+- **Why it fails today.** Two implementations can disagree about the same diff: `scripts/lib/ladder_equiv.py:79`
+  `classify()`, used by `scripts/check_model_ladder.sh`, and `release_readiness.sh:58-97` `receipts_commit()`, a
+  plain path diff with `evidence/` excluded (§6 C4, C5). The cut, the commit the receipts must match, is chosen by
+  each caller, and a caller that names none gets HEAD (`scripts/check_model_ladder.sh:1295`).
+  `scripts/dogfood.sh:448` runs each declared gate with no arguments, `check_model_ladder.sh` among them
+  (`Cargo.toml:621-627`), and `scripts/cascade-publish.sh:614` runs the preflight with no `--scope` or
+  `--cut-commit` (§6 C11).
+- **Mechanism.** One function returns one of `same`, `evidence-only`, `version-only`, `marks-only`, `scoped-hotfix` or
+  `not-same`, with a proof line naming the paths that decided it. `check_model_ladder.sh` and `release_readiness.sh`
+  both call it. The cut is part of the input: a caller that names none is refused, never given HEAD. New code is bash
+  (the build-kaizen rule); whether `classify()` is ported or called is decided when the row starts.
 - **Prior art.** `classify()`, `lock_dep_change` and `lock_delta` in `scripts/lib/ladder_equiv.py`.
 - **Falsifier.** A parity table: the same planted diffs through both callers give the same class. A structure test
   fails if either caller computes a diff itself; the mutation that turns it red reverts one caller to its own
-  `git diff`.
+  `git diff`. A caller that names no cut → refused.
 - **First green.** Both checks green on `main`, calling the shared function.
 - **Gate impact.** §4 Q3.
 
-### Row 9 — P3: UD-IQ2_XXS on the 0.70.2 tag
+### Row 9 — folded into row 6
 
-- **Why it fails today.** For 0.70.1 only, the file's `red_model` entry (#4004) is swapped for a `known_red` entry
-  (C279 item 6), and the GPU-to-CPU fallback is not fixed (#4664).
-- **Mechanism.** Restore the `red_model` entry. Then either fix the fallback, or refuse the file by name with an
-  error that names the file and #4664; the decision quorum picks at row start (§4 Q5).
-- **Prior art.** None of K1–K7.
-- **Falsifier.** A trace of the file on a pinned binary: before, the fallback; after, no fallback, or the refusal by
-  name.
-- **First green.** The ladder on the 0.70.2 tag.
-- **Gate impact.** Restores an entry (tightens). Needs a GPU host, so S1 only.
+C279 item 6's P0 has no operator mandate since C280 (decision D4), and C280 item 6 withdrew the swap. In the ladder
+contract the final commit adds one `emergency_scopes` entry and nothing else (C280 items 2 and 5), and `cc4463f`'s
+ladder is identical to `main`'s (§6 C7), so the `red_model` entry (#4004) ships unchanged and there is nothing to
+restore. The file's failures stay red in its P0 ticket, #4664, which E6 covers (row 6).
+
+### Row 10 — P4: nothing enforced at publish before three nightly greens
+
+- **Why it fails today.** R5, R7 and R8 judge inputs that an earlier run produced, and no scheduled workflow in this
+  repo produces them (P4 baseline). The preflight names the release path's own T-1 steps as their producers
+  (`scripts/check_publish_preflight.sh:32-45`). For 0.70.1, C280 item 4 printed R8's verdict as evidence under a
+  recorded scope instead of enforcing it.
+- **Mechanism.** Nightly producers on `main` for each of the three: the full CRUX lanes (the receipts R7 judges), the
+  readiness check over that night's receipts (R8), and the dogfood receipt (R5). The CRUX lanes run with the GPU to
+  themselves: a lane takes the GPU lock first and records, at its start and end, that no other process held the
+  device. In row 4's list, each requirement that applies to publish names its nightly producer, and the preflight
+  prints, per check, the run IDs of its last three nightly greens. The GPU scheduling half runs on hosts outside
+  this repo; its ticket text goes to the cop.
+- **Prior art.** Row 1 (the rehearsal consumes these receipts), row 4 (the list), K3 (a first-green receipt before a
+  check blocks), K5 (its nightly half).
+- **Falsifier.** Fixture histories for one check: three green nightly runs → `ready`, with the three run IDs; two →
+  `not ready`; a night with no run → `not_measured`, never green. A planted second process on the GPU during a CRUX
+  lane → that lane's receipt is void.
+- **First green.** The 0.70.2 preflight prints three nightly run IDs for each of R5, R7 and R8.
+- **Gate impact.** Moving an enforced check (R5, R7 or R8 today) to nightly-only, or to printed evidence, is a
+  report-only change to an existing gate, so the operator signs off on that list first (§4 Q9). The preflight holds
+  that "report-only is a waiver and a waiver is a stop" (`scripts/check_publish_preflight.sh:318`, operator
+  2026-09-28). If all three producers have three greens before the publish, no check changes mode. R1–R4 and R6
+  judge the commit itself and have no produced input; they stay enforced (§4 Q10). Depends on rows 1 and 4.
 
 ## 3. Ratchet
 
@@ -226,9 +288,10 @@ same scanner, no stored limit, and a fleet-hours budget before any counter block
 |---|---|---|
 | Release requirements stated outside the one list | 151 | down only |
 | Contradictions among them | 93 | down only |
-| Known-failure tickets from 0.70.1 still open | 6 (#4661–#4666; the set is fixed at the tag) | down only |
-| Implementations of "same code" | 2 | to 1, then never above 1 |
+| Known-failure tickets from 0.70.1 still open | 6 (#4661–#4666; the set is fixed by the release notes and the tag, §6 C8) | down only |
+| Implementations of "same code" (row 8, carried) | 2 | to 1, then never above 1 |
 | Checks red on `main` for more than 24 h | not_measured | down only |
+| Checks enforced at publish with no nightly producer on `main` | 3 (R5, R7, R8; §6 C10) | down only |
 
 E1, E3 and E5 are per-release times. They are recorded as receipts, not counters.
 
@@ -238,10 +301,14 @@ E1, E3 and E5 are per-release times. They are recorded as receipts, not counters
 |---|---|---|---|
 | Q1 | K7's merge-queue skip: may the queue skip re-testing a tree it already tested green (3 of 10 sampled: #4613, #4632, #4647)? | The operator only: it changes a gate. The decision quorum voted 3/3 that it is not a row (D3) | Nothing in this plan |
 | Q2 | E2 counts every check on `main`, scheduled ones included. Narrow it? | The operator only, if ever asked | Nothing: the literal reading applies |
-| Q3 | Rows 3, 7 and 8 change what a release check accepts | Each PR: two reviewers, neither the author, plus operator sign-off (as C279 item 8) | The merge of those rows |
+| Q3 | Rows 3, 7 and 8 change what a release check accepts | Each PR: two reviewers, neither the author, plus operator sign-off (as C279 item 8 and C280 item 4 required) | The merge of those rows |
 | Q4 | Row 7: option (a), (b) or (c)? | The decision quorum, at row start | Row 7 |
-| Q5 | Row 9: fix the fallback, or refuse the file by name? | The decision quorum, at row start | Row 9 |
+| Q5 | #4664 (row 6, folded from row 9): fix the fallback, or refuse the file by name? | The decision quorum, at row start | #4664 |
 | Q6 | Which runs does a bump commit still need before the tag? | Measured on the 0.70.1 bump; decided at row 3 start | Row 3 |
+| Q7 | Does C279 item 11 still stand? C280 replaces C279 and withdraws its option B (item 6), but names neither item 11 nor its P0s | The operator only | Nothing now: rows 7 and 8 are carried outside the exit bar (D4); a yes moves them into §1 |
+| Q8 | C280 item 12 says "three times"; E1 says "three nights in a row". Must item 12's three be consecutive? | The operator only: it sets when a check may be enforced | Nothing now: row 10 prints both counts until answered |
+| Q9 | A check enforced at publish whose producer lacks three nightly greens: is it printed as evidence (as C280 item 4 did for R8), or does the publish stop (`check_publish_preflight.sh:318`)? Which checks? | The operator only: a report-only change to an existing gate | The publish-side half of row 10; nothing if R5, R7 and R8 have three nightly greens before the 0.70.2 publish |
+| Q10 | Does C280 item 12 cover R1–R4 and R6? They judge the commit itself, and R3 and R4 cannot hold on a nightly `main` head | The operator, if ever asked | Nothing: they stay enforced, so no gate changes |
 
 ## 5. Out of scope
 
@@ -250,13 +317,16 @@ E1, E3 and E5 are per-release times. They are recorded as receipts, not counters
 - Items from the 2026-10-02 review that serve no exit condition: the fake `##[error]` lines (#4596, #4610); mutation
   testing as non-blocking on a dedicated host; paging the operator within 5 min on a P0; rulings kept as a versioned
   file; porting `scripts/ci/fat_driver.py` off Python; a pmat complexity-hook ticket.
-- Lean T5 at its 24 GB memory cap (C279 item 11): a ticket, no action.
+- Lean T5 at its 24 GB memory cap (C279 item 11: "ticket, no action today"); C280 item 10 keeps Lean T5 among the
+  0.70.1 checks.
 - The documentation-drift ticket (29 docs), filed after S1.
+- C280 items 1–11: the 0.70.1 release itself, under its recorded emergency scope. This plan starts when 0.70.1 is
+  live (§0).
 
 ## 6. Commands
 
-All read-only. `<sha>` = `316dee2cd4`. C1 is one unauthenticated crates.io read; C9 is the only GitHub API call and
-waits for S1.
+All read-only. `<sha>` = `316dee2cd4`. C1 is one unauthenticated crates.io read; C8's second line and C9 are the
+only GitHub API calls, and both wait for S1.
 
 ```bash
 # C1  crates.io publish times (E5)
@@ -271,21 +341,38 @@ for f in .github/workflows/*.yml; do
   grep -q -E '^\s+schedule:' "$f" || continue
   grep -n -E 'cargo publish|cargo package|make publish|publish[-_]dry|publish_check|publish-check' "$f" /dev/null
 done
-# C4  the receipts-commit rule (E3, P2)
+# C4  the receipts-commit rule (E3, row 8)
 git show <sha>:scripts/release/release_readiness.sh | sed -n '58,97p'
-# C5  the ladder's same-code function (P2)
+# C5  the ladder's same-code function (row 8)
 git show <sha>:scripts/lib/ladder_equiv.py | sed -n '79,107p'
-# C6  the build script that reads contracts/*.yaml (P1)
+# C6  the build script that reads contracts/*.yaml (row 7)
 git show <sha>:crates/aprender-contracts/build.rs | sed -n '93,120p'
-# C7  the marks in the ladder (P1, P3)
+# C7  the marks in the ladder (E6, rows 7 and 9), and the ladder at the measured commit (the diff prints nothing)
 git show <sha>:contracts/model-capability-ladder-v1.yaml \
-  | grep -n -E '^\s*(hotfix_scope|known_red|red_model|red_unsupported):'
-# C8  the known-failure tickets on the 0.70.1 tag (E6; once the tag exists)
+  | grep -n -E '^\s*(hotfix_scope|emergency_scopes|known_red|red_model|red_unsupported):'
+git diff <sha> cc4463f -- contracts/model-capability-ladder-v1.yaml
+# C8  E6, once v0.70.1 exists: the known_red tickets on the tag (local git; on cc4463f it prints "#4030"), and
+#     the tickets its release notes name (one API read, S1)
 git show v0.70.1:contracts/model-capability-ladder-v1.yaml \
   | sed -n '/^  known_red:/,/^  [a-z_]*:/p' | grep -E 'ticket:'
+gh release view v0.70.1 --repo paiml/aprender --json body --jq .body | grep -oE '#[0-9]+' | sort -u
 # C9  E2, S1 only: the conclusions of one scheduled workflow on main over one week
 gh api 'repos/paiml/aprender/actions/workflows/toolchain-ceiling.yml/runs?branch=main&created=2026-09-26..2026-10-02&per_page=100' \
   --jq '[.workflow_runs[].conclusion] | group_by(.) | map({(.[0] // "none"): length}) | add'
+# C10 P4: scheduled workflows that run a producer of R5, R7 or R8, or the preflight (prints nothing at <sha>;
+#     17 of the 25 workflows have a schedule)
+for f in $(git ls-tree --name-only <sha> .github/workflows/ | grep -E '\.ya?ml$'); do
+  git show "<sha>:$f" | grep -q -E '^\s+schedule:' || continue
+  git show "<sha>:$f" | grep -n -E 'dogfood\.sh|check_model_ladder|release_readiness|crux|check_publish_preflight' \
+    | sed "s|^|$f:|"
+done
+# C11 row 8: the cut defaults to HEAD, and two callers that name none
+git show <sha>:scripts/check_model_ladder.sh | sed -n '1295p'
+git show <sha>:scripts/dogfood.sh | sed -n '448p'
+git show <sha>:Cargo.toml | sed -n '621,627p'
+git show <sha>:scripts/cascade-publish.sh | sed -n '614p'
+# C12 P4, row 10: the preflight's rules, and the line that makes report-only a stop
+git show <sha>:scripts/check_publish_preflight.sh | sed -n '12,45p;318p'
 ```
 
 E4's 151 and 93 come from the build-kaizen baseline of 2026-10-02/03, an inventory kept outside this repo. Row 4's
@@ -295,16 +382,21 @@ first PR commits its in-repo part, so the count can be re-run from here.
 
 The operator's standing rule, verbatim (2026-10-03): "use quorum for decision, never block on me". The quorum may
 never approve a waiver, a gate or threshold change, a ruleset, secret or credential change, a force-push, a tag or a
-publish (C213). Those stay with the operator: §4 Q1 and Q3.
+publish (C213). Those stay with the operator: §4 Q1, Q3, Q7, Q8 and Q9.
 
 Lanes: gpt-oss-120b (medium) and claude-sonnet-5-5 ×2, in plan mode. Launched 10:09:26Z; all three exited 0 by
 10:09:41Z. Each lane answered from the same brief of facts: the C277 and C279 text, the layout of the existing train
 plans, and the K table.
+
+Round 2 (D4, D5), after C280 replaced C279: the same three lanes, launched 10:53:46Z; all three exited 0 by
+10:54:01Z. Their brief quoted C280's header and items 6 and 12, C279 items 6 and 11, and the baselines of rows 7–9.
 
 | D | Question | Tally | Applied as | Dissent and risks named | Reversible by |
 |---|---|---|---|---|---|
 | D1 | Where does the plan live? | A 3/3 | A new file, `docs/specifications/BLD-001-release-factory.md`: the train-plan layout plus a live-state selector, scoped to 0.70.2 | None. Risk named: a later move could duplicate or diverge, so a pointer from APR-RELEASE-001 goes in the first PR after S1 | Moving the file and leaving a pointer |
 | D2 | What are the rows? | B 2/3 | One row per C277 item 6 condition, plus the P0s of C279 items 5, 6 and 11. K items are cited as prior art; a K item that serves no row is out of scope | gpt-oss voted A (one row per K item). Risks named: B could drop a high-value K item, or savings the operator would have approved | Adding a row for a K item in a later PR |
 | D3 | Is K7's merge-queue skip a row? | no 3/3 | Not a row: it changes a gate (C213). It is §4 Q1, for the operator | None | An operator ruling |
+| D4 | What happens to P1–P3 (rows 7–9) now that C280 replaces C279? | A 2/3 | Out of the exit bar. Rows 7 and 8 are carried as measured defects with no operator mandate; row 9 is folded into row 6 (#4664); §4 Q7 asks whether C279 item 11 still stands | gpt-oss voted B (drop rows 7–9; its risk: dropping erases the trace of earlier rulings). Risks named for A: if C279 item 11 still stands, A drops a live P0 from the bar; if it does not, rows 7 and 8 are unmandated scope | An operator answer to Q7 moves rows 7 and 8 back into §1 unchanged |
+| D5 | Where does C280 item 12 go? | A 3/3 | P4 in §1 with the operator's words, and row 10 with its own ticket, falsifier and first green; depends on rows 1 and 4; moving an enforced check to nightly-only or to printed evidence waits for the operator (§4 Q9) | None | Folding row 10 into rows 1 and 4 in a later PR |
 
-`quorum: rounds 1 | width 3 | verdicts D1 A 3/3, D2 B 2/3 (oss A), D3 no 3/3 | overridden no`
+`quorum: rounds 2 | width 3 | verdicts D1 A 3/3, D2 B 2/3 (oss A), D3 no 3/3, D4 A 2/3 (oss B), D5 A 3/3 | overridden no`
