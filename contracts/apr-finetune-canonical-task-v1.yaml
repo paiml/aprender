@@ -1,6 +1,6 @@
 metadata:
   kind: pattern
-  version: 1.0.0
+  version: 1.1.0
   created: '2026-10-03'
   author: PAIML Engineering (la-0.72, APR-LOOKAHEAD-001 L2, train 0.72)
   description: >-
@@ -13,8 +13,8 @@ metadata:
     train-run-receipt-v1 1.1.0: every flag here is echoed in its recipe block, read back from the
     trainer's state, never copied from argv.
   references:
-  - contracts/beat-unsloth-finetune-throughput-v1.yaml (1.2.0, canonical task)
-  - contracts/train-run-receipt-v1.yaml (1.1.0, recipe and timed_window)
+  - contracts/beat-unsloth-finetune-throughput-v1.yaml (1.3.0, canonical task, precision pinned bf16)
+  - contracts/train-run-receipt-v1.yaml (1.1.0, recipe incl. compute_dtype, and timed_window)
   - scripts/bench/unsloth_ft_apr.py (apr_argv)
   - crates/apr-cli/src/model_ops_commands.rs (Finetune args)
   depends_on:
@@ -31,6 +31,7 @@ equations:
     - 'with --timed-steps T and --warmup-steps W the run is exactly W + T optimizer steps; --epochs is then rejected as a conflict, and the data is cycled in file order if it runs out (1000 rows / batch 4 = 250 = 50 + 200, one pass)'
     - '--no-packing: one data row per sequence, right-padded to --max-seq-len; pad and the first token carry no label'
     - '--receipt PATH writes the train-run-receipt-v1 receipt there instead of beside the output; with --timed-steps it carries timed_window'
+    - '--precision names the dtype of the frozen base weights (recipe.precision); the GEMM input dtype is recorded separately as recipe.compute_dtype, and an environment override (FP16_GEMM=1) shows up there, never silently under --precision bf16'
     - 'FILE is a local base model path; a model name is not resolved here (the T2 harness passes a path)'
     preconditions:
     - 'train-run-receipt-v1 1.1.0 writer exists (R12 + R15-receipt)'
@@ -73,3 +74,8 @@ falsification_tests:
   prediction: 'two tiny runs, same seed, alpha 16 vs 32: equal first-step loss, different second-step loss'
   test: 'tiny CPU run, LoRA B initialised to zero so step 1 matches'
   if_fails: 'alpha is recorded but the scale is hardcoded'
+- id: FALSIFY-FT-TASK-006
+  rule: An environment override cannot hide behind --precision
+  prediction: 'a tiny CUDA run with --precision bf16 and FP16_GEMM=1 either refuses before step 1 or records recipe.compute_dtype = fp16; it never writes compute_dtype bf16'
+  test: '[U] not written; needs cargo + CUDA after LIVE 0.70.1'
+  if_fails: 'T2 compares a run whose GEMMs were fp16 while its receipt says bf16'
