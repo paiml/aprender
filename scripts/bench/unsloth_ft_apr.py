@@ -45,7 +45,7 @@ TASK = dict(rank=16, alpha=32, seq_len=512, batch=4, grad_accum=1,
 APR_KEYS = dict(
     apr_version="apr_version", apr_git_sha="apr_git_sha",
     gpu_name="device.name", gpu_uuid="device.uuid", device_trace_line="device.trace_line",
-    rank="recipe.rank", alpha="recipe.alpha", targets="recipe.targets",
+    precision="recipe.precision", rank="recipe.rank", alpha="recipe.alpha", targets="recipe.targets",
     optimizer="recipe.optimizer", grad_checkpointing="recipe.grad_checkpointing",
     packing="recipe.packing", seq_len="recipe.seq_len", batch="recipe.batch",
     grad_accum="recipe.grad_accum", warmup_steps="recipe.warmup_steps",

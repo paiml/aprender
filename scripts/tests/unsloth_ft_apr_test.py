@@ -31,7 +31,7 @@ TRR_BASE = dict(status="success", apr_version="0.72.0", apr_git_sha="0123abcd",
                 backend="cuda", device="cuda:0", started_at="t0", ended_at="t1", steps=250,
                 final_loss=1.0, output_sha256="o" * 64)
 TRR_EXTENSION = [
-    "device.name", "device.uuid", "device.trace_line", "recipe.rank", "recipe.alpha",
+    "device.name", "device.uuid", "device.trace_line", "recipe.precision", "recipe.rank", "recipe.alpha",
     "recipe.targets", "recipe.optimizer", "recipe.grad_checkpointing", "recipe.packing",
     "recipe.seq_len", "recipe.batch", "recipe.grad_accum", "recipe.warmup_steps",
     "recipe.timed_steps", "trainable_params", "timed_window.label_tokens",
@@ -52,7 +52,7 @@ r = dict(status="success", apr_version="0.72.0", apr_git_sha="0123abcd",
 if mode == "full":
     r["device"] = dict(name="NVIDIA GeForce RTX 4090", uuid="GPU-4090-a",
                        trace_line="[TRACE] device=cuda:0")
-    r["recipe"] = dict(rank=int(val("--rank")), alpha=int(val("--alpha")),
+    r["recipe"] = dict(precision=val("--precision"), rank=int(val("--rank")), alpha=int(val("--alpha")),
                        targets=val("--targets").split(","), optimizer=val("--optimizer"),
                        grad_checkpointing="--no-grad-checkpointing" not in a,
                        packing="--no-packing" not in a, seq_len=int(val("--max-seq-len")),
@@ -74,7 +74,7 @@ def load(src):
 
 
 def full_trr(**recipe):
-    rec = dict(rank=16, alpha=32, targets=["q_proj", "k_proj", "v_proj", "o_proj", "gate_proj",
+    rec = dict(precision="bf16", rank=16, alpha=32, targets=["q_proj", "k_proj", "v_proj", "o_proj", "gate_proj",
                                            "up_proj", "down_proj"],
                optimizer="adamw_fp32", grad_checkpointing=False, packing=False, seq_len=512,
                batch=4, grad_accum=1, warmup_steps=50, timed_steps=200)

@@ -1,7 +1,7 @@
 contract: beat-unsloth-finetune-throughput
 metadata:
   kind: beat-benchmark
-  version: "1.2.0"
+  version: "1.3.0"
   description: >
     0.72 exit criterion T2 (APR-LOOKAHEAD-001 §2a): `apr finetune -m lora` (bf16, CUDA) training
     throughput on Qwen3.5-4B is at least 0.8x Unsloth's on the SAME GPU, same model, same recipe.
@@ -109,6 +109,16 @@ falsification_tests:
   command: "same script with --planted-incumbent-adamw8bit; expect SAME-WORK FAIL"
   expected: "SAME-WORK check exits non-zero naming the optimizer"
   if_fails: "an optimizer or checkpointing mismatch silently moves the ratio"
+- id: FALSIFY-BEAT-UNSLOTH-FT-PRECISION
+  description: >
+    (1.3.0) Planted falsifier: the "bf16" of canonical_task was stated but never recorded or
+    compared, and apr's CUDA training block has no bf16 path at 316dee2cd4 (FP32 + NF4 only), so a
+    first R15 in fp32 would have been ratioed against a bf16 Unsloth. Both receipts now carry
+    precision = the dtype of the frozen base weights, read back from the loaded model, and the
+    verdict pins it to bf16 on every run.
+  command: "python3 scripts/tests/unsloth_ft_verdict_test.py (case: planted apr fp32)"
+  expected: "an apr receipt with precision fp32 exits 1, SAME-WORK FAIL naming precision; no ratio"
+  if_fails: "a precision mismatch is folded into the ratio"
 - id: FALSIFY-BEAT-UNSLOTH-FT-FULL-WINDOW
   description: >
     (1.2.0) Planted falsifier: one side's receipt counts fewer label tokens than the full window

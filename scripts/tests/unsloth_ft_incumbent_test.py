@@ -37,7 +37,7 @@ def load(src):
 
 
 def measured(after=True, tokens=200 * 4 * 511, seconds=10.0):
-    return dict(trainable_params=23592960, label_tokens_timed=tokens,
+    return dict(precision="bf16", trainable_params=23592960, label_tokens_timed=tokens,
                 timed_seconds=seconds, timed_after_compile=after)
 
 
@@ -74,6 +74,11 @@ def c_fields_complete(m):
 def c_pins_match_verdict(m):
     inc = receipt(m)
     return all(inc[k] == want for k, want in V.PINNED.items())
+
+
+def c_precision_name(m):
+    return (m.precision_name("torch.bfloat16") == "bf16" and m.precision_name("torch.float32") == "fp32"
+            and m.precision_name("torch.float8_e4m3fn") == "torch.float8_e4m3fn")
 
 
 def c_canonical_task(m):
@@ -178,10 +183,11 @@ def c_sha256(m):
 CASES = [c_fields_complete, c_pins_match_verdict, c_canonical_task, c_pass_ratio,
          c_planted_no_fla, c_versions_blank_blocked, c_planted_adamw8bit, c_compile_in_window,
          c_one_planted, c_side_is_incumbent, c_label_tokens, c_block_fla, c_no_data_refuses,
-         c_sha256]
+         c_sha256, c_precision_name]
 
 # (name, old, new): each is one wrong edit to the runner that some case must catch.
 MUTANTS = [
+    ("M12 fp32 named bf16", '"torch.float32": "fp32"', '"torch.float32": "bf16"'),
     ("M1 planted adamw8bit ignored", '"adamw_8bit" if', '"adamw_fp32" if'),
     ("M2 no one-token shift", "t != pad_id) - 1, 0)", "t != pad_id), 0)"),
     ("M3 blocked fla still versioned", '"" if key in blocked else ', ""),

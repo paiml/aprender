@@ -95,13 +95,22 @@ def optimizer_name(args):
     return "adamw_8bit" if args.planted_incumbent_adamw8bit else "adamw_fp32"
 
 
+DTYPE_NAMES = {"torch.bfloat16": "bf16", "torch.float32": "fp32", "torch.float16": "fp16"}
+
+
+def precision_name(dtype):
+    """bf16/fp32/fp16 for a torch dtype's str(); anything else verbatim, so it cannot pin."""
+    return DTYPE_NAMES.get(str(dtype), str(dtype))
+
+
 def build_receipt(args, data_sha, gpu, measured, vers):
     """The receipt the verdict reads. gpu: name, uuid, trace; measured:
-    trainable_params, label_tokens_timed, timed_seconds, timed_after_compile."""
+    precision, trainable_params, label_tokens_timed, timed_seconds, timed_after_compile."""
     return dict(
         side="incumbent", model=args.model, data_sha256=data_sha,
         gpu_name=gpu["name"], gpu_uuid=gpu["uuid"], device_trace_line=gpu["trace"],
-        rank=TASK["rank"], alpha=TASK["alpha"], targets=list(TARGETS),
+        precision=measured["precision"], rank=TASK["rank"], alpha=TASK["alpha"],
+        targets=list(TARGETS),
         trainable_params=measured["trainable_params"], optimizer=optimizer_name(args),
         grad_checkpointing=False, packing=False, seq_len=TASK["seq_len"],
         batch=TASK["batch"], grad_accum=TASK["grad_accum"],
@@ -168,6 +177,7 @@ def train(args):
         model, r=TASK["rank"], lora_alpha=TASK["alpha"], target_modules=TARGETS,
         lora_dropout=0, bias="none", use_gradient_checkpointing=False)
     params = [p for p in model.parameters() if p.requires_grad]
+    frozen = next(p for p in model.parameters() if not p.requires_grad)
     opt = make_optimizer(torch, params, args)
     batches = load_batches(os.environ["APR_FT_DATA"], tok)
     pad = tok.pad_token_id
@@ -183,7 +193,8 @@ def train(args):
     seconds = time.perf_counter() - t0
     # Timed after compile = no new graph compiled inside the timed window.
     after = graphs0 >= 0 and compile_count(torch) == graphs0
-    measured = dict(trainable_params=sum(p.numel() for p in params), label_tokens_timed=tokens,
+    measured = dict(precision=precision_name(frozen.dtype),
+                    trainable_params=sum(p.numel() for p in params), label_tokens_timed=tokens,
                     timed_seconds=seconds, timed_after_compile=after)
     return measured, gpu_identity(torch, torch.cuda.current_device())
 

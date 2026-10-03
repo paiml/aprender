@@ -44,7 +44,7 @@ targets = ["q_proj", "k_proj", "v_proj", "o_proj", "gate_proj", "up_proj", "down
 r = dict(side=side, gpu_name="NVIDIA GeForce RTX 4090", gpu_uuid="GPU-4090-a",
          device_trace_line="[TRACE] device=cuda:0", model=val("--model"),
          data_sha256="d" * 64, rank=16, alpha=32, targets=targets,
-         trainable_params=23592960, optimizer="adamw_fp32", grad_checkpointing=False,
+         precision="bf16", trainable_params=23592960, optimizer="adamw_fp32", grad_checkpointing=False,
          packing=False, seq_len=512, batch=4, grad_accum=1, warmup_steps=50,
          timed_steps=200, timed_after_compile=True, label_tokens_timed=408800,
          # STUB_TOK_<SIDE> is the side's rate; every run trains the full window.

@@ -29,7 +29,7 @@ PARAM_TOLERANCE = 0.01
 # Every receipt carries these. A missing one is NOT_MEASURED, never a default.
 COMMON_FIELDS = (
     "side", "gpu_name", "gpu_uuid", "device_trace_line", "model", "data_sha256",
-    "rank", "alpha", "targets", "trainable_params", "optimizer",
+    "precision", "rank", "alpha", "targets", "trainable_params", "optimizer",
     "grad_checkpointing", "packing", "seq_len", "batch", "grad_accum",
     "warmup_steps", "timed_steps", "timed_after_compile",
     "label_tokens_timed", "timed_seconds",
@@ -38,8 +38,9 @@ COMMON_FIELDS = (
 APR_FIELDS = ("apr_version", "apr_git_sha")
 INCUMBENT_VERSIONS = ("unsloth", "unsloth_zoo", "torch", "transformers", "fla", "causal_conv1d")
 
-# contract 1.2.0 canonical_task pins these on BOTH sides.
+# contract 1.3.0 canonical_task pins these on BOTH sides.
 PINNED = dict(
+    precision="bf16",  # 1.3.0: the dtype of the frozen base weights, read from the model
     optimizer="adamw_fp32",
     grad_checkpointing=False,
     packing=False,

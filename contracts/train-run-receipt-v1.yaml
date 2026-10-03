@@ -44,6 +44,7 @@ equations:
     invariants:
     - 'device.kind is the 1.0.0 device string (cuda:0, cpu); name and uuid come from the driver for the device the trainer ran on, and trace_line is the [TRACE] line the trainer printed when it bound it'
     - 'recipe is the EFFECTIVE config after defaults and CLI flags, and recipe_sha256 = sha256(canonical JSON of recipe); so the hash and the echoed values cannot disagree'
+    - 'recipe.precision is the dtype of the frozen base weights read back from the loaded model (bf16, fp32, fp16, nf4), not the --precision argv'
     - 'recipe.targets are the module names actually wrapped with adapters, read back from the model after wrapping, not the --targets argv'
     - 'trainable_params = Σ numel over parameters with requires_grad after adapters are attached'
     - 'timed_window covers exactly the timed_steps optimizer steps after warmup_steps; label_tokens = Σ over those steps of Σ_row max(nonpad(row) − 1, 0); seconds is wall time from the device sync before the first timed step to the device sync after the last'

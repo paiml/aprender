@@ -43,7 +43,7 @@ def run(side, rate, seconds=None):
     r = dict(
         side=side, gpu_name="NVIDIA GeForce RTX 4090", gpu_uuid="GPU-4090-a",
         device_trace_line="[TRACE] device=cuda:0 RTX 4090", model="Qwen/Qwen3.5-4B",
-        data_sha256="d" * 64, rank=16, alpha=32, targets=list(TARGETS),
+        data_sha256="d" * 64, precision="bf16", rank=16, alpha=32, targets=list(TARGETS),
         trainable_params=23_592_960, optimizer="adamw_fp32",
         grad_checkpointing=False, packing=False, seq_len=512, batch=4,
         grad_accum=1, warmup_steps=50, timed_steps=200, timed_after_compile=True,
@@ -118,6 +118,8 @@ CASES = [
     ("planted unsloth checkpointing", edit("incumbent", "grad_checkpointing", "unsloth"), 1,
      "FAIL", "grad_checkpointing", None),
     ("packing on", edit("apr", "packing", True), 1, "FAIL", "packing", None),
+    ("planted apr fp32", edit("apr", "precision", "fp32"), 1, "FAIL",
+     "SAME-WORK FAIL: apr run 1: precision", None),
     ("timed before compile", edit("incumbent", "timed_after_compile", False), 1, "FAIL",
      "timed_after_compile", None),
     ("planted half targets", half_targets, 1, "FAIL", "SAME-WORK FAIL: targets differ", None),
@@ -142,6 +144,7 @@ CASES = [
 
 # (name, text to replace, replacement). Each must be KILLED by the case table.
 MUTANTS = [
+    ("precision pin dropped", '    precision="bf16",', '    # dropped'),
     ("threshold halved", "if ratio >= threshold:", "if ratio >= threshold * 0.5:"),
     ("median -> mean", "ratio = statistics.median(tok_s(r) for r in apr) / statistics.median(",
      "ratio = statistics.mean(tok_s(r) for r in apr) / statistics.mean("),
