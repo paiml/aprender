@@ -3,14 +3,16 @@
 # (lookahead-readiness-v1), which renders it into the cop's hourly report.
 metadata:
   id: lookahead-dor-v1
-  version: "0.1.0"
+  version: "0.2.0"
   created: "2026-10-03"
   author: la-0.71 (L1)
   status: draft
   description: >
     Definition of Ready ledger for look-ahead train N+1 (APR-LOOKAHEAD-001 §4 L1.2).
     A row is READY iff spec, contract, falsifier, baseline and a proposed owner are
-    present and every on_main claim exists at the checked ref.
+    present and every on_main claim exists at the checked ref. A staged claim must
+    exist at its branch. If its path already exists at the ref, it must also name a
+    staged_marker that the branch carries and the ref does not.
   references:
     - 'docs/lookahead/0.71-dor.yaml'
     - 'scripts/lookahead/dor_check.py'
@@ -20,8 +22,13 @@ equations:
       ready(r) := on_main(r.spec) ∧ on_main(r.contract) ∧ |r.falsifier| ≥ 1
                   ∧ on_main(r.baseline) ∧ r.owner_proposed ≠ null
       on_main(x) := x.path ≠ null ∧ x.on_main ∧ exists(ref, x.path)
+      staged_ok(x) := exists(x.staged_at, p) ∧ ( (¬exists(ref, p) ∧ x.staged_marker = null)
+                      ∨ (x.staged_marker ∈ text(x.staged_at, p) ∧ x.staged_marker ∉ text(ref, p)) )
+                      where p = x.staged_path, else x.path
     invariants:
       - "a claim on_main=true whose path is absent at ref is RED, never NOT READY"
+      - "a staged claim that is not staged_ok is RED; a field missing on main but staged_ok renders name*, still NOT READY"
+      - "each planted ledger is RED for its own reason; RED for another reason is a surviving falsifier"
       - "an empty ledger is RED (APR-OBS-001 R-2)"
       - "|rows| ≤ 10 and ev_rank is a permutation of 1..|rows|"
 falsification_tests:
@@ -41,4 +48,28 @@ falsification_tests:
     rule: "control row with all five present renders READY"
     fixture: scripts/lookahead/fixtures/planted.yaml#ALL-PRESENT
     if_fails: "the checker is vacuously NOT READY"
-verification: "python3 scripts/lookahead/dor_check.py --self-test --ref origin/main  # each falsifier killed its mutant, 2026-10-03"
+  - id: FALSIFY-LADOR-005
+    rule: "a staged claim to a path absent at its branch exits 2"
+    fixture: scripts/lookahead/fixtures/false-staged.yaml
+    if_fails: "the ledger can claim branch work that does not exist"
+  - id: FALSIFY-LADOR-006
+    rule: "a staged claim on a path the ref already has, with no staged_marker, exits 2"
+    fixture: scripts/lookahead/fixtures/vacuous-staged.yaml
+    if_fails: "a branch that merely contains a file main already has reads as staging a change to it"
+  - id: FALSIFY-LADOR-007
+    rule: "a staged_marker absent at the branch exits 2"
+    fixture: scripts/lookahead/fixtures/absent-marker.yaml
+    if_fails: "a staged claim can name text the branch does not carry"
+  - id: FALSIFY-LADOR-008
+    rule: "a staged_marker the ref already carries exits 2"
+    fixture: scripts/lookahead/fixtures/marker-on-ref.yaml
+    if_fails: "content already on main reads as staged instead of on_main"
+  - id: FALSIFY-LADOR-009
+    rule: "control: a marker the branch adds and the ref lacks is accepted"
+    fixture: scripts/lookahead/dor_check.py#expect_marker_control
+    if_fails: "every marker claim is RED, so the staged rule is vacuously strict"
+  - id: FALSIFY-LADOR-010
+    rule: "control: empty.yaml checked as a marker fault is flagged as RED for the wrong reason"
+    fixture: scripts/lookahead/dor_check.py#expect_red
+    if_fails: "a planted ledger that is RED for another reason counts as its own falsifier firing"
+verification: "python3 scripts/lookahead/dor_check.py --self-test --ref origin/main  # each falsifier killed its mutant, 2026-10-03; 005-010: 6 mutants of the staged rule and self-test, all killed"

@@ -42,9 +42,12 @@ rows:
     spec: {path: docs/specifications/APR-EPIC-001-themed-epics-and-issue-cap.md, section: "§2 E2 goal line (one line, no section)", on_main: true}
     # 17:11Z CORRECTION: apr-serve-ttft-v1 (la-71/serve-ttft-v1) WITHDRAWN, as a second definition of a metric
     # PP-LLAMA-001 already owns. See docs/lookahead/0.71-v1-ttft-home.md. V2 = a proposed §3 `load_ms` row (REPORTED).
+    # 18:17Z drafted as PP-LLAMA-001 v3.2 §3 (e1f32ac9e5); resolution and keys aligned with aprender-cd in 0494f5b9ff.
     contract: {id: PP-LLAMA-001-s3-load_ms, path: null, on_main: false,
-               proposed: "PP-LLAMA-001 §3 row load_ms (spawn -> first passing readiness probe, upper bound + resolution), R-71-6"}
-    falsifier: null   # FALSIFY-TTFT-004 withdrawn with the draft; cases move to perf_gate.sh mutations when wired
+               staged_at: origin/la-71/pp-llama-p8-ttft, staged_path: docs/specifications/PP-LLAMA-001-MASTER.md,
+               staged_marker: "| `load_ms` |",
+               proposed: "PP-LLAMA-001 v3.2 §3 row load_ms: spawn -> first readiness probe answering 200, an upper bound whose resolution is the measured probe bracket, under a declared page-cache mode; REPORTED, R-71-6"}
+    falsifier: null   # REPORTED, so no gate case; validity cases (coarse bracket, evicted claim its witness contradicts) are owed by the load producer (aprender-cd la-71/load-block, not on origin at 18:37Z)
     baseline: null    # one --start replicate per lane in the §12 row 18 reference cell (aprender-cd harness la-71/bench-ready-ms)
     owner_proposed: perf-gate (PP-LLAMA-001 §12 owner) per R-71-6, not L1
     related: [PMAT-3718]
@@ -57,9 +60,12 @@ rows:
     # 17:11Z CORRECTION: apr-serve-ttft-v1 + ttft_receipt_check.py WITHDRAWN (own estimator, hardcoded BOUND 2.0 =
     # PP-33 violation). Home: PP-LLAMA-001 §4 P-8 ("No latency bound is set in this version") + perf-matrix.yaml
     # arm parity (ttft is `reported`) + Rust perf_gate paired_ratio_lcb(ttft_p50_ms). docs/lookahead/0.71-v1-ttft-home.md
+    # 18:17Z drafted as PP-LLAMA-001 v3.2 P-8 + PP-34 + §12 row 23 (e1f32ac9e5, head 0494f5b9ff).
     contract: {id: PP-LLAMA-001-P-8-ttft-bound, path: null, on_main: false,
-               proposed: "P-8 first latency bound: LCB95(comparator/subject ttft_p50, W1 c1) >= 0.5, value in perf-matrix.yaml, R-71-6"}
-    falsifier: null   # FALSIFY-TTFT-001..015 withdrawn; their case table moves to perf_gate.sh mutations (wiring (c))
+               staged_at: origin/la-71/pp-llama-p8-ttft, staged_path: docs/specifications/PP-LLAMA-001-MASTER.md,
+               staged_marker: "`ttft` is gated as `ttft_ratio`",
+               proposed: "P-8: ttft at c=1 under W1 gated as ttft_ratio = ttft_llama/ttft_apr by P-5 (LCB95 >= 1 - delta, delta in perf-matrix.yaml, 0.5 proposed = V1's 2x), armed by P-6; R-71-6"}
+    falsifier: null   # owed in §12 row 23's order: PP-34's two producer rs tests, then ONE gate commit with perf_gate.sh must-fire + must-not-fire (P-7); FALSIFY-TTFT-001..015 cases move there as mutations
     baseline: null   # = PP-LLAMA-001 §12 row 18 reference cell (owner perf-gate, blocked on row 15). Model is R-71-7:
       # V1 names Qwen3.5-4B; §8 REFERENCE is Qwen2.5-Coder-7B Q4_K_M, which is what the pin-bump evidence used.
       # That evidence still fails its own validation (failed requests; prompt_tokens 144, not W1's 512).

@@ -1,0 +1,9 @@
+# Planted: a staged claim on a path that already exists at the ref, with no staged_marker.
+# Existing at the branch proves nothing there. Must be RED.
+schema: lookahead-dor-v1
+train: "0.00"
+rows:
+  - id: VACUOUS-STAGED
+    ev_rank: 1
+    contract: {id: planted-v1, path: null, on_main: false, staged_at: origin/main,
+               staged_path: docs/specifications/APR-EPIC-001-themed-epics-and-issue-cap.md}

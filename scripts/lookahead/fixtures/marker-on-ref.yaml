@@ -1,0 +1,9 @@
+# Planted: a staged_marker the ref already carries, so the branch adds nothing. Must be RED.
+schema: lookahead-dor-v1
+train: "0.00"
+rows:
+  - id: MARKER-ON-REF
+    ev_rank: 1
+    contract: {id: planted-v1, path: null, on_main: false, staged_at: origin/main,
+               staged_path: docs/specifications/APR-EPIC-001-themed-epics-and-issue-cap.md,
+               staged_marker: "# APR-EPIC-001 — themed epics"}
