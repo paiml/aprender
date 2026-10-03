@@ -1,7 +1,7 @@
 # DRAFT (branch-only during S-1). Moves to contracts/ with a strict test binding and a
 # Rust receipt emitter once 0.70.1 is live and a ticket is minted (0.71 rows V1 + V2, #3596).
 # scripts/lookahead/ttft_receipt_check.py is the executable reference for these rules. It is not a second
-# schema: arm provenance and the raw-sample median come from scripts/lib/bench_receipt.py (14/14 fixtures, 11/11 mutants killed).
+# schema: arm provenance and the raw-sample median come from scripts/lib/bench_receipt.py (15/15 fixtures, 12/12 mutants killed).
 metadata:
   id: apr-serve-ttft-v1
   version: "0.1.0"
@@ -19,7 +19,9 @@ metadata:
 equations:
   v2_reported_together:
     formula: |
-      report(apr) ⊇ {load_ms, ttft_ms_p50, pp512_tok_s, tg128_tok_s}, each > 0
+      report(apr) ⊇ {load_ms, load_resolution_ms, ttft_ms, pp512_tok_s, tg128_tok_s}, each > 0
+      load_ms := runs[*].cold_start_ms of `apr test llm bench --start` (la-71/bench-ready-ms), an upper bound
+      load_resolution_ms := its probe bracket (--health-poll-ms) ≤ 100
   v1_ttft_ratio:
     formula: |
       same_identity(a, l) := ∀k ∈ {model_sha256, prompt_sha256, prompt_n, completion_n}: a.k = l.k
@@ -51,5 +53,6 @@ falsification_tests:
   - {id: FALSIFY-TTFT-011, fixture: ttft/class-mismatch.json, expect: 2, rule: "cuda vs cpu is REFUSED (EXT R-17)"}
   - {id: FALSIFY-TTFT-012, fixture: ttft/summary-only.json, expect: 2, rule: "no raw ttft_ms samples is RED"}
   - {id: FALSIFY-TTFT-013, fixture: ttft/bad-binary-sha.json, expect: 2, rule: "bench_receipt provenance rule (binary_sha256 not a digest) is RED"}
+  - {id: FALSIFY-TTFT-015, fixture: ttft/coarse-load.json, expect: 2, rule: "load_ms with a 2000 ms bracket (the old 2 s poll) is RED"}
   - {id: FALSIFY-TTFT-014, fixture: ttft/unpinned.json, expect: 2, rule: "comparator with no build_commit is RED, not a crash"}
 verification: "python3 scripts/lookahead/ttft_receipt_check.py --self-test  # 5/6 mutants killed; the 6th (missing-arm guard) is equivalent, 2026-10-03"

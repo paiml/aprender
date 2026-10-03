@@ -30,7 +30,11 @@ MIN_SAMPLES = 5
 SHARED = ("model_sha256", "prompt_sha256", "prompt_n", "completion_n")
 JOIN = br.JOIN_KEY_REQUIRED + ("compute_class",)
 APR_IDENTITY = ("ts", "apr_version", "build_identity", "model_id")
-V2_FIELDS = ("load_ms", "pp512_tok_s", "tg128_tok_s")
+V2_FIELDS = ("load_ms", "load_resolution_ms", "pp512_tok_s", "tg128_tok_s")
+# load_ms := runs[*].cold_start_ms from `apr test llm bench --start` (la-71/bench-ready-ms):
+# an upper bound, the first passing probe. Its bracket is --health-poll-ms (default 50).
+# The old 2 s poll gives a +/-2 s number, which is not a V2 load time.
+LOAD_RES_MAX_MS = 100.0
 
 
 class Red(Exception):
@@ -79,6 +83,8 @@ def check_identity(doc):
 def check_v2(apr):
     missing = [k for k in V2_FIELDS if not isinstance(apr.get(k), (int, float)) or apr[k] <= 0]
     require(not missing, f"V2: apr arm must report load_ms, TTFT, pp512, tg128 together; missing {missing}")
+    require(apr["load_resolution_ms"] <= LOAD_RES_MAX_MS,
+            f"V2: load_ms bracket {apr['load_resolution_ms']} ms > {LOAD_RES_MAX_MS} ms is not a load time")
 
 
 def median_ttft(name, arm):
@@ -115,7 +121,7 @@ EXPECT = {"pass.json": 0, "ratio-fail.json": 1, "identity-mismatch.json": 2,
           "missing-load.json": 2, "wrong-pin.json": 2, "few-samples.json": 2, "empty.json": 2,
           "fabricated-p50.json": 2, "failed-requests.json": 2, "no-backend-proof.json": 2,
           "class-mismatch.json": 2, "summary-only.json": 2, "bad-binary-sha.json": 2,
-          "unpinned.json": 2}
+          "unpinned.json": 2, "coarse-load.json": 2}
 
 
 def outcome(path):

@@ -39,6 +39,7 @@
    ],
    "ttft_ms_p50": 20.6,
    "load_ms": 1800.0,
+   "load_resolution_ms": 50.0,
    "pp512_tok_s": 9000.0,
    "tg128_tok_s": 150.0
   },
