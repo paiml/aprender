@@ -1,0 +1,41 @@
+{
+ "_planted": "FIXTURE: not a measurement",
+ "binary_sha256": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+ "commit": "ffffffffffffffffffffffffffffffffffffffff",
+ "host": "lambda",
+ "prompt_sha256": "bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb",
+ "model": {
+  "path": "qwen2.5-coder-1.5b-instruct-q4_k_m.gguf",
+  "sha256": "cccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccc"
+ },
+ "bands": [
+  {
+   "c": 1,
+   "m_formed": 1,
+   "result": "PASS",
+   "declared_min": 64,
+   "divergence_at": 127
+  },
+  {
+   "c": 4,
+   "m_formed": 4,
+   "result": "PASS",
+   "declared_min": 64,
+   "divergence_at": 127
+  },
+  {
+   "c": 8,
+   "m_formed": 8,
+   "result": "PASS",
+   "declared_min": 64,
+   "divergence_at": 127
+  },
+  {
+   "c": 16,
+   "m_formed": 16,
+   "result": "PASS",
+   "declared_min": 64,
+   "divergence_at": 127
+  }
+ ]
+}

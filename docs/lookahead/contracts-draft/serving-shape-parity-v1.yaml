@@ -1,0 +1,39 @@
+# DRAFT (branch-only during S-1). 0.71 exit criterion V3. Extends continuous-batching-v1
+# (FALSIFY-CB-004/006/008) and the perf041 PP-26 v3.1 witness; does not replace them.
+metadata:
+  id: serving-shape-parity-v1
+  version: "0.1.0"
+  created: "2026-10-03"
+  author: la-0.71 (L1)
+  status: draft
+  parent_contracts: [continuous-batching-v1]
+  description: >
+    A perf041 witness is a V3 serving-shape parity receipt iff it is on the blessed
+    Qwen3.5-4B, measures bands c in {1,4,8,16} each formed at full width, carries
+    identity, and agrees with the m=1 reference to declared_min unless a near-tie
+    (top-2 margin < epsilon) explains the divergence.
+  references:
+    - docs/lookahead/0.71-v3-serving-shape-parity.md
+    - scripts/perf041_batched_parity_probe.py
+    - scripts/lookahead/v3_shape_check.py
+equations:
+  admissible:
+    formula: |
+      admissible(w) := blessed(w.model) ∧ ∀c ∈ {1,4,8,16}: band(c) ∈ w
+                       ∧ band(c).result = PASS ∧ band(c).m_formed = c
+                       ∧ (band(c).divergence_at ≥ declared_min ∨ band(c).top2_margin_at_divergence < ε)
+                       ∧ identity(w) complete
+      ε := 0.05 logit  [A]
+    invariants:
+      - "a band formed at m < c is never admissible as shape c"
+      - "a divergence from m=1 without a recorded margin is never explained"
+      - "an empty witness is RED"
+falsification_tests:
+  - {id: FALSIFY-SSP-001, fixture: v3/admissible.json, expect: 0, rule: "control: full bands on blessed model admissible"}
+  - {id: FALSIFY-SSP-002, fixture: v3/near-tie.json, expect: 0, rule: "divergence at 3 with margin 0.01 is explained"}
+  - {id: FALSIFY-SSP-003, fixture: v3/short-band.json, expect: 1, rule: "c=16 with m_formed=14 is not admissible"}
+  - {id: FALSIFY-SSP-004, fixture: v3/wrong-model.json, expect: 1, rule: "non-blessed model is not admissible"}
+  - {id: FALSIFY-SSP-005, fixture: v3/unexplained-divergence.json, expect: 1, rule: "divergence without margin is not admissible"}
+  - {id: FALSIFY-SSP-006, fixture: v3/empty.json, expect: 2, rule: "empty witness is RED"}
+  - {id: FALSIFY-SSP-007, input: evidence/perf041/lambda/witness.json, expect: 1, rule: "real lambda witness (perf041 PASS) is not a V3 receipt: wrong model, m=14 at c=16, unexplained divergence at 3"}
+verification: "python3 scripts/lookahead/v3_shape_check.py --self-test  # 5/5 mutants killed (1 by crash), 2026-10-03"
