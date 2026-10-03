@@ -1,6 +1,14 @@
 #!/usr/bin/env python3
 """Check an apr-serve-ttft-v1 receipt (0.71 exit criteria V1 + V2).
 
+WITHDRAWN 2026-10-03 17:30Z, so do not fold this file. It is a second
+definition of a gate main already owns. PP-LLAMA-001 §4 P-8 (ttft, W1, c=1)
+plus scripts/perf-matrix.yaml (the parity arm, where ttft is `reported`) is the
+home, and the request-unit estimator is the paired bootstrap that the Rust
+perf_gate already runs on ttft_p50_ms. The BOUND/PIN constants below are what
+PP-33 forbids. Its fixtures are the case table that moves into perf_gate.sh's
+mutation suite. Proposal: origin/la-71/dor-071:docs/lookahead/0.71-v1-ttft-home.md.
+
 V2: the apr arm reports load_ms, TTFT, pp512 and tg128 together.
 V1: apr TTFT <= 2.0x llama.cpp at pin d1d3c3396, on the same identity.
 
