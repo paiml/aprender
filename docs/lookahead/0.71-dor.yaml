@@ -49,7 +49,8 @@ rows:
     # 17:11Z CORRECTION: apr-serve-ttft-v1 (la-71/serve-ttft-v1) WITHDRAWN, as a second definition of a metric
     # PP-LLAMA-001 already owns. See docs/lookahead/0.71-v1-ttft-home.md. V2 = a proposed §3 `load_ms` row (REPORTED).
     # 18:17Z drafted as PP-LLAMA-001 v3.2 §3 (e1f32ac9e5); resolution and keys aligned with aprender-cd in 0494f5b9ff,
-    # probe/refusal and Appendix B spellings with la-71/load-block@84a1f56d01 in 3e12078c24.
+    # probe/refusal and Appendix B spellings with la-71/load-block@84a1f56d01 in 3e12078c24, and the bracket and
+    # 2xx probe every MEASURED side carries (load-block@1e52d7ac9f) in cccd65b496.
     contract: {id: PP-LLAMA-001-s3-load_ms, path: null, on_main: false,
                staged_at: origin/la-71/pp-llama-p8-ttft, staged_path: docs/specifications/PP-LLAMA-001-MASTER.md,
                staged_marker: "| `load_ms` |",
@@ -76,7 +77,7 @@ rows:
     # 17:11Z CORRECTION: apr-serve-ttft-v1 + ttft_receipt_check.py WITHDRAWN (own estimator, hardcoded BOUND 2.0 =
     # PP-33 violation). Home: PP-LLAMA-001 §4 P-8 ("No latency bound is set in this version") + perf-matrix.yaml
     # arm parity (ttft is `reported`) + Rust perf_gate paired_ratio_lcb(ttft_p50_ms). docs/lookahead/0.71-v1-ttft-home.md
-    # 18:17Z drafted as PP-LLAMA-001 v3.2 P-8 + PP-34 + §12 row 23 (e1f32ac9e5, head 3e12078c24).
+    # 18:17Z drafted as PP-LLAMA-001 v3.2 P-8 + PP-34 + §12 row 23 (e1f32ac9e5, head cccd65b496).
     contract: {id: PP-LLAMA-001-P-8-ttft-bound, path: null, on_main: false,
                staged_at: origin/la-71/pp-llama-p8-ttft, staged_path: docs/specifications/PP-LLAMA-001-MASTER.md,
                staged_marker: "`ttft` is gated as `ttft_ratio`",
