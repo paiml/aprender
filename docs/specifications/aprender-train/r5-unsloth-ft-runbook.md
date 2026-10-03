@@ -9,7 +9,7 @@ runs on lambda (RTX 4090), with the 0.72 train idle and the fleet GPU queue free
 |---|---|---|
 | Train idle | `/tmp/apr-train-active` (or `$APR_TRAIN_ACTIVE_MARKER`) is absent | the orchestrator exits 3; wait |
 | GPU queue | `gpu-q` on PATH; the lock goes around each run, never around cargo | exits 3 |
-| apr side runner | `scripts/bench/unsloth_ft_apr_side.sh` exists (needs R15: CUDA bf16 LoRA in `apr finetune`) | exits 3; T2 stays open |
+| apr side runner | `scripts/bench/unsloth_ft_apr_side.sh` (adapter `unsloth_ft_apr.py`) runs `$APR_BIN finetune` and copies its receipt keys; R15 must add the flags in `apr_argv()` and the keys in `APR_KEYS` | apr's rc, or exit 4 naming each missing receipt key (R15 gap); T2 stays open |
 | Incumbent env | `scripts/bench/unsloth-incumbent/pyproject.toml` + `uv` | the side wrapper exits 3 |
 | Data | `APR_FT_DATA` points at a file | exits 3 |
 
@@ -53,4 +53,6 @@ The verdict names the cause. Act on it; never re-run until a different answer co
   and gpu-q.
 - **`timed_after_compile`**: the incumbent compiled a new graph inside the timed window. Report
   it; do not lengthen the warmup to hide it, because 50 warmup steps should cover compilation.
+- **exit 4 `GAP: apr receipt lacks …`**: `apr finetune` did not write a key the verdict needs. That is R15
+  work; never fill the key from `--json` tokens_per_sec or by hand.
 - **`fla absent`**: the uv env lost fla. Re-run `uv sync`; never measure without it.
