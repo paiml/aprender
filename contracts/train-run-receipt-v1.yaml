@@ -1,6 +1,6 @@
 metadata:
   kind: pattern
-  version: 1.0.0
+  version: 1.1.0
   created: '2026-09-28'
   author: PAIML Engineering (la-72, APR-LOOKAHEAD-001 L2, train 0.72)
   description: >-
@@ -10,11 +10,19 @@ metadata:
     recipe hash or a model hash; the seed is never persisted (finetune hardcodes 42); a data hash exists
     only in finetune and covers parsed samples, not file bytes. APR-OBS has no schema (aprender#4484);
     this contract proposes the training-run slice of it.
+    1.1.0 (2026-10-03, la-0.72): the T2 extension. beat-unsloth-finetune-throughput-v1 judges apr by
+    copying keys of this receipt (scripts/bench/unsloth_ft_apr.py, APR_KEYS) and never by the --json
+    tokens_per_sec of apr-finetune-metrics-v1, which is samples/s x avg_seq_len over the whole run.
+    A receipt with only the 1.0.0 keys lacks 18 keys the verdict needs, so the adapter exits 4.
+    1.1.0 makes `device` an object, adds the effective-recipe block, trainable_params and a timed
+    window. It is the receipt half of R15; the flag half is the canonical-task argv in apr_argv().
   references:
   - docs/specifications/aprender-train/train-what-you-serve-0.72.md §R12, Spike S-R12
   - contracts/entrenar/apr-checkpoint-v1.yaml (F-CKPT-017 canonical base_model_hash, no writer emits it)
   - crates/aprender-build-sha (APR_GIT_SHA, used by --version/bench/serve, by no training writer)
   - crates/apr-cli/src/commands/finetune.rs (seed 42 hardcoded), distill.rs (training_metadata.json), pretrain.rs
+  - contracts/beat-unsloth-finetune-throughput-v1.yaml (1.2.0, the consumer of the 1.1.0 keys)
+  - scripts/bench/unsloth_ft_apr.py (APR_KEYS) and scripts/tests/unsloth_ft_apr_test.py (prints the gap list)
   depends_on:
   - apr-checkpoint-v1
 status: PROPOSED
@@ -30,6 +38,17 @@ equations:
     - 'a failed run writes no receipt claiming success (status field, or no file)'
     preconditions:
     - 'APR_GIT_SHA is compiled into the binary (aprender-build-sha)'
+  receipt_t2_extension:
+    formula: 'R_T2(run) = R(run) with device := {kind, name, uuid, trace_line} ∪ {recipe{rank, alpha, targets[], optimizer, grad_checkpointing, packing, seq_len, batch, grad_accum, warmup_steps, timed_steps, …}, trainable_params, timed_window{label_tokens, seconds, after_compile}}'
+    domain: 'every successful apr finetune run; timed_window is required when --timed-steps is given and absent otherwise'
+    invariants:
+    - 'device.kind is the 1.0.0 device string (cuda:0, cpu); name and uuid come from the driver for the device the trainer ran on, and trace_line is the [TRACE] line the trainer printed when it bound it'
+    - 'recipe is the EFFECTIVE config after defaults and CLI flags, and recipe_sha256 = sha256(canonical JSON of recipe); so the hash and the echoed values cannot disagree'
+    - 'recipe.targets are the module names actually wrapped with adapters, read back from the model after wrapping, not the --targets argv'
+    - 'trainable_params = Σ numel over parameters with requires_grad after adapters are attached'
+    - 'timed_window covers exactly the timed_steps optimizer steps after warmup_steps; label_tokens = Σ over those steps of Σ_row max(nonpad(row) − 1, 0); seconds is wall time from the device sync before the first timed step to the device sync after the last'
+    - 'timed_window.after_compile is true iff no kernel JIT, PTX module load or graph capture happened inside the window'
+    - 'every value is written by the trainer from its own state; no value is filled from argv by a script'
 proof_obligations:
 - type: invariant
   property: Receipt is complete
@@ -38,6 +57,14 @@ proof_obligations:
 - type: equivalence
   property: Receipt identifies the binary
   formal: '∀ run: R.apr_git_sha ≡ sha printed by `apr --version` of the binary that ran'
+  applies_to: all
+- type: invariant
+  property: T2 receipt is complete
+  formal: '∀ successful finetune with --timed-steps: every key of R_T2 is present and non-null'
+  applies_to: all
+- type: equivalence
+  property: Recipe hash and recipe echo agree
+  formal: 'R.recipe_sha256 ≡ sha256(canonical_json(R.recipe))'
   applies_to: all
 - type: invariant
   property: Hashes move with their inputs
@@ -74,3 +101,23 @@ falsification_tests:
   prediction: 'passing --batch-size equal to the default gives the same recipe_sha256 as omitting it; changing it changes the hash'
   test: 'tiny CPU distill or finetune'
   if_fails: 'the hash covers the argv, not the effective config, so a changed default is invisible'
+- id: FALSIFY-TRR-007
+  rule: A timed finetune writes every T2 key
+  prediction: 'scripts/bench/unsloth_ft_apr.py on the receipt of a tiny CPU `apr finetune … --timed-steps 4` exits 0 and names no gap'
+  test: 'CPU, tiny synthetic model; today a TRR-only receipt makes scripts/tests/unsloth_ft_apr_test.py print 18 gaps'
+  if_fails: 'beat-unsloth-finetune-throughput-v1 stays NOT_MEASURED on the apr side'
+- id: FALSIFY-TRR-008
+  rule: Planted falsifier — recipe.targets is read back, not echoed
+  prediction: 'with --targets q_proj,k_proj,v_proj,o_proj, recipe.targets has 4 entries and trainable_params is 4/7 of the 7-target run on the same model; a writer that echoes a default target list turns this RED'
+  test: 'two tiny CPU finetunes, 7 and 4 targets'
+  if_fails: 'a half-sized LoRA could be judged as the canonical task'
+- id: FALSIFY-TRR-009
+  rule: The timed window counts label tokens over the timed steps only
+  prediction: 'with batch 2, seq_len 8, rows of 5 and 8 non-pad tokens, warmup 1 and timed 3: label_tokens = 3·((5−1)+(8−1)) = 33'
+  test: 'tiny CPU finetune on a two-row data file'
+  if_fails: 'warmup steps, padding or the shift are counted, so tokens/s is not comparable to the incumbent'
+- id: FALSIFY-TRR-010
+  rule: Recipe hash covers the echoed recipe
+  prediction: 'recomputing sha256(canonical_json(R.recipe)) from the receipt equals R.recipe_sha256'
+  test: 'any FALSIFY-TRR-001 receipt'
+  if_fails: 'the hash and the echoed values can disagree, so neither can be trusted'
