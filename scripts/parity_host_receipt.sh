@@ -44,6 +44,7 @@
 #                                  [--install-source crates.io|local-build]
 #                                  [--replicates N] [--duration S] [--warmup S]
 #                                  [--cooldown S] [--profile P] [--dry-run]
+#                                  [--load-page-cache warm|evicted]
 #
 # What it writes to --out: a parity block carrying `layout: "executor"` and a
 # `run_id` both lanes of every band share. scripts/lib/parity_block.py builds it
@@ -77,6 +78,7 @@ set -euo pipefail
 APR=""; MODEL=""; OUT="-"; SRC="crates.io"
 REPLICATES=5; DURATION=30; WARMUP=15; COOLDOWN=10; PROFILE="medium"; DRY_RUN=0
 WITNESS_JSON=""   # PP-26: the perf041 witness for this host, attached per band by parity_block.py
+LOAD_PAGE_CACHE=warm   # the load pass's page cache before each measured load (see run_load)
 while [ $# -gt 0 ]; do
     case "$1" in
         --apr) APR="$2"; shift 2 ;;
@@ -97,10 +99,15 @@ while [ $# -gt 0 ]; do
         --cooldown) COOLDOWN="$2"; shift 2 ;;
         --profile) PROFILE="$2"; shift 2 ;;
         --dry-run) DRY_RUN=1; shift ;;
+        --load-page-cache) LOAD_PAGE_CACHE="$2"; shift 2 ;;
         *) printf 'unknown argument: %s\n' "$1" >&2; exit 2 ;;
     esac
 done
 case "$REPLICATES" in ''|*[!0-9]*) printf 'FAIL  --replicates must be a number\n' >&2; exit 2 ;; esac
+case "$LOAD_PAGE_CACHE" in
+    warm|evicted) ;;
+    *) printf 'FAIL  --load-page-cache must be warm or evicted\n' >&2; exit 2 ;;
+esac
 if [ "$DRY_RUN" -eq 0 ]; then
     [ -n "$APR" ] && [ -x "$APR" ] || { printf 'FAIL  --apr must name an executable\n' >&2; exit 2; }
     [ -n "$MODEL" ] && [ -f "$MODEL" ] || { printf 'FAIL  --model must name a GGUF file\n' >&2; exit 2; }
@@ -585,6 +592,193 @@ probe_accel() {
     printf '%s' "${r:-0}"
 }
 
+# ---------------------------------------------------------------------------
+# THE LOAD PASS: one cold start per lane, per class. REPORTED: nothing bounds
+# it, and it never refuses the block (#3598).
+#
+# The bench starts each server itself (`--start`), so both lanes are timed by
+# the same client with the same readiness probe, from spawn to the first probe
+# that passes. It also records which probe decided (URL, status) and what the
+# last failing probe saw, because the two servers come up differently: apr
+# loads the model and only then binds, so nothing answers while it loads;
+# llama.cpp binds first and answers /health with 503 until the model is
+# resident. A probe that took any 2xx would call llama.cpp ready at bind.
+#
+# THE PAGE CACHE IS DECLARED, NOT ASSUMED. Both lanes read the same GGUF, so
+# the lane that loads second would read a cache the first one warmed. Each lane
+# gets one discarded warm-up load first, and `--load-page-cache evicted` also
+# drops the file from the cache before each measured load. The receipt records
+# the mode and, where fincore exists, how much of the file was resident at spawn.
+#
+# llama.cpp maps the file rather than reading it, so part of its load can land
+# in the first request instead; that request's TTFT is recorded beside load_ms.
+#
+# Writes $WORK/load-<klass>.json in every case, with the reason when nothing
+# was measured.
+LOAD_POLL_MS=50
+LOAD_HEALTH_TIMEOUT_S=300
+
+# "<resident> <size>" of <file> in bytes, or nothing when fincore is absent.
+page_cache_bytes() { # page_cache_bytes <file>
+    command -v fincore > /dev/null 2>&1 || return 0
+    fincore --bytes --noheadings --output RES,SIZE "$1" 2> /dev/null \
+        | awk 'NF == 2 && $1 ~ /^[0-9]+$/ && $2 ~ /^[0-9]+$/ { print $1, $2 }' || true
+}
+
+# Ask the kernel to drop <file> from the page cache: GNU dd's `iflag=nocache`
+# with nothing read applies to the whole file. Only a request, and pages another
+# process maps stay resident, so the fincore witness is recorded beside it.
+evict_page_cache() { # evict_page_cache <file>
+    dd if="$1" iflag=nocache count=0 status=none 2> /dev/null
+}
+
+# Is <pid> alive and one of the two servers this script starts? The bench
+# normally reaps its server before it exits, so by the time the pid file is
+# read the PID may already name an unrelated process.
+is_our_server() { # is_our_server <pid>
+    local args
+    args=$(ps -p "$1" -o args= 2> /dev/null) || return 1
+    case "$args" in
+        "$APR "*|"$LLAMA_SERVER "*) return 0 ;;
+        *) return 1 ;;
+    esac
+}
+
+# One server start, timed by the bench that starts it. The start command writes
+# its own PID (it then `exec`s, so that PID is the server's), and adds it to the
+# GPU lock's kill list when this pass holds the lock: at the lock's time limit
+# the holder kills the bench, and a bench killed by a signal skips its teardown,
+# so its server would outlive it.
+load_once() { # load_once <apr|llama> <klass> <warmup|measured> <apr-gpu-layers> <comparator flags>
+    local lane="$1" klass="$2" pass="$3" gl="$4" lflags="$5"
+    local stem="$WORK/load-$lane-$klass-$pass" port start gpids="" bpid brc=0 p
+    if [ "$lane" = apr ]; then
+        port="$APORT"
+        # shellcheck disable=SC2016
+        start='echo $$ > "$LOAD_PIDFILE"; [ -z "$LOAD_GPU_PIDS" ] || echo $$ >> "$LOAD_GPU_PIDS"; exec "$LOAD_APR" serve run "$LOAD_MODEL" --gpu-layers "$LOAD_GL" --port "$LOAD_PORT" --context-length "$LOAD_CTX"'
+    else
+        port="$LPORT"
+        # shellcheck disable=SC2016
+        start='echo $$ > "$LOAD_PIDFILE"; [ -z "$LOAD_GPU_PIDS" ] || echo $$ >> "$LOAD_GPU_PIDS"; exec "$LOAD_LLAMA_SERVER" -m "$LOAD_MODEL" --port "$LOAD_PORT" $LOAD_LFLAGS'
+    fi
+    [ -z "$GPU_BAND_HOLDER" ] || gpids="$GPU_BAND_DIR/gpu-pids-$GPU_BAND_TAG"
+    LOAD_APR="$APR" LOAD_LLAMA_SERVER="$LLAMA_SERVER" LOAD_MODEL="$MODEL" LOAD_GL="$gl" \
+    LOAD_CTX="$CTX" LOAD_LFLAGS="$lflags" LOAD_PORT="$port" LOAD_PIDFILE="$stem.pid" \
+    LOAD_GPU_PIDS="$gpids" \
+        "$APR" test llm bench --url "http://127.0.0.1:$port" --model "$MODEL_NAME" \
+            --profile "$PROFILE" --start "$start" --start-log "$stem.log" \
+            --health-timeout "$LOAD_HEALTH_TIMEOUT_S" --health-poll-ms "$LOAD_POLL_MS" \
+            --warmup 0 --duration 1 --runs 1 --cooldown 0 --concurrency 1 --stream \
+            --runtime-name "$lane-load-$klass" --output "$stem.json" > "$stem.bench.log" 2>&1 &
+    bpid=$!
+    gpu_band_track "$bpid"
+    wait "$bpid" || brc=$?
+    p=$(cat "$stem.pid" 2> /dev/null || true)
+    case "$p" in
+        ''|*[!0-9]*) ;;
+        *) if is_our_server "$p"; then SERVER_PIDS="$SERVER_PIDS $p"; fi ;;
+    esac
+    kill_servers
+    return "$brc"
+}
+
+load_lane_json() { # load_lane_json <lane> <klass> <bench rc> <evict rc|null> <resident|null> <size|null>
+    local s="load-$1-$2-measured"
+    printf '"%s": {"bench_rc": %s, "evict_rc": %s, "resident_bytes": %s, "file_bytes": %s, "report": "%s.json", "start_log": "%s.log", "bench_log": "%s.bench.log"}' \
+        "$1" "$3" "$4" "$5" "$6" "$s" "$s" "$s"
+}
+
+run_load() { # run_load <klass> <apr-gpu-layers> <llama-ngl>
+    local klass="$1" gl="$2" ngl="$3" lflags="" why="" held=0 lane brc erc res size
+    local lanes_json="" taken=null glr=null alog nm witness=absent
+    command -v fincore > /dev/null 2>&1 && witness=fincore
+    lflags=$(llama_comparator_server_flags "$ngl" 1 "$PIN") || {
+        why="cannot build the comparator invocation from the pin (rc=$?)"
+        lflags=""
+    }
+
+    if [ "$DRY_RUN" -eq 1 ]; then
+        printf 'load %s (REPORTED, no bound; never refuses the block)\n' "$klass"
+        if [ "$klass" = accel ]; then
+            printf '  gpu-lock  : held for the load pass only, via %s (GPUQ_WAIT=%s s, bound %s s)\n' \
+                "${GPU_BAND_Q:-<no GPU rule on this host>}" "${GPUQ_WAIT:-unbounded}" "${GPU_BAND_TIMEOUT_S:-1200}"
+        fi
+        printf '  page cache: %s; one discarded warm-up load per lane first, apr then llama\n' "$LOAD_PAGE_CACHE"
+        if [ "$LOAD_PAGE_CACHE" = evicted ]; then
+            printf '  evict     : dd if=%s iflag=nocache count=0, before each measured load\n' "$MODEL"
+        fi
+        printf '  witness   : fincore --bytes %s before each measured load (%s)\n' "$MODEL" "$witness"
+        printf '  subject   : %s test llm bench --url http://127.0.0.1:%s --start "exec %s serve run %s --gpu-layers %s --port %s --context-length %s" --health-poll-ms %s\n' \
+            "$APR" "$APORT" "$APR" "$MODEL" "$gl" "$APORT" "$CTX" "$LOAD_POLL_MS"
+        printf '  comparator: %s test llm bench --url http://127.0.0.1:%s --start "exec %s -m %s --port %s %s" --health-poll-ms %s\n' \
+            "$APR" "$LPORT" "$LLAMA_SERVER" "$MODEL" "$LPORT" "$lflags" "$LOAD_POLL_MS"
+        printf '  receipt   : %s/load-%s.json, read into the lane'"'"'s load block\n' "$WORK" "$klass"
+        return 0
+    fi
+
+    if [ -z "$why" ] && [ "$klass" = accel ]; then
+        if gpu_band_acquire "load-$klass" "$WORK"; then
+            held=1
+        else
+            why="the GPU queue did not admit the load pass (GPUQ_WAIT=${GPUQ_WAIT:-unbounded} s)"
+        fi
+    fi
+    if [ -z "$why" ]; then
+        for lane in apr llama; do
+            load_once "$lane" "$klass" warmup "$gl" "$lflags" || true
+        done
+        for lane in apr llama; do
+            erc=null
+            if [ "$LOAD_PAGE_CACHE" = evicted ]; then
+                erc=0
+                evict_page_cache "$MODEL" || erc=$?
+            fi
+            res=""; size=""
+            read -r res size <<< "$(page_cache_bytes "$MODEL")" || true
+            case "$res" in ''|*[!0-9]*) res=null ;; esac
+            case "$size" in ''|*[!0-9]*) size=null ;; esac
+            brc=0
+            load_once "$lane" "$klass" measured "$gl" "$lflags" || brc=$?
+            lanes_json="$lanes_json${lanes_json:+, }$(load_lane_json "$lane" "$klass" "$brc" "$erc" "$res" "$size")"
+        done
+        alog="$WORK/load-apr-$klass-measured.log"
+        if [ -s "$alog" ]; then
+            taken="\"$(json_str "$(apr_class_from_log "$alog")")\""
+            glr=$(gpu_layers_field "$alog" resolved)
+            case "$glr" in ''|*[!0-9]*) glr=null ;; esac
+        fi
+    fi
+    if [ "$held" -eq 1 ]; then
+        if gpu_band_expired; then
+            why="the load pass ran past GPU_BAND_TIMEOUT_S=${GPU_BAND_TIMEOUT_S:-1200} s; its servers were killed to release the GPU lock"
+        fi
+        gpu_band_release
+    fi
+
+    nm=null
+    [ -z "$why" ] || nm="\"$(json_str "$why")\""
+    cat > "$WORK/load-$klass.json" <<JSON
+{
+  "class": "$(json_str "$klass")",
+  "not_measured": $nm,
+  "page_cache_mode": "$LOAD_PAGE_CACHE",
+  "page_cache_witness": "$witness",
+  "warmup_loads_per_lane": 1,
+  "order": ["apr", "llama"],
+  "poll_ms": $LOAD_POLL_MS,
+  "health_timeout_s": $LOAD_HEALTH_TIMEOUT_S,
+  "client_concurrency": 1,
+  "comparator_flags": "$(json_str "$lflags")",
+  "subject_gpu_layers_requested": "$(json_str "$gl")",
+  "subject_gpu_layers_resolved": $glr,
+  "subject_compute_class": $taken,
+  "lanes": {$lanes_json}
+}
+JSON
+    printf 'REPORT load %s: page cache %s; %s\n' "$klass" "$LOAD_PAGE_CACHE" "${why:-measured, see load-$klass.json}" >&2
+    return 0
+}
+
 if [ "$DRY_RUN" -eq 1 ]; then
     printf -- '--- dry run: the commands each band would issue ----------------------\n'
     printf 'comparator: %s (pin %s, expiry %s)\n' \
@@ -593,9 +787,11 @@ if [ "$DRY_RUN" -eq 1 ]; then
     printf 'cell lock : %s (exclusive, flock -n; a second run on this host REFUSES, §5.4/PP-19)\n' "$PERF_LOCK"
     printf 'accel probe: %s serve run %s --gpu-layers all --port 8092 (accel lane iff resolved > 0)\n' \
         "$APR" "$MODEL"
+    run_load cpu 0 0
     for c in $BANDS; do
         run_band cpu 0 0 "$c"
     done
+    run_load accel all 999
     for c in $BANDS; do
         run_band accel all 999 "$c"
     done
@@ -605,6 +801,8 @@ fi
 
 # A cpu-class apr must be measured against llama.cpp at `-ngl 0`, so the
 # quantity is 0 on both sides rather than a boolean absence on one.
+# Each lane's load pass runs before its bands; it never stops them (run_load).
+run_load cpu 0 0 || true
 run_lane cpu 0 0
 
 ACCEL_RESOLVED=$(probe_accel)
@@ -615,6 +813,7 @@ if [ -e "$WORK/probe-not-admitted" ]; then
 fi
 case "$ACCEL_RESOLVED" in ''|*[!0-9]*) ACCEL_RESOLVED=0 ;; esac
 if [ "$ACCEL_RESOLVED" -gt 0 ]; then
+    run_load accel all 999 || true
     run_lane accel all 999
 else
     # Say WHY, in the receipt, in a form the gate can read. A gate that demands

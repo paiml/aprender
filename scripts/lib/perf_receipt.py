@@ -1000,6 +1000,11 @@ def _fill_from_parity_v3(args, receipt, block, errors):
         "timeouts": _every(bands, "timeouts"),
         "unproduced_fields": unproduced,
     })
+    # The lane's load block rides along UNREAD (parity_block.py, THE LOAD
+    # BLOCK). It is REPORTED with no bound, so nothing in perf_gate.sh reads it
+    # and nothing under it can arm or refuse a threshold.
+    if isinstance(lane.get("load"), dict):
+        receipt["load"] = lane["load"]
     return receipt
 
 
@@ -1468,6 +1473,274 @@ def _selftest_p1_witness_rows(root):
     return rows
 
 
+# One load pass's fixture values, named so the rows below compare against what
+# the mutation wrote instead of restating it.
+P1_LOAD = {"apr": {"port": 8090, "load_ms": 1840, "ttft_ms": 450},
+           "llama": {"port": 8091, "load_ms": 950, "ttft_ms": 2100}}
+P1_LOAD_RESOLUTION_MS = 50
+# The model's size, and what the page-cache witness (fincore's RES, in whole
+# 4 KiB pages) reads for it fully resident and half resident.
+P1_LOAD_FILE, P1_LOAD_WHOLE, P1_LOAD_HALF = 4683072, 4685824, 2341536
+
+
+def _p1_load_pass(edit=None, **meta):
+    """A mutation that writes one load pass into $WORK the way
+    parity_host_receipt.sh's run_load leaves it: load-<class>.json, and per
+    server a report, a start log and a bench log. `edit(lane, run, entry)`
+    may change a server's report run and manifest entry, and returns the run
+    to write, or None to write no report; `meta` overrides manifest keys."""
+    def mutate(work):
+        lanes = {}
+        for lane in ("apr", "llama"):
+            port, ttft = P1_LOAD[lane]["port"], P1_LOAD[lane]["ttft_ms"]
+            stem = "load-%s-%s-measured" % (lane, P1_LANE)
+            run = {"failed": 0, "cold_start_ms": P1_LOAD[lane]["load_ms"],
+                   "cold_start_resolution_ms": P1_LOAD_RESOLUTION_MS,
+                   "cold_start_probe": {"url": "http://127.0.0.1:%d/health" % port,
+                                        "status": 200},
+                   "cold_start_refusal": {"url": "http://127.0.0.1:%d" % port,
+                                          "status": None},
+                   "request_details": [{"latency_ms": ttft + 400, "ttft_ms": ttft,
+                                        "completion_tokens": 16, "prompt_tokens": 9,
+                                        "itl_ms": 25}]}
+            entry = {"bench_rc": 0, "evict_rc": None,
+                     "resident_bytes": P1_LOAD_WHOLE, "file_bytes": P1_LOAD_FILE,
+                     "report": stem + ".json", "start_log": stem + ".log",
+                     "bench_log": stem + ".bench.log"}
+            if edit is not None:
+                run = edit(lane, run, entry)
+            if run is not None:
+                with open(os.path.join(work, stem + ".json"), "w", encoding="utf-8") as handle:
+                    json.dump({"runs": [run]}, handle)
+            with open(os.path.join(work, stem + ".log"), "w", encoding="utf-8") as handle:
+                handle.write("the %s server's start log\n" % lane)
+            with open(os.path.join(work, stem + ".bench.log"), "w", encoding="utf-8") as handle:
+                handle.write("bench: starting the server\nbench: the %s server "
+                             "never became ready\n" % lane)
+            lanes[lane] = entry
+        doc = {"class": P1_LANE, "not_measured": None, "page_cache_mode": "warm",
+               "page_cache_witness": "fincore", "warmup_loads_per_lane": 1,
+               "order": ["apr", "llama"], "poll_ms": 50, "health_timeout_s": 300,
+               "client_concurrency": 1, "comparator_flags": "-ngl 0 -c 4096",
+               "subject_gpu_layers_requested": "0", "subject_gpu_layers_resolved": 0,
+               "subject_compute_class": P1_LANE, "lanes": lanes}
+        doc.update(meta)
+        with open(os.path.join(work, "load-%s.json" % P1_LANE), "w", encoding="utf-8") as handle:
+            json.dump(doc, handle)
+    return mutate
+
+
+def _p1_load_edit(lane_name, **changes):
+    """An `edit` for _p1_load_pass: on one server, set run keys (or drop the
+    report with run=None) and manifest entry keys (prefixed entry_)."""
+    def edit(lane, run, entry):
+        if lane != lane_name:
+            return run
+        for key, value in changes.items():
+            if key == "run":
+                run = value
+            elif key.startswith("entry_"):
+                entry[key[len("entry_"):]] = value
+            else:
+                run[key] = value
+        return run
+    return edit
+
+
+def _p1_load_case(root, expect, name, mutate):
+    """One load pass through the P1 chain: its receipt's load block and "",
+    or None and why when the chain refused or the pass moved the bands."""
+    receipt, why = _p1_receipt(_p1_work(root, "p1-load-" + name, mutate))
+    if receipt is None:
+        return None, "the chain refused: " + why
+    if _p1_statuses(receipt) != expect:
+        return None, "the load pass moved the bands: %s" % _p1_statuses(receipt)
+    return receipt.get("load"), ""
+
+
+def _p1_load_row(name, ok, load, why):
+    """A load row; a failing one says why, or shows the block it read."""
+    detail = "" if ok else ": " + (why or json.dumps(load))
+    return (name + detail, ok)
+
+
+def _p1_load_sides(load):
+    """The load block's subject and comparator, {} for each one it lacks."""
+    load = load or {}
+    return load.get("subject") or {}, load.get("comparator") or {}
+
+
+def _selftest_p1_load_measured_rows(case):
+    """Both servers measured: the block carries each one's load and how it
+    was read."""
+    load, why = case("measured", _p1_load_pass())
+    subj, comp = _p1_load_sides(load)
+    contract = ((load or {}).get("see_also") or {}).get("contract")
+    return [_p1_load_row(
+        "load_measured_carries_both_servers",
+        load is not None and load.get("status") == "MEASURED"
+        and subj.get("load_ms") == P1_LOAD["apr"]["load_ms"]
+        and comp.get("load_ms") == P1_LOAD["llama"]["load_ms"]
+        and subj.get("resolution_ms") == P1_LOAD_RESOLUTION_MS
+        and (subj.get("probe") or {}).get("status") == 200
+        and (subj.get("refusal") or {}).get("status") is None
+        and comp.get("first_request_ttft_ms") == P1_LOAD["llama"]["ttft_ms"]
+        and subj.get("compute_class") == P1_LANE
+        and (load.get("page_cache") or {}).get("mode") == "warm"
+        and (subj.get("page_cache") or {}).get("resident_fraction") == 1
+        and isinstance(subj.get("start_log_sha256"), str)
+        and isinstance(contract, str) and os.path.isfile(os.path.join(ROOT, contract)),
+        load, why)]
+
+
+def _selftest_p1_load_report_rows(case):
+    """What one server's report leaves unmeasured: no report, another
+    compute class, and a failed first request (load_ms stays, its TTFT does
+    not)."""
+    rows = []
+    load, why = case("no-report", _p1_load_pass(
+        _p1_load_edit("llama", run=None, entry_bench_rc=2)))
+    _subj, comp = _p1_load_sides(load)
+    reasons = " ".join(comp.get("status_reasons") or [])
+    rows.append(_p1_load_row(
+        "load_without_a_report_is_unmeasured_and_says_why",
+        load is not None and load.get("status") == "UNMEASURED"
+        and comp.get("status") == "UNMEASURED" and "load_ms" not in comp
+        and "exited 2" in reasons and "never became ready" in reasons
+        and ((load.get("subject") or {}).get("status") == "MEASURED"),
+        load, why))
+
+    load, why = case("class-mismatch", _p1_load_pass(subject_compute_class="cuda"))
+    subj, _comp = _p1_load_sides(load)
+    rows.append(_p1_load_row(
+        "load_on_another_compute_class_is_unmeasured",
+        load is not None and load.get("status") == "UNMEASURED"
+        and subj.get("status") == "UNMEASURED" and "load_ms" not in subj
+        and any("'cuda'" in r for r in subj.get("status_reasons") or []),
+        load, why))
+
+    load, why = case("failed-request", _p1_load_pass(_p1_load_edit("llama", failed=1)))
+    _subj, comp = _p1_load_sides(load)
+    rows.append(_p1_load_row(
+        "load_first_ttft_withheld_after_a_failed_request",
+        load is not None and load.get("status") == "MEASURED"
+        and comp.get("load_ms") == P1_LOAD["llama"]["load_ms"]
+        and comp.get("first_request_ttft_ms") is None
+        and "failed" in (comp.get("first_request_reason") or ""),
+        load, why))
+    return rows
+
+
+def _selftest_p1_load_eviction_rows(case):
+    """An eviction that failed, and one its witness contradicts."""
+    rows = []
+    load, why = case("evict-failed", _p1_load_pass(
+        _p1_load_edit("apr", entry_evict_rc=1), page_cache_mode="evicted"))
+    subj, _comp = _p1_load_sides(load)
+    rows.append(_p1_load_row(
+        "load_after_a_failed_eviction_is_unmeasured",
+        load is not None and load.get("status") == "UNMEASURED"
+        and subj.get("status") == "UNMEASURED" and "load_ms" not in subj
+        and any("eviction exited 1" in r for r in subj.get("status_reasons") or []),
+        load, why))
+
+    # Both evictions exit 0; the witness clears the subject (nothing
+    # resident) and contradicts the comparator (half the file resident).
+    def evicted(lane, run, entry):
+        entry.update(evict_rc=0, resident_bytes=P1_LOAD_HALF if lane == "llama" else 0)
+        return run
+    load, why = case("evicted-resident", _p1_load_pass(evicted, page_cache_mode="evicted"))
+    subj, comp = _p1_load_sides(load)
+    rows.append(_p1_load_row(
+        "load_declared_evicted_but_still_resident_is_unmeasured",
+        load is not None and load.get("status") == "UNMEASURED"
+        and subj.get("status") == "MEASURED"
+        and comp.get("status") == "UNMEASURED" and "load_ms" not in comp
+        and any("%d of %d bytes" % (P1_LOAD_HALF, P1_LOAD_FILE) in r
+                for r in comp.get("status_reasons") or []),
+        load, why))
+    return rows
+
+
+def _selftest_p1_load_witness_rows(case):
+    """A warm cache the witness found short, no witness, no declared mode."""
+    rows = []
+
+    # Warm, but the witness finds half the subject's model resident; the
+    # comparator's reads exactly its size, the most a page-aligned model can.
+    def warm(lane, run, entry):
+        entry.update(resident_bytes=P1_LOAD_HALF if lane == "apr" else P1_LOAD_FILE)
+        return run
+    load, why = case("warm-short", _p1_load_pass(warm))
+    subj, comp = _p1_load_sides(load)
+    rows.append(_p1_load_row(
+        "load_declared_warm_but_partly_resident_is_unmeasured",
+        load is not None and load.get("status") == "UNMEASURED"
+        and subj.get("status") == "UNMEASURED" and "load_ms" not in subj
+        and any("only %d of %d bytes" % (P1_LOAD_HALF, P1_LOAD_FILE) in r
+                for r in subj.get("status_reasons") or [])
+        and comp.get("status") == "MEASURED",
+        load, why))
+
+    def unwitnessed(lane, run, entry):
+        entry.update(resident_bytes=None, file_bytes=None)
+        return run
+    load, why = case("unwitnessed", _p1_load_pass(unwitnessed, page_cache_witness="absent"))
+    sides = _p1_load_sides(load)
+    rows.append(_p1_load_row(
+        "load_nothing_witnessed_is_unmeasured",
+        load is not None and load.get("status") == "UNMEASURED"
+        and all(side.get("status") == "UNMEASURED" and "load_ms" not in side
+                and any("nothing witnessed" in r for r in side.get("status_reasons") or [])
+                for side in sides),
+        load, why))
+
+    load, why = case("mode-undeclared", _p1_load_pass(page_cache_mode=None))
+    sides = _p1_load_sides(load)
+    rows.append(_p1_load_row(
+        "load_page_cache_mode_undeclared_is_unmeasured",
+        load is not None and load.get("status") == "UNMEASURED"
+        and all(side.get("status") == "UNMEASURED"
+                and any("mode None" in r for r in side.get("status_reasons") or [])
+                for side in sides),
+        load, why))
+    return rows
+
+
+def _selftest_p1_load_rows(root):
+    """The lane's load block is REPORTED and never gated: every row below
+    must leave the bands exactly as the fixture without a load pass leaves
+    them, and each says what the block claims about the load."""
+    base, why = _p1_receipt(_p1_work(root, "p1-load-base"))
+    if base is None:
+        return [("load rows need the p1 chain: " + why, False)]
+    expect = _p1_statuses(base)
+
+    def case(name, mutate):
+        return _p1_load_case(root, expect, name, mutate)
+
+    load = base.get("load") or {}
+    rows = [_p1_load_row(
+        "load_absent_manifest_is_unmeasured",
+        load.get("status") == "UNMEASURED"
+        and any("no load-%s.json" % P1_LANE in r for r in load.get("status_reasons") or []),
+        load, "")]
+    rows += _selftest_p1_load_measured_rows(case)
+    rows += _selftest_p1_load_report_rows(case)
+    rows += _selftest_p1_load_eviction_rows(case)
+    rows += _selftest_p1_load_witness_rows(case)
+
+    load, why = case("pass-unmeasured", _p1_load_pass(
+        not_measured="the GPU queue did not admit the load pass (GPUQ_WAIT=60 s)"))
+    rows.append(_p1_load_row(
+        "load_pass_not_measured_carries_its_reason_and_no_sides",
+        load is not None and load.get("status") == "UNMEASURED"
+        and "subject" not in load and "comparator" not in load
+        and any("did not admit" in r for r in load.get("status_reasons") or []),
+        load, why))
+    return rows
+
+
 def _selftest_p1_chain_ok_rows(root):
     """The must-not-fire rows, and the receipt they read (None if it refused)."""
     receipt, why = _p1_receipt(_p1_work(root, "p1-ok"))
@@ -1649,7 +1922,8 @@ def selftest():
                 + _selftest_fixture_rows(work)
                 + _selftest_parity_chain_rows(work, gate)
                 + _selftest_p1_chain_rows(work)
-                + _selftest_p1_witness_rows(work))
+                + _selftest_p1_witness_rows(work)
+                + _selftest_p1_load_rows(work))
     finally:
         shutil.rmtree(work, ignore_errors=True)
     bad = sum(1 for _name, ok in rows if not ok)

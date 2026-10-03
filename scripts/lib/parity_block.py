@@ -31,6 +31,7 @@ labelling a lane by intent.
 """
 import argparse
 import glob
+import hashlib
 import json
 import os
 import statistics
@@ -737,6 +738,279 @@ def _executor_comparator(base, args, comp_class, source):
     return comparator
 
 
+# ===========================================================================
+# THE LOAD BLOCK -- REPORTED, NEVER GATED (#3598).
+#
+# Before its bands, each lane's executor starts each server once more through
+# the bench client, after one discarded warm-up load per server, and writes
+# load-<class>.json naming the two measured reports. The client times its own
+# spawn of the server to the first passing readiness probe (cold_start_ms);
+# this block carries that per server as load_ms, with the probe that decided
+# it and the last probe that refused.
+#
+# Nothing reads this block to decide anything. No contract this gate
+# implements bounds a server's load time, and a number with no bound is
+# reported, not gated: the block never refuses the lane and never moves its
+# verdict. Three things travel with the numbers so the two servers compare
+# honestly:
+#   * they do not become ready the same way. The comparator binds first and
+#     answers 503 while it loads; the subject loads first and binds after, so
+#     while it loads nothing answers at all and its refusal has no status.
+#     LOAD_READY is the one rule that reads both.
+#   * the page cache is DECLARED and WITNESSED, never assumed. Both servers
+#     read the same file, so the second would load from a warm cache unless
+#     the pass says otherwise; the mode and the resident bytes before each
+#     measured load are recorded, and a load the witness did not see start
+#     in the declared state is UNMEASURED.
+#   * a server that maps its weights instead of reading them is "loaded"
+#     before they are resident and pays for the pages on its first request,
+#     so the first request's time to first token travels with load_ms.
+# ===========================================================================
+LOAD_META = "load-%s.json"
+LOAD_REPORTED = ("REPORTED, no bound: nothing in this block is gated and "
+                 "nothing in it moves the lane's verdict")
+LOAD_READY = ("the first readiness path that answers with a verdict decides: "
+              "2xx is ready and 5xx is not; a path that is absent (4xx) or "
+              "unreachable gives no verdict and the next is tried. load_ms is "
+              "spawn to the first passing probe's answer, and the true ready "
+              "time lies at most resolution_ms below it")
+LOAD_SEE_ALSO = {
+    "contract": "contracts/crux-C-27-v1.yaml",
+    "equation": "startup_latency",
+    "surface": ("the one-shot CLI's time to first ready (tokenizer loaded + "
+                "graph built). load_ms is a different surface: a server's "
+                "spawn to its first passing readiness probe"),
+}
+
+
+def _sha256_file(path):
+    """The file's sha256, or None when it cannot be read."""
+    digest = hashlib.sha256()
+    try:
+        with open(path, "rb") as handle:
+            for chunk in iter(lambda: handle.read(1 << 20), b""):
+                digest.update(chunk)
+    except OSError:
+        return None
+    return digest.hexdigest()
+
+
+def _last_line(path, limit=200):
+    """The last non-empty line of a text file, or None. A line longer than
+    `limit` keeps its TAIL, where an error says what went wrong, and says how
+    much it dropped."""
+    try:
+        with open(path, encoding="utf-8", errors="replace") as handle:
+            lines = [line.strip() for line in handle if line.strip()]
+    except OSError:
+        return None
+    if not lines:
+        return None
+    line = lines[-1]
+    if len(line) <= limit:
+        return line
+    return "[... and %d more chars before this] %s" % (len(line) - limit, line[-limit:])
+
+
+def _number(value):
+    """A JSON number, or None. A bool is not a number here."""
+    if isinstance(value, bool) or not isinstance(value, (int, float)):
+        return None
+    return value
+
+
+def _work_file(work, entry, key):
+    """The $WORK file a load manifest entry names, or None. Only the basename
+    is used: the manifest names files in $WORK and nothing outside it."""
+    value = entry.get(key)
+    if not isinstance(value, str) or not value:
+        return None
+    return os.path.join(work, os.path.basename(value))
+
+
+def _first_request(run):
+    """The first request's time to first token. Only when no request failed:
+    the report lists successful requests alone, so after a failure the first
+    one listed need not be the first one sent."""
+    failed = run.get("failed")
+    details = run.get("request_details")
+    why = None
+    if _number(failed) is None:
+        why = "the run does not say how many requests failed"
+    elif failed != 0:
+        why = ("%s request(s) failed, so the first one listed need not be "
+               "the first one sent" % failed)
+    elif not isinstance(details, list) or not details \
+            or not isinstance(details[0], dict) \
+            or _number(details[0].get("ttft_ms")) is None:
+        why = "the run lists no request with a time to first token"
+    if why is not None:
+        return {"first_request_ttft_ms": None, "first_request_reason": why}
+    return {"first_request_ttft_ms": details[0]["ttft_ms"],
+            "first_request_reason": None}
+
+
+def _load_page_cache(resident, size):
+    """What the witness saw of the model just before a load. It counts whole
+    pages, so a fully resident model reads a little over its size; the
+    fraction stops at the whole file."""
+    fraction = None
+    if resident is not None and size:
+        fraction = round(min(resident, size) / size, 4)
+    return {"resident_bytes": resident, "file_bytes": size,
+            "resident_fraction": fraction}
+
+
+def _load_cache_why(entry, mode, resident, size):
+    """Why the page cache a load started from is not known, or None when a
+    witness saw it in the state the pass declared."""
+    evict_rc = entry.get("evict_rc")
+    if evict_rc is not None and evict_rc != 0:
+        return ("the page cache was to be evicted before this load and the "
+                "eviction exited %s, so the cache state it ran under is not "
+                "known" % evict_rc)
+    if mode not in ("warm", "evicted"):
+        return ("the pass declared page cache mode %r, and only warm or "
+                "evicted says what this load started from" % (mode,))
+    if resident is None or size is None:
+        return ("nothing witnessed the page cache just before this load, so "
+                "%s is what the pass intended, not what it measured" % mode)
+    if mode == "evicted" and resident != 0:
+        # The eviction is only a request: pages another process maps stay
+        # resident. Its witness decides, or "evicted" is a label by intent.
+        return ("the page cache was to be evicted before this load and its "
+                "witness found %s of %s bytes of the model still resident "
+                "just before it, so the load did not start from an evicted "
+                "cache" % (resident, size))
+    if mode == "warm" and resident < size:
+        # The warm-up is a request too: memory pressure can drop pages before
+        # the measured load reads them. The witness counts whole pages, so a
+        # fully resident model reads as at least its size.
+        return ("the page cache was to be warm before this load and its "
+                "witness found only %s of %s bytes of the model resident just "
+                "before it, so the load did not start from a warm cache"
+                % (resident, size))
+    return None
+
+
+def _load_run(work, entry):
+    """The first run of the bench report a manifest entry names, or None."""
+    report = _work_file(work, entry, "report")
+    doc = _maybe_json(report) if report else None
+    runs = doc.get("runs") if isinstance(doc, dict) else None
+    if isinstance(runs, list) and runs and isinstance(runs[0], dict):
+        return runs[0]
+    return None
+
+
+def _load_run_why(work, entry, run):
+    """Why the bench report gives a load no time, or None when it does."""
+    if run is None:
+        bench_log = _work_file(work, entry, "bench_log")
+        return ("no bench report with a run: the client exited %s; its last "
+                "line: %s" % (entry.get("bench_rc"),
+                              _last_line(bench_log) if bench_log else None))
+    if _number(run.get("cold_start_ms")) is None:
+        return ("the report carries no cold_start_ms: the client that wrote "
+                "it does not time a server it starts")
+    return None
+
+
+def _load_side(work, entry, mode, class_why=None):
+    """One server's measured load, read from the report its manifest entry
+    names. MEASURED iff that report carries the client's cold start and a
+    witness saw the page cache in the state the pass declared (`mode`): warm
+    is the whole model resident, evicted is none of it. A failed eviction, no
+    witness, or a witness that contradicts the mode leaves the state the load
+    started from unknown, and `class_why` says the server took another
+    compute path than the lane. Only a MEASURED side carries load_ms. What the
+    manifest recorded about the load travels either way, so an unmeasured
+    load still says how it ended."""
+    entry = entry if isinstance(entry, dict) else {}
+    resident, size = _number(entry.get("resident_bytes")), _number(entry.get("file_bytes"))
+    start_log = _work_file(work, entry, "start_log")
+    side = {"status": "UNMEASURED",
+            "bench_rc": entry.get("bench_rc"),
+            "evict_rc": entry.get("evict_rc"),
+            "page_cache": _load_page_cache(resident, size),
+            "start_log": os.path.basename(start_log) if start_log else None,
+            "start_log_sha256": _sha256_file(start_log) if start_log else None}
+    run = _load_run(work, entry)
+    # The cache state decides first, then the compute class, then the report.
+    why = _load_cache_why(entry, mode, resident, size)
+    if why is None:
+        why = class_why
+    if why is None:
+        why = _load_run_why(work, entry, run)
+    if why is not None:
+        side["status_reasons"] = [why]
+        return side
+    side.update({"status": "MEASURED", "status_reasons": [],
+                 "load_ms": run["cold_start_ms"],
+                 "resolution_ms": _number(run.get("cold_start_resolution_ms")),
+                 "probe": run.get("cold_start_probe"),
+                 "refusal": run.get("cold_start_refusal")})
+    side.update(_first_request(run))
+    return side
+
+
+def _load_class_why(taken, apr_class):
+    """Why the subject's load is not the lane's, or None when its server log
+    names the compute class the lane's bands took."""
+    if taken == apr_class:
+        return None
+    if taken is None:
+        return ("its server log is empty or absent, so nothing says which "
+                "compute class it took")
+    return ("its server log names compute class %r and the lane's bands "
+            "took %r, so it did not load the way the lane ran" % (taken, apr_class))
+
+
+def _executor_load(work, klass, apr_class):
+    """The lane's load block (REPORTED, never gated, never a refusal).
+
+    MEASURED iff both servers' loads measured. The subject's load also has to
+    have taken the lane's compute class: a load on another path is a
+    different measurement under the same name."""
+    name = LOAD_META % klass
+    block = {"status": "UNMEASURED", "status_reasons": [],
+             "reported": LOAD_REPORTED, "ready": LOAD_READY,
+             "see_also": dict(LOAD_SEE_ALSO)}
+    meta = _maybe_json(os.path.join(work, name))
+    if not isinstance(meta, dict):
+        block["status_reasons"].append(
+            "no %s: the load pass did not run, or did not finish" % name)
+        return block
+    if meta.get("not_measured"):
+        block["status_reasons"].append(str(meta["not_measured"]))
+        return block
+    lanes = meta.get("lanes") if isinstance(meta.get("lanes"), dict) else {}
+    mode = meta.get("page_cache_mode")
+    taken = meta.get("subject_compute_class")
+    class_why = _load_class_why(taken, apr_class)
+    subject = _load_side(work, lanes.get("apr"), mode, class_why)
+    comparator = _load_side(work, lanes.get("llama"), mode)
+    subject.update({"compute_class": taken,
+                    "gpu_layers_requested": meta.get("subject_gpu_layers_requested"),
+                    "gpu_layers_resolved": meta.get("subject_gpu_layers_resolved")})
+    block.update({
+        "page_cache": {"mode": meta.get("page_cache_mode"),
+                       "witness": meta.get("page_cache_witness"),
+                       "warmup_loads_per_lane": meta.get("warmup_loads_per_lane")},
+        "order": meta.get("order"),
+        "poll_ms": meta.get("poll_ms"),
+        "health_timeout_s": meta.get("health_timeout_s"),
+        "client_concurrency": meta.get("client_concurrency"),
+        "comparator_flags": meta.get("comparator_flags"),
+        "subject": subject, "comparator": comparator})
+    for label, side in (("subject", subject), ("comparator", comparator)):
+        block["status_reasons"].extend(
+            "%s: %s" % (label, why) for why in side["status_reasons"])
+    if not block["status_reasons"]:
+        block["status"] = "MEASURED"
+    return block
+
+
 def _executor_lane(klass, args, work):
     """One lane of the executor layout, or None with the reason on stderr."""
     floor, ceiling = bench_receipt.lane_bounds()
@@ -773,6 +1047,8 @@ def _executor_lane(klass, args, work):
     _apply_verdict(lane, ratio, apr_class, comp_class)
     if any(b["verdict"] == "FAIL" for b in bands):
         lane["verdict"] = "FAIL"
+    # After the verdict, and never an input to it (see THE LOAD BLOCK).
+    lane["load"] = _executor_load(work, klass, apr_class)
     return lane
 
 
