@@ -20,7 +20,7 @@ In:
    - Emit it in the `apr run --trace` kernel step.
    - `SimdBackend` display stays, but may no longer be cited as evidence of a SIMD path.
 3. Contract `contracts/neon-q4k-q6k-v1.yaml`, patterned on `avx512-q4k-v1.yaml`:
-   - parity bound ε = 1e-3 abs per super-block dot (avx512-q4k-v1.yaml:28 [V]);
+   - parity bound 2·γ(K)·S over the row's terms (E-R3-1; Higham 2002, Lemma 3.1). It replaced the ε = 1e-3 of avx512-q4k-v1.yaml:28 [V] on 2026-10-03 (§13 row 11);
    - super-block layout reuses `q4k-q6k-superblock-v1.yaml` and `q4k-interleaved-scale-min-v1.yaml`.
 
 Out:
@@ -29,7 +29,7 @@ Out:
 - Any GPU work.
 
 ## 3. Equations
-- **E-R3-1 parity:** ∀ random super-block b (seeded), for k ∈ {q4k-f32, q6k-f32, q4k-q8k}: |neon_k(b, x) − scalar_k(b, x)| < 1e-3 · max(1, |scalar_k(b, x)|).
+- **E-R3-1 parity:** for k ∈ {q4k-f32, q6k-f32, q4k-q8k} and seeded rows b of n super-blocks, n ∈ {1, 2, 3, 7, 8, 36}: |neon_k(b, x) − scalar_k(b, x)| ≤ 2·γ(K)·S_k(b, x). Here γ(m) = m·u/(1 − m·u) with u = 2⁻²⁴, K = 256n + 2 for the f32 kernels and 16n + 2 for q4k-q8k, and S_k is the row's sum of |term| (the contract lists the terms). Each kernel is within γ(K)·S of the exact sum (Higham 2002, §3.1, Lemma 3.1), so no fixture turns this RED without a defect. A masked sweep with a power guard keeps it able to go RED at 36 blocks (§13 row 11).
 - **E-R3-2 dispatch honesty:** on aarch64, `kernel_path()` of each dispatcher ∈ {`*/neon*`}. With dotprod absent, `q4k-q8k` reports `*/scalar`. A path never names a kernel the call does not reach.
 - **E-R3-3 E1 leg (C4):** logits cosine(C4 apr-CPU-NEON, C0 apr-CPU-x86) ≥ 0.995 on the E1 prompt set, Qwen3-dense Q4_K_M. The composed-leg method is in R1.
 - **E-R3-4 E2 speed:** the lower CI bound of decode tok/s ratio apr-C4 / llama.cpp ggml-cpu (pin d1d3c3396, RQ-2) is ≥ 0.5. This is report-only until first-green + 7 green nights (R-6).
@@ -38,10 +38,10 @@ Out:
 | id | prediction | planted RED |
 |---|---|---|
 | FALSIFY-NEON-Q4K-000 | build floor: `cargo check -p aprender-serve --lib --target aarch64-unknown-linux-gnu` exits 0 (baseline RC=0 @aca6f2d7f6, 138 crates, 2026-09-27) | add a NEON kernel whose `#[cfg(target_arch = "aarch64")]` body calls an x86-only intrinsic; the check must exit non-zero. Report-only until first green + 7 nights (R-6). The x86 CI cannot see this: aarch64 cfg bodies are not compiled on x86 |
-| FALSIFY-NEON-Q4K-001 | E-R3-1 holds for 10 000 seeded blocks × 3 kernels | a mutant that swaps the low/high nibble order in `fused_q4k_dot_neon` must FAIL |
+| FALSIFY-NEON-Q4K-001 | E-R3-1 holds for 10 000 seeded rows of 1 to 36 blocks × 3 kernels, and on every case of the masked sweep | a mutant that swaps the low/high nibble order in `fused_q4k_dot_neon` must FAIL; one that skips a 32-value group in rows of 8 or more blocks must FAIL the masked sweep |
 | FALSIFY-NEON-Q4K-002 | E-R3-2: the aarch64 test asserts `kernel_path()` starts with `q4k-f32/neon` | revert the dispatcher arm → path is `scalar` → FAIL. On x86 the test is NotRun{reason: "not aarch64"}, never PASS |
-| FALSIFY-NEON-Q4K-003 | cross-arch golden: dots on a fixed block set, recorded on x86 scalar, match aarch64 NEON within ε | perturb one scale byte in the golden → FAIL |
-| FALSIFY-NEON-Q4K-004 | the Q6K analogue of 001 (6-bit ql/qh recombination) | a mutant that drops `qh` bit 5 must FAIL |
+| FALSIFY-NEON-Q4K-003 | cross-arch golden: dots on a fixed block set, recorded on x86 scalar, match aarch64 NEON within the E-R3-1 bound | perturb one scale byte in the golden → FAIL |
+| FALSIFY-NEON-Q4K-004 | the Q6K analogue of 001 (6-bit ql/qh recombination) | a mutant that drops `qh` bit 5 must FAIL; one that skips a 16-value scale group must FAIL the masked sweep |
 | FALSIFY-NEON-Q4K-005 | E-R3-3 cosine ≥ 0.995; the trace line shows `neon` | a trace without a `neon` kernel line → the cell is refused (R1 F-R5-2 rule), not scored |
 
 ## 5. Measurement plan
@@ -52,7 +52,7 @@ Out:
 
 ## 6. Risks
 - **K10:** until E-R3-2 ships, every C4 number is mislabelled. Existing gx10 CPU receipts citing "NEON" must be re-read as scalar.
-- **K11:** f32-activation NEON reorders the FMA reduction relative to scalar. ε = 1e-3 relative may be tight for large-magnitude rows. Tune from measured distributions only, never by widening to pass.
+- **K11 (resolved 2026-10-03, §13 row 11):** f32-activation NEON reorders the FMA reduction relative to scalar, and a 1e-3 relative ε could fail a cancelling long row with no defect. E-R3-1 now uses a derived bound that covers any order, so nothing is tuned. A numpy emulation put the bound 360× to 10 789× above the largest scalar-against-32-lane-FMA difference for the f32 kernels, and 15× to 300× above the largest scalar-against-AVX2-grouping difference for q4k-q8k (n = 1, 8 and 36). The lemma, not the emulation, is the guarantee.
 - **K12 [U]:** dotprod availability on GB10 is unverified. `is_aarch64_feature_detected!` handles absence, and E-R3-2 reports it honestly.
 - **K15 (L):** dispatch shape. The NEON kernels slot into the existing cfg-plus-runtime-detect dispatchers (§9), so nothing is re-plumbed.
 
@@ -96,7 +96,7 @@ The NEON kernels go into three aprender-serve dispatchers. Each has the same sha
 |---|---|---|---|
 | `aprender-serve/src/quantize/simd_backend.rs:41` `detect_simd_backend()` | `SimdBackend::Neon` on every aarch64 host, from arch alone | serve: tests only (`simd_backend.rs:319`, `tests_coverage_detect_simd.rs`); `aprender-zram/bins/trueno-ublk/src/device/mod.rs:351` | Arch label, not kernel path. Harmless today (no serve prod consumer). A trap if a receipt ever reads it: that is why E-R3-2 asks for `kernel_path()` per dispatcher, never this |
 | `docs/audits/impl-PMAT-989-receipt.md:52,60` | gx10 / mini `backend: cpu … class=neon` | receipt prose | Host-class label. It must not be read as "Q4K/Q6K ran NEON". Emitter: `aprender-compute/src/registry/mod.rs:438` `render_entry` prints `class={compute_class}`, set at :606 from `cpu_isa()` (:614), which returns `"neon"` for any aarch64 build (:627) and the widest detected ISA on x86. It is an ISA-availability label for the host, never the kernel a Q4K/Q6K dot took |
-| `contracts/trueno/neon-dequant-v1.yaml` (+ generated `contract_*_neon_q4k_dequant!` macros in `aprender-compute/src/generated_contracts.rs`) | NEON Q4K/Q6K/Q8_0 **dequant** equations with Lean theorems | aprender-compute | Dequant, not the fused dot. It is a separate kernel family, but R3's oracle tests can reuse its fixtures (block builders, ε). Check before R3 writes a new block generator |
+| `contracts/trueno/neon-dequant-v1.yaml` (+ generated `contract_*_neon_q4k_dequant!` macros in `aprender-compute/src/generated_contracts.rs`) | NEON Q4K/Q6K/Q8_0 **dequant** equations with Lean theorems | aprender-compute | Dequant, not the fused dot. It is a separate kernel family, but R3's oracle tests can reuse its block builders (not its ε, since E-R3-1 derives its own bound). Check before R3 writes a new block generator |
 | `docs/build-ledger/2026-09-13/e45eaab47-reconcile.json:85` | "remaining: NEON path for Q4_K and Q6_K GEMV, and an ARM speed gate" | ledger | Correct (it names the gap) |
 | `docs/specifications/0.66-performance-parity-report.md:175` | G5 "GB10 decode 0.66× … Q4_K GEMV scalar on aarch64 (#2567)" | spec | Correct: attributes the GB10 gap to scalar |
 
@@ -111,13 +111,14 @@ R3 is a **FINDING, not a minted row**. The mint is deferred (only the cop mints,
 | 1 | **Dead site.** The contract cited `quantize/fused_q4k.rs:338` for the q4k-q8k dispatcher. No `mod` or `include!` names that file: it is a byte-identical 360-line copy of `q4k_dot_avx2.rs`, which `fused_k.rs:370` includes. The file has been an orphan since the APR-MONO subtree merge (3da75b7d3d). A NEON arm added there compiles nothing, and every test would pass against the old path | Cite corrected in §1, §9, §11 and in R5. A planted `compile_error!` must break the aarch64 check at each cited site | NEON-Q4K-006 |
 | 2 | Random f16 `d`/`dmin` bytes are Inf/NaN for 1 draw in 32 | Finite, normal f16 by construction | precondition |
 | 3 | Uniform scales or `dmin = 0` hide the scale and min terms (the existing tests use uniform scales; R3-test-skeletons.md) | Varied 6-bit scales and mins, `dmin ≠ 0`; second mutation drops the min term | NEON-Q4K-001 |
-| 4 | The epsilon floor of 1 makes the check absolute for small dots | At least 90% of cases have \|dot\| ≥ 1, and the test prints the fraction | precondition |
-| 5 | One super-block per case never runs the block loop | n ∈ {1, 2, 3, 7} | precondition |
+| 4 | The epsilon floor of 1 makes the check absolute for small dots | At least 90% of cases had \|dot\| ≥ 1. Superseded by row 11: the bound has no floor | precondition, then row 11 |
+| 5 | One super-block per case never runs the block loop | n ∈ {1, 2, 3, 7}, and 8 and 36 since row 11 | precondition |
 | 6 | The widen fallback is unreachable on gx10, which has dotprod | Test-only direct entry | NEON-Q4K-007 |
 | 7 | A golden regenerated in the run is a self-comparison | Committed golden with a pinned sha256 | NEON-Q4K-003 |
 | 8 | The C4 leg used prefill-final only and an unnamed reference path, and listed its gate as a postcondition | Decode positions, same `cpu_ref_path`; the gate stays in the formula | R1 BPM-008/-013 |
 | 9 | **Second orphan.** `quantize/fused_q.rs` is an older copy of `q5k_q6k_matvec.rs`, the file `parallel_k.rs:498` includes. No `mod` or `include!` names it, yet four falsify tests cite it as the CPU side (falsify_q6k_fp_accumulator_order_001.rs:101 and three others; R1 §11a). It holds matvec wrappers, not dots, so it is never a NEON site | Delete it and fix the four cites (PROPOSE-TICKET, after LIVE). The contract's site list already leaves it out | none (cleanup) |
-| 10 | **A dot Err becomes a 0.0 row.** Every CPU matvec writes 0.0 for a row whose dot returns Err (generic_matvec.rs:126, :143, :239; parallel_k.rs:320; direct_f32.rs:63; q5k_q6k_matvec.rs, 12 sites from :249 to :448; bsum_precompute.rs:296, :312; fused_gate_up.rs:134, :137, :160, :163). The fixtures use rows of 1, 2, 3 and 7 blocks, while a 2048-wide row has 8. A NEON arm that errs only on longer rows passes every dot test and zeroes rows in the forward. A few zero rows can pass the C4 cosine gate | The NEON arm has exactly the scalar oracle's Err conditions (shape only). A matvec-level check at production row lengths (8 and 36 blocks) calls each row's dot directly, so a NEON Err fails the test, and checks that the matvec wrote that value to that row | NEON-Q4K-008 |
+| 10 | **A dot Err becomes a 0.0 row.** Every CPU matvec writes 0.0 for a row whose dot returns Err (generic_matvec.rs:126, :143, :239; parallel_k.rs:320; direct_f32.rs:63; q5k_q6k_matvec.rs, 12 sites from :249 to :448; bsum_precompute.rs:296, :312; fused_gate_up.rs:134, :137, :160, :163). The fixtures used rows of 1, 2, 3 and 7 blocks, while a 2048-wide row has 8. A NEON arm that erred only on longer rows passed every dot test and zeroed rows in the forward. Since row 11 the dot tests run 8 and 36 blocks, but an Err on an input their fixtures never draw still passes them. A few zero rows can pass the C4 cosine gate | The NEON arm has exactly the scalar oracle's Err conditions (shape only). A matvec-level check at production row lengths (8 and 36 blocks) calls each row's dot directly, so a NEON Err fails the test, and checks that the matvec wrote that value to that row | NEON-Q4K-008 |
+| 11 | **The ε could not run at production row lengths** (item d, 2026-10-03). 1e-3 · max(1, \|dot\|) is relative to the dot, while summation-order error grows with the row's sum of \|w·x\|, so a cancelling 36-block row could miss it with no defect. Value parity stopped at 7 blocks, while production rows have 8 and 36 | E-R3-1: 2·γ(K)·S over the row's terms (Higham 2002, Lemma 3.1), which no fixture breaks without a defect, at n up to 36. On full random rows at 36 blocks a skipped 32-value group stays GREEN 85% of the time (simulated), so a masked sweep gives every scale group its own case, and a power guard (\|scalar\| ≥ 10 × bound) keeps the sweep from passing vacuously | NEON-Q4K-001, -004, -007 |
 
 Cleanup candidates (PROPOSE-TICKET, not done here):
 - Delete the orphan `quantize/fused_q4k.rs`. It shows up in `.pmat-baseline.json` and in code search as a live twin of `q4k_dot_avx2.rs`.
@@ -146,7 +147,7 @@ NEON-Q4K-008 (2026-10-03, row 10) checks five decode matvec entries and two pref
 
 The shapes are in_dim 2048 and 9216 (8 and 36 blocks per row) and out_dim 48 and 300. At 9216, C quantizes into heap buffers instead of stack ones (MAX_STACK_DIM 8960, parallel_k.rs:328). Out_dim 48 takes the sequential branches. 300 takes the parallel ones and ends in a 44-row tail tile.
 
-The reference is each row's own dot, called directly, and not the scalar oracle. The oracle bound is relative to the dot, while f32 summation-order error grows with the row's sum of |w·x|. So a long row whose terms cancel could fail with no kernel defect. On aarch64 the bsums dot falls through to `fused_q4k_q8k_dot_simd` (bsum_precompute.rs:237), so C and D reach that one dispatcher whether bsums is set or not.
+The reference is each row's own dot, called directly, and not the scalar oracle: 008 asks whether each row holds its own dot. Value parity at 8 and 36 blocks is E-R3-1's since row 11. On aarch64 the bsums dot falls through to `fused_q4k_q8k_dot_simd` (bsum_precompute.rs:237), so C and D reach that one dispatcher whether bsums is set or not.
 
 F and G (2026-10-03) run 3 tokens at once. No C4 run reaches them at 316dee2cd4. Their only production caller, `matmul_rows` (forward_qwen35.rs:1416), is reached only from `forward_prefill_qwen35` (:1200), and only its tests call that. They are covered anyway. FALSIFY-4228-004 and -005 check the batched prefill bit-identical to `forward_single_qwen35`, and a NEON Err would pass them: on aarch64 both sides call the same dot on the same row and swallow the Err into the same 0.0. G ignores the fp32 scope (R1 mechanism list), so the test runs it outside the scope against each token's Q8_K dot. F tiles rows by 64 at 8 blocks and by 32 at 36 (generic_matvec.rs:226), so every shape ends in a part tile. Q5_K multirow is left out, since Q5_K is not an R3 kernel.
 
@@ -161,3 +162,12 @@ BPM-012 and the C4 leg (2026-10-03). R1 FALSIFY-BPM-012 now compares, per (tenso
 - A C4 leg on the default route, against the C0 fp32_act reference the way a GPU cell runs, is the next draft (handoff Next, item e).
 
 pv 0.70.0 after this: validate 0/0; lint 0 errors and the same 5 lean_theorem warnings. Counts unchanged (5 equations, 9 falsifiers, 3 KANI, 8 obligations).
+
+## 14. Item (d): value parity at production row lengths (2026-10-03)
+
+- neon_scalar_parity now bounds |neon − scalar| by 2·γ(K)·S over the row's terms (Higham 2002, §3.1, Lemma 3.1), in place of 1e-3 · max(1, |dot|). The ε was relative to the dot while the order error grows with S, so value parity stopped at 7 blocks. It now runs at 8 and 36, the production lengths (§13 row 11).
+- K = 256n + 2 for the f32 kernels and 16n + 2 for q4k-q8k, read off the scalar oracles at 316dee2cd4. The q4k-q8k bound needs a kernel that forms each sub-block's integer sums exactly before any f32 rounding.
+- Power: on full random rows at 36 blocks a skipped 32-value group stays GREEN 85% of the time (simulated). The masked sweep gives each scale group its own case, and the power guard (|scalar| ≥ 10 × bound) is asserted on every case. That guard is scalar only, so it runs on x86.
+- The R3 test skeletons (§2) carry the bound helpers and the sweep. Their new code passes rustfmt --check under the repo's rustfmt.toml. Nothing was compiled or run (C277).
+
+pv 0.70.0 after item (d): validate 0/0; lint 0 errors and the same 5 lean_theorem warnings. Counts unchanged (5 equations, 9 falsifiers, 3 KANI, 8 obligations).

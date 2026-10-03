@@ -6,7 +6,8 @@ metadata:
   references:
   - 'docs/lookahead/0.73.md R3: NEON Q4_K / Q6_K kernels (draft: la-73 drafts/R3-neon-q4k-q6k.md)'
   - 'epic aprender#3999: 0.73 "Runs Everywhere", cell C4 (gx10 aarch64 CPU)'
-  - 'contracts/avx512-q4k-v1.yaml: epsilon precedent (1e-3 relative)'
+  - 'contracts/avx512-q4k-v1.yaml: the 1e-3 relative epsilon this contract first copied (replaced 2026-10-03 by a derived bound)'
+  - 'N. J. Higham, Accuracy and Stability of Numerical Algorithms, 2nd ed., SIAM 2002, section 3.1 and Lemma 3.1: the basis of the neon_scalar_parity bound'
   - 'la-73 drafts/backend-parity-matrix-v1.yaml: E1 composed-leg method used by E-R3-3'
   description: >
     Today every quantized dot in aprender-serve is x86-gated. On aarch64 the three
@@ -25,24 +26,34 @@ metadata:
 equations:
   neon_scalar_parity:
     formula: |
-      for k in {q4k-f32, q6k-f32, q4k-q8k}, seeded super-blocks b, activations x:
-        |neon_k(b, x) - scalar_k(b, x)| < 1e-3 * max(1, |scalar_k(b, x)|)
-    domain: 'one super-block row (256 values) of Q4_K or Q6_K with f32 or Q8_K activations'
+      for k in {q4k-f32, q6k-f32, q4k-q8k}, seeded rows b of n super-blocks, activations x:
+        |neon_k(b, x) - scalar_k(b, x)| <= tol_k(b, x) = 2 * gamma(K_k) * S_k(b, x)
+      gamma(m) = m * u / (1 - m * u), with u = 2^-24 (the f32 unit roundoff)
+      K = 256n + 2 for q4k-f32 and q6k-f32, and 16n + 2 for q4k-q8k
+      S_q4k-f32 = sum over values i of |d * sc_j * q_i * x_i| + |dmin * m_j * x_i|   (i in sub-block j)
+      S_q6k-f32 = sum over values i of |d * sc_g * (q_i - 32) * x_i|   (i in scale group g)
+      S_q4k-q8k = sum over sub-blocks j of |q8s * d * sc_j * S_j| + |q8s * dmin * m_j * Q_j|,
+        where S_j = sum of q_i * q8_i and Q_j = sum of q8_i over j, both exact integers
+    domain: 'rows of n super-blocks (256n values), n in {1, 2, 3, 7, 8, 36}, of Q4_K or Q6_K with f32 or Q8_K activations'
     codomain: bool
     preconditions:
-    - x.len() == 256
+    - 'x.len() == 256 * n (for q4k-q8k: q8.len() == 256 * n and q8s.len() == n)'
     - x.iter().all(|v| v.is_finite())
-    - 'b.len() == n * 144 for q4k and n * 210 for q6k, with n in {1, 2, 3, 7} (multi-block rows exercise the accumulator reset and the block loop)'
+    - 'b.len() == n * 144 for q4k and n * 210 for q6k, with n in {1, 2, 3, 7, 8, 36}. Multi-block rows run the accumulator reset and the block loop, and 8 and 36 are the production row lengths (in_dim 2048 and 9216)'
     - 'fixture d and dmin are finite, normal f16 by construction (random f16 bytes are Inf/NaN for 1 draw in 32)'
     - 'fixture 6-bit scales and mins differ across the 8 sub-blocks, and dmin != 0 (otherwise the min term is invisible)'
-    - 'at least 90% of fixture cases have |scalar_k(b, x)| >= 1, and the test prints that fraction (below the floor of 1 the epsilon is an absolute 1e-3)'
+    - 'S_k is computed in f64 from the block fields and x, never from a dot. The test takes |neon - scalar| in f64, where the difference of two f32 is exact'
+    - 'masked sweep, at n in {1, 8, 36}: one case per scale group of every block (32 values for Q4_K and q4k-q8k, 16 for Q6_K), on rows whose scales are all non-zero. x is zero outside the group and takes the signs of the dequantized weights inside it. Every case has |scalar_k| >= 10 * tol_k > 0, asserted before comparing (the power guard)'
     postconditions:
     - neon_k(b, x).is_finite() == scalar_k(b, x).is_finite()
-    - (neon_k(b, x) - scalar_k(b, x)).abs() < 1e-3 * scalar_k(b, x).abs().max(1.0)
+    - '(f64::from(neon_k(b, x)) - f64::from(scalar_k(b, x))).abs() <= tol_k(b, x)'
     invariants:
     - 'The scalar oracle is the dispatcher fallback (fused_q4k_dot, fused_q6k_dot, fused_q4k_q8k_dot), unchanged by this work.'
-    - 'The epsilon is relative with a floor of 1, as in avx512-q4k-v1, so near-zero dots are not over-constrained.'
-    - 'L25: that floor makes the check absolute (1e-3) for |dot| < 1. A fixture set of small dots lets a wrong kernel pass, so the magnitude precondition is part of the test, not a tuning choice.'
+    - 'Basis: Higham, Accuracy and Stability of Numerical Algorithms, 2nd ed. (2002), section 3.1 and Lemma 3.1. A sum whose every term passes through at most K roundings, in any order and with or without FMA, is within gamma(K) * sum|t| of the exact sum (without underflow or overflow, which the fixtures are far from). Both kernels meet that, so they differ by at most 2 * gamma(K) * S. No fixture can turn the check RED without a kernel defect, at any row length, and nothing is tuned to pass.'
+    - 'K, read at 316dee2cd4. d * sc * q is exact in f32 (11 + 6 + 4 significant bits for Q4_K, at most 23 for Q6_K), and so is dmin * m. The scalar oracles round a term at most 256n + 1 times (Q4_K: the subtraction, the product, then up to 256n - 1 additions), 256n times (Q6_K) and 8n + 2 times (q4k-q8k). Lane-parallel orders round far less: 8n + 6 to 8n + 38 for the q4k-f32 shapes checked, n + 4 for sdot. 16n + 2 also covers summing all 16n scale and min terms of a q4k-q8k row in one accumulator. The NEON kernel states its own count next to its code, and that count must not exceed K.'
+    - 'S_k sums the terms, not the dot, so S >= |dot|, and S >> |dot| on a cancelling row. Summation-order error grows with S. That is why the earlier 1e-3 * max(1, |dot|), copied from avx512-q4k-v1, could fail a long cancelling row with no defect, and why it kept value parity at 1 to 7 blocks.'
+    - 'q4k-q8k: the bound holds only if the kernel forms each sub-block''s integer sums S_j and Q_j exactly, in i32, before any f32 rounding (|S_j| <= 32 * 15 * 128 = 61 440 < 2^24). The scalar oracle does (q4k_dot_avx2.rs:232), and so do sdot and the widening kernel. A kernel that rounds partial sums to f32 needs an S over those partials.'
+    - 'L25 power. At n = 36 the bound is about 1.1e-3 * S, and one 32-value group carries about 1/288 of S. On full random rows a NEON arm that skips one group stays GREEN in 85% of cases (simulated: the skipped dot is a median 0.08 of the bound). In the masked sweep one group carries all of S, so a skipped group misses by its whole dot. At n = 36 that is at least 184 bounds for Q4_K and 4253 for q4k-q8k (simulated), and exactly 1 / (2 * gamma(K)), about 910, for Q6_K. The power guard turns a fixture without a 10x margin RED, so the sweep cannot pass vacuously.'
     - 'L25: the q4k-q8k widening fallback is unreachable on gx10 (it has dotprod), so dispatch never exercises it. Its parity runs through a test-only entry that calls the widen kernel directly (FALSIFY-NEON-Q4K-007).'
   dispatch_honesty:
     formula: |
@@ -70,7 +81,7 @@ equations:
     codomain: bool
     preconditions:
     - 'kernel_path(k) starts with "<k>/neon" for all three kernels (dispatch_honesty), so the rows run NEON and not scalar'
-    - 'in_dim in {2048, 9216}: 8 and 36 super-blocks per row, beyond the 1 to 7 of neon_scalar_parity. At 9216 > MAX_STACK_DIM 8960 (parallel_k.rs:328), entry C quantizes into heap buffers (:347) instead of stack ones (:331)'
+    - 'in_dim in {2048, 9216}: 8 and 36 super-blocks per row, the production lengths, which neon_scalar_parity also runs (item d). At 9216 > MAX_STACK_DIM 8960 (parallel_k.rs:328), entry C quantizes into heap buffers (:347) instead of stack ones (:331)'
     - 'out_dim in {48, 300}. 48 takes the sequential branches (q5k_q6k_matvec.rs:341 for out_dim <= 64, generic_matvec.rs:120 below 256). 300 takes the parallel ones (q5k_q6k_matvec.rs:319, generic_matvec.rs:128) and ends in a 44-row tail tile. F tiles rows by 64 at 8 blocks and by 32 at 36 blocks (generic_matvec.rs:226), so each shape ends in a part tile of 48, 44, 16 or 12 rows'
     - 'every direct dot has |v| >= 0.01, asserted before comparing: a 0.0 row next to a near-zero dot passes the bound'
     - 'the output is filled with NaN first, so a row the entry never writes cannot pass'
@@ -81,9 +92,9 @@ equations:
     - 'every entry returns Ok, and every row meets the formula'
     invariants:
     - 'Every CPU matvec writes 0.0 for a row whose dot returns Err (parallel_k.rs:320, direct_f32.rs:63, q5k_q6k_matvec.rs:331-350 and :437-448, generic_matvec.rs:126/:143, and the multirow generic_matvec.rs:239). The caller never sees a NEON Err, so the test calls each row''s dot directly.'
-    - 'neon_scalar_parity expects Ok from the dot, but only on rows of 1 to 7 blocks. A NEON arm that errs only on longer rows passes it.'
+    - 'neon_scalar_parity expects Ok from the dot, but only on its own random fixtures. A NEON arm that errs only on an input those fixtures never draw (mutation 2: one planted block) passes it, and the matvec turns the Err into a 0.0 row.'
     - 'One 0.0 row among 300 rows of similar size moves that output''s cosine to about sqrt(1 - 1/300) = 0.998, above the 0.995 floor, so a cosine gate can pass it. The check is per row.'
-    - 'The reference is the NEON dot itself, not the scalar oracle. Value parity stays with neon_scalar_parity. Taking that past 7 blocks needs an error term first: the bound is relative to the dot, while f32 summation-order error grows with the row sum of |w*x|, so a cancelling long row can miss the bound with no kernel defect.'
+    - 'The reference is the NEON dot itself, not the scalar oracle: this equation asks whether each row holds its own dot. Value parity is neon_scalar_parity''s, which runs at 8 and 36 blocks under its error term since item (d) (2026-10-03).'
     - 'Not entries at 316dee2cd4, since no C4 decode path calls them: bsum_precompute.rs:296/:312 (fused_q4k_q8k_parallel_matvec_with_bsums_into, called only by its own tests) and fused_gate_up.rs:134-163 (Gemma-1, gated-LayerNorm and FFN-norm-less archs, ffn_block.rs:58).'
     - 'F and G have no C4 caller at 316dee2cd4 either. Their only production caller, matmul_rows (forward_qwen35.rs:1416), is reached only from forward_prefill_qwen35 (:1200), and only forward_qwen35_prefill_tests.rs calls that. They are entries anyway. FALSIFY-4228-004 and -005 check the batched prefill bit-identical to forward_single_qwen35, and a NEON Err would pass them: on aarch64 both sides call the same dot on the same row and swallow the Err into the same 0.0. Wiring the batched prefill into a run would otherwise open this hole with no red test.'
     - 'G ignores with_fp32_activations: it reads only DIRECT_FP32_GEMV (q4k_q8k_multirow.rs:178-179; R1 mechanism list). On aarch64 it quantizes each token to Q8_K (:194-199) and runs fused_q4k_q8k_parallel_matvec_into, the row loop of C, once per token (:137-147). So its reference is the Q8_K dot of each token, and the test runs it outside the scope. The test stays valid if the scope is honoured later.'
@@ -136,11 +147,11 @@ falsification_tests:
   if_fails: 'x86 CI never compiles aarch64 cfg bodies, so a break there ships unseen'
   mutation: 'call an x86-only intrinsic inside a cfg(aarch64) body; the check must exit non-zero'
 - id: FALSIFY-NEON-Q4K-001
-  rule: q4k-f32 NEON matches scalar within epsilon
-  prediction: '10 000 seeded Q4_K super-blocks satisfy neon_scalar_parity.'
+  rule: q4k-f32 NEON matches scalar within the summation bound
+  prediction: '10 000 seeded Q4_K rows of 1 to 36 super-blocks satisfy neon_scalar_parity, and so does every case of the masked sweep.'
   test: 'NOT YET WRITTEN. Lands with R3'
   if_fails: 'the NEON kernel decodes nibbles or scales differently from scalar'
-  mutation: 'swap the low/high nibble order in the q4k NEON kernel; the test must turn RED. Second mutation: drop the dmin*min term; the test must turn RED (it bites only if the fixture has dmin != 0 and varied mins).'
+  mutation: 'swap the low/high nibble order in the q4k NEON kernel; the test must turn RED. Second mutation: drop the dmin*min term; the test must turn RED (it bites only if the fixture has dmin != 0 and varied mins). Third: skip one 32-value group in rows of 8 or more super-blocks. The full random rows at 36 blocks stay GREEN in most cases, and the masked sweep must turn RED.'
 - id: FALSIFY-NEON-Q4K-002
   rule: dispatch is honest on aarch64
   prediction: 'On aarch64, kernel_path of fused_q4k_dot_simd starts with q4k-f32/neon. On x86 the test is NotRun (not aarch64), never PASS.'
@@ -149,16 +160,16 @@ falsification_tests:
   mutation: 'delete the cfg(aarch64) arm; the path reads scalar and the test must turn RED'
 - id: FALSIFY-NEON-Q4K-003
   rule: a cross-arch golden agrees
-  prediction: 'Dots over a fixed block set, recorded on x86 scalar into a COMMITTED golden file (its sha256 is pinned in the test), match aarch64 NEON within epsilon. A golden regenerated inside the test run is a self-comparison and does not count.'
+  prediction: 'Dots over a fixed block set, recorded on x86 scalar into a COMMITTED golden file (its sha256 is pinned in the test), match aarch64 NEON within the neon_scalar_parity bound (S from the stored block and the seeded activations). A golden regenerated inside the test run is a self-comparison and does not count.'
   test: 'NOT YET WRITTEN. Lands with R3'
   if_fails: 'x86 and aarch64 give different answers for the same weights'
   mutation: 'perturb one scale byte in the golden; the test must turn RED'
 - id: FALSIFY-NEON-Q4K-004
-  rule: q6k-f32 NEON matches scalar within epsilon
-  prediction: '10 000 seeded Q6_K super-blocks satisfy neon_scalar_parity.'
+  rule: q6k-f32 NEON matches scalar within the summation bound
+  prediction: '10 000 seeded Q6_K rows of 1 to 36 super-blocks satisfy neon_scalar_parity, and so does every case of the masked sweep.'
   test: 'NOT YET WRITTEN. Lands with R3'
   if_fails: 'the 6-bit ql/qh recombination is wrong'
-  mutation: 'drop qh bit 5 in the q6k NEON kernel; the test must turn RED'
+  mutation: 'drop qh bit 5 in the q6k NEON kernel; the test must turn RED. Second: skip one 16-value scale group in rows of 8 or more super-blocks; the masked sweep must turn RED.'
 - id: FALSIFY-NEON-Q4K-005
   rule: C4 end-to-end leg passes, and only on a trace that shows NEON
   prediction: 'c4_e1_leg >= 0.995, and the forward trace names a neon kernel.'
@@ -182,12 +193,12 @@ falsification_tests:
   rule: no NEON dot Err becomes a silent 0.0 matvec row (L25)
   prediction: 'On aarch64, matvec_row_parity holds for the five decode entries and the two prefill entries at in_dim 2048 and 9216 and out_dim 48 and 300. (A) fused_q4k_parallel_matvec_into inside with_fp32_activations (parallel_k.rs:270, rows at :320). (B) fused_q4k_parallel_matvec_f32_into, the crushed-block route of matvec_honest (direct_f32.rs:21, rows at :62-63; ffn_block.rs:790, :799). (C) fused_q4k_parallel_matvec_into without the scope, through fused_q4k_q8k_parallel_matvec_into (q5k_q6k_matvec.rs:79, rows at :331-350). (D) fused_q4k_q8k_ffn_up_gate_into, called by scratch_q8k_up_gate in the scratch and traced forwards (q5k_q6k_matvec.rs:380, rows at :437-448; results.rs:33). (E) fused_q6k_parallel_matvec_into (q5k_q6k_matvec.rs:48, then generic_matvec.rs:68, rows at :126 and :143). (F) fused_q6k_multirow_matmul_into at m = 3 (q4k_q8k_multirow.rs:326, then generic_matvec.rs:188, rows at :239). (G) fused_q4k_multirow_matmul_f32_into at m = 3 (q4k_q8k_multirow.rs:161; Q8_K per token at :194-199, then the row loop of C per token at :137-147).'
   test: 'NOT YET WRITTEN. Lands with R3 (skeleton in R3-test-skeletons.md section 4c)'
-  if_fails: 'a NEON arm that errs on production row lengths ships as silent 0.0 rows, which the dot tests, a cosine gate and the prefill bit-identity tests (FALSIFY-4228-004, -005) can all pass'
-  mutation: 'make the NEON arm return Err for rows of 8 or more super-blocks. The neon_scalar_parity tests (1 to 7 blocks) stay GREEN, and this test must turn RED. Second: return Err for one planted block (its first 16 quant bytes are 0x5A) in one row of an out_dim 300 case; this test must turn RED. Third, for the row check itself: write 0.0 in place of one tail-tile row in the parallel branch of fused_q4k_q8k_parallel_matvec_into; this test must turn RED. Fourth, for the prefill row check: in generic_multirow_matmul_into, write 0.0 for the last row of the part tile for token m - 1 (generic_matvec.rs:238-239); entry F must turn RED.'
+  if_fails: 'a NEON arm that errs on some production-length row ships as silent 0.0 rows. The dot tests miss an Err on an input their fixtures never draw, and a cosine gate and the prefill bit-identity tests (FALSIFY-4228-004, -005) can pass it'
+  mutation: 'make the NEON arm return Err for rows of 8 or more super-blocks; this test must turn RED (and since item (d) so must neon_scalar_parity, which runs 8 and 36 blocks). Second: return Err for one planted block (its first 16 quant bytes are 0x5A) in one row of an out_dim 300 case; this test must turn RED, while the neon_scalar_parity fixtures never draw that block and stay GREEN. Third, for the row check itself: write 0.0 in place of one tail-tile row in the parallel branch of fused_q4k_q8k_parallel_matvec_into; this test must turn RED. Fourth, for the prefill row check: in generic_multirow_matmul_into, write 0.0 for the last row of the part tile for token m - 1 (generic_matvec.rs:238-239); entry F must turn RED.'
 proof_obligations:
 - type: invariant
-  property: 'NEON equals scalar within epsilon for all three kernels (FALSIFY-NEON-Q4K-001, 004)'
-  formal: 'forall k, b, x: |neon_k(b,x) - scalar_k(b,x)| < 1e-3 * max(1, |scalar_k(b,x)|)'
+  property: 'NEON equals scalar within the summation bound for all three kernels (FALSIFY-NEON-Q4K-001, 004)'
+  formal: 'forall k, n, b, x: |neon_k(b,x) - scalar_k(b,x)| <= 2 * gamma(K_k(n)) * S_k(b,x)'
 - type: invariant
   property: 'A kernel label names only a reached kernel (FALSIFY-NEON-Q4K-002)'
   formal: 'kernel_path(k) = path_of(reached_kernel(k))'
@@ -203,7 +214,7 @@ proof_obligations:
   formal: 'forall k: site(k) in compiled_files(aprender-serve, aarch64)'
 - type: invariant
   property: 'The widen fallback matches scalar (FALSIFY-NEON-Q4K-007)'
-  formal: 'forall b, x: |widen(b,x) - scalar_q4k_q8k(b,x)| < 1e-3 * max(1, |scalar_q4k_q8k(b,x)|)'
+  formal: 'forall n, b, x: |widen(b,x) - scalar_q4k_q8k(b,x)| <= 2 * gamma(16n + 2) * S_q4k_q8k(b,x)'
 - type: invariant
   property: 'Every decode matvec row, and every row of each prefill token, holds its own NEON dot, and that dot is Ok at production row lengths (FALSIFY-NEON-Q4K-008)'
   formal: 'forall e, (in_dim, out_dim), t < m_e, r < out_dim: dot_e(W[r], x_e[t]) = Ok(v) and |matvec_e(W, x)[t][r] - v| < 1e-3 * max(1, |v|)'
@@ -250,4 +261,4 @@ verification_summary:
   proven: 0
   tested: 0
   status: proposed
-  notes: 'Draft by la-73 (L3). No ticket yet; tests land with R3. L25 review 2026-10-03 at main 316dee2cd4: orphan-file site, fixture f16/scale/magnitude/multi-block preconditions, unreachable widen fallback, committed golden, C4 leg decode positions and ref path (NEON-Q4K-006, -007). NEON-Q4K-008 (2026-10-03): every CPU matvec turns a dot Err into a 0.0 row, so each decode matvec row is checked against its own dot at production row lengths. Prefill entries F and G (2026-10-03): the multirow kernels swallow a dot Err too (generic_matvec.rs:239, or the row loop of C per token). No C4 run calls them at 316dee2cd4, and the prefill bit-identity tests cannot see a swallowed Err, so 008 covers them before the batched prefill is wired. Item (c) 2026-10-03: the C4 leg meets R1 BPM-012 (now per tensor, arch ignored) through dispatch honesty, not the second machine; the C4 leg reaches A, B and E only.'
+  notes: 'Draft by la-73 (L3). No ticket yet; tests land with R3. L25 review 2026-10-03 at main 316dee2cd4: orphan-file site, fixture f16/scale/magnitude/multi-block preconditions, unreachable widen fallback, committed golden, C4 leg decode positions and ref path (NEON-Q4K-006, -007). NEON-Q4K-008 (2026-10-03): every CPU matvec turns a dot Err into a 0.0 row, so each decode matvec row is checked against its own dot at production row lengths. Prefill entries F and G (2026-10-03): the multirow kernels swallow a dot Err too (generic_matvec.rs:239, or the row loop of C per token). No C4 run calls them at 316dee2cd4, and the prefill bit-identity tests cannot see a swallowed Err, so 008 covers them before the batched prefill is wired. Item (c) 2026-10-03: the C4 leg meets R1 BPM-012 (now per tensor, arch ignored) through dispatch honesty, not the second machine; the C4 leg reaches A, B and E only. Item (d) 2026-10-03: neon_scalar_parity bounds |neon - scalar| by 2 * gamma(K) * S over the row''s terms (Higham 2002, Lemma 3.1) in place of 1e-3 * max(1, |dot|), so value parity runs at the production row lengths 8 and 36; the magnitude precondition gives way to a masked sweep with a power guard.'

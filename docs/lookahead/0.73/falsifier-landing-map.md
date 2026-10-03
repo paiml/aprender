@@ -43,7 +43,7 @@ blocked them on the harness and GPU access for no reason. Only the checker is ne
 | WGF-009 total op_placement | P1 + P2 | map without attention |
 | R4-003 `--no-gpu` refused | P1 | plus a positive control: a real C0 GPU receipt is ACCEPTED |
 | NEON-000 cross-check | P3 | `cargo check --target aarch64-unknown-linux-gnu`, off the release path |
-| NEON-001 parity proptest | P3 | gx10; magnitude-floor part runs on x86 |
+| NEON-001 parity proptest | P3 | gx10; the masked-sweep power guard (scalar and bound only) runs on x86 |
 | NEON-002 path matches dotprod | P3 | gx10 |
 | NEON-003 pinned golden | P3 | golden recorded on x86 scalar, checked on gx10 |
 | NEON-004 Q6_K parity | P3 | gx10 |
