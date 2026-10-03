@@ -171,6 +171,12 @@ falsification_tests:
     test: "bash scripts/perf_gate.sh --selftest"
     if_fails: "A pre-flight run with one band walks every print in Arm A, fires none, and the gate says VERDICT PASS over a measurement that never happened — the exact run observed on lambda in #2830"
 
+  - id: FALSIFY-PP-LLAMA-001-PERF-GATE-014
+    rule: "Arm L3 takes an armed metric's verdict only from a band whose §7.4 status is MEASURED; comparator_status records only that a comparator lane was joined. An armed metric on a band of any other status, or of none, FAILS, and an unarmed one REPORTS (PP-35)"
+    prediction: "perf_gate.sh --selftest keeps five rows green. l3_measured_band_passes prints `PASS ArmL3 c=1 dec_ratio lcb95=1.0500` on a MEASURED band. The same band, every armed lcb95 clearing its bound, FAILS as NONCONFORMANT-VALID (l3_nonconformant_band_fails), as COMPARATOR_STALE (l3_stale_band_fails) and with no status (l3_statusless_band_fails), and REPORTS under the committed, unarmed matrix (l3_nonconformant_unarmed_reports). Dropping the status check turns the three FAIL rows red; checking it before the armed test turns the REPORT row red"
+    test: "bash scripts/perf_gate.sh --selftest"
+    if_fails: "A band the producer refused, too few replicates or not interleaved, carries an armed verdict, and a shortened run passes an armed gate; or an unarmed metric on such a band fails a gate nobody armed"
+
 qa_gate:
   id: F-PP-LLAMA-001-PERF-GATE-001
   name: "Perf gate integrity — every arm can fail, at its declared phase, against a number in one file"

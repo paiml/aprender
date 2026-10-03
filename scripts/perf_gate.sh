@@ -769,7 +769,13 @@ arm_l3_parity() {
   # authorless 0.80 and B2's floor inherited from a document that never existed
   # in any ref are gone; the bound is `lcb95 >= 1 - delta` with delta in the
   # matrix. An (cell, band, metric) absent from `armed_by` is REPORTING: a gate
-  # arms when a measurement arms it, never on a date.
+  # arms when a measurement arms it, never on a date. PP-35: an armed metric
+  # takes its verdict only from a band whose §7.4 `status` is MEASURED.
+  # `comparator_status` says only that a comparator lane was joined, and
+  # perf_receipt.py writes it MEASURED beside a NONCONFORMANT-VALID band (too
+  # few replicates, or not interleaved). Any other status therefore FAILs an
+  # armed metric rather than REPORTing it, or a shortened run would be a way
+  # past an armed gate.
   local receipt="$1" host="$2" workload="$3"
   python3 - "$receipt" "$MATRIX" "$host" "$workload" <<'PY_L3'
 import json,sys,yaml
@@ -818,6 +824,7 @@ for b in bands:
               "representable ONLY inside a band that carries its own paired baseline (PP-3)"
               % (c, st))
         fail=True; continue
+    bst = b.get("status")
     want = gated.get("c1") if c == 1 else gated.get("c_gt_1")
     want = list(want or [])
     armed_cell = (armed.get("c%s" % c) or {})
@@ -833,6 +840,11 @@ for b in bands:
                   "arms.L3.armed_by, so this metric REPORTS until a measurement arms it"
                   % (c, metric, lcb, bound, host, wl, c, metric))
             continue
+        if bst != "MEASURED":
+            print("FAIL ArmL3 c=%s status=%r: armed %s takes its verdict only from a MEASURED "
+                  "band; comparator_status=%r says only that a comparator lane was joined (PP-35)"
+                  % (c, bst, metric, st))
+            fail=True; continue
         if lcb is None:
             print("FAIL ArmL3 c=%s %s is armed and carries no lcb95 -- an armed metric with no "
                   "interval is a point estimate wearing a bound" % (c, metric))
@@ -1447,6 +1459,7 @@ for b in r["bands"]:
     if b["concurrency"] != 4:
         continue
     b["comparator_status"]="MEASURED"
+    b["status"]="MEASURED"
     b["baseline"]={"run_id": r["run_id"], "concurrency": 4,
                    "aggregate_tok_per_sec": 400.0, "decode_tok_per_sec": 100.0,
                    "prefill_tok_per_sec": 3000.0,
@@ -1612,6 +1625,7 @@ for b in r["bands"]:
     if b["concurrency"] != 1:
         continue
     b["comparator_status"]="MEASURED"
+    b["status"]="MEASURED"
     b["baseline"]={"run_id": r["run_id"], "concurrency": 1,
                    "aggregate_tok_per_sec": 111.0, "decode_tok_per_sec": 120.0,
                    "prefill_tok_per_sec": 800.0,
@@ -1639,6 +1653,46 @@ for b in r["bands"]:
   # arms it -- a gate arms when a measurement arms it, never on a date.
   F="$(_mut l3unarmed "$OK3" "$L3_BELOW")"
   _row l3_unarmed_is_reporting     "$F" release W1 lambda "" pass "is not in arms.L3.armed_by"
+  # PP-35. A band's §7.4 `status`, not `comparator_status`, decides whether it
+  # can carry a verdict. perf_receipt.py writes comparator_status MEASURED on a
+  # NONCONFORMANT-VALID band (too few replicates, or not interleaved), so a gate
+  # that reads only comparator_status passes that band. Every armed lcb95 here
+  # clears its bound, so only the status can turn these rows red. PAIRED and
+  # C1_PAIRED mark their band MEASURED, as the producer marks a conformant one.
+  local L3_CLEARS
+  L3_CLEARS="$C1_PAIRED"'
+for b in r["bands"]:
+    if b["concurrency"] == 1:
+        b["ratios"]["dec"]["lcb95"]=1.05
+'
+  F="$(_mut l3measured "$OK3" "$L3_CLEARS")"
+  _row l3_measured_band_passes     "$F" release W1 lambda "$MX_ARMED" pass "PASS ArmL3 c=1 dec_ratio lcb95=1.0500"
+  F="$(_mut l3nonconf "$OK3" "$L3_CLEARS"'
+for b in r["bands"]:
+    if b["concurrency"] == 1:
+        b["status"]="NONCONFORMANT-VALID"
+')"
+  _row l3_nonconformant_band_fails "$F" release W1 lambda "$MX_ARMED" fail "status='NONCONFORMANT-VALID': armed dec_ratio"
+  F="$(_mut l3stale "$OK3" "$L3_CLEARS"'
+for b in r["bands"]:
+    if b["concurrency"] == 1:
+        b["status"]="COMPARATOR_STALE"
+')"
+  _row l3_stale_band_fails         "$F" release W1 lambda "$MX_ARMED" fail "status='COMPARATOR_STALE': armed dec_ratio"
+  F="$(_mut l3nostatus "$OK3" "$L3_CLEARS"'
+for b in r["bands"]:
+    if b["concurrency"] == 1:
+        del b["status"]
+')"
+  _row l3_statusless_band_fails    "$F" release W1 lambda "$MX_ARMED" fail "status=None: armed dec_ratio"
+  # ... and an UNARMED metric on the same band still REPORTS: the status
+  # decides whether a band can carry a verdict, never whether one is owed.
+  F="$(_mut l3nonconfunarmed "$OK3" "$L3_CLEARS"'
+for b in r["bands"]:
+    if b["concurrency"] == 1:
+        b["status"]="NONCONFORMANT-VALID"
+')"
+  _row l3_nonconformant_unarmed_reports "$F" release W1 lambda "" pass "c=1, dec_ratio) is not in arms.L3.armed_by"
 
   # ---- PP-31: self-regression ----------------------------------------------
   local REPS

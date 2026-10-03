@@ -443,6 +443,22 @@ time (`parse_timing_ms` reads the `Completed in` line), divided APR over Ollama 
 It has the same name and the un-inverted orientation, and it measures a different quantity, so
 the row names it as a source no producer may copy.
 
+### PP-35
+
+The producer and the gate read different fields. `perf_receipt.py` writes a band's §7.4 `status`
+and, separately, the legacy `comparator_status`, which is `MEASURED` whenever a comparator lane was
+joined. A band of three replicates, or one whose lanes did not alternate, is `NONCONFORMANT-VALID`
+and still `comparator_status: MEASURED` (`_v3_band`; `_nonconformance` lists the reasons a band
+"may be cited but may not arm a threshold"). Arm L3 chose which bands to gate from
+`comparator_status` alone and never read `status`, so the producer's refusal never reached the
+verdict. The replicate estimator happens to survive this, because below `replicates_min` it
+returns no `lcb95` and an armed metric without one FAILs. The bootstrap does not: it has no floor
+of its own. Neither estimator can see that a sweep was not interleaved. An armed metric on such a
+band FAILs rather than REPORTs, because an armed cell exists to prove non-inferiority on this
+receipt and a band that cannot carry a verdict proves nothing. Were it only reported, shortening
+a run would be the way past an armed gate. FAIL against REPORT is the spec owner's to rule; under
+REPORT the three FAIL rows would flip.
+
 ---
 
 ## §5.1 — the protocol decision
