@@ -454,13 +454,15 @@ and still `comparator_status: MEASURED` (`_v3_band`; `_nonconformance` lists the
 replicates, or one not interleaved, `NONCONFORMANT-VALID`, and `insert_comparator`
 (`perf_gate/receipt.rs`) renders `comparator_status` from the comparator lane alone. Arm L3 chose
 which bands to gate from `comparator_status` alone and never read `status`, so neither producer's
-refusal reached the verdict. The replicate estimator happens to survive this, because below
-`replicates_min` it returns no `lcb95` and an armed metric without one FAILs. The bootstrap does
-not: it has no floor of its own. Neither estimator can see that a sweep was not interleaved. An
-armed metric on such a band FAILs rather than REPORTs, because an armed cell exists to prove
-non-inferiority on this receipt and a band that cannot carry a verdict proves nothing. Were it only
-reported, shortening a run would be the way past an armed gate. FAIL against REPORT is the spec
-owner's to rule; under REPORT the three FAIL rows would flip.
+refusal reached the verdict. The replicate estimators happen to survive this: below `replicates_min`
+they return no `lcb95`, Rust's `log_ratio_lcb` returns none either unless the replicates strictly
+alternate, and an armed metric without one FAILs. The bootstraps do not. `perf_receipt.py`'s needs
+only non-empty lanes, and Rust's `paired_ratio_lcb`, which `ratios_of` runs for `dec` whenever both
+lanes report a decode rate, needs only two retained requests per lane. Neither bootstrap can see
+that a sweep was not interleaved. An armed metric on such a band FAILs rather than REPORTs, because
+an armed cell exists to prove non-inferiority on this receipt and a band that cannot carry a verdict
+proves nothing. Were it only reported, shortening a run would be the way past an armed gate. FAIL
+against REPORT is the spec owner's to rule; under REPORT the three FAIL rows would flip.
 
 ---
 
