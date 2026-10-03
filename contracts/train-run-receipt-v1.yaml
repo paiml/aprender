@@ -16,12 +16,14 @@ metadata:
     A receipt with only the 1.0.0 keys lacks 18 keys the verdict needs, so the adapter exits 4.
     1.1.0 makes `device` an object, adds the effective-recipe block, trainable_params and a timed
     window. It is the receipt half of R15; the flag half is the canonical-task argv in apr_argv().
+    TRR-012 and TRR-013 (2026-10-03, R15b) falsify the precision read-back and after_compile invariants.
   references:
   - docs/specifications/aprender-train/train-what-you-serve-0.72.md §R12, Spike S-R12
   - contracts/entrenar/apr-checkpoint-v1.yaml (F-CKPT-017 canonical base_model_hash, no writer emits it)
   - crates/aprender-build-sha (APR_GIT_SHA, used by --version/bench/serve, by no training writer)
   - crates/apr-cli/src/commands/finetune.rs (seed 42 hardcoded), distill.rs (training_metadata.json), pretrain.rs
-  - contracts/beat-unsloth-finetune-throughput-v1.yaml (1.2.0, the consumer of the 1.1.0 keys)
+  - contracts/beat-unsloth-finetune-throughput-v1.yaml (1.3.0, the consumer of the 1.1.0 keys; it pins precision bf16)
+  - docs/specifications/aprender-train/r15-cuda-lora-cells.md (R15 cells C5-C7; FALSIFY-TRR-012 and FALSIFY-TRR-013)
   - scripts/bench/unsloth_ft_apr.py (APR_KEYS) and scripts/tests/unsloth_ft_apr_test.py (prints the gap list)
   depends_on:
   - apr-checkpoint-v1
@@ -128,3 +130,13 @@ falsification_tests:
   prediction: 'the same tiny NF4 finetune with and without FP16_GEMM=1 gives recipe.compute_dtype fp16 vs fp32 and two different recipe_sha256'
   test: 'tiny CUDA NF4 run twice (after LIVE 0.70.1 and with the train idle)'
   if_fails: 'two runs with different numerics share a recipe hash, so the receipt cannot tell them apart'
+- id: FALSIFY-TRR-012
+  rule: Planted falsifier — recipe.precision and recipe.compute_dtype are read back, not echoed
+  prediction: 'a tiny `apr finetune … --precision bf16 --timed-steps 2` on a bf16 safetensors file, before R15 C5 (the CPU trainer holds every weight as f32, autograd/tensor.rs:20; every CudaTransformerBlock buffer is GpuBuffer<f32>), either refuses before step 1 and writes no receipt or writes recipe.precision fp32, never bf16; unsloth_ft_verdict.py on an fp32 receipt exits 1, SAME-WORK FAIL naming precision, with no ratio (FALSIFY-BEAT-UNSLOTH-FT-PRECISION). A writer that copies --precision from argv, or the dtype from the safetensors header or config.json, writes bf16 and turns this RED. After C5 the same run on CUDA writes precision bf16, read from the dtype of the base weight buffers. compute_dtype is taken where the GEMM is called, not from precision: a planted C5 build that widens the bf16 base to fp32 before each GEMM writes compute_dtype fp32 and a recipe_sha256 different from the true bf16 run'
+  test: 'tiny CPU finetune after R15 C6 (first half); tiny CUDA run after C5 (second half, after LIVE 0.70.1 and with the train idle)'
+  if_fails: 'an fp32 run reaches the T2 verdict labelled bf16 and is compared with bf16 Unsloth as the same work, or a run that stores bf16 but multiplies in fp32 is reported as a bf16 run'
+- id: FALSIFY-TRR-013
+  rule: Planted falsifier — after_compile sees a module load inside the timed window
+  prediction: 'a tiny CUDA `apr finetune … --warmup-steps 1 --timed-steps 2` writes timed_window.after_compile true, computed from a count of PTX module loads, kernel JITs and graph captures read at the device syncs on both window edges, never assumed; the same run with a test-only hook that loads one PTX module not yet loaded (or JIT-compiles one kernel) at timed step 1 writes false. A writer that hard-codes true turns this RED. Through unsloth_ft_apr.py and unsloth_ft_verdict.py the false receipt exits 1, SAME-WORK FAIL naming timed_after_compile, with no ratio: check_pins (unsloth_ft_verdict.py:103) pins it on every run of both sides, already tested as "timed before compile" in scripts/tests/unsloth_ft_verdict_test.py:123'
+  test: 'tiny CUDA run twice, with and without the hook, after R15 C7 (after LIVE 0.70.1 and with the train idle)'
+  if_fails: 'the receipt claims a clean window it does not have: the timed seconds include module loads or JIT, so apr''s tokens/s is not the steady state that the incumbent''s after-compile window measures'
