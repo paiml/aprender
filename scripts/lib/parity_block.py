@@ -746,7 +746,10 @@ def _executor_comparator(base, args, comp_class, source):
 # load-<class>.json naming the two measured reports. The client times its own
 # spawn of the server to the first passing readiness probe (cold_start_ms);
 # this block carries that per server as load_ms, with the probe that decided
-# it and the last probe that refused.
+# it and the last probe that refused. The client writes the time, the bracket
+# that resolves it and the deciding probe together; a report with the time
+# alone came from a client that does not bracket readiness, and leaves its
+# side UNMEASURED.
 #
 # Nothing reads this block to decide anything. No contract this gate
 # implements bounds a server's load time, and a number with no bound is
@@ -903,8 +906,29 @@ def _load_run(work, entry):
     return None
 
 
+def _ready_probe_why(probe):
+    """Why the report's cold_start_probe does not show which path found the
+    server ready, or None when it does. The client stamps a cold start only
+    with the probe that answered 2xx: its URL and its status."""
+    if not isinstance(probe, dict):
+        return ("the report carries cold_start_ms with no cold_start_probe, "
+                "so nothing says which path found the server ready")
+    url, status = probe.get("url"), probe.get("status")
+    if not isinstance(url, str) or not url:
+        return ("the report's cold_start_probe names no URL, so nothing says "
+                "which path found the server ready")
+    if not isinstance(status, int) or not 200 <= status < 300:
+        # The comparator answers 503 while it loads: a time stamped on a
+        # probe that was not 2xx timed its bind, not its load.
+        return ("the report's cold_start_probe answered %r, and only a 2xx "
+                "says the server was ready" % (status,))
+    return None
+
+
 def _load_run_why(work, entry, run):
-    """Why the bench report gives a load no time, or None when it does."""
+    """Why the bench report gives a load no time to ready, or None when it
+    does: the client's cold start, the bracket that resolves it and the probe
+    that decided it, which the client writes together."""
     if run is None:
         bench_log = _work_file(work, entry, "bench_log")
         return ("no bench report with a run: the client exited %s; its last "
@@ -913,12 +937,18 @@ def _load_run_why(work, entry, run):
     if _number(run.get("cold_start_ms")) is None:
         return ("the report carries no cold_start_ms: the client that wrote "
                 "it does not time a server it starts")
-    return None
+    if _number(run.get("cold_start_resolution_ms")) is None:
+        return ("the report carries cold_start_ms without "
+                "cold_start_resolution_ms: the client that wrote it does not "
+                "bracket readiness, so nothing bounds how late that time "
+                "marks it")
+    return _ready_probe_why(run.get("cold_start_probe"))
 
 
 def _load_side(work, entry, mode, class_why=None):
     """One server's measured load, read from the report its manifest entry
-    names. MEASURED iff that report carries the client's cold start and a
+    names. MEASURED iff that report carries the client's cold start whole
+    (the time, its resolution and the 2xx probe that decided it) and a
     witness saw the page cache in the state the pass declared (`mode`): warm
     is the whole model resident, evicted is none of it. A failed eviction, no
     witness, or a witness that contradicts the mode leaves the state the load
@@ -947,7 +977,7 @@ def _load_side(work, entry, mode, class_why=None):
         return side
     side.update({"status": "MEASURED", "status_reasons": [],
                  "load_ms": run["cold_start_ms"],
-                 "resolution_ms": _number(run.get("cold_start_resolution_ms")),
+                 "resolution_ms": run["cold_start_resolution_ms"],
                  "probe": run.get("cold_start_probe"),
                  "refusal": run.get("cold_start_refusal")})
     side.update(_first_request(run))
