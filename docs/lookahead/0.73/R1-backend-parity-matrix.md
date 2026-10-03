@@ -119,8 +119,11 @@ Mechanism, per qtype (aprender-serve):
   (`matvec_into_honest`, ffn_block.rs; `fused_q4k_parallel_matvec_f32_into`, L0-1b #2971). This is data-dependent.
 - **Q4_K, multirow (m > 1).** `fused_q4k_multirow_matmul_f32_into` reads only `DIRECT_FP32_GEMV`
   (q4k_q8k_multirow.rs:178). The scope is ignored.
-- **Q5_K / Q6_K.** Always f32: `generic_parallel_matvec_into` with `fused_q6k_dot_simd` / `fused_q5k_dot_simd`
-  (fused_q5k_q6k.rs:118, included at parallel_k.rs:498). There is no Q8_K path for them.
+- **Q5_K / Q6_K.** Always f32. `fused_q5k_parallel_matvec_into` and `fused_q6k_parallel_matvec_into`
+  (q5k_q6k_matvec.rs:7, :48, included at parallel_k.rs:498) run `generic_parallel_matvec_into` with the f32 dots
+  (`fused_q6k_dot_simd`, fused_q5k_q6k.rs:118). There is no Q8_K path for them.
+  - quantize/fused_q.rs is an older copy of q5k_q6k_matvec.rs that nothing compiles (no `mod`, no `include!`).
+    Three falsify tests still cite it as the CPU path (falsify_q6k_chain_length_003.rs:104 and two others).
 - **Q4_0 / Q8_0.** Always Q8_0 activations (`fused_q4_0_q8_0_*`, `fused_q8_0_q8_0_parallel_matvec_into`). There is no
   f32 path.
 - **Callers that pre-quantize whatever the scope says:**
@@ -138,10 +141,22 @@ Mechanism, per qtype (aprender-serve):
     - `fused_matmul` never takes the multirow path: for seq_len > 1 it loops the single-row matvec.
     - So a Q5_K/Q6_K up/gate stays f32, and the label holds.
   - Gemma-1 (`is_gemma1`, config.rs:391: arch exactly "gemma" or "gemmaforcausallm"), gated LayerNorm
-    models and gated models without an FFN norm use the non-fused gated branch. It calls `fused_gate_up_matmul_into` (ffn_block.rs:58 →
-    fused_matmul_into.rs:163). Their Q4_K up/gate stay on Q8_K inside the scope. The only other callers
-    are in the scratch forward (results.rs:51, :103), which is never the reference. The fused gate/up
-    kernels have no caller except `fused_gate_up_matmul_into` (fused_matmul_into.rs:187/:198/:209).
+    models and gated models without an FFN norm use the non-fused gated branch.
+    - It calls `fused_gate_up_matmul_into` (ffn_block.rs:58 → fused_matmul_into.rs:163), so their Q4_K
+      up/gate stay on Q8_K inside the scope.
+    - Its only other callers are in the scratch forward (results.rs:51, :103), which is never the reference.
+    - The fused gate/up kernels have no caller except `fused_gate_up_matmul_into` (fused_matmul_into.rs:187,
+      :198, :209).
+- **LM head** (`single_cache_final_output`, ffn_block.rs:139). The dense forward calls it at :587 and the MoE
+  forward at forward_qwen3_moe.rs:504.
+  - RMSNorm models use `fused_rmsnorm_lm_head` (fused_matmul_into.rs:441). A Q4_0 head runs the fused
+    RMSNorm + Q8_0 kernel (`fused_rmsnorm_q4_0_matmul`, quantize/activation.rs:273). Any other head runs
+    `fused_matmul`.
+  - Unit-offset RMSNorm and LayerNorm models normalize first, then run `fused_matmul` (ffn_block.rs:185, :195).
+  - `fused_matmul` sends Q4_K to `fused_q4k_parallel_matvec` (matmul_fused.rs:368), which wraps the `_into`
+    above, so it honours the scope. Q5_K/Q6_K are f32, Q4_0/Q8_0 are Q8_0, and F16/BF16/F32 are float.
+  - Qwen3.5 runs `fused_matmul_into` on its head (forward_qwen35.rs:1051). That reaches the same `_into` kernels.
+  - So the head keeps the label on all three reference forwards. A Q6_K head is f32 under either label.
 
 | command | source | CPU fn | activation path |
 |---|---|---|---|
@@ -165,6 +180,7 @@ RQ-5 implication (provisional default `fp32_act`, §11):
 - `fp32_act` is honest with no code change for Q4_K_M (Q4_K + Q6_K): run the honest or MoE forward token by
   token inside the scope.
 - The label is false for the scratch and traced forwards, for fused gate/up, and for multirow without the env var.
+  The LM head is not an exception: on every reference forward it honours the scope, or its qtype fixes the path.
   The receipt must name the forward, and derive the per-qtype path from the trace instead of trusting the label
   (FALSIFY-BPM-008, fixture f008d).
 - Q4_0/Q8_0 tensors keep a Q8_0 reference under either label, so they are recorded as `ref_mixed`.
