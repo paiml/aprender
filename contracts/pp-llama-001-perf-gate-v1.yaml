@@ -171,6 +171,12 @@ falsification_tests:
     test: "bash scripts/perf_gate.sh --selftest"
     if_fails: "A pre-flight run with one band walks every print in Arm A, fires none, and the gate says VERDICT PASS over a measurement that never happened — the exact run observed on lambda in #2830"
 
+  - id: FALSIFY-PP-LLAMA-001-PERF-GATE-013
+    rule: "ttft_ratio (ttft_llama / ttft_apr) is gated at c=1 by P-5 against its own delta, which is 0.5 in the matrix (P-8, §12 row 23). It FAILS below 1 - delta and PASSES on the bound. A c=1 band with no ttft ratio FAILS. The ratio REPORTS until a measurement arms it (P-6)"
+    prediction: "perf_gate.sh --selftest keeps four rows green. l3_ttft_gated_at_c1 prints `FAIL ArmL3 c=1 ttft_ratio lcb95=0.4900`, just below the bound. l3_ttft_within_delta_c1 prints `PASS ArmL3 c=1 ttft_ratio lcb95=0.5000`, the bound itself. l3_ttft_absent_at_c1 FAILS with no armed cell. l3_ttft_unarmed_is_reporting REPORTS that the cell is not in arms.L3.armed_by"
+    test: "bash scripts/perf_gate.sh --selftest"
+    if_fails: "Either the gate reads the TTFT ratio the wrong way round, on the wrong band class or against the wrong bound, and an apr more than twice as slow to its first token passes; or a receipt whose producer never wrote ratios.ttft passes a gate that claims to bound latency"
+
 qa_gate:
   id: F-PP-LLAMA-001-PERF-GATE-001
   name: "Perf gate integrity — every arm can fail, at its declared phase, against a number in one file"

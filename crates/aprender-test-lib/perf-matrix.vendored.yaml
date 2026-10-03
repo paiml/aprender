@@ -217,7 +217,11 @@ arms:
   # the decode, and at c>1 the aggregate is the only number a deployment feels.
   # PASS iff ratios.<metric>.lcb95 >= 1 - delta. An (cell, band, metric) absent
   # from `armed_by` is REPORTING -- a gate arms when a measurement arms it,
-  # never on a date (P-6).
+  # never on a date (P-6). P-8: ttft_ratio (ttft_llama / ttft_apr, so above 1
+  # means apr is faster) is gated at c=1 only, because W1 yields a time to
+  # first token at c=1 alone (§5.1). Its delta, 0.5, is the bound that apr's
+  # ttft is at most 2x the comparator's, and is the spec owner's to set
+  # (`author:`), as every delta here is.
   L3:
     name: parity
     phase: release
@@ -225,10 +229,10 @@ arms:
     statistic: lcb95
     threshold_class: policy
     author: spec-owner
-    gated: {c1: [dec_ratio, prefill_ratio], c_gt_1: [agg_ratio]}
+    gated: {c1: [dec_ratio, prefill_ratio, ttft_ratio], c_gt_1: [agg_ratio]}
     reported: [agg_ratio@c1, dec_ratio@c_gt_1, prefill_ratio@c_gt_1, ttft,
                itl_p95, scaling_efficiency, overhead_share]
-    delta: {dec_ratio: 0.0, prefill_ratio: 0.0, agg_ratio: 0.0}
+    delta: {dec_ratio: 0.0, prefill_ratio: 0.0, agg_ratio: 0.0, ttft_ratio: 0.5}
     # Written by the first PASS: armed_by.<host>.<wl>.c<c>.<metric> = {receipt, commit}
     armed_by: {}
     rising_decode_trap: >-

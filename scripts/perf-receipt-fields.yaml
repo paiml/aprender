@@ -1176,8 +1176,10 @@ fields:
     owner: PERF-004
     spec: "§4 (PP-3)"
     needs: >-
-      {agg, dec, prefill}, each {point, lcb95, method, n}. The ONLY place a
-      ratio is representable, and only beside a baseline from the same run_id.
+      {agg, dec, prefill, ttft}, each {point, lcb95, method, n}. The ONLY place
+      a ratio is representable, and only beside a baseline from the same
+      run_id. `ttft` is ttft_llama / ttft_apr (P-8, PP-34) and sits only on a
+      band whose workload yields a time to first token (§5.1).
 
   bands[].ratios.agg:
     class: UNMEASURED
@@ -1232,6 +1234,29 @@ fields:
     spec: "§4 (P-5)"
     needs: >-
       the one-sided 95% lower bound of the dec ratio.
+
+  bands[].ratios.ttft:
+    class: UNMEASURED
+    source: derived
+    required: conditional
+    owner: PERF-004
+    spec: "§4 (P-8, PP-34)"
+    needs: >-
+      The ttft ratio's interval object, ttft_llama / ttft_apr, on a c=1 W1
+      band. Neither producer writes it yet: BandRatios
+      (crates/aprender-test-lib/src/perf_gate/join.rs, deny_unknown_fields)
+      and perf_receipt.py::_ratios_for must both write it before Arm L3 gates
+      it (§12 row 23), because Arm L3 FAILS a gated metric whose ratio is
+      absent.
+
+  bands[].ratios.ttft.lcb95:
+    class: UNMEASURED
+    source: derived
+    required: conditional
+    owner: PERF-004
+    spec: "§4 (P-5, P-8)"
+    needs: >-
+      the one-sided 95% lower bound of the ttft ratio.
 
   bands[].ratios[].point:
     class: UNMEASURED

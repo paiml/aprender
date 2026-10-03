@@ -769,7 +769,11 @@ arm_l3_parity() {
   # authorless 0.80 and B2's floor inherited from a document that never existed
   # in any ref are gone; the bound is `lcb95 >= 1 - delta` with delta in the
   # matrix. An (cell, band, metric) absent from `armed_by` is REPORTING: a gate
-  # arms when a measurement arms it, never on a date.
+  # arms when a measurement arms it, never on a date. P-8: ttft_ratio is
+  # ttft_llama / ttft_apr, inverted so that above 1 means `apr` is faster, as
+  # for every other ratio here (PP-34). It is gated at c=1 only, because W1
+  # yields a time to first token at c=1 alone (§5.1). A c>1 ttft ratio comes
+  # only from W3, which is owed (§12 row 16), and is REPORTED by the loop below.
   local receipt="$1" host="$2" workload="$3"
   python3 - "$receipt" "$MATRIX" "$host" "$workload" <<'PY_L3'
 import json,sys,yaml
@@ -779,7 +783,7 @@ mx_arm=((m.get("arms") or {}).get("L3")) or {}
 gated=mx_arm.get("gated") or {}
 delta=mx_arm.get("delta") or {}
 armed=(((mx_arm.get("armed_by") or {}).get(host) or {}).get(wl)) or {}
-RATIOKEY={"agg_ratio":"agg","dec_ratio":"dec","prefill_ratio":"prefill"}
+RATIOKEY={"agg_ratio":"agg","dec_ratio":"dec","prefill_ratio":"prefill","ttft_ratio":"ttft"}
 bl=((m.get("baselines") or {}).get(host) or {}).get(wl) or {}
 if bl.get("status") == "NA":
     print("REPORT ArmL3 %s/%s is NA (%s; decided_by=%s) -- an NA cell has no comparator to be "
@@ -1539,7 +1543,8 @@ for b in r["bands"]:
       lambda:
         W1:
           c1: {dec_ratio: {receipt: evidence/perf-gate-001-w1-lambda/receipt.r1.json, commit: 745fa8588},
-               prefill_ratio: {receipt: evidence/perf-gate-001-w1-lambda/receipt.r1.json, commit: 745fa8588}}
+               prefill_ratio: {receipt: evidence/perf-gate-001-w1-lambda/receipt.r1.json, commit: 745fa8588},
+               ttft_ratio: {receipt: evidence/perf-gate-001-w1-lambda/receipt.r1.json, commit: 745fa8588}}
           c4: {agg_ratio: {receipt: evidence/perf-gate-001-w1-lambda/receipt.r1.json, commit: 745fa8588}}'
   MX_SEEDED="$(_mx seeded "$A_W1_OLD"$'\x1f'"$A_W1_NEW")"
   MX_C1SILENT="$(_mx c1silent "$A_W1_OLD"$'\x1f'"$A_W1_MEASURED_NOBANDS")"
@@ -1620,7 +1625,8 @@ for b in r["bands"]:
                               "commit": r["provenance"]["client"]["commit"]}}
     b["ratios"]={"agg": {"point": 0.90, "lcb95": 0.88, "method": "replicate_t_lower", "n": 5},
                  "dec": {"point": 0.50, "lcb95": 0.45, "method": "paired_percentile_bootstrap", "n": 5},
-                 "prefill": {"point": 1.12, "lcb95": 1.05, "method": "replicate_t_lower", "n": 5}}
+                 "prefill": {"point": 1.12, "lcb95": 1.05, "method": "replicate_t_lower", "n": 5},
+                 "ttft": {"point": 0.80, "lcb95": 0.70, "method": "paired_percentile_bootstrap", "n": 5}}
 '
   F="$(_mut l3c1 "$OK3" "$C1_PAIRED")"
   _row l3_dec_gated_at_c1          "$F" release W1 lambda "$MX_ARMED" fail "FAIL ArmL3 c=1 dec_ratio"
@@ -1639,6 +1645,46 @@ for b in r["bands"]:
   # arms it -- a gate arms when a measurement arms it, never on a date.
   F="$(_mut l3unarmed "$OK3" "$L3_BELOW")"
   _row l3_unarmed_is_reporting     "$F" release W1 lambda "" pass "is not in arms.L3.armed_by"
+  # P-8: ttft_ratio is gated at c=1 against its own delta, 0.5 in the matrix,
+  # the bound `apr`'s ttft <= 2x the comparator's. 0.49 is below it and FAILS.
+  # 0.50 is ON it and PASSES, because `lcb95 >= 1 - delta` is inclusive: a gate
+  # that flipped the comparison would fail a subject exactly at the bound.
+  F="$(_mut l3ttft "$OK3" "$C1_PAIRED"'
+for b in r["bands"]:
+    if b["concurrency"] == 1:
+        b["ratios"]["dec"]["lcb95"]=1.05
+        b["ratios"]["ttft"]["lcb95"]=0.49
+')"
+  _row l3_ttft_gated_at_c1         "$F" release W1 lambda "$MX_ARMED" fail "FAIL ArmL3 c=1 ttft_ratio lcb95=0.4900"
+  F="$(_mut l3ttftedge "$OK3" "$C1_PAIRED"'
+for b in r["bands"]:
+    if b["concurrency"] == 1:
+        b["ratios"]["dec"]["lcb95"]=1.05
+        b["ratios"]["ttft"]["lcb95"]=0.50
+')"
+  _row l3_ttft_within_delta_c1     "$F" release W1 lambda "$MX_ARMED" pass "PASS ArmL3 c=1 ttft_ratio lcb95=0.5000"
+  # An ABSENT gated ratio FAILS even in the committed, unarmed matrix: a c=1
+  # band without `ratios.ttft` comes from a producer that never wrote it, which
+  # is a different thing from a metric that is still REPORTING. That is why
+  # both producers land before this gate does (§12 row 23).
+  F="$(_mut l3ttftabsent "$OK3" "$C1_PAIRED"'
+for b in r["bands"]:
+    if b["concurrency"] == 1:
+        b["ratios"]["dec"]["lcb95"]=1.05
+        del b["ratios"]["ttft"]
+')"
+  _row l3_ttft_absent_at_c1        "$F" release W1 lambda "" fail "c=1 ttft_ratio absent from"
+  # ... and a PRESENT ttft ratio below the bound REPORTS until a measurement
+  # arms it (P-6). A gate that treats ttft_ratio as armed without an
+  # `armed_by` entry turns this row red. Arming it in the committed matrix
+  # stops the table earlier, at the `_mx armed` edit of `armed_by: {}`.
+  F="$(_mut l3ttftunarmed "$OK3" "$C1_PAIRED"'
+for b in r["bands"]:
+    if b["concurrency"] == 1:
+        b["ratios"]["dec"]["lcb95"]=1.05
+        b["ratios"]["ttft"]["lcb95"]=0.49
+')"
+  _row l3_ttft_unarmed_is_reporting "$F" release W1 lambda "" pass "c=1, ttft_ratio) is not in arms.L3.armed_by"
 
   # ---- PP-31: self-regression ----------------------------------------------
   local REPS
