@@ -1,7 +1,7 @@
 contract: lora-adapter-trains-base-frozen
 metadata:
   kind: training-loop
-  version: "1.0.0"
+  version: "1.1.0"
   description: >
     P3 / Unsloth-pillar END-TO-END capability proof for LoRA fine-tuning,
     extending the PMAT-921 end-to-end-training-proof methodology (a real model
@@ -31,6 +31,7 @@ metadata:
   - "crates/aprender-train/src/lora/train_to_loss_tests.rs"
   - "crates/aprender-train/src/autograd/ops/basic.rs"
   - "crates/aprender-train/src/autograd/ops/matmul.rs"
+  - "docs/specifications/aprender-train/r15-cuda-lora-cells.md (0.72 R15 cell C4; 1.1.0 adds FALSIFY-LORA-ADAPTER-TRAINS-BASE-FROZEN-CUDA-003)"
 version: 1
 status: enforced
 date: 2026-06-25
@@ -79,3 +80,8 @@ falsification_tests:
     test_harness: "cargo test -p aprender-train --lib lora_forward_backward_reaches_adapter_not_base"
     expected_output: "test result: ok"
     if_fails: "LoRALayer::forward dropped the backward op (Tensor::new with requires_grad=false). Build the LoRA output via autograd-aware ops so the result carries a backward op reaching the adapter while leaving the frozen base ungraded."
+  - id: FALSIFY-LORA-ADAPTER-TRAINS-BASE-FROZEN-CUDA-003
+    rule: "PROPOSED (0.72 R15 cell C4, la-0.72): LATBF-INV-001 holds on the CUDA frozen-base, non-NF4 LoRA block that `-m lora` reaches after C4"
+    prediction: "A tiny fp32 (non-NF4) dense model trained by the `-m lora --gpu-backend cuda` path for N >= 2 steps, fixed seed, weight_decay 0: (a) every base weight, read back from its device buffer, has the same SHA-256 after the run as after upload; (b) every adapter, read back from its device buffer, moved (each B off zero, each A off init); (c) the step-N loss differs from the step-1 loss. Reading (a) and (b) from device buffers is what proves the GPU trained. CLI half: gpu_backend_notice(\"cuda\", false, _) (apr-cli finetune.rs:245) no longer returns the 'plain LoRA (-m lora) runs on the CPU F32 path' warning, so gpu_backend_notice_cuda_plain_lora_warns_cpu (finetune_tests.rs:1231) flips with C4; gpu_backend_notice_auto_plain_lora_is_cpu (:1265) flips only if auto picks CUDA, and either way the notice names the device that trains. Planted: letting the full-weight AdamW optimizer_step (cuda_block.rs:2248) step the base turns (a) RED"
+    test: "[U] not written; needs cargo + CUDA after LIVE 0.70.1, GPU lock around the test binary only"
+    if_fails: "(a) RED: the block still trains the base, so `-m lora` on CUDA is full fine-tuning and QQE-004's LoRA reference (qwen35-qlora-e2e-v1 1.1.0) is not a LoRA run. (b) RED with (a) GREEN: the C1-C3 backward does not reach the adapters on the non-NF4 block. The warning is still printed: init_cuda is still reached only for NF4, and the run trained on the CPU."

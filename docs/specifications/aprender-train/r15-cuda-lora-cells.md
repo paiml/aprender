@@ -4,6 +4,8 @@ Status: desk read 2026-10-03 at origin/main `316dee2cd4`. Nothing here was built
 in the code, with file:line; `[A]` marks estimates. Paths are under `crates/aprender-train/src/` unless they start
 with `apr-cli/`. This replaces R15's K̂ of 120 `[A]` in the 0.72 ranking v2 (§3, row 5, "re-size before R4").
 Ranking v3 (§3, 2026-10-03) carries the new size, split into R15a (C1–C4) and R15b (C5–C7).
+The C1–C4 falsifiers are PROPOSED rows in the existing LoRA contracts, named in the table; each test is `[U]` until
+cargo and CUDA are allowed (after LIVE 0.70.1).
 
 ## What the code says `[V]`
 
@@ -51,10 +53,10 @@ New in this read:
 
 | # | Cell | Serves | K̂ (min) | Falsifier |
 |---|---|---|---|---|
-| C1 | Extract `lora_backward(x, a, b, dy, da, db, dx)` from the inline Q block; switch Q and V to it | R4, T2 | 30 | Q/V adapter grads bit-identical before and after on a tiny NF4 run (the refactor changes nothing) |
-| C2 | Target list: the workspace, optimizer state, clipping and NF4 adapter fields become a `Vec` keyed by target kind; `build_lora_layers` and `inject_adapter_weights` read `LoRAConfig.target_modules` | R4, T2 | 60 | `--targets q_proj,v_proj` gives today's tensor set; `all_linear` gives 7 adapters per layer; a dropped target is RED (FALSIFY-FT-TASK-003) |
-| C3 | Call C1 for k and o in the attention backward, and add LoRA to the FFN backward (gate, up, down) | R4, T2 | 60 | after N CUDA steps every one of the 7 adapter kinds has changed, and the loss moved (S-R15's own falsifier) |
-| C4 | Frozen-base non-NF4 LoRA block: the FP32 `CudaTransformerBlock` forward plus C1–C3 backward, base weights frozen (no full-weight AdamW), and `init_cuda` reached for `-m lora` | R4 (QQE-004 reference), T2 | 60 | base weight checksums unchanged after N steps; adapters changed; `finetune.rs:280` no longer falls back to the CPU |
+| C1 | Extract `lora_backward(x, a, b, dy, da, db, dx)` from the inline Q block; switch Q and V to it | R4, T2 | 30 | Q/V adapter grads bit-identical before and after on a tiny NF4 run (the refactor changes nothing). FALSIFY-LORA_GRADIENT_FLOW_V1_004 |
+| C2 | Target list: the workspace, optimizer state, clipping and NF4 adapter fields become a `Vec` keyed by target kind; `build_lora_layers` and `inject_adapter_weights` read `LoRAConfig.target_modules` | R4, T2 | 60 | `--targets q_proj,v_proj` gives today's tensor set; `all_linear` gives 7 adapters per layer; a dropped target is RED (FALSIFY-FT-TASK-003). FALSIFY-LORA_TARGET_SELECTION_V1_003 |
+| C3 | Call C1 for k and o in the attention backward, and add LoRA to the FFN backward (gate, up, down) | R4, T2 | 60 | after N CUDA steps every one of the 7 adapter kinds has changed, and the loss moved (S-R15's own falsifier). FALSIFY-LORA_GRADIENT_FLOW_V1_005 |
+| C4 | Frozen-base non-NF4 LoRA block: the FP32 `CudaTransformerBlock` forward plus C1–C3 backward, base weights frozen (no full-weight AdamW), and `init_cuda` reached for `-m lora` | R4 (QQE-004 reference), T2 | 60 | base weight checksums unchanged after N steps; adapters changed; `finetune.rs:280` no longer falls back to the CPU. FALSIFY-LORA-ADAPTER-TRAINS-BASE-FROZEN-CUDA-003 |
 | C5 | bf16 frozen base: bf16 weight storage plus bf16 cuBLAS GEMM (`CUDA_R_16BF`, following `matmul_f16.rs`), fp32 adapters and optimizer state | T2 (R4 only if the QQE-004 reference must be bf16) | 120 | `recipe.precision` reads `bf16` from the loaded weights; loss within tolerance of the C4 fp32 run over 20 steps |
 | C6 | `apr finetune` flags (apr-finetune-canonical-task-v1) and the TRR 1.1.0 receipt writer, coordinated with the R12 owner | T2 | 45 | FALSIFY-FT-TASK-001/002, FALSIFY-TRR-007/010 |
 | C7 | Timed window: device sync at both edges, label-token count, `after_compile` (no PTX module load inside the window), `[TRACE]` device line with name and UUID | T2 | 45 | FALSIFY-TRR-009 (33 tokens); a planted PTX load inside the window sets `after_compile` false |
