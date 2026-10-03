@@ -11,10 +11,16 @@ metadata:
     measured each leg: safetensors <-> apr is bit-identical (489/489, max diff 0) but only
     with a config.json supplied by hand; apr -> GGUF exits 0 with 488/489 tensors unmapped;
     GGUF -> apr refuses every real Qwen3.5 GGUF (4 files, rc 5).
+    QFR-006 (PROPOSED 2026-10-03) checks function, not names: the GGUF export must equal llama.cpp's own
+    conversion of the same snapshot. It needs the 4B, because the 0.8B and the 2B have as many value heads as
+    key heads and cannot see the value-head order. The version stays 1.1.0: no row of this file has landed.
   references:
   - 'branch la-72/0.72-shaping: docs/specifications/aprender-train/train-what-you-serve-0.72.md §R10, Spike S-R10 (not on main until the 0.72 shaping PR lands)'
   - contracts/model-format-conversion-v1.yaml
   - 'aprender#4418 (qwen35 GGUF name map, export direction; 738/739 unmapped at 4B)'
+  - 'aprender#4418 @1af0e3cc11 (m0694/4418-qwen35-gguf-main): qwen35_gguf.rs transform_qwen35_tensor, the value transforms QFR-006 checks'
+  - 'llama.cpp d1d3c3396, convert_hf_to_gguf.py Qwen3_5TextModel: the reference conversion of QFR-006'
+  - 'branch la-72/r15-receipt-ext: docs/specifications/aprender-train/r21-cuda-qwen35-hybrid-block.md §Value-head order (which checkpoints and fixtures can see the order)'
   - crates/aprender-core/src/format/gguf/api_tests_all_keys_3733.rs (qwen35.* keys kept off the config accessors on purpose)
   depends_on:
   - model-format-conversion-v1
@@ -34,6 +40,15 @@ equations:
     domain: apr export --format safetensors, then apr import of that output alone
     invariants:
     - S-R10 measured a bare exported .safetensors re-imports as Qwen2→Qwen3 and fails the GH-279 completeness gate; the same file beside the source config.json imports and is bit-identical. The export must carry the config it needs
+  gguf_function:
+    formula: 'names(E(M)) = names(L(M)) ∧ ∀ t: E(M)[t] = L(M)[t] (bitwise; ssm_a within 2 ulp) ∧ meta(E(M)) = meta(L(M)) on the qwen35.* and tokenizer.ggml.* keys'
+    domain: 'E = apr export --format gguf with no quantize flag, of M imported from HF safetensors; L = llama.cpp d1d3c3396 convert_hf_to_gguf.py --outtype f32 on the same snapshot; M = Qwen3.5-4B (16 key heads, 32 value heads) or a seeded tiny checkpoint with 3 key heads and 6 value heads'
+    invariants:
+    - 'Names are not function. An export that maps every name and skips the value transforms (+1 on the zero-centred norms, A_log -> -exp(A_log), the conv kernel squeezed to [C,K], the value-head reorder) passes QFR-001..004. A future qwen35 GGUF import that skipped the same transforms would make apr->gguf->apr bit-identical, so value_roundtrip cannot see it either'
+    - 'The 0.8B and the 2B have 16 key and 16 value heads, so the reorder is the identity there. With 2 key and 4 value heads it is its own inverse, so a reorder applied backwards passes. Neither can see the order'
+    - 'apr diff --values compares only the names both files share (select_common_tensors, crates/apr-cli/src/commands/diff.rs:295), so a dropped tensor is invisible to it; the name sets are compared separately'
+    preconditions:
+    - one apr binary, sha recorded, writes E and reads both files
 proof_obligations:
 - type: equivalence
   property: Lossless round-trip is bit-identical
@@ -47,6 +62,10 @@ proof_obligations:
 - type: invariant
   property: No silent pass-through
   formal: 'unmapped(export(M, fmt)) ≠ ∅ ⇒ exit ≠ 0'
+  applies_to: all
+- type: equivalence
+  property: The GGUF export is llama.cpp's conversion of the same snapshot
+  formal: 'names(E(M)) = names(L(M)) ∧ ∀ t: E(M)[t] = L(M)[t], bitwise except ssm_a (≤ 2 ulp)'
   applies_to: all
 falsification_tests:
 - id: FALSIFY-QFR-001
@@ -74,3 +93,8 @@ falsification_tests:
   prediction: 'apr import of a real Qwen3.5 GGUF exits non-zero with an error naming qwen35 as unsupported, never "may be malformed", and never imports under the Qwen3 name map'
   test: 'IN-TREE: crates/aprender-core/src/format/converter/tests/qfr_005_named_refusal.rs::falsify_qfr_005_qwen35_gguf_is_refused_by_name (qwen35, qwen35moe, qwen3next; no .apr written) + ::falsify_qfr_005_explicit_arch_does_not_bypass_the_refusal; qwen3 control imports. Guard-off mutant: KILLED (exactly the 2 refusal tests). CELL: S-R10 measured rc 5 on 0.8B Q4_K_M, 0.8B IQ4_XS, 2B and 4B Q4_K_M, all "Missing … hidden_dim (0) … may be malformed" after "[ARCH-EVIDENCE] Override … → Qwen3". The refusal is deliberate (api_tests_all_keys_3733.rs keeps qwen35.* off the config accessors); the message is not'
   if_fails: 'widening the reader allowlist to qwen35. without a qwen35 import path imports a hybrid model under the Qwen3 name map (silent wrong .apr)'
+- id: FALSIFY-QFR-006
+  rule: The exported GGUF computes the source's function, not only its names
+  prediction: 'apr export --format gguf (no quantize flag) of a Qwen3.5 checkpoint equals llama.cpp d1d3c3396''s conversion of the same snapshot (convert_hf_to_gguf.py --outtype f32): the same tensor names, every tensor bitwise equal except ssm_a, whose exp torch and Rust each compute (within 2 ulp), and the same qwen35.* and tokenizer.ggml.* metadata. Planted, each RED: an export that maps the names and skips the value transforms; the value-head reorder applied backwards (nk and nv/nk exchanged); the +1 skipped on the zero-centred norms; ssm.group_count and ssm.time_step_rank exchanged; one tensor dropped'
+  test: '[U] not written; NOT MEASURED until #4418 merges. IN-TREE (CPU, cargo after LIVE 0.70.1): a seeded tiny Qwen3.5 checkpoint with 3 key heads and 6 value heads (4 layers at interval 4, a vocabulary of a few hundred tokens so the fixture stays under 1 MB), converted once by llama.cpp d1d3c3396 with --outtype f32. The checkpoint, the reference GGUF and the script that wrote them are committed with their sha256. Not 2 and 4, where the reorder is its own inverse: #4418 @1af0e3cc11 pins its names against llama.cpp output (qwen35_gguf_tests.rs:1-6), but its value tests compare with hand-computed values at 2 key and 4 value heads (:141-216). CELL: Qwen/Qwen3.5-4B, revision recorded; not the 0.8B or the 2B, where the reorder is the identity. apr import, then apr export --format gguf; llama.cpp on the same snapshot directory (two f32 files of about 15 GB each). apr tensors: the same 426 names in both (the published 4B Q4_K_M has 426: 424 layer tensors, token_embd and output_norm; tied, no MTP layers, no visual tower). apr diff --values --limit 426 --json: 426 compared, every one IDENTICAL except the 24 ssm_a, each within 2 ulp. apr inspect --json: equal qwen35.* and tokenizer.ggml.* keys. apr eval perplexity of both files, same binary, text and device: equal within 1e-4 relative. Read at 316dee2cd4: the value diff goes through RosettaStone::inspect and load_gguf_raw, which check no architecture (the qwen35 refusal is in import.rs:345), so it reads qwen35 GGUFs'
+  if_fails: 'apr writes a GGUF that llama.cpp loads but that computes a different function, so llama.cpp and apr both serve it wrong while QFR-001..004 are green. Bisect by tensor kind: the norms (+1), ssm_a (-exp), ssm_conv1d (squeeze), then the tensors indexed by value head (reorder)'
