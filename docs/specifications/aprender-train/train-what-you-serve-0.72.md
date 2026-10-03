@@ -343,6 +343,9 @@ R4, and T2 needs R15b.
   - R13 (EXT-001 rc publish) needs HRP-001 first: the plan is what a quorum reviews, so it must equal the upload.
   - A trained model needs a publish directory builder: `.apr` → `model.safetensors`, plus the source `config.json`,
     tokenizer and chat template, plus the R12 receipt. That builder is the same fix as QFR-003.
+  - The trainer holds a Qwen3.5 in GGUF conventions (`Qwen35Model::from_gguf`). Before the builder writes it under HF
+    names, it must undo every value transform #4418's export applies, including −1 on the five zero-centred norms (K38,
+    row 23).
   - The license must come from the base model and must never default for a derivative (HRP-003). Publishing an
     Apache-2.0 derivative under MIT is a licence error, not a style issue.
 
@@ -458,6 +461,21 @@ up, a new size changes its place, and a row already held on a branch drops out o
     misses one ghost, `gated_rmsnorm_oxide::kernels::gated_rmsnorm` (`contracts/binding.yaml:817`), which would turn
     the gate red once armed. K37 is a comment on #4502, not a ticket. The K36 branch removes the 7 allowlist entries
     that its rebinding resolves.
+- **Row 23, K38: serve, train and the GGUF export agree on Qwen3.5's RMSNorm weights, but serve's safetensors path
+  does not refuse the model.** HF Qwen3.5 stores five norms zero-centred: input, post-attention, q, k and final. It
+  applies them as x̂·(1 + w) (transformers 5.3.0 `modeling_qwen3_5.py:808,821`). The gated `linear_attn.norm` is plain
+  x̂·w·silu(z). llama.cpp adds 1 to every `norm.weight` except `linear_attn.norm.weight`, so GGUF stores 1 + w.
+  On Qwen3.5-4B, measured on CPU, GGUF − HF = 1 exactly for all five, and `ssm_norm` equals `linear_attn.norm`.
+  `ssm_a` is −exp(A_log) computed in f32: bit-exact against torch f32, and 3·10⁻³ away from a bf16 exp. So
+  QFR-006's 4B cell needs no bf16 tolerance.
+  - **They agree.** Serve's GGUF forward applies the stored 1 + w as x̂·w. The training model loads from the GGUF
+    (`fold-r2r3`, `Qwen35Model::from_gguf`) and does the same. #4418's export adds the 1 to the five and not to the
+    gated norm, and a unit test pins that (`m0694/4418-qwen35-gguf-main`).
+  - **Serve's safetensors path does not refuse it.** `apr run`, `chat` and `serve` load a Qwen3.5 safetensors
+    checkpoint. Each GDN layer's `in_proj_qkv` and `out_proj` go into the dense attention slots, and the GDN tensors go
+    into fields that no CPU forward reads. The norms get no +1. The GGUF paths ask `hybrid_forward_handles`; the
+    safetensors paths do not. This is a desk read and has not been run. The fix is a refusal at conversion. It is off
+    0.72's path, because QQE-003's served side is the GGUF.
 
 State is read from the branch tips on 2026-10-03. origin/main is `316dee2cd4` and no la-72 branch has landed. K̂ is
 minutes of worker time still left; `[A]` marks an assumption.
@@ -488,6 +506,7 @@ minutes of worker time still left; `[A]` marks an assumption.
 | 20 | K30 `apr train` tie flag | TOC-001/002: config.json says tied exactly when the saved model has no head | 15 `[A]` | `la-72/k30-train-tie-flag` @687554a60a (`apr-train-output-config-v1`); off the critical path; opens with the cheap refusals after LIVE 0.70.1 |
 | 21 | K36 GDN contract text | restate `gated-delta-net-v1`'s decay, read and output; point its tests at the shipped decay; re-prove GDN-BND-001 | 60 `[A]` | contracts on `la-72/k36-gdn-contract` @e8834d7711: both at 2.0.0, bindings point at the served fns, allowlist 163→156. The tests and the Lean re-proof come at PR time, after LIVE 0.70.1. `qwen35-train-gdn-v1` @80723cf206 already states the served GDN |
 | 22 | K37 phantom bindings | fold into #4502: make `pv audit --binding` agree with the `bindings` gate; arm the gate once the `gated_rmsnorm_oxide` ghost is fixed or allowlisted | 10 `[A]` (was 30; the gate exists) | comment on #4502 posted; the K36 branch fixes 6 of the 9 phantoms at `316dee2cd4` |
+| 23 | K38 Qwen3.5 norm convention | serve's safetensors conversion refuses a hybrid `layer_types`; R13's builder inverts #4418's value transforms, norm −1 included | 15 `[A]` + R13's builder | desk read plus a CPU measurement on the 4B; GGUF serve, train and #4418 agree |
 | — | R19 ROADMAP PMAT-711 stale | — | done | shaping @378ec8e920 |
 | — | R20 declarative recipe | — | out | RQ-3: stays in #4002 (E8, 0.75) |
 
