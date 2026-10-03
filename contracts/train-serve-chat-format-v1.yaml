@@ -9,8 +9,11 @@ metadata:
     (K39 and K42 of the 0.72 spec). No apr code is built or run; the measurements are header reads of S-R10's
     files, and piece and token counts from HF tokenizers 0.22.2 on the Qwen3.5 tokenizer.json (for K42, on the
     repo's two SFT corpora).
-    (1) The control tokens are split. Every apr finetune training path ends in InstructPipeline::from_apr
-    (apr-cli finetune.rs:387,461). Its tokenizer comes from the .apr's own vocabulary first (aprender-train
+    (1) The control tokens are split. In a default or full build, every apr finetune training path ends in
+    InstructPipeline::from_apr (apr-cli finetune.rs:387,461). A build with --features wgpu trains in
+    train_wgpu_sft instead under --gpu-backend wgpu, or auto with QLoRA (:442, :906). That path encodes the raw instruction
+    and response, with no template and no eos (:917-918), and fixes max_seq_len at 512 whatever --max-seq-len
+    says (:719). The tokenizer from_apr builds comes from the .apr's own vocabulary first (aprender-train
     instruct_pipeline/constructors.rs:212), rebuilt as tokenizer JSON with "added_tokens": [] (:343-350).
     load_from_json registers special tokens only from that list, and BpeTokenizer::encode keeps only
     registered special tokens whole, so <|im_start|> and <|im_end|> reach the model as BPE pieces, in the
