@@ -1,0 +1,44 @@
+# DRAFT (branch-only during S-1). Moves to contracts/ with a strict test binding and a
+# Rust receipt emitter once 0.70.1 is live and a ticket is minted (0.71 rows V1 + V2, #3596).
+# scripts/lookahead/ttft_receipt_check.py is the executable reference for these rules.
+metadata:
+  id: apr-serve-ttft-v1
+  version: "0.1.0"
+  created: "2026-10-03"
+  author: la-0.71 (L1)
+  status: draft
+  description: >
+    0.71 "Verbs Are Fast" exit criteria V1 and V2. One receipt holds two arms, apr and
+    llama.cpp at pin d1d3c3396, on one identity (APR-OBS-001 §2.1). The apr arm reports
+    load, TTFT, pp512 and tg128 together (V2); the TTFT ratio is bounded by 2.0 (V1).
+  references:
+    - '#3598 (epic), #3596 (load + TTFT reporting), PMAT-3718 (prefill_ms/prompt_tokens)'
+    - 'APR-OBS-001 §2.1 identity block, §2.3 lane row, §8 S-4 (staged: cop-inbox/handoff)'
+    - 'evidence/parity/pin-bump-d1d3c3396/llamacpp-d1d3c3396.json (llama.cpp arm; no load_ms, no model identity)'
+equations:
+  v2_reported_together:
+    formula: |
+      report(apr) ⊇ {load_ms, ttft_ms_p50, pp512_tok_s, tg128_tok_s}, each > 0
+  v1_ttft_ratio:
+    formula: |
+      same_identity(a, l) := ∀k ∈ {host, model_sha256, backend, prompt_sha256, prompt_n, completion_n}: a.k = l.k
+      precondition: same_identity(apr, llamacpp) ∧ llamacpp.pin = d1d3c3396 ∧ n_apr, n_llamacpp ≥ 5
+      ratio := apr.ttft_ms_p50 / llamacpp.ttft_ms_p50
+      pass  := ratio ≤ 2.0
+    invariants:
+      - "a ratio is never computed when the precondition fails: REFUSED (exit 2), never FAIL"
+      - "an empty receipt, or one with a missing arm, is RED (APR-OBS-001 R-2)"
+      - "identity fields equal to 'unknown' count as missing"
+workload:
+  model: Qwen3.5-4B (Q4_K_M GGUF; sha256 recorded per receipt)
+  prompts: "pp512: 512-token prompt, tg128: 128 generated tokens, concurrency 1"
+  open_question: "TTFT prompt length for V1: 512 (pp512 shape) or the #3596 context rungs (4k..262k)? Proposed: 512 for V1, rungs recorded report-only."
+falsification_tests:
+  - {id: FALSIFY-TTFT-001, fixture: ttft/pass.json, expect: 0, rule: "control: ratio 1.8 on one identity passes"}
+  - {id: FALSIFY-TTFT-002, fixture: ttft/ratio-fail.json, expect: 1, rule: "ratio 2.05 fails V1"}
+  - {id: FALSIFY-TTFT-003, fixture: ttft/identity-mismatch.json, expect: 2, rule: "different model_sha256 is REFUSED, not FAIL"}
+  - {id: FALSIFY-TTFT-004, fixture: ttft/missing-load.json, expect: 2, rule: "V2: no load_ms is RED"}
+  - {id: FALSIFY-TTFT-005, fixture: ttft/wrong-pin.json, expect: 2, rule: "comparator not at d1d3c3396 is RED"}
+  - {id: FALSIFY-TTFT-006, fixture: ttft/few-samples.json, expect: 2, rule: "n < 5 is RED"}
+  - {id: FALSIFY-TTFT-007, fixture: ttft/empty.json, expect: 2, rule: "empty receipt is RED"}
+verification: "python3 scripts/lookahead/ttft_receipt_check.py --self-test  # 5/6 mutants killed; the 6th (missing-arm guard) is equivalent, 2026-10-03"

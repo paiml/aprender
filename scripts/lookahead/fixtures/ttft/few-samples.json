@@ -1,0 +1,35 @@
+{
+ "schema": "apr-serve-ttft-v1",
+ "_planted": "FIXTURE: not a measurement",
+ "arms": {
+  "apr": {
+   "host": "lambda",
+   "model_sha256": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+   "backend": "cuda",
+   "prompt_sha256": "bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb",
+   "prompt_n": 512,
+   "completion_n": 128,
+   "ts": "2026-10-03T00:00:00Z",
+   "apr_version": "0.70.1",
+   "binary_sha256": "cccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccc",
+   "build_identity": "planted fixture",
+   "model_id": "Qwen3.5-4B-Q4_K_M",
+   "n": 10,
+   "load_ms": 1800.0,
+   "ttft_ms_p50": 18.0,
+   "pp512_tok_s": 9000.0,
+   "tg128_tok_s": 150.0
+  },
+  "llamacpp": {
+   "host": "lambda",
+   "model_sha256": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+   "backend": "cuda",
+   "prompt_sha256": "bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb",
+   "prompt_n": 512,
+   "completion_n": 128,
+   "pin": "d1d3c3396",
+   "n": 1,
+   "ttft_ms_p50": 10.0
+  }
+ }
+}
