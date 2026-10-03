@@ -466,8 +466,9 @@ up, a new size changes its place, and a row already held on a branch drops out o
   applies them as x̂·(1 + w) (transformers 5.3.0 `modeling_qwen3_5.py:808,821`). The gated `linear_attn.norm` is plain
   x̂·w·silu(z). llama.cpp adds 1 to every `norm.weight` except `linear_attn.norm.weight`, so GGUF stores 1 + w.
   On Qwen3.5-4B, measured on CPU, GGUF − HF = 1 exactly for all five, and `ssm_norm` equals `linear_attn.norm`.
-  `ssm_a` is −exp(A_log) computed in f32: bit-exact against torch f32, and 3·10⁻³ away from a bf16 exp. So
-  QFR-006's 4B cell needs no bf16 tolerance.
+  `ssm_a` is −exp(A_log) computed in f32: bit-exact against torch f32, and 3·10⁻³ away from a bf16 exp. So the
+  converter that made this file upcast to f32 first, as QFR-006's bitwise prediction assumes. The file does not name
+  its llama.cpp version, so the same check at d1d3c3396 stays open until QFR-006's 4B cell runs.
   - **They agree.** Serve's GGUF forward applies the stored 1 + w as x̂·w. The training model loads from the GGUF
     (`fold-r2r3`, `Qwen35Model::from_gguf`) and does the same. #4418's export adds the 1 to the five and not to the
     gated norm, and a unit test pins that (`m0694/4418-qwen35-gguf-main`).
