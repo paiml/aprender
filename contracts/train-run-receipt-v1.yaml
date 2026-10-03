@@ -39,12 +39,13 @@ equations:
     preconditions:
     - 'APR_GIT_SHA is compiled into the binary (aprender-build-sha)'
   receipt_t2_extension:
-    formula: 'R_T2(run) = R(run) with device := {kind, name, uuid, trace_line} ∪ {recipe{precision, rank, alpha, targets[], optimizer, grad_checkpointing, packing, seq_len, batch, grad_accum, warmup_steps, timed_steps, …}, trainable_params, timed_window{label_tokens, seconds, after_compile}}'
+    formula: 'R_T2(run) = R(run) with device := {kind, name, uuid, trace_line} ∪ {recipe{precision, compute_dtype, rank, alpha, targets[], optimizer, grad_checkpointing, packing, seq_len, batch, grad_accum, warmup_steps, timed_steps, …}, trainable_params, timed_window{label_tokens, seconds, after_compile}}'
     domain: 'every successful apr finetune run; timed_window is required when --timed-steps is given and absent otherwise'
     invariants:
     - 'device.kind is the 1.0.0 device string (cuda:0, cpu); name and uuid come from the driver for the device the trainer ran on, and trace_line is the [TRACE] line the trainer printed when it bound it'
     - 'recipe is the EFFECTIVE config after defaults and CLI flags, and recipe_sha256 = sha256(canonical JSON of recipe); so the hash and the echoed values cannot disagree'
     - 'recipe.precision is the dtype of the frozen base weights read back from the loaded model (bf16, fp32, fp16, nf4), not the --precision argv'
+    - 'recipe.compute_dtype is the dtype of the GEMM inputs the trainer actually used, including settings made through environment variables (FP16_GEMM=1 switches the NF4 path to fp16 cuBLAS at instruct_pipeline/cuda_init.rs:363, read 2026-10-03), and it enters recipe_sha256'
     - 'recipe.targets are the module names actually wrapped with adapters, read back from the model after wrapping, not the --targets argv'
     - 'trainable_params = Σ numel over parameters with requires_grad after adapters are attached'
     - 'timed_window covers exactly the timed_steps optimizer steps after warmup_steps; label_tokens = Σ over those steps of Σ_row max(nonpad(row) − 1, 0); seconds is wall time from the device sync before the first timed step to the device sync after the last'
@@ -122,3 +123,8 @@ falsification_tests:
   prediction: 'recomputing sha256(canonical_json(R.recipe)) from the receipt equals R.recipe_sha256'
   test: 'any FALSIFY-TRR-001 receipt'
   if_fails: 'the hash and the echoed values can disagree, so neither can be trusted'
+- id: FALSIFY-TRR-011
+  rule: An environment variable that changes numerics is in the recipe
+  prediction: 'the same tiny NF4 finetune with and without FP16_GEMM=1 gives recipe.compute_dtype fp16 vs fp32 and two different recipe_sha256'
+  test: 'tiny CUDA NF4 run twice (after LIVE 0.70.1 and with the train idle)'
+  if_fails: 'two runs with different numerics share a recipe hash, so the receipt cannot tell them apart'

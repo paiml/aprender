@@ -1,6 +1,6 @@
 metadata:
   kind: training-loop
-  version: 1.0.0
+  version: 1.1.0
   created: '2026-09-27'
   author: PAIML Engineering (la-72, APR-LOOKAHEAD-001 L2, train 0.72)
   description: >-
@@ -8,11 +8,17 @@ metadata:
     adapters on attention, MLP and GDN projections), with 0 refusals, and the adapter it
     writes is served by `apr serve` with the same outputs as the training-side merged forward.
     This is the 0.72 T1 cell for finetune; distill and merge get sibling cells (R6, R7).
+    1.1.0 (2026-10-03, la-0.72): QQE-004's reference run (`-m lora` on CUDA) does not exist at
+    316dee2cd4. `-m lora --gpu-backend cuda` warns and trains on the CPU (apr-cli finetune.rs:280),
+    so an unguarded QQE-004 would compare an NF4 CUDA run against a CPU run. Both runs must now
+    record device and precision (train-run-receipt-v1 1.1.0), and the reference needs R15 cells C4
+    (fp32 frozen base), or C5 if it is bf16 (docs/specifications/aprender-train/r15-cuda-lora-cells.md).
   references:
   - docs/specifications/aprender-train/train-what-you-serve-0.72.md §R4
   - contracts/qwen35-train-gdn-v1.yaml
   - contracts/cuda-nf4-train-loss-parity-v1.yaml
   - contracts/lora-merge-forward-equivalence-v1.yaml
+  - contracts/train-run-receipt-v1.yaml (1.1.0, device + recipe.precision + recipe.compute_dtype)
   - 'aprender-train transformer::Qwen35Lora (CPU reference adapter gradient, FALSIFY-QTG-009)'
   depends_on:
   - train-arch-honesty-v1
@@ -78,8 +84,8 @@ falsification_tests:
   if_fails: 'adapter layout, scaling (alpha/r) or GDN-projection target naming differs between train and serve'
 - id: FALSIFY-QQE-004
   rule: NF4 quantization does not silently cost quality on Qwen3.5
-  prediction: 'mean(L_last10, QLoRA) ≤ 1.05 · mean(L_last10, bf16 LoRA) on the same cell, seed and data'
-  test: 'run the canonical cell twice, -m qlora and -m lora (bf16), compare the final loss windows'
+  prediction: 'mean(L_last10, QLoRA) ≤ 1.05 · mean(L_last10, LoRA) on the same cell, seed and data, where the QLoRA receipt has recipe.precision = nf4, the LoRA receipt has recipe.precision ∈ {bf16, fp32}, and both have the same device.uuid (a CUDA GPU)'
+  test: 'run the canonical cell twice, -m qlora and -m lora, compare the final loss windows. Read both receipts first; any other precision pair, a CPU device or two different GPUs is NOT_MEASURED, not a pass or a fail. Planted: the 316dee2cd4 binary, whose -m lora on CUDA trains on the CPU, must come out NOT_MEASURED'
   if_fails: >-
     Unsloth's Qwen3.5 guide advises against QLoRA for "higher than normal quantization differences"
     (read 2026-09-27). If this fails, `apr finetune -m qlora` must refuse qwen3.5 by name and point
