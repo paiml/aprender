@@ -502,8 +502,9 @@ up, a new size changes its place, and a row already held on a branch drops out o
   - **Effect on 0.72.** R4 and T2's apr side train through this path, because `apr finetune` trains from .apr only.
     R4's gates cannot see it: the loss gate is met on pieces too, and QQE-003 feeds both forwards the same ids. T4
     would publish a model tuned on a prompt that no apr server sends, which ends its answers in text pieces instead
-    of the eos. T2's token count would also include the pieces and the system turn, which the model's own template
-    does not produce (about 45 tokens per sample by hand count `[A]`).
+    of the eos. T2's ratio is not biased by this. Its rows are plain `{"text": …}` Rust that fill 512 tokens on both
+    sides, so the count is fixed by shape. If R15 routes plain rows through `format_chat_prompt`, apr's rows would
+    carry the system turn and the pieces in place of about 45 tokens of Rust `[A]`.
   - **Earlier work.** `origin/PMAT-3803-trainer-apr-tokenizer` @5116cbc28b (2026-09-22) is not on main, and no PR head
     matches its last 12 commits. It builds a byte-level vocabulary with realizar's canonical BPE, under
     `feature = "realizar"` (#3742). It does not touch the template.
@@ -514,6 +515,49 @@ up, a new size changes its place, and a row already held on a branch drops out o
       response) equal serve's ids for the same messages: the model's own template with thinking off, then the
       answer, then 248046. It is RED today on the system turn, the think block and the pieces. Planted: the default
       system prompt restored.
+- **Row 25, K40: apr's tokenizers split the same text three ways before BPE.** Desk read at `316dee2cd4`, plus a
+  simulation: HF `tokenizers` 0.22.2 on the Qwen3.5 vocabulary and merges, with each split swapped in. It is not the
+  Rust code.
+  - **The paths.** Qwen3.5's `tokenizer.json` splits text with a regex before BPE: letters, single digits, punctuation
+    runs, newline runs, and space runs that leave their last space to the next word. NFC is applied first.
+    - GGUF serve implements that regex (`gguf/byte_level_bpe.rs`, since #3772).
+    - Train does not. `HfTokenizer` wraps aprender-core's `BpeTokenizer`, whose `pre_tokenize` starts a new word at
+      every whitespace character (`qwen2bpe_tokenizer.rs:463-466`: "Future: Use self.config for model-specific
+      pre-tokenization rules"). `apr chat` on a .apr builds the same type (`chat.rs:461`).
+    - `apr run` and `apr serve` on a .apr use realizar's `apr::BpeTokenizer` (`infer/mod.rs:726,817` through
+      `encode_text`, and `serve/handlers.rs:1307`). It splits only at special tokens and runs the merges over the
+      whole segment (`apr/tokenizer.rs:125-147,243-262`).
+    - None of the three applies NFC.
+  - **Measured (simulation).** Five samples: two Python, one Rust, one Markdown and one English. They come to 160
+    tokens under the regex, 193 under train's split, and 160 with no split.
+    - English is the same under all three.
+    - Indented code is not. Four spaces then `if` is `ĠĠĠ`,`Ġif` under the regex; `Ġ`,`Ġ`,`Ġ`,`Ġif` in train; and
+      `ĠĠĠĠ`,`if` on .apr serve.
+    - A blank line is `ĊĊ` under the regex and `Ċ`,`Ċ` in train. A five-line Python class is 23 tokens under the
+      regex and 38 in train.
+    - Every split decodes back to the same text, so a round-trip test cannot see the difference.
+  - **Effect on 0.72.** R4 and T4 tune through train's split. On code, the model learns indentation as ids that its
+    pretraining never produced and that no apr server sends. R4's gates cannot see this: QQE-003 feeds both forwards
+    the same ids, and the loss gate is met under any split. T2's ratio is not biased. Every row fills 512 tokens on
+    both sides, so `label_tokens_timed` is fixed by shape (`unsloth_ft_data.py` on `la-72/r5-data`). The sides only
+    see different ids for the same Rust text, and apr's 512 tokens cover less of it. Separately, .apr serve hands
+    even the base model a split it was never trained on. QQE-003's GGUF route is not affected.
+  - **Earlier work.**
+    - `crux-M-05-v1.yaml` (draft) states the check: `ids_apr == ids_hf` on 128 fixtures that include code. Nothing in
+      apr-cli or aprender-serve implements it.
+    - `bpe-tokenization-v1.yaml:98-99` says `pre_tokenize` splits at whitespace and punctuation. The code splits at
+      whitespace only.
+    - PMAT-3803's branch (K39) moves train onto realizar's `apr::BpeTokenizer` (`hf.rs:35,67` there). That would make
+      train match .apr serve, with no split, and still not match the regex.
+  - **Falsifiers (proposed `tokenizer-pretokenize-parity-v1`, TPP).** Each runs on CPU against frozen reference ids.
+    The ids come from the shipped `tokenizer.json`, pinned by its sha256. The fixture covers indented Python and
+    Rust, blank lines, space runs before a newline, digits, punctuation runs, contractions and combining marks.
+    - TPP-001: train's tokenizer, built by `from_apr` from a Qwen3.5 .apr, gives the reference ids. It is RED at
+      `316dee2cd4` in the simulation. Planted: the whitespace-only `pre_tokenize` restored.
+    - TPP-002: `AprV2Model::encode_text` on the same .apr gives the reference ids. Planted: the whole-segment merge
+      restored.
+    - TPP-003: GGUF serve's `byte_level_bpe` gives the reference ids. This should be GREEN today and keeps the
+      reference honest.
 
 State is read from the branch tips on 2026-10-03. origin/main is `316dee2cd4` and no la-72 branch has landed. K̂ is
 minutes of worker time still left; `[A]` marks an assumption.
@@ -546,6 +590,7 @@ minutes of worker time still left; `[A]` marks an assumption.
 | 22 | K37 phantom bindings | fold into #4502: make `pv audit --binding` agree with the `bindings` gate; arm the gate once the `gated_rmsnorm_oxide` ghost is fixed or allowlisted | 10 `[A]` (was 30; the gate exists) | comment on #4502 posted; the K36 branch fixes 6 of the 9 phantoms at `316dee2cd4` |
 | 23 | K38 Qwen3.5 norm convention | serve's safetensors conversion refuses a hybrid `layer_types`; R13's builder inverts #4418's value transforms, norm −1 included | 15 `[A]` + R13's builder | desk read plus a CPU measurement on the 4B; GGUF serve, train and #4418 agree |
 | 24 | K39 train/serve chat format | the HF importer writes the added tokens and the chat template into the .apr; TSC-001: `from_apr`'s tokenizer keeps `<\|im_end\|>`, `<think>` and `</think>` whole; TSC-002: train renders the model's own template, thinking off, no default system turn, target ends in the eos id | 90 `[A]` | desk read at `316dee2cd4` plus a header read of S-R10's .apr (17 keys, no template, no added tokens); PMAT-3803's branch has part of the tokenizer half, unmerged; must be green before R4's 200-step cell and any T4 run |
+| 25 | K40 pre-tokenizer split | one regex pre-tokenizer shared by train, `apr chat` and .apr serve; TPP-001/002: train's tokenizer and `encode_text` give the HF reference ids on a frozen code fixture; TPP-003 keeps GGUF serve on them | 80 `[A]` | desk read at `316dee2cd4` plus a simulation on the Qwen3.5 vocabulary: 5 samples are 193 tokens in train against 160 under the regex, and .apr serve has the same count with different ids on indented code; CRUX-M-05 (draft) states the check and nothing implements it; T2 is unaffected because its count is fixed by shape; must be green before R4's 200-step cell and any T4 run |
 | — | R19 ROADMAP PMAT-711 stale | — | done | shaping @378ec8e920 |
 | — | R20 declarative recipe | — | out | RQ-3: stays in #4002 (E8, 0.75) |
 
