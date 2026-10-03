@@ -114,7 +114,7 @@ def case_env(e, extra_env):
     env = dict(os.environ)
     env.update(APR_FT_SIDE_CMD=str(e.side), INCUMBENT_FT_SIDE_CMD=str(e.side),
                GPUQ=str(e.gpuq), GPUQ_LOG=str(e.gpuq_log), STUB_LOG=str(e.stub_log),
-               TRAIN_ACTIVE_FILE=str(e.active), VERDICT=str(VERDICT), RUN_TIMEOUT="60")
+               APR_TRAIN_ACTIVE_MARKER=str(e.active), VERDICT=str(VERDICT), RUN_TIMEOUT="60")
     env.update(extra_env or {})
     return env
 

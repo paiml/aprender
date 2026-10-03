@@ -30,8 +30,8 @@
 #   GPUQ                   GPU queue wrapper        (default gpu-q; never empty: no unlocked GPU run)
 #   GPUQ_PRIO              gpu-q priority 0-9       (default 5)
 #   RUN_TIMEOUT            seconds per run          (default 3600)
-#   TRAIN_ACTIVE_FILE      if this file exists the train is active and nothing runs
-#                          (default /tmp/apr-train-active; the fleet has no single marker yet, [A])
+#   APR_TRAIN_ACTIVE_MARKER if this file exists the train is active and nothing runs
+#                          (default /tmp/apr-train-active [A]; a fleet-wide marker is a ticket after 0.70.1)
 #   VERDICT                verdict script           (default scripts/bench/unsloth_ft_verdict.py)
 #
 # Exit: 0 PASS, 1 FAIL, 2 NOT_MEASURED (the verdict's codes), 3 refused (train active,
@@ -73,7 +73,7 @@ inc_cmd=${INCUMBENT_FT_SIDE_CMD:-$root/scripts/bench/unsloth_ft_incumbent_side.s
 gpuq=${GPUQ-gpu-q}
 prio=${GPUQ_PRIO:-5}
 run_timeout=${RUN_TIMEOUT:-3600}
-train_active=${TRAIN_ACTIVE_FILE:-/tmp/apr-train-active}
+train_active=${APR_TRAIN_ACTIVE_MARKER:-/tmp/apr-train-active}
 verdict=${VERDICT:-$root/scripts/bench/unsloth_ft_verdict.py}
 
 # The planted flag a side receives, or nothing.
