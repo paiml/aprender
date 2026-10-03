@@ -1,0 +1,25 @@
+# DRAFT (la-0.71 look-ahead, branch-only). Not in contracts/ until EXT-24 is
+# minted; checker: scripts/lookahead/crux_bind_check.py
+metadata:
+  id: ext-crux-bind-v1
+  version: "0.1.0-draft"
+  status: draft
+  description: >
+    EXT-001 §10.1 EXT-24 precondition: the CRUX schema can express the C1-C7
+    surfaces before EXT-25 writes contracts for them.
+  references:
+  - 'cop-inbox/handoff/EXT-001-dogfood-model-lifecycle.md §10, §10.1 EXT-24/25'
+  - 'crates/aprender-contracts/src/schema/validator.rs CRUX_COMPETITORS'
+equations:
+  bound:
+    formula: 'EXT_ARMS ⊆ CRUX_COMPETITORS  ∧  ∀ letter: |names(letter)| = 1'
+falsification_tests:
+  - {id: FALSIFY-CRUXBIND-001, fixture: crux_bind/cases.json#control-bound, expect: 0, rule: "control: full registry, one name per letter"}
+  - {id: FALSIFY-CRUXBIND-002, fixture: crux_bind/cases.json#B1-missing-arm, expect: 2, rule: "an EXT arm absent from CRUX_COMPETITORS is RED"}
+  - {id: FALSIFY-CRUXBIND-003, fixture: crux_bind/cases.json#B1-commented-arm-not-registered, expect: 2, rule: "a slug inside a // comment is not registered"}
+  - {id: FALSIFY-CRUXBIND-004, fixture: crux_bind/cases.json#B1-control-subset, expect: 0, rule: "control: the checked arm list is the one passed"}
+  - {id: FALSIFY-CRUXBIND-005, fixture: crux_bind/cases.json#B2-letter-collision, expect: 2, rule: "one letter, two category names is RED"}
+  - {id: FALSIFY-CRUXBIND-006, fixture: crux_bind/cases.json#B2-vacuous, expect: 2, rule: "no category at all is RED, not vacuously bound"}
+  - {id: FALSIFY-CRUXBIND-007, fixture: crux_bind/cases.json#B0-no-registry, expect: 2, rule: "registry not found is RED"}
+mutation_record: "7/7 sed mutants killed by --self-test (2026-10-03, la-0.71)"
+initial_state: "origin/main 316dee2cd4 is RED: 7 arms unregistered, 5 letters collide"
