@@ -91,15 +91,19 @@ equations:
               + { cell, adapter_name, llamacpp_sha, model, quant,
                   leg_a {min,median,max,n}, leg_b {min,median,max,n}, composed_bound,
                   e2 {decode {r,ci_lo,ci_hi,n}, prefill {r,ci_lo,ci_hi,n}},
-                  forward_trace_line }
+                  forward_trace_line,
+                  info_rows [{name, route, runs {role -> {run_sha256, model_sha256, prompt_set_sha256, kernel_path}},
+                              cos {pair -> {min,median,max,n}}}] }
       REQUIRE: llamacpp_sha = d1d3c3396 (the ruled pin)
       REQUIRE: forward_trace_line names the forward that ran (E3: the MoE forward)
+      REQUIRE: the verdict reads leg_a, leg_b and e2 only; info_rows never enter it (RQ-5, FALSIFY-BPM-018)
       E6 admissible(cell) <=> PASS_E1 AND PASS_E2 receipts on main   (RQ-3 provisional S-4 default; PRM-001 must agree)
       hybrid(cell)       => E1 may PASS; E2 and E6 report it as HYBRID, never as GPU   (RQ-4 provisional S-4 default)
     domain: 'one receipt'
     codomain: bool
     invariants:
     - 'A receipt missing any identity field is refused (FALSIFY-OBS-ID-001, shared lint).'
+    - 'Item (e) 2026-10-03: info_rows carry the RQ-5 info figures, such as a q8k_act reference or the C4 default route (neon-q4k-q6k-v1 c4_default_route_info). The checker derives the status, reason and labels of each row and reads none from the producer. A row never changes the verdict, whatever it holds (FALSIFY-BPM-018).'
 
 falsification_tests:
 - id: FALSIFY-BPM-001
@@ -205,6 +209,12 @@ falsification_tests:
   test: 'NOT YET WRITTEN — lands with P1, the receipt checker'
   if_fails: 'a GPU run that skipped its own parity guard reads as a validated GPU run'
   mutation: 'accept on used_gpu = true alone; the planted SKIP_PARITY_GATE receipt must turn GREEN'
+- id: FALSIFY-BPM-018
+  rule: an info row never gates (RQ-5, item e)
+  prediction: 'f018a: leg_a has 15 prompts at 0.999 and 1 at 0.990, next to an info row at 0.999 everywhere: Fail(E1 min). f018b: base.json plus an info row (the q8k_act reference, RQ-5) at min 0.985 stays Pass, and so does a second fixture whose info row holds one cosine "NaN"; that row reads not_measured(non_finite).'
+  test: 'NOT YET WRITTEN — lands with P1, planted fixtures f018a and f018b (P1 spec §4)'
+  if_fails: 'an info row lifts a failing leg, or an info row under 0.995 fails a cell it cannot gate under the RQ-5 ruling. An info row moved INTO a leg is BPM-008 (f008c).'
+  mutation: 'take the best of a leg and its info rows (f018a turns GREEN); fold the info rows into the leg min (f018b fails); refuse the receipt on a non-finite info row, as BPM-009 does for a leg (the second f018b is refused)'
 proof_obligations:
 - type: invariant
   property: 'Two legs >= 0.995 imply end-to-end cosine >= 0.98 (FALSIFY-BPM-002)'
@@ -243,6 +253,9 @@ proof_obligations:
 - type: invariant
   property: 'An E3 GPU receipt carries a judged F2 guard (FALSIFY-BPM-017)'
   formal: 'E3_gpu(r) => f2_matches_line(r.stderr) and not f2_skipped(r.stderr)'
+- type: invariant
+  property: 'An info row never changes the verdict (FALSIFY-BPM-018)'
+  formal: 'forall r, I: verdict(r with info_rows := I) = verdict(r)'
 
 qa_gate:
   id: F-BPM-GATE-001
@@ -256,8 +269,8 @@ qa_gate:
   pass_criteria: 'Every cell has an admissible receipt on main. Report-only until the harness lands.'
 
 verification_summary:
-  total_obligations: 12
+  total_obligations: 13
   proven: 0
   tested: 0
   status: proposed
-  notes: 'Draft by la-73 (L3). No ticket yet; the harness and the tests land with R1. L25 review 2026-10-03 at main 316dee2cd4 added BPM-009..015 (7 vacuous-pass holes). L25 on R4/R5 2026-10-03 at main 316dee2cd4 added BPM-016 (per-op hybrid) and BPM-017 (skipped F2 guard). C293.3 2026-10-03: RQ-3, RQ-4 and RQ-5 run on provisional S-4 defaults; BPM-008 now pins the value and checks the trace act path (f008c, f008d). Item (c) 2026-10-03: BPM-012 compares kernel_id per (tensor, op), not per path, OBS slot or entry, over the set each tensor reached (f012b..f012e). RQ-5 2026-10-03: ruled fp32_act by the cop on 2026-09-27 (q8k_act an info row only); text only, nothing flips.'
+  notes: 'Draft by la-73 (L3). No ticket yet; the harness and the tests land with R1. L25 review 2026-10-03 at main 316dee2cd4 added BPM-009..015 (7 vacuous-pass holes). L25 on R4/R5 2026-10-03 at main 316dee2cd4 added BPM-016 (per-op hybrid) and BPM-017 (skipped F2 guard). C293.3 2026-10-03: RQ-3, RQ-4 and RQ-5 run on provisional S-4 defaults; BPM-008 now pins the value and checks the trace act path (f008c, f008d). Item (c) 2026-10-03: BPM-012 compares kernel_id per (tensor, op), not per path, OBS slot or entry, over the set each tensor reached (f012b..f012e). RQ-5 2026-10-03: ruled fp32_act by the cop on 2026-09-27 (q8k_act an info row only); text only, nothing flips. Item (e) 2026-10-03: receipt_shape gains info_rows, and BPM-018 keeps them out of the verdict (f018a, f018b); the first row is the C4 default route (neon-q4k-q6k-v1 c4_default_route_info, NEON-Q4K-009).'

@@ -8,7 +8,7 @@ metadata:
   - 'epic aprender#3999: 0.73 "Runs Everywhere", cell C4 (gx10 aarch64 CPU)'
   - 'contracts/avx512-q4k-v1.yaml: the 1e-3 relative epsilon this contract first copied (replaced 2026-10-03 by a derived bound)'
   - 'N. J. Higham, Accuracy and Stability of Numerical Algorithms, 2nd ed., SIAM 2002, section 3.1 and Lemma 3.1: the basis of the neon_scalar_parity bound'
-  - 'la-73 drafts/backend-parity-matrix-v1.yaml: E1 composed-leg method used by E-R3-3'
+  - 'la-73 drafts/backend-parity-matrix-v1.yaml: E1 composed-leg method used by E-R3-3, and receipt_shape.info_rows, which carries c4_default_route_info (item e)'
   description: >
     Today every quantized dot in aprender-serve is x86-gated. On aarch64 the three
     dispatchers (quantize/fused_k.rs:193 fused_q4k_dot_simd, quantize/fused_q5k_q6k.rs:118
@@ -119,9 +119,41 @@ equations:
     - 'The gate reads the per-prompt minimum. It is one leg of the R1 composed bound.'
     - 'L25: leg >= 0.995 was listed as a postcondition. It is the gate decision, and a postcondition that a FAIL violates is not a property of the computation. It now lives only in the formula.'
     - 'R1 FALSIFY-BPM-012 (no self-comparison) compares kernel_id per tensor and ignores arch, so a second machine alone does not meet it: one scalar kernel on both hosts is a self-comparison (P1 f012c). This leg meets it through the dispatch_honesty precondition above. Every C4 Q4_K and Q6_K GEMV entry names a /neon kernel, and dispatch_honesty forbids an x86 run to name one (NEON is compiled out there), so no quantized tensor shares a kernel_id. At 316dee2cd4 the f32 Q4_K and Q6_K dots have no aarch64 arm (fused_k.rs:201, fused_q5k_q6k.rs:123): the C4 entries are scalar, and the leg is not_measured until R3 lands.'
-    - 'L25 (2026-10-03): with fp32_act on both hosts, the C4 run is the R1 reference forward run token by token, so it reaches entries A, B and E of NEON-Q4K-008 only. The default Q8_K route C (parallel_k.rs:303-304), D, and the prefill entries F and G are never part of this leg. The NEON kernel of C, D and G, q4k-q8k, is checked per kernel only (neon_scalar_parity, NEON-Q4K-007, -008). F runs the Q6_K dot that E covers (generic_matvec.rs:188), so only its multirow row loop is outside the leg (NEON-Q4K-008). R1 does not narrow a GPU backend''s activation path, so a C4 leg on the default route, against the C0 fp32_act reference as a GPU cell runs, is the open follow-on (handoff Next, item e).'
+    - 'L25 (2026-10-03): with fp32_act on both hosts, the C4 run is the R1 reference forward run token by token, so it reaches entries A, B and E of NEON-Q4K-008 only. The default Q8_K route C (parallel_k.rs:303-304), D, and the prefill entries F and G are never part of this leg. The NEON kernel of C, D and G, q4k-q8k, is checked per kernel only (neon_scalar_parity, NEON-Q4K-007, -008). F runs the Q6_K dot that E covers (generic_matvec.rs:188), so only its multirow row loop is outside the leg (NEON-Q4K-008). Dense Qwen3 decode in forward_single_with_cache, the forward this leg runs, never reaches D on either route: D runs only from the non-fused gated branch (ffn_block.rs:58, then fused_matmul_into.rs:180-187 and fused_gate_up.rs:227) and from scratch_q8k_up_gate (results.rs:33), which only the scratch and traced forwards reach (results.rs:608, traced.rs:179). Item (e), 2026-10-03: a default-route C4 run is reported by c4_default_route_info as an info row only (RQ-5), never as this leg.'
     - 'Leg B of the C4 cell is cos(logits_apr_c0_x86, logits_llamacpp_cpu). The triangle bound needs leg B on the same reference vector as leg A, so it is the C0 cell''s leg B. It is reused only if the prompt_set_sha256, model_sha256 and cpu_ref_path all match, and the receipt cites it by sha256. llama.cpp on aarch64 is then measured only for E2 speed, not for correctness, which the bound does not need.'
     - 'The receipt spans two hosts (C0 for the reference, C4 for the backend). The P1 identity block is per run, not per receipt, so a host mismatch between runs is expected here and is not a BPM refusal.'
+  c4_default_route_info:
+    formula: |
+      d4 = the C4 apr CPU run (gx10 aarch64) on the default route (no with_fp32_activations scope, DIRECT_FP32_GEMV unset)
+      d0 = the C0 apr CPU run (x86) on the default route
+      f0 = the C0 apr CPU fp32_act run that c4_e1_leg reads as its reference, cited by run sha256
+      r1 = cos(d4, f0)   end to end: the gx10 default route against the E1 reference
+      r2 = cos(d0, f0)   the x86 activation-quantization gap
+      r3 = cos(d4, d0)   the cross-host kernel difference on one route
+      info = { r1, r2, r3 as {min,median,max,n} over the positions, route default, labels {d4, d0},
+               q8k_tensors, f32_only_tensors, status, reason }
+      measured(info) <=> route_proof(d4) and route_proof(d0) and bound(d4, d0, f0)
+                         and triangle(r1, r2, r3) and finite(r1, r2, r3)
+      INFO ONLY (RQ-5): never a gate, never a leg, never in qa_gate.checks (R1 FALSIFY-BPM-018)
+    domain: 'the positions of c4_e1_leg: prefill-final and teacher-forced decode logits'
+    codomain: 'one row of R1 receipt_shape.info_rows, status measured or not_measured(reason)'
+    preconditions:
+    - 'd4, d0 and f0 use the GGUF sha256, prompt_set_sha256, token ids and positions of c4_e1_leg: prefill-final plus >= 8 teacher-forced decode positions per prompt, >= thresholds.min_positions (64) in total (R1 FALSIFY-BPM-013)'
+    - 'every logits pair has equal length and nonzero norms. The cosine helpers return 0.0 otherwise (parity_per_op_table.rs:61-75, forward_error.rs:254-270), and a 0.0 reads as a real cosine'
+    - 'route_proof(d): at least one Q4_K (tensor, op) entry in the kernel_path of d has a q4k-q8k kernel_id. Dense Qwen3 in the fp32 scope has none, so this tells the routes apart; the route field of the row is not proof (FALSIFY-NEON-Q4K-009, fN9a). Otherwise not_measured(route_unproven)'
+    - 'bound(d4, d0, f0): the three runs agree on model_sha256 and prompt_set_sha256, every pair has the n of leg_a, and the run sha256 of f0 is the apr CPU run that leg_a cites (fN9c). Otherwise not_measured(unbound)'
+    - 'triangle(r1, r2, r3): with a_i = acos(clamp(r_i.min, -1, 1)), each a_i <= the sum of the other two + 1e-3 rad (fN9d). Otherwise not_measured(inconsistent)'
+    postconditions:
+    - 'labels {d4, d0} are derived by the checker from kernel_path: the ISA family (the kernel_id text after "/" up to the first "-", e.g. neon, avx2 or scalar) shared by every Q4_K and Q6_K matvec entry of the run, else mixed. Never from the producer, never from arch (fN9b)'
+    - 'q8k_tensors counts the Q4_K (tensor, op) entries of d4 that reached q4k-q8k, and f32_only_tensors the quantized (tensor, op) entries of d4 that reached only f32 kernels (Q6_K, and a Q4_K tensor crushed on every call)'
+    - 'a non-finite cosine makes the row not_measured(non_finite). The row is still reported, and the receipt is never refused for it (R1 FALSIFY-BPM-018), unlike a non-finite leg cosine (BPM-009)'
+    invariants:
+    - 'Info only (RQ-5, ruled fp32_act by the cop on 2026-09-27; q8k_act is an info row only). The default route is the mixed path of R1 §11a: Q4_K on Q8_K activations, Q6_K and crushed Q4_K blocks on f32. RQ-5 calls a run on it q8k_act. The row says default because not every tensor is Q8_K.'
+    - 'Not a gate: #3714 quotes CUDA MoE at cos 1.000000 against fp32_act and 0.985 against the production Q8_K path (Qwen3-Coder-30B-A3B, not re-measured), so r2 may sit near 0.985, under the 0.995 floor; dense Qwen3 is unmeasured [U]. A gated default-route leg would then measure activation quantization, not NEON. GPU paths use exact-FP32 activations (R1 §11), so the default route has no GPU-cell analogue, and the earlier wording (a C4 leg against the reference "as a GPU cell runs") is withdrawn. Gating the default route on C4 is RQ-6 (handoff, 2026-10-03), with r3 as the candidate; the provisional S-4 default is info only.'
+    - 'Dense Qwen3 decode in forward_single_with_cache on the default route: every Q4_K tensor, lm_head included, runs entry C (parallel_k.rs:303-304, then :326); Q6_K runs E; crushed Q4_K blocks run B (ffn_block.rs:790-792, :799-801), mostly at the first token. D is not reached on either route: it runs only from the non-fused gated branch (ffn_block.rs:58, then fused_matmul_into.rs:180-187 and fused_gate_up.rs:227) and from scratch_q8k_up_gate (results.rs:33), which only the scratch and traced forwards reach (results.rs:608, traced.rs:179). At 316dee2cd4 the q4k-q8k dot of C has no aarch64 arm (bsum_precompute.rs:237, then q4k_dot_avx2.rs:343 on x86 and :359 scalar), so label(d4) reads scalar until R3 lands.'
+    - 'r3 compares two kernels only where the labels of d4 and d0 differ (BPM-012 compares per tensor). With both scalar it compares one kernel with itself, and the labels show that.'
+    - 'The triangle check holds for any three vectors. At each position the angles obey the triangle inequality. For the maxima, take for each i the position p* where the angle of r_i peaks: a_i = theta_i(p*) <= theta_j(p*) + theta_k(p*) <= a_j + a_k. A broken triangle means the cosines are not of the three cited vectors. It catches gross provenance errors only; the run binding is the real check. The 1e-3 rad slack covers f32 cosines: the helpers accumulate in f64 and return f32, so each angle is off by at most sqrt(2^-24) = 2.44e-4 rad (checked numerically, 2026-10-03), 7.3e-4 over three.'
+    - 'Runs (plan only, C277): C4 twice (fp32_act for c4_e1_leg, default for this row) and C0 twice (f0 and d0).'
   c4_e2_speed:
     formula: |
       r = tok_s_apr_c4 / tok_s_llamacpp_ggml_cpu   (llama.cpp d1d3c3396)
@@ -195,6 +227,12 @@ falsification_tests:
   test: 'NOT YET WRITTEN. Lands with R3 (skeleton in R3-test-skeletons.md section 4c)'
   if_fails: 'a NEON arm that errs on some production-length row ships as silent 0.0 rows. The dot tests miss an Err on an input their fixtures never draw, and a cosine gate and the prefill bit-identity tests (FALSIFY-4228-004, -005) can pass it'
   mutation: 'make the NEON arm return Err for rows of 8 or more super-blocks; this test must turn RED (and since item (d) so must neon_scalar_parity, which runs 8 and 36 blocks). Second: return Err for one planted block (its first 16 quant bytes are 0x5A) in one row of an out_dim 300 case; this test must turn RED, while the neon_scalar_parity fixtures never draw that block and stay GREEN. Third, for the row check itself: write 0.0 in place of one tail-tile row in the parallel branch of fused_q4k_q8k_parallel_matvec_into; this test must turn RED. Fourth, for the prefill row check: in generic_multirow_matmul_into, write 0.0 for the last row of the part tile for token m - 1 (generic_matvec.rs:238-239); entry F must turn RED.'
+- id: FALSIFY-NEON-Q4K-009
+  rule: a C4 default-route info row is measured only on a proven route, one bound run triple and consistent angles (L25, item e)
+  prediction: 'The P1 checker derives the status and labels of the c4_default_route_info row itself. The fN9 fixtures are base_c4.json (f012b) plus one such row: d4 has q4k-q8k/neon-sdot on Q4_K and q6k-f32/neon on Q6_K, d0 has q4k-q8k/avx2, f0 is the apr CPU run of leg_a, and r1, r2, r3 have min 0.993, 0.994, 0.9995. Then one edit. fN9a: every Q4_K entry of d4 is q4k-f32/neon (an fp32_act run) while the row still says route default: not_measured(route_unproven). fN9b: every Q4_K and Q6_K entry of d4 is /scalar (the 316dee2cd4 kernels) on arch aarch64: measured, with label(d4) scalar, not neon. fN9c: f0 is a C0 fp32_act run of another prompt set, not the run leg_a cites: not_measured(unbound). fN9d: r1, r2, r3 min 0.95, 0.999, 0.9999, so a1 = 0.3176 rad > a2 + a3 + 1e-3 = 0.0599: not_measured(inconsistent). The receipt stays Pass in all four (R1 FALSIFY-BPM-018).'
+  test: 'NOT YET WRITTEN. Lands with P1, planted fixtures fN9a..fN9d (P1 spec §4)'
+  if_fails: 'an fp32_act run labelled default reads as the default route, a scalar kernel reads as NEON because the host is aarch64, or a cosine against some other run reads as the gx10 default-route figure'
+  mutation: 'trust the route field (fN9a turns GREEN as measured); take the label from arch (fN9b reads neon); skip the run binding (fN9c turns GREEN); drop the triangle check (fN9d turns GREEN)'
 proof_obligations:
 - type: invariant
   property: 'NEON equals scalar within the summation bound for all three kernels (FALSIFY-NEON-Q4K-001, 004)'
@@ -218,6 +256,9 @@ proof_obligations:
 - type: invariant
   property: 'Every decode matvec row, and every row of each prefill token, holds its own NEON dot, and that dot is Ok at production row lengths (FALSIFY-NEON-Q4K-008)'
   formal: 'forall e, (in_dim, out_dim), t < m_e, r < out_dim: dot_e(W[r], x_e[t]) = Ok(v) and |matvec_e(W, x)[t][r] - v| < 1e-3 * max(1, |v|)'
+- type: invariant
+  property: 'A C4 default-route info row is measured only on a proven route, one bound run triple and consistent angles (FALSIFY-NEON-Q4K-009)'
+  formal: 'measured(info) => route_proof(d4) and route_proof(d0) and bound(d4, d0, f0) and forall i: a_i <= a_j + a_k + 1e-3, with a_i = acos(clamp(r_i.min, -1, 1))'
 - type: invariant
   property: 'Integer decode steps the NEON kernels must reproduce are exact and in range (KANI-NEON-Q4K-001..003)'
   formal: 'forall q in u8: split(q) exact; forall l,h: recombine(l,h) in -32..=31; forall j < 8: unpack reads < 12'
@@ -257,8 +298,8 @@ qa_gate:
   pass_criteria: 'Every falsifier is GREEN on gx10 C4. Report-only until first green plus 7 nights.'
 
 verification_summary:
-  total_obligations: 8
+  total_obligations: 9
   proven: 0
   tested: 0
   status: proposed
-  notes: 'Draft by la-73 (L3). No ticket yet; tests land with R3. L25 review 2026-10-03 at main 316dee2cd4: orphan-file site, fixture f16/scale/magnitude/multi-block preconditions, unreachable widen fallback, committed golden, C4 leg decode positions and ref path (NEON-Q4K-006, -007). NEON-Q4K-008 (2026-10-03): every CPU matvec turns a dot Err into a 0.0 row, so each decode matvec row is checked against its own dot at production row lengths. Prefill entries F and G (2026-10-03): the multirow kernels swallow a dot Err too (generic_matvec.rs:239, or the row loop of C per token). No C4 run calls them at 316dee2cd4, and the prefill bit-identity tests cannot see a swallowed Err, so 008 covers them before the batched prefill is wired. Item (c) 2026-10-03: the C4 leg meets R1 BPM-012 (now per tensor, arch ignored) through dispatch honesty, not the second machine; the C4 leg reaches A, B and E only. Item (d) 2026-10-03: neon_scalar_parity bounds |neon - scalar| by 2 * gamma(K) * S over the row''s terms (Higham 2002, Lemma 3.1) in place of 1e-3 * max(1, |dot|), so value parity runs at the production row lengths 8 and 36; the magnitude precondition gives way to a masked sweep with a power guard.'
+  notes: 'Draft by la-73 (L3). No ticket yet; tests land with R3. L25 review 2026-10-03 at main 316dee2cd4: orphan-file site, fixture f16/scale/magnitude/multi-block preconditions, unreachable widen fallback, committed golden, C4 leg decode positions and ref path (NEON-Q4K-006, -007). NEON-Q4K-008 (2026-10-03): every CPU matvec turns a dot Err into a 0.0 row, so each decode matvec row is checked against its own dot at production row lengths. Prefill entries F and G (2026-10-03): the multirow kernels swallow a dot Err too (generic_matvec.rs:239, or the row loop of C per token). No C4 run calls them at 316dee2cd4, and the prefill bit-identity tests cannot see a swallowed Err, so 008 covers them before the batched prefill is wired. Item (c) 2026-10-03: the C4 leg meets R1 BPM-012 (now per tensor, arch ignored) through dispatch honesty, not the second machine; the C4 leg reaches A, B and E only. Item (d) 2026-10-03: neon_scalar_parity bounds |neon - scalar| by 2 * gamma(K) * S over the row''s terms (Higham 2002, Lemma 3.1) in place of 1e-3 * max(1, |dot|), so value parity runs at the production row lengths 8 and 36; the magnitude precondition gives way to a masked sweep with a power guard. Item (e) 2026-10-03: c4_default_route_info reports the gx10 default route (Q4_K on Q8_K activations) as an info row only, per RQ-5: r1 cos(C4 default, C0 fp32_act reference), r2 cos(C0 default, reference), r3 cos(C4 default, C0 default), measured only on a proven route, one bound run triple and consistent angles (NEON-Q4K-009). Dense Qwen3 never reaches D in forward_single_with_cache; the earlier plan said it did.'

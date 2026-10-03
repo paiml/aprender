@@ -18,14 +18,14 @@ These are bodies ready to file, one per bundle in `falsifier-landing-map.md`.
 
 **Acceptance**
 - **Control:** the planted `base.json` passes. Without this, a checker that refuses everything would pass.
-- **Planted receipts:** 34 files under `tests/fixtures/bpm/` (`base.json`, the 27 rows of spec §4 with the second fixtures of f010, f012e and f013 and the three of f017, and f002b) give their spec §4 verdicts. They cover BPM-001..006 and 008..017, plus WGF-005, WGF-009, R4-003 and the uncaptured-stderr case.
-- **Mutations:** the 15 checker mutations in spec §5 each flip their named receipt. The run is recorded in the PR body.
+- **Planted receipts:** 41 files under `tests/fixtures/bpm/` (`base.json`, the 33 rows of spec §4 with the second fixtures of f010, f012e, f013 and f018b and the three of f017, and f002b) give their spec §4 verdicts. They cover BPM-001..006 and 008..018, NEON-Q4K-009, plus WGF-005, WGF-009, R4-003 and the uncaptured-stderr case.
+- **Mutations:** the 22 checker mutations in spec §5 each flip their named receipt. The run is recorded in the PR body.
 - **Composed bound:** a const test checks 2·acos(0.995) ≤ acos(0.98).
 - **Command:** `cargo test -p aprender-contracts --lib` runs all of it.
 
 **Blocked by**
 - The OBS stack (#4487 identity block, #4574 kernel-path shape) is not on main. Until it merges, the identity check returns `NotRun(identity lint absent)`, never a pass.
-- RQ-5 is ruled (cop, 2026-09-27 20:12Z): `cpu_ref_path` = `fp32_act`, held as data in `bpm.cpu_ref_path`. A `q8k_act` run is an info row only and never an E1 receipt (f008c).
+- RQ-5 is ruled (cop, 2026-09-27 20:12Z): `cpu_ref_path` = `fp32_act`, held as data in `bpm.cpu_ref_path`. A `q8k_act` run is an info row only and never an E1 receipt (f008c). Info rows have their own field and never enter the verdict (BPM-018).
 
 **Hosts** x86 CI only. No GPU, no model.
 **Out of scope** Running any model; P2 trace fields; arming the shape in `lint-baseline.json` (shared file, a separate labelled follow-up).

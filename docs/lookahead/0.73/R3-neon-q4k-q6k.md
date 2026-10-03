@@ -33,6 +33,7 @@ Out:
 - **E-R3-2 dispatch honesty:** on aarch64, `kernel_path()` of each dispatcher ∈ {`*/neon*`}. With dotprod absent, `q4k-q8k` reports `*/scalar`. A path never names a kernel the call does not reach.
 - **E-R3-3 E1 leg (C4):** logits cosine(C4 apr-CPU-NEON, C0 apr-CPU-x86) ≥ 0.995 on the E1 prompt set, Qwen3-dense Q4_K_M. The composed-leg method is in R1.
 - **E-R3-4 E2 speed:** the lower CI bound of decode tok/s ratio apr-C4 / llama.cpp ggml-cpu (pin d1d3c3396, RQ-2) is ≥ 0.5. This is report-only until first-green + 7 green nights (R-6).
+- **E-R3-5 default-route info row (C4):** r1 = cos(C4 default, C0 `fp32_act` reference), r2 = cos(C0 default, the reference), r3 = cos(C4 default, C0 default), on the E1 positions. It is an info row only (RQ-5), never a gate, and it is measured only on a proven route, one bound run triple and consistent angles (FALSIFY-NEON-Q4K-009, §15).
 
 ## 4. Falsifiers (each must be able to go RED)
 | id | prediction | planted RED |
@@ -77,7 +78,7 @@ The NEON kernels go into three aprender-serve dispatchers. Each has the same sha
 - Q5_K (`fused_q5k_q6k.rs`) has the same shape and is a cheap follow-on. Q4_0 and Q8_0 (`fused_q4_0_q8_0.rs:6`, `fused_q8_0_q8_0.rs:15/208`) are x86-only too. They are listed for the R5 census, not added to R3.
 
 ## 10. Contract draft (2026-09-27)
-- The contract draft is drafts/neon-q4k-q6k-v1.yaml, `kind: kernel`: 4 equations, FALSIFY-NEON-Q4K-000..005, 5 obligations, and KANI-NEON-Q4K-001..003. Current state (2026-10-03): contracts-draft/neon-q4k-q6k-v1.yaml, 5 equations, FALSIFY-NEON-Q4K-000..008, 8 obligations and the same three Kani harnesses.
+- The contract draft is drafts/neon-q4k-q6k-v1.yaml, `kind: kernel`: 4 equations, FALSIFY-NEON-Q4K-000..005, 5 obligations, and KANI-NEON-Q4K-001..003. Current state (2026-10-03, after item e): contracts-draft/neon-q4k-q6k-v1.yaml, 6 equations, FALSIFY-NEON-Q4K-000..009, 9 obligations and the same three Kani harnesses.
 - The Kani harnesses cover only integer decode steps (nibble split, 6-bit recombine, scale-unpack bounds), because those are exhaustively provable.
 - pv validate: rc 0. The first try failed PROVABILITY-001 because a kernel contract must have kani_harnesses.
 - pv score: **0.57 (D)**. By dimension: D1 0.70, D2 1.00, D3 0.60, D4 Lean 0.00, D5 Binding 0.00. There is no binding registry for a draft outside the tree; the binding lands with the code.
@@ -159,7 +160,7 @@ BPM-012 and the C4 leg (2026-10-03). R1 FALSIFY-BPM-012 now compares, per (tenso
 - This leg meets it through the c4_e1_leg precondition that every C4 Q4_K and Q6_K GEMV entry names a `/neon` kernel. dispatch_honesty forbids an x86 run to name one.
 - At 316dee2cd4 the f32 Q4_K and Q6_K dots have no aarch64 arm (fused_k.rs:201, fused_q5k_q6k.rs:123). The C4 entries are scalar, so the leg is not_measured until R3 lands.
 - The gap: on fp32_act, run token by token like the R1 reference, the C4 run reaches entries A, B and E only. The default Q8_K route C (parallel_k.rs:303-304, where `DIRECT_FP32_GEMV=1` also selects f32) and D, and the prefill entries F and G, are never part of the leg. The NEON kernel of C, D and G, q4k-q8k, is checked per kernel only (neon_scalar_parity, NEON-Q4K-007, -008). F runs the Q6_K dot that E covers (generic_matvec.rs:188), so only its multirow row loop is outside the leg, and NEON-Q4K-008 checks that loop.
-- A C4 leg on the default route, against the C0 fp32_act reference the way a GPU cell runs, is the next draft (handoff Next, item e).
+- The default route of dense Qwen3 reaches C, E and B, never D (§15). The row loop of C reaches the q4k-q8k dot through the bsums wrapper (bsum_precompute.rs:220, then :237), which has no aarch64 arm at 316dee2cd4. The route is reported as the info row `c4_default_route_info`, not as a leg (§15, item e).
 
 pv 0.70.0 after this: validate 0/0; lint 0 errors and the same 5 lean_theorem warnings. Counts unchanged (5 equations, 9 falsifiers, 3 KANI, 8 obligations).
 
@@ -171,3 +172,14 @@ pv 0.70.0 after this: validate 0/0; lint 0 errors and the same 5 lean_theorem wa
 - The R3 test skeletons (§2) carry the bound helpers and the sweep. Their new code passes rustfmt --check under the repo's rustfmt.toml. Nothing was compiled or run (C277).
 
 pv 0.70.0 after item (d): validate 0/0; lint 0 errors and the same 5 lean_theorem warnings. Counts unchanged (5 equations, 9 falsifiers, 3 KANI, 8 obligations).
+
+## 15. Item (e): the gx10 default route as an info row (2026-10-03)
+
+- The default route of dense Qwen3 in `forward_single_with_cache` (no `with_fp32_activations` scope, `DIRECT_FP32_GEMV` unset): every Q4_K tensor, lm_head included, runs entry C (parallel_k.rs:303-304, then :326); Q6_K runs E; crushed Q4_K blocks run B (ffn_block.rs:790-792, :799-801), mostly at the first token. D is never reached on either route. It runs only from the non-fused gated branch (ffn_block.rs:58, then fused_matmul_into.rs:180-187 and fused_gate_up.rs:227) and from `scratch_q8k_up_gate` (results.rs:33), which only the scratch and traced forwards reach (results.rs:608, traced.rs:179). The 20:59Z handoff Next said the route reaches C and D; that was wrong.
+- The equation `c4_default_route_info` reports three cosines: r1 = cos(C4 default, C0 `fp32_act` reference), r2 = cos(C0 default, the same reference), r3 = cos(C4 default, C0 default). They form an info row only, per RQ-5. #3714 quotes CUDA MoE at 0.985 against the production Q8_K path (not re-measured), so r2 may sit under the 0.995 floor, and a gated default-route leg would measure activation quantization, not NEON. GPU paths use exact-FP32 activations (R1 §11), so "the way a GPU cell runs" (§13) is withdrawn. Whether the gx10 default route should gate is RQ-6 (handoff), with r3 as the candidate; the provisional S-4 default is info only.
+- FALSIFY-NEON-Q4K-009 lands with P1 (fixtures fN9a..fN9d). The checker proves the route from `kernel_path` (a Q4_K entry with a q4k-q8k kernel_id), derives the labels from `kernel_path` and never from `arch`, binds f0 to the run leg_a cites, and checks that the angles close a triangle within 1e-3 rad. The cosine helpers (parity_per_op_table.rs:61-75, forward_error.rs:254-270) accumulate in f64 and return f32, so each angle is off by at most 2.44e-4 rad, and three by 7.3e-4. R1 FALSIFY-BPM-018 keeps every info row out of the verdict.
+- At 316dee2cd4 the q4k-q8k dot of C has no aarch64 arm: the row loop goes bsum_precompute.rs:220, then :237, to q4k_dot_avx2.rs:343 on x86 and :359 scalar. So label(d4) reads scalar, and r3 compares the scalar kernel with the x86 arm, until R3 lands.
+- Side defect [V]: the #2971 crushed fallback in `fused_gate_up_q4k_into` (fused_gate_up.rs:189-213) calls `fused_q4k_parallel_matvec_into`, which quantizes outside the scope, so the fallback changes nothing, and it never calls `note_crushed_fallback`. The fix calls `fused_q4k_parallel_matvec_f32_into`, as `matvec_into_honest` does (ffn_block.rs:791-792). It becomes a PROPOSE-TICKET after LIVE 0.70.1; no 0.73 model reaches it.
+- Runs (plan only, C277): C4 twice (fp32_act for c4_e1_leg, default for the row) and C0 twice (f0 and d0).
+
+pv 0.70.0 after item (e): validate 0/0; lint 0 errors and 6 lean_theorem warnings (the new one is `c4_default_route_info`). Counts: 6 equations, 10 falsifiers, 3 KANI, 9 obligations.

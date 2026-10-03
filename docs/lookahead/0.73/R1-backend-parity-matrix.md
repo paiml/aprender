@@ -129,8 +129,11 @@ Mechanism, per qtype (aprender-serve):
 - **Q4_0 / Q8_0.** Always Q8_0 activations (`fused_q4_0_q8_0_*`, `fused_q8_0_q8_0_parallel_matvec_into`). There is no
   f32 path.
 - **Callers that pre-quantize whatever the scope says:**
-  - `fused_gate_up_q4k_into` (fused_gate_up.rs:177) uses Q8_K, except on crushed blocks. Its Q5_K/Q6_K
-    siblings (:240, :265) use the f32 dots.
+  - `fused_gate_up_q4k_into` (fused_gate_up.rs:177) uses Q8_K through `fused_q4k_q8k_ffn_up_gate_into` (:227),
+    except when the input has a crushed block. Its fallback for that case (#2971, :189-213) calls
+    `fused_q4k_parallel_matvec_into`, which takes f32 only inside the scope or with `DIRECT_FP32_GEMV`
+    (parallel_k.rs:303-304). Outside the scope the fallback quantizes too, and it never calls
+    `note_crushed_fallback` (item e, §11b). Its Q5_K/Q6_K siblings (:240, :265) use the f32 dots.
   - `forward_single_with_scratch` sets `use_q8k_path = hidden_dim % 256 == 0` (results.rs:541). It has no
     non-test callers.
   - The traced forward does the same (traced.rs:88).
@@ -191,6 +194,19 @@ RQ-5 implication (ruled `fp32_act`, §11):
   - Qwen3.5 and the MoE have their own forwards, with no fused gate/up.
   - A Gemma-1 cell would reach it, so its Q4_K up/gate would contradict the label. BPM-008 refuses that
     receipt from the trace (f008d), provided the fused gate/up kernel emits its `kernel_path` entry (P2).
+
+## §11b — RQ-5 info rows (item e, 2026-10-03, origin/main 316dee2cd4, read-only)
+
+RQ-5 made `fp32_act` the E1 reference and `q8k_act` an info row only. Item (e) gives info rows a shape and a rule, and writes the first row.
+
+- **Shape.** `receipt_shape` gains `info_rows`: name, route, the runs (run sha256, model and prompt-set sha256, `kernel_path`) and per-pair cosines {min, median, max, n}. The checker derives each row's status, reason and labels, and reads none of them from the producer.
+- **Rule, FALSIFY-BPM-018.** A row never changes the verdict. f018a: a failing leg next to a 0.999 info row stays Fail(E1 min). f018b: a 0.985 info row, or one holding a "NaN" cosine, leaves a Pass receipt Pass, and the NaN row reads not_measured(non_finite). An info row moved into a leg is BPM-008 (f008c).
+- **The first row, `c4_default_route_info`** (neon-q4k-q6k-v1, FALSIFY-NEON-Q4K-009). r1 = cos(C4 default, C0 `fp32_act` reference) is the end-to-end figure. r2 = cos(C0 default, the same reference) is the x86 activation-quantization gap. r3 = cos(C4 default, C0 default) is the cross-host kernel difference on one route. The row is measured only when `kernel_path` proves the default route on both hosts, the three runs are one bound triple (f0 is the run leg_a cites), and the angles close a triangle within 1e-3 rad. The f32 cosine helpers lose up to 2.44e-4 rad per angle, so three lose at most 7.3e-4.
+- **Why an info row, not a leg.** #3714 quotes CUDA MoE at cos 1.000000 against `fp32_act` and 0.985 against the production Q8_K path (Qwen3-Coder-30B-A3B, not re-measured). So r2 may sit under the 0.995 floor, and a gated default-route leg would measure activation quantization, not NEON. Dense Qwen3 is [U]. GPU paths use exact-FP32 activations (§11), so the default route has no GPU-cell analogue, and the earlier framing (a C4 leg against the reference "as a GPU cell runs") is withdrawn. Whether the gx10 default route should gate is RQ-6 (handoff), with r3 as the candidate. The provisional S-4 default is info only.
+- **Correction [V].** Dense Qwen3 decode in `forward_single_with_cache` reaches C and never D, on either route. D (`fused_q4k_q8k_ffn_up_gate_into`) runs only from `fused_gate_up_q4k_into` (fused_gate_up.rs:227), through the non-fused gated branch (ffn_block.rs:58, then fused_matmul_into.rs:180-187; taken by LayerNorm models, models with no FFN norm, and Gemma-1, ffn_block.rs:42-58), and from `scratch_q8k_up_gate` (results.rs:33), which only the scratch and traced forwards reach (results.rs:608, traced.rs:179). The 20:59Z handoff Next said the default route reaches C and D.
+- **Side defect [V].** The #2971 crushed fallback in `fused_gate_up_q4k_into` (fused_gate_up.rs:189-213) calls `fused_q4k_parallel_matvec_into`. Outside the scope that function quantizes to Q8_K (parallel_k.rs:303-304), so the fallback changes nothing, and it never calls `note_crushed_fallback`. The fix calls `fused_q4k_parallel_matvec_f32_into`, as `matvec_into_honest` does (ffn_block.rs:791-792). It becomes a PROPOSE-TICKET after LIVE 0.70.1; no 0.73 model reaches it.
+
+pv 0.70.0 after item (e): validate 0/0 on both contracts; lint 0 errors and 6 lean_theorem warnings (the new one is `c4_default_route_info`). BPM: 4 equations, 18 falsifiers, 13 obligations.
 
 ## 12. L25 review: vacuous-pass holes (2026-10-03, origin/main 316dee2cd4, read-only)
 The draft gated the right quantities, but seven inputs could make a cell PASS without the check measuring anything. Each now has a planted falsifier in `backend-parity-matrix-v1` (BPM-009..015):

@@ -1,6 +1,6 @@
 # P1 — backend-parity cell receipt: schema and planted fixtures (draft, la-73, 2026-10-03)
 
-P1 is the first bundle in `falsifier-landing-map.md`. It holds 19 falsifiers and needs no GPU, no model and no aarch64 host.
+P1 is the first bundle in `falsifier-landing-map.md`. It holds 21 falsifiers and needs no GPU, no model and no aarch64 host.
 This is a spec only. No code is written and no ticket is minted (C277). Citations are at origin/main 316dee2cd4 unless a line says otherwise.
 
 ## 1. Reuse first: one validator per artifact family
@@ -31,7 +31,7 @@ pre-push checklist and in CI.
 | Field | Type | Read by |
 |---|---|---|
 | `cell` | C0..C5 | all |
-| `leg_a`, `leg_b` | {record path, record sha256, `cpu_ref_path`, `prompt_set_sha256`, `n`, `model_sha256`, `cos[p][t]` (prompt × position, position 0 = prefill-final, then ≥ 8 decode)} | 001, 002, 008-011, 013 |
+| `leg_a`, `leg_b` | {record path, record sha256, `cpu_ref_path`, `cpu_run_sha256` (the apr CPU run the leg reads), `prompt_set_sha256`, `n`, `model_sha256`, `cos[p][t]` (prompt × position, position 0 = prefill-final, then ≥ 8 decode)} | 001, 002, 008-011, 013; NEON-Q4K-009 reads leg_a's `cpu_run_sha256` |
 | `e2` | {record path, sha256, `n_gen_apr`, `n_gen_llamacpp`, decode/prefill {r, ci_lo, ci_hi, n}} | 005, 015 |
 | `llamacpp_sha` | string | 004 |
 | `adapter` | {name, `device_type` ∈ wgpu DeviceType, banner line} | 003, 006, 014 |
@@ -41,6 +41,7 @@ pre-push checklist and in CI.
 | `hybrid` | bool | WGF-005 |
 | `stderr_lines` | captured lines of the serving process; `stderr_captured: true` | 003, 017, R4-003 |
 | `used_gpu`, `no_gpu_flag` | bool | R4-003 |
+| `info_rows` | list of {`name`, `route`, `runs` {role → {`run_sha256`, `model_sha256`, `prompt_set_sha256`, `kernel_path`}}, `cos` {pair → {record path, record sha256, min, median, max, n}}}. The checker derives each row's status (measured, or not_measured with a reason) and labels, and reads none of them from the producer (RQ-5: never in the verdict) | 018, NEON-Q4K-009 |
 
 ## 3a. Alignment with the OBS stack (found 2026-10-03; unmerged, #4487 / #4574)
 `apr-obs-row-identity-v1` and `apr-kernel-path-v1` are not on main. They sit on the unmerged OBS-00 commit 96d2fe4aa1,
@@ -75,6 +76,8 @@ Every fixture is `base.json` plus one edit. `base.json` is a C0 CUDA cell with:
 
 **C4 control:** f012b (`base_c4.json`) must be `Pass`. f012, f012c, f012d and f012e are `base_c4.json` plus one edit, and f012b fixes which GPU-only fields a CPU cell omits. A checker that refuses every CPU cell fails this row.
 
+**Info rows:** fN9a..fN9d are `base_c4.json` plus one `c4_default_route_info` row (neon-q4k-q6k-v1): d4 has q4k-q8k/neon-sdot on Q4_K and q6k-f32/neon on Q6_K, d0 has q4k-q8k/avx2, f0 is leg_a's `cpu_run_sha256`, and r1, r2, r3 have min 0.993, 0.994, 0.9995. Then one edit. The receipt verdict stays Pass in all four (BPM-018), and fN9b is the measured control.
+
 | Fixture | Edit to base | Expected | Falsifier |
 |---|---|---|---|
 | f001 | leg_a: 15 prompts 0.999, 1 prompt 0.990 (median 0.999) | Fail(E1 min) | BPM-001 |
@@ -100,6 +103,12 @@ Every fixture is `base.json` plus one edit. `base.json` is a C0 CUDA cell with:
 | f015 | n_gen_apr 37, n_gen_llamacpp 128 | Refused | BPM-015 |
 | f016 | cell C1, Q8_0, DiscreteGpu, banner, gemv_backend Q8_0 = cpu | label HYBRID, not scored as wgpu | BPM-016 |
 | f017a/b/c | stderr has SKIP_PARITY_GATE=1 / has "nothing was judged" / lacks "GPU matches" | Refused as E3 GPU | BPM-017 |
+| f018a | f001 plus one info row at 0.999 everywhere | Fail(E1 min) | BPM-018 |
+| f018b | one info row (the q8k_act reference, RQ-5) at min 0.985; and a second fixture whose info row holds one cosine "NaN" | Pass; the second row reads not_measured(non_finite) | BPM-018 (control) |
+| fN9a | every Q4_K entry of d4 is q4k-f32/neon (an fp32_act run); the row still says route default | Pass; row not_measured(route_unproven) | NEON-Q4K-009 |
+| fN9b | every Q4_K and Q6_K entry of d4 is /scalar (the 316dee2cd4 kernels), arch aarch64 | Pass; row measured, label(d4) scalar | NEON-Q4K-009 (control) |
+| fN9c | f0 is a C0 fp32_act run of another prompt set, not leg_a's `cpu_run_sha256` | Pass; row not_measured(unbound) | NEON-Q4K-009 |
+| fN9d | r1, r2, r3 min 0.95, 0.999, 0.9999 (a1 = 0.3176 rad > a2 + a3 + 1e-3 = 0.0599) | Pass; row not_measured(inconsistent) | NEON-Q4K-009 |
 | fW05 | op_placement.attention = host, hybrid false | Refused | WGF-005 |
 | fW09 | op_placement without the attention key, hybrid false | Refused | WGF-009 |
 | fR3 | no_gpu_flag true, used_gpu false, cell C0 E3 GPU | Refused | R4-003 |
@@ -121,6 +130,13 @@ Every fixture is `base.json` plus one edit. `base.json` is a C0 CUDA cell with:
 | compare whole entries (`arch` included) | f012c |
 | key by the OBS slot `(op, shape_class)`, first or last entry | f012d |
 | keep one `kernel_id` per (tensor, op), first or last entry | f012e (both orders) |
+| take the best of a leg and its info rows | f018a |
+| fold the info rows into the leg min | f018b (control) |
+| refuse a receipt on a non-finite info row, as BPM-009 does for a leg | f018b, second fixture (control) |
+| trust the row's route field (skip the route proof) | fN9a |
+| take the label from `arch` | fN9b |
+| skip the run binding | fN9c |
+| drop the triangle check | fN9d |
 | refuse every CPU cell | f012b (control) |
 | refuse everything | base (control) |
 
@@ -129,6 +145,6 @@ implied by both legs ≥ 0.995, so it is a proof obligation (BPM-002, the triang
 Its test is the arithmetic 2·acos(0.995) = 0.200083 ≤ acos(0.98) = 0.200335 (checked 2026-10-03, so cos(2·acos(0.995)) = 0.98005), plus f002b at the boundary. f002 stays as a per-leg Fail fixture.
 
 ## 6. Open
-- RQ-5 is ruled (cop, 2026-09-27 20:12Z): the E1 CPU reference is `fp32_act`, held as data in `bpm.cpu_ref_path` with `bpm.ref_mixed_qtypes` = [Q4_0, Q8_0]. A `q8k_act` run is reported as an info row only, so P1 refuses it as an E1 receipt (f008c) and it never counts toward a gate. Dense parity and parity-moe use the same reference.
+- RQ-5 is ruled (cop, 2026-09-27 20:12Z): the E1 CPU reference is `fp32_act`, held as data in `bpm.cpu_ref_path` with `bpm.ref_mixed_qtypes` = [Q4_0, Q8_0]. A `q8k_act` run is reported as an info row only, so P1 refuses it as an E1 receipt (f008c) and it never counts toward a gate. Dense parity and parity-moe use the same reference. Item (e) gives info rows their place, `info_rows` (§3), and two rules: a row never changes the verdict (BPM-018, f018a, f018b), and the C4 default-route row is measured only on a proven route, one bound run triple and consistent angles (NEON-Q4K-009, fN9a..fN9d). Whether the gx10 default route should gate is RQ-6 (handoff); the provisional S-4 default is info only.
 - RQ-4 decides whether a HYBRID cell counts for E6. Provisional default: E1 may pass hybrid, and E2/E6 name it. f016 asserts only the label, so it holds under either ruling.
 - The DECODE_OPS list is defined in wgpu-forward-v1 (WGF-009). P1 imports that list and does not restate it.
