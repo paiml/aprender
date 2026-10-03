@@ -6,8 +6,9 @@ metadata:
   description: >-
     apr finetune trains a chat model on the token ids that apr serves it for the same messages: the model's
     own template, its control tokens as single ids, and a target that ends in the eos. Read at 316dee2cd4
-    (K39 of the 0.72 spec). No apr code is built or run; the measurements are header reads of S-R10's files and
-    piece counts from HF tokenizers 0.22.2 on the Qwen3.5 tokenizer.json.
+    (K39 and K42 of the 0.72 spec). No apr code is built or run; the measurements are header reads of S-R10's
+    files, and piece and token counts from HF tokenizers 0.22.2 on the Qwen3.5 tokenizer.json (for K42, on the
+    repo's two SFT corpora).
     (1) The control tokens are split. Every apr finetune training path ends in InstructPipeline::from_apr
     (apr-cli finetune.rs:387,461). Its tokenizer comes from the .apr's own vocabulary first (aprender-train
     instruct_pipeline/constructors.rs:212), rebuilt as tokenizer JSON with "added_tokens": [] (:343-350).
@@ -27,7 +28,13 @@ metadata:
     and </think> at 248045, 248046, 248068 and 248069). apr finetune merge clones that metadata, so the GGUF
     that apr export writes from the merge carries no template either. At 316dee2cd4 that GGUF also says pre
     default, no eos and no token types (S-R10's hf-rt.gguf, 18 keys). #4418's branch fixes the pre, the eos
-    and the types, not the template. PROPOSED from a desk read.
+    and the types, not the template.
+    (5) The window cuts the end of the target. train_step keeps the first max_seq_len ids of prompt and target
+    (instruct_pipeline/training.rs:29-33; the default is 512, mod.rs:87), and evaluate does the same (:488-490).
+    Nothing counts or refuses a long sample first. F-INST-002 says the total must fit (instruct_corpus.rs:9),
+    and nothing enforces it. A sample whose prompt fills the window is reported on CUDA only, and a cut target
+    is reported nowhere. So a long sample is trained on an answer with no end: no eos, and on a tool call no
+    closing tag. PROPOSED from a desk read.
   references:
   - crates/aprender-train/src/finetune/instruct_pipeline/constructors.rs (from_apr :192, the embedded tokenizer first :212, the tokenizer JSON with "added_tokens" [] :343-350)
   - crates/apr-cli/src/commands/finetune.rs (every training path ends in InstructPipeline::from_apr, :387; the call, :461)
@@ -41,7 +48,12 @@ metadata:
   - 'aprender#4418 @1af0e3cc11 (not on main): qwen35_gguf.rs:655 fix_qwen35_tokenizer_metadata (pre qwen35, CONTROL and USER_DEFINED types, eos <|im_end|>); gguf_export_config.rs:744 qwen35_chat_template (the template from the .apr or a chat_template.jinja beside the input only)'
   - contracts/chat-template-v1.yaml
   - 'origin/PMAT-3803-trainer-apr-tokenizer @5116cbc28b (not on main): 3c65950f8d (PMAT-3742 R2) sends fine-tuning to the serve-side .apr tokenizer, and 71a7bdc44e keeps the added tokens in the tokenizer an exported .apr embeds. Neither is checked against TSC-001 here, and neither touches the chat template'
-  - 'branch la-72/r15-receipt-ext @a401159f74: docs/specifications/aprender-train/train-what-you-serve-0.72.md K39, row 24'
+  - crates/aprender-train/src/finetune/instruct_pipeline/training.rs (train_step keeps full_ids[..max_seq_len], :29-33; the CPU path returns 0 with no message when no target id is left, :87-88; the CUDA skip line, for a prompt that fills the window only, :149-157; evaluate, :488-490)
+  - crates/aprender-train/src/finetune/instruct_trainer.rs (prepare_samples, no length check, :324-336; the epoch line prints tokens and samples, not cuts)
+  - crates/apr-cli/src/model_ops_commands.rs (--max-seq-len, "Maximum sequence length for GPU buffer allocation (lower = less VRAM)", :58-60)
+  - crates/aprender-train/src/finetune/instruct_pipeline/cuda_init.rs (the f32 logits buffer is max_seq_len × vocab, :453-455)
+  - datasets/apr_code_sft_curated.jsonl and datasets/apr_code_sft_balanced.jsonl (the token counts in FALSIFY-TSC-005)
+  - 'branch la-72/r15-receipt-ext: docs/specifications/aprender-train/train-what-you-serve-0.72.md K39 (row 24) and K42 (row 27)'
 status: PROPOSED
 equations:
   same_ids:
@@ -62,6 +74,12 @@ equations:
     domain: 'S = an HF Qwen3.5 snapshot; import, merge and export are apr import, apr finetune merge and apr export --format gguf'
     invariants:
     - apr finetune merge passes the base's template and tokenizer metadata on unchanged
+  whole_sample:
+    formula: 'trained(m) ∨ scored(m) ⇒ |prompt_train(m)| + |target_train(m)| ≤ L, and the loss window ends at the eos'
+    domain: 'L = InstructConfig.max_seq_len (apr finetune --max-seq-len, default 512); trained and scored = used by train_step and by evaluate'
+    invariants:
+    - a sample that does not fit is refused and counted, never trained or scored on a prefix
+    - the count is known before step 1 and is written to the run's receipt
 proof_obligations:
 - type: invariant
   property: Train's ids for a sample equal serve's ids for the same messages, then the answer, then the eos
@@ -70,6 +88,10 @@ proof_obligations:
 - type: equivalence
   property: The built-in Qwen3NoThink equals the model's own template with thinking off
   formal: 'render(Qwen3NoThink, c) = render(T_model, c, enable_thinking = false), byte for byte'
+  applies_to: all
+- type: invariant
+  property: No sample is trained or scored with the end of its target cut off
+  formal: 'trained(m) ∨ scored(m) ⇒ |prompt_train(m)| + |target_train(m)| ≤ L'
   applies_to: all
 falsification_tests:
 - id: FALSIFY-TSC-001
@@ -92,6 +114,16 @@ falsification_tests:
   prediction: 'the GGUF that apr export --format gguf writes from apr finetune merge''s output, on an HF-sourced Qwen3.5 base, carries the model''s own chat template, tokenizer.ggml.pre qwen35, eos 248046 and CONTROL token types on the <|…|> tokens. At 316dee2cd4 it is RED on all four, measured on S-R10''s export (hf-rt.gguf: pre default, no template, no eos, no token types). By reading, #4418''s branch would be RED on the template alone: fix_qwen35_tokenizer_metadata sets the pre, the types and the eos, and qwen35_chat_template takes the template only from the .apr or from a chat_template.jinja beside the input. Planted: the template dropped from the base .apr'
   test: '[U] not written; CPU only, needs cargo after LIVE 0.70.1. Runs on QQE-009''s 3/6 fixture (a tiny Qwen3.5 checkpoint with 3 key heads and 6 value heads), given the shipped Qwen3.5 tokenizer files (tokenizer.json, tokenizer_config.json, chat_template.jinja), through apr import, a one-step LoRA merge and apr export'
   if_fails: 'the model 0.72 publishes is served with apr''s built-in prompt instead of its own; without #4418''s fixup it is also split by greedy longest match and stopped only at <|endoftext|>, while every turn ends in <|im_end|>'
+- id: FALSIFY-TSC-005
+  rule: No sample is trained or scored with the end of its target cut off
+  prediction: 'with max_seq_len L, train_step and evaluate either use a sample whole or refuse it and count it; neither uses a prefix. At 316dee2cd4 it is RED: both keep full_ids[..L] (training.rs:29-33 and :488-490) and say nothing. Simulated with HF tokenizers on the Qwen3.5 tokenizer.json, imitating main''s train tokenizer (control tokens in pieces, TSC-001; a split at each whitespace, TPP-001): every one of the 124 samples in datasets/apr_code_sft_curated.jsonl ends in </tool_call>, and 123 come to 514-535 tokens. The default L of 512 cuts 2 to 10 tokens off 122 of them and 23 off one. The cut takes at least the last two of the six pieces of <|im_end|>, and in 68 samples all six and the > that closes </tool_call>. With serve''s ids the same samples come to 456-480 tokens and all fit. Planted: full_ids[..max_seq_len] restored'
+  test: '[U] not written; CPU only, needs cargo after LIVE 0.70.1. A pipeline with max_seq_len 32 (the trainer tests already build one) and a sample of 40 ids: the step trains nothing and the refusal is counted, or the sample is trained whole after the fix keeps its target; never a 32-id prefix'
+  if_fails: 'the model learns answers that do not end: tool calls without their closing tag and no eos, so the served model runs past the end of its answer'
+- id: FALSIFY-TSC-006
+  rule: apr finetune counts the samples that do not fit before step 1
+  prediction: 'before the first step, apr finetune tokenizes the corpus with the training tokenizer and reports the number of samples longer than --max-seq-len and the longest one, in its output and in the run''s receipt. It refuses to start when any sample would be cut, unless told to drop them, and then the number dropped is in the receipt. At 316dee2cd4 it is RED: nothing counts them. F-INST-002 is stated (instruct_corpus.rs:9) and not enforced. The --max-seq-len help speaks of buffer size only (model_ops_commands.rs:58), and the epoch line prints tokens and samples, not cuts. Planted: the count removed'
+  test: '[U] not written; CPU only, needs cargo after LIVE 0.70.1. The plan step on a three-sample corpus with one sample over a small --max-seq-len: one refusal naming that sample''s length, and with the drop flag a receipt that says 1 dropped'
+  if_fails: 'a user sets --max-seq-len to fit memory (the f32 logits buffer alone is --max-seq-len × vocab, cuda_init.rs:453-455: 0.51 GB at 512 and 2.03 GB at 2048 on Qwen3.5''s 248,070 entries) and trains on cut samples without being told'
 qa_gate:
   certeza:
     min_score: 0.0
