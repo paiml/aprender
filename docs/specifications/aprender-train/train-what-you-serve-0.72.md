@@ -28,6 +28,8 @@ R1 honesty gate ─► R2 GDN forward (= serve) ─► R3 GDN backward ─► R4
                                                                                 ├─► R6 distill, R7 merge
                                                   #4418 GGUF name map (0.71) ───┴─► R10 round-trip ─► R13 HF rc
 ```
+This is the shaping-time path. The current one is §3's critical path v3 (2026-10-03): R15a and R12 join before R4, and
+T2 needs R15b.
 
 ## §2 Rows
 
@@ -133,7 +135,9 @@ R1 honesty gate ─► R2 GDN forward (= serve) ─► R3 GDN backward ─► R4
 - **Consequence for the ranking:** R15 ("`-m lora` is CPU F32 today", `finetune.rs:280` on main aca6f2d7f6, re-measured by R19) moves onto the critical path,
   because bf16 LoRA on CUDA IS the T2 cell. R4 stays the T1 finetune cell, but NF4 quality on Qwen3.5 is now a known risk
   (K10). R4 adds a gate: QLoRA's final loss is within 5% of bf16 LoRA's on the same cell, or QLoRA is documented as
-  unsupported for qwen3.5 (an honest refusal, not a silent quality loss).
+  unsupported for qwen3.5 (an honest refusal, not a silent quality loss). *(Amended 2026-10-03, qwen35-qlora-e2e-v1
+  1.1.0: the LoRA reference may be bf16 or fp32, as recorded in its receipt, and must run on the same GPU as the QLoRA
+  side. At `316dee2cd4`, `-m lora` trains on the CPU, so the reference needs R15a C4.)*
 
 ### Spike S-R17 — does the 4B fit a 24 GB RTX 4090, and must R4 avoid `dW'`? · `[V]` (2026-09-27, desk, GGUF shapes)
 - **Method:** tensor shapes read from `~/models/Qwen3.5-{0.8B,4B}-Q4_K_M.gguf` (python `gguf`). Targets are the GGUF names
@@ -374,54 +378,75 @@ L2 deliverable 2. Each fact carries its source; `[U]` marks one that was inferre
 - **S-R5's "own Triton kernels for the GDN layers" is corrected by U4**, and the contract text is corrected with it. R14's gap analysis compares against fla's chunked GDN, not an Unsloth GDN kernel.
 - The Unsloth versions are pinned from U10 at harness time. U10 is the 2026-09-29 reading, not the lock.
 
-## §3 Ranking v2, after the spikes (2026-09-28)
-This replaces the pre-spike order. Rows move for three reasons:
-- **Evidence voids:** a row whose absence makes other rows' receipts worthless moves up. That is R12, and the
-  honesty refusals (DBH-001, MOF-002, HRP-001).
-- **Sizing:** S-R15 made R15 new kernel-side work, not a flag change.
-- **Ownership:** rows already held on a branch drop out of L2's queue.
+## §3 Ranking v3 (2026-10-03)
+v3 replaces v2 (2026-09-28, at `363f9ca810`). Rows still move for v2's three reasons: an evidence void moves a row
+up, a new size changes its place, and a row already held on a branch drops out of L2's queue. Changes since v2:
+- **R15 is re-sized from 120 to 420 `[A]`** (`r15-cuda-lora-cells.md`) and split by consumer:
+  - **R15a** is cells C1–C4 (210). It is on R4's path, because QQE-004's reference run is `-m lora` on CUDA
+    (qwen35-qlora-e2e-v1 1.1.0).
+  - **R15b** is cells C5–C7 (210). Only T2 needs it. Its largest cell, C5 bf16 (120), is the subject of RQ-5 (§4).
+- **R12 has an owner.** la-impl holds `la/r12-train-receipt` @68747b344e, which has the writer and the `apr pretrain`
+  wiring, built on TRR 1.0.0. The TRR 1.1.0 delta (device object, recipe with compute_dtype, timed window) is on
+  `la-72/r15-receipt-ext`, and la-impl has been told.
+- **R5 is done on the desk.** Verdict, orchestrator, incumbent side, pinned data and apr adapter are stacked from
+  `r5-verdict` to `r5-apr-adapter` @7aeb557271. What is left is GPU time, plus the apr side, which is R15b.
+- **The cheap refusals sit on fold branches:** DBH-001, MOF-002, HRP-001 and TIS-005, on `fold-dbh-a`/`-b`,
+  `fold-mof`, `fold-hrp` and `fold-tis`. Each is ≤ 15 `[A]`, turns a silent wrong answer into a named refusal, and
+  needs no GDN work. They are the first PRs to open after LIVE 0.70.1.
+- **R20 is out of 0.72.** RQ-3 was ruled 2026-09-27: #4002 (E8, 0.75) keeps everything beyond GDN training.
 
-K̂ is minutes of worker time; `[A]` is an assumption, the rest are carried from §2.
+State is read from the branch tips on 2026-10-03. origin/main is `316dee2cd4` and no la-72 branch has landed. K̂ is
+minutes of worker time still left; `[A]` marks an assumption.
 
-| # | Row | Changed by | Cell to build first | K̂ | State |
-|---|---|---|---|---|---|
-| 1 | R1 honesty gate | S-R6 (distill takes the dense config for qwen3_5) | TAH-001..003 | 30 | branches `la-72/4552-train-arch-honesty`, `tah-003-head-dim` |
-| 2 | R12 training receipts | S-R12: 0/4 verbs record sha, recipe, model hash or seed | one shared `train_receipt.json` writer, TRR-001..006 | 45 `[A]` | contract only |
-| 3 | R2 GDN forward | — | QTG-001 parity vs serve | 90 | branches `r2-gdn-forward`, `r2-gated-attn`, `r2-qwen35-model` |
-| 4 | R3 GDN backward | — | QTG-003/006 gradcheck | 120 | branch `r3-backward` (dev-dep `features=["cuda"]` note) |
-| 5 | R15 CUDA LoRA | S-R15: NF4-only backward, Q+V adapters only | LoRA grad workspace for non-NF4, all projections | 120 `[A]`, re-size before R4 | contract only |
-| 6 | R4 QLoRA 4B end to end | S-R17 (fits 24 GB only without `dW'`), S-R4c | QQE-001..006 | 90 | blocked on R2, R3, R15 |
-| 7 | R5 Unsloth harness | S-R5 | Unsloth side runs now | 60 | parallel to R2–R4 |
-| 8 | R10 round-trip | S-R10: st↔apr bit-identical, but the export has no config (QFR-003); GGUF legs wait on #4418 | QFR-003 self-describing export | 40 `[A]` | contract only |
-| 9 | R13 HF rc publish | S-R13: plan ≠ upload, weights only, license mit | HRP-001 (small), then the publish directory builder (= the QFR-003 fix) | 45 `[A]` | needs R10, R12 |
-| 10 | R11 sealed ingress | S-R11b: no loader checks; TSG/TDD unmerged | TIS-001/002 at the three loaders | 40 `[A]` + the TDD normaliser (aprender-cb) | verb half: aprender-ont #3597 |
-| 11 | R6 distill batch | S-R6: batch B > 1 silently trains the last row | DBH refusal first (15 `[A]`), then real batching (90 `[A]`) | 15 + 90 | contract only |
-| 12 | R7 merge | S-R7: `-o *.apr` writes metadata-free F32 safetensors | MOF-002/003 APR writer | 30 `[A]` | contract only |
-| 13 | R9 #4418 GGUF name map | still OPEN in 0.71 at 2026-09-28 | — | owned by 0.71 | if it slips, R10's GGUF legs and T4/T5 slip with it |
-| 14 | R8 GDN quantize policy | — | — | — | branch `79/r8-gdn-quant-policy` |
-| 15 | R17 memory, measured | S-R17 desk plan | peak-memory run on the 4090 | 30 `[A]` | needs GPU; after train-active clears |
-| 16 | R18 vocab alignment | — | — | — | branch `76/0.72-r18-vocab-cell` |
-| 17 | R16 dangling `qlora-training-loop-v1` | — | — | — | branch `la/r16-qlora-loop-contract` |
-| 18 | R19 ROADMAP PMAT-711 stale | done | — | — | shaping @378ec8e920 |
-| 19 | R14 throughput work | — | sized from the R5 baseline | — | after R5 |
-| 20 | R20 declarative recipe | — | — | — | only if pulled from E8 0.75 (RQ-3) |
+| # | Row | Next cell | K̂ left | State |
+|---|---|---|---|---|
+| 1 | R1 honesty gate | TAH-001..003 | 30 | `la-72/4552-train-arch-honesty` @1fda81ad6c, `tah-003-head-dim` @57ada988a7 |
+| 2 | R12 training receipts | TRR 1.1.0 fields on the shared writer | 45 `[A]` | la-impl, `la/r12-train-receipt` @68747b344e (TRR 1.0.0) |
+| 3 | R2 GDN forward | QTG-001 parity vs serve | 90 | `fold-r2r3` @5a837dfa3b; one-line Cargo.toml conflict with main |
+| 4 | R3 GDN backward | QTG-003/006 gradcheck | 120 | in `fold-r2r3` (`r3-backward` @8a9f4f0104) |
+| 5 | R15a CUDA LoRA, C1–C4 | C1 `lora_backward` extraction (FALSIFY-LORA_GRADIENT_FLOW_V1_004) | 210 `[A]` | cells and falsifiers on `la-72/r15-receipt-ext`; cargo after LIVE 0.70.1 |
+| 6 | R4 QLoRA 4B end to end | QQE-001..006 | 90 | blocked on R2, R3, R15a; contract 1.1.0 pins the QQE-004 reference's precision and device |
+| 7 | R5 Unsloth harness | Unsloth-side runs (`r5-unsloth-ft-runbook.md`) | GPU only | desk-done, `r5-apr-adapter` @7aeb557271; needs train-idle |
+| 8 | R15b CUDA LoRA, C5–C7 | C6 flags and receipt (with R12), C7 timed window; C5 bf16 per RQ-5 | 210 `[A]` | contracts apr-finetune-canonical-task-v1 1.1.0, TRR 1.1.0 |
+| 9 | R10 round-trip | QFR-003 self-describing export | 40 `[A]` | `fold-r10-qfr` @6b13da980f (QFR-001/002/003/005); QFR-004 is #4418 |
+| 10 | R13 HF rc publish | HRP-001 plan = upload | 45 `[A]` | `fold-hrp` @6c93634c3c; header reader `amr-on-4607` @d34ce7cacd waits on #4607 |
+| 11 | R11 sealed ingress | TIS-002 planted perturbed item | 40 `[A]` + the TDD normaliser | `fold-tis` @9fed5c27db (TIS-001/003/004/005); TIS-002 waits on a foreign branch |
+| 12 | R6 distill batch | DBH refusal, then real batching | 15 + 90 | `fold-dbh-a` @2cfe655b98, `fold-dbh-b` @df5e4d74f6, GPU halves `gpu-falsifiers` @e890928f4e; 3 Definition-of-Ready tests, plus R18's 3 |
+| 13 | R7 merge | MOF-002/003 APR writer | 30 `[A]` | `fold-mof` @17fbe022eb; Definition of Ready: FWD-001's path, FWD-002..004 unwritten |
+| 14 | R9 #4418 GGUF name map | — | owned by 0.71 | fix not on main at `316dee2cd4`; if it slips, R10's GGUF legs and T4/T5 slip with it |
+| 15 | R8 GDN quantize policy | — | — | `79/r8-gdn-quant-policy` |
+| 16 | R17 memory, measured | peak-memory run on the 4090 | 30 `[A]` | needs GPU at train-idle |
+| 17 | R18 vocab alignment | — | — | `76/0.72-r18-vocab-cell`; 3 Definition-of-Ready tests shared with R6 |
+| 18 | R16 dangling `qlora-training-loop-v1` | — | — | `la/r16-qlora-loop-contract` |
+| 19 | R14 throughput work | sized from the R5 gap | — | after R5 and R15b |
+| — | R19 ROADMAP PMAT-711 stale | — | done | shaping @378ec8e920 |
+| — | R20 declarative recipe | — | out | RQ-3: stays in #4002 (E8, 0.75) |
 
-**Critical path v2:**
+**Critical path v3:**
 ```
 R1 ─► R2 ─► R3 ─┐
-R15 ────────────┼─► R4 ─┬─► R5 baseline ─► R14
-R12 receipts ───┘       ├─► R6 (DBH refusal lands with R1), R7 (MOF)
-                        └─► R13 HF rc ◄── R10 QFR-003 export ◄── #4418 (GGUF legs only)
+R15a C1–C4 ─────┼─► R4 ─┬─► R6 (DBH refusal lands with R1), R7 (MOF)
+R12 receipts ───┤       └─► R13 HF rc ◄── R10 QFR-003 export ◄── #4418 (GGUF legs only)
+                └─► R15b C5–C7 (C5 = RQ-5) ─► R5 T2 verdict ─► R14
 R11 TIS ◄── TDD normaliser (PRM C7–C9) ─────► gates every R4/R6 run counted for 0.72
 ```
+T2 trains Qwen3.5-4B, so its apr side needs R2 and R3 as well as R15a and R15b. It does not need R4.
 
-**Cheap refusals first:** DBH-001 (distill B > 1), MOF-002 (merge writes APR), HRP-001 (plan = upload) and TIS-005 (no
-manifest, no rc run) are each ≤ 15 `[A]`. Each turns a silent wrong answer into a named refusal, and none depends on
-GDN work. They are the best 0.72 value per minute before R2 lands.
+## §4 Rulings (S-4)
+Ruled by the cop on 2026-09-27 at 12:11Z (full text in the handoff file):
+- RQ-1: #4000's old "Agent Ready" rows go to the backlog milestone. Done 2026-09-27.
+- RQ-2: T1 includes GDN forward and backward training in aprender-train.
+- RQ-3: 0.72 owns GDN training for the qwen3.5 family; #4002 (E8, 0.75) keeps everything beyond it.
+- RQ-4: #4418 stays in 0.71.
 
-## §4 Rulings requested (S-4)
-RQ-1 epic #4000 body is still "Agent Ready" · RQ-2 T1 scope = GDN training · RQ-3 T2 vs E8 0.75 (#4002) overlap ·
-RQ-4 #4418 stays in 0.71. Full text is in the handoff file.
+Requested 2026-10-03, not blocking:
+- RQ-5: if R15 cell C5 (bf16) misses 0.72, should T2
+  - (a) stay bf16 and slip to 0.73, or
+  - (b) add a declared second cell, "apr fp32 vs Unsloth fp32"?
+
+  (b) needs the incumbent re-run in fp32 as well; it never allows a cross-precision ratio. Recommendation: (a).
+  C1–C4, C6 and C7 are needed either way, and the decision point is when C4 lands. Full text:
+  `r15-cuda-lora-cells.md` §Consequences and the handoff file.
 
 ## §5 Fold plan: one APR v2 metadata reader `[C]`
 
@@ -460,10 +485,11 @@ Order: after the whole-file-reads PR, the HRP fold and the MOF fold are all on m
 
 ## §6 Measurement plan: how each exit criterion is measured `[C]`
 
-L2 deliverable 3 (APR-LOOKAHEAD-001 §4). Written 2026-09-29 from contracts at the branch tips named below. Each criterion
-names what measures it, where it runs, what counts as green, and what counts as **NOT MEASURED**. NOT MEASURED is never
-green (L25). A criterion is green only when every row under it is green on **one** pinned `apr` binary (version + sha in
-the receipt), built from the release commit.
+L2 deliverable 3 (APR-LOOKAHEAD-001 §4). Written 2026-09-29 from contracts at the branch tips named below, and updated
+2026-10-03 for T2 contract 1.3.0 and QQE-004 in qwen35-qlora-e2e-v1 1.1.0. Each criterion names what measures it, where
+it runs, what counts as green, and what counts as **NOT MEASURED**. NOT MEASURED is never green (L25). A criterion is
+green only when every row under it is green on **one** pinned `apr` binary (version + sha in the receipt), built from the
+release commit.
 
 **Rules for every row:**
 - The device comes from a trace line in the log, never from a flag or `CUDA_VISIBLE_DEVICES` (CLAUDE.md verification rule 2).
@@ -481,7 +507,7 @@ the receipt), built from the release commit.
 |---|---|---|---|---|
 | all | TAH-001..004 (`train-arch-honesty-v1`): a qwen3_5 config is never silently built as dense | intel | 4/4, planted dense map RED | branch `la-72/4552-train-arch-honesty` not on main |
 | finetune | QQE-006 CPU pre-flight first, then QQE-001/002/003 on 4B (`qwen35-qlora-e2e-v1`). QQE-005 holds CUDA adapter gradients to the CPU reference | intel (006), lambda (001–005) | exit 0; loss(last 10) ≤ 0.9 × loss(first 10); served = merged (cos ≥ 0.999, equal argmax); QQE-002 frozen-step RED | QQE-006 not green, since no GPU time is spent before it is |
-| finetune (NF4) | QQE-004: QLoRA final loss ≤ 1.05 × bf16 LoRA on the same cell | lambda | ≤ 1.05, **or** a named refusal for qwen3.5 QLoRA (K10) | only one side ran |
+| finetune (NF4) | QQE-004 (1.1.0): QLoRA's mean loss over the last 10 steps ≤ 1.05 × LoRA's, same cell, seed and data. The QLoRA receipt says `recipe.precision = nf4`, the LoRA one bf16 or fp32, and both carry the same `device.uuid` | lambda | ≤ 1.05, **or** a named refusal for qwen3.5 QLoRA (K10) | only one side ran; a side ran on the CPU (true of `-m lora` at `316dee2cd4`, until R15a C4); the sides ran on different GPUs; any other precision pair |
 | distill | `distill-batch-honesty-v1` (DBH) on the fold-dbh branches: batch B > 1 trains every row or refuses by name | intel (refusal), lambda (batched KD) | refusal green on CPU; batched KD matches B single-row steps | DBH-001/006/007/008 GPU halves not run |
 | merge | `merge-output-fidelity-v1` (MOF): `-o *.apr` writes an APR with metadata and a qwen3_5 arch | intel | MOF-002/003 green; the planted F32-safetensors writer RED | — |
 | quantize | the R8 GDN quantize policy cell, branch `79/r8-gdn-quant-policy` (another session's) | intel | owner's falsifiers green | that branch is not on main; L2 does not measure it |
@@ -491,18 +517,28 @@ as a refusal. It is honest, but it is not T1-green.
 
 ### T2 — fine-tune throughput ≥ 0.8× Unsloth
 
-- **Measured by:** `beat-unsloth-finetune-throughput-v1` 1.1.0. The command is `scripts/bench/unsloth_finetune_throughput.sh
-  --model Qwen3.5-4B --gpu 0 --out evidence/beat-unsloth-ft/<version>/`, which R5 writes. Until that script exists, the
-  whole of T2 is NOT MEASURED.
-- **Cell:** bf16 LoRA (not QLoRA, S-R5), Unsloth default targets on both sides, AdamW fp32, checkpointing off, packing
-  off. 200 timed steps, starting after 50 warmup steps and after compile.
+- **Measured by:** `beat-unsloth-finetune-throughput-v1` 1.3.0. The command is `scripts/bench/unsloth_finetune_throughput.sh
+  --model Qwen3.5-4B --gpu 0 --out evidence/beat-unsloth-ft/<version>/`, on the `la-72/r5-*` branches (R5, done on the
+  desk). The apr side stays NOT MEASURED until `apr finetune` has the canonical flags and receipt fields (R15b, built on
+  R2, R3 and R15a). Before that, the apr adapter exits 4 and lists every missing key.
+- **Cell:** the canonical task, the same on both sides:
+  - bf16 LoRA, not QLoRA (S-R5). Precision is pinned to bf16 on both sides (1.3.0).
+  - r16, alpha 32, on the 7 targets q, k, v, o, gate, up and down.
+  - AdamW fp32, checkpointing off, packing off.
+  - seq 512, batch 4, grad_accum 1.
+  - 200 timed steps, starting after 50 warmup steps and after compile.
+  - `label_tokens_timed` = 408800 on the pinned `APR_FT_DATA`.
 - **Statistic:** median of 3 runs per side, run interleaved on the same GPU in one session. The ratio is
   apr tokens/s ÷ Unsloth tokens/s, counting non-pad label tokens.
 - **Host:** lambda 4090, train idle. The gx10 run is a control only, and never the T2 number.
-- **Green:** ratio ≥ 0.80, **and** all three planted falsifiers RED in the same session:
+- **Green:** ratio ≥ 0.80, **and** all three planted runs RED in the same session:
   SAMEWORK (`--planted-half-targets`), INCUMBENT-FASTPATH (`--planted-no-fla`) and SAMEOPT (`--planted-incumbent-adamw8bit`).
-- **NOT MEASURED when:** fla is missing (INCUMBENT_SLOW_PATH), the versions are not in the receipt, or fewer than 3 runs
-  completed on either side.
+  PRECISION, FULL-WINDOW and DATA-PINNED are verdict checks on every run, tested on the CPU.
+- **NOT MEASURED when:** fla is missing (INCUMBENT_SLOW_PATH), the versions are not in the receipt, the apr receipt lacks
+  a key (adapter exit 4), or fewer than 3 runs completed on either side. A precision or label-token mismatch is a SAME-WORK
+  FAIL (exit 1), not NOT MEASURED.
+- **Not T2:** after R15a C4, an fp32 apr run done by hand against the bf16 Unsloth baseline gives a sizing number for K2
+  and RQ-5. It is never a T2 number: PRECISION makes it a SAME-WORK FAIL by design.
 - **First:** Unsloth's side can run the moment the train is idle. It needs no apr work, and it gives R14 its target.
 
 ### T3 — Prometheus B2 challenger
@@ -548,7 +584,7 @@ as a refusal. It is honest, but it is not T1-green.
 2. R17: peak memory on the 4B.
 3. QQE-005: CUDA adapter gradients against the CPU reference, on 0.8B.
 4. DBH GPU halves.
-5. QQE-001..004 on 4B.
-6. The apr side of T2.
+5. QQE-001..004 on 4B. QQE-004's LoRA reference needs R15a C4.
+6. The apr side of T2. It needs R15b.
 
 CPU rows (TAH, TRR, MOF, QFR on 0.8B, HRP dry-run, TIS-001/003/004/005) run on intel at any time, load1 ≤ 32.

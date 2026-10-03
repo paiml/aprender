@@ -3,6 +3,7 @@
 Status: desk read 2026-10-03 at origin/main `316dee2cd4`. Nothing here was built or run. `[V]` marks facts read
 in the code, with file:line; `[A]` marks estimates. Paths are under `crates/aprender-train/src/` unless they start
 with `apr-cli/`. This replaces R15's K̂ of 120 `[A]` in the 0.72 ranking v2 (§3, row 5, "re-size before R4").
+Ranking v3 (§3, 2026-10-03) carries the new size, split into R15a (C1–C4) and R15b (C5–C7).
 
 ## What the code says `[V]`
 
@@ -72,7 +73,7 @@ R12.
   (beat-unsloth-finetune-throughput-v1 1.3.0, FALSIFY-BEAT-UNSLOTH-FT-PRECISION). An R15 built without C5 makes T2
   fail SAME-WORK instead of quietly comparing fp32 apr with bf16 Unsloth. Before 1.3.0 that mismatch would have
   gone into the ratio unseen.
-- **Ruling needed (proposed RQ-5):** if C5 does not fit 0.72, should T2
+- **Ruling requested (RQ-5, spec §4; not blocking):** if C5 does not fit 0.72, should T2
   - (a) stay bf16 and slip to 0.73, or
   - (b) gain a declared second cell, "apr fp32 vs Unsloth fp32"?
 
