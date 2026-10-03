@@ -1,5 +1,5 @@
 metadata:
-  version: 1.0.0
+  version: 1.1.0
   created: '2026-07-04'
   author: PAIML Engineering
   description: >
@@ -138,8 +138,8 @@ falsification_tests:
   if_fails: merge/unmerge are not exact inverses — scale or sign asymmetry
 - id: FALSIFY-LORA-FWD-004
   rule: NF4 bit-parity vs bitsandbytes (L2 ONLY — capped, not a proof obligation)
-  prediction: apr QLoRA merged forward matches bitsandbytes within fp tolerance
-  test: cargo test -p entrenar --lib lora::qlora::tests::bnb_merge_forward_within_tol
+  prediction: 'apr QLoRA merged forward matches bitsandbytes: rel-L2(y_apr, y_bnb) ≤ 1e-3 [A, calibrate on the first run and then fix the number here], with the merged weight dtype recorded on both sides (fp32 or bf16 dequant target; a dtype mismatch is NOT_MEASURED)'
+  test: '[U] 1.1.0 (la-0.72, 2026-10-03, desk read of 316dee2cd4): the test named in 1.0.0, `cargo test -p entrenar --lib lora::qlora::tests::bnb_merge_forward_within_tol`, does not exist (git grep finds no bnb_merge_forward in crates/), and entrenar is the lib name of package aprender-train, so `-p entrenar` does not resolve either. This row has never run. 0.72 R7 owes the test'
   if_fails: NF4 dequant LUT or scale mismatch vs bitsandbytes reference
   discharge_status: L2_FALSIFICATION_ONLY
   notes: >
@@ -174,7 +174,7 @@ qa_gate:
   - matvec_matmul_associativity
   pass_criteria: >
     Lean file compiles sorry-free (3/3 obligations) AND falsification tests 001-003
-    pass. FALSIFY-004 held at L2 (tolerance band), never proved.
+    pass. FALSIFY-004 is meant to be held at L2 (tolerance band), never proved; as of 1.1.0 it has no test, so it holds nothing yet.
   falsification: >
     Flip the B@A order to A@B in merge() → FALSIFY-001 must fail and
     matvec_matmul_assoc must no longer typecheck against the merge identity.
