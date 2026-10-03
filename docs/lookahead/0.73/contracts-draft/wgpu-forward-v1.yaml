@@ -27,6 +27,7 @@ equations:
     - 'A hardcoded 1e6 matches only models whose freq_base happens to be 1e6; that is a coincidence, not a pass.'
     - 'Both RoPE shaders read the same theta. Fixing one and not the other is FAIL.'
     - 'The fixture needs position >= 1 and pos_in_head >= 1. At position 0 the angle is 0, and at pos_in_head 0 the frequency is 1 for every base, so either case makes RoPE blind to theta.'
+    - 'L25 (2026-10-03): the ledger clause is vacuous when every ledger model has freq_base = 1e6, which holds for the Qwen2/Qwen3 families, so the hardcoded value passes it. The ledger leg needs at least one model whose freq_base is not 1e6; without one it reports NOT_MEASURED, not PASS (FALSIFY-WGF-007).'
 
   head_dim_from_metadata:
     formula: |
@@ -36,6 +37,7 @@ equations:
     codomain: bool
     invariants:
     - 'hidden / n_heads is the fallback, never the first choice.'
+    - 'L25: the same vacuity as theta. A ledger where key_length = hidden / n_heads for every model cannot tell the two sources apart. The receipt records head_dim_source in {key_length, fallback}, and the ledger leg needs one model with key_length != hidden / n_heads (FALSIFY-WGF-007).'
 
   qk_norm_applied:
     formula: |
@@ -47,6 +49,8 @@ equations:
     invariants:
     - 'Attribution of the 0.955 end-to-end cosine to q/k norm is UNMEASURED (K14) until the layer-diff trace runs.'
     - 'The fixture needs norm weights that are not all 1, and q/k whose per-head RMS is not 1. Otherwise RMSNorm is close to identity and a path that skips it still passes.'
+    - 'L25: the implication is vacuous on a fixture with no q_norm/k_norm tensors. The test asserts the tensors are present before it compares anything.'
+    - 'L25: the min over layers propagates NaN. A non-finite layer_cos is FAIL; f32::min would drop it (as in BPM-009).'
 
   qtype_coverage:
     formula: |
@@ -56,6 +60,7 @@ equations:
     codomain: bool
     invariants:
     - 'A refusal is honest; a silent fallback is not (R1 F6).'
+    - 'L25: refusing every qtype satisfies the implication. The required set is {Q4_K, Q6_K}, because a Q4_K_M file stores some tensors (e.g. output, ffn_down) as Q6_K, so refusing Q6_K refuses the exit model. A required qtype that is refused is FAIL, not honest (FALSIFY-WGF-008).'
     - 'Today Q6_K and Q5_K are widened to F32 on the host at load (dequant_tensor_public), and the device runs an F32 GEMV. op_placement reads device either way, so the receipt must also carry, for each weight tensor, the qtype as stored on the device. A widen shows as device_qtype = F32 for a file qtype that is not F32.'
 
   device_placement_honesty:
@@ -67,6 +72,7 @@ equations:
     codomain: bool
     invariants:
     - 'Until attention, RoPE, LM head and argmax run on the device, every wgpu receipt is hybrid: true (RQ-4 pending).'
+    - 'L25: an op_placement map that omits ops has no host ops, so hybrid reads false. The map keys must equal the full decode op set {embed, rmsnorm, qkv_gemv, qk_norm, rope, attention, o_gemv, ffn_gemv, lm_head, sample}. A missing key REFUSES the receipt (FALSIFY-WGF-009).'
 
 falsification_tests:
 - id: FALSIFY-WGF-001
@@ -105,6 +111,30 @@ falsification_tests:
   test: 'NOT YET WRITTEN — ledger sweep on C1 once train-inactive; base and head builds swept in one job'
   if_fails: 'a model that matched 1e6 by coincidence regresses unnoticed'
   mutation: 'run the sweep on one model only; the check must refuse a single-model sweep as incomplete'
+- id: FALSIFY-WGF-007
+  rule: the ledger legs of theta and head_dim can tell the sources apart (L25)
+  prediction: 'A ledger with only freq_base = 1e6 models, or only key_length = hidden / n_heads models, reports NOT_MEASURED for that equation, not PASS.'
+  test: 'NOT YET WRITTEN — lands with the ledger sweep (WGF-006)'
+  if_fails: 'the hardcoded 1e6 and the hidden / n_heads fallback pass a ledger that never exercises them'
+  mutation: 'drop the discriminating-model requirement; an all-Qwen3 ledger must turn GREEN with the hardcoded 1e6 restored'
+- id: FALSIFY-WGF-008
+  rule: the qtypes of the exit model cannot be refused (L25)
+  prediction: 'A build that refuses Q6_K on wgpu with a named error FAILS qtype_coverage, because Q4_K_M needs Q6_K.'
+  test: 'NOT YET WRITTEN — lands with R2 item 4'
+  if_fails: 'refuse-everything passes coverage and E1 on C1-C3 is never measured'
+  mutation: 'accept any named refusal; the planted Q6_K refusal must turn GREEN'
+- id: FALSIFY-WGF-009
+  rule: op_placement covers the full decode op set (L25)
+  prediction: 'A receipt whose op_placement lacks attention (or any listed op) is REFUSED, even with hybrid: false and every listed op on device.'
+  test: 'NOT YET WRITTEN — lands with the R1 receipt checker'
+  if_fails: 'an incomplete map hides the host ops and derives hybrid = false'
+  mutation: 'derive hybrid from the keys present; the planted map without attention must turn GREEN'
+- id: FALSIFY-WGF-010
+  rule: a refusal after the change counts as a regression (L25, WGF-004 x WGF-006)
+  prediction: 'A ledger model that measured leg A before and is refused after counts as a regression in the never-worse sweep, not as skipped.'
+  test: 'NOT YET WRITTEN — lands with the ledger sweep'
+  if_fails: 'a fix that turns a bad model into a refusal shrinks the sweep and passes never-worse'
+  mutation: 'drop refused models from the sweep; the planted refusal must turn GREEN'
 
 proof_obligations:
 - type: invariant
@@ -125,6 +155,18 @@ proof_obligations:
 - type: invariant
   property: 'no ledger model regresses (FALSIFY-WGF-006)'
   formal: 'forall m in ledger: leg_a_after(m) >= leg_a_before(m) - 1e-4'
+- type: invariant
+  property: 'the ledger discriminates theta and head_dim sources (FALSIFY-WGF-007)'
+  formal: 'PASS_theta => exists m in ledger: freq_base(m) != 1e6; PASS_head_dim => exists m: key_length(m) != hidden(m) / n_heads(m)'
+- type: invariant
+  property: 'the exit qtypes are served, not refused (FALSIFY-WGF-008)'
+  formal: 'forall q in {Q4_K, Q6_K}: device_gemv(q) and not refused(q)'
+- type: invariant
+  property: 'op_placement is total over the decode op set (FALSIFY-WGF-009)'
+  formal: 'keys(r.op_placement) = DECODE_OPS'
+- type: invariant
+  property: 'the sweep set is fixed before and after (FALSIFY-WGF-010)'
+  formal: 'measured_after = measured_before; refused_after(m) and measured_before(m) => regress(m)'
 
 qa_gate:
   id: F-WGF-GATE-001
@@ -139,8 +181,8 @@ qa_gate:
   pass_criteria: 'All falsifiers GREEN on C1. Report-only until first-green plus 7 nights (R-7).'
 
 verification_summary:
-  total_obligations: 6
+  total_obligations: 10
   proven: 0
   tested: 0
   status: proposed
-  notes: 'Draft by la-73 (L3). No ticket yet. WGF-003 waits on the K14 trace; WGF-006 waits on a train-inactive C1 sweep.'
+  notes: 'Draft by la-73 (L3). No ticket yet. WGF-003 waits on the K14 trace; WGF-006 waits on a train-inactive C1 sweep. L25 review 2026-10-03 added WGF-007..010 (ledger discrimination, required qtypes, total op_placement, refusal-as-regression).'

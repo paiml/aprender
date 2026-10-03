@@ -18,3 +18,16 @@ E1 ≥ 0.995 per leg on C1, C2 and C3 for Qwen3 Q4_K_M, with op_placement all-de
 ## Risks
 - **K13:** fixing theta or head_dim may *lower* cosine on models that happened to match 1e6. Measure every model in the ledger, not one.
 - **K14:** item 3's attribution is unmeasured (R-1). Run the layer-diff trace first.
+
+## L25 review (2026-10-03, la-73)
+The contract already blocked the theta-blind positions (0 and pos_in_head 0) and identity-like norm fixtures. The new holes are:
+
+| # | Check | Vacuous pass | Fix |
+|---|---|---|---|
+| 1 | Ledger leg of rope_theta and head_dim | Qwen2/Qwen3 GGUFs use freq_base 1e6, so an all-Qwen ledger passes with the hardcoded value. The same holds for head_dim when key_length = hidden / n_heads on every model. | The ledger needs one model per equation that discriminates, e.g. a Llama-family freq_base (5e5 or 1e4 [A]) and a decoupled head_dim (Qwen3 sizes [A]). Without one: NOT_MEASURED (WGF-007). |
+| 2 | qk_norm_applied | Vacuous on a fixture with no q_norm tensors; a NaN layer cosine is dropped by `f32::min`. | Assert the tensors are present; non-finite is FAIL. |
+| 3 | qtype_coverage | "device GEMV or named refusal" holds when every qtype is refused. | Q4_K and Q6_K are required: Q4_K_M stores some tensors as Q6_K (WGF-008). |
+| 4 | Hybrid flag (WGF-005) | A map that omits ops has no host ops, so `hybrid` derives false. | op_placement keys must equal the full decode op set (WGF-009). |
+| 5 | Never-worse sweep (WGF-006) | Item 4 makes refusal legitimate; a model refused after the change leaves the sweep, which then passes. | A refusal after a prior measurement is a regression (WGF-010). |
+
+Contract: obligations 6 -> 10.
