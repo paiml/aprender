@@ -79,8 +79,22 @@ caught that in the same commit. Both cases land together or neither lands.
 `C-14`. The predecessor refused TTFT under W1 outright, on a convoy argument — at every round
 boundary all `c` prefills collide. At c=1 there is one request and no convoy, so TTFT(c=1) under
 W1 is a clean measurement and the cheapest prefill witness available today. Above c=1 the argument
-holds, which is what W3 is for; until W3 exists those numbers are REPORTING and no latency bound
-is set.
+holds, which is what W3 is for; until W3 exists those numbers are REPORTING.
+
+v3.2 makes TTFT(c=1) the first latency bound. The 0.71 exit criterion V1 (#3598) bounds `apr`'s
+TTFT against the comparator's, and the alternative to carrying it here was a second definition of
+the metric: a standalone contract with its own estimator and a bound typed into its checker, which
+is the shape PP-33 refuses. The bound reuses what this document already has — §3's `ttft`, §4.3's
+request bootstrap, P-5's decision rule and P-6's arming — and adds one thing, the orientation.
+`ttft_ratio` is `ttft_llama / ttft_apr`, so above 1 is better for every ratio: P-5 needs no second
+form, and the bootstrap's 5th percentile stays the lower bound. V1's figure is that cell's `δ` in
+`perf-matrix.yaml`, with an author, and never a literal here (P-1).
+
+`load_ms` is REPORTED, not gated: V2 asks for load time beside the throughput figures, not under a
+bound. It is an upper bound because a readiness probe only sees that the server became ready
+within one probe interval, so the interval travels with it as its resolution. `crux-C-27-v1`'s
+`time_to_first_ready` is a different quantity — it times `apr run`, not `apr serve`, and its ready
+is a state inside the process rather than a probe the client sees.
 
 ---
 
@@ -402,6 +416,15 @@ author, and a numeric comparison in a gate script that is not read from that fil
 Definitional comparisons (a count against zero, a band against one) are not thresholds and are
 explicitly out of scope, because widening the rule to cover them would make it unusable and
 therefore ignored.
+
+### PP-34
+
+`ttft_ratio` is the one ratio that is not `x_apr / x_llama` (§3), and a producer written by copying
+the `dec` line — `paired_ratio_lcb(subject, comparator, …)` with the statistic changed — computes
+it upside down. The error is silent: the un-inverted quotient is above 1 exactly when `apr` is
+slower, so P-5 passes the regressions the bound exists to catch. Orientation is therefore an
+invariant of the producer, tested where the quotient is formed (the Rust receipt governs), and not
+a convention the gate trusts. The other ratios all share `x_apr / x_llama` and carry no such row.
 
 ---
 

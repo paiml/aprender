@@ -1,4 +1,4 @@
-# PP-LLAMA-001 v3.1 — MASTER — Inference performance parity with `llama.cpp`
+# PP-LLAMA-001 v3.2 — MASTER — Inference performance parity with `llama.cpp`
 
 **Status:** VERIFIED, NOT ARMED (§0.2) · **Supersedes:** `docs/archive/perf-2026-09-02/performance-parity-llama.cpp.md` and fifteen documents in four repositories (§13) · **Governs:** inference performance of `apr serve` in `paiml/aprender`
 
@@ -85,7 +85,7 @@ All token counts are the server's `usage.completion_tokens` / `prompt_tokens` (P
 
 | metric | definition | unit | source |
 |---|---|---|---|
-| `ttft` | request send → first content byte | ms | client |
+| `ttft` | per request, request send → first content byte; band value = **median** over retained requests | ms | client |
 | `tpot` | `(e2e − ttft) / (completion_tokens − 1)` | ms | client / server count |
 | `dec` | per request `(completion_tokens − 1) / (e2e − ttft)`; band value = **median** over retained requests | tok/s | derived |
 | `itl_p95` | 95th percentile of per-token inter-arrival intervals within the band | ms | client |
@@ -95,10 +95,11 @@ All token counts are the server's `usage.completion_tokens` / `prompt_tokens` (P
 | `overhead_share` | per lane, `agg(1) / dec(1)` | — | derived; paired quotient reported beside both lane values |
 | `vram.used_peak_bytes` (sampled), `vram.recorded_alloc_peak_bytes` (a recorded **lower bound**, never a peak), `kv.kv_per_slot_bytes`, `scheduler.slots_admitted` | server-reported by `GET /v1/effective-config` at load and after each band; there is no key named `vram_peak` | bytes, bytes, bytes, count | server (PP-2) |
 | `stream_mode` | `live` \| `replayed`, declared by the server on the first SSE chunk | — | server (PP-27) |
+| `load_ms` | per lane, once per receipt: server spawn → the first `GET /health` answering 200; an **upper bound**, carried with the probe interval as its resolution | ms | client |
 
 `n_predict` is the generation budget. **On the wire it is carried as the OpenAI field `max_tokens`** — that is what the W1 corpus records, what the client sends and what both servers read; `n_predict` is reserved for the comparator's launch argument.
 
-Ratios: `x_ratio(c) = x_apr(c) / x_llama(c)` from the same run (P-1). `agg` and `dec` are not interchangeable (§2.2).
+Ratios: `x_ratio(c) = x_apr(c) / x_llama(c)` from the same run (P-1), except `ttft_ratio(c) = ttft_llama(c) / ttft_apr(c)`, inverted so that above 1 is better for every ratio and P-5 reads them all one way (PP-34). `agg` and `dec` are not interchangeable (§2.2).
 
 ---
 
@@ -108,7 +109,7 @@ Ratios: `x_ratio(c) = x_apr(c) / x_llama(c)` from the same run (P-1). `agg` and 
 
 **P-2 · Named.** A parity claim names cell, band and metric. Otherwise it is schema-fatal (PP-17).
 
-**P-3 · Asymmetric by band.** Gated at c=1: `dec_ratio` and `prefill_ratio`. Gated at c>1: `agg_ratio`. Everything else is REPORTED on every band (PP-4). Both `agg` and `dec` at `>= 1` on every band is refused as a rule (§2.2).
+**P-3 · Asymmetric by band.** Gated at c=1: `dec_ratio`, `prefill_ratio` and `ttft_ratio` (P-8). Gated at c>1: `agg_ratio`. Everything else is REPORTED on every band (PP-4). Both `agg` and `dec` at `>= 1` on every band is refused as a rule (§2.2).
 
 **P-4 · Correct before fast.** A band whose correctness witness (PP-26) is absent or failing is `INVALID-CORRECTNESS`: its throughput is not reported, not gated, and never a baseline.
 
@@ -118,14 +119,14 @@ Ratios: `x_ratio(c) = x_apr(c) / x_llama(c)` from the same run (P-1). `agg` and 
 
 **P-7 · Must-not-fire.** Every gate lands with a must-fire mutation and a must-not-fire fixture in one commit (PP-29).
 
-**P-8 · Latency.** `ttft` and `itl_p95` at c=1 are valid under W1 and REPORTED; at c>1 they are measured only under W3 (§5.1) and are REPORTING until W3 exists. No latency bound is set in this version.
+**P-8 · Latency.** At c=1 under W1, `ttft` is gated as `ttft_ratio` (§3) by P-5, against its own `δ` in `perf-matrix.yaml`, and arms by P-6; `itl_p95` is REPORTED. At c>1 both are measured only under W3 (§5.1) and are REPORTING until W3 exists. `ttft_ratio` at c=1 is the only latency bound. `load_ms` (§3) is REPORTED on every receipt.
 
 ### §4.3 Statistics
 
 | unit | metrics | design | estimator | verdict statistic |
 |---|---|---|---|---|
 | **replicate** (window statistics) | `agg`, `prefill`, `vram.used_peak_bytes` | `n >= 5` **interleaved** paired replicates, A,B,A,B,… within one harness invocation, comparator and subject alternating | mean of per-replicate `ln(x_apr / x_llama)` | one-sided t lower bound, `df = n − 1`, exponentiated |
-| **request** (per-request statistics) | `dec`, `ttft`, `itl_p95` | all retained requests of the band, both lanes | paired percentile bootstrap, 10 000 resamples, seed `2026`, resampling whole requests | 5th percentile of the bootstrap ratio distribution |
+| **request** (per-request statistics) | `dec`, `ttft`, `itl_p95` | all retained requests of the band, both lanes | paired percentile bootstrap, 10 000 resamples, seed `2026`, resampling whole requests | 5th percentile of the bootstrap ratio distribution, each ratio oriented as §3 (`ttft`: comparator over subject) |
 
 Interleaving is mandatory: thermal state, JIT/graph-capture warm state and free VRAM drift across a sweep, and alternation is the only design that cancels the drift. A receipt whose replicates were not interleaved is `NONCONFORMANT` (PP-9 key includes `interleaved: true`). `n = 3` sizes an effect and bounds no variance: no σ-dependent status changes at `n < 5`.
 
@@ -207,6 +208,7 @@ One table. Columns: rule · must-fire (RED) · must-not-fire (GREEN) · status �
 | **PP-31** | Self-regression: per (cell, band) `agg(c)`, `dec(c)`, and at c=1 `prefill`, each ratchets **against the last `MEASURED` receipt on protected `origin/main`**, seeded at the value that receipt achieved; a decrease beyond that cell's LCB at `n >= 5` is a release FAIL for that cell; `scaling_efficiency` is never ratcheted | halve CPU `agg(4)` in a PR that doubles CUDA | raise `agg(1)` by 20% with `agg(16)` unchanged: `scaling_efficiency` falls and nothing fails | ARMED | §12 row 8 · `self_regress_fail` / `agg1_improve_ok` (pg) |
 | **PP-32** | Engine-track `AbRecord` (§10) has no field able to hold a comparator, a second runtime name, or a parity verdict; carries `delta_kind ∈ {config, code}`, per-arm `(commit, sha256)`, interleaved arms, and both arms' effective-config responses diffed | add a `comparator` field; two arms not interleaved | a `code` delta with two shas | ARMED | §12 row 9 · `abrecord_comparator` / `abrecord_ok` (rs:aprender-test-lib `abrecord_comparator__a_comparator_field_does_not_parse`, `abrecord_ok__a_code_delta_with_two_shas_parses`) |
 | **PP-33** | Every threshold, floor, ceiling, ratchet direction and phase the gate reads lives in `perf-matrix.yaml` with `threshold_class` and author; a numeric comparison in `perf_gate.sh`, `parity_block.py` or any lane script that is not read from the matrix is RED | a bare stretch constant in `parity_block.py` | all comparisons read from the matrix | ARMED | `scripts/check_thresholds_in_matrix.sh` · `threshold_outside_matrix` / `threshold_in_matrix` (sh:scripts/check_thresholds_in_matrix.sh) |
+| **PP-34** | `ratios.ttft` is `ttft_llama / ttft_apr` (§3) at every producer, so a subject whose band `ttft` is the larger gets a point below 1; the un-inverted quotient would PASS P-5 exactly when `apr` is slower | the producer divides subject by comparator | a subject with the smaller band `ttft` gets a point above 1 | OPEN | §12 row 23 · `ttft_ratio_subject_slower_below_one` / `ttft_ratio_subject_faster_above_one` (rs:aprender-test-lib) |
 
 **RETIRED:** none in v3.0.
 
@@ -238,7 +240,7 @@ At merge: receipt schema; every `ARMED` L1 rule, statically; `scripts/spec_confo
 
 | band | gated (L3) | reported |
 |---|---|---|
-| c=1 | `dec_ratio`, `prefill_ratio` | `agg_ratio`, `ttft`, `itl_p95`, `overhead_share` per lane |
+| c=1 | `dec_ratio`, `prefill_ratio`, `ttft_ratio` | `agg_ratio`, `itl_p95`, `overhead_share` per lane |
 | c ∈ ladder, c>1 | `agg_ratio` | `dec_ratio`, `prefill_ratio`, `scaling_efficiency`, `itl_p95` |
 
 **Arming.** For every (cell, band, metric) the L3 gate is `REPORTING` until the first receipt that PASSES P-5; from that receipt it is `ARMED`, that receipt is recorded in `perf-matrix.yaml` as `armed_by`, and a later receipt that FAILS P-5 blocks release. Nothing in L3 arms by date. L2 arms on the first `MEASURED` receipt of the cell (PP-31 seeds there).
@@ -335,7 +337,7 @@ Engine work proceeds from today and needs no comparator, no matrix run and no §
 
 ## §11 Non-goals
 
-No latency bound (P-8). No summing attribution identity (Σ samples / span = c by construction; per-phase averages and the per-lane `overhead_share` are used instead). No iteration budget. No causal independence between levers. No non-CUDA L3 gate (§8). No training, LAPACK or datacenter serving — `NA{decided_by}` in `perf-matrix.yaml`. No review-process rules — `PR-REVIEW-SKILL-002-v2.md` owns those.
+No latency bound other than `ttft_ratio` at c=1 (P-8). No summing attribution identity (Σ samples / span = c by construction; per-phase averages and the per-lane `overhead_share` are used instead). No iteration budget. No causal independence between levers. No non-CUDA L3 gate (§8). No training, LAPACK or datacenter serving — `NA{decided_by}` in `perf-matrix.yaml`. No review-process rules — `PR-REVIEW-SKILL-002-v2.md` owns those.
 
 ---
 
@@ -372,6 +374,7 @@ Every row has an owner. `expires` is a date only on root rows; every other row i
 | **20** | **speed**: §9 #3 (prefill sync copies and allocs) — registered prediction under 10% API share | throughput on the gated cell, at the gated c=1 metric | serve | — | **OPEN**, **2026-10-23** |
 | **21** | **speed**: §9 #1 KV-scatter root cause on Blackwell | gx10 c=1 fixed cost 16.75 s → under 1 s, conditional on row 2 showing the cost exists on the streaming transport | serve | 2 | **OPEN**, 2026-10-15 (was 2026-09-30) — dated here because row 2 was discharged and nothing derives this row's expiry any more (D2). Basis: it was blocked until 2026-09-20 and this is one full train past the 0.69.0 cut, matching rows 13/15/19. The owner may move it with a stated basis. **Row 2's condition is now MET**: the cost exists on the streaming transport and is linear at 9.042 ms/token (r² 0.999947, n=15, gx10 cc 121) — and `BATCHED_PREFILL=1` already reaches **0.099 s** at ~512 tokens, i.e. this row's "under 1 s" target is reachable on that path today; what remains is the KV-scatter root cause on the DEFAULT path. See `docs/audits/impl-PMAT-3556-receipt.md` Re-dated by the operator (Noah) 2026-10-01, ruling C197: not delivered for 0.70; carried to 0.71. #4651. |
 | **22** | **instrument**: a top-2 logit margin per generated token on the wire (`logprobs` on the SSE delta, both engines), so the witness can classify an `m=1`↔`m=c` divergence as a near-tie flip (margin below a declared τ at the divergence index) or a defect; PP-26 (c) then becomes a gate | PP-26 (c); the residual that (a)+(b) cannot see — a whole batch that is coherent and identically wrong | serve | — | **OPEN.** Root row. Why it exists: `GET /v1/chat/completions` answers `logprobs: null` (`realize_handlers_completion_request.rs`), so the divergence lambda measured (`evidence/perf041/lambda/m1-vs-m4-three-prompts.txt`) can be read by a person but not classified by the witness. Expires **2026-10-15** |
+| 23 | `ttft_ratio` (P-8), in the order the gate forces: both producers emit `ratios.ttft` oriented as §3, on the bands whose workload yields `ttft` (§5.1), first (the Rust receipt's `BandRatios` with PP-34's two tests, and the legacy `perf_receipt.py::_ratios_for` from a per-request `request_ttft_ms`), since `perf_gate.sh` FAILs a gated metric whose ratio is absent; then one commit (P-7) adds `ttft_ratio` to `RATIOKEY` in `perf_gate.sh` and to `gated.c1` and `delta:` in `perf-matrix.yaml` and its vendored copy, with selftests `l3_ttft_gated_at_c1` / `l3_ttft_within_delta_c1` (pg). It arms on the first receipt that PASSES (P-6) | PP-34; P-8 | perf-gate | — | **OPEN**. Expires **2026-10-23** |
 
 Rows 19–21 are the deliverable. A version of this table with no speed row is a defect of the table.
 
@@ -397,7 +400,7 @@ Roadmap cross-references (`docs/roadmaps/roadmap.yaml` notes carry the same map)
 
 ## Appendix B — Receipt (normative fields)
 
-`run_id` · `started_utc`, `clock_source` (PP-30) · `provenance{subject{commit,sha256,feature_set}, comparator{commit,cmake,sha256,pin_expiry,props}, client{commit,sha256}, host, compute_class, server_config(verbatim), model{path,sha256,bytes}, quantization}` (PP-2, 18, 20, 25) · `workload{id,window_ms,warmup_requests_per_worker,quiesce_ms,cooldown_ms,n_predict,sampler{temperature,seed,ignore_eos}}` (PP-28) · `tokenization{method}` (PP-11) · `ladder{declared,derived,slots_admitted{apr,llama}}` (PP-24) · per band: `c`, `stream_mode`, `stream_witness`, `witness{batch_invariance, divergence_at}` (PP-26, 27), `samples[]` (PP-7), `short_of_n_predict` (PP-28), `timeouts`, `drain_ms` (PP-5, 10), `agg`, `dec`, `prefill`, `ttft`, `itl_p95`, `scaling_efficiency`, `overhead_share` per lane, `roofline_tok_per_sec` (PP-23), `baseline{…same schema…}` (PP-3), `ratios{agg,dec,prefill}` each `{point, lcb95, method, n}` (P-5), `status` (§7.4) · `signature` (PP-21).
+`run_id` · `started_utc`, `clock_source` (PP-30) · `provenance{subject{commit,sha256,feature_set}, comparator{commit,cmake,sha256,pin_expiry,props}, client{commit,sha256}, host, compute_class, server_config(verbatim), model{path,sha256,bytes}, quantization}` (PP-2, 18, 20, 25) · `workload{id,window_ms,warmup_requests_per_worker,quiesce_ms,cooldown_ms,n_predict,sampler{temperature,seed,ignore_eos}}` (PP-28) · `tokenization{method}` (PP-11) · `ladder{declared,derived,slots_admitted{apr,llama}}` (PP-24) · per band: `c`, `stream_mode`, `stream_witness`, `witness{batch_invariance, divergence_at}` (PP-26, 27), `samples[]` (PP-7), `short_of_n_predict` (PP-28), `timeouts`, `drain_ms` (PP-5, 10), `agg`, `dec`, `prefill`, `ttft`, `itl_p95`, `scaling_efficiency`, `overhead_share` per lane, `roofline_tok_per_sec` (PP-23), `baseline{…same schema…}` (PP-3), `ratios{agg,dec,prefill,ttft}` each `{point, lcb95, method, n}` (P-5; `ttft` oriented as §3, PP-34, and only on a band whose workload yields `ttft`, §5.1), `status` (§7.4) · `load{apr,llama}` each `{load_ms, resolution_ms, probe}` (§3, P-8) · `signature` (PP-21).
 
 Appendix B names are logical. The wire keeps the v2.2 spellings (`aggregate_tok_per_sec`, `decode_tok_per_sec`, `prefill_tok_per_sec`, `ttft_p50_ms`/`ttft_p95_ms`, `itl_p50_ms`/`itl_p95_ms`) so today's readers keep working; `schema_version: 3` marks the additive shape.
 
@@ -444,6 +447,7 @@ Append-only. PP-9 binds on `RECORDED`. Rows entered under the pre-v3 eleven-colu
 | 3.1 | 2026-09-03 | PP-9's live scan read the ledger's first pipe table only; a blank line after row 4 left rows 5 and 6 outside it, and a re-spend of row 6 as row 7 passed `spec_conformance.sh`. L2 now refuses every ledger row outside the table it reads: any pipe line after the first table, to the end of the file, with a cell that starts with `RECORDED` or `CONFORMANT` (the tiers PP-9 binds on, read through the same normalisation as every other cell) — the row's id is reported, never required, and no width, leading-pipe, run, header or heading condition stands between such a row and the rule, because four review rounds on #2861 each removed one an author could satisfy; `RECORDED` and `CONFORMANT` are therefore reserved words wherever they start a cell in `LEDGER.md`. Rows found by L2 also enter the L1 spend check, which dedupes every row that claims a tier and reads every key cell through the one normaliser (code tags, format characters, no-break spaces, whitespace runs and wrapping emphasis off; casefolded), because a formatting habit must not make a second run new — a key disguised past that is a forged row the diff shows. L3 refuses a first-table row whose cell count differs from the header's; L0 refuses a first table that is not the ledger. The ledger is re-joined; twenty-nine cases are named beside PP-9's and scripts/mutate_spec_conformance.sh kills 15 of 15 over a green baseline, a crash counted as unviable (PMAT-930, PMAT-931, PMAT-932, PMAT-933, PMAT-934, PMAT-935) |
 | 3.1 | 2026-09-15 | `scripts/llama_pin.toml` re-pinned `39173bcac` (2026-01-15) → `d1d3c3396` (2026-09-15), `pinned_on` 2026-09-15; `pin_expiry` unchanged. The old pin predates upstream Qwen3.5 support (`fc0fe4004`, 2026-02-10): `grep -c qwen35 src/llama-arch.cpp` is 0 at the old pin and 2 at the new one, and a CPU build on `intel` at `d1d3c3396` loads `Qwen3.5-0.8B-Q4_K_M.gguf` (`general.architecture str = qwen35`) and emits a token, rc 0. `GET /props` re-read at both argvs (`evidence/parity/props-d1d3c3396-{template,np16}.json`: `total_slots` 4 / 16, `n_ctx` 4096 / 1024, unchanged). The row-0a comparator lane re-measured at both pins side by side is `LEDGER.md` row 12. PP-20: every ratio against `39173bcac` is incomparable with one against `d1d3c3396`. | the 0.68 Qwen3.5 scope (#3329) had no comparator at the old pin | PMAT-3329 |
 | 3.1 | 2026-10-01 | §12 rows 13, 15, 19 and 21 re-dated **2026-09-30 → 2026-10-15**; row 18 follows, because its date is derived from row 15 and none is typed. **Moved by: the operator (Noah), ruling C197.** None of the five was discharged by its expiry, and on 2026-10-01 the D6 andon turned every PR and main RED. The andon itself is unchanged: with `SPEC_CONFORMANCE_TODAY=2026-10-16` it is RED again for these rows. §12's on-expiry consequence is carried, not waived: the 0.70 release notes say `NO SPEED DELIVERED: PP-LLAMA-001 rows 13, 15, 18, 19, 21 (re-dated to 2026-10-15)`. `evidence/parity/derived_expiries.json` was regenerated with `--write`; exactly these five rows changed. | not delivered for 0.70; carried to 0.71 | #4651 (advance warning before expiry: #4652) |
+| 3.2 | 2026-10-03 | P-8 sets the first latency bound: `ttft` at c=1 under W1 is gated as `ttft_ratio = ttft_llama / ttft_apr` by P-5, against a `δ` in `perf-matrix.yaml`, and arms by P-6. §3 gains that orientation, a band value for `ttft` (the median over retained requests) and `load_ms`, REPORTED. P-3, §4.3, §7.2, §11 and Appendix B follow; PP-34 (OPEN) and §12 row 23 are added. **Decided by:** pending, spec-owner ruling R-71-6 | the 0.71 exit criterion V1 bounds `apr`'s TTFT against the comparator's, and P-8 had no bound to carry it; the reasons are `RATIONALE.md` P-8 and PP-34 | #3598 (V1, V2) |
 
 ## Appendix E — Landing a rule, and what to run before pushing
 
