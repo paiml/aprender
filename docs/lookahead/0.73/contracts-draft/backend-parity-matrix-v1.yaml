@@ -26,6 +26,12 @@ equations:
       angle(x) = acos(x)
       end_to_end >= cos(angle(leg_a) + angle(leg_b))
       PASS_E1  <=>  leg_a >= 0.995 AND leg_b >= 0.995 AND n_prompts >= 16
+      REFUSED  <=   any per-position cosine is non-finite
+                 OR leg_a.prompt_set_sha256 != leg_b.prompt_set_sha256 OR leg_a.n != leg_b.n
+                 OR model_sha256 differs between the backend, apr-CPU and llama.cpp runs
+                 OR len(logits) differs between any two runs
+                 OR (CPU cell) leg_a.kernel_path(backend) == leg_a.kernel_path(ref)
+      positions = the prefill-final position AND >= 8 teacher-forced decode positions per prompt
     domain: 'final-position logits of one (cell, model, quant) over n prompts'
     codomain: bool
     invariants:
@@ -35,28 +41,38 @@ equations:
     - 'cpu_ref_path is recorded in the receipt, never inferred. On main (aca6f2d7f6), apr parity-moe runs the CPU under with_fp32_activations (parity_moe.rs:110), while dense apr parity has no such scope and runs Q8_K unless DIRECT_FP32_GEMV=1 (parallel_k.rs:304). Today the two commands disagree on the reference.'
     - 'Two legs at 0.99 only guarantee cos(16.21 deg) = 0.960: 0.99 per leg is NOT the gate.'
     - 'The gate reads the MIN over prompts; median and max are reported, never gated.'
+    - 'L25: the MIN is NaN-propagating. Rust f32::min/f64::min return the non-NaN operand, so a fold with them drops a NaN prompt and the gate reads the 15 good ones. apr''s cosine helpers (parity_per_op_table.rs:61, forward_error.rs:254 at main 316dee2cd4) return 0.0 on a length mismatch or zero norm but NaN on NaN logits. A non-finite cosine REFUSES the receipt (FALSIFY-BPM-009).'
+    - 'L25: the triangle bound is per prompt. Leg A over prompt set P and leg B over Q != P bounds nothing on the prompts outside P ∩ Q, so both legs carry prompt_set_sha256 and n, and they must match (FALSIFY-BPM-010).'
+    - 'L25: all three runs read ONE model file (model_sha256 equal). Leg B over a different GGUF (re-quantized, or apr-converted) measures the file difference, not the engine (FALSIFY-BPM-011).'
+    - 'L25: on a CPU cell (C4) the backend IS the CPU. If the reference runs the same kernels, leg A is a self-comparison and reads 1.0 for free. The fp32_act scope does not separate them for Q5K/Q6K (§11a: only the Q4K kernel honours the flag), so R3''s NEON Q6K dot would be compared with itself. The reference must run a different kernel_path (scalar, or the C0 x86 reference logits) for every quantized tensor, or the receipt is REFUSED (FALSIFY-BPM-012).'
+    - 'L25: final-position-of-prefill logits never exercise the KV cache or the decode kernels (M=1 GEMV). The known-bad 0.955 (FALSIFY-BPM-007) is a decode measurement. The gate reads prefill-final plus >= 8 teacher-forced decode positions per prompt, all fed the same token ids (FALSIFY-BPM-013).'
 
   speed_ratio_ci:
     formula: |
       r = tok_s_apr / tok_s_llamacpp   (decode and prefill, same client, prompts, clock)
       ci = paired bootstrap 95% over n >= 5 runs per engine
+      REQUIRE: both engines on one host_id, n_gen fixed and EOS ignored on both (equal decoded tokens)
       PASS_E2  <=>  ci.lo >= 0.5   (decode AND prefill)
     domain: 'paired timing runs on one cell'
     codomain: bool
     invariants:
     - 'A point estimate >= 0.5 with ci.lo < 0.5 is FAIL.'
     - 'The 0.5 floor is [A]; the first three measured cells recalibrate it by amendment only.'
+    - 'L25: tok/s over unequal token counts is not paired. An engine that stops at an early EOS decodes fewer, cheaper (shorter-context) tokens and reads faster. A receipt whose decoded-token counts differ is REFUSED (FALSIFY-BPM-015).'
 
   backend_is_self_reported:
     formula: |
       cell.backend := what the serving process printed about itself
                       (wgpu adapter name, CUDA device banner)
       adapter in {llvmpipe, lavapipe, SwiftShader, "Microsoft Basic Render"} OR no banner
+        OR wgpu AdapterInfo.device_type = Cpu
         => FALLBACK => FAIL (not "slow")
     domain: 'the receipt backend fields'
     codomain: bool
     invariants:
     - 'A launch flag is intent, never evidence (verification rule 2).'
+    - 'L25: a name denylist is open-ended; a software adapter not on the list passes. device_type = Cpu is the closed check, and the names stay as a second check (FALSIFY-BPM-014).'
+    - 'Until F3 (la-73/4575-wgpu-backend-label @fd02954a8e) lands, the serve line "Backend: wgpu (Vulkan)" is a hardcoded literal and cannot be evidence for C3 (Metal). The banner must come from AdapterInfo.backend.'
 
   receipt_shape:
     formula: |
@@ -123,6 +139,48 @@ falsification_tests:
   test: 'NOT YET WRITTEN — lands with the R1 receipt checker'
   if_fails: 'a GPU path that matches FP32 activations (cos 1.0) is scored against a Q8_K CPU (quoted 0.985, #3714) and FAILS E1 for the CPU rounding, or a mixed pair PASSES with no valid bound'
   mutation: 'let the checker accept per-leg cpu_ref_path; the planted mixed receipt must turn it RED'
+- id: FALSIFY-BPM-009
+  rule: a non-finite per-prompt cosine REFUSES the receipt (L25)
+  prediction: 'A fixture with 15 prompts at cos 0.999 and one prompt with NaN logits is REFUSED, never PASS.'
+  test: 'NOT YET WRITTEN — lands with the R1 receipt checker'
+  if_fails: 'a NaN-producing prompt (overflow, bad scale) disappears from the MIN and the cell passes'
+  mutation: 'fold the minimum with f32::min; the planted NaN fixture must turn the check GREEN, proving the case bites'
+- id: FALSIFY-BPM-010
+  rule: both legs cover one prompt set (L25)
+  prediction: 'leg_a over 16 prompts and leg_b over a different 16 (prompt_set_sha256 differs) is REFUSED.'
+  test: 'NOT YET WRITTEN — lands with the R1 receipt checker'
+  if_fails: 'the composed bound is claimed for prompts that only one leg measured'
+  mutation: 'drop the prompt_set_sha256 comparison; the planted receipt must turn GREEN'
+- id: FALSIFY-BPM-011
+  rule: all three runs read one model file (L25)
+  prediction: 'A receipt whose llama.cpp run has a different model_sha256 from the apr runs is REFUSED.'
+  test: 'NOT YET WRITTEN — lands with the R1 receipt checker'
+  if_fails: 'leg B measures a quantization difference between two files and charges it to the engine'
+  mutation: 'compare only the apr runs'' sha; the planted receipt must turn GREEN'
+- id: FALSIFY-BPM-012
+  rule: a CPU cell's leg A is never a self-comparison (L25)
+  prediction: 'A C4 receipt whose backend and reference runs report the same kernel_path for any quantized tensor is REFUSED, even at leg_a = 1.0.'
+  test: 'NOT YET WRITTEN — lands with the R1 receipt checker (kernel_path from the R3 skeletons)'
+  if_fails: 'a wrong NEON Q6K dot is compared with itself and passes E1 at 1.0'
+  mutation: 'drop the kernel_path inequality; the planted self-comparison must turn GREEN'
+- id: FALSIFY-BPM-013
+  rule: E1 covers decode positions, not only prefill-final (L25)
+  prediction: 'A fixture with prefill-final cos 1.0 and decode position 4 cos 0.90 FAILS E1.'
+  test: 'NOT YET WRITTEN — lands with the R1 harness'
+  if_fails: 'a KV-cache or M=1 GEMV defect (the 0.955 class) hides behind a perfect prefill'
+  mutation: 'gate on prefill-final only; the planted fixture must turn GREEN'
+- id: FALSIFY-BPM-014
+  rule: an unlisted software adapter is still FALLBACK (L25)
+  prediction: 'A receipt with adapter_name "FooSoft Renderer" and device_type Cpu FAILS as FALLBACK.'
+  test: 'NOT YET WRITTEN — lands with the R1 harness'
+  if_fails: 'a new software rasteriser name reads as a real GPU'
+  mutation: 'check the name denylist only; the planted receipt must turn GREEN'
+- id: FALSIFY-BPM-015
+  rule: E2 pairs equal decoded-token counts (L25)
+  prediction: 'apr decoding 37 tokens (early EOS) against llama.cpp decoding 128 is REFUSED, not scored.'
+  test: 'NOT YET WRITTEN — lands with the R1 harness'
+  if_fails: 'an engine that stops early reads faster than it is'
+  mutation: 'drop the n_gen equality; the planted receipt must turn GREEN'
 proof_obligations:
 - type: invariant
   property: 'Two legs >= 0.995 imply end-to-end cosine >= 0.98 (FALSIFY-BPM-002)'
@@ -143,6 +201,18 @@ proof_obligations:
 - type: invariant
   property: 'Both legs read the same apr CPU reference (FALSIFY-BPM-008)'
   formal: 'forall r: r.leg_a.cpu_ref_path = r.leg_b.cpu_ref_path and defined'
+- type: invariant
+  property: 'No non-finite cosine reaches the gate (FALSIFY-BPM-009)'
+  formal: 'PASS_E1 => forall p, t: is_finite(cos_a(p,t)) and is_finite(cos_b(p,t))'
+- type: invariant
+  property: 'Both legs read the same inputs (FALSIFY-BPM-010, -011)'
+  formal: 'forall r: r.leg_a.prompt_set_sha256 = r.leg_b.prompt_set_sha256 and r.leg_a.n = r.leg_b.n and model_sha256 equal over the three runs'
+- type: invariant
+  property: 'A CPU cell is never its own reference (FALSIFY-BPM-012)'
+  formal: 'cpu_cell(r) => forall t in quantized_tensors: kernel_path_backend(t) != kernel_path_ref(t)'
+- type: invariant
+  property: 'E1 reads decode positions (FALSIFY-BPM-013)'
+  formal: 'PASS_E1 => forall p: |decode_positions(p)| >= 8'
 
 qa_gate:
   id: F-BPM-GATE-001
@@ -156,8 +226,8 @@ qa_gate:
   pass_criteria: 'Every cell has an admissible receipt on main. Report-only until the harness lands.'
 
 verification_summary:
-  total_obligations: 6
+  total_obligations: 10
   proven: 0
   tested: 0
   status: proposed
-  notes: 'Draft by la-73 (L3). No ticket yet; the harness and the tests land with R1.'
+  notes: 'Draft by la-73 (L3). No ticket yet; the harness and the tests land with R1. L25 review 2026-10-03 at main 316dee2cd4 added BPM-009..015 (7 vacuous-pass holes).'

@@ -110,3 +110,19 @@ otherwise Q4K quantizes activations to Q8K (parallel_k.rs:326). Q5K/Q6K `_into` 
 RQ-5 implication: only `--moe` compares an fp32-activation CPU reference; the other three forward-path
 commands compare GPU against a Q8K-activation CPU path unless DIRECT_FP32_GEMV=1 is exported — and even
 the `--moe` wrapper leaves Q5K/Q6K tensors on Q8K activations.
+
+## 12. L25 review: vacuous-pass holes (2026-10-03, origin/main 316dee2cd4, read-only)
+The draft gated the right quantities, but seven inputs could make a cell PASS without the check measuring anything. Each now has a planted falsifier in `backend-parity-matrix-v1` (BPM-009..015):
+
+| # | Hole | Why it passes vacuously | Fix | Falsifier |
+|---|---|---|---|---|
+| 1 | NaN in one prompt | `f32::min` returns the non-NaN operand, so a fold drops the NaN prompt. apr's cosine helpers (parity_per_op_table.rs:61, forward_error.rs:254) return 0.0 on a length mismatch or zero norm, but NaN on NaN logits [V] | A non-finite cosine REFUSES the receipt | BPM-009 |
+| 2 | Legs over different prompt sets | The triangle bound holds per prompt | Both legs carry `prompt_set_sha256` and `n`, which must match | BPM-010 |
+| 3 | Legs over different model files | Leg B then measures the file, not the engine | `model_sha256` is equal across all 3 runs | BPM-011 |
+| 4 | CPU cell C4 is its own reference | Same kernels on both sides read 1.0. `fp32_act` does not separate Q5K/Q6K (§11a), so the R3 NEON Q6K dot would meet itself | The reference `kernel_path` must differ per quantized tensor | BPM-012 |
+| 5 | Prefill-final logits only | Never touches the KV cache or the M=1 decode GEMV, which is where the known 0.955 sits | Gate on prefill-final plus ≥ 8 teacher-forced decode positions | BPM-013 |
+| 6 | Adapter name denylist | An unlisted software adapter passes | `AdapterInfo.device_type = Cpu` ⇒ FALLBACK; names stay as a second check. Banner from `AdapterInfo.backend` (F3) | BPM-014 |
+| 7 | E2 over unequal token counts | An early EOS decodes fewer, shorter-context tokens | One `host_id`, fixed `n_gen`, EOS ignored on both engines | BPM-015 |
+
+Reuse note: origin/main has at least 8 cosine copies (`git grep 'fn cosine'`). The R1 checker uses `parity_per_op_table::cosine`, which already fails closed on length and zero norm, and adds no ninth copy.
+pv 0.70.0: validate 0 errors / 0 warnings; `pv lint contracts-draft/` PASS. Obligations went from 6 to 10.
