@@ -111,12 +111,17 @@ rows:
     ev_rank: 9
     exit_criterion: V4
     title: --json-schema constrained decoding
-    ticket: null
-    spec: {path: docs/specifications/APR-EPIC-001-themed-epics-and-issue-cap.md, section: "§2 E5 (places it in 0.72)", on_main: true}
-    contract: {id: null, path: null, on_main: false}
-    falsifier: []
-    baseline: null
-    owner_proposed: null   # RULING R-71-1: §2a puts V4 in 0.71, APR-EPIC-001 E5 puts it in 0.72
+    ticket: "#3568 (minted; 4-PR plan)"   # PR 1/4 = PMAT-3747 TokenConstraint + llguidance, ON main (crates/aprender-serve/src/constrain/, no loop wired)
+    spec: {path: docs/roadmaps/entries/PMAT-3568.yaml, section: "status planned", on_main: true,
+           also: "docs/specifications/APR-EPIC-001-themed-epics-and-issue-cap.md §2 E5 (places it in 0.72)"}
+    contract: {id: CRUX-I-11, path: contracts/crux-I-11-v1.yaml, on_main: true, status: draft}
+      # category label is "I — Observability & Metrics" (wrong letter for structured output; feeds R-71-4)
+    falsifier: [FALSIFY-CRUX-I-11-001, FALSIFY-CRUX-I-11-002, FALSIFY-CRUX-I-11-003]   # serve response_format path
+      # CLI path: PR 2/4 = PMAT-3793 (b61ba3251b, apr run --json-schema/--grammar on CPU loops, constrained_run_tests.rs)
+      # is on origin/PMAT-3793-apr-run-json-schema only, stacked on release/0.69.1-batch-1: 2 own commits, 104 unmerged
+      # patches vs main -> needs a rebase onto main before it can land. PR state not_measured (no GH call spent).
+    baseline: "llama.cpp d1d3c3396 llama-cli --json-schema (same schema, same prompt), per EXT R-17 like-for-like"
+    owner_proposed: "#3568 ticket owner (PMAT-3747/3793 author), not L1"   # RULING R-71-1 still decides 0.71 vs 0.72
   - id: OBS-00
     ev_rank: 10
     exit_criterion: [V1, V6]
