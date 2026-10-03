@@ -116,8 +116,10 @@ R4, and T2 needs R15b.
       so the output is the base.
     - A safetensors adapter with no `lora_alpha` in its header or sidecar is merged at alpha 16. At S-R4a's r16 and
       alpha 32, that halves the delta.
-  - QQE-003's cosine of 0.999 on logits may not see a LoRA delta the merge dropped. QQE-009 (PROPOSED) checks the merge
-    tensor by tensor and plants all three.
+  - QQE-003's cosine of 0.999 on logits may not see a LoRA delta the merge dropped. QQE-009 (PROPOSED) plants all three
+    and checks the whole chain tensor by tensor on a 3/6 fixture: the adapter R4 writes, merged by `apr finetune merge`
+    and read back through row 4b's loader, must equal `Qwen35Lora::merge_into`. That also catches a writer that drops
+    a target kind, which no merge-side check can see.
 - **Planted:** a zero step (lr = `f32::MIN_POSITIVE`) must FAIL the loss gate with bit-identical losses. Not lr = 0: the
   in-tree AdamW panics on lr = 0, and a crash reads as the falsifier firing (S-R4a). The receipt names the device from a trace line (CLAUDE.md verification rule 2).
 - **Spike S-R4a (2026-09-27, `la-72/r3-backward` @045a7edb73) — does LoRA + AdamW over the R3 backward train the real
