@@ -426,6 +426,16 @@ up, a new size changes its place, and a row already held on a branch drops out o
   differently and that nothing on main converts between them. #4418's branch has the converter. `apr finetune`
   trains from .apr only and `apr import` refuses every real Qwen3.5 GGUF, so R4's and T2's bases are HF-sourced and
   need a load-time conversion (row 4b, QQE-008). R4's PEFT export also needs the permutation back (QQE-007).
+- **Row 20, K30, is new and off the critical path.** `apr train` writes config.json's `tie_word_embeddings` from
+  `TransformerConfig::ties_embeddings()`, which returns `use_bias && vocab_size > 150000` whenever the configured flag
+  is false and never reads the model it saved (`helpers.rs:876` and `config.rs:434` in aprender-train at
+  `316dee2cd4`). The flag and the weights can disagree either way:
+  - An untied checkpoint with attention biases and a vocabulary over 150000 is written as tied. apr's safetensors
+    loaders read the flag before the tensor, so apr serves the embedding as the head.
+  - A run without weights saves no head but is written as untied, so an HF-convention loader starts a random head.
+  Only `apr train` reaches this writer (`train_from_yaml`); `apr finetune`, which R4 and T2 use, does not. The
+  contract is `apr-train-output-config-v1` (TOC-001..003) on its own branch, and the fix writes the saved model's
+  own state from both save paths.
 
 State is read from the branch tips on 2026-10-03. origin/main is `316dee2cd4` and no la-72 branch has landed. K̂ is
 minutes of worker time still left; `[A]` marks an assumption.
@@ -453,6 +463,7 @@ minutes of worker time still left; `[A]` marks an assumption.
 | 17 | R18 vocab alignment | — | — | `76/0.72-r18-vocab-cell`; 3 Definition-of-Ready tests shared with R6 |
 | 18 | R16 dangling `qlora-training-loop-v1` | — | — | `la/r16-qlora-loop-contract` |
 | 19 | R14 throughput work | sized from the R5 gap | — | after R5 and R15b |
+| 20 | K30 `apr train` tie flag | TOC-001/002: config.json says tied exactly when the saved model has no head | 15 `[A]` | `la-72/k30-train-tie-flag` @687554a60a (`apr-train-output-config-v1`); off the critical path; opens with the cheap refusals after LIVE 0.70.1 |
 | — | R19 ROADMAP PMAT-711 stale | — | done | shaping @378ec8e920 |
 | — | R20 declarative recipe | — | out | RQ-3: stays in #4002 (E8, 0.75) |
 
