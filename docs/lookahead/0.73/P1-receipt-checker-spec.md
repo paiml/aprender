@@ -78,6 +78,8 @@ Every fixture is `base.json` plus one edit. `base.json` is a C0 CUDA cell with:
 | f006 | cell C1, Q8_0, real adapter, no wgpu forward line | NotRun | BPM-006 |
 | f008a | leg_a.cpu_ref_path fp32_act, leg_b q8k_act | Refused | BPM-008 |
 | f008b | cpu_ref_path absent on one leg | Refused | BPM-008 |
+| f008c | both legs q8k_act; pin `bpm.cpu_ref_path` = fp32_act (provisional, RQ-5) | Refused | BPM-008 |
+| f008d | both legs fp32_act, but the reference `kernel_path` has blk.0.ffn_gate Q4_K at precision q8k (the scratch forward) | Refused | BPM-008 |
 | f009 | one cosine = NaN (as a JSON string "NaN"; JSON has no NaN literal, so the extractor must parse it and not drop it) | Refused | BPM-009 |
 | f010 | leg_b.prompt_set_sha256 differs; and a second fixture with n 16 vs 15 | Refused | BPM-010 |
 | f011 | model_sha256 differs between the three records | Refused | BPM-011 |
@@ -101,6 +103,8 @@ Every fixture is `base.json` plus one edit. `base.json` is a C0 CUDA cell with:
 | name denylist only | f014 |
 | drop the n_gen equality | f015 |
 | accept on used_gpu alone | f017a |
+| accept any equal `cpu_ref_path` pair (ignore the pin) | f008c |
+| trust the `cpu_ref_path` label (skip the trace act-path check) | f008d |
 | hybrid from keys present | fW09 |
 | refuse everything | base (control) |
 
@@ -109,6 +113,6 @@ implied by both legs ≥ 0.995, so it is a proof obligation (BPM-002, the triang
 Its test is the arithmetic 2·acos(0.995) = 0.200083 ≤ acos(0.98) = 0.200335 (checked 2026-10-03, so cos(2·acos(0.995)) = 0.98005), plus f002b at the boundary. f002 stays as a per-leg Fail fixture.
 
 ## 6. Open
-- RQ-5 sets the allowed `cpu_ref_path` value. P1 lands with the field required and equal on both legs, and the value open.
-- RQ-4 decides whether a HYBRID cell counts for E6. f016 asserts only the label.
+- RQ-5 sets the allowed `cpu_ref_path` value. It is not a blocker (C293.3). P1 lands on the provisional S-4 default `fp32_act`, held as data in `bpm.cpu_ref_path` with `bpm.ref_mixed_qtypes` = [Q4_0, Q8_0]. A different ruling flips that line and f008c's expected verdict.
+- RQ-4 decides whether a HYBRID cell counts for E6. Provisional default: E1 may pass hybrid, and E2/E6 name it. f016 asserts only the label, so it holds under either ruling.
 - The DECODE_OPS list is defined in wgpu-forward-v1 (WGF-009). P1 imports that list and does not restate it.

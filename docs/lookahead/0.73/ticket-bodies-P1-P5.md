@@ -18,14 +18,14 @@ These are bodies ready to file, one per bundle in `falsifier-landing-map.md`.
 
 **Acceptance**
 - **Control:** the planted `base.json` passes. Without this, a checker that refuses everything would pass.
-- **Planted receipts:** 22 under `tests/fixtures/bpm/` give their spec §4 verdicts. They cover BPM-001..006 and 008..017, plus WGF-005, WGF-009, R4-003 and the uncaptured-stderr case.
-- **Mutations:** the 8 checker mutations in spec §5 each flip their named receipt. The run is recorded in the PR body.
+- **Planted receipts:** 24 under `tests/fixtures/bpm/` give their spec §4 verdicts. They cover BPM-001..006 and 008..017, plus WGF-005, WGF-009, R4-003 and the uncaptured-stderr case.
+- **Mutations:** the 10 checker mutations in spec §5 each flip their named receipt. The run is recorded in the PR body.
 - **Composed bound:** a const test checks 2·acos(0.995) ≤ acos(0.98).
 - **Command:** `cargo test -p aprender-contracts --lib` runs all of it.
 
 **Blocked by**
 - The OBS stack (#4487 identity block, #4574 kernel-path shape) is not on main. Until it merges, the identity check returns `NotRun(identity lint absent)`, never a pass.
-- RQ-5 sets the `cpu_ref_path` value. P1 lands requiring the field to be present and equal on both legs, with the value left open.
+- RQ-5 sets the `cpu_ref_path` value, but it does not block (C293.3). P1 lands on the provisional default `fp32_act`, held as data in `bpm.cpu_ref_path`; a different ruling flips one line.
 
 **Hosts** x86 CI only. No GPU, no model.
 **Out of scope** Running any model; P2 trace fields; arming the shape in `lint-baseline.json` (shared file, a separate labelled follow-up).
@@ -41,6 +41,7 @@ These are bodies ready to file, one per bundle in `falsifier-landing-map.md`.
 - `qtype_path` per qtype: device-kernel, host-widen or refused-cpu.
 - `head_dim_source`: key_length or fallback.
 - a wgpu forward banner line, the counterpart of the CUDA `Backend: GPU (…)` line.
+- `precision` in each `kernel_path` entry names the activation path (f32, q8k or q8_0), including the per-call crushed-block f32 switch. The receipt derives `act_path_by_qtype` from it (BPM-008, f008d), and the forward trace line names the forward that ran.
 
 **Acceptance**
 - A schema test asserts every field is present on a CPU run of a tiny fixture model.
@@ -123,5 +124,5 @@ These runs produce receipts, not code. They are scheduled when a host is train-i
 ## Status (2026-10-03 16:46Z)
 - origin/main is 316dee2cd4. All file:line cites in R1–R5 and these bodies were re-checked there at 13:18Z (ac564391ab).
 - **Filing:** still under S-1 hold (operator C292): nothing is filed or opened until LIVE 0.70.1. After LIVE, 0.73 moves from the floor to normal cadence: P1..P5 go to the cop as PROPOSE-TICKET lines, and this branch gets its PR.
-- **Open rulings:** RQ-3 (E6 admissible cell), RQ-4 (does hybrid count for E6), RQ-5 (cpu_ref_path; L3 recommends fp32_act). P1 can land before RQ-5 is ruled; see its blockers.
+- **Open rulings, not blocking (C293.3):** RQ-3, RQ-4 and RQ-5 are requested in the handoff. Work proceeds on provisional S-4 defaults: RQ-3 = E1 PASS + E2 PASS receipts on main; RQ-4 = a hybrid may pass E1, and E2/E6 name it; RQ-5 = `fp32_act`.
 - **External blocker:** the OBS stack, #4487 and #4574, is unmerged, so P1's identity check stays NotRun until it merges.

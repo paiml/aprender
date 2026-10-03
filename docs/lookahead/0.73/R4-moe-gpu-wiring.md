@@ -40,4 +40,4 @@ Each check below could pass without measuring anything. [V] means the line was r
 | 6 | E2 decode tok/s taken from the `qwen3moe CUDA: … tok/s` line | That line is "(prompt + generated) / time, including the token-by-token prefill" [V]. A long prompt inflates the figure as decode speed. | E2 reads decode and prefill from the harness's own timers (BPM `speed_ratio_ci`), never from this line. |
 
 - **K17 update [V]:** `mark_generation_start()` runs after the F2 guard (#3981), so generation timing already excludes the parity pre-check. Time to first token from the client side still includes it. E2 prefill must say which clock it used.
-- **K19** is now carried by BPM `cpu_ref_path` (FALSIFY-BPM-008), and ruling RQ-5 is still pending.
+- **K19** is now carried by BPM `cpu_ref_path` (FALSIFY-BPM-008). RQ-5 is requested, and work proceeds on the provisional default `fp32_act`, which parity_moe.rs:110 already uses. CPU MoE experts run only Q4_K and Q6_K (`SUPPORTED_EXPERT_QTYPES`, qwen3_moe_load.rs:84), both on f32 activations inside the scope. An expert tensor of any other qtype refuses on the CPU reference [V at 316dee2cd4].

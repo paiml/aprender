@@ -6,7 +6,8 @@ when the repo is under the 10-PR cap. Every number is [A] until a cell is measur
 ## 1. What it answers
 Is each 0.73 backend cell correct (E1), fast enough (E2) and MoE-capable (E3)? The answer is one
 receipt per cell. E6 "admissible cell" means: E1 PASS + E2 PASS receipts on main, subject to
-PRM-001 agreeing (RQ-3).
+PRM-001 agreeing. This is RQ-3's provisional S-4 default (C293.3, 2026-10-03), not a ruling; the request
+is in the handoff's "Rulings needed".
 
 ## 2. Cells
 | Cell | Host | apr backend | Comparator (llama.cpp d1d3c3396, ruled RQ-2) |
@@ -82,7 +83,7 @@ Fixing any cell: those are R2–R5. R1 only measures and gates. A thresholds cha
 
 ## 10. Census fold-in (R5, 2026-09-27; drafts/R5-kernel-key-census.md)
 - **F6 (F-R5-2, silent CPU fallback):** wgpu refuses Q4_0/Q8_0 at `wgpu_adapter.rs:339` [V], but those qtypes pass the GPU whitelist. So the run falls back to CPU on a real GPU adapter, and F2's adapter check cannot see it. A cell whose trace has no wgpu forward line for every layer is **refused (NotRun{reason: "backend forward not in trace"})**, not scored. Planted RED: a Q8_0 wgpu run on a real adapter must be refused.
-- **F7 (F-R5-4, hybrids):** on wgpu today, attention, RoPE, the LM head and argmax run on the host. Every wgpu receipt carries `op_placement`, and E2 reports `device_ops / total_ops`. A cell with any host-placed op is labelled `hybrid: true`. Whether a hybrid counts toward E6 admissibility is **RQ-4 (cop ruling needed)**. L3 recommends: E1 may pass hybrid, but E2/E6 name it and never call it "GPU".
+- **F7 (F-R5-4, hybrids):** on wgpu today, attention, RoPE, the LM head and argmax run on the host. Every wgpu receipt carries `op_placement`, and E2 reports `device_ops / total_ops`. A cell with any host-placed op is labelled `hybrid: true`. Whether a hybrid counts toward E6 admissibility is **RQ-4** (ruling requested in the handoff). **Provisional S-4 default (C293.3), not a ruling:** E1 may pass hybrid, but E2/E6 name it and never call it "GPU".
 - **F8 (F-R5-3, known-bad control):** current wgpu decode measures cosine 0.955 on intel, gx10 and mini (`gguf_gpu_generate.rs:104-110`) [V]. The harness's first run on today's wgpu Qwen3 **must FAIL** E1. If it passes, the harness is broken; that is the control, not a finding.
 - The E5 kernel key per cell comes from `qtype_path` × `op_placement`. It needs the KREG backend field (K4).
 
@@ -91,32 +92,68 @@ Fixing any cell: those are R2–R5. R1 only measures and gates. A thresholds cha
   - `fp32_act`: exact FP32 activations, inside `with_fp32_activations`;
   - `q8k_act`: the production Q8_K activations.
 - **Evidence** (quoted in the #3714 comment, not re-measured): the CUDA MoE forward scored cosine 1.000000 against `fp32_act` and 0.985 against `q8k_act`.
-- **Current tools disagree.** On main aca6f2d7f6, `apr parity-moe` uses `fp32_act` (parity_moe.rs:110) [V]. Dense `apr parity` has no such scope, so it uses `q8k_act` unless `DIRECT_FP32_GEMV=1` is set (parallel_k.rs:304). That second point is [V] only by grep absence.
+- **Current tools disagree** (re-read at main 316dee2cd4, 2026-10-03; see §11a). `apr parity-moe` runs the CPU inside `with_fp32_activations` (parity_moe.rs:110) [V]. Dense `apr parity` has no scope, so its reference is mixed: Q4_K on Q8_K activations (f32 on crushed blocks), Q5_K/Q6_K on f32, Q4_0/Q8_0 on Q8_0 [V]. Neither label is true of it.
 - **Rule.** The receipt records `cpu_ref_path`, and both legs must name the same one. FALSIFY-BPM-008 refuses a mixed or missing pair.
-- **Open question RQ-5 (needs a cop ruling): which path is pinned?**
-  - Recommended: `fp32_act`. Leg A then measures only the backend's own error, and leg B absorbs apr's activation-quantization gap against llama.cpp. That gap is unmeasured; llama.cpp's CPU k-quant dot also quantizes activations, to Q8_K.
-  - Alternative: `q8k_act`, i.e. what users actually run. But then every exact-FP32 GPU path pays an error of roughly 0.985 that belongs to the CPU, not the GPU.
+- **RQ-5: which path is pinned?** The ruling request is in the handoff. Under C293.3 work proceeds on the **provisional S-4 default `fp32_act`**, which is not a ruling.
+  - Why `fp32_act`: leg A then measures only the backend's own error, and leg B absorbs apr's activation-quantization gap against llama.cpp. That gap is unmeasured; llama.cpp's CPU k-quant dot also quantizes activations, to Q8_K. It is also the only label one forward can honour per tensor (§11a). Under `q8k_act`, Q5_K/Q6_K stay on f32 and crushed Q4_K blocks switch to f32.
+  - Alternative: `q8k_act`, earlier called "what users actually run". Users run the mixed path in §11a, so a `q8k_act` pin would have to name that forward and list Q5_K/Q6_K as `ref_mixed`. Every exact-FP32 GPU path would also pay an error of roughly 0.985 that belongs to the CPU, not the GPU.
+  - **How the default is applied** (P1/P2; no code change needed at main for Q4_K_M):
+    - The reference is `forward_single_with_cache` token by token inside `with_fp32_activations` (dense), or `forward_single_qwen3_moe_with_cache` inside it (MoE, as parity_moe.rs:110 does).
+    - It is never the scratch or traced forward, and never multirow without `DIRECT_FP32_GEMV=1`.
+    - The value is data: `bpm.cpu_ref_path` in thresholds.yaml, with a basis.
+    - The receipt derives `act_path_by_qtype` from the reference run's `kernel_path` precision.
+    - It lists in `ref_mixed` the qtypes with no kernel for the pinned path (`bpm.ref_mixed_qtypes`; for `fp32_act` that is Q4_0 and Q8_0). The list is pinned, never chosen by the run.
+  - **Flip cost:** one line in thresholds.yaml plus the f008c fixture's expected verdict. No M receipt exists before LIVE 0.70.1, so nothing is re-measured.
 
-## §11a — `apr parity*` CPU activation path (origin/main aca6f2d7f6, read-only, 2026-09-27)
+## §11a — `apr parity*` CPU activation path (origin/main 316dee2cd4, re-read 2026-10-03)
 
-Mechanism: only `fused_q4k_parallel_matvec_into` (aprender-serve quantize/parallel_k.rs:304) honours
-`fp32_activations_scoped()` (set by `with_fp32_activations`, parallel_k.rs:236) or `DIRECT_FP32_GEMV=1`;
-otherwise Q4K quantizes activations to Q8K (parallel_k.rs:326). Q5K/Q6K `_into` kernels never read the flag.
-`fused_matmul_into` (gguf/inference/fused_matmul_into.rs:47/61) dispatches Q4K→flag-honouring fn, Q6K→Q8K-only.
+Correction: the first reading (aca6f2d7f6, 2026-09-27) said Q5K/Q6K stay on Q8K activations under the scope. That
+was wrong when written. Q5_K/Q6_K never quantize activations, and the code was the same at aca6f2d7f6. Only one
+commit touched these files since: 989cb012e5 (#4655).
+
+Mechanism, per qtype (aprender-serve):
+- **Q4_K, single row.** `fused_q4k_parallel_matvec_into` (quantize/parallel_k.rs:304) takes f32 activations when
+  `fp32_activations_scoped()` (set by `with_fp32_activations`, :236) or `DIRECT_FP32_GEMV=1`. Otherwise it quantizes
+  to Q8_K (:326).
+- **Q4_K, crushed blocks.** The honest forward switches one Q4_K matvec to f32 when `has_crushed_block(x)`
+  (`matvec_into_honest`, ffn_block.rs; `fused_q4k_parallel_matvec_f32_into`, L0-1b #2971). This is data-dependent.
+- **Q4_K, multirow (m > 1).** `fused_q4k_multirow_matmul_f32_into` reads only `DIRECT_FP32_GEMV`
+  (q4k_q8k_multirow.rs:178). The scope is ignored.
+- **Q5_K / Q6_K.** Always f32: `generic_parallel_matvec_into` with `fused_q6k_dot_simd` / `fused_q5k_dot_simd`
+  (fused_q5k_q6k.rs:118, included at parallel_k.rs:498). There is no Q8_K path for them.
+- **Q4_0 / Q8_0.** Always Q8_0 activations (`fused_q4_0_q8_0_*`, `fused_q8_0_q8_0_parallel_matvec_into`). There is no
+  f32 path.
+- **Callers that pre-quantize whatever the scope says:**
+  - `fused_gate_up_q4k_into` (fused_gate_up.rs:176) uses Q8_K, except on crushed blocks.
+  - `forward_single_with_scratch` sets `use_q8k_path = hidden_dim % 256 == 0` (results.rs:541). It has no
+    non-test callers.
+  - The traced forward does the same (traced.rs:88).
 
 | command | source | CPU fn | activation path |
 |---|---|---|---|
-| `apr parity` (dense) | apr-cli parity_03.rs:185 | forward_single_with_cache | q8k_act (no wrapper) |
-| `apr parity --moe` | parity_moe.rs:110 | with_fp32_activations(forward) | fp32_act for Q4K; Q5K/Q6K still q8k |
-| `apr parity` hybrid/qwen35 | parity_hybrid.rs:268 | forward_single_qwen35 → fused_matmul_into (forward_qwen35.rs:977) | q8k_act (no wrapper); MoE arm → parity_moe |
-| `apr parity` per-op | parity_per_op.rs:85 | forward_single_with_cache | q8k_act (no wrapper) |
+| `apr parity` (dense) | apr-cli parity_03.rs:185 | forward_single_with_cache (honest path) | mixed: Q4_K on Q8_K (f32 on crushed blocks), Q5_K/Q6_K f32, Q4_0/Q8_0 Q8_0 |
+| `apr parity --moe` | parity_moe.rs:110 | with_fp32_activations(forward_single_qwen3_moe_with_cache) | fp32_act on Q4_K and Q6_K; Q4_0 tensors stay Q8_0 |
+| `apr parity` hybrid/qwen35 | parity_hybrid.rs:268 | forward_single_qwen35 → fused_matmul_into (forward_qwen35.rs:977) | mixed, as dense (no scope); MoE arm → parity_moe |
+| `apr parity` per-op | parity_per_op.rs:85 | forward_single_with_cache | mixed, as dense (no scope) |
 | `apr kernel parity` | kernel_parity.rs | attention tiled vs naive | N/A (not a forward pass) |
 | attn-parity-lint | attn_parity_lint.rs | consumes kernel-parity JSON | N/A |
 | quantize-flag parity | quantize_flag_parity.rs | argv parity | N/A |
 
-RQ-5 implication: only `--moe` compares an fp32-activation CPU reference; the other three forward-path
-commands compare GPU against a Q8K-activation CPU path unless DIRECT_FP32_GEMV=1 is exported — and even
-the `--moe` wrapper leaves Q5K/Q6K tensors on Q8K activations.
+The MoE forward reaches experts through `matvec_for_qtype` (qwen3_moe_load.rs:69). That calls
+`fused_q4k_parallel_matvec`, which wraps the `_into` above, so it honours the scope. Its QKV and output
+projections use `fused_matmul`. `SUPPORTED_EXPERT_QTYPES = [Q4_K, Q6_K]` (qwen3_moe_load.rs:84), so an
+expert tensor of any other qtype refuses on the CPU reference.
+
+Production CPU decode runs the same honest forward without the scope (sync_owned_quantized_02.rs:82/171,
+forward/batch_size.rs:63/98, apr_q4k_scheduler.rs:469). So "what users run" is the mixed path, not a pure `q8k_act`.
+
+RQ-5 implication (provisional default `fp32_act`, §11):
+- `fp32_act` is honest with no code change for Q4_K_M (Q4_K + Q6_K): run the honest or MoE forward token by
+  token inside the scope.
+- The label is false for the scratch and traced forwards, for fused gate/up, and for multirow without the env var.
+  The receipt must name the forward, and derive the per-qtype path from the trace instead of trusting the label
+  (FALSIFY-BPM-008, fixture f008d).
+- Q4_0/Q8_0 tensors keep a Q8_0 reference under either label, so they are recorded as `ref_mixed`.
 
 ## 12. L25 review: vacuous-pass holes (2026-10-03, origin/main 316dee2cd4, read-only)
 The draft gated the right quantities, but seven inputs could make a cell PASS without the check measuring anything. Each now has a planted falsifier in `backend-parity-matrix-v1` (BPM-009..015):
@@ -126,7 +163,7 @@ The draft gated the right quantities, but seven inputs could make a cell PASS wi
 | 1 | NaN in one prompt | `f32::min` returns the non-NaN operand, so a fold drops the NaN prompt. apr's cosine helpers (parity_per_op_table.rs:61, forward_error.rs:254) return 0.0 on a length mismatch or zero norm, but NaN on NaN logits [V] | A non-finite cosine REFUSES the receipt | BPM-009 |
 | 2 | Legs over different prompt sets | The triangle bound holds per prompt | Both legs carry `prompt_set_sha256` and `n`, which must match | BPM-010 |
 | 3 | Legs over different model files | Leg B then measures the file, not the engine | `model_sha256` is equal across all 3 runs | BPM-011 |
-| 4 | CPU cell C4 is its own reference | Same kernels on both sides read 1.0. `fp32_act` does not separate Q5K/Q6K (§11a), so the R3 NEON Q6K dot would meet itself | The reference `kernel_path` must differ per quantized tensor | BPM-012 |
+| 4 | CPU cell C4 is its own reference | Same kernels on both sides read 1.0. Q5K/Q6K have one CPU activation path (f32) under either label (§11a), so the R3 NEON Q6K dot would meet itself | The reference `kernel_path` must differ per quantized tensor | BPM-012 |
 | 5 | Prefill-final logits only | Never touches the KV cache or the M=1 decode GEMV, which is where the known 0.955 sits | Gate on prefill-final plus ≥ 8 teacher-forced decode positions | BPM-013 |
 | 6 | Adapter name denylist | An unlisted software adapter passes | `AdapterInfo.device_type = Cpu` ⇒ FALLBACK; names stay as a second check. Banner from `AdapterInfo.backend` (F3) | BPM-014 |
 | 7 | E2 over unequal token counts | An early EOS decodes fewer, shorter-context tokens | One `host_id`, fixed `n_gen`, EOS ignored on both engines | BPM-015 |

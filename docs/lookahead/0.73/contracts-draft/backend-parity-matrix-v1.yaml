@@ -23,7 +23,7 @@ metadata:
 equations:
   composed_leg_bound:
     formula: |
-      ref   = the ONE apr CPU run of this receipt, with cpu_ref_path in {fp32_act, q8k_act}
+      ref   = the ONE apr CPU run of this receipt; cpu_ref_path = bpm.cpu_ref_path (provisional S-4 default fp32_act, RQ-5)
       leg_a = min over prompts of cos(logits_apr_backend, logits_apr_cpu[ref])
       leg_b = min over prompts of cos(logits_apr_cpu[ref], logits_llamacpp_cpu)
       angle(x) = acos(x)
@@ -33,6 +33,8 @@ equations:
                  OR leg_a.prompt_set_sha256 != leg_b.prompt_set_sha256 OR leg_a.n != leg_b.n
                  OR model_sha256 differs between the backend, apr-CPU and llama.cpp runs
                  OR len(logits) differs between any two runs
+                 OR leg_a.cpu_ref_path != leg_b.cpu_ref_path OR either differs from bpm.cpu_ref_path
+                 OR act_path(ref, t) != cpu_ref_path for some tensor t whose qtype is not in bpm.ref_mixed_qtypes
                  OR (CPU cell) leg_a.kernel_path(backend) == leg_a.kernel_path(ref)
       positions = the prefill-final position AND >= 8 teacher-forced decode positions per prompt
                   AND total positions per leg >= thresholds.min_positions (64 at 316dee2cd4)
@@ -43,7 +45,8 @@ equations:
     - 'acos(0.995) = 5.732 deg; 2 x 5.732 = 11.464 < acos(0.98) = 11.478 deg, so
        two legs at 0.995 guarantee >= 0.98 end to end.'
     - 'The bound needs BOTH legs to share one apr CPU vector (triangle inequality on angles). Leg A on fp32_act and leg B on q8k_act composes nothing, and the receipt is REFUSED (FALSIFY-BPM-008).'
-    - 'cpu_ref_path is recorded in the receipt, never inferred. On main (aca6f2d7f6), apr parity-moe runs the CPU under with_fp32_activations (parity_moe.rs:110), while dense apr parity has no such scope and runs Q8_K unless DIRECT_FP32_GEMV=1 (parallel_k.rs:304). Today the two commands disagree on the reference.'
+    - 'cpu_ref_path is recorded in the receipt and checked against act_path(ref, t), which is derived from the reference run''s kernel_path precision. It is never inferred from the command. At main 316dee2cd4 (R1 §11a): only the single-row Q4_K kernel reads the scope (parallel_k.rs:304); crushed Q4_K blocks switch to f32 per call; multirow Q4_K reads only DIRECT_FP32_GEMV (q4k_q8k_multirow.rs:178); Q5_K/Q6_K are always f32; Q4_0/Q8_0 are always Q8_0; fused gate/up (fused_gate_up.rs:176) and the scratch and traced forwards (results.rs:541, traced.rs:88) pre-quantize to Q8_K whatever the scope says. apr parity-moe runs inside the scope (parity_moe.rs:110); dense apr parity does not, so its reference is mixed and neither label is true of it.'
+    - 'RQ-5 provisional S-4 default (C293.3, 2026-10-03, not a ruling): bpm.cpu_ref_path = fp32_act and bpm.ref_mixed_qtypes = [Q4_0, Q8_0], both data in thresholds.yaml with a basis. The reference is forward_single_with_cache (or the MoE forward) token by token inside with_fp32_activations. A different ruling flips one line; no M receipt exists before LIVE 0.70.1.'
     - 'Two legs at 0.99 only guarantee cos(16.21 deg) = 0.960: 0.99 per leg is NOT the gate.'
     - 'The gate reads the MIN over prompts; median and max are reported, never gated.'
     - 'Threshold basis (2026-10-03). thresholds.yaml is fail-closed: "a threshold without a basis is not a threshold". The 0.98 end-to-end floor reuses the MEASURED default basis (known-good 0.998607 / 0.998465 vs known-bad 0.950827 / 0.950611, n=5). That basis is GPU-vs-CPU within apr on dense qwen2.5, so applying it apr-vs-llama.cpp is an extrapolation [A]. The 0.995 per-leg floor is DERIVED from 0.98 by the triangle bound and has no basis of its own. The bpm: entry records both facts, and the first measured cells recalibrate it by amendment.'
@@ -51,7 +54,7 @@ equations:
     - 'L25: the MIN is NaN-propagating. Rust f32::min/f64::min return the non-NaN operand, so a fold with them drops a NaN prompt and the gate reads the 15 good ones. apr''s cosine helpers (parity_per_op_table.rs:61, forward_error.rs:254 at main 316dee2cd4) return 0.0 on a length mismatch or zero norm but NaN on NaN logits. A non-finite cosine REFUSES the receipt (FALSIFY-BPM-009).'
     - 'L25: the triangle bound is per prompt. Leg A over prompt set P and leg B over Q != P bounds nothing on the prompts outside P ∩ Q, so both legs carry prompt_set_sha256 and n, and they must match (FALSIFY-BPM-010).'
     - 'L25: all three runs read ONE model file (model_sha256 equal). Leg B over a different GGUF (re-quantized, or apr-converted) measures the file difference, not the engine (FALSIFY-BPM-011).'
-    - 'L25: on a CPU cell (C4) the backend IS the CPU. If the reference runs the same kernels, leg A is a self-comparison and reads 1.0 for free. The fp32_act scope does not separate them for Q5K/Q6K (§11a: only the Q4K kernel honours the flag), so R3''s NEON Q6K dot would be compared with itself. The reference must run a different kernel_path (scalar, or the C0 x86 reference logits) for every quantized tensor, or the receipt is REFUSED (FALSIFY-BPM-012).'
+    - 'L25: on a CPU cell (C4) the backend IS the CPU. If the reference runs the same kernels, leg A is a self-comparison and reads 1.0 for free. Q5K/Q6K have one CPU activation path, f32, under either label (§11a, corrected 2026-10-03), so R3''s NEON Q6K dot would be compared with itself. The reference must run a different kernel_path (scalar, or the C0 x86 reference logits) for every quantized tensor, or the receipt is REFUSED (FALSIFY-BPM-012).'
     - 'L25: final-position-of-prefill logits never exercise the KV cache or the decode kernels (M=1 GEMV). The known-bad 0.955 (FALSIFY-BPM-007) is a decode measurement. The gate reads prefill-final plus >= 8 teacher-forced decode positions per prompt, all fed the same token ids (FALSIFY-BPM-013).'
 
   speed_ratio_ci:
@@ -90,7 +93,8 @@ equations:
                   forward_trace_line }
       REQUIRE: llamacpp_sha = d1d3c3396 (the ruled pin)
       REQUIRE: forward_trace_line names the forward that ran (E3: the MoE forward)
-      E6 admissible(cell) <=> PASS_E1 AND PASS_E2 receipts on main   (pending PRM-001, RQ-3)
+      E6 admissible(cell) <=> PASS_E1 AND PASS_E2 receipts on main   (RQ-3 provisional S-4 default; PRM-001 must agree)
+      hybrid(cell)       => E1 may PASS; E2 and E6 report it as HYBRID, never as GPU   (RQ-4 provisional S-4 default)
     domain: 'one receipt'
     codomain: bool
     invariants:
@@ -142,10 +146,10 @@ falsification_tests:
   mutation: 'compare the backend against itself; the control must turn RED'
 - id: FALSIFY-BPM-008
   rule: both legs share one CPU reference run (K19)
-  prediction: 'A receipt with leg_a.cpu_ref_path = fp32_act and leg_b.cpu_ref_path = q8k_act (or either missing) is REFUSED, not scored.'
+  prediction: 'A receipt with leg_a.cpu_ref_path = fp32_act and leg_b.cpu_ref_path = q8k_act (or either missing) is REFUSED, not scored. So is an equal pair that differs from bpm.cpu_ref_path (f008c), and a pair labelled fp32_act whose reference trace shows a Q4_K tensor on Q8_K activations, or a Q4_0 tensor that bpm.ref_mixed_qtypes does not list (f008d).'
   test: 'NOT YET WRITTEN — lands with P1, the receipt checker'
   if_fails: 'a GPU path that matches FP32 activations (cos 1.0) is scored against a Q8_K CPU (quoted 0.985, #3714) and FAILS E1 for the CPU rounding, or a mixed pair PASSES with no valid bound'
-  mutation: 'let the checker accept per-leg cpu_ref_path; the planted mixed receipt must turn it RED'
+  mutation: 'let the checker accept per-leg cpu_ref_path (f008a turns it RED); accept any equal pair (f008c turns it RED); trust the label without the trace act_path (f008d turns it RED)'
 - id: FALSIFY-BPM-009
   rule: a non-finite per-prompt cosine REFUSES the receipt (L25)
   prediction: 'A fixture with 15 prompts at cos 0.999 and one prompt with NaN logits is REFUSED, never PASS.'
@@ -219,7 +223,7 @@ proof_obligations:
 
 - type: invariant
   property: 'Both legs read the same apr CPU reference (FALSIFY-BPM-008)'
-  formal: 'forall r: r.leg_a.cpu_ref_path = r.leg_b.cpu_ref_path and defined'
+  formal: 'forall r: r.leg_a.cpu_ref_path = r.leg_b.cpu_ref_path = bpm.cpu_ref_path and forall t in ref_tensors(r): act_path(t) = r.cpu_ref_path or qtype(t) in bpm.ref_mixed_qtypes'
 - type: invariant
   property: 'No non-finite cosine reaches the gate (FALSIFY-BPM-009)'
   formal: 'PASS_E1 => forall p, t: is_finite(cos_a(p,t)) and is_finite(cos_b(p,t))'
@@ -255,4 +259,4 @@ verification_summary:
   proven: 0
   tested: 0
   status: proposed
-  notes: 'Draft by la-73 (L3). No ticket yet; the harness and the tests land with R1. L25 review 2026-10-03 at main 316dee2cd4 added BPM-009..015 (7 vacuous-pass holes). L25 on R4/R5 2026-10-03 at main 316dee2cd4 added BPM-016 (per-op hybrid) and BPM-017 (skipped F2 guard).'
+  notes: 'Draft by la-73 (L3). No ticket yet; the harness and the tests land with R1. L25 review 2026-10-03 at main 316dee2cd4 added BPM-009..015 (7 vacuous-pass holes). L25 on R4/R5 2026-10-03 at main 316dee2cd4 added BPM-016 (per-op hybrid) and BPM-017 (skipped F2 guard). C293.3 2026-10-03: RQ-3, RQ-4 and RQ-5 run on provisional S-4 defaults; BPM-008 now pins the value and checks the trace act path (f008c, f008d).'

@@ -71,7 +71,7 @@ equations:
     domain: 'the R1 receipt op_placement map'
     codomain: bool
     invariants:
-    - 'Until attention, RoPE, LM head and argmax run on the device, every wgpu receipt is hybrid: true (RQ-4 pending).'
+    - 'Until attention, RoPE, LM head and argmax run on the device, every wgpu receipt is hybrid: true (RQ-4 provisional S-4 default: E1 may pass, and E2/E6 name it HYBRID).'
     - 'L25: an op_placement map that omits ops has no host ops, so hybrid reads false. The map keys must equal the full decode op set {embed, rmsnorm, qkv_gemv, qk_norm, rope, attention, o_gemv, ffn_gemv, lm_head, sample}. A missing key REFUSES the receipt (FALSIFY-WGF-009).'
 
 falsification_tests:
