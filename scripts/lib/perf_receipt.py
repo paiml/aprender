@@ -1645,23 +1645,26 @@ def _selftest_p1_load_cold_start_rows(case):
         return run
     health = "http://127.0.0.1:%d/health" % P1_LOAD["llama"]["port"]
     rows = []
+    # Each row's name is written out whole, so a falsifier list can cite it.
     for name, lane, edit, says in (
-            ("time-alone", "apr", time_alone, "without cold_start_resolution_ms"),
-            ("no-bracket", "llama", _p1_load_edit("llama", cold_start_resolution_ms=None),
+            ("load_cold_start_time_alone_is_unmeasured", "apr", time_alone,
              "without cold_start_resolution_ms"),
-            ("no-probe", "llama", _p1_load_edit("llama", cold_start_probe=None),
-             "no cold_start_probe"),
-            ("probe-no-url", "llama", _p1_load_edit(
+            ("load_cold_start_no_bracket_is_unmeasured", "llama",
+             _p1_load_edit("llama", cold_start_resolution_ms=None),
+             "without cold_start_resolution_ms"),
+            ("load_cold_start_no_probe_is_unmeasured", "llama",
+             _p1_load_edit("llama", cold_start_probe=None), "no cold_start_probe"),
+            ("load_cold_start_probe_no_url_is_unmeasured", "llama", _p1_load_edit(
                 "llama", cold_start_probe={"url": "", "status": 200}), "names no URL"),
-            ("probe-503", "llama", _p1_load_edit(
+            ("load_cold_start_probe_503_is_unmeasured", "llama", _p1_load_edit(
                 "llama", cold_start_probe={"url": health, "status": 503}), "answered 503"),
-            ("probe-no-status", "llama", _p1_load_edit(
+            ("load_cold_start_probe_no_status_is_unmeasured", "llama", _p1_load_edit(
                 "llama", cold_start_probe={"url": health, "status": None}), "answered None")):
         load, why = case(name, _p1_load_pass(edit))
         sides = dict(zip(("apr", "llama"), _p1_load_sides(load)))
         hit, other = sides[lane], sides["llama" if lane == "apr" else "apr"]
         rows.append(_p1_load_row(
-            "load_cold_start_%s_is_unmeasured" % name.replace("-", "_"),
+            name,
             load is not None and load.get("status") == "UNMEASURED"
             and hit.get("status") == "UNMEASURED" and "load_ms" not in hit
             and any(says in r for r in hit.get("status_reasons") or [])
