@@ -94,7 +94,10 @@ form, and the bootstrap's 5th percentile stays the lower bound. V1's figure is t
 bound. It is an upper bound because a probe only sees that the server became ready somewhere
 between the last probe that failed and the first that passed. That measured bracket travels with
 it as its resolution; the poll interval is only its floor once a probe has failed, and is carried
-separately. The page-cache mode travels with it too: a load from a warm page cache and one from
+separately. A time without its bracket bounds nothing, and it is what a client that times the start
+but does not bracket readiness writes, so such a report leaves the side unmeasured. So does a time
+stamped on a probe that was not 2xx: the comparator answers 503 while it loads, so that time marks
+its bind, not its load. The page-cache mode travels with it too: a load from a warm page cache and one from
 an evicted cache are different measurements of the same server. Both lanes read the same GGUF, so
 the second load would read the first one's pages unless the state is declared and witnessed. The
 mode is therefore declared once for the block, which makes the two sides like-for-like by shape
