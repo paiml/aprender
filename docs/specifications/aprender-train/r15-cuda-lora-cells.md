@@ -144,8 +144,10 @@ C5 at 150, R15 is 450: R15a 210, R15b 240.
     all wait on it. Ranking v2 and v3 sized no row for it.
 
   Proposed as R21 in spec §3: a correct CUDA GDN block, forward and backward, with LoRA on the GDN projections
-  (attn_qkv, attn_gate, ssm_out in qwen35-qlora-e2e-v1), checked against the CPU R3 oracle. K̂ 360–480 `[A]` until
-  spike S-R21: causal conv1d, the q/k L2 norm, the gates, a sequential delta-rule scan with checkpointed state, and
+  (attn_qkv, attn_gate, ssm_out in qwen35-qlora-e2e-v1), checked against the CPU R3 oracle. K̂ was 360–480 `[A]` before
+  spike S-R21, for causal conv1d, the q/k L2 norm, the gates, a sequential delta-rule scan with checkpointed state, and
   the gated RMSNorm, each forward and backward. A chunked kernel fast enough to race fla is R14's job. Running the
   GDN layers on the CPU inside the CUDA pipeline would be correct but slow (S-R4a: 7.2 s a step for 5 tokens at 0.8B
-  on the CPU), so the estimate does not assume it.
+  on the CPU), so the estimate does not assume it. Spike S-R21 (2026-10-03, `r21-cuda-qwen35-hybrid-block.md`)
+  sized R21 at 400 `[A]` plus 25 `[A]` for bf16 on T2's path. It widened the row to the gated full-attention
+  layers, whose output gate and partial RoPE the CUDA trainer also lacks.

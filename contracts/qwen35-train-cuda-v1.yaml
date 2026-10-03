@@ -1,0 +1,103 @@
+metadata:
+  kind: training-loop
+  version: 1.0.0
+  created: '2026-10-03'
+  author: PAIML Engineering (la-72, APR-LOOKAHEAD-001 L2, train 0.72)
+  description: >-
+    R21 (0.72): the Qwen3.5 hybrid block trains on CUDA. That covers the Gated DeltaNet mixer and
+    the gated full-attention layer, forward and backward, with LoRA on attn_qkv, attn_gate and
+    ssm_out. Each piece must equal the CPU oracle of R2/R3 (la-72/fold-r2r3 @5a837dfa3b:
+    transformer/gdn.rs, gdn_backward.rs, qwen35_layer.rs). At 316dee2cd4 serving's CUDA GDN
+    kernels are forward only, no GDN backward kernel exists, and the CUDA trainer's RoPE rotates
+    the full head with no output gate, so Qwen3.5's partial RoPE and gated attention are missing
+    too. PROPOSED from the S-R21 desk spike
+    (docs/specifications/aprender-train/r21-cuda-qwen35-hybrid-block.md). Nothing is built or run.
+  references:
+  - docs/specifications/aprender-train/r21-cuda-qwen35-hybrid-block.md
+  - docs/specifications/aprender-train/train-what-you-serve-0.72.md §3 (row 4a, R21)
+  - docs/specifications/aprender-train/r15-cuda-lora-cells.md (C1 lora_backward helper; C5 bf16 GEMM)
+  - qwen35-train-gdn-v1 on la-72/fold-r2r3 (the CPU oracle's own forward parity and gradcheck rows, QTG-001..009)
+  - crates/aprender-gpu/src/kernels/gdn/delta_rule_scan.rs (serving's sequential scan, forward only)
+  - crates/aprender-gpu/src/kernels/elementwise/rope/neox.rs (BatchedRopeNeoxKernel, full-width rotation)
+  depends_on:
+  - lora-gradient-flow-v1
+status: PROPOSED
+equations:
+  gdn_recurrence:
+    formula: 'S̃_t = e^{g_t}·S_{t−1};  S_t = S̃_t + β_t (v_t − S̃_t k_t) k_tᵀ;  o_t = S_t q_t / √d_k'
+    domain: 'per value head h with key head h mod H_k (the GGUF tiled order); S ∈ R^{d_v × d_k}; t = 1..T'
+    invariants:
+    - S_0 = 0 for every sequence; no state crosses from one sequence of the batch to the next
+    - the scan state is f32 on every path, including T2's bf16 path
+    preconditions:
+    - weights in GGUF conventions (ssm_a = −exp(A_log), tiled value-head order), as the CPU oracle loads them
+  reverse_scan:
+    formula: 'dS += s·dO_t q_tᵀ;  dq_t = s·S_tᵀ dO_t;  dδ = dS k_t;  dv_t = β_t dδ;  dβ_t = Σ_j dδ_j (v_t − S̃_t k_t)_j;  dk_t = dSᵀ δ_t − β_t S̃_tᵀ dδ;  dS̃ = dS − β_t dδ k_tᵀ;  dg_t = ⟨dS̃, S̃_t⟩;  dS ← e^{g_t} dS̃'
+    domain: 't = T..1, s = 1/√d_k, δ_t = β_t (v_t − S̃_t k_t), dS = 0 before step T (no final-state gradient)'
+    invariants:
+    - dq and dk are reduced over the value heads that share a key head in a fixed order; no float atomics
+  checkpointed_replay:
+    formula: '∀ c ∈ {1, 8, T}: grads(checkpoint every c steps) ≡ grads(full history), bitwise'
+    domain: 'the replay of each c-step chunk calls the same step code as the forward'
+    invariants:
+    - checkpoint memory per layer = batch·(T/c + c)·H_v·d_v·d_k·4 B (576 MiB at batch 4, T 512, c 8 on the 4B)
+  gated_attention:
+    formula: 'o = σ(gate) ⊙ softmax(rope_p(q̂) rope_p(k̂)ᵀ / √d_h + mask) V;  rope_p rotates dims [0, d_h/4) in NeoX halves and passes the rest'
+    domain: 'Qwen3.5 full-attention layers: q and gate interleaved per head in attn_q, q̂ and k̂ after q_norm and k_norm, GQA in contiguous groups'
+  frozen_set:
+    formula: '∀ θ ∉ {LoRA A, LoRA B}: θ_after = θ_before, bitwise'
+    domain: 'ssm_a, dt_bias, conv1d, ssm_norm, ssm_alpha, ssm_beta and every base projection'
+proof_obligations:
+- type: equivalence
+  property: The CUDA GDN mixer forward is the CPU oracle's
+  formal: 'max|o^{cuda} − o^{cpu}| ≤ 1e-5 · max(scale, 1)'
+  tolerance: 1.0e-05
+  applies_to: all
+- type: equivalence
+  property: The CUDA GDN mixer backward is the CPU oracle's
+  formal: '‖g^{cuda} − g^{cpu}‖₂ / ‖g^{cpu}‖₂ ≤ 1e-4 for dX and each LoRA gradient (f32)'
+  tolerance: 1.0e-04
+  applies_to: all
+- type: invariant
+  property: Checkpointing changes no bit of the gradients
+  formal: 'grads_c ≡ grads_full for c ∈ {1, 8, T}'
+  applies_to: all
+- type: equivalence
+  property: Gated full attention on CUDA is the CPU layer's, forward and backward
+  formal: 'max|y^{cuda} − y^{cpu}| ≤ 1e-5 · max(scale, 1) ∧ rel L2 of each gradient ≤ 1e-4'
+  tolerance: 1.0e-04
+  applies_to: all
+- type: invariant
+  property: A hybrid CUDA step trains only the adapters
+  formal: 'frozen_set holds ∧ |L_1^{cuda} − L_1^{cpu}| ≤ 1e-4 · |L_1^{cpu}|'
+  applies_to: all
+falsification_tests:
+- id: FALSIFY-QTC-001
+  rule: The CUDA GDN mixer's training forward equals the CPU oracle
+  prediction: 'tiny fixture (2 key heads, 4 value heads, d_k = d_v = 8, conv kernel 4, T = 13, batch 2, random weights, fixed seed), zero state per sequence: max abs diff to gdn_mixer_forward ≤ 1e-5·max(scale, 1). Planted: carrying the state from sequence 0 into sequence 1 turns it RED, and so does reading key head h / 2 (grouped) instead of h mod 2 (tiled)'
+  test: '[U] not written; needs cargo + CUDA after LIVE 0.70.1, GPU lock around the test binary only'
+  if_fails: 'the training forward differs from the oracle that R2 proved against serving: fix the CUDA side before any backward work'
+- id: FALSIFY-QTC-002
+  rule: The CUDA GDN mixer backward equals the CPU oracle
+  prediction: 'same fixture: dX and the LoRA gradients of attn_qkv, attn_gate and ssm_out match gdn_mixer_backward within relative L2 1e-4 in f32. Planted: dropping the −β_t·S̃_tᵀ·dδ term of dk turns it RED, and so does summing dq and dk over the grouped value-head pairs (0,1),(2,3) instead of the tiled pairs (0,2),(1,3)'
+  test: '[U] not written; needs cargo + CUDA after LIVE 0.70.1, GPU lock around the test binary only'
+  if_fails: 'the reverse scan or a pointwise backward is wrong; bisect by comparing dq, dk, dv, dβ and dg per step against gated_delta_scan_backward'
+- id: FALSIFY-QTC-003
+  rule: Checkpointing the scan state changes no bit of the gradients
+  prediction: 'T = 13 (the c = 8 chunks are 8 and 5 steps long): gradients with checkpoints every c ∈ {1, 8, 13} steps are bitwise equal to the full-history gradients. Planted: restarting each chunk replay one step late turns it RED'
+  test: '[U] not written; needs cargo + CUDA after LIVE 0.70.1, GPU lock around the test binary only'
+  if_fails: 'the replay does not run the forward step code, or a chunk boundary is off by one'
+- id: FALSIFY-QTC-004
+  rule: Gated full attention on CUDA equals the CPU layer, forward and backward
+  prediction: 'tiny Qwen3.5 attention layer (head_dim 16, so 4 rotary dims; 4 query heads, 2 KV heads; interleaved q/gate, q_norm, k_norm, sigmoid output gate), T = 9: output within 1e-5·max(scale, 1) of the CPU layer (partial_neox_rope_seq), every gradient within relative L2 1e-4. Planted: full-width RoPE, which is BatchedRopeNeoxKernel at 316dee2cd4, turns it RED, and so does dropping the output gate'
+  test: '[U] not written; needs cargo + CUDA after LIVE 0.70.1, GPU lock around the test binary only'
+  if_fails: 'the 8 full-attention layers of the 4B would train against a different function than the one served'
+- id: FALSIFY-QTC-005
+  rule: A hybrid CUDA step trains only the adapters, and its first loss is the CPU loss
+  prediction: '4-layer hybrid model (3 GDN layers + 1 full attention, interval 4), LoRA on every target, 2 optimizer steps: every tensor other than LoRA A and B is bitwise unchanged, every B is off zero, every A is off its init after step 2, and the step-1 loss equals loss_and_grads within 1e-4 relative. Planted: making conv1d trainable turns it RED'
+  test: '[U] not written; needs cargo + CUDA after LIVE 0.70.1, GPU lock around the test binary only'
+  if_fails: 'a frozen GDN parameter is being stepped, or the hybrid schedule runs a layer kind in the wrong place'
+qa_gate:
+  certeza:
+    min_score: 0.0
+    note: Gates are the parity bounds and bit-identities above; no composite score is claimed.

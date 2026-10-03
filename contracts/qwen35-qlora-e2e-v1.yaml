@@ -13,6 +13,10 @@ metadata:
     so an unguarded QQE-004 would compare an NF4 CUDA run against a CPU run. Both runs must now
     record device and precision (train-run-receipt-v1 1.1.0), and the reference needs R15 cells C4
     (fp32 frozen base), or C5 if it is bf16 (docs/specifications/aprender-train/r15-cuda-lora-cells.md).
+    1.1.0 also adds QQE-007/008 (S-R21, 2026-10-03): GGUF stores Qwen3.5's value heads tiled (h mod
+    H_k), HF stores them grouped (h / ratio), and at 316dee2cd4 neither apr import nor PEFT export
+    converts between the two (docs/specifications/aprender-train/r21-cuda-qwen35-hybrid-block.md,
+    §Value-head order).
   references:
   - docs/specifications/aprender-train/train-what-you-serve-0.72.md §R4
   - contracts/qwen35-train-gdn-v1.yaml
@@ -31,12 +35,13 @@ equations:
     - The run is reproducible from (recipe, data sha, seed, binary sha)
     - Every loss value finite
     preconditions:
-    - base is Qwen3.5-4B .apr imported by a released apr (sha recorded)
+    - base is Qwen3.5-4B .apr imported by a released apr (sha recorded); an HF-sourced base is converted to GGUF conventions (tiled value heads, ssm_a) or refused (QQE-008)
   adapter_serve_identity:
     formula: 'cos(logits^{train, merged}(x), logits^{serve, base+adapter}(x)) ≥ 0.999 ∧ argmax equal'
     domain: 3 fixed prompts, after training
     invariants:
     - The adapter file is standard PEFT layout (lora-merge-peft-layout-v1)
+    - 'Standard PEFT means HF order: the value rows of attn_qkv''s B, the rows of attn_gate''s B and the columns of ssm_out''s A are written grouped, although the trainer holds them tiled (QQE-007). This identity cannot see that permutation, because the trainer and the GGUF server share the tiled order'
     preconditions:
     - adapter written by the run under test
   adapter_gradient_reference:
@@ -100,6 +105,16 @@ falsification_tests:
   prediction: 'r16, alpha 32, all 150 targets, AdamW lr 1e-4, one 5-token sentence, 8 steps: the loss falls every step and ends below half the start (measured 8.881 → 0.002, about 7.2 s per step on CPU)'
   test: 'aprender-train transformer::qwen35_model::tests::lora::real_model_lora_adamw_descends (ignored; QWEN35_GGUF)'
   if_fails: 'a regression in the backward, the merge or the optimiser: fix it on CPU before spending GPU time'
+- id: FALSIFY-QQE-007
+  rule: The PEFT adapter stores the GDN targets in HF's grouped value-head order
+  prediction: 'tiny Qwen3.5-shaped fixture (2 key heads, 4 value heads, random weights, fixed seed): random LoRA A and B on attn_qkv, attn_gate and ssm_out in the trainer''s tiled order, exported as PEFT. A grouped-order reference forward (key head h / 2, as HF repeat_interleave) on the base permuted into HF order plus the exported adapter equals the trainer''s merged forward within 1e-5. Planted: exporting the tiled rows unpermuted, which is what peft_export.rs:100-110 does at 316dee2cd4, turns it RED while adapter_serve_identity stays green'
+  test: '[U] not written; CPU only, needs cargo after LIVE 0.70.1'
+  if_fails: 'HF, vLLM and apr''s own safetensors path (grouped, linear_attn.rs:218-233) apply 30 of the 4B''s 32 value heads'' adapter deltas to the wrong head'
+- id: FALSIFY-QQE-008
+  rule: A Qwen3.5 base in HF conventions is converted or refused before training, never trained as it is
+  prediction: 'the same tiny random checkpoint written twice, once in GGUF conventions (tiled value heads, ssm_a) and once in HF conventions (grouped value heads, A_log, as apr import of HF safetensors writes it at 316dee2cd4): either the step-1 loss of the HF copy equals the GGUF copy''s within 1e-6 relative, or the HF copy is refused before step 1 with exit ≠ 0, a message naming the convention, and no adapter written. Planted: a loader that maps the names but skips the value-head permutation trains with a different step-1 loss, which turns it RED'
+  test: '[U] not written; CPU only, needs cargo after LIVE 0.70.1'
+  if_fails: 'R4 or T2 trains the GDN layers against the wrong head map without any error'
 qa_gate:
   certeza:
     min_score: 0.0

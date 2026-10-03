@@ -398,7 +398,11 @@ up, a new size changes its place, and a row already held on a branch drops out o
 - **R21, GDN on CUDA, is new.** T2, R4 and R6 on qwen35 train Qwen3.5 on CUDA, and 24 of the 4B's 32 layers are
   GDN. R15's cells are dense only, R2/R3's GDN is CPU only (`fold-r2r3`; its four GDN files never mention CUDA), and
   serving's CUDA GDN is forward only. S-R15 named the need at shaping, but neither v2 nor v3 sized a row for it.
-  K̂ 360–480 `[A]` until spike S-R21 (`r15-cuda-lora-cells.md` §Consequences).
+  Spike S-R21 (2026-10-03, `r21-cuda-qwen35-hybrid-block.md`) sized it at 400 `[A]` (325–465) in f32, plus 25
+  `[A]` for bf16 on T2's path. It also widened the row to the whole hybrid block: the CUDA trainer has neither the
+  attention output gate nor the partial RoPE that the 4B's 8 full-attention layers need. Its falsifiers are
+  `qwen35-train-cuda-v1` QTC-001..005. The spike also found that GGUF and HF order Qwen3.5's value heads
+  differently and nothing converts between them, which R4's PEFT export must handle (QQE-007/008).
 
 State is read from the branch tips on 2026-10-03. origin/main is `316dee2cd4` and no la-72 branch has landed. K̂ is
 minutes of worker time still left; `[A]` marks an assumption.
@@ -409,7 +413,7 @@ minutes of worker time still left; `[A]` marks an assumption.
 | 2 | R12 training receipts | TRR 1.1.0 fields on the shared writer | 45 `[A]` | la-impl, `la/r12-train-receipt` @68747b344e (TRR 1.0.0) |
 | 3 | R2 GDN forward | QTG-001 parity vs serve | 90 | `fold-r2r3` @5a837dfa3b; one-line Cargo.toml conflict with main |
 | 4 | R3 GDN backward | QTG-003/006 gradcheck | 120 | in `fold-r2r3` (`r3-backward` @8a9f4f0104) |
-| 4a | R21 GDN on CUDA | S-R21 sizing spike (desk), then forward parity against the R2 CPU forward | 360–480 `[A]` | new 2026-10-03, no branch; the CPU oracle is `fold-r2r3`; cargo after LIVE 0.70.1 |
+| 4a | R21 GDN on CUDA (the hybrid block) | QTC-001 training forward = the R2 CPU forward | 400 `[A]`, +25 bf16 on T2's path | S-R21 desk spike done 2026-10-03 (`r21-cuda-qwen35-hybrid-block.md`); no branch; oracle `fold-r2r3`; LoRA wiring needs R15a's C1; cargo after LIVE 0.70.1 |
 | 5 | R15a CUDA LoRA, C1–C4 | C1 `lora_backward` extraction (FALSIFY-LORA_GRADIENT_FLOW_V1_004) | 210 `[A]` | cells and falsifiers on `la-72/r15-receipt-ext`; cargo after LIVE 0.70.1 |
 | 6 | R4 QLoRA 4B end to end | QQE-001..006 | 90 | blocked on R2, R3, R21, R15a; contract 1.1.0 pins the QQE-004 reference's precision and device |
 | 7 | R5 Unsloth harness | Unsloth-side runs (`r5-unsloth-ft-runbook.md`) | GPU only | desk-done, `r5-apr-adapter` @7aeb557271; needs train-idle |
@@ -436,8 +440,9 @@ R12 receipts ──────────────────────�
                                    └─► R15b C5–C7 (C5 = RQ-5) ─► R5 T2 verdict ─► R14
 R11 TIS ◄── TDD normaliser (PRM C7–C9) ─────► gates every R4/R6 run counted for 0.72
 ```
-T2 trains Qwen3.5-4B, so its apr side needs R2, R3 and R21 as well as R15a and R15b. It does not need R4. R21 is
-the largest row on both R4's path and T2's, and the least certain one.
+T2 trains Qwen3.5-4B, so its apr side needs R2, R3 and R21 as well as R15a and R15b. It does not need R4. R21
+(400 + 25 `[A]`) is the largest row on both R4's path and T2's. Its LoRA wiring calls R15a's C1 helper, so C1
+lands before R21's projection cell.
 
 ## §4 Rulings (S-4)
 Ruled by the cop on 2026-09-27 at 12:11Z (full text in the handoff file):
