@@ -100,6 +100,24 @@ R4, and T2 needs R15b.
 - **Cell:** NF4 base; LoRA r16 on attention, MLP and GDN projections; 1,000-sample pinned set; seed 42; 200 steps; RTX 4090.
 - **Gates:** loss(last 10) ≤ 0.9 × loss(first 10), all finite. Served base+adapter equals the training-side merged forward
   (cos ≥ 0.999, equal argmax).
+- **Served side and merged file `[V]` (read at `316dee2cd4`):**
+  - apr serves Qwen3.5 only from a qwen35 GGUF. `run`, `chat` and `serve` load no adapter; a Modelfile `ADAPTER` line
+    is printed (`modelfile/mod.rs:122`) and never applied. QQE-003's served side is therefore the merged model exported
+    as a GGUF, which needs #4418 (row 14).
+  - The merged file comes from `apr finetune merge` (`finetune_display_next_validate.rs:469`). It works on files: each
+    adapter pair is added to the base tensor whose name it matches (`adapter_pair_names`, :213), and every other tensor
+    is copied. The file keeps the base's HF conventions, provided the adapter is in HF order (QQE-007).
+  - The trainer's own merge (`Qwen35Lora::merge_into`) is in memory and in GGUF conventions. Nothing writes it, and
+    nothing should: those values under HF names would make the GGUF export apply #4418's transforms a second time.
+  - Three wrong merges are written with exit 0, and `verify_merged_runnable` passes each:
+    - GDN targets named the GGUF way (`attn_qkv`, `attn_gate`, `ssm_out`) beside HF-named attention and MLP targets.
+      `gguf_proj_to_hf` maps only the seven llama projections, so the GDN deltas are dropped.
+    - A PEFT-named adapter (`lora_A.weight`) matches nothing, and the zero-match refusal counts only `.lora_a` names,
+      so the output is the base.
+    - A safetensors adapter with no `lora_alpha` in its header or sidecar is merged at alpha 16. At S-R4a's r16 and
+      alpha 32, that halves the delta.
+  - QQE-003's cosine of 0.999 on logits may not see a LoRA delta the merge dropped. QQE-009 (PROPOSED) checks the merge
+    tensor by tensor and plants all three.
 - **Planted:** a zero step (lr = `f32::MIN_POSITIVE`) must FAIL the loss gate with bit-identical losses. Not lr = 0: the
   in-tree AdamW panics on lr = 0, and a crash reads as the falsifier firing (S-R4a). The receipt names the device from a trace line (CLAUDE.md verification rule 2).
 - **Spike S-R4a (2026-09-27, `la-72/r3-backward` @045a7edb73) — does LoRA + AdamW over the R3 backward train the real
@@ -419,7 +437,7 @@ minutes of worker time still left; `[A]` marks an assumption.
 | 4a | R21 GDN on CUDA (the hybrid block) | QTC-001 training forward = the R2 CPU forward | 400 `[A]`, +25 bf16 on T2's path | S-R21 desk spike done 2026-10-03 (`r21-cuda-qwen35-hybrid-block.md`); no branch; oracle `fold-r2r3`; LoRA wiring needs R15a's C1; cargo after LIVE 0.70.1 |
 | 4b | HF-convention loader | QQE-008: the HF copy's step-1 loss = the GGUF copy's, or a refusal | 25 `[A]`, +20 if #4418 has not landed | new 2026-10-03, no branch; calls #4418's `transform_qwen35_tensor` (`m0694/4418-qwen35-gguf-main` @1af0e3cc11); on R4's path and T2's; cargo after LIVE 0.70.1 |
 | 5 | R15a CUDA LoRA, C1–C4 | C1 `lora_backward` extraction (FALSIFY-LORA_GRADIENT_FLOW_V1_004) | 210 `[A]` | cells and falsifiers on `la-72/r15-receipt-ext`; cargo after LIVE 0.70.1 |
-| 6 | R4 QLoRA 4B end to end | QQE-001..007 | 90 + 15 `[A]` | blocked on R2, R3, R21, R15a, 4b; contract 1.1.0 pins the QQE-004 reference's precision and device and adds QQE-007, the export permutation (the +15) |
+| 6 | R4 QLoRA 4B end to end | QQE-001..007, QQE-009 | 90 + 15 + 10 `[A]` | blocked on R2, R3, R21, R15a, 4b; QQE-003 also needs #4418 (row 14), because apr serves Qwen3.5 only from a GGUF and loads no adapter; contract 1.1.0 pins the QQE-004 reference's precision and device, adds QQE-007, the export permutation (the +15), and proposes QQE-009, a strict `apr finetune merge` (the +10) |
 | 7 | R5 Unsloth harness | Unsloth-side runs (`r5-unsloth-ft-runbook.md`) | GPU only | desk-done, `r5-apr-adapter` @7aeb557271; needs train-idle |
 | 8 | R15b CUDA LoRA, C5–C7 | C6 flags and receipt (with R12), C7 timed window; C5 bf16 per RQ-5 | 240 `[A]` | contracts apr-finetune-canonical-task-v1 1.1.0, TRR 1.1.0 |
 | 9 | R10 round-trip | QFR-003 self-describing export | 40 `[A]` | `fold-r10-qfr` @6b13da980f (QFR-001/002/003/005); QFR-004 is #4418 |
@@ -427,7 +445,7 @@ minutes of worker time still left; `[A]` marks an assumption.
 | 11 | R11 sealed ingress | TIS-002 planted perturbed item | 40 `[A]` + the TDD normaliser | `fold-tis` @9fed5c27db (TIS-001/003/004/005); TIS-002 waits on a foreign branch |
 | 12 | R6 distill batch | DBH refusal, then real batching | 15 + 90 | `fold-dbh-a` @2cfe655b98, `fold-dbh-b` @df5e4d74f6, GPU halves `gpu-falsifiers` @e890928f4e; 3 Definition-of-Ready tests, plus R18's 3 |
 | 13 | R7 merge | MOF-002/003 APR writer | 30 `[A]` | `fold-mof` @17fbe022eb; Definition of Ready: FWD-001's path, FWD-002..004 unwritten |
-| 14 | R9 #4418 GGUF name map | — | owned by 0.71 | fix not on main at `316dee2cd4`; if it slips, R10's GGUF legs and T4/T5 slip with it, and row 4b copies its transforms (+20 `[A]`) |
+| 14 | R9 #4418 GGUF name map | — | owned by 0.71 | fix not on main at `316dee2cd4`; if it slips, R10's GGUF legs and T4/T5 slip with it, R4's QQE-003 has no served side, and row 4b copies its transforms (+20 `[A]`) |
 | 15 | R8 GDN quantize policy | — | — | `79/r8-gdn-quant-policy` |
 | 16 | R17 memory, measured | peak-memory run on the 4090 | 30 `[A]` | needs GPU at train-idle |
 | 17 | R18 vocab alignment | — | — | `76/0.72-r18-vocab-cell`; 3 Definition-of-Ready tests shared with R6 |
@@ -593,6 +611,9 @@ as a refusal. It is honest, but it is not T1-green.
   - QFR-006 (PROPOSED 2026-10-03): the exported GGUF computes the source's function. An export that maps the names and
     skips #4418's value transforms passes QFR-001..004, so this row compares the export with llama.cpp's own conversion
     of the same snapshot, tensor by tensor and by `apr eval` perplexity.
+  - QFR-006 checks the export, not the merge. A merged file that lost the GDN deltas, or carries them at half scale,
+    exports and converts identically in apr and in llama.cpp, so QFR-001..006 stay green on it. QQE-009
+    (`qwen35-qlora-e2e-v1`) checks the merge.
 - **Statistic:** the **minimum** per-tensor cosine over all tensors, never the mean. It uses `apr diff --values
   --limit <|T|>`. The default `--limit 10` samples too few tensors, and QFR-002 guards against that.
 - **Model:** the trained 4B from the T1 finetune row, after the 0.8B dev cell is green. The GGUF legs and QFR-006 need

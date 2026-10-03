@@ -22,6 +22,12 @@ metadata:
     QQE-007/008 use 3 key heads and 6 value heads. With 2 and 4 the value-head permutation is its own inverse,
     so neither row could catch it applied backwards. The 0.8B and the 2B have 16 key and 16 value heads, so the
     permutation is the identity there, and the 0.8B rows (QQE-005/006) cannot see the head order at all.
+    QQE-009 (PROPOSED 2026-10-03): apr serves Qwen3.5 only from a GGUF and loads no adapter, so the served side is
+    the merged file, written by apr finetune merge (apr-cli finetune_display_next_validate.rs:469). It matches
+    adapter tensors to base tensors by name (adapter_pair_names, :213), and at 316dee2cd4 it writes three wrong
+    merges without error: a partial merge, a PEFT-named adapter that matches nothing, and an adapter with no
+    lora_alpha merged at alpha 16. QQE-009 checks the merge tensor by tensor. The version stays 1.1.0: no row of
+    this file has landed.
   references:
   - docs/specifications/aprender-train/train-what-you-serve-0.72.md §R4
   - contracts/qwen35-train-gdn-v1.yaml
@@ -29,6 +35,7 @@ metadata:
   - contracts/lora-merge-forward-equivalence-v1.yaml
   - contracts/train-run-receipt-v1.yaml (1.1.0, device + recipe.precision + recipe.compute_dtype)
   - 'aprender-train transformer::Qwen35Lora (CPU reference adapter gradient, FALSIFY-QTG-009)'
+  - 'crates/apr-cli/src/commands/finetune_display_next_validate.rs at 316dee2cd4 (run_merge :469, adapter_pair_names :213, gguf_proj_to_hf, read_adapter_lora_params)'
   depends_on:
   - train-arch-honesty-v1
 status: PROPOSED
@@ -47,8 +54,16 @@ equations:
     invariants:
     - The adapter file is standard PEFT layout (lora-merge-peft-layout-v1)
     - 'Standard PEFT means HF order: the value rows of attn_qkv''s B, the rows of attn_gate''s B and the columns of ssm_out''s A are written grouped, although the trainer holds them tiled (QQE-007). This identity cannot see that permutation, because the trainer and the GGUF server share the tiled order'
+    - 'At 316dee2cd4 no serve path loads an adapter, so the served side is the merged file exported as a GGUF (#4418). Then this identity also rests on the merge (merge_completeness, QQE-009), and a cosine of 0.999 on logits may not see a LoRA delta that the merge dropped'
     preconditions:
     - adapter written by the run under test
+  merge_completeness:
+    formula: "∀ (A_t, B_t) ∈ adapter: W'_t = W_t + (α/r)·B_t·A_t;  ∀ t ∉ targets: W'_t ≡ W_t;  |pairs consumed| = |pairs in adapter|, else exit ≠ 0"
+    domain: 'apr finetune merge of an adapter into the HF-convention base .apr; α and r read from the adapter, never defaulted'
+    invariants:
+    - The merged file keeps the base's HF conventions; the trainer's in-memory merge (Qwen35Lora::merge_into, GGUF conventions) is a reference and is never written, because those values under HF names would make the GGUF export apply #4418's transforms a second time
+    preconditions:
+    - the adapter is in HF order (QQE-007)
   adapter_gradient_reference:
     formula: "∂L/∂A = s·Bᵀ·∂L/∂W',  ∂L/∂B = s·∂L/∂W'·Aᵀ  (W' = W + s·B·A, s = alpha/r)"
     domain: 'targets per layer, by GGUF tensor: attn_q, attn_k, attn_v, attn_output (attention layers); attn_qkv, attn_gate, ssm_out (GDN layers); ffn_gate, ffn_up, ffn_down (all layers)'
@@ -75,6 +90,11 @@ proof_obligations:
 - type: invariant
   property: Zero refusals on the canonical cell
   formal: 'exit(apr finetune qwen3.5-4b -m qlora) = 0 ∧ refusals = 0'
+  applies_to: all
+- type: invariant
+  property: The merged file carries every adapter pair at the adapter's own scale, or the merge is refused
+  formal: "∀ t ∈ targets: max|W'_t − (W_t + (α/r)·B_t·A_t)| ≤ 1e-6·max|W_t| ∧ ∀ t ∉ targets: W'_t ≡ W_t ∧ consumed = pairs"
+  tolerance: 1.0e-06
   applies_to: all
 falsification_tests:
 - id: FALSIFY-QQE-001
@@ -120,6 +140,11 @@ falsification_tests:
   prediction: 'the same tiny random checkpoint (3 key heads, 6 value heads) written twice, once in GGUF conventions (tiled value heads, ssm_a, norms with the +1, conv [C,K]) and once in HF conventions (grouped value heads, A_log, zero-centred norms, conv [C,1,K], as apr import of HF safetensors writes it at 316dee2cd4): either the step-1 loss of the HF copy equals the GGUF copy''s within 1e-6 relative, or the HF copy is refused before step 1 with exit ≠ 0, a message naming the convention, and no adapter written. Planted: a loader that maps the names but skips the value-head permutation trains with a different step-1 loss, which turns it RED, and so does one that applies the permutation backwards or skips the +1 on the zero-centred norms'
   test: '[U] not written; CPU only, needs cargo after LIVE 0.70.1'
   if_fails: 'R4 or T2 trains against the wrong head map, or with every zero-centred norm near zero, without any error'
+- id: FALSIFY-QQE-009
+  rule: apr finetune merge applies every adapter pair at the adapter's own scale, or refuses
+  prediction: 'tiny HF-convention Qwen3.5 base .apr (3 key heads, 6 value heads, 4 layers at interval 4) and an adapter on every R4 target (attn_qkv, attn_gate, ssm_out, attn_q, attn_k, attn_v, attn_output, ffn_gate, ffn_up, ffn_down) with random non-zero A and B, r 2, alpha 4: the merge exits 0, reports every pair consumed, gives W + 2·B·A within 1e-6·max|W| on each target, and leaves every other tensor bitwise equal to the base. Planted, each of which must exit ≠ 0 and write nothing: (a) the GDN targets named the GGUF way (lora.{layer}.attn_qkv.lora_a) beside HF-named attention and MLP targets, because gguf_proj_to_hf maps only the seven llama projections; (b) the same adapter in PEFT names (…lora_A.weight), which the zero-match refusal does not count; (c) lora_alpha absent from the safetensors header and the sidecar, which read_adapter_lora_params replaces with 16.0. At 316dee2cd4 (a) writes a partial merge, (b) writes the base and (c) writes the delta at alpha 16, all with exit 0, so this row is RED until the merge is strict'
+  test: '[U] not written; CPU only, needs cargo after LIVE 0.70.1'
+  if_fails: 'the merged file that R4 serves and T5 round-trips lacks part of the adapter, or carries it at the wrong scale, and verify_merged_runnable still passes; QFR-001..006 cannot see it, because apr and llama.cpp export the same wrong file identically'
 qa_gate:
   certeza:
     min_score: 0.0
