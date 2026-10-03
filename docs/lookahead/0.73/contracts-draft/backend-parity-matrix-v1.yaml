@@ -23,7 +23,7 @@ metadata:
 equations:
   composed_leg_bound:
     formula: |
-      ref   = the ONE apr CPU run of this receipt; cpu_ref_path = bpm.cpu_ref_path (provisional S-4 default fp32_act, RQ-5)
+      ref   = the ONE apr CPU run of this receipt; cpu_ref_path = bpm.cpu_ref_path (fp32_act, RQ-5 ruled 2026-09-27)
       leg_a = min over prompts of cos(logits_apr_backend, logits_apr_cpu[ref])
       leg_b = min over prompts of cos(logits_apr_cpu[ref], logits_llamacpp_cpu)
       angle(x) = acos(x)
@@ -46,7 +46,7 @@ equations:
        two legs at 0.995 guarantee >= 0.98 end to end.'
     - 'The bound needs BOTH legs to share one apr CPU vector (triangle inequality on angles). Leg A on fp32_act and leg B on q8k_act composes nothing, and the receipt is REFUSED (FALSIFY-BPM-008).'
     - 'cpu_ref_path is recorded in the receipt and checked against act_path(ref, t), which is derived from the reference run''s kernel_path precision. It is never inferred from the command. At main 316dee2cd4 (R1 §11a): only the single-row Q4_K kernel reads the scope (parallel_k.rs:304); crushed Q4_K blocks switch to f32 per call; multirow Q4_K reads only DIRECT_FP32_GEMV (q4k_q8k_multirow.rs:178); Q5_K/Q6_K are always f32; Q4_0/Q8_0 are always Q8_0; fused gate/up (fused_gate_up.rs:177; the honest forward reaches it only for Gemma-1, gated LayerNorm and FFN-norm-less archs, ffn_block.rs:58) and the scratch and traced forwards (results.rs:541, traced.rs:88) pre-quantize to Q8_K whatever the scope says. apr parity-moe runs inside the scope (parity_moe.rs:110); dense apr parity does not, so its reference is mixed and neither label is true of it.'
-    - 'RQ-5 provisional S-4 default (C293.3, 2026-10-03, not a ruling): bpm.cpu_ref_path = fp32_act and bpm.ref_mixed_qtypes = [Q4_0, Q8_0], both data in thresholds.yaml with a basis. The reference is forward_single_with_cache (or the MoE or Qwen3.5 forward) token by token inside with_fp32_activations. A different ruling flips one line; no M receipt exists before LIVE 0.70.1.'
+    - 'RQ-5 ruled (cop, 2026-09-27 20:12Z): bpm.cpu_ref_path = fp32_act and bpm.ref_mixed_qtypes = [Q4_0, Q8_0], both data in thresholds.yaml with a basis. A q8k_act run is reported as an info row only and is never an E1 receipt (f008c). Dense parity and parity-moe use the same reference. The reference is forward_single_with_cache (or the MoE or Qwen3.5 forward) token by token inside with_fp32_activations. No M receipt exists before LIVE 0.70.1.'
     - 'Two legs at 0.99 only guarantee cos(16.21 deg) = 0.960: 0.99 per leg is NOT the gate.'
     - 'The gate reads the MIN over prompts; median and max are reported, never gated.'
     - 'Threshold basis (2026-10-03). thresholds.yaml is fail-closed: "a threshold without a basis is not a threshold". The 0.98 end-to-end floor reuses the MEASURED default basis (known-good 0.998607 / 0.998465 vs known-bad 0.950827 / 0.950611, n=5). That basis is GPU-vs-CPU within apr on dense qwen2.5, so applying it apr-vs-llama.cpp is an extrapolation [A]. The 0.995 per-leg floor is DERIVED from 0.98 by the triangle bound and has no basis of its own. The bpm: entry records both facts, and the first measured cells recalibrate it by amendment.'
@@ -260,4 +260,4 @@ verification_summary:
   proven: 0
   tested: 0
   status: proposed
-  notes: 'Draft by la-73 (L3). No ticket yet; the harness and the tests land with R1. L25 review 2026-10-03 at main 316dee2cd4 added BPM-009..015 (7 vacuous-pass holes). L25 on R4/R5 2026-10-03 at main 316dee2cd4 added BPM-016 (per-op hybrid) and BPM-017 (skipped F2 guard). C293.3 2026-10-03: RQ-3, RQ-4 and RQ-5 run on provisional S-4 defaults; BPM-008 now pins the value and checks the trace act path (f008c, f008d). Item (c) 2026-10-03: BPM-012 compares kernel_id per (tensor, op), not per path, OBS slot or entry, over the set each tensor reached (f012b..f012e).'
+  notes: 'Draft by la-73 (L3). No ticket yet; the harness and the tests land with R1. L25 review 2026-10-03 at main 316dee2cd4 added BPM-009..015 (7 vacuous-pass holes). L25 on R4/R5 2026-10-03 at main 316dee2cd4 added BPM-016 (per-op hybrid) and BPM-017 (skipped F2 guard). C293.3 2026-10-03: RQ-3, RQ-4 and RQ-5 run on provisional S-4 defaults; BPM-008 now pins the value and checks the trace act path (f008c, f008d). Item (c) 2026-10-03: BPM-012 compares kernel_id per (tensor, op), not per path, OBS slot or entry, over the set each tensor reached (f012b..f012e). RQ-5 2026-10-03: ruled fp32_act by the cop on 2026-09-27 (q8k_act an info row only); text only, nothing flips.'

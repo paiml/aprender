@@ -25,7 +25,7 @@ These are bodies ready to file, one per bundle in `falsifier-landing-map.md`.
 
 **Blocked by**
 - The OBS stack (#4487 identity block, #4574 kernel-path shape) is not on main. Until it merges, the identity check returns `NotRun(identity lint absent)`, never a pass.
-- RQ-5 sets the `cpu_ref_path` value, but it does not block (C293.3). P1 lands on the provisional default `fp32_act`, held as data in `bpm.cpu_ref_path`; a different ruling flips one line.
+- RQ-5 is ruled (cop, 2026-09-27 20:12Z): `cpu_ref_path` = `fp32_act`, held as data in `bpm.cpu_ref_path`. A `q8k_act` run is an info row only and never an E1 receipt (f008c).
 
 **Hosts** x86 CI only. No GPU, no model.
 **Out of scope** Running any model; P2 trace fields; arming the shape in `lint-baseline.json` (shared file, a separate labelled follow-up).
@@ -127,5 +127,5 @@ These runs produce receipts, not code. They are scheduled when a host is train-i
 ## Status (2026-10-03 16:46Z)
 - origin/main is 316dee2cd4. All file:line cites in R1–R5 and these bodies were re-checked there at 13:18Z (ac564391ab).
 - **Filing:** still under S-1 hold (operator C292): nothing is filed or opened until LIVE 0.70.1. After LIVE, 0.73 moves from the floor to normal cadence: P1..P5 go to the cop as PROPOSE-TICKET lines, and this branch gets its PR.
-- **Open rulings, not blocking (C293.3):** RQ-3, RQ-4 and RQ-5 are requested in the handoff. Work proceeds on provisional S-4 defaults: RQ-3 = E1 PASS + E2 PASS receipts on main; RQ-4 = a hybrid may pass E1, and E2/E6 name it; RQ-5 = `fp32_act`.
+- **Open rulings, not blocking (C293.3):** RQ-3 and RQ-4 are requested in the handoff. Work proceeds on provisional S-4 defaults: RQ-3 = E1 PASS + E2 PASS receipts on main; RQ-4 = a hybrid may pass E1, and E2/E6 name it. RQ-5 is ruled: `fp32_act` (cop, 2026-09-27 20:12Z).
 - **External blocker:** the OBS stack, #4487 and #4574, is unmerged, so P1's identity check stays NotRun until it merges.

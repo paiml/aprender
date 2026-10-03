@@ -30,7 +30,7 @@ blocked them on the harness and GPU access for no reason. Only the checker is ne
 | BPM-005 CI lower bound | P1 | r 0.55, ci_lo 0.45 |
 | BPM-006 no wgpu forward line = NotRun | P1 + P2 | Q8_0 receipt on a real adapter without a wgpu forward line |
 | BPM-007 today's gap is visible | M (C1) | the harness on current wgpu Qwen3; expects < 0.995 |
-| BPM-008 shared, pinned cpu_ref_path | P1 | mixed legs (f008a/b); equal legs off the pin (f008c); a label the trace contradicts (f008d). Pin: provisional fp32_act (RQ-5) |
+| BPM-008 shared, pinned cpu_ref_path | P1 | mixed legs (f008a/b); equal legs off the pin (f008c); a label the trace contradicts (f008d). Pin: fp32_act (RQ-5, ruled) |
 | BPM-009 non-finite cosine | P1 | one NaN cosine among 16 prompts |
 | BPM-010/011 same inputs | P1 | prompt_set_sha256, n or model_sha256 mismatch |
 | BPM-012 CPU cell not self-compared | P1 + P2 | f012 (one equal tensor among differing ones), f012c (one kernel_id on two arches), f012d (OBS slot collision), f012e (a tensor with two routes); control f012b; value from P3 |
@@ -72,6 +72,6 @@ for the real field, but their planted receipts carry it already. Then 8 in P3, 5
 4. M runs only when the host is train-inactive, each with its receipt checked by P1.
 
 ## Open
-- RQ-5 decides the `cpu_ref_path` value that BPM-008 pins. Provisional S-4 default (C293.3): `fp32_act`, held as data in `bpm.cpu_ref_path`. A different ruling is a one-line flip.
+- RQ-5 is ruled (cop, 2026-09-27 20:12Z): BPM-008 pins `cpu_ref_path` = `fp32_act`, held as data in `bpm.cpu_ref_path`. A `q8k_act` run is an info row only.
 - RQ-3 decides the E6 admissible cell; it affects no row here. Provisional default: E1 PASS + E2 PASS receipts on main, with PRM-001 agreeing.
 - RQ-4 decides whether a hybrid cell counts for E6. Provisional default: E1 may pass hybrid, and E2/E6 name it. It affects no row here (f016 asserts only the label).

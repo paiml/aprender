@@ -94,7 +94,7 @@ Fixing any cell: those are R2–R5. R1 only measures and gates. A thresholds cha
 - **Evidence** (quoted in the #3714 comment, not re-measured): the CUDA MoE forward scored cosine 1.000000 against `fp32_act` and 0.985 against `q8k_act`.
 - **Current tools disagree** (re-read at main 316dee2cd4, 2026-10-03; see §11a). `apr parity-moe` runs the CPU inside `with_fp32_activations` (parity_moe.rs:110) [V]. Dense `apr parity` has no scope, so its reference is mixed: Q4_K on Q8_K activations (f32 on crushed blocks), Q5_K/Q6_K on f32, Q4_0/Q8_0 on Q8_0 [V]. Neither label is true of it.
 - **Rule.** The receipt records `cpu_ref_path`, and both legs must name the same one. FALSIFY-BPM-008 refuses a mixed or missing pair.
-- **RQ-5: which path is pinned?** The ruling request is in the handoff. Under C293.3 work proceeds on the **provisional S-4 default `fp32_act`**, which is not a ruling.
+- **RQ-5: which path is pinned?** Ruled (cop, 2026-09-27 20:12Z): **`fp32_act`**. `q8k_act` is reported as an info row only, and dense parity and parity-moe use the same reference. The drafts carried `fp32_act` as the provisional S-4 default until 2026-10-03, when the cop pointed to the ruling (cop-inbox/processed/inbox-20260927T2110Z.md:1); nothing flipped.
   - Why `fp32_act`: leg A then measures only the backend's own error, and leg B absorbs apr's activation-quantization gap against llama.cpp. That gap is unmeasured; llama.cpp's CPU k-quant dot also quantizes activations, to Q8_K. It is also the only label one forward can honour per tensor (§11a). Under `q8k_act`, Q5_K/Q6_K stay on f32 and crushed Q4_K blocks switch to f32.
   - Alternative: `q8k_act`, earlier called "what users actually run". Users run the mixed path in §11a, so a `q8k_act` pin would have to name that forward and list Q5_K/Q6_K as `ref_mixed`. Every exact-FP32 GPU path would also pay an error of roughly 0.985 that belongs to the CPU, not the GPU.
   - **How the default is applied** (P1/P2; no code change needed at main for Q4_K_M):
@@ -178,7 +178,7 @@ expert tensor of any other qtype refuses on the CPU reference.
 Production CPU decode runs the same honest forward without the scope (sync_owned_quantized_02.rs:82/171,
 forward/batch_size.rs:63/98, apr_q4k_scheduler.rs:469). So "what users run" is the mixed path, not a pure `q8k_act`.
 
-RQ-5 implication (provisional default `fp32_act`, §11):
+RQ-5 implication (ruled `fp32_act`, §11):
 - `fp32_act` is honest with no code change for Q4_K_M (Q4_K + Q6_K): run the honest or MoE forward token by
   token inside the scope.
 - The label is false for the scratch and traced forwards, for fused gate/up, and for multirow without the env var.
