@@ -116,6 +116,21 @@ R3 is a **FINDING, not a minted row**. The mint is deferred (only the cop mints,
 | 6 | The widen fallback is unreachable on gx10, which has dotprod | Test-only direct entry | NEON-Q4K-007 |
 | 7 | A golden regenerated in the run is a self-comparison | Committed golden with a pinned sha256 | NEON-Q4K-003 |
 | 8 | The C4 leg used prefill-final only and an unnamed reference path, and listed its gate as a postcondition | Decode positions, same `cpu_ref_path`; the gate stays in the formula | R1 BPM-008/-013 |
+| 9 | **Second orphan.** `quantize/fused_q.rs` is an older copy of `q5k_q6k_matvec.rs`, the file `parallel_k.rs:498` includes. No `mod` or `include!` names it, yet four falsify tests cite it as the CPU side (falsify_q6k_fp_accumulator_order_001.rs:101 and three others; R1 §11a). It holds matvec wrappers, not dots, so it is never a NEON site | Delete it and fix the four cites (PROPOSE-TICKET, after LIVE). The contract's site list already leaves it out | none (cleanup) |
+| 10 | **A dot Err becomes a 0.0 row.** Every CPU matvec writes 0.0 for a row whose dot returns Err (generic_matvec.rs:126, :143, :239; parallel_k.rs:320; q5k_q6k_matvec.rs, 12 sites from :249 to :448; bsum_precompute.rs:296, :312). The fixtures use rows of 1, 2, 3 and 7 blocks, while a 2048-wide row has 8. A NEON arm that errs only on longer rows passes every dot test and zeroes rows in the forward. A few zero rows can pass the C4 cosine gate | The NEON arm has exactly the scalar oracle's Err conditions (shape only). A matvec-level check at a production shape compares every row with the oracle | NEON-Q4K-008 (proposed) |
 
-Cleanup candidate (PROPOSE-TICKET, not done here): delete the orphan `quantize/fused_q4k.rs`. It shows up in `.pmat-baseline.json` and in code search as a live twin of `q4k_dot_avx2.rs`.
+Cleanup candidates (PROPOSE-TICKET, not done here):
+- Delete the orphan `quantize/fused_q4k.rs`. It shows up in `.pmat-baseline.json` and in code search as a live twin of `q4k_dot_avx2.rs`.
+- Delete the orphan `quantize/fused_q.rs` (row 9).
+
+Route on gx10 (verified at 316dee2cd4). It shows that the three cited dispatchers are the only arms correctness needs:
+- **Default path (no scope).** A Q4_K matvec quantizes to Q8_K and calls `fused_q4k_q8k_parallel_matvec_into`
+  (q5k_q6k_matvec.rs:79).
+  - The x86 lean and 4-row paths are compiled out off x86_64 (:122, :180). So their `[0.0f32; 4]` placeholder (:230)
+    never runs on aarch64.
+  - Each row calls `fused_q4k_q8k_dot_with_bsums_simd` (bsum_precompute.rs:220). Off x86 that falls back to
+    `fused_k::fused_q4k_q8k_dot_simd`, the `q4k_dot_avx2.rs:338` dispatcher.
+  - A NEON bsums variant would be a speed follow-on only.
+- **Inside `with_fp32_activations`.** Each Q4_K row calls `fused_q4k_dot_simd` (parallel_k.rs:320 → fused_k.rs:193).
+- **Q6_K, either way.** `generic_parallel_matvec_into` calls `fused_q6k_dot_simd` (fused_q5k_q6k.rs:118).
 pv 0.70.0: validate 0/0; lint 0 errors, the same 4 lean_theorem warnings. Obligations went from 5 to 7.

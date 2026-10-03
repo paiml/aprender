@@ -59,9 +59,10 @@ These are bodies ready to file, one per bundle in `falsifier-landing-map.md`.
 
 **Scope**
 - NEON arms in the three live dispatchers: `fused_k.rs:193`, `fused_q5k_q6k.rs:118`, and `q4k_dot_avx2.rs:338` (compiled through `include!` at `fused_k.rs:370`).
+- On gx10 the default Q8_K route reaches the `q4k_dot_avx2.rs:338` arm through `fused_q4k_q8k_dot_with_bsums_simd` (bsum_precompute.rs:220), which falls back to that dispatcher off x86. No fourth arm is needed for correctness (R3 §13, route).
 - `kernel_path(k)` maps to OBS `kernel_id`.
 - A widen entry exposed only to tests.
-- The orphan `quantize/fused_q4k.rs` is not touched here; it has its own PROPOSE-TICKET (07:49Z).
+- The orphans `quantize/fused_q4k.rs` and `quantize/fused_q.rs` are not touched here. Each has its own PROPOSE-TICKET (R3 §13 rows 1 and 9).
 
 **Acceptance**
 - NEON-Q4K-001..004 and 007 are green on gx10, with 10 000 cases each, f16-normal d/dmin, and rows of 1, 2, 3 and 7 blocks.
@@ -69,6 +70,7 @@ These are bodies ready to file, one per bundle in `falsifier-landing-map.md`.
 - The golden file is checked against a pinned sha256.
 - NEON-Q4K-000 and 006 (the cross-target `cargo check` and the compile-site probe with the orphan as control) run off the release path.
 - Every mutation listed in the contract turns its test red.
+- The NEON arms add no Err condition beyond the scalar oracle's, because every CPU matvec turns a dot Err into a 0.0 row (R3 §13 row 10). NEON-Q4K-008 (proposed) checks every row of a production-shape matvec against the oracle.
 
 **Hosts** gx10 (aarch64). x86 for the magnitude floor, 000 and 006.
 **Out of scope** The C4 E1 measurement (M run, NEON-Q4K-005) and E2 speed.

@@ -123,7 +123,9 @@ Mechanism, per qtype (aprender-serve):
   (q5k_q6k_matvec.rs:7, :48, included at parallel_k.rs:498) run `generic_parallel_matvec_into` with the f32 dots
   (`fused_q6k_dot_simd`, fused_q5k_q6k.rs:118). There is no Q8_K path for them.
   - quantize/fused_q.rs is an older copy of q5k_q6k_matvec.rs that nothing compiles (no `mod`, no `include!`).
-    Three falsify tests still cite it as the CPU path (falsify_q6k_chain_length_003.rs:104 and two others).
+    Four falsify tests still cite it as the CPU path: falsify_q6k_fp_accumulator_order_001.rs:101,
+    falsify_q6k_activation_amplification_002.rs:84, falsify_q6k_chain_length_003.rs:104 and
+    falsify_q4k_bisect_dequant_007.rs:128.
 - **Q4_0 / Q8_0.** Always Q8_0 activations (`fused_q4_0_q8_0_*`, `fused_q8_0_q8_0_parallel_matvec_into`). There is no
   f32 path.
 - **Callers that pre-quantize whatever the scope says:**

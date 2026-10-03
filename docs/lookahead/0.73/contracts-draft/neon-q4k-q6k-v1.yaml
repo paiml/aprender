@@ -19,6 +19,8 @@ metadata:
     L25 note (main 316dee2cd4): quantize/fused_q4k.rs is an ORPHAN. No mod or include! names
     it, and it is byte-identical (360 lines) to q4k_dot_avx2.rs. An arm added there compiles
     nothing, and every NEON test passes vacuously against the old x86/scalar code.
+    A second orphan, quantize/fused_q.rs, is an older copy of q5k_q6k_matvec.rs. It holds matvec
+    wrappers, not dots, so it is never a site.
 
 equations:
   neon_scalar_parity:
