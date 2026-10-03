@@ -28,8 +28,8 @@ R1 honesty gate ─► R2 GDN forward (= serve) ─► R3 GDN backward ─► R4
                                                                                 ├─► R6 distill, R7 merge
                                                   #4418 GGUF name map (0.71) ───┴─► R10 round-trip ─► R13 HF rc
 ```
-This is the shaping-time path. The current one is §3's critical path v3 (2026-10-03): R15a and R12 join before R4, and
-T2 needs R15b.
+This is the shaping-time path. The current one is §3's critical path v3 (2026-10-03): R21 (GDN on CUDA) follows R3 and
+feeds both R4 and T2, R15a and R12 join before R4, and T2 needs R15b.
 
 ## §2 Rows
 
@@ -381,10 +381,11 @@ L2 deliverable 2. Each fact carries its source; `[U]` marks one that was inferre
 ## §3 Ranking v3 (2026-10-03)
 v3 replaces v2 (2026-09-28, at `363f9ca810`). Rows still move for v2's three reasons: an evidence void moves a row
 up, a new size changes its place, and a row already held on a branch drops out of L2's queue. Changes since v2:
-- **R15 is re-sized from 120 to 420 `[A]`** (`r15-cuda-lora-cells.md`) and split by consumer:
+- **R15 is re-sized from 120 to 450 `[A]`** (`r15-cuda-lora-cells.md`; C5 was sized from the code at 150) and split
+  by consumer:
   - **R15a** is cells C1–C4 (210). It is on R4's path, because QQE-004's reference run is `-m lora` on CUDA
     (qwen35-qlora-e2e-v1 1.1.0).
-  - **R15b** is cells C5–C7 (210). Only T2 needs it. Its largest cell, C5 bf16 (120), is the subject of RQ-5 (§4).
+  - **R15b** is cells C5–C7 (240). Only T2 needs it. Its largest cell, C5 bf16 (150), is the subject of RQ-5 (§4).
 - **R12 has an owner.** la-impl holds `la/r12-train-receipt` @68747b344e, which has the writer and the `apr pretrain`
   wiring, built on TRR 1.0.0. The TRR 1.1.0 delta (device object, recipe with compute_dtype, timed window) is on
   `la-72/r15-receipt-ext`, and la-impl has been told.
@@ -394,6 +395,10 @@ up, a new size changes its place, and a row already held on a branch drops out o
   `fold-mof`, `fold-hrp` and `fold-tis`. Each is ≤ 15 `[A]`, turns a silent wrong answer into a named refusal, and
   needs no GDN work. They are the first PRs to open after LIVE 0.70.1.
 - **R20 is out of 0.72.** RQ-3 was ruled 2026-09-27: #4002 (E8, 0.75) keeps everything beyond GDN training.
+- **R21, GDN on CUDA, is new.** T2, R4 and R6 on qwen35 train Qwen3.5 on CUDA, and 24 of the 4B's 32 layers are
+  GDN. R15's cells are dense only, R2/R3's GDN is CPU only (`fold-r2r3`; its four GDN files never mention CUDA), and
+  serving's CUDA GDN is forward only. S-R15 named the need at shaping, but neither v2 nor v3 sized a row for it.
+  K̂ 360–480 `[A]` until spike S-R21 (`r15-cuda-lora-cells.md` §Consequences).
 
 State is read from the branch tips on 2026-10-03. origin/main is `316dee2cd4` and no la-72 branch has landed. K̂ is
 minutes of worker time still left; `[A]` marks an assumption.
@@ -404,10 +409,11 @@ minutes of worker time still left; `[A]` marks an assumption.
 | 2 | R12 training receipts | TRR 1.1.0 fields on the shared writer | 45 `[A]` | la-impl, `la/r12-train-receipt` @68747b344e (TRR 1.0.0) |
 | 3 | R2 GDN forward | QTG-001 parity vs serve | 90 | `fold-r2r3` @5a837dfa3b; one-line Cargo.toml conflict with main |
 | 4 | R3 GDN backward | QTG-003/006 gradcheck | 120 | in `fold-r2r3` (`r3-backward` @8a9f4f0104) |
+| 4a | R21 GDN on CUDA | S-R21 sizing spike (desk), then forward parity against the R2 CPU forward | 360–480 `[A]` | new 2026-10-03, no branch; the CPU oracle is `fold-r2r3`; cargo after LIVE 0.70.1 |
 | 5 | R15a CUDA LoRA, C1–C4 | C1 `lora_backward` extraction (FALSIFY-LORA_GRADIENT_FLOW_V1_004) | 210 `[A]` | cells and falsifiers on `la-72/r15-receipt-ext`; cargo after LIVE 0.70.1 |
-| 6 | R4 QLoRA 4B end to end | QQE-001..006 | 90 | blocked on R2, R3, R15a; contract 1.1.0 pins the QQE-004 reference's precision and device |
+| 6 | R4 QLoRA 4B end to end | QQE-001..006 | 90 | blocked on R2, R3, R21, R15a; contract 1.1.0 pins the QQE-004 reference's precision and device |
 | 7 | R5 Unsloth harness | Unsloth-side runs (`r5-unsloth-ft-runbook.md`) | GPU only | desk-done, `r5-apr-adapter` @7aeb557271; needs train-idle |
-| 8 | R15b CUDA LoRA, C5–C7 | C6 flags and receipt (with R12), C7 timed window; C5 bf16 per RQ-5 | 210 `[A]` | contracts apr-finetune-canonical-task-v1 1.1.0, TRR 1.1.0 |
+| 8 | R15b CUDA LoRA, C5–C7 | C6 flags and receipt (with R12), C7 timed window; C5 bf16 per RQ-5 | 240 `[A]` | contracts apr-finetune-canonical-task-v1 1.1.0, TRR 1.1.0 |
 | 9 | R10 round-trip | QFR-003 self-describing export | 40 `[A]` | `fold-r10-qfr` @6b13da980f (QFR-001/002/003/005); QFR-004 is #4418 |
 | 10 | R13 HF rc publish | HRP-001 plan = upload | 45 `[A]` | `fold-hrp` @6c93634c3c; header reader `amr-on-4607` @d34ce7cacd waits on #4607 |
 | 11 | R11 sealed ingress | TIS-002 planted perturbed item | 40 `[A]` + the TDD normaliser | `fold-tis` @9fed5c27db (TIS-001/003/004/005); TIS-002 waits on a foreign branch |
@@ -424,13 +430,14 @@ minutes of worker time still left; `[A]` marks an assumption.
 
 **Critical path v3:**
 ```
-R1 ─► R2 ─► R3 ─┐
-R15a C1–C4 ─────┼─► R4 ─┬─► R6 (DBH refusal lands with R1), R7 (MOF)
-R12 receipts ───┤       └─► R13 HF rc ◄── R10 QFR-003 export ◄── #4418 (GGUF legs only)
-                └─► R15b C5–C7 (C5 = RQ-5) ─► R5 T2 verdict ─► R14
+R1 ─► R2 ─► R3 ─► R21 GDN on CUDA ─┐
+R15a C1–C4 ────────────────────────┼─► R4 ─┬─► R6 (DBH refusal lands with R1), R7 (MOF)
+R12 receipts ──────────────────────┤       └─► R13 HF rc ◄── R10 QFR-003 export ◄── #4418 (GGUF legs only)
+                                   └─► R15b C5–C7 (C5 = RQ-5) ─► R5 T2 verdict ─► R14
 R11 TIS ◄── TDD normaliser (PRM C7–C9) ─────► gates every R4/R6 run counted for 0.72
 ```
-T2 trains Qwen3.5-4B, so its apr side needs R2 and R3 as well as R15a and R15b. It does not need R4.
+T2 trains Qwen3.5-4B, so its apr side needs R2, R3 and R21 as well as R15a and R15b. It does not need R4. R21 is
+the largest row on both R4's path and T2's, and the least certain one.
 
 ## §4 Rulings (S-4)
 Ruled by the cop on 2026-09-27 at 12:11Z (full text in the handoff file):

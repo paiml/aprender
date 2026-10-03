@@ -1,6 +1,6 @@
 metadata:
   id: C-CUDA-NF4-TRAIN-LOSS-PARITY
-  version: 1.0.0
+  version: 1.1.0
   created: '2026-07-02'
   author: PAIML Engineering
   kind: pattern
@@ -85,6 +85,14 @@ metadata:
         bias drop      -> loss 5.17 vs 0.66, relL2 0.97 RED
         partial warp   -> fused loss NaN                RED
 
+    1.1.0 (2026-10-03, la-0.72; desk read of 316dee2cd4, not run):
+      adds the PROPOSED row FALSIFY-CUDA-NF4-TRAIN-LOSS-PARITY-002. The
+      GPU lm_head, forward and backward, is embed_tokens (uploaded at
+      instruct_pipeline/cuda_init.rs:429) even when the checkpoint has
+      its own lm_head.weight. 001 cannot see this on a tied model, such
+      as the Qwen2.5-Coder-1.5B it was verified on [A: tied in its HF
+      config].
+
   references:
     - 'crates/aprender-gpu/src/kernels/elementwise/rope/neox.rs (BatchedRopeNeoxKernel + BatchedRopeNeoxBackwardKernel)'
     - 'crates/aprender-train/src/autograd/cuda_forward/normalization.rs (batched_rope_neox_forward/_backward rewired to NEOX kernels)'
@@ -99,6 +107,7 @@ metadata:
     - 'crates/aprender-train/src/transformer/attention.rs (Decoder -> attention_causal dispatch)'
     - 'crates/aprender-train/src/finetune/instruct_pipeline/parity_probe.rs (falsifier + layer bisect probes)'
     - 'crates/aprender-train/src/transformer/cuda_block_parity_probe.rs (per-op layer-0 bisect probe)'
+    - 'crates/aprender-train/src/finetune/instruct_pipeline/cuda_forward.rs and training.rs (1.1.0: the GPU lm_head forward and backward read embed_original, uploaded from embed_tokens at cuda_init.rs:429; FALSIFY-CUDA-NF4-TRAIN-LOSS-PARITY-002)'
   depends_on:
     - 'cuda-nf4-forward-stream-ordering-v1'
 
@@ -210,6 +219,47 @@ falsification_tests:
   - partial_warp_shfl_sync_undefined
   - noncausal_decoder_attention_label_leakage
   - finite_garbage_forward_worse_than_uniform
+- id: FALSIFY-CUDA-NF4-TRAIN-LOSS-PARITY-002
+  rule: |
+    PROPOSED (0.72, la-0.72; desk read of 316dee2cd4, not run): an
+    untied model trains and evaluates on CUDA against its own lm_head.
+    At 316dee2cd4, embed_original is uploaded from model.embed_tokens
+    (instruct_pipeline/cuda_init.rs:429). It is the head of both GPU
+    forwards (cuda_forward.rs:335 in forward_logits_gpu, :520 in
+    forward_logits_gpu_resident) and of the GPU lm_head backward
+    (training.rs:266, :406), and the cuda_train_step fallback reads
+    embed_tokens too (training.rs:285). Only the CPU forward
+    (cuda_forward.rs:442) and the cuda_train_step_cpu_loss fallback
+    (training.rs:425) use lm_head.unwrap_or(embed_tokens). model.rs:74
+    fills lm_head from lm_head.weight, so every untied checkpoint is
+    affected whenever the head fits in VRAM (cuda_init.rs:434). Tied
+    ones are not, Qwen3.5-4B (the R4 and T2 model) among them.
+  prediction: |
+    A tiny NF4 model whose lm_head.weight is drawn independently of
+    embed_tokens, from the same distribution, on the 001 toy sample
+    with LoRA B = 0.
+    (a) Head uploaded ("[CUDA] GPU-resident embeddings" in the log):
+    the forward_logits_gpu logits agree with the CPU oracle through
+    lm_head within relL2 < 0.10, and the hidden-state gradient of the
+    GPU lm_head backward agrees with the CPU one within 1e-3 relative
+    L2.
+    (b) Head not uploaded: the test shrinks embed_original below
+    vocab x hidden, failing the checks at training.rs:163 and :354, so
+    the step takes forward_inference_saving_inputs and the :425
+    fallback, which applies lm_head on the CPU. Its logits and
+    hidden-state gradient pass the same two checks.
+    At 316dee2cd4, (a) is RED with relL2 near sqrt(2) and (b) is
+    GREEN, so the function trained depends on free VRAM. A tied copy
+    of the model is GREEN in both. The loss alone cannot decide it:
+    with random heads both CE values sit near ln(vocab).
+  test: '[U] not written; needs cargo + CUDA after LIVE 0.70.1 and an untied tiny NF4 fixture, GPU lock around the test binary only'
+  if_fails: |
+    The training and eval losses (training.rs:509) are not the
+    model's, the adapters fit the wrong head, and the adapter is
+    wrong when it is served with the real lm_head.
+  ship_blocking: false
+  counter_example_classes:
+  - untied_lm_head_replaced_by_embed_tokens
 
 qa_gate:
   id: QA-CUDA-NF4-TRAIN-LOSS-PARITY-001
