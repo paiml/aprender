@@ -32,13 +32,15 @@ rows:
     ticket: 4539
     spec: {path: docs/specifications/KTEST-001-kernel-testing-gpu-cpu-hardware.md, section: "§5.1, §8", on_main: false,
            staged_at: origin/la-71/ktest-001}
+    # staged_at is the KREG-B1 scope tip (fold plan §2: segments 1-5 + ktest-001), where the contract
+    # and receipts land. 3715-kernel-cells is segment 7, which ships later, in KREG-B2.
     contract: {id: kernel-registry-v1, path: contracts/kernel-registry-v1.yaml, on_main: false,
-               staged_at: origin/la-71/3715-kernel-cells}
+               staged_at: origin/la-71/ktest-07-receipt-reuse}
     falsifier:   # 011 names a kernel dispatched unregistered: the "0 unregistered dispatches" half of V5
-      - {ids: [FALSIFY-KREG-001..005, FALSIFY-KREG-011], staged_at: origin/la-71/3715-kernel-cells,
+      - {ids: [FALSIFY-KREG-001..005, FALSIFY-KREG-011], staged_at: origin/la-71/ktest-07-receipt-reuse,
          staged_path: contracts/kernel-registry-v1.yaml}
     baseline: {path: crates/aprender-serve/kernel-registry-receipts.json, on_main: false,
-               note: "unreceipted_max 41 on branch; CPU rows reduced to 26 per kreg 09-29; unregistered-dispatch count not yet measured"}
+               note: "at ktest-07-receipt-reuse: 41 rows (cpu 21, cuda 18, wgpu 2), 16 receipts, unreceipted_max 25, hard_red_at 0.73.0; unregistered-dispatch count not yet measured"}
     owner_proposed: L1 (la-0.71, ex-kreg)
   - id: SRV-LOAD-TTFT
     ev_rank: 3
