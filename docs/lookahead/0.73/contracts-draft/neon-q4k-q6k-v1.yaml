@@ -132,7 +132,7 @@ falsification_tests:
   prediction: 'c4_e1_leg >= 0.995, and the forward trace names a neon kernel.'
   test: 'NOT YET WRITTEN. Lands with the R1 harness on C4'
   if_fails: 'a scalar run is scored as a NEON cell'
-  mutation: 'feed a receipt whose trace has no neon kernel line; the cell must be refused (R1 FALSIFY-BPM-006), not scored'
+  mutation: 'feed a receipt whose trace has no neon kernel line; the cell must be NotRun (the R1 FALSIFY-BPM-006 verdict; P1 spec §2), not scored'
 
 - id: FALSIFY-NEON-Q4K-006
   rule: each NEON arm sits in a compiled file (L25)

@@ -2,7 +2,7 @@
 Source: R5 census F-R5-3/F-R5-4. Tags: [V] = verified in the tree, [A] = asserted and needs a re-read before coding.
 
 ## Goal
-Measured wgpu decode cosine is 0.955 against a floor of 0.995 (E1 per leg). R2 closes that gap. R1's FALSIFY-BPM-007 is the control that shows the gap today, and BPM-006 refuses silent CPU fallback.
+Measured wgpu decode cosine is 0.955 against a floor of 0.995 (E1 per leg). R2 closes that gap. R1's FALSIFY-BPM-007 is the control that shows the gap today, BPM-006 marks a wgpu cell with no wgpu forward line as NotRun, and BPM-016 labels a cell whose GEMVs fall back to the CPU per op as HYBRID.
 
 ## Items (ordered: correctness first, coverage second)
 1. **rope_theta from GGUF metadata.** It is hardcoded as `pow(1000000.0, …)` in **two** WGSL RoPE shaders, `crates/aprender-compute/src/backends/gpu/device/linalg/wgsl_forward.rs:229` and `:265` [V at main 00052c0128, 2026-09-30; the earlier `:943` cite was stale]. That is wrong for every model whose theta is not 1e6. Falsifier: a theta = 1e4 fixture must give a different RoPE output than 1e6 in both shaders, at position >= 1 (at position 0 RoPE is the identity for any theta).

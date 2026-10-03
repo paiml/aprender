@@ -4,7 +4,7 @@ Evidence tags: [V] = read in the tree at origin/main aca6f2d7f6; [A] = reported 
 
 ## 1. Problem (from the R5 census)
 - On aarch64, `detect_simd_backend()` returns `SimdBackend::Neon` (crates/aprender-serve/src/quantize/simd_backend.rs:41-44) [V]. No code dispatches on `Neon`: it is used only by Display and tests [V].
-- `fused_q4k_dot_simd` (quantize/fused_k.rs:193), `fused_q6k_dot_simd` (fused_q5k_q6k.rs:118) and `fused_q4k_q8k_dot_simd` (q4k_dot_avx2.rs:338, included at fused_k.rs:370) have only `cfg(target_arch = "x86_64")` arms [V]. On aarch64 each one falls through to the scalar kernel (fused_k.rs:60, fused_q5k_q6k.rs:15, fused_q4k.rs:232).
+- `fused_q4k_dot_simd` (quantize/fused_k.rs:193), `fused_q6k_dot_simd` (fused_q5k_q6k.rs:118) and `fused_q4k_q8k_dot_simd` (q4k_dot_avx2.rs:338, included at fused_k.rs:370) have only `cfg(target_arch = "x86_64")` arms [V]. On aarch64 each one falls through to the scalar kernel (fused_k.rs:60, fused_q5k_q6k.rs:15, q4k_dot_avx2.rs:232; the identical `fused_q4k.rs:232` is the orphan and is not compiled, corrected 2026-10-03).
 - Consequence 1: every gx10 CPU number measures the scalar kernel while being labelled NEON. That breaks verification rule 2.
 - Consequence 2: no aarch64 quantized SIMD exists to port. R3 is new kernels plus an honest label.
 
