@@ -1,0 +1,8 @@
+# Planted: a contract that claims to be staged on a branch where it does not exist. Must be RED.
+schema: lookahead-dor-v1
+train: "0.00"
+rows:
+  - id: FALSE-STAGED
+    ev_rank: 1
+    contract: {id: no-such-v1, path: null, on_main: false, staged_at: origin/main,
+               staged_path: docs/lookahead/contracts-draft/no-such-planted-v1.yaml}

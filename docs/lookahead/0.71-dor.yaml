@@ -2,7 +2,7 @@
 # APR-LOOKAHEAD-001 §4 L1 item 2. Data only; scripts/lookahead/dor_check.py renders it.
 # A row is READY only when spec, contract, falsifier, baseline and owner are all present
 # AND every path claimed `on_main: true` exists at the checked ref (claims are verified,
-# never trusted). Audit: 2026-10-03 against origin/main 316dee2cd4, by la-0.71 (L1).
+# never trusted; `staged_at: origin/…` claims are verified against that branch too). Audit: 2026-10-03 against origin/main 316dee2cd4, by la-0.71 (L1).
 schema: lookahead-dor-v1
 train: "0.71"
 epic: 3598
@@ -15,8 +15,9 @@ rows:
     ticket: null            # not minted; APR-OBS-001 §7 row OBS-09 (K̂ 240)
     spec: {path: docs/specifications/APR-OBS-001-dogfood-observability.md, section: "§7 OBS-09, §5.2", on_main: false,
            staged_at: cop-inbox/handoff/APR-OBS-001-dogfood-observability.md}
-    contract: {id: apr-trace-v1, path: null, on_main: false}
-    falsifier: ["provenance Measured when tracer did not run", "per-layer sum > request wall"]
+    contract: {id: apr-trace-v1, path: null, on_main: false, staged_at: origin/la-71/obs-09-trace-v1,
+               staged_path: docs/lookahead/contracts-draft/apr-trace-v1.yaml}
+    falsifier: [FALSIFY-TRACE-001..015]   # incl. "Measured when tracer did not run", "per-layer sum > wall"
     baseline: null
     owner_proposed: L1 (la-0.71)
     blocks: [V1, V3]        # §5.2: every 0.71 perf PR carries an apr-trace-v1 diff
@@ -39,8 +40,9 @@ rows:
     title: apr serve resident; load + TTFT reported beside pp512/tg128
     ticket: 3596
     spec: {path: docs/specifications/APR-EPIC-001-themed-epics-and-issue-cap.md, section: "§2 E2 goal line (one line, no section)", on_main: true}
-    contract: {id: null, path: null, on_main: false}
-    falsifier: []
+    contract: {id: apr-serve-ttft-v1, path: null, on_main: false, staged_at: origin/la-71/serve-ttft-v1,
+               staged_path: docs/lookahead/contracts-draft/apr-serve-ttft-v1.yaml}
+    falsifier: [FALSIFY-TTFT-004]   # V2: load_ms, ttft, pp512, tg128 reported together
     baseline: null
     owner_proposed: L1
     related: [PMAT-3718]
@@ -50,8 +52,9 @@ rows:
     title: TTFT <= 2x llama.cpp d1d3c3396 on Qwen3.5-4B, APR-OBS identity
     ticket: null
     spec: {path: docs/specifications/APR-EPIC-001-themed-epics-and-issue-cap.md, section: "§2 E2 goal line", on_main: true}
-    contract: {id: null, path: null, on_main: false}
-    falsifier: []          # APR-OBS-001 §8 S-4: ratio across mismatched identity must be refused
+    contract: {id: apr-serve-ttft-v1, path: null, on_main: false, staged_at: origin/la-71/serve-ttft-v1,
+               staged_path: docs/lookahead/contracts-draft/apr-serve-ttft-v1.yaml}
+    falsifier: [FALSIFY-TTFT-001, FALSIFY-TTFT-002, FALSIFY-TTFT-003, FALSIFY-TTFT-005, FALSIFY-TTFT-006, FALSIFY-TTFT-007]
     baseline: {path: evidence/parity/pin-bump-d1d3c3396/llamacpp-d1d3c3396.json, on_main: true,
                note: "llama.cpp arm only; no apr-side Qwen3.5-4B TTFT receipt"}
     owner_proposed: L1
@@ -73,11 +76,13 @@ rows:
     exit_criterion: V3
     title: batched decode with a serving-shape parity receipt
     ticket: null
-    spec: {path: null, section: null, on_main: false}
-    contract: {id: continuous-batching-v1, path: contracts/continuous-batching-v1.yaml, on_main: true}
-    falsifier: [FALSIFY-CB-001, FALSIFY-CB-008]
+    spec: {path: null, section: null, on_main: false, staged_at: origin/la-71/v3-serving-shape-parity,
+           staged_path: docs/lookahead/0.71-v3-serving-shape-parity.md}
+    contract: {id: continuous-batching-v1, path: contracts/continuous-batching-v1.yaml, on_main: true,
+               draft: {id: serving-shape-parity-v1, staged_at: origin/la-71/v3-serving-shape-parity}}
+    falsifier: [FALSIFY-CB-001, FALSIFY-CB-008, FALSIFY-SSP-001..007]
     baseline: {path: evidence/parity-http/bands/apr-c4.json, on_main: true,
-               note: "concurrency bands exist; nothing defines 'serving-shape parity receipt'"}
+               note: "concurrency bands exist; lambda perf041 witness is NOT ADMISSIBLE for V3 (wrong model, m=14 at c=16, no top-2 margin)"}
     owner_proposed: L1
   - id: EXT-24-25
     ev_rank: 7

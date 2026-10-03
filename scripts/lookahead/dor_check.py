@@ -38,6 +38,17 @@ def claims(row):
             yield field, v.get("path")
 
 
+def staged(v):
+    return isinstance(v, dict) and str(v.get("staged_at") or "").startswith("origin/")
+
+
+def staged_claims(row):
+    for field in ("spec", "contract", "baseline"):
+        v = row.get(field)
+        if staged(v):
+            yield field, v["staged_at"], v.get("staged_path") or v.get("path")
+
+
 def on_main(v):
     return isinstance(v, dict) and bool(v.get("path")) and bool(v.get("on_main"))
 
@@ -73,6 +84,9 @@ def verify_claims(row, ref):
     for field, path in claims(row):
         if not path or not exists_at(ref, path):
             raise Red(f"{row['id']}: {field} claims on_main but {path!r} is absent at {ref}")
+    for field, branch, path in staged_claims(row):
+        if not path or not exists_at(branch, path):
+            raise Red(f"{row['id']}: {field} claims staged at {branch} but {path!r} is absent there")
 
 
 def missing_fields(row):
@@ -83,7 +97,8 @@ def missing_fields(row):
         ("baseline", on_main(row.get("baseline"))),
         ("owner", bool(row.get("owner_proposed"))),
     )
-    return [name for name, ok in checks if not ok]
+    # A missing field that is staged on a branch renders as "name*": still NOT READY.
+    return [name + ("*" if staged(row.get(name)) else "") for name, ok in checks if not ok]
 
 
 def evaluate(doc, ref):
@@ -99,7 +114,7 @@ def render(rows, train):
     for rank, rid, crit, missing in rows:
         state = "READY" if not missing else "NOT READY (" + ",".join(missing) + ")"
         print(f"{rank:>2} {rid:<20} {str(crit):<12} {state}")
-    print(f"train {train}: top10_ready: {ready}/{len(rows)}")
+    print(f"train {train}: top10_ready: {ready}/{len(rows)}  (* = staged on a branch, verified)")
     return ready
 
 
@@ -112,7 +127,7 @@ def run(path, ref, require_ready=False):
 
 def expect_red(fx, ref):
     failures = []
-    for name in ("empty.yaml", "false-claim.yaml"):
+    for name in ("empty.yaml", "false-claim.yaml", "false-staged.yaml"):
         try:
             evaluate(yaml.safe_load((fx / name).read_text()), ref)
             failures.append(f"{name}: expected RED, got a render")
@@ -134,7 +149,7 @@ def self_test(ref):
     failures = expect_red(fx, ref) + expect_planted(fx, ref)
     for f in failures:
         print("FALSIFIER SURVIVED:", f)
-    print("self-test:", "RED" if failures else "ok (3 falsifiers fire, 1 control READY)")
+    print("self-test:", "RED" if failures else "ok (4 falsifiers fire, 1 control READY)")
     return 2 if failures else 0
 
 
