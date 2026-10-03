@@ -183,3 +183,31 @@ pv 0.70.0 after item (d): validate 0/0; lint 0 errors and the same 5 lean_theore
 - Runs (plan only, C277): C4 twice (fp32_act for c4_e1_leg, default for the row) and C0 twice (f0 and d0).
 
 pv 0.70.0 after item (e): validate 0/0; lint 0 errors and 6 lean_theorem warnings (the new one is `c4_default_route_info`). Counts: 6 equations, 10 falsifiers, 3 KANI, 9 obligations.
+
+## 16. Item (k): where P3's falsifiers run in CI (2026-10-04, read at 316dee2cd4)
+
+The handoff premise for (k) was that the only ARM64 job in ci.yml is gx10. There are three. None of them runs aprender-serve tests, so no PR job runs FALSIFY-NEON-Q4K-001..004 or 007 on aarch64 today. Read from the workflow files at 316dee2cd4. No run was looked up (C277, 0 GitHub calls).
+
+| Job (`.github/workflows/ci.yml`) | Runner labels | Runs when | What it runs | In `gate`'s needs (:617)? |
+|---|---|---|---|---|
+| `gx10` (:208) | self-hosted, Linux, ARM64, cuda, gx10, ephemeral, docker (:209) | a PR with gpu_touched=1 (:212). A diff under `crates/aprender-serve/` sets it (`scripts/ci_gpu_touched.sh:49`), so a P3 PR starts this job | sections `gpu-touched,gpu-quick` (:231). gpu-quick runs `cargo test -p aprender-gpu --features cuda --lib --release` and a perf053 filter of it (`ci/sections.yml:3171`, :3180). Nothing from aprender-serve | no |
+| `determinism` (:261) | self-hosted, Linux, clean-room, ARM64 (:262) | every ci.yml run (no job `if:`) | sections `determinism[ARM64],determinism-compare` (:279): three aprender-viz render tests (`ci/sections.yml:3505`, :3512, :3524) | yes |
+| `mac-check` (:313) | self-hosted, macOS, ARM64, apple-silicon, m4, mini (:314) | every ci.yml run | `cargo check --workspace --all-targets --locked --exclude aprender-profile` (:332), then `cargo nextest run --profile ci -p apr-cli --lib` (:334) | no |
+| `workspace-test-shard` (:349) | self-hosted, Linux, X64, clean-room (:350) | every ci.yml run | the workspace lib tests in 3 shards, aprender-serve included, on x86 only | yes, through `workspace-test` (:381) |
+
+Off the PR path:
+- `cuda-nightly.yml`, job `falsifiers` (:87) on gx10, runs on the 20:30 UTC cron (:57), on dispatch, or on a PR labelled `cuda-check`, and only while `vars.CUDA_RUNNER_READY` is true (:97-98). Its steps run named tests, and none of them is a NEON parity test. The last step, F-QW3-MOE-C22214-001 (:688-698), rebuilds `apr` without cuda and runs it on the Qwen3-Coder-30B MoE GGUF. That is the only scheduled run of the aarch64 CPU path. It checks that `apr run` emits text. It has no parity oracle, and the GGUF's quant types are [U].
+- `nightly.yml` build-darwin (:245-263) builds `apr-cli` for darwin and runs no tests. `mini-probe.yml` runs only on workflow_dispatch (:97).
+
+What follows:
+1. Compile coverage exists but does not gate. On every PR, mac-check type-checks the NEON arms and the `cfg(target_arch = "aarch64")` test modules for aarch64-apple-darwin. That is NEON-000's intent on another target triple, outside `gate`.
+2. Parity coverage does not exist. On x86 the parity cases are compiled out (R3-test-skeletons.md §3, option (a)), and no job runs them on aarch64. A P3 PR whose NEON arm is wrong, or never reached, merges green. This is the L25 failure of §13 one level up: not a test that passes without testing anything, but a gate that never runs the test.
+3. A P3 PR does start one ARM64 job, gx10 (row 1). That job tests another crate and does not gate.
+4. Two drafts said otherwise: the landing map's P3 row ("aarch64 CI or gx10") and R3-test-skeletons.md §1 ("CI is x86-only"). Both are corrected in the commit that adds this section.
+
+Where a CI step could go. This is a REQUEST in the handoff (APR-LOOKAHEAD-001 §8, S-4). Each option edits ci.yml or `ci/sections.yml`, which needs an operator check-in first.
+- (a) A P3 section in the determinism job's ARM64 leg, added to its `--sections` list (:279). The job already gates, runs Linux aarch64 (the triple NEON-000 names) and is clean-room. The comment at :614 names the clean-room pool as intel, yoga and gx10, so this leg runs on gx10. That is inferred from the comment, not read from the runner list. Grace is Armv9, and dotprod is mandatory from Armv8.4. Cost [U]: it adds an aprender-serve test build to a job with a 120-minute timeout (:263) that today builds only aprender-viz. Without a path filter on the section, it runs on every ci.yml run.
+- (b) A test step in mac-check, and mac-check added to `gate`'s needs (:617). Every PR would then wait on one Mac mini. The mini's CPU features were not probed [U].
+- (c) A line in cuda-nightly.yml. It is not a PR gate: a wrong arm is found the next day, after the merge.
+
+Recommendation: (a), filtered to P3's test module so that it builds and runs the minimum. Until there is a ruling, the P3 ticket says the tests are run by hand on gx10 (ticket-bodies-P1-P5.md, P3 **Hosts**).

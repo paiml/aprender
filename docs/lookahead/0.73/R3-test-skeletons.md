@@ -29,9 +29,10 @@ The contract needs three things these tests cannot give it:
    relative error. The contract now derives one (item d, 2026-10-03):
    `2 * gamma(K) * S` over the row's terms, which holds at every row length (§2).
 
-None of these tests runs on aarch64 in CI, because CI is x86-only. They only
-witness C4 when run on gx10, which is GPU-deferred while a train is active
-(Next item 1).
+None of these tests runs on aarch64 in CI. CI has three ARM64 jobs, but none
+of them runs aprender-serve tests: mac-check only compiles them (see
+R3-neon-q4k-q6k.md §16). They only witness C4 when run on gx10, which is
+GPU-deferred while a train is active (Next item 1).
 
 ## 2. Skeleton: FALSIFY-NEON-Q4K-001 (parity, 10 000 seeded rows per kernel, and the masked sweep)
 

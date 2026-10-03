@@ -16,7 +16,7 @@ blocked them on the harness and GPU access for no reason. Only the checker is ne
 |---|---|---|---|
 | **P1 receipt checker** | a pure function `check_receipt(json) -> Verdict` plus planted receipts under `tests/fixtures/bpm/` | x86 CI, no model | nothing (first to land) |
 | **P2 trace fields** | aprender-serve trace emits `kernel_path`, the per-op `backend`, a total `op_placement`, `device_qtype`, `head_dim_source`, and a wgpu MoE banner | x86 CI (schema test) | nothing for the fields; their values need P3/P4 |
-| **P3 R3 NEON kernels** | Q4_K/Q6_K NEON dots, `kernel_path`, the widen test entry, the matvec row test | aarch64 CI or gx10; 000/006 cross-check on x86 | R3 mint |
+| **P3 R3 NEON kernels** | Q4_K/Q6_K NEON dots, `kernel_path`, the widen test entry, the matvec row test | gx10, by hand: no PR job runs aprender-serve tests on aarch64 (R3 §16); 000/006 cross-check on x86 | R3 mint |
 | **P4 R2 wgpu fixes** | theta and head_dim from metadata, q/k norm, Q6_K/Q8_0/Q4_0 WGSL | C1 (wgpu adapter); CI has no GPU | R2 mint; WGF-003 also on the K14 trace |
 | **P5 R4 MoE dispatch** | the streaming variant of the dispatch; the wgpu MoE forward (R4 item 2) | C0 for streaming; C1-C3 for wgpu | R4 mint; item 2 after P4 |
 | **M measurement runs** | receipts only, no code | GPU hosts, train-inactive | P1 + the bundle that is measured |

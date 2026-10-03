@@ -72,7 +72,7 @@ These are bodies ready to file, one per bundle in `falsifier-landing-map.md`.
 - Every mutation listed in the contract turns its test red.
 - The NEON arms add no Err condition beyond the scalar oracle's, because every CPU matvec turns a dot Err into a 0.0 row (R3 §13 row 10). FALSIFY-NEON-Q4K-008 is green on gx10. It calls every row's dot directly at 8 and 36 super-blocks per row, in five decode matvec entries and two prefill (multirow) entries, and checks that the matvec wrote that value to that row (R3-test-skeletons.md §4c).
 
-**Hosts** gx10 (aarch64). x86 for the power guard, 000 and 006.
+**Hosts** gx10 (aarch64). x86 for the power guard, 000 and 006. No PR job runs these tests on aarch64 yet: mac-check only compiles them. Where the CI step goes is open (`docs/lookahead/0.73/R3-neon-q4k-q6k.md` §16).
 **Out of scope** The C4 E1 measurement (M run, NEON-Q4K-005) and E2 speed.
 
 ---
