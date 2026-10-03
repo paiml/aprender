@@ -12,14 +12,14 @@ rows:
     ev_rank: 1
     exit_criterion: V6
     title: per-layer serve tracing (X-Trace-Level step|layer), first row of the 0.71 serve epic
-    ticket: null            # not minted; APR-OBS-001 §7 row OBS-09 (K̂ 240)
+    ticket: 4496            # tracer on feat/4496-obs09-trace-serve (aprender-76), commits "(#4496)"; APR-OBS-001 v1.3 G17 + §8 row 2. Issue state not read (C277 GH budget)
     spec: {path: docs/specifications/APR-OBS-001-dogfood-observability.md, section: "§7 OBS-09, §5.2", on_main: false,
            staged_at: origin/la-71/4487-obs-00}   # ffb4a348bd: c1 + APR-OBS-001 v1.3 + TRACE-001 v1.2 + EXT-001 v1.2 (aprender-cd)
     contract: {id: apr-trace-v1, path: contracts/apr-trace-v1.yaml, on_main: false,
-               staged_at: origin/a01/4492-obs05-ledger-checks}   # 04cc701e; #4564 carries colliding 1c31e6c2  COLLISION: a01/4492 sits on fold/88 older #4487; apr-trace-v1 blob 23f0305863 there vs 294b8c9ac8 on c1 (cd, 13:33Z)
-    falsifier: [FALSIFY-OBS-TRACE-001, FALSIFY-OBS-TRACE-002]   # + 13 proposed: la-71/obs-09-trace-v1 SUPERSEDED-apr-trace-v1.md
+               staged_at: origin/la-71/4487-obs-00}   # blob 828bc46eb6 = #4487 (c1 294b8c9ac8 + c291c0d02c), which lands before OBS-09. Census of all 1213 origin refs, 18:44Z and again 18:49Z: 5 blobs on 13 refs (0.71-dor.md); the a01/4492 copy 23f0305863 is fold/88's, the older #4487
+    falsifier: [FALSIFY-OBS-TRACE-001, FALSIFY-OBS-TRACE-002, FALSIFY-OBS-TRACE-003]   # as defined in 828bc46eb6. feat/4496 tests 001/002's rules as FALSIFY-TRACE-001/002, ids main already defines twice (apr-chrome-trace-v1, pmat/tracing-observability-v1): relabel before its PR. + 13 proposed: la-71/obs-09-trace-v1 SUPERSEDED-apr-trace-v1.md
     baseline: null
-    owner_proposed: a01 (#4492 ticket worker), not L1
+    owner_proposed: aprender-76 (OBS-09 owner, APR-OBS-001 v1.3 §8 row 2; tracer on feat/4496), not L1
     blocks: [V1, V3]        # §5.2: every 0.71 perf PR carries an apr-trace-v1 diff
   - id: KREG-001
     ev_rank: 2
