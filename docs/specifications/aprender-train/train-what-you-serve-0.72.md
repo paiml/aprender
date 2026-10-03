@@ -494,6 +494,11 @@ up, a new size changes its place, and a row already held on a branch drops out o
     no system turn unless the request sends one, and `<think>\n\n</think>\n\n` follows `<|im_start|>assistant\n` (HF
     `chat_template.jinja:54-64,148-150`). Train has no think block. `<think>` and `</think>` (248068, 248069) are
     added tokens that are not shaped `<|…|>`, so the #3920 rule alone would still split them.
+  - **Measured on S-R10's HF-sourced .apr** (Qwen3.5-0.8B, the HF directory imported by apr 0.69.3; header read
+    only). `tokenizer.vocabulary` has 248,070 entries, with `<|im_start|>`, `<|im_end|>`, `<think>` and `</think>` at
+    248045, 248046, 248068 and 248069. The metadata has 17 keys: none is a chat template, a token-type list, an
+    added-token list or an eos id. The HF snapshot's `tokenizer_config.json` has both. So the .apr gives train neither
+    the model's own template nor which entries are special, and the fix spans the importer as well as train.
   - **Effect on 0.72.** R4 and T2's apr side train through this path, because `apr finetune` trains from .apr only.
     R4's gates cannot see it: the loss gate is met on pieces too, and QQE-003 feeds both forwards the same ids. T4
     would publish a model tuned on a prompt that no apr server sends, which ends its answers in text pieces instead
@@ -540,7 +545,7 @@ minutes of worker time still left; `[A]` marks an assumption.
 | 21 | K36 GDN contract text | restate `gated-delta-net-v1`'s decay, read and output; point its tests at the shipped decay; re-prove GDN-BND-001 | 60 `[A]` | contracts on `la-72/k36-gdn-contract` @e8834d7711: both at 2.0.0, bindings point at the served fns, allowlist 163→156. The tests and the Lean re-proof come at PR time, after LIVE 0.70.1. `qwen35-train-gdn-v1` @80723cf206 already states the served GDN |
 | 22 | K37 phantom bindings | fold into #4502: make `pv audit --binding` agree with the `bindings` gate; arm the gate once the `gated_rmsnorm_oxide` ghost is fixed or allowlisted | 10 `[A]` (was 30; the gate exists) | comment on #4502 posted; the K36 branch fixes 6 of the 9 phantoms at `316dee2cd4` |
 | 23 | K38 Qwen3.5 norm convention | serve's safetensors conversion refuses a hybrid `layer_types`; R13's builder inverts #4418's value transforms, norm −1 included | 15 `[A]` + R13's builder | desk read plus a CPU measurement on the 4B; GGUF serve, train and #4418 agree |
-| 24 | K39 train/serve chat format | TSC-001: `from_apr`'s tokenizer keeps `<\|im_end\|>`, `<think>` and `</think>` whole; TSC-002: train renders the model's own template, thinking off, no default system turn, target ends in the eos id | 60 `[A]` | desk read at `316dee2cd4`; PMAT-3803's branch has part of the tokenizer half, unmerged; must be green before R4's 200-step cell and any T4 run |
+| 24 | K39 train/serve chat format | the HF importer writes the added tokens and the chat template into the .apr; TSC-001: `from_apr`'s tokenizer keeps `<\|im_end\|>`, `<think>` and `</think>` whole; TSC-002: train renders the model's own template, thinking off, no default system turn, target ends in the eos id | 90 `[A]` | desk read at `316dee2cd4` plus a header read of S-R10's .apr (17 keys, no template, no added tokens); PMAT-3803's branch has part of the tokenizer half, unmerged; must be green before R4's 200-step cell and any T4 run |
 | — | R19 ROADMAP PMAT-711 stale | — | done | shaping @378ec8e920 |
 | — | R20 declarative recipe | — | out | RQ-3: stays in #4002 (E8, 0.75) |
 
