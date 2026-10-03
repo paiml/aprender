@@ -23,10 +23,11 @@ metadata:
 status: PROPOSED
 equations:
   gdn_recurrence:
-    formula: 'S_{t+1} = α_t S_t + k_t ⊗ β_t (v_t − S_tᵀ k_t);  o_t = (S_{t+1}ᵀ q_t) ⊙ z_t'
-    domain: per head, S ∈ R^{d_k × d_v}; α_t = sigmoid(exp(A_log)·dt_t + dt_bias) (gated-delta-net-v1)
+    formula: 'S̃_t = α_t S_{t−1};  S_t = S̃_t + k_t ⊗ β_t (v_t − S̃_tᵀ k_t);  o_t = S_tᵀ q_t / √d_k;  α_t = exp(g_t), g_t = softplus(a_t + dt_bias)·ssm_a'
+    domain: 'per value head h, reading key head h mod H_k (GGUF order); S ∈ R^{d_k × d_v}, S_0 = 0; ssm_a = −exp(A_log); q_t and k_t L2-normalised; a_t is the alpha projection of x_t. z_t enters only afterwards, through gated_rmsnorm (silu(z), gated-delta-net-v1)'
     invariants:
-    - Identical equations to gated-delta-net-v1; the training crate re-uses them, never re-derives them
+    - 'The read uses the decayed state S̃_t, as serving does: delta_rule_recurrence_gqa (aprender-serve forward_qwen35.rs:221) multiplies S by exp(g) first. QTG-001 checks that the two are the same function'
+    - 'gated-delta-net-v1 1.0.0 states a different recurrence: α = sigmoid(exp(A_log)·dt + dt_bias), and o = Sᵀq × z with no 1/√d_k. Neither crate computes that, so this contract takes only gated_rmsnorm from it'
     preconditions:
     - d_k > 0
     - d_v > 0
@@ -93,7 +94,7 @@ falsification_tests:
   if_fails: 'the training model is not the served model — the class this whole train exists to remove'
 - id: FALSIFY-QTG-002
   rule: Planted falsifier — the decay-gate mutant
-  prediction: 'in the TRAINING GDN the decay is α_t = exp(g_t) with g_t = softplus(x_t + dt_bias)·a (gdn.rs; the older wording "α = sigmoid(·)" does not match the code). Dropping the softplus from g_t turns QTG-001 RED (the serving-side decay mutant scores 0.7656, qwen35-hybrid-forward-v1)'
+  prediction: 'in the TRAINING GDN the decay is α_t = exp(g_t) with g_t = softplus(x_t + dt_bias)·a (gdn.rs; gated-delta-net-v1 1.0.0 still says "α = sigmoid(·)", which neither crate computes). Dropping the softplus from g_t turns QTG-001 RED (the serving-side decay mutant scores 0.7656, qwen35-hybrid-forward-v1)'
   test: 'MUTATION RUN, not an in-tree test. On la-72/fold-r2r3 @5eb4ab88f4 (intel, 2026-09-28): softplus dropped in gdn.rs → falsify_qtg_001_sequence_mixer_equals_serve_per_token and falsify_qtg_001_tiny_model_logits_equal_serve FAILED (rc=101); the attention-only QTG-001 test stayed ok, as it should. Sibling mutant β without sigmoid went RED at b370fb40ea'
   if_fails: 'QTG-001 is vacuous (compares serve to serve, or tolerance too loose)'
 - id: FALSIFY-QTG-003
