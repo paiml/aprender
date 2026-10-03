@@ -262,13 +262,14 @@ The entry follows the AVX2 precedent (`unsafe fn` plus a SAFETY comment at the c
 
 Every CPU matvec writes 0.0 for a row whose dot returns Err, so no caller sees a NEON Err. The §2 tests would see
 one, but only on rows of 1 to 7 blocks. This test calls each row's dot directly at 8 and 36 blocks per row, then
-checks that the matvec wrote that value to that row. It runs all five decode entries (contract `matvec_row_parity`;
-R3 §13 row 10).
+checks that the matvec wrote that value to that row. It runs all five decode entries and the two prefill (multirow)
+entries, F and G, for 3 tokens at once (contract `matvec_row_parity`; R3 §13 row 10).
 
 ```rust
 // crates/aprender-serve/src/quantize/neon_parity_tests.rs  (lands with R3; adds to the §2 imports)
-use super::{fused_q4k_parallel_matvec_f32_into, fused_q4k_parallel_matvec_into,
-            fused_q4k_q8k_ffn_up_gate_into, fused_q6k_parallel_matvec_into,
+use super::{fused_q4k_multirow_matmul_f32_into, fused_q4k_parallel_matvec_f32_into,
+            fused_q4k_parallel_matvec_into, fused_q4k_q8k_ffn_up_gate_into,
+            fused_q6k_multirow_matmul_into, fused_q6k_parallel_matvec_into,
             quantize_activations_q8k_into, with_fp32_activations};
 use crate::error::Result;
 use proptest::strategy::ValueTree;
@@ -278,6 +279,7 @@ use proptest::test_runner::TestRunner;
 /// sides of the sequential/parallel split (300 ends in a 44-row tail tile).
 const SHAPES: [(usize, usize); 4] = [(2048, 48), (2048, 300), (9216, 48), (9216, 300)];
 const PLANT_ROW: usize = 280; // inside the tail tile, rows 256..300
+const M: usize = 3; // tokens for the prefill entries F and G; G takes its multirow route only for m > 1
 
 fn draw<T: std::fmt::Debug, S: Strategy<Value = T>>(r: &mut TestRunner, s: S) -> T {
     s.new_tree(r).expect("tree").current()
@@ -305,7 +307,7 @@ fn falsify_neon_q4k_008_every_matvec_row() {
     for k in ["q4k-f32", "q6k-f32", "q4k-q8k"] {
         require_neon_path(k).expect("dispatch_honesty"); // §3
     }
-    assert_ne!(std::env::var("DIRECT_FP32_GEMV").as_deref(), Ok("1"), "entry C would run f32");
+    assert_ne!(std::env::var("DIRECT_FP32_GEMV").as_deref(), Ok("1"), "entries C and G would run f32");
     let mut r = TestRunner::deterministic();
     for (in_dim, out_dim) in SHAPES {
         let n = in_dim / 256;
@@ -340,6 +342,21 @@ fn falsify_neon_q4k_008_every_matvec_row() {
         let mut y = nan();
         fused_q6k_parallel_matvec_into(&w6, &x, in_dim, out_dim, &mut y).expect("E");
         check_rows("E", &y, &w6, n * 210, |row: &[u8]| fused_q6k_dot_simd(row, &x));
+
+        // Prefill: M tokens at once, output token-major (token t is y[t * out_dim..][..out_dim]).
+        let xs: Vec<f32> = (0..M).flat_map(|_| draw(&mut r, acts(n))).collect();
+        let mut y = vec![f32::NAN; M * out_dim];
+        fused_q6k_multirow_matmul_into(&w6, &xs, M, in_dim, out_dim, &mut y).expect("F");
+        for (t, (xt, yt)) in xs.chunks(in_dim).zip(y.chunks(out_dim)).enumerate() {
+            check_rows(&format!("F t{t}"), yt, &w6, n * 210, |row: &[u8]| fused_q6k_dot_simd(row, xt));
+        }
+        let mut y = vec![f32::NAN; M * out_dim];
+        fused_q4k_multirow_matmul_f32_into(&up, &xs, M, in_dim, out_dim, &mut y).expect("G"); // outside the scope
+        for (t, (xt, yt)) in xs.chunks(in_dim).zip(y.chunks(out_dim)).enumerate() {
+            let (mut dt, mut qt) = (vec![0.0f32; n], vec![0i8; in_dim]);
+            quantize_activations_q8k_into(xt, &mut dt, &mut qt).expect("q8k");
+            check_rows(&format!("G t{t}"), yt, &up, n * 144, |row: &[u8]| fused_q4k_q8k_dot_simd(row, &dt, &qt));
+        }
     }
 }
 ```
@@ -351,6 +368,8 @@ fn falsify_neon_q4k_008_every_matvec_row() {
 3. In the parallel branch of `fused_q4k_q8k_parallel_matvec_into` (q5k_q6k_matvec.rs:319), write 0.0 in place of one
    tail-tile row. Entry C turns RED on that row. This one tests the row check itself: `close(0.0, v)` fails whenever
    |v| >= 0.01, which the fixture asserts.
+4. In `generic_multirow_matmul_into` (generic_matvec.rs:238-239), write 0.0 for the last row of the part tile for
+   token m - 1. Entry F turns RED on that row. No decode entry reaches that loop.
 
 **Why the reference is each row's own dot.** `close` bounds the error relative to the reference, while f32
 summation-order error grows with the row's sum of |w·x|. A 36-block row whose terms cancel could miss the bound
@@ -359,6 +378,14 @@ an error term first. On aarch64, `fused_q4k_q8k_dot_with_bsums_simd` falls throu
 (bsum_precompute.rs:237), so entries C and D reach that one dispatcher whether bsums is set or not. A NEON bsums
 variant would change their reference.
 
+**Why the prefill entries, with no C4 caller yet.** The only production caller of the multirow kernels,
+`matmul_rows` (forward_qwen35.rs:1416), is reached only from `forward_prefill_qwen35` (:1200), and only its tests
+call that (forward_qwen35_prefill_tests.rs). FALSIFY-4228-004 and -005 check the batched prefill bit-identical to
+`forward_single_qwen35`, and a NEON Err would pass them: on aarch64 both sides call the same dot on the same row and
+swallow the Err into the same 0.0. F and G close that before the batched prefill is wired into a run. G reads only
+`DIRECT_FP32_GEMV`, never the fp32 scope (q4k_q8k_multirow.rs:178-179), so it runs outside the scope and its
+reference is each token's own Q8_K dot. `fused_q5k_multirow_matmul_into` is left out: Q5_K is not an R3 kernel.
+
 ## 5. What this needs before it can run
 
 | Need | State |
@@ -366,7 +393,7 @@ variant would change their reference.
 | `kernel_path(k)` API | R3 code (not written; mint deferred, cop 10:20Z 09-28). It is also emitted in the forward trace, because the R1 receipt checker reads it: FALSIFY-BPM-012 refuses a C4 receipt whose backend and reference `kernel_path` match |
 | `kernel_path` shape | reuse `apr-kernel-path-v1` (OBS-15, unmerged #4574): `kernel_path(k)` becomes the entry's `kernel_id`, with `arch = aarch64`. See P1 spec §3a |
 | `fused_q4k_q8k_dot_neon_widen` test entry | R3 code (NEON-Q4K-007) |
-| The five matvec entries, `with_fp32_activations` and `quantize_activations_q8k_into` in reach of a `quantize/` test (NEON-Q4K-008) | exist at 316dee2cd4: re-exported at quantize/mod.rs:132 and :140-146; the quantizer is at mod.rs:241 |
+| The seven matvec entries (five decode, two prefill), `with_fp32_activations` and `quantize_activations_q8k_into` in reach of a `quantize/` test (NEON-Q4K-008) | exist at 316dee2cd4: re-exported at quantize/mod.rs:132 and :140-146 (the multirow ones at :141 and :145); the quantizer is at mod.rs:241 |
 | Orphan `quantize/fused_q4k.rs` deleted | PROPOSE-TICKET 07:49Z; NEON-Q4K-006 keeps it as a control until then |
 | Orphan `quantize/fused_q.rs` deleted | PROPOSE-TICKET (R3 §13 row 9). It is not a dot site, so NEON-Q4K-006 needs no second control |
 | An aarch64 run (gx10) | GPU-deferred while a train is active; runs on CPU only, so it may be admissible earlier. Cop to rule |

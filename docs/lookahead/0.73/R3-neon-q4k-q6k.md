@@ -135,15 +135,21 @@ Route on gx10 (verified at 316dee2cd4). It shows that the three cited dispatcher
 - **Q6_K, either way.** `generic_parallel_matvec_into` calls `fused_q6k_dot_simd` (fused_q5k_q6k.rs:118).
 pv 0.70.0: validate 0/0; lint 0 errors, the same 4 lean_theorem warnings. Obligations went from 5 to 7.
 
-NEON-Q4K-008 (2026-10-03, row 10) checks five decode matvec entries. Each one turns a dot Err into a 0.0 row:
+NEON-Q4K-008 (2026-10-03, row 10) checks five decode matvec entries and two prefill entries. Each one turns a dot Err into a 0.0 row:
 - (A) `fused_q4k_parallel_matvec_into` inside `with_fp32_activations` (parallel_k.rs:320).
 - (B) `fused_q4k_parallel_matvec_f32_into`, the crushed-block route of `matvec_honest` (direct_f32.rs:63; ffn_block.rs:790, :799).
 - (C) The default path above (q5k_q6k_matvec.rs:331-350).
 - (D) `fused_q4k_q8k_ffn_up_gate_into`. The scratch and traced forwards call it through `scratch_q8k_up_gate` (results.rs:33; rows at q5k_q6k_matvec.rs:437-448).
 - (E) The Q6_K route (generic_matvec.rs:126, :143).
+- (F) `fused_q6k_multirow_matmul_into`, the Q6_K prefill (q4k_q8k_multirow.rs:326; rows at generic_matvec.rs:239).
+- (G) `fused_q4k_multirow_matmul_f32_into`, the Q4_K prefill (q4k_q8k_multirow.rs:161). On aarch64 it quantizes each token to Q8_K (:194-199) and runs the row loop of C, `fused_q4k_q8k_parallel_matvec_into`, once per token (:137-147).
 
 The shapes are in_dim 2048 and 9216 (8 and 36 blocks per row) and out_dim 48 and 300. At 9216, C quantizes into heap buffers instead of stack ones (MAX_STACK_DIM 8960, parallel_k.rs:328). Out_dim 48 takes the sequential branches. 300 takes the parallel ones and ends in a 44-row tail tile.
 
 The reference is each row's own dot, called directly, and not the scalar oracle. The oracle bound is relative to the dot, while f32 summation-order error grows with the row's sum of |w·x|. So a long row whose terms cancel could fail with no kernel defect. On aarch64 the bsums dot falls through to `fused_q4k_q8k_dot_simd` (bsum_precompute.rs:237), so C and D reach that one dispatcher whether bsums is set or not.
 
+F and G (2026-10-03) run 3 tokens at once. No C4 run reaches them at 316dee2cd4. Their only production caller, `matmul_rows` (forward_qwen35.rs:1416), is reached only from `forward_prefill_qwen35` (:1200), and only its tests call that. They are covered anyway. FALSIFY-4228-004 and -005 check the batched prefill bit-identical to `forward_single_qwen35`, and a NEON Err would pass them: on aarch64 both sides call the same dot on the same row and swallow the Err into the same 0.0. G ignores the fp32 scope (R1 mechanism list), so the test runs it outside the scope against each token's Q8_K dot. F tiles rows by 64 at 8 blocks and by 32 at 36 (generic_matvec.rs:226), so every shape ends in a part tile. Q5_K multirow is left out, since Q5_K is not an R3 kernel.
+
 pv 0.70.0 after 008: validate 0/0; lint 0 errors and 5 lean_theorem warnings (the new one is `matvec_row_parity`). Obligations went from 7 to 8.
+
+pv 0.70.0 after F and G: validate 0/0; lint 0 errors and the same 5 lean_theorem warnings. Obligations stay at 8; the 008 obligation now ranges over tokens too.

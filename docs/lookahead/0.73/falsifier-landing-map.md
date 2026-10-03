@@ -50,7 +50,7 @@ blocked them on the harness and GPU access for no reason. Only the checker is ne
 | NEON-005 C4 E1 leg | M (C4) | P1 + P3 |
 | NEON-006 compile-site probe | P3 | x86 with the aarch64 target, scratch tree |
 | NEON-007 widen entry | P3 | gx10 |
-| NEON-008 matvec rows | P3 | gx10 |
+| NEON-008 matvec rows, decode and prefill | P3 | gx10 |
 | WGF-001 theta | P4 | synthetic fixture on C1 |
 | WGF-002 head_dim | P4 | synthetic fixture on C1 |
 | WGF-003 q/k norm | P4 | after the K14 layer-diff trace |

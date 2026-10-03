@@ -70,7 +70,7 @@ These are bodies ready to file, one per bundle in `falsifier-landing-map.md`.
 - The golden file is checked against a pinned sha256.
 - NEON-Q4K-000 and 006 (the cross-target `cargo check` and the compile-site probe with the orphan as control) run off the release path.
 - Every mutation listed in the contract turns its test red.
-- The NEON arms add no Err condition beyond the scalar oracle's, because every CPU matvec turns a dot Err into a 0.0 row (R3 §13 row 10). FALSIFY-NEON-Q4K-008 is green on gx10. It calls every row's dot directly at 8 and 36 super-blocks per row, in five decode matvec entries, and checks that the matvec wrote that value to that row (R3-test-skeletons.md §4c).
+- The NEON arms add no Err condition beyond the scalar oracle's, because every CPU matvec turns a dot Err into a 0.0 row (R3 §13 row 10). FALSIFY-NEON-Q4K-008 is green on gx10. It calls every row's dot directly at 8 and 36 super-blocks per row, in five decode matvec entries and two prefill (multirow) entries, and checks that the matvec wrote that value to that row (R3-test-skeletons.md §4c).
 
 **Hosts** gx10 (aarch64). x86 for the magnitude floor, 000 and 006.
 **Out of scope** The C4 E1 measurement (M run, NEON-Q4K-005) and E2 speed.

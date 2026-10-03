@@ -61,28 +61,33 @@ equations:
     - 'A label that names a kernel the call does not reach is FAIL. This is the defect class of the SimdBackend::Neon label today.'
   matvec_row_parity:
     formula: |
-      for each decode matvec entry e in A..E, shape (in_dim, out_dim) and row r < out_dim:
-        dot_e(W[r], x_e) returns Ok(v), and |matvec_e(W, x)[r] - v| < 1e-3 * max(1, |v|)
-      dot_e is the dispatcher the entry calls per row: fused_q4k_dot_simd (A, B), fused_q4k_q8k_dot_simd (C, D), fused_q6k_dot_simd (E).
-      x_e is x for the f32 entries, and its Q8_K quantization (quantize_activations_q8k_into, mod.rs:241) for C and D.
-    domain: 'every output row of a single-token decode matvec at production row lengths, on aarch64'
+      for each matvec entry e in A..G, shape (in_dim, out_dim), token t < m_e and row r < out_dim:
+        dot_e(W[r], x_e[t]) returns Ok(v), and |matvec_e(W, x)[t][r] - v| < 1e-3 * max(1, |v|)
+      A..E are the decode entries, with m_e = 1. F and G are the prefill (multirow) entries, with m_e = 3 and token-major output.
+      dot_e is the dispatcher the entry calls per row: fused_q4k_dot_simd (A, B), fused_q4k_q8k_dot_simd (C, D, G), fused_q6k_dot_simd (E, F).
+      x_e[t] is token t for the f32 entries, and its Q8_K quantization (quantize_activations_q8k_into, mod.rs:241) for C, D and G.
+    domain: 'every output row of a decode matvec, and of each token of a prefill multirow matmul, at production row lengths, on aarch64'
     codomain: bool
     preconditions:
     - 'kernel_path(k) starts with "<k>/neon" for all three kernels (dispatch_honesty), so the rows run NEON and not scalar'
     - 'in_dim in {2048, 9216}: 8 and 36 super-blocks per row, beyond the 1 to 7 of neon_scalar_parity. At 9216 > MAX_STACK_DIM 8960 (parallel_k.rs:328), entry C quantizes into heap buffers (:347) instead of stack ones (:331)'
-    - 'out_dim in {48, 300}. 48 takes the sequential branches (q5k_q6k_matvec.rs:341 for out_dim <= 64, generic_matvec.rs:120 below 256). 300 takes the parallel ones (q5k_q6k_matvec.rs:319, generic_matvec.rs:128) and ends in a 44-row tail tile'
+    - 'out_dim in {48, 300}. 48 takes the sequential branches (q5k_q6k_matvec.rs:341 for out_dim <= 64, generic_matvec.rs:120 below 256). 300 takes the parallel ones (q5k_q6k_matvec.rs:319, generic_matvec.rs:128) and ends in a 44-row tail tile. F tiles rows by 64 at 8 blocks and by 32 at 36 blocks (generic_matvec.rs:226), so each shape ends in a part tile of 48, 44, 16 or 12 rows'
     - 'every direct dot has |v| >= 0.01, asserted before comparing: a 0.0 row next to a near-zero dot passes the bound'
     - 'the output is filled with NaN first, so a row the entry never writes cannot pass'
-    - 'DIRECT_FP32_GEMV is not "1", so entry C takes its default Q8_K route (parallel_k.rs:303-304)'
+    - 'DIRECT_FP32_GEMV is not "1", so entry C takes its default Q8_K route (parallel_k.rs:303-304) and entry G its multirow Q8_K route (q4k_q8k_multirow.rs:178-179)'
+    - 'm_e = 3 for F and G. G takes its multirow route only for m > 1 (q4k_q8k_multirow.rs:179); at m = 1 it is entry A or C per token'
     - 'weights come from the neon_scalar_parity block generators'
     postconditions:
     - 'every entry returns Ok, and every row meets the formula'
     invariants:
-    - 'Every CPU matvec writes 0.0 for a row whose dot returns Err (parallel_k.rs:320, direct_f32.rs:63, q5k_q6k_matvec.rs:331-350 and :437-448, generic_matvec.rs:126/:143). The caller never sees a NEON Err, so the test calls each row''s dot directly.'
+    - 'Every CPU matvec writes 0.0 for a row whose dot returns Err (parallel_k.rs:320, direct_f32.rs:63, q5k_q6k_matvec.rs:331-350 and :437-448, generic_matvec.rs:126/:143, and the multirow generic_matvec.rs:239). The caller never sees a NEON Err, so the test calls each row''s dot directly.'
     - 'neon_scalar_parity expects Ok from the dot, but only on rows of 1 to 7 blocks. A NEON arm that errs only on longer rows passes it.'
     - 'One 0.0 row among 300 rows of similar size moves that output''s cosine to about sqrt(1 - 1/300) = 0.998, above the 0.995 floor, so a cosine gate can pass it. The check is per row.'
     - 'The reference is the NEON dot itself, not the scalar oracle. Value parity stays with neon_scalar_parity. Taking that past 7 blocks needs an error term first: the bound is relative to the dot, while f32 summation-order error grows with the row sum of |w*x|, so a cancelling long row can miss the bound with no kernel defect.'
-    - 'Not entries at 316dee2cd4, since no C4 decode path calls them: bsum_precompute.rs:296/:312 (fused_q4k_q8k_parallel_matvec_with_bsums_into, called only by its own tests) and fused_gate_up.rs:134-163 (Gemma-1, gated-LayerNorm and FFN-norm-less archs, ffn_block.rs:58). The prefill multirow paths (generic_matvec.rs:239, q4k_q8k_multirow.rs) are not covered yet.'
+    - 'Not entries at 316dee2cd4, since no C4 decode path calls them: bsum_precompute.rs:296/:312 (fused_q4k_q8k_parallel_matvec_with_bsums_into, called only by its own tests) and fused_gate_up.rs:134-163 (Gemma-1, gated-LayerNorm and FFN-norm-less archs, ffn_block.rs:58).'
+    - 'F and G have no C4 caller at 316dee2cd4 either. Their only production caller, matmul_rows (forward_qwen35.rs:1416), is reached only from forward_prefill_qwen35 (:1200), and only forward_qwen35_prefill_tests.rs calls that. They are entries anyway. FALSIFY-4228-004 and -005 check the batched prefill bit-identical to forward_single_qwen35, and a NEON Err would pass them: on aarch64 both sides call the same dot on the same row and swallow the Err into the same 0.0. Wiring the batched prefill into a run would otherwise open this hole with no red test.'
+    - 'G ignores with_fp32_activations: it reads only DIRECT_FP32_GEMV (q4k_q8k_multirow.rs:178-179; R1 mechanism list). On aarch64 it quantizes each token to Q8_K (:194-199) and runs fused_q4k_q8k_parallel_matvec_into, the row loop of C, once per token (:137-147). So its reference is the Q8_K dot of each token, and the test runs it outside the scope. The test stays valid if the scope is honoured later.'
+    - 'fused_q5k_multirow_matmul_into is not an entry: Q5_K is not an R3 kernel.'
   c4_e1_leg:
     formula: |
       leg = min over E1 prompts of cos(logits_apr_c4_neon, logits_apr_c0_x86)
@@ -174,10 +179,10 @@ falsification_tests:
   mutation: 'mis-widen the i8 lanes as unsigned in the widen kernel; the test must turn RED'
 - id: FALSIFY-NEON-Q4K-008
   rule: no NEON dot Err becomes a silent 0.0 matvec row (L25)
-  prediction: 'On aarch64, matvec_row_parity holds for the five decode entries at in_dim 2048 and 9216 and out_dim 48 and 300. (A) fused_q4k_parallel_matvec_into inside with_fp32_activations (parallel_k.rs:270, rows at :320). (B) fused_q4k_parallel_matvec_f32_into, the crushed-block route of matvec_honest (direct_f32.rs:21, rows at :62-63; ffn_block.rs:790, :799). (C) fused_q4k_parallel_matvec_into without the scope, through fused_q4k_q8k_parallel_matvec_into (q5k_q6k_matvec.rs:79, rows at :331-350). (D) fused_q4k_q8k_ffn_up_gate_into, called by scratch_q8k_up_gate in the scratch and traced forwards (q5k_q6k_matvec.rs:380, rows at :437-448; results.rs:33). (E) fused_q6k_parallel_matvec_into (q5k_q6k_matvec.rs:48, then generic_matvec.rs:68, rows at :126 and :143).'
+  prediction: 'On aarch64, matvec_row_parity holds for the five decode entries and the two prefill entries at in_dim 2048 and 9216 and out_dim 48 and 300. (A) fused_q4k_parallel_matvec_into inside with_fp32_activations (parallel_k.rs:270, rows at :320). (B) fused_q4k_parallel_matvec_f32_into, the crushed-block route of matvec_honest (direct_f32.rs:21, rows at :62-63; ffn_block.rs:790, :799). (C) fused_q4k_parallel_matvec_into without the scope, through fused_q4k_q8k_parallel_matvec_into (q5k_q6k_matvec.rs:79, rows at :331-350). (D) fused_q4k_q8k_ffn_up_gate_into, called by scratch_q8k_up_gate in the scratch and traced forwards (q5k_q6k_matvec.rs:380, rows at :437-448; results.rs:33). (E) fused_q6k_parallel_matvec_into (q5k_q6k_matvec.rs:48, then generic_matvec.rs:68, rows at :126 and :143). (F) fused_q6k_multirow_matmul_into at m = 3 (q4k_q8k_multirow.rs:326, then generic_matvec.rs:188, rows at :239). (G) fused_q4k_multirow_matmul_f32_into at m = 3 (q4k_q8k_multirow.rs:161; Q8_K per token at :194-199, then the row loop of C per token at :137-147).'
   test: 'NOT YET WRITTEN. Lands with R3 (skeleton in R3-test-skeletons.md section 4c)'
-  if_fails: 'a NEON arm that errs on production row lengths ships as silent 0.0 rows, which the dot tests and a cosine gate can both pass'
-  mutation: 'make the NEON arm return Err for rows of 8 or more super-blocks. The neon_scalar_parity tests (1 to 7 blocks) stay GREEN, and this test must turn RED. Second: return Err for one planted block (its first 16 quant bytes are 0x5A) in one row of an out_dim 300 case; this test must turn RED. Third, for the row check itself: write 0.0 in place of one tail-tile row in the parallel branch of fused_q4k_q8k_parallel_matvec_into; this test must turn RED.'
+  if_fails: 'a NEON arm that errs on production row lengths ships as silent 0.0 rows, which the dot tests, a cosine gate and the prefill bit-identity tests (FALSIFY-4228-004, -005) can all pass'
+  mutation: 'make the NEON arm return Err for rows of 8 or more super-blocks. The neon_scalar_parity tests (1 to 7 blocks) stay GREEN, and this test must turn RED. Second: return Err for one planted block (its first 16 quant bytes are 0x5A) in one row of an out_dim 300 case; this test must turn RED. Third, for the row check itself: write 0.0 in place of one tail-tile row in the parallel branch of fused_q4k_q8k_parallel_matvec_into; this test must turn RED. Fourth, for the prefill row check: in generic_multirow_matmul_into, write 0.0 for the last row of the part tile for token m - 1 (generic_matvec.rs:238-239); entry F must turn RED.'
 proof_obligations:
 - type: invariant
   property: 'NEON equals scalar within epsilon for all three kernels (FALSIFY-NEON-Q4K-001, 004)'
@@ -199,8 +204,8 @@ proof_obligations:
   property: 'The widen fallback matches scalar (FALSIFY-NEON-Q4K-007)'
   formal: 'forall b, x: |widen(b,x) - scalar_q4k_q8k(b,x)| < 1e-3 * max(1, |scalar_q4k_q8k(b,x)|)'
 - type: invariant
-  property: 'Every decode matvec row holds its own NEON dot, and that dot is Ok at production row lengths (FALSIFY-NEON-Q4K-008)'
-  formal: 'forall e, (in_dim, out_dim), r < out_dim: dot_e(W[r], x_e) = Ok(v) and |matvec_e(W, x)[r] - v| < 1e-3 * max(1, |v|)'
+  property: 'Every decode matvec row, and every row of each prefill token, holds its own NEON dot, and that dot is Ok at production row lengths (FALSIFY-NEON-Q4K-008)'
+  formal: 'forall e, (in_dim, out_dim), t < m_e, r < out_dim: dot_e(W[r], x_e[t]) = Ok(v) and |matvec_e(W, x)[t][r] - v| < 1e-3 * max(1, |v|)'
 - type: invariant
   property: 'Integer decode steps the NEON kernels must reproduce are exact and in range (KANI-NEON-Q4K-001..003)'
   formal: 'forall q in u8: split(q) exact; forall l,h: recombine(l,h) in -32..=31; forall j < 8: unpack reads < 12'
@@ -244,4 +249,4 @@ verification_summary:
   proven: 0
   tested: 0
   status: proposed
-  notes: 'Draft by la-73 (L3). No ticket yet; tests land with R3. L25 review 2026-10-03 at main 316dee2cd4: orphan-file site, fixture f16/scale/magnitude/multi-block preconditions, unreachable widen fallback, committed golden, C4 leg decode positions and ref path (NEON-Q4K-006, -007). NEON-Q4K-008 (2026-10-03): every CPU matvec turns a dot Err into a 0.0 row, so each decode matvec row is checked against its own dot at production row lengths.'
+  notes: 'Draft by la-73 (L3). No ticket yet; tests land with R3. L25 review 2026-10-03 at main 316dee2cd4: orphan-file site, fixture f16/scale/magnitude/multi-block preconditions, unreachable widen fallback, committed golden, C4 leg decode positions and ref path (NEON-Q4K-006, -007). NEON-Q4K-008 (2026-10-03): every CPU matvec turns a dot Err into a 0.0 row, so each decode matvec row is checked against its own dot at production row lengths. Prefill entries F and G (2026-10-03): the multirow kernels swallow a dot Err too (generic_matvec.rs:239, or the row loop of C per token). No C4 run calls them at 316dee2cd4, and the prefill bit-identity tests cannot see a swallowed Err, so 008 covers them before the batched prefill is wired.'
