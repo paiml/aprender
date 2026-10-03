@@ -4,7 +4,7 @@
 # AND every path claimed `on_main: true` exists at the checked ref (claims are verified,
 # never trusted; `staged_at: origin/…` claims are verified against that branch too). A falsifier is a list of
 # {ids, path, on_main} or {ids, staged_at, staged_path} claims, and the named file must define every id; a bare id
-# list is RED. Audit: 2026-10-03 against origin/main 316dee2cd4, by la-0.71 (L1); falsifier ids verified 19:30Z.
+# list is RED. Audit: 2026-10-03 against origin/main 316dee2cd4, by la-0.71 (L1); falsifier ids verified 19:30Z, row 4's at 21:58Z.
 schema: lookahead-dor-v1
 train: "0.71"
 epic: 3598
@@ -89,7 +89,17 @@ rows:
                staged_at: origin/la-71/pp-llama-p8-ttft, staged_path: docs/specifications/PP-LLAMA-001-MASTER.md,
                staged_marker: "`ttft` is gated as `ttft_ratio`",
                proposed: "P-8: ttft at c=1 under W1 gated as ttft_ratio = ttft_llama/ttft_apr by P-5 (LCB95 >= 1 - delta, delta in perf-matrix.yaml, 0.5 proposed = V1's 2x), armed by P-6; R-71-6"}
-    falsifier: null   # owed in §12 row 23's order: PP-34's two producer rs tests, then ONE gate commit with perf_gate.sh must-fire + must-not-fire (P-7); FALSIFY-TTFT-001..015 cases move there as mutations
+    # §12 row 23's gate commit (P-7), a213ffea5b: selftest 113/0; of 9 planted mutants, 8 turn a named row red and the
+    # 9th (arming in the committed matrix) stops the table at its `_mx armed` assertion. Still owed in row 23's order:
+    # PP-34's two producer rs tests (they stage .rs, so they wait for the S-1 lift) and perf_receipt.py::_ratios_for.
+    # The withdrawn case table (FALSIFY-TTFT-001..015) has not moved. Failed requests and a summary-only lane are already
+    # main's `completed_lt_requested` and `samples_stripped`. A summary its samples contradict and n below a floor need a
+    # rule first (Arm L3 checks neither), and a coarse load bracket is row 3's.
+    falsifier:
+      - {ids: [l3_ttft_gated_at_c1, l3_ttft_within_delta_c1, l3_ttft_absent_at_c1, l3_ttft_unarmed_is_reporting],
+         staged_at: origin/la-71/pp-llama-p8-gate, staged_path: scripts/perf_gate.sh}
+      - {ids: [FALSIFY-PP-LLAMA-001-PERF-GATE-013], staged_at: origin/la-71/pp-llama-p8-gate,
+         staged_path: contracts/pp-llama-001-perf-gate-v1.yaml}
     baseline: null   # = PP-LLAMA-001 §12 row 18 reference cell (owner perf-gate, blocked on row 15). Model is R-71-7:
       # V1 names Qwen3.5-4B; §8 REFERENCE is Qwen2.5-Coder-7B Q4_K_M, which is what the pin-bump evidence used.
       # That evidence still fails its own validation (failed requests; prompt_tokens 144, not W1's 512).
