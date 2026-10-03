@@ -1,0 +1,59 @@
+metadata:
+  kind: pattern
+  version: 1.0.0
+  created: '2026-10-03'
+  author: PAIML Engineering (la-0.72, APR-LOOKAHEAD-001 L2, train 0.72)
+  description: >-
+    A falsification test row that names a cargo test must name one that exists. A desk sweep on
+    2026-10-03 (origin/main 316dee2cd4) of 18 LoRA, distill and merge contracts found 8 cited
+    test functions that exist in no git ref (lora-merge-forward-equivalence-v1 FWD-002/003/004,
+    apr-distill-teacher-backend-selection-v1, apr-distill-teacher-vocab-alignment-v1 x2,
+    distill-pipeline-observability-v1 x2), one cited at a path where it does not live (FWD-001),
+    and four rows running `cargo test -p entrenar`, a lib name and not a package. Such a row has
+    never run, but pass_criteria still counts it. `pv verify-bindings` checks binding.yaml
+    functions, not test rows, so nothing catches this today.
+  references:
+  - contracts/lora-merge-forward-equivalence-v1.yaml (1.1.0, FWD-004 marked [U])
+  - crates/aprender-contracts-cli (pv lint)
+status: PROPOSED
+equations:
+  test_row_resolves:
+    formula: 'resolves(row) ⇔ (row.test is marked [U]) ∨ (pkg(row.test) ∈ workspace_packages ∧ ∃ fn f in pkg: path(f) ends with path(row.test))'
+    domain: 'every falsification_tests[*].test (and evidence) string in contracts/*.yaml that contains a `cargo test` command or a Rust path `a::b::name`'
+    invariants:
+    - 'pkg(row) is the -p argument; it must be a [package] name from cargo metadata, never a [lib] name (entrenar, trueno, realizar)'
+    - 'path(row) is matched by module path plus fn name, so a fn of the same name in another module does not count (FWD-001: merge_forward_equivalence lives in aprender-train-lora merge.rs, not lora::layer::tests)'
+    - 'a nextest filter prefix (e.g. falsify_pmat805) resolves when at least one fn in the package starts with it'
+    - 'a row whose test does not exist yet carries the marker [U] and is never counted by pass_criteria'
+    preconditions:
+    - 'pv lint can read the workspace (cargo metadata --no-deps and the crate sources), without building'
+proof_obligations:
+- type: invariant
+  property: No phantom test row
+  formal: '∀ contract c, ∀ row r ∈ c.falsification_tests: resolves(r)'
+  applies_to: all
+- type: invariant
+  property: '[U] rows do not count as passing'
+  formal: 'r.test marked [U] ⇒ r ∉ passed(c)'
+  applies_to: all
+falsification_tests:
+- id: FALSIFY-PV-TEST-RESOLVES-001
+  rule: Planted phantom — a cited fn that does not exist is RED
+  prediction: 'pv lint on a copy of lora-merge-forward-equivalence-v1 1.0.0 reports FWD-002, FWD-003 and FWD-004 as unresolved and exits non-zero'
+  test: '[U] the rule is not written; desk evidence: git log --all -S"fn composed_affine_equivalence" is empty'
+  if_fails: 'a contract can claim a falsifier that has never run'
+- id: FALSIFY-PV-TEST-RESOLVES-002
+  rule: A lib name in -p is RED
+  prediction: 'a row with `cargo test -p entrenar --lib x` is reported as "entrenar is a lib name; the package is aprender-train"'
+  test: '[U] not written'
+  if_fails: 'the cited command fails at cargo resolution, before any test runs'
+- id: FALSIFY-PV-TEST-RESOLVES-003
+  rule: A real row stays green
+  prediction: 'lora-gradient-flow-v1 FALSIFY-LORA_GRADIENT_FLOW_V1_003 (attention.rs falsify_pmat805_rope_backward_matches_finite_difference) resolves; an [U] row is skipped and listed as not counted'
+  test: '[U] not written'
+  if_fails: 'the rule flags real tests, so people turn it off'
+- id: FALSIFY-PV-TEST-RESOLVES-004
+  rule: Wrong module path is RED
+  prediction: 'FWD-001 (lora::layer::tests::merge_forward_equivalence) is unresolved although a fn of that name exists in merge.rs'
+  test: '[U] not written'
+  if_fails: 'a same-named fn elsewhere hides that the cited test is not the one that runs'
