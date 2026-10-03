@@ -422,15 +422,25 @@ for site in fused_k.rs fused_q5k_q6k.rs q4k_dot_avx2.rs; do       # live: must g
   else echo "ok ${site}: compiled"; fi
   mv "${q}/${site}.bak" "${q}/${site}"
 done
-cp "${q}/fused_q4k.rs" "${q}/fused_q4k.rs.bak"                    # orphan control
-printf '%s\n' "${plant}" >> "${q}/fused_q4k.rs"
-if check; then echo "ok fused_q4k.rs: orphan (control holds)"
-else echo "FAIL control: fused_q4k.rs is compiled now; update the R3 cites"; rc=1; fi
-mv "${q}/fused_q4k.rs.bak" "${q}/fused_q4k.rs"
+orphan="${q}/neon_q4k_006_orphan.rs"                               # control: no mod or include! names it
+printf '%s\n' "${plant}" > "${orphan}"
+if check; then echo "ok control: an unnamed file is not compiled"
+else echo "FAIL control: the planted orphan compiled; the probe cannot tell dead from live"; rc=1; fi
+rm -f "${orphan:?}"
+if [ -e "${q}/fused_q4k.rs" ]; then                                # tripwire while S3 is open
+  cp "${q}/fused_q4k.rs" "${q}/fused_q4k.rs.bak"
+  printf '%s\n' "${plant}" >> "${q}/fused_q4k.rs"
+  if check; then echo "ok fused_q4k.rs: still an orphan (S3 open)"
+  else echo "FAIL fused_q4k.rs is compiled now; update the R3 cites"; rc=1; fi
+  mv "${q}/fused_q4k.rs.bak" "${q}/fused_q4k.rs"
+else echo "n/a fused_q4k.rs: deleted (S3)"; fi
 exit "${rc}"
 ```
-The orphan control proves the probe can tell the two cases apart. Once the PROPOSE-TICKET
-delete lands, the control is dropped in the same commit.
+The control is a file the probe plants itself, so it survives the S3 delete
+(`ticket-bodies-side-fixes.md`). It proves that `check` can pass: a `check` that always fails, such as
+one on a tree whose aarch64 build is already broken, would otherwise report every live site as compiled.
+The `fused_q4k.rs` tripwire runs only while that file exists. Until S3 lands, it catches anyone who
+wires the orphan back in without updating the R3 cites.
 
 ## 4b. Skeleton: FALSIFY-NEON-Q4K-007 (widen fallback, tested on a dotprod host)
 
@@ -584,7 +594,9 @@ call that (forward_qwen35_prefill_tests.rs). FALSIFY-4228-004 and -005 check the
 `forward_single_qwen35`, and a NEON Err would pass them: on aarch64 both sides call the same dot on the same row and
 swallow the Err into the same 0.0. F and G close that before the batched prefill is wired into a run. G reads only
 `DIRECT_FP32_GEMV`, never the fp32 scope (q4k_q8k_multirow.rs:178-179), so it runs outside the scope and its
-reference is each token's own Q8_K dot. `fused_q5k_multirow_matmul_into` is left out: Q5_K is not an R3 kernel.
+reference is each token's own Q8_K dot. Running outside the scope stays right after ticket S2
+(`ticket-bodies-side-fixes.md`): once the multirow follows the scope, G inside it would take the per-row f32
+path and never reach the Q8_K multirow kernel it tests. `fused_q5k_multirow_matmul_into` is left out: Q5_K is not an R3 kernel.
 
 ## 5. What this needs before it can run
 
@@ -594,7 +606,7 @@ reference is each token's own Q8_K dot. `fused_q5k_multirow_matmul_into` is left
 | `kernel_path` shape | reuse `apr-kernel-path-v1` (OBS-15, unmerged #4574): `kernel_path(k)` becomes the entry's `kernel_id`, with `arch = aarch64`. On x86 it names the x86 arm (e.g. `q4k-f32/avx2`), because the C0 reference is read too. Each trace entry also carries `tensor`, the GGUF name, since BPM-012 compares per tensor, and a tensor gets one entry per kernel it reached (a crushed activation block switches one Q4_K call to f32). See P1 spec §3a |
 | `fused_q4k_q8k_dot_neon_widen` test entry | R3 code (NEON-Q4K-007) |
 | The seven matvec entries (five decode, two prefill), `with_fp32_activations` and `quantize_activations_q8k_into` in reach of a `quantize/` test (NEON-Q4K-008) | exist at 316dee2cd4: re-exported at quantize/mod.rs:132 and :140-146 (the multirow ones at :141 and :145); the quantizer is at mod.rs:241 |
-| Orphan `quantize/fused_q4k.rs` deleted | PROPOSE-TICKET 07:49Z; NEON-Q4K-006 keeps it as a control until then |
-| Orphan `quantize/fused_q.rs` deleted | PROPOSE-TICKET (R3 §13 row 9). It is not a dot site, so NEON-Q4K-006 needs no second control |
+| Orphan `quantize/fused_q4k.rs` deleted | Ticket S3 (`ticket-bodies-side-fixes.md`; PROPOSE-TICKET 07:49Z). NEON-Q4K-006 plants its own control file, so the delete does not weaken it; its `fused_q4k.rs` tripwire runs only while the file exists |
+| Orphan `quantize/fused_q.rs` deleted | Ticket S3 (R3 §13 row 9; PROPOSE-TICKET 18:21Z). It is not a dot site, so NEON-Q4K-006 needs no second control |
 | An aarch64 run (gx10) | GPU-deferred while a train is active; runs on CPU only, so it may be admissible earlier. Cop to rule |
 | An aarch64 CI lane | none today; FALSIFY-NEON-Q4K-000 proposes a report-only `cargo check --target aarch64` step |

@@ -73,6 +73,13 @@ for the real field, but their planted receipts carry it already. Then 8 in P3, 5
 3. P5 after P4 for the wgpu MoE part; the streaming part can follow P1.
 4. M runs only when the host is train-inactive, each with its receipt checked by P1.
 
+## Side fixes (not 0.73 gates)
+Three falsifiers sit outside the 41. They come from the draft amendment `contracts-draft/cpu-q4k-activation-quant-v1.yaml` (1.1.0) and land with their tickets (`ticket-bodies-side-fixes.md`), not with P1..P5:
+- FALSIFY-AQ-005 → S2: the multirow entry follows the fp32 scope.
+- FALSIFY-AQ-006 and FALSIFY-AQ-007 → S1: the fused gate+up entry follows the selector, and its crushed fallback is f32 and noted.
+
+All three are x86 lib tests: no GPU, no model, no aarch64 host. S3 has no contract falsifier; its acceptance is one-shot checks recorded in its PR body.
+
 ## Open
 - RQ-5 is ruled (cop, 2026-09-27 20:12Z): BPM-008 pins `cpu_ref_path` = `fp32_act`, held as data in `bpm.cpu_ref_path`. A `q8k_act` run is an info row only. Item (e): BPM-018 keeps info rows out of the verdict, and NEON-009 judges the gx10 default-route row; both are P1 rows. Whether that route should gate is RQ-6 (handoff).
 - RQ-3 decides the E6 admissible cell; it affects no row here. Provisional default: E1 PASS + E2 PASS receipts on main, with PRM-001 agreeing.

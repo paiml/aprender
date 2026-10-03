@@ -62,7 +62,7 @@ These are bodies ready to file, one per bundle in `falsifier-landing-map.md`.
 - On gx10 the default Q8_K route reaches the `q4k_dot_avx2.rs:338` arm through `fused_q4k_q8k_dot_with_bsums_simd` (bsum_precompute.rs:220), which falls back to that dispatcher off x86. No fourth arm is needed for correctness (R3 §13, route).
 - `kernel_path(k)` maps to OBS `kernel_id`.
 - A widen entry exposed only to tests.
-- The orphans `quantize/fused_q4k.rs` and `quantize/fused_q.rs` are not touched here. Each has its own PROPOSE-TICKET (R3 §13 rows 1 and 9).
+- The orphans `quantize/fused_q4k.rs` and `quantize/fused_q.rs` are not touched here. Each has its own PROPOSE-TICKET (R3 §13 rows 1 and 9). Body: S3 in `ticket-bodies-side-fixes.md`.
 
 **Acceptance**
 - NEON-Q4K-001..004 and 007 are green on gx10, with 10 000 cases each, f16-normal d/dmin, rows of 1, 2, 3, 7, 8 and 36 blocks under the derived bound 2·γ(K)·S, and the masked sweep.
@@ -124,8 +124,9 @@ These runs produce receipts, not code. They are scheduled when a host is train-i
 
 ---
 
-## Status (2026-10-03 16:46Z)
+## Status (2026-10-03 22:15Z)
 - origin/main is 316dee2cd4. All file:line cites in R1–R5 and these bodies were re-checked there at 13:18Z (ac564391ab).
 - **Filing:** still under S-1 hold (operator C292): nothing is filed or opened until LIVE 0.70.1. After LIVE, 0.73 moves from the floor to normal cadence: P1..P5 go to the cop as PROPOSE-TICKET lines, and this branch gets its PR.
-- **Open rulings, not blocking (C293.3):** RQ-3 and RQ-4 are requested in the handoff. Work proceeds on provisional S-4 defaults: RQ-3 = E1 PASS + E2 PASS receipts on main; RQ-4 = a hybrid may pass E1, and E2/E6 name it. RQ-5 is ruled: `fp32_act` (cop, 2026-09-27 20:12Z).
+- **Open rulings, not blocking (C293.3):** RQ-3, RQ-4 and RQ-6 are requested in the handoff. Work proceeds on provisional S-4 defaults: RQ-3 = E1 PASS + E2 PASS receipts on main; RQ-4 = a hybrid may pass E1, and E2/E6 name it; RQ-6 (gate the gx10 default route?) = info only, applied at c49bbb23cb. RQ-5 is ruled: `fp32_act` (cop, 2026-09-27 20:12Z).
 - **External blocker:** the OBS stack, #4487 and #4574, is unmerged, so P1's identity check stays NotRun until it merges.
+- **Side fixes:** S1..S3 (`ticket-bodies-side-fixes.md`) go out with P1..P5 at LIVE 0.70.1. They are not 0.73 gates, and none of P1..P5 waits on them.

@@ -211,10 +211,10 @@ falsification_tests:
 
 - id: FALSIFY-NEON-Q4K-006
   rule: each NEON arm sits in a compiled file (L25)
-  prediction: 'Adding compile_error!("planted") under cfg(target_arch = "aarch64") in each cited dispatcher file (fused_k.rs, fused_q5k_q6k.rs, q4k_dot_avx2.rs) makes the aarch64 cargo check fail. Planting it in the orphan quantize/fused_q4k.rs does NOT, which shows the file is dead.'
+  prediction: 'Adding compile_error!("planted") under cfg(target_arch = "aarch64") in each cited dispatcher file (fused_k.rs, fused_q5k_q6k.rs, q4k_dot_avx2.rs) makes the aarch64 cargo check fail. Planting it in a file that no mod or include! names does NOT: a fresh file the probe creates, and quantize/fused_q4k.rs while it exists (ticket S3 deletes it).'
   test: 'NOT YET WRITTEN. Runs with FALSIFY-NEON-Q4K-000, off the release path'
   if_fails: 'the NEON arm lives in dead code; parity tests run the old path and pass vacuously'
-  mutation: 'cite the orphan file as the site; the planted compile_error! must leave the check green, so the orphan must be refused as a site'
+  mutation: 'cite an orphan as the site (quantize/fused_q4k.rs at 316dee2cd4, or the planted file); the planted compile_error! must leave the check green, so the orphan must be refused as a site'
 - id: FALSIFY-NEON-Q4K-007
   rule: the q4k-q8k widen fallback is tested even on a dotprod host (L25)
   prediction: 'A test-only entry that calls the widen kernel directly satisfies neon_scalar_parity on gx10, a host with dotprod.'

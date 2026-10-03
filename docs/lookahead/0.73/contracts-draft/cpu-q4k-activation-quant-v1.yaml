@@ -1,0 +1,195 @@
+# DRAFT amendment, not landed (0.73 L3, la-73, 2026-10-03; Refs #3999).
+# Base: contracts/cpu-q4k-activation-quant-v1.yaml at 316dee2cd4, copied unchanged except
+# for what 1.1.0 adds: the version, the end of the description, three references, the
+# equation activation_path_selector, AQ-SEL-005/006, FALSIFY-AQ-005..007 and one qa_gate
+# check. Tickets S1 and S2 (docs/lookahead/0.73/ticket-bodies-side-fixes.md) make it true.
+# It lands with the later of the two, because FALSIFY-AQ-005 is red until S2 lands and
+# FALSIFY-AQ-006/007 are red until S1 lands.
+metadata:
+  version: 1.1.0
+  created: '2026-03-03'
+  author: PAIML Engineering
+  description: CPU Q4K kernel must pre-quantize activations to Q8_K for integer-only inner loop, except where activation_path_selector picks f32 (1.1.0)
+  references:
+  - llama.cpp ggml_vec_dot_q4_K_q8_K — maddubs_epi16 integer-only dot product
+  - realizar fused_k.rs:177 TODO — pre-quantize activations to Q8_0 format
+  - 'qwen-coder-deploy bench-results-v2: apr CPU 9.5 tok/s vs llama.cpp 74 tok/s'
+  - 'Williams et al. (2009) Roofline: memory-bound inference requires bandwidth reduction'
+  - 'realizar quantize/parallel_k.rs:201-244 (#3714): with_fp32_activations, the scoped exact-activation reference'
+  - 'realizar quantize/mod.rs:386-438 and quantize/direct_f32.rs (#2971, L0-1b): the crushed-block fallback'
+  - '0.73 L3 side-fix ticket bodies S1 and S2 (#3999): docs/lookahead/0.73/ticket-bodies-side-fixes.md'
+  depends_on:
+  - roofline-model-v1.yaml
+  - q4k-q6k-superblock-v1.yaml
+equations:
+  current_path:
+    formula: "Current (f32 activations):\n  dot(row, acts) = Σ_b Σ_i dequant_q4k(row[b][i]) × acts[b*256+i]\n\nOperations\
+      \ per super-block (256 values):\n  - 256 nibble extractions (bit ops)\n  - 256 f32 multiplications (dequant × activation)\n\
+      \  - 256 f32 FMA operations\n  - Total: ~768 f32 ops per super-block\n"
+    domain: Q4_K super-blocks (144 bytes, 256 values each)
+    preconditions:
+    - x.iter().all(|v| v.is_finite())
+    - x.len() > 0
+    lean_theorem: Theorems.Current_Path
+  target_path:
+    formula: "Target (Q8_K activations, integer-only inner loop):\n  Phase 1: quantize_row_q8_k(acts) → q8_acts  (once per\
+      \ matmul)\n  Phase 2: dot(q4_row, q8_acts) = Σ_b vpdpbusd(q4[b], q8[b]) × scale[b]\n\nOperations per super-block:\n\
+      \  - 4× _mm256_maddubs_epi16 (integer multiply-accumulate, 1 cycle throughput)\n  - 4× _mm256_madd_epi16 (horizontal\
+      \ pair add, 1 cycle)\n  - 1× horizontal sum + scale application\n  - Total: ~12 integer ops per super-block\n"
+    domain: Q4_K × Q8_K integer arithmetic
+    preconditions:
+    - x.iter().all(|v| v.is_finite())
+    - x.len() > 0
+    lean_theorem: Theorems.Target_Path
+  speedup_bound:
+    formula: "Theoretical speedup from activation quantization:\n  bandwidth_reduction = sizeof(f32) / sizeof(int8) = 4×\n\
+      \  compute_reduction = fma_latency / maddubs_latency ≈ 3-4×\n  combined_speedup ≈ 4-8× (memory-bound regime)\n\nTarget:\
+      \ apr CPU ≥ 60 tok/s (within 15% of llama.cpp's 74)\n"
+    domain: Memory-bound inference on DDR4/DDR5
+    invariants:
+    - Q8_K quantization error < 0.1% relative to f32
+    - Throughput improvement monotonic with activation vector length
+    preconditions:
+    - x.iter().all(|v| v.is_finite())
+    - x.len() > 0
+    lean_theorem: Theorems.Speedup_Bound
+  activation_path_selector:
+    formula: |
+      For a Q4_K matvec whose input x arrives as f32 (1.1.0):
+        path(x) = f32  if fp32_activations_scoped()            (inside with_fp32_activations, #3714)
+                       or DIRECT_FP32_GEMV = 1
+                       or the entry checks for crushed blocks and has_crushed_block(x)   (L0-1b, #2971)
+                = q8k  otherwise
+      A 256-block B is crushed when max|B| / second|B| >= CRUSHED_BLOCK_RATIO = 8.0.
+        A block with one nonzero element is crushed; an all-zero block is not.
+      f32: each output row is fused_q4k_dot_simd(row, x zero-padded to whole super-blocks)
+      q8k: x is quantized to Q8_K once per token row, then target_path runs
+    domain: 'The Q4_K entries that take f32 activations: fused_q4k_parallel_matvec_into, fused_gate_up_q4k_into, fused_q4k_multirow_matmul_f32_into (per token row) and the matvec_into_honest wrapper (ffn_block.rs:784-795)'
+    codomain: 'one path in {f32, q8k} per call, or per token row for the multirow entry'
+    preconditions:
+    - x.iter().all(|v| v.is_finite())
+    - x.len() > 0
+    postconditions:
+    - 'path = f32 implies every output row is bit-identical to fused_q4k_parallel_matvec_f32_into on the same row and x'
+    - 'path = q8k implies x is quantized to Q8_K once per token row per call (AQ-INV-003)'
+    - 'on the default route (outside the scope, DIRECT_FP32_GEMV unset), a switch caused by a crushed block calls note_crushed_fallback once per projection, on the calling thread'
+    invariants:
+    - 'At 316dee2cd4 two entries break the selector. fused_gate_up_q4k_into reads neither the scope nor the env var, and its crushed fallback stays on q8k outside the scope (S1). The multirow entry reads only the env var (S2)'
+    - 'The multirow entry has no crushed check. #2971 scoped the crushed remedy to the reference forward (direct_f32.rs:6-7); a default-route check there is an open question and not part of 1.1.0'
+    - 'The scope is a thread-local flag set on every worker of the pool that with_fp32_activations builds, so rayon work spawned inside the scope stays inside it'
+    - 'Entries that receive activations already quantized to Q8_K are outside the domain; their callers choose q8k themselves'
+    - 'Q4_K only. The Q5_K and Q6_K drivers are not covered'
+    - 'The AQ-EQ-001 epsilon holds only off crushed blocks. On the layer-26 crushed block (L0-1b) the q8k gate and up outputs came out 13 % low (quantize/mod.rs:388-393)'
+    lean_theorem: Theorems.Activation_Path_Selector
+proof_obligations:
+- id: AQ-EQ-001
+  type: equivalence
+  property: Q8_K quantization preserves dot product accuracy
+  formal: '|dot_q4k_f32(row, acts) - dot_q4k_q8k(row, quantize_q8k(acts))| < ε'
+  tolerance: 0.001
+  applies_to: all
+- id: AQ-BND-002
+  type: bound
+  property: CPU throughput reaches llama.cpp parity
+  formal: tok/s(apr CPU) ≥ 0.85 × tok/s(llama.cpp CPU) on same hardware
+  applies_to: all
+- id: AQ-INV-003
+  type: invariant
+  property: Phase 1 quantization is amortized
+  formal: quantize_row_q8_k called exactly once per matmul, not once per dot product
+  applies_to: all
+- id: AQ-EQ-004
+  type: equivalence
+  property: SIMD kernel equivalence
+  formal: avx2_q4k_q8k_dot(row, q8_acts) ≡ scalar_q4k_q8k_dot(row, q8_acts)
+  tolerance: 1.0e-06
+  applies_to: simd
+- id: AQ-SEL-005
+  type: invariant
+  property: Every Q4_K entry on f32 input follows activation_path_selector
+  formal: 'forall entry e in the selector domain, x, scope, env: path_e(x) = path(x)'
+  applies_to: all
+- id: AQ-SEL-006
+  type: invariant
+  property: A crushed-block fallback on the default route is noted once per projection
+  formal: 'for an entry that checks for crushed blocks, outside the scope with DIRECT_FP32_GEMV unset: notes_e(x) = projections(e) if has_crushed_block(x), else 0, counted on the calling thread'
+  applies_to: all
+falsification_tests:
+- id: FALSIFY-AQ-001
+  rule: Dot product parity
+  prediction: Q4K×Q8K dot matches Q4K×f32 dot within 0.1% for random vectors
+  test: proptest with 10000 random activation vectors, dim 256..4096
+  if_fails: Q8K quantization rounding error exceeds tolerance
+- id: FALSIFY-AQ-002
+  rule: Throughput target
+  prediction: apr CPU ≥ 60 tok/s on Qwen2.5-Coder-1.5B Q4K (RTX 4090 host, CPU-only)
+  test: probador llm bench --prompt-profile medium --duration 30s --runs 3
+  if_fails: Activation quantization not applied or parallelism overhead too high
+- id: FALSIFY-AQ-003
+  rule: Amortized quantization
+  prediction: quantize_row_q8_k called ≤ out_dim times per forward pass (once per matmul)
+  test: Instrument quantize_row_q8_k with counter, run 10-token generation
+  if_fails: Quantization called per-dot instead of per-matmul
+- id: FALSIFY-AQ-004
+  rule: No regression in output quality
+  prediction: argmax(logits_q8k) == argmax(logits_f32) for greedy decoding
+  test: Compare 20-token greedy generation between paths
+  if_fails: Quantization error flips argmax — increase Q8K precision
+- id: FALSIFY-AQ-005
+  rule: The multirow entry follows the scope (S2)
+  prediction: 'Inside with_fp32_activations, with DIRECT_FP32_GEMV unset, fused_q4k_multirow_matmul_f32_into with m = 3, in_dim 512, out_dim 8 gives every token row bit-identical to fused_q4k_parallel_matvec_f32_into on that row. Token 1 carries the layer-26 crushed block. Control: the same call outside the scope differs. Red at 316dee2cd4.'
+  test: 'NOT YET WRITTEN. Proposed home: fp32_activation_scope_tests in quantize/parallel_k.rs (ticket S2)'
+  if_fails: 'an fp32_act reference over a qwen35 chunked prefill runs its m > 1 chunks on Q8_K and still reports itself as exact'
+  mutation: 'restore the env-only read at q4k_q8k_multirow.rs:178; the test must turn RED. Second: drop direct_fp32 from the :179 predicate; the test must turn RED.'
+- id: FALSIFY-AQ-006
+  rule: The fused gate+up entry follows the scope (S1)
+  prediction: 'Inside with_fp32_activations, with DIRECT_FP32_GEMV unset, fused_gate_up_q4k_into on uncrushed x (in_dim 512, out_dim 8) gives gate and up bit-identical to fused_q4k_parallel_matvec_f32_into on each projection. Control: the same call outside the scope differs. Red at 316dee2cd4.'
+  test: 'NOT YET WRITTEN. Proposed home: fp32_activation_scope_tests in quantize/parallel_k.rs (ticket S1)'
+  if_fails: 'a scoped exact-activation reference runs this entry on Q8_K and still reports itself as exact'
+  mutation: 'drop q4k_takes_f32() from the new condition, or make it return false; the test must turn RED. Make it return true; the control must turn RED.'
+- id: FALSIFY-AQ-007
+  rule: The fused gate+up crushed fallback is f32 and noted (S1)
+  prediction: 'Outside the scope, with DIRECT_FP32_GEMV unset, fused_gate_up_q4k_into on x with a crushed block gives gate and up bit-identical to fused_q4k_parallel_matvec_f32_into and counts exactly 2 notes on the calling thread; uncrushed x counts 0. Control: two fused_q4k_parallel_matvec_into calls on the crushed x differ from the reference. Red at 316dee2cd4 (Q8_K, 0 notes).'
+  test: 'NOT YET WRITTEN. Proposed home: fp32_activation_scope_tests in quantize/parallel_k.rs, with a cfg(test) thread-local note counter in quantize/mod.rs (ticket S1)'
+  if_fails: 'the L0-1b remedy is a no-op on this entry, and the crushed-block rate that a speed basis cites undercounts'
+  mutation: 'put fused_q4k_parallel_matvec_into back in the fallback; the test must turn RED. Delete one note or both, or move the notes into the rayon::join closures; the count must turn RED.'
+kani_harnesses:
+- id: KANI-AQ-001
+  obligation: AQ-EQV-001
+  property: Q8K dot product bounded error for small vectors
+  bound: 8
+  strategy: stub_float
+  solver: cadical
+  harness: verify_q8k_dot_parity
+- id: KANI-CPU_Q4-002
+  obligation: Q8_K quantization preserves dot product accuracy
+  property: Q8_K quantization preserves dot product accuracy
+  bound: 8
+  strategy: exhaustive
+- id: KANI-CPU_Q4-003
+  obligation: CPU throughput reaches llama.cpp parity
+  property: CPU throughput reaches llama.cpp parity
+  bound: 8
+  strategy: exhaustive
+- id: KANI-CPU_Q4-004
+  obligation: Phase 1 quantization is amortized
+  property: Phase 1 quantization is amortized
+  bound: 8
+  strategy: exhaustive
+- id: KANI-CPU_Q4-005
+  obligation: SIMD kernel equivalence
+  property: SIMD kernel equivalence
+  bound: 8
+  strategy: exhaustive
+qa_gate:
+  id: F-AQ-001
+  name: CPU Q4K Activation Quantization Contract
+  description: Pre-quantize activations to Q8_K for integer-only CPU inference
+  checks:
+  - dot_product_parity
+  - throughput_target
+  - amortized_quantization
+  - output_quality
+  - activation_path_selector
+  pass_criteria: All 7 falsification tests pass + throughput ≥ 60 tok/s
+  falsification: Skip activation quantization — measure throughput delta

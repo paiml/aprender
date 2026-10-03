@@ -118,14 +118,14 @@ Mechanism, per qtype (aprender-serve):
 - **Q4_K, crushed blocks.** The honest forward switches one Q4_K matvec to f32 when `has_crushed_block(x)`
   (`matvec_into_honest`, ffn_block.rs; `fused_q4k_parallel_matvec_f32_into`, L0-1b #2971). This is data-dependent.
 - **Q4_K, multirow (m > 1).** `fused_q4k_multirow_matmul_f32_into` reads only `DIRECT_FP32_GEMV`
-  (q4k_q8k_multirow.rs:178). The scope is ignored.
+  (q4k_q8k_multirow.rs:178). The scope is ignored. Fix: ticket S2 (`ticket-bodies-side-fixes.md`).
 - **Q5_K / Q6_K.** Always f32. `fused_q5k_parallel_matvec_into` and `fused_q6k_parallel_matvec_into`
   (q5k_q6k_matvec.rs:7, :48, included at parallel_k.rs:498) run `generic_parallel_matvec_into` with the f32 dots
   (`fused_q6k_dot_simd`, fused_q5k_q6k.rs:118). There is no Q8_K path for them.
   - quantize/fused_q.rs is an older copy of q5k_q6k_matvec.rs that nothing compiles (no `mod`, no `include!`).
     Four falsify tests still cite it as the CPU path: falsify_q6k_fp_accumulator_order_001.rs:101,
     falsify_q6k_activation_amplification_002.rs:84, falsify_q6k_chain_length_003.rs:104 and
-    falsify_q4k_bisect_dequant_007.rs:128.
+    falsify_q4k_bisect_dequant_007.rs:128. Ticket S3 (`ticket-bodies-side-fixes.md`) deletes the file and re-points the four cites.
 - **Q4_0 / Q8_0.** Always Q8_0 activations (`fused_q4_0_q8_0_*`, `fused_q8_0_q8_0_parallel_matvec_into`). There is no
   f32 path.
 - **Callers that pre-quantize whatever the scope says:**
@@ -204,7 +204,7 @@ RQ-5 made `fp32_act` the E1 reference and `q8k_act` an info row only. Item (e) g
 - **The first row, `c4_default_route_info`** (neon-q4k-q6k-v1, FALSIFY-NEON-Q4K-009). r1 = cos(C4 default, C0 `fp32_act` reference) is the end-to-end figure. r2 = cos(C0 default, the same reference) is the x86 activation-quantization gap. r3 = cos(C4 default, C0 default) is the cross-host kernel difference on one route. The row is measured only when `kernel_path` proves the default route on both hosts, the three runs are one bound triple (f0 is the run leg_a cites), and the angles close a triangle within 1e-3 rad. The f32 cosine helpers lose up to 2.44e-4 rad per angle, so three lose at most 7.3e-4.
 - **Why an info row, not a leg.** #3714 quotes CUDA MoE at cos 1.000000 against `fp32_act` and 0.985 against the production Q8_K path (Qwen3-Coder-30B-A3B, not re-measured). So r2 may sit under the 0.995 floor, and a gated default-route leg would measure activation quantization, not NEON. Dense Qwen3 is [U]. GPU paths use exact-FP32 activations (§11), so the default route has no GPU-cell analogue, and the earlier framing (a C4 leg against the reference "as a GPU cell runs") is withdrawn. Whether the gx10 default route should gate is RQ-6 (handoff), with r3 as the candidate. The provisional S-4 default is info only.
 - **Correction [V].** Dense Qwen3 decode in `forward_single_with_cache` reaches C and never D, on either route. D (`fused_q4k_q8k_ffn_up_gate_into`) runs only from `fused_gate_up_q4k_into` (fused_gate_up.rs:227), through the non-fused gated branch (ffn_block.rs:58, then fused_matmul_into.rs:180-187; taken by LayerNorm models, models with no FFN norm, and Gemma-1, ffn_block.rs:42-58), and from `scratch_q8k_up_gate` (results.rs:33), which only the scratch and traced forwards reach (results.rs:608, traced.rs:179). The 20:59Z handoff Next said the default route reaches C and D.
-- **Side defect [V].** The #2971 crushed fallback in `fused_gate_up_q4k_into` (fused_gate_up.rs:189-213) calls `fused_q4k_parallel_matvec_into`. Outside the scope that function quantizes to Q8_K (parallel_k.rs:303-304), so the fallback changes nothing, and it never calls `note_crushed_fallback`. The fix calls `fused_q4k_parallel_matvec_f32_into`, as `matvec_into_honest` does (ffn_block.rs:791-792). It becomes a PROPOSE-TICKET after LIVE 0.70.1; no 0.73 model reaches it.
+- **Side defect [V].** The #2971 crushed fallback in `fused_gate_up_q4k_into` (fused_gate_up.rs:189-213) calls `fused_q4k_parallel_matvec_into`. Outside the scope that function quantizes to Q8_K (parallel_k.rs:303-304), so the fallback changes nothing, and it never calls `note_crushed_fallback`. The fix calls `fused_q4k_parallel_matvec_f32_into`, as `matvec_into_honest` does (ffn_block.rs:791-792). It becomes a PROPOSE-TICKET after LIVE 0.70.1 (ticket body S1, `ticket-bodies-side-fixes.md`); no 0.73 model reaches it.
 
 pv 0.70.0 after item (e): validate 0/0 on both contracts; lint 0 errors and 6 lean_theorem warnings (the new one is `c4_default_route_info`). BPM: 4 equations, 18 falsifiers, 13 obligations.
 
