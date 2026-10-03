@@ -13,7 +13,12 @@ metadata:
     GGUF -> apr refuses every real Qwen3.5 GGUF (4 files, rc 5).
     QFR-006 (PROPOSED 2026-10-03) checks function, not names: the GGUF export must equal llama.cpp's own
     conversion of the same snapshot. It needs the 4B, because the 0.8B and the 2B have as many value heads as
-    key heads and cannot see the value-head order. The version stays 1.1.0: no row of this file has landed.
+    key heads and cannot see the value-head order.
+    QFR-007..009 (PROPOSED 2026-10-03, K41) check the hyperparameters: Qwen3.5 keeps its dims under text_config
+    and its rope base (1e7) under text_config.rope_parameters, and a .apr imported without #4418 says 1e4 with no
+    dims. The rope base and dims must reach the .apr, its merge and the exported GGUF, or the export refuses; every
+    qwen35 fallback and preset must agree with the published headers. The version stays 1.1.0: no row of this
+    file has landed.
   references:
   - 'branch la-72/0.72-shaping: docs/specifications/aprender-train/train-what-you-serve-0.72.md §R10, Spike S-R10 (not on main until the 0.72 shaping PR lands)'
   - contracts/model-format-conversion-v1.yaml
@@ -22,6 +27,8 @@ metadata:
   - 'llama.cpp d1d3c3396, convert_hf_to_gguf.py Qwen3_5TextModel: the reference conversion of QFR-006'
   - 'branch la-72/r15-receipt-ext: docs/specifications/aprender-train/r21-cuda-qwen35-hybrid-block.md §Value-head order (which checkpoints and fixtures can see the order)'
   - crates/aprender-core/src/format/gguf/api_tests_all_keys_3733.rs (qwen35.* keys kept off the config accessors on purpose)
+  - 'aprender#4418 @1af0e3cc11: source_load_result.rs:288,381 merge_text_config and :304-310 the rope_parameters read (QFR-007); gguf_export_config.rs:680-714 qwen35_base, the .apr before the config.json (QFR-008); qwen35_gguf.rs:497 the 1e7 fallback, used only when both are absent'
+  - 'branch la-72/r15-receipt-ext @a401159f74: docs/specifications/aprender-train/train-what-you-serve-0.72.md K41, row 26 (QFR-007..009)'
   depends_on:
   - model-format-conversion-v1
 status: PROPOSED
@@ -49,6 +56,15 @@ equations:
     - 'apr diff --values compares only the names both files share (select_common_tensors, crates/apr-cli/src/commands/diff.rs:295), so a dropped tensor is invisible to it; the name sets are compared separately'
     preconditions:
     - one apr binary, sha recorded, writes E and reads both files
+  hparams_carried:
+    formula: 'hp(import(S)) = hp(merge(import(S))) = hp(S) ∧ gguf_hp(export(merge(import(S)))) = gguf_hp(S)'
+    domain: 'S = an HF Qwen3.5 snapshot whose config.json nests the text model under text_config and the rope base under text_config.rope_parameters; hp = rope_theta, hidden_size, num_attention_heads, num_key_value_heads, head_dim, num_hidden_layers, intermediate_size, max_position_embeddings; gguf_hp = qwen35.rope.freq_base, attention.head_count, attention.head_count_kv, attention.key_length, context_length, rope.dimension_sections'
+    invariants:
+    - 'Read at 316dee2cd4: load_model_config_from_json reads the top level only (source_load_result.rs:282-303), so the .apr gets rope_theta 10000, the default, which is always Some, and no dims. S-R10 (apr 0.69.3): hf.apr says rope_theta 10000 with no dims, and hf-rt.gguf says qwen3_5, freq_base 10000, heads 16/8, ctx 0, with no key_length and no dimension_sections. The published 0.8B, 2B, 4B, 9B and 27B GGUFs all say freq_base 1e7 and key_length 256'
+    - '#4418 @1af0e3cc11 fixes a fresh import (merge_text_config, source_load_result.rs:288,381; the rope_parameters read, :304-310). Its export takes each field from the .apr first and from the config.json beside it second (qwen35_base, gguf_export_config.rs:680-714), and its 1e7 fallback fires only on None (qwen35_gguf.rs:497). A .apr imported before #4418 always says 10000, so with the HF config.json beside it, it exports at 1e4 with no warning'
+    - 'apr finetune merge clones the base metadata. backfill_arch_dims (apr-cli finetune_display_next_validate.rs:240) never sets rope_theta, and fills head counts for qwen2 only (arch_preset_dims, :169-179)'
+    preconditions:
+    - one apr binary, sha recorded, runs import, merge and export
 proof_obligations:
 - type: equivalence
   property: Lossless round-trip is bit-identical
@@ -66,6 +82,10 @@ proof_obligations:
 - type: equivalence
   property: The GGUF export is llama.cpp's conversion of the same snapshot
   formal: 'names(E(M)) = names(L(M)) ∧ ∀ t: E(M)[t] = L(M)[t], bitwise except ssm_a (≤ 2 ulp)'
+  applies_to: all
+- type: invariant
+  property: The source config's rope base and dims reach the exported GGUF, or the export refuses
+  formal: 'hp(A) ≠ hp(C) ⇒ exit(export(A)) ≠ 0, for C the config.json beside A or the source config stored in A'
   applies_to: all
 falsification_tests:
 - id: FALSIFY-QFR-001
@@ -98,3 +118,18 @@ falsification_tests:
   prediction: 'apr export --format gguf (no quantize flag) of a Qwen3.5 checkpoint equals llama.cpp d1d3c3396''s conversion of the same snapshot (convert_hf_to_gguf.py --outtype f32): the same tensor names, every tensor bitwise equal except ssm_a, whose exp torch and Rust each compute (within 2 ulp), and the same qwen35.* and tokenizer.ggml.* metadata. Planted, each RED: an export that maps the names and skips the value transforms; the value-head reorder applied backwards (nk and nv/nk exchanged); the +1 skipped on the zero-centred norms; ssm.group_count and ssm.time_step_rank exchanged; one tensor dropped'
   test: '[U] not written; NOT MEASURED until #4418 merges. IN-TREE (CPU, cargo after LIVE 0.70.1): a seeded tiny Qwen3.5 checkpoint with 3 key heads and 6 value heads (4 layers at interval 4, a vocabulary of a few hundred tokens so the fixture stays under 1 MB), converted once by llama.cpp d1d3c3396 with --outtype f32. The checkpoint, the reference GGUF and the script that wrote them are committed with their sha256. Not 2 and 4, where the reorder is its own inverse: #4418 @1af0e3cc11 pins its names against llama.cpp output (qwen35_gguf_tests.rs:1-6), but its value tests compare with hand-computed values at 2 key and 4 value heads (:141-216). CELL: Qwen/Qwen3.5-4B, revision recorded; not the 0.8B or the 2B, where the reorder is the identity. apr import, then apr export --format gguf; llama.cpp on the same snapshot directory (two f32 files of about 15 GB each). apr tensors: the same 426 names in both (the published 4B Q4_K_M has 426: 424 layer tensors, token_embd and output_norm; tied, no MTP layers, no visual tower). apr diff --values --limit 426 --json: 426 compared, every one IDENTICAL except the 24 ssm_a, each within 2 ulp. apr inspect --json: equal qwen35.* and tokenizer.ggml.* keys. apr eval perplexity of both files, same binary, text and device: equal within 1e-4 relative. Read at 316dee2cd4: the value diff goes through RosettaStone::inspect and load_gguf_raw, which check no architecture (the qwen35 refusal is in import.rs:345), so it reads qwen35 GGUFs'
   if_fails: 'apr writes a GGUF that llama.cpp loads but that computes a different function, so llama.cpp and apr both serve it wrong while QFR-001..004 are green. Bisect by tensor kind: the norms (+1), ssm_a (-exp), ssm_conv1d (squeeze), then the tensors indexed by value head (reorder)'
+- id: FALSIFY-QFR-007
+  rule: The imported .apr, its merge, and the GGUF exported from the merge carry the source config's rope base and dims
+  prediction: 'apr import of an HF Qwen3.5 snapshot writes text_config''s dims and text_config.rope_parameters.rope_theta into the .apr, and apr finetune merge keeps them. apr export --format gguf of the merged .apr writes general.architecture qwen35 and the source''s rope.freq_base, attention.head_count, attention.head_count_kv, attention.key_length, context_length, rope.dimension_count and rope.dimension_sections. On the 0.8B these are the published GGUF''s values: 1e7, 8, 2, 256, 262144, 64 and [11, 11, 10, 0]. Planted, each RED: merge_text_config removed; the rope_parameters read removed; a merge that drops rope_theta'
+  test: '[U] not written; CPU only, needs cargo after LIVE 0.70.1. IN-TREE: QFR-006''s seeded tiny checkpoint, whose config.json nests the text model under text_config and puts rope_theta 1e7 only under rope_parameters (a top-level rope_theta would hide the defect), run through import, a one-step LoRA merge, and export. CELL: S-R10''s files are RED, measured: hf.apr has rope_theta 10000 and no dims; hf-rt.gguf has qwen3_5, freq_base 10000, heads 16/8, context_length 0, no key_length and no dimension_sections. By reading, 316dee2cd4 is RED and #4418 @1af0e3cc11 is GREEN for a fresh import; neither is run'
+  if_fails: 'the served model computes with rope base 1e4 instead of 1e7. Arithmetic, not measured: pair 16 of the 32 rotating pairs turns about 32 times faster per token. The dims can still be right, and every gate that reads the same file on both sides stays green. Bisect: the .apr after import, then after merge, then the GGUF header'
+- id: FALSIFY-QFR-008
+  rule: apr export refuses a qwen35 .apr whose rope base or dims disagree with its source config
+  prediction: 'apr export --format gguf of a qwen35 .apr exits non-zero and prints both values when the .apr has a rope_theta, head count, head_dim, hidden_size, num_layers or max_position_embeddings that differs from its source config. The source config is custom.hf_config, which QFR-003''s fix stores (56f8995801, this branch), or else the config.json beside the input. A .apr that agrees with it exports as before. Planted: S-R10''s hf.apr (rope_theta 10000, no dims, no custom.hf_config) with the HF config.json beside it'
+  test: '[U] not written; CPU only, needs cargo after LIVE 0.70.1. IN-TREE: QFR-006''s tiny checkpoint imported, its .apr rope_theta then set to 10000 (the value an import without #4418 writes), and exported with the source config.json beside it. By reading, #4418 @1af0e3cc11 is RED: qwen35_base takes the .apr''s rope_theta before the config.json''s, so this exports at freq_base 1e4 with the right dims and no warning. Not run'
+  if_fails: 'a .apr imported before #4418, or merged from one, ships a GGUF that loads and serves at the wrong rope base. The fix that makes fresh imports right leaves the files already on disk wrong, and no gate reads them'
+- id: FALSIFY-QFR-009
+  rule: Every qwen35 rope fallback and preset says what the published Qwen3.5 checkpoints say
+  prediction: 'For architecture qwen35 or qwen3_5, serve''s default_rope_theta_for_architecture (aprender-serve gguf/config.rs:365) and core''s (aprender-core format/converter/export.rs:52) return 1e7. TransformerConfig::qwen3_5_9b() (aprender-train transformer/config.rs:246) and the 9b row of contracts/model-families/qwen3_5.yaml say rope_theta 1e7, and the 27b row says hidden_dim 5120. Each agrees with the published GGUF header of its size'
+  test: '[U] not written; CPU only, needs cargo after LIVE 0.70.1. IN-TREE: a table test of the four sources against the published headers, recorded as constants: freq_base 1e7 and key_length 256 on the 0.8B, 2B, 4B, 9B and 27B; embedding_length 4096 on the 9B and 5120 on the 27B. By reading, 316dee2cd4 is RED on each of the five checks: serve says 1e4 (no qwen35 arm), core 1e6 (every architecture containing "qwen"), the 9B preset 1e6 (QWEN2_ROPE_THETA), the 9b row 1e6, and the 27b row hidden_dim 6144 (derived there as num_heads × head_dim = 24 × 256)'
+  if_fails: 'a qwen35 file that lacks its rope base, or a run built from the preset, trains or serves at 1e4 or 1e6 with no error. The preset line belongs on R1''s branch (4552-train-arch-honesty @1fda81ad6c), which already gates qwen3_5_9b() and leaves its rope at 1e6'
