@@ -181,6 +181,18 @@ falsification_tests:
   test: 'NOT YET WRITTEN — lands with the R1 harness'
   if_fails: 'an engine that stops early reads faster than it is'
   mutation: 'drop the n_gen equality; the planted receipt must turn GREEN'
+- id: FALSIFY-BPM-016
+  rule: a wgpu cell whose GEMV ops fall back to the CPU per op is HYBRID, not wgpu (L25, R5 F-R5-2/4)
+  prediction: 'A Q8_0 model on a real GPU adapter (device_type DiscreteGpu, banner present, no fallback line) whose trace shows the GEMVs on the CPU path (wa:339 refusal) is labelled HYBRID and is not scored as a wgpu cell.'
+  test: 'NOT YET WRITTEN — lands with the R1 harness; needs a per-op backend field in the trace'
+  if_fails: 'a wgpu E1/E2 cell measures the CPU while every banner-level check passes'
+  mutation: 'check the adapter banner only; the planted Q8_0 receipt must turn GREEN as wgpu'
+- id: FALSIFY-BPM-017
+  rule: an E3 GPU receipt needs the in-process F2 guard to have judged something (L25, R4)
+  prediction: 'A C0 MoE receipt whose stderr has "F2 guard: SKIP_PARITY_GATE=1" or "nothing was judged" (a prompt under 2 tokens), or lacks the "F2 guard: GPU matches" line, is REFUSED as E3 GPU evidence.'
+  test: 'NOT YET WRITTEN — lands with the R1 receipt checker'
+  if_fails: 'a GPU run that skipped its own parity guard reads as a validated GPU run'
+  mutation: 'accept on used_gpu = true alone; the planted SKIP_PARITY_GATE receipt must turn GREEN'
 proof_obligations:
 - type: invariant
   property: 'Two legs >= 0.995 imply end-to-end cosine >= 0.98 (FALSIFY-BPM-002)'
@@ -213,6 +225,12 @@ proof_obligations:
 - type: invariant
   property: 'E1 reads decode positions (FALSIFY-BPM-013)'
   formal: 'PASS_E1 => forall p: |decode_positions(p)| >= 8'
+- type: invariant
+  property: 'A wgpu cell runs its GEMVs on wgpu (FALSIFY-BPM-016)'
+  formal: 'wgpu_cell(r) => forall op in gemv_ops(r.trace): op.backend = wgpu, else label(r) = HYBRID'
+- type: invariant
+  property: 'An E3 GPU receipt carries a judged F2 guard (FALSIFY-BPM-017)'
+  formal: 'E3_gpu(r) => f2_matches_line(r.stderr) and not f2_skipped(r.stderr)'
 
 qa_gate:
   id: F-BPM-GATE-001
@@ -226,8 +244,8 @@ qa_gate:
   pass_criteria: 'Every cell has an admissible receipt on main. Report-only until the harness lands.'
 
 verification_summary:
-  total_obligations: 10
+  total_obligations: 12
   proven: 0
   tested: 0
   status: proposed
-  notes: 'Draft by la-73 (L3). No ticket yet; the harness and the tests land with R1. L25 review 2026-10-03 at main 316dee2cd4 added BPM-009..015 (7 vacuous-pass holes).'
+  notes: 'Draft by la-73 (L3). No ticket yet; the harness and the tests land with R1. L25 review 2026-10-03 at main 316dee2cd4 added BPM-009..015 (7 vacuous-pass holes). L25 on R4/R5 2026-10-03 at main 316dee2cd4 added BPM-016 (per-op hybrid) and BPM-017 (skipped F2 guard).'
