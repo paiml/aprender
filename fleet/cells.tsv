@@ -1,5 +1,5 @@
-# measured 2026-10-03T13:37:38Z
-lambda-labs	apr	RED	mirror-unreachable (installed v0.70.0@2add1c6, target -)
+# measured 2026-10-03T13:52:39Z
+lambda-labs	apr	RED	behind (installed v0.70.0@2add1c6, target nightly@d8c0039)
 lambda-labs	pv	GREEN	ok (installed v0.70.0@2add1c6, target v0.70.0@2add1c6)
 lambda-labs	forjar	GREEN	no-sha (installed nightly@49b33fb, target nightly@49b33fb)
 lambda-labs	bashrs	GREEN	no-sha (installed nightly@1241570, target nightly@1241570)
