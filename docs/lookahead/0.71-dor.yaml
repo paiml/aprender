@@ -52,7 +52,8 @@ rows:
     # PP-LLAMA-001 already owns. See docs/lookahead/0.71-v1-ttft-home.md. V2 = a proposed §3 `load_ms` row (REPORTED).
     # 18:17Z drafted as PP-LLAMA-001 v3.2 §3 (e1f32ac9e5); resolution and keys aligned with aprender-cd in 0494f5b9ff,
     # probe/refusal and Appendix B spellings with la-71/load-block@84a1f56d01 in 3e12078c24, and the bracket and
-    # 2xx probe every MEASURED side carries (load-block@1e52d7ac9f) in cccd65b496.
+    # 2xx probe every MEASURED side carries (load-block@1e52d7ac9f) in cccd65b496; Appendix B's load keys, and the six
+    # that only a MEASURED side carries, checked against load-block@eca952b489 in d67b6539da.
     contract: {id: PP-LLAMA-001-s3-load_ms, path: null, on_main: false,
                staged_at: origin/la-71/pp-llama-p8-ttft, staged_path: docs/specifications/PP-LLAMA-001-MASTER.md,
                staged_marker: "| `load_ms` |",
@@ -60,14 +61,18 @@ rows:
     falsifier:   # REPORTED, so no gate case: these are the load producer's validity cases for the §3 row (aprender-cd)
       - {ids: [load_measured_carries_both_servers, load_without_a_report_is_unmeasured_and_says_why,
                load_on_another_compute_class_is_unmeasured, load_first_ttft_withheld_after_a_failed_request,
+               load_cold_start_time_alone_is_unmeasured, load_cold_start_no_bracket_is_unmeasured,
+               load_cold_start_no_probe_is_unmeasured, load_cold_start_probe_no_url_is_unmeasured,
+               load_cold_start_probe_503_is_unmeasured, load_cold_start_probe_no_status_is_unmeasured,
                load_after_a_failed_eviction_is_unmeasured, load_declared_evicted_but_still_resident_is_unmeasured,
                load_declared_warm_but_partly_resident_is_unmeasured, load_nothing_witnessed_is_unmeasured,
                load_page_cache_mode_undeclared_is_unmeasured, load_absent_manifest_is_unmeasured,
                load_pass_not_measured_carries_its_reason_and_no_sides],
          staged_at: origin/la-71/load-block, staged_path: scripts/lib/perf_receipt.py}
-      # load-block@1e52d7ac9f. Its six load_cold_start_*_is_unmeasured rows (no bracket, no 2xx probe) build their
-      # names at runtime, so no file defines them as tokens and they are not cited.
-    baseline: null    # one --start replicate per lane in the §12 row 18 reference cell (aprender-cd harness la-71/bench-ready-ms)
+      # All 17 load rows at load-block@eca952b489, which writes the six load_cold_start_*_is_unmeasured names out
+      # whole (at 1e52d7ac9f they were built at runtime, so no file defined them and only 11 were cited).
+    baseline: null    # the §12 row 18 reference cell's load pass: per lane one discarded warm-up load, then one measured
+                      # --start load (scripts/parity_host_receipt.sh run_load at load-block@eca952b489)
     owner_proposed: perf-gate (PP-LLAMA-001 §12 owner) per R-71-6, not L1
     related: [PMAT-3718]
   - id: TTFT-RATIO
