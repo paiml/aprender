@@ -816,8 +816,8 @@ FXREADY
         # bashrs SEC010: self-test fixture: $d is under this script's own mktemp -d dir.
         # bashrs disable-next-line=SEC010
         mkdir -p "$d/contracts" "$d/scripts/lib"
-        # bashrs SEC014: the sources are this checkout's own reader files; $d is the mktemp -d fixture above.
-        # bashrs disable-next-line=SEC014
+        # bashrs SEC010,SEC014: the sources are this checkout's own reader files; $d is the mktemp -d fixture above.
+        # bashrs disable-next-line=SEC010,SEC014
         cp -- "$SCRIPT_DIR/lib/crux_smoke_scope.py" "$SCRIPT_DIR/lib/model_ladder_crux.py" "$d/scripts/lib/"
         printf 'ladder:\n  emergency_scopes:\n' > "$d/contracts/model-capability-ladder-v1.yaml"
         printf '    - name: crux-smoke\n      release: "%s"\n' "$@" >> "$d/contracts/model-capability-ladder-v1.yaml"
