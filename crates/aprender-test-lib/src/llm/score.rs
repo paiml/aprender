@@ -312,115 +312,17 @@ pub fn compute_scorecard(
         .unwrap_or_default();
 
     // Phase 1: Extract raw metric values per runtime
-    let mut runtime_metrics: Vec<(String, String, HashMap<String, f64>, Option<&TailAnalysis>)> =
-        Vec::new();
-
-    for (result, source_file) in results {
-        let mut metrics = extract_metrics(result, is_throughput);
-
-        // Compute throughput_scaling if we have c=1 data
-        if is_throughput {
-            let base_name = strip_concurrency_suffix(&result.runtime_name);
-            if let Some(&c1_decode_val) = c1_decode.get(&base_name) {
-                if c1_decode_val > 0.0 {
-                    metrics.insert(
-                        "throughput_scaling".into(),
-                        result.tokens_per_sec / c1_decode_val,
-                    );
-                }
-            }
-        }
-
-        runtime_metrics.push((
-            result.runtime_name.clone(),
-            source_file.clone(),
-            metrics,
-            result.tail_analysis.as_ref(),
-        ));
-    }
+    let runtime_metrics = extract_runtime_metrics(results, is_throughput, &c1_decode);
 
     // Phase 2: Find best value per metric (for best-in-class bonus)
-    let mut best_per_metric: HashMap<String, (f64, usize)> = HashMap::new(); // metric → (best_value, runtime_idx)
-    for (idx, (_, _, metrics, _)) in runtime_metrics.iter().enumerate() {
-        for (metric_name, &value) in metrics {
-            if let Some(threshold) = contract.thresholds.get(metric_name) {
-                let is_better = match best_per_metric.get(metric_name) {
-                    None => true,
-                    Some(&(best_val, _)) => {
-                        if threshold.higher_is_better {
-                            value > best_val
-                        } else {
-                            value < best_val
-                        }
-                    }
-                };
-                if is_better {
-                    best_per_metric.insert(metric_name.clone(), (value, idx));
-                }
-            }
-        }
-    }
+    let best_per_metric = find_best_per_metric(&runtime_metrics, contract);
 
     // Phase 3: Compute scores per runtime
-    let mut scored_runtimes: Vec<RuntimeScore> = Vec::new();
-
-    for (idx, (name, source_file, metrics, tail)) in runtime_metrics.iter().enumerate() {
-        let mut metric_scores: HashMap<String, MetricScore> = HashMap::new();
-        let mut weighted_sum = 0.0;
-
-        for (metric_name, weight) in weights {
-            if let Some(&value) = metrics.get(metric_name) {
-                if let Some(threshold) = contract.thresholds.get(metric_name) {
-                    let mut score = compute_metric_score(value, threshold);
-
-                    // Apply jitter penalty to ITL
-                    let jitter_penalty = if metric_name == "itl_p50_ms" {
-                        if let Some(tail_analysis) = tail {
-                            let penalty = compute_jitter_penalty(tail_analysis);
-                            score = score.saturating_sub(penalty);
-                            Some(penalty)
-                        } else {
-                            None
-                        }
-                    } else {
-                        None
-                    };
-
-                    // Best-in-class bonus
-                    let is_best = best_per_metric
-                        .get(metric_name)
-                        .is_some_and(|&(_, best_idx)| best_idx == idx);
-
-                    if is_best {
-                        score = score.saturating_add(contract.best_in_class_bonus).min(100);
-                    }
-
-                    weighted_sum += *weight * f64::from(score);
-
-                    metric_scores.insert(
-                        metric_name.clone(),
-                        MetricScore {
-                            value,
-                            score,
-                            best: is_best,
-                            jitter_penalty,
-                        },
-                    );
-                }
-            }
-        }
-
-        let composite = weighted_sum.round().min(100.0);
-        let grade = assign_grade(composite, &contract.grades);
-
-        scored_runtimes.push(RuntimeScore {
-            name: name.clone(),
-            source_file: source_file.clone(),
-            metrics: metric_scores,
-            composite,
-            grade,
-        });
-    }
+    let mut scored_runtimes: Vec<RuntimeScore> = runtime_metrics
+        .iter()
+        .enumerate()
+        .map(|(idx, raw)| score_runtime(idx, raw, weights, &best_per_metric, contract))
+        .collect();
 
     // Sort by composite descending
     scored_runtimes.sort_by(|a, b| {
@@ -434,6 +336,183 @@ pub fn compute_scorecard(
         timestamp: chrono::Utc::now().to_rfc3339(),
         concurrency,
         runtimes: scored_runtimes,
+    }
+}
+
+/// Raw (unscored) metric values for one runtime, as extracted in phase 1.
+struct RuntimeRawMetrics<'a> {
+    name: String,
+    source_file: String,
+    metrics: HashMap<String, f64>,
+    tail: Option<&'a TailAnalysis>,
+}
+
+/// Insert `throughput_scaling` (aggregate tok/s over the c=1 decode baseline)
+/// when a positive c=1 baseline exists for this runtime.
+fn insert_throughput_scaling(
+    metrics: &mut HashMap<String, f64>,
+    result: &LoadTestResult,
+    c1_decode: &HashMap<String, f64>,
+) {
+    let base_name = strip_concurrency_suffix(&result.runtime_name);
+    if let Some(&c1_decode_val) = c1_decode.get(&base_name) {
+        if c1_decode_val > 0.0 {
+            metrics.insert(
+                "throughput_scaling".into(),
+                result.tokens_per_sec / c1_decode_val,
+            );
+        }
+    }
+}
+
+/// Phase 1: extract raw metric values for every runtime, in input order.
+fn extract_runtime_metrics<'a>(
+    results: &'a [(LoadTestResult, String)],
+    is_throughput: bool,
+    c1_decode: &HashMap<String, f64>,
+) -> Vec<RuntimeRawMetrics<'a>> {
+    let mut runtime_metrics = Vec::new();
+
+    for (result, source_file) in results {
+        let mut metrics = extract_metrics(result, is_throughput);
+
+        // Compute throughput_scaling if we have c=1 data
+        if is_throughput {
+            insert_throughput_scaling(&mut metrics, result, c1_decode);
+        }
+
+        runtime_metrics.push(RuntimeRawMetrics {
+            name: result.runtime_name.clone(),
+            source_file: source_file.clone(),
+            metrics,
+            tail: result.tail_analysis.as_ref(),
+        });
+    }
+
+    runtime_metrics
+}
+
+/// Whether `value` beats the current best for a metric (`None` means no best yet).
+fn is_better_value(
+    current_best: Option<&(f64, usize)>,
+    value: f64,
+    threshold: &MetricThreshold,
+) -> bool {
+    match current_best {
+        None => true,
+        Some(&(best_val, _)) => {
+            if threshold.higher_is_better {
+                value > best_val
+            } else {
+                value < best_val
+            }
+        }
+    }
+}
+
+/// Phase 2: find the best value per metric (for the best-in-class bonus).
+///
+/// Maps each metric to `(best_value, runtime_idx)`; a tie keeps the earlier runtime.
+fn find_best_per_metric(
+    runtime_metrics: &[RuntimeRawMetrics<'_>],
+    contract: &ScoringContract,
+) -> HashMap<String, (f64, usize)> {
+    let mut best_per_metric: HashMap<String, (f64, usize)> = HashMap::new(); // metric → (best_value, runtime_idx)
+    for (idx, raw) in runtime_metrics.iter().enumerate() {
+        for (metric_name, &value) in &raw.metrics {
+            if let Some(threshold) = contract.thresholds.get(metric_name) {
+                if is_better_value(best_per_metric.get(metric_name), value, threshold) {
+                    best_per_metric.insert(metric_name.clone(), (value, idx));
+                }
+            }
+        }
+    }
+    best_per_metric
+}
+
+/// Jitter penalty applied to ITL p50 only; `None` for other metrics or without tail data.
+fn jitter_penalty_for(metric_name: &str, tail: Option<&TailAnalysis>) -> Option<u8> {
+    if metric_name == "itl_p50_ms" {
+        tail.map(compute_jitter_penalty)
+    } else {
+        None
+    }
+}
+
+/// Score one metric: threshold score, then ITL jitter penalty, then the
+/// best-in-class bonus (capped at 100).
+fn score_one_metric(
+    metric_name: &str,
+    value: f64,
+    threshold: &MetricThreshold,
+    tail: Option<&TailAnalysis>,
+    is_best: bool,
+    best_in_class_bonus: u8,
+) -> MetricScore {
+    let mut score = compute_metric_score(value, threshold);
+
+    // Apply jitter penalty to ITL
+    let jitter_penalty = jitter_penalty_for(metric_name, tail);
+    if let Some(penalty) = jitter_penalty {
+        score = score.saturating_sub(penalty);
+    }
+
+    // Best-in-class bonus
+    if is_best {
+        score = score.saturating_add(best_in_class_bonus).min(100);
+    }
+
+    MetricScore {
+        value,
+        score,
+        best: is_best,
+        jitter_penalty,
+    }
+}
+
+/// Phase 3 for one runtime: score every weighted metric, then derive composite and grade.
+fn score_runtime(
+    idx: usize,
+    raw: &RuntimeRawMetrics<'_>,
+    weights: &HashMap<String, f64>,
+    best_per_metric: &HashMap<String, (f64, usize)>,
+    contract: &ScoringContract,
+) -> RuntimeScore {
+    let mut metric_scores: HashMap<String, MetricScore> = HashMap::new();
+    let mut weighted_sum = 0.0_f64;
+
+    for (metric_name, weight) in weights {
+        if let Some(&value) = raw.metrics.get(metric_name) {
+            if let Some(threshold) = contract.thresholds.get(metric_name) {
+                let is_best = best_per_metric
+                    .get(metric_name)
+                    .is_some_and(|&(_, best_idx)| best_idx == idx);
+
+                let metric = score_one_metric(
+                    metric_name,
+                    value,
+                    threshold,
+                    raw.tail,
+                    is_best,
+                    contract.best_in_class_bonus,
+                );
+
+                weighted_sum += *weight * f64::from(metric.score);
+
+                metric_scores.insert(metric_name.clone(), metric);
+            }
+        }
+    }
+
+    let composite = weighted_sum.round().min(100.0);
+    let grade = assign_grade(composite, &contract.grades);
+
+    RuntimeScore {
+        name: raw.name.clone(),
+        source_file: raw.source_file.clone(),
+        metrics: metric_scores,
+        composite,
+        grade,
     }
 }
 
@@ -981,19 +1060,7 @@ pub fn compute_profile_scorecard(
     let concurrency = results.first().map(|r| r.0.concurrency).unwrap_or(1);
 
     // Group by (runtime_name, prompt_category)
-    let mut grouped: HashMap<(String, PromptCategory), Vec<&LoadTestResult>> = HashMap::new();
-    for (result, _) in results {
-        let avg_prompt = if result.total_requests > 0 {
-            result.prompt_tokens_total as f64 / result.total_requests as f64
-        } else {
-            0.0
-        };
-        let category = PromptCategory::from_avg_prompt_tokens(avg_prompt);
-        grouped
-            .entry((result.runtime_name.clone(), category))
-            .or_default()
-            .push(result);
-    }
+    let grouped = group_by_runtime_and_category(results);
 
     let weights = if concurrency > 1 {
         &contract.throughput_weights
@@ -1006,62 +1073,162 @@ pub fn compute_profile_scorecard(
     for ((name, profile), results_in_group) in &grouped {
         // Use the latest result (last by timestamp, already sorted)
         if let Some(result) = results_in_group.last() {
-            let avg_prompt = if result.total_requests > 0 {
-                result.prompt_tokens_total as f64 / result.total_requests as f64
-            } else {
-                0.0
-            };
-
-            // Compute composite from available metrics
-            let mut weighted_sum = 0.0;
-            for (metric_name, weight) in weights {
-                let value = match metric_name.as_str() {
-                    "decode_tok_s" => result.decode_tok_per_sec,
-                    "ttft_p50_ms" => result.ttft_p50_ms,
-                    "itl_p50_ms" => result.itl_p50_ms,
-                    "ttft_p99_ms" => result.ttft_p99_ms,
-                    "error_rate" => result.error_rate,
-                    "aggregate_tok_s" => result.tokens_per_sec,
-                    _ => continue,
-                };
-                if let Some(threshold) = contract.thresholds.get(metric_name) {
-                    let score = compute_metric_score(value, threshold);
-                    weighted_sum += weight * f64::from(score);
-                }
-            }
-
-            let composite = weighted_sum.round().min(100.0);
-            let grade = assign_grade(composite, &contract.grades);
-
-            entries.push(ProfileEntry {
-                name: name.clone(),
-                profile: *profile,
-                avg_prompt_tokens: avg_prompt,
-                composite,
-                grade,
-                decode_tok_s: result.decode_tok_per_sec,
-                ttft_p50_ms: result.ttft_p50_ms,
-                itl_p50_ms: result.itl_p50_ms,
-            });
+            entries.push(build_profile_entry(
+                name, *profile, result, weights, contract,
+            ));
         }
     }
 
     // Sort by runtime name, then profile order
-    entries.sort_by(|a, b| {
-        a.name.cmp(&b.name).then_with(|| {
-            let order = |p: &PromptCategory| match p {
-                PromptCategory::Micro => 0,
-                PromptCategory::Short => 1,
-                PromptCategory::Medium => 2,
-                PromptCategory::Long => 3,
-            };
-            order(&a.profile).cmp(&order(&b.profile))
-        })
-    });
+    entries.sort_by(compare_profile_entries);
 
     // Compute consistency per runtime
+    let consistency = compute_profile_consistency(&entries, contract);
+
+    ProfileScorecard {
+        timestamp: chrono::Utc::now().to_rfc3339(),
+        concurrency,
+        entries,
+        consistency,
+    }
+}
+
+/// Average prompt tokens per request (0.0 when no requests were made).
+fn average_prompt_tokens(result: &LoadTestResult) -> f64 {
+    if result.total_requests > 0 {
+        result.prompt_tokens_total as f64 / result.total_requests as f64
+    } else {
+        0.0
+    }
+}
+
+/// Group results by (runtime name, prompt category); each group keeps input order.
+fn group_by_runtime_and_category(
+    results: &[(LoadTestResult, String)],
+) -> HashMap<(String, PromptCategory), Vec<&LoadTestResult>> {
+    let mut grouped: HashMap<(String, PromptCategory), Vec<&LoadTestResult>> = HashMap::new();
+    for (result, _) in results {
+        let category = PromptCategory::from_avg_prompt_tokens(average_prompt_tokens(result));
+        grouped
+            .entry((result.runtime_name.clone(), category))
+            .or_default()
+            .push(result);
+    }
+    grouped
+}
+
+/// Raw result value feeding a profile metric; `None` for metrics profiles do not score.
+fn profile_metric_value(metric_name: &str, result: &LoadTestResult) -> Option<f64> {
+    match metric_name {
+        "decode_tok_s" => Some(result.decode_tok_per_sec),
+        "ttft_p50_ms" => Some(result.ttft_p50_ms),
+        "itl_p50_ms" => Some(result.itl_p50_ms),
+        "ttft_p99_ms" => Some(result.ttft_p99_ms),
+        "error_rate" => Some(result.error_rate),
+        "aggregate_tok_s" => Some(result.tokens_per_sec),
+        _ => None,
+    }
+}
+
+/// Weighted score contribution of one metric; `None` when the metric is not
+/// scored for profiles or has no threshold.
+fn profile_metric_contribution(
+    metric_name: &str,
+    weight: f64,
+    result: &LoadTestResult,
+    contract: &ScoringContract,
+) -> Option<f64> {
+    let value = profile_metric_value(metric_name, result)?;
+    let threshold = contract.thresholds.get(metric_name)?;
+    let score = compute_metric_score(value, threshold);
+    Some(weight * f64::from(score))
+}
+
+/// Composite profile score from the available metrics (rounded, capped at 100).
+fn profile_composite(
+    result: &LoadTestResult,
+    weights: &HashMap<String, f64>,
+    contract: &ScoringContract,
+) -> f64 {
+    let mut weighted_sum = 0.0_f64;
+    for (metric_name, weight) in weights {
+        if let Some(contribution) =
+            profile_metric_contribution(metric_name, *weight, result, contract)
+        {
+            weighted_sum += contribution;
+        }
+    }
+
+    weighted_sum.round().min(100.0)
+}
+
+/// Build the profile entry for one (runtime, profile) pair from its latest result.
+fn build_profile_entry(
+    name: &str,
+    profile: PromptCategory,
+    result: &LoadTestResult,
+    weights: &HashMap<String, f64>,
+    contract: &ScoringContract,
+) -> ProfileEntry {
+    // Compute composite from available metrics
+    let composite = profile_composite(result, weights, contract);
+    let grade = assign_grade(composite, &contract.grades);
+
+    ProfileEntry {
+        name: name.to_string(),
+        profile,
+        avg_prompt_tokens: average_prompt_tokens(result),
+        composite,
+        grade,
+        decode_tok_s: result.decode_tok_per_sec,
+        ttft_p50_ms: result.ttft_p50_ms,
+        itl_p50_ms: result.itl_p50_ms,
+    }
+}
+
+/// Sort rank of a prompt profile (shortest first).
+fn profile_order(profile: PromptCategory) -> u8 {
+    match profile {
+        PromptCategory::Micro => 0,
+        PromptCategory::Short => 1,
+        PromptCategory::Medium => 2,
+        PromptCategory::Long => 3,
+    }
+}
+
+/// Order profile entries by runtime name, then profile order.
+fn compare_profile_entries(a: &ProfileEntry, b: &ProfileEntry) -> std::cmp::Ordering {
+    a.name
+        .cmp(&b.name)
+        .then_with(|| profile_order(a.profile).cmp(&profile_order(b.profile)))
+}
+
+/// Best/worst/consistency summary for one runtime from its per-profile composites.
+fn consistency_score(name: String, scores: &[f64], grades: &[(f64, String)]) -> ConsistencyScore {
+    let best = scores.iter().cloned().fold(f64::NEG_INFINITY, f64::max);
+    let worst = scores.iter().cloned().fold(f64::INFINITY, f64::min);
+    let cons = if best > 0.0 {
+        (worst / best * 100.0).round()
+    } else {
+        0.0
+    };
+    let grade = assign_grade(cons, grades);
+    ConsistencyScore {
+        name,
+        best_score: best,
+        worst_score: worst,
+        consistency: cons,
+        grade,
+    }
+}
+
+/// Per-runtime consistency (runtimes with at least two profiles), most consistent first.
+fn compute_profile_consistency(
+    entries: &[ProfileEntry],
+    contract: &ScoringContract,
+) -> Vec<ConsistencyScore> {
     let mut runtime_scores: HashMap<String, Vec<f64>> = HashMap::new();
-    for entry in &entries {
+    for entry in entries {
         runtime_scores
             .entry(entry.name.clone())
             .or_default()
@@ -1071,23 +1238,7 @@ pub fn compute_profile_scorecard(
     let mut consistency: Vec<ConsistencyScore> = runtime_scores
         .into_iter()
         .filter(|(_, scores)| scores.len() >= 2)
-        .map(|(name, scores)| {
-            let best = scores.iter().cloned().fold(f64::NEG_INFINITY, f64::max);
-            let worst = scores.iter().cloned().fold(f64::INFINITY, f64::min);
-            let cons = if best > 0.0 {
-                (worst / best * 100.0).round()
-            } else {
-                0.0
-            };
-            let grade = assign_grade(cons, &contract.grades);
-            ConsistencyScore {
-                name,
-                best_score: best,
-                worst_score: worst,
-                consistency: cons,
-                grade,
-            }
-        })
+        .map(|(name, scores)| consistency_score(name, &scores, &contract.grades))
         .collect();
 
     consistency.sort_by(|a, b| {
@@ -1096,12 +1247,7 @@ pub fn compute_profile_scorecard(
             .unwrap_or(std::cmp::Ordering::Equal)
     });
 
-    ProfileScorecard {
-        timestamp: chrono::Utc::now().to_rfc3339(),
-        concurrency,
-        entries,
-        consistency,
-    }
+    consistency
 }
 
 /// Format profile scorecard as a terminal table.
@@ -1949,61 +2095,9 @@ pub fn compute_concurrency_scaling_scorecard(
     let mut scored: Vec<ConcurrencyScalingScore> = Vec::new();
 
     for (base_name, runs) in &by_runtime {
-        // Need at least 2 concurrency levels
-        let mut by_c: HashMap<usize, Vec<&LoadTestResult>> = HashMap::new();
-        for r in runs {
-            by_c.entry(r.concurrency).or_default().push(r);
+        if let Some(score) = score_runtime_scaling(base_name, runs, &threshold, grades) {
+            scored.push(score);
         }
-        if by_c.len() < 2 {
-            continue;
-        }
-
-        // Get c=1 baseline (best decode tok/s)
-        let c1_decode = by_c
-            .get(&1)
-            .and_then(|runs| {
-                runs.iter()
-                    .map(|r| r.decode_tok_per_sec)
-                    .fold(None, |max: Option<f64>, v| {
-                        Some(max.map_or(v, |m: f64| m.max(v)))
-                    })
-            })
-            .unwrap_or(0.0);
-
-        if c1_decode <= 0.0 {
-            continue;
-        }
-
-        // Find peak aggregate across all concurrency levels
-        let mut peak_agg = 0.0f64;
-        let mut peak_c = 1usize;
-        for (&c, runs) in &by_c {
-            for r in runs {
-                if r.tokens_per_sec > peak_agg {
-                    peak_agg = r.tokens_per_sec;
-                    peak_c = c;
-                }
-            }
-        }
-
-        if peak_c == 0 {
-            continue;
-        }
-
-        let efficiency = peak_agg / (c1_decode * peak_c as f64);
-        let score = compute_metric_score(efficiency, &threshold);
-        let grade = assign_grade(f64::from(score), grades);
-
-        scored.push(ConcurrencyScalingScore {
-            name: base_name.clone(),
-            c1_decode_tok_s: c1_decode,
-            peak_aggregate_tok_s: peak_agg,
-            peak_concurrency: peak_c,
-            scaling_efficiency: efficiency,
-            score,
-            grade,
-            best: false,
-        });
     }
 
     scored.sort_by(|a, b| {
@@ -2019,6 +2113,90 @@ pub fn compute_concurrency_scaling_scorecard(
         timestamp: chrono::Utc::now().to_rfc3339(),
         runtimes: scored,
     }
+}
+
+/// Group one runtime's results by concurrency level; each group keeps input order.
+fn group_by_concurrency<'a>(
+    runs: &[&'a LoadTestResult],
+) -> HashMap<usize, Vec<&'a LoadTestResult>> {
+    let mut by_c: HashMap<usize, Vec<&'a LoadTestResult>> = HashMap::new();
+    for &r in runs {
+        by_c.entry(r.concurrency).or_default().push(r);
+    }
+    by_c
+}
+
+/// Best decode tok/s at c=1 (0.0 when there is no c=1 run).
+fn best_c1_decode(by_c: &HashMap<usize, Vec<&LoadTestResult>>) -> f64 {
+    by_c.get(&1)
+        .and_then(|runs| {
+            runs.iter()
+                .map(|r| r.decode_tok_per_sec)
+                .fold(None, |max: Option<f64>, v| {
+                    Some(max.map_or(v, |m: f64| m.max(v)))
+                })
+        })
+        .unwrap_or(0.0)
+}
+
+/// Peak aggregate tok/s across all concurrency levels, with the concurrency that
+/// reached it (first strict maximum in map order; starts at (0.0, 1)).
+fn find_peak_aggregate(by_c: &HashMap<usize, Vec<&LoadTestResult>>) -> (f64, usize) {
+    let mut peak_agg = 0.0f64;
+    let mut peak_c = 1usize;
+    for (&c, runs) in by_c {
+        for r in runs {
+            if r.tokens_per_sec > peak_agg {
+                peak_agg = r.tokens_per_sec;
+                peak_c = c;
+            }
+        }
+    }
+    (peak_agg, peak_c)
+}
+
+/// Scaling score for one runtime, or `None` when it lacks two concurrency levels,
+/// a positive c=1 baseline, or a usable peak concurrency.
+fn score_runtime_scaling(
+    base_name: &str,
+    runs: &[&LoadTestResult],
+    threshold: &MetricThreshold,
+    grades: &[(f64, String)],
+) -> Option<ConcurrencyScalingScore> {
+    // Need at least 2 concurrency levels
+    let by_c = group_by_concurrency(runs);
+    if by_c.len() < 2 {
+        return None;
+    }
+
+    // Get c=1 baseline (best decode tok/s)
+    let c1_decode = best_c1_decode(&by_c);
+
+    if c1_decode <= 0.0 {
+        return None;
+    }
+
+    // Find peak aggregate across all concurrency levels
+    let (peak_agg, peak_c) = find_peak_aggregate(&by_c);
+
+    if peak_c == 0 {
+        return None;
+    }
+
+    let efficiency = peak_agg / (c1_decode * peak_c as f64);
+    let score = compute_metric_score(efficiency, threshold);
+    let grade = assign_grade(f64::from(score), grades);
+
+    Some(ConcurrencyScalingScore {
+        name: base_name.to_string(),
+        c1_decode_tok_s: c1_decode,
+        peak_aggregate_tok_s: peak_agg,
+        peak_concurrency: peak_c,
+        scaling_efficiency: efficiency,
+        score,
+        grade,
+        best: false,
+    })
 }
 
 /// Format concurrency scaling scorecard as a terminal table.
