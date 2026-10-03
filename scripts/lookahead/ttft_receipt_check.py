@@ -1,7 +1,7 @@
 #!/usr/bin/env python3
 """Check an apr-serve-ttft-v1 receipt (0.71 exit criteria V1 + V2).
 
-WITHDRAWN 2026-10-03 17:30Z, so do not fold this file. It is a second
+WITHDRAWN 2026-10-03 17:11Z, so do not fold this file. It is a second
 definition of a gate main already owns. PP-LLAMA-001 §4 P-8 (ttft, W1, c=1)
 plus scripts/perf-matrix.yaml (the parity arm, where ttft is `reported`) is the
 home, and the request-unit estimator is the paired bootstrap that the Rust

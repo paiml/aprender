@@ -1,4 +1,4 @@
-# WITHDRAWN 2026-10-03 17:30Z (la-0.71). Do not fold. This IS a second definition, and the line below
+# WITHDRAWN 2026-10-03 17:11Z (la-0.71). Do not fold. This IS a second definition, and the line below
 # that says otherwise was wrong. PP-LLAMA-001 already owns the metric (§3 ttft; §4 P-8 REPORTED with
 # "No latency bound is set in this version"; §4 request-unit paired bootstrap), and perf-matrix.yaml lists
 # ttft under the parity arm. This draft carried its own estimator (raw-sample median, n>=5) and a hardcoded
