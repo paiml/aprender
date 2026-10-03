@@ -10,7 +10,10 @@ metadata:
     apr-distill-teacher-backend-selection-v1, apr-distill-teacher-vocab-alignment-v1 x2,
     distill-pipeline-observability-v1 x2), one cited at a path where it does not live (FWD-001),
     and four rows running `cargo test -p entrenar`, a lib name and not a package. Such a row has
-    never run, but pass_criteria still counts it. `pv verify-bindings` checks binding.yaml
+    never run, but pass_criteria still counts it. Repo-wide (all contracts/*.yaml, 204 cited names)
+    the true misses are 12, in 4 contracts: the 6 R6 distill rows, 3 R7 lora-merge rows (FWD-001's fn
+    is beat_lora_merge_forward_equivalence), and clean-chat-output-v1, whose 3 cited tests were renamed
+    to test_clean_chat_response_* in apr-cli chat_clean.rs. Most of the misses sit in the 0.72 T1 path. `pv verify-bindings` checks binding.yaml
     functions, not test rows, so nothing catches this today.
   references:
   - contracts/lora-merge-forward-equivalence-v1.yaml (1.1.0, FWD-004 marked [U])
@@ -25,6 +28,7 @@ equations:
     - 'path(row) is matched by module path plus fn name, so a fn of the same name in another module does not count (FWD-001: merge_forward_equivalence lives in aprender-train-lora merge.rs, not lora::layer::tests)'
     - 'a nextest filter prefix (e.g. falsify_pmat805) resolves when at least one fn in the package starts with it'
     - 'a row whose test does not exist yet carries the marker [U] and is never counted by pass_criteria'
+    - 'a name that is a module (`mod NAME`) or a test-target file (NAME.rs) resolves as a filter; measured 2026-10-03: of 26 repo-wide names absent as fns, 14 were modules or files (f16_tests, repetition_penalty, parity_receipt, sigma_gate, aprt_stage_diff_tests, release_evidence), so a fn-only rule would be wrong half the time'
     preconditions:
     - 'pv lint can read the workspace (cargo metadata --no-deps and the crate sources), without building'
 proof_obligations:
@@ -52,6 +56,11 @@ falsification_tests:
   prediction: 'lora-gradient-flow-v1 FALSIFY-LORA_GRADIENT_FLOW_V1_003 (attention.rs falsify_pmat805_rope_backward_matches_finite_difference) resolves; an [U] row is skipped and listed as not counted'
   test: '[U] not written'
   if_fails: 'the rule flags real tests, so people turn it off'
+- id: FALSIFY-PV-TEST-RESOLVES-005
+  rule: A module or file name resolves (no false RED)
+  prediction: 'apr-cli-trace-save-tensor-v1 (commands::diff::aprt_stage_diff_tests, a mod in diff_05_aprt_stage.rs:228) and f16-to-f32-subnormal-v1 (dequant_f16_tests.rs) resolve'
+  test: '[U] not written'
+  if_fails: 'half the hits are false, so the rule is noise'
 - id: FALSIFY-PV-TEST-RESOLVES-004
   rule: Wrong module path is RED
   prediction: 'FWD-001 (lora::layer::tests::merge_forward_equivalence) is unresolved although a fn of that name exists in merge.rs'
