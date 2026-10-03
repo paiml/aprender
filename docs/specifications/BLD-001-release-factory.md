@@ -62,7 +62,7 @@ Read 2026-10-03 10:15Z: `max_stable_version` = `0.69.1` → **S0**.
 | E2 | "no check has been red on main for more than 24 h" | For every check that reports on a `main` commit, the longest red stretch in the 7 days before the tag is ≤ 24 h | Successful / total scheduled runs on `main`, 2026-09-26 to 10-02: `mutants-nightly.yml` 0/5, `toolchain-ceiling.yml` 0/7, `guards-nightly.yml` 1/7 (Actions API, read 2026-10-02 11:17–11:30Z; §6 C9). Longest red stretch per check: **not_measured** (needs the API; S1) | Row 2's meter table at the tag |
 | E3 | "a version-only bump reuses the saved results: bump to tag under 30 minutes" | (a) a diff of version lines only is judged the same code and the saved receipts are reused; (b) bump commit → tag < 30 min | (a) **No.** `scripts/release/release_readiness.sh:58-97` (`receipts_commit`) withholds the receipts when the measured and release commits differ anywhere outside `evidence/` (:91), and a bump changes `Cargo.toml` and `Cargo.lock`. (b) 0.66.0 2.42 h · 0.67.0 15.78 h · 0.68.1 1.80 h · 0.68.2 0.93 h · 0.69.1 31.80 h → **0 of 5** under 30 min (§6 C2) | Bump SHA, tag time, and the check's reuse line |
 | E4 | ""required to merge, to tag, to publish" is one list in code: one definition of release-ready, zero contradictions" | Requirements stated outside the one list = 0; contradictions = 0 | **151** gate definitions, **93** contradictions (build-kaizen baseline, 2026-10-02/03: 76 of the 151 are in this repo @ `989cb012e5`, 75 outside it — operator rulings 31, agent memory 23, the fleet infra repo 21). The 2 required checks on `main` (`ci / gate`, `workspace-test`) live in GitHub settings, not in code | Row 4's checker: 0 unlisted, 0 orphaned, 0 contradictions |
-| E5 | "tag to crates.io for 0.70.2 itself is under 2 hours" | crates.io `created_at` of 0.70.2 − tag creator date < 2 h | 0.66.0 0.65 h · 0.67.0 1.02 h · 0.68.1 7.57 h · 0.68.2 10.17 h · 0.69.1 4.01 h → **2 of 5** under 2 h (§6 C1, C2) | Tag time and crates.io `created_at` |
+| E5 | "tag to crates.io for 0.70.2 itself is under 2 hours" | The newest crates.io `created_at` at 0.70.2 over the crates of `scripts/release/publish-order.txt` at the tag − the tag's tagger date < 2 h (row 5) | 0.66.0 0.65 h · 0.67.0 1.02 h · 0.68.1 7.57 h · 0.68.2 10.17 h · 0.69.1 4.01 h → **2 of 5** under 2 h (§6 C1, C2). These time the root crate `aprender` alone. At v0.69.1 two crates publish after it, and before v0.69.0 the order file does not exist (§6 C13) | Row 5's timer at the tag: one line per crate, and the E5 line |
 | E6 | "the known-failure P0 tickets from 0.70.1 are closed or re-ruled" | Every P0 ticket of a failure that 0.70.1 ships red is closed with a red→green receipt, or carries a new operator ruling. The set: the tickets the `v0.70.1` release notes name for its old failures (C280 item 6), plus each `known_red` ticket on the tag | 6 tickets from the 2026-10-03 classification, #4661–#4666 (row 6); states not re-read (S0). C280 item 6 adds no `known_red` entry: the ladder at the measured commit `cc4463f` is identical to the one at `316dee2cd4`, and its `known_red` holds one entry, rung `qwen35-0.8b-q4km`, ticket #4030 (§6 C7). The release notes do not exist yet (§6 C8) | One line per ticket: the closing PR and its receipt, or the ruling id |
 | P4 | "no check may be enforced at publish until its inputs have been produced green on main, nightly, three times" (C280 item 12) | Checks the publish preflight enforces whose inputs have not been produced green on `main` by a nightly run three times = 0 (whether the three must be consecutive is §4 Q8) | The preflight's verdict is the AND of R1–R8 (`scripts/check_publish_preflight.sh:12-45`). Three of them judge an input that an earlier run produced: R5 the dogfood receipt (:32-34), R7 the per-host model-matrix receipts (:35-39), R8 the committed evidence graded through `release_readiness.sh` (:40-45). Of the 17 scheduled workflows, **0** run `scripts/dogfood.sh`, `check_model_ladder.sh`, `release_readiness.sh` or the preflight (§6 C10); timers outside this repo are not measured here | Row 10's table at the 0.70.2 tag: per check, the run IDs of its three nightly greens, or the operator's sign-off |
 
@@ -125,6 +125,12 @@ checker follows CHECKER-BOOTSTRAP.
 - **Prior art.** K1, K3, K6.
 - **Falsifier.** Fixture histories: red for 25 h → meter red; red for 23 h → green; a green result resets the age; a
   check with no result in the window → `not_measured`, never green.
+- **Built (S0, branch only).** `build-kaizen/r2-red-age` @ `a0bc666676`, no PR: `scripts/release/red_age.sh` and
+  `contracts/red-age-v1.yaml`. The exit code is the andon, each check's red age at `--as-of`; the table also prints
+  each check's 7-day maximum as E2's receipt column (decision D6). A green at attempt 2 or later is red, as in row 10 (decision D7).
+  One TSV holds every check, and the exit is worst-of (decision D8). Receipts: case table 71/71 rows, 27/27 planted mutants
+  killed, the contracts gate 8 of 8 steps. Waits for S1: the run-history fetcher (Actions API), `cargo test` of the
+  contract crates, CI wiring.
 - **First green.** Seven days on `main` with every check ≤ 24 h.
 - **Gate impact.** "Check" means every check that reports on a `main` commit, scheduled ones included: the literal
   reading of C277 item 6. Narrowing it is §4 Q2.
@@ -172,6 +178,28 @@ checker follows CHECKER-BOOTSTRAP.
 - **Prior art.** K5, its nightly half.
 - **Falsifier.** The timer's case table: 2 h 01 min → red; 1 h 59 min → green; a missing crates.io timestamp →
   `not_measured`.
+- **Built (S0, branch only).** `build-kaizen/r5-tag-to-crates` @ `87b8bafdf4`, no PR:
+  `scripts/release/tag_to_crates.sh` and `contracts/tag-to-crates-v1.yaml`. It judges crates.io reads that a fetcher
+  took; it makes no network call. Inputs: `--version`, `--tag-time` (the annotated tag's tagger date; a lightweight
+  tag gives no start), `--as-of`, the order file at the tag, and a TSV of reads (`crate`, `version`, `created_at`,
+  `read_at`). The clock stops at the newest `created_at` over every crate of the order file, at `--version` (decision D9).
+  The three facade crates that `publish_strict.sh` appends are not timed: they carry their own version, `0.4.0` at
+  every tag from v0.66.0 to v0.70.0 (decision D11; §6 C13). Per crate: no row → `not_measured`; a `created_at` before the
+  tag → `not_measured` (decision D10); published 2 h or more after the tag → red; not on crates.io at a read 2 h or more
+  after the tag (the read clipped to `--as-of`) → red, under 2 h → `not_measured` (decision D12); published under 2 h after
+  the tag → ok. One unreadable row makes the whole judgment `not_measured`. Exit 0 met, 1 red (red wins),
+  2 `not_measured`, 3 caller error. `LIMIT = 7200` is a constant. A context line prints what `aprender` alone took,
+  the baseline's method, never as the verdict. Receipts: case table 64/64 rows, 44/44 planted mutants killed,
+  `bashrs` 0 findings, `pv validate` 0/0, the contracts gate 8 of 8 steps. Waits for S1: the reads fetcher (one
+  request per second; a failed read is not a row), `cargo test` of the contract crates, CI wiring.
+- **Baseline method.** The E5 baseline times the root crate `aprender` alone (§6 C1). `scripts/release/publish-order.txt`
+  has 71 crates at v0.69.x (`aprender` at line 69) and 73 at v0.70.0 (line 71), so two crates publish after
+  `aprender` from v0.69.0 on. The file is absent at v0.66.0 to v0.68.2, so the order-file method can re-measure
+  v0.69.0 and later only (§6 C13).
+- **A measuring defect on `main`.** `scripts/release/release_wall_time.py` turns any failed crates.io read (a
+  timeout, a 5xx, a 429) into a crate with no such version: `_crates_io` returns `None` on any exception (:61-66),
+  and `measure` adds that crate to `missing` (:82). "Not published" and "not known" become one fact there. Fixing
+  it is a ticket for S1.
 - **First green.** 0.70.2's own tag.
 - **Gate impact.** None in this repo.
 
@@ -272,6 +300,12 @@ restore. The file's failures stay red in its P0 ticket, #4664, which E6 covers (
 - **Falsifier.** Fixture histories for one check: three green nightly runs → `ready`, with the three run IDs; two →
   `not ready`; a night with no run → `not_measured`, never green. A planted second process on the GPU during a CRUX
   lane → that lane's receipt is void.
+- **Built (S0, branch only).** `build-kaizen/r10-nightly-greens` @ `3045add39f`, no PR:
+  `scripts/release/nightly_greens.sh` and `contracts/nightly-greens-v1.yaml`. It reads a run-history TSV, counts
+  only scheduled runs on `main`, and gives each UTC night one state. It says ready only when the newest three
+  nights are green and the newest is no older than the day before `--as-of`. A green at attempt 2 or later is red.
+  Receipts: case table 42/42 rows, 15/15 planted mutants killed. Waits for S1: the run-history fetcher, `cargo test`
+  of the contract crates, CI and preflight wiring.
 - **First green.** The 0.70.2 preflight prints three nightly run IDs for each of R5, R7 and R8.
 - **Gate impact.** Moving an enforced check (R5, R7 or R8 today) to nightly-only, or to printed evidence, is a
   report-only change to an existing gate, so the operator signs off on that list first (§4 Q9). The preflight holds
@@ -373,6 +407,14 @@ git show <sha>:Cargo.toml | sed -n '621,627p'
 git show <sha>:scripts/cascade-publish.sh | sed -n '614p'
 # C12 P4, row 10: the preflight's rules, and the line that makes report-only a stop
 git show <sha>:scripts/check_publish_preflight.sh | sed -n '12,45p;318p'
+# C13 E5, row 5: the crates the clock covers (local git). At v0.70.0: 73 lines, `aprender` at line 71; at v0.69.x:
+#     71 lines, line 69; absent at v0.66.0, v0.67.0, v0.68.0, v0.68.1 and v0.68.2. The facades print version = "0.4.0".
+git show v0.70.0:scripts/release/publish-order.txt | wc -l
+git show v0.70.0:scripts/release/publish-order.txt | grep -nx aprender
+for t in v0.66.0 v0.67.0 v0.68.0 v0.68.1 v0.68.2 v0.69.0 v0.69.1 v0.70.0; do
+  git cat-file -e "${t}:scripts/release/publish-order.txt" 2>/dev/null && echo "$t present" || echo "$t absent"; done
+git show v0.70.0:crates/facades/Cargo.toml | grep -m1 '^version'
+TZ=UTC git for-each-ref --format='%(taggerdate:format-local:%Y-%m-%dT%H:%M:%SZ)' refs/tags/v0.70.0   # 2026-10-02T23:42:38Z
 ```
 
 E4's 151 and 93 come from the build-kaizen baseline of 2026-10-02/03, an inventory kept outside this repo. Row 4's
@@ -391,6 +433,13 @@ plans, and the K table.
 Round 2 (D4, D5), after C280 replaced C279: the same three lanes, launched 10:53:46Z; all three exited 0 by
 10:54:01Z. Their brief quoted C280's header and items 6 and 12, C279 items 6 and 11, and the baselines of rows 7–9.
 
+Rounds 3–5 (D6–D12) shaped the row 2 meter and the row 5 timer, built on branches in S0. The author is Opus 5.5, so
+the lanes were the same three models: claude-sonnet-5-5 ×2 and gpt-oss-120b. There was no Gemini lane, because C10
+keeps Gemini for release votes. Round 3 (D6–D8) launched 12:23:12Z and all three lanes had answered by 12:23:26Z;
+round 4 (D9, D10) ran 13:32:55Z to 13:33:10Z; round 5 (D11, D12) ran 13:54:09Z to 13:54:23Z. Each brief quoted the
+operator condition (C277 item 6), the row's text, facts from local git, and what was already settled. Each lane
+also named the strongest argument against one of its answers (D7, D9, D12).
+
 | D | Question | Tally | Applied as | Dissent and risks named | Reversible by |
 |---|---|---|---|---|---|
 | D1 | Where does the plan live? | A 3/3 | A new file, `docs/specifications/BLD-001-release-factory.md`: the train-plan layout plus a live-state selector, scoped to 0.70.2 | None. Risk named: a later move could duplicate or diverge, so a pointer from APR-RELEASE-001 goes in the first PR after S1 | Moving the file and leaving a pointer |
@@ -398,5 +447,12 @@ Round 2 (D4, D5), after C280 replaced C279: the same three lanes, launched 10:53
 | D3 | Is K7's merge-queue skip a row? | no 3/3 | Not a row: it changes a gate (C213). It is §4 Q1, for the operator | None | An operator ruling |
 | D4 | What happens to P1–P3 (rows 7–9) now that C280 replaces C279? | A 2/3 | Out of the exit bar. Rows 7 and 8 are carried as measured defects with no operator mandate; row 9 is folded into row 6 (#4664); §4 Q7 asks whether C279 item 11 still stands | gpt-oss voted B (drop rows 7–9; its risk: dropping erases the trace of earlier rulings). Risks named for A: if C279 item 11 still stands, A drops a live P0 from the bar; if it does not, rows 7 and 8 are unmandated scope | An operator answer to Q7 moves rows 7 and 8 back into §1 unchanged |
 | D5 | Where does C280 item 12 go? | A 3/3 | P4 in §1 with the operator's words, and row 10 with its own ticket, falsifier and first green; depends on rows 1 and 4; moving an enforced check to nightly-only or to printed evidence waits for the operator (§4 Q9) | None | Folding row 10 into rows 1 and 4 in a later PR |
+| D6 | Row 2's meter: what sets its exit code? | A 3/3 | The andon: each check's red age at `--as-of` (≥ 24 h red; no result in the 7 days before `--as-of` → `not_measured`). The table also prints each check's 7-day maximum, E2's receipt column, and an E2 line | None | Editing row 2's meter |
+| D7 | Row 2: a run that succeeded only at attempt 2 or later | A 3/3 | Not a green, as in row 10: it starts or continues a red stretch and never resets the age | None. Risk named by both claude lanes: a rerun that passes can hold a check red past 24 h on infrastructure flakiness, not code | Editing row 2's meter |
+| D8 | Row 2's input | A 3/3 | One TSV for all checks: a `check` column, then row 10's six columns. One invocation; worst-of exit (any red 1, else any `not_measured` 2, else 0); a header-only file is `not_measured` | None | Editing row 2's meter |
+| D9 | Row 5: where does the clock stop? | A 3/3 | At the newest `created_at` over all crates of `publish-order.txt` at the tag, not at the root crate `aprender`: two crates publish after it | None. Risks named: one crates.io read per crate (73) strains rate limits and makes `not_measured` likelier; the 5-release baseline used the one-crate method, so the two are not comparable | Editing row 5's timer |
+| D10 | Row 5: a crate whose `created_at` is earlier than the tag | A 3/3 | `not_measured`, naming the crate: the clock has no valid start | None | Editing row 5's timer |
+| D11 | Row 5: which crates does the clock cover? | A 3/3 | The crates of `publish-order.txt` at the tag, all at `--version`. The three facades are out: they carry their own version and are skipped when already live | None | Editing row 5's timer |
+| D12 | Row 5: each read's time | A 3/3 | A fourth column, `read_at`. A crate missing at its read is known missing only up to the earlier of `read_at` and `--as-of`, and is red only when that is 2 h or more after the tag | None. Risks named: the fetcher supplies `read_at`, so a fetcher that reports it wrongly defeats the check; a fourth column adds input surface and fetcher work | Editing row 5's timer |
 
-`quorum: rounds 2 | width 3 | verdicts D1 A 3/3, D2 B 2/3 (oss A), D3 no 3/3, D4 A 2/3 (oss B), D5 A 3/3 | overridden no`
+`quorum: rounds 5 | width 3 | verdicts D1 A 3/3, D2 B 2/3 (oss A), D3 no 3/3, D4 A 2/3 (oss B), D5 A 3/3, D6 A 3/3, D7 A 3/3, D8 A 3/3, D9 A 3/3, D10 A 3/3, D11 A 3/3, D12 A 3/3 | overridden no`
