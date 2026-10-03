@@ -1,0 +1,39 @@
+# DRAFT (la-0.71 look-ahead, branch-only). EXT-24b. Checker:
+# scripts/lookahead/crux_gap_check.py. Landing it for real means a Rust rule in
+# crates/aprender-contracts/src/schema/ (its own ticket); this is the oracle.
+metadata:
+  id: crux-comparison-v1
+  version: "0.1.0-draft"
+  status: draft
+  description: >
+    Optional `crux_comparison:` block on a contracts/crux-*.yaml contract. It holds an
+    EXT-001 §10 surface's arms, metric and R-15 gap delta. It reuses gap_effect
+    (closes|widens|none, PR-REVIEW-SKILL-002 §3.C) and the comparator block
+    (§3.C.1) instead of minting new vocabulary.
+  references:
+  - 'docs/specifications/PR-REVIEW-SKILL-002-v2.md §3.C, §3.C.1 (origin/main)'
+  - 'cop-inbox/handoff/EXT-001-dogfood-model-lifecycle.md R-15..R-17, S-12..S-14, §10'
+equations:
+  delta:
+    formula: 'gap_effect = none if prev undefined or now = prev; widens if now is worse than prev under metric.direction; else closes'
+  claim:
+    formula: 'gap_effect ∈ {closes, widens} ⇒ ∀ arm: comparator complete ∧ comparator ≠ unrunnable-hermetically'
+rules: [G0 block+arms present, G1 vocabulary, G2 comparator complete, G3 unrunnable report-only, G4 conceded no speed, G5 like-for-like quant, G6 delta agrees, G7 pin sha256, G8 registered competitor]
+falsification_tests:
+  - {id: FALSIFY-CRUXGAP-001, fixture: crux_gap/control-closes.yaml, expect: 0}
+  - {id: FALSIFY-CRUXGAP-002, fixture: crux_gap/control-first-record-none.yaml, expect: 0}
+  - {id: FALSIFY-CRUXGAP-003, fixture: crux_gap/control-unrunnable-report-only.yaml, expect: 0}
+  - {id: FALSIFY-CRUXGAP-004, fixture: crux_gap/G1-vocab.yaml, expect: 2, rule: G1}
+  - {id: FALSIFY-CRUXGAP-005, fixture: crux_gap/G2-gap-effect-no-comparator.yaml, expect: 2, rule: G2}
+  - {id: FALSIFY-CRUXGAP-006, fixture: crux_gap/G2-partial-comparator.yaml, expect: 2, rule: G2}
+  - {id: FALSIFY-CRUXGAP-007, fixture: crux_gap/G3-unrunnable-claims.yaml, expect: 2, rule: G3}
+  - {id: FALSIFY-CRUXGAP-008, fixture: crux_gap/G4-conceded-speed.yaml, expect: 2, rule: G4}
+  - {id: FALSIFY-CRUXGAP-009, fixture: crux_gap/G5-quant-mismatch-unlabelled.yaml, expect: 2, rule: G5}
+  - {id: FALSIFY-CRUXGAP-010, fixture: crux_gap/G6-says-closes-but-widened.yaml, expect: 2, rule: G6}
+  - {id: FALSIFY-CRUXGAP-011, fixture: crux_gap/G6-control-higher-is-better.yaml, expect: 0}
+  - {id: FALSIFY-CRUXGAP-012, fixture: crux_gap/G6-higher-is-better-flipped.yaml, expect: 2, rule: G6}
+  - {id: FALSIFY-CRUXGAP-013, fixture: crux_gap/G7-no-pin.yaml, expect: 2, rule: G7}
+  - {id: FALSIFY-CRUXGAP-014, fixture: crux_gap/G8-unregistered.yaml, expect: 2, rule: G8}
+  - {id: FALSIFY-CRUXGAP-015, fixture: crux_gap/G0-no-block.yaml, expect: 2, rule: G0}
+  - {id: FALSIFY-CRUXGAP-016, fixture: crux_gap/G0-no-arms.yaml, expect: 2, rule: G0}
+mutation_record: "15/15 sed mutants killed by --self-test (2026-10-03, la-0.71)"

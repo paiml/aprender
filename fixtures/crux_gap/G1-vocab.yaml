@@ -1,0 +1,61 @@
+metadata:
+  id: CRUX-P-01
+  category: P — Model Artifact
+  competitor: unsloth
+crux_comparison:
+  surface: 'model-artifact: released Q4_K_M file'
+  subject_quant: Q4_K_M
+  metric:
+    name: kl_divergence_vs_bf16
+    direction: lower
+  arms:
+  - competitor: unsloth
+    quant: Q4_K_M
+    pin:
+      revision: rev-unsloth
+      sha256: ffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffff
+    comparator:
+      command:
+      - llama-perplexity
+      - --kl-divergence
+      - -m
+      - unsloth.gguf
+      version: llama.cpp d1d3c3396
+      env_sha256: eeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeee
+      artifact_sha256: aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa
+      log_path: evidence/crux/c1/unsloth.log
+  - competitor: bartowski
+    quant: Q4_K_M
+    pin:
+      revision: rev-bartowski
+      sha256: ffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffff
+    comparator:
+      command:
+      - llama-perplexity
+      - --kl-divergence
+      - -m
+      - bartowski.gguf
+      version: llama.cpp d1d3c3396
+      env_sha256: eeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeee
+      artifact_sha256: aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa
+      log_path: evidence/crux/c1/bartowski.log
+  - competitor: unsloth
+    quant: UD-Q4_K_XL
+    pin:
+      revision: rev-unsloth
+      sha256: ffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffff
+    comparator:
+      command:
+      - llama-perplexity
+      - --kl-divergence
+      - -m
+      - unsloth.gguf
+      version: llama.cpp d1d3c3396
+      env_sha256: eeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeee
+      artifact_sha256: aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa
+      log_path: evidence/crux/c1/unsloth.log
+    separate_arm: true
+  gap:
+    previous: 0.02
+    now: 0.015
+  gap_effect: improves

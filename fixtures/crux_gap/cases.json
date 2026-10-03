@@ -1,0 +1,94 @@
+[
+ {
+  "id": "control-closes",
+  "fixture": "control-closes.yaml",
+  "expect": 0
+ },
+ {
+  "id": "control-first-record-none",
+  "fixture": "control-first-record-none.yaml",
+  "expect": 0
+ },
+ {
+  "id": "control-unrunnable-report-only",
+  "fixture": "control-unrunnable-report-only.yaml",
+  "expect": 0
+ },
+ {
+  "id": "G1-vocab",
+  "fixture": "G1-vocab.yaml",
+  "expect": 2,
+  "rule": "G1"
+ },
+ {
+  "id": "G2-gap-effect-no-comparator",
+  "fixture": "G2-gap-effect-no-comparator.yaml",
+  "expect": 2,
+  "rule": "G2"
+ },
+ {
+  "id": "G2-partial-comparator",
+  "fixture": "G2-partial-comparator.yaml",
+  "expect": 2,
+  "rule": "G2"
+ },
+ {
+  "id": "G3-unrunnable-claims",
+  "fixture": "G3-unrunnable-claims.yaml",
+  "expect": 2,
+  "rule": "G3"
+ },
+ {
+  "id": "G4-conceded-speed",
+  "fixture": "G4-conceded-speed.yaml",
+  "expect": 2,
+  "rule": "G4"
+ },
+ {
+  "id": "G5-quant-mismatch-unlabelled",
+  "fixture": "G5-quant-mismatch-unlabelled.yaml",
+  "expect": 2,
+  "rule": "G5"
+ },
+ {
+  "id": "G6-says-closes-but-widened",
+  "fixture": "G6-says-closes-but-widened.yaml",
+  "expect": 2,
+  "rule": "G6"
+ },
+ {
+  "id": "G6-control-higher-is-better",
+  "fixture": "G6-control-higher-is-better.yaml",
+  "expect": 0
+ },
+ {
+  "id": "G6-higher-is-better-flipped",
+  "fixture": "G6-higher-is-better-flipped.yaml",
+  "expect": 2,
+  "rule": "G6"
+ },
+ {
+  "id": "G7-no-pin",
+  "fixture": "G7-no-pin.yaml",
+  "expect": 2,
+  "rule": "G7"
+ },
+ {
+  "id": "G8-unregistered",
+  "fixture": "G8-unregistered.yaml",
+  "expect": 2,
+  "rule": "G8"
+ },
+ {
+  "id": "G0-no-block",
+  "fixture": "G0-no-block.yaml",
+  "expect": 2,
+  "rule": "G0"
+ },
+ {
+  "id": "G0-no-arms",
+  "fixture": "G0-no-arms.yaml",
+  "expect": 2,
+  "rule": "G0"
+ }
+]

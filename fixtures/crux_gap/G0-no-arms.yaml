@@ -1,0 +1,15 @@
+metadata:
+  id: CRUX-P-01
+  category: P — Model Artifact
+  competitor: unsloth
+crux_comparison:
+  surface: 'model-artifact: released Q4_K_M file'
+  subject_quant: Q4_K_M
+  metric:
+    name: kl_divergence_vs_bf16
+    direction: lower
+  arms: []
+  gap:
+    previous: 0.02
+    now: 0.015
+  gap_effect: closes
