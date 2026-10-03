@@ -227,6 +227,8 @@ Two consequences sit outside the kernels:
    already depends on (`aprender-train/Cargo.toml:85`), so the change is a visibility change plus the loader. Add 20
    `[A]` if #4418 has not landed by then and the transforms must first move to a shared module. It is on R4's path
    and T2's (§Value-head order, Load).
-5. **Contract text on `fold-r2r3`.** `qwen35-train-gdn-v1` (:26-27) still states the old recurrence: α = sigmoid(·)
-   and o = (Sᵀq) ⊙ z. The code decays by e^g (`gdn.rs:291`) and applies z only in the gated norm. That contract's
-   note at :96 already records the right decay, so this is a text fix in that PR, not a defect in the code.
+5. **Contract text on `fold-r2r3`, fixed at `80723cf206`.** `qwen35-train-gdn-v1` stated the old recurrence:
+   α = sigmoid(·) and o = (Sᵀq) ⊙ z. The code decays by e^g (`gdn.rs:291`), reads the decayed state, scales the
+   read-out by 1/√d_k and applies z only in the gated norm, and the contract now says so. The shared
+   `gated-delta-net-v1` 1.0.0 on main still states the old recurrence, which neither crate computes; R21's kernels
+   follow `qwen35-train-cuda-v1` and the CPU oracle, not that file.
