@@ -1,0 +1,8 @@
+# Planted: an on_main falsifier claim naming one real id and one the file does not define. Must be RED.
+schema: lookahead-dor-v1
+train: "0.00"
+rows:
+  - id: FALSE-FALSIFIER
+    ev_rank: 1
+    falsifier:
+      - {ids: [FALSIFY-CB-001, FALSIFY-LADOR-PLANTED-001], path: contracts/continuous-batching-v1.yaml, on_main: true}

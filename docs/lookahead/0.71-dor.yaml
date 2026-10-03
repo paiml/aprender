@@ -2,7 +2,9 @@
 # APR-LOOKAHEAD-001 §4 L1 item 2. Data only; scripts/lookahead/dor_check.py renders it.
 # A row is READY only when spec, contract, falsifier, baseline and owner are all present
 # AND every path claimed `on_main: true` exists at the checked ref (claims are verified,
-# never trusted; `staged_at: origin/…` claims are verified against that branch too). Audit: 2026-10-03 against origin/main 316dee2cd4, by la-0.71 (L1).
+# never trusted; `staged_at: origin/…` claims are verified against that branch too). A falsifier is a list of
+# {ids, path, on_main} or {ids, staged_at, staged_path} claims, and the named file must define every id; a bare id
+# list is RED. Audit: 2026-10-03 against origin/main 316dee2cd4, by la-0.71 (L1); falsifier ids verified 19:30Z.
 schema: lookahead-dor-v1
 train: "0.71"
 epic: 3598
@@ -17,7 +19,9 @@ rows:
            staged_at: origin/la-71/4487-obs-00}   # ffb4a348bd: c1 + APR-OBS-001 v1.3 + TRACE-001 v1.2 + EXT-001 v1.2 (aprender-cd)
     contract: {id: apr-trace-v1, path: contracts/apr-trace-v1.yaml, on_main: false,
                staged_at: origin/la-71/4487-obs-00}   # blob 828bc46eb6 = #4487 (c1 294b8c9ac8 + c291c0d02c), which lands before OBS-09. Census of all 1213 origin refs, 18:44Z and again 18:49Z: 5 blobs on 13 refs (0.71-dor.md); the a01/4492 copy 23f0305863 is fold/88's, the older #4487
-    falsifier: [FALSIFY-OBS-TRACE-001, FALSIFY-OBS-TRACE-002, FALSIFY-OBS-TRACE-003]   # as defined in 828bc46eb6. feat/4496 tests 001/002's rules as FALSIFY-TRACE-001/002, ids main already defines twice (apr-chrome-trace-v1, pmat/tracing-observability-v1): relabel before its PR. + 13 proposed: la-71/obs-09-trace-v1 SUPERSEDED-apr-trace-v1.md
+    falsifier:
+      - {ids: [FALSIFY-OBS-TRACE-001..003], staged_at: origin/la-71/4487-obs-00, staged_path: contracts/apr-trace-v1.yaml}
+      # as defined in 828bc46eb6. feat/4496 tests 001/002's rules as FALSIFY-TRACE-001/002, ids main already defines twice (apr-chrome-trace-v1, pmat/tracing-observability-v1): relabel before its PR. + 13 proposed: la-71/obs-09-trace-v1 SUPERSEDED-apr-trace-v1.md
     baseline: null
     owner_proposed: aprender-76 (OBS-09 owner, APR-OBS-001 v1.3 §8 row 2; tracer on feat/4496), not L1
     blocks: [V1, V3]        # §5.2: every 0.71 perf PR carries an apr-trace-v1 diff
@@ -30,7 +34,9 @@ rows:
            staged_at: origin/la-71/ktest-001}
     contract: {id: kernel-registry-v1, path: contracts/kernel-registry-v1.yaml, on_main: false,
                staged_at: origin/la-71/3715-kernel-cells}
-    falsifier: [FALSIFY-KREG-001, FALSIFY-KREG-002, FALSIFY-KREG-003, FALSIFY-KREG-004, FALSIFY-KREG-005]
+    falsifier:   # 011 names a kernel dispatched unregistered: the "0 unregistered dispatches" half of V5
+      - {ids: [FALSIFY-KREG-001..005, FALSIFY-KREG-011], staged_at: origin/la-71/3715-kernel-cells,
+         staged_path: contracts/kernel-registry-v1.yaml}
     baseline: {path: crates/aprender-serve/kernel-registry-receipts.json, on_main: false,
                note: "unreceipted_max 41 on branch; CPU rows reduced to 26 per kreg 09-29; unregistered-dispatch count not yet measured"}
     owner_proposed: L1 (la-0.71, ex-kreg)
@@ -42,12 +48,22 @@ rows:
     spec: {path: docs/specifications/APR-EPIC-001-themed-epics-and-issue-cap.md, section: "§2 E2 goal line (one line, no section)", on_main: true}
     # 17:11Z CORRECTION: apr-serve-ttft-v1 (la-71/serve-ttft-v1) WITHDRAWN, as a second definition of a metric
     # PP-LLAMA-001 already owns. See docs/lookahead/0.71-v1-ttft-home.md. V2 = a proposed §3 `load_ms` row (REPORTED).
-    # 18:17Z drafted as PP-LLAMA-001 v3.2 §3 (e1f32ac9e5); resolution and keys aligned with aprender-cd in 0494f5b9ff.
+    # 18:17Z drafted as PP-LLAMA-001 v3.2 §3 (e1f32ac9e5); resolution and keys aligned with aprender-cd in 0494f5b9ff,
+    # probe/refusal and Appendix B spellings with la-71/load-block@84a1f56d01 in 3e12078c24.
     contract: {id: PP-LLAMA-001-s3-load_ms, path: null, on_main: false,
                staged_at: origin/la-71/pp-llama-p8-ttft, staged_path: docs/specifications/PP-LLAMA-001-MASTER.md,
                staged_marker: "| `load_ms` |",
-               proposed: "PP-LLAMA-001 v3.2 §3 row load_ms: spawn -> first readiness probe answering 200, an upper bound whose resolution is the measured probe bracket, under a declared page-cache mode; REPORTED, R-71-6"}
-    falsifier: null   # REPORTED, so no gate case; validity cases (coarse bracket, evicted claim its witness contradicts) are owed by the load producer (aprender-cd la-71/load-block, not on origin at 18:37Z)
+               proposed: "PP-LLAMA-001 v3.2 §3 row load_ms: spawn -> the first passing readiness probe (2xx from /health, /v1/models or /), an upper bound whose resolution is the measured probe bracket, under a declared page-cache mode; REPORTED, R-71-6"}
+    falsifier:   # REPORTED, so no gate case: these are the load producer's validity cases for the §3 row (aprender-cd)
+      - {ids: [load_measured_carries_both_servers, load_without_a_report_is_unmeasured_and_says_why,
+               load_on_another_compute_class_is_unmeasured, load_first_ttft_withheld_after_a_failed_request,
+               load_after_a_failed_eviction_is_unmeasured, load_declared_evicted_but_still_resident_is_unmeasured,
+               load_declared_warm_but_partly_resident_is_unmeasured, load_nothing_witnessed_is_unmeasured,
+               load_page_cache_mode_undeclared_is_unmeasured, load_absent_manifest_is_unmeasured,
+               load_pass_not_measured_carries_its_reason_and_no_sides],
+         staged_at: origin/la-71/load-block, staged_path: scripts/lib/perf_receipt.py}
+      # load-block@1e52d7ac9f. Its six load_cold_start_*_is_unmeasured rows (no bracket, no 2xx probe) build their
+      # names at runtime, so no file defines them as tokens and they are not cited.
     baseline: null    # one --start replicate per lane in the §12 row 18 reference cell (aprender-cd harness la-71/bench-ready-ms)
     owner_proposed: perf-gate (PP-LLAMA-001 §12 owner) per R-71-6, not L1
     related: [PMAT-3718]
@@ -60,7 +76,7 @@ rows:
     # 17:11Z CORRECTION: apr-serve-ttft-v1 + ttft_receipt_check.py WITHDRAWN (own estimator, hardcoded BOUND 2.0 =
     # PP-33 violation). Home: PP-LLAMA-001 §4 P-8 ("No latency bound is set in this version") + perf-matrix.yaml
     # arm parity (ttft is `reported`) + Rust perf_gate paired_ratio_lcb(ttft_p50_ms). docs/lookahead/0.71-v1-ttft-home.md
-    # 18:17Z drafted as PP-LLAMA-001 v3.2 P-8 + PP-34 + §12 row 23 (e1f32ac9e5, head 0494f5b9ff).
+    # 18:17Z drafted as PP-LLAMA-001 v3.2 P-8 + PP-34 + §12 row 23 (e1f32ac9e5, head 3e12078c24).
     contract: {id: PP-LLAMA-001-P-8-ttft-bound, path: null, on_main: false,
                staged_at: origin/la-71/pp-llama-p8-ttft, staged_path: docs/specifications/PP-LLAMA-001-MASTER.md,
                staged_marker: "`ttft` is gated as `ttft_ratio`",
@@ -80,7 +96,11 @@ rows:
            staged_at: origin/la-71/4487-obs-00}   # ffb4a348bd: c1 + APR-OBS-001 v1.3 + TRACE-001 v1.2 + EXT-001 v1.2 (aprender-cd)
     contract: {id: apr-raw-samples-v1, path: contracts/apr-raw-samples-v1.yaml, on_main: false,
                staged_at: origin/la-71/4551-raw-samples}
-    falsifier: [FALSIFY-OBS-PERF-001..012]   # apr-perf-ledger-v1 on origin/a01/4492-obs05-ledger-checks (bde14e59; #4494 a304d19f diverges); + 7 proposed: la-71/obs-05-perf-ledger-v1 SUPERSEDED-apr-perf-ledger-v1.md
+    falsifier:   # the row's contract, then the ledger checks on the #4492 ticket branch (bde14e59; #4494 a304d19f diverges)
+      - {ids: [FALSIFY-RAWS-001..002], staged_at: origin/la-71/4551-raw-samples, staged_path: contracts/apr-raw-samples-v1.yaml}
+      - {ids: [FALSIFY-OBS-PERF-001..012], staged_at: origin/a01/4492-obs05-ledger-checks,
+         staged_path: contracts/apr-perf-ledger-v1.yaml}
+      # + 7 proposed: la-71/obs-05-perf-ledger-v1 SUPERSEDED-apr-perf-ledger-v1.md
     baseline: null
     owner_proposed: a01 (#4492 ticket worker), not L1
   - id: BATCH-DECODE-PARITY
@@ -92,7 +112,10 @@ rows:
            staged_path: docs/lookahead/0.71-v3-serving-shape-parity.md}
     contract: {id: continuous-batching-v1, path: contracts/continuous-batching-v1.yaml, on_main: true,
                draft: {id: serving-shape-parity-v1, staged_at: origin/la-71/v3-serving-shape-parity}}
-    falsifier: [FALSIFY-CB-001, FALSIFY-CB-008, FALSIFY-SSP-001..007]
+    falsifier:
+      - {ids: [FALSIFY-CB-001, FALSIFY-CB-008], path: contracts/continuous-batching-v1.yaml, on_main: true}
+      - {ids: [FALSIFY-SSP-001..007], staged_at: origin/la-71/v3-serving-shape-parity,
+         staged_path: docs/lookahead/contracts-draft/serving-shape-parity-v1.yaml}
     baseline: {path: evidence/parity-http/bands/apr-c4.json, on_main: true,
                note: "concurrency bands exist; lambda perf041 witness is NOT ADMISSIBLE for V3 (wrong model, m=14 at c=16, no top-2 margin)"}
     owner_proposed: L1
@@ -104,7 +127,10 @@ rows:
     spec: {path: docs/specifications/EXT-001-dogfood-model-lifecycle.md, section: "§10, §10.1, §11", on_main: false,
            staged_at: origin/la-71/4487-obs-00}   # EXT-001 v1.2, ffb4a348bd
     contract: {id: crux-competitive-research-ux-v1, path: contracts/crux-competitive-research-ux-v1.yaml, on_main: true}
-    falsifier: [FALSIFY-CRUX-001, FALSIFY-CRUXBIND-001..007]   # bind precondition: origin/la-71/ext-24-crux-bind docs/lookahead/contracts-draft/ext-crux-bind-v1.yaml; RED on main (7 arms unregistered, 5 letters collide, no gap_effect schema)
+    falsifier:   # CRUXBIND is the bind precondition; RED on main (7 arms unregistered, 5 letters collide, no gap_effect schema)
+      - {ids: [FALSIFY-CRUX-001], path: contracts/crux-competitive-research-ux-v1.yaml, on_main: true}
+      - {ids: [FALSIFY-CRUXBIND-001..007], staged_at: origin/la-71/ext-24-crux-bind,
+         staged_path: docs/lookahead/contracts-draft/ext-crux-bind-v1.yaml}
     baseline: {path: evidence/crux/0.69.1, on_main: true, note: "0.69.1 run; no 0.71 run"}
     owner_proposed: EXT lane (E4 #4381), L1 tracks
   - id: KTEST-04
@@ -116,7 +142,9 @@ rows:
            staged_at: origin/la-71/ktest-001}
     contract: {id: kernel-registry-v1, path: contracts/kernel-registry-v1.yaml, on_main: false,
                staged_at: origin/la-71/ktest-04-force-isa}
-    falsifier: [F-11]
+    falsifier:   # §7 row F-11: an ISA path compiled in that no host can run is refused at registration
+      - {ids: [F-11], staged_at: origin/la-71/ktest-001,
+         staged_path: docs/specifications/KTEST-001-kernel-testing-gpu-cpu-hardware.md}
     baseline: {path: null, on_main: false, note: "lambda receipts @f0a74a9e67 local-only per kreg 09-30"}
     owner_proposed: L1
   - id: JSON-SCHEMA
@@ -128,7 +156,8 @@ rows:
            also: "docs/specifications/APR-EPIC-001-themed-epics-and-issue-cap.md §2 E5 (places it in 0.72)"}
     contract: {id: CRUX-I-11, path: contracts/crux-I-11-v1.yaml, on_main: true, status: draft}
       # category label is "I — Observability & Metrics" (wrong letter for structured output; feeds R-71-4)
-    falsifier: [FALSIFY-CRUX-I-11-001, FALSIFY-CRUX-I-11-002, FALSIFY-CRUX-I-11-003]   # serve response_format path
+    falsifier:   # serve response_format path
+      - {ids: [FALSIFY-CRUX-I-11-001..003], path: contracts/crux-I-11-v1.yaml, on_main: true}
       # CLI path: PR 2/4 = PMAT-3793 (b61ba3251b, apr run --json-schema/--grammar on CPU loops, constrained_run_tests.rs)
       # is on origin/PMAT-3793-apr-run-json-schema only, stacked on release/0.69.1-batch-1: 2 own commits, 104 unmerged
       # patches vs main -> needs a rebase onto main before it can land. PR state not_measured (no GH call spent).
@@ -143,7 +172,11 @@ rows:
            staged_at: origin/la-71/4487-obs-00}   # ffb4a348bd: c1 + APR-OBS-001 v1.3 + TRACE-001 v1.2 + EXT-001 v1.2 (aprender-cd)
     contract: {id: apr-obs-row-identity-v1, path: contracts/apr-obs-row-identity-v1.yaml, on_main: false,
                staged_at: origin/la-71/4487-obs-00}   # c1 leaves apr-perf-ledger-v1 to #4551
-    falsifier: ["schemas lint", "R-2 empty is RED"]
+    falsifier:   # the schema contracts this row folds: row identity (APR-OBS-001 §2.1), lane and serve rows (§2.2).
+      # apr-trace-v1's ids are OBS-09's. It cited "schemas lint" and "R-2 empty is RED": checks, not ids (B-7 is the baseline)
+      - {ids: [FALSIFY-OBS-ID-001..004], staged_at: origin/la-71/4487-obs-00, staged_path: contracts/apr-obs-row-identity-v1.yaml}
+      - {ids: [FALSIFY-OBS-LANE-001..003], staged_at: origin/la-71/4487-obs-00, staged_path: contracts/apr-lane-row-v1.yaml}
+      - {ids: [FALSIFY-OBS-SERVE-001..003], staged_at: origin/la-71/4487-obs-00, staged_path: contracts/apr-serve-timing-v1.yaml}
     baseline: {path: contracts/lint-baseline.json, on_main: true,
                note: "B-7 schemas lint: sigma ratchet formal_prose<=1464; pv 0.70.0 2add1c644 measured 1463 at main 316dee2cd4 and at main+la-71/4487-obs-00@c291c0d02c, lint rc=0, 0 errors both (aprender-cd, /mnt/nvme-raid0/tmp/cd-4487-evidence.md)"}
     owner_proposed: L1

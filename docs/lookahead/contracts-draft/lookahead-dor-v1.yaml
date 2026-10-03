@@ -3,7 +3,7 @@
 # (lookahead-readiness-v1), which renders it into the cop's hourly report.
 metadata:
   id: lookahead-dor-v1
-  version: "0.2.0"
+  version: "0.3.0"
   created: "2026-10-03"
   author: la-0.71 (L1)
   status: draft
@@ -12,25 +12,40 @@ metadata:
     A row is READY iff spec, contract, falsifier, baseline and a proposed owner are
     present and every on_main claim exists at the checked ref. A staged claim must
     exist at its branch. If its path already exists at the ref, it must also name a
-    staged_marker that the branch carries and the ref does not.
+    staged_marker that the branch carries and the ref does not. A falsifier is a list
+    of id claims, each naming the file that defines its ids. The ids are looked up in
+    that file, at the ref for an on_main claim and at the branch for a staged one: a
+    falsifier id is verified, never trusted (0.2.0 counted any non-empty list).
   references:
     - 'docs/lookahead/0.71-dor.yaml'
     - 'scripts/lookahead/dor_check.py'
 equations:
   ready:
     formula: |
-      ready(r) := on_main(r.spec) ∧ on_main(r.contract) ∧ |r.falsifier| ≥ 1
+      ready(r) := on_main(r.spec) ∧ on_main(r.contract) ∧ falsified(r)
                   ∧ on_main(r.baseline) ∧ r.owner_proposed ≠ null
+      falsified(r) := |r.falsifier| ≥ 1 ∧ ∀c ∈ r.falsifier: c.on_main ∧ ids(c) ⊆ defined(ref, c.path)
       on_main(x) := x.path ≠ null ∧ x.on_main ∧ exists(ref, x.path)
       staged_ok(x) := exists(x.staged_at, p) ∧ ( (¬exists(ref, p) ∧ x.staged_marker = null)
                       ∨ (x.staged_marker ∈ text(x.staged_at, p) ∧ x.staged_marker ∉ text(ref, p)) )
                       where p = x.staged_path, else x.path
+      staged_ids_ok(c) := ids(c) ⊆ defined(c.staged_at, p) ∧ ¬(ids(c) ⊆ defined(ref, p))
+      ids(c) := ⋃ expand(t) for t ∈ c.ids;  expand(S·lo..S·hi) := S·lo, …, S·hi, zero-padded, lo < hi
+      defined(g, p) := the `id:` values at any depth of g:p if p is YAML, else the ids that occur
+                       in text(g, p) as whole tokens; ∅ if p is absent at g
     invariants:
       - "a claim on_main=true whose path is absent at ref is RED, never NOT READY"
       - "a staged claim that is not staged_ok is RED; a field missing on main but staged_ok renders name*, still NOT READY"
       - "each planted ledger is RED for its own reason; RED for another reason is a surviving falsifier"
       - "an empty ledger is RED (APR-OBS-001 R-2)"
       - "|rows| ≤ 10 and ev_rank is a permutation of 1..|rows|"
+      - "a falsifier that is not a list of {ids, …} claims is RED: a bare id is trusted, never verified"
+      - "a claim that is neither on_main nor staged_at origin/… is RED"
+      - "an id its claimed file does not define (at the ref for on_main, at the branch for staged) is RED"
+      - "a staged claim whose ids the ref already defines, every one, is RED: that claim is on main"
+      - "a descending id range is RED"
+      - "falsifier renders falsifier* while any claim is staged; READY needs every claim on main"
+      - "in YAML only an id: value defines an id, so a comment or a rule's prose defines nothing; elsewhere an id is a whole token, so XF-11 and F-110 do not define F-11"
 falsification_tests:
   - id: FALSIFY-LADOR-001
     rule: "a planted row with contract=null renders NOT READY (contract) only"
@@ -66,10 +81,54 @@ falsification_tests:
     if_fails: "content already on main reads as staged instead of on_main"
   - id: FALSIFY-LADOR-009
     rule: "control: a marker the branch adds and the ref lacks is accepted"
-    fixture: scripts/lookahead/dor_check.py#expect_marker_control
+    fixture: scripts/lookahead/dor_check.py#unit_checks
     if_fails: "every marker claim is RED, so the staged rule is vacuously strict"
   - id: FALSIFY-LADOR-010
     rule: "control: empty.yaml checked as a marker fault is flagged as RED for the wrong reason"
     fixture: scripts/lookahead/dor_check.py#expect_red
     if_fails: "a planted ledger that is RED for another reason counts as its own falsifier firing"
-verification: "python3 scripts/lookahead/dor_check.py --self-test --ref origin/main  # each falsifier killed its mutant, 2026-10-03; 005-010: 6 mutants of the staged rule and self-test, all killed"
+  - id: FALSIFY-LADOR-011
+    rule: "a falsifier given as a bare id list exits 2"
+    fixture: scripts/lookahead/fixtures/bare-falsifier.yaml
+    if_fails: "a falsifier id is trusted, never verified"
+  - id: FALSIFY-LADOR-012
+    rule: "an on_main claim naming an id its file at the ref does not define exits 2"
+    fixture: scripts/lookahead/fixtures/false-falsifier.yaml
+    if_fails: "the ledger can cite falsifiers main does not have"
+  - id: FALSIFY-LADOR-013
+    rule: "a staged claim naming an id its file at the branch does not define exits 2"
+    fixture: scripts/lookahead/fixtures/absent-falsifier.yaml
+    if_fails: "the ledger can cite branch falsifiers that do not exist"
+  - id: FALSIFY-LADOR-014
+    rule: "a staged claim whose ids the ref already defines exits 2"
+    fixture: scripts/lookahead/fixtures/falsifier-on-ref.yaml
+    if_fails: "falsifiers already on main read as staged"
+  - id: FALSIFY-LADOR-015
+    rule: "a claim with neither on_main nor staged_at exits 2"
+    fixture: scripts/lookahead/fixtures/unanchored-falsifier.yaml
+    if_fails: "an unanchored claim is checked nowhere"
+  - id: FALSIFY-LADOR-016
+    rule: "a planted row with falsifier=null renders NOT READY (falsifier) only"
+    fixture: scripts/lookahead/fixtures/planted.yaml#NO-FALSIFIER
+    if_fails: "a row without a falsifier counts toward top10_ready"
+  - id: FALSIFY-LADOR-017
+    rule: "XF-11 and F-110 do not define F-11 outside YAML"
+    fixture: scripts/lookahead/dor_check.py#unit_checks
+    if_fails: "an id read as a substring of a longer id passes"
+  - id: FALSIFY-LADOR-018
+    rule: "a YAML comment or a rule's prose mentioning an id does not define it"
+    fixture: scripts/lookahead/dor_check.py#unit_checks
+    if_fails: "a retired or merely mentioned id reads as defined"
+  - id: FALSIFY-LADOR-019
+    rule: "a descending id range exits 2"
+    fixture: scripts/lookahead/dor_check.py#unit_checks
+    if_fails: "a reversed range cites no ids and passes vacuously"
+  - id: FALSIFY-LADOR-020
+    rule: "a row whose only falsifier claim is staged renders falsifier*, never READY"
+    fixture: scripts/lookahead/dor_check.py#unit_checks
+    if_fails: "a row whose falsifiers exist only on a branch counts toward top10_ready"
+  - id: FALSIFY-LADOR-021
+    rule: "controls: an exact token outside YAML, a YAML id under a key other than falsification_tests, ids the branch adds and the ref lacks, and an ascending range are all accepted"
+    fixture: scripts/lookahead/dor_check.py#unit_checks
+    if_fails: "the id rule is vacuously strict and every real citation is RED"
+verification: "python3 scripts/lookahead/dor_check.py --self-test --ref origin/main  # 2026-10-03 19:35Z: ok (17 falsifiers fire, 7 controls pass). 005-010: 6 mutants of the staged rule, all killed. 011-021: 15 mutants of the falsifier rule and 3 of the claim checks it moved (on_main paths, staged paths, nested YAML ids), all 18 killed (rc=2)"

@@ -1,0 +1,9 @@
+# Planted: a staged falsifier claim naming an id the branch's file does not define. Must be RED.
+schema: lookahead-dor-v1
+train: "0.00"
+rows:
+  - id: ABSENT-FALSIFIER
+    ev_rank: 1
+    falsifier:
+      - {ids: [FALSIFY-LADOR-PLANTED-001], staged_at: origin/main,
+         staged_path: contracts/continuous-batching-v1.yaml}

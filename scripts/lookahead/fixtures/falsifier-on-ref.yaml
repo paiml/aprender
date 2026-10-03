@@ -1,0 +1,8 @@
+# Planted: a staged falsifier claim whose ids the ref already defines, so the branch adds nothing. Must be RED.
+schema: lookahead-dor-v1
+train: "0.00"
+rows:
+  - id: FALSIFIER-ON-REF
+    ev_rank: 1
+    falsifier:
+      - {ids: [FALSIFY-CB-001..002], staged_at: origin/main, staged_path: contracts/continuous-batching-v1.yaml}

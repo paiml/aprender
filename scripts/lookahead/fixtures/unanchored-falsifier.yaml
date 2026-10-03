@@ -1,0 +1,8 @@
+# Planted: a falsifier claim with a path but neither on_main nor staged_at. Must be RED.
+schema: lookahead-dor-v1
+train: "0.00"
+rows:
+  - id: UNANCHORED-FALSIFIER
+    ev_rank: 1
+    falsifier:
+      - {ids: [FALSIFY-CB-001], path: contracts/continuous-batching-v1.yaml}

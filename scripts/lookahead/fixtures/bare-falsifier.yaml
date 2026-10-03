@@ -1,0 +1,7 @@
+# Planted: a falsifier given as bare ids, with no file to check them in. Must be RED.
+schema: lookahead-dor-v1
+train: "0.00"
+rows:
+  - id: BARE-FALSIFIER
+    ev_rank: 1
+    falsifier: [FALSIFY-CB-001]

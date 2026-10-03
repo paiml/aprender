@@ -1,4 +1,5 @@
-# Planted: NO-CONTRACT must render NOT READY (contract) only; ALL-PRESENT is the READY control.
+# Planted: NO-CONTRACT must render NOT READY (contract) only and NO-FALSIFIER NOT READY (falsifier)
+# only; ALL-PRESENT is the READY control.
 schema: lookahead-dor-v1
 train: "0.00"
 rows:
@@ -6,13 +7,22 @@ rows:
     ev_rank: 1
     spec: {path: docs/specifications/APR-EPIC-001-themed-epics-and-issue-cap.md, on_main: true}
     contract: {id: null, path: null, on_main: false}
-    falsifier: [FALSIFY-CB-001]
+    falsifier:
+      - {ids: [FALSIFY-CB-001], path: contracts/continuous-batching-v1.yaml, on_main: true}
     baseline: {path: evidence/parity-http/bands/apr-c4.json, on_main: true}
     owner_proposed: L1
-  - id: ALL-PRESENT
+  - id: NO-FALSIFIER
     ev_rank: 2
     spec: {path: docs/specifications/APR-EPIC-001-themed-epics-and-issue-cap.md, on_main: true}
     contract: {id: continuous-batching-v1, path: contracts/continuous-batching-v1.yaml, on_main: true}
-    falsifier: [FALSIFY-CB-001]
+    falsifier: null
+    baseline: {path: evidence/parity-http/bands/apr-c4.json, on_main: true}
+    owner_proposed: L1
+  - id: ALL-PRESENT
+    ev_rank: 3
+    spec: {path: docs/specifications/APR-EPIC-001-themed-epics-and-issue-cap.md, on_main: true}
+    contract: {id: continuous-batching-v1, path: contracts/continuous-batching-v1.yaml, on_main: true}
+    falsifier:
+      - {ids: [FALSIFY-CB-001..002, FALSIFY-CB-008], path: contracts/continuous-batching-v1.yaml, on_main: true}
     baseline: {path: evidence/parity-http/bands/apr-c4.json, on_main: true}
     owner_proposed: L1
