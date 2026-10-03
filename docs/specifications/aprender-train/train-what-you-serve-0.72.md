@@ -655,6 +655,51 @@ up, a new size changes its place, and a row already held on a branch drops out o
       and on the 27B's hidden size. Planted: 1e6 restored in the preset. The preset's line fits R1's branch
       (`4552-train-arch-honesty` @1fda81ad6c), which already gates `qwen3_5_9b()` and leaves its rope at 1e6.
   - **Until it lands,** re-import S-R10's base after #4418 merges. Do not reuse it.
+- **Row 27, K42: the training window cuts the end of the answer and says nothing.** Desk read at `316dee2cd4`, plus a
+  token count of the repo's two SFT corpora on the Qwen3.5 tokenizer (HF tokenizers 0.22.2, imitating each path's
+  tokenizer). No apr code was run.
+  - **At `316dee2cd4`.**
+    - `train_step` joins the prompt and target ids and keeps the first `max_seq_len` (`instruct_pipeline/training.rs:29-33`).
+      The default is 512 (`mod.rs:87`), and `apr finetune --max-seq-len` sets it (`finetune.rs:334`). `evaluate` cuts
+      the same way (`:488-490`). The target ends in `<|im_end|>` (`instruct_corpus.rs:63`), so a cut takes the stop first.
+    - Nothing checks the length first. `prepare_samples` tokenizes and keeps every sample (`instruct_trainer.rs:324-336`).
+      F-INST-002, "Total token count (prompt + response) must fit max_seq_len", is stated (`instruct_corpus.rs:9`) and
+      not enforced.
+    - One case is reported. When the prompt alone fills the window, the CUDA step prints a skip line
+      (`training.rs:149-157`, the fix for FALSIFY-CUDA-LOSS-WINDOW-512-001), and the CPU step returns 0 with no message
+      (`:87-88`). A cut target is reported nowhere, and the epoch line prints tokens and samples, not cuts.
+    - The flag reads as a memory setting: "Maximum sequence length for GPU buffer allocation (lower = less VRAM)"
+      (`model_ops_commands.rs:58`). The f32 logits buffer alone is `max_seq_len` × vocab (`cuda_init.rs:453-455`). On
+      Qwen3.5's 248,070 entries that is 0.51 GB at 512 and 2.03 GB at 2048, so a small card pushes the window down.
+    - A build with `--features wgpu` (in neither the default nor `full`) trains in `train_wgpu_sft` under
+      `--gpu-backend wgpu`, or `auto` with QLoRA (`finetune.rs:442,906`). That path encodes the raw instruction and
+      response, with no template and no eos (`:917-918`), at a fixed 512 (`:719`). TSC's "every training path ends in
+      `from_apr`" holds for default and `full` builds only.
+  - **Measured (simulation).** Each sample is rendered as `format_chat_prompt` renders it and counted two ways: with
+    serve's ids (control tokens whole, the regex split), and imitating main's train tokenizer (control tokens in
+    pieces, TSC-001; a split at each whitespace, TPP-001).
+    - `datasets/apr_code_sft_curated.jsonl`: 124 samples, each ending in `</tool_call>`. With serve's ids they are
+      456–480 tokens and all fit in 512. With main's train tokenizer they are 511–535, so 123 are cut: 122 by 2 to 10
+      tokens and one by 23. Every cut takes at least the last two of the six pieces of `<|im_end|>`, and 68 samples
+      also lose the `>` that closes `</tool_call>`. K39 and K40 add the tokens, and K42 turns them into a cut answer.
+    - `datasets/apr_code_sft_balanced.jsonl`: 200 samples with a long system prompt. At 512, 184 prompts fill the
+      window on either count, and main's tokenizer cuts the other 16, so no sample is trained whole. With serve's ids,
+      1024 skips 86 and cuts 31, and 2048 skips 6 and cuts 2.
+  - **Effect on 0.72.** A sample longer than the window teaches an answer that does not end: no eos, and on a tool
+    call no closing tag. The served model then runs past its answer. The step's loss looks normal, and validation
+    cannot see it, because `evaluate` scores the same cut windows. R4's 200-step cell and every T4 run train on chat
+    samples, and how many are cut depends on the corpus and on `--max-seq-len`. T2's canonical cell is fixed by
+    shape and is unaffected.
+  - **Falsifiers (PROPOSED in `train-serve-chat-format-v1` on `la-72/k39-k40-contracts` @275c009e4a).**
+    - TSC-005: `train_step` and `evaluate` use a sample whole, or refuse it and count it, never a prefix. It is RED
+      at `316dee2cd4` by reading, and the counts above say how often it fires. Planted: `full_ids[..max_seq_len]`
+      restored.
+    - TSC-006: `apr finetune` counts the samples over `--max-seq-len` before step 1, in its output and its receipt,
+      and refuses unless told to drop them. It is RED at `316dee2cd4`: nothing counts them. Planted: the count
+      removed.
+  - **Until it lands,** count the corpus with the model's tokenizer.json before a run, add K39 and K40's inflation
+    (about 12% on the curated corpus), and set `--max-seq-len` above the longest sample, or drop the long samples by
+    hand.
 
 State is read from the branch tips on 2026-10-03. origin/main is `316dee2cd4` and no la-72 branch has landed. K̂ is
 minutes of worker time still left; `[A]` marks an assumption.
@@ -689,6 +734,7 @@ minutes of worker time still left; `[A]` marks an assumption.
 | 24 | K39 train/serve chat format | the HF importer writes the added tokens and the chat template into the .apr; TSC-001: `from_apr`'s tokenizer keeps `<\|im_start\|>`, `<\|im_end\|>`, `<think>` and `</think>` whole; TSC-002: train renders the model's own template, thinking off, no default system turn, target ends in the eos id; TSC-003: serve's built-in `Qwen3NoThink` renders as the model's own template does; TSC-004: the GGUF exported from a merged HF-sourced base carries the model's template, pre `qwen35`, the eos and the token types | 110 `[A]` | contract PROPOSED @ae7a75b7f0 (pv 0/0); desk read at `316dee2cd4` plus a header read of S-R10's .apr (17 keys, no template, no added tokens) and of its GGUF export (18 keys: pre `default`, no eos, token types or template); #4418's branch fixes all but the template; PMAT-3803's branch has part of the tokenizer half, unmerged; must be green before R4's 200-step cell and any T4 run |
 | 25 | K40 pre-tokenizer split | one regex pre-tokenizer shared by train, `apr chat` and .apr serve; TPP-001/002: train's tokenizer and `encode_text` give the HF reference ids on a frozen code fixture; TPP-003 keeps GGUF serve on them, on the file apr exports too | 80 `[A]` | contract PROPOSED @ae7a75b7f0 (pv 0/0); desk read at `316dee2cd4` plus a simulation on the Qwen3.5 vocabulary: 5 samples are 193 tokens in train against 160 under the regex, and .apr serve has the same count with different ids on indented code; CRUX-M-05 (draft) states the check and nothing implements it; PMAT-3803's branch moves Qwen3.5 training to .apr serve's no-split path, not the regex (the HF-sourced .apr has no `pre_type` and says `qwen3_5`); T2 is unaffected because its count is fixed by shape; must be green before R4's 200-step cell and any T4 run |
 | 26 | K41 Qwen3.5 rope base and dims | QFR-007: the imported .apr and the GGUF exported from its merge carry the source config's dims and rope base (1e7); QFR-008: `apr export` refuses a qwen35 .apr that disagrees with its source config; QFR-009: the qwen35 rope fallbacks, the 9B preset and the family contract say 1e7 | 40 `[A]` | QFR-007..009 PROPOSED @e6ea295728; desk read at `316dee2cd4` and on #4418's branch, plus header reads: S-R10's `hf.apr` says 10000 with no dims, and its GGUF says 10000, heads 16/8, ctx 0; the published 0.8B to 27B say 1e7; #4418 fixes a fresh import but exports an older .apr at 1e4 with no warning; QFR-006 checks fresh imports only, and QQE-003 cannot see it; re-import S-R10's base after #4418, never reuse it; must be green before R4's 200-step cell and any T4 run |
+| 27 | K42 training window | TSC-005: `train_step` and `evaluate` use a sample whole or refuse and count it, never a prefix; TSC-006: `apr finetune` counts the samples over `--max-seq-len` before step 1 and refuses unless told to drop them | 45 `[A]` | TSC-005/006 PROPOSED @275c009e4a (pv 0/0); desk read at `316dee2cd4` plus a simulation on the repo's SFT corpora: on main's train tokenizer the default 512 cuts 123 of the 124 curated samples, each losing part of `<\|im_end\|>` and 68 also the `>` that closes `</tool_call>`; with serve's ids all fit; the CUDA step reports only a prompt that fills the window; a `--features wgpu` build trains on raw text at a fixed 512; must be green before R4's 200-step cell and any T4 run |
 | — | R19 ROADMAP PMAT-711 stale | — | done | shaping @378ec8e920 |
 | — | R20 declarative recipe | — | out | RQ-3: stays in #4002 (E8, 0.75) |
 
@@ -700,15 +746,16 @@ R15a C1–C4 ──────────────────────�
 R12 receipts ──────────────────────┤       └─► R13 HF rc ◄── R10 QFR-003 export ◄── #4418 (GGUF legs only)
                                    └─► R15b C5–C7 (C5 = RQ-5) ─► R5 T2 verdict ─► R14
 R11 TIS ◄── TDD normaliser (PRM C7–C9) ─────► gates every R4/R6 run counted for 0.72
-K39 TSC, K40 TPP, K41 QFR-007..009 ─────────► gate R4's 200-step cell and every T4 run
+K39 TSC, K40 TPP, K41 QFR-007..009, K42 ────► gate R4's 200-step cell and every T4 run
 ```
 T2 trains Qwen3.5-4B, so its apr side needs R2, R3, R21 and 4b as well as R15a and R15b. It does not need R4. R21
 (400 + 25 `[A]`) is the largest row on both R4's path and T2's. Its LoRA wiring calls R15a's C1 helper, so C1
 lands before R21's projection cell. The value-head work splits in two. The load-time conversion (4b) is on both
 paths, because `apr finetune` trains from .apr only and the only Qwen3.5 .apr today is HF-sourced. The export
-permutation (QQE-007) is R4's alone, because T2's canonical cell targets no GDN projection. Rows 24–26 (K39 the chat
-format, K40 the pre-tokenizer split, K41 the rope base and dims) are small, but none of R4's gates sees them, and each
-changes what the served model is given or computes. They gate R4's 200-step cell and every T4 run, not T2's ratio.
+permutation (QQE-007) is R4's alone, because T2's canonical cell targets no GDN projection. Rows 24–27 (K39 the chat
+format, K40 the pre-tokenizer split, K41 the rope base and dims, K42 the training window) are small, but none of R4's
+gates sees them, and each changes what the model learns, is given or computes. They gate R4's 200-step cell and every
+T4 run, not T2's ratio.
 
 ## §4 Rulings (S-4)
 Ruled by the cop on 2026-09-27 at 12:11Z (full text in the handoff file):
