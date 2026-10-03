@@ -14,9 +14,9 @@ rows:
     title: per-layer serve tracing (X-Trace-Level step|layer), first row of the 0.71 serve epic
     ticket: null            # not minted; APR-OBS-001 §7 row OBS-09 (K̂ 240)
     spec: {path: docs/specifications/APR-OBS-001-dogfood-observability.md, section: "§7 OBS-09, §5.2", on_main: false,
-           staged_at: origin/docs/trace001-obs-specs}   # v1.3 with §2.7
+           staged_at: origin/la-71/4487-obs-00}   # ffb4a348bd: c1 + APR-OBS-001 v1.3 + TRACE-001 v1.2 + EXT-001 v1.2 (aprender-cd)
     contract: {id: apr-trace-v1, path: contracts/apr-trace-v1.yaml, on_main: false,
-               staged_at: origin/a01/4492-obs05-ledger-checks}   # 04cc701e; #4564 carries colliding 1c31e6c2
+               staged_at: origin/a01/4492-obs05-ledger-checks}   # 04cc701e; #4564 carries colliding 1c31e6c2  COLLISION: a01/4492 sits on fold/88 older #4487; apr-trace-v1 blob 23f0305863 there vs 294b8c9ac8 on c1 (cd, 13:33Z)
     falsifier: [FALSIFY-OBS-TRACE-001, FALSIFY-OBS-TRACE-002]   # + 13 proposed: la-71/obs-09-trace-v1 SUPERSEDED-apr-trace-v1.md
     baseline: null
     owner_proposed: a01 (#4492 ticket worker), not L1
@@ -65,7 +65,7 @@ rows:
     title: nightly perf ledger with §2.1 identity block (raw samples)
     ticket: 4551
     spec: {path: docs/specifications/APR-OBS-001-dogfood-observability.md, section: "§2.1, §2.4", on_main: false,
-           staged_at: origin/docs/trace001-obs-specs}   # v1.3 with §2.7
+           staged_at: origin/la-71/4487-obs-00}   # ffb4a348bd: c1 + APR-OBS-001 v1.3 + TRACE-001 v1.2 + EXT-001 v1.2 (aprender-cd)
     contract: {id: apr-raw-samples-v1, path: contracts/apr-raw-samples-v1.yaml, on_main: false,
                staged_at: origin/la-71/4551-raw-samples}
     falsifier: [FALSIFY-OBS-PERF-001..012]   # apr-perf-ledger-v1 on origin/a01/4492-obs05-ledger-checks (bde14e59; #4494 a304d19f diverges); + 7 proposed: la-71/obs-05-perf-ledger-v1 SUPERSEDED-apr-perf-ledger-v1.md
@@ -90,7 +90,7 @@ rows:
     title: EXT-001 CRUX bind + per-surface crux contracts (EXT-25 must-carry, D-8)
     ticket: null           # EXT-001 §11: the cop mints the epic and children
     spec: {path: docs/specifications/EXT-001-dogfood-model-lifecycle.md, section: "§10, §10.1, §11", on_main: false,
-           staged_at: cop-inbox/handoff/EXT-001-dogfood-model-lifecycle.md}
+           staged_at: origin/la-71/4487-obs-00}   # EXT-001 v1.2, ffb4a348bd
     contract: {id: crux-competitive-research-ux-v1, path: contracts/crux-competitive-research-ux-v1.yaml, on_main: true}
     falsifier: [FALSIFY-CRUX-001, FALSIFY-CRUXBIND-001..007]   # bind precondition: origin/la-71/ext-24-crux-bind docs/lookahead/contracts-draft/ext-crux-bind-v1.yaml; RED on main (7 arms unregistered, 5 letters collide, no gap_effect schema)
     baseline: {path: evidence/crux/0.69.1, on_main: true, note: "0.69.1 run; no 0.71 run"}
@@ -126,10 +126,11 @@ rows:
     ev_rank: 10
     exit_criterion: [V1, V6]
     title: fold APR-OBS-001 + EXT-001 specs and the §2.1 identity schemas into the repo
-    ticket: null
+    ticket: "#4487 (aprender-cd adopts c1/4487-obs-00)"
     spec: {path: docs/specifications/APR-OBS-001-dogfood-observability.md, section: "§7 OBS-00", on_main: false,
-           staged_at: origin/docs/trace001-obs-specs}   # v1.3 with §2.7
-    contract: {id: apr-perf-ledger-v1, path: null, on_main: false}
+           staged_at: origin/la-71/4487-obs-00}   # ffb4a348bd: c1 + APR-OBS-001 v1.3 + TRACE-001 v1.2 + EXT-001 v1.2 (aprender-cd)
+    contract: {id: apr-obs-row-identity-v1, path: contracts/apr-obs-row-identity-v1.yaml, on_main: false,
+               staged_at: origin/la-71/4487-obs-00}   # c1 leaves apr-perf-ledger-v1 to #4551
     falsifier: ["schemas lint", "R-2 empty is RED"]
     baseline: null
     owner_proposed: L1
