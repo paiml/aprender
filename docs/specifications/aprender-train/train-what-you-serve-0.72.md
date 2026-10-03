@@ -477,6 +477,38 @@ up, a new size changes its place, and a row already held on a branch drops out o
     into fields that no CPU forward reads. The norms get no +1. The GGUF paths ask `hybrid_forward_handles`; the
     safetensors paths do not. This is a desk read and has not been run. The fix is a refusal at conversion. It is off
     0.72's path, because QQE-003's served side is the GGUF.
+- **Row 24, K39: `apr finetune` trains on a chat format that serve never sends.** Desk read at `316dee2cd4`; nothing
+  run. Ids are from the HF snapshot's `tokenizer_config.json`.
+  - **The control tokens are split.** Every `apr finetune` training path ends in `InstructPipeline::from_apr`
+    (`finetune.rs:387,461`). Its tokenizer comes from the .apr's own vocabulary first (`constructors.rs:212`), rebuilt
+    as tokenizer JSON with `"added_tokens": []` (`:343-350`). `load_from_json` registers special tokens only from that
+    list (`qwen2.rs:391,442`). `BpeTokenizer::encode` keeps only registered special tokens whole
+    (`qwen2bpe_tokenizer.rs:328,372`). So `<|im_start|>` and `<|im_end|>` reach the model as six BPE pieces each, in
+    the prompt and in the trained target (`instruct_trainer.rs:329-332`, `accessors.rs:23`). #3920 fixed this for
+    `load_from_vocab_merges`: a vocabulary entry shaped `<|…|>` is registered whole (`qwen2.rs:528-553`). Its doc
+    says "one parser and not two". The train loader goes through JSON and never reaches it. Serve matches special
+    tokens first (`gguf/byte_level_bpe.rs:384-400`), so the served prompt carries 248045 and 248046 as single tokens.
+    The trained target never ends in 248046 (`<|im_end|>`, the eos).
+  - **The template differs.** Train renders fixed ChatML with a default system prompt (`instruct_corpus.rs:51-66`).
+    Serve renders the model's own template with thinking off unless asked (`chat_template_helpers.rs:209`). There is
+    no system turn unless the request sends one, and `<think>\n\n</think>\n\n` follows `<|im_start|>assistant\n` (HF
+    `chat_template.jinja:54-64,148-150`). Train has no think block. `<think>` and `</think>` (248068, 248069) are
+    added tokens that are not shaped `<|…|>`, so the #3920 rule alone would still split them.
+  - **Effect on 0.72.** R4 and T2's apr side train through this path, because `apr finetune` trains from .apr only.
+    R4's gates cannot see it: the loss gate is met on pieces too, and QQE-003 feeds both forwards the same ids. T4
+    would publish a model tuned on a prompt that no apr server sends, which ends its answers in text pieces instead
+    of the eos. T2's token count would also include the pieces and the system turn, which the model's own template
+    does not produce (about 45 tokens per sample by hand count `[A]`).
+  - **Earlier work.** `origin/PMAT-3803-trainer-apr-tokenizer` @5116cbc28b (2026-09-22) is not on main, and no PR head
+    matches its last 12 commits. It builds a byte-level vocabulary with realizar's canonical BPE, under
+    `feature = "realizar"` (#3742). It does not touch the template.
+  - **Falsifiers (proposed `train-serve-chat-format-v1`, TSC):**
+    - TSC-001: the tokenizer `from_apr` builds from an embedded vocabulary that holds `<|im_end|>`, `<think>` and
+      `</think>` encodes each as one id. It is RED at `316dee2cd4`. Planted: `"added_tokens": []` restored.
+    - TSC-002: for a one-turn sample on the Qwen3.5 vocabulary (CPU), the ids `prepare_samples` gives (prompt, then
+      response) equal serve's ids for the same messages: the model's own template with thinking off, then the
+      answer, then 248046. It is RED today on the system turn, the think block and the pieces. Planted: the default
+      system prompt restored.
 
 State is read from the branch tips on 2026-10-03. origin/main is `316dee2cd4` and no la-72 branch has landed. K̂ is
 minutes of worker time still left; `[A]` marks an assumption.
@@ -508,6 +540,7 @@ minutes of worker time still left; `[A]` marks an assumption.
 | 21 | K36 GDN contract text | restate `gated-delta-net-v1`'s decay, read and output; point its tests at the shipped decay; re-prove GDN-BND-001 | 60 `[A]` | contracts on `la-72/k36-gdn-contract` @e8834d7711: both at 2.0.0, bindings point at the served fns, allowlist 163→156. The tests and the Lean re-proof come at PR time, after LIVE 0.70.1. `qwen35-train-gdn-v1` @80723cf206 already states the served GDN |
 | 22 | K37 phantom bindings | fold into #4502: make `pv audit --binding` agree with the `bindings` gate; arm the gate once the `gated_rmsnorm_oxide` ghost is fixed or allowlisted | 10 `[A]` (was 30; the gate exists) | comment on #4502 posted; the K36 branch fixes 6 of the 9 phantoms at `316dee2cd4` |
 | 23 | K38 Qwen3.5 norm convention | serve's safetensors conversion refuses a hybrid `layer_types`; R13's builder inverts #4418's value transforms, norm −1 included | 15 `[A]` + R13's builder | desk read plus a CPU measurement on the 4B; GGUF serve, train and #4418 agree |
+| 24 | K39 train/serve chat format | TSC-001: `from_apr`'s tokenizer keeps `<\|im_end\|>`, `<think>` and `</think>` whole; TSC-002: train renders the model's own template, thinking off, no default system turn, target ends in the eos id | 60 `[A]` | desk read at `316dee2cd4`; PMAT-3803's branch has part of the tokenizer half, unmerged; must be green before R4's 200-step cell and any T4 run |
 | — | R19 ROADMAP PMAT-711 stale | — | done | shaping @378ec8e920 |
 | — | R20 declarative recipe | — | out | RQ-3: stays in #4002 (E8, 0.75) |
 
