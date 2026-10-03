@@ -91,8 +91,12 @@ form, and the bootstrap's 5th percentile stays the lower bound. V1's figure is t
 `perf-matrix.yaml`, with an author, and never a literal here (P-1).
 
 `load_ms` is REPORTED, not gated: V2 asks for load time beside the throughput figures, not under a
-bound. It is an upper bound because a readiness probe only sees that the server became ready
-within one probe interval, so the interval travels with it as its resolution. `crux-C-27-v1`'s
+bound. It is an upper bound because a probe only sees that the server became ready somewhere
+between the last probe that failed and the first that passed. That measured bracket travels with
+it as its resolution; the poll interval is only its floor once a probe has failed, and is carried
+separately. The page-cache mode travels with it too: a load from a warm page cache and one from
+an evicted cache are different measurements of the same server, so an `evicted` claim that the
+residency witness contradicts is unmeasured, not fast. `crux-C-27-v1`'s
 `time_to_first_ready` is a different quantity — it times `apr run`, not `apr serve`, and its ready
 is a state inside the process rather than a probe the client sees.
 
