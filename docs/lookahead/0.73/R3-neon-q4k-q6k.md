@@ -108,9 +108,9 @@ R3 is a **FINDING, not a minted row**. The mint is deferred (only the cop mints,
 ## 13. L25 review of `neon-q4k-q6k-v1` (2026-10-03, origin/main 316dee2cd4, read-only)
 | # | Hole | Fix | Falsifier |
 |---|---|---|---|
-| 1 | **Dead site.** The contract cited `quantize/fused_q4k.rs:338` for the q4k-q8k dispatcher. No `mod` or `include!` names that file: it is a byte-identical 360-line copy of `q4k_dot_avx2.rs`, which `fused_k.rs:370` includes. The file has been an orphan since the APR-MONO subtree merge (3da75b7d3d). A NEON arm added there compiles nothing, and every test would pass against the old path | Cite corrected here, in §7/§9 and in R5. A planted `compile_error!` must break the aarch64 check at each cited site | NEON-Q4K-006 |
+| 1 | **Dead site.** The contract cited `quantize/fused_q4k.rs:338` for the q4k-q8k dispatcher. No `mod` or `include!` names that file: it is a byte-identical 360-line copy of `q4k_dot_avx2.rs`, which `fused_k.rs:370` includes. The file has been an orphan since the APR-MONO subtree merge (3da75b7d3d). A NEON arm added there compiles nothing, and every test would pass against the old path | Cite corrected in §1, §9, §11 and in R5. A planted `compile_error!` must break the aarch64 check at each cited site | NEON-Q4K-006 |
 | 2 | Random f16 `d`/`dmin` bytes are Inf/NaN for 1 draw in 32 | Finite, normal f16 by construction | precondition |
-| 3 | Uniform scales or `dmin = 0` hide the scale and min terms (the existing tests use uniform scales, §12) | Varied 6-bit scales and mins, `dmin ≠ 0`; second mutation drops the min term | NEON-Q4K-001 |
+| 3 | Uniform scales or `dmin = 0` hide the scale and min terms (the existing tests use uniform scales; R3-test-skeletons.md) | Varied 6-bit scales and mins, `dmin ≠ 0`; second mutation drops the min term | NEON-Q4K-001 |
 | 4 | The epsilon floor of 1 makes the check absolute for small dots | At least 90% of cases have \|dot\| ≥ 1, and the test prints the fraction | precondition |
 | 5 | One super-block per case never runs the block loop | n ∈ {1, 2, 3, 7} | precondition |
 | 6 | The widen fallback is unreachable on gx10, which has dotprod | Test-only direct entry | NEON-Q4K-007 |
