@@ -137,10 +137,10 @@ def c_no_translation(m):
 
 
 def c_argv(m):
-    a = m.apr_argv("apr", m.parse(ARGV + ["--receipt", "R"]), "D", "T")
-    h = m.apr_argv("apr", m.parse(ARGV + ["--receipt", "R", "--planted-half-targets"]), "D", "T")
+    a = m.apr_argv("apr", m.parse(ARGV + ["--receipt", "R"]), "B", "D", "T")
+    h = m.apr_argv("apr", m.parse(ARGV + ["--receipt", "R", "--planted-half-targets"]), "B", "D", "T")
     val = lambda argv, f: argv[argv.index(f) + 1]  # noqa: E731
-    return (a[:3] == ["apr", "finetune", "Qwen3.5-4B"] and val(a, "--targets").count(",") == 6
+    return (a[:3] == ["apr", "finetune", "B"] and val(a, "--targets").count(",") == 6
             and val(h, "--targets") == "q_proj,k_proj,v_proj,o_proj" and val(a, "--rank") == "16"
             and val(a, "--alpha") == "32" and val(a, "--receipt") == "T" and val(a, "--data") == "D"
             and val(a, "--optimizer") == "adamw_fp32" and "--no-grad-checkpointing" in a)
@@ -150,7 +150,7 @@ CASES = [c_full_passes, c_trr_only_gaps, c_failed_status, c_two_data_files, c_nu
          c_no_translation, c_argv]
 
 
-def e2e(script, tmp, mode, extra=(), data=True):
+def e2e(script, tmp, mode, extra=(), data=True, base=True):
     """Run the adapter as a process against the stub apr. Returns (rc, receipt or None)."""
     stub = os.path.join(tmp, "apr")
     with open(stub, "w") as f:
@@ -159,10 +159,14 @@ def e2e(script, tmp, mode, extra=(), data=True):
     dpath = os.path.join(tmp, "data.jsonl")
     with open(dpath, "w") as f:
         f.write('{"text": "x"}\n')
+    bpath = os.path.join(tmp, "base.apr")
+    with open(bpath, "w") as f:
+        f.write("base")
     receipt = os.path.join(tmp, "apr-1.json")
     if os.path.exists(receipt):
         os.unlink(receipt)
-    env = dict(os.environ, APR_BIN=stub, STUB_APR_MODE=mode, APR_FT_DATA=dpath if data else "")
+    env = dict(os.environ, APR_BIN=stub, STUB_APR_MODE=mode, APR_FT_DATA=dpath if data else "",
+               APR_FT_BASE=bpath if base else os.path.join(tmp, "absent.apr"))
     p = subprocess.run([sys.executable, script] + ARGV + ["--receipt", receipt] + list(extra),
                        env=env, capture_output=True, text=True)
     if not os.path.exists(receipt):
@@ -181,6 +185,7 @@ def e2e_cases(script, tmp):
     rc_t, r_t = e2e(script, tmp, "trr")
     rc_f, r_f = e2e(script, tmp, "fail")
     rc_d, r_d = e2e(script, tmp, "full", data=False)
+    rc_b, r_b = e2e(script, tmp, "full", base=False)
     return [
         ("e2e full -> PASS", full_ok),
         ("e2e planted half targets -> SAME-WORK FAIL", rc_h == 0 and half[0] == 1
@@ -188,6 +193,7 @@ def e2e_cases(script, tmp):
         ("e2e TRR-only -> exit 4, no receipt", rc_t == 4 and r_t is None),
         ("e2e apr fails -> its rc, no receipt", rc_f == 5 and r_f is None),
         ("e2e no data -> exit 3, no receipt", rc_d == 3 and r_d is None),
+        ("e2e no base -> exit 3, no receipt", rc_b == 3 and r_b is None),
     ]
 
 
@@ -209,6 +215,8 @@ MUTANTS = [
     ("A7 receipt written despite gaps", "    if gaps:\n        print(\"GAP: apr receipt lacks",
      "    if False:\n        print(\"GAP: apr receipt lacks"),
     ("A8 apr exit code ignored", "if rc != 0:", "if False:"),
+    ("A9 base check dropped", "if data is None or base is None or", "if data is None or"),
+    ("A10 model name as FILE", '[apr, "finetune", base,', '[apr, "finetune", args.model,'),
 ]
 
 
@@ -248,7 +256,7 @@ def main():
         print("FAIL case", name)
     for name in left:
         print("SURVIVED", name)
-    total = len(CASES) + 5 + 1 + len(MUTANTS)
+    total = len(CASES) + 6 + 1 + len(MUTANTS)
     print("%d checks, %d failed" % (total, len(failed) + len(left)))
     return 1 if failed or left else 0
 

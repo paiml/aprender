@@ -12,6 +12,7 @@ runs on lambda (RTX 4090), with the 0.72 train idle and the fleet GPU queue free
 | apr side runner | `scripts/bench/unsloth_ft_apr_side.sh` (adapter `unsloth_ft_apr.py`) runs `$APR_BIN finetune` and copies its receipt keys; R15 must add the flags in `apr_argv()` and the keys in `APR_KEYS` | apr's rc, or exit 4 naming each missing receipt key (R15 gap); T2 stays open |
 | Incumbent env | `scripts/bench/unsloth-incumbent/pyproject.toml` + `uv` | the side wrapper exits 3 |
 | Data | `APR_FT_DATA` points at a file | exits 3 |
+| apr base | `APR_FT_BASE` is the local Qwen3.5-4B path given to `apr finetune` as FILE (`--model` stays the name both receipts carry) | the apr side exits 3 |
 
 ## Steps
 

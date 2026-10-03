@@ -5,7 +5,12 @@ Called by unsloth_ft_apr_side.sh, which unsloth_finetune_throughput.sh runs
 under gpu-q. It runs `apr finetune` once on the canonical task and copies the
 fields of apr's own run receipt into the receipt unsloth_ft_verdict.py reads.
 
-  unsloth_ft_apr.py --side apr --model M --gpu N --run K --receipt PATH [--planted-half-targets]
+  APR_FT_BASE=<local base model> APR_FT_DATA=<data.jsonl> \
+    unsloth_ft_apr.py --side apr --model M --gpu N --run K --receipt PATH [--planted-half-targets]
+
+--model is the name both receipts carry (the incumbent loads it as an HF id);
+`apr finetune` takes a local path as its positional FILE, so that comes from
+APR_FT_BASE.
 
 It copies, it never computes or translates: every verdict field comes from a
 named key of apr's receipt (APR_KEYS), so the number the verdict judges is the
@@ -62,10 +67,10 @@ def parse(argv):
     return ap.parse_args(argv)
 
 
-def apr_argv(apr, args, data, trr):
+def apr_argv(apr, args, base, data, trr):
     """The canonical task as `apr finetune` flags. [U] R15: most do not exist yet."""
     targets = HALF_TARGETS if args.planted_half_targets else TARGETS
-    return [apr, "finetune", args.model, "--method", "lora", "--precision", "bf16",
+    return [apr, "finetune", base, "--method", "lora", "--precision", "bf16",
             "--gpu-backend", "cuda", "--gpus", str(args.gpu),
             "--rank", str(TASK["rank"]), "--alpha", str(TASK["alpha"]),
             "--targets", ",".join(targets), "--data", data,
@@ -110,14 +115,22 @@ def to_verdict(trr, model):
     return (None, gaps) if gaps else (out, [])
 
 
+def env_file(name):
+    """The path in env var `name` if it exists (a file, or a model directory), else None."""
+    path = os.environ.get(name, "")
+    if path and os.path.exists(path):
+        return path
+    print("%s does not exist: %r" % (name, path), file=sys.stderr)
+    return None
+
+
 def main(argv):
     args = parse(argv)
-    data = os.environ.get("APR_FT_DATA", "")
-    if not data or not os.path.isfile(data):
-        print("APR_FT_DATA is not a file: %r" % data, file=sys.stderr)
+    data, base = env_file("APR_FT_DATA"), env_file("APR_FT_BASE")
+    if data is None or base is None or not os.path.isfile(data):
         return 3
     trr = args.receipt + ".apr.json"
-    cmd = apr_argv(os.environ.get("APR_BIN", "apr"), args, data, trr)
+    cmd = apr_argv(os.environ.get("APR_BIN", "apr"), args, base, data, trr)
     print("+ " + " ".join(cmd), file=sys.stderr)
     rc = subprocess.run(cmd).returncode
     if rc != 0:
