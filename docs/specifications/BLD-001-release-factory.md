@@ -420,6 +420,49 @@ TZ=UTC git for-each-ref --format='%(taggerdate:format-local:%Y-%m-%dT%H:%M:%SZ)'
 E4's 151 and 93 come from the build-kaizen baseline of 2026-10-02/03, an inventory kept outside this repo. Row 4's
 first PR commits its in-repo part, so the count can be re-run from here.
 
+## 7. BLD-002: release from green evidence (rows R0–R13)
+
+BLD-002 (operator ruling C289, 2026-10-03) extends this plan: measure every night and release what is already green. Release day verifies evidence and uploads; it measures nothing new. The rows run in the order the ruling gives. Until 0.70.1 is live they stay on branches only (C277 item 3). Tickets are minted after that; until then, commits carry `BLD-002/Rn`. Each row gets a ticket, a contract, one planted falsifier that must go red, and before/after numbers from R0.
+
+| BLD-002 row | Work | Rows of this plan it carries | State, 2026-10-03 |
+|---|---|---|---|
+| R0 | Baseline: step, duration, wait and first-pass yes/no for 0.70 and 0.70.1, plus the rolled first-pass yield | the baseline report | not started; a step with no measured duration is listed UNMEASURED |
+| R1 | One code identity H, used by the ladder judge, the readiness wrapper, the preflight and dogfood | row 8 | design; the path set waits on ruling request RQ-5 |
+| R2 | An evidence store outside H, keyed by H | row 7 | design; its location waits on RQ-6 |
+| R3 | The version bump moves to the start of a cycle | row 3 | not started |
+| R4 | A nightly evidence train: every lane in parallel, one line out (`RELEASABLE H=…` or `NOT RELEASABLE: <check>`) | row 1 (the publish lane) | not started |
+| R5 | Release = promote, rehearsed nightly up to the upload | row 5 | row 5's clock and fetcher are built on a branch |
+| R6 | Split dogfood: coverage nightly, model tests in an optimized build, release-day dogfood in 15 min or less | none | waits on RQ-1 |
+| R7 | Gate admission as code: a check may block only after three green nights | rows 2 and 10 | rows 2 and 10 are built on branches |
+| R8 | A known-failure ratchet against the last release | rows 6 and 9 | not started |
+| R9 | One definition of release-ready | row 4 | design decided by quorum; build in progress |
+| R10 | Flow control as code | none | not started |
+| R11 | The nightly train builds the binaries; a release is public only with every asset | none | not started |
+| R12 | Python off the release path: inventory now, no new Python | none | not started |
+| R13 | The tag-day coverage gate names a CI job that no longer exists | none | found 2026-10-03; see below |
+
+### R13 — the tag-day coverage gate names a CI job that no longer exists
+
+Found 2026-10-03 while answering RQ-1. It does not affect the 0.70.1 release, whose release steps never call the gate. Any 0.70.2 release driven by `scripts/release/autopilot.sh` hits it.
+
+- **Fact.**
+  - `scripts/release/tag_coverage_gate.sh:26` sets `JOB='ci / coverage'`, but `.github/workflows/ci.yml` has no job by that name: `git show <sha>:.github/workflows/ci.yml | grep -c 'ci / coverage'` prints 0, both at 316dee2cd4 and at the 0.70.1 release head. `evidence/fleet/history.jsonl:3` still records a job of that name.
+  - The autopilot calls the gate in step 5 (`autopilot.sh:312`). By then, step 3 has already pushed the tag and published the GitHub release.
+  - The gate polls the tag-push CI run for up to 90 × 60 s (`TCG_TRIES`, `TCG_SLEEP`, :57), then refuses.
+  - The release then stops with its tag and its GitHub release public and no crate published.
+- **The comment is wrong too.** The gate and its caller say it enforces `COV_FLOOR`. It cannot: the CI coverage section sets no floor (`ci/sections.yml:22-26`). Only `make coverage` (in `coverage-nightly.yml` and in dogfood) enforces the floor.
+- **Five whys.**
+  1. Why does the release stop after the tag? The gate waits for a job that never appears.
+  2. Why does the job never appear? Its name left the workflow.
+  3. Why did nobody notice? No check compares a gate's job names with the workflow at the commit it judges.
+  4. Why is there no such check? Gates are admitted by hand, with no registry (R7).
+  - Mechanism: R7's registry records each gate's inputs, and admission resolves them.
+- **Countermeasure.**
+  1. The gate resolves its job name in `.github/workflows/ci.yml` at the commit before it waits. The autopilot runs that check before step 3, and a missing name refuses at once, naming the job.
+  2. With R6 and R2, the gate reads the nightly coverage result for H instead of waiting for a tag-push job.
+- **Falsifier (must go RED today).** A case-table row where the workflow at the commit has no job of that name must refuse before the tag, within 1 minute, naming the job. Today the tag is pushed first and the refusal comes up to 90 minutes later.
+- **Before/after.** Before: up to 90 min of waiting, then a stop after the tag. After: a refusal before the tag, within 1 min.
+
 ## Quorum record: decision quorum, 2026-10-03 (aprender-a7)
 
 The operator's standing rule, verbatim (2026-10-03): "use quorum for decision, never block on me". The quorum may
