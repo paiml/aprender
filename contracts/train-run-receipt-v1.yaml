@@ -39,7 +39,7 @@ equations:
     preconditions:
     - 'APR_GIT_SHA is compiled into the binary (aprender-build-sha)'
   receipt_t2_extension:
-    formula: 'R_T2(run) = R(run) with device := {kind, name, uuid, trace_line} ∪ {recipe{rank, alpha, targets[], optimizer, grad_checkpointing, packing, seq_len, batch, grad_accum, warmup_steps, timed_steps, …}, trainable_params, timed_window{label_tokens, seconds, after_compile}}'
+    formula: 'R_T2(run) = R(run) with device := {kind, name, uuid, trace_line} ∪ {recipe{precision, rank, alpha, targets[], optimizer, grad_checkpointing, packing, seq_len, batch, grad_accum, warmup_steps, timed_steps, …}, trainable_params, timed_window{label_tokens, seconds, after_compile}}'
     domain: 'every successful apr finetune run; timed_window is required when --timed-steps is given and absent otherwise'
     invariants:
     - 'device.kind is the 1.0.0 device string (cuda:0, cpu); name and uuid come from the driver for the device the trainer ran on, and trace_line is the [TRACE] line the trainer printed when it bound it'

@@ -1,0 +1,75 @@
+metadata:
+  kind: pattern
+  version: 1.0.0
+  created: '2026-10-03'
+  author: PAIML Engineering (la-0.72, APR-LOOKAHEAD-001 L2, train 0.72)
+  description: >-
+    The flag half of R15: the `apr finetune` surface that beat-unsloth-finetune-throughput-v1 (T2) needs
+    to state its canonical task (bf16 LoRA r16/alpha 32 on 7 targets, seq 512, batch 4, grad_accum 1,
+    50 warmup + 200 timed steps, adamw_fp32, no gradient checkpointing, no packing). The argv is
+    apr_argv() in scripts/bench/unsloth_ft_apr.py. Desk read of crates/apr-cli/src/model_ops_commands.rs
+    (Finetune): --method, --rank, --data, --max-seq-len, --gpus, --gpu-backend, --learning-rate and
+    --epochs (default 3) exist; the eleven flags in flag_surface do not. The receipt half is
+    train-run-receipt-v1 1.1.0: every flag here is echoed in its recipe block, read back from the
+    trainer's state, never copied from argv.
+  references:
+  - contracts/beat-unsloth-finetune-throughput-v1.yaml (1.2.0, canonical task)
+  - contracts/train-run-receipt-v1.yaml (1.1.0, recipe and timed_window)
+  - scripts/bench/unsloth_ft_apr.py (apr_argv)
+  - crates/apr-cli/src/model_ops_commands.rs (Finetune args)
+  depends_on:
+  - train-run-receipt-v1
+status: PROPOSED
+equations:
+  flag_surface:
+    formula: 'F_new = {--precision {bf16,fp32}, --alpha f32, --targets csv, --batch-size N, --grad-accum N, --warmup-steps N, --timed-steps N, --optimizer {adamw_fp32,…}, --no-grad-checkpointing, --no-packing, --receipt PATH}'
+    domain: 'apr finetune FILE --method lora (CUDA backend for T2; every flag also parses on CPU)'
+    invariants:
+    - 'each flag sets exactly the recipe key of the same name in train-run-receipt-v1 1.1.0 (precision→recipe.precision, alpha→recipe.alpha, …); an omitted flag records the default actually used'
+    - '--alpha is the LoRA scale numerator: scale = alpha / rank, so r16/alpha 32 gives 2.0'
+    - '--targets names modules by their HF suffix (q_proj, …, down_proj); an unknown or unmatched name is a usage error, never silently dropped'
+    - 'with --timed-steps T and --warmup-steps W the run is exactly W + T optimizer steps; --epochs is then rejected as a conflict, and the data is cycled in file order if it runs out (1000 rows / batch 4 = 250 = 50 + 200, one pass)'
+    - '--no-packing: one data row per sequence, right-padded to --max-seq-len; pad and the first token carry no label'
+    - '--receipt PATH writes the train-run-receipt-v1 receipt there instead of beside the output; with --timed-steps it carries timed_window'
+    - 'FILE is a local base model path; a model name is not resolved here (the T2 harness passes a path)'
+    preconditions:
+    - 'train-run-receipt-v1 1.1.0 writer exists (R12 + R15-receipt)'
+proof_obligations:
+- type: equivalence
+  property: Flags and recipe echo agree
+  formal: '∀ f ∈ F_new given on argv: R.recipe[key(f)] ≡ value(f)'
+  applies_to: all
+- type: invariant
+  property: Timed run length is exact
+  formal: '--timed-steps T ∧ --warmup-steps W ⇒ R.steps = W + T ∧ R.recipe.timed_steps = T'
+  applies_to: all
+- type: invariant
+  property: No silent flag
+  formal: '∀ f ∈ F_new: parse(f) succeeds ∧ (an invalid value of f ⇒ exit ≠ 0 before any training step)'
+  applies_to: all
+falsification_tests:
+- id: FALSIFY-FT-TASK-001
+  rule: The canonical argv parses
+  prediction: '`apr finetune FILE` with the full apr_argv() of scripts/bench/unsloth_ft_apr.py and --plan exits 0; [U] desk read: today clap rejects --precision as unknown (exit 2), not run'
+  test: 'CPU, --plan, no training'
+  if_fails: 'the apr side of T2 cannot state the canonical task'
+- id: FALSIFY-FT-TASK-002
+  rule: Every flag reaches the receipt
+  prediction: 'a tiny CPU run with non-default values for all eleven flags writes a receipt whose recipe holds exactly those values; scripts/bench/unsloth_ft_apr.py on it names no gap'
+  test: 'tiny synthetic model, --warmup-steps 1 --timed-steps 2'
+  if_fails: 'a flag is parsed and ignored, so the receipt claims a recipe that did not run'
+- id: FALSIFY-FT-TASK-003
+  rule: Planted falsifier — an unmatched target refuses
+  prediction: '--targets q_proj,nonexistent_proj exits non-zero before step 1 and writes no receipt'
+  test: 'tiny CPU run'
+  if_fails: 'a typo silently trains fewer adapters, the half-targets case T2 exists to catch'
+- id: FALSIFY-FT-TASK-004
+  rule: --epochs conflicts with --timed-steps
+  prediction: '--epochs 3 --timed-steps 2 exits non-zero; --timed-steps 2 --warmup-steps 1 alone gives R.steps = 3'
+  test: 'tiny CPU run'
+  if_fails: 'the timed window is not the stated one, so label_tokens is wrong'
+- id: FALSIFY-FT-TASK-005
+  rule: --alpha changes the update, not only the echo
+  prediction: 'two tiny runs, same seed, alpha 16 vs 32: equal first-step loss, different second-step loss'
+  test: 'tiny CPU run, LoRA B initialised to zero so step 1 matches'
+  if_fails: 'alpha is recorded but the scale is hardcoded'
