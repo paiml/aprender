@@ -117,3 +117,11 @@ These runs produce receipts, not code. They are scheduled when a host is train-i
 - NEON-Q4K-005 on C4.
 - The WGF-006/007/010 ledger sweep on C1.
 - R4-001 on C0 and R4-002 on C1–C3.
+
+---
+
+## Status (2026-10-03 16:46Z)
+- origin/main is 316dee2cd4. All file:line cites in R1–R5 and these bodies were re-checked there at 13:18Z (ac564391ab).
+- **Filing:** still under S-1 hold (operator C292): nothing is filed or opened until LIVE 0.70.1. After LIVE, 0.73 moves from the floor to normal cadence: P1..P5 go to the cop as PROPOSE-TICKET lines, and this branch gets its PR.
+- **Open rulings:** RQ-3 (E6 admissible cell), RQ-4 (does hybrid count for E6), RQ-5 (cpu_ref_path; L3 recommends fp32_act). P1 can land before RQ-5 is ruled; see its blockers.
+- **External blocker:** the OBS stack, #4487 and #4574, is unmerged, so P1's identity check stays NotRun until it merges.
