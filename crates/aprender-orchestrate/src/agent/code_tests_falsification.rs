@@ -185,3 +185,84 @@ fn falsify_4599_005_code_window_is_the_models_context_length() {
     assert_eq!(code_context_window(None, &not_gguf), CODE_DEFAULT_CONTEXT_WINDOW);
     assert_eq!(code_context_window(None, &dir.path().join("absent.gguf")), 32_768);
 }
+
+/// TinyLlama-1.1B-Chat's GGUF `llama.context_length`.
+#[cfg(feature = "inference")]
+const TINYLLAMA_CONTEXT: u32 = 2048;
+
+/// The manifest `apr code -p --model <tinyllama>` runs with: the default manifest, the model
+/// path, the small-model system prompt (PMAT-198), and the #4599 reserve cap.
+#[cfg(feature = "inference")]
+fn tinyllama_manifest(model: &Path) -> AgentManifest {
+    let mut m = build_default_manifest();
+    m.model.model_path = Some(model.to_path_buf());
+    m.model.system_prompt = scale_prompt_for_model(estimate_model_params_from_name(model));
+    cap_output_reserve_to_model_window(&mut m);
+    m
+}
+
+/// FALSIFY-4599-009 (0.70.1 regression): a window from the model leaves an input budget. The
+/// default 4096 reserve is capped to a quarter of the window; an explicit window keeps it.
+#[test]
+fn falsify_4599_009_output_reserve_never_takes_a_model_window() {
+    assert_eq!(code_output_reserve(4096, 2048), 512, "a 2048 window keeps 1536 for input");
+    assert_eq!(code_output_reserve(4096, 4096), 1024);
+    assert_eq!(code_output_reserve(4096, 262_144), 4096, "a large window keeps the default");
+    assert_eq!(code_output_reserve(256, 2048), 256, "a smaller reserve is never raised");
+
+    #[cfg(feature = "inference")]
+    {
+        let dir = tempfile::tempdir().expect("tempdir");
+        let model = dir.path().join("tinyllama-1.1b-chat-v1.0.Q4_K_M.gguf");
+        std::fs::write(&model, gguf_header("llama", Some(TINYLLAMA_CONTEXT))).expect("write");
+        assert_eq!(tinyllama_manifest(&model).model.max_tokens, 512);
+
+        let mut explicit = build_default_manifest();
+        explicit.model.model_path = Some(model);
+        explicit.model.context_window = Some(2048);
+        cap_output_reserve_to_model_window(&mut explicit);
+        assert_eq!(explicit.model.max_tokens, 4096, "an explicit window keeps its reserve");
+    }
+}
+
+/// FALSIFY-4599-010 (0.70.1 regression): through the real agent loop and `apr code`'s own tool
+/// registry, a 2048-token model answers a 12-token prompt (0.70.0: "context overflow: required
+/// 12 tokens, available 0"), and a prompt larger than the window is still refused, nonzero.
+#[cfg(feature = "inference")]
+#[tokio::test]
+async fn falsify_4599_010_small_window_fits_a_short_prompt_and_refuses_an_oversized_one() {
+    use crate::agent::driver::mock::MockDriver;
+    use crate::agent::memory::InMemorySubstrate;
+    use crate::agent::result::AgentError;
+    use crate::agent::runtime::run_agent_loop;
+
+    let dir = tempfile::tempdir().expect("tempdir");
+    let model = dir.path().join("tinyllama-1.1b-chat-v1.0.Q4_K_M.gguf");
+    std::fs::write(&model, gguf_header("llama", Some(TINYLLAMA_CONTEXT))).expect("write");
+    let m = tinyllama_manifest(&model);
+    let window = code_driver_window(&m, &model);
+    assert_eq!(window, TINYLLAMA_CONTEXT as usize, "the window is the model's");
+    let tools = build_code_tools(&m);
+    let run = |manifest: AgentManifest, prompt: String| {
+        let tools = &tools;
+        async move {
+            let driver = MockDriver::single_response("ok").with_context_window(window);
+            run_agent_loop(&manifest, &prompt, &driver, tools, &InMemorySubstrate::new(), None)
+                .await
+        }
+    };
+
+    let ok = run(m.clone(), "Reply with the single word: ok".into()).await;
+    assert_eq!(ok.expect("a 12-token prompt fits a 2048 window").text, "ok");
+
+    // The defect: the uncapped 4096 reserve leaves nothing for input.
+    let mut uncapped = m.clone();
+    uncapped.model.max_tokens = 4096;
+    let e = run(uncapped, "Reply with the single word: ok".into()).await.expect_err("0.70.0");
+    assert!(matches!(e, AgentError::ContextOverflow { available: 0, .. }), "{e}");
+
+    // #4599 holds: a prompt above the window is refused by name, never dropped.
+    let e = run(m, "word ".repeat(4 * window)).await.expect_err("over the window");
+    assert!(matches!(e, AgentError::ContextOverflow { .. }), "{e}");
+    assert_ne!(map_error_to_exit_code(&e), 0, "a refusal exits nonzero");
+}
