@@ -68,10 +68,30 @@ Count (41): 21 in P1 (BPM-001..006, 008..018, NEON-009, WGF-005, WGF-009, R4-003
 for the real field, but their planted receipts carry it already. Then 8 in P3, 5 in P4 (WGF-003 gated on K14),
 5 in M alone (BPM-007, NEON-005, WGF-006/007/010) and 2 in P5 + M (R4-001, R4-002).
 
+## Ranking
+This is the one ranking for 0.73. The cop mints from it, and the PROPOSE-TICKET lines go out in this order. The
+research rows R1..R5 (2026-09-27) are the evidence behind it, not a second list. The From column maps them.
+
+| Rank | Bundle | From | Gate falsifiers | Why this rank |
+|---|---|---|---|---|
+| 1 | P1 receipt checker | R1, its checker | 21 | The cheapest falsifier in 0.73: x86 CI, no model. Every other bundle's receipts, and every M run, are judged by it. |
+| 2 | P2 trace fields | R1, the fields its receipts read | 0. BPM-006, BPM-012, BPM-016, WGF-009 and WGF-004 need its fields | CPU only. Until it lands, those falsifiers are checked on planted fields only. |
+| 3 | P4 wgpu fixes | R2 | 5 | It goes after a measured failure: wgpu decode reaches cosine 0.955 on every GPU measured, below the 0.995 floor of an E1 leg (F-R5-3). P5's wgpu half waits on it. |
+| 4 | P3 NEON kernels | R3 | 8 | On aarch64 the gap is speed, plus a trace that says NEON while scalar code runs (F-R5-1). The output is already right. It runs in parallel with P4. |
+| 5 | P5 MoE dispatch | R4 | 2, each with its M run | The CUDA MoE forward exists; the gap is wiring. Its wgpu half follows P4. |
+
+- R1 was one row: the harness, its cells and a speed receipt. Minted as one ticket, it would put P1's falsifiers
+  behind the GPU cells again. So it is split: P1 and P2 land first on CPU, and its GPU cells are M runs, last.
+- R5, the kernel-key census (`R5-kernel-key-census.md`), is done and lands no bundle. Its one ask, a backend field
+  in the KREG-001 key (#4539, train 0.71), is in the KREG draft: `kreg:backend` at `contracts/kernel-registry-v1.yaml:86`
+  on branch kreg/4539-parity-receipts at 02b0f7f7fc. It is not on main at 316dee2cd4.
+- M is not ranked. It is runs, not code; the Count line above gives its falsifiers.
+- S1..S3 (`ticket-bodies-side-fixes.md`) are not 0.73 gates. Their lines go out after P5.
+
 ## Order
 1. P1, then P2. They are CPU-only and unblock every measurement. P1 is the cheapest falsifier in 0.73, and it is
    where the L25 fixes take effect.
-2. P3 and P4 in parallel: different crates and different hosts.
+2. P4 and P3 in parallel: different crates and different hosts. If only one can be staffed, P4 goes first (Ranking).
 3. P5 after P4 for the wgpu MoE part; the streaming part can follow P1.
 4. M runs only when the host is train-inactive, each with its receipt checked by P1.
 

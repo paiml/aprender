@@ -6,8 +6,8 @@ states it is checked against the derived value. Per-contract totals come from `p
 The falsifier ids and their `test:` text come from the YAML, because pv does not print them.
 
 Sources: the four contracts in contracts-draft/, the FALSIFY-R4-NNN ids in
-R4-moe-gpu-wiring.md (R4 has no contract), the Assignment table in falsifier-landing-map.md,
-and the fixture table in P1-receipt-checker-spec.md §4.
+R4-moe-gpu-wiring.md (R4 has no contract), the Assignment and Bundles tables in
+falsifier-landing-map.md, and the fixture table in P1-receipt-checker-spec.md §4.
 
 Usage: python3 docs/lookahead/0.73/count_audit.py [--self-test]   (needs PyYAML, and pv on PATH or in $PV)
 Exit 0 when every check passes, 1 when one fails, 2 when a source is missing.
@@ -166,6 +166,9 @@ def audit_landing_map(unwritten, gate):
 
 
 def audit_count_line(gate, per_bundle, needs_p2):
+    m, where = find(LANDING, r"\*\*Main finding:\*\* (\d+) of the (\d+)")
+    check("main finding P1", len(per_bundle["P1"]), int(m.group(1)), where)
+    check("main finding total", len(gate), int(m.group(2)), where)
     m, where = find(LANDING, r"Count \((\d+)\): (\d+) in P1 \(([^)]*)\)")
     check("Count line total", len(gate), int(m.group(1)), where)
     check("Count line P1", len(per_bundle["P1"]), int(m.group(2)), where)
@@ -179,6 +182,33 @@ def audit_count_line(gate, per_bundle, needs_p2):
         m, where = find(LANDING, rf"(\d+) in {pattern} \(([^)]*)\)")
         check(f"Count line {key}", len(per_bundle[key]), int(m.group(1)), where)
         check(f"Count line {key} ids", per_bundle[key], ids_in(m.group(2)), where)
+
+
+def landed(per_bundle, label):
+    """The gate falsifiers a ranked bundle lands: its own, and those it lands together with M runs."""
+    return set().union(*(ids for b, ids in per_bundle.items() if b == label or b.startswith(f"{label} + ")))
+
+
+def research_rows(cell):
+    return set(re.findall(r"\bR[1-5]\b", cell))
+
+
+def audit_ranking(per_bundle, needs_p2):
+    """The Ranking table ranks each bundle once, keeps the research row the Bundles table names, and states
+    the falsifiers each bundle lands."""
+    where = f"{LANDING} Ranking"
+    named = {c[0].strip("*").split()[0]: research_rows(c[0]) for c in table_rows(LANDING, r"^## Bundles$")}
+    rows = table_rows(LANDING, r"^## Ranking$")
+    labels = [c[1].split()[0] for c in rows]
+    check("ranking ranks", list(range(1, len(rows) + 1)), [int(c[0]) if c[0].isdigit() else -1 for c in rows], where)
+    check("ranking bundles", sorted(set(named) - {"M"}), sorted(labels), where)
+    check("ranking research rows", {(b, r) for b, rs in named.items() for r in rs},
+          {(b, r) for b, c in zip(labels, rows, strict=True) if named.get(b) for r in research_rows(c[2])}, where)
+    for label, c in zip(labels, rows, strict=True):
+        m = re.match(r"\d+", c[3])
+        check(f"ranking {label} gate falsifiers", len(landed(per_bundle, label)), int(m.group()) if m else -1, where)
+    p2 = [c[3] for b, c in zip(labels, rows, strict=True) if b == "P2"]
+    check("ranking P2 ids that need its fields", needs_p2, ids_in(p2[0]) if p2 else set(), where)
 
 
 def audit_side_fixes(unwritten, gate):
@@ -245,6 +275,12 @@ MUTATIONS = [
     ("P1-receipt-checker-spec.md", "| fW09 | op_placement without the attention key", "fW09 was here", "P1 body spec §4 rows"),
     ("ticket-bodies-P1-P5.md", "**Planted receipts:** 41 files", "**Planted receipts:** 40 files", "P1 body planted files"),
     ("P1-receipt-checker-spec.md", "; and a second fixture with only 7 decode positions", "", "P1 body second-fixture rows"),
+    ("falsifier-landing-map.md", "**Main finding:** 21 of the 41", "**Main finding:** 20 of the 41", "main finding P1"),
+    ("falsifier-landing-map.md", "| 4 | P3 NEON kernels |", "| 3 | P3 NEON kernels |", "ranking ranks"),
+    ("falsifier-landing-map.md", "| 5 | P5 MoE dispatch |", "| 5 | P6 MoE dispatch |", "ranking bundles"),
+    ("falsifier-landing-map.md", "| P4 wgpu fixes | R2 |", "| P4 wgpu fixes | R3 |", "ranking research rows"),
+    ("falsifier-landing-map.md", "| R3 | 8 |", "| R3 | 9 |", "ranking P3 gate falsifiers"),
+    ("falsifier-landing-map.md", "WGF-009 and WGF-004 need", "WGF-009 need", "ranking P2 ids that need its fields"),
     ("R4-moe-gpu-wiring.md", None, None, 2),
 ]
 
@@ -301,6 +337,7 @@ def main():
     gate = unwritten["BPM"] | unwritten["NEON"] | unwritten["WGF"] | unwritten["R4"]
     per_bundle, needs_p2 = audit_landing_map(unwritten, gate)
     audit_count_line(gate, per_bundle, needs_p2)
+    audit_ranking(per_bundle, needs_p2)
     audit_side_fixes(unwritten, gate)
     files = audit_p1(per_bundle)
     audit_bodies(per_bundle)
