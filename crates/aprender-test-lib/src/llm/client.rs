@@ -318,6 +318,25 @@ pub struct TimedChatResponse {
     pub brick_trace: Option<BrickTrace>,
 }
 
+/// What one readiness probe saw: the URL whose answer decided it, and that
+/// answer's HTTP status.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+pub struct ReadyProbe {
+    /// The URL that decided, or the server's base URL when no path did.
+    pub url: String,
+    /// The status it answered. `None` when no path gave a verdict: nothing
+    /// accepted the connection, or every path was absent (4xx).
+    pub status: Option<u16>,
+}
+
+impl ReadyProbe {
+    /// Did the probe find the server ready (a 2xx verdict)?
+    #[must_use]
+    pub fn is_ready(&self) -> bool {
+        self.status.is_some_and(|s| (200..300).contains(&s))
+    }
+}
+
 /// Errors from the LLM client.
 #[cfg(feature = "llm")]
 #[derive(Debug, thiserror::Error)]
@@ -652,38 +671,53 @@ impl LlmClient {
         })
     }
 
-    /// Check whether the server is ready, probing `/health`, then
-    /// `/v1/models`, then `/`.
+    /// Probe whether the server is ready, trying `/health`, then
+    /// `/v1/models`, then `/`, and return the answer that decided.
     ///
     /// The first path that answers with a verdict decides: 2xx is ready and
     /// 5xx is not ready, and the later paths are not consulted. A path that
     /// answers 4xx (absent) or cannot be reached gives no verdict, so the
     /// next one is tried. This matters while a server loads. llama-server (at
-    /// d1d3c3396) and `apr serve` both answer `/health` with 503 until the
-    /// model is resident, but llama-server serves its web UI at `/` with 200
-    /// from the moment it binds. Taking any 2xx from any path called it ready
-    /// before it could serve a completion.
-    ///
-    /// Not ready is an `Err`, never `Ok(false)`: callers test `is_ok()`.
-    pub async fn health_check(&self) -> Result<bool, LlmClientError> {
+    /// d1d3c3396) binds first and answers `/health` with 503 until the model
+    /// is resident, but serves its web UI at `/` with 200 from the moment it
+    /// binds. Taking any 2xx from any path called it ready before it could
+    /// serve a completion. `apr serve run` loads the model before it binds,
+    /// so while it loads nothing answers at all.
+    pub async fn probe_ready(&self) -> ReadyProbe {
         for path in &["/health", "/v1/models", "/"] {
             let url = format!("{}{path}", self.base_url);
             if let Ok(resp) = self.client.get(&url).send().await {
                 let status = resp.status();
-                if status.is_success() {
-                    return Ok(true);
-                }
-                if status.is_server_error() {
-                    return Err(LlmClientError::HealthCheckFailed(format!(
-                        "{url} answered {status}: not ready"
-                    )));
+                if status.is_success() || status.is_server_error() {
+                    return ReadyProbe {
+                        url,
+                        status: Some(status.as_u16()),
+                    };
                 }
             }
         }
-        Err(LlmClientError::HealthCheckFailed(format!(
-            "No health endpoint responded at {}",
-            self.base_url
-        )))
+        ReadyProbe {
+            url: self.base_url.clone(),
+            status: None,
+        }
+    }
+
+    /// Check whether the server is ready; see [`Self::probe_ready`].
+    ///
+    /// Not ready is an `Err`, never `Ok(false)`: callers test `is_ok()`.
+    pub async fn health_check(&self) -> Result<bool, LlmClientError> {
+        let probe = self.probe_ready().await;
+        match probe.status {
+            Some(_) if probe.is_ready() => Ok(true),
+            Some(status) => Err(LlmClientError::HealthCheckFailed(format!(
+                "{} answered {status}: not ready",
+                probe.url
+            ))),
+            None => Err(LlmClientError::HealthCheckFailed(format!(
+                "No health endpoint responded at {}",
+                probe.url
+            ))),
+        }
     }
 
     /// Send a streaming chat completion request and collect per-token timestamps.
@@ -1514,6 +1548,47 @@ mod tests {
             .await
             .expect_err("a server whose /health says 503 is not ready");
         assert!(err.to_string().contains("503"), "{err}");
+    }
+
+    /// `probe_ready` names the path whose answer decided and the status it
+    /// gave. With no verdict it names the base URL and no status.
+    #[cfg(feature = "llm")]
+    #[tokio::test]
+    async fn probe_ready_names_the_deciding_url_and_status() {
+        let base =
+            spawn_routed_endpoint(&[("/health", "503 Service Unavailable"), ("/", "200 OK")]).await;
+        let probe = LlmClient::new(&base, "m").probe_ready().await;
+        assert_eq!(
+            probe,
+            ReadyProbe {
+                url: format!("{base}/health"),
+                status: Some(503)
+            }
+        );
+        assert!(!probe.is_ready());
+
+        let base = spawn_routed_endpoint(&[("/v1/models", "200 OK")]).await;
+        let probe = LlmClient::new(&base, "m").probe_ready().await;
+        assert_eq!(
+            probe,
+            ReadyProbe {
+                url: format!("{base}/v1/models"),
+                status: Some(200)
+            }
+        );
+        assert!(probe.is_ready());
+
+        let base = spawn_routed_endpoint(&[]).await;
+        let probe = LlmClient::new(&base, "m").probe_ready().await;
+        assert_eq!(
+            probe,
+            ReadyProbe {
+                url: base.clone(),
+                status: None
+            },
+            "every path absent gives no verdict"
+        );
+        assert!(!probe.is_ready());
     }
 
     /// The first path that answers 2xx or 5xx decides; 4xx falls through.

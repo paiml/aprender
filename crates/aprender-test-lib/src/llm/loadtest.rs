@@ -3,7 +3,9 @@
 //! Generates concurrent chat completion requests, collects timing metrics,
 //! and produces percentile-based latency reports.
 
-use super::client::{BrickTrace, ChatMessage, ChatRequest, LlmClient, LlmClientError, Role};
+use super::client::{
+    BrickTrace, ChatMessage, ChatRequest, LlmClient, LlmClientError, ReadyProbe, Role,
+};
 use serde::{Deserialize, Serialize};
 use std::collections::HashMap;
 use std::sync::atomic::{AtomicUsize, Ordering};
@@ -252,6 +254,15 @@ pub struct LoadTestResult {
     /// probe passed. The cold start is known to no better than this.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub cold_start_resolution_ms: Option<f64>,
+    /// The probe that found the started server ready: which URL decided, and
+    /// what it answered.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub cold_start_probe: Option<ReadyProbe>,
+    /// The last probe that found it not ready, or `None` when the first probe
+    /// passed. A status says the server was up and still loading (a 503); no
+    /// status says nothing answered yet.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub cold_start_refusal: Option<ReadyProbe>,
 }
 
 /// Per-request timing for distribution analysis and debugging.
@@ -1016,6 +1027,8 @@ fn aggregate_results(
         dataset_stats: None,
         cold_start_ms: None,
         cold_start_resolution_ms: None,
+        cold_start_probe: None,
+        cold_start_refusal: None,
     }
 }
 
@@ -1683,6 +1696,8 @@ mod tests {
             dataset_stats: None,
             cold_start_ms: None,
             cold_start_resolution_ms: None,
+            cold_start_probe: None,
+            cold_start_refusal: None,
         };
         let json = serde_json::to_string(&result).unwrap();
         let back: LoadTestResult = serde_json::from_str(&json).unwrap();

@@ -2576,6 +2576,8 @@ mod tests {
             dataset_stats: None,
             cold_start_ms: None,
             cold_start_resolution_ms: None,
+            cold_start_probe: None,
+            cold_start_refusal: None,
         }
     }
 

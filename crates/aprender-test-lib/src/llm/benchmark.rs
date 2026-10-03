@@ -3,7 +3,7 @@
 //! Orchestrates the complete lifecycle: server start, health poll, warmup,
 //! multi-run measurement, statistical analysis, baseline comparison, and teardown.
 
-use super::client::{ChatRequest, LlmClient, LlmClientError};
+use super::client::{ChatRequest, LlmClient, LlmClientError, ReadyProbe};
 use super::loadtest::{LoadTest, LoadTestConfig, LoadTestResult};
 use serde::{Deserialize, Serialize};
 use std::path::{Path, PathBuf};
@@ -232,12 +232,13 @@ impl Benchmark {
             eprintln!("Server ready in {:.1}s", ready_time.as_secs_f64());
             return Ok(None);
         };
-        // A server that already answers would be timed in place of the one
-        // this run starts, whose bind would then fail.
-        if client.health_check().await.is_ok() {
+        // A server that already answers, ready or still loading, would be
+        // timed in place of the one this run starts, whose bind would then fail.
+        let occupant = client.probe_ready().await;
+        if let Some(status) = occupant.status {
             return Err(LlmClientError::HealthCheckFailed(format!(
-                "a server already answers at {}; --start would time it, not the one it starts",
-                self.config.url
+                "a server already answers at {} ({status}); --start would time it, not the one it starts",
+                occupant.url
             )));
         }
         let log = self.config.start_log.as_deref();
@@ -253,9 +254,14 @@ impl Benchmark {
         )
         .await?;
         eprintln!(
-            "Server ready {:.0} ms after start (known to within {:.0} ms)",
+            "Server ready {:.0} ms after start (known to within {:.0} ms): {} answered {}",
             readiness.ready_ms,
-            readiness.resolution_ms()
+            readiness.resolution_ms(),
+            readiness.probe.url,
+            readiness
+                .probe
+                .status
+                .map_or_else(|| "nothing".to_string(), |s| s.to_string())
         );
         Ok(Some(readiness))
     }
@@ -287,14 +293,21 @@ impl Drop for Benchmark {
 /// `not_ready_ms` is when the last failing probe was sent, or 0 when the first
 /// probe passed. The gap between them is how well the load time is known. It
 /// is at least one poll interval whenever a probe failed.
-#[derive(Debug, Clone, Copy)]
+///
+/// `probe` is what the passing probe saw, and `refusal` what the last failing
+/// one saw (`None` when the first probe passed). A refusal with a status says
+/// the server was listening while it loaded; one without says nothing had
+/// bound yet, which is how a server that loads before it binds looks.
+#[derive(Debug, Clone)]
 struct Readiness {
     ready_ms: f64,
     not_ready_ms: f64,
+    probe: ReadyProbe,
+    refusal: Option<ReadyProbe>,
 }
 
 impl Readiness {
-    fn resolution_ms(self) -> f64 {
+    fn resolution_ms(&self) -> f64 {
         self.ready_ms - self.not_ready_ms
     }
 }
@@ -352,6 +365,7 @@ async fn await_started_server(
     log: Option<&Path>,
 ) -> Result<Readiness, LlmClientError> {
     let mut not_ready_ms = 0.0;
+    let mut refusal = None;
     loop {
         let sent = spawned.elapsed();
         if sent > timeout {
@@ -361,12 +375,16 @@ async fn await_started_server(
                 log_evidence(log)
             )));
         }
-        if client.health_check().await.is_ok() {
+        let probe = client.probe_ready().await;
+        if probe.is_ready() {
             return Ok(Readiness {
                 ready_ms: millis(spawned.elapsed()),
                 not_ready_ms,
+                probe,
+                refusal,
             });
         }
+        refusal = Some(probe);
         not_ready_ms = millis(sent);
         let exited = child.try_wait().ok().flatten();
         if let Some(status) = exited.filter(|status| !status.success()) {
@@ -401,7 +419,7 @@ fn last_nonempty_line(text: &str) -> Option<&str> {
 }
 
 /// Record a started server's readiness on every run it served. Runs against
-/// a server the benchmark found running keep both fields unset.
+/// a server the benchmark found running keep every cold-start field unset.
 fn stamp_cold_start(runs: &mut [LoadTestResult], readiness: Option<Readiness>) {
     let Some(readiness) = readiness else {
         return;
@@ -409,6 +427,8 @@ fn stamp_cold_start(runs: &mut [LoadTestResult], readiness: Option<Readiness>) {
     for run in runs {
         run.cold_start_ms = Some(readiness.ready_ms);
         run.cold_start_resolution_ms = Some(readiness.resolution_ms());
+        run.cold_start_probe = Some(readiness.probe.clone());
+        run.cold_start_refusal.clone_from(&readiness.refusal);
     }
 }
 
@@ -539,6 +559,8 @@ mod tests {
             dataset_stats: None,
             cold_start_ms: None,
             cold_start_resolution_ms: None,
+            cold_start_probe: None,
+            cold_start_refusal: None,
         }
     }
 
@@ -731,6 +753,8 @@ mod tests {
         assert_eq!(report.runs.len(), 1);
         assert!(report.runs[0].cold_start_ms.is_none());
         assert!(report.runs[0].cold_start_resolution_ms.is_none());
+        assert!(report.runs[0].cold_start_probe.is_none());
+        assert!(report.runs[0].cold_start_refusal.is_none());
     }
 
     #[tokio::test]
@@ -739,6 +763,19 @@ mod tests {
         let mut bench = Benchmark::new(test_config(&base, Some("exec sleep 30")));
         let err = bench.run().await.expect_err("occupied URL").to_string();
         assert!(err.contains("already answers"), "{err}");
+        assert!(err.contains("(200)"), "{err}");
+        assert!(bench.child.is_none(), "nothing was started");
+        assert_eq!(probes.load(Ordering::SeqCst), 1);
+    }
+
+    /// A server still loading answers 503, and it holds the port all the same.
+    #[tokio::test]
+    async fn start_refuses_a_url_that_answers_not_ready() {
+        let (base, probes) = spawn_health_endpoint(usize::MAX).await;
+        let mut bench = Benchmark::new(test_config(&base, Some("exec sleep 30")));
+        let err = bench.run().await.expect_err("occupied URL").to_string();
+        assert!(err.contains("already answers"), "{err}");
+        assert!(err.contains("(503)"), "{err}");
         assert!(bench.child.is_none(), "nothing was started");
         assert_eq!(probes.load(Ordering::SeqCst), 1);
     }
@@ -766,6 +803,44 @@ mod tests {
             "{readiness:?}"
         );
         assert!(readiness.resolution_ms() >= millis(poll), "{readiness:?}");
+        let health = format!("{base}/health");
+        assert_eq!(
+            readiness.probe,
+            ReadyProbe {
+                url: health.clone(),
+                status: Some(200)
+            }
+        );
+        assert_eq!(
+            readiness.refusal,
+            Some(ReadyProbe {
+                url: health,
+                status: Some(503)
+            }),
+            "the last failing probe is kept"
+        );
+    }
+
+    #[tokio::test]
+    async fn a_first_probe_that_passes_leaves_no_refusal() {
+        let (base, probes) = spawn_health_endpoint(0).await;
+        let client = LlmClient::new(&base, "m");
+        let (mut child, spawned) = spawn_server("exec sleep 30", None).expect("spawn");
+        let readiness = await_started_server(
+            &client,
+            &mut child,
+            spawned,
+            Duration::from_secs(30),
+            Duration::from_millis(20),
+            None,
+        )
+        .await
+        .expect("ready");
+        let _ = child.kill().await;
+        assert_eq!(probes.load(Ordering::SeqCst), 1);
+        assert!(readiness.refusal.is_none(), "{readiness:?}");
+        assert_eq!(readiness.not_ready_ms, 0.0, "{readiness:?}");
+        assert_eq!(readiness.resolution_ms(), readiness.ready_ms);
     }
 
     #[tokio::test]
@@ -853,19 +928,43 @@ mod tests {
     }
 
     #[test]
-    fn stamp_cold_start_sets_both_fields_or_neither() {
+    fn stamp_cold_start_sets_every_field_or_none() {
         let mut runs = vec![sample_run(1.0, 1.0, 1.0), sample_run(2.0, 2.0, 2.0)];
         stamp_cold_start(&mut runs, None);
-        assert!(runs.iter().all(|r| r.cold_start_ms.is_none()));
-        assert!(runs.iter().all(|r| r.cold_start_resolution_ms.is_none()));
+        for run in &runs {
+            assert!(run.cold_start_ms.is_none());
+            assert!(run.cold_start_resolution_ms.is_none());
+            assert!(run.cold_start_probe.is_none());
+            assert!(run.cold_start_refusal.is_none());
+            let json = serde_json::to_value(run).expect("serialize");
+            assert!(json.get("cold_start_probe").is_none(), "{json}");
+            assert!(json.get("cold_start_refusal").is_none(), "{json}");
+        }
+        let probe = ReadyProbe {
+            url: "http://127.0.0.1:8090/health".to_string(),
+            status: Some(200),
+        };
+        let refusal = ReadyProbe {
+            url: "http://127.0.0.1:8090".to_string(),
+            status: None,
+        };
         let readiness = Readiness {
             ready_ms: 1840.0,
             not_ready_ms: 1790.0,
+            probe: probe.clone(),
+            refusal: Some(refusal.clone()),
         };
         stamp_cold_start(&mut runs, Some(readiness));
         for run in &runs {
             assert_eq!(run.cold_start_ms, Some(1840.0));
             assert_eq!(run.cold_start_resolution_ms, Some(50.0));
+            assert_eq!(run.cold_start_probe.as_ref(), Some(&probe));
+            assert_eq!(run.cold_start_refusal.as_ref(), Some(&refusal));
+            // The wire shape the parity producer reads.
+            let json = serde_json::to_value(run).expect("serialize");
+            assert_eq!(json["cold_start_probe"]["url"], probe.url.as_str());
+            assert_eq!(json["cold_start_probe"]["status"], 200);
+            assert!(json["cold_start_refusal"]["status"].is_null(), "{json}");
         }
     }
 

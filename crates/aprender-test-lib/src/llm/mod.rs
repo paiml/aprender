@@ -32,8 +32,8 @@ pub use assertion::{LlmAssertion, LlmAssertionError, LlmAssertionResult};
 #[cfg(feature = "llm")]
 pub use band::{run_band, run_cell, BandRun};
 pub use client::{
-    BrickTrace, BrickTraceOp, ChatMessage, ChatRequest, ChatResponse, ChatResponseChoice, Role,
-    StreamChunk, StreamedChatResponse, TimedChatResponse, Usage,
+    BrickTrace, BrickTraceOp, ChatMessage, ChatRequest, ChatResponse, ChatResponseChoice,
+    ReadyProbe, Role, StreamChunk, StreamedChatResponse, TimedChatResponse, Usage,
 };
 #[cfg(feature = "llm")]
 pub use client::{LlmClient, LlmClientError};
