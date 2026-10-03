@@ -647,7 +647,8 @@ up, a new size changes its place, and a row already held on a branch drops out o
       exports S-R10's `hf.apr` at 1e4 (desk read). Planted: S-R10's `hf.apr` with the HF `config.json` beside it.
     - QFR-009: for qwen35, serve's and core's rope fallbacks return 1e7, and `qwen3_5_9b()` and the family contract
       match the published 9B and 27B headers. It is RED at `316dee2cd4` on all four rope values (1e4, 1e6, 1e6, 1e6)
-      and on the 27B's hidden size. Planted: 1e6 restored in the preset.
+      and on the 27B's hidden size. Planted: 1e6 restored in the preset. The preset's line fits R1's branch
+      (`4552-train-arch-honesty` @1fda81ad6c), which already gates `qwen3_5_9b()` and leaves its rope at 1e6.
   - **Until it lands,** re-import S-R10's base after #4418 merges. Do not reuse it.
 
 State is read from the branch tips on 2026-10-03. origin/main is `316dee2cd4` and no la-72 branch has landed. K̂ is
@@ -694,12 +695,15 @@ R15a C1–C4 ──────────────────────�
 R12 receipts ──────────────────────┤       └─► R13 HF rc ◄── R10 QFR-003 export ◄── #4418 (GGUF legs only)
                                    └─► R15b C5–C7 (C5 = RQ-5) ─► R5 T2 verdict ─► R14
 R11 TIS ◄── TDD normaliser (PRM C7–C9) ─────► gates every R4/R6 run counted for 0.72
+K39 TSC, K40 TPP, K41 QFR-007..009 ─────────► gate R4's 200-step cell and every T4 run
 ```
 T2 trains Qwen3.5-4B, so its apr side needs R2, R3, R21 and 4b as well as R15a and R15b. It does not need R4. R21
 (400 + 25 `[A]`) is the largest row on both R4's path and T2's. Its LoRA wiring calls R15a's C1 helper, so C1
 lands before R21's projection cell. The value-head work splits in two. The load-time conversion (4b) is on both
 paths, because `apr finetune` trains from .apr only and the only Qwen3.5 .apr today is HF-sourced. The export
-permutation (QQE-007) is R4's alone, because T2's canonical cell targets no GDN projection.
+permutation (QQE-007) is R4's alone, because T2's canonical cell targets no GDN projection. Rows 24–26 (K39 the chat
+format, K40 the pre-tokenizer split, K41 the rope base and dims) are small, but none of R4's gates sees them, and each
+changes what the served model is given or computes. They gate R4's 200-step cell and every T4 run, not T2's ratio.
 
 ## §4 Rulings (S-4)
 Ruled by the cop on 2026-09-27 at 12:11Z (full text in the handoff file):
