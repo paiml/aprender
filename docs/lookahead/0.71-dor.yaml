@@ -14,12 +14,12 @@ rows:
     title: per-layer serve tracing (X-Trace-Level step|layer), first row of the 0.71 serve epic
     ticket: null            # not minted; APR-OBS-001 §7 row OBS-09 (K̂ 240)
     spec: {path: docs/specifications/APR-OBS-001-dogfood-observability.md, section: "§7 OBS-09, §5.2", on_main: false,
-           staged_at: cop-inbox/handoff/APR-OBS-001-dogfood-observability.md}
-    contract: {id: apr-trace-v1, path: null, on_main: false, staged_at: origin/la-71/obs-09-trace-v1,
-               staged_path: docs/lookahead/contracts-draft/apr-trace-v1.yaml}
-    falsifier: [FALSIFY-TRACE-001..015]   # incl. "Measured when tracer did not run", "per-layer sum > wall"
+           staged_at: origin/docs/trace001-obs-specs}   # v1.3 with §2.7
+    contract: {id: apr-trace-v1, path: contracts/apr-trace-v1.yaml, on_main: false,
+               staged_at: origin/a01/4492-obs05-ledger-checks}   # 04cc701e; #4564 carries colliding 1c31e6c2
+    falsifier: [FALSIFY-OBS-TRACE-001, FALSIFY-OBS-TRACE-002]   # + 13 proposed: la-71/obs-09-trace-v1 SUPERSEDED-apr-trace-v1.md
     baseline: null
-    owner_proposed: L1 (la-0.71)
+    owner_proposed: a01 (#4492 ticket worker), not L1
     blocks: [V1, V3]        # §5.2: every 0.71 perf PR carries an apr-trace-v1 diff
   - id: KREG-001
     ev_rank: 2
@@ -65,12 +65,12 @@ rows:
     title: nightly perf ledger with §2.1 identity block (raw samples)
     ticket: 4551
     spec: {path: docs/specifications/APR-OBS-001-dogfood-observability.md, section: "§2.1, §2.4", on_main: false,
-           staged_at: cop-inbox/handoff/APR-OBS-001-dogfood-observability.md}
+           staged_at: origin/docs/trace001-obs-specs}   # v1.3 with §2.7
     contract: {id: apr-raw-samples-v1, path: contracts/apr-raw-samples-v1.yaml, on_main: false,
                staged_at: origin/la-71/4551-raw-samples}
-    falsifier: ["missing host row", "empty ledger", "ratio across mismatched identity"]
+    falsifier: [FALSIFY-OBS-PERF-001..012]   # apr-perf-ledger-v1 on origin/a01/4492-obs05-ledger-checks (bde14e59; #4494 a304d19f diverges); + 7 proposed: la-71/obs-05-perf-ledger-v1 SUPERSEDED-apr-perf-ledger-v1.md
     baseline: null
-    owner_proposed: L1
+    owner_proposed: a01 (#4492 ticket worker), not L1
   - id: BATCH-DECODE-PARITY
     ev_rank: 6
     exit_criterion: V3
@@ -123,7 +123,7 @@ rows:
     title: fold APR-OBS-001 + EXT-001 specs and the §2.1 identity schemas into the repo
     ticket: null
     spec: {path: docs/specifications/APR-OBS-001-dogfood-observability.md, section: "§7 OBS-00", on_main: false,
-           staged_at: cop-inbox/handoff/APR-OBS-001-dogfood-observability.md}
+           staged_at: origin/docs/trace001-obs-specs}   # v1.3 with §2.7
     contract: {id: apr-perf-ledger-v1, path: null, on_main: false}
     falsifier: ["schemas lint", "R-2 empty is RED"]
     baseline: null
