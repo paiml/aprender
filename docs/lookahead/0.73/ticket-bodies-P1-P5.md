@@ -41,12 +41,13 @@ These are bodies ready to file, one per bundle in `falsifier-landing-map.md`.
 - `qtype_path` per qtype: device-kernel, host-widen or refused-cpu.
 - `head_dim_source`: key_length or fallback.
 - a wgpu forward banner line, the counterpart of the CUDA `Backend: GPU (…)` line.
-- `precision` in each `kernel_path` entry names the activation path (f32, q8k or q8_0), including the per-call crushed-block f32 switch. The receipt derives `act_path_by_qtype` from it (BPM-008, f008d), and the forward trace line names the forward that ran.
+- `precision` in each `kernel_path` entry names the activation path (f32, q8k or q8_0), including the per-call crushed-block f32 switch. The receipt derives `act_path_by_qtype` from it (BPM-008, f008d), and the forward trace line names the forward that ran. Every matmul site emits its entry, including fused gate/up (fused_gate_up.rs:177) and the fused RMSNorm + Q8_0 kernels.
 
 **Acceptance**
 - A schema test asserts every field is present on a CPU run of a tiny fixture model.
 - `op_placement` keys equal DECODE_OPS, and `kernel_path` is non-null on CPU.
 - **Mutation:** drop the `attention` key; WGF-009's planted receipt in P1 must then be refused.
+- **Act-path control:** a tiny gated model forced down the non-fused gated branch (ffn_block.rs:58) inside `with_fp32_activations` must show its Q4_K up/gate at precision q8k. If the trace says f32, the precision field is not evidence.
 
 **Hosts** x86 CI (CPU forward). The wgpu values are checked later, in P4.
 **Out of scope** New kernels; changing the OBS-15 contract (flag the CPU-row conflict to its owner instead).

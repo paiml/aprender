@@ -98,7 +98,7 @@ Fixing any cell: those are R2–R5. R1 only measures and gates. A thresholds cha
   - Why `fp32_act`: leg A then measures only the backend's own error, and leg B absorbs apr's activation-quantization gap against llama.cpp. That gap is unmeasured; llama.cpp's CPU k-quant dot also quantizes activations, to Q8_K. It is also the only label one forward can honour per tensor (§11a). Under `q8k_act`, Q5_K/Q6_K stay on f32 and crushed Q4_K blocks switch to f32.
   - Alternative: `q8k_act`, earlier called "what users actually run". Users run the mixed path in §11a, so a `q8k_act` pin would have to name that forward and list Q5_K/Q6_K as `ref_mixed`. Every exact-FP32 GPU path would also pay an error of roughly 0.985 that belongs to the CPU, not the GPU.
   - **How the default is applied** (P1/P2; no code change needed at main for Q4_K_M):
-    - The reference is `forward_single_with_cache` token by token inside `with_fp32_activations` (dense), or `forward_single_qwen3_moe_with_cache` inside it (MoE, as parity_moe.rs:110 does).
+    - The reference is `forward_single_with_cache` token by token inside `with_fp32_activations` (dense), or `forward_single_qwen3_moe_with_cache` inside it (MoE, as parity_moe.rs:110 does), or `forward_single_qwen35` inside it (Qwen3.5).
     - It is never the scratch or traced forward, and never multirow without `DIRECT_FP32_GEMV=1`.
     - The value is data: `bpm.cpu_ref_path` in thresholds.yaml, with a basis.
     - The receipt derives `act_path_by_qtype` from the reference run's `kernel_path` precision.
@@ -124,22 +124,36 @@ Mechanism, per qtype (aprender-serve):
 - **Q4_0 / Q8_0.** Always Q8_0 activations (`fused_q4_0_q8_0_*`, `fused_q8_0_q8_0_parallel_matvec_into`). There is no
   f32 path.
 - **Callers that pre-quantize whatever the scope says:**
-  - `fused_gate_up_q4k_into` (fused_gate_up.rs:176) uses Q8_K, except on crushed blocks.
+  - `fused_gate_up_q4k_into` (fused_gate_up.rs:177) uses Q8_K, except on crushed blocks. Its Q5_K/Q6_K
+    siblings (:240, :265) use the f32 dots.
   - `forward_single_with_scratch` sets `use_q8k_path = hidden_dim % 256 == 0` (results.rs:541). It has no
     non-test callers.
   - The traced forward does the same (traced.rs:88).
+- **Which FFN branch the honest forward takes** (`single_cache_ffn_block`, ffn_block.rs:14):
+  - RMSNorm models with an FFN norm, other than Gemma-1, use `ffn_up_gate_honest` (:44).
+    - A Q4_K pair runs `matvec_honest` per tensor (ffn_block.rs:844, in `ffn_up_gate_honest` at :833).
+    - Any other pair goes to `fused_rmsnorm_ffn_up_gate` (fused_matmul_into.rs:463). There a Q4_0 pair uses
+      the fused RMSNorm + Q8_0 kernel (quantize/activation.rs:342), and everything else runs `fused_matmul`
+      per tensor (matmul_fused.rs:134).
+    - `fused_matmul` never takes the multirow path: for seq_len > 1 it loops the single-row matvec.
+    - So a Q5_K/Q6_K up/gate stays f32, and the label holds.
+  - Gemma-1 (`is_gemma1`, config.rs:391: arch exactly "gemma" or "gemmaforcausallm"), gated LayerNorm
+    models and gated models without an FFN norm use the non-fused gated branch. It calls `fused_gate_up_matmul_into` (ffn_block.rs:58 →
+    fused_matmul_into.rs:163). Their Q4_K up/gate stay on Q8_K inside the scope. The only other callers
+    are in the scratch forward (results.rs:51, :103), which is never the reference. The fused gate/up
+    kernels have no caller except `fused_gate_up_matmul_into` (fused_matmul_into.rs:187/:198/:209).
 
 | command | source | CPU fn | activation path |
 |---|---|---|---|
 | `apr parity` (dense) | apr-cli parity_03.rs:185 | forward_single_with_cache (honest path) | mixed: Q4_K on Q8_K (f32 on crushed blocks), Q5_K/Q6_K f32, Q4_0/Q8_0 Q8_0 |
 | `apr parity --moe` | parity_moe.rs:110 | with_fp32_activations(forward_single_qwen3_moe_with_cache) | fp32_act on Q4_K and Q6_K; Q4_0 tensors stay Q8_0 |
-| `apr parity` hybrid/qwen35 | parity_hybrid.rs:268 | forward_single_qwen35 → fused_matmul_into (forward_qwen35.rs:977) | mixed, as dense (no scope); MoE arm → parity_moe |
+| `apr parity` hybrid/qwen35 | parity_hybrid.rs:268 | forward_single_qwen35 (forward_qwen35.rs:993) → fused_matmul_into per tensor (:1077–:1177), no fused gate/up | mixed, as dense (no scope); MoE arm → parity_moe |
 | `apr parity` per-op | parity_per_op.rs:85 | forward_single_with_cache | mixed, as dense (no scope) |
 | `apr kernel parity` | kernel_parity.rs | attention tiled vs naive | N/A (not a forward pass) |
 | attn-parity-lint | attn_parity_lint.rs | consumes kernel-parity JSON | N/A |
 | quantize-flag parity | quantize_flag_parity.rs | argv parity | N/A |
 
-The MoE forward reaches experts through `matvec_for_qtype` (qwen3_moe_load.rs:69). That calls
+The MoE forward reaches experts through `matvec_for_qtype` (qwen3_moe_load.rs:442). That calls
 `fused_q4k_parallel_matvec`, which wraps the `_into` above, so it honours the scope. Its QKV and output
 projections use `fused_matmul`. `SUPPORTED_EXPERT_QTYPES = [Q4_K, Q6_K]` (qwen3_moe_load.rs:84), so an
 expert tensor of any other qtype refuses on the CPU reference.
@@ -154,6 +168,11 @@ RQ-5 implication (provisional default `fp32_act`, §11):
   The receipt must name the forward, and derive the per-qtype path from the trace instead of trusting the label
   (FALSIFY-BPM-008, fixture f008d).
 - Q4_0/Q8_0 tensors keep a Q8_0 reference under either label, so they are recorded as `ref_mixed`.
+- The 0.73 models (§3: Qwen3 dense, Qwen3.5, Qwen3-Coder-30B-A3B) never reach fused gate/up:
+  - Qwen3 is RMSNorm with an FFN norm.
+  - Qwen3.5 and the MoE have their own forwards, with no fused gate/up.
+  - A Gemma-1 cell would reach it, so its Q4_K up/gate would contradict the label. BPM-008 refuses that
+    receipt from the trace (f008d), provided the fused gate/up kernel emits its `kernel_path` entry (P2).
 
 ## 12. L25 review: vacuous-pass holes (2026-10-03, origin/main 316dee2cd4, read-only)
 The draft gated the right quantities, but seven inputs could make a cell PASS without the check measuring anything. Each now has a planted falsifier in `backend-parity-matrix-v1` (BPM-009..015):
