@@ -494,6 +494,12 @@ up, a new size changes its place, and a row already held on a branch drops out o
     no system turn unless the request sends one, and `<think>\n\n</think>\n\n` follows `<|im_start|>assistant\n` (HF
     `chat_template.jinja:54-64,148-150`). Train has no think block. `<think>` and `</think>` (248068, 248069) are
     added tokens that are not shaped `<|…|>`, so the #3920 rule alone would still split them.
+  - **Serve has two Qwen3.5 prompts.** A model with no template of its own gets apr's built-in formatter
+    (`chat_template_helpers.rs:206-207`). A name containing `qwen3` picks `Qwen3NoThink`. That formatter ends in
+    `<think>\n</think>\n` (`chat_template_qwen3_nothink.rs:44`), while the model's own template ends in
+    `<think>\n\n</think>\n\n`. `\n\n` is one token, `ĊĊ`, so the ids differ. Every HF-sourced .apr carries no
+    template (below), so `apr run` and `apr chat` on it send the built-in prompt (`:190` names both callers). The
+    GGUF sends the model's own.
   - **Measured on S-R10's HF-sourced .apr** (Qwen3.5-0.8B, the HF directory imported by apr 0.69.3; header read
     only). `tokenizer.vocabulary` has 248,070 entries, with `<|im_start|>`, `<|im_end|>`, `<think>` and `</think>` at
     248045, 248046, 248068 and 248069. The metadata has 17 keys: none is a chat template, a token-type list, an
@@ -515,6 +521,9 @@ up, a new size changes its place, and a row already held on a branch drops out o
       response) equal serve's ids for the same messages: the model's own template with thinking off, then the
       answer, then 248046. It is RED today on the system turn, the think block and the pieces. Planted: the default
       system prompt restored.
+    - TSC-003: for Qwen3 and Qwen3.5, the built-in `Qwen3NoThink` renders a two-turn conversation exactly as the
+      model's own template does with thinking off. It is RED at `316dee2cd4` on the two newlines. Planted:
+      `<think>\n</think>\n` restored.
 - **Row 25, K40: apr's tokenizers split the same text three ways before BPE.** Desk read at `316dee2cd4`, plus a
   simulation: HF `tokenizers` 0.22.2 on the Qwen3.5 vocabulary and merges, with each split swapped in. It is not the
   Rust code.
@@ -589,7 +598,7 @@ minutes of worker time still left; `[A]` marks an assumption.
 | 21 | K36 GDN contract text | restate `gated-delta-net-v1`'s decay, read and output; point its tests at the shipped decay; re-prove GDN-BND-001 | 60 `[A]` | contracts on `la-72/k36-gdn-contract` @e8834d7711: both at 2.0.0, bindings point at the served fns, allowlist 163→156. The tests and the Lean re-proof come at PR time, after LIVE 0.70.1. `qwen35-train-gdn-v1` @80723cf206 already states the served GDN |
 | 22 | K37 phantom bindings | fold into #4502: make `pv audit --binding` agree with the `bindings` gate; arm the gate once the `gated_rmsnorm_oxide` ghost is fixed or allowlisted | 10 `[A]` (was 30; the gate exists) | comment on #4502 posted; the K36 branch fixes 6 of the 9 phantoms at `316dee2cd4` |
 | 23 | K38 Qwen3.5 norm convention | serve's safetensors conversion refuses a hybrid `layer_types`; R13's builder inverts #4418's value transforms, norm −1 included | 15 `[A]` + R13's builder | desk read plus a CPU measurement on the 4B; GGUF serve, train and #4418 agree |
-| 24 | K39 train/serve chat format | the HF importer writes the added tokens and the chat template into the .apr; TSC-001: `from_apr`'s tokenizer keeps `<\|im_end\|>`, `<think>` and `</think>` whole; TSC-002: train renders the model's own template, thinking off, no default system turn, target ends in the eos id | 90 `[A]` | desk read at `316dee2cd4` plus a header read of S-R10's .apr (17 keys, no template, no added tokens); PMAT-3803's branch has part of the tokenizer half, unmerged; must be green before R4's 200-step cell and any T4 run |
+| 24 | K39 train/serve chat format | the HF importer writes the added tokens and the chat template into the .apr; TSC-001: `from_apr`'s tokenizer keeps `<\|im_end\|>`, `<think>` and `</think>` whole; TSC-002: train renders the model's own template, thinking off, no default system turn, target ends in the eos id; TSC-003: serve's built-in `Qwen3NoThink` renders as the model's own template does | 100 `[A]` | desk read at `316dee2cd4` plus a header read of S-R10's .apr (17 keys, no template, no added tokens); PMAT-3803's branch has part of the tokenizer half, unmerged; must be green before R4's 200-step cell and any T4 run |
 | 25 | K40 pre-tokenizer split | one regex pre-tokenizer shared by train, `apr chat` and .apr serve; TPP-001/002: train's tokenizer and `encode_text` give the HF reference ids on a frozen code fixture; TPP-003 keeps GGUF serve on them | 80 `[A]` | desk read at `316dee2cd4` plus a simulation on the Qwen3.5 vocabulary: 5 samples are 193 tokens in train against 160 under the regex, and .apr serve has the same count with different ids on indented code; CRUX-M-05 (draft) states the check and nothing implements it; T2 is unaffected because its count is fixed by shape; must be green before R4's 200-step cell and any T4 run |
 | — | R19 ROADMAP PMAT-711 stale | — | done | shaping @378ec8e920 |
 | — | R20 declarative recipe | — | out | RQ-3: stays in #4002 (E8, 0.75) |
