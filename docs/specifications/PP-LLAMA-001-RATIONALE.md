@@ -95,9 +95,14 @@ bound. It is an upper bound because a probe only sees that the server became rea
 between the last probe that failed and the first that passed. That measured bracket travels with
 it as its resolution; the poll interval is only its floor once a probe has failed, and is carried
 separately. The page-cache mode travels with it too: a load from a warm page cache and one from
-an evicted cache are different measurements of the same server, so an `evicted` claim that the
-residency witness contradicts is unmeasured, not fast. `crux-C-27-v1`'s
-`time_to_first_ready` is a different quantity — it times `apr run`, not `apr serve`, and its ready
+an evicted cache are different measurements of the same server. Both lanes read the same GGUF, so
+the second load would read the first one's pages unless the state is declared and witnessed. The
+mode is therefore declared once for the block, which makes the two sides like-for-like by shape
+rather than by a check, and a witness reading that contradicts it (`evicted` with pages resident,
+`warm` with pages missing) leaves the side unmeasured, not fast. The first request after a load
+travels with it because `llama-server` maps its weights, so that request can pay the page-in that
+`load_ms` did not; it is a cold figure, never the band `ttft`. `crux-C-27-v1`'s `startup_latency`
+(`time_to_first_ready`) is a different quantity — it times `apr run`, not `apr serve`, and its ready
 is a state inside the process rather than a probe the client sees.
 
 ---
