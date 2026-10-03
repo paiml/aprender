@@ -1,0 +1,75 @@
+metadata:
+  kind: pattern
+  version: 1.0.0
+  created: '2026-10-03'
+  author: PAIML Engineering (la-72, APR-LOOKAHEAD-001 L2, train 0.72)
+  description: >-
+    Every apr path that turns text into token ids for a model splits the text the way the model's own
+    tokenizer.json does: its normalizer first (NFC for Qwen3.5), then its Split regex, then byte-level BPE
+    inside each piece. The paths are training, apr chat on a .apr, apr run and apr serve on a .apr, and GGUF
+    serve. Read at 316dee2cd4 (K40 of the 0.72 spec), plus a simulation with HF tokenizers 0.22.2 on the
+    Qwen3.5 tokenizer.json (normalizer NFC, pre_tokenizer Split then ByteLevel, 248,044 BPE entries and 26
+    added tokens). The simulation imitates the three splits below; it does not run the Rust code.
+    (1) Training and apr chat on a .apr use aprender-core's BpeTokenizer, whose pre_tokenize starts a new word
+    at every whitespace character (qwen2bpe_tokenizer.rs:463-466, "Future: Use self.config for model-specific
+    pre-tokenization rules"). bpe-tokenization-v1 says the split is at whitespace and punctuation boundaries
+    (:98-99); the code splits at whitespace only.
+    (2) apr run and apr serve on a .apr (AprV2Model::encode_text) match special tokens first, then run every
+    merge over the whole remaining segment with no pre-split (aprender-serve apr/tokenizer.rs:125-147, :243-262).
+    (3) GGUF serve implements the regex (gguf/byte_level_bpe.rs) only when tokenizer.ggml.pre is qwen2 or
+    qwen35 (from_gguf_pre, :47-53). Otherwise it warns once and falls back to greedy longest match
+    (gguf/token.rs:165-176).
+    No path applies NFC. In the simulation, 5 code samples are 160 tokens under the regex, 193 under
+    training's split and 160 with no split; four spaces then `if` are ĠĠĠ,Ġif under the regex, Ġ,Ġ,Ġ,Ġif in
+    training and ĠĠĠĠ,if on .apr serve; a blank line is ĊĊ under the regex and Ċ,Ċ in training. Every split
+    decodes back to the same text, so a round-trip test cannot see any of this. crux-M-05-v1 (a draft) states
+    ids_apr = ids_hf on 128 fixtures, and nothing implements it. PROPOSED from a desk read.
+  references:
+  - crates/aprender-core/src/text/bpe/qwen2bpe_tokenizer.rs (BpeTokenizer::encode :318, special tokens first :325-334, encode_segment calls pre_tokenize :355, pre_tokenize at every whitespace character :463-466)
+  - crates/aprender-train/src/tokenizer/hf.rs (HfTokenizer::from_json :61, over aprender-core's load_from_json)
+  - crates/aprender-serve/src/apr/tokenizer.rs (bpe_encode :125-147, bpe_encode_segment over the whole segment :243-262)
+  - crates/aprender-serve/src/apr/tokenizer_loading.rs (AprV2Model::encode_text :23)
+  - crates/aprender-serve/src/gguf/byte_level_bpe.rs (from_gguf_pre :47-53, qwen2 and qwen35 only; encode :384-400)
+  - crates/aprender-serve/src/gguf/token.rs (encode_byte_level :165-176; a refused pre falls back to greedy longest match)
+  - contracts/bpe-tokenization-v1.yaml (:98-99, whitespace and punctuation boundaries)
+  - contracts/crux-M-05-v1.yaml (ids_apr = ids_hf on 128 fixtures; a draft, implemented nowhere)
+  - contracts/train-serve-chat-format-v1.yaml (TSC-001 keeps the control tokens whole before any split; TSC-004 checks the pre that apr export writes)
+  - 'HF Qwen/Qwen3.5-4B @851bf6e8 tokenizer.json, sha256 5f9e4d4901a92b997e463c1f46055088b6cca5ca61a6522d1b9f64c4bb81cb42: normalizer NFC, pre_tokenizer Split then ByteLevel (the file the simulation read)'
+  - 'origin/PMAT-3803-trainer-apr-tokenizer @5116cbc28b (not on main): 3c65950f8d sends fine-tuning to the serve-side .apr tokenizer, which uses the regex when canonical_for_apr can name a pre-tokenizer: tokenizer.pre_type, else the architecture, where for_architecture knows qwen35 but not qwen3_5. An HF-sourced Qwen3.5 .apr carries neither (S-R10''s hf.apr: architecture qwen3_5, no pre_type), so for 0.72''s model the branch moves training from split (1) to split (2), still not the regex'
+  - 'branch la-72/r15-receipt-ext @a401159f74: docs/specifications/aprender-train/train-what-you-serve-0.72.md K40, row 25'
+status: PROPOSED
+equations:
+  same_split:
+    formula: 'ids_p(x) = ids_ref(x) for every path p ∈ {train, chat_apr, serve_apr, serve_gguf} and every text x'
+    domain: 'x = UTF-8 text with no control tokens; ids_ref = HF tokenizers on the model''s shipped tokenizer.json, pinned by sha256 (normalizer, then pre_tokenizer, then BPE); ids_p = the ids path p gives x on the same model'
+    invariants:
+    - 'one pre-tokenizer: every path splits x with the tokenizer.json''s Split regex, never at every whitespace character and never not at all'
+    - NFC first when the tokenizer.json's normalizer is NFC
+    - apr export writes the tokenizer.ggml.pre that names the model's regex (qwen35 for Qwen3.5), so GGUF serve never falls back to greedy longest match on apr's own export
+    preconditions:
+    - x has no control tokens; TSC-001 keeps those whole before any split
+proof_obligations:
+- type: equivalence
+  property: Every apr path gives the reference ids for the same text
+  formal: '∀ p, x: ids_p(x) = ids_ref(x)'
+  applies_to: all
+falsification_tests:
+- id: FALSIFY-TPP-001
+  rule: Training's tokenizer splits text as the model's regex does
+  prediction: 'the tokenizer InstructPipeline::from_apr builds from a Qwen3.5 .apr gives ids_ref on every fixture line. At 316dee2cd4 it is RED by simulation: four spaces then `if` become Ġ,Ġ,Ġ,Ġif against ĠĠĠ,Ġif, a blank line Ċ,Ċ against ĊĊ, and 5 code samples 193 tokens against 160. Planted: the whitespace-only pre_tokenize restored'
+  test: '[U] not written; CPU only, needs cargo after LIVE 0.70.1. Fixture: indented Python and Rust, blank lines, runs of spaces before a newline, digits, runs of punctuation, English contractions, and text with combining marks that is not in NFC. The reference ids come from HF tokenizers on the shipped tokenizer.json (pinned by sha256), committed with the script that made them'
+  if_fails: 'apr finetune tunes the model on splits its pretraining never produced, at every indent of every code sample (a five-line Python class is 38 tokens in training against 23 under the regex), and the tuned model is then served the regex split'
+- id: FALSIFY-TPP-002
+  rule: apr run and apr serve on a .apr split text as the model's regex does
+  prediction: 'AprV2Model::encode_text on the same .apr gives ids_ref on every fixture line. At 316dee2cd4 it is RED by simulation: bpe_encode_segment merges over the whole segment, so four spaces then `if` become ĠĠĠĠ,if against ĠĠĠ,Ġif, and the 5 samples have the same count (160) with different ids. Planted: the whole-segment merge restored'
+  test: '[U] not written; CPU only, needs cargo after LIVE 0.70.1. Same fixture and reference as TPP-001'
+  if_fails: 'apr run and apr serve on a .apr hand even the base model a split it never saw in pretraining, so a .apr and the GGUF of the same weights answer differently'
+- id: FALSIFY-TPP-003
+  rule: GGUF serve splits text as the model's regex does, on a published GGUF and on apr's own export
+  prediction: 'GGUF serve gives ids_ref on every fixture line, for a published Qwen3.5 GGUF and for the GGUF apr export writes from an HF-sourced .apr (TSC-004''s chain). By reading, at 316dee2cd4 the published GGUF is GREEN on the lines already in NFC and RED on the lines that are not, since no apr path applies NFC. The export is RED wherever the regex and greedy longest match split differently: it says pre default, from_gguf_pre refuses it, and serve falls back to greedy longest match (token.rs:165-176). On #4418''s branch the export says pre qwen35 and should match the published GGUF. Planted, once fixed: the NFC step removed, or apr export writing pre default'
+  test: '[U] not written; CPU only, needs cargo after LIVE 0.70.1. Only the tokenizer of the published file is read. The export comes from a tiny Qwen3.5 checkpoint carrying the shipped tokenizer files, through apr import and apr export'
+  if_fails: 'on the published file, the reference or the fixture is wrong, so TPP-001 and TPP-002 cannot be trusted either; on the export, the model 0.72 publishes is served by greedy longest match, a split that neither its pretraining nor its fine-tune used'
+qa_gate:
+  certeza:
+    min_score: 0.0
+    note: Gates are the id identities above; no composite score is claimed.

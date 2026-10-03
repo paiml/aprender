@@ -1,0 +1,98 @@
+metadata:
+  kind: pattern
+  version: 1.0.0
+  created: '2026-10-03'
+  author: PAIML Engineering (la-72, APR-LOOKAHEAD-001 L2, train 0.72)
+  description: >-
+    apr finetune trains a chat model on the token ids that apr serves it for the same messages: the model's
+    own template, its control tokens as single ids, and a target that ends in the eos. Read at 316dee2cd4
+    (K39 of the 0.72 spec). No apr code is built or run; the measurements are header reads of S-R10's files and
+    piece counts from HF tokenizers 0.22.2 on the Qwen3.5 tokenizer.json.
+    (1) The control tokens are split. Every apr finetune training path ends in InstructPipeline::from_apr
+    (apr-cli finetune.rs:387,461). Its tokenizer comes from the .apr's own vocabulary first (aprender-train
+    instruct_pipeline/constructors.rs:212), rebuilt as tokenizer JSON with "added_tokens": [] (:343-350).
+    load_from_json registers special tokens only from that list, and BpeTokenizer::encode keeps only
+    registered special tokens whole, so <|im_start|> and <|im_end|> reach the model as BPE pieces, in the
+    prompt and in the trained target. On the Qwen3.5 vocabulary each is six pieces on its own (<,|,im,_start,|,>),
+    and a '.' before it takes the '<' (answer.<|im_end|> is answer,.<,|,im,_end,|,>). Serve matches special tokens first (aprender-serve
+    gguf/byte_level_bpe.rs:384-400), so the served prompt carries 248045 and 248046 as single ids.
+    (2) The template differs. Train renders fixed ChatML with a default system prompt (instruct_corpus.rs:51-66).
+    Serve renders the model's own template with thinking off unless asked: there is no system turn unless the
+    request sends one, and <think>\n\n</think>\n\n follows <|im_start|>assistant\n. Train has no think block.
+    (3) Serve has two Qwen3.5 prompts. A model with no template of its own gets apr's built-in formatter, and a
+    name containing qwen3 picks Qwen3NoThink, which ends in <think>\n</think>\n (chat_template_qwen3_nothink.rs:44).
+    \n\n is one token (ĊĊ), so the ids differ from the model's own.
+    (4) The HF importer writes no template, no added-token list, no token types and no eos id into the .apr
+    (S-R10's hf.apr: 17 metadata keys, a vocabulary of 248,070 entries with <|im_start|>, <|im_end|>, <think>
+    and </think> at 248045, 248046, 248068 and 248069). apr finetune merge clones that metadata, so the GGUF
+    that apr export writes from the merge carries no template either. At 316dee2cd4 that GGUF also says pre
+    default, no eos and no token types (S-R10's hf-rt.gguf, 18 keys). #4418's branch fixes the pre, the eos
+    and the types, not the template. PROPOSED from a desk read.
+  references:
+  - crates/aprender-train/src/finetune/instruct_pipeline/constructors.rs (from_apr :192, the embedded tokenizer first :212, the tokenizer JSON with "added_tokens" [] :343-350)
+  - crates/apr-cli/src/commands/finetune.rs (every training path ends in InstructPipeline::from_apr, :387; the call, :461)
+  - crates/aprender-train/src/tokenizer/hf.rs (HfTokenizer::from_json :61, over aprender-core's load_from_json)
+  - crates/aprender-core/src/text/bpe/qwen2.rs (load_from_json :367 registers special tokens only through load_added_tokens, :392 and :442-445; #3920's <|…|> shape rule, in load_from_vocab_merges only, :528-553)
+  - crates/aprender-core/src/text/bpe/qwen2bpe_tokenizer.rs (BpeTokenizer::encode keeps only registered special tokens whole, :318 and :325-334)
+  - crates/aprender-train/src/finetune/instruct_corpus.rs (format_chat_prompt :51, the default system prompt :52-54)
+  - crates/aprender-serve/src/chat_template_qwen3_nothink.rs (the generation prompt <think>\n</think>\n, :44)
+  - crates/aprender-serve/src/gguf/byte_level_bpe.rs (special tokens matched first, :384-400)
+  - crates/aprender-core/src/format/converter/export.rs (resolve_pre_tokenizer_type :68, no Qwen3.5 arm)
+  - 'aprender#4418 @1af0e3cc11 (not on main): qwen35_gguf.rs:655 fix_qwen35_tokenizer_metadata (pre qwen35, CONTROL and USER_DEFINED types, eos <|im_end|>); gguf_export_config.rs:744 qwen35_chat_template (the template from the .apr or a chat_template.jinja beside the input only)'
+  - contracts/chat-template-v1.yaml
+  - 'origin/PMAT-3803-trainer-apr-tokenizer @5116cbc28b (not on main): 3c65950f8d (PMAT-3742 R2) sends fine-tuning to the serve-side .apr tokenizer, and 71a7bdc44e keeps the added tokens in the tokenizer an exported .apr embeds. Neither is checked against TSC-001 here, and neither touches the chat template'
+  - 'branch la-72/r15-receipt-ext @a401159f74: docs/specifications/aprender-train/train-what-you-serve-0.72.md K39, row 24'
+status: PROPOSED
+equations:
+  same_ids:
+    formula: 'prompt_train(m) = prompt_serve(m) ∧ target_train(m) = enc(answer(m)) ++ [eos], eos = id(<|im_end|>)'
+    domain: 'm = a conversation of an optional system turn, one user turn and one assistant answer, on a chat checkpoint (Qwen3.5: eos 248046); prompt_serve = the ids apr serve tokenizes for m''s messages with the generation prompt and thinking off; prompt_train, target_train = the ids apr finetune''s instruct path (prepare_samples) trains on'
+    invariants:
+    - 'each control token is one id: enc(<|im_start|>) = [248045], enc(<|im_end|>) = [248046], enc(<think>) = [248068], enc(</think>) = [248069] on Qwen3.5'
+    - train renders the model's own template from the .apr; never a fixed ChatML, and never a system turn the sample does not have
+    preconditions:
+    - the .apr carries the model's template and its added-token list, written by apr import from the HF snapshot
+  builtin_is_own:
+    formula: 'render(Qwen3NoThink, c) = render(T_model, c, enable_thinking = false)'
+    domain: 'c = a one- or two-turn conversation for Qwen3 or Qwen3.5; T_model = the chat_template.jinja shipped with the checkpoint'
+    invariants:
+    - a model with no template of its own is served the prompt its own template would give with thinking off
+  exported_tokenizer_block:
+    formula: 'G = export(merge(import(S))) ⇒ G.chat_template = S.chat_template ∧ G.pre = qwen35 ∧ G.eos = id(<|im_end|>) ∧ ∀ t shaped <|…|>: G.token_type[t] = CONTROL'
+    domain: 'S = an HF Qwen3.5 snapshot; import, merge and export are apr import, apr finetune merge and apr export --format gguf'
+    invariants:
+    - apr finetune merge passes the base's template and tokenizer metadata on unchanged
+proof_obligations:
+- type: invariant
+  property: Train's ids for a sample equal serve's ids for the same messages, then the answer, then the eos
+  formal: 'prepare_samples(m) = (prompt_serve(m), enc(answer(m)) ++ [id(<|im_end|>)])'
+  applies_to: all
+- type: equivalence
+  property: The built-in Qwen3NoThink equals the model's own template with thinking off
+  formal: 'render(Qwen3NoThink, c) = render(T_model, c, enable_thinking = false), byte for byte'
+  applies_to: all
+falsification_tests:
+- id: FALSIFY-TSC-001
+  rule: The tokenizer train builds from a .apr keeps the added tokens whole
+  prediction: 'the tokenizer InstructPipeline::from_apr builds from a .apr whose embedded vocabulary holds <|im_start|>, <|im_end|>, <think> and </think> encodes each as one id (248045, 248046, 248068, 248069 on Qwen3.5). At 316dee2cd4 it is RED: the rebuilt tokenizer JSON says "added_tokens": [] (constructors.rs:349), so each becomes BPE pieces (on the Qwen3.5 vocabulary, six for <|im_start|> or <|im_end|> on its own and three for <think> or </think>). #3920''s rule (a vocabulary entry shaped <|…|> is registered whole, qwen2.rs:528-553) covers load_from_vocab_merges only, and would still split <think> and </think>, which are not shaped <|…|>. Planted: "added_tokens": [] restored'
+  test: '[U] not written; CPU only, needs cargo after LIVE 0.70.1. The .apr comes from apr import of a tiny HF directory whose tokenizer_config.json lists the four as added tokens, so the row checks the importer and train together'
+  if_fails: 'the model is trained on control tokens it never sees as single ids when served, and its trained answers end in the pieces of <|im_end|>, not in the eos'
+- id: FALSIFY-TSC-002
+  rule: Train's ids for a sample equal serve's ids for the same messages
+  prediction: 'for a one-turn sample on the Qwen3.5 vocabulary, the ids prepare_samples gives (prompt, then response) equal serve''s ids for the same messages: the model''s own template with thinking off (no system turn unless the sample has one, and <think>\n\n</think>\n\n after <|im_start|>assistant\n), then the answer, then 248046. At 316dee2cd4 it is RED three ways: the default system prompt (instruct_corpus.rs:52-54), no think block, and the control tokens in pieces. Planted: the default system prompt restored'
+  test: '[U] not written; CPU only, needs cargo after LIVE 0.70.1. The reference ids are rendered once from the HF snapshot''s own chat_template.jinja with enable_thinking false, tokenized with its tokenizer.json (both pinned by sha256), and committed with the script that made them'
+  if_fails: 'apr finetune tunes the model on a prompt no apr server sends, so the published model answers a prompt it was not tuned on and runs past its answer instead of stopping at the eos'
+- id: FALSIFY-TSC-003
+  rule: apr's built-in Qwen3NoThink renders what the model's own template renders with thinking off
+  prediction: 'for Qwen3 and Qwen3.5, Qwen3NoThink renders a two-turn conversation exactly as the model''s own chat_template.jinja does with enable_thinking false. At 316dee2cd4 it is RED on the two newlines: the built-in ends in <think>\n</think>\n (chat_template_qwen3_nothink.rs:44) and the model''s template in <think>\n\n</think>\n\n. \n\n is one token (ĊĊ), so the ids differ. Planted: <think>\n</think>\n restored'
+  test: '[U] not written; CPU only, needs cargo after LIVE 0.70.1. The reference strings come from rendering each model''s chat_template.jinja once (Qwen3 and Qwen3.5, pinned by sha256), committed with the script that rendered them'
+  if_fails: 'every .apr without a template of its own, which at 316dee2cd4 is every HF-sourced .apr, is served a prompt whose ids differ from the model''s own at the think block'
+- id: FALSIFY-TSC-004
+  rule: The GGUF apr exports from a fine-tune carries the model's tokenizer block
+  prediction: 'the GGUF that apr export --format gguf writes from apr finetune merge''s output, on an HF-sourced Qwen3.5 base, carries the model''s own chat template, tokenizer.ggml.pre qwen35, eos 248046 and CONTROL token types on the <|…|> tokens. At 316dee2cd4 it is RED on all four, measured on S-R10''s export (hf-rt.gguf: pre default, no template, no eos, no token types). By reading, #4418''s branch would be RED on the template alone: fix_qwen35_tokenizer_metadata sets the pre, the types and the eos, and qwen35_chat_template takes the template only from the .apr or from a chat_template.jinja beside the input. Planted: the template dropped from the base .apr'
+  test: '[U] not written; CPU only, needs cargo after LIVE 0.70.1. Runs on QQE-009''s 3/6 fixture (a tiny Qwen3.5 checkpoint with 3 key heads and 6 value heads), given the shipped Qwen3.5 tokenizer files (tokenizer.json, tokenizer_config.json, chat_template.jinja), through apr import, a one-step LoRA merge and apr export'
+  if_fails: 'the model 0.72 publishes is served with apr''s built-in prompt instead of its own; without #4418''s fixup it is also split by greedy longest match and stopped only at <|endoftext|>, while every turn ends in <|im_end|>'
+qa_gate:
+  certeza:
+    min_score: 0.0
+    note: Gates are the id identities above; no composite score is claimed.
