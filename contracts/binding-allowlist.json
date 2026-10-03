@@ -461,41 +461,6 @@
       "ticket": "#4502"
     },
     {
-      "symbol": "realizar::gpu::scheduler::forward_from_model::forward_block_traced",
-      "reason": "ghost: no `mod forward_from_model` or `use \u2026 forward_from_model` in `crates/aprender-serve/src/gpu/scheduler/mod.rs`",
-      "ticket": "#4502"
-    },
-    {
-      "symbol": "realizar::gpu::scheduler::linear_attn::gated_delta_net_decay",
-      "reason": "ghost: no `fn gated_delta_net_decay` (free or in an impl) or item `gated_delta_net_decay` in `crates/aprender-serve/src/gpu/scheduler/linear_attn.rs`",
-      "ticket": "#4502"
-    },
-    {
-      "symbol": "realizar::gpu::scheduler::linear_attn::gated_delta_net_delta",
-      "reason": "ghost: no `fn gated_delta_net_delta` (free or in an impl) or item `gated_delta_net_delta` in `crates/aprender-serve/src/gpu/scheduler/linear_attn.rs`",
-      "ticket": "#4502"
-    },
-    {
-      "symbol": "realizar::gpu::scheduler::linear_attn::gated_delta_net_forward",
-      "reason": "ghost: no `fn gated_delta_net_forward` (free or in an impl) or item `gated_delta_net_forward` in `crates/aprender-serve/src/gpu/scheduler/linear_attn.rs`",
-      "ticket": "#4502"
-    },
-    {
-      "symbol": "realizar::gpu::scheduler::linear_attn::gated_delta_net_output",
-      "reason": "ghost: no `fn gated_delta_net_output` (free or in an impl) or item `gated_delta_net_output` in `crates/aprender-serve/src/gpu/scheduler/linear_attn.rs`",
-      "ticket": "#4502"
-    },
-    {
-      "symbol": "realizar::gpu::scheduler::linear_attn::gated_delta_net_read",
-      "reason": "ghost: no `fn gated_delta_net_read` (free or in an impl) or item `gated_delta_net_read` in `crates/aprender-serve/src/gpu/scheduler/linear_attn.rs`",
-      "ticket": "#4502"
-    },
-    {
-      "symbol": "realizar::gpu::scheduler::linear_attn::gated_delta_net_write",
-      "reason": "ghost: no `fn gated_delta_net_write` (free or in an impl) or item `gated_delta_net_write` in `crates/aprender-serve/src/gpu/scheduler/linear_attn.rs`",
-      "ticket": "#4502"
-    },
-    {
       "symbol": "realizar::gpu::scheduler::model_forward_block_gpu::fused_qkv_projection",
       "reason": "ghost: no `mod model_forward_block_gpu` or `use \u2026 model_forward_block_gpu` in `crates/aprender-serve/src/gpu/scheduler/mod.rs`",
       "ticket": "#4502"
