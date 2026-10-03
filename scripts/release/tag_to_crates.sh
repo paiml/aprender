@@ -14,12 +14,12 @@
 #   provable-contracts-cli) are not timed: they carry their own version (0.4.0 in crates/facades/Cargo.toml at every
 #   tag from v0.66.0 to v0.70.0), never --version, so no read at --version can time them.
 #
-# A READ. One row per crate: what crates.io answered for <crate> at --version, and when. The fetcher GETs
-#   https://crates.io/api/v1/crates/<crate>/<version>; version.created_at is the publish time, and a 404 means not
-#   published, written as an empty created_at. read_at is the UTC second the answer came. The fetcher floors
-#   fractional seconds (16:40:00.123456Z -> 16:40:00Z); that never moves a crate across the tag or the bar, both
-#   whole seconds. A failed read (a timeout, a 5xx, a 429) is NOT a row: "not published" and "not known" are
-#   different facts.
+# A READ. One row per crate: what crates.io answered for <crate> at --version, and when. The fetcher,
+#   crates_io_reads.sh next to this script, GETs https://crates.io/api/v1/crates/<crate>/<version>; version.created_at
+#   is the publish time, and a 404 means not published, written as an empty created_at. read_at is the UTC second the
+#   answer came. The fetcher floors fractional seconds (16:40:00.123456Z -> 16:40:00Z); that never moves a crate
+#   across the tag or the bar, both whole seconds. A failed read (a timeout, a 5xx, a 429) is NOT a row: "not
+#   published" and "not known" are different facts.
 #
 # THE CLOCK starts at --tag-time, the annotated tag's tagger date (a lightweight tag has none, so it gives no start):
 #     TZ=UTC git for-each-ref --format='%(taggerdate:format-local:%Y-%m-%dT%H:%M:%SZ)' refs/tags/v<version>
