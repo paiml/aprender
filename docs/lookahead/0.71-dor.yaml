@@ -134,7 +134,8 @@ rows:
     contract: {id: apr-obs-row-identity-v1, path: contracts/apr-obs-row-identity-v1.yaml, on_main: false,
                staged_at: origin/la-71/4487-obs-00}   # c1 leaves apr-perf-ledger-v1 to #4551
     falsifier: ["schemas lint", "R-2 empty is RED"]
-    baseline: null
+    baseline: {path: contracts/lint-baseline.json, on_main: true,
+               note: "B-7 schemas lint: sigma ratchet formal_prose<=1464; pv 0.70.0 2add1c644 measured 1463 at main 316dee2cd4 and at main+la-71/4487-obs-00@c291c0d02c, lint rc=0, 0 errors both (aprender-cd, /mnt/nvme-raid0/tmp/cd-4487-evidence.md)"}
     owner_proposed: L1
 rulings_needed:
   - id: R-71-1
