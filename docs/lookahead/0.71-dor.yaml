@@ -93,8 +93,10 @@ rows:
     # 9th (arming in the committed matrix) stops the table at its `_mx armed` assertion. Still owed in row 23's order:
     # PP-34's two producer rs tests (they stage .rs, so they wait for the S-1 lift) and perf_receipt.py::_ratios_for.
     # The withdrawn case table (FALSIFY-TTFT-001..015) has not moved. Failed requests and a summary-only lane are already
-    # main's `completed_lt_requested` and `samples_stripped`. A summary its samples contradict and n below a floor need a
-    # rule first (Arm L3 checks neither), and a coarse load bracket is row 3's.
+    # main's `completed_lt_requested` and `samples_stripped`. n below the replicate floor is staged as PP-35
+    # (la-71/pp-llama-l3-status@bcd259ac80): Arm L3 now reads the band `status` that both producers already write. A
+    # summary its samples contradict still needs a rule first (Arm L3 does not recompute it), and a coarse load bracket
+    # is row 3's.
     falsifier:
       - {ids: [l3_ttft_gated_at_c1, l3_ttft_within_delta_c1, l3_ttft_absent_at_c1, l3_ttft_unarmed_is_reporting],
          staged_at: origin/la-71/pp-llama-p8-gate, staged_path: scripts/perf_gate.sh}
