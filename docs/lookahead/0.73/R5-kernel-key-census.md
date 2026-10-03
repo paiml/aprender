@@ -4,7 +4,7 @@ Key = (qtype, op, layout, precision). Paths are relative to crates/.
 
 | op × qtype | CUDA (C0,C5) | wgpu (C1–C3) | x86 SIMD (C0 CPU) | aarch64 (C4) |
 |---|---|---|---|---|
-| GEMV Q4_K | gemv_dispatch.rs:46, ~20 variants | WGSL basic_ops.rs:555 (M=1) | fused_k.rs:193 AVX2, fused_q4k.rs:338 VNNI | **scalar** fused_k.rs:60 |
+| GEMV Q4_K | gemv_dispatch.rs:46, ~20 variants | WGSL basic_ops.rs:555 (M=1) | fused_k.rs:193 AVX2, q4k_dot_avx2.rs:338 VNNI | **scalar** fused_k.rs:60 |
 | GEMV Q5_K | device.rs:93 | host dequant→F32 (wa:312) | fused_q5k_q6k.rs:388 | scalar |
 | GEMV Q6_K | weight.rs:77 | host dequant→F32 (wa:311) | fused_q5k_q6k.rs:118 AVX2 | scalar :15 |
 | GEMV Q8_0 | weight.rs:480 | **refused** wa:339 → CPU [V] | fused_q8_0_q8_0.rs:19 AVX2 | scalar :156 |

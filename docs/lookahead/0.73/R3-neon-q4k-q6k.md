@@ -4,7 +4,7 @@ Evidence tags: [V] = read in the tree at origin/main aca6f2d7f6; [A] = reported 
 
 ## 1. Problem (from the R5 census)
 - On aarch64, `detect_simd_backend()` returns `SimdBackend::Neon` (crates/aprender-serve/src/quantize/simd_backend.rs:41-44) [V]. No code dispatches on `Neon`: it is used only by Display and tests [V].
-- `fused_q4k_dot_simd` (quantize/fused_k.rs:193), `fused_q6k_dot_simd` (fused_q5k_q6k.rs:118) and `fused_q4k_q8k_dot_simd` (fused_q4k.rs:338) have only `cfg(target_arch = "x86_64")` arms [V]. On aarch64 each one falls through to the scalar kernel (fused_k.rs:60, fused_q5k_q6k.rs:15, fused_q4k.rs:232).
+- `fused_q4k_dot_simd` (quantize/fused_k.rs:193), `fused_q6k_dot_simd` (fused_q5k_q6k.rs:118) and `fused_q4k_q8k_dot_simd` (q4k_dot_avx2.rs:338, included at fused_k.rs:370) have only `cfg(target_arch = "x86_64")` arms [V]. On aarch64 each one falls through to the scalar kernel (fused_k.rs:60, fused_q5k_q6k.rs:15, fused_q4k.rs:232).
 - Consequence 1: every gx10 CPU number measures the scalar kernel while being labelled NEON. That breaks verification rule 2.
 - Consequence 2: no aarch64 quantized SIMD exists to port. R3 is new kernels plus an honest label.
 
@@ -70,7 +70,7 @@ The NEON kernels go into three aprender-serve dispatchers. Each has the same sha
 |---|---|---|---|
 | `fused_q4k_dot_simd(&[u8], &[f32]) -> Result<f32>` | quantize/fused_k.rs:193 | avx2+fma | `#[cfg(target_arch = "aarch64")]` block before the fallback; NEON is baseline on aarch64, so no detection is needed |
 | `fused_q6k_dot_simd(&[u8], &[f32]) -> Result<f32>` | quantize/fused_q5k_q6k.rs:118 | avx2+fma | same |
-| `fused_q4k_q8k_dot_simd(&[u8], &[f32], &[i8]) -> Result<f32>` | quantize/fused_q4k.rs:338 | avx512vnni v2, then avx2 | aarch64 block with `is_aarch64_feature_detected!("dotprod")` → sdot kernel, else the NEON widening kernel |
+| `fused_q4k_q8k_dot_simd(&[u8], &[f32], &[i8]) -> Result<f32>` | quantize/q4k_dot_avx2.rs:338 (included at fused_k.rs:370) | avx512vnni v2, then avx2 | aarch64 block with `is_aarch64_feature_detected!("dotprod")` → sdot kernel, else the NEON widening kernel |
 - **No signature changes, and no new `backend` parameter.** Dispatch is runtime feature detection, as it is on x86. New risk **K15 (dispatch shape): L**, because nothing has to be re-plumbed.
 - The oracle for each NEON kernel is the scalar fallback it sits in front of (`fused_q4k_dot`, `fused_q6k_dot`, `fused_q4k_q8k_dot`). That is the E-R3-1 reference; no new oracle is needed.
 - **Out of scope:** trueno `brick/quant_ops` `DotQ5KOp`/`DotQ6KOp` (the unused-`backend` warnings at :219 and :318). Only examples, tests and re-exports call them; the serving path does not. They are a second, cold NEON gap. R3 may silence the warning (`let _ = backend` on non-x86), but that does not count as NEON coverage.
@@ -88,7 +88,7 @@ The NEON kernels go into three aprender-serve dispatchers. Each has the same sha
 **Lineage — R3 is not a duplicate; it is the open successor of two closed rows.**
 - #2567 "Q4_K GEMV has no aarch64 SIMD and its 'parallel' variant calls the scalar path" (milestone 0.73.0) is CLOSED as *completed*, but the closing comment is "folded into epic #3999 (triage evidence/triage-1717.md)". Nothing was fixed. R3 carries it.
 - #2942 / roadmap PMAT-1027 "W-G GB10: NEON Q4_K GEMV; batched prefill default on sm_121…; pre-compiled kernels" is CLOSED (backlog). The roadmap row is still `status: planned, assigned_to: null`, and it bundles two unrelated GPU items. When R3 is minted, it should name PMAT-1027 as superseded for its NEON part only. Owning the roadmap row is the cop's call; L3 edits no roadmap.
-- K10 still holds at c115c5ed02. The three dispatchers (`fused_k.rs`, `fused_q5k_q6k.rs`, `fused_q4k.rs`) have no `target_arch = "aarch64"` arm. The only aarch64 cfg in `aprender-serve/src/quantize/` is `simd_backend.rs:41`.
+- K10 still holds at c115c5ed02. The three dispatchers (`fused_k.rs`, `fused_q5k_q6k.rs`, `q4k_dot_avx2.rs`) have no `target_arch = "aarch64"` arm. The only aarch64 cfg in `aprender-serve/src/quantize/` is `simd_backend.rs:41`.
 
 **Label sources that say NEON while the Q4K/Q6K dot runs scalar:**
 
@@ -104,3 +104,18 @@ The NEON kernels go into three aprender-serve dispatchers. Each has the same sha
 
 ## 12. Status (cop ruling 2026-09-28 10:20Z)
 R3 is a **FINDING, not a minted row**. The mint is deferred (only the cop mints, freeze on). Nothing here is code. When it is minted, the scope is §2 plus §11's rule: `kernel_path()` in every receipt; `cpu_isa()`/`class=` and `detect_simd_backend()` are host labels, never proof. Checked at c115c5ed02.
+
+## 13. L25 review of `neon-q4k-q6k-v1` (2026-10-03, origin/main 316dee2cd4, read-only)
+| # | Hole | Fix | Falsifier |
+|---|---|---|---|
+| 1 | **Dead site.** The contract cited `quantize/fused_q4k.rs:338` for the q4k-q8k dispatcher. No `mod` or `include!` names that file: it is a byte-identical 360-line copy of `q4k_dot_avx2.rs`, which `fused_k.rs:370` includes. The file has been an orphan since the APR-MONO subtree merge (3da75b7d3d). A NEON arm added there compiles nothing, and every test would pass against the old path | Cite corrected here, in §7/§9 and in R5. A planted `compile_error!` must break the aarch64 check at each cited site | NEON-Q4K-006 |
+| 2 | Random f16 `d`/`dmin` bytes are Inf/NaN for 1 draw in 32 | Finite, normal f16 by construction | precondition |
+| 3 | Uniform scales or `dmin = 0` hide the scale and min terms (the existing tests use uniform scales, §12) | Varied 6-bit scales and mins, `dmin ≠ 0`; second mutation drops the min term | NEON-Q4K-001 |
+| 4 | The epsilon floor of 1 makes the check absolute for small dots | At least 90% of cases have \|dot\| ≥ 1, and the test prints the fraction | precondition |
+| 5 | One super-block per case never runs the block loop | n ∈ {1, 2, 3, 7} | precondition |
+| 6 | The widen fallback is unreachable on gx10, which has dotprod | Test-only direct entry | NEON-Q4K-007 |
+| 7 | A golden regenerated in the run is a self-comparison | Committed golden with a pinned sha256 | NEON-Q4K-003 |
+| 8 | The C4 leg used prefill-final only and an unnamed reference path, and listed its gate as a postcondition | Decode positions, same `cpu_ref_path`; the gate stays in the formula | R1 BPM-008/-013 |
+
+Cleanup candidate (PROPOSE-TICKET, not done here): delete the orphan `quantize/fused_q4k.rs`. It shows up in `.pmat-baseline.json` and in code search as a live twin of `q4k_dot_avx2.rs`.
+pv 0.70.0: validate 0/0; lint 0 errors, the same 4 lean_theorem warnings. Obligations went from 5 to 7.

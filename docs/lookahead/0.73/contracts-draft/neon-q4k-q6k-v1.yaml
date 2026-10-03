@@ -11,11 +11,14 @@ metadata:
   description: >
     Today every quantized dot in aprender-serve is x86-gated. On aarch64 the three
     dispatchers (quantize/fused_k.rs:193 fused_q4k_dot_simd, quantize/fused_q5k_q6k.rs:118
-    fused_q6k_dot_simd, quantize/fused_q4k.rs:338 fused_q4k_q8k_dot_simd) fall through
+    fused_q6k_dot_simd, quantize/q4k_dot_avx2.rs:338 fused_q4k_q8k_dot_simd, compiled via include! at fused_k.rs:370) fall through
     to scalar while the backend label says NEON. This contract adds a cfg(aarch64) arm
     to each: NEON f32-widening kernels for q4k-f32 and q6k-f32, and for q4k-q8k an sdot
     kernel behind is_aarch64_feature_detected!("dotprod") with a widening fallback.
     The oracle for each kernel is the existing scalar function it sits in front of.
+    L25 note (main 316dee2cd4): quantize/fused_q4k.rs is an ORPHAN. No mod or include! names
+    it, and it is byte-identical (360 lines) to q4k_dot_avx2.rs. An arm added there compiles
+    nothing, and every NEON test passes vacuously against the old x86/scalar code.
 
 equations:
   neon_scalar_parity:
@@ -27,13 +30,18 @@ equations:
     preconditions:
     - x.len() == 256
     - x.iter().all(|v| v.is_finite())
-    - 'b.len() == 144 for q4k and b.len() == 210 for q6k (one super-block)'
+    - 'b.len() == n * 144 for q4k and n * 210 for q6k, with n in {1, 2, 3, 7} (multi-block rows exercise the accumulator reset and the block loop)'
+    - 'fixture d and dmin are finite, normal f16 by construction (random f16 bytes are Inf/NaN for 1 draw in 32)'
+    - 'fixture 6-bit scales and mins differ across the 8 sub-blocks, and dmin != 0 (otherwise the min term is invisible)'
+    - 'at least 90% of fixture cases have |scalar_k(b, x)| >= 1, and the test prints that fraction (below the floor of 1 the epsilon is an absolute 1e-3)'
     postconditions:
     - neon_k(b, x).is_finite() == scalar_k(b, x).is_finite()
     - (neon_k(b, x) - scalar_k(b, x)).abs() < 1e-3 * scalar_k(b, x).abs().max(1.0)
     invariants:
     - 'The scalar oracle is the dispatcher fallback (fused_q4k_dot, fused_q6k_dot, fused_q4k_q8k_dot), unchanged by this work.'
     - 'The epsilon is relative with a floor of 1, as in avx512-q4k-v1, so near-zero dots are not over-constrained.'
+    - 'L25: that floor makes the check absolute (1e-3) for |dot| < 1. A fixture set of small dots lets a wrong kernel pass, so the magnitude precondition is part of the test, not a tuning choice.'
+    - 'L25: the q4k-q8k widening fallback is unreachable on gx10 (it has dotprod), so dispatch never exercises it. Its parity runs through a test-only entry that calls the widen kernel directly (FALSIFY-NEON-Q4K-007).'
   dispatch_honesty:
     formula: |
       on aarch64: kernel_path(k) starts with "<k>/neon"
@@ -60,10 +68,14 @@ equations:
     - logits_apr_c4_neon.len() == logits_apr_c0_x86.len()
     - 'both runs use the same GGUF sha256 and the same token ids'
     - 'every kernel_path in the C4 run contains "/neon" (dispatch_honesty holds), otherwise the leg is not_measured'
+    - 'the C0 reference and the C4 run use the same cpu_ref_path (R1 FALSIFY-BPM-008; RQ-5), otherwise the leg measures activation quantization, not NEON'
+    - 'positions = prefill-final plus >= 8 teacher-forced decode positions (R1 FALSIFY-BPM-013)'
     postconditions:
-    - leg >= 0.995
+    - every per-position cosine is finite
     invariants:
     - 'The gate reads the per-prompt minimum. It is one leg of the R1 composed bound.'
+    - 'L25: leg >= 0.995 was listed as a postcondition. It is the gate decision, and a postcondition that a FAIL violates is not a property of the computation. It now lives only in the formula.'
+    - 'The C0 x86 reference makes this leg a cross-machine comparison, so it meets R1 FALSIFY-BPM-012 (no self-comparison).'
   c4_e2_speed:
     formula: |
       r = tok_s_apr_c4 / tok_s_llamacpp_ggml_cpu   (llama.cpp d1d3c3396)
@@ -74,6 +86,7 @@ equations:
     - runs_apr.len() >= 5 && runs_llamacpp.len() >= 5
     - llamacpp_sha == "d1d3c3396"
     - 'both engines run on the same host, same model file and same thread count'
+    - 'n_gen is fixed and EOS is ignored on both engines (R1 FALSIFY-BPM-015)'
     - 'host load1 / nproc < 1.0 before and after each run, otherwise the sample is not_measured'
     postconditions:
     - bootstrap_ci95(runs_apr, runs_llamacpp).lo >= 0.5
@@ -92,7 +105,7 @@ falsification_tests:
   prediction: '10 000 seeded Q4_K super-blocks satisfy neon_scalar_parity.'
   test: 'NOT YET WRITTEN. Lands with R3'
   if_fails: 'the NEON kernel decodes nibbles or scales differently from scalar'
-  mutation: 'swap the low/high nibble order in the q4k NEON kernel; the test must turn RED'
+  mutation: 'swap the low/high nibble order in the q4k NEON kernel; the test must turn RED. Second mutation: drop the dmin*min term; the test must turn RED (it bites only if the fixture has dmin != 0 and varied mins).'
 - id: FALSIFY-NEON-Q4K-002
   rule: dispatch is honest on aarch64
   prediction: 'On aarch64, kernel_path of fused_q4k_dot_simd starts with q4k-f32/neon. On x86 the test is NotRun (not aarch64), never PASS.'
@@ -101,7 +114,7 @@ falsification_tests:
   mutation: 'delete the cfg(aarch64) arm; the path reads scalar and the test must turn RED'
 - id: FALSIFY-NEON-Q4K-003
   rule: a cross-arch golden agrees
-  prediction: 'Dots over a fixed block set, recorded on x86 scalar, match aarch64 NEON within epsilon.'
+  prediction: 'Dots over a fixed block set, recorded on x86 scalar into a COMMITTED golden file (its sha256 is pinned in the test), match aarch64 NEON within epsilon. A golden regenerated inside the test run is a self-comparison and does not count.'
   test: 'NOT YET WRITTEN. Lands with R3'
   if_fails: 'x86 and aarch64 give different answers for the same weights'
   mutation: 'perturb one scale byte in the golden; the test must turn RED'
@@ -118,6 +131,18 @@ falsification_tests:
   if_fails: 'a scalar run is scored as a NEON cell'
   mutation: 'feed a receipt whose trace has no neon kernel line; the cell must be refused (R1 FALSIFY-BPM-006), not scored'
 
+- id: FALSIFY-NEON-Q4K-006
+  rule: each NEON arm sits in a compiled file (L25)
+  prediction: 'Adding compile_error!("planted") under cfg(target_arch = "aarch64") in each cited dispatcher file (fused_k.rs, fused_q5k_q6k.rs, q4k_dot_avx2.rs) makes the aarch64 cargo check fail. Planting it in the orphan quantize/fused_q4k.rs does NOT, which shows the file is dead.'
+  test: 'NOT YET WRITTEN. Runs with FALSIFY-NEON-Q4K-000, off the release path'
+  if_fails: 'the NEON arm lives in dead code; parity tests run the old path and pass vacuously'
+  mutation: 'cite the orphan file as the site; the planted compile_error! must leave the check green, so the orphan must be refused as a site'
+- id: FALSIFY-NEON-Q4K-007
+  rule: the q4k-q8k widen fallback is tested even on a dotprod host (L25)
+  prediction: 'A test-only entry that calls the widen kernel directly satisfies neon_scalar_parity on gx10, a host with dotprod.'
+  test: 'NOT YET WRITTEN. Lands with R3'
+  if_fails: 'the fallback for CPUs without dotprod (e.g. Cortex-A72 on a Raspberry Pi 4) ships untested'
+  mutation: 'mis-widen the i8 lanes as unsigned in the widen kernel; the test must turn RED'
 proof_obligations:
 - type: invariant
   property: 'NEON equals scalar within epsilon for all three kernels (FALSIFY-NEON-Q4K-001, 004)'
@@ -132,6 +157,12 @@ proof_obligations:
   property: 'C4 E1 leg >= 0.995 on a NEON trace (FALSIFY-NEON-Q4K-005)'
   formal: 'PASS_leg => min_p cos(c4, c0) >= 0.995 and trace_has(neon)'
 
+- type: invariant
+  property: 'Every NEON arm is compiled (FALSIFY-NEON-Q4K-006)'
+  formal: 'forall k: site(k) in compiled_files(aprender-serve, aarch64)'
+- type: invariant
+  property: 'The widen fallback matches scalar (FALSIFY-NEON-Q4K-007)'
+  formal: 'forall b, x: |widen(b,x) - scalar_q4k_q8k(b,x)| < 1e-3 * max(1, |scalar_q4k_q8k(b,x)|)'
 - type: invariant
   property: 'Integer decode steps the NEON kernels must reproduce are exact and in range (KANI-NEON-Q4K-001..003)'
   formal: 'forall q in u8: split(q) exact; forall l,h: recombine(l,h) in -32..=31; forall j < 8: unpack reads < 12'
@@ -170,8 +201,8 @@ qa_gate:
   pass_criteria: 'Every falsifier is GREEN on gx10 C4. Report-only until first green plus 7 nights.'
 
 verification_summary:
-  total_obligations: 5
+  total_obligations: 7
   proven: 0
   tested: 0
   status: proposed
-  notes: 'Draft by la-73 (L3). No ticket yet; tests land with R3.'
+  notes: 'Draft by la-73 (L3). No ticket yet; tests land with R3. L25 review 2026-10-03 at main 316dee2cd4: orphan-file site, fixture f16/scale/magnitude/multi-block preconditions, unreachable widen fallback, committed golden, C4 leg decode positions and ref path (NEON-Q4K-006, -007).'
