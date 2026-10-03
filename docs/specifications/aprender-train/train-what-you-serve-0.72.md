@@ -591,6 +591,64 @@ up, a new size changes its place, and a row already held on a branch drops out o
     - TPP-003: GGUF serve gives the reference ids, both on a published GGUF and on the file `apr export` writes
       (TSC-004's chain). On a published GGUF it should be GREEN today, which keeps the reference honest. On the
       exported file it would be RED at `316dee2cd4` (pre `default`, greedy fallback) and GREEN on #4418's branch.
+- **Row 26, K41: the HF-sourced Qwen3.5 .apr loses the model's rope base and dimensions.** Desk read at `316dee2cd4`
+  and on #4418's branch (@1af0e3cc11), plus header reads of S-R10's `hf.apr` and `hf-rt.gguf` (apr 0.69.3) and of
+  the published GGUFs. Nothing was run.
+  - **The source.** Qwen3.5's `config.json` nests the text model under `text_config`, and the rope base under
+    `text_config.rope_parameters`: `rope_theta` 1e7, `partial_rotary_factor` 0.25, `mrope_section` [11,11,10]. The
+    top level has neither the dims nor `rope_theta`. The published 0.8B, 2B, 4B, 9B and 27B GGUFs all say
+    `rope.freq_base` 1e7 and `key_length` 256.
+  - **At `316dee2cd4`.**
+    - Import: `load_model_config_from_json` reads the top level only (`source_load_result.rs:282-303`). `rope_theta`
+      takes its default, 10000, and is always `Some`. S-R10's `hf.apr` says rope_theta 10000 and has no hidden size,
+      head counts or head_dim.
+    - Export: S-R10's `hf-rt.gguf` names arch `qwen3_5` and says freq_base 10000, heads 16/8 and ctx 0, with no
+      `key_length` and no `dimension_sections`. The published 0.8B says `qwen35`, 1e7, 8/2, 262144, 256 and
+      [11,11,10].
+    - Serve takes the base from the file's `rope.freq_base` (`gguf/config.rs:739-742`), and the Qwen3.5 forward
+      rotates with it (`forward_qwen35.rs:1663`). Neither fallback gives 1e7. Serve's
+      `default_rope_theta_for_architecture` has no qwen35 arm (`config.rs:365`, so 1e4), and core's copy gives 1e6
+      to any name containing "qwen" (`export.rs:52`).
+    - `apr finetune` refuses, which is loud. The .apr has no dims, and `read_hf_config_file` reads the sibling
+      `config.json` at the top level only (`model_config.rs:154-203`; it also drops `head_dim` and defaults rope to
+      10000). The last resort, `--model-size`, is wrong too: `qwen3_5_9b()` sets 1e6, "Same 1M theta as Qwen2"
+      (`transformer/config.rs:246-264`), and so does the family contract's 9b row
+      (`contracts/model-families/qwen3_5.yaml:28`). The published 9B says 1e7. The contract's 27b row also says
+      hidden 6144 where the published 27B says 5120, and the contract has no 0.8B, 2B or 4B row.
+    - `apr finetune merge` clones the base's metadata (K39). `backfill_arch_dims` fills hidden, vocab, layers and
+      intermediate from the tensors, and head counts for qwen2 only (`finetune_display_next_validate.rs:169-178,240`).
+      It never touches rope_theta.
+  - **On #4418's branch.** The import is fixed: `merge_text_config` lifts `text_config`
+    (`source_load_result.rs:288,381`), and the base is read from `rope_parameters` (`:304-310`). A fresh import gets
+    1e7 and the dims. An older .apr is not caught. `qwen35_base` takes each field from the .apr first and from the
+    `config.json` beside it second (`gguf_export_config.rs:680-709`). Its 1e7 fallback fires only when the .apr has
+    no rope_theta (`qwen35_gguf.rs:497`), and an import made before #4418 always has one: 10000. So S-R10's
+    `hf.apr`, or a merge of it, exported with the HF `config.json` beside it gets the right dims and freq_base 10000,
+    with no warning. Without that `config.json` the export refuses on the missing head count. #4418 changes no
+    apr-cli, train or rope-default file, so the finetune reader, the presets and both fallbacks stay as above.
+  - **Effect on 0.72.** R4 serves the export of a merged HF-sourced base, and so does T4's judgement if it serves the
+    rc from apr's export. If that base was imported before #4418 lands, the served model rotates at 1e4 where it was
+    trained at 1e7. A quarter of each head rotates (64 of 256 dims, 32 frequency pairs), and pair i turns by
+    base^(−i/32) rad per token. Both bases give 1 rad at i = 0. At i = 16 it is 0.01 against 3.2e-4, about 32 times
+    faster. The effect on loss and output is not measured. Most gates cannot see it. QFR-001..005 and T5 check
+    values, names and the architecture, not the rope base. QQE-003 compares two forwards that read the same file
+    (fold-r2r3's training model takes `rope.freq_base` from the GGUF, `qwen35_model.rs:294`). QFR-006 compares the
+    `qwen35.*` keys with llama.cpp's conversion, but on a fresh import only, never on a merge or an older .apr.
+  - **Falsifiers (proposed for `qwen35-format-roundtrip-v1`).**
+    - QFR-007: the .apr that `apr import` writes from an HF Qwen3.5 snapshot, and the GGUF that `apr export` writes
+      from `apr finetune merge`'s output of it, carry the dims and rope base the source config states. In the GGUF
+      that is `freq_base`, the head counts, `key_length`, `context_length` and `dimension_sections`. It runs on
+      TSC-004's chain, with a fixture config that nests `text_config` as Qwen3.5's does. On the 0.8B the reference is
+      the published GGUF's header. It is RED on S-R10's files (measured) and at `316dee2cd4` (desk read, the same
+      top-level read). On #4418's branch it would be GREEN for a fresh import. Planted: `merge_text_config` or the
+      `rope_parameters` read removed.
+    - QFR-008: `apr export` refuses a qwen35 .apr whose rope_theta or a dim disagrees with the `config.json` beside it,
+      or with the source config QFR-003 stores, and prints both values. It would be RED on #4418's branch, which
+      exports S-R10's `hf.apr` at 1e4 (desk read). Planted: S-R10's `hf.apr` with the HF `config.json` beside it.
+    - QFR-009: for qwen35, serve's and core's rope fallbacks return 1e7, and `qwen3_5_9b()` and the family contract
+      match the published 9B and 27B headers. It is RED at `316dee2cd4` on all four rope values (1e4, 1e6, 1e6, 1e6)
+      and on the 27B's hidden size. Planted: 1e6 restored in the preset.
+  - **Until it lands,** re-import S-R10's base after #4418 merges. Do not reuse it.
 
 State is read from the branch tips on 2026-10-03. origin/main is `316dee2cd4` and no la-72 branch has landed. K̂ is
 minutes of worker time still left; `[A]` marks an assumption.
@@ -612,7 +670,7 @@ minutes of worker time still left; `[A]` marks an assumption.
 | 11 | R11 sealed ingress | TIS-002 planted perturbed item | 40 `[A]` + the TDD normaliser | `fold-tis` @9fed5c27db (TIS-001/003/004/005); TIS-002 waits on a foreign branch |
 | 12 | R6 distill batch | DBH refusal, then real batching | 15 + 90 | `fold-dbh-a` @2cfe655b98, `fold-dbh-b` @df5e4d74f6, GPU halves `gpu-falsifiers` @e890928f4e; 3 Definition-of-Ready tests, plus R18's 3 |
 | 13 | R7 merge | MOF-002/003 APR writer | 30 `[A]` | `fold-mof` @17fbe022eb; Definition of Ready: FWD-001's path, FWD-002..004 unwritten |
-| 14 | R9 #4418 GGUF name map | — | owned by 0.71 | fix not on main at `316dee2cd4`; if it slips, R10's GGUF legs and T4/T5 slip with it, R4's QQE-003 has no served side, and row 4b copies its transforms (+20 `[A]`); its branch (@1af0e3cc11) also fixes the exported file's tokenizer block, but takes the template only from the .apr or a `chat_template.jinja` beside it (TSC-004, row 24) |
+| 14 | R9 #4418 GGUF name map | — | owned by 0.71 | fix not on main at `316dee2cd4`; if it slips, R10's GGUF legs and T4/T5 slip with it, R4's QQE-003 has no served side, and row 4b copies its transforms (+20 `[A]`); its branch (@1af0e3cc11) also fixes the exported file's tokenizer block, but takes the template only from the .apr or a `chat_template.jinja` beside it (TSC-004, row 24); its export also prefers the .apr's rope_theta to the `config.json` beside it, so a .apr imported before it exports at 1e4 with no warning (QFR-008, row 26) |
 | 15 | R8 GDN quantize policy | — | — | `79/r8-gdn-quant-policy` |
 | 16 | R17 memory, measured | peak-memory run on the 4090 | 30 `[A]` | needs GPU at train-idle |
 | 17 | R18 vocab alignment | — | — | `76/0.72-r18-vocab-cell`; 3 Definition-of-Ready tests shared with R6 |
@@ -624,6 +682,7 @@ minutes of worker time still left; `[A]` marks an assumption.
 | 23 | K38 Qwen3.5 norm convention | serve's safetensors conversion refuses a hybrid `layer_types`; R13's builder inverts #4418's value transforms, norm −1 included | 15 `[A]` + R13's builder | desk read plus a CPU measurement on the 4B; GGUF serve, train and #4418 agree |
 | 24 | K39 train/serve chat format | the HF importer writes the added tokens and the chat template into the .apr; TSC-001: `from_apr`'s tokenizer keeps `<\|im_end\|>`, `<think>` and `</think>` whole; TSC-002: train renders the model's own template, thinking off, no default system turn, target ends in the eos id; TSC-003: serve's built-in `Qwen3NoThink` renders as the model's own template does; TSC-004: the GGUF exported from a merged HF-sourced base carries the model's template, pre `qwen35`, the eos and the token types | 110 `[A]` | desk read at `316dee2cd4` plus a header read of S-R10's .apr (17 keys, no template, no added tokens) and of its GGUF export (18 keys: pre `default`, no eos, token types or template); #4418's branch fixes all but the template; PMAT-3803's branch has part of the tokenizer half, unmerged; must be green before R4's 200-step cell and any T4 run |
 | 25 | K40 pre-tokenizer split | one regex pre-tokenizer shared by train, `apr chat` and .apr serve; TPP-001/002: train's tokenizer and `encode_text` give the HF reference ids on a frozen code fixture; TPP-003 keeps GGUF serve on them, on the file apr exports too | 80 `[A]` | desk read at `316dee2cd4` plus a simulation on the Qwen3.5 vocabulary: 5 samples are 193 tokens in train against 160 under the regex, and .apr serve has the same count with different ids on indented code; CRUX-M-05 (draft) states the check and nothing implements it; T2 is unaffected because its count is fixed by shape; must be green before R4's 200-step cell and any T4 run |
+| 26 | K41 Qwen3.5 rope base and dims | QFR-007: the imported .apr and the GGUF exported from its merge carry the source config's dims and rope base (1e7); QFR-008: `apr export` refuses a qwen35 .apr that disagrees with its source config; QFR-009: the qwen35 rope fallbacks, the 9B preset and the family contract say 1e7 | 40 `[A]` | desk read at `316dee2cd4` and on #4418's branch, plus header reads: S-R10's `hf.apr` says 10000 with no dims, and its GGUF says 10000, heads 16/8, ctx 0; the published 0.8B to 27B say 1e7; #4418 fixes a fresh import but exports an older .apr at 1e4 with no warning; QFR-006 checks fresh imports only, and QQE-003 cannot see it; re-import S-R10's base after #4418, never reuse it; must be green before R4's 200-step cell and any T4 run |
 | — | R19 ROADMAP PMAT-711 stale | — | done | shaping @378ec8e920 |
 | — | R20 declarative recipe | — | out | RQ-3: stays in #4002 (E8, 0.75) |
 
