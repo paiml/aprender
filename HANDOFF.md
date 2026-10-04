@@ -81,3 +81,63 @@ Planned as `scripts/release/check_nightly_cut.sh`, bash, with a planted-row tabl
 - Moving clean-room, binary-release or host checks: they need the tag.
 - Changing any judge.
 - Changing the provable-ladder: since #4710 / C312 it runs in full on every push to main.
+
+## 6. Quorum round 1 (2 Sonnet 5.5 lanes, author is Opus 5.5): both APPROVE-WITH-FIXES
+
+Folded in here. These amendments override §2 and §3 where they conflict.
+
+### F1. "Unchanged steps" is false as written
+
+autopilot.sh:40-79 needs a PR, a milestone, an epic and `gh` before any step runs.
+
+- **Fix:** factor deep/dogfood/models into `scripts/release/lib_ladders.sh <sha> <V>`, sourced and option-neutral.
+- autopilot then calls the lib. This is a refactor PR with a planted-row diff of the worktree state, and no behaviour change.
+
+### F2. Where the receipts live
+
+R5 picks the newest `.dogfood/receipt-*.json`. R7/R8 read the receipts committed under `evidence/dogfood/models/<V>`. The dirty-tree stop is at autopilot.sh:138.
+
+- **Invariant:** release day opens a worktree at S (the measured sha) and leaves it **byte-identical** to what today's steps leave at MC. It then follows today's path unchanged: the ledger/receipt commit and the judges.
+- The dogfood receipt is selected by `commit == S`, not by mtime. A stale older receipt is never copied; the copy replaces `.dogfood/` whole.
+- The planted test for this is a diff of the worktree after the "real steps" against the worktree after the "nightly copy".
+
+### F3. MC is no longer the bump merge
+
+autopilot.sh:75-88 must re-run at the new MC: version == V and `bump-version.sh --check`. `check_milestone_cut.sh` re-reads at T-3 against MC.
+
+- S must descend from the bump merge.
+
+### F4. Most nights measure the wrong version
+
+Receipts are keyed by version. **Fix:** the nightly runs the ladders only when main's version is greater than the latest tag, i.e. a bump has landed and is not yet tagged. Otherwise it exits "no pending release" and writes no row. This also saves GPU on the other ~6 nights.
+
+- Row 9 is now: the row must come from a night **after** the bump merge, which bounds it to ≤ 30 h, not 36 h.
+
+### F5. Case table changes
+
+- Drop row 10 (partial host reuse). models_t1.sh judges the two hosts as one batch (:167-179), and mixed provenance is not admitted. Any missing host means a full fallback.
+- Row 3 loses "unless triaged". A red row at V is STOP, with no human-waiver path.
+- New row 13: the receipt's `version` ≠ V, or its `phase` ≠ pre-publish → STOP.
+- New row 14: OPEN obligations outside the pre-publish phase → STOP (check_publish_preflight.sh:153-165).
+- New row 15: lock-busy model_ladder exit 75 (apr-gpu.lock) → decline → fallback, never a pass.
+- New row 16: release day rebuilds `apr` at S. A nightly target dir is reused only when its build sha == S (the readiness re-grep at autopilot.sh:168-169).
+
+### F6. Cite fixes
+
+- R5 is check_publish_preflight.sh:119-179.
+- R7 begins at check_model_ladder.sh:87.
+- dogfood is autopilot.sh:125-143; models is :146-156.
+
+### F7. The saving is fragile, and there is a simpler option for a7 to rule on
+
+Today's release-day order is deep → dogfood → models, run serially after the bump merges.
+
+**Option B:** launch the three at the bump merge, concurrently. dogfood and deep run on lambda; the model ladder runs on lambda and gx10 in parallel, as a sibling of `wait`.
+
+- B needs no timer, no index, no evening bump, and no fallback table.
+- It saves the serial sum minus the longest leg on the critical path.
+- The nightly (option A) saves the whole duration, but only when the bump lands the evening before and the post-bump night is green.
+
+**Recommendation:** ship B first, because it is small and has no train-order change. Then add A's nightly as a second step only if B's measured critical path still misses the target.
+
+**Ruling asked of aprender-a7:** A, B, or B then A.
