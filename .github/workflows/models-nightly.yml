@@ -4,10 +4,10 @@
 #
 # WHAT IS MEASURED, AND WHERE
 # ---------------------------
-# The models lane is scripts/release/models_t1.sh: the GPU-host model ladder on
-# lambda and gx10, judged by check_model_ladder.sh. It is the SAME entry point
+# The models lane is scripts/release/models_t1.sh: the model ladder on
+# the two GPU hosts, judged by check_model_ladder.sh. It is the SAME entry point
 # release day runs. It needs both GPU hosts, and no runner in this repo's pool
-# is either of them, so the measurement does not happen here. A lambda timer
+# is either of them, so the measurement does not happen here. A timer on a GPU host
 # runs `models_nightly.sh --run` against main's head C, seals the receipts, the
 # models_t1 log and a verdict into one bundle, and `--publish` pushes the bundle
 # to the `nightly-evidence` branch as models/<C>/. Neither half holds a registry
@@ -40,8 +40,8 @@
 # proof the lane can go red; it is never on in a scheduled run, and a planted
 # run uploads no models-t1, so readiness never reads a plant as a receipt.
 #
-# ARTIFACT models-t1. On a verified green or red the bundle (lambda.json,
-# gx10.json, the models_t1 log, verdict, SHA256SUMS) is uploaded as models-t1
+# ARTIFACT models-t1. On a verified green or red the bundle (each host leg's
+# <host>.json receipt, the models_t1 log, verdict, SHA256SUMS) is uploaded as models-t1
 # for readiness-nightly.yml, which reads the receipts' *.json at its root.
 #
 # RUNNER. [self-hosted, Linux, X64, clean-room]. The job reads git and runs
@@ -51,13 +51,17 @@ name: models-nightly
 
 on:
   schedule:
-    # Schedule events land 3h51m-6h49m late on this account (#3292). The lambda
-    # run starts ~21:00Z and publishes when the ladder ends; the train reads at
-    # 04:45Z. Two slots: the first may land before the publish, and then the
-    # second is the run the train reads -- it takes the newest completed run on
-    # C. Re-measure the delay before trusting either slot.
-    - cron: '20 22 * * *'
-    - cron: '50 22 * * *'
+    # Schedule events land late on this account: guards-nightly's 14 scheduled
+    # runs of 2026-09-20..10-04 started 1h43m-3h29m after their cron (median
+    # ~2h14m). The GPU-host run starts ~21:00Z and publishes when the ladder
+    # ends; the train reads at 04:45Z. At that lateness 23:40 lands ~01:23-03:09Z
+    # and 00:30 lands ~02:13-03:59Z, both before the read. Two slots: if the
+    # first lands before the publish it is not_measured, and the second is the
+    # run the train reads -- it takes the newest completed run on C. A ladder
+    # that has not published by the second slot's landing is a not_measured
+    # night, never a green. Re-measure the delay before trusting either slot.
+    - cron: '40 23 * * *'
+    - cron: '30 0 * * *'
   workflow_dispatch:
     inputs:
       plant_red:
@@ -102,7 +106,7 @@ jobs:
           fetch-depth: 1
       - name: The producer's case table, before it is trusted
         run: setsid --wait bash scripts/release/models_nightly.sh --self-test
-      - name: Relay the lambda measurement of this commit
+      - name: Relay the GPU-host measurement of this commit
         id: relay
         env:
           PLANT_RED: ${{ inputs.plant_red }}

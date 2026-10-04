@@ -4,19 +4,19 @@
 # on main, so it printed not_measured every night. This is that producer.
 #
 # THE SAME ENTRY POINT RELEASE DAY RUNS. --run executes models_t1.sh AS IT IS AT C (main's head):
-# both legs (lambda here, gx10 over SSH), its own build, its own binary proof, its own judge. Nothing
+# both GPU-host ladder legs (one local, one over SSH), its own build, its own binary proof, its own judge. Nothing
 # here measures a model; this file only runs C's measurer and carries its result to the train.
 #
 # WHY A RELAY. The GPU hosts are not Actions runners, and the train reads only Actions runs on main.
-#   lambda   --run      measure C with C's models_t1.sh, classify, write a bundle to <work>/pending/<C>
-#   lambda   --publish  commit pending bundles to branch nightly-evidence as models/<C>/ (never forced)
+#   GPU host --run      measure C with C's models_t1.sh, classify, write a bundle to <work>/pending/<C>
+#   GPU host --publish  commit pending bundles to branch nightly-evidence as models/<C>/ (never forced)
 #   CI       --relay    models-nightly.yml, at C: fetch models/<C>, verify it, replay the verdict from the
 #                       raw evidence, and hand the state to the `models` job. No bundle, a bundle that
 #                       fails a check, or a replay that disagrees is not_measured: never a pass.
 #   --run and --publish are separate so that the measuring step never sees the push credential: the
 #   host's units keep the credential out of the measuring sandbox (the infra ticket, not this file).
 #
-# THE VERDICT (classify, run identically on lambda and in the relay, over the bundle's own files):
+# THE VERDICT (classify, run identically on the GPU host and in the relay, over the bundle's own files):
 #   green         models_t1 exit 0 and its GO line at C, and both receipts bound to "apr <v> (<sha9>)"
 #                 with executed > 0 and red == 0
 #   red           a bound receipt with red cells, a build failure, a binary that is not C, a receipt
@@ -24,7 +24,7 @@
 #                 finding red/missing cells on two bound receipts. Red dominates, as in the judge.
 #   not_measured  everything else: a host unreachable, a disk refusal (ENV), a judge DECLINE or DEFER
 #                 (the judge's own "not green, not red"), a ladder decline, a timeout, an unknown exit,
-#                 or a red seen while another models_t1.sh was running (it shares gx10's rel-* dirs).
+#                 or a red seen while another models_t1.sh was running (it shares the remote leg's rel-* dirs).
 #
 # NO REGISTRY TOKEN: --run and --publish refuse (exit 3) where one is reachable -- nightly_train.sh's
 # no_token, plus $HOME/.cargo/credentials{,.toml} even when CARGO_HOME points elsewhere.
@@ -75,7 +75,7 @@ vget() { awk -v k="$1" 'index($0, k "=") == 1 { print substr($0, length(k) + 2);
 foreign_t1() { awk -v own="$1" '$1 != own && $0 ~ /[ \/]models_t1\.sh( |$)/'; }
 # The process table foreign_t1 reads. MODELS_NIGHTLY_PS_TABLE (a file of "pgid args" lines) is for
 # the self-test only: on a host where anyone is running a models_t1.sh fixture, the real table would
-# refuse every e2e row. The lambda units never set it.
+# refuse every e2e row. The host units never set it.
 ps_table() { if [ -n "${MODELS_NIGHTLY_PS_TABLE:-}" ]; then cat -- "$MODELS_NIGHTLY_PS_TABLE"; else ps -eo pgid=,args=; fi; }
 
 receipt_bound() { [ -f "$1" ] && jq -es --arg w "$2" 'length == 1 and (.[0] | type == "object" and .apr_version == $w)' -- "$1" > /dev/null 2>&1; }
@@ -185,7 +185,7 @@ run() { # run REPO WORK COMMIT TIMEOUT
     exec 9> "$work/.lock" || die "cannot open $work/.lock"
     flock -n 9 || refuse "another models_nightly.sh holds $work/.lock"
     f=$(ps_table | foreign_t1 0 | head -n 1)
-    [ -z "$f" ] || refuse "another models_t1.sh is running (a release's models step shares gx10): $f"
+    [ -z "$f" ] || refuse "another models_t1.sh is running (a release's models step shares the GPU hosts): $f"
     git -C "$repo" fetch -q --no-tags origin +refs/heads/main:refs/remotes/origin/main || die "git fetch of main failed in $repo"
     git -C "$repo" fetch -q --no-tags origin "+refs/heads/$EV_BRANCH:refs/remotes/origin/$EV_BRANCH" 2> /dev/null || :
     [ -n "$c" ] || c=$(git -C "$repo" rev-parse refs/remotes/origin/main) || die "origin/main does not resolve"
@@ -419,7 +419,7 @@ STUB
     mkdir -p "$tmp/fake"; printf 'sleep 30\n' > "$tmp/fake/models_t1.sh"
     bash "$tmp/fake/models_t1.sh" > /dev/null 2>&1 & bg=$!
     printf '4242 bash /r/scripts/release/models_t1.sh 1.2.3 c /o\n' > "$tmp/ps.one"
-    row e2e_foreign_in_the_table_refused 3 "running (a release's models step shares gx10): 4242 bash /r/scripts" "RUN " -- env MODELS_NIGHTLY_PS_TABLE="$tmp/ps.one" bash "$SCRIPT_PATH" --run --repo "$repo" --work "$work" --commit "$c2"
+    row e2e_foreign_in_the_table_refused 3 "running (a release's models step shares the GPU hosts): 4242 bash /r/scripts" "RUN " -- env MODELS_NIGHTLY_PS_TABLE="$tmp/ps.one" bash "$SCRIPT_PATH" --run --repo "$repo" --work "$work" --commit "$c2"
     row e2e_foreign_models_t1_refused_by_ps 3 "REFUSED: another models_t1.sh is running" "RUN " -- env -u MODELS_NIGHTLY_PS_TABLE bash "$SCRIPT_PATH" --run --repo "$repo" --work "$work" --commit "$c2"
     kill "$bg" 2> /dev/null; wait "$bg" 2> /dev/null
     (exec 9> "$work/.lock"; flock 9; : > "$tmp/locked"; exec sleep 30) > /dev/null 2>&1 & bg=$!
