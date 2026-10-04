@@ -1,5 +1,5 @@
 {
-  "build_identity": "fd27cc465e",
+  "build_identity": "1d194fc5b0",
   "fp32_activations": {
     "max_abs_err": 0.000829568921290047,
     "max_rel_err": 1.3110594897372703e-6
@@ -11,10 +11,10 @@
     "driver": "none",
     "oracle": "in_tree_dequant_f64",
     "row_sha256": "de5b094f4d2fbf0011c236357f3c77120abc975f1ff37261386aec6e2b540275",
-    "source_sha256": "193455f21236aacb29a1a28828a505f2fc24736cbf532236bdd7bf133e65f0f1",
+    "source_sha256": "d0bf7b08c0f7613f9a026aba14a61a43035380199954b6e5fa19998b1bafd703",
     "toolchain": "1.93.0"
   },
-  "input_set_hash": "776f8f7a5dbd778c92adfc56593634f176a876db3e910c76e11596a410395275",
+  "input_set_hash": "c9c2a19f8357e8c26835f9d1591da655f5b28a3f82cd1a1cd85e2d65321d3eda",
   "isa_detected": [
     "sse4.2",
     "avx",
@@ -44,7 +44,7 @@
   },
   "source_fn": "fused_q5k_parallel_matvec",
   "tolerance_rel": 3e-6,
-  "ts": "2026-09-28T12:28:26Z",
+  "ts": "2026-10-04T04:47:52Z",
   "workload": {
     "in_dim": 2048,
     "out_dim": 256,
