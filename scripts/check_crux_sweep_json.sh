@@ -85,6 +85,8 @@ plan_lines() { # <scope>
 }
 plan_lines controls | LC_ALL=C sort -s -t $'\t' -k2,2 > "$FX/plan-controls.expected"
 plan_lines admitted | LC_ALL=C sort -s -t $'\t' -k2,2 > "$FX/plan-admitted.expected"
+# A models dir named like an option: the ABSENT reason names it, and nothing reads it as one.
+DIRS="$FX/m1/ $FX/m2 -nodir" plan_lines controls | LC_ALL=C sort -s -t $'\t' -k2,2 > "$FX/plan-dash.expected"
 
 # Greedy rows: copied verbatim (spacing, exponents, NaN, escapes), the unterminated last row gets a newline.
 printf '%s\n' '{"kind":"gen","id":"a"}' '{"kind": "greedy",  "x": 1e-05, "u": "é"}' \
@@ -94,6 +96,10 @@ printf '%s\n' '{"kind": "greedy",  "x": 1e-05, "u": "é"}' '{"kind":"greedy","x"
   '{"kind":"greedy","last":true}' > "$FX/greedy.expected"
 printf '%s\n' '{"kind":"greedy","n":1}' '[1]' '{"kind":"greedy","n":2}' > "$FX/manifest-bad.jsonl"
 printf '%s\n' '{"kind":"greedy","n":1}' > "$FX/greedy-bad.expected"
+# CR LF and a final lone CR end a row (Python's text mode); a lone CR between two rows is refused.
+printf '{"kind":"greedy","a":1}\r\n{"kind":"gen"}\r\n{"kind":"greedy","b":2}\r' > "$FX/manifest-crlf.jsonl"
+printf '%s\n' '{"kind":"greedy","a":1}' '{"kind":"greedy","b":2}' > "$FX/greedy-crlf.expected"
+printf '{"kind":"greedy","a":1}\r{"kind":"greedy","b":2}\n' > "$FX/manifest-lone-cr.jsonl"
 
 # Shard metas and the shards.tsv that names them.
 printf '%s\n' '{"host": "syn", "models": [{"sha256": "aa", "format": "gguf"}, {"sha256": "bb"}], "x": "é", "f": 1.5}' \
@@ -105,11 +111,14 @@ printf '%s\n' '{"models": [{"sha256": "gg"}]}' > "$FX/WG/meta.json"
 printf '%s\n' '{"host": "h"}' > "$FX/meta-bare.json"
 mkdir -p "$FX/W6" "$FX/W7"; : > "$FX/W6/meta.json"   # an empty meta (a shard killed mid-write)
 printf '%s\n' '{"models": []}' '{"models": []}' > "$FX/W7/meta.json"
+mkdir -p "$FX/W8"   # numbers jq writes in another form than Python did (0.00001, 1E+5, -0): same doubles
+printf '%s\n' '{"x": 1e-05, "y": 1e5, "z": -0, "models": [{"sha256": "ee", "e": 0.0025}]}' > "$FX/W8/meta.json"
 t=$'\t'
 printf '%s\n' "s1${t}0${t}$FX/W1" "greedy-g${t}0${t}$FX/WG" "s2${t}1${t}$FX/W2" "s3${t}0${t}" "s4${t}0${t}$FX/W4" \
   "s5${t}0${t}$FX/W3" "s6" > "$FX/shards.tsv"
 printf '%s\n' "greedy-g${t}0${t}$FX/WG" > "$FX/shards-greedy.tsv"
 printf '%s\n' "s1${t}0${t}$FX/W1" "s5${t}0${t}$FX/W5" > "$FX/shards-nan.tsv"
+printf '%s\n' "s8${t}0${t}$FX/W8" > "$FX/shards-num.tsv"
 printf '%s\n' "s1${t}0${t}$FX/W1" "s6${t}0${t}$FX/W6" > "$FX/shards-empty.tsv"
 printf '%s\n' "s1${t}0${t}$FX/W1" "s7${t}0${t}$FX/W7" > "$FX/shards-two.tsv"
 noeol > "$FX/meta.expected" <<'JSON'
@@ -197,6 +206,9 @@ run_cases() (
   rc=0; crux_sweep_plan "$FX/cert.json" "$FX/prompts.json" admitted "$W/plan" "$FX/m1/" "$FX/m2" "$FX/nope" \
     > "$W/out" 2> "$W/err" || rc=$?
   ok plan-admitted "$rc"; same plan-admitted "$FX/plan-admitted.expected" "$W/plan"
+  rc=0; crux_sweep_plan "$FX/cert.json" "$FX/prompts.json" controls "$W/plan-dash" "$FX/m1/" "$FX/m2" -nodir \
+    > "$W/out" 2> "$W/err" || rc=$?
+  ok plan-dash-dir "$rc"; same plan-dash-dir "$FX/plan-dash.expected" "$W/plan-dash"
   rc=0; crux_sweep_plan "$FX/cert-mismatch.json" "$FX/prompts.json" controls "$W/plan-mm" "$FX/m1" \
     > "$W/out" 2> "$W/err" || rc=$?
   refused plan-prompts-not-bound "$rc"
@@ -228,6 +240,10 @@ run_cases() (
   ok greedy-rows "$rc"; same greedy-rows "$FX/greedy.expected" "$W/greedy"
   rc=0; crux_greedy_rows "$FX/manifest-bad.jsonl" > "$W/greedy-bad" 2> "$W/err" || rc=$?
   refused greedy-rows-stop-at-bad-row "$rc"; same greedy-rows-stop-at-bad-row "$FX/greedy-bad.expected" "$W/greedy-bad"
+  rc=0; crux_greedy_rows "$FX/manifest-crlf.jsonl" > "$W/greedy-crlf" 2> "$W/err" || rc=$?
+  ok greedy-rows-crlf "$rc"; same greedy-rows-crlf "$FX/greedy-crlf.expected" "$W/greedy-crlf"
+  rc=0; crux_greedy_rows "$FX/manifest-lone-cr.jsonl" > "$W/greedy-lone-cr" 2> "$W/err" || rc=$?
+  refused greedy-rows-lone-cr "$rc"
 
   # crux_merge_meta
   rc=0; crux_merge_meta "$FX/W1/meta.json" "$W/meta" "$FX/shards.tsv" > "$W/out" 2> "$W/err" || rc=$?
@@ -237,6 +253,10 @@ run_cases() (
   ok merge-meta-no-models "$rc"; same merge-meta-no-models "$FX/meta-bare.expected" "$W/meta-bare"
   rc=0; crux_merge_meta "$FX/W1/meta.json" "$W/meta-nan" "$FX/shards-nan.tsv" > "$W/out" 2> "$W/err" || rc=$?
   refused merge-meta-nan "$rc"
+  rc=0; crux_merge_meta "$FX/W8/meta.json" "$W/meta-num" "$FX/shards-num.tsv" > "$W/out" 2> "$W/err" || rc=$?
+  ok merge-meta-number-values "$rc"
+  jq -e '.x == 1e-05 and .y == 100000 and .z == 0 and .models == [{sha256: "ee", e: 0.0025}] and .merged_shards == 1' \
+    "$W/meta-num" > /dev/null 2>&1 || bad merge-meta-number-values "a number changed its value"
   for t in shards-empty shards-two; do
     rc=0; crux_merge_meta "$FX/W1/meta.json" "$W/meta-$t" "$FX/$t.tsv" > "$W/out" 2> "$W/err" || rc=$?
     refused "merge-meta-$t" "$rc"
@@ -322,6 +342,7 @@ plant mark-indent         mark 's/jq -nj -a --indent 1/jq -nj -a --indent 2/'
 plant mark-takes-cells    mark-refuses-r-cells 's/elif \.cells \| pytrue then error/elif false then error/'
 plant mark-empty-greedy   mark-refuses-r-nogreedy 's/elif \.greedy \| pytrue \| not then error/elif false then error/'
 plant nonfinite-written   merge-meta-nan 's/select\(isnan or isinfinite\)/select(false)/'
+plant greedy-crlf-kept    greedy-rows-crlf 's/\| rtrimstr\("\\r"\)/| ./'
 plant control-jq-truth    first-control-python-truth 's/select\(\.control \| pytrue\)\) \/\/ error/select(.control != null)) \/\/ error/'
 plant one-value-loosened   mark-two-values 's/def one\(\$what\): if length == 1 then/def one(\$what): if length >= 1 then/'
 plant meta-count-skipped  merge-meta-shards-empty 's/if \[ "\$k" != 1 \]; then/if false; then/'

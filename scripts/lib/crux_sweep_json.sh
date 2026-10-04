@@ -4,12 +4,15 @@
 # differ, the difference is listed here and pinned by a case in scripts/check_crux_sweep_json.sh:
 #
 #   - A JSON file the sweep rewrites (the merged meta, the greedy-only receipt) keeps Python's layout:
-#     same indent, ASCII-only escapes, no final newline. jq writes a number in exponent form canonically
-#     (Python's 1e-05 comes out as 0.00001): the value is the same, the bytes are not.
+#     same indent, ASCII-only escapes, no final newline. A number can come out in another form than
+#     Python wrote it (1e-05 as 0.00001, 1e5 as 1E+5 not 100000.0, -0 as -0 not 0, digits past a double's
+#     precision kept): the double it reads back is the same, the bytes are not.
 #   - Python carried NaN and Infinity through; jq cannot write them back. Those two files are REFUSED
 #     when they hold a non-finite number, never rewritten with a changed value.
 #   - A greedy row is copied verbatim, plus a final newline if the shard's last row had none (Python
 #     glued the next shard's first row onto it).
+#   - A row's CR LF or final lone CR ends the row, as in Python's text mode; a lone CR between two rows
+#     is refused (Python split the rows there).
 #   - A malformed certification or plan input (a non-string id, a mode list that is not a list, a model
 #     path holding a tab or newline) is refused. Python crashed on most of these, or wrote a plan line
 #     the sweep then misread.
@@ -40,7 +43,7 @@ _crux_sha256() { # <file> — the hex sha256 of one file, or return 1
 # given sha256 wins. A models dir that does not exist is skipped, as before.
 crux_sweep_plan() {
   local cert="$1" prompts="$2" scope="$3" plan="$4"; shift 4
-  local bound actual d fd names sorted rest f p sha idx='{}'
+  local bound actual d fd names sorted rest f p sha dirs idx='{}'
   bound=$(jq -nr --slurpfile c "$cert" "$_CRUX_JQ_DEFS"'
     $c | one("the certification") | .prompts_sha256
     | if pytrue | not then "" elif type == "string" then . else error("prompts_sha256 is not a string") end') || return 1
@@ -65,9 +68,10 @@ crux_sweep_plan() {
       idx=$(jq -c --arg s "$sha" --arg p "$p" 'if has($s) then . else .[$s] = $p end' <<< "$idx") || return 1
     done
   done
+  # The dirs as Python joined them for the ABSENT reason; never jq positional args, which jq parses as options.
+  printf -v dirs '%s ' "$@"; dirs=${dirs% }
   jq -nr "$_CRUX_JQ_DEFS"'
-    ($ARGS.positional | join(" ")) as $dirs
-    | ($c | one("the certification")) as $c
+    ($c | one("the certification")) as $c
     | ($p | one("the prompt set")) as $p
     | [ $p.prompts[] | select(.control | pytrue)
         | if has("id") then .id else error("a control prompt has no id") end ] as $controls
@@ -91,7 +95,7 @@ crux_sweep_plan() {
           else "RUN\t\($sha)\t\($mode)\t\($path)\t\($ids | join(","))" end
       end' \
     --slurpfile c "$cert" --slurpfile p "$prompts" --arg scope "$scope" --argjson local "$idx" \
-    --args "$@" > "$plan" || return 1
+    --arg dirs "$dirs" > "$plan" || return 1
 }
 
 # crux_first_control <prompts> — the id of the first control prompt; return 1 (and print nothing) if
@@ -104,11 +108,12 @@ crux_first_control() {
   printf '%s\n' "$id"
 }
 
-# crux_greedy_rows <manifest.jsonl> — the rows whose "kind" is "greedy", byte for byte. A row that is not
-# a JSON object stops the copy there, with the rows before it already written (as before).
+# crux_greedy_rows <manifest.jsonl> — the rows whose "kind" is "greedy", byte for byte up to the line end.
+# A row that is not a JSON object stops the copy there, with the rows before it already written (as before).
 crux_greedy_rows() {
   jq -nRr 'inputs
-    | select(fromjson | if type == "object" then .kind == "greedy" else error("a manifest row is not a JSON object") end)' \
+    | select(fromjson | if type == "object" then .kind == "greedy" else error("a manifest row is not a JSON object") end)
+    | rtrimstr("\r")' \
     < "$1"
 }
 

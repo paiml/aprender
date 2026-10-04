@@ -84,7 +84,10 @@ while [ "$MERGE_ONLY" = 0 ] && IFS=$'\t' read -r kind sha mode path ids; do
   run_shard "${sha:0:12}-$mode" --model "$path" --engines apr,llama.cpp,vllm,hf --verbs run,chat,serve,code \
     --thinking-modes "$mode" --only-prompts "$ids"
 done < "$PLAN"
-CTL=$(crux_first_control "$PROMPTS")
+CTL=""   # the greedy shards' one prompt; a greedy run with no control prompt would run nothing
+if [ "$MERGE_ONLY" = 0 ] && [ "${#GREEDY_MODELS[@]}" -gt 0 ]; then
+  CTL=$(crux_first_control "$PROMPTS") || die "--greedy-model needs a control prompt in $PROMPTS"
+fi
 for g in "${GREEDY_MODELS[@]}"; do
   [ "$MERGE_ONLY" = 1 ] && break
   run_shard "greedy-$(basename "$g" .gguf)" --model "$g" --engines apr,llama.cpp --verbs run --thinking-modes off \
