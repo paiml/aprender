@@ -746,7 +746,10 @@ fn dispatch_analysis_commands_rest(cli: &Cli) -> Option<Result<(), CliError>> {
             init,
             force_under_provisioned,
             val_shard,
-        } => commands::pretrain::run(
+            rc_bound,
+            sealed_manifest,
+        } => commands::sealed_ingress::gate("pretrain", *rc_bound, sealed_manifest.as_deref())
+            .and_then(|_| commands::pretrain::run(
             dataset,
             tokenizer,
             run_dir,
@@ -766,7 +769,7 @@ fn dispatch_analysis_commands_rest(cli: &Cli) -> Option<Result<(), CliError>> {
             *force_under_provisioned,
             val_shard.as_deref(),
             cli.json,
-        ),
+        )),
         ExtendedCommands::Tokenize { command } => dispatch_tokenize_command(command, cli),
         ExtendedCommands::Data { command } => dispatch_data_command(command, cli.json),
         ExtendedCommands::Pipeline { command } => dispatch_pipeline_command(command, cli),

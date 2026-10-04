@@ -838,6 +838,14 @@ pub enum ExtendedCommands {
         /// batches of --dataset" behaviour for backwards compatibility.
         #[arg(long, value_name = "DIR")]
         val_shard: Option<InputFile>,
+        /// Mark this run as release-candidate bound: it must name a sealed
+        /// manifest (train-ingress-sealed-refusal-v1 FALSIFY-TIS-005).
+        #[arg(long)]
+        rc_bound: bool,
+        /// Sealed test-set manifest (`<id> <sha256> [hunk,…]` per line). Required
+        /// with --rc-bound; an empty or unreadable manifest is refused.
+        #[arg(long, value_name = "PATH")]
+        sealed_manifest: Option<InputFile>,
     },
     /// Tokenizer training pipeline (plan/apply) — BPE vocabulary learning
     Tokenize {
