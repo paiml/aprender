@@ -41,7 +41,7 @@ equations:
     - 'serve oracle runs under realizar::quantize::with_fp32_activations — its default Q4_K matvec quantises activations to Q8_K first, which alone moves the real 0.8B to cos 0.998 of the f32 forward (the arithmetic, not the model)'
   gdn_backward:
     formula: '∀ θ ∈ {q,k,v,z,β,dt projections, A_log, dt_bias, conv1d, norm}: |∂L/∂θ_analytic − (L(θ+ε) − L(θ−ε))/2ε| ≤ 1e-3 · max(1, |∂L/∂θ_fd|)'
-    domain: 'f64 reference on a 2 key : 4 value head, d_k=d_v=8, T=16 GDN scan, and an 8-wide mixer with causal conv1d (K=4, T=8), both again at 3 key : 6 value heads with d_k=8, d_v=4 (qwen35-train-cuda-v1 QTC-001''s shape); ε = 1e-6'
+    domain: 'f64 reference on a 2 key : 4 value head, d_k=d_v=8, T=16 GDN scan, and an 8-wide mixer with causal conv1d (K=4, T=8), both again at 3 key : 6 value heads with d_k=8, d_v=12 (qwen35-train-cuda-v1 QTC-001''s shape, where the key and value totals differ too); ε = 1e-6'
     invariants:
     - Gradient w.r.t. the carried state S_0 is also checked (chunked training passes state across chunks)
     preconditions:

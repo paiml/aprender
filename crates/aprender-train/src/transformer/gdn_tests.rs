@@ -26,17 +26,18 @@ const DIMS: GdnDims = GdnDims {
     eps: 1e-6,
 };
 
-/// QTC-001's shape: 3 key heads of width 8 shared by 6 value heads of width 4. With
-/// d_k = d_v, code that uses one width where the other belongs computes the same
-/// numbers, and with 2 : 4 heads the key-head count equals the head ratio, so either
-/// can stand for the other. R21's CUDA kernel is compared against this forward at this
-/// shape (qwen35-train-cuda-v1 QTC-001).
+/// QTC-001's shape: 3 key heads of width 8 shared by 6 value heads of width 12. Code
+/// can confuse three pairs, and each differs here: the head widths (equal on every
+/// local Qwen3.5 checkpoint), the key-head count and the head ratio (equal at 2 : 4
+/// heads), and the key and value totals (24 and 72; 3 heads of 8 and 6 of 4 give 24
+/// and 24, as the 0.8B gives 2048 and 2048). R21's CUDA kernel is compared against
+/// this forward at this shape (qwen35-train-cuda-v1 QTC-001).
 const QTC: GdnDims = GdnDims {
-    hidden_dim: 12,
+    hidden_dim: 16,
     num_k_heads: 3,
     head_k_dim: 8,
     num_v_heads: 6,
-    head_v_dim: 4,
+    head_v_dim: 12,
     conv_kernel: 4,
     eps: 1e-6,
 };
@@ -267,7 +268,7 @@ mod serve_parity {
         assert_mixer_equals_serve(&DIMS, "2 : 4 heads");
     }
 
-    /// The same at QTC-001's shape (d_k = 8, d_v = 4, 3 key : 6 value heads).
+    /// The same at QTC-001's shape (d_k = 8, d_v = 12, 3 key : 6 value heads).
     #[test]
     fn falsify_qtg_001_sequence_mixer_equals_serve_per_token_unequal_widths() {
         assert_mixer_equals_serve(&QTC, "QTC shape");
