@@ -421,7 +421,8 @@ up, a new size changes its place, and a row already held on a branch drops out o
   `r5-verdict` to `r5-apr-adapter` @7aeb557271. What is left is GPU time, plus the apr side, which is R15b.
 - **The cheap refusals sit on fold branches:** DBH-001, MOF-002, HRP-001 and TIS-005, on `fold-dbh-a`/`-b`,
   `fold-mof`, `fold-hrp` and `fold-tis`. Each is ≤ 15 `[A]`, turns a silent wrong answer into a named refusal, and
-  needs no GDN work. They are the first PRs to open after LIVE 0.70.1.
+  needs no GDN work. They are the first PRs to open after LIVE 0.70.1. `fold-hrp` is built on the first four
+  `fold-r10-qfr` commits (QFR-001/002/003/005, up to 4298fb0055), so the QFR PR (row 9) opens just before it.
 - **R20 is out of 0.72.** RQ-3 was ruled 2026-09-27: #4002 (E8, 0.75) keeps everything beyond GDN training.
 - **R21, GDN on CUDA, is new.** T2, R4 and R6 on qwen35 train Qwen3.5 on CUDA, and 24 of the 4B's 32 layers are
   GDN. R15's cells are dense only, R2/R3's GDN is CPU only (`fold-r2r3`; its four GDN files never mention CUDA), and
@@ -815,7 +816,7 @@ minutes of worker time still left; `[A]` marks an assumption.
 |---|---|---|---|---|
 | 1 | R1 honesty gate | TAH-001..003 | 30 | `la-72/4552-train-arch-honesty` @1fda81ad6c, `tah-003-head-dim` @57ada988a7 |
 | 2 | R12 training receipts | TRR 1.1.0 fields on the shared writer | 45 `[A]` | la-impl, `la/r12-train-receipt` @68747b344e (TRR 1.0.0) |
-| 3 | R2 GDN forward | QTG-001 parity vs serve | 90 | `fold-r2r3` @5a837dfa3b; one-line Cargo.toml conflict with main |
+| 3 | R2 GDN forward | QTG-001 parity vs serve | 90 | `fold-r2r3` @80723cf206 (the PR opens from `fold-r2r3-qtc` @0e7737e516, which adds the QTC-shape tests); one-line Cargo.toml conflict with main |
 | 4 | R3 GDN backward | QTG-003/006 gradcheck | 120 | in `fold-r2r3` (`r3-backward` @8a9f4f0104) |
 | 4a | R21 GDN on CUDA (the hybrid block) | QTC-001 training forward = the R2 CPU forward | 400 `[A]`, +25 bf16 on T2's path | S-R21 desk spike done 2026-10-03 (`r21-cuda-qwen35-hybrid-block.md`); no branch; oracle `fold-r2r3`; LoRA wiring needs R15a's C1; cargo after LIVE 0.70.1 |
 | 4b | HF-convention loader | QQE-008: the HF copy's step-1 loss = the GGUF copy's, or a refusal | 25 `[A]`, +20 if #4418 has not landed | new 2026-10-03, no branch; calls #4418's `transform_qwen35_tensor` (`m0694/4418-qwen35-gguf-main` @1af0e3cc11) and takes the head counts from the .apr's `linear_attn_hparams`, which only #4418's import writes, refusing a .apr without them; on R4's path and T2's; cargo after LIVE 0.70.1 |
@@ -823,7 +824,7 @@ minutes of worker time still left; `[A]` marks an assumption.
 | 6 | R4 QLoRA 4B end to end | QQE-001..007, QQE-009 | 90 + 15 + 10 `[A]` | blocked on R2, R3, R21, R15a, 4b; QQE-003 also needs #4418 (row 14), because apr serves Qwen3.5 only from a GGUF and loads no adapter; contract 1.1.0 pins the QQE-004 reference's precision and device, adds QQE-007, the export permutation (the +15), and proposes QQE-009, a strict `apr finetune merge` (the +10) |
 | 7 | R5 Unsloth harness | Unsloth-side runs (`r5-unsloth-ft-runbook.md`) | GPU only | desk-done, `r5-apr-adapter` @7aeb557271; needs train-idle |
 | 8 | R15b CUDA LoRA, C5–C7 | C6 flags and receipt (with R12), C7 timed window; C5 bf16 per RQ-5 | 240 `[A]` | contracts apr-finetune-canonical-task-v1 1.1.0, TRR 1.1.0 |
-| 9 | R10 round-trip | QFR-003 self-describing export | 40 `[A]` | `fold-r10-qfr` @6b13da980f (QFR-001/002/003/005); QFR-004 is #4418 |
+| 9 | R10 round-trip | QFR-003 self-describing export | 40 `[A]` | `fold-r10-qfr` @1b149c5f35 (QFR-001/002/003/005); QFR-004 is #4418 |
 | 10 | R13 HF rc publish | HRP-001 plan = upload | 45 `[A]` | `fold-hrp` @6c93634c3c; header reader `amr-on-4607` @d34ce7cacd waits on #4607 |
 | 11 | R11 sealed ingress | TIS-002 planted perturbed item | 40 `[A]` + the TDD normaliser | `fold-tis` @9fed5c27db (TIS-001/003/004/005); TIS-002 waits on a foreign branch |
 | 12 | R6 distill batch | DBH refusal, then real batching | 15 + 90 | `fold-dbh-a` @2cfe655b98, `fold-dbh-b` @df5e4d74f6, GPU halves `gpu-falsifiers` @e890928f4e; 3 Definition-of-Ready tests, plus R18's 3 |
@@ -834,8 +835,8 @@ minutes of worker time still left; `[A]` marks an assumption.
 | 17 | R18 vocab alignment | — | — | `76/0.72-r18-vocab-cell`; 3 Definition-of-Ready tests shared with R6 |
 | 18 | R16 dangling `qlora-training-loop-v1` | — | — | `la/r16-qlora-loop-contract` |
 | 19 | R14 throughput work | sized from the R5 gap | — | after R5 and R15b |
-| 20 | K30 `apr train` tie flag | TOC-001/002: config.json says tied exactly when the saved model has no head | 15 `[A]` | `la-72/k30-train-tie-flag` @687554a60a (`apr-train-output-config-v1`); off the critical path; opens with the cheap refusals after LIVE 0.70.1 |
-| 21 | K36 GDN contract text | restate `gated-delta-net-v1`'s decay, read and output; point its tests at the shipped decay; re-prove GDN-BND-001 | 60 `[A]` | contracts on `la-72/k36-gdn-contract` @e8834d7711: both at 2.0.0, bindings point at the served fns, allowlist 163→156. The tests and the Lean re-proof come at PR time, after LIVE 0.70.1. `qwen35-train-gdn-v1` @80723cf206 already states the served GDN |
+| 20 | K30 `apr train` tie flag | TOC-001/002: config.json says tied exactly when the saved model has no head | 15 `[A]` | `la-72/k30-train-tie-flag` @a6ee4a8bec (`apr-train-output-config-v1`); off the critical path; opens with the cheap refusals after LIVE 0.70.1 |
+| 21 | K36 GDN contract text | restate `gated-delta-net-v1`'s decay, read and output; point its tests at the shipped decay; re-prove GDN-BND-001 | 60 `[A]` | contracts on `la-72/k36-gdn-contract` @4192fe7985: both at 2.0.0, bindings point at the served fns, allowlist 163→156. The tests and the Lean re-proof come at PR time, after LIVE 0.70.1. `qwen35-train-gdn-v1` @80723cf206 already states the served GDN |
 | 22 | K37 phantom bindings | fold into #4502: make `pv audit --binding` agree with the `bindings` gate; arm the gate once the `gated_rmsnorm_oxide` ghost is fixed or allowlisted | 10 `[A]` (was 30; the gate exists) | comment on #4502 posted; the K36 branch fixes 6 of the 9 phantoms at `316dee2cd4` |
 | 23 | K38 Qwen3.5 norm convention | serve's safetensors conversion refuses a hybrid `layer_types`; R13's builder inverts #4418's value transforms, norm −1 included | 15 `[A]` + R13's builder | desk read plus a CPU measurement on the 4B; GGUF serve, train and #4418 agree |
 | 24 | K39 train/serve chat format | the HF importer writes the added tokens and the chat template into the .apr; TSC-001: `from_apr`'s tokenizer keeps `<\|im_start\|>`, `<\|im_end\|>`, `<think>` and `</think>` whole; TSC-002: train renders the model's own template, thinking off, no default system turn, target ends in the eos id; TSC-003: serve's built-in `Qwen3NoThink` renders as the model's own template does; TSC-004: the GGUF exported from a merged HF-sourced base carries the model's template, pre `qwen35`, the eos and the token types | 110 `[A]` | contract PROPOSED @ae7a75b7f0 (pv 0/0); desk read at `316dee2cd4` plus a header read of S-R10's .apr (17 keys, no template, no added tokens) and of its GGUF export (18 keys: pre `default`, no eos, token types or template); #4418's branch fixes all but the template; PMAT-3803's branch has part of the tokenizer half, unmerged; must be green before R4's 200-step cell and any T4 run |
