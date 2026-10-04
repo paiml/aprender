@@ -185,6 +185,47 @@ self_test() {
     row full "env!/concat! include: basename match" "M${T}crates/x/GUIDE.md"
     row full "a .md named by a build.rs" "M${T}crates/y/NOTES.md"
     row ENV "an empty diff is undecidable, never docs" ""
+    # The event paths over a real history: C0 (fixtures + docs/a.md), then main
+    # gains Rust (C1) while the PR adds a doc and renames docs/a.md (P1, P2).
+    # M merges P2 into C1 the way actions/checkout leaves a pull_request.
+    local c0 c1 p1 p2 m1 m2
+    gx() { git -C "$td" -c user.name=t -c user.email=t@t -c commit.gpgsign=false -c core.hooksPath=/dev/null "$@"; }
+    printf 'a\n' > "$td/docs/a.md"
+    gx add -A && gx commit -qm C0 && c0=$(gx rev-parse HEAD)
+    printf 'pub fn e() {}\n' > "$td/crates/x/src/extra.rs"
+    gx add -A && gx commit -qm C1 && c1=$(gx rev-parse HEAD)
+    gx checkout -q -b pr "$c0"
+    printf 'new\n' > "$td/docs/new.md"
+    gx add -A && gx commit -qm P1 && p1=$(gx rev-parse HEAD)
+    gx mv docs/a.md docs/b.md && gx commit -qm P2 && p2=$(gx rev-parse HEAD)
+    erow() { # want, reason-prefix ("" = any), label, checkout-sha, ci_change_class args...
+        local want reason label sha out got rc=0
+        want="$1"
+        reason="$2"
+        label="$3"
+        sha="$4"
+        shift 4
+        rows=$((rows + 1))
+        gx checkout -q --detach "$sha"
+        out=$(bash "$SELF" --repo-root "$td" "$@" 2> /dev/null) || rc=$?
+        got=$(printf '%s\n' "$out" | sed -n 's/^class=//p')
+        [ "$rc" -eq 2 ] && got=ENV
+        if [ -n "$reason" ] && ! printf '%s\n' "$out" | grep -qF "reason=$reason"; then got="$got, reason not $reason"; fi
+        if [[ "$got" == "$want" ]]; then
+            printf 'ok   %-5s %s\n' "$want" "$label"
+        else
+            printf 'FAIL want=%s got=%s (rc %s): %s\n' "$want" "${got:-<none>}" "$rc" "$label"
+            fails=$((fails + 1))
+        fi
+    }
+    gx checkout -q --detach "$c1" && gx merge -q --no-edit "$p1" && m1=$(gx rev-parse HEAD)
+    gx checkout -q --detach "$c1" && gx merge -q --no-edit "$p2" && m2=$(gx rev-parse HEAD)
+    erow docs "" "pull_request: HEAD^1..HEAD is the PR alone, not main's Rust" "$m1" --event pull_request
+    erow full "D docs/a.md:" "pull_request: a rename is a delete, by name" "$m2" --event pull_request
+    erow docs "" "merge_group: --base main's tip, the PR's docs alone" "$m1" --event merge_group --base "$c1"
+    erow full "" "merge_group: --base before main's Rust, the Rust is in range" "$m1" --event merge_group --base "$c0"
+    erow full "D docs/a.md:" "merge_group: a rename is a delete, by name" "$m2" --event merge_group --base "$c1"
+    erow ENV "" "merge_group with no --base is undecidable" "$m1" --event merge_group
     rows=$((rows + 1))
     if bash "$SELF" --event push | grep -qx 'class=full'; then
         printf 'ok   full  a push is never classified\n'

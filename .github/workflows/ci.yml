@@ -712,8 +712,11 @@ jobs:
           # sovereign-ci gate), workspace-test, determinism-compare. gpu-quick and
           # cuda-unit were never in the gate; they still are not.
           # workspace-test is its own job now (three shard jobs + the Σ fan-in).
+          # The two a docs run may excuse come FIRST: an excuse that ended the loop
+          # instead of skipping one pair would then skip the guards, and the case
+          # table sees it. Every pair must pass either way; only the order moved.
           [ "$WT" = success ] || { echo "workspace-test failed: $WT"; exit 1; }
-          for pair in X86:guard-tree X86:guard-cargo X86:sov.gate DET:determinism-compare; do
+          for pair in X86:sov.gate DET:determinism-compare X86:guard-tree X86:guard-cargo; do
             job="${pair%%:*}" sec="${pair#*:}"
             # #4472: on class=docs (from a change-class job that SUCCEEDED) these two
             # did not run, and say so by name; guard-tree and guard-cargo (they read

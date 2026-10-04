@@ -80,6 +80,7 @@ table() { # table <workflow> -> 0 iff every row holds, 2 when a step is missing
     row pass "ci/gate: docs, x86-main + guard-tree + guard-cargo ok" "$(st run_cigate "$c" success docs success "$DOCS_X86")"
     row fail "ci/gate: docs, x86-main failed" "$(st run_cigate "$c" success docs failure "$DOCS_X86")"
     row fail "ci/gate: docs, x86-main ok but guard-tree failed" "$(st run_cigate "$c" success docs success "$GT_FAIL")"
+    row fail "ci/gate: docs, x86-main ok but guard-cargo missing" "$(st run_cigate "$c" success docs success "$GC_MISS")"
     row fail "ci/gate: docs, results empty" "$(st run_cigate "$c" success docs success '')"
     row fail "ci/gate: docs output from a FAILED change-class" "$(st run_cigate "$c" failure docs success "$DOCS_X86")"
     row fail "ci/gate: empty class, no sov.gate" "$(st run_cigate "$c" success '' success "$DOCS_X86")"
@@ -101,9 +102,13 @@ if [ "${1:-}" = "--self-test" ]; then
     sed 's/success:docs:sov.gate | success:docs:determinism-compare)/success:docs:*)/' "$WF" > "$d/loose.yml"
     # ci / gate trusts x86-main's job result alone, not the doc-content sections
     awk '/for sec in guard-tree guard-cargo; do/ { skip = 1 } skip && /^ *done$/ { skip = 0; next } !skip' "$WF" > "$d/cig.yml"
+    # ci / gate drops guard-cargo from the doc-content sections it still requires
+    sed 's/for sec in guard-tree guard-cargo; do/for sec in guard-tree; do/' "$WF" > "$d/cigc.yml"
+    # gate ends the whole check at the first excused section instead of skipping it
+    awk '/success:docs:sov.gate \| success:docs:determinism-compare\)/ { hit = 1 } hit && /continue ;;/ { sub(/continue ;;/, "exit 0 ;;"); hit = 0 } 1' "$WF" > "$d/exit.yml"
     printf 'jobs: {}\n' > "$d/none.yml"
     bad=0
-    for m in nojob loose cig; do
+    for m in nojob loose cig cigc exit; do
         if cmp -s "$WF" "$d/$m.yml"; then printf 'FAIL  the %s mutant did not apply (its anchor is gone)\n' "$m"; bad=1; continue; fi
         if table "$d/$m.yml" > "$d/out" 2>&1; then printf 'FAIL  the planted %s rule passed the table\n' "$m"; bad=1
         else printf 'ok    the planted %-5s rule is RED: %s row(s), e.g. %s\n' "$m" "$(grep -c '^FAIL' "$d/out")" "$(grep -m1 '^FAIL' "$d/out" | cut -c7-90)"; fi
