@@ -48,6 +48,8 @@ GH=${GH:-gh}
 GIT=${GIT:-git}
 REPO=${TCG_REPO:-paiml/aprender}
 WF='coverage-nightly.yml'
+# WF_NAME is the name: line of the nightly. Every run the gate reads must carry it, #4757.
+WF_NAME='Coverage Nightly'
 ART='coverage-receipt'
 SURFACE='^(Cargo\.toml|Cargo\.lock|CHANGELOG\.md|crates/[^/]+/Cargo\.toml|crates/facades/[^/]+/Cargo\.toml|crates/facades/Cargo\.lock)$'
 
@@ -108,17 +110,20 @@ version_only() {
 }
 
 # find_run SHA -> "<run id> <commit>" of the newest completed nightly on SHA or on a commit SHA
-# is a version-only bump of; '' if none; rc 1 if gh failed or answered garbage.
+# is a version-only bump of; '' if none; rc 1 if gh failed or answered garbage; rc 2 if any run
+# it answered is not a coverage-nightly run (#4757: only the nightly receipt is ever read, so
+# the gate fails closed at run time whatever names the workflow).
 find_run() {
-    local runs id h
+    local runs ids id h
     runs=$("$GH" run list --repo "$REPO" --workflow "$WF" --status completed --limit 30 \
-        --json databaseId,headSha,createdAt 2>/dev/null) || return 1
-    runs=$(jq -er 'sort_by(.createdAt) | reverse | .[] | "\(.databaseId) \(.headSha)"' <<< "$runs" 2>/dev/null) \
-        || jq -e 'length == 0' <<< "$runs" > /dev/null 2>&1 || return 1
+        --json databaseId,headSha,createdAt,workflowName 2>/dev/null) || return 1
+    jq -e 'type == "array"' <<< "$runs" > /dev/null 2>&1 || return 1
+    WFN="$WF_NAME" jq -e 'all(.[]; .workflowName == env.WFN)' <<< "$runs" > /dev/null 2>&1 || return 2
+    ids=$(jq -r 'sort_by(.createdAt) | reverse | .[] | "\(.databaseId) \(.headSha)"' <<< "$runs" 2>/dev/null) || return 1
     while read -r id h; do
         [ -n "$id" ] || continue
         if version_only "$h" "$1"; then echo "$id $h"; return 0; fi
-    done <<< "$runs"
+    done <<< "$ids"
 }
 
 # receipt RUN_ID H -> the receipt's fields, tab separated (null for absent, - for empty), or ''
@@ -138,10 +143,12 @@ receipt() {
 # gate WHAT SHA STOP -> judge the receipt for SHA. WHAT names the subject ("v0.70.2 at SHA"),
 # STOP what a refusal stops. rc 0 measured at or above COV_FLOOR, 1 anything else.
 gate() {
-    local what=$1 sha=$2 stop=$3 floor found id h r v schema rsha st pct passed cov tot why
+    local what=$1 sha=$2 stop=$3 floor found id h r v schema rsha st pct passed cov tot why rc=0
     floor=$(floor_at "$sha")
     if [ -z "$floor" ]; then echo "FAIL  no COV_FLOOR in the Makefile at $sha -- the floor is unknown, $stop"; return 1; fi
-    found=$(find_run "$sha") || { echo "FAIL  gh could not list $WF runs -- Unknown is not a pass, $stop"; return 1; }
+    found=$(find_run "$sha") || rc=$?
+    if [ "$rc" = 2 ]; then echo "FAIL  gh answered a run that is not a $WF_NAME run -- only the nightly receipt counts, $stop"; return 1; fi
+    [ "$rc" = 0 ] || { echo "FAIL  gh could not list $WF runs -- Unknown is not a pass, $stop"; return 1; }
     if [ -z "$found" ]; then echo "FAIL  NOT_MEASURED: no completed $WF run on $sha or a version-only parent of it -- $stop"; return 1; fi
     id=${found%% *}; h=${found#* }
     r=$(receipt "$id" "$h")
@@ -224,15 +231,18 @@ STUB
     # rec SHA PCT PASSED COVERED TOTAL [STATUS] -> a receipt in the producer's form
     rec() { printf '{"schema":"coverage-receipt/v1","sha":"%s","floor":89,"pct":%s,"covered":%s,"total":%s,"status":"%s","reason":null,"passed":%s}' \
         "$1" "$2" "$4" "$5" "${6:-measured}" "$3"; }
-    # e2e WANT_RC WHY SHA RUNS [ID:FILE-SHA:JSON | down ...] -- RUNS is "id:sha:createdAt,..."
+    # e2e WANT_RC WHY SHA RUNS [ID:FILE-SHA:JSON | down ...] -- RUNS is "id:sha:createdAt[@name],..."
+    # (a run has the nightly name unless @name gives another)
     e2e() {
-        local want=$1 why=$2 sha=$3 runs=$4 a rid rest fsha js first=1
+        local want=$1 why=$2 sha=$3 runs=$4 a nm rid rest fsha js first=1
         shift 4
         rm -rf -- "${d:?}/art" "${d:?}/down"; mkdir -p "$d/art"
         { printf '['
           for a in ${runs//,/ }; do
               [ "$first" = 1 ] || printf ','; first=0
-              printf '{"databaseId":%s,"headSha":"%s","createdAt":"%s"}' "${a%%:*}" "$(cut -d: -f2 <<< "$a")" "$(cut -d: -f3- <<< "$a")"
+              case "$a" in *@*) ;; *) a="$a@$WF_NAME" ;; esac
+              IFS=@ read -r a nm <<< "$a"
+              printf '{"databaseId":%s,"headSha":"%s","createdAt":"%s","workflowName":"%s"}' "${a%%:*}" "$(cut -d: -f2 <<< "$a")" "$(cut -d: -f3- <<< "$a")" "$nm"
           done; printf ']'; } > "$d/runs.json"
         for a in "$@"; do
             if [ "$a" = down ]; then : > "$d/down"; continue; fi
@@ -266,6 +276,12 @@ STUB
         "7:$C:$T1,8:$B:$T2" "8:$B:$(rec "$B" 80.00 87772 8 10)" "7:$C:$OK"
     e2e 0 "e2e: an unrelated newer run is skipped for the qualifying one" "$B" "8:$A:$T2,7:$C:$T1" "7:$C:$OK"
     e2e 1 "e2e: no COV_FLOOR at the release commit refuses" "$N" "7:$N:$T1" "7:$N:$(rec "$N" 90.00 87772 9 10)"
+    echo "$PROG self-test: only the nightly runs count (#4757)"
+    e2e 1 "e2e: a run of another workflow (CI) on the release commit refuses" "$C" "7:$C:$T1@CI" "7:$C:$OK"
+    if grep -qF "not a $WF_NAME run" "$d/out"; then echo "  ok   e2e: the refusal names the foreign run"
+    else echo "  FAIL e2e: the refusal does not name the foreign run: $(cat "$d/out")"; fail=1; fi
+    e2e 1 "e2e: one run of another workflow among nightly runs refuses" "$B" "7:$C:$T1,8:$A:$T2@CI" "7:$C:$OK"
+    e2e 1 "e2e: a run with an empty workflowName refuses" "$C" "7:$C:$T1@" "7:$C:$OK"
     echo "$PROG self-test: the version surface (#4735)"
     e2e 0 "e2e: an ADDED model-ladder receipt for the version cut rides on the bump" "$EA" "7:$C:$T1" "7:$C:$OK"
     e2e 1 "e2e: a MODIFIED model-ladder receipt is not a bump" "$EM" "7:$C:$T1" "7:$C:$OK"

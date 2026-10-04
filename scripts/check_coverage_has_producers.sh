@@ -12,134 +12,134 @@
 #       pre-publish dogfood uses measures coverage itself, reads nothing from CI.
 #   R2  scripts/dogfood.sh still runs `make ... coverage-check` -- the release
 #       CONSUMER exists (without it the chain would be vacuously intact).
-#   R3  .github/workflows/coverage-nightly.yml triggers on `schedule:`, NOT on `v*`
-#       tags, and runs scripts/coverage_receipt.sh on a live line -- the nightly is
-#       the CI producer: it leaves coverage-receipt-<sha>.json for the commit measured.
+#   R3  .github/workflows/coverage-nightly.yml has the pinned `on:` block (schedule and
+#       workflow_dispatch, no tag push) and the name `Coverage Nightly`, and runs
+#       scripts/coverage_receipt.sh on a live line -- the nightly is the CI producer: it
+#       leaves coverage-receipt-<sha>.json for the commit measured.
 #   R4  the Makefile defines a numeric COV_FLOOR -- the floor `make coverage` enforces.
 #   R5  ci/sections.yml (#4433) hands sovereign-ci `coverage_on: tag` (no `skip_coverage: true`)
-#       AND ci.yml's own `on:` has NO `v*` tag trigger (T39). `tag` keeps coverage off the
-#       PR / queue / branch-push path: sovereign-ci's gate prints "coverage: NOT MEASURED"
-#       there. `skip_coverage: true` was the first spelling (#3688): that gate counts a
-#       skipped coverage job as a mandatory failure, so it turned `ci / gate` red on every
-#       PR. The tag trigger is gone because nothing read the tag run and it could not
+#       AND ci.yml has the pinned `on:` block, which has NO tag trigger (T39). `tag` keeps
+#       coverage off the PR / queue / branch-push path: sovereign-ci's gate prints "coverage:
+#       NOT MEASURED" there. `skip_coverage: true` was the first spelling (#3688): that gate
+#       counts a skipped coverage job as a mandatory failure, so it turned `ci / gate` red on
+#       every PR. The tag trigger is gone because nothing read the tag run and it could not
 #       pass: a tag create has no base sha, and its coverage section built only the facade.
-#   R6  the release gate reads coverage-nightly (`WF='coverage-nightly.yml'` on a live
-#       line of scripts/release/tag_coverage_gate.sh), and no script under scripts/
-#       lists ci.yml runs for a branch held in a variable -- the shape that read a tag's
-#       ci.yml run, which no longer exists and would wait forever.
+#   R6  scripts/release/tag_coverage_gate.sh, the one file where the release's coverage
+#       verdict is made, still talks to GitHub only in the pinned way: its lines that name
+#       gh, curl, wget, WF*, a workflow or ci.yml, or that eval or source code (outside its
+#       self_test function) are exactly the pinned list. The list reads coverage-nightly.yml
+#       and, at run time, refuses any run whose workflowName is not `Coverage Nightly`.
+#       Callers of ci.yml runs elsewhere do not matter: the gate never consumes them.
+#
+# WHY PINS (#4757). R3/R5 used to read `on:` with an awk parser and R6 used a regex over how
+# a gh call is spelled. Three review rounds of #4745 each found a new YAML or gh spelling the
+# patterns missed. A pin does not enumerate spellings: any change to these blocks or lines is
+# RED until a reviewer re-pins it here. The YAML shape is an allow-list too: every top-level
+# line must be one of name, run-name, on, permissions, env, defaults, concurrency or jobs,
+# unquoted, with exactly one `on:`; a CR, a tab-led line, `---`, a quoted key, `true:`, `<<:`,
+# `? key` or a column-0 `- item` cannot be judged and is ENV rc=2, never a pass.
+# To re-pin after a reviewed change, paste the block the FAIL line prints into the PIN below.
 # Any link missing is FAIL; a file that cannot be read is ENV rc=2.
 #
 #   check_coverage_has_producers.sh              judge the tree
 #   check_coverage_has_producers.sh --self-test  each rule against fixtures that break it
 #
-# Test seams: COVCHAIN_ROOT (the tree judged).
+# Test seams: COVCHAIN_ROOT (the tree judged); COVCHAIN_BASELINE=<a guard script> makes
+# --self-test run every row against that guard as well and report, not judge, its result.
 set -uo pipefail
 ROOT="${COVCHAIN_ROOT:-$(cd "$(dirname "$0")/.." && pwd)}"
 
-# The top-level `on:` key, spelled on, "on", 'on' or true (YAML 1.1 reads a bare `on` as true).
-# q is a single quote, passed in so the awk text stays single-quoted shell.
-ON_KEY_AWK=$(cat <<'AWK'
-function is_on(l) { return l ~ ("^[\"" q "]?(on|true)[\"" q "]?:") }
+# The pins. Full-line comments and blank lines are dropped before the compare; every other
+# byte counts.
+CI_ON_PIN=$(cat <<'PIN'
+on:
+  push:
+    branches: [main, master]
+  pull_request:
+    branches: [main, master]
+  merge_group:
+  workflow_dispatch:
+PIN
+)
+NIGHTLY_ON_PIN=$(cat <<'PIN'
+on:
+  schedule:
+    - cron: '0 22 * * *'   # 22:00 UTC -> lands ~03:00 UTC
+  workflow_dispatch: {}
+PIN
+)
+NIGHTLY_NAME='name: Coverage Nightly'
+GATE_PIN=$(cat <<'PIN'
+GH=${GH:-gh}
+WF='coverage-nightly.yml'
+WF_NAME='Coverage Nightly'
+    runs=$("$GH" run list --repo "$REPO" --workflow "$WF" --status completed --limit 30 \
+        --json databaseId,headSha,createdAt,workflowName 2>/dev/null) || return 1
+    WFN="$WF_NAME" jq -e 'all(.[]; .workflowName == env.WFN)' <<< "$runs" > /dev/null 2>&1 || return 2
+    if "$GH" run download "$1" --repo "$REPO" -n "$ART" -D "$d" > /dev/null 2>&1; then
+    if [ "$rc" = 2 ]; then echo "FAIL  gh answered a run that is not a $WF_NAME run -- only the nightly receipt counts, $stop"; return 1; fi
+    [ "$rc" = 0 ] || { echo "FAIL  gh could not list $WF runs -- Unknown is not a pass, $stop"; return 1; }
+    if [ -z "$found" ]; then echo "FAIL  NOT_MEASURED: no completed $WF run on $sha or a version-only parent of it -- $stop"; return 1; fi
+    if [ -z "$r" ]; then echo "FAIL  NOT_MEASURED: $WF run $id left no readable receipt for $h -- $stop"; return 1; fi
+        echo "ok    coverage $pct% >= COV_FLOOR $floor% ($passed tests) measured on $h by $WF run $id, for $what"; return 0
+    echo "FAIL  ${v#bad } ($WF run $id on $h, for $what) -- $stop"
+PIN
+)
+
+# TOP_AWK: a workflow -> "N <its name: line>" and "B <a line of its on: block>" records, or one
+# "E <why>" record when the file is not in the shape this guard reads (then nothing is judged).
+TOP_AWK=$(cat <<'AWK'
+/\r/ { why = "a CR at line " NR; exit }
+/^[[:space:]]*(#.*)?$/ { next }
+/^[^ ]/ {
+    if ($0 !~ /^(name|run-name|on|permissions|env|defaults|concurrency|jobs):( .*)?$/) { why = "the top-level line " NR " (" $0 ")"; exit }
+    inon = ($0 ~ /^on:/); if (inon) n++
+    if ($0 ~ /^name:/) print "N " $0
+}
+inon { print "B " $0 }
+END {
+    if (why == "" && n != 1) why = n + 0 " top-level on: keys"
+    if (why != "") print "E " why
+}
 AWK
 )
-# on_block <workflow> -> the lines of its top-level `on:` block, comments and CRs stripped
-on_block() {
-    tr -d '\r' < "$1" | sed 's/#.*$//' | awk -v q="'" "$ON_KEY_AWK"' is_on($0) { f = 1; next } f && /^[^[:space:]]/ { exit } f'
+# on_pinned <workflow> <label> <pin> [<name line>] -> 0 the on: block (and name) are the pinned
+# ones, 1 they are not (printed), 2 an ENV line: the file is not in a shape this guard reads.
+on_pinned() {
+    local out got
+    out=$(awk "$TOP_AWK" "$1") || { printf 'ENV   %s could not be read -- cannot judge, not a pass\n' "$2"; return 2; }
+    if grep -q "^E " <<< "$out"; then
+        printf 'ENV   %s is not in the YAML shape this guard reads (%s) -- cannot judge, not a pass\n' "$2" "$(sed -n 's/^E //p' <<< "$out")"
+        return 2
+    fi
+    got=$(sed -n 's/^B //p' <<< "$out")
+    if [ "$got" != "$3" ]; then
+        printf 'FAIL  %s: its on: block is not the pinned one (re-pin in this guard only after review):\n' "$2"
+        diff <(printf '%s\n' "$3") <(printf '%s\n' "$got") | sed 's/^/        /' | head -n 12
+        return 1
+    fi
+    if [ -n "${4:-}" ] && ! grep -qxF -- "$4" <<< "$(sed -n 's/^N //p' <<< "$out")"; then
+        printf 'FAIL  %s: its top-level name is not "%s" -- the release gate reads only runs carrying that name\n' "$2" "${4#name: }"
+        return 1
+    fi
+    return 0
+}
+# gate_lines <file> -> its live lines (outside self_test) that talk to GitHub or run other code
+gate_lines() {
+    awk '/^self_test\(\) \{/ { st = 1; next } st && /^\}/ { st = 0; next } st { next } /^[[:space:]]*#/ { next }
+        /(^|[^A-Za-z0-9_])(gh|GH|curl|wget|WF[A-Z_]*|[Ww]orkflow[A-Za-z]*|ci\.yml|eval|sourc[e]|exec)([^A-Za-z0-9_]|$)|^[[:space:]]*\.[[:space:]]/' "$1"
 }
 # live <file> -> the file with comments stripped (a setting in a comment is not a setting)
 live() { sed 's/#.*$//' "$1"; }
 
-# tag_push <workflow> <label> -> exit 1 when a push of a tag would start it, 0 when it would
-# not, or 2 (printing an ENV line) for an `on:` this reader does not parse -- which is never 0
-# (a guard that skips a spelling it cannot read passes it). GitHub: a `push:` filtered to
-# branches only never fires for a tag; `tags:`/`tags-ignore:`, no filter, or a paths-only
-# filter does. Read: block style at ANY indent, quoted keys, `- push` block lists, one-line
-# `[..]`/`{..}` flow values, `on: push`, `on: [a, push]`, `- push` at column 0; `create` fires too
-# (it runs when a tag is created). Refused as a shape: a multi-line
-# flow (`on: {` ... `}`), an alias (`push: *x`), any other value of push.
-# Case table (self-test rows R3/R5): branches only -> no; branches + tags [v*] -> fires;
-# tags as a block list -> fires; bare `push:` -> fires; `on: [push, pull_request]` -> fires;
-# 4-space indent + tags -> fires; quoted "on"/"push" + tags -> fires; `- push` -> fires;
-# branches-ignore only -> no; no push at all -> no; `on: {` multi-line -> shape.
-TAG_PUSH_AWK=$(cat <<'AWK'
-
-function unq(s) { gsub(/^[ \t]+|[ \t]+$/, "", s); gsub("^[\"" q "]|[\"" q "]$", "", s); return s }
-function bal(s,   o, c) { o = gsub(/[\[{]/, "&", s); c = gsub(/[\]}]/, "&", s); return o == c }
-function key(l) { sub(/:.*$/, "", l); return unq(l) }
-{ sub(/\r$/, ""); sub(/#.*$/, ""); sub(/[ \t]+$/, "") }
-!top && is_on($0) {
-    top = 1; v = $0; sub(/^[^:]*:[ \t]*/, "", v)
-    if (v == "") { blk = 1; next }
-    if (v ~ /^\[[^\]]*\]$/) {
-        n = split(substr(v, 2, length(v) - 2), it, ","); verdict = "no"
-        for (i = 1; i <= n; i++) if (unq(it[i]) ~ /^(push|create)$/) verdict = "fires"
-        exit
-    }
-    if (unq(v) ~ /^[A-Za-z_]+$/) { verdict = (unq(v) ~ /^(push|create)$/) ? "fires" : "no"; exit }
-    verdict = "shape: on: " v; exit
-}
-!blk { next }
-/^[^ \t]/ && !/^- / { exit }   # a column-0 `- item` is still an on: list item
-$0 == "" { next }
-{
-    match($0, /^[ \t]*/); ind = RLENGTH; line = substr($0, ind + 1)
-    if (!evset) { ev = ind; evset = 1 }
-    if (ind < ev) { verdict = "shape: an on: line indented less than its first event"; exit }
-    if (ind == ev) {
-        inpush = 0
-        if (line ~ /^- /) { k = unq(substr(line, 3)); if (k == "push") pushseen = 1; if (k == "create") cre = 1; next }
-        if (line !~ /:/) { verdict = "shape: " line; exit }
-        k = key(line); v = line; sub(/^[^:]*:[ \t]*/, "", v)
-        if (!bal(v)) { verdict = "shape: a multi-line flow value under " k; exit }
-        if (k == "create") { cre = 1; next }
-        if (k != "push") next
-        pushseen = 1
-        if (v == "" || v == "~" || v == "null") { inpush = 1; pev = 0; next }
-        if (v ~ /^\{.*\}$/) { if (v ~ /tags/) tags = 1; if (v ~ /branches/) br = 1; next }
-        verdict = "shape: push: " v; exit
-    }
-    if (inpush) {
-        if (pev == 0) pev = ind
-        if (ind == pev) { k = key(line); if (k ~ /^tags(-ignore)?$/) tags = 1; if (k ~ /^branches(-ignore)?$/) br = 1 }
-    }
-}
-END {
-    if (verdict == "") verdict = !top ? "shape: no top-level on: key" : (cre || (pushseen && (tags || !br))) ? "fires" : "no"
-    if (verdict ~ /^shape: /) {
-        printf "ENV   %s has an on: this guard cannot parse (%s) -- cannot judge, not a pass\n", label, substr(verdict, 8)
-        exit 2
-    }
-    exit verdict == "fires"
-}
-AWK
-)
-tag_push() { awk -v q="'" -v label="$2" "$ON_KEY_AWK$TAG_PUSH_AWK" "$1"; }
-# R6: a listing of ci.yml (or "CI") runs whose branch holds a variable anywhere ($T, v$VER,
-# refs/tags/$T) -- how a tag's ci.yml run was read (tag_coverage_gate.sh before #4734). A
-# literal branch (main) is fine. The flags match in either order, short or long, and
-# `gh api .../workflows/ci.yml/runs?branch=$X` too.
-CI_WF_RE='(--workflow|-w)[= ]["'"'"']?(\.github/workflows/)?(ci\.yml|CI)["'"'"']?([[:space:]]|$)'
-CI_BR_RE='(--branch|-b)[= ]["'"'"']?[^ \t"'"'"']*[$]'
-CI_API_RE='workflows/ci\.yml/runs.*branch=[^& \t"'"'"']*[$]'
-# R6_AWK: join `\`-continued lines, skip comment lines, and print FILE:LINE:text for a ci.yml
-# run lookup whose branch is a variable (the regexes come in through the environment).
-R6_AWK=$(cat <<'AWK'
-FNR == 1 { acc = "" }
-{ if (acc != "") line = acc " " $0; else { line = $0; at = FNR } }
-/[\\]$/ { acc = substr(line, 1, length(line) - 1); next }
-{ acc = "" }
-line ~ /^[[:space:]]*[#]/ || line !~ /run list|workflows[\/]ci[.]yml[\/]runs/ { next }
-(line ~ ENVIRON["WFRE"] && line ~ ENVIRON["BRRE"]) || line ~ ENVIRON["APIRE"] { print FILENAME ":" at ":" line }
-AWK
-)
-
-judge() { # judge <root> -> 0 all links hold, 1 a link broke, 2 ENV
-    local r=$1 bad=0 env=0 dry blk ci tg hits lines wfl v3 v5
+# judge <root> -> 0 all links hold, 1 a link broke, 2 ENV
+judge() {
+    local r=$1 bad=0 env=0 dry ci tg got v3 v5
     local mk="$r/Makefile" df="$r/scripts/dogfood.sh" wf="$r/.github/workflows/coverage-nightly.yml" cy="$r/.github/workflows/ci.yml" sy="$r/ci/sections.yml"
-    for f in "$mk" "$df" "$wf" "$cy" "$sy"; do [ -r "$f" ] || { printf 'ENV   %s is not readable -- cannot judge, not a pass\n' "$f"; return 2; }; done
-
+    tg="$r/scripts/release/tag_coverage_gate.sh"
+    for f in "$mk" "$df" "$wf" "$cy" "$sy" "$tg"; do [ -r "$f" ] || { printf 'ENV   %s is not readable -- cannot judge, not a pass\n' "$f"; return 2; }; done
     dry=$(make -n -C "$r" coverage-check 2>/dev/null) || dry=""
-    if [[ $dry == *"llvm-cov"* ]]; then printf 'ok    R1 make -n coverage-check reaches llvm-cov (the release producer measures, it reads nothing from CI)\n'
+    if grep -q "llvm-cov" <<< "$dry"; then printf 'ok    R1 make -n coverage-check reaches llvm-cov (the release producer measures, it reads nothing from CI)\n'
     else printf 'FAIL  R1 make -n coverage-check does not reach llvm-cov -- the dogfood coverage gate would measure nothing\n'; bad=1; fi
 
     # WIDENED (#3844): R2 asks "does the release still CHECK coverage", and it used to
@@ -161,16 +161,14 @@ judge() { # judge <root> -> 0 all links hold, 1 a link broke, 2 ENV
         printf 'ok    R2 scripts/dogfood.sh runs make ... coverage-check (the release consumer exists)\n'
     else printf 'FAIL  R2 scripts/dogfood.sh no longer runs coverage-check -- nothing checks coverage at the release\n'; bad=1; fi
 
-    tag_push "$wf" "R3 coverage-nightly.yml"; v3=$?
-    if ! on_block "$wf" | grep -qE '^[[:space:]]+schedule:'; then
-        printf 'FAIL  R3 coverage-nightly.yml must trigger on schedule (on: block, comments ignored)\n'; bad=1
-    elif [ "$v3" = 2 ]; then
+    on_pinned "$wf" "R3 coverage-nightly.yml" "$NIGHTLY_ON_PIN" "$NIGHTLY_NAME"; v3=$?
+    if [ "$v3" = 2 ]; then
         env=1
     elif [ "$v3" = 1 ]; then
-        printf 'FAIL  R3 coverage-nightly.yml also triggers on a tag push -- the release reads the receipt for its commit; no tag needs its own run\n'; bad=1
+        bad=1
     elif ! live "$wf" | grep -qE '(^|[[:space:]])scripts/coverage_receipt\.sh([[:space:]]|$)'; then
         printf 'FAIL  R3 coverage-nightly.yml no longer runs scripts/coverage_receipt.sh (on a live line) -- the release gate would find no receipt\n'; bad=1
-    else printf 'ok    R3 coverage-nightly.yml triggers on schedule, not on tags, and writes the sha-keyed receipt\n'; fi
+    else printf 'ok    R3 coverage-nightly.yml has the pinned on: (schedule, no tag push) and name, and writes the sha-keyed receipt\n'; fi
 
     if grep -qE '^COV_FLOOR[[:space:]]*:?=[[:space:]]*[0-9]+' "$mk"; then
         printf 'ok    R4 the Makefile defines a numeric COV_FLOOR\n'
@@ -183,27 +181,17 @@ judge() { # judge <root> -> 0 all links hold, 1 a link broke, 2 ENV
         printf 'FAIL  R5 ci/sections.yml sets skip_coverage: true -- sovereign-ci'"'"'s gate reads that skip as a mandatory failure (ci / gate red on every PR); use coverage_on: tag\n'; bad=1
     elif ! grep -qE "^[[:space:]]+coverage_on:[[:space:]]*['\"]?tag['\"]?[[:space:]]*$" <<<"$ci"; then
         printf 'FAIL  R5 ci/sections.yml does not hand sovereign-ci coverage_on: tag (on a live line)\n'; bad=1
-    elif tag_push "$cy" "R5 ci.yml"; v5=$?; [ "$v5" = 2 ]; then
+    elif on_pinned "$cy" "R5 ci.yml" "$CI_ON_PIN"; v5=$?; [ "$v5" = 2 ]; then
         env=1
     elif [ "$v5" = 1 ]; then
-        printf "FAIL  R5 ci.yml fires on a tag push again -- nothing reads that run, and it cannot pass (no base sha on a tag create)\n"; bad=1
-    else printf 'ok    R5 ci/sections.yml: coverage_on: tag, and ci.yml does not fire on a tag push\n'; fi
+        bad=1
+    else printf 'ok    R5 ci/sections.yml: coverage_on: tag, and ci.yml has the pinned on: (no tag trigger)\n'; fi
 
-    tg="$r/scripts/release/tag_coverage_gate.sh"
-    if [ ! -r "$tg" ]; then printf 'ENV   %s is not readable -- cannot judge, not a pass\n' "$tg"; return 2; fi
-    # One pass: a live (continued) line naming ci.yml or CI with a variable branch, any flag order.
-    hits=$(find "$r/scripts" -name '*.sh' ! -name check_coverage_has_producers.sh -print0 2>/dev/null |
-        WFRE="$CI_WF_RE" BRRE="$CI_BR_RE" APIRE="$CI_API_RE" xargs -0 -r awk "$R6_AWK" 2>/dev/null)
-    hits=${hits//"$r/"/}
-    # Every live WF= must name the nightly: a later WF=ci.yml would override the first.
-    if ! live "$tg" | awk -v q="'" '
-            /^[[:space:]]*((readonly|local)[[:space:]]+)?WF=/ { n++; if ($0 !~ ("WF=[\"" q "]?coverage-nightly[.]yml[\"" q "]?[[:space:]]*$")) other = 1 }
-            END { exit !(n > 0 && !other) }'; then
-        printf "FAIL  R6 scripts/release/tag_coverage_gate.sh does not judge coverage-nightly (no live WF='coverage-nightly.yml')\n"; bad=1
-    elif [ "${#hits}" -gt 0 ]; then
-        printf 'FAIL  R6 a script lists ci.yml runs for a branch held in a variable (a tag'"'"'s ci.yml run no longer exists):\n'
-        printf '        %s\n' "$hits" | head -n 5; bad=1
-    else printf 'ok    R6 the release gate reads coverage-nightly, and no script waits for a ci.yml run by a variable branch\n'; fi
+    got=$(gate_lines "$tg")
+    if [ "$got" != "$GATE_PIN" ]; then
+        printf 'FAIL  R6 scripts/release/tag_coverage_gate.sh talks to GitHub (or runs code) in a way that is not pinned (re-pin only after review):\n'
+        diff <(printf '%s\n' "$GATE_PIN") <(printf '%s\n' "$got") | sed 's/^/        /' | head -n 12; bad=1
+    else printf 'ok    R6 the release gate reads only coverage-nightly runs, in the pinned lines, and refuses any other run at run time\n'; fi
     [ "$env" = 1 ] && return 2
     return "$bad"
 }
@@ -214,88 +202,134 @@ case "${1:-}" in -h|--help) awk 'NR == 1 { next } !/^#/ { exit } { sub(/^# ?/, "
 if [ "${1:-}" = "--self-test" ]; then
     echo "=== coverage producer chain: each rule must turn RED when its link breaks ==="
     d=$(mktemp -d "${TMPDIR:-/tmp}/covchain.XXXXXX") || exit 2
-    rmtree() { case "${1:-}" in ''|/) return 0 ;; *) [ -d "$1" ] && rm -rf -- "$1" ;; esac; return 0; }
+    rmtree() { case "${1:-}" in ''|/) return 0 ;; *) [ -d "${1:?}" ] && { rm -rf -- "${1:?}" || return 1; } ;; esac; return 0; }
     trap 'rmtree "${d:-}"' EXIT
-    bad=0; n=0
-    fixture() { # fixture <dir> -> a tree where every link holds
+    bad=0; n=0; base=0; BL=${COVCHAIN_BASELINE:-}
+    NW=.github/workflows/coverage-nightly.yml CY=.github/workflows/ci.yml TG=scripts/release/tag_coverage_gate.sh
+    # fixture <dir> -> a tree where every link holds (the pins, as the tree has them)
+    fixture() {
         mkdir -p "$1/scripts/release" "$1/.github/workflows" "$1/ci"
         printf 'COV_FLOOR := 88\nLLVMCOV := llvm-cov\ncoverage:\n\t$(LLVMCOV) report --fail-under-lines $(COV_FLOOR)\ncoverage-check: coverage\n' > "$1/Makefile"
         printf '#!/usr/bin/env bash\n  gate coverage make -C "$d" coverage-check\n' > "$1/scripts/dogfood.sh"
-        printf "on:\n  schedule:\n    - cron: '0 22 * * *'\n  workflow_dispatch: {}\njobs:\n  c:\n    steps:\n      - run: |\n          bash scripts/coverage_receipt.sh cov.log \"\$(git rev-parse HEAD)\" 89 out since\n" > "$1/.github/workflows/coverage-nightly.yml"
-        printf "on:\n  push:\n    branches: [main, master]\n  pull_request:\n    branches: [main, master]\njobs: {}\n" > "$1/.github/workflows/ci.yml"
+        printf '%s\n# the nightly\n%s\n\njobs:\n  c:\n    steps:\n      - run: |\n          bash scripts/coverage_receipt.sh cov.log "$(git rev-parse HEAD)" 89 out since\n' \
+            "$NIGHTLY_NAME" "$NIGHTLY_ON_PIN" > "$1/$NW"
+        printf 'name: CI\n\n%s\n\njobs: {}\n' "$CI_ON_PIN" > "$1/$CY"
         printf "sovereign-ci:\n  uses: paiml/.github/.github/workflows/sovereign-ci.yml@x\n  with:\n    coverage_on: tag\n" > "$1/ci/sections.yml"
-        printf "#!/usr/bin/env bash\nWF='coverage-nightly.yml'\n" > "$1/scripts/release/tag_coverage_gate.sh"
+        printf '#!/usr/bin/env bash\n%s\nself_test() {\n    gh run list --workflow ci.yml --branch "%sT"\n}\n' "$GATE_PIN" '$' > "$1/$TG"
         printf '#!/usr/bin/env bash\ngh run list --workflow ci.yml --branch main --limit 1\n' > "$1/scripts/state.sh"
     }
+    # The fixture text below spells a shell `$` as @, so no line here is shell code.
+    at() { printf '%s\n' "$1" | tr '@' '$'; }
+    addg() { at "$1" >> "$TG"; }                     # a live line of the gate (after self_test)
+    adds() { at "$1" >> scripts/state.sh; }          # a line of a script the gate never runs
+    ciyml() { printf 'name: CI\n%b\n  pull_request:\n    branches: [main, master]\njobs: {}\n' "$1" > "$CY"; }
+    ciraw() { printf '%b' "$1" > "$CY"; }
+    nwraw() { printf '%b' "$1" > "$NW"; }
     # one mutation per row, as a function (no eval: the mutation is code, not a string)
-    ciyml()           { printf '%b\n  pull_request:\n    branches: [main, master]\njobs: {}\n' "$1" > .github/workflows/ci.yml; }
     m_none()          { :; }
     m_r1()            { sed -i 's/\$(LLVMCOV) report.*/echo nothing/' Makefile; }
     m_r2_gone()       { printf '#!/usr/bin/env bash\n' > scripts/dogfood.sh; }
     m_r2_comment()    { printf '#!/usr/bin/env bash\n# gate coverage make -C x coverage-check\n' > scripts/dogfood.sh; }
-    m_r3_nosched()    { sed -i '/schedule:/d; /cron:/d' .github/workflows/coverage-nightly.yml; }
-    m_r3_tagsback()   { sed -i "s/^  workflow_dispatch: {}/  push:\n    tags: ['v*']/" .github/workflows/coverage-nightly.yml; }
-    m_r3_tagsblock()  { sed -i "s/^  workflow_dispatch: {}/  push:\n    tags:\n      - 'v*'/" .github/workflows/coverage-nightly.yml; }
-    m_r3_noreceipt()  { sed -i '/coverage_receipt/d' .github/workflows/coverage-nightly.yml; }
-    m_r3_rcptcomment(){ sed -i 's/^\( *\)bash scripts\/coverage_receipt/\1# bash scripts\/coverage_receipt/' .github/workflows/coverage-nightly.yml; }
+    m_r3_nosched()    { sed -i '/schedule:/d; /cron:/d' "$NW"; }
+    m_r3_tagsback()   { sed -i "s/^  workflow_dispatch: {}/  push:\n    tags: ['v*']/" "$NW"; }
+    m_r3_tagsblock()  { sed -i "s/^  workflow_dispatch: {}/  workflow_dispatch: {}\n  push:\n    tags:\n      - 'v*'/" "$NW"; }
+    m_r3_noreceipt()  { sed -i '/coverage_receipt/d' "$NW"; }
+    m_r3_rcptcomment(){ sed -i 's/^\( *\)bash scripts\/coverage_receipt/\1# bash scripts\/coverage_receipt/' "$NW"; }
+    m_r3_indent4()    { nwraw "name: Coverage Nightly\non:\n    schedule:\n        - cron: '0 22 * * *'\n    push:\n        tags: ['v*']\njobs:\n  c:\n    steps:\n      - run: |\n          bash scripts/coverage_receipt.sh cov.log x 89 out since\n"; }
+    m_r3_flowmulti()  { sed -i "s/^  workflow_dispatch: {}/  workflow_dispatch: {}\n  push: {tags: [v1,\n    v2]}/" "$NW"; }
+    m_r3_unbal()      { sed -i "s/^  workflow_dispatch: {}/  workflow_dispatch: {inputs: {a: {type: string},\n    b: {type: string}}}/" "$NW"; }
+    m_r3_rename()     { sed -i 's/^name: Coverage Nightly$/name: Coverage/' "$NW"; }
+    m_r3_cmtok()      { sed -i 's/^  schedule:$/  # the nightly fires on its schedule only\n  schedule:/' "$NW"; }
+    m_r3_crlf()       { sed -i 's/$/\r/' "$NW"; }
+    m_r3_quoted()     { sed -i 's/^on:$/"on":/' "$NW"; }
+    m_r3_dupon()      { printf 'on:\n  push:\n    tags: [v1]\n' >> "$NW"; }
     m_r4()            { sed -i '/^COV_FLOOR/d' Makefile; }
     m_r5_skip()       { sed -i 's/coverage_on: tag/skip_coverage: true/' ci/sections.yml; }
     m_r5_both()       { printf '    skip_coverage: true\n' >> ci/sections.yml; }
     m_r5_nocov()      { sed -i '/coverage_on:/d' ci/sections.yml; }
     m_r5_comment()    { sed -i 's/    coverage_on: tag/    # coverage_on: tag/' ci/sections.yml; }
     m_r5_always()     { sed -i 's/coverage_on: tag/coverage_on: always/' ci/sections.yml; }
-    m_r5_tagsback()   { ciyml 'on:\n  push:\n    branches: [main, master]\n    tags: ["v*"]'; }
+    m_r5_tagsback()   { sed -i '0,/^    branches: \[main, master\]$/s//&\n    tags: ["v*"]/' "$CY"; }
     m_r5_tagsblock()  { ciyml 'on:\n  push:\n    branches: [main]\n    tags:\n      - "v[0-9]*"'; }
     m_r5_barepush()   { ciyml 'on:\n  push:'; }
-    m_r5_inline()     { printf 'on: [push, pull_request]\njobs: {}\n' > .github/workflows/ci.yml; }
-    m_r5_tagcomment() { ciyml 'on:\n  push:\n    branches: [main, master]\n    # tags: ["v*"]'; }
+    m_r5_inline()     { ciraw 'name: CI\non: [push, pull_request]\njobs: {}\n'; }
+    m_r5_tagcomment() { sed -i '0,/^    branches: \[main, master\]$/s//&\n    # tags: ["v*"]/' "$CY"; }
+    m_r5_blank()      { sed -i 's/^  merge_group:$/\n  merge_group:/' "$CY"; }
     m_r5_brignore()   { ciyml 'on:\n  push:\n    branches-ignore: [gh-pages]'; }
     m_r5_nopush()     { ciyml 'on:\n  merge_group:'; }
-    m_r6_wf()         { sed -i "s/^WF=.*/WF='ci.yml'/" scripts/release/tag_coverage_gate.sh; }
-    m_r6_wfcomment()  { sed -i 's/^WF=/# WF=/' scripts/release/tag_coverage_gate.sh; }
-    # The planted readers carry a literal '$', passed as %s so the fixture text is not shell code here.
-    m_r6_reader()     { printf '    "%sGH" run list --repo "%sREPO" --workflow ci.yml --event push --branch "%s1" --limit 20\n' '$' '$' '$' >> scripts/release/tag_coverage_gate.sh; }
-    m_r6_readercmt()  { printf '    # gh run list --workflow ci.yml --branch "%sT"\n' '$' >> scripts/state.sh; }
-    m_r6_readerci()   { printf 'gh run list --workflow=CI --branch=%sT\n' '$' >> scripts/state.sh; }
-    m_r5_indent4()    { printf 'on:\n    push:\n        branches: [main]\n        tags: ["v*"]\n    pull_request: {}\njobs: {}\n' > .github/workflows/ci.yml; }
-    m_r5_quoted()     { printf '"on":\n  "push":\n    tags: ["v*"]\njobs: {}\n' > .github/workflows/ci.yml; }
-    m_r5_dashpush()   { printf 'on:\n  - push\n  - pull_request\njobs: {}\n' > .github/workflows/ci.yml; }
-    m_r5_flowmulti()  { printf 'on: {\n  push: {tags: [v1]}\n}\njobs: {}\n' > .github/workflows/ci.yml; }
-    m_r5_listmulti()  { printf 'on: [pull_request,\n  push]\njobs: {}\n' > .github/workflows/ci.yml; }
+    m_r5_indent4()    { ciraw 'name: CI\non:\n    push:\n        branches: [main]\n        tags: ["v*"]\n    pull_request: {}\njobs: {}\n'; }
+    m_r5_quoted()     { ciraw '"on":\n  "push":\n    tags: ["v*"]\njobs: {}\n'; }
+    m_r5_squoted()    { ciraw "'on':\n  push:\n    tags: ['v*']\njobs: {}\n"; }
+    m_r5_dashpush()   { ciraw 'on:\n  - push\n  - pull_request\njobs: {}\n'; }
+    m_r5_flowmulti()  { ciraw 'on: {\n  push: {tags: [v1]}\n}\njobs: {}\n'; }
+    m_r5_listmulti()  { ciraw 'on: [pull_request,\n  push]\njobs: {}\n'; }
     m_r5_flowbr()     { ciyml 'on:\n  push: {branches: [main]}'; }
-    m_r5_crlf()       { printf 'on:\r\n  push:\r\n    tags: ["v*"]\r\njobs: {}\r\n' > .github/workflows/ci.yml; }
-    m_r5_truekey()    { printf 'true:\n  push:\n    tags: ["v*"]\njobs: {}\n' > .github/workflows/ci.yml; }
-    m_r3_indent4()    { printf "on:\n    schedule:\n        - cron: '0 22 * * *'\n    push:\n        tags: ['v*']\njobs:\n  c:\n    steps:\n      - run: |\n          bash scripts/coverage_receipt.sh cov.log x 89 out since\n" > .github/workflows/coverage-nightly.yml; }
-    m_r6_swapped()    { printf 'gh run list --branch "%sT" --workflow ci.yml\n' '$' >> scripts/state.sh; }
-    m_r6_short()      { printf 'gh run list -w ci.yml -b "%sT"\n' '$' >> scripts/state.sh; }
-    m_r6_path()       { printf 'gh run list --workflow .github/workflows/ci.yml --branch "%sT"\n' '$' >> scripts/state.sh; }
-    m_r6_api()        { printf 'gh api "repos/x/y/actions/workflows/ci.yml/runs?branch=%sT"\n' '$' >> scripts/state.sh; }
-    m_r6_wf2()        { printf "WF='ci.yml'\n" >> scripts/release/tag_coverage_gate.sh; }
-    m_r6_mainok()     { printf 'gh run list --branch main --workflow ci.yml\n' >> scripts/state.sh; }
-    m_r5_dash0()      { printf 'on:\n- pull_request\n- push\njobs: {}\n' > .github/workflows/ci.yml; }
-    m_r5_create()     { ciyml 'on:\n  push:\n    branches: [main]\n  create:'; }
-    m_r5_createlist() { printf 'on: [pull_request, create]\njobs: {}\n' > .github/workflows/ci.yml; }
-    m_r5_createword() { printf 'on: create\njobs: {}\n' > .github/workflows/ci.yml; }
-    m_r5_createdash() { printf 'on:\n  - pull_request\n  - create\njobs: {}\n' > .github/workflows/ci.yml; }
-    m_r6_contd()      { printf 'gh run list --workflow ci.yml \\\n    --branch "%sT" --limit 1\n' '$' >> scripts/state.sh; }
-    m_r6_contdmain()  { printf 'gh run list --workflow ci.yml \\\n    --branch main --limit 1\n' >> scripts/state.sh; }
-    m_r6_vprefix()    { printf 'gh run list --workflow ci.yml --branch "v%s{VER}"\n' '$' >> scripts/state.sh; }
-    m_r6_refstag()    { printf 'gh run list -w ci.yml -b "refs/tags/%sTAG"\n' '$' >> scripts/state.sh; }
-    m_r6_eqprefix()   { printf 'gh run list --workflow=ci.yml --branch=v%sVER\n' '$' >> scripts/state.sh; }
-    m_r6_apiprefix()  { printf 'gh api "repos/x/y/actions/workflows/ci.yml/runs?branch=v%sVER"\n' '$' >> scripts/state.sh; }
-    m_r6_apimain()    { printf 'gh api "repos/x/y/actions/workflows/ci.yml/runs?branch=main&per_page=%sN"\n' '$' >> scripts/state.sh; }
-    m_r3_flowmulti()  { sed -i "s/^  workflow_dispatch: {}/  push: {tags: [v1,\n    v2]}/" .github/workflows/coverage-nightly.yml; }
-    m_r3_unbal()      { sed -i "s/^  workflow_dispatch: {}/  workflow_dispatch: {inputs: {a: {type: string},\n    b: {type: string}}}/" .github/workflows/coverage-nightly.yml; }
-    m_missing()       { rm -f .github/workflows/coverage-nightly.yml; }
-    m_missing_ci()    { rm -f .github/workflows/ci.yml; }
+    m_r5_crlf()       { sed -i 's/$/\r/' "$CY"; }
+    m_r5_crone()      { sed -i 's/^  merge_group:$/  merge_group:\r/' "$CY"; }
+    m_r5_truekey()    { ciraw 'true:\n  push:\n    tags: ["v*"]\njobs: {}\n'; }
+    m_r5_dash0()      { ciraw 'on:\n- pull_request\n- push\njobs: {}\n'; }
+    m_r5_create()     { sed -i 's/^  workflow_dispatch:$/&\n  create:/' "$CY"; }
+    m_r5_createlist() { ciraw 'on: [pull_request, create]\njobs: {}\n'; }
+    m_r5_createword() { ciraw 'on: create\njobs: {}\n'; }
+    m_r5_createdash() { ciraw 'on:\n  - pull_request\n  - create\njobs: {}\n'; }
+    m_r5_dashmap()    { ciraw 'on:\n  - push:\n      tags: [v1]\njobs: {}\n'; }
+    m_r5_dashcreate() { ciraw 'on:\n  - create:\njobs: {}\n'; }
+    m_r5_docstart()   { sed -i '1i ---' "$CY"; }
+    m_r5_merge()      { printf '<<: {on: [push]}\n' >> "$CY"; }
+    m_r5_qkey()       { printf '? on\n: [push]\n' >> "$CY"; }
+    m_r5_tab()        { sed -i 's/^  merge_group:$/\tmerge_group:/' "$CY"; }
+    m_r5_dupon()      { printf 'on: [push]\n' >> "$CY"; }
+    m_r5_noon()       { sed -i '/^on:$/d; /^  /d' "$CY"; }
+    m_r5_allindent()  { sed -i 's/^/  /' "$CY"; }
+    m_r5_anchor()     { sed -i 's/^on:$/on: \&a/' "$CY"; }
+    m_r5_trail()      { sed -i 's/^  merge_group:$/  merge_group: /' "$CY"; }
+    m_r5_onkey()      { sed -i 's/^on:$/on :/' "$CY"; }
+    m_r6_wf()         { sed -i "s/^WF=.*/WF='ci.yml'/" "$TG"; }
+    m_r6_wfcomment()  { sed -i 's/^WF=/# WF=/' "$TG"; }
+    m_r6_wf2()        { addg "WF='ci.yml'"; }
+    m_r6_wfeq()       { addg "WF2='ci.yml'"; addg '    "@GH" run list --workflow="@WF2" --branch main'; }
+    m_r6_reader()     { addg '    "@GH" run list --repo "@REPO" --workflow ci.yml --event push --branch "@1" --limit 20'; }
+    m_r6_readerci()   { addg 'gh run list --workflow=CI --branch=@T'; }
+    m_r6_swapped()    { addg 'gh run list --branch "@T" --workflow ci.yml'; }
+    m_r6_short()      { addg 'gh run list -w ci.yml -b "@T"'; }
+    m_r6_path()       { addg 'gh run list --workflow .github/workflows/ci.yml --branch "@T"'; }
+    m_r6_api()        { addg 'gh api "repos/x/y/actions/workflows/ci.yml/runs?branch=@T"'; }
+    m_r6_contd()      { addg "X=@(true \\"; addg '    --workflow ci.yml --branch "@T")'; }
+    m_r6_vprefix()    { addg 'gh run list --workflow ci.yml --branch "v@{VER}"'; }
+    m_r6_refstag()    { addg 'gh run list -w ci.yml -b "refs/tags/@TAG"'; }
+    m_r6_eqprefix()   { addg 'gh run list --workflow=ci.yml --branch=v@VER'; }
+    m_r6_apiprefix()  { addg 'gh api "repos/x/y/actions/workflows/ci.yml/runs?branch=v@VER"'; }
+    m_r6_mainlit()    { addg 'gh run list --branch main --workflow ci.yml'; }
+    m_r6_curl()       { addg 'curl -s "https://api.github.com/repos/x/y/actions/runs?branch=v1"'; }
+    m_r6_eval()       { addg 'eval "@CMD"'; }
+    m_r6_source()     { addg '. scripts/lib/runs.sh'; }
+    m_r6_nightlyok()  { addg '    "@GH" run view "@id" --repo "@REPO" --json conclusion'; }
+    m_r6_comment()    { addg "# gh run list --workflow ci.yml --branch \"@T\" (a comment runs nothing)"; }
+    m_r6_sourceword() { addg "source scripts/lib/runs.sh"; }
+    m_r6_exec()       { addg "exec bash scripts/lib/runs.sh"; }
+    m_r6_wget()       { addg "wget -qO- https://api.github.com/repos/x/y/actions/runs"; }
+    m_r6_ciyml()      { addg "F=ci.yml"; }
+    m_r6_contd2()     { addg "R=@(\"@G\" run list \\"; addg "    --workflow \"@W\" --branch \"@T\")"; }
+    m_r6_norun()      { sed -i '/workflowName == env.WFN/d' "$TG"; }
+    m_r6_nojson()     { sed -i 's/,workflowName 2>/ 2>/' "$TG"; }
+    m_r6_inselftest() { sed -i 's/^}$/    gh api "repos\/x\/y\/actions\/workflows\/ci.yml\/runs?branch=v1"\n}/' "$TG"; }
+    m_r6_elsewhere()  { adds 'gh run list --workflow ci.yml --branch "@T"'; adds 'gh run list -w ci.yml -b "refs/tags/@TAG"'
+                        adds 'gh api "repos/x/y/actions/workflows/ci.yml/runs?branch=v@VER"'
+                        printf 'name: other\non:\n  workflow_dispatch:\njobs:\n  a:\n    steps:\n      - run: gh run list -w ci.yml -b "%sT"\n' '$' > .github/workflows/other.yml; }
+    m_missing()       { rm -f "$NW"; }
+    m_missing_ci()    { rm -f "$CY"; }
     m_missing_sy()    { rm -f ci/sections.yml; }
-    m_missing_tg()    { rm -f scripts/release/tag_coverage_gate.sh; }
+    m_missing_tg()    { rm -f "$TG"; }
     row() { # row WANT-RC LABEL MUTATION-FUNCTION
-        local want=$1 label=$2 rc=0; n=$((n + 1)); rmtree "$d/t"; fixture "$d/t"
+        local want=$1 label=$2 rc=0 brc=0 bcol=''; n=$((n + 1)); rmtree "$d/t"; fixture "$d/t"
         ( cd "$d/t" && "$3" ) || { printf 'FAIL  row %s fixture mutation failed: %s\n' "$n" "$label"; bad=1; return; }
         judge "$d/t" > "$d/out" 2>&1 || rc=$?
-        if [ "$rc" = "$want" ]; then printf 'ok    row %-2s rc=%s  %s\n' "$n" "$rc" "$label"
-        else printf 'FAIL  row %-2s rc=%s (wanted %s)  %s\n' "$n" "$rc" "$want" "$label"; sed 's/^/        /' "$d/out"; bad=1; fi
+        if [ -n "$BL" ]; then
+            COVCHAIN_ROOT="$d/t" bash "$BL" > /dev/null 2>&1; brc=$?
+            if [ "$brc" = "$want" ]; then bcol="base=$brc  "; base=$((base + 1)); else bcol="base=$brc! "; fi
+        fi
+        if [ "$rc" = "$want" ]; then printf 'ok    row %-3s rc=%s  %s%s\n' "$n" "$rc" "$bcol" "$label"
+        else printf 'FAIL  row %-3s rc=%s (wanted %s)  %s%s\n' "$n" "$rc" "$want" "$bcol" "$label"; sed 's/^/        /' "$d/out"; bad=1; fi
     }
     row 0 "every link holds -> PASS"                                            m_none
     row 1 "R1: coverage no longer runs llvm-cov -> RED"                         m_r1
@@ -306,6 +340,15 @@ if [ "${1:-}" = "--self-test" ]; then
     row 1 "R3: the nightly fires on tags (block list) -> RED"                   m_r3_tagsblock
     row 1 "R3: the nightly no longer writes the receipt -> RED"                 m_r3_noreceipt
     row 1 "R3: the receipt call only in a COMMENT -> RED"                       m_r3_rcptcomment
+    row 1 "R3 r1: the nightly's tag trigger at a 4-space indent -> RED"         m_r3_indent4
+    row 1 "R3 r3: the nightly's on: has a multi-line flow push value -> RED"    m_r3_flowmulti
+    row 1 "R3 r3: the nightly's on: has a multi-line flow non-push value -> RED" m_r3_unbal
+    row 1 "R3: the nightly renamed (the gate reads runs by that name) -> RED"   m_r3_rename
+    row 0 "R3: a comment line added inside the nightly's on: -> PASS"           m_r3_cmtok
+    row 2 "R3 r3: CRLF line ends on the nightly are ENV rc=2, never a pass"     m_r3_crlf
+    row 2 "R3 r3: a quoted \"on\" key on the nightly is ENV rc=2"                m_r3_quoted
+    row 2 "R3: a second on: key on the nightly is ENV rc=2"                     m_r3_dupon
+    row 2 "coverage-nightly.yml missing is ENV rc=2, never a pass"              m_missing
     row 1 "R4: COV_FLOOR removed -> RED"                                        m_r4
     row 1 "R5: skip_coverage: true instead of coverage_on (the #3688 red) -> RED" m_r5_skip
     row 1 "R5: skip_coverage: true alongside coverage_on -> RED"                m_r5_both
@@ -317,46 +360,70 @@ if [ "${1:-}" = "--self-test" ]; then
     row 1 "R5: ci.yml bare push: (fires on tags too) -> RED"                    m_r5_barepush
     row 1 "R5: ci.yml on: [push, pull_request] (inline) -> RED"                 m_r5_inline
     row 0 "R5: ci.yml tag trigger only in a COMMENT -> PASS (not a trigger)"    m_r5_tagcomment
-    row 0 "R5: ci.yml push: branches-ignore only (no tag) -> PASS"              m_r5_brignore
-    row 0 "R5: ci.yml with no push trigger at all -> PASS"                      m_r5_nopush
-    row 1 "R6: the release gate reads ci.yml, not the nightly -> RED"           m_r6_wf
-    row 1 "R6: the gate's WF= only in a COMMENT -> RED"                         m_r6_wfcomment
-    row 1 "R6: a gh run list of ci.yml by a variable branch (the old main lookup) -> RED" m_r6_reader
-    row 1 "R6: the same lookup as --workflow=CI, branch in a variable -> RED"   m_r6_readerci
-    row 0 "R6: that lookup only in a COMMENT -> PASS"                           m_r6_readercmt
-    row 1 "R5: tag trigger at a 4-space indent -> RED"                          m_r5_indent4
-    row 1 "R5: quoted \"on\"/\"push\" keys with tags -> RED"                      m_r5_quoted
-    row 1 "R5: on: as a block list with - push -> RED"                          m_r5_dashpush
-    row 2 "R5: a multi-line flow on: { ... } is ENV rc=2, never a pass"         m_r5_flowmulti
-    row 2 "R5: a multi-line inline on: [ ... ] is ENV rc=2, never a pass"       m_r5_listmulti
-    row 0 "R5: push: {branches: [main]} one-line flow -> PASS"                  m_r5_flowbr
-    row 1 "R5: CRLF line ends with a tag trigger -> RED"                        m_r5_crlf
-    row 1 "R5: the key spelled true: (YAML 1.1 on) with tags -> RED"            m_r5_truekey
-    row 1 "R3: the nightly's tag trigger at a 4-space indent -> RED"            m_r3_indent4
-    row 1 "R6: flag order swapped (--branch VAR --workflow ci.yml) -> RED"      m_r6_swapped
-    row 1 "R6: short flags -w ci.yml -b VAR -> RED"                             m_r6_short
-    row 1 "R6: --workflow .github/workflows/ci.yml by path -> RED"              m_r6_path
-    row 1 "R6: gh api workflows/ci.yml/runs?branch=VAR -> RED"                  m_r6_api
-    row 1 "R6: a later WF='ci.yml' overrides the nightly -> RED"                m_r6_wf2
-    row 0 "R6: --branch main (a literal, not a variable) -> PASS"               m_r6_mainok
-    row 1 "R5: on: as a zero-indent block list (- push at column 0) -> RED"     m_r5_dash0
-    row 1 "R5: a create: event (fires when a tag is pushed) -> RED"             m_r5_create
-    row 1 "R5: on: [pull_request, create] -> RED"                               m_r5_createlist
-    row 1 "R5: on: create -> RED"                                               m_r5_createword
-    row 1 "R5: on: as a block list with - create -> RED"                        m_r5_createdash
-    row 1 "R6: the lookup split over a backslash continuation -> RED"           m_r6_contd
-    row 0 "R6: a continued lookup with a literal --branch main -> PASS"         m_r6_contdmain
-    row 2 "coverage-nightly.yml missing is ENV rc=2, never a pass"              m_missing
+    row 0 "R5: a blank line inside ci.yml's on: -> PASS"                        m_r5_blank
+    row 1 "R5: ci.yml push: branches-ignore only (not the pinned block) -> RED" m_r5_brignore
+    row 1 "R5: ci.yml with no push trigger (not the pinned block) -> RED"       m_r5_nopush
+    row 1 "R5 r1: tag trigger at a 4-space indent -> RED"                       m_r5_indent4
+    row 2 "R5 r1: quoted \"on\"/\"push\" keys with tags -> ENV rc=2"              m_r5_quoted
+    row 2 "R5: a single-quoted 'on' key -> ENV rc=2"                            m_r5_squoted
+    row 1 "R5 r1: on: as a block list with - push -> RED"                       m_r5_dashpush
+    row 2 "R5 r1: a multi-line flow on: { ... } -> ENV rc=2 (its } is a top-level line)" m_r5_flowmulti
+    row 1 "R5 r1: a multi-line inline on: [ ... ] -> RED"                       m_r5_listmulti
+    row 1 "R5: push: {branches: [main]} one-line flow (not the pinned block) -> RED" m_r5_flowbr
+    row 2 "R5 r1: CRLF line ends with a tag trigger -> ENV rc=2"                m_r5_crlf
+    row 2 "R5 r3: one CR inside the on: block -> ENV rc=2 (the strip is gone, the CR is refused)" m_r5_crone
+    row 2 "R5 r1: the key spelled true: (YAML 1.1 on) -> ENV rc=2"              m_r5_truekey
+    row 2 "R5 r2: on: as a zero-indent block list (- push at column 0) -> ENV rc=2" m_r5_dash0
+    row 1 "R5 r2: a create: event (fires when a tag is pushed) -> RED"          m_r5_create
+    row 1 "R5 r2: on: [pull_request, create] -> RED"                            m_r5_createlist
+    row 1 "R5 r2: on: create -> RED"                                            m_r5_createword
+    row 1 "R5 r2: on: as a block list with - create -> RED"                     m_r5_createdash
+    row 1 "R5 r3: - push: with a map under a list item (GitHub-invalid) -> RED" m_r5_dashmap
+    row 1 "R5 r3: - create: as a list item map (GitHub-invalid) -> RED"         m_r5_dashcreate
+    row 2 "R5: a --- document marker -> ENV rc=2"                               m_r5_docstart
+    row 2 "R5: a <<: merge key at the top -> ENV rc=2"                          m_r5_merge
+    row 2 "R5: a ? on explicit key -> ENV rc=2"                                 m_r5_qkey
+    row 2 "R5: a tab-indented line -> ENV rc=2"                                 m_r5_tab
+    row 2 "R5: a second on: key -> ENV rc=2"                                    m_r5_dupon
+    row 2 "R5: no on: key at all -> ENV rc=2"                                   m_r5_noon
+    row 2 "R5: the whole file indented (no top-level on:) -> ENV rc=2"          m_r5_allindent
+    row 1 "R5: an anchor on the on: line -> RED"                                m_r5_anchor
+    row 1 "R5: a trailing space inside the on: block -> RED (every byte is pinned)" m_r5_trail
+    row 2 "R5: on : with a space before the colon -> ENV rc=2"                  m_r5_onkey
     row 2 "ci.yml missing is ENV rc=2, never a pass"                            m_missing_ci
     row 2 "ci/sections.yml missing is ENV rc=2, never a pass"                   m_missing_sy
+    row 1 "R6: the release gate reads ci.yml, not the nightly -> RED"           m_r6_wf
+    row 1 "R6: the gate's WF= only in a COMMENT -> RED"                         m_r6_wfcomment
+    row 1 "R6 r1: a later WF='ci.yml' overrides the nightly -> RED"             m_r6_wf2
+    row 1 "R6: --workflow= a second variable that holds ci.yml -> RED"               m_r6_wfeq
+    row 1 "R6: the gate lists ci.yml runs by a variable branch (the old main lookup) -> RED" m_r6_reader
+    row 1 "R6: the same lookup as --workflow=CI, branch in a variable -> RED"   m_r6_readerci
+    row 1 "R6 r1: flag order swapped (--branch VAR --workflow ci.yml) -> RED"   m_r6_swapped
+    row 1 "R6 r1: short flags -w ci.yml -b VAR -> RED"                          m_r6_short
+    row 1 "R6 r1: --workflow .github/workflows/ci.yml by path -> RED"           m_r6_path
+    row 1 "R6 r1: gh api workflows/ci.yml/runs?branch=VAR -> RED"               m_r6_api
+    row 1 "R6 r2: the lookup split over a backslash continuation -> RED"        m_r6_contd
+    row 1 "R6 r3: --branch v + a braced variable -> RED"                                  m_r6_vprefix
+    row 1 "R6 r3: -b refs/tags/ + a variable -> RED"                                     m_r6_refstag
+    row 1 "R6 r3: --branch=v + a variable -> RED"                                        m_r6_eqprefix
+    row 1 "R6 r3: gh api ci.yml runs?branch=v + a variable -> RED"                       m_r6_apiprefix
+    row 1 "R6: even a literal --branch main lookup of ci.yml in the gate -> RED" m_r6_mainlit
+    row 1 "R6: a curl to the actions API in the gate -> RED"                    m_r6_curl
+    row 1 "R6: an eval in the gate -> RED"                                      m_r6_eval
+    row 1 "R6: the gate sources another file -> RED"                            m_r6_source
+    row 1 "R6: a new gh call, even a harmless one, is not pinned -> RED"        m_r6_nightlyok
+    row 0 "R6: a gh call only in a COMMENT of the gate -> PASS (a comment runs nothing)" m_r6_comment
+    row 1 "R6: the gate runs source on another file -> RED"                  m_r6_sourceword
+    row 1 "R6: the gate execs another script -> RED"                         m_r6_exec
+    row 1 "R6: a wget to the actions API in the gate -> RED"                 m_r6_wget
+    row 1 "R6: a bare ci.yml name in a live gate line -> RED"                 m_r6_ciyml
+    row 1 "R6: a continued lookup whose only GitHub word is --workflow -> RED" m_r6_contd2
+    row 1 "R6: the run-time workflowName check removed -> RED"                  m_r6_norun
+    row 1 "R6: workflowName no longer fetched -> RED"                           m_r6_nojson
+    row 0 "R6: a ci.yml lookup inside the gate's self_test -> PASS (never on the release path)" m_r6_inselftest
+    row 0 "R6: ci.yml lookups in other scripts and workflows -> PASS (the gate never reads them)" m_r6_elsewhere
     row 2 "scripts/release/tag_coverage_gate.sh missing is ENV rc=2, never a pass" m_missing_tg
-    row 1 "R6: ci.yml runs for a tag-name branch v + a variable -> RED"                 m_r6_vprefix
-    row 1 "R6: ci.yml runs for -b refs/tags/ + a variable -> RED"                       m_r6_refstag
-    row 1 "R6: ci.yml runs for --branch=v + a variable -> RED"                          m_r6_eqprefix
-    row 1 "R6: gh api ci.yml runs?branch=v + a variable -> RED"                         m_r6_apiprefix
-    row 0 "R6: gh api ci.yml runs?branch=main with a variable page size -> PASS" m_r6_apimain
-    row 2 "R3: the nightly's on: has a multi-line flow push value -> ENV rc=2"   m_r3_flowmulti
-    row 2 "R3: the nightly's on: has a multi-line flow non-push value -> ENV rc=2" m_r3_unbal
+    [ -n "$BL" ] && printf 'BASELINE: %s of %s rows give the wanted rc under %s\n' "$base" "$n" "$BL"
     [ "$bad" = 0 ] && { printf 'SELF-TEST PASSED: %s rows\n' "$n"; exit 0; }
     printf 'SELF-TEST FAILED\n' >&2; exit 1
 fi
