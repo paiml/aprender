@@ -1,0 +1,13 @@
+{
+  "schema": "prompt-certification/v1",
+  "admitted_by_sha_thinking": {
+    "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa": {
+      "off": true,
+      "on": true
+    },
+    "bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb": {
+      "off": true,
+      "on": false
+    }
+  }
+}

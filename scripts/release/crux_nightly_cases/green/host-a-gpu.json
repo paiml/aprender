@@ -1,0 +1,96 @@
+{
+  "schema": "crux-inference-receipt/v1",
+  "host": "host-a",
+  "apr": {
+    "sha": "1234567890abcdef1234567890abcdef12345678"
+  },
+  "summary": {
+    "verdict": "PASS"
+  },
+  "cells": [
+    {
+      "key": {
+        "model_sha256": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+        "host": "host-a",
+        "verb": "run",
+        "thinking": "off",
+        "rung": "smoke",
+        "prompt_id": "control"
+      },
+      "verdict": "GREEN",
+      "positive_control": true
+    },
+    {
+      "key": {
+        "model_sha256": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+        "host": "host-a",
+        "verb": "run",
+        "thinking": "off",
+        "rung": "smoke",
+        "prompt_id": "p1"
+      },
+      "verdict": "GREEN",
+      "positive_control": false
+    },
+    {
+      "key": {
+        "model_sha256": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+        "host": "host-a",
+        "verb": "run",
+        "thinking": "on",
+        "rung": "smoke",
+        "prompt_id": "control"
+      },
+      "verdict": "GREEN",
+      "positive_control": true
+    },
+    {
+      "key": {
+        "model_sha256": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+        "host": "host-a",
+        "verb": "run",
+        "thinking": "on",
+        "rung": "smoke",
+        "prompt_id": "p1"
+      },
+      "verdict": "GREEN",
+      "positive_control": false
+    },
+    {
+      "key": {
+        "model_sha256": "bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb",
+        "host": "host-a",
+        "verb": "run",
+        "thinking": "off",
+        "rung": "smoke",
+        "prompt_id": "control"
+      },
+      "verdict": "GREEN",
+      "positive_control": true
+    },
+    {
+      "key": {
+        "model_sha256": "bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb",
+        "host": "host-a",
+        "verb": "run",
+        "thinking": "off",
+        "rung": "smoke",
+        "prompt_id": "p1"
+      },
+      "verdict": "GREEN",
+      "positive_control": false
+    },
+    {
+      "key": {
+        "model_sha256": "bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb",
+        "host": "host-a",
+        "verb": "run",
+        "thinking": "on",
+        "rung": "smoke",
+        "prompt_id": "p1"
+      },
+      "verdict": "RED",
+      "positive_control": false
+    }
+  ]
+}
