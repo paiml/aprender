@@ -1,0 +1,158 @@
+# ──────────────────────────────────────────────
+# RENAMED 2026-09-27 (untangle, #4430 bin renames): bin `ptop` -> `aprender-ptop`. Measurements quoted below
+# were taken on the old name and are re-taken by the next snapshot.
+# bin-aprender-present-terminal--aprender-ptop-v1 — the `aprender-ptop` bin target of package aprender-present-terminal (ONT-10 slice S13 (2/2))
+#
+# Drafted to the exemplar contracts/bin-aprender-contracts-cli--pv-v1.yaml. The shared shapes (sha, helpSha,
+# gitSha, …) live in binary-surface-v1 and are not restated. Moved from docs/ont-10/binary-contracts/ (aprender-bb).
+#
+# binary-aprender-ptop-v1 — ONT-10 slice S13 (2/2): the `aprender-ptop` target of package `aprender-present-terminal` as an entity
+# (ONT-001 v4.17 ONT-4g; #4476, #4079)
+#
+# MEASURED (2026-09-26, batch/ont-10 @ b6cf6d2ed, release build, private CARGO_TARGET_DIR). aprender-ptop declares
+# `required-features = ["aprender-ptop"]` and the package's default features are empty, so a default build does not produce
+# it at all; it was built with `--features aprender-ptop`, the smallest build that has it.
+#   `aprender-ptop --version` = "aprender-ptop 0.69.3". Name right; no git sha, so G0.1 (warning) is RED today.
+#   (G0.1 FIXED 2026-09-27 on batch/ont-10: `aprender-ptop 0.69.3 (<sha9>)`, semver still field 2; the shape is now a violation.)
+#   --help: no subcommands (0 commands) and 10 long options, --help/--version excluded: --config, --deterministic,
+#   --dump-config, --explode, --height, --no-color, --qa-timing, --refresh, --render-once, --width. The --help
+#   description line is the library's ("Terminal backend for Presentar UI framework…"), not aprender-ptop's; not shaped.
+#   surface_audit.csv holds 4 rows with binary=aprender-ptop (ledger at cf038d37f): the bare entry row `aprender-ptop (interactive TUI
+#   system monitor)`, and `aprender-ptop --dump-config`, `aprender-ptop --render-once`, `aprender-ptop --render-once --explode <PANEL>`. Every
+#   option a row names is in --help: GREEN (G0.1 too, since the fix above).
+#
+# CONVENTION (S15's option join, plus one rule): a row whose feature after the binary name starts with `-` joins
+# bin:option on its first long option; a row that is the bare binary name (optionally with a parenthetical) is the
+# default mode and resolves to the focus node itself.
+#
+# KIND: pattern (one binary's surface over the binary-surface-v1 vocabulary).
+# ──────────────────────────────────────────────
+name: bin-aprender-present-terminal--aprender-ptop-v1
+version: "1.0.0"
+scope: >
+  The built `aprender-ptop` target of package `aprender-present-terminal` (features = ["aprender-ptop"], its required feature) as the focus node binary/aprender-present-terminal/aprender-ptop: its identity, its options, and the surface_audit.csv rows that must resolve to it.
+status: active
+
+metadata:
+  version: "1.0.0"
+  kind: pattern
+  created: '2026-09-26'
+  last_modified: '2026-09-27'
+  author: PAIML Engineering
+  description: >
+    ONT-10 binary slice S13 (2/2) (aprender-ptop). Per-binary shapes over the node extract:binary (ONT-4g, #4476) draws
+    for binary/aprender-present-terminal/aprender-ptop, on the binary-surface-v1 vocabulary.
+  references:
+    - 'contracts/binary-surface-v1.yaml — the shared shapes and vocabulary'
+    - 'paiml/infra docs/specifications/paiml-ontology.md v4.17 §5 ONT-4g, ONT-10'
+    - 'docs/audits/surface_audit.csv (the ledger; binary column = aprender-ptop)'
+    - 'scripts/dogfood_surfaces.sh (the snapshot extract:binary reads)'
+    - 'crates/aprender-present-terminal/Cargo.toml ([[bin]] aprender-ptop, required-features = ["aprender-ptop"])'
+    - 'aprender#4502 — ONT-10'
+
+entity:
+  type: binary
+  ref: binary/aprender-present-terminal/aprender-ptop
+
+relations:
+  depends_on: [binary-surface-v1]
+
+shapes:
+  - id: binary-aprender-ptop-surface
+    targetClass: bin:target/aprender-present-terminal/aprender-ptop
+    properties:
+      - {path: bin:name, minCount: 1, maxCount: 1, in: ["aprender-ptop"]}
+      - {path: bin:package, minCount: 1, maxCount: 1, in: ["aprender-present-terminal"]}
+      - {path: "bin:versionString", minCount: 1, maxCount: 1, pattern: "^aprender-ptop [0-9]+\\.[0-9]+\\.[0-9]+"}
+      # G0.1 — a violation since batch/ont-10 2026-09-27 (build.rs embeds APR_GIT_SHA); was a warning while RED
+      - {path: "bin:versionString", minCount: 1, maxCount: 1, pattern: "[0-9a-f]{9}"}
+      - {path: "bin:command", maxCount: 0}
+      - path: bin:option
+        minCount: 10
+        maxCount: 10
+        in:
+          - "--config"
+          - "--deterministic"
+          - "--dump-config"
+          - "--explode"
+          - "--height"
+          - "--no-color"
+          - "--qa-timing"
+          - "--refresh"
+          - "--render-once"
+          - "--width"
+      - {path: "bin:ledgerOrphan", maxCount: 0}
+
+equations:
+  surface_equals_snapshot:
+    formula: "commands(binary/aprender-present-terminal/aprender-ptop) = ∅; options = O, |O| = 10, O = the long options of --help of the --features aprender-ptop build, --help and --version excluded ∧ ledgerOrphan = { r ∈ csv : r.binary = aprender-ptop ∧ key(r) ≠ ⊤ ∧ key(r) ∉ O }; key(r) = ⊤ (the node) for the bare entry row, else the first long option of r.feature"
+    domain: "the snapshot record dogfood_surfaces.sh writes for this target; docs/audits/surface_audit.csv rows whose binary column is aprender-ptop (4 on 2026-09-26)"
+    codomain: "set equality, or a Fail naming each member of the symmetric difference; literals on the focus node, one per orphan row"
+    invariants:
+      - "in + minCount 10 + maxCount 10 is set equality on options: an added, dropped or renamed option is a violation naming it"
+      - "a ledgered option the built binary does not accept is a violation, never a silent skip"
+    preconditions:
+      - "the snapshot was written at this commit, default features"
+    postconditions:
+      - "help_sha256 in the snapshot is the sha256 of `aprender-ptop --help` at this commit"
+    lean_theorem: none — L4 not declared
+
+invariants:
+  - id: BIN-PTOP-INV-001
+    property: every aprender-ptop surface member has an audited ledger row, and every ledger row names one
+    formal: '∀ c ∈ surface(aprender-ptop): ∃ r ∈ surface_audit : r.binary = aprender-ptop ∧ path(r) = c; ∀ r with r.binary = aprender-ptop: path(r) ∈ surface(aprender-ptop)'
+    prose: false
+  - id: BIN-PTOP-INV-002
+    property: unusable input is a clean rejection, never a success and never a panic
+    formal: '∀ a ∈ rejection_rows(crates/aprender-present-terminal/tests/cli_surface_gate.rs): exit(a) ∉ {0, 101} ∧ "panicked" ∉ stderr(a)'
+    prose: false
+
+falsification_tests:
+  - id: FALSIFY-BIN-PTOP-001
+    rule: 'G1.2 help answers'
+    prediction: '`aprender-ptop --help` exits 0 with non-empty stdout'
+    test: 'cargo test -p aprender-present-terminal --features aprender-ptop --test cli_surface_gate advertised_options_are_the_pinned_surface'
+    if_fails: 'the binary cannot describe its own surface (observed 2026-09-27: exit 0, GREEN)'
+    mutation: 'make the top-level --help return an error; must turn RED'
+  - id: FALSIFY-BIN-PTOP-002
+    rule: 'G1.2 an unknown flag is a usage error'
+    prediction: '`aprender-ptop --no-such-flag` exits 2'
+    test: 'cargo test -p aprender-present-terminal --features aprender-ptop --test cli_surface_gate unknown_'
+    if_fails: 'a typo is silently ignored (observed 2026-09-27: exit 2, GREEN)'
+    mutation: 'add #[arg(allow_hyphen_values)] catch-all at the top level; must turn RED'
+  - id: FALSIFY-BIN-PTOP-003
+    rule: 'G0.1 the version names the commit'
+    prediction: '`aprender-ptop --version` contains the first 9 hex of the git sha it was built from'
+    test: 'crates/aprender-present-terminal/src/bin/aprender-ptop.rs tests::version_flag_names_the_commit; the shape: bin:versionLacksSha, once extract:binary lands'
+    if_fails: 'a stale aprender-ptop reads as HEAD (observed 2026-09-26 at b6cf6d2ed: "aprender-ptop 0.69.3", no sha; fixed on batch/ont-10: build.rs embeds APR_GIT_SHA, same resolver as pv)'
+    mutation: 'set VERSION back to CARGO_PKG_VERSION alone; the unit test turns RED (field 3 missing)'
+  - id: FALSIFY-BIN-PTOP-004
+    rule: 'G1.3/G1.4 the surface set equals the snapshot'
+    prediction: '`aprender-ptop --explode nosuch` exits 2, and the surface literals in the shape above = the snapshot''s, set-equal'
+    test: 'cargo test -p aprender-present-terminal --features aprender-ptop --test cli_surface_gate -- advertised_options_are_the_pinned_surface malformed_arguments_are_usage_errors'
+    if_fails: 'an added, dropped or renamed surface member ships with the ontology green ; a misspelt --explode panel rendered the whole screen with exit 0 (observed 2026-09-26 at b6cf6d2ed; fixed on batch/ont-10: parse_panel_type is the clap value_parser, exit 2)'
+    mutation: 'map the unknown-panel arm of parse_panel_type to Ok(PanelType::Cpu); the unit test turns RED (checked 2026-09-27). Remove one surface literal from the snapshot; must turn RED naming it'
+  - id: FALSIFY-BIN-PTOP-005
+    rule: 'ledger rows exist'
+    prediction: 'docs/audits/surface_audit.csv has ≥1 row per surface member with binary = aprender-ptop (4 rows on 2026-09-27)'
+    test: 'scripts/check_surface_audit_bins.sh (aprender#4476)'
+    if_fails: 'the dogfood coverage ratio is computed over a ledger that silently omits a shipped surface member'
+    mutation: 'delete every aprender-ptop row; must turn RED naming aprender-ptop'
+  - id: FALSIFY-BIN-PTOP-006
+    rule: 'ledgered option removed is red'
+    prediction: 'deleting --render-once from the snapshot''s option list makes aprender-ptop-options RED: |O| = 9 and the two --render-once rows become bin:ledgerOrphan'
+    test: 'pv lint contracts/ --gate shapes --format json (after ONT-4g), on the snapshot with --render-once removed'
+    if_fails: 'aprender-ptop''s headless render mode, the one CI can exercise, could vanish with the ontology green.'
+    mutation: 'the edit in the prediction; must turn RED — verdict Fail, results on binary/aprender-present-terminal/aprender-ptop paths bin:option and bin:ledgerOrphan'
+  - id: FALSIFY-BIN-PTOP-007
+    rule: 'default feature build has no node'
+    prediction: 'an extractor that builds aprender-present-terminal with default features produces no aprender-ptop target, so no focus node exists and the 4 ledger rows resolve to nothing'
+    test: 'pv lint contracts/ --gate shapes --format json (after ONT-4g), on a snapshot from a default-feature build'
+    if_fails: 'A binary the ledger lists could drop out of the ontology silently because its feature is opt-in.'
+    mutation: 'the edit in the prediction; must turn RED — the ONT-4g surface_audit_bins gate names aprender-ptop as a ledgered binary with no node'
+  - id: FALSIFY-BIN-PTOP-008
+    rule: 'unusable input is rejected cleanly'
+    prediction: 'a non-numeric `--width`, `--refresh` and `--height` (aprender-ptop reads no input file it could reject: a missing or garbage `-c` config warns and falls back to the defaults): each exits non-zero, not 101, with no "panicked" on stderr'
+    test: 'cargo test -p aprender-present-terminal --features aprender-ptop --test cli_surface_gate unusable_input_is_rejected'
+    if_fails: 'MEASURED 2026-09-27 (aprender-01): each exits 2, GREEN. `-c <missing|garbage> --render-once` exits 0 with a warning — NOT asserted, recorded as finding a01-ont10-ptop-config-falls-back'
+    mutation: 'make a rejection path return Ok(()) or unwrap the read; must turn RED on that row'

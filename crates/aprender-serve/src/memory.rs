@@ -341,6 +341,7 @@ mod tests {
         let d2 = vec![2u8; 256];
         // SAFETY: data is valid
         let (r1, res1) = unsafe { PinnedRegion::new(d1.as_ptr(), d1.len(), &config) };
+        // SAFETY: d2 is a live Vec that outlives r2; ptr/len come from the same allocation
         let (r2, res2) = unsafe { PinnedRegion::new(d2.as_ptr(), d2.len(), &config) };
         assert_eq!(res1, MlockResult::Disabled);
         assert_eq!(res2, MlockResult::Disabled);

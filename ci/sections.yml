@@ -298,6 +298,16 @@ jobs:
           }
           parent="/mnt/nvme-raid0/targets/aprender-ci/${PR_OR_REF}"
           reg="/mnt/nvme-raid0/cargo-ci/registry/${PR_OR_REF}"
+          # infra#1059: admit this target unit against gx10's disk budget BEFORE creating it
+          # (free >= 50G + 25G x (live+1), live < 2; waits <=20m, then exit 1). The admit
+          # record is what the runner's JOB_COMPLETED hook reaps, and nothing else. Hosts
+          # without the gate skip; gx10 exports CI_TARGET_ADMIT_REQUIRED=1, so a missing
+          # gate there is red, never a silent skip.
+          if command -v ci-target-admit >/dev/null 2>&1; then
+            ci-target-admit "${parent}/run-${GITHUB_RUN_ID}" || exit 1
+          elif [ "${CI_TARGET_ADMIT_REQUIRED:-0}" = 1 ]; then
+            echo "::error::infra#1059: ci-target-admit is required on ${RUNNER_NAME:-this runner} and is missing"; exit 1
+          fi
           heal_path /mnt/nvme-raid0/targets/aprender-ci "${parent}/run-${GITHUB_RUN_ID}"
           heal_path /mnt/nvme-raid0/cargo-ci/registry "$reg"
           ls -ld "$parent" "${parent}/run-${GITHUB_RUN_ID}" "$reg"
@@ -391,6 +401,44 @@ jobs:
           esac
           bash scripts/ci_test_tier.sh "${args[@]}" | tee "$RUNNER_TEMP/tier.txt"
           grep -E '^(tier|crates|targets|check_workspace|reason|cite)=' "$RUNNER_TEMP/tier.txt" >> "$GITHUB_OUTPUT"
+      # #4502 row 2: lint_passes_on_real_contracts (aprender-contracts) requires the
+      # refinement gate to RUN whenever CI is set, and that gate compares HEAD with
+      # merge-base(HEAD, origin/main), else the origin/main tip. This section clones at
+      # depth 1 and only the tier step's pull_request arm fetched a main, so a
+      # workflow_dispatch / merge_group / push shard had no base and the test panicked
+      # "the refinement gate declined". Operator ruling (2026-09-28 09:41): compare HEAD
+      # with the EVENT's base commit -- pull_request.base.sha, merge_group.base_sha,
+      # push's `before` -- and fall back to the origin/main tip only for
+      # workflow_dispatch. That commit is pinned as refs/remotes/origin/main, so at
+      # depth 1 (no merge-base) the gate's tip fallback compares against exactly it.
+      # AFTER the tier step: its pull_request arm fetches main's CURRENT tip into
+      # origin/main, which would replace the base. A missing base fails the step here,
+      # loudly, instead of reaching the test as a skipped gate.
+      - name: Pin the event's base commit as origin/main (refinement gate comparand, aprender-4502)
+        env:
+          PR_BASE_SHA: ${{ github.event.pull_request.base.sha }}
+          MG_BASE_SHA: ${{ github.event.merge_group.base_sha }}
+          PUSH_BEFORE: ${{ github.event.before }}
+        run: |
+          set -euo pipefail
+          case "${GITHUB_EVENT_NAME}" in
+            pull_request) base="${PR_BASE_SHA:-}" ;;
+            merge_group) base="${MG_BASE_SHA:-}" ;;
+            push) base="${PUSH_BEFORE:-}" ;;
+            workflow_dispatch)
+              git fetch --no-tags --depth=1 origin +refs/heads/main:refs/remotes/origin/main
+              printf 'refinement base: origin/main tip %s (workflow_dispatch has no event base)\n' "$(git rev-parse origin/main)"
+              exit 0
+              ;;
+            *) printf '::error::refinement base: event %s has no base rule\n' "${GITHUB_EVENT_NAME}"; exit 1 ;;
+          esac
+          if ! printf '%s' "$base" | grep -Eq '^[0-9a-f]{40}$' || [ "$base" = 0000000000000000000000000000000000000000 ]; then
+            printf '::error::refinement base: %s event carries no base sha (got "%s")\n' "${GITHUB_EVENT_NAME}" "$base"
+            exit 1
+          fi
+          git fetch --no-tags --depth=1 origin "$base"
+          git update-ref refs/remotes/origin/main "$base"
+          printf 'refinement base: %s base %s pinned as origin/main\n' "${GITHUB_EVENT_NAME}" "$(git rev-parse 'origin/main^{commit}')"
       - name: Workspace lib tests (25,300+)
         if: steps.tier.outputs.tier == 'full'
         # Excluded: aprender-compute (SIMD SIGSEGV at exit), aprender-gpu and aprender-cuda-edge
@@ -428,8 +476,12 @@ jobs:
         # comes from root Cargo.toml [profile.test]; the CARGO_PROFILE_*_DEBUG
         # env vars are kept as belt-and-suspenders.
         timeout-minutes: 110
+        # safe.directory: the container runs as root over a host-owned /workspace, so
+        # git refuses it ("dubious ownership") and the pinned origin/main above never
+        # resolves -- the refinement gate then skips and its CI assert fails (aprender-4502).
         run: |
           docker run --rm \
+          -e GIT_CONFIG_COUNT=1 -e GIT_CONFIG_KEY_0=safe.directory -e GIT_CONFIG_VALUE_0=/workspace \
           -e CI -e GITHUB_ACTIONS -e GITHUB_REF -e GITHUB_SHA -e GITHUB_REPOSITORY -e GITHUB_RUN_ID -e GITHUB_EVENT_NAME -e GITHUB_WORKFLOW \
             -v "${GITHUB_WORKSPACE}:/workspace" \
             -v "/mnt/nvme-raid0/cargo-ci/registry/${PR_OR_REF}:/usr/local/cargo/registry" \
@@ -706,6 +758,7 @@ jobs:
           pkgs=""; for c in "${crates[@]}"; do pkgs="$pkgs -p $c"; done
           printf 'quick tier crates: %s\n' "$CRATES"
           docker run --rm \
+          -e GIT_CONFIG_COUNT=1 -e GIT_CONFIG_KEY_0=safe.directory -e GIT_CONFIG_VALUE_0=/workspace \
           -e CI -e GITHUB_ACTIONS -e GITHUB_REF -e GITHUB_SHA -e GITHUB_REPOSITORY -e GITHUB_RUN_ID -e GITHUB_EVENT_NAME -e GITHUB_WORKFLOW \
             -v "${GITHUB_WORKSPACE}:/workspace" \
             -v "/mnt/nvme-raid0/cargo-ci/registry/${PR_OR_REF}:/usr/local/cargo/registry" \
@@ -789,6 +842,7 @@ jobs:
           printf 'nextest filterset (%s clause(s)):\n' "$(printf '%s' "$EXPR" | tr '|' '\n' | wc -l)"
           printf '%s\n' "$EXPR" | tr '|' '\n' | sed 's/^ *//; s/ *$//; s/^/  + /'
           docker run --rm \
+          -e GIT_CONFIG_COUNT=1 -e GIT_CONFIG_KEY_0=safe.directory -e GIT_CONFIG_VALUE_0=/workspace \
           -e CI -e GITHUB_ACTIONS -e GITHUB_REF -e GITHUB_SHA -e GITHUB_REPOSITORY -e GITHUB_RUN_ID -e GITHUB_EVENT_NAME -e GITHUB_WORKFLOW \
             -v "${GITHUB_WORKSPACE}:/workspace" \
             -v "/mnt/nvme-raid0/cargo-ci/registry/${PR_OR_REF}:/usr/local/cargo/registry" \
@@ -955,11 +1009,17 @@ jobs:
           # workspace. Runner (noah:1000) can't git-clean them on next run
           # → checkout fails → CI breaks. This runs inside the container
           # (as root) restoring host ownership for subsequent bare-metal jobs.
+          # infra#1059: mount the target unit only if it exists. When the disk
+          # admit gate refused it, a bind mount here would make docker create the
+          # refused unit as root, unrecorded, so the reap hook would never free it.
+          unit="/mnt/nvme-raid0/targets/aprender-ci/${PR_OR_REF}/run-${GITHUB_RUN_ID}"
+          target_mount=()
+          if [ -d "$unit" ]; then target_mount=(-v "${unit}:/workspace/target"); fi
           docker run --rm \
           -e CI -e GITHUB_ACTIONS -e GITHUB_REF -e GITHUB_SHA -e GITHUB_REPOSITORY -e GITHUB_RUN_ID -e GITHUB_EVENT_NAME -e GITHUB_WORKFLOW \
             -v "${GITHUB_WORKSPACE}:/workspace" \
             -v "/mnt/nvme-raid0/cargo-ci/registry/${PR_OR_REF}:/usr/local/cargo/registry" \
-            -v "/mnt/nvme-raid0/targets/aprender-ci/${PR_OR_REF}/run-${GITHUB_RUN_ID}:/workspace/target" \
+            "${target_mount[@]}" \
             "$IMAGE" \
             bash -c 'chown -R 1000:1000 /workspace || true; chown -R 1000:1000 /usr/local/cargo/registry || true; chown -R 1000:1000 /workspace/target || true'
 
@@ -1073,13 +1133,146 @@ jobs:
       # ratchets fall back to the origin/main TIP. That is the STRICTER
       # comparand, and it means the CI path is the tip path: a local run that
       # passes on the merge-base can still red here, and CI is authoritative.
-      - name: Fetch origin/main as the comparand for every ratchet in this job
+      - id: guard-setup
+        name: Fetch origin/main as the comparand for every ratchet in this job
         run: |
           git fetch --no-tags --depth=1 origin +refs/heads/main:refs/remotes/origin/main
           # push shape: HEAD IS the origin/main tip, so every differential ratchet judges it against
           # its FIRST PARENT (scripts/lib/resolve_base.sh: HEAD vs HEAD would pass vacuously, the
           # G-10 quorum's finding), and a depth-1 checkout has not fetched that parent. Deepen by one.
           if [ "${GITHUB_EVENT_NAME:-}" = push ]; then git fetch --no-tags --deepen=1 origin +refs/heads/main:refs/remotes/origin/main; fi
+      # #4415 (operator A4, 2026-09-25): ONE step runs every guard step of guard-tree-steps
+      # below, keeps going past a red one, and reports every failure. GitHub would
+      # stop this job at its first red step, and the others would never be seen.
+      # `make guards-local` and the pre-push hook run this same script and print
+      # the same `ci_guards: sha256` line.
+      - name: Every guard step runs, and every failure is reported (scripts/ci_guards.sh, #4415)
+        if: ${{ !cancelled() && steps.guard-setup.outcome == 'success' }}
+        env:
+          GITHUB_TOKEN: ${{ github.token }}
+          GH_TOKEN: ${{ github.token }}
+        run: bash scripts/ci_guards.sh guard-tree
+      # APR-RELEASE-001 §6 R-2, WIRED (#3200 shipped the guard; this is its
+      # caller). This step is its ONLY runner: guard_tree.sh skips it as
+      # wired-with-args (it needs a body), so its case table ran in NO job until
+      # this step called `--self-test` beside `--body` (found by aprender-f0,
+      # 2026-09-21; the comment here used to claim guard_tree ran it bare). The
+      # 0.67.0 reconcile found 48 merged PRs since the previous tag of which only
+      # 9 closed anything; that is what this guard exists to stop.
+      #
+      # THE BODY IS NEVER INTERPOLATED INTO THE SCRIPT. `${{ }}` is substituted
+      # textually BEFORE bash sees the line, so a body containing a backtick or
+      # $(...) would execute on the runner -- and this body is attacker-controlled
+      # by construction. Since #3298 it is fetched live by `gh api` straight into
+      # a file (it used to arrive through `env:` from the stale event payload);
+      # either way it is data. scripts/check_workflow_env_defined.sh enforces
+      # the env: side of that rule.
+      #
+      # WHY THIS STEP AND ITS TWO NEIGHBOURS ARE NOT IN guard-tree-steps (#4415):
+      # they read the pull_request payload (PR_NUMBER), which ci_guards.sh cannot
+      # supply to a local run, so they stay here. They still run all: both carry
+      # !cancelled(), the report is always(), and check_guard_steps_run_all.sh
+      # refuses any other fail-fast step in a guard section over the baseline.
+      #
+      # pull_request only: on merge_group there is no pull_request payload, and
+      # a body is fixed before a PR is ever enqueued.
+      - name: A PR body must close every issue it cites, or say why not (§6 R-2)
+        # `!cancelled()` and NOT a bare event check. Actions steps are fail-fast:
+        # measured on run 34875945193, step 8 went red and 48 of this job's 59
+        # steps were SKIPPED -- including this one and its §11.1 neighbour. This
+        # guard exists because the 0.67.0 reconcile found 48 merged PRs of which
+        # only 9 closed anything; masked by an unrelated guard, it is dark exactly
+        # as it was before it had a caller. It reads a PR body and nothing else,
+        # so no guard result can be its precondition. (#3282 classifies the other
+        # 46, which is a judgment call per step rather than one blanket edit.)
+        if: "!cancelled() && github.event_name == 'pull_request'"
+        # #3298: the body is read LIVE from the API, not from the event payload.
+        # `github.event.pull_request.body` is frozen when the event is minted and
+        # `gh run rerun` replays that payload, so fixing the body per the guard's
+        # own FAIL message could never be re-graded by a rerun -- only by a push.
+        # Still data, never interpolated: gh writes it straight to the file.
+        env:
+          PR_NUMBER: ${{ github.event.pull_request.number }}
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          set -euo pipefail
+          setsid --wait bash scripts/check_pr_closes_issue.sh --self-test
+          gh api "repos/${GITHUB_REPOSITORY}/pulls/${PR_NUMBER}" \
+            --jq '.body // ""' > "$RUNNER_TEMP/pr-body.txt"
+          setsid --wait bash scripts/check_pr_closes_issue.sh --body "$RUNNER_TEMP/pr-body.txt"
+      # APR-RELEASE-001 §11.1, WIRED. The section shipped as prose in #3268 and
+      # nothing read it: `grep -rl ont-delta scripts/ .github/ Makefile` returned
+      # NOTHING, while §11.1's own text says "Absent is a PR-body lint failure,
+      # not a review comment". A rule whose enforcement is "not a review comment"
+      # and whose only mechanism IS a review comment is this repo's anti-theater
+      # class, one level up from the guard it sits beside.
+      #
+      # Same body-handling rule as the step above: the body is fetched live by
+      # `gh api` into a file as DATA and is never interpolated into the script.
+      # It is attacker-controlled by construction.
+      #
+      # The changed-file list is the other input, and it is what makes the guard
+      # non-trivial: half the sweep surface ("a known-red list anywhere") is
+      # DERIVED from the tree, not typed. Measured on #3277, which touches
+      # scripts/cb200_baseline.txt and no prose sink at all -- a hand-typed sink
+      # list would have passed it.
+      - name: A sweep PR closes with an ontology delta, not a paragraph (§11.1)
+        # `!cancelled()` and NOT a bare event check. Actions steps are fail-fast:
+        # measured on run 34875945193, step 8 went red and 48 of this job's 59
+        # steps were SKIPPED -- including this one and its §11.1 neighbour. This
+        # guard exists because the 0.67.0 reconcile found 48 merged PRs of which
+        # only 9 closed anything; masked by an unrelated guard, it is dark exactly
+        # as it was before it had a caller. It reads a PR body and nothing else,
+        # so no guard result can be its precondition. (#3282 classifies the other
+        # 46, which is a judgment call per step rather than one blanket edit.)
+        if: "!cancelled() && github.event_name == 'pull_request'"
+        # #3298: body and file list now come from the same place (the live API)
+        # at the same time. The body used to be the event SNAPSHOT while the file
+        # list was live, so a rerun after a body edit re-graded the OLD body.
+        env:
+          PR_NUMBER: ${{ github.event.pull_request.number }}
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          set -euo pipefail
+          gh api "repos/${GITHUB_REPOSITORY}/pulls/${PR_NUMBER}" \
+            --jq '.body // ""' > "$RUNNER_TEMP/ont-body.txt"
+          gh api "repos/${GITHUB_REPOSITORY}/pulls/${PR_NUMBER}/files" --paginate \
+            --jq '.[].filename' > "$RUNNER_TEMP/ont-files.txt"
+          setsid --wait bash scripts/check_pr_ont_delta.sh \
+            --body "$RUNNER_TEMP/ont-body.txt" --changed "$RUNNER_TEMP/ont-files.txt"
+      # aprender#2822: THE REPORT. Runs even when the job dies mid-cargo,
+      # and takes its own final probe first -- without that, a failure at
+      # step K leaves the last recorded boundary BEFORE K and the table
+      # reads clean, which is the whole failure mode being investigated.
+      #
+      # It also pulls the host journal for the job's window into the job
+      # log. That is the decisive evidence and the only evidence that
+      # expires: `_work/*/target` is deleted by HOST automation (a sibling
+      # runner's job-started hook, a systemd timer) which logs under its own
+      # tag and appears in NO GitHub log. See
+      # scripts/runner-infra/runner-disk-guard.sh, whose own header records
+      # this exact signature.
+      #
+      # continue-on-error is deliberate and is NOT a disarmed gate: nothing
+      # here asserts anything. The gate that can fail is the case table
+      # wired above.
+      - name: "target-watch: report (aprender#2822)"
+        if: always()
+        continue-on-error: true
+        run: |
+          bash scripts/ci_target_watch.sh probe post-job
+          bash scripts/ci_target_watch.sh report
+
+  guard-tree-steps:
+    # MANIFEST, never run by GitHub (`if: false`). These are guard-tree's guard steps,
+    # executed by the single `scripts/ci_guards.sh guard-tree` step of guard-tree above, and by
+    # `make guards-local` (#4415). They live here, verbatim, so every guard that
+    # reads this file for an invocation (check_guards_are_wired.sh, guard_tree.sh,
+    # the contracts' `test:` greps) still finds it. A step here is name/run/env
+    # only; scripts/check_guard_steps_run_all.sh refuses anything else.
+    if: false
+    runs-on: [self-hosted, Linux, clean-room]   # arch-neutral: intel, yoga or gx10 (#3100)
+    steps:
       # aprender#2822. Case table FIRST, per the convention above: the probe
       # below is only worth its 0.15s if the classifier it feeds can still turn
       # RED. Seven rows over a throwaway tree - no cargo, no network, no host.
@@ -1126,6 +1319,16 @@ jobs:
         env:
           GH_TOKEN: ${{ github.token }}
         run: bash scripts/guard_tree.sh --no-cargo
+      # The gate's mutants skip rule, executed from ci.yml's own marker block. It
+      # was run by no step: guard_tree.sh files it as a cargo guard (its text
+      # names guard-cargo) and no workflow dispatches --cargo-only, so the mutants
+      # rule (#3676) passed check_guards_are_wired.sh on a comment mention alone.
+      # It reads only ci.yml and invokes no build tool, so it runs here -- the job
+      # that runs on every PR, including the one that edits the gate.
+      - name: gate accepts a skipped mutants job only when that is its filter (#3676)
+        run: setsid --wait bash scripts/check_ci_gate_mutants_rule.sh
+      - name: gate mutants rule can still go RED (#3676)
+        run: setsid --wait bash scripts/check_ci_gate_mutants_rule.sh --self-test
       # scripts/tests/guard_tree_test.sh is guard_tree.sh's OWN case table
       # (BSE-01, PMAT-1062) -- it proves guard_tree.sh's no-fail-fast
       # behaviour against a fixture, proves a fail-fast MUTANT of it goes RED
@@ -1411,6 +1614,13 @@ jobs:
         run: setsid --wait bash scripts/check_pr_review_wiring.sh --self-test
       - name: The PR-review receipt guard is wired job-level, not path-filtered
         run: setsid --wait bash scripts/check_pr_review_wiring.sh
+      # #4441 passed FAT_SECRET_PR_REVIEW_SIGNING_KEY_B (no "64"), so pr-review-sign
+      # read an empty key and Arm 4 went RED on every new PR. A section's
+      # a secrets.<NAME> read reaches it only through ci.yml's FAT_SECRET_<NAME>. Case table first.
+      - name: "Fat-job secret pass-through case table (6 rows)"
+        run: setsid --wait bash scripts/check_fat_secrets_passed.sh --self-test
+      - name: Every secret a section reads is passed to the fat job under its own name
+        run: setsid --wait bash scripts/check_fat_secrets_passed.sh
       # PRQ-013 (PP-066 C0-5, #2982): the job that judges a PR's OWN receipt must be
       # defined by the base — a workflow on pull_request_target + merge_group, never
       # pull_request — and `gate` must not wait on a head-defined receipt job. Case
@@ -1429,98 +1639,10 @@ jobs:
       # HARNESS-BROKEN rather than as a dead mutant. Text-only, no build.
       - name: "Receipt-wiring guard: every rule it states, mutated (15/15 kill)"
         run: bash scripts/mutate_pr_review_wiring_guard.sh
-      # APR-RELEASE-001 §6 R-2, WIRED (#3200 shipped the guard; this is its
-      # caller). This step is its ONLY runner: guard_tree.sh skips it as
-      # wired-with-args (it needs a body), so its case table ran in NO job until
-      # this step called `--self-test` beside `--body` (found by aprender-f0,
-      # 2026-09-21; the comment here used to claim guard_tree ran it bare). The
-      # 0.67.0 reconcile found 48 merged PRs since the previous tag of which only
-      # 9 closed anything; that is what this guard exists to stop.
-      #
-      # THE BODY ARRIVES THROUGH `env:`, NEVER INTERPOLATED INTO THE SCRIPT.
-      # `${{ }}` is substituted textually BEFORE bash sees the line, so a body
-      # containing a backtick or $(...) would execute on the runner -- and this
-      # body is attacker-controlled by construction. `env:` passes it as data.
-      # scripts/check_workflow_env_defined.sh enforces the same rule.
-      #
-      # pull_request only: on merge_group there is no pull_request payload, and
-      # a body is fixed before a PR is ever enqueued.
-      - name: A PR body must close every issue it cites, or say why not (§6 R-2)
-        # `!cancelled()` and NOT a bare event check. Actions steps are fail-fast:
-        # measured on run 34875945193, step 8 went red and 48 of this job's 59
-        # steps were SKIPPED -- including this one and its §11.1 neighbour. This
-        # guard exists because the 0.67.0 reconcile found 48 merged PRs of which
-        # only 9 closed anything; masked by an unrelated guard, it is dark exactly
-        # as it was before it had a caller. It reads a PR body and nothing else,
-        # so no guard result can be its precondition. (#3282 classifies the other
-        # 46, which is a judgment call per step rather than one blanket edit.)
-        if: "!cancelled() && github.event_name == 'pull_request'"
-        env:
-          PR_BODY: ${{ github.event.pull_request.body }}
+      - name: "Guard jobs run all: no fail-fast step over baseline, every guard script reachable (#4415)"
         run: |
-          set -euo pipefail
-          setsid --wait bash scripts/check_pr_closes_issue.sh --self-test
-          printf '%s' "$PR_BODY" > "$RUNNER_TEMP/pr-body.txt"
-          setsid --wait bash scripts/check_pr_closes_issue.sh --body "$RUNNER_TEMP/pr-body.txt"
-      # APR-RELEASE-001 §11.1, WIRED. The section shipped as prose in #3268 and
-      # nothing read it: `grep -rl ont-delta scripts/ .github/ Makefile` returned
-      # NOTHING, while §11.1's own text says "Absent is a PR-body lint failure,
-      # not a review comment". A rule whose enforcement is "not a review comment"
-      # and whose only mechanism IS a review comment is this repo's anti-theater
-      # class, one level up from the guard it sits beside.
-      #
-      # Same body-handling rule as the step above: the body arrives through
-      # `env:` as DATA and is never interpolated into the script. It is
-      # attacker-controlled by construction.
-      #
-      # The changed-file list is the other input, and it is what makes the guard
-      # non-trivial: half the sweep surface ("a known-red list anywhere") is
-      # DERIVED from the tree, not typed. Measured on #3277, which touches
-      # scripts/cb200_baseline.txt and no prose sink at all -- a hand-typed sink
-      # list would have passed it.
-      - name: A sweep PR closes with an ontology delta, not a paragraph (§11.1)
-        # `!cancelled()` and NOT a bare event check. Actions steps are fail-fast:
-        # measured on run 34875945193, step 8 went red and 48 of this job's 59
-        # steps were SKIPPED -- including this one and its §11.1 neighbour. This
-        # guard exists because the 0.67.0 reconcile found 48 merged PRs of which
-        # only 9 closed anything; masked by an unrelated guard, it is dark exactly
-        # as it was before it had a caller. It reads a PR body and nothing else,
-        # so no guard result can be its precondition. (#3282 classifies the other
-        # 46, which is a judgment call per step rather than one blanket edit.)
-        if: "!cancelled() && github.event_name == 'pull_request'"
-        env:
-          PR_BODY: ${{ github.event.pull_request.body }}
-          PR_NUMBER: ${{ github.event.pull_request.number }}
-          GH_TOKEN: ${{ github.token }}
-        run: |
-          set -euo pipefail
-          printf '%s' "$PR_BODY" > "$RUNNER_TEMP/ont-body.txt"
-          gh api "repos/${GITHUB_REPOSITORY}/pulls/${PR_NUMBER}/files" --paginate \
-            --jq '.[].filename' > "$RUNNER_TEMP/ont-files.txt"
-          setsid --wait bash scripts/check_pr_ont_delta.sh \
-            --body "$RUNNER_TEMP/ont-body.txt" --changed "$RUNNER_TEMP/ont-files.txt"
-      # aprender#2822: THE REPORT. Runs even when the job dies mid-cargo,
-      # and takes its own final probe first -- without that, a failure at
-      # step K leaves the last recorded boundary BEFORE K and the table
-      # reads clean, which is the whole failure mode being investigated.
-      #
-      # It also pulls the host journal for the job's window into the job
-      # log. That is the decisive evidence and the only evidence that
-      # expires: `_work/*/target` is deleted by HOST automation (a sibling
-      # runner's job-started hook, a systemd timer) which logs under its own
-      # tag and appears in NO GitHub log. See
-      # scripts/runner-infra/runner-disk-guard.sh, whose own header records
-      # this exact signature.
-      #
-      # continue-on-error is deliberate and is NOT a disarmed gate: nothing
-      # here asserts anything. The gate that can fail is the case table
-      # wired above.
-      - name: "target-watch: report (aprender#2822)"
-        if: always()
-        continue-on-error: true
-        run: |
-          bash scripts/ci_target_watch.sh probe post-job
-          bash scripts/ci_target_watch.sh report
+          setsid --wait bash scripts/check_guard_steps_run_all.sh --self-test
+          setsid --wait bash scripts/check_guard_steps_run_all.sh
 
   # ── THE CARGO-USING GUARDS, PARALLEL TO workspace-test ────────────────────
   #
@@ -1637,7 +1759,8 @@ jobs:
       # .package-cache-mutate) are created by cargo itself INSIDE this same
       # directory — which is the entire reason the mount is $CARGO_HOME and
       # not $CARGO_HOME/registry.
-      - name: Create this job's own target dir and CARGO_HOME (before any bind mount)
+      - id: guard-setup
+        name: Create this job's own target dir and CARGO_HOME (before any bind mount)
         run: |
           # A root-owned parent (created by the docker daemon for another job's
           # bind mount, #3039) is chowned through the image before the mkdir;
@@ -1661,10 +1784,42 @@ jobs:
             done
             mkdir -p "$path"
           }
+          # infra#1059: admit this target unit against gx10's disk budget BEFORE creating it
+          # (free >= 50G + 25G x (live+1), live < 2; waits <=20m, then exit 1). The admit
+          # record is what the runner's JOB_COMPLETED hook reaps, and nothing else. Hosts
+          # without the gate skip; gx10 exports CI_TARGET_ADMIT_REQUIRED=1, so a missing
+          # gate there is red, never a silent skip.
+          if command -v ci-target-admit >/dev/null 2>&1; then
+            CI_TARGET_ADMIT_WAIT_S=300 ci-target-admit "$GUARD_TARGET_DIR" || exit 1   # 5 min, not 20: the 30 min job budget is rule E and is never widened; gx10 guard-cargo max 23 min (46 runs, 2026-09-24)
+          elif [ "${CI_TARGET_ADMIT_REQUIRED:-0}" = 1 ]; then
+            echo "::error::infra#1059: ci-target-admit is required on ${RUNNER_NAME:-this runner} and is missing"; exit 1
+          fi
           heal_path /mnt/nvme-raid0/targets/aprender-ci "$GUARD_TARGET_DIR"
           heal_path /mnt/nvme-raid0/cargo-ci/home "$GUARD_CARGO_HOME/registry"
           printf 'target dir: %s\n' "$GUARD_TARGET_DIR"
           printf 'cargo home: %s (registry/ .package-cache .package-cache-mutate travel together)\n' "$GUARD_CARGO_HOME"
+      # #4415 (operator A4, 2026-09-25): ONE step runs every guard step of guard-cargo-steps
+      # below, keeps going past a red one, and reports every failure. GitHub would
+      # stop this job at its first red step, and the others would never be seen.
+      # `make guards-local` and the pre-push hook run this same script and print
+      # the same `ci_guards: sha256` line.
+      - name: Every guard step runs, and every failure is reported (scripts/ci_guards.sh, #4415)
+        if: ${{ !cancelled() && steps.guard-setup.outcome == 'success' }}
+        env:
+          GITHUB_TOKEN: ${{ github.token }}
+          GH_TOKEN: ${{ github.token }}
+        run: bash scripts/ci_guards.sh guard-cargo
+
+  guard-cargo-steps:
+    # MANIFEST, never run by GitHub (`if: false`). These are guard-cargo's guard steps,
+    # executed by the single `scripts/ci_guards.sh guard-cargo` step of guard-cargo above, and by
+    # `make guards-local` (#4415). They live here, verbatim, so every guard that
+    # reads this file for an invocation (check_guards_are_wired.sh, guard_tree.sh,
+    # the contracts' `test:` greps) still finds it. A step here is name/run/env
+    # only; scripts/check_guard_steps_run_all.sh refuses anything else.
+    if: false
+    runs-on: [self-hosted, Linux, clean-room]   # arch-neutral: intel, yoga or gx10 (#3100)
+    steps:
       # Poka-yoke: a beat that no workflow executes reads as enforcement, is
       # counted as enforcement, and proves nothing. The Pillar-4 marquee decode
       # beat sat in ZERO workflows while being quoted as an enforced win (#2319).
@@ -1974,6 +2129,17 @@ jobs:
       # same binary. Nothing extra is compiled by placing it here.
       - name: pv_bin.sh must resolve the HEAD-built pv and refuse a stale one
         run: setsid --wait bash scripts/check_pv_bin_resolution.sh
+      # #4475: the contract gate, blocking. `make contracts` stopped after its first step (an
+      # unconditional `exit` under .ONESHELL) and nothing on a PR ran `extract --check`, so a contract
+      # could land without its census / contracts.nt / shapes.ttl regenerated. The shapes step fails
+      # CLOSED here with the HEAD pv: a decline (pv exit 2: NoShapes / NoFocus), an Unknown verdict,
+      # shapes_n == 0, focus_nodes_n == 0 or a silent planted control is RED, unlike the fleet-pin
+      # andon (check_fleet_pv_shapes_advisory.sh), which reports fleet state and is not this gate.
+      # The self-test runs first so a gate that can no longer refuse is named as such.
+      - name: contracts gate refuses what it cannot measure (self-test + mutant)
+        run: setsid --wait bash scripts/contracts_gate.sh --self-test
+      - name: contracts gate — lint, fail-closed shapes, regenerate + git diff, README, provenance
+        run: setsid --wait bash scripts/contracts_gate.sh
       - name: Every contract cites a test that exists (strict-test-binding)
         run: setsid --wait bash scripts/check_contract_test_binding.sh
       # Poka-yoke (#2551): `cargo test -p aprender-contracts --test
@@ -2009,6 +2175,21 @@ jobs:
       # (text-only, no build) runs first, per the convention above.
       - name: Renamed-crate facades case table
         run: setsid --wait bash scripts/check_facade_compat.sh --self-test
+      # #4587 review B3 (PR-REVIEW-SKILL-002 v2 S3.D): a guard with only its own
+      # self-test is a guard nobody has shown can turn RED. Each mutation set applies
+      # every drop/flip to a COPY and fails on any survivor or any patch that did not
+      # apply. The two lean guards were added with no CI caller at all; they run here.
+      - name: scoped facade allowlist can still turn RED (17 mutants)
+        run: setsid --wait bash scripts/mutate_facade_compat_guard.sh
+      - name: lean guards (leanchecker scoped, modules reachable) + their mutation sets
+        run: |
+          set -euo pipefail
+          setsid --wait bash scripts/check_leanchecker_scoped.sh --self-test
+          setsid --wait bash scripts/check_leanchecker_scoped.sh
+          setsid --wait bash scripts/check_lean_modules_reachable.sh --self-test
+          setsid --wait bash scripts/check_lean_modules_reachable.sh
+          setsid --wait bash scripts/mutate_leanchecker_scoped_guard.sh
+          setsid --wait bash scripts/mutate_lean_modules_reachable_guard.sh
       - name: provable-contracts 0.3.1 code still compiles against the facades
         run: setsid --wait bash scripts/check_facade_compat.sh
       # aprender#2628: check_facade_compat.sh proves the facades COMPILE and are
@@ -2717,8 +2898,11 @@ jobs:
     runs-on: [self-hosted, Linux, clean-room]   # arch-neutral: intel, yoga or gx10 (#3100)
     timeout-minutes: 15
     if: github.event_name == 'pull_request' && github.event.pull_request.head.repo.full_name == github.repository
+    # B1: the signature is posted as a check run, so the one write this section needs
+    # is checks. It no longer pushes, so contents is read-only.
     permissions:
-      contents: write
+      contents: read
+      checks: write
     steps:
       - name: Checkout the PR head
         uses: actions/checkout@v7
@@ -2744,48 +2928,68 @@ jobs:
         shell: bash
         run: bash scripts/pr_review_sign_receipt.sh --self-test
 
-      - name: Sign this PR's receipt, if it has an unsigned one
+      # B1 (operator 2026-09-28 14:52Z): the signature is a CHECK RUN on the head sha,
+      # never a commit. A commit by the signer made the PR head a bot commit, and under
+      # the approval policy a bot-actor head is action_required with 0 jobs and never
+      # fires pull_request_target (Arm 4) at all. The trusted comment binds
+      # `pr= head= pid=` under the signature; Arm 4 requires head= to be the PR head it
+      # judges and pid= the diff it computes, so a signature cannot be replayed onto
+      # another head or another diff.
+      - name: Sign this PR's unsigned receipt(s), bound to the head sha
         shell: bash
         env:
           PR_NUMBER: ${{ github.event.pull_request.number }}
+          PR_HEAD_SHA: ${{ github.event.pull_request.head.sha }}
           PR_REVIEW_SIGNING_KEY_B64: ${{ secrets.PR_REVIEW_SIGNING_KEY_B64 }}
         run: |
           set -euo pipefail
+          # Sign exactly the head the event names, not whatever the branch moved to.
+          git checkout -q --detach "$PR_HEAD_SHA"
           root="evidence/pr-review/$PR_NUMBER"
+          sigs="$RUNNER_TEMP/pr-review-signatures.json"
+          printf '{}' > "$sigs"
           if [ ! -d "$root" ]; then
             echo "no receipt directory $root — nothing to sign."
             echo "The review is still owed; the S13.11 shadow lane records its absence."
             exit 0
           fi
           signed_any=0
-          # A receipt with a document and no signature is the only thing this touches.
+          # A receipt with a document and no COMMITTED signature is the only thing this touches.
           while IFS= read -r rcpt; do
             d=$(dirname "$rcpt")
-            [ -f "$rcpt.minisig" ] && { echo "already signed: $d"; continue; }
+            [ -f "$rcpt.minisig" ] && { echo "already signed (committed .minisig): $d"; continue; }
             if [ -z "${PR_REVIEW_SIGNING_KEY_B64:-}" ]; then
               echo "::error::$d carries an UNSIGNED receipt and PR_REVIEW_SIGNING_KEY_B64 is empty."
               echo "::error::A receipt that cannot be signed cannot be verified by Arm 4."
               exit 1
             fi
-            bash scripts/pr_review_sign_receipt.sh "$d"
+            pid=$(jq -r '.predicate.diff_patch_id // "none"' "$rcpt")
+            PR_REVIEW_SIGN_BIND="pr=$PR_NUMBER head=$PR_HEAD_SHA pid=$pid" \
+              bash scripts/pr_review_sign_receipt.sh "$d"
+            jq --arg k "$(basename "$d")" --rawfile v "$rcpt.minisig" '.[$k] = $v' "$sigs" > "$sigs.new"
+            mv "$sigs.new" "$sigs"
+            # The signature leaves as a check run; it is never staged, committed or pushed.
+            rm -f "${rcpt:?}.minisig"
             signed_any=1
           done < <(find "$root" -name receipt.intoto.jsonl -type f)
           echo "signed_any=$signed_any" >> "$GITHUB_ENV"
 
-      - name: Commit the signature back to the PR branch
+      - name: Post the signature as a check run on the head sha (never a commit)
         if: env.signed_any == '1'
         shell: bash
         env:
-          PR_HEAD_REF: ${{ github.event.pull_request.head.ref }}
+          PR_HEAD_SHA: ${{ github.event.pull_request.head.sha }}
+          GH_TOKEN: ${{ github.token }}
         run: |
           set -euo pipefail
-          git config user.name  "aprender-pr-review-signer"
-          git config user.email "noreply@anthropic.com"
-          git add evidence/pr-review
-          git commit -m "chore(pr-review): sign this PR's receipt (PR-REVIEW-SKILL-002 v2 §4.3 CI signer)"
-          # Never --force. A race with the author's own push fails this step and the
-          # next run signs it; a force-push would silently discard their commit.
-          git push origin "HEAD:$PR_HEAD_REF"
+          sigs="$RUNNER_TEMP/pr-review-signatures.json"
+          jq -n --arg h "$PR_HEAD_SHA" --rawfile t "$sigs" '{
+              name: "pr-review-signature", head_sha: $h,
+              status: "completed", conclusion: "success",
+              output: { title: "PR-REVIEW-SKILL-002 v2 §4.3 receipt signature(s)",
+                        summary: "minisign signatures keyed by receipt directory; the trusted comment binds pr= head= pid=. Verified by Arm 4 in the pr-review-quorum check.",
+                        text: $t } }' \
+            | gh api -X POST "repos/$GITHUB_REPOSITORY/check-runs" --input - --jq '"posted check run \(.id) on \(.head_sha)"'
 
   # ---------------------------------------------------------------------------
   # RECEIPT PRESENCE, AS A FAST REQUIRED CHECK.
@@ -2863,6 +3067,7 @@ jobs:
     outputs:
       gpu_touched: ${{ steps.decide.outputs.gpu_touched }}
       gpu_crates: ${{ steps.decide.outputs.gpu_crates }}
+      cuda_lint: ${{ steps.decide.outputs.cuda_lint }}
     steps:
       - uses: actions/checkout@v7
         with:
@@ -2893,7 +3098,7 @@ jobs:
           bash scripts/ci_gpu_touched.sh --diff-from "$RUNNER_TEMP/touched.txt" \
             > "$RUNNER_TEMP/gpu.txt"
           cat "$RUNNER_TEMP/gpu.txt"
-          grep -E '^(gpu_touched|gpu_crates|reason)=' "$RUNNER_TEMP/gpu.txt" >> "$GITHUB_OUTPUT"
+          grep -E '^(gpu_touched|gpu_crates|cuda_lint|reason)=' "$RUNNER_TEMP/gpu.txt" >> "$GITHUB_OUTPUT"
 
   # ROW 67-C1 — `gpu-quick` on gx10 (GB10, sm_121, aarch64).
   # Promotion to required: row 68-C3, after 5 consecutive green gx10 nightlies.
@@ -2989,14 +3194,20 @@ jobs:
   # (the yoga nightly axis is #3060 / YOGA-NIGHTLY-001).
   cuda-unit:
     needs: [gpu-touched]
-    if: github.event_name == 'pull_request' && needs.gpu-touched.outputs.gpu_touched == '1'
+    # gpu_touched=1 runs every step. cuda_lint=1 alone (an apr-cli-only diff,
+    # #4336) runs ONLY the clippy step: the test steps carry their own
+    # gpu_touched `if:`, so yoga is held for a check build, not the test builds.
+    if: github.event_name == 'pull_request' && (needs.gpu-touched.outputs.gpu_touched == '1' || needs.gpu-touched.outputs.cuda_lint == '1')
     runs-on: [self-hosted, Linux, X64, cuda, yoga, ephemeral, docker]
     # 15 -> 35 (#3810): the derived cuda-only set needs a second, default-feature
     # test build of aprender-serve to list against. MEASURED on this PR's own run
     # (job 107295428985, yoga-eph, sharing yoga with a coverage job): the step
     # took 18 m 20 s and the job 21 m 18 s (tests alone 51 s). 25 left 3.7 min
     # of margin on a shared runner, a future flaky timeout, so 35.
-    timeout-minutes: 35
+    # 35 -> 50 (#3636): the clippy step is a check-profile build of the cuda tree,
+    # separate from the release test builds. Not yet measured on yoga; 15 min is a
+    # ceiling, not an estimate. Re-derive from the first run and tighten.
+    timeout-minutes: 50
     continue-on-error: false
     concurrency:
       group: perf-yoga
@@ -3035,6 +3246,7 @@ jobs:
       # (operator, 2026-09-09), not a training host. Nothing to yield to. The
       # `perf-yoga` concurrency group above is what keeps two runs off it.
       - name: aprender-gpu cuda unit tests (--features cuda --lib --release)
+        if: needs.gpu-touched.outputs.gpu_touched == '1'
         run: |
           nice -n 19 cargo test -p aprender-gpu --features cuda --lib --release
       # THE SERVE CUDA SET IS DERIVED, NOT FILTERED (#3810). The step used to filter
@@ -3070,6 +3282,7 @@ jobs:
       # counts as a pass. The grep is UNANCHORED, because under --nocapture the
       # message lands on the `test X ... ` line.
       - name: "aprender-serve cuda unit tests (the derived cuda-only set, by name)"
+        if: needs.gpu-touched.outputs.gpu_touched == '1'
         run: |
           set -euo pipefail
           export LC_ALL=C
@@ -3119,6 +3332,124 @@ jobs:
           echo "$summary"
           printf 'cuda-only: %s passed + %s ignored = %s derived, 0 device skips, %s model-absent skip line(s)\n' \
             "$passed" "$ignored" "$n_only" "${model_skips:-0}"
+      # #3636: `clippy --features cuda` was never run by any gate, and 62 findings
+      # piled up in cuda-gated code (compute, train, serve) before anyone looked.
+      # This is the only job with nvcc, so the lint lives here. The script runs its
+      # own planted-mutant self-test first: an unused import under
+      # #[cfg(feature = "cuda")] must turn it RED, or the gate is refused as vacuous.
+      # No step `if:`: this step runs whenever the job does, including on an
+      # apr-cli-only diff (cuda_lint=1, gpu_touched=0) — apr-cli has 30 files of
+      # #[cfg(feature = "cuda")] code that only this lint builds (#4336).
+      - name: "clippy --features cuda is clean (#3636)"
+        run: |
+          set -euo pipefail
+          setsid --wait bash scripts/check_clippy_cuda.sh --self-test
+          nice -n 19 setsid --wait bash scripts/check_clippy_cuda.sh
+
+  # #4621 (operator E1): the CUDA mutants shard. cargo-mutants on clean-room builds default features, so a
+  # mutant in `#[cfg(feature = "cuda")]` code is never compiled there: it "survives" without being measured.
+  # The CPU `mutants` section defers that set (not_measured + its sha). This section builds the cuda feature on
+  # the yoga device, mutates exactly the diff's files that the cuda build compiles and the default build does
+  # not (both MEASURED from dep-info), and runs the derived cuda-only lib tests against each mutant. The `gate`
+  # job is RED on a pull_request whose deferred set is non-empty unless this section succeeded AND measured the
+  # same set (measured_sha == not_measured_sha). Local runs never count (E1).
+  #
+  # The GPU lock is taken WITHOUT a wait limit here. cuda-unit's `-w 600 -E 175` turns a busy lock into a
+  # failing test binary, and under cargo-mutants a failing test is a CAUGHT mutant: a lock wait would pass as a
+  # kill. The job timeout bounds the wait instead. A device skip cannot pass a mutant either way: a skipped test
+  # catches nothing, so the mutant survives and the section is RED.
+  mutants-cuda:
+    needs: [gpu-touched]
+    if: github.event_name == 'pull_request' && needs.gpu-touched.outputs.gpu_touched == '1'
+    runs-on: [self-hosted, Linux, X64, cuda, yoga, ephemeral, docker]
+    # 150, estimated, not measured (no history): two dep-info checks and two test listings (~10 min cold), a
+    # cuda lib test build (~10 min), then per mutant an incremental rebuild plus the cuda-only set run one
+    # thread at a time (#4043), ~5 min each at -j 1. #4620 has 7. Refit from this section's own p99.
+    timeout-minutes: 150
+    continue-on-error: false
+    env:
+      CARGO_TERM_COLOR: always
+      CARGO_TARGET_DIR: ${{ github.workspace }}/target
+      CARGO_INCREMENTAL: "0"
+      CARGO_TARGET_X86_64_UNKNOWN_LINUX_GNU_RUNNER: flock /run/lock/fleet-gpu/gpu.lock
+      MUTANTS_MAX_MISSED: ${{ vars.MUTANTS_MAX_MISSED || '0' }}
+      MUTANTS_CAP: ${{ vars.MUTANTS_CAP || '60' }}
+    outputs:
+      measured: ${{ steps.measured.outputs.measured }}
+      measured_sha: ${{ steps.measured.outputs.measured_sha }}
+    steps:
+      - uses: actions/checkout@v7
+        with:
+          fetch-depth: 0
+      - name: Preflight — the self-hosted toolset this job needs (67-C2)
+        run: bash scripts/ci_self_hosted_preflight.sh --cuda
+      - name: Host GPU lock — the host's file, taken with no wait limit
+        run: |
+          set -euo pipefail
+          l=/run/lock/fleet-gpu/gpu.lock
+          mountpoint -q /run/lock/fleet-gpu || { echo "::error::/run/lock/fleet-gpu is not mounted from the host (infra eph-env EXTRA_MOUNTS)"; exit 1; }
+          [ -f "$l" ] || { echo "::error::$l is absent on the host (infra gpu-lock-tmpfiles)"; exit 1; }
+          command -v flock > /dev/null || { echo "::error::no flock in the runner image"; exit 1; }
+          [ "$CARGO_TARGET_X86_64_UNKNOWN_LINUX_GNU_RUNNER" = "flock $l" ] \
+            || { echo "::error::the runner must be 'flock $l' (no -w: a lock timeout would read as a kill): '$CARGO_TARGET_X86_64_UNKNOWN_LINUX_GNU_RUNNER'"; exit 1; }
+          echo "GPU lock: $l; test binaries run under: $CARGO_TARGET_X86_64_UNKNOWN_LINUX_GNU_RUNNER"
+      - name: The PR diff -- the same merge-base diff the CPU mutants section judges
+        run: |
+          set -euo pipefail
+          BASE_REF="${{ github.event.pull_request.base.ref }}"
+          git fetch --no-tags origin "$BASE_REF"
+          MERGE_BASE=$(git merge-base HEAD "origin/$BASE_REF" 2>/dev/null || true)
+          [ -n "$MERGE_BASE" ] || MERGE_BASE="origin/$BASE_REF"
+          git diff "$MERGE_BASE"...HEAD > pr.diff
+          echo "merge-base $MERGE_BASE, diff $(wc -l < pr.diff) lines"
+      - name: Install cargo-mutants 27.1.0 into a private root
+        run: |
+          set -euo pipefail
+          export CARGO_INSTALL_ROOT="$RUNNER_TEMP/cargo-mutants-root"
+          cargo install cargo-mutants --locked --version 27.1.0 > "$RUNNER_TEMP/mi.log" 2>&1 \
+            || { tail -20 "$RUNNER_TEMP/mi.log"; echo "::error::cargo-mutants install failed; the shard cannot run"; exit 1; }
+          "$CARGO_INSTALL_ROOT/bin/cargo-mutants" mutants --version
+          echo "$CARGO_INSTALL_ROOT/bin" >> "$GITHUB_PATH"
+      - name: The cuda-only lib tests (derived, as cuda-unit derives them) and the shard
+        run: |
+          set -euo pipefail
+          export LC_ALL=C
+          t="$RUNNER_TEMP"
+          nice -n 19 cargo test -p aprender-serve --lib -- --list 2> "$t/cpu-list.err" \
+            | sed -n 's/: test$//p' | sort > "$t/cpu-list.txt" || { cat "$t/cpu-list.err"; exit 1; }
+          nice -n 19 cargo test -p aprender-serve --features cuda --lib -- --list 2> "$t/cuda-list.err" \
+            | sed -n 's/: test$//p' | sort > "$t/cuda-list.txt" || { cat "$t/cuda-list.err"; exit 1; }
+          comm -23 "$t/cuda-list.txt" "$t/cpu-list.txt" > "$t/cuda-only.txt"
+          printf 'cuda binary %s tests, default %s, cuda-only %s\n' "$(wc -l < "$t/cuda-list.txt")" \
+            "$(wc -l < "$t/cpu-list.txt")" "$(wc -l < "$t/cuda-only.txt")"
+          [ -s "$t/cuda-only.txt" ] || { echo "::error::the derived cuda-only set is empty: the cuda feature did not engage"; exit 1; }
+          # the crates the CPU section keeps out of mutation, derived from the same line, so both sets agree
+          EXCL=$(grep -m1 -E "^[[:space:]]+cargo nextest run --profile ci --workspace --lib" ci/sections.yml \
+            | grep -oE -- "--exclude [a-z0-9_-]+" | sed "s/^--exclude /--exclude-crate /" | tr "\n" " ")
+          [ -n "$EXCL" ] || { echo "::error::no --exclude list found on the workspace-test nextest line"; exit 1; }
+          # shellcheck disable=SC2086
+          nice -n 19 bash scripts/mutants_diff_gate.sh pr.diff --features aprender-serve/cuda --gated-only \
+            --test-names "$t/cuda-only.txt" --cap "$MUTANTS_CAP" --jobs 1 --timeout 900 \
+            --max-missed "$MUTANTS_MAX_MISSED" --out mutants-cuda-gate $EXCL
+      - name: The measured set -- the gate job compares its sha with the CPU section's deferred set
+        id: measured
+        if: always()
+        run: |
+          set -euo pipefail
+          f=mutants-cuda-gate/measured.txt
+          [ -f "$f" ] || { echo "measured=none" >> "$GITHUB_OUTPUT"; echo "::error::no $f: the shard never ran its scope"; exit 1; }
+          n=$(grep -c . "$f" || true)
+          sha=$(LC_ALL=C sort "$f" | sha256sum | cut -c1-64)
+          echo "measured=${n:-0}" >> "$GITHUB_OUTPUT"
+          echo "measured_sha=$sha" >> "$GITHUB_OUTPUT"
+          echo "measured: ${n:-0} mutant(s), set sha $sha"
+          sed 's/^/  /' "$f"
+      - name: Upload the shard's results
+        if: always()
+        uses: actions/upload-artifact@v7
+        with:
+          name: mutation-results-cuda
+          path: mutants-cuda-gate/
 
   # APEX-001 EV-2a: the same figure, rendered on two architectures, must be the same bytes.
   #
@@ -3269,6 +3600,153 @@ jobs:
           path: target/aprender-viz/raster-receipt.json
           if-no-files-found: error
 
+  # ── PVL-001 EV-9 (#4083): the provable ladder, ADVISORY ────────────────────
+  #
+  # `pv discharge run` over the Lean tree: build.sh (Mathlib cache get, and a cache
+  # MISS declines instead of silently building Mathlib), then `check` with every arm
+  # (--strict, the comparator, --leanchecker), then the tracked discharge-summary.json.
+  # The committed summary must be what the run writes (summary-fresh: the tree carries
+  # the summary and CI regenerates it and diffs it; a gate never rewrites its own
+  # baseline, PVL-001 §5.3).
+  #
+  # ADVISORY: NOT in `gate`'s `needs:` (cop ruling, 2026-09-24). Measured at 4a870daf5 on
+  # lambda (4m21s, 1.4 GB RSS), the ladder is RED: 7 escape-allowlist.yaml entries are still
+  # `confirmed_by: pending`, and only a person may confirm them (§5.3). Flip to required --
+  # add it to `gate.needs` and read its result there -- only when that is clear.
+  #
+  # The clean-room X64 pool is intel-clean-room-* plus yoga-build, yoga-build2 and yoga-build3,
+  # and infra-8d verified elan and a writable /mnt/nvme-raid0/lean-cache on every one of them
+  # (2026-09-25). A host added to the pool without them DECLINES here, never builds cold.
+  # X64 is mandatory: `ci / lint` once landed on aarch64 gx10 and failed on x86-only code.
+  # 90 min: under the merge queue's 180 min.
+  # build.sh is ~6 min on a warm cache, and the leanchecker arm's own cap is 3600 s.
+  provable-ladder:
+    runs-on: [self-hosted, Linux, clean-room, X64]
+    timeout-minutes: 90
+    # #4433: a section in x86-main. ADVISORY there too: fat_driver's verdict skips a
+    # continue-on-error section, so a RED ladder does not turn the x86-main job red.
+    continue-on-error: true
+    env:
+      LEAN: crates/aprender-contracts-staging/lean
+      SUMMARY: crates/aprender-contracts-staging/discharge-summary.json
+      LEAN_CACHE_ROOT: /mnt/nvme-raid0/lean-cache
+      CARGO_TARGET_DIR: /mnt/nvme-raid0/targets/aprender-ci/${{ github.event.pull_request.number || github.ref_name }}/provable-ladder
+      PV: /mnt/nvme-raid0/targets/aprender-ci/${{ github.event.pull_request.number || github.ref_name }}/provable-ladder/debug/pv
+    steps:
+      - uses: actions/checkout@v7
+        with:
+          fetch-depth: 1
+
+      - name: Preconditions -- elan, the lean cache, and the files the ladder judges
+        id: pre
+        # A missing precondition DECLINES (rc 2); it is never a silent cold build. The toolchain
+        # is read from lean-toolchain, so this workflow never names a Lean version. The .lake dir
+        # lives in the cache, keyed on lean-toolchain + lake-manifest.json.
+        shell: bash
+        run: |
+          set -euo pipefail
+          decline() { echo "decline: $1" | tee -a "$GITHUB_STEP_SUMMARY"; exit 2; }
+          # A file the ladder judges that this TREE does not carry is a SKIP, not a host defect:
+          # no ladder to run, so no verdict either way (#4429: build.sh and discharge-summary.json
+          # have never been committed). skip=true turns build + discharge off; summary-fresh and
+          # pv lint key on their outcomes and skip with them. Host defects below still DECLINE.
+          skip() { echo "SKIP (no verdict, not a pass): $1" | tee -a "$GITHUB_STEP_SUMMARY"; { echo "skip=true"; echo "skip_reason=$1"; } >> "$GITHUB_OUTPUT"; exit 0; }
+          # Planted falsifier (scripts/ci/ladder_skip_is_red.sh): force the skip path. A skip is
+          # RED (step "No verdict is not a pass"), so this knob can only turn the ladder red.
+          [ "${LADDER_FORCE_SKIP:-}" != 1 ] || skip "LADDER_FORCE_SKIP=1 (planted falsifier)"
+          for f in "$LEAN/lean-toolchain" "$LEAN/lake-manifest.json" "$LEAN/build.sh"; do
+            [ -f "$f" ] || skip "$f is not in this tree"
+          done
+          # summary-fresh diffs a TRACKED file: `git diff` exits 0 on an untracked path.
+          git ls-files --error-unmatch -- "$SUMMARY" >/dev/null 2>&1 || skip "$SUMMARY is not tracked"
+          # elan's own default, from the runner user's $HOME: no machine-specific literal.
+          ELAN_HOME="${ELAN_HOME:-$HOME/.elan}"
+          echo "ELAN_HOME=$ELAN_HOME" >> "$GITHUB_ENV"
+          export PATH="$ELAN_HOME/bin:$PATH"
+          command -v elan >/dev/null || decline "no elan in $ELAN_HOME on $(hostname) (proof-toolchain, infra)"
+          [ -d "$LEAN_CACHE_ROOT" ] || decline "no $LEAN_CACHE_ROOT on $(hostname) (proof-toolchain, infra)"
+          key=$(cat "$LEAN/lean-toolchain" "$LEAN/lake-manifest.json" | sha256sum | cut -c1-16)
+          cache=$LEAN_CACHE_ROOT/$key
+          mkdir -p "$cache"
+          # elan >= 4 exits 1 on `toolchain install` of a toolchain that is already installed
+          # ("error: '...' is already installed"), so a warm runner failed this step every time
+          # after the first (#4502 row 13). Install only when it is missing, and decide that
+          # inside the lock so two jobs cannot both see "missing" and race the install.
+          tc=$(cat "$LEAN/lean-toolchain")
+          flock "$cache.lock" bash -c 'elan toolchain list | awk "{print \$1}" | grep -qxF -- "$1" || elan toolchain install "$1"' _ "$tc"
+          # A real .lake dir would make `ln` write the link INSIDE it instead of replacing it.
+          [ ! -e "$LEAN/.lake" ] || [ -L "$LEAN/.lake" ] || decline "$LEAN/.lake is a real directory, not the cache link"
+          ln -sfn "$cache" "$LEAN/.lake"
+          echo "$ELAN_HOME/bin" >> "$GITHUB_PATH"
+          echo "cache=$cache" >> "$GITHUB_OUTPUT"
+
+      - name: Build the in-tree pv
+        id: build
+        if: ${{ steps.pre.outputs.skip != 'true' }}
+        shell: bash
+        run: |
+          set -euo pipefail
+          cargo build --locked -p aprender-contracts-cli --bin pv
+          test -x "$PV"
+
+      - name: pv discharge run (build.sh, then check --strict + comparator + leanchecker)
+        id: discharge
+        if: ${{ steps.pre.outputs.skip != 'true' }}
+        shell: bash
+        # One run at a time per cache: two runs unpacking into the same .lake would race.
+        # set +e: Actions runs `bash -e`, which would abort at a failing run before its rc and
+        # its log tail are recorded.
+        run: |
+          set +e
+          flock "${{ steps.pre.outputs.cache }}.lock" "$PV" discharge run "$LEAN" > "$RUNNER_TEMP/discharge-run.log" 2>&1
+          rc=$?
+          tail -n 40 "$RUNNER_TEMP/discharge-run.log"
+          echo "pv discharge run: rc=$rc" >> "$GITHUB_STEP_SUMMARY"
+          exit "$rc"
+
+      - name: summary-fresh -- the committed discharge-summary.json is what the run wrote
+        # Only when the run RAN (it writes the summary on failure too). Skipped means nothing
+        # was regenerated, and a diff of an unregenerated file would pass vacuously.
+        if: ${{ !cancelled() && (steps.discharge.outcome == 'success' || steps.discharge.outcome == 'failure') }}
+        shell: bash
+        run: git diff --exit-code -- "$SUMMARY"
+
+      - name: pv lint contracts/
+        if: ${{ !cancelled() && steps.build.outcome == 'success' }}
+        shell: bash
+        run: '"$PV" lint contracts/'
+
+      - name: Upload the discharge logs
+        if: ${{ !cancelled() }}
+        uses: actions/upload-artifact@v7
+        with:
+          name: provable-ladder
+          path: |
+            ${{ runner.temp }}/discharge-run.log
+            crates/aprender-contracts-staging/lean/discharge.json
+            crates/aprender-contracts-staging/discharge-summary.json
+          if-no-files-found: warn
+
+      # EV-9 finding a2-fat-driver-skip-is-success (operator 2026-09-28: "skipped ≠ pass"). A
+      # skip ran nothing, so it must not leave the section `success`: fat_driver would report
+      # that as a ladder pass. RED here; the section stays continue-on-error (advisory).
+      - name: No verdict is not a pass -- a skipped ladder is RED
+        if: ${{ !cancelled() && steps.pre.outputs.skip == 'true' }}
+        shell: bash
+        run: |
+          echo "::error::provable-ladder SKIPPED (${{ steps.pre.outputs.skip_reason }}): no verdict, so not a pass" | tee -a "$GITHUB_STEP_SUMMARY"
+          exit 1
+
+      - name: Advisory verdict
+        if: always()
+        shell: bash
+        run: |
+          {
+            echo "### provable-ladder (PVL-001 EV-9, #4083): ADVISORY, not in gate.needs"
+            echo "Job status: ${{ job.status }}. It becomes required only when this blocker is clear:"
+            echo "1. escape-allowlist.yaml: 7 entries are \`confirmed_by: pending\`, and a person must confirm them or delete the axioms (PVL-001 §5.3)"
+          } >> "$GITHUB_STEP_SUMMARY"
+
   # Mutation testing — DIFF-SCOPED + BLOCKING on PRs (PMAT build-system audit gap #1).
   #
   # BEFORE: full-tree `cargo mutants -- --lib`, push-to-main only, and
@@ -3304,6 +3782,11 @@ jobs:
       # mutant). mutants-nightly.yml judges main's merges with no cap.
       MUTANTS_CAP: ${{ vars.MUTANTS_CAP || '60' }}
       MUTANTS_JOBS: ${{ vars.MUTANTS_JOBS || '4' }}
+    # #4621 (operator E1): the mutants this build never compiles (cfg feature off by default) are DEFERRED to
+    # mutants-cuda, not passed. The gate job is RED unless mutants-cuda measured exactly this set (sha).
+    outputs:
+      not_measured: ${{ steps.deferred.outputs.not_measured }}
+      not_measured_sha: ${{ steps.deferred.outputs.not_measured_sha }}
     steps:
       - name: Pre-checkout ownership restore (EACCES self-heal)
         # Same guard as workspace-test: a hard-killed docker job leaves
@@ -3328,8 +3811,20 @@ jobs:
         # cargo-mutants --in-diff takes a unified diff and mutates ONLY the
         # lines it adds/changes. We diff the PR head against the merge-base with
         # the target branch so the scope is exactly "what this PR introduces".
+        env:
+          HEAD_REF: ${{ github.head_ref }}
+          HEAD_REPO: ${{ github.event.pull_request.head.repo.full_name }}
+          BASE_REPO: ${{ github.repository }}
         run: |
           set -euo pipefail
+          # Rule 0 (operator 2026-09-27, verbatim "exempt the car"): a car/* PR of this repo is judged by
+          # mutants-nightly (uncapped) after it lands; every other PR keeps MUTANTS_CAP. Case table:
+          # scripts/mutants_diff_gate.sh --self-test (car, non-car, nested, fork rows).
+          if bash scripts/mutants_diff_gate.sh --exempt-ref "$HEAD_REF" "$HEAD_REPO" "$BASE_REPO"; then
+            echo "has_rs=false" >> "$GITHUB_OUTPUT"
+            : > pr.diff
+            exit 0
+          fi
           BASE_REF="${{ github.event.pull_request.base.ref }}"
           # NOT --depth=1: a shallow base commit has no shared ancestor with the
           # fetch-depth:0 PR head, so `git merge-base` finds none and (under
@@ -3357,6 +3852,14 @@ jobs:
           else
             echo "has_rs=false" >> "$GITHUB_OUTPUT"
             echo "No .rs path in the diff ($(grep -c . pr.files || true) path(s)) -- nothing to mutate; the mutation steps skip and the job passes"
+          fi
+          # #4587 A' (operator 2026-09-29 06:36Z): a head ref in ci/mutants-table-refs.txt (PR-1 and PR-2 of 0.70
+          # only) is judged by the CI survivor table -- the mutants-shard matrix over the WHOLE diff, cap 0, verified
+          # by mutants-table -- and `gate` requires mutants-table to succeed for exactly these refs, read from the
+          # same file at the same commit. So this section hands over; it does not pass anything unjudged.
+          if grep -v '^#' ci/mutants-table-refs.txt | grep -qxF -- "$HEAD_REF"; then
+            echo "has_rs=false" >> "$GITHUB_OUTPUT"
+            echo "head ref $HEAD_REF is in ci/mutants-table-refs.txt: judged by the mutants-shard matrix + mutants-table (gate requires it)"
           fi
       - name: Pull sovereign-ci image (with retry + local-cache fallback)
         if: steps.prdiff.outputs.has_rs == 'true'
@@ -3458,8 +3961,26 @@ jobs:
               [ -n "$EXCL" ] || { echo "::error::no --exclude list found on the workspace-test nextest line"; exit 1; }
               # shellcheck disable=SC2086
               bash scripts/mutants_diff_gate.sh pr.diff --cap "$MUTANTS_CAP" --jobs "$MUTANTS_JOBS" \
-                --max-missed "$MUTANTS_MAX_MISSED" --out mutants-gate $EXCL
+                --max-missed "$MUTANTS_MAX_MISSED" --out mutants-gate --defer-unbuilt mutants-gate/not_measured.txt $EXCL
             '
+      - name: The deferred NOT_MEASURED set -- the gate job requires mutants-cuda to measure exactly this (#4621)
+        id: deferred
+        if: steps.prdiff.outputs.has_rs == 'true'
+        run: |
+          set -euo pipefail
+          f=mutants-gate/not_measured.txt
+          if [ -s pr.diff ]; then
+            # the gate writes the file before it looks at the diff: absent means it never ran, not "none"
+            [ -f "$f" ] || { echo "::error::the gate wrote no $f"; exit 1; }
+          else
+            mkdir -p mutants-gate && : > "$f"
+          fi
+          n=$(grep -c . "$f" || true)
+          sha=$(LC_ALL=C sort "$f" | sha256sum | cut -c1-64)
+          echo "not_measured=${n:-0}" >> "$GITHUB_OUTPUT"
+          echo "not_measured_sha=$sha" >> "$GITHUB_OUTPUT"
+          echo "deferred to mutants-cuda: ${n:-0} mutant(s), set sha $sha"
+          sed 's/^/  /' "$f"
       - name: Upload mutation results
         if: always() && steps.prdiff.outputs.has_rs == 'true'
         uses: actions/upload-artifact@v7

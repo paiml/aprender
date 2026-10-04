@@ -32,6 +32,19 @@ use super::swiglu;
 // Float transcendental stubs
 // ════════════════════════════════════════════════════════════════════════════
 
+/// Magnitude bound for harness inputs that feed products, sums or exponents.
+///
+/// "Finite for every finite input" is false for these kernels: Kani finds
+/// inputs near `f32::MAX` whose dot products overflow to inf, and inf - inf
+/// is NaN (#3140). Real activations sit far inside this bound, so a harness
+/// states its precondition as `|x| <= ACT_BOUND` instead of `x.is_finite()`.
+const ACT_BOUND: f32 = 1.0e4;
+
+/// `x` is finite and within [`ACT_BOUND`].
+fn act_bounded(x: f32) -> bool {
+    x.is_finite() && x.abs() <= ACT_BOUND
+}
+
 /// Stub for `f32::exp` — models exp(x) for softmax after max-subtraction.
 ///
 /// Softmax calls exp(x_i - max(x)), where x_i - max(x) ∈ (-∞, 0].
@@ -42,7 +55,13 @@ use super::swiglu;
 /// - Lean proves exp(x) > 0 for all x ∈ ℝ (Real.exp_pos)
 /// - Lean proves exp(0) = 1 (Real.exp_zero)
 /// - The upper bound 1.0 follows from x_i - max(x) ≤ 0 → exp(·) ≤ 1
-fn stub_exp(_x: f32) -> f32 {
+fn stub_exp(x: f32) -> f32 {
+    // exp(0) = 1 exactly (the max element). Without this the stub let every
+    // element be tiny at once, so 1/sum overflowed and softmax/attention
+    // harnesses reported non-finite outputs no real exp can produce (#3140).
+    if x == 0.0 {
+        return 1.0;
+    }
     let r: f32 = kani::any();
     // exp(x - max(x)) for x - max(x) ∈ [-88, 0] gives values in [exp(-88), 1].
     // exp(-88) ≈ 6e-39 > f32::MIN_POSITIVE (1.175e-38 is normal).
@@ -51,10 +70,28 @@ fn stub_exp(_x: f32) -> f32 {
     r
 }
 
+/// Deterministic exp stand-in for EQUIVALENCE harnesses (PMAT-3140).
+///
+/// `stub_exp` draws a fresh `kani::any()` per call, so two code paths that each
+/// call `exp` on the same argument see two unrelated values and an equivalence
+/// assertion between them is refuted by the stub, not by the code. This stub is a
+/// pure function of `x` (positive, like exp), so both paths see the same value
+/// and the harness judges only the arithmetic around the call. It has no branch
+/// and no division: a stub with both timed out at 600 s on 4 elements.
+fn stub_exp_det(x: f32) -> f32 {
+    1.0 + x * x
+}
+
 /// Stub for `f32::sqrt` — returns an arbitrary non-negative finite value.
-fn stub_sqrt(_x: f32) -> f32 {
+fn stub_sqrt(x: f32) -> f32 {
     let r: f32 = kani::any();
     kani::assume(r >= 0.0 && r.is_finite());
+    // For x >= 0, sqrt(x) lies between x and 1 (both representable, so the
+    // bracket survives rounding). Without it the stub could return 0 for
+    // sqrt(d_k) and divide the attention scores by zero (#3140).
+    if x >= 0.0 {
+        kani::assume(r >= x.min(1.0) && r <= x.max(1.0));
+    }
     r
 }
 

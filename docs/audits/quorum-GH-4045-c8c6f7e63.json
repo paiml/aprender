@@ -1,0 +1,4 @@
+{"ticket":"GH-4045","head":"c8c6f7e63","base":"origin/batch/0.70.0","author":"claude-opus-5-5","degraded":"same-family (agy lane exit 3: foreign ref/config churn, attributed; conversation c1c4eba9-ddc7-4c33-8495-56d658c6907f)",
+ "round1":{"head":"71dfe133e","lanes":[{"model":"sonnet-5","verdict":"PASS"},{"model":"haiku-4-5","verdict":"FAIL","finding":"set -uo lacks -e (both scripts)"},{"model":"gemini-3.1-pro-high","verdict":"FAIL","counted":false,"confirmed":["cascade_end_to_release_min uncased","weak unparseable-anchor row","precondition-lint exit swallowed"],"refuted":["dangling $infra paths","printf|grep exit"]}],"fixed_in":"c8c6f7e63"},
+ "round2":{"head":"c8c6f7e63","lanes":[{"model":"sonnet-5","role":"adversarial","verdict":"PASS"},{"model":"haiku-4-5","verdict":"PASS"},{"model":"sonnet-5","role":"seat for opus (author is opus)","verdict":"PASS"}]},
+ "verdict":"3/3 PASS on c8c6f7e63, degraded: same-family"}

@@ -1,0 +1,187 @@
+{
+  "version": "2.1.0",
+  "$schema": "https://raw.githubusercontent.com/oasis-tcs/sarif-spec/master/Schemata/sarif-schema-2.1.0.json",
+  "runs": [
+    {
+      "tool": {
+        "driver": {
+          "name": "pmat",
+          "informationUri": "https://github.com/paiml/pmat",
+          "version": "3.42.0",
+          "rules": []
+        }
+      },
+      "invocations": [
+        {
+          "executionSuccessful": true,
+          "commandLine": "pmat query \"provable contracts lint gate\" --limit 3 --format json"
+        }
+      ],
+      "results": [
+        {
+          "ruleId": "PRREV-SCOPE-001",
+          "level": "note",
+          "message": {
+            "text": "PR #4587 (split/pvl-rows-0.70) is 712 files changed vs merge-base c115c5ed02, +89792/-3184 across 34 squashed commits, aggregating many individual PVL-row feature branches onto one release-prep branch. Per task instruction, ~15 crates' crates/*/src/generated_contracts.rs (regen output), contracts/census.json, contracts.nt, shapes.ttl and README.md were excluded from source-logic review. Depth review was sampled: crates/aprender-contracts-cli/src/commands/lint_arming.rs (the only sampled file with both insertions AND deletions, i.e. a genuine modification of pre-existing logic) and its two new dependencies, crates/aprender-contracts/src/ontology/measured_sets.rs and crates/aprender-contracts/src/discharge/mod.rs (both wholly-new files), were read in full. The remaining ~700 files (mostly new files: kani proofs, lean modules, schema/ontology extractors, contracts/*.yaml, per-crate generated_contracts.rs) were not individually read; this is a scope limitation of a time-boxed review against a diff of this size, not a claim that they were checked."
+          },
+          "properties": {
+            "grounding": "measured",
+            "command": [
+              "git",
+              "diff",
+              "--shortstat",
+              "c115c5ed024f441a394052355a590bc1be223110..3c971b0b39bcb9c7de7c5e34ca21882347f7e57d"
+            ],
+            "exit_code": 0,
+            "stdout_sha256": "b2b9a51eb81e90e8a04ff1297a0ac985d390b96cf1cdc89e7e34ac7b6abdbaf5",
+            "failure_scenario": "A reader of only the verdict could assume the full 712-file diff was read line-by-line; without this note they would not know coverage was a targeted sample and a defect in an unread file (e.g. one of the ~120 new kani_proofs/lean files) would ship unreviewed.",
+            "precision_class": "advisory"
+          }
+        },
+        {
+          "ruleId": "PRREV-DUP-001",
+          "level": "note",
+          "message": {
+            "text": "Duplication check on the diff's genuinely-new logic: pmat query \"measured set withdrawal ratchet F-34\" returns crates/aprender-contracts-cli/src/commands/lint_arming.rs::measured_ratchet, ::MeasuredRatchet and crates/aprender-contracts/src/ontology/measured_sets.rs::withdrawal all with clone_count=0, duplication_score=0.0 -- no pre-existing sibling implementation of the F-34 withdrawal ratchet exists elsewhere in the indexed tree that this re-implements. This covers only the two symbols sampled; the wider diff (712 files) was not swept via scripts/pr_review_duplication_scan.sh within this review's budget, so duplication_coverage below is 'semantic' for these two symbols only and 'none' for every other surface (shell/python/yaml/docs/sibling-branches/merge_base_to_main)."
+          },
+          "properties": {
+            "grounding": "measured",
+            "command": [
+              "pmat",
+              "query",
+              "measured set withdrawal ratchet F-34",
+              "--limit",
+              "5",
+              "--format",
+              "json"
+            ],
+            "exit_code": 0,
+            "stdout_sha256": "f9e31c0f3ba0e4fde189925c2e20c41ce99bd974c404e3a2da6c593880a99efb",
+            "failure_scenario": "PERF-055 nearly re-implemented ~7200 lines that already existed elsewhere; without this check the same could happen silently for the new F-34 ratchet logic, and a reviewer relying on the verdict alone would not know whether a duplication check had even been attempted.",
+            "precision_class": "advisory"
+          }
+        },
+        {
+          "ruleId": "PRREV-READ-001",
+          "level": "note",
+          "message": {
+            "text": "Read crates/aprender-contracts-cli/src/commands/lint_arming.rs (81-line diff: +76/-5) and its two dependencies in full for the sampled scope. lint_arming.rs replaces Comparand::Absent(String) with Comparand::Absent(Missing, String) (new enum Missing{WorkTree,Ref,Untracked}) and adds measured_ratchet()/MeasuredRatchet, implementing ONT-4c F-34. crates/aprender-contracts/src/ontology/measured_sets.rs (new file, +176) supplies KEYS/read()/withdrawal()/REMEDY that measured_ratchet() calls; the withdrawal() signature (key, head: &Entry, comparand: &Entry, live: &BTreeSet<String>) matches every call site, and its 4 unit tests cover: malformed-baseline error, F-33 bidirectional diff, F-34 drop-recorded vs drop-unrecorded vs withdrawn-but-not-dropped, and the bootstrap case (comparand absent -> compared against the empty set). crates/aprender-contracts/src/discharge/mod.rs is confirmed wholly new (does not exist at base_sha under either its current path or the pre-existing crates/aprender-contracts/src/discharge.rs single-file path). No internal inconsistency or behaviour drift found in the portion read."
+          },
+          "properties": {
+            "grounding": "measured",
+            "command": [
+              "git",
+              "diff",
+              "c115c5ed024f441a394052355a590bc1be223110..3c971b0b39bcb9c7de7c5e34ca21882347f7e57d",
+              "--",
+              "crates/aprender-contracts-cli/src/commands/lint_arming.rs",
+              "crates/aprender-contracts/src/ontology/measured_sets.rs"
+            ],
+            "exit_code": 0,
+            "stdout_sha256": "072919706da9f318eac870359b00436030f7533718823ef5c0a313dfb0a3bdb6",
+            "failure_scenario": "A ratchet whose head/comparand arguments were swapped, or whose Missing-variant handling silently disarmed on one of the three no-comparand cases, would compile and pass its own narrow tests while failing to gate real CI runs; reading the call sites against the callee's signature and test suite is what rules that out for this sampled surface.",
+            "precision_class": "advisory"
+          }
+        },
+        {
+          "ruleId": "PRREV-GUARDS-001",
+          "level": "warning",
+          "message": {
+            "text": "243 of 712 diff files match the S3.D mutation-scope predicate (--match-mutation-trigger), 183 of them .rs (the bulk of crates/aprender-contracts/src and crates/aprender-contracts-cli/src, plus two NEW guard scripts: scripts/check_lean_modules_reachable.sh and scripts/check_leanchecker_scoped.sh). Per S3.D a guard/gate-logic-touching PR of this shape should reach a 100% kill score on its committed mutation set; cargo-mutants was not completed in this review (see consultations.mutation: unreachable, attempted=0) -- the baseline `cargo test --package aprender-contracts-cli` exceeded a 180s timeout even scoped to a single new function (measured_ratchet), so a full-crate baseline could not be established within the review budget without a scoped test-tool setup this run did not have time to build."
+          },
+          "properties": {
+            "grounding": "measured",
+            "command": [
+              "bash",
+              "scripts/check_pr_review_receipt.sh",
+              "--match-mutation-trigger",
+              "<each of 712 diff paths>"
+            ],
+            "exit_code": 0,
+            "stdout_sha256": "b188c4939187299e62301b3e3e9af7eb5897c8f0294cb8f1edc96cf67957a219",
+            "failure_scenario": "A weakened predicate anywhere in the 183 matched .rs files (e.g. lint_arming.rs's Missing-variant match arms silently merged back together, or one of the two new Lean-reachability guard scripts' BFS walk inverted) could stop catching the regression it exists to catch while every current fixture still passes, and this would not surface until the incident the guard was written to prevent.",
+            "precision_class": "advisory"
+          }
+        }
+      ]
+    },
+    {
+      "tool": {
+        "driver": {
+          "name": "nvidia-cuda-docs",
+          "informationUri": "https://developer.nvidia.com/cuda-toolkit"
+        }
+      },
+      "invocations": [
+        {
+          "executionSuccessful": false,
+          "toolExecutionNotifications": [
+            {
+              "level": "error",
+              "message": {
+                "text": "mcp__nvidia-cuda-docs__search_cuda_docs is not present in this session's tool set; the only nvidia-cuda-docs tools surfaced are authenticate/complete_authentication, indicating the server requires an interactive OAuth flow not completed for this session."
+              },
+              "properties": {
+                "grounding": "measured",
+                "command": [
+                  "ToolSearch",
+                  "query=nvidia cuda docs search"
+                ],
+                "exit_code": 0
+              }
+            }
+          ]
+        }
+      ],
+      "results": [
+        {
+          "ruleId": "PRREV-CUDA-001",
+          "level": "note",
+          "message": {
+            "text": "S3.B path trigger fires on exactly 2 of 712 diff files (recomputed via --match-path, not eyeballed): crates/aprender-contracts-cli/tests/fixtures/pvl/obligations/pmat/src/tdg/cuda_simd_scores.rs.txt (a Popper-falsification test fixture whose struct is named for 'cuda_simd' scoring, no device-behaviour claim) and crates/aprender-contracts-staging/lean/Challenge/fp8-interchange-v1.lean (an auto-generated, sorry-stubbed Lean4 theorem about FP8 quantization arithmetic, no device-behaviour claim). Both were read in full; neither asserts anything about CUDA/PTX/GPU device behaviour that would need a documentation citation. The commit-message trigger (sm_\\d+, cuXxx, cudaXxx, architecture names) does not fire across all 341 lines of combined commit messages in this range (--match-message exit_code=1). No device-behaviour claim requiring citation or no-authority-found was found in this diff's reviewed scope, so this consultation is recorded consulted with a trigger_reason naming the two false-positive paths, per the guard's explicit rule that an over-broad trigger with nothing to cite is still 'consulted', never 'not-triggered'. The transport itself remains unreachable (see invocation above), so no query could be issued even if one had been needed."
+          },
+          "properties": {
+            "grounding": "measured",
+            "command": [
+              "bash",
+              "-c",
+              "git diff --name-only $BASE $HEAD | while read f; do scripts/check_pr_review_receipt.sh --match-path \"$f\" && echo \"$f\"; done"
+            ],
+            "exit_code": 0,
+            "stdout_sha256": "3c357c5cbbf695005792c9a420530b788f1bdbd259364aa007de65a0cdd29762",
+            "failure_scenario": "If either fixture file did carry a real device-behaviour claim (e.g. an SM-generation-specific numeric assumption baked into the falsification fixture), it would go uncited because the docs transport cannot be reached this run; reading both in full is what rules that specific risk out for these two paths.",
+            "precision_class": "advisory"
+          }
+        }
+      ]
+    },
+    {
+      "tool": {
+        "driver": {
+          "name": "crux",
+          "informationUri": "internal:crux"
+        }
+      },
+      "invocations": [
+        {
+          "executionSuccessful": true
+        }
+      ],
+      "results": [
+        {
+          "ruleId": "PRREV-CRUX-001",
+          "level": "warning",
+          "message": {
+            "text": "S3.C fires: contracts/apr-cli-commands-v1.yaml changes (+16/-1) add a new `ptx-debug` command (category hardware, subcommands analyze/gen-fkr/version), add four new `pv` subcommands (challenge, discharge, obligations, ontology) and add a hidden `surface` command (apr-cli-surface/v1, #3745, gate input only, not user-facing). grep -li across all 318 contracts/crux-*.yaml for ptx-debug, ptx_debug, 'pv discharge', 'pv challenge', 'pv obligations', 'pv ontology' and apr-cli-surface returns zero matches (exit_code 1 on every pattern): no crux contract covers this surface, so crux_coverage=none and gap_effect=none (no competitor comparison exists to close or widen). This is dev/CI-internal tooling surface (a provable-contracts CLI and a PTX-debug diagnostic subcommand), not a named competitive product surface, so the absence of coverage is plausibly appropriate rather than a gap -- recorded as an assertion, not a measurement, since no crux-*.yaml schema field says which surfaces are meant to be excluded from coverage."
+          },
+          "properties": {
+            "grounding": "asserted",
+            "rationale": "The zero-match grep is measured; whether the CLI-surface exclusion from crux coverage is intentional design (internal tooling) versus an oversight is a judgement call this review did not find a contract field to check mechanically.",
+            "failure_scenario": "If `pv discharge`/`pv challenge` etc. are meant to be user-facing (they ship in the same `pv`/`apr` binary users install), a UX regression (inconsistent flag naming, missing --help text) in this new surface would have nothing in the crux suite to catch it.",
+            "precision_class": "advisory"
+          }
+        }
+      ]
+    }
+  ]
+}

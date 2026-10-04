@@ -75,8 +75,13 @@ A_DECLINE='    2) echo "MODELS NO-GO: the judge DECLINED (rc 2)'
 A_PROOF='[ "\$got" = "$want" ] || { echo "MODELS-LEG $REMOTE_HOST NOT-THE-RELEASE'
 A_DISK='if [ -z "\$free_kib" ] || [ \$(( free_kib + have_kib )) -lt $NEED_KIB ]; then'
 A_DIE='  [ $rc -eq 0 ] || die "T-1 model matrix NO-GO'
+A_RDIE='  [ $rc -eq 0 ] || die "T-1 release-readiness-v1'
+A_RNODR='  [ -n "$DR" ] || die "T-1 readiness: no dogfood receipt'
+A_RAPR='    || die "T-1 readiness: $TD/release/apr is not built from'
 A_CHOOM_R='choom -n 1000 -- bash scripts/model_ladder.sh --host $REMOTE_HOST'
 A_CHOOM_L='    choom -n 1000 -- bash scripts/model_ladder.sh --host "$LOCAL_HOST"'
+A_CELLS_R='bash scripts/model_ladder.sh --host $REMOTE_HOST --cells --out'
+A_CELLS_L='bash scripts/model_ladder.sh --host "$LOCAL_HOST" --cells --out'
 R_VER='    out="$(cd "$root" && bash "$judge" --version "$version" 2>&1)"; rc=$?'
 R_RED='        *) printf '"'"'FAIL  R7 model matrix NOT green for %s (rc %s):\n%s\n'"'"' "$version" "$rc" \'
 # The FAIL-lines line also appears on the emergency-scope path (#4046 merge-back), so the
@@ -89,10 +94,12 @@ R_NOJUDGE='    if [ ! -f "$judge" ]; then'
 env_die() { printf 'ENV   %s -- the table judged nothing, not a pass\n' "$*" >&2; exit 2; }
 for f in "$AUTOPILOT" "$MODELS" "$PARAMS" "$PREFLIGHT"; do [ -r "$f" ] || env_die "no $f"; done
 for t in git python3; do command -v "$t" > /dev/null 2>&1 || env_die "no $t"; done
-for a in "$A_SHARED" "$A_255" "$A_BUILD" "$A_NORCPT" "$A_RED" "$A_DECLINE" "$A_PROOF" "$A_DISK" "$A_CHOOM_R" "$A_CHOOM_L"; do
+for a in "$A_SHARED" "$A_255" "$A_BUILD" "$A_NORCPT" "$A_RED" "$A_DECLINE" "$A_PROOF" "$A_DISK" "$A_CHOOM_R" "$A_CHOOM_L" "$A_CELLS_R" "$A_CELLS_L"; do
     grep -qF -- "$a" "$MODELS" || env_die "models_t1.sh has no '$a' line -- the subject moved"
 done
-grep -qF -- "$A_DIE" "$AUTOPILOT" || env_die "autopilot.sh has no '$A_DIE' line -- the subject moved"
+for a in "$A_DIE" "$A_RDIE" "$A_RNODR"; do
+    grep -qF -- "$a" "$AUTOPILOT" || env_die "autopilot.sh has no '$a' line -- the subject moved"
+done
 for a in "$R_VER" "$R_RED" "$R_LINES" "$R_DECLINE" "$R_NOJUDGE"; do
     grep -qF -- "$a" "$PREFLIGHT" || env_die "check_publish_preflight.sh has no '$a' line -- the subject moved"
 done
@@ -198,7 +205,8 @@ fixture() {
     # model_ladder.sh stub: measures by the apr in the target dir; FX_NO_RECEIPT_HOST / FX_RED_HOST
     cat > "$r/scripts/model_ladder.sh" <<'STUB'
 #!/usr/bin/env bash
-while [ $# -gt 0 ]; do case "$1" in --host) h=$2; shift 2 ;; --out) o=$2; shift 2 ;; *) shift ;; esac; done
+while [ $# -gt 0 ]; do case "$1" in --host) h=$2; shift 2 ;; --out) o=$2; shift 2 ;; --cells) c=1; shift ;; *) shift ;; esac; done
+[ "${c:-0}" = 1 ] || { echo "fixture: no --cells on $h, so the receipt would carry no cells[] (#3715 B1)"; exit 2; }
 printf 'ladder host=%s oom=%s flock=%s\n' "$h" "${FX_OOM:-none}" "${FX_FLOCK:-0}" >> "$FX_LOG"
 [ "${FX_NO_RECEIPT_HOST:-}" = "$h" ] && { echo "fixture: measured nothing on $h"; exit 2; }
 apr="${CARGO_TARGET_DIR:-$PWD/target}/release/apr"
@@ -209,6 +217,16 @@ printf '{"host":"%s","version":"%s","apr_version":"%s","executed":2,"red":%s}\n'
 [ "$red" = 0 ]
 STUB
     cp -- "$TMP/judge-stub.sh" "$r/scripts/check_model_ladder.sh" || return 2
+    # release_readiness.sh stub (#3715): records its argv; a missing or empty --dogfood-receipt is a
+    # caller error (3); otherwise prints FX_RR_LINE (default an ok R8 row) and exits FX_RR_RC
+    cat > "$r/scripts/release/release_readiness.sh" <<'STUB'
+#!/usr/bin/env bash
+printf 'readiness %s\n' "$*" >> "$FX_LOG"
+dr=""; while [ $# -gt 0 ]; do case "$1" in --dogfood-receipt) dr=$2; shift 2 ;; *) shift ;; esac; done
+[ -n "$dr" ] && [ -f "$dr" ] || { echo "error: no dogfood receipt"; exit 3; }
+printf '%s\n' "${FX_RR_LINE:-ok    R8 release-readiness-v1 Pass (fixture)}"
+exit "${FX_RR_RC:-0}"
+STUB
     printf 'target/\n.dogfood/\n' > "$r/.gitignore"
     printf '[package]\nname = "fx"\nversion = "9.9.8"\nedition = "2021"\n' > "$r/Cargo.toml"
     git init -q --bare -b main "$d/origin.git" && git -C "$r" init -q -b main \
@@ -233,6 +251,34 @@ models() {
           FX_MC="$(cat "$d/mc")" FX_GX10_HOME="$d/gx10" MODELS_T1_NEED_KIB=1 FX_LOG="$d/wrap.log"
       for kv in "$@"; do export "${kv?}"; done
       bash "$d/repo/scripts/release/autopilot.sh" 9.9.9 99 models models ) > "$d/out.log" 2>&1
+    printf '%s\n' "$?" > "$d/rc"
+}
+
+# ready NAME AUTOPILOT MODELS_T1 [ENV=VAL ...] -> runs `autopilot.sh 9.9.9 99 readiness readiness` over a
+# release worktree that already holds a dogfood receipt (FX_NO_DR=1: none) -- the state `dogfood` leaves
+ready() {
+    local n=$1 d="$TMP/$1" mc; shift
+    fixture "$n" "$1" "$2" || return 2
+    shift 2
+    : > "$d/wrap.log"; mc=$(cat "$d/mc")
+    git -C "$d/repo" worktree add -q --detach "$d/ap/wt" "$mc" || return 2
+    case " $* " in *" FX_NO_DR=1 "*) ;; *) mkdir -p "$d/ap/wt/.dogfood" && printf '{}\n' > "$d/ap/wt/.dogfood/receipt-fx.json" || return 2 ;; esac
+    # the apr `models` built from MC, where autopilot pins it (\$REPO_ROOT/target) (#3745): the step re-proves its sha and takes the surface from it.
+    # FX_APR_SHA stands in a binary built from another commit.
+    mkdir -p "$d/repo/target/release" || return 2
+    cat > "$d/repo/target/release/apr" <<'STUB'
+#!/usr/bin/env bash
+case "$*" in
+    --version) echo "apr 9.9.9 (${FX_APR_SHA:-${FX_MC:0:9}})" ;;
+    "surface --json") echo '{"schema":"apr-cli-surface/v1.1","fixture":true}' ;;
+    *) exit 2 ;;
+esac
+STUB
+    chmod +x "$d/repo/target/release/apr" || return 2
+    ( export RELEASE_AP="$d/ap" RELEASE_EPIC=9002 CARGO_HOME="$TMP/cargo-home" PATH="$TMP/bin:$PATH" \
+          FX_MC="$mc" FX_LOG="$d/wrap.log"
+      for kv in "$@"; do export "${kv?}"; done
+      bash "$d/repo/scripts/release/autopilot.sh" 9.9.9 99 readiness readiness ) > "$d/out.log" 2>&1
     printf '%s\n' "$?" > "$d/rc"
 }
 
@@ -294,10 +340,48 @@ oom_victim() {
     return 0
 }
 
+# ---- readiness (#3715): release-readiness-v1 at T-1, its own step after models -------------------
+r_goes() { # TAG AUTOPILOT MODELS_T1 WORD LINE ENV... -> 0 when the step continued and said READINESS WORD
+    local n="$1" d="$TMP/$1" word=$4 line=$5 a=$2 m=$3 mc; shift 5
+    ready "$n" "$a" "$m" "$@" || return 2
+    mc=$(cat "$d/mc")
+    [ "$(cat "$d/rc")" = 0 ] || { printf 'autopilot exited %s: %s\n' "$(cat "$d/rc")" "$(tail -n 1 "$d/ap/STATUS" 2>/dev/null)"; return 1; }
+    grep -qF -- "$line" "$d/ap/STATUS" || { printf 'the R8 row "%s" never reached STATUS\n' "$line"; return 1; }
+    grep -qF "READINESS $word at $mc" "$d/ap/STATUS" || { printf 'no "READINESS %s" line: %s\n' "$word" "$(tail -n 1 "$d/ap/STATUS")"; return 1; }
+    grep -qF -- "--version 9.9.9 --commit $mc --receipts $d/ap/models-t1 --dogfood-receipt .dogfood/receipt-fx.json" "$d/wrap.log" \
+        || { printf 'the wrapper was not asked about the release: %s\n' "$(grep '^readiness' "$d/wrap.log")"; return 1; }
+    grep -qF -- "--surface $d/ap/surface-t1.json" "$d/wrap.log" \
+        || { printf 'the wrapper was not given the candidate surface: %s\n' "$(grep '^readiness' "$d/wrap.log")"; return 1; }
+    grep -qF '"fixture":true' "$d/ap/surface-t1.json" 2>/dev/null || { printf 'surface-t1.json is not the release apr surface\n'; return 1; }
+    return 0
+}
+r_stops() { # TAG AUTOPILOT MODELS_T1 NEEDLE ENV... -> 0 when the step STOPped naming NEEDLE
+    local n="$1" d="$TMP/$1" needle=$4 a=$2 m=$3; shift 4
+    ready "$n" "$a" "$m" "$@" || return 2
+    [ "$(cat "$d/rc")" != 0 ] || { printf 'autopilot exited 0 (%s)\n' "$*"; return 1; }
+    grep -qF -- "STOP $needle" "$d/ap/STATUS" || { printf 'the STOP never said "%s": %s\n' "$needle" "$(tail -n 1 "$d/ap/STATUS")"; return 1; }
+    return 0
+}
+r_pass()    { r_goes "rpass-$1" "$2" "$3" ok "ok    R8 release-readiness-v1 Pass"; }
+r_warn()    { r_stops "rwarn-$1" "$2" "$3" "T-1 release-readiness-v1 printed a WARN R8 row" 'FX_RR_LINE=WARN  R8 REPORT-ONLY fixture Fail'; }
+r_fail()    { r_stops "rfail-$1" "$2" "$3" "T-1 release-readiness-v1 rc=1" FX_RR_RC=1 'FX_RR_LINE=FAIL  R8 fixture Fail'; }
+r_decline() { r_stops "rdecl-$1" "$2" "$3" "T-1 release-readiness-v1 rc=2" FX_RR_RC=2 'FX_RR_LINE=FAIL  R8 fixture decline'; }
+r_no_dr()   { r_stops "rnodr-$1" "$2" "$3" "T-1 readiness: no dogfood receipt" FX_NO_DR=1; }
+r_stale()   { # an apr built from another commit: its surface would derive another release's cells
+    r_stops "rstale-$1" "$2" "$3" "T-1 readiness: $TMP/rstale-$1/repo/target/release/apr is not built from" FX_APR_SHA=000000000 || return $?
+    ! grep -q '^readiness' "$TMP/rstale-$1/wrap.log" || { printf 'the wrapper ran on a stale binary surface\n'; return 1; }
+}
+
 # ---- the rows ---------------------------------------------------------------------------------
 for spec in "green-pair green_pair" "gx10-unreachable unreachable" "build-fails build_fails" \
             "missing-receipt missing" "red-cell red_cell" "judge-decline decline" \
             "stale-binary stale" "disk-refusal disk" "oom-victim oom_victim"; do
+    set -- $spec
+    msg=$($2 real "$AUTOPILOT" "$MODELS"); row "$1" "$?" "$msg"
+done
+for spec in "readiness-pass r_pass" "readiness-warn-stops r_warn" "readiness-fail-stops r_fail" \
+            "readiness-decline-stops r_decline" "readiness-no-dogfood-receipt r_no_dr" \
+            "readiness-stale-apr-stops r_stale"; do
     set -- $spec
     msg=$($2 real "$AUTOPILOT" "$MODELS"); row "$1" "$?" "$msg"
 done
@@ -367,8 +451,13 @@ mutant decline-is-go    "$MODELS" "$A_DECLINE" '    2) ;; 98) echo "' decline
 mutant no-version-proof "$MODELS" "$A_PROOF" 'true || { echo "MODELS-LEG $REMOTE_HOST NOT-THE-RELEASE' stale
 mutant no-disk-check    "$MODELS" "$A_DISK" 'if false; then' disk
 mutant autopilot-no-die "$AUTOPILOT" "$A_DIE" '  [ $rc -eq $rc ] || die "T-1 model matrix NO-GO' red_cell autopilot
+mutant readiness-no-die  "$AUTOPILOT" "$A_RDIE" '  [ $rc -eq $rc ] || die "T-1 release-readiness-v1' r_fail autopilot
+mutant readiness-no-dr   "$AUTOPILOT" "$A_RNODR" '  true || die "T-1 readiness: no dogfood receipt' r_no_dr autopilot
+mutant readiness-any-apr "$AUTOPILOT" "$A_RAPR" '    || true || die "T-1 readiness: $TD/release/apr is not built from' r_stale autopilot
 mutant no-choom         "$MODELS" "$A_CHOOM_R" 'bash scripts/model_ladder.sh --host $REMOTE_HOST' oom_victim
 mutant wrapper-flock    "$MODELS" "$A_CHOOM_L" '    flock /tmp/apr-gpu.lock choom -n 1000 -- bash scripts/model_ladder.sh --host "$LOCAL_HOST"' oom_victim
+mutant no-cells-remote   "$MODELS" "$A_CELLS_R" 'bash scripts/model_ladder.sh --host $REMOTE_HOST --out' green_pair
+mutant no-cells-local    "$MODELS" "$A_CELLS_L" 'bash scripts/model_ladder.sh --host "$LOCAL_HOST" --out' green_pair
 mutant r7-no-version    "$PREFLIGHT" "$R_VER" '    out="$(cd "$root" && bash "$judge" 2>&1)"; rc=$?' r7_green preflight
 mutant r7-red-is-go     "$PREFLIGHT" "$R_RED" '        *) return 0; printf '"'"'FAIL  R7 model matrix NOT green for %s (rc %s):\n%s\n'"'"' "$version" "$rc" \' r7_red preflight
 mutant r7-no-fail-lines "$PREFLIGHT" "$R_LINES" "$R_LINES_HEAD"$'\n''               "" ;;' r7_missing preflight
@@ -376,6 +465,6 @@ mutant r7-decline-is-go "$PREFLIGHT" "$R_DECLINE" '        2) return 0; echo "FA
 mutant r7-no-judge-ok   "$PREFLIGHT" "$R_NOJUDGE" '    if false; then' r7_nojudge preflight
 
 # VACUITY FLOOR: a table that ran fewer rows than it declares is not a pass.
-[ "$rows" -ge 30 ] || { printf 'VACUOUS %s row(s) ran, fewer than the 30 declared\n' "$rows" >&2; exit 1; }
+[ "$rows" -ge 41 ] || { printf 'VACUOUS %s row(s) ran, fewer than the 41 declared\n' "$rows" >&2; exit 1; }
 [ "$fails" -eq 0 ] || { printf 'RED   %s of %s row(s) failed\n' "$fails" "$rows" >&2; exit 1; }
 printf 'PASS  %s row(s): the model matrix runs at T-1 on both hosts, every failure to prove the release STOPs before the tag, and R7 refuses the same failures at T-4 (#3717)\n' "$rows"

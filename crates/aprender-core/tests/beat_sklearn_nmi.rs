@@ -3,8 +3,9 @@
 //!
 //! The clustering-metric parity itself is exercised by the unit tests in
 //! `crates/aprender-core/src/metrics/mod.rs` (module `tests_nmi`). This
-//! integration test guards the *contract*: it `include_str!`s
-//! `contracts/beat-sklearn-nmi-v1.yaml` at compile time so the pinned oracle
+//! integration test guards the *contract*: it reads
+//! `contracts/beat-sklearn-nmi-v1.yaml` (#4192: at run time, via
+//! `workspace_file_or_skip!`) so the pinned oracle
 //! values cannot silently drift away from the implementation.
 //!
 //! Oracle (scikit-learn 1.9.0, numpy float64), generated offline:
@@ -16,8 +17,6 @@
 
 use aprender::metrics::{mutual_info_score, normalized_mutual_info_score};
 
-const CONTRACT_YAML: &str = include_str!("../../../contracts/beat-sklearn-nmi-v1.yaml");
-
 /// The full-precision sklearn 1.9.0 oracle values, as they appear verbatim in
 /// the contract YAML.
 const ORACLE_NMI_LITERAL: &str = "0.7396673768007592";
@@ -28,14 +27,21 @@ const ORACLE_MI_LITERAL: &str = "0.7803552045207032";
 #[test]
 fn contract_oracle_constants_pinned() {
     // 1. The contract YAML literally contains the pinned sklearn oracle values.
-    assert!(
-        CONTRACT_YAML.contains(ORACLE_NMI_LITERAL),
-        "contract YAML missing pinned NMI oracle {ORACLE_NMI_LITERAL}"
-    );
-    assert!(
-        CONTRACT_YAML.contains(ORACLE_MI_LITERAL),
-        "contract YAML missing pinned MI oracle {ORACLE_MI_LITERAL}"
-    );
+    //    Read at run time: out of tree (a published tarball) there is no
+    //    `contracts/`, so only this half skips; in tree a missing file panics.
+    if let Some(contract_yaml) = provable_contracts::workspace_file_or_skip!(
+        "contract_oracle_constants_pinned",
+        "contracts/beat-sklearn-nmi-v1.yaml"
+    ) {
+        assert!(
+            contract_yaml.contains(ORACLE_NMI_LITERAL),
+            "contract YAML missing pinned NMI oracle {ORACLE_NMI_LITERAL}"
+        );
+        assert!(
+            contract_yaml.contains(ORACLE_MI_LITERAL),
+            "contract YAML missing pinned MI oracle {ORACLE_MI_LITERAL}"
+        );
+    }
 
     // 2. The live implementation reproduces those exact oracle values (1e-4 f32).
     let t = [0usize, 0, 1, 1, 2, 2];

@@ -1,0 +1,259 @@
+{
+  "$schema": "https://raw.githubusercontent.com/oasis-tcs/sarif-spec/master/Schemata/sarif-schema-2.1.0.json",
+  "version": "2.1.0",
+  "runs": [
+    {
+      "tool": {
+        "driver": {
+          "name": "pmat",
+          "informationUri": "https://github.com/paiml/pmat",
+          "rules": []
+        }
+      },
+      "results": [
+        {
+          "ruleId": "pmat-complexity-no-sh-analyzer",
+          "level": "note",
+          "message": {
+            "text": "pmat's complexity analyzer has no analyzer registered for .sh at all (335 .sh files unanalyzed, incl. this diff's file); complexity_delta cannot be measured for scripts/check_silicon_coverage.sh by pmat, only by reading the diff directly."
+          },
+          "properties": {
+            "grounding": "measured",
+            "precision_class": "advisory",
+            "command": [
+              "pmat",
+              "analyze",
+              "complexity",
+              "--path",
+              "scripts/",
+              "--top-files",
+              "1",
+              "--format",
+              "json"
+            ],
+            "exit_code": 0,
+            "stdout_sha256": "77ed1f6b319b0b214f5feb2ded0855d2e64047dd2d48ddb4182582a6d4b7dbd3",
+            "failure_scenario": "A reviewer who trusts pmat's complexity gate as a completeness signal for this diff would wrongly conclude the guard script's new branching (listing_is_short, the re-read block) was complexity-checked, when in fact zero .sh files including this one were scored."
+          }
+        },
+        {
+          "ruleId": "pmat-tdg-no-sh-analyzer",
+          "level": "note",
+          "message": {
+            "text": "pmat's TDG analyzer likewise has no analyzer for .sh; scripts/check_silicon_coverage.sh is excluded from the TDG score, same root cause as the complexity gap."
+          },
+          "properties": {
+            "grounding": "measured",
+            "precision_class": "advisory",
+            "command": [
+              "pmat",
+              "analyze",
+              "tdg",
+              "--path",
+              "scripts/check_silicon_coverage.sh"
+            ],
+            "exit_code": 1,
+            "stdout_sha256": "6bbf4004f1650c85312ef8d014b506a7deec1e89267b6d3e75bd9191f40eeac1",
+            "failure_scenario": "Same as pmat-complexity-no-sh-analyzer: TDG grade cannot stand in for review of this diff's bash logic."
+          }
+        },
+        {
+          "ruleId": "pmat-satd-clean",
+          "level": "note",
+          "message": {
+            "text": "pmat's SATD analyzer does support .sh (unlike complexity/TDG) and reports 0 SATD violations in scripts/check_silicon_coverage.sh (1 of 1 files analyzed)."
+          },
+          "properties": {
+            "grounding": "measured",
+            "precision_class": "advisory",
+            "command": [
+              "pmat",
+              "analyze",
+              "satd",
+              "--path",
+              "scripts/check_silicon_coverage.sh",
+              "--format",
+              "json"
+            ],
+            "exit_code": 0,
+            "stdout_sha256": "57d3ea0097b9b0ca94e75baa24de3777047afe35a395a1702abe1a471df98e5a",
+            "failure_scenario": "No concrete failure; recorded as a positive measured check the diff passes."
+          }
+        },
+        {
+          "ruleId": "pmat-semantic-index-no-bash-symbols",
+          "level": "note",
+          "message": {
+            "text": "pmat's semantic query index returns zero hits for 'listing_is_short' scoped to scripts/check_silicon_coverage.sh -- pmat's function-level index covers Rust/Python, not Bash, so pmat query cannot independently corroborate or refute the new bash functions; the lexical duplication scan (scripts/pr_review_duplication_scan.sh) is the mechanism actually capable of checking this diff for reimplemented prior art, and it was run (see the cited finding below)."
+          },
+          "properties": {
+            "grounding": "measured",
+            "precision_class": "advisory",
+            "command": [
+              "pmat",
+              "query",
+              "listing_is_short",
+              "--path",
+              "scripts/check_silicon_coverage.sh",
+              "--format",
+              "json",
+              "--limit",
+              "5"
+            ],
+            "exit_code": 0,
+            "stdout_sha256": "37517e5f3dc66819f61f5a7bb8ace1921282415f10551d2defa5c3eb0985b570",
+            "failure_scenario": "A reviewer relying on pmat query alone to search for duplicate/prior-art implementations of listing_is_short would see zero results and could misread that as 'no prior art exists' rather than 'this language is not indexed'."
+          }
+        },
+        {
+          "ruleId": "pmat-duplication-scan-full-horizon-clean",
+          "level": "note",
+          "message": {
+            "text": "The lexical duplication scan (scripts/pr_review_duplication_scan.sh) swept the full committed horizon -- head, all 1087/1087 unmerged sibling branches, and merge_base_to_main -- for the new symbols/filenames in this diff and found 0 hits across all 8 duplication_coverage buckets (rust/shell/python/config/docs/other/sibling_branches/merge_base_to_main, all method=lexical)."
+          },
+          "properties": {
+            "grounding": "cited",
+            "precision_class": "advisory",
+            "source": "scripts/pr_review_duplication_scan.sh output (dup.json), horizon_branches_scanned=1087 of horizon_branches_total=1087, hits_total=0",
+            "excerpt": "\"horizon_branches_total\": 1087,\n  \"horizon_branches_scanned\": 1087,\n  \"hits_total\": 0,\n  \"hits_recorded\": 0",
+            "excerpt_sha256": "1517239e1680eda5c2326a0aae931e4eb22b01f7312fe803d439f658dfc97abc",
+            "failure_scenario": "If listing_is_short/list_window/build_jobs re-read logic reimplemented an existing helper elsewhere in the tree or on an unmerged sibling branch, this scan would have surfaced it as a duplication hit; it did not, so no prior-art collision was missed for lack of trying."
+          }
+        }
+      ]
+    },
+    {
+      "tool": {
+        "driver": {
+          "name": "cargo-mutants",
+          "informationUri": "https://github.com/paiml/aprender",
+          "rules": []
+        }
+      },
+      "results": [
+        {
+          "ruleId": "mutation-m1-listing-is-short-always-return-1-killed",
+          "level": "note",
+          "message": {
+            "text": "Mutant m1 (listing_is_short() unconditionally `return 1`, i.e. never short) was planted in an external copy and run via SILICON_SELFTEST_SUBJECT; it broke self-test rows f-inconsistent, i-short-once and j-short-always (3 of 12), rc=2 'INSTRUMENT BROKEN'. Killed."
+          },
+          "properties": {
+            "grounding": "measured",
+            "precision_class": "advisory",
+            "command": [
+              "env",
+              "SILICON_SELFTEST_SUBJECT=<scratch copy with return 1 inserted at top of listing_is_short()>",
+              "bash",
+              "scripts/check_silicon_coverage.sh",
+              "--self-test"
+            ],
+            "exit_code": 2,
+            "stdout_sha256": "289210121fd9d13f93b52834a6199eda00425e58a14c65bcef4c98003a20ede5",
+            "failure_scenario": "A listing_is_short() that always reports 'not short' would make the widened cross-check in this diff inert -- the exact regression PMAT-4594 exists to prevent -- and the self-test catches it."
+          }
+        },
+        {
+          "ruleId": "mutation-m2-skip-reread-killed",
+          "level": "note",
+          "message": {
+            "text": "Mutant m2 (build_jobs() skips the re-read entirely and sets _bj_state=inconsistent on the first short read, deleting the reread_calls increment and the list_window call) broke self-test row i-short-once (1 of 12), rc=2. Killed."
+          },
+          "properties": {
+            "grounding": "measured",
+            "precision_class": "advisory",
+            "command": [
+              "env",
+              "SILICON_SELFTEST_SUBJECT=<scratch copy with re-read block replaced by unconditional _bj_state=inconsistent>",
+              "bash",
+              "scripts/check_silicon_coverage.sh",
+              "--self-test"
+            ],
+            "exit_code": 2,
+            "stdout_sha256": "257e373b82777a12a8c362f9b2d63420c61172514304efe126c4e3d02c6f656c",
+            "failure_scenario": "Skipping the single re-read means a short-but-since-caught-up listing (i-short-once) is wrongly marked inconsistent/NO-GO instead of re-checked and passed; the self-test catches the false negative."
+          }
+        },
+        {
+          "ruleId": "mutation-m3-remove-inconsistent-assignment-killed",
+          "level": "note",
+          "message": {
+            "text": "Mutant m3 (the `_bj_state=inconsistent` assignment after a still-short re-read replaced with `:`, a no-op) broke self-test rows f-inconsistent and j-short-always (2 of 12), rc=2. Killed."
+          },
+          "properties": {
+            "grounding": "measured",
+            "precision_class": "advisory",
+            "command": [
+              "env",
+              "SILICON_SELFTEST_SUBJECT=<scratch copy with _bj_state=inconsistent replaced by :>",
+              "bash",
+              "scripts/check_silicon_coverage.sh",
+              "--self-test"
+            ],
+            "exit_code": 2,
+            "stdout_sha256": "d8954bda66543348867ca573aaf4f72e9f2a60ee4126843296283d46de701f58",
+            "failure_scenario": "Without this assignment, a listing that is STILL short after the one re-read falls through with state=ok, which is exactly the original bug (a self-consistent short listing scored falsely STALE/green instead of NO-GO); the self-test catches its reintroduction."
+          }
+        },
+        {
+          "ruleId": "mutation-baseline-12-of-12-green",
+          "level": "note",
+          "message": {
+            "text": "Unmutated baseline (SILICON_SELFTEST_SUBJECT unset, running scripts/check_silicon_coverage.sh --self-test directly): 12/12 gh-shim self-test rows green, rc=0, including the four task-specified falsifier rows g-real-green(rc0)/h-real-stale(rc1)/i-short-once(rc0)/j-short-always(rc2), all matching the task's specified expected rc for each row exactly."
+          },
+          "properties": {
+            "grounding": "measured",
+            "precision_class": "advisory",
+            "command": [
+              "bash",
+              "scripts/check_silicon_coverage.sh",
+              "--self-test"
+            ],
+            "exit_code": 0,
+            "stdout_sha256": "38f5e0b769fb27b5187b34d5fd95445cbdf68608c964c0f875f963804be39d27",
+            "failure_scenario": "n/a -- confirming finding: establishes the baseline the three mutants above are diffed against, so their 'killed' status is measured relative to a verified-green baseline, not assumed."
+          }
+        },
+        {
+          "ruleId": "listing-is-short-matches-stated-intent",
+          "level": "note",
+          "message": {
+            "text": "listing_is_short() (lines 338-345) reads: an empty unfiltered-newest listing is treated as 'not short' (return 0); otherwise it compares the unfiltered newest created_at against the listing's own newest via a lexical string compare on fixed-width ISO-8601 timestamps. This matches the stated intent (cross-check every listing, not only empty ones, against the unfiltered newest run) with no lookback/page-cap/policy-limit change in the function."
+          },
+          "properties": {
+            "grounding": "cited",
+            "precision_class": "advisory",
+            "source": "scripts/check_silicon_coverage.sh lines 338-345, commit 9aa15959c71339f2a843b001c3c24e87641cdd64",
+            "excerpt": "listing_is_short() {\n    [ -n \"${2:-}\" ] || return 1\n    _ls_pe=$(iso_epoch \"$2\") || return 1\n    [ \"$_ls_pe\" -ge \"$3\" ] || return 1\n    _ls_newest=\"$(cut -f2 \"$1\" | sort | tail -n 1)\"\n    [ -z \"$_ls_newest\" ] && return 0\n    [[ \"$2\" > \"$_ls_newest\" ]]\n}",
+            "excerpt_sha256": "cacca35f2c2210d71bb19d4bdacda87c3d68ec8ffe372ec6a700cf55ecae272b",
+            "failure_scenario": "n/a -- confirming finding, not a defect: recorded to satisfy the review's obligation to independently verify the diff's core logic against its stated intent, not merely trust the self-test."
+          }
+        },
+        {
+          "ruleId": "reread-block-matches-stated-intent",
+          "level": "note",
+          "message": {
+            "text": "The re-read block in build_jobs() (lines 400-406) re-reads via list_window() exactly once on a short listing, and only sets _bj_state=inconsistent if the state was still 'ok' AND the re-read is still short -- matching 're-read once; if STILL short, mark inconsistent -> NO-GO, never STALE' exactly."
+          },
+          "properties": {
+            "grounding": "cited",
+            "precision_class": "advisory",
+            "source": "scripts/check_silicon_coverage.sh lines 400-406, commit 9aa15959c71339f2a843b001c3c24e87641cdd64",
+            "excerpt": "                if listing_is_short \"$_bj_one\" \"$_bj_pnewest\" \"$_bj_cut\"; then\n                    reread_calls=$((reread_calls + 1))\n                    list_window \"$_bj_wf\" \"$_bj_ev\" \"$_bj_one\" || { rm -f \"${_bj_one:?}\" \"${_bj_runs:?}\"; return 1; }\n                    if [ \"$_bj_state\" = ok ] && listing_is_short \"$_bj_one\" \"$_bj_pnewest\" \"$_bj_cut\"; then\n                        _bj_state=inconsistent\n                    fi\n                fi",
+            "excerpt_sha256": "7cbb0272ca668ab457cb53801b37d141c263e8b23fbd23060bca5be044c4b5fc",
+            "failure_scenario": "n/a -- confirming finding, not a defect: same purpose as the listing_is_short citation above, for the re-read/inconsistent-marking half of the fix."
+          }
+        }
+      ]
+    },
+    {
+      "tool": {
+        "driver": {
+          "name": "antigravity",
+          "informationUri": "https://github.com/paiml/aprender",
+          "rules": []
+        }
+      },
+      "results": []
+    }
+  ]
+}

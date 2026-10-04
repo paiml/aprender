@@ -82,8 +82,8 @@ cargo install alimentar
 Verify the CLI:
 
 ```bash
-alimentar --version
-alimentar --help
+aprender-data --version
+aprender-data --help
 ```
 
 ## Building from Source

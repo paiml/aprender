@@ -1,0 +1,181 @@
+{
+ "$schema": "https://json.schemastore.org/sarif-2.1.0.json",
+ "version": "2.1.0",
+ "runs": [
+  {
+   "tool": {
+    "driver": {
+     "name": "pmat",
+     "informationUri": "https://github.com/paiml/aprender",
+     "rules": []
+    }
+   },
+   "invocations": [
+    {
+     "executionSuccessful": true,
+     "toolExecutionNotifications": [
+      {
+       "level": "warning",
+       "message": {
+        "text": "duplication scan (scripts/pr_review_duplication_scan.sh) and TDG/SATD were NOT run on this head: read-only seat, and the scan timed out at 25m over 1160 branches on the previous head. No duplication coverage is claimed. Only pmat analyze complexity over the 17 non-test src files added/modified by 32fc88e6f5..HEAD was run."
+       },
+       "properties": {
+        "grounding": "measured",
+        "command": [
+         "pmat",
+         "--version"
+        ],
+        "exit_code": 0,
+        "stdout_sha256": "7e0de8a1042d0109fed8ec3c217c1d936e4cdeed08909b6bda26139a6cdda109"
+       }
+      }
+     ]
+    }
+   ],
+   "results": [
+    {
+     "ruleId": "review.complexity-delta-over-ceiling",
+     "level": "note",
+     "message": {
+      "text": "pmat analyze complexity over 17 added/modified non-test crate src files in the delta (head-only; all arrive via the merge of main): 4 functions over max_complexity=10, worst 12 (extract/json/github.rs positive_control); others 11 (shapes.rs check_kind_and_type, turtle_property; covering.rs extend)."
+     },
+     "properties": {
+      "grounding": "measured",
+      "command": [
+       "pmat",
+       "analyze",
+       "complexity",
+       "--files",
+       "<17 files>",
+       "--format",
+       "json"
+      ],
+      "exit_code": 0,
+      "stdout_sha256": "71b03e08fc6b65e69d77ef44a5c22c67898b0cb1b3359812a9b75cf8e5d6a1a0",
+      "failure_scenario": "Functions above the configured ceiling of 10 enter main via the merge; pmat comply may flag them later.",
+      "precision_class": "advisory"
+     }
+    }
+   ]
+  },
+  {
+   "tool": {
+    "driver": {
+     "name": "nvidia-cuda-docs",
+     "rules": []
+    }
+   },
+   "invocations": [
+    {
+     "executionSuccessful": true,
+     "toolExecutionNotifications": []
+    }
+   ],
+   "results": [
+    {
+     "ruleId": "review.fp8-clamp-assumes-saturation",
+     "level": "note",
+     "message": {
+      "text": "crates/aprender-contracts-staging/lean/Challenge/fp8-interchange-v1.lean states clampMag_le / range_e4m3 (|decode| <= E4M3_MAX) as `:= sorry` theorems. The CUDA Math API says under __NV_NOSAT an E4M3 overflow becomes NaN, not a value <= max, so the stated range holds only for a saturating (SATFINITE) conversion model. Nothing is asserted yet (all sorry); matters when someone discharges them."
+     },
+     "properties": {
+      "grounding": "cited",
+      "source": "CUDA Math API, FP8 section 3.11.1, enum __nv_saturation_t (__NV_NOSAT) via mcp__nvidia-cuda-docs__search_cuda_docs",
+      "excerpt": "NOTE: for the target `fp8` types of `e4m3` and `ue5m3` kinds, the results that are larger than the maximum representable finite number of the target format become NaN.",
+      "excerpt_sha256": "c624bfa1b4fb1c7f7ade327064355505826589c932cdf281c275c7d6b0ac451c",
+      "failure_scenario": "A discharged range_e4m3 proof certifies a clamp that NOSAT hardware conversion does not perform; a downstream kernel contract inherits a wrong bound.",
+      "precision_class": "advisory",
+      "carried_forward_from": "32fc88e6f55e62edc1dfda70ddfd805a8cafaa36"
+     }
+    }
+   ]
+  },
+  {
+   "tool": {
+    "driver": {
+     "name": "antigravity",
+     "rules": []
+    }
+   },
+   "invocations": [
+    {
+     "executionSuccessful": false,
+     "toolExecutionNotifications": [
+      {
+       "level": "error",
+       "message": {
+        "text": "agy cross-vendor review was NOT dispatched on this head (delta-only re-review seat). agy is present (agy 1.2.14) but no review was run; the last agy consultation covers head 32fc88e6f5 only."
+       },
+       "properties": {
+        "grounding": "measured",
+        "command": [
+         "agy",
+         "--version"
+        ],
+        "exit_code": 0,
+        "stdout_sha256": "22e988bfb2127d8584cc829f76868c2c85e138af32fe0989b29f7580b88a00a5"
+       }
+      }
+     ]
+    }
+   ],
+   "results": []
+  },
+  {
+   "tool": {
+    "driver": {
+     "name": "cargo-mutants",
+     "rules": []
+    }
+   },
+   "invocations": [
+    {
+     "executionSuccessful": false,
+     "toolExecutionNotifications": [
+      {
+       "level": "error",
+       "message": {
+        "text": "Mutation not run on this head: cargo is not permitted on this lambda review-lane host (runs only on intel). Rust-source mutation of the merged-in PMAT-4646 changes is not_measured. Only scripts/check_mutants_debt_ratchet.sh --self-test (16 cases, rc 0) was run; a case table is not a mutation set."
+       },
+       "properties": {
+        "grounding": "measured",
+        "command": [
+         "bash",
+         "scripts/check_mutants_debt_ratchet.sh",
+         "--self-test"
+        ],
+        "exit_code": 0,
+        "stdout_sha256": "9f791821024e6e64a60b929f196ae46b459addd407351488db2e6ff6e20e332f"
+       }
+      }
+     ]
+    }
+   ],
+   "results": [
+    {
+     "ruleId": "review.ci-gate-mutants-rules-unreachable-inherited",
+     "level": "warning",
+     "message": {
+      "text": "ci.yml gate job: an unconditional exit 0 (line 635, MUTANTS-RATCHET block) still precedes GATE-MUTANTS-RULE and GATE-MUTANTS-TABLE-RULE (line 653), so the mutants-table-scope/mutants-table results this PR wires into gate cannot block. Identical block exists on origin/main (exit 0 at main's line 465), so the merge did not introduce it; the earlier finding that scripts/check_mutants_debt_ratchet.sh and ci/mutants-debt.tsv were missing is resolved (both now exist, ls rc 0)."
+     },
+     "properties": {
+      "grounding": "measured",
+      "command": [
+       "grep",
+       "-n",
+       "-e",
+       "MUTANTS-RATCHET-END",
+       "-e",
+       "GATE-MUTANTS-TABLE-RULE-BEGIN",
+       ".github/workflows/ci.yml"
+      ],
+      "exit_code": 0,
+      "stdout_sha256": "aa8c862b1e3ddf972bee91e04d15ee3a4c1c1846d44bf335701f590b61993675",
+      "failure_scenario": "A PR with a RED survivor table still passes gate until RESTORE PR #4648 re-arms the rules.",
+      "precision_class": "advisory"
+     }
+    }
+   ]
+  }
+ ]
+}

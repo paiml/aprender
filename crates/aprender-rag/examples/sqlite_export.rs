@@ -109,7 +109,7 @@ fn main() -> aprender_rag::Result<()> {
     println!("  index.optimize()?;");
     println!();
     println!("  # CLI equivalent:");
-    println!("  trueno-rag index --path /data/corpus --output /data/index --sqlite");
+    println!("  aprender-rag index --path /data/corpus --output /data/index --sqlite");
     println!();
     println!("  # Use with batuta oracle:");
     println!("  scp intel:/data/index/index.sqlite ~/.cache/batuta/rag/video-corpus.sqlite");

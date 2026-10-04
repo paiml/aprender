@@ -718,37 +718,37 @@ Verificar provides a complete CLI for the end-to-end pipeline:
 
 ```bash
 # Generate synthetic test cases
-verificar generate \
+aprender-verify generate \
   --count 10000 \
   --language python \
   --strategy swarm \
   --output data/generated/
 
 # Run advanced depyler pattern generation
-verificar depyler \
+aprender-verify depyler \
   --count 1000 \
   --output data/depyler/
 
 # Verify transpilation correctness
-verificar verify \
+aprender-verify verify \
   --input data/generated/ \
   --transpilers depyler,bashrs,decy \
   --output data/verified/
 
 # Train bug prediction model
-verificar train \
+aprender-verify train \
   --input data/verified/ \
   --output models/bug_predictor.bin \
   --split 0.8
 
 # Evaluate trained model
-verificar evaluate \
+aprender-verify evaluate \
   --model models/bug_predictor.bin \
   --test data/test/ \
   --output reports/evaluation.json
 
 # Export for LLM fine-tuning (entrenar)
-verificar export \
+aprender-verify export \
   --input data/verified/ \
   --output entrenar_data/ \
   --format jsonl \
@@ -1500,7 +1500,7 @@ fn roundtrip_property(code in python_generator()) {
 **Application to Verificar**:
 - Every generated Python program must survive `parse → emit → parse`
 - Transpilation must preserve this property: `parse(source) → transpile → parse(target)`
-- Differential testing: `verificar generate` output must match `tree-sitter parse` behavior
+- Differential testing: `aprender-verify generate` output must match `tree-sitter parse` behavior
 
 ### E.4 Differential Testing Pattern
 

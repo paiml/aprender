@@ -223,7 +223,7 @@ fn apr_zram_benchmark_runs_instead_of_panicking() {
     );
 }
 
-// A cross-binary byte-identity check (`apr rag query` vs `trueno-rag query`)
+// A cross-binary byte-identity check (`apr rag query` vs `aprender-rag query`)
 // belongs here in spirit, but `CARGO_BIN_EXE_*` only exposes the binaries of
 // THIS package, so writing it from apr-cli yields an apr-vs-apr comparison --
 // an oracle that agrees with itself by construction. The structural guarantee
@@ -263,17 +263,18 @@ fn every_simular_command_is_reachable_through_apr_sim() {
 
 #[test]
 fn apr_sim_validates_a_real_emc_file() {
-    let emc = concat!(
-        env!("CARGO_MANIFEST_DIR"),
-        "/../aprender-simulate/docs/emc/ml/linear_regression.emc.yaml"
-    );
-    assert!(
-        std::path::Path::new(emc).is_file(),
-        "fixture moved: {emc} -- fix the path rather than weakening the test"
-    );
+    // A sibling crate's file: in tree a moved fixture FAILS (fix the path rather than weakening
+    // the test); out of tree (the published tarball) the test skips by name (#4149).
+    let Some(emc) = provable_contracts::workspace_path_or_skip!(
+        "apr_sim_validates_a_real_emc_file",
+        "crates/aprender-simulate/docs/emc/ml/linear_regression.emc.yaml",
+    ) else {
+        return;
+    };
 
     let out = apr()
-        .args(["sim", "emc-validate", emc])
+        .args(["sim", "emc-validate"])
+        .arg(&emc)
         .output()
         .expect("apr sim emc-validate");
     assert!(
@@ -411,16 +412,15 @@ fn apr_pv_reaches_the_contract_engine() {
     assert!(!help.contains("wharrgarbl"), "contains proves nothing here");
 
     // Execution: validate a contract that really is in the tree.
-    let contract = concat!(
-        env!("CARGO_MANIFEST_DIR"),
-        "/../../contracts/apr-cli-commands-v1.yaml"
-    );
-    assert!(
-        std::path::Path::new(contract).is_file(),
-        "fixture moved: {contract}"
-    );
+    let Some(contract) = provable_contracts::workspace_path_or_skip!(
+        "apr_pv_reaches_the_contract_engine",
+        "contracts/apr-cli-commands-v1.yaml",
+    ) else {
+        return;
+    };
     let out = apr()
-        .args(["pv", "validate", contract])
+        .args(["pv", "validate"])
+        .arg(&contract)
         .output()
         .expect("apr pv validate");
     assert!(

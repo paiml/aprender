@@ -1,0 +1,22 @@
+[package]
+name = "gated_rmsnorm_oxide"
+version = "0.1.0"
+edition = "2024"
+
+# Standalone: the pinned nightly + cuda-oxide codegen backend is not the workspace toolchain.
+[workspace]
+
+[lib]
+name = "gated_rmsnorm_oxide"
+path = "src/lib.rs"
+
+[[bin]]
+name = "gated_rmsnorm_ab"
+path = "src/main.rs"
+
+# Pinned to the rev the cached codegen backend (~/.cargo/cuda-oxide/source-rev.txt) was built from; the
+# backend is a rustc plugin and loads only into its own nightly (rust-toolchain.toml).
+[dependencies]
+cuda-device = { git = "https://github.com/NVlabs/cuda-oxide.git", rev = "b9847e9515ed3a23096f22567d3eaf0a6e3e440c" }
+cuda-host = { git = "https://github.com/NVlabs/cuda-oxide.git", rev = "b9847e9515ed3a23096f22567d3eaf0a6e3e440c" }
+cuda-core = "0.3.1"

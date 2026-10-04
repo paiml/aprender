@@ -1,0 +1,469 @@
+{
+ "$schema": "https://raw.githubusercontent.com/oasis-tcs/sarif-spec/master/Schemata/sarif-schema-2.1.0.json",
+ "version": "2.1.0",
+ "runs": [
+  {
+   "tool": {
+    "driver": {
+     "name": "pmat",
+     "version": "3.30.0",
+     "rules": [
+      {
+       "id": "PRREV-R4-001",
+       "name": "prompt-only refusal boundary (pre-existing)"
+      },
+      {
+       "id": "PRREV-R4-002",
+       "name": ">= vs > boundary asymmetry"
+      },
+      {
+       "id": "PRREV-R4-003",
+       "name": "exists()-guarded rerun-if-changed"
+      },
+      {
+       "id": "PRREV-R4-004",
+       "name": "scheduler channel errors remain 500"
+      },
+      {
+       "id": "PRREV-R4-005",
+       "name": "no test execution in this review"
+      },
+      {
+       "id": "PRREV-R4-CX",
+       "name": "complexity increases"
+      },
+      {
+       "id": "PRREV-R4-TDG",
+       "name": "tdg head vs base"
+      },
+      {
+       "id": "PRREV-R4-DUP",
+       "name": "duplication scan"
+      },
+      {
+       "id": "PRREV-R5-BLD",
+       "name": "build.rs helper refactor complexity"
+      }
+     ]
+    }
+   },
+   "invocations": [
+    {
+     "executionSuccessful": true,
+     "toolExecutionNotifications": [],
+     "commandLine": "pmat analyze complexity per changed function (head fb6567d0dc vs merge base; build.rs re-measured for this head, other rows carried from the same diff content verified unchanged since 12c0e28a00); agy --model gpt-oss-120b-medium in disposable rsync copy; git diff added-line scan"
+    }
+   ],
+   "results": [
+    {
+     "ruleId": "PRREV-R4-001",
+     "level": "note",
+     "message": {
+      "text": "Pre-existing, unchanged since PRREV-PRIMARY-003: serve_context_refusal refuses only on prompt_tokens >= serving_context and does not add the request's max_tokens, so a prompt of context_length-1 tokens with max_tokens > 1 is admitted on every route and may still fail or degrade at generation time. This diff neither introduces nor fixes it; it is outside PMAT-4616's stated 500-vs-400 scope. Re-read at this head: the typed ContextLimitExceeded raised by generate_gpu_resident{,_logprobs} (prompt.len() > min(gpu_max_len, context_length)) maps to 400 via generation_error_status, so the hard failure path is a 400, not a 500.",
+      "markdown": "Pre-existing prompt-only boundary (`prompt_tokens >= serving_context`); `max_tokens` is not added. Advisory, out of scope."
+     },
+     "locations": [
+      {
+       "physicalLocation": {
+        "artifactLocation": {
+         "uri": "crates/aprender-serve/src/api/mod.rs"
+        }
+       }
+      }
+     ],
+     "properties": {
+      "grounding": "asserted",
+      "precision_class": "advisory",
+      "rationale": "Read of serve_context_refusal and the generate_gpu_resident precondition at this head; nothing was compiled or executed (lambda forbids cargo build/test).",
+      "failure_scenario": "A client sending a prompt of serving_context-1 tokens with max_tokens=512 passes the pre-flight on every route, then generates past the KV cap or context_length; the outcome is a late typed error (now 400) or silently degraded positions rather than an up-front refusal."
+     }
+    },
+    {
+     "ruleId": "PRREV-R4-002",
+     "level": "note",
+     "message": {
+      "text": "Boundary asymmetry, benign: the new pre-flight refuses at prompt_tokens >= serving_context ('no room to answer'), while dense_stream and check_gpu_resident_preconditions reject only at prompt_tokens > limit. A prompt of exactly serving_context tokens is refused up front with 400 though the lower layer would technically accept it. The diff documents this as intentional (at least one position must remain for the first generated token).",
+      "markdown": "`>=` at the pre-flight vs `>` in the lower-layer precondition; intentional and documented."
+     },
+     "locations": [
+      {
+       "physicalLocation": {
+        "artifactLocation": {
+         "uri": "crates/aprender-serve/src/api/mod.rs"
+        }
+       }
+      }
+     ],
+     "properties": {
+      "grounding": "asserted",
+      "precision_class": "advisory",
+      "rationale": "Compared serve_context_refusal (>=) with the generate_gpu_resident precondition (>) by reading both; the diff's doc comment states the intent.",
+      "failure_scenario": "A prompt of exactly serving_context tokens that the engine could prefill is answered 400 'context exceeds N' even though a zero-token completion would have fit; a client probing the limit sees an off-by-one versus the lower layer."
+     }
+    },
+    {
+     "ruleId": "PRREV-R4-003",
+     "level": "note",
+     "message": {
+      "text": "The build-script change guards cargo:rerun-if-changed behind path.exists() (now via the watch_if_exists helper in aprender-serve/build.rs; inline elsewhere). That stops rebuilds on every invocation for paths that do not exist (the PMAT-4616 goal), but a watched file created after the first build no longer triggers a rerun. The head fb6567d0dc refactor into a helper does not change this behaviour.",
+      "markdown": "`.exists()`-guarded `rerun-if-changed` trades perpetual rebuilds for a missed rerun when a watched path appears later."
+     },
+     "locations": [
+      {
+       "physicalLocation": {
+        "artifactLocation": {
+         "uri": "crates/aprender-build-sha/src/lib.rs"
+        }
+       }
+      }
+     ],
+     "properties": {
+      "grounding": "asserted",
+      "precision_class": "advisory",
+      "rationale": "Read of the four build-script diffs; the behaviour described is Cargo's documented rerun-if-changed semantics and was not exercised here.",
+      "failure_scenario": "A developer creates .git-sha or a binding.yaml after the crate first built without it; the next cargo build reuses the stale build-script output and embeds no/old value until something else invalidates it."
+     }
+    },
+    {
+     "ruleId": "PRREV-R4-004",
+     "level": "note",
+     "message": {
+      "text": "Errors that cross the scheduler channel as plain strings are not typed as ContextLimitExceeded and therefore still map to 500. The diff comments acknowledge this; the pre-flights placed before the scheduler hand-off cover the reachable prompt-too-long cases, so this only matters for a prompt that slips past the cached cap.",
+      "markdown": "Scheduler-channel string errors remain 500; acknowledged in the diff."
+     },
+     "locations": [
+      {
+       "physicalLocation": {
+        "artifactLocation": {
+         "uri": "crates/aprender-serve/src/api/batch_processing.rs"
+        }
+       }
+      }
+     ],
+     "properties": {
+      "grounding": "asserted",
+      "precision_class": "advisory",
+      "rationale": "Read of generation_error_status and the scheduler error path; not executed.",
+      "failure_scenario": "If the cached serving context is None (non-CUDA constructors) and the model context is later exceeded inside the scheduler, the client still receives a 500 instead of 400."
+     }
+    },
+    {
+     "ruleId": "PRREV-R4-005",
+     "level": "note",
+     "message": {
+      "text": "Nothing in this review compiled or ran the tests: cargo build/test and cargo-mutants are forbidden on host noah-Lambda-Vector and intel is at load 204 on 32 cores. Test outcomes for serve_context_d5.rs and cap_context rest on the audit commit 12c0e28a00 (quorum) and CI, not on this receipt.",
+      "markdown": "No test execution in this review; test outcomes are not evidence here."
+     },
+     "locations": [
+      {
+       "physicalLocation": {
+        "artifactLocation": {
+         "uri": "crates/aprender-serve/src/api/tests/serve_context_d5.rs"
+        }
+       }
+      }
+     ],
+     "properties": {
+      "grounding": "asserted",
+      "precision_class": "advisory",
+      "rationale": "Statement about this review's own execution limits, recorded so the pass status of the new tests is not read as measured here.",
+      "failure_scenario": "A regression in serve_context_d5.rs that only shows at run time would not be caught by this review; only CI would."
+     }
+    },
+    {
+     "ruleId": "PRREV-R4-CX",
+     "level": "note",
+     "message": {
+      "text": "pmat complexity per function, head vs base (extracted base tree): three existing functions each gain +1 cyclomatic (try_cuda_batch_generate 5->6, try_cuda_gguf_completions 5->6, try_cuda_stream_tokens 2->3); none crosses the configured max_complexity=10 cyclomatic. New functions preflight_serving_context, preflight_context and cap_context are cyclomatic 1-2.",
+      "markdown": "Three +1 cyclomatic increases from the added pre-flight branches; no function crosses cyclomatic 10."
+     },
+     "properties": {
+      "grounding": "measured",
+      "precision_class": "advisory",
+      "command": [
+       "jq",
+       "-c",
+       ".[]|select(.[2]!=null)",
+       "cxdelta.json"
+      ],
+      "exit_code": 0,
+      "stdout_sha256": "7ef9d0357aff8cb40eca12897d7090e22d30d17237e0c0cebaf3cf29f8305dc5",
+      "failure_scenario": "A later pre-flight added to try_cuda_gguf_completions (cognitive 12->15 already) would push it toward the cognitive threshold and make the handler harder to test."
+     }
+    },
+    {
+     "ruleId": "PRREV-R4-TDG",
+     "level": "note",
+     "message": {
+      "text": "pmat analyze tdg head vs base on the changed non-test source files: no grade change in any file (batch.rs B 78.61->76.79, dense_session.rs A- 88.23->87.03, openai_handlers.rs A- 88.81->87.52; others within +-1).",
+      "markdown": "TDG grades unchanged on 10 files; largest drop batch.rs -1.82 (B->B)."
+     },
+     "properties": {
+      "grounding": "measured",
+      "precision_class": "advisory",
+      "command": [
+       "pmat",
+       "analyze",
+       "tdg",
+       "--path",
+       "<changed file>",
+       "--format",
+       "json"
+      ],
+      "exit_code": 0,
+      "stdout_sha256": "54ed6ad263c6541add2650581824145d96d656ca4b339190daa929dba2f0d788",
+      "failure_scenario": "batch.rs sits at B 76.79; a further ~-6 would cross to C and trip the configured min_grade B."
+     },
+     "locations": [
+      {
+       "physicalLocation": {
+        "artifactLocation": {
+         "uri": "crates/aprender-serve/src/api/batch.rs"
+        }
+       }
+      }
+     ]
+    },
+    {
+     "ruleId": "PRREV-R4-DUP",
+     "level": "note",
+     "message": {
+      "text": "Duplication scan: 31 needles, 7 hits over 1152/1152 sibling branches, all filename hits for this ticket's own files (serve_context_d5.rs, PMAT-4616.yaml, quorum-PMAT-4616.json) on origin/devont/k1-kv-only, k1-revert-red and k1-serve-kv, i.e. earlier iterations of the same D5 work, not a second implementation. Nothing found on origin/main after the merge base (merge_base_to_main_files 0).",
+      "markdown": "7 hits, all this ticket's own files on sibling devont/k1-* branches; no independent re-implementation found."
+     },
+     "properties": {
+      "grounding": "measured",
+      "precision_class": "advisory",
+      "command": [
+       "scripts/pr_review_duplication_scan.sh",
+       "--base",
+       "00052c01284caa74c70b287088a79c6dee2959b9",
+       "--head",
+       "12c0e28a000ad4454836412ab3c9161be4b39008",
+       "--rust-semantic",
+       "--json",
+       "dup.json"
+      ],
+      "exit_code": 0,
+      "stdout_sha256": "98b218443471af9c201474e6148c0ed977bb6a0ec946a4e0d751c9c094dd7680",
+      "failure_scenario": "If devont/k1-serve-kv is later merged in addition to this branch, the same test file and roadmap entry would land twice."
+     }
+    },
+    {
+     "ruleId": "PRREV-R5-BLD",
+     "level": "note",
+     "message": {
+      "text": "Head fb6567d0dc vs previous head 12c0e28a00: crates/aprender-serve/build.rs extracts the exists()-guarded rerun-if-changed into watch_if_exists (cyclomatic 2). emit_contract_bindings stays at base cyclomatic 20 / cognitive 70 (unchanged from the merge base; already above max_complexity=10 before this PR), the other two callers are unchanged. Behaviour is identical: watch only when the path exists.",
+      "markdown": "watch_if_exists helper keeps emit_contract_bindings complexity at the merge-base value; behaviour unchanged."
+     },
+     "locations": [
+      {
+       "physicalLocation": {
+        "artifactLocation": {
+         "uri": "crates/aprender-serve/build.rs"
+        }
+       }
+      }
+     ],
+     "properties": {
+      "grounding": "measured",
+      "precision_class": "advisory",
+      "command": [
+       "pmat",
+       "analyze",
+       "complexity",
+       "--path",
+       "<extracted base|head build.rs>",
+       "--format",
+       "json"
+      ],
+      "exit_code": 0,
+      "stdout_sha256": "0c966b88167ecae26e1ff6f3931db7632bd75679fa3e0613bd28e5cd738e907b",
+      "failure_scenario": "A future edit adding a branch inside emit_contract_bindings raises an already over-threshold function; not introduced here."
+     }
+    }
+   ]
+  },
+  {
+   "tool": {
+    "driver": {
+     "name": "nvidia-cuda-docs",
+     "version": "mcp",
+     "rules": [
+      {
+       "id": "PRREV-CUDA",
+       "name": "device-behaviour claim vs NVIDIA docs"
+      }
+     ]
+    }
+   },
+   "invocations": [
+    {
+     "executionSuccessful": true,
+     "toolExecutionNotifications": []
+    }
+   ],
+   "results": [
+    {
+     "ruleId": "PRREV-CUDA",
+     "level": "note",
+     "message": {
+      "text": "Two search_cuda_docs queries this run, both no-authority-found: the first returned cuMemCreate/cuMemMap multi-device sample code and a cuDNN front-end GEMM sample, the second a generic vecAdd bounds-check example and a one-line nRead comparison. Neither addresses a device KV-cache cap or refusing an over-long sequence at the API layer. This diff changes no kernel or launch: it caps the host-side serving context (min of model context_length and the executor's already-allocated max_kv_len) and refuses earlier, so no device-behaviour claim is made that the docs could confirm or contradict.",
+      "markdown": "CUDA docs: 2 queries, `no-authority-found`; diff makes no new device-behaviour claim."
+     },
+     "locations": [
+      {
+       "physicalLocation": {
+        "artifactLocation": {
+         "uri": "crates/aprender-serve/src/api/cuda_chat_backend.rs"
+        }
+       }
+      }
+     ],
+     "properties": {
+      "grounding": "asserted",
+      "precision_class": "advisory",
+      "rationale": "Judgement over the two query results (named in consultations.cuda.queries); query output was not saved to a file, so the result is asserted, not measured.",
+      "failure_scenario": "If the executor's max_kv_len were ever reported larger than the buffer actually allocated, the pre-flight would admit a prompt the device cannot hold; the docs corpus gave no authority on this so it is not checked externally.",
+      "queries": [
+       "maximum KV cache length device memory allocation limit for LLM inference decode with cuMemAlloc failure handling",
+       "host-side validation of sequence length against preallocated device buffer capacity before kernel launch to avoid out-of-bounds access"
+      ]
+     }
+    }
+   ]
+  },
+  {
+   "tool": {
+    "driver": {
+     "name": "crux",
+     "version": "pv 0.70.0",
+     "rules": [
+      {
+       "id": "PRREV-CRUX",
+       "name": "user-facing surface / competitive coverage"
+      }
+     ]
+    }
+   },
+   "invocations": [
+    {
+     "executionSuccessful": true,
+     "toolExecutionNotifications": [],
+     "commandLine": "pv query \"context limit exceeded status code\" --limit 5"
+    }
+   ],
+   "results": [
+    {
+     "ruleId": "PRREV-CRUX",
+     "level": "note",
+     "message": {
+      "text": "crux_coverage: none, unchanged from prior rounds. The mechanical S3.C trigger fires only on evidence/pr-review/4614/167bd5e1.../ and 70080627.../ receipts committed inside this diff window (their prose quotes the surface token list). The real surface change in this diff is behavioural: serve prompts at or past the device-KV cap now answer HTTP 400 'context exceeds N' instead of 500, on existing routes; no route, flag, MCP tool or config key is added. pv query returned no contract covering serve error-status semantics against a named competitor.",
+      "markdown": "`crux_coverage: none`: no crux-* contract covers serve 400-vs-500 context semantics; trigger fires only on prior receipts' prose."
+     },
+     "properties": {
+      "grounding": "measured",
+      "precision_class": "advisory",
+      "command": [
+       "pv",
+       "query",
+       "context limit exceeded status code",
+       "--limit",
+       "5"
+      ],
+      "exit_code": 0,
+      "stdout_sha256": "d06c70f89c4d5f452c7c8b5c3314d4911273476e85661541bdc9b1c877c0b83d",
+      "failure_scenario": "No contract in contracts/crux-*.yaml pins serve context-overflow status against a named competitor, so a future change back to 500 would not be caught as a competitive regression."
+     }
+    }
+   ]
+  },
+  {
+   "tool": {
+    "driver": {
+     "name": "cargo-mutants",
+     "version": "27.0.0",
+     "rules": [
+      {
+       "id": "PRREV-MUTATION",
+       "name": "mutation coverage of the diff"
+      }
+     ]
+    }
+   },
+   "invocations": [
+    {
+     "executionSuccessful": false,
+     "toolExecutionNotifications": [
+      {
+       "level": "error",
+       "message": {
+        "text": "cargo-mutants unreachable: this worktree is on host noah-Lambda-Vector, which forbids cargo build/test. The fallback host intel was probed with `ssh intel 'uptime; nproc; git -C ~/wt-2e-d5 rev-parse HEAD'`: load average 101.47/129.47/189.73 on 32 cores, and its worktree is at a8e97a4711, not this head 12c0e28a00. Recorded NOT_MEASURED, not a clean zero-mutant run."
+       },
+       "properties": {
+        "grounding": "measured",
+        "command": [
+         "ssh",
+         "-o",
+         "BatchMode=yes",
+         "intel",
+         "uptime; nproc; git -C ~/wt-2e-d5 rev-parse HEAD"
+        ],
+        "exit_code": 0,
+        "stdout_sha256": "116962f2463858a74c27a848cf6cc29bbf8b7a6b3041c63d408f69508388529f"
+       }
+      }
+     ]
+    }
+   ],
+   "results": []
+  },
+  {
+   "tool": {
+    "driver": {
+     "name": "antigravity",
+     "version": "1.2.13",
+     "rules": [
+      {
+       "id": "PRREV-ARM-E",
+       "name": "cross-vendor second-opinion review (advisory)"
+      }
+     ]
+    }
+   },
+   "invocations": [
+    {
+     "executionSuccessful": true,
+     "toolExecutionNotifications": [],
+     "commandLine": "agy -p .pr-review-prompt.md --output-format json --json-schema .claude/skills/pr-review/agy-review-v1.schema.json --model gemini-3.1-pro-high --print-timeout 30m --dangerously-skip-permissions (inside a disposable rsync copy of HEAD plus .pr-review-diff.patch)"
+    }
+   ],
+   "results": [
+    {
+     "ruleId": "AGY-1",
+     "level": "note",
+     "message": {
+      "text": "agy (gemini-3.1-pro-high): Wrapping `cargo:rerun-if-changed` in `path.exists()` prevents Cargo from watching for file creation. agy marked this finding cited against the Cargo build-scripts reference; the primary reviewer did not consult that source in this run, so the receipt records it as asserted. Agreed with PRREV-R4-003.",
+      "markdown": "agy: `.exists()`-guarded rerun-if-changed stops Cargo watching for file creation. Same as PRREV-R4-003."
+     },
+     "locations": [
+      {
+       "physicalLocation": {
+        "artifactLocation": {
+         "uri": "crates/aprender-build-sha/src/lib.rs"
+        }
+       }
+      }
+     ],
+     "properties": {
+      "grounding": "asserted",
+      "precision_class": "advisory",
+      "rationale": "agy's own mark was 'cited' with source https://doc.rust-lang.org/cargo/reference/build-scripts.html#rerun-if-changed - Cargo requires `cargo:rerun-if-changed` ; not verified by the primary reviewer, so downgraded to asserted here.",
+      "failure_scenario": "If `.git-sha`, `binding.yaml`, or other watched files are missing during the initial Cargo build, the `if path.exists()` check skips emitting the `cargo:rerun-if-changed` instruction entirely. As a result, Cargo does not know it should watch those paths for creation. If the user subsequently creates the file (e.g., by cloning a sibling repository, checking out a branch, or running a script that generates the file), the next `cargo build` will incorrectly assume the crate is up-to-date and will NOT re-run the build script, causing the build to silently ignore the newly created file.",
+      "source": "crates/aprender-build-sha/src/lib.rs"
+     }
+    }
+   ]
+  }
+ ]
+}

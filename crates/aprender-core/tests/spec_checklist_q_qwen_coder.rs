@@ -39,8 +39,10 @@ fn q1_qwen25_coder_imports() {
     assert_eq!(config.vocab_size, 151936, "Q1: Coder vocab_size");
     assert_eq!(config.max_seq_len, 32768, "Q1: Coder max_seq_len");
 
-    // Verify model can be created
-    let model = Qwen2Model::new(&config);
+    // Verify model can be created. new_uninitialized builds the same layer
+    // structure without random-initializing ~500M f32s, which took >180s in a
+    // debug build on x86-main; the checks below are structural only.
+    let model = Qwen2Model::new_uninitialized(&config);
     assert_eq!(
         model.config().hidden_size,
         config.hidden_size,
@@ -50,6 +52,11 @@ fn q1_qwen25_coder_imports() {
         model.config().num_layers,
         24,
         "Q1: Qwen2.5-Coder should have 24 layers"
+    );
+    assert_eq!(
+        model.num_layers(),
+        24,
+        "Q1: Qwen2.5-Coder model should build 24 decoder layers"
     );
 
     // Verify Architecture::Qwen2 supports import

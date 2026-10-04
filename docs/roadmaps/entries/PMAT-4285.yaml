@@ -1,0 +1,17 @@
+- id: PMAT-4285
+  github_issue: 4285
+  item_type: task
+  kind: code
+  title: 'rc cut: tag vX.Y.Z-rc.N on every green merge to release/X.Y.Z'
+  status: planned
+  priority: medium
+  assigned_to: null
+  created: 2026-09-24T14:01:18Z
+  updated: 2026-09-24T14:01:18Z
+  spec: null
+  acceptance_criteria: []
+  phases: []
+  subtasks: []
+  estimated_effort: null
+  labels: []
+  notes: null

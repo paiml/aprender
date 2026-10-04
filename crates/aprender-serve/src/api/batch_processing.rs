@@ -34,7 +34,7 @@ async fn process_batch(
             max_tokens: first.max_tokens,
             temperature: first.temperature,
             top_k: first.top_k,
-            stop_tokens: Vec::new(),
+            stop_tokens: first.stop_tokens.clone(),
             trace: false,
             ..Default::default()
         };
@@ -87,7 +87,7 @@ async fn process_batch(
                     max_tokens: request.max_tokens,
                     temperature: request.temperature,
                     top_k: request.top_k,
-                    stop_tokens: Vec::new(),
+                    stop_tokens: request.stop_tokens.clone(),
                     trace: false,
             ..Default::default()
                 };
@@ -317,13 +317,27 @@ pub async fn gpu_batch_completions_handler(
         )
     })?;
     let prompts_tokens = encode_batch_prompts(&tokenizer, &request.prompts)?;
+    // D5: `batch_generate_gpu` sizes its KV caches from prompt + max_tokens and
+    // never checks the model context, so refuse an over-context prompt here with a
+    // 400 — against the device serving context when one is set, else the cached
+    // model's own context (`serving_context` is None for every cached-model state).
+    let context = state
+        .serving_context()
+        .unwrap_or(cached_model.model().config.context_length);
+    prompts_tokens
+        .iter()
+        .try_for_each(|p| preflight_context(Some(context), p.len()))?;
 
     // Create generation config
     let gen_config = crate::gguf::QuantizedGenerateConfig {
         max_tokens: request.max_tokens,
         temperature: request.temperature,
         top_k: request.top_k,
-        stop_tokens: vec![],
+        // aprender#4345: was `vec![]`, so every prompt ran to `max_tokens`.
+        stop_tokens: crate::api::realize_handlers::completion_stop_tokens(
+            &tokenizer,
+            state.model_eos_token_id(),
+        ),
         trace: false,
             ..Default::default()
     };
@@ -340,7 +354,7 @@ pub async fn gpu_batch_completions_handler(
             Ok(generated) => generated,
             Err(e) => {
                 return Err((
-                    StatusCode::INTERNAL_SERVER_ERROR,
+                    crate::api::generation_error_status(&e),
                     Json(ErrorResponse {
                         error: format!("GPU batch generation failed: {e}"),
                     }),
@@ -355,7 +369,7 @@ pub async fn gpu_batch_completions_handler(
                 Ok(tokens) => results.push(tokens),
                 Err(e) => {
                     return Err((
-                        StatusCode::INTERNAL_SERVER_ERROR,
+                        crate::api::generation_error_status(&e),
                         Json(ErrorResponse {
                             error: format!("Generation failed: {e}"),
                         }),
@@ -467,6 +481,7 @@ fn try_cuda_generate(
     let tokenizer = require_tok(state)?;
     let prompt_ids = tokenize_prompt(&tokenizer, &request.prompt)?;
     let prompt_tokens = prompt_ids.len();
+    preflight_serving_context(state, prompt_tokens)?;
 
     let q_config = QuantizedGenerateConfig {
         max_tokens: request.max_tokens,
@@ -476,7 +491,10 @@ fn try_cuda_generate(
         } else {
             request.top_k
         },
-        stop_tokens: vec![eos_id(&tokenizer, state.model_eos_token_id())],
+        stop_tokens: crate::api::realize_handlers::completion_stop_tokens(
+            &tokenizer,
+            Some(eos_id(&tokenizer, state.model_eos_token_id())),
+        ), // aprender#4345
         trace: false,
         cancel: cancel.clone(),
         ..Default::default()
@@ -492,7 +510,7 @@ fn try_cuda_generate(
         .generate_gpu_resident(&prompt_ids, &q_config)
         .map_err(|e| {
             api_err(
-                StatusCode::INTERNAL_SERVER_ERROR,
+                crate::api::generation_error_status(&e),
                 format!("CUDA generation failed: {e}"),
             )
         })?;

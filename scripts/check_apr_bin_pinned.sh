@@ -177,7 +177,7 @@ OPEN_PV_KW="if|elif|while|until"
 OPEN_PV_KW="${OPEN_PV_KW}|then|do|else"
 OPEN_PV="(${OPEN}|(^|[[:space:];&|(])(${OPEN_PV_KW})[[:space:]]+)"
 BARE_PV="${OPEN_PV}[[:space:]]*@?[[:space:]]*${WRAP}*pv[[:space:]]+[a-z\"'\$/~.-]"
-PATHRES_PV='(command[[:space:]]+-v[[:space:]]+pv|which[[:space:]]+pv|type[[:space:]]+(-[A-Za-z]+[[:space:]]+)?pv|require_tool[[:space:]]+pv)([[:space:]]|[;)&|]|$)'
+PATHRES_PV='(command[[:space:]]+-v[[:space:]]+pv|which[[:space:]]+pv|type[[:space:]]+(-[A-Za-z]+[[:space:]]+)?pv|require_tool[[:space:]]+pv)([[:space:]]|[;)&|`]|$)'
 
 MIN_EXPECTED="${MIN_EXPECTED:-80}"
 
@@ -312,8 +312,18 @@ ltrim() {
 # `pv validate` after the quotes go. It does blind us to the rare `pv "$@"`
 # form, which is the correct trade -- a false positive on every reporter line
 # would get this guard disabled, and a disabled guard catches nothing.
+#
+# EXCEPT a command substitution. `"$(command -v pv 2>/dev/null || true)"` is
+# double-quoted and still RUNS: the quotes only stop its output word-splitting.
+# Stripping every "..." erased check_ont_ratchet.sh's bare-pv probe whole and
+# the scan called it pinned (#3679). So single-quoted text goes (it is inert),
+# and the body of every $(...) or `...` is lifted out before the "..." strip
+# and appended to the probe. Nesting deeper than one level is not parsed.
 demessage_pv() {
-    printf '%s' "$1" | sed "s/'[^']*'//g; s/\"[^\"]*\"//g"
+    local s subs
+    s="$(printf '%s' "$1" | sed "s/'[^']*'//g")"
+    subs="$({ printf '%s' "$s" | grep -oE '\$\([^)]*\)|`[^`]*`' || true; } | tr '\n' ' ')"
+    printf '%s %s' "$(printf '%s' "$s" | sed 's/"[^"]*"//g')" "$subs"
 }
 
 demessage() {
@@ -537,8 +547,11 @@ if [ "${1:-}" = "--self-test" ]; then
         'bad "pv lint contracts/ FAILED: $out"'
         'if "$PV" validate contracts/x.yaml; then'
     )
-    must_match_pathres_pv=( 'PV=$(command -v pv)' 'require_tool pv "x"' 'which pv' )
-    must_not_match_pathres_pv=( '. scripts/pv_bin.sh || exit 1' 'echo "resolved $PV"' )
+    # #3679: the double-quoted substitution form was invisible (demessage_pv stripped it whole).
+    must_match_pathres_pv=( 'PV=$(command -v pv)' 'require_tool pv "x"' 'which pv'
+        'pvbin="$(command -v pv 2>/dev/null || true)"' 'x=$(command -v pv)' 'x="`which pv`"' )
+    must_not_match_pathres_pv=( '. scripts/pv_bin.sh || exit 1' 'echo "resolved $PV"'
+        'ok "we never run command -v pv here"' "printf '%s' '\$(command -v pv)'" )
     for c in "${must_match_pv[@]}";          do probe_case_pv "$BARE_PV" "$c" match bare-pv; done
     for c in "${must_not_match_pv[@]}";      do probe_case_pv "$BARE_PV" "$c" nomatch bare-pv; done
     for c in "${must_match_pathres_pv[@]}";  do probe_case_pv "$PATHRES_PV" "$c" match pathres-pv; done

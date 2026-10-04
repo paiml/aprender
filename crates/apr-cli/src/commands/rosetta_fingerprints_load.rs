@@ -53,9 +53,9 @@
     #[test]
     fn test_rosetta_commands_compare_inference() {
         let cmd = RosettaCommands::CompareInference {
-            model_a: PathBuf::from("model_a.gguf"),
-            model_b: PathBuf::from("model_b.apr"),
-            prompt: "Hello".to_string(),
+            model_a: PathBuf::from("model_a.gguf").into(),
+            model_b: PathBuf::from("model_b.apr").into(),
+            prompt: "Hello".to_string().into(),
             max_tokens: 10,
             temperature: 0.0,
             tolerance: 0.1,
@@ -77,11 +77,11 @@
     #[test]
     fn test_rosetta_commands_diff_tensors() {
         let cmd = RosettaCommands::DiffTensors {
-            model_a: PathBuf::from("model_a.gguf"),
-            model_b: PathBuf::from("model_b.apr"),
+            model_a: PathBuf::from("model_a.gguf").into(),
+            model_b: PathBuf::from("model_b.apr").into(),
             mismatches_only: true,
             show_values: 5,
-            filter: Some("attention".to_string()),
+            filter: Some("attention".to_string().into()),
             json: false,
         };
         match cmd {
@@ -93,7 +93,7 @@
             } => {
                 assert!(mismatches_only);
                 assert_eq!(show_values, 5);
-                assert_eq!(filter, Some("attention".to_string()));
+                assert_eq!(filter, Some("attention".to_string()).map(Into::into));
             }
             _ => panic!("Wrong command variant"),
         }
@@ -102,9 +102,9 @@
     #[test]
     fn test_rosetta_commands_fingerprint() {
         let cmd = RosettaCommands::Fingerprint {
-            model: PathBuf::from("model.gguf"),
+            model: PathBuf::from("model.gguf").into(),
             model_b: None,
-            output: Some(PathBuf::from("fingerprints.json")),
+            output: Some(PathBuf::from("fingerprints.json").into()),
             filter: None,
             verbose: true,
             json: false,
@@ -123,9 +123,9 @@
     #[test]
     fn test_rosetta_commands_validate_stats() {
         let cmd = RosettaCommands::ValidateStats {
-            model: PathBuf::from("model.gguf"),
+            model: PathBuf::from("model.gguf").into(),
             reference: None,
-            fingerprints: Some(PathBuf::from("ref.json")),
+            fingerprints: Some(PathBuf::from("ref.json").into()),
             threshold: 0.01,
             strict: true,
             json: true,

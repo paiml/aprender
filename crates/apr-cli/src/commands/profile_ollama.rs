@@ -404,8 +404,7 @@ fn safe_ratio(num: f64, denom: f64) -> f64 {
 
 /// Printed in place of a memory-vs-compute verdict while the arithmetic
 /// intensity is not measured. A magnitude may be reported; a verdict decided by
-/// a number nothing measured may not.
-#[cfg(feature = "inference")]
+/// a number nothing measured may not. Not feature-gated: `print_roofline_section` reads it in every build (#4041).
 pub(crate) const ROOFLINE_AI_UNMEASURED: &str = "UNMEASURED";
 
 /// Does the arithmetic intensity actually depend on the workload?

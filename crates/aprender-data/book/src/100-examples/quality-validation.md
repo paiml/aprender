@@ -74,16 +74,16 @@ std::fs::write("quality_report.json", json)?;
 
 ```bash
 # Basic quality report
-alimentar quality data.parquet
+aprender-data quality data.parquet
 
 # With JSON output
-alimentar quality data.parquet --format json
+aprender-data quality data.parquet --format json
 
 # Score only
-alimentar quality score data.parquet
+aprender-data quality score data.parquet
 
 # Strict profile
-alimentar quality data.parquet --profile strict
+aprender-data quality data.parquet --profile strict
 ```
 
 ## Quality Issues Detected

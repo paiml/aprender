@@ -7,7 +7,7 @@
 //! - Parallel test execution with varying durations
 //! - Inspired by trueno-viz and btop polish
 //!
-//! Run with: cargo run --example `brick_computer` -p presentar
+//! Run with: cargo run --example `brick_computer` -p aprender-present-lib
 
 use std::io::{self, Write};
 use std::thread;

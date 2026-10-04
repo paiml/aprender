@@ -1,0 +1,165 @@
+# ─────────────────────────────────────────────────────────────────────────────
+# ont-consistency-v1 — the corpus's typed relations are jointly satisfiable, and
+# the witness that says so checks (ONT-001 §3.5 + §5 row ONT-5; issue #4074;
+# ticket PMAT-4074)
+#
+# WHAT IT GOVERNS
+#   provable_contracts::ontology::witness — ClauseSet (the Horn encoding),
+#   census_id_set_sha256, relations_sha256, Witness, check, pc_checker.
+#   provable_contracts::lint::consistency_gate — the `ont-consistency` gate:
+#   PV-ONT-022 (inconsistent, core named), PV-ONT-023 (witness does not check),
+#   declines NoCheckable / WitnessStale / PositiveControlFailed, exit 3 on a
+#   malformed Σ.
+#   `pv-sat` (crates/aprender-contracts-cli/src/bin/pv-sat/) — the UNTRUSTED
+#   reasoner, private to its bin target (R-1, F-7), and its pc_reasoner plant.
+#
+# PROOF LADDER, STATED HONESTLY
+#   * L2 — unit tests over the encoding, the digests and the checker; the gate's
+#          tests; pv-sat's 500-seed sweep in which every answer it gives checks;
+#          the CLI test runs the §5 probe verbatim on this repo's corpus.
+#   * L3 — not declared. There are no Kani harnesses for this checker.
+#   * L4 — not declared. There is no Lean theorem.
+#   The gate is COMPUTED and NOT ARMED: it is absent from `armed_gates`, so its
+#   verdict does not reach the armed meet until an arming PR adds it.
+# ─────────────────────────────────────────────────────────────────────────────
+metadata:
+  version: 1.0.0
+  created: '2026-09-24'
+  last_modified: '2026-09-24'
+  author: PAIML Engineering
+  kind: pattern
+  description: >
+    ONT-001 consistency — the typed relation graph as propositional Horn clauses, decided offline by the
+    untrusted pv-sat, and re-verified in the gate by a linear witness checker with two positive controls
+  references:
+  - 'paiml/infra docs/specifications/paiml-ontology.md §3.5 (the checkable subset), §5 ONT-5, R-1 (the reasoner is untrusted), R-2 (zero is a decline), R-3 (positive controls), F-5, F-7'
+  - 'Dowling & Gallier (1984) Linear-time algorithms for testing the satisfiability of propositional Horn formulae'
+  - 'crates/aprender-contracts/src/ontology/witness.rs — the encoding, the digests, check, pc_checker'
+  - 'crates/aprender-contracts/src/lint/consistency_gate.rs — the ont-consistency gate'
+  - 'crates/aprender-contracts-cli/src/bin/pv-sat/ — the reasoner and its plant'
+equations:
+  encode:
+    formula: 'clauses(G) = {A : A live} ∪ {¬A ∨ B : A depends_on B ∨ A refines B} ∪ {¬A ∨ ¬B : A contradicts B}'
+    domain: G the typed relation graph over the census id set; live = not the target of any supersedes
+    codomain: a propositional Horn clause set over contract ids
+    invariants:
+    - every clause names only ids in the census id set
+    - a superseded id is not asserted, but an implication from a live id still derives it
+    preconditions:
+    - G is the relations gate's typed graph with symmetric roles closed
+    postconditions:
+    - unencoded_edges(G) lists every edge whose role has no clause, so nothing is dropped silently
+    lean_theorem: none — L4 not declared
+  check:
+    formula: 'check(W, C) = Ok ⇔ (W = model M ∧ ∀c ∈ C: M ⊨ c) ∨ (W = core K ∧ K is a unit-propagation derivation in C ending in a contradicts clause both sides of which K derived)'
+    domain: W a witness, C = clauses(G) for the current corpus
+    codomain: '{Ok(Consistent), Ok(Inconsistent(core)), Err(reason)}'
+    invariants:
+    - every clause a core names exists in C (a stale or invented core is refused)
+    - a premise used before it is derived is refused
+    - the check is linear in |W| + |C|
+    preconditions:
+    - W.census_id_set_sha256 and W.relations_sha256 equal the corpus's; otherwise the gate declines WitnessStale before checking
+    postconditions:
+    - Ok(Consistent) ⇒ C is satisfiable; Ok(Inconsistent(K)) ⇒ C is unsatisfiable and K names why
+    lean_theorem: none — L4 not declared
+  gate:
+    formula: 'verdict = Unknown(NoCheckable) if |C| = 0; Unknown(WitnessStale) if no witness for the digests; Unknown(PositiveControlFailed) unless pc_checker and pc_reasoner fired; Fail if check errs or yields a core; Pass otherwise'
+    domain: a contracts/ directory with Σ and a witness directory
+    codomain: V (the ONT-6 lattice)
+    invariants:
+    - zero clauses is a decline, never a Pass (R-2)
+    - no verdict without both positive controls fired (R-3)
+    preconditions:
+    - Σ parses; otherwise exit 3
+    postconditions:
+    - verdict == Pass ⇒ a checked model of the current graph exists
+    lean_theorem: none — L4 not declared
+proof_obligations:
+- id: ONT5-INV-001
+  type: invariant
+  property: the encoding types each role and asserts only live contracts
+  formal: 'units(C) = ids \ targets(supersedes) ∧ roles(C) ⊆ {depends_on, refines, contradicts}'
+  applies_to: all
+- id: ONT5-INV-002
+  type: invariant
+  property: the witness name is order-free and sensitive to every edge
+  formal: 'relations_sha256(permute(G)) = relations_sha256(G) ∧ ∀e ∈ G: relations_sha256(G \ {e}) ≠ relations_sha256(G)'
+  applies_to: all
+- id: ONT5-INV-003
+  type: invariant
+  property: the checker refuses any core that is not a derivation in the current graph
+  formal: 'check(K, C) = Ok(Inconsistent) ⇒ every step of K is a unit of C or a clause of C whose premise an earlier step derived, and its final contradicts clause has both sides derived'
+  applies_to: all
+- id: ONT5-INV-004
+  type: invariant
+  property: the checker refuses a model that falsifies any clause
+  formal: 'check(M, C) = Ok(Consistent) ⇒ ∀c ∈ C: eval(M, c) = true'
+  applies_to: all
+- id: ONT5-POST-005
+  type: postcondition
+  property: the gate's exit is the lattice element, and a stale, absent or uncontrolled witness never passes
+  formal: 'stale ∨ absent ⇒ exit 2 `decline: WitnessStale` naming make contracts; ¬pc_checker ∨ ¬pc_reasoner ⇒ exit 2; |C| = 0 ⇒ exit 2 `decline: NoCheckable`; malformed Σ ⇒ exit 3'
+  applies_to: all
+- id: ONT5-INV-006
+  type: invariant
+  property: the reasoner is private to its bin target
+  formal: 'lib.rs contains no `mod sat`; the pv CLI main.rs names no pv_sat (F-7)'
+  applies_to: all
+verification_summary:
+  total_obligations: 6
+  l2_property_tested: 6
+  l3_kani_proved: 0
+  l4_lean_proved: 0
+  l4_sorry_count: 0
+  l4_not_applicable: 6
+falsification_tests:
+- id: FALSIFY-ONT5-001
+  rule: the encoding
+  prediction: live contracts are units, depends_on/refines are implications, contradicts is a conflict pair, supersedes withdraws a unit
+  test: cargo test -p aprender-contracts --lib ontology::witness::tests::the_encoding_asserts_live_contracts_and_types_each_role
+  if_fails: a role is encoded under the wrong clause shape, so the reasoner answers a different question from the corpus
+- id: FALSIFY-ONT5-002
+  rule: the digests
+  prediction: permuting the edges leaves both digests unchanged; removing any one edge changes relations_sha256
+  test: cargo test -p aprender-contracts --lib ontology::witness::tests::the_digests_are_order_free_and_sensitive_to_every_edge
+  if_fails: a witness for one graph is accepted for another
+- id: FALSIFY-ONT5-003
+  rule: the core checker
+  prediction: a real derivation checks; a premise used early, a clause the graph lacks and an underived conflict side are each refused
+  test: cargo test -p aprender-contracts --lib ontology::witness::tests::a_premise_used_before_it_is_derived_is_refused
+  if_fails: the checker accepts a core that proves nothing — pc_checker then fires on the shipped fixture
+- id: FALSIFY-ONT5-004
+  rule: pc_checker
+  prediction: the checker refuses fixtures/unsat-core-corrupt.json on every run
+  test: cargo test -p aprender-contracts --lib ontology::witness::tests::pc_checker_fires_on_the_shipped_fixture
+  if_fails: a checker that returns Ok for everything goes unnoticed (measured 2026-09-24 — 14 lib tests red)
+- id: FALSIFY-ONT5-005
+  rule: the gate's lattice
+  prediction: 'consistent → Pass; inconsistent → PV-ONT-022 with the core named; tampered → PV-ONT-023; missing or foreign → WitnessStale; control not fired → PositiveControlFailed; zero clauses → NoCheckable; malformed Σ → exit 3'
+  test: cargo test -p aprender-contracts --lib lint::consistency_gate::tests
+  if_fails: the gate reports a verdict about a graph nobody reasoned over
+- id: FALSIFY-ONT5-006
+  rule: the reasoner is untrusted but honest here
+  prediction: over a 500-seed sweep every answer pv-sat gives checks; the plant draws the core [A, B, C]; a rerun leaves the witness byte-identical
+  test: cargo test -p aprender-contracts-cli --bin pv-sat
+  if_fails: pv-sat writes witnesses the gate refuses, or its positive control is a constant (measured 2026-09-24 — an all-true reasoner turns 4 tests red)
+- id: FALSIFY-ONT5-007
+  rule: the §5 probe end to end, and F-7
+  prediction: 'pv lint contracts/ --gate ont-consistency on this repo: checkable_n > 0, pc_checker fired, witness.pc_reasoner fired, witness.stale false; exits 0/1/2/3 on witnesses the real pv-sat wrote; lib.rs has no mod sat'
+  test: cargo test -p aprender-contracts-cli --test ont5_consistency_gate
+  if_fails: the probe the ledger binds is not the behaviour shipped (measured 2026-09-24 — `pub mod sat` in the lib turns it red)
+qa_gate:
+  id: F-ONT5-001
+  name: ONT-001 relation consistency
+  description: Horn encoding, witness digests, linear checker, two positive controls, pv-sat behind a bin boundary (ONT-5)
+  checks:
+  - encoding
+  - digests
+  - core_checker
+  - pc_checker
+  - gate_lattice
+  - reasoner_answers_check
+  - spec_probe
+  pass_criteria: All 7 falsification tests pass
+  falsification: 'a checker that returns Ok for everything, `pub mod sat` in the lib, or a reasoner that answers all-true — each turns a named test RED (measured 2026-09-24)'

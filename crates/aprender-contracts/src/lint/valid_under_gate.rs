@@ -268,6 +268,18 @@ fn check_valid_under(
         ));
         return;
     }
+    check_valid_under_world(sigma, map, stem, file, out);
+    check_valid_under_qualifiers(map, stem, file, out);
+}
+
+/// PV-ONT-014: the `world:` key names a world Σ declares (or defaults to one that exists).
+fn check_valid_under_world(
+    sigma: &Sigma,
+    map: &serde_yaml::Mapping,
+    stem: &str,
+    file: &Path,
+    out: &mut Vec<LintFinding>,
+) {
     match map.get("world").map(|w| w.as_str()) {
         None if !sigma.worlds.contains_key(DEFAULT_WORLD) => out.push(finding(
             "PV-ONT-014",
@@ -293,6 +305,15 @@ fn check_valid_under(
         )),
         Some(Some(_)) => {}
     }
+}
+
+/// PV-ONT-015: the toolchain map and the host_class/backend/features lists are well-formed.
+fn check_valid_under_qualifiers(
+    map: &serde_yaml::Mapping,
+    stem: &str,
+    file: &Path,
+    out: &mut Vec<LintFinding>,
+) {
     if let Some(tc) = map.get("toolchain") {
         let ok = tc.as_mapping().is_some_and(|m| {
             !m.is_empty()

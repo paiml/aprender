@@ -190,7 +190,7 @@ strip_ansi() { sed -e 's/\x1b\[[0-9;]*[A-Za-z]//g' -e 's/\x1b([A-Z]//g'; }
 gate() { # gate <name> <cmd...> — runs cmd, records pass/fail
   local name="$1"; shift
   local out rc log
-  # KEEP THE OUTPUT (#3841). This used to discard `out` into a shell variable, so
+  # KEEP THE OUTPUT (#3844; e8c341cca cited #3841 in error). This used to discard `out` into a shell variable, so
   # `gate` was the ONLY row family writing nothing into $WORKLOG -- fmt, clippy, test
   # and bashrs. d8's keep-the-worklog-on-NO-GO fix could not reach them because they
   # never put anything there to keep. A red `test` row's real output was simply gone.
@@ -199,7 +199,7 @@ gate() { # gate <name> <cmd...> — runs cmd, records pass/fail
   out=$(printf '%s' "$out" | strip_ansi)
   printf '%s\n' "$out" > "$log" 2>/dev/null || :
   local note
-  # ANCHORED picker (#3841). The old pattern was an unanchored case-insensitive
+  # ANCHORED picker (#3844). The old pattern was an unanchored case-insensitive
   # 'error|fail|...' and it matched SUBSTRINGS INSIDE DEPENDENCY NAMES, so on a red
   # row the entire visible explanation could be a `Compiling` line emitted minutes
   # before the real diagnostic. Three instances measured on ONE yoga run:
@@ -243,10 +243,18 @@ mark() { # mark <name> <PASS|FAIL|SKIP|REPORT|WARN|MANUAL|OPEN> <note>
 # code and log; returns 1 when the row counts against the declared gates. A function so the
 # rule can be lifted and driven by a case table (scripts/check_dogfood_no_defer.sh).
 classify_declared() {
-  local name="$1" path="$2" rc="$3" log="$4" tail defer obl
+  local name="$1" path="$2" rc="$3" log="$4" tail defer obl scoped
   tail=$(tail -3 "$log" 2>/dev/null | strip_ansi | tr '\n' ' ')
   defer=$(grep -m1 '^DEFERRED: ' "$log" 2>/dev/null | strip_ansi)
   obl=$(grep -m1 '^OPEN-OBLIGATION: ' "$log" 2>/dev/null | strip_ansi)
+  # #4086: a gate that judged a RECORDED scope instead of its full subject says so on a `SCOPED:` line
+  # (check_model_ladder.sh under a release's emergency scope). The row carries it, green or red: a
+  # scoped pass that read `exit=0` would be indistinguishable from the full gate passing. Only the scope's
+  # NAME is carried (the line reads `SCOPED: <name> -- <why>`): mark() keeps 200 chars of a note, and a
+  # long prefix would push a red row's reason out of it.
+  scoped=$(grep -m1 '^SCOPED: ' "$log" 2>/dev/null | strip_ansi | cut -c1-120)
+  scoped=${scoped%% -- *}
+  scoped=${scoped:+ -- $scoped (a recorded scope, not the full gate)}
   if [ -n "$defer" ]; then
     # #3957 F1b: the DEFERRED: hatch is gone. A gate that still says it is a refusal to measure.
     mark "$name" FAIL "$path printed a DEFERRED: line -- DEFER is abolished (#3957 F1b): ${defer#DEFERRED: }"
@@ -256,9 +264,9 @@ classify_declared() {
     mark "$name" OPEN "$path: ${obl#OPEN-OBLIGATION: }"
     [ "${RESULTS[${#RESULTS[@]}-1]}" = OPEN ] || return 1
   elif [ "$rc" -eq 0 ]; then
-    mark "$name" PASS "$path exit=0"
+    mark "$name" PASS "$path exit=0$scoped"
   else
-    mark "$name" FAIL "$path exit=$rc — $tail"
+    mark "$name" FAIL "$path exit=$rc$scoped — $tail"
     return 1
   fi
   return 0
@@ -1194,10 +1202,9 @@ PY
     case "$CM_CB200" in
       Pass)
         mark pmat-comply PASS "CB-200 measured and passing; ${CM_FAIL} other fail(s), ${CM_SKIP} skip(s) of which ${CM_DARK} are Error-severity (workstation state, #1008)" ;;
-      # CB-200 is a RATCHET on a recorded baseline: `Warn` means the count is AT
-      # or under it, so no NEW definition has dropped below the floor. That is a
-      # GO — holding debt flat is the entire point — but it is not a clean tree,
-      # and the note must carry the absolute count so nobody reads it as one.
+      # CB-200 is a RATCHET on a recorded baseline: `Warn` means the count is AT or under the
+      # STORED number. Nothing else pins that number, so `Warn` is not a GO by itself: it is
+      # re-judged head-vs-release in the `Warn|Fail)` arm below, like `Fail`.
       #
       # `Warn` rather than `Pass` is deliberate on pmat's side:
       # `retain_blocking_checks` switches on CheckStatus alone and drops `Pass`
@@ -1206,14 +1213,34 @@ PY
       # place anyone reads it. `Warn` lands in `summary.warn`, which is tallied
       # before the list is narrowed.
       #
-      # `Fail` (the count went UP) and `Skip` (nothing was measured) remain
-      # NO-GO below, unchanged.
-      Warn)
-        mark pmat-comply PASS "CB-200 at or under its recorded baseline — debt held flat, NOT a clean tree; ${CM_FAIL} other fail(s), ${CM_SKIP} skip(s) of which ${CM_DARK} are Error-severity (#1008). Run \`pmat comply check\` (without --failures-only) for the absolute count." ;;
+      # `Skip` (nothing was measured) remains NO-GO below, unchanged. `Fail`
+      # and `Warn` (at or under the STORED baseline: a number nothing else pins) are re-judged head-vs-last-release in the
+      # `Warn|Fail)` arm below — cop ruling 2026-09-29 21:33Z — and is NO-GO unless
+      # head <= that release; unmeasurable stays NO-GO.
       Skip)
         mark pmat-comply FAIL "CB-200 (TDG Grade Gate) is UNMEASURED, not passing — run \`pmat query \"x\"\` in this repo to build .pmat/context.db, then re-run. ${CM_DARK} Error-severity checks went dark; comply's own exit code (${PMAT_COMPLY_RC}) cannot see a skip." ;;
       ABSENT)
         mark pmat-comply FAIL "CB-200 absent from comply's check list — this pmat build does not run the TDG grade gate" ;;
+      Warn|Fail)
+        # The stored `[tdg] baseline` is not evidence: a moved scanner or a stale number turns FINAL
+        # red with no code change. Judge head vs BASE, one pmat, one run, baseline neutralised in
+        # both trees (scripts/cb200_head_vs_base.sh). BASE = $DOGFOOD_CB200_BASE, else the
+        # newest FINAL release tag (vX.Y.Z, no -rc/-dev; not the merge-base, which compares a tree to itself). Unmeasurable (rc 3) stays FAIL, never a pass.
+        CB200_BASE=${DOGFOOD_CB200_BASE:-$(bash "$SKILL_DIR/cb200_head_vs_base.sh" --default-base)}
+        if [ -n "$(git status --porcelain --untracked-files=no 2>/dev/null)" ]; then
+          # The helper measures committed HEAD; refuse before it spends its pmat runs on a tree it cannot see.
+          mark pmat-comply FAIL "CB-200 head-vs-base measures committed HEAD but tracked files are modified — NOT MEASURED"
+        elif [ -z "$CB200_BASE" ]; then
+          mark pmat-comply FAIL "CB-200 = $CM_CB200 against the stored baseline and no BASE ref to compare to (set DOGFOOD_CB200_BASE) — NOT MEASURED"
+        else
+          bash "$SKILL_DIR/cb200_head_vs_base.sh" --base "$CB200_BASE" --head HEAD > "$WORKLOG/cb200.txt" 2>&1; CB200_RC=$?
+          CB200_MSG=$(tail -n 1 "$WORKLOG/cb200.txt")
+          if [ "$CB200_RC" -eq 0 ]; then
+            mark pmat-comply PASS "CB-200 stored baseline says $CM_CB200; head <= base ($CB200_MSG) — debt did not grow"
+          else
+            mark pmat-comply FAIL "CB-200 head vs base rc=$CB200_RC: $CB200_MSG"
+          fi
+        fi ;;
       *)
         mark pmat-comply FAIL "CB-200 (TDG Grade Gate) = $CM_CB200 — see \`pmat comply check\`; ${CM_FAIL} total fail(s), ${CM_DARK} Error-severity checks dark (#1008, not gated)" ;;
     esac
@@ -1314,7 +1341,7 @@ if [ "$DOGFOOD_PHASE" = post-publish ]; then
     RA_RC=$RUN_RC
     RA_MISS=$(grep -c '^MISSING ' "$WORKLOG/release-assets.log" 2>/dev/null || true)
     if [ "$RA_RC" -eq 0 ]; then
-      mark release-assets PASS "v$VERSION carries all 16 assets (4 apr {cuda,cpu}x{x86_64,aarch64} + 4 sha256 + 8 pv)"
+      mark release-assets PASS "v$VERSION carries all 18 assets (4 apr {cuda,cpu}x{x86_64,aarch64} + darwin cpu, each + sha256, + 8 pv)"
     elif [ "$RA_RC" -eq 2 ]; then
       # ENV is a FAIL here on purpose: "the release could not be read" is not
       # evidence that the release is complete.

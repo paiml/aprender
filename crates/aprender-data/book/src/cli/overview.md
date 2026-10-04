@@ -31,17 +31,17 @@ cargo build --release --features cli
 
 ```bash
 # Inspect a dataset
-alimentar info data.parquet
-alimentar head data.parquet -n 10
-alimentar schema data.parquet
+aprender-data info data.parquet
+aprender-data head data.parquet -n 10
+aprender-data schema data.parquet
 
 # Interactive exploration
-alimentar view data.parquet
-alimentar view data.csv --search "error"
+aprender-data view data.parquet
+aprender-data view data.csv --search "error"
 
 # Format conversion
-alimentar convert data.csv data.parquet
-alimentar convert data.parquet data.json
+aprender-data convert data.csv data.parquet
+aprender-data convert data.parquet data.json
 ```
 
 ## Global Options

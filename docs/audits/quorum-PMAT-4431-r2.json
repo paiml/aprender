@@ -1,0 +1,390 @@
+{
+  "ticket": "PMAT-4431",
+  "base": "e5929e6e5",
+  "base_resolved": "e5929e6e5",
+  "base_note": "no origin/e5929e6e5 exists; judged against the local ref",
+  "head": "367ce9880ec7ddbdd8a5ba78c5ed1805b5d6bbed",
+  "diff_sha256": "847d3bb949953a9cdaaa54c683d2ea6e34ca007c8da8e323672e16e1138848f2",
+  "width": 3,
+  "executor": "agy",
+  "prompt_mode": "inline",
+  "prompt_bytes": 46847,
+  "prompt_sha256": "96f3e499170f1b31dfde266cdd733580ec688e972751ebe256f2c0ddba4478a8",
+  "author": {
+    "model": "claude-opus-5-5",
+    "family": "claude",
+    "source": "flag"
+  },
+  "agreed": false,
+  "lanes": [
+    {
+      "lane": 1,
+      "status": "SUCCESS",
+      "verdict": "PASS",
+      "summary": "I found nothing that refutes the diff. Every change maps to a named guard that the receipt says was RED without it. Acceptance criterion 2 explicitly allows edits to any file, including another ticket's fragment, when a guard requires it. That covers the PMAT-4072 notes change, which the two earlier FAIL lanes flagged as out of scope. The quorum and re-arm criterion is marked process, not diff content, so its absence from the diff is not a defect. I judged from the diff and receipt text only and ran nothing; the recorded gate results are the build's evidence.",
+      "findings": [
+        {
+          "file": "docs/findings/aprender-57.jsonl",
+          "line": 1,
+          "claim": "Cosmetic only: the 'ask' string now reads '...ci/sections.yml Also move scripts/retired/...' with a missing full stop. The JSON is still valid and the ask is complete.",
+          "grounding": "cited",
+          "fix": "Add a period before 'Also'."
+        }
+      ],
+      "raw_bytes": 2623,
+      "err_bytes": 0,
+      "envelope_status": "SUCCESS",
+      "verdict_source": "structured_output",
+      "executor": "claude-code",
+      "grounding_check": "parity",
+      "role": "counted",
+      "model": "claude-sonnet-5",
+      "model_measured": "claude-sonnet-5",
+      "model_source": "flag",
+      "family": "claude",
+      "brief_sha256": "96f3e499170f1b31dfde266cdd733580ec688e972751ebe256f2c0ddba4478a8",
+      "trace": {
+        "input_sha256": "eb8dfa9704cb8e98320ec0b1a3861482441c938d96adadff40a864b647aa16ac",
+        "output_sha256": "c9d06766cf6776c6b4ffe32dab402d1eeb39abeaa10d3b8cc1a37de29bd78581",
+        "store": null,
+        "store_why": "almacen not provisioned yet (infra-27): the blobs stay in the round's gitignored .lanes dir"
+      },
+      "fallback": {
+        "judged_by": "claude-sonnet-5",
+        "exhausted": false,
+        "attempts": [
+          {
+            "model": "claude-sonnet-5",
+            "family": "claude",
+            "outcome": "answered"
+          }
+        ],
+        "skipped": []
+      }
+    },
+    {
+      "lane": 2,
+      "status": "SUCCESS",
+      "verdict": "PASS",
+      "summary": "Every change in the diff is backed by a named guard's RED output in the receipt. PMAT-4431's criterion 2 explicitly puts other tickets' files in scope when a guard is RED without them, which covers the PMAT-4072 notes edit. The two helper-split refactors look behaviour-preserving, and the guard-retirement and .gitattributes changes are documented and paired with a filed re-port finding. I did not run any build or test; I judged the recorded gate results in the receipt from the diff and receipt text alone.",
+      "findings": [
+        {
+          "file": "docs/findings/aprender-57.jsonl",
+          "line": 1,
+          "claim": "The commit edits the existing finding line in place instead of appending. The new `ask` text also runs two sentences together ('...ci/sections.yml Also move...'). This is cosmetic and does not refute the ticket; the file is not one of the guarded append-only audit ledgers, so it is not a gate weakening.",
+          "grounding": "cited",
+          "fix": "Add a period before 'Also' in the `ask` string."
+        },
+        {
+          "file": "docs/audits/impl-PMAT-4431-receipt.md",
+          "line": 3,
+          "claim": "The receipt says the judged diff is 'the three fix commits', but the diff also carries the round-1 quorum receipt file and the roadmap.yaml regeneration. This is a minor wording mismatch; the receipt's table does cover the roadmap regen.",
+          "grounding": "cited"
+        }
+      ],
+      "raw_bytes": 3493,
+      "err_bytes": 0,
+      "envelope_status": "SUCCESS",
+      "verdict_source": "structured_output",
+      "executor": "claude-code",
+      "grounding_check": "parity",
+      "role": "counted",
+      "model": "claude-sonnet-5",
+      "model_measured": "claude-sonnet-5",
+      "model_source": "flag",
+      "family": "claude",
+      "brief_sha256": "96f3e499170f1b31dfde266cdd733580ec688e972751ebe256f2c0ddba4478a8",
+      "trace": {
+        "input_sha256": "9d2fd3744db527bc01a58d2744213d648c975bb95eb1ec968d142a70969ddf15",
+        "output_sha256": "fcd60b0abd946f3d47e85bc978614f89fe9976f48907a0c8261c6bd88f9a6908",
+        "store": null,
+        "store_why": "almacen not provisioned yet (infra-27): the blobs stay in the round's gitignored .lanes dir"
+      },
+      "fallback": {
+        "judged_by": "claude-sonnet-5",
+        "exhausted": false,
+        "attempts": [
+          {
+            "model": "claude-sonnet-5",
+            "family": "claude",
+            "outcome": "answered"
+          }
+        ],
+        "skipped": [
+          {
+            "model": "gemini-3.1-pro-high",
+            "why": "family gemini withheld by policy: the diff is not tier-1 (quorum.agy_tier1_only: none of its paths matches quorum.tier1_paths or the built-in policy paths), and agy is reserved for tier-1 diffs — cop ruling of 2026-09-24"
+          }
+        ]
+      },
+      "repeat_of": 1
+    },
+    {
+      "lane": 3,
+      "status": "SUCCESS",
+      "verdict": "FAIL",
+      "summary": "The receipt contains a factually false claim (\"status/assignee untouched\" for PMAT-4072), and the diff modifies PMAT-4072's status and assignee without justifying these changes as required by any guard, violating the ticket's scope rules.",
+      "findings": [
+        {
+          "file": "docs/roadmaps/roadmap.yaml",
+          "line": 21808,
+          "claim": "The receipt claims 'PMAT-4072 fragment: ONLY `notes` changes... status/assignee untouched', but the diff changes status from 'inprogress' to 'completed'",
+          "grounding": "cited",
+          "fix": "Correct the receipt to acknowledge all changes made to PMAT-4072, or revert the status change if it is not justified by a guard requirement"
+        },
+        {
+          "file": "docs/roadmaps/roadmap.yaml",
+          "line": 21810,
+          "claim": "The diff changes assigned_to from 'aprender-ont3a' to 'aprender-ea', but this change is not justified in the receipt as being required by any guard. The ticket requires 'A change to ANY file is in scope when a named guard is RED without it.'",
+          "grounding": "cited",
+          "fix": "Either provide the guard justification in the receipt, or revert the assigned_to change to match the receipt's stated scope"
+        }
+      ],
+      "raw_bytes": 3112,
+      "err_bytes": 0,
+      "envelope_status": "SUCCESS",
+      "verdict_source": "structured_output",
+      "executor": "claude-code",
+      "grounding_check": "parity",
+      "role": "counted",
+      "model": "claude-haiku-4-5",
+      "model_measured": "claude-haiku-4-5",
+      "model_source": "flag",
+      "family": "claude",
+      "brief_sha256": "96f3e499170f1b31dfde266cdd733580ec688e972751ebe256f2c0ddba4478a8",
+      "trace": {
+        "input_sha256": "cfd43042e99b83972ea6ad0d4d5566eb22eaa1c3ee6d019e482f183ac7b4d9d8",
+        "output_sha256": "c169d4aa572930442a7a92db09d68e42f6175a8c88108f4f6e81ecced2a44585",
+        "store": null,
+        "store_why": "almacen not provisioned yet (infra-27): the blobs stay in the round's gitignored .lanes dir"
+      },
+      "fallback": {
+        "judged_by": "claude-haiku-4-5",
+        "exhausted": false,
+        "attempts": [
+          {
+            "model": "claude-haiku-4-5",
+            "family": "claude",
+            "outcome": "answered"
+          }
+        ],
+        "skipped": []
+      }
+    }
+  ],
+  "dissent": [
+    {
+      "lane": 3,
+      "verdict": "FAIL",
+      "summary": "The receipt contains a factually false claim (\"status/assignee untouched\" for PMAT-4072), and the diff modifies PMAT-4072's status and assignee without justifying these changes as required by any guard, violating the ticket's scope rules.",
+      "findings": [
+        {
+          "file": "docs/roadmaps/roadmap.yaml",
+          "line": 21808,
+          "claim": "The receipt claims 'PMAT-4072 fragment: ONLY `notes` changes... status/assignee untouched', but the diff changes status from 'inprogress' to 'completed'",
+          "grounding": "cited",
+          "fix": "Correct the receipt to acknowledge all changes made to PMAT-4072, or revert the status change if it is not justified by a guard requirement"
+        },
+        {
+          "file": "docs/roadmaps/roadmap.yaml",
+          "line": 21810,
+          "claim": "The diff changes assigned_to from 'aprender-ont3a' to 'aprender-ea', but this change is not justified in the receipt as being required by any guard. The ticket requires 'A change to ANY file is in scope when a named guard is RED without it.'",
+          "grounding": "cited",
+          "fix": "Either provide the guard justification in the receipt, or revert the assigned_to change to match the receipt's stated scope"
+        }
+      ]
+    }
+  ],
+  "dedup": [
+    {
+      "file": "docs/audits/impl-PMAT-4431-receipt.md",
+      "line": 3,
+      "lanes_agreeing": [
+        2
+      ],
+      "claims": [
+        "The receipt says the judged diff is 'the three fix commits', but the diff also carries the round-1 quorum receipt file and the roadmap.yaml regeneration. This is a minor wording mismatch; the receipt's table does cover the roadmap regen."
+      ]
+    },
+    {
+      "file": "docs/findings/aprender-57.jsonl",
+      "line": 1,
+      "lanes_agreeing": [
+        1,
+        2
+      ],
+      "claims": [
+        "Cosmetic only: the 'ask' string now reads '...ci/sections.yml Also move scripts/retired/...' with a missing full stop. The JSON is still valid and the ask is complete.",
+        "The commit edits the existing finding line in place instead of appending. The new `ask` text also runs two sentences together ('...ci/sections.yml Also move...'). This is cosmetic and does not refute the ticket; the file is not one of the guarded append-only audit ledgers, so it is not a gate weakening."
+      ]
+    },
+    {
+      "file": "docs/roadmaps/roadmap.yaml",
+      "line": 21808,
+      "lanes_agreeing": [
+        3
+      ],
+      "claims": [
+        "The receipt claims 'PMAT-4072 fragment: ONLY `notes` changes... status/assignee untouched', but the diff changes status from 'inprogress' to 'completed'"
+      ]
+    },
+    {
+      "file": "docs/roadmaps/roadmap.yaml",
+      "line": 21810,
+      "lanes_agreeing": [
+        3
+      ],
+      "claims": [
+        "The diff changes assigned_to from 'aprender-ont3a' to 'aprender-ea', but this change is not justified in the receipt as being required by any guard. The ticket requires 'A change to ANY file is in scope when a named guard is RED without it.'"
+      ]
+    }
+  ],
+  "uncovered": [],
+  "coverage_source": "lanes",
+  "partial": false,
+  "partial_reasons": [
+    "lane models: only 2 distinct model ids across 3 lanes (claude-haiku-4-5, claude-sonnet-5) — lanes sharing an id are resamples, not independent reviewers (PMAT-125)",
+    "lane 2: judged by claude-sonnet-5 after falling through gemini-3.1-pro-high (skipped: family gemini withheld by policy: the diff is not tier-1 (quorum.agy_tier1_only: none of its paths matches quorum.tier1_paths or the built-in policy paths), and agy is reserved for tier-1 diffs — cop ruling of 2026-09-24) (PMAT-321)"
+  ],
+  "fallback": {
+    "same_family_width": 2,
+    "chain": [
+      {
+        "model": "claude-sonnet-5",
+        "family": "claude",
+        "disposition": "claude-code",
+        "why": "run by Claude Code on its own budget: a configured seat runs every round, a fallback step only when every non-Claude family is measured out (PMAT-360, operator standing rule)"
+      },
+      {
+        "model": "gemini-3.1-pro-high",
+        "family": "gemini",
+        "disposition": "configured"
+      },
+      {
+        "model": "claude-haiku-4-5",
+        "family": "claude",
+        "disposition": "claude-code",
+        "why": "run by Claude Code on its own budget: a configured seat runs every round, a fallback step only when every non-Claude family is measured out (PMAT-360, operator standing rule)"
+      },
+      {
+        "model": "claude-opus-5-5",
+        "family": "claude",
+        "disposition": "excluded-self-review",
+        "why": "the author's own model id (claude-opus-5-5) — a model never reviews its own diff, at any width (R-15a identity bar)"
+      },
+      {
+        "model": "qwen3.5",
+        "family": "qwen",
+        "disposition": "not-run",
+        "why": "no quorum.local_lane in the config — the aprender lane has no model to load"
+      }
+    ],
+    "precheck": [
+      {
+        "family": "gemini",
+        "model": "gemini-3.1-pro-high",
+        "probe": 0,
+        "outcome": "policy",
+        "reason": "the diff is not tier-1 (quorum.agy_tier1_only: none of its paths matches quorum.tier1_paths or the built-in policy paths), and agy is reserved for tier-1 diffs — cop ruling of 2026-09-24"
+      }
+    ],
+    "degraded": {
+      "reason": "same-family (policy: agy reserved for tier-1 diffs)",
+      "lanes": [
+        2
+      ],
+      "families": [
+        {
+          "family": "gemini",
+          "state": "policy",
+          "evidence": "the diff is not tier-1 (quorum.agy_tier1_only: none of its paths matches quorum.tier1_paths or the built-in policy paths), and agy is reserved for tier-1 diffs — cop ruling of 2026-09-24"
+        }
+      ],
+      "rule": "operator standing rule: if agy quota is ever gone, simply use claude code itself (PMAT-360)"
+    },
+    "prah": {
+      "source": "install-receipt",
+      "path": "/home/noah/.claude/skills/paiml-implement/bin/prah"
+    },
+    "tier1": {
+      "agy_tier1_only": true,
+      "tier1": false,
+      "matched": [],
+      "paths": 15,
+      "patterns": [
+        "^\\.github/workflows/",
+        "(^|/)release[^/]*\\.(ya?ml|sh|rs|toml)$",
+        "cuda|kernel|\\.cu$|\\.ptx$",
+        "(^|/)[^/]*(gate|guard)[^/]*\\.(sh|rs|py)$|^hooks/",
+        "security|secret|credential|(^|/)deny\\.toml$",
+        "^skills/quorum-review/|(^|/)(receipt-lint|roadmap-lint|release-lint|kind-gate|model-gate)[^/]*$|^crates/prah-lint/"
+      ],
+      "builtin": "^skills/quorum-review/|(^|/)skills/paiml-implement/config\\.json$|(^|/)(modellib|lane-reduce|lane-fallback|lane-group|agy-lane|cc-lane|receipt-lint|route|quota)\\.sh$|^crates/prah-lint/"
+    },
+    "bucket": {
+      "ledger": "/home/noah/.local/state/paiml-implement/agy-bucket.jsonl",
+      "window_s": 18000,
+      "pace": "off",
+      "buckets": {},
+      "closed": []
+    }
+  },
+  "auto_merge": {
+    "checked": true,
+    "was_armed": false,
+    "disarmed": false,
+    "note": "auto-merge not armed"
+  },
+  "degraded": {
+    "reason": "same-family (policy: agy reserved for tier-1 diffs)",
+    "lanes": [
+      2
+    ],
+    "families": [
+      {
+        "family": "gemini",
+        "state": "policy",
+        "evidence": "the diff is not tier-1 (quorum.agy_tier1_only: none of its paths matches quorum.tier1_paths or the built-in policy paths), and agy is reserved for tier-1 diffs — cop ruling of 2026-09-24"
+      }
+    ],
+    "rule": "operator standing rule: if agy quota is ever gone, simply use claude code itself (PMAT-360)"
+  },
+  "cheap_seat": "claude-haiku-4-5",
+  "canary": {
+    "skipped": "brief 46847 bytes > 24576"
+  },
+  "advisory_lane": {
+    "state": "not-run",
+    "counts": false,
+    "row": {
+      "NotRun": "ContextOverflow"
+    },
+    "verdict": "unavailable",
+    "why": "the brief is 46847 bytes, over quorum.advisory_lane.max_brief_bytes=24576; a cut brief is a different question, so the lane was not launched",
+    "served_by": null,
+    "gpu_proof": null,
+    "apr": null,
+    "model": null,
+    "model_sha256": null,
+    "rc": 0,
+    "wall_s": 0,
+    "collected_s": 0,
+    "budget_s": 300,
+    "budget_basis": "[U] 300 s: fewer than 10 gx10-cuda Verdict rows in the ledger",
+    "brief": {
+      "bytes": 46847,
+      "sent_bytes": 0,
+      "max_bytes": 24576
+    },
+    "trace": null,
+    "attempts": [],
+    "ledger": "/home/noah/.local/state/paiml-implement/advisory-ledger.jsonl",
+    "raw": "advisory.json",
+    "agrees_with_counted": null,
+    "counted": "NOT-AGREED"
+  },
+  "lint": {
+    "ok": true,
+    "output": "receipt complete: kind=artifact lanes=3 author=claude-opus-5-5/claude same_family=3/2 degraded=same-family (policy: agy reserved for tier-1 diffs)"
+  }
+}

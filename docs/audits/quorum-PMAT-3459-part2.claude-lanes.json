@@ -1,0 +1,42 @@
+{
+  "ticket": "PMAT-3459 (#3459 part 2)",
+  "head": "9a6bc003a6a445ef3105325d65f8a482c235a7c3",
+  "diff_sha256": "cb1aa389c82a09613a532f57155322bc75add5b18d0e3eedc00b8363617af296",
+  "brief_sha256": "689025e6a82104e8492ed30d345b9ccd779b55bb9ae5dfd03578c7519bba7f77",
+  "brief_bytes": 38533,
+  "brief_note": "brief rebuilt byte-for-byte from quorum-review.sh lines 241-313 (width 1); its byte count equals the agy artifact prompt_bytes; the artifact does not record prompt_sha256 (lane-reduce drops it), so both Claude lanes sha256-ed the file they read and reported it back",
+  "composition": "cop ruling 2026-09-24: sonnet-5 + 1 agy (gemini-3.1-pro-high) + haiku-4-5; author claude-opus-5-5",
+  "lanes": [
+    {
+      "seat": "agy",
+      "model": "gemini-3.1-pro-high",
+      "verdict": "PASS",
+      "artifact": "quorum-PMAT-3459-r2.json"
+    },
+    {
+      "seat": "claude",
+      "model": "claude-sonnet-5",
+      "verdict": "PASS",
+      "brief_sha256_reported": "689025e6a82104e8492ed30d345b9ccd779b55bb9ae5dfd03578c7519bba7f77",
+      "agent": "a5742813694bc906c",
+      "nits": [
+        "check_milestone_cut.sh:151 --json gains mode/to_carry keys in strict mode too (the verdict is unchanged, the schema grows)",
+        "carry_milestone_items.sh:48 backlog is matched by title, its open state is not checked"
+      ]
+    },
+    {
+      "seat": "claude",
+      "model": "claude-haiku-4-5",
+      "verdict": "PASS",
+      "brief_sha256_reported": "689025e6a82104e8492ed30d345b9ccd779b55bb9ae5dfd03578c7519bba7f77",
+      "agent": "a7e36bbfb164b3c8f",
+      "findings": []
+    }
+  ],
+  "result": "3/3 PASS",
+  "round1": {
+    "head": "a639f441e",
+    "lanes": "2 agy (gemini-3.1-pro-high, gemini-3.8-flash-high) FAIL 2/2 on scope only: the brief carried only the part-1 roadmap title; fixed by the receipt commit 9a6bc003a (docs/audits/impl-PMAT-3459-receipt.md), no code change",
+    "artifact": "quorum-PMAT-3459-r1.json"
+  }
+}
