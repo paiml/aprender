@@ -18,8 +18,9 @@
 #
 # NO UPLOAD IS POSSIBLE. Neither mode runs `cargo publish`; the selftest row source_has_no_upload
 # fails if this file ever does. And both modes refuse to START (rc 3) when a registry token is
-# reachable: CARGO_REGISTRY_TOKEN, any CARGO_REGISTRIES_<NAME>_TOKEN, a credential provider
-# setting, or a credentials file in CARGO_HOME. Run it with a token-less CARGO_HOME.
+# reachable, failing closed: any non-empty CARGO_REGISTR* env var, a credentials file in CARGO_HOME, or a
+# cargo config (CARGO_HOME, under the tree, or above it) that mentions token, credential or a \u escape.
+# Run it with a clean CARGO_HOME.
 #
 # Exit: 0 PASS (release) / measured (night); 1 REFUSE; 2 NOT_MEASURED (any step that cannot run:
 # no clone, a bump that fails, cargo or jq missing, a crate that cannot be listed, a universe
@@ -42,28 +43,30 @@ trap cleanup EXIT
 usage() { echo "$PROG: usage: night <V> --out FILE [--root R] [--rev REV] | release <V> --night FILE [--root R] [--rev BUMP] | --selftest | --mutants" >&2; exit 3; }
 nm() { echo "NOT_MEASURED $PROG: $*"; exit 2; }
 
-# cfg_token FILE: 0 when a cargo config FILE sets a registry token or a credential provider
-cfg_token() { [ -f "$1" ] && grep -q -E '^[[:space:]]*(token|credential-provider|global-credential-providers)[[:space:]]*=' "$1"; }
-# token_reachable [DIR...]: prints what it found and returns 0 when any registry credential is reachable
-# (env, CARGO_HOME credentials and config, and the .cargo/config of each DIR and its ancestors)
+# cfg_token FILE: 0 when FILE exists and cannot be read, or mentions token, credential or a \u / \U escape
+# anywhere. Coarse on purpose (fails closed): every spelling of a token key — a table, an inline table, a
+# dotted, quoted or escaped key — hits, and so may a harmless comment; the remedy is a clean CARGO_HOME.
+cfg_token() { [ -e "$1" ] || return 1; [ -r "$1" ] || return 0; grep -q -i -E 'token|credential|\\[uU]' "$1"; }
+# token_reachable [DIR...]: prints what it found and returns 0 when a registry credential may be reachable:
+# a non-empty env var named CARGO_REGISTR*, any credentials file in CARGO_HOME, a flagged CARGO_HOME config,
+# or a flagged .cargo/config(.toml) anywhere under a DIR (cargo runs from each crate dir) or above one.
 token_reachable() {
-    local n ch=${CARGO_HOME:-${HOME:+$HOME/.cargo}} f d hit=1
+    local n ch=${CARGO_HOME:-${HOME:+$HOME/.cargo}} f d p l hit=1
     [ -n "$ch" ] || { echo "no CARGO_HOME and no HOME (cannot rule a token out)"; return 0; }
-    [ -z "${CARGO_REGISTRY_TOKEN:-}" ] || { echo "env CARGO_REGISTRY_TOKEN"; hit=0; }
     for n in $(compgen -e); do
-        case $n in
-            CARGO_REGISTRIES_*_TOKEN) [ -z "${!n}" ] || { echo "env $n"; hit=0; } ;;
-            CARGO_REGISTRY_CREDENTIAL_PROVIDER|CARGO_REGISTRY_GLOBAL_CREDENTIAL_PROVIDERS|CARGO_REGISTRIES_*_CREDENTIAL_PROVIDER)
-                [ -z "${!n}" ] || { echo "env $n"; hit=0; } ;;
-        esac
+        case $n in CARGO_REGISTR*) [ -z "${!n}" ] || { echo "env $n"; hit=0; } ;; esac
     done
     for f in "$ch/credentials.toml" "$ch/credentials"; do [ ! -e "$f" ] || { echo "file CARGO_HOME/$(basename "$f")"; hit=0; }; done
-    for f in "$ch/config.toml" "$ch/config"; do ! cfg_token "$f" || { echo "token key in CARGO_HOME/$(basename "$f")"; hit=0; }; done
-    for d in "$@"; do   # every .cargo/config cargo would read from d: d and each ancestor
-        d=$(cd "$d" 2> /dev/null && pwd -P) || continue
-        while :; do
-            for f in "$d/.cargo/config.toml" "$d/.cargo/config"; do ! cfg_token "$f" || { echo "token key in $f"; hit=0; }; done
-            [ "$d" = / ] && break; d=$(dirname "$d")
+    for f in "$ch/config.toml" "$ch/config"; do ! cfg_token "$f" || { echo "flagged CARGO_HOME/$(basename "$f")"; hit=0; }; done
+    for d in "$@"; do
+        [ -d "$d" ] || continue
+        l=$(find "$d" \( -name .git -o -name target \) -prune -o -path '*/.cargo/config*' -print) \
+            || { echo "cannot search $d for cargo configs"; hit=0; }
+        while IFS= read -r f; do [ -z "$f" ] || ! cfg_token "$f" || { echo "flagged $f"; hit=0; }; done <<< "$l"
+        for p in "$(cd "$d" && pwd)" "$(cd "$d" && pwd -P)"; do   # the logical and the physical ancestors
+            while [ -n "$p" ] && [ "$p" != / ]; do p=$(dirname "$p")
+                for f in "$p/.cargo/config.toml" "$p/.cargo/config"; do ! cfg_token "$f" || { echo "flagged $f"; hit=0; }; done
+            done
         done
     done
     return "$hit"
@@ -202,7 +205,8 @@ selftest() {
     d=$(mktemp -d) || return 2
     export GIT_CONFIG_COUNT=1 GIT_CONFIG_KEY_0=core.hooksPath GIT_CONFIG_VALUE_0=/dev/null   # fixture clones run no hooks
     mkstub "$d/cargo"; mkdir -p "$d/home-clean" "$d/home-cred"; : > "$d/home-cred/credentials.toml"
-    run() { got=$(env -u CARGO_REGISTRY_TOKEN CARGO_HOME="$d/home-clean" BPR_CARGO="$d/cargo" BPR_MIN_CRATES="${MIN:-2}" BPR_SANDBOX="$SANDBOX" "$@" 2>&1); rc=$?; }
+    local un=() ev; for ev in $(compgen -e); do case $ev in CARGO_REGISTR*) un+=(-u "$ev") ;; esac; done   # hermetic: no ambient CARGO_REGISTR*
+    run() { got=$(env "${un[@]}" CARGO_HOME="$d/home-clean" BPR_CARGO="$d/cargo" BPR_MIN_CRATES="${MIN:-2}" BPR_SANDBOX="$SANDBOX" "$@" 2>&1); rc=$?; }
     check() { n=$((n + 1))
         if [ "$rc" = "$2" ] && [[ "$got" == *"$3"* ]]; then [ -n "$quiet" ] || echo "  ok   $1 (rc=$rc)"
         else echo "  FAIL $1: want rc=$2 '$3', got rc=$rc: $(printf '%s' "$got" | tr '\n' '|' | cut -c1-240)"; fail=$((fail + 1)); fi; }
@@ -218,7 +222,21 @@ selftest() {
     run env CARGO_REGISTRY_CREDENTIAL_PROVIDER=cargo:token bash "$subj" night 1.2.3 --out "$d/t.txt" --root "$d/r"; check night_refuses_credential_provider 3 "REFUSED-TO-START"
     run env CARGO_HOME="$d/home-cred" bash "$subj" night 1.2.3 --out "$d/t.txt" --root "$d/r"; check night_refuses_credentials_file 3 "credentials.toml"
     mkdir -p "$d/home-cfg"; printf '[registry]\ntoken = "x"\n' > "$d/home-cfg/config.toml"
-    run env CARGO_HOME="$d/home-cfg" bash "$subj" night 1.2.3 --out "$d/t.txt" --root "$d/r"; check night_refuses_cargo_home_config_token 3 "token key in CARGO_HOME/config.toml"
+    run env CARGO_HOME="$d/home-cfg" bash "$subj" night 1.2.3 --out "$d/t.txt" --root "$d/r"; check night_refuses_cargo_home_config_token 3 "flagged CARGO_HOME/config.toml"
+    for cf in inline:'registry = { token = "x" }' dotted:'registry.token = "x"' quoted:'[registry]\n"token" = "x"' escaped:'[registry]\n"\\u0074oken" = "x"' \
+        provider:'[registry]\nglobal-credential-providers = ["cargo:libsecret"]'; do
+        mkdir -p "$d/home-${cf%%:*}"; printf "${cf#*:}\n" > "$d/home-${cf%%:*}/config.toml"
+        run env CARGO_HOME="$d/home-${cf%%:*}" bash "$subj" night 1.2.3 --out "$d/t.txt" --root "$d/r"; check "night_refuses_config_${cf%%:*}" 3 "flagged CARGO_HOME/config.toml"
+    done
+    mkdir -p "$d/home-locked"; : > "$d/home-locked/config.toml"; chmod 000 "$d/home-locked/config.toml"
+    if [ -r "$d/home-locked/config.toml" ]; then got="flagged CARGO_HOME/config.toml (root reads all: row vacuous here)"; rc=3
+    else run env CARGO_HOME="$d/home-locked" bash "$subj" night 1.2.3 --out "$d/t.txt" --root "$d/r"; fi
+    check night_refuses_unreadable_config 3 "flagged CARGO_HOME/config.toml"; chmod 600 "$d/home-locked/config.toml"
+    run env CARGO_REGISTRIES_ALT_INDEX=sparse+https://example.invalid/ bash "$subj" night 1.2.3 --out "$d/t.txt" --root "$d/r"; check night_refuses_any_cargo_registr_env 3 "env CARGO_REGISTRIES_ALT_INDEX"
+    mkdir -p "$d/anc/.cargo" && printf '[registry]\ntoken = "x"\n' > "$d/anc/.cargo/config.toml" && git -C "$d" clone -q "$d/r" "$d/anc/r"
+    run bash "$subj" night 1.2.3 --out "$d/t.txt" --root "$d/anc/r"; check night_refuses_ancestor_config 3 "flagged $d/anc/.cargo/config.toml"
+    git -C "$d" clone -q "$d/r" "$d/sub" && mkdir -p "$d/sub/crates/a/.cargo" && printf '[registry]\ntoken = "x"\n' > "$d/sub/crates/a/.cargo/config.toml"
+    run bash "$subj" night 1.2.3 --out "$d/t.txt" --root "$d/sub"; check night_refuses_crate_subdir_config 3 "crates/a/.cargo/config.toml"
     git -C "$d" clone -q "$d/r" "$d/tk" && mkdir -p "$d/tk/.cargo" && printf '[registries.alt]\ntoken = "x"\n' > "$d/tk/.cargo/config.toml" \
         && git -C "$d/tk" add -A && git -C "$d/tk" commit -qm tok && rm -rf "${d:?}/tk/.cargo"
     run bash "$subj" night 1.2.3 --out "$d/t.txt" --root "$d/tk"; check night_refuses_token_in_measured_commit 2 "REFUSED-TO-START"
@@ -253,15 +271,13 @@ selftest() {
 }
 
 # mutants: each drops one check; a mutant that does not apply, or breaks syntax, is an ERROR, not a survivor
-MUTANTS='M01 env token ignored@@[ -z "${CARGO_REGISTRY_TOKEN:-}" ] || { echo "env CARGO_REGISTRY_TOKEN"; hit=0; }@@:
-M02 named registry token ignored@@CARGO_REGISTRIES_*_TOKEN) [ -z "${!n}" ] || { echo "env $n"; hit=0; } ;;@@CARGO_REGISTRIES_*_TOKEN) : ;;
+MUTANTS='M01 CARGO_REGISTR env ignored@@case $n in CARGO_REGISTR*) [ -z "${!n}" ] || { echo "env $n"; hit=0; } ;; esac@@case $n in NONE) ;; esac
+M02 credential word dropped@@token|credential|@@token|
 M03 credentials file ignored@@[ ! -e "$f" ] || { echo "file CARGO_HOME/$(basename "$f")"; hit=0; }@@:
 M04 refusal does not stop@@        exit 3
     fi@@        :
     fi
-M05 provider ignored@@[ -z "${!n}" ] || { echo "env $n"; hit=0; } ;;
-        esac@@: ;;
-        esac
+M05 escape dropped@@credential|\\\\[uU]@@credential
 M06 diff ignored@@    if [ -n "$d" ]; then@@    if false; then
 M07 night version not checked@@grep -q -x -F -e "# version: $v" "$nf" || nm@@true || nm
 M08 bump commit not checked@@[ "$hv" = "$v" ] || nm@@true || nm
@@ -271,7 +287,9 @@ M11 publish=false listed@@select(.publish == null or (.publish | length) > 0)@@s
 M12 night sandbox failure passes@@[ "$rc" = 0 ] || { echo "NOT_MEASURED $PROG: the sandbox run ended rc=$rc"; exit 2; }@@:
 M13 metadata failure passes@@|| { echo "cargo metadata failed for $ws" >&2; rm -f -- "${out:?}"; return 2; }@@|| m=""
 M14 CARGO_HOME config token ignored@@for f in "$ch/config.toml" "$ch/config"; do ! cfg_token@@for f in ; do ! cfg_token
-M15 measured-commit config ignored@@            for f in "$d/.cargo/config.toml" "$d/.cargo/config"; do@@            for f in ; do
+M15 tree config search dropped@@-prune -o -path@@-prune -o -false -path
+M18 ancestor configs ignored@@            while [ -n "$p" ] && [ "$p" != / ]; do p=$(dirname "$p")@@            while false; do p=$(dirname "$p")
+M19 unreadable config passes@@[ -r "$1" ] || return 0;@@[ -r "$1" ] || return 1;
 M16 crate in two workspaces ignored@@|| { echo "crate $name is in two workspaces" >&2; rm -f -- "${out:?}" "${out:?}.names"; return 2; }@@|| continue'
 mutants() {
     local tmp line name from to k=0 t=0 e=0
