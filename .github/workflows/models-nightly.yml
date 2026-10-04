@@ -1,0 +1,133 @@
+# models-nightly.yml -- the producer for the nightly train's `models` lane
+# (#4721). Before this file the lane had no producer on main, so the train
+# could only ever print not_measured for it.
+#
+# WHAT IS MEASURED, AND WHERE
+# ---------------------------
+# The models lane is scripts/release/models_t1.sh: the GPU-host model ladder on
+# lambda and gx10, judged by check_model_ladder.sh. It is the SAME entry point
+# release day runs. It needs both GPU hosts, and no runner in this repo's pool
+# is either of them, so the measurement does not happen here. A lambda timer
+# runs `models_nightly.sh --run` against main's head C, seals the receipts, the
+# models_t1 log and a verdict into one bundle, and `--publish` pushes the bundle
+# to the `nightly-evidence` branch as models/<C>/. Neither half holds a registry
+# token: both refuse to start when one is in reach (the R4 no-token refusal,
+# copied verbatim from nightly_train.sh).
+#
+# WHAT THIS WORKFLOW DOES
+# -----------------------
+# It reads that bundle for the commit it was dispatched on (github.sha), checks
+# it, and turns it into the `models` job's conclusion -- the column the train
+# reads. `--relay` re-checks everything the bundle claims and believes nothing:
+#
+#   SHA256SUMS covers every file and nothing else; the verdict names this exact
+#   commit, the version in this commit's Cargo.toml and this commit's
+#   models_t1.sh blob; and the classifier, re-run here on the bundle's own
+#   files, reaches the state the verdict recorded.
+#
+# Any check that fails is not_measured, never green.
+#
+#   bundle verdict   `models` job   train reads
+#   --------------   ------------   -----------
+#   green            success        green
+#   red              failure        red
+#   not_measured     skipped        not_measured
+#   no bundle for C  skipped        not_measured
+#   relay broke      skipped        not_measured  (models-evidence fails)
+#
+# THE PLANTED FAILURE. A workflow_dispatch with plant_red=true makes the relay
+# print red whatever the bundle says, and the `models` job fails. That is the
+# proof the lane can go red; it is never on in a scheduled run.
+#
+# RUNNER. [self-hosted, Linux, X64, clean-room]. The job reads git and runs
+# bash, jq and sha256sum on the host, with no cargo, so it needs no image beyond
+# the ownership restore every job on this pool runs first.
+name: models-nightly
+
+on:
+  schedule:
+    # Schedule events land 3h51m-6h49m late on this account (#3292). The lambda
+    # run starts ~21:00Z and publishes when the ladder ends; the train reads at
+    # 04:45Z. Two slots: the first may land before the publish, and then the
+    # second is the run the train reads -- it takes the newest completed run on
+    # C. Re-measure the delay before trusting either slot.
+    - cron: '20 22 * * *'
+    - cron: '50 22 * * *'
+  workflow_dispatch:
+    inputs:
+      plant_red:
+        description: 'Planted failure: report red whatever the bundle says'
+        type: boolean
+        default: false
+
+concurrency:
+  group: models-nightly-${{ github.ref }}
+  cancel-in-progress: false
+
+permissions:
+  contents: read
+
+jobs:
+  models-evidence:
+    runs-on: [self-hosted, Linux, X64, clean-room]
+    # BSE-05: T = max(15, ceil(1.5*p99), p99+20). This job has no history; the
+    # basis is ~2 min (checkout, the script's case table, one depth-1 fetch of
+    # nightly-evidence), so T = max(15, 3, 22) = 22, rounded to 25. The first
+    # three runs replace this basis.
+    timeout-minutes: 25
+    env:
+      IMAGE: localhost:5000/sovereign-ci:stable
+    outputs:
+      state: ${{ steps.relay.outputs.state }}
+      reason: ${{ steps.relay.outputs.reason }}
+    steps:
+      - name: Pre-checkout ownership restore (EACCES self-heal)
+        # Verbatim from ci.yml's guard-cargo. A hard-killed docker job leaves
+        # root-owned files in the runner checkout and the next job's
+        # `git clean -ffdx` dies with EACCES before a step runs.
+        run: |
+          if docker image inspect "$IMAGE" > /dev/null 2>&1; then
+            docker run --rm -v "${GITHUB_WORKSPACE}:/workspace" "$IMAGE" \
+              bash -c 'chown -R 1000:1000 /workspace 2>/dev/null || true'
+          else
+            echo "Image not cached — no prior docker job on this runner, nothing to restore"
+          fi
+      - uses: actions/checkout@v7
+        with:
+          fetch-depth: 1
+      - name: The producer's case table, before it is trusted
+        run: setsid --wait bash scripts/release/models_nightly.sh --self-test
+      - name: Relay the lambda measurement of this commit
+        id: relay
+        env:
+          PLANT_RED: ${{ inputs.plant_red }}
+        run: |
+          plant=()
+          case "$PLANT_RED" in true) plant=(--plant-red) ;; esac
+          setsid --wait bash scripts/release/models_nightly.sh --relay --commit "$GITHUB_SHA" --out "$RUNNER_TEMP/models-relay" "${plant[@]}"
+      - name: Keep the bundle the verdict was read from
+        if: always()
+        uses: actions/upload-artifact@v7
+        with:
+          name: models-relay-${{ github.run_id }}
+          path: ${{ runner.temp }}/models-relay
+          if-no-files-found: ignore
+          retention-days: 30
+
+  # The column the nightly train reads (job regex ^models$). It runs only on a
+  # measured verdict, so a missing or broken measurement is a skipped job,
+  # which the train reads as not_measured.
+  models:
+    name: models
+    needs: models-evidence
+    if: needs.models-evidence.outputs.state == 'green' || needs.models-evidence.outputs.state == 'red'
+    runs-on: [self-hosted, Linux, X64, clean-room]
+    timeout-minutes: 15
+    env:
+      STATE: ${{ needs.models-evidence.outputs.state }}
+      REASON: ${{ needs.models-evidence.outputs.reason }}
+    steps:
+      - name: The models lane verdict
+        run: |
+          echo "models lane: $STATE -- $REASON"
+          [ "$STATE" = green ]
