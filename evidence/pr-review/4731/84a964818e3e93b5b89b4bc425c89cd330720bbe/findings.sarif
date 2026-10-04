@@ -1,0 +1,374 @@
+{
+  "$schema": "https://docs.oasis-open.org/sarif/sarif/v2.1.0/errata01/os/schemas/sarif-schema-2.1.0.json",
+  "version": "2.1.0",
+  "runs": [
+    {
+      "tool": {
+        "driver": {
+          "name": "pmat"
+        }
+      },
+      "invocations": [
+        {
+          "executionSuccessful": true,
+          "toolExecutionNotifications": []
+        }
+      ],
+      "results": [
+        {
+          "ruleId": "pmat_index_consulted",
+          "level": "note",
+          "message": {
+            "text": "pmat semantic index built from a disposable copy of the head tree and queried for the nightly-train concept; no existing implementation of a nightly verdict train surfaced among the top 5 results."
+          },
+          "properties": {
+            "grounding": "measured",
+            "command": [
+              "pmat",
+              "query",
+              "nightly evidence train release lane verdict",
+              "--limit",
+              "5",
+              "--format",
+              "json"
+            ],
+            "exit_code": 0,
+            "stdout_sha256": "5ba67e1f2fab57b3e9a70a2d93fb9365faead7a4cb6b5c45f301b230755a2318",
+            "failure_scenario": "If the index had been built from another tree the duplication answer would describe code not in this PR; it was built from a copy of HEAD.",
+            "precision_class": "advisory"
+          }
+        },
+        {
+          "ruleId": "duplication_scan_swept",
+          "level": "note",
+          "message": {
+            "text": "pr_review_duplication_scan swept head, 1292 of 1292 sibling branches and the merge-base-to-main range with 43 needles; 40 hits, all name collisions in unrelated files or this PR own squashed source branches, none a re-implementation."
+          },
+          "properties": {
+            "grounding": "measured",
+            "command": [
+              "bash",
+              "scripts/pr_review_duplication_scan.sh",
+              "--base",
+              "316dee2cd4b3b3990ad47cc1a7a661c979a4e1d3",
+              "--head",
+              "84a964818e3e93b5b89b4bc425c89cd330720bbe",
+              "--rust-semantic",
+              "--json",
+              "dup.json"
+            ],
+            "exit_code": 0,
+            "stdout_sha256": "404ad10b0e8ca6c2f922c66c0940a4e12f767b1351c91f2b8d5d064cedcdaaad",
+            "failure_scenario": "A re-implementation under a different name is invisible to an exact-name scan; the scan cannot rule it out.",
+            "precision_class": "advisory"
+          }
+        },
+        {
+          "ruleId": "satd_none_introduced",
+          "level": "note",
+          "message": {
+            "text": "pmat analyze satd over scripts/release reports 0 violations."
+          },
+          "properties": {
+            "grounding": "measured",
+            "command": [
+              "pmat",
+              "analyze",
+              "satd",
+              "--format",
+              "json",
+              "--path",
+              "scripts/release"
+            ],
+            "exit_code": 0,
+            "stdout_sha256": "ee1a657e87314e9f3aade9495e518185a48c680231a662cdca8eb7200c23d3d3",
+            "failure_scenario": "A SATD marker in a file pmat does not parse would be missed.",
+            "precision_class": "advisory"
+          }
+        },
+        {
+          "ruleId": "complexity_not_measurable",
+          "level": "note",
+          "message": {
+            "text": "pmat analyze complexity over scripts/release analysed only pre-existing python files; none of the 4 bash scripts in this diff was measured, so complexity_delta is empty because nothing was measured, not because it is zero."
+          },
+          "properties": {
+            "grounding": "measured",
+            "command": [
+              "pmat",
+              "analyze",
+              "complexity",
+              "--format",
+              "json",
+              "--path",
+              "scripts/release"
+            ],
+            "exit_code": 0,
+            "stdout_sha256": "a459ebdb835b506861d0d4096f8cb7357d855882968994f9ef1bfa0824321ff1",
+            "failure_scenario": "A reader could take the empty complexity_delta as a measured zero; for these bash scripts it is unmeasured.",
+            "precision_class": "advisory"
+          }
+        },
+        {
+          "ruleId": "bashrs_warnings_no_errors",
+          "level": "note",
+          "message": {
+            "text": "bashrs 7.4.1 lint on scripts/release/nightly_train.sh: 0 errors, 329 warnings, 234 info; the nonzero exit is the warning count. The existing scripts/release/release_readiness.sh (60 warnings) and scripts/check_pr_review_receipt.sh (171) also exit nonzero, and the repo CI gates bashrs at --level error."
+          },
+          "properties": {
+            "grounding": "measured",
+            "command": [
+              "bashrs",
+              "lint",
+              "scripts/release/nightly_train.sh"
+            ],
+            "exit_code": 1,
+            "stdout_sha256": "6fc198762d9ff2833ba3a083e7c872ab1ba7fd00c56f143399a8e3f3f758bcfd",
+            "failure_scenario": "A CI step that ran bashrs lint without --level error on these scripts would go red; no such step exists for scripts/release today.",
+            "precision_class": "advisory"
+          }
+        },
+        {
+          "ruleId": "pv_validate_contract",
+          "level": "note",
+          "message": {
+            "text": "pv validate accepts contracts/nightly-train-v1.yaml: 0 errors, 0 warnings, Contract is valid."
+          },
+          "properties": {
+            "grounding": "measured",
+            "command": [
+              "pv",
+              "validate",
+              "contracts/nightly-train-v1.yaml"
+            ],
+            "exit_code": 0,
+            "stdout_sha256": "0ce30b6f47aa39b8ed84623e7568e873151a4384f7b5d16470a0c76f0ff4dc85",
+            "failure_scenario": "A valid contract may still bind a falsifier to the wrong test; the bound tests are the selftest and mutants commands measured under the mutation run.",
+            "precision_class": "advisory"
+          }
+        },
+        {
+          "ruleId": "workflow_streak_not_persisted",
+          "level": "note",
+          "message": {
+            "text": "The scheduled workflow passes --out under the runner temp dir and has no cache or download step, so history.tsv holds exactly the one row of the current run; the bundle line greens in a row can never exceed 1 from the workflow, and only the user timer (persistent OUT) accumulates a streak."
+          },
+          "properties": {
+            "grounding": "asserted",
+            "rationale": "read of .github/workflows/nightly-train.yml: --out is RUNNER_TEMP/nt; the only artifact step is upload-artifact, there is no restore of the previous history.tsv.",
+            "failure_scenario": "A reader of the workflow summary takes greens in a row: 1 as a streak that is just starting, every night, indefinitely.",
+            "precision_class": "advisory"
+          }
+        },
+        {
+          "ruleId": "workflow_red_by_design_and_unpinned",
+          "level": "note",
+          "message": {
+            "text": "With --exit-verdict the workflow job fails every night until all 11 verdict lanes without a producer have one, and it runs the head scripts rather than the pinned bundle (no --pinned), so a PR that edits scripts/release/nightly_train.sh changes tomorrow judge with no pin."
+          },
+          "properties": {
+            "grounding": "asserted",
+            "rationale": "read of the lane table (11 verdict lanes with producer -) and of the workflow step; the self-test and mutants steps run first, which bounds but does not remove the second point.",
+            "failure_scenario": "Red nightly-train runs become background noise that hides the night the lane table finally turns green, and a bad edit of the judge on main is trusted until the next table run.",
+            "precision_class": "advisory"
+          }
+        }
+      ]
+    },
+    {
+      "tool": {
+        "driver": {
+          "name": "cargo-mutants"
+        }
+      },
+      "invocations": [
+        {
+          "executionSuccessful": true,
+          "toolExecutionNotifications": []
+        }
+      ],
+      "results": [
+        {
+          "ruleId": "guard_selftest_step_table",
+          "level": "note",
+          "message": {
+            "text": "scripts/release/step_table.sh --selftest: 48/48 rows, exit 0."
+          },
+          "properties": {
+            "grounding": "measured",
+            "command": [
+              "bash",
+              "scripts/release/step_table.sh",
+              "--selftest"
+            ],
+            "exit_code": 0,
+            "stdout_sha256": "7c7246afdc0edf1fa49297985cb90bf93c936701517f535539cc380884d1502b",
+            "failure_scenario": "A case table that cannot fail proves nothing; its mutant set follows.",
+            "precision_class": "advisory"
+          }
+        },
+        {
+          "ruleId": "guard_mutants_step_table",
+          "level": "note",
+          "message": {
+            "text": "scripts/release/step_table.sh --mutants: 16/16 mutants killed."
+          },
+          "properties": {
+            "grounding": "measured",
+            "command": [
+              "bash",
+              "scripts/release/step_table.sh",
+              "--mutants"
+            ],
+            "exit_code": 0,
+            "stdout_sha256": "13c648b08e89678630901519bae483d13748b1824f21d8d646eeed64daf7bb05",
+            "failure_scenario": "A surviving mutant would be a stated rule nothing tests; none survived.",
+            "precision_class": "advisory"
+          }
+        },
+        {
+          "ruleId": "guard_selftest_redage",
+          "level": "note",
+          "message": {
+            "text": "scripts/release/red_age.sh --selftest: 71/71 rows, exit 0."
+          },
+          "properties": {
+            "grounding": "measured",
+            "command": [
+              "bash",
+              "scripts/release/red_age.sh",
+              "--selftest"
+            ],
+            "exit_code": 0,
+            "stdout_sha256": "40f0a7423004c2f971a2791895679dabdc5da82f291d5abd2a150bff2590a257",
+            "failure_scenario": "As above.",
+            "precision_class": "advisory"
+          }
+        },
+        {
+          "ruleId": "guard_mutants_redage",
+          "level": "note",
+          "message": {
+            "text": "scripts/release/red_age.sh --mutants: 27/27 mutants killed."
+          },
+          "properties": {
+            "grounding": "measured",
+            "command": [
+              "bash",
+              "scripts/release/red_age.sh",
+              "--mutants"
+            ],
+            "exit_code": 0,
+            "stdout_sha256": "19d5a182c21fec581af911e2fa2c60dbc0bae103b91ee348fa5073411e364f06",
+            "failure_scenario": "As above.",
+            "precision_class": "advisory"
+          }
+        },
+        {
+          "ruleId": "guard_selftest_greens",
+          "level": "note",
+          "message": {
+            "text": "scripts/release/nightly_greens.sh --selftest: 42/42 rows, exit 0."
+          },
+          "properties": {
+            "grounding": "measured",
+            "command": [
+              "bash",
+              "scripts/release/nightly_greens.sh",
+              "--selftest"
+            ],
+            "exit_code": 0,
+            "stdout_sha256": "4037ca2d404d703942778766d309888c79e60b7c68de83452b93e3d863b72d14",
+            "failure_scenario": "As above.",
+            "precision_class": "advisory"
+          }
+        },
+        {
+          "ruleId": "guard_mutants_greens",
+          "level": "note",
+          "message": {
+            "text": "scripts/release/nightly_greens.sh --mutants: 15/15 mutants killed."
+          },
+          "properties": {
+            "grounding": "measured",
+            "command": [
+              "bash",
+              "scripts/release/nightly_greens.sh",
+              "--mutants"
+            ],
+            "exit_code": 0,
+            "stdout_sha256": "aa6136fe8a7964d75e1e4e38c82e0a58e964a38b79b9d43bfe0c3b8718a23543",
+            "failure_scenario": "As above.",
+            "precision_class": "advisory"
+          }
+        },
+        {
+          "ruleId": "guard_selftest_nightly_train",
+          "level": "note",
+          "message": {
+            "text": "scripts/release/nightly_train.sh --self-test: 57/57 rows, exit 0."
+          },
+          "properties": {
+            "grounding": "measured",
+            "command": [
+              "bash",
+              "scripts/release/nightly_train.sh",
+              "--self-test"
+            ],
+            "exit_code": 0,
+            "stdout_sha256": "7b2936f37dbffe23bbfc5c1b6a54c4fc3355720829054b6e5dbaf56e9be87b10",
+            "failure_scenario": "As above.",
+            "precision_class": "advisory"
+          }
+        },
+        {
+          "ruleId": "guard_mutants_nightly_train",
+          "level": "note",
+          "message": {
+            "text": "scripts/release/nightly_train.sh --mutants: 42/42 mutants killed."
+          },
+          "properties": {
+            "grounding": "measured",
+            "command": [
+              "bash",
+              "scripts/release/nightly_train.sh",
+              "--mutants"
+            ],
+            "exit_code": 0,
+            "stdout_sha256": "60e7100b6c510fdc1294b7b652e02ea78728d594e25a7364da140d4b4d695d4e",
+            "failure_scenario": "As above.",
+            "precision_class": "advisory"
+          }
+        }
+      ]
+    },
+    {
+      "tool": {
+        "driver": {
+          "name": "antigravity"
+        }
+      },
+      "invocations": [
+        {
+          "executionSuccessful": true,
+          "toolExecutionNotifications": []
+        }
+      ],
+      "results": [
+        {
+          "ruleId": "agy_bashrs_not_lint_clean",
+          "level": "note",
+          "message": {
+            "text": "agy reports the new shell scripts are not bashrs lint clean (warnings, nonzero exit) against the global rule that scripts be lint clean."
+          },
+          "properties": {
+            "grounding": "asserted",
+            "rationale": "raised and measured by the antigravity reviewer (requested model gemini-3.1-pro-high); the primary measured the same fact independently (0 errors, warnings only) and rates it advisory because existing release scripts and the receipt guard carry warnings and CI gates at --level error.",
+            "failure_scenario": "If CI added a bare bashrs lint over scripts/release the four scripts would fail it; today no such step exists.",
+            "precision_class": "advisory"
+          }
+        }
+      ]
+    }
+  ]
+}
