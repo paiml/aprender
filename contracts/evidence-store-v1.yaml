@@ -1,0 +1,197 @@
+metadata:
+  version: 1.0.0
+  created: '2026-10-04'
+  author: PAIML Engineering
+  description: "BLD-002 row R2, the evidence store: receipts, rulings, known-failure marks and release notes are kept outside the code they describe, keyed by its code identity H, and written by one writer. A record is written once and never changed. Whether a record is valid depends only on its own bytes, the H asked for and the store's writer, so adding a record never changes whether another record is valid, and a record for another H is refused by name. Not decided here: how H is computed (row R1) and where the store lives (an operator ruling, BLD-002 RQ-6); the store is an argument. Until that ruling, the publish check does not read the store and no gate changes."
+  kind: pattern
+  references:
+    - "scripts/release/evidence_store.sh — the store (init, put, get, verify), its case table (--selftest) and its planted mutants (--mutants)"
+    - "scripts/release/release_readiness.sh — receipts_commit(): today a host receipt binds to the tree outside evidence/, so recording evidence makes a new commit"
+    - "scripts/check_publish_preflight.sh — rules R5 and R7: today they read receipts from the tree (.dogfood/ and evidence/dogfood/models/<version>/)"
+
+five_whys:
+  symptom: "Release evidence (host ladder receipts, dogfood receipts, CRUX and surface results) was committed into the tree it judged. In the BLD-002 R0 baseline, 0.70.0's release-readiness check never ran on its tag, because the tagged tree held no receipts, and a 0.70.1 pre-tag check failed because the evidence was not yet committed."
+  why_1: "Recording a receipt was a commit: the readiness check and the publish preflight read receipts from evidence/ in the tree."
+  why_2: "A commit changes the commit id, so every check bound to 'this commit' had to run again or be matched to the new one; the readiness wrapper did the matching by comparing trees outside evidence/, one of three private definitions of 'same code'."
+  why_3: "A tag on a commit made before its receipts existed has no receipts in its tree, so the check could not run on the tag at all."
+  why_4: "Evidence had no home of its own: no store keyed by what the evidence is about, the code identity, so the tree was the only place to put it."
+  why_5: "Nothing separated what is measured (the code) from what is recorded about it (receipts, rulings, known-failure marks), and nothing refused a receipt filed against other code."
+  root_cause: "Evidence was part of the thing it judged. The remedy is a store outside the code, keyed by the code identity H: a record is written once, is valid only for its own H, and is checked by its own bytes, so adding a record cannot change whether another record is valid, and a record for another H is refused by name."
+
+equations:
+  record_validity:
+    formula: "valid(f, H, W) = regular(f) and not symlink(f) and neither STORE/<H> nor STORE/<H>/<kind> is a symlink and the first seven lines of f are, byte for byte, the header put writes: (evidence-store-record/v1, h H, kind <kind>, name <name>, writer W, body-sha256 sha256(body(f)), --), where (kind, name) is the path f is filed under, and body(f) ≠ ''"
+    domain: "a file f under STORE/<H>/<kind>/<name>, the H asked for, and the writer W named in STORE/WRITER"
+    codomain: "{valid, refused}; a refused record prints a FAIL line naming it and why"
+    invariants:
+      - "validity reads only the record's own bytes, its path, H and W: no other record, no clock and no commit"
+      - "a symlink is never a record, even one that points at a valid record, and no record is read through a symlinked H or kind directory"
+      - "a directory, a FIFO or anything else that is not a regular file is refused without being read"
+      - "the header is compared byte for byte with the header put writes, so a header that reads the same once a NUL byte is dropped is still refused"
+      - "a record whose body no longer hashes to its body-sha256 is refused as changed after it was written"
+      - "an empty body is refused: a receipt that says nothing is not a receipt"
+      - "get judges one copy of the record and prints that copy, so the bytes printed are the bytes judged"
+
+  write_once:
+    formula: "put(H, kind, name, b): no record yet -> write it (a temporary file under STORE/.tmp/, then ln -T, which makes the record appear whole at exactly its path or not at all); a record with body b -> unchanged; a record with another body -> refused; a symlink, a directory or another non-file at the path -> refused"
+    domain: "a put of body b under (H, kind, name) by the store's writer"
+    codomain: "{recorded, unchanged, refused}"
+    invariants:
+      - "a record is never rewritten: a second put with another body is refused and the record stays byte for byte the same"
+      - "a put of an empty body records nothing and makes nothing under STORE/<H>/"
+      - "an unfinished write, of init or of put, lives only under STORE/.tmp/, which no reader reads; a STORE/.tmp that is a symlink is refused"
+      - "a put never replaces a file, never writes into a directory and never writes through a symlink, and a put through a symlinked H or kind directory is refused: whatever a put is refused for, it writes nothing outside the store"
+
+  add_independence:
+    formula: "for all records r and r′ ≠ r: valid(r) before put(r′) = valid(r) after put(r′)"
+    domain: "any two records of one store, under the same H or different ones"
+    codomain: "always true"
+    invariants:
+      - "adding a receipt, a ruling, a known-failure mark or a release note never changes whether an existing record is valid"
+      - "a refused rewrite leaves the record it tried to replace unchanged"
+
+  foreign_h_refusal:
+    formula: "get(H, kind, name) with no record (H, kind, name) but records (H′, kind, name) for some H′ ≠ H -> refused, naming every such H′ in full"
+    domain: "a get of (kind, name) for H"
+    codomain: "a FAIL line: '<kind>/<name> is not recorded for H=<H>; it is filed only under H=<H′>, ...: a record for another code identity is refused'"
+    invariants:
+      - "a record filed under H whose own h line names another H′ is refused: 'is recorded for H=<H′>, not H=<H>'"
+      - "every H in these refusals is printed in full, so two H that share a prefix are still told apart"
+      - "a record is never read across code identities"
+
+  verify_nonvacuous:
+    formula: "verify(H) exits 0 only if STORE/<H> is not a symlink, n(H) > 0 and bad(H) = 0, where n counts every entry under STORE/<H>/ and bad counts the refused ones"
+    domain: "the entries under STORE/<H>/"
+    codomain: "exit 0 or 1, one line per entry and a count line"
+    invariants:
+      - "an H with no records is refused: nothing to verify is not a pass"
+      - "an entry that is not a record kind or not a record name is counted and refused, never skipped"
+      - "a symlink, a directory or a FIFO filed as a record is counted and refused, and a STORE/<H> that is a symlink is refused"
+
+  single_writer:
+    formula: "init(STORE, W) sets STORE/WRITER once, by ln -T from a temporary file under STORE/.tmp/; put requires EVIDENCE_STORE_WRITER = W; a valid record carries writer W"
+    domain: "the store and every put into it"
+    codomain: "{ok, refused, caller error}"
+    invariants:
+      - "init adopts an empty directory, or one that holds only the STORE/.tmp/ directory of an init that did not finish; it never adopts any other directory that has no WRITER"
+      - "a second init with another writer is refused"
+      - "a WRITER that is a symlink is never adopted: init refuses it, and put, get and verify treat the directory as no store"
+      - "of two inits at once, one sets the writer; the other may be refused, and run again it reports the writer that was set"
+      - "a put by another writer, or with no writer named, is refused"
+      - "the writer is checked by name; stopping other processes from writing at all is the job of the store location's file permissions, decided with the ruling on where the store lives"
+
+  key_grammar:
+    formula: "H is 40 or 64 lowercase hex digits; kind is one of receipt, ruling, known-failure, release-note; name is 1 to 128 of [A-Za-z0-9._-] and does not start with '.'"
+    domain: "every H, kind and name given on the command line"
+    codomain: "{accepted, caller error (exit 3)}"
+    invariants:
+      - "a key outside the grammar is a caller error, never a record and never a path outside the store"
+      - "how H is computed is row R1's; this store accepts any H in the grammar"
+
+proof_obligations:
+  - id: ESV-INV-001
+    type: invariant
+    property: "A record is valid only for the H it records"
+    formal: "∀ f, H: valid(f, H, W) ⇒ h(f) = H"
+    applies_to: record_validity
+  - id: ESV-INV-002
+    type: invariant
+    property: "Validity depends only on the record's bytes, its path, H and W"
+    formal: "∀ S, S′, f: f ∈ S ∩ S′ ∧ bytes(S, f) = bytes(S′, f) ∧ W(S) = W(S′) ⇒ valid(S, f, H) = valid(S′, f, H)"
+    applies_to: record_validity
+  - id: ESV-INV-003
+    type: invariant
+    property: "A symlink is never a record, and no record is read through a symlinked H or kind directory"
+    formal: "∀ f: symlink(f) ∨ symlink(dir_H(f)) ∨ symlink(dir_kind(f)) ⇒ ¬valid(f, H, W)"
+    applies_to: record_validity
+  - id: ESV-INV-004
+    type: invariant
+    property: "A body changed after it was written is refused"
+    formal: "∀ f: sha256(body(f)) ≠ body_sha256(f) ⇒ ¬valid(f, H, W)"
+    applies_to: record_validity
+  - id: ESV-INV-005
+    type: invariant
+    property: "An empty body is never valid, and a put of one records nothing and makes nothing under STORE/<H>/"
+    formal: "(∀ f: body(f) = '' ⇒ ¬valid(f, H, W)) ∧ (∀ H, k, n: refused(put(H, k, n, '')) ∧ tree_after(S/H) = tree_before(S/H))"
+    applies_to: record_validity
+  - id: ESV-INV-006
+    type: invariant
+    property: "A record is written once and never changed"
+    formal: "∀ r, b, b′: b′ ≠ b ∧ recorded(r, b) ⇒ refused(put(r, b′)) ∧ body(r) = b"
+    applies_to: write_once
+  - id: ESV-INV-007
+    type: invariant
+    property: "Adding a record changes no other record's validity"
+    formal: "∀ r, r′: r ≠ r′ ⇒ valid_before_put(r′)(r) = valid_after_put(r′)(r)"
+    applies_to: add_independence
+  - id: ESV-INV-008
+    type: invariant
+    property: "A record asked for under another H is refused, naming in full every H it is filed under"
+    formal: "(H, k, n) ∉ S ∧ (H′, k, n) ∈ S ∧ H′ ≠ H ⇒ refused(get(H, k, n)) ∧ H′ ∈ message"
+    applies_to: foreign_h_refusal
+  - id: ESV-INV-009
+    type: invariant
+    property: "A record filed under H that names another H is refused"
+    formal: "∀ f ∈ S/H: h(f) ≠ H ⇒ ¬valid(f, H, W)"
+    applies_to: foreign_h_refusal
+  - id: ESV-INV-010
+    type: invariant
+    property: "Verify of an H with no records is not a pass"
+    formal: "entries(S/H) = ∅ ⇒ verify(H) ≠ 0"
+    applies_to: verify_nonvacuous
+  - id: ESV-INV-011
+    type: invariant
+    property: "Verify passes only when STORE/<H> is a real directory and every entry under it is a valid record"
+    formal: "verify(H) = 0 ⟺ ¬symlink(S/H) ∧ entries(S/H) ≠ ∅ ∧ ∀ e ∈ entries(S/H): valid(e, H, W)"
+    applies_to: verify_nonvacuous
+  - id: ESV-INV-012
+    type: invariant
+    property: "A put by any writer but the store's is refused"
+    formal: "∀ p ∈ puts(S): writer(p) ≠ W(S) ⇒ refused(p)"
+    applies_to: single_writer
+  - id: ESV-INV-013
+    type: invariant
+    property: "init sets the writer once, never adopts a symlinked WRITER, and adopts no directory with anything in it but the STORE/.tmp/ of an init that did not finish"
+    formal: "symlink(S/WRITER) ∨ (W(S) ≠ '' ∧ W′ ≠ W(S)) ∨ (W(S) = '' ∧ (entries(S) ⊄ {.tmp} ∨ symlink(S/.tmp))) ⇒ refused(init(S, W′))"
+    applies_to: single_writer
+  - id: ESV-INV-014
+    type: invariant
+    property: "A key outside the grammar is a caller error"
+    formal: "H ∉ HEX40 ∪ HEX64 ∨ k ∉ KINDS ∨ n ∉ NAMES ⇒ exit = 3"
+    applies_to: key_grammar
+  - id: ESV-INV-015
+    type: invariant
+    property: "A record's header is, byte for byte, the header put writes"
+    formal: "∀ f: head7(f) ≠ header(H, k, n, W, sha256(body(f))) ⇒ ¬valid(f, H, W)"
+    applies_to: record_validity
+  - id: ESV-INV-016
+    type: invariant
+    property: "A put writes nothing outside the store, whatever it is refused for"
+    formal: "∀ p ∈ puts(S): written(p) ⊆ S"
+    applies_to: write_once
+
+falsification_tests:
+  - id: FALSIFY-ESV-001
+    rule: "The store is right on every row of its case table"
+    prediction: "init makes one writer and refuses a second; a put records once, says unchanged for the same body and refuses another body; a put of an empty body records nothing and makes nothing under STORE/<H>/; get returns the body byte for byte, with no final newline or with binary bytes; a name of 128 characters is a key and one of 129 is a caller error; a record asked for under another H is refused, naming in full every H it is filed under, even two that share a prefix; verify of an H with no records is refused; after four more records are added and a rewrite is refused, the earlier receipts read the same, byte for byte, in get and in verify; every planted bad record (a copy from another H, a symlink, an appended byte, a moved file, another writer, no header, an old header, a header with a NUL byte, an empty body, a stray directory and a stray file) is refused by name while the good records stay valid; a put or a get through a symlinked H or kind directory, onto a symlink or a directory, with a STORE/.tmp that links out of the store, or of a FIFO, is refused, and the refused puts write nothing outside the store; a WRITER that is a symlink is never adopted, and the STORE/.tmp/ of a killed init is"
+    test: "bash scripts/release/evidence_store.sh --selftest"
+    if_fails: "Adding evidence could void a receipt, a receipt could be read for code it was not measured on, a write could land outside the store, or a store with no records could pass: the release would read evidence it cannot trust"
+
+  - id: FALSIFY-ESV-002
+    rule: "The case table can still fail on the defects it names"
+    prediction: "Each planted mutant (H, kind, name or writer not checked, the body not hashed, the header bytes not compared, an empty body kept, a symlink followed, the header not required, a record overwritten, ln without -T, any writer accepted, the other H not named or named by a prefix, an empty verify passing, a refusal not reaching the exit code, stray entries skipped, an H of any case or length, a dotted name, a name of any length or a limit off by one, init adopting a non-empty directory or a second writer, any kind, get or verify skipping the check, get, put or verify following a symlinked H or kind directory, put following a symlinked STORE/.tmp, put taking a symlink or a directory at the record's path, get reading a non-file, an empty put making directories, init or the reader following a symlinked WRITER, init counting STORE/.tmp/ or ignoring what else is there, init taking a symlinked STORE/.tmp) makes the case table print BROKE; a mutant that changes nothing, does not parse or does not run is never a kill; the harness exits 1 if any mutant survives"
+    test: "bash scripts/release/evidence_store.sh --mutants"
+    if_fails: "The case table is theater: it would pass a store that serves a receipt for code it never measured"
+
+qa_gate:
+  id: F-ESV-001
+  name: "Evidence lives outside the code it judges: adding a record never voids a receipt, and a record for another code identity is refused by name"
+  description: "scripts/release/evidence_store.sh keeps receipts, rulings, known-failure marks and release notes under STORE/<H>/<kind>/<name>, written once by one writer, each checked by its own header bytes and body hash against the H asked for, with no symlink followed inside the store. Not decided and not claimed here: how H is computed (BLD-002 R1), where the store lives and who may write to it at the file-system level (BLD-002 RQ-6), and the publish check reading the store, which waits for that ruling; until then no check moves and no gate changes. The case table has no row for, and so does not claim, a symlink swapped in while a get reads (cp -P copies it as a symlink, which is refused), two inits at the same moment, or the signal traps that remove temporary files; a writer that edits the store by hand while another process reads it is outside this contract."
+  checks:
+    - "record_validity"
+    - "write_once"
+    - "add_independence"
+    - "foreign_h_refusal"
+    - "verify_nonvacuous"
+    - "single_writer"
+    - "key_grammar"
