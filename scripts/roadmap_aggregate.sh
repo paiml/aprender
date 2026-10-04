@@ -41,6 +41,8 @@ ROADMAP="$ROOT/docs/roadmaps/roadmap.yaml"
 ENTRIES="$ROOT/docs/roadmaps/entries"
 # Mutation seam: production never sets it. --mutants sets each value and requires a RED row.
 MUT="${ROADMAP_AGG_MUTANT:-}"
+# -H: a symlinked entries DIR is followed, as python's os.listdir follows it (round-3 M; mutant nodirlink)
+FH=-H; [ "$MUT" = nodirlink ] && FH=-P
 
 die2() { printf '%s: %s\n' "$PROG" "$*" >&2; exit 2; }
 
@@ -49,7 +51,7 @@ die2() { printf '%s: %s\n' "$PROG" "$*" >&2; exit 2; }
 fragments() {
     local d=$1
     [ -d "$d" ] || return 0
-    find "$d" -maxdepth 1 -mindepth 1 -name '*.yaml' -print | LC_ALL=C sort
+    find "$FH" "$d" -maxdepth 1 -mindepth 1 -name '*.yaml' -print | LC_ALL=C sort
 }
 
 # norm <in> <out>: python's universal-newline read (open(encoding="utf-8"), newline=None): CRLF -> LF, lone CR -> LF.
@@ -77,7 +79,7 @@ aggregate() {
     list=$(fragments "$dir"); rc=$?
     [ "$rc" = 0 ] || return 2
     # A filename holding a newline splits this list: this box cannot answer (2, never a pass, never a refusal).
-    if [ -d "$dir" ] && [ "$(find "$dir" -maxdepth 1 -mindepth 1 -name '*.yaml' -print0 | tr -cd '\0' | wc -c)" != "$(grep -c -e . <<< "$list")" ]; then
+    if [ -d "$dir" ] && [ "$(find "$FH" "$dir" -maxdepth 1 -mindepth 1 -name '*.yaml' -print0 | tr -cd '\0' | wc -c)" != "$(grep -c -e . <<< "$list")" ]; then
         printf '%s: ENV - a fragment filename holds a newline; this aggregator cannot answer\n' "$PROG" >&2; return 2
     fi
     nd=$(mktemp -d) || return 2
@@ -312,6 +314,8 @@ selftest() {
     # E1-E2: environment
     mkdir -p "$T/l" && ent B-9 > "$T/outside.yaml" && ln -s "$T/outside.yaml" "$T/l/B-9.yaml"
     ent A-1 > "$T/lbase"; aggregate "$T/lbase" "$T/l" > "$T/out" 2>&1; rc=$?; st_row L1 "a symlinked fragment is followed, as python's open() follows it" 0 "$rc" "id: B-9" "$T/out"
+    mkdir -p "$T/real" && ent B-7 > "$T/real/B-7.yaml" && ln -s "$T/real" "$T/ldir"
+    aggregate "$T/lbase" "$T/ldir" > "$T/out" 2>&1; rc=$?; st_row L2 "a symlinked entries DIR is followed, as python's os.listdir follows it" 0 "$rc" "id: B-7" "$T/out"
     # F1: --check proves the fixed point (python _check does too); a no-final-newline fragment mid-list breaks it
     fresh; { ent PMAT-1; ent PMAT-3; } >> "$T/base"; ent PMAT-2 | head -c -1 > "$T/e/PMAT-2.yaml"
     cp -- "$T/base" "$T/rm"
@@ -335,7 +339,7 @@ selftest() {
 # every planted mutant must turn at least one row RED; a mutant that survives is a row that cannot fail
 mutants() {
     local m killed=0 alive=0
-    for m in strnum numge append idline addnl nocr nofollow nosup noutf8 nofix; do
+    for m in strnum numge append idline addnl nocr nofollow nosup noutf8 nofix nodirlink; do
         if ROADMAP_AGG_MUTANT=$m bash "$SELF" --selftest > /dev/null 2>&1; then
             alive=$((alive + 1)); printf 'SURVIVED  mutant %s\n' "$m"
         else killed=$((killed + 1)); printf 'killed    mutant %s\n' "$m"; fi

@@ -6,7 +6,8 @@
 # WHAT IT GOVERNS
 #   scripts/check_row_pr_write_set.sh (a head branch agent/<id> whose <id> is
 #   a DAG row may not touch docs/specifications/pp-066-dag.yaml,
-#   docs/roadmaps/roadmap.yaml, docs/specifications/PP-066-release-spec.md
+#   docs/roadmaps/roadmap.yaml, a roadmap fragment docs/roadmaps/entries/*
+#   (T21, RQ-8), docs/specifications/PP-066-release-spec.md
 #   or a README count line); scripts/lib/dag_status.py (a row is complete iff
 #   docs/audits/impl-<pmat_id>-receipt.md says `status: complete` in its
 #   leading front matter — render_dag.py prints that, dag_invariants.py D7
@@ -23,7 +24,7 @@
 # PROOF LADDER, STATED HONESTLY (F-26)
 #   * L1 — the guards exist and are wired in ci.yml job guard-runner-labels.
 #   * L2 — falsification tests cover the obligations, MEASURED (2026-09-06):
-#          check_row_pr_write_set.sh --self-test 11/11, check_dag_invariants.sh
+#          check_row_pr_write_set.sh --self-test 17/17 (2026-10-04), check_dag_invariants.sh
 #          --selftest 15/15 (D7 rows 12-15), check_readme_claims.sh --self-test
 #          7/7 — each with its registered mutation RED.
 #   * L3/L4 — NOT APPLICABLE and not declared: shell and python guards over
@@ -45,7 +46,7 @@ metadata:
   last_modified: '2026-09-06'
   author: PAIML Engineering
   references:
-    - 'scripts/check_row_pr_write_set.sh — --base/--head/--branch/--event · --self-test (11 rows)'
+    - 'scripts/check_row_pr_write_set.sh — --base/--head/--branch/--event · --self-test (17 rows) · --mutants (nofrag)'
     - 'scripts/lib/dag_status.py — derived_status(), receipt_marker(), d7_typed_status()'
     - 'scripts/render_dag.py — the status column is derived; --root'
     - 'scripts/lib/dag_invariants.py — D7; past-expiry reads the derived status; --root'
@@ -148,15 +149,20 @@ falsification_tests:
     prediction: >-
       rows 2-5 RED naming the file or line (DAG, roadmap, spec, README count);
       rows 1 and 6 PASS (crate code; README prose); rows 7-8 not judged (an
-      orchestrator branch; a fix/ branch); rows 9-10 REPORT with exit 0
-      (merge_group, push); row 11 exit 2 (missing DAG). One --self-test run
+      orchestrator branch; a fix/ branch); rows 9-11 RED (a fix/ branch writing
+      the DAG, an agent/<not-a-row> writing the spec, a rename of the DAG);
+      rows 12-13 REPORT with exit 0
+      (merge_group, push); row 14 RED naming a fragment-only write
+      (docs/roadmaps/entries/, T21); rows 15-16 PASS (fix/, orchestrator);
+      row 17 exit 2 (missing DAG). One --self-test run
       exercises every row.
     test: 'bash scripts/check_row_pr_write_set.sh --self-test'
     if_fails: >-
       every merge makes every other armed PR DIRTY again (the eight-PR rebuild storm of 2026-09-06)
     mutation: >-
       drop docs/specifications/pp-066-dag.yaml from the forbidden list; row 2
-      must turn RED (it passes at rc 0).
+      must turn RED (it passes at rc 0). Registered in --mutants: nofrag drops
+      the entries/ rule; row 14 must turn RED.
 
   - id: WS-F-002
     rule: status is derived from the receipt

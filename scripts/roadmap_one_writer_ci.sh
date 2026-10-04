@@ -103,6 +103,7 @@ step_fresh_refs() {   # c.
     for g in check_roadmap_diff_additive.sh check_roadmap_fragment_required.sh; do
         bash "$REPO_ROOT/scripts/$g" "$fb" "$fh" > "$log" 2>&1; rc=$?
         [ "$MUT" = norefs ] && rc=0
+        [ "$MUT" = refsany ] && rc=1   # over-blocking: the control rows O1-O3, P1 must turn RED
         if [ "$rc" = 0 ]; then printf 'ok    %s on fresh refs aggregate(base)..aggregate(head)\n' "$g"
         elif [ "$rc" = 2 ]; then sed -n '1,6p' "$log" | sed 's/^/      /'; henv "$g could not run on fresh refs (rc 2)"
         else sed -n '1,12p' "$log" | sed 's/^/      /'; blockf "$g refuses the entry changes this PR makes (fresh refs, rc $rc)"; fi
@@ -229,7 +230,7 @@ selftest() {
 mutants() {
     local m killed=0 total=0 out
     out=$(mktemp) || return 2
-    for m in stalefresh novalidate norefs regenpass noblock nofreshgate softenv wiring; do
+    for m in stalefresh novalidate norefs regenpass noblock nofreshgate softenv wiring refsany; do
         total=$((total+1))
         if ROADMAP_OW_CI_MUTANT=$m bash "$SELF" --selftest > "$out" 2>&1; then printf 'SURVIVED  %s\n' "$m"
         else killed=$((killed+1)); printf 'killed    %s (%s rows)\n' "$m" "$(LC_ALL=C grep -a -c -e '^FAIL  [A-Z][0-9]' "$out")"; fi

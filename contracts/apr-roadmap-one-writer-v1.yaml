@@ -16,11 +16,12 @@
 # PROOF LADDER, STATED HONESTLY
 #   * L1 — every script exists and is wired (ci/sections.yml, guard-tree job).
 #   * L2 — falsification MEASURED by hermetic case tables and mutant runs:
-#          roadmap_aggregate.sh 24 rows / 10 mutants, roadmap_one_writer_ci.sh
-#          16 / 8, check_roadmap_one_writer.sh 13 / 7, roadmap_writer_nightly.sh
+#          roadmap_aggregate.sh 25 rows / 11 mutants, roadmap_one_writer_ci.sh
+#          16 / 9, check_roadmap_one_writer.sh 13 / 8, roadmap_writer_nightly.sh
 #          9 / 8, roadmap_to_fragments.sh 11 / 7,
 #          check_roadmap_fragment_required.sh 23 / 2,
-#          check_publish_preflight.sh R9 7 rows; every mutant killed.
+#          check_publish_preflight.sh R9 7 rows, check_row_pr_write_set.sh
+#          17 / 1; every mutant killed.
 #   * L3/L4 — NOT APPLICABLE: a generated YAML data file, not a kernel.
 #   * WHAT BLOCKS FROM THE START: R9; every EXISTING verdict moved onto the
 #     fresh copy (R3 and R4 on fresh refs, pmat work validate on the fresh
@@ -81,7 +82,7 @@ equations:
     domain: 'docs/roadmaps/roadmap.yaml and docs/roadmaps/entries/*.yaml'
     codomain: 'bytes, or a refusal'
     invariants:
-    - 'BYTE-IDENTICAL TO THE PYTHON GENERATOR, with the same refusals (rows D1, P1-P7).'
+    - 'BYTE-IDENTICAL TO THE PYTHON GENERATOR, with the same refusals (rows D1, P1-P7, L1, L2).'
     preconditions: []
     postconditions:
     - 'exit 0 ok · 1 refused or stale · 2 environment (never a pass)'
@@ -114,7 +115,8 @@ equations:
     domain: 'a pull request diff'
     codomain: 'bool'
     invariants:
-    - 'A HAND EDIT IN A WRITER-SHAPED PR STAYS NAMED, covered by a fragment or not, and so does a deleted entry (rows W7, W8, W9; R4 FAIL CHANGED / FAIL DRIFT).'
+    - 'A HAND EDIT IN A WRITER-SHAPED PR STAYS NAMED, covered by a fragment or not, and so does a deleted entry: on the stale path by this judge (rows W7, W8, W9); on the fresh path a base-only edit equals aggregate(head), so the judge accepts it and R4 rule 1 names it and BLOCKS (R4 row "a lifecycle edit written straight into the base"; R4 FAIL CHANGED / FAIL DRIFT).'
+    - 'A ROW PR (agent/<DAG-row>) writes no fragment either: check_row_pr_write_set.sh rule 2 reads docs/roadmaps/entries/ as it reads roadmap.yaml, so the move to fragments makes that guard compare no less (round-3 L; its row 14, mutant nofrag).'
     preconditions: []
     postconditions:
     - 'the tag check still requires committed == fresh'
@@ -179,13 +181,14 @@ falsification_tests:
       UTF-8 and a dangling link named *.yaml exit 1, as python does (P6, P7);
       the id is the filename (P1), PMAT-5 beside PMAT-05 is two entries (P2), a
       missing final newline is pasted verbatim (P3) and CRLF reads as LF (P4),
-      each as python does.
+      each as python does; a symlinked fragment (L1) and a symlinked entries
+      DIR (L2) are followed, as python's open() and os.listdir follow them.
     test: 'bash scripts/roadmap_aggregate.sh --selftest && bash scripts/roadmap_aggregate.sh --mutants'
     if_fails: >-
       the generated file depends on which generator ran, or two PRs mint one
       ticket through spelling twins
     mutation: >-
-      --mutants: strnum numge append idline addnl nocr nofollow nosup noutf8 nofix, all killed.
+      --mutants: strnum numge append idline addnl nocr nofollow nosup noutf8 nofix nodirlink, all killed.
 
   - id: RMOW-F-002
     rule: readers see the fresh aggregate; diff guards judge fresh refs
@@ -201,7 +204,8 @@ falsification_tests:
       a fragment-only PR changes an entry non-additively and every diff guard
       passes because roadmap.yaml is untouched
     mutation: >-
-      --mutants: stalefresh novalidate norefs regenpass noblock nofreshgate softenv wiring, all killed;
+      --mutants: stalefresh novalidate norefs regenpass noblock nofreshgate softenv wiring refsany, all
+      killed; refsany over-blocks, so the control rows O1-O3 and P1 can turn RED;
       it also runs check_roadmap_fragment_required.sh --mutants (movednovalid nomb).
 
   - id: RMOW-F-003
@@ -219,7 +223,8 @@ falsification_tests:
     if_fails: >-
       the writer PR is refused forever, or it carries a hand edit through
     mutation: >-
-      --mutants: anyshape noequal nostale anystale nofaithful nodelete nomb, all killed;
+      --mutants: anyshape noequal nostale anystale nofaithful nodelete nomb nameall, all killed;
+      nameall names every change, so the control rows W1, W3, W5 can turn RED;
       R4 --mutants: movednovalid nomb, all killed.
 
   - id: RMOW-F-004

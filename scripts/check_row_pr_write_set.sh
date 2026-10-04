@@ -39,7 +39,7 @@ DAG_DEFAULT="docs/specifications/pp-066-dag.yaml"
 COUNT_RE='[0-9]+\*{0,2}( +[a-z]+){0,2} +(workspace crates?|contracts?|CLI commands?)\b'   # = check_readme_claims.sh's claim extractors: a line they do not read is not a claim
 ORCHESTRATOR_RE='^agent/(pp-066-|pr-triage)'
 
-usage() { printf 'usage: %s --base <ref> --head <ref> [--branch <name>] [--event <name>] [--dag <yaml>] [--readme <md>] | --self-test\n' "$PROG" >&2; exit 2; }
+usage() { printf 'usage: %s --base <ref> --head <ref> [--branch <name>] [--event <name>] [--dag <yaml>] [--readme <md>] | --self-test | --mutants\n' "$PROG" >&2; exit 2; }
 
 row_ids() { # row_ids <repo> <base> <dag relpath> -> one id per line; the DAG is read at the BASE (a PR that renames or deletes it still has a base)
     git -C "$1" show "$2:$3" 2>/dev/null | python3 -c '
@@ -78,6 +78,13 @@ judge() { # judge <repo> <base> <head> <branch> <event> <dag> <readme> -> 0 clea
     if printf '%s\n' "$changed" | grep -qxF -- docs/roadmaps/roadmap.yaml; then
         printf 'FAIL  %s: row PR %s writes docs/roadmaps/roadmap.yaml — pmat work complete and the ticket edits belong to the orchestrator docs commit\n' "$PROG" "$branch"; rc=1
     fi
+    # T21 (RQ-8): a ticket edit now lands as a fragment, docs/roadmaps/entries/<ID>.yaml, and roadmap.yaml is
+    # generated from them; a fragment-only row PR is the same ticket edit, so the rule reads entries/ too
+    local frags; frags=$(printf '%s\n' "$changed" | grep -E '^docs/roadmaps/entries/' || true)
+    [ "${ROWPR_MUTANT:-}" = nofrag ] && frags=""   # --mutants: the fragment rule removed
+    if [ -n "$frags" ]; then
+        printf 'FAIL  %s: row PR %s writes roadmap fragment(s) %s — the ticket edits belong to the orchestrator docs commit\n' "$PROG" "$branch" "$(printf '%s' "$frags" | tr '\n' ' ')"; rc=1
+    fi
     if printf '%s\n' "$changed" | grep -qxF -- "$readme"; then
         local hits; hits=$(git -C "$repo" diff "$base" "$head" -- "$readme" | grep -E '^[-+][^-+]' | grep -E -- "$COUNT_RE" || true)
         if [ -n "$hits" ]; then
@@ -92,6 +99,15 @@ judge() { # judge <repo> <base> <head> <branch> <event> <dag> <readme> -> 0 clea
 # ---------------------------------------------------------------------------
 # --self-test: a fixture repo, both polarities per rule
 # ---------------------------------------------------------------------------
+if [ "${1:-}" = "--mutants" ]; then # each mutant must turn --self-test RED
+    mrc=0
+    for m in nofrag; do
+        if ROWPR_MUTANT=$m bash "${BASH_SOURCE[0]}" --self-test > /dev/null 2>&1; then printf 'FAIL  mutant %s survived --self-test\n' "$m"; mrc=1
+        else printf 'ok    mutant %s killed\n' "$m"; fi
+    done
+    [ "$mrc" = 0 ] && printf '1/1 mutants killed\n'
+    exit "$mrc"
+fi
 if [ "${1:-}" = "--self-test" ]; then
     TD=$(mktemp -d "${TMPDIR:-/tmp}/rowpr-selftest.XXXXXX")
     safe_rm_scratch() {
@@ -139,6 +155,10 @@ if [ "${1:-}" = "--self-test" ]; then
     row 0 "push shape: REPORT, exit 0"                                                agent/G-11 push        'echo "- {id: Z-1}" >> docs/specifications/pp-066-dag.yaml'
     for i in 12 13; do grep -q '^REPORT' "$TD/out.$i" || { printf 'FAIL  row %-2s printed no REPORT line: a silent skip\n' "$i"; red=1; }; done
     grep -q 'pp-066-dag.yaml' "$TD/out.11" || { printf 'FAIL  row 11 did not name the renamed file\n'; red=1; }
+    row 1 "row PR writing ONLY a roadmap fragment entries/PMAT-9.yaml: RED (T21; the mutant nofrag)" agent/R-0 pull_request 'mkdir -p docs/roadmaps/entries && printf -- "- id: PMAT-9\n" > docs/roadmaps/entries/PMAT-9.yaml'
+    grep -q 'entries/PMAT-9.yaml' "$TD/out.$n" || { printf 'FAIL  row %s did not name the fragment\n' "$n"; red=1; }
+    row 0 "a fix/ branch writing a fragment: not an agent branch"                     fix/thing  pull_request 'mkdir -p docs/roadmaps/entries && printf -- "- id: PMAT-9\n" > docs/roadmaps/entries/PMAT-9.yaml'
+    row 0 "orchestrator branch writing a fragment: not a row PR"                      agent/pp-066-spec pull_request 'mkdir -p docs/roadmaps/entries && printf -- "- id: PMAT-9\n" > docs/roadmaps/entries/PMAT-9.yaml'
     n2=$((n + 1)); rc=0; judge "$R" "$BASE" "$BASE" agent/G-11 pull_request docs/specifications/nope.yaml README.md >"$TD/out.$n2" 2>&1 || rc=$?
     if [ "$rc" = 2 ]; then printf 'ok    row %-2s rc=2  a DAG missing at the base is ENV (exit 2), never a pass\n' "$n2"; else printf 'FAIL  row %-2s rc=%s (wanted 2)  a missing DAG\n' "$n2" "$rc"; red=1; fi
     printf '%s/%s rows\n' "$((n2 - red))" "$n2"

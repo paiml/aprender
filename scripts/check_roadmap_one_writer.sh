@@ -34,6 +34,7 @@ is_generated() { local g; for g in $GENERATED; do [ "$1" = "$g" ] && return 0; d
 judge() {
     local base=$1 head=$2 files f other="" td rc p2 mb="" src
     files=$(git -C "$REPO_ROOT" diff --name-only "$base" "$head" --) || { printf 'ENV   %s: git diff %s..%s failed\n' "$PROG" "$base" "$head"; return 2; }
+    [ "$MUT" = nameall ] && { printf 'FAIL  mutant nameall names every change\n'; return 1; }   # over-naming: controls W1 W3 W5 must turn RED
     if ! grep -q -x -F -e "$RM" <<< "$files"; then
         printf 'ok    %s: this change does not write %s (its fragments are aggregated by CI and by the nightly writer)\n' "$PROG" "$RM"; return 0
     fi
@@ -181,7 +182,7 @@ selftest() {
 
 mutants() {
     local m alive=0
-    for m in anyshape noequal nostale anystale nofaithful nodelete nomb; do
+    for m in anyshape noequal nostale anystale nofaithful nodelete nomb nameall; do
         if ROADMAP_ONE_WRITER_MUTANT=$m bash "$SELF" --selftest > /dev/null 2>&1; then alive=$((alive + 1)); printf 'SURVIVED  mutant %s\n' "$m"
         else printf 'killed    mutant %s\n' "$m"; fi
     done
