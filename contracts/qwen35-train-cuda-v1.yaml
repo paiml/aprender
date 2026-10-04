@@ -27,7 +27,7 @@ status: PROPOSED
 equations:
   gdn_recurrence:
     formula: 'S̃_t = e^{g_t}·S_{t−1};  S_t = S̃_t + β_t (v_t − S̃_t k_t) k_tᵀ;  o_t = S_t q_t / √d_k'
-    domain: 'per value head h with key head h mod H_k (the GGUF tiled order); S ∈ R^{d_v × d_k}; t = 1..T'
+    domain: 'per value head h with key head h mod H_k (the GGUF tiled order); S ∈ R^{d_v × d_k}, row-major, which is the memory layout of the CPU oracle and of serve (gdn.rs on la-72/fold-r2r3 keeps value row j of head h at state[(h·d_v + j)·d_k ..]; qwen35-train-gdn-v1 writes the same state as its transpose, S ∈ R^{d_k × d_v}); t = 1..T'
     invariants:
     - S_0 = 0 for every sequence; no state crosses from one sequence of the batch to the next
     - the scan state is f32 on every path, including T2's bf16 path
