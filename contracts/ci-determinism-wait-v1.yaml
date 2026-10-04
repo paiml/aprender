@@ -12,9 +12,13 @@
 # Verification level:
 #   * L1 — scripts/check_determinism_wait.sh exists; its `check` mode reads the
 #          determinism job in .github/workflows/ci.yml.
-#   * L2 — falsification MEASURED by its case table (14 rows: planted ci.yml
-#          copies and planted receipts) and 6 mutants, every one killed; the
-#          check is RED on origin/main's ci.yml (W1, W2, W3).
+#   * L2 — falsification MEASURED by its case table (21 rows: planted ci.yml,
+#          driver and sections copies, planted receipts) and 10 mutants, every one
+#          killed; the
+#          check is RED on the pre-T42 ci.yml (W1, W2, W3). W6-W8 read the driver,
+#          the gate and the compare section as source: structural, not executed.
+#          The end-to-end chain is measured by the first real run whose x86-main
+#          fails before its upload.
 #   * L3/L4 — NOT APPLICABLE: a workflow-scheduling rule, not a kernel.
 #   * WHAT BLOCKS: unchanged. The determinism verdict is still the compare
 #     section (scripts/ci/determinism-compare.sh), read by `gate` as
@@ -51,14 +55,15 @@ metadata:
 equations:
   the_arm64_runner_is_not_held:
     formula: |
-      held_s(missing X64) = FAT_ARTIFACT_WAIT_S of the determinism job (driver default 3600 when unset)
+      held_s(missing X64) = FAT_ARTIFACT_WAIT_S of the determinism job, counted from the job's start (driver default 3600 when unset)
+      before the job starts, W1 alone decides: with needs ∋ x86-main the runner is not taken while x86-main is queued
       rest_calls(wait)    = held_s / 20 + 1
       T42: needs ∋ x86-main ∧ FAT_ARTIFACT_WAIT_S = 0  ⇒  held_s = 0, rest_calls = 1
       before T42: no needs, no override               ⇒  held_s = 3600, rest_calls = 181
     domain: 'the determinism job block of a ci.yml'
     codomain: 'check rc {0, 1, 2}; held_s, rest_calls'
     invariants:
-    - 'the job needs x86-main (W1) and carries FAT_ARTIFACT_WAIT_S "0" (W3)'
+    - 'the job needs x86-main (W1) and carries FAT_ARTIFACT_WAIT_S "0" at job level with no step-level override (W3); held_s is computed from the wait alone, the not-held-while-queued half is W1'
     preconditions:
     - 'x86-main uploads determinism-X64 in a step before it concludes'
     postconditions:
@@ -72,8 +77,9 @@ equations:
     domain: 'one CI run'
     codomain: '{RED, GREEN}'
     invariants:
-    - 'never a skip, never a pass, when the X64 raster is missing (W2, C3)'
+    - 'never a skip, never a pass, when the X64 raster is missing (W2, W6-W8; C3 measures only the compare refusing one receipt)'
     - 'FAT_EXPECT_ARTIFACTS still names determinism-X64 and determinism-ARM64 (W4); the job still runs determinism[ARM64] and determinism-compare (W5)'
+    - 'the driver returns failure on the first read past its deadline (W6), the gate needs determinism under always() and reads DET:determinism-compare (W7), the compare section has no continue-on-error (W8): read as source, not executed'
     preconditions:
     - 'the run is not cancelled'
     postconditions:
@@ -102,7 +108,7 @@ falsification_tests:
       an ARM64 clean-room runner sits for an hour per run whose x86-main is
       queued or failed, and the wait spends ~181 shared REST calls
     mutation: >-
-      --mutants: noneeds nowait, killed.
+      --mutants: noneeds nowait nostepwait, killed.
 
   - id: CDW-F-002
     rule: a missing X64 raster and a hash mismatch are RED, never a skip or a pass
@@ -110,19 +116,26 @@ falsification_tests:
       A copy whose determinism job has no if: (default success()) or if:
       success() is RED: a failed x86-main would skip the job (W2, W2b). A copy
       that drops determinism-X64 from FAT_EXPECT_ARTIFACTS (W4) or the compare
-      section (W5) is RED. determinism-compare.sh on planted receipts: equal SVG
-      digests GREEN (C1), different SVG digests RED (C2), the X64 receipt
-      missing RED (C3).
+      section (W5), or names it only in a comment (W5b), is RED; so is a
+      step-level wait of 3600 under the job's "0" (W3c). A driver copy that
+      returns success past the deadline (D1) or no longer reads
+      FAT_ARTIFACT_WAIT_S (D2), a gate that drops DET:determinism-compare (G1)
+      or is not always() (G2), and a compare section with continue-on-error
+      (S1) are RED. determinism-compare.sh on planted receipts: equal SVG
+      digests GREEN (C1), different SVG digests RED (C2), one receipt only
+      RED (C3).
     test: 'bash scripts/check_determinism_wait.sh --selftest && bash scripts/check_determinism_wait.sh --mutants'
     if_fails: >-
       a run whose X64 raster never came reads as skipped or green, or a real
       non-determinism passes
     mutation: >-
-      --mutants: noif noexpect nocompare cmpnosvg (a compare that calls every SVG pair identical), killed; 6/6 with CDW-F-001's (2026-10-04).
+      --mutants: noif noexpect nocompare nodriver nogate nocoe cmpnosvg (a compare that calls every SVG pair identical), killed; 10/10 with CDW-F-001's (2026-10-04).
 
 non_goals:
   - "Making x86-main publish its raster sooner, or growing the x86 pool: a raster that never comes is reported RED at once, not waited for."
   - "Changing what the comparison decides: scripts/ci/determinism-compare.sh and the gate's DET:determinism-compare read are unchanged."
+  - "An earlier determinism verdict. The job now starts when x86-main concludes, not when the X64 raster is uploaded, so the verdict arrives after x86-main's last section. The gate already needs x86-main, so the gate's own verdict moves later only by the determinism job's run after that (runner pickup, ~65 s ARM64 raster, the compare), not by x86-main's length."
+  - "Telling a raster from a previous attempt apart: after a re-run of failed jobs, an earlier attempt's determinism-X64 stays listed for the run. That was already so before T42; the single read neither adds nor removes it."
   - "Conditional (If-None-Match) artifact reads: with one read per job there is no poll to make conditional, and fat_driver.py does not grow."
 
 binding_registry:
