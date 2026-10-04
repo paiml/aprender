@@ -97,6 +97,10 @@ self_test() {
     row a_lost_race_to_an_older_commit_keeps_the_winner 0 "C=$c1 KEPT night 2026-10-11 (another pick won the race)" "PICKED" -- env PATH="$FX/bin-ff:$PATH" bash "$SCRIPT_PATH" pick --repo "$W" --night 2026-10-11 --sha "$c3"
     row a_lost_race_leaves_the_ref_at_the_winner 0 "$c1" "$c3" -- bash "$SCRIPT_PATH" resolve --repo "$W" --night 2026-10-11
     row an_unknown_commit_is_not_measured 2 "cannot tell whether" "PICKED" -- bash "$SCRIPT_PATH" pick --repo "$W" --night 2026-10-12 --sha 0123456789abcdef0123456789abcdef01234567
+    # a decoy: a BRANCH named refs/nightly/<night> must not be read as the night's ref (ls-remote matches by tail)
+    git -C "$W" push -q origin "$br:refs/heads/refs/nightly/2026-10-13" || caller_error "fixture decoy push"
+    row a_decoy_branch_is_not_the_night 2 "is ambiguous" "C=" -- bash "$SCRIPT_PATH" pick --repo "$W" --night 2026-10-13 --sha "$c3"
+    row a_decoy_branch_does_not_resolve 2 "is ambiguous" "$br" -- bash "$SCRIPT_PATH" resolve --repo "$W" --night 2026-10-13
     row unreachable_remote_is_not_measured 2 "NOT_MEASURED" "PICKED" -- bash "$SCRIPT_PATH" pick --repo "$W" --remote "$FX/absent.git" --night 2026-10-08 --sha "$c2"
     row unreachable_remote_resolve_is_not_measured 2 "cannot read" "" -- bash "$SCRIPT_PATH" resolve --repo "$W" --remote "$FX/absent.git" --night "$n"
     row malformed_night_is_a_caller_error 3 "not YYYY-MM-DD" "PICKED" -- bash "$SCRIPT_PATH" pick --repo "$W" --night 2026-1-4 --sha "$c1"
@@ -119,9 +123,10 @@ m06_unreadable_is_absent	s/\[ "\$rc" -eq 0 \] || return 2$/[ "$rc" -eq 0 ] || re
 m07_night_is_the_fire_date	s/\$((e - 43200))/$e/
 m08_bad_night_accepted	s/grep -qxE .\[0-9\]{4}-\[0-9\]{2}-\[0-9\]{2}. || {/true || {/
 m09_bad_sha_accepted	s/grep -qxE .\[0-9a-f\]{40}. || {/true || {/
-m10_race_loser_claims_picked	s/printf .C=%s KEPT night %s (another pick won the race)\\n. "\$c" "\$3"$/printf '"'"'C=%s PICKED night %s\\n'"'"' "$c" "$3"/
+m10_race_loser_claims_picked	s/printf .C=%s KEPT night %s (another pick won the race)\\n. "\$c" "\$3"/printf '"'"'C=%s PICKED night %s\\n'"'"' "$c" "$3"/
 m11_plain_push_fast_forwards	s/ --force-with-lease="refs\/nightly\/\$3:"//
-m12_unknown_commit_is_red	/cannot tell whether/s/return 2 ;;/return 1 ;;/'
+m12_unknown_commit_is_red	/cannot tell whether/s/return 2 ;;/return 1 ;;/
+m13_ref_name_matched_by_tail	s/NF && \$2 != r { found = 1 }/NF \&\& 0 { found = 1 }/'
 mutants() {
     local tmp name expr killed=0 total=0 errors=0 out
     tmp="$(mktemp -d "${TMPDIR:-/tmp}/np-mu.XXXXXX")" || caller_error "no temp dir"

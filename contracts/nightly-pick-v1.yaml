@@ -43,6 +43,7 @@ equations:
     invariants:
       - "a producer handed main's head instead of C is RED"
       - "an unreadable remote is NOT_MEASURED, never OK"
+      - "another remote ref whose name ends in refs/nightly/<n> (git matches a pattern and a push destination by tail) makes the night ambiguous: NOT_MEASURED, never a C"
 
 proof_obligations:
   - id: NP-INV-001
@@ -79,13 +80,13 @@ proof_obligations:
 falsification_tests:
   - id: FALSIFY-NP-001
     rule: "The picker is right on every row of its case table, including the planted merge after the pick"
-    prediction: "Against a fixture remote: the first pick publishes the ref; a merge to main then a second pick keeps the first C; the train-line stub is identical before and after the merge while a main-head reader's line changes (the counter-row that proves the plant can fail); a producer handed main's head is RED; a commit not on main is refused with no ref; an existing or racing ref is never overwritten, including a race won by an older commit that a plain push would fast-forward; a commit whose ancestry cannot be read is not_measured; an unreadable remote and an unpicked night are not_measured; malformed input is a caller error; a late fire lands on its night"
+    prediction: "Against a fixture remote: the first pick publishes the ref; a merge to main then a second pick keeps the first C; the train-line stub is identical before and after the merge while a main-head reader's line changes (the counter-row that proves the plant can fail); a producer handed main's head is RED; a commit not on main is refused with no ref; an existing or racing ref is never overwritten, including a race won by an older commit that a plain push would fast-forward; a commit whose ancestry cannot be read is not_measured; a decoy branch named refs/nightly/<night> makes the night ambiguous and not_measured; an unreadable remote and an unpicked night are not_measured; malformed input is a caller error; a late fire lands on its night"
     test: "bash scripts/release/nightly_pick.sh --self-test"
     if_fails: "A merge after the pick can change what the night measured, so producers, the train and a release can disagree on the commit they judged"
 
   - id: FALSIFY-NP-002
     rule: "The case table can still fail on the defects it names"
-    prediction: "Each planted mutant (a force push that moves the ref, a plain push that fast-forwards a racing ref, an unreadable ancestry refused as RED, an existing ref ignored, a branch commit accepted, verify accepting any commit, an unpicked night resolving, an unreadable remote read as absent, the night taken as the fire date, a malformed night or commit accepted, a lost race claimed as PICKED) turns --self-test RED; a mutant whose patch does not apply is an error, never a survivor"
+    prediction: "Each planted mutant (a force push that moves the ref, a plain push that fast-forwards a racing ref, an unreadable ancestry refused as RED, a decoy ref matched by its tail, an existing ref ignored, a branch commit accepted, verify accepting any commit, an unpicked night resolving, an unreadable remote read as absent, the night taken as the fire date, a malformed night or commit accepted, a lost race claimed as PICKED) turns --self-test RED; a mutant whose patch does not apply is an error, never a survivor"
     test: "bash scripts/release/nightly_pick.sh --mutants"
     if_fails: "The case table is theater: it would pass a picker that lets a merge move the night's C"
 

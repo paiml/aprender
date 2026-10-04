@@ -33,8 +33,15 @@ np__read() { # REPO REMOTE NIGHT -> the ref's sha on stdout; 0 found, 1 absent, 
     local out rc=0
     out="$(git -C "$1" ls-remote --refs "$2" "refs/nightly/$3" 2>/dev/null)" || rc=$?
     [ "$rc" -eq 0 ] || return 2
+    # exact name only. ls-remote matches a pattern by its tail, and so does a push destination, so another ref ending in
+    # refs/nightly/N (a branch refs/heads/refs/nightly/N) would be read as C, and would swallow the pick's push.
+    # Such a name makes the night ambiguous: unreadable (2), never a C.
+    if printf '%s\n' "$out" | awk -v r="refs/nightly/$3" 'NF && $2 != r { found = 1 } END { exit !found }'; then
+        printf 'NP: refs/nightly/%s is ambiguous on the remote (another ref ends in that name)\n' "$3" >&2; return 2
+    fi
+    out="$(printf '%s\n' "$out" | awk -v r="refs/nightly/$3" '$2 == r { print $1; exit }')"
     [ -n "$out" ] || return 1
-    printf '%s\n' "${out%%[[:space:]]*}"
+    printf '%s\n' "$out"
 }
 
 np_resolve() { # REPO REMOTE NIGHT
@@ -80,5 +87,5 @@ np_pick() { # REPO REMOTE NIGHT SHA
     rc=0; git -C "$1" push -q --force-with-lease="refs/nightly/$3:" "$2" "$4:refs/nightly/$3" 2>/dev/null || rc=$?
     c="$(np__read "$1" "$2" "$3")" || { printf 'NP NOT_MEASURED: refs/nightly/%s absent or unreadable after the push (push rc=%s)\n' "$3" "$rc"; return 2; }
     if [ "$c" = "$4" ]; then printf 'C=%s PICKED night %s\n' "$c" "$3"; return 0; fi
-    printf 'C=%s KEPT night %s (another pick won the race)\n' "$c" "$3"
+    printf 'C=%s KEPT night %s (another pick won the race)\n' "$c" "$3"; return 0
 }
