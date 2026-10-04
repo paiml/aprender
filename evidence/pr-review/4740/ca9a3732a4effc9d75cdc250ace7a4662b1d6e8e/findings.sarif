@@ -1,0 +1,212 @@
+{
+  "$schema": "https://docs.oasis-open.org/sarif/sarif/v2.1.0/errata01/os/schemas/sarif-schema-2.1.0.json",
+  "version": "2.1.0",
+  "runs": [
+    {
+      "tool": {
+        "driver": {
+          "name": "pmat"
+        }
+      },
+      "results": [
+        {
+          "ruleId": "complexity_tdg_not_measurable",
+          "level": "note",
+          "message": {
+            "text": "pmat analyze complexity --path scripts analyzed Python only; the three changed files are .sh/.yml, which pmat has no analyzer for. complexity_delta and tdg_delta are empty because nothing was measured, not because they are zero. satd: the only TODO-like tokens in the added lines are the mktemp templates XXXXXX (two lines), not debt markers, so satd_introduced is empty."
+          },
+          "properties": {
+            "grounding": "measured",
+            "command": [
+              "pmat",
+              "analyze",
+              "complexity",
+              "--path",
+              "scripts"
+            ],
+            "exit_code": 0,
+            "stdout_sha256": "8b3ef86bcb17d6fc25bef8a87746b1afcea68b306c71632b496247c383200051",
+            "failure_scenario": "A reader takes an empty complexity_delta as a measured zero; for a shell/YAML-only diff it is unmeasured, so a long shell function added here is invisible to the complexity gate.",
+            "precision_class": "advisory"
+          }
+        },
+        {
+          "ruleId": "duplication_scan_name_collision_only",
+          "level": "note",
+          "message": {
+            "text": "pr_review_duplication_scan.sh over 1330/1330 horizon branches (rust semantic via pmat query, everything else lexical) found 3 hits, all for needle step_if in scripts/check_guard_steps_run_all.sh: that file only emits a fixture-variant string of the same name; it does not define a step-if reader. pmat query for the partition/union idea surfaced scripts/ci/sigma_executed.py (nextest_list_ids, run), which the diff CALLS rather than re-implements. No prior art for the diff found. The scan is an exact name match and cannot see a re-implementation under another name."
+          },
+          "properties": {
+            "grounding": "measured",
+            "command": [
+              "bash",
+              "scripts/pr_review_duplication_scan.sh",
+              "--base",
+              "316dee2cd4b3b3990ad47cc1a7a661c979a4e1d3",
+              "--head",
+              "ca9a3732a4effc9d75cdc250ace7a4662b1d6e8e",
+              "--rust-semantic",
+              "--json",
+              "dup.json"
+            ],
+            "exit_code": 0,
+            "stdout_sha256": "1be8bdb5200a2fa23251b74e80a27a7c0b9bfc1150428602721ee46136d7b470",
+            "failure_scenario": "A second copy of the step_if awk reader would drift from the other; none exists, so the failure scenario (two readers disagreeing on what a step if: is) is not present at this head.",
+            "precision_class": "advisory"
+          }
+        },
+        {
+          "ruleId": "guard_table_22_rows_pass",
+          "level": "note",
+          "message": {
+            "text": "bash scripts/check_quick_tier_shard_sigma.sh re-run by the reviewer at ca9a3732a4: rc 0, 22 ok rows, 0 FAIL rows."
+          },
+          "properties": {
+            "grounding": "measured",
+            "command": [
+              "bash",
+              "scripts/check_quick_tier_shard_sigma.sh"
+            ],
+            "exit_code": 0,
+            "stdout_sha256": "1fdeaa00ee248a7b5618bec2c63997087df2a351472e7610d03891b513649a4c",
+            "failure_scenario": "If the table were not re-run, a PASS here would be the author report repeated; the rc and the row count are this run, not the author.",
+            "precision_class": "advisory"
+          }
+        },
+        {
+          "ruleId": "guard_self_test_passes",
+          "level": "note",
+          "message": {
+            "text": "bash scripts/check_quick_tier_shard_sigma.sh --self-test: rc 0, SELF-TEST PASSED, 18 planted-rule rows each RED plus the ENV rc=2 row (19 ok lines). The committed mutation set kills 18 of 18."
+          },
+          "properties": {
+            "grounding": "measured",
+            "command": [
+              "bash",
+              "scripts/check_quick_tier_shard_sigma.sh",
+              "--self-test"
+            ],
+            "exit_code": 0,
+            "stdout_sha256": "70acf2ae479eddb25f9d32c283bd2bf151ac4daefbe8da1d889d564d20544ae9",
+            "failure_scenario": "A planted wrong rule that the table still passes would mean the guard states a rule nothing tests; all 18 turn the table RED.",
+            "precision_class": "advisory"
+          }
+        },
+        {
+          "ruleId": "guard_survivor_n3_stage_if_constant_false",
+          "level": "warning",
+          "message": {
+            "text": "Reviewer re-measured prior-lane survivor n3: ci/sections.yml staging step if: replaced by ${{ 0 == 1 }} (staging never runs) leaves the guard at rc 0. The shard-spelling check recognises only shard-ish tokens and the literal false, not a constant-false expression."
+          },
+          "properties": {
+            "grounding": "measured",
+            "command": [
+              "env",
+              "QUICK_SIGMA_SECTIONS=<mutant n3>",
+              "bash",
+              "scripts/check_quick_tier_shard_sigma.sh"
+            ],
+            "exit_code": 0,
+            "stdout_sha256": "1fdeaa00ee248a7b5618bec2c63997087df2a351472e7610d03891b513649a4c",
+            "failure_scenario": "A later edit that makes the staging step constant-false by an expression the regex does not know passes the guard; at run time the fan-in then goes RED on the missing artifact, so the failure is loud, but the guard that exists to catch it earlier is silent.",
+            "precision_class": "advisory"
+          }
+        },
+        {
+          "ruleId": "guard_survivor_n5_keep_if_extra_conjunct",
+          "level": "warning",
+          "message": {
+            "text": "Reviewer re-measured prior-lane survivor n5: the keep step if: changed to  ... && endsWith(github.job, 1)  (runs only on a job named ...1) leaves the guard at rc 0, the extra conjunct not being on the pattern list."
+          },
+          "properties": {
+            "grounding": "measured",
+            "command": [
+              "env",
+              "QUICK_SIGMA_SECTIONS=<mutant n5>",
+              "bash",
+              "scripts/check_quick_tier_shard_sigma.sh"
+            ],
+            "exit_code": 0,
+            "stdout_sha256": "1fdeaa00ee248a7b5618bec2c63997087df2a351472e7610d03891b513649a4c",
+            "failure_scenario": "A shard-narrowing conjunct on the keep step passes the guard; at run time shards 2 and 3 stage no junit and the fan-in goes RED (loud, late).",
+            "precision_class": "advisory"
+          }
+        },
+        {
+          "ruleId": "guard_survivor_n6_upload_name_substring",
+          "level": "warning",
+          "message": {
+            "text": "Reviewer re-measured prior-lane survivor n6: the upload artifact name sigma-shard-matrix.shard-x (a suffix on the real name) leaves the guard at rc 0 because the name check is a substring match; the fan-in reads sigma-shard-N/ exactly."
+          },
+          "properties": {
+            "grounding": "measured",
+            "command": [
+              "env",
+              "QUICK_SIGMA_SECTIONS=<mutant n6>",
+              "bash",
+              "scripts/check_quick_tier_shard_sigma.sh"
+            ],
+            "exit_code": 0,
+            "stdout_sha256": "1fdeaa00ee248a7b5618bec2c63997087df2a351472e7610d03891b513649a4c",
+            "failure_scenario": "A suffixed artifact name passes the guard; the fan-in then finds no sigma-shard-N directory and goes RED at run time.",
+            "precision_class": "advisory"
+          }
+        },
+        {
+          "ruleId": "guard_scope_is_report_only",
+          "level": "note",
+          "message": {
+            "text": "The new CI step runs the guard as bash ... || echo ::warning::, report-only until three green nights (L31), stated in the diff. B3 (guard mutation score below 100%) is therefore read on the committed self-test set, 18 of 18, with the three survivors above recorded as advisory findings; a stricter reading that counts the reviewer-derived survivors gives 18/21 and would be B3."
+          },
+          "properties": {
+            "grounding": "asserted",
+            "rationale": "Read from the diff comment and the step || echo; not executed. The classification of B3 scope is a judgement the guard does not evaluate (it states B3 is not evaluated here).",
+            "failure_scenario": "If the survivors are read as B3, the PR is BLOCK on a guard that cannot itself fail the build; if not, three guard blind spots are accepted for a report-only rollout.",
+            "precision_class": "advisory"
+          }
+        },
+        {
+          "ruleId": "prior_lane_ci_logic_empty_partition_junit",
+          "level": "note",
+          "message": {
+            "text": "Prior independent Sonnet lane (CI-logic, PASS-WITH-NITS, no defects): the fan-in requires every shard to stage a quick-tree junit; a shard whose hash partition is empty relies on nextest writing a 0-testcase junit under --no-tests=warn. The author measured this in the CI image; this reviewer did not (no cargo run permitted)."
+          },
+          "properties": {
+            "grounding": "asserted",
+            "rationale": "Carried from the prior lane, author-measured, not re-measured by this reviewer; recorded as asserted so it is not read as measured here.",
+            "failure_scenario": "If a nextest version writes no junit file for an empty partition, a small quick selection goes RED at the fan-in with the staged-no-junit error instead of passing.",
+            "precision_class": "advisory"
+          }
+        },
+        {
+          "ruleId": "prior_lane_ci_logic_bash_dup_counts_skipped",
+          "level": "note",
+          "message": {
+            "text": "Prior lane advisory re-checked: the fan-in bash dup scan counts every testcase element including ones holding a skipped child, while scripts/ci/sigma_executed.py (line 60, self-test rows at 169-175) treats a skipped testcase as not executed. The mismatch can only add a duplicate id (false RED), never hide one."
+          },
+          "properties": {
+            "grounding": "measured",
+            "command": [
+              "grep",
+              "-n",
+              "skipped",
+              "scripts/ci/sigma_executed.py"
+            ],
+            "exit_code": 0,
+            "stdout_sha256": "1ea591d45f99222a31650ad339734aeb5de2309c1b52ca414734ee78d8b481f3",
+            "failure_scenario": "Two partitions listing one id, one of them as skipped, go RED as run-on-more-than-one-shard although only one executed it.",
+            "precision_class": "advisory"
+          }
+        }
+      ]
+    },
+    {
+      "tool": {
+        "driver": {
+          "name": "antigravity"
+        }
+      },
+      "results": []
+    }
+  ]
+}
