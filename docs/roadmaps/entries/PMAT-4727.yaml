@@ -1,0 +1,18 @@
+- id: PMAT-4727
+  github_issue: 4727
+  item_type: task
+  title: 'FLAKE-0: e2e_modality_parity tests race on process-wide REALIZAR_* env vars; disable, then serialise force_backend/clear_backend_forcing'
+  status: planned
+  priority: critical
+  assigned_to: null
+  created: 2026-10-04T11:13:46Z
+  updated: 2026-10-04T11:13:46Z
+  spec: null
+  acceptance_criteria: []
+  phases: []
+  subtasks: []
+  estimated_effort: null
+  labels:
+  - kind:code
+  notes: null
+  epic: 3998
