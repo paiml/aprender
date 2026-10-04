@@ -97,11 +97,11 @@ equations:
 proof_obligations:
 - type: invariant
   property: Train's ids for a sample equal serve's ids for the same messages, then the answer, then the eos
-  formal: 'prepare_samples(m) = (prompt_serve(m), enc(answer(m)) ++ [id(<|im_end|>)])'
+  formal: '∀ m: prepare_samples(m) = (prompt_serve(m), enc(answer(m)) ++ [id(<|im_end|>)])'
   applies_to: all
 - type: equivalence
   property: The built-in Qwen3NoThink equals the model's own template with thinking off
-  formal: 'render(Qwen3NoThink, c) = render(T_model, c, enable_thinking = false), byte for byte'
+  formal: '∀ c: bytes(render(Qwen3NoThink, c)) = bytes(render(T_model, c, enable_thinking = false))'
   applies_to: all
 - type: invariant
   property: No sample is trained or scored with the end of its target cut off
