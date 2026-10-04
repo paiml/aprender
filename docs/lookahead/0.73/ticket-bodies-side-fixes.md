@@ -1,7 +1,7 @@
-# 0.73 L3 side-fix ticket bodies, S1 to S3 (DRAFT, not filed; la-73, 2026-10-03)
+# 0.73 L3 side-fix ticket bodies, S1 to S3 and S5 (DRAFT, not filed; la-73, 2026-10-03; S5 2026-10-04)
 
-These are three small fixes found while writing the 0.73 drafts. None of them blocks 0.73: no 0.73 model reaches the S1 or S2 code, and S3 deletes two files that nothing compiles.
-- **Filing:** after the cop writes LIVE 0.70.1, as PROPOSE-TICKET lines next to P1..P5 (`ticket-bodies-P1-P5.md`). L3 never mints (C277).
+These are four fixes found while writing the 0.73 drafts. None of them blocks 0.73: no 0.73 model reaches the S1 or S2 code, S3 deletes two files that nothing compiles, and S5 makes a guard catch every such file. (S4, a pv lint rule, has no body here.)
+- **Filing:** as PROPOSE-TICKET lines next to P1..P5 (`ticket-bodies-P1-P5.md`). S1..S3 went out on 2026-10-04 at 03:32Z, after LIVE 0.70.1; S5 goes out after the commit that adds it. L3 never mints (C277).
 - **Format:** the P-body shape. Each acceptance names a falsifier that is red at 316dee2cd4, a control that shows the test can tell the two paths apart, and the mutations that must turn it red.
 - **Citations:** at origin/main 316dee2cd4. Every defect marked [V] was read there.
 - **Contract:** S1 and S2 amend `cpu-q4k-activation-quant-v1`, the contract that `fused_gate_up.rs:173` names. The draft is `contracts-draft/cpu-q4k-activation-quant-v1.yaml` (1.1.0). It adds the equation `activation_path_selector`, the obligations AQ-SEL-005 and AQ-SEL-006, and FALSIFY-AQ-005..007.
@@ -122,7 +122,7 @@ No 0.73 model reaches it (R1 §11b). Neither scope caller at 316dee2cd4 reaches 
 **Defect [V]** No `mod` or `include!` names either file, so neither compiles. Both still look live.
 - `fused_q4k.rs` (360 lines) is a byte-identical copy of `q4k_dot_avx2.rs`, which `fused_k.rs:370` includes. A NEON arm added to the copy compiles away (R3 §13 row 1).
 - `fused_q.rs` (327 lines) is an older copy of `q5k_q6k_matvec.rs` (included at parallel_k.rs:498) that has since diverged: the first 114 lines match, then 155 lines differ.
-  - It holds a stale `fused_q4k_q8k_ffn_up_gate_into` (fused_q.rs:253) beside the live one (q5k_q6k_matvec.rs:380). That is the kernel S1 routes around, and a search for it finds two definitions.
+  - It holds a stale, uncompiled `fused_q4k_q8k_ffn_up_gate_into` (fused_q.rs:253) beside the live one (q5k_q6k_matvec.rs:380). That is the kernel S1 routes around, and a search for it finds two definitions.
 - Four falsify tests cite `fused_q.rs` as the CPU path (listed below), and `crates/aprender-serve/.pmat-baseline.json` lists both files.
 
 **Scope**
@@ -144,10 +144,56 @@ No 0.73 model reaches it (R1 §11b). Neither scope caller at 316dee2cd4 reaches 
 
 **Blocked by** Nothing.
 **Hosts** x86 CI. The NEON-Q4K-006 probe itself runs later, with NEON-Q4K-000.
-**Out of scope** Any other unreferenced file. This ticket deletes only the two that R3 §13 verified.
+**Out of scope** Any other unreferenced file. This ticket deletes only the two that R3 §13 verified; S5 covers the rest and the guard.
 
 ---
 
-## Status (2026-10-03 22:10Z)
-- None of S1..S3 is a 0.73 gate. `falsifier-landing-map.md` lists AQ-005..007 separately from the 42 0.73 falsifiers.
-- Filing: held under S-1 (C292) until LIVE 0.70.1, like P1..P5.
+## S5 — every src file must compile: widen the #3809 dark-file guard to the whole tree
+**Refs** #3999 (R5 F-R5-6, and L25 row 5). #3809, the dark-test-file guard this widens. #4502: its 7981643bfa (2026-10-01) deleted 3 parity files that never compiled. S3 deletes two more files of this class; S5 is the guard and the rest.
+
+**Defect [V]** 138 of the 8,264 `.rs` files in the workspace's packages (53,211 lines, in 12 packages) are reached by no `mod`, `include!` or `#[path]` from any package root, so nothing compiles them (`orphan_census.py`; the list is `orphan-census-316dee2cd4.tsv`). All 138 sit under a package's `src/`. aprender-serve holds 111 of them (36,286 lines).
+- **The #3809 guard sees 42.** `scripts/check_src_test_files_wired.sh` looks only at files that hold a test attribute. It counts a file as declared when any file of its crate names it, without asking whether that file compiles. Its baseline, `scripts/src_test_files_unwired_baseline.txt`, has 42 entries, all of them orphans, and `scripts/check_baseline_ratchets.sh:150` keeps that set shrink-only. The other 96 orphans are 27 test files whose only declarers are dark themselves, and 69 files with no test attribute.
+- **They read as live code** (Rule 8). Two R5 cells cited uncompiled copies (F-R5-6). The v0.69.3 merge-back #4338 converted the argmax module compiles in the uncompiled copy, reduces.rs, and the compiled copy kept the raw form.
+- **Live files point into them** [V at 316dee2cd4]:
+  - `contracts/realizar/binding.yaml:250-252` marks `paged_attention_into` `implemented`, but its only body is in the uncompiled `cuda/executor/incremental_attention.rs`. `contracts/binding-allowlist.json:339-340` already lists the symbol as a ghost.
+  - `contracts/apr-model-capability-v1.yaml:81`, and its copy `crates/apr-cli/contracts/apr-model-capability-v1.yaml:81`, cite the `gelu_host` in the uncompiled `cuda/executor/kernel.rs`. The compiled `gelu_host` and `fused_swiglu_host` are at `crates/aprender-serve/src/cuda/executor/rope_indirect.rs:112` and `:138`.
+  - The doc comment at `crates/aprender-serve/tests/falsify_swiglu_cpu_cuda_005.rs:112` names the uncompiled `kernel.rs` copy of `fused_swiglu_host`.
+  - `falsify_007_no_catch_all_in_dispatch_sites` (`crates/aprender-serve/src/quantize/contract_tests.rs:611`) reads 8 dispatch files as text and panics when one is missing. One of them (`:621`) is the uncompiled `layers/transformer_layer_indexed.rs`, whose 3 fns are all defined in the compiled `indexed_transformer.rs`, which the test also reads. So the commit that deletes the file must also drop it from that list.
+
+**Prior art** Reuse one of these; do not write a third resolver.
+- The #3809 guard and its baseline, above.
+- `module_of()` at `scripts/check_tree_reader_tests.sh:112`, a shell resolver for one file's module path.
+- The syn walk in `crates/aprender-contracts/src/ontology/extract/code.rs`: `crate_roots` (`:458`) finds a crate's roots, `splice` (`:498`) splices `include!` files in, and `child_file` (`:958`) resolves a `mod` and follows `#[path]` (`:964`).
+- `orphan_census.py` on this branch, as the oracle to diff the guard against. It has 31 self-test cases and 13 mutants, and it lists the sites it cannot resolve: one at 316dee2cd4, the `#[path = "."]` in `crates/aprender-core/src/nn/quantization_tests.rs`, checked by hand.
+
+**Scope**
+- Widen the guard from files with a test attribute to every `.rs` under `crates/*/src`. A file counts as declared only when a chain of `mod`, `include!` or `#[path]` reaches it from a package root: `src/lib.rs`, `src/main.rs`, `build.rs`, `src/bin/`, the manifest's `path =` entries, and the test, bench and example targets.
+- Keep the files that are still dark in a new shrink-only baseline (for example `scripts/src_files_unreachable_baseline.txt`), registered in `check_baseline_ratchets.sh` beside the #3809 one, which it can replace.
+- Delete in batches. Diff each file against its compiled twin first; a fn with no twin needs a decision, not a delete. The first batch, checked at 316dee2cd4 by fn name only:
+  - `gguf/inference/forward/debug.rs` (629 lines) and `gguf/inference/forward/cache.rs` (385): each fn name in them is also defined in a compiled file. The live `forward_single_with_cache` is at `crates/aprender-serve/src/gguf/inference/forward/ffn_block.rs:479`.
+  - `cuda/executor/incremental_attention.rs` (208) and `cuda/executor/layers/reduces.rs` (550), from F-R5-6. `paged_attention_into` has no compiled twin: port it or drop its binding first. Either way, the allowlist's ghost entry goes in the same commit.
+  - `cuda/executor/kernel.rs` (393): each fn name is also defined in a compiled file. Move the two contract cites to `rope_indirect.rs` first.
+- Fix every reference in the commit that deletes its file. Re-derive the list at the PR head with `git grep -n -F '<path below src/>'`. Known at 316dee2cd4, besides the four bullets above:
+  - `contracts/apr-merge-runnable-v1.yaml:66` names the uncompiled `apr/mapped_apr_model.rs` (260 lines);
+  - `contracts/decode-hot-path-first-tokens-diagnostic-v1.yaml:196-197` records reduces.rs as dead;
+  - three doc comments: `crates/aprender-serve/src/gguf/inference/forward/forward_qwen3_moe.rs:289` takes a line of the uncompiled debug.rs as its reference; `crates/aprender-serve/src/convert/q4k_converter_helpers.rs:117` names the uncompiled `apr/loading.rs` (319 lines), while the live `load_embedded_bpe_tokenizer` is in `apr/tokenizer_loading.rs`; `crates/aprender-core/src/text/bpe/tests_encode_decode.rs:19` names the uncompiled `models/qwen2/tests.rs` (389 lines, in the #3809 baseline);
+  - the #3809 baseline, and the root and aprender-serve `.pmat-baseline.json`.
+- Leave the roadmap notes that name deleted files (`docs/roadmaps/entries/PMAT-3759.yaml:22`, `docs/roadmaps/roadmap.yaml:21589`). They are history.
+
+**Acceptance** The guard stays; the rest are one-shot checks recorded in the PR body.
+- **Compiled code is unchanged.** For each crate a batch touches, `cargo test -p <crate> --lib -- --list` prints the same list before and after, compared by sha256.
+- **The guard turns RED in its new scope (Rule 4).** Each of these makes it fail: a new non-test file that nothing names; a test file whose only parent is dark; a dark chain of two files; a commented-out `mod` line; an `include!` written in a dark file. It stays GREEN on a `#[path]` inside an inline module, an `include!` of a sibling file, and an `r#` module name.
+- **Rule 7.** Those cases ship as a table, run by a `--self-test` mode that CI calls.
+- **The baseline only shrinks.** A new entry fails `check_baseline_ratchets.sh`.
+- **No cite is left.** For each deleted file, `git grep -n -F '<path below src/>'` prints only the roadmap lines.
+- **The census agrees.** At the PR head, `orphan_census.py` lists exactly the files left in the new baseline.
+
+**Blocked by** Nothing. S3 can land first or fold into the first batch.
+**Hosts** x86 CI. The guard is a script and needs no GPU; no cargo on lambda.
+**Out of scope** `crates/aprender-present` and `crates/aprender-test`. Their manifests declare a workspace and no package, and the root `Cargo.toml` excludes both, so no package root can reach the 2 files under them (32,270 lines). Whether to keep them is a separate call.
+
+---
+
+## Status (2026-10-04)
+- None of S1..S3 or S5 is a 0.73 gate. `falsifier-landing-map.md` lists AQ-005..007 separately from the 42 0.73 falsifiers.
+- Filing: S1..S3 went out as PROPOSE-TICKET lines on 2026-10-04 at 03:32Z, after LIVE 0.70.1. S5 goes out after its commit. The cop mints.

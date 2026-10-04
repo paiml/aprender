@@ -87,14 +87,14 @@ research rows R1..R5 (2026-09-27) are the evidence behind it, not a second list.
   in the KREG-001 key (#4539, train 0.71), is in the KREG draft: `kreg:backend` at `contracts/kernel-registry-v1.yaml:86`
   on branch kreg/4539-parity-receipts at 02b0f7f7fc. It is not on main at 316dee2cd4.
 - M is not ranked. It is runs, not code; the Count line above gives its falsifiers.
-- S1..S3 (`ticket-bodies-side-fixes.md`) are not 0.73 gates. Their lines go out after P5.
+- S1..S3 and S5 (`ticket-bodies-side-fixes.md`) are not 0.73 gates. The S1..S3 lines went out after P5 (2026-10-04 03:32Z); S5 follows its commit.
 
 ## Ranking, rows 6 to 20
 Rows 6 to 20 continue the one ranking above; they are not a second list (APR-LOOKAHEAD-001 §4, L2 item 2: the
 top 20 ranked). They are not bundles. None has a spec, a contract or a gate falsifier yet, so the gate total above
 is unchanged, and no PROPOSE-TICKET line goes out for them; L2 specifies them in this order. Each row names the
 exit criteria it serves (APR-LOOKAHEAD-001 §2a). Code paths are relative to `crates/` and were read at 316dee2cd4
-unless the row says otherwise. M and S1..S3 stay out of the ranking, as above, and so does F3, the #4575
+unless the row says otherwise. M, S1..S3 and S5 stay out of the ranking, as above, and so does F3, the #4575
 backend-label fix already written (`F3-pr-draft.md`).
 
 Ranks 1 to 5 serve: P1 E1, E2; P2 E1, E2; P3 E1, E2; P4 E1, E4; P5 E3, E4.

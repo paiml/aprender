@@ -39,7 +39,7 @@ ID_RE = re.compile(r"\b(BPM|NEON(?:-Q4K)?|WGF|R4|AQ)-(\d{3})((?:\s*(?:\.\.|,|/|,
 TAIL_RE = re.compile(r"(\.\.|,|/|and)\s*(\d{3})")
 FIX_RE = re.compile(r"\bf\d{3}[a-z]?\b")
 E_RE = re.compile(r"\bE([1-6])\b")
-UNRANKED = {"M", "F3", "S1", "S2", "S3"}
+UNRANKED = {"M", "F3", "S1", "S2", "S3", "S5"}
 failures = []
 
 
