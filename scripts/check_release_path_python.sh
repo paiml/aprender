@@ -81,7 +81,7 @@ function fold(p,    n, i, a, out, k, j) {
     for (j = 1; j <= k; j++) p = p (j > 1 ? "/" : "") out[j]
     return p
 }
-function tokens(s,    t, u, k, n, i, w, c, ws, c1, c2, bare) {
+function tokens(s, li,    t, u, k, n, i, w, c, ws, c1, c2, bare) {
     # $VAR, ${...}, $(...) and ${{ ... }} stand for some directory, so each one becomes "/"
     t = s
     for (k = 0; k < 8; k++) {
@@ -109,6 +109,9 @@ function tokens(s,    t, u, k, n, i, w, c, ws, c1, c2, bare) {
         c2 = (dir == "") ? c1 : fold(dir "/" c)
         bare = (c ~ /\//) ? "" : c
         printf "T\t%s\t%s\t%s\t%s\n", w, (c1 == "" ? "." : c1), (c2 == "" ? "." : c2), (bare == "" ? "." : bare)
+        # on a line that runs an interpreter, a directory argument (pytest DIR, python3 PKGDIR) runs the
+        # Python under it; the directory a cd changes to does not
+        if (li && ws[i - 1] != "cd") printf "Y\t%s\t%s\n", (c1 == "" ? "." : c1), (c2 == "" ? "." : c2)
     }
 }
 # one make target record: TARGET in the Makefile MF, which may be named from the root or from the
@@ -117,11 +120,20 @@ function mkrec(t, mf,    m1, m2) {
     m1 = fold(mf); m2 = (dir == "") ? m1 : fold(dir "/" mf)
     printf "M\t%s\t%s\t%s\n", t, (m1 == "" ? "." : m1), (m2 == "" ? "." : m2)
 }
-function maketargets(s,    rest, tail, n, i, w, words, ended, nt, tg, odd, k, cd, mf, v) {
+function maketargets(s,    rest, tail, n, i, w, words, ended, nt, tg, odd, k, cd, mf, v, pre, cdpre, o, c) {
     rest = s
-    while (match(rest, /(^|[^A-Za-z0-9_.-])(make|\$\(MAKE\)|\$\{MAKE\})([ \t]+|$)/)) {
+    while (match(rest, /(^|[^A-Za-z0-9_.-])(g?make|\$\(MAKE\)|\$\{MAKE\}|"?\$MAKE"?|"\$\{MAKE\}")([ \t]+|$|\))/)) {
         tail = substr(rest, RSTART + RLENGTH)
+        pre = substr(rest, 1, RSTART)
         rest = tail
+        # "cd DIR && make" and "cd DIR; make" run make in DIR; the Makefile beside the caller is kept too,
+        # since the cd may sit in another subshell of the line
+        cdpre = ""
+        while (match(pre, /(^|[^A-Za-z0-9_.-])cd[ \t]+[^ \t;&|()]+[ \t]*(&&|;)/)) {
+            cdpre = substr(pre, RSTART, RLENGTH); pre = substr(pre, RSTART + RLENGTH)
+            sub(/^[^c]*cd[ \t]+/, "", cdpre); sub(/[ \t]*(&&|;)$/, "", cdpre); gsub(/["']/, "", cdpre)
+        }
+        if (cdpre ~ /\$/) cdpre = ""
         n = split(tail, words, /[ \t]+/)
         # -C DIR and -f FILE, before or after the targets, name the Makefile the targets are read from;
         # with no target, make runs the default goal
@@ -129,6 +141,10 @@ function maketargets(s,    rest, tail, n, i, w, words, ended, nt, tg, odd, k, cd
         for (i = 1; i <= n; i++) {
             w = words[i]
             if (w == "") continue
+            # an operator or a redirection ends the make command
+            if (w ~ /^([0-9]*[<>]|&&|\|\|?|;|&|\))/) break
+            # an expansion such as $(nproc) or "$JOBS" is an option value, not a target
+            if (w ~ /^["']?\$/) { o = gsub(/\(/, "(", w); c = gsub(/\)/, ")", w); if (c > o || w ~ /[;&|>]["']?$/) break; continue }
             ended = (w ~ /(;|&|\||\)|>)$/)
             if (w ~ /^(-C|--directory|-f|--file|--makefile)$/) { v = words[++i]; ended = (v ~ /(;|&|\||\)|>)$/) }
             else if (w ~ /^(-C|-f)./) v = substr(w, 3)
@@ -149,7 +165,7 @@ function maketargets(s,    rest, tail, n, i, w, words, ended, nt, tg, odd, k, cd
         if (mf == "") mf = (cd != "") ? "Makefile" : (kind == "make" ? name : "Makefile")
         if (cd != "") mf = cd "/" mf
         if (nt == 0 && !odd) tg[++nt] = "<default>"
-        for (k = 1; k <= nt; k++) mkrec(tg[k], mf)
+        for (k = 1; k <= nt; k++) { mkrec(tg[k], mf); if (cdpre != "") mkrec(tg[k], cdpre "/" mf) }
     }
 }
 # S -> how many interpreter uses S names. Each interpreter word counts once, so a second call on a line
@@ -160,7 +176,7 @@ function interp_words(s,    n, t) {
     n = 0
     # one space either side, so the first and the last word each find a boundary
     t = " " s " "
-    while (match(t, /([^A-Za-z0-9_.-]|:-|\$\{[A-Za-z0-9_]+[-=?+])(python([0-9]+(\.[0-9]+)?)?|pytest|pip[0-9]?|pipx|pipenv|uvx?|poetry|pdm|hatch|tox|nox|conda|pypy([0-9]+(\.[0-9]+)?)?|twine|mkdocs|pre-commit|jupyter|ipython)[^A-Za-z0-9_.-]/)) {
+    while (match(t, /([^A-Za-z0-9_.-]|:-|\$\{[A-Za-z0-9_]+[-=?+])(python([0-9]+(\.[0-9]+)?)?|pytest|pip[0-9]?|pipx|pipenv|uvx?|poetry|pdm|hatch|tox|nox|conda|pypy([0-9]+(\.[0-9]+)?)?|twine|mkdocs|pre-commit|jupyter|ipython|maturin|sphinx-build|flake8|mypy|ruff|virtualenv)[^A-Za-z0-9_.-]/)) {
         n++; t = substr(t, RSTART + RLENGTH - 1)
     }
     t = s " "
@@ -171,14 +187,17 @@ function interp_words(s,    n, t) {
 }
 # the modules a command line hands to Python by name: "-m a.b" runs a/b.py (or its __main__.py), and
 # each import in a "-c '...'" program loads a module; one "D a/b" record each
-function pymods(s,    t, m, n, i, a, seg, n2, k2) {
+function pymods(s,    t, m, n, i, a, seg, n2, k2, q) {
     t = s
     while (match(t, /(^|[ \t])-m[ \t]+[A-Za-z_][A-Za-z0-9_.]*/)) {
         m = substr(t, RSTART, RLENGTH); t = substr(t, RSTART + RLENGTH)
         sub(/^[ \t]*-m[ \t]+/, "", m); gsub(/\./, "/", m); printf "D\t%s\n", m
     }
     if (!match(s, /(^|[ \t])-c[ \t]+/)) return
-    t = substr(s, RSTART + RLENGTH); gsub(/["']/, " ", t)
+    t = substr(s, RSTART + RLENGTH); q = substr(t, 1, 1)
+    # a quote the line does not close leaves the program open: the lines up to the closing quote are Python
+    if ((q == "\"" || q == "'") && index(substr(t, 2), q) == 0) pyq = q
+    gsub(/["']/, " ", t)
     n = split(t, seg, ";")
     for (i = 1; i <= n; i++) {
         m = seg[i]
@@ -194,13 +213,31 @@ function pymods(s,    t, m, n, i, a, seg, n2, k2) {
         }
     }
 }
-function code_line(s, lineno,    t, n, k) {
+function code_line(s, lineno,    t, n, k, m) {
+    # the body of a python3 - <<END heredoc, or of a python3 -c " program left open, is Python: its imports
+    # are followed until the END line, or the line that closes the quote
+    if (pyhd != "") { if (trim(s) == pyhd) pyhd = ""; else pyline(s) }
+    else if (pyq != "") { k = index(s, pyq); if (k) { pyline(substr(s, 1, k - 1)); pyq = "" } else pyline(s) }
     if (s ~ /^[ \t]*(#|$)/) return
     n = interp_words(s)
     if (n) { t = substr(trim(s), 1, 160); gsub(/\t/, " ", t); for (k = 1; k <= n; k++) printf "I\t%d\t%s\n", lineno, t }
     maketargets(s)
-    tokens(s)
+    tokens(s, n)
     pymods(s)
+    if (match(s, /(^|[^A-Za-z0-9_.-])(python([0-9]+(\.[0-9]+)?)?|uv[ \t]+run)([ \t][^<|;&]*)?<<-?[ \t]*["']?[A-Za-z_][A-Za-z0-9_]*/)) {
+        m = substr(s, RSTART, RLENGTH); sub(/^.*<<-?[ \t]*["']?/, "", m); pyhd = m
+    }
+}
+# one line of Python: its imports, which may follow a ";" or the colon of try:, else:, if ...: and the like
+function pyline(s,    ns, seg, k, x) {
+    if (s ~ /^[ \t]*#/) return
+    if (impx != "") { imports(s); return }
+    ns = split(s, seg, ";")
+    for (k = 1; k <= ns; k++) {
+        x = seg[k]
+        sub(/^[ \t]*(try|else|finally|except[^:]*|if[ \t][^:]*|elif[ \t][^:]*|with[ \t][^:]*|for[ \t][^:]*|while[ \t][^:]*):[ \t]*/, "", x)
+        imports(x)
+    }
 }
 # MOD (dotted, a leading dot for each level of a relative import) -> one record per module it can load:
 # "P a", "P a/b" for a.b (the package, then the submodule); a relative import resolves against the
@@ -252,13 +289,16 @@ function prereqs(r,    n, k, pr) {
 BEGIN {
     # the caller passes these through the environment: awk -v would make a backslash in a path an escape
     name = ENVIRON["RELPY_NAME"]; dir = ENVIRON["RELPY_DIR"]; target = ENVIRON["RELPY_TARGET"]
-    if (target != "") kind = "make"
+    if (target == "<all>") kind = "code"
+    else if (target != "") kind = "make"
     else if (name ~ /\.py$/) kind = "python"
     else if (name ~ /\.(sh|bash|mk)$/ || (name ~ /\.(yml|yaml)$/ && name ~ /^(\.github|ci)\//)) kind = "code"
     # a local action runs wherever it sits
     else if (name ~ /(^|\/)action\.ya?ml$/) kind = "code"
+    # a symlink: its blob is the path it points to, which is followed
+    else if (ENVIRON["RELPY_LINK"] != "") kind = "code"
     else kind = ""
-    inrec = 0; found = 0; rcont = 0; pcont = 0; impx = ""; gcont = 0; dflt = 0
+    inrec = 0; found = 0; rcont = 0; pcont = 0; impx = ""; gcont = 0; dflt = 0; pyhd = ""; pyq = ""
 }
 NR == 1 && target == "" {
     if ($0 ~ /^#!/ && $0 ~ /(python|uv run)/) kind = "python"
@@ -268,15 +308,7 @@ NR == 1 && target == "" {
 # an import may follow a ";" or the colon of try:, else:, if ...: and the like
 kind == "python" {
     if ($0 ~ /^[ \t]*#/) next
-    if (impx != "") imports($0)
-    else {
-        ns = split($0, seg, ";")
-        for (k = 1; k <= ns; k++) {
-            s = seg[k]
-            sub(/^[ \t]*(try|else|finally|except[^:]*|if[ \t][^:]*|elif[ \t][^:]*|with[ \t][^:]*|for[ \t][^:]*|while[ \t][^:]*):[ \t]*/, "", s)
-            imports(s)
-        }
-    }
+    pyline($0)
     tokens($0)
     next
 }
@@ -289,6 +321,8 @@ kind == "make" && target == "<global>" {
     if ($0 ~ /^\t/) { gcont = ($0 ~ /\\$/); next }
     if ($0 ~ /^[ \t]*(#|$)/) next
     if ($0 ~ /^[^ \t#][^=:]*:([^=]|$)/) next
+    # an included fragment that is not a .mk is read whole, as a .mk is
+    if ($0 ~ /^[ \t]*-?s?include[ \t]/) { s = $0; sub(/^[ \t]*-?s?include[ \t]+/, "", s); sub(/#.*/, "", s); n = split(s, inc, /[ \t]+/); for (k = 1; k <= n; k++) if (inc[k] != "" && inc[k] !~ /\.mk$/ && inc[k] !~ /\$/) mkrec("<all>", inc[k]) }
     code_line($0, NR)
     next
 }
@@ -311,7 +345,8 @@ kind == "make" {
         n = split(names, nm, /[ \t]+/)
         for (k = 1; k <= n; k++) if (nm[k] == target) inrec = 1
         # the default goal is the first rule whose target is not special (.PHONY and the like) or a pattern
-        if (target == "<default>" && !dflt && nm[1] !~ /^[.]/ && nm[1] !~ /%/) { inrec = 1; dflt = 1 }
+        # it is followed under its own name, so a recipe already on the path is not counted twice
+        if (target == "<default>" && !dflt && nm[1] !~ /^[.]/ && nm[1] !~ /%/) { dflt = 1; found = 1; mkrec(nm[1], name); exit }
         if (inrec) {
             found = 1
             recipe = ""
@@ -440,8 +475,8 @@ runmodule() {
 # (node kind via), py.tsv (node blob lines via), interp.tsv (node line text, once per interpreter use) and unres.tsv (node token).
 # Returns 2, having said why, when the tree, a blob or the scanner could not be read.
 walk() {
-    local rev="$1" out="$2" meta path step entry node name target d b kind nlines tag f1 f2 f3 f4 mf p state qi=0 werr=0
-    local -A blob=() bybase=() seen=() via=() nkind=() dirn=()
+    local rev="$1" out="$2" meta path step entry node name target d b kind nlines tag f1 f2 f3 f4 mf p c state qi=0 werr=0 nread=0
+    local -A blob=() bybase=() seen=() via=() nkind=() dirn=() pyunder=() link=()
     local -a queue=() order=()
     if ! mkdir -p -- "$out"; then printf 'FAIL  RELPY not measured: cannot make %s\n' "$out"; return 2; fi
     : > "$out/entries.tsv"; : > "$out/nodes.tsv"; : > "$out/py.tsv"; : > "$out/interp.tsv"; : > "$out/unres.tsv"
@@ -452,6 +487,10 @@ walk() {
         case "$meta" in *' blob '*) ;; *) continue ;; esac
         blob[$path]="${meta##* }"; order+=("$path")
         case "$path" in scripts/*|ci/*|.github/*) bybase[${path##*/}]+="$path"$'\n' ;; esac
+        # a symlink is read as the path it points to
+        case "$meta" in 120000\ *) link[$path]=1 ;; esac
+        # every directory above a .py, for a directory an interpreter is given
+        case "$path" in *.py) p="$path"; while [[ "$p" == */* ]]; do p="${p%/*}"; pyunder[$p]+="$path"$'\n'; done ;; esac
     done < "$out/tree.z"
     while read -r step entry; do
         if [ -z "$entry" ]; then continue; fi
@@ -467,7 +506,7 @@ walk() {
         node="${queue[$qi]}"; qi=$((qi + 1))
         case "$node" in
             *:*) name="${node%:*}"; target="${node##*:}"; d=''; case "$name" in */*) d="${name%/*}" ;; esac
-                 if [ "$target" != "<global>" ]; then enq "$name:<global>" "$node"; fi ;;
+                 if [ "$target" != "<global>" ] && [ "$target" != "<all>" ]; then enq "$name:<global>" "$node"; fi ;;
             */*) name="$node"; target=''; d="${node%/*}" ;;
             *) name="$node"; target=''; d='' ;;
         esac
@@ -476,7 +515,7 @@ walk() {
             if ! g cat-file blob "$b" > "$out/cur"; then
                 printf 'FAIL  RELPY not measured: cannot read %s (blob %s) at %s\n' "$name" "$b" "$rev"; return 2
             fi
-            if ! RELPY_NAME="$name" RELPY_DIR="$d" RELPY_TARGET="$target" awk "$SCAN_AWK" < "$out/cur" > "$out/rec"; then
+            if ! RELPY_NAME="$name" RELPY_DIR="$d" RELPY_TARGET="$target" RELPY_LINK="${link[$name]:-}" awk "$SCAN_AWK" < "$out/cur" > "$out/rec"; then
                 printf 'FAIL  RELPY not measured: the scanner failed on %s at %s\n' "$node" "$rev"; return 2
             fi
             while IFS=$'\t' read -r tag f1 f2 f3 f4; do
@@ -486,10 +525,27 @@ walk() {
                     I) printf '%s\t%s\t%s\n' "$node" "$f1" "$f2" >> "$out/interp.tsv" || werr=1 ;;
                     T) resolve "$node" "$f1" "$f2" "$f3" "$f4" ;;
                     M) mf="$f2"; if [ -z "${blob[$f2]+x}" ] && [ -n "${blob[$f3]+x}" ]; then mf="$f3"; fi
+                       # with no Makefile, make reads a GNUmakefile or a makefile
+                       if [ -z "${blob[$mf]+x}" ]; then
+                           case "$mf" in
+                               Makefile|*/Makefile)
+                                   for c in "${mf%Makefile}GNUmakefile" "${mf%Makefile}makefile"; do
+                                       if [ -n "${blob[$c]+x}" ]; then mf="$c"; break; fi
+                                   done ;;
+                           esac
+                       fi
                        enq "$mf:$f1" "$node"; if [ -n "${blob[$f1]+x}" ]; then enq "$f1" "$node"; fi ;;
                     P) module "$node" "$d" "$f1" ;;
                     R) relmodule "$node" "$f1" ;;
                     D) runmodule "$node" "$d" "$f1" ;;
+                    Y) for c in "$f1" "$f2"; do
+                           if [ -z "${blob[$c]+x}" ] && [ -n "${pyunder[$c]+x}" ]; then
+                               while IFS= read -r p; do
+                                   if [ -n "$p" ]; then enq "$p" "$node"; fi
+                               done <<< "${pyunder[$c]}"
+                               break
+                           fi
+                       done ;;
                 esac
             done < "$out/rec"
         fi
@@ -505,10 +561,13 @@ walk() {
             */) if [ "${dirn[$entry]:-0}" -ge 1 ]; then state=read; fi ;;
             *) if [ -n "${blob[$entry]+x}" ]; then state=read; fi ;;
         esac
+        if [ "$state" = read ]; then nread=$((nread + 1)); fi
         printf '%s\t%s\t%s\n' "$step" "$entry" "$state" >> "$out/entries.tsv" || werr=1
     done <<< "$ENTRIES"
     # a record that could not be written lowers a count, so a failed write is not measured
     if [ "$werr" != 0 ]; then printf 'FAIL  RELPY not measured: cannot write the walk of %s into %s\n' "$rev" "$out"; return 2; fi
+    # a revision where no entry is read (another repository, a tree with no release scripts) measured nothing
+    if [ "$nread" = 0 ]; then printf 'FAIL  RELPY not measured: no entry of the release path is read at %s\n' "$rev"; return 2; fi
     return 0
 }
 
@@ -733,7 +792,7 @@ FX
         printf 'VERSION := $(shell python3 -V)\npublish: prep\n\tcd scripts/lib && python3 universe.py\nprep:\n\t@echo prep\ndanger:\n\tpython3 scripts/tools/offpath.py\n' | put Makefile &&
         commit v-shell-assign || return 2
     variant v-default-goal && printf 'make -j8\n' >> "$r/scripts/dogfood.sh" &&
-        printf '.PHONY: all\nall:\n\tpython3 -V\npublish: prep\n\tcd scripts/lib && python3 universe.py\nprep:\n\t@echo prep\ndanger:\n\tpython3 scripts/tools/offpath.py\n' | put Makefile &&
+        printf '.PHONY: all danger\nall:\n\tpython3 -V\npublish: prep\n\tcd scripts/lib && python3 universe.py\nprep:\n\t@echo prep\ndanger:\n\tpython3 scripts/tools/offpath.py\n' | put Makefile &&
         commit v-default-goal || return 2
     variant v-dash-m && printf 'python3 -m scripts.lib.runmod\n' >> "$r/scripts/dogfood.sh" &&
         printf 'R = 1\n' | put scripts/lib/runmod.py && commit v-dash-m || return 2
@@ -755,6 +814,30 @@ FX
         ln -s ../tools/linked.py "$r/scripts/release/link.sh" && commit v-symlink || return 2
     variant v-multi-bare && printf 'bash dup.sh\n' >> "$r/scripts/dogfood.sh" &&
         printf 'python3 -V\n' | put scripts/a/dup.sh && printf 'python3 -V\n' | put scripts/b/dup.sh && commit v-multi-bare || return 2
+    # round 3 of the review
+    variant v-heredoc && printf "python3 - <<'PY'\nfrom hdmod import x\nPY\n" >> "$r/scripts/dogfood.sh" &&
+        printf 'x = 1\n' | put scripts/hdmod.py && commit v-heredoc || return 2
+    variant v-dash-c-multi && printf 'python3 -c "\nimport cmod2\ncmod2.go()"\n' >> "$r/scripts/dogfood.sh" &&
+        printf 'C = 2\n' | put scripts/cmod2.py && commit v-dash-c-multi || return 2
+    variant v-make-nproc && printf 'make -j $(nproc) gen\n' >> "$r/scripts/dogfood.sh" &&
+        printf 'gen:\n\tpython3 -V\n' >> "$r/Makefile" && commit v-make-nproc || return 2
+    variant v-dir-arg && printf 'python3 -m pytest tools/tests\n' >> "$r/scripts/dogfood.sh" &&
+        printf 'def test_x():\n    pass\n' | put tools/tests/test_x.py && commit v-dir-arg || return 2
+    variant v-cd-make && printf 'cd cookbooks/y && make test\n' >> "$r/scripts/dogfood.sh" &&
+        printf 'test:\n\tpython3 -V\n' | put cookbooks/y/Makefile && commit v-cd-make || return 2
+    variant v-include-frag &&
+        printf 'include Makefile.common\npublish: prep\n\tcd scripts/lib && python3 universe.py\nprep:\n\t@echo prep\ndanger:\n\tpython3 scripts/tools/offpath.py\n' | put Makefile &&
+        printf 'V := $(shell python3 -V)\n' | put Makefile.common && commit v-include-frag || return 2
+    variant v-gnumakefile && printf 'make -C docs html\n' >> "$r/scripts/dogfood.sh" &&
+        printf 'html:\n\tpython3 -V\n' | put docs/GNUmakefile && commit v-gnumakefile || return 2
+    variant v-make-andand && printf 'make && echo ok\n' >> "$r/scripts/dogfood.sh" &&
+        printf 'all:\n\tpython3 -V\npublish: prep\n\tcd scripts/lib && python3 universe.py\nprep:\n\t@echo prep\ndanger:\n\tpython3 scripts/tools/offpath.py\n' | put Makefile &&
+        commit v-make-andand || return 2
+    variant v-default-dup && printf 'make\n' >> "$r/scripts/dogfood.sh" && commit v-default-dup || return 2
+    variant v-link-extless && printf 'L = 2\n' | put scripts/tools/linked2.py &&
+        ln -s ../tools/linked2.py "$r/scripts/release/runner" && commit v-link-extless || return 2
+    variant v-noentries && fx rm -r -q scripts .github Makefile && printf 'r\n' | put README && commit v-noentries || return 2
+    variant v-words2 && printf 'maturin build\nruff check .\n' >> "$r/scripts/dogfood.sh" && commit v-words2 || return 2
     # the work tree is left dirty: an edit to a release script and an untracked release script, both
     # running Python; every row reads at a revision, so neither may show
     printf 'python3 -V\n' >> "$r/scripts/dogfood.sh" && printf 'python3 -V\n' > "$r/scripts/release/dirty.sh" || return 2
@@ -816,7 +899,8 @@ FX
     row 'make -f FILE TARGET reads the target from FILE' 1 'mk/Release.mk:ship 0 -> 1' -- --check --base main --head v-make-f "${at[@]}"
     row 'a Makefile include is followed' 1 'mk/rel.mk 0 -> 1' -- --check --base main --head v-include "${at[@]}"
     row 'a $(shell python3) outside every rule counts' 1 'Makefile:<global> 0 -> 1' -- --check --base main --head v-shell-assign "${at[@]}"
-    row 'make with no target runs the default goal, .PHONY skipped' 1 'Makefile:<default> 0 -> 1' -- --check --base main --head v-default-goal "${at[@]}"
+    row 'make with no target runs the default goal, .PHONY skipped' 1 'Makefile:all 0 -> 1' -- --check --base main --head v-default-goal "${at[@]}"
+    row 'the default goal is never a .PHONY line' 1 '!offpath.py' -- --check --base main --head v-default-goal "${at[@]}"
     row 'python3 -m a.b reaches a/b.py' 1 'RED   new Python file on the release path: scripts/lib/runmod.py' -- --check --base main --head v-dash-m "${at[@]}"
     row 'an import in a python3 -c program is followed' 1 'RED   new Python file on the release path: scripts/lib/cmod.py' -- --check --base main --head v-dash-c "${at[@]}"
     row 'an import after a ";" is followed' 1 'RED   new Python file on the release path: scripts/lib/extra3.py' -- --check --base main --head v-semi-import "${at[@]}"
@@ -827,6 +911,18 @@ FX
     row 'a local action with an action.yaml' 1 'actions/py2/action.yaml 0 -> 1' -- --check --base main --head v-action-yaml "${at[@]}"
     row 'a symlink is read as the path it points to' 1 'RED   new Python file on the release path: scripts/tools/linked.py' -- --check --base main --head v-symlink "${at[@]}"
     row 'a bare name that matches two files reaches both' 1 'RED   interpreter uses on the release path rose 3 -> 5' -- --check --base main --head v-multi-bare "${at[@]}"
+    row 'an import in a python3 heredoc is followed' 1 'RED   new Python file on the release path: scripts/hdmod.py' -- --check --base main --head v-heredoc "${at[@]}"
+    row 'an import in a python3 -c program over many lines' 1 'RED   new Python file on the release path: scripts/cmod2.py' -- --check --base main --head v-dash-c-multi "${at[@]}"
+    row 'make -j $(nproc) TARGET keeps the target' 1 'Makefile:gen 0 -> 1' -- --check --base main --head v-make-nproc "${at[@]}"
+    row 'a directory given to an interpreter runs the Python under it' 1 'RED   new Python file on the release path: tools/tests/test_x.py' -- --check --base main --head v-dir-arg "${at[@]}"
+    row 'cd DIR && make TARGET reads DIR/Makefile' 1 'cookbooks/y/Makefile:test 0 -> 1' -- --check --base main --head v-cd-make "${at[@]}"
+    row 'an include of a file that is not .mk is read whole' 1 'Makefile.common:<all> 0 -> 1' -- --check --base main --head v-include-frag "${at[@]}"
+    row 'make -C DIR with only a GNUmakefile there' 1 'docs/GNUmakefile:html 0 -> 1' -- --check --base main --head v-gnumakefile "${at[@]}"
+    row 'make && x runs the default goal' 1 'Makefile:all 0 -> 1' -- --check --base main --head v-make-andand "${at[@]}"
+    row 'the default goal is counted once' 0 'interp_uses 3->3' -- --check --base main --head v-default-dup "${at[@]}"
+    row 'a symlink with no extension is read as the path it points to' 1 'RED   new Python file on the release path: scripts/tools/linked2.py' -- --check --base main --head v-link-extless "${at[@]}"
+    row 'maturin and ruff are interpreter uses' 1 'RED   interpreter uses on the release path rose 3 -> 5' -- --check --base main --head v-words2 "${at[@]}"
+    row 'a tree with no entry read: not measured, never GREEN' 2 'no entry of the release path is read' -- --check --base v-noentries --head v-noentries "${at[@]}"
     row 'a blob the walk cannot read: not measured, never GREEN' 2 'FAIL  RELPY not measured: cannot read scripts/dogfood.sh' -- --inventory --rev main --repo "$tmp/broken"
     row 'a check that cannot read a blob: not measured' 2 'not measured' -- --check --base main --head main --repo "$tmp/broken"
     row 'caller: --check without --base' 3 '--check needs --base' -- --check "${at[@]}"
@@ -905,13 +1001,13 @@ uv_word_blind               s@|pipenv|uvx?|@|pipenv|@
 make_C_ignored              s@if (cd != "") mf = cd "/" mf@if (0) mf = mf@
 make_f_ignored              s@if (w ~ /^-(C|-directory)/) cd = v; else mf = v@if (w ~ /^-(C|-directory)/) cd = v@
 global_lines_skipped        s@^kind == "make" && target == "<global>" {@kind == "make" \&\& target == "<global>" { next@
-global_node_never_queued    s@if \[ "\$target" != "<global>" \]; then enq@if false; then enq@
+global_node_never_queued    s@if \[ "\$target" != "<global>" \] && \[@if false \&\& [@
 default_goal_dropped        s/if (nt == 0 && !odd) tg\[++nt\]/if (0) tg[++nt]/
 default_goal_takes_phony    s@nm\[1\] !~ /^\[.\]/ && @@
 dash_m_blind                s/(^|\[ \\t\])-m\[ \\t\]+\[A-Za-z_\]/(^|[ \\t])-mQ[ \\t]+[A-Za-z_]/
 dash_c_blind                s@if (!match(s, /(^|\[ \\t\])-c\[ \\t\]+/)) return@return@
 run_module_dropped          s/D) runmodule "\$node" "\$d" "\$f1" ;;/D) : ;;/
-semicolon_import_blind      s/ns = split(\$0, seg, ";")/ns = split($0, seg, "\\n")/
+semicolon_import_blind      s/ns = split(s, seg, ";")/ns = split(s, seg, "\\n")/
 try_import_blind            s/sub(\/^\[ \\t\]\*(try|else/sub(\/^[ \\t]*(tryQ|elseQ/
 comment_paren_ends_list     s@m = s; sub(/#\.\*/, "", m); impx_end@m = s; impx_end@
 backslash_import_dropped    s@else if (m ~ /\\\\\[ \\t\]\*\$/) {@else if (0) {@
@@ -919,6 +1015,18 @@ runner_words_blind          s/|twine|mkdocs|/|mkdocs|/
 pybin_blind                 s/|PYBIN|PYEXE|/|PYEXE|/
 action_yaml_dropped         s@blob\[\$c/action.yaml\]+x@blob[$c/action.yamlX]+x@
 bare_name_first_only        s/then enq "\$f" "\$1"; hit=1; fi/then enq "$f" "$1"; hit=1; break; fi/
+heredoc_import_blind        s/if (pyhd != "") {/if (0) {/
+dash_c_multiline_blind      s/index(substr(t, 2), q) == 0) pyq = q/index(substr(t, 2), q) == 0) pyq = ""/
+make_expansion_ends_targets /an expansion such as/{n;s/; continue }$/; break }/}
+make_operator_not_end       /an operator or a redirection/{n;s/) break$/) w = w/}
+dir_arg_dropped             s/Y) for c in "\$f1" "\$f2"; do/Y) for c in; do/
+cd_make_ignored             s/if (cdpre != "") mkrec/if (0) mkrec/
+include_frag_dropped        s@mkrec("<all>", inc\[k\])@k = k@
+gnumakefile_ignored         s/for c in "\${mf%Makefile}GNUmakefile" "\${mf%Makefile}makefile"; do/for c in; do/
+default_goal_twice          s/mkrec(nm\[1\], name); exit/inrec = 1/
+extless_link_ignored        s/else if (ENVIRON\["RELPY_LINK"\] != "") kind = "code"/else if (0) kind = "code"/
+words2_blind                s/|ipython|maturin|/|ipython|/
+no_entry_read_green         s/if \[ "\$nread" = 0 \]; then/if false; then/
 MUTANTS
     printf -- '--- %s/%s mutants killed ---\n' "$pass" "$((pass + fail))"
     [ "$fail" -eq 0 ]
