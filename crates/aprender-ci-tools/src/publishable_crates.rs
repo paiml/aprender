@@ -6,18 +6,22 @@
 use crate::pystr::py_dirname;
 use serde_json::Value;
 
-/// The output lines, each with its `\n`, or the reason the input is refused.
+/// The output lines, each with its `\n`, or `(printed, reason)` when the input is refused.
+/// `printed` holds the lines of the packages before the bad one: the original printed
+/// each line as it went, so it had already written them when it raised, and the caller
+/// must write them too.
 ///
 /// # Errors
 /// Input that is not JSON, has no `packages` list, or has a package without a string
 /// `name` or `manifest_path` (the original raised `KeyError`/`TypeError` on each).
-pub fn run(metadata: &str) -> Result<String, String> {
+pub fn run(metadata: &str) -> Result<String, (String, String)> {
+    let refuse = |reason: String| (String::new(), reason);
     let meta: Value =
-        serde_json::from_str(metadata).map_err(|e| format!("metadata is not JSON: {e}"))?;
+        serde_json::from_str(metadata).map_err(|e| refuse(format!("metadata is not JSON: {e}")))?;
     let packages = meta
         .get("packages")
         .and_then(Value::as_array)
-        .ok_or("metadata has no `packages` list")?;
+        .ok_or_else(|| refuse("metadata has no `packages` list".to_string()))?;
     let mut out = String::new();
     for pkg in packages {
         if pkg
@@ -32,10 +36,14 @@ pub fn run(metadata: &str) -> Result<String, String> {
                 .and_then(Value::as_str)
                 .ok_or_else(|| format!("a package has no string `{k}`"))
         };
-        out.push_str(field("name")?);
-        out.push('\t');
-        out.push_str(py_dirname(field("manifest_path")?));
-        out.push('\n');
+        // Both fields before any byte of the line: the original built the whole f-string
+        // before printing it, so a bad package prints nothing of its own line.
+        let line = field("name")
+            .and_then(|name| Ok(format!("{name}\t{}\n", py_dirname(field("manifest_path")?))));
+        match line {
+            Ok(line) => out.push_str(&line),
+            Err(reason) => return Err((out, reason)),
+        }
     }
     Ok(out)
 }
@@ -88,6 +96,19 @@ mod tests {
     #[test]
     fn zero_packages_is_empty_and_ok() {
         assert_eq!(run(r#"{"packages":[]}"#), Ok(String::new()));
+    }
+
+    /// A bad package after good ones: the good lines were already printed (the original
+    /// printed as it went), and nothing of the bad package's own line is.
+    #[test]
+    fn refusal_keeps_the_lines_printed_before_it() {
+        let bad_path = r#"{"name":"x"}"#.to_owned();
+        let bad_name = r#"{"manifest_path":"/w/y/Cargo.toml"}"#.to_owned();
+        for bad in [bad_path, bad_name] {
+            let got = run(&meta(&[pkg("a", ""), pkg("b", "[]"), bad, pkg("c", "")]));
+            let (printed, _) = got.expect_err("a bad package is refused");
+            assert_eq!(printed, "a\t/w/crates/a\n");
+        }
     }
 
     #[test]

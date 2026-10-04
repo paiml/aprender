@@ -54,26 +54,32 @@ fn cargo_metadata() -> Result<String, String> {
     String::from_utf8(out.stdout).map_err(|e| format!("cargo metadata is not UTF-8: {e}"))
 }
 
+fn nothing_printed(reason: String) -> (String, String) {
+    (String::new(), reason)
+}
+
 fn read(path: &PathBuf) -> Result<Vec<u8>, String> {
     std::fs::read(path).map_err(|e| format!("{}: {e}", path.display()))
 }
 
-fn run(cmd: Cmd) -> Result<String, String> {
+/// The output, or `(already printed, reason)` on a refusal.
+fn run(cmd: Cmd) -> Result<String, (String, String)> {
     match cmd {
         Cmd::PublishableCrates => {
             let mut meta = String::new();
             std::io::stdin()
                 .read_to_string(&mut meta)
-                .map_err(|e| format!("stdin: {e}"))?;
+                .map_err(|e| (String::new(), format!("stdin: {e}")))?;
             publishable_crates::run(&meta)
         }
         Cmd::PackageIncludeDiff { listing, includes } => {
-            let listing = read(&listing)?;
-            let includes = read(&includes)?;
+            let listing = read(&listing).map_err(nothing_printed)?;
+            let includes = read(&includes).map_err(nothing_printed)?;
             Ok(package_include_diff::diff(&listing, &includes))
         }
         Cmd::CoverageReportScope { exclude } => {
-            coverage_report_scope::scope(&cargo_metadata()?, &exclude)
+            let meta = cargo_metadata().map_err(nothing_printed)?;
+            coverage_report_scope::scope(&meta, &exclude).map_err(nothing_printed)
         }
     }
 }
@@ -88,20 +94,22 @@ fn main() -> ExitCode {
             return ExitCode::from(code);
         }
     };
-    match run(cli.cmd) {
-        Ok(out) => {
-            let mut stdout = std::io::stdout().lock();
-            if let Err(e) = stdout
-                .write_all(out.as_bytes())
-                .and_then(|()| stdout.flush())
-            {
-                eprintln!("aprender-ci-tools: stdout: {e}");
-                return ExitCode::FAILURE;
-            }
-            ExitCode::SUCCESS
-        }
-        Err(msg) => {
-            eprintln!("{msg}");
+    let (out, refusal) = match run(cli.cmd) {
+        Ok(out) => (out, None),
+        Err((printed, reason)) => (printed, Some(reason)),
+    };
+    let mut stdout = std::io::stdout().lock();
+    if let Err(e) = stdout
+        .write_all(out.as_bytes())
+        .and_then(|()| stdout.flush())
+    {
+        eprintln!("aprender-ci-tools: stdout: {e}");
+        return ExitCode::FAILURE;
+    }
+    match refusal {
+        None => ExitCode::SUCCESS,
+        Some(reason) => {
+            eprintln!("{reason}");
             ExitCode::FAILURE
         }
     }
