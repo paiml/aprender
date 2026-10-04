@@ -24060,3 +24060,23 @@ Not done, pending the ruling: moving the 31 fixture files to an obviously synthe
   labels:
   - kind:docs
   notes: 'Operator C197, 2026-10-01 12:40Z: re-date via the spec''s own procedure; check unchanged; not a waiver.'
+- id: PMAT-4719
+  github_issue: 4719
+  item_type: task
+  title: '0702-P2: nightly producers for the readiness, milestone and preflight verdict lanes (#4719)'
+  status: inprogress
+  priority: critical
+  assigned_to: null
+  created: 2026-10-04T09:18:17Z
+  updated: 2026-10-04T09:18:17Z
+  spec: null
+  acceptance_criteria:
+  - release-gates-nightly.yml runs milestone (--must-carry) and preflight (--graph-only) at main HEAD
+  - readiness-nightly.yml runs release_readiness.sh on same-commit dogfood-receipt + models-t1, else skipped (not_measured)
+  phases: []
+  subtasks: []
+  estimated_effort: null
+  labels:
+  - kind:code
+  notes: null
+  epic: 4678

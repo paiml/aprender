@@ -65,7 +65,7 @@ jobs:
           [ -n "$train" ] || { echo "::error::no open X.Y.Z milestone above v$last: the train cannot be named"; exit 2; }
           echo "train milestone: $train (lowest open X.Y.Z above the newest final tag v$last)"
           rc=0
-          bash scripts/check_milestone_cut.sh "$train" --must-carry || rc=$?
+          setsid --wait bash scripts/check_milestone_cut.sh "$train" --must-carry || rc=$?
           case $rc in
             0) echo "MUST-CARRY $train: no open must-carry issue (rc=0)" ;;
             1) echo "::error::milestone $train holds open must-carry issue(s) (rc=1)"; exit 1 ;;
@@ -82,5 +82,5 @@ jobs:
         run: |
           set -uo pipefail
           rc=0
-          bash scripts/check_publish_preflight.sh --graph-only || rc=$?
+          setsid --wait bash scripts/check_publish_preflight.sh --graph-only || rc=$?
           [ "$rc" -eq 0 ] || { echo "::error::publish preflight --graph-only refused rc=$rc (1 = a rule refused, 2 = could not answer)"; exit 1; }
