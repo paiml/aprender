@@ -2,11 +2,14 @@
 # (FALSIFY-CB-004/006/008) and the perf041 PP-26 v3.1 witness; does not replace them.
 # Checker: scripts/lookahead/v3_shape_check.py, an external check run by hand. No build,
 # test, gate or CI job invokes it. Before this file moves into contracts/, its cases port
-# to Rust with the fixtures as data, plus the five planted cases the qa_gate names.
+# to Rust with scripts/lookahead/fixtures/v3/cases.json as the case table (fixture, exit
+# code, reasons), together with the findings below. docs/lookahead/0.71-v3-selftest-cases.patch
+# makes the Python --self-test run that table. Until the patch is applied, the self-test
+# runs only the six original fixtures.
 metadata:
   id: serving-shape-parity-v1
   kind: schema
-  version: "0.2.0"
+  version: "0.3.0"
   created: "2026-10-03"
   author: la-0.71 (L1)
   status: draft
@@ -82,21 +85,134 @@ falsification_tests:
     prediction: "On main's lambda witness the checker exits 1 with five reasons: the model is not the blessed Qwen3.5-4B; c=4, c=8 and c=16 diverge from m=1 at 3 < 64 with no margin recorded; and c=16 has m_formed 14."
     test: "v3_shape_check.py evidence/perf041/lambda/witness.json, run by hand (the self-test does not run it)"
     if_fails: "A perf041 PASS is read as a V3 receipt: a V3 rule is missing, or the witness on main changed."
+  - id: FALSIFY-SSP-008
+    rule: "identity complete: a witness missing any one of binary_sha256, commit, host, prompt_sha256 is not admissible (one case per member)"
+    fixtures:
+      - scripts/lookahead/fixtures/v3/no-identity-binary-sha256.json
+      - scripts/lookahead/fixtures/v3/no-identity-commit.json
+      - scripts/lookahead/fixtures/v3/no-identity-host.json
+      - scripts/lookahead/fixtures/v3/no-identity-prompt-sha256.json
+    expect: 1
+    prediction: "Each fixture drops one identity field from the admissible witness and exits 1 with the single reason 'identity field <k> missing' for that field."
+    test: "v3_shape_check.py --self-test with docs/lookahead/0.71-v3-selftest-cases.patch applied, cases no-identity-binary-sha256, no-identity-commit, no-identity-host, no-identity-prompt-sha256. Unpatched: run v3_shape_check.py on each fixture, by hand."
+    if_fails: "The identity check is missing or skips a member: the fixture that drops that member exits 0."
+  - id: FALSIFY-SSP-009
+    rule: "a blessed model with no sha256 recorded is not admissible"
+    fixture: scripts/lookahead/fixtures/v3/no-model-sha256.json
+    expect: 1
+    prediction: "The checker exits 1 with the single reason 'model sha256 missing'."
+    test: "v3_shape_check.py --self-test with the patch applied, case no-model-sha256. Unpatched: v3_shape_check.py on the fixture, by hand."
+    if_fails: "The sha256 half of S1 is unchecked, so a path prefix alone admits the model."
+  - id: FALSIFY-SSP-010
+    rule: "a margin equal to epsilon does not explain a divergence (epsilon is a strict upper bound)"
+    fixture: scripts/lookahead/fixtures/v3/margin-at-epsilon.json
+    expect: 1
+    prediction: "A c=4 band that diverges at 3 with a recorded margin of exactly 0.05 is not explained. The checker exits 1 with the single reason 'c=4: diverges from m=1 at 3 < 64 with no near-tie margin recorded'. That wording says no margin was recorded although one was (findings F4); the case pins today's wording."
+    test: "v3_shape_check.py --self-test with the patch applied, case margin-at-epsilon. Unpatched: v3_shape_check.py on the fixture, by hand."
+    if_fails: "epsilon was raised or the comparison became <=, so a margin at epsilon explains the divergence and the fixture exits 0."
+  - id: FALSIFY-SSP-011
+    rule: "a band whose perf041 result is not PASS is not admissible"
+    fixture: scripts/lookahead/fixtures/v3/failed-band.json
+    expect: 1
+    prediction: "The checker exits 1 with the single reason 'c=8: perf041 result FAIL'."
+    test: "v3_shape_check.py --self-test with the patch applied, case failed-band. Unpatched: v3_shape_check.py on the fixture, by hand."
+    if_fails: "S6 is unchecked: a band that perf041 failed is admitted."
+  - id: FALSIFY-SSP-012
+    rule: "every band c in {1,4,8,16} is measured (one case per member)"
+    fixtures:
+      - scripts/lookahead/fixtures/v3/missing-band-c1.json
+      - scripts/lookahead/fixtures/v3/missing-band-c4.json
+      - scripts/lookahead/fixtures/v3/missing-band-c8.json
+      - scripts/lookahead/fixtures/v3/missing-band-c16.json
+    expect: 1
+    prediction: "Each fixture drops one band from the admissible witness and exits 1 with the single reason 'band c=<c> not measured' for that band."
+    test: "v3_shape_check.py --self-test with the patch applied, cases missing-band-c1, missing-band-c4, missing-band-c8, missing-band-c16. Unpatched: run v3_shape_check.py on each fixture, by hand."
+    if_fails: "S2 is unchecked or skips a band: the fixture that drops that band exits 0."
+  - id: FALSIFY-SSP-013
+    rule: "control: a divergence exactly at declared_min is admissible"
+    fixture: scripts/lookahead/fixtures/v3/divergence-at-min.json
+    expect: 0
+    prediction: "A c=4 band that diverges from m=1 at 64 with declared_min 64 agrees to declared_min, so the checker exits 0 and prints no reason."
+    test: "v3_shape_check.py --self-test with the patch applied, case divergence-at-min. Unpatched: v3_shape_check.py on the fixture, by hand."
+    if_fails: "The divergence comparison became <=, so agreement to exactly declared_min is reported as a divergence."
+  - id: FALSIFY-SSP-014
+    rule: "a witness whose band list is empty is RED"
+    fixture: scripts/lookahead/fixtures/v3/no-bands.json
+    expect: 2
+    prediction: "The checker exits 2 with 'RED: empty or unreadable witness'."
+    test: "v3_shape_check.py --self-test with the patch applied, case no-bands. Unpatched: v3_shape_check.py on the fixture, by hand."
+    if_fails: "A witness that measured nothing is evaluated instead of RED: it exits 1 with four 'not measured' reasons."
+  - id: FALSIFY-SSP-015
+    rule: "an UNMEASURABLE band is not admissible, and its null divergence_at does not crash the check"
+    fixture: scripts/lookahead/fixtures/v3/unmeasurable-band.json
+    expect: 1
+    prediction: "The checker exits 1 with two reasons, 'c=8: perf041 result UNMEASURABLE' and 'c=8: diverges from m=1 at None < 64 with no near-tie margin recorded'. The second is redundant (findings F5); the case pins it."
+    test: "v3_shape_check.py --self-test with the patch applied, case unmeasurable-band. Unpatched: v3_shape_check.py on the fixture, by hand."
+    if_fails: "A null divergence_at raises TypeError instead of reading as 0, or an UNMEASURABLE band is admitted."
+  - id: FALSIFY-SSP-016
+    rule: "a whitespace-only witness is RED"
+    fixture: scripts/lookahead/fixtures/v3/blank.json
+    expect: 2
+    prediction: "A witness file holding only a newline exits 2 with 'RED: empty or unreadable witness'."
+    test: "v3_shape_check.py --self-test with the patch applied, case blank. Unpatched: v3_shape_check.py on the fixture, by hand."
+    if_fails: "load() parses the whitespace as JSON and raises JSONDecodeError (exit 1), so a blank witness is not RED."
 qa_gate:
   id: F-SSP-QA-001
   name: A V3 receipt is admitted only when every conjunct holds
   description: >
-    Each planted fixture exits with its expected code, and each NOT ADMISSIBLE fixture
-    prints only its own reason. The self-test compares exit codes only, over 001-006; the
-    reasons were checked by hand on 2026-10-04, and 007 runs by hand. The planted set pins
-    the blessed-model prefix, m_formed = c, and a divergence explained only by a recorded
-    margin, plus RED on an empty witness. Five checks have no planted fixture yet: three
-    whole conjuncts (every band measured, result = PASS, identity complete) and two parts
-    of pinned ones (a model sha256 is present; epsilon's upper bound). See falsification.
+    The case table scripts/lookahead/fixtures/v3/cases.json has 21 rows, each a fixture
+    with its exit code and its exact reasons, and every row belongs to one of
+    FALSIFY-SSP-001..006 or 008..016. Every conjunct has a planted case. A set rule has one
+    case per member (identity fields, bands), and each boundary has a case on it (divergence
+    at declared_min, margin at epsilon). As staged, the self-test runs only the six original
+    fixtures and compares exit codes. With docs/lookahead/0.71-v3-selftest-cases.patch
+    applied, it runs the table, compares exit code and reasons exactly, and is RED on a
+    fixture that no row names or on an empty table. FALSIFY-SSP-007 runs by hand.
   checks:
     - planted_fixture_exits_as_expected
     - not_admissible_fixture_prints_only_its_own_reason
+    - every_fixture_named_by_a_case
+    - case_table_not_empty
     - real_witness_not_admissible
-  pass_criteria: "v3_shape_check.py --self-test prints 'self-test: ok (6 fixtures)', and main's lambda witness exits 1 with the five reasons in FALSIFY-SSP-007"
-  falsification: "Measured 2026-10-04: the self-test kills mutants that drop the m_formed check or the blessed-model check. Five mutants survive it, one per check with no planted fixture: the identity check, the model sha256 check, epsilon (NEAR_TIE_EPS raised to 1.0), the band result = PASS check, and the all-bands-measured check. PROPOSE for the Rust port: planted fixtures missing-identity, no-model-sha, margin-at-epsilon (margin 0.05, not explained), failed-band (result FAIL) and missing-band (no c=8)."
-verification: "External check, by hand: python3 scripts/lookahead/v3_shape_check.py --self-test  # 2026-10-04 11:05Z: self-test: ok (6 fixtures). 2026-10-03: 5/5 mutants killed (1 by crash). 2026-10-04: five more mutants survive, recorded under qa_gate."
+  pass_criteria: "As staged, v3_shape_check.py --self-test prints 'self-test: ok (6 fixtures)'. With the patch applied it prints 'self-test: ok (21 cases)'. Main's lambda witness exits 1 with the five reasons in FALSIFY-SSP-007."
+  falsification: "Measured 2026-10-04 with 32 in-memory mutants, one per rule, per set member and per boundary (mutation_record). The staged self-test kills 14, 2 of them by a crash, and 18 survive. The table kills 30, 4 of them by a crash, whether it compares exit codes alone or exit codes and reasons; the patched self-test kills the same 30. Two survive. startswith-to-in (the blessed prefix matched anywhere in the path) survives because the check is a filename heuristic, and a planted case would only pin the heuristic; the stronger rule is S1 by sha256 match against the blessed model, a PROPOSE for the Rust port. declared-min-default-64 survives because no planted witness lacks declared_min (findings F3)."
+findings:
+  - id: F1
+    summary: "An unreadable witness exits 1 with a traceback, not 2 (RED) as the checker's docstring says."
+    evidence: "Measured 2026-10-04: malformed JSON raises JSONDecodeError and a missing file raises FileNotFoundError. Both exit 1, the code for NOT ADMISSIBLE."
+    proposal: "PROPOSE for the Rust port: a read or parse failure is RED, exit 2."
+  - id: F2
+    summary: "A JSON boolean passes the numeric checks, because a Python bool is an int."
+    evidence: "Measured 2026-10-04: top2_margin_at_divergence false explains a divergence (False < 0.05), and m_formed true passes c=1 (True == 1)."
+    proposal: "PROPOSE: typed fields in the Rust port, so both are parse failures."
+  - id: F3
+    summary: "A band with no declared_min passes S5, because the default is 0."
+    evidence: "band_reasons reads declared_min with a default of 0, so any divergence_at clears it. Latent today: the probe's band() (scripts/perf041_batched_parity_probe.py L450-455 on main) writes declared_min on every band. Mutant declared-min-default-64 survives the table for this reason."
+    proposal: "PROPOSE: in the Rust port a band with no declared_min is not admissible, with a planted case."
+  - id: F4
+    summary: "The S5 reason says 'no near-tie margin recorded' even when a margin is recorded at or above epsilon."
+    evidence: "Case margin-at-epsilon (FALSIFY-SSP-010) pins today's wording."
+    proposal: "PROPOSE: the Rust port's reason names the recorded margin and epsilon, and the case row changes with it."
+  - id: F5
+    summary: "An UNMEASURABLE band also reports 'diverges from m=1 at None < 64'."
+    evidence: "The probe returns UNMEASURABLE with divergence_at null (L458 on main), and the checker reads null as 0. Case unmeasurable-band (FALSIFY-SSP-015) pins both reasons."
+    proposal: "PROPOSE: a band with no divergence measurement reports only its result."
+  - id: F6
+    summary: "When two bands share a c, the last one wins, so an earlier FAIL is masked."
+    evidence: "Measured 2026-10-04: bands_reasons keys the bands by c in a dict."
+    proposal: "PROPOSE: in the Rust port a duplicate c is not admissible, with a planted case."
+  - id: S7-scope
+    summary: "S7 (FALSIFY-CB-004, per-request decode at c=4 at least 50% of c=1) is not checked by this script."
+    evidence: "The perf041 witness records no timing. S7 is the parent contract's FALSIFY-CB-004, measured on the same run."
+    proposal: "The receipt cites the CB-004 measurement of the same run beside the witness."
+mutation_record:
+  date: "2026-10-04"
+  method: "One exact-once string replacement per mutant on scripts/lookahead/v3_shape_check.py, executed in a fresh namespace beside the fixture tree; the checker file is never edited. A crash counts as a kill."
+  mutants: 32
+  staged_self_test: {killed: 14, killed_by_crash: 2, survived: 18}
+  case_table_exit_code: {killed: 30, killed_by_crash: 4, survived: 2}
+  case_table_exit_code_and_reasons: {killed: 30, killed_by_crash: 4, survived: 2}
+  patched_self_test: {killed: 30, killed_by_crash: 4, survived: 2}
+  killed_only_by_crash: [explained-no-type-check, divergence-no-or-0, evaluate-no-object-check, load-no-strip]
+  survived_table: [startswith-to-in, declared-min-default-64]
+verification: "External check, by hand: python3 scripts/lookahead/v3_shape_check.py --self-test  # 2026-10-04 12:26Z: self-test: ok (6 fixtures). The same tree with docs/lookahead/0.71-v3-selftest-cases.patch applied in a scratch copy: self-test: ok (21 cases). Main's lambda witness exits 1 with the five FALSIFY-SSP-007 reasons. Mutants: mutation_record."

@@ -1,0 +1,33 @@
+diff --git a/scripts/lookahead/v3_shape_check.py b/scripts/lookahead/v3_shape_check.py
+index 3563890..dde0372 100755
+--- a/scripts/lookahead/v3_shape_check.py
++++ b/scripts/lookahead/v3_shape_check.py
+@@ -73,17 +73,22 @@ def verdict(path):
+     return (2, ["RED: empty or unreadable witness"]) if reasons is None else (1 if reasons else 0, reasons)
+ 
+ 
+-EXPECT = {"admissible.json": 0, "near-tie.json": 0, "short-band.json": 1,
+-          "wrong-model.json": 1, "unexplained-divergence.json": 1, "empty.json": 2}
++CASES = HERE / "fixtures" / "v3" / "cases.json"
+ 
+ 
+ def self_test():
+-    fx = HERE / "fixtures" / "v3"
+-    bad = [f"{n}: got {verdict(fx / n)[0]}, want {w}" for n, w in EXPECT.items() if verdict(fx / n)[0] != w]
++    rows = json.loads(CASES.read_text())
++    named = {r["fixture"] for r in rows}
++    dark = [p.name for p in sorted(CASES.parent.glob("*.json")) if p != CASES and p.name not in named]
++    bad = [f"{r['id']}: got {verdict(CASES.parent / r['fixture'])}, want {(r['expect'], r['reasons'])}"
++           for r in rows if verdict(CASES.parent / r["fixture"]) != (r["expect"], r["reasons"])]
+     for b in bad:
+         print("FALSIFIER SURVIVED:", b)
+-    print("self-test:", "RED" if bad else f"ok ({len(EXPECT)} fixtures)")
+-    return 2 if bad else 0
++    for d in dark:
++        print("DARK FIXTURE (no case names it):", d)
++    ok = rows and not bad and not dark
++    print("self-test:", f"ok ({len(rows)} cases)" if ok else "RED")
++    return 0 if ok else 2
+ 
+ 
+ def main():

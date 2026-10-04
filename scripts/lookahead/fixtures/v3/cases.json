@@ -1,0 +1,23 @@
+[
+ {"id": "admissible", "fixture": "admissible.json", "expect": 0, "reasons": []},
+ {"id": "near-tie", "fixture": "near-tie.json", "expect": 0, "reasons": []},
+ {"id": "short-band", "fixture": "short-band.json", "expect": 1, "reasons": ["c=16: m_formed 14 != c (shape not served)"]},
+ {"id": "wrong-model", "fixture": "wrong-model.json", "expect": 1, "reasons": ["model 'qwen2.5-coder-1.5b-instruct-q4_k_m.gguf' is not the blessed Qwen3.5-4B"]},
+ {"id": "unexplained-divergence", "fixture": "unexplained-divergence.json", "expect": 1, "reasons": ["c=4: diverges from m=1 at 3 < 64 with no near-tie margin recorded"]},
+ {"id": "empty", "fixture": "empty.json", "expect": 2, "reasons": ["RED: empty or unreadable witness"]},
+ {"id": "no-identity-binary-sha256", "fixture": "no-identity-binary-sha256.json", "expect": 1, "reasons": ["identity field binary_sha256 missing"]},
+ {"id": "no-identity-commit", "fixture": "no-identity-commit.json", "expect": 1, "reasons": ["identity field commit missing"]},
+ {"id": "no-identity-host", "fixture": "no-identity-host.json", "expect": 1, "reasons": ["identity field host missing"]},
+ {"id": "no-identity-prompt-sha256", "fixture": "no-identity-prompt-sha256.json", "expect": 1, "reasons": ["identity field prompt_sha256 missing"]},
+ {"id": "no-model-sha256", "fixture": "no-model-sha256.json", "expect": 1, "reasons": ["model sha256 missing"]},
+ {"id": "margin-at-epsilon", "fixture": "margin-at-epsilon.json", "expect": 1, "reasons": ["c=4: diverges from m=1 at 3 < 64 with no near-tie margin recorded"]},
+ {"id": "failed-band", "fixture": "failed-band.json", "expect": 1, "reasons": ["c=8: perf041 result FAIL"]},
+ {"id": "missing-band-c1", "fixture": "missing-band-c1.json", "expect": 1, "reasons": ["band c=1 not measured"]},
+ {"id": "missing-band-c4", "fixture": "missing-band-c4.json", "expect": 1, "reasons": ["band c=4 not measured"]},
+ {"id": "missing-band-c8", "fixture": "missing-band-c8.json", "expect": 1, "reasons": ["band c=8 not measured"]},
+ {"id": "missing-band-c16", "fixture": "missing-band-c16.json", "expect": 1, "reasons": ["band c=16 not measured"]},
+ {"id": "divergence-at-min", "fixture": "divergence-at-min.json", "expect": 0, "reasons": []},
+ {"id": "no-bands", "fixture": "no-bands.json", "expect": 2, "reasons": ["RED: empty or unreadable witness"]},
+ {"id": "unmeasurable-band", "fixture": "unmeasurable-band.json", "expect": 1, "reasons": ["c=8: perf041 result UNMEASURABLE", "c=8: diverges from m=1 at None < 64 with no near-tie margin recorded"]},
+ {"id": "blank", "fixture": "blank.json", "expect": 2, "reasons": ["RED: empty or unreadable witness"]}
+]
