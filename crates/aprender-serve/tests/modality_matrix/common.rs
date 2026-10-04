@@ -441,8 +441,40 @@ impl ModalityTestResult {
     }
 }
 
-/// Force a specific backend via environment variable
+/// One lock for the process-wide `REALIZAR_*` backend env vars (#4727).
+///
+/// Tests run in parallel threads of one process, so without it one test's
+/// `clear_backend_forcing` removed the variable another had just forced.
+static BACKEND_ENV_LOCK: std::sync::Mutex<()> = std::sync::Mutex::new(());
+
+thread_local! {
+    /// The lock, held by this test thread from `force_backend` until
+    /// `clear_backend_forcing`. Dropped at thread exit if a test panics first.
+    static BACKEND_ENV_GUARD: std::cell::RefCell<Option<std::sync::MutexGuard<'static, ()>>> =
+        const { std::cell::RefCell::new(None) };
+}
+
+/// Take the backend env lock for this thread, unless it already holds it.
+fn hold_backend_env_lock() {
+    BACKEND_ENV_GUARD.with(|guard| {
+        let mut guard = guard.borrow_mut();
+        if guard.is_none() {
+            // A test that panicked while holding the lock poisons it; the env
+            // is reset by every `force_backend`, so the poison carries nothing.
+            *guard = Some(
+                BACKEND_ENV_LOCK
+                    .lock()
+                    .unwrap_or_else(std::sync::PoisonError::into_inner),
+            );
+        }
+    });
+}
+
+/// Force a specific backend via environment variable.
+///
+/// Holds the backend env lock until `clear_backend_forcing` on this thread.
 pub fn force_backend(backend: Backend) {
+    hold_backend_env_lock();
     // Clear all backend env vars first
     std::env::remove_var("REALIZAR_FORCE_SCALAR");
     std::env::remove_var("REALIZAR_FORCE_SIMD");
@@ -452,11 +484,13 @@ pub fn force_backend(backend: Backend) {
     std::env::set_var(backend.env_var(), backend.env_value());
 }
 
-/// Clear all backend forcing env vars
+/// Clear all backend forcing env vars, then release the backend env lock.
 pub fn clear_backend_forcing() {
+    hold_backend_env_lock();
     std::env::remove_var("REALIZAR_FORCE_SCALAR");
     std::env::remove_var("REALIZAR_FORCE_SIMD");
     std::env::remove_var("REALIZAR_BACKEND");
+    BACKEND_ENV_GUARD.with(|guard| guard.borrow_mut().take());
 }
 
 /// Generate test prompts for batch testing

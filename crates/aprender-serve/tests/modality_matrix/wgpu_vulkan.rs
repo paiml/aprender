@@ -247,7 +247,6 @@ fn test_wgpu_availability_check() {
 
 /// PARITY-112-WGPU-10: WGPU backend in common infrastructure
 #[test]
-#[ignore = "FLAKE #4727: races other tests on the process-wide REALIZAR_BACKEND env var"]
 fn test_wgpu_in_common_infrastructure() {
     println!("PARITY-112-WGPU-10: WGPU in Common Infrastructure");
 
