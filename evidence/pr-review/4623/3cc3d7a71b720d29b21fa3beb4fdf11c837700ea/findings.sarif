@@ -1,0 +1,259 @@
+{
+  "$schema": "https://docs.oasis-open.org/sarif/sarif/v2.1.0/errata01/os/schemas/sarif-schema-2.1.0.json",
+  "version": "2.1.0",
+  "runs": [
+    {
+      "tool": {
+        "driver": {
+          "name": "pmat"
+        }
+      },
+      "invocations": [
+        {
+          "executionSuccessful": true,
+          "toolExecutionNotifications": []
+        }
+      ],
+      "results": [
+        {
+          "ruleId": "complexity_build_increase",
+          "level": "note",
+          "message": {
+            "text": "build() in gguf/cuda/mod.rs is cyclomatic 8 / cognitive 13 at head against 6 / 11 on base (148 lines against 125). That is the increase #4623 already carried; the fold adds for_serving (1/0) and serving_kv_len (1/1), both trivial. Under the repo threshold of 10."
+          },
+          "properties": {
+            "grounding": "measured",
+            "command": [
+              "pmat",
+              "analyze",
+              "complexity",
+              "--file",
+              "<head copy of gguf/cuda/mod.rs>",
+              "--format",
+              "json"
+            ],
+            "exit_code": 0,
+            "stdout_sha256": "875229194d8f9971fcf348a48488c2e3f8150090f0dedb6adc0b62e8599bbef1",
+            "failure_scenario": "build() keeps absorbing sizing logic; the next branch added to it crosses cyclomatic 10 and lands in the hotspot list.",
+            "precision_class": "advisory"
+          }
+        },
+        {
+          "ruleId": "union_property_chat_side",
+          "level": "note",
+          "message": {
+            "text": "Union property, #4623 side: git diff --numstat origin/ec/4621-chat-session-kv HEAD over the 5 files that PR changed against main shows 0 deleted lines in every file (gguf/cuda/mod.rs +50/-0, session_kv.rs +77/-0; gpu_profile.rs, chat_load_tokenizers.rs and resident.rs identical). Every line #4623 changed against main is present in HEAD."
+          },
+          "properties": {
+            "grounding": "measured",
+            "command": [
+              "git",
+              "diff",
+              "--numstat",
+              "origin/ec/4621-chat-session-kv",
+              "HEAD",
+              "--",
+              "<the 5 files #4623 changed vs main>"
+            ],
+            "exit_code": 0,
+            "stdout_sha256": "9460c87ceede6f97d271303984c459b80cb372603612035e1a3a99154ceee13b",
+            "failure_scenario": "A line #4623 added or edited that the fold dropped would show as a deletion here and put chat back on a fixed 2048 KV; none does.",
+            "precision_class": "advisory"
+          }
+        },
+        {
+          "ruleId": "union_property_serve_side",
+          "level": "note",
+          "message": {
+            "text": "Union property, #4630 side: the same numstat against origin/devont/k1-serve-kv over the 10 non-evidence files that PR changed shows 0 deletions in 9 files and 2 in gguf/cuda/mod.rs (+63/-2). The 2 lines are the BATCHED_PREFILL argument of the disable_fp8_for_qk_norm call and the #3413 eprintln text. Both are main text that #4630 left untouched (git diff main..k1 on that file has 0 matches for them) and #4623 edited, so they are the one place the two PRs conflict. Confirms the author's count of 2."
+          },
+          "properties": {
+            "grounding": "measured",
+            "command": [
+              "git",
+              "diff",
+              "--numstat",
+              "origin/devont/k1-serve-kv",
+              "HEAD",
+              "--",
+              "<the 10 non-evidence files #4630 changed vs main>"
+            ],
+            "exit_code": 0,
+            "stdout_sha256": "0bf489fa5237c8581ad42c6926f08064e69f567f316d4ccdc20d0b11b0e558d5",
+            "failure_scenario": "If the 2 lines were K1 additions, serve would lose a K1 change; git shows they are main text on which #4623 and the base conflict, so taking #4623 is the only consistent resolution.",
+            "precision_class": "advisory"
+          }
+        },
+        {
+          "ruleId": "nothing_else_changed",
+          "level": "note",
+          "message": {
+            "text": "HEAD against main changes 16 files and the set equals the union of the two PRs' file sets (sorted name lists diff empty). Merge parents are 56ad4d4a43 (#4623) and da4f4f9c62 (#4630). Files only K1 changed are byte-identical to k1 (serve handlers, tests, roadmap, resident.rs); gpu_profile.rs, chat_load_tokenizers.rs and resident.rs are identical to the #4623 side; session_kv.rs equals k1, which is a superset of #4623's."
+          },
+          "properties": {
+            "grounding": "measured",
+            "command": [
+              "git",
+              "diff",
+              "--name-only",
+              "316dee2cd4b3b3990ad47cc1a7a661c979a4e1d3",
+              "HEAD"
+            ],
+            "exit_code": 0,
+            "stdout_sha256": "87cd88047e4edf8c4395f26ac2a156acd8c5b45332f8b34f737512cf0327de75",
+            "failure_scenario": "A conflict hunk resolved by touching a third file would appear as a name outside the union; none does.",
+            "precision_class": "advisory"
+          }
+        },
+        {
+          "ruleId": "callers_reach_intended_constructor",
+          "level": "note",
+          "message": {
+            "text": "apr chat (chat_load_tokenizers.rs:270 and :352) calls for_session; apr serve (serve/handler_gpu_completion.rs:609) calls for_serving, and keeps with_max_seq_len for an explicit --context-length (:605). disable_fp8_for_qk_norm is the 2-argument form at gpu_profile.rs:1193 and its one call site and 5 tests use 2 arguments, so no stale 3-argument caller remains. KvLen is a Copy enum passed by value into build(); the FitContext and FitServing arms share no state and both reach the #3715 QK-norm fit check."
+          },
+          "properties": {
+            "grounding": "measured",
+            "command": [
+              "git",
+              "grep",
+              "-n",
+              "for_session(|for_serving(",
+              "HEAD",
+              "--",
+              "crates/apr-cli",
+              "crates/aprender-serve/src/api"
+            ],
+            "exit_code": 0,
+            "stdout_sha256": "9110e268aa05ed035bdf44e54500b62f4d11a9ca59c583df1fc73b59670900e6",
+            "failure_scenario": "A swapped constructor would give serve a context-sized KV with no batched-slot budget, or chat serve's 4096 floor; each caller reaches its own.",
+            "precision_class": "advisory"
+          }
+        },
+        {
+          "ruleId": "fit_check_need_ignores_serve_batched_slots",
+          "level": "warning",
+          "message": {
+            "text": "The #3715 QK-norm fit check in build() computes need = weights + cache + reserve + kv_per_pos * max_seq_len for both modes. For FitServing the KV length was sized against (1 + SERVE_BATCH_SLOTS) slots, so need counts one slot. Where the 4096 floor does not bind the check is consistent; where it binds, the check can call the FP16 batched prefill a fit that a three-slot budget would not. fit_batched_kv_alloc (kv_cache_gpu_init.rs:272) shrinks the batched slots to what fits rather than failing."
+          },
+          "properties": {
+            "grounding": "asserted",
+            "rationale": "Read of build() and session_kv::serving_kv_len at head; raised independently by the primary and by the antigravity reviewer. The primary disagrees with the reviewer on severity because the batched allocation degrades gracefully. Not measured on a device.",
+            "failure_scenario": "A QK-norm model on a card where serving_kv_len hits its 4096 floor keeps the FP16 batched prefill cache, and the later batched-KV allocation gets fewer than SERVE_BATCH_SLOTS slots (a throughput loss logged as X1-KVALLOC), or in the worst case a CUDA OOM at batched init.",
+            "precision_class": "advisory"
+          }
+        }
+      ]
+    },
+    {
+      "tool": {
+        "driver": {
+          "name": "nvidia-cuda-docs"
+        }
+      },
+      "invocations": [
+        {
+          "executionSuccessful": true,
+          "toolExecutionNotifications": []
+        }
+      ],
+      "results": []
+    },
+    {
+      "tool": {
+        "driver": {
+          "name": "crux"
+        }
+      },
+      "invocations": [
+        {
+          "executionSuccessful": true,
+          "toolExecutionNotifications": []
+        }
+      ],
+      "results": [
+        {
+          "ruleId": "crux_surface_covered",
+          "level": "note",
+          "message": {
+            "text": "The K1 half changes apr serve GPU KV sizing and the HTTP status of an over-limit prompt (500 to 400). contracts/crux-C-07-v1.yaml and contracts/crux-C-32-v1.yaml, the two contracts the #4630 receipt recorded for these surfaces, exist at head. gap_effect none; the fold adds no surface beyond the two PRs."
+          },
+          "properties": {
+            "grounding": "measured",
+            "command": [
+              "ls",
+              "contracts/crux-C-07-v1.yaml",
+              "contracts/crux-C-32-v1.yaml"
+            ],
+            "exit_code": 0,
+            "stdout_sha256": "e0cb196defeb650a646a7e7a5dd444b849cef9ea7c07804bcf9f43c5f7adf536",
+            "failure_scenario": "A surface with no covering contract would be crux_coverage none; both contracts are present.",
+            "precision_class": "advisory"
+          }
+        }
+      ]
+    },
+    {
+      "tool": {
+        "driver": {
+          "name": "cargo-mutants"
+        }
+      },
+      "invocations": [
+        {
+          "executionSuccessful": false,
+          "toolExecutionNotifications": [
+            {
+              "level": "error",
+              "message": {
+                "text": "cargo mutants was not run: the standing instruction for this review forbids running cargo on the review host, and the diff changes 8 .rs files so the in-diff mutation scope is triggered. Mutation is unreachable, not clean."
+              },
+              "properties": {
+                "grounding": "measured",
+                "command": [
+                  "git",
+                  "diff",
+                  "--name-only",
+                  "316dee2cd4b3b3990ad47cc1a7a661c979a4e1d3",
+                  "HEAD",
+                  "--",
+                  "*.rs"
+                ],
+                "exit_code": 0,
+                "stdout_sha256": "ac2499f83ad86c879b72e8140653ce7ad2f4f6a688b2473386ac5a5eba73af92"
+              }
+            }
+          ]
+        }
+      ],
+      "results": []
+    },
+    {
+      "tool": {
+        "driver": {
+          "name": "antigravity"
+        }
+      },
+      "invocations": [
+        {
+          "executionSuccessful": true,
+          "toolExecutionNotifications": []
+        }
+      ],
+      "results": [
+        {
+          "ruleId": "agy_fit_serving_need_mis_sizing",
+          "level": "warning",
+          "message": {
+            "text": "The need byte calculation for the FP16 batched prefill fit check does not account for SERVE_BATCH_SLOTS when KvLen::FitServing is used (mod.rs:837)."
+          },
+          "properties": {
+            "grounding": "asserted",
+            "rationale": "Raised by the antigravity reviewer as asserted; the primary did not re-run anything. The primary reached the same subject independently (pmat result fit_check_need_ignores_serve_batched_slots) and agrees on direction, not on severity: fit_batched_kv_alloc shrinks the slots instead of the process failing.",
+            "failure_scenario": "For `apr serve` models, `KvLen::FitServing` provisions `1 + SERVE_BATCH_SLOTS` KV slots per sequence to accommodate continuous batching. However, the `need` calculation in `OwnedQuantizedModelCuda::build` only adds `r.kv_per_pos * max_seq_len` (1 slot) to the footprint. This severely underestimates the actual VRAM usage by omitting the batched slots that the scheduler will allocate later. As a result, the `serial_when_fp16_prefill_does_not_fit` check incorrectly concludes that the FP16 batched prefill cache will fit alongside the weights and KV caches. This will lead to an Out-Of-Memory (OOM) crash when the continuous-batching scheduler allocates the remaining KV slots.",
+            "precision_class": "advisory"
+          }
+        }
+      ]
+    }
+  ]
+}
