@@ -54,7 +54,8 @@
 #   r2 inline code collapse (non-goal) .................... N2
 #   r2 kill credited to any red row ....................... --mutants names the row per mutant
 #   v2 new: split syscalls T6; deleted temp script P26; untracked root E6;
-#   data file after the entry point P25.
+#   data file after the entry point P25; still running at the end T7;
+#   untracked repo script hashed at --count T8; no TMPDIR means /tmp only T9.
 #
 # REPORT-ONLY TODAY. It lands as a ratchet from the measured value (head vs
 # base, never worse) and blocks only after three green nights, by sign-off.
@@ -176,7 +177,7 @@ falsification_tests:
       missed and the run says not_measured.
     test: 'bash scripts/python_runcount.sh --self-test   # rows P7-P9, P12, P14, P22, P23, T5'
     if_fails: 'a shim-only count would read low and pass'
-    mutation: 'drop the shebang table, narrow the interpreter pattern, key on argv[0], or drop execveat; the named row must turn RED'
+    mutation: 'skip the #! read, narrow the interpreter pattern, key on argv[0], or drop execveat; the named row must turn RED'
   - id: PRC-F-003
     rule: never worse, and never a pass without a trace
     prediction: >-
@@ -192,12 +193,14 @@ falsification_tests:
       A script run twice is one key; cd and fchdir before the call key the
       repo path; -W/-X values joined or not, -mcompileall, -Im and -Bc need no
       flag table; temp scripts (mktemp files, -XXXXXX dirs, pid names) key by
-      content and two runs agree; a script under the run's TMPDIR deleted
-      before --count keys gone@caller; a data file after the script is not the
+      content and two runs agree; the temp dir is the run's TMPDIR, or /tmp
+      when it is unset (mktemp's rule); a temp script deleted before --count
+      keys gone@caller; an untracked repo script nobody hashed keys by its
+      content at --count; a process still running at the end counts; a data file after the script is not the
       entry; a reused pid keys by its own cwd and caller; a split syscall is
       read whole; octal names key as the shim saw them in any locale; the root
       is the run's.
-    test: 'bash scripts/python_runcount.sh --self-test   # rows P10, P11, P13, P15-P21, P24-P26, S1, T1-T4, T6, L1'
+    test: 'bash scripts/python_runcount.sh --self-test   # rows P10, P11, P13, P15-P21, P24-P26, S1, T1-T4, T6-T9, L1'
     if_fails: 'the count would drift run to run and the ratchet would read noise as RED'
     mutation: 'drop chdir/fchdir tracking, pid lifetimes, resumed-call merging, the content hash, TMPDIR or root from meta, first-match order, the octal decode or LC_ALL=C; the named row must turn RED'
   - id: PRC-F-005
@@ -236,7 +239,9 @@ non_goals:
   - "Inline code per snippet. -c and stdin code key inline@<caller>: a caller is the porting unit, so a new snippet in a caller that already runs inline Python does not raise the count (row N2). Reversible by adding an argv-hash key."
   - "Two temp scripts with the same content are one entry point (row N1): the key is the content, not the name."
   - "A token naming a module CPython imports at start-up (e.g. an argument spelled encodings) can read as -m of that module."
-  - "Opens relative to a directory fd other than AT_FDCWD. CPython opens its entry point by an absolute or cwd-relative path."
+  - "Threads. A thread (clone with CLONE_THREAD) is read as a child of its creator with no image of its own: an entry point opened on a thread other than the one that exec'd is not seen."
+  - "An untracked #! script gone before --count whose interpreter is unknown then keys gone@caller whether or not it ran Python (fail-safe: it can only raise the count)."
+  - "A flag cluster ending in the name of a module CPython opens at start-up (e.g. -Xencodings) can read as -m of that module, like the plain token above; so can -c code joined to its flag that ends in the name of a module it imports (-cimport json). Either way it is one key, stable run to run."
   - "A script path holding a newline or a tab is not hashed by the shim; such a temp script keys by count-time content, or gone@caller."
   - "Which entry points changed, as a gate. The ratchet is on the count; added keys are listed even when GREEN."
   - "A head lane that stopped early with the same exit status as base. The status is the only completion evidence; the ratchet's lane must run to its end."

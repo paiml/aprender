@@ -85,7 +85,7 @@ stop_tracer() { # stop_tracer OUT
 }
 
 run_cmd() { # run_cmd OUT CMD...
-    local out="$1" n rc=0
+    local out="$1" n rc=0 root tmpd m
     shift
     [ "$#" -gt 0 ] || usage
     mkdir -p "$out/shim"
@@ -94,14 +94,19 @@ run_cmd() { # run_cmd OUT CMD...
     for n in "${SHIM_NAMES[@]}"; do
         ln -sf "$LIB/shim" "$out/shim/$n"
     done
-    out="$( cd "$out" && pwd )"
+    out="$( cd "$out" && pwd -P )"
+    # The run's facts --count needs, physical (strace paths are): where it ran, the
+    # repo it ran in, its TMPDIR, and the shim dir (never an entry point).
+    root=$( cd "$ROOT" 2>/dev/null && pwd -P ) || root=""
+    tmpd=$( cd "${TMPDIR:-/tmp}" 2>/dev/null && pwd -P ) || tmpd="${TMPDIR:-}"
+    m=$(printf 'cwd=%s\nroot=%s\ntmpdir=%s\nshim=%s' "$(pwd -P)" "$root" "$tmpd" "$out/shim")
     if trace_usable; then
-        printf 'trace=measured\ncwd=%s\ntmpdir=%s\n' "$PWD" "${TMPDIR:-}" > "$out/meta"
+        printf 'trace=measured\n%s\n' "$m" > "$out/meta"
         PATH="$out/shim:$PATH" PYRUN_LOG="$out/shim.log" PYRUN_SHIM_DIR="$out/shim" \
-            strace -D -I 2 -f -q -s 4096 -e signal=none -e trace=execve,chdir,clone,clone3,fork,vfork -o "$out/trace.raw" "$@" || rc=$?
+            strace -D -I 2 -f -q -s 4096 -e signal=none -e 'trace=execve,execveat,?open,openat,chdir,fchdir,clone,clone3,fork,vfork' -o "$out/trace.raw" "$@" || rc=$?
         stop_tracer "$out"
     else
-        printf 'trace=not_measured\ncwd=%s\ntmpdir=%s\n' "$PWD" "${TMPDIR:-}" > "$out/meta"
+        printf 'trace=not_measured\n%s\n' "$m" > "$out/meta"
         PATH="$out/shim:$PATH" PYRUN_LOG="$out/shim.log" PYRUN_SHIM_DIR="$out/shim" "$@" || rc=$?
     fi
     printf 'rc=%s\n' "$rc" >> "$out/meta"
@@ -110,24 +115,6 @@ run_cmd() { # run_cmd OUT CMD...
 
 meta() { # meta OUT KEY
     sed -n "s/^$2=//p" "$1/meta" | head -n 1
-}
-
-shebang_interp() { # shebang_interp FILE -> python*/uv/uvx if FILE's #! line runs one
-    local line tok b
-    line=$(head -c 256 "$1" 2>/dev/null | tr -d '\000' | head -n 1) || return 1
-    case "$line" in '#!'*) ;; *) return 1 ;; esac
-    line="${line#\#!}"
-    read -r -a tok <<< "$line"
-    [ "${#tok[@]}" -gt 0 ] || return 1
-    b="${tok[0]##*/}"
-    if [ "$b" = env ]; then
-        b=""
-        for t in "${tok[@]:1}"; do
-            case "$t" in -*|*=*) continue ;; esac
-            b="${t##*/}"; break
-        done
-    fi
-    case "$b" in python|python[0-9]*|uv|uvx) printf '%s' "$b" ;; *) return 1 ;; esac
 }
 
 err2() { printf 'ERROR: %s\n' "$*" >&2; return 2; }
@@ -139,7 +126,7 @@ trace_ran() { # trace_ran TRACE -> true iff the trace is whole: a successful exe
     local root
     root=$(head -n 1 "$1" | cut -d' ' -f1)
     case "$root" in ''|*[!0-9]*) return 1 ;; esac
-    grep -q -E '^[0-9]+ +(execve\(|<\.\.\. execve resumed>).* = 0$' "$1" &&
+    grep -q -E '^[0-9]+ +(execve(at)?\(|<\.\.\. execve(at)? resumed>).* = 0$' "$1" &&
         grep -q -E "^$root +\+\+\+ (exited with [0-9]+|killed by SIG[A-Z0-9]+( \(core dumped\))?) \+\+\+$" "$1"
 }
 
@@ -147,24 +134,33 @@ trace_ran() { # trace_ran TRACE -> true iff the trace is whole: a successful exe
 # stage would leave an empty key list that reads as count 0. So every stage
 # checks its own status, and a failure is exit 2, never a count.
 count() { # count OUT -> OUT/keys, OUT/summary; prints the summary line
-    local out="$1" f i n s t
+    local out="$1" root f n s t
     [ -r "$out/meta" ] || { printf 'ENV: %s has no meta (not a --run dir)\n' "$out" >&2; return 2; }
-    if ! cat "$out/shim.log" > "$out/records"; then err2 "cannot read $out/shim.log"; return; fi
+    [ -r "$out/shim.log" ] || { err2 "cannot read $out/shim.log"; return; }
     if [ "$(meta "$out" trace)" = measured ]; then
         trace_ran "$out/trace.raw" ||
             { err2 "$out says trace=measured, but its trace is not whole (no execve, or no exit line for the lane)"; return; }
-        awk -v cwd0="$(meta "$out" cwd)" -f "$LIB/trace.awk" "$out/trace.raw" "$out/trace.raw" >> "$out/records" ||
-            { err2 "trace.awk failed on $out"; return; }
+        awk -v cwd0="$(meta "$out" cwd)" -v shimdir="$(meta "$out" shim)" -f "$LIB/trace.awk" \
+            "$out/trace.raw" "$out/trace.raw" > "$out/images" || { err2 "trace.awk failed on $out"; return; }
+    else
+        : > "$out/images" || { err2 "cannot write $out/images"; return; }
     fi
-    awk -F'\t' '$1 == "trace" && NF >= 5 { print $5 }' "$out/records" | sort -u > "$out/execs" ||
-        { err2 "cannot list the exec'd files of $out"; return; }
-    : > "$out/shebangs"
+    # Tracked files key by path. The root is the run's (meta); a root git cannot
+    # list would key every repo script as a temp one, so it is NOT_MEASURED.
+    # (A root below the top of its repo lists paths relative to itself, as rel() reads them.)
+    root=$(meta "$out" root)
+    [ -n "$root" ] || { err2 "$out/meta names no repo root"; return; }
+    git -C "$root" ls-files -z > "$out/tracked.z" && tr '\0' '\n' < "$out/tracked.z" > "$out/tracked" ||
+        { err2 "git cannot list the tracked files of $root"; return; }
+    # The content of each script still on disk, for a temp one the shim did not hash.
+    : > "$out/hashes" || { err2 "cannot write $out/hashes"; return; }
     while IFS= read -r f; do
-        [ -n "$f" ] || continue
-        i=$(shebang_interp "$f") || continue
-        printf '%s\t%s\n' "$f" "$i" >> "$out/shebangs"
-    done < "$out/execs"
-    awk -v root="$ROOT" -v tmpd="$(meta "$out" tmpdir)" -f "$LIB/keys.awk" "$out/shebangs" "$out/records" > "$out/calls" ||
+        [ -f "$f" ] && [ -r "$f" ] || continue
+        s=$(head -c 65536 -- "$f" | sha256sum) || { err2 "cannot hash $f"; return; }
+        printf '%s\t%s\n' "$f" "${s:0:12}" >> "$out/hashes" || { err2 "cannot write $out/hashes"; return; }
+    done < <(awk -F'\t' '$3 == "script" { print $4 }' "$out/images" | sort -u)
+    awk -v root="$root" -v tmpd="$(meta "$out" tmpdir)" -f "$LIB/keys.awk" \
+        "$out/tracked" "$out/hashes" "$out/shim.log" "$out/images" > "$out/calls" ||
         { err2 "keys.awk failed on $out"; return; }
     # One line per entry point: key, then which mechanisms saw it, then its callers.
     awk -F'\t' '{ s[$1] = s[$1] (index(s[$1], $2) ? "" : (s[$1] ? "+" : "") $2)
@@ -226,9 +222,10 @@ self_test() {
     local fails=0 rows=0 rc td n f p k o
     PYRUN_TD=$(mktemp -d "${TMPDIR:-/tmp}/pyrun.XXXXXX"); td=$PYRUN_TD
     trap 'pyrun_cleanup' EXIT   # td is local; the trap runs after it is gone
+    trap 'exit 143' TERM INT
     # The fake interpreters open what CPython opens (lib/python_runcount/fakes/python).
     # They sit AFTER the shim on PATH, so nothing real runs.
-    mkdir -p "$td/bin" "$td/w/sub" "$td/w/lanes" "$td/lib/encodings/__pycache__" "$td/lib/json/__pycache__" "$td/lib/__pycache__"
+    mkdir -p "$td/bin" "$td/tmp" "$td/w/sub" "$td/w/lanes" "$td/lib/encodings/__pycache__" "$td/lib/json/__pycache__" "$td/lib/__pycache__"
     for f in encodings/__pycache__/__init__ json/__pycache__/__init__ json/__pycache__/tool __pycache__/compileall; do
         : > "$td/lib/$f.cpython-313.pyc"
     done
@@ -250,6 +247,7 @@ self_test() {
     cp "$LIB"/plants/*.sh "$td/w/lanes/"
     git -C "$td/w" init -q && git -C "$td/w" add -A ||
         { printf 'NOT_MEASURED: cannot make the plant repo (git)\n'; return 2; }
+    printf '# u\n' > "$td/w/untracked.py"   # made after git add: untracked (T8)
     _eq() {
         rows=$((rows + 1))
         if [ "$2" = "$3" ]; then printf 'ok    %s\n' "$1"
@@ -258,12 +256,12 @@ self_test() {
     # plant NAME NO_TRACE(0|1) OUT: run lanes/NAME.sh in the plant repo, into o_OUT
     plant() {
         local o="$td/o_$3"
-        ( cd "$td/w" && env "PATH=$td/bin:$PATH" "PYRUN_NO_TRACE=$2" "PYRUN_TEST_FIFO=$td/fifo" "PYRUN_FAKE_LIB=$td/lib" "PYRUN_FAKE_BIN=$td/bin" "PYRUN_ROOT=$td/w" timeout 60 bash "$SELF" --run "$o" -- bash "lanes/$1.sh" ) < /dev/null > /dev/null 2>&1 || :
+        ( cd "$td/w" && env "PATH=$td/bin:$PATH" "TMPDIR=$td/tmp" "PYRUN_NO_TRACE=$2" "PYRUN_TEST_FIFO=$td/fifo" "PYRUN_FAKE_LIB=$td/lib" "PYRUN_FAKE_BIN=$td/bin" "PYRUN_ROOT=$td/w" timeout 60 bash "$SELF" --run "$o" -- bash "lanes/$1.sh" ) < /dev/null > /dev/null 2>&1 || :
         PYRUN_ROOT=/nonexistent count "$o" > /dev/null 2>&1 || :   # the root is the run's (meta)
     }
     synth() { # synth OUT META < TRACE -> a --run dir holding that trace, counted
         mkdir -p "$td/o_$1"; printf '%s\n' "$2" > "$td/o_$1/meta"; : > "$td/o_$1/shim.log"
-        sed "s|@W@|$td/w|g" > "$td/o_$1/trace.raw"
+        sed -e "s|@W@|$td/w|g" -e "s|@T@|/tmp|g" > "$td/o_$1/trace.raw"   # @T@: the system temp dir (T9)
         count "$td/o_$1" > /dev/null 2>&1 || :
     }
     dup() { cp -r "$td/o_$1" "$td/o_$2"; }   # dup FROM TO: a copy of run o_FROM to break
@@ -417,6 +415,42 @@ SYN
 100 +++ exited with 0 +++
 SYN
     _eq 'T6 a call strace split (<unfinished ...> / resumed) is read whole' 'script:sub/tool.py lane.sh' "$(cut -f1,3 "$td/o_split/keys" 2>/dev/null | tr '\t' ' ')"
+    # A process still running when the trace ends (a daemon the lane left behind) still counts.
+    synth running "$k" <<'SYN'
+100 execve("/bin/bash", ["bash", "/opt/lanes/lane.sh"], 0x7ffd /* 5 vars */) = 0
+100 openat(AT_FDCWD, "/opt/lanes/lane.sh", O_RDONLY) = 3
+100 clone(child_stack=NULL, flags=SIGCHLD) = 200
+200 execve("/usr/bin/python3", ["python3", "sub/tool.py"], 0x7ffd /* 5 vars */) = 0
+200 openat(AT_FDCWD, "@W@/sub/tool.py", O_RDONLY|O_CLOEXEC) = 3
+100 +++ exited with 0 +++
+SYN
+    _eq 'T7 a python process still running when the trace ends counts' 'script:sub/tool.py' "$(keys running)"
+    # An untracked repo script the shim never hashed (no shim on that path) keys by its hash at --count.
+    synth nowhash "$k" <<'SYN'
+100 execve("/bin/bash", ["bash", "/opt/lanes/lane.sh"], 0x7ffd /* 5 vars */) = 0
+100 openat(AT_FDCWD, "/opt/lanes/lane.sh", O_RDONLY) = 3
+100 clone(child_stack=NULL, flags=SIGCHLD) = 200
+200 execve("/usr/bin/python3.11", ["python3.11", "untracked.py"], 0x7ffd /* 5 vars */) = 0
+200 openat(AT_FDCWD, "@W@/untracked.py", O_RDONLY|O_CLOEXEC) = 3
+200 +++ exited with 0 +++
+100 +++ exited with 0 +++
+SYN
+    _eq 'T8 an untracked repo script outside any temp dir, never shimmed, keys by its content at --count' "script:#$(h '# u\n')" "$(keys nowhash)"
+    # A run with no TMPDIR: /tmp is its temp dir (mktemp's rule), and nothing else is.
+    synth notmpdir "${k/tmpdir=\/scratch\/q/tmpdir=}" <<'SYN'
+100 execve("/bin/bash", ["bash", "/opt/lanes/lane.sh"], 0x7ffd /* 5 vars */) = 0
+100 openat(AT_FDCWD, "/opt/lanes/lane.sh", O_RDONLY) = 3
+100 clone(child_stack=NULL, flags=SIGCHLD) = 200
+200 execve("/usr/bin/python3", ["python3", "@T@/pyrun-none.Zq9/x.py"], 0x7ffd /* 5 vars */) = 0
+200 openat(AT_FDCWD, "@T@/pyrun-none.Zq9/x.py", O_RDONLY|O_CLOEXEC) = 3
+200 +++ exited with 0 +++
+100 clone(child_stack=NULL, flags=SIGCHLD) = 300
+300 execve("/usr/bin/python3", ["python3", "/opt/tools/y.py"], 0x7ffd /* 5 vars */) = 0
+300 openat(AT_FDCWD, "/opt/tools/y.py", O_RDONLY|O_CLOEXEC) = 3
+300 +++ exited with 0 +++
+100 +++ exited with 0 +++
+SYN
+    _eq 'T9 with no TMPDIR, /tmp is the temp dir and an absolute path elsewhere is not' 'script:/opt/tools/y.py script:gone@lane.sh' "$(keys notmpdir | tr ' ' '\n' | LC_ALL=C sort | paste -sd' ' -)"
     _eq 'L1 keys do not depend on the locale --count is started in (strace octal bytes)' "$(keys octal)" \
         "$(LC_ALL=C.UTF-8 bash "$SELF" --count "$td/o_octal" 2>/dev/null | sed '1d' | cut -f1 | paste -sd' ' -)"
     # Never a count from a broken measurement: each is exit 2, not GREEN 0.
@@ -447,9 +481,17 @@ SYN
 # Each mutant removes one thing a row depends on, in a copy of this script and
 # its lib. A patch that does not change its file is an ERROR, never a kill.
 mutants() {
-    local killed=0 total=0 errors=0 id rel expr out row
+    local killed=0 total=0 errors=0 id want rel expr out row
+    # M0 runs --mutants from inside a table. A mutant that defeats its quick
+    # NOT_MEASURED exit (M35) would recurse without end: one nesting level only.
+    if [ "${PYRUN_MUTANTS_DEPTH:-0}" -ge 2 ]; then
+        printf 'NOT_MEASURED: --mutants nested more than one level\n'
+        return 2
+    fi
+    PYRUN_MUTANTS_DEPTH=$((${PYRUN_MUTANTS_DEPTH:-0} + 1)); export PYRUN_MUTANTS_DEPTH
     PYRUN_MT=$(mktemp -d "${TMPDIR:-/tmp}/pyrun-mut.XXXXXX")
     trap 'rm -rf "${PYRUN_MT:?}"' EXIT
+    trap 'exit 143' TERM INT   # so a stopped run still removes its copies
     # A mutant is judged against a GREEN unmutated table. If the table cannot
     # run here (no strace, ptrace denied), every mutant would "fail" and read killed.
     if ! bash "$SELF" --self-test > "$PYRUN_MT/base" 2>&1; then
@@ -457,7 +499,7 @@ mutants() {
         tail -n 3 "$PYRUN_MT/base"
         return 2
     fi
-    while IFS='|' read -r id rel expr; do
+    while IFS='|' read -r id want rel expr; do
         [ -n "$id" ] || continue
         total=$((total + 1))
         rm -rf "${PYRUN_MT:?}/t"; mkdir -p "$PYRUN_MT/t/lib"
@@ -470,50 +512,66 @@ mutants() {
         out="$PYRUN_MT/out"
         if bash "$PYRUN_MT/t/${SELF##*/}" --self-test > "$out" 2>&1; then
             printf 'SURVIVED  %s\n' "$id"
+        elif grep -q -e "^FAIL  ${want}[: ]" "$out"; then
+            killed=$((killed + 1))   # a kill is the NAMED row going red, nothing less
+            printf 'killed    %s by %s\n' "$id" "$want"
         elif row=$(grep -m1 -o -e '^FAIL  [A-Z][0-9]*' "$out"); then
-            killed=$((killed + 1))   # a kill is a named red row, nothing less
-            printf 'killed    %s by %s\n' "$id" "${row#FAIL  }"
+            errors=$((errors + 1))   # red, but not where the table says: the table is wrong
+            printf 'ERROR     %s: wanted %s red, got %s\n' "$id" "$want" "$(grep -o -e '^FAIL  [A-Z][0-9]*' "$out" | cut -c7- | paste -sd, -)"
         else
             errors=$((errors + 1))
             printf 'ERROR     %s: the self-test failed with no red row: %s\n' "$id" "$(tail -n 1 "$out")"
         fi
     done <<'TABLE'
-M1 drop chdir|lib/python_runcount/trace.awk|s/    cwd\[pid\] = norm(unq(d), cwd\[pid\]); next/    next/
-M2 no inheritance from the parent|lib/python_runcount/trace.awk|s/cwd\[pid\] = (p != "" ? cwd\[p\] : cwd0); argv\[pid\] = (p != "" ? argv\[p\] : "?")/cwd[pid] = cwd0; argv[pid] = "?"/
-M3 no shebang table|python_runcount.sh|s/i=$(shebang_interp "$f") || continue/continue/
-M4 drop the shim log|python_runcount.sh|s/^    if ! cat "$out\/shim.log" > "$out\/records"; then/    if ! : > "$out\/records"; then/
-M5 not_measured passes|python_runcount.sh|/a shim-only count is not a pass/{n;s/return 2/return 0/}
-M6 count calls, not entry points|python_runcount.sh|s/END { for (k in s) printf "%s\\t%s\\t%s\\n", k, s\[k\], c\[k\] }/{ print }/
-M7 only python and python3|lib/python_runcount/keys.awk|s/\^python\[0-9.\]\*t?\$/^python3?$/
-M8 a silent shim|lib/python_runcount/shim|s/>> "$log"$/> \/dev\/null/
-M9 NR == FNR on an empty shebang file|lib/python_runcount/keys.awk|s/^FILENAME == ARGV\[1\]/NR == FNR/
-M10 equal counts read RED|python_runcount.sh|s/\[ "$hc" -le "$bc" \]/[ "$hc" -lt "$bc" ]/
-M11 PYRUN_NO_TRACE ignored|python_runcount.sh|s/\[ "${PYRUN_NO_TRACE:-0}" != 1 \] || return 1/:/
-M12 stdin code loses its lane|lib/python_runcount/keys.awk|s/^\(        if (x == "-") return "stdin\)@" who/\1"/
-M13 argv[0] alone names the interpreter|lib/python_runcount/keys.awk|s/if (src == "trace" \&\& !interp(name) \&\& interp(base(file))) name = base(file)/if (0) name = base(file)/
-M14 temp paths keyed raw|lib/python_runcount/keys.awk|s/^    if (!rel \&\& tmpath(p)) return/    if (0) return/
-M15 mktemp names kept|lib/python_runcount/keys.awk|s/^function stable(s, lvl,    out, r) {/function stable(s, lvl,    out, r) { return s/
-M16 strace attached (not -D)|python_runcount.sh|s/strace -D -I 2 -f/strace -I 2 -f/
-M17 tracer left running|python_runcount.sh|s/^        stop_tracer "$out"$/        :/
-M18 strace ignores SIGTERM (-I 3, its default with -o)|python_runcount.sh|s/strace -D -I 2 -f/strace -D -I 3 -f/
-M19 newlines kept in a shim record|lib/python_runcount/shim|\%^    c=\${c//\$'\\n'%d
-M20 tabs kept in a shim record|lib/python_runcount/shim|\%^    c=\${c//\$'\\t'%d
-M21 a failed key stage reads as a count|python_runcount.sh|s/{ err2 "keys.awk failed on $out"; return; }/:/
-M22 a trace with no execve passes|python_runcount.sh|s/^trace_ran() { # /trace_ran() { return 0; # /
-M23 the head lane's exit status ignored|python_runcount.sh|s/\[ "$hr" != "$br" \]; }/false; }/
-M24 a reused pid keeps the dead process's state|lib/python_runcount/trace.awk|/^rest ~ \/^\\+\\+\\+ (exited|killed) \/ {/d
-M25 joined -W/-X values read as -c/-m|lib/python_runcount/keys.awk|/-Wonce, -Xutf8/d
-M26 bash -ec is not an inline-shell caller|lib/python_runcount/keys.awk|s/if (a\[i\] ~ \/^-\[A-Za-z\]\*c\$\/) return b " -c"/if (a[i] == "-c") return b " -c"/
-M27 a cut trace (no exit line for the lane) passes|python_runcount.sh|s/ grep -q -E "^$root / true || grep -q -E "^$root /
-M28 -c tested before -m in a joined flag|lib/python_runcount/keys.awk|s/j = match(f, \/\[cm\]\/)/j = match(f, \/c\/)/
-M29 -XXXXXX suffixes kept|lib/python_runcount/keys.awk|s/    if (lvl >= 1 \&\& length(r) >= 6/    if (0 \&\& length(r) >= 6/
-M30 pid names kept|lib/python_runcount/keys.awk|s/if (r ~ \/^\[0-9\]+\$\/ \&\& length(r) >= 5) return 1/if (0) return 1/
-M31 a mktemp dir in the repo keyed raw|lib/python_runcount/keys.awk|s/p = p stable(parts\[i\], 1) "\/"/p = p parts[i] "\/"/
-M32 TMPDIR read at count time, not from the run|python_runcount.sh|s/ -v tmpd="$(meta "$out" tmpdir)"//
-M33 a caller in a temp dir keyed raw|lib/python_runcount/keys.awk|s/^function cname(p) { return stable(base(p), tmpath(p) ? 2 : 0) }/function cname(p) { return stable(base(p), 0) }/
-M34 uv long options with a value read as the script|lib/python_runcount/keys.awk|s/|color|index-strategy|/|/
-M35 uv short options with a value read as the script|lib/python_runcount/keys.awk|s/\^-\[pwcrifCP\]\$/^-[pw]$/
-M36 a repo-local tmp.XXXXXXXXXX kept|lib/python_runcount/keys.awk|s/    if (length(r) == 10 \&\& before/    if (0 \&\& before/
+M1 drop chdir|P13|lib/python_runcount/trace.awk|s/cwd\[pid\] = norm(cd\[1\], cwd\[pid\]); next/next/
+M2 drop fchdir|T4|lib/python_runcount/trace.awk|s/if (d != "") cwd\[pid\] = d }/}/
+M3 a child does not inherit its parent's cwd|P13|lib/python_runcount/trace.awk|s/cwd\[pid\] = (p != "" ? cwd\[p\] : cwd0)/cwd[pid] = cwd0/
+M4 a child does not inherit its parent's caller|P4|lib/python_runcount/trace.awk|s/ctx\[pid\] = (p != "" ? ctx\[p\] : "")/ctx[pid] = ""/
+M5 a reused pid keeps the dead process's state|T1|lib/python_runcount/trace.awk|s/    delete cwd\[pid\]; delete ctx\[pid\]; delete par\[pid\]; delete pend\[pid\]; life\[pid\]++; next/    next/
+M6 a resumed call is read without its first half|T6|lib/python_runcount/trace.awk|s/rest = pend\[pid\] rest; delete pend\[pid\]/delete pend[pid]/
+M7 execveat ignored|T5|lib/python_runcount/trace.awk|s/^rest ~ \/\^execve(at)?\\(\/ {/rest ~ \/^execve\\(\/ {/
+M8 the #! line not read|P7|lib/python_runcount/trace.awk|s/^        h = hashbang(f)$/        h = ""/
+M9 only python and python3 are Python|P22|lib/python_runcount/trace.awk|s/PYRE = "\^(python|pypy)\[0-9.\]\*\[a-z\]\*\$"/PYRE = "^python3?$"/
+M10 argv words not resolved by the cwd|P1|lib/python_runcount/trace.awk|s/tok\[pid, k\] = norm(a\[i\], cwd\[pid\])/tok[pid, k] = a[i]/
+M11 the shim read as an entry point|P4|lib/python_runcount/trace.awk|s/if (shimdir != "" \&\& index(p, shimdir "\/") == 1) return/if (0) return/
+M12 a later open replaces the entry point|P25|lib/python_runcount/trace.awk|s/if (!img\[pid\] || ekind\[pid\] != "") return/if (!img[pid]) return/
+M13 no module match|P5|lib/python_runcount/trace.awk|s/if (id\[pid\] == "py" \&\& (m = modname(pid, p)) != "")/if (0)/
+M14 a flag cluster ending in M is not M|P19|lib/python_runcount/trace.awk|s/(t ~ \/\^-\/ \&\& length(t) > L \&\& substr(t, length(t) - L + 1) == m)/0/
+M15 the shortest module name wins|P5|lib/python_runcount/trace.awk|s/        m = base(d) "." m; d = dir(d)/        break/
+M16 octal bytes not decoded|P24|lib/python_runcount/trace.awk|s/sprintf("%c", v)/substr(s, i, j)/
+M17 uv not counted|P6|lib/python_runcount/trace.awk|s/    } else if (id\[pid\] == "uv" \&\& why != "exec") emit(pid, "uv", uvname\[pid\])/    }/
+M18 an unreadable #! script is not counted|P26|lib/python_runcount/trace.awk|s/if (h == "?") id\[pid\] = "unk"/if (0) id[pid] = "unk"/
+M19 a process still running at the end is dropped|T7|lib/python_runcount/trace.awk|s/^END { for (p in img) finish(p, "end") }/END { }/
+M20 no fork tree from pass 1|T6|lib/python_runcount/trace.awk|s/if (c + 0 > 0) par1\[c, life1\[c\] + 0\] = \$1/if (0) par1[c, 0] = $1/
+M21 the shim never joined to the trace|P10|lib/python_runcount/keys.awk|s/src = (\$2 in shim) ? "shim+trace" : "trace"/src = "trace"/
+M22 a tracked script keyed as a temp one|P1|lib/python_runcount/keys.awk|s/^    if (r != "" \&\& (r in tracked)) return "script:" r/    if (0) return "script:" r/
+M23 the shim's call-time hash ignored|P15|lib/python_runcount/keys.awk|s/if ((pid, p) in callh) return/if (0) return/
+M24 the hash at --count ignored|T8|lib/python_runcount/keys.awk|s/if (p in nowhash) return/if (0) return/
+M25 the run's TMPDIR is not a temp dir|T2|lib/python_runcount/keys.awk|s/(tmpd != "" ? tmpd : "\/tmp")/"\/tmp"/
+M26 a tracked caller keyed by its basename|P3|lib/python_runcount/keys.awk|s/^    if (r != "" \&\& (r in tracked)) return r$/    if (0) return r/
+M27 a temp caller keyed by its name|P16|lib/python_runcount/keys.awk|s/    if (r != "" || temp(c)) return "~tmp"/    if (0) return "~tmp"/
+M28 an untracked repo script keyed by its path|T8|lib/python_runcount/keys.awk|s/    if (r != "" || temp(p)) {/    if (temp(p)) {/
+M29 a silent shim|P10|lib/python_runcount/shim|s/    printf '%s\\n' "\$rec" >> "\$log"/    :/
+M30 the shim logs its parent, not its own pid|P10|lib/python_runcount/shim|s/^    pid=\$\$ /    pid=$PPID /
+M31 the shim hashes nothing|P15|lib/python_runcount/shim|s/        rec="\$rec"\$'\\n'/        : /
+M32 not_measured passes|C4|python_runcount.sh|/a shim-only count is not a pass/{n;s/return 2/return 0/}
+M33 count calls, not entry points|P11|python_runcount.sh|s/END { for (k in s) printf "%s\\t%s\\t%s\\n", k, s\[k\], c\[k\] }/{ print }/
+M34 equal counts read RED|C3|python_runcount.sh|s/\[ "\$hc" -le "\$bc" \]/[ "$hc" -lt "$bc" ]/
+M35 PYRUN_NO_TRACE ignored|P12|python_runcount.sh|s/\[ "\${PYRUN_NO_TRACE:-0}" != 1 \] || return 1/:/
+M36 strace attached (not -D)|D1|python_runcount.sh|s/strace -D -I 2 -f/strace -I 2 -f/
+M37 tracer left running|D2|python_runcount.sh|s/^        stop_tracer "\$out"$/        :/
+M38 strace ignores SIGTERM (-I 3, its default with -o)|D2|python_runcount.sh|s/strace -D -I 2 -f/strace -D -I 3 -f/
+M39 a failed key stage reads as a count|E1|python_runcount.sh|s/{ err2 "keys.awk failed on \$out"; return; }/:/
+M40 a trace with no execve passes|E2|python_runcount.sh|s/^trace_ran() { # /trace_ran() { return 0; # /
+M41 the head lane's exit status ignored|E3|python_runcount.sh|s/\[ "\$hr" != "\$br" \]; }/false; }/
+M42 a cut trace (no exit line for the lane) passes|E5|python_runcount.sh|s/ grep -q -E "^\$root / true || grep -q -E "^$root /
+M43 TMPDIR read at count time, not from the run|T2|python_runcount.sh|s/ -v tmpd="\$(meta "\$out" tmpdir)"//
+M44 git cannot list the root, and it is a count|E6|python_runcount.sh|s/git -C "\$root" ls-files -z > "\$out\/tracked.z" \&\&/: > "$out\/tracked.z" \&\&/
+M45 the root read at count time, not from the run|T3|python_runcount.sh|s/^    root=\$(meta "\$out" root)$/    root=$ROOT/
+M46 the shim dir not passed to the trace|P4|python_runcount.sh|s/ -v shimdir="\$(meta "\$out" shim)"//
+M47 opens not traced|P1|python_runcount.sh|s/,?open,openat,/,/
+M48 no hash at --count|T8|python_runcount.sh|s/^        printf '%s\\t%s\\n' "\$f" "\${s:0:12}" >> "\$out\/hashes" ||/        : ||/
+M49 no TMPDIR makes every path a temp path|T9|lib/python_runcount/keys.awk|s/(tmpd != "" ? tmpd : "\/tmp")/tmpd/
 TABLE
     printf '\nkilled=%s total=%s errors=%s\n' "$killed" "$total" "$errors"
     [ "$killed" -eq "$total" ] && [ "$errors" -eq 0 ]
