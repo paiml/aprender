@@ -46,7 +46,7 @@ TOP = subprocess.run(["git", "-C", str(HERE), "rev-parse", "--show-toplevel"],
                      capture_output=True, text=True).stdout.strip() or str(HERE)
 DEFAULT_PIN = "316dee2cd4"
 EXTERNAL = ("cop-inbox/",)
-EXT = r"(?:rs|wgsl|yaml|yml|toml|py|sh|json|cu|ptx|cmd|md)"
+EXT = r"(?:rs|wgsl|yaml|yml|toml|py|sh|json|cu|ptx|cmd|md|txt)"
 NAME = r"(?<![\w./-])((?:[\w.-]+/)*[\w.-]+\." + EXT + r")"
 FILE_RE = re.compile(NAME + r":(\d+)(?:-(\d+))?((?:/\d+(?:-\d+)?)*)(?![\w-])")
 BARE_RE = re.compile(NAME + r"(?![\w-]|:\d)")
@@ -513,6 +513,7 @@ def rows_tokens(check):
     check("file path", files_in("`crates/x/src/a_b.rs:376`"), [("crates/x/src/a_b.rs", "376", None, "")])
     check("file slash lines", files_in("fused_k_tests_q4k.rs:330/367"), [("fused_k_tests_q4k.rs", "330", None, "/367")])
     check("file yaml", files_in("at `contracts/kernel-registry-v1.yaml:86` on"), [("contracts/kernel-registry-v1.yaml", "86", None, "")])
+    check("file txt", files_in("(`evidence/x/run-logs.txt:133`, added"), [("evidence/x/run-logs.txt", "133", None, "")])
     check("file dir prefix", files_in("| q/rope.rs:62 AVX2"), [("q/rope.rs", "62", None, "")])
     check("file no line", files_in("see quantize/mod.rs and x.rs"), [])
     check("file in url", files_in("https://example.org/a.rs:443"), [])
@@ -579,6 +580,8 @@ def rows_real(check):
                               ("real eof", "qwen35_session.rs:999999", "eof"),
                               ("real ambiguous", "mod.rs:5", "ambiguous"),
                               ("real same", "qwen35_session.rs:472", "same"),
+                              ("real txt", "evidence/pmat919-postmerge-gx10-blackwell/run-logs.txt:133", "same"),
+                              ("real txt eof", "scripts/include_fmt_baseline.txt:999999", "eof"),
                               ("real external", "(cop-inbox/processed/x.md:1)", "external"),
                               ("real crate word", "aprender-serve sets it (Cargo.toml:31-32)",
                                ("same", "crates/aprender-serve/Cargo.toml")),
@@ -588,9 +591,9 @@ def rows_real(check):
                                ("same", ".github/workflows/ci.yml")),
                               ("real two named", f"`{serve}fused_q5k_q6k.rs`, `{serve}tests/fused_q5k_q6k.rs`; "
                                "fused_q5k_q6k.rs:118", "ambiguous")]:
-        c = next(scan("r.md", text + " @316dee2cd4\n"))
-        got = classify(c, "316dee2cd4")[0]
-        check(label, (got, c.get("path")) if isinstance(want, tuple) else got, want)
+        c = next(scan("r.md", text + " @316dee2cd4\n"), None)
+        got = classify(c, "316dee2cd4")[0] if c else "not a cite"
+        check(label, (got, c and c.get("path")) if isinstance(want, tuple) else got, want)
     c = next(scan("r.md", f"`{serve}fused_q5k_q6k.rs` has fused_q6k_dot_simd (fused_q5k_q6k.rs:118 @316dee2cd4)\n"))
     check("real one named", (classify(c, "316dee2cd4")[0], c.get("path")), ("same", f"{serve}fused_q5k_q6k.rs"))
 
