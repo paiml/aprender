@@ -30,9 +30,9 @@ equations:
       - "fewer than 3 measured nights is BASELINE, never GREEN"
 
   verdict:
-    formula: "NOT_MEASURED if there is no checker, no receipt, the newest receipt is not from tonight, or the checker cannot read its sidecar or prints neither PASS nor REPORT; else BASELINE if budget = none; else OVER if the checker reports the cheap tier over budget; else GREEN"
+    formula: "NOT_MEASURED if there is no checker, no stamped receipt-YYYYMMDDTHHMMSSZ.json, the newest stamped receipt is not from tonight, or the checker cannot read its sidecar, prints neither PASS nor REPORT, or prints PASS with the cheap tier over the budget; else BASELINE if budget = none; else OVER if the checker reports the cheap tier over budget; else GREEN"
     domain: "the newest receipt-*.json in the receipts directory and its sidecar, read by the row-order checker with DOGFOOD_ROW_ORDER_ENFORCE=0"
-    codomain: "exit 0 GREEN, OVER or BASELINE | 2 NOT_MEASURED | 3 caller error"
+    codomain: "exit 0 GREEN, OVER or BASELINE | 2 NOT_MEASURED | 3 caller error, an unwritable history included"
     invariants:
       - "NOT_MEASURED is never GREEN and never feeds the budget"
       - "OVER exits 0: report mode, whatever the caller's environment says"
@@ -58,13 +58,13 @@ proof_obligations:
 falsification_tests:
   - id: FALSIFY-DTL-001
     rule: "The lane is right on every row of its case table"
-    prediction: "A first night and two measured nights are BASELINE; within budget is GREEN; over budget is OVER and exits 0, also under DOGFOOD_ROW_ORDER_ENFORCE=1; an OVER night, a NOT_MEASURED night and tonight never set the bar; only the latest 7 nights count and the latest row on a night decides it; a stale, missing or unstamped receipt, a missing sidecar, a row with no time, a missing checker and a checker verdict that is neither PASS nor REPORT are NOT_MEASURED; every judged night is recorded; the line reaches the inbox file; a bad time, a missing option and an unknown option are caller errors"
+    prediction: "A first night and two measured nights are BASELINE; within budget is GREEN; the budget rounds up; over budget is OVER and exits 0, also under DOGFOOD_ROW_ORDER_ENFORCE=1; an OVER night, a NOT_MEASURED night and tonight never set the bar; only the latest 7 nights count and the latest row on a night decides it; an unstamped receipt is never judged; a stale or missing receipt, a missing sidecar, a row with no time, a missing checker, a checker verdict that is neither PASS nor REPORT and a PASS over the budget are NOT_MEASURED; every judged night is recorded, NOT_MEASURED nights with no receipt or no checker included; the line reaches the inbox file; a bad time, a missing option, an unknown option and an unwritable history are caller errors"
     test: "bash scripts/release/dogfood_timing_lane.sh --self-test"
     if_fails: "The lane can call a slow night green, let the budget creep with the rows, or read missing data as a pass"
 
   - id: FALSIFY-DTL-002
     rule: "The case table can still fail on the defects it names"
-    prediction: "Each planted mutant (a stale receipt judged, a checker not_measured read as measured, an OVER night raising the bar, a budget from 2 nights, no headroom, tonight setting its own bar, a widened window, the oldest nights setting the budget, the first row on a night deciding, a NOT_MEASURED night used as a duration, an enforcing caller inherited, the history not written, a neither verdict read as green, the oldest receipt judged) turns --self-test RED; a mutant whose patch does not apply is an error, never a survivor"
+    prediction: "Each planted mutant (a stale receipt judged, a checker not_measured read as measured, an OVER night raising the bar, a budget from 2 nights, no headroom, tonight setting its own bar, a widened window, the oldest nights setting the budget, the first row on a night deciding, a NOT_MEASURED night used as a duration, an enforcing caller inherited, the history not written, a neither verdict read as green, the oldest receipt judged, the budget not rounded up, a checker PASS trusted over the budget, an unwritable history ignored, a night with no receipt or checker not recorded, an unstamped receipt judged) turns --self-test RED; a mutant whose patch does not apply is an error, never a survivor"
     test: "bash scripts/release/dogfood_timing_lane.sh --mutants"
     if_fails: "The case table is theater: it would pass a lane whose budget creeps or whose missing data reads green"
 

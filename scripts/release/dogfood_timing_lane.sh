@@ -60,9 +60,11 @@ judge() {
     local night r rt out rc cheap total b k state
     night="$(night_of "$3")" || caller_error "--now '$3' is not a time"
     : > "$ROWF"
-    [ -f "$4" ] || { printf 'DOGFOOD-TIMING NOT_MEASURED night=%s: no row-order checker at %s\n' "$night" "$4"; return 2; }
-    r="$(find "$1" -maxdepth 1 -name 'receipt-*.json' 2>/dev/null | LC_ALL=C sort | tail -n 1)"
-    [ -n "$r" ] || { printf 'DOGFOOD-TIMING NOT_MEASURED night=%s: no dogfood receipt in the receipts dir\n' "$night"; return 2; }
+    [ -f "$4" ] || { printf 'DOGFOOD-TIMING NOT_MEASURED night=%s: no row-order checker at %s\n' "$night" "$4"
+        row "$night	-	-	-	-	NOT_MEASURED"; return 2; }
+    r="$(find "$1" -maxdepth 1 -regextype posix-extended -regex '.*/receipt-[0-9]{8}T[0-9]{6}Z\.json' 2>/dev/null | LC_ALL=C sort | tail -n 1)"
+    [ -n "$r" ] || { printf 'DOGFOOD-TIMING NOT_MEASURED night=%s: no dogfood receipt in the receipts dir\n' "$night"
+        row "$night	-	-	-	-	NOT_MEASURED"; return 2; }
     rt="$(receipt_time "$r")"
     if [ "$(night_of "$rt" 2>/dev/null)" != "$night" ]; then
         printf 'DOGFOOD-TIMING NOT_MEASURED night=%s: the newest receipt %s is not from this night\n' "$night" "${r##*/}"
@@ -87,7 +89,9 @@ judge() {
     fi
     case "$out" in
         *"REPORT:"*) state=OVER ;;
-        *PASS*) state=GREEN ;;
+        *PASS*) state=GREEN
+           [ "$cheap" -le "$b" ] || { printf 'DOGFOOD-TIMING NOT_MEASURED night=%s: the checker said PASS at +%ss over the budget %ss\n' "$night" "$cheap" "$b"
+               row "$night	${r##*/}	-	-	-	NOT_MEASURED"; return 2; } ;;
         *) printf 'DOGFOOD-TIMING NOT_MEASURED night=%s: the checker printed neither PASS nor REPORT\n' "$night"
            row "$night	${r##*/}	-	-	-	NOT_MEASURED"; return 2 ;;
     esac
@@ -216,8 +220,8 @@ self_test() {
     R="$tmp/r13"; mkdir -p "$R"; receipt "$R" 20261011T230000Z x -
     row_case a_row_with_no_time_is_not_measured 2 "NOT_MEASURED night=2026-10-11: the checker could not read the row times" "BASELINE" -- \
         bash "$S" --receipts "$R" --history "$tmp/h13" --now "$NOW" --checker "$C"
-    R="$tmp/r14"; mkdir -p "$R"; printf '{}\n' > "$R/receipt-latest.json"
-    row_case a_receipt_with_no_stamp_is_not_measured 2 "NOT_MEASURED night=2026-10-11: the newest receipt receipt-latest.json is not from this night" "" -- \
+    R="$tmp/r14"; mkdir -p "$R"; printf '{}\n' > "$R/receipt-latest.json"; receipt "$R" 20261011T230000Z 63 900
+    row_case an_unstamped_receipt_is_never_judged 0 "BASELINE night=2026-10-11 cheap=+63s" "" -- \
         bash "$S" --receipts "$R" --history "$tmp/h14" --now "$NOW" --checker "$C"
     row_case no_checker_is_not_measured 2 "NOT_MEASURED night=2026-10-11: no row-order checker" "" -- \
         bash "$S" --receipts "$tmp/r1" --history "$tmp/h15" --now "$NOW" --checker "$tmp/absent.sh"
@@ -226,6 +230,20 @@ self_test() {
     row_case a_checker_verdict_that_is_neither_pass_nor_report_is_not_measured 2 "printed neither PASS nor REPORT" "GREEN" -- \
         bash "$S" --receipts "$tmp/r1" --history "$H" --now "$NOW" --checker "$tmp/odd.sh"
     # caller
+    row_case a_night_with_no_receipt_is_recorded 0 "2026-10-11	-	-	-	-	NOT_MEASURED" "" -- \
+        bash -c 'tail -n 1 "$1"' _ "$tmp/h11"
+    row_case a_night_with_no_checker_is_recorded 0 "2026-10-11	-	-	-	-	NOT_MEASURED" "" -- \
+        bash -c 'tail -n 1 "$1"' _ "$tmp/h15"
+    H="$tmp/h19"; hist "$H" 2026-10-08 60 GREEN 2026-10-09 83 GREEN 2026-10-10 70 GREEN
+    row_case the_budget_rounds_up 0 "GREEN night=2026-10-11 cheap=+95s of +900s budget=104s" "" -- \
+        bash "$S" --receipts "$tmp/r3" --history "$H" --now "$NOW" --checker "$C"
+    printf 'echo "row time: 3 rows; cheap tier (2 rows) closed at +120s of +900s"; echo PASS; exit 0\n' > "$tmp/lax.sh"
+    H="$tmp/h20"; hist "$H" 2026-10-08 60 GREEN 2026-10-09 70 GREEN 2026-10-10 80 GREEN
+    row_case a_pass_over_the_budget_is_not_measured 2 "the checker said PASS at +120s over the budget 100s" "GREEN" -- \
+        bash "$S" --receipts "$tmp/r4" --history "$H" --now "$NOW" --checker "$tmp/lax.sh"
+    mkdir -p "$tmp/hdir"
+    row_case an_unwritable_history_is_a_caller_error 3 "DOGFOOD-TIMING" "" -- \
+        bash "$S" --receipts "$tmp/r1" --history "$tmp/hdir" --now "$NOW" --checker "$C"
     : > "$tmp/inbox"
     row_case the_line_reaches_the_inbox 0 "DOGFOOD-TIMING BASELINE night=2026-10-11" "" -- \
         bash -c 'bash "$1" --receipts "$2" --history "$3" --now "$4" --checker "$5" --inbox "$6" > /dev/null; tail -n 1 "$6"' _ \
@@ -253,9 +271,14 @@ m08_oldest_nights_set_the_budget	s/        sort -r | head -n "\$WINDOW" |/      
 m09_first_row_on_a_night_decides	s/\$1 < T { s\[\$1\] = \$6; v\[\$1\] = \$3 }/$1 < T \&\& !($1 in s) { s[$1] = $6; v[$1] = $3 }/
 m10_not_measured_is_a_duration	s/(s\[k\] == "GREEN" || s\[k\] == "BASELINE")/(s[k] != "OVER")/
 m11_enforce_inherited_from_the_caller	s/rc=0; out="\$(DOGFOOD_ROW_ORDER_ENFORCE=0 bash "\$4" --timing "\${r%.json}.timing.tsv" --cheap-budget-s/rc=0; out="$(bash "$4" --timing "${r%.json}.timing.tsv" --cheap-budget-s/
-m12_history_not_written	s/^        cat -- "\$ROWF" >> "\$history"$/        :/
-m13_neither_verdict_read_as_green	s/^        \*PASS\*) state=GREEN ;;$/        *) state=GREEN ;;/
-m14_newest_receipt_not_taken	s/LC_ALL=C sort | tail -n 1)/LC_ALL=C sort | head -n 1)/'
+m12_history_not_written	s/^        cat -- "\$ROWF" >> "\$history" 2>\/dev\/null ||$/        : ||/
+m13_neither_verdict_read_as_green	s/^        \*PASS\*) state=GREEN$/        *) state=GREEN/
+m14_newest_receipt_not_taken	s/LC_ALL=C sort | tail -n 1)/LC_ALL=C sort | head -n 1)/
+m15_budget_not_rounded_up	s/ + 99) \/ 100)/) \/ 100)/
+m16_checker_pass_trusted_over_budget	s/^           \[ "\$cheap" -le "\$b" \] || {/           true || {/
+m17_history_write_failure_ignored	/DT the history/s/exit 3/exit 0/
+m18_night_without_a_receipt_not_recorded	s/^        row "\$night\t-\t/        : "$night\t-\t/
+m19_unstamped_receipt_judged	s/receipt-\[0-9\]{8}T\[0-9\]{6}Z/receipt-.*/'
 
 mutants() {
     local tmp name expr killed=0 total=0 errors=0
@@ -292,18 +315,19 @@ main() {
     [ -n "$history" ] || caller_error "--history is required"
     [ -n "$now" ] || now="$(date -u +%FT%TZ)"
     ROWF="$(mktemp "${TMPDIR:-/tmp}/dt-row.XXXXXX")" || caller_error "no temp file"
+    trap 'rm -f -- "${ROWF:?}"' EXIT
     rc=0; line="$(judge "$receipts" "$history" "$now" "$checker")" || rc=$?
-    [ "$rc" -eq 3 ] && { printf '%s\n' "$line"; rm -f -- "${ROWF:?}"; exit 3; }
+    [ "$rc" -eq 3 ] && { printf '%s\n' "$line"; exit 3; }
     printf '%s\n' "$line"
     if [ -s "$ROWF" ]; then
-        [ -f "$history" ] || printf 'night\treceipt\tcheap_s\ttotal_s\tbudget_s\tstate\n' > "$history"
-        cat -- "$ROWF" >> "$history"
+        { [ -f "$history" ] || printf 'night\treceipt\tcheap_s\ttotal_s\tbudget_s\tstate\n' > "$history"; } 2>/dev/null &&
+        cat -- "$ROWF" >> "$history" 2>/dev/null ||
+        { printf 'DT the history %s could not be written: this night is not recorded\n' "$history" >&2; exit 3; }
     fi
     if [ -n "$inbox" ]; then
         printf '%s\n' "${line:0:299}" >> "$inbox"
-        [ "$(tail -n 1 "$inbox")" = "${line:0:299}" ] || { printf 'DT the inbox line did not read back\n' >&2; exit 3; }
+        grep -qxF -- "${line:0:299}" "$inbox" || { printf 'DT the inbox line did not read back\n' >&2; exit 3; }
     fi
-    rm -f -- "${ROWF:?}"
     exit "$rc"
 }
 
