@@ -1,0 +1,311 @@
+{
+  "ticket": "PMAT-4652",
+  "base": "9d1ddc0e1dc272d80a0ff9cdcf0fbab013ce2570",
+  "base_resolved": "9d1ddc0e1dc272d80a0ff9cdcf0fbab013ce2570",
+  "base_note": "no origin/9d1ddc0e1dc272d80a0ff9cdcf0fbab013ce2570 exists; judged against the local ref",
+  "head": "455b46065a210b4839f3879e2573103e2de03b79",
+  "diff_sha256": "ca2d397731db4fc09f275cf900f9268853c76fb9139951ed38ade9189e3d8209",
+  "width": 3,
+  "executor": "agy",
+  "prompt_mode": "inline",
+  "prompt_bytes": 17789,
+  "prompt_sha256": "ba7ebf11ab28734b1e24c5a66b9db7ec6ea467e350f820e39ae94436c569ab99",
+  "author": {
+    "model": "claude-opus-5-5",
+    "family": "claude",
+    "source": "flag"
+  },
+  "agreed": false,
+  "lanes": [
+    {
+      "lane": 1,
+      "status": "SUCCESS",
+      "verdict": "FAIL",
+      "summary": "The diff fails to uphold the formal property it adds to the contract (NT-INV-005) and the explicitly stated acceptance criteria. While it correctly prints the lane table for successful/judged runs, a crashed run (which still constitutes a \"run\" with a writable stdout) continues to print exactly one line and does not write `D/lanes.txt`, mathematically violating the new invariant formula `|stdout(run)| = 2 + |lanes|`.",
+      "findings": [
+        {
+          "claim": "formal: \"∀ run: writable(stdout(run)) ⇒ first(stdout(run)) = line(run) ∧ |stdout(run)| = 2 + |lanes|\"",
+          "file": "contracts/nightly-train-v1.yaml",
+          "fix": "A crashed run (such as one failing the `CARGO_REGISTRY_TOKEN` check or hitting the rate limit) exits via `on_exit` and prints exactly one line (the failure verdict), completely omitting the lane table from stdout and failing to write `D/lanes.txt`. This mathematically violates the updated `NT-INV-005` formal property and the AC \"every run writes D/lanes.txt\". The contract and AC must be restricted to successful/judged runs, or the table must be populated even during early crashes.",
+          "grounding": "measured",
+          "line": 67
+        }
+      ],
+      "raw_bytes": 3512,
+      "err_bytes": 0,
+      "envelope_status": "SUCCESS",
+      "verdict_source": "structured_output",
+      "grounding_check": "parity",
+      "role": "independent",
+      "model": "gemini-3.1-pro-high",
+      "model_measured": "gemini-3.1-pro-high",
+      "model_source": "measured",
+      "family": "gemini",
+      "executor": "agy",
+      "brief_sha256": "ba7ebf11ab28734b1e24c5a66b9db7ec6ea467e350f820e39ae94436c569ab99",
+      "trace": {
+        "input_sha256": "7ffa2c916cc4463c297b486d0d8170cc404bd3333452c8b02be7c2aa38037d7d",
+        "output_sha256": "2fd1f977c29ac8b026fbc5f8ce3ab670581a736ebdad3a843900f3c489ebbfc4",
+        "store": null,
+        "store_why": "almacen not provisioned yet (infra-27): the blobs stay in the round's gitignored .lanes dir"
+      },
+      "fallback": {
+        "judged_by": "gemini-3.1-pro-high",
+        "exhausted": false,
+        "attempts": [
+          {
+            "model": "gemini-3.1-pro-high",
+            "family": "gemini",
+            "outcome": "answered"
+          }
+        ],
+        "skipped": []
+      }
+    },
+    {
+      "lane": 2,
+      "status": "SUCCESS",
+      "verdict": "PASS",
+      "summary": "The diff does what PMAT-4652 asks and nothing the ticket forbids. Every run writes lanes.txt, and stdout is the verdict line followed by the lane table, with green lanes included and a stale run showing its own commit. The verdict, exit code and streak logic are untouched, and the contract and self-test rows were updated to match. I did not run the self-test and the diff carries no recorded gate result, so the new rows and mutants m43 to m45 are judged by reading only.",
+      "findings": [],
+      "raw_bytes": 1876,
+      "err_bytes": 0,
+      "envelope_status": "SUCCESS",
+      "verdict_source": "structured_output",
+      "executor": "claude-code",
+      "grounding_check": "parity",
+      "role": "counted",
+      "model": "claude-sonnet-5-5",
+      "model_measured": "claude-sonnet-5-5",
+      "model_source": "flag",
+      "family": "claude",
+      "brief_sha256": "ba7ebf11ab28734b1e24c5a66b9db7ec6ea467e350f820e39ae94436c569ab99",
+      "trace": {
+        "input_sha256": "41967b6de423854e010a045d5b31dd34669880a762ae59faf3dc9d2aa282c0ca",
+        "output_sha256": "d6374f248a6baaa5ca41aa6ccc3642e5807e8233eb9f2dd3a3f0737ae7625a83",
+        "store": null,
+        "store_why": "almacen not provisioned yet (infra-27): the blobs stay in the round's gitignored .lanes dir"
+      },
+      "fallback": {
+        "judged_by": "claude-sonnet-5-5",
+        "exhausted": false,
+        "attempts": [
+          {
+            "model": "claude-sonnet-5-5",
+            "family": "claude",
+            "outcome": "answered"
+          }
+        ],
+        "skipped": []
+      }
+    },
+    {
+      "lane": 3,
+      "status": "SUCCESS",
+      "verdict": "PASS",
+      "summary": "The diff correctly implements PMAT-4652, printing the lane table (lane, state, reason, commit) beside the nightly-train verdict line every morning. All 5 acceptance criteria are satisfied: lanes.txt is written with all lanes including green ones, stdout outputs the verdict line first then the lane table, stale run commits are correctly extracted, report-only semantics are preserved (no verdict/exit code changes), and contract NT-INV-005 is updated with 3 well-chosen mutants (table not printed, other commit hidden, green lanes dropped) that catch regressions.",
+      "findings": [],
+      "raw_bytes": 2072,
+      "err_bytes": 0,
+      "envelope_status": "SUCCESS",
+      "verdict_source": "structured_output",
+      "executor": "claude-code",
+      "grounding_check": "parity",
+      "role": "counted",
+      "model": "claude-haiku-4-5",
+      "model_measured": "claude-haiku-4-5",
+      "model_source": "flag",
+      "family": "claude",
+      "brief_sha256": "ba7ebf11ab28734b1e24c5a66b9db7ec6ea467e350f820e39ae94436c569ab99",
+      "trace": {
+        "input_sha256": "bad4ed06cb65318b2ed90f87abc95dbd34a5972584dfce3143500008f0864717",
+        "output_sha256": "4a57576f3808842fa6680f27e1d3ac7696578e21d5022b98fe385ed8cd56c9fe",
+        "store": null,
+        "store_why": "almacen not provisioned yet (infra-27): the blobs stay in the round's gitignored .lanes dir"
+      },
+      "fallback": {
+        "judged_by": "claude-haiku-4-5",
+        "exhausted": false,
+        "attempts": [
+          {
+            "model": "claude-haiku-4-5",
+            "family": "claude",
+            "outcome": "answered"
+          }
+        ],
+        "skipped": []
+      }
+    }
+  ],
+  "dissent": [
+    {
+      "lane": 1,
+      "verdict": "FAIL",
+      "summary": "The diff fails to uphold the formal property it adds to the contract (NT-INV-005) and the explicitly stated acceptance criteria. While it correctly prints the lane table for successful/judged runs, a crashed run (which still constitutes a \"run\" with a writable stdout) continues to print exactly one line and does not write `D/lanes.txt`, mathematically violating the new invariant formula `|stdout(run)| = 2 + |lanes|`.",
+      "findings": [
+        {
+          "claim": "formal: \"∀ run: writable(stdout(run)) ⇒ first(stdout(run)) = line(run) ∧ |stdout(run)| = 2 + |lanes|\"",
+          "file": "contracts/nightly-train-v1.yaml",
+          "fix": "A crashed run (such as one failing the `CARGO_REGISTRY_TOKEN` check or hitting the rate limit) exits via `on_exit` and prints exactly one line (the failure verdict), completely omitting the lane table from stdout and failing to write `D/lanes.txt`. This mathematically violates the updated `NT-INV-005` formal property and the AC \"every run writes D/lanes.txt\". The contract and AC must be restricted to successful/judged runs, or the table must be populated even during early crashes.",
+          "grounding": "measured",
+          "line": 67
+        }
+      ]
+    }
+  ],
+  "dedup": [
+    {
+      "file": "contracts/nightly-train-v1.yaml",
+      "line": 67,
+      "lanes_agreeing": [
+        1
+      ],
+      "claims": [
+        "formal: \"∀ run: writable(stdout(run)) ⇒ first(stdout(run)) = line(run) ∧ |stdout(run)| = 2 + |lanes|\""
+      ]
+    }
+  ],
+  "uncovered": [],
+  "coverage_source": "lanes",
+  "partial": false,
+  "partial_reasons": [],
+  "fallback": {
+    "same_family_width": 2,
+    "chain": [
+      {
+        "model": "gemini-3.1-pro-high",
+        "family": "gemini",
+        "disposition": "configured"
+      },
+      {
+        "model": "claude-sonnet-5-5",
+        "family": "claude",
+        "disposition": "claude-code",
+        "why": "run by Claude Code on its own budget: a configured seat runs every round, a fallback step only when every non-Claude family is measured out (PMAT-360, operator standing rule)"
+      },
+      {
+        "model": "claude-haiku-4-5",
+        "family": "claude",
+        "disposition": "claude-code",
+        "why": "run by Claude Code on its own budget: a configured seat runs every round, a fallback step only when every non-Claude family is measured out (PMAT-360, operator standing rule)"
+      },
+      {
+        "model": "qwen3.5",
+        "family": "qwen",
+        "disposition": "not-run",
+        "why": "no quorum.local_lane in the config — the aprender lane has no model to load"
+      }
+    ],
+    "precheck": [
+      {
+        "family": "gemini",
+        "model": "gemini-3.1-pro-high",
+        "probe": 1,
+        "outcome": "live"
+      }
+    ],
+    "degraded": null,
+    "prah": {
+      "source": "install-receipt",
+      "path": "~/.claude/skills/paiml-implement/bin/prah"
+    },
+    "tier1": {
+      "agy_tier1_only": true,
+      "tier1": true,
+      "matched": [
+        ".github/workflows/nightly-train.yml"
+      ],
+      "paths": 4,
+      "patterns": [
+        "^\\.github/workflows/",
+        "(^|/)release[^/]*\\.(ya?ml|sh|rs|toml)$",
+        "cuda|kernel|\\.cu$|\\.ptx$",
+        "(^|/)[^/]*(gate|guard)[^/]*\\.(sh|rs|py)$|^hooks/",
+        "security|secret|credential|(^|/)deny\\.toml$",
+        "^skills/quorum-review/|(^|/)(receipt-lint|roadmap-lint|release-lint|kind-gate|model-gate)[^/]*$|^crates/prah-lint/"
+      ],
+      "builtin": "^skills/quorum-review/|(^|/)skills/paiml-implement/config\\.json$|(^|/)(modellib|lane-reduce|lane-fallback|lane-group|agy-lane|cc-lane|receipt-lint|route|quota)\\.sh$|^crates/prah-lint/"
+    },
+    "bucket": {
+      "ledger": "~/.local/state/paiml-implement/agy-bucket.jsonl",
+      "window_s": 18000,
+      "pace": "off",
+      "buckets": {
+        "gemini": {
+          "bucket": "gemini",
+          "budget": 0,
+          "basis": "ledger: the calls served before the first 429 of the latest window that reached one",
+          "window_start": 1791108592,
+          "window_calls": 23,
+          "window_429": 0,
+          "hour_calls": 17,
+          "share": 1,
+          "want": 2,
+          "state": "empty",
+          "reason": "agy bucket gemini is empty: 23 calls in this window reach its budget 0 (ledger: the calls served before the first 429 of the latest window that reached one)"
+        }
+      },
+      "closed": []
+    }
+  },
+  "auto_merge": {
+    "checked": false,
+    "was_armed": false,
+    "disarmed": false,
+    "note": "no --pr given: nothing to disarm"
+  },
+  "cheap_seat": "claude-haiku-4-5",
+  "advisory_lane": {
+    "state": "unavailable",
+    "counts": false,
+    "row": {
+      "NotRun": "Busy"
+    },
+    "verdict": "unavailable",
+    "why": "no host answered inside the budget",
+    "served_by": null,
+    "gpu_proof": null,
+    "apr": null,
+    "apr_binary_sha256": null,
+    "apr_tag": null,
+    "apr_commit": null,
+    "apr_build_why": null,
+    "model": null,
+    "model_sha256": null,
+    "rc": 2,
+    "wall_s": 0,
+    "collected_s": 243,
+    "budget_s": 196,
+    "budget_basis": "ledger: 2 x p95 98 s over 126 <gpu-host>-cuda Verdict rows",
+    "brief": {
+      "bytes": 17789,
+      "sent_bytes": 17958,
+      "max_bytes": 196608
+    },
+    "trace": {
+      "input_sha256": "313d32fc5f8c934017947341153a15a6920e7eb4a292e2d129821cd853d75c7c",
+      "raw": "advisory.json"
+    },
+    "attempts": [
+      {
+        "host": "<gpu-host>",
+        "ok": false,
+        "wall_s": 0,
+        "error": "busy: executor yielded (unit inactive; last yield: 2026-10-03T00:47:22Z host=<gpu-host> event=stopped gpu-priority lock=/tmp/apr-gpu.priority)",
+        "ts": "2026-10-04T12:22:11.537Z",
+        "wall_ms": 382,
+        "request_id": "01a106dd-574e-789b-8bc2-9054d0b4aa30",
+        "load1": 0.21,
+        "cold": null
+      }
+    ],
+    "ledger": "~/.local/state/paiml-implement/advisory-ledger.jsonl",
+    "raw": "advisory.json",
+    "agrees_with_counted": null,
+    "counted": "NOT-AGREED"
+  },
+  "lint": {
+    "ok": true,
+    "output": "receipt complete: kind=artifact lanes=3 author=claude-opus-5-5/claude same_family=2/2"
+  }
+}
