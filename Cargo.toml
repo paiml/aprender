@@ -31,6 +31,8 @@ members = [
     "crates/aprender-tensor",
     "crates/aprender-gemm-codegen",
     "crates/aprender-compute-xtask",
+    # --- PY-PORT (C301): CI helpers ported from scripts/**/*.py, publish = false ---
+    "crates/aprender-ci-tools",
     # --- APR-MONO Phase 2b: was provable-contracts ---
     "crates/aprender-contracts",
     "crates/aprender-contracts-macros",

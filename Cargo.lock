@@ -422,6 +422,15 @@ dependencies = [
 ]
 
 [[package]]
+name = "aprender-ci-tools"
+version = "0.70.0"
+dependencies = [
+ "aprender-build-sha",
+ "clap",
+ "serde_json",
+]
+
+[[package]]
 name = "aprender-common"
 version = "0.70.0"
 dependencies = [
