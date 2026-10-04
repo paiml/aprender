@@ -499,6 +499,8 @@ CASES
     printf '\074 reader_mods\t--lib\tflat::child\n\076 reader_mods\t--lib\n' > "$td/no2018.want"
     row 0 "MUTATION: 2018-layout sibling ignored (TREE_READER_MUTATE_NO_2018=1) -> the golden DIFFERS" '^[0-9]' cat "$td/no2018.diff"
     row 0 "  ...and exactly flat::child is lost to the whole-crate fallback (reader_mods --lib)" '^$' diff "$td/no2018.want" "$td/no2018.lines"
+    env -u TREE_READER_SELF_TEST TREE_READER_MUTATE_NO_2018=1 bash "$T" --derive "$FX" > "$td/no2018.inert" 2> /dev/null || true
+    row 0 "  ...and TREE_READER_MUTATE_NO_2018 is inert outside --self-test (the real golden)" '^$' diff "$FX/derived.golden.txt" "$td/no2018.inert"
     # The mutations are self-test-only: without TREE_READER_SELF_TEST the switch is inert.
     row 1 "the mutation switches are inert outside --self-test (TREE_READER_SELF_TEST unset -> the real golden)" '^[<>]' \
         env -u TREE_READER_SELF_TEST TREE_READER_MUTATE_FLAT=1 bash -c "bash '$T' --derive '$FX' 2>/dev/null | diff '$FX/derived.flat.golden.txt' -"
