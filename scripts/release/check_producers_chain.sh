@@ -18,7 +18,9 @@
 #       calls a reusable workflow (`uses:` at job level), whose checkout this file cannot see;
 #   P4  names github.sha, GITHUB_SHA, github.workflow_sha or GITHUB_WORKFLOW_SHA on a live line that names neither
 #       NIGHTLY_C nor workflow_run.head_sha outside a trailing comment;
-#   P5  is listed below and missing, or chains from the pick and is not listed (the list is complete both ways).
+#   P5  is listed below and missing, or chains from the pick and is not listed (the list is complete both ways);
+#   P6  is read by a lane of scripts/release/nightly_train.sh's LANES table whose event pattern is not exactly
+#       ^workflow_run$ (its scheduled runs are gone), or a lane reads workflow_run runs of a workflow not listed.
 # Limits: it reads the workflow text, not the scripts a step calls, so a later run step that fetches or checks out
 # main again is not seen; an origin/main a step fetches as a declared comparand (guards-nightly's SATD ceiling) is
 # not a measurement and is not judged here. It reads `on:` as a block mapping with keys at indent 2; any other
@@ -144,6 +146,26 @@ judge_file() {
         }' "$1"
 }
 
+p6() { # ROOT -> FAIL lines; the train's LANES must read a listed producer by its workflow_run runs, and only those
+    local t="$1/scripts/release/nightly_train.sh"
+    [ -f "$t" ] || { printf 'FAIL  nightly_train.sh: P6 missing, so its LANES table cannot be read\n'; return 1; }
+    awk -F ';' -v prods=" $(printf '%s' "$PRODUCERS" | tr '\n' ' ') " '
+        /^LANES=\047/ { inl = 1; sub(/^LANES=\047/, "") }
+        inl {
+            last = ($0 ~ /\047$/); line = $0; sub(/\047$/, "", line); split(line, a, ";")
+            if (a[4] ~ /^\.github\/workflows\/[^\/]+\.yml$/) {
+                w = a[4]; sub(/^.*\//, "", w); sub(/\.yml$/, "", w); lanes++
+                if (index(prods, " " w " ") && a[5] != "^workflow_run$") {
+                    printf "FAIL  nightly_train.sh: P6 lane %s reads %s.yml by event %s; it chains from the pick, so ^workflow_run$\n", a[1], w, a[5]; bad = 1 }
+                if (!index(prods, " " w " ") && a[5] ~ /workflow_run/) {
+                    printf "FAIL  nightly_train.sh: P6 lane %s reads workflow_run runs of %s.yml, which is not a listed producer\n", a[1], w; bad = 1 }
+            }
+            if (last) { inl = 0; done = 1 }
+        }
+        END { if (!done || !lanes) { print "FAIL  nightly_train.sh: P6 no LANES table read"; bad = 1 }
+              exit bad }' "$t"
+}
+
 judge() { # ROOT
     local root="$1" wf pick p rc=0 out listed
     wf="$root/.github/workflows"
@@ -163,6 +185,7 @@ judge() { # ROOT
         [ -n "$out" ] && printf '%s\n' "$out"
         printf '%s\n' "$out" | grep -q -e '^FAIL' && rc=1
     done
+    p6 "$root" || rc=1
     if [ "$rc" -eq 0 ]; then printf 'PASS  every nightly producer chains from "%s" and measures its C\n' "$pick"
     else printf 'RED   a nightly producer is not chained to the pick, or does not measure its C\n'; fi
     return "$rc"
@@ -175,6 +198,7 @@ fixture() { # DIR: the real producers + nightly-pick.yml
     rm -rf -- "${1:?}"; mkdir -p "$1/.github/workflows" || return 1
     local p
     for p in $PRODUCERS nightly-pick; do cp "$REAL_ROOT/.github/workflows/$p.yml" "$1/.github/workflows/" || return 1; done
+    mkdir -p "$1/scripts/release" && cp "$REAL_ROOT/scripts/release/nightly_train.sh" "$1/scripts/release/" || return 1
 }
 row() { # NAME WANT-RC MUST -- MUTATION-FN (run inside the fixture's workflows dir)
     local name="$1" want="$2" must="$3" fx out rc
@@ -211,6 +235,13 @@ m_chain_branch2() { changed cuda-nightly.yml 's/^    branches: \[main\]$/    bra
 m_chain_cmt()     { changed cuda-nightly.yml 's/^    workflows:/    # workflows:/'; }
 m_pick_renamed()  { changed nightly-pick.yml 's/^name: Nightly pick$/name: Nightly Pick/'; }
 m_missing()       { rm -f -- silicon-nightly.yml; }
+NT=../../scripts/release/nightly_train.sh
+m_lane_sched()    { changed "$NT" '/^book;/s/;\^workflow_run\$;/;^schedule$;/'; }
+m_lane_both()     { changed "$NT" '/^cuda;/s/;\^workflow_run\$;/;^(schedule|workflow_run)$;/'; }
+m_lane_unlisted() { changed "$NT" '/^fleet-toolset;/s/;\^schedule\$;/;^workflow_run$;/'; }
+m_train_pre_t44() { changed "$NT" 's/;\^workflow_run\$;/;^schedule$;/g'; }
+m_train_gone()    { rm -f -- "$NT"; }
+m_lanes_renamed() { changed "$NT" 's/^LANES=\x27/LANEZ=\x27/'; }
 m_unlisted()      { synth extra.yml <<< '      - run: true'; }
 m_no_cstep()      { changed toolchain-ceiling.yml '/- name: Measure the night.s C, not main.s head (T44)/,/nightly_c_checkout.sh/d'; }
 m_cstep_or()      { changed install-script.yml "0,/if: github.event_name == 'workflow_run'\$/s//if: github.event_name == 'workflow_run' || true/"; }
@@ -292,6 +323,12 @@ self_test() {
     row p3_repository_this_repo_cmt 1 'is not followed by the C step'          -- m_repo_self_cmt
     row p4_github_sha_bracket       1 'qwen-story-daily.yml: P4'               -- m_sha_bracket
     row p4_github_sha_case          1 'qwen-story-daily.yml: P4'               -- m_sha_case
+    row p6_lane_still_schedule      1 'P6 lane book reads book.yml'            -- m_lane_sched
+    row p6_lane_both_events         1 'P6 lane cuda reads cuda-nightly.yml'    -- m_lane_both
+    row p6_unlisted_reads_chain     1 'P6 lane fleet-toolset reads workflow_run' -- m_lane_unlisted
+    row p6_train_before_t44         1 'P6 lane deep-examples reads'         -- m_train_pre_t44
+    row p6_train_missing            1 'P6 missing'                             -- m_train_gone
+    row p6_no_lanes_table           1 'P6 no LANES table read'                 -- m_lanes_renamed
     rm -rf -- "${TMP_ST:?}"
     if [ "$FAILED" -eq 0 ]; then printf 'SELF-TEST PASSED: %s rows\n' "$CASES"; return 0; fi
     printf 'SELF-TEST FAILED: %s of %s rows\n' "$FAILED" "$CASES"; return 1
@@ -328,7 +365,12 @@ m28_literal_self_exempt	s/ && tolower(r) != "paiml\/aprender")/)/
 m29_local_action_ok	s/if (unq(key(S\[k\], "uses")) ~ \/^\\.\\\/\/) {/if (0) {/
 m30_repo_comment_kept	s/r = bare(a\[i\]); sub(\/\[\[:space:\]\]+#\.\*\/, "", r); r = unq(r)/r = unq(bare(a[i]))/
 m31_case_sensitive	s/if (tolower(c) ~/if (c ~/
-m32_no_bracket	s/github(\\.|\\\[\["\\047\])/github\\./'
+m32_no_bracket	s/github(\\.|\\\[\["\\047\])/github\\./
+m33_p6_not_called	s/^    p6 "\$root" || rc=1$/    :/
+m34_listed_any_event	s/ && a\[5\] != "^workflow_run\$")/ \&\& 0)/
+m35_unlisted_any_event	s/ && a\[5\] ~ \/workflow_run\/)/ \&\& 0)/
+m36_missing_train_read	s/\[ -f "\$t" \] ||/[ 1 ] ||/
+m37_no_table_ok	s/if (!done || !lanes) {/if (0) {/'
 mutants() {
     local tmp name expr killed=0 total=0 errors=0 out cut reds
     cut="$(grep -n -m1 -e "^# -* the case table" "$SCRIPT_PATH" | cut -d: -f1)"
@@ -336,6 +378,12 @@ mutants() {
     tmp="$(mktemp -d "${TMPDIR:-/tmp}/pc-mu.XXXXXX")" || caller_error "no temp dir"
     mkdir -p "$tmp/scripts/release" "$tmp/.github/workflows"
     cp "$REAL_ROOT"/.github/workflows/*.yml "$tmp/.github/workflows/" || caller_error "cannot copy the workflows"
+    cp "$REAL_ROOT/scripts/release/nightly_train.sh" "$tmp/scripts/release/" || caller_error "cannot copy nightly_train.sh"
+    # baseline: the unmutated copy must pass here, or every kill below is the mutant dir's fault, not the mutant's
+    cp "$SCRIPT_PATH" "$tmp/scripts/release/check_producers_chain.sh"
+    if ! bash "$tmp/scripts/release/check_producers_chain.sh" --self-test > "$tmp/base" 2>&1; then
+        printf 'ERROR baseline: the unmutated copy fails in the mutant dir\n'; grep -e '^RED' "$tmp/base" | head -n 3; rm -rf -- "${tmp:?}"; return 1
+    fi
     while IFS="$(printf '\t')" read -r name expr; do
         [ -n "$name" ] || continue
         total=$((total + 1))
@@ -368,7 +416,7 @@ main() {
     case "${1:-}" in
         --self-test) self_test; return $? ;;
         --mutants) mutants; return $? ;;
-        -h | --help) sed -n '2,31p' "$SCRIPT_PATH"; return 0 ;;
+        -h | --help) sed -n '2,33p' "$SCRIPT_PATH"; return 0 ;;
         --root) root="${2:-}"; [ -d "$root" ] || caller_error "--root DIR" ;;
         '') ;;
         *) caller_error "unknown argument '$1' (--root DIR|--self-test|--mutants)" ;;

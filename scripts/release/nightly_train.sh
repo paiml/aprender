@@ -10,8 +10,12 @@
 #   and every line ends with [C=<sha10> pin=<train>.<greens>.<redage>]: the commit judged and the shas of the three
 #   scripts that judged it. H is the commit id of C, main's head at the moment of the read.
 #
-# READ, DON'T RE-RUN. Night 1 runs nothing. Each lane takes the result its existing scheduled producer (a workflow on
-#   main and, optionally, a job-name pattern) recorded for C. A lane is
+# READ, DON'T RE-RUN. Night 1 runs nothing. Each lane takes the result its existing nightly producer (a workflow on
+#   main and, optionally, a job-name pattern) recorded for C. A producer that chains from "Nightly pick" is read by
+#   its workflow_run runs only (scripts/release/check_producers_chain.sh P6 keeps this table in step with the
+#   triggers). Such a run is filed under main's head when the pick finished, while its tree is the pick's commit
+#   (nightly_c_checkout.sh); the two differ only when a merge lands while the pick runs, and the lane is then
+#   credited with the pick's commit's result. A lane is
 #     green         the newest completed run of its producer on C ran every matched job to success, at attempt 1;
 #     red           a matched job ended failure, timed_out or startup_failure, or the run succeeded only at attempt 2
 #                   or later (a retried green is not a green: FLOW-003 G4, CI retries 2 -> 0);
@@ -70,8 +74,8 @@ UNIT="aprender-nightly-train"
 LANES='ci-main;verdict;ci / gate + workspace-test (merge, autopilot wait);.github/workflows/ci.yml;^push$;^(ci / gate|workspace-test)$;2
 deep-doctests;verdict;autopilot deep: cargo test --doc --workspace;-;-;-
 deep-nodefault;verdict;autopilot deep: cargo check --workspace --no-default-features;-;-;-
-deep-examples;verdict;autopilot deep: cargo build --workspace --examples;.github/workflows/examples-nightly.yml;^schedule$;^examples$
-deep-bins-build;verdict;autopilot deep: all-bins cargo build --locked --release;.github/workflows/nightly.yml;^schedule$;-unknown-linux-gnu on 
+deep-examples;verdict;autopilot deep: cargo build --workspace --examples;.github/workflows/examples-nightly.yml;^workflow_run$;^examples$
+deep-bins-build;verdict;autopilot deep: all-bins cargo build --locked --release;.github/workflows/nightly.yml;^workflow_run$;-unknown-linux-gnu on 
 deep-bins-smoke;verdict;autopilot deep: nightly_manifest.py smoke;-;-;-
 dogfood;verdict;dogfood.sh --phase pre-publish + preflight R5;-;-;-
 models;verdict;models_t1.sh GPU-host ladder legs, preflight R7;-;-;-
@@ -82,19 +86,19 @@ cleanroom-gpu;verdict;b2-gpu.yml on the tag;-;-;-
 assets;verdict;binary-release.yml + check_release_assets.sh;-;-;-
 preflight;verdict;check_publish_preflight.sh R1-R8;-;-;-
 publish-dryrun;verdict;rc_publish_gate.sh --verify + cascade-publish.sh --check;-;-;-
-coverage;info;tag_coverage_gate.sh (C291.1: not gating);.github/workflows/coverage-nightly.yml;^schedule$;^coverage$
-guards;info;guards-nightly;.github/workflows/guards-nightly.yml;^schedule$;
-mutants;info;mutants-nightly;.github/workflows/mutants-nightly.yml;^schedule$;
-toolchain-ceiling;info;toolchain-ceiling;.github/workflows/toolchain-ceiling.yml;^schedule$;
-cuda;info;cuda-nightly;.github/workflows/cuda-nightly.yml;^schedule$;
-silicon;info;silicon-nightly;.github/workflows/silicon-nightly.yml;^schedule$;
-qwen-story;info;qwen-story-daily;.github/workflows/qwen-story-daily.yml;^schedule$;
-beat-speed;info;beat-speed-nightly;.github/workflows/beat-speed-nightly.yml;^schedule$;
-conleche;info;conleche-nightly;.github/workflows/conleche-nightly.yml;^schedule$;
-bench;info;nightly-bench;.github/workflows/nightly-bench.yml;^schedule$;
-book;info;book;.github/workflows/book.yml;^schedule$;
-book-contracts;info;book-contracts;.github/workflows/book-contracts.yml;^schedule$;
-install-script;info;install-script;.github/workflows/install-script.yml;^schedule$;
+coverage;info;tag_coverage_gate.sh (C291.1: not gating);.github/workflows/coverage-nightly.yml;^workflow_run$;^coverage$
+guards;info;guards-nightly;.github/workflows/guards-nightly.yml;^workflow_run$;
+mutants;info;mutants-nightly;.github/workflows/mutants-nightly.yml;^workflow_run$;
+toolchain-ceiling;info;toolchain-ceiling;.github/workflows/toolchain-ceiling.yml;^workflow_run$;
+cuda;info;cuda-nightly;.github/workflows/cuda-nightly.yml;^workflow_run$;
+silicon;info;silicon-nightly;.github/workflows/silicon-nightly.yml;^workflow_run$;
+qwen-story;info;qwen-story-daily;.github/workflows/qwen-story-daily.yml;^workflow_run$;
+beat-speed;info;beat-speed-nightly;.github/workflows/beat-speed-nightly.yml;^workflow_run$;
+conleche;info;conleche-nightly;.github/workflows/conleche-nightly.yml;^workflow_run$;
+bench;info;nightly-bench;.github/workflows/nightly-bench.yml;^workflow_run$;
+book;info;book;.github/workflows/book.yml;^workflow_run$;
+book-contracts;info;book-contracts;.github/workflows/book-contracts.yml;^workflow_run$;
+install-script;info;install-script;.github/workflows/install-script.yml;^workflow_run$;
 fleet-toolset;info;fleet-toolset;.github/workflows/fleet-toolset.yml;^schedule$;'
 caller_error() { printf 'NOT RELEASABLE: nightly-train, caller error: %s\n' "$*"; exit 3; }
 # ---------------------------------------------------------------- judgement (pure: files in, files out) ----------
@@ -556,6 +560,11 @@ self_test() {
     row all_verdict_lanes_green_is_releasable 0 "RELEASABLE H=$ST_C" "NOT RELEASABLE" -- st_decide "$d"
     d="$tmp/removed"; fixture "$d"; sed -i '/\t201\t/d' "$d/runs.tsv"
     row one_lane_removed_names_it 0 "NOT RELEASABLE: v-b, not_measured" "RELEASABLE H=" -- st_decide "$d"
+    st_chain() { decide "$(printf '%s\n' "$ST_LANES" | sed -e '/^v-b;/s/\^schedule\$/^workflow_run$/')" "$1" 2026-10-04T06:00:00Z; cat "$1/line"; }
+    d="$tmp/chain"; fixture "$d"; sed -i '/\t201\t/s/\tschedule\t/\tworkflow_run\t/' "$d/runs.tsv"
+    row a_chained_lane_reads_its_workflow_run_run 0 "RELEASABLE H=$ST_C" "NOT RELEASABLE" -- st_chain "$d"
+    d="$tmp/chainsched"; fixture "$d"
+    row a_chained_lane_ignores_a_schedule_run 0 "NOT RELEASABLE: v-b, not_measured" "RELEASABLE H=" -- st_chain "$d"
     d="$tmp/other"; fixture "$d"; sed -i "/\t101\t/s/$ST_C/$ST_X/" "$d/runs.tsv"
     row run_on_another_commit_is_not_measured 0 "newest run 101 on bbbbbbbbbb" "RELEASABLE H=" -- st_decide "$d"
     d="$tmp/running"; fixture "$d"; sed -i '/\t101\t/s/\tCOMPLETED\tSUCCESS\tjob-a/\tIN_PROGRESS\t\tjob-a/' "$d/runs.tsv"
@@ -767,7 +776,8 @@ m38_verdict_rc_always_red	s/"RELEASABLE "\*) return 0 ;;/"RELEASABLE "*) return 
 m39_exit_verdict_always_red	s/^    \[ -z "\$EXIT_VERDICT" \] || verdict_rc "\$line" || exit 1$/    [ -z "$EXIT_VERDICT" ] || exit 1/
 m40_config_token_ignored	s/^        if grep -qsE /        if false \&\& grep -qsE /
 m41_home_cargo_unchecked	s/ "\$HOME\/.cargo"; do$/; do/
-m42_floor_ignores_the_limit	s/fl=\$((lim \/ 5))/fl=$RATE_FLOOR/'
+m42_floor_ignores_the_limit	s/fl=\$((lim \/ 5))/fl=$RATE_FLOOR/
+m43_any_event_counts	s/ && REV\[r\] ~ EV\[i\]//'
 # each planted mutant must change the file, still parse, and turn at least one row RED
 mutants() {
     local tmp pass=0 fail=0 name expr o rc
