@@ -46,22 +46,29 @@ permissions:
 
 jobs:
   present:
-    # ARCH-NEUTRAL: intel, yoga OR gx10, the same move ci.yml's gate,
-    # guard-tree, pr-review-shadow and pr-review-sign already made (#3100 /
-    # PMAT-3138). The X64 pin here was not load-bearing and cost real capacity.
+    # OWN LANE: review-light (#4729). This job is a seconds-to-minutes check
+    # that reads a receipt; it builds nothing. On the shared build pool it
+    # waits behind every build in the FIFO.
     #
-    # MEASURED 2026-09-13T13:47Z: 19 active runs, 21 of 26 runners busy, and
-    # ELEVEN queued pr-review-quorum runs — all of them this job, all waiting
-    # on [self-hosted, X64, Linux, clean-room], the same pool workspace-test
-    # and guard-cargo need, some queued 23 minutes. gx10's four ARM64
-    # clean-room runners could not take a single one and sat at ~19% occupancy.
+    # MEASURED 2026-10-04: run 37191245180 (PR 4716) was created 09:09:33Z and
+    # its job started 14:06:17Z on a clean-room build runner, almost 5 h
+    # queued, then ran 9.3 min. #4729: every clean-room runner was busy, and
+    # `present` was the only check holding six armed PRs. The labels matched
+    # and pre-job.sh (the disk floor) admitted the job. The pool was full: a
+    # later snapshot the same afternoon found all 21 online clean-room
+    # runners busy.
     #
-    # NOTHING IN THIS JOB IS x86. scripts/install_pr_review_tools.sh reads
-    # `uname -m` and accepts x86_64 AND aarch64 (it pulls the matching minisign
-    # from the same pinned tarball, and dies loudly on anything else), and
-    # scripts/check_pr_review_arm4.sh contains no arch reference at all. The
-    # pin was inherited, not derived.
-    runs-on: [self-hosted, Linux, clean-room]
+    # review-light is one dedicated runner on a clean-room host: the same
+    # runner unit and the same isolation, and it has run aprender jobs. Its
+    # only label past the defaults is review-light, so no build can take its
+    # slot. Steps are unchanged: the same base checkout, tools and Arm 4.
+    # check_runner_labels.sh lists review-light as a one-box label, like
+    # perf-solo.
+    #
+    # History: the X64 pin was dropped on 2026-09-13 (#3100 / PMAT-3138).
+    # Nothing in this job is x86; install_pr_review_tools.sh takes x86_64 and
+    # aarch64.
+    runs-on: [self-hosted, Linux, review-light]
     timeout-minutes: 20
     # B1 (#4512): read the pr-review-signature check run. Job-scoped, read-only.
     # pull-requests: read - in the queue Arm 4 must name the PR's head, which the

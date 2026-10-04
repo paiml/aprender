@@ -1,0 +1,21 @@
+- id: GH-4729
+  github_issue: 4729
+  item_type: task
+  title: 'pr-review-quorum `present`: run on its own review-light runner, not the clean-room build FIFO (queued 2.5-5 h, held six armed PRs)'
+  status: inprogress
+  priority: critical
+  assigned_to: aprender-wcensus
+  created: 2026-10-04T17:00:00Z
+  updated: 2026-10-04T17:00:00Z
+  acceptance_criteria:
+  - The cause is named from run and job data. Run 37191245180 was queued 09:09:33Z to 14:06:17Z with matching labels, and pre-job.sh admitted it (disk floor passed), so the queue was clean-room pool saturation, not labels or disk
+  - The present job runs on [self-hosted, Linux, review-light]. Its steps, permissions, timeout and Arm 4 are unchanged
+  - scripts/check_runner_labels.sh accepts review-light as a one-box discriminating label, like perf-solo, and is RED on this workflow if review-light is removed from DISCRIM (mutant run)
+  - .github/actionlint.yaml lists review-light, and actionlint is clean on pr-review-quorum.yml
+  - The runner-side follow-up (a second review-light runner, or CPU weight for the one runner) goes to infra as ticket text, not in this diff
+  phases: []
+  subtasks: []
+  estimated_effort: null
+  labels:
+  - kind:ci
+  notes: 'Changes what check_runner_labels.sh accepts by one one-box label. Branch only, no PR (freeze).'

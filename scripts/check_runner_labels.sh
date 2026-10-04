@@ -21,7 +21,9 @@ cd "$(dirname "$0")/.."
 # mini-builder (#4292, infra#1042): the mini's dedicated repo-level release runner, labelled
 # self-hosted,macOS,ARM64,mini-builder and "used only via mini-builder so it never joins the
 # general pool" (operator, via the cop). Also a one-box label.
-DISCRIM='clean-room|cuda|gpu|rtx4090|ada|blackwell|gb10|apple-silicon|m4|perf-solo|mini-builder'
+# review-light (#4729): one dedicated runner for the pr-review-quorum `present` job, labelled
+# WITHOUT clean-room so the build FIFO cannot hold a receipt check for hours. A one-box label.
+DISCRIM='clean-room|cuda|gpu|rtx4090|ada|blackwell|gb10|apple-silicon|m4|perf-solo|mini-builder|review-light'
 fail=0
 
 while IFS=: read -r file line sel; do
