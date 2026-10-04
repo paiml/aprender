@@ -62,12 +62,18 @@ models:
     # honest state is that we do not know its budget yet. Refusing names that, where
     # inheriting 2048 would republish an 8B's number as this model's measurement.
     why_unmeasured: |
-      Generated 8,901 chars without closing at 2048 on lambda. Whether a larger budget
-      closes it, or this model genuinely loops on `What is 2+2?`, is UNMEASURED. The
-      measurement must be on lambda: d8 measured that tinyllama-1.1b's CPU and GPU legs
-      diverge at token 143 of 192 while Qwen3-1.7B does not, so a greedy token-level
-      number is not host-portable and a yoga figure could not be used for lambda's gate.
-    owed_by: "aprender#3907 (the measurement is queued behind aprender#3899, d8's Rule A blocker, for the lambda slot)"
+      Generated 8,901 chars without closing at 2048 on lambda (#3907). MEASURED since
+      (aprender#4663, operator ruling A, 2026-10-04): NO budget closes it, so the entry
+      keeps no `budget` and the leg stays FAIL-CLOSED. Released apr 0.70.1 cuda
+      (04332f838), lambda RTX 4090, greedy ON leg on the official template: unclosed at
+      2048 / 4096 / 8192 / 16384 with 8,910 / 17,795 / 35,574 / 71,140 chars; output
+      grows linearly with the budget. The text is coherent, reaches "2 + 2 = 4", then
+      loops ("Wait, I should check..."). A model property, not apr: llama.cpp with
+      Qwen's sampling (T 0.6, top-k 20, top-p 0.95, 8 seeds, 2048) closes 4/8; llama.cpp
+      greedy closes only because an early near-tie ("Identify the Core Task") resolves
+      differently across engines and backends. Evidence:
+      cop-inbox/handoff/c298-4663-4666-evidence.md (raw: /mnt/nvme-raid0/tmp/fix-4663/).
+    owed_by: "a sampled-closure-rate ON leg is a gate change, proposed as its own ticket for operator sign-off (aprender#4663)"
   "Qwen3.5-0.8B-Q4_K_M.gguf":
     # #3948 quorum item 3: recorded explicitly, so a failure on this model cites ITS measurement
     # and never the 8B-measured `default`. The budget is not what fails here.
