@@ -23,6 +23,10 @@ sovereign-ci:
     repo: ${{ github.event.repository.name }}
     enable_sccache: true
     use_nextest: true
+    # 'tag' keeps coverage off the PR, queue and branch-push path (operator 2026-09-21). Since
+    # T39 ci.yml has no v* tag trigger, so this section's coverage runs on workflow_dispatch
+    # only; the release reads coverage-nightly's receipt instead. 'always' would put coverage
+    # back on every PR, and skip_coverage: true turns `ci / gate` red (#3688).
     coverage_on: 'tag'
 
 # A matrix job becomes one section per pinned combination. workspace-test-shard

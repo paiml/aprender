@@ -13,10 +13,13 @@ name: CI
 on:
   push:
     branches: [main, master]
-    # #3676: sovereign-ci's `coverage_on: tag` (below) runs coverage only on a push of a
-    # v* tag, and its gate REQUIRES it to succeed there. A push filtered to branches never
-    # fires for a tag, so this is the reusable's second required edit.
-    tags: ['v*']
+    # NO v* tag trigger (T39). A tag push ran this whole workflow and nothing read it: the
+    # release gate (scripts/release/tag_coverage_gate.sh) judges coverage-nightly's receipt
+    # for the release commit, not a ci.yml run. The tag run could not pass either: a tag
+    # create has no base sha, so every head-vs-base step had no comparand, and its coverage
+    # section built only the facade (0 tests, no %). With `coverage_on: tag` in
+    # ci/sections.yml and no tag trigger, coverage runs here on workflow_dispatch only.
+    # scripts/check_coverage_has_producers.sh R5 keeps the trigger out.
   pull_request:
     branches: [main, master]
   # Merge queue: GitHub dispatches a `merge_group` event for each batch it forms.
