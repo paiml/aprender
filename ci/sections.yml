@@ -973,11 +973,16 @@ jobs:
       # workspace-test already succeeded; measuring it again is waste, not
       # evidence. The tier step proved both facts (trees compared by hash, the
       # check-run's conclusion read from GitHub); this step records the citation.
-      - name: "Reuse: this tree already passed workspace-test on the PR head (BSE-17)"
+      # T36: on a push the citation is instead the merge_group run that tested
+      # this very sha, so the label names what is cited for each event.
+      - name: "Reuse: this tree already passed workspace-test (BSE-17 PR head / T36 merge queue)"
         if: steps.tier.outputs.tier == 'reuse'
         run: |
           printf 'workspace-test REUSED: %s\n' "${{ steps.tier.outputs.reason }}"
-          printf 'cited PR head: %s\n' "${{ steps.tier.outputs.cite }}"
+          case "${{ github.event_name }}" in
+            push) printf 'cited merge_group run: %s\n' "${{ steps.tier.outputs.cite }}" ;;
+            *) printf 'cited PR head: %s\n' "${{ steps.tier.outputs.cite }}" ;;
+          esac
       # #3658 NONE: the tier step proved the change gives workspace-test nothing
       # to measure -- every touched path is under docs/roadmaps/ or docs/audits/
       # and present at HEAD (no Rust source, test or tree reader reads them), or
