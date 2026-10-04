@@ -47,6 +47,18 @@ metadata:
     0.8%) and are explicitly NOT a calibration: a threshold comes from samples,
     never from invention.
 
+    2026-10-04 (#4715): sm_121 GETS A RATCHET ENTRY, BY OPERATOR RULING. The
+    ruling: a ratchet at its measured value - it passes at today's value and
+    fails on any drop. The value is the GB10 leg of cuda-nightly run
+    37161229337 (commit 316dee2cd, 2026-10-03): ratio_median 0.595922, from a
+    median-of-7 of 108.29 tok/s against a median of 181.72 tok/s for the
+    incumbent. The floor is that ratio rounded DOWN to 0.5959, because the
+    printed 0.596 would fail the very run it was read from. This entry is
+    NOT a calibration and does not settle the open question (#2835): it only
+    refuses a further drop on sm_121. The harness test
+    gb10_floor_is_a_ratchet_at_its_measured_value pins the floor to the
+    recorded trials both ways (passes them; sits within 5e-5 of them).
+
     SCOPE: STEADY-STATE GPU DECODE only — marginal token-generation rate with
     model load + FP8-weight-cache build + CUDA-graph capture + prefill amortized
     out. apr's one-shot CLI has a large (~3.4-3.9s) fixed per-invocation startup
