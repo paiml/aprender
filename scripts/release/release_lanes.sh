@@ -144,15 +144,25 @@ judge_dryrun() {
 }
 
 # tested_sha (a clean-room job log on stdin) -> the tested commit, or nothing. The release driver's rule
-# (cascade-publish.sh clean_room_tested_shas + its caller): the DISTINCT structured `tested-sha:` records, and only
-# exactly one full lowercase 40-hex sha counts. Two records, or a malformed one, is a log that proves no commit.
+# (cascade-publish.sh clean_room_tested_shas/_abbrevs + clean_room_gate): the DISTINCT structured `tested-sha:`
+# records, and only exactly one full lowercase 40-hex sha counts; beside it, at most one legacy `commit:` record,
+# and that one a prefix of the sha. Anything else is a log that proves no commit. A log with only the legacy record
+# predates infra#621 and reads as no commit too (the driver resolves it with git; a lane need not).
 # It reads the whole log, so the download is never cut off mid-stream.
 tested_sha() {
-    local s
-    s="$(tr -d '\r' | { grep -E '^([0-9]{4}-[0-9]{2}-[0-9]{2}T[0-9:.]+Z )?[[:space:]]*tested-sha: .+$' || true; } \
+    local log s a
+    log="$(tr -d '\r')"
+    s="$(printf '%s\n' "$log" | { grep -E '^([0-9]{4}-[0-9]{2}-[0-9]{2}T[0-9:.]+Z )?[[:space:]]*tested-sha: .+$' || true; } \
         | sed -E 's/^.*tested-sha: //; s/[[:space:]]+$//' | sort -u)"
-    [[ "$s" =~ ^[0-9a-f]{40}$ ]] && printf '%s\n' "$s"
-    return 0
+    a="$(printf '%s\n' "$log" | { grep -E '^([0-9]{4}-[0-9]{2}-[0-9]{2}T[0-9:.]+Z )?    commit:  [0-9a-f]{7,40}$' || true; } \
+        | sed -E 's/^.*    commit:  //' | sort -u)"
+    [[ "$s" =~ ^[0-9a-f]{40}$ ]] || return 0
+    case "$a" in
+        "") ;;
+        *$'\n'*) return 0 ;;
+        *) case "$s" in "$a"*) ;; *) return 0 ;; esac ;;
+    esac
+    printf '%s\n' "$s"
 }
 
 # emit LANE (one judge line on stdin) -> GITHUB_OUTPUT verdict/reason, a summary row, one printed line. Anything
@@ -193,6 +203,21 @@ measure_jobs() {   # measure_jobs PREFIX ENV_RE
     printf '%s\n' "$js" | judge_jobs "$1" "$2"
 }
 
+# infra_job (a run's jobs JSON on stdin) -> "id status conclusion assert-status/assert-conclusion" of the
+# `clean-room (aprender)` job, or nothing; a missing assert step reads absent/-
+infra_job() {
+    jq -r --arg n "$INFRA_JOB" --arg a "$INFRA_ASSERT" \
+        '[.jobs[] | select(.name == $n)][0] // empty
+         | ([.steps[]? | select(.name == $a)][0] // {status: "absent", conclusion: null}) as $s
+         | "\(.id) \(.status) \(.conclusion // "-") \($s.status)/\($s.conclusion // "-")"' 2>/dev/null
+}
+
+# log_proves STATUS ASSERT -> 0 when the job's log may name its commit: the job completed and its commit assert
+# succeeded. A log whose assert did not succeed proves no commit, whatever it prints (the release driver's rule).
+log_proves() {
+    [ "$1" = completed ] && [ "$2" = completed/success ]
+}
+
 # infra_rows C -> the TSV judge_cpu reads, newest run first; stops at the first run that tested C
 infra_rows() {
     local runs ids id att jobs jid jst jcon jassert sha logs=0
@@ -202,14 +227,10 @@ infra_rows() {
         [ -n "$id" ] || continue
         jobs="$(api "$API/repos/$INFRA_REPO/actions/runs/$id/jobs?per_page=100" "$INFRA_TOKEN")" || return 1
         jid=""; jst=""; jcon=""; jassert=""
-        read -r jid jst jcon jassert < <(printf '%s\n' "$jobs" | jq -r --arg n "$INFRA_JOB" --arg a "$INFRA_ASSERT" \
-            '[.jobs[] | select(.name == $n)][0] // empty
-             | ([.steps[]? | select(.name == $a)][0] // {status: "absent", conclusion: null}) as $s
-             | "\(.id) \(.status) \(.conclusion // "-") \($s.status)/\($s.conclusion // "-")"')
+        read -r jid jst jcon jassert < <(printf '%s\n' "$jobs" | infra_job)
         [ -n "$jid" ] || continue
         sha="?"
-        # a log whose commit assert did not succeed proves no commit, whatever it prints (the release driver's rule)
-        if [ "$jst" = completed ] && [ "$jassert" = completed/success ] && [ "$logs" -lt "$INFRA_MAX_LOGS" ]; then
+        if log_proves "$jst" "$jassert" && [ "$logs" -lt "$INFRA_MAX_LOGS" ]; then
             logs=$((logs + 1))
             sha="$(api "$API/repos/$INFRA_REPO/actions/jobs/$jid/logs" "$INFRA_TOKEN" | tested_sha)"
             [ -n "$sha" ] || sha="?"
@@ -285,7 +306,7 @@ fx_job() {
 fx_run() { jq -cs '{jobs: .}'; }
 
 self_test() {
-    local pass=0 fail=0 o tmp c d g a T
+    local pass=0 fail=0 o tmp c d g a T st as
     tmp="$(mktemp -d)" || return 1
     ok() { printf '  ok    %-46s %s\n' "$1" "$2"; pass=$((pass + 1)); }
     broke() { printf '  BROKE %-46s %s\n' "$1" "$2"; fail=$((fail + 1)); }
@@ -379,6 +400,38 @@ self_test() {
     if [ -z "$o" ]; then ok tested_sha_two_commits_prove_none empty; else broke tested_sha_two_commits_prove_none "got: $o"; fi
     o="$(printf '2026-10-04T02:28:41Z     tested-sha: %s\n' "${c:0:12}" | tested_sha)"
     if [ -z "$o" ]; then ok tested_sha_short_sha_proves_none empty; else broke tested_sha_short_sha_proves_none "got: $o"; fi
+    o="$(printf '2026-10-04T02:28:41Z     commit:  %s\n2026-10-04T02:28:41Z     tested-sha: %s\n' "${c:0:9}" "$c" | tested_sha)"
+    if [ "$o" = "$c" ]; then ok tested_sha_agreeing_legacy_record "${c:0:12}"; else broke tested_sha_agreeing_legacy_record "got: $o"; fi
+    o="$(printf '2026-10-04T02:28:41Z     commit:  %s\n2026-10-04T02:28:41Z     tested-sha: %s\n' "${d:0:9}" "$c" | tested_sha)"
+    if [ -z "$o" ]; then ok tested_sha_disagreeing_legacy_record_proves_none empty; else broke tested_sha_disagreeing_legacy_record_proves_none "got: $o"; fi
+    o="$(printf '2026-10-04T02:28:41Z     commit:  %s\n2026-10-04T02:28:42Z     commit:  %s\n2026-10-04T02:28:42Z     tested-sha: %s\n' "${c:0:9}" "${d:0:9}" "$c" | tested_sha)"
+    if [ -z "$o" ]; then ok tested_sha_two_legacy_records_prove_none empty; else broke tested_sha_two_legacy_records_prove_none "got: $o"; fi
+    o="$(printf '2026-10-04T02:28:41Z     commit:  %s\n' "${c:0:9}" | tested_sha)"
+    if [ -z "$o" ]; then ok tested_sha_legacy_record_alone_proves_none empty; else broke tested_sha_legacy_record_alone_proves_none "got: $o"; fi
+    # infra_rows' seams: which job, its commit assert, and whether its log may name a commit
+    o="$(jq -cn --arg a "$INFRA_ASSERT" '{jobs: [{id: 7, name: "clean-room (trueno)", status: "completed", conclusion: "success", steps: []},
+        {id: 9, name: "clean-room (aprender)", status: "completed", conclusion: "failure",
+         steps: [{name: $a, status: "completed", conclusion: "success"}]}]}' | infra_job)"
+    if [ "$o" = "9 completed failure completed/success" ]; then ok infra_job_reads_its_job_and_assert "$o"; else broke infra_job_reads_its_job_and_assert "got: $o"; fi
+    o="$(jq -cn '{jobs: [{id: 9, name: "clean-room (aprender)", status: "in_progress", conclusion: null, steps: []}]}' | infra_job)"
+    if [ "$o" = "9 in_progress - absent/-" ]; then ok infra_job_missing_assert_is_absent "$o"; else broke infra_job_missing_assert_is_absent "got: $o"; fi
+    if log_proves completed completed/success; then ok log_proves_after_a_passed_assert yes; else broke log_proves_after_a_passed_assert no; fi
+    for o in "completed completed/failure" "completed completed/skipped" "completed absent/-" "in_progress completed/success"; do
+        read -r st as <<< "$o"
+        if log_proves "$st" "$as"; then broke log_proves_nothing_without_a_passed_assert "accepted: $o"; else ok log_proves_nothing_without_a_passed_assert "$o"; fi
+    done
+    mkdir -p "$tmp/bin"
+    cat > "$tmp/bin/curl" <<'FAKE'
+#!/usr/bin/env bash
+# the self-test's curl: prints the headers it was handed by file, then its argv
+for a in "$@"; do case "$a" in @*) printf 'HDR %s\n' "$(cat "${a#@}")" ;; esac; done
+printf 'ARGV %s\n' "$*"
+FAKE
+    chmod +x "$tmp/bin/curl"
+    o="$(PATH="$tmp/bin:$PATH" api https://example.invalid/x fixture-token-41)"
+    if [[ "$o" == *"HDR Authorization: Bearer fixture-token-41"* ]] && ! grep -q '^ARGV .*fixture-token-41' <<< "$o"; then
+        ok api_keeps_the_token_out_of_argv "header by fd"
+    else broke api_keeps_the_token_out_of_argv "got: $o"; fi
     # publish-dryrun
     row dryrun_green_on_a_bumped_tree green "green at 0.70.2" -- judge_dryrun 0 0.70.2 0.70.1
     row dryrun_defect_is_red red "publish defect" -- judge_dryrun 1 0.70.2 0.70.1
@@ -390,6 +443,7 @@ self_test() {
     row dryrun_not_run_is_not_measured not_measured "not run" -- judge_dryrun - 0.70.2 0.70.1
     row dryrun_prerelease_of_a_published_version_is_not_measured not_measured "must be bumped" -- judge_dryrun 0 0.70.1-rc.1 0.70.1
     row dryrun_prerelease_of_the_next_version_is_measured green "green at 0.70.2-rc.1" -- judge_dryrun 0 0.70.2-rc.1 0.70.1
+    row dryrun_build_metadata_is_not_a_bump not_measured "must be bumped" -- judge_dryrun 0 0.70.1+build.5 0.70.1
     o="$(printf '%s\n' '{"vers":"0.70.0","yanked":false}' '{"vers":"0.70.2","yanked":true}' '{"vers":"0.70.1","yanked":false}' | registry_newest)"
     if [ "$o" = 0.70.1 ]; then ok registry_newest_skips_a_yanked_version 0.70.1; else broke registry_newest_skips_a_yanked_version "got: $o"; fi
     # emit: the only door to the outputs
@@ -435,7 +489,12 @@ m16_yanked_version_counts s/select(.yanked | not) | //
 m17_startup_failure_is_not_red s/ || $4 == "startup_failure")/)/
 m18_prefix_without_its_separator s/startswith($p + " \/ ")/startswith($p)/
 m19_reason_keeps_a_cr s/tr -d .\\r\\n.)"/tr -d "\\n")"/
-m20_first_of_two_tested_shas_counts s/| sort -u)"/| sort -u | head -n 1)"/'
+m20_first_of_two_tested_shas_counts s/| sort -u)"/| sort -u | head -n 1)"/
+m21_build_metadata_counts_as_bumped s/%%\[-+\]\*}" r=/%%[-]*}" r=/
+m22_log_proves_without_the_assert s/\[ "\$2" = completed\/success \]/true/
+m23_two_legacy_records_count s/\(\*\$.\\n.\*)\) return 0 ;;/\1 ;;/
+m24_disagreeing_legacy_record_counts s/\*) case "\$s" in "\$a"\*) ;; \*) return 0 ;; esac ;;/*) ;;/
+m25_token_in_argv s/-H @<(printf .Authorization: Bearer %s\\n. "\$2")/-H "Authorization: Bearer $2"/'
 
 mutants() {
     local tmp pass=0 fail=0 name expr o rc m
