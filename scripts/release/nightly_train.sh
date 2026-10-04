@@ -355,6 +355,7 @@ on_exit() {
             printf 'nt-%s\t%s\tmain\t%s\tfailure\t%s\n' "${NOW//[-:]/}" "$NOW" "${GITHUB_EVENT_NAME:-timer}" "${GITHUB_RUN_ATTEMPT:-1}" >> "$OUTDIR/history.tsv"; fi
     fi
     inbox_line "$l" "not_measured"
+    [ -z "${DRILL:-}" ] || rm -f -- "${INBOXF:?}"
     exit 2
 }
 
@@ -501,6 +502,7 @@ st_decide() { decide "$ST_LANES" "$1" 2026-10-04T06:00:00Z; cat "$1/line" "$1/la
 self_test() {
     local tmp pass=0 fail=0 d o rc
     tmp="$(mktemp -d)" || exit 3
+    export INBOX="$tmp/inbox.md"   # whatever INBOX the caller set: a self-test never writes a real inbox
     # row NAME EXPECT-RC NEEDLE FORBID -- CMD...
     row() {
         local name="$1" expect="$2" needle="$3" forbid="$4"; shift 5
@@ -580,7 +582,11 @@ v-e;verdict;check E;-;-;-" "$d" 2026-10-04T06:00:00Z; cat "$d/line" "$d/lanes.ts
         eval 'NIGHTLY_TRAIN_FAULT=inbox bash "$SCRIPT_PATH" --from "$d" --out "$tmp/o4" --inbox "$tmp/ib4" --now 2026-10-04T06:00:00Z > /dev/null; awk -F "\t" "NR > 1 { n++; if (\$5 == \"failure\") f++ } END { print \"rows=\" n+0, \"failure=\" f+0 }" "$tmp/o4/history.tsv"'
     row a_closed_stdout_adds_no_second_row 0 "rows=1 failure=0" "" -- \
         eval 'bash "$SCRIPT_PATH" --from "$d" --out "$tmp/o5" --now 2026-10-04T06:00:00Z >&- 2> /dev/null; awk -F "\t" "NR > 1 { n++; if (\$5 == \"failure\") f++ } END { print \"rows=\" n+0, \"failure=\" f+0 }" "$tmp/o5/history.tsv"'
-    mkdir -p "$tmp/pb" && cp "$SCRIPT_PATH" "$HERE/red_age.sh" "$HERE/nightly_greens.sh" "$tmp/pb/" 2>/dev/null
+    row a_self_test_writes_only_its_own_inbox 0 "sandbox" "" -- \
+        eval 'case "$INBOX" in "$tmp"/*) echo sandbox ;; *) echo "INBOX is $INBOX" ;; esac'
+    row a_planted_fault_never_writes_the_named_inbox 0 "caller=0 lines=2" "" -- \
+        eval 'INBOX="$tmp/c6.md" NIGHTLY_TRAIN_FAULT=bundle bash "$SCRIPT_PATH" --from "$d" --out "$tmp/o6" --now 2026-10-04T06:00:00Z > /dev/null; NIGHTLY_TRAIN_FAULT=bundle bash "$SCRIPT_PATH" --from "$d" --out "$tmp/o7" --inbox "$tmp/c7.md" --now 2026-10-04T06:00:00Z > /dev/null; printf "caller=%s lines=%s\n" "$(cat "$tmp/c6.md" "$tmp/c7.md" 2>/dev/null | wc -l)" "$(cat "$tmp/o6"/*/line "$tmp/o7"/*/line | grep -c "planted fault")"'
+    mkdir -p "$tmp/pb" && cp "$SCRIPT_PATH" "$HERE/red_age.sh" "$HERE/nightly_greens.sh" "$tmp/pb/" 2>/dev/null; chmod u+w "$tmp/pb"/*.sh
     printf 'train %s\ngreens %s\nredage %s\n' "$ST_C" "$ST_C" "$ST_C" > "$tmp/pb/PIN"
     (cd "$tmp/pb" && sha256sum nightly_train.sh nightly_greens.sh red_age.sh > SHA256SUMS) 2>/dev/null
     printf '# an edit after pinning\n' >> "$tmp/pb/nightly_train.sh"
@@ -612,15 +618,18 @@ m17_cut_job_list_is_read	s/if (JN\[r, k\] == "#truncated") {/if (0) {/
 m18_void_run_is_picked	s/if (pick == "" \&\& s != "void") {/if (pick == "") {/
 m19_edited_bundle_runs	s/sha256sum --quiet -c SHA256SUMS/true/
 m20_producerless_lane_is_green	s/out(i, "not_measured", "", "", "no nightly producer on main yet")/out(i, "green", "", "", "x")/
-m21_failure_row_after_history	s/if \[ -z "\$HISTDONE" \]; then/if :; then/'
+m21_failure_row_after_history	s/if \[ -z "\$HISTDONE" \]; then/if :; then/
+m22_self_test_inbox_inherited	s/^    export INBOX="\$tmp\/inbox.md"   # whatever/    : # whatever/
+m23_drill_writes_named_inbox	s/then INBOXF="\$(mktemp)" || exit 3; DRILL=1;/then DRILL="";/'
 
 # each planted mutant must change the file, still parse, and turn at least one row RED
 mutants() {
     local tmp pass=0 fail=0 name expr o rc
     tmp="$(mktemp -d)" || exit 3
+    export INBOX="$tmp/inbox.md"   # the same for every mutant run
     cp "$HERE/red_age.sh" "$HERE/nightly_greens.sh" "$tmp/" 2>/dev/null
     # baseline: the unmutated copy must be green here, or every kill below proves nothing
-    cp "$SCRIPT_PATH" "$tmp/nightly_train.sh"
+    cp "$SCRIPT_PATH" "$tmp/nightly_train.sh"; chmod u+w "$tmp"/*.sh   # an installed bundle is 0555
     if ! bash "$tmp/nightly_train.sh" --self-test > /dev/null 2>&1; then printf '  BROKE %-44s the unmutated script is not green in the mutant dir\n' baseline; rm -rf -- "${tmp:?}"; return 1; fi
     while IFS='	' read -r name expr; do
         [ -n "$name" ] || continue
@@ -648,10 +657,12 @@ case "${1:-}" in
     --install) shift; install_timer "$@"; exit $? ;;
 esac
 FROM=""; NOW=""; OUTDIR="${OUT:-}"; INBOXF="${INBOX:-}"
+# a planted fault is a drill: its line goes to a throwaway inbox, never the one the caller named
+if [ -n "${NIGHTLY_TRAIN_FAULT:-}" ]; then INBOXF="$(mktemp)" || exit 3; DRILL=1; else DRILL=""; fi
 while [ $# -gt 0 ]; do
     case "$1" in
         --out) OUTDIR="${2:-}"; shift 2 ;;
-        --inbox) INBOXF="${2:-}"; shift 2 ;;
+        --inbox) [ -n "$DRILL" ] || INBOXF="${2:-}"; shift 2 ;;
         --from) FROM="${2:-}"; shift 2 ;;
         --now) NOW="${2:-}"; shift 2 ;;
         *) caller_error "unknown argument $1" ;;
