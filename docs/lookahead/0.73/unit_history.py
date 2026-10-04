@@ -14,9 +14,11 @@ count from the first commit after which both sides held it. A `live` unit is onl
 `never` unit can hold code that the compiled copy lacks.
 
 A dark file's dark-only commits touched it but none of the compiled files that hold one of its names (impl headers
-aside), after the first of those files existed. They catch what the keys leave out, such as a doc comment. The replay
-checks itself: before each commit a file must hold the text the previous commit left, and after the last one the
-pin's text; a source's last text must be the text that its import left on main. A gap fails the run.
+aside), after the first of those files existed. They catch what the keys leave out, such as a doc comment. A dark
+file under a --source PREFIX has them in DIR's history too, judged against its namesakes under PREFIX and named
+<DIR's basename>:<commit>; DIR is replayed over every such dark file and namesake, not only over changed units. The
+replay checks itself: before each commit a file must hold the text the previous commit left, and after the last one
+the pin's text; a source's last text must be the text that its import left on main. A gap fails the run.
 
 Usage: unit_history.py --pin REV [--verdict V ...] [--source PREFIX=DIR ...] [--tsv PATH] | --self-test
 rc 3 when the pin lists no crates/*/src .rs file: orphan_census.load() refuses a vacuous answer.
@@ -212,16 +214,34 @@ def dark_only(log, d, ns):
     return [] if born is None else [i for i, c in enumerate(log) if i > born and d in c[4] and not c[4] & ns]
 
 
-def before(pin, prefix, repo, units, first):
-    """({unit: states}, broken, commits) from repo, the source of the pin's squashed import of prefix: the states of
-    the units whose dark file and live holders all lie under prefix, over repo's first-parent history up to the
-    imported commit. first holds each path's text after its first commit on main."""
-    rev = squash_rev(git(".", "log", "--format=%s", f"--grep=^Squashed '{prefix}/' content from commit ", pin)
-                     .decode(), prefix)
-    mine = {u: live for u, live in units.items() if all(p.startswith(prefix + "/") for p in (u[0], *live))}
-    paths = sorted({p[len(prefix) + 1:] for u, live in mine.items() for p in (u[0], *live)})
+def dark_only_all(dark, ns, srcs, log):
+    """{dark path: its dark-only commits} over the log of the source whose prefix holds it, if one does, and then
+    main's log; srcs holds each source's (prefix, log)."""
+    out = {}
+    for d in dark:
+        hist = [c for p, sl in srcs if d.startswith(p + "/") for c in sl] + log
+        out[d] = [hist[i] for i in dark_only(hist, d, ns[d])]
+    return out
+
+
+def source_paths(prefix, units, ns):
+    """(the units whose dark file and live holders all lie under prefix, the paths below prefix that a source replays
+    for them and for the dark-only commits of each dark file under prefix: its own path and its namesakes there)."""
+    head = prefix + "/"
+    mine = {u: live for u, live in units.items() if all(p.startswith(head) for p in (u[0], *live))}
+    held = {p for u, live in mine.items() for p in (u[0], *live)}
+    held |= {p for d, names in ns.items() if d.startswith(head) for p in (d, *names)}
+    return mine, sorted(p[len(head):] for p in held if p.startswith(head))
+
+
+def source_states(prefix, repo, rev, units, ns, first):
+    """({unit: states}, broken, log) from repo, whose tree at rev is what prefix imported: the states of the units
+    whose dark file and live holders all lie under prefix, over repo's first-parent history up to rev, and that
+    history over the paths source_paths() names, each commit named <repo's basename>:<commit> and its paths put under
+    prefix. first holds each path's text after its first commit on main."""
+    mine, paths = source_paths(prefix, units, ns)
     if not paths:
-        return {}, {}, 0
+        return {}, {}, []
     at_rev = dict(zip(paths, read(repo, [f"{rev}:{p}" for p in paths])))
     log, after, broken = replay(repo, rev, set(paths), at_rev)
     tag = pp.basename(pp.abspath(repo))
@@ -229,7 +249,14 @@ def before(pin, prefix, repo, units, first):
     after = {(i, f"{prefix}/{p}"): t for (i, p), t in after.items()}
     bad = {f"{prefix}/{p}": g for p, g in broken.items()}
     bad.update({p: ["import"] for p in seam(at_rev, first, prefix)})
-    return sweep(log, after, mine), bad, len(log)
+    return sweep(log, after, mine), bad, log
+
+
+def before(pin, prefix, repo, units, ns, first):
+    """source_states() of repo, the source of the pin's squashed import of prefix, up to the imported commit."""
+    rev = squash_rev(git(".", "log", "--format=%s", f"--grep=^Squashed '{prefix}/' content from commit ", pin)
+                     .decode(), prefix)
+    return source_states(prefix, repo, rev, units, ns, first)
 
 
 def results(seqs):
@@ -269,16 +296,16 @@ def open_units(res):
     return keep
 
 
-def report_dark_only(dark, log, donly):
+def report_dark_only(dark, donly):
     """Print the dark-only commits of each dark file that has one."""
     hit = {d: cs for d, cs in donly.items() if cs}
     print(f"  dark-only commits: {len(hit)} of {len(dark)} files")
     for d, cs in sorted(hit.items()):
-        for i in cs:
-            print(f"    {short(d)}: {log[i][1]} {log[i][2]} {log[i][3][:80]}")
+        for c in cs:
+            print(f"    {short(d)}: {c[1]} {c[2]} {c[3][:80]}")
 
 
-def report(dark, log, res, donly):
+def report(dark, res, donly):
     """Print the unit states, the files that hold a dark, both or never unit, and the dark-only commits."""
     st = Counter(r[0] for r in res.values())
     print("  units: " + ", ".join(f"{s} {st[s]}" for s in STATES))
@@ -286,7 +313,7 @@ def report(dark, log, res, donly):
     print(f"  files: {len(keep)} of {len(dark)} hold a dark, both or never unit")
     for d, us in sorted(keep.items()):
         print(f"    {short(d)}: " + "; ".join(us))
-    report_dark_only(dark, log, donly)
+    report_dark_only(dark, donly)
 
 
 def write_tsv(path, units, res):
@@ -343,6 +370,10 @@ def unit_cases():
     after = {(0, "d.rs"): "fn f() { 1 }", (0, "l.rs"): "fn f() { 1 }", (1, "l.rs"): "fn f() { 2 }", (2, "x.rs"): "",
              (3, "d.rs"): "fn f() { 3 }"}
     seq = sweep(hist, after, {("d.rs", "", "fn", "f"): {"l.rs"}})[("d.rs", "", "fn", "f")]
+    src = [("r0", "r:a", "d", "", {"p/d.rs"}), ("r1", "r:b", "d", "", {"p/d.rs", "p/n.rs"}),
+           ("r2", "r:c", "d", "", {"p/d.rs"})]
+    main = [("m0", "f", "d", "", {"pq/d.rs"}), ("m1", "g", "d", "", {"p/d.rs", "p/n.rs"}),
+            ("m2", "h", "d", "", {"p/d.rs", "pq/d.rs"})]
     return [
         ("16 dark-only: after the namesake existed, and not touching it", dark_only(log, "d.rs", {"n.rs"}) == [2]),
         ("17 dark-only: no namesake ever, no commit", dark_only(log, "d.rs", {"m.rs"}) == []),
@@ -360,6 +391,9 @@ def unit_cases():
         ("22 seam: the source's last text must be what the import left; a later file is no seam",
          seam({"a.rs": "x", "b.rs": None, "c.rs": "y"}, {"p/a.rs": "x", "p/b.rs": "q", "p/c.rs": "z"}, "p")
          == ["p/c.rs"]),
+        ("24 dark-only over the log of the source whose prefix holds the file, then main's; pq/ is not under p/",
+         dark_only_all(["p/d.rs", "pq/d.rs"], {"p/d.rs": {"p/n.rs"}, "pq/d.rs": {"p/n.rs"}}, [("p", src)], main)
+         == {"p/d.rs": [src[2], main[2]], "pq/d.rs": [main[2]]}),
     ]
 
 
@@ -373,9 +407,26 @@ def subdir_cases():
              isinstance(got, tuple) and [c[0] for c in got[0]] == shas and got[2] == {})]
 
 
+def source_cases():
+    """Case 25: a scratch source repo, the tree that p/ imported, replayed for a dark file with no changed unit."""
+    ns, doc = {"p/a.rs": {"p/n.rs"}}, "/// doc\nfn a() { 1 }\n"
+    with tempfile.TemporaryDirectory() as tmp:
+        shas = oc.scratch_repo(tmp, [{"a.rs": "fn a() { 1 }\n", "n.rs": "fn a() { 1 }\n"}, {"a.rs": doc},
+                                     {"x.md": "x\n"}])
+        got = oc.at(tmp, source_states, "p", tmp, shas[-1], {}, ns, {"p/a.rs": doc, "p/n.rs": "fn a() { 1 }\n"})
+        tag = pp.basename(tmp)
+    ok = isinstance(got, tuple) and got[:2] == ({}, {}) and [c[0] for c in got[2]] == shas[:2]
+    name = got[2][1][1].split(":", 1) if ok else ["", ""]
+    return [("25 a source replays a dark file that has no changed unit, and its namesake; the commit that touched "
+             "only the dark file is dark-only, named <repo's basename>:<commit>",
+             ok and dark_only_all(["p/a.rs"], ns, [("p", got[2])], [])["p/a.rs"] == [got[2][1]]
+             and name[0] == tag and len(name[1]) >= 7 and shas[1].startswith(name[1]))]
+
+
 def self_test():
-    """Rule 7: the move, git-parse, unit and subdirectory cases, in number order."""
-    cases = sorted(move_cases() + git_cases() + unit_cases() + subdir_cases(), key=lambda c: int(c[0].split()[0]))
+    """Rule 7: the move, git-parse, unit, subdirectory and source cases, in number order."""
+    cases = sorted(move_cases() + git_cases() + unit_cases() + subdir_cases() + source_cases(),
+                   key=lambda c: int(c[0].split()[0]))
     for c, ok in cases:
         print(("ok   " if ok else "FAIL ") + c)
     bad = sum(not ok for _, ok in cases)
@@ -401,18 +452,19 @@ def first_texts(after):
     return first
 
 
-def add_sources(pin, specs, units, seqs, first, broken):
+def add_sources(pin, specs, units, ns, seqs, first, broken):
     """Put each unit's states in the PREFIX=DIR source clones, up to their import, in front of its states on main;
-    add the clones' gaps to broken and return how many source commits were replayed."""
-    pre = 0
+    add the clones' gaps to broken and return each clone's (prefix, log)."""
+    srcs = []
     for spec in specs:
         prefix, repo = spec.split("=", 1)
-        got, bad, n = before(pin, prefix.rstrip("/"), repo, units, first)
+        prefix = prefix.rstrip("/")
+        got, bad, log = before(pin, prefix, repo, units, ns, first)
         broken.update(bad)
-        pre += n
+        srcs.append((prefix, log))
         for u, s in got.items():
             seqs[u] = s + seqs[u]
-    return pre
+    return srcs
 
 
 def run(pin, verdict, specs, tsv):
@@ -421,7 +473,8 @@ def run(pin, verdict, specs, tsv):
     files, dark, units, ns = select(pin, set(verdict))
     log, after, broken = replay(".", pin, set(dark).union(*ns.values()), files)
     seqs = sweep(log, after, units)
-    pre = add_sources(pin, specs, units, seqs, first_texts(after), broken)
+    srcs = add_sources(pin, specs, units, ns, seqs, first_texts(after), broken)
+    pre = sum(len(sl) for _, sl in srcs)
     print(f"unit history at {pin}: {len(dark)} {'/'.join(verdict)} dark files, {len(units)} changed units; "
           f"replayed {len(log)} first-parent commits on main and {pre} in sources, {len(broken)} paths with gaps")
     for p, g in broken.items():
@@ -429,7 +482,7 @@ def run(pin, verdict, specs, tsv):
     if broken:
         return 1
     res = results(seqs)
-    report(dark, log, res, {d: dark_only(log, d, ns[d]) for d in dark})
+    report(dark, res, dark_only_all(dark, ns, srcs, log))
     if tsv:
         write_tsv(tsv, units, res)
     return 0
