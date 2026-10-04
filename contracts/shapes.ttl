@@ -1598,6 +1598,120 @@
         sh:maxCount 1 ;
         sh:pattern "^contracts/.+\\.yaml$" ;
     ] ;
+    sh:property [
+        sh:path <https://ont.paiml.dev/v1alpha1/kreg/labels> ;
+        sh:pattern "^[a-z0-9_]+(@[a-z0-9_]+)?$" ;
+    ] ;
+.
+
+<https://ont.paiml.dev/v1alpha1/shape/kernel-registry-v1.op> a sh:NodeShape ;
+    sh:targetClass <https://ont.paiml.dev/v1alpha1/kreg/Op> ;
+    sh:closed true ;
+    sh:property [
+        sh:path <https://ont.paiml.dev/v1alpha1/kreg/kernel_id> ;
+        sh:minCount 1 ;
+        sh:maxCount 1 ;
+        sh:datatype <http://www.w3.org/2001/XMLSchema#string> ;
+        sh:pattern "^(cpu|cuda|wgpu|metal)\\.[a-z0-9_]+\\.[a-z0-9_]+(\\.[a-z0-9_+]+){0,2}$" ;
+    ] ;
+    sh:property [
+        sh:path <https://ont.paiml.dev/v1alpha1/kreg/op> ;
+        sh:minCount 1 ;
+        sh:maxCount 1 ;
+        sh:in ( "embed" "rmsnorm" "layernorm" "rope" "attention" "kv_write" "swiglu" "gelu" "residual_add" "argmax" "conv1d" "l2norm" "gdn_gates" "delta_rule" "sigmoid_gate" "split" "elementwise_mul" "sample" "route_topk" "repeat_penalty" ) ;
+    ] ;
+    sh:property [
+        sh:path <https://ont.paiml.dev/v1alpha1/kreg/backend> ;
+        sh:minCount 1 ;
+        sh:maxCount 1 ;
+        sh:in ( "cpu" "cuda" "wgpu" "metal" ) ;
+    ] ;
+    sh:property [
+        sh:path <https://ont.paiml.dev/v1alpha1/kreg/arch> ;
+        sh:minCount 1 ;
+        sh:maxCount 1 ;
+        sh:pattern "^(any|[a-z][a-z0-9_]*)$" ;
+    ] ;
+    sh:property [
+        sh:path <https://ont.paiml.dev/v1alpha1/kreg/archs> ;
+        sh:pattern "^[a-z][a-z0-9_]*$" ;
+    ] ;
+    sh:property [
+        sh:path <https://ont.paiml.dev/v1alpha1/kreg/isa_features> ;
+        sh:minCount 1 ;
+        sh:maxCount 1 ;
+        sh:pattern "^(none|[a-z0-9_.]+(\\+[a-z0-9_.]+)*)$" ;
+    ] ;
+    sh:property [
+        sh:path <https://ont.paiml.dev/v1alpha1/kreg/requires> ;
+        sh:minCount 1 ;
+        sh:maxCount 1 ;
+        sh:pattern "^(none|[A-Za-z0-9_]+(\\+[A-Za-z0-9_]+)*)$" ;
+    ] ;
+    sh:property [
+        sh:path <https://ont.paiml.dev/v1alpha1/kreg/accumulate> ;
+        sh:minCount 1 ;
+        sh:maxCount 1 ;
+        sh:in ( "f32" ) ;
+    ] ;
+    sh:property [
+        sh:path <https://ont.paiml.dev/v1alpha1/kreg/precision> ;
+        sh:minCount 1 ;
+        sh:maxCount 1 ;
+        sh:in ( "f32" "f16" "bf16" ) ;
+    ] ;
+    sh:property [
+        sh:path <https://ont.paiml.dev/v1alpha1/kreg/error_model> ;
+        sh:minCount 1 ;
+        sh:maxCount 1 ;
+        sh:in ( "EM-ELEM" "EM-RED" "EM-SMX" "EM-ATT" "EM-ROPE" "EM-NONDET" ) ;
+    ] ;
+    sh:property [
+        sh:path <https://ont.paiml.dev/v1alpha1/kreg/determinism> ;
+        sh:minCount 1 ;
+        sh:maxCount 1 ;
+        sh:in ( "bitwise" "bounded" ) ;
+    ] ;
+    sh:property [
+        sh:path <https://ont.paiml.dev/v1alpha1/kreg/shape_class> ;
+        sh:minCount 1 ;
+        sh:maxCount 1 ;
+        sh:in ( "m1" "m_any" ) ;
+    ] ;
+    sh:property [
+        sh:path <https://ont.paiml.dev/v1alpha1/kreg/tolerance> ;
+        sh:minCount 1 ;
+        sh:maxCount 1 ;
+        sh:pattern "^(unmeasured|evidence/.+\\.json)$" ;
+    ] ;
+    sh:property [
+        sh:path <https://ont.paiml.dev/v1alpha1/kreg/source_file> ;
+        sh:minCount 1 ;
+        sh:maxCount 1 ;
+        sh:pattern "^crates/[a-z0-9_-]+/src/.+\\.rs$" ;
+    ] ;
+    sh:property [
+        sh:path <https://ont.paiml.dev/v1alpha1/kreg/source_fn> ;
+        sh:minCount 1 ;
+        sh:maxCount 1 ;
+        sh:pattern "^[a-z_][a-z0-9_]*$" ;
+    ] ;
+    sh:property [
+        sh:path <https://ont.paiml.dev/v1alpha1/kreg/selector> ;
+        sh:minCount 1 ;
+        sh:maxCount 1 ;
+        sh:minLength 8 ;
+    ] ;
+    sh:property [
+        sh:path <https://ont.paiml.dev/v1alpha1/kreg/contract> ;
+        sh:minCount 1 ;
+        sh:maxCount 1 ;
+        sh:pattern "^contracts/.+\\.yaml$" ;
+    ] ;
+    sh:property [
+        sh:path <https://ont.paiml.dev/v1alpha1/kreg/labels> ;
+        sh:pattern "^[a-z0-9_]+(@[a-z0-9_]+)?$" ;
+    ] ;
 .
 
 <https://ont.paiml.dev/v1alpha1/shape/model-setfit-slice> a sh:NodeShape ;
@@ -2508,6 +2622,130 @@
     ] ;
     sh:property [
         sh:path <https://ont.paiml.dev/v1alpha1/release/f2Measured> ;
+        sh:minCount 1 ;
+        sh:maxCount 1 ;
+        sh:in ( "true"^^<http://www.w3.org/2001/XMLSchema#boolean> ) ;
+    ] ;
+.
+
+<https://ont.paiml.dev/v1alpha1/shape/release-readiness-v2.kernel> a sh:NodeShape ;
+    sh:targetClass <https://ont.paiml.dev/v1alpha1/release/KernelParityCell> ;
+    sh:property [
+        sh:path <https://ont.paiml.dev/v1alpha1/release/kernelId> ;
+        sh:minCount 1 ;
+        sh:maxCount 1 ;
+    ] ;
+    sh:property [
+        sh:path <https://ont.paiml.dev/v1alpha1/release/verdict> ;
+        sh:minCount 1 ;
+        sh:maxCount 1 ;
+        sh:in ( "pass" ) ;
+    ] ;
+    sh:property [
+        sh:path <https://ont.paiml.dev/v1alpha1/release/withinBound> ;
+        sh:minCount 1 ;
+        sh:maxCount 1 ;
+        sh:in ( "true"^^<http://www.w3.org/2001/XMLSchema#boolean> ) ;
+    ] ;
+    sh:property [
+        sh:path <https://ont.paiml.dev/v1alpha1/release/fresh> ;
+        sh:minCount 1 ;
+        sh:maxCount 1 ;
+        sh:in ( "true"^^<http://www.w3.org/2001/XMLSchema#boolean> ) ;
+    ] ;
+    sh:property [
+        sh:path <https://ont.paiml.dev/v1alpha1/release/archMatch> ;
+        sh:minCount 1 ;
+        sh:maxCount 1 ;
+        sh:in ( "true"^^<http://www.w3.org/2001/XMLSchema#boolean> ) ;
+    ] ;
+.
+
+<https://ont.paiml.dev/v1alpha1/shape/release-readiness-v2.model> a sh:NodeShape ;
+    sh:targetClass <https://ont.paiml.dev/v1alpha1/release/ModelKernelCell> ;
+    sh:property [
+        sh:path <https://ont.paiml.dev/v1alpha1/release/usesKernel> ;
+        sh:minCount 1 ;
+        sh:class <https://ont.paiml.dev/v1alpha1/release/KernelParityCell> ;
+        sh:nodeKind sh:IRI ;
+        sh:node <https://ont.paiml.dev/v1alpha1/shape/release-readiness-v2.model/node> ;
+    ] ;
+    sh:property [
+        sh:path <https://ont.paiml.dev/v1alpha1/release/unregisteredQtype> ;
+        sh:maxCount 0 ;
+    ] ;
+    sh:property [
+        sh:path <https://ont.paiml.dev/v1alpha1/release/unpredictedKernel> ;
+        sh:maxCount 0 ;
+    ] ;
+    sh:property [
+        sh:path <https://ont.paiml.dev/v1alpha1/release/smoke> ;
+        sh:minCount 1 ;
+        sh:maxCount 1 ;
+        sh:class <https://ont.paiml.dev/v1alpha1/release/SmokeCell> ;
+        sh:nodeKind sh:IRI ;
+        sh:node <https://ont.paiml.dev/v1alpha1/shape/release-readiness-v2.model/node> ;
+    ] ;
+.
+
+<https://ont.paiml.dev/v1alpha1/shape/release-readiness-v2.model/node> a sh:NodeShape ;
+    sh:property [
+        sh:path <https://ont.paiml.dev/v1alpha1/release/verdict> ;
+        sh:minCount 1 ;
+        sh:maxCount 1 ;
+        sh:in ( "pass" ) ;
+    ] ;
+    sh:property [
+        sh:path <https://ont.paiml.dev/v1alpha1/release/withinBound> ;
+        sh:minCount 1 ;
+        sh:maxCount 1 ;
+        sh:in ( "true"^^<http://www.w3.org/2001/XMLSchema#boolean> ) ;
+    ] ;
+    sh:property [
+        sh:path <https://ont.paiml.dev/v1alpha1/release/fresh> ;
+        sh:minCount 1 ;
+        sh:maxCount 1 ;
+        sh:in ( "true"^^<http://www.w3.org/2001/XMLSchema#boolean> ) ;
+    ] ;
+    sh:property [
+        sh:path <https://ont.paiml.dev/v1alpha1/release/archMatch> ;
+        sh:minCount 1 ;
+        sh:maxCount 1 ;
+        sh:in ( "true"^^<http://www.w3.org/2001/XMLSchema#boolean> ) ;
+    ] ;
+.
+
+<https://ont.paiml.dev/v1alpha1/shape/release-readiness-v2.model/node> a sh:NodeShape ;
+    sh:property [
+        sh:path <https://ont.paiml.dev/v1alpha1/release/verdict> ;
+        sh:minCount 1 ;
+        sh:maxCount 1 ;
+        sh:in ( "pass" ) ;
+    ] ;
+    sh:property [
+        sh:path <https://ont.paiml.dev/v1alpha1/release/fresh> ;
+        sh:minCount 1 ;
+        sh:maxCount 1 ;
+        sh:in ( "true"^^<http://www.w3.org/2001/XMLSchema#boolean> ) ;
+    ] ;
+    sh:property [
+        sh:path <https://ont.paiml.dev/v1alpha1/release/kernelPathKnown> ;
+        sh:minCount 1 ;
+        sh:maxCount 1 ;
+        sh:in ( "true"^^<http://www.w3.org/2001/XMLSchema#boolean> ) ;
+    ] ;
+.
+
+<https://ont.paiml.dev/v1alpha1/shape/release-readiness-v2.sanitizer> a sh:NodeShape ;
+    sh:targetClass <https://ont.paiml.dev/v1alpha1/release/SanitizedKernelCell> ;
+    sh:property [
+        sh:path <https://ont.paiml.dev/v1alpha1/release/sanitizerClean> ;
+        sh:minCount 1 ;
+        sh:maxCount 1 ;
+        sh:in ( "true"^^<http://www.w3.org/2001/XMLSchema#boolean> ) ;
+    ] ;
+    sh:property [
+        sh:path <https://ont.paiml.dev/v1alpha1/release/sanitizerFresh> ;
         sh:minCount 1 ;
         sh:maxCount 1 ;
         sh:in ( "true"^^<http://www.w3.org/2001/XMLSchema#boolean> ) ;
