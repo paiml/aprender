@@ -1,0 +1,127 @@
+{
+  "$schema": "https://docs.oasis-open.org/sarif/sarif/v2.1.0/errata01/os/schemas/sarif-schema-2.1.0.json",
+  "version": "2.1.0",
+  "runs": [
+    {
+      "tool": { "driver": { "name": "pmat" } },
+      "invocations": [ { "executionSuccessful": true, "toolExecutionNotifications": [],
+        "commandLine": "pmat query (index built at HEAD, clean tree); python3 only_basis.py (YAML structural diff vs merge base); cmp of the mirror; grep of golden_output.rs YAML reads" } ],
+      "results": [
+        {
+          "ruleId": "only_the_basis_text_changed",
+          "level": "note",
+          "message": { "text": "Parsing the merge-base and head contracts/thinking-budgets-v1.yaml with PyYAML and overwriting only models['Qwen3.5-0.8B-Q4_K_M.gguf'].basis in the old document makes the two documents equal: budget stays 2048, the entry's keys are exactly [basis, budget], and every other model, default, threshold and acceptance line is structurally identical. `git diff -U0` shows 12 added and 8 removed lines, all inside that one basis block scalar." },
+          "properties": {
+            "grounding": "measured",
+            "command": ["python3", "/tmp/claude-1000/-mnt-nvme-raid0-agent-wt-ont-c244/3d015212-4a44-46f8-9069-3cdf6d7c67dd/scratchpad/only_basis.py"],
+            "exit_code": 0,
+            "stdout_sha256": "173632ec5f174486ff300cc8f7516235dbbf89d1c91ab00c624566950607366d",
+            "failure_scenario": "If the claim were false, a changed budget, default or acceptance field would ship inside a text-only commit and change the golden ON leg's pass/fail without a reviewer noticing; the structural comparison would have printed only_basis_changed: False.",
+            "precision_class": "advisory"
+          }
+        },
+        {
+          "ruleId": "mirror_byte_identical",
+          "level": "note",
+          "message": { "text": "contracts/thinking-budgets-v1.yaml and crates/apr-cli/contracts/thinking-budgets-v1.yaml are byte-identical at head (cmp exits 0, prints nothing), which is the invariant thinking_budgets_mirror.rs asserts." },
+          "properties": {
+            "grounding": "measured",
+            "command": ["cmp", "contracts/thinking-budgets-v1.yaml", "crates/apr-cli/contracts/thinking-budgets-v1.yaml"],
+            "exit_code": 0,
+            "stdout_sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+            "failure_scenario": "A drifted mirror would embed a different table in the apr binary than pv lint checks; the thinking_budgets_mirror test would go red.",
+            "precision_class": "advisory"
+          }
+        },
+        {
+          "ruleId": "golden_output_reads_only_budget_basis_why_unmeasured",
+          "level": "note",
+          "message": { "text": "crates/apr-cli/src/commands/golden_output.rs reads a model row through exactly v.get(\"budget\") (363), v.get(\"why_unmeasured\") (365) and v.get(\"basis\") (376), and the default through get(\"budget\") (411) and get(\"basis\") (414). `basis` is only trimmed, checked non-empty and echoed into the failure text as `{pat}: {basis}`; no code branches on its content. No test asserts on this row's basis text: the only basis assertions (golden_output.rs 1318-1337) are on `default` and on the IQ4_XS probe override, and output_verification.rs:1366 asserts the row label, not the text." },
+          "properties": {
+            "grounding": "measured",
+            "command": ["grep", "-n", "get(\"budget\")\\|get(\"basis\")\\|get(\"why_unmeasured\")\\|why_unmeasured", "crates/apr-cli/src/commands/golden_output.rs"],
+            "exit_code": 0,
+            "stdout_sha256": "aa94fba29c03f084b39e085f6540f0c0150cccdc25a1251c7804a12eeeba72a7",
+            "failure_scenario": "If another reader of the YAML parsed or matched the basis prose, rewording it could flip a verdict; the grep of every consumer (golden_output.rs, output_verification.rs, thinking_budgets_mirror.rs, one shell test) found none that does.",
+            "precision_class": "advisory"
+          }
+        },
+        {
+          "ruleId": "basis_figures_match_sweep_txt",
+          "level": "note",
+          "message": { "text": "The figures in the new basis (UNCLOSED at 2048/4096/8192/16384 with 6,723/13,225/26,243/52,290 chars) match the four Q4_K_M rows of /mnt/nvme-raid0/tmp/fix-4663/sweep.txt, and the 2/8 vs 5/8 sampled-closure figures match section 2 of /mnt/nvme-raid0/cop-inbox/handoff/c298-4663-4666-evidence.md. The raw runs were not re-executed: no GPU or cargo on this host, and the author's measurement is the evidence." },
+          "properties": {
+            "grounding": "measured",
+            "command": ["grep", "-n", "Q4_K_M", "/mnt/nvme-raid0/tmp/fix-4663/sweep.txt"],
+            "exit_code": 0,
+            "stdout_sha256": "c31bcba5e300ce608d7f75595615af1d54a6a8ce4f36375d2d4887b7705207ed",
+            "failure_scenario": "A transcribed number that disagrees with its receipt would put a false measurement into a contract that downstream readers cite when classifying the leg as a model defect.",
+            "precision_class": "advisory"
+          }
+        },
+        {
+          "ruleId": "evidence_path_not_in_repo",
+          "level": "warning",
+          "message": { "text": "The basis cites `cop-inbox/handoff/c298-4663-4666-evidence.md` and `/mnt/nvme-raid0/tmp/fix-4663/`. Neither is tracked in this repository (git ls-files cop-inbox lists 0 files); both live on one host's disk outside the tree. A reader of the contract on any other checkout cannot reach the receipt that supports the measurement. Independently raised by the antigravity reviewer; I re-checked it." },
+          "properties": {
+            "grounding": "measured",
+            "command": ["git", "ls-files", "cop-inbox"],
+            "exit_code": 0,
+            "stdout_sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+            "failure_scenario": "When /mnt/nvme-raid0/tmp/fix-4663 is cleaned or the cop inbox is rotated, the basis becomes an unfalsifiable assertion: a later reader cannot re-derive 52,290 chars or 2/8 vs 5/8 from anything under version control.",
+            "precision_class": "advisory"
+          }
+        },
+        {
+          "ruleId": "operator_ruling_a_not_checkable",
+          "level": "note",
+          "message": { "text": "The basis and commit message attribute the decision to keep budget 2048 to 'operator ruling A, 2026-10-04'. Nothing in the diff or the repository records that ruling; it is checkable only in the cop inbox, which this review did not read." },
+          "properties": {
+            "grounding": "asserted",
+            "rationale": "Read of the diff and a search of tracked files for the ruling text found no in-repo record; the review had no access to the operator's channel.",
+            "failure_scenario": "If the ruling named a different option than the contract now says, the contract would encode a decision nobody made; the numeric facts stay correct regardless because they come from sweep.txt.",
+            "precision_class": "advisory"
+          }
+        }
+      ]
+    },
+    {
+      "tool": { "driver": { "name": "cargo-mutants" } },
+      "invocations": [ {
+        "executionSuccessful": false,
+        "toolExecutionNotifications": [ {
+          "level": "error",
+          "message": { "text": "Mutation consultation not run: the guard's S3.D trigger fires on contracts/thinking-budgets-v1.yaml (a contracts/*.yaml path), but this review ran on lambda, where cargo build/test is forbidden by the operator rule given to this lane; the author ran thinking_budgets_mirror 2/2 and the apr-cli lib budget/refused/default/probe filters 108/108 on intel (reported to this lane, not re-measured here). The edit changes no falsifier and no code, only block-scalar prose, so no mutant of it exists to kill. NOT_MEASURED, not a clean run." },
+          "properties": {
+            "grounding": "measured",
+            "command": ["bash", "scripts/check_pr_review_receipt.sh", "--match-mutation-trigger", "contracts/thinking-budgets-v1.yaml"],
+            "exit_code": 0,
+            "stdout_sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+          }
+        } ]
+      } ],
+      "results": []
+    },
+    {
+      "tool": { "driver": { "name": "antigravity" } },
+      "invocations": [ {
+        "executionSuccessful": true,
+        "toolExecutionNotifications": [],
+        "commandLine": "agy -p .pr-review-prompt.md --output-format json --json-schema .claude/skills/pr-review/agy-review-v1.schema.json --model gemini-3.1-pro-high --print-timeout 9m --dangerously-skip-permissions (inside a disposable git-archive copy of HEAD plus .pr-review-diff.patch)"
+      } ],
+      "results": [
+        {
+          "ruleId": "agy_missing_evidence",
+          "level": "warning",
+          "message": { "text": "The cited evidence file `cop-inbox/handoff/c298-4663-4666-evidence.md` does not exist in the repository." },
+          "properties": {
+            "grounding": "asserted",
+            "rationale": "Raised by the antigravity reviewer, which marked it measured (ls inside its disposable tree); that measurement was agy's own. The primary re-checked the underlying fact separately (finding evidence_path_not_in_repo): the file is absent from the tree but present on the host at /mnt/nvme-raid0/cop-inbox/handoff/.",
+            "failure_scenario": "A missing evidence file means the basis cannot be verified by a future reader, permitting an untraceable measurement to act as a contract.",
+            "precision_class": "advisory"
+          }
+        }
+      ]
+    }
+  ]
+}
