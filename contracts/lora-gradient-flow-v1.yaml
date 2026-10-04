@@ -1,5 +1,5 @@
 metadata:
-  version: "1.1.0"
+  version: "1.2.0"
   created: "2026-04-13"
   author: PAIML Engineering
   registry: true
@@ -7,9 +7,10 @@ metadata:
   references:
     - "Provable contract for lora-gradient-flow-v1"
     - "PMAT-805: CPU train_step routed through model.forward() (no LoRA) and apply_rope severed the autograd graph for the Q projection — both adapters silently untrained on the default q_proj+v_proj target set"
+    - "0.72 R15a cell C1 (la-0.72): the CUDA Q and V LoRA backward of backward_nf4_attention run through one helper, lora_backward (crates/aprender-train/src/transformer/cuda_block.rs); 1.2.0 adds FALSIFY-LORA_GRADIENT_FLOW_V1_004"
 
 name: lora-gradient-flow
-version: "1.1.0"
+version: "1.2.0"
 scope: "crates/aprender-train/src/finetune/"
 
 description: |
@@ -46,3 +47,8 @@ falsification:
     description: "RoPE backward matches finite-difference gradients (graph not severed at RoPE)"
     test: "crates/aprender-train/src/transformer/attention.rs::tests::falsify_pmat805_rope_backward_matches_finite_difference"
     evidence: "cargo test -p aprender-train --lib falsify_pmat805_rope_backward_matches_finite_difference"
+
+  - id: FALSIFY-LORA_GRADIENT_FLOW_V1_004
+    description: "Extracting the CUDA LoRA backward into lora_backward changes no number (0.72 R15a C1). backward_nf4_attention ran the Q and V LoRA backward inline at 316dee2cd4; both now call lora_backward(x, a, b, dy, da, db, dx, inter, temp, ...) with the buffers the inline code used. The test runs the helper and a copy of the 316dee2cd4 inline sequence (the same five GEMMs and the add, in the same order) on one device and the same inputs, at a Q-shaped width and a narrower V-shaped (GQA) one, with B nonzero and pre-scaled as the upload leaves it at alpha = 2·rank. dA, dB and dX must be bit-identical (raw f32 bits), and both must match an f64 replay of the chain rule (dB = (x·A)ᵀ·dy, dA = xᵀ·(dy·Bᵀ), dX += (dy·Bᵀ)·Aᵀ) within 1e-4 of the largest magnitude; the replayed dA, dB and dX share are nonzero, so the check has power. The helper's scratch starts as NaN, so reading it before writing it fails. Planted: computing dInter before dB inside the helper must be RED, because dInter is written over the x·A recompute that dB reads. K44's fix (qwen35-qlora-e2e-v1 QQE-011) lands after this as its own change and alters these gradients by design whenever alpha ≠ rank; this row then holds at alpha = rank."
+    test: "crates/aprender-train/src/transformer/cuda_block_lora_backward_tests.rs::falsify_lora_gradient_flow_v1_004_lora_backward_is_the_inline_path (#[ignore]: needs a CUDA device; run it with the GPU lock around the test binary only)"
+    evidence: "cargo test -p aprender-train --features cuda --lib falsify_lora_gradient_flow_v1_004 -- --ignored (written; not run yet: no GPU work runs while a train is active)"
