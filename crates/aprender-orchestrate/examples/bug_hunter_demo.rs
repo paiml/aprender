@@ -312,9 +312,14 @@ fn main() {
         let config =
             HuntConfig { mode: HuntMode::Quick, min_suspiciousness: 0.5, ..Default::default() };
 
-        // Scoped to this crate's bug_hunter module: "." is the workspace root when
+        // Debug builds scan only this crate's bug_hunter module: "." is the workspace root when
         // run through cargo, and a debug-build scan of the whole monorepo is minutes.
-        let target = Path::new(env!("CARGO_MANIFEST_DIR")).join("src/bug_hunter");
+        // Release builds keep the original whole-tree scan.
+        let target = if cfg!(debug_assertions) {
+            Path::new(env!("CARGO_MANIFEST_DIR")).join("src/bug_hunter")
+        } else {
+            Path::new(".").to_path_buf()
+        };
         println!("Running quick scan on {}...\n", target.display());
         let result = hunt(&target, config);
 
