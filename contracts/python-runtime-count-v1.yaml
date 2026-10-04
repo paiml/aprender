@@ -1,7 +1,7 @@
 # ─────────────────────────────────────────────────────────────────────────────
 # python-runtime-count-v1
 #
-# COUNT THE PYTHON THE GATE PATH RUNS, not how its scripts spell it (#TICKET;
+# COUNT THE PYTHON THE GATE PATH RUNS, not how its scripts spell it (#4742;
 # replaces the static scan of #4684, which closes into this).
 #
 # WHY. The build is Rust only, and Python leaving the gate path has to be
@@ -55,7 +55,7 @@ metadata:
   references:
     - 'scripts/python_runcount.sh — driver: --run, --count, --compare, --self-test, --mutants'
     - 'scripts/lib/python_runcount/ — shim, trace.awk, keys.awk, the plant lanes'
-    - 'issue #TICKET — the run-time count; issue #4684 — the static scan it replaces'
+    - 'issue #4742 — the run-time count; issue #4684 — the static scan it replaces'
   description: >
     Every way a lane reaches Python raises the count; the count does not change
     when nothing changed; a side without an execve trace is not_measured.
@@ -70,6 +70,7 @@ equations:
     invariants:
       - 'the shim and the trace share one key function, so a call both saw is counted once'
       - 'a script under a temp dir is keyed ~tmp/<name>, so a mktemp name does not make a new entry point'
+      - 'a residual: a mktemp suffix of only lower-case letters (about 1 in 200 for six X''s) is not collapsed'
   prc_never_worse:
     formula: |
       measured(base, head) = both sides trace = measured, each trace holds an execve,
@@ -102,7 +103,7 @@ proof_obligations:
     statement: "A descendant that outlives the lane (a daemon) neither holds --run open nor leaves the tracer running."
     discharged_by: falsification_tests[5]
   - id: PRC-OB-007
-    statement: "A broken measurement is never a count: a failing stage, a trace with no execve, or a head lane that exited other than 0 or as base did is NOT_MEASURED (exit 2)."
+    statement: "A broken measurement is never a count: a failing stage, a trace with no execve or no exit line for the lane, or a head lane that exited other than 0 or as base did is NOT_MEASURED (exit 2)."
     discharged_by: falsification_tests[6]
 
 falsification_tests:
@@ -140,11 +141,14 @@ falsification_tests:
       mktemp dir keys ~tmp/cell.py; -c code in a mktemp script keys -c@tmp.X;
       -c code holding a newline and a tab is one shim record of 4 fields; two
       runs of the mktemp plants give the same keys; a pid reused after an exit
-      keys by its own cwd and caller; joined -Wonce/-Xutf8 values do not read
+      keys by its own cwd and caller; -XXXXXX suffixes, pid names, a mktemp dir in
+      the repo and a script under the run's TMPDIR key stably; -mcompileall and
+      -Im are -m, -Bc is -c; uv options with a value are not the script;
+      joined -Wonce/-Xutf8 values do not read
       as -c/-m, and `bash -ec` is an inline-shell caller.
-    test: 'bash scripts/python_runcount.sh --self-test   # rows P10, P11, P13, P15-P18, S1, T1'
+    test: 'bash scripts/python_runcount.sh --self-test   # rows P10, P11, P13, P15-P21, S1, T1, T2'
     if_fails: 'the count would drift run to run and the ratchet would read noise as RED'
-    mutation: 'drop chdir tracking, parent inheritance, pid lifetimes, distinct-key aggregation, the temp-dir key, the mktemp-name collapse, the joined -W/-X skip, combined shell -c flags, or the newline/tab escape in the shim; the table must turn RED'
+    mutation: 'drop chdir tracking, parent inheritance, pid lifetimes, distinct-key aggregation, the temp-dir key, the mktemp-name collapse, the joined -W/-X skip, -m before -c in a joined flag, the -XXXXXX/pid/repo-dir collapse, TMPDIR from meta, the uv value options, combined shell -c flags, or the newline/tab escape in the shim; the table must turn RED'
   - id: PRC-F-005
     rule: every check has a killing mutant
     prediction: >-
@@ -166,11 +170,12 @@ falsification_tests:
     rule: a broken measurement is NOT_MEASURED, never a count
     prediction: >-
       With a key stage that fails (a broken keys.awk), a trace=measured run whose
-      trace holds no execve, or a head lane that exited 3 where base exited 0,
+      trace holds no execve, a trace cut before the lane's exit line (a tracer
+      killed mid-run), or a head lane that exited 3 where base exited 0,
       --compare exits 2. A head and base that both exited 3 are measured (GREEN).
-    test: 'bash scripts/python_runcount.sh --self-test   # rows E1-E4'
+    test: 'bash scripts/python_runcount.sh --self-test   # rows E1-E5'
     if_fails: 'a lane that broke the measurement, or stopped before its Python, would read count 0 and pass'
-    mutation: 'skip the key-stage status check, pass a trace with no execve, or ignore the head lane exit status; the table must turn RED'
+    mutation: 'skip the key-stage status check, pass a trace with no execve or no lane exit line, or ignore the head lane exit status; the table must turn RED'
 
 non_goals:
   - "Wiring. No lane runs under the count yet; nightly report-only first, blocking only after three green nights and a sign-off."
@@ -188,4 +193,4 @@ binding_registry:
   checker: scripts/python_runcount.sh
   selftest: 'bash scripts/python_runcount.sh --self-test'
   mutants: 'bash scripts/python_runcount.sh --mutants'
-  issue: "https://github.com/paiml/aprender/issues/TICKET"
+  issue: "https://github.com/paiml/aprender/issues/4742"

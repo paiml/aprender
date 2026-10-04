@@ -96,12 +96,12 @@ run_cmd() { # run_cmd OUT CMD...
     done
     out="$( cd "$out" && pwd )"
     if trace_usable; then
-        printf 'trace=measured\ncwd=%s\n' "$PWD" > "$out/meta"
+        printf 'trace=measured\ncwd=%s\ntmpdir=%s\n' "$PWD" "${TMPDIR:-}" > "$out/meta"
         PATH="$out/shim:$PATH" PYRUN_LOG="$out/shim.log" PYRUN_SHIM_DIR="$out/shim" \
             strace -D -I 2 -f -q -s 4096 -e signal=none -e trace=execve,chdir,clone,clone3,fork,vfork -o "$out/trace.raw" "$@" || rc=$?
         stop_tracer "$out"
     else
-        printf 'trace=not_measured\ncwd=%s\n' "$PWD" > "$out/meta"
+        printf 'trace=not_measured\ncwd=%s\ntmpdir=%s\n' "$PWD" "${TMPDIR:-}" > "$out/meta"
         PATH="$out/shim:$PATH" PYRUN_LOG="$out/shim.log" PYRUN_SHIM_DIR="$out/shim" "$@" || rc=$?
     fi
     printf 'rc=%s\n' "$rc" >> "$out/meta"
@@ -132,9 +132,15 @@ shebang_interp() { # shebang_interp FILE -> python*/uv/uvx if FILE's #! line run
 
 err2() { printf 'ERROR: %s\n' "$*" >&2; return 2; }
 
-trace_ran() { # trace_ran TRACE -> true iff the trace holds a successful execve
+trace_ran() { # trace_ran TRACE -> true iff the trace is whole: a successful execve and the lane's exit
     # A real trace always holds the lane's own exec; none means strace never ran it.
-    grep -q -E '^[0-9]+ +(execve\(|<\.\.\. execve resumed>).* = 0$' "$1"
+    # The first pid in it is the lane. A tracer killed mid-run leaves no exit line
+    # for that pid, and the execs it missed would read as a low count.
+    local root
+    root=$(head -n 1 "$1" | cut -d' ' -f1)
+    case "$root" in ''|*[!0-9]*) return 1 ;; esac
+    grep -q -E '^[0-9]+ +(execve\(|<\.\.\. execve resumed>).* = 0$' "$1" &&
+        grep -q -E "^$root +\+\+\+ (exited with [0-9]+|killed by SIG[A-Z0-9]+( \(core dumped\))?) \+\+\+$" "$1"
 }
 
 # count is called as `count X || ...`, where set -e does not apply: a failed
@@ -146,7 +152,7 @@ count() { # count OUT -> OUT/keys, OUT/summary; prints the summary line
     if ! cat "$out/shim.log" > "$out/records"; then err2 "cannot read $out/shim.log"; return; fi
     if [ "$(meta "$out" trace)" = measured ]; then
         trace_ran "$out/trace.raw" ||
-            { err2 "$out says trace=measured, but its trace holds no execve"; return; }
+            { err2 "$out says trace=measured, but its trace is not whole (no execve, or no exit line for the lane)"; return; }
         awk -v cwd0="$(meta "$out" cwd)" -f "$LIB/trace.awk" "$out/trace.raw" "$out/trace.raw" >> "$out/records" ||
             { err2 "trace.awk failed on $out"; return; }
     fi
@@ -158,7 +164,7 @@ count() { # count OUT -> OUT/keys, OUT/summary; prints the summary line
         i=$(shebang_interp "$f") || continue
         printf '%s\t%s\n' "$f" "$i" >> "$out/shebangs"
     done < "$out/execs"
-    awk -v root="$ROOT" -f "$LIB/keys.awk" "$out/shebangs" "$out/records" > "$out/calls" ||
+    awk -v root="$ROOT" -v tmpd="$(meta "$out" tmpdir)" -f "$LIB/keys.awk" "$out/shebangs" "$out/records" > "$out/calls" ||
         { err2 "keys.awk failed on $out"; return; }
     # One line per entry point: key, then which mechanisms saw it, then its callers.
     awk -F'\t' '{ s[$1] = s[$1] (index(s[$1], $2) ? "" : (s[$1] ? "+" : "") $2)
@@ -245,7 +251,7 @@ self_test() {
         return 2
     fi
     ROOT="$td/w"
-    for p in none env_call var_call heredoc inline module uv_run abs_shebang versioned twice cd_call renamed tmp_script tmp_caller multiline flag_forms daemon; do
+    for p in none env_call var_call heredoc inline module uv_run abs_shebang versioned twice cd_call renamed tmp_script tmp_caller multiline flag_forms daemon mflag tmp_names uv_flags; do
         plant "$p" 0 "$p"
     done
     plant tmp_script 0 tmp_script2
@@ -289,6 +295,9 @@ self_test() {
     _eq 'R1 --run exits with the command status' '7' "$rc"
     _eq 'P18 joined -W/-X values do not read as -c/-m; bash -ec is an inline-shell caller' '-c@bash -c -c@flag_forms.sh script:sub/tool.py' "$(keys flag_forms)"
     _eq 'S1 two runs of the same lanes give the same keys (fresh mktemp names each run)' 'yes' "$( [ "$(keys tmp_script) $(keys tmp_caller)" = "$(keys tmp_script2) $(keys tmp_caller2)" ] && echo yes || echo no)"
+    _eq 'P19 -m joined to other flags or to its module is -m, not -c (-mcompileall, -Im, -Bc)' '-c@mflag.sh -m:compileall -m:json.tool' "$(keys mflag)"
+    _eq 'P20 -XXXXXX suffixes, pid names and a mktemp dir in the repo key by one stable name' '-c@lane.X script:tmp.X.py script:wk.X/tool.py script:~tmp/cell.X script:~tmp/job.X.py' "$(keys tmp_names)"
+    _eq 'P21 uv options that take a value (--color, --index-strategy, -c) are not taken for the script' 'uv:run:script:sub/tool.py' "$(keys uv_flags)"
     # A pid the kernel reused is a new process: it must not inherit the old one's cwd or caller.
     mkdir -p "$td/o_reuse"
     printf 'trace=measured\ncwd=%s\nrc=0\n' "$td/w" > "$td/o_reuse/meta"
@@ -301,9 +310,22 @@ self_test() {
       printf '300 execve("/bin/bash", ["bash", "lane2.sh"], 0x7ffd /* 5 vars */) = 0\n'
       printf '300 clone(child_stack=NULL, flags=SIGCHLD) = 200\n'
       printf '200 execve("/usr/bin/python3", ["python3", "tool.py"], 0x7ffd /* 5 vars */) = 0\n'
+      printf '100 +++ exited with 0 +++\n'
     } > "$td/o_reuse/trace.raw"
     count "$td/o_reuse" > /dev/null 2>&1 || :
     _eq 'T1 a reused pid keys by its own cwd and caller, not the dead process'"'"'s' 'script:tool.py lane2.sh' "$(cut -f1,3 "$td/o_reuse/keys" 2>/dev/null | tr '\t' ' ')"
+    # The temp dir is the one the lane ran with (meta), not whatever TMPDIR --count sees.
+    mkdir -p "$td/o_tmpd"
+    printf 'trace=measured\ncwd=/\ntmpdir=/scratch/q\nrc=0\n' > "$td/o_tmpd/meta"
+    : > "$td/o_tmpd/shim.log"
+    { printf '100 execve("/bin/bash", ["bash", "lane.sh"], 0x7ffd /* 5 vars */) = 0\n'
+      printf '100 clone(child_stack=NULL, flags=SIGCHLD) = 200\n'
+      printf '200 execve("/usr/bin/python3", ["python3", "/scratch/q/x7/cell.py"], 0x7ffd /* 5 vars */) = 0\n'
+      printf '200 +++ exited with 0 +++\n'
+      printf '100 +++ exited with 0 +++\n'
+    } > "$td/o_tmpd/trace.raw"
+    TMPDIR=/elsewhere count "$td/o_tmpd" > /dev/null 2>&1 || :
+    _eq 'T2 a script under the TMPDIR of the run keys ~tmp/<name>, whatever TMPDIR --count has' 'script:~tmp/cell.py' "$(keys tmpd)"
     # Never a count from a broken measurement: each is exit 2, not GREEN 0.
     cp -r "$td/o_none" "$td/o_e"
     mkdir -p "$td/broken/lib"; cp "$SELF" "$td/broken/runcount.sh"; cp -r "$LIB" "$td/broken/lib/"
@@ -317,6 +339,10 @@ self_test() {
     _eq 'E3 a head lane that exited 3 where base exited 0 is NOT_MEASURED (2)' '2' "$(rc_of compare "$td/o_env_call" "$td/o_e")"
     cp -r "$td/o_env_call" "$td/o_e_base"; sed -i 's/^rc=0$/rc=3/' "$td/o_e_base/meta"
     _eq 'E4 head and base ending with the same status are measured (GREEN 0)' '0' "$(rc_of compare "$td/o_e_base" "$td/o_e")"
+    # A tracer killed mid-run leaves a cut trace: execs, but no exit line for the lane.
+    cp -r "$td/o_env_call" "$td/o_e5"
+    head -n "$(( $(wc -l < "$td/o_env_call/trace.raw") / 2 ))" "$td/o_env_call/trace.raw" > "$td/o_e5/trace.raw"
+    _eq 'E5 a cut trace (no exit line for the lane, rc 0) is NOT_MEASURED (2)' '2' "$(rc_of compare "$td/o_env_call" "$td/o_e5")"
     printf '\n%s row(s), %s red / %s\n' "$rows" "$fails" "$( [ "$fails" -eq 0 ] && echo GREEN || echo RED )"
     [ "$fails" -eq 0 ]
 }
@@ -369,8 +395,8 @@ M10 equal counts read RED|python_runcount.sh|s/\[ "$hc" -le "$bc" \]/[ "$hc" -lt
 M11 PYRUN_NO_TRACE ignored|python_runcount.sh|s/\[ "${PYRUN_NO_TRACE:-0}" != 1 \] || return 1/:/
 M12 stdin code loses its lane|lib/python_runcount/keys.awk|s/^\(        if (x == "-") return "stdin\)@" who/\1"/
 M13 argv[0] alone names the interpreter|lib/python_runcount/keys.awk|s/if (src == "trace" \&\& !interp(name) \&\& interp(base(file))) name = base(file)/if (0) name = base(file)/
-M14 temp paths keyed raw|lib/python_runcount/keys.awk|s/ p = "~tmp\/" stable(base(p))$/ p = p/
-M15 mktemp names kept|lib/python_runcount/keys.awk|s/^function stable(s) { gsub(.*, "tmp.X", s); return s }/function stable(s) { return s }/
+M14 temp paths keyed raw|lib/python_runcount/keys.awk|s/^    if (!rel \&\& tmpath(p)) return/    if (0) return/
+M15 mktemp names kept|lib/python_runcount/keys.awk|s/^function stable(s, lvl,    out, r) {/function stable(s, lvl,    out, r) { return s/
 M16 strace attached (not -D)|python_runcount.sh|s/strace -D -I 2 -f/strace -I 2 -f/
 M17 tracer left running|python_runcount.sh|s/^        stop_tracer "$out"$/        :/
 M18 strace ignores SIGTERM (-I 3, its default with -o)|python_runcount.sh|s/strace -D -I 2 -f/strace -D -I 3 -f/
@@ -382,6 +408,16 @@ M23 the head lane's exit status ignored|python_runcount.sh|s/\[ "$hr" != "$br" \
 M24 a reused pid keeps the dead process's state|lib/python_runcount/trace.awk|/^rest ~ \/^\\+\\+\\+ (exited|killed) \/ {/d
 M25 joined -W/-X values read as -c/-m|lib/python_runcount/keys.awk|/-Wonce, -Xutf8/d
 M26 bash -ec is not an inline-shell caller|lib/python_runcount/keys.awk|s/if (a\[i\] ~ \/^-\[A-Za-z\]\*c\$\/) return b " -c"/if (a[i] == "-c") return b " -c"/
+M27 a cut trace (no exit line for the lane) passes|python_runcount.sh|s/ grep -q -E "^$root / true || grep -q -E "^$root /
+M28 -c tested before -m in a joined flag|lib/python_runcount/keys.awk|s/j = match(f, \/\[cm\]\/)/j = match(f, \/c\/)/
+M29 -XXXXXX suffixes kept|lib/python_runcount/keys.awk|s/    if (lvl >= 1 \&\& length(r) >= 6/    if (0 \&\& length(r) >= 6/
+M30 pid names kept|lib/python_runcount/keys.awk|s/if (r ~ \/^\[0-9\]+\$\/ \&\& length(r) >= 5) return 1/if (0) return 1/
+M31 a mktemp dir in the repo keyed raw|lib/python_runcount/keys.awk|s/p = p stable(parts\[i\], 1) "\/"/p = p parts[i] "\/"/
+M32 TMPDIR read at count time, not from the run|python_runcount.sh|s/ -v tmpd="$(meta "$out" tmpdir)"//
+M33 a caller in a temp dir keyed raw|lib/python_runcount/keys.awk|s/^function cname(p) { return stable(base(p), tmpath(p) ? 2 : 0) }/function cname(p) { return stable(base(p), 0) }/
+M34 uv long options with a value read as the script|lib/python_runcount/keys.awk|s/|color|index-strategy|/|/
+M35 uv short options with a value read as the script|lib/python_runcount/keys.awk|s/\^-\[pwcrifCP\]\$/^-[pw]$/
+M36 a repo-local tmp.XXXXXXXXXX kept|lib/python_runcount/keys.awk|s/    if (length(r) == 10 \&\& before/    if (0 \&\& before/
 TABLE
     printf '\nkilled=%s total=%s errors=%s\n' "$killed" "$total" "$errors"
     [ "$killed" -eq "$total" ] && [ "$errors" -eq 0 ]
