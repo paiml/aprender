@@ -7,16 +7,19 @@
 #             epic (1) -> ticket (2) -> sub-ticket (3). A sub-sub-ticket (4) is RED: the ruling allows none.
 #             0 orphans. An orphan is a non-root with no parent, a CLOSED parent, a parent in another repo,
 #             or a parent chain that loops.
-#   R2 size   open TICKETS <= 100. A ticket is a direct child of a root. Epics and sub-tickets are not
-#             counted; the open-issue and root totals are printed, not capped (0 open issues = NO-DATA).
+#   R2 size   open TICKETS <= 100. A ticket is a direct child of a root. Roots and sub-tickets are not
+#             counted. An `epic`-labelled issue WITH a parent is not a root: under a root it is a ticket and
+#             is counted. The open-issue and root totals are printed, not capped (0 open issues = NO-DATA).
 #   R3 fanout open children per non-root issue <= 5, i.e. sub-tickets per ticket. A root's tickets are
 #             not capped here: R2 counts them.
 #   R4 wip    in-progress TICKETS per worker <= 2. A branch on a sub-ticket counts as its ticket; a branch
-#             on an epic (a root) is not a ticket and is not counted; a branch on any other issue counts
-#             as that issue. "In progress" means a remote branch
-#             `<worker>/<issue>-<slug>` (the fleet's branch convention; worker = 2-3 hex session id, so
-#             type prefixes like fix/ feat/ docs/ fold/ perf/ are not workers) whose issue is open and whose
-#             head commit is at most ACTIVE_DAYS (default 7) old. A worker is its session id.
+#             on an epic (a root) is not a ticket and is not counted; a branch on any other issue (an
+#             orphan too) counts as that issue. "In progress" means a remote branch
+#             `<worker>/<issue>-<slug>` (the fleet's branch convention; worker = 2-3 lowercase hex, the
+#             session id, so type prefixes like fix/ feat/ docs/ fold/ perf/ are not workers) whose issue is
+#             open and whose head commit is at most ACTIVE_DAYS (default 7) old. A worker is its session id.
+#             R4 sees only branches that follow the convention, so its count is a floor on WIP, not all of
+#             it; and an all-hex type prefix (add/ bad/ fed/) would read as a worker.
 #
 # Usage:
 #   issue_tree_lint.sh fetch <dir> [owner/repo]    # read-only: dir/issues.jsonl, dir/branches.jsonl, dir/now.txt
@@ -28,7 +31,7 @@
 # Exit codes of check/run: 0 GREEN, 10 RED, 20 NO-DATA (0 issues read), others = the script crashed.
 # RED and NO-DATA are >= 10 so an alarm never looks like a shell or jq crash (exit 1/2/5).
 #
-# Env: MAX_TICKETS=100 MAX_DEPTH=3 MAX_CHILDREN=5 MAX_WIP=2 ACTIVE_DAYS=7
+# Env: MAX_TICKETS=100 MAX_DEPTH=3 MAX_CHILDREN=5 MAX_WIP=2 ACTIVE_DAYS=7 (whole numbers; anything else exits 2)
 #      ROOT_LABEL=epic   ISSUE_TITLE="ISSUE-TREE-001 RED: issue graph lint"
 #      ISSUE_PARENT=<n>  the filed RED issue is linked under it, so the lint's own ticket is never an orphan
 #      ISSUE_MILESTONE=backlog
@@ -48,6 +51,11 @@ die() { printf 'issue_tree_lint: %s\n' "$1" >&2; exit 2; }
 
 # The cap counts tickets now: a caller still setting the old knob would lose its cap without a word.
 if [ -n "${MAX_OPEN+set}" ]; then die "MAX_OPEN is gone: the cap is MAX_TICKETS and counts tickets only (ISSUE-TREE-001)"; fi
+# The knobs reach jq through --argjson, where jq sorts a string, [] or {} above every number, so a cap set
+# to one never fires; 1.5 and -1 are not counts either. Whole numbers only.
+for knob in MAX_TICKETS MAX_DEPTH MAX_CHILDREN MAX_WIP ACTIVE_DAYS; do
+    [[ ${!knob} =~ ^(0|[1-9][0-9]*)$ ]] || die "$knob must be a whole number, got '${!knob}'"
+done
 
 fetch() {
     local dir="$1" repo="${2:-$REPO_DEFAULT}"
@@ -161,7 +169,7 @@ check() {
           verdict: (if $open == 0 then "NO-DATA"
                     elif ([$orphans, $deep, $fat, $busy] | map(length) | add) == 0 and $tickets_ok
                     then "GREEN" else "RED" end)
-        }') || die "check: jq failed on $dir (a malformed fetch row or knob value)"
+        }') || die "check: jq failed on $dir (a malformed fetch row)"
     printf '%s\n' "$v"
     case "$(printf '%s' "$v" | jq -r .verdict)" in
         GREEN) return 0 ;;
@@ -282,7 +290,7 @@ verdict_of() { local rc=0; check "$1" > "$1/v.json" || rc=$?; printf '%s/%s' "$(
 rule_of() { jq -r ".rules.$2.ok" "$1/v.json"; }
 
 self_test() {
-    local T
+    local T quoted
     T=$(mktemp -d)
     # shellcheck disable=SC2064
     trap "rm -rf '${T:?}'" EXIT
@@ -295,7 +303,13 @@ self_test() {
     expect "env MAX_CHILDREN=1 reaches the check (2 sub-tickets is RED)" "10" "$(knob_rc MAX_CHILDREN=1 "$T/green")"
     expect "env MAX_WIP=1 reaches the check (2 tickets in progress is RED)" "10" "$(knob_rc MAX_WIP=1 "$T/green")"
     expect "env ROOT_LABEL=zzz reaches the check (no root, so every issue is an orphan: RED)" "10" "$(knob_rc ROOT_LABEL=zzz "$T/green")"
-    expect "a non-numeric MAX_TICKETS crashes (exit 2), never NO-DATA" "2" "$(knob_rc MAX_TICKETS=abc "$T/green")"
+    expect "a non-numeric MAX_TICKETS stops the run (exit 2), never NO-DATA" "2" "$(knob_rc MAX_TICKETS=abc "$T/green")"
+    quoted='MAX_TICKETS="100"'
+    expect "a quoted MAX_TICKETS stops the run (exit 2): jq reads 2 <= a string as true" "2" "$(knob_rc "$quoted" "$T/green")"
+    expect "an array MAX_DEPTH stops the run (exit 2): no level is > [] in jq" "2" "$(knob_rc 'MAX_DEPTH=[]' "$T/green")"
+    expect "an object MAX_CHILDREN stops the run (exit 2): no count is > {} in jq" "2" "$(knob_rc 'MAX_CHILDREN={}' "$T/green")"
+    expect "a fractional MAX_WIP stops the run (exit 2)" "2" "$(knob_rc MAX_WIP=1.5 "$T/green")"
+    expect "a negative ACTIVE_DAYS stops the run (exit 2): it would empty R4" "2" "$(knob_rc ACTIVE_DAYS=-1 "$T/green")"
     expect "the old MAX_OPEN knob stops the run (exit 2), never ignored" "2" "$(knob_rc MAX_OPEN=1 "$T/green")"
     expect "an empty MAX_OPEN stops the run too (the knob is gone, not defaulted)" "2" "$(knob_rc MAX_OPEN= "$T/green")"
 
@@ -309,6 +323,8 @@ self_test() {
 
     base "$T/foreign"; issue 6 '[]' 7 OPEN false >> "$T/foreign/issues.jsonl"
     expect "R1 a parent in another repo is an orphan" "parent-in-other-repo" "$(verdict_of "$T/foreign" >/dev/null; jq -r '.detail.orphans[0].reason' "$T/foreign/v.json")"
+    base "$T/foreignroot"; issue 6 '[]' 1 OPEN false >> "$T/foreignroot/issues.jsonl"
+    expect "R2 a parent #1 in another repo is not local root #1: an orphan, not a ticket" "2 parent-in-other-repo" "$(verdict_of "$T/foreignroot" >/dev/null; jq -r '"\(.rules.R2_tickets.count) \(.detail.orphans[0].reason)"' "$T/foreignroot/v.json")"
 
     base "$T/loop"; { issue 6 '[]' 7; issue 7 '[]' 6; } >> "$T/loop/issues.jsonl"
     expect "R1 a parent loop is RED, not a hang" "RED/10" "$(verdict_of "$T/loop")"
@@ -324,6 +340,8 @@ self_test() {
     base "$T/deep"; issue 6 '[]' 4 >> "$T/deep/issues.jsonl"
     expect "R1 a sub-sub-ticket (level 4) is RED" "RED/10" "$(verdict_of "$T/deep")"
     expect "R1 depth rule is the one that fired" "false" "$(rule_of "$T/deep" R1_depth)"
+    base "$T/deeper"; { issue 6 '[]' 4; issue 7 '[]' 6; } >> "$T/deeper/issues.jsonl"
+    expect "R1 names every issue below level 3 (levels 4 and 5)" "6,7" "$(verdict_of "$T/deeper" >/dev/null; jq -r '[.detail.deep[].n] | sort | map(tostring) | join(",")' "$T/deeper/v.json")"
 
     base "$T/big"; issue_range "$T/big" 6 104 '[]' 1
     expect "R2 101 tickets is RED" "false" "$(verdict_of "$T/big" >/dev/null; rule_of "$T/big" R2_tickets)"
@@ -364,6 +382,15 @@ self_test() {
     expect "R4 a branch whose issue is closed is not in progress" "GREEN/0" "$(verdict_of "$T/wipclosed")"
     base "$T/wiptwo"; branch "$T/wiptwo" 89/2-again; branch "$T/wiptwo" release/0.71
     expect "R4 two branches on one issue count once; non-convention branches ignored" "GREEN/0" "$(verdict_of "$T/wiptwo")"
+    base "$T/wipworkers"; third_ticket "$T/wipworkers"
+    branch "$T/wipworkers" ab/2-a; branch "$T/wipworkers" ab/6-b; branch "$T/wipworkers" ac/5-c; branch "$T/wipworkers" ac/6-d
+    expect "R4 caps each worker, not the fleet (89, ab, ac on 2 tickets each; 3 tickets in all)" "GREEN/0" "$(verdict_of "$T/wipworkers")"
+    base "$T/wipviasubs"; third_ticket "$T/wipviasubs"; { issue 7 '[]' 5; issue 8 '[]' 6; } >> "$T/wipviasubs/issues.jsonl"
+    branch "$T/wipviasubs" ad/3-a; branch "$T/wipviasubs" ad/7-b; branch "$T/wipviasubs" ad/8-c
+    expect "R4 three tickets reached only through sub-ticket branches is RED" "false" "$(verdict_of "$T/wipviasubs" >/dev/null; rule_of "$T/wipviasubs" R4_wip)"
+    base "$T/wiporphan"; { issue 6 '[]' -; issue 7 '[]' -; issue 8 '[]' -; } >> "$T/wiporphan/issues.jsonl"
+    branch "$T/wiporphan" ae/6-a; branch "$T/wiporphan" ae/7-b; branch "$T/wiporphan" ae/8-c
+    expect "R4 a branch on an orphan counts as that issue (3 orphans, one worker: R4 RED as well as R1)" "false" "$(verdict_of "$T/wiporphan" >/dev/null; rule_of "$T/wiporphan" R4_wip)"
 
     base "$T/wiptype"; third_ticket "$T/wiptype"
     branch "$T/wiptype" fix/2-a; branch "$T/wiptype" fix/5-b; branch "$T/wiptype" fix/6-c; branch "$T/wiptype" feat/2-d
@@ -371,6 +398,13 @@ self_test() {
     base "$T/wipnested"; third_ticket "$T/wipnested"
     branch "$T/wipnested" topic/ab/2-a; branch "$T/wipnested" topic/ab/5-b; branch "$T/wipnested" topic/ab/6-c
     expect "R4 a worker id must start the branch name (topic/ab/N- is not worker ab)" "GREEN/0" "$(verdict_of "$T/wipnested")"
+    base "$T/wipdecoy"; third_ticket "$T/wipdecoy"
+    branch "$T/wipdecoy" a/2-x; branch "$T/wipdecoy" a/5-y; branch "$T/wipdecoy" a/6-z
+    branch "$T/wipdecoy" abcd/2-x; branch "$T/wipdecoy" abcd/5-y; branch "$T/wipdecoy" abcd/6-z
+    branch "$T/wipdecoy" AB/2-x; branch "$T/wipdecoy" AB/5-y; branch "$T/wipdecoy" AB/6-z
+    branch "$T/wipdecoy" ab/2-x; branch "$T/wipdecoy" ab/5-y; branch "$T/wipdecoy" ab/6
+    expect "R4 a worker is 2-3 lowercase hex and needs <issue>-: a/ abcd/ AB/ and a dash-less ab/6 are not counted" "GREEN/0" "$(verdict_of "$T/wipdecoy")"
+    expect "R4 reads only the rows that follow the convention (89 x2, ab x2)" "4" "$(jq -r .wip_rows "$T/wipdecoy/v.json")"
     base "$T/wipepic"; branch "$T/wipepic" 89/1-epic-notes
     expect "R4 a branch on an epic is not an in-progress ticket (still 2)" "GREEN/0" "$(verdict_of "$T/wipepic")"
     base "$T/wipnull"; third_ticket "$T/wipnull"; branch_undated "$T/wipnull" 89/6-undated
