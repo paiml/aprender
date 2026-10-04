@@ -84,11 +84,12 @@ TOP_AWK=$(cat <<'AWK'
     if ($0 !~ /^(name|run-name|on|permissions|env|defaults|concurrency|jobs):( .*)?$/) { why = "the top-level line " NR " (" $0 ")"; exit }
     inon = ($0 ~ /^on:/); if (inon) n++
     sc = (!inon && $0 ~ /^[^:]*:[[:space:]]*[^[:space:]#]/)   # on: is judged by its pin
-    if ($0 ~ /^name:/) print "N " $0
+    if ($0 ~ /^name:/) { print "N " $0; nm++ }
 }
 inon { print "B " $0 }
 END {
     if (why == "" && n != 1) why = n + 0 " top-level on: keys"
+    if (why == "" && nm > 1) why = nm " top-level name: keys"
     if (why != "") print "E " why
 }
 AWK
@@ -221,6 +222,7 @@ if [ "${1:-}" = "--self-test" ]; then
     m_r3_tagsback()   { sed -i "s/^  workflow_dispatch: {}/  push:\n    tags: ['v*']/" "$NW"; }
     m_r3_tagsblock()  { sed -i "s/^  workflow_dispatch: {}/  workflow_dispatch: {}\n  push:\n    tags:\n      - 'v*'/" "$NW"; }
     m_r3_namecont()   { sed -i 's/^name: Coverage Nightly$/&\n  Extra/' "$NW"; }
+    m_r3_name2()      { printf 'name: Other\n' >> "$NW"; }
     m_r3_noreceipt()  { sed -i '/coverage_receipt/d' "$NW"; }
     m_r3_rcptcomment(){ sed -i 's/^\( *\)bash scripts\/coverage_receipt/\1# bash scripts\/coverage_receipt/' "$NW"; }
     m_r3_indent4()    { nwraw "name: Coverage Nightly\non:\n    schedule:\n        - cron: '0 22 * * *'\n    push:\n        tags: ['v*']\njobs:\n  c:\n    steps:\n      - run: |\n          bash scripts/coverage_receipt.sh cov.log x 89 out since\n"; }
@@ -337,6 +339,7 @@ if [ "${1:-}" = "--self-test" ]; then
     row 1 "R3 r3: the nightly's on: has a multi-line flow non-push value -> RED" m_r3_unbal
     row 1 "R3: the nightly renamed (the gate reads runs by that name) -> RED"   m_r3_rename
     row 2 "R3 r4: the nightly's name continued on an indented line -> ENV rc=2" m_r3_namecont
+    row 2 "R3 r5: a second top-level name: in the nightly -> ENV rc=2"         m_r3_name2
     row 0 "R3: a comment line added inside the nightly's on: -> PASS"           m_r3_cmtok
     row 2 "R3 r3: CRLF line ends on the nightly are ENV rc=2, never a pass"     m_r3_crlf
     row 2 "R3 r3: a quoted \"on\" key on the nightly is ENV rc=2"                m_r3_quoted
