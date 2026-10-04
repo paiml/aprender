@@ -142,9 +142,12 @@ per row (block 2·d_v), with a pair shuffle for the row dot products.
 
 ## Falsifiers in `qwen35-train-cuda-v1` (PROPOSED, `[U]`)
 
-Each runs on a tiny fixture against the CPU oracle above: 3 key heads, 6 value heads, d_k = d_v = 8, conv kernel 4,
-T ≥ 9, batch 2, random weights and a fixed seed. Not 2 and 4: there the key-head count equals the ratio, so a kernel
-that uses one for the other still passes (§Value-head order).
+Each runs on a tiny fixture against the CPU oracle above: 3 key heads of width d_k = 8, 6 value heads of width
+d_v = 4, conv kernel 4, T ≥ 9, batch 2, random weights and a fixed seed. Not 2 and 4 heads: there the key-head count
+equals the ratio, so a kernel that uses one for the other still passes (§Value-head order). Not equal widths either:
+every local Qwen3.5 checkpoint has d_k = d_v = 128, so a kernel that uses one width for both passes on all of them,
+and on a fixture with equal widths. The CPU oracle's own tests at `80723cf206` (`gdn_tests.rs`, and the QTG-003
+gradcheck in `gdn_backward_tests.rs`) all use equal widths too, so they get a case at these widths first.
 
 | ID | Claim | Planted mutation that must turn it RED |
 |---|---|---|

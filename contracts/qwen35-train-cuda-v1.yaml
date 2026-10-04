@@ -76,7 +76,7 @@ proof_obligations:
 falsification_tests:
 - id: FALSIFY-QTC-001
   rule: The CUDA GDN mixer's training forward equals the CPU oracle
-  prediction: 'tiny fixture (3 key heads, 6 value heads, d_k = d_v = 8, conv kernel 4, T = 13, batch 2, random weights, fixed seed), zero state per sequence: max abs diff to gdn_mixer_forward ≤ 1e-5·max(scale, 1). Planted: carrying the state from sequence 0 into sequence 1 turns it RED, and so does reading key head h / 2 (grouped) instead of h mod 3 (tiled), and so does h mod 2 (the ratio in place of the key-head count, which a 2-key, 4-value fixture cannot tell apart)'
+  prediction: 'tiny fixture (3 key heads of width d_k = 8, 6 value heads of width d_v = 4, conv kernel 4, T = 13, batch 2, random weights, fixed seed), zero state per sequence: max abs diff to gdn_mixer_forward ≤ 1e-5·max(scale, 1). Planted: carrying the state from sequence 0 into sequence 1 turns it RED, and so does reading key head h / 2 (grouped) instead of h mod 3 (tiled), and so does h mod 2 (the ratio in place of the key-head count, which a 2-key, 4-value fixture cannot tell apart), and so does one width used for both (d_v as the length of a state row, say), which a fixture with d_k = d_v cannot tell apart and every local Qwen3.5 checkpoint has (128 and 128). The oracle''s own tests at 80723cf206 (gdn_tests.rs, and the QTG-003 gradcheck in gdn_backward_tests.rs) all run at d_k = d_v, so they first get a case at these widths: a kernel is only checked against an oracle that holds there'
   test: '[U] not written; needs cargo + CUDA after LIVE 0.70.1, GPU lock around the test binary only'
   if_fails: 'the training forward differs from the oracle that R2 proved against serving: fix the CUDA side before any backward work'
 - id: FALSIFY-QTC-002
