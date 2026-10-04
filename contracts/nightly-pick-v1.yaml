@@ -1,0 +1,99 @@
+metadata:
+  version: 1.0.0
+  created: '2026-10-04'
+  author: PAIML Engineering
+  description: "One job picks the night's candidate C once and publishes it as the ref refs/nightly/<night>. Every producer measures that C, the nightly train prints its line for that C, and a release promotes that C. The ref is created once and never moved, so a merge to main after the pick cannot change the night's line. scripts/release/nightly_pick.sh picks, resolves and verifies; .github/workflows/nightly-pick.yml is the one job. Report-only: no producer, train or release reads the ref yet."
+  kind: pattern
+  references:
+    - "scripts/release/nightly_pick.sh: the command line (night, pick, resolve, verify), the case table (--self-test) and the planted mutants (--mutants)"
+    - "scripts/lib/nightly_pick.sh: the picker, an option-neutral sourced library that fails by return status"
+    - ".github/workflows/nightly-pick.yml: the one job that picks C, on a schedule or a dispatch from main"
+    - ".github/workflows/nightly.yml: its gate job already resolves main's head once per run and builds that sha; this generalises that from one workflow to the night"
+
+five_whys:
+  symptom: "On 2026-10-02 the scheduled nightly producers judged three different commits of main in one night (scheduled runs of 2026-09-29 to 2026-10-03, read from the runs API), so their results did not describe one candidate."
+  why_1: "Each scheduled workflow reads main's head at its own start time."
+  why_2: "Scheduled events on this account fire 1h43m to 5h48m late (14 nights measured), so the start times spread over hours."
+  why_3: "Merges to main land inside that spread, so early and late producers see different heads."
+  why_4: "Nothing names the night's candidate, so neither the train nor a release can say which commit the night measured."
+  why_5: "Cron spacing was used as the ordering, and the lateness makes cron spacing meaningless."
+  root_cause: "The night had no single picked commit. The remedy is one pick per night, published as an immutable ref, with the night chained from that pick instead of from cron spacing."
+
+equations:
+  night:
+    formula: "night(t) = UTC date of (t − 12 h)"
+    domain: "t = the pick's wall-clock time in UTC"
+    codomain: "YYYY-MM-DD"
+    invariants:
+      - "a night runs from 12:00Z to 12:00Z, so a pick that fires hours late still lands on the night it was meant for"
+
+  pick:
+    formula: "pick(n, s) = ref(n) if ref(n) exists; else create ref(n) := s when s is reachable from main, then return ref(n)"
+    domain: "n a night, s a 40-hex commit id, ref(n) = refs/nightly/<n> on the remote"
+    codomain: "C = ref(n), printed as PICKED (this call created it) or KEPT (it existed)"
+    invariants:
+      - "ref(n) is created once and never moved: no force push, and an existing ref is returned unchanged"
+      - "a commit not on main is refused and no ref is created"
+      - "a lost race returns the winner as KEPT, never PICKED"
+
+  verify:
+    formula: "verify(n, s) = OK if s = ref(n); RED if ref(n) exists and s ≠ ref(n); NOT_MEASURED if ref(n) is absent or unreadable"
+    domain: "n a night, s the commit a producer was handed"
+    codomain: "exit 0 OK | 1 RED | 2 NOT_MEASURED | 3 caller error"
+    invariants:
+      - "a producer handed main's head instead of C is RED"
+      - "an unreadable remote is NOT_MEASURED, never OK"
+
+proof_obligations:
+  - id: NP-INV-001
+    type: invariant
+    property: "A merge to main after the pick does not change the night's line"
+    formal: "pick(n, s₁) = s₁ ∧ main advances to s₂ ⇒ pick(n, s₂) = s₁ ∧ resolve(n) = s₁ ∧ line(n) unchanged"
+    applies_to: pick
+  - id: NP-INV-002
+    type: invariant
+    property: "The night's ref is never moved"
+    formal: "∀ n: once ref(n) = c, every later pick, including a racing one, leaves ref(n) = c"
+    applies_to: pick
+  - id: NP-INV-003
+    type: invariant
+    property: "Only a commit on main can be the night's C"
+    formal: "s ∉ ancestors(main) ⇒ pick(n, s) = RED ∧ ref(n) absent"
+    applies_to: pick
+  - id: NP-INV-004
+    type: invariant
+    property: "A producer that measured another commit is RED"
+    formal: "ref(n) = c ∧ s ≠ c ⇒ verify(n, s) = RED"
+    applies_to: verify
+  - id: NP-INV-005
+    type: invariant
+    property: "No pick or no remote is not_measured, never OK"
+    formal: "ref(n) absent ∨ remote unreadable ⇒ resolve(n) and verify(n, s) exit 2"
+    applies_to: verify
+  - id: NP-INV-006
+    type: invariant
+    property: "A late pick lands on its own night"
+    formal: "t ∈ [n 12:00Z, n+1 12:00Z) ⇒ night(t) = n"
+    applies_to: night
+
+falsification_tests:
+  - id: FALSIFY-NP-001
+    rule: "The picker is right on every row of its case table, including the planted merge after the pick"
+    prediction: "Against a fixture remote: the first pick publishes the ref; a merge to main then a second pick keeps the first C; the train-line stub is identical before and after the merge while a main-head reader's line changes (the counter-row that proves the plant can fail); a producer handed main's head is RED; a commit not on main is refused with no ref; an existing or racing ref is never overwritten; an unreadable remote and an unpicked night are not_measured; malformed input is a caller error; a late fire lands on its night"
+    test: "bash scripts/release/nightly_pick.sh --self-test"
+    if_fails: "A merge after the pick can change what the night measured, so producers, the train and a release can disagree on the commit they judged"
+
+  - id: FALSIFY-NP-002
+    rule: "The case table can still fail on the defects it names"
+    prediction: "Each planted mutant (a force push that moves the ref, an existing ref ignored, a branch commit accepted, verify accepting any commit, an unpicked night resolving, an unreadable remote read as absent, the night taken as the fire date, a malformed night or commit accepted, a lost race claimed as PICKED) turns --self-test RED; a mutant whose patch does not apply is an error, never a survivor"
+    test: "bash scripts/release/nightly_pick.sh --mutants"
+    if_fails: "The case table is theater: it would pass a picker that lets a merge move the night's C"
+
+qa_gate:
+  id: QA-NP-001
+  name: "One immutable C per night, picked from main and published as a ref"
+  description: "scripts/release/nightly_pick.sh creates refs/nightly/<night> once from a commit on main, never moves it, and verifies that a producer measured that commit. Report-only until the producers, the train and the release read it."
+  checks:
+    - "night"
+    - "pick"
+    - "verify"

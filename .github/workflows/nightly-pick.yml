@@ -1,0 +1,68 @@
+# Nightly pick: ONE job picks the night's candidate C and publishes it as refs/nightly/<night>.
+#
+# Every producer measures that C, the nightly train prints its line for that C, and a release
+# promotes that C. The ref is created once and never moved (create-only push, never forced), so a
+# merge to main after the pick cannot change the night's line. Contract: contracts/nightly-pick-v1.yaml.
+#
+# WHY A PICK, NOT CRON SPACING. Scheduled events here fire 1h43m to 5h48m late (14 nights measured),
+# so producers that each read main's head at their own start judge different commits in one night.
+# A producer chains from this workflow (workflow_run on "Nightly pick", or a dispatch carrying the
+# night) and runs `scripts/release/nightly_pick.sh verify --night N --sha <what it built>`.
+#
+# The schedule below is a fallback trigger only. A dispatch is the reliable one, and a re-pick is
+# idempotent: it prints KEPT and leaves the ref as it is. The night is the UTC date of (now - 12h),
+# so a pick that fires late still lands on its own night.
+#
+# REPORT-ONLY. Nothing reads refs/nightly/* yet; no job here gates anything.
+name: Nightly pick
+
+on:
+  schedule:
+    - cron: '30 20 * * *'
+  workflow_dispatch:
+
+permissions:
+  contents: write
+
+concurrency:
+  group: nightly-pick
+  cancel-in-progress: false
+
+jobs:
+  pick:
+    if: github.ref == 'refs/heads/main'
+    runs-on: [self-hosted, Linux, X64, clean-room]
+    timeout-minutes: 10
+    outputs:
+      night: ${{ steps.pick.outputs.night }}
+      c: ${{ steps.pick.outputs.c }}
+    steps:
+      - name: Checkout main
+        uses: actions/checkout@v7
+        with:
+          ref: main
+          fetch-depth: 50
+
+      - name: Picker case table
+        run: bash scripts/release/nightly_pick.sh --self-test
+
+      - name: Pick C for the night
+        id: pick
+        run: |
+          set -euo pipefail
+          night="$(bash scripts/release/nightly_pick.sh night)"
+          rc=0
+          bash scripts/release/nightly_pick.sh pick --night "$night" --sha "$GITHUB_SHA" || rc=$?
+          [ "$rc" -eq 0 ] || { echo "pick exited $rc"; exit "$rc"; }
+          c="$(bash scripts/release/nightly_pick.sh resolve --night "$night")"
+          {
+            echo "night=$night"
+            echo "c=$c"
+          } >> "$GITHUB_OUTPUT"
+          {
+            echo "### Nightly pick"
+            echo ""
+            echo "| night | C | main at pick |"
+            echo "|---|---|---|"
+            echo "| $night | \`$c\` | \`$GITHUB_SHA\` |"
+          } >> "$GITHUB_STEP_SUMMARY"
