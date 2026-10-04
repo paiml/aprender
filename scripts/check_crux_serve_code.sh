@@ -24,6 +24,7 @@ case "${1:-}" in -h|--help) printf 'usage: bash scripts/check_crux_serve_code.sh
 ROOT=$(cd "$(dirname "$0")/.." && pwd) || exit 2
 PROG=check_crux_serve_code
 command -v python3 > /dev/null 2>&1 || { printf '%s: ENV - python3 is missing\n' "$PROG" >&2; exit 2; }
+command -v jq > /dev/null 2>&1 || { printf '%s: ENV - jq is missing\n' "$PROG" >&2; exit 2; }
 ROUTES_PY="$ROOT/scripts/lib/crux_serve_routes.py"
 CODE_PY="$ROOT/scripts/lib/crux_apr_code.py"
 FAKE="$ROOT/scripts/lib/crux_fake_serve.py"
@@ -412,6 +413,84 @@ m_x2() { pty_case "$1" "$PX2"; }
 mutant "M14 X2 vs a missing echo read as the reply" "$PTY_PY" '        if k < 0:
             return None, (' '        if False:
             return None, (' m_x2
+
+
+printf -- '--- %s: serve prompt ids (crux_serve_pids in crux_cells_serve_code.sh, bash + jq) ---\n' "$PROG"
+SC_LIB="$ROOT/scripts/lib/crux_cells_serve_code.sh"
+mkdir -p "$TMP/sp" "$TMP/spbad" || exit 2
+# Blank and whitespace-only lines, CR LF, an id with a space, and non-ASCII ids written escaped (é4) and raw (é5).
+printf '%s\n' '["p1", ["serve run", "serve stream"]]' '["p2", ["serve stream"]]' '' '   ' \
+  '["p 3", ["serve run"]]'$'\r' '["\u00e94", ["serve run"]]' '["é5", ["serve stream"]]' > "$TMP/sp/serve-prompts.jsonl"
+SP_WANT_RUN='p1|p 3|é4'
+SP_WANT_STREAM='p1|p2|é5'
+sp_ids() { # <lib> <dir> <verb>: the ids crux_serve_pids prints from <dir>/serve-prompts.jsonl, joined by "|", then " rc=N"
+  local out rc
+  out=$(WORK="$2" bash -c '. "$1" || exit 2; crux_serve_pids "$2"' _ "$1" "$3" 2> /dev/null)
+  rc=$?
+  printf '%s rc=%s' "${out//$'\n'/|}" "$rc"
+}
+sp_row() { # <label> <want> <lib> <dir> <verb>
+  local got
+  got=$(sp_ids "$3" "$4" "$5")
+  if [ "$got" = "$2" ]; then ok "$1"; else bad "$1 (want '$2', got '$got')"; fi
+}
+sp_row "SP1 serve run: in file order, blank lines and CR LF skipped, escaped and raw UTF-8 alike" "$SP_WANT_RUN rc=0" "$SC_LIB" "$TMP/sp" "serve run"
+sp_row "SP2 serve stream" "$SP_WANT_STREAM rc=0" "$SC_LIB" "$TMP/sp" "serve stream"
+sp_row "SP3 a verb is a list member, never a substring of one" " rc=0" "$SC_LIB" "$TMP/sp" "serve"
+# Must-fail rows: each damaged list fails the function (nonzero), never reads as "no serve prompts".
+sp_bad() { # <label> <line> <lib>: true when crux_serve_pids fails on a list holding <line>
+  printf '%s\n' '["p1", ["serve run"]]' "$2" > "$TMP/spbad/serve-prompts.jsonl"
+  case "$(sp_ids "$3" "$TMP/spbad" "serve run")" in *" rc=0") return 1 ;; *) return 0 ;; esac
+}
+sp_badrow() { if sp_bad "$1" "$2" "$SC_LIB"; then ok "$1"; else bad "$1 (read as a good list)"; fi; }
+sp_badrow "SP4 a line that is not JSON fails" '{not json'
+sp_badrow "SP5 verbs that are a string, not a list, fail" '["p2", "serve run"]'
+sp_badrow "SP6 an id that is not a string fails" '[7, ["serve run"]]'
+sp_badrow "SP7 an empty id fails" '["", ["serve run"]]'
+sp_badrow "SP8 an id holding a newline fails" '["a\nb", ["serve run"]]'
+sp_badrow "SP9 a line of three fields fails" '["p2", ["serve run"], 1]'
+# SP10: serve_routes_cell stops on a damaged list (return 1, so the driver DECLINEs the cell) before it writes
+# the cell. crux_teardown_trap is the first helper it calls in its own shell after reading the ids, so the stub
+# there exits 9: rc 9 means the ids were read past. free_port runs in a $(...) subshell and cannot stop it.
+# SP10b is the control: on a good list the stub is reached, so rc 1 on SP10 is not just "never got that far".
+mkdir -p "$TMP/spgood" || exit 2
+printf '%s\n' '["p1", ["serve run"]]' > "$TMP/spgood/serve-prompts.jsonl"
+sp_cell_rc() { # <lib> <dir>: serve_routes_cell's status over <dir>/serve-prompts.jsonl, with the stubs above
+  WORK="$2" SHA12=x bash -c '. "$1" || exit 2; free_port() { echo 1; }; crux_teardown_trap() { exit 9; }
+    serve_routes_cell' _ "$1" "$2" > /dev/null 2>&1
+  printf '%s' "$?"
+}
+sp_cell() { # <lib>: true when serve_routes_cell returned 1 on a damaged list, before its first helper
+  printf '%s\n' '["p1", ["serve run"]]' '{not json' > "$TMP/spbad/serve-prompts.jsonl"
+  [ "$(sp_cell_rc "$1" "$TMP/spbad")" = 1 ]
+}
+if sp_cell "$SC_LIB"; then ok "SP10 serve_routes_cell returns 1 on a damaged list, before building the cell"
+else bad "SP10 serve_routes_cell read past a damaged list (rc $(sp_cell_rc "$SC_LIB" "$TMP/spbad"))"; fi
+got=$(sp_cell_rc "$SC_LIB" "$TMP/spgood")
+if [ "$got" = 9 ]; then ok "SP10b control: on a good list serve_routes_cell reaches its first helper"
+else bad "SP10b control: a good list did not reach crux_teardown_trap (rc $got), so SP10 proves nothing"; fi
+# Mutants, planted in bash: one anchor, exactly once, or the row is broken.
+sp_mutant() { # <label> <old> <new> <case command...>: the case must FAIL against the planted copy
+  local label="$1" old="$2" new="$3" s rest m="$TMP/mutant-crux_cells_serve_code.sh"
+  shift 3
+  s=$(cat "$SC_LIB"; printf x) && s=${s%x}
+  rest=${s//"$old"/}
+  if [ "$(( (${#s} - ${#rest}) / ${#old} ))" != 1 ]; then
+    bad "$label: the mutation anchor is gone (re-anchor it; a mutant that cannot be planted proves nothing)"; return
+  fi
+  printf '%s' "${s/"$old"/"$new"}" > "$m"
+  if "$@" "$m"; then bad "$label: SURVIVED (its row passed against the mutant)"; else ok "$label: killed"; fi
+}
+m_sp3() { [ "$(sp_ids "$1" "$TMP/sp" serve)" = " rc=0" ]; }
+m_sp5() { sp_bad x '["p2", "serve run"]' "$1"; }
+m_sp1() { [ "$(sp_ids "$1" "$TMP/sp" "serve run")" = "$SP_WANT_RUN rc=0" ]; }
+sp_mutant "MSP1 SP3 vs a substring match" 'any(.[1][]; . == $v)' 'any(.[1][]; contains($v))' m_sp3
+sp_mutant "MSP2 SP5 vs no shape check" 'error("serve-prompts.jsonl: a line is not [id, [verbs]]: \(tojson)")' 'empty' m_sp5
+sp_mutant "MSP3 SP1 vs every id printed" 'then select(any(.[1][]; . == $v)) | .[0]' 'then .[0]' m_sp1
+# Both calls read the same file, so the mutant drops both returns: dropping one leaves the other to catch it.
+sp_mutant "MSP4 SP10 vs a failed list read as empty" '  crux_serve_pids "serve run" > "$d/pids-serve-run.txt" || return 1
+  crux_serve_pids "serve stream" > "$d/pids-serve-stream.txt" || return 1' '  crux_serve_pids "serve run" > "$d/pids-serve-run.txt"
+  crux_serve_pids "serve stream" > "$d/pids-serve-stream.txt"' sp_cell
 
 printf '%s: %d row(s), %d failed\n' "$PROG" "$ROWS" "$FAILS"
 [ "$ROWS" -gt 0 ] || { printf '%s: zero rows ran - that is a broken table, not a pass\n' "$PROG" >&2; exit 1; }

@@ -122,12 +122,16 @@ crux_teardown_why() { # <state file>: empty when clean, else why the cell is RED
 # chat_template_kwargs. apr gets nothing, because it reads no toggle and the row says so.
 crux_think_extra() { printf '{"chat_template_kwargs": {"enable_thinking": %s}}' "$([ "$THINK" = on ] && echo true || echo false)"; }
 
-crux_serve_pids() { # <verb>: the serve prompts that carry that verb
-  python3 -c 'import json,sys
-for l in open(sys.argv[1]):
-    if l.strip():
-        i, v = json.loads(l)
-        if sys.argv[2] in v: print(i)' "$WORK/serve-prompts.jsonl" "$1"
+# crux_serve_pids <verb>: the serve prompts that carry that verb, one id per line, in file order. Every line of
+# serve-prompts.jsonl must be [id, [verbs]] with a non-empty string id that holds no newline; the verb is matched
+# against the list's members exactly. Anything else fails (nonzero), so a damaged list ends the cell instead of
+# reading as "no serve prompts" and dropping the plugin rows. jq 1.6 or later.
+crux_serve_pids() {
+  jq -r --arg v "$1" '
+    if type == "array" and length == 2 and (.[1] | type) == "array"
+       and (.[0] | type == "string" and length > 0 and (contains("\n") | not))
+    then select(any(.[1][]; . == $v)) | .[0]
+    else error("serve-prompts.jsonl: a line is not [id, [verbs]]: \(tojson)") end' "$WORK/serve-prompts.jsonl"
 }
 
 serve_routes_cell() {
@@ -137,8 +141,10 @@ serve_routes_cell() {
   [ -s "$WORK/serve-prompts.jsonl" ] || return 0
   # The plugins answer both serve verbs themselves (#3952 drivers: `serve run` and
   # `serve stream`), so each apr stream cell has a bf16 row on the same verb (#3957 F6).
-  while IFS= read -r pid; do pids+=("$pid"); done < <(crux_serve_pids "serve run")
-  while IFS= read -r pid; do spids+=("$pid"); done < <(crux_serve_pids "serve stream")
+  crux_serve_pids "serve run" > "$d/pids-serve-run.txt" || return 1
+  crux_serve_pids "serve stream" > "$d/pids-serve-stream.txt" || return 1
+  while IFS= read -r pid; do pids+=("$pid"); done < "$d/pids-serve-run.txt"
+  while IFS= read -r pid; do spids+=("$pid"); done < "$d/pids-serve-stream.txt"
   cell="$d/cell-serve.sh"
   pa=$(free_port)
   printf '#!/usr/bin/env bash\n# one CRUX serve cell (#3962): every route apr mounts x every mode x every serve prompt\n' > "$cell"
