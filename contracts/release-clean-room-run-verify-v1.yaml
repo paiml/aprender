@@ -1,7 +1,7 @@
 # ─────────────────────────────────────────────────────────────────────────────
 # release-clean-room-run-verify-v1 — one door to cargo publish: a clean-room run
 # id is proof only when that run is green AND tested exactly the tag's commit
-# (issue #4687, row R5b of 0.70.2)
+# (issue #4687, row R5b of 0.70.2; B2-gpu and the dry-run receipt added by R5c)
 #
 # THE DEFECT. scripts/release/publish_strict.sh opened its publishing path with
 # `[ -s "$AP/cleanroom-run-id" ]`: ANY non-empty file opened the door. A red
@@ -27,6 +27,19 @@
 #   scripts/cascade-publish.sh — clean_room_gate's per-run check calls the same
 #     clean_room_verify_run; rc 1 moves to the next run, rc 2 refuses at once.
 #
+# R5c. publish_strict.sh had the same `[ -s ]` door on its two other inputs:
+# `b2gpu-run-id` and `dryrun-receipt-commit`. Both now go through a verifier in
+# the same lib, with the same return contract:
+#   b2gpu_verify_run RID WANT -- the `b2-gpu (aprender-gpu ...)` job of
+#     paiml/aprender run RID completed, concluded success, its `Assert the
+#     commit under test` step succeeded, and its log holds exactly one
+#     structured `tested-sha:` record, equal to WANT
+#   dryrun_receipt_verify FILE TAG WANT ROOT -- FILE records one full sha of a
+#     commit present in ROOT. That commit holds
+#     docs/audits/release/TAG/dry-run-receipt.md, whose tag row names exactly
+#     WANT and whose dry-run row records `--dry-run --no-verify --locked`, a
+#     single rc of 0, and the tree clean
+#
 # PROOF LADDER, STATED HONESTLY
 #   * L1 — scripts/release/check_clean_room_verify.sh runs ONE case table through
 #          BOTH doors with a stub gh on PATH (no network, no python, no cargo).
@@ -37,27 +50,29 @@
 #   * L3/L4 — not applicable: a guard in a release script, not a kernel.
 # ─────────────────────────────────────────────────────────────────────────────
 name: release-clean-room-run-verify
-version: "1.0.0"
+version: "1.1.0"
 scope: >
   Whether a recorded clean-room run id may open a cargo publish: the verifier
   in scripts/release/lib_clean_room.sh and its two callers, publish_strict.sh
-  and cascade-publish.sh. Out of scope: the B2-gpu run id and the dry-run
-  receipt commit (same weakness, separate row), and what clean-room itself
-  tests.
+  and cascade-publish.sh. Since 1.1.0 (R5c) also whether the recorded B2-gpu
+  run id and dry-run receipt commit may open publish_strict.sh. Out of scope:
+  what clean-room, B2-gpu or the dry-run themselves test.
 status: active
 
 metadata:
   kind: pattern     # a refusal invariant over a release script's inputs, not a
                     # math kernel; set explicitly so the `kernel` default never applies.
-  version: "1.0.0"
+  version: "1.1.0"
   created: '2026-10-04'
   last_modified: '2026-10-04'
   author: PAIML Engineering
   references:
     - 'scripts/release/lib_clean_room.sh — clean_room_verify_run, clean_room_read_run_id, clean_room_tested_shas, clean_room_tested_abbrevs'
+    - 'scripts/release/lib_clean_room.sh — b2gpu_verify_run, b2gpu_read_run_id, dryrun_receipt_verify (R5c)'
     - 'scripts/release/check_clean_room_verify.sh — the case table, run through both doors'
     - 'scripts/check_cascade_clean_room_gate.sh — the clean_room_gate search table (PMAT-3318), now sourcing the shared verifier'
     - 'issue #4687 (R5b)'
+    - 'R5c: the B2-gpu run id and the dry-run receipt commit, same treatment'
   description: >
     A clean-room run id that is missing, red, or tested another commit must
     refuse, at both doors, through one verifier. gh failing is a refusal, never
@@ -84,6 +99,28 @@ equations:
     - 'want is a full 40-character lowercase commit sha'
     postconditions:
     - 'a green run on the tag commit opens both doors (the must-accept row)'
+  b2gpu_and_receipt:
+    formula: |
+      b2(rid, want) = 0  ⇔  rid ∈ [0-9]+
+                         ∧ |jobs(rid, "b2-gpu (aprender-gpu …)")| = 1
+                         ∧ job.status = completed ∧ job.conclusion = success
+                         ∧ assert step = completed/success
+                         ∧ structured tested-sha records(job.log) = [want]
+      receipt(c, tag, want) = 0  ⇔  c is one full sha of a commit in the checkout
+                         ∧ c:docs/audits/release/tag/dry-run-receipt.md exists
+                         ∧ tag row shas = {want}
+                         ∧ dry-run row ∋ --dry-run, --no-verify, --locked, "tree clean"
+                         ∧ dry-run row rc values = {0}
+      publish_strict opens  ⇔  verify = 0 ∧ b2 = 0 ∧ receipt = 0
+    domain: 'the recorded B2-gpu run id and receipt commit, the tag and its commit, gh and git'
+    codomain: '{0 proof, 1 not proof, 2 not measured}'
+    invariants:
+    - 'NOT MEASURED NEVER PASSES: rc 1 and rc 2 from either verifier stop publish_strict.'
+    - 'COMMITTED, NOT PRESENT: the receipt is read with git show from the recorded commit, never from a working tree.'
+    preconditions:
+    - 'want is the tag commit, a full 40-character lowercase sha'
+    postconditions:
+    - 'a green B2-gpu run and a green committed receipt on the tag commit let publish_strict through'
 
 proof_obligations:
   - id: CRV-OB-001
@@ -104,6 +141,15 @@ proof_obligations:
   - id: CRV-OB-006
     statement: "Both doors use the one verifier and give the same verdict on every row."
     discharged_by: falsification_tests[5]
+  - id: CRV-OB-007
+    statement: "A B2-gpu run id that is missing, not an id, red, unfinished, on another commit, without exactly one structured tested-sha record, or unreadable through gh refuses at publish_strict."
+    discharged_by: falsification_tests[6]
+  - id: CRV-OB-008
+    statement: "A dry-run receipt commit that is missing, not a full sha, absent, without the receipt file, on another commit, red, not --no-verify --locked, or not tree-clean refuses at publish_strict."
+    discharged_by: falsification_tests[7]
+  - id: CRV-OB-009
+    statement: "A green B2-gpu run and a green committed receipt on the tag's commit are accepted."
+    discharged_by: falsification_tests[8]
 
 falsification_tests:
   - id: CRV-F-001
@@ -142,10 +188,28 @@ falsification_tests:
     test: 'bash scripts/release/check_clean_room_verify.sh && bash scripts/check_cascade_clean_room_gate.sh'
     if_fails: 'the two doors drift and one of them opens on evidence the other refuses'
     mutation: 'restore publish_strict.sh `[ -s "$AP/cleanroom-run-id" ]`; the bad-id rows turn RED at the publish_strict door'
+  - id: CRV-F-007
+    rule: a bad B2-gpu run id refuses
+    prediction: 'the 15 b2_* rows refuse at publish_strict with a STOP line naming b2-gpu'
+    test: 'bash scripts/release/check_clean_room_verify.sh'
+    if_fails: 'a red B2-gpu run, or one on another commit, opens a publish'
+    mutation: 'ps_b2_back_to_nonempty_file restores `[ -s "$AP/b2gpu-run-id" ]`; b2_job_not_completed, b2_tested_other_commit and the other b2_* mutants each drop one refusal; each turns a row from REFUSE to ACCEPT'
+  - id: CRV-F-008
+    rule: a bad dry-run receipt commit refuses
+    prediction: 'the 10 rcpt_* rows refuse at publish_strict with a STOP line naming the dry-run receipt'
+    test: 'bash scripts/release/check_clean_room_verify.sh'
+    if_fails: 'a red, uncommitted, or other-commit dry-run opens a publish'
+    mutation: 'ps_receipt_back_to_nonempty_file restores `[ -s "$AP/dryrun-receipt-commit" ]`; rcpt_red, rcpt_other_commit and the other rcpt_* mutants each drop one refusal; each turns a row from REFUSE to ACCEPT'
+  - id: CRV-F-009
+    rule: green B2-gpu and receipt on the tag commit are accepted
+    prediction: 'row green_on_tag passes publish_strict and prints B2-GPU VERIFIED and DRY-RUN VERIFIED (stub_engaged_r5c)'
+    test: 'bash scripts/release/check_clean_room_verify.sh'
+    if_fails: 'the new verifiers refuse everything and the release cannot publish'
+    mutation: 'make dryrun_receipt_verify always return 1; green_on_tag turns RED'
 
 non_goals:
-  - "Verifying the B2-gpu run id or the dry-run receipt commit (same weakness, a separate row)."
-  - "What the clean-room workflow runs, or which commit it should be dispatched on."
+  - "What the clean-room, B2-gpu or dry-run workflows run, or which commit they should be dispatched on."
+  - "The legacy B2-gpu log form: b2-gpu.yml has always written the structured tested-sha record, so no fallback is read."
 
 binding_registry:
   guard: scripts/release/check_clean_room_verify.sh

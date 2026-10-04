@@ -31,14 +31,19 @@ if [ "${1:-}" != "--plan" ]; then
   ctag=$(git rev-parse --verify --quiet "refs/tags/$T^{commit}") || die "clean-room: tag $T does not resolve to a commit"
   cverdict=$(clean_room_verify_run "$crid" "$ctag" "$WT") || die "clean-room: run $crid is not proof for $T: $cverdict"
   say "$cverdict ($T)"
+  # B2-gpu and the dry-run receipt (R5c) get the same treatment: a run id or receipt commit
+  # that is missing, red, on another commit, or unreadable (gh/git failing) STOPs here.
+  grid=$(b2gpu_read_run_id "$AP/b2gpu-run-id") || die "b2-gpu: $grid ($T, rule 14)"
+  gverdict=$(b2gpu_verify_run "$grid" "$ctag") || die "b2-gpu: run $grid is not proof for $T: $gverdict"
+  say "$gverdict ($T)"
+  dverdict=$(dryrun_receipt_verify "$AP/dryrun-receipt-commit" "$T" "$ctag" "$WT") || die "dry-run receipt: not proof for $T (T-4): $dverdict"
+  say "$dverdict ($T)"
 fi
 [ "$(git rev-parse HEAD)" = "$(git rev-parse "refs/tags/$T^{commit}")" ] || die "HEAD is not $T"
 git symbolic-ref -q HEAD > /dev/null && die "checkout is not detached"
 [ -z "$(git status --porcelain)" ] || die "tree dirty: $(git status --porcelain | head -3 | tr '\n' ' ')"
 [ -e .cargo/config.toml ] && die ".cargo/config.toml present in the publish tree"
 [ -s "$HOME/.cargo/credentials.toml" ] || die "no publish token on this host (precondition 5)"
-[ "${1:-}" = "--plan" ] || [ -s "$AP/b2gpu-run-id" ] || die "no green B2-gpu run id recorded for $T (rule 14)"
-[ "${1:-}" = "--plan" ] || [ -s "$AP/dryrun-receipt-commit" ] || die "no committed dry-run receipt (T-4)"
 
 # order: NOT the tag's TIERS — measured 2026-09-17, TIERS is not topological (47 non-dev
 # violations; it only ever worked through the drain's retries). publish-order.txt is derived from
