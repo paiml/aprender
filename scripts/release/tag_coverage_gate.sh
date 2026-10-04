@@ -117,7 +117,9 @@ find_run() {
     local runs ids id h
     runs=$("$GH" run list --repo "$REPO" --workflow "$WF" --status completed --limit 30 \
         --json databaseId,headSha,createdAt,workflowName 2>/dev/null) || return 1
-    jq -e 'type == "array"' <<< "$runs" > /dev/null 2>&1 || return 1
+    # every run must be an object with an id, a sha and a time, or the answer is garbage (rc 1), #4757.
+    local shape='type == "array" and all(.[]; type == "object" and (.databaseId|type) == "number" and (.headSha|type) == "string" and (.createdAt|type) == "string")'
+    jq -e "$shape" <<< "$runs" > /dev/null 2>&1 || return 1
     WFN="$WF_NAME" jq -e 'all(.[]; .workflowName == env.WFN)' <<< "$runs" > /dev/null 2>&1 || return 2
     ids=$(jq -r 'sort_by(.createdAt) | reverse | .[] | "\(.databaseId) \(.headSha)"' <<< "$runs" 2>/dev/null) || return 1
     while read -r id h; do
@@ -244,6 +246,7 @@ STUB
               IFS=@ read -r a nm <<< "$a"
               printf '{"databaseId":%s,"headSha":"%s","createdAt":"%s","workflowName":"%s"}' "${a%%:*}" "$(cut -d: -f2 <<< "$a")" "$(cut -d: -f3- <<< "$a")" "$nm"
           done; printf ']'; } > "$d/runs.json"
+        if [ -n "${RAW:-}" ]; then printf '%s' "$RAW" > "$d/runs.json"; fi
         for a in "$@"; do
             if [ "$a" = down ]; then : > "$d/down"; continue; fi
             rid=${a%%:*}; rest=${a#*:}; fsha=${rest%%:*}; js=${rest#*:}
@@ -282,6 +285,16 @@ STUB
     else echo "  FAIL e2e: the refusal does not name the foreign run: $(cat "$d/out")"; fail=1; fi
     e2e 1 "e2e: one run of another workflow among nightly runs refuses" "$B" "7:$C:$T1,8:$A:$T2@CI" "7:$C:$OK"
     e2e 1 "e2e: a run with an empty workflowName refuses" "$C" "7:$C:$T1@" "7:$C:$OK"
+    # garbage NAME RAW: a run list gh should never give refuses as "could not list", not for some later reason.
+    garbage() {
+        RAW=$2 e2e 1 "e2e: $1 refuses as garbage" "$C" "7:$C:$T1" "7:$C:$OK"
+        if grep -qF "could not list" "$d/out"; then echo "  ok   e2e: $1 reads as a gh failure"
+        else echo "  FAIL e2e: $1 is misreported: $(cat "$d/out")"; fail=1; fi
+    }
+    garbage "a null run in the list" '[null]'
+    garbage "a run with no databaseId" "[{\"headSha\":\"$C\",\"createdAt\":\"$T1\",\"workflowName\":\"$WF_NAME\"}]"
+    garbage "a run with no headSha" "[{\"databaseId\":7,\"createdAt\":\"$T1\",\"workflowName\":\"$WF_NAME\"}]"
+    garbage "a run with no createdAt" "[{\"databaseId\":7,\"headSha\":\"$C\",\"workflowName\":\"$WF_NAME\"}]"
     echo "$PROG self-test: the version surface (#4735)"
     e2e 0 "e2e: an ADDED model-ladder receipt for the version cut rides on the bump" "$EA" "7:$C:$T1" "7:$C:$OK"
     e2e 1 "e2e: a MODIFIED model-ladder receipt is not a bump" "$EM" "7:$C:$T1" "7:$C:$OK"

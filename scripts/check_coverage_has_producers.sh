@@ -25,11 +25,11 @@
 #       every PR. The tag trigger is gone because nothing read the tag run and it could not
 #       pass: a tag create has no base sha, and its coverage section built only the facade.
 #   R6  scripts/release/tag_coverage_gate.sh, the one file where the release's coverage
-#       verdict is made, still talks to GitHub only in the pinned way: its lines that name
-#       gh, curl, wget, WF*, a workflow or ci.yml, or that eval or source code (outside its
-#       self_test function) are exactly the pinned list. The list reads coverage-nightly.yml
-#       and, at run time, refuses any run whose workflowName is not `Coverage Nightly`.
-#       Callers of ci.yml runs elsewhere do not matter: the gate never consumes them.
+#       verdict is made, is byte for byte the reviewed file: its sha256 equals GATE_SHA. That
+#       file reads coverage-nightly.yml runs only and, at run time, refuses any run whose
+#       workflowName is not `Coverage Nightly`. A keyword pin was bypassable (an unpinned
+#       `REPO=`, `ids=` or `jq()` line, a decoy self_test), so every byte is pinned, comments
+#       too. Callers of ci.yml runs elsewhere do not matter: the gate never consumes them.
 #
 # WHY PINS (#4757). R3/R5 used to read `on:` with an awk parser and R6 used a regex over how
 # a gh call is spelled. Three review rounds of #4745 each found a new YAML or gh spelling the
@@ -37,8 +37,10 @@
 # RED until a reviewer re-pins it here. The YAML shape is an allow-list too: every top-level
 # line must be one of name, run-name, on, permissions, env, defaults, concurrency or jobs,
 # unquoted, with exactly one `on:`; a CR, a tab-led line, `---`, a quoted key, `true:`, `<<:`,
-# `? key` or a column-0 `- item` cannot be judged and is ENV rc=2, never a pass.
-# To re-pin after a reviewed change, paste the block the FAIL line prints into the PIN below.
+# `? key`, a column-0 `- item` or an indented line continuing a top-level value cannot be
+# judged and is ENV rc=2, never a pass.
+# To re-pin after a reviewed change: for R3/R5 update the PIN block below from the diff the
+# FAIL line prints; for R6 set GATE_SHA to the sha256 the FAIL line prints.
 # Any link missing is FAIL; a file that cannot be read is ENV rc=2.
 #
 #   check_coverage_has_producers.sh              judge the tree
@@ -69,31 +71,19 @@ on:
 PIN
 )
 NIGHTLY_NAME='name: Coverage Nightly'
-GATE_PIN=$(cat <<'PIN'
-GH=${GH:-gh}
-WF='coverage-nightly.yml'
-WF_NAME='Coverage Nightly'
-    runs=$("$GH" run list --repo "$REPO" --workflow "$WF" --status completed --limit 30 \
-        --json databaseId,headSha,createdAt,workflowName 2>/dev/null) || return 1
-    WFN="$WF_NAME" jq -e 'all(.[]; .workflowName == env.WFN)' <<< "$runs" > /dev/null 2>&1 || return 2
-    if "$GH" run download "$1" --repo "$REPO" -n "$ART" -D "$d" > /dev/null 2>&1; then
-    if [ "$rc" = 2 ]; then echo "FAIL  gh answered a run that is not a $WF_NAME run -- only the nightly receipt counts, $stop"; return 1; fi
-    [ "$rc" = 0 ] || { echo "FAIL  gh could not list $WF runs -- Unknown is not a pass, $stop"; return 1; }
-    if [ -z "$found" ]; then echo "FAIL  NOT_MEASURED: no completed $WF run on $sha or a version-only parent of it -- $stop"; return 1; fi
-    if [ -z "$r" ]; then echo "FAIL  NOT_MEASURED: $WF run $id left no readable receipt for $h -- $stop"; return 1; fi
-        echo "ok    coverage $pct% >= COV_FLOOR $floor% ($passed tests) measured on $h by $WF run $id, for $what"; return 0
-    echo "FAIL  ${v#bad } ($WF run $id on $h, for $what) -- $stop"
-PIN
-)
+# GATE_SHA: the sha256 of the whole release gate, #4757. Any byte changed is RED until re-pinned.
+GATE_SHA=98a36ea2ff55d3cfe074cca554c7c15c2d38d9777e8112867e6c51594cdd2af5
 
 # TOP_AWK: a workflow -> "N <its name: line>" and "B <a line of its on: block>" records, or one
 # "E <why>" record when the file is not in the shape this guard reads (then nothing is judged).
 TOP_AWK=$(cat <<'AWK'
 /\r/ { why = "a CR at line " NR; exit }
 /^[[:space:]]*(#.*)?$/ { next }
+/^ / && sc { why = "an indented line " NR " continues a top-level value"; exit }
 /^[^ ]/ {
     if ($0 !~ /^(name|run-name|on|permissions|env|defaults|concurrency|jobs):( .*)?$/) { why = "the top-level line " NR " (" $0 ")"; exit }
     inon = ($0 ~ /^on:/); if (inon) n++
+    sc = (!inon && $0 ~ /^[^:]*:[[:space:]]*[^[:space:]#]/)   # on: is judged by its pin
     if ($0 ~ /^name:/) print "N " $0
 }
 inon { print "B " $0 }
@@ -123,11 +113,6 @@ on_pinned() {
         return 1
     fi
     return 0
-}
-# gate_lines <file> -> its live lines (outside self_test) that talk to GitHub or run other code
-gate_lines() {
-    awk '/^self_test\(\) \{/ { st = 1; next } st && /^\}/ { st = 0; next } st { next } /^[[:space:]]*#/ { next }
-        /(^|[^A-Za-z0-9_])(gh|GH|curl|wget|WF[A-Z_]*|[Ww]orkflow[A-Za-z]*|ci\.yml|eval|sourc[e]|exec)([^A-Za-z0-9_]|$)|^[[:space:]]*\.[[:space:]]/' "$1"
 }
 # live <file> -> the file with comments stripped (a setting in a comment is not a setting)
 live() { sed 's/#.*$//' "$1"; }
@@ -187,11 +172,13 @@ judge() {
         bad=1
     else printf 'ok    R5 ci/sections.yml: coverage_on: tag, and ci.yml has the pinned on: (no tag trigger)\n'; fi
 
-    got=$(gate_lines "$tg")
-    if [ "$got" != "$GATE_PIN" ]; then
-        printf 'FAIL  R6 scripts/release/tag_coverage_gate.sh talks to GitHub (or runs code) in a way that is not pinned (re-pin only after review):\n'
-        diff <(printf '%s\n' "$GATE_PIN") <(printf '%s\n' "$got") | sed 's/^/        /' | head -n 12; bad=1
-    else printf 'ok    R6 the release gate reads only coverage-nightly runs, in the pinned lines, and refuses any other run at run time\n'; fi
+    got=$(sha256sum < "$tg" 2>/dev/null) || got=''
+    got=${got%% *}
+    if [ -z "$got" ]; then
+        printf 'ENV   R6 could not hash scripts/release/tag_coverage_gate.sh -- cannot judge, not a pass\n'; env=1
+    elif [ "$got" != "$GATE_SHA" ]; then
+        printf 'FAIL  R6 scripts/release/tag_coverage_gate.sh is not the pinned file (sha256 %s, pinned %s) -- re-pin GATE_SHA only after review\n' "$got" "$GATE_SHA"; bad=1
+    else printf 'ok    R6 the release gate is the pinned file: it reads only coverage-nightly runs and refuses any other run at run time\n'; fi
     [ "$env" = 1 ] && return 2
     return "$bad"
 }
@@ -215,7 +202,7 @@ if [ "${1:-}" = "--self-test" ]; then
             "$NIGHTLY_NAME" "$NIGHTLY_ON_PIN" > "$1/$NW"
         printf 'name: CI\n\n%s\n\njobs: {}\n' "$CI_ON_PIN" > "$1/$CY"
         printf "sovereign-ci:\n  uses: paiml/.github/.github/workflows/sovereign-ci.yml@x\n  with:\n    coverage_on: tag\n" > "$1/ci/sections.yml"
-        printf '#!/usr/bin/env bash\n%s\nself_test() {\n    gh run list --workflow ci.yml --branch "%sT"\n}\n' "$GATE_PIN" '$' > "$1/$TG"
+        cp -- "$ROOT/$TG" "$1/$TG"
         printf '#!/usr/bin/env bash\ngh run list --workflow ci.yml --branch main --limit 1\n' > "$1/scripts/state.sh"
     }
     # The fixture text below spells a shell `$` as @, so no line here is shell code.
@@ -233,6 +220,7 @@ if [ "${1:-}" = "--self-test" ]; then
     m_r3_nosched()    { sed -i '/schedule:/d; /cron:/d' "$NW"; }
     m_r3_tagsback()   { sed -i "s/^  workflow_dispatch: {}/  push:\n    tags: ['v*']/" "$NW"; }
     m_r3_tagsblock()  { sed -i "s/^  workflow_dispatch: {}/  workflow_dispatch: {}\n  push:\n    tags:\n      - 'v*'/" "$NW"; }
+    m_r3_namecont()   { sed -i 's/^name: Coverage Nightly$/&\n  Extra/' "$NW"; }
     m_r3_noreceipt()  { sed -i '/coverage_receipt/d' "$NW"; }
     m_r3_rcptcomment(){ sed -i 's/^\( *\)bash scripts\/coverage_receipt/\1# bash scripts\/coverage_receipt/' "$NW"; }
     m_r3_indent4()    { nwraw "name: Coverage Nightly\non:\n    schedule:\n        - cron: '0 22 * * *'\n    push:\n        tags: ['v*']\njobs:\n  c:\n    steps:\n      - run: |\n          bash scripts/coverage_receipt.sh cov.log x 89 out since\n"; }
@@ -310,6 +298,10 @@ if [ "${1:-}" = "--self-test" ]; then
     m_r6_wget()       { addg "wget -qO- https://api.github.com/repos/x/y/actions/runs"; }
     m_r6_ciyml()      { addg "F=ci.yml"; }
     m_r6_contd2()     { addg "R=@(\"@G\" run list \\"; addg "    --workflow \"@W\" --branch \"@T\")"; }
+    m_r6_decoy()      { sed -i '0,/^floor_at() {$/s//floor_at() {\nself_test() { :; }\n    "$GH" run list --workflow ci.yml --branch main/' "$TG"; }
+    m_r6_repo()       { sed -i 's/^REPO=.*/REPO=other\/fork/' "$TG"; }
+    m_r6_ids()        { sed -i 's/^    ids=.*/    ids="99999 $1"/' "$TG"; }
+    m_r6_jqshadow()   { addg 'jq() { return 0; }'; }
     m_r6_norun()      { sed -i '/workflowName == env.WFN/d' "$TG"; }
     m_r6_nojson()     { sed -i 's/,workflowName 2>/ 2>/' "$TG"; }
     m_r6_inselftest() { sed -i 's/^}$/    gh api "repos\/x\/y\/actions\/workflows\/ci.yml\/runs?branch=v1"\n}/' "$TG"; }
@@ -344,6 +336,7 @@ if [ "${1:-}" = "--self-test" ]; then
     row 1 "R3 r3: the nightly's on: has a multi-line flow push value -> RED"    m_r3_flowmulti
     row 1 "R3 r3: the nightly's on: has a multi-line flow non-push value -> RED" m_r3_unbal
     row 1 "R3: the nightly renamed (the gate reads runs by that name) -> RED"   m_r3_rename
+    row 2 "R3 r4: the nightly's name continued on an indented line -> ENV rc=2" m_r3_namecont
     row 0 "R3: a comment line added inside the nightly's on: -> PASS"           m_r3_cmtok
     row 2 "R3 r3: CRLF line ends on the nightly are ENV rc=2, never a pass"     m_r3_crlf
     row 2 "R3 r3: a quoted \"on\" key on the nightly is ENV rc=2"                m_r3_quoted
@@ -412,7 +405,7 @@ if [ "${1:-}" = "--self-test" ]; then
     row 1 "R6: an eval in the gate -> RED"                                      m_r6_eval
     row 1 "R6: the gate sources another file -> RED"                            m_r6_source
     row 1 "R6: a new gh call, even a harmless one, is not pinned -> RED"        m_r6_nightlyok
-    row 0 "R6: a gh call only in a COMMENT of the gate -> PASS (a comment runs nothing)" m_r6_comment
+    row 1 "R6: even a COMMENT added to the gate -> RED (every byte is pinned)"   m_r6_comment
     row 1 "R6: the gate runs source on another file -> RED"                  m_r6_sourceword
     row 1 "R6: the gate execs another script -> RED"                         m_r6_exec
     row 1 "R6: a wget to the actions API in the gate -> RED"                 m_r6_wget
@@ -420,7 +413,11 @@ if [ "${1:-}" = "--self-test" ]; then
     row 1 "R6: a continued lookup whose only GitHub word is --workflow -> RED" m_r6_contd2
     row 1 "R6: the run-time workflowName check removed -> RED"                  m_r6_norun
     row 1 "R6: workflowName no longer fetched -> RED"                           m_r6_nojson
-    row 0 "R6: a ci.yml lookup inside the gate's self_test -> PASS (never on the release path)" m_r6_inselftest
+    row 1 "R6: a ci.yml lookup inside the gate's self_test -> RED (every byte is pinned)" m_r6_inselftest
+    row 1 "R6 r4: a decoy self_test() { :; } inside a function, then a ci.yml lookup -> RED" m_r6_decoy
+    row 1 "R6 r4: REPO= points at another repo (a line with no GitHub word) -> RED" m_r6_repo
+    row 1 "R6 r4: the gate picks its own run id (the ids= line) -> RED"        m_r6_ids
+    row 1 "R6 r4: a jq() shadow that turns every check true -> RED"           m_r6_jqshadow
     row 0 "R6: ci.yml lookups in other scripts and workflows -> PASS (the gate never reads them)" m_r6_elsewhere
     row 2 "scripts/release/tag_coverage_gate.sh missing is ENV rc=2, never a pass" m_missing_tg
     [ -n "$BL" ] && printf 'BASELINE: %s of %s rows give the wanted rc under %s\n' "$base" "$n" "$BL"
