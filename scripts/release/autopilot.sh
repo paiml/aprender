@@ -176,6 +176,11 @@ if run_step readiness; then
   # exits 0 (a hand-edited or stale copy) is a waiver, and a waiver is a stop.
   ! grep -qE '^WARN +R8 ' "$AP/readiness-t1.log" \
     || die "T-1 release-readiness-v1 printed a WARN R8 row (report-only = waiver = stop): nothing is tagged ($AP/readiness-t1.log)"
+  # CENSUS-RATCHET (#4709, operator C303): entity-bound contracts at $MC >= the previous tag's + min(100,
+  # unbound); 0.70.2 is baseline (step 0). Exit 1 (short) and 2 (NOT_MEASURED) both stop before the tag.
+  bash scripts/check_census_ratchet.sh --release "$V" --commit "$MC" > "$AP/census-ratchet.log" 2>&1; rc=$?
+  grep -E '^(CENSUS|PASS|FAIL|NOT_MEASURED) ' "$AP/census-ratchet.log" >> "$STATUS"
+  [ $rc -eq 0 ] || die "T-1 census ratchet rc=$rc: nothing is tagged ($AP/census-ratchet.log)"
   say "READINESS ok at $MC"
 fi
 # 3. tag + release (binary-release.yml fires on release: published, from the TAG's workflow file)

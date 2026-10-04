@@ -1,0 +1,22 @@
+- id: PMAT-4709
+  github_issue: 4709
+  item_type: task
+  title: 'CENSUS-RATCHET: entity-bound contracts never drop and rise every release (operator C303)'
+  status: inprogress
+  priority: critical
+  assigned_to: aprender-wcensus
+  created: 2026-10-04T00:00:00Z
+  updated: 2026-10-04T00:00:00Z
+  spec: docs/specifications/APR-RELEASE-001-train-and-build-kaizen.md
+  acceptance_criteria:
+  - scripts/check_census_ratchet.sh measures bound = class + instance with `pv census --format json`, head vs base with one pv in one run, and is RED when bound falls or the unbound share rises
+  - '`--release V --commit SHA` requires bound >= bound(previous tag) + min(100, unbound(previous tag)) from 0.71.0; 0.70.2 is baseline (step 0); autopilot readiness calls it before any tag'
+  - A census that fails, does not parse, counts 0 contracts, has parse errors or does not sum is NOT_MEASURED (exit 2), never a pass
+  - '`--self-test` on the real pv: unbinding one contract turns the gate RED (the mutation), and every row is green'
+  - Baseline 48/1889 bound at origin/main 316dee2cd4 (pv 0.70.1) is recorded in #4709 and the PR
+  phases: []
+  subtasks: []
+  estimated_effort: null
+  labels:
+  - kind:code
+  notes: 'Operator C303 ordered this gate; no further sign-off needed. Step work (~100 bindings per train) goes to the look-ahead lanes, first owner proposed L1 0.71 la-71.'
