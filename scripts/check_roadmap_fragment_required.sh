@@ -91,6 +91,7 @@ set -uo pipefail
 PROG=${0##*/}
 REPO_ROOT="$(cd -- "$(dirname -- "${BASH_SOURCE[0]}")/.." && pwd)"
 PY_LIB="$REPO_ROOT/scripts/lib/roadmap_fragments.py"
+AGG="$REPO_ROOT/scripts/roadmap_aggregate.sh"   # T21 checks: bash, which refuses exactly what PY_LIB refuses (fork (i))
 ROADMAP_FILE="docs/roadmaps/roadmap.yaml"
 ENTRIES_DIR="docs/roadmaps/entries"
 
@@ -134,7 +135,7 @@ remedy() {
 judge() {
     local repo=$1 base=$2 head=$3
     local td roadmap_changed=0 frag_paths names name verdict eid line
-    local violations=0 checked=0 out rc
+    local violations=0 checked=0 out rc writer=0 p2 mb src
 
     git -C "$repo" rev-parse --verify -q "$base^{commit}" >/dev/null || {
         printf 'ENV   %s: base ref %s is not a commit here — refusing to judge (never a pass)\n' "$PROG" "$base" >&2
@@ -187,6 +188,14 @@ judge() {
 
     printf '=== %s: base=%s head=%s ===\n' "$PROG" "$base" "$head"
 
+    # WRITER SHAPE (RQ-8): the diff changes roadmap.yaml and nothing else. Its entries come from fragments that
+    # landed in EARLIER diffs, so rule 1 licenses them by the fragment existing at head, and rule 2 proves the
+    # bytes are that fragment's (committed == aggregate, or the stale-writer test below).
+    if [ "$roadmap_changed" = 1 ] && [ -z "$frag_paths" ] &&
+       [ "$(git -C "$repo" diff --name-only "$base" "$head" | grep -c -v -x -F -e "$ROADMAP_FILE")" = 0 ]; then
+        writer=1
+    fi
+
     # --- RULE 1: every changed entry carries its fragment in the same diff ----
     if ! out=$(python3 "$PY_LIB" changed --base "$td/base.yaml" --head "$td/head.yaml" 2>&1); then
         rm -rf -- "${td:?}"
@@ -204,6 +213,10 @@ judge() {
             printf 'ok    %-8s %s — %s/%s.yaml changes in the same diff\n' "$verdict" "$eid" "$ENTRIES_DIR" "$eid"
             continue
         fi
+        if [ "$writer" = 1 ] && [ "$verdict" != REMOVED ] && filename_safe "$eid" && [ -f "$td/entries/$eid.yaml" ]; then
+            printf 'ok    %-8s %s — WRITER: %s/%s.yaml exists at head (landed earlier); rule 2 proves the bytes\n' "$verdict" "$eid" "$ENTRIES_DIR" "$eid"
+            continue
+        fi
         violations=$((violations + 1))
         if filename_safe "$eid"; then
             printf 'FAIL  %-8s %s in %s with NO change to %s/%s.yaml — a roadmap edit without its fragment\n' \
@@ -215,10 +228,73 @@ judge() {
     done < <(printf '%s\n' "$out")
 
     # --- RULE 2: the aggregate at head is REGENERATED, not drifting ----------
+    # ONE WRITER (T21, operator ruling RQ-8): a diff that changes fragments but not
+    # roadmap.yaml is the one-writer PR shape. Its committed == fresh comparison
+    # MOVES to the nightly writer PR (which writes roadmap.yaml, so it lands in the
+    # branch below) and to the tag (check_publish_preflight.sh R9); on the PR, CI
+    # regenerates before any reader (scripts/roadmap_one_writer_ci.sh). A diff that
+    # DOES write roadmap.yaml keeps this rule exactly as before.
+    # Only the committed == fresh COMPARISON moves: the fragments must still aggregate (quorum r2 C), or a local
+    # guard_tree run would pass fragments that every later writer and the tag refuse.
+    if [ "$roadmap_changed" = 0 ]; then
+        out=$(bash "$AGG" --print --roadmap "$td/head.yaml" --entries "$td/entries" 2>&1 >/dev/null)
+        rc=$?
+        [ "${FRAGREQ_MUTANT:-}" = movednovalid ] && rc=0
+        rm -rf -- "${td:?}"
+        # rc 1 is a refusal; anything else (rc 2, an aggregator that cannot run) is ENV, never a refusal and never a
+        # pass (quorum r2 H).
+        if [ "$rc" != 0 ] && [ "$rc" != 1 ]; then
+            printf 'ENV   %s: the existing generator could not run (rc %s), so the fragments are NOT MEASURED:\n%s\n' "$PROG" "$rc" "$out" >&2
+            return 2
+        fi
+        if [ "$rc" = 0 ]; then
+            printf 'MOVED rule 2 (committed %s == aggregate): the fragments aggregate; this diff does not write %s, so the comparison runs on the nightly writer PR and at the tag (RQ-8)\n' \
+                "$ROADMAP_FILE" "$ROADMAP_FILE"
+        else
+            violations=$((violations + 1))
+            printf 'FAIL  FRAGMENTS: at head, %s/ does not aggregate (the existing generator refuses it, rc %s)\n' "$ENTRIES_DIR" "$rc"
+            printf '%s\n' "$out" | sed -n '1,6p' | sed 's/^/      /'
+        fi
+        rc=0
+    else
     out=$(python3 "$PY_LIB" aggregate --check --roadmap "$td/head.yaml" --entries "$td/entries" 2>&1)
     rc=$?
+    # STALE WRITER (RQ-8): in a merge ref, fragments that landed on main after the writer branched are not in its
+    # copy, so committed != aggregate(head). Its copy is still fragment-faithful iff it equals aggregate(its copy,
+    # the head fragments of the ids it CONTAINS): fragments it never saw are left out, every entry it holds must be
+    # its fragment's bytes (a hand edit of a fragment-covered entry differs; a base-only edit is rule 1's).
+    # committed == fresh is then proved at the tag (check_publish_preflight.sh R9).
+    # A fragment main EDITED after the writer branched (planned -> completed) is held at its older version, which
+    # was main's at the writer's merge-base (quorum r2 E). So an entry may be its fragment's bytes at head OR at that
+    # merge-base: both were on main. The version whose bytes the copy holds is chosen; a hand edit matches neither.
+    if [ "$rc" = 1 ] && [ "$writer" = 1 ]; then
+        mb=""
+        mkdir -p "$td/held"
+        if p2=$(git -C "$repo" rev-parse -q --verify "$head^2" 2>/dev/null) && [ "${FRAGREQ_MUTANT:-}" != nomb ]; then
+            mb=$(git -C "$repo" merge-base "$head^1" "$p2" 2>/dev/null) || mb=""
+        fi
+        while IFS= read -r eid; do
+            eid=${eid%\"}; eid=${eid#\"}; eid=${eid%\'}; eid=${eid#\'}
+            filename_safe "$eid" && [ -f "$td/entries/$eid.yaml" ] || continue
+            src="$td/entries/$eid.yaml"
+            if [ -n "$mb" ] && git -C "$repo" show "$mb:$ENTRIES_DIR/$eid.yaml" >"$td/mbf" 2>/dev/null && ! cmp -s -- "$src" "$td/mbf"; then
+                LC_ALL=C awk -v id="$eid" '/^- id:/ { v = $0; sub(/^- id:[ \t]*/, "", v); sub(/[ \t]*$/, "", v); gsub(/^["\047]|["\047]$/, "", v); on = (v == id) } on' \
+                    "$td/head.yaml" >"$td/blk"
+                cmp -s -- "$td/blk" "$src" || src="$td/mbf"
+            fi
+            cp -- "$src" "$td/held/$eid.yaml"
+        done < <(sed -n 's/^- id:[[:space:]]*//p' "$td/head.yaml" | sed 's/[[:space:]]*$//')
+        if bash "$AGG" --print --roadmap "$td/head.yaml" --entries "$td/held" >"$td/a0" 2>/dev/null &&
+           cmp -s -- "$td/head.yaml" "$td/a0"; then
+            rc=0
+            printf 'ok    STALE WRITER: only %s changes; every entry it holds is its fragment at head or at its merge-base (fragments landed after it are R9-checked at the tag)\n' "$ROADMAP_FILE"
+        fi
+    fi
     rm -rf -- "${td:?}"
-    if [ "$rc" = 0 ]; then
+    fi
+    if [ "$roadmap_changed" = 0 ]; then
+        :
+    elif [ "$rc" = 0 ]; then
         printf 'ok    %s == aggregate(%s/) at head\n' "$ROADMAP_FILE" "$ENTRIES_DIR"
     else
         violations=$((violations + 1))
@@ -394,10 +470,53 @@ PY
         printf -- '- id: PMAT-200\n  title: unlicensed\n  status: planned\n' >>"$1/$ROADMAP_FILE"
         commit_all "$1"
     }
+    # Writes roadmap.yaml (regenerated), then edits the fragment again: the
+    # committed aggregate is stale, and because this diff WRITES roadmap.yaml,
+    # rule 2 still judges it on the PR (T21 moves rule 2 only for one-writer diffs).
+    b_written_but_stale() {
+        printf -- '- id: PMAT-200\n  title: first draft\n  status: planned\n' >"$1/$ENTRIES_DIR/PMAT-200.yaml"
+        bash "$AGG" --write --roadmap "$1/$ROADMAP_FILE" --entries "$1/$ENTRIES_DIR" >/dev/null 2>&1 || return 1
+        printf -- '- id: PMAT-200\n  title: second draft\n  status: planned\n' >"$1/$ENTRIES_DIR/PMAT-200.yaml"
+        commit_all "$1"
+    }
     # Supersession: edit an ADOPTED entry through its fragment, regenerate.
     b_supersede() {
         printf -- '- id: PMAT-100\n  title: first\n  status: completed\n' >"$1/$ENTRIES_DIR/PMAT-100.yaml"
         python3 "$PY_LIB" aggregate --write --roadmap "$1/$ROADMAP_FILE" >/dev/null 2>&1 || return 1
+        commit_all "$1"
+    }
+
+    # STALE WRITER in a merge ref: HEAD~1 = main after a later fragment landed, HEAD = merge of the writer PR.
+    b_stale_writer_base() {   # b_stale_writer_base <dir> <edit-fn> [<main-change-fn>]
+        local w wh
+        printf -- '- id: PMAT-200\n  title: two\n  status: planned\n' >"$1/$ENTRIES_DIR/PMAT-200.yaml"
+        commit_all "$1" && w=$(git -C "$1" rev-parse HEAD) || return 1
+        bash "$AGG" --write --roadmap "$1/$ROADMAP_FILE" --entries "$1/$ENTRIES_DIR" >/dev/null 2>&1 || return 1
+        "$2" "$1" || return 1
+        commit_all "$1" && wh=$(git -C "$1" rev-parse HEAD) || return 1
+        git -C "$1" checkout -q "$w" || return 1
+        "${3:-m_later_fragment}" "$1" || return 1
+        commit_all "$1" && git -C "$1" merge -q --no-edit "$wh" >/dev/null 2>&1
+    }
+    m_later_fragment() { printf -- '- id: PMAT-201\n  title: later\n  status: planned\n' >"$1/$ENTRIES_DIR/PMAT-201.yaml"; }
+    m_edit_held() { printf -- '- id: PMAT-200\n  title: two\n  status: completed\n' >"$1/$ENTRIES_DIR/PMAT-200.yaml"; }
+    e_none() { :; }
+    e_drop() { sed -i '/^- id: PMAT-300$/,+2d' "$1/$ROADMAP_FILE"; }
+    b_stale_writer_main_edited() { b_stale_writer_base "$1" e_none m_edit_held; }
+    b_stale_writer_drops() { b_stale_writer_base "$1" e_drop; }
+    b_fragment_broken() {
+        printf -- '- id: PMAT-200\n  title: \377\376\n' >"$1/$ENTRIES_DIR/PMAT-200.yaml"
+        commit_all "$1"
+    }
+    e_base_only() { sed -i 's/  title: third/  title: THIRD BY HAND/' "$1/$ROADMAP_FILE"; }
+    b_stale_writer() { b_stale_writer_base "$1" e_none; }
+    b_stale_writer_handedit() { b_stale_writer_base "$1" e_base_only; }
+    e_covered() { sed -i 's/  title: two/  title: TWO BY HAND/' "$1/$ROADMAP_FILE"; }
+    b_stale_writer_covered_edit() { b_stale_writer_base "$1" e_covered; }
+    b_writer_fresh() {
+        printf -- '- id: PMAT-200\n  title: two\n  status: planned\n' >"$1/$ENTRIES_DIR/PMAT-200.yaml"
+        commit_all "$1" || return 1
+        bash "$AGG" --write --roadmap "$1/$ROADMAP_FILE" --entries "$1/$ENTRIES_DIR" >/dev/null 2>&1 || return 1
         commit_all "$1"
     }
 
@@ -406,8 +525,24 @@ PY
         1 'ADDED    PMAT-200 in docs/roadmaps/roadmap.yaml with NO change' b_monolith_only
     row 'fragment + regenerated aggregate, in sync -> PASS' \
         0 'ok    ADDED    PMAT-200 — docs/roadmaps/entries/PMAT-200.yaml changes in the same diff' b_fragment_and_aggregate
-    row 'fragment added, aggregate NOT regenerated -> REFUSE, naming the drift' \
-        1 'FAIL  DRIFT' b_fragment_no_regen
+    row 'ONE WRITER (RQ-8): fragment only, roadmap.yaml untouched -> PASS, rule 2 MOVED to writer+tag' \
+        0 'MOVED rule 2' b_fragment_no_regen
+    row 'roadmap.yaml written but NOT aggregate(head) -> REFUSE, naming the drift (rule 2 still runs here)' \
+        1 'FAIL  DRIFT' b_written_but_stale
+    row 'STALE WRITER: writer PR in a merge ref after a later fragment landed -> PASS (RQ-8)' \
+        0 'ok    STALE WRITER' b_stale_writer
+    row 'stale writer that ALSO hand-edits a base-only entry -> REFUSE, named by rule 1' \
+        1 'FAIL  CHANGED  PMAT-300' b_stale_writer_handedit
+    row 'stale writer that hand-edits a FRAGMENT-COVERED entry -> REFUSE, DRIFT named' \
+        1 'FAIL  DRIFT' b_stale_writer_covered_edit
+    row 'C: fragment-only diff whose fragments do not aggregate -> REFUSE (rule 2 moved, validity did not)' \
+        1 'FAIL  FRAGMENTS' b_fragment_broken
+    row 'E: stale writer after main EDITED a fragment it holds (planned -> completed) -> PASS, no false DRIFT' \
+        0 'ok    STALE WRITER' b_stale_writer_main_edited
+    row 'K: stale writer that DROPS an entry -> REFUSE, named by rule 1 (ids(base) subset of ids(head))' \
+        1 'REMOVED  PMAT-300' b_stale_writer_drops
+    row 'writer PR (fragment landed earlier), fresh -> PASS via WRITER licence' \
+        0 'WRITER: docs/roadmaps/entries/PMAT-200.yaml exists' b_writer_fresh
     row 'a docs-only diff touching neither side -> PASS (no false positive)' \
         0 'nothing to judge' b_unrelated
     row 'the aggregate RE-SERIALISED with no content change -> REFUSE' \
@@ -425,9 +560,22 @@ PY
     row 'supersession through the fragment, regenerated -> PASS' \
         0 'ok    CHANGED  PMAT-100 — docs/roadmaps/entries/PMAT-100.yaml changes in the same diff' b_supersede
 
-    # An unresolvable ref is ENV (rc 2), never a pass.
+    # H: a generator that cannot load is ENV (rc 2): never read as a fragment refusal, never a pass.
     n=$((n + 1))
     local out rc
+    mkrepo "$td/r$n" >/dev/null 2>&1 && b_fragment_no_regen "$td/r$n" >/dev/null 2>&1
+    out=$(AGG="$td/no-such-aggregator.sh" judge "$td/r$n" HEAD~1 HEAD 2>&1)
+    rc=$?
+    if [ "$rc" = 2 ] && grep -qF 'ENV ' <<<"$out" && ! grep -qF 'FAIL  FRAGMENTS' <<<"$out"; then
+        printf 'ok    row %-2s rc=2  H: the generator cannot load -> ENV, never a refusal or a pass\n' "$n"
+    else
+        printf 'FAIL  row %-2s rc=%s (wanted 2)  H: the generator cannot load -> ENV\n' "$n" "$rc"
+        printf '%s\n' "$out" | sed 's/^/        /'
+        red=$((red + 1))
+    fi
+
+    # An unresolvable ref is ENV (rc 2), never a pass.
+    n=$((n + 1))
     mkrepo "$td/r$n" >/dev/null 2>&1
     out=$(judge "$td/r$n" deadbeefdeadbeefdeadbeefdeadbeefdeadbeef HEAD 2>&1)
     rc=$?
@@ -489,8 +637,21 @@ PY
 }
 
 # ---------------------------------------------------------------------------
+# --mutants: each mutant removes one T21 mechanism; the self-test must go RED under every one.
+mutants() {
+    local m killed=0 total=0
+    for m in movednovalid nomb; do
+        total=$((total + 1))
+        if FRAGREQ_MUTANT=$m bash "${BASH_SOURCE[0]}" --self-test >/dev/null 2>&1; then printf 'SURVIVED  %s\n' "$m"
+        else killed=$((killed + 1)); printf 'killed    %s\n' "$m"; fi
+    done
+    printf '%s --mutants: %s/%s killed\n' "$PROG" "$killed" "$total"
+    [ "$killed" = "$total" ]
+}
+
 case "${1:-}" in
     --self-test|--selftest) self_test; exit $? ;;
+    --mutants) mutants; exit $? ;;
     --help|-h) usage ;;
     --*) usage ;;
 esac

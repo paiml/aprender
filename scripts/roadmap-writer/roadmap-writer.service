@@ -1,0 +1,14 @@
+[Unit]
+Description=Roadmap one writer: regenerate docs/roadmaps/roadmap.yaml on main and open ONE PR (T21, RQ-8)
+After=network-online.target
+Wants=network-online.target
+
+[Service]
+Type=oneshot
+# A dedicated clone this unit alone writes; `make roadmap-writer-install` creates it. Never a working checkout.
+Environment=ROADMAP_WRITER_CLONE=%h/.local/share/roadmap-writer/aprender
+# The installed copy runs, not the clone's: the writer checks out origin/main in the clone mid-run.
+ExecStart=/usr/bin/env bash %h/.local/libexec/roadmap-writer/roadmap_writer_nightly.sh
+Nice=10
+IOSchedulingClass=idle
+TimeoutStartSec=20min

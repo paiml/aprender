@@ -1,0 +1,264 @@
+# ─────────────────────────────────────────────────────────────────────────────
+# apr-roadmap-one-writer-v1 — docs/roadmaps/roadmap.yaml has ONE writer (T21,
+# operator ruling RQ-8)
+#
+# WHAT IT GOVERNS
+#   Pull requests commit docs/roadmaps/entries/<ID>.yaml only. CI regenerates
+#   the aggregate before any reader runs, a nightly host-timer writer opens ONE
+#   pull request that changes roadmap.yaml and nothing else, and the publish
+#   preflight refuses a tag whose committed roadmap.yaml is not the aggregate.
+#   The per-PR comparison "committed == aggregate" (check_roadmap_fragment_required.sh
+#   rule 2) moves to the writer PR and the tag: the one move RQ-8 rules.
+#
+#   One writer cleans 0 of the pull requests open when it lands; it prevents
+#   the next re-dirty of the generated file.
+#
+# PROOF LADDER, STATED HONESTLY
+#   * L1 — every script exists and is wired (ci/sections.yml, guard-tree job).
+#   * L2 — falsification MEASURED by hermetic case tables and mutant runs:
+#          roadmap_aggregate.sh 24 rows / 10 mutants, roadmap_one_writer_ci.sh
+#          16 / 8, check_roadmap_one_writer.sh 13 / 7, roadmap_writer_nightly.sh
+#          9 / 8, roadmap_to_fragments.sh 11 / 7,
+#          check_roadmap_fragment_required.sh 23 / 2,
+#          check_publish_preflight.sh R9 7 rows; every mutant killed.
+#   * L3/L4 — NOT APPLICABLE: a generated YAML data file, not a kernel.
+#   * WHAT BLOCKS FROM THE START: R9; every EXISTING verdict moved onto the
+#     fresh copy (R3 and R4 on fresh refs, pmat work validate on the fresh
+#     roadmap.yaml, fragments the generator refuses); every environment gap
+#     behind them (exit 2, never a pass). The bash aggregator refuses exactly
+#     what the existing python generator refuses (parity, fork (i)), so moving
+#     a check onto it makes no new verdict.
+#   * WHAT IS SHADOW: only the verdict no existing check made — the writer-shape
+#     judge (check_roadmap_one_writer.sh). It prints `SHADOW FAIL` and exits 0. Nothing counts
+#     green nights automatically: the admission PR that sets
+#     ROADMAP_ONE_WRITER_MODE=enforce must cite three consecutive green
+#     nightly-writer runs, and must first make scripts/batch_fold.sh stop
+#     committing roadmap.yaml beside other files (it is a second writer today,
+#     which the shape judge names in shadow).
+# ─────────────────────────────────────────────────────────────────────────────
+name: apr-roadmap-one-writer
+version: "1.0.0"
+scope: >
+  docs/roadmaps/roadmap.yaml as a generated file: who writes it, when it is
+  compared with the aggregate of docs/roadmaps/entries/, and where. Out of
+  scope: the fragment schema (apr-roadmap-fragments-v1), id uniqueness
+  (apr-roadmap-ids-unique-v1), the additive rule (apr-roadmap-additive-diff-v1),
+  pmat's own writer (`pmat work add/complete` still rewrites roadmap.yaml; a
+  converter and an upstream ticket cover it), and the PRs open when this lands.
+status: active
+
+metadata:
+  kind: pattern     # a write-ownership rule over a generated file, not a math kernel
+  version: "1.0.0"
+  created: '2026-10-04'
+  last_modified: '2026-10-04'
+  author: PAIML Engineering
+  references:
+    - 'scripts/roadmap_aggregate.sh — bash aggregator: --print/--write/--check/--roundtrip · --selftest · --mutants'
+    - 'scripts/roadmap_one_writer_ci.sh — guard-tree step before every reader: regen, pmat work validate, fresh-ref diff guards'
+    - 'scripts/check_roadmap_one_writer.sh — PR-side: names a roadmap.yaml edit outside the writer shape (shadow)'
+    - 'scripts/roadmap_writer_nightly.sh + scripts/roadmap-writer/ — the nightly writer, a systemd user timer'
+    - 'scripts/check_roadmap_fragment_required.sh — R4: rule 1 writer licence, rule 2 moved (RQ-8)'
+    - 'scripts/check_publish_preflight.sh — R9: committed == aggregate at the tag'
+    - 'scripts/roadmap_to_fragments.sh — converts a pmat-style roadmap.yaml edit into fragments, roadmap.yaml back at base'
+  description: >
+    Eleven open pull requests carried hand-merged copies of roadmap.yaml (239
+    new ids, 4 edited ids), each already shipping its fragment, and the file
+    was a merge conflict in nine of them. With one writer, a PR's diff never
+    touches the aggregate, so a fragment cannot conflict with another PR's
+    fragment through the generated file.
+
+equations:
+  aggregate_is_base_plus_fragments:
+    formula: |
+      aggregate(base, F) = base with every entry e replaced by F[e.id] when present,
+                           then every fragment id absent from base inserted at the slot of its
+                           prefix by numeral (check_roadmap_sorted.sh order); a prefix base lacks,
+                           or a legacy id, is appended in filename order
+      --check  ⇔  committed bytes == aggregate(committed, F) bytes
+      refused (exit 1): exactly what the python generator refuses — a *.yaml it cannot read as
+                        UTF-8 text (invalid UTF-8, a directory, a dangling or unreadable link)
+    domain: 'docs/roadmaps/roadmap.yaml and docs/roadmaps/entries/*.yaml'
+    codomain: 'bytes, or a refusal'
+    invariants:
+    - 'BYTE-IDENTICAL TO THE PYTHON GENERATOR, with the same refusals (rows D1, P1-P7).'
+    preconditions: []
+    postconditions:
+    - 'exit 0 ok · 1 refused or stale · 2 environment (never a pass)'
+
+  readers_see_the_fresh_aggregate:
+    formula: |
+      guard-tree job: roadmap_one_writer_ci.sh runs BEFORE guard_tree.sh;
+        (a) --write in the CI clone (never committed)  (b) pmat work validate on it
+        (c) diff guards R3/R4 rule 1 on FRESH(base)..FRESH(head) commit objects
+    domain: 'the guard-tree job of ci/sections.yml'
+    codomain: 'bool'
+    invariants:
+    - 'A FRAGMENT-ONLY PR IS JUDGED ON THE ENTRIES IT CHANGES: raw refs see an untouched roadmap.yaml and pass vacuously (control row K1).'
+    preconditions: []
+    postconditions:
+    - 'R3, R4 and pmat work validate on the fresh copy BLOCK in every mode: before RQ-8 the same checks judged these entries on the committed copy'
+    - 'absent pmat, an unregenerated copy, or an aggregator that cannot answer is ENV, exit 2 in every mode, never a pass'
+    - 'fragments the aggregator refuses BLOCK in every mode: the existing generator refuses them too, so R4 rule 2 blocked them before RQ-8'
+    - 'the regen step sits in the guard-tree-steps job before guard_tree.sh, whose runner continues past a red step (row W1; moved to a fail-fast job, W2 refuses)'
+
+  one_writer_shape:
+    formula: |
+      writer shape ⇔ merge-base..HEAD changes docs/roadmaps/roadmap.yaml and nothing else
+      PR edits roadmap.yaml outside the writer shape  ⇒  named (SHADOW FAIL; exit 1 in enforce)
+      writer PR accepted ⇔ committed == aggregate(head)
+                          ∨ (stale in a merge ref: copy == aggregate(copy, held fragments), each held
+                               fragment at head or at merge-base(head^1, head^2) — main may edit one later
+                             ∧ aggregate(head copy) == aggregate(base copy)
+                             ∧ ids(base copy) ⊆ ids(head copy))
+    domain: 'a pull request diff'
+    codomain: 'bool'
+    invariants:
+    - 'A HAND EDIT IN A WRITER-SHAPED PR STAYS NAMED, covered by a fragment or not, and so does a deleted entry (rows W7, W8, W9; R4 FAIL CHANGED / FAIL DRIFT).'
+    preconditions: []
+    postconditions:
+    - 'the tag check still requires committed == fresh'
+
+  the_tag_is_fresh:
+    formula: |
+      check_publish_preflight R9: the COMMITTED tree at HEAD (git archive, never the worktree),
+        judged by the roadmap_aggregate.sh next to the preflight, never the tag's own copy
+      stale ⇒ refuse · aggregator absent ⇒ refuse · aggregator rc 2 ⇒ refuse · no fragment ⇒ refuse
+    domain: 'the tagged tree at T-4'
+    codomain: 'bool'
+    invariants:
+    - 'ONLY R9 MAY REFUSE in its rows: the release ref is advanced so R4 cannot mask it.'
+    - 'A TAG CANNOT JUDGE ITSELF: an aggregator that exits 0 committed at the tag beside a stale roadmap.yaml still refuses.'
+    preconditions: []
+    postconditions:
+    - 'unwiring rule_r9 breaks every R9 refusal row'
+    - 'remedy on a release branch: a roadmap.yaml-only regen commit there, then re-tag (the writer targets main)'
+
+  the_writer_never_writes_main:
+    formula: |
+      nightly writer: origin/main fresh ⇒ no GitHub write
+                      an open roadmap-writer/* PR from this repository by the writer identity
+                        ⇒ merge origin/main (-X theirs; only roadmap.yaml can conflict), regenerate,
+                          fast-forward its branch, no new PR
+                      a fork's or another author's roadmap-writer/* PR ⇒ ignored
+                      else ⇒ one branch, one commit touching roadmap.yaml only, one PR
+                      GitHub core remaining < 1000 or a dirty clone ⇒ exit 2, nothing written
+                      two or more open writer PRs of its own ⇒ exit 1, nothing written
+    domain: 'one run of scripts/roadmap_writer_nightly.sh'
+    codomain: '{0, 1, 2}'
+    invariants:
+    - 'NEVER PUSHES main, never forces, never merges, never arms auto-merge (row N6).'
+    preconditions:
+    - 'a dedicated clone; the identity it pushes as is an operator ruling'
+    postconditions:
+    - 'at most one open writer PR authored by the writer identity'
+
+proof_obligations:
+  - id: RMOW-OB-001
+    statement: "The bash aggregator equals the python generator byte for byte and refuses exactly what it refuses."
+    discharged_by: falsification_tests[0]
+  - id: RMOW-OB-002
+    statement: "Every worktree reader that guard_tree.sh runs after this step reads the fresh aggregate; R3, R4 and pmat validate judge it and block."
+    discharged_by: falsification_tests[1]
+  - id: RMOW-OB-003
+    statement: "A PR edit of roadmap.yaml outside the writer shape is named; the writer PR is accepted, stale or not, and a hand edit in it is named."
+    discharged_by: falsification_tests[2]
+  - id: RMOW-OB-004
+    statement: "A tag whose committed roadmap.yaml is not the aggregate is refused by publish preflight R9."
+    discharged_by: falsification_tests[3]
+  - id: RMOW-OB-005
+    statement: "The nightly writer keeps at most one PR of its own open, changes roadmap.yaml only and never writes main."
+    discharged_by: falsification_tests[4]
+
+falsification_tests:
+
+  - id: RMOW-F-001
+    rule: the aggregate is base plus fragments, byte-identical to the python generator, same refusals
+    prediction: >-
+      Row D1 diffs bash and python output on the real tree (identical); invalid
+      UTF-8 and a dangling link named *.yaml exit 1, as python does (P6, P7);
+      the id is the filename (P1), PMAT-5 beside PMAT-05 is two entries (P2), a
+      missing final newline is pasted verbatim (P3) and CRLF reads as LF (P4),
+      each as python does.
+    test: 'bash scripts/roadmap_aggregate.sh --selftest && bash scripts/roadmap_aggregate.sh --mutants'
+    if_fails: >-
+      the generated file depends on which generator ran, or two PRs mint one
+      ticket through spelling twins
+    mutation: >-
+      --mutants: strnum numge append idline addnl nocr nofollow nosup noutf8 nofix, all killed.
+
+  - id: RMOW-F-002
+    rule: readers see the fresh aggregate; diff guards judge fresh refs
+    prediction: >-
+      A fragment-only retitle BLOCKS through fresh refs in shadow mode (F1)
+      and passes on raw refs (control K1); a fresh copy pmat rejects blocks
+      (V1); PMAT-4 beside a-04 passes, as in the existing generator (P1); no
+      pmat and an unregenerated copy exit 2 in shadow mode (E1, R2); fragments
+      the generator refuses block in both modes (B1, B1e); the regen step is
+      wired before guard_tree.sh in guard-tree-steps (W1) and a move refuses (W2).
+    test: 'bash scripts/roadmap_one_writer_ci.sh --selftest && bash scripts/roadmap_one_writer_ci.sh --mutants'
+    if_fails: >-
+      a fragment-only PR changes an entry non-additively and every diff guard
+      passes because roadmap.yaml is untouched
+    mutation: >-
+      --mutants: stalefresh novalidate norefs regenpass noblock nofreshgate softenv wiring, all killed;
+      it also runs check_roadmap_fragment_required.sh --mutants (movednovalid nomb).
+
+  - id: RMOW-F-003
+    rule: one writer shape
+    prediction: >-
+      A PR editing roadmap.yaml with other files is named (W1); the writer
+      PR passes fresh (W2) and stale in a merge ref (W6); a base-only hand
+      edit (W7), a fragment-covered hand edit (W8) and a deleted
+      fragment-covered entry (W9) are named; a stale writer after main edited
+      a fragment it holds passes (W10). R4 rows: STALE WRITER passes, also
+      after main edited a held fragment; 'FAIL  CHANGED  PMAT-300', 'FAIL  DRIFT',
+      'REMOVED  PMAT-300'; fragments the aggregator refuses are 'FAIL  FRAGMENTS';
+      an aggregator that cannot run is ENV (rc 2).
+    test: 'bash scripts/check_roadmap_one_writer.sh --selftest && bash scripts/check_roadmap_one_writer.sh --mutants && bash scripts/check_roadmap_fragment_required.sh --self-test && bash scripts/check_roadmap_fragment_required.sh --mutants'
+    if_fails: >-
+      the writer PR is refused forever, or it carries a hand edit through
+    mutation: >-
+      --mutants: anyshape noequal nostale anystale nofaithful nodelete nomb, all killed;
+      R4 --mutants: movednovalid nomb, all killed.
+
+  - id: RMOW-F-004
+    rule: the tag is fresh
+    prediction: >-
+      A fragment landed without regenerating, then tagged, refuses at R9;
+      an absent aggregator, an absent roadmap and an entries/ with no
+      fragment refuse; a stale commit with a regenerated worktree still
+      refuses (the committed tree is judged); a tag shipping a no-op aggregator
+      beside a stale roadmap.yaml refuses; the fresh fixture prints 'ok    R9'.
+    test: 'bash scripts/check_publish_preflight.sh --selftest'
+    if_fails: >-
+      a release ships a roadmap.yaml that is not the aggregate of its fragments
+    mutation: >-
+      replace the rule_r9 call with ':'; every R9 refusal row turns BROKE.
+
+  - id: RMOW-F-005
+    rule: the writer never writes main
+    prediction: >-
+      Fresh main writes nothing (N1); a landed fragment yields one branch
+      changing roadmap.yaml only and one `pr create` (N2); an open writer PR
+      is fast-forwarded with no new PR (N3); a roadmap.yaml conflict under it
+      is merged and regenerated, never forced (N7); fork and other-author
+      roadmap-writer/* PRs are ignored (N8); a dirty clone and rate_limit 999
+      exit 2 with nothing pushed (N4, N5); two own open writer PRs exit 1 with
+      nothing pushed (N9); main is untouched (N6).
+    test: 'bash scripts/roadmap_writer_nightly.sh --selftest && bash scripts/roadmap_writer_nightly.sh --mutants'
+    if_fails: >-
+      the writer floods PRs, spends the shared GitHub budget, or writes main
+    mutation: >-
+      --mutants: nodirty norate nocheck noreuse noowner notheirs noresolve nomulti, all killed.
+
+non_goals:
+  - "Cleaning the PRs open when this lands: one writer cleans 0 of them; it prevents the next re-dirty."
+  - "Blocking on the NEW verdict (writer shape) before the admission PR cites three green nightly-writer runs; existing verdicts moved onto the fresh copy block from the start."
+  - "Changing pmat's writer: `pmat work add/complete` still rewrites roadmap.yaml; scripts/roadmap_to_fragments.sh converts that diff."
+
+binding_registry:
+  guard: scripts/check_roadmap_one_writer.sh
+  ci_step: "ci/sections.yml guard-tree: 'Regenerate the roadmap aggregate before any reader (one writer, T21)' and 'One-writer roadmap case tables and mutants (T21)'"
+  tag_check: scripts/check_publish_preflight.sh R9
+  make_target: roadmap-writer-install
