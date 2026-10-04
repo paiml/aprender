@@ -142,14 +142,17 @@ pmat_dump() {
   rm -f -- "${out:?}.raw"
 }
 
-# pmat_rows_in <filter> <dump> <path>: the first 3 dump records in <path> (that
-# file, or any file under that directory), formatted by <filter>. The dump keeps
-# pmat's order, so this is the per-path query's top 3 for ranked kinds.
+# pmat_rows_in <filter> <dump> <path>: the first 3 rows <filter> makes from the
+# dump records in <path> (that file, or any file under that directory). The dump
+# keeps pmat's order, so this is the per-path query's top 3 for ranked kinds.
 pmat_rows_in() {
   local filter="$1" dump="$2" p="${3%/}" prog rows
   [ -s "$dump" ] || return 0
+  # Filter BEFORE the cap (head -3 below): the faults dump lists every function,
+  # most of them with no annotation, and capping first lost a path's annotated
+  # ones.
   prog=$(printf '%s\n%s\n%s' \
-    '[.[] | select(.file_path == $p or (.file_path | startswith($p + "/")))] | .[0:3] | .[]' \
+    '.[] | select(.file_path == $p or (.file_path | startswith($p + "/")))' \
     '| select(.function_name != null)' \
     "| $filter")
   rows=$(jq -r --arg p "$p" "$prog" "$dump" 2>/dev/null)

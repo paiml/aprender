@@ -98,7 +98,11 @@ case " $* " in
   {"function_name":"ModelSource","file_path":"scripts/lib_story_pmat.sh","impact_score":0,
    "commit_count":3,"churn_score":0.1,"fault_annotations":["PANIC"]},
   {"function_name":"in_dir","file_path":"dirx/sub/a.rs","impact_score":5,
-   "commit_count":1,"churn_score":0.1,"fault_annotations":["UNSAFE"]}
+   "commit_count":1,"churn_score":0.1,"fault_annotations":["UNSAFE"]},
+  {"function_name":"bare1","file_path":"dirf/a.rs","impact_score":4,"fault_annotations":[]},
+  {"function_name":"bare2","file_path":"dirf/a.rs","impact_score":3,"fault_annotations":null},
+  {"function_name":"bare3","file_path":"dirf/a.rs","impact_score":2,"fault_annotations":[]},
+  {"function_name":"late_fault","file_path":"dirf/a.rs","impact_score":1,"fault_annotations":["PANIC"]}
 ]
 JSON
      exit 0 ;;
@@ -218,6 +222,13 @@ want "a directory path scopes to files under it" \
   "        gap   in_dir (impact=5)" "$(pmat_rows_in "$PMAT_FILTER_GAP" "$TMP/dump/pmat-gaps.json" dirx)"
 want "a trailing slash on a directory path is the same path" \
   "        gap   in_dir (impact=5)" "$(pmat_rows_in "$PMAT_FILTER_GAP" "$TMP/dump/pmat-gaps.json" dirx/)"
+# The faults dump lists every function, most with no annotation (79,930 of
+# 89,430 on the real tree). Capping at 3 before the filter lost a path's
+# annotated functions whenever 3 bare ones ranked ahead of them.
+want "a path's fault rows survive unannotated records ranked ahead of them" \
+  "        fault late_fault (PANIC)" "$(pmat_rows_in "$PMAT_FILTER_FAULT" "$TMP/dump/pmat-faults.json" dirf)"
+want "a path with 4 dump records still lists 3" "3" \
+  "$(pmat_rows_in "$PMAT_FILTER_GAP" "$TMP/dump/pmat-gaps.json" dirf | grep -c .)"
 want "a bare name prefix is not a directory" "" \
   "$(pmat_rows_in "$PMAT_FILTER_GAP" "$TMP/dump/pmat-gaps.json" dir)"
 # A pmat that fails is asked once per kind per run, not once per beat: the
