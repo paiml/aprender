@@ -424,11 +424,11 @@ first PR commits its in-repo part, so the count can be re-run from here.
 
 BLD-002 (operator ruling C289, 2026-10-03) extends this plan: measure every night and release what is already green. Release day verifies evidence and uploads; it measures nothing new. The rows run in the order the ruling gives. Until 0.70.1 is live they stay on branches only (C277 item 3). Tickets are minted after that; until then, commits carry `BLD-002/Rn`. Each row gets a ticket, a contract, one planted falsifier that must go red, and before/after numbers from R0.
 
-| BLD-002 row | Work | Rows of this plan it carries | State, 2026-10-03 |
+| BLD-002 row | Work | Rows of this plan it carries | State, 2026-10-04 |
 |---|---|---|---|
-| R0 | Baseline: step, duration, wait and first-pass yes/no for 0.70 and 0.70.1, plus the rolled first-pass yield | the baseline report | not started; a step with no measured duration is listed UNMEASURED |
+| R0 | Baseline: step, duration, wait and first-pass yes/no for 0.70 and 0.70.1, plus the rolled first-pass yield | the baseline report | built on a branch: the step-table calculator (48 case rows, 16 planted mutants killed) and its contract; a step with no measured duration is listed UNMEASURED; the rolled first-pass yield over 0.70 and 0.70.1 is 0.000 (baseline data kept outside this repo) |
 | R1 | One code identity H, used by the ladder judge, the readiness wrapper, the preflight and dogfood | row 8 | design; the path set waits on ruling request RQ-5 |
-| R2 | An evidence store outside H, keyed by H | row 7 | design; its location waits on RQ-6 |
+| R2 | An evidence store outside H, keyed by H | row 7 | built on a branch: the store script (82 case rows, 46 planted mutants killed) and its contract; the publish check reads the store only after RQ-6 rules on where it lives |
 | R3 | The version bump moves to the start of a cycle | row 3 | not started |
 | R4 | A nightly evidence train: every lane in parallel, one line out (`RELEASABLE H=…` or `NOT RELEASABLE: <check>`) | row 1 (the publish lane) | not started |
 | R5 | Release = promote, rehearsed nightly up to the upload | row 5 | row 5's clock and fetcher are built on a branch |
