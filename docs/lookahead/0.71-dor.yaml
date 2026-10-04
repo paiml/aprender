@@ -5,6 +5,8 @@
 # never trusted; `staged_at: origin/…` claims are verified against that branch too). A falsifier is a list of
 # {ids, path, on_main} or {ids, staged_at, staged_path} claims, and the named file must define every id; a bare id
 # list is RED. Audit: 2026-10-03 against origin/main 316dee2cd4, by la-0.71 (L1); falsifier ids verified 19:30Z, row 4's at 21:58Z.
+# 2026-10-04 16:02Z: row 2 repinned to origin/la-71/kreg-b3 (a962cd7568). That branch also carries KTEST-04 under #4539, so
+# the old row 8 (KTEST-04) folds into row 2, and row 8 is now CRUX-SHACL (V7, PROPOSE-TICKET, raised 2026-10-04 as a 0.71 defect).
 schema: lookahead-dor-v1
 train: "0.71"
 epic: 3598
@@ -28,20 +30,27 @@ rows:
   - id: KREG-001
     ev_rank: 2
     exit_criterion: V5
-    title: kernel registry live — unregistered kernels refused, 0 unregistered dispatches
+    title: kernel registry live — unregistered kernels refused, 0 unregistered dispatches; APR_FORCE_ISA per-ISA receipts (KTEST-04, folded in)
     ticket: 4539
-    spec: {path: docs/specifications/KTEST-001-kernel-testing-gpu-cpu-hardware.md, section: "§5.1, §8", on_main: false,
-           staged_at: origin/la-71/kreg-b1}
-    # staged_at is the KREG-B1 PR head, la-71/kreg-b1 (534a5071bc, 2026-10-04): fold plan §2's segments 1-5 +
-    # ktest-001, built and tested on intel. 3715-kernel-cells is segment 7, which ships later, in KREG-B2
-    # (la-71/kreg-b2).
+    spec: {path: docs/specifications/KTEST-001-kernel-testing-gpu-cpu-hardware.md, section: "§5.1, §6.1.1, §8", on_main: false,
+           staged_at: origin/la-71/kreg-b3}
+    # staged_at is la-71/kreg-b3 (a962cd7568, aprender-cd, 2026-10-04), the head of the KREG-B1/B2/B3 stack: B1 534a5071bc
+    # (fold plan §2 segments 1-5 + ktest-001), B2 ab11c6c6ae (segment 7, 3715-kernel-cells), then B3's 20 picks, the
+    # KTEST-04 gate patch, one regeneration and the six receipts re-measured on intel. KTEST-04 (old row 8) folds in here:
+    # its five commits on B3 name #4539, and APR_FORCE_ISA now gates every serve dispatch site and caps trueno's backend
+    # selection. KTEST-001 §6.1.1 steps 1-7 (one registry row per ISA path) land after the per-ISA receipts. B3
+    # 3-way merged with la-71/fold-pr-a@65b5875a8f gives tree 81a6e018c8: 0.71-fold-kreg-b3.md's forecast end tree
+    # 32dafa0435 with only the six receipts changed (build identity, input hashes, isa_forced, ts; no measured value moved).
     contract: {id: kernel-registry-v1, path: contracts/kernel-registry-v1.yaml, on_main: false,
-               staged_at: origin/la-71/kreg-b1}
-    falsifier:   # 011 names a kernel dispatched unregistered: the "0 unregistered dispatches" half of V5
-      - {ids: [FALSIFY-KREG-001..005, FALSIFY-KREG-011], staged_at: origin/la-71/kreg-b1,
+               staged_at: origin/la-71/kreg-b3}
+    falsifier:   # 011 names a kernel dispatched unregistered: the "0 unregistered dispatches" half of V5.
+      # F-11 is KTEST-04's: an ISA path compiled in that no host can run is refused at registration (§7 table; not armed yet)
+      - {ids: [FALSIFY-KREG-001..005, FALSIFY-KREG-011], staged_at: origin/la-71/kreg-b3,
          staged_path: contracts/kernel-registry-v1.yaml}
-    baseline: {path: crates/aprender-serve/kernel-registry-receipts.json, on_main: false, staged_at: origin/la-71/kreg-b1,
-               note: "at kreg-b1@534a5071bc: 41 rows (cpu 21, cuda 18, wgpu 2), 16 receipts, unreceipted_max 25, hard_red_at 0.73.0; unregistered-dispatch count not yet measured: FALSIFY-KREG-011 takes its trace from OBS-09/OBS-15 (#4496)"}
+      - {ids: [F-11], staged_at: origin/la-71/kreg-b3,
+         staged_path: docs/specifications/KTEST-001-kernel-testing-gpu-cpu-hardware.md}
+    baseline: {path: crates/aprender-serve/kernel-registry-receipts.json, on_main: false, staged_at: origin/la-71/kreg-b3,
+               note: "at kreg-b3@a962cd7568: 41 kernel rows (cpu 21, cuda 18, wgpu 2), 21 receipts (all cpu, x86_64), unreceipted_max 20 (25 at B1); 39 op rows (cpu 13, cuda 26; from B2), 13 op receipts, op_unreceipted_max 26; hard_red_at 0.73.0. No per-ISA receipt yet: the six re-measured receipts record isa_forced native, the other 28 lack the field, and the lambda receipts at f0a74a9e67 are still local-only. Unregistered-dispatch count not yet measured: FALSIFY-KREG-011 takes its trace from OBS-09/OBS-15 (#4496)"}
     owner_proposed: L1 (la-0.71, ex-kreg)
   - id: SRV-LOAD-TTFT
     ev_rank: 3
@@ -154,20 +163,23 @@ rows:
          staged_path: docs/lookahead/contracts-draft/ext-crux-bind-v1.yaml}
     baseline: {path: evidence/crux/0.69.1, on_main: true, note: "0.69.1 run; no 0.71 run"}
     owner_proposed: EXT lane (E4 #4381), L1 tracks
-  - id: KTEST-04
+  - id: CRUX-SHACL
     ev_rank: 8
-    exit_criterion: V5
-    title: APR_FORCE_ISA forcing + per-ISA receipts (registry rows per ISA path)
-    ticket: null           # rows staged outside the repo; not minted (PROPOSE-TICKET)
-    spec: {path: docs/specifications/KTEST-001-kernel-testing-gpu-cpu-hardware.md, section: "§6.1.1", on_main: false,
-           staged_at: origin/la-71/ktest-001}
-    contract: {id: kernel-registry-v1, path: contracts/kernel-registry-v1.yaml, on_main: false,
-               staged_at: origin/la-71/ktest-04-force-isa}
-    falsifier:   # §7 row F-11: an ISA path compiled in that no host can run is refused at registration
-      - {ids: [F-11], staged_at: origin/la-71/ktest-001,
-         staged_path: docs/specifications/KTEST-001-kernel-testing-gpu-cpu-hardware.md}
-    baseline: {path: null, on_main: false, note: "lambda receipts @f0a74a9e67 local-only per kreg 09-30"}
-    owner_proposed: L1
+    exit_criterion: V7
+    title: CRUX SHACL vs Apache Jena — pv reads, returns and validates the same complex SHACL ontologies, with a full validation report
+    ticket: null           # PROPOSE-TICKET, not minted: 1 ticket + 5 sub-tickets. (1) jena in the CRUX competitor registry, with a
+      # letter that collides with no other; (2) a Jena runner outside the workspace, pinned by sha256 like tests/oracle/owl's
+      # ELK jar, on a JVM the host declares; (3) pv reads and writes Turtle and N-Triples, isomorphic to Jena riot on the same
+      # input (the gate path has no Turtle reader, R-13); (4) pv returns a W3C sh:ValidationReport with every result field,
+      # compared to Jena's; (5) tests/oracle stops scraping pv's lint messages for (focus, component), reads (4)'s report
+      # instead, and regenerates differential.json over every vendored case
+    spec: {path: null, section: null, on_main: false}
+    contract: {id: null, path: null, on_main: false}
+    falsifier: []          # to draft with the contract: each case GREEN or RED with its coverage stated, positive and negative
+                           # controls, one comparator per RED, never skipped; a host without a JVM is NOT MEASURED, never a pass
+    baseline: {path: null, on_main: false,
+               note: "no Jena measurement exists. Nearest record on main: tests/oracle/, a crate outside the workspace run by the release gate, not by a PR check, that compares pv to the pinned shacl and rudof_rdf 0.3.21 crates on (focus, component) pairs only, read from pv's lint messages. Its differential.json was last written at daad9f7c53 (2026-09-19) with 16 W3C cases, 0 disagreements; crates/aprender-contracts/src/ontology/w3c.rs now vendors 19 (989cb012e5)"}
+    owner_proposed: aprender-cd for the sub-tickets, after KREG-B3; L1 tracks
   - id: JSON-SCHEMA
     ev_rank: 9
     exit_criterion: V4
