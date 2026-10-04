@@ -36,8 +36,17 @@ permissions:
 
 jobs:
   examples:
-    # yoga only: low-priority work that must never take an intel or gx10 PR slot
-    runs-on: [self-hosted, Linux, X64, clean-room, yoga]
+    # yoga only: low-priority work that must never take an intel or gx10 PR slot.
+    # NOT the clean-room label: the three yoga clean-room runners also serve ci.yml's
+    # arch-neutral `gate` job and the rest of the clean-room PR FIFO, which has no
+    # priority. Measured 2026-09-28..10-04: 5 of 7 nights ended cancelled (10-03 never
+    # started: 24h in the queue), and 10-04 started 9h50m after it queued. The yoga `ada`
+    # runner is otherwise taken only by b2-gpu (dispatch) and one 30-min cuda-nightly job.
+    runs-on: [self-hosted, Linux, X64, yoga, ada]
+    # PP-19: the ada runner is a perf host, so this job serialises with every other consumer of it
+    concurrency:
+      group: perf-yoga
+      cancel-in-progress: false
     timeout-minutes: 300
     steps:
       - uses: actions/checkout@v7
@@ -48,6 +57,9 @@ jobs:
       - name: Every example builds and runs (pass / fail / timeout / needs-args / needs-hardware)
         env:
           FILTER: ${{ github.event.inputs.filter }}
+          # the ada runner is persistent, not ephemeral: build in the per-job temp dir the
+          # runner empties (`runner` is a step-level context only)
+          CARGO_TARGET_DIR: ${{ runner.temp }}/examples-target
         run: |
           set -euo pipefail
           args=(--timeout-secs 180)
