@@ -41,6 +41,11 @@
           "level": "note",
           "message": {
             "text": "Quorum (sonnet lane, info, no action): W9 proves the pattern takes both host receipt names and not determinism-receipt; it cannot see a future artifact whose name happens to match determinism-[AX]*64. The contract states the pattern names exactly the two host receipts."
+          },
+          "properties": {
+            "grounding": "asserted",
+            "precision_class": "advisory",
+            "failure_scenario": "A future artifact named determinism-<two capitals>64 that is not a host raster would be downloaded by the compare job; W9 checks only today's names."
           }
         },
         {
@@ -48,6 +53,11 @@
           "level": "note",
           "message": {
             "text": "Quorum (sonnet lane, low): the T43 wiring row matches its needs line as a fixed string, so a comment carrying the same text could satisfy it. The row is strictly stronger than before (it was GREEN on the duplicate-key workflow and is RED now); a line-anchored match is left for a follow-up."
+          },
+          "properties": {
+            "grounding": "asserted",
+            "precision_class": "advisory",
+            "failure_scenario": "A comment in the determinism block containing needs: [mg-reuse, x86-main] could satisfy the T43 wiring row while the real needs line differs."
           }
         },
         {
@@ -55,6 +65,11 @@
           "level": "note",
           "message": {
             "text": "Quorum (sonnet lane, low): the fix commit message does not mention the regenerated contracts.nt; the regeneration is mechanical (contracts gate 8/8 at head)."
+          },
+          "properties": {
+            "grounding": "asserted",
+            "precision_class": "advisory",
+            "failure_scenario": "A reader of the fix commit message would not learn that contracts.nt was regenerated in the same commit."
           }
         },
         {
@@ -62,6 +77,61 @@
           "level": "note",
           "message": {
             "text": "Merging main auto-merged the determinism job into duplicate needs/if keys (no textual conflict). Fixed at head: needs both mg-reuse and x86-main, if keeps the merge-group reuse condition; both guards fail on the duplicate-key workflow."
+          },
+          "properties": {
+            "grounding": "measured",
+            "precision_class": "advisory",
+            "command": [
+              "bash",
+              "scripts/check_determinism_wait.sh",
+              "--selftest"
+            ],
+            "exit_code": 0,
+            "failure_scenario": "Without the fix, the merged workflow carries duplicate needs/if keys in the determinism job; a YAML loader keeps the last of each, so the job runs without waiting on x86-main or without the merge-group reuse condition."
+          }
+        },
+        {
+          "ruleId": "zero_tolerance_artifact_listing",
+          "level": "note",
+          "message": {
+            "text": "With FAT_ARTIFACT_WAIT_S 0 the driver reads the run artifact list exactly once. If the REST artifact list were ever briefly stale after x86-main uploaded determinism-X64, a present raster would read as missing and the job would go RED once, where the old poll would have absorbed the lag. The job starts after x86-main concluded, so the upload has finished, which makes this unlikely."
+          },
+          "properties": {
+            "grounding": "asserted",
+            "rationale": "read of scripts/ci/fat_driver.py uses_download (single read then deadline check) and the ci.yml determinism job at head; not run, it needs a live Actions run.",
+            "failure_scenario": "A transient stale artifact list gives a false-RED determinism check that a re-run clears; it can never give a false green.",
+            "precision_class": "advisory"
+          }
+        },
+        {
+          "ruleId": "verdict_arrives_later",
+          "level": "note",
+          "message": {
+            "text": "The determinism verdict now arrives after x86-main concludes rather than when its raster uploads, so the gate waits for the whole x86-main plus a short ARM64 job. The contract records this as a stated non-goal."
+          },
+          "properties": {
+            "grounding": "asserted",
+            "rationale": "read of the needs edge in ci.yml and of the non_goals list in contracts/ci-determinism-wait-v1.yaml; wall time not measured.",
+            "failure_scenario": "Gate wall time grows by the ARM64 job time (about a minute plus pickup) on green runs; no correctness effect.",
+            "precision_class": "advisory"
+          }
+        },
+        {
+          "ruleId": "quorum_merge_round",
+          "level": "note",
+          "message": {
+            "text": "The Claude Code quorum on the merge and its fix (claude-sonnet-5-5 and claude-haiku-4-5-20251001) returned SHIP-TO-BRANCH from both lanes with low-severity notes only, recorded above; the primary re-ran the guard selftest (26 PASS) and its mutation set (11/11) at this head."
+          },
+          "properties": {
+            "grounding": "measured",
+            "precision_class": "advisory",
+            "command": [
+              "bash",
+              "scripts/check_determinism_wait.sh",
+              "--mutants"
+            ],
+            "exit_code": 0,
+            "failure_scenario": "Had a lane returned BLOCK, the push would have been held; both returned SHIP-TO-BRANCH."
           }
         }
       ]
@@ -69,7 +139,9 @@
     {
       "tool": {
         "driver": {
-          "name": "mutation"
+          "name": "cargo-mutants",
+          "version": "unversioned",
+          "rules": []
         }
       },
       "invocations": [
@@ -83,19 +155,18 @@
           "ruleId": "guard_mutation_set_killed",
           "level": "note",
           "message": {
-            "text": "The committed mutation set of scripts/check_determinism_wait.sh was run on the local host: 10 of 10 mutants killed, 0 survivors, each mutant turning the 23-row case table RED."
+            "text": "Run via the guard's own committed mutation set (scripts/check_determinism_wait.sh --mutants), not cargo-mutants: 11 of 11 mutants killed, 0 survivors, each mutant turning the 26-row case table RED."
           },
           "properties": {
             "grounding": "measured",
+            "precision_class": "advisory",
             "command": [
               "bash",
               "scripts/check_determinism_wait.sh",
               "--mutants"
             ],
             "exit_code": 0,
-            "stdout_sha256": "7c384a1601ececbe77d7372e628ee081bda02c2d6cca733cfa383ae445ea6888",
-            "failure_scenario": "A surviving mutant would be a W-rule the guard states and nothing tests; none survived.",
-            "precision_class": "advisory"
+            "failure_scenario": "A surviving mutant would mean the case table cannot see that edit to the guard; none survived."
           }
         }
       ]
@@ -130,62 +201,6 @@
         }
       ],
       "results": []
-    },
-    {
-      "tool": {
-        "driver": {
-          "name": "primary-review"
-        }
-      },
-      "invocations": [
-        {
-          "executionSuccessful": true,
-          "toolExecutionNotifications": []
-        }
-      ],
-      "results": [
-        {
-          "ruleId": "quorum_round4_no_findings",
-          "level": "note",
-          "message": {
-            "text": "Round 4 of the Claude Code quorum on this head (claude-sonnet-5-5 and claude-haiku-4-5-20251001) returned no findings; the primary re-ran the guard selftest (23 PASS) and mutants (10/10) itself."
-          },
-          "properties": {
-            "grounding": "cited",
-            "source": "quorum round 4, claude-sonnet-5-5 lane output on the local host",
-            "excerpt": "Remaining checks: the default run is `ok` (rc 0) and `--selftest` is 23 PASS, 0 FAIL. (4) Nothing else wrong in the delta.",
-            "excerpt_sha256": "1434938012e8e1f5cfe10558d39b66b3fcdc0ef2190ed16a993bb6b832dfded3",
-            "failure_scenario": "If the lanes shared a blind spot (same family), a defect could pass all of them; the verdict is DEGRADED for that reason.",
-            "precision_class": "advisory"
-          }
-        },
-        {
-          "ruleId": "zero_tolerance_artifact_listing",
-          "level": "note",
-          "message": {
-            "text": "With FAT_ARTIFACT_WAIT_S 0 the driver reads the run artifact list exactly once. If the REST artifact list were ever briefly stale after x86-main uploaded determinism-X64, a present raster would read as missing and the job would go RED once, where the old poll would have absorbed the lag. The job starts after x86-main concluded, so the upload has finished, which makes this unlikely."
-          },
-          "properties": {
-            "grounding": "asserted",
-            "rationale": "read of scripts/ci/fat_driver.py uses_download (single read then deadline check) and the ci.yml determinism job at head; not run, it needs a live Actions run.",
-            "failure_scenario": "A transient stale artifact list gives a false-RED determinism check that a re-run clears; it can never give a false green.",
-            "precision_class": "advisory"
-          }
-        },
-        {
-          "ruleId": "verdict_arrives_later",
-          "level": "note",
-          "message": {
-            "text": "The determinism verdict now arrives after x86-main concludes rather than when its raster uploads, so the gate waits for the whole x86-main plus a short ARM64 job. The contract records this as a stated non-goal."
-          },
-          "properties": {
-            "grounding": "asserted",
-            "rationale": "read of the needs edge in ci.yml and of the non_goals list in contracts/ci-determinism-wait-v1.yaml; wall time not measured.",
-            "failure_scenario": "Gate wall time grows by the ARM64 job time (about a minute plus pickup) on green runs; no correctness effect.",
-            "precision_class": "advisory"
-          }
-        }
-      ]
     }
   ]
 }
