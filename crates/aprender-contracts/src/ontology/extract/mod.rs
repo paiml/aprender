@@ -75,6 +75,10 @@ pub struct Extraction {
     pub release: Option<release_evidence::ReleaseStats>,
     /// ONT-4d: how many `rdf:type` triples the Σ closure added.
     pub type_closure_added: usize,
+    /// #4538: crate-local contracts refused by name (PV-DUP-001) — a stem whose copies differ is never unioned.
+    pub refused: Vec<pv_contract::RefusedStem>,
+    /// #4538: crate-local YAML files that do not parse as a typed contract, so neither Σ nor the census counts them.
+    pub unparsed: Vec<String>,
 }
 
 /// Σ from `<contract_dir>/ontology.yaml`, when it parses and is well-formed. A malformed Σ is the `sigma`
@@ -158,8 +162,11 @@ pub fn all_with(
     contract_dir: &Path,
     release: Option<&release_inputs::Subject>,
 ) -> Result<Extraction, ExtractFailure> {
+    let corpus = pv_contract::corpus(contract_dir);
     let mut out = Extraction {
         graph: pv_contract::extract(contract_dir),
+        refused: corpus.refused,
+        unparsed: corpus.unparsed,
         ..Extraction::default()
     };
     let root = contract_dir.parent().unwrap_or(contract_dir);
