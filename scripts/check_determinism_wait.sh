@@ -146,11 +146,11 @@ selftest() {
     grep -q -x 'held_s_per_missing_x64=0 rest_calls_per_wait=1 starts_after_x86_main=yes' "$d/out"; rc=$?
     row N0 GREEN "$rc" "real ci.yml: 0 ARM64 seconds held, 1 REST call per wait, starts after x86-main"
 
-    plant "$d/w1.yml" 's/^    needs: \[x86-main\]$/    needs: []/'
+    plant "$d/w1.yml" 's/^    needs: \[mg-reuse, x86-main\]$/    needs: [mg-reuse]/'
     check "$d/w1.yml" > /dev/null 2>&1; row W1 RED $? "determinism that does not need x86-main"
-    plant "$d/w2.yml" '/^    if: \$\{\{ !cancelled\(\) \}\}$/d'
+    plant "$d/w2.yml" '/^    if: \$\{\{ !cancelled\(\) && needs\.mg-reuse\.outputs\.det != .1. \}\}$/d'
     check "$d/w2.yml" > /dev/null 2>&1; row W2 RED $? "no if: (default success()) skips the job when x86-main fails"
-    plant "$d/w2b.yml" 's/^    if: \$\{\{ !cancelled\(\) \}\}$/    if: ${{ success() }}/'
+    plant "$d/w2b.yml" 's/^    if: \$\{\{ !cancelled\(\) (&& needs\.mg-reuse\.outputs\.det != .1. )\}\}$/    if: ${{ success() \1}}/'
     check "$d/w2b.yml" > /dev/null 2>&1; row W2b RED $? "if: success() skips the job when x86-main fails"
     plant "$d/w3.yml" '/^      FAT_ARTIFACT_WAIT_S: "0"$/d'
     check "$d/w3.yml" > /dev/null 2>&1; row W3 RED $? "no FAT_ARTIFACT_WAIT_S: the driver waits its 3600 s default"
@@ -186,8 +186,8 @@ selftest() {
     plant_file "$SECTIONS" "$d/s3.yml" '/^  determinism-compare:$/,/^  [a-z]/{s/^( +pattern: ).*$/\1determinism-A*64/}'
     check "$CI" "$DRIVER" "$d/s3.yml" > /dev/null 2>&1; row S3 RED $? "a compare download that misses determinism-X64"
 
-    # The pre-T42 shape (no needs, no if, no wait override): the before numbers.
-    plant "$d/old.yml" '/^    needs: \[x86-main\]$/d; /^    if: \$\{\{ !cancelled\(\) \}\}$/d; /^      FAT_ARTIFACT_WAIT_S: "0"$/d'
+    # The pre-T42 shape (needs only mg-reuse, no wait override): the before numbers.
+    plant "$d/old.yml" 's/^    needs: \[mg-reuse, x86-main\]$/    needs: [mg-reuse]/; /^      FAT_ARTIFACT_WAIT_S: "0"$/d'
     check "$d/old.yml" > "$d/old.out" 2>&1; row B0 RED $? "the pre-T42 determinism job"
     grep -q -x 'held_s_per_missing_x64=3600 rest_calls_per_wait=181 starts_after_x86_main=no' "$d/old.out"; rc=$?
     row B1 GREEN "$rc" "pre-T42 numbers: 3600 ARM64 seconds held, 181 REST calls per missing X64 raster"
