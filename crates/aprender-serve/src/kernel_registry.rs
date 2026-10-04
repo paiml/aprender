@@ -209,11 +209,63 @@ pub struct KernelRow {
     pub selector: String,
     /// The contract that governs it.
     pub contract: String,
+    /// The `kernel@quant` labels (`kernel` alone when the quant is empty) under which `apr` kernel-diff
+    /// receipts name this row (`release_evidence.rs::kernel_label`); absent when no receipt names it. A
+    /// label names one row per backend, so the registry is the only label→`kernel_id` map (#3715 v2 §4).
+    pub labels: Option<Vec<String>>,
+}
+
+/// One per-forward op row (`ops[]`, shape `kernel-registry-v1.op`, #3715 v2 §4): a norm, RoPE,
+/// attention or activation kernel. It runs on f32 activations whatever the tensor types, so it has
+/// no qtype, type id, layout or block size, and [`Registry::admit`] never selects one. Unknown
+/// fields are refused, as the closed shape refuses them: a `ggml_type` here is an error.
+#[derive(Debug, Clone, Deserialize)]
+#[serde(deny_unknown_fields)]
+pub struct OpRow {
+    /// Stable id, `<backend>.<op>.<precision>[.<arch>[.<isa>]]`; unique across kernels and ops.
+    pub kernel_id: String,
+    /// `rmsnorm`, `rope`, `attention`, `swiglu`, … (the shape's closed set).
+    pub op: String,
+    /// `cpu`, `cuda`, `wgpu` or `metal`.
+    pub backend: String,
+    /// Host architecture; `any` until the row is arch-specific.
+    pub arch: String,
+    /// The model architectures (`general.architecture`) it serves; absent means every one.
+    pub archs: Option<Vec<String>>,
+    /// `+`-joined ISA features the row requires; `none` for baseline.
+    pub isa_features: String,
+    /// `+`-joined device features beyond the backend; `none` for any device.
+    pub requires: String,
+    /// Accumulator precision.
+    pub accumulate: String,
+    /// Activation precision inside the kernel.
+    pub precision: String,
+    /// The error model its parity bound is derived from (KTEST-001 §3.1).
+    pub error_model: String,
+    /// `bitwise` or `bounded`.
+    pub determinism: String,
+    /// The M the kernel serves: `m1` or `m_any`.
+    pub shape_class: String,
+    /// `unmeasured` or the path of a tolerance receipt.
+    pub tolerance: String,
+    /// Repo-relative file holding the kernel.
+    pub source_file: String,
+    /// The kernel's function name in `source_file`.
+    pub source_fn: String,
+    /// The selector that dispatches to it.
+    pub selector: String,
+    /// The contract that governs it.
+    pub contract: String,
+    /// The `kernel@quant` labels (`kernel` alone when the quant is empty) under which `apr` kernel-diff
+    /// receipts name this row (`release_evidence.rs::kernel_label`); absent when no receipt names it. A
+    /// label names one row per backend, so the registry is the only label→`kernel_id` map (#3715 v2 §4).
+    pub labels: Option<Vec<String>>,
 }
 
 #[derive(Deserialize)]
 struct Document {
     kernels: Vec<KernelRow>,
+    ops: Vec<OpRow>,
 }
 
 /// The error models of KTEST-001 §3.1. The contract's shape holds the same closed set.
@@ -228,14 +280,47 @@ pub const ERROR_MODELS: [&str; 8] = [
     "EM-NONDET",
 ];
 
+/// The per-forward ops an `ops[]` row may name. The `kernel-registry-v1.op` shape holds the same
+/// closed set, and `the_op_set_is_the_contracts` keeps the two equal.
+pub const OPS: [&str; 20] = [
+    "embed",
+    "rmsnorm",
+    "layernorm",
+    "rope",
+    "attention",
+    "kv_write",
+    "swiglu",
+    "gelu",
+    "residual_add",
+    "argmax",
+    "conv1d",
+    "l2norm",
+    "gdn_gates",
+    "delta_rule",
+    "sigmoid_gate",
+    "split",
+    "elementwise_mul",
+    "sample",
+    "route_topk",
+    "repeat_penalty",
+];
+
 /// A cross-field rule SHACL Core cannot state: an atomics-based kernel (`EM-NONDET`) is never
 /// `bitwise`, and a row outside the closed sets is refused here too, not only by the shape.
 fn check_determinism(row: &KernelRow) -> std::result::Result<(), String> {
-    let refuse = |why: &str| Err(format!("kernel registry: row `{}` {why}", row.kernel_id));
-    if !ERROR_MODELS.contains(&row.error_model.as_str()) {
-        return refuse(&format!("has error_model `{}`", row.error_model));
+    check_error_model(&row.kernel_id, &row.error_model, &row.determinism)
+}
+
+fn check_error_model(
+    kernel_id: &str,
+    error_model: &str,
+    determinism: &str,
+) -> std::result::Result<(), String> {
+    let refuse = |why: &str| Err(format!("kernel registry: row `{kernel_id}` {why}"));
+    if !ERROR_MODELS.contains(&error_model) {
+        return refuse(&format!("has error_model `{error_model}`"));
     }
-    match (row.error_model.as_str(), row.determinism.as_str()) {
+    match (error_model, determinism) {
         ("EM-NONDET", "bitwise") => refuse("claims bitwise determinism under EM-NONDET"),
         (_, "bitwise" | "bounded") => Ok(()),
         (_, other) => refuse(&format!("has determinism `{other}`")),
@@ -356,8 +441,8 @@ impl InputSet {
     }
 }
 
-/// A row's identity for [`InputSet`]: every field but `tolerance`, `name=value` lines in the
-/// struct's declared order. Changing the order is a new input-set version.
+/// A row's identity for [`InputSet`]: every field but `tolerance` and `labels` (a receipt's name for
+/// the row, not what the row runs), `name=value` lines in the struct's declared order. Changing the order is a new input-set version.
 pub fn row_key(row: &KernelRow) -> String {
     let f: [(&str, String); 19] = [
         ("kernel_id", row.kernel_id.clone()),
@@ -403,7 +488,86 @@ fn pinned_toolchain(root: &std::path::Path) -> std::result::Result<String, Strin
 /// The parsed registry and its `(backend, type id) -> rows` table.
 pub struct Registry {
     rows: Vec<KernelRow>,
+    ops: Vec<OpRow>,
     table: Vec<Vec<u16>>,
+}
+
+/// An op row this registry could not answer for: an unknown op or backend, a bad error model, or an
+/// `archs` list that is empty or repeats a name (the shape cannot see either).
+fn check_op(op: &OpRow) -> std::result::Result<(), String> {
+    let refuse = |why: &str| Err(format!("kernel registry: op `{}` {why}", op.kernel_id));
+    if !OPS.contains(&op.op.as_str()) {
+        return refuse(&format!("has unknown op `{}`", op.op));
+    }
+    if Backend::parse(&op.backend).is_none() {
+        return refuse(&format!("has unknown backend `{}`", op.backend));
+    }
+    check_error_model(&op.kernel_id, &op.error_model, &op.determinism)?;
+    if let Some(archs) = &op.archs {
+        let mut seen = std::collections::BTreeSet::new();
+        if archs.is_empty() {
+            return refuse("has an empty `archs` list");
+        }
+        if let Some(a) = archs
+            .iter()
+            .find(|a| a.is_empty() || !seen.insert(a.as_str()))
+        {
+            return refuse(&format!("has an empty or repeated arch `{a}` in `archs`"));
+        }
+    }
+    Ok(())
+}
+
+/// The first `kernel_id` two rows share, across `kernels[]` and `ops[]` (OBS-15 records one id per
+/// dispatch, so an id must name one row).
+fn repeated_id<'a>(kernels: &'a [KernelRow], ops: &'a [OpRow]) -> Option<&'a str> {
+    let mut seen = std::collections::BTreeSet::new();
+    kernels
+        .iter()
+        .map(|r| r.kernel_id.as_str())
+        .chain(ops.iter().map(|o| o.kernel_id.as_str()))
+        .find(|id| !seen.insert(*id))
+}
+
+/// Whether `l` is a receipt label, `kernel` or `kernel@quant`, each part `[a-z0-9_]+`.
+fn is_label(l: &str) -> bool {
+    let part = |p: &str| {
+        !p.is_empty()
+            && p.bytes()
+                .all(|b| b.is_ascii_lowercase() || b.is_ascii_digit() || b == b'_')
+    };
+    match l.split_once('@') {
+        Some((k, q)) => part(k) && part(q),
+        None => part(l),
+    }
+}
+
+/// The first bad `labels` entry across both row lists: an empty list, a malformed label, or a
+/// `(backend, label)` two rows (or one row twice) share. A receipt label carries no backend, so one
+/// label may name one row per backend and no more.
+fn bad_label(kernels: &[KernelRow], ops: &[OpRow]) -> Option<String> {
+    let mut seen = std::collections::BTreeMap::new();
+    let rows = kernels
+        .iter()
+        .map(|r| (&r.kernel_id, &r.backend, &r.labels))
+        .chain(ops.iter().map(|o| (&o.kernel_id, &o.backend, &o.labels)));
+    for (id, backend, labels) in rows {
+        let Some(labels) = labels else { continue };
+        if labels.is_empty() {
+            return Some(format!("`{id}` has an empty `labels` list"));
+        }
+        for l in labels {
+            if !is_label(l) {
+                return Some(format!("`{id}` has malformed label `{l}`"));
+            }
+            if let Some(other) = seen.insert((backend.as_str(), l.as_str()), id) {
+                return Some(format!(
+                    "label `{l}` on {backend} names both `{other}` and `{id}`"
+                ));
+            }
+        }
+    }
+    None
 }
 
 /// The table cell for `(backend slot, type id)`.
@@ -456,10 +620,39 @@ impl Registry {
             }
             cell.push(u16::try_from(i).map_err(|e| format!("kernel registry: {e}"))?);
         }
+        for op in &doc.ops {
+            check_op(op)?;
+        }
+        if let Some(id) = repeated_id(&doc.kernels, &doc.ops) {
+            return Err(format!("kernel registry: kernel_id `{id}` names two rows"));
+        }
+        if let Some(why) = bad_label(&doc.kernels, &doc.ops) {
+            return Err(format!("kernel registry: {why}"));
+        }
         Ok(Self {
             rows: doc.kernels,
+            ops: doc.ops,
             table,
         })
+    }
+
+    /// The `kernel_id` a receipt label names on `backend` — a `kernels[]` or `ops[]` row — or `None`
+    /// when no row carries it. Parse refused a label two rows share, so the answer is unique.
+    pub fn kernel_id_for_label(&self, backend: Backend, label: &str) -> Option<&str> {
+        let has = |b: &str, ls: &Option<Vec<String>>| {
+            Backend::parse(b) == Some(backend) && ls.iter().flatten().any(|l| l == label)
+        };
+        self.rows
+            .iter()
+            .filter(|r| has(&r.backend, &r.labels))
+            .map(|r| r.kernel_id.as_str())
+            .chain(
+                self.ops
+                    .iter()
+                    .filter(|o| has(&o.backend, &o.labels))
+                    .map(|o| o.kernel_id.as_str()),
+            )
+            .next()
     }
 
     /// Every row, in document order.
@@ -467,15 +660,23 @@ impl Registry {
         &self.rows
     }
 
+    /// Every per-forward op row, in document order. None of them is ever admitted.
+    pub fn ops(&self) -> &[OpRow] {
+        &self.ops
+    }
+
     /// S-REG (KTEST-001 §5.2, falsifier F-7): the dispatched kernel keys of a trace that name no
-    /// row, sorted and deduplicated. Empty means every dispatch was registered. The match is exact:
+    /// row — kernel or op — sorted and deduplicated. Empty means every dispatch was registered. The match is exact:
     /// a label that is not a `kernel_id` (e.g. a trace's `q4k-f32/neon`) is unregistered, since
     /// nothing ties it to a row, a receipt or a tolerance.
     pub fn unregistered_dispatches<'a>(&self, trace: &[&'a str]) -> Vec<&'a str> {
         let mut out: Vec<&'a str> = trace
             .iter()
             .copied()
-            .filter(|id| !self.rows.iter().any(|r| r.kernel_id == *id))
+            .filter(|id| {
+                !self.rows.iter().any(|r| r.kernel_id == *id)
+                    && !self.ops.iter().any(|o| o.kernel_id == *id)
+            })
             .collect();
         out.sort_unstable();
         out.dedup();
@@ -751,7 +952,7 @@ mod tests {
     }
 
     fn doc(rows: &[String]) -> String {
-        format!(r#"{{"kernels":[{}]}}"#, rows.join(","))
+        format!(r#"{{"kernels":[{}],"ops":[]}}"#, rows.join(","))
     }
 
     /// F-7 case table: a trace with only registered ids has no S-REG violation; every other key
@@ -764,7 +965,10 @@ mod tests {
         let cases: [(&[&str], &[&str]); 6] = [
             (&[], &[]),
             (&[reg.as_str(), reg.as_str()], &[]),
-            (&[reg.as_str(), "cpu.attention.f32"], &["cpu.attention.f32"]),
+            (
+                &[reg.as_str(), "cuda.attention.f64"],
+                &["cuda.attention.f64"],
+            ),
             (
                 &["q4k-f32/neon", reg.as_str(), "q4k-f32/neon"],
                 &["q4k-f32/neon"],
@@ -1142,23 +1346,510 @@ mod tests {
         assert!(WeightQuantType::admitted_by(&only_q4k, GGUF_TYPE_Q4_K).is_some());
     }
 
-    /// FALSIFY-KREG-005: every row names a function that exists in its source file.
+    /// Lexical `..`/`.` removal, so an include path and a row path compare equal.
+    fn norm(p: &std::path::Path) -> std::path::PathBuf {
+        use std::path::Component;
+        let mut out = std::path::PathBuf::new();
+        for c in p.components() {
+            match c {
+                Component::ParentDir => {
+                    out.pop();
+                },
+                Component::CurDir => {},
+                c => out.push(c),
+            }
+        }
+        out
+    }
+
+    /// `x` of a `mod x;` / `pub mod x;` / `pub(crate) mod x;` line; an inline `mod x {` is not one.
+    fn mod_decl(t: &str) -> Option<&str> {
+        let t = match t.strip_prefix("pub") {
+            Some(r) => match r.strip_prefix('(') {
+                Some(r) => r.split_once(')').map_or(r, |(_, a)| a),
+                None => r,
+            },
+            None => t,
+        };
+        let name = t
+            .trim_start()
+            .strip_prefix("mod ")?
+            .trim()
+            .strip_suffix(';')?
+            .trim();
+        let ok = !name.is_empty() && name.chars().all(|c| c.is_ascii_alphanumeric() || c == '_');
+        ok.then_some(name)
+    }
+
+    /// The first `"…"` literal after `head` on the line.
+    fn quoted_after<'a>(t: &'a str, head: &str) -> Option<&'a str> {
+        let rest = &t[t.find(head)? + head.len()..];
+        let rest = &rest[rest.find('"')? + 1..];
+        Some(&rest[..rest.find('"')?])
+    }
+
+    /// The files rustc compiles into a crate, walked from `lib`: `mod x;` (x.rs or x/mod.rs in
+    /// the module dir), `#[path = "…"] mod x;`, and `include!("…")` (the included text keeps
+    /// the includer's module dir). Anything it does not understand is not reached, so a row
+    /// in such a file fails closed.
+    fn compiled_files(
+        root: &std::path::Path,
+        lib: &str,
+    ) -> std::collections::HashSet<std::path::PathBuf> {
+        let lib = std::path::PathBuf::from(lib);
+        let dir = lib
+            .parent()
+            .map(std::path::Path::to_path_buf)
+            .unwrap_or_default();
+        let mut seen = std::collections::HashSet::new();
+        let mut stack = vec![(lib, dir)];
+        while let Some((file, mdir)) = stack.pop() {
+            let Ok(src) = std::fs::read_to_string(root.join(&file)) else {
+                continue;
+            };
+            if !seen.insert(file.clone()) {
+                continue;
+            }
+            let here = file
+                .parent()
+                .map(std::path::Path::to_path_buf)
+                .unwrap_or_default();
+            let mut path_attr: Option<String> = None;
+            for line in src.lines() {
+                let t = line.trim();
+                if t.starts_with("//") {
+                    continue;
+                }
+                if t.starts_with("#[path") {
+                    path_attr = quoted_after(t, "#[path").map(str::to_string);
+                    continue;
+                }
+                if let Some(inc) = quoted_after(t, "include!(") {
+                    stack.push((norm(&here.join(inc)), mdir.clone()));
+                }
+                if let Some(name) = mod_decl(t) {
+                    if let Some(p) = path_attr.take() {
+                        let f = norm(&here.join(p));
+                        let d = f.with_extension("");
+                        stack.push((f, d));
+                    } else {
+                        let d = mdir.join(name);
+                        for f in [mdir.join(format!("{name}.rs")), d.join("mod.rs")] {
+                            if root.join(&f).is_file() {
+                                stack.push((f, d));
+                                break;
+                            }
+                        }
+                    }
+                }
+                if !t.starts_with("#[") {
+                    path_attr = None;
+                }
+            }
+        }
+        seen
+    }
+
+    /// FALSIFY-KREG-005: every row names a function that exists in its source file, and that
+    /// file is compiled into its crate (a dead `include!` twin with the same fn is not).
     #[test]
     fn falsify_kreg_005_every_row_names_a_real_fn() {
         let root = std::path::Path::new(env!("CARGO_MANIFEST_DIR")).join("../..");
-        for row in registry().expect("registry").rows() {
-            let src = std::fs::read_to_string(root.join(&row.source_file))
-                .unwrap_or_else(|e| panic!("{}: {}: {e}", row.kernel_id, row.source_file));
-            let needle = format!("fn {}", row.source_fn);
+        let mut compiled = std::collections::HashSet::new();
+        for lib in [
+            "crates/aprender-serve/src/lib.rs",
+            "crates/aprender-compute/src/lib.rs",
+        ] {
+            compiled.extend(compiled_files(&root, lib));
+        }
+        // The walker must tell a dead twin from a live file, or the check below is vacuous.
+        let twin = "crates/aprender-serve/src/cuda/executor/kernel.rs";
+        if root.join(twin).is_file() {
+            assert!(
+                !compiled.contains(std::path::Path::new(twin)),
+                "{twin} is not compiled"
+            );
+        }
+        assert!(compiled.contains(std::path::Path::new(
+            "crates/aprender-serve/src/cuda/executor/layers/indexed_ffn.rs"
+        )));
+        let r = registry().expect("registry");
+        let kernels = r
+            .rows()
+            .iter()
+            .map(|k| (&k.kernel_id, &k.source_file, &k.source_fn));
+        let ops = r
+            .ops()
+            .iter()
+            .map(|o| (&o.kernel_id, &o.source_file, &o.source_fn));
+        for (id, file, func) in kernels.chain(ops) {
+            let src = std::fs::read_to_string(root.join(file))
+                .unwrap_or_else(|e| panic!("{id}: {file}: {e}"));
+            let needle = format!("fn {func}");
             let found = src
                 .match_indices(&needle)
                 .any(|(i, _)| src[i + needle.len()..].starts_with(['(', '<']));
+            assert!(found, "{id}: `{needle}` not in {file}");
+            let f = norm(std::path::Path::new(file.as_str()));
             assert!(
-                found,
-                "{}: `{needle}` not in {}",
-                row.kernel_id, row.source_file
+                compiled.contains(&f),
+                "{id}: {file} is not compiled into its crate (no mod/include! chain from lib.rs)"
             );
         }
+    }
+
+    fn op_json(id: &str, extra: &str) -> String {
+        format!(
+            r#"{{"kernel_id":"{id}","op":"rmsnorm","backend":"cpu","arch":"any",{extra}"isa_features":"none",
+            "requires":"none","accumulate":"f32","precision":"f32","error_model":"EM-RED","determinism":"bounded",
+            "shape_class":"m1","tolerance":"unmeasured","source_file":"crates/x/src/a.rs","source_fn":"f",
+            "selector":"selector::fn","contract":"contracts/rmsnorm-kernel-v1.yaml"}}"#
+        )
+    }
+
+    fn op_doc(kernels: &[String], ops: &[String]) -> String {
+        format!(
+            r#"{{"kernels":[{}],"ops":[{}]}}"#,
+            kernels.join(","),
+            ops.join(",")
+        )
+    }
+
+    /// FALSIFY-KREG-013: an op row parses into `ops()`, never into the admit table, and the
+    /// checks the closed shape cannot make are made here.
+    #[test]
+    fn falsify_kreg_013_the_op_row_case_table() {
+        let k = row_json("cpu.matvec.q4_k", "cpu", GGUF_TYPE_Q4_K, "row_major");
+        let good = Registry::parse(&op_doc(
+            std::slice::from_ref(&k),
+            &[op_json("cpu.rmsnorm.f32", "")],
+        ))
+        .expect("a well-formed op row parses");
+        assert_eq!(good.ops().len(), 1);
+        assert_eq!(good.rows().len(), 1);
+        let narrowed = op_json("cpu.rmsnorm.f32", r#""archs":["llama","qwen2"],"#);
+        let with_archs = Registry::parse(&op_doc(&[], &[narrowed])).expect("archs parse");
+        assert_eq!(
+            with_archs.ops()[0].archs.as_deref(),
+            Some(&["llama".to_string(), "qwen2".to_string()][..])
+        );
+        let refused: [(&str, String, &str); 8] = [
+            (
+                "a type id on an op",
+                op_doc(&[], &[op_json("cpu.rmsnorm.f32", r#""ggml_type":0,"#)]),
+                "ggml_type",
+            ),
+            (
+                "a qtype on an op",
+                op_doc(&[], &[op_json("cpu.rmsnorm.f32", r#""qtype":"F32","#)]),
+                "qtype",
+            ),
+            (
+                "an op id a kernel holds",
+                op_doc(&[k], &[op_json("cpu.matvec.q4_k", "")]),
+                "names two rows",
+            ),
+            (
+                "two ops with one id",
+                op_doc(
+                    &[],
+                    &[op_json("cpu.rope.f32", ""), op_json("cpu.rope.f32", "")],
+                ),
+                "names two rows",
+            ),
+            (
+                "an empty archs list",
+                op_doc(&[], &[op_json("cpu.rmsnorm.f32", r#""archs":[],"#)]),
+                "empty `archs`",
+            ),
+            (
+                "a repeated arch",
+                op_doc(
+                    &[],
+                    &[op_json("cpu.rmsnorm.f32", r#""archs":["llama","llama"],"#)],
+                ),
+                "repeated arch",
+            ),
+            (
+                "an unknown backend",
+                op_doc(
+                    &[],
+                    &[op_json("tpu.rmsnorm.f32", "")
+                        .replace(r#""backend":"cpu""#, r#""backend":"tpu""#)],
+                ),
+                "unknown backend",
+            ),
+            (
+                "EM-NONDET claiming bitwise",
+                op_doc(
+                    &[],
+                    &[op_json("cpu.rmsnorm.f32", "")
+                        .replace("EM-RED", "EM-NONDET")
+                        .replace("bounded", "bitwise")],
+                ),
+                "bitwise",
+            ),
+        ];
+        for (case, json, want) in refused {
+            let e = Registry::parse(&json)
+                .err()
+                .unwrap_or_else(|| panic!("{case}: parsed"));
+            assert!(e.contains(want), "{case}: {e}");
+        }
+        let e = Registry::parse(r#"{"kernels":[]}"#)
+            .err()
+            .expect("a document with no ops[] parsed");
+        assert!(e.contains("ops"), "{e}");
+    }
+
+    /// An op outside the closed set is refused at parse, not only by the shape, and the set is the
+    /// one `kernel-registry-v1.op` declares.
+    #[test]
+    fn the_op_set_is_the_contracts() {
+        let k = row_json("cpu.matvec.q4_k", "cpu", GGUF_TYPE_Q4_K, "row_major");
+        let bad =
+            op_json("cpu.residual.f32", "").replace(r#""op":"rmsnorm""#, r#""op":"residual""#);
+        let e = Registry::parse(&op_doc(std::slice::from_ref(&k), &[bad]))
+            .err()
+            .expect("an unknown op is refused");
+        assert!(e.contains("unknown op `residual`"), "{e}");
+
+        let root = std::path::Path::new(env!("CARGO_MANIFEST_DIR")).join("../..");
+        let yaml = std::fs::read_to_string(root.join("contracts/kernel-registry-v1.yaml"))
+            .expect("the contract is readable");
+        let line = yaml
+            .lines()
+            .skip_while(|l| !l.contains("id: kernel-registry-v1.op"))
+            .find(|l| l.contains("{path: kreg:op,"))
+            .expect("the kernel-registry-v1.op shape names kreg:op");
+        let set = line
+            .split_once("in: [")
+            .and_then(|(_, rest)| rest.split_once(']'))
+            .map(|(set, _)| set.split(',').map(str::trim).collect::<Vec<_>>())
+            .expect("kreg:op has an `in` list");
+        assert_eq!(set, OPS, "OPS and the kernel-registry-v1.op shape disagree");
+    }
+
+    /// The committed registry registers every per-forward op of the CPU and CUDA decode paths, and a trace
+    /// of their ids is fully registered (S-REG covers ops, not only kernels).
+    #[test]
+    fn the_committed_op_rows_are_registered_dispatches() {
+        let r = registry().expect("registry");
+        let ids: Vec<&str> = r.ops().iter().map(|o| o.kernel_id.as_str()).collect();
+        for want in [
+            "cpu.rmsnorm.f32",
+            "cpu.layernorm.f32",
+            "cpu.rope.f32",
+            "cpu.attention.f32",
+            "cpu.swiglu.f32",
+            "cpu.gelu.f32",
+            "cpu.embed.f32",
+            "cpu.kv_write.f32",
+            "cpu.residual_add.f32",
+            "cpu.argmax.f32",
+            "cuda.embed.f32",
+            "cuda.rmsnorm.f32",
+            "cuda.rmsnorm.per_head.f32",
+            "cuda.rope.f32",
+            "cuda.rope.neox.f32",
+            "cuda.kv_write.f32",
+            "cuda.attention.f32",
+            "cuda.swiglu.f32",
+            "cuda.residual_add.f32",
+            "cuda.argmax.f32",
+            "cuda.rope.partial_neox.f32",
+            "cuda.attention.gdn_decode.f32",
+            "cuda.rmsnorm.gated.f32",
+            "cuda.conv1d.silu.f32",
+            "cuda.l2norm.per_head.f32",
+            "cuda.gdn_gates.f32",
+            "cuda.delta_rule.f32",
+            "cuda.sigmoid_gate.f32",
+            "cuda.split.interleaved.f32",
+            "cuda.elementwise_mul.f32",
+            "cuda.sample.host.f32",
+            "cpu.sample.topk.f32",
+            "cuda.sample.host_topk.f32",
+            "cuda.sample.host_seeded.f32",
+            "cuda.argmax.host.f32",
+            "cpu.sample.seeded.f32",
+            "cuda.route_topk.host.f32",
+            "cpu.repeat_penalty.f32",
+            "cuda.repeat_penalty.host.f32",
+        ] {
+            assert!(ids.contains(&want), "{want} not in {ids:?}");
+        }
+        assert!(r.unregistered_dispatches(&ids).is_empty());
+        for o in r.ops() {
+            assert!(
+                o.kernel_id.starts_with(&format!("{}.", o.backend)),
+                "{}",
+                o.kernel_id
+            );
+        }
+    }
+
+    /// FALSIFY-KREG-014: a receipt label names one row per backend. Parse refuses an empty list, a
+    /// malformed label and a `(backend, label)` two rows share; the same label on two backends is two rows.
+    #[test]
+    fn falsify_kreg_014_the_label_case_table() {
+        let labelled = |id: &str, backend: &str, labels: &str| {
+            op_json(id, &format!(r#""labels":{labels},"#))
+                .replace(r#""backend":"cpu""#, &format!(r#""backend":"{backend}""#))
+        };
+        let good = Registry::parse(&op_doc(
+            &[],
+            &[
+                labelled("cpu.rmsnorm.f32", "cpu", r#"["rmsnorm@f32","rmsnorm"]"#),
+                labelled("cuda.rmsnorm.f32", "cuda", r#"["rmsnorm@f32"]"#),
+            ],
+        ))
+        .expect("one label per backend parses");
+        assert_eq!(
+            good.kernel_id_for_label(Backend::Cuda, "rmsnorm@f32"),
+            Some("cuda.rmsnorm.f32")
+        );
+        assert_eq!(
+            good.kernel_id_for_label(Backend::Cpu, "rmsnorm"),
+            Some("cpu.rmsnorm.f32")
+        );
+        assert_eq!(good.kernel_id_for_label(Backend::Cuda, "rmsnorm"), None);
+        assert_eq!(good.kernel_id_for_label(Backend::Wgpu, "rmsnorm@f32"), None);
+        let k = row_json("cpu.matvec.q4_k", "cpu", GGUF_TYPE_Q4_K, "row_major").replacen(
+            '{',
+            r#"{"labels":["q4k_gemv@q4_k"],"#,
+            1,
+        );
+        let with_kernel = Registry::parse(&op_doc(std::slice::from_ref(&k), &[]))
+            .expect("a labelled kernels[] row parses");
+        assert_eq!(
+            with_kernel.kernel_id_for_label(Backend::Cpu, "q4k_gemv@q4_k"),
+            Some("cpu.matvec.q4_k")
+        );
+        let refused: [(&str, String, &str); 6] = [
+            (
+                "an empty list",
+                op_doc(&[], &[labelled("cpu.rmsnorm.f32", "cpu", "[]")]),
+                "empty `labels`",
+            ),
+            (
+                "an upper-case label",
+                op_doc(
+                    &[],
+                    &[labelled("cpu.rmsnorm.f32", "cpu", r#"["RMSNorm@f32"]"#)],
+                ),
+                "malformed label `RMSNorm@f32`",
+            ),
+            (
+                "an empty quant",
+                op_doc(
+                    &[],
+                    &[labelled("cpu.rmsnorm.f32", "cpu", r#"["rmsnorm@"]"#)],
+                ),
+                "malformed label `rmsnorm@`",
+            ),
+            (
+                "two quants",
+                op_doc(&[], &[labelled("cpu.rmsnorm.f32", "cpu", r#"["a@b@c"]"#)]),
+                "malformed label `a@b@c`",
+            ),
+            (
+                "one label twice on a row",
+                op_doc(&[], &[labelled("cpu.rmsnorm.f32", "cpu", r#"["x","x"]"#)]),
+                "names both `cpu.rmsnorm.f32` and `cpu.rmsnorm.f32`",
+            ),
+            (
+                "one label on a kernel and an op of one backend",
+                op_doc(
+                    &[k],
+                    &[labelled("cpu.rmsnorm.f32", "cpu", r#"["q4k_gemv@q4_k"]"#)],
+                ),
+                "names both `cpu.matvec.q4_k` and `cpu.rmsnorm.f32`",
+            ),
+        ];
+        for (case, json, want) in refused {
+            let e = Registry::parse(&json)
+                .err()
+                .unwrap_or_else(|| panic!("{case}: parsed"));
+            assert!(e.contains(want), "{case}: {e}");
+        }
+    }
+
+    /// Every label a kernel-diff receipt in the tree dispatches or judges names exactly one committed
+    /// CUDA row (the receipts' hosts carry `sm`/`cc`), so a receipt row always reaches a registry id.
+    #[test]
+    fn every_committed_receipt_label_names_a_cuda_row() {
+        use std::path::{Path, PathBuf};
+        fn walk(dir: &Path, out: &mut Vec<PathBuf>) {
+            let Ok(entries) = std::fs::read_dir(dir) else {
+                return;
+            };
+            for e in entries.flatten() {
+                let p = e.path();
+                if p.is_dir() {
+                    walk(&p, out);
+                } else if p.extension().is_some_and(|x| x == "json") {
+                    out.push(p);
+                }
+            }
+        }
+        fn label(v: &serde_json::Value) -> Option<String> {
+            let quant = |q: &serde_json::Value| q.as_str().map(str::to_lowercase);
+            match v {
+                serde_json::Value::String(k) => Some(k.clone()),
+                _ => {
+                    let k = v.get("kernel")?.as_str()?;
+                    match v.get("quant").and_then(quant).filter(|q| !q.is_empty()) {
+                        Some(q) => Some(format!("{k}@{q}")),
+                        None => Some(k.to_string()),
+                    }
+                },
+            }
+        }
+        let root = Path::new(env!("CARGO_MANIFEST_DIR")).join("../..");
+        let mut files = Vec::new();
+        walk(&root.join("tests/fixtures"), &mut files);
+        walk(&root.join("evidence"), &mut files);
+        let r = registry().expect("registry");
+        let mut seen = std::collections::BTreeSet::new();
+        for f in files {
+            let Ok(text) = std::fs::read_to_string(&f) else {
+                continue;
+            };
+            let Ok(rc) = serde_json::from_str::<serde_json::Value>(&text) else {
+                continue;
+            };
+            if rc.get("schema").and_then(|s| s.as_str()) != Some("apr-kernel-diff-receipt/v1") {
+                continue;
+            }
+            let dispatched = rc["dispatch"]
+                .as_array()
+                .into_iter()
+                .flatten()
+                .flat_map(|d| d["kernels"].as_array().into_iter().flatten());
+            let judged = rc["rows"].as_array().into_iter().flatten();
+            for l in dispatched.chain(judged).filter_map(label) {
+                let id = r.kernel_id_for_label(Backend::Cuda, &l);
+                assert!(
+                    id.is_some(),
+                    "{}: label `{l}` names no cuda row",
+                    f.display()
+                );
+                seen.insert(l);
+            }
+        }
+        assert!(
+            seen.contains("q4k_gemv@q4_k") && seen.contains("rmsnorm@f32"),
+            "the walk found no kernel-diff receipt labels: {seen:?}"
+        );
+        assert_eq!(
+            r.kernel_id_for_label(Backend::Cuda, "q4k_gemv@q4_k"),
+            Some("cuda.gemv.q4_k")
+        );
+        assert_eq!(
+            r.kernel_id_for_label(Backend::Cuda, "rmsnorm@f32"),
+            Some("cuda.rmsnorm.f32")
+        );
     }
 }
 

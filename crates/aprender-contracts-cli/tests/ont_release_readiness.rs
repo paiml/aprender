@@ -1286,3 +1286,57 @@ fn a_withdrawn_gb10_dense_model_owes_nothing_there_a_planted_claim_is_red_and_la
     drop_row(t.path(), "lambda", &id);
     assert_red_naming(&gate(t.path(), &[]), &named(&id));
 }
+
+/// aprender#3715 v2 (KTEST-08): `--v2-evidence` puts the v2 kernel and model cells in the same graph, and the
+/// v1 gate still passes: v2's kernel class is `release:KernelParityCell`, so v1's `release:KernelCell` shape
+/// never grades it. Without the registry the flag refuses rather than adding nothing.
+#[test]
+fn v2_cells_in_the_graph_leave_the_v1_gate_green() {
+    let t = green();
+    for host in ["lambda", "gx10"] {
+        edit(&models(t.path(), host), |v| {
+            for item in v["inventory"].as_array_mut().expect("inventory") {
+                item["tensor_types"] = Value::Array(vec![Value::from(12)]);
+            }
+        });
+    }
+    let v2 = t.path().join("evidence/release-v2");
+    std::fs::create_dir_all(&v2).expect("v2 dir");
+    let v2s = s(&v2);
+
+    let r = gate(t.path(), &["--v2-evidence", &v2s]);
+    assert_ne!(r.code, 0, "no registry → refused: {}", show(&r));
+    assert!(
+        format!("{}{}", r.stdout, r.stderr).contains("kernel-registry.json"),
+        "{}",
+        show(&r)
+    );
+
+    let reg = t.path().join("crates/aprender-serve/kernel-registry.json");
+    std::fs::create_dir_all(reg.parent().expect("parent")).expect("mkdir");
+    std::fs::write(
+        &reg,
+        r#"{"kernels":[{"kernel_id":"cuda.gemv.q4_k","backend":"cuda","ggml_type":12,"layout":"row_major","arch":"any"}],"ops":[]}"#,
+    )
+    .expect("registry");
+    let r = gate(t.path(), &["--v2-evidence", &v2s]);
+    assert_eq!(r.code, 0, "{}", show(&r));
+    assert_eq!(json_of(&r)["verdict"], "Pass");
+
+    // --gate-utc reaches the extractor: a malformed one is refused by name, a stamp is accepted.
+    let r = gate(
+        t.path(),
+        &["--v2-evidence", &v2s, "--gate-utc", "yesterday"],
+    );
+    assert_ne!(r.code, 0, "{}", show(&r));
+    assert!(
+        format!("{}{}", r.stdout, r.stderr).contains("--gate-utc"),
+        "{}",
+        show(&r)
+    );
+    let r = gate(
+        t.path(),
+        &["--v2-evidence", &v2s, "--gate-utc", "2026-09-28T16:00:00Z"],
+    );
+    assert_eq!(r.code, 0, "{}", show(&r));
+}

@@ -39,7 +39,7 @@ metadata:
   version: "1.0.0"
   kind: pattern
   created: '2026-09-27'
-  last_modified: '2026-09-28'
+  last_modified: '2026-09-29'
   author: PAIML Engineering
   description: >
     A kernel is loadable only if a shaped row declares its (backend, arch, isa_features, op, qtype, layout). Layout is closed to
@@ -64,6 +64,7 @@ vocabulary:
   root_class: kreg:Registry
   nested:
     kernels: kreg:Kernel
+    ops: kreg:Op
 
 shape:
   targetClass: kreg:Kernel
@@ -103,6 +104,38 @@ shape:
     - {path: kreg:source_fn, minCount: 1, maxCount: 1, pattern: "^[a-z_][a-z0-9_]*$"}
     - {path: kreg:selector, minCount: 1, maxCount: 1, minLength: 8}
     - {path: kreg:contract, minCount: 1, maxCount: 1, pattern: "^contracts/.+\\.yaml$"}
+    - {path: kreg:labels, pattern: "^[a-z0-9_]+(@[a-z0-9_]+)?$"}
+
+# PER-FORWARD OPS (#3715 v2 §4). Norms, RoPE, attention, the gated activations and the rest run on f32
+# activations whatever the file's tensor types, so no ggml type id reaches them and `admit` never selects
+# one. They are rows of `ops[]`, not `kernels[]`: a `kernels[]` row with no type would need `ggml_type`
+# minCount 0, and SHACL Core cannot then say "a typed op has a type". This shape is closed too, so a type
+# field on an op row is refused. `archs` (optional, model architectures) narrows the models an op serves.
+# `labels` (optional, both shapes) are the `kernel@quant` names kernel-diff receipts give a row; Registry::parse
+# refuses one (backend, label) on two rows, which SHACL Core cannot see.
+shapes:
+  - id: kernel-registry-v1.op
+    targetClass: kreg:Op
+    closed: true
+    properties:
+      - {path: kreg:kernel_id, minCount: 1, maxCount: 1, datatype: xsd:string, pattern: "^(cpu|cuda|wgpu|metal)\\.[a-z0-9_]+\\.[a-z0-9_]+(\\.[a-z0-9_+]+){0,2}$"}
+      - {path: kreg:op, minCount: 1, maxCount: 1, in: [embed, rmsnorm, layernorm, rope, attention, kv_write, swiglu, gelu, residual_add, argmax, conv1d, l2norm, gdn_gates, delta_rule, sigmoid_gate, split, elementwise_mul, sample, route_topk, repeat_penalty]}
+      - {path: kreg:backend, minCount: 1, maxCount: 1, in: [cpu, cuda, wgpu, metal]}
+      - {path: kreg:arch, minCount: 1, maxCount: 1, pattern: "^(any|[a-z][a-z0-9_]*)$"}
+      - {path: kreg:archs, pattern: "^[a-z][a-z0-9_]*$"}
+      - {path: kreg:isa_features, minCount: 1, maxCount: 1, pattern: "^(none|[a-z0-9_.]+(\\+[a-z0-9_.]+)*)$"}
+      - {path: kreg:requires, minCount: 1, maxCount: 1, pattern: "^(none|[A-Za-z0-9_]+(\\+[A-Za-z0-9_]+)*)$"}
+      - {path: kreg:accumulate, minCount: 1, maxCount: 1, in: [f32]}
+      - {path: kreg:precision, minCount: 1, maxCount: 1, in: [f32, f16, bf16]}
+      - {path: kreg:error_model, minCount: 1, maxCount: 1, in: [EM-ELEM, EM-RED, EM-SMX, EM-ATT, EM-ROPE, EM-NONDET]}
+      - {path: kreg:determinism, minCount: 1, maxCount: 1, in: [bitwise, bounded]}
+      - {path: kreg:shape_class, minCount: 1, maxCount: 1, in: [m1, m_any]}
+      - {path: kreg:tolerance, minCount: 1, maxCount: 1, pattern: "^(unmeasured|evidence/.+\\.json)$"}
+      - {path: kreg:source_file, minCount: 1, maxCount: 1, pattern: "^crates/[a-z0-9_-]+/src/.+\\.rs$"}
+      - {path: kreg:source_fn, minCount: 1, maxCount: 1, pattern: "^[a-z_][a-z0-9_]*$"}
+      - {path: kreg:selector, minCount: 1, maxCount: 1, minLength: 8}
+      - {path: kreg:contract, minCount: 1, maxCount: 1, pattern: "^contracts/.+\\.yaml$"}
+      - {path: kreg:labels, pattern: "^[a-z0-9_]+(@[a-z0-9_]+)?$"}
 
 equations:
   admissible:
@@ -144,6 +177,10 @@ invariants:
   - id: KREG-INV-006
     property: a committed parity receipt is reused only while its input set recomputes unchanged from the tree (KTEST-001 §5.1, F-8)
     formal: 'reuse(rc) ↔ rc.input_set_hash = H(rc.input_set) ∧ rc.input_set = InputSet(tree, row, rc.driver, rc.device, oracle(tree))'
+    prose: false
+  - id: KREG-INV-007
+    property: a per-forward op is an ops[] row with no type key, and its kernel_id is unique across kernels and ops
+    formal: 'r ∈ Op ∧ (ggml_type(r) ≠ ⊥ ∨ op(r) ∉ OPS) ⇒ Fail(kernel-registry-v1.op, r); kernel_id(r) = kernel_id(r′) ∧ r ≠ r′ ⇒ Registry::parse = Err'
     prose: false
 falsification_tests:
   - id: FALSIFY-KREG-001
@@ -213,3 +250,22 @@ falsification_tests:
     prediction: an unchanged set is fresh; editing any one of source, row, toolchain, driver, device or oracle names exactly that part; a digest that does not match the recorded parts is stale whatever the parts say; every committed receipt is fresh against its own tree and the reuse count is printed
     test: 'cargo test -p aprender-serve --lib kernel_registry:: -- f8_a_stale_input_set_is_named committed_parity_receipts_are_fresh_against_this_tree'
     if_fails: a receipt measured against an older kernel source passes a release, or every release re-measures every kernel
+  - id: FALSIFY-KREG-013
+    rule: a per-forward op row carries no tensor type and names a real fn (#3715 v2 §4)
+    prediction: >
+      the committed ops[] rows conform and each is a focus node of kernel-registry-v1.op; an op row given a
+      ggml_type or qtype, an op outside the closed set, or a non-f32 accumulate is a shape violation naming the
+      row and the property; Registry::parse refuses a type field on an op row, a kernel_id shared by two rows
+      (kernels or ops), an empty or repeated archs list, and an absent ops[]; a trace of op ids is registered;
+      each op row's (source_file, source_fn) resolves to a fn in the tree
+    test: cargo test -p aprender-contracts --lib kernel_registry_v1 && cargo test -p aprender-serve --lib kernel_registry
+    if_fails: a norm, RoPE or attention kernel runs in every forward with no row, so no receipt can ever be asked of it
+  - id: FALSIFY-KREG-014
+    rule: a kernel-diff receipt label names one registry row per backend (#3715 v2 §4, the `labels` field)
+    prediction: >
+      a `kernel` or `kernel@quant` label on a kernels[] or ops[] row maps to that row's kernel_id on its backend
+      and to nothing on another; Registry::parse refuses an empty labels list, a malformed label and a
+      (backend, label) on two rows; every label a kernel-diff receipt in the tree dispatches or judges names
+      exactly one committed cuda row
+    test: 'cargo test -p aprender-serve --lib kernel_registry:: -- falsify_kreg_014_the_label_case_table every_committed_receipt_label_names_a_cuda_row'
+    if_fails: a receipt row names a kernel by a label no registry id answers to, so the kernel cell it measures is never found
