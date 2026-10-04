@@ -19,7 +19,8 @@
 # NO UPLOAD IS POSSIBLE. Neither mode runs `cargo publish`; the selftest row source_has_no_upload
 # fails if this file ever does. And both modes refuse to START (rc 3) when a registry token is
 # reachable, failing closed: any non-empty CARGO_REGISTR* env var, a credentials file in CARGO_HOME, or a
-# cargo config (CARGO_HOME, under the tree, or above it) that mentions token, credential or a \u escape.
+# cargo config (CARGO_HOME, under the tree, or above it) that mentions token, credential, a \u escape or
+# include (an included file is not read, so any include refuses). An unreadable config refuses too.
 # Run it with a clean CARGO_HOME.
 #
 # Exit: 0 PASS (release) / measured (night); 1 REFUSE; 2 NOT_MEASURED (any step that cannot run:
@@ -46,7 +47,7 @@ nm() { echo "NOT_MEASURED $PROG: $*"; exit 2; }
 # cfg_token FILE: 0 when FILE exists and cannot be read, or mentions token, credential or a \u / \U escape
 # anywhere. Coarse on purpose (fails closed): every spelling of a token key — a table, an inline table, a
 # dotted, quoted or escaped key — hits, and so may a harmless comment; the remedy is a clean CARGO_HOME.
-cfg_token() { [ -e "$1" ] || return 1; [ -r "$1" ] || return 0; grep -q -i -E 'token|credential|\\[uU]' "$1"; }
+cfg_token() { [ -e "$1" ] || return 1; [ -r "$1" ] || return 0; grep -q -i -E 'token|credential|\\[uU]|include' "$1"; }
 # token_reachable [DIR...]: prints what it found and returns 0 when a registry credential may be reachable:
 # a non-empty env var named CARGO_REGISTR*, any credentials file in CARGO_HOME, a flagged CARGO_HOME config,
 # or a flagged .cargo/config(.toml) anywhere under a DIR (cargo runs from each crate dir) or above one.
@@ -224,7 +225,7 @@ selftest() {
     mkdir -p "$d/home-cfg"; printf '[registry]\ntoken = "x"\n' > "$d/home-cfg/config.toml"
     run env CARGO_HOME="$d/home-cfg" bash "$subj" night 1.2.3 --out "$d/t.txt" --root "$d/r"; check night_refuses_cargo_home_config_token 3 "flagged CARGO_HOME/config.toml"
     for cf in inline:'registry = { token = "x" }' dotted:'registry.token = "x"' quoted:'[registry]\n"token" = "x"' escaped:'[registry]\n"\\u0074oken" = "x"' \
-        provider:'[registry]\nglobal-credential-providers = ["cargo:libsecret"]'; do
+        provider:'[registry]\nglobal-credential-providers = ["cargo:libsecret"]' include:'include = ["more.toml"]'; do
         mkdir -p "$d/home-${cf%%:*}"; printf "${cf#*:}\n" > "$d/home-${cf%%:*}/config.toml"
         run env CARGO_HOME="$d/home-${cf%%:*}" bash "$subj" night 1.2.3 --out "$d/t.txt" --root "$d/r"; check "night_refuses_config_${cf%%:*}" 3 "flagged CARGO_HOME/config.toml"
     done
@@ -290,6 +291,7 @@ M14 CARGO_HOME config token ignored@@for f in "$ch/config.toml" "$ch/config"; do
 M15 tree config search dropped@@-prune -o -path@@-prune -o -false -path
 M18 ancestor configs ignored@@            while [ -n "$p" ] && [ "$p" != / ]; do p=$(dirname "$p")@@            while false; do p=$(dirname "$p")
 M19 unreadable config passes@@[ -r "$1" ] || return 0;@@[ -r "$1" ] || return 1;
+M20 config include ignored@@[uU]|include@@[uU]
 M16 crate in two workspaces ignored@@|| { echo "crate $name is in two workspaces" >&2; rm -f -- "${out:?}" "${out:?}.names"; return 2; }@@|| continue'
 mutants() {
     local tmp line name from to k=0 t=0 e=0
