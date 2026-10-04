@@ -18,7 +18,7 @@
 #   * L2 — falsification MEASURED by hermetic case tables and mutant runs:
 #          roadmap_aggregate.sh 25 rows / 11 mutants, roadmap_one_writer_ci.sh
 #          16 / 9, check_roadmap_one_writer.sh 13 / 8, roadmap_writer_nightly.sh
-#          11 / 12, roadmap_to_fragments.sh 11 / 7,
+#          14 / 13, roadmap_to_fragments.sh 11 / 7,
 #          check_roadmap_fragment_required.sh 23 / 2,
 #          check_publish_preflight.sh R9 7 rows, check_row_pr_write_set.sh
 #          17 / 1; every mutant killed.
@@ -149,7 +149,7 @@ equations:
     domain: 'one run of scripts/roadmap_writer_nightly.sh'
     codomain: '{0, 1, 2}'
     invariants:
-    - 'NEVER PUSHES main (row N6), never forces, never merges by itself: lands only through its PR and the merge queue (operator rule C310.7) — arms gh pr merge --squash --auto, never --admin, never --delete-branch (rows N10, N11).'
+    - 'NEVER PUSHES main (row N6), never forces, never merges by itself: lands only through its PR and the merge queue (operator rule C310.7) — arms gh pr merge --squash --auto, never --admin, never --delete-branch (rows N10, N11); an open writer PR that is already fresh is re-armed (N14); a normal run honours no ROADMAP_WRITER_MUTANT — only --selftest-child against a local fixture origin reads it (N12, N13).'
     preconditions:
     - 'a dedicated clone; the identity it pushes as is an operator ruling'
     postconditions:
@@ -253,12 +253,16 @@ falsification_tests:
       nothing pushed (N9); main is untouched (N6); the PR is armed into the merge
       queue with --squash --auto and gh is never asked for --admin or
       --delete-branch (N10); writer() source that gains --admin, --delete-branch
-      or a push to main, or loses --auto, is RED (N11).
+      or a push to main, or loses --auto, is RED (N11); a normal run with
+      ROADMAP_WRITER_MUTANT=admin/pushmain/noauto still arms plain --squash
+      --auto and leaves main untouched (N12); --selftest-child against a
+      non-path origin exits 2 with no gh call (N13); an open, already-fresh
+      writer PR is re-armed with no push and no new PR (N14).
     test: 'bash scripts/roadmap_writer_nightly.sh --selftest && bash scripts/roadmap_writer_nightly.sh --mutants'
     if_fails: >-
       the writer floods PRs, spends the shared GitHub budget, or writes main
     mutation: >-
-      --mutants: nodirty norate nocheck noreuse noowner notheirs noresolve nomulti noauto admin delbranch pushmain, 12/12 killed (2026-10-04).
+      --mutants: nodirty norate nocheck noreuse noowner notheirs noresolve nomulti noauto admin delbranch pushmain norearm, 13/13 killed (2026-10-04).
 
 non_goals:
   - "Cleaning the PRs open when this lands: one writer cleans 0 of them; it prevents the next re-dirty."

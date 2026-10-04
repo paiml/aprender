@@ -5,6 +5,8 @@ Operator ruling RQ-8 (T21): pull requests commit `docs/roadmaps/entries/<ID>.yam
 opens ONE pull request that changes `roadmap.yaml` and nothing else, then arms it into the merge queue
 (`gh pr merge --squash --auto`). It never pushes to `main`, never force-pushes, never uses `--admin` or
 `--delete-branch`: it lands only through the PR and the queue (rows N10, N11 go RED otherwise).
+An open writer PR that is already fresh is re-armed (N14). A normal run ignores `ROADMAP_WRITER_MUTANT`; only the
+self-test's `--selftest-child` mode, against a local fixture origin, reads it (N12, N13).
 
 It runs as a host systemd **user** timer, not a GitHub Actions workflow, so it does not depend on the
 repository setting that lets Actions create pull requests.
