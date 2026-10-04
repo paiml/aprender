@@ -1,5 +1,5 @@
 #!/usr/bin/env bash
-# check_tag_coverage_gated.sh -- the release reads coverage-nightly's receipt for the release commit (#3690, #4734)
+# check_tag_coverage_gated.sh -- the release reads coverage-nightly's receipt for the release commit (#3690, #4734, #4735)
 #
 #   bash scripts/check_tag_coverage_gated.sh              # judge scripts/release/autopilot.sh
 #   bash scripts/check_tag_coverage_gated.sh --self-test  # wiring rows + mutants of the gate itself
@@ -58,6 +58,12 @@ covered<=total check deleted|[[ $cov =~ ^[0-9]+$ ]] && [ "$cov" -le "$tot" ] |||
 pct-is-covered/total check deleted|[ "$pct" = "$want" ] |||true ||
 floor compare ignores the floor|p + 0 >= f + 0|p + 0 >= 0
 no COV_FLOOR passes as floor 0|if [ -z "$floor" ]; then|if false; then
+ancestry check deleted|--is-ancestor "$h" "$sha" 2>/dev/null || return 1|--is-ancestor "$h" "$sha" 2>/dev/null || true
+surface file may be added or deleted|[ "$st" = M ] || return 1|true || return 1
+model-ladder receipt may be modified|[ "$st" = A ] || return 1|true || return 1
+any path rides on a bump|else return 1; fi|else :; fi
+any version's receipt dir rides on a bump|${v//./\\.}|[^/]+
+Cargo diff not compared|blank_versions() { sed -E 's/version = "[^"]*"/version = ""/g' \| sort; }|blank_versions() { :; }
 oldest run picked, not newest|sort_by(.createdAt) \| reverse \||sort_by(.createdAt) \|
 --resolve always passes|gate "the release commit $2" "$2" "no tag, nothing carried" ;;|exit 0 ;;
 EOF

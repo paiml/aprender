@@ -14,9 +14,18 @@
 # green verdict there is not a measurement. coverage-nightly measures the workspace and
 # leaves coverage-receipt-<sha>.json (artifact `coverage-receipt`, scripts/coverage_receipt.sh)
 # keyed by the commit it measured. This gate takes the NEWEST completed coverage-nightly run
-# whose commit is SHA itself and reads that run's receipt. A newer run on SHA always wins over
-# an older one, so an older passing receipt cannot be picked over a newer failing one.
+# whose commit H is either SHA itself or a commit that SHA is a version-only bump of, and
+# reads that run's receipt. A newer run on a qualifying commit always wins over an older one,
+# so an older passing receipt cannot be picked over a newer failing one.
 #
+# VERSION-ONLY (#4735). H is an ancestor of SHA and every path changed in H..SHA is one of:
+#   - a Cargo file bump-version.sh rewrites (SURFACE, measured from a real bump), MODIFIED, in
+#     which every removed and added line is the same once its `version = "..."` value is blanked;
+#   - CHANGELOG.md, MODIFIED;
+#   - an ADDED evidence/dogfood/models/<V>/<host>.json, V the version Cargo.toml sets at SHA:
+#     prepare_bump.sh commits the model-ladder receipts for the version being cut (#3708).
+# A changed dependency, path or source line, a modified or deleted receipt, or another version's
+# receipt directory is not a bump.
 #
 # BEFORE THE TAG (#4691). autopilot.sh cut_tag() runs `--resolve SHA` ahead of `git tag`, so a
 # release commit with no qualifying receipt stops with no tag and no GitHub release made public.
@@ -40,6 +49,7 @@ GIT=${GIT:-git}
 REPO=${TCG_REPO:-paiml/aprender}
 WF='coverage-nightly.yml'
 ART='coverage-receipt'
+SURFACE='^(Cargo\.toml|Cargo\.lock|CHANGELOG\.md|crates/[^/]+/Cargo\.toml|crates/facades/[^/]+/Cargo\.toml|crates/facades/Cargo\.lock)$'
 
 # Pure. tcg_judge H FLOOR SCHEMA SHA STATUS PCT PASSED COVERED TOTAL REASON -> ok | bad <why>.
 # Absent JSON fields arrive as the word null.
@@ -65,9 +75,40 @@ floor_at() {
     [[ $v =~ ^[0-9]+$ ]] && echo "$v"
 }
 
+# blank_versions -> stdin's lines with every version = "..." value blanked, sorted
+blank_versions() { sed -E 's/version = "[^"]*"/version = ""/g' | sort; }
 
-# find_run SHA -> "<run id> <commit>" of the newest completed nightly on SHA; '' if none;
-# rc 1 if gh failed or answered garbage.
+# version_at SHA -> the [workspace.package] version Cargo.toml sets at SHA, or ''
+version_at() {
+    "$GIT" show "$1:Cargo.toml" 2>/dev/null | awk '
+        /^\[/ { inw = ($0 == "[workspace.package]"); next }
+        inw && /^version[ \t]*=/ { v = $0; sub(/^[^"]*"/, "", v); sub(/".*/, "", v); print v; exit }'
+}
+
+# version_only H SHA -> rc 0 iff SHA is H, or H plus a version-only bump
+version_only() {
+    local h=$1 sha=$2 v ev ns st p cargo='' d
+    [ "$h" = "$sha" ] && return 0
+    "$GIT" merge-base --is-ancestor "$h" "$sha" 2>/dev/null || return 1
+    v=$(version_at "$sha"); [[ $v =~ ^[0-9A-Za-z.+-]+$ ]] || return 1
+    ev="^evidence/dogfood/models/${v//./\\.}/[^/]+\\.json$"
+    ns=$("$GIT" diff --no-renames --name-status "$h" "$sha" 2>/dev/null) || return 1
+    while IFS=$'\t' read -r st p; do
+        if [ -z "$st" ]; then :
+        elif [[ $p =~ $SURFACE ]]; then [ "$st" = M ] || return 1
+            [[ $p == CHANGELOG.md ]] || cargo+="$p"$'\n'
+        elif [[ $p =~ $ev ]]; then [ "$st" = A ] || return 1
+        else return 1; fi
+    done <<< "$ns"
+    [ -n "$cargo" ] || return 0
+    # shellcheck disable=SC2086 # one path per line, none with spaces (the SURFACE list)
+    d=$("$GIT" diff -U0 "$h" "$sha" -- $cargo 2>/dev/null) || return 1
+    [ "$(grep -E '^-' <<< "$d" | grep -vE '^--- ' | cut -c2- | blank_versions)" = \
+      "$(grep -E '^\+' <<< "$d" | grep -vE '^\+\+\+ ' | cut -c2- | blank_versions)" ]
+}
+
+# find_run SHA -> "<run id> <commit>" of the newest completed nightly on SHA or on a commit SHA
+# is a version-only bump of; '' if none; rc 1 if gh failed or answered garbage.
 find_run() {
     local runs id h
     runs=$("$GH" run list --repo "$REPO" --workflow "$WF" --status completed --limit 30 \
@@ -76,7 +117,7 @@ find_run() {
         || jq -e 'length == 0' <<< "$runs" > /dev/null 2>&1 || return 1
     while read -r id h; do
         [ -n "$id" ] || continue
-        if [ "$h" = "$1" ]; then echo "$id $h"; return 0; fi
+        if version_only "$h" "$1"; then echo "$id $h"; return 0; fi
     done <<< "$runs"
 }
 
@@ -101,7 +142,7 @@ gate() {
     floor=$(floor_at "$sha")
     if [ -z "$floor" ]; then echo "FAIL  no COV_FLOOR in the Makefile at $sha -- the floor is unknown, $stop"; return 1; fi
     found=$(find_run "$sha") || { echo "FAIL  gh could not list $WF runs -- Unknown is not a pass, $stop"; return 1; }
-    if [ -z "$found" ]; then echo "FAIL  NOT_MEASURED: no completed $WF run on $sha -- $stop"; return 1; fi
+    if [ -z "$found" ]; then echo "FAIL  NOT_MEASURED: no completed $WF run on $sha or a version-only parent of it -- $stop"; return 1; fi
     id=${found%% *}; h=${found#* }
     r=$(receipt "$id" "$h")
     if [ -z "$r" ]; then echo "FAIL  NOT_MEASURED: $WF run $id left no readable receipt for $h -- $stop"; return 1; fi
@@ -150,9 +191,12 @@ case "$1 $2" in
 esac
 STUB
     chmod +x "$d/gh"
-    # history: C (floor 89) -> B = C + a version bump -> X = B + a code change; D = C + a
+    # history: C (floor 89) -> B = C + version-only bump -> X = B + a code change; D = C + a
     # dependency change beside a version bump; N = C without COV_FLOOR; A = an unrelated root.
-    local g="$d/repo" C B X D N A
+    # #4735, each B + one more change: EA adds a model-ladder receipt for the version cut (0.1.1),
+    # EM modifies one C already held, EO adds one for another version, EN adds a file off the surface,
+    # ED deletes CHANGELOG.md.
+    local g="$d/repo" C B X D N A EA EM EO EN ED
     git init -q "$g" && git -C "$g" config user.email t@t && git -C "$g" config user.name t \
         && git -C "$g" config core.hooksPath /dev/null || return 1
     printf 'COV_FLOOR := 89\n' > "$g/Makefile"; mkdir -p "$g/crates/a" "$g/evidence/dogfood/models/0.1.1"
@@ -163,6 +207,14 @@ STUB
     git -C "$g" add -A && git -C "$g" commit -qm C && C=$(git -C "$g" rev-parse HEAD)
     sed -i 's/0\.1\.0/0.1.1/' "$g/Cargo.toml" "$g/crates/a/Cargo.toml" "$g/Cargo.lock"; printf '# log\n## 0.1.1\n' > "$g/CHANGELOG.md"
     git -C "$g" commit -qam B && B=$(git -C "$g" rev-parse HEAD)
+    # on_b NAME FILE TEXT -> commit FILE=TEXT on top of B, print the commit
+    on_b() { git -C "$g" checkout -q "$B" && mkdir -p "$(dirname "$g/$2")" && printf '%s\n' "$3" > "$g/$2" \
+        && git -C "$g" add -A && git -C "$g" commit -qm "$1" && git -C "$g" rev-parse HEAD; }
+    EA=$(on_b EA evidence/dogfood/models/0.1.1/intel.json '{"host":"intel"}')
+    EM=$(on_b EM evidence/dogfood/models/0.1.1/early.json '{"host":"rewritten"}')
+    EO=$(on_b EO evidence/dogfood/models/0.1.0/intel.json '{"host":"intel"}')
+    EN=$(on_b EN docs/notes.md 'not a version')
+    ED=$(git -C "$g" checkout -q "$B" && git -C "$g" rm -q CHANGELOG.md && git -C "$g" commit -qm ED && git -C "$g" rev-parse HEAD)
     git -C "$g" checkout -q "$B"
     printf 'fn f() { g() }\n' > "$g/lib.rs"; git -C "$g" commit -qam X && X=$(git -C "$g" rev-parse HEAD)
     git -C "$g" checkout -q "$C" && sed -i -e 's|path = "../b"|path = "../evil"|' -e 's/0\.1\.0/0.1.1/g' "$g/crates/a/Cargo.toml"
@@ -195,6 +247,7 @@ STUB
     echo "$PROG self-test: end to end"
     OK=$(rec "$C" 90.00 87772 9 10)
     e2e 0 "e2e: a receipt for the release commit at or above COV_FLOOR passes" "$C" "7:$C:$T1" "7:$C:$OK"
+    e2e 0 "e2e: a receipt for C passes for a version-only bump of C (Cargo versions + CHANGELOG)" "$B" "7:$C:$T1" "7:$C:$OK"
     e2e 1 "e2e: plant missing receipt -- no nightly run at all refuses" "$C" ""
     e2e 1 "e2e: plant missing receipt -- a run whose artifact holds no receipt refuses" "$C" "7:$C:$T1"
     e2e 1 "e2e: plant another sha -- a nightly on an unrelated commit refuses" "$C" "7:$A:$T1" "7:$A:$(rec "$A" 90.00 87772 9 10)"
@@ -207,15 +260,23 @@ STUB
     e2e 1 "e2e: plant gh failing -- gh failing refuses (Unknown is not a pass)" "$C" "7:$C:$T1" "7:$C:$OK" down
     e2e 1 "e2e: a receipt below COV_FLOOR refuses" "$C" "7:$C:$T1" "7:$C:$(rec "$C" 88.99 87772 8899 10000)"
     e2e 1 "e2e: a receipt for C does not cover a CODE change after C" "$X" "7:$C:$T1" "7:$C:$OK"
+    e2e 1 "e2e: a receipt for C does not cover a dependency change hidden in a version bump" "$D" "7:$C:$T1" "7:$C:$OK"
     e2e 1 "e2e: a receipt for a LATER commit does not cover an earlier one" "$C" "7:$X:$T1" "7:$X:$(rec "$X" 90.00 87772 9 10)"
-    e2e 1 "e2e: the newest qualifying run wins -- a newer failing receipt is not skipped for an older passing one" "$C" \
-        "7:$C:$T1,8:$C:$T2" "8:$C:$(rec "$C" 80.00 87772 8 10)" "7:$C:$OK"
-    e2e 0 "e2e: an unrelated newer run is skipped for the qualifying one" "$C" "8:$A:$T2,7:$C:$T1" "7:$C:$OK"
+    e2e 1 "e2e: the newest qualifying run wins -- a newer failing receipt is not skipped for an older passing one" "$B" \
+        "7:$C:$T1,8:$B:$T2" "8:$B:$(rec "$B" 80.00 87772 8 10)" "7:$C:$OK"
+    e2e 0 "e2e: an unrelated newer run is skipped for the qualifying one" "$B" "8:$A:$T2,7:$C:$T1" "7:$C:$OK"
     e2e 1 "e2e: no COV_FLOOR at the release commit refuses" "$N" "7:$N:$T1" "7:$N:$(rec "$N" 90.00 87772 9 10)"
+    echo "$PROG self-test: the version surface (#4735)"
+    e2e 0 "e2e: an ADDED model-ladder receipt for the version cut rides on the bump" "$EA" "7:$C:$T1" "7:$C:$OK"
+    e2e 1 "e2e: a MODIFIED model-ladder receipt is not a bump" "$EM" "7:$C:$T1" "7:$C:$OK"
+    e2e 1 "e2e: a receipt in ANOTHER version's dir is not a bump" "$EO" "7:$C:$T1" "7:$C:$OK"
+    e2e 1 "e2e: any other path is not a bump" "$EN" "7:$C:$T1" "7:$C:$OK"
+    e2e 1 "e2e: a DELETED surface file is not a bump" "$ED" "7:$C:$T1" "7:$C:$OK"
+    e2e 1 "e2e: a receipt for a later version-only bump does not cover the commit before it" "$C" "7:$B:$T1" "7:$B:$(rec "$B" 90.00 87772 9 10)"
     echo "$PROG self-test: --resolve SHA, before the tag (#4691)"
     mode="--resolve"
-    e2e 0 "e2e: --resolve passes on a release commit whose receipt holds the floor" "$C" "7:$C:$T1" "7:$C:$OK"
-    e2e 1 "e2e: --resolve refuses with no receipt for the release commit" "$C" ""
+    e2e 0 "e2e: --resolve passes on a release commit whose receipt holds the floor" "$B" "7:$C:$T1" "7:$C:$OK"
+    e2e 1 "e2e: --resolve refuses with no receipt for the release commit" "$B" ""
     e2e 1 "e2e: --resolve refuses a receipt below COV_FLOOR" "$C" "7:$C:$T1" "7:$C:$(rec "$C" 88.99 87772 8899 10000)"
     e2e 1 "e2e: --resolve refuses when gh fails" "$C" "7:$C:$T1" "7:$C:$OK" down
     mode=v9.9.9
