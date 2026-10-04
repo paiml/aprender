@@ -83,10 +83,11 @@ These are bodies ready to file, one per bundle in `falsifier-landing-map.md`.
 **Refs** #3999 (C1–C3 E1). Contract: `wgpu-forward-v1` (draft). Scope doc: `R2-wgpu-forward-scope.md`.
 
 **Scope**
-- rope_theta from metadata in both WGSL RoPE shaders (`wgsl_forward.rs:242` and `:278` at 316dee2cd4).
-- head_dim from `key_length`.
+- rope_theta and the RoPE pairing from metadata at every RoPE site, all at 316dee2cd4: the host decode RoPE that `apr run` uses (`wgsl_forward.rs:970`, pairing at `:972-1002`), the batch shader (`:278`, reached only from training) and the shader nothing dispatches (`:242`, deleted or fixed). A shader-only fix leaves decode unchanged.
+- head_dim from `key_length` at all three sites (`gguf_gpu_generate.rs:185`, `:672` and `batch_wgpu.rs:151`, at 316dee2cd4).
 - Q6_K, Q8_0 and Q4_0 WGSL GEMVs, so the exit model's Q6_K tensors stop being widened on the host.
-- Qwen3 q/k norm, only after the K14 layer-diff trace has attributed the 0.955 gap.
+- A qtype check on the ffn_gate weight, which today reaches the Q4_K GEMV unchecked (R2 D-1, static, unmeasured).
+- Qwen3 q/k norm. The 0.955 was measured on qwen2.5-coder-1.5b, where none of the theta, head_dim or q/k-norm defects applies, so its cause is unattributed. The layer-diff trace (R2 item 0, K14) runs before any of these fixes is credited with it.
 
 **Acceptance**
 - WGF-001, 002, 004 and 008 are green on C1, using synthetic fixtures at position ≥ 1 and pos_in_head ≥ 1.
@@ -98,6 +99,7 @@ These are bodies ready to file, one per bundle in `falsifier-landing-map.md`.
 - Moving attention, RoPE and the LM head onto the device (R2 item 5).
 - The gated-delta route (R2 item 6, which may slip to 0.74). It is rank 6 in the landing map, and E1's WGPU and Metal legs wait on it.
 - The ledger sweep (M run: WGF-006, 007 and 010).
+- The batch wgpu path, which runs before CUDA and has no parity probe (R2 D-2). It is a separate ticket.
 
 ---
 

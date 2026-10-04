@@ -7,11 +7,11 @@ metadata:
   - 'docs/lookahead/0.73.md R2 — wgpu forward scope (draft: la-73 drafts/R2-wgpu-forward-scope.md)'
   - 'epic aprender#3999 — 0.73 "Runs Everywhere", exit criterion E1 on C1-C3'
   - 'drafts/backend-parity-matrix-v1.yaml — the E1 composed-leg gate this forward must pass'
-  - 'crates/aprender-compute/src/backends/gpu/device/linalg/wgsl_forward.rs:242 and :278 (316dee2cd4; :229/:265 at 00052c0128) — rope_theta hardcoded as pow(1000000.0, …) in TWO WGSL shaders [V at main 00052c0128, 2026-09-30; the earlier "aprender-serve …:943" cite was stale]'
-  - 'crates/aprender-serve/src/gpu/adapters/wgpu_adapter.rs dequant_tensor_public — Q4_K/Q6_K/Q5_K/F32/F16 (and APR q4/q8) are dequantized to F32 on the host; only other types are refused ("Unsupported quantization type … for WGPU dequant") [V at 00052c0128]'
+  - 'crates/aprender-compute/src/backends/gpu/device/linalg/wgsl_forward.rs:970 (316dee2cd4) — the decode RoPE that apr run uses runs on the host in forward_layer, with theta hardcoded as 1e6 and the split-halves pairing hardcoded at :972-1002 (316dee2cd4). The two WGSL RoPE shaders at :242 and :278 (316dee2cd4; :229/:265 at 00052c0128) also hardcode pow(1000000.0, …), but nothing dispatches :242, and :278 is reached only from the aprender-train finetune pipeline (316dee2cd4) [V at 316dee2cd4, 2026-10-04. The 2026-09-30 reading at 00052c0128 named only the shaders and called the earlier "aprender-serve …:943" cite stale; the host theta literal was at :944 there (00052c0128)]'
+  - 'crates/aprender-serve/src/gpu/adapters/wgpu_adapter.rs dequant_tensor_public — Q4_K/Q6_K/Q5_K/F32/F16 (and APR q4/q8) are dequantized to F32 on the host; only other types are refused ("Unsupported quantization type … for WGPU dequant") [V at 00052c0128, re-read at 316dee2cd4 on 2026-10-04]. One exception (R2 D-1): the ffn_gate weight goes to the Q4_K GEMV without a qtype check, so a non-Q4_K gate is read as Q4_K, neither widened nor refused.'
   description: >
     What the wgpu (WGSL) decoder forward must do before a C1-C3 receipt can pass E1:
-    read rope_theta and head_dim from model metadata, apply Qwen3 q/k norm, own a
+    read rope_theta, the RoPE pairing and head_dim from model metadata, apply Qwen3 q/k norm, own a
     device GEMV for every qtype it serves, and place the whole decode step on the
     device or say it did not. Every item is a behaviour delta against the CPU
     forward, which is the oracle (leg A of backend-parity-matrix-v1).
@@ -25,9 +25,10 @@ equations:
     codomain: bool
     invariants:
     - 'A hardcoded 1e6 matches only models whose freq_base happens to be 1e6; that is a coincidence, not a pass.'
-    - 'Both RoPE shaders read the same theta. Fixing one and not the other is FAIL.'
+    - 'Every RoPE site reads the same theta: the host RoPE in forward_layer (wgsl_forward.rs:970 at 316dee2cd4), which is the one decode uses, and the batch shader (:278), which only training reaches. The shader at :242 (316dee2cd4) is never dispatched; it is deleted or held to the same rule. A shader-only fix leaves decode unchanged, and fixing one site and not the others is FAIL.'
+    - 'The RoPE pairing follows the same metadata as the CPU forward, rope_type from gguf/token.rs:25-38 (316dee2cd4): adjacent pairs for 0, split halves for 2. wgpu hardcodes split halves at wgsl_forward.rs:972-1002 (316dee2cd4), which matches the CPU for Qwen2 and Qwen3 and not for Llama (R2 D-3, K15). Fixing theta alone leaves a Llama model wrong.'
     - 'The fixture needs position >= 1 and pos_in_head >= 1. At position 0 the angle is 0, and at pos_in_head 0 the frequency is 1 for every base, so either case makes RoPE blind to theta.'
-    - 'L25 (2026-10-03): the ledger clause is vacuous when every ledger model has freq_base = 1e6, which holds for the Qwen2/Qwen3 families, so the hardcoded value passes it. The ledger leg needs at least one model whose freq_base is not 1e6; without one it reports NOT_MEASURED, not PASS (FALSIFY-WGF-007).'
+    - 'L25 (2026-10-03): the ledger clause is vacuous when every ledger model has freq_base = 1e6, which holds for the Qwen2/Qwen3 families, so the hardcoded value passes it. The ledger leg needs at least one model whose freq_base is not 1e6; without one it reports NOT_MEASURED, not PASS (FALSIFY-WGF-007). A Llama-family model (5e5) also differs in RoPE pairing, so it tests theta only once the pairing is fixed too (K15, 2026-10-04).'
 
   head_dim_from_metadata:
     formula: |
@@ -47,7 +48,7 @@ equations:
     domain: 'per-layer attention output, one prompt'
     codomain: bool
     invariants:
-    - 'Attribution of the 0.955 end-to-end cosine to q/k norm is UNMEASURED (K14) until the layer-diff trace runs.'
+    - 'The 0.955 end-to-end cosine was measured on qwen2.5-coder-1.5b (gguf_gpu_generate.rs:520-529 at 316dee2cd4), and Qwen2 has no q/k norm, so it is not this defect (corrected 2026-10-04). What the missing q/k norm does on Qwen3 is UNMEASURED (K14) until a layer-diff trace runs.'
     - 'The fixture needs norm weights that are not all 1, and q/k whose per-head RMS is not 1. Otherwise RMSNorm is close to identity and a path that skips it still passes.'
     - 'L25: the implication is vacuous on a fixture with no q_norm/k_norm tensors. The test asserts the tensors are present before it compares anything.'
     - 'L25: the min over layers propagates NaN. A non-finite layer_cos is FAIL; f32::min would drop it (as in BPM-009).'
@@ -59,7 +60,7 @@ equations:
     domain: 'q in {Q4_K, Q6_K, Q8_0, Q4_0, F32}'
     codomain: bool
     invariants:
-    - 'A refusal is honest; a silent fallback is not (R1 F6).'
+    - 'A refusal is honest; a silent fallback is not (R1 F6). On apr run the wgpu_adapter.rs:339 refusal is not silent when the backend is forced: the CPU runs, then the run exits 14, and --json reports backend.ran = cpu with fell_back = true (R5 F-R5-2, 316dee2cd4). An unforced run never attempts wgpu.'
     - 'L25: refusing every qtype satisfies the implication. The required set is {Q4_K, Q6_K}, because a Q4_K_M file stores some tensors (e.g. output, ffn_down) as Q6_K, so refusing Q6_K refuses the exit model. A required qtype that is refused is FAIL, not honest (FALSIFY-WGF-008).'
     - 'Today Q6_K and Q5_K are widened to F32 on the host at load (dequant_tensor_public), and the device runs an F32 GEMV. op_placement reads device either way, so the receipt must also carry, for each weight tensor, the qtype as stored on the device. A widen shows as device_qtype = F32 for a file qtype that is not F32. (2026-10-03: the receipt field is R1 §6 qtype_path {device-kernel, host-widen, refused-cpu}; device_qtype is derived from it, not a second field.)'
 
@@ -76,11 +77,11 @@ equations:
 
 falsification_tests:
 - id: FALSIFY-WGF-001
-  rule: rope_theta comes from metadata
-  prediction: 'A synthetic 1-layer fixture with freq_base = 1e4, at position >= 1 and head_dim >= 4, gives a RoPE output that differs from the 1e6 output and matches the CPU forward. This holds for both RoPE shaders.'
+  rule: rope_theta and the RoPE pairing come from metadata
+  prediction: 'A synthetic 1-layer fixture with freq_base = 1e4, at position >= 1 and head_dim >= 4, gives a RoPE output that differs from the 1e6 output and matches the CPU forward. This holds at every RoPE site, each driven on its own: the host RoPE in forward_layer that decode uses (wgsl_forward.rs:970 at 316dee2cd4) and the batch shader (:278). A second fixture with rope_type 0 (adjacent pairs) matches the CPU forward too.'
   test: 'NOT YET WRITTEN — lands with R2 item 1'
-  if_fails: 'every non-1e6 model decodes with the wrong rotation on wgpu'
-  mutation: 'restore the hardcoded 1e6 in ONE of the two shaders; the fixture must turn RED. Also move the fixture to position 0; the test must refuse it as blind to theta, not pass it'
+  if_fails: 'every non-1e6 model, and every adjacent-pair (rope_type 0) model, decodes with the wrong rotation on wgpu'
+  mutation: 'restore the hardcoded 1e6 at ONE RoPE site (the host decode RoPE or the batch shader); the fixture for that site must turn RED. Hardcode split halves; the rope_type 0 fixture must turn RED. Also move the fixture to position 0; the test must refuse it as blind to theta, not pass it'
 - id: FALSIFY-WGF-002
   rule: head_dim comes from metadata
   prediction: 'A synthetic config with key_length != hidden / n_heads matches the CPU forward (cosine >= 0.9999).'
@@ -91,14 +92,14 @@ falsification_tests:
   rule: Qwen3 q/k norm is applied on wgpu
   prediction: 'On a Qwen3 fixture the per-layer attention cosine vs CPU is >= 0.9999 at every layer.'
   test: 'NOT YET WRITTEN — gated on the K14 layer-diff trace (Next#1, deferred while train-active)'
-  if_fails: 'the wgpu Qwen3 path stays near 0.955 end to end and fails E1'
+  if_fails: 'the wgpu Qwen3 path skips a norm the CPU applies at every layer and diverges from it by an unmeasured amount (the measured 0.955 is qwen2.5-coder-1.5b, not this defect)'
   mutation: 'skip the q/k norm dispatch; layer 0 cosine must drop below the floor. The fixture uses non-unit norm weights and q/k RMS != 1, or skipping the norm cannot move the cosine'
 - id: FALSIFY-WGF-004
   rule: no silent CPU fallback for an unsupported qtype
-  prediction: 'Every served qtype either has a device GEMV on its native bytes (device_qtype = file qtype in the receipt) or is refused with a named error. A Q6_K or Q5_K model that is widened to F32 at load, as it is today, is FAIL, even though op_placement shows device.'
+  prediction: 'Every served qtype either has a device GEMV on its native bytes (device_qtype = file qtype in the receipt) or is refused with a named error. A Q6_K or Q5_K model that is widened to F32 at load, as it is today, is FAIL, even though op_placement shows device. The ffn_gate weight is a live case (R2 D-1, 316dee2cd4): it reaches the Q4_K GEMV without a qtype check, so a non-Q4_K gate is read as Q4_K, neither widened nor refused.'
   test: 'NOT YET WRITTEN — lands with R2 item 4'
-  if_fails: 'a receipt labelled wgpu measures CPU work'
-  mutation: 'route the refused qtype to the CPU dequant path; the receipt check must turn RED'
+  if_fails: 'a receipt labelled wgpu measures CPU work, or reads Q6_K bytes as Q4_K'
+  mutation: 'route the refused qtype to the CPU dequant path; the receipt check must turn RED. Hand a Q6_K ffn_gate to the Q4_K GEMV; the check must turn RED too'
 - id: FALSIFY-WGF-005
   rule: hybrid is derived, not declared
   prediction: 'A receipt with any op_placement = host and hybrid: false is rejected by the receipt checker.'
