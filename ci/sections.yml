@@ -3680,6 +3680,12 @@ jobs:
           echo "$ELAN_HOME/bin" >> "$GITHUB_PATH"
           echo "cache=$cache" >> "$GITHUB_OUTPUT"
 
+      - name: Planted rows -- a PR run skips leanchecker, a push runs it in full (C312)
+        # Seconds, no pv or Lean: stubs only. Runs even on a skipped ladder, so the event
+        # split below is checked on every run of this section.
+        shell: bash
+        run: bash scripts/ci/ladder_pr_skips_leanchecker.sh
+
       - name: Build the in-tree pv
         id: build
         if: ${{ steps.pre.outputs.skip != 'true' }}
@@ -3689,10 +3695,14 @@ jobs:
           cargo build --locked -p aprender-contracts-cli --bin pv
           test -x "$PV"
 
-      - name: pv discharge run (build.sh, then check --strict + comparator + leanchecker)
+      - name: pv discharge (PR - build + check --strict + comparator; push - run, adding leanchecker)
         id: discharge
         if: ${{ steps.pre.outputs.skip != 'true' }}
         shell: bash
+        # Operator ruling C312 (#4578): pull_request and merge_group skip the leanchecker
+        # re-check (~75 min under load); a push to main runs `pv discharge run` in full. The
+        # split and its planted rows: scripts/ci/provable_ladder_discharge.sh and
+        # scripts/ci/ladder_pr_skips_leanchecker.sh.
         # One run at a time per cache: two runs unpacking into the same .lake would race.
         # set +e: Actions runs `bash -e`, which would abort at a failing run before its rc and
         # its log tail are recorded.
@@ -3700,24 +3710,29 @@ jobs:
         # `systemd-run --user` cannot reach the user bus: pv declined the leanchecker arm on
         # every main run (#4578). Point it at the lingering user's runtime dir when one exists;
         # where none exists the variable stays unset and pv still declines (rc 2).
+        env:
+          EVENT: ${{ github.event_name }}
+          LOCK: ${{ steps.pre.outputs.cache }}.lock
         run: |
           set +e
           if [ -z "${XDG_RUNTIME_DIR:-}" ] && [ -O "/run/user/$(id -u)" ]; then
             export XDG_RUNTIME_DIR="/run/user/$(id -u)"
           fi
           echo "XDG_RUNTIME_DIR=${XDG_RUNTIME_DIR:-<unset>}"
-          flock "${{ steps.pre.outputs.cache }}.lock" "$PV" discharge run "$LEAN" > "$RUNNER_TEMP/discharge-run.log" 2>&1
+          LOG="$RUNNER_TEMP/discharge-run.log" bash scripts/ci/provable_ladder_discharge.sh discharge
           rc=$?
-          tail -n 40 "$RUNNER_TEMP/discharge-run.log"
-          echo "pv discharge run: rc=$rc" >> "$GITHUB_STEP_SUMMARY"
+          echo "pv discharge ($(bash scripts/ci/provable_ladder_discharge.sh mode)): rc=$rc" >> "$GITHUB_STEP_SUMMARY"
           exit "$rc"
 
       - name: summary-fresh -- the committed discharge-summary.json is what the run wrote
         # Only when the run RAN (it writes the summary on failure too). Skipped means nothing
-        # was regenerated, and a diff of an unregenerated file would pass vacuously.
+        # was regenerated, and a diff of an unregenerated file would pass vacuously. On a PR
+        # (no summary written) it checks the committed summary's tree_sha is this Lean tree.
         if: ${{ !cancelled() && (steps.discharge.outcome == 'success' || steps.discharge.outcome == 'failure') }}
         shell: bash
-        run: git diff --exit-code -- "$SUMMARY"
+        env:
+          EVENT: ${{ github.event_name }}
+        run: bash scripts/ci/provable_ladder_discharge.sh summary-fresh
 
       - name: pv lint contracts/
         if: ${{ !cancelled() && steps.build.outcome == 'success' }}
