@@ -773,6 +773,7 @@ include!("qa_gguf.rs");
 include!("output_verification.rs");
 include!("gpu_correct_subject.rs");
 include!("golden_output.rs");
+include!("golden_thinking_sampling.rs");
 include!("speedup.rs");
 include!("forward_error.rs");
 include!("gpu_isolation_result.rs");

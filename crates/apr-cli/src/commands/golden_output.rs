@@ -105,9 +105,8 @@ fn golden_output_gguf_cpu(
     prompt: &str,
     max_tokens: usize,
 ) -> Result<(Vec<u32>, String)> {
-    use realizar::gguf::{OwnedQuantizedModel, QuantizedGenerateConfig};
+    use realizar::gguf::QuantizedGenerateConfig;
 
-    let prompt_tokens = golden_prompt_tokens(gguf, prompt);
     // #1864: without stop_tokens, the model runs for the full max_tokens
     // budget and starts emitting in-distribution chat-template tokens like
     // `<|im_start|>` from accumulated drift — which `verify_output` then
@@ -122,9 +121,24 @@ fn golden_output_gguf_cpu(
         stop_tokens: golden_stop_tokens(gguf),
         ..Default::default()
     };
+    golden_gguf_cpu_generate(mapped, gguf, prompt, &gen_config)
+}
+
+/// One CPU generation of `prompt` under `gen_config`, decoded. The greedy golden legs
+/// and the sampled thinking-ON leg (#4696) share it, so they differ only in the sampler.
+#[cfg(feature = "inference")]
+fn golden_gguf_cpu_generate(
+    mapped: &realizar::gguf::MappedGGUFModel,
+    gguf: &realizar::gguf::GGUFModel,
+    prompt: &str,
+    gen_config: &realizar::gguf::QuantizedGenerateConfig,
+) -> Result<(Vec<u32>, String)> {
+    use realizar::gguf::OwnedQuantizedModel;
+
+    let prompt_tokens = golden_prompt_tokens(gguf, prompt);
     let model = OwnedQuantizedModel::from_mapped(mapped)
         .map_err(|e| CliError::ValidationFailed(format!("Model failed: {e}")))?;
-    let tokens = qa_dense_generate(&mut qa_dense_cpu(model), &prompt_tokens, &gen_config, false)
+    let tokens = qa_dense_generate(&mut qa_dense_cpu(model), &prompt_tokens, gen_config, false)
         .map_err(|e| CliError::ValidationFailed(format!("CPU generation failed: {e}")))?;
     let text = gguf.decode(&tokens);
     Ok((tokens, text))
@@ -1057,6 +1071,25 @@ fn judge_thinking_on_leg(
                 )))
             }
         };
+        // #4696: a row that declares `sampling` is judged over its seeds, not greedy.
+        if let Some(verdict) = sampled_on_leg_verdict(
+            &model_file,
+            mapped,
+            gguf_model,
+            &on_prompt,
+            &on_patterns,
+            on_budget,
+        ) {
+            return Ok(verdict.map(|r| {
+                GateResult::failed(
+                    "golden_output",
+                    &format!("{r} [budget basis — {budget_basis}]"),
+                    None,
+                    None,
+                    start.elapsed(),
+                )
+            }));
+        }
         if let Some((_, on_text)) = generate_golden_for_format(
             path, &on_prompt, on_budget, format, mapped,
             gguf_model, // #3750 made this a borrow of the map; `Option<&T>` is Copy
