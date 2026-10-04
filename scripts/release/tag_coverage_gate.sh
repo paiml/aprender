@@ -17,13 +17,79 @@
 # A run that is absent, a job that never appears, or either still unfinished after the
 # wait is a refusal: Unknown is not a pass.
 #
-# ENV  GH (default gh) · TCG_REPO (paiml/aprender) · TCG_TRIES (90) · TCG_SLEEP (60 s).
-# EXIT 0 coverage green on the tag · 1 red, absent or unfinished · 2 usage.
+# THE JOB MUST EXIST BEFORE THE TAG (#4691). ci.yml dropped its `ci:` sovereign-ci call, and
+# `ci / coverage` with it, while this gate kept waiting for that name after every tag. On v0.70.1
+# it waited for the whole 25-minute tag run and then refused, with the tag and the GitHub release
+# already public. `tcg_job_name` is the ONE place the name lives. `--resolve SHA` reads
+# .github/workflows/ci.yml at SHA and refuses, naming the job and the file, unless one of its jobs
+# produces that check name. autopilot.sh cut_tag() runs it ahead of `git tag`, and gate() runs it
+# again before its first gh call. A ci.yml that cannot be read is NOT_MEASURED, which refuses. A
+# name that only a reusable workflow's inner job would produce (`<caller> / <job>`, the caller
+# having `uses:`) cannot be resolved from ci.yml, and refuses the same way.
+#
+#   bash scripts/release/tag_coverage_gate.sh --resolve SHA   # before the tag: is the job declared?
+#
+# ENV  GH (default gh) · TCG_REPO (paiml/aprender) · TCG_TRIES (90) · TCG_SLEEP (60 s) ·
+#      TCG_CI_YML (read this file instead of `git show SHA:.github/workflows/ci.yml`).
+# EXIT 0 coverage green on the tag (with --resolve: the job is declared) · 1 red, absent,
+#      unfinished, undeclared or not measured · 2 usage.
 set -uo pipefail
 PROG=tag_coverage_gate
 GH=${GH:-gh}
 REPO=${TCG_REPO:-paiml/aprender}
-JOB='ci / coverage'
+CI_YML_REL=.github/workflows/ci.yml
+
+# The ONE place the coverage check name lives (#4691).
+tcg_job_name() { echo 'ci / coverage'; }
+JOB=$(tcg_job_name)
+
+# ci_jobs FILE -> one "<id><TAB><check name><TAB><uses or ->" line per job under `jobs:`. The
+# check name is the job's `name:` when it has one, else its id. Pure; no network.
+ci_jobs() {
+    awk '
+        function flush() { if (id != "") printf "%s\t%s\t%s\n", id, (name == "" ? id : name), (uses == "" ? "-" : uses); id = ""; name = ""; uses = "" }
+        function val(s) { sub(/^[^:]*:[ \t]*/, "", s); sub(/[ \t]+$/, "", s); if (s ~ /^".*"$/ || s ~ /^\047.*\047$/) s = substr(s, 2, length(s) - 2); return s }
+        /^jobs:[ \t]*$/ { inj = 1; next }
+        inj && /^[^ \t#]/ { flush(); inj = 0; next }
+        inj && /^  [A-Za-z0-9_-]+:[ \t]*$/ { flush(); id = $0; sub(/^  /, "", id); sub(/:.*/, "", id); next }
+        inj && id != "" && /^    name:/ { name = val($0); next }
+        inj && id != "" && /^    uses:/ { uses = val($0); next }
+        END { flush() }
+    ' "$1"
+}
+
+# tcg_resolve FILE -> prints ok|bad|nm <why>. Pure: is $JOB a check name some job in FILE produces?
+tcg_resolve() {
+    local f=$1 jobs caller
+    [ -s "$f" ] || { echo "nm $CI_YML_REL could not be read"; return; }
+    jobs=$(ci_jobs "$f")
+    [ -n "$jobs" ] || { echo "nm $CI_YML_REL declares no jobs that could be parsed"; return; }
+    if awk -F'\t' -v j="$JOB" '$2 == j && $3 == "-" { f = 1 } END { exit !f }' <<< "$jobs"; then echo ok; return; fi
+    caller=${JOB%% / *}
+    if [ "$caller" != "$JOB" ] && awk -F'\t' -v c="$caller" '$2 == c && $3 != "-" { f = 1 } END { exit !f }' <<< "$jobs"; then
+        echo "nm '$JOB' would come from inside the reusable workflow job '$caller' calls, which $CI_YML_REL does not show"; return
+    fi
+    echo "bad no job in $CI_YML_REL produces '$JOB' (its jobs: $(cut -f2 <<< "$jobs" | paste -sd, -))"
+}
+
+# resolve SHA -> 0 when the job is declared in ci.yml at SHA; 1 (refuse) otherwise. Prints one line.
+resolve() {
+    local sha=$1 f v d=""
+    if [ -n "${TCG_CI_YML:-}" ]; then f=$TCG_CI_YML
+    else
+        d=$(mktemp -d) || { echo "NOT_MEASURED mktemp failed -- refused before the tag"; return 1; }
+        f=$d/ci.yml
+        git show "$sha:$CI_YML_REL" > "$f" 2>/dev/null || : > "$f"
+    fi
+    v=$(tcg_resolve "$f")
+    [ -n "$d" ] && { rm -f -- "$d/ci.yml"; rmdir -- "$d"; }
+    case "$v" in
+        ok) echo "ok    '$JOB' is declared in $CI_YML_REL at $sha"; return 0 ;;
+        nm\ *) echo "NOT_MEASURED ${v#nm } at $sha -- refused; Unknown is not a pass" ;;
+        *) echo "FAIL  ${v#bad } at $sha -- refused before the tag" ;;
+    esac
+    return 1
+}
 
 # Pure. RUN is the matched run's status ('' = no run on this sha yet); JOB_STATE is
 # "<status> <conclusion>" of the coverage job ('' = not present). Prints ok|wait|bad <why>.
@@ -55,6 +121,8 @@ job_state() {
 
 gate() {
     local tag=$1 sha=$2 tries=${TCG_TRIES:-90} slp=${TCG_SLEEP:-60} i found id run job v=""
+    # #4691: a job ci.yml does not declare can never appear; refuse now, not after the wait.
+    resolve "$sha" || return 1
     for ((i = 1; i <= tries; i++)); do
         found=$(find_run "$tag" "$sha"); id=${found%% *}; run=${found#* }
         [ -n "$found" ] || run=""
@@ -87,22 +155,64 @@ wait|in_progress|in_progress |coverage still running
 wait|queued||coverage not yet scheduled
 wait|||no run on this commit yet
 EOF
-    # End to end through the real JSON filters, with a stub gh answering from fixtures.
+    # End to end through the real JSON filters, with a stub gh answering from fixtures. The stub
+    # logs every call, so a refusal that must come before any gh call (#4691) can be told apart
+    # from one that waited for a job that can never appear.
     d=$(mktemp -d) || return 1
     cat > "$d/gh" <<'STUB'
 #!/usr/bin/env bash
+echo "$1" >> "$FIX/calls"
+[ -e "$FIX/gh-fails" ] && { echo "HTTP 502" >&2; exit 1; }
 case "$1" in
     run) cat "$FIX/runs.json" ;;
     api) cat "$FIX/jobs.json" ;;
 esac
 STUB
     chmod +x "$d/gh"
+    # ci.yml fixtures: the job declared (in the `ci / gate` shape ci.yml uses today), absent,
+    # renamed, and reachable only through a reusable workflow call (the shape #3676 waited on).
+    printf 'name: CI\non: push\njobs:\n  x86-main:\n    runs-on: x\n  ci-coverage:\n    name: "ci / coverage"\n    runs-on: x\n' > "$d/present.yml"
+    printf 'name: CI\non: push\njobs:\n  x86-main:\n    runs-on: x\n  ci-gate:\n    name: ci / gate\n    runs-on: x\n' > "$d/absent.yml"
+    printf 'name: CI\njobs:\n  ci-coverage:\n    name: ci / coverage-tag\n    runs-on: x\n' > "$d/renamed.yml"
+    printf 'name: CI\njobs:\n  ci:\n    uses: paiml/.github/.github/workflows/sovereign-ci.yml@main\n' > "$d/reusable.yml"
+    printf 'name: CI\non: push\n' > "$d/nojobs.yml"
+    : > "$d/empty.yml"
+    echo "$PROG self-test: ci.yml resolution (#4691)"
+    local fx
+    while IFS='|' read -r want fx why; do
+        got=$(tcg_resolve "$d/$fx.yml")
+        if [ "${got%% *}" = "$want" ]; then echo "  ok   $why"; else echo "  FAIL $why: wanted $want, got '$got'"; fail=1; fi
+    done <<'EOF'
+ok|present|a job whose name: is the check name resolves
+bad|absent|no job produces the check name: refused
+bad|renamed|a renamed job (ci / coverage-tag) is not the job waited for: refused
+nm|reusable|a name only a reusable workflow's inner job would produce cannot be resolved: refused
+nm|nojobs|a ci.yml with no parsable jobs is not measured: refused
+nm|empty|an unreadable (empty) ci.yml is not measured: refused
+EOF
     local S=1111111111111111111111111111111111111111 O=2222222222222222222222222222222222222222
-    e2e() { # e2e WANT_RC WHY RUNS_JSON JOBS_JSON
-        printf '%s' "$3" > "$d/runs.json"; printf '%s' "$4" > "$d/jobs.json"
-        FIX=$d GH=$d/gh TCG_TRIES=2 TCG_SLEEP=0 gate v9.9.9 "$S" > "$d/out" 2>&1; rc=$?
-        if [ "$rc" = "$1" ]; then echo "  ok   $2"; else echo "  FAIL $2: wanted rc $1, got $rc: $(cat "$d/out")"; fail=1; fi
+    e2e() { # e2e WANT_RC WHY RUNS_JSON JOBS_JSON [CI_YML_FIXTURE [WANT_GH_CALLS]]
+        local calls
+        printf '%s' "$3" > "$d/runs.json"; printf '%s' "$4" > "$d/jobs.json"; : > "$d/calls"
+        FIX=$d GH=$d/gh TCG_TRIES=2 TCG_SLEEP=0 TCG_CI_YML="$d/${5:-present}.yml" gate v9.9.9 "$S" > "$d/out" 2>&1; rc=$?
+        calls=$(wc -l < "$d/calls")
+        if [ "$rc" != "$1" ]; then echo "  FAIL $2: wanted rc $1, got $rc: $(cat "$d/out")"; fail=1
+        elif [ -n "${6:-}" ] && [ "$calls" != "$6" ]; then echo "  FAIL $2: wanted $6 gh call(s), got $calls: $(cat "$d/out")"; fail=1
+        else echo "  ok   $2"; fi
     }
+    local GREEN='{"jobs":[{"name":"ci / coverage","status":"completed","conclusion":"success"}]}'
+    local RUN_DONE="[{\"databaseId\":7,\"headSha\":\"$S\",\"status\":\"completed\"}]"
+    local RUN_LIVE="[{\"databaseId\":7,\"headSha\":\"$S\",\"status\":\"in_progress\"}]"
+    e2e 1 "e2e #4691: job absent from ci.yml refuses before any gh call (no wait on a live run)" \
+        "$RUN_LIVE" '{"jobs":[{"name":"x86-main","status":"in_progress","conclusion":null}]}' absent 0
+    e2e 1 "e2e #4691: job renamed in ci.yml refuses before any gh call" "$RUN_DONE" "$GREEN" renamed 0
+    e2e 1 "e2e #4691: job behind a reusable workflow refuses before any gh call" "$RUN_DONE" "$GREEN" reusable 0
+    e2e 0 "e2e #4691: job declared and green on the tag passes" "$RUN_DONE" "$GREEN" present
+    e2e 1 "e2e #4691: job declared and red on the tag refuses" \
+        "$RUN_DONE" '{"jobs":[{"name":"ci / coverage","status":"completed","conclusion":"failure"}]}' present
+    : > "$d/gh-fails"
+    e2e 1 "e2e #4691: job declared, gh failing refuses (a failed read is not a pass)" "$RUN_DONE" "$GREEN" present
+    rm -f -- "${d:?}/gh-fails"
     e2e 0 "e2e: green coverage on the tag commit passes" \
         "[{\"databaseId\":7,\"headSha\":\"$S\",\"status\":\"completed\"}]" \
         '{"jobs":[{"name":"gate","status":"completed","conclusion":"failure"},{"name":"ci / coverage","status":"completed","conclusion":"success"}]}'
@@ -117,7 +227,7 @@ STUB
         "[{\"databaseId\":7,\"headSha\":\"$S\",\"status\":\"in_progress\"}]" \
         '{"jobs":[{"name":"ci / coverage","status":"in_progress","conclusion":null}]}'
     e2e 1 "e2e: gh answering garbage is a refusal, not a pass" 'rate limited' 'rate limited'
-    rm -f -- "$d/gh" "$d/runs.json" "$d/jobs.json" "$d/out"; rmdir -- "$d"
+    rm -f -- "${d:?}/gh" "$d/runs.json" "$d/jobs.json" "$d/out" "$d/calls" "$d"/*.yml; rmdir -- "$d"
     if [ "$fail" -eq 0 ]; then echo "$PROG self-test: PASS"; return 0; fi
     echo "$PROG self-test: FAIL"; return 1
 }
@@ -125,10 +235,15 @@ STUB
 main() {
     case "${1:-}" in
         --self-test) self_test; return ;;
-        -h|--help) sed -n '2,23p' "${BASH_SOURCE[0]}"; return 0 ;;
+        -h|--help) sed -n '2,36p' "${BASH_SOURCE[0]}"; return 0 ;;
+        --resolve)
+            if [ "$#" -ne 2 ] || [[ ! $2 =~ ^[0-9a-f]{40}$ ]]; then
+                echo "$PROG: usage: --resolve SHA(40-hex)" >&2; return 2
+            fi
+            resolve "$2"; return ;;
     esac
     if [ "$#" -ne 2 ] || [[ ! $2 =~ ^[0-9a-f]{40}$ ]]; then
-        echo "$PROG: usage: TAG SHA(40-hex) | --self-test" >&2; return 2
+        echo "$PROG: usage: TAG SHA(40-hex) | --resolve SHA(40-hex) | --self-test" >&2; return 2
     fi
     gate "$1" "$2"
 }

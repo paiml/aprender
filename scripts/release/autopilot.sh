@@ -206,6 +206,11 @@ cut_tag() {
     awk -v n="$need" 'index($0, n) == 1 { f = 1 } END { exit !f }' "${AP:-/nonexistent}/readiness-t1.log" 2>/dev/null \
         || die "no '#3715 ENFORCE PASS' for $v at $mc in ${AP:-<unset AP>}/readiness-t1.log -- release-readiness-v1 missing, skipped or not enforced; no tag"
     say "READINESS-GATE $(grep -F "$need" "$AP/readiness-t1.log" | tail -n 1)"
+    # #4691: the coverage job the preflight step waits for must be declared in ci.yml at $mc BEFORE the
+    # tag. Undeclared, renamed or unreadable -> no tag, nothing carried (it refused 25 min after v0.70.1).
+    bash "$REPO_ROOT/scripts/release/tag_coverage_gate.sh" --resolve "$mc" >> "$LOG" 2>&1 \
+        || die "the tag coverage job is not declared in ci.yml at $mc (tag_coverage_gate.sh --resolve) -- no tag, nothing carried"
+    say "COVERAGE-JOB declared in ci.yml at $mc (tag_coverage_gate.sh --resolve rc=0)"
     bash "$REPO_ROOT/scripts/check_milestone_cut.sh" "$v" --must-carry >> "$LOG" 2>&1 || rc=$?
     case "$rc" in
         0) say "MUST-CARRY $v: no open must-carry issue (check_milestone_cut.sh --must-carry rc=0)" ;;
