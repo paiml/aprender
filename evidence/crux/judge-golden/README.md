@@ -11,18 +11,50 @@ Nothing here is wired: no workflow, script or guard reads this directory yet.
 - `inputs/syn/`: the synthetic cases' inputs, all written by hand.
 - `inputs/real/`: relabelled copies of committed 0.69.1 CRUX evidence (see "Relabelling" below):
   `p3962/` (a producer run), `f9-greedy/` (greedy rows) and `cert/` (the prompt certification and its
-  two manifests).
+  two manifests). The 1022 raw output files the real rows name are packed, see "Unpacking" below.
 - `inputs/p3962/`, `inputs/f9-greedy/`, `inputs/cert/`: the manifest and metas those cases read. The
   producer manifest drops its `code` rows and points its row paths into `inputs/real/p3962/`. No run
   committed a meta, so each meta is synthetic and carries a `fixture` field saying so.
 - `inputs/prompts/`: frozen copies of `scripts/crux_inference_prompts.json` and
   `scripts/crux_inference_prompts.v2.json`, relabelled.
-- `SHA256SUMS`: every input a case reads (1073 files). Check with
-  `sha256sum -c evidence/crux/judge-golden/SHA256SUMS` from the repo root.
+- `SHA256SUMS`: every input a case reads (1073 files), as the judge sees them after unpacking.
+  Unpacking ends with `sha256sum -c` over this list.
 - `golden/`: the judge's output per case, with the exact command, interpreter and judge commit.
   See `golden/README.md`.
 
 Row paths in a manifest are resolved against the working directory, so run every case from the repo root.
+
+## Unpacking
+
+The judge reads every row's raw output file, and the real cases name 1022 of them. To keep the
+directory small they are committed as four JSON Lines bundles under `inputs/real/bundles/`, one per
+source (`p3962`, `cert-gpu-sm89`, `cert-arm64-gpu`, `f9-greedy`). Each line is
+`{"path": <the row path>, "text": <the file's bytes>}`, sorted by path. Every raw file is valid UTF-8
+with no NUL byte, so the text is exact.
+
+**Unpack before running any case.** A missing stdout or stderr file reads as empty, so a case run
+over the bundles without unpacking yields a different receipt, not an error. Unpack into a copy of
+the tree, not the checkout, and run the cases from that copy. With bash and jq, from the copy's root:
+
+```bash
+set -euo pipefail
+G=evidence/crux/judge-golden
+for b in "$G"/inputs/real/bundles/*.jsonl; do
+  jq -j '.path, "\u0000", .text, "\u0000"' "$b" | while IFS= read -r -d '' p && IFS= read -r -d '' t; do
+    case "$p" in "$G"/inputs/real/*/*) ;; *) printf 'refused path: %s\n' "$p" >&2; exit 1 ;; esac
+    case "$p" in *..* | *//*) printf 'refused path: %s\n' "$p" >&2; exit 1 ;; esac
+    awk -v p="$p" '$2 == p { f = 1 } END { exit !f }' "$G/SHA256SUMS" || { printf 'not in SHA256SUMS: %s\n' "$p" >&2; exit 1; }
+    if [ -e "$p" ]; then printf 'exists, not overwritten: %s\n' "$p" >&2; exit 1; fi
+    mkdir -p "${p%/*}"
+    printf '%s' "$t" > "$p"
+  done
+done
+sha256sum -c --quiet "$G/SHA256SUMS"
+```
+
+It exits 0 only when all 1073 inputs are present with the listed hashes and every bundled file is one
+of them. It fails on a changed byte, a dropped bundle line, a path outside `inputs/real/`, a path
+`SHA256SUMS` does not list, and a second unpack over the same tree.
 
 ## Cases
 

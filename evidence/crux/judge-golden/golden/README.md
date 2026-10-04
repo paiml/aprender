@@ -15,7 +15,7 @@ check these files. They are data: the expected output a port of the judge must r
 | interpreter | Python 3.13.1 |
 | run 1 | 2026-10-04T17:02:43Z to 17:02:49Z, once, under `nice -n 10`, over the original real inputs and the six synthetic cases |
 | run 2 | 2026-10-04T17:59:56Z to 18:00:02Z, once, under `nice -n 10`, over all eleven cases in `../cases.tsv` |
-| inputs | `../SHA256SUMS`; check with `sha256sum -c evidence/crux/judge-golden/SHA256SUMS` from the repo root |
+| inputs | `../SHA256SUMS`, after unpacking (see "Unpacking" in `../README.md`) |
 | outputs | `SHA256SUMS` in this directory |
 
 ## The exact command
@@ -44,6 +44,26 @@ Over this `cases.tsv` the command reproduces exactly this directory, up to the m
 Each case directory holds `receipt.json`, `receipt.md` and `rc` (the judge's exit code). In every
 case of both runs `stdout.md` was byte-identical to `receipt.md` and `stderr.txt` was empty, so
 those two files were not kept. A port must print the markdown receipt on stdout and nothing on stderr.
+
+## What the judge opens
+
+Every file in `../SHA256SUMS` is opened by at least one case, so none was dropped from the fixtures.
+The 1073 files, by how the judge reaches them:
+
+| how | files | where in the judge |
+|---|---|---|
+| a `cases.tsv` column: manifest, prompts, meta, certification | 21 | `collect` arguments |
+| a `gen` row's `stdout` | 693 | `engine_entry` (`read_text`) |
+| a `gen` row's `stderr` | 330 | `engine_entry`; an apr `run` row with thinking on also has its rendered prompt read from it |
+| a `greedy` row's `tokens` | 24 | `_greedy_raw` and `report_greedy` |
+| a `tok` row's `ids` | 3 | `judge_deterministic` (`tok`) and `token_parity` |
+| a `tmpl` row's `rendered` | 2 | `judge_deterministic` (`tmpl`) and `prompt_opens_think` |
+
+No path is named by two fields. One `stdout` path,
+`inputs/syn/raw/missing-on-purpose.out` in `syn-branches`, names no file on purpose: the judge
+reads a missing stdout as empty, and that case pins it. A row from an engine the judge does not
+know (`syn-unknown-engine`) is never opened, but the file it names is also read by `syn-pass`.
+This was found by reading the judge, not by tracing a run.
 
 ## Comparing
 
