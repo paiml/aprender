@@ -1024,7 +1024,9 @@ as a refusal. It is honest, but it is not T1-green.
   --limit <|T|>`. The default `--limit 10` samples too few tensors, and QFR-002 guards against that.
 - **Model:** the trained 4B from the T1 finetune row, after the 0.8B dev cell is green. The GGUF legs and QFR-006 need
   the 4B: the 0.8B has as many value heads as key heads (16 and 16), so the value-head reorder is the identity there
-  and a 0.8B cell cannot catch an export that skips it.
+  and a 0.8B cell cannot catch an export that skips it. Its key and value totals are equal too (2048 and 2048), so
+  it cannot catch an export that starts the value rows of `attn_qkv` at n_k·d_k + n_v·d_v instead of 2·n_k·d_k
+  either. The 4B's totals are 2048 and 4096, and those of QFR-006's in-tree fixture are 24 and 72.
 - **Host:** intel, CPU.
 - **NOT MEASURED when:** #4418 (qwen35 GGUF name map) is not merged. Without it the GGUF legs cannot run, and QFR-005's
   named refusal is the only honest answer.
