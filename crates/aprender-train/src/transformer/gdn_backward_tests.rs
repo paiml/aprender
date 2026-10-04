@@ -29,10 +29,26 @@ const DIMS: GdnDims = GdnDims {
 };
 const T: usize = 16;
 
+/// QTC-001's shape: 3 key heads of width 8 shared by 6 value heads of width 4. With
+/// d_k = d_v, code that uses one width where the other belongs computes the same
+/// numbers, and with 2 : 4 heads the key-head count equals the head ratio, so either
+/// can stand for the other. R21's CUDA kernel is compared against this oracle at this
+/// shape (qwen35-train-cuda-v1 QTC-001).
+const QTC: GdnDims = GdnDims {
+    hidden_dim: 8,
+    num_k_heads: 3,
+    head_k_dim: 8,
+    num_v_heads: 6,
+    head_v_dim: 4,
+    conv_kernel: 4,
+    eps: 1e-6,
+};
+
 /// Every scan input, plus the fixed cotangents that define the scalar loss
 /// `L = Σ w_out · out + Σ w_final · final_state`.
 #[derive(Clone)]
 struct Case {
+    dims: &'static GdnDims,
     q: Vec<f64>,
     k: Vec<f64>,
     v: Vec<f64>,
@@ -45,9 +61,14 @@ struct Case {
 
 impl Case {
     fn random(seed: u64) -> Self {
+        Self::random_in(&DIMS, seed)
+    }
+
+    fn random_in(d: &'static GdnDims, seed: u64) -> Self {
         let mut r = Lcg(seed);
-        let (kd, vd, nv, sl) = (DIMS.k_dim(), DIMS.v_dim(), DIMS.num_v_heads, DIMS.state_len());
+        let (kd, vd, nv, sl) = (d.k_dim(), d.v_dim(), d.num_v_heads, d.state_len());
         Self {
+            dims: d,
             // Unit-scale keys (the forward L2-normalises them before the scan).
             q: r.vec(T * kd, -0.35, 0.35),
             k: r.vec(T * kd, -0.35, 0.35),
@@ -68,7 +89,7 @@ impl Case {
             &self.v,
             &self.beta,
             &self.g,
-            &DIMS,
+            self.dims,
             Some(&self.s0),
             false,
         );
@@ -82,7 +103,7 @@ impl Case {
             &self.v,
             &self.beta,
             &self.g,
-            &DIMS,
+            self.dims,
             Some(&self.s0),
             true,
         );
@@ -92,7 +113,7 @@ impl Case {
             &self.v,
             &self.beta,
             &self.g,
-            &DIMS,
+            self.dims,
             Some(&self.s0),
             &s.history,
             &self.w_out,
@@ -159,6 +180,16 @@ fn falsify_qtg_003_scan_gradcheck_f64() {
     for seed in [1, 7, 42] {
         for (name, rel) in gradcheck(&Case::random(seed)) {
             assert!(rel <= 1e-3, "seed {seed}: d{name} rel err {rel:e} > 1e-3");
+        }
+    }
+}
+
+/// FALSIFY-QTG-003 at QTC-001's shape (d_k = 8, d_v = 4, 3 key : 6 value heads).
+#[test]
+fn falsify_qtg_003_scan_gradcheck_unequal_widths() {
+    for seed in [1, 7, 42] {
+        for (name, rel) in gradcheck(&Case::random_in(&QTC, seed)) {
+            assert!(rel <= 1e-3, "QTC shape, seed {seed}: d{name} rel err {rel:e} > 1e-3");
         }
     }
 }
@@ -232,27 +263,32 @@ const MIX_FIELDS: [&str; 10] =
 /// The mixer's input, every weight, and the cotangent `w_y` of `L = Σ w_y · y`.
 #[derive(Clone)]
 struct MixCase {
+    dims: &'static GdnDims,
     f: Vec<Vec<f64>>,
     w_y: Vec<f64>,
 }
 
 impl MixCase {
     fn random(seed: u64) -> Self {
+        Self::random_in(&MIX, seed)
+    }
+
+    fn random_in(d: &'static GdnDims, seed: u64) -> Self {
         let mut r = Lcg(seed);
-        let (h, cd, vd, nv) = (MIX.hidden_dim, MIX.conv_dim(), MIX.v_dim(), MIX.num_v_heads);
+        let (h, cd, vd, nv) = (d.hidden_dim, d.conv_dim(), d.v_dim(), d.num_v_heads);
         let f = vec![
-            r.vec(MIX_T * h, -1.0, 1.0),            // normed
-            r.vec(cd * h, -0.5, 0.5),               // qkv
-            r.vec(vd * h, -0.5, 0.5),               // gate
-            r.vec(nv * h, -0.5, 0.5),               // alpha
-            r.vec(nv * h, -0.5, 0.5),               // beta
-            r.vec(nv, -1.5, -0.2),                  // a = -exp(A_log) < 0
-            r.vec(nv, -0.5, 0.5),                   // dt_bias
-            r.vec(cd * MIX.conv_kernel, -0.6, 0.6), // conv
-            r.vec(MIX.head_v_dim, 0.5, 1.5),        // norm
-            r.vec(h * vd, -0.5, 0.5),               // out
+            r.vec(MIX_T * h, -1.0, 1.0),          // normed
+            r.vec(cd * h, -0.5, 0.5),             // qkv
+            r.vec(vd * h, -0.5, 0.5),             // gate
+            r.vec(nv * h, -0.5, 0.5),             // alpha
+            r.vec(nv * h, -0.5, 0.5),             // beta
+            r.vec(nv, -1.5, -0.2),                // a = -exp(A_log) < 0
+            r.vec(nv, -0.5, 0.5),                 // dt_bias
+            r.vec(cd * d.conv_kernel, -0.6, 0.6), // conv
+            r.vec(d.head_v_dim, 0.5, 1.5),        // norm
+            r.vec(h * vd, -0.5, 0.5),             // out
         ];
-        Self { f, w_y: r.vec(MIX_T * h, -1.0, 1.0) }
+        Self { dims: d, f, w_y: r.vec(MIX_T * h, -1.0, 1.0) }
     }
 
     fn weights(&self) -> GdnWeights<'_, f64> {
@@ -271,7 +307,7 @@ impl MixCase {
     }
 
     fn loss(&self) -> f64 {
-        dot(&gdn_mixer_forward(&self.f[0], &self.weights(), &MIX), &self.w_y)
+        dot(&gdn_mixer_forward(&self.f[0], &self.weights(), self.dims), &self.w_y)
     }
 }
 
@@ -285,10 +321,18 @@ fn falsify_qtg_003_mixer_gradcheck_f64() {
     }
 }
 
+/// FALSIFY-QTG-003 at mixer scale and QTC-001's shape (d_k = 8, d_v = 4, 3 : 6 heads).
+#[test]
+fn falsify_qtg_003_mixer_gradcheck_unequal_widths() {
+    for seed in [2, 11, 23] {
+        mixer_gradcheck(&MixCase::random_in(&QTC, seed), &format!("QTC shape, seed {seed}"));
+    }
+}
+
 /// Gradcheck `normed` and every weight of `case`'s mixer at rel err ≤ 1e-3.
 fn mixer_gradcheck(case: &MixCase, at: &str) {
     const H: f64 = 1e-6;
-    let (d_normed, g) = gdn_mixer_backward(&case.f[0], &case.weights(), &MIX, &case.w_y);
+    let (d_normed, g) = gdn_mixer_backward(&case.f[0], &case.weights(), case.dims, &case.w_y);
     let got =
         [&d_normed, &g.qkv, &g.gate, &g.alpha, &g.beta, &g.a, &g.dt_bias, &g.conv, &g.norm, &g.out];
     for (fi, name) in MIX_FIELDS.iter().enumerate() {

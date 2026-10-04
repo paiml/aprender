@@ -26,6 +26,21 @@ const DIMS: GdnDims = GdnDims {
     eps: 1e-6,
 };
 
+/// QTC-001's shape: 3 key heads of width 8 shared by 6 value heads of width 4. With
+/// d_k = d_v, code that uses one width where the other belongs computes the same
+/// numbers, and with 2 : 4 heads the key-head count equals the head ratio, so either
+/// can stand for the other. R21's CUDA kernel is compared against this forward at this
+/// shape (qwen35-train-cuda-v1 QTC-001).
+const QTC: GdnDims = GdnDims {
+    hidden_dim: 12,
+    num_k_heads: 3,
+    head_k_dim: 8,
+    num_v_heads: 6,
+    head_v_dim: 4,
+    conv_kernel: 4,
+    eps: 1e-6,
+};
+
 struct Owned {
     qkv: Vec<f32>,
     gate: Vec<f32>,
@@ -167,7 +182,7 @@ fn mixer_is_causal() {
 
 /// QTG-001 at layer scale: the sequence mixer equals serve's own per-token GDN
 /// arithmetic (`realizar::gguf::forward_qwen35`, as `forward_deltanet` composes it)
-/// on the same weights, on a grouped (2 key : 4 value heads) layer.
+/// on the same weights, on a grouped (2 key : 4 value heads) layer and at QTC-001's shape.
 /// `realizar` is a dev-dependency, so this compiles in every `cargo test` run, CI included.
 mod serve_parity {
     use super::*;
@@ -226,24 +241,35 @@ mod serve_parity {
         out
     }
 
-    #[test]
-    fn falsify_qtg_001_sequence_mixer_equals_serve_per_token() {
+    /// `gdn_mixer_forward` equals `serve_mixer` on `d`'s layer, for three seeds.
+    fn assert_mixer_equals_serve(d: &GdnDims, at: &str) {
         for seed in [1_u64, 2, 3] {
-            let (t, w) = (9, Owned::random(&DIMS, seed));
-            let x = Lcg(seed + 100).vec(t * DIMS.hidden_dim, 1.0);
-            let ours = gdn_mixer_forward(&x, &w.view(), &DIMS);
-            let theirs = serve_mixer(&x, &w, &DIMS);
+            let (t, w) = (9, Owned::random(d, seed));
+            let x = Lcg(seed + 100).vec(t * d.hidden_dim, 1.0);
+            let ours = gdn_mixer_forward(&x, &w.view(), d);
+            let theirs = serve_mixer(&x, &w, d);
             let max_err =
                 ours.iter().zip(&theirs).map(|(a, b)| (a - b).abs()).fold(0.0_f32, f32::max);
             let scale = theirs.iter().map(|v| v.abs()).fold(0.0_f32, f32::max);
             assert!(
                 scale > 1e-3,
-                "seed {seed}: degenerate output, the comparison would be vacuous"
+                "{at}, seed {seed}: degenerate output, the comparison would be vacuous"
             );
             assert!(
                 max_err <= 1e-5 * scale.max(1.0),
-                "seed {seed}: max |train - serve| = {max_err} (scale {scale})"
+                "{at}, seed {seed}: max |train - serve| = {max_err} (scale {scale})"
             );
         }
+    }
+
+    #[test]
+    fn falsify_qtg_001_sequence_mixer_equals_serve_per_token() {
+        assert_mixer_equals_serve(&DIMS, "2 : 4 heads");
+    }
+
+    /// The same at QTC-001's shape (d_k = 8, d_v = 4, 3 key : 6 value heads).
+    #[test]
+    fn falsify_qtg_001_sequence_mixer_equals_serve_per_token_unequal_widths() {
+        assert_mixer_equals_serve(&QTC, "QTC shape");
     }
 }

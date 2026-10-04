@@ -41,7 +41,7 @@ equations:
     - 'serve oracle runs under realizar::quantize::with_fp32_activations — its default Q4_K matvec quantises activations to Q8_K first, which alone moves the real 0.8B to cos 0.998 of the f32 forward (the arithmetic, not the model)'
   gdn_backward:
     formula: '∀ θ ∈ {q,k,v,z,β,dt projections, A_log, dt_bias, conv1d, norm}: |∂L/∂θ_analytic − (L(θ+ε) − L(θ−ε))/2ε| ≤ 1e-3 · max(1, |∂L/∂θ_fd|)'
-    domain: 'f64 reference on a 2 key : 4 value head, d_k=d_v=8, T=16 GDN scan, and an 8-wide mixer with causal conv1d (K=4, T=8); ε = 1e-6'
+    domain: 'f64 reference on a 2 key : 4 value head, d_k=d_v=8, T=16 GDN scan, and an 8-wide mixer with causal conv1d (K=4, T=8), both again at 3 key : 6 value heads with d_k=8, d_v=4 (qwen35-train-cuda-v1 QTC-001''s shape); ε = 1e-6'
     invariants:
     - Gradient w.r.t. the carried state S_0 is also checked (chunked training passes state across chunks)
     preconditions:
@@ -90,7 +90,7 @@ falsification_tests:
 - id: FALSIFY-QTG-001
   rule: Train forward = serve forward on Qwen3.5-4B
   prediction: 'per-position cosine ≥ 0.9999 and identical argmax between aprender-train and aprender-serve logits on 3 fixed prompts'
-  test: 'IN-TREE: crates/aprender-train/src/transformer/gdn_tests.rs::falsify_qtg_001_sequence_mixer_equals_serve_per_token, crates/aprender-train/src/transformer/qwen35_layer_tests.rs::falsify_qtg_001_gated_attention_equals_serve_per_token, crates/aprender-train/src/transformer/qwen35_model_tests.rs::falsify_qtg_001_tiny_model_logits_equal_serve; ignored (needs QWEN35_GGUF) falsify_qtg_001_real_model_logits_equal_serve'
+  test: 'IN-TREE: crates/aprender-train/src/transformer/gdn_tests.rs::{falsify_qtg_001_sequence_mixer_equals_serve_per_token, falsify_qtg_001_sequence_mixer_equals_serve_per_token_unequal_widths}, crates/aprender-train/src/transformer/qwen35_layer_tests.rs::falsify_qtg_001_gated_attention_equals_serve_per_token, crates/aprender-train/src/transformer/qwen35_model_tests.rs::falsify_qtg_001_tiny_model_logits_equal_serve; ignored (needs QWEN35_GGUF) falsify_qtg_001_real_model_logits_equal_serve'
   if_fails: 'the training model is not the served model — the class this whole train exists to remove'
 - id: FALSIFY-QTG-002
   rule: Planted falsifier — the decay-gate mutant
@@ -100,7 +100,7 @@ falsification_tests:
 - id: FALSIFY-QTG-003
   rule: GDN gradcheck
   prediction: 'every parameter and S_0 passes central-difference gradcheck at rel err ≤ 1e-3 in f64'
-  test: 'IN-TREE: crates/aprender-train/src/transformer/gdn_backward_tests.rs::{falsify_qtg_003_scan_gradcheck_f64, falsify_qtg_003_mixer_gradcheck_f64, falsify_qtg_003_mixer_gradcheck_past_softplus_cutover}'
+  test: 'IN-TREE: crates/aprender-train/src/transformer/gdn_backward_tests.rs::{falsify_qtg_003_scan_gradcheck_f64, falsify_qtg_003_scan_gradcheck_unequal_widths, falsify_qtg_003_mixer_gradcheck_f64, falsify_qtg_003_mixer_gradcheck_unequal_widths, falsify_qtg_003_mixer_gradcheck_past_softplus_cutover}'
   if_fails: 'a backward term is missing or wrong (typically the S_tᵀk_t read-out term or the conv1d causal shift)'
 - id: FALSIFY-QTG-004
   rule: Planted falsifier — drop the delta read-out gradient
