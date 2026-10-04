@@ -140,7 +140,7 @@ cmd_init() {
     if [ "${#e[@]}" -eq 1 ] && [ "${e[0]}" = "$store/.tmp" ] && [ ! -L "${e[0]}" ]; then e=(); fi
     if [ "${#e[@]}" -gt 0 ]; then refuse "$store is not empty and has no WRITER: it is not adopted"; return 1; fi
     if ! mkdir -p -- "$store/.tmp"; then refuse "could not create $store/.tmp"; return 1; fi
-    TMPF="$(mktemp "$store/.tmp/WRITER.XXXXXX")" || { refuse "mktemp failed in $store/.tmp"; return 1; }
+    TMPF="$(mktemp -- "$store/.tmp/WRITER.XXXXXX")" || { refuse "mktemp failed in $store/.tmp"; return 1; }
     # ln -T sets the WRITER whole, at exactly that path, or not at all. Of two inits at once, one sets
     # it and the other is refused; run again, that one reports the writer that was set.
     if ! printf '%s\n' "$id" > "$TMPF" || ! ln -T -- "$TMPF" "$store/WRITER" 2>/dev/null; then
@@ -162,8 +162,8 @@ cmd_put() {
     f="$store/$h/$kind/$name"
     if ! mkdir -p -- "$store/.tmp"; then refuse "could not create $store/.tmp"; return 1; fi
     # The body is copied first and hashed from the copy, so the hash is of the bytes recorded.
-    TMPB="$(mktemp "$store/.tmp/body.XXXXXX")" || { refuse "mktemp failed in $store/.tmp"; return 1; }
-    TMPF="$(mktemp "$store/.tmp/put.XXXXXX")" || { refuse "mktemp failed in $store/.tmp"; return 1; }
+    TMPB="$(mktemp -- "$store/.tmp/body.XXXXXX")" || { refuse "mktemp failed in $store/.tmp"; return 1; }
+    TMPF="$(mktemp -- "$store/.tmp/put.XXXXXX")" || { refuse "mktemp failed in $store/.tmp"; return 1; }
     # Read by redirection: cat takes an operand - as stdin, even after --, so a file named - would be skipped.
     if ! cat < "$src" > "$TMPB"; then refuse "could not copy $src"; return 1; fi
     if ! sum="$(sha256sum < "$TMPB")"; then refuse "could not hash $src"; return 1; fi
@@ -200,9 +200,11 @@ cmd_get() {
     if [ -L "$store/$h" ] || [ -L "$store/$h/$kind" ]; then refuse "the path to $kind/$name for H=$(short "$h") holds a symlink"; return 1; fi
     f="$store/$h/$kind/$name"
     if [ ! -e "$f" ] && [ ! -L "$f" ]; then
+        # A symlinked H or kind directory is skipped: no symlink inside the store is followed, even to
+        # say where a record is filed.
         for d in "$store"/*; do
             o="${d##*/}"
-            if is_h "$o" && [ "$o" != "$h" ] && { [ -e "$d/$kind/$name" ] || [ -L "$d/$kind/$name" ]; }; then
+            if is_h "$o" && [ "$o" != "$h" ] && [ ! -L "$d" ] && [ ! -L "$d/$kind" ] && { [ -e "$d/$kind/$name" ] || [ -L "$d/$kind/$name" ]; }; then
                 others="$others${others:+, }H=$o"
             fi
         done
@@ -265,7 +267,8 @@ selftest() {
     # SEC011: validate before rm -rf. $tmp is this function's own mktemp -d (checked above).
     trap selftest_cleanup RETURN
     export EVIDENCE_STORE_WRITER=train
-    row() { # name expect-rc needle -- script-args ... ; a needle that starts with ! must NOT be said
+    row() { # name expect-rc needle -- script-args ... ; a needle that starts with ! must NOT be said, and
+        # one that starts with = is the whole output
         local name="$1" expect="$2" needle="$3" o rc=0
         shift 3
         if [ "${1:-}" = -- ]; then shift; fi
@@ -277,6 +280,9 @@ selftest() {
                     *"${needle#!}"*) printf '  BROKE %-66s exit %s but said: %s\n%s\n' "$name" "$rc" "${needle#!}" "$o"; fail=$((fail + 1)) ;;
                     *) printf '  ok    %-66s exit=%s\n' "$name" "$rc"; pass=$((pass + 1)) ;;
                 esac ;;
+            '='*)
+                if [ "$o" = "${needle#=}" ]; then printf '  ok    %-66s exit=%s\n' "$name" "$rc"; pass=$((pass + 1))
+                else printf '  BROKE %-66s exit %s but did not say exactly: %s\n%s\n' "$name" "$rc" "${needle#=}" "$o"; fail=$((fail + 1)); fi ;;
             *)
                 case "$o" in
                     *"$needle"*) printf '  ok    %-66s exit=%s\n' "$name" "$rc"; pass=$((pass + 1)) ;;
@@ -506,6 +512,18 @@ selftest() {
         printf '  BROKE %-66s\n  before %s\n  after  %s\n' 'a STORE link to a non-store: nothing is written there' "$before" "$after"; fail=$((fail + 1))
     fi
     body_row 'a STORE that links to a store reads that store' "$tmp/store7link" "$H1" receipt dash "$tmp/dash/-"
+    mkdir -p "$s7/$H1/receipt/sub"
+    row 'FALSIFIER: verify refuses a directory filed as a record, by name' 1 'receipt/sub for H=111111111111 is not a file' -- verify "$s7" "$H1"
+    mkdir -p "$tmp/elsewhere/receipt"; printf 'x\n' > "$tmp/elsewhere/receipt/r9"
+    ln -s -- "$tmp/elsewhere" "$s7/$H5"
+    row 'FALSIFIER: the other-H scan skips a symlinked H' 1 "=FAIL  STORE receipt/r9 is not recorded for H=$H3" -- get "$s7" "$H3" receipt r9
+    mkdir -p "$s7/$H2"; ln -s -- "$tmp/elsewhere/receipt" "$s7/$H2/known-failure"
+    row 'FALSIFIER: the other-H scan skips a symlinked kind directory' 1 "=FAIL  STORE known-failure/r9 is not recorded for H=$H3" -- get "$s7" "$H3" known-failure r9
+    cd -- "$tmp" || return 2
+    row 'FALSIFIER: a STORE path that starts with - is a path, for init' 0 'is the store of writer train' -- init -dashstore train
+    row 'FALSIFIER: a STORE path that starts with - is a path, for put' 0 'receipt/r1 recorded for H=111111111111' -- put -dashstore "$H1" receipt r1 "$tmp/r1"
+    body_row 'a STORE path that starts with - is a path, for get' -dashstore "$H1" receipt r1 "$tmp/r1"
+    cd -- "$here" || return 2
 
     printf -- '--- %s/%s rows ---\n' "$pass" "$((pass + fail))"
     [ "$fail" -eq 0 ]
@@ -585,6 +603,11 @@ init_takes_tmp_symlink      /^cmd_init() {$/,/^}$/s/ && \[ ! -L "\${e\[0\]}" \];
 check_record_reads_non_file /^check_record() {$/,/^}$/s/if \[ ! -f "\$f" \]; then echo/if false; then echo/
 get_refusals_on_stdout      s/^    get) shift; cmd_get "\$@" 3>&1 1>&2 ;;$/    get) shift; cmd_get "$@" 3>\&1 ;;/
 put_reads_dash_as_stdin     /^cmd_put() {$/,/^}$/s/if ! cat < "\$src" > "\$TMPB"; then/if ! cat -- "$src" > "$TMPB"; then/
+init_mktemp_takes_option    /^cmd_init() {$/,/^}$/s#mktemp -- "\$store/\.tmp/WRITER#mktemp "$store/.tmp/WRITER#
+put_body_mktemp_option      /^cmd_put() {$/,/^}$/s#mktemp -- "\$store/\.tmp/body#mktemp "$store/.tmp/body#
+put_mktemp_takes_option     /^cmd_put() {$/,/^}$/s#mktemp -- "\$store/\.tmp/put#mktemp "$store/.tmp/put#
+scan_follows_symlinked_h    /^cmd_get() {$/,/^}$/s#\[ ! -L "\$d" \] && ##
+scan_follows_symlinked_kind /^cmd_get() {$/,/^}$/s#\[ ! -L "\$d/\$kind" \] && ##
 MUTANTS
     printf -- '--- %s/%s mutants killed ---\n' "$pass" "$((pass + fail))"
     [ "$fail" -eq 0 ]
