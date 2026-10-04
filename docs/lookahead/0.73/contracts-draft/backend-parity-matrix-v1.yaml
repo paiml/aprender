@@ -92,11 +92,13 @@ equations:
                   leg_a {min,median,max,n}, leg_b {min,median,max,n}, composed_bound,
                   e2 {decode {r,ci_lo,ci_hi,n}, prefill {r,ci_lo,ci_hi,n}},
                   forward_trace_line,
+                  routes {run, serve} -> {binary_sha256, model_sha256, host, prompt_set_sha256, n_gen, forward_trace_line, kernel_path, tokens},
                   info_rows [{name, route, runs {role -> {run_sha256, model_sha256, prompt_set_sha256, kernel_path}},
                               cos {pair -> {min,median,max,n}}}] }
       REQUIRE: llamacpp_sha = d1d3c3396 (the ruled pin)
       REQUIRE: forward_trace_line names the forward that ran (E3: the MoE forward)
       REQUIRE: the verdict reads leg_a, leg_b and e2 only; info_rows never enter it (RQ-5, FALSIFY-BPM-018)
+      REQUIRE: E1 holds for a cell only when both routes are bound to leg A's backend run and their tokens are equal; a route's verdict is the cell's (FALSIFY-BPM-019)
       E6 admissible(cell) <=> PASS_E1 AND PASS_E2 receipts on main   (RQ-3 provisional S-4 default; PRM-001 must agree)
       hybrid(cell)       => E1 may PASS; E2 and E6 report it as HYBRID, never as GPU   (RQ-4 provisional S-4 default)
     domain: 'one receipt'
@@ -104,6 +106,7 @@ equations:
     invariants:
     - 'A receipt missing any identity field is refused (FALSIFY-OBS-ID-001, shared lint).'
     - 'Item (e) 2026-10-03: info_rows carry the RQ-5 info figures, such as a q8k_act reference or the C4 default route (neon-q4k-q6k-v1 c4_default_route_info). The checker derives the status, reason and labels of each row and reads none from the producer. A row never changes the verdict, whatever it holds (FALSIFY-BPM-018).'
+    - 'Item (m) 2026-10-04: routes carry the two E1 routes, apr run and apr serve, each greedy and non-batched (serve through POST /generate). The checker binds each route to leg A''s backend run by identity, kernel_path and forward line, compares the routes'' tokens, and gives a bound route the cell''s verdict (FALSIFY-BPM-019).'
 
 falsification_tests:
 - id: FALSIFY-BPM-001
@@ -215,6 +218,12 @@ falsification_tests:
   test: 'NOT YET WRITTEN — lands with P1, planted fixtures f018a and f018b (P1 spec §4)'
   if_fails: 'an info row lifts a failing leg, or an info row under 0.995 fails a cell it cannot gate under the RQ-5 ruling. An info row moved INTO a leg is BPM-008 (f008c).'
   mutation: 'take the best of a leg and its info rows (f018a turns GREEN); fold the info rows into the leg min (f018b fails); refuse the receipt on a non-finite info row, as BPM-009 does for a leg (the second f018b is refused)'
+- id: FALSIFY-BPM-019
+  rule: an E1 route passes only through a leg A that ran its decoder (route binding, item m)
+  prediction: 'base.json carries routes run and serve, each a copy of leg A''s backend run with equal tokens, and stays Pass. f019a: routes.run reaches a kernel_id on blk.0.ffn_up Q4_K that leg A''s backend run never reached: Refused, and so is a second fixture with the edit on routes.serve only. f019b: the routes'' tokens differ at decode step 5 of prompt 11 of 16: Fail(route tokens). f019c: routes.serve absent: NotRun(route); a second fixture whose routes.serve binary_sha256 is not the cell''s: Refused. f019d: the routes.run forward line names a batched prefill, leg A''s backend run per-token, kernel_path unchanged: Refused. f001 with bound, equal routes stays Fail(E1 min).'
+  test: 'NOT YET WRITTEN — lands with P1, planted fixtures f019a..f019d (P1 spec §4); the real route fields need P2'
+  if_fails: 'a route that leg A never ran passes E1 on the strength of the run oracle: at 316dee2cd4 the Qwen3.5 routes prefill in one batched call while leg A runs per token, and dense wgpu serve is its own decoder (R1 §13). A route that lifts a failing cell is the same defect.'
+  mutation: 'skip the route kernel_path check (f019a turns GREEN); check the run route only (the second f019a); bind on kernel_path alone (f019d); compare the routes'' tokens on the first prompt only (f019b); accept a cell with one route (f019c); skip the route identity check (the second f019c); let bound, equal routes pass without the leg checks (f001)'
 proof_obligations:
 - type: invariant
   property: 'Two legs >= 0.995 imply end-to-end cosine >= 0.98 (FALSIFY-BPM-002)'
@@ -256,6 +265,9 @@ proof_obligations:
 - type: invariant
   property: 'An info row never changes the verdict (FALSIFY-BPM-018)'
   formal: 'forall r, I: verdict(r with info_rows := I) = verdict(r)'
+- type: invariant
+  property: 'A route passes E1 only through a leg A that ran its decoder, and E1 needs both routes (FALSIFY-BPM-019)'
+  formal: 'PASS_E1(r) => tokens(r.routes.run) = tokens(r.routes.serve) and forall q in {r.routes.run, r.routes.serve}: present(q) and identity(q) = identity(r) and forward(q) = forward(backend(r)) and forall t: kernel_ids(q, t) = kernel_ids(backend(r), t)'
 
 qa_gate:
   id: F-BPM-GATE-001
@@ -269,8 +281,8 @@ qa_gate:
   pass_criteria: 'Every cell has an admissible receipt on main. Report-only until the harness lands.'
 
 verification_summary:
-  total_obligations: 13
+  total_obligations: 14
   proven: 0
   tested: 0
   status: proposed
-  notes: 'Draft by la-73 (L3). No ticket yet; the harness and the tests land with R1. L25 review 2026-10-03 at main 316dee2cd4 added BPM-009..015 (7 vacuous-pass holes). L25 on R4/R5 2026-10-03 at main 316dee2cd4 added BPM-016 (per-op hybrid) and BPM-017 (skipped F2 guard). C293.3 2026-10-03: RQ-3, RQ-4 and RQ-5 run on provisional S-4 defaults; BPM-008 now pins the value and checks the trace act path (f008c, f008d). Item (c) 2026-10-03: BPM-012 compares kernel_id per (tensor, op), not per path, OBS slot or entry, over the set each tensor reached (f012b..f012e). RQ-5 2026-10-03: ruled fp32_act by the cop on 2026-09-27 (q8k_act an info row only); text only, nothing flips. Item (e) 2026-10-03: receipt_shape gains info_rows, and BPM-018 keeps them out of the verdict (f018a, f018b); the first row is the C4 default route (neon-q4k-q6k-v1 c4_default_route_info, NEON-Q4K-009).'
+  notes: 'Draft by la-73 (L3). No ticket yet; the harness and the tests land with R1. L25 review 2026-10-03 at main 316dee2cd4 added BPM-009..015 (7 vacuous-pass holes). L25 on R4/R5 2026-10-03 at main 316dee2cd4 added BPM-016 (per-op hybrid) and BPM-017 (skipped F2 guard). C293.3 2026-10-03: RQ-3, RQ-4 and RQ-5 run on provisional S-4 defaults; BPM-008 now pins the value and checks the trace act path (f008c, f008d). Item (c) 2026-10-03: BPM-012 compares kernel_id per (tensor, op), not per path, OBS slot or entry, over the set each tensor reached (f012b..f012e). RQ-5 2026-10-03: ruled fp32_act by the cop on 2026-09-27 (q8k_act an info row only); text only, nothing flips. Item (e) 2026-10-03: receipt_shape gains info_rows, and BPM-018 keeps them out of the verdict (f018a, f018b); the first row is the C4 default route (neon-q4k-q6k-v1 c4_default_route_info, NEON-Q4K-009). Item (m) 2026-10-04: receipt_shape gains routes, and BPM-019 binds each E1 route (apr run, apr serve) to leg A''s backend run: the serve half of E1 is a falsifier, not a reused oracle (R1 §13).'

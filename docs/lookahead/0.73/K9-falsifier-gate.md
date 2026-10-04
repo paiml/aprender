@@ -80,7 +80,7 @@ min(tests, obligations) / obligations (`scoring/mod.rs:260-262`). For a contract
 obligations it is 0.0 without tests and 1.0 with any (:252-257). For each obligation, pv also
 looks for a falsification test whose `rule` equals the obligation's `property` (:222, "(no test)"
 at :231), but that probe does not enter the score. On main, 680 of 3888 obligations (17.5%) have
-such a test. In the four drafts, 0 of 38 do. So D2 = 1.00 means "at least as many tests as
+such a test. In the four drafts, 0 of 39 do (`falsifier_gate.py` prints the figure). So D2 = 1.00 means "at least as many tests as
 obligations", not "each obligation has a test".
 
 ## 4. The gate that works today

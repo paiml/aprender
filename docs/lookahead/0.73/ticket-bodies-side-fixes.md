@@ -149,5 +149,5 @@ No 0.73 model reaches it (R1 §11b). Neither scope caller at 316dee2cd4 reaches 
 ---
 
 ## Status (2026-10-03 22:10Z)
-- None of S1..S3 is a 0.73 gate. `falsifier-landing-map.md` lists AQ-005..007 separately from the 41 0.73 falsifiers.
+- None of S1..S3 is a 0.73 gate. `falsifier-landing-map.md` lists AQ-005..007 separately from the 42 0.73 falsifiers.
 - Filing: held under S-1 (C292) until LIVE 0.70.1, like P1..P5.

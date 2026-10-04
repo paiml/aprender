@@ -22,10 +22,17 @@ A cell's backend is named by what the process *printed about itself*: the wgpu a
 and the CUDA banner (verification rule 2). The flag it was launched with does not count. A
 cell whose engine silently fell back to CPU is RED, not "slow".
 
+Each cell has two routes, `apr run` and `apr serve`, since E1 names both. A route passes E1 only through a leg A
+that ran its decoder, and a cell meets E1 only when both routes pass (§13, FALSIFY-BPM-019).
+
 ## 3. E1 — correctness (composed-leg cosine)
 - Leg A: apr-backend vs apr-CPU on the same host, same GGUF, final-position logits. This is `apr parity`,
   which exists (registry `contracts/apr-cli-commands-v1.yaml`). `apr parity --per-op` is the diagnostic
   for a failing cell (`apr-parity-per-op-v1`).
+  At 316dee2cd4 `apr parity` runs only on a cuda build (`apr-cli/src/commands/parity_03.rs:214-218`), so it is
+  leg A for C0 and C5 only: C1–C3 have no leg-A tool, and C4's leg A compares its own CPU run with the C0
+  reference (§12, row 4). Its Qwen3.5 arm runs one token at a time, while `apr run` and `apr serve` prefill in
+  one batched call; §13 says what that does to E1.
 - Leg B: apr-CPU vs llama.cpp-CPU, once per (model, quant), from saved logits
   (`--kl-divergence-base`, common/arg.cpp:2502-2509 at d1d3c3396).
 - Prompts: n ≥ 16, the 78-token prompt of `scripts/check_model_parity.sh` plus variants (rule 6).
@@ -74,9 +81,12 @@ states device-kernel, host-widen and refused-cpu. WGF-004 FAILs on any host-wide
 
 ## 8. Reuse, not new tools
 check_model_parity.sh (prompts), parity_host_receipt.sh (E2 method, the rule that a lane is not
-labelled by intent), `apr parity` / `--per-op` (leg A + diagnosis), #4464 receipt shape, APR-OBS identity lint.
-New work: the leg-B logits harness, the matrix runner (one cell per invocation; it runs only when
-train-active is clear, with the GPU lock around the binary), and the contract.
+labelled by intent), `apr parity` / `--per-op` (leg A on C0 and C5 + diagnosis), #4464 receipt shape, APR-OBS
+identity lint.
+New work: the leg-B logits harness, the leg-A arms and route runs of §13, the matrix runner (one cell per
+invocation; it runs only when train-active is clear, with the GPU lock around the binary), and the contract.
+The harness, the leg-A arms, the route runs and the runner have no bundle yet: they are landing-map row 10
+until RQ-9 is ruled (§13).
 
 ## 9. Out of scope
 Fixing any cell: those are R2–R5. R1 only measures and gates. A thresholds change needs an amendment.
@@ -230,3 +240,102 @@ BPM-012 per tensor (2026-10-03). The first form compared whole kernel paths, and
 
 BPM-012 now compares, per (tensor, op), the sets of `kernel_id`s each run reached over the quantized matmul tensors, and refuses on any overlap. It needs sets because the route can switch per call: on the default route a crushed activation block sends that one Q4_K call to f32 (ffn_block.rs:790-792) [V]. P1 plants f012 (one equal tensor among differing ones), f012b (the C4 control), f012c (one kernel_id on two arches), f012d (a slot collision) and f012e (a tensor with two routes). The C4 leg meets the rule through R3's dispatch-honesty precondition, not through the second machine (R3 §13).
 pv 0.70.0 after this: validate 0/0 on both contracts; lint 0 errors and the same 5 lean_theorem warnings. Counts unchanged (BPM: 4 equations, 17 falsifiers, 12 obligations).
+
+## 13. The `apr serve` half of E1, and leg A per route (item m, 2026-10-04, origin/main 316dee2cd4, read-only)
+E1 names `apr run` and `apr serve`. §2–§8 measure one route per cell and judge it by leg A, but the oracle judges
+only the decoder that leg A ran, and at 316dee2cd4 neither route is shown to run that decoder. So the serve half
+of E1 is a falsifier, FALSIFY-BPM-019, and not the run oracle reused.
+
+### 13a. What leg A runs today
+- `apr parity` builds only with cuda: without it the command returns FeatureDisabled
+  (`apr-cli/src/commands/parity_03.rs:214-218`). Its arms are in `parity_hybrid.rs:15-25`. The Qwen3.5 arm
+  builds `Qwen35CudaModel::with_max_seq_len` (:246), and `run_hybrid` (:294) compares `forward_single_qwen35`
+  with `Qwen35CudaModel::forward_single` one token at a time.
+- The Qwen3.5 session prefills "in one batched call on the GPU"
+  (`aprender-serve/src/gguf/inference/forward/qwen35_session.rs:472`). `APR_QWEN35_SESSION_PREFILL=per-token`
+  restores the per-token prefill that 0.69.1 served, so that the two "can be compared token for token on ONE
+  binary" (:35-39). So by default leg A runs the prefill of neither route.
+- The two routes do not plan the same prefill. `apr run` loads through `Qwen35Session::load_for_run`
+  (`aprender-serve/src/infer/inference_result.rs:376`; `qwen35_session.rs:252-262`), which passes the run's
+  positions through `from_host` (:380) to `GpuBackend::build` (:407). That plans the CUDA prefill only when it
+  has positions (:85-87), and only then sets the rows per chunk and the attention path (:103-105), from
+  `plan_capacity` (:149): cuBLAS f32 attention while its plan fits, flash only when flash alone fits, and bigger
+  chunks on a unified-memory host. `apr serve` calls
+  `Qwen35Session::load` (`apr-cli/src/commands/serve/server.rs:172`), which reaches `from_host` with no positions
+  (`qwen35_session.rs:240-241`, :325-327), so it keeps the model defaults
+  (`aprender-serve/src/gguf/cuda/forward_qwen35_cuda_prefill.rs`): the first attention candidate (:199-207) and
+  512 rows per chunk (:39, :290-300), where a run on C5's unified memory tries 2048 first (:45). Rows per chunk
+  are capped by the prompt (:211-213), so a prompt under 512 positions is one chunk on serve. The run's chunk
+  and attention path come from its plan, so the two routes prefill alike only when the plan picks the defaults.
+- CPU-GPU-006 in `apr run` is not a leg A. `try_wgpu_generate`
+  (`aprender-serve/src/infer/gguf_gpu_generate.rs:160`) probes three steps (:236-264) against the CPU
+  `forward_single_with_cache` (:267), not the `fp32_act` reference (RQ-5). It accepts at `cos >= 0.99` (:304)
+  and logs and falls back below that (:306-310). Its note (:104-120, #3827) withdraws the 0.999863 figure:
+  #3757 measured 0.955 on intel, gx10, mini and the RTX 4090.
+
+### 13b. The two routes on each backend
+| Model, backend | `apr run` | `apr serve` | Same decoder as leg A? |
+|---|---|---|---|
+| Qwen3.5, CUDA (C0, C5) | the session, through `load_for_run`; batched prefill on the run's plan | the session, through `load` (`server.rs:172`); batched prefill on the model defaults | No, by default: leg A runs per token. The per-token variable makes both routes prefill per token. Whether each decode step is leg A's `forward_single` is [U]; BPM-019 checks it |
+| Qwen3.5, aarch64 CPU (C4) | the session on the CPU: the default route (Q4_K on Q8_K activations) | the same, when serve is started without an accelerator (`server.rs:172` passes `!config.wants_accelerator()` as no_gpu) | No: leg A runs `fp32_act` (RQ-5), and the default route is an info row while RQ-6 holds (`c4_default_route_info`). Both routes are Refused |
+| Qwen3.5, wgpu (C1–C3) | refused, exit 14 (`apr-cli/src/commands/run_entry.rs:331`) | refused at load: `--backend wgpu` reaches `try_start_wgpu_backend` first (`apr-cli/src/commands/serve/handlers.rs:947`, fn :905), and its `build_serve_model` (:922) refuses the layerless Qwen3.5 base (`handler_gpu_completion.rs:487`) before the Qwen3.5 route (:396) | Neither route runs (landing-map row 6) |
+| dense, wgpu (C1–C3) | `try_wgpu_generate`: raw Q4K weights (`gguf_gpu_generate.rs:205`), eps from the config (:197) | `serve_wgpu_backend` (`handlers.rs:746`): F32 weights unless `WGPU_Q4K` (:510), a literal final-norm eps of 1e-6 (:133-148), per-layer eps from the config (:771), and a smoke test on the argmax only (:534-580) | No: two decoders, and no wgpu leg A |
+| dense, CUDA (C0, C5) | [U] | [U] | [U]; BPM-019 checks it |
+
+### 13c. What a route can be compared on
+- Serve returns no full-vocab logits. `/v1/logprobs` builds only with cuda and returns log probabilities per
+  generated token (`aprender-serve/src/api/gpu_completions_handler.rs:697-703`, mounted at `router.rs:222`),
+  and the Qwen3.5 completions backend sets `logprobs: None` (`qwen35_completions_backend.rs:348`).
+- Serve returns tokens. `POST /generate` (`router.rs:97`; `batch.rs:442`, `qwen35_raw_generate.rs:90`) returns
+  `GenerateResponse.token_ids` (`types.rs:110`), and the Qwen3.5 server mounts that router
+  (`apr-cli/src/commands/serve/server.rs:153-160`, :418-430).
+- `apr run --stream` returns tokens: `print_stream_output` (`apr-cli/src/commands/run_entry.rs:560-561`, fn :700)
+  writes a `token_id` for each of `RunResult.generated_tokens` (:723-729). `execute_with_realizar` fills that
+  field with the tokens after the prompt (`apr-cli/src/commands/inference_output.rs:366`, :380, :396-404;
+  `run.rs:361`), and for Qwen3.5 those come from the session in `run_gguf_inference`
+  (`aprender-serve/src/infer/inference_result.rs:239`, :267, :376-383, :396).
+- The legs are teacher-forced (BPM-013) and a route generates freely, so a route is compared with the other
+  route, never with a leg.
+
+### 13d. FALSIFY-BPM-019 (route binding)
+The receipt carries `routes`: `run` and `serve`, each {`binary_sha256`, `model_sha256`, `host`,
+`prompt_set_sha256`, `n_gen`, `forward_trace_line` (the prefill forward with its attention path and rows per
+chunk, and the decode forward), `kernel_path`, `tokens`}. Both routes are greedy and non-batched, and `serve`
+goes through `POST /generate`. The checker applies five rules:
+1. Identity: a route's binary, model, host and prompt set are the cell's, else Refused(route identity).
+2. Decoder: per (tensor, op), a route's `kernel_id` sets equal those of leg A's backend run, and its forward
+   line names the same forwards, else Refused(route binding).
+3. Tokens: the run and serve tokens are equal on every prompt, else Fail(route tokens).
+4. Inheritance: a bound route's verdict is the cell's, so a route never lifts a failing cell.
+5. Absence: a missing route is NotRun(route).
+
+The planted fixtures f019a..f019d are in the P1 spec §4, and the seven checker mutations in its §5.
+
+### 13e. At 316dee2cd4, under the defaults
+- Qwen3.5 on C0 and C5: Refused(route binding). Both routes prefill in one batched call and leg A runs per
+  token. With `APR_QWEN35_SESSION_PREFILL=per-token` the prefill can bind, but it is then the 0.69.1 prefill,
+  not the default, and the session prints that the variable is set.
+- C1–C3: there is no leg A, so each route is NotRun until landing-map row 10 lands (RQ-9). The Qwen3.5 routes
+  do not run at all (row 6).
+- C4: Refused while RQ-6 holds (13b).
+- Dense wgpu: serve is a second decoder, so a leg A built on `try_wgpu_generate` would bind the run route only.
+- So no Qwen3.5 cell can pass E1 at 316dee2cd4. Only dense CUDA on C0 and C5 can, if its routes bind, which
+  is [U].
+
+### 13f. Known limits
+- `kernel_path` carries no scalar parameters, so serve's literal eps of 1e-6 would bind on `kernel_path` alone.
+  That is why rule 2 also reads the forward line, which names the forward that ran.
+- Only matmul sites emit `kernel_path`, so a different attention path shows only in the forward line. That is
+  why the prefill entry names its attention path.
+- The batched serve (`start_gguf_server_gpu_batched`, `server.rs:479`) is out of scope: both routes are
+  non-batched.
+
+Open:
+- RQ-9 (handoff): who builds leg A for each route and §8's harness? (a) a bundle P6 ranked after P2; (b)
+  landing-map row 10, the default; (c) the wgpu arm in P4 and the rest in row 10. Under (b) no falsifier moves,
+  the gate stays at 42, and the M runs that need a wgpu or Qwen3.5 leg A wait on row 10.
+- If RQ-6 flips, the C4 routes are compared without the crushed-block f32 switch entries on either side
+  (`aprender-serve/src/gguf/inference/forward/ffn_block.rs:790-792`, f012e), because that switch depends on the
+  activations. Under the default, RQ-6 holds and the C4 routes are Refused.
+
+pv 0.70.0 after this: validate passes on all four draft contracts; lint 0 errors and the same 9 warnings as before the edit (6 lean_theorem, 3 postconditions). BPM: 4 equations, 19 falsifiers, 14 obligations. `falsifier_gate.py`: 0 of 11 checks differ from the K9 table.

@@ -18,8 +18,8 @@ These are bodies ready to file, one per bundle in `falsifier-landing-map.md`.
 
 **Acceptance**
 - **Control:** the planted `base.json` passes. Without this, a checker that refuses everything would pass.
-- **Planted receipts:** 41 files under `tests/fixtures/bpm/` (`base.json`, the 33 rows of spec §4 with the second fixtures of f010, f012e, f013 and f018b and the three of f017, and f002b) give their spec §4 verdicts. They cover BPM-001..006 and 008..018, NEON-Q4K-009, plus WGF-005, WGF-009, R4-003 and the uncaptured-stderr case.
-- **Mutations:** the 22 checker mutations in spec §5 each flip their named receipt. The run is recorded in the PR body.
+- **Planted receipts:** 47 files under `tests/fixtures/bpm/` (`base.json`, the 37 rows of spec §4 with the second fixtures of f010, f012e, f013, f018b, f019a and f019c and the three of f017, and f002b) give their spec §4 verdicts. They cover BPM-001..006 and 008..019, NEON-Q4K-009, plus WGF-005, WGF-009, R4-003 and the uncaptured-stderr case.
+- **Mutations:** the 29 checker mutations in spec §5 each flip their named receipt. The run is recorded in the PR body.
 - **Composed bound:** a const test checks 2·acos(0.995) ≤ acos(0.98).
 - **Command:** `cargo test -p aprender-contracts --lib` runs all of it.
 
@@ -42,12 +42,14 @@ These are bodies ready to file, one per bundle in `falsifier-landing-map.md`.
 - `head_dim_source`: key_length or fallback.
 - a wgpu forward banner line, the counterpart of the CUDA `Backend: GPU (…)` line.
 - `precision` in each `kernel_path` entry names the activation path (f32, q8k or q8_0), including the per-call crushed-block f32 switch. The receipt derives `act_path_by_qtype` from it (BPM-008, f008d), and the forward trace line names the forward that ran. Every matmul site emits its entry, including fused gate/up (fused_gate_up.rs:177) and the fused RMSNorm + Q8_0 kernels.
+- Both routes name the prefill forward (its attention path and rows per chunk) and the decode forward apart in the forward trace line, and `apr serve` emits the same `kernel_path` and forward line as `apr run` for each non-batched request (FALSIFY-BPM-019). Today only the .apr CPU handler returns trace data (`apr-cli/src/commands/serve/handler_apr_cpu_completion.rs:299`), and `POST /generate` returns tokens only.
 
 **Acceptance**
 - A schema test asserts every field is present on a CPU run of a tiny fixture model.
 - `op_placement` keys equal DECODE_OPS, and `kernel_path` is non-null on CPU.
 - **Mutation:** drop the `attention` key; WGF-009's planted receipt in P1 must then be refused.
 - **Act-path control:** a tiny gated model forced down the non-fused gated branch (ffn_block.rs:58) inside `with_fp32_activations` must show its Q4_K up/gate at precision q8k. If the trace says f32, the precision field is not evidence.
+- **Route fields:** a non-batched `POST /generate` on the tiny fixture model returns a `kernel_path` and a forward line in the same schema as `apr run`'s, with the prefill and decode forwards named apart. Whether they are equal is BPM-019's check on a real cell, not P2's.
 
 **Hosts** x86 CI (CPU forward). The wgpu values are checked later, in P4.
 **Out of scope** New kernels; changing the OBS-15 contract (flag the CPU-row conflict to its owner instead).
@@ -121,12 +123,13 @@ These runs produce receipts, not code. They are scheduled when a host is train-i
 - NEON-Q4K-005 on C4.
 - The WGF-006/007/010 ledger sweep on C1.
 - R4-001 on C0 and R4-002 on C1–C3.
+- Each E1 receipt carries both routes (FALSIFY-BPM-019). A run that needs a wgpu or Qwen3.5 leg A waits for landing-map row 10 (RQ-9).
 
 ---
 
 ## Status (2026-10-03 22:15Z)
 - origin/main is 316dee2cd4. All file:line cites in R1–R5 and these bodies were re-checked there at 13:18Z (ac564391ab).
 - **Filing:** still under S-1 hold (operator C292): nothing is filed or opened until LIVE 0.70.1. After LIVE, 0.73 moves from the floor to normal cadence: P1..P5 go to the cop as PROPOSE-TICKET lines, and this branch gets its PR.
-- **Open rulings, not blocking (C293.3):** RQ-3, RQ-4 and RQ-6 are requested in the handoff. Work proceeds on provisional S-4 defaults: RQ-3 = E1 PASS + E2 PASS receipts on main; RQ-4 = a hybrid may pass E1, and E2/E6 name it; RQ-6 (gate the gx10 default route?) = info only, applied at c49bbb23cb. RQ-5 is ruled: `fp32_act` (cop, 2026-09-27 20:12Z). Added 2026-10-04: RQ-7 (where P3's aarch64 PR-CI step goes; default: P3's tests run by hand on gx10) and RQ-8 (whether qwen35 on wgpu, landing-map row 6, goes above P5; default: it stays at 6).
+- **Open rulings, not blocking (C293.3):** RQ-3, RQ-4 and RQ-6 are requested in the handoff. Work proceeds on provisional S-4 defaults: RQ-3 = E1 PASS + E2 PASS receipts on main; RQ-4 = a hybrid may pass E1, and E2/E6 name it; RQ-6 (gate the gx10 default route?) = info only, applied at c49bbb23cb. RQ-5 is ruled: `fp32_act` (cop, 2026-09-27 20:12Z). Added 2026-10-04: RQ-7 (where P3's aarch64 PR-CI step goes; default: P3's tests run by hand on gx10), RQ-8 (whether qwen35 on wgpu, landing-map row 6, goes above P5; default: it stays at 6) and RQ-9 (who builds leg A for each E1 route, and R1 §8's harness; default: landing-map row 10, and the M runs that need it wait).
 - **External blocker:** the OBS stack, #4487 and #4574, is unmerged, so P1's identity check stays NotRun until it merges.
 - **Side fixes:** S1..S3 (`ticket-bodies-side-fixes.md`) go out with P1..P5 at LIVE 0.70.1. They are not 0.73 gates, and none of P1..P5 waits on them.

@@ -1,12 +1,12 @@
 # 0.73 L3 falsifier landing map (draft, la-73, 2026-10-03)
 
-There are 41 falsifiers not yet written: 18 in backend-parity-matrix-v1 (BPM), 10 in neon-q4k-q6k-v1 (NEON),
+There are 42 falsifiers not yet written: 19 in backend-parity-matrix-v1 (BPM), 10 in neon-q4k-q6k-v1 (NEON),
 10 in wgpu-forward-v1 (WGF) and 3 in R4-moe-gpu-wiring.md (R4). The contract ones carry `test: NOT YET WRITTEN`.
 R4 has no contract, so its three exist only as lines in that note. This map assigns each one to one landing bundle.
 `count_audit.py` derives every count stated here and in the P1..P5 drafts from its source, and checks each one.
 The bundles are ticket PROPOSALS for the mint after LIVE 0.70.1. Nothing here is minted (C277).
 
-**Main finding:** 21 of the 41 need no GPU, no model and no aarch64 host. They are checks on planted receipt JSON,
+**Main finding:** 22 of the 42 need no GPU, no model and no aarch64 host. They are checks on planted receipt JSON,
 so they can land first and run on x86 CI. The contracts said "lands with the R1 harness" for several of them. That
 blocked them on the harness and GPU access for no reason. Only the checker is needed.
 
@@ -19,7 +19,7 @@ blocked them on the harness and GPU access for no reason. Only the checker is ne
 | **P3 R3 NEON kernels** | Q4_K/Q6_K NEON dots, `kernel_path`, the widen test entry, the matvec row test | gx10, by hand: no PR job runs aprender-serve tests on aarch64 (R3 §16); 000/006 cross-check on x86 | R3 mint |
 | **P4 R2 wgpu fixes** | theta and head_dim from metadata, q/k norm, Q6_K/Q8_0/Q4_0 WGSL | C1 (wgpu adapter); CI has no GPU | R2 mint; WGF-003 also on the K14 trace |
 | **P5 R4 MoE dispatch** | the streaming variant of the dispatch; the wgpu MoE forward (R4 item 2) | C0 for streaming; C1-C3 for wgpu | R4 mint; item 2 after P4 |
-| **M measurement runs** | receipts only, no code | GPU hosts, train-inactive | P1 + the bundle that is measured |
+| **M measurement runs** | receipts only, no code | GPU hosts, train-inactive | P1 + the bundle that is measured; row 10 for a run that needs a wgpu or Qwen3.5 leg A (RQ-9) |
 
 ## Assignment
 
@@ -42,6 +42,7 @@ blocked them on the harness and GPU access for no reason. Only the checker is ne
 | BPM-016 per-op HYBRID | P1 + P2 | Q8_0 trace with CPU GEMVs on a real adapter |
 | BPM-017 judged F2 guard | P1 | stderr with SKIP_PARITY_GATE=1; with "nothing was judged"; without the "GPU matches" line |
 | BPM-018 info row never gates | P1 | f018a: a failing leg next to a 0.999 info row; f018b: a 0.985 or "NaN" info row on a Pass receipt |
+| BPM-019 route binding | P1 + P2 | f019a..f019d: a route whose `kernel_path` or forward line is not leg A's backend run's; run and serve tokens that differ; an absent or unbound route |
 | WGF-005 hybrid is derived | P1 | host op with hybrid: false |
 | WGF-009 total op_placement | P1 + P2 | map without attention |
 | R4-003 `--no-gpu` refused | P1 | plus a positive control: a real C0 GPU receipt is ACCEPTED |
@@ -64,7 +65,7 @@ blocked them on the harness and GPU access for no reason. Only the checker is ne
 | R4-001 stream = non-stream | P5 + M (C0) | `used_gpu = true` and the banner on both runs |
 | R4-002 wgpu MoE leg A | P5 + M (C1-C3) | after P4 and R4 item 2 |
 
-Count (41): 21 in P1 (BPM-001..006, 008..018, NEON-009, WGF-005, WGF-009, R4-003). BPM-006, 012, 016 and WGF-009 also need P2
+Count (42): 22 in P1 (BPM-001..006, 008..019, NEON-009, WGF-005, WGF-009, R4-003). BPM-006, 012, 016, 019 and WGF-009 also need P2
 for the real field, but their planted receipts carry it already. Then 8 in P3, 5 in P4 (WGF-003 gated on K14),
 5 in M alone (BPM-007, NEON-005, WGF-006/007/010) and 2 in P5 + M (R4-001, R4-002).
 
@@ -74,8 +75,8 @@ research rows R1..R5 (2026-09-27) are the evidence behind it, not a second list.
 
 | Rank | Bundle | From | Gate falsifiers | Why this rank |
 |---|---|---|---|---|
-| 1 | P1 receipt checker | R1, its checker | 21 | The cheapest falsifier in 0.73: x86 CI, no model. Every other bundle's receipts, and every M run, are judged by it. |
-| 2 | P2 trace fields | R1, the fields its receipts read | 0. BPM-006, BPM-012, BPM-016, WGF-009 and WGF-004 need its fields | CPU only. Until it lands, those falsifiers are checked on planted fields only. |
+| 1 | P1 receipt checker | R1, its checker | 22 | The cheapest falsifier in 0.73: x86 CI, no model. Every other bundle's receipts, and every M run, are judged by it. |
+| 2 | P2 trace fields | R1, the fields its receipts read | 0. BPM-006, BPM-012, BPM-016, BPM-019, WGF-009 and WGF-004 need its fields | CPU only. Until it lands, those falsifiers are checked on planted fields only. |
 | 3 | P4 wgpu fixes | R2 | 5 | It goes after a measured failure: wgpu decode reaches cosine 0.955 on every GPU measured, below the 0.995 floor of an E1 leg (F-R5-3). P5's wgpu half waits on it. |
 | 4 | P3 NEON kernels | R3 | 8 | On aarch64 the gap is speed, plus a trace that says NEON while scalar code runs (F-R5-1). The output is already right. It runs in parallel with P4. |
 | 5 | P5 MoE dispatch | R4 | 2, each with its M run | The CUDA MoE forward exists; the gap is wiring. Its wgpu half follows P4. |
@@ -102,11 +103,11 @@ So no bundle serves E5 or E6, and none runs Qwen3.5-4B, E1's model, on wgpu (row
 
 | Rank | Row | Serves | Evidence | Why this rank |
 |---|---|---|---|---|
-| 6 | qwen35 on wgpu: a wgpu forward in `Qwen35Session`, with the gated-delta WGSL route (R2 item 6) | E1, E4 | `aprender-serve/src/infer/inference_result.rs:365-385` and `apr-cli/src/commands/serve/server.rs:172` load the session on CUDA or on the CPU, never on wgpu. A forced wgpu run is refused with exit 14 (`apr-cli/src/commands/run_entry.rs:331`), and so is a forced serve (`server.rs:180`). The gated-delta step has no wgpu arm (`aprender-serve/src/gguf/inference/forward/forward_qwen35.rs:1341`). | P4 repairs the dense wgpu path only, so P1..P5 leave E1's WGPU and Metal legs refused. It is the long pole and reuses P4's WGSL GEMV, so it starts when P4 lands. RQ-8 asks whether it goes above P5. |
+| 6 | qwen35 on wgpu: a wgpu forward in `Qwen35Session`, with the gated-delta WGSL route (R2 item 6) | E1, E4 | `aprender-serve/src/infer/inference_result.rs:365-385` and `apr-cli/src/commands/serve/server.rs:172` load the session on CUDA or on the CPU, never on wgpu. A forced wgpu run is refused with exit 14 (`apr-cli/src/commands/run_entry.rs:331`). A forced wgpu serve is refused at load, before any Qwen3.5 route is chosen: `--backend wgpu` reaches `try_start_wgpu_backend` first (`apr-cli/src/commands/serve/handlers.rs:947`), and its `build_serve_model` refuses the layerless Qwen3.5 base (`handler_gpu_completion.rs:487`). `server.rs:178-180` refuses a serve that wants an accelerator when its session lands on the CPU. The gated-delta step has no wgpu arm (`aprender-serve/src/gguf/inference/forward/forward_qwen35.rs:1341`). | P4 repairs the dense wgpu path only, so P1..P5 leave E1's WGPU and Metal legs refused. It is the long pole and reuses P4's WGSL GEMV, so it starts when P4 lands. RQ-8 asks whether it goes above P5. |
 | 7 | OBS-18 (#4575): `gpu_proof` for Metal and wgpu, a device-kernel trace line | E1, E6 | Defined in `OBS-18-gpu-proof-metal-wgpu.md`, read from origin/main on 2026-09-28. Its finding F3, a hardcoded backend label, has a fix written on la-73/4575-wgpu-backend-label @fd02954a8e. | Already minted. A WGPU or Metal leg counts only with this proof; without it a CPU fallback reads as a GPU run. Every wgpu and Metal M run waits on it. |
 | 8 | Kernel-registry coverage: register every kernel key the E1 backends dispatch, and a falsifier that fails on a dispatched key the registry lacks | E5 | No Rust kernel registry has both a backend and a qtype dimension (F-R5-5). The field is `kreg:backend` at `contracts/kernel-registry-v1.yaml:86` on kreg/4539-parity-receipts @02b0f7f7fc (#4539, train 0.71); that file is not on main. R5's census is the key list. | No bundle serves E5. It starts when #4539 is on main. |
 | 9 | E4 census: every refusal and CPU fallback a WGPU or Metal run can hit, each with a falsifier that it is gone | E4 | Today: Q8_0 and Q4_0 are refused for wgpu dequant and run on the CPU (`aprender-serve/src/gpu/adapters/wgpu_adapter.rs:339`, F-R5-2); the wgpu MoE forward is a stub (`aprender-serve/src/gguf/wgpu_backend/mod.rs:196`); qwen35 (row 6); sampled requests (row 17). | E4 says the refusals are removed, but nothing lists them, so E4 cannot be checked. Reading only, no GPU. P4 and P5 then strike rows off it. |
-| 10 | The `apr serve` half of E1: a serve parity cell per backend, greedy, judged like the run cell | E1 | R1's cells are all `apr run`: a case-insensitive grep of R1 for serve finds only `aprender-serve`. Serve loads the same `Qwen35Session` as run (`server.rs:172`), so the run oracle carries over. | E1 names `apr run` and `apr serve`, and the measurement plan covers only run: a gap in this slot's own plan. Cheap once the run cell exists. |
+| 10 | Leg A for each E1 route: the leg-A arms that run the routes' decoders (a wgpu arm; a Qwen3.5 arm through `Qwen35Session`), the route runs, and R1 §8's harness | E1 | `apr parity` is leg A and builds only with cuda (`apr-cli/src/commands/parity_03.rs:214-218`); its Qwen3.5 arm runs one token at a time (`parity_hybrid.rs:294`), while run and serve prefill in one batched call, and only run plans that prefill (R1 §13). Dense wgpu run and serve are two decoders (`try_wgpu_generate`, `serve_wgpu_backend`). FALSIFY-BPM-019 refuses a route that leg A did not run. | Without it no E1 route passes on C1–C3, and none for Qwen3.5. BPM-007 (M, C1) and R4-002 (P5 + M, C1–C3) need the same wgpu leg A. RQ-9 asks whether it becomes a bundle after P2; by default it stays here, and the M runs that need it wait. |
 | 11 | llama.cpp at the ruled pin d1d3c3396 on each E1 host, built for that host's backend, with its sha in every receipt | E1, E2 | R1 line 13 names the comparator (RQ-2), and R1 F4 fails a receipt whose llama.cpp sha is not the pin. Which hosts have that build today is [U]. | Host setup, not aprender code. Every E1 cosine and E2 ratio needs it, but only before the first M run, and M runs come last. |
 | 12 | wgpu device residency: attention, RoPE, the LM head and argmax on the device (R2 item 5) | E2, E6 | `aprender-compute/src/backends/gpu/device/linalg/wgsl_forward.rs:751` (embedding and LM head on the CPU), `:796` (LM head CPU matmul), `:876-877` (Q, K and V read back, attention on the CPU). | Until it lands every wgpu cell is hybrid (R1 F7), which RQ-4 rules on for E6, and the per-layer readback bounds E2 speed [U until measured]. Large, and it follows P4. |
 | 13 | intel's AMD GPUs under wgpu: a working Vulkan driver and a pinned adapter choice | E1, E6 | The #3757 measurement quoted in the #3827 comment lists intel as "Vulkan, no working driver" (`aprender-serve/src/infer/gguf_gpu_generate.rs:108`). The driver state today, and whether E1 means one adapter or both, are [U]. | Host setup. Without it neither E1's intel leg nor E6's C1 intel-wgpu cell (`contracts/rex-cell-admission-v1.yaml:6`) can be measured. |
@@ -123,11 +124,12 @@ So no bundle serves E5 or E6, and none runs Qwen3.5-4B, E1's model, on wgpu (row
    where the L25 fixes take effect.
 2. P4 and P3 in parallel: different crates and different hosts. If only one can be staffed, P4 goes first (Ranking).
 3. P5 after P4 for the wgpu MoE part; the streaming part can follow P1.
-4. M runs only when the host is train-inactive, each with its receipt checked by P1.
+4. M runs only when the host is train-inactive, each with its receipt checked by P1. A run that needs a wgpu or
+   Qwen3.5 leg A also waits on row 10 (RQ-9).
 5. Rows 6 to 20 in rank order, once L2 specifies them. Row 6 starts when P4 lands.
 
 ## Side fixes (not 0.73 gates)
-Three falsifiers sit outside the 41. They come from the draft amendment `contracts-draft/cpu-q4k-activation-quant-v1.yaml` (1.1.0) and land with their tickets (`ticket-bodies-side-fixes.md`), not with P1..P5:
+Three falsifiers sit outside the 42. They come from the draft amendment `contracts-draft/cpu-q4k-activation-quant-v1.yaml` (1.1.0) and land with their tickets (`ticket-bodies-side-fixes.md`), not with P1..P5:
 - FALSIFY-AQ-005 → S2: the multirow entry follows the fp32 scope.
 - FALSIFY-AQ-006 and FALSIFY-AQ-007 → S1: the fused gate+up entry follows the selector, and its crushed fallback is f32 and noted.
 
@@ -139,3 +141,4 @@ All three are x86 lib tests: no GPU, no model, no aarch64 host. S3 has no contra
 - RQ-4 decides whether a hybrid cell counts for E6. Provisional default: E1 may pass hybrid, and E2/E6 name it. It affects no bundle row (f016 asserts only the label). For row 12 it decides whether E6 needs device residency.
 - RQ-7 (handoff, item (k)) asks where P3's aarch64 PR-CI step goes (row 15). Without a ruling, P3's tests run by hand on gx10.
 - RQ-8 (handoff, item (l)) asks whether row 6, qwen35 on wgpu, goes above P5. Without a ruling it stays at 6, and E1's WGPU and Metal legs stay open until it lands, which may be in 0.74.
+- RQ-9 (handoff, item (m)) asks who builds leg A for each E1 route and R1 §8's harness: a bundle P6 ranked after P2, row 10 (the default), or the wgpu arm in P4 and the rest in row 10. Under the default no falsifier moves and the gate stays at 42, but no Qwen3.5 cell can pass E1: C0 and C5 are refused (batched prefill against a per-token leg A), C1–C3 have no leg A, and C4 is refused while RQ-6 holds (R1 §13e).

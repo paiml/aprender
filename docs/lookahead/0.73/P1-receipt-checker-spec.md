@@ -1,6 +1,6 @@
 # P1 — backend-parity cell receipt: schema and planted fixtures (draft, la-73, 2026-10-03)
 
-P1 is the first bundle in `falsifier-landing-map.md`. It holds 21 falsifiers and needs no GPU, no model and no aarch64 host.
+P1 is the first bundle in `falsifier-landing-map.md`. It holds 22 falsifiers and needs no GPU, no model and no aarch64 host.
 This is a spec only. No code is written and no ticket is minted (C277). Citations are at origin/main 316dee2cd4 unless a line says otherwise.
 
 ## 1. Reuse first: one validator per artifact family
@@ -42,6 +42,7 @@ pre-push checklist and in CI.
 | `stderr_lines` | captured lines of the serving process; `stderr_captured: true` | 003, 017, R4-003 |
 | `used_gpu`, `no_gpu_flag` | bool | R4-003 |
 | `info_rows` | list of {`name`, `route`, `runs` {role → {`run_sha256`, `model_sha256`, `prompt_set_sha256`, `kernel_path`}}, `cos` {pair → {record path, record sha256, min, median, max, n}}}. The checker derives each row's status (measured, or not_measured with a reason) and labels, and reads none of them from the producer (RQ-5: never in the verdict) | 018, NEON-Q4K-009 |
+| `routes` | {`run`, `serve`} → {`binary_sha256`, `model_sha256`, `host`, `prompt_set_sha256`, `n_gen`, `forward_trace_line` (the prefill forward with its attention path and rows per chunk, and the decode forward), `kernel_path`, `tokens` [prompt → generated ids]}. Greedy and non-batched; `serve` goes through `POST /generate` (`token_ids`, `aprender-serve/src/api/types.rs:110`). The checker binds each route to leg A's backend run (its `kernel_path` and forward line), never to a field the producer asserts (R1 §13) | 019 |
 
 ## 3a. Alignment with the OBS stack (found 2026-10-03; unmerged, #4487 / #4574)
 `apr-obs-row-identity-v1` and `apr-kernel-path-v1` are not on main. They sit on the unmerged OBS-00 commit 96d2fe4aa1,
@@ -70,11 +71,12 @@ which `origin/a01/4574-obs15-kernel-path` (b1244f6fb7) carries with a Rust check
 Every fixture is `base.json` plus one edit. `base.json` is a C0 CUDA cell with:
 - both legs ≥ 0.999 at every position, and E2 r = 0.7 with ci_lo = 0.6;
 - equal n_gen, the ruled pin, `device_type` DiscreteGpu and the CUDA banner;
-- a "F2 guard: GPU matches" line, different kernel paths and a total `op_placement` on device.
+- a "F2 guard: GPU matches" line, different kernel paths and a total `op_placement` on device;
+- `routes` run and serve, each a copy of leg A's backend run (identity, forward line, `kernel_path`), with equal tokens on all 16 prompts. Every fixture keeps that copy unless its edit names a route, so no earlier verdict changes.
 
 **Control:** `base.json` must be `Pass`. A checker that refuses everything fails this row.
 
-**C4 control:** f012b (`base_c4.json`) must be `Pass`. f012, f012c, f012d and f012e are `base_c4.json` plus one edit, and f012b fixes which GPU-only fields a CPU cell omits. A checker that refuses every CPU cell fails this row.
+**C4 control:** f012b (`base_c4.json`) must be `Pass`. f012, f012c, f012d and f012e are `base_c4.json` plus one edit, and f012b fixes which GPU-only fields a CPU cell omits. A checker that refuses every CPU cell fails this row. Its routes are planted bound, as in `base.json`; a real C4 route at 316dee2cd4 runs the default route, not leg A's `fp32_act` run, so it is Refused while RQ-6 holds (R1 §13e).
 
 **Info rows:** fN9a..fN9d are `base_c4.json` plus one `c4_default_route_info` row (neon-q4k-q6k-v1): d4 has q4k-q8k/neon-sdot on Q4_K and q6k-f32/neon on Q6_K, d0 has q4k-q8k/avx2, f0 is leg_a's `cpu_run_sha256`, and r1, r2, r3 have min 0.993, 0.994, 0.9995. Then one edit. The receipt verdict stays Pass in all four (BPM-018), and fN9b is the measured control.
 
@@ -113,6 +115,10 @@ Every fixture is `base.json` plus one edit. `base.json` is a C0 CUDA cell with:
 | fW09 | op_placement without the attention key, hybrid false | Refused | WGF-009 |
 | fR3 | no_gpu_flag true, used_gpu false, cell C0 E3 GPU | Refused | R4-003 |
 | fS | stderr_captured false, no lines | Refused (absence of the fallback line counts only with the banner present) | R4 L25 #4 |
+| f019a | `routes.run.kernel_path` reaches a `kernel_id` on blk.0.ffn_up Q4_K that leg A's backend run never reached (a batched-prefill GEMM); and a second fixture with the same edit on `routes.serve` only | Refused(route binding) | BPM-019 |
+| f019b | `routes.serve` tokens differ from `routes.run` at decode step 5 of prompt 11 of 16 | Fail(route tokens) | BPM-019 |
+| f019c | `routes.serve` absent; and a second fixture whose `routes.serve` `binary_sha256` is not the cell's | NotRun(route); the second Refused(route identity) | BPM-019 |
+| f019d | the `routes.run` forward line names the session's batched prefill while leg A's backend run printed per-token; `kernel_path` unchanged | Refused(route binding) | BPM-019 |
 
 ## 5. Mutations (each must turn its fixture GREEN)
 | Mutation of the checker | Fixture that must flip |
@@ -137,6 +143,13 @@ Every fixture is `base.json` plus one edit. `base.json` is a C0 CUDA cell with:
 | take the label from `arch` | fN9b |
 | skip the run binding | fN9c |
 | drop the triangle check | fN9d |
+| skip the route `kernel_path` check | f019a |
+| check the run route only | f019a, second fixture |
+| bind on `kernel_path` alone (skip the forward line) | f019d |
+| compare the routes' tokens on the first prompt only | f019b |
+| accept a cell with one route | f019c |
+| skip the route identity check (binary, model, host, prompt set) | f019c, second fixture |
+| let bound, equal routes pass without the leg checks | f001 |
 | refuse every CPU cell | f012b (control) |
 | refuse everything | base (control) |
 
@@ -148,3 +161,5 @@ Its test is the arithmetic 2·acos(0.995) = 0.200083 ≤ acos(0.98) = 0.200335 (
 - RQ-5 is ruled (cop, 2026-09-27 20:12Z): the E1 CPU reference is `fp32_act`, held as data in `bpm.cpu_ref_path` with `bpm.ref_mixed_qtypes` = [Q4_0, Q8_0]. A `q8k_act` run is reported as an info row only, so P1 refuses it as an E1 receipt (f008c) and it never counts toward a gate. Dense parity and parity-moe use the same reference. Item (e) gives info rows their place, `info_rows` (§3), and two rules: a row never changes the verdict (BPM-018, f018a, f018b), and the C4 default-route row is measured only on a proven route, one bound run triple and consistent angles (NEON-Q4K-009, fN9a..fN9d). Whether the gx10 default route should gate is RQ-6 (handoff); the provisional S-4 default is info only.
 - RQ-4 decides whether a HYBRID cell counts for E6. Provisional default: E1 may pass hybrid, and E2/E6 name it. f016 asserts only the label, so it holds under either ruling.
 - The DECODE_OPS list is defined in wgpu-forward-v1 (WGF-009). P1 imports that list and does not restate it.
+- RQ-9 (who builds leg A for each E1 route) does not block P1: f019a..f019d are planted receipts. The real `routes` fields need P2 and the route runs of R1 §13.
+- If RQ-6 flips, the C4 routes are compared without the crushed-block f32 switch entries on either side (`aprender-serve/src/gguf/inference/forward/ffn_block.rs:790-792`, f012e), because that switch depends on the activations. Under the default the C4 routes are Refused.

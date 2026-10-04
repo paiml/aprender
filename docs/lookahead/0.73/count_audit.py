@@ -274,6 +274,8 @@ def audit_p1(per_bundle):
     check("P1 body §5-only fixtures", only5, set(FIX_RE.findall(m.group(6))), where)
     m, where = find(BODIES, r"They cover ([^\n]*?) and the uncaptured-stderr case")
     check("P1 body coverage ids", per_bundle["P1"], ids_in(m.group(1)), where)
+    m, where = find(BODIES, r"the (\d+) checker mutations in spec §5")
+    check("P1 body mutations", len(table_rows(SPEC, r"^## 5\. ")), int(m.group(1)), where)
     return files
 
 
@@ -288,18 +290,18 @@ def audit_bodies(per_bundle):
 # the check the case breaks. The unchanged copy must exit 0, and a deleted source must exit 2.
 MUTATIONS = [
     (None, None, None, 0),
-    ("falsifier-landing-map.md", "18 in backend-parity-matrix-v1", "17 in backend-parity-matrix-v1", "landing map header BPM"),
+    ("falsifier-landing-map.md", "19 in backend-parity-matrix-v1", "18 in backend-parity-matrix-v1", "landing map header BPM"),
     ("falsifier-landing-map.md", "WGF-005, WGF-009, R4-003)", "WGF-005, R4-003)", "Count line P1 ids"),
     ("falsifier-landing-map.md", "| NEON-000 cross-check | P3 |", "| NEON-000 cross-check | P4 |", "Count line P3"),
     ("falsifier-landing-map.md", "Three falsifiers sit outside", "Two falsifiers sit outside", "side fixes outside the gate set"),
     ("contracts-draft/wgpu-forward-v1.yaml", "'NOT YET WRITTEN — lands with R2 item 1'", "'tests/wgf.rs'",
      "landing map header WGF"),
     ("R4-moe-gpu-wiring.md", "Falsifier FALSIFY-R4-003", "Falsifier FALSIFY-R4-004", "landing map covers the gate set"),
-    ("P1-receipt-checker-spec.md", "It holds 21 falsifiers", "It holds 20 falsifiers", "P1 spec falsifier count"),
+    ("P1-receipt-checker-spec.md", "It holds 22 falsifiers", "It holds 21 falsifiers", "P1 spec falsifier count"),
     ("P1-receipt-checker-spec.md", "| fW09 | op_placement without the attention key", "fW09 was here", "P1 body spec §4 rows"),
-    ("ticket-bodies-P1-P5.md", "**Planted receipts:** 41 files", "**Planted receipts:** 40 files", "P1 body planted files"),
+    ("ticket-bodies-P1-P5.md", "**Planted receipts:** 47 files", "**Planted receipts:** 46 files", "P1 body planted files"),
     ("P1-receipt-checker-spec.md", "; and a second fixture with only 7 decode positions", "", "P1 body second-fixture rows"),
-    ("falsifier-landing-map.md", "**Main finding:** 21 of the 41", "**Main finding:** 20 of the 41", "main finding P1"),
+    ("falsifier-landing-map.md", "**Main finding:** 22 of the 42", "**Main finding:** 21 of the 42", "main finding P1"),
     ("falsifier-landing-map.md", "| 4 | P3 NEON kernels |", "| 3 | P3 NEON kernels |", "ranking ranks"),
     ("falsifier-landing-map.md", "| 5 | P5 MoE dispatch |", "| 5 | P6 MoE dispatch |", "ranking bundles"),
     ("falsifier-landing-map.md", "| P4 wgpu fixes | R2 |", "| P4 wgpu fixes | R3 |", "ranking research rows"),
@@ -311,6 +313,7 @@ MUTATIONS = [
      "ranking rows 6 to 20 serve a criterion"),
     ("falsifier-landing-map.md", "P5 E3, E4.", "P6 E3, E4.", "ranks 1 to 5 serve line"),
     ("falsifier-landing-map.md", "| E5 |", "| E4 |", "ranking covers E1 to E6"),
+    ("ticket-bodies-P1-P5.md", "the 29 checker mutations", "the 28 checker mutations", "P1 body mutations"),
     ("R4-moe-gpu-wiring.md", None, None, 2),
 ]
 
