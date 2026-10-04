@@ -65,6 +65,8 @@ want_out() { case "$OUT" in *"$2"*) ok "$1";; *) bad "$1" "output containing '$2
 # The list the table judges against, independent of the committed one.
 printf '# planted\ncrux-latest.timer   # installs tools\nfleet-bins.timer\n' >"$T/list.txt"
 export TIMER_GUARD_LIST="$T/list.txt"
+# The real writer: the guard asks only that it exists (N1 plants its absence).
+export TIMER_GUARD_WRITER="$HERE/release/release_marker.sh"
 
 # The stub probe: prints $T/ans/<host>.out and exits with $T/ans/<host>.rc (default 0).
 mkdir -p "$T/ans"
@@ -170,6 +172,44 @@ answer h1 "${OPEN}${OFF}${BINS_OFF}END\n"
 OUT="$(TIMER_GUARD_PROBE="$T/probe" TIMER_GUARD_LIST="$T/no-such-list.txt" timeout 20 bash "$GUARD" --ssh h1 2>&1)"; RC=$?
 want "R14 an unreadable timer list -> caller error, exit 3" 3 "$RC"
 want_out "R14 names the unreadable list" "cannot read the tool-installing timer list"
+
+# -- the marker writer (#4670): "no marker" means something only when something writes one ----------
+answer h1 "${SHUT}${OFF}${BINS_OFF}END\n"
+OUT="$(TIMER_GUARD_PROBE="$T/probe" TIMER_GUARD_WRITER="$T/no-writer.sh" timeout 20 bash "$GUARD" --ssh h1 2>&1)"; RC=$?
+want "N1 no marker writer -> NOT_MEASURED, exit 2" 2 "$RC"
+want_out "N1 names the missing writer" "NOT_MEASURED R10 no release-open marker writer"
+case "$OUT" in *PASS*) bad "N1 never prints PASS" "no PASS" "$OUT";; *) ok "N1 never prints PASS";; esac
+
+guard --release 0.70.2 --ssh h1
+want "N2 release open (--release) but no marker on the host -> NOT_MEASURED, exit 2" 2 "$RC"
+want_out "N2 names the unset marker" "the writer did not set it"
+
+answer h1 "${OPEN}${OFF}${BINS_OFF}END\n"
+guard --release 0.70.3 --ssh h1
+want "N3 the marker names another release -> NOT_MEASURED, exit 2" 2 "$RC"
+want_out "N3 names both versions" "the marker is for 0.70.2, not the open release 0.70.3"
+
+guard --release 0.70.2 --ssh h1
+want "N4 --release with its own marker, timers disarmed -> pass, exit 0" 0 "$RC"
+
+answer h1 "${OPEN}${ON}${BINS_OFF}END\n"
+guard --release 0.70.2 --ssh h1
+want "N5 --release with its own marker, timer armed -> fail, exit 1" 1 "$RC"
+
+OUT="$(timeout 20 bash "$GUARD" --release --ssh h1 2>&1)"; RC=$?
+want "N6 --release with no version -> caller error, exit 3" 3 "$RC"
+want_out "N6 names the missing version" "--release needs a version"
+
+# -- the train wires both halves: `open` writes the marker, `timers` demands it, `live` clears it ---
+AP_SRC="${TIMER_GUARD_AUTOPILOT:-$HERE/release/autopilot.sh}"
+steps=" $(sed -n 's/^STEPS=(\(.*\))$/\1/p' "$AP_SRC") "
+case "$steps" in
+  " open "*" timers tag "*" postpub live "*) ok "W1 STEPS: open first, timers before tag, live right after postpub" ;;
+  *) bad "W1 STEPS: open first, timers before tag, live right after postpub" "open .. timers .. tag .. postpub live" "$steps" ;;
+esac
+want "W2 open runs the writer's set"  1 "$(grep -c 'release_marker.sh set "\$V"' "$AP_SRC")"
+want "W3 timers demands the marker (--release)" 1 "$(grep -c 'release_timer_guard.sh --release "\$V"' "$AP_SRC")"
+want "W4 live runs the writer's clear" 1 "$(grep -c 'release_marker.sh clear "\$V"' "$AP_SRC")"
 
 # -- several hosts: the worst verdict wins, armed over could-not-judge --------
 answer h1 "${OPEN}${OFF}${BINS_OFF}END\n"

@@ -6,7 +6,8 @@
 # one argument; milestone, epic and the state dir AP are read from GitHub and the repo, never literals.
 #
 #   autopilot.sh <version> <bump-pr> [from-step] [to-step]
-#   steps: wait deep dogfood models readiness timers tag cleanroom assets preflight dryrun cascade install hosts postpub ledger close
+#   steps: open wait deep dogfood models readiness timers tag cleanroom assets preflight dryrun cascade install hosts postpub live ledger close
+#   `open` marks the release open on every release host (#4670); `live` clears it once post-publish is GO.
 #   T-4 for THIS train (operator 2026-09-17): cascade DRY-RUN receipt, then STOP and report — the cascade
 #   itself is the operator's step. Default to-step is dryrun; `cascade` and later run only when named.
 #   T-1 'ci / deep' has no workflow on main, so `deep` runs the equivalent locally on the release commit.
@@ -25,6 +26,12 @@ ASSET_HOSTS="gx10 aarch64-unknown-linux-gnu|yoga x86_64-unknown-linux-gnu"   # t
 INSTALLER_HOSTS="intel --cpu|gx10 --cpu"                                        # install.sh at the tag runs here
 TRAIN_HOST="${RELEASE_TRAIN_HOST:-lambda}"  # the host this train runs on (APR-RELEASE-001; ledger.py: host_class lambda)
 matrix_hosts() { sed -n 's/^HOSTS="\(.*\)"$/\1/p' "$REPO_ROOT/scripts/check_multiplatform_dogfood.sh" | head -n 1; }
+# release_host_args: every host a release step runs on, as --local/--ssh arguments, one per line -- the
+# train host, the dogfood matrix, the asset and installer hosts. The marker writer and R10 read this one list.
+release_host_args() {
+  { echo "$TRAIN_HOST"; matrix_hosts | tr " " "\n"; printf "%s\n%s\n" "$ASSET_HOSTS" "$INSTALLER_HOSTS" | tr "|" "\n" | cut -d" " -f1; } \
+    | awk -v t="$TRAIN_HOST" 'NF && !seen[$0]++ { if ($0 == t) print "--local\n" $0; else print "--ssh\n" $0 }'
+}
 if [ "${1:-}" = "--visited" ]; then
   # no gh, no network, nothing run: one line per (host, how) the hosts step would reach
   printf '%s\n' "$ASSET_HOSTS" | tr '|' '\n' | while read -r h _; do printf 'VISITED %s release-asset\n' "$h"; done
@@ -37,8 +44,8 @@ fi
 . "$REPO_ROOT/scripts/release/lib_release_params.sh" || exit 2
 release_params "${1:-}" "$REPO_ROOT" || { echo "usage: autopilot.sh <version> <bump-pr> [from-step] [to-step]" >&2; exit 2; }
 STATUS="$AP/STATUS"; LOG="$AP/autopilot.log"
-PR="${2:?usage: autopilot.sh <version> <bump-pr> [from-step] [to-step]}"; FROM="${3:-wait}"; TO="${4:-dryrun}"
-STEPS=(wait deep dogfood models readiness timers tag cleanroom assets preflight dryrun cascade install hosts postpub ledger close)
+PR="${2:?usage: autopilot.sh <version> <bump-pr> [from-step] [to-step]}"; FROM="${3:-open}"; TO="${4:-dryrun}"
+STEPS=(open wait deep dogfood models readiness timers tag cleanroom assets preflight dryrun cascade install hosts postpub live ledger close)
 say() { printf '%s %s\n' "$(date -u +%FT%TZ)" "$*" | tee -a "$STATUS" >> "$LOG"; }
 die() { say "STOP $*"; exit 1; }
 run_step() { # run_step <name>: true when <name> is at or after FROM and at or before TO
@@ -63,6 +70,17 @@ export PATH="$CARGO_BIN:$PATH"
 unset CARGO_REGISTRY_TOKEN
 WT="$AP/wt"
 say "START autopilot pid=$$ pr=#$PR from=$FROM to=$TO"
+
+# 0. open (#4670 R10): mark the release open on every release host, and read it back, before any step.
+#    The tool-installing timers skip while it is set, and the timers step below refuses an armed one.
+#    A marker left by another release, or older than 24h, is named as stale and overwritten.
+if run_step open; then
+  mapfile -t hargs < <(release_host_args)
+  bash scripts/release/release_marker.sh set "$V" "${hargs[@]}" > "$AP/marker-open.log" 2>&1; rc=$?
+  grep -E "^(ok|WARN|FAIL) +MARKER " "$AP/marker-open.log" >> "$STATUS"
+  [ $rc -eq 0 ] || die "OPEN release-open marker not set on every release host rc=$rc ($AP/marker-open.log)"
+  say "OPEN $V marked open: $(tail -n 1 "$AP/marker-open.log")"
+fi
 
 # 1. wait: the bump PR merges; its merge commit is the release commit
 if run_step wait; then
@@ -182,11 +200,11 @@ fi
 #     train measures on is asked, read-only, for the user timers that install tools
 #     (scripts/release/tool-install-timers.txt); one armed on a host carrying the release-open marker, or
 #     a host that cannot be asked, stops here, before any tag exists. It never touches a timer.
+#     --release: `open` set the marker for $V on these same hosts, so a host without it is NOT_MEASURED.
 if run_step timers; then
-  targs=(--local "$TRAIN_HOST")
-  for h in $(matrix_hosts); do [ "$h" = "$TRAIN_HOST" ] || targs+=(--ssh "$h"); done
-  bash scripts/release/release_timer_guard.sh "${targs[@]}" > "$AP/timers-t1.log" 2>&1; rc=$?
-  grep -E '^(ok|FAIL) +R10 ' "$AP/timers-t1.log" >> "$STATUS"
+  mapfile -t targs < <(release_host_args)
+  bash scripts/release/release_timer_guard.sh --release "$V" "${targs[@]}" > "$AP/timers-t1.log" 2>&1; rc=$?
+  grep -E '^(ok|FAIL|NOT_MEASURED) +R10 ' "$AP/timers-t1.log" >> "$STATUS"
   [ $rc -eq 0 ] || die "T-1 R10 release-host timers rc=$rc: nothing is tagged ($AP/timers-t1.log)"
   say "TIMERS ok: $(tail -n 1 "$AP/timers-t1.log")"
 fi
@@ -534,6 +552,18 @@ PY
     fi
     say "REPORT rows named in the $T release notes: $(grep -c . "$AP/multiplatform-report.txt")"
   fi
+fi
+
+# 8b2. live (#4670 R10): post-publish is GO, so the release is live -- clear the release-open marker on
+#     every release host and read back that it is gone; a marker another release set is left alone.
+#     A host not cleared is a WARN, not a STOP: the release is out, and a marker left set only keeps
+#     tool installs paused until it is cleared (the next `open` names it as stale).
+if run_step live; then
+  mapfile -t hargs < <(release_host_args)
+  bash scripts/release/release_marker.sh clear "$V" "${hargs[@]}" > "$AP/marker-live.log" 2>&1; rc=$?
+  grep -E "^(ok|WARN|FAIL) +MARKER " "$AP/marker-live.log" >> "$STATUS"
+  if [ $rc -eq 0 ]; then say "LIVE $V: release-open marker cleared: $(tail -n 1 "$AP/marker-live.log")"
+  else say "WARN LIVE $V: release-open marker not cleared on every host rc=$rc -- tool installs stay paused there ($AP/marker-live.log)"; fi
 fi
 
 # 8c. ledger (#3731, cop ruling 2026-09-21): the host receipts and the ledger record leave $AP -- which

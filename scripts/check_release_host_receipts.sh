@@ -211,7 +211,7 @@ mutate "$HOST_RECEIPT" "$M/hr-no-version-check.sh" \
 mutate "$HOST_RECEIPT" "$M/hr-version-key.sh" \
     '"version_tested": ver,' '"version": ver,'
 mutate "$AUTOPILOT" "$M/ap-steps-reordered.sh" \
-    'install hosts postpub ledger close)' 'install postpub hosts ledger close)'
+    'install hosts postpub live ledger close)' 'install postpub hosts live ledger close)'
 mutate "$AUTOPILOT" "$M/ap-no-receipts-env.sh" \
     '  DOGFOOD_RECEIPTS_DIR="$AP/receipts/dogfood" bash scripts/dogfood.sh --phase post-publish' '  bash scripts/dogfood.sh --phase post-publish'
 mutate "$AUTOPILOT" "$M/ap-hosts-literal.sh" \

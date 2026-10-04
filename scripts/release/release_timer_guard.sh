@@ -13,7 +13,10 @@
 #   marker present + a tool-installing timer armed  -> FAIL (exit 1), the unit named
 #   marker present + every one of them disarmed     -> ok
 #   no marker                                       -> ok   (no release open on that host)
-#   the host cannot be asked                        -> could not judge (exit 2): never a pass
+#   the host cannot be asked                        -> NOT_MEASURED (exit 2): never a pass
+#   no marker writer (release_marker.sh) beside it  -> NOT_MEASURED: "no marker" would be vacuous
+#   --release V and the marker absent, or for another version on a host
+#                                                   -> NOT_MEASURED: the writer should have set it
 #
 # The marker is ${XDG_STATE_HOME:-$HOME/.local/state}/apr/release-open on each host, read on that host.
 # This script only READS: it never enables, disables, starts or stops a timer, and never writes a marker.
@@ -22,19 +25,24 @@
 # delete it and prove its table turns red without it.
 #
 # EXIT  0 every host passes · 1 a tool-installing timer is armed during a release ·
-#       2 a host could not be judged · 3 caller error. Every non-zero stops the caller.
+#       2 NOT_MEASURED: a host could not be judged, or no marker writer exists · 3 caller error. Every non-zero stops the caller.
 #
 # SEAMS (the case table drives every row through them; production sets neither):
 #   TIMER_GUARD_PROBE   a command run as `<probe> <local|ssh> <host> <units...>` instead of the real probe
 #   TIMER_GUARD_LIST    the unit list (default: tool-install-timers.txt beside this script)
+#   TIMER_GUARD_WRITER  the marker writer whose presence makes "no marker" mean something
+#                       (default: release_marker.sh beside this script)
 #
 # USAGE
-#   release_timer_guard.sh [--local NAME] [--ssh HOST]...
+#   release_timer_guard.sh [--release VERSION] [--local NAME] [--ssh HOST]...
+#   --release VERSION   the train calls it so: every host must carry the marker for VERSION
 set -uo pipefail
 
 PROG=${0##*/}
 HERE="$(cd -- "$(dirname -- "${BASH_SOURCE[0]}")" && pwd)"
 LIST="${TIMER_GUARD_LIST:-$HERE/tool-install-timers.txt}"
+WRITER="${TIMER_GUARD_WRITER:-$HERE/release_marker.sh}"
+RELEASE=""
 
 caller_error() { printf 'FAIL  R10 %s: caller error: %s\n' "$PROG" "$*"; exit 3; }
 
@@ -76,18 +84,20 @@ armed() {
 judge_host() {
     local how=$1 host=$2 out rc marker line u e a armed_units="" listed=0 nobus; shift 2
     out=$(probe "$how" "$host" "$@" 2>&1); rc=$?
-    [ "$rc" -eq 0 ] || { printf 'FAIL  R10 %s: the probe exited %s, so its timers cannot be judged: %s\n' "$host" "$rc" "$(tail -n 1 <<<"$out")"; return 2; } # R-PROBE
+    [ "$rc" -eq 0 ] || { printf 'NOT_MEASURED R10 %s: the probe exited %s, so its timers cannot be judged: %s\n' "$host" "$rc" "$(tail -n 1 <<<"$out")"; return 2; } # R-PROBE
     marker=$(sed -n 's/^MARKER //p' <<<"$out" | head -n 1)
-    [ -n "$marker" ] || { printf 'FAIL  R10 %s: the probe printed no MARKER line, so whether a release is open is unknown\n' "$host"; return 2; } # R-NOMARKERLINE
+    [ -n "$marker" ] || { printf 'NOT_MEASURED R10 %s: the probe printed no MARKER line, so whether a release is open is unknown\n' "$host"; return 2; } # R-NOMARKERLINE
     nobus=$(sed -n 's/^NOBUS //p' <<<"$out" | head -n 1)
-    [ -z "$nobus" ] || { printf 'FAIL  R10 %s: %s, so its timers cannot be listed\n' "$host" "$nobus"; return 2; } # R-NOBUS
-    grep -qx END <<<"$out" || { printf 'FAIL  R10 %s: the probe stopped before END, so its timer list is partial\n' "$host"; return 2; } # R-NOEND
+    [ -z "$nobus" ] || { printf 'NOT_MEASURED R10 %s: %s, so its timers cannot be listed\n' "$host" "$nobus"; return 2; } # R-NOBUS
+    grep -qx END <<<"$out" || { printf 'NOT_MEASURED R10 %s: the probe stopped before END, so its timer list is partial\n' "$host"; return 2; } # R-NOEND
     while read -r line; do
         read -r _ u e a <<<"$line"
         listed=$((listed+1))
         armed "$e" "$a" && armed_units="$armed_units $u($e/$a)"
     done < <(grep '^TIMER ' <<<"$out")
-    [ "$listed" -eq "$#" ] || { printf 'FAIL  R10 %s: asked about %s timer(s), the probe answered %s\n' "$host" "$#" "$listed"; return 2; } # R-COUNT
+    [ "$listed" -eq "$#" ] || { printf 'NOT_MEASURED R10 %s: asked about %s timer(s), the probe answered %s\n' "$host" "$#" "$listed"; return 2; } # R-COUNT
+    if [ -n "$RELEASE" ] && [ "$marker" = absent ]; then printf "NOT_MEASURED R10 %s: no release-open marker, but release %s is open: the writer did not set it\n" "$host" "$RELEASE"; return 2; fi # R-UNSET
+    if [ -n "$RELEASE" ] && [ "${marker#present }" != "$RELEASE" ]; then printf "NOT_MEASURED R10 %s: the marker is for %s, not the open release %s\n" "$host" "${marker#present }" "$RELEASE"; return 2; fi # R-OTHERVERSION
     case "$marker" in
         absent)
             printf 'ok    R10 %s: no release-open marker; tool-installing timers armed:%s\n' "$host" "${armed_units:- none}"
@@ -102,11 +112,14 @@ main() {
     local hosts=() units=() u worst=0 rc
     while [ $# -gt 0 ]; do
         case "$1" in
+            --release)
+                [[ ${2:-} =~ ^[A-Za-z0-9][A-Za-z0-9._-]*$ ]] || caller_error "--release needs a version" # R-NORELEASE
+                RELEASE=$2; shift 2 ;;
             --local|--ssh)
                 [ -n "${2:-}" ] || caller_error "$1 needs a host name" # R-NOHOSTNAME
                 hosts+=("${1#--} $2"); shift 2 ;;
             *)
-                caller_error "unknown argument '$1' (usage: $PROG [--local NAME] [--ssh HOST]...)" ;; # R-BADARG
+                caller_error "unknown argument '$1' (usage: $PROG [--release VERSION] [--local NAME] [--ssh HOST]...)" ;; # R-BADARG
         esac
     done
     [ "${#hosts[@]}" -gt 0 ] || caller_error "no release host named: a check of zero hosts is vacuous" # R-NOHOSTS
@@ -118,6 +131,7 @@ main() {
         units+=("$u")
     done <"$LIST"
     [ "${#units[@]}" -gt 0 ] || caller_error "$LIST names no timer: a check of zero timers is vacuous" # R-EMPTYLIST
+    [ -f "$WRITER" ] || { printf "NOT_MEASURED R10 no release-open marker writer at %s: an absent marker would mean nothing\n" "$WRITER"; exit 2; } # R-NOWRITER
     for h in "${hosts[@]}"; do
         # shellcheck disable=SC2086
         judge_host $h "${units[@]}"; rc=$?
@@ -127,7 +141,7 @@ main() {
     case "$worst" in
         0) printf 'ok    R10 TIMERS PASS hosts=%s timers=%s\n' "${#hosts[@]}" "${#units[@]}" ;;
         1) printf 'FAIL  R10 a tool-installing timer is armed on a release host while the release is open\n' ;;
-        *) printf 'FAIL  R10 at least one release host could not be judged; not judged is not a pass\n' ;;
+        *) printf 'NOT_MEASURED R10 at least one release host could not be judged; not judged is not a pass\n' ;;
     esac
     exit "$worst"
 }

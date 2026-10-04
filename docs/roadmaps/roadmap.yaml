@@ -24060,3 +24060,26 @@ Not done, pending the ruling: moving the 31 fixture files to an obviously synthe
   labels:
   - kind:docs
   notes: 'Operator C197, 2026-10-01 12:40Z: re-date via the spec''s own procedure; check unchanged; not a waiver.'
+- id: PMAT-4670
+  github_issue: 4670
+  item_type: task
+  title: 'R10: the pre-tag check refuses the tag while a tool-installing user timer is armed on a release host with the release open'
+  status: inprogress
+  priority: high
+  assigned_to: build-kaizen
+  created: 2026-10-04T00:00:00Z
+  updated: 2026-10-04T00:00:00Z
+  acceptance_criteria:
+  - The pre-tag check lists the user timers named in scripts/release/tool-install-timers.txt on every release host, read-only
+  - 'Case table: a timer enabled during a release fails; the same timer disabled passes; no release-open marker passes'
+  - A host that cannot be asked (probe failure, no user manager, partial answer) is could-not-judge and stops the train; it is never a pass
+  - Every refusal in the guard has a mutant that turns the case table red
+  - 'The autopilot writes the marker: open sets it on every release host and reads it back, live clears it after post-publish GO; a stale marker (another version, or older than 24h) warns'
+  - 'No marker writer, or --release with the marker unset or for another version, is NOT_MEASURED, never PASS'
+  - 'Out of scope: the timers'' own marker check and skip line (provisioned outside this repo), and any change to a timer on any host'
+  phases: []
+  subtasks: []
+  estimated_effort: null
+  labels:
+  - kind:bug
+  notes: 'R10 of BLD-002; the pre-tag half of #4670.'

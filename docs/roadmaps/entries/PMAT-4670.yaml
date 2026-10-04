@@ -12,6 +12,8 @@
   - 'Case table: a timer enabled during a release fails; the same timer disabled passes; no release-open marker passes'
   - A host that cannot be asked (probe failure, no user manager, partial answer) is could-not-judge and stops the train; it is never a pass
   - Every refusal in the guard has a mutant that turns the case table red
+  - 'The autopilot writes the marker: open sets it on every release host and reads it back, live clears it after post-publish GO; a stale marker (another version, or older than 24h) warns'
+  - 'No marker writer, or --release with the marker unset or for another version, is NOT_MEASURED, never PASS'
   - 'Out of scope: the timers'' own marker check and skip line (provisioned outside this repo), and any change to a timer on any host'
   phases: []
   subtasks: []
