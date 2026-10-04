@@ -40,6 +40,15 @@
 //! opposite fixes, and this gate must not pick one by accident — which is exactly what
 //! inheriting 0.90 did.
 //!
+//! ## 2026-10-04: sm_121 GETS A RATCHET, NOT A CALIBRATION (#4715)
+//!
+//! By operator ruling sm_121 now has an entry, and it is a ratchet: the floor is the
+//! measured ratio of one recorded run (cuda-nightly 37161229337, ratio 0.595922, rounded
+//! DOWN to 0.5959), so it passes at today's value and fails on any drop. It answers
+//! "did GB10 decode get worse?", not the OPEN question above, and it does not make the
+//! sm_89 numbers in this file apply to sm_121. `gb10_floor_is_a_ratchet_at_its_measured_value`
+//! pins the floor to the recorded trials both ways.
+//!
 //! The unit tests below now DO run in CI: this target was added to `ci.yml`'s beat
 //! chain (since PMAT-3313, its fragment in `ci/explicit-test-commands.d/`). The
 //! header's own admission that they did not was still true today.
@@ -178,21 +187,53 @@ struct SiliconFloor {
     derived_from: &'static str,
 }
 
-/// One entry per silicon this gate has been calibrated on. **Absence is meaningful**
-/// and is handled explicitly — see `UNCALIBRATED` in the assertion below. Adding a
-/// silicon here requires the derivation, not just the number.
-const SILICON_FLOORS: &[SiliconFloor] = &[SiliconFloor {
-    compute_cap: "8.9",
-    arch: "sm_89 (RTX 4090)",
-    floor: 0.90,
-    derived_from: "four measurements 2026-06-15..2026-07-31 on lambda-vector; worst \
+/// One entry per silicon this gate has a floor for, calibrated or ratcheted. **Absence
+/// is meaningful** and is handled explicitly — see `UNCALIBRATED` in the assertion below.
+/// Adding a silicon here requires the derivation, not just the number.
+const SILICON_FLOORS: &[SiliconFloor] = &[
+    SiliconFloor {
+        compute_cap: "8.9",
+        arch: "sm_89 (RTX 4090)",
+        floor: 0.90,
+        derived_from: "four measurements 2026-06-15..2026-07-31 on lambda-vector; worst \
                    observed median 1.015, and 0.90 sits 12% under it so it does not \
                    flake, while still catching the CPU-SIMD collapse at ratio ~0.065",
-}];
+    },
+    SiliconFloor {
+        compute_cap: "12.1",
+        arch: "sm_121 (GB10)",
+        floor: GB10_RATCHET_FLOOR,
+        derived_from: "a RATCHET, not a calibration (#4715, operator ruling: passes at today's \
+                   value, fails on any drop): the GB10 leg of cuda-nightly run 37161229337 \
+                   at 316dee2cd measured ratio_median 0.595922 (GB10_RATCHET_APR_TRIALS / \
+                   GB10_RATCHET_OLLAMA_TRIALS); the floor is that value rounded DOWN to 4 \
+                   places. It says GB10 decode must not get worse; it does not say 0.596 is \
+                   an honest GB10 number - that is still OPEN (#2835)",
+    },
+];
 
-/// The four GB10 executions, recorded as DATA and deliberately not turned into a
-/// floor. ollama is stable within 0.8% across them, so this is a reproducible
-/// measurement of apr on this silicon and not a noisy rig:
+/// The GB10 floor: the ratchet run's measured ratio, rounded down to 4 places.
+/// Rounded DOWN because the printed "0.596" is a rounding of 0.595922 — a floor of
+/// 0.596 fails the very run it was read from.
+const GB10_RATCHET_FLOOR: f64 = 0.5959;
+
+/// The run the ratchet was set from, as DATA (cuda-nightly 37161229337, 2026-10-03,
+/// GB10 leg): apr's 7 decode trials and ollama's 5 eval rates, verbatim from its log.
+const GB10_RATCHET_APR_TRIALS: [f64; 7] = [
+    101.193_770_258_518_48,
+    129.995_429_848_169_32,
+    108.291_032_148_900_17,
+    126.525_972_421_291_87,
+    97.279_221_766_225_86,
+    83.953_694_290_492_88,
+    122.540_807_046_096_39,
+];
+const GB10_RATCHET_OLLAMA_TRIALS: [f64; 5] = [182.05, 182.15, 180.58, 181.72, 181.6];
+
+/// The GB10 executions, recorded as DATA. The first four were deliberately not turned
+/// into a floor; the fifth set the ratchet above. ollama is stable within 0.8% across
+/// them, so this is a reproducible measurement of apr on this silicon and not a noisy
+/// rig:
 ///
 /// ```text
 ///   date        apr median-of-7   ollama median   ratio
@@ -200,13 +241,15 @@ const SILICON_FLOORS: &[SiliconFloor] = &[SiliconFloor {
 ///   2026-08-30      117.9             182.3       0.647
 ///   2026-08-31      116.0             181.8       0.638
 ///   2026-09-01      112.0             180.9       0.619
+///   2026-10-03      108.3             181.7       0.596   <- ratchet (run 37161229337)
 /// ```
 ///
 /// Whether that is an honest GB10 number or a real sm_121 decode deficit is OPEN
 /// (aprender#2835, and #2800 argues the GB10 shortfall on #2786 is a real deficit).
 /// The two answers imply opposite fixes — recalibrate, or fix the kernel — and this
-/// gate must not pick one by accident, which is exactly what inheriting 0.90 did.
-const GB10_OBSERVED: &[f64] = &[0.579, 0.647, 0.638, 0.619];
+/// gate must not pick one by accident, which is exactly what inheriting 0.90 did. The
+/// ratchet picks neither: it only refuses a further drop.
+const GB10_OBSERVED: &[f64] = &[0.579, 0.647, 0.638, 0.619, 0.596];
 
 /// Retained as the sm_89 floor's spelling for the contract mirror and the unit test
 /// below. Reading it directly in an assertion is what this fix removes.
@@ -574,14 +617,36 @@ fn every_floor_states_what_it_was_derived_from() {
 }
 
 #[test]
-fn gb10_is_deliberately_uncalibrated() {
-    // GB10 reports compute_cap 12.1. If someone adds an entry for it, this test must be
-    // the thing that makes them justify it — deleting this test is the visible act.
+fn gb10_floor_is_a_ratchet_at_its_measured_value() {
+    // GB10 reports compute_cap 12.1. Its floor is a RATCHET (#4715): it must pass the
+    // run it was set from and fail any drop below it. Both halves are asserted against
+    // the recorded trials, so the floor cannot be moved without moving the evidence.
+    let f = floor_for("12.1").expect(
+        "GB10/sm_121 must carry its ratchet floor; without it the CUDA nightly beat fails \
+         UNCALIBRATED-SILICON on the GB10 leg every night",
+    );
     assert!(
-        floor_for("12.1").is_none(),
-        "GB10/sm_121 has no derived floor. Four nights is data, not a calibration (S8: a \
-         threshold comes from samples, never from invention). If you are adding one, bring \
-         the derivation and update GB10_OBSERVED and aprender#2835."
+        (f.floor - GB10_RATCHET_FLOOR).abs() < f64::EPSILON,
+        "the sm_121 entry and GB10_RATCHET_FLOOR must not drift apart"
+    );
+    let measured = median(&GB10_RATCHET_APR_TRIALS) / median(&GB10_RATCHET_OLLAMA_TRIALS);
+    assert!(
+        measured >= f.floor,
+        "the ratchet must PASS the run it was set from: measured {measured:.6} < floor {}",
+        f.floor
+    );
+    assert!(
+        measured - f.floor < 1e-4,
+        "a ratchet sits AT today's value, not under it: measured {measured:.6}, floor {} \
+         leaves {:.6} of slack, so a real drop would pass",
+        f.floor,
+        measured - f.floor
+    );
+    assert!(
+        GB10_OBSERVED
+            .last()
+            .is_some_and(|r| (r - measured).abs() < 5e-4),
+        "the ratchet run must be the last GB10_OBSERVED entry"
     );
     assert!(
         floor_for("<nvidia-smi did not answer>").is_none(),
