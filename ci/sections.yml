@@ -1329,6 +1329,14 @@ jobs:
         run: setsid --wait bash scripts/check_ci_gate_mutants_rule.sh
       - name: gate mutants rule can still go RED (#3676)
         run: setsid --wait bash scripts/check_ci_gate_mutants_rule.sh --self-test
+      # #4472: on class=docs the verdict jobs excuse sov.gate and determinism-compare
+      # by name. This executes both verdict steps from ci.yml against the case table:
+      # docs only from a change-class job that succeeded, and guard-tree/guard-cargo
+      # are never excused. Reads only ci.yml, so it runs here, on every PR.
+      - name: gate excuses a section only on a succeeded class=docs (#4472)
+        run: setsid --wait bash scripts/check_ci_gate_docs_class_rule.sh
+      - name: gate docs-class rule can still go RED (#4472)
+        run: setsid --wait bash scripts/check_ci_gate_docs_class_rule.sh --self-test
       # scripts/tests/guard_tree_test.sh is guard_tree.sh's OWN case table
       # (BSE-01, PMAT-1062) -- it proves guard_tree.sh's no-fail-fast
       # behaviour against a fixture, proves a fail-fast MUTANT of it goes RED

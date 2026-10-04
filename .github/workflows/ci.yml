@@ -662,13 +662,15 @@ jobs:
         env:
           RESULTS: ${{ needs.x86-main.outputs.results }}
           X86_RESULT: ${{ needs.x86-main.result }}
+          CLASS_JOB: ${{ needs.change-class.result }}
           CLASS: ${{ needs.change-class.outputs.class }}
           CLASS_REASON: ${{ needs.change-class.outputs.reason }}
         run: |
           set -euo pipefail
           # #4472: class=docs ran no sov.* section. not-triggered, by name; the
-          # doc-content sections x86-main did run must have passed.
-          if [ "$CLASS" = docs ]; then
+          # doc-content sections x86-main did run must have passed. Executed against
+          # a case table by scripts/check_ci_gate_docs_class_rule.sh.
+          if [ "$CLASS_JOB" = success ] && [ "$CLASS" = docs ]; then
             echo "sov.gate: not-triggered: docs-only change ($CLASS_REASON)"
             echo "x86-main (doc-content sections): $X86_RESULT"
             [ "$X86_RESULT" = success ] || { echo "::error::ci / gate (docs): x86-main result is '$X86_RESULT'"; exit 1; }
@@ -700,6 +702,7 @@ jobs:
           SCOPE: ${{ needs.mutants-table-scope.result }}
           IN_SCOPE: ${{ needs.mutants-table-scope.outputs.in_scope }}
           TABLE: ${{ needs.mutants-table.result }}
+          CLASS_JOB: ${{ needs.change-class.result }}
           CLASS: ${{ needs.change-class.outputs.class }}
           CLASS_REASON: ${{ needs.change-class.outputs.reason }}
         run: |
@@ -712,10 +715,12 @@ jobs:
           [ "$WT" = success ] || { echo "workspace-test failed: $WT"; exit 1; }
           for pair in X86:guard-tree X86:guard-cargo X86:sov.gate DET:determinism-compare; do
             job="${pair%%:*}" sec="${pair#*:}"
-            # #4472: on class=docs these two did not run, and say so by name;
-            # guard-tree and guard-cargo (they read doc content) did, and must pass.
-            case "$CLASS:$sec" in
-              docs:sov.gate | docs:determinism-compare)
+            # #4472: on class=docs (from a change-class job that SUCCEEDED) these two
+            # did not run, and say so by name; guard-tree and guard-cargo (they read
+            # doc content) did, and must pass. scripts/check_ci_gate_docs_class_rule.sh
+            # executes this step against its case table.
+            case "$CLASS_JOB:$CLASS:$sec" in
+              success:docs:sov.gate | success:docs:determinism-compare)
                 echo "$sec: not-triggered: docs-only change ($CLASS_REASON)"
                 continue ;;
             esac
