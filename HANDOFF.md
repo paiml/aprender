@@ -1,6 +1,6 @@
 # RQ-2 — release-day ladders move to the nightly (design, look-ahead)
 
-Status: DESIGN ONLY, branch `build-kaizen/rq2-ladders-night`, READY-NO-PR (freeze). Agent: aprender-w4578.
+Status: ruling A BUILT (§8), quorum round 2 folded (§9); branch `build-kaizen/rq2-ladders-night`, READY-NO-PR (freeze), off by default. Agent: aprender-w4578.
 Target: release day stops running the long ladders; it reads last night's result **for its own commit**.
 Saving claimed by aprender-a7: −160 min per release (a7's measurement, not re-derived here).
 
@@ -171,3 +171,25 @@ Supersedes §7's build order where they differ.
   1. The forjar systemd timer, 02:00Z on lambda, from a dedicated checkout (paiml/infra; the timer is the only trigger, 0 GitHub calls).
   2. B's concurrent launch for a late bump: the fallback today is still the serial run.
   3. Turning `RELEASE_CUT_FROM_NIGHTLY=1` on by default, after one release cuts from a nightly row.
+
+## 9. Quorum round 2 (2 Sonnet 5.5 lanes on e52ba8632f): both APPROVE-WITH-FIXES
+
+Neither lane found a path where `RELEASE_CUT_FROM_NIGHTLY=1` tags a sha that was not measured GO, or where the unset path changes. Fixed in the next commit:
+
+- **r1 F1. Deep was trusted from the index alone.** check_nightly_cut now also requires `DEEP GO at <S>` in `<root>/<S>/STATUS` (row 17; else FALLBACK). Mutant `no-deep-evidence` is caught.
+- **r1 F3 = r2 F4. step_rc could read an earlier step's STOP line**, so a killed step became 2. It now reads only the STATUS lines written during its own step. Row + mutant `stale-stop-line`.
+- **r1 F5. The stub's STOP text was not tied to autopilot.** Two rows grep autopilot for the exact `die "... NO-GO rc=$rc` lines step_rc parses.
+- **r2 F2. Lock fd leaked to children; no timeout.** Steps now run `9>&-` under `timeout` (`RELEASE_LADDERS_STEP_TIMEOUT`, default 6 h). A timeout is 2, never 0. Rows + mutants `fd9-leak` and `timeout-is-red`.
+- **r2 F3. A not-measured sha was never retried.** A sha is re-measured while its newest row holds a 2; a 0 or 1 row is final. Rows + mutant `no-retry-on-2`.
+- **Found while folding these: the tables reused state across mutant runs.** `table` runs in a subshell, so the dir counter reset and mutant runs inherited earlier index rows, which gave spurious catches. Dirs now come from `mktemp`. Every mutant is still caught by its own target row.
+- **r2 F7.** The status line above.
+
+Open, not fixed here:
+
+1. **r1 F2: the release-day block has no planted test.** It needs `gh` and judge stubs around a full autopilot run. That is the next item before `RELEASE_CUT_FROM_NIGHTLY` is used on a real release; until then it stays off.
+2. **r1 F4 (to aprender-a7: changes what a gate reports).** models_t1.sh checks `env` before `nogo`. A RED cell plus an unreachable host exits 2 (not measured), not 1. The effect today is a fallback re-run, not a bad tag.
+3. **r2 F1 + F5 (infra timer follow-up).**
+   - The nightly must run from a dedicated checkout that the timer detaches to origin/main first, so the nightly runs the same autopilot release day will.
+   - It must never share `target/` with a release train.
+   - autopilot should take `<root>/.lock` while it runs the fallback ladders.
+   - Add `git worktree prune` and retention for `<root>/<sha>/wt`.

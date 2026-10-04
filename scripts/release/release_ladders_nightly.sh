@@ -26,6 +26,7 @@ REPO_ROOT="$(cd "$(dirname "$0")/../.." && pwd)" || exit 2
 ROOT="${RELEASE_LADDERS_ROOT:-/mnt/nvme-raid0/release-ladders}"
 AUTOPILOT="${RELEASE_LADDERS_AUTOPILOT:-$REPO_ROOT/scripts/release/autopilot.sh}"   # the table's seam
 REF="${RELEASE_LADDERS_REF:-origin/main}"
+STEP_TIMEOUT="${RELEASE_LADDERS_STEP_TIMEOUT:-21600}"   # 6 h per step; a hung ladder must not hold the lock forever
 say() { printf '%s release-ladders %s\n' "$(date -u +%FT%TZ)" "$*"; }
 
 mkdir -p "$ROOT" || { say "cannot create $ROOT"; exit 2; }
@@ -43,8 +44,10 @@ V=$(git -C "$REPO_ROOT" show "$S:Cargo.toml" | sed -n '/^\[workspace\.package\]/
 if git -C "$REPO_ROOT" rev-parse -q --verify "refs/tags/v$V" > /dev/null; then
     say "v$V is already tagged: no pending release at ${S:0:9}, nothing to measure"; exit 0
 fi
-if [ -f "$ROOT/index.tsv" ] && cut -f1 "$ROOT/index.tsv" | grep -qx "$S"; then
-    say "${S:0:9} already has a row: not measuring it twice"; exit 0
+# A sha is measured again only while its newest row holds a "not measured" (2): a busy GPU lock one
+# night must not cost the release its nightly (quorum r2 F3). A 0 or a 1 is final.
+if [ -f "$ROOT/index.tsv" ] && awk -F"\t" -v s="$S" '$1 == s { last = $3 $4 $5 } END { exit !(last != "" && last !~ /2/) }' "$ROOT/index.tsv"; then
+    say "${S:0:9} already has a final row: not measuring it twice"; exit 0
 fi
 
 AP="$ROOT/$S"
@@ -53,10 +56,13 @@ say "measuring $V at $S into $AP"
 
 # step_rc <step> -> the index rc for one autopilot --ladders run
 step_rc() {
-    local rc n
-    RELEASE_AP="$AP" bash "$AUTOPILOT" --ladders "$V" "$S" "$1" > "$AP/nightly-$1.out" 2>&1; rc=$?
+    local rc n from
+    from=$(( $(wc -l 2> /dev/null < "$AP/STATUS" || echo 0) + 1 ))   # only THIS step's STOP line (quorum F3/F4)
+    # 9>&-: no child (a model server, an ssh) inherits the nightly lock and wedges every later night.
+    RELEASE_AP="$AP" timeout --kill-after=60 "$STEP_TIMEOUT" bash "$AUTOPILOT" --ladders "$V" "$S" "$1" > "$AP/nightly-$1.out" 2>&1 9>&-; rc=$?
     [ "$rc" = 0 ] && { echo 0; return; }
-    n=$(grep -E ' STOP ' "$AP/STATUS" 2>/dev/null | tail -n 1 | sed -n 's/.*NO-GO rc=\([0-9][0-9]*\).*/\1/p')
+    [ "$rc" = 124 ] || [ "$rc" = 137 ] && { echo 2; return; }   # timed out: not measured, never a pass
+    n=$(tail -n +"$from" "$AP/STATUS" 2> /dev/null | grep -E " STOP " | tail -n 1 | sed -n 's/.*NO-GO rc=\([0-9][0-9]*\).*/\1/p')
     case "$rc:$n" in
         2:*) echo 2 ;;            # autopilot's own usage/ENV exit: nothing was judged
         *:2 | *:75) echo 2 ;;     # the step declined, or the GPU lock was busy

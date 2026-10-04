@@ -22,6 +22,8 @@ cat > "$TD/autopilot.sh" <<'STUB'
 [ "$1" = --ladders ] || exit 64
 v="$2" s="$3" step="$4"; var="STUB_$step"; spec="${!var:-0|}"
 echo "$step" >> "$RELEASE_AP/calls"
+[ -e /proc/self/fd/9 ] && echo "$step" >> "$RELEASE_AP/fd9-inherited"
+vs="STUB_SLEEP_$step"; [ -z "${!vs:-}" ] || sleep "${!vs}"
 if [ "$step" = dogfood ]; then
     mkdir -p "$RELEASE_AP/wt/.dogfood"
     for p in ${STUB_RECEIPTS:-}; do
@@ -36,10 +38,9 @@ STUB
 fail=0
 row() { if [ "$2" = "$3" ]; then echo "ok    $1"; else echo "FAIL  $1: got '$2', want '$3'"; fail=1; fi; }
 
-n=0
 # repo <version> [tag] -> a fresh repo carrying the script under test at scripts/release/; sets G, R, S
 repo() {
-    n=$((n + 1)); G="$TD/g$n"; R="$TD/root$n"
+    G=$(mktemp -d "$TD/g.XXXXXX"); R="$G.root"   # unique: table runs in a subshell per mutant
     mkdir -p "$G/scripts/release"
     cp "$SUTX" "$G/scripts/release/release_ladders_nightly.sh"
     printf '[workspace]\nmembers = []\n\n[workspace.package]\nversion = "%s"\nedition = "2021"\n' "$1" > "$G/Cargo.toml"
@@ -83,6 +84,20 @@ table() { # table <sut> <label>
     repo 9.9.0
     STUB_RECEIPTS="20270101:1111111111111111111111111111111111111111" go > /dev/null
     row "$l only a foreign-commit receipt: none copied" "$([ -e "$R/$S/dogfood/receipt.json" ] && echo copied || echo none)" "none"
+    repo 9.9.0
+    STUB_models='1|T-1 model matrix NO-GO rc=75: x' go > /dev/null
+    row "$l a not-measured row is measured again the next night" "$(go)" "0|S 9.9.0 0 0 0"
+    row "$l   ... two rows for the sha" "$(wc -l < "$R/index.tsv" | tr -d ' ')" 2
+    repo 9.9.0
+    STUB_models='1|T-1 model matrix NO-GO rc=1: x' go > /dev/null
+    row "$l a RED row is final: no re-measure" "$(go)" "0|S 9.9.0 0 0 1"
+    repo 9.9.0
+    row "$l dogfood dies with no STOP line after deep declined -> 1, not deep's 2" "$(STUB_deep='1|dogfood pre-publish NO-GO rc=2 (x)' STUB_dogfood='1|' go)" "1|S 9.9.0 2 1 0"
+    repo 9.9.0
+    row "$l a step past its timeout -> 2 (not measured)" "$(RELEASE_LADDERS_STEP_TIMEOUT=1 STUB_SLEEP_deep=5 go)" "1|S 9.9.0 2 0 0"
+    repo 9.9.0
+    go > /dev/null
+    row "$l no step inherits the nightly lock fd" "$([ -e "$R/$S/fd9-inherited" ] && tr '\n' ' ' < "$R/$S/fd9-inherited" || echo none)" none
 }
 
 table "$SUT" real
@@ -96,6 +111,11 @@ row "autopilot --ladders short sha -> 2" "$(apx env RELEASE_AP="$TD/x" bash "$AP
 row "autopilot --ladders wrong arg count -> 2" "$(apx env RELEASE_AP="$TD/x" bash "$AP_SUT" --ladders 9.9.0 deep)" 2
 row "autopilot --ladders created no state dir" "$([ -e "$TD/x" ] && echo created || echo none)" none
 
+# the stub's STOP text is autopilot's own: step_rc parses these exact die lines
+APT=$(cat "$ROOT/scripts/release/autopilot.sh")
+row "autopilot dogfood dies with 'NO-GO rc=\$rc'" "$(grep -cF 'die "dogfood pre-publish NO-GO rc=$rc ' <<< "$APT")" 1
+row "autopilot models dies with 'NO-GO rc=\$rc'" "$(grep -cF 'die "T-1 model matrix NO-GO rc=$rc: ' <<< "$APT")" 1
+
 mutant() { # mutant <label> <sed expr>
     local m="$TD/mutant.sh" c
     sed "$2" "$SUT" > "$m"
@@ -106,6 +126,10 @@ mutant() { # mutant <label> <sed expr>
 mutant no-version-gate      's/rev-parse -q --verify "refs\/tags\/v\$V"/rev-parse -q --verify refs\/tags\/never-a-tag/'
 mutant receipt-by-mtime     's/if \[ "\$(jq -r .\.commit \/\/ empty. -- "\$r" 2> \/dev\/null)" = "\$S" \]; then/if true; then/'
 mutant red-is-not-measured  's/^        \*) echo 1 ;;$/        *) echo 2 ;;/'
-mutant no-rerun-guard       's/cut -f1 "\$ROOT\/index.tsv" | grep -qx "\$S"/false/'
+mutant no-rerun-guard       's/if \[ -f "\$ROOT\/index.tsv" \] \&\& awk/if false \&\& awk/'
+mutant stale-stop-line      's/n=\$(tail -n +"\$from" "\$AP\/STATUS"/n=$(cat "$AP\/STATUS"/'
+mutant fd9-leak             's/ 2>&1 9>&-; rc=/ 2>\&1; rc=/'
+mutant no-retry-on-2        's/last != "" \&\& last !~ \/2\//last != ""/'
+mutant timeout-is-red       's/^    \[ "\$rc" = 124 \] || \[ "\$rc" = 137 \] \&\& { echo 2; return; }.*$//'
 
 exit "$fail"

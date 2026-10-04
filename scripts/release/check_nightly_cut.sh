@@ -69,6 +69,10 @@ for p in "deep:$DRC" "dogfood:$FRC" "models:$MRC"; do
     [ "${p#*:}" = 0 ] || fallback "nightly ${p%%:*} rc ${p#*:} at ${S:0:9}: not measured (rows 4/15)"
 done
 
+# row 17: deep leaves no receipt, so its evidence is its own GO line in the run's STATUS, at S (quorum r1 F1).
+# An index rc 0 without it is a bare pointer: not measured.
+grep -qF " DEEP GO at $S " "$ROOT/$S/STATUS" 2> /dev/null || fallback "no 'DEEP GO at ${S:0:9}' line in $ROOT/$S/STATUS (row 17)"
+
 # rows 5, 6, 13: the dogfood receipt exists, is bound to S, to V and to the pre-publish phase
 r="$ROOT/$S/dogfood/receipt.json"
 c=$(jf "$r" commit)

@@ -34,6 +34,7 @@ row() { # row <name> <got> <want>
 plant() {
     local d="$1" s="$2" ver="${3:-$V}" ph="${4:-pre-publish}" c="${5:-$2}" a="${6:-$2}" h
     mkdir -p "$d/$s/dogfood" "$d/$s/models-t1"
+    printf '2026-01-01T00:00:00Z DEEP GO at %s (doctests, examples, all bins green)\n' "$s" > "$d/$s/STATUS"
     printf '{"commit":"%s","version":"%s","phase":"%s","verdict":"GO"}\n' "$c" "$ver" "$ph" > "$d/$s/dogfood/receipt.json"
     for h in lambda gx10; do
         printf '{"host":"%s","version":"%s","sha":"%s","apr_sha":"%s"}\n' "$h" "$ver" "$s" "$a" > "$d/$s/models-t1/$h.json"
@@ -48,8 +49,7 @@ run() {
     echo "$rc|$(tail -n 1 <<< "$out" | cut -d' ' -f1)"
 }
 
-n=0
-fresh() { n=$((n + 1)); D="$TD/r$n"; mkdir -p "$D"; }
+fresh() { D=$(mktemp -d "$TD/r.XXXXXX"); }   # unique: table runs in a subshell per mutant
 H=$((NOW - 6 * 3600))   # finished six hours ago
 
 table() { # table <sut> <label>
@@ -91,6 +91,10 @@ table() { # table <sut> <label>
     row "$l 13 dogfood phase != pre-publish -> STOP" "$(run "$s" "$D")" "1|STOP"
     fresh; plant "$D" "$BUMP"; idx "$D" "$BUMP" "$V" 0 0 75 "$H"
     row "$l 15 models rc 75 (apr-gpu.lock busy) -> FALLBACK" "$(run "$s" "$D")" "2|FALLBACK"
+    fresh; plant "$D" "$BUMP"; : > "$D/$BUMP/STATUS"; idx "$D" "$BUMP" "$V" 0 0 0 "$H"
+    row "$l 17 deep rc 0 but no DEEP GO line -> FALLBACK" "$(run "$s" "$D")" "2|FALLBACK"
+    fresh; plant "$D" "$BUMP"; echo "x DEEP GO at $PRE (y)" > "$D/$BUMP/STATUS"; idx "$D" "$BUMP" "$V" 0 0 0 "$H"
+    row "$l 17 DEEP GO line for another sha -> FALLBACK" "$(run "$s" "$D")" "2|FALLBACK"
     fresh; plant "$D" "$BUMP"; idx "$D" "${BUMP:0:9}" "$V" 0 0 0 "$H"
     row "$l   short sha in the index is not a row -> FALLBACK" "$(run "$s" "$D")" "2|FALLBACK"
 }
@@ -111,5 +115,6 @@ mutant no-red-stop        's/\[ "\${p#\*:}" = 1 \] && stop/false \&\& stop/'
 mutant no-ancestry        's/merge-base --is-ancestor "\$BUMP" "\$s" 2>\/dev\/null || continue/true/'
 mutant no-age-bound       's/^\[ "\$age" -le/[ 0 -le/'
 mutant oldest-row-wins    's/"\$t" -gt "\$best_t"/"$best_t" -lt 0/'
+mutant no-deep-evidence   's/^grep -qF " DEEP GO at \$S " "\$ROOT\/\$S\/STATUS" 2> \/dev\/null || fallback/true || fallback/'
 
 exit "$fail"
