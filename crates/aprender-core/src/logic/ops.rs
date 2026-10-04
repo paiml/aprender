@@ -13,7 +13,6 @@
 //! | Negation | 1-x (after threshold) | 1-x | elementwise |
 //! | Select | mask | multiply | elementwise |
 
-use std::f64;
 
 /// Logic mode determines how operations handle intermediate values
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
