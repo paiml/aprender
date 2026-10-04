@@ -1,5 +1,5 @@
 metadata:
-  version: 1.0.0
+  version: 1.1.0
   created: '2026-09-20'
   author: PAIML Engineering
   description: "The release train's tag step cannot be reached without a clean milestone. v0.68.1 was tagged 2026-09-17T15:06:29Z by an autopilot copy living outside the repository, six minutes after #3455 merged the milestone gate; `grep -c check_milestone_cut autopilot.sh` was 0. The spec required the read and no code path that cuts a tag made it. This contract is the property that the requirement and the mechanism are the same object: the gate call lives INSIDE cut_tag(), ahead of `git tag`, and a guard runs that function against each gate outcome and asserts on whether a tag was cut."
@@ -11,6 +11,7 @@ metadata:
     - "docs/specifications/APR-RELEASE-001-train-and-build-kaizen.md — §4 T-0/T-3"
     - "docs/specifications/06x-release-schedule.md — §4 steps 1 and 4"
     - "contracts/release-schedule-06x-v1.yaml — milestone_settled_at_cut, the schedule-level statement of the same rule"
+    - "scripts/release/tag_on_bump.sh — #4692: the tag sits on the version-bump commit; planted rows + mutants in --self-test"
 
 five_whys:
   symptom: "v0.68.1 was tagged while nothing had read its milestone, six minutes after the gate that would have read it merged."
@@ -41,6 +42,17 @@ equations:
       - "a mutant whose gate verdict is discarded with `|| true` is RED"
       - "a subject with no cut_tag() is ENV (rc 2), never a pass"
 
+  tag_on_bump_commit:
+    formula: "tag_on_bump(V, T) = PASS iff ver(T) = V ∧ T = B(V, T) ∧ |B..T| = 0, where B(V, T) is the newest commit on T's first-parent history with ver(B) = V ∧ ver(B^) ≠ V"
+    domain: "a version V and a target T (refs/tags/vV, or the commit cut_tag() is about to tag); ver = the root Cargo.toml [workspace.package] version"
+    codomain: "rc 0 PASS, rc 1 REFUSE (commits between bump and tag, or no bump commit), rc 2 NOT_MEASURED (V not a version, T unresolvable, ver(T) unreadable)"
+    invariants:
+      - "one commit between the bump and the tag refuses: code no gate measured under V is never released as V (#4692, signed for 0.70.2)"
+      - "a tag on a commit that does not carry V refuses: there is no bump commit under it"
+      - "an unreadable tag or version is NOT_MEASURED, never a pass (L25)"
+      - "B is the version TRANSITION, not the first commit whose text gains the string: a dependency line or a reverted-then-redone bump does not move B"
+      - "report-only in cut_tag() and in release-gates-nightly until three green nights; then a die on rc 1 and rc 2 (L31 ratchet)"
+
 proof_obligations:
   - id: TSMG-INV-001
     type: invariant
@@ -57,6 +69,11 @@ proof_obligations:
     property: "The autopilot that cuts the tag is in the repository and reviewed"
     formal: "scripts/release/autopilot.sh ∈ tracked(main) ∧ cut_tag ∈ autopilot.sh"
     applies_to: tag_requires_clean_milestone
+  - id: TSMG-INV-004
+    type: invariant
+    property: "Only a tag on the version-bump commit passes"
+    formal: "tag_on_bump(V, T) = 0 ⇒ ver(T) = V ∧ ver(T^) ≠ V; |B..T| ≥ 1 ∨ ver(T) ≠ V ⇒ tag_on_bump(V, T) = 1; unreadable(V) ∨ unreadable(T) ⇒ tag_on_bump(V, T) = 2"
+    applies_to: tag_on_bump_commit
 
 falsification_tests:
   - id: FALSIFY-TSMG-001
@@ -95,6 +112,24 @@ falsification_tests:
     test: "test -f scripts/check_milestone_cut.sh"
     if_fails: "cut_tag() calls a script that is not there; every cut becomes rc 2 and the train stops — fail-closed, but the gate is gone"
 
+  - id: FALSIFY-TSMG-007
+    rule: "Only a tag on the version-bump commit passes"
+    prediction: "The planted rows hold: the tag on the bump commit passes; one commit between bump and tag refuses; no bump commit refuses; an unreadable tag or version prints NOT_MEASURED; a re-done bump and a dependency version line do not move the bump"
+    test: "bash scripts/release/tag_on_bump.sh --self-test"
+    if_fails: "A release can be tagged on code that was never measured under its version: 0.70.1 was tagged 3 commits after its bump, 0.69.1 541"
+
+  - id: FALSIFY-TSMG-008
+    rule: "Each refusal of the tag-on-bump judge is load-bearing"
+    prediction: "Every mutant that removes a refusal, a NOT_MEASURED, or the exact bump identity turns a planted row red: the self-test prints mutants killed 7/7"
+    test: "bash scripts/release/tag_on_bump.sh --self-test | grep -qx 'tag_on_bump self-test: mutants killed 7/7'"
+    if_fails: "A refusal no row depends on is theater; the table would pass a judge that never refuses"
+
+  - id: FALSIFY-TSMG-009
+    rule: "The tag step asks the tag-on-bump judge about the commit it tags, before `git tag`"
+    prediction: "cut_tag() calls scripts/release/tag_on_bump.sh with --commit on a line above `git tag -a`"
+    test: "b=$(awk '/^cut_tag\\(\\) \\{/,/^\\}/' scripts/release/autopilot.sh); j=$(printf '%s\\n' \"$b\" | grep -n 'tag_on_bump\\.sh' | head -1 | cut -d: -f1); t=$(printf '%s\\n' \"$b\" | grep -n 'git tag -a' | head -1 | cut -d: -f1); [ -n \"$j\" ] && [ -n \"$t\" ] && [ \"$j\" -lt \"$t\" ]"
+    if_fails: "The release path never asks whether the commit it tags is the bump: the 0.70.1 condition (3 commits between) is reachable unseen"
+
 qa_gate:
   id: F-TSMG-001
   name: "The release train's tag step cannot be reached without a clean milestone"
@@ -102,3 +137,4 @@ qa_gate:
   checks:
     - "tag_requires_clean_milestone"
     - "guard_is_behavioural_not_textual"
+    - "tag_on_bump_commit"

@@ -223,6 +223,12 @@ cut_tag() {
         1) die "milestone $v still holds open item(s) -- no tag, no publish (check_milestone_cut.sh rc=1)" ;;
         *) die "milestone $v could not be judged (check_milestone_cut.sh rc=$rc) -- no tag; Unknown is not a pass" ;;
     esac
+    # #4692 (signed: "At release, with the tag on the bump commit"): the commit about to be tagged must
+    # be the commit that bumped the version to $v, with nothing between. REPORT-ONLY until three green
+    # nights of release-gates-nightly (L31); then this line becomes a die on rc 1 and rc 2.
+    rc=0
+    local tob; tob=$(bash "$REPO_ROOT/scripts/release/tag_on_bump.sh" "$v" --commit "$mc" --root "$REPO_ROOT" 2>&1) || rc=$?
+    say "TAG-ON-BUMP REPORT-ONLY rc=$rc $(printf '%s\n' "$tob" | head -n 1)"
     git tag -a "$t" -m "aprender $t" "$mc" >> "$LOG" 2>&1 || die "tag failed"
     git push origin "$t" >> "$LOG" 2>&1 || die "tag push failed"
 }
