@@ -100,20 +100,29 @@ sections jobs workspace-test-shard"
 # up to the next NON-COMMENT line at indent <= 2. A comment or blank ends nothing: it is held and
 # printed only if the job goes on, so `  # note` inside a job cannot cut its tail out of the
 # digest (lane E, round 4). A second <job> key under <parent> is rc=3: a YAML loader keeps the
-# last duplicate, which is not the block pinned here.
+# last duplicate, which is not the block pinned here. The duplicate is counted in every spelling
+# a loader reads as the same key -- quoted, `key :`, `key: # c` (lane G, round 5).
 job_block() {
-    awk -v p="$2:" -v j="  $3:" '
+    awk -v p="$2:" -v j="  $3:" -v k="$3" '
+        BEGIN { dk = "^  [\"'"'"']?" k "[\"'"'"']?[ \t]*:([ \t]|$)" }
         $0 == p { inp = 1; next }
         inp && /^[^ #]/ { inp = 0 }
-        inp && $0 == j { seen++ }
+        inp && $0 ~ dk { seen++ }
         inb && !/^[[:space:]]*#/ && (/^[^ ]/ || /^ [^ ]/ || /^  [^ ]/) { inb = 0; done = 1 }
         inp && !inb && !done && $0 == j { inb = 1 }
         inb { if ($0 ~ /^[[:space:]]*(#.*)?$/) { held = held $0 "\n"; next } printf "%s%s\n", held, $0; held = "" }
         END { if (seen > 1) exit 3 }' "$1"
 }
+# outside_jobs <file> -> every top-level key line, plus every non-comment line of every top-level
+# block but `jobs:`. That pins by VALUE what reaches every pinned job without touching one of
+# their lines: a workflow-level `env:`, the `on:` triggers, `concurrency:`, sovereign-ci's
+# `use_nextest` and `uses:` pin, the matrix-pins (lanes F round 4, H round 5). A second top-level
+# `jobs:`, which a loader keeps in place of the first, shows here as a second key line.
+outside_jobs() {
+    awk '/^[^ #]/ { inj = ($0 == "jobs:"); print; next } !inj && !/^[[:space:]]*(#.*)?$/' "$1"
+}
 # golden_compute <workflow> <sections> -> the manifest; rc=2 (ENV) when a pinned job is absent or
-# keyed twice. It also pins each file's top-level key set: a workflow-level `env:`, `defaults:` or
-# `permissions:` reaches every pinned job without touching one of their lines (lane F, round 4).
+# keyed twice. It also pins each file's lines outside `jobs:` (outside_jobs).
 golden_compute() {
     local role parent job file block rc
     while read -r role parent job; do
@@ -123,8 +132,8 @@ golden_compute() {
         [ -n "$block" ] || { printf 'ENV   pinned job %s.%s is missing from the %s: cannot judge, not a pass\n' "$parent" "$job" "$role" >&2; return 2; }
         printf '%s  %s:%s.%s\n' "$(printf '%s\n' "$block" | sha256sum | cut -c1-64)" "$role" "$parent" "$job"
     done <<< "$PINNED"
-    printf '%s  workflow:top-level-keys\n' "$(grep -E '^[^ #]' "$1" | cut -d: -f1 | sha256sum | cut -c1-64)"
-    printf '%s  sections:top-level-keys\n' "$(grep -E '^[^ #]' "$2" | cut -d: -f1 | sha256sum | cut -c1-64)"
+    printf '%s  workflow:outside-jobs\n' "$(outside_jobs "$1" | sha256sum | cut -c1-64)"
+    printf '%s  sections:outside-jobs\n' "$(outside_jobs "$2" | sha256sum | cut -c1-64)"
 }
 golden_header() {
     printf '%s\n' "# The jobs the quick-tier shard split lives in, pinned by the sha256 of their lines" \
@@ -354,6 +363,30 @@ if [ "${1:-}" = "--self-test" ]; then
   NEXTEST_PROFILE: bogus
 jobs:' > "$d/c-env.yml"
     case_rc 1 "a workflow-level env added above the pinned jobs" "$(st_rc table "$d/c-env.yml" "$SEC")"
+    # round 5 (lanes G, H): a duplicate key in every spelling a loader reads as the same key, and
+    # the values outside `jobs:` that reach every pinned job
+    r5() { # r5 WANT LABEL WF SEC -- the mutant must differ from the tree it was made from
+        if cmp -s "$WF" "$3" && cmp -s "$SEC" "$4"; then printf 'FAIL  the %s mutant did not apply\n' "$2"; bad=1
+        else case_rc "$1" "$2" "$(st_rc table "$3" "$4")"; fi
+    }
+    for k in '"workspace-test-shard":' "'workspace-test-shard':" 'workspace-test-shard :' 'workspace-test-shard: # dup'; do
+        edit "$SEC" '  workspace-test:' '  workspace-test:' sub "  $k
+    runs-on: shadow
+  workspace-test:" > "$d/r5-dup.yml"
+        r5 2 "a second key spelt  $k  under jobs" "$WF" "$d/r5-dup.yml"
+    done
+    { cat "$WF"; printf '  workspace-test-shard: # dup\n    runs-on: shadow\n'; } > "$d/r5-wfdup.yml"
+    r5 2 "a commented second workspace-test-shard key appended to the workflow" "$d/r5-wfdup.yml" "$SEC"
+    { cat "$WF"; printf 'jobs:\n  other:\n    runs-on: shadow\n'; } > "$d/r5-jobs2.yml"
+    r5 1 "a second top-level jobs: (a loader keeps it in place of the first)" "$d/r5-jobs2.yml" "$SEC"
+    edit "$WF" 'merge_group:' 'workflow_dispatch:' after '  schedule: [{cron: "0 0 * * *"}]' > "$d/r5-on.yml"
+    r5 1 "a trigger added under on:" "$d/r5-on.yml" "$SEC"
+    sed 's/^  cancel-in-progress: .*/  cancel-in-progress: true/' "$WF" > "$d/r5-conc.yml"
+    r5 1 "concurrency cancel-in-progress made unconditional" "$d/r5-conc.yml" "$SEC"
+    sed 's/^    use_nextest: true$/    use_nextest: false/' "$SEC" > "$d/r5-nextest.yml"
+    r5 1 "sovereign-ci use_nextest turned off" "$WF" "$d/r5-nextest.yml"
+    edit "$WF" 'merge_group:' 'workflow_dispatch:' after '  # a reviewed comment' > "$d/r5-cmt.yml"
+    r5 0 "a comment added under on: (comments are not pinned)" "$d/r5-cmt.yml" "$SEC"
     case_rc 2 "no golden file" "$(GOLDEN="$d/absent.sha256" st_rc table "$WF" "$SEC")"
     rc=0; table "$d/none.yml" "$SEC" > /dev/null 2>&1 || rc=$?
     if [ "$rc" = 2 ]; then printf 'ok    a workflow with no fan-in step is ENV rc=2, never a pass\n'
