@@ -1,0 +1,20 @@
+- id: GH-4665
+  github_issue: 4665
+  item_type: task
+  title: '0.70.2 P0: Qwen3.5-35B-A3B-UD-IQ4_XS.gguf capability_match: no CUDA forward for qwen35moe (known failure in 0.70.1)'
+  status: inprogress
+  priority: medium
+  assigned_to: null
+  created: 2026-10-04T09:22:13.463681379+00:00
+  updated: 2026-10-04T09:22:13.463681379+00:00
+  spec: null
+  acceptance_criteria: []
+  phases: []
+  subtasks: []
+  estimated_effort: null
+  labels:
+  - bug
+  - P0
+  - size:M
+  - owner:aprender-a7
+  notes: null

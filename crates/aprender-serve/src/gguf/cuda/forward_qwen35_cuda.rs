@@ -443,6 +443,23 @@ impl<'a> Qwen35CudaModel<'a> {
         })
     }
 
+    /// #4665: the GPU layers carry only `ffn_*`, which on a Qwen3.5-MoE file is the shared
+    /// expert alone. Uploading such a layer would run without its routed experts — wrong
+    /// output, no error — so a MoE layer is refused until the GPU runs its experts.
+    fn check_moe_layers(model: &Qwen35Model<'_>) -> Result<()> {
+        match model.layers.iter().position(|l| l.moe().is_some()) {
+            None => Ok(()),
+            Some(il) => Err(RealizarError::UnsupportedOperation {
+                operation: "qwen35_cuda".to_string(),
+                reason: format!(
+                    "layer {il} is a Qwen3.5-MoE layer and the CUDA forward does not run its \
+                     routed experts yet (#4665); refusing rather than computing the shared \
+                     expert alone"
+                ),
+            }),
+        }
+    }
+
     /// Upload one `DeltaNet` layer's tensors.
     fn build_layer(
         executor: &mut CudaExecutor,
@@ -569,6 +586,7 @@ impl<'a> Qwen35CudaModel<'a> {
     ) -> Result<Self> {
         let dims = Self::dims_of(model);
         Self::check_head_grouping(dims)?;
+        Self::check_moe_layers(model)?;
         if max_seq_len == 0 {
             return Err(RealizarError::InvalidShape {
                 reason: "qwen35_cuda: max_seq_len must be at least 1".to_string(),

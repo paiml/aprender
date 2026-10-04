@@ -21,6 +21,8 @@ pub struct Qwen35DeltaNetLayer {
     pub ffn_gate: QuantizedTensorRef,
     pub ffn_up: QuantizedTensorRef,
     pub ffn_down: QuantizedTensorRef,
+    /// The routed experts of a Qwen3.5-MoE layer (#4665); `None` on a dense layer.
+    pub moe: Option<Qwen35MoeRefs>,
 }
 
 #[derive(Clone, Debug)]
@@ -36,12 +38,81 @@ pub struct Qwen35AttentionLayer {
     pub ffn_gate: QuantizedTensorRef,
     pub ffn_up: QuantizedTensorRef,
     pub ffn_down: QuantizedTensorRef,
+    /// The routed experts of a Qwen3.5-MoE layer (#4665); `None` on a dense layer.
+    pub moe: Option<Qwen35MoeRefs>,
+}
+
+/// The routed half of a Qwen3.5-MoE FFN (#4665). The layer's `ffn_gate`/`ffn_up`/`ffn_down`
+/// then hold the SHARED expert (`*_shexp`), a dense SwiGLU whose output is scaled by
+/// `sigmoid(shared_gate · x)` and added to the routed sum (llama.cpp `qwen35moe.cpp`
+/// `build_layer_ffn`).
+#[derive(Clone, Debug)]
+pub struct Qwen35MoeRefs {
+    /// `ffn_gate_inp`: the F32 router, `[num_experts × hidden]` row-major.
+    pub router: QuantizedTensorRef,
+    /// `ffn_gate_inp_shexp`: the F32 shared-expert gate, `[hidden]`.
+    pub shared_gate: QuantizedTensorRef,
+    /// `ffn_gate_exps`: every expert's gate projection, stacked expert-major.
+    pub gate_exps: QuantizedTensorRef,
+    /// `ffn_up_exps`: every expert's up projection, stacked expert-major.
+    pub up_exps: QuantizedTensorRef,
+    /// `ffn_down_exps`: every expert's down projection, stacked expert-major.
+    pub down_exps: QuantizedTensorRef,
+}
+
+/// One layer's FFN tensors: dense, or shared expert + routed experts.
+struct Qwen35FfnRefs {
+    gate: QuantizedTensorRef,
+    up: QuantizedTensorRef,
+    down: QuantizedTensorRef,
+    moe: Option<Qwen35MoeRefs>,
+}
+
+/// A layer is MoE iff it carries a router (`ffn_gate_inp`). A dense file never does, so the
+/// dense names are read exactly as before; an MoE layer missing any of its six other tensors
+/// is refused by name rather than run without its shared expert.
+fn load_ffn_refs(model: &GGUFModel, data: &[u8], i: usize) -> Result<Qwen35FfnRefs> {
+    let get = |suffix: &str| {
+        QuantizedGGUFTransformer::get_tensor_ref(model, data, &format!("blk.{i}.{suffix}.weight"))
+    };
+    let router_name = format!("blk.{i}.ffn_gate_inp.weight");
+    if !model.tensors.iter().any(|t| t.name == router_name) {
+        return Ok(Qwen35FfnRefs {
+            gate: get("ffn_gate")?,
+            up: get("ffn_up")?,
+            down: get("ffn_down")?,
+            moe: None,
+        });
+    }
+    Ok(Qwen35FfnRefs {
+        gate: get("ffn_gate_shexp")?,
+        up: get("ffn_up_shexp")?,
+        down: get("ffn_down_shexp")?,
+        moe: Some(Qwen35MoeRefs {
+            router: get("ffn_gate_inp")?,
+            shared_gate: get("ffn_gate_inp_shexp")?,
+            gate_exps: get("ffn_gate_exps")?,
+            up_exps: get("ffn_up_exps")?,
+            down_exps: get("ffn_down_exps")?,
+        }),
+    })
 }
 
 #[derive(Clone, Debug)]
 pub enum Qwen35Layer {
     DeltaNet(Qwen35DeltaNetLayer),
     Attention(Qwen35AttentionLayer),
+}
+
+impl Qwen35Layer {
+    /// Does this layer carry routed experts (Qwen3.5-MoE, #4665)?
+    #[must_use]
+    pub fn is_moe(&self) -> bool {
+        match self {
+            Self::DeltaNet(d) => d.moe.is_some(),
+            Self::Attention(a) => a.moe.is_some(),
+        }
+    }
 }
 
 fn as_u32(v: &GGUFValue) -> Option<u32> {
@@ -87,6 +158,7 @@ pub fn load_qwen35_layers(model: &GGUFModel, data: &[u8]) -> Result<Vec<Qwen35La
     let interval = arch_u32(model, "full_attention_interval").unwrap_or(4) as usize;
 
     for i in 0..num_layers {
+        let ffn = load_ffn_refs(model, data, i)?;
         if (i + 1) % interval == 0 {
             // Full attention
             layers.push(Qwen35Layer::Attention(Qwen35AttentionLayer {
@@ -130,21 +202,10 @@ pub fn load_qwen35_layers(model: &GGUFModel, data: &[u8]) -> Result<Vec<Qwen35La
                     data,
                     &format!("blk.{}.post_attention_norm.weight", i),
                 )?,
-                ffn_gate: QuantizedGGUFTransformer::get_tensor_ref(
-                    model,
-                    data,
-                    &format!("blk.{}.ffn_gate.weight", i),
-                )?,
-                ffn_up: QuantizedGGUFTransformer::get_tensor_ref(
-                    model,
-                    data,
-                    &format!("blk.{}.ffn_up.weight", i),
-                )?,
-                ffn_down: QuantizedGGUFTransformer::get_tensor_ref(
-                    model,
-                    data,
-                    &format!("blk.{}.ffn_down.weight", i),
-                )?,
+                ffn_gate: ffn.gate,
+                ffn_up: ffn.up,
+                ffn_down: ffn.down,
+                moe: ffn.moe,
             }));
         } else {
             // DeltaNet
@@ -204,21 +265,10 @@ pub fn load_qwen35_layers(model: &GGUFModel, data: &[u8]) -> Result<Vec<Qwen35La
                     data,
                     &format!("blk.{}.post_attention_norm.weight", i),
                 )?,
-                ffn_gate: QuantizedGGUFTransformer::get_tensor_ref(
-                    model,
-                    data,
-                    &format!("blk.{}.ffn_gate.weight", i),
-                )?,
-                ffn_up: QuantizedGGUFTransformer::get_tensor_ref(
-                    model,
-                    data,
-                    &format!("blk.{}.ffn_up.weight", i),
-                )?,
-                ffn_down: QuantizedGGUFTransformer::get_tensor_ref(
-                    model,
-                    data,
-                    &format!("blk.{}.ffn_down.weight", i),
-                )?,
+                ffn_gate: ffn.gate,
+                ffn_up: ffn.up,
+                ffn_down: ffn.down,
+                moe: ffn.moe,
             }));
         }
     }

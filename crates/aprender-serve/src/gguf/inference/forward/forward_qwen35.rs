@@ -7,6 +7,11 @@ use std::f32::consts::E;
 #[path = "qwen35_known_issue.rs"]
 pub mod qwen35_known_issue;
 
+/// Qwen3.5-MoE (`qwen35moe`): routed experts + gated shared expert in every layer (#4665).
+#[path = "forward_qwen35_moe.rs"]
+pub(crate) mod qwen35_moe;
+use qwen35_moe::{Qwen35MoeFfn, Qwen35MoeShape};
+
 /// SiLU activation function
 pub fn silu(x: f32) -> f32 {
     x / (1.0 + (-x as f32).exp())
@@ -566,6 +571,8 @@ pub(crate) struct Qwen35OwnedDeltaNetLayer {
     pub(crate) ffn_gate: OwnedQuantizedTensor,
     pub(crate) ffn_up: OwnedQuantizedTensor,
     pub(crate) ffn_down: OwnedQuantizedTensor,
+    /// Qwen3.5-MoE only (#4665): the routed experts. `ffn_*` above are then the shared expert.
+    pub(crate) moe: Option<Box<Qwen35MoeFfn>>,
 }
 
 pub(crate) struct Qwen35OwnedAttentionLayer {
@@ -580,11 +587,23 @@ pub(crate) struct Qwen35OwnedAttentionLayer {
     pub(crate) ffn_gate: OwnedQuantizedTensor,
     pub(crate) ffn_up: OwnedQuantizedTensor,
     pub(crate) ffn_down: OwnedQuantizedTensor,
+    /// Qwen3.5-MoE only (#4665): the routed experts. `ffn_*` above are then the shared expert.
+    pub(crate) moe: Option<Box<Qwen35MoeFfn>>,
 }
 
 pub(crate) enum Qwen35OwnedLayer {
     DeltaNet(Qwen35OwnedDeltaNetLayer),
     Attention(Qwen35OwnedAttentionLayer),
+}
+
+impl Qwen35OwnedLayer {
+    /// The routed experts of a Qwen3.5-MoE layer (#4665), `None` for a dense one.
+    pub(crate) fn moe(&self) -> Option<&Qwen35MoeFfn> {
+        match self {
+            Self::DeltaNet(d) => d.moe.as_deref(),
+            Self::Attention(a) => a.moe.as_deref(),
+        }
+    }
 }
 
 /// Qwen3.5 / Qwen3.8 hybrid decoder on the CPU (#3091): Gated `DeltaNet` layers (short causal
@@ -633,7 +652,7 @@ fn load_f32_vec(tensor_ref: &QuantizedTensorRef, data: &[u8]) -> Result<Vec<f32>
 type GGUFMetadata = std::collections::HashMap<String, crate::gguf::types::GGUFValue>;
 
 /// The Gated `DeltaNet` shape Qwen3.5 records in GGUF metadata, under either the
-/// `qwen2.*` or the `qwen35.*` key prefix.
+/// `qwen2.*`, `qwen35.*` or (#4665) `qwen35moe.*` key prefix.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub(crate) struct Qwen35SsmMeta {
     pub(crate) head_k_dim: usize,
@@ -652,10 +671,19 @@ fn metadata_usize(metadata: &GGUFMetadata, key: &str) -> Option<usize> {
     }
 }
 
-/// `key`, else `fallback`, else `default` — the `qwen2.*`/`qwen35.*` prefix pair.
+/// The `qwen35moe.*` spelling of a `qwen35.*` key (#4665): the MoE file records the same
+/// hybrid shape under its own architecture prefix.
+fn moe_key(key: &str) -> Option<String> {
+    key.strip_prefix("qwen35.")
+        .map(|k| format!("qwen35moe.{k}"))
+}
+
+/// `key`, else `fallback`, else its `qwen35moe.*` spelling, else `default` — the
+/// `qwen2.*`/`qwen35.*`/`qwen35moe.*` prefix set.
 fn metadata_usize_or(metadata: &GGUFMetadata, key: &str, fallback: &str, default: usize) -> usize {
     metadata_usize(metadata, key)
         .or_else(|| metadata_usize(metadata, fallback))
+        .or_else(|| moe_key(fallback).and_then(|k| metadata_usize(metadata, &k)))
         .unwrap_or(default)
 }
 
@@ -666,6 +694,7 @@ fn rope_sections_from_metadata(metadata: &GGUFMetadata) -> [usize; 4] {
     if let Some(crate::gguf::types::GGUFValue::Array(arr)) = metadata
         .get("qwen2.rope.dimension_sections")
         .or_else(|| metadata.get("qwen35.rope.dimension_sections"))
+        .or_else(|| metadata.get("qwen35moe.rope.dimension_sections"))
     {
         for (i, val) in arr.iter().take(4).enumerate() {
             if let crate::gguf::types::GGUFValue::UInt32(v) = val {
@@ -718,6 +747,38 @@ struct Qwen35LayerDims {
     num_v_heads: usize,
     conv_dim: usize,
     value_dim: usize,
+    /// Expert layout, read once per file; `None` for a dense Qwen3.5.
+    moe: Option<Qwen35MoeShape>,
+}
+
+/// The dense FFN's intermediate width: the config's for a dense layer, the shared expert's own
+/// (`ffn_gate_shexp`'s, which the metadata records under no key the config reads) for MoE.
+fn ffn_width(ffn_gate: &QuantizedTensorRef, moe: bool, dims: &Qwen35LayerDims) -> usize {
+    if moe {
+        ffn_gate.num_elements / dims.hidden_dim.max(1)
+    } else {
+        dims.intermediate_dim
+    }
+}
+
+/// Own a layer's routed experts, if it has any.
+fn own_moe(
+    refs: Option<&crate::gguf::qwen35_load::Qwen35MoeRefs>,
+    data: &[u8],
+    dims: &Qwen35LayerDims,
+) -> Result<Option<Box<Qwen35MoeFfn>>> {
+    let Some(refs) = refs else { return Ok(None) };
+    let shape = dims
+        .moe
+        .ok_or_else(|| crate::error::RealizarError::FormatError {
+            reason: "qwen35moe: a layer carries a router but the file has no expert layout".into(),
+        })?;
+    Ok(Some(Box::new(Qwen35MoeFfn::own(
+        refs,
+        data,
+        dims.hidden_dim,
+        shape,
+    )?)))
 }
 
 /// Own one Gated `DeltaNet` layer's tensors.
@@ -726,6 +787,7 @@ fn own_deltanet_layer(
     data: &[u8],
     dims: &Qwen35LayerDims,
 ) -> Result<Qwen35OwnedDeltaNetLayer> {
+    let ffn_dim = ffn_width(&d.ffn_gate, d.moe.is_some(), dims);
     Ok(Qwen35OwnedDeltaNetLayer {
         attn_norm: load_f32_vec(&d.attn_norm, data)?,
         attn_qkv: OwnedQuantizedTensor::from_ref_with_dims(
@@ -767,20 +829,16 @@ fn own_deltanet_layer(
             &d.ffn_gate,
             data,
             dims.hidden_dim,
-            dims.intermediate_dim,
+            ffn_dim,
         ),
-        ffn_up: OwnedQuantizedTensor::from_ref_with_dims(
-            &d.ffn_up,
-            data,
-            dims.hidden_dim,
-            dims.intermediate_dim,
-        ),
+        ffn_up: OwnedQuantizedTensor::from_ref_with_dims(&d.ffn_up, data, dims.hidden_dim, ffn_dim),
         ffn_down: OwnedQuantizedTensor::from_ref_with_dims(
             &d.ffn_down,
             data,
-            dims.intermediate_dim,
+            ffn_dim,
             dims.hidden_dim,
         ),
+        moe: own_moe(d.moe.as_ref(), data, dims)?,
     })
 }
 
@@ -792,6 +850,7 @@ fn own_attention_layer(
     data: &[u8],
     dims: &Qwen35LayerDims,
 ) -> Result<Qwen35OwnedAttentionLayer> {
+    let ffn_dim = ffn_width(&a.ffn_gate, a.moe.is_some(), dims);
     let attn_q_norm = load_f32_vec(&a.attn_q_norm, data)?;
     let true_head_dim = attn_q_norm.len();
 
@@ -828,20 +887,16 @@ fn own_attention_layer(
             &a.ffn_gate,
             data,
             dims.hidden_dim,
-            dims.intermediate_dim,
+            ffn_dim,
         ),
-        ffn_up: OwnedQuantizedTensor::from_ref_with_dims(
-            &a.ffn_up,
-            data,
-            dims.hidden_dim,
-            dims.intermediate_dim,
-        ),
+        ffn_up: OwnedQuantizedTensor::from_ref_with_dims(&a.ffn_up, data, dims.hidden_dim, ffn_dim),
         ffn_down: OwnedQuantizedTensor::from_ref_with_dims(
             &a.ffn_down,
             data,
-            dims.intermediate_dim,
+            ffn_dim,
             dims.hidden_dim,
         ),
+        moe: own_moe(a.moe.as_ref(), data, dims)?,
     })
 }
 
@@ -941,6 +996,14 @@ impl<'a> Qwen35Model<'a> {
             num_v_heads: meta.num_v_heads,
             conv_dim: key_dim * 2 + value_dim,
             value_dim,
+            moe: if refs
+                .iter()
+                .any(crate::gguf::qwen35_load::Qwen35Layer::is_moe)
+            {
+                Some(Qwen35MoeShape::from_model(model)?)
+            } else {
+                None
+            },
         };
 
         let mut owned = Vec::with_capacity(refs.len());
@@ -1116,6 +1179,9 @@ impl<'a> Qwen35Model<'a> {
         let mut ffn_down = vec![0.0; d.ffn_down.out_dim];
         self.base
             .fused_matmul_into(&ffn_up, &d.ffn_down, &mut ffn_down)?;
+        if let Some(moe) = &d.moe {
+            self.moe_combine_into(moe, post_attn_normed, &mut ffn_down)?;
+        }
         for i in 0..self.base.config.hidden_dim {
             hidden[i] += ffn_down[i];
         }
@@ -1175,6 +1241,9 @@ impl<'a> Qwen35Model<'a> {
         let mut ffn_down = vec![0.0; a.ffn_down.out_dim];
         self.base
             .fused_matmul_into(&ffn_up, &a.ffn_down, &mut ffn_down)?;
+        if let Some(moe) = &a.moe {
+            self.moe_combine_into(moe, post_attn_normed, &mut ffn_down)?;
+        }
         for i in 0..self.base.config.hidden_dim {
             hidden[i] += ffn_down[i];
         }
@@ -1259,6 +1328,7 @@ impl<'a> Qwen35Model<'a> {
                         b,
                         &d.post_attention_norm,
                         [&d.ffn_gate, &d.ffn_up, &d.ffn_down],
+                        d.moe.as_deref(),
                     )?;
                 },
                 Qwen35OwnedLayer::Attention(a) => {
@@ -1274,6 +1344,7 @@ impl<'a> Qwen35Model<'a> {
                         b,
                         &a.post_attention_norm,
                         [&a.ffn_gate, &a.ffn_up, &a.ffn_down],
+                        a.moe.as_deref(),
                     )?;
                 },
             }
@@ -1468,6 +1539,7 @@ impl<'a> Qwen35Model<'a> {
         b: usize,
         post_norm: &[f32],
         [ffn_gate, ffn_up, ffn_down]: [&OwnedQuantizedTensor; 3],
+        moe: Option<&Qwen35MoeFfn>,
     ) -> Result<()> {
         let hd = self.base.config.hidden_dim;
         let mut normed = vec![0.0; b * hd];
@@ -1478,7 +1550,13 @@ impl<'a> Qwen35Model<'a> {
             let silu = x / (1.0 + (-x as f32).exp());
             *u *= silu;
         }
-        let down = self.matmul_rows(&up, b, ffn_down)?;
+        let mut down = self.matmul_rows(&up, b, ffn_down)?;
+        if let Some(moe) = moe {
+            // Routed experts differ per token, so each row is the per-token combine.
+            for (x, out) in normed.chunks_exact(hd).zip(down.chunks_exact_mut(hd)) {
+                self.moe_combine_into(moe, x, out)?;
+            }
+        }
         add_into(hidden, &down);
         Ok(())
     }
@@ -2315,6 +2393,26 @@ mod qwen35_ssm_meta_tests {
         assert_eq!(meta.num_k_heads, 2, "no qwen2 key: the qwen35 one is read");
         assert_eq!(meta.num_v_heads, 32, "Int32 is accepted like UInt32");
         assert_eq!(meta.conv_kernel, 4);
+    }
+
+    /// #4665: a qwen35moe file keys its hybrid shape `qwen35moe.*`. Read as defaults, the
+    /// 35B-A3B would run with head_k_dim 16 instead of 128 — wrong output, no error.
+    #[test]
+    fn test_qwen35moe_keys_are_read_not_defaulted() {
+        let meta = qwen35_ssm_meta(&md(&[
+            ("qwen35moe.ssm.state_size", GGUFValue::UInt32(128)),
+            ("qwen35moe.ssm.group_count", GGUFValue::UInt32(16)),
+            ("qwen35moe.ssm.time_step_rank", GGUFValue::UInt32(32)),
+            ("qwen35moe.ssm.conv_kernel", GGUFValue::UInt32(4)),
+            (
+                "qwen35moe.rope.dimension_sections",
+                GGUFValue::Array(vec![GGUFValue::Int32(11); 4]),
+            ),
+        ]));
+        assert_eq!(meta.head_k_dim, 128);
+        assert_eq!(meta.num_k_heads, 16);
+        assert_eq!(meta.num_v_heads, 32);
+        assert_eq!(meta.rope_sections, [11; 4]);
     }
 
     #[test]

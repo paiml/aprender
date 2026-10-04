@@ -280,7 +280,10 @@ fn run_gguf_inference(
     // #3091: Qwen3.5/Qwen3.8 hybrids (Gated DeltaNet) are refused by the dense
     // loader. Their host model (base + hybrid layers) is built once per file and
     // generation goes through the one engine, `realizar::session` (#4263).
-    let is_qwen35 = mapped.model.architecture() == Some("qwen35");
+    let is_qwen35 = mapped
+        .model
+        .architecture()
+        .is_some_and(crate::gguf::hybrid_forward_handles);
     let qwen35_host = if is_qwen35 {
         Some(crate::gguf::qwen35_session::Qwen35Forward::cached_host(
             &config.model_path,

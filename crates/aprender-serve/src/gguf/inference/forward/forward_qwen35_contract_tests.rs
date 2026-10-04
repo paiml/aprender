@@ -21,21 +21,21 @@ const CONTRACT_TOL: f32 = 1.0e-6;
 /// Shapes of one synthetic model. Every inner width differs from `hidden`, so a projection
 /// that fails to restore `d_model` cannot pass by coincidence.
 #[derive(Clone, Copy)]
-struct Dims {
-    hidden: usize,
-    num_heads: usize,
-    num_kv_heads: usize,
+pub(super) struct Dims {
+    pub(super) hidden: usize,
+    pub(super) num_heads: usize,
+    pub(super) num_kv_heads: usize,
     /// Attention head width (`attn_q_norm.len()`), deliberately != hidden / num_heads.
-    attn_head_dim: usize,
-    intermediate: usize,
+    pub(super) attn_head_dim: usize,
+    pub(super) intermediate: usize,
     /// Gated `DeltaNet` head width (k and v share it, as the loader does).
-    gdn_head_dim: usize,
+    pub(super) gdn_head_dim: usize,
     /// Gated `DeltaNet` head count (k and v, so `q`, `k` and `v` have equal widths).
-    gdn_heads: usize,
-    vocab: usize,
+    pub(super) gdn_heads: usize,
+    pub(super) vocab: usize,
 }
 
-const DIMS: [Dims; 2] = [
+pub(super) const DIMS: [Dims; 2] = [
     Dims {
         hidden: 8,
         num_heads: 2,
@@ -61,41 +61,41 @@ const DIMS: [Dims; 2] = [
 /// `Qwen35State` allocates `3 * conv_dim` of conv window, i.e. kernel 4 is baked in.
 const CONV_KERNEL: usize = 4;
 const SEQ_LEN: usize = 3;
-const INPUT_SEEDS: [u64; 3] = [11, 23, 57];
+pub(super) const INPUT_SEEDS: [u64; 3] = [11, 23, 57];
 
 impl Dims {
-    fn gdn_width(self) -> usize {
+    pub(super) fn gdn_width(self) -> usize {
         self.gdn_head_dim * self.gdn_heads
     }
-    fn conv_dim(self) -> usize {
+    pub(super) fn conv_dim(self) -> usize {
         self.gdn_width() * 3
     }
 }
 
 /// Deterministic xorshift stream of floats in [-0.5, 0.5).
-struct Rng(u64);
+pub(super) struct Rng(u64);
 
 impl Rng {
-    fn new(seed: u64) -> Self {
+    pub(super) fn new(seed: u64) -> Self {
         Self(seed.wrapping_mul(0x9E37_79B9_7F4A_7C15) | 1)
     }
-    fn next_f32(&mut self) -> f32 {
+    pub(super) fn next_f32(&mut self) -> f32 {
         self.0 ^= self.0 << 13;
         self.0 ^= self.0 >> 7;
         self.0 ^= self.0 << 17;
         // 24 high bits -> [0, 1), exactly representable in f32.
         ((self.0 >> 40) as f32) / 16_777_216.0 - 0.5
     }
-    fn vec(&mut self, n: usize) -> Vec<f32> {
+    pub(super) fn vec(&mut self, n: usize) -> Vec<f32> {
         (0..n).map(|_| self.next_f32()).collect()
     }
     /// Strictly positive norm weights in [0.5, 1.5).
-    fn norm_weight(&mut self, n: usize) -> Vec<f32> {
+    pub(super) fn norm_weight(&mut self, n: usize) -> Vec<f32> {
         (0..n).map(|_| self.next_f32() + 1.0).collect()
     }
 }
 
-fn f32_tensor(rng: &mut Rng, in_dim: usize, out_dim: usize) -> OwnedQuantizedTensor {
+pub(super) fn f32_tensor(rng: &mut Rng, in_dim: usize, out_dim: usize) -> OwnedQuantizedTensor {
     OwnedQuantizedTensor {
         data: rng
             .vec(in_dim * out_dim)
@@ -108,7 +108,7 @@ fn f32_tensor(rng: &mut Rng, in_dim: usize, out_dim: usize) -> OwnedQuantizedTen
     }
 }
 
-fn zero_tensor(in_dim: usize, out_dim: usize) -> OwnedQuantizedTensor {
+pub(super) fn zero_tensor(in_dim: usize, out_dim: usize) -> OwnedQuantizedTensor {
     OwnedQuantizedTensor {
         data: vec![0u8; in_dim * out_dim * 4],
         in_dim,
@@ -117,7 +117,7 @@ fn zero_tensor(in_dim: usize, out_dim: usize) -> OwnedQuantizedTensor {
     }
 }
 
-fn base_model(dims: Dims) -> OwnedQuantizedModel {
+pub(super) fn base_model(dims: Dims) -> OwnedQuantizedModel {
     let mut rng = Rng::new(1);
     let config = GGUFConfig {
         architecture: "qwen35".to_string(),
@@ -160,7 +160,7 @@ fn base_model(dims: Dims) -> OwnedQuantizedModel {
     }
 }
 
-fn attention_layer(dims: Dims, seed: u64) -> Qwen35OwnedAttentionLayer {
+pub(super) fn attention_layer(dims: Dims, seed: u64) -> Qwen35OwnedAttentionLayer {
     let mut r = Rng::new(seed);
     let (h, hd) = (dims.hidden, dims.attn_head_dim);
     Qwen35OwnedAttentionLayer {
@@ -175,10 +175,11 @@ fn attention_layer(dims: Dims, seed: u64) -> Qwen35OwnedAttentionLayer {
         ffn_gate: f32_tensor(&mut r, h, dims.intermediate),
         ffn_up: f32_tensor(&mut r, h, dims.intermediate),
         ffn_down: f32_tensor(&mut r, dims.intermediate, h),
+        moe: None,
     }
 }
 
-fn deltanet_layer(dims: Dims, seed: u64) -> Qwen35OwnedDeltaNetLayer {
+pub(super) fn deltanet_layer(dims: Dims, seed: u64) -> Qwen35OwnedDeltaNetLayer {
     let mut r = Rng::new(seed);
     let h = dims.hidden;
     let heads = dims.gdn_heads;
@@ -198,10 +199,15 @@ fn deltanet_layer(dims: Dims, seed: u64) -> Qwen35OwnedDeltaNetLayer {
         ffn_gate: f32_tensor(&mut r, h, dims.intermediate),
         ffn_up: f32_tensor(&mut r, h, dims.intermediate),
         ffn_down: f32_tensor(&mut r, dims.intermediate, h),
+        moe: None,
     }
 }
 
-fn model(base: &OwnedQuantizedModel, dims: Dims, layers: Vec<Qwen35OwnedLayer>) -> Qwen35Model<'_> {
+pub(super) fn model(
+    base: &OwnedQuantizedModel,
+    dims: Dims,
+    layers: Vec<Qwen35OwnedLayer>,
+) -> Qwen35Model<'_> {
     Qwen35Model {
         base,
         layers,
@@ -242,7 +248,10 @@ fn run_block(
 
 /// Run `inputs` (one per position) through the single layer of `m` from a fresh state and
 /// return each position's residual delta `h_out - h_in`.
-fn deltas_over_sequence(m: &Qwen35Model<'_>, inputs: &[Vec<f32>]) -> Result<Vec<Vec<f32>>> {
+pub(super) fn deltas_over_sequence(
+    m: &Qwen35Model<'_>,
+    inputs: &[Vec<f32>],
+) -> Result<Vec<Vec<f32>>> {
     let mut state = m.new_state(inputs.len() + 1);
     let mut deltas = Vec::with_capacity(inputs.len());
     for (pos, h) in inputs.iter().enumerate() {
@@ -261,7 +270,7 @@ fn hybrid_layers(dims: Dims, seed: u64) -> Vec<Qwen35OwnedLayer> {
 }
 
 /// Qwen3.5's layer schedule over `n` layers: every 4th is full attention, each seeded `seed + l`.
-fn hybrid_schedule(dims: Dims, seed: u64, n: u64) -> Vec<Qwen35OwnedLayer> {
+pub(super) fn hybrid_schedule(dims: Dims, seed: u64, n: u64) -> Vec<Qwen35OwnedLayer> {
     (0..n)
         .map(|l| {
             if (l + 1) % 4 == 0 {
@@ -273,7 +282,7 @@ fn hybrid_schedule(dims: Dims, seed: u64, n: u64) -> Vec<Qwen35OwnedLayer> {
         .collect()
 }
 
-fn inputs(dims: Dims, seed: u64) -> Vec<Vec<f32>> {
+pub(super) fn inputs(dims: Dims, seed: u64) -> Vec<Vec<f32>> {
     let mut r = Rng::new(seed);
     (0..SEQ_LEN).map(|_| r.vec(dims.hidden)).collect()
 }
@@ -309,24 +318,24 @@ fn weights(t: &OwnedQuantizedTensor) -> Vec<f32> {
         .collect()
 }
 
-fn matvec(t: &OwnedQuantizedTensor, x: &[f32]) -> Vec<f32> {
+pub(super) fn matvec(t: &OwnedQuantizedTensor, x: &[f32]) -> Vec<f32> {
     let w = weights(t);
     (0..t.out_dim)
         .map(|r| (0..t.in_dim).map(|c| w[r * t.in_dim + c] * x[c]).sum())
         .collect()
 }
 
-fn rmsnorm(x: &[f32], w: &[f32], eps: f32) -> Vec<f32> {
+pub(super) fn rmsnorm(x: &[f32], w: &[f32], eps: f32) -> Vec<f32> {
     let inv = 1.0 / (x.iter().map(|v| v * v).sum::<f32>() / x.len() as f32 + eps).sqrt();
     x.iter().zip(w).map(|(v, g)| v * inv * g).collect()
 }
 
-fn sigmoid(x: f32) -> f32 {
+pub(super) fn sigmoid(x: f32) -> f32 {
     1.0 / (1.0 + (-x).exp())
 }
 
 /// `swiglu(rmsnorm(x))`: down(silu(gate(n)) * up(n)).
-fn ref_ffn(
+pub(super) fn ref_ffn(
     h: &[f32],
     norm: &[f32],
     gate: &OwnedQuantizedTensor,
@@ -406,7 +415,7 @@ fn ref_deltanet_pos0(dims: Dims, d: &Qwen35OwnedDeltaNetLayer, h: &[f32], eps: f
     matvec(&d.ssm_out, &normed)
 }
 
-fn assert_close(got: &[f32], want: &[f32], what: &str) {
+pub(super) fn assert_close(got: &[f32], want: &[f32], what: &str) {
     assert_eq!(got.len(), want.len(), "{what}: width");
     for (i, (g, w)) in got.iter().zip(want).enumerate() {
         assert!(
@@ -694,7 +703,7 @@ fn qhf_con_007_residual_identity() -> Result<()> {
 // asserted either -- see the note on that obligation in the contract (#3091).
 
 /// Tokens that visit the first and the last embedding row.
-fn token_sequence(dims: Dims, seq_len: usize) -> Vec<u32> {
+pub(super) fn token_sequence(dims: Dims, seq_len: usize) -> Vec<u32> {
     (0..seq_len)
         .map(|p| u32::try_from((p * 3 + 1) % dims.vocab).unwrap_or(0))
         .collect()

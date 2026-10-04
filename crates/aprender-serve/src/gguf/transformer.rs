@@ -110,19 +110,22 @@ pub fn unsupported_architecture_reason<'n>(
 /// attention) forward handles?
 ///
 /// This is the ONE spelling set the runtime dispatches on: `inference_result.rs`
-/// compares the GGUF architecture to the literal `"qwen35"` and, on a match,
+/// asks this predicate of the GGUF architecture and, on a match,
 /// builds `forward_qwen35::Qwen35Model` (CPU, #3091), which
 /// `cuda::forward_qwen35_cuda::Qwen35CudaModel` wraps on the GPU (#3090).
 /// `apr qa`'s capability gate, `apr parity`'s refusal and `apr ptx-map` all ask
 /// THIS function rather than keeping private copies, so a tool can no longer
 /// admit a spelling the runtime refuses (or refuse one it serves).
 ///
+/// `qwen35moe` (#4665) is the same hybrid stack with a routed-expert FFN; the
+/// layers carry it (`Qwen35MoeFfn`), so the one forward serves both.
+///
 /// Deliberately exact, not case-insensitive and not a spelling family:
 /// `qwen3_5` / `qwen3.5` reach no forward, so calling them handled would have
 /// the tooling promise a load `apr run` cannot perform.
 #[must_use]
 pub fn hybrid_forward_handles(architecture: &str) -> bool {
-    architecture == "qwen35"
+    matches!(architecture, "qwen35" | "qwen35moe")
 }
 
 /// Is this an architecture string the routed-expert (Qwen3-MoE) forward
@@ -987,14 +990,23 @@ mod unsupported_architecture_tests {
         );
     }
 
-    // The admission mirrors the runtime dispatch, which compares the GGUF
-    // architecture to the literal "qwen35" (infer/inference_result.rs). A
+    // The admission IS the runtime dispatch: infer/inference_result.rs asks this
+    // predicate (#4665 added "qwen35moe"). A
     // spelling the runtime does not dispatch must keep the refusal, or the
     // tooling would promise a load `apr run` cannot perform.
     #[test]
     fn unsupported_architecture_handled_set_is_the_runtime_dispatch_literal() {
         assert!(hybrid_forward_handles("qwen35"));
-        for other in ["qwen3_5", "qwen3.5", "QWEN35", "mamba", "qwen2", "llama"] {
+        assert!(hybrid_forward_handles("qwen35moe"), "#4665: the MoE hybrid");
+        for other in [
+            "qwen3_5",
+            "qwen3.5",
+            "QWEN35",
+            "qwen3_5moe",
+            "mamba",
+            "qwen2",
+            "llama",
+        ] {
             assert!(
                 !hybrid_forward_handles(other),
                 "'{other}' reaches no hybrid forward"
