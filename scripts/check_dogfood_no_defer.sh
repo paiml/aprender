@@ -55,6 +55,8 @@ lift() { # lift <script> -> the obligation list and the three deciding functions
 #   kind declared: classify_declared <row name> gate.sh <rc> <log>   bad = its return status
 #   kind declnote: as declared, plus SCOPED|UNSCOPED -- whether the row's note carries the gate's
 #                  `SCOPED: <name>` line (#4086: a recorded-scope verdict must never read as a bare pass)
+#   kind marknm / declnm: as mark / declared, plus NM|MEASURED -- whether the row's note says NOT_MEASURED
+#                  (#4672: --phase nightly reads a row it cannot measure at H as NOT_MEASURED, never OPEN)
 run_case() {
   local src="$1" kind="$2" phase="$3" name="$4" arg="$5" text="$6" tmp log rc
   tmp=$(mktemp) || return 2; log=$(mktemp) || { rm -f "$tmp"; return 2; }
@@ -64,12 +66,15 @@ run_case() {
   if [ "$kind" = declnote ]; then printf '%b\n' "$text" > "$log"; else printf '%s\n' "$text" > "$log"; fi
   cat >> "$tmp" <<'RUN'
 NAMES=(); RESULTS=(); NOTES=(); FAILED=0
-if [ "$KIND" = mark ]; then mark "$NAME" "$ARG" "note" > /dev/null; bad=$FAILED
+if [ "$KIND" = mark ] || [ "$KIND" = marknm ]; then mark "$NAME" "$ARG" "note" > /dev/null; bad=$FAILED
 else classify_declared "$NAME" gate.sh "$ARG" "$LOG" > /dev/null; bad=$?; fi
 if [ "$KIND" = declnote ]; then
   # #4086: does the ROW carry the gate's scope? SCOPED iff the note names it, else UNSCOPED.
   case "${NOTES[${#NOTES[@]}-1]:-}" in *"SCOPED: "*) sc=SCOPED ;; *) sc=UNSCOPED ;; esac
   printf '%s %s %s\n' "${RESULTS[${#RESULTS[@]}-1]:-NONE}" "$bad" "$sc"
+elif [ "$KIND" = marknm ] || [ "$KIND" = declnm ]; then
+  case "${NOTES[${#NOTES[@]}-1]:-}" in NOT_MEASURED*) nm=NM ;; *) nm=MEASURED ;; esac
+  printf '%s %s %s\n' "${RESULTS[${#RESULTS[@]}-1]:-NONE}" "$bad" "$nm"
 else printf '%s %s\n' "${RESULTS[${#RESULTS[@]}-1]:-NONE}" "$bad"; fi
 RUN
   KIND="$kind" DOGFOOD_PHASE="$phase" NAME="$name" ARG="$arg" LOG="$log" bash "$tmp" 2> /dev/null; rc=$?
@@ -98,6 +103,14 @@ scoped-pass-names-its-scope|declnote|pre-publish|declared:check_model_ladder|0|S
 scoped-fail-names-its-scope|declnote|pre-publish|declared:check_model_ladder|1|SCOPED: crux-smoke -- the emergency scope recorded for release 0.69.1 applies\nFAIL  host gx10 has no CRUX receipt from the release binary\nFAIL  lambda certified model 00fe7986ff5f thinking=on: no CRUX cell\nRED   OPERATOR EMERGENCY SCOPE: CRUX smoke only -- NOT satisfied (see FAIL rows)|FAIL 1 SCOPED
 unscoped-pass-stays-plain|declnote|pre-publish|declared:check_model_ladder|0|ok    every required rung green|PASS 0 UNSCOPED
 scoped-word-mid-line-is-not-a-scope|declnote|pre-publish|declared:check_model_ladder|0|note: SCOPED: is only a word here|PASS 0 UNSCOPED
+nightly-open-is-not-measured|marknm|nightly|publish-dry-run|OPEN||FAIL 1 NM
+nightly-obligation-is-not-measured|declnm|nightly|declared:check_multiplatform_dogfood|0|OPEN-OBLIGATION: 0.70.2 is not on crates.io yet|FAIL 1 NM
+nightly-stale-by-sha-is-not-measured|declnm|nightly|declared:check_model_ladder|1|FAIL  lambda  receipt measured at apr_sha 04332f838c00, cut is 316dee2cd400, and the trees differ outside evidence/ -- STALE BY SHA: re-measure at the cut (#3957 F2)|FAIL 1 NM
+nightly-no-receipt-is-not-measured|declnm|nightly|declared:check_model_ladder|1|FAIL  gx10    no receipt at evidence/model-ladder/receipts/gx10.json -- run scripts/model_ladder.sh on gx10|FAIL 1 NM
+nightly-real-red-stays-measured|declnm|nightly|declared:check_model_ladder|1|RED   the release claims a capability no receipt proves|FAIL 1 MEASURED
+nightly-green-stays-green|declnm|nightly|declared:check_model_ladder|0|ok    every required rung green|PASS 0 MEASURED
+pre-publish-stale-by-sha-stays-a-fail|declnm|pre-publish|declared:check_model_ladder|1|FAIL  lambda  receipt measured at apr_sha 04332f838c00 -- STALE BY SHA: re-measure at the cut (#3957 F2)|FAIL 1 MEASURED
+pre-publish-open-stays-open|marknm|pre-publish|publish-dry-run|OPEN||OPEN 0 MEASURED
 CASES
 }
 
@@ -144,12 +157,15 @@ if [ "$SELF_TEST" = 1 ]; then
   mut hatch-restored  table  's/^  if \[ -n "\$defer" \]; then$/  if [ -n "$defer" ] \&\& false; then/'
   mut defer-legal     table  's/^  if \[ "\$st" = DEFER \]; then$/  if false; then/'
   mut any-obligation  table  's/^    case " \$POST_PUBLISH_OBLIGATIONS " in \*" \$1 "\*) ;; \*) st=FAIL/    case " $POST_PUBLISH_OBLIGATIONS " in *) ;; *) st=FAIL/'
-  mut open-any-phase  table  's/^  if \[ "\$st" = OPEN \] && \[ "\$DOGFOOD_PHASE" != pre-publish \]; then$/  if false; then/'
+  mut open-any-phase  table  's/^  elif \[ "\$st" = OPEN \] && \[ "\$DOGFOOD_PHASE" != pre-publish \]; then$/  elif false; then/'
+  mut nightly-open-unnamed table 's/^  if \[ "\$st" = OPEN \] && \[ "\$DOGFOOD_PHASE" = nightly \]; then$/  if false; then/'
+  mut nightly-stale-unnamed table 's/^  elif \[ "\$DOGFOOD_PHASE" = nightly \] && grep -qE /  elif false \&\& grep -qE /'
+  mut stale-any-phase   table 's/^  elif \[ "\$DOGFOOD_PHASE" = nightly \] && grep -qE /  elif grep -qE /'
   mut coverage-defer  static 's/^    mark coverage FAIL "measured/    mark coverage DEFER "measured/'
   mut scope-dropped-pass table  's/^    mark "\$name" PASS "\$path exit=0\$scoped"$/    mark "$name" PASS "$path exit=0"/'
   mut scope-dropped-fail table  's/^    mark "\$name" FAIL "\$path exit=\$rc\$scoped — \$tail"$/    mark "$name" FAIL "$path exit=$rc — $tail"/'
   mut scope-anywhere     table  "s/grep -m1 '^SCOPED: '/grep -m1 'SCOPED: '/"
-  [ "$bad" = 0 ] && echo "self-test: PASS -- red when the hatch returns, when DEFER is legal, when any row may be OPEN, when OPEN outlives pre-publish, when coverage defers, and when a scoped verdict loses its scope"
+  [ "$bad" = 0 ] && echo "self-test: PASS -- red when the hatch returns, when DEFER is legal, when any row may be OPEN, when OPEN outlives pre-publish, when nightly loses NOT_MEASURED (OPEN or stale by sha) or stale-by-sha leaks out of nightly, when coverage defers, and when a scoped verdict loses its scope"
   exit "$bad"
 fi
 
