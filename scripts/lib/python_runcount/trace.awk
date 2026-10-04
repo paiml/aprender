@@ -6,7 +6,8 @@
 # child inherits its parent's argv and working dir until it execs or chdirs.
 # Every exec is emitted, not only python ones: an absolute-shebang script is
 # exec'd by its own path, and keys.awk decides from its #! line.
-# Input: strace -f -qq -s 4096 -e trace=execve,chdir,clone,clone3,fork,vfork
+# Input: strace -f -q -s 4096 -e trace=execve,chdir,clone,clone3,fork,vfork
+#        (-q, not -qq: the "+++ exited" lines mark where a pid's lifetime ends)
 # Variables: -v cwd0=<the working dir the traced command started in>.
 # Usage: awk -v cwd0=DIR -f trace.awk LOG LOG   (the same log twice)
 BEGIN { US = sprintf("%c", 31) }
@@ -27,9 +28,10 @@ function unq(s) { # strace's quoted string -> raw (\" and \\ only)
     gsub(/\\"/, "\"", s); gsub(/\\\\/, "\\", s)
     return s
 }
-function seen(pid,    p) {
+function seen(pid,    p, k) {
     if (pid in cwd) return
-    p = (pid in par1) ? par1[pid] : ""
+    k = pid SUBSEP (life[pid] + 0)
+    p = (k in par1) ? par1[k] : ""
     if (p != "") seen(p)
     cwd[pid] = (p != "" ? cwd[p] : cwd0); argv[pid] = (p != "" ? argv[p] : "?"); par[pid] = p
 }
@@ -45,9 +47,12 @@ function do_exec(pid, body,    file, args, n, i, a, joined) {
 }
 # Pass 1 (the log is read twice): who forked whom. strace may print a child's
 # exec before its parent's clone result, so the tree must be known up front.
+# The kernel reuses pids, so the tree is kept per LIFETIME: pid P after its Nth
+# exit line is a new process, with its own parent, argv and working dir.
 NR == FNR {
+    if ($0 ~ /^[0-9]+ +\+\+\+ (exited|killed) /) { life1[$1]++; next }
     if ($0 ~ / (clone3?|v?fork)\(/ || $0 ~ /<\.\.\. (clone3?|v?fork) resumed>/) if ($0 ~ /= [0-9]+$/) {
-        c = $0; sub(/^.*= /, "", c); if (c + 0 > 0) par1[c] = $1
+        c = $0; sub(/^.*= /, "", c); if (c + 0 > 0) par1[c, life1[c] + 0] = $1
     }
     next
 }
@@ -55,6 +60,8 @@ NR == FNR {
     pid = $1; seen(pid)
     rest = $0; sub(/^[0-9]+ +/, "", rest)
 }
+# exit: the pid's lifetime ends; a later process with this pid starts afresh.
+rest ~ /^\+\+\+ (exited|killed) / { delete cwd[pid]; delete argv[pid]; delete par[pid]; delete pend[pid]; life[pid]++; next }
 # execve: whole line, or <unfinished ...> + <... execve resumed>
 rest ~ /^execve\(/ && rest ~ /<unfinished \.\.\.>$/ { pend[pid] = rest; next }
 rest ~ /^<\.\.\. execve resumed>/ {

@@ -34,14 +34,14 @@ function norm(p, cwdir,    n, i, parts, out, k) {
     if (p ~ /^\/(var\/)?tmp\// || (tmpd != "" && index(p, tmpd "/") == 1)) p = "~tmp/" stable(base(p))
     return p == "" ? "/" : p
 }
-function interp(name) { return name ~ /^python[0-9.]*$/ || name == "uv" || name == "uvx" }
+function interp(name) { return name ~ /^python[0-9.]*t?$/ || name == "uv" || name == "uvx" }
 function caller_of(s,    a, n, b, i) {
     if (s == "?" || s == "") return "?"
     s = stable(s)
     n = split(s, a, US); b = base(a[1])
     if (b ~ /^(ba|da|z|k)?sh$/) {
         for (i = 2; i <= n; i++) {
-            if (a[i] == "-c") return b " -c"
+            if (a[i] ~ /^-[A-Za-z]*c$/) return b " -c"   # -c, -ec, -lc ...
             if (a[i] ~ /^[-+]/) { if (a[i] == "-o" || a[i] == "+o") i++; continue }
             return base(a[i])
         }
@@ -54,6 +54,7 @@ function py_key(a, n, cwdir, who,    i, x) {
         if (x == "-") return "stdin@" who
         if (x == "-V" || x == "--version" || x == "-h" || x == "--help") return "info@" who
         if (x == "-W" || x == "-X" || x == "--check-hash-based-pycs") { i++; continue }
+        if (x ~ /^-[WX]./) continue   # -Wonce, -Xutf8: the value is joined, not a -c or -m
         if (x ~ /^-[A-Za-z]*c/) return "-c@" who
         if (x ~ /^-[A-Za-z]*m$/) return "-m:" a[i + 1]
         if (x ~ /^-[A-Za-z]*m./) { sub(/^-[A-Za-z]*m/, "", x); return "-m:" x }
@@ -66,7 +67,7 @@ function uv_key(a, n, cwdir, tool,    i, x, sub1) {
     sub1 = ""
     for (i = 2; i <= n; i++) {
         x = a[i]
-        if (x ~ /^--(with|python|project|directory|from|index-url|extra|group|package|env-file)$/ || x == "-p" || x == "-w") { i++; continue }
+        if (x ~ /^--(with|with-requirements|with-editable|python|project|directory|from|index|index-url|default-index|extra-index-url|find-links|constraints|overrides|cache-dir|config-file|extra|group|package|env-file)$/ || x == "-p" || x == "-w") { i++; continue }
         if (x ~ /^-/) continue
         if (tool == "uvx") return "uvx:" x
         if (sub1 == "") { sub1 = x; continue }

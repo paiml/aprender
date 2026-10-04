@@ -24,6 +24,8 @@
 # `bash scripts/ci_guards.sh --step-timeout 3000 guard-tree`, run to the end):
 #   count 176 = 72 scripts + 67 stdin + 35 -c + 1 -m + 1 info; 171 seen by both
 #   mechanisms, 5 by the trace alone. A second run: 176, the same key set (GREEN).
+#   The lane exits 1 on that commit (a guard is red there), in both runs: a head
+#   is measured when it exits 0 or as base did, never on any other status.
 #   Planting env_call after the lane (on the 300 s lane below): 118 -> 119, RED,
 #   naming script:sub/tool.py.
 #   The lane must run to the end: with --step-timeout 300 one step times out and
@@ -70,11 +72,15 @@ equations:
       - 'a script under a temp dir is keyed ~tmp/<name>, so a mktemp name does not make a new entry point'
   prc_never_worse:
     formula: |
-      compare(base, head) = GREEN  iff  count(head) <= count(base)
+      measured(base, head) = both sides trace = measured, each trace holds an execve,
+                             every counting stage exits 0, and rc(head) in {0, rc(base)}
+      compare(base, head) = NOT_MEASURED  iff  not measured(base, head)
+                          = GREEN  iff  count(head) <= count(base)   (keys(head) \ keys(base) still listed)
                           = RED    iff  count(head) >  count(base), listing keys(head) \ keys(base)
-                          = NOT_MEASURED  iff  either side has trace != measured
     domain: 'two --run directories of the same lane'
     codomain: '{GREEN, RED, NOT_MEASURED}'
+    invariants:
+      - 'a failure inside the measurement is exit 2, never an empty key list read as count 0'
 
 proof_obligations:
   - id: PRC-OB-001
@@ -87,14 +93,17 @@ proof_obligations:
     statement: "A head that adds an entry point is RED and names it; a side without a trace is NOT_MEASURED (exit 2), never a pass."
     discharged_by: falsification_tests[2]
   - id: PRC-OB-004
-    statement: "The count is stable: the same script run twice, after a cd, from a fresh temp dir, or as -c code holding a newline and a tab is one entry point per run and across runs."
+    statement: "The count is stable: the same script run twice, after a cd, from a fresh temp dir, by a reused pid, or as -c code holding a newline and a tab is one entry point per run, and two runs of the same lanes give the same keys."
     discharged_by: falsification_tests[3]
   - id: PRC-OB-005
-    statement: "Each check, once dropped from the code, leaves the plant table RED (mutants killed = total, errors 0)."
+    statement: "Each check, once dropped from the code, turns a named row of the plant table RED (mutants killed = total, errors 0); with no green unmutated table there is no verdict."
     discharged_by: falsification_tests[4]
   - id: PRC-OB-006
     statement: "A descendant that outlives the lane (a daemon) neither holds --run open nor leaves the tracer running."
     discharged_by: falsification_tests[5]
+  - id: PRC-OB-007
+    statement: "A broken measurement is never a count: a failing stage, a trace with no execve, or a head lane that exited other than 0 or as base did is NOT_MEASURED (exit 2)."
+    discharged_by: falsification_tests[6]
 
 falsification_tests:
   - id: PRC-F-001
@@ -129,15 +138,22 @@ falsification_tests:
       A script run twice is one key; a lane that cds into sub/ before running
       tool.py keys it sub/tool.py from both mechanisms; a script in a fresh
       mktemp dir keys ~tmp/cell.py; -c code in a mktemp script keys -c@tmp.X;
-      -c code holding a newline and a tab is one shim record of 4 fields.
-    test: 'bash scripts/python_runcount.sh --self-test   # rows P10, P11, P13, P15-P17'
+      -c code holding a newline and a tab is one shim record of 4 fields; two
+      runs of the mktemp plants give the same keys; a pid reused after an exit
+      keys by its own cwd and caller; joined -Wonce/-Xutf8 values do not read
+      as -c/-m, and `bash -ec` is an inline-shell caller.
+    test: 'bash scripts/python_runcount.sh --self-test   # rows P10, P11, P13, P15-P18, S1, T1'
     if_fails: 'the count would drift run to run and the ratchet would read noise as RED'
-    mutation: 'drop chdir tracking, parent inheritance, distinct-key aggregation, the temp-dir key, the mktemp-name collapse, or the newline/tab escape in the shim; the table must turn RED'
+    mutation: 'drop chdir tracking, parent inheritance, pid lifetimes, distinct-key aggregation, the temp-dir key, the mktemp-name collapse, the joined -W/-X skip, combined shell -c flags, or the newline/tab escape in the shim; the table must turn RED'
   - id: PRC-F-005
     rule: every check has a killing mutant
-    prediction: 'bash scripts/python_runcount.sh --mutants prints killed=N total=N errors=0 and exits 0'
+    prediction: >-
+      bash scripts/python_runcount.sh --mutants prints killed=N total=N errors=0
+      and exits 0. A kill is a named red row; any other failure is an ERROR. With
+      the trace off (PYRUN_NO_TRACE=1) the unmutated table is not green and
+      --mutants is NOT_MEASURED (exit 2), never killed=N.
     test: 'bash scripts/python_runcount.sh --mutants'
-    if_fails: 'a check could be deleted with the plant table still green'
+    if_fails: 'a check could be deleted with the plant table still green, or a host that cannot trace would read every mutant as killed'
   - id: PRC-F-006
     rule: a daemonized descendant does not hang the run or orphan the tracer
     prediction: >-
@@ -146,6 +162,15 @@ falsification_tests:
     test: 'bash scripts/python_runcount.sh --self-test   # rows D1, D2'
     if_fails: 'a lane that starts a service would hang the measured run, or leave a tracer attached'
     mutation: 'attach strace without -D, let it ignore SIGTERM (-I 3), or skip stop_tracer; the table must turn RED'
+  - id: PRC-F-007
+    rule: a broken measurement is NOT_MEASURED, never a count
+    prediction: >-
+      With a key stage that fails (a broken keys.awk), a trace=measured run whose
+      trace holds no execve, or a head lane that exited 3 where base exited 0,
+      --compare exits 2. A head and base that both exited 3 are measured (GREEN).
+    test: 'bash scripts/python_runcount.sh --self-test   # rows E1-E4'
+    if_fails: 'a lane that broke the measurement, or stopped before its Python, would read count 0 and pass'
+    mutation: 'skip the key-stage status check, pass a trace with no execve, or ignore the head lane exit status; the table must turn RED'
 
 non_goals:
   - "Wiring. No lane runs under the count yet; nightly report-only first, blocking only after three green nights and a sign-off."
@@ -153,6 +178,10 @@ non_goals:
   - "Python started by a process outside the lane's process tree (a daemon, a service, a remote host)."
   - "Python a descendant runs after the lane command has exited. The trace detaches then (strace -D -I 2), so a daemon is counted only for what it ran before the command returned."
   - "Argument text past 256 characters. The shim keeps each argv element to one line of at most 256 characters; a script path longer than that would key on its first 256."
+  - "Which entry points changed, as a gate. The ratchet is on the count: a head that drops one entry point and adds another is GREEN; the added one is still listed."
+  - "Telling apart two temp-dir scripts with one basename. A script under a temp dir keys ~tmp/<name>, so /tmp/a/x.py and /tmp/b/x.py are one entry point."
+  - "A script run by its own absolute #! line and deleted before --count reads it. Its #! line is read at count time; `#!/usr/bin/env python3` is still seen by the shim."
+  - "A head lane that stopped early with the same exit status as base. The status is the only completion evidence; the ratchet's lane must run to its end."
   - "Judging an entry point. The count says what runs; porting each to Rust is separate work."
 
 binding_registry:
