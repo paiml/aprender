@@ -398,6 +398,19 @@ jobs:
                 args+=(--pr-head "$head" --pr-head-conclusion "${concl:-none}")
               fi
               ;;
+            push)
+              # T36: the merge queue already tested this very sha. Hand its
+              # workspace-test result to the tier script, which reuses it only
+              # on a success for HEAD itself. A failed lookup is the push's own
+              # tier, as before -- never a reuse, never a red step.
+              mg=$(bash scripts/ci_mg_workspace_result.sh "${GITHUB_REPOSITORY}" "${GITHUB_SHA}") || mg=""
+              if [ -n "$mg" ]; then
+                mapfile -t mgargs <<<"$mg"
+                args+=("${mgargs[@]}")
+              else
+                printf 'no merge_group workspace-test result for %s: the tier is decided from the push diff\n' "${GITHUB_SHA}"
+              fi
+              ;;
           esac
           bash scripts/ci_test_tier.sh "${args[@]}" | tee "$RUNNER_TEMP/tier.txt"
           grep -E '^(tier|crates|targets|check_workspace|reason|cite)=' "$RUNNER_TEMP/tier.txt" >> "$GITHUB_OUTPUT"
