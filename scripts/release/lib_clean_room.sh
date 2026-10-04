@@ -277,14 +277,15 @@ dryrun_receipt_verify() {
   row=$(grep -E '^\| *packaging dry-run *\|' <<< "$body" || true)
   nrow=$(grep -c . <<< "$row" || true)
   if [ "$nrow" != 1 ]; then echo "receipt commit $rsha: $path needs exactly one '| packaging dry-run |' row"; return 1; fi
-  # Exact command, token-bounded: a substring test took `--no-locked` and `--dry-run-skipped`.
-  if ! grep -qE '(^|[`| ])cargo publish --workspace --dry-run --no-verify --locked([`| ]|$)' <<< "$row"; then echo "receipt commit $rsha: the dry-run row does not record cargo publish --workspace --dry-run --no-verify --locked"; return 1; fi
+  # The exact command inside its backticks: a substring test took `--no-locked`, a space-bounded one
+  # `--locked -p x`; reordered flags, an extra flag anywhere, or a bare command all refuse.
+  if ! grep -qF '`cargo publish --workspace --dry-run --no-verify --locked`' <<< "$row"; then echo "receipt commit $rsha: the dry-run row does not record cargo publish --workspace --dry-run --no-verify --locked"; return 1; fi
   rcs=$(grep -oE '(^|[ ,(|])rc=\**[0-9]+\**([ ,)|]|$)' <<< "$row" | grep -oE '[0-9]+' | sort -u || true)
   nr=$(grep -c . <<< "$rcs" || true); nr=${nr:-0}
   if [ "$nr" -ne 1 ]; then echo "receipt commit $rsha: the dry-run row records $nr exit status(es) (need exactly 1)"; return 1; fi
   if [ "$rcs" != 0 ]; then echo "receipt commit $rsha: the dry-run exited rc=$rcs"; return 1; fi
-  # "tree clean after" must open a clause, and nothing may qualify it: "not tree clean" is dirty.
-  if ! grep -qE '(^|, |\| *)tree clean after([ ,(|]|$)' <<< "$row"; then echo "receipt commit $rsha: the dry-run row does not record the tree clean after"; return 1; fi
+  # "tree clean after" must open a clause and end it (" (", "|" or EOL); no not/dirty/unclean anywhere.
+  if ! grep -qE '(^|, |\| *)tree clean after( \(| *\||$)' <<< "$row"; then echo "receipt commit $rsha: the dry-run row does not record the tree clean after"; return 1; fi
   if grep -qiE '(^|[^a-z])(not|dirty|unclean)([^a-z]|$)' <<< "$row"; then echo "receipt commit $rsha: the dry-run row qualifies its tree state (not/dirty/unclean)"; return 1; fi
   echo "DRY-RUN VERIFIED: $path at $rsha -- dry-run of $want rc=0, tree clean"
   return 0
