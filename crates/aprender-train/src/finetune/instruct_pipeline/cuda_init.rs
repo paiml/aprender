@@ -338,9 +338,8 @@ impl InstructPipeline {
             .map(CudaBlock::Fp32);
         }
 
-        let q_lora = lora_slot(lora_layers, i * 2, "contiguous lora_a_q", "contiguous lora_b_q");
-        let v_lora =
-            lora_slot(lora_layers, i * 2 + 1, "contiguous lora_a_v", "contiguous lora_b_v");
+        let q_lora = lora_slot(lora_layers, i * 2);
+        let v_lora = lora_slot(lora_layers, i * 2 + 1);
         // ENT-270: QK-norm weights, if present
         let q_norm = optional_slice(layer.self_attn.q_norm.as_ref(), "contiguous q_norm");
         let k_norm = optional_slice(layer.self_attn.k_norm.as_ref(), "contiguous k_norm");
@@ -359,8 +358,8 @@ impl InstructPipeline {
             w_up,
             w_down,
             config.max_seq_len,
-            q_lora,
-            v_lora,
+            q_lora.as_ref().map(|(a, b)| (a.as_slice(), b.as_slice())),
+            v_lora.as_ref().map(|(a, b)| (a.as_slice(), b.as_slice())),
             config.lora_alpha / config.lora_rank as f32,
             config.lora_rank,
             q_norm,
@@ -539,23 +538,45 @@ impl InstructPipeline {
     }
 }
 
-/// The A and B weights of LoRA slot `idx`, or `None` past the last slot.
+/// The A and B weights of LoRA slot `idx` in the layout the NF4 block computes with, `(Aᵀ, Bᵀ)`,
+/// or `None` past the last slot. The block runs `(x·A)·B`, so the PEFT layout copied raw would
+/// be a different adapter (FALSIFY-CUDA-NF4-TRAIN-LOSS-PARITY-003).
 #[cfg(feature = "cuda")]
-fn lora_slot<'a>(
-    lora_layers: &'a [LoRALayer],
-    idx: usize,
-    a_what: &str,
-    b_what: &str,
-) -> Option<(&'a [f32], &'a [f32])> {
-    let layer = lora_layers.get(idx)?;
-    Some((
-        layer.lora_a().data().as_slice().expect(a_what),
-        layer.lora_b().data().as_slice().expect(b_what),
-    ))
+fn lora_slot(lora_layers: &[LoRALayer], idx: usize) -> Option<(Vec<f32>, Vec<f32>)> {
+    lora_layers.get(idx).map(LoRALayer::device_layout)
 }
 
 /// The data of an optional weight, such as a bias or a QK-norm, as a slice.
 #[cfg(feature = "cuda")]
 fn optional_slice<'a>(tensor: Option<&'a Tensor>, what: &str) -> Option<&'a [f32]> {
     tensor.map(|t| t.data().as_slice().expect(what))
+}
+
+#[cfg(all(test, feature = "cuda"))]
+mod tests {
+    use super::*;
+
+    /// The upload half of FALSIFY-CUDA-NF4-TRAIN-LOSS-PARITY-003, with no device: every slot
+    /// `init_cuda` uploads is that layer's device layout. A raw copy is caught here, not only
+    /// by the GPU probe.
+    #[test]
+    fn falsify_cuda_nf4_train_loss_parity_003_lora_slot_is_the_device_layout() {
+        // d_out 6, d_in 4, rank 2: no pair is square, and every entry differs.
+        let layers: Vec<LoRALayer> = (0..2)
+            .map(|k| {
+                let mut l = LoRALayer::new(Tensor::zeros(6 * 4, false), 6, 4, 2, 4.0);
+                let a = (0..2 * 4).map(|i| (100 * k + i + 1) as f32).collect();
+                let b = (0..6 * 2).map(|i| -((100 * k + i + 1) as f32)).collect();
+                *l.lora_a_mut() = Tensor::from_vec(a, true);
+                *l.lora_b_mut() = Tensor::from_vec(b, true);
+                l
+            })
+            .collect();
+        for (idx, layer) in layers.iter().enumerate() {
+            let slot = lora_slot(&layers, idx).expect("a slot in range");
+            assert_eq!(slot, layer.device_layout(), "slot {idx} is not (Aᵀ, Bᵀ)");
+            assert_ne!(slot.0, layer.lora_a().data().to_vec(), "slot {idx}: A copied raw");
+        }
+        assert!(lora_slot(&layers, layers.len()).is_none(), "a slot past the last layer");
+    }
 }

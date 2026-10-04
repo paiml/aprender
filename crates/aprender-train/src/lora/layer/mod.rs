@@ -10,6 +10,7 @@
 //! where α is a scaling factor (typically alpha/r)
 
 mod core;
+mod device_layout;
 
 #[cfg(test)]
 mod tests;
