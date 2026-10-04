@@ -80,7 +80,7 @@ cargo run --example edd_yaml_loader
 | Pillar | Requirements | Command |
 |--------|--------------|---------|
 | **Z3 Proofs** | EDD-11, EDD-12 | `cargo test --features z3-proofs` |
-| **YAML Config** | EDD-05, EDD-13 | `simular validate *.yaml` |
+| **YAML Config** | EDD-05, EDD-13 | `aprender-simulate validate *.yaml` |
 | **Probar UX** | EDD-14, EDD-15 | `cargo test --features probar` |
 
 ### Reference Documentation

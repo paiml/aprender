@@ -324,7 +324,7 @@ async fn test_tsp_tui_displays_equation() {
 | Pillar | Tool | Verification |
 |--------|------|--------------|
 | Equations | Z3 | `cargo test --features z3-proofs` |
-| Configuration | YAML Schema | `simular validate experiment.yaml` |
+| Configuration | YAML Schema | `aprender-simulate validate experiment.yaml` |
 | User Experience | probar | `cargo test --features probar` |
 
 **Quality Gate:** A simulation missing ANY pillar is **STOP THE LINE** severity.
@@ -476,9 +476,9 @@ impl SimulationAuditLog for TspGraspDemo {
 
 | ID | Requirement | Severity | Verification |
 |----|-------------|----------|--------------|
-| **EDD-16** | **Complete audit log for every step** | **Critical** | `simular audit-verify` |
+| **EDD-16** | **Complete audit log for every step** | **Critical** | `aprender-simulate audit-verify` |
 | **EDD-17** | **Equation evaluations logged** | **Critical** | Log schema validation |
-| **EDD-18** | **Test cases generatable from log** | **Major** | `simular generate-tests --from-log` |
+| **EDD-18** | **Test cases generatable from log** | **Major** | `aprender-simulate generate-tests --from-log` |
 
 ### 1.7 Test-Driven Development and the Scientific Method
 
@@ -1482,16 +1482,16 @@ reporting:
 
 ```bash
 # Run single experiment
-simular run experiments/harmonic_oscillator.yaml
+aprender-simulate run experiments/harmonic_oscillator.yaml
 
 # Run with different seed (for sensitivity analysis)
-simular run experiments/harmonic_oscillator.yaml --seed 12345
+aprender-simulate run experiments/harmonic_oscillator.yaml --seed 12345
 
 # Verify reproducibility across platforms
-simular verify experiments/harmonic_oscillator.yaml
+aprender-simulate verify experiments/harmonic_oscillator.yaml
 
 # Generate EMC compliance report
-simular emc-check experiments/harmonic_oscillator.yaml
+aprender-simulate emc-check experiments/harmonic_oscillator.yaml
 ```
 
 ---
@@ -2029,14 +2029,14 @@ repos:
     hooks:
       - id: edd-check
         name: EDD Compliance Check
-        entry: simular edd-check
+        entry: aprender-simulate edd-check
         language: system
         files: '\.(rs|yaml)$'
         stages: [commit]
 
       - id: emc-validate
         name: EMC Validation
-        entry: simular emc-validate docs/emc/
+        entry: aprender-simulate emc-validate docs/emc/
         language: system
         files: '\.emc\.yaml$'
         stages: [commit]
@@ -2057,14 +2057,14 @@ jobs:
       - uses: actions/checkout@v4
 
       - name: Verify all examples have EMCs
-        run: simular edd-check --strict
+        run: aprender-simulate edd-check --strict
 
       - name: Run verification tests
         run: cargo test --features verification
 
       - name: Cross-platform reproducibility
         run: |
-          simular run examples/experiments/*.yaml --verify-reproducibility
+          aprender-simulate run examples/experiments/*.yaml --verify-reproducibility
 ```
 
 ---
@@ -2075,7 +2075,7 @@ jobs:
 
 | ID | Requirement | Severity | Verification |
 |----|-------------|----------|--------------|
-| EDD-01 | Every simulation has EMC | Critical | `simular emc-check` |
+| EDD-01 | Every simulation has EMC | Critical | `aprender-simulate emc-check` |
 | EDD-02 | EMC has peer-reviewed citation | Major | Manual review |
 | EDD-03 | Analytical test cases in EMC | Critical | EMC schema validation |
 | EDD-04 | Falsification criteria defined | Critical | EMC schema validation |
@@ -2098,7 +2098,7 @@ jobs:
 | Pillar | Requirements | Command | Failure = |
 |--------|--------------|---------|-----------|
 | **Z3 Proofs** | EDD-11, EDD-12 | `cargo test --features z3-proofs` | STOP THE LINE |
-| **YAML Config** | EDD-05, EDD-13 | `simular validate *.yaml` | STOP THE LINE |
+| **YAML Config** | EDD-05, EDD-13 | `aprender-simulate validate *.yaml` | STOP THE LINE |
 | **Probar UX** | EDD-14, EDD-15 | `cargo test --features probar` | STOP THE LINE |
 
 ```yaml
@@ -2112,8 +2112,8 @@ jobs:
 
       - name: Pillar 2 - YAML Configuration Validation
         run: |
-          simular validate examples/experiments/*.yaml
-          simular emc-check docs/emc/*.yaml
+          aprender-simulate validate examples/experiments/*.yaml
+          aprender-simulate emc-check docs/emc/*.yaml
 
       - name: Pillar 3 - Probar UX Verification
         run: |

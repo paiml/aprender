@@ -1,0 +1,12 @@
+{
+  "packages": [
+    {"name": "aprender-build-sha", "version": "0.69.4"},
+    {"name": "aprender-update", "version": "0.69.4"},
+    {"name": "aprender-contracts-macros", "version": "0.69.4"},
+    {"name": "aprender-common", "version": "0.69.4"},
+    {"name": "aprender-contracts", "version": "0.69.4"},
+    {"name": "aprender-contracts-cli", "version": "0.69.4"},
+    {"name": "aprender-core", "version": "0.70.0"},
+    {"name": "aprender-serve", "version": "0.69.4"}
+  ]
+}

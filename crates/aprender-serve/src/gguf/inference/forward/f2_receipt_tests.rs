@@ -9,8 +9,8 @@
 //! device.
 
 use super::{
-    apr_version, decide, model_sha256, read_receipt, receipt_path, write_receipt, F2Decision,
-    F2Receipt, F2ReceiptKey, F2ValidateReason, F2_RECEIPT_SCHEMA,
+    apr_version, build_identity, decide, model_sha256, read_receipt, receipt_path, write_receipt,
+    F2Decision, F2Receipt, F2ReceiptKey, F2ValidateReason, F2_RECEIPT_SCHEMA,
 };
 
 fn key() -> F2ReceiptKey {
@@ -221,9 +221,56 @@ fn model_sha256_is_the_real_sha256_lowercase_hex() {
 }
 
 #[test]
-fn apr_version_is_this_crates_version() {
-    assert_eq!(apr_version(), env!("CARGO_PKG_VERSION"));
-    assert!(!apr_version().is_empty());
+fn apr_version_names_this_crates_version_and_this_executable() {
+    let v = apr_version();
+    let want = format!("{} exe:", env!("CARGO_PKG_VERSION"));
+    assert!(v.starts_with(&want), "{v:?} does not start with {want:?}");
+    // the mutant #4290 names: a version-only key. It would print the bare version.
+    assert_ne!(
+        v,
+        env!("CARGO_PKG_VERSION"),
+        "the key is the version alone (#4290)"
+    );
+    assert_eq!(
+        v,
+        apr_version(),
+        "the same executable must key the same way twice"
+    );
+}
+
+/// #4290's case table, through `decide`: the key must tell builds apart, not versions.
+#[test]
+fn f2_receipt_key_is_the_build_not_the_version() {
+    let device = "NVIDIA GeForce RTX 4090".to_string();
+    let k = |id: String| F2ReceiptKey {
+        model_sha256: "ab".repeat(32),
+        apr_version: id,
+        device: device.clone(),
+    };
+    let rc1 = build_identity("0.69.3", Some(b"rc.1 forward loop"));
+    let rc2 = build_identity("0.69.3", Some(b"rc.2 one-engine loop"));
+    let written = receipt_for(&k(rc1.clone()));
+    // same version, different build -> validate
+    assert!(matches!(
+        decide(Ok(Some(written.clone())), &k(rc2), false),
+        F2Decision::Validate(F2ValidateReason::AprVersionMismatch { .. })
+    ));
+    // the identical build -> skip
+    assert!(matches!(
+        decide(Ok(Some(written)), &k(rc1), false),
+        F2Decision::Skip { .. }
+    ));
+    // an unreadable executable never matches, not even another unreadable one
+    let (u1, u2) = (
+        build_identity("0.69.3", None),
+        build_identity("0.69.3", None),
+    );
+    assert_ne!(u1, u2);
+    let unreadable = receipt_for(&k(u1));
+    assert!(matches!(
+        decide(Ok(Some(unreadable)), &k(u2), false),
+        F2Decision::Validate(F2ValidateReason::AprVersionMismatch { .. })
+    ));
 }
 
 #[test]

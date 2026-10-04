@@ -1,0 +1,303 @@
+{
+  "ticket": "PMAT-4616",
+  "base": "00052c01284caa74c70b287088a79c6dee2959b9",
+  "base_resolved": "00052c01284caa74c70b287088a79c6dee2959b9",
+  "base_note": "no origin/00052c01284caa74c70b287088a79c6dee2959b9 exists; judged against the local ref; brief_exclude (C45) kept out of the brief: docs/roadmaps/roadmap.yaml",
+  "head": "a8e97a47111974dd4589cf93cbcc3709e22afc8f",
+  "diff_sha256": "0ec2e2cec922b19ca8977297afffc311360af519cbe7e46f55c9d3030b455b4d",
+  "width": 3,
+  "executor": "agy",
+  "prompt_mode": "file",
+  "prompt_bytes": 122510,
+  "prompt_sha256": "b10f6ac855073e601cdb30bdf039adf4a5a5192111f2589c7d7e91157d7a5096",
+  "author": {
+    "model": "claude-sonnet-5-5",
+    "family": "claude",
+    "source": "flag"
+  },
+  "agreed": true,
+  "lanes": [
+    {
+      "lane": 1,
+      "status": "SUCCESS",
+      "verdict": "PASS",
+      "summary": "The diff implements D5 correctly: serve_context_refusal/cap_context/preflight_serving_context/preflight_context/fit_serving_context are added and wired into every dense GGUF CUDA generation path (chat, completions, stream, /generate, /batch/generate, /v1/batch/completions) before any GPU work or lock is taken, and generation_error_status maps RealizarError::ContextLimitExceeded to 400 everywhere the old code hardcoded 500. Verified by direct file read (not diff alone) that batch_processing.rs's try_cuda_generate (the one function a stale embedded review artifact from PR #4614 flagged as still hardcoding 500) already calls preflight_serving_context and uses generation_error_status at HEAD — the flagged defect predates this diff's final state and does not reproduce. Tests (serve_context_d5.rs, cap_context_tests) cover the boundary (prompt_tokens >= serving_context), the no-cap case, and both pre-flight helpers. Build.rs guards (#4614, bundled in this diff range) are a straightforward exists()-check fix, out of ticket scope but harmless. The embedded evidence/pr-review/4614/* files are prior-commit review receipts for an earlier ticket already reviewed elsewhere in this branch's history, not new work needing judgment here.",
+      "findings": [],
+      "raw_bytes": 3391,
+      "err_bytes": 0,
+      "envelope_status": "SUCCESS",
+      "verdict_source": "structured_output",
+      "executor": "claude-code",
+      "grounding_check": "parity",
+      "role": "counted",
+      "model": "claude-sonnet-5",
+      "model_measured": "claude-sonnet-5",
+      "model_source": "flag",
+      "family": "claude",
+      "brief_sha256": "b10f6ac855073e601cdb30bdf039adf4a5a5192111f2589c7d7e91157d7a5096",
+      "trace": {
+        "input_sha256": "2310066886eafcde80fb20e9a8b3b9ab3e66f9aff8253f9196c88d09cf03b660",
+        "output_sha256": "ecffa377bb2725602f8d053c11c950217f60f49f544133664e8c4c9e3bc3e5c1",
+        "store": null,
+        "store_why": "almacen not provisioned yet (infra-27): the blobs stay in the round's gitignored .lanes dir"
+      },
+      "fallback": {
+        "judged_by": "claude-sonnet-5",
+        "exhausted": false,
+        "attempts": [
+          {
+            "model": "claude-sonnet-5",
+            "family": "claude",
+            "outcome": "answered"
+          }
+        ],
+        "skipped": []
+      }
+    },
+    {
+      "lane": 2,
+      "status": "SUCCESS",
+      "verdict": "PASS",
+      "summary": "The diff implements PMAT-4616 correctly. It adds serve_context_refusal and preflight checks to all dense GGUF CUDA generation paths (chat, completions, stream, /generate, /batch/generate, /v1/batch/completions), ensuring prompts exceeding the device-KV-capped context return a 400 error before taking the model lock. It correctly maps generation errors like ContextLimitExceeded to 400 instead of 500. Additionally, it fixes the mutants gate timeout by wrapping `cargo:rerun-if-changed` statements in build scripts with `.exists()` checks for missing paths. The ticket's acceptance criteria are fully met, and the prior review's findings have been addressed.",
+      "findings": [],
+      "raw_bytes": 4020,
+      "err_bytes": 62,
+      "envelope_status": "SUCCESS",
+      "verdict_source": "structured_output",
+      "grounding_check": "parity",
+      "role": "independent",
+      "model": "gemini-3.1-pro-high",
+      "model_measured": "gemini-3.1-pro-high",
+      "model_source": "measured",
+      "family": "gemini",
+      "executor": "agy",
+      "brief_sha256": "b10f6ac855073e601cdb30bdf039adf4a5a5192111f2589c7d7e91157d7a5096",
+      "trace": {
+        "input_sha256": "a0570f124cb5aadf328d63fe417e574bba6a84868184d237cbe2576743488c01",
+        "output_sha256": "e07b4d2ec56c62a29500fc2706ceebdd035752db2d9aac8492572111cc600ebf",
+        "store": null,
+        "store_why": "almacen not provisioned yet (infra-27): the blobs stay in the round's gitignored .lanes dir"
+      },
+      "fallback": {
+        "judged_by": "gemini-3.1-pro-high",
+        "exhausted": false,
+        "attempts": [
+          {
+            "model": "gemini-3.1-pro-high",
+            "family": "gemini",
+            "outcome": "answered"
+          }
+        ],
+        "skipped": []
+      }
+    },
+    {
+      "lane": 3,
+      "status": "SUCCESS",
+      "verdict": "PASS",
+      "summary": "PMAT-4616 diff correctly implements the D5 serve-context-refusal requirement: all six CUDA endpoints (chat, completions, stream, /generate, /batch/generate, /v1/batch/completions) now pre-flight-check prompts against the device-KV-capped context (>= boundary) and return 400 before model lock acquisition. Status code mapping fixed across all generate-error sites. Build.rs fixes address mutants timeout. All prior round findings addressed. Quorum: 3/3 PASS.",
+      "findings": [],
+      "raw_bytes": 1900,
+      "err_bytes": 0,
+      "envelope_status": "SUCCESS",
+      "verdict_source": "structured_output",
+      "executor": "claude-code",
+      "grounding_check": "parity",
+      "role": "counted",
+      "model": "claude-haiku-4-5",
+      "model_measured": "claude-haiku-4-5",
+      "model_source": "flag",
+      "family": "claude",
+      "brief_sha256": "b10f6ac855073e601cdb30bdf039adf4a5a5192111f2589c7d7e91157d7a5096",
+      "trace": {
+        "input_sha256": "1058ef41156817e80dc6abbcdcaea68388472e7cecb9377473bfde8ddba97990",
+        "output_sha256": "339e964465bb53cd8d55ddcbf88fd3de999e72d37260f7cc21d10e84e6f931e7",
+        "store": null,
+        "store_why": "almacen not provisioned yet (infra-27): the blobs stay in the round's gitignored .lanes dir"
+      },
+      "fallback": {
+        "judged_by": "claude-haiku-4-5",
+        "exhausted": false,
+        "attempts": [
+          {
+            "model": "claude-haiku-4-5",
+            "family": "claude",
+            "outcome": "answered"
+          }
+        ],
+        "skipped": []
+      }
+    }
+  ],
+  "dissent": [],
+  "dedup": [],
+  "uncovered": [],
+  "coverage_source": "lanes",
+  "partial": false,
+  "partial_reasons": [],
+  "fallback": {
+    "same_family_width": 2,
+    "chain": [
+      {
+        "model": "claude-sonnet-5",
+        "family": "claude",
+        "disposition": "claude-code",
+        "why": "run by Claude Code on its own budget: a configured seat runs every round, a fallback step only when every non-Claude family is measured out (PMAT-360, operator standing rule)"
+      },
+      {
+        "model": "gemini-3.1-pro-high",
+        "family": "gemini",
+        "disposition": "configured"
+      },
+      {
+        "model": "claude-haiku-4-5",
+        "family": "claude",
+        "disposition": "claude-code",
+        "why": "run by Claude Code on its own budget: a configured seat runs every round, a fallback step only when every non-Claude family is measured out (PMAT-360, operator standing rule)"
+      },
+      {
+        "model": "claude-sonnet-5-5",
+        "family": "claude",
+        "disposition": "excluded-self-review",
+        "why": "the author's own model id (claude-sonnet-5-5) — a model never reviews its own diff, at any width (R-15a identity bar)"
+      },
+      {
+        "model": "claude-opus-5-5",
+        "family": "claude",
+        "disposition": "claude-code",
+        "why": "run by Claude Code on its own budget: a configured seat runs every round, a fallback step only when every non-Claude family is measured out (PMAT-360, operator standing rule)"
+      },
+      {
+        "model": "qwen3.5",
+        "family": "qwen",
+        "disposition": "not-run",
+        "why": "no quorum.local_lane in the config — the aprender lane has no model to load"
+      }
+    ],
+    "precheck": [
+      {
+        "family": "gemini",
+        "model": "gemini-3.1-pro-high",
+        "probe": 1,
+        "outcome": "live"
+      }
+    ],
+    "degraded": null,
+    "prah": {
+      "source": "install-receipt",
+      "path": "/home/noah/.claude/skills/paiml-implement/bin/prah"
+    },
+    "tier1": {
+      "agy_tier1_only": true,
+      "tier1": true,
+      "matched": [
+        "crates/aprender-serve/src/api/cuda_chat_backend.rs"
+      ],
+      "paths": 29,
+      "patterns": [
+        "^\\.github/workflows/",
+        "(^|/)release[^/]*\\.(ya?ml|sh|rs|toml)$",
+        "cuda|kernel|\\.cu$|\\.ptx$",
+        "(^|/)[^/]*(gate|guard)[^/]*\\.(sh|rs|py)$|^hooks/",
+        "security|secret|credential|(^|/)deny\\.toml$",
+        "^skills/quorum-review/|(^|/)(receipt-lint|roadmap-lint|release-lint|kind-gate|model-gate)[^/]*$|^crates/prah-lint/"
+      ],
+      "builtin": "^skills/quorum-review/|(^|/)skills/paiml-implement/config\\.json$|(^|/)(modellib|lane-reduce|lane-fallback|lane-group|agy-lane|cc-lane|receipt-lint|route|quota)\\.sh$|^crates/prah-lint/"
+    },
+    "bucket": {
+      "ledger": "/home/noah/.local/state/paiml-implement/agy-bucket.jsonl",
+      "window_s": 18000,
+      "pace": "off",
+      "buckets": {
+        "gemini": {
+          "bucket": "gemini",
+          "budget": 86,
+          "basis": "[U] default 30, raised to the 86 calls a window has made without a 429; no window reached one",
+          "window_start": 1790702669,
+          "window_calls": 22,
+          "window_429": 0,
+          "hour_calls": 10,
+          "share": 17,
+          "want": 2,
+          "state": "open",
+          "reason": ""
+        }
+      },
+      "closed": []
+    }
+  },
+  "auto_merge": {
+    "checked": true,
+    "was_armed": false,
+    "disarmed": false,
+    "note": "auto-merge not armed"
+  },
+  "cheap_seat": "claude-haiku-4-5",
+  "canary": {
+    "skipped": "brief 122510 bytes > 24576"
+  },
+  "advisory_lane": {
+    "state": "answered",
+    "counts": false,
+    "row": {
+      "Verdict": {
+        "verdict": "FAIL",
+        "cell": "gx10-cuda",
+        "backend": "cuda"
+      }
+    },
+    "verdict": "FAIL",
+    "why": null,
+    "served_by": "gx10-cuda",
+    "gpu_proof": {
+      "used_gpu_probe": true,
+      "server_holds_gpu": true,
+      "used_gpu_source": "completions probe (chat omits used_gpu, aprender#4146)",
+      "trace_lines": [
+        "1083089, 309 MiB"
+      ]
+    },
+    "apr": "0.70.0",
+    "apr_binary_sha256": "6b2a7dc66c38adcca20b315beac70a1a31e7bd0af2a1cc5c2a7730ca6086d417",
+    "apr_tag": "v0.70.0-dev.3990584f0",
+    "apr_commit": "3990584f0bf5af6bca34ea9298df92177f3ef79a",
+    "apr_build_why": null,
+    "model": "/home/noah/data/models/Qwen3.5-4B-Q4_K_M.gguf",
+    "model_sha256": "00fe7986ff5f6b463e62455821146049db6f9313603938a70800d1fb69ef11a4",
+    "rc": 0,
+    "wall_s": 46,
+    "collected_s": 436,
+    "budget_s": 164,
+    "budget_basis": "ledger: 2 x p95 82 s over 104 gx10-cuda Verdict rows",
+    "brief": {
+      "bytes": 122510,
+      "sent_bytes": 122679,
+      "max_bytes": 196608
+    },
+    "trace": {
+      "input_sha256": "2987747734a9437c3193b09636f223a24dcb071eab8d065606af785e47c72e31",
+      "raw": "advisory.json"
+    },
+    "attempts": [
+      {
+        "host": "gx10",
+        "ok": true,
+        "wall_s": 46,
+        "used_gpu": true,
+        "ts": "2026-09-29T19:25:46.093Z",
+        "wall_ms": 46802,
+        "request_id": "01a0eea1-56ea-7a00-9c9e-96a1a7d2dac3",
+        "load1": 44.75,
+        "cold": false
+      }
+    ],
+    "ledger": "/home/noah/.local/state/paiml-implement/advisory-ledger.jsonl",
+    "raw": "advisory.json",
+    "agrees_with_counted": false,
+    "counted": "PASS"
+  },
+  "lint": {
+    "ok": true,
+    "output": "receipt complete: kind=artifact lanes=3 author=claude-sonnet-5-5/claude same_family=2/2"
+  }
+}

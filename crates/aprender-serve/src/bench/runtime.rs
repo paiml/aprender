@@ -263,7 +263,8 @@ impl Default for BackendRegistry {
 /// Configuration for llama.cpp backend
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct LlamaCppConfig {
-    /// Path to llama-cli binary
+    /// Path to llama-cli binary. The `Default` (`llama-cli`, via `PATH`) is
+    /// unverified and not what aprender's gates use; see `impl Default`.
     pub binary_path: String,
     /// Path to model file
     pub model_path: Option<String>,
@@ -275,6 +276,14 @@ pub struct LlamaCppConfig {
     pub threads: usize,
 }
 
+/// The default `binary_path` is the bare name `llama-cli`, resolved through the
+/// caller's `PATH`. It is UNVERIFIED: whichever llama.cpp build the host happens
+/// to have, with no pin, commit or build-flag check. It is a convenience for
+/// outside users of this library and is NOT what aprender's gates use. Those
+/// read the pinned build that `scripts/llama_bin.sh` proves against
+/// `scripts/llama_pin.toml` and exports as `$LLAMA_CLI` / `$LLAMA_SERVER`
+/// (#3740). A benchmark meant to be compared across releases should pass
+/// that path to [`LlamaCppConfig::new`].
 impl Default for LlamaCppConfig {
     fn default() -> Self {
         Self {

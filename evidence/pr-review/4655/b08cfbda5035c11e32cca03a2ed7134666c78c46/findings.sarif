@@ -1,0 +1,250 @@
+{
+  "$schema": "https://docs.oasis-open.org/sarif/sarif/v2.1.0/errata01/os/schemas/sarif-schema-2.1.0.json",
+  "version": "2.1.0",
+  "runs": [
+    {
+      "tool": {
+        "driver": {
+          "name": "pmat"
+        }
+      },
+      "invocations": [
+        {
+          "executionSuccessful": true,
+          "toolExecutionNotifications": []
+        }
+      ],
+      "results": [
+        {
+          "ruleId": "complexity_delta",
+          "level": "note",
+          "message": {
+            "text": "pmat complexity: 184 function/rule entries above threshold are new or increased vs the merge-base (127 in new files, 57 increases in modified files); worst new cognitive 255 scripts/token_usage_report.py::claude. Advisory under C218 scope."
+          },
+          "properties": {
+            "grounding": "measured",
+            "command": [
+              "pmat",
+              "analyze",
+              "complexity",
+              "--format",
+              "json",
+              "--path",
+              "."
+            ],
+            "exit_code": 0,
+            "stdout_sha256": "04bcf01e0031c2d291d22d2d0ae64f8b0fb61edeae4c8a262d59dea865b29342",
+            "failure_scenario": "Hard-to-review high-cognitive helper scripts (Python/Rust) raise the chance a later edit breaks them unnoticed; no behavioural failure is claimed.",
+            "precision_class": "advisory"
+          }
+        },
+        {
+          "ruleId": "fg_vacuity",
+          "level": "warning",
+          "message": {
+            "text": "scripts/check_mutants_feature_groups.sh:103: `done < ci/mutants-feature-groups.txt` runs under `set -uo pipefail` (no -e); a missing or empty groups file skips the loop with bad=0 and the script prints PASS (loop shape reproduced; agy raised the same)."
+          },
+          "properties": {
+            "grounding": "measured",
+            "command": [
+              "bash",
+              "-c",
+              "set -uo pipefail; bad=0; while read -r x; do bad=1; done < /nonexistent/file 2>/dev/null; echo \"bad=$bad\""
+            ],
+            "exit_code": 0,
+            "stdout_sha256": "ef6b8267de4470cd3f7e17f90a04055e85d316f7057fc75ab7be2d9e3def5421",
+            "failure_scenario": "If ci/mutants-feature-groups.txt is deleted, renamed or truncated to zero bytes, the real-groups-file arm of ci.yml:464 reports PASS having checked zero rows, so a broken or cuda-bearing groups table is never refused.",
+            "precision_class": "advisory"
+          }
+        },
+        {
+          "ruleId": "shfl_full_mask_uniform",
+          "level": "note",
+          "message": {
+            "text": "emit_scores_warp issues shfl.sync.down with membermask 0xFFFFFFFF inside a loop gated by `pp < n_c` where pp starts at the warp id and steps by WARPS: the predicate is warp-uniform, so every lane reaches the shuffle (no UB from non-participating lanes)."
+          },
+          "properties": {
+            "grounding": "cited",
+            "source": "nvidia-cuda-docs MCP search_cuda_docs: PTX ISA \u00a79.7.10.6 shfl.sync",
+            "excerpt": "`shfl.sync` will cause executing thread to wait until all non-exited threads corresponding to `membermask` have executed `shfl.sync` with the same qualifiers and same `membermask` value before resuming execution.",
+            "excerpt_sha256": "85c61796b98536350e0c918c72bb9d405e93df1ca2bdc792e3d63f2ea9b0e555",
+            "failure_scenario": "If the loop predicate were lane-dependent, lanes outside the membermask would source undefined registers and corrupt the attention score; it is not lane-dependent here.",
+            "precision_class": "advisory"
+          }
+        },
+        {
+          "ruleId": "ptx_global_init_align",
+          "level": "note",
+          "message": {
+            "text": "iq3s/kvalues_iq4nl tables are emitted as `.global .align 4 .u32 name[N] = { ... }`: initializers on .global arrays of .u32 with a power-of-two .align are valid PTX."
+          },
+          "properties": {
+            "grounding": "cited",
+            "source": "nvidia-cuda-docs MCP search_cuda_docs: PTX ISA \u00a75.4 variable initializers",
+            "excerpt": "Currently, variable initialization is supported only for constant and global state spaces. Variables in constant and global state spaces with no explicit initializer are initialized to zero by default.",
+            "excerpt_sha256": "079565b5c71a6916f8c63c95c698a8f354d8f8edc2a21e051afb53600e23ad44",
+            "failure_scenario": "A table in an unsupported state space or with a non-power-of-two alignment would make ptxas reject the module at load and take the whole quantised GPU path down.",
+            "precision_class": "advisory"
+          }
+        },
+        {
+          "ruleId": "gate_change_none",
+          "level": "note",
+          "message": {
+            "text": "Delta 4f57a19fe0..b08cfbda50 is test-harness fixes for merge_group; gate change per ONT spec: none (mutation remains report-only per ci.yml MUTANTS-RATCHET 646-657). Only the --self-test branch of check_ont_ratchet.sh and case (d) of guard_tree_parallel_test.sh change; --check/--print/--write and guard_tree.sh are untouched."
+          },
+          "properties": {
+            "grounding": "asserted",
+            "rationale": "git diff --stat 4f57a19fe0 b08cfbda50: 2 files, +10 -3, both test paths",
+            "failure_scenario": "If a gate path had changed, a weakened gate could ride in under a test-fix label.",
+            "precision_class": "advisory"
+          }
+        },
+        {
+          "ruleId": "sonnet_F1",
+          "level": "note",
+          "message": {
+            "text": "The `^slowest: ` filter hides the guard names in the slowest list and their order, which depend on timing and are not deterministic. The per-guard rows and the `N checks, M failed` verdict line are still compared."
+          },
+          "properties": {
+            "grounding": "asserted",
+            "rationale": "raised by the independent claude-sonnet-5-5 reviewer (cited by it, file scripts/tests/guard_tree_parallel_test.sh:136); advisory, the `slowest:` list is timing-derived by construction (guard_tree.sh:755)",
+            "failure_scenario": "A bug that changed which guards the `slowest:` list reports, or how it is ordered, would not fail case (d). The list is derived from timing, so nothing deterministic is lost, but a tie-break regression in it would go unnoticed.",
+            "precision_class": "advisory"
+          }
+        }
+      ]
+    },
+    {
+      "tool": {
+        "driver": {
+          "name": "nvidia-cuda-docs"
+        }
+      },
+      "invocations": [
+        {
+          "executionSuccessful": true,
+          "toolExecutionNotifications": []
+        }
+      ],
+      "results": []
+    },
+    {
+      "tool": {
+        "driver": {
+          "name": "crux"
+        }
+      },
+      "invocations": [
+        {
+          "executionSuccessful": true,
+          "toolExecutionNotifications": []
+        }
+      ],
+      "results": [
+        {
+          "ruleId": "crux_coverage_none",
+          "level": "note",
+          "message": {
+            "text": "The diff adds CLI subcommands `ptx-debug` and `surface` to contracts/apr-cli-commands-v1.yaml; no contracts/crux-*.yaml names ptx-debug (crux_coverage: none, itself a finding per \u00a73.C)."
+          },
+          "properties": {
+            "grounding": "asserted",
+            "rationale": "grep over contracts/crux-*.yaml for ptx-debug/ptx_debug returned no file; competitor behaviour for these surfaces was not compared.",
+            "failure_scenario": "A user-facing ptx-debug CLI ships with no CRUX comparison, so a competitive-gap regression on that surface would not be detected by the crux ladder.",
+            "precision_class": "advisory"
+          }
+        }
+      ]
+    },
+    {
+      "tool": {
+        "driver": {
+          "name": "cargo-mutants"
+        }
+      },
+      "invocations": [
+        {
+          "executionSuccessful": true,
+          "toolExecutionNotifications": []
+        }
+      ],
+      "results": [
+        {
+          "ruleId": "ont_selftest_merge_group_green",
+          "level": "note",
+          "message": {
+            "text": "check_ont_ratchet.sh --self-test under GITHUB_EVENT_NAME=merge_group at b08cfbda50: 56 passed, 0 failed (the delta's fix)."
+          },
+          "properties": {
+            "grounding": "measured",
+            "command": [
+              "env",
+              "GITHUB_EVENT_NAME=merge_group",
+              "bash",
+              "scripts/check_ont_ratchet.sh",
+              "--self-test"
+            ],
+            "exit_code": 0,
+            "stdout_sha256": "f0165018c7b12e399e9ed780cb05d3e1b13c346adc9f41b436b2cf82ef54be3a",
+            "failure_scenario": "Without the env clear, resolve_base.sh falls back to the single parent under merge_group and the no-comparand row reports 0, turning ci / gate (X86 guard-tree) red in the queue (merge_group run 37034947646).",
+            "precision_class": "advisory"
+          }
+        },
+        {
+          "ruleId": "ont_selftest_merge_group_red_before",
+          "level": "note",
+          "message": {
+            "text": "Same command at 4f57a19fe0 (before the delta): 55 passed, 1 failed, i.e. the defect reproduces locally and the fix is what turns it green (a mutant of the fix is killed)."
+          },
+          "properties": {
+            "grounding": "measured",
+            "command": [
+              "env",
+              "GITHUB_EVENT_NAME=merge_group",
+              "bash",
+              "scripts/check_ont_ratchet.sh",
+              "--self-test"
+            ],
+            "exit_code": 1,
+            "stdout_sha256": "a1694ffc4740103f1d58f2c13ea344c55258a0ca22895fad1d90246cb4e3c34e",
+            "failure_scenario": "If the env clear were reverted, the self-test goes red again under the merge queue.",
+            "precision_class": "advisory"
+          }
+        },
+        {
+          "ruleId": "guard_tree_parallel_table_green",
+          "level": "note",
+          "message": {
+            "text": "scripts/tests/guard_tree_parallel_test.sh at b08cfbda50: 6/6 rows pass, (d) included."
+          },
+          "properties": {
+            "grounding": "measured",
+            "command": [
+              "bash",
+              "scripts/tests/guard_tree_parallel_test.sh"
+            ],
+            "exit_code": 0,
+            "stdout_sha256": "b458a7823f7ce70d59c4060bdacf22bfc26f00788c96be40c43d49b2b4f1bbb6",
+            "failure_scenario": "Case (d) compared wall-clock `slowest:` rows between two runs, so 1s vs 0s jitter failed the determinism row in the queue.",
+            "precision_class": "advisory"
+          }
+        }
+      ]
+    },
+    {
+      "tool": {
+        "driver": {
+          "name": "antigravity"
+        }
+      },
+      "invocations": [
+        {
+          "executionSuccessful": true,
+          "toolExecutionNotifications": []
+        }
+      ],
+      "results": []
+    }
+  ]
+}

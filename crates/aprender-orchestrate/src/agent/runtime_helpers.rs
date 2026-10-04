@@ -37,19 +37,31 @@ pub(super) fn truncate_messages(
     // Map truncated ChatMessages back to original Messages
     // by matching content. SlidingWindow keeps most recent,
     // so iterate from end of original list.
-    let mut result = Vec::with_capacity(truncated.len());
+    let mut kept = Vec::with_capacity(truncated.len());
     let mut msg_idx = messages.len();
     for chat_msg in truncated.iter().rev() {
         while msg_idx > 0 {
             msg_idx -= 1;
             if messages[msg_idx].to_chat_message().content == chat_msg.content {
-                result.push(messages[msg_idx].clone());
+                kept.push(msg_idx);
                 break;
             }
         }
     }
-    result.reverse();
-    Ok(result)
+    kept.reverse();
+
+    // #4599: the current turn's prompt (the last `User` message) is never evicted to make room
+    // for its own tool results. Dropping it would answer a conversation that no longer asks
+    // anything, with rc 0; refuse instead.
+    if let Some(prompt) = messages.iter().rposition(|m| matches!(m, Message::User(_))) {
+        if !kept.contains(&prompt) {
+            return Err(AgentError::ContextOverflow {
+                required: context.estimate_tokens(&chat_msgs[prompt..]),
+                available: context.available_tokens(),
+            });
+        }
+    }
+    Ok(kept.into_iter().map(|i| messages[i].clone()).collect())
 }
 
 /// Retry `driver.complete()` with exponential backoff for retryable errors.

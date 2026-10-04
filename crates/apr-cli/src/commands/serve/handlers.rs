@@ -6,7 +6,6 @@
 
 #![allow(unused_imports)]
 #![allow(unused_variables)]
-#![allow(dead_code)]
 
 #[cfg(feature = "wgpu")]
 use axum::response::IntoResponse;
@@ -115,22 +114,9 @@ fn wgpu_detokenize_one(id: u32, vocab: &[String]) -> String {
     String::from_utf8_lossy(&gpt2_token_bytes(token)).into_owned()
 }
 
-/// PMAT-355: Qwen2 stop conditions for the WGPU greedy decode loop.
+/// PMAT-355: Qwen2 stop tokens for the WGPU greedy decode loop (`<|im_end|>`, pad).
 #[cfg(feature = "wgpu")]
-fn wgpu_is_stop_token(token: u32) -> bool {
-    token == 151645 || token == 0
-}
-
-/// PMAT-355: Greedy argmax over a logits vector (0 when empty).
-#[cfg(feature = "wgpu")]
-fn wgpu_argmax(logits: &[f32]) -> u32 {
-    logits
-        .iter()
-        .enumerate()
-        .max_by(|a, b| a.1.partial_cmp(b.1).unwrap_or(std::cmp::Ordering::Equal))
-        .map(|(i, _)| i as u32)
-        .unwrap_or(0)
-}
+const WGPU_STOP_TOKENS: [u32; 2] = [151645, 0];
 
 /// PMAT-355: Tokens per second, guarding the zero-elapsed case.
 #[cfg(feature = "wgpu")]
@@ -265,8 +251,8 @@ fn wgpu_stream_generate(
 
     let mut completion_tokens = 0u32;
     for step in 0..max_tokens {
-        let next_token = wgpu_argmax(&last_logits);
-        if wgpu_is_stop_token(next_token) {
+        let next_token = realizar::sampling::argmax(&last_logits);
+        if realizar::sampling::is_stop(next_token, &WGPU_STOP_TOKENS) {
             break;
         }
         let text = wgpu_detokenize_one(next_token, vocab);
@@ -328,8 +314,8 @@ fn wgpu_chat_completion_blocking(
     };
 
     for step in 0..max_tokens {
-        let next_token = wgpu_argmax(&last_logits);
-        if wgpu_is_stop_token(next_token) {
+        let next_token = realizar::sampling::argmax(&last_logits);
+        if realizar::sampling::is_stop(next_token, &WGPU_STOP_TOKENS) {
             break;
         }
         output_ids.push(next_token);
@@ -781,6 +767,8 @@ fn serve_wgpu_backend(
         dims.head_dim,
         dims.intermediate_dim,
     );
+    // #4056: the WGSL RMSNorm takes the model's eps (it hardcoded 1e-6).
+    fwd.set_rms_norm_eps(quantized.config().eps);
 
     upload_wgpu_weights(&mut fwd, quantized, weights, num_layers);
 
@@ -1067,6 +1055,9 @@ struct AprServerState {
     /// always leaves this `None`; only `build_demo_apr_cpu_router_for_test` sets
     /// it, so the streaming falsifier can observe real multi-chunk NDJSON.
     demo_scripted_tokens: Option<Vec<String>>,
+    /// #4295: the stop set, derived once from the tokenizers at load
+    /// ([`derive_apr_cpu_stop_tokens`]), never rescanned per request.
+    stop_tokens: Arc<[u32]>,
 }
 
 /// Output from a successful APR inference run
@@ -1168,13 +1159,23 @@ fn run_apr_cpu_inference(
 const APR_CPU_TURN_END_TOKENS: &[&str] =
     &["<|im_end|>", "<|endoftext|>", "<|eot_id|>", "<end_of_turn>"];
 
-/// #4265: the token ids that end an APR CPU generation: every EOS the loaded
-/// tokenizer declares plus the chat-turn terminators it has an id for. The
-/// generation loop already stops at id 0 on its own (`is_eos_token`).
+/// #4265: the token ids that end an APR CPU generation, as derived at load.
 #[cfg(feature = "inference")]
 fn apr_cpu_stop_tokens(state: &AprServerState) -> Vec<u32> {
+    state.stop_tokens.to_vec()
+}
+
+/// #4265: every EOS the loaded tokenizers declare plus the chat-turn
+/// terminators they have an id for. The generation loop already stops at id 0
+/// on its own (`is_eos_token`). It walks the whole tokenizer.json vocab, so it
+/// runs once, when the state is built (#4295).
+#[cfg(feature = "inference")]
+fn derive_apr_cpu_stop_tokens(
+    embedded_tokenizer: Option<&realizar::apr::BpeTokenizer>,
+    tokenizer: Option<&SafeTensorsTokenizerInfo>,
+) -> Arc<[u32]> {
     let mut stop = Vec::new();
-    if let Some(tok) = &state.embedded_tokenizer {
+    if let Some(tok) = embedded_tokenizer {
         stop.extend(tok.eos_id);
         stop.extend(
             APR_CPU_TURN_END_TOKENS
@@ -1182,17 +1183,42 @@ fn apr_cpu_stop_tokens(state: &AprServerState) -> Vec<u32> {
                 .filter_map(|t| tok.special_tokens.get(*t).copied()),
         );
     }
-    if let Some(tok) = &state.tokenizer {
-        stop.extend(tok.eos_token_id);
-        stop.extend(tok.vocab.iter().enumerate().filter_map(|(id, t)| {
-            APR_CPU_TURN_END_TOKENS
-                .contains(&t.as_str())
-                .then_some(id as u32)
-        }));
+    if let Some(tok) = tokenizer {
+        stop.extend(tokenizer_info_stop_tokens(tok));
     }
     stop.sort_unstable();
     stop.dedup();
+    stop.into()
+}
+
+/// #4334: the stop ids a tokenizer.json-backed tokenizer declares: its EOS plus
+/// the chat-turn terminators its vocab has. Shared by the APR CPU path and the
+/// SafeTensors handlers (`chat.rs`, `simple.rs`), which hardcoded an empty set.
+#[cfg(feature = "inference")]
+pub(crate) fn tokenizer_info_stop_tokens(tok: &SafeTensorsTokenizerInfo) -> Vec<u32> {
+    let mut stop: Vec<u32> = tok.eos_token_id.into_iter().collect();
+    stop.extend(tok.vocab.iter().enumerate().filter_map(|(id, t)| {
+        APR_CPU_TURN_END_TOKENS
+            .contains(&t.as_str())
+            .then_some(id as u32)
+    }));
+    stop.sort_unstable();
+    stop.dedup();
     stop
+}
+
+/// #4334: the reply tokens of an `st_cpu_generate` result: everything past the
+/// prompt, minus the stop id the loop ended on (its stop set is
+/// `gen_config.stop_tokens` plus token 0).
+#[cfg(feature = "inference")]
+pub(crate) fn generated_reply_tokens<'a>(
+    output_ids: &'a [u32],
+    prompt_len: usize,
+    gen_config: &realizar::gguf::QuantizedGenerateConfig,
+) -> &'a [u32] {
+    let mut stop_ids = gen_config.stop_tokens.clone();
+    stop_ids.push(0);
+    apr_cpu_reply_tokens(output_ids.get(prompt_len..).unwrap_or(&[]), &stop_ids)
 }
 
 /// The reply text's tokens: `new_tokens` without the stop id the loop ended on.
@@ -1211,7 +1237,7 @@ fn apr_cpu_reply_tokens<'a>(new_tokens: &'a [u32], stop_ids: &[u32]) -> &'a [u32
 /// of its own, so 0 is added to the stop set here to keep the old
 /// `is_eos_token` contract (token 0 is always EOS).
 #[cfg(feature = "inference")]
-fn apr_cpu_generate_config(
+pub(crate) fn apr_cpu_generate_config(
     max_tokens: usize,
     temperature: f32,
     top_p: Option<f32>,
@@ -1352,6 +1378,8 @@ fn load_apr_model_state(model_path: &Path, config: &ServerConfig) -> Result<AprS
         .unwrap_or("apr")
         .to_string();
 
+    let stop_tokens =
+        derive_apr_cpu_stop_tokens(embedded_tokenizer.as_ref(), bpe_tokenizer.as_ref());
     Ok(AprServerState {
         transformer,
         model_type,
@@ -1361,6 +1389,7 @@ fn load_apr_model_state(model_path: &Path, config: &ServerConfig) -> Result<AprS
         embedded_tokenizer,
         model_name,
         demo_scripted_tokens: None,
+        stop_tokens,
     })
 }
 
@@ -1680,6 +1709,7 @@ pub fn build_demo_apr_cpu_router_for_test() -> axum::Router {
         embedded_tokenizer: None,
         model_name: "apr".to_string(),
         demo_scripted_tokens: None,
+        stop_tokens: Arc::from([]),
     };
     build_apr_cpu_router(state, super::auth::AuthGate::disabled())
 }
@@ -1711,6 +1741,7 @@ pub fn build_demo_streaming_apr_cpu_router_for_test() -> axum::Router {
             "world".to_string(),
             "!".to_string(),
         ]),
+        stop_tokens: Arc::from([]),
     };
     build_apr_cpu_router(state, super::auth::AuthGate::disabled())
 }

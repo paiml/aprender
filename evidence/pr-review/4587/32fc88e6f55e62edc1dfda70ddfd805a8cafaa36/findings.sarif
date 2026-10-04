@@ -1,0 +1,225 @@
+{
+ "$schema": "https://json.schemastore.org/sarif-2.1.0.json",
+ "version": "2.1.0",
+ "runs": [
+  {
+   "tool": {
+    "driver": {
+     "name": "pmat",
+     "informationUri": "https://github.com/paiml/aprender",
+     "rules": []
+    }
+   },
+   "invocations": [
+    {
+     "executionSuccessful": true,
+     "toolExecutionNotifications": [
+      {
+       "level": "warning",
+       "message": {
+        "text": "duplication scan scripts/pr_review_duplication_scan.sh timed out at 25m (timeout 1500, rc 124) over 1160 unmerged branches; no duplication coverage is claimed."
+       },
+       "properties": {
+        "grounding": "measured",
+        "command": [
+         "timeout",
+         "1500",
+         "bash",
+         "scripts/pr_review_duplication_scan.sh",
+         "--base",
+         "00052c01284caa74c70b287088a79c6dee2959b9",
+         "--head",
+         "32fc88e6f55e62edc1dfda70ddfd805a8cafaa36",
+         "--rust-semantic",
+         "--json",
+         "dup.json"
+        ],
+        "exit_code": 124,
+        "stdout_sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+       }
+      }
+     ]
+    }
+   ],
+   "results": [
+    {
+     "ruleId": "review.table-rule-guard-validates-dead-block",
+     "level": "warning",
+     "message": {
+      "text": "scripts/check_ci_gate_mutants_table_rule.sh extracts and evaluates the text of the GATE-MUTANTS-TABLE-RULE block (self-test and real run both exit 0), but never checks the block is reachable. Because the block now sits after `exit 0`, the guard stays GREEN over rules that can never execute: a guard that scans the text, not the decision surface."
+     },
+     "properties": {
+      "grounding": "asserted",
+      "rationale": "Read of check_ci_gate_mutants_table_rule.sh table() + ci.yml lines 624-662: the guard's planted-weak-rule table varies the rule body, not the position of an earlier exit; reviewer did not run a mutant that inserts `exit 0` above the block.",
+      "failure_scenario": "The unreachable block is later edited or the `exit 0` moved; the guard stays green in both states, so it cannot tell armed from disarmed.",
+      "precision_class": "advisory"
+     }
+    },
+    {
+     "ruleId": "review.complexity-increase-new-functions",
+     "level": "note",
+     "message": {
+      "text": "pmat analyze complexity over the 145 added/modified crate src files (head only; no base comparison possible for new files) reports 8 new-file functions over .pmat-gates.toml max_complexity=10, worst release_crux.rs emit_obligation cyclomatic 15; others 11-12 (challenge.rs preamble, binary.rs emit, covering.rs extend, example.rs walk, json/github.rs positive_control, owl.rs tbox, witness_planted.rs consistent). Standing offenders in untouched code (explain.rs explain_contract_markdown cc 22) are not counted."
+     },
+     "properties": {
+      "grounding": "measured",
+      "command": [
+       "pmat",
+       "analyze",
+       "complexity",
+       "--files",
+       "<145 added/modified crates/*/src/**.rs>",
+       "--format",
+       "json"
+      ],
+      "exit_code": 0,
+      "stdout_sha256": "629a158db06b38d4073a4071ef262c1ef476da28b2463d1b4569349fbc62660b",
+      "failure_scenario": "Functions above the configured cyclomatic ceiling of 10 enter main via a folded batch; the comply gate (`pmat comply check`) could flag them later on a branch with no authors left holding the context.",
+      "precision_class": "advisory"
+     }
+    },
+    {
+     "ruleId": "review.facade-pins-vacuous-on-zero",
+     "level": "note",
+     "message": {
+      "text": "scripts/bump-version.sh check_facade_pins iterates facade_pinned_manifests; if no facade manifest matches `^upstream.*version=`, the loop runs zero times and the function returns 0 (OK), i.e. vacuously passes. Today two facades match (provable-contracts, provable-contracts-macros), so nothing is wrong on this tree."
+     },
+     "properties": {
+      "grounding": "asserted",
+      "rationale": "Read of bump-version.sh lines 50-117; no zero-manifest row seen in the self-test cases (the grep for check_facade_pins in the self-test shows four positive/negative call sites, none on an empty facades dir).",
+      "failure_scenario": "A rewrite of the facades' upstream key syntax makes the glob match nothing; bump-version.sh then bumps without pinning and check_facade_pins still prints nothing and exits 0.",
+      "precision_class": "advisory"
+     }
+    },
+    {
+     "ruleId": "review.ci-gate-mutants-rules-dead",
+     "level": "warning",
+     "message": {
+      "text": "ci.yml 'gate' job (lines ~624-633) ends in an unconditional `exit 0` (MUTANTS-RATCHET block) BEFORE GATE-MUTANTS-RULE and GATE-MUTANTS-TABLE-RULE, so on this head neither mutation rule can fire. The block's comment says the blocking replacement is scripts/check_mutants_debt_ratchet.sh + ci/mutants-debt.tsv, 'landing with PR #4647'; neither file exists on this branch (ls exit 2). Net on this head: mutation results block nothing, and the survivor table this PR builds (#4587 A') is not required by the gate. This is deliberate per the comment (operator C187(a)/C188(a), restore PR #4648), reported so the receipt does not read as 'mutants gated'."
+     },
+     "properties": {
+      "grounding": "measured",
+      "command": [
+       "ls",
+       "scripts/check_mutants_debt_ratchet.sh",
+       "ci/mutants-debt.tsv"
+      ],
+      "exit_code": 2,
+      "stdout_sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+      "failure_scenario": "A PR on this head (or any branch carrying the block before #4647 merges) with surviving mutants or a RED survivor table passes `gate` and can auto-merge; if #4647 slips, the ratchet is never armed and the 'report-only' state becomes permanent.",
+      "precision_class": "advisory"
+     }
+    }
+   ]
+  },
+  {
+   "tool": {
+    "driver": {
+     "name": "nvidia-cuda-docs",
+     "rules": []
+    }
+   },
+   "invocations": [
+    {
+     "executionSuccessful": true,
+     "toolExecutionNotifications": []
+    }
+   ],
+   "results": [
+    {
+     "ruleId": "review.fp8-clamp-assumes-saturation",
+     "level": "note",
+     "message": {
+      "text": "crates/aprender-contracts-staging/lean/Challenge/fp8-interchange-v1.lean states clampMag_le / range_e4m3 (|decode| <= E4M3_MAX) as `:= sorry` theorems. The CUDA Math API says under __NV_NOSAT an E4M3 overflow becomes NaN, not a value <= max, so the stated range holds only for a saturating (SATFINITE) conversion model. Nothing is asserted yet (all sorry); matters when someone discharges them."
+     },
+     "properties": {
+      "grounding": "cited",
+      "source": "CUDA Math API, FP8 section 3.11.1, enum __nv_saturation_t (__NV_NOSAT) via mcp__nvidia-cuda-docs__search_cuda_docs",
+      "excerpt": "NOTE: for the target `fp8` types of `e4m3` and `ue5m3` kinds, the results that are larger than the maximum representable finite number of the target format become NaN.",
+      "excerpt_sha256": "c624bfa1b4fb1c7f7ade327064355505826589c932cdf281c275c7d6b0ac451c",
+      "failure_scenario": "A discharged range_e4m3 proof certifies a clamp that NOSAT hardware conversion does not perform; a downstream kernel contract inherits a wrong bound.",
+      "precision_class": "advisory"
+     }
+    }
+   ]
+  },
+  {
+   "tool": {
+    "driver": {
+     "name": "cargo-mutants",
+     "rules": []
+    }
+   },
+   "invocations": [
+    {
+     "executionSuccessful": true,
+     "commandLine": "scripts/mutate_{facade_compat,lean_modules_reachable,leanchecker_scoped}_guard.sh (each rc 0, 100%); check_*.sh --self-test x5 rc 0",
+     "toolExecutionNotifications": []
+    }
+   ],
+   "results": [
+    {
+     "ruleId": "review.guard-without-committed-mutation-set",
+     "level": "warning",
+     "message": {
+      "text": "Two guard scripts changed/added by this PR have no committed mutation set: scripts/check_ci_gate_mutants_table_rule.sh (has a --self-test with 3 planted rules, but no mutate_*.sh) and scripts/check_mutants_feature_groups.sh (no --self-test and no mutate_*.sh). The other three new guards each have one and killed 66/66 here. S3.D asks for 100% kill on the guard's committed set; for these two there is no set, so the requirement is not measured."
+     },
+     "properties": {
+      "grounding": "measured",
+      "command": [
+       "bash",
+       "-c",
+       "ls scripts | grep -E 'mutate.*(table_rule|feature_groups)'"
+      ],
+      "exit_code": 1,
+      "stdout_sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+      "failure_scenario": "A regression in check_mutants_feature_groups.sh (e.g. its row-count comparison read through a pipe) is not detected by any committed test; it exits 0 on today's tree only.",
+      "precision_class": "advisory"
+     }
+    }
+   ]
+  },
+  {
+   "tool": {
+    "driver": {
+     "name": "antigravity",
+     "rules": []
+    }
+   },
+   "invocations": [
+    {
+     "executionSuccessful": true,
+     "toolExecutionNotifications": []
+    }
+   ],
+   "results": [
+    {
+     "ruleId": "antigravity.gate-rule-unreachable",
+     "level": "warning",
+     "message": {
+      "text": "The GATE-MUTANTS-TABLE-RULE in ci.yml is unreachable because of a preceding exit 0. [.github/workflows/ci.yml:624]"
+     },
+     "properties": {
+      "grounding": "asserted",
+      "rationale": "Reported by agy (gemini-3.1-pro-high); reverified_by_primary false for its measurements, but the primary read the cited lines and agrees with the factual claim.",
+      "failure_scenario": "A mutant survivor table with test failures or missing shards will be ignored because the gate job unconditionally exits 0 for the #4646 ratchet mode before evaluating the GATE-MUTANTS-TABLE-RULE block. This allows a PR to merge despite failing the required mutants-table check.",
+      "precision_class": "advisory"
+     }
+    },
+    {
+     "ruleId": "antigravity.facade-pins-vacuous-pass",
+     "level": "warning",
+     "message": {
+      "text": "check_facade_pins vacuously passes if no pinned manifests are found. [scripts/bump-version.sh:748]"
+     },
+     "properties": {
+      "grounding": "asserted",
+      "rationale": "Reported by agy (gemini-3.1-pro-high); reverified_by_primary false for its measurements, but the primary read the cited lines and agrees with the factual claim.",
+      "failure_scenario": "If all facade crates have their upstream version pins deleted (either maliciously or accidentally), facade_pinned_manifests yields empty output. The while-read loop executes zero times and returns 0, vacuously passing the validation and allowing unpinned facades to merge.",
+      "precision_class": "advisory"
+     }
+    }
+   ]
+  }
+ ]
+}

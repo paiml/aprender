@@ -23,3 +23,8 @@
 #
 # scripts/check_append_only_ledgers.sh holds that distinction as a case table.
 docs/audits/*.jsonl merge=union
+# Append-only ledgers one level down. `docs/audits/*.jsonl` does not cross a `/`,
+# so these two resolved no merge driver (check_append_only_ledgers, after the
+# main merge into #4431). Named file by file: the scope rule above still holds.
+docs/audits/review-corpus/corpus-v1.jsonl merge=union
+docs/audits/rex-001/rex-04-admission.jsonl merge=union

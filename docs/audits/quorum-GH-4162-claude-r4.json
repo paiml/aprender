@@ -1,0 +1,56 @@
+{
+ "ticket": "GH-4162",
+ "head": "8a8cc4215",
+ "base": "origin/batch/0.70.0",
+ "executor": "claude-code",
+ "degraded": "same-family",
+ "author": {
+  "model": "claude-opus-5-5",
+  "family": "claude"
+ },
+ "prior": "docs/audits/quorum-GH-4162.json (agy r2 AGREED 2/2 @f38703f46; covers the pre-attribution diff)",
+ "rounds": [
+  {
+   "round": 3,
+   "head": "fd550547f",
+   "lanes": [
+    {
+     "model": "claude-sonnet-5",
+     "verdict": "FAIL",
+     "findings": [
+      "F2 replay ignored real compactions (negative savings)",
+      "gitdir first .git / relative path",
+      "self_test SRC restore without finally"
+     ]
+    },
+    {
+     "model": "claude-haiku-4-5",
+     "verdict": "FAIL",
+     "findings": [
+      "/tmp/claude-1000 regex cut hyphenated repo names"
+     ]
+    }
+   ]
+  },
+  {
+   "round": 4,
+   "head": "8a8cc4215",
+   "agreed": true,
+   "lanes": [
+    {
+     "model": "claude-sonnet-5",
+     "verdict": "PASS",
+     "findings": [
+      "dormant: scratchpad fallback when no ~/src prefix exists splits on first hyphen (no live instance)"
+     ],
+     "evidence": "reverted each r3 fix -> self-test RED; 24h F2 net 38.9/34.5/30.3/21.1% monotone"
+    },
+    {
+     "model": "claude-haiku-4-5",
+     "verdict": "PASS",
+     "findings": []
+    }
+   ]
+  }
+ ]
+}

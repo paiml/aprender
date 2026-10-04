@@ -14,29 +14,29 @@ pub enum TrainCommands {
     Plan {
         /// Path to training data (JSONL). Only read by `apr finetune --task classify`.
         #[arg(long, value_name = "FILE")]
-        data: Option<PathBuf>,
+        data: Option<InputFile>,
         /// Model size: "0.5B", "9B", "7B", "13B"
         #[arg(long, default_value = "0.5B")]
-        model_size: String,
+        model_size: FreeText,
         /// Path to model weights directory
         #[arg(long, value_name = "DIR")]
-        model_path: Option<PathBuf>,
+        model_path: Option<ModelPath>,
         /// Number of output classes
         #[arg(long, default_value = "5")]
         num_classes: usize,
         /// Task type: pretrain (causal LM). Classification fine-tuning is
         /// `apr finetune --task classify`, not this command.
         #[arg(long, default_value = "pretrain")]
-        task: String,
+        task: FreeText,
         /// YAML training config (for --task pretrain)
         #[arg(long, value_name = "FILE")]
-        config: Option<PathBuf>,
+        config: Option<ConfigPath>,
         /// Output directory for checkpoints
         #[arg(short, long, default_value = "/tmp/training-output")]
-        output: PathBuf,
+        output: OutputPath,
         /// HPO strategy: tpe, grid, random, manual
         #[arg(long, default_value = "tpe")]
-        strategy: String,
+        strategy: FreeText,
         /// HPO budget (number of trials)
         #[arg(long, default_value = "20")]
         budget: usize,
@@ -57,13 +57,13 @@ pub enum TrainCommands {
         batch_size: Option<usize>,
         /// Validation data file (JSONL)
         #[arg(long, value_name = "FILE")]
-        val_data: Option<PathBuf>,
+        val_data: Option<InputFile>,
         /// Test data file (JSONL)
         #[arg(long, value_name = "FILE")]
-        test_data: Option<PathBuf>,
+        test_data: Option<InputFile>,
         /// Output format: text, json, yaml
         #[arg(long, default_value = "text")]
-        format: String,
+        format: FreeText,
     },
 
     /// Execute a training plan (allocate GPU, run trials).
@@ -76,27 +76,27 @@ pub enum TrainCommands {
     Apply {
         /// Path to a saved plan file (YAML or JSON from `apr train plan`)
         #[arg(long, value_name = "FILE")]
-        plan: Option<PathBuf>,
+        plan: Option<ConfigPath>,
 
         /// YAML training config (for --task pretrain)
         #[arg(long, value_name = "FILE")]
-        config: Option<PathBuf>,
+        config: Option<ConfigPath>,
 
         /// Task type: pretrain (causal LM). Classification fine-tuning is
         /// `apr finetune --task classify`, not this command.
         #[arg(long, default_value = "pretrain")]
-        task: String,
+        task: FreeText,
 
         // ── Inline plan params (used when no --plan file is given) ─────
         /// Path to training data (JSONL)
         #[arg(long, value_name = "FILE")]
-        data: Option<PathBuf>,
+        data: Option<InputFile>,
         /// Model size: "0.5B", "9B", "7B", "13B"
         #[arg(long, default_value = "0.5B")]
-        model_size: String,
+        model_size: FreeText,
         /// Path to model weights directory
         #[arg(long, value_name = "DIR")]
-        model_path: Option<PathBuf>,
+        model_path: Option<ModelPath>,
         /// Number of output classes
         #[arg(long, default_value = "5")]
         num_classes: usize,
@@ -106,10 +106,10 @@ pub enum TrainCommands {
         /// When omitted, the config's `training.output_dir` is used (default
         /// `./checkpoints`). The directory is created if it does not exist.
         #[arg(short, long, value_name = "DIR")]
-        output: Option<PathBuf>,
+        output: Option<OutputPath>,
         /// HPO strategy: tpe, grid, random, manual
         #[arg(long, default_value = "tpe")]
-        strategy: String,
+        strategy: FreeText,
         /// HPO budget (number of trials)
         #[arg(long, default_value = "20")]
         budget: usize,
@@ -141,7 +141,7 @@ pub enum TrainCommands {
         rank: Option<usize>,
         /// Coordinator address for distributed training (default: 0.0.0.0:9000)
         #[arg(long, value_name = "HOST:PORT")]
-        coordinator_addr: Option<String>,
+        coordinator_addr: Option<FreeText>,
 
         // ── Reproducibility params (R-084 C-DETERM-001) ──
         /// Enable bitwise deterministic training (CUBLAS_WORKSPACE_CONFIG, cuDNN deterministic)
@@ -172,7 +172,7 @@ pub enum TrainCommands {
     Watch {
         /// YAML training config to run and watch
         #[arg(long, value_name = "FILE")]
-        config: PathBuf,
+        config: ConfigPath,
 
         /// Maximum number of restart attempts
         #[arg(long, default_value = "5")]
@@ -201,11 +201,11 @@ pub enum TrainCommands {
     Sweep {
         /// Base YAML training config to sweep from
         #[arg(long, value_name = "FILE")]
-        config: PathBuf,
+        config: ConfigPath,
 
         /// Search strategy: grid or random
         #[arg(long, default_value = "random")]
-        strategy: String,
+        strategy: FreeText,
 
         /// Number of configs to generate (random) or max combinations (grid)
         #[arg(long, default_value = "10")]
@@ -213,7 +213,7 @@ pub enum TrainCommands {
 
         /// Output directory for generated configs
         #[arg(long, default_value = "sweeps/")]
-        output_dir: PathBuf,
+        output_dir: OutputPath,
 
         /// Seed for random search reproducibility
         #[arg(long, default_value = "42")]
@@ -232,7 +232,7 @@ pub enum TrainCommands {
     Halving {
         /// Directory containing sweep-*.yaml configs (from `apr train sweep`)
         #[arg(long, value_name = "DIR")]
-        sweep_dir: PathBuf,
+        sweep_dir: DirPath,
 
         /// Number of halving rounds (default: 3)
         #[arg(long, default_value = "3")]
@@ -252,7 +252,7 @@ pub enum TrainCommands {
 
         /// Output JSON file for results
         #[arg(long, default_value = "sweeps/hpo-results.json")]
-        output: PathBuf,
+        output: OutputPath,
     },
 
     /// Archive a checkpoint into a release bundle.
@@ -262,19 +262,19 @@ pub enum TrainCommands {
     Archive {
         /// Path to checkpoint directory
         #[arg(value_name = "CHECKPOINT_DIR")]
-        checkpoint_dir: PathBuf,
+        checkpoint_dir: ModelPath,
 
         /// Output archive directory
         #[arg(short, long, value_name = "DIR")]
-        output: PathBuf,
+        output: OutputPath,
 
         /// Release version tag (e.g., "v1.0")
         #[arg(long = "release-version")]
-        release_version: Option<String>,
+        release_version: Option<FreeText>,
 
         /// Release notes
         #[arg(long)]
-        notes: Option<String>,
+        notes: Option<FreeText>,
     },
 
     /// Submit multi-adapter training jobs to a cluster (GPU-SHARE Phase 3).
@@ -284,15 +284,15 @@ pub enum TrainCommands {
     Submit {
         /// Path to cluster config YAML
         #[arg(long, value_name = "FILE")]
-        cluster: PathBuf,
+        cluster: ConfigPath,
 
         /// Model checkpoint path (.apr)
         #[arg(long, value_name = "FILE")]
-        model: PathBuf,
+        model: ModelPath,
 
         /// Adapter specs: DATA:CHECKPOINT pairs (one per adapter)
         #[arg(long = "adapter", value_name = "DATA:CHECKPOINT")]
-        adapters: Vec<String>,
+        adapters: Vec<FreeText>,
 
         /// LoRA rank
         #[arg(long, default_value = "16")]
@@ -318,6 +318,6 @@ pub enum TrainCommands {
     ClusterStatus {
         /// Path to cluster config YAML
         #[arg(long, value_name = "FILE")]
-        cluster: PathBuf,
+        cluster: ConfigPath,
     },
 }

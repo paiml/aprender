@@ -51,6 +51,9 @@
 # re-run the table, never re-read the pattern).
 
 set -uo pipefail
+# guard_tree.sh probes `--help` to decide whether to run a self-test. Answer it before any work:
+# a probe that fell through to the body ran this whole guard and hit PROBE-TIMEOUT (#4144).
+case "${1:-}" in -h|--help) printf '%s\n' 'usage: bash scripts/check_assertions_exclude.sh [--self-test]'; exit 0 ;; esac
 
 SELF="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)/$(basename "${BASH_SOURCE[0]}")"
 REPO_ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"

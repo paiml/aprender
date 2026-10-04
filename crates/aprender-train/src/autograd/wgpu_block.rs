@@ -214,7 +214,7 @@ impl WgpuBlockManager {
             // Kaiming init for A, zero for B
             let kaiming = |fan_in: usize, len: usize| -> Vec<f32> {
                 let std = (2.0 / fan_in as f32).sqrt();
-                (0..len).map(|i| ((i as f32 * 0.013 + layer_idx as f32).sin() * std)).collect()
+                (0..len).map(|i| (i as f32 * 0.013 + layer_idx as f32).sin() * std).collect()
             };
             let zeros = |len: usize| vec![0.0f32; len];
 

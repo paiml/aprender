@@ -32,7 +32,7 @@
             }) => {
                 assert_eq!(file, PathBuf::from("model.gguf"));
                 assert_eq!(dataset, "lambada");
-                assert_eq!(text, Some("The quick brown fox".to_string()));
+                assert_eq!(text, Some("The quick brown fox".to_string()).map(Into::into));
                 assert_eq!(max_tokens, 256);
                 assert!((threshold - 15.5).abs() < f32::EPSILON);
                 assert!(task.is_none());
@@ -90,7 +90,7 @@
                 json: _,
             }) => {
                 assert_eq!(file, PathBuf::from("model.apr"));
-                assert_eq!(layer, Some("encoder.0".to_string()));
+                assert_eq!(layer, Some("encoder.0".to_string()).map(Into::into));
                 assert_eq!(component, "encoder");
                 assert!(verbose);
             }
@@ -145,7 +145,7 @@
                 ..
             }) => {
                 assert_eq!(file, PathBuf::from("model.apr"));
-                assert_eq!(tensor, Some("embed.weight".to_string()));
+                assert_eq!(tensor, Some("embed.weight".to_string()).map(Into::into));
                 assert_eq!(limit, 128);
                 assert!(stats);
                 assert!(list);
@@ -204,7 +204,7 @@
                 depth,
             }) => {
                 assert_eq!(file, PathBuf::from("model.apr"));
-                assert_eq!(filter, Some("encoder".to_string()));
+                assert_eq!(filter, Some("encoder".to_string()).map(Into::into));
                 assert_eq!(format, crate::commands::tree::TreeFormat::Mermaid);
                 assert!(sizes);
                 assert_eq!(depth, Some(3));
@@ -273,8 +273,8 @@
                     assert_eq!(file, PathBuf::from("model.apr"));
                     assert_eq!(output, PathBuf::from("/tmp/probar"));
                     assert_eq!(format, "json");
-                    assert_eq!(golden, Some(PathBuf::from("/refs/golden")));
-                    assert_eq!(layer, Some("layer.0".to_string()));
+                    assert_eq!(golden, Some(PathBuf::from("/refs/golden")).map(Into::into));
+                    assert_eq!(layer, Some("layer.0".to_string()).map(Into::into));
                     assert!(!assert);
                     assert!((tolerance - 0.98).abs() < 0.01);
                 },
@@ -333,7 +333,7 @@
                 strings,
                 limit,
             } => {
-                assert_eq!(file, Some(PathBuf::from("model.apr")));
+                assert_eq!(file, Some(PathBuf::from("model.apr")).map(Into::into));
                 assert!(action.is_none(), "no subcommand was given");
                 assert!(drama);
                 assert!(hex);
@@ -373,7 +373,7 @@
         let cli = parse_cli(args).expect("Failed to parse");
         match *cli.command {
             Commands::Tui { file } => {
-                assert_eq!(file, Some(PathBuf::from("model.apr")));
+                assert_eq!(file, Some(PathBuf::from("model.apr")).map(Into::into));
             }
             _ => panic!("Expected Tui command"),
         }
@@ -424,12 +424,12 @@
                 allow_no_config,
             } => {
                 assert_eq!(source, "hf://openai/whisper-tiny");
-                assert_eq!(output, Some(PathBuf::from("whisper.apr")));
+                assert_eq!(output, Some(PathBuf::from("whisper.apr")).map(Into::into));
                 assert_eq!(arch, "whisper");
-                assert_eq!(quantize, Some("int8".to_string()));
+                assert_eq!(quantize, Some("int8".to_string()).map(Into::into));
                 assert!(strict);
                 assert!(preserve_q4k);
-                assert_eq!(tokenizer, Some(PathBuf::from("/path/to/tokenizer.json")));
+                assert_eq!(tokenizer, Some(PathBuf::from("/path/to/tokenizer.json")).map(Into::into));
                 assert!(!enforce_provenance);
                 assert!(!allow_no_config);
             }
@@ -461,4 +461,65 @@
             }
             _ => panic!("Expected Import command"),
         }
+    }
+
+    // ========================================================================
+    // ONT-4g G1.4 (#4476): `apr eval --task` must validate its value
+    // ========================================================================
+
+    /// `apr eval m.apr --task nonsense` must be REJECTED and the error must name
+    /// every valid task. Before #4476 `task` was a free `Option<String>` and the
+    /// dispatch's `_` arm silently ran perplexity for any unknown name.
+    #[test]
+    fn test_eval_rejects_unknown_task_4476() {
+        let err = parse_cli(vec!["apr", "eval", "m.apr", "--task", "nonsense"])
+            .expect_err("`apr eval --task nonsense` must NOT parse (#4476)");
+        assert_eq!(err.kind(), clap::error::ErrorKind::InvalidValue);
+        let rendered = err.to_string();
+        for value in crate::EVAL_TASK_VALUES {
+            assert!(
+                rendered.contains(value),
+                "error must name the valid task `{value}`; got:\n{rendered}"
+            );
+        }
+    }
+
+    /// Every value in `EVAL_TASK_VALUES` must still parse.
+    #[test]
+    fn test_eval_accepts_known_tasks_4476() {
+        for value in crate::EVAL_TASK_VALUES {
+            let cli = parse_cli(vec!["apr", "eval", "m.apr", "--task", value])
+                .unwrap_or_else(|e| panic!("`apr eval --task {value}` must parse: {e}"));
+            match *cli.command {
+                Commands::Extended(ExtendedCommands::Eval { ref task, .. }) => {
+                    assert_eq!(task.as_deref(), Some(value));
+                }
+                _ => panic!("Expected Eval command"),
+            }
+        }
+    }
+
+    /// The parser's value list and the dispatch's match arms must be the same
+    /// set: an arm missing from the const is unreachable, a const value with no
+    /// arm falls to the `_` perplexity arm — the defect #4476 closed.
+    #[test]
+    fn test_eval_task_values_match_dispatch_arms_4476() {
+        let src = include_str!("dispatch_analysis.rs");
+        let start = src
+            .find("ExtendedCommands::Eval {")
+            .expect("Eval dispatch arm");
+        let end = start
+            + src[start..]
+                .find("ExtendedCommands::Qa")
+                .expect("Qa arm follows Eval");
+        let mut arms: Vec<&str> = src[start..end]
+            .split("Some(\"")
+            .skip(1)
+            .filter_map(|s| s.split('"').next())
+            .collect();
+        arms.sort_unstable();
+        arms.dedup();
+        let mut values: Vec<&str> = crate::EVAL_TASK_VALUES.to_vec();
+        values.sort_unstable();
+        assert_eq!(arms, values, "EVAL_TASK_VALUES vs dispatch `Some(\"…\")` arms");
     }

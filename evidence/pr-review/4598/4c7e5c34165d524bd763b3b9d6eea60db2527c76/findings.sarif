@@ -1,0 +1,239 @@
+{
+  "$schema": "https://raw.githubusercontent.com/oasis-tcs/sarif-spec/master/Schemata/sarif-schema-2.1.0.json",
+  "version": "2.1.0",
+  "runs": [
+    {
+      "tool": {
+        "driver": {
+          "name": "pmat",
+          "version": "3.42.0",
+          "rules": [
+            {
+              "id": "roadmap-fragment-aggregate-check-clean"
+            },
+            {
+              "id": "roadmap-fragment-required-guard-clean"
+            },
+            {
+              "id": "pmat-tdg-new-fragment-clean"
+            },
+            {
+              "id": "pmat-satd-new-fragment-clean"
+            },
+            {
+              "id": "pmat-complexity-no-yaml-analyzer"
+            },
+            {
+              "id": "pmat-duplication-scan-full-horizon-clean-new-head"
+            }
+          ]
+        }
+      },
+      "results": [
+        {
+          "ruleId": "roadmap-fragment-aggregate-check-clean",
+          "level": "note",
+          "message": {
+            "text": "The only change since 9aa15959c7 is docs/roadmaps/entries/PMAT-4594.yaml (a new fragment). `python3 scripts/lib/roadmap_fragments.py aggregate --check` confirms roadmap.yaml still equals aggregate(entries/), idempotent, over all 208 fragments at the new head."
+          },
+          "properties": {
+            "grounding": "measured",
+            "precision_class": "advisory",
+            "command": [
+              "python3",
+              "scripts/lib/roadmap_fragments.py",
+              "aggregate",
+              "--check"
+            ],
+            "exit_code": 0,
+            "stdout_sha256": "64b2077d9efd65815c748c7c164b546a5da4e1a82c033024e558be1ebafa0fc7",
+            "failure_scenario": "If PMAT-4594.yaml had drifted from the roadmap.yaml entry already merged (d72eb32730), the aggregate would no longer equal roadmap.yaml and this check would exit non-zero; it did not, so the fragment matches the aggregate entry byte-for-byte."
+          }
+        },
+        {
+          "ruleId": "roadmap-fragment-required-guard-clean",
+          "level": "note",
+          "message": {
+            "text": "check_roadmap_fragment_required.sh, run explicitly over base=9aa15959c7..head=4c7e5c34 (the delta this receipt reviews), reports 0 changed roadmap.yaml entries in that range (roadmap.yaml itself did not change in this delta -- PMAT-4594's entry was already added to roadmap.yaml by an earlier commit, d72eb32730) and PASS on the aggregate-regeneration rule."
+          },
+          "properties": {
+            "grounding": "measured",
+            "precision_class": "advisory",
+            "command": [
+              "bash",
+              "scripts/check_roadmap_fragment_required.sh",
+              "9aa15959c71339f2a843b001c3c24e87641cdd64",
+              "4c7e5c34165d524bd763b3b9d6eea60db2527c76"
+            ],
+            "exit_code": 0,
+            "stdout_sha256": "268800590dfcf8b0411e35036a42eca33406f0ddbaa696dfe0b1eec89149d884",
+            "failure_scenario": "A fragment landed without its roadmap.yaml counterpart (or vice versa) would fail this guard with a named violation; it passed clean."
+          }
+        },
+        {
+          "ruleId": "pmat-tdg-new-fragment-clean",
+          "level": "note",
+          "message": {
+            "text": "pmat analyze tdg on the new file docs/roadmaps/entries/PMAT-4594.yaml (the only content change in this delta) scores grade A+ (total 95.0), 0 critical defects."
+          },
+          "properties": {
+            "grounding": "measured",
+            "precision_class": "advisory",
+            "command": [
+              "pmat",
+              "analyze",
+              "tdg",
+              "--format",
+              "json",
+              "--path",
+              "docs/roadmaps/entries/PMAT-4594.yaml"
+            ],
+            "exit_code": 0,
+            "stdout_sha256": "e6720f3c1d8583639df2ba75db41507e0e8e5e25b6634293c6b6e8410cd899ec",
+            "failure_scenario": "No concrete failure; recorded as a positive measured check the new file passes."
+          }
+        },
+        {
+          "ruleId": "pmat-satd-new-fragment-clean",
+          "level": "note",
+          "message": {
+            "text": "pmat analyze satd on docs/roadmaps/entries/PMAT-4594.yaml reports 0 SATD violations (1 of 1 files analyzed)."
+          },
+          "properties": {
+            "grounding": "measured",
+            "precision_class": "advisory",
+            "command": [
+              "pmat",
+              "analyze",
+              "satd",
+              "--format",
+              "json",
+              "--path",
+              "docs/roadmaps/entries/PMAT-4594.yaml"
+            ],
+            "exit_code": 0,
+            "stdout_sha256": "57d3ea0097b9b0ca94e75baa24de3777047afe35a395a1702abe1a471df98e5a",
+            "failure_scenario": "No concrete failure; recorded as a positive measured check."
+          }
+        },
+        {
+          "ruleId": "pmat-complexity-no-yaml-analyzer",
+          "level": "note",
+          "message": {
+            "text": "pmat's complexity analyzer walked docs/roadmaps/entries/PMAT-4594.yaml and found no file with a registered extension to analyze (rc=5, 'no source files were found ... so no complexity measurement was taken'); complexity_delta is empty by construction for a YAML-only diff, not silently skipped -- recorded as a run-level notification, matching the same shape the prior receipt found for .sh."
+          },
+          "properties": {
+            "grounding": "measured",
+            "precision_class": "advisory",
+            "command": [
+              "pmat",
+              "analyze",
+              "complexity",
+              "--format",
+              "json",
+              "--path",
+              "docs/roadmaps/entries/PMAT-4594.yaml"
+            ],
+            "exit_code": 5,
+            "stdout_sha256": "43a3d2ded195873471bb7e7192d2ca4462a2dbcb9f385c09ea18132025ea5648",
+            "failure_scenario": "A reviewer trusting pmat complexity as completeness for this diff would wrongly assume the fragment's structure was complexity-scored; it was not, because pmat has no YAML complexity analyzer."
+          }
+        },
+        {
+          "ruleId": "pmat-duplication-scan-full-horizon-clean-new-head",
+          "level": "note",
+          "message": {
+            "text": "The lexical duplication scan re-run at the new head (base=9aa15959c7, head=4c7e5c34) swept the full committed horizon (1089/1089 sibling branches) for the needles from this delta and found only expected same-ID cross-references (PMAT-4594 appearing in docs/audits/quorum-PMAT-4594.json x3 and docs/roadmaps/roadmap.yaml x1, all pre-existing companion files for the same ticket, not re-implementation); 0 duplication hits for the new fragment's own content."
+          },
+          "properties": {
+            "grounding": "cited",
+            "precision_class": "advisory",
+            "source": "scripts/pr_review_duplication_scan.sh output (dup.json) at the new head, horizon_branches_scanned=1089 of horizon_branches_total=1089, hits_total=4 (all same-ID cross-refs, not the fragment's structural content)",
+            "excerpt": "\"needle\": \"PMAT-4594\", \"kind\": \"name\", \"where\": \"HEAD\", \"path\": \"docs/roadmaps/roadmap.yaml\", \"line\": 22170",
+            "excerpt_sha256": "e22f1d524cedd9a41558ce459eb219800374cb58624c09d2b73a7c07716d573e",
+            "failure_scenario": "If the fragment reimplemented an existing entry under a different id or diverged from roadmap.yaml's own PMAT-4594 record, this scan (plus the aggregate --check above) would surface it as a hit or a mismatch; neither happened."
+          }
+        }
+      ]
+    },
+    {
+      "tool": {
+        "driver": {
+          "name": "mutation-guard",
+          "version": "check_silicon_coverage.sh",
+          "rules": [
+            {
+              "id": "mutation-carried-forward-script-unchanged"
+            },
+            {
+              "id": "silicon-selftest-green-at-new-head"
+            }
+          ]
+        }
+      },
+      "results": [
+        {
+          "ruleId": "mutation-carried-forward-script-unchanged",
+          "level": "note",
+          "message": {
+            "text": "scripts/check_silicon_coverage.sh (the guard target of the prior receipt's 3/3-killed mutation run) is byte-identical between the prior head 9aa15959c7 and this head 4c7e5c34 (diff --stat empty, confirmed before re-running). The prior mutation result (m1/m2/m3, 3 attempted, 3 killed, 0 survivors) is carried forward as still valid rather than re-mutated, because the guard under test did not change; what was re-verified at the new head is that its baseline self-test is still fully green (see next finding)."
+          },
+          "properties": {
+            "grounding": "measured",
+            "precision_class": "advisory",
+            "command": [
+              "git",
+              "diff",
+              "--stat",
+              "9aa15959c71339f2a843b001c3c24e87641cdd64",
+              "4c7e5c34165d524bd763b3b9d6eea60db2527c76",
+              "--",
+              "scripts/check_silicon_coverage.sh"
+            ],
+            "exit_code": 0,
+            "stdout_sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+            "failure_scenario": "If the script had changed since the prior mutation run, carrying forward 3/3-killed without re-mutating would be reporting a score for code that no longer exists; the diff is empty so this is not that case."
+          }
+        },
+        {
+          "ruleId": "silicon-selftest-green-at-new-head",
+          "level": "note",
+          "message": {
+            "text": "bash scripts/check_silicon_coverage.sh --self-test re-run at the new head 4c7e5c34: rc=0, 12/12 gh-shim rows ok, including the four falsifier rows g-real-green(rc0)/h-real-stale(rc1)/i-short-once(rc0)/j-short-always(rc2), matching spec exactly -- the same result the prior receipt measured at 9aa15959c7, now re-measured rather than assumed."
+          },
+          "properties": {
+            "grounding": "measured",
+            "precision_class": "advisory",
+            "command": [
+              "bash",
+              "scripts/check_silicon_coverage.sh",
+              "--self-test"
+            ],
+            "exit_code": 0,
+            "stdout_sha256": "7134c0c4f59c2c2b4548e64f8f2a558cf06cad73881dff79afbee68fdbf7d46e",
+            "failure_scenario": "A regression introduced by an unrelated change (e.g. a shell/coreutils update, or an accidental edit this diff --stat check did not catch) would show up as a non-zero rc or fewer than 12/12 ok rows here; it did not."
+          }
+        }
+      ]
+    },
+    {
+      "tool": {
+        "driver": {
+          "name": "antigravity",
+          "version": "agy 1.2.12 / gemini-3.1-pro-high",
+          "rules": []
+        }
+      },
+      "results": [],
+      "invocations": [
+        {
+          "executionSuccessful": false,
+          "properties": {
+            "status": "unreachable",
+            "note": "Run per S3.E in a disposable tree (rsync fallback, as the prior receipt used -- the tree-snapshot git subcommand is categorically blocked by this review lane's read-only-git hook): agy --model gemini-3.1-pro-high --print-timeout 4m ... scoped to the single-file delta diff (docs/roadmaps/entries/PMAT-4594.yaml). The harness's own Bash-tool wall-clock timeout (2 minutes) elapsed while agy was still running a background tool call; agy.json shows \"status\": \"ERROR\", \"error\": \"interrupted\", duration_seconds=114.997, num_turns=1, no structured_output key at all. Per the 3-conjunct liveness test (S3.E): rc was not captured as 0 (the process was terminated by the harness, not by agy completing), structured_output.reviewed is absent, so output_check.structured_output_present=false. This is honestly unreachable/DEGRADED for this arm, not a clean 'found nothing' run, per S3.0 row 3 ('a timeout is unreachable, never no findings'). Given the reviewing session's ~15-minute hard deadline, a second full-timeout retry was not attempted a second time; recorded honestly rather than silently retried into the deadline."
+          }
+        }
+      ]
+    }
+  ]
+}

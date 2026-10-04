@@ -135,7 +135,7 @@ trueno-quant = { workspace = true }
 # APR-2231: sovereign `.apr` container leaf. aprender-core From-wraps its
 # AprFormatError into AprenderError and re-exports it (no API break). Leaf has
 # no dependency back on core, so this introduces no publish cycle.
-apr-format = { path = "../apr-format", version = "0.69" }
+apr-format = { path = "../apr-format", version = "0.70" }
 
 # NOTE: trueno-rag (=aprender-rag) removed (APR-MONO self-containment): aprender-rag
 # depends on aprender-core + aprender-serve, so core→rag closed a core→rag→serve→core
@@ -213,6 +213,7 @@ provable-contracts-macros = { workspace = true }
 # realizar = { version = "0.6", default-features = false, optional = true }  # BLOCKED
 
 [build-dependencies]
+provable-contracts = { workspace = true }  # #4369: build_helper::env_key, the one CONTRACT_* key builder
 serde = { version = "1", features = ["derive"] }
 serde_yaml_ng = "0.10"
 
@@ -229,7 +230,7 @@ renacer = { path = "../aprender-profile", package = "aprender-profile" }
 tempfile = "3.14"  # For format module tests
 jugar-probar = { path = "../aprender-test-lib", package = "aprender-test-lib" }  # TUI/GUI testing framework with coverage tracking (spec §8)
 ctrlc = "3.4"  # Signal handling for SIGINT/SIGTERM (PMAT-098-PF: zombie process mitigation)
-provable-contracts = { path = "../aprender-contracts", package = "aprender-contracts" }  # Contract enforcement (dev-only)
+provable-contracts = { workspace = true }  # versioned (#4175): tests call its in-tree helper, so it must survive `cargo package`; no cycle - aprender-contracts depends only on -macros
 # Integration tests for InferenceMonitor (GH-305: was runtime dep, now dev-only).
 # Same publish-time cycle break as renacer above.
 entrenar = { path = "../aprender-train", package = "aprender-train" }

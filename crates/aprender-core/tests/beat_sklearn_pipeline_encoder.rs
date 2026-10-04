@@ -33,11 +33,14 @@ struct BeatParams {
     ci_gate_name: String,
 }
 
-fn load_beat() -> BeatParams {
-    const YAML: &str = include_str!("../../../contracts/apr-sklearn-pipeline-encoder-beat-v1.yaml");
-    let contract: BeatContract = serde_yaml::from_str(YAML)
+fn load_beat() -> Option<BeatParams> {
+    let yaml = provable_contracts::workspace_file_or_skip!(
+        "beat_sklearn_pipeline_encoder",
+        "contracts/apr-sklearn-pipeline-encoder-beat-v1.yaml"
+    )?;
+    let contract: BeatContract = serde_yaml::from_str(&yaml)
         .expect("parse contracts/apr-sklearn-pipeline-encoder-beat-v1.yaml");
-    contract.beat
+    Some(contract.beat)
 }
 
 /// Deterministic categorical dataset (identical formula on both apr and sklearn).
@@ -64,7 +67,9 @@ fn categorical_split() -> (Matrix<f32>, Vector<f32>, Matrix<f32>, Vec<usize>) {
 
 #[test]
 fn beat_sklearn_pipeline_encoder() {
-    let beat = load_beat();
+    let Some(beat) = load_beat() else {
+        return;
+    };
     assert_eq!(
         beat.ci_gate_name, "beat_sklearn_pipeline_encoder",
         "contract ci_gate_name must match this test binary"

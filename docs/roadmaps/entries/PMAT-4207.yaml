@@ -1,0 +1,17 @@
+- id: PMAT-4207
+  github_issue: 4207
+  item_type: task
+  title: '#4207: lint tests read the shared /tmp as their project root — nest each corpus in a private tempdir'
+  status: planned
+  priority: medium
+  assigned_to: null
+  created: 2026-09-24T10:55:00Z
+  updated: 2026-09-24T10:55:00Z
+  spec: null
+  acceptance_criteria: []
+  phases: []
+  subtasks: []
+  estimated_effort: null
+  labels:
+  - kind:code
+  notes: null

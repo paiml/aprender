@@ -1,0 +1,54 @@
+[
+ {
+  "issue": 3269,
+  "result": "skip-already-applied"
+ },
+ {
+  "issue": 3998,
+  "result": "skip-already-applied"
+ },
+ {
+  "issue": 3598,
+  "result": "skip-already-applied"
+ },
+ {
+  "issue": 3994,
+  "result": "skip-already-applied"
+ },
+ {
+  "issue": 4381,
+  "result": "skip-already-applied"
+ },
+ {
+  "issue": 4000,
+  "result": "skip-already-applied"
+ },
+ {
+  "issue": 3999,
+  "result": "skip-already-applied"
+ },
+ {
+  "issue": 4001,
+  "result": "skip-already-applied"
+ },
+ {
+  "issue": 4002,
+  "result": "skip-already-applied"
+ },
+ {
+  "issue": 4164,
+  "result": "skip-already-applied"
+ },
+ {
+  "issue": 3863,
+  "result": "skip-already-applied"
+ },
+ {
+  "issue": 2870,
+  "result": "skip-already-applied"
+ },
+ {
+  "issue": 3997,
+  "result": "skip-already-applied"
+ }
+]

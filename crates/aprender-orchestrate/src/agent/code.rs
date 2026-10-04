@@ -8,7 +8,7 @@
 //! so `apr-cli` can call `batuta::agent::code::cmd_code()` directly.
 
 use std::io::IsTerminal;
-use std::path::PathBuf;
+use std::path::{Path, PathBuf};
 use std::sync::Arc;
 
 use crate::agent::capability::Capability;
@@ -405,8 +405,8 @@ fn launch_code_driver(
             ..serve_opts.serve
         };
         match crate::agent::driver::apr_serve::AprServeDriver::launch_with(
-            model_path,
-            manifest.model.context_window,
+            model_path.clone(),
+            Some(code_driver_window(manifest, &model_path)),
             &launch,
         ) {
             Ok(d) => Arc::new(d),
@@ -751,10 +751,9 @@ fn build_fallback_driver(manifest: &AgentManifest) -> anyhow::Result<Box<dyn Llm
     #[cfg(feature = "inference")]
     {
         if let Some(model_path) = manifest.model.resolve_model_path() {
-            let driver = crate::agent::driver::realizar::RealizarDriver::new(
-                model_path,
-                manifest.model.context_window,
-            )?;
+            let window = code_driver_window(manifest, &model_path);
+            let driver =
+                crate::agent::driver::realizar::RealizarDriver::new(model_path, Some(window))?;
             return Ok(Box::new(driver));
         }
     }
@@ -899,6 +898,46 @@ fn load_project_instructions(max_bytes: usize) -> Option<String> {
         }
     }
     None
+}
+
+/// #4599: the window when neither the manifest nor the model names one (Qwen3-class, PMAT-197).
+const CODE_DEFAULT_CONTEXT_WINDOW: usize = 32_768;
+
+/// The window both `apr code` drivers are launched with (#4599): the one place the serve and the
+/// embedded fallback resolve it, so neither can drift back to a hard-coded size.
+fn code_driver_window(manifest: &AgentManifest, model_path: &Path) -> usize {
+    code_context_window(manifest.model.context_window, model_path)
+}
+
+/// #4599: the context window `apr code` sizes the conversation to. An explicit manifest or
+/// settings value wins; then the model's own declared context length; then 32K. A prompt that
+/// still does not fit is refused loudly (`context_overflow`), never dropped. The default
+/// manifest leaves `context_window` unset for this: the hard-coded 32K it had (PMAT-197)
+/// refused a >~105 KB prompt on a 262K-context model.
+fn code_context_window(manifest_window: Option<usize>, model_path: &Path) -> usize {
+    manifest_window
+        .or_else(|| model_context_length(model_path))
+        .unwrap_or(CODE_DEFAULT_CONTEXT_WINDOW)
+}
+
+/// The GGUF header's `<arch>.context_length`. Reads a bounded prefix (header, metadata and
+/// tensor infos precede the weights) so a multi-GB model is never mapped just to read one key.
+/// `None` for a non-GGUF file, a header larger than the prefix, or a missing key.
+/// Without `inference` there is no GGUF reader, so the window falls through to the default.
+fn model_context_length(path: &Path) -> Option<usize> {
+    #[cfg(feature = "inference")]
+    {
+        use std::io::Read;
+        const HEADER_PREFIX: u64 = 64 << 20;
+        let mut buf = Vec::new();
+        std::fs::File::open(path).ok()?.take(HEADER_PREFIX).read_to_end(&mut buf).ok()?;
+        realizar::gguf::GGUFModel::from_bytes(&buf).ok()?.context_length().filter(|&n| n > 0)
+    }
+    #[cfg(not(feature = "inference"))]
+    {
+        let _ = path;
+        None
+    }
 }
 
 /// Compute instruction budget based on model context window.
@@ -1073,10 +1112,6 @@ fn build_default_manifest() -> AgentManifest {
             system_prompt,
             max_tokens: 4096,
             temperature: 0.0,
-            // PMAT-197: Qwen3 supports 32K context. Default 4096 caused
-            // truncate_messages to drop user query (9 tool schemas ~4000 tokens
-            // consumed the entire window). Set to 32K for Qwen3-class models.
-            context_window: Some(32768),
             ..ModelConfig::default()
         },
         resources: ResourceQuota {

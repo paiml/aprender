@@ -126,6 +126,7 @@ PAGE_CAP="${SILICON_PAGE_CAP:-10}"
 TAB="$(printf '\t')"
 api_calls=0
 probe_calls=0
+reread_calls=0
 
 # labels_contain <runner-label-csv> <required-label-csv>
 # 0 when every required label is present in the runner's set. Case-insensitive:
@@ -291,6 +292,58 @@ axis_workflows() {
     done | sort -u
 }
 
+# list_window <workflow file> <event> <out-tsv>
+# One created>=lookback listing of one workflow x event, every page up to the
+# cap, into <out-tsv> as "<run id>\t<created_at>\t<name>" (replacing it). Sets
+# _bj_read, _bj_total and _bj_state (ok|truncated). rc 1 on an API error or a
+# page without total_count, after saying which.
+list_window() {
+    _lw_wf="$1"; _lw_ev="$2"; _lw_out="$3"
+    : > "$_lw_out"
+    _bj_page=1; _bj_read=0; _bj_total=0; _bj_state=ok
+    while :; do
+        if [ "$_bj_page" -gt "$PAGE_CAP" ]; then
+            [ "$_bj_read" -lt "$_bj_total" ] && _bj_state=truncated
+            break
+        fi
+        _lw_pf="$(mktemp)" || return 1
+        api_calls=$((api_calls + 1))
+        if ! gh api "repos/$REPO/actions/workflows/${_lw_wf}/runs?event=${_lw_ev}&created=%3E%3D${_bj_since}&per_page=${PAGE_SIZE}&page=${_bj_page}" \
+            --jq '"#total\t\(.total_count)", (.workflow_runs[] | [(.id|tostring), .created_at, .name] | @tsv)' \
+            > "$_lw_pf" 2>/dev/null; then
+            printf 'listing FAILED: %s %s page %s\n' "$_lw_wf" "$_lw_ev" "$_bj_page"
+            rm -f "${_lw_pf:?}"
+            return 1
+        fi
+        _bj_total="$(awk -F'\t' '$1 == "#total" { print $2; exit }' "$_lw_pf")"
+        case "$_bj_total" in ''|*[!0-9]*)
+            printf 'listing UNREADABLE: %s %s page %s has no total_count\n' "$_lw_wf" "$_lw_ev" "$_bj_page"
+            rm -f "${_lw_pf:?}"
+            return 1 ;;
+        esac
+        _lw_n="$(awk -F'\t' '$1 != "#total" && NF >= 2' "$_lw_pf" | tee -a "$_lw_out" | grep -c . || true)"
+        rm -f "${_lw_pf:?}"
+        _bj_read=$((_bj_read + ${_lw_n:-0}))
+        if [ "${_lw_n:-0}" -lt "$PAGE_SIZE" ] || [ "$_bj_read" -ge "$_bj_total" ]; then break; fi
+        _bj_page=$((_bj_page + 1))
+    done
+    return 0
+}
+
+# listing_is_short <listing tsv> <unfiltered newest created_at> <cut epoch>
+# rc 0 when the unfiltered newest run is inside the lookback AND newer than
+# every run the filtered listing held (an empty listing holds none). ISO-8601 Z
+# is fixed width, so the lexical max IS the newest. No unfiltered run, or one
+# older than the cut: rc 1, a true negative.
+listing_is_short() {
+    [ -n "${2:-}" ] || return 1
+    _ls_pe=$(iso_epoch "$2") || return 1
+    [ "$_ls_pe" -ge "$3" ] || return 1
+    _ls_newest="$(cut -f2 "$1" | sort | tail -n 1)"
+    [ -z "$_ls_newest" ] && return 0
+    [[ "$2" > "$_ls_newest" ]]
+}
+
 # build_jobs <out-tsv> <listings-tsv> <workflow file>...
 # The concluded-job ledger for the AXIS-CARRYING workflows, over the lookback:
 #
@@ -324,54 +377,36 @@ build_jobs() {
     _bj_runs="$(mktemp)" || return 1
     for _bj_wf in "$@"; do
         for _bj_ev in schedule workflow_dispatch; do
-            _bj_page=1; _bj_read=0; _bj_total=0; _bj_state=ok
-            while :; do
-                if [ "$_bj_page" -gt "$PAGE_CAP" ]; then
-                    [ "$_bj_read" -lt "$_bj_total" ] && _bj_state=truncated
-                    break
-                fi
-                _bj_pf="$(mktemp)" || return 1
-                api_calls=$((api_calls + 1))
-                if ! gh api "repos/$REPO/actions/workflows/${_bj_wf}/runs?event=${_bj_ev}&created=%3E%3D${_bj_since}&per_page=${PAGE_SIZE}&page=${_bj_page}" \
-                    --jq '"#total\t\(.total_count)", (.workflow_runs[] | [(.id|tostring), .created_at, .name] | @tsv)' \
-                    > "$_bj_pf" 2>/dev/null; then
-                    printf 'listing FAILED: %s %s page %s\n' "$_bj_wf" "$_bj_ev" "$_bj_page"
-                    rm -f "$_bj_pf" "$_bj_runs"
-                    return 1
-                fi
-                _bj_total="$(awk -F'\t' '$1 == "#total" { print $2; exit }' "$_bj_pf")"
-                case "$_bj_total" in ''|*[!0-9]*)
-                    printf 'listing UNREADABLE: %s %s page %s has no total_count\n' "$_bj_wf" "$_bj_ev" "$_bj_page"
-                    rm -f "$_bj_pf" "$_bj_runs"
-                    return 1 ;;
-                esac
-                _bj_n="$(awk -F'\t' '$1 != "#total" && NF >= 2' "$_bj_pf" | tee -a "$_bj_runs" | grep -c . || true)"
-                rm -f "$_bj_pf"
-                _bj_read=$((_bj_read + ${_bj_n:-0}))
-                if [ "${_bj_n:-0}" -lt "$PAGE_SIZE" ] || [ "$_bj_read" -ge "$_bj_total" ]; then break; fi
-                _bj_page=$((_bj_page + 1))
-            done
-            # CROSS-CHECK AN EMPTY LISTING (PMAT-3337 §8). The recorded failure
-            # mode is the API handing back a bad EMPTY page, and an empty page is
-            # exactly what would score UNCOVERED. So ask once more WITHOUT the
-            # created filter: if the newest run of this workflow and event is
-            # inside the lookback, the two listings contradict each other and
-            # neither is evidence. Older than the window, or none: a true negative.
+            _bj_one="$(mktemp)" || return 1
+            list_window "$_bj_wf" "$_bj_ev" "$_bj_one" || { rm -f "${_bj_one:?}" "${_bj_runs:?}"; return 1; }
+            # CROSS-CHECK EVERY LISTING (PMAT-3337 §8, widened). The API can hand
+            # back a bad page that is internally consistent: on 2026-09-28 11:25Z
+            # (run 36410817478) the created>= listing of silicon-nightly.yml said
+            # "21 of 21" and was missing its newest 9 runs, so two green axes
+            # scored STALE 9d. An EMPTY page is the same defect with every run
+            # missing. So ask once WITHOUT the created filter: if its newest run
+            # is inside the lookback and newer than anything the filtered listing
+            # held, re-read the listing once; still short, neither is evidence.
             _bj_ptotal="-"; _bj_pnewest="-"
-            if [ "$_bj_total" -eq 0 ] && [ "$_bj_state" = ok ]; then
+            if [ "$_bj_state" = ok ]; then
                 api_calls=$((api_calls + 1)); probe_calls=$((probe_calls + 1))
                 if ! _bj_probe="$(gh api "repos/$REPO/actions/workflows/${_bj_wf}/runs?event=${_bj_ev}&per_page=1" \
                     --jq '"\(.total_count)\t\(.workflow_runs[0].created_at // "")"' 2>/dev/null)"; then
                     printf 'listing FAILED: %s %s unfiltered cross-check\n' "$_bj_wf" "$_bj_ev"
-                    rm -f "$_bj_runs"
+                    rm -f "${_bj_one:?}" "${_bj_runs:?}"
                     return 1
                 fi
                 _bj_ptotal="${_bj_probe%%"$TAB"*}"; _bj_pnewest="${_bj_probe#*"$TAB"}"
-                if [ -n "$_bj_pnewest" ] && _bj_pe=$(iso_epoch "$_bj_pnewest") && [ "$_bj_pe" -ge "$_bj_cut" ]; then
-                    _bj_state=inconsistent
+                if listing_is_short "$_bj_one" "$_bj_pnewest" "$_bj_cut"; then
+                    reread_calls=$((reread_calls + 1))
+                    list_window "$_bj_wf" "$_bj_ev" "$_bj_one" || { rm -f "${_bj_one:?}" "${_bj_runs:?}"; return 1; }
+                    if [ "$_bj_state" = ok ] && listing_is_short "$_bj_one" "$_bj_pnewest" "$_bj_cut"; then
+                        _bj_state=inconsistent
+                    fi
                 fi
                 [ -n "$_bj_pnewest" ] || _bj_pnewest="none"
             fi
+            cat "$_bj_one" >> "$_bj_runs"; rm -f "${_bj_one:?}"
             printf '%s\t%s\t%s\t%s\t%s\t%s\t%s\n' "$_bj_wf" "$_bj_ev" "$_bj_read" "$_bj_total" "$_bj_state" \
                 "$_bj_ptotal" "$_bj_pnewest" >> "$_bj_lst"
         done
@@ -406,7 +441,8 @@ build_jobs() {
 # window_holes <listings-tsv> <workflow file>... -> one line naming every read of
 # these workflows that did not reach the lookback edge, or nothing.
 # window_contradictions <listings-tsv> <workflow file>... -> one line naming every
-# EMPTY filtered listing whose unfiltered newest run is inside the lookback.
+# filtered listing that, read twice, still lacked the unfiltered newest run
+# although that run is inside the lookback (an empty listing is the extreme).
 window_contradictions() {
     _wc_lst="$1"; shift
     for _wc_wf in "$@"; do
@@ -467,6 +503,15 @@ while [ $# -gt 0 ]; do
 done
 f="$(awk -F'\t' -v p="$path" '$1 == p { print $2; exit }' "$d/routes.tsv")"
 [ -n "$f" ] || unmodelled "route $path"
+case "$f" in @SEQ:*)
+    # One page per call to this path, the last one repeating.
+    k="$d/seq-$(printf '%s' "$path" | cksum | cut -d' ' -f1)"
+    n=$(( $(cat "$k" 2>/dev/null || echo 0) + 1 )); printf '%s' "$n" > "$k"
+    seq="${f#@SEQ:}"
+    f="$(printf '%s' "$seq" | tr ',' '\n' | sed -n "${n}p")"
+    [ -n "$f" ] || f="$(printf '%s' "$seq" | tr ',' '\n' | tail -n 1)"
+    ;;
+esac
 if [ "$f" = "@ERROR" ]; then
     printf 'gh: Server Error (HTTP 502)\n' >&2
     exit 1
@@ -484,6 +529,7 @@ st_reset() {
     mkdir -p "$ST/u/pages" "$ST/u/workflows" || return 1
     : > "$ST/u/routes.tsv"; : > "$ST/u/runs.tsv"; : > "$ST/u/calls.log"
     ST_PAGE_SIZE=100; ST_PAGE_CAP=10; ST_RUN_CAP=60; ST_ERROR=0; ST_HIDE_FILTERED=""
+    ST_SHORT_WF=""; ST_SHORT_N=0; ST_SHORT_READS=0
     printf '%s\n' \
         '# self-test policy' \
         'cpu-axis   required  self-hosted,shimcpu  job:cpu-leg' \
@@ -510,7 +556,10 @@ st_reset() {
 st_run() {
     _sr_id="$1"; _sr_wf="$2"; _sr_ev="$3"; _sr_h="$4"; _sr_g="$5"; shift 5
     _sr_epoch=$(( ST_NOW - _sr_h * 3600 ))
-    case "$_sr_wf" in sil.yml) _sr_name="Sil" ;; gpu.yml) _sr_name="Gpu" ;; *) _sr_name="Noise" ;; esac
+    case "$_sr_wf" in
+        sil.yml) _sr_name="Sil" ;; gpu.yml) _sr_name="Gpu" ;;
+        silicon-nightly.yml) _sr_name="Silicon Nightly" ;; *) _sr_name="Noise" ;;
+    esac
     printf '%s\t%s\t%s\t%s\t%s\t%s\n' "$_sr_id" "$_sr_wf" "$_sr_ev" "$_sr_name" "$_sr_epoch" "$_sr_g" \
         >> "$ST/u/runs.tsv"
     _sr_done="$(st_iso $(( _sr_epoch + 1800 )))"
@@ -558,7 +607,7 @@ st_finish() {
         st_page "$ST/u/l.tsv" "$(grep -c . "$ST/u/l.tsv")" "$ST/u/pages/global-$_sf_ev.json"
         st_route "$_sf_key" "pages/global-$_sf_ev.json"
     done
-    for _sf_wf in sil.yml gpu.yml noise.yml; do
+    for _sf_wf in sil.yml gpu.yml noise.yml silicon-nightly.yml; do
         for _sf_ev in schedule workflow_dispatch; do
             awk -F'\t' -v wf="$_sf_wf" -v ev="$_sf_ev" -v s="$_sf_since_e" \
                 '$2 == wf && $3 == ev && $5 >= s' "$ST/u/runs.tsv" \
@@ -573,7 +622,17 @@ st_finish() {
             else st_route "$_sf_pkey" "pages/wfall-$_sf_wf-$_sf_ev.json"; fi
             # A bad EMPTY page: the created-filtered listing of this workflow lies.
             [ "$_sf_wf" = "$ST_HIDE_FILTERED" ] && : > "$ST/u/l.tsv"
+            # A bad SHORT page that agrees with itself (the 2026-09-28 11:25Z
+            # shape): the newest ST_SHORT_N runs are missing and total_count
+            # counts only what is left. ST_SHORT_READS reads are short, then
+            # the listing is whole (0 = short on every read).
             _sf_total="$(grep -c . "$ST/u/l.tsv")"
+            _sf_short=0
+            if [ "$_sf_wf" = "$ST_SHORT_WF" ] && [ "$ST_SHORT_N" -gt 0 ]; then
+                _sf_short=1
+                tail -n +"$(( ST_SHORT_N + 1 ))" "$ST/u/l.tsv" > "$ST/u/ls.tsv"
+                _sf_stotal=$(( _sf_total > ST_SHORT_N ? _sf_total - ST_SHORT_N : 0 ))
+            fi
             _sf_p=1
             while :; do
                 _sf_key="repos/$ST_REPO/actions/workflows/${_sf_wf}/runs?event=${_sf_ev}&created=%3E%3D${_sf_since}&per_page=${ST_PAGE_SIZE}&page=${_sf_p}"
@@ -582,8 +641,24 @@ st_finish() {
                 else
                     _sf_from=$(( (_sf_p - 1) * ST_PAGE_SIZE + 1 )); _sf_to=$(( _sf_p * ST_PAGE_SIZE ))
                     sed -n "${_sf_from},${_sf_to}p" "$ST/u/l.tsv" > "$ST/u/p.tsv"
-                    st_page "$ST/u/p.tsv" "$_sf_total" "$ST/u/pages/wf-$_sf_wf-$_sf_ev-$_sf_p.json"
-                    st_route "$_sf_key" "pages/wf-$_sf_wf-$_sf_ev-$_sf_p.json"
+                    _sf_pg="pages/wf-$_sf_wf-$_sf_ev-$_sf_p.json"
+                    st_page "$ST/u/p.tsv" "$_sf_total" "$ST/u/$_sf_pg"
+                    if [ "$_sf_short" = 1 ]; then
+                        sed -n "${_sf_from},${_sf_to}p" "$ST/u/ls.tsv" > "$ST/u/p.tsv"
+                        st_page "$ST/u/p.tsv" "$_sf_stotal" "$ST/u/short-$_sf_p.json"
+                        _sf_seq="@SEQ:pages/short-$_sf_wf-$_sf_ev-$_sf_p.json"
+                        mv "$ST/u/short-$_sf_p.json" "$ST/u/pages/short-$_sf_wf-$_sf_ev-$_sf_p.json"
+                        if [ "$ST_SHORT_READS" -gt 0 ]; then
+                            _sf_i=1
+                            while [ "$_sf_i" -lt "$ST_SHORT_READS" ]; do
+                                _sf_seq="$_sf_seq,pages/short-$_sf_wf-$_sf_ev-$_sf_p.json"
+                                _sf_i=$((_sf_i + 1))
+                            done
+                            _sf_seq="$_sf_seq,$_sf_pg"
+                        fi
+                        _sf_pg="$_sf_seq"
+                    fi
+                    st_route "$_sf_key" "$_sf_pg"
                 fi
                 [ $(( _sf_p * ST_PAGE_SIZE )) -ge "$_sf_total" ] && break
                 _sf_p=$((_sf_p + 1))
@@ -618,6 +693,32 @@ st_check() {
     printf '  ok   %-14s rc=%s  %s\n' "$_sc_row" "$_sc_got" \
         "$(grep -Em1 -- "$_sc_re" "$_sc_out" | sed 's/^  *//')"
     return 0
+}
+
+# st_real: the REAL policy lines for the two silicon-nightly axes and the REAL
+# silicon-nightly.yml, so these rows move with the policy they judge.
+st_real() {
+    _rl_root="$(cd "$(dirname "$SELF")/.." && pwd)"
+    grep -E '^(x86_64-cpu|aarch64-cuda-sm121)[[:space:]]' "$_rl_root/.github/silicon-coverage.txt" \
+        > "$ST/u/policy.txt" || return 1
+    rm -f "${ST:?}"/u/workflows/*.yml
+    cp "$_rl_root/.github/workflows/silicon-nightly.yml" "$ST/u/workflows/" || return 1
+}
+
+# st_real_nightlies <newest age h> <count>: one Silicon Nightly a day, newest
+# first. The newest is run 36364433328 with its four jobs as the API returned
+# them (2026-09-28): names, conclusions and runs-on labels verbatim.
+st_real_nightlies() {
+    _rn_h="$1"; _rn_i=0
+    while [ "$_rn_i" -lt "$2" ]; do
+        _rn_id=$(( 36364433328 - _rn_i ))
+        st_run "$_rn_id" silicon-nightly.yml schedule $(( _rn_h + 24 * _rn_i )) 1 \
+            "x86_64-cpu|success|self-hosted,clean-room,intel" \
+            "coverage|success|self-hosted,clean-room,intel" \
+            "aarch64-cuda-sm121|success|self-hosted,gpu,gx10,cuda,blackwell" \
+            "summary|success|self-hosted,clean-room,intel"
+        _rn_i=$((_rn_i + 1))
+    done
 }
 
 CPU_JOB="cpu-leg|success|self-hosted,shimcpu"
@@ -687,6 +788,34 @@ selftest_rows() {
     st_finish
     _rows=$((_rows + 1))
     st_check f-inconsistent 2 '^  NO-GO +gpu-axis +REQUIRED: inconsistent listing .*listed 0 of 0.*total 1' \
+        || _rows_bad=$((_rows_bad + 1))
+
+    # (g) run 36364433328's real jobs, fresh: both silicon-nightly axes GREEN.
+    st_reset; st_real || return 2; st_real_nightlies 10 13; st_finish
+    _rows=$((_rows + 1))
+    st_check g-real-green 0 '^  ok +aarch64-cuda-sm121 +success .*Silicon Nightly / aarch64-cuda-sm121' \
+        || _rows_bad=$((_rows_bad + 1))
+
+    # (h) the same jobs, but the newest nightly is 9 days old and the listing is
+    # whole: stale evidence is RED. This is the verdict the fix must not lose.
+    st_reset; st_real || return 2; st_real_nightlies $(( 9 * 24 + 10 )) 4; st_finish
+    _rows=$((_rows + 1))
+    st_check h-real-stale 1 '^  STALE +x86_64-cpu +REQUIRED: last carried 9d ago' \
+        || _rows_bad=$((_rows_bad + 1))
+
+    # (i) the 2026-09-28 11:25Z listing: "N of N" with the newest 9 runs
+    # missing, on the FIRST read only. The re-read is whole: GREEN, not STALE.
+    st_reset; st_real || return 2; st_real_nightlies 10 13
+    ST_SHORT_WF=silicon-nightly.yml; ST_SHORT_N=9; ST_SHORT_READS=1; st_finish
+    _rows=$((_rows + 1))
+    st_check i-short-once 0 '^  ok +x86_64-cpu +success ' || _rows_bad=$((_rows_bad + 1))
+
+    # (j) the same short listing on every read: the unfiltered newest run says
+    # it is short, so it is NO-GO (unknown), never STALE.
+    st_reset; st_real || return 2; st_real_nightlies 10 13
+    ST_SHORT_WF=silicon-nightly.yml; ST_SHORT_N=9; ST_SHORT_READS=0; st_finish
+    _rows=$((_rows + 1))
+    st_check j-short-always 2 '^  NO-GO +x86_64-cpu +REQUIRED: inconsistent listing .*listed 4 of 4.*total 13' \
         || _rows_bad=$((_rows_bad + 1))
 
     # (e) the API errors: refuse, exactly as before.
@@ -965,7 +1094,8 @@ printf ' deferred %s: PROMOTABLE %s, ready %s)\n' "$deferred" "$promotable" "$re
 printf 'evidence: %s online runner(s), %s concluded job(s), floor %sd\n' \
     "$n_runners" "$n_jobs" "$STALE_DAYS"
 if [ "$MODE" = "live" ]; then
-    printf 'api calls: %s (empty-listing cross-checks: %s)\n' "$api_calls" "$probe_calls"
+    printf 'api calls: %s (listing cross-checks: %s, re-reads of a short listing: %s)\n' \
+        "$api_calls" "$probe_calls" "$reread_calls"
 fi
 
 # THE DENOMINATOR. A policy that parsed nothing must not read as clean.

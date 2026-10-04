@@ -32,29 +32,24 @@
 #![allow(clippy::unwrap_used)]
 
 use std::collections::BTreeMap;
-use std::path::PathBuf;
 use std::process::Command;
 
-fn repo_root() -> PathBuf {
-    let manifest = PathBuf::from(env!("CARGO_MANIFEST_DIR"));
-    manifest
-        .ancestors()
-        .nth(2)
-        .expect("CARGO_MANIFEST_DIR has repo root 2 ancestors up")
-        .to_path_buf()
-}
-
-fn load_aliases() -> BTreeMap<String, String> {
-    let path = repo_root().join("configs").join("aliases.yaml");
-    let text = std::fs::read_to_string(&path)
-        .unwrap_or_else(|e| panic!("FALSIFY-CRUX-A-01-002: cannot read {path:?}: {e}"));
-    serde_yaml::from_str::<BTreeMap<String, String>>(&text)
-        .unwrap_or_else(|e| panic!("FALSIFY-CRUX-A-01-002: aliases.yaml not a str→str map: {e}"))
+/// `configs/aliases.yaml` is a workspace file: `None` (a named SKIP) out of tree — the published
+/// tarball does not carry it — and a FAIL in tree when it is missing or unparseable (#4149).
+fn load_aliases(test: &str) -> Option<BTreeMap<String, String>> {
+    let text = provable_contracts::workspace_file_or_skip!(test, "configs/aliases.yaml")?;
+    Some(
+        serde_yaml::from_str::<BTreeMap<String, String>>(&text).unwrap_or_else(|e| {
+            panic!("FALSIFY-CRUX-A-01-002: aliases.yaml not a str→str map: {e}")
+        }),
+    )
 }
 
 #[test]
 fn falsify_crux_a_01_002_aliases_yaml_present_and_parseable() {
-    let map = load_aliases();
+    let Some(map) = load_aliases("falsify_crux_a_01_002_aliases_yaml_present_and_parseable") else {
+        return;
+    };
     assert!(
         !map.is_empty(),
         "FALSIFY-CRUX-A-01-002: aliases.yaml parsed empty"
@@ -63,7 +58,9 @@ fn falsify_crux_a_01_002_aliases_yaml_present_and_parseable() {
 
 #[test]
 fn falsify_crux_a_01_002_canonical_short_names_present() {
-    let map = load_aliases();
+    let Some(map) = load_aliases("falsify_crux_a_01_002_canonical_short_names_present") else {
+        return;
+    };
     for canonical in ["llama3", "mistral", "phi3", "qwen2"] {
         assert!(
             map.contains_key(canonical),
@@ -74,7 +71,9 @@ fn falsify_crux_a_01_002_canonical_short_names_present() {
 
 #[test]
 fn falsify_crux_a_01_002_every_value_has_known_scheme() {
-    let map = load_aliases();
+    let Some(map) = load_aliases("falsify_crux_a_01_002_every_value_has_known_scheme") else {
+        return;
+    };
     for (name, url) in &map {
         assert!(
             url.starts_with("hf://") || url.starts_with("https://"),
@@ -85,8 +84,12 @@ fn falsify_crux_a_01_002_every_value_has_known_scheme() {
 
 #[test]
 fn falsify_crux_a_01_002_resolution_deterministic() {
-    let a = load_aliases();
-    let b = load_aliases();
+    let (Some(a), Some(b)) = (
+        load_aliases("falsify_crux_a_01_002_resolution_deterministic"),
+        load_aliases("falsify_crux_a_01_002_resolution_deterministic"),
+    ) else {
+        return;
+    };
     assert_eq!(
         a, b,
         "FALSIFY-CRUX-A-01-002: two reads of aliases.yaml must yield byte-identical maps"
