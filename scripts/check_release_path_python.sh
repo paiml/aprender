@@ -8,18 +8,25 @@
 # THE PATH  Every tracked file reached from the ENTRIES below by a reference the release machinery
 #           follows: a file path in a script, a workflow or a Makefile recipe (a name with a known
 #           extension, any path with a directory in it, or a bare file name under scripts/, ci/ or
-#           .github/); a make target, from a recipe, a prerequisite or $(MAKE); a local action; a Python
-#           import (dotted, relative, or a name after "from X import") of a module that sits next to
-#           the importer or in scripts/lib/. Files are read at a git revision, never from the work tree.
+#           .github/; a directory given to an interpreter reaches every .py under it); a make target,
+#           from a recipe, a prerequisite or $(MAKE), read from the Makefile that -C DIR, -f FILE or a
+#           cd DIR before the make names, and the default goal of a bare make; the lines of a Makefile
+#           outside every rule; a local action; a module run with python -m or imported in a python -c
+#           program or a heredoc fed to python; a Python import (dotted, relative, or a name after
+#           "from X import") of a module that sits next to the importer or in scripts/lib/. Files are
+#           read at a git revision, never from the work tree.
 # KINDS     python: a .py file, or a file whose first line is a #! line naming python or uv run. code:
-#           .sh .bash .mk, a .yml or .yaml under .github/ or ci/ (the CI definitions), an action.yml
-#           anywhere, a Makefile target, or a file with any other #! line; its lines are scanned.
+#           .sh .bash .mk, a .yml or .yaml under .github/ or ci/ (the CI definitions), an action.yml or
+#           action.yaml anywhere, a symlink (its blob is the path it points to), or a file with any
+#           other #! line; make: a Makefile target; the lines of code and make nodes are scanned.
 #           data: anything else, every other YAML file (contracts, roadmaps, fixtures) included: a script
 #           reads it, nothing runs it, so it is on the path but never scanned.
 # MEASURES  python files on the path, by path and blob; interpreter uses (in a code line, not a comment:
 #           each word python, python3, python3.N, python2, pytest, pip, pip3, pipx, pipenv, uv, uvx,
-#           poetry, pdm, hatch, tox, nox or conda, and each expansion of a PY, PYTHON, PIP or PYTEST
-#           variable, counts once); and references to a .py that the walk cannot find in the tree.
+#           poetry, pdm, hatch, tox, nox, conda, pypy, pypy3, twine, mkdocs, pre-commit, jupyter,
+#           ipython, maturin, sphinx-build, flake8, mypy, ruff or virtualenv, and each expansion of a PY,
+#           PYTHON, PIP, PYTEST, PYBIN, PYEXE or PYCMD variable, counts once); and references to a .py
+#           that the walk cannot find in the tree.
 # THE RULE  Base and head are walked in one run, by this script's own entries and scanner. RED when a
 #           Python file joins the path (one that only moved, byte for byte, has not joined), when the
 #           path's interpreter uses rise in number, when references to a .py the walk cannot find rise
@@ -27,7 +34,7 @@
 # NOT READ  The clean-room job (another repository runs it) and the GPU-host ladder and CRUX legs (host
 #           scripts, not files in this repository). Every inventory prints them as not read.
 # EXIT      0 GREEN, or the inventory printed; 1 RED, with a line for every finding; 2 not measured
-#           (the tree, a blob or the scanner failed: never GREEN); 3 caller error
+#           (the tree, a blob or the scanner failed, or no entry is read: never GREEN); 3 caller error
 # USAGE     check_release_path_python.sh --inventory [--rev REV] [--repo DIR]
 #           check_release_path_python.sh --check --base REV [--head REV] [--repo DIR]
 #           check_release_path_python.sh --selftest | --mutants | -h
