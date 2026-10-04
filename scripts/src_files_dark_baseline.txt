@@ -16,13 +16,11 @@ crates/aprender-core/src/models/qwen2/tests_apr_loading.rs
 crates/aprender-gpu/src/testing/integration_tests/mod.rs
 crates/aprender-gpu/src/testing/integration_tests/reports.rs
 crates/aprender-gpu/src/testing/integration_tests/stress_tests.rs
-crates/aprender-orchestrate/src/oracle/knowledge_graph/queries.rs
 crates/aprender-present-terminal/src/ptop/v2_sketch.rs
 crates/aprender-present-terminal/src/widgets/battery_panel.rs
 crates/aprender-present-terminal/src/widgets/disk_panel.rs
 crates/aprender-present/src/generated_contracts.rs
 crates/aprender-serve/src/apr/loading.rs
-crates/aprender-serve/src/apr/mapped_apr_model.rs
 crates/aprender-serve/src/bench_viz_tests_benchmark_runner.rs
 crates/aprender-serve/src/cli/benchmark.rs
 crates/aprender-serve/src/cli/inference_tests_sample_next.rs
@@ -35,7 +33,6 @@ crates/aprender-serve/src/convert/q4k_conversion_stats.rs
 crates/aprender-serve/src/convert/tests_conversion_stats_orphan.rs
 crates/aprender-serve/src/convert/tests_gguf_converter.rs
 crates/aprender-serve/src/convert/writing.rs
-crates/aprender-serve/src/cuda/cuda_kernels.rs
 crates/aprender-serve/src/cuda/executor/cache_from_cache_from_kv_cache.rs
 crates/aprender-serve/src/cuda/executor/incremental_attention.rs
 crates/aprender-serve/src/cuda/executor/kernel.rs
@@ -48,13 +45,9 @@ crates/aprender-serve/src/cuda/executor/layers/rope.rs
 crates/aprender-serve/src/cuda/executor/layers/transformer_layer_indexed.rs
 crates/aprender-serve/src/cuda/executor/layers/workspace_attention.rs
 crates/aprender-serve/src/cuda/executor/q4k_gemv_cached_uses.rs
-crates/aprender-serve/src/cuda/executor/reference.rs
-crates/aprender-serve/src/gamma.rs
 crates/aprender-serve/src/generate/make.rs
 crates/aprender-serve/src/gguf/cuda/cache.rs
 crates/aprender-serve/src/gguf/cuda/loading.rs
-crates/aprender-serve/src/gguf/inference/cache.rs
-crates/aprender-serve/src/gguf/inference/forward/cache.rs
 crates/aprender-serve/src/gguf/inference/forward/debug.rs
 crates/aprender-serve/src/gguf/loader_tests.rs
 crates/aprender-serve/src/gguf/loader_tests_tensor.rs
@@ -65,7 +58,6 @@ crates/aprender-serve/src/gguf/tests/loader_tests_fields_02.rs
 crates/aprender-serve/src/gpu/diagnostics_tests.rs
 crates/aprender-serve/src/gpu/diagnostics_tests_state_dump.rs
 crates/aprender-serve/src/gpu/executor_tests.rs
-crates/aprender-serve/src/gpu/gpu_buffer_pool.rs
 crates/aprender-serve/src/gpu/metrics_tests.rs
 crates/aprender-serve/src/gpu/metrics_tests_compute_backend.rs
 crates/aprender-serve/src/gpu/scheduler/config.rs
@@ -89,10 +81,8 @@ crates/aprender-serve/src/quantize/fused_q.rs
 crates/aprender-serve/src/quantize/spin_pool.rs
 crates/aprender-serve/src/quantize/tests/q4k.rs
 crates/aprender-serve/src/quantize/tests/tests_22.rs
-crates/aprender-serve/src/safetensors/mapped_safe_tensors_model.rs
 crates/aprender-serve/src/safetensors/safetensors_config.rs
 crates/aprender-serve/src/safetensors/tensor.rs
-crates/aprender-serve/src/safetensors/transform.rs
 crates/aprender-shell/src/cli_dispatch.rs
 crates/aprender-shell/src/daemon_action.rs
 crates/aprender-shell/src/diversity.rs

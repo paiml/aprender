@@ -119,7 +119,6 @@ crates/aprender-profile/src/cli.rs:249
 crates/aprender-profile/src/hpu.rs:10
 crates/aprender-profile/src/model_persistence.rs:4
 crates/aprender-qa-gen/src/kernel_coverage.rs:122
-crates/aprender-serve/src/apr/mapped_apr_model.rs:63
 crates/aprender-serve/src/apr/special_tokens.rs:63
 crates/aprender-serve/src/brick/brick_impls.rs:316
 crates/aprender-serve/src/brick/brick_impls.rs:341

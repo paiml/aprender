@@ -63,7 +63,7 @@ metadata:
   references:
     - 'crates/apr-cli/src/commands/finetune_display_next_validate.rs (run_merge, verify_merged_runnable, backfill_arch_dims)'
     - 'crates/apr-format/src/v2/header_impl.rs (AprV2Metadata skip_serializing_if + canonicalize_hf_aliases)'
-    - 'crates/aprender-serve/src/apr/mapped_apr_model.rs (from_mmap unwrap_or_default — the silent swallow)'
+    - 'crates/aprender-serve/src/apr/special_tokens.rs (from_mmap unwrap_or_default — the silent swallow)'
     - 'crates/aprender-serve/src/gguf/config.rs (GGUFConfig::from_apr — C-01/C-03)'
     - 'crates/aprender-serve/src/apr/tokenizer_loading.rs (load_embedded_bpe_tokenizer, PMAT-171)'
   depends_on:

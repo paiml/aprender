@@ -1096,7 +1096,6 @@ crates/aprender-serve/src/gguf/format_factory_safetensors_builder.rs
 crates/aprender-serve/src/gguf/format_factory_tests_safetensors_data.rs
 crates/aprender-serve/src/gguf/inference/attention_gqa.rs
 crates/aprender-serve/src/gguf/inference/attention_gqa_tests_forward_cached.rs
-crates/aprender-serve/src/gguf/inference/cache.rs
 crates/aprender-serve/src/gguf/inference/cached/attention.rs
 crates/aprender-serve/src/gguf/inference/cached/hidden_dim.rs
 crates/aprender-serve/src/gguf/inference/cached/single_flattened_batched_owned.rs
