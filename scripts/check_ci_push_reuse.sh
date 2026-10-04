@@ -227,7 +227,9 @@ want "W3 the reuse step labels a push citation as a merge_group run, not a PR he
 CI="$ROOT/.github/workflows/ci.yml"
 agg="$(awk '/set -- \$tiers/{p=1} p{print} /is not owed/{exit}' "$CI" | sed 's/^ *//')"
 has "A0 the aggregator's tier rule was found in ci.yml" 'the shards disagree' "$agg"
-agg_run() { OUT="$(tiers=" $*"; eval "$agg" 2>&1)"; RC=$?; }
+# run the extract as its own script (no eval): its `exit` ends that script, and $tiers is its env
+printf '%s\n' "$agg" >"$T/agg.sh"
+agg_run() { OUT="$(tiers=" $*" bash "$T/agg.sh" 2>&1)"; RC=$?; }
 agg_run reuse reuse quick; want "A1 a split tier (reuse reuse quick) -> RED" 1 "$RC"
 agg_run reuse full reuse;  want "A2 a split tier (reuse full reuse) -> RED" 1 "$RC"
 agg_run reuse reuse reuse; want "A3 all three shards reuse -> green, Σ not owed" 0 "$RC"
