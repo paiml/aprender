@@ -1,0 +1,130 @@
+# deep-nightly -- the nightly PRODUCERS for three release-day deep lanes (#4718, parent #4678).
+#
+# WHY. scripts/release/nightly_train.sh does not re-run anything: it reads, for one commit C,
+# the newest completed run of each lane's producer workflow, and calls the lane green only
+# when every matched job succeeded at attempt 1. A lane without a producer prints
+# not_measured, never pass. Until this file, deep-doctests, deep-nodefault and deep-bins-smoke
+# had no producer on main, so no night could be all-measured.
+#
+# WHAT. Each job is exactly autopilot.sh's T-1 `deep` step (scripts/release/autopilot.sh),
+# with the same pass rule -- not looser, not stricter:
+#   deep-doctests    cargo test --doc --workspace (minus the 3 GPU-toolchain crates)   rc=0
+#   deep-nodefault   cargo check --workspace --no-default-features: 0 errors OUTSIDE
+#                    crates/aprender-distribute/ (the standing #3176 class is inside it)
+#   deep-bins-smoke  every workspace [[bin]] builds --release and its --version prints the
+#                    workspace version AND this commit's SHA (#4189, #4219)
+# The JOB NAMES are the lane keys nightly_train.sh matches (^deep-doctests$ ...): renaming a
+# job turns its lane not_measured.
+#
+# NO PYTHON (operator C301). The bin set and smoke verdicts are scripts/release/deep_bins_smoke.sh
+# (bash + jq), whose --self-test runs first and whose output was diffed identical to
+# nightly_manifest.py on the workspace metadata.
+#
+# RUNNERS. clean-room pool, NOT pinned to yoga: examples-nightly is yoga-pinned and starved
+# (247.6 h lost in the queue, 0702-eta). #3073: no hosted runners.
+
+name: deep-nightly
+
+on:
+  schedule:
+    # ~5h EARLY: GitHub dispatches schedules 3h51m-6h49m late on this account (#3292, see
+    # nightly.yml). 22:45 UTC lands near 03:45 UTC, ahead of the 04:45Z train read.
+    - cron: '45 22 * * *'
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: deep-nightly
+  cancel-in-progress: false
+
+jobs:
+  deep-doctests:
+    runs-on: [self-hosted, Linux, X64, clean-room]
+    timeout-minutes: 240
+    steps:
+      - uses: actions/checkout@v7
+
+      - name: cargo test --doc --workspace (rc must be 0)
+        run: |
+          set -uo pipefail
+          mkdir -p deep
+          cargo test --doc --workspace --exclude aprender-gpu --exclude aprender-cuda-edge --exclude aprender-compute \
+            > deep/deep-doctests.log 2>&1; rc=$?
+          echo "DEEP doctests rc=$rc: $(grep -E '^test result' deep/deep-doctests.log | awk '{p+=$4; f+=$6} END {print p" passed, "f" failed"}')"
+          tail -n 40 deep/deep-doctests.log
+          exit "$rc"
+
+      - name: Publish the log
+        if: always()
+        uses: actions/upload-artifact@v7
+        with:
+          name: deep-doctests-log
+          path: deep/deep-doctests.log
+          if-no-files-found: error
+
+  deep-nodefault:
+    runs-on: [self-hosted, Linux, X64, clean-room]
+    timeout-minutes: 120
+    steps:
+      - uses: actions/checkout@v7
+
+      - name: cargo check --workspace --no-default-features (0 errors outside the #3176 class)
+        run: |
+          set -uo pipefail
+          mkdir -p deep
+          cargo check --workspace --no-default-features > deep/deep-nodefault.log 2>&1; rc=$?
+          other=$(grep -E '^error' -A3 deep/deep-nodefault.log | grep -E '^\s+--> ' | grep -vc 'crates/aprender-distribute/' || true)
+          echo "DEEP --no-default-features rc=$rc errors_outside_aprender-distribute=$other (standing #3176 class is inside it)"
+          tail -n 40 deep/deep-nodefault.log
+          [ "$other" = 0 ] || { echo "::error::--no-default-features RED outside the #3176 class: $other errors"; exit 1; }
+
+      - name: Publish the log
+        if: always()
+        uses: actions/upload-artifact@v7
+        with:
+          name: deep-nodefault-log
+          path: deep/deep-nodefault.log
+          if-no-files-found: error
+
+  deep-bins-smoke:
+    runs-on: [self-hosted, Linux, X64, clean-room]
+    timeout-minutes: 240
+    steps:
+      - uses: actions/checkout@v7
+
+      - name: deep_bins_smoke.sh case table (hermetic)
+        run: bash scripts/release/deep_bins_smoke.sh --self-test
+
+      - name: Every workspace [[bin]] builds and answers --version at this commit
+        env:
+          SHA: ${{ github.sha }}
+        run: |
+          set -euo pipefail
+          mkdir -p deep
+          cargo metadata --locked --no-deps --format-version 1 > deep/metadata.json
+          BINS=$(bash scripts/release/deep_bins_smoke.sh bins deep/metadata.json list)
+          BIN_ARGS=$(bash scripts/release/deep_bins_smoke.sh bins deep/metadata.json cargo)
+          # The version every bin must print is the workspace root package's; the bin dir is
+          # cargo's own answer, so a runner that redirects target-dir is still read (#4659).
+          V=$(bash scripts/release/deep_bins_smoke.sh meta deep/metadata.json version)
+          TD=$(bash scripts/release/deep_bins_smoke.sh meta deep/metadata.json target_dir)
+          [ -n "$BINS" ] && [ -n "$V" ] && [ -n "$TD" ] || { echo "::error::derived an empty bin set, version or target dir"; exit 1; }
+          echo "DEEP bins at ${SHA:0:9}, version $V: $(echo "$BINS" | tr ',' '\n' | wc -l) bins"
+          rc=0
+          # shellcheck disable=SC2086  # BIN_ARGS is a flag list; word-splitting is intended
+          cargo build --locked --release $BIN_ARGS > deep/deep-bins.log 2>&1 || rc=$?
+          echo "DEEP all-bins release build rc=$rc"
+          tail -n 40 deep/deep-bins.log
+          [ "$rc" -eq 0 ] || { echo "::error::a workspace [[bin]] does not build"; exit 1; }
+          bash scripts/release/deep_bins_smoke.sh smoke "$SHA" "$BINS" "$TD/release" "$V" | tee deep/deep-bins-smoke.tsv
+          exit "${PIPESTATUS[0]}"
+
+      - name: Publish the smoke table
+        if: always()
+        uses: actions/upload-artifact@v7
+        with:
+          name: deep-bins-smoke
+          path: deep/
+          if-no-files-found: error
