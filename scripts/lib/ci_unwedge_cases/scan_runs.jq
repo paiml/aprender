@@ -1,4 +1,4 @@
-# Runs for the scan rows S1-S8 of scripts/check_ci_unwedge.sh --self-test (jq -n -f).
+# Runs for the scan rows of scripts/check_ci_unwedge.sh --self-test (jq -n -f).
 def r($id; $wf; $br; $s; $ev; $h): {id: $id, workflow: $wf, head_branch: $br, status: $s,
     conclusion: (if $s == "completed" then "success" else null end), event: $ev, head_sha: $h,
     created_at: "2026-10-04T12:00:00Z"};
@@ -13,3 +13,5 @@ def r($id; $wf; $br; $s; $ev; $h): {id: $id, workflow: $wf, head_branch: $br, st
     r(6996; "CI"; "gh-readonly-queue/main/pr-1-0123456789abcdef0123456789abcdef01234567"; "queued"; "merge_group"; "mmmm1"),
     r(6995; "CI"; "fx"; "completed"; "pull_request"; "xxxx1") ]
 + [ range(0; 23) as $i | r(6000 - $i; "CI"; "f\($i)"; $st[$i % 5]; "pull_request"; "h\($i)") ]
++ [ range(0; 100) as $i | r(6500 - $i; "CI"; "d\($i)"; "queued"; "pull_request"; "dh\($i)") ]
++ [ r(5000; "CI"; "fz"; "queued"; "pull_request"; "zzzz1") ]

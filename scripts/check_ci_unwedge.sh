@@ -525,9 +525,13 @@ orphan_verdict() {
 #   fc  6999  queued       head = PR head (LEAVE)        fd 6998  no PR at all (REFUSE)
 #   fe  6997  queued       PR closed, head moved (CANCEL, as `gh pr view` says today)
 #   mq  6996  merge_group  (never superseded)            fx 6995  completed (not a candidate)
-#   f0..f22   23 healthy runs over every non-completed status; 31 open PRs in all
+#   f0..f22   23 healthy runs over every non-completed status
+#   d0..d99   100 healthy queued runs, so `queued` is deeper than one page
+#   fz  5000  queued       superseded, on the SECOND page of `queued` (S9)
+#   132 open PRs in all -- more than `gh pr list` returns by default (30)
 # The stub is bin/gh, the fixtures are scan_runs.jq and scan_open_prs.jq,
-# all three beside the case files.
+# all three beside the case files. Like the real gh, the stub returns one page
+# unless --paginate is passed, and at most --limit open PRs.
 scan_fixture() { # scan_fixture DIR -> writes runs.json, open_prs.json, all_prs.json
     local d="$1"
     jq -n -f "$CASES_DIR/scan_runs.jq" > "$d/runs.json" || return 1
@@ -535,8 +539,8 @@ scan_fixture() { # scan_fixture DIR -> writes runs.json, open_prs.json, all_prs.
     jq '. + [ {headRefName: "fe", headRefOid: "eeee2"} ]' "$d/open_prs.json" > "$d/all_prs.json" || return 1
 }
 
-scan_table() { # scan_table DIR: rows S1-S8 and W1 in a fresh DIR; uses _eq from self_test
-    local sd out pv total wf
+scan_table() { # scan_table DIR: rows S1-S11 and W1 in a fresh DIR; uses _eq from self_test
+    local sd out pv total wf rc got
     sd="$1"; mkdir -p "$sd" || { _eq 'S0 scan fixture' 'built' 'mkdir failed'; return; }
     scan_fixture "$sd" || { _eq 'S0 scan fixture' 'built' 'jq failed'; return; }
     : > "$sd/calls"
@@ -547,8 +551,8 @@ scan_table() { # scan_table DIR: rows S1-S8 and W1 in a fresh DIR; uses _eq from
         'yes' "$( printf '%s\n' "$out" | grep -q -e '^WOULD-FREE 8000 fa -- CANCEL' && echo yes || echo no )"
     _eq 'S2 a superseded CI run behind 110 newer COMPLETED CI runs is seen' \
         'yes' "$( printf '%s\n' "$out" | grep -q -e '^WOULD-FREE 7000 fb -- CANCEL' && echo yes || echo no )"
-    _eq 'S3 every non-completed CI run is looked at (29), none of another workflow' \
-        'yes' "$( printf '%s\n' "$out" | grep -q -e ' UNWEDGE looked=29 ' && echo yes || echo no )"
+    _eq 'S3 every non-completed CI run is looked at (130), none of another workflow' \
+        'yes' "$( printf '%s\n' "$out" | grep -q -e ' UNWEDGE looked=130 ' && echo yes || echo no )"
     _eq 'S4 run head = PR head is never freed' \
         'no' "$( printf '%s\n' "$out" | grep -q -e '^WOULD-FREE 6999 ' && echo yes || echo no )"
     _eq 'S5 no PR found refuses, never superseded' \
@@ -560,15 +564,33 @@ scan_table() { # scan_table DIR: rows S1-S8 and W1 in a fresh DIR; uses _eq from
         'none' "$( printf '%s\n' "$out" | grep -q -e '^WOULD-FREE 699[56] ' && echo freed || echo none )"
     pv=$(grep -c -e '^pr view ' "$sd/calls") || pv=0
     total=$(wc -l < "$sd/calls" | tr -d ' ')
-    # 29 candidates, 31 open PRs: one `gh pr list` for the scan, and `gh pr view`
+    # 130 candidates, 132 open PRs: one `gh pr list` for the scan, and `gh pr view`
     # only for the two branches with no open PR (fd, fe) -- not one per candidate.
     _eq "S8 budget: gh pr view only on an open-PR miss (2), not per candidate [total calls $total]" \
         '2' "$pv"
+    _eq 'S9 a superseded run past the first page of its status is seen (pagination)' \
+        'yes' "$( printf '%s\n' "$out" | grep -q -e '^WOULD-FREE 5000 fz -- CANCEL' && echo yes || echo no )"
+    # --limit N is a cap on candidates: the NEWEST N, whatever their status.
+    PATH="$CASES_DIR/bin:$PATH" STUB_DIR="$sd" GH_CONFIG_DIR="$sd/ghcfg" \
+        bash "${BASH_SOURCE[0]}" --scan --repo o/r --dry-run --limit 2 > "$sd/out2" 2>&1 || :
+    out=$(< "$sd/out2")
+    got=$( printf '%s\n' "$out" | grep -o -e 'looked=[0-9]*' | head -1 )
+    got="$got $( printf '%s\n' "$out" | grep -e '^WOULD-FREE' | cut -d' ' -f2 | paste -sd' ' - )"
+    _eq 'S10 --limit 2 looks at the two newest CI runs only (8000 fa, 7000 fb)' \
+        'looked=2 8000 7000' "$got"
+    # A failed listing is ENV (exit 2) -- never an empty window that frees nothing
+    # and reports a clean sweep.
+    rc=0
+    PATH="$CASES_DIR/bin:$PATH" STUB_DIR="$sd" GH_CONFIG_DIR="$sd/ghcfg" STUB_FAIL_RUNS=1 \
+        bash "${BASH_SOURCE[0]}" --scan --repo o/r --dry-run > "$sd/out3" 2>&1 || rc=$?
+    _eq 'S11 a failed CI-run listing exits 2 with ENV, never a clean sweep' \
+        "2 yes" "$rc $( grep -q -e '^ENV: listing the CI runs failed' "$sd/out3" && echo yes || echo no )"
     wf="$( cd "$( dirname "${BASH_SOURCE[0]}" )/.." > /dev/null 2>&1 && pwd )/.github/workflows/ci-unwedge.yml"
-    # W1: the job runs where a gh login may be stored; both steps point gh at an
-    # empty config dir, so only GH_TOKEN (the workflow's own token) can be used.
-    _eq 'W1 both ci-unwedge.yml steps that run code set GH_CONFIG_DIR to an empty runner.temp dir' \
-        '2' "$( grep -c -e 'GH_CONFIG_DIR: \${{ runner.temp }}/' "$wf" 2>/dev/null || true )"
+    # W1: the job runs where a gh login may be stored; EACH of the two steps that
+    # run code sets its own uncommented GH_CONFIG_DIR under runner.temp, two
+    # different dirs, so only GH_TOKEN (the workflow's own token) can be used.
+    _eq 'W1 each ci-unwedge.yml step that runs code sets its own GH_CONFIG_DIR under runner.temp' \
+        'Predicate falsifier|Scan and free|distinct' "$( awk -f "$CASES_DIR/w1_cfgdir.awk" "$wf" 2>/dev/null )"
 }
 
 self_test() {

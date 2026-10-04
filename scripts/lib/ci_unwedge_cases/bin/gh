@@ -1,26 +1,32 @@
 #!/usr/bin/env bash
-# Stub gh (scripts/lib/ci_unwedge_cases/bin/gh) for the scan rows S1-S8 of
+# Stub gh (scripts/lib/ci_unwedge_cases/bin/gh) for the scan rows S1-S11 of
 # scripts/check_ci_unwedge.sh --self-test. It is FIRST on PATH in those rows,
-# answers every gh call the scan makes from the JSON
-# files in $STUB_DIR, and logs each call to $STUB_DIR/calls. No network.
+# answers every gh call the scan makes from the JSON files in $STUB_DIR, and
+# logs each call to $STUB_DIR/calls. No network. Like the real gh, it returns
+# ONE page (per_page, default 30) unless --paginate is passed, and `pr list`
+# returns at most --limit PRs (default 30). STUB_FAIL_RUNS=1 fails the run listing.
 printf "%s\n" "$*" >> "$STUB_DIR/calls"
-q=""; url=""; lim=20; prev=""
+q="."; url=""; lim=30; pag=0; prev=""
 for a in "$@"; do
     case $prev in -q|--jq) q=$a ;; --limit) lim=$a ;; esac
-    case $a in repos/*|graphql) url=$a ;; esac
+    case $a in repos/*|graphql) url=$a ;; --paginate) pag=1 ;; esac
     prev=$a
 done
 case "$1 $2" in
     "run list") jq -c --argjson n "$lim" ".[:\$n] | map({databaseId: .id, headBranch: .head_branch, createdAt: .created_at, status, conclusion, workflowName: .workflow, event, headSha: .head_sha})" "$STUB_DIR/runs.json" | jq -r "$q"; exit ;;
-    "pr list") jq -r "$q" "$STUB_DIR/open_prs.json"; exit ;;
+    "pr list") jq -c --argjson n "$lim" ".[:\$n]" "$STUB_DIR/open_prs.json" | jq -r "$q"; exit ;;
     "pr view") v=$(jq -r --arg b "$3" "[.[] | select(.headRefName == \$b)][0].headRefOid // empty" "$STUB_DIR/all_prs.json")
                [ -n "$v" ] || { echo "no pull requests found for branch \"$3\"" >&2; exit 1; }
                echo "$v"; exit ;;
 esac
 case $url in
     graphql) exit 1 ;;
-    */workflows/ci.yml/runs*) s=${url#*status=}; s=${s%%&*}
-        jq -c --arg s "$s" "{workflow_runs: [.[] | select(.workflow == \"CI\" and .status == \$s)]}" "$STUB_DIR/runs.json" | jq -r "$q"; exit ;;
+    */workflows/ci.yml/runs*)
+        [ "${STUB_FAIL_RUNS:-0}" = 1 ] && { echo "stub gh: HTTP 502" >&2; exit 1; }
+        s=${url#*status=}; s=${s%%&*}
+        pp=30; case $url in *per_page=*) pp=${url#*per_page=}; pp=${pp%%&*} ;; esac
+        [ "$pag" = 1 ] && pp=100000
+        jq -c --arg s "$s" --argjson n "$pp" "{workflow_runs: ([.[] | select(.workflow == \"CI\" and .status == \$s)] | .[:\$n])}" "$STUB_DIR/runs.json" | jq -r "$q"; exit ;;
     */jobs) cat "${0%/*}/../h3_all_terminal.json"; exit ;;
     */git/ref/*) echo 0000; exit ;;
 esac
