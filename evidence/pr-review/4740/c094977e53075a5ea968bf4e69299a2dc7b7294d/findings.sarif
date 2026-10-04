@@ -1,0 +1,83 @@
+{
+  "$schema": "https://docs.oasis-open.org/sarif/sarif/v2.1.0/errata01/os/schemas/sarif-schema-2.1.0.json",
+  "version": "2.1.0",
+  "runs": [
+    {
+      "tool": {
+        "driver": {
+          "name": "pmat"
+        }
+      },
+      "results": [
+        {
+          "level": "note",
+          "message": {
+            "text": "bash scripts/check_quick_tier_shard_sigma.sh at head: rc 0, 26 ok rows, 0 FAIL rows, PASS. No false RED on the real tree."
+          },
+          "properties": {
+            "grounding": "measured",
+            "command": [
+              "bash",
+              "scripts/check_quick_tier_shard_sigma.sh"
+            ],
+            "exit_code": 0,
+            "stdout_sha256": "8255f170153fcb679b42d76e441e091e22f7a2c94d289d8dcc8b09447dd214f6",
+            "failure_scenario": "A false RED on the real tree would block every PR; none observed.",
+            "precision_class": "advisory"
+          },
+          "ruleId": "guard_table_pass"
+        },
+        {
+          "level": "note",
+          "message": {
+            "text": "--self-test: 54 output lines, 24 planted-rule mutants RED at rc=1, 19 golden mutants RED on the golden row, 9 controls, SELF-TEST PASSED."
+          },
+          "properties": {
+            "grounding": "measured",
+            "command": [
+              "bash",
+              "scripts/check_quick_tier_shard_sigma.sh",
+              "--self-test"
+            ],
+            "exit_code": 0,
+            "stdout_sha256": "1c78b44099437f5faa2da2fcfe9653bb9e214e56cd85747a1be2d67377b1d617",
+            "failure_scenario": "A mutant that did not apply would be reported FAIL; none did.",
+            "precision_class": "advisory"
+          },
+          "ruleId": "guard_self_test_passes"
+        },
+        {
+          "ruleId": "round4_blocking_closed",
+          "level": "note",
+          "message": {
+            "text": "Round-4 BLOCKING verified closed on scratch copies: a re-pinned indent-2 comment line placed before steps: in jobs.workspace-test-shard, then fetch-depth 0 changed to 1 below it, with the golden unchanged, gives rc 1 (RED). A tab-only or CR-only line inside a pinned job ends the jobs parent and gives ENV rc 2, and --update-golden refuses to pin it (no golden written): fail-closed, not a bypass."
+          },
+          "properties": {
+            "grounding": "asserted",
+            "rationale": "Reproduced by hand on scratch copies with the QUICK_SIGMA_* variables; the in-script control row covers the comment case.",
+            "failure_scenario": "If the comment-held lines were dropped as before, an edit below a re-pinned comment would stay GREEN; it does not.",
+            "precision_class": "advisory"
+          }
+        },
+        {
+          "level": "note",
+          "message": {
+            "text": "Reviewer mutant, scratch copy of ci/sections.yml: append a second key for the pinned job under jobs, spelled with quotes (\"workspace-test-shard\":), or single quotes, or with a trailing comment, or with a space before the colon, each followed by a one-line shadow body. job_block counts only the exact text \"  workspace-test-shard:\" so seen stays 1: rc 0, stdout byte-identical to the real tree, golden unchanged. safe_load (fat_driver load_yaml) keeps the LAST duplicate: confirmed the loaded section is the shadow body. The driver has no duplicate-key check. Four spellings tried, all rc 0."
+          },
+          "properties": {
+            "grounding": "measured",
+            "command": [
+              "bash",
+              "scripts/check_quick_tier_shard_sigma.sh"
+            ],
+            "exit_code": 0,
+            "stdout_sha256": "8255f170153fcb679b42d76e441e091e22f7a2c94d289d8dcc8b09447dd214f6",
+            "failure_scenario": "A PR appends a quoted duplicate of the shard section at the end of jobs in ci/sections.yml; every row and the whole-job golden stay GREEN while the fat driver runs the shadow section, so the quick tier shards run no tree readers and merge green. The round-5 duplicate-key row (ENV rc 2) cannot fail for any spelling but the exact one.",
+            "precision_class": "blocking"
+          },
+          "ruleId": "golden_survivor_duplicate_key_spelling"
+        }
+      ]
+    }
+  ]
+}
