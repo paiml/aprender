@@ -11,6 +11,9 @@ A cited path with a "/" that exists from the repo root is that file. Otherwise, 
 the pin end with the cited name, the cite means the one longer path that the same doc names (in prose
 or on a legend line; a named path from the root is that file), else the one candidate in a crate its
 clause names. A bare name such as Cargo.toml is never taken as the root file on its own.
+A path that no file at the pin fits and that starts with a crate's source dir, `<name>-<version>/`
+(`wgpu-hal-27.0.4/src/lib.rs`), cites that published crate if the pin's Cargo.lock locks that
+version from a registry. Its lines are not checked: a published version never changes.
 A doc defines short names on a line that starts "Abbreviations" or "Paths" (in YAML, a comment):
 `wf` = `path/file.rs` for a file, `q/` = `path/dir/` for a directory prefix, and
 `results.rs` = `path/to/results.rs` for a file name.
@@ -20,9 +23,11 @@ The cite is then mapped from its pin to --head (default origin/main) through `gi
   same       unchanged, at the same line numbers at head
   moved      unchanged, at new line numbers (printed)
   edited     a hunk touches the cited lines: re-read them by hand
-  gone       the path is not at head, but it was on main (deleted or renamed)
-  off-main   the pin is a branch commit, and the path has not reached head
-  external   the path is outside the repo (cop-inbox/): listed, not checked
+  gone       the path is not at head, but it was on main (deleted or renamed); for a crate,
+             head no longer locks the version, but main did
+  off-main   the pin is a branch commit, and the path (or crate version) has not reached head
+  external   the path is outside the repo: cop-inbox/ (listed, not checked), or a crate
+             version that head locks too
   orphan     a bare :N with no file before it in its paragraph or cell: listed, not checked
   absent     no file at the pin fits the cite                         (defect)
   ambiguous  several files fit, and neither the doc nor the clause picks one (defect)
@@ -46,6 +51,8 @@ TOP = subprocess.run(["git", "-C", str(HERE), "rev-parse", "--show-toplevel"],
                      capture_output=True, text=True).stdout.strip() or str(HERE)
 DEFAULT_PIN = "316dee2cd4"
 EXTERNAL = ("cop-inbox/",)
+REGISTRY = ("registry+", "sparse+")  # a registry version never changes; a git or path package can
+LOCK_FIELD = re.compile(r'^(name|version|source) = "([^"]*)"$', re.M)
 EXT = r"(?:rs|wgsl|yaml|yml|toml|py|sh|json|cu|ptx|cmd|md|txt)"
 NAME = r"(?<![\w./-])((?:[\w.-]+/)*[\w.-]+\." + EXT + r")"
 FILE_RE = re.compile(NAME + r":(\d+)(?:-(\d+))?((?:/\d+(?:-\d+)?)*)(?![\w-])")
@@ -108,6 +115,22 @@ def at(ref, path):
 def lines_at(ref, path):
     out = git("show", f"{ref}:{path}")
     return None if out is None else out.split("\n")
+
+
+def lock_crates(text):
+    """The source dirs, `<name>-<version>`, of the registry packages that a Cargo.lock text locks."""
+    out = set()
+    for block in text.split("[[package]]"):
+        f = dict(LOCK_FIELD.findall(block))
+        if f.get("source", "").startswith(REGISTRY) and {"name", "version"} <= f.keys():
+            out.add(f"{f['name']}-{f['version']}")
+    return frozenset(out)
+
+
+@lru_cache(None)
+def locked(ref):
+    """lock_crates() of ref's Cargo.lock. An empty ref locks none: `git show :Cargo.lock` reads the index."""
+    return lock_crates((git("show", f"{ref}:Cargo.lock") or "") if ref else "")
 
 
 @lru_cache(None)
@@ -390,12 +413,31 @@ def drift(c, path, head):
     return status
 
 
+def crate_of(c):
+    """The crate source dir, `<name>-<version>`, that a cite's path starts with, when the pin's
+    Cargo.lock locks that version from a registry; else None."""
+    first = c["tok"].split("/", 1)[0]
+    return first if first in locked(c["pin"]) else None
+
+
+def crate_drift(c, crate, head):
+    """Map a cite into a locked crate to head: external while head locks the version too, else gone
+    when the fork point of pin and head locks it (main had it), else off-main."""
+    if crate in locked(head):
+        return "external"
+    fork = (git("merge-base", c["pin"], head) or "").strip()
+    return "gone" if crate in locked(fork) else "off-main"
+
+
 def classify(c, head):
     """(status, info): info is a defect's detail, or the unanchored hint."""
     status = unchecked(c["tok"])
     if status:
         return status, None
     cands = resolve(c)
+    crate = None if cands else crate_of(c)
+    if crate:
+        return crate_drift(c, crate, head), None
     if len(cands) != 1:
         return ("ambiguous", f"{len(cands)} files") if cands else ("absent", None)
     path = cands[0]
@@ -568,9 +610,19 @@ def rows_scan(check):
     check("yaml legend", picks("c.yaml", yml, "tok", "pin"), [("crates/a/results.rs", "316dee2cd4")])
 
 
+def rows_lock(check):
+    """lock_crates: the registry packages of a Cargo.lock, by name and version; never a path or git one."""
+    lock = ('version = 4\n\n[[package]]\nname = "apr"\nversion = "0.1.0"\ndependencies = [\n "wgpu-hal",\n]\n\n'
+            '[[package]]\nname = "wgpu-hal"\nversion = "27.0.4"\nsource = "registry+https://r"\n\n'
+            '[[package]]\nname = "dep"\nversion = "1.0.0"\nsource = "sparse+https://s"\n\n'
+            '[[package]]\nname = "fork"\nversion = "2.0.0"\nsource = "git+https://g#0a1b"\n')
+    check("lock registry only", lock_crates(lock), frozenset({"wgpu-hal-27.0.4", "dep-1.0.0"}))
+
+
 def rows_real(check):
     """The mechanism on real history: R2 records the WGSL RoPE shader lines as :229/:265 at
-    00052c0128 and :242/:278 at 316dee2cd4, both read by hand."""
+    00052c0128 and :242/:278 at 316dee2cd4, both read by hand. Cargo.lock locks chacha20 0.10.0
+    at 00052c0128 and 0.10.2 at 316dee2cd4, also read by hand."""
     wf = "crates/aprender-compute/src/backends/gpu/device/linalg/wgsl_forward.rs"
     hs = hunks("00052c0128", "316dee2cd4", wf)
     check("real map 229", map_range(229, 229, hs)[0:2], ("moved", 242))
@@ -583,6 +635,9 @@ def rows_real(check):
                               ("real txt", "evidence/pmat919-postmerge-gx10-blackwell/run-logs.txt:133", "same"),
                               ("real txt eof", "scripts/include_fmt_baseline.txt:999999", "eof"),
                               ("real external", "(cop-inbox/processed/x.md:1)", "external"),
+                              ("real crate", "`wgpu-hal-27.0.4/src/vulkan/instance.rs:320-322`", "external"),
+                              ("real crate unlocked", "`wgpu-hal-99.0.0/src/lib.rs:1`", "absent"),
+                              ("real path package", "`aprender-compute-0.70.0/src/lib.rs:1`", "absent"),
                               ("real crate word", "aprender-serve sets it (Cargo.toml:31-32)",
                                ("same", "crates/aprender-serve/Cargo.toml")),
                               ("real root path", "aprender-serve gates it (.github/workflows/ci.yml:617)",
@@ -596,12 +651,18 @@ def rows_real(check):
         check(label, (got, c and c.get("path")) if isinstance(want, tuple) else got, want)
     c = next(scan("r.md", f"`{serve}fused_q5k_q6k.rs` has fused_q6k_dot_simd (fused_q5k_q6k.rs:118 @316dee2cd4)\n"))
     check("real one named", (classify(c, "316dee2cd4")[0], c.get("path")), ("same", f"{serve}fused_q5k_q6k.rs"))
+    crates = [("real crate gone", "chacha20-0.10.0", "00052c0128", "316dee2cd4", "gone"),
+              ("real crate off-main", "chacha20-0.10.2", "316dee2cd4", "00052c0128", "off-main")]
+    for label, crate, pin, head, want in crates:
+        c = next(scan("r.md", f"`{crate}/src/lib.rs:1` @{pin}\n"))
+        check(label, classify(c, head)[0], want)
+    check("real lock no ref", locked(""), frozenset())  # `git show :Cargo.lock` reads the index
 
 
 def self_test():
     """The case table. Each row must hold; a row that does not is printed and the run exits 2."""
     t = Table()
-    for part in (rows_tokens, rows_map, rows_scan):
+    for part in (rows_tokens, rows_map, rows_scan, rows_lock):
         part(t.check)
     if is_commit("00052c0128") and is_commit("316dee2cd4"):
         rows_real(t.check)
