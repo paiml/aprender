@@ -116,20 +116,22 @@ evaluate() {
         if ($10 != "") { nj[r]++; k = nj[r]; JN[r, k] = $10; JS[r, k] = toupper($11); JC[r, k] = toupper($12); JB[r, k] = $13; JE[r, k] = $14; JD[r, k] = $15 }
     }
     # lane state of run r for lane i: green | red | pending | void; sets WHY, ST, EN, DUP
-    function lst(i, r,    k, b, nm, pend, bad, ok, tot) {
-        split("", b); ST = ""; EN = ""; DUP = 0; WHY = ""
+    function lst(i, r,    k, b, fb, nm, pend, bad, ok, tot) {
+        split("", b); split("", fb); ST = ""; EN = ""; DUP = 0; WHY = ""
         if (RST[r] != "COMPLETED") { WHY = "run " r " is " tolower(RST[r]); return "pending" }
         for (k = 1; k <= nj[r]; k++) if (JN[r, k] == "#truncated") { WHY = "run " r ": its job list was cut at the page size, so a failed job may be unseen"; return "unread" }
         for (k = 1; k <= nj[r]; k++) if (JN[r, k] ~ RE[i]) {
             if (!(JN[r, k] in b) || JB[r, k] > JB[r, b[JN[r, k]]]) b[JN[r, k]] = k
             if (JD[r, k] > 1) DUP = 1
+            # every matched job votes, not only the newest of a name: two parallel legs that render the same name must not
+            # let a later success hide an earlier failure (a re-run that hides one is attempt >= 2, red either way)
+            if (JS[r, k] == "COMPLETED" && JC[r, k] ~ /^(FAILURE|TIMED_OUT|STARTUP_FAILURE)$/ && !((JN[r, k]) in fb)) { fb[JN[r, k]] = 1; bad = bad " " JN[r, k] "=" tolower(JC[r, k]) }
         }
         for (nm in b) {
             k = b[nm]; tot++
             if (ST == "" || (JB[r, k] != "" && JB[r, k] < ST)) ST = JB[r, k]
             if (JE[r, k] > EN) EN = JE[r, k]
             if (JS[r, k] != "COMPLETED") pend = pend " " nm
-            else if (JC[r, k] ~ /^(FAILURE|TIMED_OUT|STARTUP_FAILURE)$/) bad = bad " " nm "=" tolower(JC[r, k])
             else if (JC[r, k] == "SUCCESS") ok++
         }
         if (tot == 0) { WHY = "run " r ": no job matched"; return "void" }
@@ -180,7 +182,11 @@ evaluate() {
                 att = AT[pick]
             } else {
                 if (MODE == "cand") continue
-                att = (pick in AT && AT[pick] ~ /^[0-9]+$/) ? AT[pick] : (pD ? 2 : 1)
+                # no attempt is read for an info lane (the call budget): a repeated job name shows a re-run; otherwise the
+                # attempt is inferred, and the bundle says so instead of claiming attempt 1
+                if (pick in AT && AT[pick] ~ /^[0-9]+$/) att = AT[pick]
+                else if (pD) att = 2
+                else { out(i, "green", pick, "1?", "attempt inferred from the job list, not read: an info lane, it does not vote"); continue }
             }
             if (att > 1) out(i, "red", pick, att, "success only at attempt " att ": a retried green is not a green")
             else out(i, "green", pick, att, "")
@@ -330,7 +336,7 @@ fetch() {
 
 # ---------------------------------------------------------------- the run -----------------------------------------
 
-STEP="start"; PRINTED=""; HISTDONE=""; OUTDIR=""; INBOXF=""; DAY=""; CSHA=""; PIN=""
+STEP="start"; PRINTED=""; HISTDONE=""; OUTDIR=""; INBOXF=""; DAY=""; CSHA=""; PIN=""; PINNED=""
 step() { STEP="$1"; [ "${NIGHTLY_TRAIN_FAULT:-}" != "$1" ] || { STEP="$1 (planted fault)"; exit 1; }; }
 
 inbox_line() {   # inbox_line LINE GREENS -> append <= 300 bytes and read it back
@@ -341,18 +347,19 @@ inbox_line() {   # inbox_line LINE GREENS -> append <= 300 bytes and read it bac
     l="$(printf '%s' "$l" | head -c 300)"
     printf '%s\n' "$l" >> "$INBOXF" 2>/dev/null \
         || printf '%s\n' "$l" | sg "$(stat -c %G -- "$INBOXF")" -c "tee -a $INBOXF > /dev/null"   # the file's own group: no name in the repo
-    [ "$(tail -n 1 "$INBOXF" 2>/dev/null)" = "$l" ] || printf 'inbox: read-back mismatch\n' >&2
+    [ "$(tail -n 1 "$INBOXF" 2>/dev/null)" = "$l" ] || { printf 'inbox: read-back mismatch\n' >&2; return 1; }
 }
 
 on_exit() {
     local rc=$?
-    [ -z "$PRINTED" ] || exit "$rc"
+    # once the history row is written the run is recorded: a later failure (a closed stdout) rewrites nothing
+    [ -z "$PRINTED$HISTDONE" ] || { [ -z "${DRILL:-}" ] || rm -f -- "${INBOXF:?}"; exit "$rc"; }
     local l="NOT RELEASABLE: nightly-train, $STEP failed (exit $rc) [C=${CSHA:0:10} pin=${PIN:-unpinned}]"
     printf '%s\n' "$l"
     if [ -n "$OUTDIR" ] && [ -n "$DAY" ] && mkdir -p "$OUTDIR/$DAY" 2>/dev/null; then
         printf '%s\n' "$l" > "$OUTDIR/$DAY/line"
-        if [ -z "$HISTDONE" ]; then [ -f "$OUTDIR/history.tsv" ] || printf 'run_id\tcreated_at\tbranch\tevent\tconclusion\tattempt\n' > "$OUTDIR/history.tsv"
-            printf 'nt-%s\t%s\tmain\t%s\tfailure\t%s\n' "${NOW//[-:]/}" "$NOW" "${GITHUB_EVENT_NAME:-timer}" "${GITHUB_RUN_ATTEMPT:-1}" >> "$OUTDIR/history.tsv"; fi
+        [ -f "$OUTDIR/history.tsv" ] || printf 'run_id\tcreated_at\tbranch\tevent\tconclusion\tattempt\n' > "$OUTDIR/history.tsv"
+        printf 'nt-%s\t%s\tmain\t%s\tfailure\t%s\n' "${NOW//[-:]/}" "$NOW" "${GITHUB_EVENT_NAME:-timer}" "${GITHUB_RUN_ATTEMPT:-1}" >> "$OUTDIR/history.tsv"
     fi
     inbox_line "$l" "not_measured"
     [ -z "${DRILL:-}" ] || rm -f -- "${INBOXF:?}"
@@ -362,8 +369,12 @@ on_exit() {
 run_train() {
     local from="$1" raw line g concl budget pin_t pin_g pin_r hrow
     trap on_exit EXIT
+    DAY="${NOW%%T*}"   # before any step that can fail, so every failure leaves its line and its history row
     step pin
-    if [ -f "$HERE/PIN" ]; then
+    # the timer passes --pinned: then PIN and SHA256SUMS must both be there, so deleting them cannot skip the check
+    if [ -n "$PINNED" ] || [ -f "$HERE/PIN" ]; then
+        [ -f "$HERE/PIN" ] && [ -f "$HERE/SHA256SUMS" ] || { PIN="missing"; exit 1; }
+        awk '$2 == "PIN" { f = 1 } END { exit !f }' "$HERE/SHA256SUMS" || { PIN="unhashed"; exit 1; }   # SHA256SUMS must cover PIN too
         pin_t="$(awk '$1 == "train" { print substr($2, 1, 10) }' "$HERE/PIN")"
         pin_g="$(awk '$1 == "greens" { print substr($2, 1, 10) }' "$HERE/PIN")"
         pin_r="$(awk '$1 == "redage" { print substr($2, 1, 10) }' "$HERE/PIN")"
@@ -374,7 +385,6 @@ run_train() {
     step tools
     for t in jq awk sort date; do command -v "$t" > /dev/null || exit 1; done
     [ -n "$from" ] || command -v gh > /dev/null || exit 1
-    DAY="${NOW%%T*}"
     raw="$OUTDIR/$DAY/raw"
     step outdir
     mkdir -p "$raw" || exit 1
@@ -413,7 +423,7 @@ run_train() {
     printf '%s\n' "$hrow" >> "$OUTDIR/history.tsv" || exit 1
     HISTDONE=1
     printf '%s\n' "$line" || exit 1; PRINTED=1
-    inbox_line "$line" "$g"
+    inbox_line "$line" "$g" || exit 1
     exit 0
 }
 
@@ -453,7 +463,7 @@ install_timer() {
     git show "$r:scripts/release/red_age.sh" > "$dir/red_age.sh" || caller_error "no red_age.sh at $r"
     printf 'train %s\ngreens %s\nredage %s\n' "$t" "$g" "$r" > "$dir/PIN"
     chmod 0555 "$dir"/*.sh
-    (cd "$dir" && sha256sum nightly_train.sh nightly_greens.sh red_age.sh > SHA256SUMS) || caller_error "cannot write SHA256SUMS"
+    (cd "$dir" && sha256sum nightly_train.sh nightly_greens.sh red_age.sh PIN > SHA256SUMS) || caller_error "cannot write SHA256SUMS"
     # the self-test runs under the unit's own PATH: a tool the timer resolves differently (jq 1.6) must fail here
     p="$(dirname "$(command -v gh)"):$(dirname "$(command -v jq)"):/usr/local/bin:/usr/bin:/bin"
     PATH="$p" bash "$dir/nightly_train.sh" --self-test > "$dir/self-test.out" 2>&1 || { tail -n 5 "$dir/self-test.out"; caller_error "the pinned self-test is RED; nothing installed"; }
@@ -462,7 +472,7 @@ install_timer() {
     mkdir -p "$unitdir" || caller_error "cannot create $unitdir"
     {
         printf '[Unit]\nDescription=aprender nightly evidence train (BLD-002 R4), report-only\n\n[Service]\nType=oneshot\nNice=10\nTimeoutStartSec=900\n'
-        printf 'Environment=OUT=%s\nEnvironment=INBOX=%s\nEnvironment=PATH=%s\nExecStart=/bin/bash %s/nightly_train.sh\n' "$out" "$inbox" "$p" "$dir"
+        printf 'Environment=OUT=%s\nEnvironment=INBOX=%s\nEnvironment=PATH=%s\nExecStart=/bin/bash %s/nightly_train.sh --pinned\n' "$out" "$inbox" "$p" "$dir"
     } > "$unitdir/$UNIT.service"
     printf '[Unit]\nDescription=aprender nightly evidence train, daily 04:45 UTC\n\n[Timer]\nOnCalendar=*-*-* 04:45:00 UTC\nPersistent=true\nUnit=%s.service\n\n[Install]\nWantedBy=timers.target\n' "$UNIT" > "$unitdir/$UNIT.timer"
     systemctl --user daemon-reload || caller_error "daemon-reload failed"
@@ -586,12 +596,51 @@ v-e;verdict;check E;-;-;-" "$d" 2026-10-04T06:00:00Z; cat "$d/line" "$d/lanes.ts
         eval 'case "$INBOX" in "$tmp"/*) echo sandbox ;; *) echo "INBOX is $INBOX" ;; esac'
     row a_planted_fault_never_writes_the_named_inbox 0 "caller=0 lines=2" "" -- \
         eval 'INBOX="$tmp/c6.md" NIGHTLY_TRAIN_FAULT=bundle bash "$SCRIPT_PATH" --from "$d" --out "$tmp/o6" --now 2026-10-04T06:00:00Z > /dev/null; NIGHTLY_TRAIN_FAULT=bundle bash "$SCRIPT_PATH" --from "$d" --out "$tmp/o7" --inbox "$tmp/c7.md" --now 2026-10-04T06:00:00Z > /dev/null; printf "caller=%s lines=%s\n" "$(cat "$tmp/c6.md" "$tmp/c7.md" 2>/dev/null | wc -l)" "$(cat "$tmp/o6"/*/line "$tmp/o7"/*/line | grep -c "planted fault")"'
+    d="$tmp/legs"; fixture "$d"
+    printf 'wf\t.github/workflows/a.yml\t101\tschedule\tmain\t%s\t2026-10-04T01:00:00Z\tCOMPLETED\tSUCCESS\tjob-a\tCOMPLETED\tFAILURE\t2026-10-04T01:00:30Z\t2026-10-04T01:20:00Z\t2\n' "$ST_C" >> "$d/runs.tsv"
+    row a_failed_parallel_leg_of_the_same_name_is_red 0 "NOT RELEASABLE: v-a, 101" "RELEASABLE H=" -- st_decide "$d"
+    d="$tmp/infoatt"; fixture "$d"
+    row an_info_lane_attempt_is_marked_inferred 0 "$(printf 'i-d\tinfo\tgreen\t.github/workflows/d.yml \t401\t%s\tsuccess\t1?' "$ST_C")" "" -- st_decide "$d"
+    st_rcut() {
+        printf '%s' '{"data":{"repository":{"defaultBranchRef":{"name":"main","target":{"oid":"'"$ST_C"'","tree":{"oid":"t"},"statusCheckRollup":{"contexts":{"pageInfo":{"hasNextPage":true},"nodes":[{"name":"gate","status":"COMPLETED","conclusion":"SUCCESS","startedAt":"s","completedAt":"e","checkSuite":{"status":"COMPLETED","conclusion":"SUCCESS","branch":{"name":"main"},"workflowRun":{"databaseId":301,"event":"push","createdAt":"c","workflow":{"id":"WC"}}}}]}}}}}}}' > "$tmp/rcut.json"
+        normalize "$tmp/rcut.json" "$tmp/wf.json"
+    }
+    row normalize_marks_a_cut_rollup 0 "$(printf 'rollup\t.github/workflows/c.yml\t301\tpush\tmain\t%s\tc\tCOMPLETED\tSUCCESS\t#truncated\tCOMPLETED\tTRUNCATED' "$ST_C")" "" -- st_rcut
+    # fetch against a stub gh: the refusals happen before any real call could be made
+    mkdir -p "$tmp/bin"
+    printf '%s\n' '#!/bin/bash' 'case "$*" in' \
+        '  *rate_limit*) echo "${STUB_REM:-5000}" ;;' \
+        '  *actions/workflows*) printf "HTTP/2.0 200 OK\r\netag: \"e1\"\r\n\r\n"; cat "$STUB_WF" ;;' \
+        '  *graphql*) echo "{\"errors\":[{\"message\":\"stub\"}]}" ;;' \
+        '  *) echo 1 ;;' 'esac' > "$tmp/bin/gh"; chmod +x "$tmp/bin/gh"
+    printf '{"workflows":[%s]}\n' '{"node_id":"WA","path":".github/workflows/a.yml"},{"node_id":"WB","path":".github/workflows/b.yml"},{"node_id":"WC","path":".github/workflows/c.yml"},{"node_id":"WD","path":".github/workflows/d.yml"}' > "$tmp/wfall.json"
+    st_fetch() { mkdir -p "$tmp/f$1"; PATH="$tmp/bin:$PATH" STUB_WF="$tmp/wfall.json" LANES="$ST_LANES" fetch "$tmp/f$1" "$tmp/f$1/cache"; cat "$tmp/f$1/read"; }
+    row fetch_refuses_under_the_rate_floor 0 "failed: core remaining 999 under 1000" "" -- eval 'STUB_REM=999 st_fetch 1'
+    row fetch_refuses_past_the_call_budget 0 "failed: call budget" "" -- eval 'MAX_CALLS=0; st_fetch 2'
+    row fetch_refuses_a_graphql_error 0 "failed: GraphQL errors" "" -- eval 'CALLS=0; st_fetch 3'
+    row an_inbox_read_back_mismatch_exits_non_zero 1 "inbox: read-back mismatch" "" -- \
+        bash "$SCRIPT_PATH" --from "$d" --out "$tmp/o9" --inbox /dev/null --now 2026-10-04T06:00:00Z
+    row a_closed_stdout_keeps_the_real_verdict 0 "[C=aaaaaaaaaa pin=unpinned]" "nightly-train" -- cat "$tmp/o5/2026-10-04/line"
     mkdir -p "$tmp/pb" && cp "$SCRIPT_PATH" "$HERE/red_age.sh" "$HERE/nightly_greens.sh" "$tmp/pb/" 2>/dev/null; chmod u+w "$tmp/pb"/*.sh
     printf 'train %s\ngreens %s\nredage %s\n' "$ST_C" "$ST_C" "$ST_C" > "$tmp/pb/PIN"
-    (cd "$tmp/pb" && sha256sum nightly_train.sh nightly_greens.sh red_age.sh > SHA256SUMS) 2>/dev/null
+    (cd "$tmp/pb" && sha256sum nightly_train.sh nightly_greens.sh red_age.sh PIN > SHA256SUMS) 2>/dev/null
+    cp -r "$tmp/pb" "$tmp/pc"; chmod u+w "$tmp/pc"/*; rm -f -- "${tmp:?}/pc/PIN" "${tmp:?}/pc/SHA256SUMS"
+    for x in pd pe pf; do cp -r "$tmp/pb" "$tmp/$x"; chmod u+w "$tmp/$x"/*; done
+    printf 'train %s\n' "$ST_X" >> "$tmp/pd/PIN"
+    (cd "$tmp/pf" && sha256sum nightly_train.sh nightly_greens.sh red_age.sh > SHA256SUMS) 2>/dev/null
     printf '# an edit after pinning\n' >> "$tmp/pb/nightly_train.sh"
     row an_edited_bundle_refuses 2 "NOT RELEASABLE: nightly-train, pin failed" "RELEASABLE H=" -- \
         bash "$tmp/pb/nightly_train.sh" --from "$d" --out "$tmp/o2" --now 2026-10-04T06:00:00Z
+    row an_edited_bundle_leaves_its_line_and_one_row 0 "rows=1 failure=1 pin" "" -- \
+        eval 'awk -F "\t" "NR > 1 { n++; if (\$5 == \"failure\") f++ } END { printf \"rows=%d failure=%d \", n, f }" "$tmp/o2/history.tsv"; grep -o "pin failed" "$tmp/o2/2026-10-04/line"'
+    row a_pinned_run_of_an_intact_bundle_judges 0 "[C=aaaaaaaaaa pin=aaaaaaaaaa.aaaaaaaaaa.aaaaaaaaaa]" "nightly-train" -- \
+        bash "$tmp/pe/nightly_train.sh" --pinned --from "$d" --out "$tmp/oe" --now 2026-10-04T06:00:00Z
+    row a_pinned_run_without_pin_refuses 2 "NOT RELEASABLE: nightly-train, pin failed" "RELEASABLE H=" -- \
+        bash "$tmp/pc/nightly_train.sh" --pinned --from "$d" --out "$tmp/oc" --now 2026-10-04T06:00:00Z
+    row an_edited_pin_refuses 2 "NOT RELEASABLE: nightly-train, pin failed" "RELEASABLE H=" -- \
+        bash "$tmp/pd/nightly_train.sh" --pinned --from "$d" --out "$tmp/od" --now 2026-10-04T06:00:00Z
+    row sums_that_omit_pin_refuse 2 "NOT RELEASABLE: nightly-train, pin failed" "RELEASABLE H=" -- \
+        bash "$tmp/pf/nightly_train.sh" --pinned --from "$d" --out "$tmp/of" --now 2026-10-04T06:00:00Z
     printf -- '--- %s/%s rows ---\n' "$pass" "$((pass + fail))"
     rm -rf -- "${tmp:?}"
     [ "$fail" -eq 0 ]
@@ -618,9 +667,19 @@ m17_cut_job_list_is_read	s/if (JN\[r, k\] == "#truncated") {/if (0) {/
 m18_void_run_is_picked	s/if (pick == "" \&\& s != "void") {/if (pick == "") {/
 m19_edited_bundle_runs	s/sha256sum --quiet -c SHA256SUMS/true/
 m20_producerless_lane_is_green	s/out(i, "not_measured", "", "", "no nightly producer on main yet")/out(i, "green", "", "", "x")/
-m21_failure_row_after_history	s/if \[ -z "\$HISTDONE" \]; then/if :; then/
+m21_failure_row_after_history	s/\[ -z "\$PRINTED\$HISTDONE" \]/[ -z "$PRINTED" ]/
 m22_self_test_inbox_inherited	s/^    export INBOX="\$tmp\/inbox.md"   # whatever/    : # whatever/
-m23_drill_writes_named_inbox	s/then INBOXF="\$(mktemp)" || exit 3; DRILL=1;/then DRILL="";/'
+m23_drill_writes_named_inbox	s/then INBOXF="\$(mktemp)" || exit 3; DRILL=1;/then DRILL="";/
+m24_one_leg_hides_another	/fb\[JN\[r, k\]\] = 1; bad = bad/d
+m25_cut_rollup_read	s/if (\$c.statusCheckRollup.contexts.pageInfo.hasNextPage \/\/ false) then/if false then/
+m26_day_set_late	/^    DAY=.*# before any step/d;s/^    step outdir$/    DAY="${NOW%%T*}"; step outdir/
+m27_pinned_not_required	s/if \[ -n "\$PINNED" \] || \[ -f "\$HERE\/PIN" \]; then/if [ -f "$HERE\/PIN" ]; then/
+m28_unhashed_pin_accepted	s/|| { PIN="unhashed"; exit 1; }/|| :/
+m29_rate_floor_ignored	s/\[ "\$rem" -ge "\$RATE_FLOOR" \]/[ 1 ]/
+m30_call_budget_ignored	s/call_ok() { \[ "\$CALLS" -lt "\$MAX_CALLS" \] || return 1;/call_ok() {/
+m31_graphql_errors_read	s/(.errors \/\/ \[\]) | length > 0/false/
+m32_inbox_mismatch_exits_0	s/inbox_line "\$line" "\$g" || exit 1/inbox_line "$line" "$g"/
+m33_info_attempt_claimed	s/out(i, "green", pick, "1?", /out(i, "green", pick, "1", /'
 
 # each planted mutant must change the file, still parse, and turn at least one row RED
 mutants() {
@@ -664,6 +723,7 @@ while [ $# -gt 0 ]; do
         --out) OUTDIR="${2:-}"; shift 2 ;;
         --inbox) [ -n "$DRILL" ] || INBOXF="${2:-}"; shift 2 ;;
         --from) FROM="${2:-}"; shift 2 ;;
+        --pinned) PINNED=1; shift ;;
         --now) NOW="${2:-}"; shift 2 ;;
         *) caller_error "unknown argument $1" ;;
     esac

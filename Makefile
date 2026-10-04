@@ -1573,8 +1573,11 @@ nightly-train-install:
 	  --train "$(NIGHTLY_TRAIN_SHA)" --greens "$(NIGHTLY_GREENS_SHA)" --redage "$(RED_AGE_SHA)"
 
 nightly-train-run:
-	systemctl --user start --wait aprender-nightly-train.service
-	@journalctl --user -u aprender-nightly-train.service -o cat --no-pager | grep -E '^(NOT )?RELEASABLE' | tail -n 1
+	@rc=0; systemctl --user start --wait aprender-nightly-train.service || rc=$$?; \
+	id=$$(systemctl --user show -p InvocationID --value aprender-nightly-train.service); \
+	l=$$(journalctl --user _SYSTEMD_INVOCATION_ID="$$id" -o cat --no-pager | grep -E '^(NOT )?RELEASABLE' | tail -n 1); \
+	if [ -n "$$l" ]; then printf '%s\n' "$$l"; else printf 'no verdict line from invocation %s\n' "$${id:-unknown}"; fi; \
+	exit $$rc
 
 nightly-train-show:
 	@systemctl --user cat aprender-nightly-train.service aprender-nightly-train.timer --no-pager
