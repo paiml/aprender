@@ -419,10 +419,14 @@ up, a new size changes its place, and a row already held on a branch drops out o
   `la-72/r15-receipt-ext`, and la-impl has been told.
 - **R5 is done on the desk.** Verdict, orchestrator, incumbent side, pinned data and apr adapter are stacked from
   `r5-verdict` to `r5-apr-adapter` @7aeb557271. What is left is GPU time, plus the apr side, which is R15b.
-- **The cheap refusals sit on fold branches:** DBH-001, MOF-002, HRP-001 and TIS-005, on `fold-dbh-a`/`-b`,
-  `fold-mof`, `fold-hrp` and `fold-tis`. Each is ≤ 15 `[A]`, turns a silent wrong answer into a named refusal, and
-  needs no GDN work. They are the first PRs to open after LIVE 0.70.1. `fold-hrp` is built on the first four
-  `fold-r10-qfr` commits (QFR-001/002/003/005, up to 4298fb0055), so the QFR PR (row 9) opens just before it.
+- **The cheap refusals are fold branches now, and most became fixes.** Ranking v2 (2026-09-28) picked four
+  refusals of ≤ 15 `[A]`: distill B > 1, merge writes APR, plan = upload, and no manifest, no rc run. On the
+  branches, `fold-dbh-a` refuses a batch the provider cannot take (DBH-002) and `fold-dbh-b` batches (DBH-001);
+  `fold-mof` writes APR (MOF-002/003) and refuses mismatched architectures (MOF-005); `fold-hrp`'s dry-run plan
+  lists every uploaded file (HRP-001); and `fold-tis` refuses an rc run without a manifest (TIS-005). Rows 10–13
+  size them. None needs GDN work, and their code is written and was measured before the rebase. They are the first
+  PRs to open after LIVE 0.70.1. `fold-hrp` is built on the first four `fold-r10-qfr` commits (QFR-001/002/003/005,
+  up to 4298fb0055), so the QFR PR (row 9) opens just before it.
 - **R20 is out of 0.72.** RQ-3 was ruled 2026-09-27: #4002 (E8, 0.75) keeps everything beyond GDN training.
 - **R21, GDN on CUDA, is new.** T2, R4 and R6 on qwen35 train Qwen3.5 on CUDA, and 24 of the 4B's 32 layers are
   GDN. R15's cells are dense only, R2/R3's GDN is CPU only (`fold-r2r3`; its four GDN files never mention CUDA), and
