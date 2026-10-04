@@ -69,9 +69,11 @@ check() {   # check <ci.yml>: rc 0 when W1-W5 hold
     n_step=$(printf '%s\n' "$j" | grep -E '^ +FAT_ARTIFACT_WAIT_S:' | grep -c -v -E 'FAT_ARTIFACT_WAIT_S: "?0"?[[:space:]]*$')
     [ "$n_step" = 0 ] ||   # m:nostepwait
         { printf 'FAIL  W3 a step-level FAT_ARTIFACT_WAIT_S overrides the job-level "0"\n'; bad=1; }
-    # W6 the driver: one read past the deadline returns failure before any sleep (missing raster = RED).
+    # W6 the driver: the deadline is exactly now + FAT_ARTIFACT_WAIT_S, and the first read past it returns
+    # failure with no sleep before it (missing raster = RED).
     awk '/^def uses_download\(/{p=1; next} p && /^def /{exit}
-         p && /deadline = time\.time\(\) \+ float\(os\.environ\.get\("FAT_ARTIFACT_WAIT_S"/{dl=1}
+         p && /^    deadline = time\.time\(\) \+ float\(os\.environ\.get\("FAT_ARTIFACT_WAIT_S", "3600"\)\)$/{dl=1; next}
+         p && dl && !br && /time\.sleep\(/{exit}
          p && dl && /if CANCELLED\.is_set\(\) or time\.time\(\) > deadline:/{br=1; next}
          p && br && /time\.sleep\(/{exit}
          p && br && /^ +return False, \{\}$/{ok=1; exit}
@@ -89,7 +91,7 @@ check() {   # check <ci.yml>: rc 0 when W1-W5 hold
     [ "$n_coe" = 0 ] ||   # m:nocoe
         { printf 'FAIL  W8 the determinism-compare section carries continue-on-error\n'; bad=1; }
     # The numbers T42 is measured by: ARM64 seconds held by one raster that never comes, REST calls per wait.
-    held="$w"   # with or without needs: x86-main, a raster that never comes holds the runner for the whole wait
+    held="$w"   # derived from the wait W3 checks, not measured; that the driver honours it is W6 (structural)
     calls=$(( w / POLL_S + 1 ))
     printf 'held_s_per_missing_x64=%s rest_calls_per_wait=%s starts_after_x86_main=%s\n' \
         "$held" "$calls" "$(printf '%s\n' "$j" | grep -q -E '^    needs: .*x86-main' && echo yes || echo no)"
@@ -159,6 +161,10 @@ selftest() {
     check "$CI" "$d/d1.py" > /dev/null 2>&1; row D1 RED $? "a driver that passes the download when the raster never came"
     plant_file "$DRIVER" "$d/d2.py" '/^def uses_download\(/,/^def /{s/FAT_ARTIFACT_WAIT_S/FAT_ARTIFACT_WAIT_SECONDS/}'
     check "$CI" "$d/d2.py" > /dev/null 2>&1; row D2 RED $? "a driver that no longer reads FAT_ARTIFACT_WAIT_S (the job's \"0\" would be ignored)"
+    plant_file "$DRIVER" "$d/d3.py" '/^def uses_download\(/,/^def /{s/^(    deadline = time\.time\(\) \+ float\(os\.environ\.get\("FAT_ARTIFACT_WAIT_S", "3600"\)\))$/\1 + 7200/}'
+    check "$CI" "$d/d3.py" > /dev/null 2>&1; row D3 RED $? "a driver deadline padded past the job's wait (+ 7200)"
+    plant_file "$DRIVER" "$d/d4.py" '/^def uses_download\(/,/^def /{s/^(        if CANCELLED\.is_set\(\) or time\.time\(\) > deadline:)$/        time.sleep(20)\n\1/}'
+    check "$CI" "$d/d4.py" > /dev/null 2>&1; row D4 RED $? "a driver that sleeps before its deadline check"
     plant_file "$CI" "$d/g1.yml" '/^  gate:$/,/^  [a-z]/{s/ DET:determinism-compare//}'
     check "$d/g1.yml" > /dev/null 2>&1; row G1 RED $? "a gate that no longer reads DET:determinism-compare"
     plant_file "$CI" "$d/g2.yml" '/^  gate:$/,/^    steps:$/{s/^    if: always\(\)$/    if: success()/}'

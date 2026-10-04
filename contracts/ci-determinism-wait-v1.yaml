@@ -12,7 +12,7 @@
 # Verification level:
 #   * L1 — scripts/check_determinism_wait.sh exists; its `check` mode reads the
 #          determinism job in .github/workflows/ci.yml.
-#   * L2 — falsification MEASURED by its case table (21 rows: planted ci.yml,
+#   * L2 — falsification MEASURED by its case table (23 rows: planted ci.yml,
 #          driver and sections copies, planted receipts) and 10 mutants, every one
 #          killed; the
 #          check is RED on the pre-T42 ci.yml (W1, W2, W3). W6-W8 read the driver,
@@ -41,7 +41,7 @@ metadata:
   last_modified: '2026-10-04'
   author: PAIML Engineering
   references:
-    - 'scripts/check_determinism_wait.sh — rules W1-W5 on ci.yml · --selftest · --mutants'
+    - 'scripts/check_determinism_wait.sh — rules W1-W5 on ci.yml, W6 on scripts/ci/fat_driver.py, W7 on the gate job in ci.yml, W8 on ci/sections.yml · --selftest · --mutants'
     - '.github/workflows/ci.yml — the determinism job (needs x86-main, if !cancelled(), FAT_ARTIFACT_WAIT_S "0")'
     - 'scripts/ci/fat_driver.py uses_download — reads FAT_ARTIFACT_WAIT_S (default 3600), sleeps 20 s between reads; unchanged'
     - 'scripts/ci/determinism-compare.sh — the verdict; unchanged'
@@ -100,7 +100,7 @@ falsification_tests:
     prediction: >-
       The real ci.yml passes W1-W5 with held_s 0 and 1 REST call per wait (W0,
       N0). A copy without needs x86-main (W1), without the wait override (W3)
-      or with a 600 s wait (W3b) is RED. The pre-T42 job is RED and measures
+      or with a 600 s wait (W3b) is RED. held_s and REST calls are derived from the wait W3 checks, not measured; that the driver honours the wait is W6, a source read (D1-D4). The pre-T42 job is RED and measures
       3600 s held and 181 REST calls per missing raster (B0, B1). origin/main's
       ci.yml is RED on W1, W2 and W3.
     test: 'bash scripts/check_determinism_wait.sh --selftest && bash scripts/check_determinism_wait.sh --mutants'
@@ -119,7 +119,7 @@ falsification_tests:
       section (W5), or names it only in a comment (W5b), is RED; so is a
       step-level wait of 3600 under the job's "0" (W3c). A driver copy that
       returns success past the deadline (D1) or no longer reads
-      FAT_ARTIFACT_WAIT_S (D2), a gate that drops DET:determinism-compare (G1)
+      FAT_ARTIFACT_WAIT_S (D2), pads its deadline (D3) or sleeps before the deadline check (D4), a gate that drops DET:determinism-compare (G1)
       or is not always() (G2), and a compare section with continue-on-error
       (S1) are RED. determinism-compare.sh on planted receipts: equal SVG
       digests GREEN (C1), different SVG digests RED (C2), one receipt only
