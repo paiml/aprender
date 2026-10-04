@@ -16,6 +16,7 @@
 #
 #   check_quick_tier_shard_sigma.sh              the case table
 #   check_quick_tier_shard_sigma.sh --self-test  planted wrong rules must go RED
+#   check_quick_tier_shard_sigma.sh --update-golden  re-pin the jobs after a reviewed change
 set -uo pipefail
 ROOT="$(cd "$(dirname "$0")/.." && pwd)" || exit 2
 WF="${QUICK_SIGMA_WORKFLOW:-$ROOT/.github/workflows/ci.yml}"
@@ -85,6 +86,41 @@ stage_run() {
     (cd "$d/st/wd" && RUNNER_TEMP="$d/st/rt" TIER="$3" SHARD="$4" bash -c "$s") > /dev/null 2>&1 || { echo "staging-failed"; return; }
     find "$d/st/wd/sigma-shard" -type f -printf '%f\n' 2> /dev/null | sort | paste -sd' '
 }
+
+# The golden: every line of the jobs the shard split lives in, pinned by digest. The rows above
+# read the steps they know; a job-level `if:`, `needs:`, `env:`, `continue-on-error:` or matrix
+# edit (the #4717 m18-m21 class), or a step flag no row names, is outside them. Any change to a
+# pinned job is RED until the golden is regenerated in the same diff, where review sees both.
+GOLDEN="${QUICK_SIGMA_GOLDEN:-$ROOT/ci/goldens/quick-tier-shard-sigma.sha256}"
+PINNED="workflow jobs workspace-test-shard
+workflow jobs workspace-test
+sections matrix-pins workspace-test-shard
+sections jobs workspace-test-shard"
+# job_block <file> <parent> <job> -> the job's lines, from its key under the top-level <parent>
+# up to the next line at indent <= 2 (the next job, or a comment heading it); trailing blanks dropped
+job_block() {
+    awk -v p="$2:" -v j="  $3:" '
+        $0 == p { inp = 1; next }
+        inp && /^[^ #]/ { inp = 0 }
+        inb && (/^[^ ]/ || /^ [^ ]/ || /^  [^ ]/) { exit }
+        inp && !inb && $0 == j { inb = 1 }
+        inb { if ($0 ~ /^[[:space:]]*$/) { blank = blank "\n"; next } printf "%s%s\n", blank, $0; blank = "" }' "$1"
+}
+# golden_compute <workflow> <sections> -> the manifest; rc=2 (ENV) when a pinned job is absent
+golden_compute() {
+    local role parent job file block
+    while read -r role parent job; do
+        if [ "$role" = workflow ]; then file=$1; else file=$2; fi
+        block=$(job_block "$file" "$parent" "$job")
+        [ -n "$block" ] || { printf 'ENV   pinned job %s.%s is missing from the %s: cannot judge, not a pass\n' "$parent" "$job" "$role" >&2; return 2; }
+        printf '%s  %s:%s.%s\n' "$(printf '%s\n' "$block" | sha256sum | cut -c1-64)" "$role" "$parent" "$job"
+    done <<< "$PINNED"
+}
+golden_header() {
+    printf '%s\n' "# The jobs the quick-tier shard split lives in, pinned by the sha256 of their lines" \
+        "# (scripts/check_quick_tier_shard_sigma.sh). A change to any of them is RED until this file" \
+        "# is regenerated in the same diff: bash scripts/check_quick_tier_shard_sigma.sh --update-golden"
+}
 # The planted shard artifacts: a universe of six ids in two binaries.
 junit() { # junit <file> <binary:test>... -- nextest's attribute order, name first
     local id
@@ -115,7 +151,9 @@ fanin() {
 }
 
 table() { # table <workflow> <sections> -> 0 iff every row holds, 2 when a step is missing
-    local f tree keep qs stage up bad=0 n=0 want got label w
+    local f tree keep qs stage up bad=0 n=0 want got label w gold
+    gold=$(golden_compute "$1" "$2") || return 2
+    [ -f "$GOLDEN" ] || { printf 'ENV   no golden at %s: cannot judge, not a pass\n' "$GOLDEN" >&2; return 2; }
     f=$(step_run "$1" "$FANIN_STEP"); tree=$(step_run "$2" "$TREE_STEP"); qs=$(step_run "$2" "$QSIGMA_STEP")
     stage=$(step_run "$2" "$STAGE_STEP" | code); keep=$(step_run "$2" "$KEEP_STEP"); up=$(upload_after "$2" "$STAGE_STEP")
     tree=$(code <<< "$tree")
@@ -131,6 +169,9 @@ table() { # table <workflow> <sections> -> 0 iff every row holds, 2 when a step 
     st() { if "$@"; then echo pass; else echo fail; fi; }
     has() { if grep -qF -- "$2" <<< "$1"; then echo pass; else echo fail; fi; }
     hasnt() { if grep -qF -- "$2" <<< "$1"; then echo fail; else echo pass; fi; }
+    # both files: the pinned jobs, whole -- job keys and every step, not only the steps named below
+    row pass "the pinned jobs are byte-identical to the golden" "$(exact_if "$gold" "$(grep -v '^#' "$GOLDEN")")"
+    grep -v '^#' "$GOLDEN" | sort | comm -13 - <(sort <<< "$gold") | sed 's/^[0-9a-f]*  /      changed since the golden: /' >&2
     # sections.yml: the tree readers are partitioned, on every shard
     row pass "tree step runs nextest with this shard's hash partition" "$(has "$tree" '--partition "hash:${SHARD}/${SHARDS}"')"
     row pass "tree step is not shard-1-only" "$(exact_if "$(step_if "$2" "$TREE_STEP")" "$QUICK_IF")"
@@ -167,9 +208,15 @@ table() { # table <workflow> <sections> -> 0 iff every row holds, 2 when a step 
     return "$bad"
 }
 
-case "${1:-}" in -h | --help) sed -n '2,19p' "$0" | sed 's/^# \{0,1\}//'; exit 0 ;; esac
+case "${1:-}" in -h | --help) sed -n '2,20p' "$0" | sed 's/^# \{0,1\}//'; exit 0 ;; esac
 
 for f in "$WF" "$SEC"; do [ -f "$f" ] || { printf 'ENV   %s is missing\n' "$f" >&2; exit 2; }; done
+
+if [ "${1:-}" = "--update-golden" ]; then
+    m=$(golden_compute "$WF" "$SEC") || exit 2
+    mkdir -p "$(dirname "$GOLDEN")" && { golden_header; printf '%s\n' "$m"; } > "$GOLDEN" || exit 2
+    printf 'wrote %s\n' "${GOLDEN#"$ROOT"/}"; exit 0
+fi
 
 if [ "${1:-}" = "--self-test" ]; then
     echo "=== quick-tier shard Σ: planted wrong rules must turn the table RED ==="
@@ -221,9 +268,65 @@ if [ "${1:-}" = "--self-test" ]; then
     for m in exempt nojunit nodup twoj nounion tiermix nopart index shard1 keep1 nostage order stage1 updead upname envshard cmtpart cmtcp updead0 endsjob upsuffix stagetier stagejunit1 treecoe; do
         case "$m" in exempt | nojunit | nodup | twoj | nounion | tiermix) wf="$d/$m.yml" sec="$SEC" src="$WF" ;; *) wf="$WF" sec="$d/$m.yml" src="$SEC" ;; esac
         if cmp -s "$src" "$d/$m.yml"; then printf 'FAIL  the %s mutant did not apply (its anchor is gone)\n' "$m"; bad=1; continue; fi
-        if table "$wf" "$sec" > "$d/out" 2>&1; then printf 'FAIL  the planted %s rule passed the table\n' "$m"; bad=1
+        # judged with a golden re-pinned to the mutant: the semantic rows must kill it on their own
+        QUICK_SIGMA_WORKFLOW="$wf" QUICK_SIGMA_SECTIONS="$sec" QUICK_SIGMA_GOLDEN="$d/$m.sha256" bash "$0" --update-golden > /dev/null 2>&1 || { printf "FAIL  the %s mutant could not be re-pinned\n" "$m"; bad=1; continue; }
+        if GOLDEN="$d/$m.sha256" table "$wf" "$sec" > "$d/out" 2>&1; then printf 'FAIL  the planted %s rule passed the table\n' "$m"; bad=1
         else printf 'ok    the planted %-8s rule is RED: %s row(s), e.g. %s\n' "$m" "$(grep -c '^FAIL' "$d/out")" "$(grep -m1 '^\(FAIL\|ENV\)' "$d/out" | cut -c7-90)"; fi
     done
+    # The golden's case table. edit <file> <anchor> <match> sub|after <line>: after the first line
+    # containing <anchor>, the first line containing <match> is replaced by, or followed by, <line>.
+    edit() {
+        awk -v a="$2" -v m="$3" -v op="$4" -v t="$5" '
+            index($0, a) { in_a = 1 }
+            in_a && !done && index($0, m) { done = 1; if (op == "sub") { print t; next } print; print t; next }
+            1' "$1"
+    }
+    tn='--partition "hash:${SHARD}/${SHARDS}" --no-tests=warn'
+    # round-3 survivors (lanes C and D): each one the rows above passed
+    edit "$SEC" "$TREE_STEP" "$tn" sub "            cargo nextest run --profile ci \$pkgs --lib --tests -E \"\$EXPR\" $tn || true" > "$d/g-treetrue.yml"
+    edit "$SEC" "$TREE_STEP" "$tn" sub '            cargo nextest run --profile ci $pkgs --lib --tests -E "$EXPR" --partition "hash:${SHARD}/${SHARDS}"' > "$d/g-nonotests.yml"
+    edit "$SEC" "$TREE_STEP" "$tn" sub "            cargo nextest run --profile ci \$pkgs --lib --tests $tn" > "$d/g-noexpr.yml"
+    edit "$SEC" "$TREE_STEP" "$tn" sub "            cargo nextest run --profile ci \$pkgs --lib -E \"\$EXPR\" $tn" > "$d/g-libonly.yml"
+    edit "$SEC" "$TREE_STEP" "-e SHARD -e SHARDS \\" sub "            -e SHARD=1 -e SHARDS=1 \\" > "$d/g-dockerenv.yml"
+    edit "$SEC" "$QSIGMA_STEP" 'if [ "$SHARDS" = 1 ]; then' sub '          if true; then' > "$d/g-qsigma1.yml"
+    edit "$SEC" "$STAGE_STEP" 'path: sigma-shard/' sub '          path: sigma-shardx/' > "$d/g-uppath.yml"
+    sed 's/"$RUNNER_TEMP\/sigma\/quick-tree.junit.xml"$/"$RUNNER_TEMP\/sigma\/quick-treex.junit.xml"/' "$SEC" > "$d/g-keepcp.yml"
+    edit "$SEC" "$STAGE_STEP" 'TIER: ${{ steps.tier.outputs.tier }}' sub '          TIER: full' > "$d/g-tierfull.yml"
+    edit "$SEC" "$STAGE_STEP" 'if-no-files-found: error' sub '          if-no-files-found: ignore' > "$d/g-nofiles.yml"
+    edit "$SEC" "$QSIGMA_STEP" 'shell: bash' after '        continue-on-error: true' > "$d/g-qscoe.yml"
+    edit "$SEC" "$STAGE_STEP" 'name: sigma-shard-${{ matrix.shard }}' sub '          name: sigma-shard-${{ matrix.shard }}
+        continue-on-error: true' > "$d/g-upcoe.yml"
+    edit "$WF" "$FANIN_STEP" "awk '!/ name=\"/" sub '              true \' > "$d/g-fanintrue.yml"
+    # job-level (the #4717 m18-m21 class): outside every step the rows read
+    edit "$WF" '  workspace-test:' 'if: always()' sub '    if: false' > "$d/g-jif.yml"
+    edit "$WF" '  workspace-test:' 'needs: [workspace-test-shard]' sub '    needs: []' > "$d/g-jneeds.yml"
+    edit "$WF" '  workspace-test:' 'timeout-minutes: 10' after '    env: {SHARDS: "1"}' > "$d/g-jenv.yml"
+    edit "$WF" '  workspace-test-shard:' 'timeout-minutes: 180' after '    continue-on-error: true' > "$d/g-jcoe.yml"
+    edit "$WF" '  workspace-test-shard:' 'shard: [1, 2, 3]' sub '        shard: [1, 2]' > "$d/g-jmatrix.yml"
+    grep -vxF '    - {shard: 3, shards: 3}' "$SEC" > "$d/g-pinsdel.yml"
+    for m in treetrue nonotests noexpr libonly dockerenv qsigma1 uppath keepcp tierfull nofiles qscoe upcoe fanintrue jif jneeds jenv jcoe jmatrix pinsdel; do
+        case "$m" in fanintrue | j*) wf="$d/g-$m.yml" sec="$SEC" src="$WF" ;; *) wf="$WF" sec="$d/g-$m.yml" src="$SEC" ;; esac
+        if cmp -s "$src" "$d/g-$m.yml"; then printf 'FAIL  the golden %s mutant did not apply (its anchor is gone)\n' "$m"; bad=1; continue; fi
+        if table "$wf" "$sec" > "$d/out" 2>&1; then printf 'FAIL  the golden %s mutant passed the table\n' "$m"; bad=1
+        elif ! grep -q '^FAIL  row 1 .*golden' "$d/out"; then printf 'FAIL  the golden %s mutant was not caught by the golden row\n' "$m"; bad=1
+        else printf 'ok    the %-9s mutant is RED against the stale golden: %s\n' "$m" "$(grep -m1 'changed since the golden' "$d/out" | sed 's/^ *//')"; fi
+    done
+    # the controls: what must stay GREEN, and the change the golden must still see
+    st_rc() { local rc=0; "$@" > "$d/out" 2>&1 || rc=$?; echo "$rc"; }
+    case_rc() { # case_rc WANT LABEL rc
+        if [ "$3" = "$1" ]; then printf 'ok    rc=%s %s\n' "$3" "$2"; else printf 'FAIL  wanted rc=%s, got %s: %s\n' "$1" "$3" "$2"; bad=1; fi
+    }
+    case_rc 0 "the unchanged tree against its golden" "$(st_rc table "$WF" "$SEC")"
+    edit "$WF" '  workspace-test-shard:' 'timeout-minutes: 180' sub '    timeout-minutes: 181' > "$d/b-wf.yml"
+    edit "$SEC" "$TREE_STEP" "$tn" after '            # a reviewed comment' > "$d/b-sec.yml"
+    case_rc 1 "a pinned job edited, golden stale" "$(st_rc table "$d/b-wf.yml" "$d/b-sec.yml")"
+    QUICK_SIGMA_WORKFLOW="$d/b-wf.yml" QUICK_SIGMA_SECTIONS="$d/b-sec.yml" QUICK_SIGMA_GOLDEN="$d/b.sha256" bash "$0" --update-golden > /dev/null 2>&1
+    case_rc 0 "the same edit with the golden re-pinned in the same diff" "$(GOLDEN="$d/b.sha256" st_rc table "$d/b-wf.yml" "$d/b-sec.yml")"
+    edit "$WF" '  mutants-table-scope:' 'timeout-minutes:' after '    # outside the pinned jobs' > "$d/o-wf.yml"
+    edit "$SEC" '  guard-tree:' 'runs-on:' after '    # outside the pinned jobs' > "$d/o-sec.yml"
+    if cmp -s "$WF" "$d/o-wf.yml" || cmp -s "$SEC" "$d/o-sec.yml"; then printf 'FAIL  the outside-the-pin control did not apply\n'; bad=1
+    else case_rc 0 "an edit outside the pinned jobs, golden unchanged" "$(st_rc table "$d/o-wf.yml" "$d/o-sec.yml")"; fi
+    case_rc 2 "no golden file" "$(GOLDEN="$d/absent.sha256" st_rc table "$WF" "$SEC")"
     rc=0; table "$d/none.yml" "$SEC" > /dev/null 2>&1 || rc=$?
     if [ "$rc" = 2 ]; then printf 'ok    a workflow with no fan-in step is ENV rc=2, never a pass\n'
     else printf 'FAIL  no fan-in step gave rc=%s\n' "$rc"; bad=1; fi

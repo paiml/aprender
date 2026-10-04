@@ -1,0 +1,7 @@
+# The jobs the quick-tier shard split lives in, pinned by the sha256 of their lines
+# (scripts/check_quick_tier_shard_sigma.sh). A change to any of them is RED until this file
+# is regenerated in the same diff: bash scripts/check_quick_tier_shard_sigma.sh --update-golden
+ecf4588fc0d1bb2042df0dc5703223eaba687a139aca29bb99ce519a4e4d70c9  workflow:jobs.workspace-test-shard
+104ee99090c4253fc09cc04148932d60d5b643332a9c546d6d1c4a45e1cd79a3  workflow:jobs.workspace-test
+cc74020ef7cc000db09789e9b5b36aeaec2b757d94d6fff22649548a223d93c8  sections:matrix-pins.workspace-test-shard
+533bb3bbd2f13f3ac51ef27640e5cdca4a07d1f3f82703ee4ea2247dd9fd8a47  sections:jobs.workspace-test-shard
