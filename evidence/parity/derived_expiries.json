@@ -169,6 +169,18 @@
       "expires": "2026-10-23",
       "root": true
     },
+    "24": {
+      "blocked_by": [
+        "15",
+        "23"
+      ],
+      "derived_from": [
+        "23"
+      ],
+      "discharged": false,
+      "expires": "2026-10-23",
+      "root": false
+    },
     "3": {
       "blocked_by": [],
       "derived_from": [],

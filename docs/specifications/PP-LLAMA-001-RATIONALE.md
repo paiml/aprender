@@ -87,8 +87,18 @@ the metric: a standalone contract with its own estimator and a bound typed into 
 is the shape PP-33 refuses. The bound reuses what this document already has — §3's `ttft`, §4.3's
 request bootstrap, P-5's decision rule and P-6's arming — and adds one thing, the orientation.
 `ttft_ratio` is `ttft_llama / ttft_apr`, so above 1 is better for every ratio: P-5 needs no second
-form, and the bootstrap's 5th percentile stays the lower bound. V1's figure is that cell's `δ` in
-`perf-matrix.yaml`, with an author, and never a literal here (P-1).
+form, and the bootstrap's 5th percentile stays the lower bound. V1's figure is the `δ` that
+`perf-matrix.yaml` holds for `ttft_ratio`, with an author, and never a literal here (P-1).
+
+V1 is read on a cell of its own. It names Qwen3.5-4B, and the reference cell is Qwen2.5-Coder-7B.
+Switching the reference cell would restart row 18, and reading V1 off the reference cell would
+bound a model V1 does not name, so §8 adds a V1 cell beside it: the same host, class and
+quantization and a different model, so the two cells differ in one thing. It gates `ttft_ratio` at
+c=1 and nothing else, because V1 asks about TTFT. Gating the whole set there would arm Qwen3.5-4B
+`dec`, `prefill` and `agg` on their first PASS, a parity claim on a second model that §8 withholds
+from a second host until the reference cell is armed. For the same reason row 24 waits for row 15,
+whose receipt shows the harness is conformant, and for row 23, which makes the ratio exist and be
+gated, but not for row 18: arming the reference cell's whole ladder is work V1 does not need.
 
 `load_ms` is REPORTED, not gated: V2 asks for load time beside the throughput figures, not under a
 bound. It is an upper bound because a probe only sees that the server became ready somewhere
