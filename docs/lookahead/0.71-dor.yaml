@@ -16,7 +16,7 @@ rows:
     ev_rank: 1
     exit_criterion: V6
     title: per-layer serve tracing (X-Trace-Level step|layer), first row of the 0.71 serve epic
-    ticket: 4496            # tracer on feat/4496-obs09-trace-serve (aprender-76), commits "(#4496)"; APR-OBS-001 v1.3 G17 + §8 row 2. Issue state not read (C277 GH budget)
+    ticket: 4496            # tracer on feat/4496-obs09-trace-serve (aprender-76), commits "(#4496)"; APR-OBS-001 v1.3 G17 + §8 row 2. Issue state not read (GH call budget)
     spec: {path: docs/specifications/APR-OBS-001-dogfood-observability.md, section: "§7 OBS-09, §5.2", on_main: false,
            staged_at: origin/la-71/4487-obs-00}   # ffb4a348bd: c1 + APR-OBS-001 v1.3 + TRACE-001 v1.2 + EXT-001 v1.2 (aprender-cd)
     contract: {id: apr-trace-v1, path: contracts/apr-trace-v1.yaml, on_main: false,
@@ -94,7 +94,8 @@ rows:
     # 17:11Z CORRECTION: apr-serve-ttft-v1 + ttft_receipt_check.py WITHDRAWN (own estimator, hardcoded BOUND 2.0 =
     # PP-33 violation). Home: PP-LLAMA-001 §4 P-8 ("No latency bound is set in this version") + perf-matrix.yaml
     # arm parity (ttft is `reported`) + Rust perf_gate paired_ratio_lcb(ttft_p50_ms). docs/lookahead/0.71-v1-ttft-home.md
-    # 18:17Z drafted as PP-LLAMA-001 v3.2 P-8 + PP-34 + §12 row 23 (e1f32ac9e5, head bdbf9256cd).
+    # 18:17Z drafted as PP-LLAMA-001 v3.2 P-8 + PP-34 + §12 row 23 (e1f32ac9e5); 23:11Z the §8 V1 cell and §12
+    # row 24, which runs it, added per R-71-7 ADD-CELL (e2d9d734b0, head).
     contract: {id: PP-LLAMA-001-P-8-ttft-bound, path: null, on_main: false,
                staged_at: origin/la-71/pp-llama-p8-ttft, staged_path: docs/specifications/PP-LLAMA-001-MASTER.md,
                staged_marker: "`ttft` is gated as `ttft_ratio`",
@@ -104,7 +105,7 @@ rows:
     # PP-34's two producer rs tests (they stage .rs, so they wait for the S-1 lift) and perf_receipt.py::_ratios_for.
     # The withdrawn case table (FALSIFY-TTFT-001..015) has not moved. Failed requests and a summary-only lane are already
     # main's `completed_lt_requested` and `samples_stripped`. n below the replicate floor is staged as PP-35
-    # (la-71/pp-llama-l3-status@ea3d55aad9): Arm L3 now reads the band `status` that both producers already write. A
+    # (la-71/pp-llama-l3-status@71fe0a1b98): Arm L3 now reads the band `status` that both producers already write. A
     # summary its samples contradict still needs its rule drafted (Arm L3 does not recompute it; R-71-9c answered 2026-10-04: re-derive from samples[]), and a coarse load bracket
     # is row 3's.
     falsifier:
@@ -153,7 +154,7 @@ rows:
     ev_rank: 7
     exit_criterion: V7
     title: EXT-001 CRUX bind + per-surface crux contracts (EXT-25 must-carry, D-8)
-    ticket: null           # EXT-001 §11: the cop mints the epic and children
+    ticket: null           # EXT-001 §11: the epic and children are minted later
     spec: {path: docs/specifications/EXT-001-dogfood-model-lifecycle.md, section: "§10, §10.1, §11", on_main: false,
            staged_at: origin/la-71/4487-obs-00}   # EXT-001 v1.2, ffb4a348bd
     contract: {id: crux-competitive-research-ux-v1, path: contracts/crux-competitive-research-ux-v1.yaml, on_main: true}
@@ -267,7 +268,7 @@ rulings_needed:
     answer: "ISSUE-TREE-001: the ruling text governs, and the lint is fixed to match it."
     quorum: {round: la-71-r71, date: 2026-10-04, outcome: unanimous}
   - id: R-71-9
-    question: "Does Arm L3 FAIL (as drafted, PP-35 on la-71/pp-llama-l3-status@ea3d55aad9) or REPORT an armed metric on a band whose section 7.4 status is not MEASURED? Owner: the PP-LLAMA-001 spec owner. Under REPORT the three FAIL rows flip."
+    question: "Does Arm L3 FAIL (as drafted, PP-35 on la-71/pp-llama-l3-status@71fe0a1b98) or REPORT an armed metric on a band whose section 7.4 status is not MEASURED? Owner: the PP-LLAMA-001 spec owner. Under REPORT the three FAIL rows flip."
     status: answered
     answer: "FAIL: Arm L3 FAILs an armed metric on a band whose status is not MEASURED, as PP-35 drafts it."
     quorum: {round: la-71-r71, date: 2026-10-04, outcome: unanimous}
