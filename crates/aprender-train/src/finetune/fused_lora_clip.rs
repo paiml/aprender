@@ -27,6 +27,7 @@ use trueno_gpu::kernels::SquaredSumKernel;
 
 /// The gradient buffers in clip order: each target's A then B, in slot
 /// order, then the two norm gradients.
+#[cfg(feature = "cuda")]
 fn grad_buffers(ws: &CudaLoraGradWorkspace) -> Vec<&GpuBuffer<f32>> {
     ws.grad_lora
         .iter()
