@@ -206,6 +206,12 @@ rulings_needed:
     question: "V4 --json-schema: 0.71 (APR-LOOKAHEAD §2a) or 0.72 (APR-EPIC-001 E5 'Agent Ready')?"
   - id: R-71-2
     question: "docs/roadmaps/epics.yaml has three 0.71 epics (E2 #3598, E3 #3994, E4 #4381) and 0.72/0.73 epics named 'Agent Ready'/'llama.cpp Parity', not the 09-27 themes. Re-theme or re-train E3/E4/E5/E6?"
+  - id: R-71-3
+    question: "Do the four small fixes on la-71/fold-pr-a@65b5875a8f open as the first 0.71 PR (default) or ship as a 0.70.x patch? trueno's Q6_K GEMV reads ql/qh in GGML's 128-element halves, repeat_penalty applies once per distinct token, and two are test and lint fixes. Neither runtime fix changes a default: trueno's Q6_K row-major kernel has no production caller and repeat_penalty defaults to 1.0."
+  - id: R-71-4
+    question: "CRUX category letters collide on main: A, B, E, F and K each carry two or three labels across the 316 crux-<letter>-<nn> contracts (K: 'Ecosystem & Integration' 9, 'Deployment & Integration' 11). Normalize the labels (ids unchanged), or keep them as historical and give the EXT surfaces new letters?"
+  - id: R-71-5
+    question: "The CRUX gates need a schema extension (EXT-24b): at 316dee2cd4 a contract cannot hold comparator, metric or gap_effect. Does that extension need the gate-framework-new label, which 0.71 excludes? EXT-001 v1.2 section 11 item 1, staged on la-71/4487-obs-00."
   - id: R-71-6
     question: "Where does the V1 gate live: the PP-LLAMA-001 P-8 bound with the value in perf-matrix.yaml (recommended, drafted on la-71/pp-llama-p8-ttft), or a standalone receipt? The V2 load_ms row folds in."
   - id: R-71-7
@@ -218,3 +224,5 @@ rulings_needed:
     question: "Does a band that is NONCONFORMANT-VALID for timeouts, conformance violations, short_of_n_predict, a stream that is not live or incomplete metrics feed PP-31's ratchet? Arm A skips only NA and INVALID-CORRECTNESS. Nothing drafted."
   - id: R-71-9c
     question: "Does the gate re-derive a stated ratio from the band's own samples and FAIL on a mismatch? Window figures and PP-34's ttft re-derive exactly from samples[]; dec needs the per-token times in the gzipped samples_file. Nothing drafted."
+  - id: R-71-10
+    question: "Does H-4's standard (P0 only where the owner shows the issue blocks a V receipt) also demote existing P0s? Seven 0.71.0 P0s tie to no V receipt: #3574, #3714, #3759, #4096, #4418, #4444, #4486. The labels stay until it is ruled (APR-EPIC-001 rules 6 and 20). See 0.71-epic-hygiene.md section 5, H-15."
