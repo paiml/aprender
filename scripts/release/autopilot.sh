@@ -33,6 +33,17 @@ if [ "${1:-}" = "--visited" ]; then
   for h in $mh; do if [ "$h" = "$TRAIN_HOST" ]; then printf 'VISITED %s host-receipt-local\n' "$h"; else printf 'VISITED %s host-receipt-ssh\n' "$h"; fi; done
   exit 0
 fi
+# --ladders (RQ-2, ruling A, aprender-a7 2026-10-04): the 02:00Z nightly
+# (scripts/release/release_ladders_nightly.sh) runs ONE of this file's own deep|dogfood|models step
+# bodies at <sha>, so both callers share one copy -- no PR, no milestone, no epic, no gh. RELEASE_AP
+# names the state dir: the nightly's per-sha dir, never a train's.
+LADDERS=""
+if [ "${1:-}" = "--ladders" ]; then
+  [ $# -eq 4 ] && [ -n "${RELEASE_AP:-}" ] || { echo "usage: RELEASE_AP=<dir> autopilot.sh --ladders <version> <sha> deep|dogfood|models" >&2; exit 2; }
+  case "$4" in deep | dogfood | models) ;; *) echo "autopilot --ladders: the step is deep, dogfood or models, not '$4'" >&2; exit 2 ;; esac
+  [[ $3 =~ ^[0-9a-f]{40}$ ]] || { echo "autopilot --ladders: '$3' is not a 40-hex sha" >&2; exit 2; }
+  LADDERS="$3"; set -- "$2" ladders "$4" "$4"
+fi
 # shellcheck source=scripts/release/lib_release_params.sh
 . "$REPO_ROOT/scripts/release/lib_release_params.sh" || exit 2
 release_params "${1:-}" "$REPO_ROOT" || { echo "usage: autopilot.sh <version> <bump-pr> [from-step] [to-step]" >&2; exit 2; }
@@ -43,6 +54,7 @@ say() { printf '%s %s\n' "$(date -u +%FT%TZ)" "$*" | tee -a "$STATUS" >> "$LOG";
 die() { say "STOP $*"; exit 1; }
 run_step() { # run_step <name>: true when <name> is at or after FROM and at or before TO
     local s seen=0 past=0
+    case "$1:${NIGHTLY_CUT:-}" in deep:?* | dogfood:?* | models:?*) return 1 ;; esac   # RQ-2
     for s in "${STEPS[@]}"; do
         [ "$s" = "$FROM" ] && seen=1
         [ "$s" = "$1" ] && { [ $seen = 1 ] && [ $past = 0 ]; return; }
@@ -55,9 +67,13 @@ run_step() { # run_step <name>: true when <name> is at or after FROM and at or b
 case " ${STEPS[*]} " in *" $FROM "*) ;; *) die "unknown step '$FROM' (${STEPS[*]})" ;; esac
 case " ${STEPS[*]} " in *" $TO "*) ;; *) die "unknown to-step '$TO' (${STEPS[*]})" ;; esac
 # the milestone and epic, derived once, before any step can need them (#3618)
-MS=$(release_milestone_number) || die "milestone $V: cannot resolve exactly one"
-EPIC=$(release_epic_number) || die "release epic for $V: cannot resolve exactly one"
-say "PARAMS V=$V T=$T milestone=#$MS epic=#$EPIC AP=$AP"
+if [ -n "$LADDERS" ]; then
+  say "PARAMS V=$V LADDERS at $LADDERS step=$FROM AP=$AP (no milestone, no epic)"
+else
+  MS=$(release_milestone_number) || die "milestone $V: cannot resolve exactly one"
+  EPIC=$(release_epic_number) || die "release epic for $V: cannot resolve exactly one"
+  say "PARAMS V=$V T=$T milestone=#$MS epic=#$EPIC AP=$AP"
+fi
 CARGO_BIN="${CARGO_HOME:-$HOME/.cargo}/bin"
 export PATH="$CARGO_BIN:$PATH"
 unset CARGO_REGISTRY_TOKEN
@@ -72,12 +88,34 @@ if run_step wait; then
     sleep 300
   done
 fi
-MC=$(gh pr view "$PR" --repo $REPO --json mergeCommit -q .mergeCommit.oid)
+if [ -n "$LADDERS" ]; then MC="$LADDERS"; else
+  MC=$(gh pr view "$PR" --repo $REPO --json mergeCommit -q .mergeCommit.oid)
+fi
 [ -n "$MC" ] || die "#$PR has no merge commit"
 say "RELEASE COMMIT $MC (#$PR)"
 cd "$REPO_ROOT" || die "no repo"
 git fetch -q origin main >> "$LOG" 2>&1 || die "fetch failed"
 git merge-base --is-ancestor "$MC" origin/main || die "merge commit $MC not on origin/main"
+# RQ-2 (ruling A, aprender-a7 2026-10-04): RELEASE_CUT_FROM_NIGHTLY=1 cuts AT the commit last night's
+# release-ladders nightly measured (scripts/release/release_ladders_nightly.sh), when
+# check_nightly_cut.sh finds one at $V that descends from the bump. That commit becomes the release
+# commit, so R5 (commit == HEAD), R7 (apr_sha == cut) and #3708 hold as written. No usable row = the
+# ladders run today at the bump (ruling B fallback); a red or misbound one = STOP.
+NIGHTLY_CUT=""
+NR="${RELEASE_LADDERS_ROOT:-/mnt/nvme-raid0/release-ladders}"
+if [ "${RELEASE_CUT_FROM_NIGHTLY:-0}" = 1 ] && [ -z "$LADDERS" ]; then
+  bash "$REPO_ROOT/scripts/release/check_nightly_cut.sh" --root "$NR" --version "$V" --bump "$MC" --repo "$REPO_ROOT" \
+    > "$AP/nightly-cut.log" 2>&1; rc=$?
+  say "NIGHTLY-CUT rc=$rc: $(tail -n 1 "$AP/nightly-cut.log")"
+  case $rc in
+    0) NIGHTLY_CUT=$(tail -n 1 "$AP/nightly-cut.log" | sed -n 's/^CUT \([0-9a-f]\{40\}\)$/\1/p')
+       [ -n "$NIGHTLY_CUT" ] || die "NIGHTLY-CUT rc 0 without a CUT <sha> line ($AP/nightly-cut.log)"
+       git merge-base --is-ancestor "$NIGHTLY_CUT" origin/main || die "nightly cut $NIGHTLY_CUT not on origin/main"
+       MC="$NIGHTLY_CUT"; say "RELEASE COMMIT $MC (last night's measured sha, descends from #$PR)" ;;
+    2) say "NIGHTLY-CUT FALLBACK: deep, dogfood and models run today at $MC (ruling B)" ;;
+    *) die "NIGHTLY-CUT STOP: $(tail -n 1 "$AP/nightly-cut.log")" ;;
+  esac
+fi
 if [ ! -d "$WT" ] || [ "$(git -C "$WT" rev-parse HEAD 2>/dev/null)" != "$MC" ]; then
   [ -d "$WT" ] && git worktree remove --force "$WT" >> "$LOG" 2>&1
   git worktree add --detach "$WT" "$MC" >> "$LOG" 2>&1 || die "worktree add failed"
@@ -87,6 +125,23 @@ v=$(cargo metadata --no-deps --format-version 1 2>/dev/null | python3 -c 'import
 [ "$v" = "$V" ] || die "release commit carries version $v, not $V"
 bash scripts/bump-version.sh --check >> "$LOG" 2>&1 || die "bump-version.sh --check: the workspaces disagree on the version"
 export CARGO_TARGET_DIR="$REPO_ROOT/target"
+# RQ-2: at a nightly cut, deep/dogfood/models are not re-run (run_step skips them). Their receipts come
+# from last night's run AT THIS COMMIT and face the same judges here; `apr` is rebuilt at this commit so
+# readiness can re-prove it (HANDOFF §6 F5 row 16).
+if [ -n "$NIGHTLY_CUT" ] && run_step readiness; then
+  rm -rf "${WT:?}/.dogfood" "${AP:?}/models-t1"
+  mkdir -p "$WT/.dogfood" || die "mkdir $WT/.dogfood"
+  cp -- "$NR/$MC/dogfood/receipt.json" "$WT/.dogfood/receipt-nightly.json" || die "NIGHTLY-CUT: cannot copy the dogfood receipt"
+  cp -r -- "$NR/$MC/models-t1" "$AP/models-t1" || die "NIGHTLY-CUT: cannot copy the models receipts"
+  bash scripts/check_publish_preflight.sh --receipt-only > "$AP/dogfood-r5.log" 2>&1; rc=$?
+  tail -2 "$AP/dogfood-r5.log" >> "$STATUS"
+  [ $rc -eq 0 ] || die "NIGHTLY-CUT R5 refused last night's dogfood receipt rc=$rc ($AP/dogfood-r5.log)"
+  bash scripts/check_model_ladder.sh --version "$V" --receipts "$AP/models-t1" > "$AP/models-judge.log" 2>&1; rc=$?
+  [ $rc -eq 0 ] || die "NIGHTLY-CUT the model judge refused last night's receipts rc=$rc ($AP/models-judge.log)"
+  cargo build --release -p apr-cli --bin apr --features cuda --locked > "$AP/nightly-cut-apr.log" 2>&1 \
+    || die "NIGHTLY-CUT apr build at $MC failed ($AP/nightly-cut-apr.log)"
+  say "NIGHTLY-CUT GO at $MC: R5 and the model judge hold on last night's receipts"
+fi
 
 
 # 1b. deep (T-1): no `ci / deep` workflow exists on main, so the local equivalent runs on THIS commit.

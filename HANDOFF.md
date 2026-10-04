@@ -152,3 +152,22 @@ a7's words, verbatim: "RQ-2 F7 ruling: A (nightly 02:00Z; the release cuts at th
   2. `check_nightly_cut.sh` plus its planted rows (§3 + F5).
   3. `release_ladders_nightly.sh`, gated on the version (F4).
   4. The `autopilot --cut-from-nightly` wiring.
+
+## 8. BUILD STATUS (aprender-w4578, 2026-10-04): A built, branch only
+
+Supersedes §7's build order where they differ.
+
+- **F1 is done by `autopilot.sh --ladders <V> <sha> deep|dogfood|models`, not `lib_ladders.sh`.** Moving the step bodies into a lib broke three guards that read autopilot's lines verbatim (check_release_models_t1, check_release_autopilot_dogfood_close, check_release_host_receipts). `--ladders` keeps one copy of each step in autopilot: it skips the milestone, epic and PR lookups, sets `MC=<sha>`, and runs only the named step. A malformed call exits 2 before any state dir, `gh` or `git` (5 rows).
+- **`scripts/release/check_nightly_cut.sh`** picks the cut (§3 + F5). Table `check_nightly_cut_table.sh`: 20 rows, 6 mutants caught.
+- **`scripts/release/release_ladders_nightly.sh`** is the nightly (F4 version gate, one row per sha, `flock`). Table `release_ladders_nightly_table.sh`: 12 rows + 5 `--ladders` rows, 4 mutants caught.
+  - A step's index rc: exit 0 → 0; autopilot exit 2 → 2; last STOP line `NO-GO rc=2` or `rc=75` → 2; anything else → 1 (fail closed toward STOP).
+  - The dogfood receipt is copied by `commit == sha`, never by mtime (F2).
+- **autopilot wiring** is opt-in: `RELEASE_CUT_FROM_NIGHTLY=1` (not a `--cut-from-nightly` flag).
+  - check_nightly_cut rc 0 → `MC` = the measured sha (must still be an ancestor of origin/main), then F3's version + `bump-version.sh --check` run at that MC as today.
+  - rc 2 → FALLBACK: today's path (ruling B). Any other rc → STOP.
+  - On a cut, deep/dogfood/models are skipped; at readiness the receipts are copied in (`.dogfood/` and `models-t1/` replaced whole) and the SAME judges run: R5 `--receipt-only` (row 14: OPEN obligations), `check_model_ladder.sh`, then `apr` is rebuilt at MC so readiness re-proves `(${MC:0:9}` (row 16).
+- **Guards:** all 7 autopilot guards + check_sourced_libs_option_neutral green after the edits.
+- **Not built here (follow-ups):**
+  1. The forjar systemd timer, 02:00Z on lambda, from a dedicated checkout (paiml/infra; the timer is the only trigger, 0 GitHub calls).
+  2. B's concurrent launch for a late bump: the fallback today is still the serial run.
+  3. Turning `RELEASE_CUT_FROM_NIGHTLY=1` on by default, after one release cuts from a nightly row.
