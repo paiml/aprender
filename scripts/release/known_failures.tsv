@@ -1,0 +1,15 @@
+# The known-failure list (#4689): shrink-only. Judged by scripts/release/known_failure_ratchet.sh,
+# contract contracts/known-failure-ratchet-v1.yaml. Key = (model sha256, leg, check); a leg is a GPU
+# architecture. Seed: the known failures fixed by the v0.70.1 release notes and tag, one row per
+# (model, leg) each ticket names. Every one of them is still a failure: printed RED with its ticket.
+# Delete a row when its ticket is fixed or re-ruled; never add one (a new failure needs a ruling).
+sha256	leg	check	ticket	model
+f1ad9d1174ce6ab47b584d522634c47e411b75bffdffd9a4e106e21e882392e5	sm_89	serve_api_chat	#4661	Qwen2.5-0.5B-Instruct-f16.gguf
+fadc3e5f8d42bf7e894a785b05082e47daee4df26680389817e2093056f088ad	sm_89	serve_api_chat	#4662	Qwen3-Coder-30B-A3B-Instruct-Q4_K_M.gguf
+fadc3e5f8d42bf7e894a785b05082e47daee4df26680389817e2093056f088ad	sm_121	serve_api_chat	#4662	Qwen3-Coder-30B-A3B-Instruct-Q4_K_M.gguf
+619917ae92f61eb6515a7070e944a0a7c2b198a2cf6536386f475485188a36ff	sm_89	golden_output_thinking_on	#4663	Qwen3.5-0.8B-IQ4_XS.gguf
+a369165c8ec45a92d55cbad98b5377e2c32ca8dfc824c899d9d05b33b6b53e54	sm_89	golden_output	#4664	Qwen3.5-0.8B-UD-IQ2_XXS.gguf
+a369165c8ec45a92d55cbad98b5377e2c32ca8dfc824c899d9d05b33b6b53e54	sm_121	golden_output	#4664	Qwen3.5-0.8B-UD-IQ2_XXS.gguf
+745def087c9ec34d12a94eb9b31eb52dba958b36def510b7e8f6f2e6bf1be123	sm_89	capability_match	#4665	Qwen3.5-35B-A3B-UD-IQ4_XS.gguf
+bd258782e35f7f458f8aced1adc053e6e92e89bc735ba3be89d38a06121dc517	sm_89	golden_output_thinking_on	#4666	Qwen3.5-0.8B-Q4_K_M.gguf
+bd258782e35f7f458f8aced1adc053e6e92e89bc735ba3be89d38a06121dc517	sm_121	golden_output_thinking_on	#4666	Qwen3.5-0.8B-Q4_K_M.gguf

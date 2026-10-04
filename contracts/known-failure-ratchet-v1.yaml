@@ -1,0 +1,103 @@
+metadata:
+  version: 1.0.0
+  created: '2026-10-04'
+  author: PAIML Engineering
+  description: "A release may ship with failures that are already known, but only on a shrink-only list keyed by (model sha256, leg, check), each with its ticket. scripts/release/known_failure_ratchet.sh compares tonight's evidence bundle with that list and with the last release's bundle. Every failure is KNOWN (listed: still printed RED with its ticket, never green), NEW (it passed in the last release's bundle and fails here) or UNLISTED (any other failure off the list). NEW and UNLISTED are RED. The list is RED when it grew or a row was edited, when a listed key passes (a fixed entry left on the list), when a row has no ticket and when a key is listed twice. A missing or unreadable bundle is not_measured and never passes. The ratchet only sorts failures: it never adds to the list and never excuses a failure (#4689)."
+  kind: pattern
+  references:
+    - "scripts/release/known_failure_ratchet.sh: the command line, the case table (--self-test) and the planted mutants (--mutants)"
+    - "scripts/lib/known_failure_ratchet.sh: the judge, an option-neutral sourced library that fails by return status"
+    - "scripts/release/known_failures.tsv: the list, seeded from the v0.70.1 release notes and tag"
+    - "scripts/check_model_ladder.sh: the known_red schema and its STALE refusal (an entry that covers nothing), which this generalises from one ladder sweep to the release"
+    - "contracts/model-capability-ladder-v1.yaml: ladder.hosts gives each leg's GPU architecture (sm_89, sm_121)"
+
+five_whys:
+  symptom: "0.70.1 shipped six known failures (#4661 to #4666). Nothing in the repo could tell, for the next release, whether a failure in its evidence was one of those six or a new one, or whether one of the six had been fixed while still being listed as known."
+  why_1: "The known failures lived in release notes and tickets, as prose, not as keys a checker could compare."
+  why_2: "The only machine-read list, the ladder's known_red, covers one ladder sweep and pins one model to one failure clause; it does not compare a release with the last one."
+  why_3: "Without a baseline, 'new' had no measurable definition, so a regression could hide among old failures."
+  why_4: "A list that any edit can grow becomes an amnesty: a new failure is added instead of ruled on."
+  why_5: "A night with no bundle reads as nothing to report unless something calls it not measured."
+  root_cause: "Known failures had no keyed, shrink-only list and no judge that compares a release against the last one. The remedy is the list plus a ratchet that sorts each failure as known or new, refuses a list that grew or kept a fixed entry, and calls missing evidence not_measured."
+
+equations:
+  classify:
+    formula: "for each key k with state_head(k) = fail: KNOWN if k ∈ list; else NEW if state_base(k) = pass; else UNLISTED"
+    domain: "key = (model sha256, leg, check), a leg being a GPU architecture or a runner label; state ∈ {pass, fail, not_measured} read from DIR/checks.tsv of the head and the base bundle"
+    codomain: "{KNOWN, NEW, UNLISTED} for each failing key"
+    invariants:
+      - "a KNOWN failure is printed RED with its ticket and is never counted green"
+      - "NEW and UNLISTED are RED"
+      - "a key the last release's bundle did not show passing is UNLISTED, never excused, when it is not listed"
+
+  list_ratchet:
+    formula: "RED if ∃ row ∈ list: row ∉ list_base (byte for byte on sha256, leg, check, ticket); RED if ∃ k ∈ list: state_head(k) = pass (STALE); RED if a row has no ticket or a ticket not of the form #<number>; RED if a key is listed twice"
+    domain: "the list at the head and the list at the base ref (none before the list lands: BOOTSTRAP)"
+    codomain: "{RED, ok}"
+    invariants:
+      - "the list only shrinks: a deleted row is ok, an added or edited row is RED"
+      - "a fixed entry left on the list is RED: a known failure cannot outlive its defect"
+      - "the ratchet never writes the list"
+
+  verdict:
+    formula: "RED if classify or list_ratchet is RED; else NOT_MEASURED if the head bundle is missing or unreadable, the base bundle is given and unreadable, a listed key is not measured on the head, or a key that passed in the base is not measured on the head; else GREEN"
+    domain: "the findings of classify and list_ratchet"
+    codomain: "exit 0 GREEN | 1 RED | 2 NOT_MEASURED | 3 caller error"
+    invariants:
+      - "RED outranks NOT_MEASURED, and NOT_MEASURED is never GREEN"
+      - "a head whose only failures are the listed ones, each still failing, is GREEN"
+      - "seed: 9 rows (one per model and leg) for tickets #4661 to #4666, from the v0.70.1 release notes and tag; 0.70.1 had no nightly bundle"
+
+proof_obligations:
+  - id: KFR-INV-001
+    type: invariant
+    property: "A planted new failure is RED"
+    formal: "∀ k: state_head(k) = fail ∧ k ∉ list ∧ state_base(k) = pass ⇒ verdict = RED"
+    applies_to: classify
+  - id: KFR-INV-002
+    type: invariant
+    property: "A fixed entry left on the list is RED"
+    formal: "∀ k ∈ list: state_head(k) = pass ⇒ verdict = RED"
+    applies_to: list_ratchet
+  - id: KFR-INV-003
+    type: invariant
+    property: "A list that grew is RED"
+    formal: "list ⊄ list_base ⇒ verdict = RED"
+    applies_to: list_ratchet
+  - id: KFR-INV-004
+    type: invariant
+    property: "An entry without a ticket is RED"
+    formal: "∀ row ∈ list: ¬ticket(row) ⇒ verdict = RED"
+    applies_to: list_ratchet
+  - id: KFR-INV-005
+    type: invariant
+    property: "A missing bundle is not_measured, never GREEN"
+    formal: "¬readable(head) ⇒ verdict ∈ {RED, NOT_MEASURED}"
+    applies_to: verdict
+  - id: KFR-INV-006
+    type: invariant
+    property: "A head whose only failures are the listed ones is GREEN"
+    formal: "{k : state_head(k) = fail} = list ∧ list ⊆ list_base ∧ ∀ k ∈ list ∪ {k : state_base(k) = pass}: state_head(k) ∈ {pass, fail} ⇒ verdict = GREEN"
+    applies_to: verdict
+
+falsification_tests:
+  - id: FALSIFY-KFR-001
+    rule: "The ratchet is right on every row of its case table"
+    prediction: "A planted new failure, an unlisted failure with no base, a fixed entry left on the list, a list that grew, an edited ticket, a row without a ticket, a malformed ticket and a key listed twice are RED; a missing head bundle, a bundle with no checks.tsv or no rows, an unknown state, conflicting rows, a listed key not measured, a base pass not measured here and an unreadable base are NOT_MEASURED; RED outranks NOT_MEASURED; a head whose only failures are the listed ones is GREEN, and its known failures are still printed RED with their tickets; a shrunk list is GREEN; the committed seed is valid, names #4661 to #4666 and is NOT_MEASURED with no bundle"
+    test: "bash scripts/release/known_failure_ratchet.sh --self-test"
+    if_fails: "The ratchet can pass a release whose evidence holds a new failure, or let a fixed entry or an added entry stay on the list: the amnesty the list must not become"
+
+  - id: FALSIFY-KFR-002
+    rule: "The case table can still fail on the defects it names"
+    prediction: "Each planted mutant (NEW not red, UNLISTED not red, STALE not red, ADDED not red, a row without a ticket accepted, a malformed ticket accepted, a duplicate accepted, a missing bundle passed, an unknown state accepted, an empty bundle measured, a listed key not measured ignored, a base pass gone ignored, NOT_MEASURED outranking RED, an unreadable head or base ignored, conflicting rows accepted, a known failure counted as not measured) turns --self-test RED; a mutant whose patch does not apply is an error, never a survivor"
+    test: "bash scripts/release/known_failure_ratchet.sh --mutants"
+    if_fails: "The case table is theater: it would pass a ratchet that excuses a new failure or keeps a fixed one listed"
+
+qa_gate:
+  id: QA-KFR-001
+  name: "Known failures are listed, keyed, ticketed and shrink-only; a new failure is RED"
+  description: "scripts/release/known_failure_ratchet.sh sorts every failure in the evidence bundle as known (listed, still RED with its ticket) or new, refuses a list that grew or kept a fixed entry, and calls missing evidence not_measured. Report-only: no gate reads it yet."
+  checks:
+    - "classify"
+    - "list_ratchet"
+    - "verdict"
