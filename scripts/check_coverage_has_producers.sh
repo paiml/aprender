@@ -114,12 +114,13 @@ END {
 AWK
 )
 tag_push() { awk -v q="'" -v label="$2" "$ON_KEY_AWK$TAG_PUSH_AWK" "$1"; }
-# R6: a listing of ci.yml (or "CI") runs whose branch is a variable -- how a tag's ci.yml run
-# was read (tag_coverage_gate.sh before #4734). A literal branch (main) is fine. The flags
-# match in either order, short or long, and `gh api .../workflows/ci.yml/runs?branch=$X` too.
+# R6: a listing of ci.yml (or "CI") runs whose branch holds a variable anywhere ($T, v$VER,
+# refs/tags/$T) -- how a tag's ci.yml run was read (tag_coverage_gate.sh before #4734). A
+# literal branch (main) is fine. The flags match in either order, short or long, and
+# `gh api .../workflows/ci.yml/runs?branch=$X` too.
 CI_WF_RE='(--workflow|-w)[= ]["'"'"']?(\.github/workflows/)?(ci\.yml|CI)["'"'"']?([[:space:]]|$)'
-CI_BR_RE='(--branch|-b)[= ]["'"'"']?[$]'
-CI_API_RE='workflows/ci\.yml/runs.*branch=[$]'
+CI_BR_RE='(--branch|-b)[= ]["'"'"']?[^ \t"'"'"']*[$]'
+CI_API_RE='workflows/ci\.yml/runs.*branch=[^& \t"'"'"']*[$]'
 # R6_AWK: join `\`-continued lines, skip comment lines, and print FILE:LINE:text for a ci.yml
 # run lookup whose branch is a variable (the regexes come in through the environment).
 R6_AWK=$(cat <<'AWK'
@@ -278,6 +279,13 @@ if [ "${1:-}" = "--self-test" ]; then
     m_r5_createdash() { printf 'on:\n  - pull_request\n  - create\njobs: {}\n' > .github/workflows/ci.yml; }
     m_r6_contd()      { printf 'gh run list --workflow ci.yml \\\n    --branch "%sT" --limit 1\n' '$' >> scripts/state.sh; }
     m_r6_contdmain()  { printf 'gh run list --workflow ci.yml \\\n    --branch main --limit 1\n' >> scripts/state.sh; }
+    m_r6_vprefix()    { printf 'gh run list --workflow ci.yml --branch "v%s{VER}"\n' '$' >> scripts/state.sh; }
+    m_r6_refstag()    { printf 'gh run list -w ci.yml -b "refs/tags/%sTAG"\n' '$' >> scripts/state.sh; }
+    m_r6_eqprefix()   { printf 'gh run list --workflow=ci.yml --branch=v%sVER\n' '$' >> scripts/state.sh; }
+    m_r6_apiprefix()  { printf 'gh api "repos/x/y/actions/workflows/ci.yml/runs?branch=v%sVER"\n' '$' >> scripts/state.sh; }
+    m_r6_apimain()    { printf 'gh api "repos/x/y/actions/workflows/ci.yml/runs?branch=main&per_page=%sN"\n' '$' >> scripts/state.sh; }
+    m_r3_flowmulti()  { sed -i "s/^  workflow_dispatch: {}/  push: {tags: [v1,\n    v2]}/" .github/workflows/coverage-nightly.yml; }
+    m_r3_unbal()      { sed -i "s/^  workflow_dispatch: {}/  workflow_dispatch: {inputs: {a: {type: string},\n    b: {type: string}}}/" .github/workflows/coverage-nightly.yml; }
     m_missing()       { rm -f .github/workflows/coverage-nightly.yml; }
     m_missing_ci()    { rm -f .github/workflows/ci.yml; }
     m_missing_sy()    { rm -f ci/sections.yml; }
@@ -342,6 +350,13 @@ if [ "${1:-}" = "--self-test" ]; then
     row 2 "ci.yml missing is ENV rc=2, never a pass"                            m_missing_ci
     row 2 "ci/sections.yml missing is ENV rc=2, never a pass"                   m_missing_sy
     row 2 "scripts/release/tag_coverage_gate.sh missing is ENV rc=2, never a pass" m_missing_tg
+    row 1 "R6: ci.yml runs for a tag-name branch v + a variable -> RED"                 m_r6_vprefix
+    row 1 "R6: ci.yml runs for -b refs/tags/ + a variable -> RED"                       m_r6_refstag
+    row 1 "R6: ci.yml runs for --branch=v + a variable -> RED"                          m_r6_eqprefix
+    row 1 "R6: gh api ci.yml runs?branch=v + a variable -> RED"                         m_r6_apiprefix
+    row 0 "R6: gh api ci.yml runs?branch=main with a variable page size -> PASS" m_r6_apimain
+    row 2 "R3: the nightly's on: has a multi-line flow push value -> ENV rc=2"   m_r3_flowmulti
+    row 2 "R3: the nightly's on: has a multi-line flow non-push value -> ENV rc=2" m_r3_unbal
     [ "$bad" = 0 ] && { printf 'SELF-TEST PASSED: %s rows\n' "$n"; exit 0; }
     printf 'SELF-TEST FAILED\n' >&2; exit 1
 fi
