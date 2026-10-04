@@ -782,11 +782,8 @@ crates/aprender-serve/src/apr/tests_apr_header.rs
 crates/aprender-serve/src/apr/tests_apr_metadata.rs
 crates/aprender-serve/src/apr/tests_apr_metadata_02.rs
 crates/aprender-serve/src/apr/tests_apr_metadata_03.rs
-crates/aprender-serve/src/apr/tests_binary_tensor_helpers.rs
 crates/aprender-serve/src/apr/tests_bpe_tokenizer_apr.rs
 crates/aprender-serve/src/apr/tests_byte.rs
-crates/aprender-serve/src/apr/tests_byte_02.rs
-crates/aprender-serve/src/apr/tests_dequantize.rs
 crates/aprender-serve/src/apr/tests_dtype_and_tokenizer.rs
 crates/aprender-serve/src/apr/tests_f16.rs
 crates/aprender-serve/src/apr/tests_format_and_mapped_model.rs
@@ -858,13 +855,10 @@ crates/aprender-serve/src/bench/tests_050.rs
 crates/aprender-serve/src/bench/tests_benchmark_matrix.rs
 crates/aprender-serve/src/bench/tests_convoy_saturation.rs
 crates/aprender-serve/src/bench/tests_distributed_bench.rs
-crates/aprender-serve/src/bench/tests_distributed_bench_02.rs
 crates/aprender-serve/src/bench/tests_dynamic_sampler.rs
 crates/aprender-serve/src/bench/tests_imp900.rs
 crates/aprender-serve/src/bench/tests_llama_cpp.rs
 crates/aprender-serve/src/bench/tests_mock_backend_registry.rs
-crates/aprender-serve/src/bench/tests_outlier_detector.rs
-crates/aprender-serve/src/bench/tests_parse_llama.rs
 crates/aprender-serve/src/bench/tests_thermal_guard.rs
 crates/aprender-serve/src/bench/tests_welch_thermal_guard.rs
 crates/aprender-serve/src/bench/welch_t_test.rs

@@ -25,7 +25,7 @@ out[r,i]  = x[r,i] * rms_inv * gamma[i]
 ```
 
 This is the exact serve `rmsnorm` math (single-warp `RmsNormKernel` dispatched by
-`crates/aprender-serve/src/cuda/executor/layers/rmsnorm.rs`). RMSNorm is pure f32
+`crates/aprender-serve/src/cuda/executor/layers/rmsnorm_ptr.rs`). RMSNorm is pure f32
 FMA + a warp-shuffle reduce + rsqrt — **ZERO DP4A** — so it is squarely the
 PMAT-882 GO class (FMA/softmax wins; DP4A-bound Q4K GEMV/FFN is the NO-GO class).
 

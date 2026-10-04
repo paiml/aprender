@@ -211,8 +211,6 @@ crates/aprender-qa-runner/src/executor_serve_battery.rs:38
 crates/aprender-serve/src/bench/gemm_performance.rs:259
 crates/aprender-serve/src/cuda/executor/cached.rs:6
 crates/aprender-serve/src/cuda/executor/layers/batched_forward.rs:492
-crates/aprender-serve/src/cuda/executor/layers/batched_layer_par111.rs:10
-crates/aprender-serve/src/cuda/executor/layers/batched_layer_par111.rs:11
 crates/aprender-serve/src/cuda/executor/layers/par-062.rs:257
 crates/aprender-serve/src/cuda/executor/layers/transformer_layer_batched.rs:32
 crates/aprender-serve/src/cuda/executor/layers/transformer_layer_batched.rs:33

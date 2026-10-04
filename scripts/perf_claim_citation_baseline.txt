@@ -121,7 +121,6 @@ crates/aprender-profile/src/model_persistence.rs:4
 crates/aprender-qa-gen/src/kernel_coverage.rs:122
 crates/aprender-serve/src/apr/mapped_apr_model.rs:63
 crates/aprender-serve/src/apr/special_tokens.rs:63
-crates/aprender-serve/src/brick/brick.rs:316
 crates/aprender-serve/src/brick/brick_impls.rs:316
 crates/aprender-serve/src/brick/brick_impls.rs:341
 crates/aprender-serve/src/cuda/executor/layer_norm_gpu.rs:139
@@ -130,7 +129,6 @@ crates/aprender-serve/src/cuda/executor/layers/cublas_prefill/mod.rs:7
 crates/aprender-serve/src/cuda/executor/q4k_tiled_gemv.rs:11
 crates/aprender-serve/src/cuda/executor/streams.rs:410
 crates/aprender-serve/src/cuda/executor/tiled_gemv.rs:339
-crates/aprender-serve/src/cuda/executor/uses.rs:11
 crates/aprender-serve/src/cuda/executor/workspace.rs:96
 crates/aprender-serve/src/cuda/memory.rs:232
 crates/aprender-serve/src/cuda/pipeline.rs:426

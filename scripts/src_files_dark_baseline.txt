@@ -9,16 +9,13 @@
 # code is wanted (and fix what no longer compiles). Wire or delete; never add.
 # A compiled file that the model lists dark is no entry: fix the model instead.
 # tool_version=none (measured by scripts/check_src_test_files_wired.sh with scripts/lib/src_reach.py: an in-tree python3 model of mod/#[path]/include! edges over git ls-files; not a versioned analyser)
-crates/apr-cli/src/commands/train_output.rs
 crates/aprender-cbtop/src/latency_distribution/analysis.rs
-crates/aprender-core/src/metaheuristics/cmaes_optimize_orphan.rs
 crates/aprender-core/src/models/qwen2/falsification.rs
 crates/aprender-core/src/models/qwen2/tests.rs
 crates/aprender-core/src/models/qwen2/tests_apr_loading.rs
 crates/aprender-gpu/src/testing/integration_tests/mod.rs
 crates/aprender-gpu/src/testing/integration_tests/reports.rs
 crates/aprender-gpu/src/testing/integration_tests/stress_tests.rs
-crates/aprender-orchestrate/src/oracle/knowledge_graph/graph.rs
 crates/aprender-orchestrate/src/oracle/knowledge_graph/queries.rs
 crates/aprender-present-terminal/src/ptop/v2_sketch.rs
 crates/aprender-present-terminal/src/widgets/battery_panel.rs
@@ -26,17 +23,7 @@ crates/aprender-present-terminal/src/widgets/disk_panel.rs
 crates/aprender-present/src/generated_contracts.rs
 crates/aprender-serve/src/apr/loading.rs
 crates/aprender-serve/src/apr/mapped_apr_model.rs
-crates/aprender-serve/src/apr/tests_binary_tensor_helpers.rs
-crates/aprender-serve/src/apr/tests_byte_02.rs
-crates/aprender-serve/src/apr/tests_dequantize.rs
-crates/aprender-serve/src/apr/tests_matmul_scaling.rs
-crates/aprender-serve/src/bench/results.rs
-crates/aprender-serve/src/bench/tests_04.rs
-crates/aprender-serve/src/bench/tests_distributed_bench_02.rs
-crates/aprender-serve/src/bench/tests_outlier_detector.rs
-crates/aprender-serve/src/bench/tests_parse_llama.rs
 crates/aprender-serve/src/bench_viz_tests_benchmark_runner.rs
-crates/aprender-serve/src/brick/brick.rs
 crates/aprender-serve/src/cli/benchmark.rs
 crates/aprender-serve/src/cli/inference_tests_sample_next.rs
 crates/aprender-serve/src/cli/tests_12.rs
@@ -52,25 +39,21 @@ crates/aprender-serve/src/cuda/cuda_kernels.rs
 crates/aprender-serve/src/cuda/executor/cache_from_cache_from_kv_cache.rs
 crates/aprender-serve/src/cuda/executor/incremental_attention.rs
 crates/aprender-serve/src/cuda/executor/kernel.rs
-crates/aprender-serve/src/cuda/executor/layers/batched_layer_par111.rs
 crates/aprender-serve/src/cuda/executor/layers/forward_graphed_decode.rs
 crates/aprender-serve/src/cuda/executor/layers/loading.rs
 crates/aprender-serve/src/cuda/executor/layers/prefill_logits.rs
 crates/aprender-serve/src/cuda/executor/layers/preload_utilities.rs
 crates/aprender-serve/src/cuda/executor/layers/reduces.rs
-crates/aprender-serve/src/cuda/executor/layers/rmsnorm.rs
 crates/aprender-serve/src/cuda/executor/layers/rope.rs
 crates/aprender-serve/src/cuda/executor/layers/transformer_layer_indexed.rs
 crates/aprender-serve/src/cuda/executor/layers/workspace_attention.rs
 crates/aprender-serve/src/cuda/executor/q4k_gemv_cached_uses.rs
 crates/aprender-serve/src/cuda/executor/reference.rs
-crates/aprender-serve/src/cuda/executor/uses.rs
 crates/aprender-serve/src/gamma.rs
 crates/aprender-serve/src/generate/make.rs
 crates/aprender-serve/src/gguf/cuda/cache.rs
 crates/aprender-serve/src/gguf/cuda/loading.rs
 crates/aprender-serve/src/gguf/inference/cache.rs
-crates/aprender-serve/src/gguf/inference/flash_attention_tiled.rs
 crates/aprender-serve/src/gguf/inference/forward/cache.rs
 crates/aprender-serve/src/gguf/inference/forward/debug.rs
 crates/aprender-serve/src/gguf/loader_tests.rs
@@ -117,8 +100,5 @@ crates/aprender-shell/src/main_cmd_daemon.rs
 crates/aprender-shell/src/main_cmd_tune_name.rs
 crates/aprender-shell/src/remove.rs
 crates/aprender-shell/src/suggestion_helpers.rs
-crates/aprender-test-cli/src/commands_tests.rs
-crates/aprender-test-cli/src/comply_commands.rs
-crates/aprender-test-cli/src/main_tests.rs
 crates/aprender-train/src/finetune/training_plan_execute.rs
 crates/aprender-verify/src/benchmark/metadata.rs
