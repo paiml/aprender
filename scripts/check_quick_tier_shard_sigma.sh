@@ -25,6 +25,9 @@ TREE_STEP="Quick tier: every test target that reads the tree (BSE-17)"
 KEEP_STEP="Σ-executed: keep the quick tree-reader junit (the next nextest run overwrites it)"
 QSIGMA_STEP="Σ-executed (quick tier): the tests this job ran are exactly the tests it owes (#4433)"
 STAGE_STEP="Σ-executed: stage this shard's executed ids for the fan-in (#4433)"
+# the only `if:` each step may carry: tree + keep on every quick shard, staging + upload on every sharded job
+QUICK_IF="steps.tier.outputs.tier == 'quick'"
+SHARDED_IF="matrix.shards != 1"
 
 # step_run <file> <step name> -> that step's `run: |` body, dedented; empty if absent
 step_run() {
@@ -59,12 +62,11 @@ upload_after() {
 }
 # code -> stdin without comments, so a commented-out flag or cp never satisfies a row
 code() { sed -e '/^[[:space:]]*#/d' -e 's/[[:space:]]#.*$//'; }
-# every_shard <if-expression> -> pass iff it names no single shard and is not dead.
-# `matrix.shards` (the shard COUNT) is allowed; `matrix.shard`, `env.SHARD`,
-# `matrix['shard']`, `strategy.job-index` and a literal false are not.
-every_shard() {
-    if grep -qiE "shard([^s]|$)|job-index|(^|[^[:alnum:]_])false([^[:alnum:]_]|$)" <<< "$1"; then echo fail; else echo pass; fi
-}
+# exact_if <if-expression> <expected> -> pass iff the step's `if:` is exactly the expected one.
+# An allowlist, not a pattern: a deny-list of shard spellings let `if: ${{ 0 == 1 }}` and
+# `if: endsWith(github.job, '1')` through (lane-B review). Any other condition -- one that
+# names a shard, is dead, or is merely reworded -- is RED until this table is changed with it.
+exact_if() { if [ "$1" = "$2" ]; then echo pass; else echo fail; fi; }
 
 # The planted shard artifacts: a universe of six ids in two binaries.
 junit() { # junit <file> <binary:test>... -- nextest's attribute order, name first
@@ -114,11 +116,11 @@ table() { # table <workflow> <sections> -> 0 iff every row holds, 2 when a step 
     hasnt() { if grep -qF -- "$2" <<< "$1"; then echo fail; else echo pass; fi; }
     # sections.yml: the tree readers are partitioned, on every shard
     row pass "tree step runs nextest with this shard's hash partition" "$(has "$tree" '--partition "hash:${SHARD}/${SHARDS}"')"
-    row pass "tree step is not shard-1-only" "$(every_shard "$(step_if "$2" "$TREE_STEP")")"
-    row pass "tree junit is kept on every shard" "$(every_shard "$(step_if "$2" "$KEEP_STEP")")"
-    row pass "staging runs on every shard" "$(every_shard "$(step_if "$2" "$STAGE_STEP")")"
-    row pass "the upload runs on every shard" "$(every_shard "$(grep -m1 -E '^ *if: ' <<< "$up")")"
-    row pass "the upload names one artifact per shard" "$(has "$(code <<< "$up")" 'name: sigma-shard-${{ matrix.shard }}')"
+    row pass "tree step is not shard-1-only" "$(exact_if "$(step_if "$2" "$TREE_STEP")" "$QUICK_IF")"
+    row pass "tree junit is kept on every shard" "$(exact_if "$(step_if "$2" "$KEEP_STEP")" "$QUICK_IF")"
+    row pass "staging runs on every shard" "$(exact_if "$(step_if "$2" "$STAGE_STEP")" "$SHARDED_IF")"
+    row pass "the upload runs on every shard" "$(exact_if "$(sed -n 's/^ *if: //p' <<< "$up" | head -1)" "$SHARDED_IF")"
+    row pass "the upload names one artifact per shard" "$(if grep -qE '^ *name: sigma-shard-\$\{\{ matrix\.shard \}\}$' <<< "$(code <<< "$up")"; then echo pass; else echo fail; fi)"
     row pass "staging ships every shard's tree junit" "$(has "$stage" 'cp "$sig/quick-tree.junit.xml" sigma-shard/')"
     row pass "staging ships shard 1's listed tree set" "$(has "$stage" 'cp "$sig/quick-tree.list.json" sigma-shard/')"
     row pass "staging runs after the tree step and the quick Σ step" \
@@ -183,9 +185,13 @@ if [ "${1:-}" = "--self-test" ]; then
     awk -v s="- name: \"$TREE_STEP\"" 'index($0, s) { hit = 1 } hit && /^ *if: / { sub(/ *$/, " \\&\\& env.SHARD == '"'"'1'"'"'"); hit = 0 } 1' "$SEC" > "$d/envshard.yml"
     sed 's/-E "\$EXPR" --partition/-E "$EXPR" # --partition/' "$SEC" > "$d/cmtpart.yml"
     sed 's/^\( *\)cp "\$sig\/quick-tree.junit.xml" sigma-shard\/quick-tree.junit.xml$/\1true # cp "$sig\/quick-tree.junit.xml" sigma-shard\/quick-tree.junit.xml/' "$SEC" > "$d/cmtcp.yml"
+    # lane-B round 2 survivors: a dead expression, a job-name test, a suffixed artifact name
+    awk -v s="- name: \"$STAGE_STEP\"" 'index($0, s) { hit = 1 } hit && /upload-artifact/ { up = 1 } up && /^ *if: / { sub(/if: .*/, "if: ${{ 0 == 1 }}"); hit = up = 0 } 1' "$SEC" > "$d/updead0.yml"
+    awk -v s="- name: \"$TREE_STEP\"" 'index($0, s) { hit = 1 } hit && /^ *if: / { sub(/ *$/, " \\&\\& endsWith(github.job, '"'"'1'"'"')"); hit = 0 } 1' "$SEC" > "$d/endsjob.yml"
+    sed 's/name: sigma-shard-\${{ matrix.shard }}$/name: sigma-shard-${{ matrix.shard }}-x/' "$SEC" > "$d/upsuffix.yml"
     printf 'jobs: {}\n' > "$d/none.yml"
     bad=0
-    for m in exempt nojunit nodup twoj nounion tiermix nopart index shard1 keep1 nostage order stage1 updead upname envshard cmtpart cmtcp; do
+    for m in exempt nojunit nodup twoj nounion tiermix nopart index shard1 keep1 nostage order stage1 updead upname envshard cmtpart cmtcp updead0 endsjob upsuffix; do
         case "$m" in exempt | nojunit | nodup | twoj | nounion | tiermix) wf="$d/$m.yml" sec="$SEC" src="$WF" ;; *) wf="$WF" sec="$d/$m.yml" src="$SEC" ;; esac
         if cmp -s "$src" "$d/$m.yml"; then printf 'FAIL  the %s mutant did not apply (its anchor is gone)\n' "$m"; bad=1; continue; fi
         if table "$wf" "$sec" > "$d/out" 2>&1; then printf 'FAIL  the planted %s rule passed the table\n' "$m"; bad=1
