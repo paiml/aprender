@@ -563,6 +563,11 @@ fn no_vocabulary(what: &str) -> CliError {
 /// explicit override must still beat the flag. The 2048 default now applies
 /// only when neither is set.
 ///
+/// K1 (#4603): with neither set this now returns `None`, and the caller sizes the
+/// KV to the model's context within free VRAM (`OwnedQuantizedModelCuda::for_serving`).
+/// `serve::run` writes `REALIZR_CONTEXT_LENGTH` only for an operator-set flag, so the
+/// 4096 default no longer caps a 32K model's KV at 4096.
+///
 /// NOTE ON SCOPE. This is NOT the same root as #2774 even though both land in
 /// the same allocation. #2774 is a VRAM budget computed before the weights are
 /// resident; this is a flag written to one name and read from another. They are
@@ -571,13 +576,39 @@ fn no_vocabulary(what: &str) -> CliError {
 /// while `--context-length` was ignored the batched KV was half-sized, which is
 /// the only reason the 7B appeared to survive c=4 on a 24 GB card at all.
 #[cfg(any(all(feature = "inference", feature = "cuda"), test))]
-fn resolve_serve_max_seq_len(explicit_override: Option<&str>, context_length: Option<&str>) -> usize {
-    const DEFAULT_MAX_SEQ_LEN: usize = 2048;
+fn resolve_serve_max_seq_len(
+    explicit_override: Option<&str>,
+    context_length: Option<&str>,
+) -> Option<usize> {
     explicit_override
         .and_then(|v| v.parse::<usize>().ok())
         .or_else(|| context_length.and_then(|v| v.parse::<usize>().ok()))
         .filter(|&n| n > 0)
-        .unwrap_or(DEFAULT_MAX_SEQ_LEN)
+}
+
+/// GH-129 + #2762 + K1 (#4603): build the CUDA model a server runs, with its KV sized
+/// from `REALIZR_MAX_SEQ_LEN` / `--context-length` when one is set, else from the
+/// model's context within free VRAM. Every CUDA serve path (GGUF, APR, SafeTensors)
+/// takes this; the APR and SafeTensors paths used `OwnedQuantizedModelCuda::new`, a
+/// fixed 2048, which no flag could move.
+#[cfg(all(feature = "inference", feature = "cuda"))]
+fn serving_cuda_model(
+    model: realizar::gguf::OwnedQuantizedModel,
+) -> std::result::Result<realizar::gguf::OwnedQuantizedModelCuda, realizar::gguf::CudaInitError> {
+    use realizar::gguf::OwnedQuantizedModelCuda;
+    match resolve_serve_max_seq_len(
+        std::env::var("REALIZR_MAX_SEQ_LEN").ok().as_deref(),
+        std::env::var("REALIZR_CONTEXT_LENGTH").ok().as_deref(),
+    ) {
+        Some(n) => {
+            println!("  Max sequence length: {n}");
+            OwnedQuantizedModelCuda::with_max_seq_len(model, 0, n)
+        },
+        None => {
+            println!("  Max sequence length: the model's context, within free VRAM (K1)");
+            OwnedQuantizedModelCuda::for_serving(model, 0)
+        },
+    }
 }
 
 /// Start GGUF server with CUDA acceleration (PAR-111).
@@ -625,18 +656,11 @@ fn start_gguf_server_cuda(
         "Enabling optimized CUDA acceleration (PAR-111)...".cyan()
     );
 
-    // GH-129 + #2762: resolve the KV-cache context length.
-    let max_seq_len = resolve_serve_max_seq_len(
-        std::env::var("REALIZR_MAX_SEQ_LEN").ok().as_deref(),
-        std::env::var("REALIZR_CONTEXT_LENGTH").ok().as_deref(),
-    );
-    println!("  Max sequence length: {max_seq_len}");
-
     // #4254: measured before the model moves into CUDA. Without it `/v1/effective-config`
     // on a CUDA server reported quantization, path and parameter count all null.
     let model_source = measured_model_source(&quantized_model, Some(&mapped_model), config);
 
-    match OwnedQuantizedModelCuda::with_max_seq_len(quantized_model, 0, max_seq_len) {
+    match serving_cuda_model(quantized_model) {
         Ok(mut cuda_model) => {
             preload_gpu_weights(&mut cuda_model);
 
@@ -785,7 +809,7 @@ mod ctx_length_2762_tests {
     fn context_length_flag_reaches_the_kv_cache() {
         assert_eq!(
             resolve_serve_max_seq_len(None, Some("4096")),
-            4096,
+            Some(4096),
             "--context-length is written to REALIZR_CONTEXT_LENGTH and must be \
              the KV cache's max_len; ignoring it sizes the batched KV stride \
              from a constant (#2762)"
@@ -797,24 +821,28 @@ mod ctx_length_2762_tests {
     /// 7.4 GB of unified memory silently gets 4096 back.
     #[test]
     fn explicit_override_still_beats_the_flag() {
-        assert_eq!(resolve_serve_max_seq_len(Some("1024"), Some("4096")), 1024);
+        assert_eq!(
+            resolve_serve_max_seq_len(Some("1024"), Some("4096")),
+            Some(1024)
+        );
     }
 
-    /// DISCRIMINATION: stays GREEN both before and after. With neither set the
-    /// historical default is unchanged, so this fix moves no default.
+    /// K1 (#4603): with neither set there is no fixed length. RED before K1, which
+    /// returned 2048 here -- and `serve::run` always wrote the 4096 default, so a
+    /// Qwen3-8B (40960 context) was served from a 4096-position KV.
     #[test]
-    fn default_is_unchanged_when_nothing_is_set() {
-        assert_eq!(resolve_serve_max_seq_len(None, None), 2048);
+    fn nothing_set_means_size_from_the_model() {
+        assert_eq!(resolve_serve_max_seq_len(None, None), None);
     }
 
     /// A garbled value must not resolve to 0 -- `num_kv_heads * 0 * head_dim`
     /// is a zero-length KV cache, which the allocator accepts and the attention
-    /// kernel then reads out of.
+    /// kernel then reads out of. It falls back to sizing from the model.
     #[test]
-    fn junk_and_zero_fall_back_to_the_default() {
-        assert_eq!(resolve_serve_max_seq_len(None, Some("banana")), 2048);
-        assert_eq!(resolve_serve_max_seq_len(None, Some("0")), 2048);
-        assert_eq!(resolve_serve_max_seq_len(Some("0"), None), 2048);
+    fn junk_and_zero_fall_back_to_the_model() {
+        assert_eq!(resolve_serve_max_seq_len(None, Some("banana")), None);
+        assert_eq!(resolve_serve_max_seq_len(None, Some("0")), None);
+        assert_eq!(resolve_serve_max_seq_len(Some("0"), None), None);
     }
 }
 

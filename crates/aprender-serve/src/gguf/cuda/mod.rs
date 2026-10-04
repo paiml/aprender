@@ -76,6 +76,9 @@ enum KvLen {
     Fixed(usize),
     /// The model's context, capped by free VRAM (#3715, `for_session`).
     FitContext,
+    /// K1 (#4603): the model's context capped by free VRAM, budgeting the server's batched-KV slots too and
+    /// never below serve's old fixed length (`session_kv::serving_kv_len`).
+    FitServing,
 }
 
 /// #3715: device bytes load makes resident, from [`OwnedQuantizedModelCuda::resident_estimate`].
@@ -665,6 +668,25 @@ impl OwnedQuantizedModelCuda {
         Self::build(model, device_ordinal, KvLen::FitContext)
     }
 
+    /// K1 (#4603): an `apr serve` model. The device KV takes
+    /// the model's context when it fits, but the VRAM budget also holds
+    /// `session_kv::SERVE_BATCH_SLOTS` batched-KV slots of that length, because the
+    /// continuous-batching scheduler allocates them beside the session KV
+    /// (`fit_batched_kv_alloc`), and it never drops below serve's old 4096. Before K1
+    /// serve used a fixed 4096 whatever the model's context, so a > 4096-token prompt
+    /// on a 32K model overflowed the KV and answered 500.
+    ///
+    /// # Errors
+    ///
+    /// The same CUDA / capability / quant / MoE errors as [`Self::with_max_seq_len`].
+    pub fn for_serving(
+        model: OwnedQuantizedModel,
+        device_ordinal: i32,
+    ) -> std::result::Result<Self, CudaInitError> {
+        let model = Self::check_not_moe(model)?;
+        Self::build(model, device_ordinal, KvLen::FitServing)
+    }
+
     /// Build the CUDA wrapper for a MoE model whose caller runs the MoE forward
     /// itself (`forward_qwen3_moe_cuda`), never the dense one. Today that is
     /// `apr bench`'s MoE arm (`bench_moe.rs`) and the qwen3moe GPU parity test.
@@ -805,6 +827,7 @@ impl OwnedQuantizedModelCuda {
         let max_seq_len = match kv_len {
             KvLen::Fixed(n) => n,
             KvLen::FitContext => Self::session_kv_len(&executor, &model, memory_info.0),
+            KvLen::FitServing => Self::serving_kv_len(&executor, &model, memory_info.0),
         };
 
         // #3715: the FP16 batched prefill a QK-norm model now takes must fit beside
@@ -879,6 +902,33 @@ impl OwnedQuantizedModelCuda {
         eprintln!(
             "[#3715] session device KV: {len} positions (context {}, {:.1} GB free, {:.1} GB weights + {:.1} GB prefill cache resident)",
             model.config.context_length,
+            free_vram as f64 / 1e9,
+            r.weights as f64 / 1e9,
+            r.cache as f64 / 1e9,
+        );
+        len
+    }
+
+    /// K1 (#4603): the device KV length for [`Self::for_serving`] -- the model's context
+    /// capped by free VRAM, with the server's batched slots budgeted and serve's old 4096 as the floor
+    /// (see `session_kv::serving_kv_len`).
+    fn serving_kv_len(
+        executor: &crate::cuda::CudaExecutor,
+        model: &OwnedQuantizedModel,
+        free_vram: usize,
+    ) -> usize {
+        let r = Self::resident_estimate(executor, model);
+        let len = session_kv::serving_kv_len(
+            model.config.context_length,
+            r.kv_per_pos,
+            free_vram,
+            r.weights + r.cache,
+            r.reserve,
+        );
+        eprintln!(
+            "[K1] serve device KV: {len} positions (context {}, {} batched slots budgeted, {:.1} GB free, {:.1} GB weights + {:.1} GB prefill cache resident)",
+            model.config.context_length,
+            session_kv::SERVE_BATCH_SLOTS,
             free_vram as f64 / 1e9,
             r.weights as f64 / 1e9,
             r.cache as f64 / 1e9,
