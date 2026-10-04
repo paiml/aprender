@@ -111,11 +111,51 @@ const KV_TOL: f32 = TOL;
 /// **-0.246**, so the assertion discriminates rather than decorates.
 const COSINE_FLOOR: f32 = 0.996;
 
-/// The measured end-to-end logit L∞ — 6.721e-2 relative, at position 0 —
-/// rounded UP to one significant figure. A budget on the accumulated
-/// CPU-reference activation quantization through 24 layers and the `lm_head`,
-/// not a tolerance anyone should read as accuracy: see [`COSINE_FLOOR`].
-const LOGITS_BUDGET: f32 = 7e-2;
+/// The measured end-to-end logit L∞ plus a host-keyed margin (below). A
+/// budget on the accumulated CPU-reference activation quantization through 24
+/// layers and the `lm_head`, not a tolerance anyone should read as accuracy:
+/// see [`COSINE_FLOOR`].
+///
+/// It is keyed on the HOST CPU architecture, not the GPU, because the reference
+/// is what moves (aprender#4523). Measured at position 0 on the same GGUF
+/// (sha256 `bd258782e35f7f45…`), dumps diffed across hosts:
+///
+/// | pair | relative L∞ | cosine |
+/// |---|---|---|
+/// | GPU sm_89 (4090) vs GPU sm_121 (GB10) | **6.5e-7** | 1.000000 |
+/// | CPU x86_64 AVX2 vs CPU aarch64 NEON | **2.6e-2** | 0.999743 |
+/// | GPU vs CPU, x86_64 host | 6.721e-2 | 0.998348 |
+/// | GPU vs CPU, aarch64 host | 7.105e-2 | 0.998316 |
+///
+/// The two GPUs agree to f32 rounding; the two CPU references do not, because
+/// their Q8_K activation-quant dot products take different SIMD paths. So the
+/// budget follows the reference: x86_64 worst 6.721e-2 -> **7e-2**; aarch64
+/// worst 7.105e-2 (positions 1..5: 2.226e-2, 3.643e-2, 2.659e-2, 2.524e-2,
+/// 2.158e-2). Re-derive with `QWEN35_E2E_DUMP=<dir>`, which prints every
+/// position's reading and then fails, so it can never pass as a verdict.
+///
+/// The aarch64 budget is LOOSER than x86_64's, so by operator ruling it is a
+/// RATCHET at its measured value, not a round-up (#4607): the worst reading,
+/// 7.105e-2 as printed to 4 significant figures (findings 4523-M2/M3, GB10,
+/// commits f80a813967 and 55e34950c2), rounded UP at that last printed digit
+/// to **7.106e-2** — the true value is under 7.1055e-2, so it passes today's
+/// reading and fails on any rise past it. It was 8e-2, which left 13% of room
+/// for a real regression to hide in.
+#[cfg(not(target_arch = "aarch64"))]
+const LOGITS_BUDGET: f32 = LOGITS_BUDGET_X86_64;
+/// See the x86_64 [`LOGITS_BUDGET`]: the aarch64 CPU reference, measured on GB10.
+#[cfg(target_arch = "aarch64")]
+const LOGITS_BUDGET: f32 = LOGITS_BUDGET_AARCH64;
+
+/// x86_64 budget: the worst reading [`LOGITS_MEASURED_X86_64`] rounded up to one
+/// significant figure (the stricter host; unchanged by #4607).
+const LOGITS_BUDGET_X86_64: f32 = 7e-2;
+/// aarch64 budget: a ratchet one unit of the last printed digit over
+/// [`LOGITS_MEASURED_AARCH64`] (#4607).
+const LOGITS_BUDGET_AARCH64: f32 = 7.106e-2;
+/// The worst end-to-end reading on each host, as printed (`{:.3e}`).
+const LOGITS_MEASURED_X86_64: f32 = 6.721e-2;
+const LOGITS_MEASURED_AARCH64: f32 = 7.105e-2;
 
 /// The same, for one whole attention layer's output hidden state: measured
 /// 4.867e-2 relative (layer 15, position 0), rounded up to one significant
@@ -164,7 +204,7 @@ fn assert_rel_linf(got: &[f32], want: &[f32], tol: f32, what: &str) {
     }
     assert!(
         worst <= tol * scale,
-        "{what}: relative L-inf {:.3e} (abs {:.3e} at [{at}], scale {:.3e}) exceeds {tol:.0e}; \
+        "{what}: relative L-inf {:.3e} (abs {:.3e} at [{at}], scale {:.3e}) exceeds {tol:.3e}; \
          cpu={:.6} gpu={:.6}",
         worst / scale,
         worst,
@@ -253,7 +293,7 @@ fn assert_forward_parity(got: &[f32], want: &[f32], budget: f32, what: &str) -> 
     );
     assert!(
         linf <= budget,
-        "{what}: relative L-inf {linf:.3e} exceeds the measured budget {budget:.0e}"
+        "{what}: relative L-inf {linf:.3e} exceeds the measured budget {budget:.3e}"
     );
     (cos, linf)
 }
@@ -1035,6 +1075,7 @@ fn qwen35_cuda_forward_single_matches_cpu_logits_end_to_end() {
     let mut cpu_state = qwen.new_state(LONG_PROMPT.len() + 1);
     let mut worst_cos = 1.0f32;
     let mut worst_linf = 0.0f32;
+    let mut dumped = false;
 
     for (pos, &token) in LONG_PROMPT.iter().enumerate() {
         let want = qwen
@@ -1048,6 +1089,19 @@ fn qwen35_cuda_forward_single_matches_cpu_logits_end_to_end() {
             .forward_single(token, &mut gpu_state, pos)
             .expect("gpu forward");
         let gpu_ms = t0.elapsed().as_secs_f64() * 1e3;
+        if let Ok(dir) = std::env::var("QWEN35_E2E_DUMP") {
+            for (side, v) in [("gpu", &got), ("cpu", &want)] {
+                let bytes: Vec<u8> = v.iter().flat_map(|x| x.to_le_bytes()).collect();
+                std::fs::write(format!("{dir}/{side}_pos{pos}.f32"), bytes).expect("dump");
+            }
+            eprintln!(
+                "[e2e-dump] pos {pos}: cosine {:.6} relative L-inf {:.3e}",
+                cosine(&got, &want),
+                rel_linf(&got, &want)
+            );
+            dumped = true;
+            continue;
+        }
         let (cos, linf) =
             assert_forward_parity(&got, &want, LOGITS_BUDGET, &format!("pos {pos} logits"));
         eprintln!(
@@ -1063,6 +1117,11 @@ fn qwen35_cuda_forward_single_matches_cpu_logits_end_to_end() {
             "pos {pos}: the device KV cache must have advanced"
         );
     }
+    assert!(
+        !dumped,
+        "QWEN35_E2E_DUMP is a measurement run: the readings are printed above and nothing \
+         was asserted, so it must not read as a pass"
+    );
     eprintln!(
         "[e2e] worst over {} positions: cosine {worst_cos:.6} relative L-inf {worst_linf:.3e}",
         LONG_PROMPT.len(),
@@ -1731,6 +1790,53 @@ fn qwen35_cuda_refusal_names_the_tensor_the_dtype_and_the_eligible_build() {
     assert!(
         unknown.contains("is an unknown type (GGML type 9999)"),
         "{unknown}"
+    );
+}
+
+/// #4607: the looser aarch64 budget is a ratchet AT its measured value, and the
+/// selected budget is the one for this host. Pure constants: no device, no model,
+/// so CI reaches it on every host.
+#[test]
+fn qwen35_cuda_logits_budget_is_a_ratchet_where_it_is_looser() {
+    // The printed reading is `{:.3e}`, so the true value is within half a unit of
+    // its last digit. The ratchet must clear that half unit (it passes the reading
+    // it was set from) and stay inside one unit (it fails on any rise past it).
+    // black_box: these are constants, and an assert clippy can fold is not a test.
+    let [budget, measured, x86_budget, x86_measured, selected] = std::hint::black_box([
+        LOGITS_BUDGET_AARCH64,
+        LOGITS_MEASURED_AARCH64,
+        LOGITS_BUDGET_X86_64,
+        LOGITS_MEASURED_X86_64,
+        LOGITS_BUDGET,
+    ]);
+    let unit = 1e-5f32;
+    let slack = budget - measured;
+    assert!(
+        slack >= unit / 2.0,
+        "the aarch64 budget {LOGITS_BUDGET_AARCH64:.4e} would fail the reading it was set \
+         from ({LOGITS_MEASURED_AARCH64:.3e} as printed, true value up to +{:.1e})",
+        unit / 2.0
+    );
+    assert!(
+        slack <= unit * 1.5,
+        "the aarch64 budget {LOGITS_BUDGET_AARCH64:.4e} sits {slack:.2e} over its measured \
+         {LOGITS_MEASURED_AARCH64:.3e}: a looser budget is allowed only as a ratchet at the \
+         measured value (#4607), so a real regression must not fit in the gap"
+    );
+    // The stricter host keeps its own derivation and stays the stricter one.
+    assert!(
+        x86_measured <= x86_budget,
+        "x86_64 budget under its own reading"
+    );
+    assert!(x86_budget <= budget, "x86_64 must stay the stricter budget");
+    let want = if cfg!(target_arch = "aarch64") {
+        LOGITS_BUDGET_AARCH64
+    } else {
+        LOGITS_BUDGET_X86_64
+    };
+    assert!(
+        (selected - want).abs() < f32::EPSILON,
+        "LOGITS_BUDGET must be this host's budget"
     );
 }
 
