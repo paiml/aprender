@@ -111,7 +111,7 @@ proof_obligations:
   - id: RSB-INV-006
     type: invariant
     property: "A duration exists only where both ends were measured"
-    formal: "∀ r: run(r) ≠ UNMEASURED ⇔ start(r) ≠ '' ∧ end(r) ≠ ''"
+    formal: "∀ r: run(r) ≠ UNMEASURED ⟺ start(r) ≠ '' ∧ end(r) ≠ ''"
     applies_to: step_duration
   - id: RSB-INV-007
     type: invariant
@@ -151,7 +151,7 @@ proof_obligations:
   - id: RSB-INV-014
     type: invariant
     property: "RTY is the product of the per-step yields over the steps measured at least once"
-    formal: "RTY = ∏_{s : yes(s) + no(s) > 0} yes(s) / (yes(s) + no(s))"
+    formal: "M = {s : yes(s) + no(s) > 0} ∧ ∀ s ∈ M: y(s) = yes(s) / (yes(s) + no(s)) ∧ RTY = product(y(s) for s ∈ M)"
     applies_to: rty
   - id: RSB-INV-015
     type: invariant
