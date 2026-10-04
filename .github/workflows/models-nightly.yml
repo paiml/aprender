@@ -51,17 +51,23 @@ name: models-nightly
 
 on:
   schedule:
-    # Schedule events land late on this account: guards-nightly's 14 scheduled
-    # runs of 2026-09-20..10-04 started 1h43m-3h29m after their cron (median
-    # ~2h14m). The GPU-host run starts ~21:00Z and publishes when the ladder
-    # ends; the train reads at 04:45Z. At that lateness 23:40 lands ~01:23-03:09Z
-    # and 00:30 lands ~02:13-03:59Z, both before the read. Two slots: if the
-    # first lands before the publish it is not_measured, and the second is the
-    # run the train reads -- it takes the newest completed run on C. A ladder
-    # that has not published by the second slot's landing is a not_measured
-    # night, never a green. Re-measure the delay before trusting either slot.
-    - cron: '40 23 * * *'
-    - cron: '30 0 * * *'
+    # Both slots fire by 23:17Z. Schedule events land late on this account,
+    # and later after midnight. Measured over the 14 nights to 2026-10-04:
+    # crons at 20:30-23:17Z fired 22:38-02:36Z; crons at 00:00Z fired
+    # 03:33-04:42Z; nightly-bench's 00:30Z fired 04:56-06:14Z, after the
+    # train's 04:45Z read on all 14. So the latest fire here (~02:36Z) plus
+    # this workflow's whole budget (25 + 15 min of job timeouts) ends by
+    # ~03:16Z, before the read.
+    # The upstream both slots wait on is the GPU-host publish: that run starts
+    # ~21:00Z and its ladder time is not measured. A slot that fires before the
+    # publish is not_measured. The train takes the newest completed run on C
+    # that measured something, so the second slot covers a first that fired
+    # too early, and a skipped second slot never hides a measured first one.
+    # If nights read not_measured for that reason, start the GPU-host run
+    # earlier; never move these crons past 23:17Z. Re-measure the delay before
+    # trusting either slot.
+    - cron: '17 22 * * *'
+    - cron: '17 23 * * *'
   workflow_dispatch:
     inputs:
       plant_red:
