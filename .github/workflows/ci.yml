@@ -72,9 +72,46 @@ jobs:
   # `workspace-test`, `ci / gate` and `gate`, each reading the fat jobs' results
   # with the same rule the old job of that name applied.
   # ==========================================================================
+  # #4472 CHANGE-CLASS: what kind of change is this diff? Decided ONCE, here, by
+  # scripts/ci_change_class.sh; x86-main, determinism and mac-check scale down on
+  # class=docs, and the verdict jobs read the same output, so a section is absent
+  # only because this job said docs, and `gate`/`ci / gate` say so by name.
+  # class=docs: every path is an added/modified *.md outside .github/ that no Rust
+  # source compiles in (include_str!/include!/build.rs). Anything else, any other
+  # event, and a FAILED decision all mean the full set: every consumer tests
+  # `== 'docs'`, never `!= 'full'`. What still runs for docs is every check that
+  # reads doc content: guard-tree, guard-cargo, vendored-schemas, both pr-review
+  # sections, and the workspace-test shards (their tier still runs the tree readers).
+  change-class:
+    runs-on: [self-hosted, Linux, clean-room]   # arch-neutral: bash + git only
+    timeout-minutes: 10
+    outputs:
+      class: ${{ steps.decide.outputs.class }}
+      reason: ${{ steps.decide.outputs.reason }}
+    steps:
+      - uses: actions/checkout@v7
+        with:
+          fetch-depth: 0
+      - name: change-class case table must still turn RED
+        run: bash scripts/ci_change_class.sh --self-test
+      - name: Classify the diff
+        id: decide
+        env:
+          EVT: ${{ github.event_name }}
+          MG_BASE: ${{ github.event.merge_group.base_sha }}
+        run: |
+          set -euo pipefail
+          bash scripts/ci_change_class.sh --event "$EVT" --base "$MG_BASE" > "$RUNNER_TEMP/class.txt"
+          cat "$RUNNER_TEMP/class.txt"
+          cat "$RUNNER_TEMP/class.txt" >> "$GITHUB_OUTPUT"
+          { echo '### change-class (#4472)'; sed 's/^/    /' "$RUNNER_TEMP/class.txt"; } >> "$GITHUB_STEP_SUMMARY"
+
   x86-main:
     runs-on: [self-hosted, Linux, X64, clean-room]
     timeout-minutes: 240
+    # #4472: !cancelled(), not success(): a failed change-class still runs the full set.
+    needs: [change-class]
+    if: ${{ !cancelled() }}
     # The sections carry their own permissions blocks (the sov provenance section
     # needs id-token + attestations); one job token must cover all of them.
     permissions: write-all
@@ -122,14 +159,27 @@ jobs:
       - name: every section secret is plumbed under its full name
         run: setsid --wait bash scripts/check_ci_fat_secrets_plumbed.sh
       - name: Sections (the determinism raster returns first; the rest keep running)
+        if: needs.change-class.outputs.class != 'docs'
         run: >-
           python3 scripts/ci/fat_driver.py run
           --sections 'sov.*,guard-tree,guard-cargo,vendored-schemas,pr-review-shadow,pr-review-sign,mutants,determinism[X64],provable-ladder'
           --external-job workspace-test
           --results "$RUNNER_TEMP/fat/results.json"
           --background-until 'determinism[X64]'
+      # #4472 class=docs: only the sections that read doc content. sov.*, mutants,
+      # determinism[X64] and provable-ladder compile or run Rust that no Markdown in
+      # a docs diff can reach (the classifier refuses any .md a crate compiles in);
+      # gate and ci / gate report them as not-triggered, by name.
+      - name: Sections (class=docs -- the doc-content sections only, #4472)
+        if: needs.change-class.outputs.class == 'docs'
+        run: >-
+          python3 scripts/ci/fat_driver.py run
+          --sections 'vendored-schemas,guard-tree,guard-cargo,pr-review-shadow,pr-review-sign'
+          --results "$RUNNER_TEMP/fat/results.json"
+          --background-until 'vendored-schemas'
       # Published mid-run: the determinism job's compare section is waiting for it.
       - uses: actions/upload-artifact@v7
+        if: needs.change-class.outputs.class != 'docs'
         with:
           name: determinism-X64
           path: ${{ runner.temp }}/fat/artifacts/determinism-X64/
@@ -261,6 +311,10 @@ jobs:
   determinism:
     runs-on: [self-hosted, Linux, clean-room, ARM64]
     timeout-minutes: 120
+    # #4472: a docs diff cannot move a raster; gate reports determinism-compare
+    # as not-triggered for it. A failed change-class still runs this.
+    needs: [change-class]
+    if: ${{ !cancelled() && needs.change-class.outputs.class != 'docs' }}
     outputs:
       results: ${{ steps.wait.outputs.results }}
     env:
@@ -313,6 +367,9 @@ jobs:
   mac-check:
     runs-on: [self-hosted, macOS, ARM64, apple-silicon, m4, mini]
     timeout-minutes: 60
+    # #4472: cargo check + apr-cli lib tests; a docs diff reaches neither.
+    needs: [change-class]
+    if: ${{ !cancelled() && needs.change-class.outputs.class != 'docs' }}
     env:
       CARGO_INCREMENTAL: 0
       CARGO_TERM_COLOR: never
@@ -598,14 +655,30 @@ jobs:
     name: ci / gate
     runs-on: [self-hosted, Linux, clean-room]
     timeout-minutes: 10
-    needs: [x86-main]
+    needs: [change-class, x86-main]
     if: always()
     steps:
       - name: The sovereign-ci gate section's result
         env:
           RESULTS: ${{ needs.x86-main.outputs.results }}
+          X86_RESULT: ${{ needs.x86-main.result }}
+          CLASS: ${{ needs.change-class.outputs.class }}
+          CLASS_REASON: ${{ needs.change-class.outputs.reason }}
         run: |
           set -euo pipefail
+          # #4472: class=docs ran no sov.* section. not-triggered, by name; the
+          # doc-content sections x86-main did run must have passed.
+          if [ "$CLASS" = docs ]; then
+            echo "sov.gate: not-triggered: docs-only change ($CLASS_REASON)"
+            echo "x86-main (doc-content sections): $X86_RESULT"
+            [ "$X86_RESULT" = success ] || { echo "::error::ci / gate (docs): x86-main result is '$X86_RESULT'"; exit 1; }
+            for sec in guard-tree guard-cargo; do
+              r=$(printf '%s' "${RESULTS:-null}" | SEC="$sec" jq -r '(. // {})[env.SEC].result // "missing"')
+              echo "$sec: $r"
+              [ "$r" = success ] || { echo "::error::ci / gate (docs): $sec result is '$r'"; exit 1; }
+            done
+            exit 0
+          fi
           r=$(printf '%s' "${RESULTS:-null}" | jq -r '(. // {})."sov.gate".result // "missing"')
           echo "sovereign-ci gate section: $r"
           [ "$r" = success ] || { echo "::error::ci / gate: section result is '$r'"; exit 1; }
@@ -614,7 +687,7 @@ jobs:
     runs-on: [self-hosted, Linux, clean-room]   # arch-neutral: intel, yoga or gx10 (#3100)
     timeout-minutes: 22
     # the GPU sections are advisory (68-C3 / 68-D2); yoga is needed for its mutants-cuda section alone (#4621)
-    needs: [x86-main, workspace-test, determinism, mutants-table-scope, mutants-table, yoga]
+    needs: [x86-main, workspace-test, determinism, mutants-table-scope, mutants-table, yoga, change-class]
     if: always()
     steps:
       - name: Check required sections
@@ -627,6 +700,8 @@ jobs:
           SCOPE: ${{ needs.mutants-table-scope.result }}
           IN_SCOPE: ${{ needs.mutants-table-scope.outputs.in_scope }}
           TABLE: ${{ needs.mutants-table.result }}
+          CLASS: ${{ needs.change-class.outputs.class }}
+          CLASS_REASON: ${{ needs.change-class.outputs.reason }}
         run: |
           set -euo pipefail
           res() { printf '%s' "${1:-null}" | SEC="$2" jq -r '(. // {})[env.SEC].result // "missing"'; }
@@ -637,6 +712,13 @@ jobs:
           [ "$WT" = success ] || { echo "workspace-test failed: $WT"; exit 1; }
           for pair in X86:guard-tree X86:guard-cargo X86:sov.gate DET:determinism-compare; do
             job="${pair%%:*}" sec="${pair#*:}"
+            # #4472: on class=docs these two did not run, and say so by name;
+            # guard-tree and guard-cargo (they read doc content) did, and must pass.
+            case "$CLASS:$sec" in
+              docs:sov.gate | docs:determinism-compare)
+                echo "$sec: not-triggered: docs-only change ($CLASS_REASON)"
+                continue ;;
+            esac
             r=$(res "${!job}" "$sec")
             if [ "$r" != success ]; then
               echo "$sec failed: $r"
