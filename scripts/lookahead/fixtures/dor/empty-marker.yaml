@@ -1,0 +1,11 @@
+# Planted: a staged claim on a path the ref already has, whose staged_marker is the empty string.
+# Every text contains "", so an empty marker names nothing. Must be RED as a claim with no
+# marker, not as a marker that is already on main.
+schema: lookahead-dor-v1
+train: "0.00"
+rows:
+  - id: EMPTY-MARKER
+    ev_rank: 1
+    contract: {id: planted-v1, path: null, on_main: false, staged_at: origin/main,
+               staged_path: docs/specifications/APR-EPIC-001-themed-epics-and-issue-cap.md,
+               staged_marker: ""}

@@ -1,0 +1,10 @@
+# Planted: a false staged contract and a false on_main baseline in one row. Must be RED,
+# naming the baseline: on_main claims are checked before staged ones.
+schema: lookahead-dor-v1
+train: "0.00"
+rows:
+  - id: ORDER-ON-MAIN-FIRST
+    ev_rank: 1
+    contract: {id: planted-v1, staged_at: origin/main,
+               staged_path: docs/lookahead/contracts-draft/no-such-planted-v1.yaml}
+    baseline: {path: evidence/no-such-baseline-planted.json, on_main: true}

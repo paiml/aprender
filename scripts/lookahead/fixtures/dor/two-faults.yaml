@@ -1,0 +1,8 @@
+# Planted: a false spec and a false contract in one row. Must be RED, naming the spec first.
+schema: lookahead-dor-v1
+train: "0.00"
+rows:
+  - id: TWO-FAULTS
+    ev_rank: 1
+    spec: {path: docs/specifications/no-such-spec-planted.md, on_main: true}
+    contract: {id: no-such-v1, path: contracts/no-such-contract-planted-v1.yaml, on_main: true}

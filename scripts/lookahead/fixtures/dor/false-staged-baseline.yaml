@@ -1,0 +1,8 @@
+# Planted: a baseline staged on a branch where it does not exist. Must be RED.
+schema: lookahead-dor-v1
+train: "0.00"
+rows:
+  - id: FALSE-STAGED-BASELINE
+    ev_rank: 1
+    baseline: {path: null, on_main: false, staged_at: origin/main,
+               staged_path: evidence/no-such-baseline-planted.json}

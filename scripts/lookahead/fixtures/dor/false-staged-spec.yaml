@@ -1,0 +1,8 @@
+# Planted: a spec staged on a branch where it does not exist. Must be RED.
+schema: lookahead-dor-v1
+train: "0.00"
+rows:
+  - id: FALSE-STAGED-SPEC
+    ev_rank: 1
+    spec: {path: null, on_main: false, staged_at: origin/main,
+           staged_path: docs/lookahead/no-such-spec-planted.md}

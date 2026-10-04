@@ -1,0 +1,6 @@
+# Planted: a row with no id. Must be RED.
+schema: lookahead-dor-v1
+train: "0.00"
+rows:
+  - ev_rank: 1
+    owner_proposed: L1

@@ -1,0 +1,12 @@
+# Planted: a staged claim on a file the ref lacks, whose staged_marker the branch does not
+# carry. Must be RED: a new file does not excuse a false marker.
+# Checked at the pinned main commit 82d92379 (the parent of 034e016a2b, which added
+# FALSIFY-CB-010). There the APR-EPIC-001 spec is absent and continuous-batching-v1.yaml
+# lacks FALSIFY-CB-010; origin/main has both.
+schema: lookahead-dor-v1
+train: "0.00"
+rows:
+  - id: NEW-FILE-ABSENT-MARKER
+    ev_rank: 1
+    contract: {path: null, on_main: false, staged_at: origin/main, staged_path: docs/specifications/APR-EPIC-001-themed-epics-and-issue-cap.md,
+               staged_marker: "planted text that the file does not contain"}

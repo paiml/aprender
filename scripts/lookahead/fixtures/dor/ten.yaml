@@ -1,0 +1,14 @@
+# Control: exactly ten rows, listed out of ev_rank order. Renders; each row misses all five.
+schema: lookahead-dor-v1
+train: "0.00"
+rows:
+  - {id: T03, ev_rank: 3}
+  - {id: T01, ev_rank: 1}
+  - {id: T02, ev_rank: 2}
+  - {id: T10, ev_rank: 10}
+  - {id: T04, ev_rank: 4}
+  - {id: T05, ev_rank: 5}
+  - {id: T09, ev_rank: 9}
+  - {id: T06, ev_rank: 6}
+  - {id: T08, ev_rank: 8}
+  - {id: T07, ev_rank: 7}

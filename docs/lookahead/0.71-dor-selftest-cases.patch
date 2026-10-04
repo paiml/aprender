@@ -1,0 +1,94 @@
+diff --git a/scripts/lookahead/dor_check.py b/scripts/lookahead/dor_check.py
+index 6eb9c28..d8bb249 100755
+--- a/scripts/lookahead/dor_check.py
++++ b/scripts/lookahead/dor_check.py
+@@ -18,6 +18,9 @@ Exit codes: 0 rendered, 1 --require-ready and a row is NOT READY,
+ 2 RED (empty ledger, schema error, or a false on_main claim).
+ """
+ import argparse
++import contextlib
++import io
++import json
+ import re
+ import subprocess
+ import sys
+@@ -362,6 +365,64 @@ def expect_planted(fx, ref):
+             for rid, w in PLANTED.items() if rows.get(rid) != w]
+ 
+ 
++# fixtures/dor/cases.json pins each fixture's exact verdict: the exit code and
++# RED line, or every row's missing fields in rank order and the ready count. An
++# exit code cannot tell one RED from another, so a rule change that alters any
++# single verdict fails here.
++CASES = HERE / "fixtures" / "dor" / "cases.json"
++UNITS = {"expand": expand, "absent_ids": absent_ids, "missing_fields": missing_fields}
++
++
++def load_cases():
++    return json.loads(CASES.read_text())
++
++
++def cli(*argv):
++    """(exit code, stdout) of main() on argv."""
++    saved, sys.argv = sys.argv, ["dor_check.py", *argv]
++    try:
++        with contextlib.redirect_stdout(io.StringIO()) as out:
++            rc = main()
++        return rc, out.getvalue()
++    finally:
++        sys.argv = saved
++
++
++def ledger_case(c, ref):
++    """(got, want) for a case that runs the CLI on a fixture ledger."""
++    ref, path = c.get("ref") or ref, HERE / "fixtures" / c["ledger"]
++    rc, out = cli(str(path), "--ref", ref, *(["--require-ready"] if c.get("require_ready") else []))
++    if c["expect"] == 2:
++        return (rc, out.strip()), (2, "RED: " + c["red"].replace("{ref}", ref))
++    try:
++        rows = [(rid, m) for _, rid, _, m in evaluate(yaml.safe_load(path.read_text()), ref)]
++    except Red as e:
++        rows = f"RED: {e}"
++    ready = re.search(r"top10_ready: (\d+/\d+)", out)
++    return (rc, rows, ready and ready[1]), (c["expect"], list(c["rows"].items()), c["ready"])
++
++
++def unit_case(u):
++    """(got, want) for a case that calls one rule directly."""
++    try:
++        got = UNITS[u["fn"]](*u["args"])
++    except Red:
++        got = "RED"
++    return got, u["want"]
++
++
++def expect_cases(ref):
++    cases = load_cases()
++    named = {c["ledger"] for c in cases if "ledger" in c}
++    failures = [f"fixture dor/{p.name} is named by no case"
++                for p in sorted(CASES.parent.glob("*.yaml")) if f"dor/{p.name}" not in named]
++    for c in cases:
++        got, want = unit_case(c) if "fn" in c else ledger_case(c, ref)
++        if got != want:
++            failures.append(f"case {c['id']}: got {got!r}, want {want!r}")
++    return failures if cases else ["the case table is empty"]
++
++
+ def tally(units):
+     """(falsifiers, controls) the self-test runs. Every RED fixture and every planted
+     row that must miss a field fires; the reason check and the READY row are controls."""
+@@ -376,11 +437,12 @@ def self_test(ref):
+     fx = HERE / "fixtures"
+     units = unit_checks()
+     failures = (expect_red(fx, ref) + expect_planted(fx, ref)
+-                + [what for what, holds, _ in units if not holds])
++                + [what for what, holds, _ in units if not holds] + expect_cases(ref))
+     for f in failures:
+         print("FALSIFIER SURVIVED:", f)
+     fired, controls = tally(units)
+-    print("self-test:", "RED" if failures else f"ok ({fired} falsifiers fire, {controls} controls pass)")
++    ok = f"ok ({fired} falsifiers fire, {controls} controls pass, {len(load_cases())} cases hold)"
++    print("self-test:", "RED" if failures else ok)
+     return 2 if failures else 0
+ 
+ 

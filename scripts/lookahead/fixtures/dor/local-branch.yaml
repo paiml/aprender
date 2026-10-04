@@ -1,0 +1,8 @@
+# Planted: a claim staged at a local branch name, not origin/... Must be RED.
+schema: lookahead-dor-v1
+train: "0.00"
+rows:
+  - id: LOCAL-BRANCH
+    ev_rank: 1
+    falsifier:
+      - {ids: [FALSIFY-CB-001], staged_at: main, staged_path: contracts/continuous-batching-v1.yaml}

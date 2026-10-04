@@ -1,0 +1,6 @@
+# Planted: ev_rank skips 2, so it is not a permutation of 1..2. Must be RED.
+schema: lookahead-dor-v1
+train: "0.00"
+rows:
+  - {id: RANK-1, ev_rank: 1}
+  - {id: RANK-3, ev_rank: 3}

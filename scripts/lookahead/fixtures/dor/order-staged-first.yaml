@@ -1,0 +1,11 @@
+# Planted: a false staged contract and a false falsifier in one row. Must be RED,
+# naming the contract: staged claims are checked before falsifier claims.
+schema: lookahead-dor-v1
+train: "0.00"
+rows:
+  - id: ORDER-STAGED-FIRST
+    ev_rank: 1
+    contract: {id: planted-v1, staged_at: origin/main,
+               staged_path: docs/lookahead/contracts-draft/no-such-planted-v1.yaml}
+    falsifier:
+      - {ids: [FALSIFY-LADOR-PLANTED-001], path: contracts/continuous-batching-v1.yaml, on_main: true}

@@ -1,0 +1,9 @@
+# Planted: a staged falsifier claim that names its file with path: instead of staged_path:,
+# whose ids the ref already defines. Must be RED for that, not for a missing path.
+schema: lookahead-dor-v1
+train: "0.00"
+rows:
+  - id: STAGED-FALSIFIER-PATH-KEY
+    ev_rank: 1
+    falsifier:
+      - {ids: [FALSIFY-CB-001], staged_at: origin/main, path: contracts/continuous-batching-v1.yaml}

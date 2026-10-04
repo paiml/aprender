@@ -1,0 +1,8 @@
+# Planted: a staged claim that names its file with path: instead of staged_path:, on a file
+# the ref already has, with no staged_marker. Must be RED for that, not for a missing path.
+schema: lookahead-dor-v1
+train: "0.00"
+rows:
+  - id: STAGED-PATH-KEY
+    ev_rank: 1
+    contract: {id: planted-v1, path: docs/specifications/APR-EPIC-001-themed-epics-and-issue-cap.md, staged_at: origin/main}

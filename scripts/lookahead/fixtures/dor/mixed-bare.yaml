@@ -1,0 +1,9 @@
+# Planted: one well-formed claim followed by a bare id. Must be RED.
+schema: lookahead-dor-v1
+train: "0.00"
+rows:
+  - id: MIXED-BARE
+    ev_rank: 1
+    falsifier:
+      - {ids: [FALSIFY-CB-001], path: contracts/continuous-batching-v1.yaml, on_main: true}
+      - FALSIFY-CB-002

@@ -1,0 +1,6 @@
+# Planted: two rows with one id. Must be RED.
+schema: lookahead-dor-v1
+train: "0.00"
+rows:
+  - {id: DUP-ID, ev_rank: 1}
+  - {id: DUP-ID, ev_rank: 2}

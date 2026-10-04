@@ -1,0 +1,12 @@
+# Planted: a ledger under another schema name. Must be RED, although its one row is READY.
+schema: lookahead-dor-v0
+train: "0.00"
+rows:
+  - id: WRONG-SCHEMA
+    ev_rank: 1
+    spec: {path: docs/specifications/APR-EPIC-001-themed-epics-and-issue-cap.md, on_main: true}
+    contract: {id: continuous-batching-v1, path: contracts/continuous-batching-v1.yaml, on_main: true}
+    falsifier:
+      - {ids: [FALSIFY-CB-001], path: contracts/continuous-batching-v1.yaml, on_main: true}
+    baseline: {path: evidence/parity-http/bands/apr-c4.json, on_main: true}
+    owner_proposed: L1

@@ -1,0 +1,8 @@
+# Planted: a claim whose ids is one string, not a list. Must be RED.
+schema: lookahead-dor-v1
+train: "0.00"
+rows:
+  - id: IDS-STRING
+    ev_rank: 1
+    falsifier:
+      - {ids: FALSIFY-CB-001, path: contracts/continuous-batching-v1.yaml, on_main: true}

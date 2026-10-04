@@ -1,0 +1,7 @@
+# Planted: a spec that claims to be on main but is not. Must be RED.
+schema: lookahead-dor-v1
+train: "0.00"
+rows:
+  - id: FALSE-CLAIM-SPEC
+    ev_rank: 1
+    spec: {path: docs/specifications/no-such-spec-planted.md, on_main: true}

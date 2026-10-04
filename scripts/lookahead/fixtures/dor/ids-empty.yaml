@@ -1,0 +1,8 @@
+# Planted: a claim with an empty id list, which would verify nothing. Must be RED.
+schema: lookahead-dor-v1
+train: "0.00"
+rows:
+  - id: IDS-EMPTY
+    ev_rank: 1
+    falsifier:
+      - {ids: [], path: contracts/continuous-batching-v1.yaml, on_main: true}

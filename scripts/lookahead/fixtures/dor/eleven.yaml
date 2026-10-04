@@ -1,0 +1,15 @@
+# Planted: eleven rows, one more than the ledger holds. Must be RED.
+schema: lookahead-dor-v1
+train: "0.00"
+rows:
+  - {id: E01, ev_rank: 1}
+  - {id: E02, ev_rank: 2}
+  - {id: E03, ev_rank: 3}
+  - {id: E04, ev_rank: 4}
+  - {id: E05, ev_rank: 5}
+  - {id: E06, ev_rank: 6}
+  - {id: E07, ev_rank: 7}
+  - {id: E08, ev_rank: 8}
+  - {id: E09, ev_rank: 9}
+  - {id: E10, ev_rank: 10}
+  - {id: E11, ev_rank: 11}

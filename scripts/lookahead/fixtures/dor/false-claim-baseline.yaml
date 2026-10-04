@@ -1,0 +1,7 @@
+# Planted: a baseline that claims to be on main but is not. Must be RED.
+schema: lookahead-dor-v1
+train: "0.00"
+rows:
+  - id: FALSE-CLAIM-BASELINE
+    ev_rank: 1
+    baseline: {path: evidence/no-such-baseline-planted.json, on_main: true}

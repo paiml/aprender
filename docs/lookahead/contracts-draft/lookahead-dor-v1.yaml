@@ -1,13 +1,18 @@
 # DRAFT (branch-only). Proposed as the input contract for LA-05 (lookahead-readiness-v1),
-# which renders it into the hourly look-ahead report. 0.4.0 passes `pv validate`: kind
+# which renders it into the hourly look-ahead report. 0.5.0 passes `pv validate`: kind
 # schema, a prediction and a test per falsifier, and a qa_gate. The renderer is an
 # external check run by hand on look-ahead branches, never a gate: Python is allowed only
 # as an external check, because the build is Rust only. Before this file moves into
-# contracts/, the self-test cases port to Rust with the fixtures as data.
+# contracts/, its cases port to Rust with scripts/lookahead/fixtures/dor/cases.json as the
+# case table (a fixture ledger with its exit code and its whole RED line or every row's
+# verdict, or one rule's call and result), together with the findings below.
+# docs/lookahead/0.71-dor-selftest-cases.patch makes the Python --self-test run that table.
+# Until the patch is applied, the self-test runs only the twelve original fixtures and nine
+# unit checks.
 metadata:
   id: lookahead-dor-v1
   kind: schema
-  version: "0.4.0"
+  version: "0.5.0"
   created: "2026-10-03"
   author: la-0.71 (L1)
   status: draft
@@ -23,6 +28,8 @@ metadata:
   references:
     - 'docs/lookahead/0.71-dor.yaml'
     - 'scripts/lookahead/dor_check.py'
+    - 'scripts/lookahead/fixtures/dor/cases.json'
+    - 'docs/lookahead/0.71-dor-selftest-cases.patch'
 equations:
   ready:
     formula: |
@@ -50,58 +57,70 @@ equations:
       - "a descending id range is RED"
       - "falsifier renders falsifier* while any claim is staged; READY needs every claim on main"
       - "in YAML only an id: value defines an id, so a comment or a rule's prose defines nothing; elsewhere an id is a whole token, so XF-11 and F-110 do not define F-11"
+      - "rows render in ev_rank order, whatever order the file lists them"
+      - "a RED names the first fault: on_main claims, then staged claims, then falsifier claims, each in the order spec, contract, baseline"
+      - "an empty staged_marker names nothing, so it reads as no marker; a staged claim with no staged_path is checked at its path"
 falsification_tests:
   - id: FALSIFY-LADOR-001
     rule: "a planted row with contract=null renders NOT READY (contract) only"
     fixture: scripts/lookahead/fixtures/planted.yaml#NO-CONTRACT
+    cases: [planted]
     prediction: "The planted NO-CONTRACT row renders `NOT READY (contract)`, with contract as the only field named, and top10_ready does not count it."
     test: "dor_check.py --self-test, case NO-CONTRACT (external check, run by hand; Rust port pending)"
     if_fails: "a row without a contract counts toward top10_ready"
   - id: FALSIFY-LADOR-002
     rule: "a planted on_main claim to an absent path exits 2"
     fixture: scripts/lookahead/fixtures/false-claim.yaml
+    cases: [false-claim]
     prediction: "The renderer exits 2 on false-claim.yaml."
     test: "dor_check.py --self-test, case false-claim.yaml (external check, run by hand; Rust port pending)"
     if_fails: "the ledger can claim artifacts that are not on main"
   - id: FALSIFY-LADOR-003
     rule: "an empty ledger exits 2"
     fixture: scripts/lookahead/fixtures/empty.yaml
+    cases: [empty]
     prediction: "The renderer exits 2 on empty.yaml and never prints a 0/0 ready count."
     test: "dor_check.py --self-test, case empty.yaml (external check, run by hand; Rust port pending)"
     if_fails: "an empty ledger reads as 0/0 ready instead of RED"
   - id: FALSIFY-LADOR-004
     rule: "control row with all five present renders READY"
     fixture: scripts/lookahead/fixtures/planted.yaml#ALL-PRESENT
+    cases: [planted]
     prediction: "The planted ALL-PRESENT row renders READY and counts toward top10_ready."
     test: "dor_check.py --self-test, case ALL-PRESENT (external check, run by hand; Rust port pending)"
     if_fails: "the checker is vacuously NOT READY"
   - id: FALSIFY-LADOR-005
     rule: "a staged claim to a path absent at its branch exits 2"
     fixture: scripts/lookahead/fixtures/false-staged.yaml
+    cases: [false-staged]
     prediction: "The renderer exits 2 on false-staged.yaml."
     test: "dor_check.py --self-test, case false-staged.yaml (external check, run by hand; Rust port pending)"
     if_fails: "the ledger can claim branch work that does not exist"
   - id: FALSIFY-LADOR-006
     rule: "a staged claim on a path the ref already has, with no staged_marker, exits 2"
     fixture: scripts/lookahead/fixtures/vacuous-staged.yaml
+    cases: [vacuous-staged]
     prediction: "The renderer exits 2 on vacuous-staged.yaml."
     test: "dor_check.py --self-test, case vacuous-staged.yaml (external check, run by hand; Rust port pending)"
     if_fails: "a branch that merely contains a file main already has reads as staging a change to it"
   - id: FALSIFY-LADOR-007
     rule: "a staged_marker absent at the branch exits 2"
     fixture: scripts/lookahead/fixtures/absent-marker.yaml
+    cases: [absent-marker]
     prediction: "The renderer exits 2 on absent-marker.yaml."
     test: "dor_check.py --self-test, case absent-marker.yaml (external check, run by hand; Rust port pending)"
     if_fails: "a staged claim can name text the branch does not carry"
   - id: FALSIFY-LADOR-008
     rule: "a staged_marker the ref already carries exits 2"
     fixture: scripts/lookahead/fixtures/marker-on-ref.yaml
+    cases: [marker-on-ref]
     prediction: "The renderer exits 2 on marker-on-ref.yaml."
     test: "dor_check.py --self-test, case marker-on-ref.yaml (external check, run by hand; Rust port pending)"
     if_fails: "content already on main reads as staged instead of on_main"
   - id: FALSIFY-LADOR-009
     rule: "control: a marker the branch adds and the ref lacks is accepted"
     fixture: scripts/lookahead/dor_check.py#unit_checks
+    cases: [staged-controls]
     prediction: "A staged claim whose staged_marker the branch adds and the ref lacks is accepted."
     test: "dor_check.py --self-test, case unit_checks (external check, run by hand; Rust port pending)"
     if_fails: "every marker claim is RED, so the staged rule is vacuously strict"
@@ -114,36 +133,42 @@ falsification_tests:
   - id: FALSIFY-LADOR-011
     rule: "a falsifier given as a bare id list exits 2"
     fixture: scripts/lookahead/fixtures/bare-falsifier.yaml
+    cases: [bare-falsifier]
     prediction: "The renderer exits 2 on bare-falsifier.yaml."
     test: "dor_check.py --self-test, case bare-falsifier.yaml (external check, run by hand; Rust port pending)"
     if_fails: "a falsifier id is trusted, never verified"
   - id: FALSIFY-LADOR-012
     rule: "an on_main claim naming an id its file at the ref does not define exits 2"
     fixture: scripts/lookahead/fixtures/false-falsifier.yaml
+    cases: [false-falsifier]
     prediction: "The renderer exits 2 on false-falsifier.yaml."
     test: "dor_check.py --self-test, case false-falsifier.yaml (external check, run by hand; Rust port pending)"
     if_fails: "the ledger can cite falsifiers main does not have"
   - id: FALSIFY-LADOR-013
     rule: "a staged claim naming an id its file at the branch does not define exits 2"
     fixture: scripts/lookahead/fixtures/absent-falsifier.yaml
+    cases: [absent-falsifier]
     prediction: "The renderer exits 2 on absent-falsifier.yaml."
     test: "dor_check.py --self-test, case absent-falsifier.yaml (external check, run by hand; Rust port pending)"
     if_fails: "the ledger can cite branch falsifiers that do not exist"
   - id: FALSIFY-LADOR-014
     rule: "a staged claim whose ids the ref already defines exits 2"
     fixture: scripts/lookahead/fixtures/falsifier-on-ref.yaml
+    cases: [falsifier-on-ref]
     prediction: "The renderer exits 2 on falsifier-on-ref.yaml."
     test: "dor_check.py --self-test, case falsifier-on-ref.yaml (external check, run by hand; Rust port pending)"
     if_fails: "falsifiers already on main read as staged"
   - id: FALSIFY-LADOR-015
     rule: "a claim with neither on_main nor staged_at exits 2"
     fixture: scripts/lookahead/fixtures/unanchored-falsifier.yaml
+    cases: [unanchored-falsifier]
     prediction: "The renderer exits 2 on unanchored-falsifier.yaml."
     test: "dor_check.py --self-test, case unanchored-falsifier.yaml (external check, run by hand; Rust port pending)"
     if_fails: "an unanchored claim is checked nowhere"
   - id: FALSIFY-LADOR-016
     rule: "a planted row with falsifier=null renders NOT READY (falsifier) only"
     fixture: scripts/lookahead/fixtures/planted.yaml#NO-FALSIFIER
+    cases: [planted]
     prediction: "The planted NO-FALSIFIER row renders `NOT READY (falsifier)`, with falsifier as the only field named, and top10_ready does not count it."
     test: "dor_check.py --self-test, case NO-FALSIFIER (external check, run by hand; Rust port pending)"
     if_fails: "a row without a falsifier counts toward top10_ready"
@@ -177,18 +202,186 @@ falsification_tests:
     prediction: "All four controls are accepted, so no real citation of those shapes is RED."
     test: "dor_check.py --self-test, case unit_checks (external check, run by hand; Rust port pending)"
     if_fails: "the id rule is vacuously strict and every real citation is RED"
-verification: "External check, by hand: python3 scripts/lookahead/dor_check.py --self-test --ref origin/main  # 2026-10-04 10:56Z: ok (17 falsifiers fire, 7 controls pass), and the 0.71 ledger renders at rc 0, top10_ready 0/10. 2026-10-03 19:35Z: ok (17 falsifiers fire, 7 controls pass). 005-010: 6 mutants of the staged rule, all killed. 011-021: 15 mutants of the falsifier rule and 3 of the claim checks it moved (on_main paths, staged paths, nested YAML ids), all 18 killed (rc=2)"
+  - id: FALSIFY-LADOR-022
+    rule: "a blank ledger file, or one under another schema, exits 2"
+    fixture: scripts/lookahead/fixtures/dor/cases.json
+    cases: [blank, wrong-schema]
+    prediction: "Both exit 2 with 'RED: schema is not lookahead-dor-v1'. wrong-schema's one row is READY, so the schema check alone decides it."
+    test: "dor_check.py --self-test with docs/lookahead/0.71-dor-selftest-cases.patch applied, cases blank, wrong-schema. Unpatched: dor_check.py <ledger> --ref origin/main by hand, for each of dor/blank.yaml, dor/wrong-schema.yaml under scripts/lookahead/fixtures/."
+    if_fails: "A ledger under another schema renders as a DoR ledger, or a blank file crashes with a traceback (exit 1) instead of RED."
+  - id: FALSIFY-LADOR-023
+    rule: "a row with no id, a null id, or an id another row has exits 2"
+    fixture: scripts/lookahead/fixtures/dor/cases.json
+    cases: [no-id, null-id, dup-id]
+    prediction: "All three exit 2 with 'RED: row ids missing or duplicated'. null-id's row also carries a false spec claim, so a rule that let a null id through would print that claim's RED, naming None."
+    test: "dor_check.py --self-test with docs/lookahead/0.71-dor-selftest-cases.patch applied, cases no-id, null-id, dup-id. Unpatched: dor_check.py <ledger> --ref origin/main by hand, for each of dor/dup-id.yaml, dor/no-id.yaml, dor/null-id.yaml under scripts/lookahead/fixtures/."
+    if_fails: "Two rows share an id and both render, or a row with no id crashes the renderer instead of RED."
+  - id: FALSIFY-LADOR-024
+    rule: "ev_rank must be a permutation of 1..n, a listing out of order is still one, and rows render in ev_rank order"
+    fixture: scripts/lookahead/fixtures/dor/cases.json
+    cases: [bad-rank, ten]
+    prediction: "bad-rank (ranks 1 and 3) exits 2 with 'RED: ev_rank must be a permutation of 1..len(rows)'. ten lists its rows out of order and renders T01 to T10 in rank order, each NOT READY on all five fields, top10_ready 0/10, exit 0."
+    test: "dor_check.py --self-test with docs/lookahead/0.71-dor-selftest-cases.patch applied, cases bad-rank, ten. Unpatched: dor_check.py <ledger> --ref origin/main by hand, for each of dor/bad-rank.yaml, dor/ten.yaml under scripts/lookahead/fixtures/."
+    if_fails: "A gap in the ranks renders, an out-of-order listing is RED, or the report lists rows in file order, so its ranking is not the ledger's."
+  - id: FALSIFY-LADOR-025
+    rule: "a ledger holds at most ten rows"
+    fixture: scripts/lookahead/fixtures/dor/cases.json
+    cases: [eleven, ten]
+    prediction: "eleven exits 2 with 'RED: more than 10 rows'. ten, exactly at the bound, renders."
+    test: "dor_check.py --self-test with docs/lookahead/0.71-dor-selftest-cases.patch applied, cases eleven, ten. Unpatched: dor_check.py <ledger> --ref origin/main by hand, for each of dor/eleven.yaml, dor/ten.yaml under scripts/lookahead/fixtures/."
+    if_fails: "An eleventh row renders, or a full ledger of ten is RED."
+  - id: FALSIFY-LADOR-026
+    rule: "an on_main claim to an absent path exits 2 for the spec and for the baseline, not only for the contract"
+    fixture: scripts/lookahead/fixtures/dor/cases.json
+    cases: [false-claim-spec, false-claim-baseline]
+    prediction: "false-claim-spec exits 2 with 'RED: FALSE-CLAIM-SPEC: spec claims on_main but 'docs/specifications/no-such-spec-planted.md' is absent at origin/main', and false-claim-baseline with the same line for its baseline 'evidence/no-such-baseline-planted.json'."
+    test: "dor_check.py --self-test with docs/lookahead/0.71-dor-selftest-cases.patch applied, cases false-claim-spec, false-claim-baseline. Unpatched: dor_check.py <ledger> --ref origin/main by hand, for each of dor/false-claim-baseline.yaml, dor/false-claim-spec.yaml under scripts/lookahead/fixtures/."
+    if_fails: "The check covers the contract (FALSIFY-LADOR-002) and skips a spec or baseline claim, which then counts as present."
+  - id: FALSIFY-LADOR-027
+    rule: "a staged claim to a path its branch lacks exits 2 for the spec and for the baseline"
+    fixture: scripts/lookahead/fixtures/dor/cases.json
+    cases: [false-staged-spec, false-staged-baseline]
+    prediction: "false-staged-spec exits 2 with 'RED: FALSE-STAGED-SPEC: spec claims staged at origin/main but 'docs/lookahead/no-such-spec-planted.md' is absent there', and false-staged-baseline with the same line for 'evidence/no-such-baseline-planted.json'."
+    test: "dor_check.py --self-test with docs/lookahead/0.71-dor-selftest-cases.patch applied, cases false-staged-spec, false-staged-baseline. Unpatched: dor_check.py <ledger> --ref origin/main by hand, for each of dor/false-staged-baseline.yaml, dor/false-staged-spec.yaml under scripts/lookahead/fixtures/."
+    if_fails: "A spec or baseline staged on a branch that lacks it renders spec* or baseline*."
+  - id: FALSIFY-LADOR-028
+    rule: "a RED names the first fault: on_main claims are checked before staged claims, staged claims before falsifier claims, and the spec before the contract before the baseline"
+    fixture: scripts/lookahead/fixtures/dor/cases.json
+    cases: [two-faults, order-on-main-first, order-staged-first]
+    prediction: "two-faults (a false spec and a false contract) names the spec. order-on-main-first (a false staged contract and a false on_main baseline) names the baseline. order-staged-first (a false staged contract and a falsifier id its file does not define) names the contract."
+    test: "dor_check.py --self-test with docs/lookahead/0.71-dor-selftest-cases.patch applied, cases two-faults, order-on-main-first, order-staged-first. Unpatched: dor_check.py <ledger> --ref origin/main by hand, for each of dor/order-on-main-first.yaml, dor/order-staged-first.yaml, dor/two-faults.yaml under scripts/lookahead/fixtures/."
+    if_fails: "The RED names a later fault, so the line a reader acts on depends on an order the contract does not state."
+  - id: FALSIFY-LADOR-029
+    rule: "a staged claim with no staged_path is checked at its path, for a field claim and for a falsifier claim"
+    fixture: scripts/lookahead/fixtures/dor/cases.json
+    cases: [staged-path-key, staged-falsifier-path-key]
+    prediction: "staged-path-key exits 2 for naming no staged_marker on a path the ref has ('in 'docs/specifications/APR-EPIC-001-themed-epics-and-issue-cap.md', but the path already exists at the ref; name the text the branch adds as staged_marker'), not for a missing path. staged-falsifier-path-key exits 2 with 'falsifier claims staged at origin/main but 'contracts/continuous-batching-v1.yaml' at the ref already defines every id, so the claim is on main'."
+    test: "dor_check.py --self-test with docs/lookahead/0.71-dor-selftest-cases.patch applied, cases staged-path-key, staged-falsifier-path-key. Unpatched: dor_check.py <ledger> --ref origin/main by hand, for each of dor/staged-falsifier-path-key.yaml, dor/staged-path-key.yaml under scripts/lookahead/fixtures/."
+    if_fails: "A claim that names its file under path: reads as naming no file, and is RED for a missing path or never checked."
+  - id: FALSIFY-LADOR-030
+    rule: "a falsifier claim holds a non-empty list of ids, and every entry of the falsifier is such a claim"
+    fixture: scripts/lookahead/fixtures/dor/cases.json
+    cases: [ids-string, ids-empty, mixed-bare]
+    prediction: "ids-string (ids is one string), ids-empty (ids: []) and mixed-bare (a claim followed by a bare id) each exit 2 with 'falsifier must be a list of {ids, path} claims; a bare id is trusted, never verified:' followed by the falsifier value."
+    test: "dor_check.py --self-test with docs/lookahead/0.71-dor-selftest-cases.patch applied, cases ids-string, ids-empty, mixed-bare. Unpatched: dor_check.py <ledger> --ref origin/main by hand, for each of dor/ids-empty.yaml, dor/ids-string.yaml, dor/mixed-bare.yaml under scripts/lookahead/fixtures/."
+    if_fails: "A string's characters or an empty list are read as ids and verify nothing, or one well-formed claim lets a bare id through unverified."
+  - id: FALSIFY-LADOR-031
+    rule: "a claim staged at a local branch name is unanchored"
+    fixture: scripts/lookahead/fixtures/dor/cases.json
+    cases: [local-branch]
+    prediction: "local-branch exits 2 with 'RED: LOCAL-BRANCH: falsifier claim is neither on_main nor staged_at origin/...'."
+    test: "dor_check.py --self-test with docs/lookahead/0.71-dor-selftest-cases.patch applied, case local-branch. Unpatched: dor_check.py scripts/lookahead/fixtures/dor/local-branch.yaml --ref origin/main, by hand."
+    if_fails: "A claim staged at a branch only this clone has is checked against local refs and can pass."
+  - id: FALSIFY-LADOR-032
+    rule: "controls: at the pinned ref R0 each staged shape holds and renders with *"
+    fixture: scripts/lookahead/fixtures/dor/cases.json
+    cases: [staged-controls]
+    prediction: "At R0 = 82d92379c732b841ae883e6458025b73e3c48ae2, where the APR-EPIC-001 spec is absent and continuous-batching-v1.yaml lacks FALSIFY-CB-010 (origin/main has both; main is protected, so R0 does not move), staged-controls renders seven rows at exit 0, top10_ready 0/7. A new file, a new file with a marker, and a marker in an existing file render contract*. Staged ids, staged ids in a new file, and ids of which one is new render falsifier*. A falsifier with one on_main and one staged claim renders falsifier*, and its on_main contract counts."
+    test: "dor_check.py --self-test with docs/lookahead/0.71-dor-selftest-cases.patch applied, case staged-controls. Unpatched: dor_check.py scripts/lookahead/fixtures/dor/staged-controls.yaml --ref 82d92379c7, by hand."
+    if_fails: "A staged rule is vacuously strict, so valid branch work is RED, or a staged field renders without its *."
+  - id: FALSIFY-LADOR-033
+    rule: "a new file does not excuse a staged_marker the branch lacks"
+    fixture: scripts/lookahead/fixtures/dor/cases.json
+    cases: [new-file-absent-marker]
+    prediction: "At R0, new-file-absent-marker exits 2 with 'RED: NEW-FILE-ABSENT-MARKER: contract claims staged at origin/main in 'docs/specifications/APR-EPIC-001-themed-epics-and-issue-cap.md', but staged_marker 'planted text that the file does not contain' is absent at the branch'."
+    test: "dor_check.py --self-test with docs/lookahead/0.71-dor-selftest-cases.patch applied, case new-file-absent-marker. Unpatched: dor_check.py scripts/lookahead/fixtures/dor/new-file-absent-marker.yaml --ref 82d92379c7, by hand."
+    if_fails: "A claim on a new file can name text the branch does not carry."
+  - id: FALSIFY-LADOR-034
+    rule: "an empty staged_marker names nothing, so it reads as no marker"
+    fixture: scripts/lookahead/fixtures/dor/cases.json
+    cases: [empty-marker]
+    prediction: "empty-marker exits 2 with 'RED: EMPTY-MARKER: contract claims staged at origin/main in 'docs/specifications/APR-EPIC-001-themed-epics-and-issue-cap.md', but the path already exists at the ref; name the text the branch adds as staged_marker', not with 'staged_marker '' is already at the ref'."
+    test: "dor_check.py --self-test with docs/lookahead/0.71-dor-selftest-cases.patch applied, case empty-marker. Unpatched: dor_check.py scripts/lookahead/fixtures/dor/empty-marker.yaml --ref origin/main, by hand."
+    if_fails: "An empty marker is checked as text. Every text contains it, so the RED blames the ref instead of the missing marker."
+  - id: FALSIFY-LADOR-035
+    rule: "RED exits 2, --require-ready exits 1 while any row is NOT READY and 0 when every row is READY, and top10_ready counts the READY rows"
+    fixture: scripts/lookahead/fixtures/dor/cases.json
+    cases: [planted, planted-require-ready, ten-require-ready, ready-one, ready-one-require-ready]
+    prediction: "planted renders top10_ready 1/3 at exit 0, and exits 1 with --require-ready. ten exits 1 with --require-ready at 0/10. ready-one renders 1/1 and exits 0 with and without --require-ready. Every RED case exits 2."
+    test: "dor_check.py --self-test with docs/lookahead/0.71-dor-selftest-cases.patch applied, cases planted, planted-require-ready, ten-require-ready, ready-one, ready-one-require-ready. Unpatched: dor_check.py <ledger> --ref origin/main by hand, for each of dor/ready-one.yaml, dor/ten.yaml, planted.yaml under scripts/lookahead/fixtures/."
+    if_fails: "A RED is indistinguishable from NOT READY by exit code, --require-ready passes a ledger with a row that is not ready, or the ready count is wrong (findings F2)."
+  - id: FALSIFY-LADOR-036
+    rule: "an id range keeps its low bound's width and its stem's zeros, needs lo < hi, and is a range only when it ends the token"
+    fixture: scripts/lookahead/fixtures/dor/cases.json
+    cases: [range-keeps-lo-width, range-stem-keeps-zeros, range-of-one-is-red, range-with-suffix-is-one-id]
+    prediction: "expand('F-9..10') is [F-9, F-10] and expand('F-009..010') is [F-009, F-010]. expand('F-001..001') is RED, the boundary of FALSIFY-LADOR-019. 'F-001..003x' is one literal id."
+    test: "dor_check.py --self-test with docs/lookahead/0.71-dor-selftest-cases.patch applied, cases range-keeps-lo-width, range-stem-keeps-zeros, range-of-one-is-red, range-with-suffix-is-one-id. Unpatched: no runner; the case rows are the spec for the Rust port."
+    if_fails: "A range cites ids its file never defines (F-09, F-0010), a range of one id passes, or a token with a suffix splits into ids."
+  - id: FALSIFY-LADOR-037
+    rule: "outside YAML an id is a literal whole token: a hyphenated prefix makes another id, and a regex metacharacter matches only itself"
+    fixture: scripts/lookahead/fixtures/dor/cases.json
+    cases: [hyphen-prefix-is-another-id, id-is-literal-not-regex]
+    prediction: "In a .md file, '| FALSIFY-CB-001 |' does not define CB-001, and '| Fx11 |' does not define F.11."
+    test: "dor_check.py --self-test with docs/lookahead/0.71-dor-selftest-cases.patch applied, cases hyphen-prefix-is-another-id, id-is-literal-not-regex. Unpatched: no runner; the case rows are the spec for the Rust port."
+    if_fails: "The tail of a longer id, or any character where the id has a dot, reads as the id."
+  - id: FALSIFY-LADOR-038
+    rule: "in YAML only a string id: value defines an id, .yml is YAML, a YAML file that defines no ids defines none instead of falling back to text, and invalid YAML is RED"
+    fixture: scripts/lookahead/fixtures/dor/cases.json
+    cases: [yaml-without-ids-defines-none, yml-is-yaml, non-string-id-defines-none, invalid-yaml-is-red]
+    prediction: "A .yaml or a .yml file whose only mention of F-1 is a comment leaves F-1 absent. '- id: [F-1]' and '- id: 2' define neither F-1 nor 2. 'a: [' is RED."
+    test: "dor_check.py --self-test with docs/lookahead/0.71-dor-selftest-cases.patch applied, cases yaml-without-ids-defines-none, yml-is-yaml, non-string-id-defines-none, invalid-yaml-is-red. Unpatched: no runner; the case rows are the spec for the Rust port."
+    if_fails: "A comment in a YAML file with no ids, a list or a number under id:, or a .yml file read as text defines an id, or an unparseable file passes."
+  - id: FALSIFY-LADOR-039
+    rule: "missing_fields names each field by itself"
+    fixture: scripts/lookahead/fixtures/dor/cases.json
+    cases: [no-spec, baseline-path-not-on-main, no-owner, empty-falsifier-list, mixed-falsifier-is-staged, two-on-main-claims-ready]
+    prediction: "A row with every field on main but one names only that one: no spec names spec, a baseline with on_main false names baseline, no owner names owner, an empty falsifier list names falsifier, and a falsifier with one on_main and one staged claim names falsifier*. Control: two on_main falsifier claims leave the row READY."
+    test: "dor_check.py --self-test with docs/lookahead/0.71-dor-selftest-cases.patch applied, cases no-spec, baseline-path-not-on-main, no-owner, empty-falsifier-list, mixed-falsifier-is-staged, two-on-main-claims-ready. Unpatched: no runner; the case rows are the spec for the Rust port."
+    if_fails: "A field is never named when it is missing, or always named, so a row reads READY without it or never reads READY."
 qa_gate:
   id: F-LADOR-QA-001
   name: The DoR ledger renders only verified claims
   description: >
-    Every planted falsifier fires for its own reason: the renderer exits 2, or names
-    exactly the planted field as NOT READY. Every control is accepted. Today it is an external check, run by hand on look-ahead
-    branches. Where its Rust port lives (a pv or apr subcommand, or a test over the
-    fixtures) is an open point.
+    Every planted falsifier fires for its own reason, and every control is accepted. The case
+    table scripts/lookahead/fixtures/dor/cases.json has 56 rows. 40 run the CLI on a fixture ledger
+    and pin its exit code with the whole RED line, or every row's missing fields in rank order
+    and the top10_ready count. 16 call one rule directly. Every row belongs to one of
+    FALSIFY-LADOR-001..009, 011..016 or 022..039. A set rule has one case per member
+    (spec, contract and baseline; each missing field), each check order has a case, and each
+    boundary has one (ten rows, a range of one id). As staged, the self-test runs the twelve
+    original fixtures and nine unit checks and matches a RED reason by substring. With
+    docs/lookahead/0.71-dor-selftest-cases.patch applied it also runs the table, compares each
+    verdict exactly, and is RED on a fixture that no row names or on an empty table. Today it is
+    an external check, run by hand on look-ahead branches. Where its Rust port lives (a pv or
+    apr subcommand, or a test over the fixtures) is an open point.
   checks:
     - planted_falsifier_fires_for_its_own_reason
     - control_accepted
+    - every_fixture_named_by_a_case
+    - case_table_not_empty
     - ledger_renders_without_red
-  pass_criteria: "the self-test prints ok (17 falsifiers fire, 7 controls pass), and the train's ledger renders at rc 0 against origin/main"
-  falsification: "Mutate any one rule of the renderer and the self-test exits 2. On 2026-10-03, 6 mutants of the staged rule, 15 of the falsifier rule and 3 of the claim checks were all killed"
+  pass_criteria: "As staged, dor_check.py --self-test --ref origin/main prints 'self-test: ok (17 falsifiers fire, 7 controls pass)'. With the patch applied it prints 'self-test: ok (17 falsifiers fire, 7 controls pass, 56 cases hold)'. The train's ledger renders at rc 0 against origin/main."
+  falsification: "Measured 2026-10-04 with 86 in-memory mutants, one per rule, per set member, per check order and per boundary (mutation_record). The staged self-test kills 34, 12 of them by a crash, and 52 survive. The table kills 84: 80 by a wrong verdict, and 4 only by a crash that every input reaching the mutated line triggers (findings F5). The patched self-test kills the same 84. Two survive. lookahead-hyphen survives because a case would pin the token asymmetry instead of fixing it (findings F1). on-main-ignores-path is equivalent (findings F4). Seven edits to the table each make it fail, so the comparison is not vacuous."
+findings:
+  - id: F1
+    summary: "Outside YAML a hyphen after an id counts as a token boundary, though a hyphen before it does not, so 'F-11-b' defines F-11."
+    evidence: "Measured 2026-10-04 on the staged checker: absent_ids finds F-11 defined in '| F-11-b |' and F-001 defined in 'see F-001-005', but F-11 absent in '| a-F-11 |'. The lookbehind class in absent_ids excludes '-' and the lookahead class does not. Mutant lookahead-hyphen (the same class on both sides) survives the table, because a case pinning today's behaviour would freeze the defect. The 0.71 ledger renders identically under the symmetric class."
+    proposal: "PROPOSE for the Rust port: the same class on both sides, with the case 'F-11-b does not define F-11'."
+  - id: F2
+    summary: "The staged self-test calls evaluate(), never main() or run(), so the exit codes and the ready count are untested."
+    evidence: "Mutants red-exit-1 (RED exits 1), require-ready-ignored, require-ready-le (ready <= rows) and ready-count-inverted all survive it. The table runs main() on each fixture and compares the exit code with the RED line, or with every row and the top10_ready count. It kills all four (FALSIFY-LADOR-035)."
+    proposal: "The Rust port's cases drive the CLI entry point, not only the library calls."
+  - id: F3
+    summary: "The original fixtures plant one member of each field set and no ledger with two faults, and the self-test matches a RED by substring."
+    evidence: "Seven set-member mutants survive the staged self-test: claims-no-spec, claims-no-baseline, staged-claims-no-spec, staged-claims-no-baseline, spec-always, baseline-always and owner-always. Only the contract was planted for the claim checks, and only the contract and the falsifier for missing fields. Three order mutants survive too: first-fault-last, order-staged-before-on-main and order-falsifier-before-staged. A substring such as 'claims on_main' matches whichever field fired. FALSIFY-LADOR-026..028 and 039 plant each member and each order, and the table compares the whole RED line."
+    proposal: "The Rust port compares whole verdicts, with one case per set member and per check order."
+  - id: F4
+    summary: "Mutant on-main-ignores-path is equivalent: no ledger reaches on_main() with an on_main claim that has no path."
+    evidence: "evaluate() runs verify_claims() before missing_fields() on every row, and verify_claims() is RED on every on_main claim without a path: on_main_faults() for the spec, contract and baseline, on_main_ids_fault() for a falsifier claim. So on_main()'s path test never decides a verdict. Only a direct call on a row the CLI cannot produce tells the two apart."
+    proposal: "PROPOSE: in the Rust port an on_main claim carries its path in its type, so the redundant test has no counterpart."
+  - id: F5
+    summary: "Four mutants die only by a crash, and no input makes them print a wrong verdict instead."
+    evidence: "Each removes a guard, and every input that reaches the mutated line then raises. non-dict-crash: any ledger that is not a mapping (AttributeError). on-main-non-dict-crash: any absent field (AttributeError). staged-ids-new-file-unguarded: staged ids in a file the ref lacks (TypeError, or AttributeError for YAML). staged-new-file-at-ref-none: a staged_marker the branch carries in a file the ref lacks (TypeError). A crash exits 1 with a traceback, never 0, so it counts as a kill. Two more died only by a crash in the first 55-row table. null-id now also carries a false claim, so ids-unique-no-none prints 'None: spec claims on_main ...', and empty-marker plants staged_marker '', which marker-none-ok passes to the text checks. Both now die by a wrong verdict."
+    proposal: "PROPOSE: typed rows in the Rust port (a ledger is a mapping, an absent field or file is an Option) make these states parse errors, so they need no case."
+mutation_record:
+  date: "2026-10-04"
+  method: "One exact-once string replacement per mutant on scripts/lookahead/dor_check.py, executed in a fresh namespace beside the fixture tree; the checker file is never edited. A crash counts as a kill. Each case also ran alone per mutant, because in one pass the first case that crashes hides every later case."
+  mutants: 86
+  staged_self_test: {killed: 34, killed_by_crash: 12, survived: 52}
+  case_table: {killed: 84, killed_by_value: 80, killed_only_by_crash: 4, survived: 2}
+  patched_self_test: {killed: 84, killed_by_crash: 18, survived: 2}
+  survived_staged_killed_by_table: {by_value: 46, only_by_crash: 4}
+  killed_only_by_crash: [non-dict-crash, on-main-non-dict-crash, staged-ids-new-file-unguarded, staged-new-file-at-ref-none]
+  survived_table: [lookahead-hyphen, on-main-ignores-path]
+  table_controls: "Seven edits to the table, each of which must make it fail: a RED line changed, ten's rows reordered, planted's ready count changed, an exit code changed, a unit's want changed, the null-id row dropped (a fixture no row names) and an empty table. All seven fail."
+verification: "External check, by hand: python3 scripts/lookahead/dor_check.py --self-test --ref origin/main  # 2026-10-04 13:43Z: self-test: ok (17 falsifiers fire, 7 controls pass). The same tree with docs/lookahead/0.71-dor-selftest-cases.patch applied in a scratch copy: self-test: ok (17 falsifiers fire, 7 controls pass, 56 cases hold), with --ref origin/main and with the default ref. The 0.71 ledger renders at rc 0, top10_ready 0/10, the same with and without the patch. Mutants: mutation_record. Earlier: 2026-10-04 10:56Z: ok (17 falsifiers fire, 7 controls pass). 2026-10-03 19:35Z: ok (17 falsifiers fire, 7 controls pass). 005-010: 6 mutants of the staged rule, all killed. 011-021: 15 mutants of the falsifier rule and 3 of the claim checks it moved (on_main paths, staged paths, nested YAML ids), all 18 killed (rc=2)."

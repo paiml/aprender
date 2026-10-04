@@ -1,0 +1,9 @@
+# Planted: a row whose id is null. Must be RED. The row also carries a false spec claim, so a
+# rule that let a null id through would print that claim's RED, naming None, instead of this one.
+schema: lookahead-dor-v1
+train: "0.00"
+rows:
+  - id: null
+    ev_rank: 1
+    spec: {path: docs/specifications/no-such-spec-planted.md, on_main: true}
+    owner_proposed: L1
