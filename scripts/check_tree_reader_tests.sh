@@ -57,9 +57,11 @@ export ORACLE
 # turn on from outside is a hole, not a falsifier.
 MUTATE_NO_INCLUDE=0
 MUTATE_FLAT=0
+MUTATE_NO_2018=0
 if [ "${TREE_READER_SELF_TEST:-0}" = 1 ]; then
     MUTATE_NO_INCLUDE=${TREE_READER_MUTATE_NO_INCLUDE:-0}
     MUTATE_FLAT=${TREE_READER_MUTATE_FLAT:-0}
+    MUTATE_NO_2018=${TREE_READER_MUTATE_NO_2018:-0}
 fi
 
 INDEX_DIR=""
@@ -136,6 +138,14 @@ module_of() { # module_of <root> <crate> <file> [depth] -> the module path; rc 1
     if [ "$MUTATE_FLAT" = 1 ]; then cand=$leaf; fi
     idx=$(index_of "$root" "$c")
     if awk -F'\t' -v n="$leaf" -v d="$owner" '$1 == "mod" && $2 == n && $4 == d { found = 1 } END { exit !found }' "$idx"; then
+        printf '%s\n' "$cand"; return 0
+    fi
+    # The Rust 2018 layout: `mod b;` for src/a/b.rs may live in src/a.rs, the
+    # FILE named for the directory (no src/a/mod.rs at all). Only that one file
+    # counts — a crate-wide name match is the loose shape rejected above.
+    # aprender-contracts' ontology/extract/json.rs owns json/github.rs this way,
+    # and without this branch the whole crate fell back to `--lib`.
+    if [ "$MUTATE_NO_2018" != 1 ] && awk -F'\t' -v n="$leaf" -v f="$owner.rs" '$1 == "mod" && $2 == n && $3 == f { found = 1 } END { exit !found }' "$idx"; then
         printf '%s\n' "$cand"; return 0
     fi
     if [ "$MUTATE_NO_INCLUDE" != 1 ]; then
@@ -466,6 +476,7 @@ CASES
     row 0 "  ...src/deep/leaf.rs -> deep::leaf" '^reader_mods	--lib	deep::leaf$' cat "$td/fx.out"
     row 0 "  ...src/gen/part.rs, pulled by include!() from src/inc.rs -> inc (the INCLUDER's module)" '^reader_mods	--lib	inc$' cat "$td/fx.out"
     row 0 "  ...src/attached.rs, declared #[path] as mod bolted from src/deep/mod.rs -> deep::bolted" '^reader_mods	--lib	deep::bolted$' cat "$td/fx.out"
+    row 0 "  ...src/flat/twig.rs, declared by src/flat.rs (2018 layout, no mod.rs) -> flat::twig" '^reader_mods	--lib	flat::twig$' cat "$td/fx.out"
     row 0 "  ...tests/it.rs -> --test it (integration rows unchanged)" '^reader_mods	--test	it$' cat "$td/fx.out"
     row 0 "  ...an unresolvable reader -> the WHOLE crate, 2 columns (fallback, never a guessed module)" '^reader_orphan	--lib$' cat "$td/fx.out"
     row 0 "  ...and that fallback is VISIBLE on stderr, never silent" 'WARN unresolved-include .*mystery\.rs' cat "$td/fx.warn"
@@ -480,6 +491,11 @@ CASES
         bash -c "TREE_READER_MUTATE_FLAT=1 bash '$T' --derive '$FX' 2>/dev/null | diff '$FX/derived.golden.txt' -"
     row 0 "  ...and it equals the committed flat golden (deep::leaf -> leaf)" '^$' \
         bash -c "TREE_READER_MUTATE_FLAT=1 bash '$T' --derive '$FX' 2>/dev/null | diff '$FX/derived.flat.golden.txt' -"
+    # MUTATION 3: hide the 2018-layout branch -> flat::twig is unresolvable, the
+    # crate falls back whole (the shape that turned the aprender-contracts row bare).
+    env TREE_READER_MUTATE_NO_2018=1 bash "$T" --derive "$FX" > "$td/no2018.out" 2> /dev/null || true
+    row 1 "MUTATION: 2018-layout branch hidden (TREE_READER_MUTATE_NO_2018=1) -> flat::twig gone, reader_mods --lib (whole crate) instead" '^< reader_mods	--lib	flat::twig$' diff "$FX/derived.golden.txt" "$td/no2018.out"
+    row 1 "  ...and the fallback is the 2-column whole-crate row" '^> reader_mods	--lib$' diff "$FX/derived.golden.txt" "$td/no2018.out"
     # The mutations are self-test-only: without TREE_READER_SELF_TEST the switch is inert.
     row 1 "the mutation switches are inert outside --self-test (TREE_READER_SELF_TEST unset -> the real golden)" '^[<>]' \
         env -u TREE_READER_SELF_TEST TREE_READER_MUTATE_FLAT=1 bash -c "bash '$T' --derive '$FX' 2>/dev/null | diff '$FX/derived.flat.golden.txt' -"
