@@ -1,0 +1,184 @@
+{
+  "$schema": "https://docs.oasis-open.org/sarif/sarif/v2.1.0/errata01/os/schemas/sarif-schema-2.1.0.json",
+  "version": "2.1.0",
+  "runs": [
+    {
+      "tool": {
+        "driver": {
+          "name": "pmat"
+        }
+      },
+      "results": [
+        {
+          "ruleId": "complexity_tdg_not_measurable",
+          "level": "note",
+          "message": {
+            "text": "pmat has no analyzer for the changed .sh/.yml files, so complexity_delta and tdg_delta are empty because nothing was measured, not because they are zero. The pmat query for the partition/union idea rebuilt the index at head and surfaced no prior art that the diff re-implements. satd: no debt markers added."
+          },
+          "properties": {
+            "grounding": "measured",
+            "command": [
+              "pmat",
+              "query",
+              "nextest hash partition shard union executed ids",
+              "--exclude-file",
+              "\\.md",
+              "--limit",
+              "5"
+            ],
+            "exit_code": 0,
+            "stdout_sha256": "abdf933640298dad70ec058c5d08859b7ae8ddd56ccd2065c7d10f9a9034c188",
+            "failure_scenario": "A reader takes an empty complexity_delta as a measured zero; for a shell/YAML-only diff it is unmeasured, so a long shell function added here is invisible to the complexity gate.",
+            "precision_class": "advisory"
+          }
+        },
+        {
+          "ruleId": "duplication_scan_name_collision_only",
+          "level": "note",
+          "message": {
+            "text": "pr_review_duplication_scan.sh over 1332/1332 horizon branches found 3 hits, all for needle step_if in scripts/check_guard_steps_run_all.sh, which only emits a fixture string of that name and defines no step-if reader. The diff calls scripts/ci/sigma_executed.py rather than re-implementing it. The scan is an exact name match and cannot see a re-implementation under another name."
+          },
+          "properties": {
+            "grounding": "measured",
+            "command": [
+              "bash",
+              "scripts/pr_review_duplication_scan.sh",
+              "--base",
+              "316dee2cd4b3b3990ad47cc1a7a661c979a4e1d3",
+              "--head",
+              "1c0723db4af751e604d8202519ffc37b424ec2ef",
+              "--rust-semantic",
+              "--json",
+              "dup.json"
+            ],
+            "exit_code": 0,
+            "stdout_sha256": "19ebbad81bc05fcec3bf83f49084563c509b145fe7d19358e196563220369084",
+            "failure_scenario": "A second copy of the step_if awk reader would drift from the other; none exists at this head.",
+            "precision_class": "advisory"
+          }
+        },
+        {
+          "ruleId": "guard_table_22_rows_pass",
+          "level": "note",
+          "message": {
+            "text": "bash scripts/check_quick_tier_shard_sigma.sh at the new head: rc 0, 22 ok rows, 0 FAIL rows, PASS. No false RED on the real tree."
+          },
+          "properties": {
+            "grounding": "measured",
+            "command": [
+              "bash",
+              "scripts/check_quick_tier_shard_sigma.sh"
+            ],
+            "exit_code": 0,
+            "stdout_sha256": "1fdeaa00ee248a7b5618bec2c63997087df2a351472e7610d03891b513649a4c",
+            "failure_scenario": "A false RED on the real tree would block every PR once the report-only echo is dropped; none is present at this head.",
+            "precision_class": "advisory"
+          }
+        },
+        {
+          "ruleId": "guard_self_test_passes",
+          "level": "note",
+          "message": {
+            "text": "bash scripts/check_quick_tier_shard_sigma.sh --self-test: rc 0, SELF-TEST PASSED, 21 planted-rule rows each RED plus the ENV rc=2 row (22 ok lines). The three round-1 survivors (dead upload if, endsWith(github.job) on the tree step, -x artifact suffix) are now planted and killed."
+          },
+          "properties": {
+            "grounding": "measured",
+            "command": [
+              "bash",
+              "scripts/check_quick_tier_shard_sigma.sh",
+              "--self-test"
+            ],
+            "exit_code": 0,
+            "stdout_sha256": "5f8850a812e96071778f78ba50f48a4c6242c171f1ec91eea15f7f2db6b44996",
+            "failure_scenario": "A planted wrong rule the table still passes would mean the guard states a rule nothing tests; all 21 turn the table RED.",
+            "precision_class": "advisory"
+          }
+        },
+        {
+          "ruleId": "guard_survivor_staging_body_conditions_unchecked",
+          "level": "warning",
+          "message": {
+            "text": "Reviewer mutants on the new head, run through QUICK_SIGMA_SECTIONS against a scratch copy: (m1) the staging body condition if TIER = quick flipped to a never-true value, and (m2) the junit cp made shard-1-only, both leave the guard at rc 0. Rows 7 and 8 test only that the cp text appears somewhere in the staging body, and the if: allowlist covers the step and upload conditions but not the shell conditions inside the body. The fan-in is the backstop and goes RED at run time, so this is a report-only-guard gap, not a merge hole."
+          },
+          "properties": {
+            "grounding": "measured",
+            "command": [
+              "bash",
+              "scripts/check_quick_tier_shard_sigma.sh"
+            ],
+            "exit_code": 0,
+            "stdout_sha256": "1fdeaa00ee248a7b5618bec2c63997087df2a351472e7610d03891b513649a4c",
+            "failure_scenario": "A later edit gates the staging cp on shard 1 or on tier full: the static guard stays green, and the fault surfaces only as a RED fan-in on the first quick-tier run.",
+            "precision_class": "advisory"
+          }
+        },
+        {
+          "ruleId": "guard_survivor_tree_step_continue_on_error",
+          "level": "warning",
+          "message": {
+            "text": "Reviewer mutant (m3): continue-on-error: true added to the tree-reader step; guard rc 0. The guard pins the step if: and flags but not the step failure semantics. A failed test is still an executed id in the junit, so the union check does not catch it either."
+          },
+          "properties": {
+            "grounding": "measured",
+            "command": [
+              "bash",
+              "scripts/check_quick_tier_shard_sigma.sh"
+            ],
+            "exit_code": 0,
+            "stdout_sha256": "1fdeaa00ee248a7b5618bec2c63997087df2a351472e7610d03891b513649a4c",
+            "failure_scenario": "A step edit adds continue-on-error to the tree step: red tree-reader tests on any shard no longer fail the job, and neither the guard nor the fan-in (which counts executed ids, not outcomes) notices.",
+            "precision_class": "advisory"
+          }
+        },
+        {
+          "ruleId": "empty_partition_junit_not_remeasured",
+          "level": "note",
+          "message": {
+            "text": "No cargo ran (instructed). Whether nextest writes a junit file for a hash partition holding zero tests under --no-tests=warn is carried from the author, not re-measured here. If it writes none, the keep step cp on that shard fails loudly (a RED job, not a silent pass); the fan-in treats a staged empty junit as a legal empty partition (table row 12 passes)."
+          },
+          "properties": {
+            "grounding": "measured",
+            "command": [
+              "bash",
+              "scripts/check_quick_tier_shard_sigma.sh"
+            ],
+            "exit_code": 0,
+            "stdout_sha256": "1fdeaa00ee248a7b5618bec2c63997087df2a351472e7610d03891b513649a4c",
+            "failure_scenario": "A small tree-reader selection leaves one partition empty and nextest writes no junit: that shard goes RED at the keep step although the selection is fine, until the keep step tolerates an absent file.",
+            "precision_class": "advisory"
+          }
+        }
+      ]
+    },
+    {
+      "tool": {
+        "driver": {
+          "name": "antigravity"
+        }
+      },
+      "invocations": [
+        {
+          "executionSuccessful": false,
+          "toolExecutionNotifications": [
+            {
+              "level": "error",
+              "message": {
+                "text": "agy cross-vendor review was NOT dispatched on this head: the Gemini quota bucket was measured empty at 17:46Z by the dispatching session, so no round was run and no output is claimed. agy is installed (agy 1.2.16). The quorum is two Claude Sonnet lanes."
+              },
+              "properties": {
+                "grounding": "measured",
+                "command": [
+                  "agy",
+                  "--version"
+                ],
+                "exit_code": 0,
+                "stdout_sha256": "e15910100f07274528d58c696204c6ed9577f346839f119bb4a63dadfdfbb6c5"
+              }
+            }
+          ]
+        }
+      ],
+      "results": []
+    }
+  ]
+}
