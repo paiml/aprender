@@ -169,8 +169,12 @@ RECEIPT="$RECEIPT_DIR/receipt-$TS.json"
 RECEIPT_PARTIAL="$RECEIPT.partial"
 
 # ── gate bookkeeping ─────────────────────────────────────────────────────────
-declare -a NAMES=() RESULTS=() NOTES=()
+declare -a NAMES=() RESULTS=() NOTES=() SECS=()
 FAILED=0
+# #4672: each row's wall seconds since the previous row closed, so the slow rows are measured, not
+# guessed. Bash-only (SECONDS), written to the receipt's .rows.tsv sidecar; the JSON writer is unchanged.
+ROW_T0=$SECONDS
+row_secs() { SECS+=("$((SECONDS - ROW_T0))"); ROW_T0=$SECONDS; }
 # Statuses:
 #   PASS   — the gate ran and its subject held.
 #   FAIL   — the gate ran and its subject did not hold  → NO-GO.
@@ -212,7 +216,7 @@ gate() { # gate <name> <cmd...> — runs cmd, records pass/fail
   # a worse note than a real diagnostic but it cannot be a dependency's name.
   [ -z "$note" ] && note=$(printf '%s' "$out" | tail -1)
   [ "$rc" -ne 0 ] && note="$note  [log: $log]"
-  NAMES+=("$name")
+  NAMES+=("$name"); row_secs
   if [ $rc -eq 0 ]; then RESULTS+=("PASS"); else RESULTS+=("FAIL"); FAILED=1; fi
   NOTES+=("${note:0:120}")
   printf '  [%s] %-26s %s\n' "$([ $rc -eq 0 ] && echo ' OK ' || echo 'FAIL')" "$name" "${note:0:80}"
@@ -235,7 +239,7 @@ mark() { # mark <name> <PASS|FAIL|SKIP|REPORT|WARN|MANUAL|OPEN> <note>
   elif [ "$st" = OPEN ]; then
     case " $POST_PUBLISH_OBLIGATIONS " in *" $1 "*) ;; *) st=FAIL; note="only [$POST_PUBLISH_OBLIGATIONS] may be OPEN; '$1' is not a post-publish obligation: $note" ;; esac
   fi
-  NAMES+=("$1"); RESULTS+=("$st"); NOTES+=("${note:0:200}")
+  NAMES+=("$1"); RESULTS+=("$st"); NOTES+=("${note:0:200}"); row_secs
   [ "$st" = FAIL ] && FAILED=1
   printf '  [%s] %-26s %s\n' "$([ "$st" = PASS ] && echo ' OK ' || echo "$st")" "$1" "${note:0:96}"
 }
@@ -1848,6 +1852,10 @@ if ! python3 -c 'import json,sys; json.load(open(sys.argv[1]))' "$RECEIPT_PARTIA
 fi
 # Atomic completion: the receipt EXISTS only once it is whole and parseable.
 mv "$RECEIPT_PARTIAL" "$RECEIPT"
+# #4672: the per-row wall seconds beside the receipt (name, result, secs; slowest first: `sort -k3,3nr`).
+# Written after the receipt is whole, so an absent sidecar never stands for a missing receipt.
+{ printf 'gate\tresult\tsecs\n'; for i in "${!NAMES[@]}"; do printf '%s\t%s\t%s\n' "${NAMES[$i]}" "${RESULTS[$i]}" "${SECS[$i]}"; done; } > "${RECEIPT%.json}.rows.tsv"
+printf 'row seconds: %s (total %ss)\n' "${RECEIPT%.json}.rows.tsv" "$SECONDS"
 
 echo "────────────────────────────────────────────────"
 echo "receipt: $RECEIPT"
