@@ -31,9 +31,7 @@ crates/aprender-serve/src/convert/q4k_conversion_stats.rs
 crates/aprender-serve/src/cuda/executor/incremental_attention.rs
 crates/aprender-serve/src/cuda/executor/kernel.rs
 crates/aprender-serve/src/cuda/executor/layers/forward_graphed_decode.rs
-crates/aprender-serve/src/cuda/executor/layers/loading.rs
 crates/aprender-serve/src/cuda/executor/layers/prefill_logits.rs
-crates/aprender-serve/src/cuda/executor/layers/preload_utilities.rs
 crates/aprender-serve/src/cuda/executor/layers/reduces.rs
 crates/aprender-serve/src/cuda/executor/layers/rope.rs
 crates/aprender-serve/src/cuda/executor/layers/transformer_layer_indexed.rs

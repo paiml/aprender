@@ -989,7 +989,6 @@ crates/aprender-serve/src/cuda/executor/layers/par-121.rs
 crates/aprender-serve/src/cuda/executor/layers/phase_attention.rs
 crates/aprender-serve/src/cuda/executor/layers/prefill_logits.rs
 crates/aprender-serve/src/cuda/executor/layers/preload_modules.rs
-crates/aprender-serve/src/cuda/executor/layers/preload_utilities.rs
 crates/aprender-serve/src/cuda/executor/layers/rmsnorm_ptr.rs
 crates/aprender-serve/src/cuda/executor/layers/transformer_layer_batched.rs
 crates/aprender-serve/src/cuda/executor/proptests_imp_1000d.rs
