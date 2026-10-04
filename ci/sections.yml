@@ -3696,8 +3696,16 @@ jobs:
         # One run at a time per cache: two runs unpacking into the same .lake would race.
         # set +e: Actions runs `bash -e`, which would abort at a failing run before its rc and
         # its log tail are recorded.
+        # The runner service starts without a login session, so XDG_RUNTIME_DIR is unset and
+        # `systemd-run --user` cannot reach the user bus: pv declined the leanchecker arm on
+        # every main run (#4578). Point it at the lingering user's runtime dir when one exists;
+        # where none exists the variable stays unset and pv still declines (rc 2).
         run: |
           set +e
+          if [ -z "${XDG_RUNTIME_DIR:-}" ] && [ -O "/run/user/$(id -u)" ]; then
+            export XDG_RUNTIME_DIR="/run/user/$(id -u)"
+          fi
+          echo "XDG_RUNTIME_DIR=${XDG_RUNTIME_DIR:-<unset>}"
           flock "${{ steps.pre.outputs.cache }}.lock" "$PV" discharge run "$LEAN" > "$RUNNER_TEMP/discharge-run.log" 2>&1
           rc=$?
           tail -n 40 "$RUNNER_TEMP/discharge-run.log"
