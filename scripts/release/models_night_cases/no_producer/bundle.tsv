@@ -1,0 +1,39 @@
+lane	kind	state	producer	run_id	run_head	conclusion	attempt	started	ended	reason	hours_lost
+ci-main	verdict	not_measured	.github/workflows/ci.yml ^(ci / gate|workspace-test)$	not_measured						no run on C; no run on main	-
+deep-doctests	verdict	not_measured	none	not_measured						no nightly producer on main yet	-
+deep-nodefault	verdict	not_measured	none	not_measured						no nightly producer on main yet	-
+deep-examples	verdict	not_measured	.github/workflows/examples-nightly.yml ^examples$	not_measured						no run on C; no run on main	-
+deep-bins-build	verdict	not_measured	.github/workflows/nightly.yml -unknown-linux-gnu on 	not_measured						no run on C; no run on main	-
+deep-bins-smoke	verdict	not_measured	none	not_measured						no nightly producer on main yet	-
+dogfood	verdict	not_measured	none	not_measured						no nightly producer on main yet	-
+models	verdict	not_measured	none	not_measured						no nightly producer on main yet	-
+readiness	verdict	not_measured	none	not_measured						no nightly producer on main yet	-
+milestone	verdict	not_measured	none	not_measured						no nightly producer on main yet	-
+cleanroom-cpu	verdict	not_measured	none	not_measured						no nightly producer on main yet	-
+cleanroom-gpu	verdict	not_measured	none	not_measured						no nightly producer on main yet	-
+assets	verdict	not_measured	none	not_measured						no nightly producer on main yet	-
+preflight	verdict	not_measured	none	not_measured						no nightly producer on main yet	-
+publish-dryrun	verdict	not_measured	none	not_measured						no nightly producer on main yet	-
+coverage	info	not_measured	.github/workflows/coverage-nightly.yml ^coverage$	not_measured						no run on C; no run on main	-
+guards	info	not_measured	.github/workflows/guards-nightly.yml 	not_measured						no run on C; no run on main	-
+mutants	info	not_measured	.github/workflows/mutants-nightly.yml 	not_measured						no run on C; no run on main	-
+toolchain-ceiling	info	not_measured	.github/workflows/toolchain-ceiling.yml 	not_measured						no run on C; no run on main	-
+cuda	info	not_measured	.github/workflows/cuda-nightly.yml 	not_measured						no run on C; no run on main	-
+silicon	info	not_measured	.github/workflows/silicon-nightly.yml 	not_measured						no run on C; no run on main	-
+qwen-story	info	not_measured	.github/workflows/qwen-story-daily.yml 	not_measured						no run on C; no run on main	-
+beat-speed	info	not_measured	.github/workflows/beat-speed-nightly.yml 	not_measured						no run on C; no run on main	-
+conleche	info	not_measured	.github/workflows/conleche-nightly.yml 	not_measured						no run on C; no run on main	-
+bench	info	not_measured	.github/workflows/nightly-bench.yml 	not_measured						no run on C; no run on main	-
+book	info	not_measured	.github/workflows/book.yml 	not_measured						no run on C; no run on main	-
+book-contracts	info	not_measured	.github/workflows/book-contracts.yml 	not_measured						no run on C; no run on main	-
+install-script	info	not_measured	.github/workflows/install-script.yml 	not_measured						no run on C; no run on main	-
+fleet-toolset	info	not_measured	.github/workflows/fleet-toolset.yml 	not_measured						no run on C; no run on main	-
+# C	4701470147014701470147014701470147014701
+# tree	cccccccccccccccccccccccccccccccccccccccc
+# read	ok
+# command	nightly_train.sh --from RAW --out OUT --now 2026-10-06T04:45:00Z
+# pin	train=unpinned greens= redage=
+# budget	first start , last end , not_measured (6 h budget; info only, not in the verdict)
+# github calls	0
+# greens in a row	not_measured (nightly_greens.sh absent)
+# as of	2026-10-06T04:45:00Z
