@@ -1229,7 +1229,7 @@ fn v2_cells_join_the_release_graph_only_when_asked() {
     let mut off = Graph::new();
     extract(&mut off, &c, &subject()).expect("extracts");
     assert!(
-        !off.to_ntriples().contains(&rel("ModelCell")),
+        !off.to_ntriples().contains(&rel("ModelKernelCell")),
         "v2 is opt-in: no dir, no v2 cells"
     );
 

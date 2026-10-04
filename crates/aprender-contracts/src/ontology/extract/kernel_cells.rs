@@ -5,7 +5,7 @@
 //! through the kernel registry (`crates/aprender-serve/kernel-registry.json`, KREG-001) for one host's
 //! backend and arch. Each type becomes either `release:usesKernel` edges or a `release:unregisteredQtype`
 //! literal. This module emits edges only, never a verdict: the release-readiness v2 shape derives the
-//! ModelCell verdict through `sh:node` on the kernel cells, so a verdict computed here would be the check
+//! ModelKernelCell verdict through `sh:node` on the kernel cells, so a verdict computed here would be the check
 //! checking itself.
 //!
 //! The registry is read as data (this crate cannot depend on `aprender-serve`). The map is a SUPERSET of
@@ -274,11 +274,11 @@ pub fn smoke_cell(host: &str, model_sha256: &str) -> String {
     iri_path("smoke-cell", &[host, model_sha256])
 }
 
-/// A `release:ModelCell` with one `release:usesKernel` edge per kernel and one `release:unregisteredQtype`
+/// A `release:ModelKernelCell` with one `release:usesKernel` edge per kernel and one `release:unregisteredQtype`
 /// integer per type no row serves. Edges only: no verdict (module note).
 pub fn emit_model_cell(g: &mut Graph, host: &str, model_sha256: &str, map: &KernelMap) {
     let cell = model_cell(host, model_sha256);
-    g.insert(cell.clone(), RDF_TYPE, Term::iri(rel("ModelCell")));
+    g.insert(cell.clone(), RDF_TYPE, Term::iri(rel("ModelKernelCell")));
     for k in &map.uses {
         g.insert(
             cell.clone(),
@@ -308,7 +308,7 @@ pub struct KernelEvidence {
     pub arch_match: bool,
 }
 
-/// A `release:KernelParityCell`, with its receipt's fields on the cell itself so a ModelCell's one-level
+/// A `release:KernelParityCell`, with its receipt's fields on the cell itself so a ModelKernelCell's one-level
 /// `sh:node` reaches them. `None` writes the cell with no fields: `minCount 1` rejects it (RR2-F1).
 pub fn emit_kernel_cell(
     g: &mut Graph,
@@ -1030,7 +1030,7 @@ pub struct CellHost {
     /// The arch the registry rows and receipts are matched on (see [`judge_parity_receipt`]).
     pub arch: String,
     /// Model sha256 → its per-tensor ggml types and architecture, or `None` when no receipt recorded the
-    /// types. A `None` model gets a ModelCell with no `usesKernel` edge, which `minCount 1` rejects: unknown
+    /// types. A `None` model gets a ModelKernelCell with no `usesKernel` edge, which `minCount 1` rejects: unknown
     /// is RED, never skipped.
     pub models: BTreeMap<String, Option<ModelShape>>,
     /// Kernel id → the judged receipt measured for this host.

@@ -12,8 +12,8 @@
 # THE CELLS
 #   release:KernelParityCell  (host, kernel_id): kernel_id fixes backend and shape_class (KREG-001 registry row), the
 #       host fixes arch/sm. Its parity receipt's judged fields sit ON the cell (verdict, withinBound, fresh,
-#       archMatch), so a ModelCell reaches them through ONE level of sh:node (the engine's limit).
-#   release:ModelCell   (host, model sha256): DERIVED. The extractor writes only release:usesKernel edges (the
+#       archMatch), so a ModelKernelCell reaches them through ONE level of sh:node (the engine's limit).
+#   release:ModelKernelCell   (host, model sha256): DERIVED. The extractor writes only release:usesKernel edges (the
 #       static map: per-tensor ggml types through the registry, extract/kernel_cells.rs), unregisteredQtype for a
 #       type no row serves, unpredictedKernel for a dispatched kernel the map did not predict, and the smoke edge.
 #       It never writes a verdict: the shape below is the derivation.
@@ -64,7 +64,7 @@ shapes:
       - {path: release:fresh, minCount: 1, maxCount: 1, in: [true]}
       - {path: release:archMatch, minCount: 1, maxCount: 1, in: [true]}
   - id: release-readiness-v2.model
-    targetClass: release:ModelCell
+    targetClass: release:ModelKernelCell
     properties:
       - {path: release:usesKernel, minCount: 1, nodeKind: IRI, class: release:KernelParityCell,
          node: {properties: [{path: release:verdict, minCount: 1, maxCount: 1, in: [pass]},
@@ -102,7 +102,7 @@ equations:
     lean_theorem: none — L4 not declared
   model_pass:
     formula: "Pass(m, h) ⇔ uses(m, h) ≠ ∅ ∧ ∀ k ∈ uses(m, h): Pass(k, h) ∧ unregistered(m, h) = ∅ ∧ unpredicted(m, h) = ∅ ∧ |smoke(m, h)| = 1 ∧ Pass(smoke(m, h))"
-    domain: "every release:ModelCell"
+    domain: "every release:ModelKernelCell"
     codomain: "a violation naming the model cell, or none"
     invariants:
       - "Pass(k, h) ⇔ verdict = pass ∧ withinBound ∧ fresh ∧ archMatch, all present"
