@@ -28,7 +28,7 @@ Meanwhile, the NF4 CUDA path (Qwen3-4B on Lambda) correctly trained only LoRA ad
 | `lora_optimizer_step()` | `cuda_block.rs:3461-3524` | AdamW on LoRA params only |
 | `CudaLoraGradWorkspace` | `cuda_block.rs:2795-2852` | Contains only `grad_lora_{a,b}_{q,v}` — no base weight grad buffers |
 | `download_lora_weights()` | `cuda_block.rs:3559-3579` | Exports A/B matrices from GPU |
-| B pre-scaling | `cuda_block.rs:2387` | B matrices pre-scaled by `lora_scale` at upload (avoids scale kernel in forward) |
+| LoRA scale (K44) | `cuda_block.rs` `lora_forward` / `lora_backward` | B is stored as given; alpha/rank is applied to `x·A` in the forward and the backward. Until K44 the upload pre-scaled B instead, so AdamW stepped alpha/rank·B and alpha cancelled out of CUDA training. `download_lora_weights` still returns alpha/rank·B and `upload_lora_weights` divides it back out, so callers and checkpoints are unchanged |
 
 **Confirmed correct**: Base weights stored as NF4, never receive gradients, never updated by optimizer. Only LoRA A/B matrices train.
 

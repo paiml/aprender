@@ -2516,6 +2516,24 @@ pub(crate) fn cuda_add_inplace(
     residual_add_forward(target_ref, source, target, saturating_u32(n), stream)
 }
 
+/// `buf[..n] *= scale` on the GPU, in place (K44: the LoRA alpha/rank scale).
+///
+/// The Scale kernel is elementwise (`output[i] = input[i] * scale`), so one buffer can be both
+/// its input and its output: each element is read before it is written.
+#[cfg(feature = "cuda")]
+pub(crate) fn cuda_scale_inplace(
+    buf: &mut GpuBuffer<f32>,
+    scale: f32,
+    n: usize,
+    stream: &CudaStream,
+) -> Result<()> {
+    // SAFETY: constructs a non-owning `GpuBuffer` view over `buf`'s device allocation, which stays live for the kernel call; the view is `leak()`ed afterwards so its Drop never frees the borrowed allocation (no double-free).
+    let view = unsafe { GpuBuffer::<f32>::from_raw_parts(buf.as_ptr(), buf.len()) };
+    let result = scale_forward(&view, buf, scale, saturating_u32(n), stream);
+    leak(view);
+    result
+}
+
 /// CUDA element-wise multiplication on GPU (zero CPU transfers)
 ///
 /// Uses `ElementwiseMulKernel` — single kernel launch, no D2H/H2D transfers.
@@ -2530,17 +2548,49 @@ fn cuda_mul(
     crate::autograd::cuda_forward::elementwise_mul_forward(a, b, output, saturating_u32(n), stream)
 }
 
-/// LoRA backward for one adapted projection `y = x·W + (x·A)·B` (R15a C1).
+/// LoRA forward for one adapted projection: `y += scale·(x·A)·B` (K44).
+///
+/// `x` is `[s, h]`, `a` is `[h, r]`, `b` is `[r, n]` and `y` is `[s, n]`; `inter` (`[s, r]`) and
+/// `temp` (at least `[s, n]`) are scratch. `scale` is alpha/rank. It is applied to `x·A`, the
+/// smallest intermediate, so `b` holds B itself rather than B multiplied by the scale.
+/// Contract: lora-gradient-flow-v1 (FALSIFY-LORA_GRADIENT_FLOW_V1_006).
+#[cfg(feature = "cuda")]
+#[allow(clippy::too_many_arguments)]
+fn lora_forward(
+    x: &GpuBuffer<f32>,
+    a: &GpuBuffer<f32>,
+    b: &GpuBuffer<f32>,
+    y: &mut GpuBuffer<f32>,
+    inter: &mut GpuBuffer<f32>,
+    temp: &mut GpuBuffer<f32>,
+    scale: f32,
+    s: u32,
+    h: u32,
+    r: u32,
+    n: u32,
+    stream: &CudaStream,
+) -> Result<()> {
+    // inter = scale·(x·A)  [s, r]
+    gemm_forward(x, a, inter, s, h, r, stream)?;
+    cuda_scale_inplace(inter, scale, s as usize * r as usize, stream)?;
+    // temp = inter·B  [s, n]
+    gemm_forward(inter, b, temp, s, r, n, stream)?;
+    // y += temp
+    cuda_add_inplace(y, temp, s as usize * n as usize, stream)
+}
+
+/// LoRA backward for one adapted projection `y = x·W + scale·(x·A)·B` (R15a C1, K44).
 ///
 /// Every adapted target runs this one sequence. `x` is the projection's input `[s, h]` and `dy`
 /// the gradient of its output `[s, n]`; `a` is `[h, r]` and `b` is `[r, n]`. It writes
-/// `db = (x·A)ᵀ·dy` and `da = xᵀ·(dy·Bᵀ)`, and adds the adapter's share of the input gradient,
-/// `(dy·Bᵀ)·Aᵀ`, into `dx` (`[s, h]`). `inter` (`[s, r]`) and `temp` (`[s, h]`) are scratch.
+/// `db = scale·(x·A)ᵀ·dy` and `da = scale·xᵀ·(dy·Bᵀ)`, and adds the adapter's share of the input
+/// gradient, `scale·(dy·Bᵀ)·Aᵀ`, into `dx` (`[s, h]`). `inter` (`[s, r]`) and `temp` (`[s, h]`)
+/// are scratch.
 ///
 /// `db` runs before `dInter` because `dInter` is written over the `x·A` recompute in `inter`.
-/// No step applies alpha/rank: `b` is the device copy, which the upload already multiplied by
-/// it, so `db` is the gradient of that pre-scaled tensor (K44).
-/// Contract: lora-gradient-flow-v1 (FALSIFY-LORA_GRADIENT_FLOW_V1_004).
+/// `scale` is alpha/rank and `b` holds B itself, the tensor AdamW steps and the adapter file
+/// stores, so the gradients are those of the CPU path and of PEFT (K44).
+/// Contract: lora-gradient-flow-v1 (FALSIFY-LORA_GRADIENT_FLOW_V1_004, _006).
 #[cfg(feature = "cuda")]
 #[allow(clippy::too_many_arguments)]
 fn lora_backward(
@@ -2553,18 +2603,21 @@ fn lora_backward(
     dx: &mut GpuBuffer<f32>,
     inter: &mut GpuBuffer<f32>,
     temp: &mut GpuBuffer<f32>,
+    scale: f32,
     s: u32,
     h: u32,
     r: u32,
     n: u32,
     stream: &CudaStream,
 ) -> Result<()> {
-    // Recompute inter = x·A  [s, r]
+    // Recompute inter = scale·(x·A)  [s, r], as the forward computed it
     gemm_forward(x, a, inter, s, h, r, stream)?;
+    cuda_scale_inplace(inter, scale, s as usize * r as usize, stream)?;
     // db = interᵀ·dy  [r, n]
     gemm_backward_b(inter, dy, db, s, r, n, stream)?;
-    // dInter = dy·Bᵀ  [s, r], written over inter
+    // dInter = scale·(dy·Bᵀ)  [s, r], written over inter
     gemm_backward_a(dy, b, inter, s, n, r, stream)?;
+    cuda_scale_inplace(inter, scale, s as usize * r as usize, stream)?;
     // da = xᵀ·dInter  [h, r]
     gemm_backward_b(x, inter, da, s, h, r, stream)?;
     // dx += dInter·Aᵀ  [s, h]
@@ -3086,13 +3139,12 @@ impl CudaNf4TransformerBlock {
         // Pipeline allocates one CudaBlockScratch and passes &mut to each forward() call.
         // Saves (L-1) * 214 MB = 7.5 GB for Qwen3-4B (36 layers).
 
-        // Upload LoRA adapters to GPU (ENT-153)
-        // B matrices are pre-scaled by lora_scale to avoid a separate scale kernel in forward.
+        // Upload LoRA adapters to GPU (ENT-153). B is uploaded as given: the forward and the
+        // backward apply lora_scale (K44), so AdamW steps B itself, as on the CPU path.
         let (lora_a_q, lora_b_q) = match q_lora {
             Some((a_data, b_data)) => {
                 let a = GpuBuffer::from_host(&ctx, a_data)?;
-                let scaled_b: Vec<f32> = b_data.iter().map(|&v| v * lora_scale).collect();
-                let b = GpuBuffer::from_host(&ctx, &scaled_b)?;
+                let b = GpuBuffer::from_host(&ctx, b_data)?;
                 (Some(a), Some(b))
             }
             None => (None, None),
@@ -3100,8 +3152,7 @@ impl CudaNf4TransformerBlock {
         let (lora_a_v, lora_b_v) = match v_lora {
             Some((a_data, b_data)) => {
                 let a = GpuBuffer::from_host(&ctx, a_data)?;
-                let scaled_b: Vec<f32> = b_data.iter().map(|&v| v * lora_scale).collect();
-                let b = GpuBuffer::from_host(&ctx, &scaled_b)?;
+                let b = GpuBuffer::from_host(&ctx, b_data)?;
                 (Some(a), Some(b))
             }
             None => (None, None),
@@ -3330,18 +3381,11 @@ impl CudaNf4TransformerBlock {
             cuda_add_inplace(&mut scratch.q, b_q_repl, seq_len * q_dim, stream)?;
         }
 
-        // ENT-153: Q LoRA: q += (norm1_out @ A_q) @ B_q  (B_q pre-scaled by lora_scale)
+        // ENT-153: Q LoRA: q += lora_scale·(norm1_out @ A_q) @ B_q (K44)
         if let (Some(a_q), Some(b_q)) = (&self.lora_a_q, &self.lora_b_q) {
-            let s = saturating_u32(seq_len);
-            let h = saturating_u32(hidden_size);
-            let r = saturating_u32(self.lora_rank);
-            let qd = saturating_u32(q_dim);
-            // lora_inter[seq, rank] = norm1_out[seq, hidden] @ A_q[hidden, rank]
-            gemm_forward(&scratch.norm1_out, a_q, &mut scratch.lora_inter, s, h, r, stream)?;
-            // lora_temp[seq, q_dim] = lora_inter[seq, rank] @ B_q[rank, q_dim]
-            gemm_forward(&scratch.lora_inter, b_q, &mut scratch.lora_temp, s, r, qd, stream)?;
-            // q += lora_temp (in-place add)
-            cuda_add_inplace(&mut scratch.q, &scratch.lora_temp, seq_len * q_dim, stream)?;
+            lora_forward(&scratch.norm1_out, a_q, b_q, &mut scratch.q, &mut scratch.lora_inter, &mut scratch.lora_temp,
+                self.lora_scale, saturating_u32(seq_len), saturating_u32(hidden_size), saturating_u32(self.lora_rank),
+                saturating_u32(q_dim), stream)?;
         }
 
         if let Some(w_k_fp16) = self.w_k_fp16.as_ref().filter(|_| fp16_gemm) {
@@ -3384,18 +3428,11 @@ impl CudaNf4TransformerBlock {
 
         scratch.op_end(_t, OP_QKV_GEMM); // End QKV timing (includes Q/K/V GEMMs + Q LoRA)
 
-        // ENT-153: V LoRA: v += (norm1_out @ A_v) @ B_v  (B_v pre-scaled by lora_scale)
+        // ENT-153: V LoRA: v += lora_scale·(norm1_out @ A_v) @ B_v (K44)
         if let (Some(a_v), Some(b_v)) = (&self.lora_a_v, &self.lora_b_v) {
-            let s = saturating_u32(seq_len);
-            let h = saturating_u32(hidden_size);
-            let r = saturating_u32(self.lora_rank);
-            let vd = saturating_u32(kv_hidden_size);
-            // lora_inter[seq, rank] = norm1_out[seq, hidden] @ A_v[hidden, rank]
-            gemm_forward(&scratch.norm1_out, a_v, &mut scratch.lora_inter, s, h, r, stream)?;
-            // lora_temp[seq, kv_hidden] = lora_inter[seq, rank] @ B_v[rank, kv_hidden]
-            gemm_forward(&scratch.lora_inter, b_v, &mut scratch.lora_temp, s, r, vd, stream)?;
-            // v += lora_temp (in-place add)
-            cuda_add_inplace(&mut scratch.v, &scratch.lora_temp, seq_len * kv_hidden_size, stream)?;
+            lora_forward(&scratch.norm1_out, a_v, b_v, &mut scratch.v, &mut scratch.lora_inter, &mut scratch.lora_temp,
+                self.lora_scale, saturating_u32(seq_len), saturating_u32(hidden_size), saturating_u32(self.lora_rank),
+                saturating_u32(kv_hidden_size), stream)?;
         }
 
         nan_scan_layer(self.layer_idx, &[
@@ -4469,6 +4506,7 @@ impl CudaNf4TransformerBlock {
                 &mut scratch.o_proj_out,
                 &mut scratch.lora_inter,
                 &mut scratch.lora_temp,
+                self.lora_scale,
                 s,
                 h,
                 saturating_u32(self.lora_rank),
@@ -4591,6 +4629,7 @@ impl CudaNf4TransformerBlock {
                 &mut scratch.o_proj_out,
                 &mut scratch.lora_inter,
                 &mut scratch.lora_temp,
+                self.lora_scale,
                 s,
                 h,
                 saturating_u32(self.lora_rank),
@@ -5152,9 +5191,9 @@ impl CudaNf4TransformerBlock {
 
     /// Download LoRA weights from GPU to CPU for checkpoint saving.
     ///
-    /// Returns (A_q, B_q, A_v, B_v) as flat f32 vectors.
-    /// B matrices are returned WITH the baked-in scale (caller can divide by lora_scale
-    /// if they need the unscaled version).
+    /// Returns (A_q, B_q, A_v, B_v) as flat f32 vectors. B comes back as alpha/rank·B, the form
+    /// every caller and checkpoint already uses (callers divide the scale back out). The device
+    /// itself holds B, and the forward applies the scale (K44).
     pub fn download_lora_weights(&self) -> Result<(Vec<f32>, Vec<f32>, Vec<f32>, Vec<f32>)> {
         let download = |buf: &GpuBuffer<f32>| -> Result<Vec<f32>> {
             let mut host = vec![0.0f32; buf.len()];
@@ -5166,9 +5205,12 @@ impl CudaNf4TransformerBlock {
             Ok(host)
         };
         let a_q = self.lora_a_q.as_ref().map(&download).transpose()?.unwrap_or_default();
-        let b_q = self.lora_b_q.as_ref().map(&download).transpose()?.unwrap_or_default();
+        let mut b_q = self.lora_b_q.as_ref().map(&download).transpose()?.unwrap_or_default();
         let a_v = self.lora_a_v.as_ref().map(&download).transpose()?.unwrap_or_default();
-        let b_v = self.lora_b_v.as_ref().map(&download).transpose()?.unwrap_or_default();
+        let mut b_v = self.lora_b_v.as_ref().map(&download).transpose()?.unwrap_or_default();
+        for v in b_q.iter_mut().chain(b_v.iter_mut()) {
+            *v *= self.lora_scale;
+        }
         Ok((a_q, b_q, a_v, b_v))
     }
 
@@ -5177,6 +5219,9 @@ impl CudaNf4TransformerBlock {
     /// Overwrites the current LoRA adapter buffers with trained weights
     /// restored from a checkpoint. Call after `new()` to replace the fresh
     /// random init with previously trained adapters.
+    ///
+    /// B is taken as alpha/rank·B, the form `download_lora_weights` returns and checkpoints
+    /// store, and the scale is divided back out, because the device holds B (K44).
     pub fn upload_lora_weights(
         &mut self,
         a_q: &[f32],
@@ -5184,6 +5229,15 @@ impl CudaNf4TransformerBlock {
         a_v: &[f32],
         b_v: &[f32],
     ) -> Result<()> {
+        let scale = self.lora_scale;
+        let unscale = |b: &[f32]| -> Vec<f32> {
+            if scale.abs() > 1e-10 {
+                b.iter().map(|&v| v / scale).collect()
+            } else {
+                b.to_vec()
+            }
+        };
+        let (b_q, b_v) = (unscale(b_q), unscale(b_v));
         let upload = |buf: &mut GpuBuffer<f32>, data: &[f32], name: &str| -> Result<()> {
             if data.len() != buf.len() {
                 return Err(crate::autograd::cuda_tensor::CudaTensorError::TransferFailed(
@@ -5204,13 +5258,13 @@ impl CudaNf4TransformerBlock {
             upload(buf, a_q, "a_q")?;
         }
         if let Some(ref mut buf) = self.lora_b_q {
-            upload(buf, b_q, "b_q")?;
+            upload(buf, &b_q, "b_q")?;
         }
         if let Some(ref mut buf) = self.lora_a_v {
             upload(buf, a_v, "a_v")?;
         }
         if let Some(ref mut buf) = self.lora_b_v {
-            upload(buf, b_v, "b_v")?;
+            upload(buf, &b_v, "b_v")?;
         }
         Ok(())
     }
