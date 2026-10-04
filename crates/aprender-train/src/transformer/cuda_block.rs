@@ -57,6 +57,8 @@ const OP_NORM_BWD: usize = 14;
 const OP_LORA_BWD: usize = 15;
 
 #[cfg(feature = "cuda")]
+use crate::lora::LoraTarget;
+#[cfg(feature = "cuda")]
 use std::sync::Arc;
 
 #[cfg(feature = "cuda")]
@@ -2910,12 +2912,10 @@ pub struct CudaNf4TransformerBlock {
     w_gate_fp32: GpuBuffer<f32>,
     w_up_fp32: GpuBuffer<f32>,
     w_down_fp32: GpuBuffer<f32>,
-    // LoRA adapters for Q and V projections (ENT-153: QLoRA backward)
-    // None when LoRA is not active (inference-only or non-QLoRA training)
-    lora_a_q: Option<GpuBuffer<f32>>, // [hidden_size, rank]
-    lora_b_q: Option<GpuBuffer<f32>>, // [rank, q_dim]
-    lora_a_v: Option<GpuBuffer<f32>>, // [hidden_size, rank]
-    lora_b_v: Option<GpuBuffer<f32>>, // [rank, kv_hidden]
+    // LoRA adapters (ENT-153: QLoRA backward), one A [d_in, rank] and one
+    // B [rank, d_out] per target in slot order (R15a C2c); empty when LoRA
+    // is not active (inference-only or non-QLoRA training)
+    lora: Vec<LoraPair>,
     lora_scale: f32,
     lora_rank: usize,
     // QK-norm weights (ENT-270: per-head RMSNorm on Q and K, shape=[head_dim])
@@ -2940,6 +2940,28 @@ pub struct CudaNf4TransformerBlock {
     w_down_fp16: Option<GpuBuffer<u16>>,
     ctx: Arc<CudaContext>,
     // NF4 blocks do NOT own scratch — shared across all layers (C-SCRATCH-001)
+}
+
+/// One LoRA adapter on the device: A [d_in, rank] and B [rank, d_out] for one
+/// target (R15a C2c). Gradient pairs and AdamW moments use the same shape.
+#[cfg(feature = "cuda")]
+pub(crate) struct LoraPair {
+    pub(crate) target: LoraTarget,
+    pub(crate) a: GpuBuffer<f32>,
+    pub(crate) b: GpuBuffer<f32>,
+}
+
+#[cfg(feature = "cuda")]
+impl LoraPair {
+    /// The pair for `target`, if the list holds one.
+    pub(crate) fn find(pairs: &[Self], target: LoraTarget) -> Option<&Self> {
+        pairs.iter().find(|p| p.target == target)
+    }
+
+    /// The targets of a pair list, in its order.
+    pub(crate) fn targets(pairs: &[Self]) -> Vec<LoraTarget> {
+        pairs.iter().map(|p| p.target).collect()
+    }
 }
 
 #[cfg(feature = "cuda")]
@@ -3141,22 +3163,14 @@ impl CudaNf4TransformerBlock {
 
         // Upload LoRA adapters to GPU (ENT-153). B is uploaded as given: the forward and the
         // backward apply lora_scale (K44), so AdamW steps B itself, as on the CPU path.
-        let (lora_a_q, lora_b_q) = match q_lora {
-            Some((a_data, b_data)) => {
+        let mut lora = Vec::new();
+        for (target, adapter) in [(LoraTarget::Q, q_lora), (LoraTarget::V, v_lora)] {
+            if let Some((a_data, b_data)) = adapter {
                 let a = GpuBuffer::from_host(&ctx, a_data)?;
                 let b = GpuBuffer::from_host(&ctx, b_data)?;
-                (Some(a), Some(b))
+                lora.push(LoraPair { target, a, b });
             }
-            None => (None, None),
-        };
-        let (lora_a_v, lora_b_v) = match v_lora {
-            Some((a_data, b_data)) => {
-                let a = GpuBuffer::from_host(&ctx, a_data)?;
-                let b = GpuBuffer::from_host(&ctx, b_data)?;
-                (Some(a), Some(b))
-            }
-            None => (None, None),
-        };
+        }
 
         // ENT-270: Upload QK-norm weights if present
         let q_norm_weight = match q_norm {
@@ -3238,10 +3252,7 @@ impl CudaNf4TransformerBlock {
             w_gate_fp32,
             w_up_fp32,
             w_down_fp32,
-            lora_a_q,
-            lora_b_q,
-            lora_a_v,
-            lora_b_v,
+            lora,
             lora_scale,
             lora_rank,
             q_norm_weight,
@@ -3382,7 +3393,7 @@ impl CudaNf4TransformerBlock {
         }
 
         // ENT-153: Q LoRA: q += lora_scale·(norm1_out @ A_q) @ B_q (K44)
-        if let (Some(a_q), Some(b_q)) = (&self.lora_a_q, &self.lora_b_q) {
+        if let Some(LoraPair { a: a_q, b: b_q, .. }) = LoraPair::find(&self.lora, LoraTarget::Q) {
             lora_forward(&scratch.norm1_out, a_q, b_q, &mut scratch.q, &mut scratch.lora_inter, &mut scratch.lora_temp,
                 self.lora_scale, saturating_u32(seq_len), saturating_u32(hidden_size), saturating_u32(self.lora_rank),
                 saturating_u32(q_dim), stream)?;
@@ -3429,7 +3440,7 @@ impl CudaNf4TransformerBlock {
         scratch.op_end(_t, OP_QKV_GEMM); // End QKV timing (includes Q/K/V GEMMs + Q LoRA)
 
         // ENT-153: V LoRA: v += lora_scale·(norm1_out @ A_v) @ B_v (K44)
-        if let (Some(a_v), Some(b_v)) = (&self.lora_a_v, &self.lora_b_v) {
+        if let Some(LoraPair { a: a_v, b: b_v, .. }) = LoraPair::find(&self.lora, LoraTarget::V) {
             lora_forward(&scratch.norm1_out, a_v, b_v, &mut scratch.v, &mut scratch.lora_inter, &mut scratch.lora_temp,
                 self.lora_scale, saturating_u32(seq_len), saturating_u32(hidden_size), saturating_u32(self.lora_rank),
                 saturating_u32(kv_hidden_size), stream)?;
@@ -3922,14 +3933,8 @@ impl CudaNf4TransformerBlock {
 /// - **Invariant**: Buffer sizes match model config; never reallocated during training
 #[cfg(feature = "cuda")]
 pub(crate) struct CudaLoraGradWorkspace {
-    /// Gradient for LoRA A_q [hidden_size, rank]
-    pub(crate) grad_lora_a_q: GpuBuffer<f32>,
-    /// Gradient for LoRA B_q [rank, q_dim]
-    pub(crate) grad_lora_b_q: GpuBuffer<f32>,
-    /// Gradient for LoRA A_v [hidden_size, rank]
-    pub(crate) grad_lora_a_v: GpuBuffer<f32>,
-    /// Gradient for LoRA B_v [rank, kv_hidden]
-    pub(crate) grad_lora_b_v: GpuBuffer<f32>,
+    /// One gradient pair per target, in slot order: dA [d_in, rank], dB [rank, d_out]
+    pub(crate) grad_lora: Vec<LoraPair>,
     /// Gradient for input norm weight [hidden_size]
     pub(crate) grad_input_norm: GpuBuffer<f32>,
     /// Gradient for post-attention norm weight [hidden_size]
@@ -3938,56 +3943,76 @@ pub(crate) struct CudaLoraGradWorkspace {
 
 #[cfg(feature = "cuda")]
 impl CudaLoraGradWorkspace {
-    /// Allocate shared LoRA gradient workspace.
+    /// Allocate shared LoRA gradient workspace for q_proj and v_proj.
     pub(crate) fn new(
         ctx: &Arc<CudaContext>,
         config: &super::config::TransformerConfig,
         lora_rank: usize,
     ) -> Result<Self> {
-        let h = config.hidden_size;
-        let q_dim = config.q_dim();
-        let kv = config.num_kv_heads * config.head_dim();
-        let r = lora_rank;
+        Self::new_for_targets(ctx, config, lora_rank, &[LoraTarget::Q, LoraTarget::V])
+    }
 
+    /// Allocate shared LoRA gradient workspace with one gradient pair per
+    /// target (R15a C2c). `targets` must be in slot order without repeats.
+    pub(crate) fn new_for_targets(
+        ctx: &Arc<CudaContext>,
+        config: &super::config::TransformerConfig,
+        lora_rank: usize,
+        targets: &[LoraTarget],
+    ) -> Result<Self> {
+        if targets.windows(2).any(|w| w[0] >= w[1]) {
+            return Err(crate::autograd::cuda_tensor::CudaTensorError::KernelError(format!(
+                "LoRA gradient workspace targets must be in slot order without repeats, got {targets:?}"
+            )));
+        }
+        let r = lora_rank;
+        let mut grad_lora = Vec::with_capacity(targets.len());
+        for &target in targets {
+            let (d_out, d_in) = target.dims(config);
+            grad_lora.push(LoraPair {
+                target,
+                a: GpuBuffer::new(ctx, d_in * r)?,
+                b: GpuBuffer::new(ctx, r * d_out)?,
+            });
+        }
+        let h = config.hidden_size;
         Ok(Self {
-            grad_lora_a_q: GpuBuffer::new(ctx, h * r)?,
-            grad_lora_b_q: GpuBuffer::new(ctx, r * q_dim)?,
-            grad_lora_a_v: GpuBuffer::new(ctx, h * r)?,
-            grad_lora_b_v: GpuBuffer::new(ctx, r * kv)?,
+            grad_lora,
             grad_input_norm: GpuBuffer::new(ctx, h)?,
             grad_post_attn_norm: GpuBuffer::new(ctx, h)?,
         })
     }
 
-    /// ENT-265: Clip all 6 LoRA gradient buffers by global L2 norm.
+    /// The gradient pair for `target`, or an error naming the targets held.
+    pub(crate) fn pair_mut(&mut self, target: LoraTarget) -> Result<&mut LoraPair> {
+        let held = LoraPair::targets(&self.grad_lora);
+        self.grad_lora.iter_mut().find(|p| p.target == target).ok_or_else(|| {
+            crate::autograd::cuda_tensor::CudaTensorError::KernelError(format!(
+                "LoRA gradient workspace has no {target:?} pair (holds {held:?})"
+            ))
+        })
+    }
+
+    /// ENT-265: Clip the LoRA gradient buffers by global L2 norm.
     ///
-    /// Computes the global L2 norm across A_q, B_q, A_v, B_v, input_norm,
-    /// and post_attn_norm. If the norm exceeds `max_norm`, scales all buffers
-    /// down by `max_norm / (total_norm + 1e-6)`.
+    /// Computes the global L2 norm across each target's dA and dB in slot
+    /// order, then input_norm and post_attn_norm, so q_proj, v_proj adds the
+    /// same six terms in the same order as the four-field form (R15a C2c).
+    /// If the norm exceeds `max_norm`, scales all buffers down by
+    /// `max_norm / (total_norm + 1e-6)`.
     ///
     /// Two-phase design: phase 1 reads norms (immutable), phase 2 applies
-    /// scale (mutable). This satisfies the borrow checker when the workspace
-    /// is behind a mutable reference.
+    /// scale (mutable).
     pub(crate) fn clip_gradients(&mut self, max_norm: f32, stream: &CudaStream) {
         // Phase 1: compute global L2 norm
-        let sq_a_q = squared_sum_cuda(&self.grad_lora_a_q, self.grad_lora_a_q.len() as u32, stream)
-            .unwrap_or(0.0);
-        let sq_b_q = squared_sum_cuda(&self.grad_lora_b_q, self.grad_lora_b_q.len() as u32, stream)
-            .unwrap_or(0.0);
-        let sq_a_v = squared_sum_cuda(&self.grad_lora_a_v, self.grad_lora_a_v.len() as u32, stream)
-            .unwrap_or(0.0);
-        let sq_b_v = squared_sum_cuda(&self.grad_lora_b_v, self.grad_lora_b_v.len() as u32, stream)
-            .unwrap_or(0.0);
-        let sq_in =
-            squared_sum_cuda(&self.grad_input_norm, self.grad_input_norm.len() as u32, stream)
-                .unwrap_or(0.0);
-        let sq_pa = squared_sum_cuda(
-            &self.grad_post_attn_norm,
-            self.grad_post_attn_norm.len() as u32,
-            stream,
-        )
-        .unwrap_or(0.0);
-        let total_norm = (sq_a_q + sq_b_q + sq_a_v + sq_b_v + sq_in + sq_pa).sqrt();
+        let sq =
+            |buf: &GpuBuffer<f32>| squared_sum_cuda(buf, buf.len() as u32, stream).unwrap_or(0.0);
+        let mut sum = 0.0;
+        for p in &self.grad_lora {
+            sum += sq(&p.a);
+            sum += sq(&p.b);
+        }
+        let total_norm = (sum + sq(&self.grad_input_norm) + sq(&self.grad_post_attn_norm)).sqrt();
 
         if total_norm <= max_norm {
             return;
@@ -3995,25 +4020,22 @@ impl CudaLoraGradWorkspace {
 
         // Phase 2: apply clip scale
         let clip_scale = max_norm / (total_norm + 1e-6);
-        let n_aq = self.grad_lora_a_q.len() as u32;
-        let n_bq = self.grad_lora_b_q.len() as u32;
-        let n_av = self.grad_lora_a_v.len() as u32;
-        let n_bv = self.grad_lora_b_v.len() as u32;
-        let n_in = self.grad_input_norm.len() as u32;
-        let n_pa = self.grad_post_attn_norm.len() as u32;
-        let _ = gradient_clip_cuda(&mut self.grad_lora_a_q, clip_scale, n_aq, stream);
-        let _ = gradient_clip_cuda(&mut self.grad_lora_b_q, clip_scale, n_bq, stream);
-        let _ = gradient_clip_cuda(&mut self.grad_lora_a_v, clip_scale, n_av, stream);
-        let _ = gradient_clip_cuda(&mut self.grad_lora_b_v, clip_scale, n_bv, stream);
-        let _ = gradient_clip_cuda(&mut self.grad_input_norm, clip_scale, n_in, stream);
-        let _ = gradient_clip_cuda(&mut self.grad_post_attn_norm, clip_scale, n_pa, stream);
+        let bufs = self
+            .grad_lora
+            .iter_mut()
+            .flat_map(|p| [&mut p.a, &mut p.b])
+            .chain([&mut self.grad_input_norm, &mut self.grad_post_attn_norm]);
+        for buf in bufs {
+            let n = buf.len() as u32;
+            let _ = gradient_clip_cuda(buf, clip_scale, n, stream);
+        }
     }
 }
 
 /// GPU-resident AdamW optimizer state for LoRA adapters in one NF4 block.
 ///
 /// Stores first (m) and second (v) moment estimates for:
-/// - 4 LoRA weight tensors (A_q, B_q, A_v, B_v)
+/// - an A and a B for each of the block's LoRA targets, in slot order (R15a C2c)
 /// - 2 RMSNorm weights (input_norm, post_attn_norm)
 ///
 /// # Contract (C-LORAOPT-001)
@@ -4023,14 +4045,8 @@ impl CudaLoraGradWorkspace {
 /// - **Invariant**: Buffer sizes immutable after creation
 #[cfg(feature = "cuda")]
 pub(crate) struct GpuLoraOptimizerState {
-    m_lora_a_q: GpuBuffer<f32>,
-    v_lora_a_q: GpuBuffer<f32>,
-    m_lora_b_q: GpuBuffer<f32>,
-    v_lora_b_q: GpuBuffer<f32>,
-    m_lora_a_v: GpuBuffer<f32>,
-    v_lora_a_v: GpuBuffer<f32>,
-    m_lora_b_v: GpuBuffer<f32>,
-    v_lora_b_v: GpuBuffer<f32>,
+    m_lora: Vec<LoraPair>,
+    v_lora: Vec<LoraPair>,
     m_input_norm: GpuBuffer<f32>,
     v_input_norm: GpuBuffer<f32>,
     m_post_attn_norm: GpuBuffer<f32>,
@@ -4039,30 +4055,22 @@ pub(crate) struct GpuLoraOptimizerState {
 
 #[cfg(feature = "cuda")]
 impl GpuLoraOptimizerState {
-    fn new(
-        ctx: &Arc<CudaContext>,
-        config: &super::config::TransformerConfig,
-        lora_rank: usize,
-    ) -> Result<Self> {
-        let h = config.hidden_size;
-        let q_dim = config.q_dim();
-        let kv = config.num_kv_heads * config.head_dim();
-        let r = lora_rank;
-
+    /// Zeroed moments for each of `adapters`, and for the two norms of size `h`.
+    fn for_adapters(ctx: &Arc<CudaContext>, adapters: &[LoraPair], h: usize) -> Result<Self> {
         // CRITICAL: Must zero-initialize m/v buffers. GpuBuffer::new() does NOT
         // zero memory (cuMemAlloc returns uninitialized VRAM).
         let z = |n: usize| -> Result<GpuBuffer<f32>> {
             Ok(GpuBuffer::from_host(ctx, &vec![0.0f32; n])?)
         };
+        let moments = || -> Result<Vec<LoraPair>> {
+            adapters
+                .iter()
+                .map(|p| Ok(LoraPair { target: p.target, a: z(p.a.len())?, b: z(p.b.len())? }))
+                .collect()
+        };
         Ok(Self {
-            m_lora_a_q: z(h * r)?,
-            v_lora_a_q: z(h * r)?,
-            m_lora_b_q: z(r * q_dim)?,
-            v_lora_b_q: z(r * q_dim)?,
-            m_lora_a_v: z(h * r)?,
-            v_lora_a_v: z(h * r)?,
-            m_lora_b_v: z(r * kv)?,
-            v_lora_b_v: z(r * kv)?,
+            m_lora: moments()?,
+            v_lora: moments()?,
             m_input_norm: z(h)?,
             v_input_norm: z(h)?,
             m_post_attn_norm: z(h)?,
@@ -4493,14 +4501,15 @@ impl CudaNf4TransformerBlock {
         }
 
         // LoRA Q backward: grad_A_q, grad_B_q, and the adapter's share of grad_norm1
-        if let (Some(a_q), Some(b_q)) = (&self.lora_a_q, &self.lora_b_q) {
+        if let Some(LoraPair { a: a_q, b: b_q, .. }) = LoraPair::find(&self.lora, LoraTarget::Q) {
+            let LoraPair { a: grad_a_q, b: grad_b_q, .. } = grad_lora.pair_mut(LoraTarget::Q)?;
             lora_backward(
                 &scratch.norm1_out,
                 a_q,
                 b_q,
                 &scratch.q,
-                &mut grad_lora.grad_lora_a_q,
-                &mut grad_lora.grad_lora_b_q,
+                grad_a_q,
+                grad_b_q,
                 &mut scratch.o_proj_out,
                 &mut scratch.lora_inter,
                 &mut scratch.lora_temp,
@@ -4616,14 +4625,15 @@ impl CudaNf4TransformerBlock {
         }
 
         // LoRA V backward: grad_A_v, grad_B_v, and the adapter's share of grad_norm1
-        if let (Some(a_v), Some(b_v)) = (&self.lora_a_v, &self.lora_b_v) {
+        if let Some(LoraPair { a: a_v, b: b_v, .. }) = LoraPair::find(&self.lora, LoraTarget::V) {
+            let LoraPair { a: grad_a_v, b: grad_b_v, .. } = grad_lora.pair_mut(LoraTarget::V)?;
             lora_backward(
                 &scratch.norm1_out,
                 a_v,
                 b_v,
                 &scratch.v,
-                &mut grad_lora.grad_lora_a_v,
-                &mut grad_lora.grad_lora_b_v,
+                grad_a_v,
+                grad_b_v,
                 &mut scratch.o_proj_out,
                 &mut scratch.lora_inter,
                 &mut scratch.lora_temp,
@@ -5066,10 +5076,12 @@ impl CudaNf4TransformerBlock {
 
     /// Initialize LoRA optimizer state for this block.
     pub(crate) fn init_lora_optimizer_state(&self) -> Result<GpuLoraOptimizerState> {
-        GpuLoraOptimizerState::new(&self.ctx, &self.config, self.lora_rank)
+        GpuLoraOptimizerState::for_adapters(&self.ctx, &self.lora, self.config.hidden_size)
     }
 
-    /// LoRA optimizer step: update A_q, B_q, A_v, B_v and norm weights using AdamW.
+    /// LoRA optimizer step: update each target's A and B, in slot order, and the
+    /// norm weights using AdamW. A block with adapters refuses a gradient workspace
+    /// or optimizer state whose targets differ from its own (R15a C2c).
     #[allow(clippy::too_many_arguments)]
     pub(crate) fn lora_optimizer_step(
         &mut self,
@@ -5084,74 +5096,28 @@ impl CudaNf4TransformerBlock {
         grad_lora: &CudaLoraGradWorkspace,
     ) -> Result<()> {
         let h = self.config.hidden_size;
-        let q_dim = self.config.q_dim();
-        let kv = self.config.num_kv_heads * self.config.head_dim();
-        let r = self.lora_rank;
+        let targets = LoraPair::targets(&self.lora);
+        if !self.lora.is_empty()
+            && (LoraPair::targets(&grad_lora.grad_lora) != targets
+                || LoraPair::targets(&state.m_lora) != targets)
+        {
+            return Err(crate::autograd::cuda_tensor::CudaTensorError::KernelError(format!(
+                "LoRA optimizer step: block targets {targets:?}, gradient workspace {:?}, optimizer state {:?}",
+                LoraPair::targets(&grad_lora.grad_lora),
+                LoraPair::targets(&state.m_lora)
+            )));
+        }
 
-        // AdamW step for each LoRA weight
-        if let Some(ref mut a_q) = self.lora_a_q {
-            adamw_step_cuda(
-                a_q,
-                &grad_lora.grad_lora_a_q,
-                &mut state.m_lora_a_q,
-                &mut state.v_lora_a_q,
-                lr,
-                beta1,
-                beta2,
-                eps,
-                weight_decay,
-                step,
-                saturating_u32(h * r),
-                stream,
-            )?;
-        }
-        if let Some(ref mut b_q) = self.lora_b_q {
-            adamw_step_cuda(
-                b_q,
-                &grad_lora.grad_lora_b_q,
-                &mut state.m_lora_b_q,
-                &mut state.v_lora_b_q,
-                lr,
-                beta1,
-                beta2,
-                eps,
-                weight_decay,
-                step,
-                saturating_u32(r * q_dim),
-                stream,
-            )?;
-        }
-        if let Some(ref mut a_v) = self.lora_a_v {
-            adamw_step_cuda(
-                a_v,
-                &grad_lora.grad_lora_a_v,
-                &mut state.m_lora_a_v,
-                &mut state.v_lora_a_v,
-                lr,
-                beta1,
-                beta2,
-                eps,
-                weight_decay,
-                step,
-                saturating_u32(h * r),
-                stream,
-            )?;
-        }
-        if let Some(ref mut b_v) = self.lora_b_v {
-            adamw_step_cuda(
-                b_v,
-                &grad_lora.grad_lora_b_v,
-                &mut state.m_lora_b_v,
-                &mut state.v_lora_b_v,
-                lr,
-                beta1,
-                beta2,
-                eps,
-                weight_decay,
-                step,
-                saturating_u32(r * kv),
-                stream,
-            )?;
+        // AdamW step for each LoRA weight: A then B of each target, in slot order
+        let moments = state.m_lora.iter_mut().zip(state.v_lora.iter_mut());
+        for ((param, grad), (m, v)) in self.lora.iter_mut().zip(&grad_lora.grad_lora).zip(moments) {
+            for (w, g, m, v) in [
+                (&mut param.a, &grad.a, &mut m.a, &mut v.a),
+                (&mut param.b, &grad.b, &mut m.b, &mut v.b),
+            ] {
+                let n = saturating_u32(w.len());
+                adamw_step_cuda(w, g, m, v, lr, beta1, beta2, eps, weight_decay, step, n, stream)?;
+            }
         }
 
         // AdamW step for norm weights
@@ -5193,6 +5159,22 @@ impl CudaNf4TransformerBlock {
     /// every caller and checkpoint already uses (callers divide the scale back out). The device
     /// itself holds B, and the forward applies the scale (K44).
     pub fn download_lora_weights(&self) -> Result<(Vec<f32>, Vec<f32>, Vec<f32>, Vec<f32>)> {
+        let mut adapters = self.download_lora_adapters()?;
+        let mut take = |target: LoraTarget| {
+            adapters
+                .iter_mut()
+                .find(|(t, _, _)| *t == target)
+                .map(|(_, a, b)| (std::mem::take(a), std::mem::take(b)))
+                .unwrap_or_default()
+        };
+        let (a_q, b_q) = take(LoraTarget::Q);
+        let (a_v, b_v) = take(LoraTarget::V);
+        Ok((a_q, b_q, a_v, b_v))
+    }
+
+    /// Download every LoRA adapter in slot order as (target, A, alpha/rank·B), B scaled
+    /// as `download_lora_weights` returns it (R15a C2c).
+    pub fn download_lora_adapters(&self) -> Result<Vec<(LoraTarget, Vec<f32>, Vec<f32>)>> {
         let download = |buf: &GpuBuffer<f32>| -> Result<Vec<f32>> {
             let mut host = vec![0.0f32; buf.len()];
             buf.copy_to_host(&mut host).map_err(|e| {
@@ -5202,14 +5184,17 @@ impl CudaNf4TransformerBlock {
             })?;
             Ok(host)
         };
-        let a_q = self.lora_a_q.as_ref().map(&download).transpose()?.unwrap_or_default();
-        let mut b_q = self.lora_b_q.as_ref().map(&download).transpose()?.unwrap_or_default();
-        let a_v = self.lora_a_v.as_ref().map(&download).transpose()?.unwrap_or_default();
-        let mut b_v = self.lora_b_v.as_ref().map(&download).transpose()?.unwrap_or_default();
-        for v in b_q.iter_mut().chain(b_v.iter_mut()) {
-            *v *= self.lora_scale;
-        }
-        Ok((a_q, b_q, a_v, b_v))
+        self.lora
+            .iter()
+            .map(|p| {
+                let a = download(&p.a)?;
+                let mut b = download(&p.b)?;
+                for v in &mut b {
+                    *v *= self.lora_scale;
+                }
+                Ok((p.target, a, b))
+            })
+            .collect()
     }
 
     /// Upload LoRA weights from CPU to GPU for checkpoint resume (ENT-276).
@@ -5227,43 +5212,84 @@ impl CudaNf4TransformerBlock {
         a_v: &[f32],
         b_v: &[f32],
     ) -> Result<()> {
+        let held = LoraPair::targets(&self.lora);
+        let adapters: Vec<(LoraTarget, &[f32], &[f32])> =
+            [(LoraTarget::Q, a_q, b_q), (LoraTarget::V, a_v, b_v)]
+                .into_iter()
+                .filter(|(t, _, _)| held.contains(t))
+                .collect();
+        self.upload_lora_adapters(&adapters)
+    }
+
+    /// Upload LoRA adapters by target, each B as alpha/rank·B like `upload_lora_weights`
+    /// (R15a C2c). Every target must be one the block has and every length must match its
+    /// buffer; all are checked before any is written.
+    pub fn upload_lora_adapters(
+        &mut self,
+        adapters: &[(LoraTarget, &[f32], &[f32])],
+    ) -> Result<()> {
+        let err = |msg: String| crate::autograd::cuda_tensor::CudaTensorError::TransferFailed(msg);
+        for &(target, a, b) in adapters {
+            let pair = LoraPair::find(&self.lora, target).ok_or_else(|| {
+                err(format!(
+                    "LoRA {target:?} upload: the block has no {target:?} adapter (holds {:?})",
+                    LoraPair::targets(&self.lora)
+                ))
+            })?;
+            for (name, data, buf) in [("A", a, &pair.a), ("B", b, &pair.b)] {
+                if data.len() != buf.len() {
+                    return Err(err(format!(
+                        "LoRA {target:?} {name} size mismatch: checkpoint has {} but GPU buffer expects {}",
+                        data.len(),
+                        buf.len()
+                    )));
+                }
+            }
+        }
         let scale = self.lora_scale;
-        let unscale = |b: &[f32]| -> Vec<f32> {
-            if scale.abs() > 1e-10 {
+        for &(target, a, b) in adapters {
+            let b: Vec<f32> = if scale.abs() > 1e-10 {
                 b.iter().map(|&v| v / scale).collect()
             } else {
                 b.to_vec()
+            };
+            let pair = self
+                .lora
+                .iter_mut()
+                .find(|p| p.target == target)
+                .ok_or_else(|| err(format!("LoRA {target:?} upload: no adapter")))?;
+            for (name, data, buf) in [("A", a, &mut pair.a), ("B", &b[..], &mut pair.b)] {
+                buf.copy_from_host(data)
+                    .map_err(|e| err(format!("LoRA {target:?} {name} upload failed: {e}")))?;
             }
-        };
-        let (b_q, b_v) = (unscale(b_q), unscale(b_v));
-        let upload = |buf: &mut GpuBuffer<f32>, data: &[f32], name: &str| -> Result<()> {
-            if data.len() != buf.len() {
-                return Err(crate::autograd::cuda_tensor::CudaTensorError::TransferFailed(
-                    format!(
-                        "LoRA {name} size mismatch: checkpoint has {} but GPU buffer expects {}",
-                        data.len(),
-                        buf.len()
-                    ),
-                ));
-            }
-            buf.copy_from_host(data).map_err(|e| {
-                crate::autograd::cuda_tensor::CudaTensorError::TransferFailed(format!(
-                    "LoRA {name} upload failed: {e}"
-                ))
-            })
-        };
-        if let Some(ref mut buf) = self.lora_a_q {
-            upload(buf, a_q, "a_q")?;
         }
-        if let Some(ref mut buf) = self.lora_b_q {
-            upload(buf, &b_q, "b_q")?;
+        Ok(())
+    }
+
+    /// Add a LoRA adapter for `target` (R15a C2c), A [d_in, rank] and B [rank, d_out] as
+    /// `new` takes them. Refuses a target the block already has, and an A or B whose length
+    /// is not d_in·rank or rank·d_out for that projection (`LoraTarget::dims`). The adapters
+    /// stay in slot order.
+    pub fn add_lora_adapter(&mut self, target: LoraTarget, a: &[f32], b: &[f32]) -> Result<()> {
+        let err = |msg: String| crate::autograd::cuda_tensor::CudaTensorError::KernelError(msg);
+        if LoraPair::find(&self.lora, target).is_some() {
+            return Err(err(format!("LoRA {target:?} adapter already present")));
         }
-        if let Some(ref mut buf) = self.lora_a_v {
-            upload(buf, a_v, "a_v")?;
+        let (d_out, d_in) = target.dims(&self.config);
+        let r = self.lora_rank;
+        if a.len() != d_in * r || b.len() != r * d_out {
+            return Err(err(format!(
+                "LoRA {target:?} adapter: A has {} and B {} values, expected {} ({d_in}x{r}) and {} ({r}x{d_out})",
+                a.len(),
+                b.len(),
+                d_in * r,
+                r * d_out
+            )));
         }
-        if let Some(ref mut buf) = self.lora_b_v {
-            upload(buf, &b_v, "b_v")?;
-        }
+        let a = GpuBuffer::from_host(&self.ctx, a)?;
+        let b = GpuBuffer::from_host(&self.ctx, b)?;
+        let at = self.lora.partition_point(|p| p.target < target);
+        self.lora.insert(at, LoraPair { target, a, b });
         Ok(())
     }
 }

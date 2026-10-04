@@ -25,6 +25,16 @@ use trueno_gpu::driver::{CudaContext, CudaStream, GpuBuffer};
 #[cfg(feature = "cuda")]
 use trueno_gpu::kernels::SquaredSumKernel;
 
+/// The gradient buffers in clip order: each target's A then B, in slot
+/// order, then the two norm gradients.
+fn grad_buffers(ws: &CudaLoraGradWorkspace) -> Vec<&GpuBuffer<f32>> {
+    ws.grad_lora
+        .iter()
+        .flat_map(|p| [&p.a, &p.b])
+        .chain([&ws.grad_input_norm, &ws.grad_post_attn_norm])
+        .collect()
+}
+
 /// Initialize a `FusedClipState` sized for the 6 LoRA gradient buffers.
 ///
 /// Pre-allocates the contiguous partials buffer and scale output buffer.
@@ -34,14 +44,11 @@ pub(crate) fn init_lora_fused_clip(
     ws: &CudaLoraGradWorkspace,
     ctx: &std::sync::Arc<CudaContext>,
 ) -> Option<FusedClipState> {
-    let sizes: [u32; 6] = [
-        ws.grad_lora_a_q.len() as u32,
-        ws.grad_lora_b_q.len() as u32,
-        ws.grad_lora_a_v.len() as u32,
-        ws.grad_lora_b_v.len() as u32,
-        ws.grad_input_norm.len() as u32,
-        ws.grad_post_attn_norm.len() as u32,
-    ];
+    let bufs = grad_buffers(ws);
+    if bufs.len() > 9 {
+        return None;
+    }
+    let sizes: Vec<u32> = bufs.iter().map(|b| b.len() as u32).collect();
 
     let mut offsets = [0u32; 9]; // FusedClipState uses [9] — pad unused
     let mut total = 0u32;
@@ -77,14 +84,11 @@ pub(crate) fn clip_lora_gradients_fused(
     stream: &CudaStream,
 ) {
     // Phase 1: Launch all 6 squared-sum reductions (async, no sync).
-    let bufs: [&GpuBuffer<f32>; 6] = [
-        &ws.grad_lora_a_q,
-        &ws.grad_lora_b_q,
-        &ws.grad_lora_a_v,
-        &ws.grad_lora_b_v,
-        &ws.grad_input_norm,
-        &ws.grad_post_attn_norm,
-    ];
+    let bufs = grad_buffers(ws);
+    if bufs.len() > state.offsets.len() {
+        ws.clip_gradients(max_norm, stream);
+        return;
+    }
 
     for (i, buf) in bufs.iter().enumerate() {
         let n = buf.len() as u32;
@@ -106,14 +110,11 @@ pub(crate) fn clip_lora_gradients_fused(
 
     // Phase 3: Apply clip scale from GPU memory (no D2H).
     let scale_ptr = state.scale_buf.as_ptr();
-    let bufs_mut: [&mut GpuBuffer<f32>; 6] = [
-        &mut ws.grad_lora_a_q,
-        &mut ws.grad_lora_b_q,
-        &mut ws.grad_lora_a_v,
-        &mut ws.grad_lora_b_v,
-        &mut ws.grad_input_norm,
-        &mut ws.grad_post_attn_norm,
-    ];
+    let bufs_mut = ws
+        .grad_lora
+        .iter_mut()
+        .flat_map(|p| [&mut p.a, &mut p.b])
+        .chain([&mut ws.grad_input_norm, &mut ws.grad_post_attn_norm]);
     for buf in bufs_mut {
         let n = buf.len() as u32;
         if n == 0 {

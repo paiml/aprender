@@ -507,14 +507,18 @@ impl InstructPipeline {
             None => return (None, None),
         };
 
-        let grad_ws =
-            match CudaLoraGradWorkspace::new(trainer.context(), model_config, config.lora_rank) {
-                Ok(ws) => ws,
-                Err(e) => {
-                    eprintln!("[CUDA] NF4 LoRA grad workspace alloc failed: {e}");
-                    return (None, None);
-                }
-            };
+        let grad_ws = match CudaLoraGradWorkspace::new_for_targets(
+            trainer.context(),
+            model_config,
+            config.lora_rank,
+            config.lora_targets.as_slice(),
+        ) {
+            Ok(ws) => ws,
+            Err(e) => {
+                eprintln!("[CUDA] NF4 LoRA grad workspace alloc failed: {e}");
+                return (None, None);
+            }
+        };
 
         let mut opt_states = Vec::with_capacity(blocks.len());
         for (i, block) in blocks.iter().enumerate() {

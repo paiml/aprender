@@ -171,6 +171,16 @@ impl ClassifyPipeline {
         }
     }
 
+    /// The A and B of LoRA layer `idx` as slices, or None if the pipeline has no such layer.
+    #[cfg(feature = "cuda")]
+    fn lora_slices(lora_layers: &[LoRALayer], idx: usize) -> Option<(&[f32], &[f32])> {
+        let layer = lora_layers.get(idx)?;
+        Some((
+            layer.lora_a().data().as_slice().expect("contiguous lora_a"),
+            layer.lora_b().data().as_slice().expect("contiguous lora_b"),
+        ))
+    }
+
     /// Attempt to initialize CUDA acceleration.
     ///
     /// Creates `CudaTrainer` and uploads all transformer layer weights to GPU as
@@ -252,33 +262,9 @@ impl ClassifyPipeline {
                 let q_lora_idx = i * 2;
                 let v_lora_idx = i * 2 + 1;
 
-                // Q LoRA
-                let q_a_data;
-                let q_b_data;
-                let q_lora = if q_lora_idx < lora_layers.len() {
-                    q_a_data = lora_layers[q_lora_idx].lora_a().data();
-                    q_b_data = lora_layers[q_lora_idx].lora_b().data();
-                    Some((
-                        q_a_data.as_slice().expect("contiguous lora_a_q"),
-                        q_b_data.as_slice().expect("contiguous lora_b_q"),
-                    ))
-                } else {
-                    None
-                };
-
-                // V LoRA
-                let v_a_data;
-                let v_b_data;
-                let v_lora = if v_lora_idx < lora_layers.len() {
-                    v_a_data = lora_layers[v_lora_idx].lora_a().data();
-                    v_b_data = lora_layers[v_lora_idx].lora_b().data();
-                    Some((
-                        v_a_data.as_slice().expect("contiguous lora_a_v"),
-                        v_b_data.as_slice().expect("contiguous lora_b_v"),
-                    ))
-                } else {
-                    None
-                };
+                // Q and V LoRA of this layer, if the pipeline has them
+                let q_lora = Self::lora_slices(lora_layers, q_lora_idx);
+                let v_lora = Self::lora_slices(lora_layers, v_lora_idx);
 
                 // ENT-270: Extract QK-norm weights if present
                 let q_norm_data = layer
@@ -376,18 +362,19 @@ impl ClassifyPipeline {
         // F-CUDA-006: verify all layers uploaded
         assert_eq!(blocks.len(), model.config.num_hidden_layers);
 
-        // C-SCRATCH-001: Allocate one shared scratch for NF4 (saves 7.5 GB for Qwen3-4B)
-        let shared_scratch = if quantize_nf4 {
-            match CudaBlockScratch::new(model_config, max_seq_len, &ctx, classify_config.lora_rank)
-            {
-                Ok(s) => Some(s),
-                Err(e) => {
-                    eprintln!("[CUDA] Failed to allocate shared scratch: {e} — using CPU");
-                    return (None, None, None, None);
-                }
+        // C-SCRATCH-001: Allocate one shared scratch for NF4 (saves 7.5 GB for Qwen3-4B);
+        // fp32 blocks own their scratch (needed for backward)
+        let shared_scratch = match quantize_nf4
+            .then(|| {
+                CudaBlockScratch::new(model_config, max_seq_len, &ctx, classify_config.lora_rank)
+            })
+            .transpose()
+        {
+            Ok(s) => s,
+            Err(e) => {
+                eprintln!("[CUDA] Failed to allocate shared scratch: {e} — using CPU");
+                return (None, None, None, None);
             }
-        } else {
-            None // fp32 blocks own their scratch (needed for backward)
         };
 
         // GPU-SHARE-002: Update actual VRAM usage after all allocations
@@ -995,34 +982,19 @@ impl ClassifyPipeline {
             // KAIZEN-014: Accumulate gradients into per-layer accumulators
             // (grad_lora workspace is shared — must consume before next layer overwrites)
             let accum = &mut grad_accum[layer_idx];
-            cuda_add_inplace(
-                &mut accum.grad_lora_a_q,
-                &grad_lora.grad_lora_a_q,
-                grad_lora.grad_lora_a_q.len(),
-                stream,
-            )
-            .ok()?;
-            cuda_add_inplace(
-                &mut accum.grad_lora_b_q,
-                &grad_lora.grad_lora_b_q,
-                grad_lora.grad_lora_b_q.len(),
-                stream,
-            )
-            .ok()?;
-            cuda_add_inplace(
-                &mut accum.grad_lora_a_v,
-                &grad_lora.grad_lora_a_v,
-                grad_lora.grad_lora_a_v.len(),
-                stream,
-            )
-            .ok()?;
-            cuda_add_inplace(
-                &mut accum.grad_lora_b_v,
-                &grad_lora.grad_lora_b_v,
-                grad_lora.grad_lora_b_v.len(),
-                stream,
-            )
-            .ok()?;
+            // One A and one B per target, in slot order (R15a C2c).
+            if !accum
+                .grad_lora
+                .iter()
+                .map(|p| p.target)
+                .eq(grad_lora.grad_lora.iter().map(|p| p.target))
+            {
+                return None;
+            }
+            for (acc, g) in accum.grad_lora.iter_mut().zip(&grad_lora.grad_lora) {
+                cuda_add_inplace(&mut acc.a, &g.a, g.a.len(), stream).ok()?;
+                cuda_add_inplace(&mut acc.b, &g.b, g.b.len(), stream).ok()?;
+            }
             cuda_add_inplace(
                 &mut accum.grad_input_norm,
                 &grad_lora.grad_input_norm,
@@ -1076,13 +1048,12 @@ impl ClassifyPipeline {
         let max_accum_len = grad_accum
             .iter()
             .map(|g| {
-                g.grad_lora_a_q
-                    .len()
-                    .max(g.grad_lora_b_q.len())
-                    .max(g.grad_lora_a_v.len())
-                    .max(g.grad_lora_b_v.len())
-                    .max(g.grad_input_norm.len())
-                    .max(g.grad_post_attn_norm.len())
+                g.grad_lora
+                    .iter()
+                    .flat_map(|p| [p.a.len(), p.b.len()])
+                    .chain([g.grad_input_norm.len(), g.grad_post_attn_norm.len()])
+                    .max()
+                    .unwrap_or(0)
             })
             .max()
             .unwrap_or(0);
@@ -1113,10 +1084,10 @@ impl ClassifyPipeline {
             let zero_buf = |buf: &mut GpuBuffer<f32>| {
                 let _ = buf.copy_from_host(&zeros[..buf.len()]);
             };
-            zero_buf(&mut grad_accum[layer_idx].grad_lora_a_q);
-            zero_buf(&mut grad_accum[layer_idx].grad_lora_b_q);
-            zero_buf(&mut grad_accum[layer_idx].grad_lora_a_v);
-            zero_buf(&mut grad_accum[layer_idx].grad_lora_b_v);
+            for p in &mut grad_accum[layer_idx].grad_lora {
+                zero_buf(&mut p.a);
+                zero_buf(&mut p.b);
+            }
             zero_buf(&mut grad_accum[layer_idx].grad_input_norm);
             zero_buf(&mut grad_accum[layer_idx].grad_post_attn_norm);
         }
