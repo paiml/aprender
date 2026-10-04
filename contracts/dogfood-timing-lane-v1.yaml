@@ -1,0 +1,77 @@
+metadata:
+  version: 1.0.0
+  created: '2026-10-04'
+  author: PAIML Engineering
+  description: "A nightly lane reads the per-row time sidecar of tonight's dogfood receipt through the row-order checker's --timing mode and judges the cheap tier against a budget taken from measured nights. scripts/release/dogfood_timing_lane.sh prints one line, DOGFOOD-TIMING GREEN, OVER, BASELINE or NOT_MEASURED, and appends the night to a history file. Report mode: OVER exits 0, and an enforcing environment is overridden. It blocks nothing; blocking is a later, separately signed-off step after three green nights."
+  kind: pattern
+  references:
+    - "scripts/release/dogfood_timing_lane.sh: the lane, its case table (--self-test) and its planted mutants (--mutants)"
+    - "scripts/check_dogfood_row_order.sh --timing SIDECAR [--cheap-budget-s N]: the checker the lane calls (from the dogfood row-order split; until it is on the branch the lane runs on, the lane is NOT_MEASURED)"
+    - "scripts/dogfood.sh: writes the receipt and its .timing.tsv sidecar"
+
+five_whys:
+  symptom: "The dogfood run was split so its cheap rows close first, but nothing measures, night after night, when the cheap tier actually closes, so a slow row can creep into it unseen."
+  why_1: "The row-order checker can read the per-row time sidecar, but only when someone runs it by hand."
+  why_2: "A budget typed into a script is a guess; it is either too loose to catch creep or too tight to stay green."
+  why_3: "A budget recomputed from every night, tonight included, follows the creep upward and never fires."
+  why_4: "A night with no receipt or no sidecar would read as nothing to report unless something calls it not measured."
+  why_5: "A new check that blocks on day one blocks on its own noise."
+  root_cause: "No nightly lane read the row times and no budget came from measured nights. The remedy is a report-mode lane whose budget is the max of earlier measured nights plus headroom, which never lets tonight or an OVER night set the bar, and which calls missing data not measured."
+
+equations:
+  budget:
+    formula: "budget(n) = ceil(max{cheap_s(m) : m in last 7 nights before n whose latest history row is GREEN or BASELINE} * 1.25) when there are at least 3 such nights; else none"
+    domain: "the history file: night, receipt, cheap_s, total_s, budget_s, state; night(t) = UTC date of (t - 12h)"
+    codomain: "an integer number of seconds, or none"
+    invariants:
+      - "an OVER or NOT_MEASURED night never feeds the budget"
+      - "tonight never sets its own bar"
+      - "the latest row on a night decides that night"
+      - "fewer than 3 measured nights is BASELINE, never GREEN"
+
+  verdict:
+    formula: "NOT_MEASURED if there is no checker, no receipt, the newest receipt is not from tonight, or the checker cannot read its sidecar or prints neither PASS nor REPORT; else BASELINE if budget = none; else OVER if the checker reports the cheap tier over budget; else GREEN"
+    domain: "the newest receipt-*.json in the receipts directory and its sidecar, read by the row-order checker with DOGFOOD_ROW_ORDER_ENFORCE=0"
+    codomain: "exit 0 GREEN, OVER or BASELINE | 2 NOT_MEASURED | 3 caller error"
+    invariants:
+      - "NOT_MEASURED is never GREEN and never feeds the budget"
+      - "OVER exits 0: report mode, whatever the caller's environment says"
+      - "every judged night, NOT_MEASURED included, is appended to the history"
+
+proof_obligations:
+  - id: DTL-INV-001
+    type: invariant
+    property: "Tonight and OVER nights never raise the bar"
+    formal: "budget(n) depends only on rows with night < n and state in {GREEN, BASELINE}"
+    applies_to: budget
+  - id: DTL-INV-002
+    type: invariant
+    property: "Missing evidence is not measured, never green"
+    formal: "¬receipt(n) ∨ ¬sidecar(n) ∨ ¬checker ⇒ verdict = NOT_MEASURED"
+    applies_to: verdict
+  - id: DTL-INV-003
+    type: invariant
+    property: "Report mode"
+    formal: "verdict = OVER ⇒ exit = 0"
+    applies_to: verdict
+
+falsification_tests:
+  - id: FALSIFY-DTL-001
+    rule: "The lane is right on every row of its case table"
+    prediction: "A first night and two measured nights are BASELINE; within budget is GREEN; over budget is OVER and exits 0, also under DOGFOOD_ROW_ORDER_ENFORCE=1; an OVER night, a NOT_MEASURED night and tonight never set the bar; only the latest 7 nights count and the latest row on a night decides it; a stale, missing or unstamped receipt, a missing sidecar, a row with no time, a missing checker and a checker verdict that is neither PASS nor REPORT are NOT_MEASURED; every judged night is recorded; the line reaches the inbox file; a bad time, a missing option and an unknown option are caller errors"
+    test: "bash scripts/release/dogfood_timing_lane.sh --self-test"
+    if_fails: "The lane can call a slow night green, let the budget creep with the rows, or read missing data as a pass"
+
+  - id: FALSIFY-DTL-002
+    rule: "The case table can still fail on the defects it names"
+    prediction: "Each planted mutant (a stale receipt judged, a checker not_measured read as measured, an OVER night raising the bar, a budget from 2 nights, no headroom, tonight setting its own bar, a widened window, the oldest nights setting the budget, the first row on a night deciding, a NOT_MEASURED night used as a duration, an enforcing caller inherited, the history not written, a neither verdict read as green, the oldest receipt judged) turns --self-test RED; a mutant whose patch does not apply is an error, never a survivor"
+    test: "bash scripts/release/dogfood_timing_lane.sh --mutants"
+    if_fails: "The case table is theater: it would pass a lane whose budget creeps or whose missing data reads green"
+
+qa_gate:
+  id: QA-DTL-001
+  name: "The cheap tier's close time is measured nightly against a budget from measured nights"
+  description: "scripts/release/dogfood_timing_lane.sh judges tonight's dogfood row times against max of the last measured nights plus 25%, in report mode. No gate reads it yet; blocking comes only after three green nights and a separate sign-off."
+  checks:
+    - "budget"
+    - "verdict"
