@@ -24068,10 +24068,11 @@ Not done, pending the ruling: moving the 31 fixture files to an obviously synthe
   priority: critical
   assigned_to: aprender-wmainred
   created: 2026-10-04T00:00:00Z
-  updated: 2026-10-04T00:00:00Z
+  updated: 2026-10-04T10:50:00Z
   acceptance_criteria:
   - Each red or cancelled scheduled workflow on main has a root cause named in its fix PR, one PR per defect, listed on issue #4715
   - Each fix PR changes no gate's acceptance; a threshold or acceptance change goes to the train lead's sign-off batch instead
+  - 'Signed acceptance change (operator sign-off 2026-10-04, qwen-story-daily): the pmat hunt reads coverage gaps only from a coverage file measured on the same sha as its checkout, and reports not_measured, which fails the beat, when that file is missing, empty or from another commit. qwen-story-daily runs on workflow_run of Coverage Nightly (completed) plus workflow_dispatch, and its own cron is removed'
   - After each fix merges, the next scheduled or dispatched run of that workflow on main gets past the step that failed
   phases: []
   subtasks: []
