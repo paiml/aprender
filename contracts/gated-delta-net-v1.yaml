@@ -195,8 +195,8 @@ verification_summary:
 falsification_tests:
 - id: FALSIFY-GDN-001
   rule: Decay bound
-  prediction: α = exp(softplus(a + dt_bias) × ssm_a) is finite and in [0, 1] for all finite a and dt_bias and every ssm_a < 0
-  test: proptest with extreme values
+  prediction: 'α = exp(softplus(a + dt_bias) × ssm_a) is finite and in [0, 1] for all finite a and dt_bias and every ssm_a < 0, and equals that expression evaluated in f64 within 1e-6. The range alone cannot see the 1.0.0 sigmoid decay, which is in (0, 1) too. Planted: the sigmoid decay restored turns it RED on the value; a flipped decay sign turns it RED on the range'
+  test: proptest with extreme values, checking the range and the f64 value
   if_fails: Decay sign or softplus wrong; α > 1 makes the state grow without bound
 - id: FALSIFY-GDN-002
   rule: State shape
