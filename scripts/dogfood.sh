@@ -476,6 +476,145 @@ if [ -n "${DOGFOOD_GATES_ONLY:-}" ]; then
   exit "$FAILED"
 fi
 
+# ── CHEAP ROWS FIRST (#4672) ───────────────────────────────────────────────────
+# bashrs and fmt run here, ahead of every long row (clippy, test, coverage, the release
+# build), so a red cheap row is on screen in minutes, not after the multi-hour sweep. They are
+# the SAME rows a full run records, moved, not copied: order changes, no row and no threshold.
+# bashrs — shell purification (bashrs 6.66.2).
+#
+# Gated on the rules that are TRUSTWORTHY, reported on the rules that are not.
+# SC1020/SC1035/SC1140 fire inside string literals (paiml/bashrs#226, still OPEN
+# in 6.66.2 — verified: even `echo "done"` trips SC1035), so gating on them
+# would make this unpassable, and an unpassable gate trains people to bypass the
+# whole protocol. SEC*/DET*/IDEM* do not have that defect and are exactly the
+# ones that matter: SEC011 caught a genuine unguarded `rm -rf "$tmp"` in a
+# forjar resource. Those FAIL the release.
+#
+# THREE THINGS THIS GATE PROVES BEFORE IT BELIEVES A CLEAN RESULT — because a
+# clean bashrs result has three different causes and only one of them is "the
+# shell is clean":
+#
+#  1. POSITIVE CONTROL. A sentinel script containing a known DET002 is linted
+#     first. If bashrs does not flag it, bashrs is not enforcing anything here
+#     and a green verdict on the real surface means nothing. Measured cost: 83ms.
+#  2. THE SCAN RECEIPT. bashrs prints `Linted N file(s): …` on STDERR, and this
+#     gate asserts N equals the number of files it enumerated itself. Without
+#     that assertion a `.bashrsignore` silently zeroes the gate — verified:
+#     a repo-root `.bashrsignore` containing `*.sh` made
+#     `bashrs lint --level error sub/bad.sh` (a file with DET002 in it) print
+#     `Skipped: sub/bad.sh` and exit 0, with NO receipt at all. `--no-ignore`
+#     restores the finding (exit 2). Both defences are load-bearing.
+#     The receipt is only emitted for N>=2, so a clean sentinel is appended to
+#     the argv to guarantee it exists — for a one-script crate the receipt would
+#     otherwise be absent and unassertable.
+#  3. NO PIPELINE, NO xargs. `xargs bashrs lint` remaps any exit in 1..125 to
+#     123, so "warnings" and "errors" become indistinguishable — the same class
+#     of exit-code laundering as the PIPESTATUS problem. argv is built with a
+#     read loop instead.
+#
+# Exit codes are overloaded and must NOT be read as a 3-value ladder:
+#   0 = nothing at/above --level  OR everything was .bashrsignore'd
+#   1 = warning-tier findings     OR "No lintable files found"
+#   2 = error-tier findings       OR the path does not exist
+# Only the receipt disambiguates. `--level` (not `--fail-on`) is what drives the
+# exit code: verified, `--fail-on error` on a warning-only file still exits 1.
+if command -v bashrs >/dev/null 2>&1; then
+  BR_DIR="$WORKLOG/bashrs"; mkdir -p "$BR_DIR"
+  # bashrs >= 6.67.0's DET002 does sink analysis: it flags a timestamp that
+  # reaches a REPRODUCIBLE sink (an artifact name, a hash, a build id, a
+  # truncating redirect) and deliberately does NOT flag one that only reaches
+  # stdout/stderr or an append-only log — that distinction is the fix for
+  # paiml/bashrs#230, adversarially reviewed before release. A sentinel that
+  # only echoes a timestamp is therefore CORRECTLY silent on >=6.67.0 and is
+  # not a valid positive control; the sentinel must land the timestamp in an
+  # artifact's own name, which is what DET002 actually exists to catch.
+  printf '#!/bin/sh\nSTAMP=$(date +%%s%%N)\ncp build.log "out/report_$STAMP.log"\n' > "$BR_DIR/dirty-sentinel.sh"
+  printf '#!/bin/sh\necho ok\n'                              > "$BR_DIR/clean-sentinel.sh"
+
+  run_split "$BR_DIR/pc.json" "$BR_DIR/pc.err" \
+    bashrs lint --no-ignore --level error --format json \
+      "$BR_DIR/dirty-sentinel.sh" "$BR_DIR/clean-sentinel.sh"
+  BR_PC_RC=$RUN_RC
+  BR_PC_HIT=1; grep -q 'DET002' "$BR_DIR/pc.json" && BR_PC_HIT=0
+
+  if [ "$BR_PC_RC" -ne 2 ] || [ "$BR_PC_HIT" -ne 0 ]; then
+    mark bashrs FAIL "POSITIVE CONTROL FAILED: a sentinel with a known DET002 did not fire (exit=$BR_PC_RC, DET002 found=$([ $BR_PC_HIT -eq 0 ] && echo yes || echo no)). bashrs is not enforcing anything here — do not read a clean result as clean."
+  else
+    # Enumerate the surface OURSELVES. bashrs cannot certify a non-empty scan.
+    git ls-files -z '*.sh' '*.bash' 'Makefile' '*/Makefile' '**/*.sh' > "$BR_DIR/surface.z" 2>/dev/null
+    BR_N=0; BR_ARGS=()
+    while IFS= read -r -d '' f; do BR_ARGS+=("$f"); BR_N=$((BR_N + 1)); done < "$BR_DIR/surface.z"
+
+    if [ "$BR_N" -eq 0 ]; then
+      # Empty is only legitimate if the tree really has no shell. A .gitignore
+      # that hides the shell surface from `git ls-files` is the same hole as a
+      # .bashrsignore, one layer up.
+      BR_HIDDEN=$(git ls-files --others --ignored --exclude-standard -- '*.sh' 2>/dev/null | head -3 | tr '\n' ' ')
+      if [ -n "$BR_HIDDEN" ]; then
+        mark bashrs FAIL "shell scripts exist but are INVISIBLE to \`git ls-files\` (gitignored): $BR_HIDDEN— the gate's subject is being hidden from it"
+      else
+        mark bashrs SKIP "0 files from: git ls-files '*.sh' '*.bash' Makefile — positive control fired, so the tool works; this tree has no shell surface"
+      fi
+    else
+      BR_EXPECT=$((BR_N + 1))   # +1 for the clean sentinel that forces the receipt
+      run_split "$BR_DIR/out.json" "$BR_DIR/out.err" \
+        bashrs lint --no-ignore --level error --format json \
+          "${BR_ARGS[@]}" "$BR_DIR/clean-sentinel.sh"
+      BR_RC=$RUN_RC
+      grep -q "Linted $BR_EXPECT file(s)" "$BR_DIR/out.err"; BR_RECEIPT=$?
+
+      # Classify by CODE PREFIX from the JSON, not by grepping rendered text.
+      # (`--format json` prepends an ANSI tracing line when exactly ONE file is
+      # linted; the sentinel guarantees >=2, and the parser skips it anyway.)
+      BR_CLASS=$(python3 - "$BR_DIR/out.json" <<'PY' 2>/dev/null || echo "PARSE_ERROR"
+import json, sys
+raw = open(sys.argv[1]).read()
+i = raw.find('{')
+raw = raw[i:] if i >= 0 else ''
+dec, pos, gating, soft, other, rules = json.JSONDecoder(), 0, 0, 0, 0, set()
+while pos < len(raw):
+    while pos < len(raw) and raw[pos] in ' \t\r\n': pos += 1
+    if pos >= len(raw): break
+    obj, pos = dec.raw_decode(raw, pos)
+    for d in obj.get('diagnostics', []):
+        if d.get('severity') != 'error': continue
+        c = d.get('code', '')
+        if c.startswith(('SEC', 'DET', 'IDEM')): gating += 1; rules.add(c)
+        elif c in ('SC1020', 'SC1035', 'SC1140'): soft += 1
+        else: other += 1
+print(f"{gating} {soft} {other} {' '.join(sorted(rules))}")
+PY
+)
+      BR_GATING=$(printf '%s' "$BR_CLASS" | awk '{print $1}')
+      BR_SOFT=$(printf '%s'   "$BR_CLASS" | awk '{print $2}')
+      BR_OTHER=$(printf '%s'  "$BR_CLASS" | awk '{print $3}')
+      BR_RULES=$(printf '%s'  "$BR_CLASS" | cut -d' ' -f4-)
+
+      if [ "$BR_CLASS" = "PARSE_ERROR" ]; then
+        mark bashrs FAIL "could not parse bashrs --format json (exit=$BR_RC) — a gate that cannot read its own tool's output has not run"
+      elif [ "$BR_RECEIPT" -ne 0 ]; then
+        mark bashrs FAIL "NO SCAN RECEIPT: expected \`Linted $BR_EXPECT file(s)\` on stderr, got '$(head -c 60 "$BR_DIR/out.err" | tr -d '\n')' (exit=$BR_RC) — bashrs did not lint the $BR_N file(s) enumerated; check for a .bashrsignore"
+      elif [ "${BR_GATING:-1}" -eq 0 ]; then
+        mark bashrs PASS "$BR_N file(s) linted (receipt confirmed), 0 SEC/DET/IDEM errors (${BR_SOFT:-0} SC10xx suppressed — bashrs#226; ${BR_OTHER:-0} other)"
+      else
+        mark bashrs FAIL "$BR_GATING SEC/DET/IDEM error(s) over $BR_N file(s): ${BR_RULES} — real findings, not #226 false positives"
+      fi
+    fi
+  fi
+fi
+
+gate fmt              cargo fmt --all -- --check
+
+# DOGFOOD_CHEAP_ONLY stops after the cheap rows (#4672): the declared repo gates (script
+# self-tests), bashrs and fmt. A release-branch commit gets these before any long run starts. Like
+# DOGFOOD_GATES_ONLY it can never print GO: a partial run is not a verdict.
+if [ -n "${DOGFOOD_CHEAP_ONLY:-}" ]; then
+  echo "────────────────────────────────────────────────"
+  echo "PARTIAL: DOGFOOD_CHEAP_ONLY — only the cheap rows above ran (declared gates, bashrs, fmt), in ${SECONDS}s."
+  echo "         This is NOT a release verdict. A GO comes only from a full run."
+  exit "$FAILED"
+fi
+
 # ── 2 + 10. version + publish dry-run (authoritative: cargo's own registry
 # index, not a flaky crates.io HTTP call). A dry-run SUCCEEDS even when the
 # version exists (it only warns), so the "already exists" string — not the exit
@@ -653,7 +792,6 @@ else mark changelog WARN "no CHANGELOG.md (looked in $PWD and $REPO_ROOT)"; fi
 
 # ── 4-8. quality gates ──────────────────────────────────────────────────────
 mark feature-scope INFO "clippy/test run with: ${FEAT_NOTE}"
-gate fmt              cargo fmt --all -- --check
 # shellcheck disable=SC2086
 gate clippy           cargo clippy --all-targets $FEATS -- -D warnings
 # shellcheck disable=SC2086
@@ -971,129 +1109,6 @@ else
     mark pv-contracts REPORT "scripts/pv_bin.sh is PRESENT but the pin FAILED to build/resolve pv (its diagnostics are on stderr above) — contracts NOT validated. A PATH-resolved pv is refused on purpose: 0.49.0 and 0.63.0 disagree on the binding gate."
   else
     mark pv-contracts REPORT "pv is not pinned in this repo (no scripts/pv_bin.sh) — contracts NOT validated. A PATH-resolved pv is refused on purpose: 0.49.0 and 0.63.0 disagree on the binding gate, so a verdict from an unknown pv is not a verdict."
-  fi
-fi
-
-# bashrs — shell purification (bashrs 6.66.2).
-#
-# Gated on the rules that are TRUSTWORTHY, reported on the rules that are not.
-# SC1020/SC1035/SC1140 fire inside string literals (paiml/bashrs#226, still OPEN
-# in 6.66.2 — verified: even `echo "done"` trips SC1035), so gating on them
-# would make this unpassable, and an unpassable gate trains people to bypass the
-# whole protocol. SEC*/DET*/IDEM* do not have that defect and are exactly the
-# ones that matter: SEC011 caught a genuine unguarded `rm -rf "$tmp"` in a
-# forjar resource. Those FAIL the release.
-#
-# THREE THINGS THIS GATE PROVES BEFORE IT BELIEVES A CLEAN RESULT — because a
-# clean bashrs result has three different causes and only one of them is "the
-# shell is clean":
-#
-#  1. POSITIVE CONTROL. A sentinel script containing a known DET002 is linted
-#     first. If bashrs does not flag it, bashrs is not enforcing anything here
-#     and a green verdict on the real surface means nothing. Measured cost: 83ms.
-#  2. THE SCAN RECEIPT. bashrs prints `Linted N file(s): …` on STDERR, and this
-#     gate asserts N equals the number of files it enumerated itself. Without
-#     that assertion a `.bashrsignore` silently zeroes the gate — verified:
-#     a repo-root `.bashrsignore` containing `*.sh` made
-#     `bashrs lint --level error sub/bad.sh` (a file with DET002 in it) print
-#     `Skipped: sub/bad.sh` and exit 0, with NO receipt at all. `--no-ignore`
-#     restores the finding (exit 2). Both defences are load-bearing.
-#     The receipt is only emitted for N>=2, so a clean sentinel is appended to
-#     the argv to guarantee it exists — for a one-script crate the receipt would
-#     otherwise be absent and unassertable.
-#  3. NO PIPELINE, NO xargs. `xargs bashrs lint` remaps any exit in 1..125 to
-#     123, so "warnings" and "errors" become indistinguishable — the same class
-#     of exit-code laundering as the PIPESTATUS problem. argv is built with a
-#     read loop instead.
-#
-# Exit codes are overloaded and must NOT be read as a 3-value ladder:
-#   0 = nothing at/above --level  OR everything was .bashrsignore'd
-#   1 = warning-tier findings     OR "No lintable files found"
-#   2 = error-tier findings       OR the path does not exist
-# Only the receipt disambiguates. `--level` (not `--fail-on`) is what drives the
-# exit code: verified, `--fail-on error` on a warning-only file still exits 1.
-if command -v bashrs >/dev/null 2>&1; then
-  BR_DIR="$WORKLOG/bashrs"; mkdir -p "$BR_DIR"
-  # bashrs >= 6.67.0's DET002 does sink analysis: it flags a timestamp that
-  # reaches a REPRODUCIBLE sink (an artifact name, a hash, a build id, a
-  # truncating redirect) and deliberately does NOT flag one that only reaches
-  # stdout/stderr or an append-only log — that distinction is the fix for
-  # paiml/bashrs#230, adversarially reviewed before release. A sentinel that
-  # only echoes a timestamp is therefore CORRECTLY silent on >=6.67.0 and is
-  # not a valid positive control; the sentinel must land the timestamp in an
-  # artifact's own name, which is what DET002 actually exists to catch.
-  printf '#!/bin/sh\nSTAMP=$(date +%%s%%N)\ncp build.log "out/report_$STAMP.log"\n' > "$BR_DIR/dirty-sentinel.sh"
-  printf '#!/bin/sh\necho ok\n'                              > "$BR_DIR/clean-sentinel.sh"
-
-  run_split "$BR_DIR/pc.json" "$BR_DIR/pc.err" \
-    bashrs lint --no-ignore --level error --format json \
-      "$BR_DIR/dirty-sentinel.sh" "$BR_DIR/clean-sentinel.sh"
-  BR_PC_RC=$RUN_RC
-  BR_PC_HIT=1; grep -q 'DET002' "$BR_DIR/pc.json" && BR_PC_HIT=0
-
-  if [ "$BR_PC_RC" -ne 2 ] || [ "$BR_PC_HIT" -ne 0 ]; then
-    mark bashrs FAIL "POSITIVE CONTROL FAILED: a sentinel with a known DET002 did not fire (exit=$BR_PC_RC, DET002 found=$([ $BR_PC_HIT -eq 0 ] && echo yes || echo no)). bashrs is not enforcing anything here — do not read a clean result as clean."
-  else
-    # Enumerate the surface OURSELVES. bashrs cannot certify a non-empty scan.
-    git ls-files -z '*.sh' '*.bash' 'Makefile' '*/Makefile' '**/*.sh' > "$BR_DIR/surface.z" 2>/dev/null
-    BR_N=0; BR_ARGS=()
-    while IFS= read -r -d '' f; do BR_ARGS+=("$f"); BR_N=$((BR_N + 1)); done < "$BR_DIR/surface.z"
-
-    if [ "$BR_N" -eq 0 ]; then
-      # Empty is only legitimate if the tree really has no shell. A .gitignore
-      # that hides the shell surface from `git ls-files` is the same hole as a
-      # .bashrsignore, one layer up.
-      BR_HIDDEN=$(git ls-files --others --ignored --exclude-standard -- '*.sh' 2>/dev/null | head -3 | tr '\n' ' ')
-      if [ -n "$BR_HIDDEN" ]; then
-        mark bashrs FAIL "shell scripts exist but are INVISIBLE to \`git ls-files\` (gitignored): $BR_HIDDEN— the gate's subject is being hidden from it"
-      else
-        mark bashrs SKIP "0 files from: git ls-files '*.sh' '*.bash' Makefile — positive control fired, so the tool works; this tree has no shell surface"
-      fi
-    else
-      BR_EXPECT=$((BR_N + 1))   # +1 for the clean sentinel that forces the receipt
-      run_split "$BR_DIR/out.json" "$BR_DIR/out.err" \
-        bashrs lint --no-ignore --level error --format json \
-          "${BR_ARGS[@]}" "$BR_DIR/clean-sentinel.sh"
-      BR_RC=$RUN_RC
-      grep -q "Linted $BR_EXPECT file(s)" "$BR_DIR/out.err"; BR_RECEIPT=$?
-
-      # Classify by CODE PREFIX from the JSON, not by grepping rendered text.
-      # (`--format json` prepends an ANSI tracing line when exactly ONE file is
-      # linted; the sentinel guarantees >=2, and the parser skips it anyway.)
-      BR_CLASS=$(python3 - "$BR_DIR/out.json" <<'PY' 2>/dev/null || echo "PARSE_ERROR"
-import json, sys
-raw = open(sys.argv[1]).read()
-i = raw.find('{')
-raw = raw[i:] if i >= 0 else ''
-dec, pos, gating, soft, other, rules = json.JSONDecoder(), 0, 0, 0, 0, set()
-while pos < len(raw):
-    while pos < len(raw) and raw[pos] in ' \t\r\n': pos += 1
-    if pos >= len(raw): break
-    obj, pos = dec.raw_decode(raw, pos)
-    for d in obj.get('diagnostics', []):
-        if d.get('severity') != 'error': continue
-        c = d.get('code', '')
-        if c.startswith(('SEC', 'DET', 'IDEM')): gating += 1; rules.add(c)
-        elif c in ('SC1020', 'SC1035', 'SC1140'): soft += 1
-        else: other += 1
-print(f"{gating} {soft} {other} {' '.join(sorted(rules))}")
-PY
-)
-      BR_GATING=$(printf '%s' "$BR_CLASS" | awk '{print $1}')
-      BR_SOFT=$(printf '%s'   "$BR_CLASS" | awk '{print $2}')
-      BR_OTHER=$(printf '%s'  "$BR_CLASS" | awk '{print $3}')
-      BR_RULES=$(printf '%s'  "$BR_CLASS" | cut -d' ' -f4-)
-
-      if [ "$BR_CLASS" = "PARSE_ERROR" ]; then
-        mark bashrs FAIL "could not parse bashrs --format json (exit=$BR_RC) — a gate that cannot read its own tool's output has not run"
-      elif [ "$BR_RECEIPT" -ne 0 ]; then
-        mark bashrs FAIL "NO SCAN RECEIPT: expected \`Linted $BR_EXPECT file(s)\` on stderr, got '$(head -c 60 "$BR_DIR/out.err" | tr -d '\n')' (exit=$BR_RC) — bashrs did not lint the $BR_N file(s) enumerated; check for a .bashrsignore"
-      elif [ "${BR_GATING:-1}" -eq 0 ]; then
-        mark bashrs PASS "$BR_N file(s) linted (receipt confirmed), 0 SEC/DET/IDEM errors (${BR_SOFT:-0} SC10xx suppressed — bashrs#226; ${BR_OTHER:-0} other)"
-      else
-        mark bashrs FAIL "$BR_GATING SEC/DET/IDEM error(s) over $BR_N file(s): ${BR_RULES} — real findings, not #226 false positives"
-      fi
-    fi
   fi
 fi
 
