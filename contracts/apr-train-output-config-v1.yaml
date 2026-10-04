@@ -48,7 +48,7 @@ equations:
 proof_obligations:
 - type: invariant
   property: config.json's tie flag says whether the saved model has its own head
-  formal: 'tie_word_embeddings(config.json) ⇔ model.lm_head = None'
+  formal: 'tie_word_embeddings(config.json) ⟺ model.lm_head = None'
   applies_to: all
 - type: equivalence
   property: apr run on an apr train output directory computes the trained model's logits
