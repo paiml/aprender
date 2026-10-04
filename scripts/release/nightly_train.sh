@@ -11,7 +11,8 @@
 #   scripts that judged it. H is the commit id of C, main's head at the moment of the read.
 #   Beside the line, every morning (operator C310.1: "print the lane table: lane, state, reason, and the commit its run
 #   was on"), the lane table follows it on stdout and in D/lanes.txt: a header, then one row per lane, green included.
-#   The line stays the FIRST line, so `head -n 1` still reads the verdict.
+#   The line stays the FIRST line, so `head -n 1` still reads the verdict. The table prints before the inbox write;
+#   a run that fails before its history row prints only the trap line and writes no table (NT-INV-005).
 #
 # READ, DON'T RE-RUN. Night 1 runs nothing. Each lane takes the result its existing scheduled producer (a workflow on
 #   main and, optionally, a job-name pattern) recorded for C. A lane is
@@ -462,8 +463,8 @@ run_train() {
     printf '%s\n' "$hrow" >> "$OUTDIR/history.tsv" || exit 1
     HISTDONE=1
     printf '%s\n' "$line" || exit 1; PRINTED=1
-    inbox_line "$line" "$g" || exit 1
     cat "$OUTDIR/$DAY/lanes.txt" || exit 1   # beside the line, every morning (C310.1)
+    inbox_line "$line" "$g" || exit 1
     [ -z "$EXIT_VERDICT" ] || verdict_rc "$line" || exit 1
     exit 0
 }
@@ -631,6 +632,10 @@ v-e;verdict;check E;-;-;-" "$d" 2026-10-04T06:00:00Z; cat "$d/line" "$d/lanes.ts
     d="$tmp/green1"; fixture "$d"
     row stdout_is_the_line_then_the_lane_table 0 "first=verdict lines=line+header+lanes" "" -- \
         eval 'bash "$SCRIPT_PATH" --from "$d" --out "$tmp/o1" --now 2026-10-04T06:00:00Z > "$tmp/o1.out"; n=$(wc -l < "$tmp"/o1/*/raw/lanes.tsv); case "$(head -n 1 "$tmp/o1.out")" in "RELEASABLE "*|"NOT RELEASABLE"*) printf "first=verdict " ;; esac; [ "$(wc -l < "$tmp/o1.out")" -eq $((n + 2)) ] && echo "lines=line+header+lanes"'
+    row a_failure_before_the_record_prints_only_the_trap_line 0 "lines=1 table=absent" "" -- \
+        eval 'NIGHTLY_TRAIN_FAULT=judge bash "$SCRIPT_PATH" --from "$d" --out "$tmp/o8" --now 2026-10-04T06:00:00Z > "$tmp/o8.out"; printf "lines=%s table=%s\n" "$(wc -l < "$tmp/o8.out")" "$([ -e "$tmp/o8/2026-10-04/lanes.txt" ] && echo present || echo absent)"'
+    row a_failed_inbox_still_prints_the_lane_table 0 "lines=line+header+lanes" "" -- \
+        eval 'NIGHTLY_TRAIN_FAULT=inbox bash "$SCRIPT_PATH" --from "$d" --out "$tmp/o9" --inbox "$tmp/ib9" --now 2026-10-04T06:00:00Z > "$tmp/o9.out"; [ "$(wc -l < "$tmp/o9.out")" -eq $(($(wc -l < "$tmp"/o9/*/raw/lanes.tsv) + 2)) ] && echo "lines=line+header+lanes"'
     row a_fault_after_judging_leaves_one_history_row 0 "rows=1 failure=1" "" -- \
         eval 'NIGHTLY_TRAIN_FAULT=history bash "$SCRIPT_PATH" --from "$d" --out "$tmp/o3" --now 2026-10-04T06:00:00Z > /dev/null; awk -F "\t" "NR > 1 { n++; if (\$5 == \"failure\") f++ } END { print \"rows=\" n+0, \"failure=\" f+0 }" "$tmp/o3/history.tsv"'
     row a_fault_after_history_adds_no_second_row 0 "rows=1 failure=0" "" -- \
@@ -766,6 +771,7 @@ m41_home_cargo_unchecked	s/ "\$HOME\/.cargo"; do$/; do/
 m43_lane_table_not_printed	s/^    cat "\$OUTDIR\/\$DAY\/lanes.txt" || exit 1   # beside/    : # beside/
 m44_lane_table_hides_the_other_commit	s/else if (match(\$11, \/ on \[0-9a-f\]{10}\/))/else if (0)/
 m45_lane_table_drops_green_lanes	s/^        { n++; L\[n\] = \$1; S\[n\] = \$3$/        $3 != "green" { n++; L[n] = $1; S[n] = $3/
+m46_inbox_write_before_the_lane_table	/^    cat "\$OUTDIR\/\$DAY\/lanes.txt" || exit 1   # beside/{h;d};/^    inbox_line "\$line" "\$g" || exit 1$/G
 m42_floor_ignores_the_limit	s/fl=\$((lim \/ 5))/fl=$RATE_FLOOR/'
 # each planted mutant must change the file, still parse, and turn at least one row RED
 mutants() {

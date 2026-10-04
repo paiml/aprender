@@ -2,7 +2,7 @@ metadata:
   version: 1.0.0
   created: '2026-10-04'
   author: PAIML Engineering
-  description: "BLD-002 row R4, the nightly evidence train: one entry point judges main's head C from the results its lanes' scheduled producers recorded for C, and prints one line, RELEASABLE H=<C> or NOT RELEASABLE: <lane>, <run>, followed by the lane table. scripts/release/nightly_train.sh is the judge. A lane that cannot be read prints not_measured, never pass. Report-only: it blocks nothing and no release script reads it."
+  description: "BLD-002 row R4, the nightly evidence train: one entry point judges main's head C from the results its lanes' scheduled producers recorded for C, and prints one line, RELEASABLE H=<C> or NOT RELEASABLE: <lane>, <run>, followed, once the run is recorded, by the lane table. scripts/release/nightly_train.sh is the judge. A lane that cannot be read prints not_measured, never pass. Report-only: it blocks nothing and no release script reads it."
   kind: pattern
   references:
     - "scripts/release/nightly_train.sh — the judge, its case table (--self-test) and its planted mutants (--mutants)"
@@ -63,8 +63,8 @@ proof_obligations:
     applies_to: verdict_line
   - id: NT-INV-005
     type: invariant
-    property: "Every run with a writable stdout prints the verdict line first, then a header and one lane-table row per lane; with a closed stdout the line file keeps the real verdict"
-    formal: "∀ run: writable(stdout(run)) ⇒ first(stdout(run)) = line(run) ∧ |stdout(run)| = 2 + |lanes|"
+    property: "Every run with a writable stdout prints its verdict line first. A run the judge recorded (history row written) follows it with a header and one lane-table row per lane, before the inbox write; a run that fails before the record prints only the trap line and writes no lane table. With a closed stdout the line file keeps the real verdict"
+    formal: "∀ run: writable(stdout(run)) ⇒ first(stdout(run)) = line(run) ∧ (recorded(run) ⇒ |stdout(run)| = 2 + |lanes|) ∧ (¬recorded(run) ⇒ |stdout(run)| = 1)"
     applies_to: verdict_line
   - id: NT-INV-006
     type: invariant
