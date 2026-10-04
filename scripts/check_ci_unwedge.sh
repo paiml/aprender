@@ -124,7 +124,9 @@ check_ci_unwedge.sh -- free CI runs wedged on a parked aggregator (#3229).
   --self-test           run the committed case table (fixtures, no network)
   --scan                look at recent runs and force-cancel the wedged ones
   --dry-run             with --scan: report, change nothing
-  --limit N             with --scan: how many recent runs to consider (default 15)
+  --limit N             with --scan: a cap on candidates -- the newest N of the
+                        non-completed CI runs (default 0: all of them, however
+                        deep the queue)
   --repo OWNER/NAME     with --scan: the repository (default paiml/aprender)
   --capacity FILE       with --scan: a HOST-SIDE capacity reading (one row per
                         host: labels, listeners, workers). Without it the
@@ -514,6 +516,61 @@ orphan_verdict() {
         "$pr" "${base:0:8}"
 }
 
+# ---- scan-level rows (T33): the window and the call budget, over a stub gh ----
+# A generated fixture, no network: the stub is FIRST on PATH and answers every gh
+# call the scan makes from a JSON file, logging each call -- so these rows make
+# zero real gh calls, and the call count is a measurement, not an estimate.
+#   fa  8000  queued       superseded, behind 25 newer runs of another workflow
+#   fb  7000  in_progress  superseded, behind 110 newer COMPLETED CI runs
+#   fc  6999  queued       head = PR head (LEAVE)        fd 6998  no PR at all (REFUSE)
+#   fe  6997  queued       PR closed, head moved (CANCEL, as `gh pr view` says today)
+#   mq  6996  merge_group  (never superseded)            fx 6995  completed (not a candidate)
+#   f0..f22   23 healthy runs over every non-completed status; 31 open PRs in all
+# The stub is bin/gh, the fixtures are scan_runs.jq and scan_open_prs.jq,
+# all three beside the case files.
+scan_fixture() { # scan_fixture DIR -> writes runs.json, open_prs.json, all_prs.json
+    local d="$1"
+    jq -n -f "$CASES_DIR/scan_runs.jq" > "$d/runs.json" || return 1
+    jq -n -f "$CASES_DIR/scan_open_prs.jq" > "$d/open_prs.json" || return 1
+    jq '. + [ {headRefName: "fe", headRefOid: "eeee2"} ]' "$d/open_prs.json" > "$d/all_prs.json" || return 1
+}
+
+scan_table() { # scan_table DIR: rows S1-S8 and W1 in a fresh DIR; uses _eq from self_test
+    local sd out pv total wf
+    sd="$1"; mkdir -p "$sd" || { _eq 'S0 scan fixture' 'built' 'mkdir failed'; return; }
+    scan_fixture "$sd" || { _eq 'S0 scan fixture' 'built' 'jq failed'; return; }
+    : > "$sd/calls"
+    PATH="$CASES_DIR/bin:$PATH" STUB_DIR="$sd" GH_CONFIG_DIR="$sd/ghcfg" \
+        bash "${BASH_SOURCE[0]}" --scan --repo o/r --dry-run > "$sd/out" 2>&1 || :
+    out=$(< "$sd/out")
+    _eq 'S1 a superseded CI run behind 25 newer runs of another workflow is seen' \
+        'yes' "$( printf '%s\n' "$out" | grep -q -e '^WOULD-FREE 8000 fa -- CANCEL' && echo yes || echo no )"
+    _eq 'S2 a superseded CI run behind 110 newer COMPLETED CI runs is seen' \
+        'yes' "$( printf '%s\n' "$out" | grep -q -e '^WOULD-FREE 7000 fb -- CANCEL' && echo yes || echo no )"
+    _eq 'S3 every non-completed CI run is looked at (29), none of another workflow' \
+        'yes' "$( printf '%s\n' "$out" | grep -q -e ' UNWEDGE looked=29 ' && echo yes || echo no )"
+    _eq 'S4 run head = PR head is never freed' \
+        'no' "$( printf '%s\n' "$out" | grep -q -e '^WOULD-FREE 6999 ' && echo yes || echo no )"
+    _eq 'S5 no PR found refuses, never superseded' \
+        'refuse-only' "$( printf '%s\n' "$out" | grep -q -e '^WOULD-FREE 6998 ' && echo freed \
+                          || { printf '%s\n' "$out" | grep -q -e '^refuse 6998 fd -- head sha is unknown' && echo refuse-only || echo missing; } )"
+    _eq "S6 a closed PR whose head moved keeps the verdict of today (CANCEL via gh pr view)" \
+        'yes' "$( printf '%s\n' "$out" | grep -q -e '^WOULD-FREE 6997 fe -- CANCEL' && echo yes || echo no )"
+    _eq 'S7 a completed run and a merge_group run are never freed' \
+        'none' "$( printf '%s\n' "$out" | grep -q -e '^WOULD-FREE 699[56] ' && echo freed || echo none )"
+    pv=$(grep -c -e '^pr view ' "$sd/calls") || pv=0
+    total=$(wc -l < "$sd/calls" | tr -d ' ')
+    # 29 candidates, 31 open PRs: one `gh pr list` for the scan, and `gh pr view`
+    # only for the two branches with no open PR (fd, fe) -- not one per candidate.
+    _eq "S8 budget: gh pr view only on an open-PR miss (2), not per candidate [total calls $total]" \
+        '2' "$pv"
+    wf="$( cd "$( dirname "${BASH_SOURCE[0]}" )/.." > /dev/null 2>&1 && pwd )/.github/workflows/ci-unwedge.yml"
+    # W1: the job runs where a gh login may be stored; both steps point gh at an
+    # empty config dir, so only GH_TOKEN (the workflow's own token) can be used.
+    _eq 'W1 both ci-unwedge.yml steps that run code set GH_CONFIG_DIR to an empty runner.temp dir' \
+        '2' "$( grep -c -e 'GH_CONFIG_DIR: \${{ runner.temp }}/' "$wf" 2>/dev/null || true )"
+}
+
 self_test() {
     local fails=0 rows=0 n want got
     if [ ! -d "$CASES_DIR" ]; then
@@ -657,7 +714,6 @@ self_test() {
         '16' "$( FLEET_BIN="$od/fake-fleet-bin.sh" emit_capacity_row intel self-hosted,Linux,clean-room | jq -r '.listeners' )"
     _eq 'C-ORACLE-b no oracle on the host -> EMPTY row (unknown), never a zero' \
         '' "$( FLEET_BIN="$od/absent-fleet-bin.sh" emit_capacity_row intel self-hosted,Linux,clean-room )"
-    rm -rf "${od:?}"
 
     # The two inputs, each from a committed payload.
     _eq 'C1 idle = listeners - workers, summed over hosts carrying the labels' \
@@ -772,6 +828,8 @@ self_test() {
     _eq 'O7 a merge_group run on a branch that is not a queue ref -> REFUSE' \
         'REFUSE' "$( orphan_verdict merge_group 'main' "$mq" | head -1 | cut -d' ' -f1 )"
 
+    scan_table "$od/scan"
+    rm -rf "${od:?}"
     printf '\n%s row(s), %s\n' "$rows" "$( [ "$fails" -eq 0 ] && echo '0 red / FALSIFIER GREEN' || echo 'RED' )"
     return "$fails"
 }
@@ -817,16 +875,63 @@ stall_pass() {
     esac
 }
 
+# ---- the window (T33): every non-completed run of the CI workflow ------------
+# The scan used to read the newest N runs of ALL workflows and keep the CI ones
+# that were not completed. With 26 CI runs queued behind other workflows, a
+# window of 20 saw 6 of them, and a wider one found two more superseded runs
+# still holding their groups. So the filter is server-side now -- the CI
+# workflow, one status at a time, paginated -- and the depth of the queue no
+# longer decides what the sweep can see. The five statuses are every value a
+# run that is not `completed` can carry, i.e. exactly the set the old
+# `.status != "completed"` filter kept; the freed runs were `queued` and
+# `in_progress`.
+CI_WORKFLOW_FILE="ci.yml"
+CI_OPEN_STATUSES=(requested waiting pending queued in_progress)
+
+# ci_candidates REPO OUT [CAP] -> OUT holds "id|branch|created|status|event|head",
+# newest first, one line per run. CAP > 0 keeps the newest CAP (--limit); 0 keeps
+# all. Any failed read returns 2: a partial window is never reported as the queue.
+ci_candidates() {
+    local repo="$1" out="$2" cap="${3:-0}" s
+    : > "$out.all" || return 2
+    for s in "${CI_OPEN_STATUSES[@]}"; do
+        gh api --paginate "repos/$repo/actions/workflows/$CI_WORKFLOW_FILE/runs?status=$s&per_page=100" \
+            -q '.workflow_runs[] | "\(.id)|\(.head_branch)|\(.created_at)|\(.status)|\(.event)|\(.head_sha)"' \
+            >> "$out.all" 2>/dev/null || return 2
+    done
+    # A run that moves between statuses during the sweep is listed twice; keep one.
+    sort -t'|' -k1,1nr -u "$out.all" > "$out.sorted" || return 2
+    case "$cap" in
+        ''|*[!0-9]*|0) mv "$out.sorted" "$out" ;;
+        *) head -n "$cap" "$out.sorted" > "$out" || return 2 ;;
+    esac
+}
+
+# open_pr_heads REPO OUT -> OUT holds "branch|head" for every open PR: ONE call
+# per scan instead of one `gh pr view` per candidate. A failed read leaves OUT
+# empty, and every lookup then falls back to `gh pr view` -- slower, same verdict.
+open_pr_heads() {
+    local fmt='.[] | "\(.headRefName)|\(.headRefOid)"'
+    if ! gh pr list --repo "$1" --state open --limit 1000 --json headRefName,headRefOid -q "$fmt" > "$2" 2>/dev/null; then
+        : > "$2"
+    fi
+}
+
 # superseded_pass REPO RUN BRANCH EVENT RUN_HEAD DRY -> 0 when force-cancelled,
 # 1 otherwise. #3292 rule 1, wired for `scan`. `merge_group` is excluded here
 # too, before any network call: the hard exclusion in superseded_verdict is the
 # proof, this is the budget optimisation that follows from it -- there is no
 # PR to look up for a merge-queue ref anyway.
 superseded_pass() {
-    local repo="$1" run="$2" br="$3" event="$4" run_head="$5" dry="$6"
+    local repo="$1" run="$2" br="$3" event="$4" run_head="$5" dry="$6" heads="${7:-}"
     local pr_head verdict
     case "$event" in merge_group) return 1 ;; esac
-    pr_head=$(gh pr view "$br" --repo "$repo" --json headRefOid -q '.headRefOid' 2>/dev/null) || pr_head=""
+    # The open-PR heads were read once for the scan. A miss (no open PR, or the
+    # list could not be read) asks `gh pr view` as before, so a branch whose PR is
+    # closed or merged gets the verdict it always got.
+    pr_head=""
+    [ -z "$heads" ] || [ ! -r "$heads" ] || pr_head=$(awk -F'|' -v b="$br" '$1 == b { print $2; exit }' "$heads")
+    [ -n "$pr_head" ] || pr_head=$(gh pr view "$br" --repo "$repo" --json headRefOid -q '.headRefOid' 2>/dev/null) || pr_head=""
     verdict="$( superseded_verdict "$event" "$run_head" "$pr_head" )"
     case "$verdict" in
         CANCEL*)
@@ -889,12 +994,12 @@ scan() {
     # ${tmp:?} refuses an empty or unset value instead of expanding to nothing;
     # the RETURN trap also covers the early returns the explicit rm's missed.
     trap 'rm -rf "${tmp:?}"' RETURN
-    # ONE list call carries status+conclusion, so the per-run jobs call is paid
-    # only for candidates (feedback_gh_api_budget_and_guard_tree_runtime).
-    gh run list --repo "$repo" --limit "$limit" \
-        --json databaseId,status,conclusion,workflowName,headBranch,createdAt,event,headSha \
-        -q '.[] | select(.workflowName=="CI") | select(.status != "completed") | "\(.databaseId)|\(.headBranch)|\(.createdAt)|\(.status)|\(.event)|\(.headSha)"' \
-        > "$tmp/candidates" 2>/dev/null || { printf 'ENV: gh run list failed\n' >&2; return 2; }
+    # The window is every non-completed CI run (ci_candidates), however deep the
+    # queue; the list calls carry status, so the per-run jobs call is paid only
+    # for candidates (feedback_gh_api_budget_and_guard_tree_runtime).
+    ci_candidates "$repo" "$tmp/candidates" "$limit" \
+        || { printf 'ENV: listing the CI runs failed\n' >&2; return 2; }
+    open_pr_heads "$repo" "$tmp/prheads"
 
     # ---- capacity, supplied ONCE by the caller (#3292) ----------------------
     # THE SWEEP DOES NOT ASK GITHUB. Idle capacity is a host-side reading
@@ -926,7 +1031,7 @@ scan() {
         looked=$(( looked + 1 ))
         # RULE 1 first, and independent of everything below: a superseded head
         # is cancelled on its own evidence, whatever the jobs/capacity would say.
-        if superseded_pass "$repo" "$run" "$br" "$revent" "$rhead" "$dry"; then
+        if superseded_pass "$repo" "$run" "$br" "$revent" "$rhead" "$dry" "$tmp/prheads"; then
             superseded=$(( superseded + 1 )); freed=$(( freed + 1 )); continue
         fi
         # RULE 3, also before the jobs call: a merge_group run whose queue group is
@@ -1011,14 +1116,14 @@ scan() {
     return 0
 }
 
-MODE=""; DRY=0; LIMIT=15; REPO="$REPO_DEFAULT"; CAPACITY_FILE="${UNWEDGE_CAPACITY_JSON:-}"
+MODE=""; DRY=0; LIMIT=0; REPO="$REPO_DEFAULT"; CAPACITY_FILE="${UNWEDGE_CAPACITY_JSON:-}"
 while [ $# -gt 0 ]; do
     case "$1" in
         --self-test|--selftest) MODE=self; shift ;;
         --scan)                 MODE=scan; shift ;;
         --verdict)              MODE=verdict; VFILE="${2:-}"; shift 2 ;;
         --dry-run)              DRY=1; shift ;;
-        --limit)                LIMIT="${2:-15}"; shift 2 ;;
+        --limit)                LIMIT="${2:-0}"; shift 2 ;;
         --repo)                 REPO="${2:-$REPO_DEFAULT}"; shift 2 ;;
         --capacity)             CAPACITY_FILE="${2:-}"; shift 2 ;;
         --emit-capacity-row)    MODE=caprow; CAPHOST="${2:-}"; CAPLABELS="${3:-}"; shift 3 ;;

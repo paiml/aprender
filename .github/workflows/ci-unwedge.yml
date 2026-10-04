@@ -52,24 +52,38 @@ concurrency:
 jobs:
   unwedge:
     name: unwedge
-    runs-on: [self-hosted, X64, Linux, clean-room]
+    # INTERIM (T33): off the clean-room pool, which sat saturated -- a sweep queued
+    # behind the very runs it exists to free cannot free them. The GPU host's
+    # runner is the one runner with these labels and is mostly idle. This moves to
+    # the review-light lane when that runner is online (#4729).
+    runs-on: [self-hosted, Linux, ARM64, gx10, blackwell]
     timeout-minutes: 10
     steps:
       - uses: actions/checkout@v7
 
       # The instrument proves itself before it is allowed to cancel anything.
-      # Fifteen rows over committed fixtures, no network: three wedged shapes,
+      # Rows over committed fixtures, no network (the run prints the count). The
+      # scan rows S1-S8 drive the whole scan over a stubbed gh: every
+      # non-completed CI run is looked at, however deep the queue, and open-PR
+      # heads are listed once per scan. W1 pins the empty GH_CONFIG_DIR below.
+      # Among the rest: three wedged shapes,
       # five healthy ones (including `jobs == 0`, which is a slow start and NEVER
       # a verdict on its own), one ENV row, and six for the dead-ref pass --
       # among them D3, which REFUSES to act when no ref corroborates the lookup,
       # so a broken derivation cancels nothing instead of cancelling the queue.
       # Every guard is mutation-proved load-bearing; see the script header.
       - name: Predicate falsifier (must pass before anything is cancelled)
+        env:
+          # That host keeps a gh login for its own account. An empty config dir
+          # per step means gh cannot reach it: the self-test uses a stub, and the
+          # scan can use only GH_TOKEN, the workflow's own scoped token.
+          GH_CONFIG_DIR: ${{ runner.temp }}/gh-empty-selftest
         run: setsid --wait bash scripts/check_ci_unwedge.sh --self-test
 
       - name: Scan and free
         env:
           GH_TOKEN: ${{ github.token }}
+          GH_CONFIG_DIR: ${{ runner.temp }}/gh-empty-scan
           DRY_RUN: ${{ inputs.dry_run }}
         # The default GH shell is `bash -e {0}` with NO pipefail, so set it here.
         # Two explicit branches rather than an interpolated flag: an empty
@@ -78,7 +92,7 @@ jobs:
         run: |
           set -euo pipefail
           if [ "${DRY_RUN:-false}" = "true" ]; then
-            setsid --wait bash scripts/check_ci_unwedge.sh --scan --repo "$GITHUB_REPOSITORY" --limit 20 --dry-run
+            setsid --wait bash scripts/check_ci_unwedge.sh --scan --repo "$GITHUB_REPOSITORY" --dry-run
           else
-            setsid --wait bash scripts/check_ci_unwedge.sh --scan --repo "$GITHUB_REPOSITORY" --limit 20
+            setsid --wait bash scripts/check_ci_unwedge.sh --scan --repo "$GITHUB_REPOSITORY"
           fi

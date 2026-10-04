@@ -1,0 +1,22 @@
+- id: PMAT-4732
+  github_issue: 4732
+  item_type: task
+  title: 'ci-unwedge: run off the clean-room pool, look at every non-completed CI run, list open-PR heads once per scan, no stored gh credential'
+  status: inprogress
+  priority: critical
+  assigned_to: null
+  created: 2026-10-04T13:00:00Z
+  updated: 2026-10-04T13:00:00Z
+  spec: null
+  acceptance_criteria:
+  - ci-unwedge.yml runs on the GPU host's runner (interim, until the review-light runner is online, #4729); scripts/check_runner_labels.sh passes unchanged
+  - Both steps set GH_CONFIG_DIR to an empty runner.temp dir, so gh can use only GH_TOKEN; self-test row W1 pins it
+  - The scan lists CI runs server-side by status (requested, waiting, pending, queued, in_progress), paginated, so a superseded run is seen however many newer runs sit ahead of it; --limit N is now a cap on candidates (default 0 = all)
+  - Open-PR heads are listed once per scan; gh pr view only on a miss (closed or merged PR branches), with verdicts unchanged
+  - 'Scan rows S1-S8 and W1 are RED on origin/main and GREEN on head; the existing 53 rows stay green; mutants killed 5/5'
+  phases: []
+  subtasks: []
+  estimated_effort: null
+  labels:
+  - kind:ci
+  notes: 'Predicates unchanged: superseded, orphan, WEDGED, STALL-RULE, merge_group.'
