@@ -640,6 +640,20 @@ CASES
         MODEL_LADDER_FIT_PIN="$pin" DOGFOOD_ALLOW_UNPINNED=1 APR=/bin/true timeout 60 bash "$prod" --fit-probe "$w/model.apr" 2> /dev/null)
   if grep -q '"verdict": "does-not-fit"' <<< "$out"; then echo "FAIL  fit case apr-error-never-does-not-fit: printed does-not-fit"; bad=1
   else echo "ok    fit case apr-error-never-does-not-fit"; fi
+  # #4668: measure() end to end on stub inventory rows -- the RECEIPT row, not just the verdict. An .apr row is
+  # refused with its true reason (no field says fit) and the receipt is still written; a GGUF the tool rejects
+  # keeps refused=fit. (A fit refusal once bypassed the append counter, so no receipt could be written at all.)
+  mkdir -p "$w/inv" "$w/out" && cp "$w/model.apr" "$w/inv/m-q4k.apr" && cp "$w/model.gguf" "$w/inv/m-q4k.gguf" \
+    && printf '#!/bin/sh\necho "apr 0.0.0"\nexit 1\n' > "$w/apr" && chmod +x "$w/apr"
+  for t in m-q4k.apr:not-gguf:tool-cannot-read m-q4k.gguf:fit:does-not-fit; do
+    IFS=: read -r f want_ref want_v <<< "$t"
+    MODEL_LADDER_ROOT="$PWD" MODEL_LADDER_INVENTORY_DIRS="$w/inv" MODEL_LADDER_GPU_LOCK="$w/lock" MODEL_LADDER_FREE_MIB=23332 \
+      MODEL_LADDER_FIT="$w/nofit" MODEL_LADDER_FIT_PIN="$pin" DOGFOOD_ALLOW_UNPINNED=1 APR="$w/apr" \
+      timeout 120 bash "$prod" --host fx --out "$w/out" --only "inv:$f" > "$w/run-$f.log" 2>&1
+    v=$(python3 -c 'import json,sys; r=json.load(open(sys.argv[1]))["rungs"][0]; print(r.get("refused"), r["fit"]["verdict"], r["green"])' "$w/out/fx.only-inv_$f.json" 2> /dev/null)
+    if [ "$v" = "$want_ref $want_v False" ]; then echo "ok    fit receipt row $f refused=$want_ref verdict=$want_v"
+    else echo "FAIL  fit receipt row $f: got '${v:-<no receipt>}', want '$want_ref $want_v False'"; bad=1; fi
+  done
   return "$bad"
 }
 
@@ -858,6 +872,7 @@ if [ "$SELF_TEST" = 1 ]; then
       else printf 'ok    verdict mutant %-15s killed by the fit case table\n' "$1"; fi
     }
     vmutant tool-absent  's/    if not tool_found:/    if False:/'
+    fmutant refused-fit   's/"refused": "not-gguf" if f.get("verdict") == "tool-cannot-read" else "fit"/"refused": "fit"/'
     fmutant not-measured 's/"reason": "not_measured: llama-fit-params is not installed/"reason": "llama-fit-params is not installed/'
     vmutant pin          's/    if not built or k < 7 or built\[:k\] != pin\[:k\]:/    if False:/'
     vmutant rc           's/    if rc != 0:/    if False:/'

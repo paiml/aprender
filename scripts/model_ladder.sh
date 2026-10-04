@@ -932,12 +932,19 @@ measure() {
     *,cuda,*|*,gpu,*)
       fit_json=$(fit_verdict "$path")
       if ! grep -q '"verdict": "fits"' <<< "$fit_json"; then
-        python3 - "$rid" "$rfile" "$rinv" "$got" "$rreq" "$fit_json" >> "$ROWS" <<'PY'
+        # #4668: via ladder_append -- a direct `>> "$ROWS"` was never counted, so the receipt check declined
+        # ("rungs 1 != appended 0") on ANY fit refusal. The status token names the true reason: a file the
+        # fit tool cannot read says so (refused: "fit-tool-cannot-read" would still say fit, so it is "not-gguf").
+        row=$(python3 - "$rid" "$rfile" "$rinv" "$got" "$rreq" "$fit_json" <<'PY'
 import json, sys
 rid, rfile, inv, sha, req, fit = sys.argv[1:7]
+f = json.loads(fit)
 print(json.dumps({"id": rid, "file": rfile, "inventory_only": inv == "1", "present": True, "sha_ok": True,
-                  "sha256": sha, "required": req == "1", "fit": json.loads(fit), "refused": "fit", "green": False}))
+                  "sha256": sha, "required": req == "1", "fit": f,
+                  "refused": "not-gguf" if f.get("verdict") == "tool-cannot-read" else "fit", "green": False}))
 PY
+)
+        ladder_append "$ROWS" "$row"
         EXECUTED=$((EXECUTED + 1)); RED=$((RED + 1))
         printf '  [REFUSE] %-30s fit: %s\n' "$rid" "$(python3 -c 'import json,sys; f=json.loads(sys.argv[1]); print(f["verdict"]+" -- "+f["reason"])' "$fit_json")"
         return
