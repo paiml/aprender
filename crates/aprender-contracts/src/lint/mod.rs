@@ -394,6 +394,8 @@ pub enum GateExtra {
         /// An earlier draft of this comment said an armed vacuity "does not reach here at all",
         /// which was false — nothing returns early at the verdict, and both kinds reach this field.
         /// A quorum lane caught the sentence; the code beside it had the matching bug.
+        /// Also names contract files excluded by read or YAML parse failures, with the diagnostic.
+        /// Incomplete coverage contributes `Unknown(WrongCorpus)` without hiding measured violations.
         declines: Vec<String>,
         /// Violations from unarmed shapes (named in the findings as warnings; never in the meet).
         unarmed_violations: usize,

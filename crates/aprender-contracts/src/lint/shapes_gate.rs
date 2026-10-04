@@ -153,6 +153,31 @@ pub fn collect_shapes(
     Ok((shapes, checked))
 }
 
+// Coverage belongs to the shapes run. Shared extraction and arming still use the parsed corpus.
+fn unread_contracts(contract_dir: &Path) -> Vec<String> {
+    let mut files = Vec::new();
+    crate::lint::collect_yaml_files(contract_dir, &mut files);
+    files.sort();
+    files
+        .into_iter()
+        .filter(|file| file != &contract_dir.join("ontology.yaml"))
+        .filter_map(|file| {
+            let error = match std::fs::read_to_string(&file) {
+                Ok(raw) => serde_yaml::from_str::<serde_yaml::Value>(&raw)
+                    .err()
+                    .map(|e| format!("cannot parse YAML: {e}")),
+                Err(e) => Some(format!("cannot read YAML: {e}")),
+            }?;
+            let rel = file
+                .strip_prefix(contract_dir.parent().unwrap_or(contract_dir))
+                .unwrap_or(&file)
+                .to_string_lossy()
+                .replace('\\', "/");
+            Some(format!("{rel}: {error}"))
+        })
+        .collect()
+}
+
 /// `(shape id, declaring file)` for every shape in the corpus — the arming ratchet's view of "what exists".
 pub fn declared_shapes(contract_dir: &Path) -> Result<Vec<(String, String)>, ShapeError> {
     Ok(collect_shapes(contract_dir)?
@@ -288,6 +313,7 @@ fn run_or_answer(
 ) -> Result<ShapesOutcome, ShapesOutcome> {
     let start = Instant::now();
     let (shapes, arming, checked) = prepare(contract_dir, opts)?;
+    let unread = unread_contracts(contract_dir);
 
     let extraction = extract_gradeable(contract_dir, opts, shapes.len())?;
     // ONT-4c5: the validator's half runs on the gate's own copy — `pv extract` keeps writing what was found
@@ -345,7 +371,13 @@ fn run_or_answer(
         &kernel_claims(contract_dir, extraction.kernel.receipt_files),
     );
     let passed = counted.violations == 0;
-    let verdict = verdict_of(&counted, armed_vacuity);
+    let verdict = if unread.is_empty() {
+        verdict_of(&counted, armed_vacuity)
+    } else {
+        verdict_of(&counted, armed_vacuity).meet(<Verdict>::Unknown(Reason::WrongCorpus))
+    };
+    let mut declines = vacuous_any.clone();
+    declines.extend(unread);
     let by_shape = by_shape(&focus_of);
     // A shape that graded nothing appears in NEITHER list: `armed_shapes` is the tool's claim about
     // what it MEASURED, and `not_armed_shapes` means "not armed by policy". Filing a vacuity as a
@@ -392,7 +424,7 @@ fn run_or_answer(
             // and the run continues, so both armed and unarmed vacuities reach here).
             // A field that can only ever be empty is decoration, which is the defect one
             // layer up from this one.
-            declines: vacuous_any.clone(),
+            declines,
             unarmed_violations: counted.unarmed_violations,
             by_entity_type,
             controls: Box::new(super::ShapesControls {
@@ -1739,6 +1771,93 @@ mod tests {
             allow_empty: allow_empty.map(str::to_string),
             ..kernel_shape(id)
         }
+    }
+
+    fn copied_shapes_fixture(name: &str) -> (tempfile::TempDir, std::path::PathBuf) {
+        let temp = tempfile::tempdir().expect("temp dir");
+        let dir = temp.path().join("contracts");
+        std::fs::create_dir(&dir).expect("contracts dir");
+        for entry in std::fs::read_dir(fixture(name)).expect("fixture") {
+            let entry = entry.expect("fixture entry");
+            std::fs::copy(entry.path(), dir.join(entry.file_name())).expect("copy fixture");
+        }
+        (temp, dir)
+    }
+
+    fn contract_declines(result: &GateResult) -> &[String] {
+        let Some(GateExtra::Shapes { declines, .. }) = &result.extra else {
+            panic!("expected shapes detail");
+        };
+        declines
+    }
+
+    #[test]
+    fn malformed_yaml_cannot_disappear_from_a_passing_shapes_run() {
+        let (_temp, dir) = copied_shapes_fixture("shapes-ok");
+        let ShapesOutcome::Ran {
+            result: control, ..
+        } = run_shapes_gate(&dir)
+        else {
+            panic!("the unmodified fixture must run");
+        };
+        assert_eq!(
+            serde_json::to_value(control.verdict).expect("verdict"),
+            "Pass"
+        );
+        let declared = declared_shapes(&dir).expect("declared shapes");
+        std::fs::write(
+            dir.join("broken-v1.yaml"),
+            "name: x\nshape: {}\nfoo: `bad`\n",
+        )
+        .expect("write malformed contract");
+        assert_eq!(
+            declared_shapes(&dir).expect("arming stays tolerant"),
+            declared
+        );
+        let ShapesOutcome::Ran { result, .. } = run_shapes_gate(&dir) else {
+            panic!("the valid shapes must still run");
+        };
+        println!("malformed contract result: {:?}", result.verdict);
+        assert_eq!(result.verdict, <Verdict>::Unknown(Reason::WrongCorpus));
+        let declines = contract_declines(&result);
+        assert_eq!(declines.len(), 1);
+        assert!(declines[0].starts_with("contracts/broken-v1.yaml: cannot parse YAML:"));
+    }
+
+    #[test]
+    fn unreadable_yaml_is_named_instead_of_skipped() {
+        let (_temp, dir) = copied_shapes_fixture("shapes-ok");
+        std::fs::write(dir.join("broken-v1.yaml"), [0xff]).expect("write non-UTF-8 contract");
+        let ShapesOutcome::Ran { result, .. } = run_shapes_gate(&dir) else {
+            panic!("the valid shapes must still run");
+        };
+        assert_eq!(result.verdict, <Verdict>::Unknown(Reason::WrongCorpus));
+        let declines = contract_declines(&result);
+        assert_eq!(declines.len(), 1);
+        assert!(declines[0].starts_with("contracts/broken-v1.yaml: cannot read YAML:"));
+    }
+
+    #[test]
+    fn malformed_yaml_does_not_mask_a_real_violation() {
+        let (_temp, dir) = copied_shapes_fixture("shapes-violation");
+        std::fs::write(dir.join("broken-v1.yaml"), "foo: `bad`\n").expect("broken contract");
+        let ShapesOutcome::Ran { result, findings } = run_shapes_gate(&dir) else {
+            panic!("the valid shapes must still run");
+        };
+        assert_eq!(result.verdict, <Verdict>::Fail);
+        assert!(!findings.is_empty());
+        assert_eq!(contract_declines(&result).len(), 1);
+    }
+
+    #[test]
+    fn malformed_yaml_alone_remains_no_shapes() {
+        let temp = tempfile::tempdir().expect("temp dir");
+        std::fs::write(temp.path().join("broken-v1.yaml"), "foo: `bad`\n")
+            .expect("broken contract");
+        assert!(matches!(
+            run_shapes_gate(temp.path()),
+            ShapesOutcome::NoShapes { .. }
+        ));
     }
 
     #[test]
