@@ -116,6 +116,18 @@ ladder:
         - '^apr qa exited \d+ — gates_failed: golden_output \(#3898\)$'
       ticket: "#4030"
       ruling: "operator selection via aprender-cf 2026-09-23 on #3907: ship as known RED + ticket"
+    # MEASURED, NOT LISTED (aprender#4661, cop ruling 2026-10-04: record the measurement, no
+    # acceptance change). inv:Qwen2.5-0.5B-Instruct-f16.gguf `serve /api/chat` stays plain RED:
+    # C280 withdrew known_red keys for the 0.70.x old failures, so no key is added here.
+    # Cause is the model's sampled tail, not apr: on identical prompt ids (apr's 42-token ChatML),
+    # apr's sampled-path logprobs match llama.cpp at positions 42-121 (same argmax, |d| <= 0.02).
+    # After "feel free to ask!" <|im_end|> has p 0.55 and ' |' is runner-up; the probe sends no
+    # options, so apr samples at T 0.7 with its fixed default seed 42, draws ' |', and both engines
+    # then predict ' |' at p 0.96-0.99. llama.cpp at the same sampler (T 0.7, top-k 40, top-p 1,
+    # min-p 0, no penalty, 256 tok) runs on into ' | | |' on 2/30 seeds (18, 28); apr 0/30 on
+    # seeds 0-29. T 0 answers "2+2 equals 4." and stops. A deterministic probe would change what
+    # the gate measures: queued for operator sign-off, not taken here.
+    # Evidence: https://github.com/paiml/aprender/issues/4661#issuecomment-5978133381
   inventory:
     # #3957 F2: `apr_sha_drift` (#3940) is DELETED. It declared, in prose no code read, that
     # receipts measured at 9b7739951 stood for the cut 28c24207a. check_model_ladder.sh now
