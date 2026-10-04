@@ -1,0 +1,145 @@
+{
+  "ticket": "PMAT-4715",
+  "base": "origin/main",
+  "base_resolved": "origin/main",
+  "base_note": "no origin/origin/main exists; judged against the local ref",
+  "head": "81a7610f6414abf39541bba09fc3dca6a9c889a4",
+  "diff_sha256": "3e1553d16d8004b771fe9ccd35f0cd5d1353537ee732214e90968df3ab27ea7a",
+  "width": 2,
+  "executor": "agy",
+  "prompt_mode": "inline",
+  "prompt_bytes": 14960,
+  "author": {
+    "model": "claude-opus-5-5",
+    "family": "claude",
+    "source": "flag"
+  },
+  "agreed": true,
+  "lanes": [
+    {
+      "lane": 1,
+      "status": "SUCCESS",
+      "verdict": "PASS",
+      "summary": "The diff perfectly implements the requested ticket criteria. The `sm_121` floor is added to `SILICON_FLOORS` at `0.5959` (rounded down from `0.595922`). The falsifier test (`gb10_floor_is_a_ratchet_at_its_measured_value`) correctly asserts that the floor passes the trials, sits within 5e-5 of the measured value, checks that the run is the last `GB10_OBSERVED` row, and verifies that an unanswered probe still resolves to no floor. No unrelated changes or weakened gates were found.",
+      "findings": [],
+      "raw_bytes": 2231,
+      "err_bytes": 0,
+      "envelope_status": "SUCCESS",
+      "verdict_source": "structured_output",
+      "grounding_check": "parity",
+      "model": "gemini-3.1-pro-high",
+      "model_measured": "gemini-3.1-pro-high",
+      "model_source": "measured",
+      "family": "gemini",
+      "role": "independent",
+      "fallback": {
+        "judged_by": "gemini-3.1-pro-high",
+        "exhausted": false,
+        "attempts": [
+          {
+            "model": "gemini-3.1-pro-high",
+            "family": "gemini",
+            "outcome": "answered"
+          }
+        ],
+        "skipped": []
+      }
+    },
+    {
+      "lane": 2,
+      "status": "SUCCESS",
+      "verdict": "PASS",
+      "summary": "The diff implements all acceptance criteria of PMAT-4715 without refutation:\n\n1. **sm_121 Ratchet Entry**: `SILICON_FLOORS` in `crates/aprender-serve/tests/beat_ollama_decode_throughput_speed.rs` adds an entry for `sm_121 (GB10)` with floor `GB10_RATCHET_FLOOR = 0.5959`, set from the measured ratio `108.29103214890017 / 181.72 = 0.595922` (rounded down to 4 decimal places) recorded from `cuda-nightly` run 37161229337.\n2. **Falsifier Unit Test**: `gb10_floor_is_a_ratchet_at_its_measured_value` replaces `gb10_is_deliberately_uncalibrated` and asserts:\n   - `measured >= f.floor` (passes the recorded trials)\n   - `measured - f.floor < 5e-5` (slack is 2.247e-5, preventing quiet loosening)\n   - `(GB10_OBSERVED.last() - measured).abs() < 5e-4` (verifies run matches last entry `0.596`)\n   - `floor_for(\"<nvidia-smi did not answer>\").is_none()` (unanswered probe returns no floor)\n3. **Contract and Roadmap Consistency**: `contracts/beat-ollama-decode-throughput-speed-v1.yaml` documents the operator ruling and scope. Roadmap entries in `docs/roadmaps/entries/PMAT-4715.yaml` and `docs/roadmaps/roadmap.yaml` track the ticket with acceptance criteria noting that criterion 3 (logits budget ratchet) belongs to PMAT-4523.\n4. **No Weakened Gates or Unrequested Changes**: Existing sm_89 calibration at 0.90 is preserved; uncalibrated probe panic behavior is maintained; no unbacked receipt claims or unrelated file modifications exist.",
+      "findings": [],
+      "raw_bytes": 4243,
+      "err_bytes": 0,
+      "envelope_status": "SUCCESS",
+      "verdict_source": "structured_output",
+      "grounding_check": "parity",
+      "model": "gemini-3.8-flash-high",
+      "model_measured": "gemini-3.8-flash-high",
+      "model_source": "measured",
+      "family": "gemini",
+      "role": "independent",
+      "fallback": {
+        "judged_by": "gemini-3.8-flash-high",
+        "exhausted": false,
+        "attempts": [
+          {
+            "model": "gemini-3.8-flash-high",
+            "family": "gemini",
+            "outcome": "answered"
+          }
+        ],
+        "skipped": []
+      }
+    }
+  ],
+  "dissent": [],
+  "dedup": [],
+  "uncovered": [],
+  "coverage_source": "lanes",
+  "partial": false,
+  "partial_reasons": [],
+  "fallback": {
+    "same_family_width": 1,
+    "chain": [
+      {
+        "model": "gemini-3.1-pro-high",
+        "family": "gemini",
+        "disposition": "configured"
+      },
+      {
+        "model": "gemini-3.8-flash-high",
+        "family": "gemini",
+        "disposition": "configured"
+      },
+      {
+        "model": "gpt-oss-120b-medium",
+        "family": "openai",
+        "disposition": "fallback"
+      },
+      {
+        "model": "qwen3.5",
+        "family": "qwen",
+        "disposition": "not-run",
+        "why": "no quorum.local_lane in the config — the aprender lane has no model to load"
+      },
+      {
+        "model": "claude-opus-4-6-thinking",
+        "family": "claude",
+        "disposition": "width",
+        "why": "same family as the author: at most 1 lane, recorded role width, counted toward no floor (R-15a)"
+      },
+      {
+        "model": "claude-sonnet-4-6",
+        "family": "claude",
+        "disposition": "width",
+        "why": "same family as the author: at most 1 lane, recorded role width, counted toward no floor (R-15a)"
+      }
+    ],
+    "precheck": [
+      {
+        "family": "gemini",
+        "model": "gemini-3.1-pro-high",
+        "probe": 1,
+        "outcome": "live"
+      }
+    ],
+    "prah": {
+      "source": "none",
+      "path": null,
+      "why": "no --prah, none on PATH, and no install receipt at /mnt/nvme-raid0/tmp/k1split/install-receipt.json"
+    }
+  },
+  "auto_merge": {
+    "checked": false,
+    "was_armed": false,
+    "disarmed": false,
+    "note": "no --pr given: nothing to disarm"
+  },
+  "lint": {
+    "ok": true,
+    "output": "receipt complete: kind=artifact lanes=2 author=claude-opus-5-5/claude"
+  }
+}
