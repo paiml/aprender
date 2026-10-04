@@ -1,0 +1,1 @@
+{"text": "<answer>Paris</answer>", "raw_text": "<answer>Paris</answer>", "turns": ["<answer>Paris</answer>"], "reported": {"interface": "LLM.chat", "thinking_requested": "off", "thinking_emitted": false, "prompt_opens_think": false, "prompt_tokens": 30, "completion_tokens": 8, "device": "cuda:0 NVIDIA GB10"}}

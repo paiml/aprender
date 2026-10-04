@@ -1,0 +1,5537 @@
+{
+  "version": "0.69.1",
+  "backend": "gpu",
+  "engines": [
+    "apr",
+    "llama.cpp",
+    "hf",
+    "vllm"
+  ],
+  "apr": {
+    "version_line": "apr 0.69.1 (feb5ac9a5)"
+  },
+  "llama_cpp": {
+    "build": "version: 0.4.1-dev (build 10987, commit d1d3c3396)",
+    "unavailable": null
+  },
+  "hf": {
+    "version": "fixture-unknown"
+  },
+  "vllm": {
+    "version": "fixture-unknown"
+  },
+  "fixture": "SYNTHETIC meta: the certification run committed none",
+  "schema": "crux-inference-receipt/v1",
+  "judged_at": "2026-10-04T17:59Z",
+  "cells": [
+    {
+      "key": {
+        "model_sha256": "aaf42c8b7c3cab2bf3d69c355048d4a0ee9973d48f16c731c0520ee914699223",
+        "host": "gpu-sm89",
+        "verb": "chat",
+        "thinking": "off",
+        "rung": "easy",
+        "prompt_id": "ctl-2plus2"
+      },
+      "verdict": "RED",
+      "reasons": [
+        "apr did not answer: missing: no row for this engine",
+        "no same-representation oracle: no engine but apr reads a format-unknown file -- a .apr is proven only through its chain to its source (#3957 F8)"
+      ],
+      "format": null,
+      "extracted": {
+        "hf": "4",
+        "vllm": "4"
+      },
+      "all_wrong": false,
+      "quorum": {
+        "floor": 2,
+        "engines_answered": 2,
+        "answered": [
+          "hf",
+          "vllm"
+        ],
+        "comparators_answered": [
+          "hf",
+          "vllm"
+        ],
+        "met": true
+      },
+      "subject": {
+        "model_sha256": "aaf42c8b7c3cab2bf3d69c355048d4a0ee9973d48f16c731c0520ee914699223",
+        "apr_version": "apr 0.69.1 (feb5ac9a5)",
+        "under_development": false,
+        "development_note": null
+      },
+      "positive_control": true,
+      "oracle": {
+        "type": "answer",
+        "expect": "4",
+        "normalize": "int"
+      },
+      "engines": {
+        "apr": {
+          "answered": false,
+          "missing": true,
+          "why": "missing: no row for this engine",
+          "correct": false,
+          "version": "apr 0.69.1 (feb5ac9a5)",
+          "not_ran_reason": "unclassified"
+        },
+        "llama.cpp": {
+          "answered": false,
+          "missing": true,
+          "why": "missing: no row for this engine",
+          "correct": false,
+          "version": "version: 0.4.1-dev (build 10987, commit d1d3c3396)",
+          "not_ran_reason": "unclassified"
+        },
+        "ollama": {
+          "answered": false,
+          "missing": true,
+          "why": "not requested",
+          "correct": false,
+          "version": null,
+          "not_ran_reason": "not_requested"
+        },
+        "hf": {
+          "answered": true,
+          "rc": 0,
+          "why": null,
+          "answer": "<answer>4</answer>",
+          "reported": {
+            "interface": "generate",
+            "thinking_requested": "off",
+            "thinking_emitted": false,
+            "prompt_tokens": 30,
+            "completion_tokens": 10,
+            "device": "cuda:0 NVIDIA GeForce RTX 4090"
+          },
+          "turns": [
+            "<answer>4</answer>"
+          ],
+          "correct": true,
+          "version": "fixture-unknown"
+        },
+        "llamafile": {
+          "answered": false,
+          "missing": true,
+          "why": "not requested",
+          "correct": false,
+          "version": null,
+          "not_ran_reason": "not_requested"
+        },
+        "vllm": {
+          "answered": true,
+          "rc": 0,
+          "why": null,
+          "answer": "<answer>4</answer>",
+          "reported": {
+            "interface": "LLM.chat",
+            "thinking_requested": "off",
+            "thinking_emitted": false,
+            "prompt_tokens": 30,
+            "completion_tokens": 8,
+            "device": "cuda:0 NVIDIA GeForce RTX 4090"
+          },
+          "turns": [
+            "<answer>4</answer>"
+          ],
+          "correct": true,
+          "version": "fixture-unknown"
+        }
+      },
+      "agreement": {
+        "answered": [
+          "hf",
+          "vllm"
+        ],
+        "all_identical": true,
+        "apr_matches": []
+      },
+      "token_parity": {
+        "measured": false,
+        "why": "not measured for the chat verb"
+      }
+    },
+    {
+      "key": {
+        "model_sha256": "aaf42c8b7c3cab2bf3d69c355048d4a0ee9973d48f16c731c0520ee914699223",
+        "host": "gpu-sm89",
+        "verb": "chat",
+        "thinking": "off",
+        "rung": "easy",
+        "prompt_id": "ctl-recall-7"
+      },
+      "verdict": "RED",
+      "reasons": [
+        "apr did not answer: missing: no row for this engine",
+        "no same-representation oracle: no engine but apr reads a format-unknown file -- a .apr is proven only through its chain to its source (#3957 F8)"
+      ],
+      "format": null,
+      "extracted": {
+        "hf": "7",
+        "vllm": "7"
+      },
+      "all_wrong": false,
+      "quorum": {
+        "floor": 2,
+        "engines_answered": 2,
+        "answered": [
+          "hf",
+          "vllm"
+        ],
+        "comparators_answered": [
+          "hf",
+          "vllm"
+        ],
+        "met": true
+      },
+      "subject": {
+        "model_sha256": "aaf42c8b7c3cab2bf3d69c355048d4a0ee9973d48f16c731c0520ee914699223",
+        "apr_version": "apr 0.69.1 (feb5ac9a5)",
+        "under_development": false,
+        "development_note": null
+      },
+      "positive_control": true,
+      "oracle": {
+        "type": "state_recall",
+        "expect": "7",
+        "normalize": "int"
+      },
+      "engines": {
+        "apr": {
+          "answered": false,
+          "missing": true,
+          "why": "missing: no row for this engine",
+          "correct": false,
+          "version": "apr 0.69.1 (feb5ac9a5)",
+          "not_ran_reason": "unclassified"
+        },
+        "llama.cpp": {
+          "answered": false,
+          "missing": true,
+          "why": "missing: no row for this engine",
+          "correct": false,
+          "version": "version: 0.4.1-dev (build 10987, commit d1d3c3396)",
+          "not_ran_reason": "unclassified"
+        },
+        "ollama": {
+          "answered": false,
+          "missing": true,
+          "why": "not requested",
+          "correct": false,
+          "version": null,
+          "not_ran_reason": "not_requested"
+        },
+        "hf": {
+          "answered": true,
+          "rc": 0,
+          "why": null,
+          "answer": "<answer>7</answer>",
+          "reported": {
+            "interface": "generate",
+            "thinking_requested": "off",
+            "thinking_emitted": false,
+            "prompt_tokens": 69,
+            "completion_tokens": 20,
+            "device": "cuda:0 NVIDIA GeForce RTX 4090"
+          },
+          "turns": [
+            "<answer>7</answer>",
+            "<answer>7</answer>"
+          ],
+          "correct": true,
+          "version": "fixture-unknown"
+        },
+        "llamafile": {
+          "answered": false,
+          "missing": true,
+          "why": "not requested",
+          "correct": false,
+          "version": null,
+          "not_ran_reason": "not_requested"
+        },
+        "vllm": {
+          "answered": true,
+          "rc": 0,
+          "why": null,
+          "answer": "<answer>7</answer>",
+          "reported": {
+            "interface": "LLM.chat",
+            "thinking_requested": "off",
+            "thinking_emitted": false,
+            "prompt_tokens": 69,
+            "completion_tokens": 16,
+            "device": "cuda:0 NVIDIA GeForce RTX 4090"
+          },
+          "turns": [
+            "<answer>7</answer>",
+            "<answer>7</answer>"
+          ],
+          "correct": true,
+          "version": "fixture-unknown"
+        }
+      },
+      "agreement": {
+        "answered": [
+          "hf",
+          "vllm"
+        ],
+        "all_identical": true,
+        "apr_matches": []
+      },
+      "token_parity": {
+        "measured": false,
+        "why": "not measured for the chat verb"
+      }
+    },
+    {
+      "key": {
+        "model_sha256": "aaf42c8b7c3cab2bf3d69c355048d4a0ee9973d48f16c731c0520ee914699223",
+        "host": "gpu-sm89",
+        "verb": "chat",
+        "thinking": "off",
+        "rung": "easy",
+        "prompt_id": "ctl-code-add"
+      },
+      "verdict": "RED",
+      "reasons": [
+        "apr did not answer: missing: no row for this engine",
+        "no same-representation oracle: no engine but apr reads a format-unknown file -- a .apr is proven only through its chain to its source (#3957 F8)"
+      ],
+      "format": null,
+      "extracted": {
+        "hf": "def add(a, b):\n    return a + b",
+        "vllm": "def add(a, b):\n    return a + b"
+      },
+      "all_wrong": false,
+      "quorum": {
+        "floor": 2,
+        "engines_answered": 2,
+        "answered": [
+          "hf",
+          "vllm"
+        ],
+        "comparators_answered": [
+          "hf",
+          "vllm"
+        ],
+        "met": true
+      },
+      "subject": {
+        "model_sha256": "aaf42c8b7c3cab2bf3d69c355048d4a0ee9973d48f16c731c0520ee914699223",
+        "apr_version": "apr 0.69.1 (feb5ac9a5)",
+        "under_development": false,
+        "development_note": null
+      },
+      "positive_control": true,
+      "oracle": {
+        "type": "code_tests",
+        "lang": "python",
+        "entry": "add",
+        "tests": "assert add(2, 3) == 5\nassert add(-4, 4) == 0\nassert add(10, 0) == 10",
+        "timeout_s": 10
+      },
+      "engines": {
+        "apr": {
+          "answered": false,
+          "missing": true,
+          "why": "missing: no row for this engine",
+          "correct": false,
+          "version": "apr 0.69.1 (feb5ac9a5)",
+          "not_ran_reason": "unclassified"
+        },
+        "llama.cpp": {
+          "answered": false,
+          "missing": true,
+          "why": "missing: no row for this engine",
+          "correct": false,
+          "version": "version: 0.4.1-dev (build 10987, commit d1d3c3396)",
+          "not_ran_reason": "unclassified"
+        },
+        "ollama": {
+          "answered": false,
+          "missing": true,
+          "why": "not requested",
+          "correct": false,
+          "version": null,
+          "not_ran_reason": "not_requested"
+        },
+        "hf": {
+          "answered": true,
+          "rc": 0,
+          "why": null,
+          "answer": "```python\ndef add(a, b):\n    return a + b\n```",
+          "reported": {
+            "interface": "generate",
+            "thinking_requested": "off",
+            "thinking_emitted": false,
+            "prompt_tokens": 42,
+            "completion_tokens": 20,
+            "device": "cuda:0 NVIDIA GeForce RTX 4090"
+          },
+          "turns": [
+            "```python\ndef add(a, b):\n    return a + b\n```"
+          ],
+          "correct": true,
+          "version": "fixture-unknown"
+        },
+        "llamafile": {
+          "answered": false,
+          "missing": true,
+          "why": "not requested",
+          "correct": false,
+          "version": null,
+          "not_ran_reason": "not_requested"
+        },
+        "vllm": {
+          "answered": true,
+          "rc": 0,
+          "why": null,
+          "answer": "```python\ndef add(a, b):\n    return a + b\n```",
+          "reported": {
+            "interface": "LLM.chat",
+            "thinking_requested": "off",
+            "thinking_emitted": false,
+            "prompt_tokens": 42,
+            "completion_tokens": 18,
+            "device": "cuda:0 NVIDIA GeForce RTX 4090"
+          },
+          "turns": [
+            "```python\ndef add(a, b):\n    return a + b\n```"
+          ],
+          "correct": true,
+          "version": "fixture-unknown"
+        }
+      },
+      "agreement": {
+        "answered": [
+          "hf",
+          "vllm"
+        ],
+        "all_identical": true,
+        "apr_matches": []
+      },
+      "token_parity": {
+        "measured": false,
+        "why": "not measured for the chat verb"
+      }
+    },
+    {
+      "key": {
+        "model_sha256": "aaf42c8b7c3cab2bf3d69c355048d4a0ee9973d48f16c731c0520ee914699223",
+        "host": "gpu-sm89",
+        "verb": "chat",
+        "thinking": "off",
+        "rung": "easy",
+        "prompt_id": "fact-capital-japan"
+      },
+      "verdict": "RED",
+      "reasons": [
+        "apr did not answer: missing: no row for this engine",
+        "no same-representation oracle: no engine but apr reads a format-unknown file -- a .apr is proven only through its chain to its source (#3957 F8)"
+      ],
+      "format": null,
+      "extracted": {
+        "hf": "tokyo",
+        "vllm": "tokyo"
+      },
+      "all_wrong": false,
+      "quorum": {
+        "floor": 2,
+        "engines_answered": 2,
+        "answered": [
+          "hf",
+          "vllm"
+        ],
+        "comparators_answered": [
+          "hf",
+          "vllm"
+        ],
+        "met": true
+      },
+      "subject": {
+        "model_sha256": "aaf42c8b7c3cab2bf3d69c355048d4a0ee9973d48f16c731c0520ee914699223",
+        "apr_version": "apr 0.69.1 (feb5ac9a5)",
+        "under_development": false,
+        "development_note": null
+      },
+      "positive_control": false,
+      "oracle": {
+        "type": "answer",
+        "expect": "Tokyo",
+        "normalize": "casefold_strip"
+      },
+      "engines": {
+        "apr": {
+          "answered": false,
+          "missing": true,
+          "why": "missing: no row for this engine",
+          "correct": false,
+          "version": "apr 0.69.1 (feb5ac9a5)",
+          "not_ran_reason": "unclassified"
+        },
+        "llama.cpp": {
+          "answered": false,
+          "missing": true,
+          "why": "missing: no row for this engine",
+          "correct": false,
+          "version": "version: 0.4.1-dev (build 10987, commit d1d3c3396)",
+          "not_ran_reason": "unclassified"
+        },
+        "ollama": {
+          "answered": false,
+          "missing": true,
+          "why": "not requested",
+          "correct": false,
+          "version": null,
+          "not_ran_reason": "not_requested"
+        },
+        "hf": {
+          "answered": true,
+          "rc": 0,
+          "why": null,
+          "answer": "<answer>Tokyo</answer>",
+          "reported": {
+            "interface": "generate",
+            "thinking_requested": "off",
+            "thinking_emitted": false,
+            "prompt_tokens": 31,
+            "completion_tokens": 11,
+            "device": "cuda:0 NVIDIA GeForce RTX 4090"
+          },
+          "turns": [
+            "<answer>Tokyo</answer>"
+          ],
+          "correct": true,
+          "version": "fixture-unknown"
+        },
+        "llamafile": {
+          "answered": false,
+          "missing": true,
+          "why": "not requested",
+          "correct": false,
+          "version": null,
+          "not_ran_reason": "not_requested"
+        },
+        "vllm": {
+          "answered": true,
+          "rc": 0,
+          "why": null,
+          "answer": "<answer>Tokyo</answer>",
+          "reported": {
+            "interface": "LLM.chat",
+            "thinking_requested": "off",
+            "thinking_emitted": false,
+            "prompt_tokens": 31,
+            "completion_tokens": 9,
+            "device": "cuda:0 NVIDIA GeForce RTX 4090"
+          },
+          "turns": [
+            "<answer>Tokyo</answer>"
+          ],
+          "correct": true,
+          "version": "fixture-unknown"
+        }
+      },
+      "agreement": {
+        "answered": [
+          "hf",
+          "vllm"
+        ],
+        "all_identical": true,
+        "apr_matches": []
+      },
+      "token_parity": {
+        "measured": false,
+        "why": "not measured for the chat verb"
+      }
+    },
+    {
+      "key": {
+        "model_sha256": "aaf42c8b7c3cab2bf3d69c355048d4a0ee9973d48f16c731c0520ee914699223",
+        "host": "gpu-sm89",
+        "verb": "chat",
+        "thinking": "off",
+        "rung": "easy",
+        "prompt_id": "fact-capital-france"
+      },
+      "verdict": "RED",
+      "reasons": [
+        "apr did not answer: missing: no row for this engine",
+        "no same-representation oracle: no engine but apr reads a format-unknown file -- a .apr is proven only through its chain to its source (#3957 F8)"
+      ],
+      "format": null,
+      "extracted": {
+        "hf": "paris",
+        "vllm": "paris"
+      },
+      "all_wrong": false,
+      "quorum": {
+        "floor": 2,
+        "engines_answered": 2,
+        "answered": [
+          "hf",
+          "vllm"
+        ],
+        "comparators_answered": [
+          "hf",
+          "vllm"
+        ],
+        "met": true
+      },
+      "subject": {
+        "model_sha256": "aaf42c8b7c3cab2bf3d69c355048d4a0ee9973d48f16c731c0520ee914699223",
+        "apr_version": "apr 0.69.1 (feb5ac9a5)",
+        "under_development": false,
+        "development_note": null
+      },
+      "positive_control": false,
+      "oracle": {
+        "type": "answer",
+        "expect": "Paris",
+        "normalize": "casefold_strip"
+      },
+      "engines": {
+        "apr": {
+          "answered": false,
+          "missing": true,
+          "why": "missing: no row for this engine",
+          "correct": false,
+          "version": "apr 0.69.1 (feb5ac9a5)",
+          "not_ran_reason": "unclassified"
+        },
+        "llama.cpp": {
+          "answered": false,
+          "missing": true,
+          "why": "missing: no row for this engine",
+          "correct": false,
+          "version": "version: 0.4.1-dev (build 10987, commit d1d3c3396)",
+          "not_ran_reason": "unclassified"
+        },
+        "ollama": {
+          "answered": false,
+          "missing": true,
+          "why": "not requested",
+          "correct": false,
+          "version": null,
+          "not_ran_reason": "not_requested"
+        },
+        "hf": {
+          "answered": true,
+          "rc": 0,
+          "why": null,
+          "answer": "<answer>Paris</answer>",
+          "reported": {
+            "interface": "generate",
+            "thinking_requested": "off",
+            "thinking_emitted": false,
+            "prompt_tokens": 31,
+            "completion_tokens": 10,
+            "device": "cuda:0 NVIDIA GeForce RTX 4090"
+          },
+          "turns": [
+            "<answer>Paris</answer>"
+          ],
+          "correct": true,
+          "version": "fixture-unknown"
+        },
+        "llamafile": {
+          "answered": false,
+          "missing": true,
+          "why": "not requested",
+          "correct": false,
+          "version": null,
+          "not_ran_reason": "not_requested"
+        },
+        "vllm": {
+          "answered": true,
+          "rc": 0,
+          "why": null,
+          "answer": "<answer>Paris</answer>",
+          "reported": {
+            "interface": "LLM.chat",
+            "thinking_requested": "off",
+            "thinking_emitted": false,
+            "prompt_tokens": 31,
+            "completion_tokens": 8,
+            "device": "cuda:0 NVIDIA GeForce RTX 4090"
+          },
+          "turns": [
+            "<answer>Paris</answer>"
+          ],
+          "correct": true,
+          "version": "fixture-unknown"
+        }
+      },
+      "agreement": {
+        "answered": [
+          "hf",
+          "vllm"
+        ],
+        "all_identical": true,
+        "apr_matches": []
+      },
+      "token_parity": {
+        "measured": false,
+        "why": "not measured for the chat verb"
+      }
+    },
+    {
+      "key": {
+        "model_sha256": "aaf42c8b7c3cab2bf3d69c355048d4a0ee9973d48f16c731c0520ee914699223",
+        "host": "gpu-sm89",
+        "verb": "chat",
+        "thinking": "off",
+        "rung": "easy",
+        "prompt_id": "golden-paris"
+      },
+      "verdict": "RED",
+      "reasons": [
+        "apr did not answer: missing: no row for this engine",
+        "no same-representation oracle: no engine but apr reads a format-unknown file -- a .apr is proven only through its chain to its source (#3957 F8)"
+      ],
+      "format": null,
+      "extracted": {
+        "hf": "paris",
+        "vllm": "paris"
+      },
+      "all_wrong": false,
+      "quorum": {
+        "floor": 2,
+        "engines_answered": 2,
+        "answered": [
+          "hf",
+          "vllm"
+        ],
+        "comparators_answered": [
+          "hf",
+          "vllm"
+        ],
+        "met": true
+      },
+      "subject": {
+        "model_sha256": "aaf42c8b7c3cab2bf3d69c355048d4a0ee9973d48f16c731c0520ee914699223",
+        "apr_version": "apr 0.69.1 (feb5ac9a5)",
+        "under_development": false,
+        "development_note": null
+      },
+      "positive_control": false,
+      "oracle": {
+        "type": "answer",
+        "expect": "Paris",
+        "normalize": "casefold_strip"
+      },
+      "engines": {
+        "apr": {
+          "answered": false,
+          "missing": true,
+          "why": "missing: no row for this engine",
+          "correct": false,
+          "version": "apr 0.69.1 (feb5ac9a5)",
+          "not_ran_reason": "unclassified"
+        },
+        "llama.cpp": {
+          "answered": false,
+          "missing": true,
+          "why": "missing: no row for this engine",
+          "correct": false,
+          "version": "version: 0.4.1-dev (build 10987, commit d1d3c3396)",
+          "not_ran_reason": "unclassified"
+        },
+        "ollama": {
+          "answered": false,
+          "missing": true,
+          "why": "not requested",
+          "correct": false,
+          "version": null,
+          "not_ran_reason": "not_requested"
+        },
+        "hf": {
+          "answered": true,
+          "rc": 0,
+          "why": null,
+          "answer": "<answer>Paris</answer>",
+          "reported": {
+            "interface": "generate",
+            "thinking_requested": "off",
+            "thinking_emitted": false,
+            "prompt_tokens": 30,
+            "completion_tokens": 10,
+            "device": "cuda:0 NVIDIA GeForce RTX 4090"
+          },
+          "turns": [
+            "<answer>Paris</answer>"
+          ],
+          "correct": true,
+          "version": "fixture-unknown"
+        },
+        "llamafile": {
+          "answered": false,
+          "missing": true,
+          "why": "not requested",
+          "correct": false,
+          "version": null,
+          "not_ran_reason": "not_requested"
+        },
+        "vllm": {
+          "answered": true,
+          "rc": 0,
+          "why": null,
+          "answer": "<answer>Paris</answer>",
+          "reported": {
+            "interface": "LLM.chat",
+            "thinking_requested": "off",
+            "thinking_emitted": false,
+            "prompt_tokens": 30,
+            "completion_tokens": 8,
+            "device": "cuda:0 NVIDIA GeForce RTX 4090"
+          },
+          "turns": [
+            "<answer>Paris</answer>"
+          ],
+          "correct": true,
+          "version": "fixture-unknown"
+        }
+      },
+      "agreement": {
+        "answered": [
+          "hf",
+          "vllm"
+        ],
+        "all_identical": true,
+        "apr_matches": []
+      },
+      "token_parity": {
+        "measured": false,
+        "why": "not measured for the chat verb"
+      }
+    },
+    {
+      "key": {
+        "model_sha256": "aaf42c8b7c3cab2bf3d69c355048d4a0ee9973d48f16c731c0520ee914699223",
+        "host": "gpu-sm89",
+        "verb": "chat",
+        "thinking": "off",
+        "rung": "easy",
+        "prompt_id": "fact-water-formula"
+      },
+      "verdict": "RED",
+      "reasons": [
+        "apr did not answer: missing: no row for this engine",
+        "no same-representation oracle: no engine but apr reads a format-unknown file -- a .apr is proven only through its chain to its source (#3957 F8)",
+        "ground-truth control FAILED (hf: mismatch; vllm: mismatch) -- a control that cannot answer vouches for nothing; the prompt or the control engine is broken (#3957 Q2, #3971)",
+        "prompt fact-water-formula is not admitted for this model with thinking off by the certification (admitted_by_sha_thinking) -- never shown answerable here (#3962 J2)"
+      ],
+      "format": null,
+      "extracted": {
+        "hf": "h_2o",
+        "vllm": "h_2o"
+      },
+      "all_wrong": true,
+      "quorum": {
+        "floor": 2,
+        "engines_answered": 2,
+        "answered": [
+          "hf",
+          "vllm"
+        ],
+        "comparators_answered": [
+          "hf",
+          "vllm"
+        ],
+        "met": true
+      },
+      "subject": {
+        "model_sha256": "aaf42c8b7c3cab2bf3d69c355048d4a0ee9973d48f16c731c0520ee914699223",
+        "apr_version": "apr 0.69.1 (feb5ac9a5)",
+        "under_development": false,
+        "development_note": null
+      },
+      "positive_control": false,
+      "oracle": {
+        "type": "answer",
+        "expect": "H2O",
+        "normalize": "casefold_strip"
+      },
+      "engines": {
+        "apr": {
+          "answered": false,
+          "missing": true,
+          "why": "missing: no row for this engine",
+          "correct": false,
+          "version": "apr 0.69.1 (feb5ac9a5)",
+          "not_ran_reason": "unclassified"
+        },
+        "llama.cpp": {
+          "answered": false,
+          "missing": true,
+          "why": "missing: no row for this engine",
+          "correct": false,
+          "version": "version: 0.4.1-dev (build 10987, commit d1d3c3396)",
+          "not_ran_reason": "unclassified"
+        },
+        "ollama": {
+          "answered": false,
+          "missing": true,
+          "why": "not requested",
+          "correct": false,
+          "version": null,
+          "not_ran_reason": "not_requested"
+        },
+        "hf": {
+          "answered": true,
+          "rc": 0,
+          "why": null,
+          "answer": "The chemical formula for water is $H_2O$. It consists of two hydrogen atoms covalently bonded to one oxygen atom.\n\n<answer>H_2O</answer>",
+          "reported": {
+            "interface": "generate",
+            "thinking_requested": "off",
+            "thinking_emitted": false,
+            "prompt_tokens": 31,
+            "completion_tokens": 40,
+            "device": "cuda:0 NVIDIA GeForce RTX 4090"
+          },
+          "turns": [
+            "The chemical formula for water is $H_2O$. It consists of two hydrogen atoms covalently bonded to one oxygen atom.\n\n<answer>H_2O</answer>"
+          ],
+          "correct": false,
+          "version": "fixture-unknown"
+        },
+        "llamafile": {
+          "answered": false,
+          "missing": true,
+          "why": "not requested",
+          "correct": false,
+          "version": null,
+          "not_ran_reason": "not_requested"
+        },
+        "vllm": {
+          "answered": true,
+          "rc": 0,
+          "why": null,
+          "answer": "The chemical formula for water is $H_2O$. It consists of two hydrogen atoms covalently bonded to one oxygen atom.\n\n<answer>H_2O</answer>",
+          "reported": {
+            "interface": "LLM.chat",
+            "thinking_requested": "off",
+            "thinking_emitted": false,
+            "prompt_tokens": 31,
+            "completion_tokens": 38,
+            "device": "cuda:0 NVIDIA GeForce RTX 4090"
+          },
+          "turns": [
+            "The chemical formula for water is $H_2O$. It consists of two hydrogen atoms covalently bonded to one oxygen atom.\n\n<answer>H_2O</answer>"
+          ],
+          "correct": false,
+          "version": "fixture-unknown"
+        }
+      },
+      "agreement": {
+        "answered": [
+          "hf",
+          "vllm"
+        ],
+        "all_identical": true,
+        "apr_matches": []
+      },
+      "token_parity": {
+        "measured": false,
+        "why": "not measured for the chat verb"
+      }
+    },
+    {
+      "key": {
+        "model_sha256": "aaf42c8b7c3cab2bf3d69c355048d4a0ee9973d48f16c731c0520ee914699223",
+        "host": "gpu-sm89",
+        "verb": "chat",
+        "thinking": "off",
+        "rung": "easy",
+        "prompt_id": "arith-17x23"
+      },
+      "verdict": "RED",
+      "reasons": [
+        "apr did not answer: missing: no row for this engine",
+        "no same-representation oracle: no engine but apr reads a format-unknown file -- a .apr is proven only through its chain to its source (#3957 F8)"
+      ],
+      "format": null,
+      "extracted": {
+        "hf": "391",
+        "vllm": "391"
+      },
+      "all_wrong": false,
+      "quorum": {
+        "floor": 2,
+        "engines_answered": 2,
+        "answered": [
+          "hf",
+          "vllm"
+        ],
+        "comparators_answered": [
+          "hf",
+          "vllm"
+        ],
+        "met": true
+      },
+      "subject": {
+        "model_sha256": "aaf42c8b7c3cab2bf3d69c355048d4a0ee9973d48f16c731c0520ee914699223",
+        "apr_version": "apr 0.69.1 (feb5ac9a5)",
+        "under_development": false,
+        "development_note": null
+      },
+      "positive_control": false,
+      "oracle": {
+        "type": "answer",
+        "expect": "391",
+        "normalize": "int"
+      },
+      "engines": {
+        "apr": {
+          "answered": false,
+          "missing": true,
+          "why": "missing: no row for this engine",
+          "correct": false,
+          "version": "apr 0.69.1 (feb5ac9a5)",
+          "not_ran_reason": "unclassified"
+        },
+        "llama.cpp": {
+          "answered": false,
+          "missing": true,
+          "why": "missing: no row for this engine",
+          "correct": false,
+          "version": "version: 0.4.1-dev (build 10987, commit d1d3c3396)",
+          "not_ran_reason": "unclassified"
+        },
+        "ollama": {
+          "answered": false,
+          "missing": true,
+          "why": "not requested",
+          "correct": false,
+          "version": null,
+          "not_ran_reason": "not_requested"
+        },
+        "hf": {
+          "answered": true,
+          "rc": 0,
+          "why": null,
+          "answer": "To find the product of 17 and 23, we can use the standard multiplication algorithm or the distributive property.\n\n**Method 1: Standard Multiplication**\n$$\n\\begin{array}{r@{\\quad}l}\n  17 & \\\\\n\\times 23 & \\\\\n\\hline\n  51 & (17 \\times 3) \\\\\n  34 & (17 \\times 20) \\\\\n\\hline\n 391 &\n\\end{array}\n$$\n\n**Method 2: Distributive Property**\n$$\n17 \\times 23 = 17 \\times (20 + 3) = (17 \\times 20) + (17 \\times 3)\n$$\n$$\n17 \\times 20 = 340\n$$\n$$\n17 \\times 3 = 51\n$$\n$$\n340 + 51 = 391\n$$\n\nBoth methods yield the same result.\n\n<answer>391</answer>",
+          "reported": {
+            "interface": "generate",
+            "thinking_requested": "off",
+            "thinking_emitted": false,
+            "prompt_tokens": 34,
+            "completion_tokens": 243,
+            "device": "cuda:0 NVIDIA GeForce RTX 4090"
+          },
+          "turns": [
+            "To find the product of 17 and 23, we can use the standard multiplication algorithm or the distributive property.\n\n**Method 1: Standard Multiplication**\n$$\n\\begin{array}{r@{\\quad}l}\n  17 & \\\\\n\\times 23 & \\\\\n\\hline\n  51 & (17 \\times 3) \\\\\n  34 & (17 \\times 20) \\\\\n\\hline\n 391 &\n\\end{array}\n$$\n\n**Method 2: Distributive Property**\n$$\n17 \\times 23 = 17 \\times (20 + 3) = (17 \\times 20) + (17 \\times 3)\n$$\n$$\n17 \\times 20 = 340\n$$\n$$\n17 \\times 3 = 51\n$$\n$$\n340 + 51 = 391\n$$\n\nBoth methods yield the same result.\n\n<answer>391</answer>"
+          ],
+          "correct": true,
+          "version": "fixture-unknown"
+        },
+        "llamafile": {
+          "answered": false,
+          "missing": true,
+          "why": "not requested",
+          "correct": false,
+          "version": null,
+          "not_ran_reason": "not_requested"
+        },
+        "vllm": {
+          "answered": true,
+          "rc": 0,
+          "why": null,
+          "answer": "To find the product of 17 and 23, we can use the standard multiplication algorithm or the distributive property.\n\n**Method 1: Standard Multiplication**\n$$\n\\begin{array}{r@{\\quad}l}\n  17 & \\\\\n\\times 23 & \\\\\n\\hline\n  51 & (17 \\times 3) \\\\\n  34 & (17 \\times 20) \\\\\n\\hline\n 391 &\n\\end{array}\n$$\n\n**Method 2: Distributive Property**\n$$\n17 \\times 23 = 17 \\times (20 + 3) = (17 \\times 20) + (17 \\times 3)\n$$\n$$\n17 \\times 20 = 340\n$$\n$$\n17 \\times 3 = 51\n$$\n$$\n340 + 51 = 391\n$$\n\nBoth methods yield the same result.\n\n<answer>391</answer>",
+          "reported": {
+            "interface": "LLM.chat",
+            "thinking_requested": "off",
+            "thinking_emitted": false,
+            "prompt_tokens": 34,
+            "completion_tokens": 241,
+            "device": "cuda:0 NVIDIA GeForce RTX 4090"
+          },
+          "turns": [
+            "To find the product of 17 and 23, we can use the standard multiplication algorithm or the distributive property.\n\n**Method 1: Standard Multiplication**\n$$\n\\begin{array}{r@{\\quad}l}\n  17 & \\\\\n\\times 23 & \\\\\n\\hline\n  51 & (17 \\times 3) \\\\\n  34 & (17 \\times 20) \\\\\n\\hline\n 391 &\n\\end{array}\n$$\n\n**Method 2: Distributive Property**\n$$\n17 \\times 23 = 17 \\times (20 + 3) = (17 \\times 20) + (17 \\times 3)\n$$\n$$\n17 \\times 20 = 340\n$$\n$$\n17 \\times 3 = 51\n$$\n$$\n340 + 51 = 391\n$$\n\nBoth methods yield the same result.\n\n<answer>391</answer>"
+          ],
+          "correct": true,
+          "version": "fixture-unknown"
+        }
+      },
+      "agreement": {
+        "answered": [
+          "hf",
+          "vllm"
+        ],
+        "all_identical": true,
+        "apr_matches": []
+      },
+      "token_parity": {
+        "measured": false,
+        "why": "not measured for the chat verb"
+      }
+    },
+    {
+      "key": {
+        "model_sha256": "aaf42c8b7c3cab2bf3d69c355048d4a0ee9973d48f16c731c0520ee914699223",
+        "host": "gpu-sm89",
+        "verb": "chat",
+        "thinking": "off",
+        "rung": "easy",
+        "prompt_id": "arith-precedence"
+      },
+      "verdict": "RED",
+      "reasons": [
+        "apr did not answer: missing: no row for this engine",
+        "no same-representation oracle: no engine but apr reads a format-unknown file -- a .apr is proven only through its chain to its source (#3957 F8)"
+      ],
+      "format": null,
+      "extracted": {
+        "hf": "23",
+        "vllm": "23"
+      },
+      "all_wrong": false,
+      "quorum": {
+        "floor": 2,
+        "engines_answered": 2,
+        "answered": [
+          "hf",
+          "vllm"
+        ],
+        "comparators_answered": [
+          "hf",
+          "vllm"
+        ],
+        "met": true
+      },
+      "subject": {
+        "model_sha256": "aaf42c8b7c3cab2bf3d69c355048d4a0ee9973d48f16c731c0520ee914699223",
+        "apr_version": "apr 0.69.1 (feb5ac9a5)",
+        "under_development": false,
+        "development_note": null
+      },
+      "positive_control": false,
+      "oracle": {
+        "type": "answer",
+        "expect": "23",
+        "normalize": "int"
+      },
+      "engines": {
+        "apr": {
+          "answered": false,
+          "missing": true,
+          "why": "missing: no row for this engine",
+          "correct": false,
+          "version": "apr 0.69.1 (feb5ac9a5)",
+          "not_ran_reason": "unclassified"
+        },
+        "llama.cpp": {
+          "answered": false,
+          "missing": true,
+          "why": "missing: no row for this engine",
+          "correct": false,
+          "version": "version: 0.4.1-dev (build 10987, commit d1d3c3396)",
+          "not_ran_reason": "unclassified"
+        },
+        "ollama": {
+          "answered": false,
+          "missing": true,
+          "why": "not requested",
+          "correct": false,
+          "version": null,
+          "not_ran_reason": "not_requested"
+        },
+        "hf": {
+          "answered": true,
+          "rc": 0,
+          "why": null,
+          "answer": "To solve the expression $3 + 4 \\times 5$, we must follow the order of operations (PEMDAS/BODMAS), which states that multiplication must be performed before addition.\n\n1.  **Identify the operations**: The expression contains addition ($+$) and multiplication ($\\times$).\n2.  **Apply the order of operations**: Multiplication has a higher precedence than addition. Therefore, we calculate $4 \\times 5$ first.\n    $$4 \\times 5 = 20$$\n3.  **Substitute back into the expression**: Now the expression becomes:\n    $$3 + 20$$\n4.  **Perform the addition**:\n    $$3 + 20 = 23$$\n\n<answer>23</answer>",
+          "reported": {
+            "interface": "generate",
+            "thinking_requested": "off",
+            "thinking_emitted": false,
+            "prompt_tokens": 34,
+            "completion_tokens": 169,
+            "device": "cuda:0 NVIDIA GeForce RTX 4090"
+          },
+          "turns": [
+            "To solve the expression $3 + 4 \\times 5$, we must follow the order of operations (PEMDAS/BODMAS), which states that multiplication must be performed before addition.\n\n1.  **Identify the operations**: The expression contains addition ($+$) and multiplication ($\\times$).\n2.  **Apply the order of operations**: Multiplication has a higher precedence than addition. Therefore, we calculate $4 \\times 5$ first.\n    $$4 \\times 5 = 20$$\n3.  **Substitute back into the expression**: Now the expression becomes:\n    $$3 + 20$$\n4.  **Perform the addition**:\n    $$3 + 20 = 23$$\n\n<answer>23</answer>"
+          ],
+          "correct": true,
+          "version": "fixture-unknown"
+        },
+        "llamafile": {
+          "answered": false,
+          "missing": true,
+          "why": "not requested",
+          "correct": false,
+          "version": null,
+          "not_ran_reason": "not_requested"
+        },
+        "vllm": {
+          "answered": true,
+          "rc": 0,
+          "why": null,
+          "answer": "To solve the expression $3 + 4 \\times 5$, we must follow the order of operations (PEMDAS/BODMAS), which states that multiplication must be performed before addition.\n\n1.  **Identify the operations**: The expression contains addition ($+$) and multiplication ($\\times$).\n2.  **Apply the order of operations**: Multiplication has a higher precedence than addition. Therefore, we calculate $4 \\times 5$ first.\n    $$4 \\times 5 = 20$$\n3.  **Substitute back into the expression**: Now the expression becomes:\n    $$3 + 20$$\n4.  **Perform the addition**:\n    $$3 + 20 = 23$$\n\n<answer>23</answer>",
+          "reported": {
+            "interface": "LLM.chat",
+            "thinking_requested": "off",
+            "thinking_emitted": false,
+            "prompt_tokens": 34,
+            "completion_tokens": 167,
+            "device": "cuda:0 NVIDIA GeForce RTX 4090"
+          },
+          "turns": [
+            "To solve the expression $3 + 4 \\times 5$, we must follow the order of operations (PEMDAS/BODMAS), which states that multiplication must be performed before addition.\n\n1.  **Identify the operations**: The expression contains addition ($+$) and multiplication ($\\times$).\n2.  **Apply the order of operations**: Multiplication has a higher precedence than addition. Therefore, we calculate $4 \\times 5$ first.\n    $$4 \\times 5 = 20$$\n3.  **Substitute back into the expression**: Now the expression becomes:\n    $$3 + 20$$\n4.  **Perform the addition**:\n    $$3 + 20 = 23$$\n\n<answer>23</answer>"
+          ],
+          "correct": true,
+          "version": "fixture-unknown"
+        }
+      },
+      "agreement": {
+        "answered": [
+          "hf",
+          "vllm"
+        ],
+        "all_identical": true,
+        "apr_matches": []
+      },
+      "token_parity": {
+        "measured": false,
+        "why": "not measured for the chat verb"
+      }
+    },
+    {
+      "key": {
+        "model_sha256": "aaf42c8b7c3cab2bf3d69c355048d4a0ee9973d48f16c731c0520ee914699223",
+        "host": "gpu-sm89",
+        "verb": "chat",
+        "thinking": "off",
+        "rung": "easy",
+        "prompt_id": "arith-word-apples"
+      },
+      "verdict": "RED",
+      "reasons": [
+        "apr did not answer: missing: no row for this engine",
+        "no same-representation oracle: no engine but apr reads a format-unknown file -- a .apr is proven only through its chain to its source (#3957 F8)"
+      ],
+      "format": null,
+      "extracted": {
+        "hf": "56",
+        "vllm": "56"
+      },
+      "all_wrong": false,
+      "quorum": {
+        "floor": 2,
+        "engines_answered": 2,
+        "answered": [
+          "hf",
+          "vllm"
+        ],
+        "comparators_answered": [
+          "hf",
+          "vllm"
+        ],
+        "met": true
+      },
+      "subject": {
+        "model_sha256": "aaf42c8b7c3cab2bf3d69c355048d4a0ee9973d48f16c731c0520ee914699223",
+        "apr_version": "apr 0.69.1 (feb5ac9a5)",
+        "under_development": false,
+        "development_note": null
+      },
+      "positive_control": false,
+      "oracle": {
+        "type": "answer",
+        "expect": "56",
+        "normalize": "int"
+      },
+      "engines": {
+        "apr": {
+          "answered": false,
+          "missing": true,
+          "why": "missing: no row for this engine",
+          "correct": false,
+          "version": "apr 0.69.1 (feb5ac9a5)",
+          "not_ran_reason": "unclassified"
+        },
+        "llama.cpp": {
+          "answered": false,
+          "missing": true,
+          "why": "missing: no row for this engine",
+          "correct": false,
+          "version": "version: 0.4.1-dev (build 10987, commit d1d3c3396)",
+          "not_ran_reason": "unclassified"
+        },
+        "ollama": {
+          "answered": false,
+          "missing": true,
+          "why": "not requested",
+          "correct": false,
+          "version": null,
+          "not_ran_reason": "not_requested"
+        },
+        "hf": {
+          "answered": true,
+          "rc": 0,
+          "why": null,
+          "answer": "To find the number of apples the shop has now, we can follow these steps:\n\n1.  **Start with the initial amount**: The shop begins with 48 apples.\n2.  **Subtract the apples sold**: The shop sells 17 apples.\n    $$48 - 17 = 31$$\n    So, after selling, the shop has 31 apples.\n3.  **Add the apples from the delivery**: The shop receives a delivery of 25 apples.\n    $$31 + 25 = 56$$\n\nThe shop now has 56 apples.\n\n<answer>56</answer>",
+          "reported": {
+            "interface": "generate",
+            "thinking_requested": "off",
+            "thinking_emitted": false,
+            "prompt_tokens": 54,
+            "completion_tokens": 144,
+            "device": "cuda:0 NVIDIA GeForce RTX 4090"
+          },
+          "turns": [
+            "To find the number of apples the shop has now, we can follow these steps:\n\n1.  **Start with the initial amount**: The shop begins with 48 apples.\n2.  **Subtract the apples sold**: The shop sells 17 apples.\n    $$48 - 17 = 31$$\n    So, after selling, the shop has 31 apples.\n3.  **Add the apples from the delivery**: The shop receives a delivery of 25 apples.\n    $$31 + 25 = 56$$\n\nThe shop now has 56 apples.\n\n<answer>56</answer>"
+          ],
+          "correct": true,
+          "version": "fixture-unknown"
+        },
+        "llamafile": {
+          "answered": false,
+          "missing": true,
+          "why": "not requested",
+          "correct": false,
+          "version": null,
+          "not_ran_reason": "not_requested"
+        },
+        "vllm": {
+          "answered": true,
+          "rc": 0,
+          "why": null,
+          "answer": "To find the number of apples the shop has now, we can follow these steps:\n\n1.  **Start with the initial amount**: The shop begins with 48 apples.\n2.  **Subtract the apples sold**: The shop sells 17 apples.\n    $$48 - 17 = 31$$\n    So, after selling, the shop has 31 apples.\n3.  **Add the apples from the delivery**: The shop receives a delivery of 25 apples.\n    $$31 + 25 = 56$$\n\nThe shop now has 56 apples.\n\n<answer>56</answer>",
+          "reported": {
+            "interface": "LLM.chat",
+            "thinking_requested": "off",
+            "thinking_emitted": false,
+            "prompt_tokens": 54,
+            "completion_tokens": 142,
+            "device": "cuda:0 NVIDIA GeForce RTX 4090"
+          },
+          "turns": [
+            "To find the number of apples the shop has now, we can follow these steps:\n\n1.  **Start with the initial amount**: The shop begins with 48 apples.\n2.  **Subtract the apples sold**: The shop sells 17 apples.\n    $$48 - 17 = 31$$\n    So, after selling, the shop has 31 apples.\n3.  **Add the apples from the delivery**: The shop receives a delivery of 25 apples.\n    $$31 + 25 = 56$$\n\nThe shop now has 56 apples.\n\n<answer>56</answer>"
+          ],
+          "correct": true,
+          "version": "fixture-unknown"
+        }
+      },
+      "agreement": {
+        "answered": [
+          "hf",
+          "vllm"
+        ],
+        "all_identical": true,
+        "apr_matches": []
+      },
+      "token_parity": {
+        "measured": false,
+        "why": "not measured for the chat verb"
+      }
+    },
+    {
+      "key": {
+        "model_sha256": "aaf42c8b7c3cab2bf3d69c355048d4a0ee9973d48f16c731c0520ee914699223",
+        "host": "gpu-sm89",
+        "verb": "chat",
+        "thinking": "off",
+        "rung": "hard",
+        "prompt_id": "hard-add-4digit"
+      },
+      "verdict": "RED",
+      "reasons": [
+        "apr did not answer: missing: no row for this engine",
+        "no same-representation oracle: no engine but apr reads a format-unknown file -- a .apr is proven only through its chain to its source (#3957 F8)"
+      ],
+      "format": null,
+      "extracted": {
+        "hf": "8613",
+        "vllm": "8613"
+      },
+      "all_wrong": false,
+      "quorum": {
+        "floor": 2,
+        "engines_answered": 2,
+        "answered": [
+          "hf",
+          "vllm"
+        ],
+        "comparators_answered": [
+          "hf",
+          "vllm"
+        ],
+        "met": true
+      },
+      "subject": {
+        "model_sha256": "aaf42c8b7c3cab2bf3d69c355048d4a0ee9973d48f16c731c0520ee914699223",
+        "apr_version": "apr 0.69.1 (feb5ac9a5)",
+        "under_development": false,
+        "development_note": null
+      },
+      "positive_control": false,
+      "oracle": {
+        "type": "answer",
+        "expect": "8613",
+        "normalize": "int"
+      },
+      "engines": {
+        "apr": {
+          "answered": false,
+          "missing": true,
+          "why": "missing: no row for this engine",
+          "correct": false,
+          "version": "apr 0.69.1 (feb5ac9a5)",
+          "not_ran_reason": "unclassified"
+        },
+        "llama.cpp": {
+          "answered": false,
+          "missing": true,
+          "why": "missing: no row for this engine",
+          "correct": false,
+          "version": "version: 0.4.1-dev (build 10987, commit d1d3c3396)",
+          "not_ran_reason": "unclassified"
+        },
+        "ollama": {
+          "answered": false,
+          "missing": true,
+          "why": "not requested",
+          "correct": false,
+          "version": null,
+          "not_ran_reason": "not_requested"
+        },
+        "hf": {
+          "answered": true,
+          "rc": 0,
+          "why": null,
+          "answer": "To find the sum of 4817 and 3796, we can add the numbers column by column:\n\n  4817\n+ 3796\n------\n\n1.  **Ones column**: $7 + 6 = 13$. Write down 3 and carry over 1.\n2.  **Tens column**: $1 + 9 = 10$. Add the carried 1 to get 11. Write down 1 and carry over 1.\n3.  **Hundreds column**: $8 + 7 = 15$. Add the carried 1 to get 16. Write down 6 and carry over 1.\n4.  **Thousands column**: $4 + 3 = 7$. Add the carried 1 to get 8.\n\nPutting it all together, the result is 8613.\n\n<answer>8613</answer>",
+          "reported": {
+            "interface": "generate",
+            "thinking_requested": "off",
+            "thinking_emitted": false,
+            "prompt_tokens": 37,
+            "completion_tokens": 206,
+            "device": "cuda:0 NVIDIA GeForce RTX 4090"
+          },
+          "turns": [
+            "To find the sum of 4817 and 3796, we can add the numbers column by column:\n\n  4817\n+ 3796\n------\n\n1.  **Ones column**: $7 + 6 = 13$. Write down 3 and carry over 1.\n2.  **Tens column**: $1 + 9 = 10$. Add the carried 1 to get 11. Write down 1 and carry over 1.\n3.  **Hundreds column**: $8 + 7 = 15$. Add the carried 1 to get 16. Write down 6 and carry over 1.\n4.  **Thousands column**: $4 + 3 = 7$. Add the carried 1 to get 8.\n\nPutting it all together, the result is 8613.\n\n<answer>8613</answer>"
+          ],
+          "correct": true,
+          "version": "fixture-unknown"
+        },
+        "llamafile": {
+          "answered": false,
+          "missing": true,
+          "why": "not requested",
+          "correct": false,
+          "version": null,
+          "not_ran_reason": "not_requested"
+        },
+        "vllm": {
+          "answered": true,
+          "rc": 0,
+          "why": null,
+          "answer": "To find the sum of 4817 and 3796, we can add the numbers column by column:\n\n  4817\n+ 3796\n------\n\n1.  **Ones column**: $7 + 6 = 13$. Write down 3 and carry over 1.\n2.  **Tens column**: $1 + 9 = 10$. Add the carried 1 to get 11. Write down 1 and carry over 1.\n3.  **Hundreds column**: $8 + 7 = 15$. Add the carried 1 to get 16. Write down 6 and carry over 1.\n4.  **Thousands column**: $4 + 3 = 7$. Add the carried 1 to get 8.\n\nPutting it all together, the result is 8613.\n\n<answer>8613</answer>",
+          "reported": {
+            "interface": "LLM.chat",
+            "thinking_requested": "off",
+            "thinking_emitted": false,
+            "prompt_tokens": 37,
+            "completion_tokens": 204,
+            "device": "cuda:0 NVIDIA GeForce RTX 4090"
+          },
+          "turns": [
+            "To find the sum of 4817 and 3796, we can add the numbers column by column:\n\n  4817\n+ 3796\n------\n\n1.  **Ones column**: $7 + 6 = 13$. Write down 3 and carry over 1.\n2.  **Tens column**: $1 + 9 = 10$. Add the carried 1 to get 11. Write down 1 and carry over 1.\n3.  **Hundreds column**: $8 + 7 = 15$. Add the carried 1 to get 16. Write down 6 and carry over 1.\n4.  **Thousands column**: $4 + 3 = 7$. Add the carried 1 to get 8.\n\nPutting it all together, the result is 8613.\n\n<answer>8613</answer>"
+          ],
+          "correct": true,
+          "version": "fixture-unknown"
+        }
+      },
+      "agreement": {
+        "answered": [
+          "hf",
+          "vllm"
+        ],
+        "all_identical": true,
+        "apr_matches": []
+      },
+      "token_parity": {
+        "measured": false,
+        "why": "not measured for the chat verb"
+      }
+    },
+    {
+      "key": {
+        "model_sha256": "aaf42c8b7c3cab2bf3d69c355048d4a0ee9973d48f16c731c0520ee914699223",
+        "host": "gpu-sm89",
+        "verb": "chat",
+        "thinking": "off",
+        "rung": "hard",
+        "prompt_id": "hard-not-prime"
+      },
+      "verdict": "RED",
+      "reasons": [
+        "apr did not answer: missing: no row for this engine",
+        "no same-representation oracle: no engine but apr reads a format-unknown file -- a .apr is proven only through its chain to its source (#3957 F8)"
+      ],
+      "format": null,
+      "extracted": {
+        "hf": "15",
+        "vllm": "15"
+      },
+      "all_wrong": false,
+      "quorum": {
+        "floor": 2,
+        "engines_answered": 2,
+        "answered": [
+          "hf",
+          "vllm"
+        ],
+        "comparators_answered": [
+          "hf",
+          "vllm"
+        ],
+        "met": true
+      },
+      "subject": {
+        "model_sha256": "aaf42c8b7c3cab2bf3d69c355048d4a0ee9973d48f16c731c0520ee914699223",
+        "apr_version": "apr 0.69.1 (feb5ac9a5)",
+        "under_development": false,
+        "development_note": null
+      },
+      "positive_control": false,
+      "oracle": {
+        "type": "answer",
+        "expect": "15",
+        "normalize": "int"
+      },
+      "engines": {
+        "apr": {
+          "answered": false,
+          "missing": true,
+          "why": "missing: no row for this engine",
+          "correct": false,
+          "version": "apr 0.69.1 (feb5ac9a5)",
+          "not_ran_reason": "unclassified"
+        },
+        "llama.cpp": {
+          "answered": false,
+          "missing": true,
+          "why": "missing: no row for this engine",
+          "correct": false,
+          "version": "version: 0.4.1-dev (build 10987, commit d1d3c3396)",
+          "not_ran_reason": "unclassified"
+        },
+        "ollama": {
+          "answered": false,
+          "missing": true,
+          "why": "not requested",
+          "correct": false,
+          "version": null,
+          "not_ran_reason": "not_requested"
+        },
+        "hf": {
+          "answered": true,
+          "rc": 0,
+          "why": null,
+          "answer": "To determine which number is not prime, let's analyze each number in the list: 7, 11, 15, 13.\n\n1.  **7**: This is a prime number. It has no divisors other than 1 and itself.\n2.  **11**: This is a prime number. It has no divisors other than 1 and itself.\n3.  **13**: This is a prime number. It has no divisors other than 1 and itself.\n4.  **15**: This number is divisible by 3 and 5 ($15 = 3 \\times 5$). Therefore, it is **not** a prime number.\n\nThe question asks for the number that is NOT prime. Based on the analysis, 15 is the only non-prime number in the list.\n\n<answer>15</answer>",
+          "reported": {
+            "interface": "generate",
+            "thinking_requested": "off",
+            "thinking_emitted": false,
+            "prompt_tokens": 50,
+            "completion_tokens": 193,
+            "device": "cuda:0 NVIDIA GeForce RTX 4090"
+          },
+          "turns": [
+            "To determine which number is not prime, let's analyze each number in the list: 7, 11, 15, 13.\n\n1.  **7**: This is a prime number. It has no divisors other than 1 and itself.\n2.  **11**: This is a prime number. It has no divisors other than 1 and itself.\n3.  **13**: This is a prime number. It has no divisors other than 1 and itself.\n4.  **15**: This number is divisible by 3 and 5 ($15 = 3 \\times 5$). Therefore, it is **not** a prime number.\n\nThe question asks for the number that is NOT prime. Based on the analysis, 15 is the only non-prime number in the list.\n\n<answer>15</answer>"
+          ],
+          "correct": true,
+          "version": "fixture-unknown"
+        },
+        "llamafile": {
+          "answered": false,
+          "missing": true,
+          "why": "not requested",
+          "correct": false,
+          "version": null,
+          "not_ran_reason": "not_requested"
+        },
+        "vllm": {
+          "answered": true,
+          "rc": 0,
+          "why": null,
+          "answer": "To determine which number is not prime, let's analyze each number in the list: 7, 11, 15, 13.\n\n1.  **7**: This is a prime number. It has no divisors other than 1 and itself.\n2.  **11**: This is a prime number. It has no divisors other than 1 and itself.\n3.  **13**: This is a prime number. It has no divisors other than 1 and itself.\n4.  **15**: This number is divisible by 3 and 5 ($15 = 3 \\times 5$). Therefore, it is **not** a prime number.\n\nThe question states that exactly one of these numbers is not prime. Based on the analysis, 15 is the only non-prime number in the list.\n\n<answer>15</answer>",
+          "reported": {
+            "interface": "LLM.chat",
+            "thinking_requested": "off",
+            "thinking_emitted": false,
+            "prompt_tokens": 50,
+            "completion_tokens": 193,
+            "device": "cuda:0 NVIDIA GeForce RTX 4090"
+          },
+          "turns": [
+            "To determine which number is not prime, let's analyze each number in the list: 7, 11, 15, 13.\n\n1.  **7**: This is a prime number. It has no divisors other than 1 and itself.\n2.  **11**: This is a prime number. It has no divisors other than 1 and itself.\n3.  **13**: This is a prime number. It has no divisors other than 1 and itself.\n4.  **15**: This number is divisible by 3 and 5 ($15 = 3 \\times 5$). Therefore, it is **not** a prime number.\n\nThe question states that exactly one of these numbers is not prime. Based on the analysis, 15 is the only non-prime number in the list.\n\n<answer>15</answer>"
+          ],
+          "correct": true,
+          "version": "fixture-unknown"
+        }
+      },
+      "agreement": {
+        "answered": [
+          "hf",
+          "vllm"
+        ],
+        "all_identical": false,
+        "apr_matches": []
+      },
+      "token_parity": {
+        "measured": false,
+        "why": "not measured for the chat verb"
+      }
+    },
+    {
+      "key": {
+        "model_sha256": "aaf42c8b7c3cab2bf3d69c355048d4a0ee9973d48f16c731c0520ee914699223",
+        "host": "gpu-sm89",
+        "verb": "chat",
+        "thinking": "off",
+        "rung": "hard",
+        "prompt_id": "hard-reverse-word"
+      },
+      "verdict": "RED",
+      "reasons": [
+        "apr did not answer: missing: no row for this engine",
+        "no same-representation oracle: no engine but apr reads a format-unknown file -- a .apr is proven only through its chain to its source (#3957 F8)",
+        "ground-truth control FAILED (hf: mismatch; vllm: mismatch) -- a control that cannot answer vouches for nothing; the prompt or the control engine is broken (#3957 Q2, #3971)",
+        "prompt hard-reverse-word is not admitted for this model with thinking off by the certification (admitted_by_sha_thinking) -- never shown answerable here (#3962 J2)"
+      ],
+      "format": null,
+      "extracted": {
+        "hf": "tnipal",
+        "vllm": "tnipal"
+      },
+      "all_wrong": true,
+      "quorum": {
+        "floor": 2,
+        "engines_answered": 2,
+        "answered": [
+          "hf",
+          "vllm"
+        ],
+        "comparators_answered": [
+          "hf",
+          "vllm"
+        ],
+        "met": true
+      },
+      "subject": {
+        "model_sha256": "aaf42c8b7c3cab2bf3d69c355048d4a0ee9973d48f16c731c0520ee914699223",
+        "apr_version": "apr 0.69.1 (feb5ac9a5)",
+        "under_development": false,
+        "development_note": null
+      },
+      "positive_control": false,
+      "oracle": {
+        "type": "answer",
+        "expect": "tenalp",
+        "normalize": "casefold_strip"
+      },
+      "engines": {
+        "apr": {
+          "answered": false,
+          "missing": true,
+          "why": "missing: no row for this engine",
+          "correct": false,
+          "version": "apr 0.69.1 (feb5ac9a5)",
+          "not_ran_reason": "unclassified"
+        },
+        "llama.cpp": {
+          "answered": false,
+          "missing": true,
+          "why": "missing: no row for this engine",
+          "correct": false,
+          "version": "version: 0.4.1-dev (build 10987, commit d1d3c3396)",
+          "not_ran_reason": "unclassified"
+        },
+        "ollama": {
+          "answered": false,
+          "missing": true,
+          "why": "not requested",
+          "correct": false,
+          "version": null,
+          "not_ran_reason": "not_requested"
+        },
+        "hf": {
+          "answered": true,
+          "rc": 0,
+          "why": null,
+          "answer": "<answer>tnipal</answer>",
+          "reported": {
+            "interface": "generate",
+            "thinking_requested": "off",
+            "thinking_emitted": false,
+            "prompt_tokens": 32,
+            "completion_tokens": 12,
+            "device": "cuda:0 NVIDIA GeForce RTX 4090"
+          },
+          "turns": [
+            "<answer>tnipal</answer>"
+          ],
+          "correct": false,
+          "version": "fixture-unknown"
+        },
+        "llamafile": {
+          "answered": false,
+          "missing": true,
+          "why": "not requested",
+          "correct": false,
+          "version": null,
+          "not_ran_reason": "not_requested"
+        },
+        "vllm": {
+          "answered": true,
+          "rc": 0,
+          "why": null,
+          "answer": "<answer>tnipal</answer>",
+          "reported": {
+            "interface": "LLM.chat",
+            "thinking_requested": "off",
+            "thinking_emitted": false,
+            "prompt_tokens": 32,
+            "completion_tokens": 10,
+            "device": "cuda:0 NVIDIA GeForce RTX 4090"
+          },
+          "turns": [
+            "<answer>tnipal</answer>"
+          ],
+          "correct": false,
+          "version": "fixture-unknown"
+        }
+      },
+      "agreement": {
+        "answered": [
+          "hf",
+          "vllm"
+        ],
+        "all_identical": true,
+        "apr_matches": []
+      },
+      "token_parity": {
+        "measured": false,
+        "why": "not measured for the chat verb"
+      }
+    },
+    {
+      "key": {
+        "model_sha256": "aaf42c8b7c3cab2bf3d69c355048d4a0ee9973d48f16c731c0520ee914699223",
+        "host": "gpu-sm89",
+        "verb": "chat",
+        "thinking": "off",
+        "rung": "hard",
+        "prompt_id": "hard-count-letters"
+      },
+      "verdict": "RED",
+      "reasons": [
+        "apr did not answer: missing: no row for this engine",
+        "no same-representation oracle: no engine but apr reads a format-unknown file -- a .apr is proven only through its chain to its source (#3957 F8)"
+      ],
+      "format": null,
+      "extracted": {
+        "hf": "3",
+        "vllm": "3"
+      },
+      "all_wrong": false,
+      "quorum": {
+        "floor": 2,
+        "engines_answered": 2,
+        "answered": [
+          "hf",
+          "vllm"
+        ],
+        "comparators_answered": [
+          "hf",
+          "vllm"
+        ],
+        "met": true
+      },
+      "subject": {
+        "model_sha256": "aaf42c8b7c3cab2bf3d69c355048d4a0ee9973d48f16c731c0520ee914699223",
+        "apr_version": "apr 0.69.1 (feb5ac9a5)",
+        "under_development": false,
+        "development_note": null
+      },
+      "positive_control": false,
+      "oracle": {
+        "type": "answer",
+        "expect": "3",
+        "normalize": "int"
+      },
+      "engines": {
+        "apr": {
+          "answered": false,
+          "missing": true,
+          "why": "missing: no row for this engine",
+          "correct": false,
+          "version": "apr 0.69.1 (feb5ac9a5)",
+          "not_ran_reason": "unclassified"
+        },
+        "llama.cpp": {
+          "answered": false,
+          "missing": true,
+          "why": "missing: no row for this engine",
+          "correct": false,
+          "version": "version: 0.4.1-dev (build 10987, commit d1d3c3396)",
+          "not_ran_reason": "unclassified"
+        },
+        "ollama": {
+          "answered": false,
+          "missing": true,
+          "why": "not requested",
+          "correct": false,
+          "version": null,
+          "not_ran_reason": "not_requested"
+        },
+        "hf": {
+          "answered": true,
+          "rc": 0,
+          "why": null,
+          "answer": "To determine how many times the letter 'r' appears in the word \"strawberry\", let's break down the word letter by letter:\n\n1.  s\n2.  t\n3.  **r** (1)\n4.  a\n5.  w\n6.  b\n7.  e\n8.  r**r** (2, 3)\n9.  y\n\nCounting the occurrences:\n-   The first 'r' is in the 3rd position.\n-   The second 'r' is in the 8th position.\n-   There is a third 'r' in the 9th position.\n\nTotal count: 3.\n\n<answer>3</answer>",
+          "reported": {
+            "interface": "generate",
+            "thinking_requested": "off",
+            "thinking_emitted": false,
+            "prompt_tokens": 41,
+            "completion_tokens": 161,
+            "device": "cuda:0 NVIDIA GeForce RTX 4090"
+          },
+          "turns": [
+            "To determine how many times the letter 'r' appears in the word \"strawberry\", let's break down the word letter by letter:\n\n1.  s\n2.  t\n3.  **r** (1)\n4.  a\n5.  w\n6.  b\n7.  e\n8.  r**r** (2, 3)\n9.  y\n\nCounting the occurrences:\n-   The first 'r' is in the 3rd position.\n-   The second 'r' is in the 8th position.\n-   There is a third 'r' in the 9th position.\n\nTotal count: 3.\n\n<answer>3</answer>"
+          ],
+          "correct": true,
+          "version": "fixture-unknown"
+        },
+        "llamafile": {
+          "answered": false,
+          "missing": true,
+          "why": "not requested",
+          "correct": false,
+          "version": null,
+          "not_ran_reason": "not_requested"
+        },
+        "vllm": {
+          "answered": true,
+          "rc": 0,
+          "why": null,
+          "answer": "To determine how many times the letter 'r' appears in the word \"strawberry\", let's break down the word letter by letter:\n\n1.  s\n2.  t\n3.  **r** (1)\n4.  a\n5.  w\n6.  b\n7.  e\n8.  r**r** (2, 3)\n9.  y\n\nCounting the occurrences:\n-   The first 'r' is in the 3rd position.\n-   The second 'r' is in the 8th position.\n-   There is a third 'r' in the 9th position.\n\nTotal count: 3.\n\n<answer>3</answer>",
+          "reported": {
+            "interface": "LLM.chat",
+            "thinking_requested": "off",
+            "thinking_emitted": false,
+            "prompt_tokens": 41,
+            "completion_tokens": 159,
+            "device": "cuda:0 NVIDIA GeForce RTX 4090"
+          },
+          "turns": [
+            "To determine how many times the letter 'r' appears in the word \"strawberry\", let's break down the word letter by letter:\n\n1.  s\n2.  t\n3.  **r** (1)\n4.  a\n5.  w\n6.  b\n7.  e\n8.  r**r** (2, 3)\n9.  y\n\nCounting the occurrences:\n-   The first 'r' is in the 3rd position.\n-   The second 'r' is in the 8th position.\n-   There is a third 'r' in the 9th position.\n\nTotal count: 3.\n\n<answer>3</answer>"
+          ],
+          "correct": true,
+          "version": "fixture-unknown"
+        }
+      },
+      "agreement": {
+        "answered": [
+          "hf",
+          "vllm"
+        ],
+        "all_identical": true,
+        "apr_matches": []
+      },
+      "token_parity": {
+        "measured": false,
+        "why": "not measured for the chat verb"
+      }
+    },
+    {
+      "key": {
+        "model_sha256": "aaf42c8b7c3cab2bf3d69c355048d4a0ee9973d48f16c731c0520ee914699223",
+        "host": "gpu-sm89",
+        "verb": "chat",
+        "thinking": "off",
+        "rung": "easy",
+        "prompt_id": "recall-cats"
+      },
+      "verdict": "RED",
+      "reasons": [
+        "apr did not answer: missing: no row for this engine",
+        "no same-representation oracle: no engine but apr reads a format-unknown file -- a .apr is proven only through its chain to its source (#3957 F8)"
+      ],
+      "format": null,
+      "extracted": {
+        "hf": "5",
+        "vllm": "5"
+      },
+      "all_wrong": false,
+      "quorum": {
+        "floor": 2,
+        "engines_answered": 2,
+        "answered": [
+          "hf",
+          "vllm"
+        ],
+        "comparators_answered": [
+          "hf",
+          "vllm"
+        ],
+        "met": true
+      },
+      "subject": {
+        "model_sha256": "aaf42c8b7c3cab2bf3d69c355048d4a0ee9973d48f16c731c0520ee914699223",
+        "apr_version": "apr 0.69.1 (feb5ac9a5)",
+        "under_development": false,
+        "development_note": null
+      },
+      "positive_control": false,
+      "oracle": {
+        "type": "state_recall",
+        "expect": "5",
+        "normalize": "int"
+      },
+      "engines": {
+        "apr": {
+          "answered": false,
+          "missing": true,
+          "why": "missing: no row for this engine",
+          "correct": false,
+          "version": "apr 0.69.1 (feb5ac9a5)",
+          "not_ran_reason": "unclassified"
+        },
+        "llama.cpp": {
+          "answered": false,
+          "missing": true,
+          "why": "missing: no row for this engine",
+          "correct": false,
+          "version": "version: 0.4.1-dev (build 10987, commit d1d3c3396)",
+          "not_ran_reason": "unclassified"
+        },
+        "ollama": {
+          "answered": false,
+          "missing": true,
+          "why": "not requested",
+          "correct": false,
+          "version": null,
+          "not_ran_reason": "not_requested"
+        },
+        "hf": {
+          "answered": true,
+          "rc": 0,
+          "why": null,
+          "answer": "<answer>5</answer>",
+          "reported": {
+            "interface": "generate",
+            "thinking_requested": "off",
+            "thinking_emitted": false,
+            "prompt_tokens": 100,
+            "completion_tokens": 30,
+            "device": "cuda:0 NVIDIA GeForce RTX 4090"
+          },
+          "turns": [
+            "<answer>3</answer>",
+            "<answer>5</answer>",
+            "<answer>5</answer>"
+          ],
+          "correct": true,
+          "version": "fixture-unknown"
+        },
+        "llamafile": {
+          "answered": false,
+          "missing": true,
+          "why": "not requested",
+          "correct": false,
+          "version": null,
+          "not_ran_reason": "not_requested"
+        },
+        "vllm": {
+          "answered": true,
+          "rc": 0,
+          "why": null,
+          "answer": "<answer>5</answer>",
+          "reported": {
+            "interface": "LLM.chat",
+            "thinking_requested": "off",
+            "thinking_emitted": false,
+            "prompt_tokens": 100,
+            "completion_tokens": 24,
+            "device": "cuda:0 NVIDIA GeForce RTX 4090"
+          },
+          "turns": [
+            "<answer>3</answer>",
+            "<answer>5</answer>",
+            "<answer>5</answer>"
+          ],
+          "correct": true,
+          "version": "fixture-unknown"
+        }
+      },
+      "agreement": {
+        "answered": [
+          "hf",
+          "vllm"
+        ],
+        "all_identical": true,
+        "apr_matches": []
+      },
+      "token_parity": {
+        "measured": false,
+        "why": "not measured for the chat verb"
+      }
+    },
+    {
+      "key": {
+        "model_sha256": "aaf42c8b7c3cab2bf3d69c355048d4a0ee9973d48f16c731c0520ee914699223",
+        "host": "gpu-sm89",
+        "verb": "chat",
+        "thinking": "off",
+        "rung": "easy",
+        "prompt_id": "recall-name"
+      },
+      "verdict": "RED",
+      "reasons": [
+        "apr did not answer: missing: no row for this engine",
+        "no same-representation oracle: no engine but apr reads a format-unknown file -- a .apr is proven only through its chain to its source (#3957 F8)"
+      ],
+      "format": null,
+      "extracted": {
+        "hf": "ada",
+        "vllm": "ada"
+      },
+      "all_wrong": false,
+      "quorum": {
+        "floor": 2,
+        "engines_answered": 2,
+        "answered": [
+          "hf",
+          "vllm"
+        ],
+        "comparators_answered": [
+          "hf",
+          "vllm"
+        ],
+        "met": true
+      },
+      "subject": {
+        "model_sha256": "aaf42c8b7c3cab2bf3d69c355048d4a0ee9973d48f16c731c0520ee914699223",
+        "apr_version": "apr 0.69.1 (feb5ac9a5)",
+        "under_development": false,
+        "development_note": null
+      },
+      "positive_control": false,
+      "oracle": {
+        "type": "state_recall",
+        "expect": "Ada",
+        "normalize": "casefold_strip"
+      },
+      "engines": {
+        "apr": {
+          "answered": false,
+          "missing": true,
+          "why": "missing: no row for this engine",
+          "correct": false,
+          "version": "apr 0.69.1 (feb5ac9a5)",
+          "not_ran_reason": "unclassified"
+        },
+        "llama.cpp": {
+          "answered": false,
+          "missing": true,
+          "why": "missing: no row for this engine",
+          "correct": false,
+          "version": "version: 0.4.1-dev (build 10987, commit d1d3c3396)",
+          "not_ran_reason": "unclassified"
+        },
+        "ollama": {
+          "answered": false,
+          "missing": true,
+          "why": "not requested",
+          "correct": false,
+          "version": null,
+          "not_ran_reason": "not_requested"
+        },
+        "hf": {
+          "answered": true,
+          "rc": 0,
+          "why": null,
+          "answer": "<answer>Ada</answer>",
+          "reported": {
+            "interface": "generate",
+            "thinking_requested": "off",
+            "thinking_emitted": false,
+            "prompt_tokens": 99,
+            "completion_tokens": 31,
+            "device": "cuda:0 NVIDIA GeForce RTX 4090"
+          },
+          "turns": [
+            "<answer>Ada</answer>",
+            "<answer>15</answer>",
+            "<answer>Ada</answer>"
+          ],
+          "correct": true,
+          "version": "fixture-unknown"
+        },
+        "llamafile": {
+          "answered": false,
+          "missing": true,
+          "why": "not requested",
+          "correct": false,
+          "version": null,
+          "not_ran_reason": "not_requested"
+        },
+        "vllm": {
+          "answered": true,
+          "rc": 0,
+          "why": null,
+          "answer": "<answer>Ada</answer>",
+          "reported": {
+            "interface": "LLM.chat",
+            "thinking_requested": "off",
+            "thinking_emitted": false,
+            "prompt_tokens": 99,
+            "completion_tokens": 25,
+            "device": "cuda:0 NVIDIA GeForce RTX 4090"
+          },
+          "turns": [
+            "<answer>Ada</answer>",
+            "<answer>15</answer>",
+            "<answer>Ada</answer>"
+          ],
+          "correct": true,
+          "version": "fixture-unknown"
+        }
+      },
+      "agreement": {
+        "answered": [
+          "hf",
+          "vllm"
+        ],
+        "all_identical": true,
+        "apr_matches": []
+      },
+      "token_parity": {
+        "measured": false,
+        "why": "not measured for the chat verb"
+      }
+    },
+    {
+      "key": {
+        "model_sha256": "aaf42c8b7c3cab2bf3d69c355048d4a0ee9973d48f16c731c0520ee914699223",
+        "host": "gpu-sm89",
+        "verb": "chat",
+        "thinking": "off",
+        "rung": "hard",
+        "prompt_id": "recall-arith-chain"
+      },
+      "verdict": "RED",
+      "reasons": [
+        "apr did not answer: missing: no row for this engine",
+        "no same-representation oracle: no engine but apr reads a format-unknown file -- a .apr is proven only through its chain to its source (#3957 F8)"
+      ],
+      "format": null,
+      "extracted": {
+        "hf": "7",
+        "vllm": "7"
+      },
+      "all_wrong": false,
+      "quorum": {
+        "floor": 2,
+        "engines_answered": 2,
+        "answered": [
+          "hf",
+          "vllm"
+        ],
+        "comparators_answered": [
+          "hf",
+          "vllm"
+        ],
+        "met": true
+      },
+      "subject": {
+        "model_sha256": "aaf42c8b7c3cab2bf3d69c355048d4a0ee9973d48f16c731c0520ee914699223",
+        "apr_version": "apr 0.69.1 (feb5ac9a5)",
+        "under_development": false,
+        "development_note": null
+      },
+      "positive_control": false,
+      "oracle": {
+        "type": "state_recall",
+        "expect": "7",
+        "normalize": "int"
+      },
+      "engines": {
+        "apr": {
+          "answered": false,
+          "missing": true,
+          "why": "missing: no row for this engine",
+          "correct": false,
+          "version": "apr 0.69.1 (feb5ac9a5)",
+          "not_ran_reason": "unclassified"
+        },
+        "llama.cpp": {
+          "answered": false,
+          "missing": true,
+          "why": "missing: no row for this engine",
+          "correct": false,
+          "version": "version: 0.4.1-dev (build 10987, commit d1d3c3396)",
+          "not_ran_reason": "unclassified"
+        },
+        "ollama": {
+          "answered": false,
+          "missing": true,
+          "why": "not requested",
+          "correct": false,
+          "version": null,
+          "not_ran_reason": "not_requested"
+        },
+        "hf": {
+          "answered": true,
+          "rc": 0,
+          "why": null,
+          "answer": "<answer>7</answer>",
+          "reported": {
+            "interface": "generate",
+            "thinking_requested": "off",
+            "thinking_emitted": false,
+            "prompt_tokens": 101,
+            "completion_tokens": 31,
+            "device": "cuda:0 NVIDIA GeForce RTX 4090"
+          },
+          "turns": [
+            "<answer>4</answer>",
+            "<answer>12</answer>",
+            "<answer>7</answer>"
+          ],
+          "correct": true,
+          "version": "fixture-unknown"
+        },
+        "llamafile": {
+          "answered": false,
+          "missing": true,
+          "why": "not requested",
+          "correct": false,
+          "version": null,
+          "not_ran_reason": "not_requested"
+        },
+        "vllm": {
+          "answered": true,
+          "rc": 0,
+          "why": null,
+          "answer": "<answer>7</answer>",
+          "reported": {
+            "interface": "LLM.chat",
+            "thinking_requested": "off",
+            "thinking_emitted": false,
+            "prompt_tokens": 101,
+            "completion_tokens": 25,
+            "device": "cuda:0 NVIDIA GeForce RTX 4090"
+          },
+          "turns": [
+            "<answer>4</answer>",
+            "<answer>12</answer>",
+            "<answer>7</answer>"
+          ],
+          "correct": true,
+          "version": "fixture-unknown"
+        }
+      },
+      "agreement": {
+        "answered": [
+          "hf",
+          "vllm"
+        ],
+        "all_identical": true,
+        "apr_matches": []
+      },
+      "token_parity": {
+        "measured": false,
+        "why": "not measured for the chat verb"
+      }
+    },
+    {
+      "key": {
+        "model_sha256": "aaf42c8b7c3cab2bf3d69c355048d4a0ee9973d48f16c731c0520ee914699223",
+        "host": "gpu-sm89",
+        "verb": "chat",
+        "thinking": "off",
+        "rung": "easy",
+        "prompt_id": "code-is-palindrome"
+      },
+      "verdict": "RED",
+      "reasons": [
+        "apr did not answer: missing: no row for this engine",
+        "no same-representation oracle: no engine but apr reads a format-unknown file -- a .apr is proven only through its chain to its source (#3957 F8)"
+      ],
+      "format": null,
+      "extracted": {
+        "hf": "def is_palindrome(s):\n    s = s.lower()\n    return s == s[::-1]",
+        "vllm": "def is_palindrome(s):\n    s = s.lower()\n    return s == s[::-1]"
+      },
+      "all_wrong": false,
+      "quorum": {
+        "floor": 2,
+        "engines_answered": 2,
+        "answered": [
+          "hf",
+          "vllm"
+        ],
+        "comparators_answered": [
+          "hf",
+          "vllm"
+        ],
+        "met": true
+      },
+      "subject": {
+        "model_sha256": "aaf42c8b7c3cab2bf3d69c355048d4a0ee9973d48f16c731c0520ee914699223",
+        "apr_version": "apr 0.69.1 (feb5ac9a5)",
+        "under_development": false,
+        "development_note": null
+      },
+      "positive_control": false,
+      "oracle": {
+        "type": "code_tests",
+        "lang": "python",
+        "entry": "is_palindrome",
+        "tests": "assert is_palindrome('Level') is True\nassert is_palindrome('abca') is False\nassert is_palindrome('') is True",
+        "timeout_s": 10
+      },
+      "engines": {
+        "apr": {
+          "answered": false,
+          "missing": true,
+          "why": "missing: no row for this engine",
+          "correct": false,
+          "version": "apr 0.69.1 (feb5ac9a5)",
+          "not_ran_reason": "unclassified"
+        },
+        "llama.cpp": {
+          "answered": false,
+          "missing": true,
+          "why": "missing: no row for this engine",
+          "correct": false,
+          "version": "version: 0.4.1-dev (build 10987, commit d1d3c3396)",
+          "not_ran_reason": "unclassified"
+        },
+        "ollama": {
+          "answered": false,
+          "missing": true,
+          "why": "not requested",
+          "correct": false,
+          "version": null,
+          "not_ran_reason": "not_requested"
+        },
+        "hf": {
+          "answered": true,
+          "rc": 0,
+          "why": null,
+          "answer": "```python\ndef is_palindrome(s):\n    s = s.lower()\n    return s == s[::-1]\n```",
+          "reported": {
+            "interface": "generate",
+            "thinking_requested": "off",
+            "thinking_emitted": false,
+            "prompt_tokens": 54,
+            "completion_tokens": 30,
+            "device": "cuda:0 NVIDIA GeForce RTX 4090"
+          },
+          "turns": [
+            "```python\ndef is_palindrome(s):\n    s = s.lower()\n    return s == s[::-1]\n```"
+          ],
+          "correct": true,
+          "version": "fixture-unknown"
+        },
+        "llamafile": {
+          "answered": false,
+          "missing": true,
+          "why": "not requested",
+          "correct": false,
+          "version": null,
+          "not_ran_reason": "not_requested"
+        },
+        "vllm": {
+          "answered": true,
+          "rc": 0,
+          "why": null,
+          "answer": "```python\ndef is_palindrome(s):\n    s = s.lower()\n    return s == s[::-1]\n```",
+          "reported": {
+            "interface": "LLM.chat",
+            "thinking_requested": "off",
+            "thinking_emitted": false,
+            "prompt_tokens": 54,
+            "completion_tokens": 28,
+            "device": "cuda:0 NVIDIA GeForce RTX 4090"
+          },
+          "turns": [
+            "```python\ndef is_palindrome(s):\n    s = s.lower()\n    return s == s[::-1]\n```"
+          ],
+          "correct": true,
+          "version": "fixture-unknown"
+        }
+      },
+      "agreement": {
+        "answered": [
+          "hf",
+          "vllm"
+        ],
+        "all_identical": true,
+        "apr_matches": []
+      },
+      "token_parity": {
+        "measured": false,
+        "why": "not measured for the chat verb"
+      }
+    },
+    {
+      "key": {
+        "model_sha256": "aaf42c8b7c3cab2bf3d69c355048d4a0ee9973d48f16c731c0520ee914699223",
+        "host": "gpu-sm89",
+        "verb": "chat",
+        "thinking": "off",
+        "rung": "easy",
+        "prompt_id": "code-fib"
+      },
+      "verdict": "RED",
+      "reasons": [
+        "apr did not answer: missing: no row for this engine",
+        "no same-representation oracle: no engine but apr reads a format-unknown file -- a .apr is proven only through its chain to its source (#3957 F8)"
+      ],
+      "format": null,
+      "extracted": {
+        "hf": "def fib(n):\n    if n < 0:\n        raise ValueError(\"n must be a non-negative integer\")\n    if n == 0:\n        return 0\n    if n == 1:\n        return 1\n    a, b = 0, 1\n    for _ in range(2, n + 1):\n        a, b = b, a + b\n    return b",
+        "vllm": "def fib(n):\n    if n < 0:\n        raise ValueError(\"n must be a non-negative integer\")\n    if n == 0:\n        return 0\n    if n == 1:\n        return 1\n    a, b = 0, 1\n    for _ in range(2, n + 1):\n        a, b = b, a + b\n    return b"
+      },
+      "all_wrong": false,
+      "quorum": {
+        "floor": 2,
+        "engines_answered": 2,
+        "answered": [
+          "hf",
+          "vllm"
+        ],
+        "comparators_answered": [
+          "hf",
+          "vllm"
+        ],
+        "met": true
+      },
+      "subject": {
+        "model_sha256": "aaf42c8b7c3cab2bf3d69c355048d4a0ee9973d48f16c731c0520ee914699223",
+        "apr_version": "apr 0.69.1 (feb5ac9a5)",
+        "under_development": false,
+        "development_note": null
+      },
+      "positive_control": false,
+      "oracle": {
+        "type": "code_tests",
+        "lang": "python",
+        "entry": "fib",
+        "tests": "assert fib(0) == 0\nassert fib(1) == 1\nassert fib(10) == 55\nassert fib(20) == 6765",
+        "timeout_s": 10
+      },
+      "engines": {
+        "apr": {
+          "answered": false,
+          "missing": true,
+          "why": "missing: no row for this engine",
+          "correct": false,
+          "version": "apr 0.69.1 (feb5ac9a5)",
+          "not_ran_reason": "unclassified"
+        },
+        "llama.cpp": {
+          "answered": false,
+          "missing": true,
+          "why": "missing: no row for this engine",
+          "correct": false,
+          "version": "version: 0.4.1-dev (build 10987, commit d1d3c3396)",
+          "not_ran_reason": "unclassified"
+        },
+        "ollama": {
+          "answered": false,
+          "missing": true,
+          "why": "not requested",
+          "correct": false,
+          "version": null,
+          "not_ran_reason": "not_requested"
+        },
+        "hf": {
+          "answered": true,
+          "rc": 0,
+          "why": null,
+          "answer": "```python\ndef fib(n):\n    if n < 0:\n        raise ValueError(\"n must be a non-negative integer\")\n    if n == 0:\n        return 0\n    if n == 1:\n        return 1\n    a, b = 0, 1\n    for _ in range(2, n + 1):\n        a, b = b, a + b\n    return b\n```",
+          "reported": {
+            "interface": "generate",
+            "thinking_requested": "off",
+            "thinking_emitted": false,
+            "prompt_tokens": 56,
+            "completion_tokens": 99,
+            "device": "cuda:0 NVIDIA GeForce RTX 4090"
+          },
+          "turns": [
+            "```python\ndef fib(n):\n    if n < 0:\n        raise ValueError(\"n must be a non-negative integer\")\n    if n == 0:\n        return 0\n    if n == 1:\n        return 1\n    a, b = 0, 1\n    for _ in range(2, n + 1):\n        a, b = b, a + b\n    return b\n```"
+          ],
+          "correct": true,
+          "version": "fixture-unknown"
+        },
+        "llamafile": {
+          "answered": false,
+          "missing": true,
+          "why": "not requested",
+          "correct": false,
+          "version": null,
+          "not_ran_reason": "not_requested"
+        },
+        "vllm": {
+          "answered": true,
+          "rc": 0,
+          "why": null,
+          "answer": "```python\ndef fib(n):\n    if n < 0:\n        raise ValueError(\"n must be a non-negative integer\")\n    if n == 0:\n        return 0\n    if n == 1:\n        return 1\n    a, b = 0, 1\n    for _ in range(2, n + 1):\n        a, b = b, a + b\n    return b\n```",
+          "reported": {
+            "interface": "LLM.chat",
+            "thinking_requested": "off",
+            "thinking_emitted": false,
+            "prompt_tokens": 56,
+            "completion_tokens": 97,
+            "device": "cuda:0 NVIDIA GeForce RTX 4090"
+          },
+          "turns": [
+            "```python\ndef fib(n):\n    if n < 0:\n        raise ValueError(\"n must be a non-negative integer\")\n    if n == 0:\n        return 0\n    if n == 1:\n        return 1\n    a, b = 0, 1\n    for _ in range(2, n + 1):\n        a, b = b, a + b\n    return b\n```"
+          ],
+          "correct": true,
+          "version": "fixture-unknown"
+        }
+      },
+      "agreement": {
+        "answered": [
+          "hf",
+          "vllm"
+        ],
+        "all_identical": true,
+        "apr_matches": []
+      },
+      "token_parity": {
+        "measured": false,
+        "why": "not measured for the chat verb"
+      }
+    },
+    {
+      "key": {
+        "model_sha256": "aaf42c8b7c3cab2bf3d69c355048d4a0ee9973d48f16c731c0520ee914699223",
+        "host": "gpu-sm89",
+        "verb": "chat",
+        "thinking": "off",
+        "rung": "hard",
+        "prompt_id": "code-count-vowels"
+      },
+      "verdict": "RED",
+      "reasons": [
+        "apr did not answer: missing: no row for this engine",
+        "no same-representation oracle: no engine but apr reads a format-unknown file -- a .apr is proven only through its chain to its source (#3957 F8)"
+      ],
+      "format": null,
+      "extracted": {
+        "hf": "def count_vowels(s):\n    vowels = set('aeiouAEIOU')\n    return sum(1 for char in s if char.lower() in vowels)",
+        "vllm": "def count_vowels(s):\n    vowels = set('aeiouAEIOU')\n    return sum(1 for char in s if char.lower() in vowels)"
+      },
+      "all_wrong": false,
+      "quorum": {
+        "floor": 2,
+        "engines_answered": 2,
+        "answered": [
+          "hf",
+          "vllm"
+        ],
+        "comparators_answered": [
+          "hf",
+          "vllm"
+        ],
+        "met": true
+      },
+      "subject": {
+        "model_sha256": "aaf42c8b7c3cab2bf3d69c355048d4a0ee9973d48f16c731c0520ee914699223",
+        "apr_version": "apr 0.69.1 (feb5ac9a5)",
+        "under_development": false,
+        "development_note": null
+      },
+      "positive_control": false,
+      "oracle": {
+        "type": "code_tests",
+        "lang": "python",
+        "entry": "count_vowels",
+        "tests": "assert count_vowels('Hello World') == 3\nassert count_vowels('xyz') == 0\nassert count_vowels('AEIOU') == 5",
+        "timeout_s": 10
+      },
+      "engines": {
+        "apr": {
+          "answered": false,
+          "missing": true,
+          "why": "missing: no row for this engine",
+          "correct": false,
+          "version": "apr 0.69.1 (feb5ac9a5)",
+          "not_ran_reason": "unclassified"
+        },
+        "llama.cpp": {
+          "answered": false,
+          "missing": true,
+          "why": "missing: no row for this engine",
+          "correct": false,
+          "version": "version: 0.4.1-dev (build 10987, commit d1d3c3396)",
+          "not_ran_reason": "unclassified"
+        },
+        "ollama": {
+          "answered": false,
+          "missing": true,
+          "why": "not requested",
+          "correct": false,
+          "version": null,
+          "not_ran_reason": "not_requested"
+        },
+        "hf": {
+          "answered": true,
+          "rc": 0,
+          "why": null,
+          "answer": "```python\ndef count_vowels(s):\n    vowels = set('aeiouAEIOU')\n    return sum(1 for char in s if char.lower() in vowels)\n```",
+          "reported": {
+            "interface": "generate",
+            "thinking_requested": "off",
+            "thinking_emitted": false,
+            "prompt_tokens": 60,
+            "completion_tokens": 44,
+            "device": "cuda:0 NVIDIA GeForce RTX 4090"
+          },
+          "turns": [
+            "```python\ndef count_vowels(s):\n    vowels = set('aeiouAEIOU')\n    return sum(1 for char in s if char.lower() in vowels)\n```"
+          ],
+          "correct": true,
+          "version": "fixture-unknown"
+        },
+        "llamafile": {
+          "answered": false,
+          "missing": true,
+          "why": "not requested",
+          "correct": false,
+          "version": null,
+          "not_ran_reason": "not_requested"
+        },
+        "vllm": {
+          "answered": true,
+          "rc": 0,
+          "why": null,
+          "answer": "```python\ndef count_vowels(s):\n    vowels = set('aeiouAEIOU')\n    return sum(1 for char in s if char.lower() in vowels)\n```",
+          "reported": {
+            "interface": "LLM.chat",
+            "thinking_requested": "off",
+            "thinking_emitted": false,
+            "prompt_tokens": 60,
+            "completion_tokens": 42,
+            "device": "cuda:0 NVIDIA GeForce RTX 4090"
+          },
+          "turns": [
+            "```python\ndef count_vowels(s):\n    vowels = set('aeiouAEIOU')\n    return sum(1 for char in s if char.lower() in vowels)\n```"
+          ],
+          "correct": true,
+          "version": "fixture-unknown"
+        }
+      },
+      "agreement": {
+        "answered": [
+          "hf",
+          "vllm"
+        ],
+        "all_identical": true,
+        "apr_matches": []
+      },
+      "token_parity": {
+        "measured": false,
+        "why": "not measured for the chat verb"
+      }
+    },
+    {
+      "key": {
+        "model_sha256": "aaf42c8b7c3cab2bf3d69c355048d4a0ee9973d48f16c731c0520ee914699223",
+        "host": "gpu-sm89",
+        "verb": "chat",
+        "thinking": "off",
+        "rung": "easy",
+        "prompt_id": "long-primes-10"
+      },
+      "verdict": "RED",
+      "reasons": [
+        "apr did not answer: missing: no row for this engine",
+        "no same-representation oracle: no engine but apr reads a format-unknown file -- a .apr is proven only through its chain to its source (#3957 F8)"
+      ],
+      "format": null,
+      "extracted": {
+        "hf": "2\n3\n5\n7\n11\n13\n17\n19\n23\n29",
+        "vllm": "2\n3\n5\n7\n11\n13\n17\n19\n23\n29"
+      },
+      "all_wrong": false,
+      "quorum": {
+        "floor": 2,
+        "engines_answered": 2,
+        "answered": [
+          "hf",
+          "vllm"
+        ],
+        "comparators_answered": [
+          "hf",
+          "vllm"
+        ],
+        "met": true
+      },
+      "subject": {
+        "model_sha256": "aaf42c8b7c3cab2bf3d69c355048d4a0ee9973d48f16c731c0520ee914699223",
+        "apr_version": "apr 0.69.1 (feb5ac9a5)",
+        "under_development": false,
+        "development_note": null
+      },
+      "positive_control": false,
+      "oracle": {
+        "type": "structure",
+        "lines": [
+          2,
+          3,
+          5,
+          7,
+          11,
+          13,
+          17,
+          19,
+          23,
+          29
+        ]
+      },
+      "engines": {
+        "apr": {
+          "answered": false,
+          "missing": true,
+          "why": "missing: no row for this engine",
+          "correct": false,
+          "version": "apr 0.69.1 (feb5ac9a5)",
+          "not_ran_reason": "unclassified"
+        },
+        "llama.cpp": {
+          "answered": false,
+          "missing": true,
+          "why": "missing: no row for this engine",
+          "correct": false,
+          "version": "version: 0.4.1-dev (build 10987, commit d1d3c3396)",
+          "not_ran_reason": "unclassified"
+        },
+        "ollama": {
+          "answered": false,
+          "missing": true,
+          "why": "not requested",
+          "correct": false,
+          "version": null,
+          "not_ran_reason": "not_requested"
+        },
+        "hf": {
+          "answered": true,
+          "rc": 0,
+          "why": null,
+          "answer": "<answer>\n2\n3\n5\n7\n11\n13\n17\n19\n23\n29\n</answer>",
+          "reported": {
+            "interface": "generate",
+            "thinking_requested": "off",
+            "thinking_emitted": false,
+            "prompt_tokens": 38,
+            "completion_tokens": 36,
+            "device": "cuda:0 NVIDIA GeForce RTX 4090"
+          },
+          "turns": [
+            "<answer>\n2\n3\n5\n7\n11\n13\n17\n19\n23\n29\n</answer>"
+          ],
+          "correct": true,
+          "version": "fixture-unknown"
+        },
+        "llamafile": {
+          "answered": false,
+          "missing": true,
+          "why": "not requested",
+          "correct": false,
+          "version": null,
+          "not_ran_reason": "not_requested"
+        },
+        "vllm": {
+          "answered": true,
+          "rc": 0,
+          "why": null,
+          "answer": "<answer>\n2\n3\n5\n7\n11\n13\n17\n19\n23\n29\n</answer>",
+          "reported": {
+            "interface": "LLM.chat",
+            "thinking_requested": "off",
+            "thinking_emitted": false,
+            "prompt_tokens": 38,
+            "completion_tokens": 34,
+            "device": "cuda:0 NVIDIA GeForce RTX 4090"
+          },
+          "turns": [
+            "<answer>\n2\n3\n5\n7\n11\n13\n17\n19\n23\n29\n</answer>"
+          ],
+          "correct": true,
+          "version": "fixture-unknown"
+        }
+      },
+      "agreement": {
+        "answered": [
+          "hf",
+          "vllm"
+        ],
+        "all_identical": true,
+        "apr_matches": []
+      },
+      "token_parity": {
+        "measured": false,
+        "why": "not measured for the chat verb"
+      }
+    },
+    {
+      "key": {
+        "model_sha256": "aaf42c8b7c3cab2bf3d69c355048d4a0ee9973d48f16c731c0520ee914699223",
+        "host": "gpu-sm89",
+        "verb": "chat",
+        "thinking": "off",
+        "rung": "hard",
+        "prompt_id": "long-countdown-15"
+      },
+      "verdict": "RED",
+      "reasons": [
+        "apr did not answer: missing: no row for this engine",
+        "no same-representation oracle: no engine but apr reads a format-unknown file -- a .apr is proven only through its chain to its source (#3957 F8)"
+      ],
+      "format": null,
+      "extracted": {
+        "hf": "15\n14\n13\n12\n11\n10\n9\n8\n7\n6\n5\n4\n3\n2\n1",
+        "vllm": "15\n14\n13\n12\n11\n10\n9\n8\n7\n6\n5\n4\n3\n2\n1"
+      },
+      "all_wrong": false,
+      "quorum": {
+        "floor": 2,
+        "engines_answered": 2,
+        "answered": [
+          "hf",
+          "vllm"
+        ],
+        "comparators_answered": [
+          "hf",
+          "vllm"
+        ],
+        "met": true
+      },
+      "subject": {
+        "model_sha256": "aaf42c8b7c3cab2bf3d69c355048d4a0ee9973d48f16c731c0520ee914699223",
+        "apr_version": "apr 0.69.1 (feb5ac9a5)",
+        "under_development": false,
+        "development_note": null
+      },
+      "positive_control": false,
+      "oracle": {
+        "type": "structure",
+        "lines": [
+          15,
+          14,
+          13,
+          12,
+          11,
+          10,
+          9,
+          8,
+          7,
+          6,
+          5,
+          4,
+          3,
+          2,
+          1
+        ]
+      },
+      "engines": {
+        "apr": {
+          "answered": false,
+          "missing": true,
+          "why": "missing: no row for this engine",
+          "correct": false,
+          "version": "apr 0.69.1 (feb5ac9a5)",
+          "not_ran_reason": "unclassified"
+        },
+        "llama.cpp": {
+          "answered": false,
+          "missing": true,
+          "why": "missing: no row for this engine",
+          "correct": false,
+          "version": "version: 0.4.1-dev (build 10987, commit d1d3c3396)",
+          "not_ran_reason": "unclassified"
+        },
+        "ollama": {
+          "answered": false,
+          "missing": true,
+          "why": "not requested",
+          "correct": false,
+          "version": null,
+          "not_ran_reason": "not_requested"
+        },
+        "hf": {
+          "answered": true,
+          "rc": 0,
+          "why": null,
+          "answer": "<answer>\n15\n14\n13\n12\n11\n10\n9\n8\n7\n6\n5\n4\n3\n2\n1\n</answer>",
+          "reported": {
+            "interface": "generate",
+            "thinking_requested": "off",
+            "thinking_emitted": false,
+            "prompt_tokens": 39,
+            "completion_tokens": 46,
+            "device": "cuda:0 NVIDIA GeForce RTX 4090"
+          },
+          "turns": [
+            "<answer>\n15\n14\n13\n12\n11\n10\n9\n8\n7\n6\n5\n4\n3\n2\n1\n</answer>"
+          ],
+          "correct": true,
+          "version": "fixture-unknown"
+        },
+        "llamafile": {
+          "answered": false,
+          "missing": true,
+          "why": "not requested",
+          "correct": false,
+          "version": null,
+          "not_ran_reason": "not_requested"
+        },
+        "vllm": {
+          "answered": true,
+          "rc": 0,
+          "why": null,
+          "answer": "<answer>\n15\n14\n13\n12\n11\n10\n9\n8\n7\n6\n5\n4\n3\n2\n1\n</answer>",
+          "reported": {
+            "interface": "LLM.chat",
+            "thinking_requested": "off",
+            "thinking_emitted": false,
+            "prompt_tokens": 39,
+            "completion_tokens": 44,
+            "device": "cuda:0 NVIDIA GeForce RTX 4090"
+          },
+          "turns": [
+            "<answer>\n15\n14\n13\n12\n11\n10\n9\n8\n7\n6\n5\n4\n3\n2\n1\n</answer>"
+          ],
+          "correct": true,
+          "version": "fixture-unknown"
+        }
+      },
+      "agreement": {
+        "answered": [
+          "hf",
+          "vllm"
+        ],
+        "all_identical": true,
+        "apr_matches": []
+      },
+      "token_parity": {
+        "measured": false,
+        "why": "not measured for the chat verb"
+      }
+    },
+    {
+      "key": {
+        "model_sha256": "00fe7986ff5f6b463e62455821146049db6f9313603938a70800d1fb69ef11a4",
+        "host": "gpu-sm89",
+        "verb": "chat",
+        "thinking": "off",
+        "rung": "easy",
+        "prompt_id": "ctl-2plus2"
+      },
+      "verdict": "RED",
+      "reasons": [
+        "apr did not answer: missing: no row for this engine",
+        "no same-representation oracle: no engine but apr reads a format-unknown file -- a .apr is proven only through its chain to its source (#3957 F8)"
+      ],
+      "format": null,
+      "extracted": {
+        "hf": "4"
+      },
+      "all_wrong": false,
+      "quorum": {
+        "floor": 2,
+        "engines_answered": 1,
+        "answered": [
+          "hf"
+        ],
+        "comparators_answered": [
+          "hf"
+        ],
+        "met": false
+      },
+      "subject": {
+        "model_sha256": "00fe7986ff5f6b463e62455821146049db6f9313603938a70800d1fb69ef11a4",
+        "apr_version": "apr 0.69.1 (feb5ac9a5)",
+        "under_development": false,
+        "development_note": null
+      },
+      "positive_control": true,
+      "oracle": {
+        "type": "answer",
+        "expect": "4",
+        "normalize": "int"
+      },
+      "engines": {
+        "apr": {
+          "answered": false,
+          "missing": true,
+          "why": "missing: no row for this engine",
+          "correct": false,
+          "version": "apr 0.69.1 (feb5ac9a5)",
+          "not_ran_reason": "unclassified"
+        },
+        "llama.cpp": {
+          "answered": false,
+          "missing": true,
+          "why": "missing: no row for this engine",
+          "correct": false,
+          "version": "version: 0.4.1-dev (build 10987, commit d1d3c3396)",
+          "not_ran_reason": "unclassified"
+        },
+        "ollama": {
+          "answered": false,
+          "missing": true,
+          "why": "not requested",
+          "correct": false,
+          "version": null,
+          "not_ran_reason": "not_requested"
+        },
+        "hf": {
+          "answered": true,
+          "rc": 0,
+          "why": null,
+          "answer": "<answer>4</answer>",
+          "reported": {
+            "interface": "generate",
+            "thinking_requested": "off",
+            "thinking_emitted": false,
+            "prompt_tokens": 30,
+            "completion_tokens": 10,
+            "device": "cuda:0 NVIDIA GeForce RTX 4090"
+          },
+          "turns": [
+            "<answer>4</answer>"
+          ],
+          "correct": true,
+          "version": "fixture-unknown"
+        },
+        "llamafile": {
+          "answered": false,
+          "missing": true,
+          "why": "not requested",
+          "correct": false,
+          "version": null,
+          "not_ran_reason": "not_requested"
+        },
+        "vllm": {
+          "answered": false,
+          "missing": true,
+          "why": "missing: no row for this engine",
+          "correct": false,
+          "version": "fixture-unknown",
+          "not_ran_reason": "unclassified"
+        }
+      },
+      "agreement": {
+        "answered": [
+          "hf"
+        ],
+        "all_identical": false,
+        "apr_matches": []
+      },
+      "token_parity": {
+        "measured": false,
+        "why": "not measured for the chat verb"
+      }
+    },
+    {
+      "key": {
+        "model_sha256": "00fe7986ff5f6b463e62455821146049db6f9313603938a70800d1fb69ef11a4",
+        "host": "gpu-sm89",
+        "verb": "chat",
+        "thinking": "off",
+        "rung": "easy",
+        "prompt_id": "ctl-recall-7"
+      },
+      "verdict": "RED",
+      "reasons": [
+        "apr did not answer: missing: no row for this engine",
+        "no same-representation oracle: no engine but apr reads a format-unknown file -- a .apr is proven only through its chain to its source (#3957 F8)"
+      ],
+      "format": null,
+      "extracted": {
+        "hf": "7"
+      },
+      "all_wrong": false,
+      "quorum": {
+        "floor": 2,
+        "engines_answered": 1,
+        "answered": [
+          "hf"
+        ],
+        "comparators_answered": [
+          "hf"
+        ],
+        "met": false
+      },
+      "subject": {
+        "model_sha256": "00fe7986ff5f6b463e62455821146049db6f9313603938a70800d1fb69ef11a4",
+        "apr_version": "apr 0.69.1 (feb5ac9a5)",
+        "under_development": false,
+        "development_note": null
+      },
+      "positive_control": true,
+      "oracle": {
+        "type": "state_recall",
+        "expect": "7",
+        "normalize": "int"
+      },
+      "engines": {
+        "apr": {
+          "answered": false,
+          "missing": true,
+          "why": "missing: no row for this engine",
+          "correct": false,
+          "version": "apr 0.69.1 (feb5ac9a5)",
+          "not_ran_reason": "unclassified"
+        },
+        "llama.cpp": {
+          "answered": false,
+          "missing": true,
+          "why": "missing: no row for this engine",
+          "correct": false,
+          "version": "version: 0.4.1-dev (build 10987, commit d1d3c3396)",
+          "not_ran_reason": "unclassified"
+        },
+        "ollama": {
+          "answered": false,
+          "missing": true,
+          "why": "not requested",
+          "correct": false,
+          "version": null,
+          "not_ran_reason": "not_requested"
+        },
+        "hf": {
+          "answered": true,
+          "rc": 0,
+          "why": null,
+          "answer": "<answer>7</answer>",
+          "reported": {
+            "interface": "generate",
+            "thinking_requested": "off",
+            "thinking_emitted": false,
+            "prompt_tokens": 69,
+            "completion_tokens": 20,
+            "device": "cuda:0 NVIDIA GeForce RTX 4090"
+          },
+          "turns": [
+            "<answer>7</answer>",
+            "<answer>7</answer>"
+          ],
+          "correct": true,
+          "version": "fixture-unknown"
+        },
+        "llamafile": {
+          "answered": false,
+          "missing": true,
+          "why": "not requested",
+          "correct": false,
+          "version": null,
+          "not_ran_reason": "not_requested"
+        },
+        "vllm": {
+          "answered": false,
+          "missing": true,
+          "why": "missing: no row for this engine",
+          "correct": false,
+          "version": "fixture-unknown",
+          "not_ran_reason": "unclassified"
+        }
+      },
+      "agreement": {
+        "answered": [
+          "hf"
+        ],
+        "all_identical": false,
+        "apr_matches": []
+      },
+      "token_parity": {
+        "measured": false,
+        "why": "not measured for the chat verb"
+      }
+    },
+    {
+      "key": {
+        "model_sha256": "00fe7986ff5f6b463e62455821146049db6f9313603938a70800d1fb69ef11a4",
+        "host": "gpu-sm89",
+        "verb": "chat",
+        "thinking": "off",
+        "rung": "easy",
+        "prompt_id": "ctl-code-add"
+      },
+      "verdict": "RED",
+      "reasons": [
+        "apr did not answer: missing: no row for this engine",
+        "no same-representation oracle: no engine but apr reads a format-unknown file -- a .apr is proven only through its chain to its source (#3957 F8)"
+      ],
+      "format": null,
+      "extracted": {
+        "hf": "def add(a, b):\n    return a + b"
+      },
+      "all_wrong": false,
+      "quorum": {
+        "floor": 2,
+        "engines_answered": 1,
+        "answered": [
+          "hf"
+        ],
+        "comparators_answered": [
+          "hf"
+        ],
+        "met": false
+      },
+      "subject": {
+        "model_sha256": "00fe7986ff5f6b463e62455821146049db6f9313603938a70800d1fb69ef11a4",
+        "apr_version": "apr 0.69.1 (feb5ac9a5)",
+        "under_development": false,
+        "development_note": null
+      },
+      "positive_control": true,
+      "oracle": {
+        "type": "code_tests",
+        "lang": "python",
+        "entry": "add",
+        "tests": "assert add(2, 3) == 5\nassert add(-4, 4) == 0\nassert add(10, 0) == 10",
+        "timeout_s": 10
+      },
+      "engines": {
+        "apr": {
+          "answered": false,
+          "missing": true,
+          "why": "missing: no row for this engine",
+          "correct": false,
+          "version": "apr 0.69.1 (feb5ac9a5)",
+          "not_ran_reason": "unclassified"
+        },
+        "llama.cpp": {
+          "answered": false,
+          "missing": true,
+          "why": "missing: no row for this engine",
+          "correct": false,
+          "version": "version: 0.4.1-dev (build 10987, commit d1d3c3396)",
+          "not_ran_reason": "unclassified"
+        },
+        "ollama": {
+          "answered": false,
+          "missing": true,
+          "why": "not requested",
+          "correct": false,
+          "version": null,
+          "not_ran_reason": "not_requested"
+        },
+        "hf": {
+          "answered": true,
+          "rc": 0,
+          "why": null,
+          "answer": "```python\ndef add(a, b):\n    return a + b\n```",
+          "reported": {
+            "interface": "generate",
+            "thinking_requested": "off",
+            "thinking_emitted": false,
+            "prompt_tokens": 42,
+            "completion_tokens": 20,
+            "device": "cuda:0 NVIDIA GeForce RTX 4090"
+          },
+          "turns": [
+            "```python\ndef add(a, b):\n    return a + b\n```"
+          ],
+          "correct": true,
+          "version": "fixture-unknown"
+        },
+        "llamafile": {
+          "answered": false,
+          "missing": true,
+          "why": "not requested",
+          "correct": false,
+          "version": null,
+          "not_ran_reason": "not_requested"
+        },
+        "vllm": {
+          "answered": false,
+          "missing": true,
+          "why": "missing: no row for this engine",
+          "correct": false,
+          "version": "fixture-unknown",
+          "not_ran_reason": "unclassified"
+        }
+      },
+      "agreement": {
+        "answered": [
+          "hf"
+        ],
+        "all_identical": false,
+        "apr_matches": []
+      },
+      "token_parity": {
+        "measured": false,
+        "why": "not measured for the chat verb"
+      }
+    },
+    {
+      "key": {
+        "model_sha256": "00fe7986ff5f6b463e62455821146049db6f9313603938a70800d1fb69ef11a4",
+        "host": "gpu-sm89",
+        "verb": "chat",
+        "thinking": "off",
+        "rung": "easy",
+        "prompt_id": "fact-capital-japan"
+      },
+      "verdict": "RED",
+      "reasons": [
+        "apr did not answer: missing: no row for this engine",
+        "no same-representation oracle: no engine but apr reads a format-unknown file -- a .apr is proven only through its chain to its source (#3957 F8)"
+      ],
+      "format": null,
+      "extracted": {
+        "hf": "tokyo"
+      },
+      "all_wrong": false,
+      "quorum": {
+        "floor": 2,
+        "engines_answered": 1,
+        "answered": [
+          "hf"
+        ],
+        "comparators_answered": [
+          "hf"
+        ],
+        "met": false
+      },
+      "subject": {
+        "model_sha256": "00fe7986ff5f6b463e62455821146049db6f9313603938a70800d1fb69ef11a4",
+        "apr_version": "apr 0.69.1 (feb5ac9a5)",
+        "under_development": false,
+        "development_note": null
+      },
+      "positive_control": false,
+      "oracle": {
+        "type": "answer",
+        "expect": "Tokyo",
+        "normalize": "casefold_strip"
+      },
+      "engines": {
+        "apr": {
+          "answered": false,
+          "missing": true,
+          "why": "missing: no row for this engine",
+          "correct": false,
+          "version": "apr 0.69.1 (feb5ac9a5)",
+          "not_ran_reason": "unclassified"
+        },
+        "llama.cpp": {
+          "answered": false,
+          "missing": true,
+          "why": "missing: no row for this engine",
+          "correct": false,
+          "version": "version: 0.4.1-dev (build 10987, commit d1d3c3396)",
+          "not_ran_reason": "unclassified"
+        },
+        "ollama": {
+          "answered": false,
+          "missing": true,
+          "why": "not requested",
+          "correct": false,
+          "version": null,
+          "not_ran_reason": "not_requested"
+        },
+        "hf": {
+          "answered": true,
+          "rc": 0,
+          "why": null,
+          "answer": "The capital city of Japan is Tokyo.\n\n<answer>Tokyo</answer>",
+          "reported": {
+            "interface": "generate",
+            "thinking_requested": "off",
+            "thinking_emitted": false,
+            "prompt_tokens": 31,
+            "completion_tokens": 20,
+            "device": "cuda:0 NVIDIA GeForce RTX 4090"
+          },
+          "turns": [
+            "The capital city of Japan is Tokyo.\n\n<answer>Tokyo</answer>"
+          ],
+          "correct": true,
+          "version": "fixture-unknown"
+        },
+        "llamafile": {
+          "answered": false,
+          "missing": true,
+          "why": "not requested",
+          "correct": false,
+          "version": null,
+          "not_ran_reason": "not_requested"
+        },
+        "vllm": {
+          "answered": false,
+          "missing": true,
+          "why": "missing: no row for this engine",
+          "correct": false,
+          "version": "fixture-unknown",
+          "not_ran_reason": "unclassified"
+        }
+      },
+      "agreement": {
+        "answered": [
+          "hf"
+        ],
+        "all_identical": false,
+        "apr_matches": []
+      },
+      "token_parity": {
+        "measured": false,
+        "why": "not measured for the chat verb"
+      }
+    },
+    {
+      "key": {
+        "model_sha256": "00fe7986ff5f6b463e62455821146049db6f9313603938a70800d1fb69ef11a4",
+        "host": "gpu-sm89",
+        "verb": "chat",
+        "thinking": "off",
+        "rung": "easy",
+        "prompt_id": "fact-capital-france"
+      },
+      "verdict": "RED",
+      "reasons": [
+        "apr did not answer: missing: no row for this engine",
+        "no same-representation oracle: no engine but apr reads a format-unknown file -- a .apr is proven only through its chain to its source (#3957 F8)"
+      ],
+      "format": null,
+      "extracted": {
+        "hf": "paris"
+      },
+      "all_wrong": false,
+      "quorum": {
+        "floor": 2,
+        "engines_answered": 1,
+        "answered": [
+          "hf"
+        ],
+        "comparators_answered": [
+          "hf"
+        ],
+        "met": false
+      },
+      "subject": {
+        "model_sha256": "00fe7986ff5f6b463e62455821146049db6f9313603938a70800d1fb69ef11a4",
+        "apr_version": "apr 0.69.1 (feb5ac9a5)",
+        "under_development": false,
+        "development_note": null
+      },
+      "positive_control": false,
+      "oracle": {
+        "type": "answer",
+        "expect": "Paris",
+        "normalize": "casefold_strip"
+      },
+      "engines": {
+        "apr": {
+          "answered": false,
+          "missing": true,
+          "why": "missing: no row for this engine",
+          "correct": false,
+          "version": "apr 0.69.1 (feb5ac9a5)",
+          "not_ran_reason": "unclassified"
+        },
+        "llama.cpp": {
+          "answered": false,
+          "missing": true,
+          "why": "missing: no row for this engine",
+          "correct": false,
+          "version": "version: 0.4.1-dev (build 10987, commit d1d3c3396)",
+          "not_ran_reason": "unclassified"
+        },
+        "ollama": {
+          "answered": false,
+          "missing": true,
+          "why": "not requested",
+          "correct": false,
+          "version": null,
+          "not_ran_reason": "not_requested"
+        },
+        "hf": {
+          "answered": true,
+          "rc": 0,
+          "why": null,
+          "answer": "The capital city of France is Paris.\n\n<answer>Paris</answer>",
+          "reported": {
+            "interface": "generate",
+            "thinking_requested": "off",
+            "thinking_emitted": false,
+            "prompt_tokens": 31,
+            "completion_tokens": 19,
+            "device": "cuda:0 NVIDIA GeForce RTX 4090"
+          },
+          "turns": [
+            "The capital city of France is Paris.\n\n<answer>Paris</answer>"
+          ],
+          "correct": true,
+          "version": "fixture-unknown"
+        },
+        "llamafile": {
+          "answered": false,
+          "missing": true,
+          "why": "not requested",
+          "correct": false,
+          "version": null,
+          "not_ran_reason": "not_requested"
+        },
+        "vllm": {
+          "answered": false,
+          "missing": true,
+          "why": "missing: no row for this engine",
+          "correct": false,
+          "version": "fixture-unknown",
+          "not_ran_reason": "unclassified"
+        }
+      },
+      "agreement": {
+        "answered": [
+          "hf"
+        ],
+        "all_identical": false,
+        "apr_matches": []
+      },
+      "token_parity": {
+        "measured": false,
+        "why": "not measured for the chat verb"
+      }
+    },
+    {
+      "key": {
+        "model_sha256": "00fe7986ff5f6b463e62455821146049db6f9313603938a70800d1fb69ef11a4",
+        "host": "gpu-sm89",
+        "verb": "chat",
+        "thinking": "off",
+        "rung": "easy",
+        "prompt_id": "golden-paris"
+      },
+      "verdict": "RED",
+      "reasons": [
+        "apr did not answer: missing: no row for this engine",
+        "no same-representation oracle: no engine but apr reads a format-unknown file -- a .apr is proven only through its chain to its source (#3957 F8)"
+      ],
+      "format": null,
+      "extracted": {
+        "hf": "paris"
+      },
+      "all_wrong": false,
+      "quorum": {
+        "floor": 2,
+        "engines_answered": 1,
+        "answered": [
+          "hf"
+        ],
+        "comparators_answered": [
+          "hf"
+        ],
+        "met": false
+      },
+      "subject": {
+        "model_sha256": "00fe7986ff5f6b463e62455821146049db6f9313603938a70800d1fb69ef11a4",
+        "apr_version": "apr 0.69.1 (feb5ac9a5)",
+        "under_development": false,
+        "development_note": null
+      },
+      "positive_control": false,
+      "oracle": {
+        "type": "answer",
+        "expect": "Paris",
+        "normalize": "casefold_strip"
+      },
+      "engines": {
+        "apr": {
+          "answered": false,
+          "missing": true,
+          "why": "missing: no row for this engine",
+          "correct": false,
+          "version": "apr 0.69.1 (feb5ac9a5)",
+          "not_ran_reason": "unclassified"
+        },
+        "llama.cpp": {
+          "answered": false,
+          "missing": true,
+          "why": "missing: no row for this engine",
+          "correct": false,
+          "version": "version: 0.4.1-dev (build 10987, commit d1d3c3396)",
+          "not_ran_reason": "unclassified"
+        },
+        "ollama": {
+          "answered": false,
+          "missing": true,
+          "why": "not requested",
+          "correct": false,
+          "version": null,
+          "not_ran_reason": "not_requested"
+        },
+        "hf": {
+          "answered": true,
+          "rc": 0,
+          "why": null,
+          "answer": "The capital of France is Paris.\n\n<answer>Paris</answer>",
+          "reported": {
+            "interface": "generate",
+            "thinking_requested": "off",
+            "thinking_emitted": false,
+            "prompt_tokens": 30,
+            "completion_tokens": 18,
+            "device": "cuda:0 NVIDIA GeForce RTX 4090"
+          },
+          "turns": [
+            "The capital of France is Paris.\n\n<answer>Paris</answer>"
+          ],
+          "correct": true,
+          "version": "fixture-unknown"
+        },
+        "llamafile": {
+          "answered": false,
+          "missing": true,
+          "why": "not requested",
+          "correct": false,
+          "version": null,
+          "not_ran_reason": "not_requested"
+        },
+        "vllm": {
+          "answered": false,
+          "missing": true,
+          "why": "missing: no row for this engine",
+          "correct": false,
+          "version": "fixture-unknown",
+          "not_ran_reason": "unclassified"
+        }
+      },
+      "agreement": {
+        "answered": [
+          "hf"
+        ],
+        "all_identical": false,
+        "apr_matches": []
+      },
+      "token_parity": {
+        "measured": false,
+        "why": "not measured for the chat verb"
+      }
+    },
+    {
+      "key": {
+        "model_sha256": "00fe7986ff5f6b463e62455821146049db6f9313603938a70800d1fb69ef11a4",
+        "host": "gpu-sm89",
+        "verb": "chat",
+        "thinking": "off",
+        "rung": "easy",
+        "prompt_id": "fact-water-formula"
+      },
+      "verdict": "RED",
+      "reasons": [
+        "apr did not answer: missing: no row for this engine",
+        "no same-representation oracle: no engine but apr reads a format-unknown file -- a .apr is proven only through its chain to its source (#3957 F8)",
+        "ground-truth control FAILED (hf: mismatch) -- a control that cannot answer vouches for nothing; the prompt or the control engine is broken (#3957 Q2, #3971)",
+        "prompt fact-water-formula is not admitted for this model with thinking off by the certification (admitted_by_sha_thinking) -- never shown answerable here (#3962 J2)"
+      ],
+      "format": null,
+      "extracted": {
+        "hf": "h₂o"
+      },
+      "all_wrong": true,
+      "quorum": {
+        "floor": 2,
+        "engines_answered": 1,
+        "answered": [
+          "hf"
+        ],
+        "comparators_answered": [
+          "hf"
+        ],
+        "met": false
+      },
+      "subject": {
+        "model_sha256": "00fe7986ff5f6b463e62455821146049db6f9313603938a70800d1fb69ef11a4",
+        "apr_version": "apr 0.69.1 (feb5ac9a5)",
+        "under_development": false,
+        "development_note": null
+      },
+      "positive_control": false,
+      "oracle": {
+        "type": "answer",
+        "expect": "H2O",
+        "normalize": "casefold_strip"
+      },
+      "engines": {
+        "apr": {
+          "answered": false,
+          "missing": true,
+          "why": "missing: no row for this engine",
+          "correct": false,
+          "version": "apr 0.69.1 (feb5ac9a5)",
+          "not_ran_reason": "unclassified"
+        },
+        "llama.cpp": {
+          "answered": false,
+          "missing": true,
+          "why": "missing: no row for this engine",
+          "correct": false,
+          "version": "version: 0.4.1-dev (build 10987, commit d1d3c3396)",
+          "not_ran_reason": "unclassified"
+        },
+        "ollama": {
+          "answered": false,
+          "missing": true,
+          "why": "not requested",
+          "correct": false,
+          "version": null,
+          "not_ran_reason": "not_requested"
+        },
+        "hf": {
+          "answered": true,
+          "rc": 0,
+          "why": null,
+          "answer": "The chemical formula for water is derived from its composition, which consists of two hydrogen atoms and one oxygen atom chemically bonded together.\n\n<answer>H₂O</answer>",
+          "reported": {
+            "interface": "generate",
+            "thinking_requested": "off",
+            "thinking_emitted": false,
+            "prompt_tokens": 31,
+            "completion_tokens": 38,
+            "device": "cuda:0 NVIDIA GeForce RTX 4090"
+          },
+          "turns": [
+            "The chemical formula for water is derived from its composition, which consists of two hydrogen atoms and one oxygen atom chemically bonded together.\n\n<answer>H₂O</answer>"
+          ],
+          "correct": false,
+          "version": "fixture-unknown"
+        },
+        "llamafile": {
+          "answered": false,
+          "missing": true,
+          "why": "not requested",
+          "correct": false,
+          "version": null,
+          "not_ran_reason": "not_requested"
+        },
+        "vllm": {
+          "answered": false,
+          "missing": true,
+          "why": "missing: no row for this engine",
+          "correct": false,
+          "version": "fixture-unknown",
+          "not_ran_reason": "unclassified"
+        }
+      },
+      "agreement": {
+        "answered": [
+          "hf"
+        ],
+        "all_identical": false,
+        "apr_matches": []
+      },
+      "token_parity": {
+        "measured": false,
+        "why": "not measured for the chat verb"
+      }
+    },
+    {
+      "key": {
+        "model_sha256": "00fe7986ff5f6b463e62455821146049db6f9313603938a70800d1fb69ef11a4",
+        "host": "gpu-sm89",
+        "verb": "chat",
+        "thinking": "off",
+        "rung": "easy",
+        "prompt_id": "arith-17x23"
+      },
+      "verdict": "RED",
+      "reasons": [
+        "apr did not answer: missing: no row for this engine",
+        "no same-representation oracle: no engine but apr reads a format-unknown file -- a .apr is proven only through its chain to its source (#3957 F8)"
+      ],
+      "format": null,
+      "extracted": {
+        "hf": "391"
+      },
+      "all_wrong": false,
+      "quorum": {
+        "floor": 2,
+        "engines_answered": 1,
+        "answered": [
+          "hf"
+        ],
+        "comparators_answered": [
+          "hf"
+        ],
+        "met": false
+      },
+      "subject": {
+        "model_sha256": "00fe7986ff5f6b463e62455821146049db6f9313603938a70800d1fb69ef11a4",
+        "apr_version": "apr 0.69.1 (feb5ac9a5)",
+        "under_development": false,
+        "development_note": null
+      },
+      "positive_control": false,
+      "oracle": {
+        "type": "answer",
+        "expect": "391",
+        "normalize": "int"
+      },
+      "engines": {
+        "apr": {
+          "answered": false,
+          "missing": true,
+          "why": "missing: no row for this engine",
+          "correct": false,
+          "version": "apr 0.69.1 (feb5ac9a5)",
+          "not_ran_reason": "unclassified"
+        },
+        "llama.cpp": {
+          "answered": false,
+          "missing": true,
+          "why": "missing: no row for this engine",
+          "correct": false,
+          "version": "version: 0.4.1-dev (build 10987, commit d1d3c3396)",
+          "not_ran_reason": "unclassified"
+        },
+        "ollama": {
+          "answered": false,
+          "missing": true,
+          "why": "not requested",
+          "correct": false,
+          "version": null,
+          "not_ran_reason": "not_requested"
+        },
+        "hf": {
+          "answered": true,
+          "rc": 0,
+          "why": null,
+          "answer": "To find the product of 17 and 23, we can perform the multiplication:\n\n$$17 \\times 23$$\n\nWe can break this down using the distributive property:\n$$17 \\times (20 + 3)$$\n$$(17 \\times 20) + (17 \\times 3)$$\n$$340 + 51$$\n$$391$$\n\nAlternatively, using standard long multiplication:\n  17\nx 23\n----\n  51  (17 * 3)\n 340  (17 * 20)\n----\n 391\n\n<answer>391</answer>",
+          "reported": {
+            "interface": "generate",
+            "thinking_requested": "off",
+            "thinking_emitted": false,
+            "prompt_tokens": 34,
+            "completion_tokens": 159,
+            "device": "cuda:0 NVIDIA GeForce RTX 4090"
+          },
+          "turns": [
+            "To find the product of 17 and 23, we can perform the multiplication:\n\n$$17 \\times 23$$\n\nWe can break this down using the distributive property:\n$$17 \\times (20 + 3)$$\n$$(17 \\times 20) + (17 \\times 3)$$\n$$340 + 51$$\n$$391$$\n\nAlternatively, using standard long multiplication:\n  17\nx 23\n----\n  51  (17 * 3)\n 340  (17 * 20)\n----\n 391\n\n<answer>391</answer>"
+          ],
+          "correct": true,
+          "version": "fixture-unknown"
+        },
+        "llamafile": {
+          "answered": false,
+          "missing": true,
+          "why": "not requested",
+          "correct": false,
+          "version": null,
+          "not_ran_reason": "not_requested"
+        },
+        "vllm": {
+          "answered": false,
+          "missing": true,
+          "why": "missing: no row for this engine",
+          "correct": false,
+          "version": "fixture-unknown",
+          "not_ran_reason": "unclassified"
+        }
+      },
+      "agreement": {
+        "answered": [
+          "hf"
+        ],
+        "all_identical": false,
+        "apr_matches": []
+      },
+      "token_parity": {
+        "measured": false,
+        "why": "not measured for the chat verb"
+      }
+    },
+    {
+      "key": {
+        "model_sha256": "00fe7986ff5f6b463e62455821146049db6f9313603938a70800d1fb69ef11a4",
+        "host": "gpu-sm89",
+        "verb": "chat",
+        "thinking": "off",
+        "rung": "easy",
+        "prompt_id": "arith-precedence"
+      },
+      "verdict": "RED",
+      "reasons": [
+        "apr did not answer: missing: no row for this engine",
+        "no same-representation oracle: no engine but apr reads a format-unknown file -- a .apr is proven only through its chain to its source (#3957 F8)"
+      ],
+      "format": null,
+      "extracted": {
+        "hf": "23"
+      },
+      "all_wrong": false,
+      "quorum": {
+        "floor": 2,
+        "engines_answered": 1,
+        "answered": [
+          "hf"
+        ],
+        "comparators_answered": [
+          "hf"
+        ],
+        "met": false
+      },
+      "subject": {
+        "model_sha256": "00fe7986ff5f6b463e62455821146049db6f9313603938a70800d1fb69ef11a4",
+        "apr_version": "apr 0.69.1 (feb5ac9a5)",
+        "under_development": false,
+        "development_note": null
+      },
+      "positive_control": false,
+      "oracle": {
+        "type": "answer",
+        "expect": "23",
+        "normalize": "int"
+      },
+      "engines": {
+        "apr": {
+          "answered": false,
+          "missing": true,
+          "why": "missing: no row for this engine",
+          "correct": false,
+          "version": "apr 0.69.1 (feb5ac9a5)",
+          "not_ran_reason": "unclassified"
+        },
+        "llama.cpp": {
+          "answered": false,
+          "missing": true,
+          "why": "missing: no row for this engine",
+          "correct": false,
+          "version": "version: 0.4.1-dev (build 10987, commit d1d3c3396)",
+          "not_ran_reason": "unclassified"
+        },
+        "ollama": {
+          "answered": false,
+          "missing": true,
+          "why": "not requested",
+          "correct": false,
+          "version": null,
+          "not_ran_reason": "not_requested"
+        },
+        "hf": {
+          "answered": true,
+          "rc": 0,
+          "why": null,
+          "answer": "To solve the expression $3 + 4 \\times 5$, we must follow the order of operations (PEMDAS/BODMAS), which states that multiplication is performed before addition.\n\n1.  **Multiplication**: Calculate $4 \\times 5$.\n    $$4 \\times 5 = 20$$\n2.  **Addition**: Add the result to 3.\n    $$3 + 20 = 23$$\n\n<answer>23</answer>",
+          "reported": {
+            "interface": "generate",
+            "thinking_requested": "off",
+            "thinking_emitted": false,
+            "prompt_tokens": 34,
+            "completion_tokens": 107,
+            "device": "cuda:0 NVIDIA GeForce RTX 4090"
+          },
+          "turns": [
+            "To solve the expression $3 + 4 \\times 5$, we must follow the order of operations (PEMDAS/BODMAS), which states that multiplication is performed before addition.\n\n1.  **Multiplication**: Calculate $4 \\times 5$.\n    $$4 \\times 5 = 20$$\n2.  **Addition**: Add the result to 3.\n    $$3 + 20 = 23$$\n\n<answer>23</answer>"
+          ],
+          "correct": true,
+          "version": "fixture-unknown"
+        },
+        "llamafile": {
+          "answered": false,
+          "missing": true,
+          "why": "not requested",
+          "correct": false,
+          "version": null,
+          "not_ran_reason": "not_requested"
+        },
+        "vllm": {
+          "answered": false,
+          "missing": true,
+          "why": "missing: no row for this engine",
+          "correct": false,
+          "version": "fixture-unknown",
+          "not_ran_reason": "unclassified"
+        }
+      },
+      "agreement": {
+        "answered": [
+          "hf"
+        ],
+        "all_identical": false,
+        "apr_matches": []
+      },
+      "token_parity": {
+        "measured": false,
+        "why": "not measured for the chat verb"
+      }
+    },
+    {
+      "key": {
+        "model_sha256": "00fe7986ff5f6b463e62455821146049db6f9313603938a70800d1fb69ef11a4",
+        "host": "gpu-sm89",
+        "verb": "chat",
+        "thinking": "off",
+        "rung": "easy",
+        "prompt_id": "arith-word-apples"
+      },
+      "verdict": "RED",
+      "reasons": [
+        "apr did not answer: missing: no row for this engine",
+        "no same-representation oracle: no engine but apr reads a format-unknown file -- a .apr is proven only through its chain to its source (#3957 F8)"
+      ],
+      "format": null,
+      "extracted": {
+        "hf": "56"
+      },
+      "all_wrong": false,
+      "quorum": {
+        "floor": 2,
+        "engines_answered": 1,
+        "answered": [
+          "hf"
+        ],
+        "comparators_answered": [
+          "hf"
+        ],
+        "met": false
+      },
+      "subject": {
+        "model_sha256": "00fe7986ff5f6b463e62455821146049db6f9313603938a70800d1fb69ef11a4",
+        "apr_version": "apr 0.69.1 (feb5ac9a5)",
+        "under_development": false,
+        "development_note": null
+      },
+      "positive_control": false,
+      "oracle": {
+        "type": "answer",
+        "expect": "56",
+        "normalize": "int"
+      },
+      "engines": {
+        "apr": {
+          "answered": false,
+          "missing": true,
+          "why": "missing: no row for this engine",
+          "correct": false,
+          "version": "apr 0.69.1 (feb5ac9a5)",
+          "not_ran_reason": "unclassified"
+        },
+        "llama.cpp": {
+          "answered": false,
+          "missing": true,
+          "why": "missing: no row for this engine",
+          "correct": false,
+          "version": "version: 0.4.1-dev (build 10987, commit d1d3c3396)",
+          "not_ran_reason": "unclassified"
+        },
+        "ollama": {
+          "answered": false,
+          "missing": true,
+          "why": "not requested",
+          "correct": false,
+          "version": null,
+          "not_ran_reason": "not_requested"
+        },
+        "hf": {
+          "answered": true,
+          "rc": 0,
+          "why": null,
+          "answer": "To find the current number of apples, we follow these steps:\n\n1.  **Start with the initial amount**: The shop has 48 apples.\n2.  **Subtract the sold apples**: The shop sells 17 apples.\n    $$48 - 17 = 31$$\n    The shop now has 31 apples.\n3.  **Add the delivered apples**: The shop receives a delivery of 25 apples.\n    $$31 + 25 = 56$$\n\nThe shop now has 56 apples.\n\n<answer>56</answer>",
+          "reported": {
+            "interface": "generate",
+            "thinking_requested": "off",
+            "thinking_emitted": false,
+            "prompt_tokens": 54,
+            "completion_tokens": 133,
+            "device": "cuda:0 NVIDIA GeForce RTX 4090"
+          },
+          "turns": [
+            "To find the current number of apples, we follow these steps:\n\n1.  **Start with the initial amount**: The shop has 48 apples.\n2.  **Subtract the sold apples**: The shop sells 17 apples.\n    $$48 - 17 = 31$$\n    The shop now has 31 apples.\n3.  **Add the delivered apples**: The shop receives a delivery of 25 apples.\n    $$31 + 25 = 56$$\n\nThe shop now has 56 apples.\n\n<answer>56</answer>"
+          ],
+          "correct": true,
+          "version": "fixture-unknown"
+        },
+        "llamafile": {
+          "answered": false,
+          "missing": true,
+          "why": "not requested",
+          "correct": false,
+          "version": null,
+          "not_ran_reason": "not_requested"
+        },
+        "vllm": {
+          "answered": false,
+          "missing": true,
+          "why": "missing: no row for this engine",
+          "correct": false,
+          "version": "fixture-unknown",
+          "not_ran_reason": "unclassified"
+        }
+      },
+      "agreement": {
+        "answered": [
+          "hf"
+        ],
+        "all_identical": false,
+        "apr_matches": []
+      },
+      "token_parity": {
+        "measured": false,
+        "why": "not measured for the chat verb"
+      }
+    },
+    {
+      "key": {
+        "model_sha256": "00fe7986ff5f6b463e62455821146049db6f9313603938a70800d1fb69ef11a4",
+        "host": "gpu-sm89",
+        "verb": "chat",
+        "thinking": "off",
+        "rung": "hard",
+        "prompt_id": "hard-add-4digit"
+      },
+      "verdict": "RED",
+      "reasons": [
+        "apr did not answer: missing: no row for this engine",
+        "no same-representation oracle: no engine but apr reads a format-unknown file -- a .apr is proven only through its chain to its source (#3957 F8)"
+      ],
+      "format": null,
+      "extracted": {
+        "hf": "8613"
+      },
+      "all_wrong": false,
+      "quorum": {
+        "floor": 2,
+        "engines_answered": 1,
+        "answered": [
+          "hf"
+        ],
+        "comparators_answered": [
+          "hf"
+        ],
+        "met": false
+      },
+      "subject": {
+        "model_sha256": "00fe7986ff5f6b463e62455821146049db6f9313603938a70800d1fb69ef11a4",
+        "apr_version": "apr 0.69.1 (feb5ac9a5)",
+        "under_development": false,
+        "development_note": null
+      },
+      "positive_control": false,
+      "oracle": {
+        "type": "answer",
+        "expect": "8613",
+        "normalize": "int"
+      },
+      "engines": {
+        "apr": {
+          "answered": false,
+          "missing": true,
+          "why": "missing: no row for this engine",
+          "correct": false,
+          "version": "apr 0.69.1 (feb5ac9a5)",
+          "not_ran_reason": "unclassified"
+        },
+        "llama.cpp": {
+          "answered": false,
+          "missing": true,
+          "why": "missing: no row for this engine",
+          "correct": false,
+          "version": "version: 0.4.1-dev (build 10987, commit d1d3c3396)",
+          "not_ran_reason": "unclassified"
+        },
+        "ollama": {
+          "answered": false,
+          "missing": true,
+          "why": "not requested",
+          "correct": false,
+          "version": null,
+          "not_ran_reason": "not_requested"
+        },
+        "hf": {
+          "answered": true,
+          "rc": 0,
+          "why": null,
+          "answer": "To find the sum of 4817 and 3796, we can add the numbers column by column from right to left:\n\n1.  **Ones place**: $7 + 6 = 13$. Write down 3, carry over 1.\n2.  **Tens place**: $1 + 9 = 10$. Add the carried 1: $10 + 1 = 11$. Write down 1, carry over 1.\n3.  **Hundreds place**: $8 + 7 = 15$. Add the carried 1: $15 + 1 = 16$. Write down 6, carry over 1.\n4.  **Thousands place**: $4 + 3 = 7$. Add the carried 1: $7 + 1 = 8$. Write down 8.\n\nCombining these digits gives us 8613.\n\n<answer>8613</answer>",
+          "reported": {
+            "interface": "generate",
+            "thinking_requested": "off",
+            "thinking_emitted": false,
+            "prompt_tokens": 37,
+            "completion_tokens": 214,
+            "device": "cuda:0 NVIDIA GeForce RTX 4090"
+          },
+          "turns": [
+            "To find the sum of 4817 and 3796, we can add the numbers column by column from right to left:\n\n1.  **Ones place**: $7 + 6 = 13$. Write down 3, carry over 1.\n2.  **Tens place**: $1 + 9 = 10$. Add the carried 1: $10 + 1 = 11$. Write down 1, carry over 1.\n3.  **Hundreds place**: $8 + 7 = 15$. Add the carried 1: $15 + 1 = 16$. Write down 6, carry over 1.\n4.  **Thousands place**: $4 + 3 = 7$. Add the carried 1: $7 + 1 = 8$. Write down 8.\n\nCombining these digits gives us 8613.\n\n<answer>8613</answer>"
+          ],
+          "correct": true,
+          "version": "fixture-unknown"
+        },
+        "llamafile": {
+          "answered": false,
+          "missing": true,
+          "why": "not requested",
+          "correct": false,
+          "version": null,
+          "not_ran_reason": "not_requested"
+        },
+        "vllm": {
+          "answered": false,
+          "missing": true,
+          "why": "missing: no row for this engine",
+          "correct": false,
+          "version": "fixture-unknown",
+          "not_ran_reason": "unclassified"
+        }
+      },
+      "agreement": {
+        "answered": [
+          "hf"
+        ],
+        "all_identical": false,
+        "apr_matches": []
+      },
+      "token_parity": {
+        "measured": false,
+        "why": "not measured for the chat verb"
+      }
+    },
+    {
+      "key": {
+        "model_sha256": "00fe7986ff5f6b463e62455821146049db6f9313603938a70800d1fb69ef11a4",
+        "host": "gpu-sm89",
+        "verb": "chat",
+        "thinking": "off",
+        "rung": "hard",
+        "prompt_id": "hard-not-prime"
+      },
+      "verdict": "RED",
+      "reasons": [
+        "apr did not answer: missing: no row for this engine",
+        "no same-representation oracle: no engine but apr reads a format-unknown file -- a .apr is proven only through its chain to its source (#3957 F8)"
+      ],
+      "format": null,
+      "extracted": {
+        "hf": "15"
+      },
+      "all_wrong": false,
+      "quorum": {
+        "floor": 2,
+        "engines_answered": 1,
+        "answered": [
+          "hf"
+        ],
+        "comparators_answered": [
+          "hf"
+        ],
+        "met": false
+      },
+      "subject": {
+        "model_sha256": "00fe7986ff5f6b463e62455821146049db6f9313603938a70800d1fb69ef11a4",
+        "apr_version": "apr 0.69.1 (feb5ac9a5)",
+        "under_development": false,
+        "development_note": null
+      },
+      "positive_control": false,
+      "oracle": {
+        "type": "answer",
+        "expect": "15",
+        "normalize": "int"
+      },
+      "engines": {
+        "apr": {
+          "answered": false,
+          "missing": true,
+          "why": "missing: no row for this engine",
+          "correct": false,
+          "version": "apr 0.69.1 (feb5ac9a5)",
+          "not_ran_reason": "unclassified"
+        },
+        "llama.cpp": {
+          "answered": false,
+          "missing": true,
+          "why": "missing: no row for this engine",
+          "correct": false,
+          "version": "version: 0.4.1-dev (build 10987, commit d1d3c3396)",
+          "not_ran_reason": "unclassified"
+        },
+        "ollama": {
+          "answered": false,
+          "missing": true,
+          "why": "not requested",
+          "correct": false,
+          "version": null,
+          "not_ran_reason": "not_requested"
+        },
+        "hf": {
+          "answered": true,
+          "rc": 0,
+          "why": null,
+          "answer": "To determine which number is not prime, let's analyze each number in the list: 7, 11, 15, and 13.\n\n1.  **7**: The only divisors of 7 are 1 and 7. Since it has no other divisors, **7 is prime**.\n2.  **11**: The only divisors of 11 are 1 and 11. Since it has no other divisors, **11 is prime**.\n3.  **13**: The only divisors of 13 are 1 and 13. Since it has no other divisors, **13 is prime**.\n4.  **15**: The divisors of 15 are 1, 3, 5, and 15. Since it has divisors other than 1 and itself (specifically 3 and 5), **15 is not prime** (it is composite).\n\nTherefore, the number that is not prime is 15.\n\n<answer>15</answer>",
+          "reported": {
+            "interface": "generate",
+            "thinking_requested": "off",
+            "thinking_emitted": false,
+            "prompt_tokens": 50,
+            "completion_tokens": 231,
+            "device": "cuda:0 NVIDIA GeForce RTX 4090"
+          },
+          "turns": [
+            "To determine which number is not prime, let's analyze each number in the list: 7, 11, 15, and 13.\n\n1.  **7**: The only divisors of 7 are 1 and 7. Since it has no other divisors, **7 is prime**.\n2.  **11**: The only divisors of 11 are 1 and 11. Since it has no other divisors, **11 is prime**.\n3.  **13**: The only divisors of 13 are 1 and 13. Since it has no other divisors, **13 is prime**.\n4.  **15**: The divisors of 15 are 1, 3, 5, and 15. Since it has divisors other than 1 and itself (specifically 3 and 5), **15 is not prime** (it is composite).\n\nTherefore, the number that is not prime is 15.\n\n<answer>15</answer>"
+          ],
+          "correct": true,
+          "version": "fixture-unknown"
+        },
+        "llamafile": {
+          "answered": false,
+          "missing": true,
+          "why": "not requested",
+          "correct": false,
+          "version": null,
+          "not_ran_reason": "not_requested"
+        },
+        "vllm": {
+          "answered": false,
+          "missing": true,
+          "why": "missing: no row for this engine",
+          "correct": false,
+          "version": "fixture-unknown",
+          "not_ran_reason": "unclassified"
+        }
+      },
+      "agreement": {
+        "answered": [
+          "hf"
+        ],
+        "all_identical": false,
+        "apr_matches": []
+      },
+      "token_parity": {
+        "measured": false,
+        "why": "not measured for the chat verb"
+      }
+    },
+    {
+      "key": {
+        "model_sha256": "00fe7986ff5f6b463e62455821146049db6f9313603938a70800d1fb69ef11a4",
+        "host": "gpu-sm89",
+        "verb": "chat",
+        "thinking": "off",
+        "rung": "hard",
+        "prompt_id": "hard-reverse-word"
+      },
+      "verdict": "RED",
+      "reasons": [
+        "apr did not answer: missing: no row for this engine",
+        "no same-representation oracle: no engine but apr reads a format-unknown file -- a .apr is proven only through its chain to its source (#3957 F8)"
+      ],
+      "format": null,
+      "extracted": {
+        "hf": "tenalp"
+      },
+      "all_wrong": false,
+      "quorum": {
+        "floor": 2,
+        "engines_answered": 1,
+        "answered": [
+          "hf"
+        ],
+        "comparators_answered": [
+          "hf"
+        ],
+        "met": false
+      },
+      "subject": {
+        "model_sha256": "00fe7986ff5f6b463e62455821146049db6f9313603938a70800d1fb69ef11a4",
+        "apr_version": "apr 0.69.1 (feb5ac9a5)",
+        "under_development": false,
+        "development_note": null
+      },
+      "positive_control": false,
+      "oracle": {
+        "type": "answer",
+        "expect": "tenalp",
+        "normalize": "casefold_strip"
+      },
+      "engines": {
+        "apr": {
+          "answered": false,
+          "missing": true,
+          "why": "missing: no row for this engine",
+          "correct": false,
+          "version": "apr 0.69.1 (feb5ac9a5)",
+          "not_ran_reason": "unclassified"
+        },
+        "llama.cpp": {
+          "answered": false,
+          "missing": true,
+          "why": "missing: no row for this engine",
+          "correct": false,
+          "version": "version: 0.4.1-dev (build 10987, commit d1d3c3396)",
+          "not_ran_reason": "unclassified"
+        },
+        "ollama": {
+          "answered": false,
+          "missing": true,
+          "why": "not requested",
+          "correct": false,
+          "version": null,
+          "not_ran_reason": "not_requested"
+        },
+        "hf": {
+          "answered": true,
+          "rc": 0,
+          "why": null,
+          "answer": "<answer>tenalp</answer>",
+          "reported": {
+            "interface": "generate",
+            "thinking_requested": "off",
+            "thinking_emitted": false,
+            "prompt_tokens": 32,
+            "completion_tokens": 11,
+            "device": "cuda:0 NVIDIA GeForce RTX 4090"
+          },
+          "turns": [
+            "<answer>tenalp</answer>"
+          ],
+          "correct": true,
+          "version": "fixture-unknown"
+        },
+        "llamafile": {
+          "answered": false,
+          "missing": true,
+          "why": "not requested",
+          "correct": false,
+          "version": null,
+          "not_ran_reason": "not_requested"
+        },
+        "vllm": {
+          "answered": false,
+          "missing": true,
+          "why": "missing: no row for this engine",
+          "correct": false,
+          "version": "fixture-unknown",
+          "not_ran_reason": "unclassified"
+        }
+      },
+      "agreement": {
+        "answered": [
+          "hf"
+        ],
+        "all_identical": false,
+        "apr_matches": []
+      },
+      "token_parity": {
+        "measured": false,
+        "why": "not measured for the chat verb"
+      }
+    },
+    {
+      "key": {
+        "model_sha256": "00fe7986ff5f6b463e62455821146049db6f9313603938a70800d1fb69ef11a4",
+        "host": "gpu-sm89",
+        "verb": "chat",
+        "thinking": "off",
+        "rung": "hard",
+        "prompt_id": "hard-count-letters"
+      },
+      "verdict": "RED",
+      "reasons": [
+        "apr did not answer: missing: no row for this engine",
+        "no same-representation oracle: no engine but apr reads a format-unknown file -- a .apr is proven only through its chain to its source (#3957 F8)"
+      ],
+      "format": null,
+      "extracted": {
+        "hf": "3"
+      },
+      "all_wrong": false,
+      "quorum": {
+        "floor": 2,
+        "engines_answered": 1,
+        "answered": [
+          "hf"
+        ],
+        "comparators_answered": [
+          "hf"
+        ],
+        "met": false
+      },
+      "subject": {
+        "model_sha256": "00fe7986ff5f6b463e62455821146049db6f9313603938a70800d1fb69ef11a4",
+        "apr_version": "apr 0.69.1 (feb5ac9a5)",
+        "under_development": false,
+        "development_note": null
+      },
+      "positive_control": false,
+      "oracle": {
+        "type": "answer",
+        "expect": "3",
+        "normalize": "int"
+      },
+      "engines": {
+        "apr": {
+          "answered": false,
+          "missing": true,
+          "why": "missing: no row for this engine",
+          "correct": false,
+          "version": "apr 0.69.1 (feb5ac9a5)",
+          "not_ran_reason": "unclassified"
+        },
+        "llama.cpp": {
+          "answered": false,
+          "missing": true,
+          "why": "missing: no row for this engine",
+          "correct": false,
+          "version": "version: 0.4.1-dev (build 10987, commit d1d3c3396)",
+          "not_ran_reason": "unclassified"
+        },
+        "ollama": {
+          "answered": false,
+          "missing": true,
+          "why": "not requested",
+          "correct": false,
+          "version": null,
+          "not_ran_reason": "not_requested"
+        },
+        "hf": {
+          "answered": true,
+          "rc": 0,
+          "why": null,
+          "answer": "To determine how many times the letter 'r' appears in the word \"strawberry\", let's break down the word letter by letter:\n\n1.  s\n2.  t\n3.  **r** (1)\n4.  a\n5.  w\n6.  b\n7.  e\n8.  **r** (2)\n9.  **r** (3)\n10. y\n\nThe letter 'r' appears at positions 3, 8, and 9.\n\nTotal count: 3\n\n<answer>3</answer>",
+          "reported": {
+            "interface": "generate",
+            "thinking_requested": "off",
+            "thinking_emitted": false,
+            "prompt_tokens": 41,
+            "completion_tokens": 130,
+            "device": "cuda:0 NVIDIA GeForce RTX 4090"
+          },
+          "turns": [
+            "To determine how many times the letter 'r' appears in the word \"strawberry\", let's break down the word letter by letter:\n\n1.  s\n2.  t\n3.  **r** (1)\n4.  a\n5.  w\n6.  b\n7.  e\n8.  **r** (2)\n9.  **r** (3)\n10. y\n\nThe letter 'r' appears at positions 3, 8, and 9.\n\nTotal count: 3\n\n<answer>3</answer>"
+          ],
+          "correct": true,
+          "version": "fixture-unknown"
+        },
+        "llamafile": {
+          "answered": false,
+          "missing": true,
+          "why": "not requested",
+          "correct": false,
+          "version": null,
+          "not_ran_reason": "not_requested"
+        },
+        "vllm": {
+          "answered": false,
+          "missing": true,
+          "why": "missing: no row for this engine",
+          "correct": false,
+          "version": "fixture-unknown",
+          "not_ran_reason": "unclassified"
+        }
+      },
+      "agreement": {
+        "answered": [
+          "hf"
+        ],
+        "all_identical": false,
+        "apr_matches": []
+      },
+      "token_parity": {
+        "measured": false,
+        "why": "not measured for the chat verb"
+      }
+    },
+    {
+      "key": {
+        "model_sha256": "00fe7986ff5f6b463e62455821146049db6f9313603938a70800d1fb69ef11a4",
+        "host": "gpu-sm89",
+        "verb": "chat",
+        "thinking": "off",
+        "rung": "easy",
+        "prompt_id": "recall-cats"
+      },
+      "verdict": "RED",
+      "reasons": [
+        "apr did not answer: missing: no row for this engine",
+        "no same-representation oracle: no engine but apr reads a format-unknown file -- a .apr is proven only through its chain to its source (#3957 F8)"
+      ],
+      "format": null,
+      "extracted": {
+        "hf": "5"
+      },
+      "all_wrong": false,
+      "quorum": {
+        "floor": 2,
+        "engines_answered": 1,
+        "answered": [
+          "hf"
+        ],
+        "comparators_answered": [
+          "hf"
+        ],
+        "met": false
+      },
+      "subject": {
+        "model_sha256": "00fe7986ff5f6b463e62455821146049db6f9313603938a70800d1fb69ef11a4",
+        "apr_version": "apr 0.69.1 (feb5ac9a5)",
+        "under_development": false,
+        "development_note": null
+      },
+      "positive_control": false,
+      "oracle": {
+        "type": "state_recall",
+        "expect": "5",
+        "normalize": "int"
+      },
+      "engines": {
+        "apr": {
+          "answered": false,
+          "missing": true,
+          "why": "missing: no row for this engine",
+          "correct": false,
+          "version": "apr 0.69.1 (feb5ac9a5)",
+          "not_ran_reason": "unclassified"
+        },
+        "llama.cpp": {
+          "answered": false,
+          "missing": true,
+          "why": "missing: no row for this engine",
+          "correct": false,
+          "version": "version: 0.4.1-dev (build 10987, commit d1d3c3396)",
+          "not_ran_reason": "unclassified"
+        },
+        "ollama": {
+          "answered": false,
+          "missing": true,
+          "why": "not requested",
+          "correct": false,
+          "version": null,
+          "not_ran_reason": "not_requested"
+        },
+        "hf": {
+          "answered": true,
+          "rc": 0,
+          "why": null,
+          "answer": "<answer>5</answer>",
+          "reported": {
+            "interface": "generate",
+            "thinking_requested": "off",
+            "thinking_emitted": false,
+            "prompt_tokens": 183,
+            "completion_tokens": 113,
+            "device": "cuda:0 NVIDIA GeForce RTX 4090"
+          },
+          "turns": [
+            "<answer>That's wonderful! Caring for three cats is a big responsibility, but also a very rewarding one. Is there anything specific you'd like to know about cat care, behavior, or anything else related to your feline friends?</answer>",
+            "<answer>That's great! You now have 5 cats in total. Is there anything specific you'd like to know about managing a larger cat household, such as feeding, litter box management, or enrichment activities?</answer>",
+            "<answer>5</answer>"
+          ],
+          "correct": true,
+          "version": "fixture-unknown"
+        },
+        "llamafile": {
+          "answered": false,
+          "missing": true,
+          "why": "not requested",
+          "correct": false,
+          "version": null,
+          "not_ran_reason": "not_requested"
+        },
+        "vllm": {
+          "answered": false,
+          "missing": true,
+          "why": "missing: no row for this engine",
+          "correct": false,
+          "version": "fixture-unknown",
+          "not_ran_reason": "unclassified"
+        }
+      },
+      "agreement": {
+        "answered": [
+          "hf"
+        ],
+        "all_identical": false,
+        "apr_matches": []
+      },
+      "token_parity": {
+        "measured": false,
+        "why": "not measured for the chat verb"
+      }
+    },
+    {
+      "key": {
+        "model_sha256": "00fe7986ff5f6b463e62455821146049db6f9313603938a70800d1fb69ef11a4",
+        "host": "gpu-sm89",
+        "verb": "chat",
+        "thinking": "off",
+        "rung": "easy",
+        "prompt_id": "recall-name"
+      },
+      "verdict": "RED",
+      "reasons": [
+        "apr did not answer: missing: no row for this engine",
+        "no same-representation oracle: no engine but apr reads a format-unknown file -- a .apr is proven only through its chain to its source (#3957 F8)"
+      ],
+      "format": null,
+      "extracted": {
+        "hf": "ada"
+      },
+      "all_wrong": false,
+      "quorum": {
+        "floor": 2,
+        "engines_answered": 1,
+        "answered": [
+          "hf"
+        ],
+        "comparators_answered": [
+          "hf"
+        ],
+        "met": false
+      },
+      "subject": {
+        "model_sha256": "00fe7986ff5f6b463e62455821146049db6f9313603938a70800d1fb69ef11a4",
+        "apr_version": "apr 0.69.1 (feb5ac9a5)",
+        "under_development": false,
+        "development_note": null
+      },
+      "positive_control": false,
+      "oracle": {
+        "type": "state_recall",
+        "expect": "Ada",
+        "normalize": "casefold_strip"
+      },
+      "engines": {
+        "apr": {
+          "answered": false,
+          "missing": true,
+          "why": "missing: no row for this engine",
+          "correct": false,
+          "version": "apr 0.69.1 (feb5ac9a5)",
+          "not_ran_reason": "unclassified"
+        },
+        "llama.cpp": {
+          "answered": false,
+          "missing": true,
+          "why": "missing: no row for this engine",
+          "correct": false,
+          "version": "version: 0.4.1-dev (build 10987, commit d1d3c3396)",
+          "not_ran_reason": "unclassified"
+        },
+        "ollama": {
+          "answered": false,
+          "missing": true,
+          "why": "not requested",
+          "correct": false,
+          "version": null,
+          "not_ran_reason": "not_requested"
+        },
+        "hf": {
+          "answered": true,
+          "rc": 0,
+          "why": null,
+          "answer": "<answer>Ada</answer>",
+          "reported": {
+            "interface": "generate",
+            "thinking_requested": "off",
+            "thinking_emitted": false,
+            "prompt_tokens": 99,
+            "completion_tokens": 31,
+            "device": "cuda:0 NVIDIA GeForce RTX 4090"
+          },
+          "turns": [
+            "<answer>Hello Ada!</answer>",
+            "<answer>15</answer>",
+            "<answer>Ada</answer>"
+          ],
+          "correct": true,
+          "version": "fixture-unknown"
+        },
+        "llamafile": {
+          "answered": false,
+          "missing": true,
+          "why": "not requested",
+          "correct": false,
+          "version": null,
+          "not_ran_reason": "not_requested"
+        },
+        "vllm": {
+          "answered": false,
+          "missing": true,
+          "why": "missing: no row for this engine",
+          "correct": false,
+          "version": "fixture-unknown",
+          "not_ran_reason": "unclassified"
+        }
+      },
+      "agreement": {
+        "answered": [
+          "hf"
+        ],
+        "all_identical": false,
+        "apr_matches": []
+      },
+      "token_parity": {
+        "measured": false,
+        "why": "not measured for the chat verb"
+      }
+    },
+    {
+      "key": {
+        "model_sha256": "00fe7986ff5f6b463e62455821146049db6f9313603938a70800d1fb69ef11a4",
+        "host": "gpu-sm89",
+        "verb": "chat",
+        "thinking": "off",
+        "rung": "hard",
+        "prompt_id": "recall-arith-chain"
+      },
+      "verdict": "RED",
+      "reasons": [
+        "apr did not answer: missing: no row for this engine",
+        "no same-representation oracle: no engine but apr reads a format-unknown file -- a .apr is proven only through its chain to its source (#3957 F8)"
+      ],
+      "format": null,
+      "extracted": {
+        "hf": "7"
+      },
+      "all_wrong": false,
+      "quorum": {
+        "floor": 2,
+        "engines_answered": 1,
+        "answered": [
+          "hf"
+        ],
+        "comparators_answered": [
+          "hf"
+        ],
+        "met": false
+      },
+      "subject": {
+        "model_sha256": "00fe7986ff5f6b463e62455821146049db6f9313603938a70800d1fb69ef11a4",
+        "apr_version": "apr 0.69.1 (feb5ac9a5)",
+        "under_development": false,
+        "development_note": null
+      },
+      "positive_control": false,
+      "oracle": {
+        "type": "state_recall",
+        "expect": "7",
+        "normalize": "int"
+      },
+      "engines": {
+        "apr": {
+          "answered": false,
+          "missing": true,
+          "why": "missing: no row for this engine",
+          "correct": false,
+          "version": "apr 0.69.1 (feb5ac9a5)",
+          "not_ran_reason": "unclassified"
+        },
+        "llama.cpp": {
+          "answered": false,
+          "missing": true,
+          "why": "missing: no row for this engine",
+          "correct": false,
+          "version": "version: 0.4.1-dev (build 10987, commit d1d3c3396)",
+          "not_ran_reason": "unclassified"
+        },
+        "ollama": {
+          "answered": false,
+          "missing": true,
+          "why": "not requested",
+          "correct": false,
+          "version": null,
+          "not_ran_reason": "not_requested"
+        },
+        "hf": {
+          "answered": true,
+          "rc": 0,
+          "why": null,
+          "answer": "<answer>7</answer>",
+          "reported": {
+            "interface": "generate",
+            "thinking_requested": "off",
+            "thinking_emitted": false,
+            "prompt_tokens": 101,
+            "completion_tokens": 31,
+            "device": "cuda:0 NVIDIA GeForce RTX 4090"
+          },
+          "turns": [
+            "<answer>4</answer>",
+            "<answer>12</answer>",
+            "<answer>7</answer>"
+          ],
+          "correct": true,
+          "version": "fixture-unknown"
+        },
+        "llamafile": {
+          "answered": false,
+          "missing": true,
+          "why": "not requested",
+          "correct": false,
+          "version": null,
+          "not_ran_reason": "not_requested"
+        },
+        "vllm": {
+          "answered": false,
+          "missing": true,
+          "why": "missing: no row for this engine",
+          "correct": false,
+          "version": "fixture-unknown",
+          "not_ran_reason": "unclassified"
+        }
+      },
+      "agreement": {
+        "answered": [
+          "hf"
+        ],
+        "all_identical": false,
+        "apr_matches": []
+      },
+      "token_parity": {
+        "measured": false,
+        "why": "not measured for the chat verb"
+      }
+    },
+    {
+      "key": {
+        "model_sha256": "00fe7986ff5f6b463e62455821146049db6f9313603938a70800d1fb69ef11a4",
+        "host": "gpu-sm89",
+        "verb": "chat",
+        "thinking": "off",
+        "rung": "easy",
+        "prompt_id": "code-is-palindrome"
+      },
+      "verdict": "RED",
+      "reasons": [
+        "apr did not answer: missing: no row for this engine",
+        "no same-representation oracle: no engine but apr reads a format-unknown file -- a .apr is proven only through its chain to its source (#3957 F8)"
+      ],
+      "format": null,
+      "extracted": {
+        "hf": "def is_palindrome(s):\n    cleaned = ''.join(char.lower() for char in s if char.isalnum())\n    return cleaned == cleaned[::-1]"
+      },
+      "all_wrong": false,
+      "quorum": {
+        "floor": 2,
+        "engines_answered": 1,
+        "answered": [
+          "hf"
+        ],
+        "comparators_answered": [
+          "hf"
+        ],
+        "met": false
+      },
+      "subject": {
+        "model_sha256": "00fe7986ff5f6b463e62455821146049db6f9313603938a70800d1fb69ef11a4",
+        "apr_version": "apr 0.69.1 (feb5ac9a5)",
+        "under_development": false,
+        "development_note": null
+      },
+      "positive_control": false,
+      "oracle": {
+        "type": "code_tests",
+        "lang": "python",
+        "entry": "is_palindrome",
+        "tests": "assert is_palindrome('Level') is True\nassert is_palindrome('abca') is False\nassert is_palindrome('') is True",
+        "timeout_s": 10
+      },
+      "engines": {
+        "apr": {
+          "answered": false,
+          "missing": true,
+          "why": "missing: no row for this engine",
+          "correct": false,
+          "version": "apr 0.69.1 (feb5ac9a5)",
+          "not_ran_reason": "unclassified"
+        },
+        "llama.cpp": {
+          "answered": false,
+          "missing": true,
+          "why": "missing: no row for this engine",
+          "correct": false,
+          "version": "version: 0.4.1-dev (build 10987, commit d1d3c3396)",
+          "not_ran_reason": "unclassified"
+        },
+        "ollama": {
+          "answered": false,
+          "missing": true,
+          "why": "not requested",
+          "correct": false,
+          "version": null,
+          "not_ran_reason": "not_requested"
+        },
+        "hf": {
+          "answered": true,
+          "rc": 0,
+          "why": null,
+          "answer": "```python\ndef is_palindrome(s):\n    cleaned = ''.join(char.lower() for char in s if char.isalnum())\n    return cleaned == cleaned[::-1]\n```",
+          "reported": {
+            "interface": "generate",
+            "thinking_requested": "off",
+            "thinking_emitted": false,
+            "prompt_tokens": 54,
+            "completion_tokens": 41,
+            "device": "cuda:0 NVIDIA GeForce RTX 4090"
+          },
+          "turns": [
+            "```python\ndef is_palindrome(s):\n    cleaned = ''.join(char.lower() for char in s if char.isalnum())\n    return cleaned == cleaned[::-1]\n```"
+          ],
+          "correct": true,
+          "version": "fixture-unknown"
+        },
+        "llamafile": {
+          "answered": false,
+          "missing": true,
+          "why": "not requested",
+          "correct": false,
+          "version": null,
+          "not_ran_reason": "not_requested"
+        },
+        "vllm": {
+          "answered": false,
+          "missing": true,
+          "why": "missing: no row for this engine",
+          "correct": false,
+          "version": "fixture-unknown",
+          "not_ran_reason": "unclassified"
+        }
+      },
+      "agreement": {
+        "answered": [
+          "hf"
+        ],
+        "all_identical": false,
+        "apr_matches": []
+      },
+      "token_parity": {
+        "measured": false,
+        "why": "not measured for the chat verb"
+      }
+    },
+    {
+      "key": {
+        "model_sha256": "00fe7986ff5f6b463e62455821146049db6f9313603938a70800d1fb69ef11a4",
+        "host": "gpu-sm89",
+        "verb": "chat",
+        "thinking": "off",
+        "rung": "easy",
+        "prompt_id": "code-fib"
+      },
+      "verdict": "RED",
+      "reasons": [
+        "apr did not answer: missing: no row for this engine",
+        "no same-representation oracle: no engine but apr reads a format-unknown file -- a .apr is proven only through its chain to its source (#3957 F8)"
+      ],
+      "format": null,
+      "extracted": {
+        "hf": "def fib(n):\n    if n == 0:\n        return 0\n    elif n == 1:\n        return 1\n    a, b = 0, 1\n    for _ in range(2, n + 1):\n        a, b = b, a + b\n    return b"
+      },
+      "all_wrong": false,
+      "quorum": {
+        "floor": 2,
+        "engines_answered": 1,
+        "answered": [
+          "hf"
+        ],
+        "comparators_answered": [
+          "hf"
+        ],
+        "met": false
+      },
+      "subject": {
+        "model_sha256": "00fe7986ff5f6b463e62455821146049db6f9313603938a70800d1fb69ef11a4",
+        "apr_version": "apr 0.69.1 (feb5ac9a5)",
+        "under_development": false,
+        "development_note": null
+      },
+      "positive_control": false,
+      "oracle": {
+        "type": "code_tests",
+        "lang": "python",
+        "entry": "fib",
+        "tests": "assert fib(0) == 0\nassert fib(1) == 1\nassert fib(10) == 55\nassert fib(20) == 6765",
+        "timeout_s": 10
+      },
+      "engines": {
+        "apr": {
+          "answered": false,
+          "missing": true,
+          "why": "missing: no row for this engine",
+          "correct": false,
+          "version": "apr 0.69.1 (feb5ac9a5)",
+          "not_ran_reason": "unclassified"
+        },
+        "llama.cpp": {
+          "answered": false,
+          "missing": true,
+          "why": "missing: no row for this engine",
+          "correct": false,
+          "version": "version: 0.4.1-dev (build 10987, commit d1d3c3396)",
+          "not_ran_reason": "unclassified"
+        },
+        "ollama": {
+          "answered": false,
+          "missing": true,
+          "why": "not requested",
+          "correct": false,
+          "version": null,
+          "not_ran_reason": "not_requested"
+        },
+        "hf": {
+          "answered": true,
+          "rc": 0,
+          "why": null,
+          "answer": "```python\ndef fib(n):\n    if n == 0:\n        return 0\n    elif n == 1:\n        return 1\n    a, b = 0, 1\n    for _ in range(2, n + 1):\n        a, b = b, a + b\n    return b\n```",
+          "reported": {
+            "interface": "generate",
+            "thinking_requested": "off",
+            "thinking_emitted": false,
+            "prompt_tokens": 56,
+            "completion_tokens": 78,
+            "device": "cuda:0 NVIDIA GeForce RTX 4090"
+          },
+          "turns": [
+            "```python\ndef fib(n):\n    if n == 0:\n        return 0\n    elif n == 1:\n        return 1\n    a, b = 0, 1\n    for _ in range(2, n + 1):\n        a, b = b, a + b\n    return b\n```"
+          ],
+          "correct": true,
+          "version": "fixture-unknown"
+        },
+        "llamafile": {
+          "answered": false,
+          "missing": true,
+          "why": "not requested",
+          "correct": false,
+          "version": null,
+          "not_ran_reason": "not_requested"
+        },
+        "vllm": {
+          "answered": false,
+          "missing": true,
+          "why": "missing: no row for this engine",
+          "correct": false,
+          "version": "fixture-unknown",
+          "not_ran_reason": "unclassified"
+        }
+      },
+      "agreement": {
+        "answered": [
+          "hf"
+        ],
+        "all_identical": false,
+        "apr_matches": []
+      },
+      "token_parity": {
+        "measured": false,
+        "why": "not measured for the chat verb"
+      }
+    },
+    {
+      "key": {
+        "model_sha256": "00fe7986ff5f6b463e62455821146049db6f9313603938a70800d1fb69ef11a4",
+        "host": "gpu-sm89",
+        "verb": "chat",
+        "thinking": "off",
+        "rung": "hard",
+        "prompt_id": "code-count-vowels"
+      },
+      "verdict": "RED",
+      "reasons": [
+        "apr did not answer: missing: no row for this engine",
+        "no same-representation oracle: no engine but apr reads a format-unknown file -- a .apr is proven only through its chain to its source (#3957 F8)"
+      ],
+      "format": null,
+      "extracted": {
+        "hf": "def count_vowels(s):\n    vowels = set('aeiouAEIOU')\n    return sum(1 for char in s if char in vowels)"
+      },
+      "all_wrong": false,
+      "quorum": {
+        "floor": 2,
+        "engines_answered": 1,
+        "answered": [
+          "hf"
+        ],
+        "comparators_answered": [
+          "hf"
+        ],
+        "met": false
+      },
+      "subject": {
+        "model_sha256": "00fe7986ff5f6b463e62455821146049db6f9313603938a70800d1fb69ef11a4",
+        "apr_version": "apr 0.69.1 (feb5ac9a5)",
+        "under_development": false,
+        "development_note": null
+      },
+      "positive_control": false,
+      "oracle": {
+        "type": "code_tests",
+        "lang": "python",
+        "entry": "count_vowels",
+        "tests": "assert count_vowels('Hello World') == 3\nassert count_vowels('xyz') == 0\nassert count_vowels('AEIOU') == 5",
+        "timeout_s": 10
+      },
+      "engines": {
+        "apr": {
+          "answered": false,
+          "missing": true,
+          "why": "missing: no row for this engine",
+          "correct": false,
+          "version": "apr 0.69.1 (feb5ac9a5)",
+          "not_ran_reason": "unclassified"
+        },
+        "llama.cpp": {
+          "answered": false,
+          "missing": true,
+          "why": "missing: no row for this engine",
+          "correct": false,
+          "version": "version: 0.4.1-dev (build 10987, commit d1d3c3396)",
+          "not_ran_reason": "unclassified"
+        },
+        "ollama": {
+          "answered": false,
+          "missing": true,
+          "why": "not requested",
+          "correct": false,
+          "version": null,
+          "not_ran_reason": "not_requested"
+        },
+        "hf": {
+          "answered": true,
+          "rc": 0,
+          "why": null,
+          "answer": "```python\ndef count_vowels(s):\n    vowels = set('aeiouAEIOU')\n    return sum(1 for char in s if char in vowels)\n```",
+          "reported": {
+            "interface": "generate",
+            "thinking_requested": "off",
+            "thinking_emitted": false,
+            "prompt_tokens": 60,
+            "completion_tokens": 42,
+            "device": "cuda:0 NVIDIA GeForce RTX 4090"
+          },
+          "turns": [
+            "```python\ndef count_vowels(s):\n    vowels = set('aeiouAEIOU')\n    return sum(1 for char in s if char in vowels)\n```"
+          ],
+          "correct": true,
+          "version": "fixture-unknown"
+        },
+        "llamafile": {
+          "answered": false,
+          "missing": true,
+          "why": "not requested",
+          "correct": false,
+          "version": null,
+          "not_ran_reason": "not_requested"
+        },
+        "vllm": {
+          "answered": false,
+          "missing": true,
+          "why": "missing: no row for this engine",
+          "correct": false,
+          "version": "fixture-unknown",
+          "not_ran_reason": "unclassified"
+        }
+      },
+      "agreement": {
+        "answered": [
+          "hf"
+        ],
+        "all_identical": false,
+        "apr_matches": []
+      },
+      "token_parity": {
+        "measured": false,
+        "why": "not measured for the chat verb"
+      }
+    },
+    {
+      "key": {
+        "model_sha256": "00fe7986ff5f6b463e62455821146049db6f9313603938a70800d1fb69ef11a4",
+        "host": "gpu-sm89",
+        "verb": "chat",
+        "thinking": "off",
+        "rung": "easy",
+        "prompt_id": "long-primes-10"
+      },
+      "verdict": "RED",
+      "reasons": [
+        "apr did not answer: missing: no row for this engine",
+        "no same-representation oracle: no engine but apr reads a format-unknown file -- a .apr is proven only through its chain to its source (#3957 F8)"
+      ],
+      "format": null,
+      "extracted": {
+        "hf": "2\n3\n5\n7\n11\n13\n17\n19\n23\n29"
+      },
+      "all_wrong": false,
+      "quorum": {
+        "floor": 2,
+        "engines_answered": 1,
+        "answered": [
+          "hf"
+        ],
+        "comparators_answered": [
+          "hf"
+        ],
+        "met": false
+      },
+      "subject": {
+        "model_sha256": "00fe7986ff5f6b463e62455821146049db6f9313603938a70800d1fb69ef11a4",
+        "apr_version": "apr 0.69.1 (feb5ac9a5)",
+        "under_development": false,
+        "development_note": null
+      },
+      "positive_control": false,
+      "oracle": {
+        "type": "structure",
+        "lines": [
+          2,
+          3,
+          5,
+          7,
+          11,
+          13,
+          17,
+          19,
+          23,
+          29
+        ]
+      },
+      "engines": {
+        "apr": {
+          "answered": false,
+          "missing": true,
+          "why": "missing: no row for this engine",
+          "correct": false,
+          "version": "apr 0.69.1 (feb5ac9a5)",
+          "not_ran_reason": "unclassified"
+        },
+        "llama.cpp": {
+          "answered": false,
+          "missing": true,
+          "why": "missing: no row for this engine",
+          "correct": false,
+          "version": "version: 0.4.1-dev (build 10987, commit d1d3c3396)",
+          "not_ran_reason": "unclassified"
+        },
+        "ollama": {
+          "answered": false,
+          "missing": true,
+          "why": "not requested",
+          "correct": false,
+          "version": null,
+          "not_ran_reason": "not_requested"
+        },
+        "hf": {
+          "answered": true,
+          "rc": 0,
+          "why": null,
+          "answer": "<answer>\n2\n3\n5\n7\n11\n13\n17\n19\n23\n29\n</answer>",
+          "reported": {
+            "interface": "generate",
+            "thinking_requested": "off",
+            "thinking_emitted": false,
+            "prompt_tokens": 38,
+            "completion_tokens": 36,
+            "device": "cuda:0 NVIDIA GeForce RTX 4090"
+          },
+          "turns": [
+            "<answer>\n2\n3\n5\n7\n11\n13\n17\n19\n23\n29\n</answer>"
+          ],
+          "correct": true,
+          "version": "fixture-unknown"
+        },
+        "llamafile": {
+          "answered": false,
+          "missing": true,
+          "why": "not requested",
+          "correct": false,
+          "version": null,
+          "not_ran_reason": "not_requested"
+        },
+        "vllm": {
+          "answered": false,
+          "missing": true,
+          "why": "missing: no row for this engine",
+          "correct": false,
+          "version": "fixture-unknown",
+          "not_ran_reason": "unclassified"
+        }
+      },
+      "agreement": {
+        "answered": [
+          "hf"
+        ],
+        "all_identical": false,
+        "apr_matches": []
+      },
+      "token_parity": {
+        "measured": false,
+        "why": "not measured for the chat verb"
+      }
+    },
+    {
+      "key": {
+        "model_sha256": "00fe7986ff5f6b463e62455821146049db6f9313603938a70800d1fb69ef11a4",
+        "host": "gpu-sm89",
+        "verb": "chat",
+        "thinking": "off",
+        "rung": "hard",
+        "prompt_id": "long-countdown-15"
+      },
+      "verdict": "RED",
+      "reasons": [
+        "apr did not answer: missing: no row for this engine",
+        "no same-representation oracle: no engine but apr reads a format-unknown file -- a .apr is proven only through its chain to its source (#3957 F8)"
+      ],
+      "format": null,
+      "extracted": {
+        "hf": "15\n14\n13\n12\n11\n10\n9\n8\n7\n6\n5\n4\n3\n2\n1"
+      },
+      "all_wrong": false,
+      "quorum": {
+        "floor": 2,
+        "engines_answered": 1,
+        "answered": [
+          "hf"
+        ],
+        "comparators_answered": [
+          "hf"
+        ],
+        "met": false
+      },
+      "subject": {
+        "model_sha256": "00fe7986ff5f6b463e62455821146049db6f9313603938a70800d1fb69ef11a4",
+        "apr_version": "apr 0.69.1 (feb5ac9a5)",
+        "under_development": false,
+        "development_note": null
+      },
+      "positive_control": false,
+      "oracle": {
+        "type": "structure",
+        "lines": [
+          15,
+          14,
+          13,
+          12,
+          11,
+          10,
+          9,
+          8,
+          7,
+          6,
+          5,
+          4,
+          3,
+          2,
+          1
+        ]
+      },
+      "engines": {
+        "apr": {
+          "answered": false,
+          "missing": true,
+          "why": "missing: no row for this engine",
+          "correct": false,
+          "version": "apr 0.69.1 (feb5ac9a5)",
+          "not_ran_reason": "unclassified"
+        },
+        "llama.cpp": {
+          "answered": false,
+          "missing": true,
+          "why": "missing: no row for this engine",
+          "correct": false,
+          "version": "version: 0.4.1-dev (build 10987, commit d1d3c3396)",
+          "not_ran_reason": "unclassified"
+        },
+        "ollama": {
+          "answered": false,
+          "missing": true,
+          "why": "not requested",
+          "correct": false,
+          "version": null,
+          "not_ran_reason": "not_requested"
+        },
+        "hf": {
+          "answered": true,
+          "rc": 0,
+          "why": null,
+          "answer": "<answer>\n15\n14\n13\n12\n11\n10\n9\n8\n7\n6\n5\n4\n3\n2\n1\n</answer>",
+          "reported": {
+            "interface": "generate",
+            "thinking_requested": "off",
+            "thinking_emitted": false,
+            "prompt_tokens": 39,
+            "completion_tokens": 46,
+            "device": "cuda:0 NVIDIA GeForce RTX 4090"
+          },
+          "turns": [
+            "<answer>\n15\n14\n13\n12\n11\n10\n9\n8\n7\n6\n5\n4\n3\n2\n1\n</answer>"
+          ],
+          "correct": true,
+          "version": "fixture-unknown"
+        },
+        "llamafile": {
+          "answered": false,
+          "missing": true,
+          "why": "not requested",
+          "correct": false,
+          "version": null,
+          "not_ran_reason": "not_requested"
+        },
+        "vllm": {
+          "answered": false,
+          "missing": true,
+          "why": "missing: no row for this engine",
+          "correct": false,
+          "version": "fixture-unknown",
+          "not_ran_reason": "unclassified"
+        }
+      },
+      "agreement": {
+        "answered": [
+          "hf"
+        ],
+        "all_identical": false,
+        "apr_matches": []
+      },
+      "token_parity": {
+        "measured": false,
+        "why": "not measured for the chat verb"
+      }
+    }
+  ],
+  "deterministic": [],
+  "greedy": [],
+  "summary": {
+    "RED": 44,
+    "GREEN": 0,
+    "ALL_WRONG": 3,
+    "cells": 44,
+    "judged": 44,
+    "verdict": "RED",
+    "deterministic": {
+      "RED": 0,
+      "GREEN": 0
+    },
+    "all_wrong_by_model": {
+      "aaf42c8b7c3cab2bf3d69c355048d4a0ee9973d48f16c731c0520ee914699223": 2,
+      "00fe7986ff5f6b463e62455821146049db6f9313603938a70800d1fb69ef11a4": 1
+    },
+    "controls": [
+      "ctl-2plus2",
+      "ctl-recall-7",
+      "ctl-code-add"
+    ],
+    "negative_controls": {},
+    "certified": true,
+    "declined_because": null
+  }
+}

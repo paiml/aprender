@@ -1,0 +1,24 @@
+{
+  "version": "0.69.1",
+  "backend": "gpu",
+  "engines": [
+    "apr",
+    "llama.cpp",
+    "hf",
+    "vllm"
+  ],
+  "apr": {
+    "version_line": "apr 0.69.1 (feb5ac9a5)"
+  },
+  "llama_cpp": {
+    "build": "version: 0.4.1-dev (build 10987, commit d1d3c3396)",
+    "unavailable": null
+  },
+  "hf": {
+    "version": "fixture-unknown"
+  },
+  "vllm": {
+    "version": "fixture-unknown"
+  },
+  "fixture": "SYNTHETIC meta: the certification run committed none"
+}

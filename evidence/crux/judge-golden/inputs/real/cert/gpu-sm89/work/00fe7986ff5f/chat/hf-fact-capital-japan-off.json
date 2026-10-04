@@ -1,0 +1,1 @@
+{"text": "The capital city of Japan is Tokyo.\n\n<answer>Tokyo</answer>", "turns": ["The capital city of Japan is Tokyo.\n\n<answer>Tokyo</answer>"], "reported": {"interface": "generate", "thinking_requested": "off", "thinking_emitted": false, "prompt_tokens": 31, "completion_tokens": 20, "device": "cuda:0 NVIDIA GeForce RTX 4090"}}

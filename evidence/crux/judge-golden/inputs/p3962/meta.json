@@ -1,0 +1,29 @@
+{
+  "version": "0.69.1",
+  "host": "gpu-sm89",
+  "backend": "gpu",
+  "engines": [
+    "apr",
+    "llama.cpp",
+    "ollama"
+  ],
+  "apr": {
+    "version_line": "apr 0.69.1 (6e294e1a0)"
+  },
+  "llama_cpp": {
+    "build": "version: 0.4.1-dev (build 10987, commit d1d3c3396)",
+    "pin": "d1d3c3396",
+    "unavailable": null
+  },
+  "ollama": {
+    "server_version": "0.34.2",
+    "unavailable": null
+  },
+  "models": [
+    {
+      "name": "qwen2.5-1.5b-instruct-q4_k_m.gguf",
+      "sha256": "6a1a2eb6d15622bf3c96857206351ba97e1af16c30d7a74ee38970e434e9407e"
+    }
+  ],
+  "fixture": "SYNTHETIC meta: the producer committed none; versions are from its README"
+}

@@ -1,4 +1,9 @@
 case	manifest	prompts	meta	certification
+p3962	evidence/crux/judge-golden/inputs/p3962/manifest.jsonl	evidence/crux/judge-golden/inputs/real/p3962/prompts.json	evidence/crux/judge-golden/inputs/p3962/meta.json	-
+p3962-cert	evidence/crux/judge-golden/inputs/p3962/manifest.jsonl	evidence/crux/judge-golden/inputs/real/p3962/prompts.json	evidence/crux/judge-golden/inputs/p3962/meta.json	evidence/crux/judge-golden/inputs/real/cert/prompt-certification.json
+f9-greedy	evidence/crux/judge-golden/inputs/real/f9-greedy/greedy-manifest.jsonl	evidence/crux/judge-golden/inputs/prompts/crux_inference_prompts.json	evidence/crux/judge-golden/inputs/f9-greedy/meta.json	-
+cert-gpu-sm89	evidence/crux/judge-golden/inputs/real/cert/manifest-gpu-sm89.jsonl	evidence/crux/judge-golden/inputs/prompts/crux_inference_prompts.v2.json	evidence/crux/judge-golden/inputs/cert/meta.json	evidence/crux/judge-golden/inputs/real/cert/prompt-certification.json
+cert-arm64-gpu	evidence/crux/judge-golden/inputs/real/cert/manifest-arm64-gpu.jsonl	evidence/crux/judge-golden/inputs/prompts/crux_inference_prompts.v2.json	evidence/crux/judge-golden/inputs/cert/meta.json	evidence/crux/judge-golden/inputs/real/cert/prompt-certification.json
 syn-pass	evidence/crux/judge-golden/inputs/syn/pass.manifest.jsonl	evidence/crux/judge-golden/inputs/syn/prompts-pass.json	evidence/crux/judge-golden/inputs/syn/meta.json	-
 syn-nocontrol	evidence/crux/judge-golden/inputs/syn/pass.manifest.jsonl	evidence/crux/judge-golden/inputs/syn/prompts-nocontrol.json	evidence/crux/judge-golden/inputs/syn/meta.json	-
 syn-negative-green	evidence/crux/judge-golden/inputs/syn/pass.manifest.jsonl	evidence/crux/judge-golden/inputs/syn/prompts-negative-green.json	evidence/crux/judge-golden/inputs/syn/meta.json	-

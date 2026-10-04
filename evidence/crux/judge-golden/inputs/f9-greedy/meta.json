@@ -1,0 +1,17 @@
+{
+  "version": "0.69.1",
+  "host": "gpu-sm89",
+  "backend": "gpu",
+  "engines": [
+    "apr",
+    "llama.cpp"
+  ],
+  "apr": {
+    "version_line": "apr 0.69.1 (70d20d44c)"
+  },
+  "llama_cpp": {
+    "build": "b10987",
+    "unavailable": null
+  },
+  "fixture": "SYNTHETIC meta: the producer committed none; versions are from its README"
+}
