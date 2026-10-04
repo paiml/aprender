@@ -51,6 +51,7 @@ equations:
     - 'The 0.955 end-to-end cosine was measured on qwen2.5-coder-1.5b (gguf_gpu_generate.rs:520-529 at 316dee2cd4), and Qwen2 has no q/k norm, so it is not this defect (corrected 2026-10-04). What the missing q/k norm does on Qwen3 is UNMEASURED (K14) until a layer-diff trace runs.'
     - 'The fixture needs norm weights that are not all 1, and q/k whose per-head RMS is not 1. Otherwise RMSNorm is close to identity and a path that skips it still passes.'
     - 'L25: the implication is vacuous on a fixture with no q_norm/k_norm tensors. The test asserts the tensors are present before it compares anything.'
+    - 'L25 (2026-10-04): the fixture needs position >= 1, so attention has at least two keys. At position 0 the attention output is the V of the one key whatever q and k are, so a path that skips the q/k norm passes there. The same fact is why the 1.5B 0.955 first shows at step 2/3 of the parity probe (R2 item 0).'
     - 'L25: the min over layers propagates NaN. A non-finite layer_cos is FAIL; f32::min would drop it (as in BPM-009).'
 
   qtype_coverage:
@@ -90,10 +91,10 @@ falsification_tests:
   mutation: 'compute head_dim as hidden / n_heads; the fixture must turn RED'
 - id: FALSIFY-WGF-003
   rule: Qwen3 q/k norm is applied on wgpu
-  prediction: 'On a Qwen3 fixture the per-layer attention cosine vs CPU is >= 0.9999 at every layer.'
+  prediction: 'On a Qwen3 fixture at position >= 1 the per-layer attention cosine vs CPU is >= 0.9999 at every layer.'
   test: 'NOT YET WRITTEN — gated on the K14 layer-diff trace (Next#1, deferred while train-active)'
   if_fails: 'the wgpu Qwen3 path skips a norm the CPU applies at every layer and diverges from it by an unmeasured amount (the measured 0.955 is qwen2.5-coder-1.5b, not this defect)'
-  mutation: 'skip the q/k norm dispatch; layer 0 cosine must drop below the floor. The fixture uses non-unit norm weights and q/k RMS != 1, or skipping the norm cannot move the cosine'
+  mutation: 'skip the q/k norm dispatch; layer 0 cosine must drop below the floor. The fixture uses position >= 1, non-unit norm weights and q/k RMS != 1, or skipping the norm cannot move the cosine'
 - id: FALSIFY-WGF-004
   rule: no silent CPU fallback for an unsupported qtype
   prediction: 'Every served qtype either has a device GEMV on its native bytes (device_qtype = file qtype in the receipt) or is refused with a named error. A Q6_K or Q5_K model that is widened to F32 at load, as it is today, is FAIL, even though op_placement shows device. The ffn_gate weight is a live case (R2 D-1, 316dee2cd4): it reaches the Q4_K GEMV without a qtype check, so a non-Q4_K gate is read as Q4_K, neither widened nor refused.'
@@ -186,4 +187,4 @@ verification_summary:
   proven: 0
   tested: 0
   status: proposed
-  notes: 'Draft by la-73 (L3). No ticket yet. WGF-003 waits on the K14 trace; WGF-006 waits on a train-inactive C1 sweep. L25 review 2026-10-03 added WGF-007..010 (ledger discrimination, required qtypes, total op_placement, refusal-as-regression).'
+  notes: 'Draft by la-73 (L3). No ticket yet. WGF-003 waits on the K14 trace; WGF-006 waits on a train-inactive C1 sweep. L25 review 2026-10-03 added WGF-007..010 (ledger discrimination, required qtypes, total op_placement, refusal-as-regression). L25 2026-10-04: the WGF-003 fixture needs position >= 1.'
