@@ -1,5 +1,5 @@
 metadata:
-  version: 1.0.0
+  version: 1.1.0
   created: '2026-09-20'
   author: PAIML Engineering
   description: "The release train's tag step cannot be reached without a clean milestone. v0.68.1 was tagged 2026-09-17T15:06:29Z by an autopilot copy living outside the repository, six minutes after #3455 merged the milestone gate; `grep -c check_milestone_cut autopilot.sh` was 0. The spec required the read and no code path that cuts a tag made it. This contract is the property that the requirement and the mechanism are the same object: the gate call lives INSIDE cut_tag(), ahead of `git tag`, and a guard runs that function against each gate outcome and asserts on whether a tag was cut."
@@ -11,6 +11,8 @@ metadata:
     - "docs/specifications/APR-RELEASE-001-train-and-build-kaizen.md — §4 T-0/T-3"
     - "docs/specifications/06x-release-schedule.md — §4 steps 1 and 4"
     - "contracts/release-schedule-06x-v1.yaml — milestone_settled_at_cut, the schedule-level statement of the same rule"
+    - "scripts/release/autopilot.sh — publish_release(); the tag step makes a DRAFT, the publish step makes it public (#4690)"
+    - "scripts/release/check_release_draft_gated.sh — the stub-gh call-order case table and its mutants (#4690)"
 
 five_whys:
   symptom: "v0.68.1 was tagged while nothing had read its milestone, six minutes after the gate that would have read it merged."
@@ -41,6 +43,16 @@ equations:
       - "a mutant whose gate verdict is discarded with `|| true` is RED"
       - "a subject with no cut_tag() is ENV (rc 2), never a pass"
 
+  release_is_draft_until_gated:
+    formula: "the GitHub release for t is created as a draft at the tag step, and goes public only in publish_release(t, mc), after it reads clean-room (aprender) = success on the recorded run, a preflight PASS naming t and mc, check_release_assets.sh(t) = 0, and isDraft(t) = true"
+    domain: "the autopilot's tag, cleanroom, assets, preflight and publish steps, run in order or started at publish"
+    codomain: "the release is public with every gate green before it, or it stays a draft and the train stops naming the gate that refused"
+    invariants:
+      - "binary-release.yml is dispatched on the tag (workflow_dispatch, input tag) and uploads to the draft, so building the assets never requires publishing first (#4690)"
+      - "assets rc 1 (missing) and rc 2 (could not read) both keep the draft: Unknown is not a pass"
+      - "a run started at publish re-reads each fact itself; no earlier step's say line is trusted"
+      - "a preflight PASS for another commit, or none, keeps the draft"
+
 proof_obligations:
   - id: TSMG-INV-001
     type: invariant
@@ -57,6 +69,11 @@ proof_obligations:
     property: "The autopilot that cuts the tag is in the repository and reviewed"
     formal: "scripts/release/autopilot.sh ∈ tracked(main) ∧ cut_tag ∈ autopilot.sh"
     applies_to: tag_requires_clean_milestone
+  - id: TSMG-INV-004
+    type: invariant
+    property: "No public GitHub release before its clean-room, its assets and its preflight"
+    formal: "public(t) at step s ⇒ ∃ s1, s2, s3 < s: cleanroom(t) = success at s1 ∧ preflight(t, mc) = PASS at s2 ∧ assets(t) = 0 at s3"
+    applies_to: release_is_draft_until_gated
 
 falsification_tests:
   - id: FALSIFY-TSMG-001
@@ -95,6 +112,12 @@ falsification_tests:
     test: "test -f scripts/check_milestone_cut.sh"
     if_fails: "cut_tag() calls a script that is not there; every cut becomes rc 2 and the train stops — fail-closed, but the gate is gone"
 
+  - id: FALSIFY-TSMG-007
+    rule: "No public GitHub release before its clean-room, its assets and its preflight (#4690)"
+    prediction: "The autopilot's own tag..publish step bodies, run against a stub gh that records the call order, keep the release a draft in every row where a gate is red, unread or absent, a resumed run inherits a stale PASS, or the publishing edit fails, and publish it only after all three; over the whole file, only publish_release() sets draft to false, every create is a --draft, and publish follows cleanroom, assets and preflight; each of 19 mutants turns a row WRONG"
+    test: "bash scripts/release/check_release_draft_gated.sh"
+    if_fails: "A public release can stand with no assets, a red clean-room or no preflight behind it: the order this ticket inverted"
+
 qa_gate:
   id: F-TSMG-001
   name: "The release train's tag step cannot be reached without a clean milestone"
@@ -102,3 +125,4 @@ qa_gate:
   checks:
     - "tag_requires_clean_milestone"
     - "guard_is_behavioural_not_textual"
+    - "release_is_draft_until_gated"
