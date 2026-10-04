@@ -2,10 +2,16 @@ name: dogfood-nightly
 
 # The producer for the nightly train's `dogfood` verdict lane (#4672).
 #
-# It runs the SAME entry point release day runs, in the same order as
-# scripts/release/autopilot.sh's dogfood step: `dogfood.sh --phase pre-publish`
-# (rc 0 = GO), the tree still clean, then the publish preflight's own R5 reader
-# (`check_publish_preflight.sh --receipt-only`) on the receipt that run wrote.
+# It runs the SAME entry point release day runs, dogfood.sh, in `--phase nightly`:
+# the pre-publish row set measured at the commit under test, H, with no OPEN state.
+# A row that cannot be measured at H (a lane receipt for another commit, or none;
+# a post-publish obligation) is NOT_MEASURED, and NOT_MEASURED is red. The version
+# row asks of the train's target, the lowest open X.Y.Z milestone above crates.io
+# (release_nightly_target in scripts/release/lib_release_params.sh), and is red
+# unless that target is above what crates.io carries.
+# Then, as scripts/release/autopilot.sh does, the tree must still be clean and the
+# publish preflight's own R5 reader runs on the receipt -- here as a NEGATIVE
+# control: R5 must REFUSE a nightly receipt, every night, green or red.
 # Nothing here re-implements a row: a red row is red because dogfood.sh says so.
 #
 # NO REGISTRY TOKEN. The job proves it cannot publish before it builds anything
@@ -34,6 +40,7 @@ concurrency:
 
 permissions:
   contents: read
+  issues: read   # the open milestones the train target is derived from
 
 jobs:
   dogfood:
@@ -74,19 +81,39 @@ jobs:
             commit -q -m "planted: DET002 falsifier (job-local, never pushed)"
           echo "planted at $(git rev-parse --short HEAD)"
 
-      - name: dogfood --phase pre-publish, then preflight R5 (autopilot's dogfood step)
+      - name: The train target (lowest open X.Y.Z milestone above crates.io)
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          set -uo pipefail
+          bash scripts/check_release_nightly_target.sh
+          . scripts/release/lib_release_params.sh || exit 2
+          # A failed read or an empty set leaves the target unset: dogfood's version row is then
+          # NOT_MEASURED, which is red. It is never defaulted here.
+          if got=$(release_nightly_target); then
+            read -r tv tms tmax <<< "$got"
+            echo "train target: V=$tv milestone=#$tms crates.io max=$tmax"
+            echo "DOGFOOD_TARGET_VERSION=$tv" >> "$GITHUB_ENV"
+          else
+            echo "::warning::train target NOT_MEASURED (see the line above); the version row will read red"
+          fi
+
+      - name: dogfood --phase nightly, tree clean, then preflight R5 must refuse it
         run: |
           set -uo pipefail
           mkdir -p "$RUNNER_TEMP/dogfood"
-          bash scripts/dogfood.sh --phase pre-publish > "$RUNNER_TEMP/dogfood/dogfood-pre-publish.log" 2>&1; rc=$?
-          tail -n 40 "$RUNNER_TEMP/dogfood/dogfood-pre-publish.log"
-          [ "$rc" -eq 0 ] || { echo "::error::dogfood pre-publish NO-GO rc=$rc"; exit 1; }
+          bash scripts/dogfood.sh --phase nightly > "$RUNNER_TEMP/dogfood/dogfood-nightly.log" 2>&1; rc=$?
+          tail -n 40 "$RUNNER_TEMP/dogfood/dogfood-nightly.log"
           dirty=$(git status --porcelain)
           [ -z "$dirty" ] || { echo "::error::tree dirty after dogfood: $(printf '%s' "$dirty" | head -3 | tr '\n' ' ')"; exit 1; }
-          bash scripts/check_publish_preflight.sh --receipt-only > "$RUNNER_TEMP/dogfood/dogfood-r5.log" 2>&1; rc=$?
+          # Negative control, run whatever the verdict: a nightly receipt is never a release receipt.
+          bash scripts/check_publish_preflight.sh --receipt-only > "$RUNNER_TEMP/dogfood/dogfood-r5.log" 2>&1; r5=$?
           tail -n 2 "$RUNNER_TEMP/dogfood/dogfood-r5.log"
-          [ "$rc" -eq 0 ] || { echo "::error::R5 refused the dogfood receipt rc=$rc"; exit 1; }
-          echo "DOGFOOD GO at $(git rev-parse HEAD) (R5 holds)"
+          if [ "$r5" -eq 0 ] || ! grep -q 'is a --phase nightly receipt' "$RUNNER_TEMP/dogfood/dogfood-r5.log"; then
+            echo "::error::R5 did not refuse the nightly receipt (rc=$r5): a nightly receipt would pass a publish"; exit 1
+          fi
+          [ "$rc" -eq 0 ] || { echo "::error::dogfood nightly NO-GO rc=$rc at $(git rev-parse HEAD)"; exit 1; }
+          echo "DOGFOOD GO at $(git rev-parse HEAD) for ${DOGFOOD_TARGET_VERSION:-?} (R5 refuses the nightly receipt, as it must)"
 
       - name: Publish the receipt, its row seconds and the logs
         if: always()

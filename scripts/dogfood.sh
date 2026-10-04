@@ -43,14 +43,23 @@ while [ $# -gt 0 ]; do
       # `shift 2` with one argument left does not shift, so a bare `--phase`
       # looped forever (seventh review of #2859, measured). A flag with no
       # value is a usage error.
-      [ $# -ge 2 ] || { echo "dogfood: --phase needs a value (full|pre-publish|post-publish)" >&2; exit 2; }
+      [ $# -ge 2 ] || { echo "dogfood: --phase needs a value (full|pre-publish|post-publish|nightly)" >&2; exit 2; }
       DOGFOOD_PHASE="$2"; shift 2 ;;
     --phase=*) DOGFOOD_PHASE="${1#--phase=}"; shift ;;
-    -h|--help) sed -n '2,14p' "$0"; echo "        dogfood.sh [--phase full|pre-publish|post-publish] [REPO_DIR]"; exit 0 ;;
+    -h|--help) sed -n '2,14p' "$0"; echo "        dogfood.sh [--phase full|pre-publish|post-publish|nightly] [REPO_DIR]"; exit 0 ;;
     *) REPO_DIR="$1"; shift ;;
   esac
 done
-case "$DOGFOOD_PHASE" in full|pre-publish|post-publish) : ;; *) echo "dogfood: unknown --phase '$DOGFOOD_PHASE' (full|pre-publish|post-publish)" >&2; exit 2 ;; esac
+case "$DOGFOOD_PHASE" in full|pre-publish|post-publish|nightly) : ;; *) echo "dogfood: unknown --phase '$DOGFOOD_PHASE' (full|pre-publish|post-publish|nightly)" >&2; exit 2 ;; esac
+# --phase nightly (#4672) runs the pre-publish row set against the commit under test, H, with no
+# OPEN state: a row that cannot be measured at H is NOT_MEASURED, and NOT_MEASURED is RED. Its
+# version row asks of DOGFOOD_TARGET_VERSION, the train's next version, instead of the tree's,
+# and the scheduled job derives that from the milestones. The override exists for nightly only:
+# a release-day phase that accepted it would answer the version question for a version it is
+# not publishing, so every other phase refuses it. The preflight (R5) refuses a nightly receipt.
+if [ -n "${DOGFOOD_TARGET_VERSION:-}" ] && [ "$DOGFOOD_PHASE" != nightly ]; then
+  echo "dogfood: DOGFOOD_TARGET_VERSION is honoured by --phase nightly only; --phase $DOGFOOD_PHASE publishes the tree's own version" >&2; exit 2
+fi
 export DOGFOOD_PHASE
 REPO_DIR="${REPO_DIR:-$PWD}"
 # The target is resolved to a real, existing directory before the cd (SEC010):
@@ -234,7 +243,9 @@ mark() { # mark <name> <PASS|FAIL|SKIP|REPORT|WARN|MANUAL|OPEN> <note>
   if [ "$st" = DEFER ]; then
     st=FAIL; note="DEFER is abolished (operator 2026-09-23, \"no defer\"): a row is measured or it is RED -- $note"
   fi
-  if [ "$st" = OPEN ] && [ "$DOGFOOD_PHASE" != pre-publish ]; then
+  if [ "$st" = OPEN ] && [ "$DOGFOOD_PHASE" = nightly ]; then
+    st=FAIL; note="NOT_MEASURED at H: --phase nightly has no OPEN state, and a row it cannot measure is RED: $note"
+  elif [ "$st" = OPEN ] && [ "$DOGFOOD_PHASE" != pre-publish ]; then
     st=FAIL; note="an OPEN post-publish obligation outside --phase pre-publish is an UNMET obligation: $note"
   elif [ "$st" = OPEN ]; then
     case " $POST_PUBLISH_OBLIGATIONS " in *" $1 "*) ;; *) st=FAIL; note="only [$POST_PUBLISH_OBLIGATIONS] may be OPEN; '$1' is not a post-publish obligation: $note" ;; esac
@@ -269,6 +280,11 @@ classify_declared() {
     [ "${RESULTS[${#RESULTS[@]}-1]}" = OPEN ] || return 1
   elif [ "$rc" -eq 0 ]; then
     mark "$name" PASS "$path exit=0$scoped"
+  elif [ "$DOGFOOD_PHASE" = nightly ] && grep -qE 'STALE BY SHA|no receipt at ' "$log" 2>/dev/null; then
+    # --phase nightly measures H. A lane whose receipt is for another commit, or absent, has not
+    # measured H: NOT_MEASURED, which is RED, and named so a reader knows which lane owes H.
+    mark "$name" FAIL "NOT_MEASURED at H: $path has no receipt for this commit (stale by sha, or none) — $tail"
+    return 1
   else
     mark "$name" FAIL "$path exit=$rc$scoped — $tail"
     return 1
@@ -683,10 +699,34 @@ sys.exit(1 if seen else 2)' "$2" "$WORKLOG/registry.ndjson"; parse=$?
 #                 mark_version_row also requires it to INSTALL from crates.io. This
 #                 phase used to run the pre-publish row, which a successful publish turns RED forever,
 #                 so the post-publish dogfood could never say GO (0.68.2, 2026-09-20).
-# An unknown index is FAIL in both: an unconsulted registry is not evidence either way.
+#   nightly       version-unpublished: VERSION is the train's target (DOGFOOD_TARGET_VERSION); PASS only
+#                 when it is X.Y.Z, absent, and strictly above MAX, the highest stable version the index
+#                 carries (5th argument; "" when the crate is not on the index). A target at or below MAX
+#                 is a train that would publish backwards or collide.
+# An unknown index is FAIL in every phase: an unconsulted registry is not evidence either way.
 version_row() {
-  local phase=$1 crate=$2 ver=$3 state=$4 why=""
+  local phase=$1 crate=$2 ver=$3 state=$4 max=${5:-} why=""
   case "$state" in unknown\ *) why=${state#unknown }; state=unknown ;; esac
+  if [ "$phase" = nightly ]; then
+    if ! [[ "$ver" =~ ^[0-9]+\.[0-9]+\.[0-9]+$ ]]; then
+      printf 'version-unpublished FAIL NOT_MEASURED: the train target %s is not X.Y.Z (DOGFOOD_TARGET_VERSION; nightly phase)\n' "${ver:-<unset>}"; return 0
+    fi
+    case "$state" in
+      unknown) printf 'version-unpublished FAIL %s — the target %s cannot be compared with crates.io (nightly phase)\n' "$why" "$ver" ;;
+      present) printf 'version-unpublished FAIL %s %s, the train target, is ALREADY in the crates.io index (nightly phase)\n' "$crate" "$ver" ;;
+      crate-absent) printf 'version-unpublished PASS %s is not in the crates.io index at all (HTTP 404), so the target %s is above it (nightly phase)\n' "$crate" "$ver" ;;
+      absent)
+        if [ -z "$max" ]; then
+          printf 'version-unpublished FAIL the crates.io index for %s carries no stable X.Y.Z version to compare the target %s with (nightly phase)\n' "$crate" "$ver"
+        elif [ "$ver" != "$max" ] && [ "$(printf '%s\n%s\n' "$max" "$ver" | sort -V | tail -n 1)" = "$ver" ]; then
+          printf 'version-unpublished PASS the train target %s is above crates.io max %s (consulted directly; nightly phase)\n' "$ver" "$max"
+        else
+          printf 'version-unpublished FAIL the train target %s is not above crates.io max %s — the train would publish backwards (nightly phase)\n' "$ver" "$max"
+        fi ;;
+      *) printf 'version-unpublished FAIL version_row has no verdict for phase nightly, state %s\n' "$state" ;;
+    esac
+    return 0
+  fi
   case "$phase:$state" in
     pre-publish:absent)        printf 'version-unpublished PASS %s absent from the crates.io index (consulted directly, HTTP 200, index parsed; pre-publish phase)\n' "$ver" ;;
     pre-publish:crate-absent)  printf 'version-unpublished PASS %s is not in the crates.io index at all (HTTP 404), so %s is absent (pre-publish phase)\n' "$crate" "$ver" ;;
@@ -730,9 +770,15 @@ published_install_check() {
 # mark_version_row PHASE -> marks the row version_row decides, from a fresh index lookup; post-publish,
 # a version the index carries must also INSTALL (published_install_check)
 mark_version_row() {
-  local row st note line state inst
-  state=$(index_version_state "$CRATE" "$VERSION")
-  line=$(version_row "$1" "$CRATE" "$VERSION" "$state")
+  local row st note line state inst ver="$VERSION" max=""
+  [ "$1" = nightly ] && ver="${DOGFOOD_TARGET_VERSION:-}"
+  state=$(index_version_state "$CRATE" "$ver")
+  if [ "$1" = nightly ] && [ "$state" = absent ]; then
+    # The highest stable version on the index, in bash (no new python): X.Y.Z only, sort -V.
+    max=$(grep -oE '"vers":"[0-9]+\.[0-9]+\.[0-9]+"' "$WORKLOG/registry.ndjson" 2>/dev/null \
+          | grep -oE '[0-9]+\.[0-9]+\.[0-9]+' | sort -V | tail -n 1)
+  fi
+  line=$(version_row "$1" "$CRATE" "$ver" "$state" "$max")
   row=${line%% *}; line=${line#* }; st=${line%% *}; note=${line#* }
   if [ "$1" = post-publish ] && [ "$state" = present ]; then
     inst=$(published_install_check "$CRATE" "$VERSION")
@@ -744,13 +790,13 @@ mark_version_row() {
   mark "$row" "$st" "$note"
 }
 
-if [ "$DOGFOOD_PHASE" = pre-publish ]; then
+if [ "$DOGFOOD_PHASE" = pre-publish ] || [ "$DOGFOOD_PHASE" = nightly ]; then
   # Before the cascade a dry-run of a workspace root cannot resolve its own
   # members (they are not on the registry yet), so it fails for a reason that
   # says nothing about the version. The question this row exists to answer --
   # "is $VERSION already on crates.io?" -- is asked of the registry directly.
   DRY=""; DRC=0
-  mark_version_row pre-publish
+  mark_version_row "$DOGFOOD_PHASE"
 else
 DRY=$(env -u CARGO_REGISTRY_TOKEN cargo publish --dry-run --allow-dirty 2>&1); DRC=$?
 if [ "$DOGFOOD_PHASE" = post-publish ]; then
@@ -1336,7 +1382,7 @@ else
 fi
 
 # ── 10. publish dry-run (already run above; verdict is its exit code) ───────
-if [ "$DOGFOOD_PHASE" = pre-publish ]; then
+if [ "$DOGFOOD_PHASE" = pre-publish ] || [ "$DOGFOOD_PHASE" = nightly ]; then
   mark publish-dry-run OPEN "a workspace root cannot dry-run before its members are on the registry; discharged by the cascade's own per-tier publish and the post-publish dogfood"
 elif [ $DRC -eq 0 ]; then mark publish-dry-run PASS "packages cleanly"
 else mark publish-dry-run FAIL "$(printf '%s' "$DRY" | grep -iE 'error' | head -1)"; fi
@@ -1879,7 +1925,9 @@ if [ $FAILED -eq 0 ]; then
     [ "${RESULTS[$i]}" = OPEN ] || continue
     printf '  · OPEN  %-18s %s\n' "${NAMES[$i]}" "${NOTES[$i]}"
   done
-  if [ "$DOGFOOD_PHASE" = pre-publish ]; then
+  if [ "$DOGFOOD_PHASE" = nightly ]; then
+    echo "VERDICT: ✅ GO (phase nightly) — every row measured green at H. A nightly receipt is not a release receipt: the preflight (R5) refuses it."
+  elif [ "$DOGFOOD_PHASE" = pre-publish ]; then
     echo "VERDICT: ✅ GO (phase pre-publish) — every measurable gate green; the OPEN rows above are post-publish obligations, NOT passed: the post-publish dogfood FAILs if any is unmet (#3957 F1b)."
   else
     echo "VERDICT: ✅ GO — all automated gates green. Complete clean-room (MANDATORY) then release."

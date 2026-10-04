@@ -95,3 +95,27 @@ release_last_tag() {
     printf 'release: no tag below %s in %s\n' "$T" "$root" >&2
     return 2
 }
+
+# release_nightly_target -> "V MILESTONE CRATES_MAX": the train the nightly measures (#4672). V is the
+# LOWEST open milestone titled X.Y.Z that is strictly above CRATES_MAX, the highest stable X.Y.Z of
+# aprender on the crates.io index. Not "the one open milestone": several are open at once, and the
+# next version to publish is the lowest one above what is published. A failed read of either source,
+# or no milestone above CRATES_MAX, returns 2 and says why: the nightly reads that as NOT_MEASURED.
+# Option-neutral like the rest of this file: every `$( )` that can be empty carries its own `||`, so a
+# caller under `set -eo pipefail` (a workflow step) gets rc 2, never an exit from inside the lib.
+release_nightly_target() {
+    local idx max ms t n best="" bestn=""
+    idx=$(curl -sSf -A "aprender-release (+https://github.com/paiml/aprender)" "https://index.crates.io/ap/re/aprender") \
+        || { printf 'release: reading the crates.io index for aprender failed\n' >&2; return 2; }
+    max=$(grep -oE '"vers":"[0-9]+\.[0-9]+\.[0-9]+"' <<< "$idx" | grep -oE '[0-9]+\.[0-9]+\.[0-9]+' | sort -V | tail -n 1) || max=""
+    [ -n "$max" ] || { printf 'release: the crates.io index for aprender carries no stable X.Y.Z version\n' >&2; return 2; }
+    ms=$(gh api "repos/$RELEASE_REPO/milestones?state=open&per_page=100" --paginate --jq '.[] | "\(.title) \(.number)"') \
+        || { printf 'release: reading the open milestones failed\n' >&2; return 2; }
+    while read -r t n; do
+        [[ $t =~ ^[0-9]+\.[0-9]+\.[0-9]+$ ]] || continue
+        [ "$t" != "$max" ] && [ "$(printf '%s\n%s\n' "$max" "$t" | sort -V | tail -n 1)" = "$t" ] || continue
+        if [ -z "$best" ] || [ "$(printf '%s\n%s\n' "$best" "$t" | sort -V | head -n 1)" = "$t" ]; then best=$t; bestn=$n; fi
+    done <<< "$ms"
+    [ -n "$best" ] || { printf 'release: no open X.Y.Z milestone is above crates.io %s\n' "$max" >&2; return 2; }
+    printf '%s %s %s\n' "$best" "$bestn" "$max"
+}

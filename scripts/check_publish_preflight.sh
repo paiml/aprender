@@ -145,6 +145,14 @@ print(d.get("verdict") or "-", d.get("commit") or "-", d.get("version") or "-",
         # receipt and only for the closed list; the list is a whitelist, so a row not named in
         # it is refused whatever it is called.
         bad_defer=""
+        # #4672: a --phase nightly receipt measures the train's commit under test against its NEXT
+        # version, not this release. It is evidence for the nightly lane only; a release that
+        # accepted it would publish on a receipt that never asked the version question it owes.
+        if [ "$rphase" = nightly ]; then
+            printf 'FAIL  R5 dogfood receipt %s is a --phase nightly receipt -- evidence for the nightly lane, never for a publish (#4672); run dogfood.sh --phase pre-publish\n' \
+                "$(basename "$receipt")"
+            return 1
+        fi
         if [ "$rdeferred" != "-" ]; then
             printf 'FAIL  R5 dogfood receipt %s DEFERS [%s] -- DEFER is abolished (#3957 F1b): a row is measured or it is RED\n' \
                 "$(basename "$receipt")" "$rdeferred"
@@ -670,6 +678,10 @@ FXREADY
     d="$tmp/full-open"; build_repo "$d"
     write_receipt "$d" GO "$(git -C "$d" rev-parse HEAD)" 1.2.3 full '[]' '["publish-dry-run"]'
     row open_outside_prepublish_refuses 1 "OPEN obligations outside the pre-publish phase" "$d"
+
+    d="$tmp/nightly-go"; build_repo "$d"
+    write_receipt "$d" GO "$(git -C "$d" rev-parse HEAD)" 1.2.3 nightly '[]' '[]'
+    row nightly_receipt_refuses 1 "is a --phase nightly receipt" "$d"
 
     d="$tmp/prepub-bad"; build_repo "$d"
     write_receipt "$d" GO "$(git -C "$d" rev-parse HEAD)" 1.2.3 pre-publish '["publish-dry-run","bashrs"]'
