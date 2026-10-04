@@ -1,4 +1,4 @@
-# Nightly pick: ONE job picks the night's candidate C and publishes it as refs/nightly/<night>.
+# Nightly pick: ONE job picks the night's candidate C and publishes it as refs/heads/nightly/<night>.
 #
 # Every producer measures that C, the nightly train prints its line for that C, and a release
 # promotes that C. The ref is created once and never moved (create-only push, never forced), so a
@@ -13,7 +13,11 @@
 # idempotent: it prints KEPT and leaves the ref as it is. The night is the UTC date of (now - 12h),
 # so a pick that fires late still lands on its own night.
 #
-# REPORT-ONLY. Nothing reads refs/nightly/* yet; no job here gates anything.
+# The ref is a BRANCH because repository rulesets cover only branches and tags; a ruleset on refs/heads/nightly/*
+# (update, deletion and non-fast-forward refused; creation allowed; no bypass) keeps it immutable on the server. It is
+# pushed with this workflow's GITHUB_TOKEN, so creating it fires no workflow. The rolling tag refs/tags/nightly is never C.
+#
+# REPORT-ONLY. Nothing reads refs/heads/nightly/* yet; no job here gates anything.
 name: Nightly pick
 
 on:

@@ -1,5 +1,5 @@
 #!/usr/bin/env bash
-# nightly_pick.sh — pick the night's candidate C once and publish it as refs/nightly/<night>.
+# nightly_pick.sh — pick the night's candidate C once and publish it as refs/heads/nightly/<night>.
 #
 # The rule (operator): one job picks C once a night and publishes it as a ref; every producer measures that C; the
 # train prints its line for that C; a release promotes that C. Planted falsifier: a merge to main after C is picked
@@ -61,7 +61,7 @@ self_test() {
     row night_turns_at_noon 0 "2026-10-05" "" -- bash "$SCRIPT_PATH" night --at 1791201600            # 2026-10-05T12:00Z
     row unpicked_night_is_not_measured 2 "has no pick" "" -- bash "$SCRIPT_PATH" resolve --repo "$W" --night "$n"
     row first_pick_publishes_the_ref 0 "C=$c1 PICKED night $n" "" -- bash "$SCRIPT_PATH" pick --repo "$W" --night "$n" --sha "$c1"
-    row the_ref_is_on_the_remote 0 "$c1" "" -- git -C "$W" ls-remote "$FX/origin.git" "refs/nightly/$n"
+    row the_ref_is_on_the_remote 0 "$c1" "" -- git -C "$W" ls-remote "$FX/origin.git" "refs/heads/nightly/$n"
     l1="$(train_line "$W" "$n")"; m1="$(main_line "$W" "$FX/origin.git")"
     # THE PLANT: a merge to main after the pick
     c2="$(commit "$W" merged-after-the-pick)" && git -C "$W" push -q origin main || caller_error "fixture push"
@@ -79,7 +79,7 @@ self_test() {
     git -C "$W" checkout -q -b side && br="$(commit "$W" branch-only)" && git -C "$W" push -q origin side && git -C "$W" checkout -q main
     row a_commit_not_on_main_is_refused 1 "is not on main" "PICKED" -- bash "$SCRIPT_PATH" pick --repo "$W" --night 2026-10-06 --sha "$br"
     row a_refused_pick_publishes_no_ref 2 "has no pick" "" -- bash "$SCRIPT_PATH" resolve --repo "$W" --night 2026-10-06
-    c3="$(commit "$W" racer)" && git -C "$W" push -q origin main && git -C "$W" push -q origin "$c3:refs/nightly/2026-10-07"
+    c3="$(commit "$W" racer)" && git -C "$W" push -q origin main && git -C "$W" push -q origin "$c3:refs/heads/nightly/2026-10-07"
     row a_pick_never_overwrites_an_existing_ref 0 "C=$c3 KEPT night 2026-10-07" "PICKED" -- bash "$SCRIPT_PATH" pick --repo "$W" --night 2026-10-07 --sha "$c2"
     # a race: the ref is absent when read and created by another picker before the push lands. race_shim DIR NIGHT
     # WINNER puts a git on PATH whose first ls-remote sees nothing and whose push first creates the ref at WINNER.
@@ -87,7 +87,7 @@ self_test() {
         mkdir -p "$1" && printf '%s\n' '#!/usr/bin/env bash' \
             "case \" \$* \" in" \
             "  *' ls-remote '*) [ -f '$1/seen' ] || { : > '$1/seen'; exit 0; } ;;" \
-            "  *' push '*) '$(command -v git)' -C '$FX/origin.git' update-ref refs/nightly/$2 '$3' ;;" \
+            "  *' push '*) '$(command -v git)' -C '$FX/origin.git' update-ref refs/heads/nightly/$2 '$3' ;;" \
             "esac" "exec '$(command -v git)' \"\$@\"" > "$1/git" && chmod +x "$1/git"
     }
     race_shim "$FX/bin" 2026-10-10 "$c3"
@@ -97,10 +97,18 @@ self_test() {
     row a_lost_race_to_an_older_commit_keeps_the_winner 0 "C=$c1 KEPT night 2026-10-11 (another pick won the race)" "PICKED" -- env PATH="$FX/bin-ff:$PATH" bash "$SCRIPT_PATH" pick --repo "$W" --night 2026-10-11 --sha "$c3"
     row a_lost_race_leaves_the_ref_at_the_winner 0 "$c1" "$c3" -- bash "$SCRIPT_PATH" resolve --repo "$W" --night 2026-10-11
     row an_unknown_commit_is_not_measured 2 "cannot tell whether" "PICKED" -- bash "$SCRIPT_PATH" pick --repo "$W" --night 2026-10-12 --sha 0123456789abcdef0123456789abcdef01234567
-    # a decoy: a BRANCH named refs/nightly/<night> must not be read as the night's ref (ls-remote matches by tail)
-    git -C "$W" push -q origin "$br:refs/heads/refs/nightly/2026-10-13" || caller_error "fixture decoy push"
+    # a decoy: a BRANCH named refs/heads/nightly/<night> must not be read as the night's ref (ls-remote matches by tail)
+    git -C "$W" push -q origin "$br:refs/heads/refs/heads/nightly/2026-10-13" || caller_error "fixture decoy push"
     row a_decoy_branch_is_not_the_night 2 "is ambiguous" "C=" -- bash "$SCRIPT_PATH" pick --repo "$W" --night 2026-10-13 --sha "$c3"
     row a_decoy_branch_does_not_resolve 2 "is ambiguous" "$br" -- bash "$SCRIPT_PATH" resolve --repo "$W" --night 2026-10-13
+    # the rolling tag refs/tags/nightly (as on the real remote) is never C: only the branch is
+    git -C "$W" push -q origin "$br:refs/tags/nightly" || caller_error "fixture tag push"
+    row the_rolling_tag_is_not_a_pick 2 "has no pick" "$br" -- bash "$SCRIPT_PATH" resolve --repo "$W" --night 2026-10-14
+    row a_pick_beside_the_rolling_tag_picks_the_branch 0 "C=$c3 PICKED night 2026-10-14" "KEPT" -- bash "$SCRIPT_PATH" pick --repo "$W" --night 2026-10-14 --sha "$c3"
+    row the_rolling_tag_never_resolves 0 "$c3" "$br" -- bash "$SCRIPT_PATH" resolve --repo "$W" --night 2026-10-14
+    # a branch named nightly blocks every nightly/<night> (a directory/file clash): not_measured, never a C
+    git init -q --bare -b main "$FX/df.git" && git -C "$W" push -q "$FX/df.git" main "$c3:refs/heads/nightly" || caller_error "fixture df remote"
+    row a_branch_named_nightly_is_not_measured 2 "NOT_MEASURED" "C=" -- bash "$SCRIPT_PATH" pick --repo "$W" --remote "$FX/df.git" --night 2026-10-15 --sha "$c3"
     row unreachable_remote_is_not_measured 2 "NOT_MEASURED" "PICKED" -- bash "$SCRIPT_PATH" pick --repo "$W" --remote "$FX/absent.git" --night 2026-10-08 --sha "$c2"
     row unreachable_remote_resolve_is_not_measured 2 "cannot read" "" -- bash "$SCRIPT_PATH" resolve --repo "$W" --remote "$FX/absent.git" --night "$n"
     row malformed_night_is_a_caller_error 3 "not YYYY-MM-DD" "PICKED" -- bash "$SCRIPT_PATH" pick --repo "$W" --night 2026-1-4 --sha "$c1"
@@ -114,7 +122,7 @@ self_test() {
 
 # ------------------------------------------------------------------------------------ the mutants ----
 # name<TAB>sed expression on the lib. Each must change the lib and turn the case table RED.
-MUTANTS='m01_pick_moves_the_ref	s/--force-with-lease="refs\/nightly\/\$3:"/-f/
+MUTANTS='m01_pick_moves_the_ref	s/--force-with-lease="refs\/heads\/nightly\/\$3:"/-f/
 m02_existing_ref_ignored	s/    if \[ "\$rc" -eq 0 \]; then$/    if false; then/
 m03_branch_commit_accepted	s/merge-base --is-ancestor "\$4" FETCH_HEAD 2>\/dev\/null ||/true ||/
 m04_verify_accepts_any_sha	s/if \[ "\$c" = "\$4" \]; then printf .NP OK/if true; then printf '"'"'NP OK/
@@ -124,7 +132,7 @@ m07_night_is_the_fire_date	s/\$((e - 43200))/$e/
 m08_bad_night_accepted	s/grep -qxE .\[0-9\]{4}-\[0-9\]{2}-\[0-9\]{2}. || {/true || {/
 m09_bad_sha_accepted	s/grep -qxE .\[0-9a-f\]{40}. || {/true || {/
 m10_race_loser_claims_picked	s/printf .C=%s KEPT night %s (another pick won the race)\\n. "\$c" "\$3"/printf '"'"'C=%s PICKED night %s\\n'"'"' "$c" "$3"/
-m11_plain_push_fast_forwards	s/ --force-with-lease="refs\/nightly\/\$3:"//
+m11_plain_push_fast_forwards	s/ --force-with-lease="refs\/heads\/nightly\/\$3:"//
 m12_unknown_commit_is_red	/cannot tell whether/s/return 2 ;;/return 1 ;;/
 m13_ref_name_matched_by_tail	s/NF && \$2 != r { found = 1 }/NF \&\& 0 { found = 1 }/'
 mutants() {
