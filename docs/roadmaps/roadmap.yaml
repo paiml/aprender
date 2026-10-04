@@ -24060,3 +24060,24 @@ Not done, pending the ruling: moving the 31 fixture files to an obviously synthe
   labels:
   - kind:docs
   notes: 'Operator C197, 2026-10-01 12:40Z: re-date via the spec''s own procedure; check unchanged; not a waiver.'
+- id: PMAT-4756
+  github_issue: 4756
+  item_type: task
+  title: 'examples-nightly: 29 examples fail and 7 time out on main (run 37169058144)'
+  status: inprogress
+  priority: high
+  assigned_to: aprender-wmainred
+  created: 2026-10-04T17:55:00Z
+  updated: 2026-10-04T17:55:00Z
+  spec: null
+  acceptance_criteria:
+  - The 36 rows that were fail or timeout in run 37169058144 are pass or a skip class (needs-args, needs-hardware, needs-data, needs-feature), with fail 0 and timeout 0, under scripts/dogfood_examples.sh --timeout-secs 180
+  - scripts/dogfood_examples.sh and its classifier are unchanged
+  - Release-build workloads are unchanged; only debug builds or non-terminal runs take a shorter path
+  - Out of scope, on build-kaizen/examples-nightly-queue - the workflow's runs-on, concurrency and runner label
+  phases: []
+  subtasks: []
+  estimated_effort: null
+  labels:
+  - kind:code
+  notes: 'Before (CI yoga-build): fail 29, timeout 7. After (intel, debug): pass 9, needs-args 11, needs-hardware 10, needs-data 5, needs-feature 1, fail 0, timeout 0.'
