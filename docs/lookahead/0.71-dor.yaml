@@ -150,7 +150,7 @@ rows:
     contract: {id: crux-competitive-research-ux-v1, path: contracts/crux-competitive-research-ux-v1.yaml, on_main: true}
     falsifier:   # CRUXBIND is the bind precondition; RED on main (7 arms unregistered, 5 letters collide, no gap_effect schema)
       - {ids: [FALSIFY-CRUX-001], path: contracts/crux-competitive-research-ux-v1.yaml, on_main: true}
-      - {ids: [FALSIFY-CRUXBIND-001..007], staged_at: origin/la-71/ext-24-crux-bind,
+      - {ids: [FALSIFY-CRUXBIND-001..010], staged_at: origin/la-71/ext-24-crux-bind,
          staged_path: docs/lookahead/contracts-draft/ext-crux-bind-v1.yaml}
     baseline: {path: evidence/crux/0.69.1, on_main: true, note: "0.69.1 run; no 0.71 run"}
     owner_proposed: EXT lane (E4 #4381), L1 tracks
