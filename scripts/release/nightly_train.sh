@@ -354,10 +354,11 @@ no_token() {
 # verdict_rc LINE -> 0 for RELEASABLE, 1 for anything else (--exit-verdict: a green job means a releasable head)
 verdict_rc() { case "$1" in "RELEASABLE "*) return 0 ;; *) return 1 ;; esac; }
 inbox_line() {   # inbox_line LINE GREENS -> append <= 300 bytes and read it back
-    local l
+    local l who="${NIGHTLY_TRAIN_REPORTER:-nightly-r4}"   # the reporter is a role, named by the caller, never written here
     [ -n "$INBOXF" ] || return 0
     step inbox
-    l="$(date -u +%H:%MZ) | aprender-a7 nightly-r4 | R4 | $1 | greens in a row: $2 | C=${CSHA:0:10}"
+    case "$who" in *[!A-Za-z0-9._-]*) printf 'inbox: NIGHTLY_TRAIN_REPORTER %s is not [A-Za-z0-9._-]\n' "$who" >&2; return 1 ;; esac
+    l="${NOW:11:5}Z | $who | R4 | $1 | greens in a row: $2 | C=${CSHA:0:10}"   # the clock read once, at entry
     l="$(printf '%s' "$l" | head -c 300)"
     printf '%s\n' "$l" >> "$INBOXF" 2>/dev/null \
         || printf '%s\n' "$l" | sg "$(stat -c %G -- "$INBOXF")" -c "tee -a $INBOXF > /dev/null"   # the file's own group: no name in the repo
@@ -441,11 +442,20 @@ run_train() {
     [ -z "$EXIT_VERDICT" ] || verdict_rc "$line" || exit 1
     exit 0
 }
-span() {   # span START END -> XhYYm, or not_measured
-    local a b
-    a="$(date -u -d "$1" +%s 2>/dev/null)"; b="$(date -u -d "$2" +%s 2>/dev/null)"
-    if [ -z "$1" ] || [ -z "$2" ] || [ -z "$a" ] || [ -z "$b" ]; then printf 'not_measured'; return 0; fi
-    printf '%dh%02dm' $(((b - a) / 3600)) $((((b - a) % 3600) / 60))
+span() {   # span START END -> XhYYm, or not_measured; parsed by awk (step_table.sh secs()), no clock read
+    awk -v a="$1" -v b="$2" '
+        function days(y, m, d,    era, yoe, doy, doe, mp) {
+            y -= (m <= 2); era = int(y / 400); yoe = y - era * 400; mp = (m + 9) % 12
+            doy = int((153 * mp + 2) / 5) + d - 1; doe = yoe * 365 + int(yoe / 4) - int(yoe / 100) + doy
+            return era * 146097 + doe - 719468
+        }
+        function secs(s) { return days(substr(s, 1, 4) + 0, substr(s, 6, 2) + 0, substr(s, 9, 2) + 0) * 86400 + substr(s, 12, 2) * 3600 + substr(s, 15, 2) * 60 + substr(s, 18, 2) }
+        function ok(s) { return s ~ /^[0-9][0-9][0-9][0-9]-[0-9][0-9]-[0-9][0-9]T[0-9][0-9]:[0-9][0-9]:[0-9][0-9]Z$/ }
+        BEGIN {
+            if (!ok(a) || !ok(b)) { printf "not_measured"; exit }
+            d = secs(b) - secs(a)
+            printf "%dh%02dm", int(d / 3600), int((d % 3600) / 60)
+        }'
 }
 # ---------------------------------------------------------------- install (the pinned bundle and the user timer) ----
 install_timer() {
@@ -467,7 +477,8 @@ install_timer() {
     [ -n "$(git branch -r --contains "$r" 2>/dev/null)" ] || caller_error "--redage $r is not on any remote branch"
     command -v gh > /dev/null && command -v jq > /dev/null || caller_error "gh and jq must be on PATH: the unit PATH is built from them"
     [ "$(loginctl show-user "$(id -un)" -p Linger --value 2>/dev/null)" = yes ] || caller_error "Linger is not yes: a user timer does not fire while logged out; nothing installed"
-    dir="$home/b-${t:0:10}-${g:0:10}-${r:0:10}"
+    dir="$(realpath -m -s -- "$home/b-${t:0:10}-${g:0:10}-${r:0:10}")" || caller_error "--home: cannot canonicalise"
+    out="$(realpath -m -s -- "$out")" || caller_error "--out: cannot canonicalise"
     mkdir -p "$dir" "$dir/cargo" "$out" || caller_error "cannot create $dir or $out"   # cargo: an empty CARGO_HOME for the unit
     chmod u+w "$dir"/*.sh 2>/dev/null   # a reinstall of the same pin overwrites the read-only copies
     git show "$t:scripts/release/nightly_train.sh" > "$dir/nightly_train.sh" || caller_error "no nightly_train.sh at $t"
@@ -567,15 +578,18 @@ self_test() {
     printf 'run_id\tcreated_at\tbranch\tevent\tconclusion\tattempt\n' > "$tmp/hist"
     printf 'n%s\t2026-%s\tmain\tschedule\t%s\t1\n' 1 09-30T04:45:00Z success 2 10-01T04:45:00Z failure 3 10-02T04:45:00Z success 4 10-03T04:45:00Z success >> "$tmp/hist"
     printf 't5\t2026-10-04T04:45:00Z\tmain\ttimer\tsuccess\t1\n' >> "$tmp/hist"
-    row greens_in_a_row_by_nightly_greens 0 "greens=2" "" -- eval 'printf "greens=%s\n" "$(greens "$tmp/hist" 2026-10-04)"'
+    st_greens_in_a_row_by_nightly_greens() { printf "greens=%s\n" "$(greens "$tmp/hist" 2026-10-04)"; }
+    row greens_in_a_row_by_nightly_greens 0 "greens=2" "" -- st_greens_in_a_row_by_nightly_greens
     printf 'run_id\tcreated_at\tbranch\tevent\tconclusion\tattempt\nt1\t2026-10-03T04:45:00Z\tmain\ttimer\tsuccess\t1\n' > "$tmp/thist"
-    row timer_runs_never_count_toward_b1 0 "greens=0" "" -- eval 'printf "greens=%s\n" "$(greens "$tmp/thist" 2026-10-04)"'
+    st_timer_runs_never_count_toward_b1() { printf "greens=%s\n" "$(greens "$tmp/thist" 2026-10-04)"; }
+    row timer_runs_never_count_toward_b1 0 "greens=0" "" -- st_timer_runs_never_count_toward_b1
     d="$tmp/trap"; fixture "$d"
     row failure_part_way_prints_the_trap_line 2 "NOT RELEASABLE: nightly-train, judge (planted fault) failed" "RELEASABLE H=" -- \
         env NIGHTLY_TRAIN_FAULT=judge bash "$SCRIPT_PATH" --from "$d" --out "$tmp/out" --now 2026-10-04T06:00:00Z
     row the_trap_line_is_recorded 0 "NOT RELEASABLE: nightly-train, judge" "" -- cat "$tmp/out/2026-10-04/line"
+    st_verdict_lanes_are_release_day_checks() { printf "verdict=%s;coverage=%s\n" "$(printf "%s\n" "$LANES" | awk -F ";" "\$2 == \"verdict\" { printf \"%s%s\", s, \$1; s = \" \" }")" "$(printf "%s\n" "$LANES" | awk -F ";" "\$1 == \"coverage\" { print \$2 }")"; }
     row verdict_lanes_are_release_day_checks 0 "verdict=ci-main deep-doctests deep-nodefault deep-examples deep-bins-build deep-bins-smoke dogfood models readiness milestone cleanroom-cpu cleanroom-gpu assets preflight publish-dryrun;coverage=info" "" -- \
-        eval 'printf "verdict=%s;coverage=%s\n" "$(printf "%s\n" "$LANES" | awk -F ";" "\$2 == \"verdict\" { printf \"%s%s\", s, \$1; s = \" \" }")" "$(printf "%s\n" "$LANES" | awk -F ";" "\$1 == \"coverage\" { print \$2 }")"'
+        st_verdict_lanes_are_release_day_checks
     st_norm() {
         printf '{"workflows":[{"node_id":"WA","path":".github/workflows/a.yml"},{"node_id":"WC","path":".github/workflows/c.yml"}]}\n' > "$tmp/wf.json"
         printf '%s' '{"data":{"repository":{"defaultBranchRef":{"name":"main","target":{"oid":"'"$ST_C"'","tree":{"oid":"t"},"statusCheckRollup":{"contexts":{"nodes":[{},{"name":"gate","status":"COMPLETED","conclusion":"SUCCESS","startedAt":"s","completedAt":"e","checkSuite":{"status":"COMPLETED","conclusion":"SUCCESS","branch":{"name":"main"},"workflowRun":{"databaseId":301,"event":"push","createdAt":"c","workflow":{"id":"WC"}}}}]}}}}},"w0":{"id":"WA","runs":{"nodes":[{"databaseId":101,"createdAt":"c1","event":"schedule","checkSuite":{"status":"COMPLETED","conclusion":"SUCCESS","branch":{"name":"main"},"commit":{"oid":"'"$ST_C"'"},"checkRuns":{"nodes":[{"name":"job-a","status":"COMPLETED","conclusion":"SUCCESS","startedAt":"s1","completedAt":"e1"},{"name":"job-a","status":"COMPLETED","conclusion":"FAILURE","startedAt":"s0","completedAt":"e0"}]}}}]}}}}' > "$tmp/gql.json"
@@ -599,22 +613,29 @@ self_test() {
     }
     row normalize_marks_a_cut_job_list 0 "$(printf '#truncated\tCOMPLETED\tTRUNCATED')" "" -- st_cut
     d="$tmp/noprod"; fixture "$d"
+    st_a_lane_without_a_producer_is_not_measured() { decide "$ST_LANES
+v-e;verdict;check E;-;-;-" "$d" 2026-10-04T06:00:00Z; cat "$d/line" "$d/lanes.tsv"; }
     row a_lane_without_a_producer_is_not_measured 0 "$(printf 'v-e\tverdict\tnot_measured')" "RELEASABLE H=" -- \
-        eval 'decide "$ST_LANES
-v-e;verdict;check E;-;-;-" "$d" 2026-10-04T06:00:00Z; cat "$d/line" "$d/lanes.tsv"'
+        st_a_lane_without_a_producer_is_not_measured
     d="$tmp/green1"; fixture "$d"
+    st_stdout_is_exactly_one_line() { bash "$SCRIPT_PATH" --from "$d" --out "$tmp/o1" --now 2026-10-04T06:00:00Z | awk "END { print \"lines=\" NR }"; }
     row stdout_is_exactly_one_line 0 "lines=1" "" -- \
-        eval 'bash "$SCRIPT_PATH" --from "$d" --out "$tmp/o1" --now 2026-10-04T06:00:00Z | awk "END { print \"lines=\" NR }"'
+        st_stdout_is_exactly_one_line
+    st_a_fault_after_judging_leaves_one_history_row() { NIGHTLY_TRAIN_FAULT=history bash "$SCRIPT_PATH" --from "$d" --out "$tmp/o3" --now 2026-10-04T06:00:00Z > /dev/null; awk -F "\t" "NR > 1 { n++; if (\$5 == \"failure\") f++ } END { print \"rows=\" n+0, \"failure=\" f+0 }" "$tmp/o3/history.tsv"; }
     row a_fault_after_judging_leaves_one_history_row 0 "rows=1 failure=1" "" -- \
-        eval 'NIGHTLY_TRAIN_FAULT=history bash "$SCRIPT_PATH" --from "$d" --out "$tmp/o3" --now 2026-10-04T06:00:00Z > /dev/null; awk -F "\t" "NR > 1 { n++; if (\$5 == \"failure\") f++ } END { print \"rows=\" n+0, \"failure=\" f+0 }" "$tmp/o3/history.tsv"'
+        st_a_fault_after_judging_leaves_one_history_row
+    st_a_fault_after_history_adds_no_second_row() { NIGHTLY_TRAIN_FAULT=inbox bash "$SCRIPT_PATH" --from "$d" --out "$tmp/o4" --inbox "$tmp/ib4" --now 2026-10-04T06:00:00Z > /dev/null; awk -F "\t" "NR > 1 { n++; if (\$5 == \"failure\") f++ } END { print \"rows=\" n+0, \"failure=\" f+0 }" "$tmp/o4/history.tsv"; }
     row a_fault_after_history_adds_no_second_row 0 "rows=1 failure=0" "" -- \
-        eval 'NIGHTLY_TRAIN_FAULT=inbox bash "$SCRIPT_PATH" --from "$d" --out "$tmp/o4" --inbox "$tmp/ib4" --now 2026-10-04T06:00:00Z > /dev/null; awk -F "\t" "NR > 1 { n++; if (\$5 == \"failure\") f++ } END { print \"rows=\" n+0, \"failure=\" f+0 }" "$tmp/o4/history.tsv"'
+        st_a_fault_after_history_adds_no_second_row
+    st_a_closed_stdout_adds_no_second_row() { bash "$SCRIPT_PATH" --from "$d" --out "$tmp/o5" --now 2026-10-04T06:00:00Z >&- 2> /dev/null; awk -F "\t" "NR > 1 { n++; if (\$5 == \"failure\") f++ } END { print \"rows=\" n+0, \"failure=\" f+0 }" "$tmp/o5/history.tsv"; }
     row a_closed_stdout_adds_no_second_row 0 "rows=1 failure=0" "" -- \
-        eval 'bash "$SCRIPT_PATH" --from "$d" --out "$tmp/o5" --now 2026-10-04T06:00:00Z >&- 2> /dev/null; awk -F "\t" "NR > 1 { n++; if (\$5 == \"failure\") f++ } END { print \"rows=\" n+0, \"failure=\" f+0 }" "$tmp/o5/history.tsv"'
+        st_a_closed_stdout_adds_no_second_row
+    st_a_self_test_writes_only_its_own_inbox() { case "$INBOX" in "$tmp"/*) echo sandbox ;; *) echo "INBOX is $INBOX" ;; esac; }
     row a_self_test_writes_only_its_own_inbox 0 "sandbox" "" -- \
-        eval 'case "$INBOX" in "$tmp"/*) echo sandbox ;; *) echo "INBOX is $INBOX" ;; esac'
+        st_a_self_test_writes_only_its_own_inbox
+    st_a_planted_fault_never_writes_the_named_inbox() { INBOX="$tmp/c6.md" NIGHTLY_TRAIN_FAULT=bundle bash "$SCRIPT_PATH" --from "$d" --out "$tmp/o6" --now 2026-10-04T06:00:00Z > /dev/null; NIGHTLY_TRAIN_FAULT=bundle bash "$SCRIPT_PATH" --from "$d" --out "$tmp/o7" --inbox "$tmp/c7.md" --now 2026-10-04T06:00:00Z > /dev/null; printf "caller=%s lines=%s\n" "$(cat "$tmp/c6.md" "$tmp/c7.md" 2>/dev/null | wc -l)" "$(cat "$tmp/o6"/*/line "$tmp/o7"/*/line | grep -c "planted fault")"; }
     row a_planted_fault_never_writes_the_named_inbox 0 "caller=0 lines=2" "" -- \
-        eval 'INBOX="$tmp/c6.md" NIGHTLY_TRAIN_FAULT=bundle bash "$SCRIPT_PATH" --from "$d" --out "$tmp/o6" --now 2026-10-04T06:00:00Z > /dev/null; NIGHTLY_TRAIN_FAULT=bundle bash "$SCRIPT_PATH" --from "$d" --out "$tmp/o7" --inbox "$tmp/c7.md" --now 2026-10-04T06:00:00Z > /dev/null; printf "caller=%s lines=%s\n" "$(cat "$tmp/c6.md" "$tmp/c7.md" 2>/dev/null | wc -l)" "$(cat "$tmp/o6"/*/line "$tmp/o7"/*/line | grep -c "planted fault")"'
+        st_a_planted_fault_never_writes_the_named_inbox
     d="$tmp/legs"; fixture "$d"
     printf 'wf\t.github/workflows/a.yml\t101\tschedule\tmain\t%s\t2026-10-04T01:00:00Z\tCOMPLETED\tSUCCESS\tjob-a\tCOMPLETED\tFAILURE\t2026-10-04T01:00:30Z\t2026-10-04T01:20:00Z\t2\n' "$ST_C" >> "$d/runs.tsv"
     row a_failed_parallel_leg_of_the_same_name_is_red 0 "NOT RELEASABLE: v-a, 101" "RELEASABLE H=" -- st_decide "$d"
@@ -633,13 +654,24 @@ v-e;verdict;check E;-;-;-" "$d" 2026-10-04T06:00:00Z; cat "$d/line" "$d/lanes.ts
         '  *graphql*) echo "{\"errors\":[{\"message\":\"stub\"}]}" ;;' \
         '  *) echo 1 ;;' 'esac' > "$tmp/bin/gh"; chmod +x "$tmp/bin/gh"
     printf '{"workflows":[%s]}\n' '{"node_id":"WA","path":".github/workflows/a.yml"},{"node_id":"WB","path":".github/workflows/b.yml"},{"node_id":"WC","path":".github/workflows/c.yml"},{"node_id":"WD","path":".github/workflows/d.yml"}' > "$tmp/wfall.json"
-    st_fetch() { mkdir -p "$tmp/f$1"; PATH="$tmp/bin:$PATH" STUB_WF="$tmp/wfall.json" LANES="$ST_LANES" fetch "$tmp/f$1" "$tmp/f$1/cache"; cat "$tmp/f$1/read"; }
-    row fetch_refuses_under_the_rate_floor 0 "failed: core remaining 999 under 1000" "" -- eval 'STUB_REM=999 st_fetch 1'
-    row a_job_token_under_a_fifth_refuses 0 "failed: core remaining 199 under 200" "" -- eval 'STUB_LIM=1000 STUB_REM=199 st_fetch 4'
-    row a_job_token_at_a_fifth_reads 0 "failed: GraphQL errors" "under" -- eval 'CALLS=0; STUB_LIM=1000 STUB_REM=200 st_fetch 5'
-    row an_unreadable_limit_refuses 0 "failed: rate_limit unreadable" "" -- eval 'STUB_LIM= STUB_REM=5000 st_fetch 6'
-    row fetch_refuses_past_the_call_budget 0 "failed: call budget" "" -- eval 'MAX_CALLS=0; st_fetch 2'
-    row fetch_refuses_a_graphql_error 0 "failed: GraphQL errors" "" -- eval 'CALLS=0; st_fetch 3'
+    st_fetch() {
+        local f; f="$(realpath -m -s -- "$tmp/f$1")"
+        mkdir -p "$f"
+        PATH="$tmp/bin:$PATH" STUB_WF="$tmp/wfall.json" LANES="$ST_LANES" fetch "$f" "$f/cache"
+        cat "$f/read"
+    }
+    st_fetch_refuses_under_the_rate_floor() { STUB_REM=999 st_fetch 1; }
+    row fetch_refuses_under_the_rate_floor 0 "failed: core remaining 999 under 1000" "" -- st_fetch_refuses_under_the_rate_floor
+    st_a_job_token_under_a_fifth_refuses() { STUB_LIM=1000 STUB_REM=199 st_fetch 4; }
+    row a_job_token_under_a_fifth_refuses 0 "failed: core remaining 199 under 200" "" -- st_a_job_token_under_a_fifth_refuses
+    st_a_job_token_at_a_fifth_reads() { CALLS=0; STUB_LIM=1000 STUB_REM=200 st_fetch 5; }
+    row a_job_token_at_a_fifth_reads 0 "failed: GraphQL errors" "under" -- st_a_job_token_at_a_fifth_reads
+    st_an_unreadable_limit_refuses() { STUB_LIM= STUB_REM=5000 st_fetch 6; }
+    row an_unreadable_limit_refuses 0 "failed: rate_limit unreadable" "" -- st_an_unreadable_limit_refuses
+    st_fetch_refuses_past_the_call_budget() { MAX_CALLS=0; st_fetch 2; }
+    row fetch_refuses_past_the_call_budget 0 "failed: call budget" "" -- st_fetch_refuses_past_the_call_budget
+    st_fetch_refuses_a_graphql_error() { CALLS=0; st_fetch 3; }
+    row fetch_refuses_a_graphql_error 0 "failed: GraphQL errors" "" -- st_fetch_refuses_a_graphql_error
     row an_inbox_read_back_mismatch_exits_non_zero 1 "inbox: read-back mismatch" "" -- \
         bash "$SCRIPT_PATH" --from "$d" --out "$tmp/o9" --inbox /dev/null --now 2026-10-04T06:00:00Z
     row a_closed_stdout_keeps_the_real_verdict 0 "NOT RELEASABLE: ci-main, not_measured (+14 more) [C=aaaaaaaaaa pin=" "nightly-train" -- cat "$tmp/o5/2026-10-04/line"
@@ -647,21 +679,27 @@ v-e;verdict;check E;-;-;-" "$d" 2026-10-04T06:00:00Z; cat "$d/line" "$d/lanes.ts
         env CARGO_REGISTRY_TOKEN=x bash "$SCRIPT_PATH" --from "$d" --out "$tmp/ot1" --now 2026-10-04T06:00:00Z
     row an_empty_named_registry_token_refuses 2 "NOT RELEASABLE: nightly-train, no-token failed" "RELEASABLE H=" -- \
         env CARGO_REGISTRIES_MIRROR_TOKEN= bash "$SCRIPT_PATH" --from "$d" --out "$tmp/ot2" --now 2026-10-04T06:00:00Z
+    st_a_credentials_file_refuses() { mkdir -p "$tmp/ch"; : > "$tmp/ch/credentials.toml"; CARGO_HOME="$tmp/ch" bash "$SCRIPT_PATH" --from "$d" --out "$tmp/ot3" --now 2026-10-04T06:00:00Z; }
     row a_credentials_file_refuses 2 "NOT RELEASABLE: nightly-train, no-token failed" "RELEASABLE H=" -- \
-        eval 'mkdir -p "$tmp/ch"; : > "$tmp/ch/credentials.toml"; CARGO_HOME="$tmp/ch" bash "$SCRIPT_PATH" --from "$d" --out "$tmp/ot3" --now 2026-10-04T06:00:00Z'
-    row exit_verdict_maps_releasable_to_0 0 "rc=0 rc=1" "" -- eval 'verdict_rc "RELEASABLE H=$ST_C"; a=$?; verdict_rc "NOT RELEASABLE: v-a, 101"; echo "rc=$a rc=$?"'
+        st_a_credentials_file_refuses
+    st_exit_verdict_maps_releasable_to_0() { verdict_rc "RELEASABLE H=$ST_C"; a=$?; verdict_rc "NOT RELEASABLE: v-a, 101"; echo "rc=$a rc=$?"; }
+    row exit_verdict_maps_releasable_to_0 0 "rc=0 rc=1" "" -- st_exit_verdict_maps_releasable_to_0
     row exit_verdict_not_releasable_exits_1 1 "NOT RELEASABLE: ci-main" "nightly-train" -- \
         bash "$SCRIPT_PATH" --from "$d" --out "$tmp/ov" --exit-verdict --now 2026-10-04T06:00:00Z
+    st_a_legacy_config_token_refuses() { mkdir -p "$tmp/cc"; printf "[registry]\ntoken = \"x\"\n" > "$tmp/cc/config.toml"; CARGO_HOME="$tmp/cc" bash "$SCRIPT_PATH" --from "$d" --out "$tmp/ot4" --now 2026-10-04T06:00:00Z; }
     row a_legacy_config_token_refuses 2 "NOT RELEASABLE: nightly-train, no-token failed" "RELEASABLE H=" -- \
-        eval 'mkdir -p "$tmp/cc"; printf "[registry]\ntoken = \"x\"\n" > "$tmp/cc/config.toml"; CARGO_HOME="$tmp/cc" bash "$SCRIPT_PATH" --from "$d" --out "$tmp/ot4" --now 2026-10-04T06:00:00Z'
+        st_a_legacy_config_token_refuses
+    st_a_home_credentials_file_refuses_whatever_cargo_home() { mkdir -p "$tmp/hh/.cargo"; : > "$tmp/hh/.cargo/credentials"; HOME="$tmp/hh" bash "$SCRIPT_PATH" --from "$d" --out "$tmp/ot5" --now 2026-10-04T06:00:00Z; }
     row a_home_credentials_file_refuses_whatever_cargo_home 2 "NOT RELEASABLE: nightly-train, no-token failed" "RELEASABLE H=" -- \
-        eval 'mkdir -p "$tmp/hh/.cargo"; : > "$tmp/hh/.cargo/credentials"; HOME="$tmp/hh" bash "$SCRIPT_PATH" --from "$d" --out "$tmp/ot5" --now 2026-10-04T06:00:00Z'
+        st_a_home_credentials_file_refuses_whatever_cargo_home
+    st_a_home_config_token_refuses_whatever_cargo_home() { mkdir -p "$tmp/hc/.cargo"; printf "token=\"x\"\n" > "$tmp/hc/.cargo/config"; HOME="$tmp/hc" bash "$SCRIPT_PATH" --probe-no-token; }
     row a_home_config_token_refuses_whatever_cargo_home 1 "no-token: a token line in the config under $tmp/hc/.cargo" "clear" -- \
-        eval 'mkdir -p "$tmp/hc/.cargo"; printf "token=\"x\"\n" > "$tmp/hc/.cargo/config"; HOME="$tmp/hc" bash "$SCRIPT_PATH" --probe-no-token'
+        st_a_home_config_token_refuses_whatever_cargo_home
     row the_probe_is_clear_where_no_token_is_reachable 0 "no-token: clear" "" -- bash "$SCRIPT_PATH" --probe-no-token
     d="$tmp/evg"; fixture "$d"
+    st_exit_verdict_releasable_run_exits_0() { (LANES="$ST_LANES"; EXIT_VERDICT=1; NOW=2026-10-04T06:00:00Z; OUTDIR="$tmp/oev"; INBOXF=""; run_train "$d"); }
     row exit_verdict_releasable_run_exits_0 0 "RELEASABLE H=$ST_C" "NOT RELEASABLE" -- \
-        eval '(LANES="$ST_LANES"; EXIT_VERDICT=1; NOW=2026-10-04T06:00:00Z; OUTDIR="$tmp/oev"; INBOXF=""; run_train "$d")'
+        st_exit_verdict_releasable_run_exits_0
     mkdir -p "$tmp/pb" && cp "$SCRIPT_PATH" "$HERE/red_age.sh" "$HERE/nightly_greens.sh" "$tmp/pb/" 2>/dev/null; chmod u+w "$tmp/pb"/*.sh
     printf 'train %s\ngreens %s\nredage %s\n' "$ST_C" "$ST_C" "$ST_C" > "$tmp/pb/PIN"
     (cd "$tmp/pb" && sha256sum nightly_train.sh nightly_greens.sh red_age.sh PIN > SHA256SUMS) 2>/dev/null
@@ -672,8 +710,9 @@ v-e;verdict;check E;-;-;-" "$d" 2026-10-04T06:00:00Z; cat "$d/line" "$d/lanes.ts
     printf '# an edit after pinning\n' >> "$tmp/pb/nightly_train.sh"
     row an_edited_bundle_refuses 2 "NOT RELEASABLE: nightly-train, pin failed" "RELEASABLE H=" -- \
         bash "$tmp/pb/nightly_train.sh" --from "$d" --out "$tmp/o2" --now 2026-10-04T06:00:00Z
+    st_an_edited_bundle_leaves_its_line_and_one_row() { awk -F "\t" "NR > 1 { n++; if (\$5 == \"failure\") f++ } END { printf \"rows=%d failure=%d \", n, f }" "$tmp/o2/history.tsv"; grep -o "pin failed" "$tmp/o2/2026-10-04/line"; }
     row an_edited_bundle_leaves_its_line_and_one_row 0 "rows=1 failure=1 pin" "" -- \
-        eval 'awk -F "\t" "NR > 1 { n++; if (\$5 == \"failure\") f++ } END { printf \"rows=%d failure=%d \", n, f }" "$tmp/o2/history.tsv"; grep -o "pin failed" "$tmp/o2/2026-10-04/line"'
+        st_an_edited_bundle_leaves_its_line_and_one_row
     row a_pinned_run_of_an_intact_bundle_judges 0 "[C=aaaaaaaaaa pin=aaaaaaaaaa.aaaaaaaaaa.aaaaaaaaaa]" "nightly-train" -- \
         bash "$tmp/pe/nightly_train.sh" --pinned --from "$d" --out "$tmp/oe" --now 2026-10-04T06:00:00Z
     row a_pinned_run_without_pin_refuses 2 "NOT RELEASABLE: nightly-train, pin failed" "RELEASABLE H=" -- \

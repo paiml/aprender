@@ -74,7 +74,7 @@ TIME_AWK='
         return (substr(s, 12, 2) + 0 <= 23 && substr(s, 15, 2) + 0 <= 59 && n <= 59)
     }
     # seconds since 1970-01-01T00:00:00Z of an instant istime() accepted
-    function secs(s) { return dayno(s) * 86400 + substr(s, 12, 2) * 3600 + substr(s, 15, 2) * 60 + ((length(s) == 20) ? substr(s, 18, 2) : 0) }
+    function secs(s) { return dayno(s) * 86400 + substr(s, 12, 2) * 3600 + substr(s, 15, 2) * 60 + ((length(s) == length("1970-01-01T00:00:00Z")) ? substr(s, 18, 2) : 0) }
     function mins(x) { return sprintf("%.1f", x / 60) }
     # a table cell never carries the column separator, and an empty cell prints -
     function cell(s) { gsub(/\|/, "/", s); return (s == "") ? "-" : s }
@@ -105,7 +105,7 @@ steps_awk() {
     BEGIN {
         FS = "\t"
         want = "release\tstep_id\tstep\tlane\tstart_utc\tstart_src\tend_utc\tend_src\tresult\tattempts\tattempts_src\tfirst_pass\tdecided_by\tdecided_src\tnote"
-        shown = want; gsub(/\t/, " ", shown)
+        shown = want; gsub(/\t/, " ", shown); nf = split(want, hcol, "\t")
         ncanon = split("S01 S02 S03 S04 S05 S06 S07 S08 S09 S09c S10 S11 S12 S13", canon, " ")
         split("version bump|PR CI on the release commit|merge queue / merge|clean-room job|model ladder, GPU host 1|model ladder, GPU host 2|CRUX smoke|CPU-host gates|dogfood|dogfood coverage stage (inside S09)|pre-tag check|tag|crates.io publish + index check|GitHub release + assets", label, "|")
         for (i = 1; i <= ncanon; i++) name[canon[i]] = label[i]
@@ -121,7 +121,7 @@ steps_awk() {
         next
     }
     hbad { next }
-    NF != 15 { refuse("a step row has 15 tab-separated fields, this one has " NF); next }
+    NF != nf { refuse("a step row has " nf " tab-separated fields, as the header does, this one has " NF); next }
     {
         if ($1 !~ /^[0-9A-Za-z.-]+$/) refuse("release " $1 " is not a release name [0-9A-Za-z.-]")
         if ($2 !~ /^(S[0-9][0-9]c?|X[0-9][0-9])$/ || ($2 ~ /^S/ && !($2 in name))) refuse("step_id " $2 " is neither a step S01..S13 or S09c nor an extra X01..X99")
@@ -313,7 +313,7 @@ questions_awk() {
     BEGIN {
         FS = "\t"
         want = "release\tq_id\tasked_utc\tasked_src\ttopic\tanswered_utc\tanswered_src\truling\tnote"
-        shown = want; gsub(/\t/, " ", shown)
+        shown = want; gsub(/\t/, " ", shown); nf = split(want, hcol, "\t")
     }
     FNR == 1 {
         hbad = ($0 != want)
@@ -321,7 +321,7 @@ questions_awk() {
         next
     }
     hbad { next }
-    NF != 9 { refuse("a question row has 9 tab-separated fields, this one has " NF); next }
+    NF != nf { refuse("a question row has " nf " tab-separated fields, as the header does, this one has " NF); next }
     {
         if ($1 !~ /^[0-9A-Za-z.-]+$/) refuse("release " $1 " is not a release name [0-9A-Za-z.-]")
         if ($2 == "") refuse("q_id is empty")
@@ -615,7 +615,7 @@ mutants() {
     done <<'MUTANTS'
 istime_accepts_anything     /^TIME_AWK='$/,/^'$/s/^    function istime(s,    n) {$/    function istime(s,    n) { return (s != "")/
 source_not_required         /^TIME_AWK='$/,/^'$/s/if (src == "") {/if (0) {/
-seconds_ignored             /^TIME_AWK='$/,/^'$/s/ + ((length(s) == 20) ? substr(s, 18, 2) : 0) }/ + 0 }/
+seconds_ignored             /^TIME_AWK='$/,/^'$/s/ + ((length(s) == length("1970-01-01T00:00:00Z")) ? substr(s, 18, 2) : 0) }/ + 0 }/
 leap_years_ignored          /^TIME_AWK='$/,/^'$/s/doe = yoe \* 365 + int(yoe \/ 4) - int(yoe \/ 100) + doy/doe = yoe * 365 + doy/
 end_before_start_accepted   /^steps_awk() {$/,/^}$/s/secs($7) < secs($5)/0/
 notrun_with_time_accepted   /^steps_awk() {$/,/^}$/s/if ($5 != "" || $7 != "") refuse/if (0) refuse/
