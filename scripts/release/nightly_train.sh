@@ -620,7 +620,7 @@ v-e;verdict;check E;-;-;-" "$d" 2026-10-04T06:00:00Z; cat "$d/line" "$d/lanes.ts
     row fetch_refuses_a_graphql_error 0 "failed: GraphQL errors" "" -- eval 'CALLS=0; st_fetch 3'
     row an_inbox_read_back_mismatch_exits_non_zero 1 "inbox: read-back mismatch" "" -- \
         bash "$SCRIPT_PATH" --from "$d" --out "$tmp/o9" --inbox /dev/null --now 2026-10-04T06:00:00Z
-    row a_closed_stdout_keeps_the_real_verdict 0 "[C=aaaaaaaaaa pin=unpinned]" "nightly-train" -- cat "$tmp/o5/2026-10-04/line"
+    row a_closed_stdout_keeps_the_real_verdict 0 "NOT RELEASABLE: ci-main, not_measured (+14 more) [C=aaaaaaaaaa pin=" "nightly-train" -- cat "$tmp/o5/2026-10-04/line"
     mkdir -p "$tmp/pb" && cp "$SCRIPT_PATH" "$HERE/red_age.sh" "$HERE/nightly_greens.sh" "$tmp/pb/" 2>/dev/null; chmod u+w "$tmp/pb"/*.sh
     printf 'train %s\ngreens %s\nredage %s\n' "$ST_C" "$ST_C" "$ST_C" > "$tmp/pb/PIN"
     (cd "$tmp/pb" && sha256sum nightly_train.sh nightly_greens.sh red_age.sh PIN > SHA256SUMS) 2>/dev/null
