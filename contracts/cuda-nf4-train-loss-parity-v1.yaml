@@ -268,6 +268,9 @@ falsification_tests:
     while the raw buffers miss it by more than 0.1;
     set_from_device_layout inverts device_layout exactly and leaves A
     and B trainable; an A or a B one entry too long panics, naming it.
+    CPU with --features cuda (instruct_pipeline/cuda_init.rs tests, no
+    device): lora_slot gives every slot's device_layout and None past
+    the last slot, so a raw upload copy is caught without a GPU.
     Device (instruct_pipeline/layout_probe.rs, TransformerConfig::tiny(),
     rank 4, alpha 8, dense A and B): (c1) after init_cuda every block's
     download is exactly (Aᵀ, 2·Bᵀ); (c2) sync_lora_to_cpu then gives
@@ -289,7 +292,9 @@ falsification_tests:
     buffer crosses between a LoRALayer and a CUDA block: lora_slot
     (cuda_init.rs), sync_lora_to_cpu (accessors.rs), and any new
     upload or download site, which must go through device_layout and
-    set_from_device_layout. Run the device half with cargo test -p
+    set_from_device_layout. The same filter with --features cuda also
+    runs the lora_slot test, which needs no device. Run the device half
+    with cargo test -p
     aprender-train --features cuda --lib
     falsify_cuda_nf4_train_loss_parity_003 -- --ignored --nocapture,
     the GPU lock around the test binary only. The classify pipeline

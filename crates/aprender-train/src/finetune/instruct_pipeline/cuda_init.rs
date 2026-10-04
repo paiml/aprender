@@ -551,3 +551,32 @@ fn lora_slot(lora_layers: &[LoRALayer], idx: usize) -> Option<(Vec<f32>, Vec<f32
 fn optional_slice<'a>(tensor: Option<&'a Tensor>, what: &str) -> Option<&'a [f32]> {
     tensor.map(|t| t.data().as_slice().expect(what))
 }
+
+#[cfg(all(test, feature = "cuda"))]
+mod tests {
+    use super::*;
+
+    /// The upload half of FALSIFY-CUDA-NF4-TRAIN-LOSS-PARITY-003, with no device: every slot
+    /// `init_cuda` uploads is that layer's device layout. A raw copy is caught here, not only
+    /// by the GPU probe.
+    #[test]
+    fn falsify_cuda_nf4_train_loss_parity_003_lora_slot_is_the_device_layout() {
+        // d_out 6, d_in 4, rank 2: no pair is square, and every entry differs.
+        let layers: Vec<LoRALayer> = (0..2)
+            .map(|k| {
+                let mut l = LoRALayer::new(Tensor::zeros(6 * 4, false), 6, 4, 2, 4.0);
+                let a = (0..2 * 4).map(|i| (100 * k + i + 1) as f32).collect();
+                let b = (0..6 * 2).map(|i| -((100 * k + i + 1) as f32)).collect();
+                *l.lora_a_mut() = Tensor::from_vec(a, true);
+                *l.lora_b_mut() = Tensor::from_vec(b, true);
+                l
+            })
+            .collect();
+        for (idx, layer) in layers.iter().enumerate() {
+            let slot = lora_slot(&layers, idx).expect("a slot in range");
+            assert_eq!(slot, layer.device_layout(), "slot {idx} is not (Aᵀ, Bᵀ)");
+            assert_ne!(slot.0, layer.lora_a().data().to_vec(), "slot {idx}: A copied raw");
+        }
+        assert!(lora_slot(&layers, layers.len()).is_none(), "a slot past the last layer");
+    }
+}
