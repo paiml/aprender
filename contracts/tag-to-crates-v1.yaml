@@ -1,0 +1,183 @@
+metadata:
+  version: 1.0.0
+  created: '2026-10-03'
+  author: PAIML Engineering
+  description: "Release 0.70.2 ships only if tag to crates.io for 0.70.2 itself is under 2 hours (operator ruling C277 item 6). scripts/release/tag_to_crates.sh is the timer: from the annotated tag's tagger date to the newest crates.io created_at among the crates of scripts/release/publish-order.txt at the tag, each at the release version. It judges reads a fetcher took and answers met, not met or not_measured. Exactly 2 h is not under 2 h; a crate nobody read, or one published before the tag, is never green; a crate still missing at a read 2 h or more after the tag is already red."
+  kind: pattern
+  references:
+    - "scripts/release/tag_to_crates.sh — the judge, its case table (--selftest) and its planted mutants (--mutants)"
+    - "scripts/release/crates_io_reads.sh — the fetcher: one crates.io read per crate of the order file, written as the judge's input; its case table (--selftest) and its planted mutants (--mutants)"
+    - "scripts/release/publish-order.txt — the crates the clock waits for, in the order the cascade publishes them (present from v0.69.0)"
+    - "scripts/release/publish_strict.sh — the cascade; it appends three facade crates that carry their own version, so no read at the release version can time them"
+    - "scripts/release/release_wall_time.py — the earlier reader of the same anchors: spans with no verdict, and a failed crates.io read counted as a missing crate"
+
+five_whys:
+  symptom: "The E5 baseline in BLD-001 (releases 0.66.0 to 0.69.1) timed one crate per release, the root crate aprender, while from v0.69.0 on the cascade publishes two more crates after it (scripts/release/publish-order.txt at main @ 316dee2cd4: 73 crates, aprender at line 71). A release could read as under 2 h while its last crate landed later."
+  why_1: "The baseline read one crates.io endpoint, the root crate's version list: one read per release, and the crate users install."
+  why_2: "Nothing turned the order file into a clock, so 'the release is on crates.io' had no single instant to measure."
+  why_3: "The reader that does walk the order file (release_wall_time.py) reports spans and no verdict, and it counts a crates.io read that failed (a timeout, a 5xx, a 429) as a crate with no such version: 'not known' reads as 'not published'."
+  why_4: "With no verdict and no fixed threshold, 'under 2 hours' could only be asserted: an unread or failed crate could pass as on time, and a late last crate could hide behind the root crate."
+  why_5: "The bar is new (C277 item 6, 2026-10-03), and the crate set it needs, the order file, exists in the tree only from v0.69.0."
+  root_cause: "The release clock had no judge: no fixed crate set, no fixed threshold and no rule for a read that says nothing. The remedy is a judge over recorded reads. The clock stops at the newest created_at among the order file's crates at the release version, 2 h is a constant, an unread or pre-tag crate is not_measured, and a crate still missing 2 h after the tag is red."
+
+equations:
+  crate_state:
+    formula: "state(c) = not_measured if no row reads c; else, if crates.io had c at the version by --as-of (created_at(c) <= as_of): not_measured if created_at(c) < tag, red if created_at(c) - tag >= LIMIT, ok otherwise; else (c not published at min(read_at(c), as_of)): not_measured if read_at(c) < tag, red if min(read_at(c), as_of) - tag >= LIMIT, not_measured otherwise"
+    domain: "the crates of the order file at the tag, each with at most one read row (crate, version, created_at, read_at) at the release version; tag is the annotated tag's tagger date; LIMIT = 7200 s"
+    codomain: "{ok, red, not_measured} for each crate"
+    invariants:
+      - "exactly 2 h after the tag is red: under 2 hours is strict"
+      - "a crate nobody read is not_measured however late it is"
+      - "a crate published before the tag is not_measured: the clock has no valid start"
+      - "a crate absent at a read is known absent only until that read, and nothing after --as-of counts"
+      - "a fractional created_at floored to the whole second keeps its side of the tag and of the bar, both whole seconds; the judge itself refuses fractional seconds"
+
+  e5_verdict:
+    formula: "stop(c) = created_at(c) - tag for a published crate, min(read_at(c), as_of) - tag for an absent one; clock = the newest stop over the order file; E5 = not met if any crate is red, else not_measured if any crate is not_measured, else met, naming the last crate and the clock"
+    domain: "crate_state over every crate of the order file, and the constant LIMIT = 7200 s"
+    codomain: "exit 0 met | 1 not met (red wins) | 2 not_measured | 3 caller error"
+    invariants:
+      - "red wins over not_measured"
+      - "the clock is the newest stop among all the crates of the order file, never the root crate aprender alone"
+      - "a clock that includes an absent crate is printed as a lower bound ('at least')"
+      - "LIMIT is 7200, and neither an option nor an environment value can change it"
+      - "the root crate's own time is printed as context and never decides the verdict"
+      - "a row the judge cannot read (a short line, an unknown or repeated crate, another version, a bad time, a created_at after its read_at) makes the judgment not_measured, never skipped"
+
+  crates_io_read:
+    formula: "row(c) = (c, V, floor_s(created_at), read_at) if crates.io answers 200 with a version object naming crate c, version V and a UTC created_at; (c, V, '', read_at) if it answers 404; no row for any other answer (no complete answer, 429, 5xx, 3xx, another crate or version, no created_at, a body that is not one JSON object, an offset other than UTC). exit = 2 if any crate of the order file has no row, else 0; 3 for a caller error"
+    domain: "the order file (one crate name per line, no comments or blank lines, no duplicates, at most 64 characters each), the release version V (X.Y.Z, optionally with a pre-release), and one GET https://crates.io/api/v1/crates/<c>/<V> per crate"
+    codomain: "a new TSV with the header crate, version, created_at, read_at (the input of tag_to_crates.sh), and exit 0 | 2 | 3"
+    invariants:
+      - "a failed read is no row and exit 2, never a row with an empty created_at: 'not known' is not 'not published'"
+      - "only a 404 writes an empty created_at"
+      - "an answer about another crate or another version is no row"
+      - "read_at is the UTC second the answer came, taken after the request returns"
+      - "the out file is written once, to a path that did not exist before the run"
+      - "one GET per crate with a User-Agent, a 20 s limit, https only, redirects not followed, and 1 s between reads"
+
+proof_obligations:
+  - id: T2C-INV-001
+    type: invariant
+    property: "Under 2 hours is strict: a crate published 2 h or more after the tag is red"
+    formal: "∀ c ∈ order: published(c) ∧ created_at(c) − tag ≥ LIMIT ⇒ state(c) = red"
+    applies_to: crate_state
+  - id: T2C-INV-002
+    type: invariant
+    property: "A crate nobody read is never green"
+    formal: "∀ c ∈ order: c ∉ reads ⇒ state(c) = not_measured"
+    applies_to: crate_state
+  - id: T2C-INV-003
+    type: invariant
+    property: "A crate published before the tag is not measured: the clock has no valid start"
+    formal: "∀ c ∈ order: published(c) ∧ created_at(c) < tag ⇒ state(c) = not_measured"
+    applies_to: crate_state
+  - id: T2C-INV-004
+    type: invariant
+    property: "A crate still missing at a read 2 h or more after the tag is already red"
+    formal: "∀ c ∈ order: ¬ published(c) ∧ read_at(c) ≥ tag ∧ min(read_at(c), as_of) − tag ≥ LIMIT ⇒ state(c) = red"
+    applies_to: crate_state
+  - id: T2C-INV-005
+    type: invariant
+    property: "Nothing after --as-of counts"
+    formal: "∀ c ∈ order: created_at(c) > as_of ⇒ ¬ published(c) ∧ stop(c) = as_of − tag"
+    applies_to: crate_state
+  - id: T2C-INV-006
+    type: invariant
+    property: "Met needs every crate of the order file ok"
+    formal: "verdict = met ⇒ ∀ c ∈ order: state(c) = ok"
+    applies_to: e5_verdict
+  - id: T2C-INV-007
+    type: invariant
+    property: "Red wins over not_measured"
+    formal: "(∃ c ∈ order: state(c) = red) ⇒ verdict = not_met"
+    applies_to: e5_verdict
+  - id: T2C-INV-008
+    type: invariant
+    property: "The clock is the newest stop among all the crates, not the root crate alone"
+    formal: "∀ c ∈ order: stop(c) ≤ clock ∧ ∃ c ∈ order: stop(c) = clock"
+    applies_to: e5_verdict
+  - id: T2C-INV-009
+    type: invariant
+    property: "The threshold is the constant 7200 s"
+    formal: "LIMIT ≡ 7200"
+    applies_to: e5_verdict
+  - id: T2C-INV-010
+    type: invariant
+    property: "An unreadable row makes the whole judgment not_measured, never skipped"
+    formal: "∀ r ∈ reads: ¬ readable(r) ⇒ verdict = not_measured"
+    applies_to: e5_verdict
+  - id: T2C-INV-011
+    type: invariant
+    property: "The crate set is the order file at the tag, at the release version: a row for another crate or version is unreadable"
+    formal: "∀ r ∈ reads: crate(r) ∉ order ∨ version(r) ≠ V ⇒ ¬ readable(r)"
+    applies_to: e5_verdict
+  - id: T2C-INV-012
+    type: invariant
+    property: "A failed crates.io read is no row and exit 2, never a row that says not published"
+    formal: "∀ c ∈ order: answer(c) ∉ {200 well formed, 404} ⇒ c ∉ rows ∧ exit = 2"
+    applies_to: crates_io_read
+  - id: T2C-INV-013
+    type: invariant
+    property: "Only a 404 writes an empty created_at"
+    formal: "∀ r ∈ rows: created_at(r) = '' ⟺ status(crate(r)) = 404"
+    applies_to: crates_io_read
+  - id: T2C-INV-014
+    type: invariant
+    property: "A row is written only for an answer that names the crate and the version it was read for"
+    formal: "∀ c ∈ order: answer(c).crate ≠ c ∨ answer(c).num ≠ V ⇒ c ∉ rows"
+    applies_to: crates_io_read
+  - id: T2C-INV-015
+    type: invariant
+    property: "A written created_at is UTC floored to the whole second; any other offset is no row"
+    formal: "∀ r ∈ rows: created_at(r) ≠ '' ⇒ offset(answer(crate(r)).created_at) ∈ {Z, +00:00} ∧ created_at(r) = floor_s(answer(crate(r)).created_at)"
+    applies_to: crates_io_read
+  - id: T2C-INV-016
+    type: invariant
+    property: "read_at is the UTC second the answer came, taken after the request returns"
+    formal: "∀ r ∈ rows: read_at(r) = floor_s(utc_now()) at the return of request(crate(r))"
+    applies_to: crates_io_read
+  - id: T2C-INV-017
+    type: invariant
+    property: "The out file is written once, to a path that did not exist: an existing file is a caller error and stays unchanged"
+    formal: "exists(out) before the run ⇒ exit = 3 ∧ out unchanged"
+    applies_to: crates_io_read
+  - id: T2C-INV-018
+    type: invariant
+    property: "One GET per crate, 1 s apart, with a User-Agent and a 20 s limit, over https only, redirects not followed"
+    formal: "∀ c ∈ order: |requests(c)| = 1 ∧ UA ≠ '' ∧ max_time = 20 s ∧ proto = https ∧ ¬follow_redirects(c) ∧ pause_after(c) = 1 s"
+    applies_to: crates_io_read
+
+falsification_tests:
+  - id: FALSIFY-T2C-001
+    rule: "The timer is right on every row of its case table"
+    prediction: "1 h 59 min is met and 2 h 01 min is red; exactly 2h00m00s is red and 1h59m59s is met; a crate missing at a read 2 h or more after the tag is red, under 2 h it is not_measured; a crate nobody read, or one published before the tag, is not_measured; red wins over not_measured; the clock waits for the last crate, not the root crate; a facade crate row, a second row, another version, fractional seconds, a short line or an impossible date is unreadable; --limit is refused and LIMIT in the environment is ignored; dates cross a year end and a leap day"
+    test: "bash scripts/release/tag_to_crates.sh --selftest"
+    if_fails: "The timer can call a release on time when its last crate landed 2 h or more after the tag, or call a crate nobody read on time: the condition C277 item 6 exists to stop"
+
+  - id: FALSIFY-T2C-002
+    rule: "The case table can still fail on the defects it names"
+    prediction: "Each planted mutant (LIMIT 3 h, LIMIT one second late, LIMIT from the environment, exactly 2 h green, a missing crate never red, an early read aged to --as-of, a read after --as-of not clipped, a created_at after --as-of counted, a pre-tag crate timed, an unread crate counted, an unknown, repeated or other-version row accepted, an unreadable row skipped, red not winning, the clock stopped at the earliest crate or at the root crate alone, a lower bound printed as exact, seconds or leap years ignored) turns --selftest RED; a mutant that changes nothing or does not parse is itself a failure"
+    test: "bash scripts/release/tag_to_crates.sh --mutants"
+    if_fails: "The case table is theater: it would pass a timer that lets a release past the 2 h bar"
+
+  - id: FALSIFY-T2C-003
+    rule: "The fetcher is right on every row of its case table"
+    prediction: "Published crates are rows in order file order, created_at floored to the second; each crate is one GET with the User-Agent, the 20 s limit and https only, its read_at taken after it, then a 1 s pause; tag_to_crates.sh reads the written file; a 404 is a row with an empty created_at; a timeout, a cut transfer, 429, 5xx, a redirect, another crate or version, no created_at, no version object, a body that is not JSON, an empty answer, JSON with more after it, an offset other than UTC and a created_at without T are each no row and exit 2; every read failing writes the header alone; an existing out file is refused and stays unchanged; a pre-release version and a 64-character last line without a newline are read; a missing out directory, --version, --order or --out, an option without a value, an unknown option, a v-prefixed version, a slash, a comment, a duplicate, an empty order and a 65-character name are caller errors; --help prints the header"
+    test: "bash scripts/release/crates_io_reads.sh --selftest"
+    if_fails: "A failed crates.io read could be written as a crate not yet published, or an answer about another crate or version could time this one: the E5 receipt would rest on reads that never happened"
+
+  - id: FALSIFY-T2C-004
+    rule: "The fetcher's case table can still fail on the defects it names"
+    prediction: "Each planted mutant (the User-Agent, the time limit, https only or the pause dropped; redirects followed; read_at in local time, a constant or taken before the request; the curl exit ignored; a 404 read as a failure; a redirect read; another crate or version accepted; a missing created_at unnamed; any offset taken as UTC; fractional seconds kept; a failed read exiting 0 or written as a 404 row; the header renamed; an existing out file overwritten; the version, the order names, the name length, duplicates or an empty order unchecked; a last line without a newline lost; the HTTP code left in the body; an empty answer unnamed; a partial JSON answer accepted) turns --selftest RED; a mutant that changes nothing or does not parse is itself a failure"
+    test: "bash scripts/release/crates_io_reads.sh --mutants"
+    if_fails: "The fetcher's case table is theater: it would pass a fetcher that writes a failed read as not published"
+
+qa_gate:
+  id: F-T2C-001
+  name: "0.70.2 ships only if tag to crates.io is under 2 hours, timed to the last crate of the cascade"
+  description: "scripts/release/tag_to_crates.sh reads recorded crates.io reads for every crate of the order file at the tag and prints met with the last crate and the time, not met, or not_measured. Its case table pins the 2 h boundary on both sides, the missing and unread cases and the constant LIMIT, and its planted mutants prove the table can fail. scripts/release/crates_io_reads.sh takes the reads: one crates.io read per crate, where a 404 is a row with no created_at and a failed read is no row, so not known never reads as not published."
+  checks:
+    - "crate_state"
+    - "e5_verdict"
+    - "crates_io_read"
