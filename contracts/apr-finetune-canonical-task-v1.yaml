@@ -76,6 +76,6 @@ falsification_tests:
   if_fails: 'alpha is recorded but the scale is hardcoded'
 - id: FALSIFY-FT-TASK-006
   rule: An environment override cannot hide behind --precision
-  prediction: 'a tiny CUDA run with --precision bf16 and FP16_GEMM=1 either refuses before step 1 or records recipe.compute_dtype = fp16; it never writes compute_dtype bf16'
+  prediction: 'a tiny CUDA run with --precision bf16 and FP16_GEMM=1 either refuses before step 1 with a message that names FP16_GEMM, or records recipe.compute_dtype = fp16; it never writes compute_dtype bf16. The same run without FP16_GEMM records compute_dtype bf16. Without the message and that control the refusal branch passes at 316dee2cd4, where clap refuses --precision as unknown (exit 2, FT-TASK-001)'
   test: '[U] not written; needs cargo + CUDA after LIVE 0.70.1'
   if_fails: 'T2 compares a run whose GEMMs were fp16 while its receipt says bf16'
