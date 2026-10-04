@@ -42,9 +42,13 @@ trap cleanup EXIT
 usage() { echo "$PROG: usage: night <V> --out FILE [--root R] [--rev REV] | release <V> --night FILE [--root R] [--rev BUMP] | --selftest | --mutants" >&2; exit 3; }
 nm() { echo "NOT_MEASURED $PROG: $*"; exit 2; }
 
-# token_reachable: prints what it found and returns 0 when any registry credential is reachable
+# cfg_token FILE: 0 when a cargo config FILE sets a registry token or a credential provider
+cfg_token() { [ -f "$1" ] && grep -q -E '^[[:space:]]*(token|credential-provider|global-credential-providers)[[:space:]]*=' "$1"; }
+# token_reachable [DIR...]: prints what it found and returns 0 when any registry credential is reachable
+# (env, CARGO_HOME credentials and config, and the .cargo/config of each DIR and its ancestors)
 token_reachable() {
-    local n ch=${CARGO_HOME:-$HOME/.cargo} f hit=1
+    local n ch=${CARGO_HOME:-${HOME:+$HOME/.cargo}} f d hit=1
+    [ -n "$ch" ] || { echo "no CARGO_HOME and no HOME (cannot rule a token out)"; return 0; }
     [ -z "${CARGO_REGISTRY_TOKEN:-}" ] || { echo "env CARGO_REGISTRY_TOKEN"; hit=0; }
     for n in $(compgen -e); do
         case $n in
@@ -54,11 +58,19 @@ token_reachable() {
         esac
     done
     for f in "$ch/credentials.toml" "$ch/credentials"; do [ ! -e "$f" ] || { echo "file CARGO_HOME/$(basename "$f")"; hit=0; }; done
+    for f in "$ch/config.toml" "$ch/config"; do ! cfg_token "$f" || { echo "token key in CARGO_HOME/$(basename "$f")"; hit=0; }; done
+    for d in "$@"; do   # every .cargo/config cargo would read from d: d and each ancestor
+        d=$(cd "$d" 2> /dev/null && pwd -P) || continue
+        while :; do
+            for f in "$d/.cargo/config.toml" "$d/.cargo/config"; do ! cfg_token "$f" || { echo "token key in $f"; hit=0; }; done
+            [ "$d" = / ] && break; d=$(dirname "$d")
+        done
+    done
     return "$hit"
 }
 refuse_if_token() {
     local t
-    if t=$(token_reachable); then
+    if t=$(token_reachable "$@"); then
         echo "REFUSED-TO-START $PROG: a registry credential is reachable ($(echo "$t" | tr '\n' ',' | sed 's/,$//')); run with a token-less CARGO_HOME"
         exit 3
     fi
@@ -76,9 +88,10 @@ listing() {
             || { echo "cargo metadata failed for $ws" >&2; rm -f -- "${out:?}"; return 2; }
         while IFS=$'\t' read -r name man; do
             [ -n "$name" ] || continue
-            grep -q -F -x -e "$name" "$out.names" 2> /dev/null && continue
+            ! grep -q -F -x -e "$name" "$out.names" 2> /dev/null \
+                || { echo "crate $name is in two workspaces" >&2; rm -f -- "${out:?}" "${out:?}.names"; return 2; }
             echo "$name" >> "$out.names"; n=$((n + 1))
-            (cd "$(dirname "$man")" && "$CARGO" package --list --manifest-path "$man") > "$out.one" 2> /dev/null \
+            (cd "$(dirname "$man")" && "$CARGO" package --list --locked --manifest-path "$man") > "$out.one" 2> /dev/null \
                 || { echo "cargo package --list failed for $name" >&2; rm -f -- "${out:?}" "${out:?}.names" "${out:?}.one"; return 2; }
             [ -s "$out.one" ] || { echo "cargo package --list printed nothing for $name" >&2; rm -f -- "${out:?}" "${out:?}.names" "${out:?}.one"; return 2; }
             awk -v N="$name" 'NF { printf "%s\t%s\n", N, $0 }' "$out.one" >> "$out"
@@ -88,7 +101,7 @@ listing() {
         echo "the universe is $n publishable crate(s), under the floor of $MIN_CRATES" >&2
         rm -f -- "${out:?}" "${out:?}.names" "${out:?}.one"; return 2
     fi
-    LC_ALL=C sort -u "$out"
+    LC_ALL=C sort -u "$out" || { rm -f -- "${out:?}" "${out:?}.names" "${out:?}.one"; return 2; }
     rm -f -- "${out:?}" "${out:?}.names" "${out:?}.one"
 }
 
@@ -100,6 +113,7 @@ header() {
 # measure (the sandbox's judge role): list the clone, write BPR_OUT
 measure() {
     local v=$1 c=$2 body src
+    refuse_if_token "$c"   # the measured commit may itself carry a .cargo/config with a token
     [ -n "${BPR_OUT:-}" ] || nm "measure role without BPR_OUT"
     src=$(git -C "$c" rev-parse 'HEAD^') || nm "the bumped clone has no parent commit"
     body=$(listing "$c") || nm "the bumped tree could not be listed"
@@ -110,7 +124,7 @@ measure() {
 
 night() {
     local v=$1 out=$2 root=$3 rev=$4 rc=0
-    refuse_if_token
+    refuse_if_token "$root"
     [ -f "$SANDBOX" ] || nm "the sandbox $SANDBOX is not there"
     rm -f -- "${out:?}"
     BPR_ROLE=measure BPR_OUT=$out TOB_JUDGE=$SELF bash "$SANDBOX" "$v" --root "$root" --rev "$rev" || rc=$?
@@ -120,8 +134,8 @@ night() {
 }
 
 release() {
-    local v=$1 nf=$2 root=$3 rev=$4 h hv c body d
-    refuse_if_token
+    local v=$1 nf=$2 root=$3 rev=$4 h hv c body d rc
+    refuse_if_token "$root"
     [ -s "$nf" ] || nm "no night measurement at $nf"
     grep -q -x -F -e '# bumped-publish-paths v1' "$nf" || nm "$nf is not a bumped-publish-paths v1 file"
     grep -q -x -F -e "# version: $v" "$nf" || nm "the night measured $(sed -n 's/^# version: //p' "$nf" | head -1), not $v"
@@ -132,8 +146,11 @@ release() {
     c="$TMP/r"
     { git clone -q --shared --no-checkout "$root" "$c" 2> /dev/null && git -C "$c" remote remove origin \
         && git -C "$c" -c advice.detachedHead=false checkout -q --detach "$h"; } || nm "no clone of ${h:0:12}"
+    refuse_if_token "$c"
     body=$(listing "$c") || nm "the bump commit ${h:0:12} could not be listed"
-    d=$(diff <(grep -v '^#' "$nf") <(printf '%s\n' "$body") | grep -E '^[<>]' | sed -e 's/^</- night only:/' -e 's/^>/+ release only:/')
+    diff <(grep -v '^#' "$nf") <(printf '%s\n' "$body") > "$TMP/d"; rc=$?
+    [ "$rc" -le 1 ] || nm "diff of the two listings failed (rc=$rc)"
+    d=$(grep -E '^[<>]' "$TMP/d" | sed -e 's/^</- night only:/' -e 's/^>/+ release only:/')
     if [ -n "$d" ]; then
         printf '%s\n' "$d" | head -n 20
         echo "REFUSE $PROG: the bump commit ${h:0:12} would publish $(printf '%s\n' "$d" | wc -l | tr -d ' ') path(s) other than the night measured for $v"
@@ -162,7 +179,9 @@ for ((i = 0; i < ${#a[@]}; i++)); do [ "${a[i]}" = --manifest-path ] && mp=${a[i
 case $1 in
   metadata)
     [ "${STUB_META_FAIL:-0}" = 1 ] && exit 101
-    r=$(dirname "$mp"); [ "$(basename "$mp")" = Cargo.toml ] && [ -d "$r/crates/a" ] || { echo '{"packages":[]}'; exit 0; }
+    r=$(dirname "$mp")
+    [ "$(basename "$r")" = facades ] && { printf '{"packages":[{"name":"a","manifest_path":"%s/Cargo.toml","publish":null}]}\n' "$r"; exit 0; }
+    [ "$(basename "$mp")" = Cargo.toml ] && [ -d "$r/crates/a" ] || { echo '{"packages":[]}'; exit 0; }
     printf '{"packages":[{"name":"a","manifest_path":"%s/crates/a/Cargo.toml","publish":null},{"name":"b","manifest_path":"%s/crates/b/Cargo.toml","publish":["crates-io"]},{"name":"c","manifest_path":"%s/crates/c/Cargo.toml","publish":[]}]}\n' "$r" "$r" "$r" ;;
   package)
     [ "${STUB_PKG_FAIL:-}" = "$(basename "$(dirname "$mp")")" ] && { echo Cargo.toml; exit 101; }
@@ -181,6 +200,7 @@ selftest() {
     command -v git > /dev/null && command -v jq > /dev/null || { echo "$PROG selftest: needs git and jq"; return 2; }
     [ -f "$SANDBOX" ] || { echo "$PROG selftest: no sandbox at $SANDBOX"; return 2; }
     d=$(mktemp -d) || return 2
+    export GIT_CONFIG_COUNT=1 GIT_CONFIG_KEY_0=core.hooksPath GIT_CONFIG_VALUE_0=/dev/null   # fixture clones run no hooks
     mkstub "$d/cargo"; mkdir -p "$d/home-clean" "$d/home-cred"; : > "$d/home-cred/credentials.toml"
     run() { got=$(env -u CARGO_REGISTRY_TOKEN CARGO_HOME="$d/home-clean" BPR_CARGO="$d/cargo" BPR_MIN_CRATES="${MIN:-2}" BPR_SANDBOX="$SANDBOX" "$@" 2>&1); rc=$?; }
     check() { n=$((n + 1))
@@ -197,6 +217,14 @@ selftest() {
     run env CARGO_REGISTRIES_ALT_TOKEN=x bash "$subj" night 1.2.3 --out "$d/t.txt" --root "$d/r"; check night_refuses_named_registry_token 3 "CARGO_REGISTRIES_ALT_TOKEN"
     run env CARGO_REGISTRY_CREDENTIAL_PROVIDER=cargo:token bash "$subj" night 1.2.3 --out "$d/t.txt" --root "$d/r"; check night_refuses_credential_provider 3 "REFUSED-TO-START"
     run env CARGO_HOME="$d/home-cred" bash "$subj" night 1.2.3 --out "$d/t.txt" --root "$d/r"; check night_refuses_credentials_file 3 "credentials.toml"
+    mkdir -p "$d/home-cfg"; printf '[registry]\ntoken = "x"\n' > "$d/home-cfg/config.toml"
+    run env CARGO_HOME="$d/home-cfg" bash "$subj" night 1.2.3 --out "$d/t.txt" --root "$d/r"; check night_refuses_cargo_home_config_token 3 "token key in CARGO_HOME/config.toml"
+    git -C "$d" clone -q "$d/r" "$d/tk" && mkdir -p "$d/tk/.cargo" && printf '[registries.alt]\ntoken = "x"\n' > "$d/tk/.cargo/config.toml" \
+        && git -C "$d/tk" add -A && git -C "$d/tk" commit -qm tok && rm -rf "${d:?}/tk/.cargo"
+    run bash "$subj" night 1.2.3 --out "$d/t.txt" --root "$d/tk"; check night_refuses_token_in_measured_commit 2 "REFUSED-TO-START"
+    git -C "$d" clone -q "$d/r" "$d/dup" && mkdir -p "$d/dup/crates/facades" && printf '[workspace]\n' > "$d/dup/crates/facades/Cargo.toml" \
+        && git -C "$d/dup" add -A && git -C "$d/dup" commit -qm dup
+    run bash "$subj" night 1.2.3 --out "$d/t.txt" --root "$d/dup"; check night_crate_in_two_workspaces_nm 2 "in two workspaces"
     run env STUB_PKG_FAIL=b bash "$subj" night 1.2.3 --out "$d/t.txt" --root "$d/r"; check night_package_fails_nm 2 "NOT_MEASURED"
     run env STUB_META_FAIL=1 bash "$subj" night 1.2.3 --out "$d/t.txt" --root "$d/r"; check night_metadata_fails_nm 2 "cargo metadata failed"
     MIN=3 run bash "$subj" night 1.2.3 --out "$d/t.txt" --root "$d/r"; check night_universe_under_floor_nm 2 "NOT_MEASURED"
@@ -237,11 +265,14 @@ M05 provider ignored@@[ -z "${!n}" ] || { echo "env $n"; hit=0; } ;;
 M06 diff ignored@@    if [ -n "$d" ]; then@@    if false; then
 M07 night version not checked@@grep -q -x -F -e "# version: $v" "$nf" || nm@@true || nm
 M08 bump commit not checked@@[ "$hv" = "$v" ] || nm@@true || nm
-M09 package failure passes@@(cd "$(dirname "$man")" && "$CARGO" package --list --manifest-path "$man") > "$out.one" 2> /dev/null \@@{ (cd "$(dirname "$man")" && "$CARGO" package --list --manifest-path "$man") || true; } > "$out.one" 2> /dev/null \
+M09 package failure passes@@(cd "$(dirname "$man")" && "$CARGO" package --list --locked --manifest-path "$man") > "$out.one" 2> /dev/null \@@{ (cd "$(dirname "$man")" && "$CARGO" package --list --locked --manifest-path "$man") || true; } > "$out.one" 2> /dev/null \
 M10 universe floor dropped@@if [ "$n" -lt "$MIN_CRATES" ]; then@@if false; then
 M11 publish=false listed@@select(.publish == null or (.publish | length) > 0)@@select(true)
 M12 night sandbox failure passes@@[ "$rc" = 0 ] || { echo "NOT_MEASURED $PROG: the sandbox run ended rc=$rc"; exit 2; }@@:
-M13 metadata failure passes@@|| { echo "cargo metadata failed for $ws" >&2; rm -f -- "${out:?}"; return 2; }@@|| m=""'
+M13 metadata failure passes@@|| { echo "cargo metadata failed for $ws" >&2; rm -f -- "${out:?}"; return 2; }@@|| m=""
+M14 CARGO_HOME config token ignored@@for f in "$ch/config.toml" "$ch/config"; do ! cfg_token@@for f in ; do ! cfg_token
+M15 measured-commit config ignored@@            for f in "$d/.cargo/config.toml" "$d/.cargo/config"; do@@            for f in ; do
+M16 crate in two workspaces ignored@@|| { echo "crate $name is in two workspaces" >&2; rm -f -- "${out:?}" "${out:?}.names"; return 2; }@@|| continue'
 mutants() {
     local tmp line name from to k=0 t=0 e=0
     tmp=$(mktemp -d) || return 2
@@ -250,7 +281,7 @@ mutants() {
     while IFS= read -r line; do
         name=${line%%@@*}; from=${line#*@@}; to=${from#*@@}; from=${from%%@@*}
         from=$(printf '%b' "$from"); to=$(printf '%b' "$to"); t=$((t + 1))
-        RR_FROM=$from RR_TO=$to awk 'BEGIN { RS = "\001" } { i = index($0, ENVIRON["RR_FROM"]); if (!i) exit 1
+        RR_FROM=$from RR_TO=$to awk 'BEGIN { RS = "\001" } { i = index($0, ENVIRON["RR_FROM"]); if (!i || i > index($0, "\nMUTANTS=")) exit 1
             printf "%s%s%s", substr($0, 1, i - 1), ENVIRON["RR_TO"], substr($0, i + length(ENVIRON["RR_FROM"])) }' "$SELF" > "$tmp/m.sh"
         if [ "${PIPESTATUS[0]:-0}" != 0 ] || cmp -s "$SELF" "$tmp/m.sh" || ! bash -n "$tmp/m.sh" 2> /dev/null; then
             echo "ERROR    $name (did not apply or broke syntax)"; e=$((e + 1)); continue
@@ -284,6 +315,8 @@ main() {
             *) usage ;;
         esac
     done
+    case $out in ""|/*) ;; *) out=$PWD/$out ;; esac
+    case $nf in ""|/*) ;; *) nf=$PWD/$nf ;; esac
     if [ "$mode" = night ]; then [ -n "$out" ] || usage; night "$v" "$out" "$root" "$rev"
     else [ -n "$nf" ] || usage; release "$v" "$nf" "$root" "$rev"; fi
 }
