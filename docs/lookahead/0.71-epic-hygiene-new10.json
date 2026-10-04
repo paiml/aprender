@@ -1,0 +1,247 @@
+{
+ "schema": "epic-hygiene-addendum/v1",
+ "note": "Section 5 of 0.71-epic-hygiene.md. One read-only GraphQL read; issue bodies are not stored. The owner label value is reduced to a flag. epic_child_at_2026_10_03 comes from 0.71-epic-hygiene.json.",
+ "read": {
+  "taken_at": "2026-10-04T09:43:03Z",
+  "cost": 1,
+  "query": "query { rateLimit { cost remaining } repository(owner: \"paiml\", name: \"aprender\") { t3574: issue(number: 3574) { ...T } t3602: issue(number: 3602) { ...T } t3714: issue(number: 3714) { ...T } t3759: issue(number: 3759) { ...T } t3850: issue(number: 3850) { ...T } t4096: issue(number: 4096) { ...T } t4418: issue(number: 4418) { ...T } t4444: issue(number: 4444) { ...T } t4485: issue(number: 4485) { ...T } t4486: issue(number: 4486) { ...T } } } fragment T on Issue { number title state createdAt updatedAt author { login } milestone { title } labels(first: 20) { nodes { name } } assignees(first: 5) { nodes { login } } parent { number title } subIssuesSummary { total completed } blockedBy(first: 10) { totalCount nodes { number state } } blocking(first: 10) { totalCount nodes { number state } } closedByPullRequestsReferences(first: 5, includeClosedPrs: false) { nodes { number state title } } body }\n"
+ },
+ "issues": [
+  {
+   "n": 3574,
+   "title": "ARB-APR-3: parity receipt for the decide lane's cell on the agent's host (Qwen3.5-9B-Q4_K_M @ lambda-labs)",
+   "state": "OPEN",
+   "created": "2026-09-20T11:20:50Z",
+   "updated": "2026-10-04T09:00:10Z",
+   "milestone": "0.71.0",
+   "labels": [
+    "P0",
+    "size:M"
+   ],
+   "owner_label": true,
+   "assignees": 0,
+   "parent": 3558,
+   "sub_issues": {
+    "total": 0,
+    "completed": 0
+   },
+   "blocked_by": 0,
+   "blocking": 0,
+   "closing_prs_open": 0,
+   "epic_child_at_2026_10_03": "E3"
+  },
+  {
+   "n": 3602,
+   "title": "apr run --gpu is 2-3x SLOWER than --no-gpu on the dense path: the GPU result fails correctness (cosine 0.4153) and falls",
+   "state": "OPEN",
+   "created": "2026-09-20T15:05:16Z",
+   "updated": "2026-10-04T09:00:17Z",
+   "milestone": "0.71.0",
+   "labels": [
+    "bug",
+    "P0",
+    "size:M"
+   ],
+   "owner_label": true,
+   "assignees": 0,
+   "parent": 3994,
+   "sub_issues": {
+    "total": 5,
+    "completed": 0
+   },
+   "blocked_by": 0,
+   "blocking": 0,
+   "closing_prs_open": 0,
+   "epic_child_at_2026_10_03": "E3"
+  },
+  {
+   "n": 3714,
+   "title": "qwen3moe (Qwen3-30B-A3B, Qwen3-Coder-30B-A3B, Q4_K_M) has NO working CUDA path: apr run --gpu falls back to CPU (rc 14),",
+   "state": "OPEN",
+   "created": "2026-09-21T15:39:14Z",
+   "updated": "2026-10-04T09:00:31Z",
+   "milestone": "0.71.0",
+   "labels": [
+    "bug",
+    "P0",
+    "size:M"
+   ],
+   "owner_label": true,
+   "assignees": 0,
+   "parent": 3994,
+   "sub_issues": {
+    "total": 3,
+    "completed": 0
+   },
+   "blocked_by": 0,
+   "blocking": 0,
+   "closing_prs_open": 0,
+   "epic_child_at_2026_10_03": "E3"
+  },
+  {
+   "n": 3759,
+   "title": "GPU RMSNorm runs with ε = 1e-5, not the model's 1e-6: the kernel cache key omits ε and preload bakes 1e-5 — special-toke",
+   "state": "OPEN",
+   "created": "2026-09-21T18:01:19Z",
+   "updated": "2026-10-04T08:51:18Z",
+   "milestone": "0.71.0",
+   "labels": [
+    "bug",
+    "P0",
+    "size:M"
+   ],
+   "owner_label": true,
+   "assignees": 0,
+   "parent": 3994,
+   "sub_issues": {
+    "total": 5,
+    "completed": 0
+   },
+   "blocked_by": 0,
+   "blocking": 0,
+   "closing_prs_open": 0,
+   "epic_child_at_2026_10_03": "E3"
+  },
+  {
+   "n": 3850,
+   "title": "resolve_qtype silently decodes an UNKNOWN ggml quant as Q4_K, and the whitelist that would refuse it is not on the apr q",
+   "state": "OPEN",
+   "created": "2026-09-22T14:25:51Z",
+   "updated": "2026-10-04T09:00:50Z",
+   "milestone": "0.71.0",
+   "labels": [
+    "bug",
+    "P0",
+    "size:M"
+   ],
+   "owner_label": true,
+   "assignees": 0,
+   "parent": 4539,
+   "sub_issues": {
+    "total": 0,
+    "completed": 0
+   },
+   "blocked_by": 0,
+   "blocking": 0,
+   "closing_prs_open": 0,
+   "epic_child_at_2026_10_03": "E3"
+  },
+  {
+   "n": 4096,
+   "title": "P0: IQ3_S/IQ2_S GEMV kernels fail to load on cc>=12 (GB10/Blackwell) — GH-480 PTX patch injects .reg inside a global arr",
+   "state": "OPEN",
+   "created": "2026-09-23T19:16:29Z",
+   "updated": "2026-10-04T09:01:19Z",
+   "milestone": "0.71.0",
+   "labels": [
+    "bug",
+    "P0",
+    "size:M"
+   ],
+   "owner_label": true,
+   "assignees": 0,
+   "parent": 3953,
+   "sub_issues": {
+    "total": 0,
+    "completed": 0
+   },
+   "blocked_by": 0,
+   "blocking": 0,
+   "closing_prs_open": 0,
+   "epic_child_at_2026_10_03": "E3"
+  },
+  {
+   "n": 4418,
+   "title": "qwen35: apr quantize --format gguf emits a GGUF llama.cpp d1d3c3396 cannot load (738/739 tensors unmapped, embed/output ",
+   "state": "OPEN",
+   "created": "2026-09-25T12:47:31Z",
+   "updated": "2026-10-04T09:02:51Z",
+   "milestone": "0.71.0",
+   "labels": [
+    "P0",
+    "dogfood",
+    "size:M"
+   ],
+   "owner_label": true,
+   "assignees": 0,
+   "parent": 3558,
+   "sub_issues": {
+    "total": 0,
+    "completed": 0
+   },
+   "blocked_by": 0,
+   "blocking": 0,
+   "closing_prs_open": 0,
+   "epic_child_at_2026_10_03": null
+  },
+  {
+   "n": 4444,
+   "title": "apr: llama.cpp logit-compare verb as the PRM parity.oracle (PRM-001 v2 §4.1)",
+   "state": "OPEN",
+   "created": "2026-09-25T16:42:52Z",
+   "updated": "2026-10-04T09:03:13Z",
+   "milestone": "0.71.0",
+   "labels": [
+    "P0",
+    "size:M"
+   ],
+   "owner_label": true,
+   "assignees": 0,
+   "parent": 4354,
+   "sub_issues": {
+    "total": 0,
+    "completed": 0
+   },
+   "blocked_by": 0,
+   "blocking": 0,
+   "closing_prs_open": 0,
+   "epic_child_at_2026_10_03": null
+  },
+  {
+   "n": 4485,
+   "title": "perf(serve): decode GEMV precision on Qwen3.5 (RCA-SRV-001 fix 3)",
+   "state": "OPEN",
+   "created": "2026-09-26T17:10:37Z",
+   "updated": "2026-10-04T08:54:06Z",
+   "milestone": "0.71.0",
+   "labels": [
+    "P1",
+    "size:M"
+   ],
+   "owner_label": true,
+   "assignees": 0,
+   "parent": 3725,
+   "sub_issues": {
+    "total": 0,
+    "completed": 0
+   },
+   "blocked_by": 0,
+   "blocking": 0,
+   "closing_prs_open": 0,
+   "epic_child_at_2026_10_03": null
+  },
+  {
+   "n": 4486,
+   "title": "perf(serve): CUDA-graph decode step + alloc-free token loop (RCA-SRV-001 fix 4)",
+   "state": "OPEN",
+   "created": "2026-09-26T17:10:39Z",
+   "updated": "2026-10-04T09:03:41Z",
+   "milestone": "0.71.0",
+   "labels": [
+    "P0",
+    "size:M"
+   ],
+   "owner_label": true,
+   "assignees": 0,
+   "parent": 3602,
+   "sub_issues": {
+    "total": 0,
+    "completed": 0
+   },
+   "blocked_by": 0,
+   "blocking": 0,
+   "closing_prs_open": 0,
+   "epic_child_at_2026_10_03": null
+  }
+ ]
+}
