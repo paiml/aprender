@@ -18,7 +18,7 @@
 #   * L2 — falsification MEASURED by hermetic case tables and mutant runs:
 #          roadmap_aggregate.sh 25 rows / 11 mutants, roadmap_one_writer_ci.sh
 #          16 / 9, check_roadmap_one_writer.sh 13 / 8, roadmap_writer_nightly.sh
-#          9 / 8, roadmap_to_fragments.sh 11 / 7,
+#          11 / 12, roadmap_to_fragments.sh 11 / 7,
 #          check_roadmap_fragment_required.sh 23 / 2,
 #          check_publish_preflight.sh R9 7 rows, check_row_pr_write_set.sh
 #          17 / 1; every mutant killed.
@@ -149,7 +149,7 @@ equations:
     domain: 'one run of scripts/roadmap_writer_nightly.sh'
     codomain: '{0, 1, 2}'
     invariants:
-    - 'NEVER PUSHES main, never forces, never merges, never arms auto-merge (row N6).'
+    - 'NEVER PUSHES main (row N6), never forces, never merges by itself: lands only through its PR and the merge queue (operator rule C310.7) — arms gh pr merge --squash --auto, never --admin, never --delete-branch (rows N10, N11).'
     preconditions:
     - 'a dedicated clone; the identity it pushes as is an operator ruling'
     postconditions:
@@ -242,7 +242,7 @@ falsification_tests:
       replace the rule_r9 call with ':'; every R9 refusal row turns BROKE.
 
   - id: RMOW-F-005
-    rule: the writer never writes main
+    rule: the writer never writes main and lands only through the merge queue
     prediction: >-
       Fresh main writes nothing (N1); a landed fragment yields one branch
       changing roadmap.yaml only and one `pr create` (N2); an open writer PR
@@ -250,12 +250,15 @@ falsification_tests:
       is merged and regenerated, never forced (N7); fork and other-author
       roadmap-writer/* PRs are ignored (N8); a dirty clone and rate_limit 999
       exit 2 with nothing pushed (N4, N5); two own open writer PRs exit 1 with
-      nothing pushed (N9); main is untouched (N6).
+      nothing pushed (N9); main is untouched (N6); the PR is armed into the merge
+      queue with --squash --auto and gh is never asked for --admin or
+      --delete-branch (N10); writer() source that gains --admin, --delete-branch
+      or a push to main, or loses --auto, is RED (N11).
     test: 'bash scripts/roadmap_writer_nightly.sh --selftest && bash scripts/roadmap_writer_nightly.sh --mutants'
     if_fails: >-
       the writer floods PRs, spends the shared GitHub budget, or writes main
     mutation: >-
-      --mutants: nodirty norate nocheck noreuse noowner notheirs noresolve nomulti, all killed.
+      --mutants: nodirty norate nocheck noreuse noowner notheirs noresolve nomulti noauto admin delbranch pushmain, 12/12 killed (2026-10-04).
 
 non_goals:
   - "Cleaning the PRs open when this lands: one writer cleans 0 of them; it prevents the next re-dirty."

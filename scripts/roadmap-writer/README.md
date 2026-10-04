@@ -2,8 +2,9 @@
 
 Operator ruling RQ-8 (T21): pull requests commit `docs/roadmaps/entries/<ID>.yaml` only. Once a night,
 `scripts/roadmap_writer_nightly.sh` regenerates the aggregate on `origin/main` in a dedicated clone and
-opens ONE pull request that changes `roadmap.yaml` and nothing else. It never pushes to `main`, never
-force-pushes, never merges and never arms auto-merge.
+opens ONE pull request that changes `roadmap.yaml` and nothing else, then arms it into the merge queue
+(`gh pr merge --squash --auto`). It never pushes to `main`, never force-pushes, never uses `--admin` or
+`--delete-branch`: it lands only through the PR and the queue (rows N10, N11 go RED otherwise).
 
 It runs as a host systemd **user** timer, not a GitHub Actions workflow, so it does not depend on the
 repository setting that lets Actions create pull requests.

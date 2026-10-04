@@ -4,8 +4,11 @@
 # PRs commit docs/roadmaps/entries/<ID>.yaml only. Once a night this script, run by a host systemd user timer
 # (scripts/roadmap-writer/, installed by `make roadmap-writer-install`), regenerates the aggregate on origin/main
 # in a DEDICATED clone and opens ONE pull request that changes roadmap.yaml and nothing else. It never pushes to
-# main, never force-pushes, never merges and never arms auto-merge: the PR goes through the same checks as any
-# PR, where check_roadmap_one_writer.sh and check_roadmap_fragment_required.sh judge the writer shape.
+# main, never force-pushes and never merges by itself: it lands ONLY through the PR and the merge queue (operator
+# rule C310.7). It arms auto-merge (`gh pr merge --squash --auto`) so the queue merges it once the same checks as
+# any PR pass, where check_roadmap_one_writer.sh and check_roadmap_fragment_required.sh judge the writer shape.
+# Never --admin, never a push to main, never --delete-branch: rows N10 (what gh is asked) and N11 (the writer's
+# own source) go RED if it gains any of them.
 #
 #   origin/main already == aggregate      -> "nothing to write", exit 0, no GitHub write
 #   a writer PR is open                   -> merge origin/main into ITS branch, regenerate, push (fast-forward)
@@ -17,7 +20,8 @@
 # side (-X theirs) and then regenerated, never pushed with force.
 #
 # GitHub budget (fleet rule GH-1): one `rate_limit` read first; below 1000 remaining it writes nothing (exit 2,
-# NOT MEASURED). Then at most: 1 user read (only without ROADMAP_WRITER_LOGIN), 1 PR list, 1 push, 1 PR create.
+# NOT MEASURED). Then at most: 1 user read (only without ROADMAP_WRITER_LOGIN), 1 PR list, 1 push, 1 PR create,
+# 1 auto-merge arm (repeated on an update push: arming is idempotent, and it re-arms a PR someone disarmed).
 #
 # USAGE   ROADMAP_WRITER_CLONE=<dedicated clone> bash scripts/roadmap_writer_nightly.sh [--dry-run]
 #         bash scripts/roadmap_writer_nightly.sh --selftest | --mutants | --help
@@ -31,6 +35,10 @@ ENT=docs/roadmaps/entries
 PREFIX=roadmap-writer/
 MUT="${ROADMAP_WRITER_MUTANT:-}"
 GH="${ROADMAP_WRITER_GH:-gh}"
+# --mutants only: the bypasses rows N6/N10 must catch, injected OUTSIDE writer() so row N11's source scan of the
+# real writer body stays meaningful.
+MERGE_X=(); PUSH_X=()
+case "$MUT" in admin) MERGE_X=(--admin) ;; delbranch) MERGE_X=(--delete-branch) ;; pushmain) PUSH_X=(HEAD:main) ;; esac
 
 say() { printf '%s %s\n' "$(TZ=UTC date +%H:%M:%SZ)" "$*"; }
 env2() { say "ENV   $PROG: $* — NOT MEASURED, nothing written"; exit 2; }
@@ -102,7 +110,7 @@ writer() {
     ahead=$(git -C "$clone" diff --name-only origin/main HEAD | tr '\n' ' ')
     [ "$ahead" = "$RM " ] || { say "FAIL  the writer commit changes more than $RM: $ahead"; return 1; }
     if [ "$dry" = 1 ]; then say "dry-run: would push $branch and $( [ -n "$open" ] && echo 'update the open PR' || echo 'open a PR')"; return 0; fi
-    git -C "$clone" push -q origin "HEAD:refs/heads/$branch" || env2 "push $branch failed (never forced)"
+    git -C "$clone" push -q origin "HEAD:refs/heads/$branch" "${PUSH_X[@]}" || env2 "push $branch failed (never forced)"
     if [ -z "$open" ]; then
         "$GH" pr create --repo "$(git -C "$clone" remote get-url origin)" --base main --head "$branch" \
             --title "chore(roadmap): regenerate roadmap.yaml (one writer, RQ-8)" \
@@ -112,6 +120,22 @@ writer() {
     else
         say "wrote $branch (open writer PR updated by a fast-forward push)"
     fi
+    # C310.7: it lands only through the merge queue. Queue-only: no --admin, no --delete-branch (row N11).
+    [ "$MUT" = noauto ] && return 0
+    "$GH" pr merge "$branch" --repo "$(git -C "$clone" remote get-url origin)" --squash --auto "${MERGE_X[@]}" \
+        > /dev/null || env2 "arming auto-merge failed (branch $branch is pushed, its PR is open but not queued)"
+    say "armed $branch into the merge queue"
+}
+
+# Row N11: the writer's own body may ask for no bypass. Prints the offending lines; rc 1 when any is found or the
+# queue arm is missing. Comments are skipped; the --mutants injections live outside writer() on purpose.
+shape() {   # shape <script>
+    local body bad
+    body=$(sed -n '/^writer() {/,/^}/p' "$1" | grep -v -E '^[[:space:]]*#')
+    [ -n "$body" ] || { printf 'no writer() body in %s\n' "$1"; return 1; }
+    bad=$(printf '%s\n' "$body" | grep -n -E -e '--admin|--delete-branch|--force|[[:space:]]push[[:space:]].*(:|[[:space:]])(refs/heads/)?main([[:space:]"]|$)')
+    [ -z "$bad" ] || { printf 'bypass in writer(): %s\n' "$bad"; return 1; }
+    printf '%s\n' "$body" | grep -q -E 'pr merge .*--auto' || { printf 'writer() never arms the merge queue (--auto)\n'; return 1; }
 }
 
 # ---------------------------------------------------------------- self-test ----
@@ -136,7 +160,7 @@ case "\$1 \$2" in
   "api rate_limit") cat "$d/rate" ;;
   "api user") echo writerbot ;;
   "pr list") cat "$d/open" 2> /dev/null || : ;;
-  "pr create") : ;;
+  "pr create"|"pr merge") : ;;
 esac
 EOF
     chmod +x "$d/bin/gh"; printf '4000\n' > "$d/rate"
@@ -161,6 +185,9 @@ selftest() {
     [ "$rc" = 0 ] && [ -n "$br" ] && [ "$(git -C "$d/2/origin.git" diff --name-only main "$br")" = "$RM" ] &&
         git -C "$d/2/origin.git" show "$br:$RM" | grep -q 'id: A-2' && [ "$(grep -c -e '^pr create' "$d/2/gh.log")" = 1 ]
     st_row 'N2 fragment landed -> one writer branch, only roadmap.yaml, carries A-2, one pr create' $? "rc $rc br '$br': $(tail -n 2 "$d/2/out")"
+    # N10 C310.7: the new PR is armed into the merge queue, and gh is never asked for a bypass
+    [ "$(grep -c -E -e "^pr merge $br .*--squash --auto" "$d/2/gh.log")" = 1 ] && ! grep -q -E -e '--admin|--delete-branch' "$d/2/gh.log"
+    st_row 'N10 writer PR armed into the merge queue (pr merge --squash --auto), never --admin / --delete-branch' $? "$(grep -e '^pr merge' "$d/2/gh.log")"
     # N3 a writer PR is open and another fragment lands -> fast-forward its branch, NO second PR
     printf '%s\tfalse\twriterbot\n' "$br" > "$d/2/open"; : > "$d/2/gh.log"; st_land "$d/2" A-3 > /dev/null 2>&1
     git -C "$d/2/origin.git" rev-parse "$br" > "$d/2/before"; st_run "$d/2"; rc=$?
@@ -187,6 +214,18 @@ selftest() {
     [ "$rc" = 1 ] && grep -q '2 open writer PRs' "$d/9/out" && ! grep -q -e '^pr create' "$d/9/gh.log" &&
         [ -z "$(git -C "$d/9/origin.git" branch --list "${PREFIX}*")" ]
     st_row 'N9 two own writer PRs open -> refused, nothing pushed, no PR' $? "rc $rc: $(tail -n 2 "$d/9/out")"
+    # N11 source shape: the real writer() passes; a copy that gains --admin, --delete-branch or a push to main, or
+    # loses --auto, is RED. The script's own body is the decision surface the queue-only rule is about.
+    local s=$d/shape.sh n11=0 c
+    shape "$SELF" > "$d/n11" 2>&1 || n11=1
+    for c in 's/--squash --auto/--squash --auto --admin/' 's/--squash --auto/--squash --auto --delete-branch/' \
+             's|"HEAD:refs/heads/$branch"|"HEAD:refs/heads/$branch" HEAD:refs/heads/main|' 's/--squash --auto/--squash/'; do
+        sed -e "/^writer() {/,/^}/$c" "$SELF" > "$s"
+        cmp -s "$SELF" "$s" && { n11=1; printf 'case did not apply: %s\n' "$c" >> "$d/n11"; continue; }
+        shape "$s" > /dev/null 2>&1 && { n11=1; printf 'not RED: %s\n' "$c" >> "$d/n11"; }
+    done
+    [ "$n11" = 0 ]
+    st_row 'N11 writer() source: real passes; +--admin / +--delete-branch / +push main / -auto each RED' $? "$(tail -n 3 "$d/n11")"
     # N4 dirty clone -> rc 2, nothing pushed
     st_fixture "$d/4" > /dev/null 2>&1; st_land "$d/4" A-2 > /dev/null 2>&1; printf 'x\n' > "$d/4/clone/stray"; st_run "$d/4"; rc=$?
     [ "$rc" = 2 ] && [ -z "$(git -C "$d/4/origin.git" branch --list "${PREFIX}*")" ]
@@ -205,7 +244,7 @@ selftest() {
 
 mutants() {
     local m killed=0 total=0
-    for m in nodirty norate nocheck noreuse noowner notheirs noresolve nomulti; do
+    for m in nodirty norate nocheck noreuse noowner notheirs noresolve nomulti noauto admin delbranch pushmain; do
         total=$((total+1))
         if ROADMAP_WRITER_MUTANT=$m bash "$SELF" --selftest > /dev/null 2>&1; then printf 'SURVIVED  %s\n' "$m"
         else killed=$((killed+1)); printf 'killed    %s\n' "$m"; fi
