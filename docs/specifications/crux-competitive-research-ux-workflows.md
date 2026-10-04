@@ -1138,3 +1138,159 @@ $ apr qa model.apr --golden-output
 
 [14] Dettmers, T. et al. *QLoRA: Efficient Finetuning of Quantized
      LLMs*. arXiv:2305.14314. 2023.
+
+---
+
+## 14. Category R — SHACL ontologies vs Apache Jena (PROPOSED for 0.71, not registered)
+
+> **Status: PROPOSED, branch-only.** This is the Definition-of-Ready spec for 0.71
+> DoR row 8, CRUX-SHACL (epic #3598). It registers no story. §5, §6 and the
+> master contract are untouched, and no row here starts with `| CRUX-`. Sub-ticket
+> S1 (§14.6) registers the stories and moves this section and the master contract
+> together in one commit, per §12.7. Until then the subspec stays at version 2.3.
+> - Contract draft: `docs/lookahead/contracts-draft/crux-shacl-jena-v1.yaml`
+> - Measured initial state: `docs/lookahead/0.71-crux-shacl-baseline.md`
+> - All citations are at `origin/main` `316dee2cd4`.
+
+**The defect (raised 2026-10-04).** No test runs pv against a second SHACL
+engine to check that both:
+- read the same ontology (input);
+- write it so the other engine reads it back to the same graph (return);
+- validate it to the same verdict (validate);
+- report the same results with the full W3C detail (feedback).
+
+Apache Jena is the Java toolkit named when the defect was raised. Its command
+line covers all four verbs, so Jena is the competitor.
+
+### 14.1 The competitor and its verbs
+
+| Verb | Jena (command line) | pv at `316dee2cd4` |
+|---|---|---|
+| input: read Turtle and N-Triples | `riot` parses and re-serializes. A syntax error names its line | **None.** The gate path has no Turtle reader (R-13, `crates/aprender-contracts/src/ontology/w3c.rs:4-5`). Shapes come only from YAML `shape:` blocks (`ontology/shapes.rs:3`). pv's graph has no blank nodes (R-15, `ontology/rdf.rs:3`) |
+| return: write a graph another engine reads back | `riot --output=<syntax>` | pv writes N-Triples (`rdf.rs:189` `to_ntriples`) and Turtle shapes (`shapes.rs:1232` `to_turtle`). Nothing checks that another engine reads them back to the same graph |
+| validate: SHACL Core | `shacl validate` with a shapes graph and a data graph | A Core subset (`shapes.rs:5-17`). At parse it refuses, with exit 3: `and`/`or`/`not`/`xone`, `sparql`, the `qualifiedValueShape` family, `equals`/`disjoint`, `languageIn`/`uniqueLang`, `targetNode`/`targetSubjectsOf`/`targetObjectsOf`, recursive shapes, every path but a single predicate, and every component the table does not name |
+| feedback: the validation report | A W3C `sh:ValidationReport` | PV-ONT-011 lint text or JSON (`lint/shapes_gate.rs:1004-1016`). A result holds severity, focus, contract stem, optional path, short component name and message (`shapes.rs:143-152`). It has no `sh:value`, no `sh:sourceShape` IRI and no `sh:sourceConstraintComponent` IRI |
+| compare two graphs | `rdfcompare` (graph isomorphism) | None |
+
+The Jena command names are from its distribution's `bin/`. S2 confirms each
+against the pinned release. A command missing there is NOT MEASURED, not assumed.
+
+### 14.2 Four cells
+
+| Cell | Claim | Comparator | At `316dee2cd4` |
+|---|---|---|---|
+| R-INPUT | pv reads X and dumps it as N-Triples. The dump is isomorphic to `riot`'s. On a malformed X, both reject it at the same line | `rdfcompare`; the line numbers by the harness | pv reads no RDF file: RED once the harness runs |
+| R-RETURN | Jena(X) ≅ Jena(pv_write(pv_read(X))). `riot` reads pv's own `contracts.nt` and `shapes.ttl` with no error | `rdfcompare` | pv writes, nothing reads back: NOT MEASURED |
+| R-VALIDATE | The same `sh:conforms` and the same result count, per case | the harness; on S-W3C, W3C's expected report arbitrates (§14.4) | 19 W3C cases are hand-vendored as YAML and agree with W3C. There is no Jena run |
+| R-FEEDBACK | The same results, as a multiset of the full tuple (focus, path, value, source-shape key, component IRI, severity). Every result has a message, and a declared `sh:message` appears in it | the harness | pv emits no W3C report: RED once the harness runs |
+
+**Rules for the comparison:**
+- **Never compare a file with itself.** R-RETURN's two sides are Jena's parse of
+  X and Jena's parse of a file pv wrote in the same run.
+- **Both engines get byte-identical inputs.** The receipt records each input's
+  sha256. Only a planted control changes one side.
+- **Source-shape key.** A property shape is usually a blank node, and its label
+  differs between engines. Its key is the parent node shape's IRI plus the
+  property shape's `sh:path`. A shape with an IRI is keyed by that IRI.
+
+### 14.3 Subjects
+
+- **S-W3C.** Every case in the `core/` manifests of the W3C `data-shapes` test
+  suite, at a pinned commit, with the archive's sha256 pinned.
+  - The case count is read from the manifests at run time and printed.
+  - A case pv refuses is RED for that case and named, never skipped.
+  - `w3c.rs` vendors 19 cases and lists 16 more as NOT_VENDORED. That list
+    bounds the gate's scope, not this subject's.
+- **S-CORPUS.** `contracts/contracts.nt` (32,665 triples, no blank node) and
+  `contracts/shapes.ttl` (394 blank-node property shapes): the files pv writes
+  and the release ships.
+- **S-SHSH.** Jena validates pv's `shapes.ttl` against the SHACL-SHACL shapes
+  graph (namespace `http://www.w3.org/ns/shacl-shacl#`, published with the SHACL
+  Recommendation), pinned by sha256. This checks that pv writes well-formed
+  SHACL. pv does not run it: that graph uses `sh:or`, which is outside the subset.
+
+### 14.4 Verdicts
+
+Exit codes follow the ELK oracle (`tests/oracle/owl/src/main.rs`): 0 GREEN,
+1 RED, 2 NOT MEASURED.
+
+- **GREEN:** the JVM ran, every planted control (§14.5) was seen, and every cell
+  agrees.
+- **RED:** a disagreement, a refused case, or a planted control not seen. Each
+  RED line names one cell, one case and one comparator.
+- **NOT MEASURED:** any of these, and it is never GREEN:
+  - no JVM;
+  - Jena cannot be fetched;
+  - a pin's sha256 differs;
+  - the subject is empty or partial, meaning fewer cases ran than the manifests
+    list.
+- **Without a JVM, the harness can prove RED but never GREEN.** pv against
+  W3C's expected reports needs no JVM. Without a JVM the exit is 1 if such a RED
+  exists, else 2.
+- **W3C arbitrates on S-W3C:**
+  - pv = W3C ≠ Jena: GREEN for pv, with a `jena≠w3c <case>` line in the receipt.
+  - pv = Jena ≠ W3C: RED, comparator `w3c`.
+  - pv ≠ W3C = Jena: RED, comparator `w3c`.
+  - S-CORPUS has no expected report, so there the comparator is Jena.
+- **Mode: never a PR check.** R-13 (ONT-001, paiml/infra
+  `docs/specifications/paiml-ontology.md`) allows no JVM reachable from `pv`.
+  It admits a third-party RDF engine only as a pinned out-of-gate oracle in
+  `tests/oracle/`, outside the workspace, run in the release gate only. The
+  harness is therefore its own detached crate there, like the OWL oracle, and
+  runs at the release gate and on demand.
+- **What needs a ruling:**
+  - Making it blocking. It would be adopted as a ratchet: a measured baseline,
+    regression-only, with a measured runtime budget.
+  - Treating NOT MEASURED at the release gate as RED. The OWL oracle already
+    does this: no JVM exits 2, "RED at the release gate and never a skip"
+    (`Makefile`, `oracle-owl`). This section PROPOSES the same rule here.
+
+### 14.5 Planted controls
+
+Controls act on the comparator's inputs, never on pv, so they prove the harness
+before S3 and S4 land. Until then the side under test is Jena's own output.
+Every run plants every control, and a control not seen is RED for its cell.
+
+| Cell | Positive control (must agree) | Negative control (must be RED, naming the item in brackets) |
+|---|---|---|
+| R-INPUT | X against X with every blank-node label renamed | The side under test's dump with one triple dropped [the triple]. `"01"^^xsd:integer` rewritten to `"1"^^xsd:integer` on one side [the literal: RDF terms compare by lexical form, not by value] |
+| R-RETURN | X with string escapes (`\"`, `\\`, `\n`), a numeric Unicode escape, a raw `é`, and language tags (`@fr`, `@en-GB`) | The written file with one triple dropped before Jena reads it [the triple] |
+| R-VALIDATE | W3C `core/property/minCount-001` | The same case with `sh:minCount 1` changed to `2` in the side under test's copy only [minCount] |
+| R-FEEDBACK | The minCount-001 report against a copy whose blank-node labels differ | Six copies of the report under test, each with one field changed: focus, path, value, source shape, component, severity [that field]. One copy with `sh:value` removed [value] |
+
+The arbitration rules of §14.4 are tested the same way, with one planted triple
+of reports (under test, Jena, W3C) per rule.
+
+### 14.6 Work items (one ticket, five sub-tickets under #3598; none minted)
+
+| Sub-ticket | Delivers | Cells it can turn GREEN |
+|---|---|---|
+| S1 | `jena` in `CRUX_COMPETITORS`, with its admission comment. Category R stories, one per cell, and one contract per cell. This section and the master contract move together | none (registration) |
+| S2 | The Jena distribution pinned by sha256, as the OWL oracle pins ELK 0.4.3. The detached harness under `tests/oracle/`, its exit codes and its planted controls. The JVM and Jena declared in the hosts' configuration (paiml/infra, cross-repo) | none alone; its controls prove the comparators |
+| S3 | pv reads Turtle and N-Triples, blank nodes included. The reader is in house, because R-13 bars a third-party RDF crate from `aprender-contracts`' tree, dev-dependencies included. Open design question: R-15 bars blank nodes from the graph pv extracts and hashes, so the reader must hold input blank nodes outside that graph, or S3 asks for a ruling | R-INPUT, R-RETURN |
+| S4 | pv emits a W3C `sh:ValidationReport`, as Turtle and as JSON, with every field of §14.2 | R-FEEDBACK; R-VALIDATE on S-W3C, where refused cases are named |
+| S5 | The rudof oracle reads S4's report and compares the full tuple. `tests/oracle/differential.json` is regenerated with every vendored case. The oracle runs on a schedule | none; it hardens the second oracle |
+
+**Precondition, proposed separately as the fix for `make oracle-check` (§14.7).**
+pv stops admitting rdf:type implicitly on `sh:closed` shapes, the 6 closed shapes
+in `contracts/` declare it in the same PR, and W3C `node/closed-001` is vendored.
+The other fix, declaring rdf:type on the shapes alone, would turn oracle-check
+GREEN but leave pv short of SHACL Core on any closed shape that does not declare
+it, which is what R-VALIDATE tests against Jena.
+
+### 14.7 Initial state (measured 2026-10-04 on `316dee2cd4`; detail in the baseline file)
+
+- **No Jena run exists.** There is no harness and no pin, and all four cells are
+  NOT MEASURED.
+- **pv against W3C:** the 19 vendored cases agree on (conforms, focus, path,
+  component). 16 cases are not vendored.
+- **The rudof oracle against pv:**
+  - The W3C arm agrees on 19 of 19.
+  - On the corpus, the oracle reports 736 results and pv 730. The 6 extra are
+    rdf:type values on focus nodes of 5 of the 6 `sh:closed` shapes (the sixth,
+    `parity-receipt-complete`, had no hit). pv admits rdf:type on every closed
+    shape (`shapes.rs:875`); SHACL Core does not.
+  - So `make oracle-check` is RED, and its record `tests/oracle/differential.json`
+    dates from 2026-09-19.
+- **The oracle compares (focus, component) only.** Changing the severity, the
+  message text or the shape id in pv's report leaves its verdict unchanged.
