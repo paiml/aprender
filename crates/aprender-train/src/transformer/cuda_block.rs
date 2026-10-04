@@ -5302,6 +5302,10 @@ mod parity_probe;
 #[path = "cuda_block_lora_backward_tests.rs"]
 mod lora_backward_tests;
 
+#[cfg(all(test, feature = "cuda"))]
+#[path = "cuda_block_target_tests.rs"]
+mod target_tests;
+
 #[cfg(test)]
 mod tests {
     #[test]
