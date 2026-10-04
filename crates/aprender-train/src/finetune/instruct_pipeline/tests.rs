@@ -526,6 +526,7 @@ fn test_instruct_config_clone() {
         max_seq_len: 1024,
         gradient_clip_norm: Some(2.0),
         quantize_nf4: true,
+        ..InstructConfig::default()
     };
     let cloned = config.clone();
     assert_eq!(cloned.lora_rank, 32);

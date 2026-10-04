@@ -334,6 +334,7 @@ fn build_instruct_config(
         max_seq_len: max_seq_len.unwrap_or(InstructConfig::default().max_seq_len),
         gradient_clip_norm: Some(1.0),
         quantize_nf4: matches!(config.method, Method::QLoRA),
+        ..InstructConfig::default()
     }
 }
 

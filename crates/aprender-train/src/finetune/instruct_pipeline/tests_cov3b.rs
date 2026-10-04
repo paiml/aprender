@@ -89,6 +89,7 @@ fn test_cov3_instruct_config_custom_all_fields() {
         max_seq_len: 2048,
         gradient_clip_norm: None,
         quantize_nf4: true,
+        ..InstructConfig::default()
     };
     assert_eq!(config.lora_rank, 64);
     assert!((config.lora_alpha - 128.0).abs() < f32::EPSILON);

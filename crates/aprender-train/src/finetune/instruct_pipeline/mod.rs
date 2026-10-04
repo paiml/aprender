@@ -38,7 +38,7 @@ mod tests_cov3;
 #[cfg(test)]
 mod tests_cov3b;
 
-use crate::lora::LoRALayer;
+use crate::lora::{LoRALayer, LoraTargets};
 use crate::optim::{clip_grad_norm_refs, AdamW, Optimizer};
 use crate::tokenizer::HfTokenizer;
 use crate::train::transformer_trainer::step_profiler::StepProfiler;
@@ -77,6 +77,11 @@ pub struct InstructConfig {
     /// When enabled, uses `CudaNf4TransformerBlock` (~8x VRAM compression) instead
     /// of `CudaTransformerBlock`. GPU backward pass updates only LoRA adapters.
     pub quantize_nf4: bool,
+    /// The projections that get a LoRA adapter (default: `q_proj`, `v_proj`).
+    ///
+    /// The forward and backward passes read only `q_proj` and `v_proj`, so every
+    /// constructor refuses any other set (`FALSIFY-LORA_TARGET_SELECTION_V1_004`).
+    pub lora_targets: LoraTargets,
 }
 
 impl Default for InstructConfig {
@@ -89,6 +94,7 @@ impl Default for InstructConfig {
             max_seq_len: 512,
             gradient_clip_norm: Some(1.0),
             quantize_nf4: false,
+            lora_targets: LoraTargets::default(),
         }
     }
 }

@@ -3,11 +3,19 @@
 
 #[allow(clippy::wildcard_imports)]
 use super::*;
+use crate::lora::LoraTarget;
 use provable_contracts_macros::{ensures, requires};
 
 impl InstructPipeline {
     /// Create a new pipeline with random weights.
+    ///
+    /// # Panics
+    /// If `instruct_config.lora_targets` is not `q_proj`, `v_proj`
+    /// ([`InstructPipeline::check_lora_targets`]).
     pub fn new(model_config: &TransformerConfig, instruct_config: InstructConfig) -> Self {
+        if let Err(e) = Self::check_lora_targets(&instruct_config) {
+            panic!("{e}");
+        }
         let model = Transformer::new(model_config);
         let mut lora_layers = Self::build_lora_layers(&model, model_config, &instruct_config);
 
@@ -78,12 +86,15 @@ impl InstructPipeline {
     /// Loads transformer from SafeTensors and optionally a BPE tokenizer.
     ///
     /// # Errors
-    /// Returns error if model files cannot be loaded.
+    /// Returns error if `instruct_config.lora_targets` is not `q_proj`, `v_proj`
+    /// ([`InstructPipeline::check_lora_targets`]), before anything is loaded,
+    /// or if model files cannot be loaded.
     pub fn from_pretrained(
         model_dir: &Path,
         model_config: &TransformerConfig,
         instruct_config: InstructConfig,
     ) -> crate::Result<Self> {
+        Self::check_lora_targets(&instruct_config)?;
         let model = Transformer::from_safetensors(model_dir, model_config)?;
         let mut lora_layers = Self::build_lora_layers(&model, model_config, &instruct_config);
 
@@ -92,7 +103,11 @@ impl InstructPipeline {
         if adapter_path.exists() {
             match crate::lora::load_adapter_peft(model_dir) {
                 Ok((_config, weights)) => {
-                    Self::inject_adapter_weights(&mut lora_layers, &weights)?;
+                    Self::inject_adapter_weights(
+                        &mut lora_layers,
+                        &weights,
+                        &instruct_config.lora_targets,
+                    )?;
                     eprintln!(
                         "[adapter] Loaded trained LoRA adapter ({} tensors) from {}",
                         weights.len(),
@@ -180,7 +195,9 @@ impl InstructPipeline {
     /// (e.g., `model.tokenizer.json` next to `model.apr`).
     ///
     /// # Errors
-    /// Returns error if APR file cannot be loaded or weights are invalid.
+    /// Returns error if `instruct_config.lora_targets` is not `q_proj`, `v_proj`
+    /// ([`InstructPipeline::check_lora_targets`]), before anything is loaded,
+    /// or if APR file cannot be loaded or weights are invalid.
     /// CONTRACT L5: apr_tokenizer_embedding (model-format-conversion-v1.yaml)
     /// APR files are self-contained — tokenizer is extracted from embedded metadata.
     /// Sibling .tokenizer.json is a legacy fallback only.
@@ -190,6 +207,7 @@ impl InstructPipeline {
         model_config: &TransformerConfig,
         instruct_config: InstructConfig,
     ) -> crate::Result<Self> {
+        Self::check_lora_targets(&instruct_config)?;
         let model = Transformer::from_apr(apr_path, model_config)?;
         let mut lora_layers = Self::build_lora_layers(&model, model_config, &instruct_config);
 
@@ -349,8 +367,11 @@ impl InstructPipeline {
         HfTokenizer::from_json(&json_str).ok()
     }
 
-    /// Build LoRA layers for Q and V projections (same pattern as ClassifyPipeline).
-    /// Build LoRA layers for Q and V projections of each transformer layer.
+    /// Build one LoRA layer per transformer layer and target in
+    /// `config.lora_targets`, in slot order: slot `|T|·layer + position`
+    /// ([`LoraTargets::slot`], `FALSIFY-LORA_TARGET_SELECTION_V1_004`).
+    /// Each adapter wraps a copy of its projection's base weight, stored
+    /// `[d_out, d_in]`.
     pub fn build_lora_layers(
         model: &Transformer,
         model_config: &TransformerConfig,
@@ -364,65 +385,107 @@ impl InstructPipeline {
         let hidden = model_config.hidden_size;
         let head_dim =
             model_config.head_dim_override.unwrap_or(hidden / model_config.num_attention_heads);
+        let q_dim = model_config.num_attention_heads * head_dim;
+        let kv_dim = model_config.num_kv_heads * head_dim;
+        let inter = model_config.intermediate_size;
 
         let mut lora_layers = Vec::new();
-
         for layer in &model.layers {
-            let attn = &layer.self_attn;
-
-            // Q projection LoRA
-            let q_dim = model_config.num_attention_heads * head_dim;
-            let q_weight = Tensor::from_vec(
-                attn.w_q.data().as_slice().expect("contiguous w_q").to_vec(),
-                false,
-            );
-            lora_layers.push(LoRALayer::new(
-                q_weight,
-                q_dim,
-                hidden,
-                config.lora_rank,
-                config.lora_alpha,
-            ));
-
-            // V projection LoRA
-            let v_dim = model_config.num_kv_heads * head_dim;
-            let v_weight = Tensor::from_vec(
-                attn.w_v.data().as_slice().expect("contiguous w_v").to_vec(),
-                false,
-            );
-            lora_layers.push(LoRALayer::new(
-                v_weight,
-                v_dim,
-                hidden,
-                config.lora_rank,
-                config.lora_alpha,
-            ));
+            let (attn, ffn) = (&layer.self_attn, &layer.ffn);
+            for &target in config.lora_targets.as_slice() {
+                let (base, d_out, d_in) = match target {
+                    LoraTarget::Q => (&attn.w_q, q_dim, hidden),
+                    LoraTarget::K => (&attn.w_k, kv_dim, hidden),
+                    LoraTarget::V => (&attn.w_v, kv_dim, hidden),
+                    LoraTarget::O => (&attn.w_o, hidden, q_dim),
+                    LoraTarget::Gate => (&ffn.w_gate, inter, hidden),
+                    LoraTarget::Up => (&ffn.w_up, inter, hidden),
+                    LoraTarget::Down => (&ffn.w_down, hidden, inter),
+                };
+                let weight = Tensor::from_vec(
+                    base.data().as_slice().expect("contiguous base weight").to_vec(),
+                    false,
+                );
+                lora_layers.push(LoRALayer::new(
+                    weight,
+                    d_out,
+                    d_in,
+                    config.lora_rank,
+                    config.lora_alpha,
+                ));
+            }
         }
 
         lora_layers
     }
 
+    /// Refuse a target set the instruct pipeline does not train
+    /// (`FALSIFY-LORA_TARGET_SELECTION_V1_004`).
+    ///
+    /// `build_lora_layers` and `inject_adapter_weights` place any target set,
+    /// but the CPU forward (`forward_hidden_with_lora`), the CUDA blocks
+    /// (`lora_slot(2·layer)`, `lora_slot(2·layer + 1)`) and their sync back
+    /// to the CPU read slot `2·layer` as `q_proj` and `2·layer + 1` as
+    /// `v_proj`. Under any other set they would apply an adapter to the wrong
+    /// projection or leave one untrained, so every constructor calls this
+    /// before it loads a weight.
+    ///
+    /// # Errors
+    /// `Error::ConfigError` naming every selected target that would not be
+    /// trained and every one of `q_proj`, `v_proj` that is missing.
+    pub fn check_lora_targets(config: &InstructConfig) -> crate::Result<()> {
+        let trained = LoraTargets::default();
+        let targets = &config.lora_targets;
+        if *targets == trained {
+            return Ok(());
+        }
+        // The targets of `from` that `other` lacks, by name.
+        let outside = |from: &LoraTargets, other: &LoraTargets| -> String {
+            let names: Vec<&str> = from
+                .as_slice()
+                .iter()
+                .filter(|&&t| !other.contains(t))
+                .map(|t| t.module_name())
+                .collect();
+            names.join(", ")
+        };
+        let mut parts =
+            vec![format!("LoRA targets {targets}: the instruct pipeline trains exactly {trained}")];
+        let untrained = outside(targets, &trained);
+        if !untrained.is_empty() {
+            parts.push(format!("would not train: {untrained}"));
+        }
+        let missing = outside(&trained, targets);
+        if !missing.is_empty() {
+            parts.push(format!("missing: {missing}"));
+        }
+        Err(crate::Error::ConfigError(parts.join("; ")))
+    }
+
     /// Inject trained adapter weights from PEFT format into LoRA layers (ENT-269).
     ///
     /// Maps PEFT tensor names (e.g., `base_model.model.model.layers.0.self_attn.q_proj.lora_A.weight`)
-    /// to the corresponding LoRA layer index. Layers are ordered as [Q(0), V(0), Q(1), V(1), ...].
+    /// to the LoRA layer of their layer and projection, at slot `|T|·layer + position`
+    /// ([`LoraTargets::slot`]), the order `build_lora_layers` builds them in. For the
+    /// default targets that is [Q(0), V(0), Q(1), V(1), ...].
     ///
     /// Every tensor is placed before any is written (`FALSIFY-LORA_TARGET_SELECTION_V1_003`).
-    /// A tensor that targets another projection or a layer the model does not have, is
-    /// neither `lora_A` nor `lora_B`, repeats a slot, or differs in length from its slot
-    /// (a rank mismatch, or bf16/f16 bytes read as f32) refuses the whole load, and no
-    /// LoRA layer changes.
+    /// A tensor that targets a projection outside `targets` or a layer the model does not
+    /// have, is neither `lora_A` nor `lora_B`, repeats a slot, or differs in length from
+    /// its slot (a rank mismatch, or bf16/f16 bytes read as f32) refuses the whole load,
+    /// and no LoRA layer changes.
     ///
     /// # Errors
     /// Returns `Error::ConfigError` naming every tensor that could not be placed.
     fn inject_adapter_weights(
         lora_layers: &mut [LoRALayer],
         weights: &[(String, Vec<f32>)],
+        targets: &LoraTargets,
     ) -> crate::Result<()> {
         let mut placed: Vec<(usize, bool, &[f32])> = Vec::with_capacity(weights.len());
         let mut unplaced: Vec<&str> = Vec::new();
         for (name, data) in weights {
-            let slot = adapter_slot(name).filter(|&(idx, is_a)| {
+            let slot = adapter_slot(name, targets).filter(|&(idx, is_a)| {
                 slot_len(lora_layers, idx, is_a) == Some(data.len())
                     && !placed.iter().any(|&(i, a, _)| i == idx && a == is_a)
             });
@@ -434,8 +497,8 @@ impl InstructPipeline {
         if !unplaced.is_empty() {
             unplaced.sort_unstable();
             return Err(crate::Error::ConfigError(format!(
-                "adapter: {} of {} tensors fit no q_proj/v_proj LoRA layer of this model \
-                 (wrong projection, layer, rank or dtype, or a repeated slot): {}",
+                "adapter: {} of {} tensors fit no LoRA layer of this model (targets \
+                 {targets}; wrong projection, layer, rank or dtype, or a repeated slot): {}",
                 unplaced.len(),
                 weights.len(),
                 unplaced.join(", ")
@@ -454,29 +517,25 @@ impl InstructPipeline {
     }
 }
 
-/// Projections the instruct pipeline adapts, in slot order within a layer:
-/// `build_lora_layers` pushes the Q adapter, then the V adapter, for each layer.
-const ADAPTED_PROJECTIONS: [&str; 2] = ["q_proj", "v_proj"];
-
 /// The LoRA slot a PEFT tensor name targets, as `(index into lora_layers, is lora_A)`,
-/// or `None` when the name is not a `lora_A`/`lora_B` tensor of an adapted projection
-/// of a numbered layer. Components are matched whole, so `qkv_proj` or `lora_a`
-/// targets nothing. A layer the model does not have yields a slot past the end of
-/// `lora_layers`, which [`slot_len`] rejects.
-fn adapter_slot(name: &str) -> Option<(usize, bool)> {
+/// or `None` when the name is not a `lora_A`/`lora_B` tensor of a projection in
+/// `targets` of a numbered layer. Components are matched whole, so `qkv_proj` or
+/// `lora_a` targets nothing. A layer the model does not have yields a slot past the
+/// end of `lora_layers`, which [`slot_len`] rejects.
+fn adapter_slot(name: &str, targets: &LoraTargets) -> Option<(usize, bool)> {
     let parts: Vec<&str> = name.split('.').collect();
     let layer = parts
         .iter()
         .position(|&p| p == "layers")
         .and_then(|i| parts.get(i + 1))
         .and_then(|s| s.parse::<usize>().ok())?;
-    let proj = ADAPTED_PROJECTIONS.iter().position(|p| parts.contains(p))?;
+    let target = parts.iter().find_map(|p| LoraTarget::from_module_name(p))?;
     let is_a = match (parts.contains(&"lora_A"), parts.contains(&"lora_B")) {
         (true, false) => true,
         (false, true) => false,
         _ => return None,
     };
-    Some((layer * ADAPTED_PROJECTIONS.len() + proj, is_a))
+    Some((targets.slot(layer, target)?, is_a))
 }
 
 /// Length of the A or B tensor of LoRA slot `idx`, or `None` past the last slot.
@@ -488,3 +547,7 @@ fn slot_len(lora_layers: &[LoRALayer], idx: usize, is_a: bool) -> Option<usize> 
 #[cfg(test)]
 #[path = "constructors_adapter_tests.rs"]
 mod adapter_tests;
+
+#[cfg(test)]
+#[path = "constructors_target_tests.rs"]
+mod target_tests;

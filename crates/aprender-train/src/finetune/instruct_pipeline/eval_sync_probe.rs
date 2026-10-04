@@ -78,6 +78,7 @@ fn falsify_cuda_eval_adapter_sync_001() {
         max_seq_len: 128,
         gradient_clip_norm: None,
         quantize_nf4: true,
+        ..InstructConfig::default()
     };
     let mut p = InstructPipeline::from_apr(&model_path, &model_config, instruct_config)
         .expect("pipeline from_apr");
@@ -190,6 +191,7 @@ fn falsify_cuda_eval_gpu_forward_001() {
         max_seq_len: 128,
         gradient_clip_norm: None,
         quantize_nf4: true,
+        ..InstructConfig::default()
     };
     let mut p = InstructPipeline::from_apr(&model_path, &model_config, instruct_config)
         .expect("pipeline from_apr");
@@ -272,6 +274,7 @@ fn diag_cpu_eval_loss_bisect() {
         max_seq_len: 128,
         gradient_clip_norm: None,
         quantize_nf4: true,
+        ..InstructConfig::default()
     };
     let mut p =
         InstructPipeline::from_apr(&model_path, &model_config, instruct_config).expect("pipeline");

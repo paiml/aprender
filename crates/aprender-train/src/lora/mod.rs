@@ -11,6 +11,7 @@ mod multi_adapter;
 mod paged_optim;
 mod pissa;
 mod qlora;
+mod target;
 
 #[cfg(test)]
 mod benchmarks;
@@ -35,6 +36,7 @@ pub use multi_adapter::{MultiAdapterManager, NamedAdapter};
 pub use paged_optim::{PagedOptimStates, PagedState, PagingStats, PagingStrategy, VramBudget};
 pub use pissa::pissa_init;
 pub use qlora::{MemoryStats, QLoRALayer};
+pub use target::{LoraTarget, LoraTargets};
 
 #[cfg(test)]
 pub use benchmarks::{

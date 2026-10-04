@@ -67,6 +67,7 @@ fn parity_probe_layer_bisect() {
         max_seq_len: 64,
         gradient_clip_norm: Some(1.0),
         quantize_nf4: true,
+        ..InstructConfig::default()
     };
     let mut p = InstructPipeline::from_apr(&model_path, &model_config, instruct_config)
         .expect("pipeline from_apr");
@@ -213,6 +214,7 @@ fn falsify_cuda_nf4_train_loss_parity_001() {
         max_seq_len: 64,
         gradient_clip_norm: Some(1.0),
         quantize_nf4: true,
+        ..InstructConfig::default()
     };
 
     let mut p = InstructPipeline::from_apr(&model_path, &model_config, instruct_config)

@@ -66,6 +66,7 @@ fn falsify_cuda_nf4_train_loss_parity_003_instruct_lora_layout() {
         max_seq_len: 16,
         gradient_clip_norm: None,
         quantize_nf4: false,
+        ..InstructConfig::default()
     };
     // Built without CUDA, so the adapters can be set before `init_cuda` uploads them.
     let mut p = InstructPipeline::new(&model_config, instruct_config);

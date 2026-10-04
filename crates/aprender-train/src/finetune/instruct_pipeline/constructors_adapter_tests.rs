@@ -27,7 +27,7 @@ fn peft_name(layer: usize, proj: &str, kind: &str) -> String {
 
 /// Values no other tensor and no initial A or B holds: `tag` in the integer
 /// part, the element index in the fraction.
-fn filled(len: usize, tag: usize) -> Vec<f32> {
+pub(super) fn filled(len: usize, tag: usize) -> Vec<f32> {
     (0..len).map(|i| tag as f32 + i as f32 * 1e-4).collect()
 }
 
@@ -69,7 +69,7 @@ fn falsify_lora_target_selection_v1_003_routes_by_name_in_any_order() {
 
     for weights in [&adapter, &reversed] {
         let (_, mut layers) = tiny_layers();
-        InstructPipeline::inject_adapter_weights(&mut layers, weights)
+        InstructPipeline::inject_adapter_weights(&mut layers, weights, &LoraTargets::default())
             .expect("a q_proj/v_proj adapter of the right rank must load");
         for (slot, layer) in layers.iter().enumerate() {
             let a = filled(len_of(&fresh, slot, 0), 1 + 2 * slot);
@@ -112,7 +112,11 @@ fn falsify_lora_target_selection_v1_003_unplaceable_tensor_refuses_and_changes_n
         weights.retain(|(n, _)| Some(n.as_str()) != left_out);
         weights.push((name.clone(), filled(len, 99)));
 
-        let Err(err) = InstructPipeline::inject_adapter_weights(&mut layers, &weights) else {
+        let Err(err) = InstructPipeline::inject_adapter_weights(
+            &mut layers,
+            &weights,
+            &LoraTargets::default(),
+        ) else {
             panic!("{name} must refuse the load");
         };
         assert!(err.to_string().contains(&name), "the error names {name}: {err}");
@@ -131,8 +135,12 @@ fn falsify_lora_target_selection_v1_003_wrong_rank_refuses() {
         let mut weights = full_adapter(num_layers, &fresh);
         weights[0].1 = filled(len, 99);
 
-        let err = InstructPipeline::inject_adapter_weights(&mut layers, &weights)
-            .expect_err("an A of the wrong length must refuse the load");
+        let err = InstructPipeline::inject_adapter_weights(
+            &mut layers,
+            &weights,
+            &LoraTargets::default(),
+        )
+        .expect_err("an A of the wrong length must refuse the load");
         assert!(err.to_string().contains(&weights[0].0), "the error names the tensor: {err}");
         assert_eq!(snapshot(&layers), before, "len {len}: no LoRA layer may change");
     }

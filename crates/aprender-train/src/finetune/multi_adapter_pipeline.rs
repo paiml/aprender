@@ -209,12 +209,19 @@ impl MultiAdapterPipeline {
     }
 
     /// Add an adapter slot with its own training data and checkpoint directory.
+    ///
+    /// # Panics
+    /// If `config.instruct_config.lora_targets` is not `q_proj`, `v_proj`
+    /// ([`InstructPipeline::check_lora_targets`]), before the slot is built.
     pub fn add_adapter(
         &mut self,
         config: AdapterConfig,
         train_samples: Vec<InstructSample>,
         val_samples: Vec<InstructSample>,
     ) {
+        if let Err(e) = InstructPipeline::check_lora_targets(&config.instruct_config) {
+            panic!("{e}");
+        }
         let model_config = &self.base_pipeline.model.config;
         let lora_layers = InstructPipeline::build_lora_layers(
             &self.base_pipeline.model,
@@ -2088,6 +2095,7 @@ checkpoint = "c"
             max_seq_len: 1024,
             gradient_clip_norm: Some(2.0),
             quantize_nf4: true,
+            ..InstructConfig::default()
         };
         let adapters = config.to_adapter_configs(&base);
         // All base values should be inherited
