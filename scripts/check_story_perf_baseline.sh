@@ -149,6 +149,11 @@ report "$T/other.json" 7.59 true false
 qa_gates_pass_except_regression "$T/other.json"; want "G2 another gate failed -> B2 fails" 1 $?
 echo '{"gates":[]}' >"$T/empty.json"
 qa_gates_pass_except_regression "$T/empty.json"; want "G3 no gates at all -> B2 fails" 1 $?
+# A skip is passed:false, skipped:true (#3965); apr qa's gates_pass counts it as no failure.
+echo '{"gates":[{"name":"tensor_contract","passed":true,"skipped":false},{"name":"gpu_speedup","passed":false,"skipped":true},{"name":"performance_regression","passed":false,"skipped":false}]}' >"$T/skipgate.json"
+qa_gates_pass_except_regression "$T/skipgate.json"; want "G4 a skipped gate (passed:false) is not a failure -> B2 passes" 0 $?
+echo '{"gates":[{"name":"tensor_contract","passed":false,"skipped":true},{"name":"performance_regression","passed":true,"skipped":false}]}' >"$T/allskip.json"
+qa_gates_pass_except_regression "$T/allskip.json"; want "G5 every other gate skipped -> nothing executed, B2 fails" 1 $?
 
 # -- pin: writes once, idle only, records sha / binary hash / host / load -----
 STUB="$T/apr"

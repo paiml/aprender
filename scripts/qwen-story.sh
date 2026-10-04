@@ -193,8 +193,8 @@ beat2_trust() {
   load_before="$(perf_load1)"
   run_cmd 180 apr qa "$M_15B_APR" --json
   # Retain the per-gate JSON regardless of verdict - it is the only record of
-  # which gates actually executed versus SKIPped (GateResult::skipped sets
-  # passed:true).
+  # which gates actually executed versus SKIPped (a skip is passed:false,
+  # skipped:true since #3965).
   emit_evidence "apr qa $M_15B_APR --json"
   qa_json="$(mktemp)"
   printf '%s\n' "$RC_OUT" >"$qa_json"

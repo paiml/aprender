@@ -44,10 +44,15 @@ perf_tps() {
   jq -r '[.gates[]? | select(.name == "throughput" and .skipped == false and .value != null) | .value][0] // empty' "$1" 2>/dev/null
 }
 
-# 0 when every gate in an `apr qa --json` report passed EXCEPT performance_regression,
-# which compares against the self-overwriting cache and is replaced by the judge below.
+# 0 when an `apr qa --json` report passes by apr qa's OWN rule (`gates_pass` in
+# crates/apr-cli/src/commands/qa.rs: every gate `passed || skipped`) with ONE gate left
+# out: performance_regression, which compares against the self-overwriting cache and is
+# replaced by the judge below. A skip is `passed: false, skipped: true` (#3965), so reading
+# `.passed` alone would fail B2 on every legitimately skipped gate. At least one gate
+# must have EXECUTED: an all-skipped report is nothing measured.
 qa_gates_pass_except_regression() {
-  jq -e '(.gates | length > 0) and ([.gates[] | select(.name != "performance_regression") | .passed] | all)' "$1" >/dev/null 2>&1
+  jq -e '[.gates[]? | select(.name != "performance_regression")] as $g
+    | ($g | map(select(.skipped == false)) | length > 0) and ($g | map(.passed or .skipped) | all)' "$1" >/dev/null 2>&1
 }
 
 # perf_baseline_judge <model> <qa-report.json> <load1 sampled before the run>
