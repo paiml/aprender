@@ -27,11 +27,12 @@ fn try_safetensors_cuda_backend(
 
     // #4007: the loaded model's architecture, not the client's `model` string.
     // #3723: the request's thinking mode; an ON the template cannot express is refused by name.
-    let prompt = match crate::api::realize_handlers::format_chat_messages_for_state_thinking(
+    let prompt = match crate::api::realize_handlers::format_chat_messages_for_state_thinking_tools(
         state,
         &request.messages,
         Some(&request.model),
         request.thinking(),
+        request.tools.as_deref(),
     ) {
         Ok(p) => p,
         Err(e) => return Some(fail_response(state, StatusCode::BAD_REQUEST, e.to_string())),
@@ -121,7 +122,7 @@ async fn try_cuda_backend(
     // D5: refused before any path (streaming, batch scheduler, direct) takes the
     // model, so the client gets a 400 rather than a 500 or a mid-stream error.
     let tokenized =
-        tokenize_chat_prompt(&tokenizer, &request.messages, arch_hint.as_deref(), request.thinking(), state);
+        tokenize_chat_prompt(&tokenizer, &request.messages, arch_hint.as_deref(), request.thinking(), request.tools.as_deref(), state);
     let prompt_ids =
         match fit_serving_context(state, tokenized) {
             Ok(ids) => ids,
@@ -358,7 +359,7 @@ fn try_quantized_backend(
     // GH-319: Use actual model architecture for chat template detection
     let arch_hint = state.model_architecture();
     let prompt_ids =
-        match tokenize_chat_prompt(&tokenizer, &request.messages, arch_hint.as_deref(), request.thinking(), state) {
+        match tokenize_chat_prompt(&tokenizer, &request.messages, arch_hint.as_deref(), request.thinking(), request.tools.as_deref(), state) {
             Ok(ids) => ids,
             Err(r) => return Some(r),
         };
@@ -516,7 +517,7 @@ fn try_apr_transformer_backend(
     };
     let arch_hint = state.model_architecture();
     let prompt_ids =
-        match tokenize_chat_prompt(&tokenizer, &request.messages, arch_hint.as_deref(), request.thinking(), state) {
+        match tokenize_chat_prompt(&tokenizer, &request.messages, arch_hint.as_deref(), request.thinking(), request.tools.as_deref(), state) {
             Ok(ids) => ids,
             Err(r) => return Some(r),
         };
@@ -613,11 +614,12 @@ fn registry_prompt_ids(
     request: &ChatCompletionRequest,
     tokenizer: &BPETokenizer,
 ) -> Result<Vec<u32>, Response> {
-    let prompt_text = match crate::api::realize_handlers::format_chat_messages_for_state_thinking(
+    let prompt_text = match crate::api::realize_handlers::format_chat_messages_for_state_thinking_tools(
         state,
         &request.messages,
         Some(&request.model),
         request.thinking(),
+        request.tools.as_deref(),
     ) {
         Ok(p) => p,
         Err(e) => return Err(fail_response(state, StatusCode::BAD_REQUEST, e.to_string())),
@@ -820,7 +822,7 @@ async fn try_apr_q4k_chat_backend(
     };
     let arch_hint = state.model_architecture();
     let prompt_ids =
-        match tokenize_chat_prompt(&tokenizer, &request.messages, arch_hint.as_deref(), request.thinking(), state) {
+        match tokenize_chat_prompt(&tokenizer, &request.messages, arch_hint.as_deref(), request.thinking(), request.tools.as_deref(), state) {
             Ok(ids) => ids,
             Err(r) => return Some(r),
         };
@@ -1229,6 +1231,7 @@ fn try_qwen3_moe_backend(
         &request.messages,
         Some(&request.model),
         request.thinking(),
+        request.tools.as_deref(),
         state,
     ) {
         Ok(ids) => ids,
