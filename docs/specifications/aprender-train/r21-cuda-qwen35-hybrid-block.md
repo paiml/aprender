@@ -227,6 +227,13 @@ Two consequences sit outside the kernels:
    already depends on (`aprender-train/Cargo.toml:85`), so the change is a visibility change plus the loader. Add 20
    `[A]` if #4418 has not landed by then and the transforms must first move to a shared module. It is on R4's path
    and T2's (§Value-head order, Load).
+   The transforms also need the head counts and widths, and the tensors cannot give them: the rows of `in_proj_qkv`
+   give only 2·n_k·d_k + n_v·d_v. #4418's import stores them in the .apr's custom key `linear_attn_hparams`
+   (`write.rs:151`). Its GGUF export takes them from there or from a config.json beside the input, and otherwise
+   refuses (`gguf_export_config.rs:611-625`). The loader does the same, so a .apr imported at `316dee2cd4`, which has
+   no such key, is refused. Every Qwen3.5 load path, `from_gguf` included, also refuses an ssm_a value that is not
+   strictly negative. A_log is ≥ 0 on 192 of the 4B's 768 heads, so A_log under the ssm_a name cannot pass. Both
+   are in QQE-008 (desk read, 2026-10-04).
 5. **Contract text on `fold-r2r3`, fixed at `80723cf206`.** `qwen35-train-gdn-v1` stated the old recurrence:
    α = sigmoid(·) and o = (Sᵀq) ⊙ z. The code decays by e^g (`gdn.rs:291`), reads the decayed state, scales the
    read-out by 1/√d_k and applies z only in the gated norm, and the contract now says so. The shared
