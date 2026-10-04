@@ -1,0 +1,21 @@
+- id: PMAT-4715
+  github_issue: 4715
+  item_type: task
+  title: 'qwen story B2: judge apr qa throughput against a PINNED baseline (sha, binary hash, host, load); a busy host is not_measured'
+  status: inprogress
+  priority: high
+  assigned_to: aprender-w4650
+  created: 2026-10-04T00:00:00Z
+  updated: 2026-10-04T00:00:00Z
+  acceptance_criteria:
+  - The baseline is pinned once on an idle host and records the commit sha, the binary sha256, the host and the load; no run rewrites it
+  - B2 compares throughput against the pinned baseline; above APR_PERF_MAX_LOAD the row is not_measured, which fails the job
+  - 'Planted rows: a high-load run gives not_measured; a real 20% drop at idle fails; an idle, equal run passes; a missing baseline gives not_measured'
+  - Every refusal in the library has a mutant that turns the case table red
+  - 'Out of scope: apr qa''s own self-overwriting regression cache (crates/apr-cli) and the workflow file'
+  phases: []
+  subtasks: []
+  estimated_effort: null
+  labels:
+  - kind:bug
+  notes: 'Checklist row 14 of #4715 (was T26).'
