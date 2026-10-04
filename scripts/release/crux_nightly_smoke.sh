@@ -108,7 +108,7 @@ judge() {
         fi
         # A receipt speaks for its own host only: no host, or a cell keyed to another host, binds
         # nothing (otherwise one host's receipt could fill another host's smoke cells).
-        rhost=$(jq -r '.host | strings' "$f")
+        rhost=$(jq -r '.host | strings | select(test("\\A[A-Za-z0-9._-]+\\z"))' "$f")
         if ! [[ $rhost =~ ^[A-Za-z0-9._-]+$ ]]; then
             refuse "$base names no host -- its cells cannot be credited to any named host"
             continue
@@ -216,6 +216,7 @@ case_table() {
     case_row "$s" short-head 1 "is not a full 40-hex sha" ':' "--head 1234567890ab" || bad=$((bad + 1))
     case_row "$s" hosts-empty-entry 1 "empty or malformed host" ':' "--hosts host-a,,host-b" || bad=$((bad + 1))
     case_row "$s" thinking-unknown-mode 1 "is not a list of off/on" ':' "--thinking off,onn" || bad=$((bad + 1))
+    case_row "$s" host-with-trailing-newline 1 "host-a-gpu.json names no host" "jset host-a-gpu.json '.host = \"host-a\\n\" | del(.cells[].key.host)'" || bad=$((bad + 1))
     case_row "$s" receipt-names-no-host 1 "host-a-gpu.json names no host" \
         "jset host-a-gpu.json 'del(.host) | del(.cells[].key.host)'" || bad=$((bad + 1))
     case_row "$s" cells-keyed-to-other-host 1 "carries cells keyed to another host" \
@@ -237,7 +238,7 @@ self_test() {
     local self="$HERE/$PROG.sh" bad mut n=0 fails=0 stub td
     printf '%s --self-test\n' "$PROG"
     bad=$(case_table "$self")
-    if [ "$bad" -eq 0 ]; then echo "PASS case table: 27 rows hold on the real judge"; else echo "FAIL case table: $bad row(s) do not hold"; fails=$((fails + 1)); fi
+    if [ "$bad" -eq 0 ]; then echo "PASS case table: 28 rows hold on the real judge"; else echo "FAIL case table: $bad row(s) do not hold"; fails=$((fails + 1)); fi
 
     # Release day runs no CRUX: with apr and the CRUX drivers stubbed on PATH to leave a mark, a
     # PASS run must leave none.
@@ -276,6 +277,7 @@ self_test() {
         's/select(.value | . != null and .*) | .key/select(.value == true) | .key/'
         's/, (.admitted_by_sha | objects \/\/ {})//'
         '/which is not a model sha256 --/{s/refuse /true /;n;s/return 1/:/}'
+        's/+\\\\z"))/+$"))/'
     )
     td=$(mktemp -d) || return 1
     for mut in "${muts[@]}"; do
