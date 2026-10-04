@@ -97,24 +97,34 @@ workflow jobs workspace-test
 sections matrix-pins workspace-test-shard
 sections jobs workspace-test-shard"
 # job_block <file> <parent> <job> -> the job's lines, from its key under the top-level <parent>
-# up to the next line at indent <= 2 (the next job, or a comment heading it); trailing blanks dropped
+# up to the next NON-COMMENT line at indent <= 2. A comment or blank ends nothing: it is held and
+# printed only if the job goes on, so `  # note` inside a job cannot cut its tail out of the
+# digest (lane E, round 4). A second <job> key under <parent> is rc=3: a YAML loader keeps the
+# last duplicate, which is not the block pinned here.
 job_block() {
     awk -v p="$2:" -v j="  $3:" '
         $0 == p { inp = 1; next }
         inp && /^[^ #]/ { inp = 0 }
-        inb && (/^[^ ]/ || /^ [^ ]/ || /^  [^ ]/) { exit }
-        inp && !inb && $0 == j { inb = 1 }
-        inb { if ($0 ~ /^[[:space:]]*$/) { blank = blank "\n"; next } printf "%s%s\n", blank, $0; blank = "" }' "$1"
+        inp && $0 == j { seen++ }
+        inb && !/^[[:space:]]*#/ && (/^[^ ]/ || /^ [^ ]/ || /^  [^ ]/) { inb = 0; done = 1 }
+        inp && !inb && !done && $0 == j { inb = 1 }
+        inb { if ($0 ~ /^[[:space:]]*(#.*)?$/) { held = held $0 "\n"; next } printf "%s%s\n", held, $0; held = "" }
+        END { if (seen > 1) exit 3 }' "$1"
 }
-# golden_compute <workflow> <sections> -> the manifest; rc=2 (ENV) when a pinned job is absent
+# golden_compute <workflow> <sections> -> the manifest; rc=2 (ENV) when a pinned job is absent or
+# keyed twice. It also pins each file's top-level key set: a workflow-level `env:`, `defaults:` or
+# `permissions:` reaches every pinned job without touching one of their lines (lane F, round 4).
 golden_compute() {
-    local role parent job file block
+    local role parent job file block rc
     while read -r role parent job; do
         if [ "$role" = workflow ]; then file=$1; else file=$2; fi
-        block=$(job_block "$file" "$parent" "$job")
+        rc=0; block=$(job_block "$file" "$parent" "$job") || rc=$?
+        [ "$rc" = 3 ] && { printf 'ENV   pinned job %s.%s is keyed twice in the %s: cannot judge, not a pass\n' "$parent" "$job" "$role" >&2; return 2; }
         [ -n "$block" ] || { printf 'ENV   pinned job %s.%s is missing from the %s: cannot judge, not a pass\n' "$parent" "$job" "$role" >&2; return 2; }
         printf '%s  %s:%s.%s\n' "$(printf '%s\n' "$block" | sha256sum | cut -c1-64)" "$role" "$parent" "$job"
     done <<< "$PINNED"
+    printf '%s  workflow:top-level-keys\n' "$(grep -E '^[^ #]' "$1" | cut -d: -f1 | sha256sum | cut -c1-64)"
+    printf '%s  sections:top-level-keys\n' "$(grep -E '^[^ #]' "$2" | cut -d: -f1 | sha256sum | cut -c1-64)"
 }
 golden_header() {
     printf '%s\n' "# The jobs the quick-tier shard split lives in, pinned by the sha256 of their lines" \
@@ -270,7 +280,9 @@ if [ "${1:-}" = "--self-test" ]; then
         if cmp -s "$src" "$d/$m.yml"; then printf 'FAIL  the %s mutant did not apply (its anchor is gone)\n' "$m"; bad=1; continue; fi
         # judged with a golden re-pinned to the mutant: the semantic rows must kill it on their own
         QUICK_SIGMA_WORKFLOW="$wf" QUICK_SIGMA_SECTIONS="$sec" QUICK_SIGMA_GOLDEN="$d/$m.sha256" bash "$0" --update-golden > /dev/null 2>&1 || { printf "FAIL  the %s mutant could not be re-pinned\n" "$m"; bad=1; continue; }
-        if GOLDEN="$d/$m.sha256" table "$wf" "$sec" > "$d/out" 2>&1; then printf 'FAIL  the planted %s rule passed the table\n' "$m"; bad=1
+        rc=0; GOLDEN="$d/$m.sha256" table "$wf" "$sec" > "$d/out" 2>&1 || rc=$?
+        if [ "$rc" = 0 ]; then printf 'FAIL  the planted %s rule passed the table\n' "$m"; bad=1
+        elif [ "$rc" != 1 ]; then printf 'FAIL  the planted %s rule was rc=%s (ENV), not a row going RED\n' "$m" "$rc"; bad=1
         else printf 'ok    the planted %-8s rule is RED: %s row(s), e.g. %s\n' "$m" "$(grep -c '^FAIL' "$d/out")" "$(grep -m1 '^\(FAIL\|ENV\)' "$d/out" | cut -c7-90)"; fi
     done
     # The golden's case table. edit <file> <anchor> <match> sub|after <line>: after the first line
@@ -326,6 +338,22 @@ if [ "${1:-}" = "--self-test" ]; then
     edit "$SEC" '  guard-tree:' 'runs-on:' after '    # outside the pinned jobs' > "$d/o-sec.yml"
     if cmp -s "$WF" "$d/o-wf.yml" || cmp -s "$SEC" "$d/o-sec.yml"; then printf 'FAIL  the outside-the-pin control did not apply\n'; bad=1
     else case_rc 0 "an edit outside the pinned jobs, golden unchanged" "$(st_rc table "$d/o-wf.yml" "$d/o-sec.yml")"; fi
+    # round 4 (lanes E, F): a re-pinned `  # note` inside a job must not blind the golden to the
+    # lines after it; a second job key is ENV; a workflow-level env reaches every pinned job
+    edit "$WF" '  workspace-test-shard:' '    steps:' sub '  # note
+    steps:' > "$d/c-note.yml"
+    edit "$d/c-note.yml" '  workspace-test-shard:' 'fetch-depth: 0' sub '          fetch-depth: 1' > "$d/c-after.yml"
+    QUICK_SIGMA_WORKFLOW="$d/c-note.yml" QUICK_SIGMA_SECTIONS="$SEC" QUICK_SIGMA_GOLDEN="$d/c.sha256" bash "$0" --update-golden > /dev/null 2>&1
+    if cmp -s "$d/c-note.yml" "$d/c-after.yml" || cmp -s "$WF" "$d/c-note.yml"; then printf 'FAIL  the comment-blind mutant did not apply\n'; bad=1
+    else case_rc 1 "an edit below a re-pinned indent-2 comment inside a job" "$(GOLDEN="$d/c.sha256" st_rc table "$d/c-after.yml" "$SEC")"; fi
+    edit "$SEC" '  workspace-test:' '  workspace-test:' sub '  workspace-test-shard:
+    runs-on: shadow
+  workspace-test:' > "$d/c-dup.yml"
+    case_rc 2 "a second workspace-test-shard key under jobs (a loader keeps the last)" "$(st_rc table "$WF" "$d/c-dup.yml")"
+    edit "$WF" 'jobs:' 'jobs:' sub 'env:
+  NEXTEST_PROFILE: bogus
+jobs:' > "$d/c-env.yml"
+    case_rc 1 "a workflow-level env added above the pinned jobs" "$(st_rc table "$d/c-env.yml" "$SEC")"
     case_rc 2 "no golden file" "$(GOLDEN="$d/absent.sha256" st_rc table "$WF" "$SEC")"
     rc=0; table "$d/none.yml" "$SEC" > /dev/null 2>&1 || rc=$?
     if [ "$rc" = 2 ]; then printf 'ok    a workflow with no fan-in step is ENV rc=2, never a pass\n'
