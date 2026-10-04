@@ -37,6 +37,19 @@ metadata:
     rows of each, layers 0 and 3, numpy on the shipped bf16 safetensors). QQE-003 now runs both sides on the
     merge's base, and QQE-010 scores the merged model against the trained one on the training loss. The version
     stays 1.1.0: no row of this file has landed.
+    QQE-011 (PROPOSED 2026-10-04, K44): at 316dee2cd4 alpha does not reach CUDA QLoRA training. The NF4 block
+    uploads B already multiplied by s = alpha/r (transformer/cuda_block.rs:3025-3038). The forward adds
+    (x·A)·B' with no s (:3272, :3326), the backward computes dB' = (x·A)ᵀ·dq and dA = xᵀ·(dq·B'ᵀ) with no s
+    (:4433, :4456, :4594, :4608), and AdamW steps B' itself (:5098, :5130). B starts at 0 on both trainers
+    (lora/layer/core.rs:109, transformer_trainer/cuda_trainer.rs:783), so B' = s·0 = 0 for every alpha, and nothing reads s again until
+    the adapter is saved as B'/s (instruct_pipeline/accessors.rs:84-94). The (A, B') trajectory is therefore
+    the same for every alpha. The CPU path applies s in the forward (lora/layer/core.rs:278) and AdamW steps B,
+    as adapter_gradient_reference states, so one recipe trains two different models on the two devices, and
+    on CUDA B moves 1/s as far per step. apr finetune sets alpha = 2·rank (apr-finetune-v1 alpha_rank_ratio),
+    so s = 2 by default. The merge is not affected: it adds s·(B'/s)·A = B'·A, the function CUDA trained.
+    Resume is not affected either: the transformer trainer's checkpoint saves B' and restores B' unchanged
+    (cuda_trainer.rs:3187-3210, :3396-3420). QQE-011 checks that alpha scales the first step, and QQE-005
+    compares dB as AdamW receives it.
   references:
   - docs/specifications/aprender-train/train-what-you-serve-0.72.md §R4
   - contracts/qwen35-train-gdn-v1.yaml
@@ -87,8 +100,15 @@ equations:
     invariants:
     - The CPU reference (Qwen35Lora::set_grads over the gradchecked full backward) is the oracle; the CUDA path must not hold every target's dW' at once (14.3 GB f32 at 4B; streaming one matrix = 94 MB, spike S-R17) and must still equal it
     - B = 0 at init, so step 0's adapted forward is bit-equal to the base
+    - The tensor AdamW steps is B itself, as the adapter file stores it, with the gradient above. A CUDA buffer that holds s·B receives dB/s, and alpha cancels out of training (K44, QQE-011)
     preconditions:
     - same base weights on both sides (the CUDA side dequantises NF4 to the values the CPU reference loads)
+  alpha_first_step:
+    formula: "Δ_t(α) = (α/r)·B_t¹·A_t¹, the delta the merge adds after one AdamW step from B⁰ = 0;  ‖Δ_t(2α)‖ / ‖Δ_t(α)‖ = 2"
+    domain: 'one optimizer step, same base, seed, batch, rank and lr; only alpha differs (16 and 32 at r16); α and r read from each adapter file, as the merge reads them'
+    invariants:
+    - 'At step 1 the reference gives B¹ = −lr·g/(|g| + ε) with g = s·∂L/∂W''·A⁰ᵀ. That step depends on |g| only through ε, so B¹ is the same for both alphas and Δ scales with s. A buffer that holds s·B gets the same B''¹ for both alphas, the file holds B''¹/s, and Δ = B''¹·A¹ does not change'
+    - 'dA = 0 at step 1, because B⁰ = 0, so A¹ is the same in both runs'
 proof_obligations:
 - type: bound
   property: Training makes progress
@@ -117,6 +137,11 @@ proof_obligations:
   property: The merged model keeps what training learned
   formal: 'mean L(merge(B_merge, ad)) ≤ 1.02 · mean L(merge(B_train, ad)) ∧ mean L(merge(B_merge, ad)) < mean L(B_merge), over the first 20 pinned samples'
   applies_to: all
+- type: equivalence
+  property: Alpha scales training the way the adapter file says it does
+  formal: '∀ t: |‖Δ_t(32)‖ / ‖Δ_t(16)‖ − 2| ≤ 2e-2 ∧ |L_trainer − L(B_train + Δ_file)| ≤ 1e-4·L_trainer, at r16 after one AdamW step from B = 0, on CUDA and on CPU'
+  tolerance: 2.0e-02
+  applies_to: all
 falsification_tests:
 - id: FALSIFY-QQE-001
   rule: End-to-end QLoRA on Qwen3.5-4B completes and learns
@@ -143,7 +168,7 @@ falsification_tests:
     to -m lora. It must not train a worse adapter silently.
 - id: FALSIFY-QQE-005
   rule: CUDA adapter gradients equal the CPU reference
-  prediction: 'on Qwen3.5-0.8B (3 fixed tokens, r16, B randomised with a fixed seed) the CUDA side emits the SAME adapter set as Qwen35Lora (150 slots, 300 tensors, matched by layer and target; a missing or extra tensor is a FAIL, never skipped — spike S-R15: the existing CUDA QLoRA path adapts Q and V only), and every CUDA dA/dB tensor is within rel 1e-2 of Qwen35Lora::set_grads, both sides on the SAME base: the CPU reference loads the target weights round-tripped through the NF4 quantize/dequantize the CUDA path uses (trueno_gpu::kernels::quantize_nf4 / dequantize_nf4; spike S-R4c measured a 0.33-1.20 per-tensor rel gap between the Q4_K and NF4 bases, all 300 tensors over 1e-2), so the tolerance measures the backward and not NF4 error (a Q4_K-dequantized CPU base vs an NF4 CUDA base would differ for a non-bug reason)'
+  prediction: 'on Qwen3.5-0.8B (3 fixed tokens, r16, B randomised with a fixed seed) the CUDA side emits the SAME adapter set as Qwen35Lora (150 slots, 300 tensors, matched by layer and target; a missing or extra tensor is a FAIL, never skipped — spike S-R15: the existing CUDA QLoRA path adapts Q and V only), and every CUDA dA/dB tensor is within rel 1e-2 of Qwen35Lora::set_grads, taken as AdamW receives it for the tensor the adapter file stores (B, never s·B, and never rescaled by the test: a buffer holding s·B gets dB/s, rel 0.5 at s = 2; K44, QQE-011), both sides on the SAME base: the CPU reference loads the target weights round-tripped through the NF4 quantize/dequantize the CUDA path uses (trueno_gpu::kernels::quantize_nf4 / dequantize_nf4; spike S-R4c measured a 0.33-1.20 per-tensor rel gap between the Q4_K and NF4 bases, all 300 tensors over 1e-2), so the tolerance measures the backward and not NF4 error (a Q4_K-dequantized CPU base vs an NF4 CUDA base would differ for a non-bug reason)'
   test: 'desk-ready reference: aprender-train transformer::qwen35_model::tests::lora (FALSIFY-QTG-009, 6 planted mutants RED). CUDA side: NOT run while train-active'
   if_fails: 'the CUDA LoRA backward optimises a different function from the gradchecked reference (scale, transpose, or a GDN target missing from the CUDA target set); planted: running the CPU side on the un-round-tripped Q4_K base must be reported as a base mismatch, not a pass or a backward defect; planted: dropping every non-Q/V slot from the CUDA side must FAIL on the adapter-set check, not pass on the tensors that remain'
 - id: FALSIFY-QQE-006
@@ -171,6 +196,11 @@ falsification_tests:
   prediction: 'after R4''s last step, over the first 20 samples of the pinned set (target tokens only, in the loss window the run trained with): the mean loss of the merged file read back through row 4b''s loader is at most 1.02 × the mean loss of the trainer''s own model (its NF4 base plus the adapter), and below the mean loss of the merged file''s base alone. The receipt names both bases and the three losses. Not measurable at 316dee2cd4: R4''s CUDA path for Qwen3.5 does not exist, nothing scores a merged model, and no receipt names a base. The gap it guards is measured: an NF4 round trip with the CUDA path''s quantizer (64-value blocks, f32 absmax) moves each of R4''s 10 target kinds on Qwen3.5-4B by 9.2-9.5% of its Frobenius norm, so the trained and the merged model differ on every adapted matrix. Planted: (a) a merge that drops the adapter (the output is the base) FAILS the second clause; (b) a train side scored on B_merge instead of the NF4 base passes vacuously, so the test first checks that B_train''s target tensors differ from B_merge''s by 5-15% (relative Frobenius) in a QLoRA run, and that plant turns it RED'
   test: '[U] not written; CUDA, after R4 runs (needs LIVE 0.70.1 and R4''s CUDA path). The base-gap probe is numpy over the bf16 safetensors and needs no GPU'
   if_fails: 'R4 reports the loss of a model nobody is served: the adapter learned against the NF4 base, the file users run carries it on the unquantized base, and the gain the loss gate saw may not be in the served model'
+- id: FALSIFY-QQE-011
+  rule: Alpha reaches training on CUDA as it does on CPU
+  prediction: 'two runs that differ only in alpha (16 and 32 at r16; same tiny base, seed, batch and lr; one AdamW step from B = 0), each writing its adapter. (1) On every target, the delta the merge adds, (α/r)·B·A with α and r read from the file, is twice as large in the alpha-32 run, within 2e-2 (alpha_first_step). (2) In each run, the trainer''s own loss on that batch after the step equals the loss of its base (B_train) plus the file''s delta, within 1e-4 relative, so the file carries the function the trainer holds. The CPU path is the control and is GREEN at 316dee2cd4: it applies s in the forward and steps B (lora/layer/core.rs:278). The CUDA NF4 path is RED there on (1): it steps the pre-scaled B'' = s·B, both runs train the same function, and the ratio is 1. Planted: (a) alpha = r in both runs gives a ratio of 1 for a non-bug reason, so the test refuses equal alphas instead of passing them; (b) an export that drops the division by s writes B'', which makes the ratio 2 while the served delta is s times the trained one, so (1) passes and (2) FAILS; (c) Δ read from the GPU buffers instead of the written file cannot see the export, so (1) reads the file'
+  test: '[U] not written; CUDA, a tiny NF4 config (the cuda-nf4-train-loss-parity size), two runs of one step each. Needs LIVE 0.70.1 and a free GPU. The CPU control needs only cargo. For R4 it runs again on the Qwen3.5 CUDA path once that exists'
+  if_fails: 'alpha does nothing on CUDA QLoRA: a recipe trains a different model on CUDA than on the CPU, B learns at 1/s of the rate PEFT or Unsloth gives the same recipe, and QQE-004 compares the QLoRA run against a LoRA reference that may follow the other rule'
 qa_gate:
   certeza:
     min_score: 0.0
