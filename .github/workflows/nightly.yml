@@ -259,6 +259,11 @@ jobs:
       - name: Build apr (host-native, pinned toolchain)
         run: |
           set -euo pipefail
+          # Every later step reads ./target. The mini's runner env redirects cargo's
+          # target dir (CARGO_TARGET_DIR=~/data/cargo-target), so cargo built
+          # elsewhere and the --version line found no apr (run 37171118510, exit
+          # 127). Same fix as binary-release.yml's mini lane (#4660).
+          export CARGO_TARGET_DIR="$GITHUB_WORKSPACE/target"
           rustup show active-toolchain
           cargo build --release --locked -p apr-cli --target "$T"
           "target/$T/release/apr" --version
