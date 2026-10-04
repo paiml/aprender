@@ -1,6 +1,6 @@
 metadata:
   id: C-CUDA-NF4-TRAIN-LOSS-PARITY
-  version: 1.0.0
+  version: 1.1.0
   created: '2026-07-02'
   author: PAIML Engineering
   kind: pattern
@@ -85,6 +85,22 @@ metadata:
         bias drop      -> loss 5.17 vs 0.66, relL2 0.97 RED
         partial warp   -> fused loss NaN                RED
 
+    1.1.0 (2026-10-04, la-0.72, K45): adds the lora_device_layout
+      equation, CNTLP-INV-005 and FALSIFY-CUDA-NF4-TRAIN-LOSS-PARITY-003.
+      LoRALayer and PEFT hold A as [rank, d_in] and B as [d_out, rank],
+      and the CPU forward adds x·Aᵀ·Bᵀ. The NF4 block adds (x·A)·B with
+      gemm_forward (row-major C = A @ B), so it needs Aᵀ and Bᵀ. The
+      instruct pipeline copied the buffers across unchanged, at upload
+      (cuda_init.rs, lora_slot) and at download (accessors.rs,
+      sync_lora_to_cpu), which reshapes them instead of transposing
+      them. A raw round trip is the identity, so CUDA training and
+      resume looked right. Everything that reads lora_layers after a
+      sync read a different adapter from the one the device trained:
+      model.safetensors from save_checkpoint, merge and PEFT export,
+      and evaluate() when it falls back to the CPU forward. A PEFT
+      adapter loaded and then trained on CUDA started from a different
+      adapter too. 001 runs with B = 0, so it cannot see this.
+
   references:
     - 'crates/aprender-gpu/src/kernels/elementwise/rope/neox.rs (BatchedRopeNeoxKernel + BatchedRopeNeoxBackwardKernel)'
     - 'crates/aprender-train/src/autograd/cuda_forward/normalization.rs (batched_rope_neox_forward/_backward rewired to NEOX kernels)'
@@ -99,6 +115,9 @@ metadata:
     - 'crates/aprender-train/src/transformer/attention.rs (Decoder -> attention_causal dispatch)'
     - 'crates/aprender-train/src/finetune/instruct_pipeline/parity_probe.rs (falsifier + layer bisect probes)'
     - 'crates/aprender-train/src/transformer/cuda_block_parity_probe.rs (per-op layer-0 bisect probe)'
+    - 'crates/aprender-train/src/lora/layer/device_layout.rs (1.1.0: LoRALayer::device_layout and set_from_device_layout, with the CPU half of 003)'
+    - 'crates/aprender-train/src/finetune/instruct_pipeline/accessors.rs (1.1.0: sync_lora_to_cpu converts back from the device layout; cuda_init.rs lora_slot converts to it)'
+    - 'crates/aprender-train/src/finetune/instruct_pipeline/layout_probe.rs (1.1.0: the device half of 003)'
   depends_on:
     - 'cuda-nf4-forward-stream-ordering-v1'
 
@@ -150,6 +169,25 @@ equations:
     preconditions:
     - 'model config architecture is Decoder'
 
+  lora_device_layout:
+    formula: |
+      to_device(A, B) = (Aᵀ, Bᵀ)  ∧  from_device(to_device(A, B)) = (A, B)
+      gemm(gemm(x, Aᵀ), Bᵀ) = x·Aᵀ·Bᵀ, the delta the CPU forward adds
+      where A is [rank, d_in] and B is [d_out, rank] as LoRALayer and
+      PEFT hold them, and gemm is gemm_forward: C = A @ B, row-major
+    domain: |
+      Every crossing of a LoRA adapter between a LoRALayer and an NF4
+      block in the instruct pipeline: the upload in init_cuda and the
+      download in sync_lora_to_cpu. The alpha/rank scale s is
+      orthogonal: download_lora_weights returns (Aᵀ, s·Bᵀ) and
+      upload_lora_weights takes that form, however the block applies s.
+    invariants:
+    - 'after init_cuda, download_lora_weights returns exactly (Aᵀ, s·Bᵀ) for every Q and V slot'
+    - 'sync_lora_to_cpu right after init_cuda gives back A and B bit for bit'
+    - 'the GPU logit delta of an adapter is its CPU forward_with_lora delta, not the delta of its buffers copied raw'
+    preconditions:
+    - 'each LoRALayer has the rank, d_in and d_out of the block buffers it is copied to'
+
 proof_obligations:
 - id: CNTLP-INV-001
   type: invariant
@@ -171,6 +209,11 @@ proof_obligations:
   property: decoder CPU attention is causal
   formal: '∀ i, j > i: softmax_row_i[j] = 0'
   applies_to: decoder_attention_causality
+- id: CNTLP-INV-005
+  type: invariant
+  property: the NF4 block computes the adapter the LoRALayer holds
+  formal: 'from_device(to_device(A, B)) = (A, B)  ∧  gemm(gemm(x, Aᵀ), Bᵀ) = x·Aᵀ·Bᵀ'
+  applies_to: lora_device_layout
 
 falsification_tests:
 - id: FALSIFY-CUDA-NF4-TRAIN-LOSS-PARITY-001
@@ -210,6 +253,51 @@ falsification_tests:
   - partial_warp_shfl_sync_undefined
   - noncausal_decoder_attention_label_leakage
   - finite_garbage_forward_worse_than_uniform
+- id: FALSIFY-CUDA-NF4-TRAIN-LOSS-PARITY-003
+  rule: |
+    The instruct pipeline hands each NF4 block its LoRA adapter in the
+    layout the block computes with, and takes it back the same way:
+    lora_slot uploads LoRALayer::device_layout, (Aᵀ, Bᵀ), and
+    sync_lora_to_cpu passes what download_lora_weights returns, with
+    alpha/rank divided out of B, to LoRALayer::set_from_device_layout.
+  prediction: |
+    CPU, in every lib test run (lora::layer::device_layout at d_out 8,
+    d_in 12, rank 3, so no pair is square): device_layout is the
+    transpose index map; the two device-layout GEMMs in gemm_forward's
+    documented layout give x·Aᵀ·Bᵀ (matmul_nt) within relL2 1e-5,
+    while the raw buffers miss it by more than 0.1;
+    set_from_device_layout inverts device_layout exactly and leaves A
+    and B trainable; an A or a B one entry too long panics, naming it.
+    Device (instruct_pipeline/layout_probe.rs, TransformerConfig::tiny(),
+    rank 4, alpha 8, dense A and B): (c1) after init_cuda every block's
+    download is exactly (Aᵀ, 2·Bᵀ); (c2) sync_lora_to_cpu then gives
+    back A and B bit for bit; (a) an adapter with B·A = 0 uploaded in
+    the device layout leaves the logits within 1e-6 (relative) of
+    B = 0, and uploaded raw moves them by more than 1e-3, so the device
+    GEMMs compute (x·A)·B on what they are given; (b) the dense
+    adapter's GPU logit delta is at least 2x closer to its CPU
+    forward_with_lora delta than to that of its buffers copied raw.
+    With the raw copies of 316dee2cd4, (c1) and (b) are RED and (c2)
+    is GREEN, because a raw round trip is the identity. The device
+    half is written and not run yet: no GPU work runs while a train is
+    active.
+  test: cargo test -p aprender-train --lib falsify_cuda_nf4_train_loss_parity_003
+  if_fails: |
+    The adapter the device trains is not the one that is saved,
+    merged, exported or evaluated on the CPU, or a loaded adapter is
+    not the one the device starts from. Check every place a LoRA
+    buffer crosses between a LoRALayer and a CUDA block: lora_slot
+    (cuda_init.rs), sync_lora_to_cpu (accessors.rs), and any new
+    upload or download site, which must go through device_layout and
+    set_from_device_layout. Run the device half with cargo test -p
+    aprender-train --features cuda --lib
+    falsify_cuda_nf4_train_loss_parity_003 -- --ignored --nocapture,
+    the GPU lock around the test binary only. The classify pipeline
+    copies its adapters the same way and this row does not cover it.
+  ship_blocking: true
+  counter_example_classes:
+  - lora_buffer_reshaped_not_transposed
+  - raw_round_trip_hides_layout_mismatch
 
 qa_gate:
   id: QA-CUDA-NF4-TRAIN-LOSS-PARITY-001
@@ -225,5 +313,6 @@ qa_gate:
   - gpu_cpu_loss_parity
   - gpu_cpu_logits_parity
   - decoder_attention_causality
-  pass_criteria: FALSIFY-CUDA-NF4-TRAIN-LOSS-PARITY-001 passes
+  - lora_device_layout
+  pass_criteria: FALSIFY-CUDA-NF4-TRAIN-LOSS-PARITY-001 and -003 pass
   falsification: Any failure fails the gate (ship-blocking)
