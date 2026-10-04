@@ -34,6 +34,15 @@ judge() {
     local f base sha line short idx models m h t got red ctl
     local -a hosts modes files admitted model_list
     FAILED=0
+    # An entry the judge cannot match is a cell it would silently skip: refuse it up front.
+    if ! [[ $hosts_csv =~ ^[A-Za-z0-9._-]+(,[A-Za-z0-9._-]+)*$ ]]; then
+        refuse "--hosts '$hosts_csv' holds an empty or malformed host -- every named host must be judged"
+        return 1
+    fi
+    if ! [[ $modes_csv =~ ^(off|on)(,(off|on))*$ ]]; then
+        refuse "--thinking '$modes_csv' is not a list of off/on -- an unknown mode would judge nothing"
+        return 1
+    fi
     IFS=, read -r -a hosts <<< "$hosts_csv"
     IFS=, read -r -a modes <<< "$modes_csv"
     if ! [[ $head =~ ^[0-9a-f]{40}$ ]]; then
@@ -54,11 +63,20 @@ judge() {
         refuse "the nightly at '$nightly' holds no CRUX receipt for H ${head:0:12} -- release day runs no CRUX to make one"
         return 1
     fi
-    if ! models=$(jq -er '.admitted_by_sha_thinking | if type == "object" then keys[] else error("absent") end' "$cert" 2> /dev/null) || [ -z "$models" ]; then
+    # The certified models are the keys of both admission maps (load_certified); one with no
+    # admitted thinking mode refuses below. A key that is not a sha256 certifies nothing.
+    if ! models=$(jq -er 'if (.admitted_by_sha_thinking | type) != "object" then error("absent") else
+            [(.admitted_by_sha_thinking, (.admitted_by_sha | objects // {})) | keys[]] | unique[] end' "$cert" 2> /dev/null) || [ -z "$models" ]; then
         refuse "no admitted_by_sha_thinking in the certification '$cert' -- the smoke matrix (model x admitted mode) is unknown"
         return 1
     fi
     mapfile -t model_list <<< "$models"
+    for m in "${model_list[@]}"; do
+        if ! [[ $m =~ ^[0-9a-f]{64}$ ]]; then
+            refuse "the certification admits '$m', which is not a model sha256 -- the smoke matrix is malformed"
+            return 1
+        fi
+    done
     idx=$(mktemp) || return 1
     for f in "${files[@]}"; do
         base=$(basename "$f")
@@ -66,13 +84,19 @@ judge() {
             refuse "$base is not a readable crux-inference-receipt/v1"
             continue
         fi
-        sha=$(jq -r '(.apr | objects | .sha) // .apr_sha // empty' "$f")
-        if [ -z "$sha" ]; then
-            line=$(jq -r '.apr | objects | .version_line // empty' "$f")
+        # apr_sha_of: an explicit sha, PRESENT in any form, wins and must be H itself ("" or
+        # false binds to nothing); only without one does the version line bind, and then every
+        # cell that names a binary must name that same line.
+        sha=$(jq -r 'if (.apr | type) == "object" and (.apr | has("sha")) then "explicit:" + (.apr.sha | tostring)
+            elif has("apr_sha") then "explicit:" + (.apr_sha | tostring) else "" end' "$f")
+        if [ -n "$sha" ]; then
+            sha=${sha#explicit:}
+        else
+            line=$(jq -r '.apr | objects | .version_line | strings' "$f")
             short=""
             if [[ $line =~ ^apr\ [^\ ]+\ \(([0-9a-f]{7,40})\)$ ]]; then short=${BASH_REMATCH[1]}; fi
             if [ -n "$short" ] && [ "${head#"$short"}" != "$head" ] &&
-                jq -e --arg l "$line" '[.cells[]? | .engines.apr.version? // empty | select(. != $l)] | length == 0' "$f" > /dev/null; then
+                jq -e --arg l "$line" '[.cells[]? | (.engines.apr.version?) | select(. != null and . != $l)] | length == 0' "$f" > /dev/null; then
                 sha=$head
             else
                 sha="unbound:${line:-none}"
@@ -82,12 +106,23 @@ judge() {
             refuse "$base was measured by apr '$sha', not the binary built from H ${head:0:12} -- the night tested something else"
             continue
         fi
+        # A receipt speaks for its own host only: no host, or a cell keyed to another host, binds
+        # nothing (otherwise one host's receipt could fill another host's smoke cells).
+        rhost=$(jq -r '.host | strings' "$f")
+        if ! [[ $rhost =~ ^[A-Za-z0-9._-]+$ ]]; then
+            refuse "$base names no host -- its cells cannot be credited to any named host"
+            continue
+        fi
+        if ! jq -e --arg h "$rhost" '[.cells[]? | .key.host? | select(. != null and . != $h)] | length == 0' "$f" > /dev/null; then
+            refuse "$base is the receipt of host $rhost but carries cells keyed to another host"
+            continue
+        fi
         if [ "$(jq -r '.summary.verdict // empty' "$f")" = DECLINE ]; then
             refuse "$base DECLINED ($(jq -r '.summary.declined_because // "no reason"' "$f"))"
             continue
         fi
-        jq -r '.host as $h | .cells[]? | [(.key.host // $h), .key.model_sha256, .key.thinking, .verdict, (.positive_control == true)] | @tsv' "$f" >> "$idx"
-        jq -r '"HOST\t" + (.host // "")' "$f" >> "$idx"
+        jq -r --arg h "$rhost" '.cells[]? | [$h, .key.model_sha256, .key.thinking, .verdict, (.positive_control == true)] | @tsv' "$f" >> "$idx"
+        printf 'HOST\t%s\n' "$rhost" >> "$idx"
     done
     for h in "${hosts[@]}"; do
         if ! grep -qxF "HOST	$h" "$idx"; then
@@ -95,7 +130,7 @@ judge() {
             continue
         fi
         for m in "${model_list[@]}"; do
-            mapfile -t admitted < <(jq -r --arg m "$m" '.admitted_by_sha_thinking[$m] | objects | to_entries[] | select(.value == true) | .key' "$cert")
+            mapfile -t admitted < <(jq -r --arg m "$m" '.admitted_by_sha_thinking[$m] | objects | to_entries[] | select(.value | . != null and . != false and . != 0 and . != "" and . != [] and . != {}) | .key' "$cert")
             local any=0
             for t in "${modes[@]}"; do
                 printf '%s\n' "${admitted[@]}" | grep -qxF "$t" || continue
@@ -147,9 +182,10 @@ export -f jset
 
 # The case table. Prints the number of rows that did not hold for SCRIPT.
 case_table() {
-    local s=$1 bad=0 A B
+    local s=$1 bad=0 A B C
     A=$(printf 'a%.0s' $(seq 64))
     B=$(printf 'b%.0s' $(seq 64))
+    C=$(printf 'c%.0s' $(seq 64))
     case_row "$s" green 0 "PASS" ':' || bad=$((bad + 1))
     case_row "$s" green-ignores-unadmitted-red 0 "ok     host-b model bbbbbbbbbbbb thinking=off" ':' || bad=$((bad + 1))
     case_row "$s" no-nightly-dir 1 "no nightly full-lane result" ':' "--nightly /nonexistent/crux-nightly" || bad=$((bad + 1))
@@ -178,6 +214,22 @@ case_table() {
     case_row "$s" model-without-mode 1 "model bbbbbbbbbbbb: no --thinking mode is admitted" \
         "jset prompt-certification.json '.admitted_by_sha_thinking[\"$B\"].off = false'" || bad=$((bad + 1))
     case_row "$s" short-head 1 "is not a full 40-hex sha" ':' "--head 1234567890ab" || bad=$((bad + 1))
+    case_row "$s" hosts-empty-entry 1 "empty or malformed host" ':' "--hosts host-a,,host-b" || bad=$((bad + 1))
+    case_row "$s" thinking-unknown-mode 1 "is not a list of off/on" ':' "--thinking off,onn" || bad=$((bad + 1))
+    case_row "$s" receipt-names-no-host 1 "host-a-gpu.json names no host" \
+        "jset host-a-gpu.json 'del(.host) | del(.cells[].key.host)'" || bad=$((bad + 1))
+    case_row "$s" cells-keyed-to-other-host 1 "carries cells keyed to another host" \
+        "jset host-b-gpu.json '.cells[0].key.host = \"host-a\"'" || bad=$((bad + 1))
+    case_row "$s" empty-explicit-sha 1 "not the binary built from H" \
+        "jset host-a-gpu.json '.apr.sha = \"\" | .apr.version_line = \"apr 0.70.2 (1234567890a)\"'" || bad=$((bad + 1))
+    case_row "$s" cell-version-false 1 "not the binary built from H" \
+        "jset host-a-gpu.json 'del(.apr.sha) | .apr.version_line = \"apr 0.70.2 (1234567890a)\" | .cells[0].engines.apr.version = false'" || bad=$((bad + 1))
+    case_row "$s" admitted-by-truthy-value 1 "model bbbbbbbbbbbb thinking=on: 1 of 1 cell(s) not GREEN" \
+        "jset prompt-certification.json '.admitted_by_sha_thinking[\"$B\"].on = 1'" || bad=$((bad + 1))
+    case_row "$s" certified-without-thinking-map 1 "model cccccccccccc: no --thinking mode is admitted" \
+        "jset prompt-certification.json '.admitted_by_sha = {\"$C\": true}'" || bad=$((bad + 1))
+    case_row "$s" certification-key-not-sha 1 "which is not a model sha256" \
+        "jset prompt-certification.json '.admitted_by_sha_thinking.xyz = {off: true}'" || bad=$((bad + 1))
     printf '%s\n' "$bad"
 }
 
@@ -185,7 +237,7 @@ self_test() {
     local self="$HERE/$PROG.sh" bad mut n=0 fails=0 stub td
     printf '%s --self-test\n' "$PROG"
     bad=$(case_table "$self")
-    if [ "$bad" -eq 0 ]; then echo "PASS case table: 18 rows hold on the real judge"; else echo "FAIL case table: $bad row(s) do not hold"; fails=$((fails + 1)); fi
+    if [ "$bad" -eq 0 ]; then echo "PASS case table: 27 rows hold on the real judge"; else echo "FAIL case table: $bad row(s) do not hold"; fails=$((fails + 1)); fi
 
     # Release day runs no CRUX: with apr and the CRUX drivers stubbed on PATH to leave a mark, a
     # PASS run must leave none.
@@ -213,9 +265,17 @@ self_test() {
         's/if ! grep -qxF "HOST\t\$h" "\$idx"; then/if false; then/'
         's/if \[ "\$any" -eq 0 \]; then/if false; then/'
         's/ != "\$head" \] \&\&/ = "\$head" ] || true \&\&/'
-        's/select(. != \$l)/select(false)/'
+        's/select(. != null and . != \$l)/select(false)/'
         's/    if \[ ! -d "\$nightly" \]; then/    if false; then/'
         's/grep -qxF "\$t" || continue/true/'
+        '/holds an empty or malformed host --/{s/refuse /true /;n;s/return 1/:/}'
+        '/is not a list of off\/on --/{s/refuse /true /;n;s/return 1/:/}'
+        '/names no host --/{s/refuse /true /;n;s/continue/:/}'
+        's/select(. != null and . != \$h)/select(false)/'
+        's/(.apr | has("sha"))/false/'
+        's/select(.value | . != null and .*) | .key/select(.value == true) | .key/'
+        's/, (.admitted_by_sha | objects \/\/ {})//'
+        '/which is not a model sha256 --/{s/refuse /true /;n;s/return 1/:/}'
     )
     td=$(mktemp -d) || return 1
     for mut in "${muts[@]}"; do
