@@ -59,8 +59,9 @@ judge() {
     if [ "$tv" = "$v" ]; then
         local cands nm="" sh shq hdr p
         # git log failing is Unknown, not "no bump commit". --diff-merges is explicit: a bump that lands
-        # as a merge commit is a candidate, and a git too old to know the flag fails here (Unknown)
-        if ! cands=$(git -C "$root" log --first-parent --diff-merges=first-parent --format=%H -G'^version[[:space:]]*=' "$t" -- Cargo.toml 2>/dev/null); then
+        # as a merge commit is a candidate, and a git too old to know the flag fails here (Unknown).
+        # The pathspec is the ROOT manifest: --root at a subdirectory would make a bare one relative
+        if ! cands=$(git -C "$root" log --first-parent --diff-merges=first-parent --format=%H -G'^version[[:space:]]*=' "$t" -- ':(top)Cargo.toml' 2>/dev/null); then
             echo "NOT_MEASURED $PROG: the history under $label ${t:0:12} could not be read"; echo "bump=none between=NA"; return 2
         fi
         # a shallow repository whose shallow file cannot be located (git < 2.31 has no --path-format)
@@ -234,6 +235,16 @@ self_test() {
     mkrepo "$d/r17" && git -C "$d/r17" checkout -qb side && setv "$d/r17" 1.2.3 bump \
         && git -C "$d/r17" checkout -q - && git -C "$d/r17" merge -q --no-ff -m merge side && git -C "$d/r17" tag v1.2.3
     run 1.2.3 --root "$d/r17"; check bump_in_merge_commit_passes 0 "between=0"
+    # 18. --root at a subdirectory of the checkout still reads the ROOT manifest's history
+    mkdir -p "$d/r1/sub"
+    run 1.2.3 --root "$d/r1/sub"; check root_at_subdirectory_passes 0 "between=0"
+    # 19. an unknown option is a usage error: 2, never a verdict on the rest of the line
+    run 1.2.3 --root "$d/r1" --bogus; check unknown_option_usage 2 "usage"
+    # 20. B..T cannot be counted (a git whose rev-list fails): NOT_MEASURED, never a count of 0
+    mkdir -p "$d/stub" && printf '#!/bin/sh\nfor a in "$@"; do [ "$a" = rev-list ] && exit 128; done\nexec "%s" "$@"\n' \
+        "$(command -v git)" > "$d/stub/git" && chmod +x "$d/stub/git"
+    got=$(PATH="$d/stub:$PATH" bash "$subj" 1.2.3 --root "$d/r1" 2>&1); rc=$?
+    check uncountable_between_not_measured 2 "could not be counted"
 
     if [ -z "$quiet" ]; then
         # MUTANTS of THIS file: each removes one refusal (or the exact bump) and must turn a row red
@@ -256,7 +267,10 @@ self_test() {
                    'inherited alternates honoured|    unset GIT_ALTERNATE_OBJECT_DIRECTORIES|    :' \
                    '--root with no value exits 1|{ usage; return 2; }; root=$2|:; root=${2:?--root needs a path}' \
                    '--commit with no value exits 1|{ usage; return 2; }; rev=$2|:; rev=${2:?--commit needs a rev}' \
-                   'merge-commit bump unseen|--diff-merges=first-parent|--diff-merges=off'; do
+                   'merge-commit bump unseen|--diff-merges=first-parent|--diff-merges=off' \
+                   'subdirectory-relative pathspec|-- '"':(top)Cargo.toml'"' 2>|-- Cargo.toml 2>' \
+                   'unknown option skipped|*) usage; return 2 ;;|*) shift ;;' \
+                   'uncounted read as 0|[ -z "$n" ]|false'; do
             IFS='|' read -r name a1 b1 <<< "$row"; n=$((n + 1))
             case $src in *"$a1"*) ;; *) echo "  FAIL mutant $name: anchor moved, re-anchor it"; fail=1; continue ;; esac
             # a second occurrence means the anchor is ambiguous (or was cut short by a `|` in it)
