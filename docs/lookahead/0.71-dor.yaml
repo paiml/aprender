@@ -158,7 +158,7 @@ rows:
     ev_rank: 8
     exit_criterion: V5
     title: APR_FORCE_ISA forcing + per-ISA receipts (registry rows per ISA path)
-    ticket: null           # staged in cop-inbox/handoff/0.71-ktest-rows.md
+    ticket: null           # rows staged outside the repo; not minted (PROPOSE-TICKET)
     spec: {path: docs/specifications/KTEST-001-kernel-testing-gpu-cpu-hardware.md, section: "§6.1.1", on_main: false,
            staged_at: origin/la-71/ktest-001}
     contract: {id: kernel-registry-v1, path: contracts/kernel-registry-v1.yaml, on_main: false,
