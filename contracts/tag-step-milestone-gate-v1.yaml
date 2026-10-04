@@ -114,7 +114,7 @@ falsification_tests:
 
   - id: FALSIFY-TSMG-007
     rule: "No public GitHub release before its clean-room, its assets and its preflight (#4690)"
-    prediction: "The autopilot's own tag..publish step bodies, run against a stub gh that records the call order, keep the release a draft in every row where a gate is red, unread or absent, a resumed run inherits a stale PASS, or the publishing edit fails, and publish it only after all three; over the whole file, only publish_release() sets draft to false, every create is a --draft, and publish follows cleanroom, assets and preflight; each of 19 mutants turns a row WRONG"
+    prediction: "The autopilot's own tag..publish step bodies, run against a stub gh that records the call order, keep the release a draft in every row where a gate is red, unread or absent, a resumed run inherits a stale PASS, or the publishing edit fails, and publish it only after all three; over the whole file, only publish_release() sets draft to false, every create is a --draft, and publish follows cleanroom, assets and preflight; each of 24 mutants turns a row WRONG"
     test: "bash scripts/release/check_release_draft_gated.sh"
     if_fails: "A public release can stand with no assets, a red clean-room or no preflight behind it: the order this ticket inverted"
 

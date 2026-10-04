@@ -3,9 +3,9 @@
 # assets, its clean-room and its preflight. Two halves, both counted:
 #
 # STRUCTURE, over the whole autopilot (so a step this table does not run is still judged): the only
-# thing that may take a release public is publish_release() -- no draft-to-false in any spelling
-# (`--draft=false`, `draft=false`, a JSON body) or release-writing `gh api` anywhere else (an edit of
-# the notes is allowed); every `gh release create` is a
+# thing that may take a release public is publish_release() -- no draft set by value in any spelling
+# (`--draft=X`, `-f draft=X`, a JSON body, X a literal or a variable) and no `gh api` write to a
+# release anywhere else (an edit of the notes is allowed); every `gh release create` is a
 # --draft; publish_release is called once, from the publish step; and `publish` comes after
 # cleanroom, assets and preflight both in STEPS and in the file.
 #
@@ -94,15 +94,21 @@ structure() {
   local ap=$1 wrong=0 code hits calls order
   srow() { if [ -z "$2" ]; then printf '  ok    %-48s\n' "$1"
            else printf '  WRONG %-48s %s\n' "$1" "$2"; wrong=$((wrong + 1)); fi; }
-  # every non-comment line outside publish_release(), numbered
-  code=$(awk '/^publish_release\(\) \{/,/^\}/ { next } /^[[:space:]]*#/ { next } { print NR": " $0 }' "$ap")
-  hits=$(grep -E -- 'draft[[:space:]=]+false|"draft"[[:space:]]*:[[:space:]]*false|gh api.*(-X|--method)[[:space:]]+(PATCH|POST|PUT).*/releases' <<< "$code" | head -n 3 | tr '\n' ' ')
+  # every non-comment line outside publish_release(), numbered, with `\` continuations joined
+  code=$(awk '/^publish_release\(\) \{/,/^\}/ { next } /^[[:space:]]*#/ { next }
+    { l = (b == "" ? NR ": " : b) $0; if (sub(/\\$/, "", l)) { b = l; next }; b = ""; print l }' "$ap")
+  # draft set by value in any spelling (--draft=X, -f draft=X, a JSON "draft": X), or any gh api write
+  # to a release -- whatever the value, so a variable cannot hide it; a plain `--draft` is a draft
+  hits=$( { grep -E -- '--draft=|(^|[^-[:alnum:]_])"?draft"?[[:space:]]*[=:]' <<< "$code"
+            grep -E 'gh api' <<< "$code" | grep -F releases \
+              | grep -E '(^|[[:space:]])(-X|--method|-f|-F|--field|--raw-field|--input)([[:space:]]|=)'; } \
+          | head -n 3 | tr '\n' ' ')
   srow structure_public_only_inside_publish_release "$hits"
   hits=$(grep -E 'gh release create' <<< "$code" | grep -v -- '--draft' | head -n 3 | tr '\n' ' ')
   srow structure_every_release_create_is_a_draft "$hits"
   calls=$(awk '/^publish_release\(\) \{/ { next } /^[[:space:]]*#/ { next }
     $0 == "if run_step publish; then" { inp = 1 }
-    /(^|[^_[:alnum:]])publish_release([[:space:]]|$)/ { n++; if (inp) k++ }
+    /(^|[^_[:alnum:]])publish_release([^_[:alnum:]]|$)/ { n++; if (inp) k++ }
     inp && /^fi$/ { inp = 0 }
     END { printf "%d %d", n, k }' "$ap")
   [ "$calls" = "1 1" ] && calls="" || calls="calls (total, in the publish step) = $calls, want 1 1"
@@ -189,12 +195,15 @@ the_tag_step_alone_leaves_a_draft|tag||draft ran
 a_missing_asset_stops_before_publish|$ALL|FX_ASSETS=1|draft stop
 an_unreadable_release_stops_before_publish|$ALL|FX_ASSETS=2|draft stop
 a_red_clean_room_stops_before_publish|$ALL|FX_CLEANROOM=failure|draft stop
+a_cancelled_clean_room_stops_before_publish|$ALL|FX_CLEANROOM=cancelled|draft stop
 a_red_preflight_stops_before_publish|$ALL|FX_PREFLIGHT=1|draft stop
 a_red_preflight_then_a_resume_at_publish_stays_draft|tag cleanroom assets preflight+publish|FX_PREFLIGHT=1 FX_PASS=prior|draft stop
 publish_alone_all_green_publishes|publish|FX_PRE=draft-built|public-gated ran
 publish_alone_refuses_a_missing_asset|publish|FX_PRE=draft-built FX_ASSETS=1|draft stop
 publish_alone_refuses_an_unreadable_release|publish|FX_PRE=draft-built FX_ASSETS=2|draft stop
 publish_alone_refuses_a_red_clean_room|publish|FX_PRE=draft-built FX_CLEANROOM=failure|draft stop
+publish_alone_refuses_a_cancelled_clean_room|publish|FX_PRE=draft-built FX_CLEANROOM=cancelled|draft stop
+publish_alone_refuses_an_empty_clean_room_conclusion|publish|FX_PRE=draft-built FX_CLEANROOM=|draft stop
 publish_alone_refuses_no_clean_room_run|publish|FX_PRE=draft-built FX_CRUN=0|draft stop
 publish_alone_refuses_no_preflight_pass|publish|FX_PRE=draft-built FX_PASS=none|draft stop
 publish_alone_refuses_another_commits_pass|publish|FX_PRE=draft-built FX_PASS=stale|draft stop
@@ -220,7 +229,7 @@ grep -q '^if run_step tag; then$' "$AUTOPILOT" \
 bad=0
 table "$AUTOPILOT" || bad=1
 rows=$(grep -c '|' <<< "$CASES")
-[ "$rows" -ge 17 ] || { printf 'VACUOUS %s row(s), fewer than the 17 declared\n' "$rows"; bad=1; }
+[ "$rows" -ge 20 ] || { printf 'VACUOUS %s row(s), fewer than the 20 declared\n' "$rows"; bad=1; }
 [ "${1:-}" = "" ] || exit "$bad"   # an explicit autopilot (e.g. origin/main's) runs the table only
 
 # mutant <name> <sed expression>: applied to a copy of the autopilot, the table must go WRONG
@@ -253,6 +262,11 @@ mutant edit-in-dryrun      '/^if run_step dryrun; then$/a\  gh release edit "$T"
 mutant publish-in-preflight '/^  printf .PASS %s %s\\n. "\$T" "\$MC" > "\$AP\/preflight-pass"/i\  publish_release "$T" "$MC"'
 mutant steps-publish-first '/^STEPS=/s/preflight publish/publish preflight/'
 mutant headers-swapped     's/^if run_step preflight; then$/if run_step PUBX; then/; s/^if run_step publish; then$/if run_step preflight; then/; s/^if run_step PUBX; then$/if run_step publish; then/'
+mutant draft-by-variable   '/^if run_step dryrun; then$/a\  F=false; gh release edit "$T" --repo "$REPO" --draft=$F >> "$LOG" 2>\&1'
+mutant publish-by-variable '/^if run_step dryrun; then$/a\  PRF=publish_release; $PRF "$T" "$MC"'
+mutant api-field-variable  '/^if run_step cascade; then$/a\  gh api "repos/$REPO/releases/$RID" -F draft=$F > /dev/null'
+mutant api-input-body      '/^if run_step cascade; then$/a\  gh api --method PATCH "repos/$REPO/releases/$RID" --input "$AP/body.json" > /dev/null'
+mutant cleanroom-not-failure 's/^    \[ "\$jc" = success \] || die/    [ "$jc" != failure ] || die/'
 
 printf 'mutants: %s/%s killed\n' "$killed" "$total"
 [ "$bad" = 0 ] && printf 'PASS  %s row(s) + 4 structural and every mutant killed: the GitHub release is a draft until clean-room, assets and preflight are green (#4690)\n' "$rows"
