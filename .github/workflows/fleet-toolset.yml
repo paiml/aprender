@@ -41,12 +41,13 @@ name: Fleet Toolset
 
 on:
   schedule:
-    # 19:47 UTC — an off-minute, and before every other nightly cron
-    # (cuda-nightly is the first, at 20:30), so the probe never queues behind
-    # a long measurement it would otherwise appear to have slowed down.
+    # 19:47 UTC — an off-minute, and ahead of every other nightly cron by
+    # cron time (cuda-nightly is the first, at 20:30). GitHub's creation lag
+    # can still reorder the runs, so this is an order of crons, not of runs.
     # GitHub created this run 5h15m–6h26m after its cron on 09-26..10-03,
     # so a 04:47 cron landed after the nightly train's 04:45 read on every
-    # night. A cron before 21:00 was created 2h46m–3h59m late on those nights.
+    # night. A cron before 21:00 was created 2h46m–3h59m late on those
+    # nights (#4686).
     - cron: "47 19 * * *"
   workflow_dispatch:
 

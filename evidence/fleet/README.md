@@ -29,7 +29,7 @@ summary. Landing a snapshot in this directory is a deliberate human act (below).
 | | |
 |---|---|
 | Workflow | `.github/workflows/fleet-toolset.yml` |
-| Schedule | daily at 04:47 UTC, plus `workflow_dispatch` |
+| Schedule | daily at 19:47 UTC, plus `workflow_dispatch` |
 | Per-box artifact | `toolset-<label>` — one of `toolset-clean-room`, `toolset-gx10`, `toolset-yoga`; each contains a single `preflight.json` |
 | Merged artifact | `fleet-toolset` — every box's `preflight.json`, one directory per box |
 | Retention | **90 days** (`retention-days: 90` on both uploads). After that the run is gone and only a file committed here survives |
