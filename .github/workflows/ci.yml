@@ -124,7 +124,7 @@ jobs:
       - name: Sections (the determinism raster returns first; the rest keep running)
         run: >-
           python3 scripts/ci/fat_driver.py run
-          --sections 'sov.*,guard-tree,guard-cargo,vendored-schemas,pr-review-shadow,pr-review-sign,mutants,determinism[X64],provable-ladder'
+          --sections 'sov.*,guard-tree,guard-cargo,guard-cargo-b,vendored-schemas,pr-review-shadow,pr-review-sign,mutants,determinism[X64],provable-ladder'
           --external-job workspace-test
           --results "$RUNNER_TEMP/fat/results.json"
           --background-until 'determinism[X64]'
@@ -635,7 +635,7 @@ jobs:
           # cuda-unit were never in the gate; they still are not.
           # workspace-test is its own job now (three shard jobs + the Σ fan-in).
           [ "$WT" = success ] || { echo "workspace-test failed: $WT"; exit 1; }
-          for pair in X86:guard-tree X86:guard-cargo X86:sov.gate DET:determinism-compare; do
+          for pair in X86:guard-tree X86:guard-cargo X86:guard-cargo-b X86:sov.gate DET:determinism-compare; do
             job="${pair%%:*}" sec="${pair#*:}"
             r=$(res "${!job}" "$sec")
             if [ "$r" != success ]; then

@@ -28,7 +28,7 @@
 set -euo pipefail
 
 # The ci.yml order of the neutral set, so the table reads like the pipeline.
-JOB_ORDER="guard-tree guard-cargo vendored-schemas pr-review-shadow pr-review-sign mutants workspace-test gate"
+JOB_ORDER="guard-tree guard-cargo guard-cargo-b vendored-schemas pr-review-shadow pr-review-sign mutants workspace-test gate"
 
 md_cell() {
   # A pipe inside a cell ends the cell; a tab ends nothing but reads as noise.

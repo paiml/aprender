@@ -21,7 +21,7 @@
 # ------------------------------------
 # The neutral set is READ FROM ci.yml, not restated here: the jobs whose
 # `runs-on:` is `[self-hosted, Linux, clean-room]` and whose comment says
-# "arch-neutral: intel, yoga or gx10 (#3100)" — guard-tree, guard-cargo,
+# "arch-neutral: intel, yoga or gx10 (#3100)" — guard-tree, guard-cargo, guard-cargo-b,
 # vendored-schemas, pr-review-shadow, pr-review-sign, mutants, gate — plus
 # workspace-test. Each probe job below extracts THAT job's steps from the
 # checked-out `.github/workflows/ci.yml` at `inputs.ref` and runs them in order,
@@ -129,6 +129,7 @@ jobs:
         job:
           - guard-tree
           - guard-cargo
+          - guard-cargo-b
           - vendored-schemas
           - pr-review-shadow
           - pr-review-sign
@@ -503,7 +504,7 @@ jobs:
             cut -f2 "rows/row-$1.tsv" | head -1
           }
           fail=""
-          for req in guard-tree guard-cargo; do
+          for req in guard-tree guard-cargo guard-cargo-b; do
             v="$(verdict_of "$req")"
             echo "gate reads ${req}: ${v}"
             if [ "$v" != "PASS" ]; then fail="${fail}${req}=${v} "; fi
