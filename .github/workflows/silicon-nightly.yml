@@ -21,17 +21,13 @@
 name: Silicon Nightly
 
 on:
-  schedule:
-    # SHIFTED so it actually runs at night (#3292). GitHub dispatches
-    # schedule events 3h51m-6h49m late on this account (28 runs, 10
-    # workflows, 3 nights, zero on time), so a 03:30 cron fired mid-
-    # morning and the nightly tier occupied 06:49-14:14 UTC — the
-    # working day, competing with PR traffic for the same runners.
-    # Cron is set ~5h EARLY so the delayed dispatch lands near 03:30 UTC.
-    # This is CALIBRATION AGAINST A MOVING TARGET: the delay varies by
-    # ~3h and is growing. The durable fix is a fleet-side timer calling
-    # `gh workflow run` (#3292); until then, re-measure before trusting.
-    - cron: '30 22 * * *'   # 22:30 UTC -> lands ~03:30 UTC
+  # Chained, not scheduled (T44, #4686): this producer measures the night's
+  # C that "Nightly pick" pinned at nightly/<night>, never main's head at
+  # whatever hour GitHub got round to creating a scheduled run.
+  workflow_run:
+    workflows: ["Nightly pick"]
+    types: [completed]
+    branches: [main]
   workflow_dispatch:
     inputs:
       axis:
@@ -56,6 +52,11 @@ jobs:
     timeout-minutes: 15
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1  # v7.0.1
+      - name: Measure the night's C, not main's head (T44)
+        if: github.event_name == 'workflow_run'
+        env:
+          NIGHTLY_PICK_AT: ${{ github.event.workflow_run.run_started_at }}
+        run: bash scripts/release/nightly_c_checkout.sh --at "$NIGHTLY_PICK_AT"
 
       # Probe the instrument before believing it. The label matcher must classify
       # six committed cases — including a runner whose labels are a strict SUBSET
@@ -110,6 +111,11 @@ jobs:
     timeout-minutes: 90
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1  # v7.0.1
+      - name: Measure the night's C, not main's head (T44)
+        if: github.event_name == 'workflow_run'
+        env:
+          NIGHTLY_PICK_AT: ${{ github.event.workflow_run.run_started_at }}
+        run: bash scripts/release/nightly_c_checkout.sh --at "$NIGHTLY_PICK_AT"
       - name: cargo_step.sh falsifier (ENV-vs-CODE instrument)
         run: bash scripts/cargo_step.sh --self-test
       - name: Put the runner's Rust toolchain on PATH
@@ -151,6 +157,11 @@ jobs:
     timeout-minutes: 90
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1  # v7.0.1
+      - name: Measure the night's C, not main's head (T44)
+        if: github.event_name == 'workflow_run'
+        env:
+          NIGHTLY_PICK_AT: ${{ github.event.workflow_run.run_started_at }}
+        run: bash scripts/release/nightly_c_checkout.sh --at "$NIGHTLY_PICK_AT"
       - name: cargo_step.sh falsifier (ENV-vs-CODE instrument)
         run: bash scripts/cargo_step.sh --self-test
       - name: Put the runner's Rust toolchain on PATH

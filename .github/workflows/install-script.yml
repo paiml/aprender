@@ -33,9 +33,14 @@ on:
       - ".github/workflows/nightly.yml"
   # #3676 rule 3 (scripts/check_workflow_path_filters.sh): a path filter is a
   # claim that nothing outside these paths can break this gate; the nightly run
-  # re-checks the claim every day. Set ~5h early for the dispatch delay (#3292).
-  schedule:
-    - cron: '0 23 * * *'
+  # re-checks the claim every night, on the night's C.
+  # Chained, not scheduled (T44, #4686): this producer measures the night's
+  # C that "Nightly pick" pinned at nightly/<night>, never main's head at
+  # whatever hour GitHub got round to creating a scheduled run.
+  workflow_run:
+    workflows: ["Nightly pick"]
+    types: [completed]
+    branches: [main]
 
 
 # #3676: a newer push to the same PR cancels the superseded run
@@ -52,6 +57,11 @@ jobs:
     runs-on: [self-hosted, Linux, X64, clean-room]
     steps:
       - uses: actions/checkout@v7
+      - name: Measure the night's C, not main's head (T44)
+        if: github.event_name == 'workflow_run'
+        env:
+          NIGHTLY_PICK_AT: ${{ github.event.workflow_run.run_started_at }}
+        run: bash scripts/release/nightly_c_checkout.sh --at "$NIGHTLY_PICK_AT"
 
       # pmat/bashrs are pinned-fleet tools, never installed per-job (BSE-10a,
       # PMAT-1066) — see ci.yml's identical step for why.

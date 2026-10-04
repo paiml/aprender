@@ -12,8 +12,11 @@
 #       pre-publish dogfood uses measures coverage itself, reads nothing from CI.
 #   R2  scripts/dogfood.sh still runs `make ... coverage-check` -- the release
 #       CONSUMER exists (without it the chain would be vacuously intact).
-#   R3  .github/workflows/coverage-nightly.yml triggers on `schedule:` and NOT on
-#       `v*` tags -- the nightly trend stays, and a tag is measured ONCE, by ci.yml.
+#   R3  .github/workflows/coverage-nightly.yml has a NIGHTLY trigger and NOT `v*` tags --
+#       the nightly trend stays, and a tag is measured ONCE, by ci.yml. Nightly is
+#       `schedule:`, or (T44, #4686) `workflow_run:` on the "Nightly pick" workflow,
+#       `types: [completed]` -- the chain that measures the night's C. A workflow_run
+#       on any other workflow is not nightly.
 #   R4  the Makefile defines a numeric COV_FLOOR -- the floor `make coverage` enforces.
 #   R5  ci/sections.yml (#4433) hands sovereign-ci `coverage_on: tag` (no `skip_coverage: true`)
 #       AND its own `on:` has `push: tags: ['v*']` -- the reusable's two required
@@ -36,6 +39,17 @@ on_block() {
 }
 # live <file> -> the file with comments stripped (a setting in a comment is not a setting)
 live() { sed 's/#.*$//' "$1"; }
+# nightly_trigger <on-block> -> 0 when the block has `schedule:`, or a `workflow_run:` whose
+# `workflows:` names exactly "Nightly pick" and whose `types:` includes completed (T44).
+nightly_trigger() {
+    grep -qE '^[[:space:]]+schedule:' <<<"$1" && return 0
+    awk '
+        /^[[:space:]]+workflow_run:/ { match($0, /^ */); wi = RLENGTH; f = 1; next }
+        f && /[^[:space:]]/ { match($0, /^ */); if (RLENGTH <= wi) f = 0 }
+        f && /^[[:space:]]+workflows:[[:space:]]*\[[[:space:]]*["\047]?Nightly pick["\047]?[[:space:]]*\]/ { w = 1 }
+        f && /^[[:space:]]+types:[[:space:]]*\[.*completed/ { t = 1 }
+        END { exit !(w && t) }' <<<"$1"
+}
 V_TAGS_RE="^[[:space:]]+tags:[[:space:]]*\[[^]]*['\"]?v\*['\"]?"
 
 judge() { # judge <root> -> 0 all links hold, 1 a link broke, 2 ENV
@@ -67,11 +81,11 @@ judge() { # judge <root> -> 0 all links hold, 1 a link broke, 2 ENV
     else printf 'FAIL  R2 scripts/dogfood.sh no longer runs coverage-check -- nothing checks coverage at the release\n'; bad=1; fi
 
     blk=$(on_block "$wf")
-    if ! grep -qE '^[[:space:]]+schedule:' <<<"$blk"; then
-        printf 'FAIL  R3 coverage-nightly.yml must trigger on schedule (on: block, comments ignored)\n'; bad=1
+    if ! nightly_trigger "$blk"; then
+        printf 'FAIL  R3 coverage-nightly.yml must trigger nightly: schedule, or workflow_run on "Nightly pick" completed (on: block, comments ignored)\n'; bad=1
     elif grep -qE "$V_TAGS_RE" <<<"$blk"; then
         printf 'FAIL  R3 coverage-nightly.yml also triggers on v* tags -- ci.yml owns tag coverage (R5); a tag would be measured twice\n'; bad=1
-    else printf 'ok    R3 coverage-nightly.yml triggers on schedule and not on v* tags\n'; fi
+    else printf 'ok    R3 coverage-nightly.yml triggers nightly and not on v* tags\n'; fi
 
     if grep -qE '^COV_FLOOR[[:space:]]*:?=[[:space:]]*[0-9]+' "$mk"; then
         printf 'ok    R4 the Makefile defines a numeric COV_FLOOR\n'
@@ -114,6 +128,14 @@ if [ "${1:-}" = "--self-test" ]; then
     m_r2_comment()    { printf '#!/usr/bin/env bash\n# gate coverage make -C x coverage-check\n' > scripts/dogfood.sh; }
     m_r3_nosched()    { sed -i '/schedule:/d; /cron:/d' .github/workflows/coverage-nightly.yml; }
     m_r3_tagsback()   { printf "on:\n  schedule:\n    - cron: '0 22 * * *'\n  push:\n    tags: ['v*']\njobs: {}\n" > .github/workflows/coverage-nightly.yml; }
+    # T44 (#4686): the chained form, as the producers carry it, and its near misses.
+    chain()           { printf "on:\n  workflow_run:\n    workflows: [%s]\n    types: [%s]\n    branches: [main]\n  workflow_dispatch: {}\njobs: {}\n" "$1" "$2" > .github/workflows/coverage-nightly.yml; }
+    m_r3_chain()      { chain '"Nightly pick"' completed; }
+    m_r3_chain_sq()   { chain "'Nightly pick'" completed; }
+    m_r3_chain_other(){ chain '"Nightly"' completed; }
+    m_r3_chain_two()  { chain '"Nightly pick", "CI"' completed; }
+    m_r3_chain_req()  { chain '"Nightly pick"' requested; }
+    m_r3_chain_cmt()  { m_r3_chain; sed -i 's/^    workflows:/    # workflows:/' .github/workflows/coverage-nightly.yml; }
     m_r4()            { sed -i '/^COV_FLOOR/d' Makefile; }
     m_r5_skip()       { sed -i 's/coverage_on: tag/skip_coverage: true/' ci/sections.yml; }
     m_r5_both()       { printf '    skip_coverage: true\n' >> ci/sections.yml; }
@@ -138,6 +160,12 @@ if [ "${1:-}" = "--self-test" ]; then
     row 1 "R2: the call only in a COMMENT -> RED"                               m_r2_comment
     row 1 "R3: nightly schedule removed -> RED"                                 m_r3_nosched
     row 1 "R3: the nightly's v* tag trigger back (a tag measured twice) -> RED" m_r3_tagsback
+    row 0 "R3: workflow_run on \"Nightly pick\" completed (T44 chain) -> PASS"     m_r3_chain
+    row 0 "R3: the chain, single-quoted -> PASS"                                m_r3_chain_sq
+    row 1 "R3: workflow_run on another workflow -> RED"                         m_r3_chain_other
+    row 1 "R3: workflow_run on Nightly pick AND another -> RED"                 m_r3_chain_two
+    row 1 "R3: workflow_run on Nightly pick, types [requested] -> RED"          m_r3_chain_req
+    row 1 "R3: the chain's workflows: only in a COMMENT -> RED"                 m_r3_chain_cmt
     row 1 "R4: COV_FLOOR removed -> RED"                                        m_r4
     row 1 "R5: skip_coverage: true instead of coverage_on (the #3688 red) -> RED" m_r5_skip
     row 1 "R5: skip_coverage: true alongside coverage_on -> RED"                m_r5_both

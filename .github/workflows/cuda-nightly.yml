@@ -44,17 +44,13 @@ name: CUDA Nightly (GPU QLoRA falsifiers)
 # without deleting the workflow.
 
 on:
-  schedule:
-    # SHIFTED so it actually runs at night (#3292). GitHub dispatches
-    # schedule events 3h51m-6h49m late on this account (28 runs, 10
-    # workflows, 3 nights, zero on time), so a 01:30 cron fired mid-
-    # morning and the nightly tier occupied 06:49-14:14 UTC — the
-    # working day, competing with PR traffic for the same runners.
-    # Cron is set ~5h EARLY so the delayed dispatch lands near 01:30 UTC.
-    # This is CALIBRATION AGAINST A MOVING TARGET: the delay varies by
-    # ~3h and is growing. The durable fix is a fleet-side timer calling
-    # `gh workflow run` (#3292); until then, re-measure before trusting.
-    - cron: "30 20 * * *"   # 20:30 UTC -> lands ~01:30 UTC
+  # Chained, not scheduled (T44, #4686): this producer measures the night's
+  # C that "Nightly pick" pinned at nightly/<night>, never main's head at
+  # whatever hour GitHub got round to creating a scheduled run.
+  workflow_run:
+    workflows: ["Nightly pick"]
+    types: [completed]
+    branches: [main]
   workflow_dispatch:
     inputs:
       silicon:
@@ -165,7 +161,7 @@ jobs:
             # NOT_RUN is not PASS.
             mkdir -p "$PERF041_OUT"
             printf '{"host":"%s","status":"NOT_RUN","reason":"yield to training (%s MiB, %s procs)","started_utc":"%s","commit":"%s","exit":null,"max_m":null,"cc":null,"sha256":null}\n' \
-              "${{ matrix.name }}" "${used:-?}" "${procs:-?}" "$(date -u +%Y-%m-%dT%H:%M:%SZ)" "${{ github.sha }}" \
+              "${{ matrix.name }}" "${used:-?}" "${procs:-?}" "$(date -u +%Y-%m-%dT%H:%M:%SZ)" "${{ github.event.workflow_run.head_sha || github.sha }}" \
               > "$PERF041_OUT/marker.json"
             echo "proceed=false" >> "$GITHUB_OUTPUT"; exit 0
           fi
@@ -186,6 +182,11 @@ jobs:
       - name: Preflight — this box has the tools this job assumes
         if: steps.decide.outputs.proceed == 'true'
         run: bash scripts/ci_self_hosted_preflight.sh --cuda
+      - name: Measure the night's C, not main's head (T44)
+        if: github.event_name == 'workflow_run' && (steps.decide.outputs.proceed == 'true')
+        env:
+          NIGHTLY_PICK_AT: ${{ github.event.workflow_run.run_started_at }}
+        run: bash scripts/release/nightly_c_checkout.sh --at "$NIGHTLY_PICK_AT"
 
       # PP-26's release-phase marker gate (scripts/check_perf041_marker.sh, a
       # dogfood gate) may not be named in a REQUIRED workflow
@@ -797,6 +798,11 @@ jobs:
       CARGO_TARGET_X86_64_UNKNOWN_LINUX_GNU_RUNNER: flock -E 175 -w 600 /run/lock/fleet-gpu/gpu.lock
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+      - name: Measure the night's C, not main's head (T44)
+        if: github.event_name == 'workflow_run'
+        env:
+          NIGHTLY_PICK_AT: ${{ github.event.workflow_run.run_started_at }}
+        run: bash scripts/release/nightly_c_checkout.sh --at "$NIGHTLY_PICK_AT"
 
       - name: Put the runner's Rust toolchain on PATH
         run: echo "$HOME/.cargo/bin" >> "$GITHUB_PATH"

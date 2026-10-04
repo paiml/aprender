@@ -36,17 +36,13 @@
 name: Nightly
 
 on:
-  schedule:
-    # SHIFTED so it actually runs at night (#3292). GitHub dispatches
-    # schedule events 3h51m-6h49m late on this account (28 runs, 10
-    # workflows, 3 nights, zero on time), so a 04:00 cron fired mid-
-    # morning and the nightly tier occupied 06:49-14:14 UTC — the
-    # working day, competing with PR traffic for the same runners.
-    # Cron is set ~5h EARLY so the delayed dispatch lands near 04:00 UTC.
-    # This is CALIBRATION AGAINST A MOVING TARGET: the delay varies by
-    # ~3h and is growing. The durable fix is a fleet-side timer calling
-    # `gh workflow run` (#3292); until then, re-measure before trusting.
-    - cron: '0 23 * * *'   # 23:00 UTC -> lands ~04:00 UTC
+  # Chained, not scheduled (T44, #4686): this producer measures the night's
+  # C that "Nightly pick" pinned at nightly/<night>, never main's head at
+  # whatever hour GitHub got round to creating a scheduled run.
+  workflow_run:
+    workflows: ["Nightly pick"]
+    types: [completed]
+    branches: [main]
   workflow_dispatch:
 
 permissions:
@@ -78,6 +74,11 @@ jobs:
         uses: actions/checkout@v7
         with:
           ref: main
+      - name: Measure the night's C, not main's head (T44)
+        if: github.event_name == 'workflow_run'
+        env:
+          NIGHTLY_PICK_AT: ${{ github.event.workflow_run.run_started_at }}
+        run: bash scripts/release/nightly_c_checkout.sh --at "$NIGHTLY_PICK_AT"
 
       - name: Case table
         run: python3 scripts/nightly_manifest.py --self-test
@@ -119,6 +120,11 @@ jobs:
         uses: actions/checkout@v7
         with:
           ref: ${{ needs.gate.outputs.sha }}
+      - name: Measure the night's C, not main's head (T44)
+        if: github.event_name == 'workflow_run'
+        env:
+          NIGHTLY_PICK_AT: ${{ github.event.workflow_run.run_started_at }}
+        run: bash scripts/release/nightly_c_checkout.sh --at "$NIGHTLY_PICK_AT"
 
       # A sibling container through the mounted socket, as in binary-release.yml's
       # CPU lanes: every bind-mount path must exist on the HOST (the work root is
@@ -255,6 +261,11 @@ jobs:
     steps:
       - name: Checkout
         uses: actions/checkout@v7
+      - name: Measure the night's C, not main's head (T44)
+        if: github.event_name == 'workflow_run'
+        env:
+          NIGHTLY_PICK_AT: ${{ github.event.workflow_run.run_started_at }}
+        run: bash scripts/release/nightly_c_checkout.sh --at "$NIGHTLY_PICK_AT"
 
       - name: Build apr (host-native, pinned toolchain)
         run: |
@@ -297,6 +308,11 @@ jobs:
         uses: actions/checkout@v7
         with:
           ref: ${{ needs.gate.outputs.sha }}
+      - name: Measure the night's C, not main's head (T44)
+        if: github.event_name == 'workflow_run'
+        env:
+          NIGHTLY_PICK_AT: ${{ github.event.workflow_run.run_started_at }}
+        run: bash scripts/release/nightly_c_checkout.sh --at "$NIGHTLY_PICK_AT"
 
       # A runner that died uploaded nothing; merge records that arch red, so
       # an empty download must not stop the other arch from publishing.

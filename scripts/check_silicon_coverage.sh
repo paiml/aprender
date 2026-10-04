@@ -376,7 +376,9 @@ build_jobs() {
     _bj_since="$(epoch_day "$_bj_cut")" || return 1
     _bj_runs="$(mktemp)" || return 1
     for _bj_wf in "$@"; do
-        for _bj_ev in schedule workflow_dispatch; do
+        # workflow_run: the nightlies chain from "Nightly pick" (T44, #4686);
+        # schedule stays for the runs from before the chain, inside the lookback.
+        for _bj_ev in schedule workflow_run workflow_dispatch; do
             _bj_one="$(mktemp)" || return 1
             list_window "$_bj_wf" "$_bj_ev" "$_bj_one" || { rm -f "${_bj_one:?}" "${_bj_runs:?}"; return 1; }
             # CROSS-CHECK EVERY LISTING (PMAT-3337 §8, widened). The API can hand
@@ -599,7 +601,7 @@ st_page() {
 st_finish() {
     _sf_since="$(epoch_day $(( ST_NOW - 30 * 86400 )))"
     _sf_since_e="$(date -u -d "$_sf_since" +%s)"  # bashrs disable-line=DET002
-    for _sf_ev in schedule workflow_dispatch; do
+    for _sf_ev in schedule workflow_run workflow_dispatch; do
         _sf_key="repos/$ST_REPO/actions/runs?event=${_sf_ev}&per_page=100"
         if [ "$ST_ERROR" = 1 ]; then st_route "$_sf_key" @ERROR; continue; fi
         awk -F'\t' -v ev="$_sf_ev" '$3 == ev && $6 == 1' "$ST/u/runs.tsv" \
@@ -608,7 +610,7 @@ st_finish() {
         st_route "$_sf_key" "pages/global-$_sf_ev.json"
     done
     for _sf_wf in sil.yml gpu.yml noise.yml silicon-nightly.yml; do
-        for _sf_ev in schedule workflow_dispatch; do
+        for _sf_ev in schedule workflow_run workflow_dispatch; do
             awk -F'\t' -v wf="$_sf_wf" -v ev="$_sf_ev" -v s="$_sf_since_e" \
                 '$2 == wf && $3 == ev && $5 >= s' "$ST/u/runs.tsv" \
                 | sort -t"$TAB" -k5,5nr > "$ST/u/l.tsv"
@@ -708,11 +710,11 @@ st_real() {
 # st_real_nightlies <newest age h> <count>: one Silicon Nightly a day, newest
 # first. The newest is run 36364433328 with its four jobs as the API returned
 # them (2026-09-28): names, conclusions and runs-on labels verbatim.
-st_real_nightlies() {
-    _rn_h="$1"; _rn_i=0
+st_real_nightlies() { # args: hours before now, count, event (default schedule)
+    _rn_h="$1"; _rn_i=0; _rn_ev="${3:-schedule}"
     while [ "$_rn_i" -lt "$2" ]; do
         _rn_id=$(( 36364433328 - _rn_i ))
-        st_run "$_rn_id" silicon-nightly.yml schedule $(( _rn_h + 24 * _rn_i )) 1 \
+        st_run "$_rn_id" silicon-nightly.yml "$_rn_ev" $(( _rn_h + 24 * _rn_i )) 1 \
             "x86_64-cpu|success|self-hosted,clean-room,intel" \
             "coverage|success|self-hosted,clean-room,intel" \
             "aarch64-cuda-sm121|success|self-hosted,gpu,gx10,cuda,blackwell" \
@@ -816,6 +818,31 @@ selftest_rows() {
     ST_SHORT_WF=silicon-nightly.yml; ST_SHORT_N=9; ST_SHORT_READS=0; st_finish
     _rows=$((_rows + 1))
     st_check j-short-always 2 '^  NO-GO +x86_64-cpu +REQUIRED: inconsistent listing .*listed 4 of 4.*total 13' \
+        || _rows_bad=$((_rows_bad + 1))
+
+    # (k) T44 (#4686): the producers run on workflow_run from "Nightly pick", no
+    # longer on schedule. Runs of the chain are evidence like scheduled runs; a
+    # guard that lists only schedule / workflow_dispatch reads every chained
+    # night as no run at all.
+    st_reset
+    st_run 9001 sil.yml workflow_run 12 1 "$CPU_JOB"; st_run 9101 gpu.yml workflow_run 20 1 "$GPU_JOB"
+    st_finish
+    _rows=$((_rows + 1))
+    st_check k-chained 0 '^  ok +gpu-axis ' || _rows_bad=$((_rows_bad + 1))
+
+    # (l) the switch-over night: the last scheduled run is stale (8 days), the
+    # chained run is fresh. The newest run of EITHER event is the evidence.
+    st_reset
+    st_run 9001 sil.yml schedule 192 1 "$CPU_JOB"; st_run 9002 sil.yml workflow_run 12 1 "$CPU_JOB"
+    st_run 9101 gpu.yml schedule 200 1 "$GPU_JOB"; st_run 9102 gpu.yml workflow_run 20 1 "$GPU_JOB"
+    st_finish
+    _rows=$((_rows + 1))
+    st_check l-switch-over 0 '^  ok +gpu-axis ' || _rows_bad=$((_rows_bad + 1))
+
+    # (m) the real silicon-nightly jobs, chained: both real axes GREEN.
+    st_reset; st_real || return 2; st_real_nightlies 10 13 workflow_run; st_finish
+    _rows=$((_rows + 1))
+    st_check m-real-chained 0 '^  ok +aarch64-cuda-sm121 +success .*Silicon Nightly / aarch64-cuda-sm121' \
         || _rows_bad=$((_rows_bad + 1))
 
     # (e) the API errors: refuse, exactly as before.

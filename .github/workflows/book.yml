@@ -51,9 +51,14 @@ on:
       - "crates/apr-cli/src/tool_commands.rs"
   # #3676 rule 3 (scripts/check_workflow_path_filters.sh): a path filter is a
   # claim that nothing outside these paths can break this gate; the nightly run
-  # re-checks the claim every day. Set ~5h early for the dispatch delay (#3292).
-  schedule:
-    - cron: '30 22 * * *'
+  # re-checks the claim every night, on the night's C.
+  # Chained, not scheduled (T44, #4686): this producer measures the night's
+  # C that "Nightly pick" pinned at nightly/<night>, never main's head at
+  # whatever hour GitHub got round to creating a scheduled run.
+  workflow_run:
+    workflows: ["Nightly pick"]
+    types: [completed]
+    branches: [main]
 
 permissions:
   contents: read
@@ -75,6 +80,11 @@ jobs:
     runs-on: [self-hosted, Linux, X64, clean-room]
     steps:
       - uses: actions/checkout@v7
+      - name: Measure the night's C, not main's head (T44)
+        if: github.event_name == 'workflow_run'
+        env:
+          NIGHTLY_PICK_AT: ${{ github.event.workflow_run.run_started_at }}
+        run: bash scripts/release/nightly_c_checkout.sh --at "$NIGHTLY_PICK_AT"
 
       # Self-hosted (#3073): tools go into this run's private $RUNNER_TEMP, never a $HOME path that every
       # runner on the box execs from (the aprender#2353 race; check_cargo_install_private_root.sh enforces

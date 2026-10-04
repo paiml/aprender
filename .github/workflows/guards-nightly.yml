@@ -37,20 +37,13 @@
 name: guards-nightly
 
 on:
-  schedule:
-    # 02:47Z -- an off-minute, and a slot no other nightly holds: cuda-nightly
-    # 01:30 (10 min), silicon-nightly 03:30, qwen-story-daily 04:17. A run of
-    # this job measured ~27 min of steps, so it lands clear of all three.
-    # SHIFTED so it actually runs at night (#3292). GitHub dispatches
-    # schedule events 3h51m-6h49m late on this account (28 runs, 10
-    # workflows, 3 nights, zero on time), so a 02:47 cron fired mid-
-    # morning and the nightly tier occupied 06:49-14:14 UTC — the
-    # working day, competing with PR traffic for the same runners.
-    # Cron is set ~5h EARLY so the delayed dispatch lands near 02:47 UTC.
-    # This is CALIBRATION AGAINST A MOVING TARGET: the delay varies by
-    # ~3h and is growing. The durable fix is a fleet-side timer calling
-    # `gh workflow run` (#3292); until then, re-measure before trusting.
-    - cron: '47 21 * * *'   # 21:47 UTC -> lands ~02:47 UTC
+  # Chained, not scheduled (T44, #4686): this producer measures the night's
+  # C that "Nightly pick" pinned at nightly/<night>, never main's head at
+  # whatever hour GitHub got round to creating a scheduled run.
+  workflow_run:
+    workflows: ["Nightly pick"]
+    types: [completed]
+    branches: [main]
   workflow_dispatch:
 
 # One at a time. Two of these jobs would share $GUARD_CARGO_HOME for the same
@@ -99,6 +92,11 @@ jobs:
       - uses: actions/checkout@v7
         with:
           fetch-depth: 1
+      - name: Measure the night's C, not main's head (T44)
+        if: github.event_name == 'workflow_run'
+        env:
+          NIGHTLY_PICK_AT: ${{ github.event.workflow_run.run_started_at }}
+        run: bash scripts/release/nightly_c_checkout.sh --at "$NIGHTLY_PICK_AT"
       # THE MANIFEST IS THE JOIN KEY, AND IT IS CHECKED BEFORE ANYTHING RUNS.
       #
       # A step that leaves ci.yml and never arrives here is a guard that was
@@ -218,7 +216,7 @@ jobs:
           # export-ignore, so an ignored source file would vanish from the
           # comparand and lower the measured count (review m2-prb-review, 4/5 lanes).
           comparand="$RUNNER_TEMP/comparand"; git worktree remove --force "$comparand" 2>/dev/null || rm -rf "$comparand"
-          git worktree add --detach "$comparand" origin/main
+          git worktree add --detach "$comparand" "${NIGHTLY_C:-origin/main}"
           trap 'git worktree remove --force "$comparand" 2>/dev/null || true' EXIT
           DR_ENV=(-e SATD_BASELINE=0)
           set +e
@@ -227,7 +225,7 @@ jobs:
           n=$(printf '%s\n' "$out" | sed -n 's/.*BROKEN -- \([0-9][0-9]*\) markers in production source.*/\1/p' | head -1)
           if [ "$mrc" -eq 0 ] && [ -z "$n" ] && printf '%s\n' "$out" | grep -q '^test result: ok'; then n=0; fi
           case "$n" in ''|*[!0-9]*) printf '%s\n' "$out" | tail -20; echo "FAIL: the comparand measurement did not yield a count (rc=$mrc)"; exit 1 ;; esac
-          echo "SATD_BASELINE=$n measured on origin/main $(git rev-parse --short origin/main) by the HEAD-built suite"
+          echo "SATD_BASELINE=$n measured on ${NIGHTLY_C:+nightly C }$(git rev-parse --short "${NIGHTLY_C:-origin/main}") by the HEAD-built suite"
           # 3. the suites, judged against the measured ceiling
           DR_ENV=(-e "SATD_BASELINE=$n")
           dr "$GITHUB_WORKSPACE" cargo test -p aprender-core --features model-tests \
@@ -246,7 +244,7 @@ jobs:
             printf 'budget (PMAT-1098, row 67-E3). Manifest: `scripts/guards_nightly_manifest.txt`.\n\n'
             printf '| fact | value |\n|---|---|\n'
             printf '| ref | `%s` |\n' "${GITHUB_REF_NAME}"
-            printf '| commit | `%s` |\n' "${GITHUB_SHA}"
+            printf '| commit | `%s` |\n' "${NIGHTLY_C:-$GITHUB_SHA}"
             printf '| steps moved here | %s |\n' "$(grep -cvE '^[[:space:]]*(#|$)' scripts/guards_nightly_manifest.txt)"
             printf '| result | %s |\n' "${JOB_STATUS}"
             printf '\nA red run here is a defect that reached main: the PR path no longer\n'
