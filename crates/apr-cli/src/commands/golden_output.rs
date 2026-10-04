@@ -898,8 +898,63 @@ fn validate_golden_test_case(
     Ok(GoldenCaseOutcome::Passed(gpu_leg))
 }
 
+/// A model `golden_output` refuses BY NAME on an operator ruling (#4664), instead of judging it.
+struct GoldenRefusal {
+    /// The exact file name (not a glob: a sibling quant of the same model must still be judged).
+    file: &'static str,
+    ticket: &'static str,
+    /// Where the measurement behind the ruling lives. Public-safe pointer, never a host path.
+    receipt: &'static str,
+}
+
+/// The refusals in force. Each is a CLAIM ABOUT CAUSE and carries its receipt; an entry with no
+/// receipt is not honoured (`golden_refusal_for` fails closed on it).
+const GOLDEN_REFUSALS: &[GoldenRefusal] = &[GoldenRefusal {
+    file: "Qwen3.5-0.8B-UD-IQ2_XXS.gguf",
+    ticket: "#4664",
+    // apr CPU/GPU and llama.cpp CPU/GPU all loop on 4 prompts, on both GPU-host ladder legs.
+    receipt: "paiml/aprender issues/4664#issuecomment-5978620184",
+}];
+
+/// `None`: judge the file. `Some(Ok(msg))`: refused by ruling. `Some(Err(msg))`: the file is
+/// listed but its entry has no ticket or receipt, so the entry is refused and the gate fails.
+fn golden_refusal_for(
+    table: &[GoldenRefusal],
+    file_name: &str,
+) -> Option<std::result::Result<String, String>> {
+    let e = table.iter().find(|e| e.file == file_name)?;
+    if e.ticket.trim().is_empty() || e.receipt.trim().is_empty() {
+        return Some(Err(format!(
+            "golden refusal entry for {file_name} has no ticket/receipt pointer: refused, \
+             not honoured (a refusal without its measurement is a skip in disguise)"
+        )));
+    }
+    Some(Ok(format!(
+        "refused-by-ruling {}: {file_name} is not judged by golden_output; receipt: {}",
+        e.ticket, e.receipt
+    )))
+}
+
+/// The gate's verdict for a refused name, or `None` to go on and judge the file. Never `passed`.
+fn golden_refusal_verdict(
+    table: &[GoldenRefusal],
+    path: &Path,
+    start: Instant,
+) -> Option<GateResult> {
+    let name = path.file_name()?.to_str()?;
+    Some(match golden_refusal_for(table, name)? {
+        Ok(msg) => GateResult::skipped("golden_output", &msg),
+        Err(msg) => GateResult::failed("golden_output", &msg, None, None, start.elapsed()),
+    })
+}
+
 fn run_golden_output_gate(path: &Path, config: &QaConfig) -> Result<GateResult> {
     let start = Instant::now();
+
+    // #4664: a model refused by operator ruling is not run, and is never reported as a pass.
+    if let Some(verdict) = golden_refusal_verdict(GOLDEN_REFUSALS, path, start) {
+        return Ok(verdict);
+    }
 
     if !config.json && config.verbose {
         println!("{}", "Running golden output test...".yellow());
@@ -2517,5 +2572,136 @@ mod golden_official_template_3990 {
             golden_prompt_for_model(None, Some(&cfg), Some("llama"), question),
             c["prompt"].as_str().expect("prompt")
         );
+    }
+}
+
+/// #4664: `golden_output` refuses a named model by operator ruling, with its receipt.
+#[cfg(test)]
+mod golden_refusal_4664 {
+    use super::*;
+
+    const NAMED: &str = "Qwen3.5-0.8B-UD-IQ2_XXS.gguf";
+
+    fn entry(ticket: &'static str, receipt: &'static str) -> [GoldenRefusal; 1] {
+        [GoldenRefusal {
+            file: NAMED,
+            ticket,
+            receipt,
+        }]
+    }
+
+    /// Planted row 1: the named file prints the refusal, naming #4664 and its receipt.
+    #[test]
+    fn the_named_file_is_refused_by_ruling_and_names_its_ticket_and_receipt() {
+        let msg = golden_refusal_for(GOLDEN_REFUSALS, NAMED)
+            .expect("the named file must be listed")
+            .expect("its entry carries a receipt");
+        assert!(msg.starts_with("refused-by-ruling #4664"), "{msg}");
+        assert!(msg.contains("issues/4664#issuecomment-"), "{msg}");
+    }
+
+    /// Planted row 2: another IQ2_XXS file, and near-miss names of the refused one, are
+    /// still judged. The match is the exact file name, not a glob or a substring.
+    #[test]
+    fn other_iq2_xxs_files_and_near_names_are_still_judged() {
+        for name in [
+            "Qwen3.5-2B-UD-IQ2_XXS.gguf",
+            "Qwen3.5-0.8B-UD-IQ2_XS.gguf",
+            "Qwen3.5-0.8B-IQ4_XS.gguf",
+            "x-Qwen3.5-0.8B-UD-IQ2_XXS.gguf",
+            "Qwen3.5-0.8B-UD-IQ2_XXS.gguf.bak",
+            "qwen3.5-0.8b-ud-iq2_xxs.gguf",
+            "",
+        ] {
+            assert!(
+                golden_refusal_for(GOLDEN_REFUSALS, name).is_none(),
+                "{name:?} must still be judged"
+            );
+        }
+    }
+
+    /// Planted row 3: an entry with no ticket or no receipt is refused, not honoured.
+    #[test]
+    fn an_entry_without_a_receipt_or_ticket_is_refused() {
+        for table in [
+            entry("#4664", ""),
+            entry("#4664", "   "),
+            entry("", "paiml/aprender issues/4664#issuecomment-1"),
+        ] {
+            let err = golden_refusal_for(&table, NAMED)
+                .expect("listed")
+                .expect_err("an entry without its measurement must not be honoured");
+            assert!(err.contains("no ticket/receipt pointer"), "{err}");
+            assert!(!err.contains("refused-by-ruling"), "{err}");
+        }
+        let ok = entry("#4664", "paiml/aprender issues/4664#issuecomment-1");
+        assert!(golden_refusal_for(&ok, NAMED).expect("listed").is_ok());
+    }
+
+    /// The gate-level verdict is never a pass; a bad entry is a hard failure; an unlisted
+    /// path (any directory) goes on to be judged.
+    #[test]
+    fn the_verdict_is_never_a_pass_and_unlisted_paths_fall_through() {
+        let start = Instant::now();
+        let v = golden_refusal_verdict(
+            GOLDEN_REFUSALS,
+            Path::new("/m/Qwen3.5-0.8B-UD-IQ2_XXS.gguf"),
+            start,
+        )
+        .expect("named file refused");
+        assert!(!v.passed && v.skipped, "refusal is a skip, never a pass");
+        assert!(
+            v.message.contains("refused-by-ruling #4664"),
+            "{}",
+            v.message
+        );
+        assert!(
+            golden_refusal_verdict(GOLDEN_REFUSALS, Path::new("/m/other.gguf"), start).is_none()
+        );
+        assert!(golden_refusal_verdict(GOLDEN_REFUSALS, Path::new("/"), start).is_none());
+        // A listed-but-receiptless entry fails the gate outright: neither pass nor skip.
+        let bad = entry("#4664", "");
+        let f = golden_refusal_verdict(&bad, Path::new("/m/Qwen3.5-0.8B-UD-IQ2_XXS.gguf"), start)
+            .expect("listed");
+        assert!(
+            !f.passed && !f.skipped,
+            "a bad entry is a failure: {}",
+            f.message
+        );
+    }
+
+    /// The refusal is reached THROUGH the gate: the named file need not exist (it is never
+    /// opened), while an unlisted missing file still errors, so a deleted call cannot pass.
+    #[test]
+    fn the_gate_itself_refuses_the_named_file_before_opening_it() {
+        let cfg = QaConfig::default();
+        let v = run_golden_output_gate(
+            Path::new("/nonexistent-dir/Qwen3.5-0.8B-UD-IQ2_XXS.gguf"),
+            &cfg,
+        )
+        .expect("refusal is a verdict, not an error");
+        assert!(!v.passed && v.skipped);
+        assert!(
+            v.message.contains("refused-by-ruling #4664"),
+            "{}",
+            v.message
+        );
+        #[cfg(feature = "inference")]
+        assert!(run_golden_output_gate(Path::new("/nonexistent-dir/other.gguf"), &cfg).is_err());
+    }
+
+    /// Every refusal in force carries a ticket and a public-safe receipt.
+    #[test]
+    fn every_refusal_in_force_has_a_ticket_and_a_public_receipt() {
+        assert!(!GOLDEN_REFUSALS.is_empty());
+        for e in GOLDEN_REFUSALS {
+            assert!(e.ticket.starts_with('#'), "{}", e.file);
+            assert!(
+                e.receipt.starts_with("paiml/aprender issues/"),
+                "{}",
+                e.file
+            );
+            assert!(!e.receipt.contains("/mnt/") && !e.receipt.contains("/home/"));
+        }
     }
 }

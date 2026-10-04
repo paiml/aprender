@@ -498,6 +498,11 @@ falsification_tests:
     prediction: "check_model_ladder.sh --self-test: the select table (no scope / another release / a prefix of the release -> the full ladder; one scope -> it applies; two scopes or a nameless one -> RED) lands on crux_smoke_scope.recorded_scope, and 4 module mutants are each killed; end to end, NO recorded scope judges the full ladder beside CRUX smoke receipts that would satisfy a scope (RED, no SCOPED: line), a recorded scope prints `SCOPED: <name>` and returns the SCOPE's verdict (green and red), --scope none and a scope for another release judge the full ladder, two scopes are RED judging neither, and the receipts are found through MODEL_LADDER_CRUX_DIR; 4 dispatch mutants are each killed. check_dogfood_no_defer.sh: a declared gate's `SCOPED:` line is carried into its dogfood row, green or red, and a row with none stays plain (3 mutants)"
     test: "bash scripts/check_model_ladder.sh --self-test && bash scripts/check_dogfood_no_defer.sh --self-test"
     if_fails: "the dogfood's declared ladder gate judges the full ladder while the release gate judges the recorded scope -- two gates, one release, opposite verdicts (0.69.1, #4086) -- or a scoped pass reads as `exit=0`, indistinguishable from every rung green"
+  - id: FALSIFY-MCL-018
+    rule: "golden_output refuses a model by its EXACT file name on an operator ruling, never a pass, and a refusal entry without a ticket and receipt is not honoured (#4664)"
+    prediction: "apr qa on Qwen3.5-0.8B-UD-IQ2_XXS.gguf prints `refused-by-ruling #4664` with the issue-comment receipt and the gate is skipped (passed=false); another IQ2_XXS file, and near-miss names (substring, suffix, case), are still judged; a table entry with an empty ticket or receipt fails the gate; 7 mutants (exact-to-contains, ticket check dropped, receipt check dropped, skip-to-pass, bad-entry-to-skip, gate call deleted, wording) are each killed"
+    test: "cargo test -p apr-cli --lib golden_refusal_4664"
+    if_fails: "a known-looping model is either judged by a gate it cannot pass (ladder red for a ruled cause) or silently excused by a refusal nobody can trace to a measurement"
 
 qa_gate:
   id: F-MCL-001
