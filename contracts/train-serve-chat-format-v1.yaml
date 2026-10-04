@@ -40,7 +40,9 @@ metadata:
     (5) The window cuts the end of the target. train_step keeps the first max_seq_len ids of prompt and target
     (instruct_pipeline/training.rs:29-33; the default is 512, mod.rs:87), and evaluate does the same (:488-490).
     Nothing counts or refuses a long sample first. F-INST-002 says the total must fit (instruct_corpus.rs:9),
-    and nothing enforces it. A sample whose prompt fills the window is reported on CUDA only, and a cut target
+    and nothing enforces it. Here F-INST-002 means that fit rule: instruct_pipeline/mod.rs:15 and train_step's
+    doc (training.rs:12) use the same id for the response-only loss mask. A sample whose prompt fills the
+    window is reported on CUDA only, and a cut target
     is reported nowhere. So a long sample is trained on an answer with no end: no eos, and on a tool call no
     closing tag. PROPOSED from a desk read.
   references:
@@ -133,7 +135,7 @@ falsification_tests:
   if_fails: 'the model learns answers that do not end: tool calls without their closing tag and no eos, so the served model runs past the end of its answer'
 - id: FALSIFY-TSC-006
   rule: apr finetune counts the samples that do not fit before step 1
-  prediction: 'before the first step, apr finetune tokenizes the corpus with the training tokenizer and reports the number of samples longer than --max-seq-len and the longest one, in its output and in the run''s receipt. It refuses to start when any sample would be cut, unless told to drop them, and then the number dropped is in the receipt. At 316dee2cd4 it is RED: nothing counts them. F-INST-002 is stated (instruct_corpus.rs:9) and not enforced. The --max-seq-len help speaks of buffer size only (model_ops_commands.rs:58), and the epoch line prints tokens and samples, not cuts. Planted: the count removed'
+  prediction: 'before the first step, apr finetune tokenizes the corpus with the training tokenizer and reports the number of samples longer than --max-seq-len and the longest one, in its output and in the run''s receipt. It refuses to start when any sample would be cut, unless told to drop them, and then the number dropped is in the receipt. At 316dee2cd4 it is RED: nothing counts them. F-INST-002''s fit rule is stated (instruct_corpus.rs:9) and not enforced; training.rs:12 uses the same id for the loss mask. The --max-seq-len help speaks of buffer size only (model_ops_commands.rs:58), and the epoch line prints tokens and samples, not cuts. Planted: the count removed'
   test: '[U] not written; CPU only, needs cargo after LIVE 0.70.1. The plan step on a three-sample corpus with one sample over a small --max-seq-len: one refusal naming that sample''s length, and with the drop flag a receipt that says 1 dropped'
   if_fails: 'a user sets --max-seq-len to fit memory (the f32 logits buffer alone is --max-seq-len × vocab, cuda_init.rs:453-455: 0.51 GB at 512 and 2.03 GB at 2048 on Qwen3.5''s 248,070 entries) and trains on cut samples without being told'
 - id: FALSIFY-TSC-007
