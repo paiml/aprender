@@ -23,8 +23,9 @@
 # VERDICTS (one line, then `bump=<B|none> between=<N|NA>` for the ledger):
 #   0  PASS          T carries V and T is B: 0 commits between the bump and the tag
 #   1  REFUSE        N >= 1 commits between B and T; or no bump commit (T does not carry V)
-#   2  NOT_MEASURED  V is not a version, T does not resolve (no tag), or T's version is unreadable.
-#                    Unknown is never a pass (L25).
+#   2  NOT_MEASURED  V is not a version; T does not resolve (no tag); T's version, a bump candidate's
+#                    parent version or object, or the history is unreadable; a shallow boundary; the
+#                    count cannot be read; a usage error. Unknown is never a pass (L25).
 # This script decides nothing by itself: cut_tag() in autopilot.sh logs its line, report-only, and
 # (once wired) the release-gates nightly runs its self-test and judges the newest final tag; until then
 # no nightly measures it, and three green nights are what make it a refusal (L31).
@@ -57,8 +58,9 @@ judge() {
     fi
     if [ "$tv" = "$v" ]; then
         local cands nm="" sh shq hdr p
-        # git log failing is Unknown, not "no bump commit"
-        if ! cands=$(git -C "$root" log --first-parent --format=%H -G'^version[[:space:]]*=' "$t" -- Cargo.toml 2>/dev/null); then
+        # git log failing is Unknown, not "no bump commit". --diff-merges is explicit: a bump that lands
+        # as a merge commit is a candidate, and a git too old to know the flag fails here (Unknown)
+        if ! cands=$(git -C "$root" log --first-parent --diff-merges=first-parent --format=%H -G'^version[[:space:]]*=' "$t" -- Cargo.toml 2>/dev/null); then
             echo "NOT_MEASURED $PROG: the history under $label ${t:0:12} could not be read"; echo "bump=none between=NA"; return 2
         fi
         # a shallow repository whose shallow file cannot be located (git < 2.31 has no --path-format)
@@ -109,20 +111,30 @@ judge() {
     echo "bump=$b between=$n"; return 1
 }
 
-main() {
+usage() { echo "$PROG: usage: <V> [--commit <rev>] [--root <repo>] | --self-test" >&2; }
+
+# main runs in a subshell: the unset below never leaks into a caller that sources this file
+main() (
+    # an inherited GIT_DIR, GIT_COMMON_DIR or GIT_OBJECT_DIRECTORY (a hook, a CI step) beats
+    # `git -C <root>`: the judge would read ANOTHER repo's tags and objects -- a decoy's PASS
+    unset GIT_DIR GIT_WORK_TREE GIT_INDEX_FILE
+    unset GIT_COMMON_DIR
+    unset GIT_OBJECT_DIRECTORY
+    unset GIT_ALTERNATE_OBJECT_DIRECTORIES
     local v="" root=. rev="" label
     v=${1:-}; [ "$#" -gt 0 ] && shift
     while [ "$#" -gt 0 ]; do
+        # an option with no value is a usage error (2), never a verdict
         case $1 in
-            --root) root=${2:?--root needs a path}; shift 2 ;;
-            --commit) rev=${2:?--commit needs a rev}; shift 2 ;;
-            *) echo "$PROG: usage: <V> [--commit <rev>] [--root <repo>] | --self-test" >&2; return 2 ;;
+            --root) [ "$#" -ge 2 ] && [ -n "$2" ] || { usage; return 2; }; root=$2; shift 2 ;;
+            --commit) [ "$#" -ge 2 ] && [ -n "$2" ] || { usage; return 2; }; rev=$2; shift 2 ;;
+            *) usage; return 2 ;;
         esac
     done
-    [ -n "$v" ] || { echo "$PROG: usage: <V> [--commit <rev>] [--root <repo>] | --self-test" >&2; return 2; }
+    [ -n "$v" ] || { usage; return 2; }
     if [ -n "$rev" ]; then label="commit $rev"; else rev="refs/tags/v$v"; label="tag v$v"; fi
     judge "$root" "$v" "$rev" "$label"
-}
+)
 
 # ---------------------------------------------------------------------------------------------
 # self-test: planted rows on a scratch repository, then mutants of THIS file (each must turn a
@@ -143,6 +155,8 @@ work() { printf '%s\n' "$2" >> "$1/w.txt"; git -C "$1" add w.txt && git -C "$1" 
 self_test() {
     local subj=${1:-${BASH_SOURCE[0]}} quiet=${2:-} d fail=0 got rc row want name expect o
     command -v git > /dev/null || { echo "$PROG self-test: needs git"; return 2; }
+    # the scratch repos are made and read by name: an inherited GIT_DIR would point every git here at it
+    unset GIT_DIR GIT_WORK_TREE GIT_INDEX_FILE GIT_COMMON_DIR GIT_OBJECT_DIRECTORY GIT_ALTERNATE_OBJECT_DIRECTORIES
     d=$(mktemp -d) || return 2
     run() { got=$(bash "$subj" "$@" 2>&1); rc=$?; }
     check() {   # check <name> <want-rc> <want-substring>
@@ -193,10 +207,33 @@ self_test() {
     run 1.2.3 --root "$d/r11"; check unreadable_parent_version_not_measured 2 "no readable version"
     # 12. a non-shallow repo missing the bump's parent object, with a commit-graph that still lets git
     #     log walk past it: NOT_MEASURED, never PASS (without a commit-graph git log fails: also Unknown)
-    mkrepo "$d/r12" && setv "$d/r12" 1.2.3 bump && git -C "$d/r12" tag v1.2.3 \
+    mkrepo "$d/r12" && setv "$d/r12" 1.2.3 bump && git -C "$d/r12" tag v1.2.3 && git clone -q --no-local "$d/r12" "$d/r12full" \
         && git -C "$d/r12" commit-graph write --reachable 2>/dev/null
     o=$(git -C "$d/r12" rev-parse HEAD^); o="$d/r12/.git/objects/${o:0:2}/${o:2}"; rm -f -- "${o:?}"
-    run 1.2.3 --root "$d/r12"; check missing_parent_object_not_measured 2 "NOT_MEASURED"
+    run 1.2.3 --root "$d/r12"; check missing_parent_object_not_measured 2 "is not in this repository"
+    # 13. GIT_DIR (with GIT_WORK_TREE and GIT_INDEX_FILE) inherited, pointing at a decoy whose tag IS
+    #     on its bump: --root is still the repo judged (r2, one commit between: REFUSE, never the
+    #     decoy's PASS)
+    mkrepo "$d/dc" && setv "$d/dc" 1.2.3 bump && git -C "$d/dc" tag v1.2.3
+    got=$(GIT_DIR="$d/dc/.git" GIT_WORK_TREE="$d/dc" GIT_INDEX_FILE="$d/dc/.git/index" bash "$subj" 1.2.3 --root "$d/r2" 2>&1); rc=$?
+    check env_git_dir_decoy_ignored 1 "between=1"
+    # 14. GIT_COMMON_DIR, then GIT_OBJECT_DIRECTORY, inherited from the decoy: still r2's REFUSE
+    got=$(GIT_COMMON_DIR="$d/dc/.git" bash "$subj" 1.2.3 --root "$d/r2" 2>&1); rc=$?
+    check env_common_dir_decoy_ignored 1 "between=1"
+    got=$(GIT_OBJECT_DIRECTORY="$d/dc/.git/objects" bash "$subj" 1.2.3 --root "$d/r2" 2>&1); rc=$?
+    check env_object_dir_decoy_ignored 1 "between=1"
+    # 15. GIT_ALTERNATE_OBJECT_DIRECTORIES inherited from a full copy of r12: the missing parent
+    #     object is still missing (NOT_MEASURED), not borrowed into a PASS
+    got=$(GIT_ALTERNATE_OBJECT_DIRECTORIES="$d/r12full/.git/objects" bash "$subj" 1.2.3 --root "$d/r12" 2>&1); rc=$?
+    check env_alternates_ignored 2 "is not in this repository"
+    # 16. an option with no value (or an empty one) is a usage error: 2, never 1 (REFUSE)
+    run 1.2.3 --root; check root_without_value_usage 2 "usage"
+    run 1.2.3 --root "$d/r1" --commit; check commit_without_value_usage 2 "usage"
+    run 1.2.3 --root ""; check root_empty_value_usage 2 "usage"
+    # 17. a bump that lands as a merge commit on the first-parent line is the bump
+    mkrepo "$d/r17" && git -C "$d/r17" checkout -qb side && setv "$d/r17" 1.2.3 bump \
+        && git -C "$d/r17" checkout -q - && git -C "$d/r17" merge -q --no-ff -m merge side && git -C "$d/r17" tag v1.2.3
+    run 1.2.3 --root "$d/r17"; check bump_in_merge_commit_passes 0 "between=0"
 
     if [ -z "$quiet" ]; then
         # MUTANTS of THIS file: each removes one refusal (or the exact bump) and must turn a row red
@@ -212,9 +249,18 @@ self_test() {
                    'unreadable parent (read as not V)|nm="the parent of ${c:0:12} has a Cargo.toml with no readable version"; break|:' \
                    'parent check (any V-commit is the bump)|[ "$pv" != "$v" ] && |' \
                    'missing parent object (read as a root)|nm="the parent ${p:0:12} of ${c:0:12} is listed but its object is not in this repository"; break|pv=""' \
-                   'parent object asked of rev-parse (commit-graph answers)|[ "$(git -C "$root" cat-file -t "$p" 2>/dev/null)" = commit ]|git -C "$root" rev-parse -q --verify "$c^{commit}^" > /dev/null 2>&1'; do
+                   'parent object asked of rev-parse (commit-graph answers)|[ "$(git -C "$root" cat-file -t "$p" 2>/dev/null)" = commit ]|git -C "$root" rev-parse -q --verify "$c^{commit}^" > /dev/null 2>&1' \
+                   'inherited GIT_DIR honoured|unset GIT_DIR GIT_WORK_TREE GIT_INDEX_FILE|:' \
+                   'inherited GIT_COMMON_DIR honoured|    unset GIT_COMMON_DIR|    :' \
+                   'inherited GIT_OBJECT_DIRECTORY honoured|    unset GIT_OBJECT_DIRECTORY|    :' \
+                   'inherited alternates honoured|    unset GIT_ALTERNATE_OBJECT_DIRECTORIES|    :' \
+                   '--root with no value exits 1|{ usage; return 2; }; root=$2|:; root=${2:?--root needs a path}' \
+                   '--commit with no value exits 1|{ usage; return 2; }; rev=$2|:; rev=${2:?--commit needs a rev}' \
+                   'merge-commit bump unseen|--diff-merges=first-parent|--diff-merges=off'; do
             IFS='|' read -r name a1 b1 <<< "$row"; n=$((n + 1))
             case $src in *"$a1"*) ;; *) echo "  FAIL mutant $name: anchor moved, re-anchor it"; fail=1; continue ;; esac
+            # a second occurrence means the anchor is ambiguous (or was cut short by a `|` in it)
+            case ${src#*"$a1"} in *"$a1"*) echo "  FAIL mutant $name: anchor is not unique, re-anchor it"; fail=1; continue ;; esac
             { printf '%s' "${src/"$a1"/"$b1"}"; printf '\nmain "$@"\n'; } > "$d/mut.sh"
             if got=$(self_test "$d/mut.sh" quiet 2>&1); then echo "  FAIL mutant ($name) survived the table"; fail=1
             else got=${got#*FAIL }; echo "  ok   mutant ($name) killed by row ${got%%:*}"; k=$((k + 1)); fi

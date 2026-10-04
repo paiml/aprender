@@ -24,10 +24,16 @@ HERE=$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)
 JUDGE=${TOB_JUDGE:-$HERE/tag_on_bump.sh}
 # an inherited GIT_DIR (hooks, CI steps) beats `git -C <clone>`: every clone command below would
 # remove the SOURCE's origin, detach its HEAD and rewrite its config. Each git call names its repo.
-unset GIT_DIR GIT_WORK_TREE GIT_INDEX_FILE GIT_OBJECT_DIRECTORY GIT_ALTERNATE_OBJECT_DIRECTORIES \
-    GIT_COMMON_DIR GIT_NAMESPACE GIT_PREFIX
+# An inherited GIT_COMMON_DIR or GIT_OBJECT_DIRECTORY sends the reads elsewhere (a false Unknown).
+unset GIT_DIR GIT_WORK_TREE GIT_INDEX_FILE
+unset GIT_COMMON_DIR
+unset GIT_OBJECT_DIRECTORY
+# config from the environment (`git -c`, GIT_CONFIG_COUNT) outranks the clone's own config: a
+# core.hooksPath there would run hooks in the clone despite core.hooksPath=/dev/null below
+unset GIT_CONFIG_PARAMETERS GIT_CONFIG_COUNT
 # the scratch clone goes on every exit: bash runs the EXIT trap on a fatal INT or TERM too (row
-# scratch_removed_on_sigterm proves it)
+# scratch_removed_on_sigterm proves it). The trap runs once the foreground step (bump or judge)
+# returns, and a SIGKILL runs no trap: the clone is under $TMPDIR, which the host's reaper owns.
 TMP=""
 cleanup() { [ -z "$TMP" ] || rm -rf "${TMP:?}"; TMP=""; }
 trap cleanup EXIT
@@ -49,9 +55,12 @@ sandbox() {   # sandbox <root> <V> <rev>
     fi
     TMP=$(mktemp -d) || { TMP=""; nm "no scratch directory"; return; }
     c="$TMP/r"
-    if ! { git clone -q --shared --no-checkout "$root" "$c" 2>/dev/null && git -C "$c" remote remove origin \
+    # hooks are off from the clone's first config write, before the checkout: a global or template
+    # post-checkout hook never runs here
+    if ! { git clone -q -c core.hooksPath=/dev/null --shared --no-checkout "$root" "$c" 2>/dev/null \
+            && git -C "$c" remote remove origin \
             && git -C "$c" -c advice.detachedHead=false checkout -q --detach "$h" \
-            && git -C "$c" config core.hooksPath /dev/null && git -C "$c" config commit.gpgsign false \
+            && git -C "$c" config commit.gpgsign false \
             && git -C "$c" config tag.gpgsign false && git -C "$c" config user.name "sandbox bump" \
             && git -C "$c" config user.email sandbox@example.invalid; }; then
         nm "the sandbox clone of ${h:0:12} could not be made"; return
@@ -96,8 +105,9 @@ mkrepo() {   # mkrepo <dir> <bump-stub-body>: root manifest at 1.2.2, a stub bum
     git -C "$d" add -A && git -C "$d" commit -qm init && git -C "$d" remote add origin https://example.invalid/r.git
 }
 STUB_OK='sed -i "s/^version = \".*\"/version = \"$1\"/" Cargo.toml'
-# snap <dir>: one checksum over the source repo's refs, HEAD, config and index, byte for byte
-snap() { { git -C "$1" for-each-ref --format='%(refname) %(objectname)'; cat "$1/.git/HEAD" "$1/.git/config"; cksum < "$1/.git/index"; } 2>&1 | cksum; }
+# snap <dir>: one checksum over every file under the source repo's .git (refs, HEAD, config, index,
+# logs, hooks, info, objects), path and bytes
+snap() { (cd "$1/.git" && find . -type f -print0 | LC_ALL=C sort -z | xargs -0 cksum) 2>&1 | cksum; }
 
 self_test() {
     local subj=${1:-${BASH_SOURCE[0]}} quiet=${2:-} d fail=0 got rc b0 p _
@@ -155,6 +165,21 @@ self_test() {
     if [ -s "$d/mark" ] && [ ! -e "$(dirname "$(cat "$d/mark")")" ]; then got="cleaned rc=$rc"; rc=0
     else got="scratch left: $(cat "$d/mark" 2>/dev/null) rc=$rc"; rc=1; fi
     check scratch_removed_on_sigterm 0 "cleaned"
+    # 11. GIT_COMMON_DIR, then GIT_OBJECT_DIRECTORY, inherited: the rehearsal still reads its source
+    mkrepo "$d/r11" "$STUB_OK"
+    GIT_COMMON_DIR="$d/nowhere" run 1.2.3 --root "$d/r11"; check env_common_dir_still_passes 0 "between=0"
+    GIT_OBJECT_DIRECTORY="$d/nowhere" run 1.2.3 --root "$d/r11"; check env_object_dir_still_passes 0 "between=0"
+    # 12. a hooks directory named by environment config, then by the global config: no hook runs in
+    #     the clone (each hook would append to hookmark)
+    mkdir -p "$d/hk" "$d/home" && printf '#!/bin/sh\necho "$0" >> "%s/hookmark"\n' "$d" > "$d/hk/post-checkout" \
+        && cp "$d/hk/post-checkout" "$d/hk/pre-commit" && chmod +x "$d/hk/post-checkout" "$d/hk/pre-commit" \
+        && printf '[core]\n\thooksPath = %s\n' "$d/hk" > "$d/home/.gitconfig"
+    GIT_CONFIG_COUNT=1 GIT_CONFIG_KEY_0=core.hooksPath GIT_CONFIG_VALUE_0="$d/hk" run 1.2.3 --root "$d/r11"
+    [ -e "$d/hookmark" ] && { rc=9; got="hooks ran: $(tr '\n' ' ' < "$d/hookmark")"; rm -f -- "${d:?}/hookmark"; }
+    check env_config_hooks_not_run 0 "between=0"
+    HOME="$d/home" run 1.2.3 --root "$d/r11"
+    [ -e "$d/hookmark" ] && { rc=9; got="hooks ran: $(tr '\n' ' ' < "$d/hookmark")"; rm -f -- "${d:?}/hookmark"; }
+    check global_hooks_not_run 0 "between=0"
 
     if [ -z "$quiet" ]; then
         local src a1 b1 k=0 n=0 name row
@@ -169,9 +194,16 @@ self_test() {
                    'source written while the judge passes|    rc=0|    git -C "$root" tag "sandbox-v$v" "$h"; rc=0' \
                    'inherited GIT_* honoured|unset GIT_DIR GIT_WORK_TREE|: GIT_DIR GIT_WORK_TREE' \
                    'existing tag rehearsed over|if t=$(git -C "$root" rev-parse -q --verify "refs/tags/v$v^{commit}" 2>/dev/null); then|if false; then' \
-                   'no cleanup trap|trap cleanup EXIT|:'; do
+                   'no cleanup trap|trap cleanup EXIT|:' \
+                   'inherited GIT_COMMON_DIR honoured|unset GIT_COMMON_DIR|:' \
+                   'inherited GIT_OBJECT_DIRECTORY honoured|unset GIT_OBJECT_DIRECTORY|:' \
+                   'environment config honoured|unset GIT_CONFIG_PARAMETERS GIT_CONFIG_COUNT|:' \
+                   'hooks on until after the checkout|clone -q -c core.hooksPath=/dev/null|clone -q' \
+                   'source .git/hooks written while the judge passes|    rc=0|    : > "$root/.git/hooks/sandbox-mark"; rc=0'; do
             IFS='|' read -r name a1 b1 <<< "$row"; n=$((n + 1))
             case $src in *"$a1"*) ;; *) echo "  FAIL mutant $name: anchor moved, re-anchor it"; fail=1; continue ;; esac
+            # a second occurrence means the anchor is ambiguous (or was cut short by a `|` in it)
+            case ${src#*"$a1"} in *"$a1"*) echo "  FAIL mutant $name: anchor is not unique, re-anchor it"; fail=1; continue ;; esac
             { printf '%s' "${src/"$a1"/"$b1"}"; printf '\nmain "$@"\n'; } > "$d/mut.sh"
             if got=$(self_test "$d/mut.sh" quiet 2>&1); then echo "  FAIL mutant ($name) survived the table"; fail=1
             else got=${got#*FAIL }; echo "  ok   mutant ($name) killed by row ${got%%:*}"; k=$((k + 1)); fi

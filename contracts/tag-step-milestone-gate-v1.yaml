@@ -1,5 +1,5 @@
 metadata:
-  version: 1.2.0
+  version: 1.3.0
   created: '2026-09-20'
   author: PAIML Engineering
   description: "The release train's tag step cannot be reached without a clean milestone. v0.68.1 was tagged 2026-09-17T15:06:29Z by an autopilot copy living outside the repository, six minutes after #3455 merged the milestone gate; `grep -c check_milestone_cut autopilot.sh` was 0. The spec required the read and no code path that cuts a tag made it. This contract is the property that the requirement and the mechanism are the same object: the gate call lives INSIDE cut_tag(), ahead of `git tag`, and a guard runs that function against each gate outcome and asserts on whether a tag was cut."
@@ -45,7 +45,7 @@ equations:
   tag_on_bump_commit:
     formula: "tag_on_bump(V, T) = PASS iff ver(T) = V ∧ T = B(V, T) ∧ |B..T| = 0, where B(V, T) is the newest commit on T's first-parent history with ver(B) = V ∧ ver(B^) ≠ V"
     domain: "a version V and a target T (refs/tags/vV, or the commit cut_tag() is about to tag); ver = the root Cargo.toml [workspace.package] version"
-    codomain: "rc 0 PASS, rc 1 REFUSE (commits between bump and tag, or no bump commit), rc 2 NOT_MEASURED (V not a version, T unresolvable, ver(T) unreadable)"
+    codomain: "rc 0 PASS, rc 1 REFUSE (commits between bump and tag, or no bump commit), rc 2 NOT_MEASURED (V not a version; T unresolvable; ver(T), a bump candidate's parent version or object, or the history unreadable; a shallow boundary; an uncountable B..T; a usage error)"
     invariants:
       - "one commit between the bump and the tag refuses: code no gate measured under V is never released as V (#4692, signed for 0.70.2)"
       - "a tag on a commit that does not carry V refuses: there is no bump commit under it"
@@ -73,7 +73,7 @@ proof_obligations:
   - id: TSMG-INV-004
     type: invariant
     property: "Only a tag on the version-bump commit passes"
-    formal: "tag_on_bump(V, T) = 0 ⇒ ver(T) = V ∧ ver(T^) ≠ V; |B..T| ≥ 1 ∨ ver(T) ≠ V ⇒ tag_on_bump(V, T) = 1; unreadable(V) ∨ unreadable(T) ⇒ tag_on_bump(V, T) = 2"
+    formal: "tag_on_bump(V, T) = 0 ⇒ ver(T) = V ∧ ver(T^) ≠ V; |B..T| ≥ 1 ∨ ver(T) ≠ V ⇒ tag_on_bump(V, T) = 1; unreadable(V) ∨ unreadable(T) ∨ unreadable(ver(T)) ∨ unreadable(history(T)) ∨ unreadable(parent(B)) ∨ shallow_boundary(B) ∨ unreadable(|B..T|) ∨ usage_error ⇒ tag_on_bump(V, T) = 2; the repository judged is --root, whatever GIT_DIR, GIT_COMMON_DIR, GIT_OBJECT_DIRECTORY or GIT_ALTERNATE_OBJECT_DIRECTORIES the caller exports"
     applies_to: tag_on_bump_commit
 
 falsification_tests:
@@ -115,14 +115,14 @@ falsification_tests:
 
   - id: FALSIFY-TSMG-007
     rule: "Only a tag on the version-bump commit passes"
-    prediction: "The planted rows hold: the tag on the bump commit passes; one commit between bump and tag refuses; no bump commit refuses; an unreadable tag or version prints NOT_MEASURED; a re-done bump and a dependency version line do not move the bump; a shallow-clone boundary, a parent manifest with no readable version, or a parent commit object missing from a non-shallow repository (a commit-graph still walking past it) is NOT_MEASURED, never PASS"
+    prediction: "The planted rows hold: the tag on the bump commit passes; one commit between bump and tag refuses; no bump commit refuses; an unreadable tag or version prints NOT_MEASURED; a re-done bump and a dependency version line do not move the bump; a shallow-clone boundary, a parent manifest with no readable version, or a parent commit object missing from a non-shallow repository (a commit-graph still walking past it) is NOT_MEASURED, never PASS; a bump that lands as a merge commit is the bump; GIT_DIR (with GIT_WORK_TREE and GIT_INDEX_FILE), GIT_COMMON_DIR, GIT_OBJECT_DIRECTORY or GIT_ALTERNATE_OBJECT_DIRECTORIES exported at a decoy does not change the verdict on --root; --root or --commit with no value, or an empty one, is a usage error (rc 2), never rc 1"
     test: "bash scripts/release/tag_on_bump.sh --self-test"
     if_fails: "A release can be tagged on code that was never measured under its version: 0.70.1 was tagged 3 commits after its bump, 0.69.1 541"
 
   - id: FALSIFY-TSMG-008
     rule: "Each refusal of the tag-on-bump judge is load-bearing"
-    prediction: "Every mutant that removes a refusal, a NOT_MEASURED, or the exact bump identity turns a planted row red: the self-test prints mutants killed 11/11"
-    test: "bash scripts/release/tag_on_bump.sh --self-test | grep -qx 'tag_on_bump self-test: mutants killed 11/11'"
+    prediction: "Every mutant that removes a refusal, a NOT_MEASURED, or the exact bump identity turns a planted row red: the self-test prints mutants killed 18/18"
+    test: "bash scripts/release/tag_on_bump.sh --self-test | grep -qx 'tag_on_bump self-test: mutants killed 18/18'"
     if_fails: "A refusal no row depends on is theater; the table would pass a judge that never refuses"
 
   - id: FALSIFY-TSMG-009
@@ -133,8 +133,8 @@ falsification_tests:
 
   - id: FALSIFY-TSMG-010
     rule: "The nightly rehearsal bumps and tags only a scratch clone, and its verdict is the judge's"
-    prediction: "The planted rows hold: a bump procedure that moves the root version passes; the source repository stays byte-identical (refs, tags, HEAD, config, index), also with GIT_DIR, GIT_WORK_TREE and GIT_INDEX_FILE exported at it, and the rehearsal still passes under them; a bump that misses the root version refuses; a failed or empty bump, a bad train version, the current version, an unresolvable rev, or a v<V> tag already in the source is NOT_MEASURED; SIGTERM mid-bump removes the scratch clone; each of the 9 mutants turns a row red"
-    test: "bash scripts/release/tag_on_bump_sandbox.sh --self-test | grep -qx 'tag_on_bump_sandbox self-test: mutants killed 9/9'"
+    prediction: "The planted rows hold: a bump procedure that moves the root version passes; the source repository stays byte-identical (every file under its .git), also with GIT_DIR, GIT_WORK_TREE and GIT_INDEX_FILE exported at it, and the rehearsal still passes under them and under an inherited GIT_COMMON_DIR or GIT_OBJECT_DIRECTORY; no hook runs in the clone, whether a hooks directory is named by environment config or by the global config; a bump that misses the root version refuses; a failed or empty bump, a bad train version, the current version, an unresolvable rev, or a v<V> tag already in the source is NOT_MEASURED; SIGTERM mid-bump removes the scratch clone; each of the 14 mutants turns a row red"
+    test: "bash scripts/release/tag_on_bump_sandbox.sh --self-test | grep -qx 'tag_on_bump_sandbox self-test: mutants killed 14/14'"
     if_fails: "A nightly that cannot fail, or one that writes a tag where a push could take it, would be counted toward the three green nights"
 
 qa_gate:
