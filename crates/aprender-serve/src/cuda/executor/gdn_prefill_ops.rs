@@ -44,6 +44,33 @@ use trueno_gpu::kernels::{
     Q8_0DequantKernel,
 };
 
+/// Whether [`CudaExecutor::qwen35_dequant_f32`] has a kernel for `qtype`. The rest run
+/// the batched prefill's projections as per-row GEMVs (#4664). Exhaustive, no
+/// catch-all: a new quantization type must be placed on one side (PMAT-232).
+#[must_use]
+pub(crate) const fn qwen35_has_dequant_kernel(qtype: WeightQuantType) -> bool {
+    match qtype {
+        WeightQuantType::F32
+        | WeightQuantType::F16
+        | WeightQuantType::Q4K
+        | WeightQuantType::Q5K
+        | WeightQuantType::Q6K
+        | WeightQuantType::Q8_0
+        | WeightQuantType::IQ4XS => true,
+        WeightQuantType::Q4_0
+        | WeightQuantType::Q4_1
+        | WeightQuantType::Q5_0
+        | WeightQuantType::Q5_1
+        | WeightQuantType::BF16
+        | WeightQuantType::IQ4NL
+        | WeightQuantType::IQ3S
+        | WeightQuantType::IQ2XXS
+        | WeightQuantType::IQ2S
+        | WeightQuantType::IQ3XXS
+        | WeightQuantType::Q2K => false,
+    }
+}
+
 impl CudaExecutor {
     /// Compile `kernel` for this device's target once, cached under `key`.
     fn qp_prepare<K: Kernel>(&mut self, key: &str, kernel: &K) -> Result<(), GpuError> {
@@ -183,6 +210,9 @@ impl CudaExecutor {
     ) -> Result<(), GpuError> {
         validate_device_ptr(x_ptr, "qwen35_project_rows x")?;
         validate_device_ptr(y_ptr, "qwen35_project_rows y")?;
+        if !qwen35_has_dequant_kernel(qtype) {
+            return self.qwen35_project_rows_gemv(qtype, w_ptr, x_ptr, y_ptr, rows, n, k, ldc);
+        }
         match qwen35_prefill_gemm_mode() {
             Qwen35PrefillGemm::F16 if self.qwen35_prefill_f16 => {
                 return self.qwen35_project_rows_f16(qtype, w_ptr, x_ptr, y_ptr, rows, n, k, ldc);
@@ -213,6 +243,49 @@ impl CudaExecutor {
             y_ptr,
             ldc as i32,
         )
+    }
+
+    /// #4664: [`Self::qwen35_project_rows`] for a weight with no f32 dequant kernel —
+    /// one GEMV per row, through the same `gemv_dispatch` kernel the per-token path
+    /// runs for that weight, so each row is what `forward_single` computes for it.
+    /// `Qwen3.5-0.8B-UD-IQ2_XXS` (IQ2_XXS/IQ2_S/IQ3_XXS/Q2_K) refused the batched
+    /// prefill here, so the F2 guard rejected its whole CUDA path and it ran on CPU.
+    #[allow(clippy::too_many_arguments)]
+    fn qwen35_project_rows_gemv(
+        &mut self,
+        qtype: WeightQuantType,
+        w_ptr: u64,
+        x_ptr: u64,
+        y_ptr: u64,
+        rows: u32,
+        n: u32,
+        k: u32,
+        ldc: u32,
+    ) -> Result<(), GpuError> {
+        if ldc < n {
+            return Err(GpuError::InvalidParameter(format!(
+                "qwen35_project_rows: ldc {ldc} < n {n}"
+            )));
+        }
+        for r in 0..u64::from(rows) {
+            // SAFETY: the caller sized `x` for `rows × k` floats and `y` for `rows` rows
+            // `ldc` floats apart, so both views lie inside live allocations; `ManuallyDrop`
+            // means neither view frees what it points at.
+            let (x, y) = unsafe {
+                (
+                    std::mem::ManuallyDrop::new(GpuBuffer::<f32>::from_raw_parts(
+                        x_ptr + r * u64::from(k) * 4,
+                        k as usize,
+                    )),
+                    std::mem::ManuallyDrop::new(GpuBuffer::<f32>::from_raw_parts(
+                        y_ptr + r * u64::from(ldc) * 4,
+                        n as usize,
+                    )),
+                )
+            };
+            self.gemv_dispatch(qtype, w_ptr, &x, &y, n, k)?;
+        }
+        Ok(())
     }
 
     /// The cached FP16 copy of the `[n × k]` weight at `w_ptr`, made on first use by
@@ -781,5 +854,75 @@ mod dequant_dispatch_tests_4621 {
         let mut got = vec![0.0f32; scratch.len()];
         scratch.copy_to_host(&mut got).expect("readback");
         assert_eq!(&got[..want.len()], &want[..]);
+    }
+
+    /// #4664: the dequant table, both sides. A type moved to the wrong side either
+    /// refuses the prefill (the #4664 fallback) or skips a kernel that exists.
+    #[test]
+    fn dequant_kernel_table_names_the_gemv_only_types() {
+        use WeightQuantType as Q;
+        for q in [Q::F32, Q::F16, Q::Q4K, Q::Q5K, Q::Q6K, Q::Q8_0, Q::IQ4XS] {
+            assert!(qwen35_has_dequant_kernel(q), "{q:?} has a dequant kernel");
+        }
+        for q in [
+            Q::Q4_0,
+            Q::Q4_1,
+            Q::Q5_0,
+            Q::Q5_1,
+            Q::BF16,
+            Q::IQ4NL,
+            Q::IQ3S,
+            Q::IQ2XXS,
+            Q::IQ2S,
+            Q::IQ3XXS,
+            Q::Q2K,
+        ] {
+            assert!(!qwen35_has_dequant_kernel(q), "{q:?} runs as per-row GEMVs");
+        }
+    }
+
+    /// #4664: a projection with no dequant kernel runs as one GEMV per row, into a
+    /// strided destination. BF16 widens exactly and the values are small integers, so
+    /// every sum is exact and the comparison is bit-for-bit.
+    #[test]
+    fn gemv_only_weight_projects_every_row_into_a_strided_destination() {
+        let Some(mut exec) = executor() else { return };
+        let (rows, n, k, ldc) = (3u32, 4u32, 256u32, 6u32);
+        let w: Vec<f32> = (0..n * k).map(|i| ((i * 7) % 5) as f32 - 2.0).collect();
+        let x: Vec<f32> = (0..rows * k).map(|i| ((i * 3) % 7) as f32 - 3.0).collect();
+        let w_bytes: Vec<u8> = w
+            .iter()
+            .flat_map(|&v| ((v.to_bits() >> 16) as u16).to_le_bytes())
+            .collect();
+        let w_dev = GpuBuffer::from_host(&exec.context, &w_bytes).expect("w");
+        let x_dev = GpuBuffer::from_host(&exec.context, &x).expect("x");
+        let pad = -99.0f32;
+        let y_dev =
+            GpuBuffer::from_host(&exec.context, &vec![pad; (rows * ldc) as usize]).expect("y");
+        exec.qwen35_project_rows(
+            WeightQuantType::BF16,
+            w_dev.as_ptr(),
+            x_dev.as_ptr(),
+            y_dev.as_ptr(),
+            rows,
+            n,
+            k,
+            ldc,
+        )
+        .expect("BF16 has no dequant kernel and runs as per-row GEMVs");
+        exec.stream.synchronize().expect("sync");
+        let mut got = vec![0.0f32; (rows * ldc) as usize];
+        y_dev.copy_to_host(&mut got).expect("readback");
+        let (n, k, ldc) = (n as usize, k as usize, ldc as usize);
+        for r in 0..rows as usize {
+            for j in 0..ldc {
+                let want = if j < n {
+                    (0..k).map(|i| w[j * k + i] * x[r * k + i]).sum()
+                } else {
+                    pad
+                };
+                assert_eq!(got[r * ldc + j], want, "row {r} col {j}");
+            }
+        }
     }
 }

@@ -72,7 +72,9 @@ pub use types::{
 mod executor;
 #[cfg(test)]
 pub(crate) use executor::gdn_prefill_ops::QWEN35_PREFILL_GEMM_OVERRIDE;
-pub(crate) use executor::gdn_prefill_ops::{qwen35_prefill_gemm_mode, Qwen35PrefillGemm};
+pub(crate) use executor::gdn_prefill_ops::{
+    qwen35_has_dequant_kernel, qwen35_prefill_gemm_mode, Qwen35PrefillGemm,
+};
 pub mod gpu_profile;
 pub use executor::CudaExecutor;
 pub use gpu_profile::GpuProfile;

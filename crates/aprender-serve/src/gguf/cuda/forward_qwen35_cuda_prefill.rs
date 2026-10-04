@@ -490,9 +490,12 @@ impl Qwen35CudaModel<'_> {
         if qwen35_prefill_gemm_mode() != Qwen35PrefillGemm::F16 {
             return 0;
         }
+        // #4664: a weight with no dequant kernel runs as per-row GEMVs and never
+        // reads the fp16 cache, so it is not prewarmed (and does not disarm the rest).
         let weights: Vec<(WeightQuantType, u64, u32, u32)> = self
             .projection_weights()
             .iter()
+            .filter(|w| crate::cuda::qwen35_has_dequant_kernel(w.qtype))
             .map(|w| (w.qtype, w.ptr, w.n, w.k))
             .collect();
         let bytes: usize = weights
@@ -604,9 +607,8 @@ impl Qwen35CudaModel<'_> {
     /// # Errors
     /// An empty prompt, a `pos0` other than the state's `kv_len` (the prefill would
     /// read KV rows that were never written, or overwrite ones that were), a position
-    /// past the state's `max_seq_len`, a token outside the
-    /// vocabulary, a projection whose quantization has no dequant kernel, or any
-    /// device failure. Nothing is half-applied that a caller could mistake for a
+    /// past the state's `max_seq_len`, a token outside the vocabulary, or any device
+    /// failure. Nothing is half-applied that a caller could mistake for a
     /// finished prefill: on `Err` the state must be discarded.
     pub fn prefill(
         &mut self,

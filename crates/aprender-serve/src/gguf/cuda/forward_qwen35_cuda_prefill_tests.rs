@@ -26,6 +26,10 @@ use crate::gguf::forward_qwen35::Qwen35Model;
 
 const MODEL_0_8B: &str = "/home/noah/models/Qwen3.5-0.8B-Q4_K_M.gguf";
 
+/// #4664: IQ2_XXS/IQ2_S/IQ3_XXS/Q2_K projections — none has an f32 dequant kernel,
+/// so the batched prefill runs them as per-row GEMVs.
+const MODEL_0_8B_IQ2_XXS: &str = "/home/noah/models/Qwen3.5-0.8B-UD-IQ2_XXS.gguf";
+
 /// Budgets for one attention path.
 #[derive(Clone, Copy)]
 struct Budget {
@@ -311,6 +315,26 @@ fn f16_prewarm_fits_only_with_a_gib_to_spare() {
     assert!(!super::f16_prewarm_fits(7 * GIB + 1, 8 * GIB));
     assert!(!super::f16_prewarm_fits(0, GIB - 1));
     assert!(!super::f16_prewarm_fits(usize::MAX, usize::MAX));
+}
+
+/// #4664: the batched prefill refused every projection with no f32 dequant kernel,
+/// so the F2 guard rejected the whole CUDA path for this file and it ran on CPU. The
+/// per-row GEMVs run the per-token kernels, so the f32 budget holds.
+#[test]
+#[serial_test::serial]
+fn qwen35_prefill_equals_per_token_on_gemv_only_quants_iq2_xxs() {
+    batched_equals_per_token(MODEL_0_8B_IQ2_XXS, 64, super::PrefillAttention::CublasF32);
+}
+
+/// #4664: the f16 default with GEMV-only weights in the set — they are left out of the
+/// prewarm, so it arms for the rest, and the f16 budget holds.
+#[test]
+#[serial_test::serial]
+fn qwen35_f16_gemm_prefill_equals_per_token_on_gemv_only_quants_iq2_xxs() {
+    crate::cuda::QWEN35_PREFILL_GEMM_OVERRIDE
+        .with(|c| c.set(Some(crate::cuda::Qwen35PrefillGemm::F16)));
+    batched_equals_per_token(MODEL_0_8B_IQ2_XXS, 64, super::PrefillAttention::CublasF32);
+    crate::cuda::QWEN35_PREFILL_GEMM_OVERRIDE.with(|c| c.set(None));
 }
 
 /// A host where f16 cannot be armed keeps working: the f16 mode with the GEMM
