@@ -4,6 +4,7 @@
 use std::fmt;
 
 use super::LoRAConfig;
+use crate::transformer::TransformerConfig;
 use crate::{Error, Result};
 
 /// A linear projection of a decoder layer that a LoRA adapter can target.
@@ -42,6 +43,22 @@ impl LoraTarget {
     /// The target a whole module name names: `q_proj` is `Q`, `qkv_proj` is none.
     pub fn from_module_name(name: &str) -> Option<Self> {
         Self::ALL.into_iter().find(|t| t.module_name() == name)
+    }
+
+    /// The `(d_out, d_in)` of this projection in a layer of `config`: q is (q, h), k and v
+    /// (kv, h), o (h, q), gate and up (i, h), down (h, i), with q = heads·head_dim and
+    /// kv = kv_heads·head_dim (`lora-target-selection-v1`, target_slots). An adapter's A
+    /// holds d_in·rank values and its B rank·d_out.
+    pub fn dims(self, config: &TransformerConfig) -> (usize, usize) {
+        let (h, i) = (config.hidden_size, config.intermediate_size);
+        let (q, kv) = (config.q_dim(), config.num_kv_heads * config.head_dim());
+        match self {
+            Self::Q => (q, h),
+            Self::K | Self::V => (kv, h),
+            Self::O => (h, q),
+            Self::Gate | Self::Up => (i, h),
+            Self::Down => (h, i),
+        }
     }
 }
 
@@ -128,6 +145,36 @@ impl fmt::Display for LoraTargets {
 mod tests {
     use super::LoraTarget::{Down, Gate, Up, K, O, Q, V};
     use super::*;
+
+    /// FALSIFY-LORA_TARGET_SELECTION_V1_005: each projection's shape, on a config where
+    /// q, kv, h and i all differ, so a swapped or shared shape cannot pass.
+    #[test]
+    fn falsify_lora_target_selection_v1_005_dims_are_the_projection_shapes() {
+        let config = TransformerConfig::qwen3_4b();
+        let (h, i) = (config.hidden_size, config.intermediate_size);
+        let q = config.num_attention_heads * 128;
+        let kv = config.num_kv_heads * 128;
+        assert_eq!(config.head_dim_override, Some(128));
+        let distinct = [q, kv, h, i];
+        for (n, a) in distinct.iter().enumerate() {
+            assert!(
+                distinct[n + 1..].iter().all(|b| b != a),
+                "q, kv, h, i must differ: {distinct:?}"
+            );
+        }
+        let expected = [
+            (Q, (q, h)),
+            (K, (kv, h)),
+            (V, (kv, h)),
+            (O, (h, q)),
+            (Gate, (i, h)),
+            (Up, (i, h)),
+            (Down, (h, i)),
+        ];
+        for (target, dims) in expected {
+            assert_eq!(target.dims(&config), dims, "{target}");
+        }
+    }
 
     #[test]
     fn falsify_lora_target_selection_v1_004_parse_sorts_dedups_and_expands() {

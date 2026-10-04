@@ -382,26 +382,20 @@ impl InstructPipeline {
             return Vec::new();
         }
 
-        let hidden = model_config.hidden_size;
-        let head_dim =
-            model_config.head_dim_override.unwrap_or(hidden / model_config.num_attention_heads);
-        let q_dim = model_config.num_attention_heads * head_dim;
-        let kv_dim = model_config.num_kv_heads * head_dim;
-        let inter = model_config.intermediate_size;
-
         let mut lora_layers = Vec::new();
         for layer in &model.layers {
             let (attn, ffn) = (&layer.self_attn, &layer.ffn);
             for &target in config.lora_targets.as_slice() {
-                let (base, d_out, d_in) = match target {
-                    LoraTarget::Q => (&attn.w_q, q_dim, hidden),
-                    LoraTarget::K => (&attn.w_k, kv_dim, hidden),
-                    LoraTarget::V => (&attn.w_v, kv_dim, hidden),
-                    LoraTarget::O => (&attn.w_o, hidden, q_dim),
-                    LoraTarget::Gate => (&ffn.w_gate, inter, hidden),
-                    LoraTarget::Up => (&ffn.w_up, inter, hidden),
-                    LoraTarget::Down => (&ffn.w_down, hidden, inter),
+                let base = match target {
+                    LoraTarget::Q => &attn.w_q,
+                    LoraTarget::K => &attn.w_k,
+                    LoraTarget::V => &attn.w_v,
+                    LoraTarget::O => &attn.w_o,
+                    LoraTarget::Gate => &ffn.w_gate,
+                    LoraTarget::Up => &ffn.w_up,
+                    LoraTarget::Down => &ffn.w_down,
                 };
+                let (d_out, d_in) = target.dims(model_config);
                 let weight = Tensor::from_vec(
                     base.data().as_slice().expect("contiguous base weight").to_vec(),
                     false,
