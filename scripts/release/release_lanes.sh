@@ -19,11 +19,14 @@
 #
 # THE LANES. C is GITHUB_SHA: the head of main when the scheduled run started.
 #   cleanroom-gpu   b2-gpu.yml called with ref=C. green: every b2-gpu job succeeded. red: a step that is not a
-#                   precondition failed (the cargo test step, a timeout inside it). not_measured: a
-#                   precondition failed (checkout, the commit assert, no CUDA device), or the job was
-#                   cancelled or skipped.
-#   cleanroom-cpu   paiml/infra clean-room.yml, job `clean-room (aprender)`: the newest one whose log names
-#                   `tested-sha: C`. green: success at attempt 1. red: failure or timed_out, or success only at
+#                   precondition failed, in a job that ended failure or timed_out (a step cancelled inside such
+#                   a job counts as failed). not_measured: a precondition failed (checkout, the commit assert,
+#                   no CUDA device), or the job ended cancelled or skipped. A job GitHub reports as cancelled
+#                   when it hits timeout-minutes therefore reads not_measured, never green.
+#   cleanroom-cpu   paiml/infra clean-room.yml, job `clean-room (aprender)`: the newest one that tested C, read
+#                   the way the release driver reads it (cascade-publish.sh clean_room_gate): the log carries
+#                   exactly one structured `tested-sha:` record, and `Assert the commit under test` succeeded.
+#                   green: success at attempt 1. red: failure, timed_out or startup_failure, or success only at
 #                   attempt 2 or later. not_measured: no read token, no infra run tested C, still running.
 #                   paiml/infra is private and GITHUB_TOKEN cannot read it: INFRA_TOKEN comes from the
 #                   repository secret INFRA_ACTIONS_READ (Actions: read on paiml/infra), and without it the
@@ -50,6 +53,7 @@ API="${GITHUB_API_URL:-https://api.github.com}"
 INFRA_REPO=paiml/infra
 INFRA_WORKFLOW=clean-room.yml
 INFRA_JOB='clean-room (aprender)'
+INFRA_ASSERT='Assert the commit under test'   # the step whose success makes the log's tested-sha count
 INFRA_RUNS=6            # newest infra runs searched for the one that tested C
 INFRA_MAX_LOGS=3        # job logs read at most (each is a whole clean-room log)
 INDEX_URL="${RELEASE_LANES_INDEX_URL:-https://index.crates.io/ap/re/aprender}"
@@ -109,9 +113,17 @@ judge_cpu() {
             else printf "not_measured\tno finished clean-room (aprender) job in the newest infra runs\n" }'
 }
 
-# is_bumped MAIN REGISTRY_NEWEST -> 0 when main's version is above everything crates.io has (sort -V, not strings)
+# is_bumped MAIN REGISTRY_NEWEST -> 0 when main's release (x.y.z, prerelease and build cut off) is above crates.io's
+# newest (sort -V, not strings). A prerelease of a published version (0.70.1-rc.1 vs 0.70.1) is NOT bumped: `^0.70.1-rc.1`
+# matches the published 0.70.1, the same false red.
 is_bumped() {
-    [ -n "$1" ] && [ -n "$2" ] && [ "$1" != "$2" ] && [ "$(printf '%s\n%s\n' "$2" "$1" | sort -V | tail -n 1)" = "$1" ]
+    local m="${1%%[-+]*}" r="${2%%[-+]*}"
+    [ -n "$m" ] && [ -n "$r" ] && [ "$m" != "$r" ] && [ "$(printf '%s\n%s\n' "$r" "$m" | sort -V | tail -n 1)" = "$m" ]
+}
+
+# registry_newest (the crates.io sparse index lines on stdin) -> the newest version that is not yanked
+registry_newest() {
+    jq -r 'select(.yanked | not) | .vers' 2>/dev/null | sort -V | tail -n 1
 }
 
 # judge_dryrun RC MAIN_VERSION REGISTRY_NEWEST. RC is `-` when the gate was not run.
@@ -131,10 +143,16 @@ judge_dryrun() {
     esac
 }
 
-# tested_sha (a clean-room job log on stdin) -> the sha after `repo: aprender`, or nothing
+# tested_sha (a clean-room job log on stdin) -> the tested commit, or nothing. The release driver's rule
+# (cascade-publish.sh clean_room_tested_shas + its caller): the DISTINCT structured `tested-sha:` records, and only
+# exactly one full lowercase 40-hex sha counts. Two records, or a malformed one, is a log that proves no commit.
+# It reads the whole log, so the download is never cut off mid-stream.
 tested_sha() {
-    sed 's/\r$//' | awk '$2 == "repo:" && $3 == "aprender" { r = 1; next }
-        r && $2 == "tested-sha:" { if ($3 ~ /^[0-9a-f]+$/ && length($3) == 40) print $3; exit }'
+    local s
+    s="$(tr -d '\r' | { grep -E '^([0-9]{4}-[0-9]{2}-[0-9]{2}T[0-9:.]+Z )?[[:space:]]*tested-sha: .+$' || true; } \
+        | sed -E 's/^.*tested-sha: //; s/[[:space:]]+$//' | sort -u)"
+    [[ "$s" =~ ^[0-9a-f]{40}$ ]] && printf '%s\n' "$s"
+    return 0
 }
 
 # emit LANE (one judge line on stdin) -> GITHUB_OUTPUT verdict/reason, a summary row, one printed line. Anything
@@ -156,9 +174,10 @@ emit() {
 
 # ---------------------------------------------------------------- the reads (network) -----------------------------
 # api URL TOKEN -> the body; non-zero on any HTTP error. A log download redirects to a signed blob URL on another
-# host, and curl drops the Authorization header on that hop.
+# host, and curl drops the Authorization header on that hop. The token goes in through a header file (printf is a
+# builtin), so it never sits in curl's argv where any process on the runner could read it.
 api() {
-    curl -fsSL --max-time 120 -H "Authorization: Bearer $2" -H "Accept: application/vnd.github+json" \
+    curl -fsSL --max-time 120 -H @<(printf 'Authorization: Bearer %s\n' "$2") -H "Accept: application/vnd.github+json" \
         -H "X-GitHub-Api-Version: 2022-11-28" "$1"
 }
 
@@ -176,21 +195,23 @@ measure_jobs() {   # measure_jobs PREFIX ENV_RE
 
 # infra_rows C -> the TSV judge_cpu reads, newest run first; stops at the first run that tested C
 infra_rows() {
-    local runs ids id att jobs jid jst jcon sha logs=0
+    local runs ids id att jobs jid jst jcon jassert sha logs=0
     runs="$(api "$API/repos/$INFRA_REPO/actions/workflows/$INFRA_WORKFLOW/runs?per_page=$INFRA_RUNS" "$INFRA_TOKEN")" || return 1
     ids="$(printf '%s\n' "$runs" | jq -r '.workflow_runs[] | "\(.id) \(.run_attempt)"')" || return 1
     while read -r id att; do
         [ -n "$id" ] || continue
         jobs="$(api "$API/repos/$INFRA_REPO/actions/runs/$id/jobs?per_page=100" "$INFRA_TOKEN")" || return 1
-        jid=""; jst=""; jcon=""
-        read -r jid jst jcon < <(printf '%s\n' "$jobs" | jq -r --arg n "$INFRA_JOB" \
-            '[.jobs[] | select(.name == $n)][0] // empty | "\(.id) \(.status) \(.conclusion // "-")"')
+        jid=""; jst=""; jcon=""; jassert=""
+        read -r jid jst jcon jassert < <(printf '%s\n' "$jobs" | jq -r --arg n "$INFRA_JOB" --arg a "$INFRA_ASSERT" \
+            '[.jobs[] | select(.name == $n)][0] // empty
+             | ([.steps[]? | select(.name == $a)][0] // {status: "absent", conclusion: null}) as $s
+             | "\(.id) \(.status) \(.conclusion // "-") \($s.status)/\($s.conclusion // "-")"')
         [ -n "$jid" ] || continue
         sha="?"
-        if [ "$jst" = completed ] && [ "$logs" -lt "$INFRA_MAX_LOGS" ]; then
+        # a log whose commit assert did not succeed proves no commit, whatever it prints (the release driver's rule)
+        if [ "$jst" = completed ] && [ "$jassert" = completed/success ] && [ "$logs" -lt "$INFRA_MAX_LOGS" ]; then
             logs=$((logs + 1))
-            # stderr dropped: tested_sha stops reading at the sha, and curl reports the closed pipe
-            sha="$(api "$API/repos/$INFRA_REPO/actions/jobs/$jid/logs" "$INFRA_TOKEN" 2>/dev/null | tested_sha)"
+            sha="$(api "$API/repos/$INFRA_REPO/actions/jobs/$jid/logs" "$INFRA_TOKEN" | tested_sha)"
             [ -n "$sha" ] || sha="?"
         fi
         tsv "$id" "$att" "$jst" "$jcon" "$sha"
@@ -210,7 +231,7 @@ measure_dryrun() {
     [ -f "$root/Cargo.toml" ] || { printf 'not_measured\t%s has no Cargo.toml\n' "$root"; return; }
     main="$(cargo metadata --no-deps --format-version 1 --manifest-path "$root/Cargo.toml" 2>/dev/null \
         | jq -r '[.packages[] | select(.name == "aprender") | .version][0] // empty')"
-    reg="$(curl -fsSL --max-time 60 "$INDEX_URL" 2>/dev/null | jq -r 'select(.yanked | not) | .vers' | sort -V | tail -n 1)"
+    reg="$(curl -fsSL --max-time 60 "$INDEX_URL" 2>/dev/null | registry_newest)"
     if is_bumped "$main" "$reg"; then
         bash "$HERE/rc_publish_gate.sh" --verify "$root" >&2; rc=$?
         # a receipt, never a stop: which crates the tree is ahead of crates.io on
@@ -316,6 +337,9 @@ self_test() {
     d="$(fx_job "cleanroom-gpu" completed success "$T:success" | fx_run)"
     row gpu_no_called_job_is_not_measured not_measured "no job named" -- on "$d" judge_jobs "$GPU_PREFIX" "$GPU_ENV"
     row gpu_unparsable_list_is_not_measured not_measured "did not parse" -- on "not json" judge_jobs "$GPU_PREFIX" "$GPU_ENV"
+    d="$( { fx_job "$g" completed success "$T:success"
+            fx_job "b2-gpu at Cx / b2-gpu (aprender-gpu, yoga sm_89)" completed failure "$T:failure"; } | fx_run)"
+    row gpu_judges_only_its_own_caller_job green "all 1 job(s)" -- on "$d" judge_jobs "$GPU_PREFIX" "$GPU_ENV"
     # several called jobs (the assets shape): one red outranks a precondition, and the rest are counted
     d="$( { fx_job "$a / pv x86_64-unknown-linux-gnu on yoga" completed success 'Package archive:success'
             fx_job "$a / smoke apr (cpu) on yoga" completed success 'Download, verify checksum, run:success'; } | fx_run)"
@@ -339,6 +363,7 @@ self_test() {
     row cpu_retried_green_is_red red "attempt 2" -- on "$(tsv 9 2 completed success "$c")" judge_cpu "$c"
     row cpu_failure_is_red red "failure" -- on "$(tsv 9 1 completed failure "$c")" judge_cpu "$c"
     row cpu_timed_out_is_red red "timed_out" -- on "$(tsv 9 1 completed timed_out "$c")" judge_cpu "$c"
+    row cpu_startup_failure_is_red red "startup_failure" -- on "$(tsv 9 1 completed startup_failure "$c")" judge_cpu "$c"
     row cpu_cancelled_is_not_measured not_measured "ended cancelled" -- on "$(tsv 9 1 completed cancelled "$c")" judge_cpu "$c"
     row cpu_other_sha_is_not_measured not_measured "newest tested ${d:0:12}" -- on "$(tsv 9 1 completed success "$d")" judge_cpu "$c"
     row cpu_running_sweep_is_not_measured not_measured "still running" -- on "$(tsv 10 1 in_progress - '?'; tsv 9 1 completed success "$d")" judge_cpu "$c"
@@ -348,8 +373,12 @@ self_test() {
     row cpu_no_token_is_not_measured not_measured "INFRA_ACTIONS_READ" -- env -u INFRA_TOKEN bash "$SCRIPT_PATH" judge-cpu-measure "$c"
     o="$(printf '2026-10-04T02:28:41Z     repo:       aprender\n2026-10-04T02:28:41Z     tested-sha: %s\r\n' "$c" | tested_sha)"
     if [ "$o" = "$c" ]; then ok tested_sha_is_read_from_the_log "${c:0:12}"; else broke tested_sha_is_read_from_the_log "got: $o"; fi
-    o="$(printf '2026-10-04T02:28:41Z     repo:       trueno\n2026-10-04T02:28:41Z     tested-sha: %s\n' "$c" | tested_sha)"
-    if [ -z "$o" ]; then ok tested_sha_of_another_repo_is_ignored empty; else broke tested_sha_of_another_repo_is_ignored "got: $o"; fi
+    o="$(printf '2026-10-04T02:28:41Z     tested-sha: %s\n2026-10-04T02:28:42Z     tested-sha: %s\n' "$c" "$c" | tested_sha)"
+    if [ "$o" = "$c" ]; then ok tested_sha_repeated_record_is_one "${c:0:12}"; else broke tested_sha_repeated_record_is_one "got: $o"; fi
+    o="$(printf '2026-10-04T02:28:41Z     tested-sha: %s\n2026-10-04T02:28:42Z     tested-sha: %s\n' "$c" "$d" | tested_sha)"
+    if [ -z "$o" ]; then ok tested_sha_two_commits_prove_none empty; else broke tested_sha_two_commits_prove_none "got: $o"; fi
+    o="$(printf '2026-10-04T02:28:41Z     tested-sha: %s\n' "${c:0:12}" | tested_sha)"
+    if [ -z "$o" ]; then ok tested_sha_short_sha_proves_none empty; else broke tested_sha_short_sha_proves_none "got: $o"; fi
     # publish-dryrun
     row dryrun_green_on_a_bumped_tree green "green at 0.70.2" -- judge_dryrun 0 0.70.2 0.70.1
     row dryrun_defect_is_red red "publish defect" -- judge_dryrun 1 0.70.2 0.70.1
@@ -359,6 +388,10 @@ self_test() {
     row dryrun_compares_versions_not_strings green "0.70.10" -- judge_dryrun 0 0.70.10 0.70.9
     row dryrun_unread_registry_is_not_measured not_measured "index" -- judge_dryrun 0 0.70.2 ""
     row dryrun_not_run_is_not_measured not_measured "not run" -- judge_dryrun - 0.70.2 0.70.1
+    row dryrun_prerelease_of_a_published_version_is_not_measured not_measured "must be bumped" -- judge_dryrun 0 0.70.1-rc.1 0.70.1
+    row dryrun_prerelease_of_the_next_version_is_measured green "green at 0.70.2-rc.1" -- judge_dryrun 0 0.70.2-rc.1 0.70.1
+    o="$(printf '%s\n' '{"vers":"0.70.0","yanked":false}' '{"vers":"0.70.2","yanked":true}' '{"vers":"0.70.1","yanked":false}' | registry_newest)"
+    if [ "$o" = 0.70.1 ]; then ok registry_newest_skips_a_yanked_version 0.70.1; else broke registry_newest_skips_a_yanked_version "got: $o"; fi
     # emit: the only door to the outputs
     says emit_prints_the_verdict "cleanroom-gpu: green — why" -- on "$(tsv green why)" emit cleanroom-gpu
     says emit_turns_nonsense_into_not_measured "assets: not_measured — the judge printed no verdict" -- on "$(tsv pass 'looks fine')" emit assets
@@ -366,6 +399,11 @@ self_test() {
     tsv red defect | GITHUB_OUTPUT="$tmp/out" emit publish-dryrun > /dev/null
     if grep -qx 'verdict=red' "$tmp/out" 2>/dev/null && grep -qx 'reason=defect' "$tmp/out"; then ok emit_fills_github_output verdict=red
     else broke emit_fills_github_output "wrote: $(cat "$tmp/out" 2>/dev/null)"; fi
+    # a reason carrying a CR must not reach GITHUB_OUTPUT as a second record
+    tsv red "$(printf 'defect\rverdict=green')" | GITHUB_OUTPUT="$tmp/out2" emit publish-dryrun > /dev/null
+    if [ "$(grep -c $'\r' "$tmp/out2" 2>/dev/null)" = 0 ] && [ "$(grep -c '' "$tmp/out2")" = 2 ] && grep -qx 'verdict=red' "$tmp/out2"; then
+        ok emit_strips_a_cr_from_the_reason "2 records"
+    else broke emit_strips_a_cr_from_the_reason "wrote: $(tr '\r' '^' < "$tmp/out2" 2>/dev/null)"; fi
     says measure_refuses_an_unknown_lane "caller error" -- bash "$SCRIPT_PATH" measure preflight
     # the wiring of the real workflow, and three miswirings it must refuse
     if o="$(wiring "$WORKFLOW")"; then ok workflow_wiring "$o"; else broke workflow_wiring "$o"; fi
@@ -388,10 +426,16 @@ m07_unbumped_main_is_measured s/    if ! is_bumped "$main" "$reg"; then/    if f
 m08_gate_env_is_green s/        0) printf .green\\trc_publish_gate/        0|2) printf '"'"'green\\trc_publish_gate/
 m09_emit_passes_any_word s/        green|red|not_measured) ;;/        *) ;;/
 m10_timeout_in_tests_is_not_a_failure s/ or .conclusion == "cancelled")/)/
-m11_versions_compared_as_strings s/| sort -V | tail -n 1)" = "$1" \]/| sort | tail -n 1)" = "$1" ]/
+m11_versions_compared_as_strings s/| sort -V | tail -n 1)" = "$m" \]/| sort | tail -n 1)" = "$m" ]/
 m12_wiring_ignores_the_lane_gate s/ || bad="$bad $lane(if)"/ || true/
 m13_wiring_ignores_green_only_exit s/ || bad="$bad exit(green-only)"/ || true/
-m14_wiring_ignores_the_job_name s/ || bad="$bad $lane(name)"/ || true/'
+m14_wiring_ignores_the_job_name s/ || bad="$bad $lane(name)"/ || true/
+m15_prerelease_counts_as_bumped s/%%\[-+\]\*}" r=/}" r=/
+m16_yanked_version_counts s/select(.yanked | not) | //
+m17_startup_failure_is_not_red s/ || $4 == "startup_failure")/)/
+m18_prefix_without_its_separator s/startswith($p + " \/ ")/startswith($p)/
+m19_reason_keeps_a_cr s/tr -d .\\r\\n.)"/tr -d "\\n")"/
+m20_first_of_two_tested_shas_counts s/| sort -u)"/| sort -u | head -n 1)"/'
 
 mutants() {
     local tmp pass=0 fail=0 name expr o rc m
