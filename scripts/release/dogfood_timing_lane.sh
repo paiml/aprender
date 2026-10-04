@@ -71,7 +71,7 @@ judge() {
         row "$night	${r##*/}	-	-	-	NOT_MEASURED"; return 2
     fi
     rc=0; out="$(DOGFOOD_ROW_ORDER_ENFORCE=0 bash "$4" --timing "${r%.json}.timing.tsv" 2>&1)" || rc=$?
-    cheap="$(printf '%s\n' "$out" | sed -n 's/^row time: [0-9]* rows; cheap tier ([0-9]* rows) closed at +\([0-9]*\)s of +\([0-9]*\)s.*$/\1 \2/p' | head -n 1)"
+    cheap="$(printf '%s\n' "$out" | sed -n 's/^row time: [0-9]* rows; cheap tier ([0-9]* rows) closed at +\([0-9]\+\)s of +\([0-9]\+\)s.*$/\1 \2/p' | head -n 1)"
     if [ "$rc" -ne 0 ] || [ -z "$cheap" ]; then
         printf 'DOGFOOD-TIMING NOT_MEASURED night=%s: the checker could not read the row times (rc=%s): %s\n' "$night" "$rc" "$(printf '%s' "$out" | head -n 1 | cut -c1-120)"
         row "$night	${r##*/}	-	-	-	NOT_MEASURED"; return 2
@@ -230,6 +230,12 @@ self_test() {
     row_case a_checker_verdict_that_is_neither_pass_nor_report_is_not_measured 2 "printed neither PASS nor REPORT" "GREEN" -- \
         bash "$S" --receipts "$tmp/r1" --history "$H" --now "$NOW" --checker "$tmp/odd.sh"
     # caller
+    printf 'echo "row time: 3 rows; cheap tier (2 rows) closed at +s of +s"; echo PASS; exit 0\n' > "$tmp/blank.sh"
+    row_case a_checker_line_with_no_numbers_is_not_measured 2 "NOT_MEASURED night=2026-10-11: the checker could not read the row times" "BASELINE" -- \
+        bash "$S" --receipts "$tmp/r1" --history "$tmp/h21" --now "$NOW" --checker "$tmp/blank.sh"
+    mkdir -p "$tmp/idir"
+    row_case an_unwritable_inbox_is_a_caller_error 3 "DOGFOOD-TIMING" "" -- \
+        bash "$S" --receipts "$tmp/r1" --history "$tmp/h22" --now "$NOW" --checker "$C" --inbox "$tmp/idir"
     row_case a_night_with_no_receipt_is_recorded 0 "2026-10-11	-	-	-	-	NOT_MEASURED" "" -- \
         bash -c 'tail -n 1 "$1"' _ "$tmp/h11"
     row_case a_night_with_no_checker_is_recorded 0 "2026-10-11	-	-	-	-	NOT_MEASURED" "" -- \
@@ -278,7 +284,9 @@ m15_budget_not_rounded_up	s/ + 99) \/ 100)/) \/ 100)/
 m16_checker_pass_trusted_over_budget	s/^           \[ "\$cheap" -le "\$b" \] || {/           true || {/
 m17_history_write_failure_ignored	/DT the history/s/exit 3/exit 0/
 m18_night_without_a_receipt_not_recorded	s/^        row "\$night\t-\t/        : "$night\t-\t/
-m19_unstamped_receipt_judged	s/receipt-\[0-9\]{8}T\[0-9\]{6}Z/receipt-.*/'
+m19_unstamped_receipt_judged	s/receipt-\[0-9\]{8}T\[0-9\]{6}Z/receipt-.*/
+m20_empty_numbers_read_as_a_time	s/9\]\\+\\)s/9]*\\)s/g
+m21_inbox_write_failure_ignored	/DT the inbox %s could not be written/s/exit 3/exit 0/'
 
 mutants() {
     local tmp name expr killed=0 total=0 errors=0
@@ -325,7 +333,7 @@ main() {
         { printf 'DT the history %s could not be written: this night is not recorded\n' "$history" >&2; exit 3; }
     fi
     if [ -n "$inbox" ]; then
-        printf '%s\n' "${line:0:299}" >> "$inbox"
+        printf '%s\n' "${line:0:299}" >> "$inbox" 2>/dev/null || { printf 'DT the inbox %s could not be written\n' "$inbox" >&2; exit 3; }
         grep -qxF -- "${line:0:299}" "$inbox" || { printf 'DT the inbox line did not read back\n' >&2; exit 3; }
     fi
     exit "$rc"
