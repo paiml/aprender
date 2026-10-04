@@ -157,7 +157,10 @@ mutants() {
     while IFS="$(printf '\t')" read -r name expr; do
         [ -n "$name" ] || continue
         total=$((total + 1))
-        { head -n "$((cut - 1))" "$SCRIPT_PATH" | sed -e "$expr"; tail -n "+$cut" "$SCRIPT_PATH"; } > "$tmp/release/nightly_c_checkout.sh"
+        if ! head -n "$((cut - 1))" "$SCRIPT_PATH" | sed -e "$expr" > "$tmp/top"; then
+            printf 'ERROR %-32s sed rejected the patch (an error, never a kill)\n' "$name"; errors=$((errors + 1)); continue
+        fi
+        { cat "$tmp/top"; tail -n "+$cut" "$SCRIPT_PATH"; } > "$tmp/release/nightly_c_checkout.sh"
         if cmp -s "$SCRIPT_PATH" "$tmp/release/nightly_c_checkout.sh"; then
             printf 'ERROR %-32s the patch did not apply (an error, never a survivor)\n' "$name"; errors=$((errors + 1)); continue
         fi

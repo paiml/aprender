@@ -34,7 +34,9 @@ chain_cmt	1	  # workflow_run:\n  #   workflows: [\"Nightly pick\"]\n  #   types:
 chain_under_other_key	1	  workflow_dispatch:\n    workflows: [\"Nightly pick\"]\n    types: [completed]\n
 comment_col0_in_on	0	# a note at column 0 inside on:\n  schedule:\n    - cron: '1 1 * * *'\n
 schedule_after_on	1	  workflow_dispatch:\njobs:\n  schedule:\n    - cron: '1 1 * * *'\n
-chain_nested_deeper	1	  workflow_run:\n    types: [completed]\n    x:\n      workflows: [\"Nightly pick\"]\n"
+chain_nested_deeper	1	  workflow_run:\n    types: [completed]\n    x:\n      workflows: [\"Nightly pick\"]\n
+cron_dash_at_key_indent	0	  schedule:\n  - cron: '0 1 * * *'\n
+cron_dash_at_key_indent_empty	1	  schedule:\n  - cron: ''\n"
 
 table() { # AWK-FILE -> prints rows, returns 1 when any is wrong
     local awkf="$1" t name want trig rc bad=0 n=0
@@ -59,7 +61,8 @@ m05_on_never_ends	/^on && ind(\$0) == 0 { on = 0 }$/d
 m06_empty_cron	s/\["\\047\]?\[^\[:space:\],}"\\047#\]/./
 m07_no_flow_list	/^                if (sc && hascron(\$0)) cron = 1$/d
 m08_no_flow_item	s/- \[{\]?\[\[:space:\]\]\*cron:/- cron:/
-m09_any_indent	s/wr && ind(\$0) == 4 && \/^ +workflows:/wr \&\& \/workflows:/'
+m09_any_indent	s/wr && ind(\$0) == 4 && \/^ +workflows:/wr \&\& \/workflows:/
+m10_dash_is_a_key	s/^ind(\$0) == 2 && !\/^  - \/ {/ind(\$0) == 2 {/'
 
 mutants() {
     local t name expr killed=0 total=0 errors=0
@@ -67,7 +70,7 @@ mutants() {
     while IFS="$(printf '\t')" read -r name expr; do
         [ -n "$name" ] || continue
         total=$((total + 1))
-        sed -e "$expr" "$AWK_SRC" > "$t/m.awk"
+        if ! sed -e "$expr" "$AWK_SRC" > "$t/m.awk"; then printf 'ERROR %-24s sed rejected the patch\n' "$name"; errors=$((errors + 1)); continue; fi
         if cmp -s "$AWK_SRC" "$t/m.awk"; then printf 'ERROR %-24s the patch did not apply\n' "$name"; errors=$((errors + 1)); continue; fi
         if table "$t/m.awk" > "$t/out" 2>&1; then printf 'SURVIVED %s\n' "$name"
         else killed=$((killed + 1)); printf 'killed   %-24s %s\n' "$name" "$(grep -c -e '^RED ' "$t/out")"; fi

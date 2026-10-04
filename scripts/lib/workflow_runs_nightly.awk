@@ -8,7 +8,7 @@
 # Exit 1 otherwise: no on: block, `schedule: []`, a schedule with no cron, a chain from another workflow.
 # Comment lines are ignored, so a commented-out trigger is no trigger. A cron is accepted in the forms the YAML
 # reader of the old rule accepted: `- cron: X`, `- {cron: X}` and `schedule: [{cron: X}]`; an empty or quoted-empty
-# value is no cron.
+# value is no cron. A sequence item may sit at the key's own indent (`  schedule:` then `  - cron: X`).
 #
 #   awk -f scripts/lib/workflow_runs_nightly.awk WORKFLOW.yml
 function ind(s) { match(s, /^ */); return RLENGTH }
@@ -24,7 +24,7 @@ function hascron(s) { return s ~ /cron:[[:space:]]*["\047]?[^[:space:],}"\047#]/
 /^[[:space:]]*(#|$)/ { next }
 on && ind($0) == 0 { on = 0 }
 !on { next }
-ind($0) == 2 { k = $0; sub(/^ +/, "", k); sub(/:.*/, "", k); sc = (k == "schedule"); wr = (k == "workflow_run")
+ind($0) == 2 && !/^  - / { k = $0; sub(/^ +/, "", k); sub(/:.*/, "", k); sc = (k == "schedule"); wr = (k == "workflow_run")
                 if (sc && hascron($0)) cron = 1
                 next }
 sc && /^[[:space:]]+- [{]?[[:space:]]*cron:/ && hascron($0) { cron = 1 }

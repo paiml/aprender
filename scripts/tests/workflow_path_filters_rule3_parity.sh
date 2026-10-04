@@ -5,12 +5,12 @@
 # --base. The rule-3 verdicts must agree on every workflow except the ones EXPECTED below, and those must move
 # one way only: RED under the old rule, green under the new, because they chain from "Nightly pick".
 #
-#   bash scripts/tests/workflow_path_filters_rule3_parity.sh [--base REF]    (default origin/main)
+#   bash scripts/tests/workflow_path_filters_rule3_parity.sh [--base REF]    (default 316dee2cd4, main before T44)
 # Exit: 0 parity holds; 1 RED; 2 not_measured (no python3 with yaml: both sides dump filters with it); 3 caller error.
 set -uo pipefail
 
 ROOT="$(cd -- "$(dirname -- "${BASH_SOURCE[0]}")/../.." && pwd)"
-BASE=origin/main
+BASE=316dee2cd4   # main before T44: the old rule 3 lives there. Once T44 is on main, origin/main has no old side
 case "${1:-}" in
     --base) BASE="${2:-}"; [ -n "$BASE" ] || { echo "caller error: --base REF" >&2; exit 3; } ;;
     '') ;;
@@ -51,6 +51,7 @@ fx cron_outside_on "  workflow_dispatch:\njobs:\n  a:\n    schedule:\n      - cr
 fx flow_list "  schedule: [{cron: '1 1 * * *'}]\n"
 fx flow_item "  schedule:\n    - {cron: \"1 1 * * *\"}\n"
 fx flow_empty "  schedule: [{cron: ''}]\n"
+fx cron_dash0 "  schedule:\n  - cron: '0 1 * * *'\n"
 for f in "$ROOT"/.github/workflows/*.yml; do cp "$f" "$W/head-$(basename -- "$f")"; done
 git -C "$ROOT" ls-tree --name-only "$BASE" .github/workflows/ | grep -e '\.yml$' | while IFS= read -r p; do
     git -C "$ROOT" show "$BASE:$p" > "$W/base-$(basename -- "$p")"
