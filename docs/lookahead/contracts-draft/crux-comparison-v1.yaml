@@ -2,12 +2,12 @@
 # Checker: scripts/lookahead/crux_gap_check.py, an external check run by hand. No build,
 # test, gate or CI job invokes it. Landing it means a Rust rule in
 # crates/aprender-contracts/src/schema/ (its own ticket). Before this file moves into
-# contracts/, its self-test cases port to Rust with fixtures/crux_gap/ as data, plus the
-# planted cases the qa_gate proposes.
+# contracts/, its self-test cases port to Rust with fixtures/crux_gap/ as data
+# (fixtures/crux_gap/cases.json is the case table).
 metadata:
   id: crux-comparison-v1
   kind: schema
-  version: "0.2.0-draft"
+  version: "0.3.0-draft"
   status: draft
   description: >
     Optional `crux_comparison:` block on a contracts/crux-*.yaml contract. It holds an
@@ -66,7 +66,7 @@ falsification_tests:
     fixture: fixtures/crux_gap/G2-partial-comparator.yaml
     expect: 2
     prediction: "The unsloth arm's comparator lacks env_sha256 and has the other four fields: the checker exits 2 with one G2 line for unsloth and no other line."
-    test: "crux_gap_check.py --self-test, case G2-partial-comparator (env_sha256 is the only field planted missing; see qa_gate)"
+    test: "crux_gap_check.py --self-test, case G2-partial-comparator (the other four fields: FALSIFY-CRUXGAP-018 to -021)"
     if_fails: "comparator_full wants some field, not all five, or does not check env_sha256."
   - id: FALSIFY-CRUXGAP-007
     rule: "G3: an unrunnable-hermetically arm is report-only and backs no claim (S-12)"
@@ -80,7 +80,7 @@ falsification_tests:
     fixture: fixtures/crux_gap/G4-conceded-speed.yaml
     expect: 2
     prediction: "The unsloth arm is conceded and the metric is train_step_s: the checker exits 2 with the single line 'G4 unsloth: conceded arm on speed metric train_step_s'. The two arms that are not conceded get no G4 line."
-    test: "crux_gap_check.py --self-test, case G4-conceded-speed (train_step_s is the only speed metric planted; see qa_gate)"
+    test: "crux_gap_check.py --self-test, case G4-conceded-speed (the other five speed metrics: FALSIFY-CRUXGAP-022 to -026; the conceded-only filter: FALSIFY-CRUXGAP-017)"
     if_fails: "G4 lets a conceded arm race on speed, or flags every arm of a speed metric."
   - id: FALSIFY-CRUXGAP-009
     rule: "G5: an arm whose quant differs from the subject's is a labelled separate arm (R-17, S-14)"
@@ -138,6 +138,76 @@ falsification_tests:
     prediction: "A block with arms [] and gap_effect closes: the checker exits 2 with the single line 'G0 crux_comparison has no arms (vacuous)'."
     test: "crux_gap_check.py --self-test, case G0-no-arms"
     if_fails: "The per-arm rules pass vacuously over no arms, so a claim stands with nothing measured."
+  - id: FALSIFY-CRUXGAP-017
+    rule: "control: a speed metric with no conceded arm is accepted (G4 flags conceded arms only)"
+    fixture: fixtures/crux_gap/control-speed-not-conceded.yaml
+    expect: 0
+    prediction: "The control-closes arms, none conceded, with metric ttft_ms (lower is better) going from 0.02 to 0.015 and gap_effect closes: the checker exits 0 and prints no violation."
+    test: "crux_gap_check.py --self-test, case control-speed-not-conceded"
+    if_fails: "G4 flags every arm of a speed metric, not only the conceded ones, so no speed comparison can pass."
+  - id: FALSIFY-CRUXGAP-018
+    rule: "G2: a comparator without command is not full"
+    fixture: fixtures/crux_gap/G2-comparator-no-command.yaml
+    expect: 2
+    prediction: "The unsloth arm's comparator lacks command and has the other four fields: the checker exits 2 with one G2 line for unsloth and no other line."
+    test: "crux_gap_check.py --self-test, case G2-comparator-no-command"
+    if_fails: "command is not a required comparator field, so a claim can rest on a run with no recorded command line."
+  - id: FALSIFY-CRUXGAP-019
+    rule: "G2: a comparator without version is not full"
+    fixture: fixtures/crux_gap/G2-comparator-no-version.yaml
+    expect: 2
+    prediction: "The unsloth arm's comparator lacks version and has the other four fields: the checker exits 2 with one G2 line for unsloth and no other line."
+    test: "crux_gap_check.py --self-test, case G2-comparator-no-version"
+    if_fails: "version is not a required comparator field, so the tool build behind a measured number goes unrecorded."
+  - id: FALSIFY-CRUXGAP-020
+    rule: "G2: a comparator without artifact_sha256 is not full"
+    fixture: fixtures/crux_gap/G2-comparator-no-artifact-sha256.yaml
+    expect: 2
+    prediction: "The unsloth arm's comparator lacks artifact_sha256 and has the other four fields: the checker exits 2 with one G2 line for unsloth and no other line."
+    test: "crux_gap_check.py --self-test, case G2-comparator-no-artifact-sha256"
+    if_fails: "artifact_sha256 is not a required comparator field, so a run need not say which artifact it measured."
+  - id: FALSIFY-CRUXGAP-021
+    rule: "G2: a comparator without log_path is not full"
+    fixture: fixtures/crux_gap/G2-comparator-no-log-path.yaml
+    expect: 2
+    prediction: "The unsloth arm's comparator lacks log_path and has the other four fields: the checker exits 2 with one G2 line for unsloth and no other line."
+    test: "crux_gap_check.py --self-test, case G2-comparator-no-log-path"
+    if_fails: "log_path is not a required comparator field, so a claim can rest on a run that left no log to audit."
+  - id: FALSIFY-CRUXGAP-022
+    rule: "G4: ttft_ms is a speed metric"
+    fixture: fixtures/crux_gap/G4-conceded-ttft-ms.yaml
+    expect: 2
+    prediction: "The unsloth arm is conceded and the metric is ttft_ms (lower is better, 0.02 to 0.015, closes): the checker exits 2 with the single line 'G4 unsloth: conceded arm on speed metric ttft_ms'."
+    test: "crux_gap_check.py --self-test, case G4-conceded-ttft-ms"
+    if_fails: "ttft_ms is not in the speed set, so a conceded arm races on time to first token."
+  - id: FALSIFY-CRUXGAP-023
+    rule: "G4: itl_ms is a speed metric"
+    fixture: fixtures/crux_gap/G4-conceded-itl-ms.yaml
+    expect: 2
+    prediction: "The unsloth arm is conceded and the metric is itl_ms (lower is better, 0.02 to 0.015, closes): the checker exits 2 with the single line 'G4 unsloth: conceded arm on speed metric itl_ms'."
+    test: "crux_gap_check.py --self-test, case G4-conceded-itl-ms"
+    if_fails: "itl_ms is not in the speed set, so a conceded arm races on inter-token latency."
+  - id: FALSIFY-CRUXGAP-024
+    rule: "G4: e2e_ms is a speed metric"
+    fixture: fixtures/crux_gap/G4-conceded-e2e-ms.yaml
+    expect: 2
+    prediction: "The unsloth arm is conceded and the metric is e2e_ms (lower is better, 0.02 to 0.015, closes): the checker exits 2 with the single line 'G4 unsloth: conceded arm on speed metric e2e_ms'."
+    test: "crux_gap_check.py --self-test, case G4-conceded-e2e-ms"
+    if_fails: "e2e_ms is not in the speed set, so a conceded arm races on end-to-end latency."
+  - id: FALSIFY-CRUXGAP-025
+    rule: "G4: load_ms is a speed metric"
+    fixture: fixtures/crux_gap/G4-conceded-load-ms.yaml
+    expect: 2
+    prediction: "The unsloth arm is conceded and the metric is load_ms (lower is better, 0.02 to 0.015, closes): the checker exits 2 with the single line 'G4 unsloth: conceded arm on speed metric load_ms'."
+    test: "crux_gap_check.py --self-test, case G4-conceded-load-ms"
+    if_fails: "load_ms is not in the speed set, so a conceded arm races on load time."
+  - id: FALSIFY-CRUXGAP-026
+    rule: "G4: tok_s is a speed metric"
+    fixture: fixtures/crux_gap/G4-conceded-tok-s.yaml
+    expect: 2
+    prediction: "The unsloth arm is conceded and the metric is tok_s (higher is better, 0.95 to 0.97, closes): the checker exits 2 with the single line 'G4 unsloth: conceded arm on speed metric tok_s'."
+    test: "crux_gap_check.py --self-test, case G4-conceded-tok-s"
+    if_fails: "tok_s is not in the speed set, so a conceded arm races on throughput."
 qa_gate:
   id: F-CRUXGAP-QA-001
   name: A crux_comparison block is accepted only when every rule holds
@@ -145,18 +215,17 @@ qa_gate:
     Every planted case exits with its expected code. For a RED case the self-test also
     needs one violation that starts with the planted rule (G0 to G8); it does not check
     that no other rule fires. On 2026-10-04 each RED case printed only lines of its own
-    rule and each control printed none. Three parts of the rules have no planted case:
-    four of the five comparator fields (only env_sha256 is planted missing), five of the
-    six speed metrics (only train_step_s is planted), and G4's conceded filter (no
-    control has a speed metric, so flagging an arm that is not conceded goes unseen).
-    See falsification.
+    rule and each control printed none. Each of the five comparator fields is planted
+    missing in its own case, each of the six speed metrics has its own conceded case,
+    and a control with a speed metric and no conceded arm holds G4's conceded-only
+    filter. See falsification.
   checks:
     - planted_case_exits_as_expected
     - red_case_names_its_own_rule
     - red_case_prints_only_its_own_rule
     - control_accepted
-  pass_criteria: "crux_gap_check.py --self-test prints 'self-test: 16/16 ok', and each RED case prints only lines of its own rule"
-  falsification: "Measured 2026-10-04 with 30 in-memory mutants: one per rule check, exemption, comparator field and speed metric, plus G6's direction and its two none cases, comparator all to any, and the unrunnable token. 20 are killed, 2 of them by a crash, and 10 survive the self-test: dropping command, version, artifact_sha256 or log_path from the required comparator fields (4); dropping ttft_ms, itl_ms, e2e_ms, load_ms or tok_s from the speed metrics (5); and flagging every arm of a speed metric, not only the conceded ones (1). PROPOSE for the Rust port: a table of planted cases, one per comparator field (5) and one per speed metric (6), and a control with a speed metric and no conceded arm that must exit 0."
-mutation_record: "15/15 sed mutants killed by --self-test (2026-10-03). 10 of 30 in-memory mutants survive (2026-10-04), recorded under qa_gate."
+  pass_criteria: "crux_gap_check.py --self-test prints 'self-test: N/N ok', where N is the number of rows in fixtures/crux_gap/cases.json (26 on 2026-10-04), and each RED case prints only lines of its own rule"
+  falsification: "Measured 2026-10-04 with 30 in-memory mutants: one per rule check, exemption, comparator field and speed metric, plus G6's direction and its two none cases, comparator all to any, and the unrunnable token. Against the 16 cases of draft 0.2.0, 20 were killed (2 by a crash) and 10 survived: dropping command, version, artifact_sha256 or log_path from the comparator fields (4), dropping ttft_ms, itl_ms, e2e_ms, load_ms or tok_s from the speed metrics (5), and flagging every arm of a speed metric (1). Draft 0.3.0 plants one case for each (FALSIFY-CRUXGAP-017 to -026), and all 30 mutants are killed, 2 of them by a crash (11:51Z). Open for the Rust port: the self-test checks that the planted rule fires, not that no other rule does; and a G2 line lists all five comparator fields, not the missing ones, so the five G2 field cases print the same line."
+mutation_record: "15/15 sed mutants killed by --self-test (2026-10-03). 30 in-memory mutants (2026-10-04): 10 survived the 16-case self-test; the 26-case self-test kills all 30, 2 by a crash. Recorded under qa_gate."
 initial_state: "origin/main 316dee2cd4: none of the 318 contracts/crux-*.yaml carries a crux_comparison block or a gap_effect (2026-10-04). Pointed at one, e.g. crux-A-01-v1.yaml, the checker exits 2 through G0."
-verification: "External check, by hand: python3 scripts/lookahead/crux_gap_check.py --self-test  # 2026-10-04 11:24Z: self-test: 16/16 ok"
+verification: "External check, by hand: python3 scripts/lookahead/crux_gap_check.py --self-test  # 2026-10-04 11:51Z: self-test: 26/26 ok"

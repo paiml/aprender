@@ -15,6 +15,11 @@
   "expect": 0
  },
  {
+  "id": "control-speed-not-conceded",
+  "fixture": "control-speed-not-conceded.yaml",
+  "expect": 0
+ },
+ {
   "id": "G1-vocab",
   "fixture": "G1-vocab.yaml",
   "expect": 2,
@@ -33,6 +38,30 @@
   "rule": "G2"
  },
  {
+  "id": "G2-comparator-no-command",
+  "fixture": "G2-comparator-no-command.yaml",
+  "expect": 2,
+  "rule": "G2"
+ },
+ {
+  "id": "G2-comparator-no-version",
+  "fixture": "G2-comparator-no-version.yaml",
+  "expect": 2,
+  "rule": "G2"
+ },
+ {
+  "id": "G2-comparator-no-artifact-sha256",
+  "fixture": "G2-comparator-no-artifact-sha256.yaml",
+  "expect": 2,
+  "rule": "G2"
+ },
+ {
+  "id": "G2-comparator-no-log-path",
+  "fixture": "G2-comparator-no-log-path.yaml",
+  "expect": 2,
+  "rule": "G2"
+ },
+ {
   "id": "G3-unrunnable-claims",
   "fixture": "G3-unrunnable-claims.yaml",
   "expect": 2,
@@ -41,6 +70,36 @@
  {
   "id": "G4-conceded-speed",
   "fixture": "G4-conceded-speed.yaml",
+  "expect": 2,
+  "rule": "G4"
+ },
+ {
+  "id": "G4-conceded-ttft-ms",
+  "fixture": "G4-conceded-ttft-ms.yaml",
+  "expect": 2,
+  "rule": "G4"
+ },
+ {
+  "id": "G4-conceded-itl-ms",
+  "fixture": "G4-conceded-itl-ms.yaml",
+  "expect": 2,
+  "rule": "G4"
+ },
+ {
+  "id": "G4-conceded-e2e-ms",
+  "fixture": "G4-conceded-e2e-ms.yaml",
+  "expect": 2,
+  "rule": "G4"
+ },
+ {
+  "id": "G4-conceded-load-ms",
+  "fixture": "G4-conceded-load-ms.yaml",
+  "expect": 2,
+  "rule": "G4"
+ },
+ {
+  "id": "G4-conceded-tok-s",
+  "fixture": "G4-conceded-tok-s.yaml",
   "expect": 2,
   "rule": "G4"
  },
