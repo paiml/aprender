@@ -55,11 +55,31 @@ judge() {
         echo "NOT_MEASURED $PROG: no version readable from Cargo.toml at $label ${t:0:12}"; echo "bump=none between=NA"; return 2
     fi
     if [ "$tv" = "$v" ]; then
+        local cands nm="" sh
+        # git log failing is Unknown, not "no bump commit"
+        if ! cands=$(git -C "$root" log --first-parent --format=%H -G'^version[[:space:]]*=' "$t" -- Cargo.toml 2>/dev/null); then
+            echo "NOT_MEASURED $PROG: the history under $label ${t:0:12} could not be read"; echo "bump=none between=NA"; return 2
+        fi
+        sh=$(git -C "$root" rev-parse --path-format=absolute --git-path shallow 2>/dev/null)
         while IFS= read -r c; do
+            [ -n "$c" ] || continue
             [ "$(ws_version "$root" "$c")" = "$v" ] || continue
-            pv=$(ws_version "$root" "$c^")
+            if git -C "$root" rev-parse -q --verify "$c^{commit}^" > /dev/null 2>&1; then
+                pv=$(ws_version "$root" "$c^")
+                # an empty parent version is "not V" only when the parent has no Cargo.toml at all
+                if [ -z "$pv" ] && git -C "$root" cat-file -e "$c^:Cargo.toml" 2>/dev/null; then
+                    nm="the parent of ${c:0:12} has a Cargo.toml with no readable version"; break
+                fi
+            elif [ -n "$sh" ] && [ -f "$sh" ] && grep -qx "$c" "$sh"; then
+                nm="${c:0:12} is a shallow-clone boundary: its parent is not in this checkout"; break
+            else
+                pv=""   # a true root commit: nothing before it carried V
+            fi
             [ "$pv" != "$v" ] && { b=$c; break; }   # bump: newest V-commit whose parent is not V
-        done < <(git -C "$root" log --first-parent --format=%H -G'^version *= *"' "$t" -- Cargo.toml 2>/dev/null)
+        done <<< "$cands"
+        if [ -n "$nm" ]; then
+            echo "NOT_MEASURED $PROG: $nm"; echo "bump=none between=NA"; return 2
+        fi
     fi
     if [ -z "$b" ]; then
         echo "REFUSE $PROG: no bump commit -- $label ${t:0:12} carries version $tv, and no commit under it bumps to $v"
@@ -152,6 +172,13 @@ self_test() {
     mkrepo "$d/r9" && setv "$d/r9" 1.2.3 bump \
         && EXTRA=$'\n[workspace.dependencies.x]\nversion = "9.9.9"\n' setv "$d/r9" 1.2.3 dep-after && git -C "$d/r9" tag v1.2.3
     run 1.2.3 --root "$d/r9"; check version_line_edit_after_bump_refuses 1 "between=1"
+    # 10. a shallow clone whose boundary is the tag commit cannot see the parent: NOT_MEASURED, never PASS
+    git clone -q --depth 1 --no-local "file://$d/r2" "$d/r10" 2>/dev/null && git -C "$d/r10" fetch -q --depth 1 origin tag v1.2.3 2>/dev/null
+    run 1.2.3 --root "$d/r10" --commit HEAD; check shallow_boundary_not_measured 2 "shallow-clone boundary"
+    # 11. a parent manifest with no readable version is Unknown, not "not V"
+    mkrepo "$d/r11" && printf '[workspace]\nmembers = []\n' > "$d/r11/Cargo.toml" && git -C "$d/r11" commit -qam nover \
+        && setv "$d/r11" 1.2.3 bump && git -C "$d/r11" tag v1.2.3
+    run 1.2.3 --root "$d/r11"; check unreadable_parent_version_not_measured 2 "no readable version"
 
     if [ -z "$quiet" ]; then
         # MUTANTS of THIS file: each removes one refusal (or the exact bump) and must turn a row red
@@ -163,6 +190,8 @@ self_test() {
                    'unreadable version arg|is not a version"; echo "bump=none between=NA"; return 2|"; echo "bump=none between=0"; return 0' \
                    'unreadable manifest|$label ${t:0:12}"; echo "bump=none between=NA"; return 2|"; echo "bump=none between=0"; return 0' \
                    'exact bump (first match, as the pickaxe)|{ b=$c; break; }|{ b=$c; }' \
+                   'shallow boundary (read as a root)|nm="${c:0:12} is a shallow-clone boundary: its parent is not in this checkout"; break|pv=""' \
+                   'unreadable parent (read as not V)|nm="the parent of ${c:0:12} has a Cargo.toml with no readable version"; break|:' \
                    'parent check (any V-commit is the bump)|[ "$pv" != "$v" ] && |'; do
             IFS='|' read -r name a1 b1 <<< "$row"; n=$((n + 1))
             case $src in *"$a1"*) ;; *) echo "  FAIL mutant $name: anchor moved, re-anchor it"; fail=1; continue ;; esac
