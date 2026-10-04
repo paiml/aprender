@@ -76,7 +76,7 @@ equations:
         dot_e(W[r], x_e[t]) returns Ok(v), and |matvec_e(W, x)[t][r] - v| < 1e-3 * max(1, |v|)
       A..E are the decode entries, with m_e = 1. F and G are the prefill (multirow) entries, with m_e = 3 and token-major output.
       dot_e is the dispatcher the entry calls per row: fused_q4k_dot_simd (A, B), fused_q4k_q8k_dot_simd (C, D, G), fused_q6k_dot_simd (E, F).
-      x_e[t] is token t for the f32 entries, and its Q8_K quantization (quantize_activations_q8k_into, mod.rs:241) for C, D and G.
+      x_e[t] is token t for the f32 entries, and its Q8_K quantization (quantize_activations_q8k_into, quantize/mod.rs:241) for C, D and G.
     domain: 'every output row of a decode matvec, and of each token of a prefill multirow matmul, at production row lengths, on aarch64'
     codomain: bool
     preconditions:
@@ -303,3 +303,4 @@ verification_summary:
   tested: 0
   status: proposed
   notes: 'Draft by la-73 (L3). No ticket yet; tests land with R3. L25 review 2026-10-03 at main 316dee2cd4: orphan-file site, fixture f16/scale/magnitude/multi-block preconditions, unreachable widen fallback, committed golden, C4 leg decode positions and ref path (NEON-Q4K-006, -007). NEON-Q4K-008 (2026-10-03): every CPU matvec turns a dot Err into a 0.0 row, so each decode matvec row is checked against its own dot at production row lengths. Prefill entries F and G (2026-10-03): the multirow kernels swallow a dot Err too (generic_matvec.rs:239, or the row loop of C per token). No C4 run calls them at 316dee2cd4, and the prefill bit-identity tests cannot see a swallowed Err, so 008 covers them before the batched prefill is wired. Item (c) 2026-10-03: the C4 leg meets R1 BPM-012 (now per tensor, arch ignored) through dispatch honesty, not the second machine; the C4 leg reaches A, B and E only. Item (d) 2026-10-03: neon_scalar_parity bounds |neon - scalar| by 2 * gamma(K) * S over the row''s terms (Higham 2002, Lemma 3.1) in place of 1e-3 * max(1, |dot|), so value parity runs at the production row lengths 8 and 36; the magnitude precondition gives way to a masked sweep with a power guard. Item (e) 2026-10-03: c4_default_route_info reports the gx10 default route (Q4_K on Q8_K activations) as an info row only, per RQ-5: r1 cos(C4 default, C0 fp32_act reference), r2 cos(C0 default, reference), r3 cos(C4 default, C0 default), measured only on a proven route, one bound run triple and consistent angles (NEON-Q4K-009). Dense Qwen3 never reaches D in forward_single_with_cache; the earlier plan said it did.'
+# Paths: `results.rs` = `crates/aprender-serve/src/gguf/inference/forward/results.rs`, `quantize/mod.rs` = `crates/aprender-serve/src/quantize/mod.rs`

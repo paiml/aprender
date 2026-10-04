@@ -60,7 +60,7 @@ These are bodies ready to file, one per bundle in `falsifier-landing-map.md`.
 **Refs** #3999 (C4 E1/E2). Contract: `neon-q4k-q6k-v1` (draft). Skeletons: `docs/lookahead/0.73/R3-test-skeletons.md`.
 
 **Scope**
-- NEON arms in the three live dispatchers: `fused_k.rs:193`, `fused_q5k_q6k.rs:118`, and `q4k_dot_avx2.rs:338` (compiled through `include!` at `fused_k.rs:370`).
+- NEON arms in the three live dispatchers: `fused_k.rs:193`, `quantize/fused_q5k_q6k.rs:118`, and `q4k_dot_avx2.rs:338` (compiled through `include!` at `fused_k.rs:370`).
 - On gx10 the default Q8_K route reaches the `q4k_dot_avx2.rs:338` arm through `fused_q4k_q8k_dot_with_bsums_simd` (bsum_precompute.rs:220), which falls back to that dispatcher off x86. No fourth arm is needed for correctness (R3 §13, route).
 - `kernel_path(k)` maps to OBS `kernel_id`.
 - A widen entry exposed only to tests.

@@ -2,6 +2,8 @@
 la-73, 2026-09-27. Status: draft for epic #3999 (0.73 "Runs Everywhere"). Exit criteria served: E1 (C4 leg), E2 (C4 speed), E5 (kernel key).
 Evidence tags: [V] = read in the tree at origin/main aca6f2d7f6; [A] = reported by an agent; [U] = unverified.
 
+Paths: `results.rs` = `crates/aprender-serve/src/gguf/inference/forward/results.rs`, `avx512-q4k-v1.yaml` = `contracts/avx512-q4k-v1.yaml`, `nightly.yml` = `.github/workflows/nightly.yml`.
+
 ## 1. Problem (from the R5 census)
 - On aarch64, `detect_simd_backend()` returns `SimdBackend::Neon` (crates/aprender-serve/src/quantize/simd_backend.rs:41-44) [V]. No code dispatches on `Neon`: it is used only by Display and tests [V].
 - `fused_q4k_dot_simd` (quantize/fused_k.rs:193), `fused_q6k_dot_simd` (fused_q5k_q6k.rs:118) and `fused_q4k_q8k_dot_simd` (q4k_dot_avx2.rs:338, included at fused_k.rs:370) have only `cfg(target_arch = "x86_64")` arms [V]. On aarch64 each one falls through to the scalar kernel (fused_k.rs:60, fused_q5k_q6k.rs:15, q4k_dot_avx2.rs:232; the identical `fused_q4k.rs:232` is the orphan and is not compiled, corrected 2026-10-03).
@@ -74,7 +76,7 @@ The NEON kernels go into three aprender-serve dispatchers. Each has the same sha
 | `fused_q4k_q8k_dot_simd(&[u8], &[f32], &[i8]) -> Result<f32>` | quantize/q4k_dot_avx2.rs:338 (included at fused_k.rs:370) | avx512vnni v2, then avx2 | aarch64 block with `is_aarch64_feature_detected!("dotprod")` → sdot kernel, else the NEON widening kernel |
 - **No signature changes, and no new `backend` parameter.** Dispatch is runtime feature detection, as it is on x86. New risk **K15 (dispatch shape): L**, because nothing has to be re-plumbed.
 - The oracle for each NEON kernel is the scalar fallback it sits in front of (`fused_q4k_dot`, `fused_q6k_dot`, `fused_q4k_q8k_dot`). That is the E-R3-1 reference; no new oracle is needed.
-- **Out of scope:** trueno `brick/quant_ops` `DotQ5KOp`/`DotQ6KOp` (the unused-`backend` warnings at :219 and :318). Only examples, tests and re-exports call them; the serving path does not. They are a second, cold NEON gap. R3 may silence the warning (`let _ = backend` on non-x86), but that does not count as NEON coverage.
+- **Out of scope:** trueno `brick/quant_ops` `DotQ5KOp`/`DotQ6KOp` (the unused-`backend` warnings at brick/quant_ops/mod.rs:219 and :318). Only examples, tests and re-exports call them; the serving path does not. They are a second, cold NEON gap. R3 may silence the warning (`let _ = backend` on non-x86), but that does not count as NEON coverage.
 - Q5_K (`fused_q5k_q6k.rs`) has the same shape and is a cheap follow-on. Q4_0 and Q8_0 (`fused_q4_0_q8_0.rs:6`, `fused_q8_0_q8_0.rs:15/208`) are x86-only too. They are listed for the R5 census, not added to R3.
 
 ## 10. Contract draft (2026-09-27)
@@ -128,7 +130,7 @@ Cleanup candidates (PROPOSE-TICKET, not done here):
 Route on gx10 (verified at 316dee2cd4). It shows that the three cited dispatchers are the only arms correctness needs:
 - **Default path (no scope).** A Q4_K matvec quantizes to Q8_K and calls `fused_q4k_q8k_parallel_matvec_into`
   (q5k_q6k_matvec.rs:79).
-  - The x86 lean and 4-row paths are compiled out off x86_64 (:122, :180). So their `[0.0f32; 4]` placeholder (:230)
+  - The x86 lean and 4-row paths are compiled out off x86_64 (q5k_q6k_matvec.rs:122, :180). So their `[0.0f32; 4]` placeholder (:230)
     never runs on aarch64.
   - Each row calls `fused_q4k_q8k_dot_with_bsums_simd` (bsum_precompute.rs:220). Off x86 that falls back to
     `fused_k::fused_q4k_q8k_dot_simd`, the `q4k_dot_avx2.rs:338` dispatcher.
@@ -139,7 +141,7 @@ pv 0.70.0: validate 0/0; lint 0 errors, the same 4 lean_theorem warnings. Obliga
 
 NEON-Q4K-008 (2026-10-03, row 10) checks five decode matvec entries and two prefill entries. Each one turns a dot Err into a 0.0 row:
 - (A) `fused_q4k_parallel_matvec_into` inside `with_fp32_activations` (parallel_k.rs:320).
-- (B) `fused_q4k_parallel_matvec_f32_into`, the crushed-block route of `matvec_honest` (direct_f32.rs:63; ffn_block.rs:790, :799).
+- (B) `fused_q4k_parallel_matvec_f32_into`, the crushed-block route of `matvec_honest` (direct_f32.rs:62-63; ffn_block.rs:790, :799).
 - (C) The default path above (q5k_q6k_matvec.rs:331-350).
 - (D) `fused_q4k_q8k_ffn_up_gate_into`. The scratch and traced forwards call it through `scratch_q8k_up_gate` (results.rs:33; rows at q5k_q6k_matvec.rs:437-448).
 - (E) The Q6_K route (generic_matvec.rs:126, :143).
@@ -206,8 +208,8 @@ What follows:
 4. Two drafts said otherwise: the landing map's P3 row ("aarch64 CI or gx10") and R3-test-skeletons.md §1 ("CI is x86-only"). Both are corrected in the commit that adds this section.
 
 Where a CI step could go. This is a REQUEST in the handoff (APR-LOOKAHEAD-001 §8, S-4). Each option edits ci.yml or `ci/sections.yml`, which needs an operator check-in first.
-- (a) A P3 section in the determinism job's ARM64 leg, added to its `--sections` list (:279). The job already gates, runs Linux aarch64 (the triple NEON-000 names) and is clean-room. The comment at :614 names the clean-room pool as intel, yoga and gx10, so this leg runs on gx10. That is inferred from the comment, not read from the runner list. Grace is Armv9, and dotprod is mandatory from Armv8.4. Cost [U]: it adds an aprender-serve test build to a job with a 120-minute timeout (:263) that today builds only aprender-viz. Without a path filter on the section, it runs on every ci.yml run.
-- (b) A test step in mac-check, and mac-check added to `gate`'s needs (:617). Every PR would then wait on one Mac mini. The mini's CPU features were not probed [U].
+- (a) A P3 section in the determinism job's ARM64 leg, added to its `--sections` list (ci.yml:279). The job already gates, runs Linux aarch64 (the triple NEON-000 names) and is clean-room. The comment at :614 names the clean-room pool as intel, yoga and gx10, so this leg runs on gx10. That is inferred from the comment, not read from the runner list. Grace is Armv9, and dotprod is mandatory from Armv8.4. Cost [U]: it adds an aprender-serve test build to a job with a 120-minute timeout (:263) that today builds only aprender-viz. Without a path filter on the section, it runs on every ci.yml run.
+- (b) A test step in mac-check, and mac-check added to `gate`'s needs (ci.yml:617). Every PR would then wait on one Mac mini. The mini's CPU features were not probed [U].
 - (c) A line in cuda-nightly.yml. It is not a PR gate: a wrong arm is found the next day, after the merge.
 
 Recommendation: (a), filtered to P3's test module so that it builds and runs the minimum. Until there is a ruling, the P3 ticket says the tests are run by hand on gx10 (ticket-bodies-P1-P5.md, P3 **Hosts**).

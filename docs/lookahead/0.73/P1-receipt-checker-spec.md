@@ -58,7 +58,7 @@ which `origin/a01/4574-obs15-kernel-path` (b1244f6fb7) carries with a Rust check
   - A set, because the route can switch per call. On the default route a crushed activation block sends that one Q4_K call to f32 (ffn_block.rs:790-792), so one tensor runs q4k-q8k and q4k-f32 in one run (f012e).
   - BPM-012 does not reuse `kernel_diff`, because each of its three choices lets a self-comparison pass (R1 contract L25, 2026-10-03):
     - it compares whole paths, so only an empty diff refuses. A same-host reference differs from a default-route backend on Q4_K (q4k-q8k against q4k-f32) while every Q6_K tensor meets itself (f012);
-    - it keys by the slot `(op, shape_class)` and keeps one entry per slot (`slots()`, obs_kernel_path.rs:118, last wins). A Q4_K_M file mixes qtypes in one slot: in Qwen3.5-0.8B-Q4_K_M, ffn_down (3584, 1024) is Q6_K in 12 layers and Q4_K in 12 (f012d);
+    - it keys by the slot `(op, shape_class)` and keeps one entry per slot (`slots()`, obs_kernel_path.rs:118 on #4574 @b1244f6fb7, last wins). A Q4_K_M file mixes qtypes in one slot: in Qwen3.5-0.8B-Q4_K_M, ffn_down (3584, 1024) is Q6_K in 12 layers and Q4_K in 12 (f012d);
     - it compares whole entries, and `arch` differs on every C0-against-C4 entry, so one scalar kernel on both hosts reads as different (f012c).
 - **Conflict to resolve.** `apr-kernel-path-v1` `trace_cut` says "CPU rows name no GPU kernel and are outside the rule", so a CPU row may carry `kernel_path = null`.
   - BPM-012 needs a non-null kernel_path on every CPU cell, C4 above all, or the self-comparison guard has nothing to read.

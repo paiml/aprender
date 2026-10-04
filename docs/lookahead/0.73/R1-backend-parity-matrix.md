@@ -3,6 +3,8 @@
 Status: draft by la-73, 2026-09-27. There is no ticket yet: the cop mints it. It becomes a spec-only PR
 when the repo is under the 10-PR cap. Every number is [A] until a cell is measured.
 
+Paths: `results.rs` = `crates/aprender-serve/src/gguf/inference/forward/results.rs`, `config.rs` = `crates/aprender-serve/src/gguf/config.rs`, `router.rs` = `crates/aprender-serve/src/api/router.rs`, `batch.rs` = `crates/aprender-serve/src/api/batch.rs`, `types.rs` = `crates/aprender-serve/src/api/types.rs`, `run.rs` = `crates/apr-cli/src/commands/run.rs`, `fused_q5k_q6k.rs` = `crates/aprender-serve/src/quantize/fused_q5k_q6k.rs`.
+
 ## 1. What it answers
 Is each 0.73 backend cell correct (E1), fast enough (E2) and MoE-capable (E3)? The answer is one
 receipt per cell. E6 "admissible cell" means: E1 PASS + E2 PASS receipts on main, subject to
@@ -148,7 +150,7 @@ Mechanism, per qtype (aprender-serve):
     non-test callers.
   - The traced forward does the same (traced.rs:88).
 - **Which FFN branch the honest forward takes** (`single_cache_ffn_block`, ffn_block.rs:14):
-  - RMSNorm models with an FFN norm, other than Gemma-1, use `ffn_up_gate_honest` (:44).
+  - RMSNorm models with an FFN norm, other than Gemma-1, use `ffn_up_gate_honest` (ffn_block.rs:44).
     - A Q4_K pair runs `matvec_honest` per tensor (ffn_block.rs:844, in `ffn_up_gate_honest` at :833).
     - Any other pair goes to `fused_rmsnorm_ffn_up_gate` (fused_matmul_into.rs:463). There a Q4_0 pair uses
       the fused RMSNorm + Q8_0 kernel (quantize/activation.rs:342), and everything else runs `fused_matmul`
@@ -235,7 +237,7 @@ Reuse note: origin/main has at least 8 cosine copies (`git grep 'fn cosine'`). T
 pv 0.70.0: validate 0 errors / 0 warnings; `pv lint contracts-draft/` PASS. Obligations went from 6 to 10.
 
 BPM-012 per tensor (2026-10-03). The first form compared whole kernel paths, and a mixed run evades that. A same-host reference differs from a default-route backend on Q4_K (q4k-q8k against q4k-f32), while every Q6_K tensor meets itself. The OBS-15 `kernel_diff` (#4574, unmerged) would not help:
-- it keys by `(op, shape_class)` and keeps one entry per slot (obs_kernel_path.rs:118, last wins). A Q4_K_M file mixes Q4_K and Q6_K in one slot: in Qwen3.5-0.8B-Q4_K_M, ffn_down (3584, 1024) is Q6_K in 12 layers and Q4_K in 12 [V];
+- it keys by `(op, shape_class)` and keeps one entry per slot (obs_kernel_path.rs:118 on #4574 @b1244f6fb7, last wins). A Q4_K_M file mixes Q4_K and Q6_K in one slot: in Qwen3.5-0.8B-Q4_K_M, ffn_down (3584, 1024) is Q6_K in 12 layers and Q4_K in 12 [V];
 - it compares whole entries, and `arch` differs on every C0-against-C4 entry, so one scalar kernel on both hosts reads as different.
 
 BPM-012 now compares, per (tensor, op), the sets of `kernel_id`s each run reached over the quantized matmul tensors, and refuses on any overlap. It needs sets because the route can switch per call: on the default route a crushed activation block sends that one Q4_K call to f32 (ffn_block.rs:790-792) [V]. P1 plants f012 (one equal tensor among differing ones), f012b (the C4 control), f012c (one kernel_id on two arches), f012d (a slot collision) and f012e (a tensor with two routes). The C4 leg meets the rule through R3's dispatch-honesty precondition, not through the second machine (R3 §13).
@@ -264,7 +266,7 @@ of E1 is a falsifier, FALSIFY-BPM-019, and not the run oracle reused.
   `Qwen35Session::load` (`apr-cli/src/commands/serve/server.rs:172`), which reaches `from_host` with no positions
   (`qwen35_session.rs:240-241`, :325-327), so it keeps the model defaults
   (`aprender-serve/src/gguf/cuda/forward_qwen35_cuda_prefill.rs`): the first attention candidate (:199-207) and
-  512 rows per chunk (:39, :290-300), where a run on C5's unified memory tries 2048 first (:45). Rows per chunk
+  512 rows per chunk (:39, :290-294), where a run on C5's unified memory tries 2048 first (:45). Rows per chunk
   are capped by the prompt (:211-213), so a prompt under 512 positions is one chunk on serve. The run's chunk
   and attention path come from its plan, so the two routes prefill alike only when the plan picks the defaults.
 - CPU-GPU-006 in `apr run` is not a leg A. `try_wgpu_generate`

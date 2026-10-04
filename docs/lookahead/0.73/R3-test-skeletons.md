@@ -4,6 +4,8 @@ Contract: `contracts-draft/neon-q4k-q6k-v1.yaml`. The code below is a draft and 
 **not compiled here**. It lands with the R3 kernels, as a sibling of the existing
 parity tests in `crates/aprender-serve/src/quantize/`.
 
+Paths: `tests/fused.rs` = `crates/aprender-serve/src/quantize/tests/fused.rs`, `fused_q5k_q6k.rs` = `crates/aprender-serve/src/quantize/fused_q5k_q6k.rs`, `simd.rs` = `crates/aprender-serve/src/quantize/simd.rs`, `quantize/mod.rs` = `crates/aprender-serve/src/quantize/mod.rs`.
+
 ## 1. What already exists (read at d63d8935e4)
 
 SIMD-vs-scalar parity tests already exist for all three dispatchers:
@@ -606,7 +608,7 @@ path and never reach the Q8_K multirow kernel it tests. `fused_q5k_multirow_matm
 | `kernel_path(k)` API | R3 code (not written; mint deferred, cop 10:20Z 09-28). It is also emitted in the forward trace, because the R1 receipt checker reads it: FALSIFY-BPM-012 refuses a C4 receipt in which one quantized matmul tensor shares a `kernel_id` between the backend and reference runs |
 | `kernel_path` shape | reuse `apr-kernel-path-v1` (OBS-15, unmerged #4574): `kernel_path(k)` becomes the entry's `kernel_id`, with `arch = aarch64`. On x86 it names the x86 arm (e.g. `q4k-f32/avx2`), because the C0 reference is read too. Each trace entry also carries `tensor`, the GGUF name, since BPM-012 compares per tensor, and a tensor gets one entry per kernel it reached (a crushed activation block switches one Q4_K call to f32). See P1 spec §3a |
 | `fused_q4k_q8k_dot_neon_widen` test entry | R3 code (NEON-Q4K-007) |
-| The seven matvec entries (five decode, two prefill), `with_fp32_activations` and `quantize_activations_q8k_into` in reach of a `quantize/` test (NEON-Q4K-008) | exist at 316dee2cd4: re-exported at quantize/mod.rs:132 and :140-146 (the multirow ones at :141 and :145); the quantizer is at mod.rs:241 |
+| The seven matvec entries (five decode, two prefill), `with_fp32_activations` and `quantize_activations_q8k_into` in reach of a `quantize/` test (NEON-Q4K-008) | exist at 316dee2cd4: re-exported at quantize/mod.rs:132 and :140-146 (the multirow ones at :141 and :145); the quantizer is at quantize/mod.rs:241 |
 | Orphan `quantize/fused_q4k.rs` deleted | Ticket S3 (`ticket-bodies-side-fixes.md`; PROPOSE-TICKET 07:49Z). NEON-Q4K-006 plants its own control file, so the delete does not weaken it; its `fused_q4k.rs` tripwire runs only while the file exists |
 | Orphan `quantize/fused_q.rs` deleted | Ticket S3 (R3 §13 row 9; PROPOSE-TICKET 18:21Z). It is not a dot site, so NEON-Q4K-006 needs no second control |
 | An aarch64 run (gx10) | GPU-deferred while a train is active; runs on CPU only, so it may be admissible earlier. Cop to rule |

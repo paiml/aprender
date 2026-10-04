@@ -13,7 +13,7 @@ what the non-null value must be for the two new backends.
 | # | Fact | Where |
 |---|---|---|
 | F1 | apr has no native Metal backend. "Metal" means wgpu on its Metal backend: `gpu_backends()` = `wgpu::Backends::PRIMARY` (Vulkan, Metal, DX12, WebGPU; never GL/GLES). | `crates/aprender-compute/src/backends/gpu/device/mod.rs:58` |
-| F2 | The backend wgpu actually picked is only knowable from `adapter.get_info()` (`backend`, `name`, `vendor`, `device`, `driver`, `driver_info`). | same file, `list_adapters_async` :215 |
+| F2 | The backend wgpu actually picked is only knowable from `adapter.get_info()` (`backend`, `name`, `vendor`, `device`, `driver`, `driver_info`). | same file, `list_adapters_async` (`device/mod.rs:215`) |
 | F3 | **DEFECT.** The user-visible backend line is a HARDCODED string: `eprintln!("Backend: wgpu (Vulkan)")`. It is printed after `GpuDevice::new()` succeeds, from `AdapterInfo`, and before any kernel runs. On mini, wgpu runs on Metal and the line still says Vulkan. | `crates/aprender-serve/src/infer/gguf_gpu_generate.rs:178` and `:653`; `crates/aprender-serve/src/infer/batch_wgpu.rs:144` |
 
 F3 is the #2644 class ("device: GPU" printed by intent): the label says what was hoped for, not what ran.

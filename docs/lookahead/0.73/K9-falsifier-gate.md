@@ -6,6 +6,8 @@ pv 0.70.0 (2add1c644). 2add1c644 is an ancestor of 316dee2cd4, and no commit bet
 rules. The numbers are dated samples. Most come from the two commands below; the others name
 their command where they appear. Where a number disagrees with its command, the command wins.
 
+Paths: `scoring/mod.rs` = `crates/aprender-contracts/src/scoring/mod.rs`.
+
 ```
 python3 docs/lookahead/0.73/falsifier_gate.py                      # the case table in §5; exit 1 if a cell changes
 python3 docs/lookahead/0.73/falsifier_gate.py --corpus 316dee2cd4  # the numbers for main's contracts/
@@ -31,7 +33,7 @@ Both decision surfaces run plain `pv lint contracts/`.
 Neither passes `--min-score`, and `.pv.toml` sets no score floor. So lint's score gate runs at
 threshold 0.00. On an extract of main's tree (`git archive 316dee2cd4 contracts .pv.toml`),
 `pv lint contracts/` reports that gate as passing: "(1889 contracts, mean=0.48, threshold=0.00)".
-The release script's other lint calls run named gates only (`--gate shapes` at :81;
+The release script's other lint calls run named gates only (`--gate shapes` at `contracts_gate.sh:81`;
 `ont-consistency`, `refines` and `bindings` at :96).
 
 ## 3. Findings

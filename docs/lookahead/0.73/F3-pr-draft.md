@@ -15,8 +15,8 @@ that never ran.
 - `backend_line()` prints `Backend: wgpu (<AdapterInfo.backend>) adapter=<name>`. On Vulkan the prefix is
   unchanged, so FALSIFY-CPU-GPU-005's grep still matches.
 - The three `eprintln!` sites in aprender-serve (`gguf_gpu_generate.rs` ×2, `batch_wgpu.rs`) use it.
-- The remaining `Backend: wgpu (Vulkan)` strings (`dispatch.rs:155`, `cli_commands.rs:416`,
-  `inference_result.rs:1143`, the contract) quote a measured RTX 4090 Vulkan run. They are history and are left unchanged.
+- The remaining `Backend: wgpu (Vulkan)` strings (`crates/apr-cli/src/dispatch.rs:155`, `cli_commands.rs:416`,
+  `crates/aprender-serve/src/infer/inference_result.rs:1143`, the contract) quote a measured RTX 4090 Vulkan run. They are history and are left unchanged.
 
 ## Evidence (intel, private CARGO_TARGET_DIR, 2026-09-28)
 - `cargo test -p aprender-compute --lib --features gpu -- backend_line test_gpu_backends`: 2 passed.

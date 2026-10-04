@@ -193,3 +193,4 @@ qa_gate:
   - activation_path_selector
   pass_criteria: All 7 falsification tests pass + throughput ≥ 60 tok/s
   falsification: Skip activation quantization — measure throughput delta
+# Paths: `quantize/mod.rs` = `crates/aprender-serve/src/quantize/mod.rs`
