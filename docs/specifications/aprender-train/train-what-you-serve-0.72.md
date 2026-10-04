@@ -674,9 +674,17 @@ up, a new size changes its place, and a row already held on a branch drops out o
       (`model_ops_commands.rs:58`). The f32 logits buffer alone is `max_seq_len` × vocab (`cuda_init.rs:453-455`). On
       Qwen3.5's 248,070 entries that is 0.51 GB at 512 and 2.03 GB at 2048, so a small card pushes the window down.
     - A build with `--features wgpu` (in neither the default nor `full`) trains in `train_wgpu_sft` under
-      `--gpu-backend wgpu`, or `auto` with QLoRA (`finetune.rs:442,906`). That path encodes the raw instruction and
-      response, with no template and no eos (`:917-918`), at a fixed 512 (`:719`). TSC's "every training path ends in
-      `from_apr`" holds for default and `full` builds only.
+      `--gpu-backend wgpu`, or under the default `auto` with QLoRA (`finetune.rs:291-295`, `:442`, `:906`;
+      `model_ops_commands.rs:70-72`). That path encodes the raw instruction and response, with no template and no eos
+      (`:917-918`), in a fixed 512 window (`:719`) whose overflow `train_step` drops with no message
+      (`wgpu_pipeline.rs:768-769`), on q_proj and v_proj only (`:725`). TSC's "every training path ends in `from_apr`"
+      holds for default and `full` builds only. No CI job builds `--features wgpu`: the clippy feature matrix excludes
+      it as not compiling (#4056, `check_clippy_feature_matrix.sh:20`), and whether it compiles at `316dee2cd4` is not
+      measured.
+    - Its DPO branch (`:737-740`, `:866`) trains the prompt, chosen and rejected texts raw, with beta fixed at 0.1
+      (`:881-884`). No `{prompt, chosen, rejected}` file reaches it: the corpus is parsed as instruction and response
+      first (`:409`, `:519`), so such a file fails as invalid JSONL. No `apr finetune` help text, contract or spec
+      says it trains DPO.
   - **Measured (simulation).** Each sample is rendered as `format_chat_prompt` renders it and counted two ways: with
     serve's ids (control tokens whole, the regex split), and imitating main's train tokenizer (control tokens in
     pieces, TSC-001; a split at each whitespace, TPP-001).
@@ -692,13 +700,17 @@ up, a new size changes its place, and a row already held on a branch drops out o
     cannot see it, because `evaluate` scores the same cut windows. R4's 200-step cell and every T4 run train on chat
     samples, and how many are cut depends on the corpus and on `--max-seq-len`. T2's canonical cell is fixed by
     shape and is unaffected.
-  - **Falsifiers (PROPOSED in `train-serve-chat-format-v1` on `la-72/k39-k40-contracts` @275c009e4a).**
+  - **Falsifiers (PROPOSED in `train-serve-chat-format-v1` on `la-72/k39-k40-contracts` @c93f1a5112).**
     - TSC-005: `train_step` and `evaluate` use a sample whole, or refuse it and count it, never a prefix. It is RED
       at `316dee2cd4` by reading, and the counts above say how often it fires. Planted: `full_ids[..max_seq_len]`
       restored.
     - TSC-006: `apr finetune` counts the samples over `--max-seq-len` before step 1, in its output and its receipt,
       and refuses unless told to drop them. It is RED at `316dee2cd4`: nothing counts them. Planted: the count
       removed.
+    - TSC-007: the `--features wgpu` route trains on serve's ids, whole within `--max-seq-len`, on the recipe's
+      targets, or refuses before the model loads, naming itself and `--gpu-backend cuda`. It is RED at `316dee2cd4` by
+      reading on four counts: raw text with no eos, a 512 window, a silent cut and two targets. Planted: `auto`'s
+      route to wgpu for `-m qlora` restored with no refusal.
   - **Until it lands,** count the corpus with the model's tokenizer.json before a run, add K39 and K40's inflation
     (about 12% on the curated corpus), and set `--max-seq-len` above the longest sample, or drop the long samples by
     hand.
@@ -772,6 +784,9 @@ up, a new size changes its place, and a row already held on a branch drops out o
     - QQE-005 now compares dB as AdamW receives it, for the tensor the file stores, and never rescales it.
   - **The fix belongs in C1,** which already rewrites this code. Keep B unscaled on the GPU, apply s in the forward
     and in both backward products, and drop the ×s at upload and the ÷s at save. Not built, not measured.
+    The wgpu pipeline already follows this rule and is an in-tree reference: its forward adds s·(x·A)·B
+    (`finetune/wgpu_pipeline.rs:285`, `:812`), its backward scales both products by s (`:1115-1139`), and its export
+    writes the raw B with alpha in the metadata (`:686-756`).
   - **Until it lands,** run CUDA LoRA at alpha = rank, where the two rules agree (s = 1), and record alpha in the
     receipt.
 
@@ -808,7 +823,7 @@ minutes of worker time still left; `[A]` marks an assumption.
 | 24 | K39 train/serve chat format | the HF importer writes the added tokens and the chat template into the .apr; TSC-001: `from_apr`'s tokenizer keeps `<\|im_start\|>`, `<\|im_end\|>`, `<think>` and `</think>` whole; TSC-002: train renders the model's own template, thinking off, no default system turn, target ends in the eos id; TSC-003: serve's built-in `Qwen3NoThink` renders as the model's own template does; TSC-004: the GGUF exported from a merged HF-sourced base carries the model's template, pre `qwen35`, the eos and the token types | 110 `[A]` | contract PROPOSED @ae7a75b7f0 (pv 0/0); desk read at `316dee2cd4` plus a header read of S-R10's .apr (17 keys, no template, no added tokens) and of its GGUF export (18 keys: pre `default`, no eos, token types or template); #4418's branch fixes all but the template; PMAT-3803's branch has part of the tokenizer half, unmerged; must be green before R4's 200-step cell and any T4 run |
 | 25 | K40 pre-tokenizer split | one regex pre-tokenizer shared by train, `apr chat` and .apr serve; TPP-001/002: train's tokenizer and `encode_text` give the HF reference ids on a frozen code fixture; TPP-003 keeps GGUF serve on them, on the file apr exports too | 80 `[A]` | contract PROPOSED @ae7a75b7f0 (pv 0/0); desk read at `316dee2cd4` plus a simulation on the Qwen3.5 vocabulary: 5 samples are 193 tokens in train against 160 under the regex, and .apr serve has the same count with different ids on indented code; CRUX-M-05 (draft) states the check and nothing implements it; PMAT-3803's branch moves Qwen3.5 training to .apr serve's no-split path, not the regex (the HF-sourced .apr has no `pre_type` and says `qwen3_5`); T2 is unaffected because its count is fixed by shape; must be green before R4's 200-step cell and any T4 run |
 | 26 | K41 Qwen3.5 rope base and dims | QFR-007: the imported .apr and the GGUF exported from its merge carry the source config's dims and rope base (1e7); QFR-008: `apr export` refuses a qwen35 .apr that disagrees with its source config; QFR-009: the qwen35 rope fallbacks, the 9B preset and the family contract say 1e7 | 40 `[A]` | QFR-007..009 PROPOSED @e6ea295728; desk read at `316dee2cd4` and on #4418's branch, plus header reads: S-R10's `hf.apr` says 10000 with no dims, and its GGUF says 10000, heads 16/8, ctx 0; the published 0.8B to 27B say 1e7; #4418 fixes a fresh import but exports an older .apr at 1e4 with no warning; QFR-006 checks fresh imports only, and QQE-003 cannot see it; re-import S-R10's base after #4418, never reuse it; must be green before R4's 200-step cell and any T4 run |
-| 27 | K42 training window | TSC-005: `train_step` and `evaluate` use a sample whole or refuse and count it, never a prefix; TSC-006: `apr finetune` counts the samples over `--max-seq-len` before step 1 and refuses unless told to drop them | 45 `[A]` | TSC-005/006 PROPOSED @275c009e4a (pv 0/0); desk read at `316dee2cd4` plus a simulation on the repo's SFT corpora: on main's train tokenizer the default 512 cuts 123 of the 124 curated samples, each losing part of `<\|im_end\|>` and 68 also the `>` that closes `</tool_call>`; with serve's ids all fit; the CUDA step reports only a prompt that fills the window; a `--features wgpu` build trains on raw text at a fixed 512; must be green before R4's 200-step cell and any T4 run |
+| 27 | K42 training window | TSC-005: `train_step` and `evaluate` use a sample whole or refuse and count it, never a prefix; TSC-006: `apr finetune` counts the samples over `--max-seq-len` before step 1 and refuses unless told to drop them; TSC-007: the `--features wgpu` route does the same or refuses by name | 45 + 15 `[A]` | TSC-005/006 PROPOSED @275c009e4a, TSC-007 @c93f1a5112 (pv 0/0); desk read at `316dee2cd4` plus a simulation on the repo's SFT corpora: on main's train tokenizer the default 512 cuts 123 of the 124 curated samples, each losing part of `<\|im_end\|>` and 68 also the `>` that closes `</tool_call>`; with serve's ids all fit; the CUDA step reports only a prompt that fills the window; a `--features wgpu` build trains on raw text at a fixed 512; must be green before R4's 200-step cell and any T4 run |
 | 28 | K43 QLoRA merge base | QQE-010: the merged file scores within 2% of the trained model on the training loss, and below its own base; QQE-003 runs both sides on the base `apr finetune merge` reads | 40 `[A]` | QQE-010 PROPOSED @75f11cd071 on `la-72/r15-receipt-ext` (pv 0/0); desk read at `316dee2cd4`: `-m qlora` trains against the NF4 round trip of the base (`cuda_block.rs:2943`), and `apr finetune merge` adds the adapter to the unquantized file; the round trip moves each of R4's 10 target kinds by 9.2–9.5% (Frobenius, numpy on the bf16 weights); measured after R4's last step, so it gates R4's verdict and any T4 rc built from a QLoRA adapter; T2 unaffected |
 | 29 | K44 LoRA scale in training | QQE-011: doubling alpha doubles the first step's merged delta on CUDA as on the CPU, and the written adapter carries the trainer's own function; QQE-005 compares dB as AdamW receives it | 30 `[A]` | QQE-011 PROPOSED @5956c65452 on `la-72/r15-receipt-ext` (pv 0/0); desk read at `316dee2cd4`: the NF4 block bakes s into B at upload (`cuda_block.rs:3025-3038`) and never applies it again, so alpha is inert on CUDA and B moves 1/s as far per step as on the CPU; the merge and resume are consistent; the fix goes in R15a's C1; must be green before R4's 200-step cell; T2's ratio unaffected |
 | — | R19 ROADMAP PMAT-711 stale | — | done | shaping @378ec8e920 |
