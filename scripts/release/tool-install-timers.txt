@@ -1,0 +1,7 @@
+# tool-install-timers.txt -- the user timers that install or upgrade a tool on a host (#4670, R10).
+# scripts/release/release_timer_guard.sh refuses the tag while one of these is armed on a release
+# host that carries the release-open marker. One unit per line; `#` starts a comment.
+# A new timer that installs a tool goes here in the same change that provisions it.
+crux-latest.timer      # tracks the latest upstream CRUX incumbents (llama.cpp, ollama)
+fleet-bins.timer       # installs the newest sovereign binaries
+fleet-bins-poll.timer  # a moved nightly/rc/release tag triggers a fleet-bins install

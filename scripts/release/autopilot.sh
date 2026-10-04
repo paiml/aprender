@@ -6,7 +6,7 @@
 # one argument; milestone, epic and the state dir AP are read from GitHub and the repo, never literals.
 #
 #   autopilot.sh <version> <bump-pr> [from-step] [to-step]
-#   steps: wait deep dogfood models tag cleanroom assets preflight dryrun cascade install hosts postpub ledger close
+#   steps: wait deep dogfood models readiness timers tag cleanroom assets preflight dryrun cascade install hosts postpub ledger close
 #   T-4 for THIS train (operator 2026-09-17): cascade DRY-RUN receipt, then STOP and report — the cascade
 #   itself is the operator's step. Default to-step is dryrun; `cascade` and later run only when named.
 #   T-1 'ci / deep' has no workflow on main, so `deep` runs the equivalent locally on the release commit.
@@ -38,7 +38,7 @@ fi
 release_params "${1:-}" "$REPO_ROOT" || { echo "usage: autopilot.sh <version> <bump-pr> [from-step] [to-step]" >&2; exit 2; }
 STATUS="$AP/STATUS"; LOG="$AP/autopilot.log"
 PR="${2:?usage: autopilot.sh <version> <bump-pr> [from-step] [to-step]}"; FROM="${3:-wait}"; TO="${4:-dryrun}"
-STEPS=(wait deep dogfood models readiness tag cleanroom assets preflight dryrun cascade install hosts postpub ledger close)
+STEPS=(wait deep dogfood models readiness timers tag cleanroom assets preflight dryrun cascade install hosts postpub ledger close)
 say() { printf '%s %s\n' "$(date -u +%FT%TZ)" "$*" | tee -a "$STATUS" >> "$LOG"; }
 die() { say "STOP $*"; exit 1; }
 run_step() { # run_step <name>: true when <name> is at or after FROM and at or before TO
@@ -177,6 +177,18 @@ if run_step readiness; then
   ! grep -qE '^WARN +R8 ' "$AP/readiness-t1.log" \
     || die "T-1 release-readiness-v1 printed a WARN R8 row (report-only = waiver = stop): nothing is tagged ($AP/readiness-t1.log)"
   say "READINESS ok at $MC"
+fi
+# 2d. timers (#4670 R10): no tool installs on a release host while the release is open. Every host this
+#     train measures on is asked, read-only, for the user timers that install tools
+#     (scripts/release/tool-install-timers.txt); one armed on a host carrying the release-open marker, or
+#     a host that cannot be asked, stops here, before any tag exists. It never touches a timer.
+if run_step timers; then
+  targs=(--local "$TRAIN_HOST")
+  for h in $(matrix_hosts); do [ "$h" = "$TRAIN_HOST" ] || targs+=(--ssh "$h"); done
+  bash scripts/release/release_timer_guard.sh "${targs[@]}" > "$AP/timers-t1.log" 2>&1; rc=$?
+  grep -E '^(ok|FAIL) +R10 ' "$AP/timers-t1.log" >> "$STATUS"
+  [ $rc -eq 0 ] || die "T-1 R10 release-host timers rc=$rc: nothing is tagged ($AP/timers-t1.log)"
+  say "TIMERS ok: $(tail -n 1 "$AP/timers-t1.log")"
 fi
 # 3. tag + release (binary-release.yml fires on release: published, from the TAG's workflow file)
 # cut_tag <version> <tag> <commit> -- PMAT-3459. The milestone gate lives INSIDE the
