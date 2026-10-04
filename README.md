@@ -50,7 +50,7 @@ full log of output
 
 <details>
 
-```bash
+```text
 
 apr pull hf://Qwen/Qwen2.5-Coder-0.5B-Instruct
 == APR Pull ===
