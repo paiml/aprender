@@ -652,6 +652,16 @@ mod tests {
     /// probes and 200 after, and 404 on every other path. Returns its base URL
     /// and a count of the `/health` probes it has answered.
     async fn spawn_health_endpoint(failures: usize) -> (String, Arc<AtomicUsize>) {
+        spawn_health_endpoint_after(0, failures).await
+    }
+
+    /// As [`spawn_health_endpoint`], but the first `absent` `/health` probes
+    /// get 404 before the 503s start. A 404 is no verdict, so to a probe the
+    /// URL looks like one where nothing serves yet, as before a start.
+    async fn spawn_health_endpoint_after(
+        absent: usize,
+        failures: usize,
+    ) -> (String, Arc<AtomicUsize>) {
         use tokio::io::{AsyncReadExt, AsyncWriteExt};
         let listener = tokio::net::TcpListener::bind("127.0.0.1:0")
             .await
@@ -673,10 +683,12 @@ mod tests {
                     }
                     let status_line = if !head.starts_with(b"GET /health ") {
                         "404 Not Found"
-                    } else if answered.fetch_add(1, Ordering::SeqCst) < failures {
-                        "503 Service Unavailable"
                     } else {
-                        "200 OK"
+                        match answered.fetch_add(1, Ordering::SeqCst) {
+                            n if n < absent => "404 Not Found",
+                            n if n - absent < failures => "503 Service Unavailable",
+                            _ => "200 OK",
+                        }
                     };
                     let response = format!(
                         "HTTP/1.1 {status_line}\r\nContent-Type: application/json\r\n\
@@ -716,13 +728,13 @@ mod tests {
 
     #[tokio::test]
     async fn started_server_cold_start_is_stamped_on_every_run() {
-        let (base, probes) = spawn_health_endpoint(3).await;
+        let (base, probes) = spawn_health_endpoint_after(1, 2).await;
         let mut config = test_config(&base, Some("exec sleep 30"));
         config.runs = 2;
         let mut bench = Benchmark::new(config);
         let report = bench.run().await.expect("benchmark");
-        // The first probe found no ready server, so the run started its own.
-        // Two more failed after the start and the fourth passed.
+        // The first probe found nothing answering, so the run started its own.
+        // Two failed after the start and the fourth passed.
         assert_eq!(probes.load(Ordering::SeqCst), 4);
         assert!(bench.child.is_none(), "teardown reaps the started server");
         assert_eq!(report.runs.len(), 2);
