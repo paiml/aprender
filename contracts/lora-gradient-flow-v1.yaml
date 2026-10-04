@@ -1,5 +1,5 @@
 metadata:
-  version: "1.3.0"
+  version: "1.4.0"
   created: "2026-04-13"
   author: PAIML Engineering
   registry: true
@@ -9,9 +9,10 @@ metadata:
     - "PMAT-805: CPU train_step routed through model.forward() (no LoRA) and apply_rope severed the autograd graph for the Q projection — both adapters silently untrained on the default q_proj+v_proj target set"
     - "0.72 R15a cell C1 (la-0.72): the CUDA Q and V LoRA backward of backward_nf4_attention run through one helper, lora_backward (crates/aprender-train/src/transformer/cuda_block.rs); 1.2.0 adds FALSIFY-LORA_GRADIENT_FLOW_V1_004"
     - "K44 (la-0.72): the CUDA LoRA path applies alpha/rank in lora_forward and lora_backward (crates/aprender-train/src/transformer/cuda_block.rs) instead of pre-scaling B on upload; 1.3.0 adds the scaled_adapter equation and FALSIFY-LORA_GRADIENT_FLOW_V1_006 (005 is reserved for the R15 receipt row)"
+    - "0.72 R15a cell C3 (la-0.72): the CUDA NF4 block's forward and backward run every LoRA adapter it holds, k_proj, o_proj, gate_proj, up_proj and down_proj as well as q_proj and v_proj (crates/aprender-train/src/transformer/cuda_block.rs); 1.4.0 adds the every_target equation and FALSIFY-LORA_GRADIENT_FLOW_V1_007"
 
 name: lora-gradient-flow
-version: "1.3.0"
+version: "1.4.0"
 scope: "crates/aprender-train/src/finetune/"
 
 description: |
@@ -36,6 +37,10 @@ equations:
   scaled_adapter:
     description: "The adapter adds alpha/rank·(x·A)·B and its gradients carry the same scale, on the CPU path, in PEFT and (since K44) on CUDA"
     formula: "y = x·W + s·(x·A)·B with s = alpha/rank; dB = s·(x·A)ᵀ·dy; dA = s·xᵀ·(dy·Bᵀ); dX += s·(dy·Bᵀ)·Aᵀ"
+
+  every_target:
+    description: "On CUDA (since R15a C3) each adapter the NF4 block holds is in its forward and its backward, at its projection: x_t is the projection's input and dy_t its output's gradient as the base backward has them"
+    formula: "for each held target t: y_t += s·(x_t·A_t)·B_t; dB_t = s·(x_t·A_t)ᵀ·dy_t; dA_t = s·x_tᵀ·(dy_t·B_tᵀ); dx_t += s·(dy_t·B_tᵀ)·A_tᵀ"
 
 falsification:
   - id: FALSIFY-LORA_GRADIENT_FLOW_V1_001
@@ -62,3 +67,8 @@ falsification:
     description: "The CUDA path applies alpha/rank where the CPU path and PEFT do (K44). Until K44 the NF4 block uploaded B' = (alpha/rank)·B, its forward computed (x·A)·B' and its backward had no scale, so AdamW stepped B' and alpha cancelled out of CUDA training: at the default alpha = 2·rank, B moved half as fast as on the CPU path. Now the device holds B. lora_forward computes y += scale·(x·A)·B, and lora_backward gives dB = scale·(x·A)ᵀ·dy, dA = scale·xᵀ·(dy·Bᵀ) and the dX share scale·(dy·Bᵀ)·Aᵀ. download_lora_weights still returns scale·B and upload_lora_weights divides it back out, so callers, adapter files and checkpoints keep their format. The helper test checks all four outputs against an f64 replay at scales 2 and 0.75. The block test checks the download, a download-upload round trip and the V forward at scale 2."
     test: "crates/aprender-train/src/transformer/cuda_block_lora_backward_tests.rs::falsify_lora_gradient_flow_v1_006_helpers_apply_alpha_over_rank and ::falsify_lora_gradient_flow_v1_006_nf4_block_keeps_b_unscaled (both #[ignore]: need a CUDA device; run them with the GPU lock around the test binary only)"
     evidence: "cargo test -p aprender-train --features cuda --lib falsify_lora_gradient_flow_v1_006 -- --ignored (written; not run yet: no GPU work runs while a train is active)"
+
+  - id: FALSIFY-LORA_GRADIENT_FLOW_V1_007
+    description: "The CUDA NF4 block trains every adapter it holds (0.72 R15a C3). Until C3 its forward and backward used only the q_proj and v_proj adapters, so a k_proj, o_proj, gate_proj, up_proj or down_proj adapter added with add_lora_adapter (C2c) changed no output and got no gradient. Now each held adapter adds s·(x·A)·B to its projection's output where the base projection writes it: k_proj before QK-norm and RoPE, o_proj and down_proj before their residual adds, gate_proj and up_proj before SwiGLU. The backward computes the adapter's A and B gradients and adds its share of the projection's input gradient (equation every_target). The O dX overwrites attn_out, o_proj's input, with its gradient, so o_proj's weight half (lora_backward_weights) runs before the O dX and its input half (lora_backward_input) after; the two halves are lora_backward. A block holding only q_proj and v_proj runs the same kernels in the same order as before. CudaBlockScratch::new_for_targets sizes the LoRA temp for every target's [s, max(d_out, d_in)], and a target the temp is too small for is refused. The NF4 backward has no QK-norm backward, so on a block with QK-norm weights the q_proj and k_proj gradients are not the loss's derivative; the finite-difference test uses a block without them. Planted mutants that must turn a test RED: an adapter skipped in the forward or in the backward; o_proj's weight half run after the O dX; gate_proj reading d_up in place of d_gate; the temp sized by d_out alone."
+    test: "crates/aprender-train/src/transformer/cuda_block_target_tests.rs::falsify_lora_gradient_flow_v1_007_gradients_match_finite_differences and ::falsify_lora_gradient_flow_v1_007_zero_b_adapters_change_no_number (both #[ignore]: need a CUDA device; run them with the GPU lock around the test binary only), and ::falsify_lora_gradient_flow_v1_007_temp_fits_every_target (no device)"
+    evidence: "cargo test -p aprender-train --features cuda --lib falsify_lora_gradient_flow_v1_007 -- --include-ignored (written; the two device tests have not run: no GPU work runs while a train is active)"
