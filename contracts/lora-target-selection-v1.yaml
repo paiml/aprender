@@ -1,5 +1,5 @@
 metadata:
-  version: "1.4.0"
+  version: "1.5.0"
   created: "2026-04-13"
   author: PAIML Engineering
   registry: true
@@ -9,10 +9,11 @@ metadata:
     - "0.72 R15a cell C2b (la-0.72): InstructConfig.lora_targets selects the LoRA targets of the instruct pipeline, build_lora_layers and inject_adapter_weights share one slot map, and every constructor refuses a target set its forward does not train (crates/aprender-train/src/lora/target.rs, crates/aprender-train/src/finetune/instruct_pipeline/constructors.rs); 1.2.0 adds target_slots and trained_targets, generalizes adapter_routing to the selected targets, and adds FALSIFY-LORA_TARGET_SELECTION_V1_004"
     - "0.72 R15a cell C2c (la-0.72): the CUDA NF4 blocks, CudaLoraGradWorkspace, GpuLoraOptimizerState, the unfused and fused gradient clips and the classify pipeline's gradient accumulation hold one A and one B per selected target instead of four q/v fields (crates/aprender-train/src/transformer/cuda_block.rs, crates/aprender-train/src/finetune/fused_lora_clip.rs, crates/aprender-train/src/finetune/classify_pipeline/gpu.rs); 1.3.0 adds device_targets and FALSIFY-LORA_TARGET_SELECTION_V1_005"
     - "0.72 R15a cell C3b (la-0.72): a backward with a gradient clip set runs under graph capture only with the fused clip, which runs inside the capture; without it the backward runs uncaptured and the syncing clip runs (crates/aprender-train/src/finetune/instruct_pipeline/backward.rs); 1.4.0 adds captured_clip and FALSIFY-LORA_TARGET_SELECTION_V1_006"
+    - "0.72 R15a cell C4a (la-0.72): the instruct pipeline uploads every selected adapter of a layer to that layer's CUDA NF4 block, and syncs every adapter a block holds back to its own slot (crates/aprender-train/src/finetune/instruct_pipeline/device_targets.rs, cuda_init.rs, accessors.rs); 1.5.0 adds device_sync and FALSIFY-LORA_TARGET_SELECTION_V1_007"
   description: "LoRA target module selection"
 
 name: lora-target-selection
-version: "1.4.0"
+version: "1.5.0"
 scope: "crates/aprender-train/src/finetune/"
 
 description: |
@@ -48,6 +49,10 @@ equations:
     description: "A backward with a gradient clip set is captured into a graph only when the fused clip can run inside the capture, so no captured or replayed step skips the clip"
     formula: "captured(step) ⇔ graph_enabled ∧ (clip_norm = None ∨ fused_clip ≠ None)"
 
+  device_sync:
+    description: "The instruct pipeline uploads every selected adapter of a layer to that layer's NF4 block, and a sync writes every adapter downloaded from a block back to its own slot, or refuses and changes no slot"
+    formula: "upload(l) = [(t, Aᵀ_s, Bᵀ_s) : t ∈ T, s = |T|·l + pos_T(t)] in slot order, q_proj and v_proj through new and every other t through add_lora_adapter; for D = [(t, A, σ·B)] downloaded from block l: (∀ (t, A, σB) ∈ D: t ∈ T ∧ s(t) = |T|·l + pos_T(t) < |lora_layers| ∧ |A| = |Aᵀ_s(t)| ∧ |σB| = |Bᵀ_s(t)|) ⇒ ∀ (t, A, σB) ∈ D: slot s(t) := (A, σB / σ); otherwise sync(l, D) → Err and ∀ slot: unchanged. For T = (q_proj, v_proj), s = 2l and 2l + 1, the two slots read before"
+
 falsification:
   - id: FALSIFY-LORA_TARGET_SELECTION_V1_001
     description: "∀ target ∈ selected: target exists in base model weights"
@@ -78,3 +83,8 @@ falsification:
     description: "A clipped NF4 backward is never captured without the fused clip (0.72 R15a C3b). The fused clip takes at most nine gradient buffers, so init_lora_fused_clip returns None for four or more targets. The syncing clip cannot run under graph capture, so until C3b a captured backward without the fused clip state skipped the clip: with backward graphs on and gradient_clip_norm set, every step from the capture on ran unclipped. Now backward_graph_allowed refuses the capture in that case, and the loop runs uncaptured with the syncing clip. The test checks the decision against a table of all eight combinations of graphs on, clip set and fused clip present. Planted: dropping either the clip term or the fused-clip term must turn it RED."
     test: "crates/aprender-train/src/finetune/instruct_pipeline/backward.rs::tests::falsify_lora_target_selection_v1_006_clipped_backward_needs_fused_clip_to_capture (no device)"
     evidence: "cargo test -p aprender-train --features cuda --lib falsify_lora_target_selection_v1_006"
+
+  - id: FALSIFY-LORA_TARGET_SELECTION_V1_007
+    description: "The instruct pipeline moves every selected adapter between its LoRA layers and its CUDA NF4 blocks (0.72 R15a C4a). At 5363d3579e upload_cuda_block gave CudaNf4TransformerBlock::new slots 2·layer and 2·layer+1 as the q_proj and v_proj adapters, and sync_lora_to_cpu wrote the q_proj and v_proj pair of download_lora_weights back to those two slots, whatever the targets. Row 004's constructor check keeps the pipeline at q_proj, v_proj, where those are the right slots; under all_linear, layer 0's block would have trained its k_proj adapter as v_proj, layer 1's block would have taken layer 0's v_proj and o_proj adapters, and no other k_proj, o_proj or MLP adapter would have reached a block. Now layer_adapters lists layer l's adapters in slot order as (target, A, B) in the device layout, from slot |T|·l + pos_T(target); upload_cuda_block gives the q_proj and v_proj ones to new and adds every other one with add_lora_adapter; and sync_lora_to_cpu downloads every adapter of each block by target (download_lora_adapters), and place_layer_adapters writes each into its own slot with B un-scaled. place_layer_adapters checks every downloaded adapter before it writes any: a target outside T, a slot past the LoRA layers, or an A or B whose length is not its slot's refuses the whole layer with an error that names it, and no slot changes. The tests build LoRA layers for two layers with distinct values in every slot and check that under all_linear layer 1's adapters are the seven targets in slot order, each the device layout of slot 7 + p; that under q_proj, v_proj layer l's adapters are slots 2l and 2l + 1 as q_proj and v_proj, the pair the old upload passed; that placing every layer's adapters, B scaled by a power of two, into zeroed layers gives back every slot bit for bit; and that a k_proj adapter under q_proj, v_proj, and a v_proj A one element short after a valid q_proj pair, each refuse, name the offender and change no slot. Row 004's check stays until the CPU forward, the checkpoint names and the pre-warmed LoRA shapes follow T. Planted: layer_adapters taking slot 2·l + position, or only q_proj and v_proj, and place_layer_adapters writing to slot 2·l + position, writing before it has checked every adapter, or not un-scaling B must each be RED."
+    test: "crates/aprender-train/src/finetune/instruct_pipeline/device_targets.rs::falsify_lora_target_selection_v1_007_layer_adapters_are_every_target_in_slot_order (with the other falsify_lora_target_selection_v1_007 tests in that file; no device)"
+    evidence: "cargo test -p aprender-train --lib falsify_lora_target_selection_v1_007"
