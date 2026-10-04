@@ -8302,7 +8302,7 @@
 <https://ont.paiml.dev/v1alpha1/contract/apr-required-checks-v1> <https://ont.paiml.dev/v1alpha1/kind> "pattern"^^<http://www.w3.org/2001/XMLSchema#string> .
 <https://ont.paiml.dev/v1alpha1/contract/apr-required-checks-v1> <https://ont.paiml.dev/v1alpha1/name> "apr-required-checks"^^<http://www.w3.org/2001/XMLSchema#string> .
 <https://ont.paiml.dev/v1alpha1/contract/apr-required-checks-v1> <https://ont.paiml.dev/v1alpha1/status> "active"^^<http://www.w3.org/2001/XMLSchema#string> .
-<https://ont.paiml.dev/v1alpha1/contract/apr-required-checks-v1> <https://ont.paiml.dev/v1alpha1/version> "1.1.0"^^<http://www.w3.org/2001/XMLSchema#string> .
+<https://ont.paiml.dev/v1alpha1/contract/apr-required-checks-v1> <https://ont.paiml.dev/v1alpha1/version> "1.2.0"^^<http://www.w3.org/2001/XMLSchema#string> .
 <https://ont.paiml.dev/v1alpha1/contract/apr-rerank-v1> <http://www.w3.org/1999/02/22-rdf-syntax-ns#type> <http://www.w3.org/ns/prov#Entity> .
 <https://ont.paiml.dev/v1alpha1/contract/apr-rerank-v1> <http://www.w3.org/1999/02/22-rdf-syntax-ns#type> <https://ont.paiml.dev/v1alpha1/Contract> .
 <https://ont.paiml.dev/v1alpha1/contract/apr-rerank-v1> <https://ont.paiml.dev/v1alpha1/file> "contracts/apr-rerank-v1.yaml"^^<http://www.w3.org/2001/XMLSchema#string> .
@@ -12249,6 +12249,16 @@
 <https://ont.paiml.dev/v1alpha1/contract/nf4-tensor-core-gemm-v1> <http://www.w3.org/1999/02/22-rdf-syntax-ns#type> <https://ont.paiml.dev/v1alpha1/Kernel> .
 <https://ont.paiml.dev/v1alpha1/contract/nf4-tensor-core-gemm-v1> <https://ont.paiml.dev/v1alpha1/file> "contracts/nf4-tensor-core-gemm-v1.yaml"^^<http://www.w3.org/2001/XMLSchema#string> .
 <https://ont.paiml.dev/v1alpha1/contract/nf4-tensor-core-gemm-v1> <https://ont.paiml.dev/v1alpha1/id> "nf4-tensor-core-gemm-v1"^^<http://www.w3.org/2001/XMLSchema#string> .
+<https://ont.paiml.dev/v1alpha1/contract/nightly-greens-v1> <http://www.w3.org/1999/02/22-rdf-syntax-ns#type> <http://www.w3.org/ns/prov#Entity> .
+<https://ont.paiml.dev/v1alpha1/contract/nightly-greens-v1> <http://www.w3.org/1999/02/22-rdf-syntax-ns#type> <https://ont.paiml.dev/v1alpha1/Contract> .
+<https://ont.paiml.dev/v1alpha1/contract/nightly-greens-v1> <https://ont.paiml.dev/v1alpha1/file> "contracts/nightly-greens-v1.yaml"^^<http://www.w3.org/2001/XMLSchema#string> .
+<https://ont.paiml.dev/v1alpha1/contract/nightly-greens-v1> <https://ont.paiml.dev/v1alpha1/id> "nightly-greens-v1"^^<http://www.w3.org/2001/XMLSchema#string> .
+<https://ont.paiml.dev/v1alpha1/contract/nightly-greens-v1> <https://ont.paiml.dev/v1alpha1/kind> "pattern"^^<http://www.w3.org/2001/XMLSchema#string> .
+<https://ont.paiml.dev/v1alpha1/contract/nightly-train-v1> <http://www.w3.org/1999/02/22-rdf-syntax-ns#type> <http://www.w3.org/ns/prov#Entity> .
+<https://ont.paiml.dev/v1alpha1/contract/nightly-train-v1> <http://www.w3.org/1999/02/22-rdf-syntax-ns#type> <https://ont.paiml.dev/v1alpha1/Contract> .
+<https://ont.paiml.dev/v1alpha1/contract/nightly-train-v1> <https://ont.paiml.dev/v1alpha1/file> "contracts/nightly-train-v1.yaml"^^<http://www.w3.org/2001/XMLSchema#string> .
+<https://ont.paiml.dev/v1alpha1/contract/nightly-train-v1> <https://ont.paiml.dev/v1alpha1/id> "nightly-train-v1"^^<http://www.w3.org/2001/XMLSchema#string> .
+<https://ont.paiml.dev/v1alpha1/contract/nightly-train-v1> <https://ont.paiml.dev/v1alpha1/kind> "pattern"^^<http://www.w3.org/2001/XMLSchema#string> .
 <https://ont.paiml.dev/v1alpha1/contract/nn-softmax-dim-v1> <http://www.w3.org/1999/02/22-rdf-syntax-ns#type> <http://www.w3.org/ns/prov#Entity> .
 <https://ont.paiml.dev/v1alpha1/contract/nn-softmax-dim-v1> <http://www.w3.org/1999/02/22-rdf-syntax-ns#type> <https://ont.paiml.dev/v1alpha1/Contract> .
 <https://ont.paiml.dev/v1alpha1/contract/nn-softmax-dim-v1> <http://www.w3.org/1999/02/22-rdf-syntax-ns#type> <https://ont.paiml.dev/v1alpha1/Kernel> .
@@ -12989,6 +12999,11 @@
 <https://ont.paiml.dev/v1alpha1/contract/recipe-determinism-v1> <http://www.w3.org/1999/02/22-rdf-syntax-ns#type> <https://ont.paiml.dev/v1alpha1/Kernel> .
 <https://ont.paiml.dev/v1alpha1/contract/recipe-determinism-v1> <https://ont.paiml.dev/v1alpha1/file> "contracts/forjar/recipe-determinism-v1.yaml"^^<http://www.w3.org/2001/XMLSchema#string> .
 <https://ont.paiml.dev/v1alpha1/contract/recipe-determinism-v1> <https://ont.paiml.dev/v1alpha1/id> "recipe-determinism-v1"^^<http://www.w3.org/2001/XMLSchema#string> .
+<https://ont.paiml.dev/v1alpha1/contract/red-age-v1> <http://www.w3.org/1999/02/22-rdf-syntax-ns#type> <http://www.w3.org/ns/prov#Entity> .
+<https://ont.paiml.dev/v1alpha1/contract/red-age-v1> <http://www.w3.org/1999/02/22-rdf-syntax-ns#type> <https://ont.paiml.dev/v1alpha1/Contract> .
+<https://ont.paiml.dev/v1alpha1/contract/red-age-v1> <https://ont.paiml.dev/v1alpha1/file> "contracts/red-age-v1.yaml"^^<http://www.w3.org/2001/XMLSchema#string> .
+<https://ont.paiml.dev/v1alpha1/contract/red-age-v1> <https://ont.paiml.dev/v1alpha1/id> "red-age-v1"^^<http://www.w3.org/2001/XMLSchema#string> .
+<https://ont.paiml.dev/v1alpha1/contract/red-age-v1> <https://ont.paiml.dev/v1alpha1/kind> "pattern"^^<http://www.w3.org/2001/XMLSchema#string> .
 <https://ont.paiml.dev/v1alpha1/contract/reduce-lr-plateau-v1> <http://www.w3.org/1999/02/22-rdf-syntax-ns#type> <http://www.w3.org/ns/prov#Entity> .
 <https://ont.paiml.dev/v1alpha1/contract/reduce-lr-plateau-v1> <http://www.w3.org/1999/02/22-rdf-syntax-ns#type> <https://ont.paiml.dev/v1alpha1/Contract> .
 <https://ont.paiml.dev/v1alpha1/contract/reduce-lr-plateau-v1> <http://www.w3.org/1999/02/22-rdf-syntax-ns#type> <https://ont.paiml.dev/v1alpha1/Kernel> .
@@ -13032,6 +13047,11 @@
 <https://ont.paiml.dev/v1alpha1/contract/release-schedule-06x-v1> <https://ont.paiml.dev/v1alpha1/file> "contracts/release-schedule-06x-v1.yaml"^^<http://www.w3.org/2001/XMLSchema#string> .
 <https://ont.paiml.dev/v1alpha1/contract/release-schedule-06x-v1> <https://ont.paiml.dev/v1alpha1/id> "release-schedule-06x-v1"^^<http://www.w3.org/2001/XMLSchema#string> .
 <https://ont.paiml.dev/v1alpha1/contract/release-schedule-06x-v1> <https://ont.paiml.dev/v1alpha1/kind> "pattern"^^<http://www.w3.org/2001/XMLSchema#string> .
+<https://ont.paiml.dev/v1alpha1/contract/release-step-baseline-v1> <http://www.w3.org/1999/02/22-rdf-syntax-ns#type> <http://www.w3.org/ns/prov#Entity> .
+<https://ont.paiml.dev/v1alpha1/contract/release-step-baseline-v1> <http://www.w3.org/1999/02/22-rdf-syntax-ns#type> <https://ont.paiml.dev/v1alpha1/Contract> .
+<https://ont.paiml.dev/v1alpha1/contract/release-step-baseline-v1> <https://ont.paiml.dev/v1alpha1/file> "contracts/release-step-baseline-v1.yaml"^^<http://www.w3.org/2001/XMLSchema#string> .
+<https://ont.paiml.dev/v1alpha1/contract/release-step-baseline-v1> <https://ont.paiml.dev/v1alpha1/id> "release-step-baseline-v1"^^<http://www.w3.org/2001/XMLSchema#string> .
+<https://ont.paiml.dev/v1alpha1/contract/release-step-baseline-v1> <https://ont.paiml.dev/v1alpha1/kind> "pattern"^^<http://www.w3.org/2001/XMLSchema#string> .
 <https://ont.paiml.dev/v1alpha1/contract/render-primitives-v1> <http://www.w3.org/1999/02/22-rdf-syntax-ns#type> <http://www.w3.org/ns/prov#Entity> .
 <https://ont.paiml.dev/v1alpha1/contract/render-primitives-v1> <http://www.w3.org/1999/02/22-rdf-syntax-ns#type> <https://ont.paiml.dev/v1alpha1/Contract> .
 <https://ont.paiml.dev/v1alpha1/contract/render-primitives-v1> <http://www.w3.org/1999/02/22-rdf-syntax-ns#type> <https://ont.paiml.dev/v1alpha1/Kernel> .
@@ -21079,7 +21099,6 @@
 <https://ont.paiml.dev/v1alpha1/kernel/evidence%2Fkernels%2Fgated_rmsnorm%2Flambda.json%233> <https://ont.paiml.dev/v1alpha1/kernel/registerBudget> "21"^^<http://www.w3.org/2001/XMLSchema#integer> .
 <https://ont.paiml.dev/v1alpha1/kernel/evidence%2Fkernels%2Fgated_rmsnorm%2Flambda.json%233> <https://ont.paiml.dev/v1alpha1/kernel/sha> "91969973aac74cf031d14010d0f4a2938c2b1161"^^<http://www.w3.org/2001/XMLSchema#string> .
 <https://ont.paiml.dev/v1alpha1/llm/claude-md> <http://www.w3.org/1999/02/22-rdf-syntax-ns#type> <https://ont.paiml.dev/v1alpha1/llm/LlmContext> .
-<https://ont.paiml.dev/v1alpha1/llm/claude-md> <https://ont.paiml.dev/v1alpha1/llm/command> "bash scripts/check_package_includes.sh"^^<http://www.w3.org/2001/XMLSchema#string> .
 <https://ont.paiml.dev/v1alpha1/llm/claude-md> <https://ont.paiml.dev/v1alpha1/llm/commandsSection> "APR CLI (`cargo install aprender`)"^^<http://www.w3.org/2001/XMLSchema#string> .
 <https://ont.paiml.dev/v1alpha1/llm/claude-md> <https://ont.paiml.dev/v1alpha1/llm/commandsSection> "Build Commands"^^<http://www.w3.org/2001/XMLSchema#string> .
 <https://ont.paiml.dev/v1alpha1/llm/claude-md> <https://ont.paiml.dev/v1alpha1/llm/commandsSection> "Debugging: Use apr Tools First (MANDATORY)"^^<http://www.w3.org/2001/XMLSchema#string> .
@@ -21504,7 +21523,6 @@
 <https://ont.paiml.dev/v1alpha1/readme/readme-root> <https://ont.paiml.dev/v1alpha1/readme/section> "Quick Start"^^<http://www.w3.org/2001/XMLSchema#string> .
 <https://ont.paiml.dev/v1alpha1/readme/readme-root> <https://ont.paiml.dev/v1alpha1/readme/section> "Verified this release"^^<http://www.w3.org/2001/XMLSchema#string> .
 <https://ont.paiml.dev/v1alpha1/readme/readme-root> <https://ont.paiml.dev/v1alpha1/readme/section> "What is Aprender?"^^<http://www.w3.org/2001/XMLSchema#string> .
-<https://ont.paiml.dev/v1alpha1/readme/readme-root> <https://ont.paiml.dev/v1alpha1/readme/verifiedCommand> "bash scripts/check_readme_claims.sh"^^<http://www.w3.org/2001/XMLSchema#string> .
 <https://ont.paiml.dev/v1alpha1/receipt/0.68.1%2Fgx10%2Fqwen2-1.5b-q4km> <http://www.w3.org/1999/02/22-rdf-syntax-ns#type> <https://ont.paiml.dev/v1alpha1/model/Receipt> .
 <https://ont.paiml.dev/v1alpha1/receipt/0.68.1%2Fgx10%2Fqwen2-1.5b-q4km> <https://ont.paiml.dev/v1alpha1/model/backendRan> "cpu=ok"^^<http://www.w3.org/2001/XMLSchema#string> .
 <https://ont.paiml.dev/v1alpha1/receipt/0.68.1%2Fgx10%2Fqwen2-1.5b-q4km> <https://ont.paiml.dev/v1alpha1/model/backendRan> "cuda=ok"^^<http://www.w3.org/2001/XMLSchema#string> .

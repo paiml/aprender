@@ -1,0 +1,130 @@
+{
+  "$schema": "https://docs.oasis-open.org/sarif/sarif/v2.1.0/errata01/os/schemas/sarif-schema-2.1.0.json",
+  "version": "2.1.0",
+  "runs": [
+    {
+      "tool": {
+        "driver": {
+          "name": "pmat"
+        }
+      },
+      "invocations": [
+        {
+          "executionSuccessful": true,
+          "toolExecutionNotifications": []
+        }
+      ],
+      "results": [
+        {
+          "ruleId": "complexity_not_measurable",
+          "level": "note",
+          "message": {
+            "text": "pmat analyze complexity has no analyzer for the changed shell script or the workflow/contract YAML (it exits 5: no files were analyzed), so complexity_delta is empty because nothing was measured, not because it is zero."
+          },
+          "properties": {
+            "grounding": "measured",
+            "command": [
+              "pmat",
+              "analyze",
+              "complexity",
+              "--path",
+              "scripts/ci_mg_reuse.sh"
+            ],
+            "exit_code": 5,
+            "stdout_sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+            "failure_scenario": "A reader could take an empty complexity_delta as a measured zero; for a shell-and-YAML diff it is unmeasured.",
+            "precision_class": "advisory"
+          }
+        },
+        {
+          "ruleId": "gate5_reads_live_registry_inside_a_reused_section",
+          "level": "warning",
+          "message": {
+            "text": "The guard-cargo section is reused on merge_group when the tree is identical, but it runs scripts/check_gate5_stage.sh (ci/sections.yml lines 2065 and 2067), which curls https://crates.io/api/v1/crates/<crate> (scripts/check_gate5_stage.sh line 155) unless GATE5_REGISTRY_FIXTURE is set. Only the RustSec steps were split out into x86-main-advisories, so this live-registry read is skipped on a reused queue head. The contract says advisories are the one input that changes with no commit; the registry state is a second one."
+          },
+          "properties": {
+            "grounding": "measured",
+            "command": [
+              "grep",
+              "-n",
+              "check_gate5_stage",
+              "ci/sections.yml"
+            ],
+            "exit_code": 0,
+            "stdout_sha256": "3dacc642bd1774a4254a68994113ab7cda3211cb644d6d103599467fb0e38b08",
+            "failure_scenario": "A crate version is published (or yanked) on crates.io between the PR head run and the merge_group run with no commit in the tree; the PR head's green guard-cargo is reused, so the stage check never sees the new registry state and a release-stage violation merges.",
+            "precision_class": "advisory"
+          }
+        },
+        {
+          "ruleId": "reuse_key_duplicates_ci_test_tier",
+          "level": "note",
+          "message": {
+            "text": "scripts/ci_test_tier.sh already implements merge_group reuse by tree equality plus the PR head's job conclusion (--pr-head-conclusion). scripts/ci_mg_reuse.sh re-implements the same key (parent walk, tree equality, same-named job lookup) as a second copy; the two can drift."
+          },
+          "properties": {
+            "grounding": "measured",
+            "command": [
+              "grep",
+              "-n",
+              "-e",
+              "pr-head-conclusion",
+              "scripts/ci_test_tier.sh"
+            ],
+            "exit_code": 0,
+            "stdout_sha256": "856fa6114af01f0db97d9ae7b975e6343eeb6af54fab6e000976e8f9d5b0805e",
+            "failure_scenario": "A later fix to the key in one script (for example a new refusal for a squash parent shape) is not applied to the other, so workspace-test and x86-main disagree on the same queue head about whether the head's run counts.",
+            "precision_class": "advisory"
+          }
+        }
+      ]
+    },
+    {
+      "tool": {
+        "driver": {
+          "name": "cargo-mutants"
+        }
+      },
+      "invocations": [
+        {
+          "executionSuccessful": true,
+          "toolExecutionNotifications": []
+        }
+      ],
+      "results": [
+        {
+          "ruleId": "guard_mutation_survivor_resolve_138",
+          "level": "warning",
+          "message": {
+            "text": "The author's guard mutation harness (.cop/mut_mg.sh, run by the reviewer) killed 31 of 32 mutants. The survivor is resolve:138, scripts/ci_mg_reuse.sh line 138: dropping the `|| { refuse \"lookup failed: no temp dir\"; return 0; }` branch of the mktemp -d call. Under SKILL section 7 class B3 a guard mutation score under 100% is a blocking class. The survivor is behaviourally equivalent: with no temp dir the next redirect to /runs.json fails (Permission denied as uid 1000), so the refusal path is reached anyway; it is a dead branch rather than an untested rule."
+          },
+          "properties": {
+            "grounding": "measured",
+            "command": [
+              "bash",
+              ".cop/mut_mg.sh"
+            ],
+            "exit_code": 1,
+            "stdout_sha256": "261b12915a4858a4a58eafe876a7535bded733e3a1579ad2445cfbf47b46b03a",
+            "failure_scenario": "If mktemp failed as root the redirect to /runs.json could succeed and write into the filesystem root with a stale file read back as the lookup result; no test covers the branch that was written to prevent it.",
+            "precision_class": "advisory"
+          }
+        }
+      ]
+    },
+    {
+      "tool": {
+        "driver": {
+          "name": "antigravity"
+        }
+      },
+      "invocations": [
+        {
+          "executionSuccessful": true,
+          "toolExecutionNotifications": []
+        }
+      ],
+      "results": []
+    }
+  ]
+}
