@@ -49,6 +49,22 @@ step_if() {
 }
 # step_line <file> <step name> -> the line number of that step; empty if absent
 step_line() { grep -nF -- "- name: \"$2\"" "$1" | head -1 | cut -d: -f1; }
+# upload_after <file> <step name> -> the first upload-artifact step after that step, as text
+upload_after() {
+    awk -v want="- name: \"$2\"" '
+        index($0, want) && !found { found = 1; next }
+        found && !up && /^ *- uses: actions\/upload-artifact@/ { up = 1; print; next }
+        up && /^ *- (name|uses):/ { exit }
+        up { print }' "$1"
+}
+# code -> stdin without comments, so a commented-out flag or cp never satisfies a row
+code() { sed -e '/^[[:space:]]*#/d' -e 's/[[:space:]]#.*$//'; }
+# every_shard <if-expression> -> pass iff it names no single shard and is not dead.
+# `matrix.shards` (the shard COUNT) is allowed; `matrix.shard`, `env.SHARD`,
+# `matrix['shard']`, `strategy.job-index` and a literal false are not.
+every_shard() {
+    if grep -qiE "shard([^s]|$)|job-index|(^|[^[:alnum:]_])false([^[:alnum:]_]|$)" <<< "$1"; then echo fail; else echo pass; fi
+}
 
 # The planted shard artifacts: a universe of six ids in two binaries.
 junit() { # junit <file> <binary:test>... -- nextest's attribute order, name first
@@ -80,10 +96,11 @@ fanin() {
 }
 
 table() { # table <workflow> <sections> -> 0 iff every row holds, 2 when a step is missing
-    local f tree keep qs stage bad=0 n=0 want got label w
+    local f tree keep qs stage up bad=0 n=0 want got label w
     f=$(step_run "$1" "$FANIN_STEP"); tree=$(step_run "$2" "$TREE_STEP"); qs=$(step_run "$2" "$QSIGMA_STEP")
-    stage=$(step_run "$2" "$STAGE_STEP"); keep=$(step_run "$2" "$KEEP_STEP")
-    for want in f tree keep qs stage; do
+    stage=$(step_run "$2" "$STAGE_STEP" | code); keep=$(step_run "$2" "$KEEP_STEP"); up=$(upload_after "$2" "$STAGE_STEP")
+    tree=$(code <<< "$tree")
+    for want in f tree keep qs stage up; do
         [ -n "${!want}" ] || { printf 'ENV   a step is missing (%s): cannot judge, not a pass\n' "$want" >&2; return 2; }
     done
     w=$(mktemp -d "${TMPDIR:-/tmp}/quick-sigma.XXXXXX") || return 2
@@ -97,8 +114,11 @@ table() { # table <workflow> <sections> -> 0 iff every row holds, 2 when a step 
     hasnt() { if grep -qF -- "$2" <<< "$1"; then echo fail; else echo pass; fi; }
     # sections.yml: the tree readers are partitioned, on every shard
     row pass "tree step runs nextest with this shard's hash partition" "$(has "$tree" '--partition "hash:${SHARD}/${SHARDS}"')"
-    row pass "tree step is not shard-1-only" "$(hasnt "$(step_if "$2" "$TREE_STEP")" 'matrix.shard')"
-    row pass "tree junit is kept on every shard" "$(hasnt "$(step_if "$2" "$KEEP_STEP")" 'matrix.shard')"
+    row pass "tree step is not shard-1-only" "$(every_shard "$(step_if "$2" "$TREE_STEP")")"
+    row pass "tree junit is kept on every shard" "$(every_shard "$(step_if "$2" "$KEEP_STEP")")"
+    row pass "staging runs on every shard" "$(every_shard "$(step_if "$2" "$STAGE_STEP")")"
+    row pass "the upload runs on every shard" "$(every_shard "$(grep -m1 -E '^ *if: ' <<< "$up")")"
+    row pass "the upload names one artifact per shard" "$(has "$(code <<< "$up")" 'name: sigma-shard-${{ matrix.shard }}')"
     row pass "staging ships every shard's tree junit" "$(has "$stage" 'cp "$sig/quick-tree.junit.xml" sigma-shard/')"
     row pass "staging ships shard 1's listed tree set" "$(has "$stage" 'cp "$sig/quick-tree.list.json" sigma-shard/')"
     row pass "staging runs after the tree step and the quick Σ step" \
@@ -156,13 +176,20 @@ if [ "${1:-}" = "--self-test" ]; then
                 print lines[i]
             }
         }' "$SEC" > "$d/order.yml"
+    # lane-B mutants: a single-shard or dead `if:`, a shared artifact name, a commented-out flag or cp
+    awk -v s="- name: \"$STAGE_STEP\"" 'index($0, s) { hit = 1 } hit && /^ *if: / { sub(/if: .*/, "if: matrix.shard == 1"); hit = 0 } 1' "$SEC" > "$d/stage1.yml"
+    awk -v s="- name: \"$STAGE_STEP\"" 'index($0, s) { hit = 1 } hit && /upload-artifact/ { up = 1 } up && /^ *if: / { sub(/if: .*/, "if: false"); hit = up = 0 } 1' "$SEC" > "$d/updead.yml"
+    sed 's/name: sigma-shard-\${{ matrix.shard }}/name: sigma-shard-1/' "$SEC" > "$d/upname.yml"
+    awk -v s="- name: \"$TREE_STEP\"" 'index($0, s) { hit = 1 } hit && /^ *if: / { sub(/ *$/, " \\&\\& env.SHARD == '"'"'1'"'"'"); hit = 0 } 1' "$SEC" > "$d/envshard.yml"
+    sed 's/-E "\$EXPR" --partition/-E "$EXPR" # --partition/' "$SEC" > "$d/cmtpart.yml"
+    sed 's/^\( *\)cp "\$sig\/quick-tree.junit.xml" sigma-shard\/quick-tree.junit.xml$/\1true # cp "$sig\/quick-tree.junit.xml" sigma-shard\/quick-tree.junit.xml/' "$SEC" > "$d/cmtcp.yml"
     printf 'jobs: {}\n' > "$d/none.yml"
     bad=0
-    for m in exempt nojunit nodup twoj nounion tiermix nopart index shard1 keep1 nostage order; do
+    for m in exempt nojunit nodup twoj nounion tiermix nopart index shard1 keep1 nostage order stage1 updead upname envshard cmtpart cmtcp; do
         case "$m" in exempt | nojunit | nodup | twoj | nounion | tiermix) wf="$d/$m.yml" sec="$SEC" src="$WF" ;; *) wf="$WF" sec="$d/$m.yml" src="$SEC" ;; esac
         if cmp -s "$src" "$d/$m.yml"; then printf 'FAIL  the %s mutant did not apply (its anchor is gone)\n' "$m"; bad=1; continue; fi
         if table "$wf" "$sec" > "$d/out" 2>&1; then printf 'FAIL  the planted %s rule passed the table\n' "$m"; bad=1
-        else printf 'ok    the planted %-7s rule is RED: %s row(s), e.g. %s\n' "$m" "$(grep -c '^FAIL' "$d/out")" "$(grep -m1 '^\(FAIL\|ENV\)' "$d/out" | cut -c7-90)"; fi
+        else printf 'ok    the planted %-8s rule is RED: %s row(s), e.g. %s\n' "$m" "$(grep -c '^FAIL' "$d/out")" "$(grep -m1 '^\(FAIL\|ENV\)' "$d/out" | cut -c7-90)"; fi
     done
     rc=0; table "$d/none.yml" "$SEC" > /dev/null 2>&1 || rc=$?
     if [ "$rc" = 2 ]; then printf 'ok    a workflow with no fan-in step is ENV rc=2, never a pass\n'
