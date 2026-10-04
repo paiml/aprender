@@ -1,0 +1,106 @@
+{
+  "$schema": "https://docs.oasis-open.org/sarif/sarif/v2.1.0/errata01/os/schemas/sarif-schema-2.1.0.json",
+  "version": "2.1.0",
+  "runs": [
+    {
+      "tool": {
+        "driver": {
+          "name": "pmat"
+        }
+      },
+      "results": [
+        {
+          "ruleId": "guard_table_pass",
+          "level": "note",
+          "message": {
+            "text": "bash scripts/check_quick_tier_shard_sigma.sh at head: rc 0, 25 ok rows, 0 FAIL rows, PASS. No false RED on the real tree."
+          },
+          "properties": {
+            "grounding": "measured",
+            "command": [
+              "bash",
+              "scripts/check_quick_tier_shard_sigma.sh"
+            ],
+            "exit_code": 0,
+            "stdout_sha256": "a206942fe50fb63e13b0e4ff3c3848374e34488ae2d0d575e2559ca20db2750a",
+            "failure_scenario": "A false RED on the real tree would block every PR; none observed.",
+            "precision_class": "advisory"
+          }
+        },
+        {
+          "ruleId": "guard_self_test_passes",
+          "level": "note",
+          "message": {
+            "text": "--self-test: 24 planted mutants all RED, plus the no-fan-in ENV rc=2 row; SELF-TEST PASSED."
+          },
+          "properties": {
+            "grounding": "measured",
+            "command": [
+              "bash",
+              "scripts/check_quick_tier_shard_sigma.sh",
+              "--self-test"
+            ],
+            "exit_code": 0,
+            "stdout_sha256": "648da40b5ed03d1788842515091bc8b9374a8ba13b3234ee45d341767e14256b",
+            "failure_scenario": "A mutant that did not apply would be reported FAIL; none did.",
+            "precision_class": "advisory"
+          }
+        },
+        {
+          "ruleId": "guard_survivor_tree_step_or_true",
+          "level": "warning",
+          "message": {
+            "text": "Reviewer mutant on a scratch copy of ci/sections.yml, sed 's/--no-tests=warn$/--no-tests=warn || true/': the tree step nextest line swallows its exit status; guard rc 0. Row 12 covers continue-on-error only, not a shell || true on the nextest line, though its label says a red test must fail the shard. The real tree has no such text, so no CI outcome is wrong today."
+          },
+          "properties": {
+            "grounding": "measured",
+            "command": [
+              "bash",
+              "scripts/check_quick_tier_shard_sigma.sh"
+            ],
+            "exit_code": 0,
+            "stdout_sha256": "a206942fe50fb63e13b0e4ff3c3848374e34488ae2d0d575e2559ca20db2750a",
+            "failure_scenario": "A later edit appends || true to the tree-reader nextest line: a failing tree-reader test no longer fails the shard, its junit still ships, the fan-in union still matches, and the quick tier merges green on a red test.",
+            "precision_class": "advisory"
+          }
+        },
+        {
+          "ruleId": "guard_survivor_no_tests_warn_unpinned",
+          "level": "warning",
+          "message": {
+            "text": "Reviewer mutants on the tree-step nextest line: dropping --no-tests=warn (partition kept) and dropping -E \"$EXPR\" each leave the guard at rc 0. Row 1 pins only the --partition text, though the sections.yml comment and the empty-partition fan-in row depend on --no-tests=warn. The real tree is correct."
+          },
+          "properties": {
+            "grounding": "measured",
+            "command": [
+              "bash",
+              "scripts/check_quick_tier_shard_sigma.sh"
+            ],
+            "exit_code": 0,
+            "stdout_sha256": "a206942fe50fb63e13b0e4ff3c3848374e34488ae2d0d575e2559ca20db2750a",
+            "failure_scenario": "A later edit drops --no-tests=warn: a shard whose hash partition holds no test fails under nextest's default no-tests handling, a false RED on small selections. Dropping -E widens the run to every test in the named packages and the fan-in sees ids outside the listed set (RED, not green).",
+            "precision_class": "advisory"
+          }
+        },
+        {
+          "ruleId": "empty_partition_junit_not_remeasured",
+          "level": "note",
+          "message": {
+            "text": "No cargo ran in this lane: whether nextest writes a junit.xml for a shard whose partition is empty under --no-tests=warn is carried from the author, not re-measured. The keep step cp would fail on a missing file and make that shard RED."
+          },
+          "properties": {
+            "grounding": "measured",
+            "command": [
+              "bash",
+              "scripts/check_quick_tier_shard_sigma.sh"
+            ],
+            "exit_code": 0,
+            "stdout_sha256": "a206942fe50fb63e13b0e4ff3c3848374e34488ae2d0d575e2559ca20db2750a",
+            "failure_scenario": "If nextest writes no junit for an empty partition, every small quick selection leaves one shard RED at the keep step.",
+            "precision_class": "advisory"
+          }
+        }
+      ]
+    }
+  ]
+}
