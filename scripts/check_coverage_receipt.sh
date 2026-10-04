@@ -10,6 +10,7 @@
 #   S3  the receipt is uploaded by its exact glob, if: always(), continue-on-error, a missing one an upload error;
 #   S4  nothing in the tracked tree (contracts/ prose aside) reads the receipt except the release gate
 #       (scripts/release/tag_coverage_gate.sh, #4734) and its guard. A new reader lands with a change to this row.
+#       The CI step that only runs this guard is not a reader; that one line is exempt, never its file.
 #   S1-S3 compare each step to the reviewed text below EXACTLY (comments and blank lines aside): a "contains"
 #   check let an added if: false, working-directory: or early exit through (review round 2).
 # Then each mutant (of the producer, or of a copy of the workflow) must turn at least one row WRONG.
@@ -144,10 +145,15 @@ structure() {
   # crate, an xtask or a *.mk is still a reader. contracts/ is prose about the receipt, never a reader of it.
   local re='coverage-receipt|coverage_receipt|cov-receipt'
   if [ "$(git -C "$root" rev-parse --show-toplevel 2>/dev/null)" = "$root" ]; then
-    readers=$(git -C "$root" grep -lE "$re" -- . ':(exclude)contracts/' 2>/dev/null)
+    readers=$(git -C "$root" grep -nE "$re" -- . ':(exclude)contracts/' 2>/dev/null)
   else
-    readers=$(grep -rlE "$re" "$root" --exclude-dir=.git --exclude-dir=contracts 2>/dev/null | sed "s|^$root/||")
+    readers=$(grep -rnE "$re" "$root" --exclude-dir=.git --exclude-dir=contracts 2>/dev/null | sed "s|^$root/||")
   fi
+  # Line by line, so the one CI step that RUNS this guard (`run: ... bash scripts/check_coverage_receipt.sh`
+  # and nothing else) names it without exempting the rest of its file: a reader beside it is still a reader.
+  readers=$(awk '{ f = $0; sub(/:[0-9]+:.*/, "", f); c = $0; sub(/^[^:]*:[0-9]+:/, "", c)
+      if (c !~ /^[[:space:]]*run: (setsid --wait )?bash scripts\/check_coverage_receipt\.sh[[:space:]]*$/) print f }' \
+      <<< "$readers" | sort -u)
   readers=$(grep -vxE '\.github/workflows/coverage-nightly\.yml|scripts/(check_)?coverage_receipt\.sh|scripts/release/tag_coverage_gate\.sh|scripts/check_tag_coverage_gated\.sh' <<< "$readers" | grep . | tr '\n' ' ')
   if [ -z "$readers" ]; then srow S4_known_readers_only ok; else srow S4_known_readers_only "read by ${readers% }"; fi
   return "$wrong"
@@ -204,6 +210,7 @@ wmutant upload-dropped       's/^          name: coverage-receipt$/          nam
 wmutant upload-optional      '/coverage-receipt-\*\.json/{n;s/error/warn/}'
 wmutant a-gate-reads-it      's/^name: Coverage Nightly$/name: Coverage Nightly/' scripts/release/read_cov.sh
 wmutant a-crate-reads-it     's/^name: Coverage Nightly$/name: Coverage Nightly/' crates/x/src/gate.rs
+wmutant a-ci-step-reads-it   's/^name: Coverage Nightly$/name: Coverage Nightly/' ci/sections.yml
 wmutant marker-in-a-comment  's|^        run: touch "\$RUNNER_TEMP/cov-start"$|        run: echo skip # touch "$RUNNER_TEMP/cov-start"|'
 wmutant floor-not-read       "s|^          floor=\"\$(make -s .*|          floor=unknown|"
 wmutant upload-glob-typo     's|coverage-receipt-\*\.json$|coverage-receipt-*.jsn|'
