@@ -35,7 +35,9 @@ equations:
     invariants:
       - "a RELEASABLE line for another commit (main's head after a merge) is not the night's C and never counts"
       - "a NOT RELEASABLE line that contains the text RELEASABLE H= never counts"
-      - "a night with no pick is not counted; a pick that cannot be read, a missing run or a missing line is not_measured"
+      - "resolve exits 0 with the pick sha, 1 when the night has no pick, 2 when the pick could not be read, 3 on a caller error: exit 1 is the only not-counted answer, every other nonzero exit is not_measured"
+      - "a night with no pick is not counted; a pick that cannot be read, a pick that exits 0 without a 40-hex sha, a missing run or a missing line is not_measured"
+      - "a train line of NOT RELEASABLE, for any reason it names, is the train's measured verdict on that night: not counted, never not_measured here; not_measured is only what the printer could not read"
 
   verdict:
     formula: "PROMOTE H=h for the newest n in the window with counts(n); else SKIP: none RELEASABLE, with (not_measured: k of 7 nights) when k > 0"
@@ -71,13 +73,13 @@ proof_obligations:
 falsification_tests:
   - id: FALSIFY-WP-001
     rule: "The printer is right on every row of its case table"
-    prediction: "A full week promotes the newest night; a newer red night promotes the older one; a week of red nights is a measured SKIP; a line or bundle for another commit, a night without a pick, an unreadable pick, a NOT RELEASABLE line containing RELEASABLE H= and a short sha are not counted; no pick command, no ledger, an empty ledger, a run without a line and a run without a run time are not_measured; nights before the window and after --as-of are not promoted; the latest run on a night decides it in either order; stdout is one line; the line reaches the inbox; git and gh on PATH see no tag, push or release call"
+    prediction: "A full week promotes the newest night; a newer red night promotes the older one; a week of red nights is a measured SKIP; a line or bundle for another commit, a night without a pick, a NOT RELEASABLE line containing RELEASABLE H= and a short sha are not counted; an unreadable pick, a pick that exits 0 without a sha, no pick command, no ledger, an empty ledger, a run without a line and a run without a run time are not_measured; nights before the window and after --as-of are not promoted; the latest run on a night decides it in either order; stdout is one line; the line reaches the inbox; git and gh on PATH see no tag, push or release call"
     test: "bash scripts/release/weekly_promote.sh --self-test"
     if_fails: "The printer can name a commit no night judged as its pick, hide unmeasured nights behind SKIP, or act on the release"
 
   - id: FALSIFY-WP-002
     rule: "The case table can still fail on the defects it names"
-    prediction: "Each planted mutant (any line read as releasable, the bundle commit ignored, the night's pick ignored, a night without a pick promoted, an unreadable pick counted, oldest night first, the first run deciding a night, the night taken as the run date, not_measured read as measured, the window widened, no ledger passing, a tag before the PROMOTE line, a missing line not counted as not_measured, an empty run time read as today) turns --self-test RED; a mutant whose patch does not apply is an error, never a survivor"
+    prediction: "Each planted mutant (any line read as releasable, the bundle commit ignored, the night's pick ignored, a night without a pick promoted, an unreadable pick counted, oldest night first, the first run deciding a night, the night taken as the run date, not_measured read as measured, the window widened, no ledger passing, a tag before the PROMOTE line, a missing line not counted as not_measured, an empty run time read as today, a pick printed empty on exit 0 counted as measured) turns --self-test RED; a mutant whose patch does not apply is an error, never a survivor"
     test: "bash scripts/release/weekly_promote.sh --mutants"
     if_fails: "The case table is theater: it would pass a printer that promotes a commit the night never picked"
 

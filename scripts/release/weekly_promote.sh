@@ -75,6 +75,8 @@ judge() {
             1) note "night $n: RELEASABLE H=${h:0:10}, but the night has no pick, not counted"; continue ;;
             *) note "night $n: the night's pick could not be read (rc=$rc), not_measured"; nm=$((nm + 1)); continue ;;
         esac
+        # a pick that exits 0 but prints no sha was never read: not_measured, never "another commit"
+        if ! printf '%s\n' "$p" | grep -Eqx '[0-9a-f]{40}'; then note "night $n: the night's pick read as \"${p:0:20}\", not_measured"; nm=$((nm + 1)); continue; fi
         if [ "$p" != "$h" ]; then note "night $n: RELEASABLE H=${h:0:10} is not the night's pick ${p:0:10}, not counted"; continue; fi
         note "night $n: RELEASABLE H=${h:0:10}, the night's pick"
         printf 'PROMOTE H=%s\n' "$h"
@@ -105,12 +107,12 @@ run() {
     printf '%s\n' "$4" > "$1/$2/line"
     printf 'lane\tkind\tstate\n# C\t%s\n# as of\t%s\n' "${5:-}" "$3" > "$1/$2/bundle.tsv"
 }
-# a stub nightly-pick: resolve reads picks.tsv beside it (night, sha | NM); a missing night has no pick
+# a stub nightly-pick: resolve reads picks.tsv beside it (night, sha | NM | EMPTY); a missing night has no pick
 stub_np() {
     cat > "$1/np.sh" <<'STUB'
 n=''; while [ "$#" -gt 0 ]; do case "$1" in --night) n="$2"; shift 2 ;; *) shift ;; esac; done
 v="$(awk -F '\t' -v n="$n" '$1 == n { print $2; exit }' "$(dirname "$0")/picks.tsv")"
-case "$v" in '') echo "has no pick" >&2; exit 1 ;; NM) exit 2 ;; *) echo "$v" ;; esac
+case "$v" in '') echo "has no pick" >&2; exit 1 ;; NM) exit 2 ;; EMPTY) exit 0 ;; *) echo "$v" ;; esac
 STUB
     : > "$1/picks.tsv"
 }
@@ -163,6 +165,11 @@ self_test() {
         bash "$SCRIPT_PATH" --ledger "$L" --as-of "$ASOF" --np "$s/np.sh"
     row no_pick_command_is_not_measured 2 "SKIP: none RELEASABLE (not_measured: 7 of 7 nights)" "PROMOTE" -- \
         bash "$SCRIPT_PATH" --ledger "$L" --as-of "$ASOF" --np "$tmp/absent.sh"
+    # a pick that exits 0 and prints no sha was never read: the week is not measured, not a measured SKIP
+    s="$tmp/w6e"; mkdir -p "$s"; stub_np "$s"
+    for i in 5 6 7 8 9 10 11; do pick "$s" "$(printf '2026-10-%02d' "$i")" EMPTY; done
+    row an_empty_pick_is_not_measured 2 "SKIP: none RELEASABLE (not_measured: 7 of 7 nights)" "PROMOTE" -- \
+        bash "$SCRIPT_PATH" --ledger "$L" --as-of "$ASOF" --np "$s/np.sh"
 
     row no_ledger_is_not_measured 2 "SKIP: none RELEASABLE (not_measured: no ledger)" "PROMOTE" -- wp "$tmp/absent"
     mkdir -p "$tmp/empty"
@@ -222,7 +229,8 @@ m10_window_widened	s/^WINDOW=7 /WINDOW=8 /
 m11_no_ledger_passes	s/if \[ ! -d "\$led" \]; then printf .SKIP: none RELEASABLE (not_measured: no ledger)\\n.; return 2; fi/:/
 m12_it_tags	s/printf .PROMOTE H=%s\\n. "\$h"/git tag "v-$h" 2> \/dev\/null; printf "PROMOTE H=%s\\n" "$h"/
 m13_missing_line_not_measured_dropped	s/if \[ -z "\$line" \]; then note "night \$n: no train line, not_measured"; nm=\$((nm + 1)); continue; fi/:/
-m14_empty_run_time_read_as_today	s/\[ -n "\$1" \] || return 3   # date reads/: # date reads/'
+m14_empty_run_time_read_as_today	s/\[ -n "\$1" \] || return 3   # date reads/: # date reads/
+m15_empty_pick_counted_as_measured	s/^        if ! printf .%s\\n. "\$p" | grep -Eqx .\[0-9a-f\]{40}.; then .*$/        :/'
 
 mutants() {
     local tmp name expr killed=0 total=0 errors=0 out
