@@ -4336,8 +4336,6 @@ impl CudaNf4TransformerBlock {
         scratch: &mut CudaBlockScratch,
         grad_lora: &mut CudaLoraGradWorkspace,
     ) -> Result<()> {
-        use crate::autograd::cuda_forward::gemm_forward;
-
         let hidden_size = self.config.hidden_size;
         let q_dim = self.config.q_dim();
         let kv_hidden_size = self.config.num_kv_heads * self.config.head_dim();
