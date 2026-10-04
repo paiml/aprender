@@ -26,7 +26,8 @@
 #   2  NOT_MEASURED  V is not a version, T does not resolve (no tag), or T's version is unreadable.
 #                    Unknown is never a pass (L25).
 # This script decides nothing by itself: cut_tag() in autopilot.sh logs its line, report-only, and
-# release-gates-nightly runs its self-test, until three green nights make it a refusal (L31).
+# (once wired) the release-gates nightly runs its self-test and judges the newest final tag; until then
+# no nightly measures it, and three green nights are what make it a refusal (L31).
 set -uo pipefail
 PROG=tag_on_bump
 
@@ -55,11 +56,14 @@ judge() {
         echo "NOT_MEASURED $PROG: no version readable from Cargo.toml at $label ${t:0:12}"; echo "bump=none between=NA"; return 2
     fi
     if [ "$tv" = "$v" ]; then
-        local cands nm="" sh
+        local cands nm="" sh shq
         # git log failing is Unknown, not "no bump commit"
         if ! cands=$(git -C "$root" log --first-parent --format=%H -G'^version[[:space:]]*=' "$t" -- Cargo.toml 2>/dev/null); then
             echo "NOT_MEASURED $PROG: the history under $label ${t:0:12} could not be read"; echo "bump=none between=NA"; return 2
         fi
+        # a shallow repository whose shallow file cannot be located (git < 2.31 has no --path-format)
+        # treats every parentless candidate as a boundary: Unknown, never a root
+        shq=$(git -C "$root" rev-parse --is-shallow-repository 2>/dev/null)
         sh=$(git -C "$root" rev-parse --path-format=absolute --git-path shallow 2>/dev/null)
         while IFS= read -r c; do
             [ -n "$c" ] || continue
@@ -70,7 +74,7 @@ judge() {
                 if [ -z "$pv" ] && git -C "$root" cat-file -e "$c^:Cargo.toml" 2>/dev/null; then
                     nm="the parent of ${c:0:12} has a Cargo.toml with no readable version"; break
                 fi
-            elif [ -n "$sh" ] && [ -f "$sh" ] && grep -qx "$c" "$sh"; then
+            elif [ "$shq" != false ] && { [ -z "$sh" ] || [ ! -f "$sh" ] || grep -qx "$c" "$sh"; }; then
                 nm="${c:0:12} is a shallow-clone boundary: its parent is not in this checkout"; break
             else
                 pv=""   # a true root commit: nothing before it carried V
