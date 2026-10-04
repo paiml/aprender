@@ -22,22 +22,32 @@
 #             it; and an all-hex type prefix (add/ bad/ fed/) would read as a worker.
 #
 # Usage:
+#   issue_tree_lint.sh fetch <dir> [owner/repo]    # read-only: dir/issues.jsonl, dir/branches.jsonl, dir/now.txt
 #   issue_tree_lint.sh check <dir>                 # verdict JSON on stdout
+#   issue_tree_lint.sh file  <verdict.json> [owner/repo]  # RED -> opens ONE issue, or comments on the open one
+#   issue_tree_lint.sh run   <dir> [--file] [owner/repo]  # fetch + check (+ file)
 #   issue_tree_lint.sh self-test                   # the case table; every rule RED on its own fixture
 #
-# Exit codes of check: 0 GREEN, 10 RED, 20 NO-DATA (0 issues read), others = the script crashed.
+# Exit codes of check/run: 0 GREEN, 10 RED, 20 NO-DATA (0 issues read), others = the script crashed.
 # RED and NO-DATA are >= 10 so an alarm never looks like a shell or jq crash (exit 1/2/5).
 #
 # Env: MAX_TICKETS=100 MAX_DEPTH=3 MAX_CHILDREN=5 MAX_WIP=2 ACTIVE_DAYS=7 (whole numbers; anything else exits 2)
-#      ROOT_LABEL=epic
+#      ROOT_LABEL=epic   ISSUE_TITLE="ISSUE-TREE-001 RED: issue graph lint"
+#      SOURCE_DATE_EPOCH=<whole seconds>  pins the now.txt a hand-run fetch writes (default: the clock; fetch says
+#                                         which); run refuses it
+#      ISSUE_PARENT=<n>  the filed RED issue is linked under it, so the lint's own ticket is never an orphan
+#      ISSUE_MILESTONE=backlog
 set -euo pipefail
 
+REPO_DEFAULT=paiml/aprender
 MAX_TICKETS=${MAX_TICKETS:-100}
 MAX_DEPTH=${MAX_DEPTH:-3}
 MAX_CHILDREN=${MAX_CHILDREN:-5}
 MAX_WIP=${MAX_WIP:-2}
 ACTIVE_DAYS=${ACTIVE_DAYS:-7}
 ROOT_LABEL=${ROOT_LABEL:-epic}
+ISSUE_TITLE=${ISSUE_TITLE:-"ISSUE-TREE-001 RED: issue graph lint"}
+ISSUE_MILESTONE=${ISSUE_MILESTONE:-backlog}
 # The exit codes in the header, named: an exit code is not a count (check_release_scripts_derive_identity R3).
 readonly ITL_RC_RED=10 ITL_RC_NODATA=20
 
@@ -52,6 +62,76 @@ if [ -n "${MAX_OPEN+set}" ]; then die "MAX_OPEN is gone: the cap is MAX_TICKETS 
 for knob in MAX_TICKETS MAX_DEPTH MAX_CHILDREN MAX_WIP ACTIVE_DAYS; do
     [[ ${!knob} =~ ^(0|[123456789]([0123456789])*)$ ]] || die "$knob must be a whole number, got '${!knob}'"
 done
+
+# The snapshot's now: R4 counts a branch whose head is at most ACTIVE_DAYS older. DET002: SOURCE_DATE_EPOCH
+# pins it when set (a fetch run by hand, e.g. to rebuild a past night's window); otherwise the clock, which a
+# live snapshot records. Whole seconds as date +%s writes them, the knob rule: jq alone would also take 1.5,
+# -1, 1e9 or 007 as a time. At most 253402300799, the last second of 9999: check cannot take a five-digit year.
+# A time jq cannot write stops the fetch with exit 2, as any input error does. jq formats it because BSD date
+# has no `-d @`.
+snapshot_now() {
+    [[ ${SOURCE_DATE_EPOCH:-0} =~ ^(0|[123456789]([0123456789])*)$ ]] || die "SOURCE_DATE_EPOCH must be a whole number of seconds, got '${SOURCE_DATE_EPOCH-}'"
+    jq -nr --argjson t "${SOURCE_DATE_EPOCH:-$(date +%s)}" 'if $t > 253402300799 then error("past 9999") else $t | todate end' \
+        || die "SOURCE_DATE_EPOCH must be at most 253402300799 (9999-12-31T23:59:59Z), got '${SOURCE_DATE_EPOCH-}'"
+}
+
+fetch() {
+    local dir="$1" repo="${2:-$REPO_DEFAULT}"
+    local owner="${repo%%/*}" name="${repo##*/}"
+    # The now comes first, before the directory is touched or any GraphQL call is made, so a bad SOURCE_DATE_EPOCH
+    # changes nothing and costs no call. It goes through a variable, since a redirect would leave an empty now.txt.
+    # A branch pushed during the fetch is newer than the now; R4 counts it as in progress.
+    local now now_from=clock
+    now=$(snapshot_now)
+    [ -z "${SOURCE_DATE_EPOCH:-}" ] || now_from=SOURCE_DATE_EPOCH
+    # now.txt is the last file a fetch writes and one check needs. Removing the old one before the first call means
+    # a fetch that stops part way, into a directory an earlier fetch filled, leaves one check refuses, never a new
+    # graph beside an old now.
+    mkdir -p "$dir"
+    rm -f "${dir:?}/now.txt"
+    : > "$dir/issues.jsonl"
+    local cursor="" page
+    # shellcheck disable=SC2016
+    local q='query($o:String!,$n:String!,$c:String){repository(owner:$o,name:$n){issues(states:OPEN,first:100,after:$c){
+      pageInfo{hasNextPage endCursor}
+      nodes{number title labels(first:30){nodes{name}}
+            parent{number state repository{nameWithOwner}}}}}}'
+    while :; do
+        if [ -n "$cursor" ]; then
+            page=$(gh api graphql -f query="$q" -F o="$owner" -F n="$name" -F c="$cursor")
+        else
+            page=$(gh api graphql -f query="$q" -F o="$owner" -F n="$name")
+        fi
+        printf '%s' "$page" | jq -c --arg repo "$repo" '.data.repository.issues.nodes[]
+          | {n: .number, title, labels: [.labels.nodes[].name],
+             parent: (if .parent then {n: .parent.number, state: .parent.state,
+                                       same_repo: (.parent.repository.nameWithOwner == $repo)} else null end)}' \
+          >> "$dir/issues.jsonl"
+        [ "$(printf '%s' "$page" | jq -r '.data.repository.issues.pageInfo.hasNextPage')" = true ] || break
+        cursor=$(printf '%s' "$page" | jq -r '.data.repository.issues.pageInfo.endCursor')
+    done
+    : > "$dir/branches.jsonl"
+    cursor=""
+    # shellcheck disable=SC2016
+    local qb='query($o:String!,$n:String!,$c:String){repository(owner:$o,name:$n){refs(refPrefix:"refs/heads/",first:100,after:$c){
+      pageInfo{hasNextPage endCursor}
+      nodes{name target{... on Commit{committedDate}}}}}}'
+    while :; do
+        if [ -n "$cursor" ]; then
+            page=$(gh api graphql -f query="$qb" -F o="$owner" -F n="$name" -F c="$cursor")
+        else
+            page=$(gh api graphql -f query="$qb" -F o="$owner" -F n="$name")
+        fi
+        printf '%s' "$page" | jq -c '.data.repository.refs.nodes[] | {name, date: .target.committedDate}' \
+          >> "$dir/branches.jsonl"
+        [ "$(printf '%s' "$page" | jq -r '.data.repository.refs.pageInfo.hasNextPage')" = true ] || break
+        cursor=$(printf '%s' "$page" | jq -r '.data.repository.refs.pageInfo.endCursor')
+    done
+    printf '%s\n' "$repo" > "$dir/repo.txt"
+    printf '%s\n' "$now" > "$dir/now.txt"
+    printf 'fetched %s issues, %s branches into %s; now %s (%s)\n' \
+        "$(wc -l < "$dir/issues.jsonl")" "$(wc -l < "$dir/branches.jsonl")" "$dir" "$now" "$now_from" >&2
+}
 
 # Pure: reads dir/{issues,branches}.jsonl + dir/now.txt, prints the verdict. Exit 0/10/20.
 check() {
@@ -130,6 +210,52 @@ summary() {
     jq -r '"ISSUE-TREE-001 \(.verdict): tickets \(.rules.R2_tickets.count)/\(.rules.R2_tickets.max), orphans \(.rules.R1_orphans.count), depth>\(.rules.R1_depth.max) \(.rules.R1_depth.count), fanout>\(.rules.R3_fanout.max) \(.rules.R3_fanout.count), wip>\(.rules.R4_wip.max) \(.rules.R4_wip.count) workers; not capped: open \(.open), roots \(.roots | length)"'
 }
 
+# RED -> exactly ONE open issue titled $ISSUE_TITLE: comment on it if it exists, else open it.
+file_issue() {
+    local verdict="$1" repo="${2:-$REPO_DEFAULT}"
+    [ "$(jq -r .verdict "$verdict")" = RED ] || { printf 'not RED, nothing filed\n' >&2; return 0; }
+    local body existing
+    body=$(printf '%s\n\n```json\n%s\n```\n\nFiled by `scripts/release/issue_tree_lint.sh` (ISSUE-TREE-001).\n' \
+        "$(summary < "$verdict")" "$(jq '{rules, detail}' "$verdict")")
+    existing=$(gh issue list -R "$repo" --state open --search "\"$ISSUE_TITLE\" in:title" --json number,title \
+        | jq -r --arg t "$ISSUE_TITLE" 'map(select(.title == $t)) | .[0].number // empty')
+    if [ -n "$existing" ]; then
+        gh issue comment "$existing" -R "$repo" --body "$body" >/dev/null
+        printf 'commented on #%s\n' "$existing"
+        return 0
+    fi
+    local url n
+    url=$(gh issue create -R "$repo" --title "$ISSUE_TITLE" --milestone "$ISSUE_MILESTONE" --body "$body")
+    n=${url##*/}
+    if [ -n "${ISSUE_PARENT:-}" ]; then
+        local id
+        id=$(gh api "repos/$repo/issues/$n" --jq .id)
+        gh api -X POST "repos/$repo/issues/$ISSUE_PARENT/sub_issues" -F sub_issue_id="$id" >/dev/null
+    fi
+    printf 'opened #%s\n' "$n"
+}
+
+run() {
+    # run reads the live graph, so its now is the clock. A SOURCE_DATE_EPOCH left in the environment (build
+    # tooling exports it) would make R4 count every branch since ACTIVE_DAYS before that date instead.
+    [ -z "${SOURCE_DATE_EPOCH:+set}" ] || die "run: SOURCE_DATE_EPOCH is set; it pins a hand-run fetch only, and run reads the live graph"
+    local dir="$1"; shift
+    local do_file=0 repo="$REPO_DEFAULT"
+    for a in "$@"; do
+        case "$a" in
+            --file) do_file=1 ;;
+            */*) repo="$a" ;;
+            *) die "run: unknown argument $a" ;;
+        esac
+    done
+    fetch "$dir" "$repo"
+    local rc=0
+    check "$dir" > "$dir/verdict.json" || rc=$?
+    summary < "$dir/verdict.json"
+    if [ "$rc" -eq "$ITL_RC_RED" ] && [ "$do_file" -eq 1 ]; then file_issue "$dir/verdict.json" "$repo"; fi
+    return "$rc"
+}
+
 # ---------------------------------------------------------------- self-test (case table)
 
 SELF_FAILS=0
@@ -194,6 +320,36 @@ knob_rc() { local -x "${1:?}"; check_rc "$2"; }
 knob_err() { local -x LC_ALL="${3:?}" "${1:?}"; bash "$0" check "$2" 2>&1 >/dev/null || :; }
 # yes when a fresh bash in locale $1 matches an Arabic-Indic digit with [0-9], as a knob check with ranges would.
 range_takes_wide_digit() { local -x LC_ALL="${1:?}"; bash -c 'if [[ ١ =~ ^[0-9]$ ]]; then printf yes; else printf no; fi'; }
+# Whether gh, in the PATH a stub run gets, is the stub. bash skips a stub it cannot execute (on a noexec TMPDIR) for
+# the next gh on PATH, the real one, so no stub run starts unless this holds.
+stub_ok() { local gh; gh=$(env PATH="$T/stub:$PATH" bash -c 'command -v gh') || :; [[ "$gh" == "$T/stub/gh" ]]; }
+# A fresh `fetch` or `run` ($1) into dir $3 with env assignment $2, against the stub gh in $T/stub (never the
+# network), SOURCE_DATE_EPOCH unset unless $2 sets it. Prints the exit code, or no-stub having run nothing.
+stub_rc() {
+    local rc=0
+    stub_ok || { printf no-stub; return 0; }
+    env -u SOURCE_DATE_EPOCH PATH="$T/stub:$PATH" "${2:?}" bash "$0" "${1:?}" "${3:?}" >/dev/null 2>&1 || rc=$?
+    printf '%s' "$rc"
+}
+# The stderr of the same run, or no-stub having run nothing.
+stub_err() {
+    stub_ok || { printf no-stub; return 0; }
+    env -u SOURCE_DATE_EPOCH PATH="$T/stub:$PATH" "${2:?}" bash "$0" "${1:?}" "${3:?}" 2>&1 >/dev/null || :
+}
+# The number of calls the gh in dir $1 has logged.
+calls_in() { wc -l < "${1:?}/calls" | tr -d ' '; }
+# "$@" with the tripwire gh in $T/trip next on PATH, where the real gh would be.
+with_trip() { local -x PATH="$T/trip:$PATH"; "$@"; }
+# "$@" with the stub gh failing query $1 (issues or refs), as gh fails a call GitHub drops, so a fetch stops part way.
+with_failing() { local -x STUB_FAIL="${1:?}"; shift; "$@"; }
+# "$@" with the stub gh answering two pages per query, counting its calls in a fresh pages file.
+with_pages() { local -x STUB_PAGES="$T/stub/pages"; : > "$STUB_PAGES"; "$@"; }
+# "$@" in locale $1, exported to the fresh bash a stub run starts.
+in_locale() { local -x LC_ALL="${1:?}"; shift; "$@"; }
+# The now of a snapshot with SOURCE_DATE_EPOCH set to $1 (exported, as knob_rc does).
+snap_with() { local -x SOURCE_DATE_EPOCH="$1"; snapshot_now; }
+# failed when that snapshot fails. A die in it ends the command substitution it runs in, so read the status of that.
+snap_fails() { local now; if now=$(snap_with "$1" 2>/dev/null); then printf 'wrote %s' "$now"; else printf failed; fi; }
 
 verdict_of() { local rc=0; check "$1" > "$1/v.json" || rc=$?; printf '%s/%s' "$(jq -r .verdict "$1/v.json")" "$rc"; }
 rule_of() { jq -r ".rules.$2.ok" "$1/v.json"; }
@@ -340,15 +496,127 @@ self_test() {
     expect "summary line" "ISSUE-TREE-001 RED: tickets 2/100, orphans 1, depth>3 0, fanout>5 0, wip>2 0 workers; not capped: open 6, roots 1" \
         "$(summary < "$T/orphan/v.json")"
 
+    # The now of a snapshot. The stub gh answers every query with one empty, final page, so fetch and run go
+    # offline, and logs each call to the calls file beside it. With STUB_FAIL set to issues or refs, it fails that
+    # query (exit 1), as gh does. With STUB_PAGES set, it answers two pages per query, one node on each, the second
+    # for the cursor of the first, and fails a fifth call: a fetch that never sends the cursor stops, instead of
+    # asking for the first page forever.
+    mkdir -p "$T/stub"
+    cat > "$T/stub/gh" <<'STUB'
+#!/usr/bin/env bash
+printf 'call\n' >> "${0%/*}/calls"
+if [ -n "${STUB_FAIL:-}" ]; then
+    case "$*" in *"$STUB_FAIL("*) printf 'gh stub: the %s query fails\n' "$STUB_FAIL" >&2; exit 1 ;; esac
+fi
+if [ -n "${STUB_PAGES:-}" ]; then
+    printf 'x\n' >> "$STUB_PAGES"
+    [ "$(wc -l < "$STUB_PAGES")" -le 4 ] || { printf 'gh stub: a fifth call in a paged fetch\n' >&2; exit 1; }
+    p=1
+    case "$*" in *' c=c1'*) p=2 ;; esac
+    jq -nc --argjson p "$p" '{pageInfo: {hasNextPage: ($p == 1), endCursor: "c\($p)"}} as $i
+      | {data: {repository: {issues: ($i + {nodes: [{number: $p, title: "t", labels: {nodes: []}, parent: null}]}),
+                             refs: ($i + {nodes: [{name: "b\($p)", target: {committedDate: "2026-09-20T00:00:00Z"}}]})}}}'
+    exit 0
+fi
+printf '%s\n' '{"data":{"repository":{"issues":{"pageInfo":{"hasNextPage":false},"nodes":[]},"refs":{"pageInfo":{"hasNextPage":false},"nodes":[]}}}}'
+STUB
+    chmod +x "$T/stub/gh"
+    : > "$T/stub/calls"
+    # bash skips a stub gh it cannot execute (a noexec TMPDIR) for the next gh on PATH. Here that is a tripwire, a
+    # copy of the stub that logs to its own calls file, where it would be the real gh querying GitHub.
+    mkdir -p "$T/trip"
+    cp "$T/stub/gh" "$T/trip/gh"
+    chmod +x "$T/trip/gh"
+    : > "$T/trip/calls"
+    chmod -x "$T/stub/gh"
+    expect "a stub gh that cannot run stops a stub run before it starts (no-stub)" "no-stub" \
+        "$(with_trip stub_rc fetch ACTIVE_DAYS=7 "$T/nostub")"
+    expect "... and a stub run for its stderr too" "no-stub" "$(with_trip stub_err fetch ACTIVE_DAYS=7 "$T/nostub")"
+    expect "... so the next gh on PATH is never called" "0" "$(calls_in "$T/trip")"
+    chmod +x "$T/stub/gh"
+    expect "SOURCE_DATE_EPOCH pins the now of the snapshot" "2026-09-21T14:13:20Z" "$(snap_with 1790000000)"
+    expect "an unset SOURCE_DATE_EPOCH is the clock: a now after 2026-10-04, the day this case was written" "true" \
+        "$(unset SOURCE_DATE_EPOCH; snapshot_now | jq -R 'fromdateiso8601 >= 1791072000')"
+    expect "an empty SOURCE_DATE_EPOCH is the clock too, as an unset one is" "true" \
+        "$(snap_with '' | jq -R 'fromdateiso8601 >= 1791072000')"
+    expect "a SOURCE_DATE_EPOCH that is not a number fails the snapshot: no now is written from it" "failed" "$(snap_fails x)"
+    expect "a fractional SOURCE_DATE_EPOCH fails the snapshot too: jq alone would write a now from 1.5" "failed" "$(snap_fails 1.5)"
+    expect "a negative SOURCE_DATE_EPOCH fails the snapshot" "failed" "$(snap_fails -1)"
+    expect "an exponent SOURCE_DATE_EPOCH fails the snapshot" "failed" "$(snap_fails 1e9)"
+    expect "Arabic-Indic digits in SOURCE_DATE_EPOCH stop a fresh fetch at its whole-number check, in $wide_locale" "1" \
+        "$(in_locale "$wide_locale" stub_err fetch SOURCE_DATE_EPOCH=١٠٠ "$T/wide" | grep -c 'must be a whole number of seconds')"
+    expect "a zero-padded SOURCE_DATE_EPOCH fails the snapshot: date +%s never pads, and jq would take 007 as 7" \
+        "failed" "$(snap_fails 007)"
+    expect "a whole number past the range of jq fails the snapshot, never falls back to the clock" "failed" \
+        "$(snap_fails 99999999999999999999)"
+    expect "the last second of 9999 is still a now" "9999-12-31T23:59:59Z" "$(snap_with 253402300799)"
+    expect "a SOURCE_DATE_EPOCH past 9999-12-31 fails the snapshot: check cannot take a five-digit year" "failed" \
+        "$(snap_fails 253402300800)"
+    calls=$(calls_in "$T/stub")
+    expect "fetch with SOURCE_DATE_EPOCH set runs (exit 0)" "0" "$(stub_rc fetch SOURCE_DATE_EPOCH=1790000000 "$T/pinned")"
+    # The calls file is how the cases below see a GraphQL call. The tripwire gh is a copy of the stub, so this shows
+    # its log works too.
+    expect "... calling gh twice, for a page of issues and a page of branches, each logged" "$((calls+2))" \
+        "$(calls_in "$T/stub")"
+    expect "fetch writes the pinned now to now.txt" "2026-09-21T14:13:20Z" "$(cat "$T/pinned/now.txt")"
+    expect "check reads that directory: the empty graph of the stub is NO-DATA (exit 20)" "20" "$(check_rc "$T/pinned")"
+    calls=$(calls_in "$T/stub")
+    expect "fetch into that filled directory with a fractional SOURCE_DATE_EPOCH stops (exit 2)" "2" \
+        "$(stub_rc fetch SOURCE_DATE_EPOCH=1.5 "$T/pinned")"
+    expect "... before its first GraphQL call" "$calls" "$(calls_in "$T/stub")"
+    expect "... and before it touches the directory: the old now.txt stays, beside the graph it was written with" \
+        "2026-09-21T14:13:20Z" "$(cat "$T/pinned/now.txt" 2>/dev/null)"
+    # A fetch that stops part way, at either query, into a directory a good fetch filled.
+    calls=$(calls_in "$T/stub")
+    expect "a fetch into that directory whose issues query fails stops with the exit code of gh (1)" "1" \
+        "$(with_failing issues stub_rc fetch SOURCE_DATE_EPOCH=1790000000 "$T/pinned")"
+    expect "... at its first call" "$((calls+1))" "$(calls_in "$T/stub")"
+    expect "... and has removed the old now.txt: check never reads a new graph beside an old now" "absent" \
+        "$(if [ -e "$T/pinned/now.txt" ]; then printf present; else printf absent; fi)"
+    expect "... so check refuses that directory (exit 2), not NO-DATA as before" "2" "$(check_rc "$T/pinned")"
+    expect "a good fetch fills that directory again (exit 0)" "0" "$(stub_rc fetch SOURCE_DATE_EPOCH=1790000000 "$T/pinned")"
+    expect "... with its now.txt" "2026-09-21T14:13:20Z" \
+        "$(cat "$T/pinned/now.txt" 2>/dev/null)"
+    calls=$(calls_in "$T/stub")
+    expect "a fetch into it whose branches query fails stops with the exit code of gh (1)" "1" \
+        "$(with_failing refs stub_rc fetch SOURCE_DATE_EPOCH=1790000000 "$T/pinned")"
+    expect "... at its second call, after a page of issues" "$((calls+2))" "$(calls_in "$T/stub")"
+    expect "... and has removed that now.txt too" "absent" \
+        "$(if [ -e "$T/pinned/now.txt" ]; then printf present; else printf absent; fi)"
+    expect "... so check refuses that directory too (exit 2)" "2" "$(check_rc "$T/pinned")"
+    calls=$(calls_in "$T/stub")
+    expect "fetch pages: two pages of issues and two of branches, the second asked for with the cursor of the first" \
+        "0" "$(with_pages stub_rc fetch SOURCE_DATE_EPOCH=1790000000 "$T/paged")"
+    expect "... in 4 calls" "$((calls+4))" "$(calls_in "$T/stub")"
+    expect "... keeping the rows of both pages" "1 2 b1 b2" \
+        "$(jq -rs 'map(.n // .name | tostring) | join(" ")' "$T/paged/issues.jsonl" "$T/paged/branches.jsonl")"
+    expect "fetch says where its now came from: SOURCE_DATE_EPOCH, when that is set" "1" \
+        "$(stub_err fetch SOURCE_DATE_EPOCH=1790000000 "$T/said" | grep -c 'now 2026-09-21T14:13:20Z (SOURCE_DATE_EPOCH)$')"
+    expect "... the clock, when it is unset" "1" "$(stub_err fetch ACTIVE_DAYS=7 "$T/said" | grep -c ' (clock)$')"
+    expect "fetch with a fractional SOURCE_DATE_EPOCH stops (exit 2)" "2" "$(stub_rc fetch SOURCE_DATE_EPOCH=1.5 "$T/junk")"
+    expect "... and makes no directory, so no now.txt for check to read" "absent" \
+        "$(if [ -e "$T/junk" ]; then printf present; else printf absent; fi)"
+    expect "fetch with a SOURCE_DATE_EPOCH jq cannot date stops with exit 2, not the exit code of jq" "2" \
+        "$(stub_rc fetch SOURCE_DATE_EPOCH=99999999999999999999 "$T/junk-far")"
+    expect "run refuses a set SOURCE_DATE_EPOCH (exit 2) before it fetches" "2" "$(stub_rc run SOURCE_DATE_EPOCH=0 "$T/run-pinned")"
+    expect "... and wrote nothing" "absent" "$(if [ -e "$T/run-pinned" ]; then printf present; else printf absent; fi)"
+    expect "run with no SOURCE_DATE_EPOCH fetches and checks: the empty graph of the stub is NO-DATA (exit 20)" "20" \
+        "$(stub_rc run ACTIVE_DAYS=7 "$T/run-clock")"
+    expect "run with an empty SOURCE_DATE_EPOCH goes on too: empty means unset, as in the snapshot" "20" \
+        "$(stub_rc run SOURCE_DATE_EPOCH= "$T/run-empty")"
+
     if [ "$SELF_FAILS" -eq 0 ]; then printf 'PASS  issue_tree_lint self-test\n'; else printf 'FAIL  %s case(s)\n' "$SELF_FAILS"; return 1; fi
 }
 
 main() {
     local cmd="${1:-}"
-    [ -n "$cmd" ] || die "usage: check|self-test (see header)"
+    [ -n "$cmd" ] || die "usage: fetch|check|file|run|self-test (see header)"
     shift
     case "$cmd" in
+        fetch) [ $# -ge 1 ] || die "fetch <dir> [owner/repo]"; fetch "$@" ;;
         check) [ $# -eq 1 ] || die "check <dir>"; check "$1" ;;
+        file) [ $# -ge 1 ] || die "file <verdict.json> [owner/repo]"; file_issue "$@" ;;
+        run) [ $# -ge 1 ] || die "run <dir> [--file] [owner/repo]"; run "$@" ;;
         self-test) self_test ;;
         *) die "unknown command $cmd" ;;
     esac
