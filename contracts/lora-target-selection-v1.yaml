@@ -1,14 +1,15 @@
 metadata:
-  version: "1.0.0"
+  version: "1.1.0"
   created: "2026-04-13"
   author: PAIML Engineering
   registry: true
   references:
     - "Hu et al. (2022). LoRA: Low-Rank Adaptation of Large Language Models."
+    - "0.72 R15a cell C2a (la-0.72): InstructPipeline::from_pretrained routes each tensor of a PEFT adapter by its name into the q_proj or v_proj LoRA layer of its layer, or refuses the load (crates/aprender-train/src/finetune/instruct_pipeline/constructors.rs); 1.1.0 adds adapter_routing and FALSIFY-LORA_TARGET_SELECTION_V1_003"
   description: "LoRA target module selection"
 
 name: lora-target-selection
-version: "1.0.0"
+version: "1.1.0"
 scope: "crates/aprender-train/src/finetune/"
 
 description: |
@@ -23,6 +24,10 @@ equations:
     description: "default selection = {q_proj, v_proj} for decoder-only LLMs"
     formula: "default selection = {q_proj, v_proj} for decoder-only LLMs"
 
+  adapter_routing:
+    description: "A loaded adapter tensor lands in the LoRA slot its name targets, or the whole load is refused and no slot changes"
+    formula: "∀ t ∈ adapter: proj(t) ∈ {q_proj, v_proj} ∧ layer(t) < L ∧ kind(t) ∈ {lora_A, lora_B} ∧ |t| = |slot(t)| ∧ slot(t) unique ⇒ slot(t) := t, with slot(t) = 2·layer(t) + [proj(t) = v_proj]; otherwise load → Err and ∀ slot: unchanged"
+
 falsification:
   - id: FALSIFY-LORA_TARGET_SELECTION_V1_001
     description: "∀ target ∈ selected: target exists in base model weights"
@@ -33,3 +38,8 @@ falsification:
     description: "default selection = {q_proj, v_proj} for decoder-only LLMs"
     test: "Related tests in crates/aprender-train/src/finetune/"
     evidence: "cargo test --lib"
+
+  - id: FALSIFY-LORA_TARGET_SELECTION_V1_003
+    description: "InstructPipeline::from_pretrained places each tensor of adapter_model.safetensors by its name (0.72 R15a C2a). At 316dee2cd4 inject_adapter_weights sent every tensor whose name lacks q_proj to the V slot of its layer and treated every name without lora_A as lora_B, so an adapter that also carries k_proj, o_proj or MLP tensors overwrote the v_proj adapter, and which tensor won depended on the HashMap order of load_adapter_peft. Now a tensor goes to slot 2·layer for q_proj and 2·layer+1 for v_proj, as A or B by its lora_A or lora_B component, and only if its length equals that slot's tensor. A tensor that names another projection, a layer the model does not have, neither lora_A nor lora_B, a slot another tensor already took, or the wrong length (a rank mismatch, or bf16 bytes read as f32) refuses the whole load with an error that names it, and no LoRA layer changes. The test loads one adapter in two tensor orders and gets the same layers, with every slot holding its own distinct values; a k_proj tensor with exactly the V slot's length refuses and leaves every slot as it was; a lora_A of the wrong rank refuses. Planted: routing by the 316dee2cd4 rule, dropping the length check, and writing tensors before all are placed must each be RED."
+    test: "crates/aprender-train/src/finetune/instruct_pipeline/constructors_adapter_tests.rs::falsify_lora_target_selection_v1_003_routes_by_name_in_any_order (with falsify_lora_target_selection_v1_003_unplaceable_tensor_refuses_and_changes_nothing and falsify_lora_target_selection_v1_003_wrong_rank_refuses in the same file)"
+    evidence: "cargo test -p aprender-train --lib falsify_lora_target_selection_v1_003"

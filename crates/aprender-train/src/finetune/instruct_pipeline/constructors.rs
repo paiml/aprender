@@ -92,11 +92,7 @@ impl InstructPipeline {
         if adapter_path.exists() {
             match crate::lora::load_adapter_peft(model_dir) {
                 Ok((_config, weights)) => {
-                    Self::inject_adapter_weights(
-                        &mut lora_layers,
-                        &weights,
-                        model_config.num_hidden_layers,
-                    );
+                    Self::inject_adapter_weights(&mut lora_layers, &weights)?;
                     eprintln!(
                         "[adapter] Loaded trained LoRA adapter ({} tensors) from {}",
                         weights.len(),
@@ -410,42 +406,85 @@ impl InstructPipeline {
     ///
     /// Maps PEFT tensor names (e.g., `base_model.model.model.layers.0.self_attn.q_proj.lora_A.weight`)
     /// to the corresponding LoRA layer index. Layers are ordered as [Q(0), V(0), Q(1), V(1), ...].
+    ///
+    /// Every tensor is placed before any is written (`FALSIFY-LORA_TARGET_SELECTION_V1_003`).
+    /// A tensor that targets another projection or a layer the model does not have, is
+    /// neither `lora_A` nor `lora_B`, repeats a slot, or differs in length from its slot
+    /// (a rank mismatch, or bf16/f16 bytes read as f32) refuses the whole load, and no
+    /// LoRA layer changes.
+    ///
+    /// # Errors
+    /// Returns `Error::ConfigError` naming every tensor that could not be placed.
     fn inject_adapter_weights(
         lora_layers: &mut [LoRALayer],
         weights: &[(String, Vec<f32>)],
-        num_layers: usize,
-    ) {
-        let mut loaded = 0usize;
+    ) -> crate::Result<()> {
+        let mut placed: Vec<(usize, bool, &[f32])> = Vec::with_capacity(weights.len());
+        let mut unplaced: Vec<&str> = Vec::new();
         for (name, data) in weights {
-            // Parse layer index from "layers.{idx}" in the tensor name
-            let parts: Vec<&str> = name.split('.').collect();
-            let layer_idx = parts
-                .iter()
-                .position(|&p| p == "layers")
-                .and_then(|i| parts.get(i + 1))
-                .and_then(|s| s.parse::<usize>().ok());
-
-            let is_q = name.contains("q_proj");
-            let is_a = name.contains("lora_A");
-
-            if let Some(idx) = layer_idx {
-                if idx >= num_layers {
-                    continue;
-                }
-                let lora_idx = idx * 2 + usize::from(!is_q);
-                if lora_idx >= lora_layers.len() {
-                    continue;
-                }
-
-                let tensor = Tensor::from_vec(data.clone(), true);
-                if is_a {
-                    *lora_layers[lora_idx].lora_a_mut() = tensor;
-                } else {
-                    *lora_layers[lora_idx].lora_b_mut() = tensor;
-                }
-                loaded += 1;
+            let slot = adapter_slot(name).filter(|&(idx, is_a)| {
+                slot_len(lora_layers, idx, is_a) == Some(data.len())
+                    && !placed.iter().any(|&(i, a, _)| i == idx && a == is_a)
+            });
+            match slot {
+                Some((idx, is_a)) => placed.push((idx, is_a, data)),
+                None => unplaced.push(name),
             }
         }
-        eprintln!("[adapter] Injected {loaded}/{} weight tensors", weights.len());
+        if !unplaced.is_empty() {
+            unplaced.sort_unstable();
+            return Err(crate::Error::ConfigError(format!(
+                "adapter: {} of {} tensors fit no q_proj/v_proj LoRA layer of this model \
+                 (wrong projection, layer, rank or dtype, or a repeated slot): {}",
+                unplaced.len(),
+                weights.len(),
+                unplaced.join(", ")
+            )));
+        }
+        for &(idx, is_a, data) in &placed {
+            let tensor = Tensor::from_vec(data.to_vec(), true);
+            if is_a {
+                *lora_layers[idx].lora_a_mut() = tensor;
+            } else {
+                *lora_layers[idx].lora_b_mut() = tensor;
+            }
+        }
+        eprintln!("[adapter] Injected {}/{} weight tensors", placed.len(), weights.len());
+        Ok(())
     }
 }
+
+/// Projections the instruct pipeline adapts, in slot order within a layer:
+/// `build_lora_layers` pushes the Q adapter, then the V adapter, for each layer.
+const ADAPTED_PROJECTIONS: [&str; 2] = ["q_proj", "v_proj"];
+
+/// The LoRA slot a PEFT tensor name targets, as `(index into lora_layers, is lora_A)`,
+/// or `None` when the name is not a `lora_A`/`lora_B` tensor of an adapted projection
+/// of a numbered layer. Components are matched whole, so `qkv_proj` or `lora_a`
+/// targets nothing. A layer the model does not have yields a slot past the end of
+/// `lora_layers`, which [`slot_len`] rejects.
+fn adapter_slot(name: &str) -> Option<(usize, bool)> {
+    let parts: Vec<&str> = name.split('.').collect();
+    let layer = parts
+        .iter()
+        .position(|&p| p == "layers")
+        .and_then(|i| parts.get(i + 1))
+        .and_then(|s| s.parse::<usize>().ok())?;
+    let proj = ADAPTED_PROJECTIONS.iter().position(|p| parts.contains(p))?;
+    let is_a = match (parts.contains(&"lora_A"), parts.contains(&"lora_B")) {
+        (true, false) => true,
+        (false, true) => false,
+        _ => return None,
+    };
+    Some((layer * ADAPTED_PROJECTIONS.len() + proj, is_a))
+}
+
+/// Length of the A or B tensor of LoRA slot `idx`, or `None` past the last slot.
+fn slot_len(lora_layers: &[LoRALayer], idx: usize, is_a: bool) -> Option<usize> {
+    let layer = lora_layers.get(idx)?;
+    Some(if is_a { layer.lora_a().len() } else { layer.lora_b().len() })
+}
+
+#[cfg(test)]
+#[path = "constructors_adapter_tests.rs"]
+mod adapter_tests;
