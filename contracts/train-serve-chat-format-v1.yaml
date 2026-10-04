@@ -13,7 +13,12 @@ metadata:
     InstructPipeline::from_apr (apr-cli finetune.rs:387,461). A build with --features wgpu trains in
     train_wgpu_sft instead under --gpu-backend wgpu, or auto with QLoRA (:442, :906). That path encodes the raw instruction
     and response, with no template and no eos (:917-918), and fixes max_seq_len at 512 whatever --max-seq-len
-    says (:719). The tokenizer from_apr builds comes from the .apr's own vocabulary first (aprender-train
+    says (:719). It trains q_proj and v_proj only (:725), keeps the first 512 ids with no message (aprender-train
+    finetune/wgpu_pipeline.rs:768-769), and reads a <model>.tokenizer.json beside the .apr (finetune.rs:700). Its DPO branch
+    (:737-740, :866) takes the prompt, chosen and rejected texts raw, with beta fixed at 0.1 (:881-884), and a
+    {prompt, chosen, rejected} file never reaches it: the corpus is parsed as instruction and response first (:409,
+    :519), so such a file fails as invalid JSONL. FALSIFY-TSC-007 holds this route to the same ids, or to a refusal.
+    The tokenizer from_apr builds comes from the .apr's own vocabulary first (aprender-train
     instruct_pipeline/constructors.rs:212), rebuilt as tokenizer JSON with "added_tokens": [] (:343-350).
     load_from_json registers special tokens only from that list, and BpeTokenizer::encode keeps only
     registered special tokens whole, so <|im_start|> and <|im_end|> reach the model as BPE pieces, in the
@@ -40,9 +45,12 @@ metadata:
     closing tag. PROPOSED from a desk read.
   references:
   - crates/aprender-train/src/finetune/instruct_pipeline/constructors.rs (from_apr :192, the embedded tokenizer first :212, the tokenizer JSON with "added_tokens" [] :343-350)
-  - crates/apr-cli/src/commands/finetune.rs (every training path ends in InstructPipeline::from_apr, :387; the call, :461)
+  - crates/apr-cli/src/commands/finetune.rs (every training path ends in InstructPipeline::from_apr, :387; the call, :461; for the --features wgpu route, :266-269 and :291-295 choose it, then the tokenizer :700, the window :719, the targets :725, the DPO test :852-860, DPO :866 and SFT :906)
+  - crates/apr-cli/src/model_ops_commands.rs (--gpu-backend defaults to auto, :70-72)
+  - crates/aprender-train/src/finetune/wgpu_pipeline.rs (train_step keeps full_ids[..max_seq_len] with no message, :768-769)
+  - 'scripts/check_clippy_feature_matrix.sh (--features wgpu excluded as not compiling, #4056, :20 and :50-51)'
   - crates/aprender-train/src/tokenizer/hf.rs (HfTokenizer::from_json :61, over aprender-core's load_from_json)
-  - crates/aprender-core/src/text/bpe/qwen2.rs (load_from_json :367 registers special tokens only through load_added_tokens, :392 and :442-445; #3920's <|…|> shape rule, in load_from_vocab_merges only, :528-553)
+  - 'crates/aprender-core/src/text/bpe/qwen2.rs (load_from_json :367 registers special tokens only through load_added_tokens, :392 and :442-445; #3920''s <|…|> shape rule, in load_from_vocab_merges only, :528-553)'
   - crates/aprender-core/src/text/bpe/qwen2bpe_tokenizer.rs (BpeTokenizer::encode keeps only registered special tokens whole, :318 and :325-334)
   - crates/aprender-train/src/finetune/instruct_corpus.rs (format_chat_prompt :51, the default system prompt :52-54)
   - crates/aprender-serve/src/chat_template_qwen3_nothink.rs (the generation prompt <think>\n</think>\n, :44)
@@ -65,6 +73,7 @@ equations:
     invariants:
     - 'each control token is one id: enc(<|im_start|>) = [248045], enc(<|im_end|>) = [248046], enc(<think>) = [248068], enc(</think>) = [248069] on Qwen3.5'
     - train renders the model's own template from the .apr; never a fixed ChatML, and never a system turn the sample does not have
+    - 'every route apr finetune can take is held to this, the --features wgpu route included; a route that cannot render the template and end the target in the eos refuses chat samples by name (FALSIFY-TSC-007)'
     preconditions:
     - the .apr carries the model's template and its added-token list, written by apr import from the HF snapshot
   builtin_is_own:
@@ -127,6 +136,11 @@ falsification_tests:
   prediction: 'before the first step, apr finetune tokenizes the corpus with the training tokenizer and reports the number of samples longer than --max-seq-len and the longest one, in its output and in the run''s receipt. It refuses to start when any sample would be cut, unless told to drop them, and then the number dropped is in the receipt. At 316dee2cd4 it is RED: nothing counts them. F-INST-002 is stated (instruct_corpus.rs:9) and not enforced. The --max-seq-len help speaks of buffer size only (model_ops_commands.rs:58), and the epoch line prints tokens and samples, not cuts. Planted: the count removed'
   test: '[U] not written; CPU only, needs cargo after LIVE 0.70.1. The plan step on a three-sample corpus with one sample over a small --max-seq-len: one refusal naming that sample''s length, and with the drop flag a receipt that says 1 dropped'
   if_fails: 'a user sets --max-seq-len to fit memory (the f32 logits buffer alone is --max-seq-len × vocab, cuda_init.rs:453-455: 0.51 GB at 512 and 2.03 GB at 2048 on Qwen3.5''s 248,070 entries) and trains on cut samples without being told'
+- id: FALSIFY-TSC-007
+  rule: The --features wgpu route trains on serve's ids too, or refuses by name
+  prediction: 'in a build with --features wgpu, apr finetune sends -m qlora under the default --gpu-backend auto (model_ops_commands.rs:70-72), and any method under --gpu-backend wgpu, to execute_training_wgpu (finetune.rs:291-295, :266-269). There each SFT sample is trained on the ids FALSIFY-TSC-002 names, whole within --max-seq-len as FALSIFY-TSC-005 requires, on the recipe''s targets; or the route refuses before the model loads, naming itself and --gpu-backend cuda. At 316dee2cd4 it is RED by reading on four counts: the raw instruction and response with no template, no system turn and no eos (:917-918); a window of 512 whatever --max-seq-len says (:719); the first 512 ids kept with no message (wgpu_pipeline.rs:768-769); and q_proj and v_proj only (:725). The DPO branch is held to the same rule once a DPO file can reach it, which at 316dee2cd4 it cannot (:409, :519). Planted: auto''s route to wgpu for -m qlora restored with no refusal'
+  test: '[U] not written; needs cargo after LIVE 0.70.1 and a --features wgpu build, which no CI job builds (the clippy feature matrix excludes it as not compiling, #4056; 989cb012e5 has since added entrenar?/gpu for its cause, and whether it compiles now is not measured). The route half needs no GPU: under auto and -m qlora, a chat corpus is refused before the model loads, or after a fix the ids the route would train equal TSC-002''s reference. The ids half needs a wgpu adapter'
+  if_fails: 'one apr finetune -m qlora command trains two different models, depending on how apr was built: in a wgpu build, raw text with no eos, a 512 window and two of the recipe''s targets, so the served model runs past its answers and the run''s receipt names a recipe it did not run'
 qa_gate:
   certeza:
     min_score: 0.0
