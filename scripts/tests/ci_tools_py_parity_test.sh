@@ -14,6 +14,10 @@
 # fake `cargo` first on PATH that prints the fixture; both sides then read the same
 # bytes. Live cases run each pair on this checkout's real `cargo metadata`.
 #
+# Not checked here: the argv forms where clap's surface deliberately differs from the
+# originals' hand-rolled loops (--help/--version, --exclude=NAME, extra positionals).
+# crates/aprender-ci-tools/README.md lists them; no caller uses any of them.
+#
 # Not vacuous (L25): the run fails if fewer cases ran than the table declares, and a
 # planted mismatch must be reported as one before any real case counts.
 #

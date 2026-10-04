@@ -13,4 +13,18 @@ Each port must print the same stdout as its original and agree with it on succes
 or failure. `scripts/tests/ci_tools_py_parity_test.sh` checks this. The Python
 files stay only as that test's external validator.
 
+## Where the argv surface differs from the originals (by design, not parity-checked)
+
+Arguments are parsed by clap derive (`scripts/check_no_hand_rolled_parsers.sh`), so a
+usage line differs from the originals' hand-rolled loops in four ways. Parity covers
+what each subcommand prints and whether it fails on the inputs its callers pass, and
+none of the callers uses these forms:
+
+| Argv | Original | Port |
+|------|----------|------|
+| `--help` / `--version` | usage refusal, exit 1 | help or version, exit 0 (dogfood surface probe) |
+| `coverage-report-scope --exclude=NAME` | usage refusal, exit 1 | same as `--exclude NAME` |
+| `package-include-diff A B EXTRA` | `EXTRA` ignored | usage error, exit 1 |
+| any usage error | the original's message | clap's message (stderr only; exit 1 on both) |
+
 Part of the [aprender monorepo](https://github.com/paiml/aprender).
