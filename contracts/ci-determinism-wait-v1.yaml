@@ -1,0 +1,130 @@
+# ─────────────────────────────────────────────────────────────────────────────
+# ci-determinism-wait-v1 — T42: the determinism job never holds an ARM64
+# clean-room runner waiting for an X64 raster that cannot come.
+#
+# Measured before (2026-10-04, six red determinism runs): every red was an X64
+# artifact-wait timeout, none a hash mismatch. The ARM64 raster was built every
+# time; the job then polled the run's artifact list every 20 s for the driver's
+# 3600 s default (~181 REST calls) while x86-main was queued past the hour or
+# had failed before uploading. One of the two ARM64 clean-room runners was held
+# for the whole hour each time.
+#
+# Verification level:
+#   * L1 — scripts/check_determinism_wait.sh exists; its `check` mode reads the
+#          determinism job in .github/workflows/ci.yml.
+#   * L2 — falsification MEASURED by its case table (14 rows: planted ci.yml
+#          copies and planted receipts) and 6 mutants, every one killed; the
+#          check is RED on origin/main's ci.yml (W1, W2, W3).
+#   * L3/L4 — NOT APPLICABLE: a workflow-scheduling rule, not a kernel.
+#   * WHAT BLOCKS: unchanged. The determinism verdict is still the compare
+#     section (scripts/ci/determinism-compare.sh), read by `gate` as
+#     DET:determinism-compare. The case table is not wired as a new blocking
+#     check; a new check is adopted as a ratchet after three green nights.
+# ─────────────────────────────────────────────────────────────────────────────
+name: ci-determinism-wait
+version: "1.0.0"
+scope: >
+  When the determinism job in .github/workflows/ci.yml starts, how long it
+  waits for the X64 raster, and that a missing raster is a RED. Out of scope:
+  what the comparison decides (scripts/ci/determinism-compare.sh, unchanged),
+  why x86-main queues or fails, and the x86 runner pool's size.
+status: active
+
+metadata:
+  kind: pattern     # a CI scheduling rule over one job, not a math kernel
+  version: "1.0.0"
+  created: '2026-10-04'
+  last_modified: '2026-10-04'
+  author: PAIML Engineering
+  references:
+    - 'scripts/check_determinism_wait.sh — rules W1-W5 on ci.yml · --selftest · --mutants'
+    - '.github/workflows/ci.yml — the determinism job (needs x86-main, if !cancelled(), FAT_ARTIFACT_WAIT_S "0")'
+    - 'scripts/ci/fat_driver.py uses_download — reads FAT_ARTIFACT_WAIT_S (default 3600), sleeps 20 s between reads; unchanged'
+    - 'scripts/ci/determinism-compare.sh — the verdict; unchanged'
+  description: >
+    The determinism job starts only after x86-main, the producer of the X64
+    raster, has concluded, and runs even when it failed. By then the raster is
+    either in the run's artifact list or never will be, so the driver reads the
+    list once and a missing raster fails the download at once: a RED, never a
+    skip and never a pass.
+
+equations:
+  the_arm64_runner_is_not_held:
+    formula: |
+      held_s(missing X64) = FAT_ARTIFACT_WAIT_S of the determinism job (driver default 3600 when unset)
+      rest_calls(wait)    = held_s / 20 + 1
+      T42: needs ∋ x86-main ∧ FAT_ARTIFACT_WAIT_S = 0  ⇒  held_s = 0, rest_calls = 1
+      before T42: no needs, no override               ⇒  held_s = 3600, rest_calls = 181
+    domain: 'the determinism job block of a ci.yml'
+    codomain: 'check rc {0, 1, 2}; held_s, rest_calls'
+    invariants:
+    - 'the job needs x86-main (W1) and carries FAT_ARTIFACT_WAIT_S "0" (W3)'
+    preconditions:
+    - 'x86-main uploads determinism-X64 in a step before it concludes'
+    postconditions:
+    - 'no ARM64 clean-room runner is held while x86-main is queued'
+
+  a_missing_raster_is_red:
+    formula: |
+      x86-main concluded (success or failure) ⇒ determinism runs (if: !cancelled())
+      X64 raster absent ⇒ download-artifact fails ⇒ determinism-compare RED ⇒ gate RED
+      SVG digests differ ⇒ determinism-compare.sh exit 1 (unchanged)
+    domain: 'one CI run'
+    codomain: '{RED, GREEN}'
+    invariants:
+    - 'never a skip, never a pass, when the X64 raster is missing (W2, C3)'
+    - 'FAT_EXPECT_ARTIFACTS still names determinism-X64 and determinism-ARM64 (W4); the job still runs determinism[ARM64] and determinism-compare (W5)'
+    preconditions:
+    - 'the run is not cancelled'
+    postconditions:
+    - 'the compare verdict is the one determinism-compare.sh makes'
+
+proof_obligations:
+  - id: CDW-OB-001
+    statement: "The determinism job starts after x86-main concludes and reads the artifact list once: no ARM64 runner is held while x86-main is queued, and one REST call per wait."
+    discharged_by: falsification_tests[0]
+  - id: CDW-OB-002
+    statement: "A missing X64 raster is a RED (the job runs after a failed x86-main and fails the download); a planted SVG hash mismatch is RED."
+    discharged_by: falsification_tests[1]
+
+falsification_tests:
+
+  - id: CDW-F-001
+    rule: the ARM64 runner is not held for an X64 raster that cannot come
+    prediction: >-
+      The real ci.yml passes W1-W5 with held_s 0 and 1 REST call per wait (W0,
+      N0). A copy without needs x86-main (W1), without the wait override (W3)
+      or with a 600 s wait (W3b) is RED. The pre-T42 job is RED and measures
+      3600 s held and 181 REST calls per missing raster (B0, B1). origin/main's
+      ci.yml is RED on W1, W2 and W3.
+    test: 'bash scripts/check_determinism_wait.sh --selftest && bash scripts/check_determinism_wait.sh --mutants'
+    if_fails: >-
+      an ARM64 clean-room runner sits for an hour per run whose x86-main is
+      queued or failed, and the wait spends ~181 shared REST calls
+    mutation: >-
+      --mutants: noneeds nowait, killed.
+
+  - id: CDW-F-002
+    rule: a missing X64 raster and a hash mismatch are RED, never a skip or a pass
+    prediction: >-
+      A copy whose determinism job has no if: (default success()) or if:
+      success() is RED: a failed x86-main would skip the job (W2, W2b). A copy
+      that drops determinism-X64 from FAT_EXPECT_ARTIFACTS (W4) or the compare
+      section (W5) is RED. determinism-compare.sh on planted receipts: equal SVG
+      digests GREEN (C1), different SVG digests RED (C2), the X64 receipt
+      missing RED (C3).
+    test: 'bash scripts/check_determinism_wait.sh --selftest && bash scripts/check_determinism_wait.sh --mutants'
+    if_fails: >-
+      a run whose X64 raster never came reads as skipped or green, or a real
+      non-determinism passes
+    mutation: >-
+      --mutants: noif noexpect nocompare cmpnosvg (a compare that calls every SVG pair identical), killed; 6/6 with CDW-F-001's (2026-10-04).
+
+non_goals:
+  - "Making x86-main publish its raster sooner, or growing the x86 pool: a raster that never comes is reported RED at once, not waited for."
+  - "Changing what the comparison decides: scripts/ci/determinism-compare.sh and the gate's DET:determinism-compare read are unchanged."
+  - "Conditional (If-None-Match) artifact reads: with one read per job there is no poll to make conditional, and fat_driver.py does not grow."
+
+binding_registry:
+  guard: scripts/check_determinism_wait.sh
+  workflow_job: ".github/workflows/ci.yml determinism"
