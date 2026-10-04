@@ -29,6 +29,19 @@ set -euo pipefail
 cd "$(dirname "$0")/.." || exit 1
 
 SEARCH_DIR="scripts"
+# scripts/lib/ holds sourced libraries too (gpu_band_lock.sh, resolve_base.sh,
+# python_fleet_state.sh, ...), sourced as `. "$ROOT/scripts/lib/x.sh"`. Until
+# #4715 T30 this check scanned only top-level scripts/*.sh for source lines and
+# resolved names only in scripts/, so every scripts/lib library was unchecked.
+LIB_DIR="scripts/lib"
+
+# RATCHET FLOOR, measured 2026-10-04 on main: 8 of the 13 scripts/lib/*.sh files
+# are sourced by another script, and 0 of those 8 set options at file scope.
+# The 5 that do (gpu_exclusive_run.sh, ci_guard_steps.sh, ...) are only ever
+# EXECUTED with `bash`, which gives them their own shell. Fewer than this many
+# scripts/lib libraries discovered means discovery went blind: RED. Raise it
+# when a new sourced library lands; lowering it is a reviewed edit.
+MIN_LIB_EXPECTED="${MIN_LIB_EXPECTED:-8}"
 
 # `set` with the errexit / nounset / pipefail family, at column 0 (file scope).
 # Indented `set` lines live inside functions or blocks, where the option change
@@ -47,7 +60,7 @@ SETOPT_RE='^set[[:space:]]+[-+]'
 # `run:` block is its own throwaway shell anyway, so a `set` leak there cannot
 # outlive the block. Narrow and sound beats broad and wrong.
 sourced_basenames() {
-    grep -rhoE '^[[:space:]]*(\.|source)[[:space:]]+[^;&|#]+' "$SEARCH_DIR"/*.sh 2>/dev/null \
+    grep -rhoE '^[[:space:]]*(\.|source)[[:space:]]+[^;&|#]+' "$SEARCH_DIR"/*.sh "$LIB_DIR"/*.sh 2>/dev/null \
         | grep -oE '[A-Za-z0-9_.-]+\.sh' | sort -u
 }
 
@@ -64,22 +77,26 @@ scan_file() {
 
 violations=0
 checked=0
+lib_checked=0
 
 for base in $VAR_SOURCED; do
     [ -f "$SEARCH_DIR/$base" ] || { printf 'ERROR: %s is named in VAR_SOURCED but %s/%s does not exist.\n' "$base" "$SEARCH_DIR" "$base" >&2; exit 1; }
 done
 
 for base in $( { sourced_basenames; printf '%s\n' $VAR_SOURCED; } | sort -u); do
-    f="$SEARCH_DIR/$base"
-    [ -f "$f" ] || continue
-    # A file that sources itself is not interesting; skip self-references.
-    checked=$((checked + 1))
-    hits=$(scan_file "$f")
-    if [ -n "$hits" ]; then
-        printf 'OPTION-LEAK %s is sourced by another script but sets shell options:\n' "$f" >&2
-        printf '%s\n' "$hits" | sed 's/^/           /' >&2
-        violations=$((violations + 1))
-    fi
+    # A basename is resolved in BOTH directories: a same-named file in each is
+    # two libraries, and either can be the one a caller sources.
+    for f in "$SEARCH_DIR/$base" "$LIB_DIR/$base"; do
+        [ -f "$f" ] || continue
+        checked=$((checked + 1))
+        [ "$f" = "$LIB_DIR/$base" ] && lib_checked=$((lib_checked + 1))
+        hits=$(scan_file "$f")
+        if [ -n "$hits" ]; then
+            printf 'OPTION-LEAK %s is sourced by another script but sets shell options:\n' "$f" >&2
+            printf '%s\n' "$hits" | sed 's/^/           /' >&2
+            violations=$((violations + 1))
+        fi
+    done
 done
 
 # --self-test: reconstruct the pre-fix header and prove the matcher rejects it.
@@ -124,5 +141,11 @@ if [ "$checked" -lt "$MIN_EXPECTED" ]; then
         "$checked" "$MIN_EXPECTED" >&2
     exit 1
 fi
+if [ "$lib_checked" -lt "$MIN_LIB_EXPECTED" ]; then
+    printf 'ERROR: examined %s sourced %s librar(y/ies), expected >= %s - %s discovery has gone blind.\n' \
+        "$lib_checked" "$LIB_DIR" "$MIN_LIB_EXPECTED" "$LIB_DIR" >&2
+    exit 1
+fi
 
-printf 'OK: %s sourced librar(y/ies) checked, none mutates the caller shell.\n' "$checked"
+printf 'OK: %s sourced librar(y/ies) checked (%s in %s), none mutates the caller shell.\n' \
+    "$checked" "$lib_checked" "$LIB_DIR"
