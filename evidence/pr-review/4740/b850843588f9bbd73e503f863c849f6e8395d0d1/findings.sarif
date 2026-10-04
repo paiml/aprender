@@ -1,0 +1,106 @@
+{
+  "$schema": "https://docs.oasis-open.org/sarif/sarif/v2.1.0/errata01/os/schemas/sarif-schema-2.1.0.json",
+  "version": "2.1.0",
+  "runs": [
+    {
+      "tool": {
+        "driver": {
+          "name": "pmat"
+        }
+      },
+      "results": [
+        {
+          "ruleId": "guard_table_pass",
+          "level": "note",
+          "message": {
+            "text": "bash scripts/check_quick_tier_shard_sigma.sh at head: rc 0, 26 ok rows, 0 FAIL rows, PASS. No false RED on the real tree; the four pinned blocks cover 31, 69, 4 and 972 lines, each ending at the real end of its job."
+          },
+          "properties": {
+            "grounding": "measured",
+            "command": [
+              "bash",
+              "scripts/check_quick_tier_shard_sigma.sh"
+            ],
+            "exit_code": 0,
+            "stdout_sha256": "8255f170153fcb679b42d76e441e091e22f7a2c94d289d8dcc8b09447dd214f6",
+            "failure_scenario": "A false RED on the real tree would block every PR; none observed.",
+            "precision_class": "advisory"
+          }
+        },
+        {
+          "ruleId": "guard_self_test_passes",
+          "level": "note",
+          "message": {
+            "text": "--self-test: 49 ok lines, SELF-TEST PASSED; the 24 old mutants, 19 golden mutants and the controls all behave as stated."
+          },
+          "properties": {
+            "grounding": "measured",
+            "command": [
+              "bash",
+              "scripts/check_quick_tier_shard_sigma.sh",
+              "--self-test"
+            ],
+            "exit_code": 0,
+            "stdout_sha256": "7a0da89ec2ed8088bf40ed3a67ec4b63e47a2955c43c6255c883a9098ffde5b4",
+            "failure_scenario": "A mutant that did not apply would be reported FAIL; none did.",
+            "precision_class": "advisory"
+          }
+        },
+        {
+          "ruleId": "golden_survivor_indent2_comment_truncates_block",
+          "level": "error",
+          "message": {
+            "text": "Reviewer mutant on scratch copies of ci.yml and the golden: (1) insert a line \"  # note\" (comment at indent 2) inside the matrix of jobs.workspace-test-shard, re-pin with --update-golden; the guard passes. (2) Then add \"    continue-on-error: true\" as a job-level key further down the same job; the guard still passes (rc 0, same output digest as the real tree). job_block exits at the first line matching /^  [^ ]/, and a comment at indent 2 matches, so everything after it is outside the digest. The real tree has no such line today, and the self-test has no mutant for it."
+          },
+          "properties": {
+            "grounding": "measured",
+            "command": [
+              "bash",
+              "scripts/check_quick_tier_shard_sigma.sh"
+            ],
+            "exit_code": 0,
+            "stdout_sha256": "8255f170153fcb679b42d76e441e091e22f7a2c94d289d8dcc8b09447dd214f6",
+            "failure_scenario": "A first PR lands an indent-2 comment inside a pinned job with a re-pinned golden (the digest change looks like any other); a later PR edits the job below the comment (continue-on-error, if:, needs:, env:) with the golden unchanged and the whole-job golden stays green, so a row meant to catch that line cannot fail.",
+            "precision_class": "blocking"
+          }
+        },
+        {
+          "ruleId": "golden_survivor_duplicate_job_key",
+          "level": "warning",
+          "message": {
+            "text": "Reviewer mutant on a scratch copy of ci/sections.yml: append a second \"  workspace-test-shard:\" key at the end of the jobs mapping (shadow body, one echo step). job_block takes the first key only, so the digest is unchanged and the guard passes (rc 0). safe_load in the section driver keeps the LAST duplicate (confirmed: the loaded steps are the shadow echo). ci.yml duplicates are refused by GitHub, so this is the sections.yml side only."
+          },
+          "properties": {
+            "grounding": "measured",
+            "command": [
+              "bash",
+              "scripts/check_quick_tier_shard_sigma.sh"
+            ],
+            "exit_code": 0,
+            "stdout_sha256": "8255f170153fcb679b42d76e441e091e22f7a2c94d289d8dcc8b09447dd214f6",
+            "failure_scenario": "A later duplicate key shadows the pinned shard section: the digest of the first block is unchanged, the driver runs the shadow section, and the quick tier merges green on a section that runs no tests.",
+            "precision_class": "advisory"
+          }
+        },
+        {
+          "ruleId": "pin_does_not_cover_nextest_profile",
+          "level": "note",
+          "message": {
+            "text": "The pinned text names profile ci but the behaviour of that profile (retries, default filter, junit path) lives in .config/nextest.toml, outside all four digests. Read only, not mutated."
+          },
+          "properties": {
+            "grounding": "measured",
+            "command": [
+              "bash",
+              "scripts/check_quick_tier_shard_sigma.sh"
+            ],
+            "exit_code": 0,
+            "stdout_sha256": "8255f170153fcb679b42d76e441e091e22f7a2c94d289d8dcc8b09447dd214f6",
+            "failure_scenario": "A change to the ci profile in the nextest config alters which tests run or are retried on every shard with all four digests unchanged.",
+            "precision_class": "advisory"
+          }
+        }
+      ]
+    }
+  ]
+}
