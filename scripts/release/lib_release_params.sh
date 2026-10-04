@@ -96,26 +96,25 @@ release_last_tag() {
     return 2
 }
 
-# release_nightly_target -> "V MILESTONE CRATES_MAX": the train the nightly measures (#4672). V is the
-# LOWEST open milestone titled X.Y.Z that is strictly above CRATES_MAX, the highest stable X.Y.Z of
-# aprender on the crates.io index. Not "the one open milestone": several are open at once, and the
-# next version to publish is the lowest one above what is published. A failed read of either source,
-# or no milestone above CRATES_MAX, returns 2 and says why: the nightly reads that as NOT_MEASURED.
+# release_train_version [<repo-root>] -> "V MILESTONE LAST": the train the nightly measures (#4672, the rule
+# of #4723). V is the LOWEST open milestone titled X.Y.Z strictly above LAST, the newest final vX.Y.Z tag.
+# Not "the one open milestone" and not "the lowest open": released versions keep open milestones and stale
+# ones sit empty, so either would name the wrong train. No final tag, a failed milestone read, or no
+# milestone above LAST returns 2 and says why: the nightly reads that as NOT_MEASURED.
 # Option-neutral like the rest of this file: every `$( )` that can be empty carries its own `||`, so a
 # caller under `set -eo pipefail` (a workflow step) gets rc 2, never an exit from inside the lib.
-release_nightly_target() {
-    local idx max ms t n best="" bestn=""
-    idx=$(curl -sSf -A "aprender-release (+https://github.com/paiml/aprender)" "https://index.crates.io/ap/re/aprender") \
-        || { printf 'release: reading the crates.io index for aprender failed\n' >&2; return 2; }
-    max=$(grep -oE '"vers":"[0-9]+\.[0-9]+\.[0-9]+"' <<< "$idx" | grep -oE '[0-9]+\.[0-9]+\.[0-9]+' | sort -V | tail -n 1) || max=""
-    [ -n "$max" ] || { printf 'release: the crates.io index for aprender carries no stable X.Y.Z version\n' >&2; return 2; }
+release_train_version() {
+    local root=${1:-} last ms t n best="" bestn=""
+    [ -n "$root" ] || root="$(cd "$(dirname "${BASH_SOURCE[0]}")/../.." && pwd)" || return 2
+    last=$(git -C "$root" tag -l 'v*' | grep -E '^v[0-9]+\.[0-9]+\.[0-9]+$' | sed 's/^v//' | sort -V | tail -n 1) || last=""
+    [ -n "$last" ] || { printf 'release: no final vX.Y.Z tag in %s: the train cannot be named\n' "$root" >&2; return 2; }
     ms=$(gh api "repos/$RELEASE_REPO/milestones?state=open&per_page=100" --paginate --jq '.[] | "\(.title) \(.number)"') \
         || { printf 'release: reading the open milestones failed\n' >&2; return 2; }
     while read -r t n; do
         [[ $t =~ ^[0-9]+\.[0-9]+\.[0-9]+$ ]] || continue
-        [ "$t" != "$max" ] && [ "$(printf '%s\n%s\n' "$max" "$t" | sort -V | tail -n 1)" = "$t" ] || continue
+        [ "$t" != "$last" ] && [ "$(printf '%s\n%s\n' "$last" "$t" | sort -V | tail -n 1)" = "$t" ] || continue
         if [ -z "$best" ] || [ "$(printf '%s\n%s\n' "$best" "$t" | sort -V | head -n 1)" = "$t" ]; then best=$t; bestn=$n; fi
     done <<< "$ms"
-    [ -n "$best" ] || { printf 'release: no open X.Y.Z milestone is above crates.io %s\n' "$max" >&2; return 2; }
-    printf '%s %s %s\n' "$best" "$bestn" "$max"
+    [ -n "$best" ] || { printf 'release: no open X.Y.Z milestone above v%s: the train cannot be named\n' "$last" >&2; return 2; }
+    printf '%s %s %s\n' "$best" "$bestn" "$last"
 }
