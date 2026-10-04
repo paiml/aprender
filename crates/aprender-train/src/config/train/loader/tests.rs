@@ -2096,3 +2096,150 @@ fn test_tabular_shapes_name_the_offending_batch_index() {
     let err = validate_tabular_batch_shapes(&batches, 8).expect_err("batch 2 must be rejected");
     assert!(err.to_string().contains("batch 2"), "error must name the batch: {err}");
 }
+
+// =========================================================================
+// apr-train-output-config-v1 (K30): config.json's tie flag comes from the model
+// =========================================================================
+
+/// FALSIFY-TOC-001's checkpoint shape: q/k/v biases and a vocab above 150000, the
+/// shape `ties_embeddings()` guesses is tied, with the flag itself false.
+fn toc_untied_qwen2_config() -> TransformerConfig {
+    TransformerConfig {
+        hidden_size: 8,
+        num_attention_heads: 2,
+        num_kv_heads: 1,
+        intermediate_size: 16,
+        num_hidden_layers: 1,
+        vocab_size: 150_016,
+        max_position_embeddings: 64,
+        rms_norm_eps: 1e-6,
+        rope_theta: 10000.0,
+        use_bias: true,
+        head_dim_override: None,
+        architecture: ModelArchitecture::Decoder,
+        hf_architecture: None,
+        hf_model_type: None,
+        tie_word_embeddings: false,
+    }
+}
+
+/// A head that cannot be mistaken for the randomly initialised embedding.
+fn toc_independent_head(config: &TransformerConfig) -> crate::Tensor {
+    let n = config.vocab_size * config.hidden_size;
+    crate::Tensor::from_vec((0..n).map(|i| ((i % 251) as f32 - 125.0) * 1e-3).collect(), false)
+}
+
+fn toc_spec(output_dir: &std::path::Path) -> TrainSpec {
+    let mut spec = minimal_spec();
+    spec.training.output_dir = output_dir.to_path_buf();
+    spec
+}
+
+fn toc_saved_tie_flag(output_dir: &std::path::Path) -> bool {
+    let text = std::fs::read_to_string(output_dir.join("config.json")).expect("config.json");
+    let json: serde_json::Value = serde_json::from_str(&text).expect("config.json parses");
+    json["tie_word_embeddings"].as_bool().expect("tie_word_embeddings is a bool")
+}
+
+/// FALSIFY-TOC-001, the config and weights half: an untied Qwen2-shaped checkpoint,
+/// loaded by `load_transformer_model` and saved by `save_trained_model_cpu`, keeps its
+/// own head. The served-logits half needs realizar, so it lives outside this crate.
+#[test]
+fn falsify_toc_001_untied_checkpoint_saves_untied_flag_and_its_head() {
+    let config = toc_untied_qwen2_config();
+    assert!(config.ties_embeddings(), "precondition: the Qwen2 shape guesses tied");
+    let dir = tempfile::tempdir().expect("temp dir should succeed");
+    let source = dir.path().join("source");
+    std::fs::create_dir_all(&source).expect("source dir");
+    let mut model = Transformer::new(&config);
+    model.lm_head = Some(toc_independent_head(&config));
+    TransformerTrainer::with_model(model, build_train_config(config.clone(), &minimal_spec()))
+        .save(source.join("model.safetensors"), "toc-source", "Qwen2ForCausalLM")
+        .expect("source checkpoint saves");
+
+    let (loaded, _) =
+        load_transformer_model(&source, &config, &dir.path().join("absent")).expect("loader runs");
+    let loaded = loaded.expect("the source checkpoint loads");
+    assert!(loaded.lm_head.is_some(), "the loader keeps the checkpoint's own head");
+    let output = dir.path().join("output");
+    let spec = toc_spec(&output);
+    let trainer = TransformerTrainer::with_model(loaded, build_train_config(config, &spec));
+    save_trained_model_cpu(&trainer, &spec).expect("save succeeds");
+
+    assert!(!toc_saved_tie_flag(&output), "config.json must say untied: the model has a head");
+    let saved = load_safetensors_weights(&output, Architecture::Auto).expect("saved weights");
+    let saved_head = saved.get("lm_head.weight").expect("model.safetensors holds lm_head.weight");
+    let saved_embed = saved.get("model.embed_tokens.weight").expect("embedding is saved");
+    let trained_head = trainer.model().lm_head.as_ref().expect("the trainer has a head");
+    let (saved_head, saved_embed) = (saved_head.data(), saved_embed.data());
+    let trained_head = trained_head.data();
+    let saved_head = saved_head.as_slice().expect("contiguous");
+    assert_eq!(saved_head, trained_head.as_slice().expect("contiguous"));
+    assert_ne!(saved_head, saved_embed.as_slice().expect("contiguous"), "the head is independent");
+}
+
+/// FALSIFY-TOC-002: a run that starts without weights (the spec's architecture block
+/// alone) allocates no head and saves no lm_head.weight, so config.json must say tied.
+/// An HF-convention loader that trusts an untied flag gives the model a fresh head.
+#[test]
+fn falsify_toc_002_run_without_a_head_saves_tied_flag() {
+    use crate::config::schema::ArchitectureOverrides;
+    let overrides = ArchitectureOverrides {
+        hidden_size: Some(8),
+        num_hidden_layers: Some(1),
+        num_attention_heads: Some(2),
+        num_kv_heads: Some(1),
+        intermediate_size: Some(16),
+        vocab_size: Some(64),
+        max_position_embeddings: Some(64),
+        rms_norm_eps: Some(1e-6),
+        rope_theta: Some(10000.0),
+        use_bias: Some(false),
+        head_dim: None,
+    };
+    let config = config_from_overrides(&overrides).expect("complete overrides build a config");
+    assert!(!config.tie_word_embeddings, "precondition: the overrides leave the flag false");
+    let dir = tempfile::tempdir().expect("temp dir should succeed");
+    let output = dir.path().join("output");
+    let spec = toc_spec(&output);
+    let model = Transformer::new(&config);
+    let trainer = TransformerTrainer::with_model(model, build_train_config(config, &spec));
+    assert!(trainer.model().lm_head.is_none(), "precondition: Transformer::new has no head");
+    save_trained_model_cpu(&trainer, &spec).expect("save succeeds");
+
+    let bytes = std::fs::read(output.join("model.safetensors")).expect("model.safetensors");
+    let tensors = safetensors::SafeTensors::deserialize(&bytes).expect("model.safetensors parses");
+    assert!(!tensors.names().iter().any(|n| n.as_str() == "lm_head.weight"), "no head is saved");
+    assert!(toc_saved_tie_flag(&output), "config.json must say tied: there is no head to load");
+}
+
+/// FALSIFY-TOC-003: the CUDA save path writes the flag from the model it saves.
+/// `sync_weights_to_cpu` always downloads the GPU head into `model.lm_head` (ALB-097:
+/// it trains with its own AdamW state and leaves the embedding), so after the save the
+/// flag is untied for an untied checkpoint and for a run whose config says tied.
+#[cfg(feature = "cuda")]
+#[test]
+#[ignore = "needs a CUDA device; hold the GPU lock around the test binary"]
+fn falsify_toc_003_cuda_save_writes_the_saved_models_flag() {
+    let mut tied_run = toc_untied_qwen2_config();
+    tied_run.vocab_size = 64;
+    tied_run.use_bias = false;
+    tied_run.tie_word_embeddings = true;
+    for (label, config, own_head) in
+        [("untied checkpoint", toc_untied_qwen2_config(), true), ("tied run", tied_run, false)]
+    {
+        let dir = tempfile::tempdir().expect("temp dir should succeed");
+        let output = dir.path().join("output");
+        let spec = toc_spec(&output);
+        let mut model = Transformer::new(&config);
+        if own_head {
+            model.lm_head = Some(toc_independent_head(&config));
+        }
+        let mut trainer =
+            CudaTransformerTrainer::with_model(model, build_train_config(config, &spec))
+                .expect("CUDA trainer");
+        save_trained_model_cuda(&mut trainer, &spec).expect("save succeeds");
+        assert!(trainer.model().lm_head.is_some(), "{label}: the save downloads the GPU head");
+        assert!(!toc_saved_tie_flag(&output), "{label}: config.json must say untied");
+    }
+}

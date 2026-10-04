@@ -798,13 +798,7 @@ fn save_trained_model_cpu(trainer: &TransformerTrainer, spec: &TrainSpec) -> Res
     }
 
     let weights_path = spec.training.output_dir.join("model.safetensors");
-    save_config_and_metadata(
-        trainer.model().config(),
-        trainer.step(),
-        &trainer.metrics,
-        &weights_path,
-        spec,
-    )
+    save_config_and_metadata(trainer.model(), trainer.step(), &trainer.metrics, &weights_path, spec)
 }
 
 /// Save trained model from CUDA trainer (syncs GPU→CPU first)
@@ -843,23 +837,24 @@ fn save_trained_model_cuda(trainer: &mut CudaTransformerTrainer, spec: &TrainSpe
     // C-QLORA-SAVE-001: NF4 QLoRA training MUST produce adapter_model.safetensors
     trainer.save_cuda_lora_adapter(&spec.training.output_dir, Some(model_name))?;
 
-    save_config_and_metadata(
-        trainer.model().config(),
-        trainer.step(),
-        &trainer.metrics,
-        &weights_path,
-        spec,
-    )
+    save_config_and_metadata(trainer.model(), trainer.step(), &trainer.metrics, &weights_path, spec)
 }
 
 /// Save config.json and metadata (shared by CPU and CUDA paths)
+///
+/// `tie_word_embeddings` is read from the model being saved, not guessed from its
+/// shape (`TransformerConfig::ties_embeddings` says "tied" for every Qwen2-shaped
+/// config). The weights file carries `lm_head.weight` exactly when `model.lm_head`
+/// is `Some`, so the flag is true exactly when there is no head to load and the
+/// server must reuse the embedding. Contract: apr-train-output-config-v1 (K30).
 fn save_config_and_metadata(
-    mc: &TransformerConfig,
+    model: &Transformer,
     step: usize,
     metrics: &crate::train::MetricsTracker,
     weights_path: &std::path::Path,
     spec: &TrainSpec,
 ) -> Result<()> {
+    let mc = model.config();
     let config_json_path = spec.training.output_dir.join("config.json");
     let config_json = serde_json::json!({
         "architectures": [mc.hf_architecture_name()],
@@ -873,7 +868,7 @@ fn save_config_and_metadata(
         "max_position_embeddings": mc.max_position_embeddings,
         "rms_norm_eps": mc.rms_norm_eps,
         "rope_theta": mc.rope_theta,
-        "tie_word_embeddings": mc.ties_embeddings(),
+        "tie_word_embeddings": model.lm_head.is_none(),
         "use_cache": true,
     });
     let config_json_str = serde_json::to_string_pretty(&config_json)

@@ -22,7 +22,11 @@ metadata:
     configs do not carry, so (1) needs a spec override use_bias true or a config with attention_bias true; (2)
     covers runs from scratch. The dedicated pretraining path (train/pretrain_real.rs) is not affected:
     save_config_and_metadata is private to helpers.rs, and the two save paths (:801, :846) are its only
-    callers. PROPOSED from a desk read; nothing is built or run.
+    callers. Fixed on this branch: save_config_and_metadata takes the model being saved and writes
+    model.lm_head.is_none(), and both save paths pass trainer.model(). The CUDA path calls
+    sync_weights_to_cpu first (through prepare_async_apr_save), which always downloads the GPU head into
+    model.lm_head (train/transformer_trainer/cuda_trainer.rs:2559, ALB-097: that head trains with its own
+    AdamW state and moves away from the embedding), so every CUDA output directory now says untied.
   references:
   - crates/aprender-train/src/config/train/loader/helpers.rs (save_trained_model_cpu :768, save_trained_model_cuda :812, save_config_and_metadata :856)
   - crates/aprender-train/src/transformer/config.rs (ties_embeddings :434, the guess at :439, hf_architecture_name :403)
@@ -57,20 +61,25 @@ proof_obligations:
   applies_to: all
 falsification_tests:
 - id: FALSIFY-TOC-001
-  rule: An untied checkpoint keeps its own head through apr train and apr run
-  prediction: 'tiny untied Qwen2-shaped checkpoint (vocab 150016, hidden 8, 1 layer, 2 heads, 1 KV head, q/k/v biases, lm_head.weight drawn independently of embed_tokens.weight, config.json with attention_bias true and tie_word_embeddings false), loaded by load_transformer_model and saved by save_trained_model_cpu: config.json says tie_word_embeddings false, model.safetensors holds lm_head.weight equal to the trainer''s head, and apr run on the output directory gives the trainer''s logits within 1e-4·max(1, max|z|) with the same argmax on 4 fixed sequences. At 316dee2cd4 ties_embeddings() returns true (use_bias and vocab > 150000), resolve_lm_head_weight then takes the embedding, and the logits differ, so this row is RED until the flag comes from the model. Planted: putting the use_bias && vocab > 150000 guess back turns it RED'
-  test: '[U] not written; CPU only, needs cargo after LIVE 0.70.1. The config half fits the aprender-train loader tests; the apr run half needs a crate that links both aprender-train and realizar, such as apr-cli'
-  if_fails: 'apr serves an untied model with its embedding as the output head, and the trained head in model.safetensors is never read'
+  rule: An untied checkpoint keeps its own head through apr train
+  prediction: 'tiny untied Qwen2-shaped checkpoint (vocab 150016, hidden 8, 1 layer, 2 heads, 1 KV head, q/k/v biases, lm_head.weight independent of embed_tokens.weight, the TransformerConfig that a config.json with attention_bias true and tie_word_embeddings false gives), saved, loaded back by load_transformer_model and saved again by save_trained_model_cpu: config.json says tie_word_embeddings false, and model.safetensors holds lm_head.weight equal to the trainer''s head and unequal to the embedding. At 316dee2cd4 ties_embeddings() returns true (use_bias and vocab > 150000), so this row is RED there. Planted: putting the use_bias && vocab > 150000 guess back turns it RED'
+  test: 'cargo test -p aprender-train --lib config::train::loader::tests::falsify_toc_001_untied_checkpoint_saves_untied_flag_and_its_head'
+  if_fails: 'config.json tells every loader that an untied model is tied, so the trained head in model.safetensors is never read'
 - id: FALSIFY-TOC-002
   rule: A run that saves no head says the head is tied
   prediction: 'run without weights (no config.json; the spec architecture block alone, which config_from_overrides turns into tie_word_embeddings false; vocab 64, hidden 8, 1 layer): Transformer::new allocates no head, model.safetensors has no lm_head.weight, and config.json must say tie_word_embeddings true. At 316dee2cd4 it says false, so this row is RED. apr run on the directory falls back to the embedding and cannot see the defect; an HF-convention loader that trusts the flag gives the model a newly initialised head. Planted: writing the config field (mc.tie_word_embeddings) instead of the model state turns it RED'
-  test: '[U] not written; CPU only, needs cargo after LIVE 0.70.1'
+  test: 'cargo test -p aprender-train --lib config::train::loader::tests::falsify_toc_002_run_without_a_head_saves_tied_flag'
   if_fails: 'a model trained from scratch by apr train loads elsewhere with a random output head and generates noise, while apr run on the same directory looks fine'
 - id: FALSIFY-TOC-003
-  rule: The CUDA save path writes the same flag as the CPU path
-  prediction: 'save_trained_model_cuda writes tie_word_embeddings false on the TOC-001 checkpoint and true on the TOC-002 run, the values save_trained_model_cpu must write. The test checks those values, not that the two paths agree: at 316dee2cd4 both paths write false on the TOC-002 run, so a comparison of the two is GREEN there. Both call save_config_and_metadata with trainer.model().config() at 316dee2cd4 (helpers.rs:801 and :846), so the fix must pass the CUDA trainer''s model state as well, not only the CPU one. The CUDA path writes model.apr, not model.safetensors (helpers.rs:823), so this row checks config.json only; whether model.apr carries lm_head.weight, and what apr run reads from it, is not read here. Planted: the fix applied to save_trained_model_cpu only turns it RED on the TOC-002 run'
-  test: '[U] not written; needs cargo + CUDA after LIVE 0.70.1, GPU lock around the test binary only'
-  if_fails: 'CUDA-trained output directories keep the guessed flag after the CPU path is fixed'
+  rule: The CUDA save path writes the flag of the model it saves
+  prediction: 'save_trained_model_cuda calls sync_weights_to_cpu first (through prepare_async_apr_save), which always downloads the GPU head into model.lm_head (ALB-097), so after the save config.json says tie_word_embeddings false on the TOC-001 checkpoint and also on a run without a head whose config says tied (vocab 64, tie_word_embeddings true). At 316dee2cd4 the CUDA path writes ties_embeddings(), which is true in both cases, so this row is RED there on both. The CUDA path writes model.apr, not model.safetensors (helpers.rs:823), so this row checks config.json only; whether model.apr carries lm_head.weight, and what apr run reads from it, is not read here. Planted: the fix applied to save_trained_model_cpu only turns it RED'
+  test: '[U] written, not run: cargo test -p aprender-train --features cuda --lib config::train::loader::tests::falsify_toc_003_cuda_save_writes_the_saved_models_flag -- --ignored. It needs a CUDA device, with the GPU lock around the test binary only'
+  if_fails: 'CUDA-trained output directories keep the guessed flag after the CPU path is fixed, and a CUDA run whose config says tied is served with the embedding instead of the head it trained'
+- id: FALSIFY-TOC-004
+  rule: apr run serves the head that was trained
+  prediction: 'apr run on the TOC-001 output directory (CPU safetensors path) gives the trainer''s logits within 1e-4·max(1, max|z|), with the same argmax, on 4 fixed sequences. At 316dee2cd4 config.json says tied there, resolve_lm_head_weight (aprender-serve safetensors_infer_convert.rs:218) takes the embedding, and the logits differ, so this row is RED there. Planted: config.json edited back to tied turns it RED'
+  test: '[U] not written; needs a crate that links both aprender-train and realizar, such as apr-cli'
+  if_fails: 'apr serves an untied model with its embedding as the output head, and the trained head in model.safetensors is never read'
 qa_gate:
   certeza:
     min_score: 0.0
