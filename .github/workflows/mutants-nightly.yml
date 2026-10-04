@@ -104,8 +104,8 @@ jobs:
                 }
               fi
               cargo mutants --version || { echo "::error::cargo-mutants not runnable after install"; exit 1; }
-              # the crates ci.yml workspace-test --excludes, derived from its nextest line (see ci.yml mutants)
-              EXCL=$(grep -m1 -E "^[[:space:]]+cargo nextest run --profile ci --workspace --lib" .github/workflows/ci.yml \
+              # the crates workspace-test --excludes, derived from its nextest line, which lives in ci/sections.yml since #4655 (as ci.yml mutants reads it)
+              EXCL=$(grep -m1 -E "^[[:space:]]+cargo nextest run --profile ci --workspace --lib" ci/sections.yml \
                 | grep -oE -- "--exclude [a-z0-9_-]+" | sed "s/^--exclude /--exclude-crate /" | tr "\n" " ")
               [ -n "$EXCL" ] || { echo "::error::no --exclude list found on the workspace-test nextest line"; exit 1; }
               # shellcheck disable=SC2086
