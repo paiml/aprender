@@ -51,7 +51,8 @@ equations:
       - "a tag on a commit that does not carry V refuses: there is no bump commit under it"
       - "an unreadable tag or version is NOT_MEASURED, never a pass (L25)"
       - "B is the version TRANSITION, not the first commit whose text gains the string: a dependency line or a reverted-then-redone bump does not move B"
-      - "report-only in cut_tag(); the release-gates nightly lane (self-test plus the newest final tag) is not wired yet, so no night is counted until it is; after three green nights, a die on rc 1 and rc 2 (L31 ratchet)"
+      - "report-only in cut_tag(); real origin tags are judged only at release"
+      - "the nightly lane is a rehearsal: tag_on_bump_sandbox.sh runs the commit's own bump procedure (scripts/bump-version.sh) to the train version in a scratch clone with no remote, tags it there, and judges that tag. Not wired until the release-gates nightly workflow is on main, so no night is counted before then; after three green nights, a die on rc 1 and rc 2 (L31 ratchet)"
 
 proof_obligations:
   - id: TSMG-INV-001
@@ -129,6 +130,12 @@ falsification_tests:
     prediction: "cut_tag() calls scripts/release/tag_on_bump.sh with --commit on an uncommented line above `git tag -a`"
     test: "b=$(awk '/^cut_tag\\(\\) \\{/,/^\\}/' scripts/release/autopilot.sh | grep -v '^[[:space:]]*#'); j=$(printf '%s\\n' \"$b\" | grep -n 'tag_on_bump\\.sh.*--commit' | head -1 | cut -d: -f1); t=$(printf '%s\\n' \"$b\" | grep -n 'git tag -a' | head -1 | cut -d: -f1); [ -n \"$j\" ] && [ -n \"$t\" ] && [ \"$j\" -lt \"$t\" ]"
     if_fails: "The release path never asks whether the commit it tags is the bump: the 0.70.1 condition (3 commits between) is reachable unseen"
+
+  - id: FALSIFY-TSMG-010
+    rule: "The nightly rehearsal bumps and tags only a scratch clone, and its verdict is the judge's"
+    prediction: "The planted rows hold: a bump procedure that moves the root version passes; the source repository gains no tag, commit or change; a bump that misses the root version refuses; a failed or empty bump, a bad train version, the current version, or an unresolvable rev is NOT_MEASURED; each of the 5 mutants turns a row red"
+    test: "bash scripts/release/tag_on_bump_sandbox.sh --self-test | grep -qx 'tag_on_bump_sandbox self-test: mutants killed 5/5'"
+    if_fails: "A nightly that cannot fail, or one that writes a tag where a push could take it, would be counted toward the three green nights"
 
 qa_gate:
   id: F-TSMG-001
