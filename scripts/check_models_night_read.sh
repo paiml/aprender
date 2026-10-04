@@ -4,9 +4,9 @@
 #
 # The reader is not wired into any release script yet, so nothing else runs it. This guard keeps its
 # read honest until the switch: every row of its case table must pass (fixtures from nightly_train.sh's
-# own bundles plus generated models-t1 artifacts). 1.8 s on a build host at load 247 on 32 cores.
+# own bundles plus generated models-t1 artifacts). 3.0 s on a build host at load about 200 on 32 cores.
 #
-# The planted mutants are NOT run here: `bash scripts/release/models_night_read.sh --mutants` took 32 s
+# The planted mutants are NOT run here: `bash scripts/release/models_night_read.sh --mutants` took 71 s
 # on the same host, every PR would pay it, and it only changes when the reader does. Run it after any
 # edit to the reader; it exits 1 unless every mutant changes the file, parses, and breaks a row.
 #

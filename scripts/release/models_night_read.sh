@@ -2,7 +2,7 @@
 # models_night_read.sh -- release day reads the night's model ladder for H, and runs none (#4701)
 #
 #   bash scripts/release/models_night_read.sh --ledger DIR --head SHA --artifact DIR --out DIR
-#   bash scripts/release/models_night_read.sh --streak --ledger DIR
+#   bash scripts/release/models_night_read.sh --streak --ledger DIR --today YYYY-MM-DD
 #   bash scripts/release/models_night_read.sh --self-test
 #   bash scripts/release/models_night_read.sh --mutants
 #
@@ -17,24 +17,32 @@
 #                   "# C" line, the commit that night measured.
 #   --artifact DIR  artifact models-t1 of the run the ledger names. models-nightly.yml uploads it only for
 #                   a verified, unplanted green or red: verdict, SHA256SUMS, models-t1.log, one <host>.json
-#                   receipt per GPU-host leg, judge.log and log tails.
+#                   receipt per GPU-host leg, judge.log and log tails. It must be the artifact of the run
+#                   that H's newest green night names (the GO line repeats it as run=). The verdict carries
+#                   no run id, so the reader ties the artifact to H, through commit= and the GO line's
+#                   sha9, and not to the run: the caller fetches it by that run id.
 #
 # THE READ. GO only when all of these hold. Anything else is NO-GO, and release day runs no ladder to
 # make up for it:
 #   1. some night's C is H;
-#   2. no night of H read models red: a later green never outvotes a red on the same commit;
+#   2. every night of H read models green, not_measured, or had no models row. A red, a second models
+#      row, or any other state is never outvoted by a later green on the same commit;
 #   3. the newest night of H that read models green did so from a run on H, at attempt 1;
 #   4. the artifact passes its own SHA256SUMS and holds nothing those sums do not list;
 #   5. its verdict says commit=H and state=green;
 #   6. its models-t1.log has models_t1.sh's GO line at H's sha9 and no NO-GO line, and it holds the receipt of each host
 #      that line names.
+# A night whose "# C" line cannot be read may be H's. The train writes that line last, so a cut-short
+# bundle has none. Such a night is passed over only when its models row ran on another named commit or
+# measured nothing (not_measured). Otherwise it is NO-GO.
 # On GO the receipts and judge.log are copied into --out: models_t1.sh's output layout, which
 # release_readiness.sh reads as --receipts. stdout gets the night's MODELS lines (the lines autopilot.sh
 # keeps from models_t1.sh) and one MODELS-NIGHT line naming the night and the run.
 #
 # THE STREAK (--streak). The switch to this read needs 3 green nights in a row, then sign-off. The newest
 # nights are counted, one per UTC day with no day missing, while each read models green from a run on
-# that night's C at attempt 1. Exit 0 at 3 or more.
+# that night's C at attempt 1. The newest night must be --today or the day before, so an old streak
+# counts nothing, and each night's directory must be a calendar day. Exit 0 at 3 or more.
 #
 # NOT WIRED. No release script calls this file. Putting it into autopilot.sh in place of models_t1.sh
 # changes what release day accepts; that is the switch, and it waits for the streak and sign-off.
@@ -91,16 +99,23 @@ read_night() {
     [ -d "$ledger" ] || nogo "no ledger at '$ledger': release day runs no ladder to make one"
     while IFS= read -r d; do
         IFS=$'\t' read -r c s r rh a < <(night "$ledger/$d/bundle.tsv")
+        if ! [[ $c =~ ^[0-9a-f]{40}$ ]]; then  # no readable C: the train writes its "# C" line last
+            [ "$rh" != "$h" ] || nogo "night $d has no readable C, and its models run (run $r) was on H ${h:0:10}"
+            [ "$s" = not_measured ] || [[ $rh =~ ^[0-9a-f]{40}$ ]] \
+                || nogo "night $d has no readable C and models $s names no commit (run $r): it may be H's"
+            continue
+        fi
         [ "$c" = "$h" ] || continue
         seen=1; printf -v hist '%s %s=%s' "$hist" "$d" "$s"
         case $s in
-            red|ambiguous) nogo "night $d read models $s on H ${h:0:10} (run $r): a later green never outvotes it" ;;
             green)
                 if [ -z "$go_d" ]; then
                     [ "$rh" = "$h" ] || nogo "night $d read models green from a run on ${rh:0:10}, not H ${h:0:10}"
                     [ "$a" = 1 ] || nogo "night $d read models green at attempt $a: a retried green is not a green"
                     go_d=$d; go_r=$r
                 fi ;;
+            not_measured|absent) ;;
+            *) nogo "night $d read models $s on H ${h:0:10} (run $r): a later green never outvotes it" ;;
         esac
     done < <(nights "$ledger")
     [ "$seen" = 1 ] || nogo "no night in the ledger measured H ${h:0:10}: release day runs no ladder to make one"
@@ -138,14 +153,26 @@ read_night() {
 # vget KEY VERDICT -> the value of KEY in a key=value verdict file
 vget() { awk -v k="$1" 'index($0, k "=") == 1 { print substr($0, length(k) + 2); exit }' "$2"; }
 
-# streak LEDGER -> one MODELS-NIGHT STREAK line; exit 0 when NEED or more green nights end the ledger
+# day SPEC -> the UTC calendar day GNU date makes of SPEC, empty when it makes none
+day() { date -u -d "$1" +%F 2> /dev/null; } # bashrs disable-line=DET002 (calendar arithmetic on an input day, never the clock)
+
+# streak LEDGER TODAY -> one MODELS-NIGHT STREAK line; exit 0 when NEED or more green nights end the
+#   ledger and the newest is TODAY or the day before
 streak() {
-    local ledger=$1 d c s r rh a n=0 prev="" want seen="" why=""
+    local ledger=$1 today=$2 d c s r rh a n=0 prev="" want seen="" why=""
     [ -n "$ledger" ] || caller_error "--ledger is required"
+    [[ $today =~ ^[0-9]{4}-[0-9]{2}-[0-9]{2}$ ]] && [ "$(day "$today")" = "$today" ] \
+        || caller_error "--streak needs --today YYYY-MM-DD, a calendar day (got '$today')"
     if [ -d "$ledger" ]; then
         while IFS= read -r d; do
-            if [ -n "$prev" ]; then
-                want=$(date -u -d "$prev -1 day" +%F) || caller_error "GNU date cannot step back from $prev" # bashrs disable-line=DET002 (a calendar step back from an input day, never the clock)
+            if [ "$(day "$d")" != "$d" ]; then why="$d is not a calendar day"; break; fi
+            if [ -z "$prev" ]; then
+                want="$today or $(day "$today -1 day")"
+                if [ "$d" != "$today" ] && [ "$d" != "$(day "$today -1 day")" ]; then
+                    why="the newest night is $d, not $want"; break
+                fi
+            else
+                want=$(day "$prev -1 day")
                 if [ "$d" != "$want" ]; then why="no night on $want"; break; fi
             fi
             IFS=$'\t' read -r c s r rh a < <(night "$ledger/$d/bundle.tsv")
@@ -168,7 +195,9 @@ X=bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb
 
 # ledger DIR SPEC... -> one night per SPEC "day:case[:mod]" from models_night_cases/<case>. mod x: the
 #   night measured X, not H; head: the models row's run is on X; att2: the models row is at attempt 2;
-#   att1: the models row is at attempt 1 (a red row carries no attempt; this one does)
+#   att1: the models row is at attempt 1 (a red row carries no attempt; this one does); dup: a second,
+#   red, models row; odd: the models row's state is void, which the train never writes; noc: no "# C"
+#   line, as when the train's write was cut short; trunc: no "# C" line and no models row; nocx: x, then noc
 ledger() {
     local dir=$1 spec day kase mod b; shift
     mkdir -p -- "$dir" || return 1
@@ -183,6 +212,11 @@ ledger() {
             head) awk -F '\t' -v OFS='\t' -v x="$X" '$1 == "models" { $6 = x } 1' "$CASES/$kase/bundle.tsv" > "$b" ;;
             att2) awk -F '\t' -v OFS='\t' '$1 == "models" { $8 = 2 } 1' "$CASES/$kase/bundle.tsv" > "$b" ;;
             att1) awk -F '\t' -v OFS='\t' '$1 == "models" { $8 = 1 } 1' "$CASES/$kase/bundle.tsv" > "$b" ;;
+            dup) awk -F '\t' -v OFS='\t' '1; $1 == "models" { $3 = "red"; print }' "$CASES/$kase/bundle.tsv" > "$b" ;;
+            odd) awk -F '\t' -v OFS='\t' '$1 == "models" { $3 = "void" } 1' "$CASES/$kase/bundle.tsv" > "$b" ;;
+            noc) awk -F '\t' '$1 != "# C"' "$CASES/$kase/bundle.tsv" > "$b" ;;
+            trunc) awk -F '\t' '$1 != "# C" && $1 != "models"' "$CASES/$kase/bundle.tsv" > "$b" ;;
+            nocx) sed "s/$H/$X/g" "$CASES/$kase/bundle.tsv" | awk -F '\t' '$1 != "# C"' > "$b" ;;
             *) return 1 ;;
         esac || return 1
     done
@@ -197,17 +231,17 @@ artifact() {
     mkdir -p -- "$a" || return 1
     case $mod in commit) c=$X ;; state) st=red ;; sha9) g=${X:0:9} ;; esac
     printf 'commit=%s\nsha9=%s\nversion=0.70.2\nentry=scripts/release/models_t1.sh@%s\nt1_rc=0\nstate=%s\nreason=fixture\n' \
-        "$c" "${H:0:9}" "$X" "$st" > "$a/verdict"
+        "$c" "${H:0:9}" "$X" "$st" > "$a/verdict" || return 1
     {
         printf 'MODELS host-a measured by apr 0.70.2 (%s): executed=12 red=0 (model_ladder rc 0)\n' "${H:0:9}"
         printf 'MODELS host-b measured by apr 0.70.2 (%s): executed=12 red=0 (model_ladder rc 0)\n' "${H:0:9}"
         printf 'MODELS GO on host-a and host-b at %s: the judge passed both receipts (apr 0.70.2 (%s))\n' "$g" "${H:0:9}"
-    } > "$a/models-t1.log"
-    printf '{"host":"host-a","executed":12,"red":0}\n' > "$a/host-a.json"
-    printf '{"host":"host-b","executed":12,"red":0}\n' > "$a/host-b.json"
-    printf 'judge: PASS\n' > "$a/judge.log"
-    [ "$mod" != nohost ] || rm -f -- "$a/host-b.json"
-    [ "$mod" != nogoline ] || printf 'MODELS host-b NO-GO: no receipt -- fixture\n' >> "$a/models-t1.log"
+    } > "$a/models-t1.log" || return 1
+    printf '{"host":"host-a","executed":12,"red":0}\n' > "$a/host-a.json" || return 1
+    printf '{"host":"host-b","executed":12,"red":0}\n' > "$a/host-b.json" || return 1
+    printf 'judge: PASS\n' > "$a/judge.log" || return 1
+    [ "$mod" != nohost ] || rm -f -- "$a/host-b.json" || return 1
+    [ "$mod" != nogoline ] || printf 'MODELS host-b NO-GO: no receipt -- fixture\n' >> "$a/models-t1.log" || return 1
     seal "$a" || return 1
     case $mod in
         tamper) printf 'x\n' >> "$a/host-a.json" ;;
@@ -240,43 +274,46 @@ cases() {
             BROKE=$((BROKE + 1))
         fi
     }
-    ledger "$t/l-go" 2026-10-06:green; artifact "$t/a-ok"
+    setup() { # setup CMD... -> runs one fixture step; a failed step breaks the table, never a row's verdict
+        "$@" || { printf 'BROKE setup: %s\n' "$*"; BROKE=$((BROKE + 1)); }
+    }
+    setup ledger "$t/l-go" 2026-10-06:green; setup artifact "$t/a-ok"
     row "green night of H: GO, naming the night and the run" 0 "MODELS-NIGHT GO H=4701470147 night=2026-10-06 run=601" "" \
         -- bash "$s" --ledger "$t/l-go" --head "$H" --artifact "$t/a-ok" --out "$t/o1"
     row "GO keeps models_t1.sh's MODELS lines" 0 "MODELS GO on host-a and host-b at 470147014" "" \
         -- bash "$s" --ledger "$t/l-go" --head "$H" --artifact "$t/a-ok" --out "$t/o2"
     row "GO leaves both receipts and judge.log in --out" 0 "files: host-a.json host-b.json judge.log" "" \
         -- files "$t/o3" "$s" --ledger "$t/l-go" --head "$H" --artifact "$t/a-ok" --out "$t/o3"
-    ledger "$t/l-other" 2026-10-06:green:x
+    setup ledger "$t/l-other" 2026-10-06:green:x
     row "no night measured H" 1 "no night in the ledger measured H 4701470147" "MODELS-NIGHT GO" \
         -- bash "$s" --ledger "$t/l-other" --head "$H" --artifact "$t/a-ok" --out "$t/o4"
-    mkdir -p -- "$t/l-empty"
+    setup mkdir -p -- "$t/l-empty"
     row "empty ledger" 1 "no night in the ledger measured H" "MODELS-NIGHT GO" \
         -- bash "$s" --ledger "$t/l-empty" --head "$H" --artifact "$t/a-ok" --out "$t/o5"
     row "no ledger" 1 "no ledger at" "MODELS-NIGHT GO" \
         -- bash "$s" --ledger "$t/l-none" --head "$H" --artifact "$t/a-ok" --out "$t/o6"
-    ledger "$t/l-red" 2026-10-06:red
+    setup ledger "$t/l-red" 2026-10-06:red
     row "red night of H" 1 "night 2026-10-06 read models red on H 4701470147 (run 601)" "MODELS-NIGHT GO" \
         -- bash "$s" --ledger "$t/l-red" --head "$H" --artifact "$t/a-ok" --out "$t/o7"
-    ledger "$t/l-redold" 2026-10-06:green 2026-10-05:red
+    setup ledger "$t/l-redold" 2026-10-06:green 2026-10-05:red
     row "a later green never outvotes a red on H" 1 "night 2026-10-05 read models red" "MODELS-NIGHT GO" \
         -- bash "$s" --ledger "$t/l-redold" --head "$H" --artifact "$t/a-ok" --out "$t/o8"
-    ledger "$t/l-redx" 2026-10-06:green 2026-10-05:red:x
+    setup ledger "$t/l-redx" 2026-10-06:green 2026-10-05:red:x
     row "a red on another commit is not H's" 0 "MODELS-NIGHT GO H=4701470147 night=2026-10-06" "" \
         -- bash "$s" --ledger "$t/l-redx" --head "$H" --artifact "$t/a-ok" --out "$t/o9"
-    ledger "$t/l-nm" 2026-10-06:not_measured
+    setup ledger "$t/l-nm" 2026-10-06:not_measured
     row "not_measured is not a pass" 1 "no night of H 4701470147 read models green: 2026-10-06=not_measured" "MODELS-NIGHT GO" \
         -- bash "$s" --ledger "$t/l-nm" --head "$H" --artifact "$t/a-ok" --out "$t/o10"
-    ledger "$t/l-np" 2026-10-06:no_producer
+    setup ledger "$t/l-np" 2026-10-06:no_producer
     row "no producer yet (the train before its models row)" 1 "read models green: 2026-10-06=not_measured" "MODELS-NIGHT GO" \
         -- bash "$s" --ledger "$t/l-np" --head "$H" --artifact "$t/a-ok" --out "$t/o11"
-    ledger "$t/l-nmnew" 2026-10-06:not_measured 2026-10-05:green
+    setup ledger "$t/l-nmnew" 2026-10-06:not_measured 2026-10-05:green
     row "an unmeasured night does not hide H's green one" 0 "MODELS-NIGHT GO H=4701470147 night=2026-10-05 run=601" "" \
         -- bash "$s" --ledger "$t/l-nmnew" --head "$H" --artifact "$t/a-ok" --out "$t/o12"
-    ledger "$t/l-head" 2026-10-06:green:head
+    setup ledger "$t/l-head" 2026-10-06:green:head
     row "green from a run on another commit" 1 "from a run on bbbbbbbbbb, not H 4701470147" "MODELS-NIGHT GO" \
         -- bash "$s" --ledger "$t/l-head" --head "$H" --artifact "$t/a-ok" --out "$t/o13"
-    ledger "$t/l-att" 2026-10-06:green:att2
+    setup ledger "$t/l-att" 2026-10-06:green:att2
     row "green at attempt 2" 1 "green at attempt 2: a retried green is not a green" "MODELS-NIGHT GO" \
         -- bash "$s" --ledger "$t/l-att" --head "$H" --artifact "$t/a-ok" --out "$t/o14"
     local m n=15
@@ -285,50 +322,90 @@ cases() {
              sha9:"is at bbbbbbbbb, not H 470147014" nohost:"no receipt for host-b" \
              nogoline:"models-t1.log holds a NO-GO line" \
              nosums:"no verdict or no SHA256SUMS"; do
-        artifact "$t/a-${m%%:*}" "${m%%:*}"
+        setup artifact "$t/a-${m%%:*}" "${m%%:*}"
         row "artifact ${m%%:*}" 1 "${m#*:}" "MODELS-NIGHT GO" \
             -- bash "$s" --ledger "$t/l-go" --head "$H" --artifact "$t/a-${m%%:*}" --out "$t/o$n"
         n=$((n + 1))
     done
     row "no artifact" 1 "no models-t1 artifact at" "MODELS-NIGHT GO" \
         -- bash "$s" --ledger "$t/l-go" --head "$H" --artifact "$t/a-none" --out "$t/o30"
-    mkdir -p -- "$t/o31"; printf 'stale\n' > "$t/o31/old.json"
+    setup mkdir -p -- "$t/o31"; setup cp -- "$CASES/green/line" "$t/o31/old.json"
     row "a non-empty --out is refused" 3 "is not empty" "MODELS-NIGHT GO" \
         -- bash "$s" --ledger "$t/l-go" --head "$H" --artifact "$t/a-ok" --out "$t/o31"
     row "H must be a full sha" 3 "not a full 40-hex sha" "MODELS-NIGHT GO" \
         -- bash "$s" --ledger "$t/l-go" --head "${H:0:12}" --artifact "$t/a-ok" --out "$t/o32"
+    setup ledger "$t/l-2g" 2026-10-06:green 2026-10-05:green
+    row "two green nights of H: GO names the newest" 0 "MODELS-NIGHT GO H=4701470147 night=2026-10-06 run=601" "" \
+        -- bash "$s" --ledger "$t/l-2g" --head "$H" --artifact "$t/a-ok" --out "$t/o33"
+    setup ledger "$t/l-dup" 2026-10-06:green 2026-10-05:green:dup
+    row "two models rows on one night of H" 1 "night 2026-10-05 read models ambiguous on H 4701470147" "MODELS-NIGHT GO" \
+        -- bash "$s" --ledger "$t/l-dup" --head "$H" --artifact "$t/a-ok" --out "$t/o34"
+    setup ledger "$t/l-odd" 2026-10-06:green 2026-10-05:red:odd
+    row "a state the train never writes, on H" 1 "night 2026-10-05 read models void on H 4701470147" "MODELS-NIGHT GO" \
+        -- bash "$s" --ledger "$t/l-odd" --head "$H" --artifact "$t/a-ok" --out "$t/o35"
+    setup ledger "$t/l-noc" 2026-10-06:green 2026-10-05:red:noc
+    row "a night with no C whose models run was on H" 1 "night 2026-10-05 has no readable C, and its models run (run 601) was on H" "MODELS-NIGHT GO" \
+        -- bash "$s" --ledger "$t/l-noc" --head "$H" --artifact "$t/a-ok" --out "$t/o36"
+    setup ledger "$t/l-trunc" 2026-10-06:green 2026-10-05:green:trunc
+    row "a cut-short night with no C and no models row" 1 "night 2026-10-05 has no readable C and models absent names no commit" "MODELS-NIGHT GO" \
+        -- bash "$s" --ledger "$t/l-trunc" --head "$H" --artifact "$t/a-ok" --out "$t/o37"
+    setup ledger "$t/l-nocx" 2026-10-06:green 2026-10-05:red:nocx
+    row "a night with no C whose models run was on another commit" 0 "MODELS-NIGHT GO H=4701470147 night=2026-10-06" "" \
+        -- bash "$s" --ledger "$t/l-nocx" --head "$H" --artifact "$t/a-ok" --out "$t/o38"
+    setup ledger "$t/l-nocnm" 2026-10-06:green 2026-10-05:not_measured:noc
+    row "a night with no C that measured nothing" 0 "MODELS-NIGHT GO H=4701470147 night=2026-10-06" "" \
+        -- bash "$s" --ledger "$t/l-nocnm" --head "$H" --artifact "$t/a-ok" --out "$t/o39"
 
-    ledger "$t/s3" 2026-10-06:green 2026-10-05:green 2026-10-04:green
-    row "streak: 3 green nights" 0 "MODELS-NIGHT STREAK 3 of 3: 2026-10-06 2026-10-05 2026-10-04" "" -- bash "$s" --streak --ledger "$t/s3"
-    ledger "$t/s4" 2026-10-06:green 2026-10-05:green 2026-10-04:green 2026-10-03:green
-    row "streak: 4 green nights" 0 "MODELS-NIGHT STREAK 4 of 3" "" -- bash "$s" --streak --ledger "$t/s4"
-    ledger "$t/sx" 2026-10-06:green:x 2026-10-05:green 2026-10-04:green:x
-    row "streak: main moved between nights" 0 "MODELS-NIGHT STREAK 3 of 3" "" -- bash "$s" --streak --ledger "$t/sx"
-    ledger "$t/sred" 2026-10-06:green 2026-10-05:green 2026-10-04:red
+    setup ledger "$t/s3" 2026-10-06:green 2026-10-05:green 2026-10-04:green
+    row "streak: 3 green nights" 0 "MODELS-NIGHT STREAK 3 of 3: 2026-10-06 2026-10-05 2026-10-04" "" -- bash "$s" --streak --ledger "$t/s3" --today 2026-10-06
+    setup ledger "$t/s4" 2026-10-06:green 2026-10-05:green 2026-10-04:green 2026-10-03:green
+    row "streak: 4 green nights" 0 "MODELS-NIGHT STREAK 4 of 3" "" -- bash "$s" --streak --ledger "$t/s4" --today 2026-10-06
+    setup ledger "$t/sx" 2026-10-06:green:x 2026-10-05:green 2026-10-04:green:x
+    row "streak: main moved between nights" 0 "MODELS-NIGHT STREAK 3 of 3" "" -- bash "$s" --streak --ledger "$t/sx" --today 2026-10-06
+    setup ledger "$t/sred" 2026-10-06:green 2026-10-05:green 2026-10-04:red
     row "streak: a red night ends it" 1 "STREAK 2 of 3: 2026-10-06 2026-10-05; stopped: 2026-10-04 read models red" "" \
-        -- bash "$s" --streak --ledger "$t/sred"
-    ledger "$t/sgap" 2026-10-06:green 2026-10-05:green 2026-10-03:green
+        -- bash "$s" --streak --ledger "$t/sred" --today 2026-10-06
+    setup ledger "$t/sgap" 2026-10-06:green 2026-10-05:green 2026-10-03:green
     row "streak: a missing night ends it" 1 "STREAK 2 of 3: 2026-10-06 2026-10-05; stopped: no night on 2026-10-04" "" \
-        -- bash "$s" --streak --ledger "$t/sgap"
-    ledger "$t/snm" 2026-10-06:not_measured 2026-10-05:green 2026-10-04:green 2026-10-03:green
+        -- bash "$s" --streak --ledger "$t/sgap" --today 2026-10-06
+    setup ledger "$t/snm" 2026-10-06:not_measured 2026-10-05:green 2026-10-04:green 2026-10-03:green
     row "streak: the newest night unmeasured" 1 "STREAK 0 of 3: none; stopped: 2026-10-06 read models not_measured" "" \
-        -- bash "$s" --streak --ledger "$t/snm"
-    ledger "$t/satt" 2026-10-06:green 2026-10-05:green 2026-10-04:green:att2
-    row "streak: a retried green ends it" 1 "STREAK 2 of 3" "" -- bash "$s" --streak --ledger "$t/satt"
-    ledger "$t/sred1" 2026-10-06:green 2026-10-05:green 2026-10-04:red:att1
+        -- bash "$s" --streak --ledger "$t/snm" --today 2026-10-06
+    setup ledger "$t/satt" 2026-10-06:green 2026-10-05:green 2026-10-04:green:att2
+    row "streak: a retried green ends it" 1 "STREAK 2 of 3" "" -- bash "$s" --streak --ledger "$t/satt" --today 2026-10-06
+    setup ledger "$t/sred1" 2026-10-06:green 2026-10-05:green 2026-10-04:red:att1
     row "streak: a red night ends it even on its own commit at attempt 1" 1 "stopped: 2026-10-04 read models red from run 601" "" \
-        -- bash "$s" --streak --ledger "$t/sred1"
-    ledger "$t/shead" 2026-10-06:green 2026-10-05:green 2026-10-04:green:head
-    row "streak: a green from a run on another commit ends it" 1 "STREAK 2 of 3" "" -- bash "$s" --streak --ledger "$t/shead"
-    ledger "$t/snp" 2026-10-06:no_producer 2026-10-05:no_producer 2026-10-04:no_producer
-    row "streak: no producer yet" 1 "STREAK 0 of 3" "" -- bash "$s" --streak --ledger "$t/snp"
-    row "streak: no ledger" 1 "STREAK 0 of 3: none; stopped: no ledger at" "" -- bash "$s" --streak --ledger "$t/s-none"
+        -- bash "$s" --streak --ledger "$t/sred1" --today 2026-10-06
+    setup ledger "$t/shead" 2026-10-06:green 2026-10-05:green 2026-10-04:green:head
+    row "streak: a green from a run on another commit ends it" 1 "STREAK 2 of 3" "" -- bash "$s" --streak --ledger "$t/shead" --today 2026-10-06
+    setup ledger "$t/snp" 2026-10-06:no_producer 2026-10-05:no_producer 2026-10-04:no_producer
+    row "streak: no producer yet" 1 "STREAK 0 of 3" "" -- bash "$s" --streak --ledger "$t/snp" --today 2026-10-06
+    row "streak: no ledger" 1 "STREAK 0 of 3: none; stopped: no ledger at" "" -- bash "$s" --streak --ledger "$t/s-none" --today 2026-10-06
+    row "streak: the newest night may be yesterday" 0 "MODELS-NIGHT STREAK 3 of 3" "" \
+        -- bash "$s" --streak --ledger "$t/s3" --today 2026-10-07
+    row "streak: an old streak counts nothing" 1 "STREAK 0 of 3: none; stopped: the newest night is 2026-10-06, not 2026-10-09 or 2026-10-08" "" \
+        -- bash "$s" --streak --ledger "$t/s3" --today 2026-10-09
+    row "streak: --today is required" 3 "--streak needs --today YYYY-MM-DD" "MODELS-NIGHT STREAK" \
+        -- bash "$s" --streak --ledger "$t/s3"
+    row "streak: --today must be a calendar day" 3 "a calendar day (got '2026-02-30')" "MODELS-NIGHT STREAK" \
+        -- bash "$s" --streak --ledger "$t/s3" --today 2026-02-30
+    setup ledger "$t/scal" 2026-03-02:green 2026-03-01:green 2026-02-30:green 2026-02-28:green
+    row "streak: a night that is not a calendar day ends it" 1 "STREAK 2 of 3: 2026-03-02 2026-03-01; stopped: 2026-02-30 is not a calendar day" "" \
+        -- bash "$s" --streak --ledger "$t/scal" --today 2026-03-02
     rm -rf -- "${t:?}"
 }
 
 # the planted mutants: each must change the file, still parse, and break at least one row
 MUTANTS=(
-    's/red|ambiguous) nogo/red|ambiguous) : nogo/'
+    's/\*) nogo "night \$d read models/*) : nogo "night $d read models/'
+    's/not_measured|absent) ;;/not_measured|absent|ambiguous) ;;/'
+    's/^            \*) nogo "night/            red|ambiguous) nogo "night/'
+    's/\[ "\$rh" != "\$h" \] || nogo/true || nogo/'
+    's/\[ "\$s" = not_measured \] || \[\[/true || [[/'
+    's/if \[ -z "\$go_d" \]; then/if true; then/'
+    's/if \[ "\$d" != "\$today" \]/if false/'
+    's/ && \[ "\$d" != "\$(day "\$today -1 day")" \]//'
+    's/if \[ "\$(day "\$d")" != "\$d" \]; then why/if false; then why/'
     's/\[ "\$rh" = "\$h" \] || nogo/true || nogo/'
     's/\[ "\$a" = 1 \] || nogo/true || nogo/'
     's/sha256sum --strict --quiet -c SHA256SUMS/true/'
@@ -370,12 +447,12 @@ mutants() {
     [ "$killed" -eq "${#MUTANTS[@]}" ]
 }
 
-MODE=read LEDGER="" HEAD="" ART="" OUT=""
+MODE=read LEDGER="" HEAD="" ART="" OUT="" TODAY=""
 while [ $# -gt 0 ]; do
     case $1 in
-        --ledger|--head|--artifact|--out)
+        --ledger|--head|--artifact|--out|--today)
             [ $# -ge 2 ] || caller_error "$1 needs a value"
-            case $1 in --ledger) LEDGER=$2 ;; --head) HEAD=$2 ;; --artifact) ART=$2 ;; --out) OUT=$2 ;; esac
+            case $1 in --ledger) LEDGER=$2 ;; --head) HEAD=$2 ;; --artifact) ART=$2 ;; --out) OUT=$2 ;; --today) TODAY=$2 ;; esac
             shift 2 ;;
         --streak) MODE=streak; shift ;;
         --self-test) MODE=selftest; shift ;;
@@ -386,7 +463,7 @@ while [ $# -gt 0 ]; do
 done
 case $MODE in
     read) read_night "$LEDGER" "$HEAD" "$ART" "$OUT" ;;
-    streak) streak "$LEDGER" ;;
+    streak) streak "$LEDGER" "$TODAY" ;;
     selftest) selftest ;;
     mutants) mutants ;;
 esac
