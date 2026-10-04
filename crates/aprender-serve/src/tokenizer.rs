@@ -147,6 +147,12 @@ pub struct BPETokenizer {
     merge_rules: Vec<(String, String)>,
     /// GH-88: Special tokens for atomic tokenization (not split by BPE).
     special_tokens: HashMap<String, u32>,
+    /// #4661/#4662: the `<|...|>` control tokens the greedy encoder must match whole.
+    ///
+    /// Without this, greedy longest-match takes a vocabulary token such as `?<` and
+    /// eats the `<` of `<|im_end|>`, so the model never sees the turn end. Kept apart
+    /// from `special_tokens`, which `is_special_token` (embedding pooling) also reads.
+    greedy_specials: HashMap<String, u32>,
 }
 
 impl BPETokenizer {
@@ -223,6 +229,12 @@ impl BPETokenizer {
         let vocab_size = token_to_id.len();
         let max_token_id = id_to_token.keys().copied().max().unwrap_or(0);
 
+        let greedy_specials = token_to_id
+            .iter()
+            .filter(|(k, _)| k.len() > 4 && k.starts_with("<|") && k.ends_with("|>"))
+            .map(|(k, v)| (k.clone(), *v))
+            .collect();
+
         Ok(Self {
             token_to_id,
             id_to_token,
@@ -231,6 +243,7 @@ impl BPETokenizer {
             max_token_id,
             merge_rules: Vec::new(),
             special_tokens: HashMap::new(),
+            greedy_specials,
         })
     }
 
@@ -318,6 +331,23 @@ impl BPETokenizer {
             );
         }
 
+        // #4661/#4662: control tokens are matched whole before greedy matching runs.
+        let mut tokens = Vec::new();
+        for segment in crate::apr::tokenizer::split_by_special_tokens(text, &self.greedy_specials) {
+            match segment {
+                crate::apr::tokenizer::TextSegment::Special(id) => tokens.push(id),
+                crate::apr::tokenizer::TextSegment::Regular(part) => {
+                    self.greedy_encode_into(&part, &mut tokens);
+                },
+            }
+        }
+
+        contract_post_encode!(&tokens);
+        tokens
+    }
+
+    /// Greedy longest-match encoding of text that holds no control token.
+    fn greedy_encode_into(&self, text: &str, tokens: &mut Vec<u32>) {
         // Convert to GPT-2 encoding: space -> Ġ, newline -> Ċ
         let processed: String = text
             .chars()
@@ -329,7 +359,6 @@ impl BPETokenizer {
             })
             .collect();
 
-        let mut tokens = Vec::new();
         let mut remaining = processed.as_str();
 
         while !remaining.is_empty() {
@@ -368,9 +397,6 @@ impl BPETokenizer {
                 remaining = &remaining[ch_len..];
             }
         }
-
-        contract_post_encode!(&tokens);
-        tokens
     }
 
     /// Decode token IDs to text
@@ -395,54 +421,64 @@ impl BPETokenizer {
                         reason: format!("Invalid token ID: {id}"),
                     })?;
 
-            // Skip special tokens
-            if token.starts_with("<|") && token.ends_with("|>") {
-                continue;
-            }
-            if token == "<s>" || token == "</s>" || token == "<unk>" || token == "<pad>" {
-                continue;
-            }
-
-            // Handle byte tokens like <0xE6>
-            if token.starts_with("<0x") && token.ends_with('>') && token.len() == 6 {
-                if let Ok(byte_val) = u8::from_str_radix(
-                    token
-                        .get(3..5)
-                        .expect("byte token <0xNN> has len 6, indices 3..5 always valid"),
-                    16,
-                ) {
-                    bytes.push(byte_val);
-                    continue;
-                }
-            }
-
-            // Decode GPT-2 style byte-level BPE
-            for c in token.chars() {
-                match c {
-                    'Ġ' => bytes.push(b' '),  // U+0120 -> space
-                    'Ċ' => bytes.push(b'\n'), // U+010A -> newline
-                    'ċ' => bytes.push(b'\n'), // lowercase variant
-                    'Ḃ' => bytes.push(b'\r'), // U+1E02 -> carriage return
-                    '▁' => bytes.push(b' '),  // U+2581 SentencePiece -> space
-                    _ => {
-                        // Try GPT-2 unicode-to-byte mapping
-                        if let Some(byte) = Self::gpt2_char_to_byte(c) {
-                            bytes.push(byte);
-                        } else {
-                            // Regular UTF-8 character
-                            let mut buf = [0u8; 4];
-                            let encoded = c.encode_utf8(&mut buf);
-                            bytes.extend_from_slice(encoded.as_bytes());
-                        }
-                    },
-                }
-            }
+            Self::decode_token_into(token, &mut bytes);
         }
 
         // Decode as UTF-8, replacing invalid sequences
         let result = String::from_utf8_lossy(&bytes).into_owned();
         contract_post_decode!(&result);
         Ok(result)
+    }
+
+    /// Append the bytes one vocabulary token stands for; control tokens add none.
+    fn decode_token_into(token: &str, bytes: &mut Vec<u8>) {
+        // Skip special tokens
+        if token.starts_with("<|") && token.ends_with("|>") {
+            return;
+        }
+        if token == "<s>" || token == "</s>" || token == "<unk>" || token == "<pad>" {
+            return;
+        }
+
+        // Handle byte tokens like <0xE6>
+        if token.starts_with("<0x") && token.ends_with('>') && token.len() == 6 {
+            if let Ok(byte_val) = u8::from_str_radix(
+                token
+                    .get(3..5)
+                    .expect("byte token <0xNN> has len 6, indices 3..5 always valid"),
+                16,
+            ) {
+                bytes.push(byte_val);
+                return;
+            }
+        }
+
+        // Decode GPT-2 style byte-level BPE
+        for c in token.chars() {
+            Self::decode_char_into(c, bytes);
+        }
+    }
+
+    /// Append the bytes one byte-level BPE character stands for.
+    fn decode_char_into(c: char, bytes: &mut Vec<u8>) {
+        match c {
+            'Ġ' => bytes.push(b' '),  // U+0120 -> space
+            'Ċ' => bytes.push(b'\n'), // U+010A -> newline
+            'ċ' => bytes.push(b'\n'), // lowercase variant
+            'Ḃ' => bytes.push(b'\r'), // U+1E02 -> carriage return
+            '▁' => bytes.push(b' '),  // U+2581 SentencePiece -> space
+            _ => {
+                // Try GPT-2 unicode-to-byte mapping
+                if let Some(byte) = Self::gpt2_char_to_byte(c) {
+                    bytes.push(byte);
+                } else {
+                    // Regular UTF-8 character
+                    let mut buf = [0u8; 4];
+                    let encoded = c.encode_utf8(&mut buf);
+                    bytes.extend_from_slice(encoded.as_bytes());
+                }
+            },
+        }
     }
 
     /// Convert a GPT-2 byte-level-BPE unicode character back to its original byte.

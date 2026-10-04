@@ -23,6 +23,37 @@ mod tokenizer_contract_tests {
         BPETokenizer::new(vocab, merges, "<unk>").expect("test tokenizer")
     }
 
+    /// #4661/#4662: greedy longest-match must not cut into a control token.
+    ///
+    /// Qwen GGUF vocabularies hold `?<` and `.<`, so before the fix greedy matching
+    /// took `?<` and left `|im_end|>` as plain text: the model never saw a turn end.
+    #[test]
+    fn greedy_encode_keeps_control_tokens_whole() {
+        let vocab: Vec<String> = [
+            "<unk>", "?", "?<", ".<", "<", "|", ">", "i", "m", "_", "e", "n", "d", "s", "t",
+            "a", "r", "Ċ", "<|im_end|>", "<|im_start|>", "x",
+        ]
+        .iter()
+        .map(|t| (*t).to_string())
+        .collect();
+        let id = |t: &str| vocab.iter().position(|v| v == t).expect("in vocab") as u32;
+        let tokenizer = BPETokenizer::new(vocab.clone(), vec![], "<unk>").expect("tokenizer");
+
+        assert_eq!(
+            tokenizer.encode("x?<|im_end|>\n<|im_start|>a"),
+            vec![
+                id("x"),
+                id("?"),
+                id("<|im_end|>"),
+                id("Ċ"),
+                id("<|im_start|>"),
+                id("a")
+            ],
+        );
+        // Text with no control token is untouched: `?<` is still matched greedily.
+        assert_eq!(tokenizer.encode("x?<"), vec![id("x"), id("?<")]);
+    }
+
     /// F-TOK-004: Deterministic encoding — same input always produces same tokens.
     #[test]
     fn falsify_tok_004_deterministic_encoding() {
