@@ -48,6 +48,8 @@ ACTIVE_DAYS=${ACTIVE_DAYS:-7}
 ROOT_LABEL=${ROOT_LABEL:-epic}
 ISSUE_TITLE=${ISSUE_TITLE:-"ISSUE-TREE-001 RED: issue graph lint"}
 ISSUE_MILESTONE=${ISSUE_MILESTONE:-backlog}
+# The exit codes in the header, named: an exit code is not a count (check_release_scripts_derive_identity R3).
+readonly ITL_RC_RED=10 ITL_RC_NODATA=20
 
 die() { printf 'issue_tree_lint: %s\n' "$1" >&2; exit 2; }
 
@@ -199,8 +201,8 @@ check() {
     printf '%s\n' "$v"
     case "$(printf '%s' "$v" | jq -r .verdict)" in
         GREEN) return 0 ;;
-        RED) return 10 ;;
-        *) return 20 ;;
+        RED) return "$ITL_RC_RED" ;;
+        *) return "$ITL_RC_NODATA" ;;
     esac
 }
 
@@ -250,7 +252,7 @@ run() {
     local rc=0
     check "$dir" > "$dir/verdict.json" || rc=$?
     summary < "$dir/verdict.json"
-    if [ "$rc" -eq 10 ] && [ "$do_file" -eq 1 ]; then file_issue "$dir/verdict.json" "$repo"; fi
+    if [ "$rc" -eq "$ITL_RC_RED" ] && [ "$do_file" -eq 1 ]; then file_issue "$dir/verdict.json" "$repo"; fi
     return "$rc"
 }
 
