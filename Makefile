@@ -1574,7 +1574,7 @@ nightly-train-install:
 
 nightly-train-run:
 	systemctl --user start --wait aprender-nightly-train.service
-	@journalctl --user -u aprender-nightly-train.service -n 1 -o cat --no-pager
+	@journalctl --user -u aprender-nightly-train.service -o cat --no-pager | grep -E '^(NOT )?RELEASABLE' | tail -n 1
 
 nightly-train-show:
 	@systemctl --user cat aprender-nightly-train.service aprender-nightly-train.timer --no-pager

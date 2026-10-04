@@ -49,7 +49,7 @@ proof_obligations:
   - id: NT-INV-002
     type: invariant
     property: "A lane that cannot be read is never green"
-    formal: "∀ l: read_failed ∨ no_run(l, C) ∨ unfinished(l, C) ∨ attempt_unread(l, C) ⇒ state(l, C) = not_measured"
+    formal: "∀ l: read_failed ∨ no_run(l, C) ∨ unfinished(l, C) ∨ attempt_unread(l, C) ∨ job_list_truncated(l, C) ∨ no_producer(l) ⇒ state(l, C) = not_measured"
     applies_to: lane_state
   - id: NT-INV-003
     type: invariant
@@ -66,17 +66,32 @@ proof_obligations:
     property: "Every run prints exactly one line"
     formal: "∀ run: |stdout(run)| = 1"
     applies_to: verdict_line
+  - id: NT-INV-006
+    type: invariant
+    property: "A void run is never the evidence; the next older run on C is read instead"
+    formal: "∀ r: (matched_jobs(r) = ∅ ∨ conclusion(r) ∈ {skipped, cancelled, neutral} ∨ |distinct_jobs(r)| < need(l)) ⇒ pick(l, C) ≠ r"
+    applies_to: lane_state
+  - id: NT-INV-007
+    type: invariant
+    property: "An edited bundle refuses to judge"
+    formal: "sha256(bundle) ≠ SHA256SUMS ⇒ line = NOT RELEASABLE: nightly-train, pin"
+    applies_to: verdict_line
+  - id: NT-INV-008
+    type: invariant
+    property: "One history row per run, whatever fails after the verdict"
+    formal: "∀ run: |history_rows(run)| = 1"
+    applies_to: verdict_line
 
 falsification_tests:
   - id: FALSIFY-NT-001
     rule: "The judge is right on every row of its case table"
-    prediction: "All verdict lanes green is RELEASABLE; a removed lane, a run on another commit, a run in progress, an unread attempt or a failed read is NOT RELEASABLE with not_measured; a green at attempt 2 is red; an info lane red leaves the verdict; reds rank by hours lost; greens in a row follow the scheduled-nights rule; a planted fault prints the trap line"
+    prediction: "All verdict lanes green is RELEASABLE; a removed lane, a run on another commit, a run in progress, an unread attempt or a failed read is NOT RELEASABLE with not_measured; a green at attempt 2 is red; an info lane red leaves the verdict; reds rank by hours lost; greens in a row follow the scheduled-nights rule; a planted fault prints the trap line; a void newer run falls to the older run on C; a lane missing a required job, a cut job list or no producer is not_measured; stdout is one line; a fault or a closed stdout after the history row adds no second row; an edited bundle refuses"
     test: "bash scripts/release/nightly_train.sh --self-test"
     if_fails: "The train can print RELEASABLE for a commit some release-day check never measured, or stay silent when it fails"
 
   - id: FALSIFY-NT-002
     rule: "The case table can still fail on the defects it names"
-    prediction: "Each planted mutant (not_measured counted green, a run on any commit, an unfinished run counted, a retried green counted, a failed read counted, an unread attempt counted, no trap, info lanes voting, ranking reversed, total counted as streak, coverage made a verdict lane, a verdict lane dropped, the rollup dropped, a re-run job not counted) turns at least one row RED"
+    prediction: "Each planted mutant (not_measured counted green, a run on any commit, an unfinished run counted, a retried green counted, a failed read counted, an unread attempt counted, no trap, info lanes voting, ranking reversed, total counted as streak, coverage made a verdict lane, a verdict lane dropped, the rollup dropped, a re-run job not counted, a missing producer not refused, the required-job count ignored, a cut job list read, a void run picked, an edited bundle run, a producerless lane green, a second history row after the first) turns at least one row RED, after the unmutated copy is shown green in the same directory"
     test: "bash scripts/release/nightly_train.sh --mutants"
     if_fails: "The case table is theater: it would pass a judge that calls main releasable on evidence it never read"
 

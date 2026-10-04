@@ -62,8 +62,9 @@ MAX_CALLS=10
 RATE_FLOOR=1000
 UNIT="aprender-nightly-train"
 
-# lane;kind;release-day check;producer workflow;event pattern;job-name pattern ('-' producer: none yet)
-LANES='ci-main;verdict;ci / gate + workspace-test (merge, autopilot wait);.github/workflows/ci.yml;^push$;^(ci / gate|workspace-test)$
+# lane;kind;release-day check;producer workflow;event pattern;job-name pattern[;required job names, default 1]
+# ('-' producer: none yet). A run with fewer distinct matched job names than required measures nothing (void).
+LANES='ci-main;verdict;ci / gate + workspace-test (merge, autopilot wait);.github/workflows/ci.yml;^push$;^(ci / gate|workspace-test)$;2
 deep-doctests;verdict;autopilot deep: cargo test --doc --workspace;-;-;-
 deep-nodefault;verdict;autopilot deep: cargo check --workspace --no-default-features;-;-;-
 deep-examples;verdict;autopilot deep: cargo build --workspace --examples;.github/workflows/examples-nightly.yml;^schedule$;^examples$
@@ -105,7 +106,7 @@ evaluate() {
     [ -f "$2/attempts.tsv" ] || : > "$2/attempts.tsv"
     [ -f "$2/runs.tsv" ] || : > "$2/runs.tsv"
     awk -F '\t' -v OFS='\t' -v C="$c" -v RD="${rd:-failed: no read status}" -v MODE="$3" -v HIST="$2/hist_redage.tsv" '
-    FILENAME == ARGV[1] { split($0, a, ";"); n++; L[n] = a[1]; K[n] = a[2]; CK[n] = a[3]; WF[n] = a[4]; EV[n] = a[5]; RE[n] = a[6]; next }
+    FILENAME == ARGV[1] { split($0, a, ";"); n++; L[n] = a[1]; K[n] = a[2]; CK[n] = a[3]; WF[n] = a[4]; EV[n] = a[5]; RE[n] = a[6]; NEED[n] = (a[7] ~ /^[0-9]+$/ ? a[7] + 0 : 1); next }
     FILENAME == ARGV[2] { AT[$1] = $2; next }
     {
         key = $3 SUBSEP $10 SUBSEP $13
@@ -118,6 +119,7 @@ evaluate() {
     function lst(i, r,    k, b, nm, pend, bad, ok, tot) {
         split("", b); ST = ""; EN = ""; DUP = 0; WHY = ""
         if (RST[r] != "COMPLETED") { WHY = "run " r " is " tolower(RST[r]); return "pending" }
+        for (k = 1; k <= nj[r]; k++) if (JN[r, k] == "#truncated") { WHY = "run " r ": its job list was cut at the page size, so a failed job may be unseen"; return "unread" }
         for (k = 1; k <= nj[r]; k++) if (JN[r, k] ~ RE[i]) {
             if (!(JN[r, k] in b) || JB[r, k] > JB[r, b[JN[r, k]]]) b[JN[r, k]] = k
             if (JD[r, k] > 1) DUP = 1
@@ -133,6 +135,7 @@ evaluate() {
         if (tot == 0) { WHY = "run " r ": no job matched"; return "void" }
         if (pend != "") { WHY = "run " r ": job(s) still running:" pend; return "pending" }
         if (bad != "") { WHY = "run " r ":" bad; return "red" }
+        if (tot < NEED[i]) { WHY = "run " r ": " tot " of " NEED[i] " required job(s) present"; return "void" }
         if (ok == tot) return "green"
         WHY = "run " r ": matched job(s) skipped or cancelled"; return "void"
     }
@@ -153,7 +156,7 @@ evaluate() {
             pick = ""; pst = ""; pwhy = ""; other = ""
             for (q = 1; q <= m; q++) {
                 r = S[q]; s = lst(i, r)
-                if (MODE == "final" && s != "pending") {
+                if (MODE == "final" && s != "pending" && s != "unread") {
                     ha = (r in AT && AT[r] ~ /^[0-9]+$/) ? AT[r] : (DUP ? 2 : 1)
                     hc = (s == "green" ? "success" : (s == "red" ? "failure" : "cancelled"))
                     print L[i], r, RC[r], "main", REV[r], hc, ha > HIST
@@ -168,6 +171,7 @@ evaluate() {
             }
             ST = pS; EN = pE
             if (pst == "pending") { if (MODE == "final") out(i, "not_measured", pick, "", "in progress: " pwhy); continue }
+            if (pst == "unread") { if (MODE == "final") out(i, "not_measured", pick, "", pwhy); continue }
             if (pst == "red") { if (MODE == "final") out(i, "red", pick, "", pwhy); continue }
             # green: the attempt decides
             if (K[i] == "verdict") {
@@ -247,8 +251,8 @@ gql_query() {
         | ($wf | first | .workflows | map(select(.path as $x | $want | index($x))) ) as $hit
         | if ($hit | length) != ($want | length) then error("producer workflow missing from the list") else . end
         | ($repo | split("/")) as $own
-        | "query { repository(owner: \"\($own | first)\", name: \"\($own | last)\") { defaultBranchRef { name target { ... on Commit { oid tree { oid } statusCheckRollup { contexts(first: 100) { nodes { ... on CheckRun { name status conclusion startedAt completedAt checkSuite { status conclusion branch { name } workflowRun { databaseId event createdAt workflow { id } } } } } } } } } } } "
-          + ([$hit | to_entries[] | "w\(.key): node(id: \"\(.value.node_id)\") { ... on Workflow { id runs(first: 12) { nodes { databaseId createdAt event checkSuite { status conclusion branch { name } commit { oid } checkRuns(first: 60, filterBy: {checkType: ALL}) { nodes { name status conclusion startedAt completedAt } } } } } } }"] | join(" ")) + " }"' 2>/dev/null
+        | "query { repository(owner: \"\($own | first)\", name: \"\($own | last)\") { defaultBranchRef { name target { ... on Commit { oid tree { oid } statusCheckRollup { contexts(first: 100) { pageInfo { hasNextPage } nodes { ... on CheckRun { name status conclusion startedAt completedAt checkSuite { status conclusion branch { name } workflowRun { databaseId event createdAt workflow { id } } } } } } } } } } } "
+          + ([$hit | to_entries[] | "w\(.key): node(id: \"\(.value.node_id)\") { ... on Workflow { id runs(first: 12) { nodes { databaseId createdAt event checkSuite { status conclusion branch { name } commit { oid } checkRuns(first: 100, filterBy: {checkType: ALL}) { pageInfo { hasNextPage } nodes { name status conclusion startedAt completedAt } } } } } } }"] | join(" ")) + " }"' 2>/dev/null
 }
 
 normalize() {
@@ -264,11 +268,22 @@ normalize() {
               | ["wf", ($p | .[$w.id]), $r.databaseId, $r.event, ($r.checkSuite.branch.name // ""), $r.checkSuite.commit.oid, $r.createdAt,
                  $r.checkSuite.status, ($r.checkSuite.conclusion // ""), $k.name, $k.status, ($k.conclusion // ""),
                  ($k.startedAt // ""), ($k.completedAt // ""), ([$j | .[] | select(.name == $k.name)] | length)]
-            end ),
+            end,
+            # a cut job list measures nothing: mark the run so the judge cannot read a partial set as green
+            (if ($r.checkSuite.checkRuns.pageInfo.hasNextPage // false) then
+              ["wf", ($p | .[$w.id]), $r.databaseId, $r.event, ($r.checkSuite.branch.name // ""), $r.checkSuite.commit.oid, $r.createdAt,
+               $r.checkSuite.status, ($r.checkSuite.conclusion // ""), "#truncated", "COMPLETED", "TRUNCATED", "", "", 1]
+             else empty end) ),
         ( ($c.statusCheckRollup.contexts.nodes // [])[] | select(.checkSuite.workflowRun != null)
           | .checkSuite.workflowRun.workflow.id as $wid | ["rollup", ($p | .[$wid]), .checkSuite.workflowRun.databaseId, .checkSuite.workflowRun.event,
              (.checkSuite.branch.name // ""), $c.oid, .checkSuite.workflowRun.createdAt, .checkSuite.status, (.checkSuite.conclusion // ""),
-             .name, .status, (.conclusion // ""), (.startedAt // ""), (.completedAt // ""), 1] )
+             .name, .status, (.conclusion // ""), (.startedAt // ""), (.completedAt // ""), 1] ),
+        ( if ($c.statusCheckRollup.contexts.pageInfo.hasNextPage // false) then
+            [($c.statusCheckRollup.contexts.nodes // [])[] | select(.checkSuite.workflowRun != null)] | unique_by(.checkSuite.workflowRun.databaseId) | .[]
+            | .checkSuite.workflowRun.workflow.id as $wid | ["rollup", ($p | .[$wid]), .checkSuite.workflowRun.databaseId, .checkSuite.workflowRun.event,
+               (.checkSuite.branch.name // ""), $c.oid, .checkSuite.workflowRun.createdAt, .checkSuite.status, (.checkSuite.conclusion // ""),
+               "#truncated", "COMPLETED", "TRUNCATED", "", "", 1]
+          else empty end )
       | map(tostring) | join("\t")' "$1"
 }
 
@@ -315,12 +330,13 @@ fetch() {
 
 # ---------------------------------------------------------------- the run -----------------------------------------
 
-STEP="start"; PRINTED=""; OUTDIR=""; INBOXF=""; DAY=""; CSHA=""; PIN=""
+STEP="start"; PRINTED=""; HISTDONE=""; OUTDIR=""; INBOXF=""; DAY=""; CSHA=""; PIN=""
 step() { STEP="$1"; [ "${NIGHTLY_TRAIN_FAULT:-}" != "$1" ] || { STEP="$1 (planted fault)"; exit 1; }; }
 
 inbox_line() {   # inbox_line LINE GREENS -> append <= 300 bytes and read it back
     local l
     [ -n "$INBOXF" ] || return 0
+    step inbox
     l="$(date -u +%H:%MZ) | aprender-a7 nightly-r4 | R4 | $1 | greens in a row: $2 | C=${CSHA:0:10}"
     l="$(printf '%s' "$l" | head -c 300)"
     printf '%s\n' "$l" >> "$INBOXF" 2>/dev/null \
@@ -335,15 +351,15 @@ on_exit() {
     printf '%s\n' "$l"
     if [ -n "$OUTDIR" ] && [ -n "$DAY" ] && mkdir -p "$OUTDIR/$DAY" 2>/dev/null; then
         printf '%s\n' "$l" > "$OUTDIR/$DAY/line"
-        [ -f "$OUTDIR/history.tsv" ] || printf 'run_id\tcreated_at\tbranch\tevent\tconclusion\tattempt\n' > "$OUTDIR/history.tsv"
-        printf 'nt-%s\t%s\tmain\t%s\tfailure\t%s\n' "${NOW//[-:]/}" "$NOW" "${GITHUB_EVENT_NAME:-timer}" "${GITHUB_RUN_ATTEMPT:-1}" >> "$OUTDIR/history.tsv"
+        if [ -z "$HISTDONE" ]; then [ -f "$OUTDIR/history.tsv" ] || printf 'run_id\tcreated_at\tbranch\tevent\tconclusion\tattempt\n' > "$OUTDIR/history.tsv"
+            printf 'nt-%s\t%s\tmain\t%s\tfailure\t%s\n' "${NOW//[-:]/}" "$NOW" "${GITHUB_EVENT_NAME:-timer}" "${GITHUB_RUN_ATTEMPT:-1}" >> "$OUTDIR/history.tsv"; fi
     fi
     inbox_line "$l" "not_measured"
     exit 2
 }
 
 run_train() {
-    local from="$1" raw line g concl budget pin_t pin_g pin_r
+    local from="$1" raw line g concl budget pin_t pin_g pin_r hrow
     trap on_exit EXIT
     step pin
     if [ -f "$HERE/PIN" ]; then
@@ -351,6 +367,8 @@ run_train() {
         pin_g="$(awk '$1 == "greens" { print substr($2, 1, 10) }' "$HERE/PIN")"
         pin_r="$(awk '$1 == "redage" { print substr($2, 1, 10) }' "$HERE/PIN")"
         PIN="$pin_t.$pin_g.$pin_r"
+        # what runs must be what was pinned: an edited bundle refuses (the trap line names the step)
+        (cd "$HERE" && sha256sum --quiet -c SHA256SUMS) > /dev/null 2>&1 || { PIN="$PIN!modified"; exit 1; }
     else PIN="unpinned"; fi
     step tools
     for t in jq awk sort date; do command -v "$t" > /dev/null || exit 1; done
@@ -369,12 +387,15 @@ run_train() {
     step rank
     [ -s "$raw/line" ] || exit 1
     cp "$raw/reds.tsv" "$OUTDIR/$DAY/reds.tsv" || exit 1
-    step history
+    step greens
     line="$(cat "$raw/line") [C=${CSHA:0:10} pin=$PIN]"
     case "$line" in "RELEASABLE "*) concl=success ;; *) if awk -F '\t' '$2 == "verdict" && $3 == "red" { f = 1 } END { exit !f }' "$raw/lanes.tsv"; then concl=failure; else concl=neutral; fi ;; esac
-    [ -f "$OUTDIR/history.tsv" ] || printf 'run_id\tcreated_at\tbranch\tevent\tconclusion\tattempt\n' > "$OUTDIR/history.tsv"
-    printf 'nt-%s\t%s\tmain\t%s\t%s\t%s\n' "${NOW//[-:]/}" "$NOW" "${GITHUB_EVENT_NAME:-timer}" "$concl" "${GITHUB_RUN_ATTEMPT:-1}" >> "$OUTDIR/history.tsv" || exit 1
-    g="$(greens "$OUTDIR/history.tsv" "$DAY")"
+    # tonight's row goes into a copy first: history.tsv gets exactly one row per run, written after everything but stdout
+    if [ -f "$OUTDIR/history.tsv" ]; then cp "$OUTDIR/history.tsv" "$raw/history.next" || exit 1
+    else printf 'run_id\tcreated_at\tbranch\tevent\tconclusion\tattempt\n' > "$raw/history.next" || exit 1; fi
+    hrow="$(printf 'nt-%s\t%s\tmain\t%s\t%s\t%s' "${NOW//[-:]/}" "$NOW" "${GITHUB_EVENT_NAME:-timer}" "$concl" "${GITHUB_RUN_ATTEMPT:-1}")"
+    printf '%s\n' "$hrow" >> "$raw/history.next" || exit 1
+    g="$(greens "$raw/history.next" "$DAY")"
     step bundle
     budget="$(awk -F '\t' -v C="$CSHA" '$6 == C && $9 != "" { if (s == "" || $9 < s) s = $9; if ($10 > e) e = $10 } END { print s "\t" e }' "$raw/lanes.tsv")"
     {
@@ -386,7 +407,11 @@ run_train() {
     } > "$OUTDIR/$DAY/bundle.tsv" || exit 1
     step print
     printf '%s\n' "$line" > "$OUTDIR/$DAY/line" || exit 1
-    printf '%s\n' "$line"; PRINTED=1
+    step history
+    [ -f "$OUTDIR/history.tsv" ] || printf 'run_id\tcreated_at\tbranch\tevent\tconclusion\tattempt\n' > "$OUTDIR/history.tsv" || exit 1
+    printf '%s\n' "$hrow" >> "$OUTDIR/history.tsv" || exit 1
+    HISTDONE=1
+    printf '%s\n' "$line" || exit 1; PRINTED=1
     inbox_line "$line" "$g"
     exit 0
 }
@@ -415,13 +440,19 @@ install_timer() {
     g="$(git rev-parse --verify --quiet "$g^{commit}")" || caller_error "--greens: not a commit"
     r="$(git rev-parse --verify --quiet "$r^{commit}")" || caller_error "--redage: not a commit"
     [ -n "$(git branch -r --contains "$t" 2>/dev/null)" ] || caller_error "--train $t is not on any remote branch: push it first"
+    [ -n "$(git branch -r --contains "$g" 2>/dev/null)" ] || caller_error "--greens $g is not on any remote branch"
+    [ -n "$(git branch -r --contains "$r" 2>/dev/null)" ] || caller_error "--redage $r is not on any remote branch"
+    command -v gh > /dev/null && command -v jq > /dev/null || caller_error "gh and jq must be on PATH: the unit PATH is built from them"
+    [ "$(loginctl show-user "$(id -un)" -p Linger --value 2>/dev/null)" = yes ] || caller_error "Linger is not yes: a user timer does not fire while logged out; nothing installed"
     dir="$home/b-${t:0:10}-${g:0:10}-${r:0:10}"
     mkdir -p "$dir" "$out" || caller_error "cannot create $dir or $out"
+    chmod u+w "$dir"/*.sh 2>/dev/null   # a reinstall of the same pin overwrites the read-only copies
     git show "$t:scripts/release/nightly_train.sh" > "$dir/nightly_train.sh" || caller_error "no nightly_train.sh at $t"
     git show "$g:scripts/release/nightly_greens.sh" > "$dir/nightly_greens.sh" || caller_error "no nightly_greens.sh at $g"
     git show "$r:scripts/release/red_age.sh" > "$dir/red_age.sh" || caller_error "no red_age.sh at $r"
     printf 'train %s\ngreens %s\nredage %s\n' "$t" "$g" "$r" > "$dir/PIN"
     chmod 0555 "$dir"/*.sh
+    (cd "$dir" && sha256sum nightly_train.sh nightly_greens.sh red_age.sh > SHA256SUMS) || caller_error "cannot write SHA256SUMS"
     # the self-test runs under the unit's own PATH: a tool the timer resolves differently (jq 1.6) must fail here
     p="$(dirname "$(command -v gh)"):$(dirname "$(command -v jq)"):/usr/local/bin:/usr/bin:/bin"
     PATH="$p" bash "$dir/nightly_train.sh" --self-test > "$dir/self-test.out" 2>&1 || { tail -n 5 "$dir/self-test.out"; caller_error "the pinned self-test is RED; nothing installed"; }
@@ -444,7 +475,7 @@ install_timer() {
 
 ST_LANES='v-a;verdict;check A;.github/workflows/a.yml;^schedule$;^job-a$
 v-b;verdict;check B;.github/workflows/b.yml;^schedule$;
-v-c;verdict;check C;.github/workflows/c.yml;^push$;^(gate|test)$
+v-c;verdict;check C;.github/workflows/c.yml;^push$;^(gate|test)$;2
 i-d;info;check D;.github/workflows/d.yml;^schedule$;'
 ST_C="$(printf 'a%.0s' $(seq 40))"
 ST_X="$(printf 'b%.0s' $(seq 40))"
@@ -523,6 +554,38 @@ self_test() {
     row normalize_counts_a_rerun_job 0 "$(printf 'job-a\tCOMPLETED\tSUCCESS\ts1\te1\t2')" "" -- st_norm
     row gql_query_names_every_producer 0 'w1: node(id: "WC")' "" -- gql_query "$(printf '%s\n' "$ST_LANES" | awk -F ';' '$4 ~ /[ac][.]yml$/')" "$tmp/wf.json"
     row gql_query_refuses_a_missing_producer 5 "" "query" -- gql_query "$ST_LANES" "$tmp/wf.json"
+    d="$tmp/voidnew"; fixture "$d"
+    printf 'wf\t.github/workflows/a.yml\t102\tschedule\tmain\t%s\t2026-10-04T05:00:00Z\tCOMPLETED\tCANCELLED\tjob-a\tCOMPLETED\tCANCELLED\t\t\t1\n' "$ST_C" >> "$d/runs.tsv"
+    row a_void_newer_run_falls_to_the_older_green 0 "RELEASABLE H=$ST_C" "NOT RELEASABLE" -- st_decide "$d"
+    d="$tmp/need"; fixture "$d"; sed -i '/\t301\t/{/\ttest\t/d}' "$d/runs.tsv"
+    row a_missing_required_job_is_not_measured 0 "1 of 2 required job(s) present" "RELEASABLE H=" -- st_decide "$d"
+    d="$tmp/cut"; fixture "$d"
+    printf 'wf\t.github/workflows/a.yml\t101\tschedule\tmain\t%s\t2026-10-04T01:00:00Z\tCOMPLETED\tSUCCESS\t#truncated\tCOMPLETED\tTRUNCATED\t\t\t1\n' "$ST_C" >> "$d/runs.tsv"
+    row a_cut_job_list_is_not_measured 0 "its job list was cut" "RELEASABLE H=" -- st_decide "$d"
+    st_cut() {
+        printf '%s' '{"data":{"repository":{"defaultBranchRef":{"name":"main","target":{"oid":"'"$ST_C"'","tree":{"oid":"t"},"statusCheckRollup":{"contexts":{"pageInfo":{"hasNextPage":false},"nodes":[]}}}}},"w0":{"id":"WA","runs":{"nodes":[{"databaseId":101,"createdAt":"c1","event":"schedule","checkSuite":{"status":"COMPLETED","conclusion":"SUCCESS","branch":{"name":"main"},"commit":{"oid":"'"$ST_C"'"},"checkRuns":{"pageInfo":{"hasNextPage":true},"nodes":[{"name":"job-a","status":"COMPLETED","conclusion":"SUCCESS","startedAt":"s","completedAt":"e"}]}}}]}}}}' > "$tmp/cut.json"
+        normalize "$tmp/cut.json" "$tmp/wf.json"
+    }
+    row normalize_marks_a_cut_job_list 0 "$(printf '#truncated\tCOMPLETED\tTRUNCATED')" "" -- st_cut
+    d="$tmp/noprod"; fixture "$d"
+    row a_lane_without_a_producer_is_not_measured 0 "$(printf 'v-e\tverdict\tnot_measured')" "RELEASABLE H=" -- \
+        eval 'decide "$ST_LANES
+v-e;verdict;check E;-;-;-" "$d" 2026-10-04T06:00:00Z; cat "$d/line" "$d/lanes.tsv"'
+    d="$tmp/green1"; fixture "$d"
+    row stdout_is_exactly_one_line 0 "lines=1" "" -- \
+        eval 'bash "$SCRIPT_PATH" --from "$d" --out "$tmp/o1" --now 2026-10-04T06:00:00Z | awk "END { print \"lines=\" NR }"'
+    row a_fault_after_judging_leaves_one_history_row 0 "rows=1 failure=1" "" -- \
+        eval 'NIGHTLY_TRAIN_FAULT=history bash "$SCRIPT_PATH" --from "$d" --out "$tmp/o3" --now 2026-10-04T06:00:00Z > /dev/null; awk -F "\t" "NR > 1 { n++; if (\$5 == \"failure\") f++ } END { print \"rows=\" n+0, \"failure=\" f+0 }" "$tmp/o3/history.tsv"'
+    row a_fault_after_history_adds_no_second_row 0 "rows=1 failure=0" "" -- \
+        eval 'NIGHTLY_TRAIN_FAULT=inbox bash "$SCRIPT_PATH" --from "$d" --out "$tmp/o4" --inbox "$tmp/ib4" --now 2026-10-04T06:00:00Z > /dev/null; awk -F "\t" "NR > 1 { n++; if (\$5 == \"failure\") f++ } END { print \"rows=\" n+0, \"failure=\" f+0 }" "$tmp/o4/history.tsv"'
+    row a_closed_stdout_adds_no_second_row 0 "rows=1 failure=0" "" -- \
+        eval 'bash "$SCRIPT_PATH" --from "$d" --out "$tmp/o5" --now 2026-10-04T06:00:00Z >&- 2> /dev/null; awk -F "\t" "NR > 1 { n++; if (\$5 == \"failure\") f++ } END { print \"rows=\" n+0, \"failure=\" f+0 }" "$tmp/o5/history.tsv"'
+    mkdir -p "$tmp/pb" && cp "$SCRIPT_PATH" "$HERE/red_age.sh" "$HERE/nightly_greens.sh" "$tmp/pb/" 2>/dev/null
+    printf 'train %s\ngreens %s\nredage %s\n' "$ST_C" "$ST_C" "$ST_C" > "$tmp/pb/PIN"
+    (cd "$tmp/pb" && sha256sum nightly_train.sh nightly_greens.sh red_age.sh > SHA256SUMS) 2>/dev/null
+    printf '# an edit after pinning\n' >> "$tmp/pb/nightly_train.sh"
+    row an_edited_bundle_refuses 2 "NOT RELEASABLE: nightly-train, pin failed" "RELEASABLE H=" -- \
+        bash "$tmp/pb/nightly_train.sh" --from "$d" --out "$tmp/o2" --now 2026-10-04T06:00:00Z
     printf -- '--- %s/%s rows ---\n' "$pass" "$((pass + fail))"
     rm -rf -- "${tmp:?}"
     [ "$fail" -eq 0 ]
@@ -543,13 +606,22 @@ m11_coverage_gates	s/^coverage;info;/coverage;verdict;/
 m12_a_verdict_lane_dropped	/^milestone;verdict;/d
 m13_rollup_dropped	s/select(.checkSuite.workflowRun != null)/select(false)/
 m14_rerun_job_not_counted	s/(\[\$j | .\[\] | select(.name == \$k.name)\] | length)\]/1]/
-m15_missing_producer_not_refused	s/if (\$hit | length) != (\$want | length) then/if false then/'
+m15_missing_producer_not_refused	s/if (\$hit | length) != (\$want | length) then/if false then/
+m16_required_job_count_ignored	s/if (tot < NEED\[i\]) {/if (0) {/
+m17_cut_job_list_is_read	s/if (JN\[r, k\] == "#truncated") {/if (0) {/
+m18_void_run_is_picked	s/if (pick == "" \&\& s != "void") {/if (pick == "") {/
+m19_edited_bundle_runs	s/sha256sum --quiet -c SHA256SUMS/true/
+m20_producerless_lane_is_green	s/out(i, "not_measured", "", "", "no nightly producer on main yet")/out(i, "green", "", "", "x")/
+m21_failure_row_after_history	s/if \[ -z "\$HISTDONE" \]; then/if :; then/'
 
 # each planted mutant must change the file, still parse, and turn at least one row RED
 mutants() {
     local tmp pass=0 fail=0 name expr o rc
     tmp="$(mktemp -d)" || exit 3
     cp "$HERE/red_age.sh" "$HERE/nightly_greens.sh" "$tmp/" 2>/dev/null
+    # baseline: the unmutated copy must be green here, or every kill below proves nothing
+    cp "$SCRIPT_PATH" "$tmp/nightly_train.sh"
+    if ! bash "$tmp/nightly_train.sh" --self-test > /dev/null 2>&1; then printf '  BROKE %-44s the unmutated script is not green in the mutant dir\n' baseline; rm -rf -- "${tmp:?}"; return 1; fi
     while IFS='	' read -r name expr; do
         [ -n "$name" ] || continue
         sed -e "$expr" "$SCRIPT_PATH" > "$tmp/nightly_train.sh"
