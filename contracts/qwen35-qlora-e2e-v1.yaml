@@ -26,8 +26,17 @@ metadata:
     the merged file, written by apr finetune merge (apr-cli finetune_display_next_validate.rs:469). It matches
     adapter tensors to base tensors by name (adapter_pair_names, :213), and at 316dee2cd4 it writes three wrong
     merges without error: a partial merge, a PEFT-named adapter that matches nothing, and an adapter with no
-    lora_alpha merged at alpha 16. QQE-009 checks the merge tensor by tensor. The version stays 1.1.0: no row of
-    this file has landed.
+    lora_alpha merged at alpha 16. QQE-009 checks the merge tensor by tensor.
+    QQE-010 (PROPOSED 2026-10-04, K43): a QLoRA run trains the adapter against the NF4 round trip of the base
+    (aprender-gpu quantize_nf4: 64-value blocks, one f32 absmax each, kernels/quantize/nf4_cpu.rs:23,120, called
+    on the frozen weights at upload, transformer/cuda_block.rs:2943), and apr finetune merge adds it to the base
+    file itself (merge_completeness). R4's loss gates score the first
+    model, and the user is served the second. QQE-003 named no base, so it either compared the two, which differ
+    for a non-bug reason (the reason QQE-005 puts its two sides on one base), or never saw the trained model. On
+    Qwen3.5-4B the round trip moves each of R4's 10 target kinds by 9.2-9.5% of its Frobenius norm (first 256
+    rows of each, layers 0 and 3, numpy on the shipped bf16 safetensors). QQE-003 now runs both sides on the
+    merge's base, and QQE-010 scores the merged model against the trained one on the training loss. The version
+    stays 1.1.0: no row of this file has landed.
   references:
   - docs/specifications/aprender-train/train-what-you-serve-0.72.md §R4
   - contracts/qwen35-train-gdn-v1.yaml
@@ -50,7 +59,7 @@ equations:
     - base is Qwen3.5-4B .apr imported by a released apr (sha recorded). At 316dee2cd4 that .apr can only come from HF safetensors, so the trainer converts it to GGUF conventions at load (tiled value heads, ssm_a = −exp(A_log), +1 on the zero-centred norms, conv [C,K]) or refuses it (QQE-008)
   adapter_serve_identity:
     formula: 'cos(logits^{train, merged}(x), logits^{serve, base+adapter}(x)) ≥ 0.999 ∧ argmax equal'
-    domain: 3 fixed prompts, after training
+    domain: '3 fixed prompts, after training; both sides on the base apr finetune merge reads (B_merge): the train side is Qwen35Lora::merge_into(B_merge, adapter), not the NF4 base the run trained on, so the identity measures layout, scale, naming and export, and trained_vs_merged covers the base gap'
     invariants:
     - The adapter file is standard PEFT layout (lora-merge-peft-layout-v1)
     - 'Standard PEFT means HF order: the value rows of attn_qkv''s B, the rows of attn_gate''s B and the columns of ssm_out''s A are written grouped, although the trainer holds them tiled (QQE-007). This identity cannot see that permutation, because the trainer and the GGUF server share the tiled order'
@@ -64,6 +73,14 @@ equations:
     - The merged file keeps the base's HF conventions; the trainer's in-memory merge (Qwen35Lora::merge_into, GGUF conventions) is a reference and is never written, because those values under HF names would make the GGUF export apply #4418's transforms a second time
     preconditions:
     - the adapter is in HF order (QQE-007)
+  trained_vs_merged:
+    formula: 'mean_x L(merge(B_merge, ad), x) ≤ 1.02 · mean_x L(merge(B_train, ad), x)  ∧  mean_x L(merge(B_merge, ad), x) < mean_x L(B_merge, x)'
+    domain: 'x = the first 20 samples of the pinned set, target tokens only, in the loss window the run trained with, after the last step. B_train = the base the run trained on (for -m qlora, the NF4 round trip of B_merge by the CUDA path''s quantizer); B_merge = the base apr finetune merge reads'
+    invariants:
+    - The receipt names both bases (B_train with its quantizer and block size, B_merge by sha) and the three mean losses
+    - If the first clause fails, the merge takes B_train instead and the receipt says so; the clause then holds by construction
+    preconditions:
+    - adapter written by the run under test, and merge_completeness holds
   adapter_gradient_reference:
     formula: "∂L/∂A = s·Bᵀ·∂L/∂W',  ∂L/∂B = s·∂L/∂W'·Aᵀ  (W' = W + s·B·A, s = alpha/r)"
     domain: 'targets per layer, by GGUF tensor: attn_q, attn_k, attn_v, attn_output (attention layers); attn_qkv, attn_gate, ssm_out (GDN layers); ffn_gate, ffn_up, ffn_down (all layers)'
@@ -95,6 +112,10 @@ proof_obligations:
   property: The merged file carries every adapter pair at the adapter's own scale, or the merge is refused
   formal: "∀ t ∈ targets: max|W'_t − (W_t + (α/r)·B_t·A_t)| ≤ 1e-6·max|W_t| ∧ ∀ t ∉ targets: W'_t ≡ W_t ∧ consumed = pairs"
   tolerance: 1.0e-06
+  applies_to: all
+- type: bound
+  property: The merged model keeps what training learned
+  formal: 'mean L(merge(B_merge, ad)) ≤ 1.02 · mean L(merge(B_train, ad)) ∧ mean L(merge(B_merge, ad)) < mean L(B_merge), over the first 20 pinned samples'
   applies_to: all
 falsification_tests:
 - id: FALSIFY-QQE-001
@@ -145,6 +166,11 @@ falsification_tests:
   prediction: 'tiny HF-convention Qwen3.5 base .apr (3 key heads, 6 value heads, 4 layers at interval 4) and Qwen35Lora on every R4 target (attn_qkv, attn_gate, ssm_out, attn_q, attn_k, attn_v, attn_output, ffn_gate, ffn_up, ffn_down) with random non-zero A and B, r 2, alpha 4, written by R4''s adapter writer: the merge exits 0, reports every pair consumed, gives W + 2·B·A within 1e-6·max|W| on each target, and leaves every other tensor bitwise equal to the base. Read back through row 4b''s loader, the merged file equals the in-memory Qwen35Lora::merge_into model within 1e-6·max|W| per tensor (ssm_a within 1e-6 absolute, after the A_log round trip). That comparison is the oracle for the whole chain, so a writer that drops a target kind (say ssm_out) is RED although the merge consumes every pair it is given. Planted inputs, each of which must exit ≠ 0 and write nothing: (a) the GDN targets named the GGUF way (lora.{layer}.attn_qkv.lora_a) beside HF-named attention and MLP targets, because gguf_proj_to_hf maps only the seven llama projections; (b) the same adapter in PEFT names (…lora_A.weight), which the zero-match refusal does not count; (c) lora_alpha absent from the safetensors header and the sidecar, which read_adapter_lora_params replaces with 16.0. At 316dee2cd4 (a) writes a partial merge, (b) writes the base and (c) writes the delta at alpha 16, all with exit 0, so this row is RED until the merge is strict'
   test: '[U] not written; CPU only, needs cargo after LIVE 0.70.1'
   if_fails: 'the merged file that R4 serves and T5 round-trips lacks part of the adapter, or carries it at the wrong scale, and verify_merged_runnable still passes; QFR-001..006 cannot see it, because apr and llama.cpp export the same wrong file identically'
+- id: FALSIFY-QQE-010
+  rule: The merged model scores within 2% of the model that was trained, on the training loss
+  prediction: 'after R4''s last step, over the first 20 samples of the pinned set (target tokens only, in the loss window the run trained with): the mean loss of the merged file read back through row 4b''s loader is at most 1.02 × the mean loss of the trainer''s own model (its NF4 base plus the adapter), and below the mean loss of the merged file''s base alone. The receipt names both bases and the three losses. Not measurable at 316dee2cd4: R4''s CUDA path for Qwen3.5 does not exist, nothing scores a merged model, and no receipt names a base. The gap it guards is measured: an NF4 round trip with the CUDA path''s quantizer (64-value blocks, f32 absmax) moves each of R4''s 10 target kinds on Qwen3.5-4B by 9.2-9.5% of its Frobenius norm, so the trained and the merged model differ on every adapted matrix. Planted: (a) a merge that drops the adapter (the output is the base) FAILS the second clause; (b) a train side scored on B_merge instead of the NF4 base passes vacuously, so the test first checks that B_train''s target tensors differ from B_merge''s by 5-15% (relative Frobenius) in a QLoRA run, and that plant turns it RED'
+  test: '[U] not written; CUDA, after R4 runs (needs LIVE 0.70.1 and R4''s CUDA path). The base-gap probe is numpy over the bf16 safetensors and needs no GPU'
+  if_fails: 'R4 reports the loss of a model nobody is served: the adapter learned against the NF4 base, the file users run carries it on the unquantized base, and the gain the loss gate saw may not be in the served model'
 qa_gate:
   certeza:
     min_score: 0.0
