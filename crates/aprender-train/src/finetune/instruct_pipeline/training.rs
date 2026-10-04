@@ -123,6 +123,7 @@ impl InstructPipeline {
     /// 4. CPU gradient of loss w.r.t. hidden states (through lm_head)
     /// 5. GPU backward through NF4 blocks → LoRA gradient + optimizer step
     #[cfg(feature = "cuda")]
+    #[cfg(feature = "cuda")]
     fn cuda_train_step(
         &mut self,
         full_ids: &[u32],
@@ -174,18 +175,13 @@ impl InstructPipeline {
             );
         }
 
-        // PMAT-483: Enable per-op profiling on scratch if profiler is active
-        if self.profiler.is_enabled() {
-            if let Some(ref mut scratch) = self.shared_scratch {
-                scratch.op_profiling_enabled = true;
-                scratch.op_us = [0u64; 16];
-            }
-        }
+        self.enable_scratch_op_profiling();
 
         // 1. GPU forward → logits stay GPU-resident in training.logits_buf (KAIZEN-064)
         self.profiler.begin(StepProfiler::FORWARD);
-        if !self.forward_logits_gpu_resident(full_ids) {
-            self.profiler.end(StepProfiler::FORWARD);
+        let forward_ok = self.forward_logits_gpu_resident(full_ids);
+        self.profiler.end(StepProfiler::FORWARD);
+        if !forward_ok {
             eprintln!("[CUDA] GPU forward failed, falling back to CPU for this step");
             return self.cuda_train_step_cpu_loss(
                 full_ids,
@@ -196,32 +192,15 @@ impl InstructPipeline {
                 vocab_size,
             );
         }
-        self.profiler.end(StepProfiler::FORWARD);
 
         // 2. Fused GPU causal cross-entropy loss + softmax backward (KAIZEN-064)
-        let targets: Vec<u32> = (0..seq_len)
-            .map(|pos| if pos + 1 < full_ids.len() { full_ids[pos + 1] } else { 0 })
-            .collect();
-
+        let targets = causal_targets(full_ids, seq_len);
         let scale = 1.0 / num_loss_tokens as f32;
 
         self.profiler.begin(StepProfiler::LOSS);
-        let avg_loss = (|| -> Option<f32> {
-            let trainer = self.cuda_trainer.as_ref()?;
-            let stream = trainer.stream();
-            let training = self.gpu_training.as_mut()?;
-            fused_causal_cross_entropy_cuda(
-                &mut training.logits_buf,
-                &targets,
-                seq_len as u32,
-                vocab_size as u32,
-                loss_start as u32,
-                loss_end as u32,
-                scale,
-                stream,
-            )
-            .ok()
-        })();
+        let avg_loss = self.fused_causal_cross_entropy_gpu(
+            &targets, seq_len, vocab_size, loss_start, loss_end, scale,
+        );
         self.profiler.end(StepProfiler::LOSS);
 
         let avg_loss = match avg_loss {
@@ -249,59 +228,22 @@ impl InstructPipeline {
                 );
             }
         };
+        let result = InstructStepResult {
+            loss: avg_loss,
+            num_response_tokens: num_loss_tokens,
+            perplexity: avg_loss.exp().min(1e6),
+        };
 
         // 3. GPU GEMM backward: grad_hidden = grad_logits @ embed (KAIZEN-064/065/068)
         self.profiler.begin(StepProfiler::LM_BWD);
-        let hidden_size = self.model.config().hidden_size;
-
-        let gemm_ok = (|| -> Option<()> {
-            let trainer = self.cuda_trainer.as_ref()?;
-            let stream = trainer.stream();
-            let training = self.gpu_training.as_mut()?;
-            if training.embed_original.len() < vocab_size * hidden_size {
-                return None;
-            }
-            gemm_forward(
-                &training.logits_buf,
-                &training.embed_original,
-                &mut training.grad_hidden_buf,
-                seq_len as u32,
-                vocab_size as u32,
-                hidden_size as u32,
-                stream,
-            )
-            .map_err(|e| eprintln!("[CUDA] lm_head backward GEMM failed: {e}"))
-            .ok()?;
-            Some(())
-        })();
-
+        let gemm_ok = self.lm_head_backward_gemm(seq_len, vocab_size, hidden_size);
         self.profiler.end(StepProfiler::LM_BWD);
 
-        if gemm_ok.is_none() {
-            // PMAT-471: CPU fallback when GPU embeddings don't fit
-            let cpu_ok = (|| -> Option<()> {
-                let trainer = self.cuda_trainer.as_ref()?;
-                let training = self.gpu_training.as_mut()?;
-                let embed = self.model.embed_tokens.weight.data();
-                let embed = embed.as_slice().expect("contiguous embed");
-                super::super::gpu_backward_fallback::cpu_lmhead_backward(
-                    trainer,
-                    &training.logits_buf,
-                    &mut training.grad_hidden_buf,
-                    embed,
-                    seq_len,
-                    vocab_size,
-                    hidden_size,
-                    trainer.stream(),
-                )
-            })();
-            if cpu_ok.is_none() {
-                return InstructStepResult {
-                    loss: avg_loss,
-                    num_response_tokens: num_loss_tokens,
-                    perplexity: avg_loss.exp().min(1e6),
-                };
-            }
+        // PMAT-471: CPU fallback when GPU embeddings don't fit
+        if gemm_ok.is_none()
+            && self.lm_head_backward_cpu(seq_len, vocab_size, hidden_size).is_none()
+        {
+            return result;
         }
 
         // 4. GPU backward through NF4 blocks (KAIZEN-065: GPU-resident)
@@ -311,7 +253,112 @@ impl InstructPipeline {
         }
         self.profiler.end(StepProfiler::BLK_BWD);
 
-        // PMAT-483: Feed per-layer timing from training state to profiler
+        self.record_gpu_step_profile();
+
+        result
+    }
+
+    /// PMAT-483: Enable per-op profiling on scratch if profiler is active
+    #[cfg(feature = "cuda")]
+    fn enable_scratch_op_profiling(&mut self) {
+        if self.profiler.is_enabled() {
+            if let Some(ref mut scratch) = self.shared_scratch {
+                scratch.op_profiling_enabled = true;
+                scratch.op_us = [0u64; 16];
+            }
+        }
+    }
+
+    /// Fused causal cross-entropy over the GPU-resident logits (KAIZEN-064):
+    /// the mean loss over `loss_start..loss_end`, with the loss gradient
+    /// (scaled by `scale`) left in `logits_buf`. `None` if the CUDA trainer or
+    /// training state is missing, or the kernel fails.
+    #[cfg(feature = "cuda")]
+    fn fused_causal_cross_entropy_gpu(
+        &mut self,
+        targets: &[u32],
+        seq_len: usize,
+        vocab_size: usize,
+        loss_start: usize,
+        loss_end: usize,
+        scale: f32,
+    ) -> Option<f32> {
+        let trainer = self.cuda_trainer.as_ref()?;
+        let stream = trainer.stream();
+        let training = self.gpu_training.as_mut()?;
+        fused_causal_cross_entropy_cuda(
+            &mut training.logits_buf,
+            targets,
+            seq_len as u32,
+            vocab_size as u32,
+            loss_start as u32,
+            loss_end as u32,
+            scale,
+            stream,
+        )
+        .ok()
+    }
+
+    /// lm_head backward as one GPU GEMM (KAIZEN-064/065/068):
+    /// `grad_hidden_buf = logits_buf @ embed_original`. `None` if the CUDA
+    /// trainer or training state is missing, the embedding is not GPU-resident
+    /// in full, or the GEMM fails.
+    #[cfg(feature = "cuda")]
+    fn lm_head_backward_gemm(
+        &mut self,
+        seq_len: usize,
+        vocab_size: usize,
+        hidden_size: usize,
+    ) -> Option<()> {
+        let trainer = self.cuda_trainer.as_ref()?;
+        let stream = trainer.stream();
+        let training = self.gpu_training.as_mut()?;
+        if training.embed_original.len() < vocab_size * hidden_size {
+            return None;
+        }
+        gemm_forward(
+            &training.logits_buf,
+            &training.embed_original,
+            &mut training.grad_hidden_buf,
+            seq_len as u32,
+            vocab_size as u32,
+            hidden_size as u32,
+            stream,
+        )
+        .map_err(|e| eprintln!("[CUDA] lm_head backward GEMM failed: {e}"))
+        .ok()
+    }
+
+    /// PMAT-471: lm_head backward on the CPU, from the CPU copy of the
+    /// embedding. `None` if the CUDA trainer or training state is missing, or
+    /// the fallback fails.
+    #[cfg(feature = "cuda")]
+    fn lm_head_backward_cpu(
+        &mut self,
+        seq_len: usize,
+        vocab_size: usize,
+        hidden_size: usize,
+    ) -> Option<()> {
+        let trainer = self.cuda_trainer.as_ref()?;
+        let training = self.gpu_training.as_mut()?;
+        let embed = self.model.embed_tokens.weight.data();
+        let embed = embed.as_slice().expect("contiguous embed");
+        super::super::gpu_backward_fallback::cpu_lmhead_backward(
+            trainer,
+            &training.logits_buf,
+            &mut training.grad_hidden_buf,
+            embed,
+            seq_len,
+            vocab_size,
+            hidden_size,
+            trainer.stream(),
+        )
+    }
+
+    /// PMAT-483: Feed per-layer timing from training state to profiler, and
+    /// (entrenar#328) per-op timing from scratch.
+    #[cfg(feature = "cuda")]
+    fn record_gpu_step_profile(&mut self) {
         if let Some(ref training) = self.gpu_training {
             self.profiler.record_layer_times(
                 &training.profiler_layer_fwd_us,
@@ -319,7 +366,6 @@ impl InstructPipeline {
             );
         }
 
-        // PMAT-483/entrenar#328: Feed per-op timing from scratch to profiler
         if let Some(ref scratch) = self.shared_scratch {
             if scratch.op_profiling_enabled {
                 for (i, &us) in scratch.op_us.iter().enumerate() {
@@ -328,12 +374,6 @@ impl InstructPipeline {
                     }
                 }
             }
-        }
-
-        InstructStepResult {
-            loss: avg_loss,
-            num_response_tokens: num_loss_tokens,
-            perplexity: avg_loss.exp().min(1e6),
         }
     }
     /// CPU fallback for causal LM loss when GPU fused kernel is unavailable.
@@ -636,9 +676,16 @@ pub(crate) fn cuda_loss_window(
     (loss_start, loss_end, num_loss_tokens, seq_len, prompt_len)
 }
 
+/// Next-token targets for the fused CUDA loss: position `pos` predicts
+/// `full_ids[pos + 1]`, and a position with no next token gets 0.
+#[cfg(feature = "cuda")]
+fn causal_targets(full_ids: &[u32], seq_len: usize) -> Vec<u32> {
+    (0..seq_len).map(|pos| if pos + 1 < full_ids.len() { full_ids[pos + 1] } else { 0 }).collect()
+}
+
 #[cfg(all(test, feature = "cuda"))]
 mod loss_window_tests {
-    use super::cuda_loss_window;
+    use super::{causal_targets, cuda_loss_window};
 
     /// FALSIFY-CUDA-LOSS-WINDOW-512-001: with a scratch sized for 2048 rows
     /// (`--max-seq-len 2048`), a 600-token prompt + 100-token response MUST
@@ -689,5 +736,15 @@ mod loss_window_tests {
         let (_, _, num_loss_tokens, seq_len, _) = cuda_loss_window(10, 40, None, 128);
         assert_eq!(seq_len, 40);
         assert_eq!(num_loss_tokens, 30);
+    }
+
+    /// The fused loss's targets: position `pos` predicts `full_ids[pos + 1]`;
+    /// a position past the last id gets 0.
+    #[test]
+    fn causal_targets_shift_by_one_and_pad_with_zero() {
+        assert_eq!(causal_targets(&[5, 6, 7, 8], 4), vec![6, 7, 8, 0]);
+        assert_eq!(causal_targets(&[5, 6, 7, 8], 2), vec![6, 7]);
+        assert_eq!(causal_targets(&[5, 6], 4), vec![6, 0, 0, 0]);
+        assert!(causal_targets(&[5, 6, 7], 0).is_empty());
     }
 }

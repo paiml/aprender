@@ -11,13 +11,19 @@ use crate::autograd::cuda_forward::{pre_warm_forward_kernels, pre_warm_lora_back
 #[cfg(feature = "cuda")]
 use crate::autograd::cuda_optim::pre_warm_lora_adamw_kernels;
 #[cfg(feature = "cuda")]
+use crate::autograd::cuda_tensor::Result as CudaResult;
+#[cfg(feature = "cuda")]
 use crate::autograd::cuda_training::cuda_training_available;
 #[cfg(feature = "cuda")]
 use crate::transformer::{
     CudaBlock, CudaBlockScratch, CudaLoraGradWorkspace, CudaTransformerBlock, GpuLoraOptimizerState,
 };
 #[cfg(feature = "cuda")]
+use crate::Tensor;
+#[cfg(feature = "cuda")]
 use std::sync::Arc;
+#[cfg(feature = "cuda")]
+use trueno_gpu::driver::CudaContext;
 
 #[cfg(feature = "cuda")]
 impl InstructPipeline {
@@ -106,257 +112,23 @@ impl InstructPipeline {
         config: &InstructConfig,
         lora_layers: &[LoRALayer],
     ) -> (Option<CudaTrainer>, Option<Vec<CudaBlock>>, Option<CudaBlockScratch>) {
-        if !cuda_training_available() {
-            eprintln!("[CUDA] No CUDA runtime detected — using CPU");
+        let Some(trainer) = Self::create_cuda_trainer() else {
             return (None, None, None);
-        }
-
-        let trainer = match CudaTrainer::new() {
-            Ok(t) => {
-                eprintln!(
-                    "[CUDA] Initialized: {} ({:.1} GB)",
-                    t.device_name(),
-                    t.total_memory() as f64 / 1e9
-                );
-                t
-            }
-            Err(e) => {
-                eprintln!("[CUDA] Failed to create trainer: {e} — using CPU");
-                return (None, None, None);
-            }
         };
 
         let ctx = Arc::clone(trainer.context());
         let max_seq_len = config.max_seq_len;
-
-        // C-PREWARM-001: JIT-compile forward kernels before block upload
-        if let Err(e) = pre_warm_forward_kernels(
-            model_config.hidden_size,
-            model_config.intermediate_size,
-            model_config.num_attention_heads,
-            model_config.num_kv_heads,
-            model_config.head_dim(),
-            max_seq_len,
-        ) {
-            eprintln!("[CUDA] Failed to pre-warm forward kernels: {e} — using CPU");
-            return (None, None, None);
-        }
-
         let quantize_nf4 = config.quantize_nf4;
-        if quantize_nf4 {
-            eprintln!(
-                "[CUDA] NF4 quantization enabled — frozen weights will be 4-bit (~8x compression)"
-            );
-        }
 
-        let head_dim = model_config.head_dim();
-        if let Err(e) = pre_warm_lora_backward_kernels(
-            model_config.hidden_size,
-            model_config.num_attention_heads * head_dim,
-            model_config.num_kv_heads * head_dim,
-            max_seq_len,
-            config.lora_rank,
-        ) {
-            eprintln!("[CUDA] Failed to pre-warm LoRA backward kernels: {e} — using CPU");
+        if !Self::pre_warm_training_kernels(model_config, config) {
             return (None, None, None);
         }
 
-        if let Err(e) = pre_warm_backward_cache_kernels(
-            model_config.hidden_size,
-            model_config.num_attention_heads * head_dim,
-            model_config.num_kv_heads * head_dim,
-            max_seq_len,
-            config.lora_rank,
-            model_config.intermediate_size,
-            model_config.num_attention_heads,
-            quantize_nf4,
-        ) {
-            eprintln!("[CUDA] Failed to pre-warm backward cache kernels: {e}");
-            eprintln!("[CUDA] STOP THE LINE: backward kernel pre-warming failed.");
-            eprintln!("[CUDA] This is a FATAL error — training will produce loss=0.0 if backward");
-            eprintln!("[CUDA] kernels are compiled during active GPU work (trueno#200).");
+        let Some(mut blocks) =
+            Self::upload_cuda_blocks(model, model_config, config, lora_layers, &ctx)
+        else {
             return (None, None, None);
-        }
-        eprintln!("[CUDA] Backward kernels pre-warmed successfully");
-        if let Err(e) = pre_warm_lora_adamw_kernels(
-            model_config.hidden_size,
-            model_config.num_attention_heads * head_dim,
-            model_config.num_kv_heads * head_dim,
-            config.lora_rank,
-            0, // instruct has no classifier head
-            model_config.intermediate_size,
-            quantize_nf4,
-        ) {
-            eprintln!("[CUDA] Failed to pre-warm AdamW kernels: {e} — using CPU");
-            return (None, None, None);
-        }
-
-        let mut blocks = Vec::with_capacity(model.config.num_hidden_layers);
-        for (i, layer) in model.layers.iter().enumerate() {
-            let input_norm = layer.input_norm.weight.data();
-            let input_norm = input_norm.as_slice().expect("contiguous input_norm");
-            let post_attn_norm = layer.post_attn_norm.weight.data();
-            let post_attn_norm = post_attn_norm.as_slice().expect("contiguous post_attn_norm");
-            let w_q = layer.self_attn.w_q.data();
-            let w_q = w_q.as_slice().expect("contiguous w_q");
-            let w_k = layer.self_attn.w_k.data();
-            let w_k = w_k.as_slice().expect("contiguous w_k");
-            let w_v = layer.self_attn.w_v.data();
-            let w_v = w_v.as_slice().expect("contiguous w_v");
-            let w_o = layer.self_attn.w_o.data();
-            let w_o = w_o.as_slice().expect("contiguous w_o");
-            let w_gate = layer.ffn.w_gate.data();
-            let w_gate = w_gate.as_slice().expect("contiguous w_gate");
-            let w_up = layer.ffn.w_up.data();
-            let w_up = w_up.as_slice().expect("contiguous w_up");
-            let w_down = layer.ffn.w_down.data();
-            let w_down = w_down.as_slice().expect("contiguous w_down");
-
-            let result = if quantize_nf4 {
-                let lora_scale = config.lora_alpha / config.lora_rank as f32;
-                let lora_rank = config.lora_rank;
-                let q_lora_idx = i * 2;
-                let v_lora_idx = i * 2 + 1;
-
-                // Q LoRA
-                let q_a_data;
-                let q_b_data;
-                let q_lora = if q_lora_idx < lora_layers.len() {
-                    q_a_data = lora_layers[q_lora_idx].lora_a().data();
-                    q_b_data = lora_layers[q_lora_idx].lora_b().data();
-                    Some((
-                        q_a_data.as_slice().expect("contiguous lora_a_q"),
-                        q_b_data.as_slice().expect("contiguous lora_b_q"),
-                    ))
-                } else {
-                    None
-                };
-
-                // V LoRA
-                let v_a_data;
-                let v_b_data;
-                let v_lora = if v_lora_idx < lora_layers.len() {
-                    v_a_data = lora_layers[v_lora_idx].lora_a().data();
-                    v_b_data = lora_layers[v_lora_idx].lora_b().data();
-                    Some((
-                        v_a_data.as_slice().expect("contiguous lora_a_v"),
-                        v_b_data.as_slice().expect("contiguous lora_b_v"),
-                    ))
-                } else {
-                    None
-                };
-
-                // ENT-270: Extract QK-norm weights if present
-                let q_norm_data = layer
-                    .self_attn
-                    .q_norm
-                    .as_ref()
-                    .map(|t| t.data().as_slice().expect("contiguous q_norm").to_vec());
-                let k_norm_data = layer
-                    .self_attn
-                    .k_norm
-                    .as_ref()
-                    .map(|t| t.data().as_slice().expect("contiguous k_norm").to_vec());
-
-                // FALSIFY-CUDA-NF4-TRAIN-LOSS-PARITY-001: thread Q/K/V biases
-                // (Qwen2 family) into the GPU block — pre-fix they were dropped.
-                let b_q_data = layer
-                    .self_attn
-                    .b_q
-                    .as_ref()
-                    .map(|t| t.data().as_slice().expect("contiguous b_q").to_vec());
-                let b_k_data = layer
-                    .self_attn
-                    .b_k
-                    .as_ref()
-                    .map(|t| t.data().as_slice().expect("contiguous b_k").to_vec());
-                let b_v_data = layer
-                    .self_attn
-                    .b_v
-                    .as_ref()
-                    .map(|t| t.data().as_slice().expect("contiguous b_v").to_vec());
-
-                crate::transformer::CudaNf4TransformerBlock::new(
-                    model_config,
-                    i,
-                    Arc::clone(&ctx),
-                    input_norm,
-                    post_attn_norm,
-                    w_q,
-                    w_k,
-                    w_v,
-                    w_o,
-                    w_gate,
-                    w_up,
-                    w_down,
-                    max_seq_len,
-                    q_lora,
-                    v_lora,
-                    lora_scale,
-                    lora_rank,
-                    q_norm_data.as_deref(),
-                    k_norm_data.as_deref(),
-                    b_q_data.as_deref(),
-                    b_k_data.as_deref(),
-                    b_v_data.as_deref(),
-                )
-                .map(CudaBlock::Nf4)
-            } else {
-                // FALSIFY-CUDA-NF4-TRAIN-LOSS-PARITY-001: surface biases on the
-                // FP32 path too (block already supported them since
-                // FALSIFY-CUDA-FORWARD-PARITY-002; this site passed None).
-                let b_q_data = layer
-                    .self_attn
-                    .b_q
-                    .as_ref()
-                    .map(|t| t.data().as_slice().expect("contiguous b_q").to_vec());
-                let b_k_data = layer
-                    .self_attn
-                    .b_k
-                    .as_ref()
-                    .map(|t| t.data().as_slice().expect("contiguous b_k").to_vec());
-                let b_v_data = layer
-                    .self_attn
-                    .b_v
-                    .as_ref()
-                    .map(|t| t.data().as_slice().expect("contiguous b_v").to_vec());
-                CudaTransformerBlock::new(
-                    model_config,
-                    i,
-                    Arc::clone(&ctx),
-                    input_norm,
-                    post_attn_norm,
-                    w_q,
-                    w_k,
-                    w_v,
-                    w_o,
-                    w_gate,
-                    w_up,
-                    w_down,
-                    max_seq_len,
-                    b_q_data.as_deref(),
-                    b_k_data.as_deref(),
-                    b_v_data.as_deref(),
-                )
-                .map(CudaBlock::Fp32)
-            };
-
-            match result {
-                Ok(block) => blocks.push(block),
-                Err(e) => {
-                    eprintln!(
-                        "[CUDA] Failed to upload layer {i} to GPU: {e} — falling back to CPU"
-                    );
-                    return (None, None, None);
-                }
-            }
-        }
-
-        eprintln!(
-            "[CUDA] Uploaded {} transformer layers to GPU (max_seq_len={})",
-            blocks.len(),
-            max_seq_len
-        );
+        };
 
         assert_eq!(blocks.len(), model.config.num_hidden_layers);
         // PMAT-470: FP16 weight cast for tensor core GEMM
@@ -378,6 +150,226 @@ impl InstructPipeline {
         };
 
         (Some(trainer), Some(blocks), shared_scratch)
+    }
+
+    /// Create the `CudaTrainer`. Returns `None`, with the reason on stderr, when
+    /// no CUDA runtime is present or the trainer cannot be created.
+    fn create_cuda_trainer() -> Option<CudaTrainer> {
+        if !cuda_training_available() {
+            eprintln!("[CUDA] No CUDA runtime detected — using CPU");
+            return None;
+        }
+
+        match CudaTrainer::new() {
+            Ok(t) => {
+                eprintln!(
+                    "[CUDA] Initialized: {} ({:.1} GB)",
+                    t.device_name(),
+                    t.total_memory() as f64 / 1e9
+                );
+                Some(t)
+            }
+            Err(e) => {
+                eprintln!("[CUDA] Failed to create trainer: {e} — using CPU");
+                None
+            }
+        }
+    }
+
+    /// JIT-compile the forward, LoRA backward, backward cache and AdamW kernels
+    /// before any block is uploaded. Returns `false`, with the reason on stderr,
+    /// if any of them fails.
+    fn pre_warm_training_kernels(
+        model_config: &TransformerConfig,
+        config: &InstructConfig,
+    ) -> bool {
+        let max_seq_len = config.max_seq_len;
+
+        // C-PREWARM-001: JIT-compile forward kernels before block upload
+        if let Err(e) = pre_warm_forward_kernels(
+            model_config.hidden_size,
+            model_config.intermediate_size,
+            model_config.num_attention_heads,
+            model_config.num_kv_heads,
+            model_config.head_dim(),
+            max_seq_len,
+        ) {
+            eprintln!("[CUDA] Failed to pre-warm forward kernels: {e} — using CPU");
+            return false;
+        }
+
+        let quantize_nf4 = config.quantize_nf4;
+        if quantize_nf4 {
+            eprintln!(
+                "[CUDA] NF4 quantization enabled — frozen weights will be 4-bit (~8x compression)"
+            );
+        }
+
+        let head_dim = model_config.head_dim();
+        if let Err(e) = pre_warm_lora_backward_kernels(
+            model_config.hidden_size,
+            model_config.num_attention_heads * head_dim,
+            model_config.num_kv_heads * head_dim,
+            max_seq_len,
+            config.lora_rank,
+        ) {
+            eprintln!("[CUDA] Failed to pre-warm LoRA backward kernels: {e} — using CPU");
+            return false;
+        }
+
+        if let Err(e) = pre_warm_backward_cache_kernels(
+            model_config.hidden_size,
+            model_config.num_attention_heads * head_dim,
+            model_config.num_kv_heads * head_dim,
+            max_seq_len,
+            config.lora_rank,
+            model_config.intermediate_size,
+            model_config.num_attention_heads,
+            quantize_nf4,
+        ) {
+            eprintln!("[CUDA] Failed to pre-warm backward cache kernels: {e}");
+            eprintln!("[CUDA] STOP THE LINE: backward kernel pre-warming failed.");
+            eprintln!("[CUDA] This is a FATAL error — training will produce loss=0.0 if backward");
+            eprintln!("[CUDA] kernels are compiled during active GPU work (trueno#200).");
+            return false;
+        }
+        eprintln!("[CUDA] Backward kernels pre-warmed successfully");
+        if let Err(e) = pre_warm_lora_adamw_kernels(
+            model_config.hidden_size,
+            model_config.num_attention_heads * head_dim,
+            model_config.num_kv_heads * head_dim,
+            config.lora_rank,
+            0, // instruct has no classifier head
+            model_config.intermediate_size,
+            quantize_nf4,
+        ) {
+            eprintln!("[CUDA] Failed to pre-warm AdamW kernels: {e} — using CPU");
+            return false;
+        }
+        true
+    }
+
+    /// Upload every transformer layer to the GPU. Returns `None`, with the
+    /// failing layer on stderr, if any upload fails.
+    fn upload_cuda_blocks(
+        model: &Transformer,
+        model_config: &TransformerConfig,
+        config: &InstructConfig,
+        lora_layers: &[LoRALayer],
+        ctx: &Arc<CudaContext>,
+    ) -> Option<Vec<CudaBlock>> {
+        let mut blocks = Vec::with_capacity(model.config.num_hidden_layers);
+        for i in 0..model.layers.len() {
+            match Self::upload_cuda_block(model, i, model_config, config, lora_layers, ctx) {
+                Ok(block) => blocks.push(block),
+                Err(e) => {
+                    eprintln!(
+                        "[CUDA] Failed to upload layer {i} to GPU: {e} — falling back to CPU"
+                    );
+                    return None;
+                }
+            }
+        }
+
+        eprintln!(
+            "[CUDA] Uploaded {} transformer layers to GPU (max_seq_len={})",
+            blocks.len(),
+            config.max_seq_len
+        );
+        Some(blocks)
+    }
+
+    /// Upload layer `i` of `model`: an NF4 block with the layer's Q and V LoRA
+    /// adapters when `config.quantize_nf4`, an FP32 block otherwise.
+    fn upload_cuda_block(
+        model: &Transformer,
+        i: usize,
+        model_config: &TransformerConfig,
+        config: &InstructConfig,
+        lora_layers: &[LoRALayer],
+        ctx: &Arc<CudaContext>,
+    ) -> CudaResult<CudaBlock> {
+        let layer = &model.layers[i];
+        let input_norm = layer.input_norm.weight.data();
+        let input_norm = input_norm.as_slice().expect("contiguous input_norm");
+        let post_attn_norm = layer.post_attn_norm.weight.data();
+        let post_attn_norm = post_attn_norm.as_slice().expect("contiguous post_attn_norm");
+        let w_q = layer.self_attn.w_q.data();
+        let w_q = w_q.as_slice().expect("contiguous w_q");
+        let w_k = layer.self_attn.w_k.data();
+        let w_k = w_k.as_slice().expect("contiguous w_k");
+        let w_v = layer.self_attn.w_v.data();
+        let w_v = w_v.as_slice().expect("contiguous w_v");
+        let w_o = layer.self_attn.w_o.data();
+        let w_o = w_o.as_slice().expect("contiguous w_o");
+        let w_gate = layer.ffn.w_gate.data();
+        let w_gate = w_gate.as_slice().expect("contiguous w_gate");
+        let w_up = layer.ffn.w_up.data();
+        let w_up = w_up.as_slice().expect("contiguous w_up");
+        let w_down = layer.ffn.w_down.data();
+        let w_down = w_down.as_slice().expect("contiguous w_down");
+
+        // FALSIFY-CUDA-NF4-TRAIN-LOSS-PARITY-001: thread Q/K/V biases (Qwen2
+        // family) into the GPU block on both paths — pre-fix they were dropped.
+        // The FP32 block has supported them since FALSIFY-CUDA-FORWARD-PARITY-002.
+        let b_q = optional_slice(layer.self_attn.b_q.as_ref(), "contiguous b_q");
+        let b_k = optional_slice(layer.self_attn.b_k.as_ref(), "contiguous b_k");
+        let b_v = optional_slice(layer.self_attn.b_v.as_ref(), "contiguous b_v");
+
+        if !config.quantize_nf4 {
+            return CudaTransformerBlock::new(
+                model_config,
+                i,
+                Arc::clone(ctx),
+                input_norm,
+                post_attn_norm,
+                w_q,
+                w_k,
+                w_v,
+                w_o,
+                w_gate,
+                w_up,
+                w_down,
+                config.max_seq_len,
+                b_q,
+                b_k,
+                b_v,
+            )
+            .map(CudaBlock::Fp32);
+        }
+
+        let q_lora = lora_slot(lora_layers, i * 2, "contiguous lora_a_q", "contiguous lora_b_q");
+        let v_lora =
+            lora_slot(lora_layers, i * 2 + 1, "contiguous lora_a_v", "contiguous lora_b_v");
+        // ENT-270: QK-norm weights, if present
+        let q_norm = optional_slice(layer.self_attn.q_norm.as_ref(), "contiguous q_norm");
+        let k_norm = optional_slice(layer.self_attn.k_norm.as_ref(), "contiguous k_norm");
+
+        crate::transformer::CudaNf4TransformerBlock::new(
+            model_config,
+            i,
+            Arc::clone(ctx),
+            input_norm,
+            post_attn_norm,
+            w_q,
+            w_k,
+            w_v,
+            w_o,
+            w_gate,
+            w_up,
+            w_down,
+            config.max_seq_len,
+            q_lora,
+            v_lora,
+            config.lora_alpha / config.lora_rank as f32,
+            config.lora_rank,
+            q_norm,
+            k_norm,
+            b_q,
+            b_k,
+            b_v,
+        )
+        .map(CudaBlock::Nf4)
     }
 
     /// Initialize GPU training state for NF4 QLoRA backward pass.
@@ -545,4 +537,25 @@ impl InstructPipeline {
 
         (Some(grad_ws), Some(opt_states))
     }
+}
+
+/// The A and B weights of LoRA slot `idx`, or `None` past the last slot.
+#[cfg(feature = "cuda")]
+fn lora_slot<'a>(
+    lora_layers: &'a [LoRALayer],
+    idx: usize,
+    a_what: &str,
+    b_what: &str,
+) -> Option<(&'a [f32], &'a [f32])> {
+    let layer = lora_layers.get(idx)?;
+    Some((
+        layer.lora_a().data().as_slice().expect(a_what),
+        layer.lora_b().data().as_slice().expect(b_what),
+    ))
+}
+
+/// The data of an optional weight, such as a bias or a QK-norm, as a slice.
+#[cfg(feature = "cuda")]
+fn optional_slice<'a>(tensor: Option<&'a Tensor>, what: &str) -> Option<&'a [f32]> {
+    tensor.map(|t| t.data().as_slice().expect(what))
 }
