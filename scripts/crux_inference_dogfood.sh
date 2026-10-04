@@ -69,6 +69,13 @@ cd "$ROOT" || exit 2
 
 decline() { printf 'decline: %s\n' "$*" >&2; exit 2; }
 
+# The JSON and YAML steps (prompt files, manifest rows, meta.json, hf-sources.yaml) in bash + jq; they write
+# the bytes the python3 snippets they replace wrote. Sourced and option-neutral; it fails by return status.
+# shellcheck source=scripts/lib/crux_dogfood_json.sh
+. scripts/lib/crux_dogfood_json.sh || decline "scripts/lib/crux_dogfood_json.sh could not be sourced"
+command -v jq > /dev/null 2>&1 || decline "jq is not on PATH (the JSON steps are bash + jq)"
+crux_dogfood_jq_ok || decline "this jq cannot write the JSON files byte for byte"
+
 VERSION=""
 HOST_ID=""
 BACKEND="gpu"
@@ -196,7 +203,7 @@ if want ollama; then
     OLLAMA_WHY="no ollama binary at \$OLLAMA_BIN, ~/.local/bin or /usr/local/bin"
   else
     OLLAMA_CLIENT=$("$OLLAMA" --version 2>&1 | sed -n 's/.*client version is \([0-9.]*\).*/\1/p;s/^ollama version is \([0-9.]*\).*/\1/p' | head -1)
-    OLLAMA_SERVER=$(curl -sf "$OLLAMA_HOST_URL/api/version" 2>/dev/null | python3 -c 'import json,sys; print(json.load(sys.stdin).get("version",""))' 2>/dev/null)
+    OLLAMA_SERVER=$(curl -sf "$OLLAMA_HOST_URL/api/version" 2>/dev/null | crux_ollama_version 2>/dev/null)
     if [ -z "$OLLAMA_SERVER" ]; then
       OLLAMA_WHY="the ollama server at $OLLAMA_HOST_URL did not answer /api/version"
     else
@@ -303,57 +310,14 @@ MODELS_JSONL="$WORK/models.jsonl"; : > "$MODELS_JSONL"
 # prompt is also a serve prompt in both modes, because the serve cell always drove
 # the run prompts. A chat prompt's messages are the USER turns of one conversation,
 # and it is judged on the final turn.
-PIDS_ALL=$(python3 - "$PROMPTS" "$WORK" "$ONLY_PROMPTS" 2> "$WORK/prompts.err" <<'PY'
-import json, sys
-d = json.load(open(sys.argv[1]))
-w = sys.argv[2]
-only = [x for x in sys.argv[3].split(",") if x]
-unknown = sorted(set(only) - {p["id"] for p in d["prompts"]})
-if unknown:
-    sys.stderr.write("--only-prompts names ids the prompt set does not hold: %s\n" % ", ".join(unknown))
-    sys.exit(3)
-if only:
-    d["prompts"] = [p for p in d["prompts"] if p["id"] in only]
-glob_mt = d.get("max_tokens")
-serve, code = open("%s/serve-prompts.jsonl" % w, "w"), open("%s/code-prompts.txt" % w, "w")
-for p in d["prompts"]:
-    open("%s/prompt-%s.txt" % (w, p["id"]), "w").write(p["messages"][-1]["content"])
-    json.dump(p, open("%s/prompt-%s.json" % (w, p["id"]), "w"))
-    json.dump({"messages": p["messages"]}, open("%s/messages-%s.json" % (w, p["id"]), "w"))
-    users = [m["content"] for m in p["messages"] if m.get("role") == "user"]
-    json.dump(users, open("%s/turns-%s.json" % (w, p["id"]), "w"))
-    open("%s/turns-%s.txt" % (w, p["id"]), "w").write("".join(u + "\n" for u in users))
-    mt = p.get("max_tokens", glob_mt)
-    # Per thinking mode (#3962 v2: {off, on}); maxtok-<id>.txt is re-pointed at the current mode by the
-    # thinking loop below, which is what the serve/code lib reads.
-    for th in ("off", "on"):
-        open("%s/maxtok-%s-%s.txt" % (w, p["id"], th), "w").write(str(int(mt[th] if isinstance(mt, dict) else mt)))
-    open("%s/maxtok-%s.txt" % (w, p["id"]), "w").write(str(int(mt["off"] if isinstance(mt, dict) else mt)))
-    v = p.get("verb", "run")
-    verbs = v if isinstance(v, list) else [v] + (["serve run", "serve stream"] if v == "run" else [])
-    sv = [x for x in verbs if x in ("serve run", "serve stream")]
-    if sv:
-        serve.write(json.dumps([p["id"], sv]) + "\n")
-    if "code" in verbs:
-        code.write(p["id"] + "\n")
-    for x in verbs:
-        if x in ("run", "chat"):
-            print("%s %s" % (x, p["id"]))
-PY
-) || decline "prompt set $PROMPTS: $(tr '\n' ' ' < "$WORK/prompts.err" 2>/dev/null | cut -c1-300)"
+PIDS_ALL=$(crux_prompt_files "$PROMPTS" "$WORK" "$ONLY_PROMPTS" 2> "$WORK/prompts.err") || decline "prompt set $PROMPTS: $(tr '\n' ' ' < "$WORK/prompts.err" 2>/dev/null | cut -c1-300)"
 pids_for() { printf '%s\n' "$PIDS_ALL" | sed -n "s/^$1 //p" | tr '\n' ' '; }
 PIDS=$(pids_for run)
 # The global cap for the run/chat cells: v1's `max_tokens`, else the largest per-prompt `off` budget.
-MAXTOK=$(python3 -c 'import json,sys
-d = json.load(open(sys.argv[1]))
-m = d.get("max_tokens")
-print(int(m) if m is not None else max(int(p["max_tokens"]["off"]) for p in d["prompts"]))' "$PROMPTS") || decline "max_tokens unreadable"
+MAXTOK=$(crux_max_tokens "$PROMPTS" off) || decline "max_tokens unreadable"
 [ -z "$PIDS_ALL" ] && decline "no prompt selected (--only-prompts '$ONLY_PROMPTS' matched nothing runnable)"
 # The same cap in thinking-ON mode: v1's global, else the largest per-prompt `on` budget.
-MAXTOK_ON=$(python3 -c 'import json,sys
-d = json.load(open(sys.argv[1]))
-m = d.get("max_tokens")
-print(int(m) if m is not None else max(int(p["max_tokens"]["on"]) for p in d["prompts"]))' "$PROMPTS") || decline "max_tokens unreadable"
+MAXTOK_ON=$(crux_max_tokens "$PROMPTS" on) || decline "max_tokens unreadable"
 MAXTOK_OFF=$MAXTOK
 # The serve and code cells (#3962). Sourced and option-neutral; it fails by return status.
 # shellcheck source=scripts/lib/crux_cells_serve_code.sh
@@ -361,7 +325,7 @@ MAXTOK_OFF=$MAXTOK
 if [ "$GREEDY" = 1 ]; then
   case "$GREEDY_MAXTOK" in ''|*[!0-9]*) decline "--greedy-max-tokens must be a positive integer, got '$GREEDY_MAXTOK'" ;; esac
   if [ -z "$GREEDY_PIDS" ]; then
-    GREEDY_PIDS=$(python3 -c 'import json,sys; print(" ".join(p["id"] for p in json.load(open(sys.argv[1]))["prompts"] if p.get("control")))' "$PROMPTS") \
+    GREEDY_PIDS=$(crux_control_ids "$PROMPTS") \
       || decline "cannot read the control prompt for --greedy"
   fi
   [ -n "$GREEDY_PIDS" ] || decline "--greedy: no prompt given and the prompt set declares no control"
@@ -428,36 +392,62 @@ cell_add_stdin() { # cell_add_stdin <cell> <prefix> <stdin file> cmd... — like
 }
 
 emit_gen() { # emit_gen <engine> <prompt_id> <rc> <stdout> <stderr> <refused> [ollama_unloaded] [mode]
-  python3 - "$MANIFEST" "$1" "$2" "$3" "$4" "$5" "$6" "${7:-}" "$SHA" "$HOST" "${VERB_KEY:-$VERB}" "$THINK" "$BACKEND" "${8:-}" <<'PY'
-import json, sys
-m, eng, pid, rc, o, e, ref, unl, sha, host, verb, think, be, mode = sys.argv[1:15]
-row = {"kind": "gen", "engine": eng, "prompt_id": pid,
-       "rc": int(rc) if rc.lstrip("-").isdigit() else None,
-       "stdout": o or None, "stderr": e or None, "refused": ref or None,
-       "model_sha256": sha, "host": host, "verb": verb, "thinking": think, "backend": be}
-if unl:
-    row["ollama_unloaded"] = unl == "true"
-if mode:
-    row["mode"] = mode
-open(m, "a").write(json.dumps(row) + "\n")
-PY
+  crux_emit_gen "$MANIFEST" "$1" "$2" "$3" "$4" "$5" "$6" "${7:-}" "$SHA" "$HOST" "${VERB_KEY:-$VERB}" "$THINK" "$BACKEND" "${8:-}"
 }
 
 rows_for() { # rows_for <engine> <prompt_id>: how many gen rows that engine has for the prompt in this verb
-  python3 - "$MANIFEST" "$1" "$2" "$SHA" "${VERB_KEY:-$VERB}" <<'PY'
-import json, sys
-m, eng, pid, sha, verb = sys.argv[1:6]
-n = 0
-for line in open(m):
-    if line.strip():
-        r = json.loads(line)
-        n += (r.get("kind") == "gen" and r.get("engine") == eng and r.get("prompt_id") == pid
-              and r.get("model_sha256") == sha and r.get("verb") == verb)
-print(n)
-PY
+  crux_rows_for "$MANIFEST" "$1" "$2" "$SHA" "${VERB_KEY:-$VERB}"
 }
 
-free_port() { python3 -c 'import socket; s=socket.socket(); s.bind(("127.0.0.1", 0)); print(s.getsockname()[1])'; }
+# A local TCP port no socket uses, as the kernel would hand out for port 0: a random start in its ephemeral
+# range, then the first port that no IPv4 or IPv6 socket in /proc/net/tcp{,6} holds and the kernel does not
+# reserve. Optional [<range file> <reserved file> <tcp table>...] stand in for the /proc files, for the check.
+free_port() {
+  local range="${1:-/proc/sys/net/ipv4/ip_local_port_range}" resv="${2:-/proc/sys/net/ipv4/ip_local_reserved_ports}"
+  local lo hi n start k p f sl a rest r rs used=" " tables=0
+  local -a res_lo=() res_hi=()
+  if [ $# -gt 2 ]; then shift 2; else set -- /proc/net/tcp /proc/net/tcp6; fi
+  [ -r "$range" ] || return 1
+  read -r lo hi rest < "$range" || true   # a last line with no newline still sets them
+  case "$lo" in ''|*[!0-9]*) return 1 ;; esac
+  case "$hi" in ''|*[!0-9]*) return 1 ;; esac
+  lo=$((10#$lo)); hi=$((10#$hi)); n=$((hi - lo + 1))
+  [ "$lo" -ge 1 ] && [ "$hi" -le 65535 ] && [ "$n" -ge 1 ] || return 1
+  for f in "$@"; do
+    [ -e "$f" ] || continue   # no tcp6 table on a host with IPv6 off
+    { read -r sl || true      # the header
+      while read -r sl a rest; do
+        a=${a##*:}
+        case "$a" in ''|*[!0-9A-Fa-f]*) return 1 ;; esac
+        used="$used$((16#$a)) "
+      done; } < "$f" || return 1
+    tables=$((tables + 1))
+  done
+  [ "$tables" -ge 1 ] || return 1
+  rs=""
+  if [ -e "$resv" ]; then read -r rs < "$resv" || true; fi
+  while [ -n "$rs" ]; do
+    r=${rs%%,*}
+    if [ "$r" = "$rs" ]; then rs=""; else rs=${rs#*,}; fi
+    case "$r" in
+      *[!0-9-]* | '' | -* | *- | *-*-*) return 1 ;;
+      *-*) res_lo+=("$((10#${r%-*}))"); res_hi+=("$((10#${r#*-}))") ;;
+      *) res_lo+=("$((10#$r))"); res_hi+=("$((10#$r))") ;;
+    esac
+  done
+  # SRANDOM (bash 5.1+) comes from the kernel in every $(free_port), so two calls in a row start apart.
+  start=$(( ${SRANDOM:-$((RANDOM * 32768 + RANDOM))} % n ))
+  for ((k = 0; k < n; k++)); do
+    p=$(( lo + (start + k) % n ))
+    case "$used" in *" $p "*) continue ;; esac
+    for ((r = 0; r < ${#res_lo[@]}; r++)); do
+      [ "$p" -ge "${res_lo[r]}" ] && [ "$p" -le "${res_hi[r]}" ] && continue 2
+    done
+    printf '%s\n' "$p"
+    return 0
+  done
+  return 1
+}
 
 # llama.cpp's OWN rendering and tokenization of each prompt: the reference apr's
 # prompt ids are compared against. The server runs on the CPU (-ngl 0), only
@@ -478,24 +468,14 @@ llama_tokenize_prompts() { # sets THINKING_CAPABLE; writes tok rows
   done
   if [ "$ok" = 1 ]; then
     curl -sf "http://127.0.0.1:$port/props" > "$d/props.json" 2>/dev/null
-    THINKING_CAPABLE=$(python3 -c 'import json,sys
-t = json.load(open(sys.argv[1])).get("chat_template") or ""
-print("true" if ("enable_thinking" in t or "<think>" in t) else "false")' "$d/props.json" 2>/dev/null || echo unknown)
+    THINKING_CAPABLE=$(crux_thinking_capable "$d/props.json" 2>/dev/null || echo unknown)
     for pid in $PIDS; do
       curl -sf -X POST "http://127.0.0.1:$port/apply-template" -H 'Content-Type: application/json' \
         --data-binary @"$WORK/messages-$pid.json" > "$d/rendered-$pid.json" 2>/dev/null
-      python3 -c 'import json,sys
-r = json.load(open(sys.argv[1]))
-json.dump({"content": r["prompt"], "add_special": True, "parse_special": True}, open(sys.argv[2], "w"))' \
-        "$d/rendered-$pid.json" "$d/tokreq-$pid.json" 2>/dev/null || continue
+      crux_tokreq "$d/rendered-$pid.json" "$d/tokreq-$pid.json" 2>/dev/null || continue
       curl -sf -X POST "http://127.0.0.1:$port/tokenize" -H 'Content-Type: application/json' \
         --data-binary @"$d/tokreq-$pid.json" > "$d/ids-$pid.json" 2>/dev/null || continue
-      python3 - "$MANIFEST" "$SHA" "$pid" "$d/rendered-$pid.json" "$d/ids-$pid.json" <<'PY'
-import json, sys
-m, sha, pid, rendered, ids = sys.argv[1:6]
-open(m, "a").write(json.dumps({"kind": "tok", "engine": "llama.cpp", "model_sha256": sha,
-                               "prompt_id": pid, "rendered": rendered, "ids": ids}) + "\n")
-PY
+      crux_emit_tok "$MANIFEST" "$SHA" "$pid" "$d/rendered-$pid.json" "$d/ids-$pid.json"
     done
   fi
   kill "$SRV_PID" 2>/dev/null; wait "$SRV_PID" 2>/dev/null; SRV_PID=""
@@ -547,16 +527,7 @@ for M_IN in "${MODELS[@]}"; do
     source_engine "$eng" && want "$eng" && [ "${EXT_OK[$eng]:-0}" = 1 ] && src_wanted=1
   done
   if [ "$src_wanted" = 1 ]; then
-    hf_line=$(python3 - "$HF_SOURCES" "$SHA" <<'PY'
-import sys, yaml
-try:
-    src = (yaml.safe_load(open(sys.argv[1])) or {}).get("sources", {}).get(sys.argv[2], {}).get("hf") or {}
-except OSError:
-    src = {}
-if src.get("repo") and src.get("revision"):
-    print("%s\t%s\t%s" % (src["repo"], src["revision"], src.get("dtype", "bfloat16")))
-PY
-)
+    hf_line=$(crux_hf_source "$HF_SOURCES" "$SHA")
     if [ -n "$hf_line" ]; then
       IFS=$'\t' read -r hf_repo hf_rev hf_dtype <<< "$hf_line"
       HF_SRC=(--source-repo "$hf_repo" --source-revision "$hf_rev" --dtype "$hf_dtype")
@@ -601,15 +572,7 @@ PY
     fi
   fi
 
-  python3 - "$MODELS_JSONL" "$NAME" "$SHA" "$THINKING_CAPABLE" "$OL_BLOB" "$OL_TEMPLATE_SHA" "$OL_REFUSED" "$TOK_WHY" <<'PY'
-import json, sys
-f, name, sha, think, blob, tsha, oref, twhy = sys.argv[1:9]
-open(f, "a").write(json.dumps({"name": name, "sha256": sha,
-    "thinking_capable": {"true": True, "false": False}.get(think),
-    "ollama": {"blob_sha256": blob or None, "blob_is_input": (blob == sha) if blob else None,
-               "template_sha256": tsha or None, "refused": oref or None},
-    "tokenization": {"refused": twhy or None}}) + "\n")
-PY
+  crux_emit_model "$MODELS_JSONL" "$NAME" "$SHA" "$THINKING_CAPABLE" "$OL_BLOB" "$OL_TEMPLATE_SHA" "$OL_REFUSED" "$TOK_WHY"
 
   # THINKING MODES (#3962 final sweep). A thinking-capable model runs every verb in each requested mode; one
   # without a thinking template runs OFF only. Every engine is told the mode EXPLICITLY (the comparators otherwise
@@ -765,45 +728,12 @@ HARNESS_SHA=$(git -C "$ROOT" rev-parse --short HEAD 2>/dev/null) || HARNESS_SHA=
 EXT_META="$WORK/ext-engines.json"
 ext_args=()
 for eng in "${PLUGIN_ENGINES[@]}"; do ext_args+=("$eng" "${EXT_PROBE[$eng]:-}" "${EXT_WHY[$eng]:-}"); done
-python3 - "$EXT_META" "${ext_args[@]}" <<'PY'
-import json, sys
-out, rest = sys.argv[1], sys.argv[2:]
-json.dump({rest[i]: {"probe": rest[i + 1] or None, "unavailable": rest[i + 2] or None}
-           for i in range(0, len(rest), 3)}, open(out, "w"))
-PY
-python3 - "$WORK/meta.json" "$MODELS_JSONL" "$VERSION" "$HOST" "$BACKEND" "$ENGINES" "$VERBS" \
-  "$APR_VERSION_LINE" "${LLAMA_BUILD:-}" "$(llama_pin_get build_commit 2>/dev/null)" "$LLAMA_WHY" \
-  "$OLLAMA_SERVER" "$OLLAMA_CLIENT" "$OLLAMA_WHY" "$TEMP" "$SEED" "$CTX" "$MAXTOK" "${GPU_NAME:-}" "$HARNESS_SHA" "$EXT_META" "$LOCK_VIA" <<'PY'
-import json, platform, sys
-(out, models, version, host, backend, engines, verbs, apr_line, lbuild, lpin, lwhy,
- osrv, ocli, owhy, temp, seed, ctx, maxtok, gpu, hsha, ext, lockvia) = sys.argv[1:23]
-meta = {
-    "version": version, "host": host, "backend": backend, "isa": platform.machine(), "gpu": gpu or None,
-    "engines": engines.split(","), "verbs": verbs.split(","), "thinking": ["off"],
-    "sampling": {"temperature": float(temp), "seed": int(seed), "context": int(ctx), "max_tokens": int(maxtok),
-                 "source": "scripts/llama_pin.toml [protocol]"},
-    "apr": {"version_line": apr_line},
-    "harness": {"sha": hsha or None, "driver": "scripts/crux_inference_dogfood.sh", "gpu_lock": lockvia},
-    "llama_cpp": {"build": lbuild or None, "pin": lpin or None, "unavailable": lwhy or None},
-    "ollama": {"server_version": osrv or None, "client_version": ocli or None, "unavailable": owhy or None},
-    **json.load(open(ext)),
-    "models": [json.loads(l) for l in open(models) if l.strip()],
-    "not_covered": [
-        "verbs not run here: " + ", ".join(v for v in ("chat", "serve", "code") if v not in verbs.split(",")),
-        *(["apr serve's backend is unverified: its responses report none"] if "serve" in verbs.split(",") else []),
-        *(["apr serve reads no per-request thinking toggle; the comparators are told enable_thinking explicitly"]
-          if "serve" in verbs.split(",") else []),
-        *(["apr code has no backend, max-tokens or thinking control: it spawns `apr serve --gpu`, "
-           "so its rows are judged by executing the code, and it is refused on the cpu lane"]
-          if "code" in verbs.split(",") else []),
-        *(["apr chat's backend is unverified: apr chat reports none (#3794)"] if "chat" in verbs.split(",") else []),
-        "thinking ON until #3723 adds an apr toggle",
-        "consumer-brief context rungs (#3716) and each engine's max accepted context",
-        "TTFT and decode rate: the serve verb's measurement goes through `apr test llm bench` (PERF-009), the next increment",
-    ],
-}
-json.dump(meta, open(out, "w"), indent=2)
-PY
+crux_ext_meta "$EXT_META" "${ext_args[@]}"
+crux_meta "$WORK/meta.json" "$MODELS_JSONL" "$EXT_META" version="$VERSION" host="$HOST" backend="$BACKEND" \
+  isa="$(uname -m)" engines="$ENGINES" verbs="$VERBS" apr_line="$APR_VERSION_LINE" lbuild="${LLAMA_BUILD:-}" \
+  lpin="$(llama_pin_get build_commit 2>/dev/null)" lwhy="$LLAMA_WHY" osrv="$OLLAMA_SERVER" ocli="$OLLAMA_CLIENT" \
+  owhy="$OLLAMA_WHY" temp="$TEMP" seed="$SEED" ctx="$CTX" maxtok="$MAXTOK" gpu="${GPU_NAME:-}" hsha="$HARNESS_SHA" \
+  lockvia="$LOCK_VIA"
 # $OUT_DIR reaches here from `--out` (default evidence/crux/$VERSION). A receipt dir may
 # legitimately be absolute -- operators point it at /mnt -- so absoluteness is allowed and
 # only a `..` segment, which walks out of wherever the caller meant, is refused.
