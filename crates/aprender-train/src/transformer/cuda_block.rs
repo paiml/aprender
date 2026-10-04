@@ -2530,6 +2530,48 @@ fn cuda_mul(
     crate::autograd::cuda_forward::elementwise_mul_forward(a, b, output, saturating_u32(n), stream)
 }
 
+/// LoRA backward for one adapted projection `y = x·W + (x·A)·B` (R15a C1).
+///
+/// Every adapted target runs this one sequence. `x` is the projection's input `[s, h]` and `dy`
+/// the gradient of its output `[s, n]`; `a` is `[h, r]` and `b` is `[r, n]`. It writes
+/// `db = (x·A)ᵀ·dy` and `da = xᵀ·(dy·Bᵀ)`, and adds the adapter's share of the input gradient,
+/// `(dy·Bᵀ)·Aᵀ`, into `dx` (`[s, h]`). `inter` (`[s, r]`) and `temp` (`[s, h]`) are scratch.
+///
+/// `db` runs before `dInter` because `dInter` is written over the `x·A` recompute in `inter`.
+/// No step applies alpha/rank: `b` is the device copy, which the upload already multiplied by
+/// it, so `db` is the gradient of that pre-scaled tensor (K44).
+/// Contract: lora-gradient-flow-v1 (FALSIFY-LORA_GRADIENT_FLOW_V1_004).
+#[cfg(feature = "cuda")]
+#[allow(clippy::too_many_arguments)]
+fn lora_backward(
+    x: &GpuBuffer<f32>,
+    a: &GpuBuffer<f32>,
+    b: &GpuBuffer<f32>,
+    dy: &GpuBuffer<f32>,
+    da: &mut GpuBuffer<f32>,
+    db: &mut GpuBuffer<f32>,
+    dx: &mut GpuBuffer<f32>,
+    inter: &mut GpuBuffer<f32>,
+    temp: &mut GpuBuffer<f32>,
+    s: u32,
+    h: u32,
+    r: u32,
+    n: u32,
+    stream: &CudaStream,
+) -> Result<()> {
+    // Recompute inter = x·A  [s, r]
+    gemm_forward(x, a, inter, s, h, r, stream)?;
+    // db = interᵀ·dy  [r, n]
+    gemm_backward_b(inter, dy, db, s, r, n, stream)?;
+    // dInter = dy·Bᵀ  [s, r], written over inter
+    gemm_backward_a(dy, b, inter, s, n, r, stream)?;
+    // da = xᵀ·dInter  [h, r]
+    gemm_backward_b(x, inter, da, s, h, r, stream)?;
+    // dx += dInter·Aᵀ  [s, h]
+    gemm_backward_a(inter, a, temp, s, r, h, stream)?;
+    cuda_add_inplace(dx, temp, s as usize * h as usize, stream)
+}
+
 // CPU fallback stub
 #[cfg(not(feature = "cuda"))]
 pub struct CudaTransformerBlock;
@@ -4415,61 +4457,22 @@ impl CudaNf4TransformerBlock {
             )?;
         }
 
-        // LoRA Q backward: compute grad_A_q, grad_B_q, and add to grad_norm1
+        // LoRA Q backward: grad_A_q, grad_B_q, and the adapter's share of grad_norm1
         if let (Some(a_q), Some(b_q)) = (&self.lora_a_q, &self.lora_b_q) {
-            let r = saturating_u32(self.lora_rank);
-
-            // Recompute: lora_inter_q = norm1_out @ A_q  [S, rank]
-            gemm_forward(&scratch.norm1_out, a_q, &mut scratch.lora_inter, s, h, r, stream)?;
-
-            // grad_B_q = lora_inter_q^T @ grad_q  [rank, q_dim]
-            // (Note: B_q was pre-scaled, so grad_B_q includes the scale factor)
-            gemm_backward_b(
-                &scratch.lora_inter,
-                &scratch.q,
-                &mut grad_lora.grad_lora_b_q,
-                s,
-                r,
-                qd,
-                stream,
-            )?;
-
-            // grad_lora_inter = grad_q @ B_q^T  [S, rank]
-            gemm_backward_a(
-                &scratch.q,
-                b_q,
-                &mut scratch.lora_inter, // reuse for grad_lora_inter
-                s,
-                qd,
-                r,
-                stream,
-            )?;
-
-            // grad_A_q = norm1_out^T @ grad_lora_inter  [H, rank]
-            gemm_backward_b(
+            lora_backward(
                 &scratch.norm1_out,
-                &scratch.lora_inter,
-                &mut grad_lora.grad_lora_a_q,
-                s,
-                h,
-                r,
-                stream,
-            )?;
-
-            // Add LoRA's contribution to grad_norm1: += grad_lora_inter @ A_q^T  [S, H]
-            gemm_backward_a(
-                &scratch.lora_inter,
                 a_q,
-                &mut scratch.lora_temp, // [S, H]
-                s,
-                r,
-                h,
-                stream,
-            )?;
-            cuda_add_inplace(
+                b_q,
+                &scratch.q,
+                &mut grad_lora.grad_lora_a_q,
+                &mut grad_lora.grad_lora_b_q,
                 &mut scratch.o_proj_out,
-                &scratch.lora_temp,
-                seq_len * hidden_size,
+                &mut scratch.lora_inter,
+                &mut scratch.lora_temp,
+                s,
+                h,
+                saturating_u32(self.lora_rank),
+                qd,
                 stream,
             )?;
         }
@@ -4576,44 +4579,22 @@ impl CudaNf4TransformerBlock {
             )?;
         }
 
-        // LoRA V backward
+        // LoRA V backward: grad_A_v, grad_B_v, and the adapter's share of grad_norm1
         if let (Some(a_v), Some(b_v)) = (&self.lora_a_v, &self.lora_b_v) {
-            let r = saturating_u32(self.lora_rank);
-
-            // Recompute: lora_inter_v = norm1_out @ A_v  [S, rank]
-            gemm_forward(&scratch.norm1_out, a_v, &mut scratch.lora_inter, s, h, r, stream)?;
-
-            // grad_B_v = lora_inter_v^T @ grad_v  [rank, kv_hidden]
-            gemm_backward_b(
-                &scratch.lora_inter,
-                &scratch.v,
-                &mut grad_lora.grad_lora_b_v,
-                s,
-                r,
-                kvh,
-                stream,
-            )?;
-
-            // grad_lora_inter = grad_v @ B_v^T  [S, rank]
-            gemm_backward_a(&scratch.v, b_v, &mut scratch.lora_inter, s, kvh, r, stream)?;
-
-            // grad_A_v = norm1_out^T @ grad_lora_inter  [H, rank]
-            gemm_backward_b(
+            lora_backward(
                 &scratch.norm1_out,
-                &scratch.lora_inter,
+                a_v,
+                b_v,
+                &scratch.v,
                 &mut grad_lora.grad_lora_a_v,
+                &mut grad_lora.grad_lora_b_v,
+                &mut scratch.o_proj_out,
+                &mut scratch.lora_inter,
+                &mut scratch.lora_temp,
                 s,
                 h,
-                r,
-                stream,
-            )?;
-
-            // Add LoRA V's contribution to grad_norm1
-            gemm_backward_a(&scratch.lora_inter, a_v, &mut scratch.lora_temp, s, r, h, stream)?;
-            cuda_add_inplace(
-                &mut scratch.o_proj_out,
-                &scratch.lora_temp,
-                seq_len * hidden_size,
+                saturating_u32(self.lora_rank),
+                kvh,
                 stream,
             )?;
         }
@@ -5238,6 +5219,10 @@ impl CudaNf4TransformerBlock {
 #[cfg(all(test, feature = "cuda"))]
 #[path = "cuda_block_parity_probe.rs"]
 mod parity_probe;
+
+#[cfg(all(test, feature = "cuda"))]
+#[path = "cuda_block_lora_backward_tests.rs"]
+mod lora_backward_tests;
 
 #[cfg(test)]
 mod tests {
