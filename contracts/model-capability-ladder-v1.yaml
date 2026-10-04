@@ -194,13 +194,10 @@ ladder:
         # aprender-83). The claim is re-proven on the prompt the sweep measures, never on the v1 text.
         prompts: [ctl-2plus2]
         control: Qwen3.5-0.8B-Q4_K_M.gguf
-    # F10, operator ruling 2026-09-23 on #3957 (verbatim): "c". apr has no CUDA forward for
-    # qwen35moe (hybrid SSM + MoE) and must REFUSE it by name on `apr run --gpu`: no fallback, no
-    # output (aprender-serve capability::no_cuda_forward_reason). The CUDA forward is 0.70.0 work.
-    red_unsupported:
-      "Qwen3.5-35B-A3B*.gguf":
-        architecture: qwen35moe
-        ticket: "#3977"
+    # F10 (operator ruling 2026-09-23 on #3957, "c") refused qwen35moe by name on `apr run --gpu`
+    # while apr had no CUDA forward for it; the `red_unsupported` key for Qwen3.5-35B-A3B*.gguf
+    # (#3977) is removed with that forward (#4665, operator sign-off batch row 16). The row is now
+    # measured like any other: it must pass on both GPU legs.
     backends: [cuda]
   # #3712 row B (operator 2026-09-21: "MORE than enough tokens for our needs (overdo it), and our verbs are
   # dogfooded, i.e chat with and without thinking, ditto run, ditto code"). A cell is (model, host, verb,
