@@ -56,7 +56,7 @@ judge() {
         echo "NOT_MEASURED $PROG: no version readable from Cargo.toml at $label ${t:0:12}"; echo "bump=none between=NA"; return 2
     fi
     if [ "$tv" = "$v" ]; then
-        local cands nm="" sh shq
+        local cands nm="" sh shq hdr p
         # git log failing is Unknown, not "no bump commit"
         if ! cands=$(git -C "$root" log --first-parent --format=%H -G'^version[[:space:]]*=' "$t" -- Cargo.toml 2>/dev/null); then
             echo "NOT_MEASURED $PROG: the history under $label ${t:0:12} could not be read"; echo "bump=none between=NA"; return 2
@@ -68,16 +68,24 @@ judge() {
         while IFS= read -r c; do
             [ -n "$c" ] || continue
             [ "$(ws_version "$root" "$c")" = "$v" ] || continue
-            if git -C "$root" rev-parse -q --verify "$c^{commit}^" > /dev/null 2>&1; then
-                pv=$(ws_version "$root" "$c^")
+            # the parent the commit OBJECT lists, checked in the object store: a commit-graph answers
+            # `rev-parse c^` (and lets git log walk on) for a parent whose object is gone
+            if ! hdr=$(git -C "$root" cat-file commit "$c" 2>/dev/null); then
+                nm="the commit object ${c:0:12} could not be read"; break
+            fi
+            p=$(printf '%s\n' "$hdr" | sed -n '/^$/q; s/^parent //p' | head -n 1)
+            if [ -z "$p" ]; then
+                pv=""   # a true root commit: nothing before it carried V
+            elif [ "$(git -C "$root" cat-file -t "$p" 2>/dev/null)" = commit ]; then
+                pv=$(ws_version "$root" "$p")
                 # an empty parent version is "not V" only when the parent has no Cargo.toml at all
-                if [ -z "$pv" ] && git -C "$root" cat-file -e "$c^:Cargo.toml" 2>/dev/null; then
+                if [ -z "$pv" ] && git -C "$root" cat-file -e "$p:Cargo.toml" 2>/dev/null; then
                     nm="the parent of ${c:0:12} has a Cargo.toml with no readable version"; break
                 fi
             elif [ "$shq" != false ] && { [ -z "$sh" ] || [ ! -f "$sh" ] || grep -qx "$c" "$sh"; }; then
                 nm="${c:0:12} is a shallow-clone boundary: its parent is not in this checkout"; break
             else
-                pv=""   # a true root commit: nothing before it carried V
+                nm="the parent ${p:0:12} of ${c:0:12} is listed but its object is not in this repository"; break
             fi
             [ "$pv" != "$v" ] && { b=$c; break; }   # bump: newest V-commit whose parent is not V
         done <<< "$cands"
@@ -133,7 +141,7 @@ setv() {     # setv <dir> <version> <msg>: commit the manifest at <version>
 work() { printf '%s\n' "$2" >> "$1/w.txt"; git -C "$1" add w.txt && git -C "$1" commit -qm "work $2"; }
 
 self_test() {
-    local subj=${1:-${BASH_SOURCE[0]}} quiet=${2:-} d fail=0 got rc row want name expect
+    local subj=${1:-${BASH_SOURCE[0]}} quiet=${2:-} d fail=0 got rc row want name expect o
     command -v git > /dev/null || { echo "$PROG self-test: needs git"; return 2; }
     d=$(mktemp -d) || return 2
     run() { got=$(bash "$subj" "$@" 2>&1); rc=$?; }
@@ -183,6 +191,12 @@ self_test() {
     mkrepo "$d/r11" && printf '[workspace]\nmembers = []\n' > "$d/r11/Cargo.toml" && git -C "$d/r11" commit -qam nover \
         && setv "$d/r11" 1.2.3 bump && git -C "$d/r11" tag v1.2.3
     run 1.2.3 --root "$d/r11"; check unreadable_parent_version_not_measured 2 "no readable version"
+    # 12. a non-shallow repo missing the bump's parent object, with a commit-graph that still lets git
+    #     log walk past it: NOT_MEASURED, never PASS (without a commit-graph git log fails: also Unknown)
+    mkrepo "$d/r12" && setv "$d/r12" 1.2.3 bump && git -C "$d/r12" tag v1.2.3 \
+        && git -C "$d/r12" commit-graph write --reachable 2>/dev/null
+    o=$(git -C "$d/r12" rev-parse HEAD^); o="$d/r12/.git/objects/${o:0:2}/${o:2}"; rm -f -- "${o:?}"
+    run 1.2.3 --root "$d/r12"; check missing_parent_object_not_measured 2 "NOT_MEASURED"
 
     if [ -z "$quiet" ]; then
         # MUTANTS of THIS file: each removes one refusal (or the exact bump) and must turn a row red
@@ -196,7 +210,9 @@ self_test() {
                    'exact bump (first match, as the pickaxe)|{ b=$c; break; }|{ b=$c; }' \
                    'shallow boundary (read as a root)|nm="${c:0:12} is a shallow-clone boundary: its parent is not in this checkout"; break|pv=""' \
                    'unreadable parent (read as not V)|nm="the parent of ${c:0:12} has a Cargo.toml with no readable version"; break|:' \
-                   'parent check (any V-commit is the bump)|[ "$pv" != "$v" ] && |'; do
+                   'parent check (any V-commit is the bump)|[ "$pv" != "$v" ] && |' \
+                   'missing parent object (read as a root)|nm="the parent ${p:0:12} of ${c:0:12} is listed but its object is not in this repository"; break|pv=""' \
+                   'parent object asked of rev-parse (commit-graph answers)|[ "$(git -C "$root" cat-file -t "$p" 2>/dev/null)" = commit ]|git -C "$root" rev-parse -q --verify "$c^{commit}^" > /dev/null 2>&1'; do
             IFS='|' read -r name a1 b1 <<< "$row"; n=$((n + 1))
             case $src in *"$a1"*) ;; *) echo "  FAIL mutant $name: anchor moved, re-anchor it"; fail=1; continue ;; esac
             { printf '%s' "${src/"$a1"/"$b1"}"; printf '\nmain "$@"\n'; } > "$d/mut.sh"

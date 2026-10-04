@@ -1,5 +1,5 @@
 metadata:
-  version: 1.1.0
+  version: 1.2.0
   created: '2026-09-20'
   author: PAIML Engineering
   description: "The release train's tag step cannot be reached without a clean milestone. v0.68.1 was tagged 2026-09-17T15:06:29Z by an autopilot copy living outside the repository, six minutes after #3455 merged the milestone gate; `grep -c check_milestone_cut autopilot.sh` was 0. The spec required the read and no code path that cuts a tag made it. This contract is the property that the requirement and the mechanism are the same object: the gate call lives INSIDE cut_tag(), ahead of `git tag`, and a guard runs that function against each gate outcome and asserts on whether a tag was cut."
@@ -115,14 +115,14 @@ falsification_tests:
 
   - id: FALSIFY-TSMG-007
     rule: "Only a tag on the version-bump commit passes"
-    prediction: "The planted rows hold: the tag on the bump commit passes; one commit between bump and tag refuses; no bump commit refuses; an unreadable tag or version prints NOT_MEASURED; a re-done bump and a dependency version line do not move the bump; a shallow-clone boundary or a parent manifest with no readable version is NOT_MEASURED, never PASS"
+    prediction: "The planted rows hold: the tag on the bump commit passes; one commit between bump and tag refuses; no bump commit refuses; an unreadable tag or version prints NOT_MEASURED; a re-done bump and a dependency version line do not move the bump; a shallow-clone boundary, a parent manifest with no readable version, or a parent commit object missing from a non-shallow repository (a commit-graph still walking past it) is NOT_MEASURED, never PASS"
     test: "bash scripts/release/tag_on_bump.sh --self-test"
     if_fails: "A release can be tagged on code that was never measured under its version: 0.70.1 was tagged 3 commits after its bump, 0.69.1 541"
 
   - id: FALSIFY-TSMG-008
     rule: "Each refusal of the tag-on-bump judge is load-bearing"
-    prediction: "Every mutant that removes a refusal, a NOT_MEASURED, or the exact bump identity turns a planted row red: the self-test prints mutants killed 9/9"
-    test: "bash scripts/release/tag_on_bump.sh --self-test | grep -qx 'tag_on_bump self-test: mutants killed 9/9'"
+    prediction: "Every mutant that removes a refusal, a NOT_MEASURED, or the exact bump identity turns a planted row red: the self-test prints mutants killed 11/11"
+    test: "bash scripts/release/tag_on_bump.sh --self-test | grep -qx 'tag_on_bump self-test: mutants killed 11/11'"
     if_fails: "A refusal no row depends on is theater; the table would pass a judge that never refuses"
 
   - id: FALSIFY-TSMG-009
