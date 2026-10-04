@@ -591,12 +591,13 @@ PY
 fit_probe() {
   local prod=$1 w=$2 bad=0 t pin=d1d3c3396 out rc want v
   mkdir -p "$w" || return 1
-  : > "$w/model.gguf"   # no readable header: trained length unknown, the 4096 floor holds
+  printf 'GGUF' > "$w/model.gguf"   # magic only, no readable KVs: trained length unknown, the 4096 floor holds (#4668: a non-GGUF file never reaches the tool)
   # gguf <file> <context_length>: a minimal GGUF v3 header whose only KV is llama.context_length
   gguf() { python3 -c 'import struct,sys; k=b"llama.context_length"; open(sys.argv[1],"wb").write(b"GGUF"+struct.pack("<IQQ",3,0,1)+struct.pack("<Q",len(k))+k+struct.pack("<II",4,int(sys.argv[2])))' "$1" "$2"; }
   gguf "$w/trained-2k.gguf" 2048
   gguf "$w/trained-4k.gguf" 4096
   gguf "$w/trained-32k.gguf" 32768
+  printf 'APRN\0\0\0\0' > "$w/model.apr"   # #4668: not GGUF, so llama-fit-params must never be asked about it
   mk() { printf '#!/usr/bin/env bash\ncase "$1" in --version) echo "version: 0.4.1-dev (build 1, commit %s)";; *) %s;; esac\n' "$2" "$3" > "$w/$1"; chmod +x "$w/$1"; }
   mk fits      "$pin"    'echo "-c 262144 -ngl -1"'
   mk nofit     "$pin"    'echo "failed to fit" >&2; exit 1'
@@ -627,7 +628,18 @@ tinyllama-2k-at-2048|smallctx|trained-2k.gguf|fits|0
 32k-trained-at-8192|ctx8k|trained-32k.gguf|fits|0
 unpinned|otherpin|model.gguf|unpinned|1
 tool-absent|absent|model.gguf|tool-absent|1
+apr-tool-exits-1|nofit|model.apr|tool-cannot-read|1
+apr-tool-absent|absent|model.apr|tool-cannot-read|1
 CASES
+  # #4668 plants: a tool error on an .apr row is not a does-not-fit; a host without the tool says not_measured.
+  out=$(MODEL_LADDER_ROOT="$PWD" MODEL_LADDER_GPU_LOCK="$w/lock" MODEL_LADDER_FREE_MIB=23332 MODEL_LADDER_FIT="$w/absent" \
+        MODEL_LADDER_FIT_PIN="$pin" DOGFOOD_ALLOW_UNPINNED=1 APR=/bin/true timeout 60 bash "$prod" --fit-probe "$w/model.gguf" 2> /dev/null)
+  if grep -q 'not_measured' <<< "$out"; then echo "ok    fit case tool-absent-says-not_measured"
+  else echo "FAIL  fit case tool-absent-says-not_measured: no not_measured in: ${out:-<none>}"; bad=1; fi
+  out=$(MODEL_LADDER_ROOT="$PWD" MODEL_LADDER_GPU_LOCK="$w/lock" MODEL_LADDER_FREE_MIB=23332 MODEL_LADDER_FIT="$w/nofit" \
+        MODEL_LADDER_FIT_PIN="$pin" DOGFOOD_ALLOW_UNPINNED=1 APR=/bin/true timeout 60 bash "$prod" --fit-probe "$w/model.apr" 2> /dev/null)
+  if grep -q '"verdict": "does-not-fit"' <<< "$out"; then echo "FAIL  fit case apr-error-never-does-not-fit: printed does-not-fit"; bad=1
+  else echo "ok    fit case apr-error-never-does-not-fit"; fi
   return "$bad"
 }
 
@@ -837,6 +849,7 @@ if [ "$SELF_TEST" = 1 ]; then
     fmutant no-gate       's/      fit_json=\$(fit_verdict "\$path")/      fit_json=\x27{"verdict": "fits"}\x27/'
     fmutant no-refusal    's/        return$/        :/'
     fmutant raw-probe     's/    fit_locked --model "\$1"/    "$LLAMA_FIT" --model "$1"/'
+    fmutant apr-routed    's/  if \[ -r "\$1" \] && /  if false \&\& /'
     vmutant() { # vmutant <label> <sed expression deleting a rule in a copy of scripts/lib/llama_fit_verdict.py>
       local md="$mdir/v-$1"; mkdir -p "$md"
       sed "$2" scripts/lib/llama_fit_verdict.py > "$md/llama_fit_verdict.py"
@@ -845,6 +858,7 @@ if [ "$SELF_TEST" = 1 ]; then
       else printf 'ok    verdict mutant %-15s killed by the fit case table\n' "$1"; fi
     }
     vmutant tool-absent  's/    if not tool_found:/    if False:/'
+    fmutant not-measured 's/"reason": "not_measured: llama-fit-params is not installed/"reason": "llama-fit-params is not installed/'
     vmutant pin          's/    if not built or k < 7 or built\[:k\] != pin\[:k\]:/    if False:/'
     vmutant rc           's/    if rc != 0:/    if False:/'
     vmutant no-verdict   's/    if not (c and n):/    if False:/'

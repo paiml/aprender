@@ -499,6 +499,12 @@ falsification_tests:
     test: "bash scripts/check_model_ladder.sh --self-test && bash scripts/check_dogfood_no_defer.sh --self-test"
     if_fails: "the dogfood's declared ladder gate judges the full ladder while the release gate judges the recorded scope -- two gates, one release, opposite verdicts (0.69.1, #4086) -- or a scoped pass reads as `exit=0`, indistinguishable from every rung green"
 
+  - id: FALSIFY-MCL-019
+    rule: "a tool error on a file llama-fit-params cannot read is never reported as does-not-fit, and a host without the tool says not_measured (#4668)"
+    prediction: "the fit probe on a non-GGUF (.apr) file prints verdict tool-cannot-read without running llama-fit-params, even when a stub tool exits 1; a GGUF the tool refuses still prints does-not-fit; an absent tool prints a reason beginning not_measured; 2 mutants (apr routing removed, not_measured wording removed) are each killed by the fit case table"
+    test: "bash scripts/check_model_ladder.sh --self-test"
+    if_fails: "the five .apr inventory rows are refused as 'does not fit' for a format error, hiding whether apr can run them, or a host without the tool reads as a measured result"
+
 qa_gate:
   id: F-MCL-001
   name: Model Capability Ladder

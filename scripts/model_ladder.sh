@@ -448,6 +448,12 @@ FIT_PIN="${MODEL_LADDER_FIT_PIN:-d1d3c3396}"
 fit_locked() { flock -E "$LOCK_BUSY" -w "$LOCK_WAIT" "$GPU_LOCK" choom -n 1000 -- "$LLAMA_FIT" "$@"; }
 fit_verdict() { # fit_verdict <gguf> -> one JSON fit record on stdout (scripts/lib/llama_fit_verdict.py)
   local found=0 rc=0 free vf sf
+  # #4668: llama-fit-params reads GGUF only. Its nonzero exit on any other file (the .apr rows) is a format
+  # error, never "does not fit": say what happened, and do not run it. An unreadable path still goes to the tool.
+  if [ -r "$1" ] && [ "$(LC_ALL=C head -c4 "$1" 2> /dev/null)" != "GGUF" ]; then
+    printf '{"tool": "llama-fit-params", "pin": "%s", "verdict": "tool-cannot-read", "reason": "llama-fit-params reads GGUF only and this file is not GGUF: no fit verdict was measured (this is not a does-not-fit)"}\n' "$FIT_PIN"
+    return 0
+  fi
   vf=$(mktemp) || return 2
   sf=$(mktemp) || { rm -f "$vf"; return 2; }
   if [ -x "$LLAMA_FIT" ]; then
@@ -459,7 +465,8 @@ fit_verdict() { # fit_verdict <gguf> -> one JSON fit record on stdout (scripts/l
   fi
   free="${MODEL_LADDER_FREE_MIB:-$(nvidia-smi --query-gpu=memory.free --format=csv,noheader,nounits 2> /dev/null | head -1 | tr -d ' ')}"
   # MODEL_LADDER_FIT_LIB: a mutant copy of the verdict module, in check_model_ladder.sh --self-test.
-  python3 "${MODEL_LADDER_FIT_LIB:-scripts/lib}/llama_fit_verdict.py" "$found" "$FIT_PIN" "$rc" "${free:-unknown}" "$vf" "$sf" "$1"
+  # #4668: an absent tool is not_measured, never a verdict (wording owned here: the judge module is over the complexity cap).
+  {   python3 "${MODEL_LADDER_FIT_LIB:-scripts/lib}/llama_fit_verdict.py" "$found" "$FIT_PIN" "$rc" "${free:-unknown}" "$vf" "$sf" "$1" | sed 's/"reason": "llama-fit-params is not installed on this host"/"reason": "not_measured: llama-fit-params is not installed on this host (no verdict, not a does-not-fit)"/'; }
   rm -f "$vf" "$sf"
 }
 if [ -n "${FIT_PROBE:-}" ]; then
