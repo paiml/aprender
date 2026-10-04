@@ -106,17 +106,27 @@ proof_obligations:
     property: "An inbox line that does not read back ends the run non-zero"
     formal: "∀ run: inbox_named(run) ∧ tail(inbox) ≠ line(run) ⇒ exit(run) ≠ 0"
     applies_to: verdict_line
+  - id: NT-INV-014
+    type: invariant
+    property: "The train refuses to start where a registry token is reachable: a CARGO_REGISTRY_TOKEN or CARGO_REGISTRIES_<NAME>_TOKEN variable, set even empty, or a credentials file in CARGO_HOME"
+    formal: "token_env(run) ∨ credentials_file(CARGO_HOME(run)) ⇒ line = NOT RELEASABLE: nightly-train, no-token ∧ exit(run) ≠ 0"
+    applies_to: verdict_line
+  - id: NT-INV-015
+    type: invariant
+    property: "Under --exit-verdict the exit status is the verdict: 0 only for RELEASABLE; without it the status says only whether the train ran"
+    formal: "exit_verdict(run) ⇒ (exit(run) = 0 ⇔ line(run) = RELEASABLE(C))"
+    applies_to: verdict_line
 
 falsification_tests:
   - id: FALSIFY-NT-001
     rule: "The judge is right on every row of its case table"
-    prediction: "All verdict lanes green is RELEASABLE; a removed lane, a run on another commit, a run in progress, an unread attempt or a failed read is NOT RELEASABLE with not_measured; a green at attempt 2 is red; an info lane red leaves the verdict; reds rank by hours lost; greens in a row follow the scheduled-nights rule; a planted fault prints the trap line; a void newer run falls to the older run on C; a lane missing a required job, a cut job list or no producer is not_measured; stdout is one line; a fault or a closed stdout after the history row adds no second row; an edited bundle refuses and still leaves its line and one history row; under --pinned a missing PIN, an edited PIN or sums that omit PIN refuse while an intact pinned bundle judges; a failed parallel leg of one name is red; a cut rollup is marked; the read refuses under the rate floor, past the call budget and on a GraphQL error; an info lane attempt not read shows 1?; an inbox read-back mismatch exits non-zero; a closed stdout keeps the real verdict; a self-test and a planted fault write only a throwaway inbox"
+    prediction: "All verdict lanes green is RELEASABLE; a removed lane, a run on another commit, a run in progress, an unread attempt or a failed read is NOT RELEASABLE with not_measured; a green at attempt 2 is red; an info lane red leaves the verdict; reds rank by hours lost; greens in a row follow the scheduled-nights rule; a planted fault prints the trap line; a void newer run falls to the older run on C; a lane missing a required job, a cut job list or no producer is not_measured; stdout is one line; a fault or a closed stdout after the history row adds no second row; an edited bundle refuses and still leaves its line and one history row; under --pinned a missing PIN, an edited PIN or sums that omit PIN refuse while an intact pinned bundle judges; a failed parallel leg of one name is red; a cut rollup is marked; the read refuses under the rate floor, past the call budget and on a GraphQL error; an info lane attempt not read shows 1?; an inbox read-back mismatch exits non-zero; a closed stdout keeps the real verdict; a registry token variable, an empty named one or a credentials file refuses to start; --exit-verdict maps RELEASABLE to 0 and NOT RELEASABLE to 1; a self-test and a planted fault write only a throwaway inbox"
     test: "bash scripts/release/nightly_train.sh --self-test"
     if_fails: "The train can print RELEASABLE for a commit some release-day check never measured, or stay silent when it fails"
 
   - id: FALSIFY-NT-002
     rule: "The case table can still fail on the defects it names"
-    prediction: "Each planted mutant (not_measured counted green, a run on any commit, an unfinished run counted, a retried green counted, a failed read counted, an unread attempt counted, no trap, info lanes voting, ranking reversed, total counted as streak, coverage made a verdict lane, a verdict lane dropped, the rollup dropped, a re-run job not counted, a missing producer not refused, the required-job count ignored, a cut job list read, a void run picked, an edited bundle run, a producerless lane green, a second history row after the first, the caller's inbox inherited by the self-test, a drill writing the named inbox, one leg hiding another, a cut rollup read, the day set after the pin step, --pinned not requiring PIN, unhashed PIN accepted, the rate floor ignored, the call budget ignored, GraphQL errors read, an inbox mismatch exiting 0, an inferred info attempt claimed as 1) turns at least one row RED, after the unmutated copy is shown green in the same directory"
+    prediction: "Each planted mutant (not_measured counted green, a run on any commit, an unfinished run counted, a retried green counted, a failed read counted, an unread attempt counted, no trap, info lanes voting, ranking reversed, total counted as streak, coverage made a verdict lane, a verdict lane dropped, the rollup dropped, a re-run job not counted, a missing producer not refused, the required-job count ignored, a cut job list read, a void run picked, an edited bundle run, a producerless lane green, a second history row after the first, the caller's inbox inherited by the self-test, a drill writing the named inbox, one leg hiding another, a cut rollup read, the day set after the pin step, --pinned not requiring PIN, unhashed PIN accepted, the rate floor ignored, the call budget ignored, GraphQL errors read, an inbox mismatch exiting 0, an inferred info attempt claimed as 1, the token guard dropped, the credentials file ignored, a named registry token ignored, --exit-verdict ignored, a RELEASABLE verdict exiting 1) turns at least one row RED, after the unmutated copy is shown green in the same directory"
     test: "bash scripts/release/nightly_train.sh --mutants"
     if_fails: "The case table is theater: it would pass a judge that calls main releasable on evidence it never read"
 

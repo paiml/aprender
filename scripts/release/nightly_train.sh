@@ -45,15 +45,18 @@
 #   RATE_FLOOR makes no further call: the read failed, every producer lane is not_measured.
 #
 # EXIT  0 a verdict line was printed (RELEASABLE or NOT) · 2 the train failed part-way (trap line) · 3 caller error
+#   With --exit-verdict, NOT RELEASABLE exits 1 (a CI job is green only on a releasable head).
+# NO TOKEN. The train refuses to start (trap line "no-token") when a registry token is reachable: CARGO_REGISTRY_TOKEN
+#   or CARGO_REGISTRIES_*_TOKEN set, or $CARGO_HOME/credentials(.toml). The installed unit points CARGO_HOME at an
+#   empty directory in its bundle.
 #
 # USAGE
-#   nightly_train.sh --out DIR [--inbox FILE] [--from RAWDIR] [--now YYYY-MM-DDTHH:MM:SSZ]
+#   nightly_train.sh --out DIR [--inbox FILE] [--from RAWDIR] [--now YYYY-MM-DDTHH:MM:SSZ] [--pinned] [--exit-verdict]
 #   nightly_train.sh --self-test   the case table (fixtures, no network)
 #   nightly_train.sh --mutants     each planted mutant must turn the case table RED
 #   nightly_train.sh --install --home DIR --out DIR [--inbox FILE] --train SHA --greens SHA --redage SHA
 #                                  pin a bundle copied out of git and install the daily user timer (04:45 UTC)
 set -uo pipefail
-
 PROG="${0##*/}"
 HERE="$(cd -- "$(dirname -- "${BASH_SOURCE[0]}")" && pwd)"
 SCRIPT_PATH="$HERE/${BASH_SOURCE[0]##*/}"
@@ -61,7 +64,6 @@ REPO="paiml/aprender"
 MAX_CALLS=10
 RATE_FLOOR=1000
 UNIT="aprender-nightly-train"
-
 # lane;kind;release-day check;producer workflow;event pattern;job-name pattern[;required job names, default 1]
 # ('-' producer: none yet). A run with fewer distinct matched job names than required measures nothing (void).
 LANES='ci-main;verdict;ci / gate + workspace-test (merge, autopilot wait);.github/workflows/ci.yml;^push$;^(ci / gate|workspace-test)$;2
@@ -93,11 +95,8 @@ book;info;book;.github/workflows/book.yml;^schedule$;
 book-contracts;info;book-contracts;.github/workflows/book-contracts.yml;^schedule$;
 install-script;info;install-script;.github/workflows/install-script.yml;^schedule$;
 fleet-toolset;info;fleet-toolset;.github/workflows/fleet-toolset.yml;^schedule$;'
-
 caller_error() { printf 'NOT RELEASABLE: nightly-train, caller error: %s\n' "$*"; exit 3; }
-
 # ---------------------------------------------------------------- judgement (pure: files in, files out) ----------
-
 # evaluate LANESFILE RAW MODE -> MODE=cand: run ids of green verdict candidates; MODE=final: lanes.tsv rows and
 #   RAW/hist_redage.tsv. RAW holds C, read, runs.tsv, attempts.tsv.
 evaluate() {
@@ -193,7 +192,6 @@ evaluate() {
         }
     }' <(printf '%s\n' "$1") "$2/attempts.tsv" "$2/runs.tsv"
 }
-
 # hours LANESOUT REDAGE_OUTPUT_FILE -> lane<TAB>hours lost (2 decimals) for every lane red_age measured
 hours() {
     awk '{
@@ -203,7 +201,6 @@ hours() {
         } else if (match($0, /REDAGE [^ ]+ ok: green/)) { s = substr($0, RSTART, RLENGTH); split(s, w, " "); printf "%s\t0.00\n", w[2] }
     }' "$1"
 }
-
 # decide LANESFILE RAW NOW -> RAW/lanes.tsv, RAW/reds.tsv, RAW/line (the verdict, without the pin suffix)
 decide() {
     local raw="$2" c
@@ -233,7 +230,6 @@ decide() {
             printf "NOT RELEASABLE: %s, %s%s\n", best, brun, (bad > 1 ? " (+" bad - 1 " more)" : "")
         }' "$raw/hours.tsv" "$raw/lanes.tsv" > "$raw/line"
 }
-
 # greens HISTORY DATE -> the streak of nightly-train in HISTORY by nightly_greens.sh's rules, or not_measured
 greens() {
     local o s
@@ -242,12 +238,9 @@ greens() {
     s="$(printf '%s\n' "$o" | awk 'match($0, /streak=[0-9]+/) { print substr($0, RSTART + 7, RLENGTH - 7); exit }')"
     if [ -n "$s" ]; then printf '%s\n' "$s"; else printf 'not_measured\n'; fi
 }
-
 # ---------------------------------------------------------------- the read (network) -------------------------------
-
 CALLS=0
 call_ok() { [ "$CALLS" -lt "$MAX_CALLS" ] || return 1; CALLS=$((CALLS + 1)); }
-
 # normalize GQL WORKFLOWS -> runs.tsv rows on stdout
 # gql_query LANES WFJSON -> the one GraphQL query; empty when a producer workflow is missing from the list.
 # jq 1.6 compatible (the timer PATH may find it first): no reserved words such as $or as variable names.
@@ -260,7 +253,6 @@ gql_query() {
         | "query { repository(owner: \"\($own | first)\", name: \"\($own | last)\") { defaultBranchRef { name target { ... on Commit { oid tree { oid } statusCheckRollup { contexts(first: 100) { pageInfo { hasNextPage } nodes { ... on CheckRun { name status conclusion startedAt completedAt checkSuite { status conclusion branch { name } workflowRun { databaseId event createdAt workflow { id } } } } } } } } } } } "
           + ([$hit | to_entries[] | "w\(.key): node(id: \"\(.value.node_id)\") { ... on Workflow { id runs(first: 12) { nodes { databaseId createdAt event checkSuite { status conclusion branch { name } commit { oid } checkRuns(first: 100, filterBy: {checkType: ALL}) { pageInfo { hasNextPage } nodes { name status conclusion startedAt completedAt } } } } } } }"] | join(" ")) + " }"' 2>/dev/null
 }
-
 normalize() {
     jq -r --slurpfile wf "$2" '
       ($wf | first | .workflows | map({key: .node_id, value: .path}) | from_entries) as $p
@@ -292,7 +284,6 @@ normalize() {
           else empty end )
       | map(tostring) | join("\t")' "$1"
 }
-
 # fetch RAW CACHE -> RAW/{C,tree,read,runs.tsv,attempts.tsv,graphql.json,workflows.json}; never fails: a failed read
 #   is recorded in RAW/read and makes every producer lane not_measured
 fetch() {
@@ -333,12 +324,20 @@ fetch() {
         printf '%s\t%s\n' "$r" "$a" >> "$raw/attempts.tsv"
     done
 }
-
 # ---------------------------------------------------------------- the run -----------------------------------------
-
-STEP="start"; PRINTED=""; HISTDONE=""; OUTDIR=""; INBOXF=""; DAY=""; CSHA=""; PIN=""; PINNED=""
+STEP="start"; PRINTED=""; HISTDONE=""; OUTDIR=""; INBOXF=""; DAY=""; CSHA=""; PIN=""; PINNED=""; EXIT_VERDICT=""
 step() { STEP="$1"; [ "${NIGHTLY_TRAIN_FAULT:-}" != "$1" ] || { STEP="$1 (planted fault)"; exit 1; }; }
-
+# no_token -> 0 when no registry token is reachable: no CARGO_REGISTRY_TOKEN or CARGO_REGISTRIES_*_TOKEN in the
+#   environment (set at all, even empty) and no credentials file under $CARGO_HOME (default ~/.cargo). The train
+#   runs no cargo, but the rule is structural: it must be unable to upload, so it refuses to start where a token
+#   exists. A flag alone is not a guard.
+no_token() {
+    local ch="${CARGO_HOME:-$HOME/.cargo}"
+    env | awk -F '=' '$1 == "CARGO_REGISTRY_TOKEN" || $1 ~ /^CARGO_REGISTRIES_[A-Za-z0-9_]+_TOKEN$/ { f = 1 } END { exit f }' || return 1
+    [ ! -e "$ch/credentials" ] && [ ! -e "$ch/credentials.toml" ]
+}
+# verdict_rc LINE -> 0 for RELEASABLE, 1 for anything else (--exit-verdict: a green job means a releasable head)
+verdict_rc() { case "$1" in "RELEASABLE "*) return 0 ;; *) return 1 ;; esac; }
 inbox_line() {   # inbox_line LINE GREENS -> append <= 300 bytes and read it back
     local l
     [ -n "$INBOXF" ] || return 0
@@ -349,7 +348,6 @@ inbox_line() {   # inbox_line LINE GREENS -> append <= 300 bytes and read it bac
         || printf '%s\n' "$l" | sg "$(stat -c %G -- "$INBOXF")" -c "tee -a $INBOXF > /dev/null"   # the file's own group: no name in the repo
     [ "$(tail -n 1 "$INBOXF" 2>/dev/null)" = "$l" ] || { printf 'inbox: read-back mismatch\n' >&2; return 1; }
 }
-
 on_exit() {
     local rc=$?
     # once the history row is written the run is recorded: a later failure (a closed stdout) rewrites nothing
@@ -365,11 +363,12 @@ on_exit() {
     [ -z "${DRILL:-}" ] || rm -f -- "${INBOXF:?}"
     exit 2
 }
-
 run_train() {
     local from="$1" raw line g concl budget pin_t pin_g pin_r hrow
     trap on_exit EXIT
     DAY="${NOW%%T*}"   # before any step that can fail, so every failure leaves its line and its history row
+    step no-token
+    no_token || exit 1
     step pin
     # the timer passes --pinned: then PIN and SHA256SUMS must both be there, so deleting them cannot skip the check
     if [ -n "$PINNED" ] || [ -f "$HERE/PIN" ]; then
@@ -424,18 +423,16 @@ run_train() {
     HISTDONE=1
     printf '%s\n' "$line" || exit 1; PRINTED=1
     inbox_line "$line" "$g" || exit 1
+    [ -z "$EXIT_VERDICT" ] || verdict_rc "$line" || exit 1
     exit 0
 }
-
 span() {   # span START END -> XhYYm, or not_measured
     local a b
     a="$(date -u -d "$1" +%s 2>/dev/null)"; b="$(date -u -d "$2" +%s 2>/dev/null)"
     if [ -z "$1" ] || [ -z "$2" ] || [ -z "$a" ] || [ -z "$b" ]; then printf 'not_measured'; return 0; fi
     printf '%dh%02dm' $(((b - a) / 3600)) $((((b - a) % 3600) / 60))
 }
-
 # ---------------------------------------------------------------- install (the pinned bundle and the user timer) ----
-
 install_timer() {
     local home="" out="" inbox="" t="" g="" r="" dir unitdir p
     while [ $# -gt 0 ]; do
@@ -456,7 +453,7 @@ install_timer() {
     command -v gh > /dev/null && command -v jq > /dev/null || caller_error "gh and jq must be on PATH: the unit PATH is built from them"
     [ "$(loginctl show-user "$(id -un)" -p Linger --value 2>/dev/null)" = yes ] || caller_error "Linger is not yes: a user timer does not fire while logged out; nothing installed"
     dir="$home/b-${t:0:10}-${g:0:10}-${r:0:10}"
-    mkdir -p "$dir" "$out" || caller_error "cannot create $dir or $out"
+    mkdir -p "$dir" "$dir/cargo" "$out" || caller_error "cannot create $dir or $out"   # cargo: an empty CARGO_HOME for the unit
     chmod u+w "$dir"/*.sh 2>/dev/null   # a reinstall of the same pin overwrites the read-only copies
     git show "$t:scripts/release/nightly_train.sh" > "$dir/nightly_train.sh" || caller_error "no nightly_train.sh at $t"
     git show "$g:scripts/release/nightly_greens.sh" > "$dir/nightly_greens.sh" || caller_error "no nightly_greens.sh at $g"
@@ -472,7 +469,7 @@ install_timer() {
     mkdir -p "$unitdir" || caller_error "cannot create $unitdir"
     {
         printf '[Unit]\nDescription=aprender nightly evidence train (BLD-002 R4), report-only\n\n[Service]\nType=oneshot\nNice=10\nTimeoutStartSec=900\n'
-        printf 'Environment=OUT=%s\nEnvironment=INBOX=%s\nEnvironment=PATH=%s\nExecStart=/bin/bash %s/nightly_train.sh --pinned\n' "$out" "$inbox" "$p" "$dir"
+        printf 'Environment=OUT=%s\nEnvironment=INBOX=%s\nEnvironment=PATH=%s\nEnvironment=CARGO_HOME=%s/cargo\nExecStart=/bin/bash %s/nightly_train.sh --pinned\n' "$out" "$inbox" "$p" "$dir" "$dir"
     } > "$unitdir/$UNIT.service"
     printf '[Unit]\nDescription=aprender nightly evidence train, daily 04:45 UTC\n\n[Timer]\nOnCalendar=*-*-* 04:45:00 UTC\nPersistent=true\nUnit=%s.service\n\n[Install]\nWantedBy=timers.target\n' "$UNIT" > "$unitdir/$UNIT.timer"
     systemctl --user daemon-reload || caller_error "daemon-reload failed"
@@ -481,16 +478,13 @@ install_timer() {
     systemctl --user list-timers "$UNIT.timer" --no-pager | head -n 2
     loginctl show-user "$(id -un)" -p Linger 2>/dev/null
 }
-
 # ---------------------------------------------------------------- the case table ----------------------------------
-
 ST_LANES='v-a;verdict;check A;.github/workflows/a.yml;^schedule$;^job-a$
 v-b;verdict;check B;.github/workflows/b.yml;^schedule$;
 v-c;verdict;check C;.github/workflows/c.yml;^push$;^(gate|test)$;2
 i-d;info;check D;.github/workflows/d.yml;^schedule$;'
 ST_C="$(printf 'a%.0s' $(seq 40))"
 ST_X="$(printf 'b%.0s' $(seq 40))"
-
 # fixture DIR -> every lane green on C, attempt 1
 fixture() {
     mkdir -p "$1"
@@ -505,14 +499,15 @@ fixture() {
     } > "$1/runs.tsv"
     printf '101\t1\n201\t1\n301\t1\n' > "$1/attempts.tsv"
 }
-
 # st_decide DIR -> the line, the lanes and the reds, as one text
 st_decide() { decide "$ST_LANES" "$1" 2026-10-04T06:00:00Z; cat "$1/line" "$1/lanes.tsv" "$1/reds.tsv"; }
-
 self_test() {
-    local tmp pass=0 fail=0 d o rc
+    local tmp pass=0 fail=0 d o rc v
     tmp="$(mktemp -d)" || exit 3
     export INBOX="$tmp/inbox.md"   # whatever INBOX the caller set: a self-test never writes a real inbox
+    # and no registry token: the rows run the train, which refuses to start where one is reachable
+    export CARGO_HOME="$tmp/cargo"; mkdir -p "$CARGO_HOME"; unset CARGO_REGISTRY_TOKEN
+    while read -r v; do unset "$v"; done < <(env | awk -F "=" '$1 ~ /^CARGO_REGISTRIES_[A-Za-z0-9_]+_TOKEN$/ { print $1 }')
     # row NAME EXPECT-RC NEEDLE FORBID -- CMD...
     row() {
         local name="$1" expect="$2" needle="$3" forbid="$4"; shift 5
@@ -621,6 +616,15 @@ v-e;verdict;check E;-;-;-" "$d" 2026-10-04T06:00:00Z; cat "$d/line" "$d/lanes.ts
     row an_inbox_read_back_mismatch_exits_non_zero 1 "inbox: read-back mismatch" "" -- \
         bash "$SCRIPT_PATH" --from "$d" --out "$tmp/o9" --inbox /dev/null --now 2026-10-04T06:00:00Z
     row a_closed_stdout_keeps_the_real_verdict 0 "NOT RELEASABLE: ci-main, not_measured (+14 more) [C=aaaaaaaaaa pin=" "nightly-train" -- cat "$tmp/o5/2026-10-04/line"
+    row a_registry_token_refuses_to_start 2 "NOT RELEASABLE: nightly-train, no-token failed" "RELEASABLE H=" -- \
+        env CARGO_REGISTRY_TOKEN=x bash "$SCRIPT_PATH" --from "$d" --out "$tmp/ot1" --now 2026-10-04T06:00:00Z
+    row an_empty_named_registry_token_refuses 2 "NOT RELEASABLE: nightly-train, no-token failed" "RELEASABLE H=" -- \
+        env CARGO_REGISTRIES_MIRROR_TOKEN= bash "$SCRIPT_PATH" --from "$d" --out "$tmp/ot2" --now 2026-10-04T06:00:00Z
+    row a_credentials_file_refuses 2 "NOT RELEASABLE: nightly-train, no-token failed" "RELEASABLE H=" -- \
+        eval 'mkdir -p "$tmp/ch"; : > "$tmp/ch/credentials.toml"; CARGO_HOME="$tmp/ch" bash "$SCRIPT_PATH" --from "$d" --out "$tmp/ot3" --now 2026-10-04T06:00:00Z'
+    row exit_verdict_maps_releasable_to_0 0 "rc=0 rc=1" "" -- eval 'verdict_rc "RELEASABLE H=$ST_C"; a=$?; verdict_rc "NOT RELEASABLE: v-a, 101"; echo "rc=$a rc=$?"'
+    row exit_verdict_not_releasable_exits_1 1 "NOT RELEASABLE: ci-main" "nightly-train" -- \
+        bash "$SCRIPT_PATH" --from "$d" --out "$tmp/ov" --exit-verdict --now 2026-10-04T06:00:00Z
     mkdir -p "$tmp/pb" && cp "$SCRIPT_PATH" "$HERE/red_age.sh" "$HERE/nightly_greens.sh" "$tmp/pb/" 2>/dev/null; chmod u+w "$tmp/pb"/*.sh
     printf 'train %s\ngreens %s\nredage %s\n' "$ST_C" "$ST_C" "$ST_C" > "$tmp/pb/PIN"
     (cd "$tmp/pb" && sha256sum nightly_train.sh nightly_greens.sh red_age.sh PIN > SHA256SUMS) 2>/dev/null
@@ -645,7 +649,6 @@ v-e;verdict;check E;-;-;-" "$d" 2026-10-04T06:00:00Z; cat "$d/line" "$d/lanes.ts
     rm -rf -- "${tmp:?}"
     [ "$fail" -eq 0 ]
 }
-
 # the planted mutants: name, TAB, a sed expression applied to this file
 NT_MUTANTS='m01_not_measured_counts_as_green	s/nv++; if (\$3 == "green") next/nv++; if ($3 != "red") next/
 m02_run_on_any_commit	s/if (RH\[r\] != C) {/if (0) {/
@@ -679,8 +682,12 @@ m29_rate_floor_ignored	s/\[ "\$rem" -ge "\$RATE_FLOOR" \]/[ 1 ]/
 m30_call_budget_ignored	s/call_ok() { \[ "\$CALLS" -lt "\$MAX_CALLS" \] || return 1;/call_ok() {/
 m31_graphql_errors_read	s/(.errors \/\/ \[\]) | length > 0/false/
 m32_inbox_mismatch_exits_0	s/inbox_line "\$line" "\$g" || exit 1/inbox_line "$line" "$g"/
-m33_info_attempt_claimed	s/out(i, "green", pick, "1?", /out(i, "green", pick, "1", /'
-
+m33_info_attempt_claimed	s/out(i, "green", pick, "1?", /out(i, "green", pick, "1", /
+m34_token_guard_dropped	s/^    no_token || exit 1$/    :/
+m35_credentials_file_ignored	s/\[ ! -e "\$ch\/credentials" \] \&\& \[ ! -e "\$ch\/credentials.toml" \]/true/
+m36_named_registry_token_ignored	s/ || \$1 ~ \/\^CARGO_REGISTRIES_\[A-Za-z0-9_\]+_TOKEN\$\// /
+m37_exit_verdict_ignored	s/^    \[ -z "\$EXIT_VERDICT" \] || verdict_rc "\$line" || exit 1$/    :/
+m38_verdict_rc_always_red	s/"RELEASABLE "\*) return 0 ;;/"RELEASABLE "*) return 1 ;;/'
 # each planted mutant must change the file, still parse, and turn at least one row RED
 mutants() {
     local tmp pass=0 fail=0 name expr o rc
@@ -706,9 +713,7 @@ mutants() {
     rm -rf -- "${tmp:?}"
     [ "$fail" -eq 0 ]
 }
-
 # ---------------------------------------------------------------- main ----------------------------------------------
-
 ARGS_SEEN="$*"
 case "${1:-}" in
     --self-test) self_test; exit $? ;;
@@ -724,6 +729,7 @@ while [ $# -gt 0 ]; do
         --inbox) [ -n "$DRILL" ] || INBOXF="${2:-}"; shift 2 ;;
         --from) FROM="${2:-}"; shift 2 ;;
         --pinned) PINNED=1; shift ;;
+        --exit-verdict) EXIT_VERDICT=1; shift ;;
         --now) NOW="${2:-}"; shift 2 ;;
         *) caller_error "unknown argument $1" ;;
     esac
