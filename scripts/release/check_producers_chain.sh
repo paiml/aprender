@@ -20,7 +20,8 @@
 #       NIGHTLY_C nor workflow_run.head_sha outside a trailing comment;
 #   P5  is listed below and missing, or chains from the pick and is not listed (the list is complete both ways);
 #   P6  is read by a lane of scripts/release/nightly_train.sh's LANES table whose event pattern is not exactly
-#       ^workflow_run$ (its scheduled runs are gone), or a lane reads workflow_run runs of a workflow not listed.
+#       ^workflow_run$ (its scheduled runs are gone), or a lane reads workflow_run runs of a workflow not listed,
+#       or a listed producer has no lane, or LANES is assigned more than once.
 # Limits: it reads the workflow text, not the scripts a step calls, so a later run step that fetches or checks out
 # main again is not seen; an origin/main a step fetches as a declared comparand (guards-nightly's SATD ceiling) is
 # not a measurement and is not judged here. It reads `on:` as a block mapping with keys at indent 2; any other
@@ -150,11 +151,12 @@ p6() { # ROOT -> FAIL lines; the train's LANES must read a listed producer by it
     local t="$1/scripts/release/nightly_train.sh"
     [ -f "$t" ] || { printf 'FAIL  nightly_train.sh: P6 missing, so its LANES table cannot be read\n'; return 1; }
     awk -F ';' -v prods=" $(printf '%s' "$PRODUCERS" | tr '\n' ' ') " '
-        /^LANES=\047/ { inl = 1; sub(/^LANES=\047/, "") }
+        /^LANES=\047/ { assigned++; inl = 1; sub(/^LANES=\047/, "") }
         inl {
             last = ($0 ~ /\047$/); line = $0; sub(/\047$/, "", line); split(line, a, ";")
             if (a[4] ~ /^\.github\/workflows\/[^\/]+\.yml$/) {
                 w = a[4]; sub(/^.*\//, "", w); sub(/\.yml$/, "", w); lanes++
+                if (index(prods, " " w " ")) seen[w] = 1
                 if (index(prods, " " w " ") && a[5] != "^workflow_run$") {
                     printf "FAIL  nightly_train.sh: P6 lane %s reads %s.yml by event %s; it chains from the pick, so ^workflow_run$\n", a[1], w, a[5]; bad = 1 }
                 if (!index(prods, " " w " ") && a[5] ~ /workflow_run/) {
@@ -163,6 +165,9 @@ p6() { # ROOT -> FAIL lines; the train's LANES must read a listed producer by it
             if (last) { inl = 0; done = 1 }
         }
         END { if (!done || !lanes) { print "FAIL  nightly_train.sh: P6 no LANES table read"; bad = 1 }
+              if (assigned > 1) { print "FAIL  nightly_train.sh: P6 LANES is assigned more than once, so the table read may not be the live one"; bad = 1 }
+              np = split(prods, pp, " "); for (k = 1; k <= np; k++) if (!(pp[k] in seen)) {
+                  printf "FAIL  nightly_train.sh: P6 listed producer %s.yml has no lane, so the train never reads it\n", pp[k]; bad = 1 }
               exit bad }' "$t"
 }
 
@@ -242,6 +247,8 @@ m_lane_unlisted() { changed "$NT" '/^fleet-toolset;/s/;\^schedule\$;/;^workflow_
 m_train_pre_t44() { changed "$NT" 's/;\^workflow_run\$;/;^schedule$;/g'; }
 m_train_gone()    { rm -f -- "$NT"; }
 m_lanes_renamed() { changed "$NT" 's/^LANES=\x27/LANEZ=\x27/'; }
+m_lane_dropped()  { changed "$NT" '/^book;info;book;/d'; }
+m_lanes_twice()   { printf '%s\n' "LANES='book;info;book;.github/workflows/book.yml;^workflow_run$;'" >> "$NT"; }
 m_unlisted()      { synth extra.yml <<< '      - run: true'; }
 m_no_cstep()      { changed toolchain-ceiling.yml '/- name: Measure the night.s C, not main.s head (T44)/,/nightly_c_checkout.sh/d'; }
 m_cstep_or()      { changed install-script.yml "0,/if: github.event_name == 'workflow_run'\$/s//if: github.event_name == 'workflow_run' || true/"; }
@@ -329,6 +336,8 @@ self_test() {
     row p6_train_before_t44         1 'P6 lane deep-examples reads'         -- m_train_pre_t44
     row p6_train_missing            1 'P6 missing'                             -- m_train_gone
     row p6_no_lanes_table           1 'P6 no LANES table read'                 -- m_lanes_renamed
+    row p6_listed_without_a_lane    1 'P6 listed producer book.yml has no lane' -- m_lane_dropped
+    row p6_lanes_assigned_twice     1 'P6 LANES is assigned more than once'   -- m_lanes_twice
     rm -rf -- "${TMP_ST:?}"
     if [ "$FAILED" -eq 0 ]; then printf 'SELF-TEST PASSED: %s rows\n' "$CASES"; return 0; fi
     printf 'SELF-TEST FAILED: %s of %s rows\n' "$FAILED" "$CASES"; return 1
@@ -370,7 +379,9 @@ m33_p6_not_called	s/^    p6 "\$root" || rc=1$/    :/
 m34_listed_any_event	s/ && a\[5\] != "^workflow_run\$")/ \&\& 0)/
 m35_unlisted_any_event	s/ && a\[5\] ~ \/workflow_run\/)/ \&\& 0)/
 m36_missing_train_read	s/\[ -f "\$t" \] ||/[ 1 ] ||/
-m37_no_table_ok	s/if (!done || !lanes) {/if (0) {/'
+m37_no_table_ok	s/if (!done || !lanes) {/if (0) {/
+m38_a_listed_lane_may_be_missing	s/if (!(pp\[k\] in seen)) {/if (0) {/
+m39_a_second_table_ok	s/if (assigned > 1) {/if (0) {/'
 mutants() {
     local tmp name expr killed=0 total=0 errors=0 out cut reds
     cut="$(grep -n -m1 -e "^# -* the case table" "$SCRIPT_PATH" | cut -d: -f1)"
@@ -416,7 +427,7 @@ main() {
     case "${1:-}" in
         --self-test) self_test; return $? ;;
         --mutants) mutants; return $? ;;
-        -h | --help) sed -n '2,33p' "$SCRIPT_PATH"; return 0 ;;
+        -h | --help) sed -n '2,34p' "$SCRIPT_PATH"; return 0 ;;
         --root) root="${2:-}"; [ -d "$root" ] || caller_error "--root DIR" ;;
         '') ;;
         *) caller_error "unknown argument '$1' (--root DIR|--self-test|--mutants)" ;;
