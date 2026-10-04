@@ -1,0 +1,162 @@
+# ─────────────────────────────────────────────────────────────────────────────
+# python-runtime-count-v1
+#
+# COUNT THE PYTHON THE GATE PATH RUNS, not how its scripts spell it (#TICKET;
+# replaces the static scan of #4684, which closes into this).
+#
+# WHY. The build is Rust only, and Python leaving the gate path has to be
+# measured. A text scan of how scripts call tools did not converge: Python is
+# reached through env, through a variable, through a heredoc, through an
+# absolute #! line or a versioned python3.NN, and each spelling needs its own
+# pattern. This measures at run time, so the spelling does not matter.
+#
+# THE MECHANISM is scripts/python_runcount.sh (bash + awk + strace, no Python):
+#   1. a PATH shim for python, python3, uv and uvx logs every call with its
+#      caller, then execs the real tool;
+#   2. an execve trace (strace -f) of the whole lane catches what the shim
+#      cannot: an absolute interpreter path, python3.NN, a #! script, a
+#      renamed argv[0].
+# Both feed one key function, so a call both saw is one entry point. The count
+# is the number of DISTINCT entry points (a script, a module, or -c/stdin code
+# keyed by the script that holds it).
+#
+# MEASURED (origin/main 316dee2cd4, lane
+# `bash scripts/ci_guards.sh --step-timeout 3000 guard-tree`, run to the end):
+#   count 176 = 72 scripts + 67 stdin + 35 -c + 1 -m + 1 info; 171 seen by both
+#   mechanisms, 5 by the trace alone. A second run: 176, the same key set (GREEN).
+#   Planting env_call after the lane (on the 300 s lane below): 118 -> 119, RED,
+#   naming script:sub/tool.py.
+#   The lane must run to the end: with --step-timeout 300 one step times out and
+#   the count (118, then 146) is only a lower bound that moves with host load.
+#
+# REPORT-ONLY TODAY. It lands as a ratchet from the measured value (head vs
+# base, never worse) and blocks only after three green nights, by sign-off.
+# ─────────────────────────────────────────────────────────────────────────────
+name: python-runtime-count
+version: "1.0.0"
+scope: >
+  The distinct Python entry points (python*, uv, uvx) that a lane command runs,
+  counted at run time by a PATH shim plus an execve trace, and the never-worse
+  comparison of that count between a base and a head run of the same lane.
+  Out of scope: which lanes are measured (the wiring), and whether a given
+  entry point should be ported (each port is its own ticket).
+status: active
+
+metadata:
+  kind: pattern     # a run-time inventory guard over shell lanes, not a math
+                    # kernel. Explicit so `pv validate`'s `kernel` default never
+                    # silently applies.
+  version: "1.0.0"
+  created: '2026-10-04'
+  last_modified: '2026-10-04'
+  author: PAIML Engineering
+  references:
+    - 'scripts/python_runcount.sh — driver: --run, --count, --compare, --self-test, --mutants'
+    - 'scripts/lib/python_runcount/ — shim, trace.awk, keys.awk, the plant lanes'
+    - 'issue #TICKET — the run-time count; issue #4684 — the static scan it replaces'
+  description: >
+    Every way a lane reaches Python raises the count; the count does not change
+    when nothing changed; a side without an execve trace is not_measured.
+
+equations:
+  prc_count_is_distinct_entry_points:
+    formula: |
+      let R = shim records ∪ trace records of one --run
+      count = |{ key(r) : r in R, r runs python*, uv or uvx }|
+    domain: 'one --run output directory with trace=measured'
+    codomain: 'natural number'
+    invariants:
+      - 'the shim and the trace share one key function, so a call both saw is counted once'
+      - 'a script under a temp dir is keyed ~tmp/<name>, so a mktemp name does not make a new entry point'
+  prc_never_worse:
+    formula: |
+      compare(base, head) = GREEN  iff  count(head) <= count(base)
+                          = RED    iff  count(head) >  count(base), listing keys(head) \ keys(base)
+                          = NOT_MEASURED  iff  either side has trace != measured
+    domain: 'two --run directories of the same lane'
+    codomain: '{GREEN, RED, NOT_MEASURED}'
+
+proof_obligations:
+  - id: PRC-OB-001
+    statement: "Python reached through env, through a variable and through a heredoc each raises the count."
+    discharged_by: falsification_tests[0]
+  - id: PRC-OB-002
+    statement: "Python the shim cannot see (an absolute #! line, python3.NN, a renamed argv[0]) is counted by the trace."
+    discharged_by: falsification_tests[1]
+  - id: PRC-OB-003
+    statement: "A head that adds an entry point is RED and names it; a side without a trace is NOT_MEASURED (exit 2), never a pass."
+    discharged_by: falsification_tests[2]
+  - id: PRC-OB-004
+    statement: "The count is stable: the same script run twice, after a cd, from a fresh temp dir, or as -c code holding a newline and a tab is one entry point per run and across runs."
+    discharged_by: falsification_tests[3]
+  - id: PRC-OB-005
+    statement: "Each check, once dropped from the code, leaves the plant table RED (mutants killed = total, errors 0)."
+    discharged_by: falsification_tests[4]
+  - id: PRC-OB-006
+    statement: "A descendant that outlives the lane (a daemon) neither holds --run open nor leaves the tracer running."
+    discharged_by: falsification_tests[5]
+
+falsification_tests:
+  - id: PRC-F-001
+    rule: a lane that calls Python through env, a variable or a heredoc raises the count
+    prediction: >-
+      Plants env_call (`env python3 sub/tool.py`), var_call (`"$PY" sub/tool.py`)
+      and heredoc (`python3 - <<'PYCODE'`) each count exactly one entry point;
+      the empty plant counts 0 with trace=measured.
+    test: 'bash scripts/python_runcount.sh --self-test   # rows P0-P3'
+    if_fails: 'a lane could add Python in a spelling the count does not see'
+    mutation: 'drop the shim log, or key stdin code without its lane; the table must turn RED'
+  - id: PRC-F-002
+    rule: what the shim misses, the trace catches
+    prediction: >-
+      An absolute #! line counts with source `trace` only; a versioned
+      python3.11 and an `exec -a renamed python3.11` count; with the trace
+      off the absolute #! line is missed and the run says not_measured.
+    test: 'bash scripts/python_runcount.sh --self-test   # rows P7-P9, P12, P14'
+    if_fails: 'a shim-only count would read low and pass'
+    mutation: 'drop the shebang table, narrow the interpreter pattern, or key on argv[0] alone; the table must turn RED'
+  - id: PRC-F-003
+    rule: never worse, and never a pass without a trace
+    prediction: >-
+      compare(none, env_call) exits 1 and names script:sub/tool.py; equal or
+      lower counts exit 0; a base run with no trace exits 2.
+    test: 'bash scripts/python_runcount.sh --self-test   # rows C1-C4'
+    if_fails: 'new Python could land green, or an unmeasured run could read as zero'
+    mutation: 'return 0 on the not_measured path, or compare with -lt; the table must turn RED'
+  - id: PRC-F-004
+    rule: one entry point is one key
+    prediction: >-
+      A script run twice is one key; a lane that cds into sub/ before running
+      tool.py keys it sub/tool.py from both mechanisms; a script in a fresh
+      mktemp dir keys ~tmp/cell.py; -c code in a mktemp script keys -c@tmp.X;
+      -c code holding a newline and a tab is one shim record of 4 fields.
+    test: 'bash scripts/python_runcount.sh --self-test   # rows P10, P11, P13, P15-P17'
+    if_fails: 'the count would drift run to run and the ratchet would read noise as RED'
+    mutation: 'drop chdir tracking, parent inheritance, distinct-key aggregation, the temp-dir key, the mktemp-name collapse, or the newline/tab escape in the shim; the table must turn RED'
+  - id: PRC-F-005
+    rule: every check has a killing mutant
+    prediction: 'bash scripts/python_runcount.sh --mutants prints killed=N total=N errors=0 and exits 0'
+    test: 'bash scripts/python_runcount.sh --mutants'
+    if_fails: 'a check could be deleted with the plant table still green'
+  - id: PRC-F-006
+    rule: a daemonized descendant does not hang the run or orphan the tracer
+    prediction: >-
+      The daemon plant returns rc 0 and keys script:sub/tool.py; the run says
+      detached=yes and no strace of that run is left.
+    test: 'bash scripts/python_runcount.sh --self-test   # rows D1, D2'
+    if_fails: 'a lane that starts a service would hang the measured run, or leave a tracer attached'
+    mutation: 'attach strace without -D, let it ignore SIGTERM (-I 3), or skip stop_tracer; the table must turn RED'
+
+non_goals:
+  - "Wiring. No lane runs under the count yet; nightly report-only first, blocking only after three green nights and a sign-off."
+  - "Hosts without a working strace (ptrace denied, strace absent). There every run is not_measured (exit 2); the shim log is kept as evidence only."
+  - "Python started by a process outside the lane's process tree (a daemon, a service, a remote host)."
+  - "Python a descendant runs after the lane command has exited. The trace detaches then (strace -D -I 2), so a daemon is counted only for what it ran before the command returned."
+  - "Argument text past 256 characters. The shim keeps each argv element to one line of at most 256 characters; a script path longer than that would key on its first 256."
+  - "Judging an entry point. The count says what runs; porting each to Rust is separate work."
+
+binding_registry:
+  checker: scripts/python_runcount.sh
+  selftest: 'bash scripts/python_runcount.sh --self-test'
+  mutants: 'bash scripts/python_runcount.sh --mutants'
+  issue: "https://github.com/paiml/aprender/issues/TICKET"

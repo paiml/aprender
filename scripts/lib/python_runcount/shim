@@ -1,0 +1,48 @@
+#!/usr/bin/env bash
+# PATH shim for python, python3, uv and uvx (scripts/python_runcount.sh --run).
+# Installed under each of those names in a shim dir that is put FIRST on PATH.
+# It logs one record per call, then execs the real tool found later on PATH.
+# The record is raw: the working dir, the caller's argv (the parent process) and
+# this call's argv. keys.awk turns raw records into entry points, the same way
+# for this log and for the execve trace, so the two never disagree on a key.
+# Fields are tab separated; argv elements are joined by the unit separator 0x1f.
+name="${0##*/}"
+us=$'\037'
+log="${PYRUN_LOG:-}"
+shimdir="${PYRUN_SHIM_DIR:-}"
+clean() { # clean ARG sets c to ARG on one line, at most 256 chars: -c code can hold newlines and
+    # tabs, which would split a record, and a long record is not one atomic append.
+    # No key needs more than a path, and a path is short.
+    c=$1
+    c=${c//$'\n'/\\n}
+    c=${c//$'\t'/\\t}
+    c=${c:0:256}
+}
+argv_of() { # argv_of PID -> argv of PID, each element clean, joined by 0x1f ("?" if unreadable)
+    local f="/proc/$1/cmdline" a out="" e
+    if [ -r "$f" ]; then
+        while IFS= read -r -d '' e; do clean "$e"; out="$out$us$c"; done < "$f"
+        a=${out#"$us"}
+        printf '%s' "$a"
+    else
+        printf '?'
+    fi
+}
+if [ -n "$log" ]; then
+    self="$name"
+    for a in "$@"; do clean "$a"; self="$self$us$c"; done
+    printf 'shim\t%s\t%s\t%s\n' "$PWD" "$(argv_of "$PPID")" "$self" >> "$log"
+fi
+# The real tool: the first executable of this name on PATH outside the shim dir.
+real=""
+IFS=: read -r -a dirs <<< "$PATH"
+for d in "${dirs[@]}"; do
+    [ -n "$d" ] || continue
+    [ "$d" != "$shimdir" ] || continue
+    if [ -x "$d/$name" ] && [ ! -d "$d/$name" ]; then real="$d/$name"; break; fi
+done
+if [ -z "$real" ]; then
+    printf 'python_runcount shim: no real %s on PATH\n' "$name" >&2
+    exit 127
+fi
+exec "$real" "$@"
