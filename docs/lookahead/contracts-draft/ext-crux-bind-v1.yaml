@@ -6,7 +6,7 @@
 metadata:
   id: ext-crux-bind-v1
   kind: schema
-  version: "0.2.0-draft"
+  version: "0.3.0-draft"
   status: draft
   description: >
     EXT-001 §10.1 EXT-24 precondition: the CRUX schema can express the C1-C7
@@ -65,8 +65,29 @@ falsification_tests:
     fixture: fixtures/crux_bind/cases.json#B0-no-registry
     expect: 2
     prediction: "On reg-missing.rs, which has no CRUX_COMPETITORS array, the checker exits 2 with the single line 'B0 CRUX_COMPETITORS not found'."
-    test: "crux_bind_check.py --self-test, case B0-no-registry (exit code only today; see qa_gate)"
+    test: "crux_bind_check.py --self-test, case B0-no-registry (exit code only; FALSIFY-CRUXBIND-008 separates B0 from B1)"
     if_fails: "A missing registry is read as an empty set, so B1 flags every arm and the case exits 2 for the wrong reason."
+  - id: FALSIFY-CRUXBIND-008
+    rule: "registry not found is RED through B0 itself, with no arm for B1 to flag"
+    fixture: fixtures/crux_bind/cases.json#B0-no-registry-no-arms
+    expect: 2
+    prediction: "On reg-missing.rs with arms [], the checker exits 2 with the single line 'B0 CRUX_COMPETITORS not found'. With no arm to check, B1 cannot carry the exit, so the case fails unless B0 fires."
+    test: "crux_bind_check.py --self-test, case B0-no-registry-no-arms"
+    if_fails: "A missing registry is read as an empty set: with no arms nothing fires, and a tree with no registry reports bound."
+  - id: FALSIFY-CRUXBIND-009
+    rule: "a hyphen separates letter and name as an em dash does"
+    fixture: fixtures/crux_bind/cases.json#B2-hyphen-collision
+    expect: 2
+    prediction: "k1.yaml ('K — Ecosystem & Integration') and k3-hyphen.yaml ('K - Deployment & Integration'): the checker exits 2 with the single line \"B2 letter K has 2 names: ['Deployment & Integration', 'Ecosystem & Integration']\"."
+    test: "crux_bind_check.py --self-test, case B2-hyphen-collision"
+    if_fails: "The category regex drops the hyphen form, so a label written with a hyphen is never read and its collision goes unseen. All 316 category lines on main 316dee2cd4 use an em dash, so this guards a form main does not use yet."
+  - id: FALSIFY-CRUXBIND-010
+    rule: "control: a plain scalar with a trailing comment reads as the same name"
+    fixture: fixtures/crux_bind/cases.json#B2-control-plain-same-name
+    expect: 0
+    prediction: "d1.yaml (double-quoted 'D — Inference & Generation') and d3-plain-comment.yaml (the same name as a plain scalar followed by a # comment): the checker exits 0, with one name for letter D."
+    test: "crux_bind_check.py --self-test, case B2-control-plain-same-name"
+    if_fails: "The category regex keeps the comment or the trailing spaces, so one name reads as two and B2 reports a collision that is not there."
 qa_gate:
   id: F-CRUXBIND-QA-001
   name: The CRUX bind census reports only real violations
@@ -74,13 +95,14 @@ qa_gate:
     Every planted case exits with its expected code, and each RED case prints only
     violations of its own class (B0, B1 or B2). The self-test compares exit codes only.
     On 2026-10-04 each RED case was run by hand and printed only lines of its own
-    class; the Rust port compares the lines too.
+    class; the Rust port compares the lines too. B0-no-registry-no-arms leaves B1 no
+    arm to flag, so B0 alone carries its exit code.
   checks:
     - planted_case_exits_as_expected
     - red_case_prints_only_its_own_class
     - control_accepted
-  pass_criteria: "crux_bind_check.py --self-test prints 'self-test: 7/7 ok', and each RED case prints only lines of its own class"
-  falsification: "Mutate one rule and the self-test exits 1: 7/7 sed mutants were killed on 2026-10-03. One mutant survives the exit-code-only self-test (checked 2026-10-04): reading a missing registry as an empty set still exits 2 through B1, so B0-no-registry passes for the wrong reason until the self-test compares lines"
-mutation_record: "7/7 sed mutants killed by --self-test (2026-10-03). One surviving mutant found 2026-10-04, recorded under qa_gate."
+  pass_criteria: "crux_bind_check.py --self-test prints 'self-test: N/N ok', where N is the number of rows in fixtures/crux_bind/cases.json (10 on 2026-10-04), and each RED case prints only lines of its own class"
+  falsification: "Mutate one rule and the self-test exits 1: 7/7 sed mutants were killed on 2026-10-03. On 2026-10-04, 23 in-memory mutants: one per rule check (B0, B1, B2 vacuous, B2 collision), reading a missing registry as an empty set, the collision threshold, the arms argument, the registry comment strip, each CAT_RE branch (single quote, em dash, hyphen, comment stop), the name strip, and each of the 10 EXT_ARMS members. Against the 7 cases of draft 0.2.0, 9 were killed (1 by a crash) and 14 survived: reading a missing registry as an empty set (B0-no-registry still exits 2, through B1), the hyphen branch, the comment stop, the name strip, and dropping any one EXT_ARMS member (10: reg-partial.rs lacks seven arms, so B1-missing-arm still exits 2 whichever one arm is dropped). Draft 0.3.0 plants three cases (FALSIFY-CRUXBIND-008 to -010), which kill the first four: 13 killed, 1 by a crash. The 10 EXT_ARMS mutants survive. Killing them needs one planted registry per arm, each lacking exactly that arm (.rs fixture data, outside this data-only change), or an arm list derived from EXT-001 section 10 instead of a hand copy. PROPOSE for the Rust port: derive the list from section 10 and compare violation lines."
+mutation_record: "7/7 sed mutants killed by --self-test (2026-10-03). 23 in-memory mutants (2026-10-04): 14 survived the 7-case self-test; the 10-case self-test kills 13 (1 by a crash), and the 10 EXT_ARMS-member mutants survive. Recorded under qa_gate."
 initial_state: "origin/main 316dee2cd4 is RED: 7 arms unregistered, 5 letters collide (re-measured 2026-10-04 11:03Z over the 318 contracts/crux-*.yaml)"
-verification: "External check, by hand: python3 scripts/lookahead/crux_bind_check.py --self-test  # 2026-10-04 11:03Z: self-test: 7/7 ok"
+verification: "External check, by hand: python3 scripts/lookahead/crux_bind_check.py --self-test  # 2026-10-04 11:59Z: self-test: 10/10 ok"

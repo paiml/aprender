@@ -4,6 +4,9 @@
  {"id": "B1-commented-arm-not-registered", "validator": "reg-partial.rs", "yaml": ["d1.yaml"], "arms": ["unsloth"], "expect": 2},
  {"id": "B1-control-subset", "validator": "reg-partial.rs", "yaml": ["d1.yaml"], "arms": ["llama_cpp", "ollama"], "expect": 0},
  {"id": "B2-letter-collision", "validator": "reg-full.rs", "yaml": ["k1.yaml", "k2.yaml"], "expect": 2},
+ {"id": "B2-hyphen-collision", "validator": "reg-full.rs", "yaml": ["k1.yaml", "k3-hyphen.yaml"], "expect": 2},
+ {"id": "B2-control-plain-same-name", "validator": "reg-full.rs", "yaml": ["d1.yaml", "d3-plain-comment.yaml"], "expect": 0},
  {"id": "B2-vacuous", "validator": "reg-full.rs", "yaml": ["nocat.yaml"], "expect": 2},
- {"id": "B0-no-registry", "validator": "reg-missing.rs", "yaml": ["d1.yaml"], "expect": 2}
+ {"id": "B0-no-registry", "validator": "reg-missing.rs", "yaml": ["d1.yaml"], "expect": 2},
+ {"id": "B0-no-registry-no-arms", "validator": "reg-missing.rs", "yaml": ["d1.yaml"], "arms": [], "expect": 2}
 ]
