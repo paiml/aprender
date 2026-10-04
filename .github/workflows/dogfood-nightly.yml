@@ -1,0 +1,100 @@
+name: dogfood-nightly
+
+# The producer for the nightly train's `dogfood` verdict lane (#4672).
+#
+# It runs the SAME entry point release day runs, in the same order as
+# scripts/release/autopilot.sh's dogfood step: `dogfood.sh --phase pre-publish`
+# (rc 0 = GO), the tree still clean, then the publish preflight's own R5 reader
+# (`check_publish_preflight.sh --receipt-only`) on the receipt that run wrote.
+# Nothing here re-implements a row: a red row is red because dogfood.sh says so.
+#
+# NO REGISTRY TOKEN. The job proves it cannot publish before it builds anything
+# (scripts/lib/no_registry_token.sh, case table first). A flag is not a guard.
+#
+# FALSIFIER. `workflow_dispatch` with `plant: bashrs` commits one shell script
+# with a known DET002 into the job's own checkout (never pushed) before the
+# run. The bashrs row must go red, so the job must go red. A producer whose
+# planted red reads green measures nothing.
+
+on:
+  schedule:
+    - cron: '0 21 * * *'   # 21:00 UTC; schedule events on this account fire hours late
+  workflow_dispatch:
+    inputs:
+      plant:
+        description: 'falsifier: none, or bashrs (plant a DET002 script in the job checkout)'
+        required: false
+        default: 'none'
+        type: choice
+        options: [none, bashrs]
+
+concurrency:
+  group: dogfood-nightly-${{ github.ref }}
+  cancel-in-progress: false
+
+permissions:
+  contents: read
+
+jobs:
+  dogfood:
+    # Low-priority pool, like coverage-nightly and examples-nightly: a multi-hour
+    # release-protocol run never takes a PR or merge-queue slot.
+    runs-on: [self-hosted, Linux, X64, clean-room, yoga]
+    timeout-minutes: 420   # release day (0.70.1): 267 min on a larger host
+    env:
+      PLANT: ${{ github.event.inputs.plant || 'none' }}
+    steps:
+      - uses: actions/checkout@v7
+        with:
+          fetch-depth: 0
+          clean: false
+
+      - name: No registry token is reachable (case table, then this job)
+        run: |
+          set -euo pipefail
+          bash scripts/check_no_registry_token.sh
+          . scripts/lib/no_registry_token.sh
+          no_registry_token || { echo "::error::a registry token is reachable; refusing to run"; exit 2; }
+          echo "no-token: none reachable (environment, cargo credentials files, cargo config token)"
+
+      - name: Plant the falsifier (dispatch with plant=bashrs only)
+        if: env.PLANT == 'bashrs'
+        run: |
+          set -euo pipefail
+          mkdir -p scripts/planted
+          # The shape of dogfood.sh's own bashrs positive control: a timestamp landing in an
+          # artifact's name, which bashrs DET002 flags (a timestamp only echoed is not a finding).
+          cat > scripts/planted/det002.sh <<'PLANT'
+          #!/bin/sh
+          STAMP=$(date +%s%N)
+          cp build.log "out/report_$STAMP.log"
+          PLANT
+          git add scripts/planted/det002.sh
+          git -c core.hooksPath=/dev/null -c user.name=dogfood-nightly -c user.email=noreply@paiml.com \
+            commit -q -m "planted: DET002 falsifier (job-local, never pushed)"
+          echo "planted at $(git rev-parse --short HEAD)"
+
+      - name: dogfood --phase pre-publish, then preflight R5 (autopilot's dogfood step)
+        run: |
+          set -uo pipefail
+          mkdir -p "$RUNNER_TEMP/dogfood"
+          bash scripts/dogfood.sh --phase pre-publish > "$RUNNER_TEMP/dogfood/dogfood-pre-publish.log" 2>&1; rc=$?
+          tail -n 40 "$RUNNER_TEMP/dogfood/dogfood-pre-publish.log"
+          [ "$rc" -eq 0 ] || { echo "::error::dogfood pre-publish NO-GO rc=$rc"; exit 1; }
+          dirty=$(git status --porcelain)
+          [ -z "$dirty" ] || { echo "::error::tree dirty after dogfood: $(printf '%s' "$dirty" | head -3 | tr '\n' ' ')"; exit 1; }
+          bash scripts/check_publish_preflight.sh --receipt-only > "$RUNNER_TEMP/dogfood/dogfood-r5.log" 2>&1; rc=$?
+          tail -n 2 "$RUNNER_TEMP/dogfood/dogfood-r5.log"
+          [ "$rc" -eq 0 ] || { echo "::error::R5 refused the dogfood receipt rc=$rc"; exit 1; }
+          echo "DOGFOOD GO at $(git rev-parse HEAD) (R5 holds)"
+
+      - name: Publish the receipt, its row seconds and the logs
+        if: always()
+        uses: actions/upload-artifact@v7
+        with:
+          name: dogfood-receipt
+          path: |
+            .dogfood/receipt-*.json
+            .dogfood/receipt-*.rows.tsv
+            ${{ runner.temp }}/dogfood/*.log
+          if-no-files-found: error
