@@ -40,12 +40,18 @@ Usage:
   python3 docs/lookahead/0.73/orphan_census.py --pin SHA [--crate crates/NAME ...] [--tsv OUT]
   python3 docs/lookahead/0.73/cite_drift.py --list | python3 docs/lookahead/0.73/orphan_census.py --cites -
   python3 docs/lookahead/0.73/orphan_census.py --self-test
+Any directory of the checkout works as the cwd. rc 3 when the pin lists no crates/*/src .rs file (with --cites,
+when a cited pin does): a census of nothing is refused, never printed as 0 orphans.
 """
 import argparse
+import contextlib
+import io
+import os
 import posixpath as pp
 import re
 import subprocess
 import sys
+import tempfile
 from collections import Counter, defaultdict
 
 TEST_RE = re.compile(r'#\[(tokio::)?test(\]|\()|#\[test_case|#\[rstest|proptest! *\{')  # the #3809 guard's regex
@@ -272,8 +278,16 @@ def git(*args, inp=None):
     return subprocess.run(["git", *args], input=inp, capture_output=True, check=True).stdout
 
 
+class Vacuous(Exception):
+    """A pin that lists no crates/*/src .rs file: its census would answer 0 of 0, so it is refused (rc 3)."""
+
+
 def load(pin):
-    names = git("ls-tree", "-r", "--name-only", "-z", pin).decode().split("\0")
+    # --full-tree: without it ls-tree lists only the cwd's subtree, so a run from docs/lookahead/0.73 read no file
+    # and printed "0 orphans" with rc 0.
+    names = git("ls-tree", "-r", "--full-tree", "--name-only", "-z", pin).decode().split("\0")
+    if not any(UNIVERSE_RE.fullmatch(f) for f in names):
+        raise Vacuous(f"no crates/*/src .rs file is listed at {pin}; refusing a vacuous answer")
     want = [f for f in names if f.endswith(".rs") or pp.basename(f) == "Cargo.toml" or f == BASELINE]
     blob = git("cat-file", "--batch", inp="".join(f"{pin}:{f}\n" for f in want).encode())
     files, i = {}, 0
@@ -359,17 +373,36 @@ def parse_cites(stream):
     return by_pin
 
 
-def cites(stream):
-    by_pin = parse_cites(stream)
-    hits = []
-    for pin in sorted(by_pin):
+def dark_at(pin):
+    """{path: status} of the crates/*/src files that do not compile at pin; None when pin lists none (Vacuous)."""
+    try:
         files, bl, tree = load(pin)
-        dark = {r["path"]: r["status"] for r in census(files, bl, tree)[0]}
-        hits += [(loc, path, pin, dark[path]) for loc, path in by_pin[pin] if path in dark]
+    except Vacuous:
+        return None
+    return {r["path"]: r["status"] for r in census(files, bl, tree)[0]}
+
+
+def cites_line(nhits, by_pin, vacuous):
+    """The --cites summary. The cites at a vacuous pin are not measured: the line counts them apart."""
     n = sum(len(v) for v in by_pin.values())
-    print(f"orphan_census --cites: {len(hits)} of {n} cites into crates/*/src land in a file that does not compile at its pin")
+    nm = sum(len(by_pin[p]) for p in vacuous)
+    tail = f"; {nm} not measured, at pins that list no crates/*/src file: {' '.join(vacuous)}" if nm else ""
+    return f"orphan_census --cites: {nhits} of {n - nm} cites into crates/*/src land in a file that does not compile at its pin{tail}"
+
+
+def cites(stream):
+    """Print the cites into crates/*/src that land in a file that does not compile at their pin. 3 if a cited pin
+    lists no crates/*/src file."""
+    by_pin = parse_cites(stream)
+    darks = {pin: dark_at(pin) for pin in sorted(by_pin)}
+    vacuous = [pin for pin, dark in darks.items() if dark is None]
+    hits = []
+    for pin, dark in darks.items():
+        hits += [(loc, path, pin, dark[path]) for loc, path in by_pin[pin] if path in (dark or {})]
+    print(cites_line(len(hits), by_pin, vacuous))
     for loc, path, pin, s in sorted(hits):
         print(f"  {loc} {path} @{pin} ({s})")
+    return 3 if vacuous else 0
 
 
 def fixture():
@@ -439,6 +472,77 @@ def classifier(rows):
     return r, cls
 
 
+def scratch_repo(root, commits):
+    """Make root a git repo with one commit per {path: text, or None to delete it}; return the commits' shas. No
+    GIT_* variable of the caller and no global or system config reach it, so no GIT_DIR, hook or signing applies."""
+    env = {k: v for k, v in os.environ.items() if not k.startswith("GIT_")}
+    env.update(GIT_CONFIG_GLOBAL=os.devnull, GIT_CONFIG_NOSYSTEM="1", GIT_AUTHOR_NAME="t", GIT_AUTHOR_EMAIL="t@t",
+               GIT_COMMITTER_NAME="t", GIT_COMMITTER_EMAIL="t@t")
+
+    def run(*args):
+        return subprocess.run(["git", "-C", root, *args], capture_output=True, check=True, env=env).stdout
+
+    run("init", "-q")
+    shas = []
+    for i, tree in enumerate(commits):
+        for path, text in tree.items():
+            f = os.path.join(root, path)
+            if text is None:
+                os.remove(f)
+                continue
+            os.makedirs(os.path.dirname(f), exist_ok=True)
+            with open(f, "w") as fh:
+                fh.write(text)
+        run("add", "-A")
+        run("commit", "-q", "-m", f"c{i}")
+        shas.append(run("rev-parse", "HEAD").decode().strip())
+    return shas
+
+
+def at(cwd, fn, *args):
+    """fn(*args) called with cwd as the working directory: its value, or the name of the exception it raised."""
+    here = os.getcwd()
+    os.chdir(cwd)
+    try:
+        return fn(*args)
+    except Exception as e:  # a case reads the failure; the other cases still run
+        return type(e).__name__
+    finally:
+        os.chdir(here)
+
+
+def captured(fn, *args):
+    """(fn(*args), what it printed to stdout)."""
+    buf = io.StringIO()
+    with contextlib.redirect_stdout(buf):
+        val = fn(*args)
+    return val, buf.getvalue()
+
+
+def subdir_cases():
+    """Cases 32-34: a scratch repo read from its docs/sub, as a run from docs/lookahead/0.73 reads this one."""
+    src = {"crates/p/Cargo.toml": '[package]\nname = "p"\n', "crates/p/src/lib.rs": "mod a;\n",
+           "crates/p/src/a.rs": "fn a() {}\n", "crates/p/src/dark.rs": "fn d() {}\n"}
+    with tempfile.TemporaryDirectory() as tmp:
+        full, bare = scratch_repo(tmp, [{**src, "docs/sub/x.md": "x\n"}, dict.fromkeys(src)])
+        sub = os.path.join(tmp, "docs", "sub")
+        got = at(sub, lambda: census(*load(full))[:2])
+        refused = at(sub, load, bare)
+        stream = [f"  x.md:1 :1 = crates/p/src/dark.rs:1 @{full[:10]}\n", f"  x.md:2 :1 = crates/p/src/a.rs:1 @{bare[:10]}\n"]
+        cited = at(sub, captured, cites, stream)
+    want = (f"orphan_census --cites: 1 of 1 cites into crates/*/src land in a file that does not compile at its pin; "
+            f"1 not measured, at pins that list no crates/*/src file: {bare[:10]}\n"
+            f"  x.md:1 crates/p/src/dark.rs @{full[:10]} (orphan)\n")
+    return [
+        ("32 from a subdirectory the pin's full tree is read: 3 src files, crates/p/src/dark.rs the one orphan",
+         isinstance(got, tuple) and got[1] == 3
+         and [r["path"] for r in got[0] if r["status"] == "orphan"] == ["crates/p/src/dark.rs"]),
+        ("33 a pin that lists no crates/*/src file is refused, never read as 0 orphans", refused == "Vacuous"),
+        ("34 --cites counts a refused pin's cites apart, as not measured, and returns 3; the other pin still hits",
+         cited == (3, want)),
+    ]
+
+
 def self_test():
     fx = fixture()
     rows, nsrc, gaps, _ = census(fx, {"crates/p/src/m.rs"})
@@ -498,13 +602,26 @@ def self_test():
         ("31 no twin: no code (empty sub/i.rs, comment-only note.rs), or a copy of a dark file only (dup1, dup2)",
          all(r["crates/p/src/" + f]["twin"] == "" for f in ("sub/i.rs", "note.rs", "dup1.rs", "dup2.rs"))),
         ("28 can_name table", all(can_name(lit, bases, tgt) == want for lit, bases, tgt, want in CAN_NAME_CASES)),
-    ]
+    ] + subdir_cases()
     bad = 0
     for label, ok in cases:
         bad += not ok
         print(f"  {'ok  ' if ok else 'FAIL'} {label}")
     print(f"self-test: {len(cases) - bad}/{len(cases)} cases pass")
     return 1 if bad else 0
+
+
+def census_pin(rev, crates, tsv):
+    """Print rev's census, and write it to tsv when given: 0, or 3 when rev lists no crates/*/src file."""
+    pin = git("rev-parse", "--short=10", rev).decode().strip()
+    try:
+        files, bl, tree = load(pin)
+    except Vacuous as e:
+        print(f"orphan_census: {e}", file=sys.stderr)
+        return 3
+    rows, nsrc, gaps, _ = census(files, bl, tree)
+    report(pin, rows, nsrc, gaps, bl, crates, tsv)
+    return 0
 
 
 def main():
@@ -519,15 +636,10 @@ def main():
         return self_test()
     if a.cites:
         with (sys.stdin if a.cites == "-" else open(a.cites)) as fh:
-            cites(fh)
-        return 0
+            return cites(fh)
     if not a.pin:
         ap.error("--pin, --cites or --self-test")
-    pin = git("rev-parse", "--short=10", a.pin).decode().strip()
-    files, bl, tree = load(pin)
-    rows, nsrc, gaps, _ = census(files, bl, tree)
-    report(pin, rows, nsrc, gaps, bl, set(c.rstrip("/") for c in a.crate), a.tsv)
-    return 0
+    return census_pin(a.pin, set(c.rstrip("/") for c in a.crate), a.tsv)
 
 
 if __name__ == "__main__":

@@ -19,11 +19,14 @@ checks itself: before each commit a file must hold the text the previous commit 
 pin's text; a source's last text must be the text that its import left on main. A gap fails the run.
 
 Usage: unit_history.py --pin REV [--verdict V ...] [--source PREFIX=DIR ...] [--tsv PATH] | --self-test
+rc 3 when the pin lists no crates/*/src .rs file: orphan_census.load() refuses a vacuous answer.
 """
 import argparse
+import os
 import os.path as pp
 import subprocess
 import sys
+import tempfile
 from collections import Counter
 
 sys.path.insert(0, pp.dirname(pp.abspath(__file__)))
@@ -101,9 +104,11 @@ def read(repo, specs):
 def replay(repo, rev, paths, final):
     """(log, after, broken): rev's first-parent log over paths in repo, oldest first; {(log index, path): text}
     after each commit that touched the path, None once deleted; and {path: gaps} for each path whose replay breaks,
-    final holding the text each path must end on."""
+    final holding the text each path must end on. The paths go to git as :(top,literal) pathspecs, from repo's root
+    and as plain text whatever the cwd: from docs/lookahead/0.73 a bare path matched nothing."""
     log = parse_log(git(repo, "log", "--first-parent", "--diff-merges=first-parent", "--reverse",
-                        f"--format={MARK}%H %h %cs %s", "--name-only", rev, "--", *sorted(paths)).decode())
+                        f"--format={MARK}%H %h %cs %s", "--name-only", rev, "--",
+                        *(f":(top,literal){p}" for p in sorted(paths))).decode())
     asks = [(i, p) for i, c in enumerate(log) for p in sorted(c[4] & paths)]
     texts = read(repo, [f"{log[i][0]}{up}:{p}" for i, p in asks for up in ("", "^")])
     after, steps = {}, {p: [] for p in paths}
@@ -358,9 +363,19 @@ def unit_cases():
     ]
 
 
+def subdir_cases():
+    """Case 23: a scratch repo replayed from its docs/sub, as a run from docs/lookahead/0.73 replays this one."""
+    p = "crates/p/src/a.rs"
+    with tempfile.TemporaryDirectory() as tmp:
+        shas = oc.scratch_repo(tmp, [{p: "fn a() { 1 }\n", "docs/sub/x.md": "x\n"}, {p: "fn a() { 2 }\n"}])
+        got = oc.at(os.path.join(tmp, "docs", "sub"), replay, ".", shas[-1], {p}, {p: "fn a() { 2 }\n"})
+    return [("23 from a subdirectory replay() finds both commits of crates/p/src/a.rs, and no gap",
+             isinstance(got, tuple) and [c[0] for c in got[0]] == shas and got[2] == {})]
+
+
 def self_test():
-    """Rule 7: the move, git-parse and unit cases, in number order."""
-    cases = sorted(move_cases() + git_cases() + unit_cases(), key=lambda c: int(c[0].split()[0]))
+    """Rule 7: the move, git-parse, unit and subdirectory cases, in number order."""
+    cases = sorted(move_cases() + git_cases() + unit_cases() + subdir_cases(), key=lambda c: int(c[0].split()[0]))
     for c, ok in cases:
         print(("ok   " if ok else "FAIL ") + c)
     bad = sum(not ok for _, ok in cases)
@@ -427,7 +442,11 @@ def main():
         return self_test()
     if not a.pin:
         ap.error("--pin or --self-test")
-    return run(oc.git("rev-parse", "--short=10", a.pin).decode().strip(), a.verdict, a.source, a.tsv)
+    try:
+        return run(oc.git("rev-parse", "--short=10", a.pin).decode().strip(), a.verdict, a.source, a.tsv)
+    except oc.Vacuous as e:
+        print(f"unit_history: {e}", file=sys.stderr)
+        return 3
 
 
 if __name__ == "__main__":

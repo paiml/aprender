@@ -15,15 +15,26 @@ Usage: dark_fix_lines.py --tsv PATH --pin REV [--source PREFIX=DIR ...] | --self
 """
 import argparse
 import csv
+import os
 import os.path as pp
 import subprocess
 import sys
+import tempfile
+
+sys.path.insert(0, pp.dirname(pp.abspath(__file__)))
+import orphan_census as oc  # noqa: E402
 
 PUNCT = "{}()[];, "
 
 
 def git(repo, *args):
     return subprocess.run(["git", "-C", repo, *args], capture_output=True, text=True, check=True).stdout
+
+
+def fix_diff(repo, sha, path):
+    """sha's diff of path against its first parent, in repo. :(top,literal) reads path from repo's root, as plain
+    text, whatever the cwd: from docs/lookahead/0.73 a bare path matched nothing, so each pair on main read as gone."""
+    return git(repo, "diff", "-U0", f"{sha}^", sha, "--", f":(top,literal){path}")
 
 
 def norm(line):
@@ -103,9 +114,18 @@ def cases():
     ]
 
 
+def subdir_cases():
+    """Case 8: a scratch repo's diff read from its docs/sub, as a run from docs/lookahead/0.73 reads this one."""
+    p = "crates/p/src/d.rs"
+    with tempfile.TemporaryDirectory() as tmp:
+        sha = oc.scratch_repo(tmp, [{p: "fn d() {}\n", "docs/sub/x.md": "x\n"}, {p: "fn d() {}\nlet fix = 1;\n"}])[-1]
+        got = oc.at(os.path.join(tmp, "docs", "sub"), fix_diff, ".", sha, p)
+    return [("8 from a subdirectory fix_diff() holds the line the commit added", added(got) == ["let fix = 1;"])]
+
+
 def self_test():
-    """Rule 7: the line, diff and token cases."""
-    got = cases()
+    """Rule 7: the line, diff and token cases, and the subdirectory case."""
+    got = cases() + subdir_cases()
     for c, ok in got:
         print(("ok   " if ok else "FAIL ") + c)
     bad = sum(not ok for _, ok in got)
@@ -131,7 +151,7 @@ def check(pin, pair, live, sources):
     """(kept, missing, report lines) of one (dark path, token) pair whose dark file's units live holds."""
     d, t = pair
     repo, sha, path = locate(t, d, sources)
-    kept, miss = missing(added(git(repo, "diff", "-U0", f"{sha}^", sha, "--", path)), lines(pin, d),
+    kept, miss = missing(added(fix_diff(repo, sha, path)), lines(pin, d),
                          set().union(*(lines(pin, p) for p in sorted(live))))
     subj = git(repo, "log", "-1", "--format=%s", sha).strip()[:56]
     text = [f"  {d.split('/src/', 1)[-1]} {t} ({subj}): {len(kept)} kept, {len(miss)} in no compiled holder"]

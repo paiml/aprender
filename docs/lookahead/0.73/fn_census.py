@@ -17,6 +17,7 @@ reached file that holds most of its present units), the absent and changed units
 unit (`rest`, with its state).
 
 Usage: fn_census.py --pin REV [--tsv PATH] | --self-test
+rc 3 when the pin lists no crates/*/src .rs file: orphan_census.load() refuses a vacuous answer.
 """
 import argparse
 import os.path as pp
@@ -388,7 +389,11 @@ def main():
     if not a.pin:
         ap.error("--pin or --self-test")
     pin = oc.git("rev-parse", "--short=10", a.pin).decode().strip()
-    files, bl, tree = oc.load(pin)
+    try:
+        files, bl, tree = oc.load(pin)
+    except oc.Vacuous as e:
+        print(f"fn_census: {e}", file=sys.stderr)
+        return 3
     rows, _, _, reach = oc.census(files, bl, tree)
     orph = {r["path"]: r for r in rows if r["status"] == "orphan"}
     res = fn_census(files, reach, orph)
