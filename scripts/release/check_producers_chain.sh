@@ -9,7 +9,7 @@
 #   P1  still has a `schedule:` trigger (a live line in its on: block);
 #   P2  lacks the chain: workflow_run with workflows: [<the name nightly-pick.yml declares>], types: [completed],
 #       branches: [main];
-#   P3  checks this repo out (actions/checkout without `repository:`) and the next step, after an optional
+#   P3  checks this repo out (actions/checkout, unless `repository:` names another repo literally) and the next step, after an optional
 #       "Preflight…" step, is not the C step: run `bash scripts/release/nightly_c_checkout.sh --at "$NIGHTLY_PICK_AT"`,
 #       env NIGHTLY_PICK_AT from github.event.workflow_run.run_started_at, and if exactly
 #       `github.event_name == 'workflow_run'`, or `github.event_name == 'workflow_run' && (<the checkout's if>)`;
@@ -19,8 +19,10 @@
 #   P4  names github.sha, GITHUB_SHA, github.workflow_sha or GITHUB_WORKFLOW_SHA on a live line that names neither
 #       NIGHTLY_C nor workflow_run.head_sha outside a trailing comment;
 #   P5  is listed below and missing, or chains from the pick and is not listed (the list is complete both ways).
-# Limits: it reads the workflow text, not the scripts a step calls; an origin/main a step fetches as a declared
-# comparand (guards-nightly's SATD ceiling) is not a measurement and is not judged here.
+# Limits: it reads the workflow text, not the scripts a step calls, so a later run step that fetches or checks out
+# main again is not seen; an origin/main a step fetches as a declared comparand (guards-nightly's SATD ceiling) is
+# not a measurement and is not judged here. It reads `on:` as a block mapping with keys at indent 2; any other
+# layout hides the chain and fails P2 (closed).
 #
 # Usage:
 #   check_producers_chain.sh [--root DIR]     judge the tree (default: the repo this file is in)
@@ -66,6 +68,12 @@ judge_file() {
             }
             return ""
         }
+        function other(st,   a, m, i, r) { # a checkout of ANOTHER repo: a literal owner/name that is not this one
+            m = split(st, a, "\n")
+            for (i = 2; i <= m; i++) if (a[i] ~ /^[[:space:]]*repository:/) {
+                r = unq(bare(a[i])); return (r !~ /\$\{\{/ && tolower(r) != "paiml/aprender") }
+            return 0
+        }
         function hasline(st, want,   a, m, i, s) {
             m = split(st, a, "\n")
             for (i = 1; i <= m; i++) { s = a[i]; gsub(/^[[:space:]]+|[[:space:]]+$/, "", s); if (s == want) return 1 }
@@ -74,7 +82,9 @@ judge_file() {
         function flush(   k, j, cif, want, nm) {
             if (!listed) { n = 0; ii = -1; return }   # only a listed producer owes the C step
             for (k = 1; k <= n; k++) {
-                if (unq(key(S[k], "uses")) !~ /^actions\/checkout@/ || S[k] ~ /\n[[:space:]]*repository:/) continue
+                if (unq(key(S[k], "uses")) ~ /^\.\//) {
+                    fail("P3 job step " k " uses a local action -- a checkout inside it cannot be judged here"); continue }
+                if (unq(key(S[k], "uses")) !~ /^actions\/checkout@/ || other(S[k])) continue
                 checkouts++
                 j = k + 1; nm = key(S[j], "name")
                 if (j <= n && nm ~ /^Preflight/) j++
@@ -113,7 +123,7 @@ judge_file() {
         # a job that calls a reusable workflow: its checkout is not in this file
         listed && live(L) && L ~ /^    uses:/ { fail("P3 line " NR " is a job-level uses: -- its checkout cannot be judged here") }
         # steps
-        insteps && live(L) && ind(L) <= si { flush(); insteps = 0 }
+        insteps && live(L) && (ind(L) < si || (ind(L) == si && L !~ /^ *- /)) { flush(); insteps = 0 }
         insteps && live(L) {
             if (L ~ /^ *- / && (ii < 0 || ind(L) == ii)) { ii = ind(L); S[++n] = L }
             else if (n > 0) S[n] = S[n] "\n" L
@@ -225,6 +235,10 @@ m_job_uses()      { synth nightly.yml <<< "$(printf '      - uses: actions/check
 m_checkout_ifexp(){ synth nightly.yml <<< "$(printf '      - uses: actions/checkout@v7\n        if: ${{ inputs.x }}\n'; cstep '${{ inputs.x }}')"; }
 m_sha_workflow()  { changed qwen-story-daily.yml '0,/^    steps:$/s//    steps:\n      - run: echo "${{ github.workflow_sha }}"/'; }
 m_sha_cmt_exempt(){ changed qwen-story-daily.yml '0,/^    steps:$/s//    steps:\n      - run: git diff "${{ github.sha }}" # NIGHTLY_C/'; }
+m_dash_at_steps() { synth nightly.yml <<< "$(printf '    - uses: actions/checkout@v7\n    - run: git checkout origin/main\n')"; }
+m_repo_expr()     { synth nightly.yml <<< "$(printf '      - uses: actions/checkout@v7\n'; cstep; printf '      - uses: actions/checkout@v7\n        with:\n          repository: ${{ github.repository }}\n          ref: main\n')"; }
+m_repo_self()     { synth nightly.yml <<< "$(printf '      - uses: actions/checkout@v7\n'; cstep; printf '      - uses: actions/checkout@v7\n        with:\n          repository: Paiml/Aprender\n')"; }
+m_local_action()  { synth nightly.yml <<< "$(printf '      - uses: actions/checkout@v7\n'; cstep; printf '      - uses: ./.github/actions/bench\n')"; }
 m_bystander()     { printf 'name: Other\non:\n  schedule:\n    - cron: "0 1 * * *"\njobs:\n  a:\n    runs-on: x\n    steps:\n      - uses: actions/checkout@v7\n      - run: echo "$GITHUB_SHA"\n' > other.yml; }
 
 self_test() {
@@ -267,6 +281,10 @@ self_test() {
     row p3_checkout_if_expression   1 'cannot copy'                            -- m_checkout_ifexp
     row p4_workflow_sha             1 'qwen-story-daily.yml: P4'               -- m_sha_workflow
     row p4_exemption_in_comment     1 'qwen-story-daily.yml: P4'               -- m_sha_cmt_exempt
+    row p3_dash_at_steps_indent     1 'is not followed by the C step'          -- m_dash_at_steps
+    row p3_repository_expression    1 'is not followed by the C step'          -- m_repo_expr
+    row p3_repository_this_repo     1 'is not followed by the C step'          -- m_repo_self
+    row p3_local_action             1 'uses a local action'                    -- m_local_action
     rm -rf -- "${TMP_ST:?}"
     if [ "$FAILED" -eq 0 ]; then printf 'SELF-TEST PASSED: %s rows\n' "$CASES"; return 0; fi
     printf 'SELF-TEST FAILED: %s of %s rows\n' "$FAILED" "$CASES"; return 1
@@ -277,7 +295,7 @@ m02_any_branch	s/list1(L) == "main") cb = 1/1) cb = 1/
 m03_any_type	s/list1(L) == "completed") ct = 1/1) ct = 1/
 m04_any_workflow	s/list1(L) == pick) cw = 1/1) cw = 1/
 m05_no_preflight_skip	s/nm ~ \/^Preflight\/) j++/0) j++/
-m06_no_repo_exempt	s/ || S\[k\] ~ \/\\n\[\[:space:\]\]\*repository:\/) continue/) continue/
+m06_no_repo_exempt	s/ || other(S\[k\])) continue/) continue/
 m07_any_if	s/if (unq(key(S\[j\], "if")) != want)/if (0)/
 m08_any_at_source	s/if (!hasline(S\[j\], "NIGHTLY_PICK_AT/if (0 \&\& !hasline(S[j], "NIGHTLY_PICK_AT/
 m09_no_sha_rule	s|if (c ~ /github|if (0 \&\& c ~ /github|
@@ -296,7 +314,11 @@ m21_checkout_if_any	s/if (cif ~ \/\\\$\\{\\{|^\[>|\]\/) {/if (0) {/
 m22_comment_exempts	s/c = L; sub(\/\[\[:space:\]\]#\.\*\/, "", c)/c = L/
 m23_no_workflow_sha	s/github\\\.(workflow_)?sha/github\\.sha/
 m24_env_any_line	s/if (s == "NIGHTLY_PICK_AT: \${{ github.event.workflow_run.run_started_at }}") continue; return s }/continue }/
-m25_cstep_if_quoted_no	s/if (unq(key(S\[j\], "if")) != want)/if (key(S[j], "if") != want)/'
+m25_cstep_if_quoted_no	s/if (unq(key(S\[j\], "if")) != want)/if (key(S[j], "if") != want)/
+m26_dash_at_si_ends	s/(ind(L) < si || (ind(L) == si && L !~ \/^ \*- \/))/ind(L) <= si/
+m27_any_repo_exempt	s/ || other(S\[k\])) continue/ || S[k] ~ \/repository:\/) continue/
+m28_literal_self_exempt	s/ && tolower(r) != "paiml\/aprender")/)/
+m29_local_action_ok	s/if (unq(key(S\[k\], "uses")) ~ \/^\\.\\\/\/) {/if (0) {/'
 mutants() {
     local tmp name expr killed=0 total=0 errors=0 out cut reds
     cut="$(grep -n -m1 -e "^# -* the case table" "$SCRIPT_PATH" | cut -d: -f1)"
@@ -336,7 +358,7 @@ main() {
     case "${1:-}" in
         --self-test) self_test; return $? ;;
         --mutants) mutants; return $? ;;
-        -h | --help) sed -n '2,28p' "$SCRIPT_PATH"; return 0 ;;
+        -h | --help) sed -n '2,30p' "$SCRIPT_PATH"; return 0 ;;
         --root) root="${2:-}"; [ -d "$root" ] || caller_error "--root DIR" ;;
         '') ;;
         *) caller_error "unknown argument '$1' (--root DIR|--self-test|--mutants)" ;;
