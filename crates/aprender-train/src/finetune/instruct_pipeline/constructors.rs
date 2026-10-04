@@ -417,10 +417,11 @@ impl InstructPipeline {
     /// (`FALSIFY-LORA_TARGET_SELECTION_V1_004`).
     ///
     /// `build_lora_layers` and `inject_adapter_weights` place any target set,
-    /// but the CPU forward (`forward_hidden_with_lora`), the CUDA blocks
-    /// (`lora_slot(2·layer)`, `lora_slot(2·layer + 1)`) and their sync back
-    /// to the CPU read slot `2·layer` as `q_proj` and `2·layer + 1` as
-    /// `v_proj`. Under any other set they would apply an adapter to the wrong
+    /// and the CUDA blocks and their sync back to the CPU move every target
+    /// (`FALSIFY-LORA_TARGET_SELECTION_V1_007`), but the CPU forward
+    /// (`forward_hidden_with_lora`) reads slot `2·layer` as `q_proj` and
+    /// `2·layer + 1` as `v_proj`, and the checkpoint names follow the same
+    /// rule. Under any other set they would apply an adapter to the wrong
     /// projection or leave one untrained, so every constructor calls this
     /// before it loads a weight.
     ///

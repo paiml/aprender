@@ -5,6 +5,8 @@ use super::{
 };
 
 #[cfg(feature = "cuda")]
+use super::device_targets::layer_adapters;
+#[cfg(feature = "cuda")]
 use crate::autograd::cuda_backward::pre_warm_lora_backward_kernels as pre_warm_backward_cache_kernels;
 #[cfg(feature = "cuda")]
 use crate::autograd::cuda_forward::{pre_warm_forward_kernels, pre_warm_lora_backward_kernels};
@@ -14,6 +16,8 @@ use crate::autograd::cuda_optim::pre_warm_lora_adamw_kernels;
 use crate::autograd::cuda_tensor::Result as CudaResult;
 #[cfg(feature = "cuda")]
 use crate::autograd::cuda_training::cuda_training_available;
+#[cfg(feature = "cuda")]
+use crate::lora::LoraTarget;
 #[cfg(feature = "cuda")]
 use crate::transformer::{
     CudaBlock, CudaBlockScratch, CudaLoraGradWorkspace, CudaTransformerBlock, GpuLoraOptimizerState,
@@ -285,8 +289,8 @@ impl InstructPipeline {
         Some(blocks)
     }
 
-    /// Upload layer `i` of `model`: an NF4 block with the layer's Q and V LoRA
-    /// adapters when `config.quantize_nf4`, an FP32 block otherwise.
+    /// Upload layer `i` of `model`: an NF4 block with every selected LoRA adapter
+    /// of the layer when `config.quantize_nf4`, an FP32 block otherwise.
     fn upload_cuda_block(
         model: &Transformer,
         i: usize,
@@ -344,13 +348,20 @@ impl InstructPipeline {
             .map(CudaBlock::Fp32);
         }
 
-        let q_lora = lora_slot(lora_layers, i * 2);
-        let v_lora = lora_slot(lora_layers, i * 2 + 1);
+        // Every selected adapter of layer i, from its own slot: q_proj and v_proj go to
+        // `new`, the others are added after it (FALSIFY-LORA_TARGET_SELECTION_V1_007).
+        let adapters = layer_adapters(lora_layers, &config.lora_targets, i);
+        let lora = |target: LoraTarget| {
+            adapters
+                .iter()
+                .find(|(t, _, _)| *t == target)
+                .map(|(_, a, b)| (a.as_slice(), b.as_slice()))
+        };
         // ENT-270: QK-norm weights, if present
         let q_norm = optional_slice(layer.self_attn.q_norm.as_ref(), "contiguous q_norm");
         let k_norm = optional_slice(layer.self_attn.k_norm.as_ref(), "contiguous k_norm");
 
-        crate::transformer::CudaNf4TransformerBlock::new(
+        let mut block = crate::transformer::CudaNf4TransformerBlock::new(
             model_config,
             i,
             Arc::clone(ctx),
@@ -364,8 +375,8 @@ impl InstructPipeline {
             w_up,
             w_down,
             config.max_seq_len,
-            q_lora.as_ref().map(|(a, b)| (a.as_slice(), b.as_slice())),
-            v_lora.as_ref().map(|(a, b)| (a.as_slice(), b.as_slice())),
+            lora(LoraTarget::Q),
+            lora(LoraTarget::V),
             config.lora_alpha / config.lora_rank as f32,
             config.lora_rank,
             q_norm,
@@ -373,8 +384,13 @@ impl InstructPipeline {
             b_q,
             b_k,
             b_v,
-        )
-        .map(CudaBlock::Nf4)
+        )?;
+        for (target, a, b) in &adapters {
+            if !matches!(target, LoraTarget::Q | LoraTarget::V) {
+                block.add_lora_adapter(*target, a, b)?;
+            }
+        }
+        Ok(CudaBlock::Nf4(block))
     }
 
     /// Initialize GPU training state for NF4 QLoRA backward pass.
@@ -548,14 +564,6 @@ impl InstructPipeline {
     }
 }
 
-/// The A and B weights of LoRA slot `idx` in the layout the NF4 block computes with, `(Aᵀ, Bᵀ)`,
-/// or `None` past the last slot. The block runs `(x·A)·B`, so the PEFT layout copied raw would
-/// be a different adapter (FALSIFY-CUDA-NF4-TRAIN-LOSS-PARITY-003).
-#[cfg(feature = "cuda")]
-fn lora_slot(lora_layers: &[LoRALayer], idx: usize) -> Option<(Vec<f32>, Vec<f32>)> {
-    lora_layers.get(idx).map(LoRALayer::device_layout)
-}
-
 /// The data of an optional weight, such as a bias or a QK-norm, as a slice.
 #[cfg(feature = "cuda")]
 fn optional_slice<'a>(tensor: Option<&'a Tensor>, what: &str) -> Option<&'a [f32]> {
@@ -564,6 +572,7 @@ fn optional_slice<'a>(tensor: Option<&'a Tensor>, what: &str) -> Option<&'a [f32
 
 #[cfg(all(test, feature = "cuda"))]
 mod tests {
+    use super::super::device_targets::lora_slot;
     use super::*;
 
     /// The upload half of FALSIFY-CUDA-NF4-TRAIN-LOSS-PARITY-003, with no device: every slot

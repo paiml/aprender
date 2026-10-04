@@ -3003,6 +3003,17 @@ impl CudaBlock {
         }
     }
 
+    /// Download every LoRA adapter of an NF4 block in slot order as (target, A, alpha/rank·B)
+    /// (R15a C4a).
+    pub fn download_lora_adapters(&self) -> Result<Vec<(LoraTarget, Vec<f32>, Vec<f32>)>> {
+        match self {
+            CudaBlock::Nf4(b) => b.download_lora_adapters(),
+            CudaBlock::Fp32(_) => Err(crate::autograd::cuda_tensor::CudaTensorError::KernelError(
+                "download_lora_adapters only supported on NF4 blocks".into(),
+            )),
+        }
+    }
+
     /// Upload LoRA weights to NF4 blocks for checkpoint resume (ENT-276).
     pub fn upload_lora_weights(
         &mut self,

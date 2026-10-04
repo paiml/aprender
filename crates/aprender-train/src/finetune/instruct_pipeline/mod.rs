@@ -21,6 +21,8 @@ mod backward;
 mod constructors;
 mod cuda_forward;
 mod cuda_init;
+#[cfg(any(test, feature = "cuda"))]
+mod device_targets;
 mod generate;
 mod training;
 mod wgpu;

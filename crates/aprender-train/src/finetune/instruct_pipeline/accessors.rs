@@ -67,10 +67,12 @@ impl InstructPipeline {
 
     /// Synchronize GPU LoRA weights back to CPU LoRA layers (NF4 QLoRA).
     ///
-    /// Required for checkpointing after NF4 QLoRA training. Downloads A_q, B_q,
-    /// A_v, B_v from each NF4 block and updates the corresponding CPU LoRA layers.
-    /// The block holds them as Aᵀ and s·Bᵀ, so B is unscaled and both are transposed
-    /// back to the PEFT layout (FALSIFY-CUDA-NF4-TRAIN-LOSS-PARITY-003).
+    /// Required for checkpointing after NF4 QLoRA training. Downloads every adapter
+    /// of each NF4 block by target and writes it into its own slot
+    /// (FALSIFY-LORA_TARGET_SELECTION_V1_007). The block returns them as Aᵀ and s·Bᵀ,
+    /// so B is unscaled and both are transposed back to the PEFT layout
+    /// (FALSIFY-CUDA-NF4-TRAIN-LOSS-PARITY-003). A block whose adapters do not fit
+    /// their slots leaves that layer's slots unchanged and is reported on stderr.
     ///
     /// # Contract (C-QLORA-CKPT-001)
     ///
@@ -87,20 +89,17 @@ impl InstructPipeline {
         let inv_scale = if lora_scale.abs() > 1e-10 { 1.0 / lora_scale } else { 1.0 };
 
         for (layer_idx, block) in blocks.iter().enumerate() {
-            if let Ok((a_q, b_q, a_v, b_v)) = block.download_lora_weights() {
-                let q_lora_idx = layer_idx * 2;
-                let v_lora_idx = layer_idx * 2 + 1;
-
-                // Un-scale B matrices (GPU stores B * lora_scale)
-                let b_q_unscaled: Vec<f32> = b_q.iter().map(|&v| v * inv_scale).collect();
-                let b_v_unscaled: Vec<f32> = b_v.iter().map(|&v| v * inv_scale).collect();
-
-                if q_lora_idx < self.lora_layers.len() {
-                    self.lora_layers[q_lora_idx].set_from_device_layout(&a_q, &b_q_unscaled);
-                }
-                if v_lora_idx < self.lora_layers.len() {
-                    self.lora_layers[v_lora_idx].set_from_device_layout(&a_v, &b_v_unscaled);
-                }
+            let Ok(adapters) = block.download_lora_adapters() else {
+                continue;
+            };
+            if let Err(e) = super::device_targets::place_layer_adapters(
+                &mut self.lora_layers,
+                &self.config.lora_targets,
+                layer_idx,
+                &adapters,
+                inv_scale,
+            ) {
+                eprintln!("[CUDA] sync_lora_to_cpu: {e}");
             }
         }
     }
