@@ -35,10 +35,15 @@ esac
 trap 'rm -rf "${WORK:?}"' EXIT
 
 FNS="$WORK/fns.sh"
-: > "$FNS"
-for fn in clean_room_parse_runs clean_room_parse_job clean_room_tested_abbrevs clean_room_tested_shas clean_room_gate; do
+# The gate is cascade's; the per-run verdict is the shared verifier it sources (#4687).
+LIB="$REPO_ROOT/scripts/release/lib_clean_room.sh"
+grep -q 'lib_clean_room.sh' "$CASCADE" || { echo "FAIL: $CASCADE does not source lib_clean_room.sh"; exit 1; }
+if ! cat "$LIB" > "$FNS"; then echo "FAIL: cannot open $LIB"; exit 1; fi
+for fn in clean_room_runs_jq clean_room_gate; do
   sed -n "/^${fn}() {/,/^}/p" "$CASCADE" >> "$FNS"
-  grep -q "^${fn}() {" "$FNS" || { echo "FAIL: could not extract '$fn' from $CASCADE"; exit 1; }
+done
+for fn in clean_room_jobs_jq clean_room_tested_abbrevs clean_room_tested_shas clean_room_verify_run clean_room_runs_jq clean_room_gate; do
+  grep -q "^${fn}() {" "$FNS" || { echo "FAIL: could not extract '$fn' from $CASCADE or $LIB"; exit 1; }
 done
 # shellcheck disable=SC1090
 . "$FNS"
@@ -68,6 +73,10 @@ cat > "$BIN/gh" <<'STUB'
 #!/usr/bin/env bash
 d=${STUB_DIR:?stub gh called without STUB_DIR}
 printf '%s\n' "$*" >> "$d/calls"
+jqx=""; all="$*"
+case " $all" in *" --jq "*) jqx=${all##* --jq } ;; esac
+# gh applies --jq with its built-in jq; so does the stub. Malformed JSON then fails the call, as in gh.
+serve() { if [ -n "$jqx" ]; then jq -r "$jqx" < "$1"; else cat "$1"; fi; }
 case "$1" in
   auth)
     [ "${2:-}" = status ] || { echo "UNEXPECTED $*" >> "$d/calls"; exit 97; }
@@ -75,8 +84,8 @@ case "$1" in
   run)
     case "${2:-}" in
       list) if [ -f "$d/runlist_rc" ]; then exit "$(cat "$d/runlist_rc")"; fi
-            cat "$d/runs.json" ;;
-      view) cat "$d/jobs-${3:-x}.json" 2>/dev/null || exit 1 ;;
+            serve "$d/runs.json" ;;
+      view) [ -f "$d/jobs-${3:-x}.json" ] || exit 1; serve "$d/jobs-${3:-x}.json" ;;
       *) echo "UNEXPECTED $*" >> "$d/calls"; exit 97 ;;
     esac ;;
   api)
@@ -252,7 +261,7 @@ row shim_engaged_probe                   0 "CLEAN-ROOM PROCEED"                 
 resolved_gh=$(export PATH="$BIN:$PATH"; command -v gh)
 calls=$(tr '\n' '|' < "$LAST_STUB/calls")
 if [ "$resolved_gh" = "$BIN/gh" ] \
-   && [[ "$calls" == "auth status|run list --repo paiml/infra --workflow clean-room.yml"*"|run view 9001 --repo paiml/infra --json jobs|api repos/paiml/infra/actions/jobs/501/logs|" ]]; then
+   && [[ "$calls" == "auth status|run list --repo paiml/infra --workflow clean-room.yml"*"|run view 9001 --repo paiml/infra --json jobs --jq "*"|api repos/paiml/infra/actions/jobs/501/logs|" ]]; then
   pass "gh_is_the_stub (resolved $resolved_gh; calls: $calls)"
 else
   fail "gh_is_the_stub: gh resolved to '$resolved_gh', calls were '$calls'"

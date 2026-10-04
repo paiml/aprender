@@ -20,12 +20,23 @@ die() { say "STOP publish: $*"; exit 1; }
 export PATH="${CARGO_HOME:-$HOME/.cargo}/bin:$PATH"
 unset CARGO_REGISTRY_TOKEN
 cd "$WT" || die "no $WT"
+# Clean-room comes first (#4687): the recorded run id is proof only when that infra run's
+# `clean-room (aprender)` job is green on exactly this tag's commit. One verifier, shared with
+# cascade-publish.sh; a run id that is missing, red, or tested another commit, and gh failing
+# (not measured), all STOP here. --plan uploads nothing and is not gated.
+# shellcheck source=scripts/release/lib_clean_room.sh
+. "$REPO_ROOT/scripts/release/lib_clean_room.sh" || die "clean-room: cannot source lib_clean_room.sh"
+if [ "${1:-}" != "--plan" ]; then
+  crid=$(clean_room_read_run_id "$AP/cleanroom-run-id") || die "clean-room: $crid ($T, rule 7, #3335)"
+  ctag=$(git rev-parse --verify --quiet "refs/tags/$T^{commit}") || die "clean-room: tag $T does not resolve to a commit"
+  cverdict=$(clean_room_verify_run "$crid" "$ctag" "$WT") || die "clean-room: run $crid is not proof for $T: $cverdict"
+  say "$cverdict ($T)"
+fi
 [ "$(git rev-parse HEAD)" = "$(git rev-parse "refs/tags/$T^{commit}")" ] || die "HEAD is not $T"
 git symbolic-ref -q HEAD > /dev/null && die "checkout is not detached"
 [ -z "$(git status --porcelain)" ] || die "tree dirty: $(git status --porcelain | head -3 | tr '\n' ' ')"
 [ -e .cargo/config.toml ] && die ".cargo/config.toml present in the publish tree"
 [ -s "$HOME/.cargo/credentials.toml" ] || die "no publish token on this host (precondition 5)"
-[ "${1:-}" = "--plan" ] || [ -s "$AP/cleanroom-run-id" ] || die "no green clean-room run id recorded for $T (rule 7, #3335)"
 [ "${1:-}" = "--plan" ] || [ -s "$AP/b2gpu-run-id" ] || die "no green B2-gpu run id recorded for $T (rule 14)"
 [ "${1:-}" = "--plan" ] || [ -s "$AP/dryrun-receipt-commit" ] || die "no committed dry-run receipt (T-4)"
 

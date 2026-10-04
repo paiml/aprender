@@ -1,0 +1,153 @@
+# ─────────────────────────────────────────────────────────────────────────────
+# release-clean-room-run-verify-v1 — one door to cargo publish: a clean-room run
+# id is proof only when that run is green AND tested exactly the tag's commit
+# (issue #4687, row R5b of 0.70.2)
+#
+# THE DEFECT. scripts/release/publish_strict.sh opened its publishing path with
+# `[ -s "$AP/cleanroom-run-id" ]`: ANY non-empty file opened the door. A red
+# run, a cancelled run, a run that tested another commit, or a word that is not
+# a run id at all were all accepted. scripts/cascade-publish.sh, the other door,
+# proved the same fact a stricter way (clean_room_gate, PMAT-3318) with its own
+# private parser. Two doors, two answers.
+#
+# WHAT IT GOVERNS
+#   scripts/release/lib_clean_room.sh — clean_room_verify_run RID WANT [ROOT], the
+#     ONE verifier, and clean_room_read_run_id FILE. Option-neutral sourced bash;
+#     it parses with gh's own --json/--jq and awk, and fails by return status:
+#       rc 0  proof: the `clean-room (aprender)` job of infra run RID completed,
+#             concluded success, and its log records exactly one tested commit
+#             equal to WANT (the structured `tested-sha:` record first, the
+#             legacy `commit:` line otherwise, both must agree when both exist)
+#       rc 1  measured, not proof (red, cancelled, unfinished, another commit,
+#             no such job, a malformed or ambiguous tested-commit record)
+#       rc 2  not measured (no id, not an id, gh failing, unparseable output)
+#   scripts/release/publish_strict.sh — verifies the recorded id FIRST, before
+#     any other publish step; rc 1 and rc 2 both stop it (L25: not_measured is
+#     never a pass).
+#   scripts/cascade-publish.sh — clean_room_gate's per-run check calls the same
+#     clean_room_verify_run; rc 1 moves to the next run, rc 2 refuses at once.
+#
+# PROOF LADDER, STATED HONESTLY
+#   * L1 — scripts/release/check_clean_room_verify.sh runs ONE case table through
+#          BOTH doors with a stub gh on PATH (no network, no python, no cargo).
+#   * L2 — falsification measured at authoring: every refusal has a mutant that
+#          drops it, and each mutant turns the table RED.
+#   * Wiring — the table is not yet a blocking check. Per the new-gate ratchet
+#          rule it blocks only after three green nights.
+#   * L3/L4 — not applicable: a guard in a release script, not a kernel.
+# ─────────────────────────────────────────────────────────────────────────────
+name: release-clean-room-run-verify
+version: "1.0.0"
+scope: >
+  Whether a recorded clean-room run id may open a cargo publish: the verifier
+  in scripts/release/lib_clean_room.sh and its two callers, publish_strict.sh
+  and cascade-publish.sh. Out of scope: the B2-gpu run id and the dry-run
+  receipt commit (same weakness, separate row), and what clean-room itself
+  tests.
+status: active
+
+metadata:
+  kind: pattern     # a refusal invariant over a release script's inputs, not a
+                    # math kernel; set explicitly so the `kernel` default never applies.
+  version: "1.0.0"
+  created: '2026-10-04'
+  last_modified: '2026-10-04'
+  author: PAIML Engineering
+  references:
+    - 'scripts/release/lib_clean_room.sh — clean_room_verify_run, clean_room_read_run_id, clean_room_tested_shas, clean_room_tested_abbrevs'
+    - 'scripts/release/check_clean_room_verify.sh — the case table, run through both doors'
+    - 'scripts/check_cascade_clean_room_gate.sh — the clean_room_gate search table (PMAT-3318), now sourcing the shared verifier'
+    - 'issue #4687 (R5b)'
+  description: >
+    A clean-room run id that is missing, red, or tested another commit must
+    refuse, at both doors, through one verifier. gh failing is a refusal, never
+    a pass.
+
+equations:
+  one_door:
+    formula: |
+      verify(rid, want) = 0  ⇔  rid ∈ [0-9]+
+                              ∧ |jobs(rid, "clean-room (aprender)")| = 1
+                              ∧ job.status = completed ∧ job.conclusion = success
+                              ∧ tested(job.log) = {want}
+      verify(rid, want) = 2  ⇔  rid missing ∨ rid ∉ [0-9]+ ∨ gh fails ∨ output unparseable
+      verify(rid, want) = 1  otherwise
+      publish_strict opens  ⇔  verify(read(cleanroom-run-id), tag commit) = 0
+      cascade run r counts  ⇔  verify(r, tag commit) = 0
+    domain: 'a recorded run id, the tag commit, and what gh reports for that run'
+    codomain: '{0 proof, 1 not proof, 2 not measured}'
+    invariants:
+    - 'ONE VERIFIER: both doors call clean_room_verify_run; no other parser of the clean-room jobs JSON exists in either script.'
+    - 'NOT MEASURED NEVER PASSES: rc 2 stops publish_strict and stops clean_room_gate.'
+    - 'NO BYPASS: no flag or variable skips the verification on a publishing run.'
+    preconditions:
+    - 'want is a full 40-character lowercase commit sha'
+    postconditions:
+    - 'a green run on the tag commit opens both doors (the must-accept row)'
+
+proof_obligations:
+  - id: CRV-OB-001
+    statement: "A missing, empty, or non-numeric run id refuses at both doors."
+    discharged_by: falsification_tests[0]
+  - id: CRV-OB-002
+    statement: "A run whose clean-room (aprender) job failed, was cancelled, or has not completed refuses."
+    discharged_by: falsification_tests[1]
+  - id: CRV-OB-003
+    statement: "A run whose recorded tested commit is not the tag's commit refuses."
+    discharged_by: falsification_tests[2]
+  - id: CRV-OB-004
+    statement: "gh failing (run view or log fetch) refuses as not measured."
+    discharged_by: falsification_tests[3]
+  - id: CRV-OB-005
+    statement: "A green run on the tag's commit is accepted by both doors."
+    discharged_by: falsification_tests[4]
+  - id: CRV-OB-006
+    statement: "Both doors use the one verifier and give the same verdict on every row."
+    discharged_by: falsification_tests[5]
+
+falsification_tests:
+  - id: CRV-F-001
+    rule: missing or empty id refuses
+    prediction: 'rows missing_id, empty_id and garbage_id refuse at publish_strict (not_measured)'
+    test: 'bash scripts/release/check_clean_room_verify.sh'
+    if_fails: 'a publish opens with no clean-room evidence at all'
+    mutation: 'drop the run-id shape check in clean_room_verify_run; garbage_id turns RED'
+  - id: CRV-F-002
+    rule: a red run refuses
+    prediction: 'rows failed_run, cancelled_run and in_progress_run refuse at both doors'
+    test: 'bash scripts/release/check_clean_room_verify.sh'
+    if_fails: 'a red clean-room run opens a publish'
+    mutation: 'drop the completed check, or the success check; the matching rows turn RED'
+  - id: CRV-F-003
+    rule: a run that tested another commit refuses
+    prediction: 'rows other_commit_structured and other_commit_log_line refuse at both doors'
+    test: 'bash scripts/release/check_clean_room_verify.sh'
+    if_fails: 'a green run on a different commit opens the tag publish'
+    mutation: 'drop the tested == want comparison; both rows turn RED'
+  - id: CRV-F-004
+    rule: gh failing refuses (not_measured never passes)
+    prediction: 'rows gh_view_fails and gh_log_fails refuse at both doors'
+    test: 'bash scripts/release/check_clean_room_verify.sh'
+    if_fails: 'an outage or rate limit reads as a pass'
+    mutation: 'treat a failed gh run view as an empty job list; gh_view_fails turns RED'
+  - id: CRV-F-005
+    rule: a green run on the tag's commit is accepted
+    prediction: 'row green_on_tag passes both doors'
+    test: 'bash scripts/release/check_clean_room_verify.sh'
+    if_fails: 'the verifier refuses everything and the release cannot publish'
+    mutation: 'make the verifier always return 1; green_on_tag turns RED'
+  - id: CRV-F-006
+    rule: both doors use one verifier
+    prediction: 'the table runs every row through publish_strict.sh and through clean_room_gate and the verdicts match the expected column at both; neither script contains its own jobs parser'
+    test: 'bash scripts/release/check_clean_room_verify.sh && bash scripts/check_cascade_clean_room_gate.sh'
+    if_fails: 'the two doors drift and one of them opens on evidence the other refuses'
+    mutation: 'restore publish_strict.sh `[ -s "$AP/cleanroom-run-id" ]`; the bad-id rows turn RED at the publish_strict door'
+
+non_goals:
+  - "Verifying the B2-gpu run id or the dry-run receipt commit (same weakness, a separate row)."
+  - "What the clean-room workflow runs, or which commit it should be dispatched on."
+
+binding_registry:
+  guard: scripts/release/check_clean_room_verify.sh
+  script: scripts/release/lib_clean_room.sh
+  issue: "https://github.com/paiml/aprender/issues/4687"
