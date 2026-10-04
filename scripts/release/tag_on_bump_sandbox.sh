@@ -21,7 +21,9 @@
 set -uo pipefail
 PROG=tag_on_bump_sandbox
 HERE=$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)
-JUDGE=${TOB_JUDGE:-$HERE/tag_on_bump.sh}
+# the judge is the one beside this file, never one named by the environment: a judge that always
+# passes would turn every rehearsal green
+JUDGE=$HERE/tag_on_bump.sh
 # an inherited GIT_DIR (hooks, CI steps) beats `git -C <clone>`: every clone command below would
 # remove the SOURCE's origin, detach its HEAD and rewrite its config. Each git call names its repo.
 # An inherited GIT_COMMON_DIR or GIT_OBJECT_DIRECTORY sends the reads elsewhere (a false Unknown).
@@ -114,7 +116,12 @@ self_test() {
     command -v git > /dev/null || { echo "$PROG self-test: needs git"; return 2; }
     [ -f "$JUDGE" ] || { echo "$PROG self-test: no judge at $JUDGE"; return 2; }
     d=$(mktemp -d) || return 2
-    run() { got=$(TOB_JUDGE="$JUDGE" bash "$subj" "$@" 2>&1); rc=$?; }
+    # every rehearsal's scratch goes under $d/tmp, so a mutant that leaks its clone leaks it here
+    # (removed with $d), and row scratch_empty_after_rows reads what the rows left
+    mkdir -p "$d/tmp" || return 2
+    # a mutant is $d/mut.sh, and its judge is the one beside it
+    cp -- "$JUDGE" "$d/tag_on_bump.sh" || return 2
+    run() { got=$(TMPDIR="$d/tmp" bash "$subj" "$@" 2>&1); rc=$?; }
     check() {   # check <name> <want-rc> <want-substring>
         if [ "$rc" = "$2" ] && [[ "$got" == *"$3"* ]]; then [ -n "$quiet" ] || echo "  ok   $1 (rc=$rc)"
         else echo "  FAIL $1: want rc=$2 '$3', got rc=$rc: ${got//$'\n'/ | }"; fail=1; fi
@@ -159,7 +166,7 @@ self_test() {
     # 10. SIGTERM mid-bump: the scratch clone is removed. The stub records its directory and sleeps;
     #     the sandbox gets TERM while it waits on the bump
     mkrepo "$d/r10" 'pwd > "'"$d"'/mark"; sleep 1'
-    TOB_JUDGE="$JUDGE" bash "$subj" 1.2.3 --root "$d/r10" > /dev/null 2>&1 & p=$!
+    TMPDIR="$d/tmp" bash "$subj" 1.2.3 --root "$d/r10" > /dev/null 2>&1 & p=$!
     for _ in $(seq 50); do [ -s "$d/mark" ] && break; sleep 0.1; done
     kill -TERM "$p" 2>/dev/null; wait "$p"; rc=$?
     if [ -s "$d/mark" ] && [ ! -e "$(dirname "$(cat "$d/mark")")" ]; then got="cleaned rc=$rc"; rc=0
@@ -180,6 +187,13 @@ self_test() {
     HOME="$d/home" run 1.2.3 --root "$d/r11"
     [ -e "$d/hookmark" ] && { rc=9; got="hooks ran: $(tr '\n' ' ' < "$d/hookmark")"; rm -f -- "${d:?}/hookmark"; }
     check global_hooks_not_run 0 "between=0"
+    # 13. a judge named by the environment is not the judge: one that always passes leaves r3's
+    #     bump that misses the root version a REFUSE
+    printf '#!/bin/sh\necho "PASS fake"; echo "bump=x between=0"\n' > "$d/fake_judge.sh"
+    TOB_JUDGE="$d/fake_judge.sh" run 1.2.3 --root "$d/r3"; check env_judge_ignored 1 "no bump commit"
+    # 14. every rehearsal above removed its scratch clone
+    if [ -z "$(ls -A "$d/tmp")" ]; then rc=0; got="empty"; else rc=1; got="left: $(ls "$d/tmp" | tr '\n' ' ')"; fi
+    check scratch_empty_after_rows 0 "empty"
 
     if [ -z "$quiet" ]; then
         local src a1 b1 k=0 n=0 name row
@@ -199,7 +213,8 @@ self_test() {
                    'inherited GIT_OBJECT_DIRECTORY honoured|unset GIT_OBJECT_DIRECTORY|:' \
                    'environment config honoured|unset GIT_CONFIG_PARAMETERS GIT_CONFIG_COUNT|:' \
                    'hooks on until after the checkout|clone -q -c core.hooksPath=/dev/null|clone -q' \
-                   'source .git/hooks written while the judge passes|    rc=0|    : > "$root/.git/hooks/sandbox-mark"; rc=0'; do
+                   'source .git/hooks written while the judge passes|    rc=0|    : > "$root/.git/hooks/sandbox-mark"; rc=0' \
+                   'judge taken from the environment|JUDGE=$HERE/tag_on_bump.sh|JUDGE=${TOB_JUDGE:-$HERE/tag_on_bump.sh}'; do
             IFS='|' read -r name a1 b1 <<< "$row"; n=$((n + 1))
             case $src in *"$a1"*) ;; *) echo "  FAIL mutant $name: anchor moved, re-anchor it"; fail=1; continue ;; esac
             # a second occurrence means the anchor is ambiguous (or was cut short by a `|` in it)
