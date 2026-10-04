@@ -33,7 +33,8 @@
 #
 # Env: MAX_TICKETS=100 MAX_DEPTH=3 MAX_CHILDREN=5 MAX_WIP=2 ACTIVE_DAYS=7 (whole numbers; anything else exits 2)
 #      ROOT_LABEL=epic   ISSUE_TITLE="ISSUE-TREE-001 RED: issue graph lint"
-#      SOURCE_DATE_EPOCH=<whole seconds>  pins the now.txt a hand-run fetch writes (default: the clock); run refuses it
+#      SOURCE_DATE_EPOCH=<whole seconds>  pins the now.txt a hand-run fetch writes (default: the clock; fetch says
+#                                         which); run refuses it
 #      ISSUE_PARENT=<n>  the filed RED issue is linked under it, so the lint's own ticket is never an orphan
 #      ISSUE_MILESTONE=backlog
 set -euo pipefail
@@ -76,6 +77,15 @@ fetch() {
     local dir="$1" repo="${2:-$REPO_DEFAULT}"
     local owner="${repo%%/*}" name="${repo##*/}"
     mkdir -p "$dir"
+    # now.txt is the last file a fetch writes and one check needs. Removing the old one first means a fetch that
+    # stops part way, into a directory an earlier fetch filled, leaves one check refuses, never a new graph beside
+    # an old now. The now is taken before the first GraphQL call, so a bad SOURCE_DATE_EPOCH costs none, and through
+    # a variable, since a redirect would leave an empty now.txt. A branch pushed during the fetch is newer than the
+    # now; R4 counts it as in progress.
+    rm -f "${dir:?}/now.txt"
+    local now now_from=clock
+    now=$(snapshot_now)
+    [ -z "${SOURCE_DATE_EPOCH:-}" ] || now_from=SOURCE_DATE_EPOCH
     : > "$dir/issues.jsonl"
     local cursor="" page
     # shellcheck disable=SC2016
@@ -114,14 +124,10 @@ fetch() {
         [ "$(printf '%s' "$page" | jq -r '.data.repository.refs.pageInfo.hasNextPage')" = true ] || break
         cursor=$(printf '%s' "$page" | jq -r '.data.repository.refs.pageInfo.endCursor')
     done
-    # Through a variable, not a redirect: a bad SOURCE_DATE_EPOCH stops the fetch before now.txt exists, where a
-    # redirect would leave an empty one for check to trip on.
-    local now
-    now=$(snapshot_now)
-    printf '%s\n' "$now" > "$dir/now.txt"
     printf '%s\n' "$repo" > "$dir/repo.txt"
-    printf 'fetched %s issues, %s branches into %s\n' \
-        "$(wc -l < "$dir/issues.jsonl")" "$(wc -l < "$dir/branches.jsonl")" "$dir" >&2
+    printf '%s\n' "$now" > "$dir/now.txt"
+    printf 'fetched %s issues, %s branches into %s; now %s (%s)\n' \
+        "$(wc -l < "$dir/issues.jsonl")" "$(wc -l < "$dir/branches.jsonl")" "$dir" "$now" "$now_from" >&2
 }
 
 # Pure: reads dir/{issues,branches}.jsonl + dir/now.txt, prints the verdict. Exit 0/10/20.
@@ -311,13 +317,28 @@ knob_rc() { local -x "${1:?}"; check_rc "$2"; }
 knob_err() { local -x LC_ALL="${3:?}" "${1:?}"; bash "$0" check "$2" 2>&1 >/dev/null || :; }
 # yes when a fresh bash in locale $1 matches an Arabic-Indic digit with [0-9], as a knob check with ranges would.
 range_takes_wide_digit() { local -x LC_ALL="${1:?}"; bash -c 'if [[ ١ =~ ^[0-9]$ ]]; then printf yes; else printf no; fi'; }
+# Whether gh, in the PATH a stub run gets, is the stub. bash skips a stub it cannot execute (on a noexec TMPDIR) for
+# the next gh on PATH, the real one, so no stub run starts unless this holds.
+stub_ok() { local gh; gh=$(env PATH="$T/stub:$PATH" bash -c 'command -v gh') || :; [[ "$gh" == "$T/stub/gh" ]]; }
 # A fresh `fetch` or `run` ($1) into dir $3 with env assignment $2, against the stub gh in $T/stub (never the
-# network), SOURCE_DATE_EPOCH unset unless $2 sets it. Prints the exit code.
+# network), SOURCE_DATE_EPOCH unset unless $2 sets it. Prints the exit code, or no-stub having run nothing.
 stub_rc() {
     local rc=0
+    stub_ok || { printf no-stub; return 0; }
     env -u SOURCE_DATE_EPOCH PATH="$T/stub:$PATH" "${2:?}" bash "$0" "${1:?}" "${3:?}" >/dev/null 2>&1 || rc=$?
     printf '%s' "$rc"
 }
+# The stderr of the same run, or no-stub having run nothing.
+stub_err() {
+    stub_ok || { printf no-stub; return 0; }
+    env -u SOURCE_DATE_EPOCH PATH="$T/stub:$PATH" "${2:?}" bash "$0" "${1:?}" "${3:?}" 2>&1 >/dev/null || :
+}
+# The number of calls the gh in dir $1 has logged.
+calls_in() { wc -l < "${1:?}/calls" | tr -d ' '; }
+# "$@" with the tripwire gh in $T/trip next on PATH, where the real gh would be.
+with_trip() { local -x PATH="$T/trip:$PATH"; "$@"; }
+# "$@" in locale $1, exported to the fresh bash a stub run starts.
+in_locale() { local -x LC_ALL="${1:?}"; shift; "$@"; }
 # The now of a snapshot with SOURCE_DATE_EPOCH set to $1 (exported, as knob_rc does).
 snap_with() { local -x SOURCE_DATE_EPOCH="$1"; snapshot_now; }
 # failed when that snapshot fails. A die in it ends the command substitution it runs in, so read the status of that.
@@ -327,7 +348,7 @@ verdict_of() { local rc=0; check "$1" > "$1/v.json" || rc=$?; printf '%s/%s' "$(
 rule_of() { jq -r ".rules.$2.ok" "$1/v.json"; }
 
 self_test() {
-    local T quoted
+    local T quoted calls
     T=$(mktemp -d)
     # shellcheck disable=SC2064
     trap "rm -rf '${T:?}'" EXIT
@@ -348,8 +369,11 @@ self_test() {
     expect "a fractional MAX_WIP stops the run (exit 2)" "2" "$(knob_rc MAX_WIP=1.5 "$T/green")"
     expect "a negative ACTIVE_DAYS stops the run (exit 2): it would empty R4" "2" "$(knob_rc ACTIVE_DAYS=-1 "$T/green")"
     expect "a zero-padded MAX_WIP stops the run (exit 2): 007 is not how a count is written" "2" "$(knob_rc MAX_WIP=007 "$T/green")"
+    expect "a zero knob is a whole number: ACTIVE_DAYS=0 runs (exit 0)" "0" "$(knob_rc ACTIVE_DAYS=0 "$T/green")"
     # The next case is a test only where [0-9] matches an Arabic-Indic digit. A host without en_US.UTF-8 falls back
-    # to C, where it does not, and the case would pass with the ranges back; this one makes that host RED instead.
+    # to C, where it does not, and the case would pass with the ranges back; this one makes that host RED instead,
+    # as it does any host where a fresh bash does not match it, whatever the cause: there the case cannot fail, so
+    # it must not pass. The SOURCE_DATE_EPOCH case on other digits below rests on it too.
     local wide_locale=en_US.UTF-8
     expect "a fresh bash in $wide_locale matches an Arabic-Indic digit with [0-9], so the next case can fail" "yes" \
         "$(range_takes_wide_digit "$wide_locale")"
@@ -465,12 +489,27 @@ self_test() {
     expect "summary line" "ISSUE-TREE-001 RED: tickets 2/100, orphans 1, depth>3 0, fanout>5 0, wip>2 0 workers; not capped: open 6, roots 1" \
         "$(summary < "$T/orphan/v.json")"
 
-    # The now of a snapshot. The stub gh answers every query with one empty, final page: fetch and run go offline.
+    # The now of a snapshot. The stub gh answers every query with one empty, final page, so fetch and run go
+    # offline, and logs each call to the calls file beside it.
     mkdir -p "$T/stub"
     cat > "$T/stub/gh" <<'STUB'
 #!/usr/bin/env bash
+printf 'call\n' >> "${0%/*}/calls"
 printf '%s\n' '{"data":{"repository":{"issues":{"pageInfo":{"hasNextPage":false},"nodes":[]},"refs":{"pageInfo":{"hasNextPage":false},"nodes":[]}}}}'
 STUB
+    chmod +x "$T/stub/gh"
+    : > "$T/stub/calls"
+    # bash skips a stub gh it cannot execute (a noexec TMPDIR) for the next gh on PATH. Here that is a tripwire, a
+    # copy of the stub that logs to its own calls file, where it would be the real gh querying GitHub.
+    mkdir -p "$T/trip"
+    cp "$T/stub/gh" "$T/trip/gh"
+    chmod +x "$T/trip/gh"
+    : > "$T/trip/calls"
+    chmod -x "$T/stub/gh"
+    expect "a stub gh that cannot run stops a stub run before it starts (no-stub)" "no-stub" \
+        "$(with_trip stub_rc fetch ACTIVE_DAYS=7 "$T/nostub")"
+    expect "... and a stub run for its stderr too" "no-stub" "$(with_trip stub_err fetch ACTIVE_DAYS=7 "$T/nostub")"
+    expect "... so the next gh on PATH is never called" "0" "$(calls_in "$T/trip")"
     chmod +x "$T/stub/gh"
     expect "SOURCE_DATE_EPOCH pins the now of the snapshot" "2026-09-21T14:13:20Z" "$(snap_with 1790000000)"
     expect "an unset SOURCE_DATE_EPOCH is the clock: a now after 2026-10-04, the day this case was written" "true" \
@@ -481,6 +520,8 @@ STUB
     expect "a fractional SOURCE_DATE_EPOCH fails the snapshot too: jq alone would write a now from 1.5" "failed" "$(snap_fails 1.5)"
     expect "a negative SOURCE_DATE_EPOCH fails the snapshot" "failed" "$(snap_fails -1)"
     expect "an exponent SOURCE_DATE_EPOCH fails the snapshot" "failed" "$(snap_fails 1e9)"
+    expect "Arabic-Indic digits in SOURCE_DATE_EPOCH stop a fresh fetch at its whole-number check, in $wide_locale" "1" \
+        "$(in_locale "$wide_locale" stub_err fetch SOURCE_DATE_EPOCH=١٠٠ "$T/wide" | grep -c 'must be a whole number of seconds')"
     expect "a zero-padded SOURCE_DATE_EPOCH fails the snapshot: date +%s never pads, and jq would take 007 as 7" \
         "failed" "$(snap_fails 007)"
     expect "a whole number past the range of jq fails the snapshot, never falls back to the clock" "failed" \
@@ -490,6 +531,15 @@ STUB
         "$(snap_fails 253402300800)"
     expect "fetch with SOURCE_DATE_EPOCH set runs (exit 0)" "0" "$(stub_rc fetch SOURCE_DATE_EPOCH=1790000000 "$T/pinned")"
     expect "fetch writes the pinned now to now.txt" "2026-09-21T14:13:20Z" "$(cat "$T/pinned/now.txt")"
+    calls=$(calls_in "$T/stub")
+    expect "fetch into that filled directory with a fractional SOURCE_DATE_EPOCH stops (exit 2)" "2" \
+        "$(stub_rc fetch SOURCE_DATE_EPOCH=1.5 "$T/pinned")"
+    expect "... before its first GraphQL call" "$calls" "$(calls_in "$T/stub")"
+    expect "... and removes the old now.txt: check never reads a new graph beside an old now" "absent" \
+        "$(if [ -e "$T/pinned/now.txt" ]; then printf present; else printf absent; fi)"
+    expect "fetch says where its now came from: SOURCE_DATE_EPOCH, when that is set" "1" \
+        "$(stub_err fetch SOURCE_DATE_EPOCH=1790000000 "$T/said" | grep -c 'now 2026-09-21T14:13:20Z (SOURCE_DATE_EPOCH)$')"
+    expect "... the clock, when it is unset" "1" "$(stub_err fetch ACTIVE_DAYS=7 "$T/said" | grep -c ' (clock)$')"
     expect "fetch with a fractional SOURCE_DATE_EPOCH stops (exit 2)" "2" "$(stub_rc fetch SOURCE_DATE_EPOCH=1.5 "$T/junk")"
     expect "... and leaves no now.txt for check to read" "absent" \
         "$(if [ -e "$T/junk/now.txt" ]; then printf present; else printf absent; fi)"
