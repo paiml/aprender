@@ -41,10 +41,13 @@ name: Fleet Toolset
 
 on:
   schedule:
-    # 04:47 UTC — an off-minute, and clear of cuda-nightly (01:30) and
-    # silicon-nightly (03:30) so the probe never queues behind a 90-minute
-    # measurement it would otherwise appear to have slowed down.
-    - cron: "47 4 * * *"
+    # 19:47 UTC — an off-minute, and before every other nightly cron
+    # (cuda-nightly is the first, at 20:30), so the probe never queues behind
+    # a long measurement it would otherwise appear to have slowed down.
+    # GitHub created this run 5h15m–6h26m after its cron on 09-26..10-03,
+    # so a 04:47 cron landed after the nightly train's 04:45 read on every
+    # night. A cron before 21:00 was created 2h46m–3h59m late on those nights.
+    - cron: "47 19 * * *"
   workflow_dispatch:
 
 permissions:
