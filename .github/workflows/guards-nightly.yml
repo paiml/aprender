@@ -237,6 +237,13 @@ jobs:
           # 4. the satd class of the ratchet-semantics case table (rebuilds nothing)
           DR_ENV=()
           dr "$GITHUB_WORKSPACE" bash scripts/tests/ratchet_semantics_test.sh --class satd
+      # REPORT-ONLY until it has been green for three nights: continue-on-error keeps the job green, and
+      # this step's own outcome is the night's receipt. Making it blocking is its own change.
+      - name: CRUX dogfood JSON port case table and self-test (report-only)
+        continue-on-error: true
+        run: |
+          setsid --wait bash scripts/tests/crux_dogfood_json_test.sh
+          setsid --wait bash scripts/tests/crux_dogfood_json_test.sh --self-test
       - name: Summary
         if: always()
         run: |

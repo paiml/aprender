@@ -3,7 +3,7 @@
 # Each function replaces one inline python3 snippet of the dogfood and writes the bytes Python wrote: the same
 # key order, `json.dumps` separators (", " and ": "), ASCII-only escapes (é, surrogate pairs past U+FFFF,
 # \u007f), Python's float repr (0.0, 1e-05, 1e+16) and int(), and indent=2 for meta.json. Where the two can
-# differ, the difference is listed here and pinned by a case in scripts/check_crux_dogfood_json.sh:
+# differ, the difference is listed here and pinned by a case in scripts/tests/crux_dogfood_json_test.sh:
 #
 #   - NaN and Infinity were written through by Python; jq cannot write them back, so a value holding one is
 #     REFUSED. So are a lone surrogate escape (jq does not parse one) and a NUL inside a text file's content or
@@ -29,7 +29,7 @@
 #   - evidence/crux/hf-sources.yaml is read as a strict subset of YAML: two-space block mappings, plain
 #     scalars of [A-Za-z0-9_./-] and comments. Anything else (flow style, quotes, tabs, CR LF, a key YAML 1.1
 #     reads as a bool, null, number or date) is REFUSED with a message, so the GGUF gets no declared HF
-#     source; scripts/check_crux_dogfood_json.sh holds the real file to the subset. A null dtype or a
+#     source; scripts/tests/crux_dogfood_json_test.sh holds the real file to the subset. A null dtype or a
 #     non-string repo, revision or dtype is refused too (Python printed None, or the value's repr).
 #
 # SOURCED: option-neutral (no `set`); every function fails by return status, never by exit.
