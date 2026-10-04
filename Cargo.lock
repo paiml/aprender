@@ -848,7 +848,7 @@ dependencies = [
 
 [[package]]
 name = "aprender-kernel-oracle"
-version = "0.69.3"
+version = "0.70.0"
 
 [[package]]
 name = "aprender-mcp"

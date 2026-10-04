@@ -183,7 +183,10 @@ aprender-review-experiment	--lib	contamination
 aprender-review-experiment	--lib	prereg
 aprender-serve	--lib	capability
 aprender-serve	--lib	cli::cli_tests
+aprender-serve	--lib	gguf::inference::matmul
+aprender-serve	--lib	gpu::adapters::wgpu_adapter
 aprender-serve	--lib	infer
+aprender-serve	--lib	kernel_registry
 aprender-serve	--lib	quantize::contract_tests
 aprender-shell	--lib	model
 aprender-simulate	--lib	demos::tsp_grasp
