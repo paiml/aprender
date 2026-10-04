@@ -87,11 +87,11 @@ These are bodies ready to file, one per bundle in `falsifier-landing-map.md`.
 - head_dim from `key_length` at all three sites (`gguf_gpu_generate.rs:185`, `:672` and `batch_wgpu.rs:151`, at 316dee2cd4).
 - Q6_K, Q8_0 and Q4_0 WGSL GEMVs, so the exit model's Q6_K tensors stop being widened on the host.
 - A qtype check on the ffn_gate weight, which today reaches the Q4_K GEMV unchecked (R2 D-1, static, unmeasured).
-- Qwen3 q/k norm. The 0.955 was measured on qwen2.5-coder-1.5b, where none of the theta, head_dim or q/k-norm defects applies, so its cause is unattributed. The layer-diff trace (R2 item 0, K14) runs before any of these fixes is credited with it. The 0.955 first shows at position 1 (every 1.5B failure of the parity probe is at step 2/3, and position 0 passes 0.99), so the trace starts at position 1, layer 0: q and k after the bias, after RoPE, the scores and the attention output.
+- Qwen3 q/k norm. The 0.955 was measured on qwen2.5-coder-1.5b, where none of the theta, head_dim or q/k-norm defects applies, so its cause is unattributed. The layer-diff trace (R2 item 0, K14) runs before any of these fixes is credited with it. The 0.955 first shows at position 1 (every 1.5B failure of the parity probe is at step 2/3, and position 0 passes 0.99), so the trace starts at position 1, layer 0: q and k after the bias, after RoPE, the scores and the attention output. Before the trace, one probe run with `DIRECT_FP32_GEMV=1` checks the reference: the probe judges the f32-activation wgpu GEMVs against a CPU forward on Q8_K activations (`q8k_act`), the #3714 shape (R2 item 0). If the 1.5B then passes 0.99 at all 3 steps, P4 moves the probe's CPU forward inside `with_fp32_activations`, as `crates/aprender-serve/src/infer/qwen3_moe_dispatch.rs:209` does [V at 316dee2cd4], and changes nothing in the wgpu forward for it.
 
 **Acceptance**
 - WGF-001, 002, 004 and 008 are green on C1, using synthetic fixtures at position ≥ 1 and pos_in_head ≥ 1.
-- WGF-003 is green only after the K14 trace has run, on a fixture at position ≥ 1. At position 0 attention has one key, so its output is that key's V and a skipped q/k norm cannot show.
+- WGF-003 is green only after the K14 trace has run, on a fixture at position ≥ 1. WGF-002 and WGF-003 judge against the CPU forward on FP32 activations (`fp32_act`): against Q8_K a correct forward can miss 0.9999 (#3714). At position 0 attention has one key, so its output is that key's V and a skipped q/k norm cannot show.
 - The mutations listed in the contract turn their tests red.
 
 **Hosts** C1 (wgpu adapter), train-inactive. CI has no GPU.

@@ -43,7 +43,7 @@ equations:
   qk_norm_applied:
     formula: |
       arch has q_norm/k_norm tensors  =>  wgpu applies RMSNorm to q and k per head before RoPE
-      layer_cos(l) = cos(attn_out_wgpu(l), attn_out_cpu(l))
+      layer_cos(l) = cos(attn_out_wgpu(l), attn_out_cpu_fp32(l))
       PASS  <=>  min over layers of layer_cos >= 0.9999 on the fixture
     domain: 'per-layer attention output, one prompt'
     codomain: bool
@@ -52,6 +52,7 @@ equations:
     - 'The fixture needs norm weights that are not all 1, and q/k whose per-head RMS is not 1. Otherwise RMSNorm is close to identity and a path that skips it still passes.'
     - 'L25: the implication is vacuous on a fixture with no q_norm/k_norm tensors. The test asserts the tensors are present before it compares anything.'
     - 'L25 (2026-10-04): the fixture needs position >= 1, so attention has at least two keys. At position 0 the attention output is the V of the one key whatever q and k are, so a path that skips the q/k norm passes there. The same fact is why the 1.5B 0.955 first shows at step 2/3 of the parity probe (R2 item 0).'
+    - 'L25 (2026-10-04, item u): attn_out_cpu_fp32 is the CPU forward on FP32 activations (DIRECT_FP32_GEMV=1, RQ-5 fp32_act). The wgpu GEMVs read f32 activations (crates/aprender-compute/src/backends/gpu/shaders/basic_ops.rs:557 at 316dee2cd4), and the default CPU Q4_K matvec quantizes them to Q8_K (crates/aprender-serve/src/quantize/parallel_k.rs:303-304 at 316dee2cd4). In #3714 a float GPU forward that matched FP32 activations at cosine 1.000000 scored 0.985 against Q8_K (crates/aprender-serve/src/quantize/parallel_k.rs:219-225 at 316dee2cd4), so a 0.9999 floor judged against Q8_K can fail a correct wgpu forward and measure the reference instead.'
     - 'L25: the min over layers propagates NaN. A non-finite layer_cos is FAIL; f32::min would drop it (as in BPM-009).'
 
   qtype_coverage:
@@ -85,13 +86,13 @@ falsification_tests:
   mutation: 'restore the hardcoded 1e6 at ONE RoPE site (the host decode RoPE or the batch shader); the fixture for that site must turn RED. Hardcode split halves; the rope_type 0 fixture must turn RED. Also move the fixture to position 0; the test must refuse it as blind to theta, not pass it'
 - id: FALSIFY-WGF-002
   rule: head_dim comes from metadata
-  prediction: 'A synthetic config with key_length != hidden / n_heads matches the CPU forward (cosine >= 0.9999).'
+  prediction: 'A synthetic config with key_length != hidden / n_heads matches the CPU forward on FP32 activations (cosine >= 0.9999).'
   test: 'NOT YET WRITTEN — lands with R2 item 2'
   if_fails: 'shape mismatch or silent mis-stride on models with decoupled head_dim'
   mutation: 'compute head_dim as hidden / n_heads; the fixture must turn RED'
 - id: FALSIFY-WGF-003
   rule: Qwen3 q/k norm is applied on wgpu
-  prediction: 'On a Qwen3 fixture at position >= 1 the per-layer attention cosine vs CPU is >= 0.9999 at every layer.'
+  prediction: 'On a Qwen3 fixture at position >= 1 the per-layer attention cosine vs the CPU forward on FP32 activations (DIRECT_FP32_GEMV=1, RQ-5 fp32_act) is >= 0.9999 at every layer.'
   test: 'NOT YET WRITTEN — gated on the K14 layer-diff trace (Next#1, deferred while train-active)'
   if_fails: 'the wgpu Qwen3 path skips a norm the CPU applies at every layer and diverges from it by an unmeasured amount (the measured 0.955 is qwen2.5-coder-1.5b, not this defect)'
   mutation: 'skip the q/k norm dispatch; layer 0 cosine must drop below the floor. The fixture uses position >= 1, non-unit norm weights and q/k RMS != 1, or skipping the norm cannot move the cosine'
@@ -187,4 +188,4 @@ verification_summary:
   proven: 0
   tested: 0
   status: proposed
-  notes: 'Draft by la-73 (L3). No ticket yet. WGF-003 waits on the K14 trace; WGF-006 waits on a train-inactive C1 sweep. L25 review 2026-10-03 added WGF-007..010 (ledger discrimination, required qtypes, total op_placement, refusal-as-regression). L25 2026-10-04: the WGF-003 fixture needs position >= 1.'
+  notes: 'Draft by la-73 (L3). No ticket yet. WGF-003 waits on the K14 trace; WGF-006 waits on a train-inactive C1 sweep. L25 review 2026-10-03 added WGF-007..010 (ledger discrimination, required qtypes, total op_placement, refusal-as-regression). L25 2026-10-04: the WGF-003 fixture needs position >= 1. Item u (2026-10-04): WGF-001..003 judge against the CPU forward on FP32 activations (fp32_act), never Q8_K (#3714).'
