@@ -96,9 +96,10 @@ judge_jobs() {
 }
 
 # judge_cpu C (TSV on stdin, newest run first: run_id attempt status conclusion tested_sha). The newest row that
-# tested C decides. A row still running has tested_sha "?" (its log is not readable yet).
+# tested C decides. A row still running has tested_sha "?" (its log is not readable yet). A row that tested another
+# commit is named in the reason only when its sha is as long as C's.
 judge_cpu() {
-    awk -F '\t' -v c="$1" '
+    awk -F '\t' -v c="$1" -v shalen="${#1}" '
         NF >= 5 && $5 == c { found = 1
             if ($3 != "completed") { printf "not_measured\tinfra run %s on C is still %s\n", $1, $3; exit }
             if ($4 == "success" && $2 == 1) { printf "green\tinfra run %s tested C: success at attempt 1\n", $1; exit }
@@ -106,7 +107,7 @@ judge_cpu() {
             if ($4 == "failure" || $4 == "timed_out" || $4 == "startup_failure") { printf "red\tinfra run %s tested C: %s\n", $1, $4; exit }
             printf "not_measured\tinfra run %s tested C and ended %s\n", $1, $4; exit }
         NF >= 5 && $3 != "completed" && run == "" { run = $1 }
-        NF >= 5 && $3 == "completed" && $5 ~ /^[0-9a-f]+$/ && length($5) == 40 && newest == "" { newest = substr($5, 1, 12) }
+        NF >= 5 && $3 == "completed" && $5 ~ /^[0-9a-f]+$/ && length($5) == shalen && newest == "" { newest = substr($5, 1, 12) }
         END { if (found) exit
             if (run != "") printf "not_measured\tinfra run %s is still running; no finished run tested C yet\n", run
             else if (newest != "") printf "not_measured\tno infra clean-room run tested C; the newest tested %s\n", newest
@@ -306,7 +307,7 @@ fx_job() {
 fx_run() { jq -cs '{jobs: .}'; }
 
 self_test() {
-    local pass=0 fail=0 o tmp c d g a T st as
+    local pass=0 fail=0 o tmp c d g a gt st as
     tmp="$(mktemp -d)" || return 1
     ok() { printf '  ok    %-46s %s\n' "$1" "$2"; pass=$((pass + 1)); }
     broke() { printf '  BROKE %-46s %s\n' "$1" "$2"; fail=$((fail + 1)); }
@@ -331,15 +332,15 @@ self_test() {
     echo "$PROG self-test: case table"
     g="b2-gpu at C / b2-gpu (aprender-gpu, yoga sm_89)"
     a="binary-release dry at C"
-    T='cargo test -p aprender-gpu --lib --features cuda'
+    gt='cargo test -p aprender-gpu --lib --features cuda'
     # cleanroom-gpu
-    d="$(fx_job "$g" completed success 'Set up job:success' "$T:success" | fx_run)"
+    d="$(fx_job "$g" completed success 'Set up job:success' "$gt:success" | fx_run)"
     row gpu_all_success_is_green green "succeeded" -- on "$d" judge_jobs "$GPU_PREFIX" "$GPU_ENV"
-    d="$(fx_job "$g" completed failure 'A CUDA device is visible:success' "$T:failure" | fx_run)"
-    row gpu_test_step_failure_is_red red "$T" -- on "$d" judge_jobs "$GPU_PREFIX" "$GPU_ENV"
-    d="$(fx_job "$g" completed failure 'A CUDA device is visible:success' "$T:cancelled" | fx_run)"
-    row gpu_timeout_inside_the_tests_is_red red "$T" -- on "$d" judge_jobs "$GPU_PREFIX" "$GPU_ENV"
-    d="$(fx_job "$g" completed failure 'A CUDA device is visible:failure' "$T:skipped" | fx_run)"
+    d="$(fx_job "$g" completed failure 'A CUDA device is visible:success' "$gt:failure" | fx_run)"
+    row gpu_test_step_failure_is_red red "$gt" -- on "$d" judge_jobs "$GPU_PREFIX" "$GPU_ENV"
+    d="$(fx_job "$g" completed failure 'A CUDA device is visible:success' "$gt:cancelled" | fx_run)"
+    row gpu_timeout_inside_the_tests_is_red red "$gt" -- on "$d" judge_jobs "$GPU_PREFIX" "$GPU_ENV"
+    d="$(fx_job "$g" completed failure 'A CUDA device is visible:failure' "$gt:skipped" | fx_run)"
     row gpu_no_cuda_device_is_not_measured not_measured "precondition" -- on "$d" judge_jobs "$GPU_PREFIX" "$GPU_ENV"
     d="$(fx_job "$g" completed failure 'Assert the commit under test:failure' | fx_run)"
     row gpu_other_commit_is_not_measured not_measured "Assert the commit" -- on "$d" judge_jobs "$GPU_PREFIX" "$GPU_ENV"
@@ -347,7 +348,7 @@ self_test() {
     row gpu_checkout_failure_is_not_measured not_measured "precondition" -- on "$d" judge_jobs "$GPU_PREFIX" "$GPU_ENV"
     d="$(fx_job "$g" completed failure 'Set up runner:failure' | fx_run)"
     row gpu_runner_setup_failure_is_not_measured not_measured "Set up runner" -- on "$d" judge_jobs "$GPU_PREFIX" "$GPU_ENV"
-    d="$(fx_job "$g" completed cancelled "$T:cancelled" | fx_run)"
+    d="$(fx_job "$g" completed cancelled "$gt:cancelled" | fx_run)"
     row gpu_cancelled_is_not_measured not_measured "ended cancelled" -- on "$d" judge_jobs "$GPU_PREFIX" "$GPU_ENV"
     d="$(fx_job "$g" completed skipped | fx_run)"
     row gpu_skipped_is_not_measured not_measured "ended skipped" -- on "$d" judge_jobs "$GPU_PREFIX" "$GPU_ENV"
@@ -355,11 +356,11 @@ self_test() {
     row gpu_failure_without_a_step_is_not_measured not_measured "no failed step" -- on "$d" judge_jobs "$GPU_PREFIX" "$GPU_ENV"
     d="$(fx_job "$g" in_progress - | fx_run)"
     row gpu_in_progress_is_not_measured not_measured "still in_progress" -- on "$d" judge_jobs "$GPU_PREFIX" "$GPU_ENV"
-    d="$(fx_job "cleanroom-gpu" completed success "$T:success" | fx_run)"
+    d="$(fx_job "cleanroom-gpu" completed success "$gt:success" | fx_run)"
     row gpu_no_called_job_is_not_measured not_measured "no job named" -- on "$d" judge_jobs "$GPU_PREFIX" "$GPU_ENV"
     row gpu_unparsable_list_is_not_measured not_measured "did not parse" -- on "not json" judge_jobs "$GPU_PREFIX" "$GPU_ENV"
-    d="$( { fx_job "$g" completed success "$T:success"
-            fx_job "b2-gpu at Cx / b2-gpu (aprender-gpu, yoga sm_89)" completed failure "$T:failure"; } | fx_run)"
+    d="$( { fx_job "$g" completed success "$gt:success"
+            fx_job "b2-gpu at Cx / b2-gpu (aprender-gpu, yoga sm_89)" completed failure "$gt:failure"; } | fx_run)"
     row gpu_judges_only_its_own_caller_job green "all 1 job(s)" -- on "$d" judge_jobs "$GPU_PREFIX" "$GPU_ENV"
     # several called jobs (the assets shape): one red outranks a precondition, and the rest are counted
     d="$( { fx_job "$a / pv x86_64-unknown-linux-gnu on yoga" completed success 'Package archive:success'
