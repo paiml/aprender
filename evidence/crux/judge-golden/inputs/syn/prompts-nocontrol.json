@@ -1,0 +1,20 @@
+{
+  "schema": "crux-inference-prompts/v1",
+  "prompts": [
+    {
+      "id": "ctl-2plus2",
+      "messages": [
+        {
+          "role": "user",
+          "content": "What is 2+2? Reply with the final answer inside <answer></answer>."
+        }
+      ],
+      "oracle": {
+        "type": "answer",
+        "expect": "4",
+        "normalize": "int"
+      },
+      "negative": "<answer>5</answer>"
+    }
+  ]
+}

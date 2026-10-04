@@ -1,0 +1,2 @@
+formatted_prompt="<|im_start|>user\nWhat is 2+2? Reply with the final answer inside <answer></answer>.<|im_end|>\n<|im_start|>assistant\n"
+encoded 3 tokens: [151644, 872, 198]

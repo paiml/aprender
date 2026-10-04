@@ -1,0 +1,7 @@
+case	manifest	prompts	meta	certification
+syn-pass	evidence/crux/judge-golden/inputs/syn/pass.manifest.jsonl	evidence/crux/judge-golden/inputs/syn/prompts-pass.json	evidence/crux/judge-golden/inputs/syn/meta.json	-
+syn-nocontrol	evidence/crux/judge-golden/inputs/syn/pass.manifest.jsonl	evidence/crux/judge-golden/inputs/syn/prompts-nocontrol.json	evidence/crux/judge-golden/inputs/syn/meta.json	-
+syn-negative-green	evidence/crux/judge-golden/inputs/syn/pass.manifest.jsonl	evidence/crux/judge-golden/inputs/syn/prompts-negative-green.json	evidence/crux/judge-golden/inputs/syn/meta.json	-
+syn-v2-nocert	evidence/crux/judge-golden/inputs/syn/pass.manifest.jsonl	evidence/crux/judge-golden/inputs/syn/prompts-v2.json	evidence/crux/judge-golden/inputs/syn/meta.json	-
+syn-branches	evidence/crux/judge-golden/inputs/syn/branches.manifest.jsonl	evidence/crux/judge-golden/inputs/syn/prompts-branches.json	evidence/crux/judge-golden/inputs/syn/meta-branches.json	-
+syn-unknown-engine	evidence/crux/judge-golden/inputs/syn/unknown-engine.manifest.jsonl	evidence/crux/judge-golden/inputs/syn/prompts-pass.json	evidence/crux/judge-golden/inputs/syn/meta.json	-

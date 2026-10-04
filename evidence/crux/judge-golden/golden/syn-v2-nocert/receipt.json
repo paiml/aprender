@@ -1,0 +1,222 @@
+{
+  "version": "0.0.0-fixture",
+  "host": "syn",
+  "backend": "gpu",
+  "engines": [
+    "apr",
+    "llama.cpp",
+    "ollama",
+    "hf"
+  ],
+  "apr": {
+    "version_line": "apr 0.0.0-fixture (000000000)"
+  },
+  "llama_cpp": {
+    "build": "fixture"
+  },
+  "ollama": {
+    "server_version": "fixture"
+  },
+  "hf": {
+    "version": "fixture"
+  },
+  "models": [
+    {
+      "name": "syn-model-q4_k_m.gguf",
+      "sha256": "ca20c78283eeec89848c4fb57074659f9db2188630c5c4810ccdd9d3989884d3"
+    }
+  ],
+  "fixture": "SYNTHETIC: every input of this case is hand-made",
+  "schema": "crux-inference-receipt/v1",
+  "judged_at": "2026-10-04T17:02Z",
+  "cells": [
+    {
+      "key": {
+        "model_sha256": "ca20c78283eeec89848c4fb57074659f9db2188630c5c4810ccdd9d3989884d3",
+        "host": "syn",
+        "verb": "run",
+        "thinking": "off",
+        "rung": "v2",
+        "prompt_id": "ctl-2plus2"
+      },
+      "verdict": "GREEN",
+      "reasons": [],
+      "format": "gguf",
+      "extracted": {
+        "apr": "4",
+        "llama.cpp": "4",
+        "ollama": "4",
+        "hf": "4"
+      },
+      "all_wrong": false,
+      "quorum": {
+        "floor": 2,
+        "engines_answered": 4,
+        "answered": [
+          "apr",
+          "hf",
+          "llama.cpp",
+          "ollama"
+        ],
+        "comparators_answered": [
+          "hf",
+          "llama.cpp",
+          "ollama"
+        ],
+        "met": true
+      },
+      "subject": {
+        "model_sha256": "ca20c78283eeec89848c4fb57074659f9db2188630c5c4810ccdd9d3989884d3",
+        "apr_version": "apr 0.0.0-fixture (000000000)",
+        "under_development": false,
+        "development_note": null
+      },
+      "positive_control": true,
+      "oracle": {
+        "type": "answer",
+        "expect": "4",
+        "normalize": "int"
+      },
+      "engines": {
+        "apr": {
+          "answered": true,
+          "rc": 0,
+          "why": null,
+          "answer": "<answer>4</answer>",
+          "reported": {
+            "reported_by": "apr",
+            "prompt_tokens": 3,
+            "completion_tokens": 5,
+            "decode_rate": 99.5,
+            "rate_unit": "tokens per second, as the engine reported it",
+            "inference_ms": 50
+          },
+          "backend": {
+            "ran": "gpu",
+            "fell_back": false
+          },
+          "prompt_ids": [
+            151644,
+            872,
+            198
+          ],
+          "prompt_token_count": 3,
+          "rendered_prompt": "<|im_start|>user\\nWhat is 2+2? Reply with the final answer inside <answer></answer>.<|im_end|>\\n<|im_start|>assistant\\n",
+          "correct": true,
+          "version": "apr 0.0.0-fixture (000000000)"
+        },
+        "llama.cpp": {
+          "answered": true,
+          "rc": 0,
+          "why": null,
+          "answer": "<answer>4</answer>",
+          "reported": {
+            "reported_by": "llama.cpp",
+            "prompt_rate": 1234.5,
+            "decode_rate": 98.7,
+            "rate_unit": "tokens per second, as the engine reported it",
+            "prompt_tokens": null,
+            "completion_tokens": null
+          },
+          "correct": true,
+          "version": "fixture"
+        },
+        "ollama": {
+          "answered": true,
+          "rc": 0,
+          "why": null,
+          "answer": "<answer>4</answer>",
+          "reported": {
+            "reported_by": "ollama",
+            "prompt_tokens": 30,
+            "completion_tokens": 5,
+            "prompt_rate": 500.0,
+            "decode_rate": 120.5,
+            "rate_unit": "tokens per second, as the engine reported it",
+            "load_duration": "20ms",
+            "total_duration": "1.2s"
+          },
+          "correct": true,
+          "version": "fixture"
+        },
+        "hf": {
+          "answered": true,
+          "rc": 0,
+          "why": null,
+          "answer": "<answer>4</answer>",
+          "reported": {
+            "device": "cuda:0"
+          },
+          "correct": true,
+          "version": "fixture"
+        },
+        "llamafile": {
+          "answered": false,
+          "missing": true,
+          "why": "not requested",
+          "correct": false,
+          "version": null,
+          "not_ran_reason": "not_requested"
+        },
+        "vllm": {
+          "answered": false,
+          "missing": true,
+          "why": "not requested",
+          "correct": false,
+          "version": null,
+          "not_ran_reason": "not_requested"
+        }
+      },
+      "agreement": {
+        "answered": [
+          "apr",
+          "hf",
+          "llama.cpp",
+          "ollama"
+        ],
+        "all_identical": true,
+        "apr_matches": [
+          "hf",
+          "llama.cpp",
+          "ollama"
+        ]
+      },
+      "token_parity": {
+        "measured": true,
+        "apr_count": 3,
+        "llama_cpp_count": 3,
+        "apr_ids_compared": 3,
+        "apr_ids_complete": true,
+        "first_divergence": null,
+        "parity": true
+      }
+    }
+  ],
+  "deterministic": [],
+  "greedy": [],
+  "summary": {
+    "RED": 0,
+    "GREEN": 1,
+    "ALL_WRONG": 0,
+    "cells": 1,
+    "judged": 1,
+    "verdict": "DECLINE",
+    "deterministic": {
+      "RED": 0,
+      "GREEN": 0
+    },
+    "all_wrong_by_model": {},
+    "controls": [
+      "ctl-2plus2"
+    ],
+    "negative_controls": {
+      "run": {
+        "prompt_id": "ctl-2plus2",
+        "planted": "<answer>5</answer>",
+        "verdict": "RED"
+      }
+    },
+    "certified": "no --certification receipt was given",
+    "declined_because": "the v2 prompt set is not certified: no --certification receipt was given (#3962 J2)"
+  }
+}

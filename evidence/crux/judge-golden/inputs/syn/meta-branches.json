@@ -1,0 +1,31 @@
+{
+  "version": "0.0.0-fixture",
+  "host": "syn",
+  "backend": "gpu",
+  "engines": [
+    "apr",
+    "llama.cpp",
+    "ollama",
+    "hf",
+    "vllm"
+  ],
+  "apr": {
+    "version_line": "apr 0.0.0-fixture (000000000)"
+  },
+  "llama_cpp": {
+    "build": "fixture"
+  },
+  "ollama": {
+    "server_version": "fixture"
+  },
+  "hf": {
+    "version": "fixture"
+  },
+  "models": [
+    {
+      "name": "syn-model-q4_k_m.gguf",
+      "sha256": "ca20c78283eeec89848c4fb57074659f9db2188630c5c4810ccdd9d3989884d3"
+    }
+  ],
+  "fixture": "SYNTHETIC: every input of this case is hand-made; vllm is requested and has no version on purpose"
+}

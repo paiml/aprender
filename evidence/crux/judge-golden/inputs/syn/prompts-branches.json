@@ -1,0 +1,329 @@
+{
+  "schema": "crux-inference-prompts/v1",
+  "prompts": [
+    {
+      "id": "ctl-2plus2",
+      "messages": [
+        {
+          "role": "user",
+          "content": "What is 2+2? Reply with the final answer inside <answer></answer>."
+        }
+      ],
+      "oracle": {
+        "type": "answer",
+        "expect": "4",
+        "normalize": "int"
+      },
+      "control": true,
+      "negative": "<answer>5</answer>"
+    },
+    {
+      "id": "p-refused",
+      "messages": [
+        {
+          "role": "user",
+          "content": "What is 2+2? Reply with the final answer inside <answer></answer>."
+        }
+      ],
+      "oracle": {
+        "type": "answer",
+        "expect": "4",
+        "normalize": "int"
+      }
+    },
+    {
+      "id": "p-timeout",
+      "messages": [
+        {
+          "role": "user",
+          "content": "What is 2+2? Reply with the final answer inside <answer></answer>."
+        }
+      ],
+      "oracle": {
+        "type": "answer",
+        "expect": "4",
+        "normalize": "int"
+      }
+    },
+    {
+      "id": "p-exit",
+      "messages": [
+        {
+          "role": "user",
+          "content": "What is 2+2? Reply with the final answer inside <answer></answer>."
+        }
+      ],
+      "oracle": {
+        "type": "answer",
+        "expect": "4",
+        "normalize": "int"
+      }
+    },
+    {
+      "id": "p-nojson",
+      "messages": [
+        {
+          "role": "user",
+          "content": "What is 2+2? Reply with the final answer inside <answer></answer>."
+        }
+      ],
+      "oracle": {
+        "type": "answer",
+        "expect": "4",
+        "normalize": "int"
+      }
+    },
+    {
+      "id": "p-badjson",
+      "messages": [
+        {
+          "role": "user",
+          "content": "What is 2+2? Reply with the final answer inside <answer></answer>."
+        }
+      ],
+      "oracle": {
+        "type": "answer",
+        "expect": "4",
+        "normalize": "int"
+      }
+    },
+    {
+      "id": "p-notext",
+      "messages": [
+        {
+          "role": "user",
+          "content": "What is 2+2? Reply with the final answer inside <answer></answer>."
+        }
+      ],
+      "oracle": {
+        "type": "answer",
+        "expect": "4",
+        "normalize": "int"
+      }
+    },
+    {
+      "id": "p-degenerate",
+      "messages": [
+        {
+          "role": "user",
+          "content": "What is 2+2? Reply with the final answer inside <answer></answer>."
+        }
+      ],
+      "oracle": {
+        "type": "answer",
+        "expect": "4",
+        "normalize": "int"
+      }
+    },
+    {
+      "id": "p-fellback",
+      "messages": [
+        {
+          "role": "user",
+          "content": "What is 2+2? Reply with the final answer inside <answer></answer>."
+        }
+      ],
+      "oracle": {
+        "type": "answer",
+        "expect": "4",
+        "normalize": "int"
+      }
+    },
+    {
+      "id": "p-wrong",
+      "messages": [
+        {
+          "role": "user",
+          "content": "What is 2+2? Reply with the final answer inside <answer></answer>."
+        }
+      ],
+      "oracle": {
+        "type": "answer",
+        "expect": "4",
+        "normalize": "int"
+      }
+    },
+    {
+      "id": "p-think-unknown",
+      "messages": [
+        {
+          "role": "user",
+          "content": "What is 2+2? Reply with the final answer inside <answer></answer>."
+        }
+      ],
+      "oracle": {
+        "type": "answer",
+        "expect": "4",
+        "normalize": "int"
+      }
+    },
+    {
+      "id": "p-chat",
+      "messages": [
+        {
+          "role": "user",
+          "content": "What is 2+2? Reply with the final answer inside <answer></answer>."
+        }
+      ],
+      "oracle": {
+        "type": "answer",
+        "expect": "4",
+        "normalize": "int"
+      }
+    },
+    {
+      "id": "p-chat-noturn",
+      "messages": [
+        {
+          "role": "user",
+          "content": "What is 2+2? Reply with the final answer inside <answer></answer>."
+        }
+      ],
+      "oracle": {
+        "type": "answer",
+        "expect": "4",
+        "normalize": "int"
+      }
+    },
+    {
+      "id": "p-noecho",
+      "messages": [
+        {
+          "role": "user",
+          "content": "What is 2+2? Reply with the final answer inside <answer></answer>."
+        }
+      ],
+      "oracle": {
+        "type": "answer",
+        "expect": "4",
+        "normalize": "int"
+      }
+    },
+    {
+      "id": "p-notiming",
+      "messages": [
+        {
+          "role": "user",
+          "content": "What is 2+2? Reply with the final answer inside <answer></answer>."
+        }
+      ],
+      "oracle": {
+        "type": "answer",
+        "expect": "4",
+        "normalize": "int"
+      }
+    },
+    {
+      "id": "p-think",
+      "messages": [
+        {
+          "role": "user",
+          "content": "What is 2+2? Reply with the final answer inside <answer></answer>."
+        }
+      ],
+      "oracle": {
+        "type": "answer",
+        "expect": "4",
+        "normalize": "int"
+      }
+    },
+    {
+      "id": "p-ollama-empty",
+      "messages": [
+        {
+          "role": "user",
+          "content": "What is 2+2? Reply with the final answer inside <answer></answer>."
+        }
+      ],
+      "oracle": {
+        "type": "answer",
+        "expect": "4",
+        "normalize": "int"
+      }
+    },
+    {
+      "id": "p-hf-nodevice",
+      "messages": [
+        {
+          "role": "user",
+          "content": "What is 2+2? Reply with the final answer inside <answer></answer>."
+        }
+      ],
+      "oracle": {
+        "type": "answer",
+        "expect": "4",
+        "normalize": "int"
+      }
+    },
+    {
+      "id": "p-hf-cpu",
+      "messages": [
+        {
+          "role": "user",
+          "content": "What is 2+2? Reply with the final answer inside <answer></answer>."
+        }
+      ],
+      "oracle": {
+        "type": "answer",
+        "expect": "4",
+        "normalize": "int"
+      }
+    },
+    {
+      "id": "p-hf-protocol",
+      "messages": [
+        {
+          "role": "user",
+          "content": "What is 2+2? Reply with the final answer inside <answer></answer>."
+        }
+      ],
+      "oracle": {
+        "type": "answer",
+        "expect": "4",
+        "normalize": "int"
+      }
+    },
+    {
+      "id": "p-hf-notjson",
+      "messages": [
+        {
+          "role": "user",
+          "content": "What is 2+2? Reply with the final answer inside <answer></answer>."
+        }
+      ],
+      "oracle": {
+        "type": "answer",
+        "expect": "4",
+        "normalize": "int"
+      }
+    },
+    {
+      "id": "p-vllm-unpinned",
+      "messages": [
+        {
+          "role": "user",
+          "content": "What is 2+2? Reply with the final answer inside <answer></answer>."
+        }
+      ],
+      "oracle": {
+        "type": "answer",
+        "expect": "4",
+        "normalize": "int"
+      }
+    },
+    {
+      "id": "p-missing-stdout",
+      "messages": [
+        {
+          "role": "user",
+          "content": "What is 2+2? Reply with the final answer inside <answer></answer>."
+        }
+      ],
+      "oracle": {
+        "type": "answer",
+        "expect": "4",
+        "normalize": "int"
+      }
+    }
+  ]
+}
