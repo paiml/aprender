@@ -338,8 +338,10 @@ stub_err() {
 calls_in() { wc -l < "${1:?}/calls" | tr -d ' '; }
 # "$@" with the tripwire gh in $T/trip next on PATH, where the real gh would be.
 with_trip() { local -x PATH="$T/trip:$PATH"; "$@"; }
-# "$@" with the stub gh failing the branches query, as gh fails a call GitHub drops, so a fetch stops part way.
-with_failing_branches() { local -x STUB_FAIL_BRANCHES=1; "$@"; }
+# "$@" with the stub gh failing query $1 (issues or refs), as gh fails a call GitHub drops, so a fetch stops part way.
+with_failing() { local -x STUB_FAIL="${1:?}"; shift; "$@"; }
+# "$@" with the stub gh answering two pages per query, counting its calls in a fresh pages file.
+with_pages() { local -x STUB_PAGES="$T/stub/pages"; : > "$STUB_PAGES"; "$@"; }
 # "$@" in locale $1, exported to the fresh bash a stub run starts.
 in_locale() { local -x LC_ALL="${1:?}"; shift; "$@"; }
 # The now of a snapshot with SOURCE_DATE_EPOCH set to $1 (exported, as knob_rc does).
@@ -493,14 +495,26 @@ self_test() {
         "$(summary < "$T/orphan/v.json")"
 
     # The now of a snapshot. The stub gh answers every query with one empty, final page, so fetch and run go
-    # offline, and logs each call to the calls file beside it. With STUB_FAIL_BRANCHES set, it fails the branches
-    # query (exit 1), as gh does.
+    # offline, and logs each call to the calls file beside it. With STUB_FAIL set to issues or refs, it fails that
+    # query (exit 1), as gh does. With STUB_PAGES set, it answers two pages per query, one node on each, the second
+    # for the cursor of the first, and fails a fifth call: a fetch that never sends the cursor stops, instead of
+    # asking for the first page forever.
     mkdir -p "$T/stub"
     cat > "$T/stub/gh" <<'STUB'
 #!/usr/bin/env bash
 printf 'call\n' >> "${0%/*}/calls"
-if [ -n "${STUB_FAIL_BRANCHES:-}" ]; then
-    case "$*" in *'refs(refPrefix'*) printf 'gh stub: the branches query fails\n' >&2; exit 1 ;; esac
+if [ -n "${STUB_FAIL:-}" ]; then
+    case "$*" in *"$STUB_FAIL("*) printf 'gh stub: the %s query fails\n' "$STUB_FAIL" >&2; exit 1 ;; esac
+fi
+if [ -n "${STUB_PAGES:-}" ]; then
+    printf 'x\n' >> "$STUB_PAGES"
+    [ "$(wc -l < "$STUB_PAGES")" -le 4 ] || { printf 'gh stub: a fifth call in a paged fetch\n' >&2; exit 1; }
+    p=1
+    case "$*" in *' c=c1'*) p=2 ;; esac
+    jq -nc --argjson p "$p" '{pageInfo: {hasNextPage: ($p == 1), endCursor: "c\($p)"}} as $i
+      | {data: {repository: {issues: ($i + {nodes: [{number: $p, title: "t", labels: {nodes: []}, parent: null}]}),
+                             refs: ($i + {nodes: [{name: "b\($p)", target: {committedDate: "2026-09-20T00:00:00Z"}}]})}}}'
+    exit 0
 fi
 printf '%s\n' '{"data":{"repository":{"issues":{"pageInfo":{"hasNextPage":false},"nodes":[]},"refs":{"pageInfo":{"hasNextPage":false},"nodes":[]}}}}'
 STUB
@@ -550,11 +564,30 @@ STUB
     expect "... before its first GraphQL call" "$calls" "$(calls_in "$T/stub")"
     expect "... and before it touches the directory: the old now.txt stays, beside the graph it was written with" \
         "2026-09-21T14:13:20Z" "$(cat "$T/pinned/now.txt" 2>/dev/null)"
-    expect "a fetch into that directory whose branches query fails stops with the exit code of gh (1)" "1" \
-        "$(with_failing_branches stub_rc fetch SOURCE_DATE_EPOCH=1790000000 "$T/pinned")"
+    # A fetch that stops part way, at either query, into a directory a good fetch filled.
+    calls=$(calls_in "$T/stub")
+    expect "a fetch into that directory whose issues query fails stops with the exit code of gh (1)" "1" \
+        "$(with_failing issues stub_rc fetch SOURCE_DATE_EPOCH=1790000000 "$T/pinned")"
+    expect "... at its first call" "$((calls+1))" "$(calls_in "$T/stub")"
     expect "... and has removed the old now.txt: check never reads a new graph beside an old now" "absent" \
         "$(if [ -e "$T/pinned/now.txt" ]; then printf present; else printf absent; fi)"
     expect "... so check refuses that directory (exit 2), not NO-DATA as before" "2" "$(check_rc "$T/pinned")"
+    expect "a good fetch fills that directory again (exit 0)" "0" "$(stub_rc fetch SOURCE_DATE_EPOCH=1790000000 "$T/pinned")"
+    expect "... with its now.txt" "2026-09-21T14:13:20Z" \
+        "$(cat "$T/pinned/now.txt" 2>/dev/null)"
+    calls=$(calls_in "$T/stub")
+    expect "a fetch into it whose branches query fails stops with the exit code of gh (1)" "1" \
+        "$(with_failing refs stub_rc fetch SOURCE_DATE_EPOCH=1790000000 "$T/pinned")"
+    expect "... at its second call, after a page of issues" "$((calls+2))" "$(calls_in "$T/stub")"
+    expect "... and has removed that now.txt too" "absent" \
+        "$(if [ -e "$T/pinned/now.txt" ]; then printf present; else printf absent; fi)"
+    expect "... so check refuses that directory too (exit 2)" "2" "$(check_rc "$T/pinned")"
+    calls=$(calls_in "$T/stub")
+    expect "fetch pages: two pages of issues and two of branches, the second asked for with the cursor of the first" \
+        "0" "$(with_pages stub_rc fetch SOURCE_DATE_EPOCH=1790000000 "$T/paged")"
+    expect "... in 4 calls" "$((calls+4))" "$(calls_in "$T/stub")"
+    expect "... keeping the rows of both pages" "1 2 b1 b2" \
+        "$(jq -rs 'map(.n // .name | tostring) | join(" ")' "$T/paged/issues.jsonl" "$T/paged/branches.jsonl")"
     expect "fetch says where its now came from: SOURCE_DATE_EPOCH, when that is set" "1" \
         "$(stub_err fetch SOURCE_DATE_EPOCH=1790000000 "$T/said" | grep -c 'now 2026-09-21T14:13:20Z (SOURCE_DATE_EPOCH)$')"
     expect "... the clock, when it is unset" "1" "$(stub_err fetch ACTIVE_DAYS=7 "$T/said" | grep -c ' (clock)$')"
