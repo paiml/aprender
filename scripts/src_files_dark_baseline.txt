@@ -9,7 +9,6 @@
 # code is wanted (and fix what no longer compiles). Wire or delete; never add.
 # A compiled file that the model lists dark is no entry: fix the model instead.
 # tool_version=none (measured by scripts/check_src_test_files_wired.sh with scripts/lib/src_reach.py: an in-tree python3 model of mod/#[path]/include! edges over git ls-files; not a versioned analyser)
-crates/aprender-cbtop/src/latency_distribution/analysis.rs
 crates/aprender-core/src/models/qwen2/falsification.rs
 crates/aprender-core/src/models/qwen2/tests.rs
 crates/aprender-core/src/models/qwen2/tests_apr_loading.rs
@@ -22,7 +21,6 @@ crates/aprender-present-terminal/src/widgets/disk_panel.rs
 crates/aprender-present/src/generated_contracts.rs
 crates/aprender-serve/src/apr/loading.rs
 crates/aprender-serve/src/bench_viz_tests_benchmark_runner.rs
-crates/aprender-serve/src/cli/benchmark.rs
 crates/aprender-serve/src/cli/inference_tests_sample_next.rs
 crates/aprender-serve/src/cli/tests_12.rs
 crates/aprender-serve/src/cli/tests_format_model.rs
@@ -30,10 +28,6 @@ crates/aprender-serve/src/cli/tests_run_gguf_03.rs
 crates/aprender-serve/src/cli/tests_serve_model.rs
 crates/aprender-serve/src/cli/tests_serve_model_02.rs
 crates/aprender-serve/src/convert/q4k_conversion_stats.rs
-crates/aprender-serve/src/convert/tests_conversion_stats_orphan.rs
-crates/aprender-serve/src/convert/tests_gguf_converter.rs
-crates/aprender-serve/src/convert/writing.rs
-crates/aprender-serve/src/cuda/executor/cache_from_cache_from_kv_cache.rs
 crates/aprender-serve/src/cuda/executor/incremental_attention.rs
 crates/aprender-serve/src/cuda/executor/kernel.rs
 crates/aprender-serve/src/cuda/executor/layers/forward_graphed_decode.rs
@@ -43,9 +37,6 @@ crates/aprender-serve/src/cuda/executor/layers/preload_utilities.rs
 crates/aprender-serve/src/cuda/executor/layers/reduces.rs
 crates/aprender-serve/src/cuda/executor/layers/rope.rs
 crates/aprender-serve/src/cuda/executor/layers/transformer_layer_indexed.rs
-crates/aprender-serve/src/cuda/executor/layers/workspace_attention.rs
-crates/aprender-serve/src/cuda/executor/q4k_gemv_cached_uses.rs
-crates/aprender-serve/src/generate/make.rs
 crates/aprender-serve/src/gguf/cuda/cache.rs
 crates/aprender-serve/src/gguf/cuda/loading.rs
 crates/aprender-serve/src/gguf/inference/forward/debug.rs

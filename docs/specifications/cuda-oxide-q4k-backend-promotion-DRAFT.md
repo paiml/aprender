@@ -75,12 +75,12 @@ The aprender CUDA stack already loads opaque PTX strings and is fully cubin-cach
 - `CudaModule::from_ptx` (`crates/aprender-gpu/src/driver/module.rs`) takes a `&str` of PTX,
   JIT/links to cubin, and caches the cubin to `~/.cache/trueno/ptx/{sha256}.cubin`. Embedding a
   pre-generated PTX string is a first-class supported input, not a hack.
-- The existing hand-PTX launch in `q4k_gemv_cached_uses.rs` is exactly the call shape we reuse.
+- The existing hand-PTX launch in `q4k_gemv_cached.rs` is exactly the call shape we reuse.
 
 ## 3. ABI mapping (the one real wiring subtlety)
 
 Current hand-PTX `TiledQ4KGemv` uses a **C-style 5-arg ABI** (see
-`crates/aprender-serve/src/cuda/executor/q4k_gemv_cached_uses.rs`, all four launch sites):
+`crates/aprender-serve/src/cuda/executor/q4k_gemv_cached.rs`, all five launch sites):
 
 ```
 (out_ptr: *f32, weight_ptr: *u8/Q4K, in_ptr: *f32, k: u32, n: u32)
@@ -135,7 +135,7 @@ passed to `stream.launch_kernel(...)`. Pin it to a stable name, e.g. `oxide_q4k_
   the crates.io package (it is referenced by `include_str!`, so it must be packaged).
 
 ### 4.2 Loader + dispatch (feature- and runtime-gated)
-- `crates/aprender-serve/src/cuda/executor/q4k_gemv_cached_uses.rs`:
+- `crates/aprender-serve/src/cuda/executor/q4k_gemv_cached.rs`:
   in `q4k_gemv_cached_async` (and the indexed/`q4k_gemv_cached` siblings), add a branch:
   - **when** `cfg!(feature = "cuda-oxide-ptx")` AND runtime profile selects oxide AND device is
     sm_121 AND K%256==0 → use cache_key `"oxide_q4k_gemv_{k}_{n}"`, and on cache-miss compile via
@@ -237,7 +237,7 @@ cargo test -p realizar --features cuda-oxide-ptx --test q4k_gemv_oxide_parity --
   driver path, behind an off-by-default `cuda-oxide-ptx` feature + a runtime `q4k` backend
   selector gated to sm_121.
 - **Touch (small):** one `.ptx` asset + meta + (doc-only) kernel source; a dispatch branch in
-  `q4k_gemv_cached_uses.rs`; a feature flag + `gpu_profile.q4k` field; a new parity test +
+  `q4k_gemv_cached.rs`; a feature flag + `gpu_profile.q4k` field; a new parity test +
   contract; a BeatBenchmark gate. **build.rs and the gpu loader are untouched.**
 - **Biggest derisking step before coding:** locate the actual spike kernel source and confirm the
   raw-ptr (Option A) ABI generation on gx10 against the existing tiled launch config.

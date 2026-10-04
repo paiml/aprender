@@ -1000,7 +1000,6 @@ crates/aprender-serve/src/cuda/executor/proptests_tcov010_more.rs
 crates/aprender-serve/src/cuda/executor/proptests_tqa012d_forward.rs
 crates/aprender-serve/src/cuda/executor/proptests_tqa013e_batched.rs
 crates/aprender-serve/src/cuda/executor/q4k_gemv_cached.rs
-crates/aprender-serve/src/cuda/executor/q4k_gemv_cached_uses.rs
 crates/aprender-serve/src/cuda/executor/q4k_mwv_gemv.rs
 crates/aprender-serve/src/cuda/executor/q4k_q8_gemv.rs
 crates/aprender-serve/src/cuda/executor/q4k_tests_gemv_cached.rs
