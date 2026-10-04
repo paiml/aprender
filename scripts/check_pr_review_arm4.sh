@@ -68,6 +68,7 @@
 #   PR_HEAD_SHA              (required) tip commit of the PR branch
 #   PR_REVIEW_EVIDENCE_ROOT  receipt root (default: evidence/pr-review)
 #   PR_REVIEW_GUARD          guard to invoke (default: scripts/check_pr_review_receipt.sh)
+#   PR_REVIEW_ATTEST_ROOT    root of the base-owned L2 attest receipts (#4462; unset = none)
 #
 #   No value of any of them turns a check off. PR_REVIEW_GUARD pointed at a permissive
 #   stub fails A3; pointed at a refuse-everything stub fails A4. Both polarities are
@@ -287,8 +288,13 @@ arm4() {
     fi
     echo "  A2  subject ($kind) diff $base..$head, patch-id $pid"
 
-    local dir best_dir='' best_head='' d h rp legacy=0 other=0 legacy_dir='' legacy_dirs=()
-    if [ ! -d "$root/$pr" ]; then
+    local dir best_dir='' best_head='' d h rp lv legacy=0 other=0 offbranch=0 legacy_dir='' legacy_dirs=()
+    # #4462: a maintainer attest (L2) is minted by pr-review-fork-attest.yml onto the
+    # BASE-owned branch pr-review-fork-receipts; the caller materialises it at
+    # PR_REVIEW_ATTEST_ROOT. An L2 receipt anywhere else - the PR head's own tree, which
+    # the fork controls - is refused, and only L2 receipts are read from that root.
+    local aroot=${PR_REVIEW_ATTEST_ROOT:-}
+    if [ ! -d "$root/$pr" ] && { [ -z "$aroot" ] || [ ! -d "$aroot/$pr" ]; }; then
         echo "  A2  no receipt directory at $root/$pr" >&2
         echo "      S6.3: a missing receipt is RED, not skipped. S8 fixes" >&2
         echo "      receipt_presence at 100% with no ratchet." >&2
@@ -297,6 +303,8 @@ arm4() {
     for dir in "$root/$pr"/*/; do
         d=${dir%/}
         [ -f "$d/receipt.intoto.jsonl" ] || continue
+        lv=$(jq -r '.predicate.attestation_level // empty' "$d/receipt.intoto.jsonl" 2>/dev/null)
+        if [ "$lv" = L2-maintainer-attest ]; then offbranch=$((offbranch + 1)); continue; fi
         rp=$(jq -r '.predicate.diff_patch_id // empty' "$d/receipt.intoto.jsonl" 2>/dev/null)
         if [ -z "$rp" ]; then legacy=$((legacy + 1)); legacy_dirs+=("$d"); continue; fi
         if [ "$rp" != "$pid" ]; then other=$((other + 1)); continue; fi
@@ -307,6 +315,23 @@ arm4() {
             best_dir=$d; best_head=$h
         fi
     done
+    if [ -n "$aroot" ] && [ -d "$aroot/$pr" ]; then
+        for dir in "$aroot/$pr"/*/; do
+            d=${dir%/}
+            [ -f "$d/receipt.intoto.jsonl" ] || continue
+            lv=$(jq -r '.predicate.attestation_level // empty' "$d/receipt.intoto.jsonl" 2>/dev/null)
+            [ "$lv" = L2-maintainer-attest ] || continue
+            # the PR number is inside the signed predicate: a receipt for PR A copied under
+            # PR B's directory is refused even when the two diffs share a patch-id (quorum, #4517)
+            if [ "$(jq -r '.predicate.pr // empty' "$d/receipt.intoto.jsonl" 2>/dev/null)" != "$pr" ]; then
+                echo "  A2  $d is an L2 attest signed for PR $(jq -r '.predicate.pr // "none"' "$d/receipt.intoto.jsonl" 2>/dev/null), not PR $pr: refused." >&2
+                other=$((other + 1)); continue
+            fi
+            rp=$(jq -r '.predicate.diff_patch_id // empty' "$d/receipt.intoto.jsonl" 2>/dev/null)
+            if [ "$rp" != "$pid" ]; then other=$((other + 1)); continue; fi
+            if [ -z "$best_dir" ]; then best_dir=$d; best_head=$(receipt_head "$d"); fi
+        done
+    fi
     # A legacy receipt is accepted ONLY where the pre-#4421 rule would have accepted it,
     # or on the queue commit that rule could never bind (the defect #4421 fixes):
     #   branch  its signed head_sha must be an ANCESTOR of the subject - the old rule,
@@ -340,6 +365,7 @@ arm4() {
         echo "      $other receipt(s) bind a DIFFERENT diff (the change moved after review," >&2
         echo "      or the queue resolved a conflict); $legacy carry no diff_patch_id at all" >&2
         echo "      (signed before #4421 - re-sign to bind). What merges is not what was reviewed." >&2
+        [ "$offbranch" -eq 0 ] || echo "      $offbranch L2-maintainer-attest receipt(s) sit in the PR head's tree; an attest counts only from the base-owned pr-review-fork-receipts branch (#4462)." >&2
         return 1
     fi
     echo "  A2  receipt $best_dir binds this diff (reviewed head $best_head)"
@@ -397,6 +423,12 @@ arm4() {
         return 1
     fi
     echo "  A4  ACCEPT under $PUBKEY_REL, with no PR_REVIEW_PUBKEY override"
+    if [ "$(jq -r '.predicate.attestation_level // empty' "$best_dir/receipt.intoto.jsonl" 2>/dev/null)" = L2-maintainer-attest ]; then
+        local who
+        who=$(jq -r '.predicate.attestation.attester // "" | sub("^github:"; "")' "$best_dir/receipt.intoto.jsonl" 2>/dev/null)
+        echo "  DEGRADED: maintainer-attest by $who"
+        [ -z "${GITHUB_STEP_SUMMARY:-}" ] || printf 'DEGRADED: maintainer-attest by %s (PR %s, head %s) - no review ran; a maintainer with write permission attested the diff (#4462)\n' "$who" "$pr" "$head" >> "$GITHUB_STEP_SUMMARY"
+    fi
     return 0
 }
 

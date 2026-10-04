@@ -541,7 +541,7 @@ run_case_table() {  # run_case_table <table-basename> <guard-flag>
 @test "every S6.3 row, the contract's owed row, and PRREV-008's seven have a fixture" {
   local n
   n=$(find "$FIX" -maxdepth 1 -type d -name 'row-*' | wc -l)
-  [ "$n" -eq 43 ] || { echo "expected 43 row fixtures (14 from S6.3 + row 15 owed by the contract + rows 16-22 from PRREV-008 + rows 23-24 from PRREV-009 + rows 25-26 from PRREV-012/F6 + rows 27-35 from PRREV-015/S3.E + rows 36-37 from PRREV-020/S3.E.4 + rows 38-40 from the pmat transport probes + rows 41-43 from PRREV-023/S4.2), found $n"; false; }
+  [ "$n" -eq 47 ] || { echo "expected 47 row fixtures (14 from S6.3 + row 15 owed by the contract + rows 16-22 from PRREV-008 + rows 23-24 from PRREV-009 + rows 25-26 from PRREV-012/F6 + rows 27-35 from PRREV-015/S3.E + rows 36-37 from PRREV-020/S3.E.4 + rows 38-40 from the pmat transport probes + rows 41-43 from PRREV-023/S4.2 + rows 44-47 from #4472 docs tier), found $n"; false; }
   local i
   for i in 01 02 03 04 05 06 07 08 09 10 11 12 13 14 15 16 17 18 19 20 21 22 23 24 25 26 27 28 29 30 31 32 33 34 35 36 37 38 39 40 41 42 43; do
     find "$FIX" -maxdepth 1 -type d -name "row-$i-*" | grep -q . \
@@ -1673,13 +1673,65 @@ land_prior_art_on_main() {
   assert_row row-33-arm-e-finding-advisory GREEN
 }
 
-@test "row 34 agy declared not-triggered                               RED  B1" {
-  # Row 19's rule (pmat: not-triggered) for the fifth arm, and STRICTER: pmat's
-  # illegality needed a code file in the diff, S3.E's needs nothing, because there is
-  # no diff shape a second opinion is not owed on. The head here is the DOCS-ONLY one,
-  # which is the hardest case for that claim and therefore the right one to pin it.
+@test "row 34 agy declared not-triggered on a code diff                RED  B1" {
+  # Row 19's rule (pmat: not-triggered) for the fifth arm. Until #4472 this row sat on
+  # the DOCS-ONLY head as the hardest case for "no diff shape is exempt"; the operator
+  # ruled that case the other way (row 44). It now sits on row 14's complete GPU review
+  # with only the agy arm changed, so the RED is this rule's and nothing else's.
   assert_row row-34-arm-e-not-triggered RED B1 \
-    "consultations.antigravity is not-triggered, but S3.E's trigger is unconditional"
+    "consultations.antigravity is not-triggered, but S3.E's trigger is unconditional on every PR except a docs-tier diff, and this one is class=code"
+}
+
+@test "row 44 agy not-triggered on a docs-tier diff, reason names it    GREEN" {
+  # #4472: docs/note.md only -> diff_class.sh class=docs, no ratio added, BEATS untouched.
+  assert_row row-44-arm-e-docs-tier GREEN
+}
+
+@test "row 45 docs tier claimed on a docs diff that publishes a ratio   RED  B1" {
+  # book/**.md only, so class=docs -- but it adds "2.93x Ollama". A claim is what a
+  # second vendor is owed; the suffix of the file must not buy it off.
+  assert_row row-45-arm-e-docs-tier-refused-on-a-claim RED B1 \
+    "states a comparative ratio; the docs tier does not cover a claim"
+}
+
+@test "row 44 with the diff classifier absent -> the docs tier fails closed  RED B1" {
+  # The classifier is looked up lazily (harnesses that copy the guard alone must not
+  # break), so its absence has to reject HERE, on the one branch that reads it.
+  PR_REVIEW_DIFF_CLASS=/nonexistent/diff_class.sh run "$GUARD" "$FIX/row-44-arm-e-docs-tier"
+  [ "$status" -eq 1 ] || { echo "expected RED, got $status:"; echo "$output"; false; }
+  [[ "$output" == *"[B1]"* && "$output" == *"the docs tier fails closed"* ]] || { echo "$output"; false; }
+}
+
+@test "row 44 with the head's blobs unreadable -> the claim scan fails closed  RED B1" {
+  # The ratio scan reads the ADDED LINES. Inside `< <(...)` a failed git diff yielded
+  # zero lines and the scan passed (quorum finding on #4503). Reproduce it: a clone
+  # whose head blob for docs/note.md is gone, so --name-only (trees only) still works
+  # but --unified=0 cannot read the content; a stub classifier answers class=docs so
+  # the scan is reached at all.
+  local repo="$BATS_TEST_TMPDIR/blobless" stub="$BATS_TEST_TMPDIR/dc-stub.sh" blob obj
+  cp -a "$FIXTURE_REPO" "$repo"
+  blob=$(git -C "$repo" rev-parse docs-pr:docs/note.md)
+  obj="$repo/.git/objects/${blob:0:2}/${blob:2}"
+  # The fixture's objects are loose; if that ever changes this probe must say so, not pass.
+  [ -f "$obj" ] || { echo "blob $blob is not loose"; false; }
+  mv -- "$obj" "$BATS_TEST_TMPDIR/"
+  ! git -C "$repo" cat-file -e "$blob" 2>/dev/null
+  printf '#!/usr/bin/env bash\nprintf "class=docs\\nsubclass=prose\\npaths=1\\nreason=stub\\n"\n' > "$stub"
+  PR_REVIEW_REPO="$repo" PR_REVIEW_DIFF_CLASS="$stub" run "$GUARD" "$FIX/row-44-arm-e-docs-tier"
+  [ "$status" -eq 1 ] || { echo "expected RED, got $status:"; echo "$output"; false; }
+  [[ "$output" == *"[B1]"* && "$output" == *"could not be read; the docs tier fails closed"* ]] || { echo "$output"; false; }
+}
+
+@test "row 46 docs-tier diff, trigger_reason does not name the tier     RED  B1" {
+  # Row 44's diff with the pre-#4472 reason: taking the exemption must be on the record.
+  assert_row row-46-arm-e-docs-tier-reason-unnamed RED B1 \
+    "does not name the docs tier"
+}
+
+@test "row 47 docs tier claimed on a diff that edits docs/BEATS.md       RED  B1" {
+  # Row 44 in every respect but the path. Added when reject-53-drop SURVIVED.
+  assert_row row-47-arm-e-docs-tier-refused-on-beats RED B1 \
+    "the diff touches docs/BEATS.md"
 }
 
 @test "probe skill_version absent                                      RED  B1" {
@@ -2050,6 +2102,87 @@ land_prior_art_on_main() {
   run jq -r '.predicate.verdict' "$FIX/row-07-honest-docs-only-pmat-consulted/receipt.intoto.jsonl"
   [ "$output" = "PASS" ] || { echo "row 7 verdict is $output, expected PASS"; return 1; }
   assert_row row-07-honest-docs-only-pmat-consulted GREEN
+}
+
+# --- L2-maintainer-attest: the fork PR path (#4462) --------------------------
+#
+# A fork PR cannot be signed by pr-review-sign (a fork's runs get no secrets), so a
+# maintainer attests it through .github/workflows/pr-review-fork-attest.yml. The guard
+# accepts that receipt ONLY in its honest shape: DEGRADED, nothing consulted, and an
+# attestation block naming a write+ labeler who is the reviewer and not the author, on
+# a fork head. Every probe is ROW 7 turned into an attest by L2_JQ, then broken in ONE
+# way; the GREEN probe is their discrimination partner, so a rule that refused every
+# attest could not pass this block.
+L2_JQ='.predicate.attestation_level = "L2-maintainer-attest"
+  | .predicate.verdict = "DEGRADED"
+  | del(.predicate.consultations)
+  | .predicate.author_actor = {"kind":"human","id":"github:someone"}
+  | .predicate.reviewer_actor = {"kind":"human","id":"github:maint"}
+  | .predicate.attestation = {"attester":"github:maint","permission":"write","label":"pr-review:attest",
+                              "head_repo":"someone/aprender","base_repo":"paiml/aprender","run_id":"12345"}'
+
+@test "L2 attest in its honest shape is ACCEPTED                   [discrimination]" {
+  local d
+  d=$(make_probe l2-attest row-07-honest-docs-only-pmat-consulted "$L2_JQ") || { echo "probe could not be built"; return 1; }
+  run "$GUARD" "$d"
+  [ "$status" -eq 0 ] || { echo "expected GREEN, got exit $status:"; echo "$output"; return 1; }
+  [[ "$output" == *"ACCEPT"* ]] || { echo "no ACCEPT line:"; echo "$output"; return 1; }
+}
+
+@test "probe L2 attest with verdict PASS                             RED  B1" {
+  assert_probe l2-pass row-07-honest-docs-only-pmat-consulted B1 "is DEGRADED and never" \
+    "$L2_JQ | .predicate.verdict = \"PASS\""
+}
+
+@test "probe L2 attest that claims a consultation                    RED  B1" {
+  assert_probe l2-consulted row-07-honest-docs-only-pmat-consulted B1 "carries consultations" \
+    "$L2_JQ | .predicate.consultations = {\"pmat\":{\"status\":\"consulted\"}}"
+}
+
+@test "probe L2 attest labelled by the PR author (self-label)        RED  B2" {
+  assert_probe l2-self row-07-honest-docs-only-pmat-consulted B2 "a self-review is not a review" \
+    "$L2_JQ | .predicate.reviewer_actor.id = .predicate.author_actor.id | .predicate.attestation.attester = .predicate.author_actor.id"
+}
+
+@test "probe L2 attester is not the reviewer                         RED  B1" {
+  assert_probe l2-attester row-07-honest-docs-only-pmat-consulted B1 "attester is not reviewer_actor.id" \
+    "$L2_JQ | .predicate.attestation.attester = \"github:boss\""
+}
+
+@test "probe L2 attest by a TRIAGE-only labeler                      RED  B1" {
+  assert_probe l2-triage row-07-honest-docs-only-pmat-consulted B1 'attestation.permission "triage"' \
+    "$L2_JQ | .predicate.attestation.permission = \"triage\""
+}
+
+@test "probe L2 permission empty, and a substring of write           RED  B1" {
+  # jq's inside() on strings is SUBSTRING containment: ["" ] and ["rite"] were both
+  # "inside" ["admin","maintain","write"] in the first draft. Caught by these rows.
+  assert_probe l2-perm-empty row-07-honest-docs-only-pmat-consulted B1 'attestation.permission ""' \
+    "$L2_JQ | .predicate.attestation.permission = \"\""
+  assert_probe l2-perm-rite row-07-honest-docs-only-pmat-consulted B1 'attestation.permission "rite"' \
+    "$L2_JQ | .predicate.attestation.permission = \"rite\""
+}
+
+@test "probe L2 attest under another label                           RED  B1" {
+  assert_probe l2-label row-07-honest-docs-only-pmat-consulted B1 "attestation.label is not pr-review:attest" \
+    "$L2_JQ | .predicate.attestation.label = \"lgtm\""
+}
+
+@test "probe L2 attest with head/base repo absent, or equal          RED  B1" {
+  assert_probe l2-norepo row-07-honest-docs-only-pmat-consulted B1 "head_repo/base_repo is absent" \
+    "$L2_JQ | .predicate.attestation.head_repo = \"\""
+  assert_probe l2-samerepo row-07-honest-docs-only-pmat-consulted B1 "the attest path is for forks only" \
+    "$L2_JQ | .predicate.attestation.head_repo = .predicate.attestation.base_repo"
+}
+
+@test "probe L2 attest with a run_id that is not a run id             RED  B1" {
+  assert_probe l2-runid row-07-honest-docs-only-pmat-consulted B1 "run_id is not a workflow run id" \
+    "$L2_JQ | .predicate.attestation.run_id = \"abc\""
+}
+
+@test "probe L2 attest with no attestation block                     RED  B1" {
+  assert_probe l2-noblock row-07-honest-docs-only-pmat-consulted B1 "predicate.attestation is absent" \
+    "$L2_JQ | del(.predicate.attestation)"
 }
 
 # --- #3594: the parse test counts DOCUMENTS; `jq -e .` tested the last value --------

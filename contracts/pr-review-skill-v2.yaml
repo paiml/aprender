@@ -458,8 +458,15 @@ equations:
       -- S3.E. The FIFTH consultation. S3.A..S3.D ask SOURCES; this one asks a
       -- different REVIEWING AGENT, in its own process, from another vendor.
       owed(receipt)     <=> skill_version(receipt) >= 2.1.0
-      status(antigravity) in { consulted, unreachable }   -- never not-triggered
+      status(antigravity) in { consulted, unreachable }   -- not-triggered ONLY via the docs tier
       owed and absent(antigravity)          => REJECT(receipt)        [B1]
+      -- docs tier (#4472): the light quorum for a diff that can reach no build, test
+      -- or workflow. Every clause is required; any one false => REJECT [B1].
+      status = not-triggered =>
+            diff_class(base, head) = docs                 -- scripts/ci/diff_class.sh
+        and docs/BEATS.md not in changed_files            -- the scoreboard is a claim
+        and no added line matches COMPARATIVE_RE          -- a ratio is a claim
+        and trigger_reason names "docs tier"              -- the exemption is on record
       status = unreachable and verdict=PASS => REJECT(receipt)        [B1]
       status = consulted and attempted = 0  => REJECT(receipt)        [B1]
       status = consulted =>
@@ -894,8 +901,10 @@ falsification_tests:
     REJECTED [B1] (row 28); the SAME receipt at 2.0.0 is ACCEPTED (row 27), because a
     receipt is a record of a review that happened and back-filling the block would
     fabricate a consultation nobody performed. antigravity.status=not-triggered is
-    REJECTED even on a DOCS-ONLY diff (row 34) — S3.E's trigger is stricter than S3.A's,
-    which needs a code file. status=unreachable with verdict=PASS is REJECTED (row 29)
+    REJECTED on a code diff (row 34); on a docs-tier diff (#4472: scripts/ci/diff_class.sh
+    class=docs, BEATS untouched, no comparative ratio added, trigger_reason naming the docs
+    tier) it is ACCEPTED (row 44), and REJECTED when the docs diff adds a ratio (row 45) or
+    the reason does not name the tier (row 46), and REJECTED when the diff edits docs/BEATS.md (row 47). status=unreachable with verdict=PASS is REJECTED (row 29)
     and the SAME receipt with verdict=DEGRADED is ACCEPTED (row 30). status=consulted
     with attempted=0 is REJECTED (row 31). AND: a receipt whose
     antigravity.model_id is `claude-opus-4-6-thinking` is REJECTED (row 35) though it is
@@ -1029,6 +1038,35 @@ falsification_tests:
     does not have. Re-pin it by re-running `agy --output-format stream-json` and checking
     the init event for a model field; the day one appears, this entry is dischargeable
     and the residual can be closed rather than stated.
+
+- id: F-PRREV-020
+  rule: >-
+    a fork PR's receipt is a maintainer attest, it says so, and it binds one diff
+  prediction: >-
+    attestation_level has exactly two values: L1-self, and L2-maintainer-attest for a
+    FORK PR, whose own runs get no secrets and so cannot reach pr-review-sign (#4462). An
+    L2 receipt is ACCEPTED only when it is DEGRADED, consults nothing, and carries an
+    attestation block whose attester is the reviewer, holds admin, maintain or write,
+    labelled pr-review:attest, and names a head repository different from the base.
+    The signer refuses an L2 receipt outside the attest job (PR_REVIEW_ALLOW_ATTEST).
+    Arm 4 counts an L2 receipt only from the base-owned pr-review-fork-receipts branch,
+    never from the PR head's tree, binds it through the signed diff_patch_id so a later
+    push voids it, and prints "DEGRADED: maintainer-attest by <login>". The labeler's
+    permission is read server-side from the collaborators API, never from the event.
+  test: >-
+    bats tests/pr-review.bats -f L2 (the GREEN attest and ten RED probes, each naming
+    its reason), and bash scripts/pr_review_fork_attest.sh --self-test (authorize,
+    build, the real signer, the guard, Arm 4 end to end, and publish), which
+    pr-review-quorum.yml's present job runs on every PR.
+  if_fails: >-
+    Either every fork PR is unmergeable by construction, or a fork PR merges on an
+    attest nobody with write access made, on a diff other than the one attested.
+  mutation: >-
+    Measured on this commit: removing the self-label check, admitting permission read,
+    reverting the permission test to jq inside() (substring containment: "" and "rite"
+    passed), letting Arm 4 read L2 receipts from the head tree, and removing the
+    signer's L2 gate each turned a named row RED; a push after the attest is RED
+    through the existing A2 patch-id binding.
 
 proof_obligations:
 - id: PRS-INV-001
@@ -1288,7 +1326,7 @@ qa_gate:
   - a_pr_editing_the_merge_mechanism_cannot_merge_itself
   - every_refusal_path_is_exercised_by_a_committed_fixture
   pass_criteria: >-
-    All 19 falsification tests turn RED against a fixture that violates them and GREEN
+    All 20 falsification tests turn RED against a fixture that violates them and GREEN
     against the honest fixture, through scripts/check_pr_review_receipt.sh, whose own
     positive control (S6.1) must fire first.
 
