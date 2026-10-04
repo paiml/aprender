@@ -220,8 +220,8 @@ falsification_tests:
   if_fails: SIMD reduction order differs
 - id: FALSIFY-GDN-006
   rule: Delta rule
-  prediction: The scalar reference matches serve's delta_rule_head step by step, including the v − S̃ᵀk correction and the 1/√d_k output scale
-  test: proptest over random q, k, v, β, g and up to 8 timesteps, comparing S_t and o_t
+  prediction: 'The scalar reference matches serve''s delta_rule_head step by step, including the v − S̃ᵀk correction and the 1/√d_k output scale. Planted: the reference scaling o by 1/√d_v, or using one width for both, turns it RED, which only unequal widths can show'
+  test: 'proptest over random q, k, v, β, g and up to 8 timesteps, comparing S_t and o_t, at d_k = 8 and d_v = 4, with serve driven through delta_rule_recurrence_gqa on one key head and one value head. Unequal widths, because every local Qwen3.5 checkpoint has d_k = d_v = 128, and at equal widths both plants pass. Through delta_rule_recurrence_gqa, because it computes the scale (1/√head_k_dim, forward_qwen35.rs:247 at 316dee2cd4); a scale the test computed and passed to delta_rule_head would check the reference against the test, not against serve'
   if_fails: The reference is not the served recurrence (at 1.0.0 it computed S ← αS + β k⊗v)
 kani_harnesses:
 - id: KANI-GDN-001
