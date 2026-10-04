@@ -1,9 +1,13 @@
-# DRAFT (branch-only during S-1). Moves to contracts/ with a strict test binding once
-# 0.70.1 is live and a ticket is minted; proposed as the input contract for LA-05
-# (lookahead-readiness-v1), which renders it into the cop's hourly report.
+# DRAFT (branch-only). Proposed as the input contract for LA-05 (lookahead-readiness-v1),
+# which renders it into the hourly look-ahead report. 0.4.0 passes `pv validate`: kind
+# schema, a prediction and a test per falsifier, and a qa_gate. The renderer is an
+# external check run by hand on look-ahead branches, never a gate: Python is allowed only
+# as an external check, because the build is Rust only. Before this file moves into
+# contracts/, the self-test cases port to Rust with the fixtures as data.
 metadata:
   id: lookahead-dor-v1
-  version: "0.3.0"
+  kind: schema
+  version: "0.4.0"
   created: "2026-10-03"
   author: la-0.71 (L1)
   status: draft
@@ -50,85 +54,141 @@ falsification_tests:
   - id: FALSIFY-LADOR-001
     rule: "a planted row with contract=null renders NOT READY (contract) only"
     fixture: scripts/lookahead/fixtures/planted.yaml#NO-CONTRACT
+    prediction: "The planted NO-CONTRACT row renders `NOT READY (contract)`, with contract as the only field named, and top10_ready does not count it."
+    test: "dor_check.py --self-test, case NO-CONTRACT (external check, run by hand; Rust port pending)"
     if_fails: "a row without a contract counts toward top10_ready"
   - id: FALSIFY-LADOR-002
     rule: "a planted on_main claim to an absent path exits 2"
     fixture: scripts/lookahead/fixtures/false-claim.yaml
+    prediction: "The renderer exits 2 on false-claim.yaml."
+    test: "dor_check.py --self-test, case false-claim.yaml (external check, run by hand; Rust port pending)"
     if_fails: "the ledger can claim artifacts that are not on main"
   - id: FALSIFY-LADOR-003
     rule: "an empty ledger exits 2"
     fixture: scripts/lookahead/fixtures/empty.yaml
+    prediction: "The renderer exits 2 on empty.yaml and never prints a 0/0 ready count."
+    test: "dor_check.py --self-test, case empty.yaml (external check, run by hand; Rust port pending)"
     if_fails: "an empty ledger reads as 0/0 ready instead of RED"
   - id: FALSIFY-LADOR-004
     rule: "control row with all five present renders READY"
     fixture: scripts/lookahead/fixtures/planted.yaml#ALL-PRESENT
+    prediction: "The planted ALL-PRESENT row renders READY and counts toward top10_ready."
+    test: "dor_check.py --self-test, case ALL-PRESENT (external check, run by hand; Rust port pending)"
     if_fails: "the checker is vacuously NOT READY"
   - id: FALSIFY-LADOR-005
     rule: "a staged claim to a path absent at its branch exits 2"
     fixture: scripts/lookahead/fixtures/false-staged.yaml
+    prediction: "The renderer exits 2 on false-staged.yaml."
+    test: "dor_check.py --self-test, case false-staged.yaml (external check, run by hand; Rust port pending)"
     if_fails: "the ledger can claim branch work that does not exist"
   - id: FALSIFY-LADOR-006
     rule: "a staged claim on a path the ref already has, with no staged_marker, exits 2"
     fixture: scripts/lookahead/fixtures/vacuous-staged.yaml
+    prediction: "The renderer exits 2 on vacuous-staged.yaml."
+    test: "dor_check.py --self-test, case vacuous-staged.yaml (external check, run by hand; Rust port pending)"
     if_fails: "a branch that merely contains a file main already has reads as staging a change to it"
   - id: FALSIFY-LADOR-007
     rule: "a staged_marker absent at the branch exits 2"
     fixture: scripts/lookahead/fixtures/absent-marker.yaml
+    prediction: "The renderer exits 2 on absent-marker.yaml."
+    test: "dor_check.py --self-test, case absent-marker.yaml (external check, run by hand; Rust port pending)"
     if_fails: "a staged claim can name text the branch does not carry"
   - id: FALSIFY-LADOR-008
     rule: "a staged_marker the ref already carries exits 2"
     fixture: scripts/lookahead/fixtures/marker-on-ref.yaml
+    prediction: "The renderer exits 2 on marker-on-ref.yaml."
+    test: "dor_check.py --self-test, case marker-on-ref.yaml (external check, run by hand; Rust port pending)"
     if_fails: "content already on main reads as staged instead of on_main"
   - id: FALSIFY-LADOR-009
     rule: "control: a marker the branch adds and the ref lacks is accepted"
     fixture: scripts/lookahead/dor_check.py#unit_checks
+    prediction: "A staged claim whose staged_marker the branch adds and the ref lacks is accepted."
+    test: "dor_check.py --self-test, case unit_checks (external check, run by hand; Rust port pending)"
     if_fails: "every marker claim is RED, so the staged rule is vacuously strict"
   - id: FALSIFY-LADOR-010
     rule: "control: empty.yaml checked as a marker fault is flagged as RED for the wrong reason"
     fixture: scripts/lookahead/dor_check.py#expect_red
+    prediction: "Run as the marker-fault case, empty.yaml is reported as RED for another reason, so it does not count as that falsifier firing."
+    test: "dor_check.py --self-test, case expect_red (external check, run by hand; Rust port pending)"
     if_fails: "a planted ledger that is RED for another reason counts as its own falsifier firing"
   - id: FALSIFY-LADOR-011
     rule: "a falsifier given as a bare id list exits 2"
     fixture: scripts/lookahead/fixtures/bare-falsifier.yaml
+    prediction: "The renderer exits 2 on bare-falsifier.yaml."
+    test: "dor_check.py --self-test, case bare-falsifier.yaml (external check, run by hand; Rust port pending)"
     if_fails: "a falsifier id is trusted, never verified"
   - id: FALSIFY-LADOR-012
     rule: "an on_main claim naming an id its file at the ref does not define exits 2"
     fixture: scripts/lookahead/fixtures/false-falsifier.yaml
+    prediction: "The renderer exits 2 on false-falsifier.yaml."
+    test: "dor_check.py --self-test, case false-falsifier.yaml (external check, run by hand; Rust port pending)"
     if_fails: "the ledger can cite falsifiers main does not have"
   - id: FALSIFY-LADOR-013
     rule: "a staged claim naming an id its file at the branch does not define exits 2"
     fixture: scripts/lookahead/fixtures/absent-falsifier.yaml
+    prediction: "The renderer exits 2 on absent-falsifier.yaml."
+    test: "dor_check.py --self-test, case absent-falsifier.yaml (external check, run by hand; Rust port pending)"
     if_fails: "the ledger can cite branch falsifiers that do not exist"
   - id: FALSIFY-LADOR-014
     rule: "a staged claim whose ids the ref already defines exits 2"
     fixture: scripts/lookahead/fixtures/falsifier-on-ref.yaml
+    prediction: "The renderer exits 2 on falsifier-on-ref.yaml."
+    test: "dor_check.py --self-test, case falsifier-on-ref.yaml (external check, run by hand; Rust port pending)"
     if_fails: "falsifiers already on main read as staged"
   - id: FALSIFY-LADOR-015
     rule: "a claim with neither on_main nor staged_at exits 2"
     fixture: scripts/lookahead/fixtures/unanchored-falsifier.yaml
+    prediction: "The renderer exits 2 on unanchored-falsifier.yaml."
+    test: "dor_check.py --self-test, case unanchored-falsifier.yaml (external check, run by hand; Rust port pending)"
     if_fails: "an unanchored claim is checked nowhere"
   - id: FALSIFY-LADOR-016
     rule: "a planted row with falsifier=null renders NOT READY (falsifier) only"
     fixture: scripts/lookahead/fixtures/planted.yaml#NO-FALSIFIER
+    prediction: "The planted NO-FALSIFIER row renders `NOT READY (falsifier)`, with falsifier as the only field named, and top10_ready does not count it."
+    test: "dor_check.py --self-test, case NO-FALSIFIER (external check, run by hand; Rust port pending)"
     if_fails: "a row without a falsifier counts toward top10_ready"
   - id: FALSIFY-LADOR-017
     rule: "XF-11 and F-110 do not define F-11 outside YAML"
     fixture: scripts/lookahead/dor_check.py#unit_checks
+    prediction: "A claim citing F-11 against a non-YAML file whose text holds only XF-11 and F-110 is RED."
+    test: "dor_check.py --self-test, case unit_checks (external check, run by hand; Rust port pending)"
     if_fails: "an id read as a substring of a longer id passes"
   - id: FALSIFY-LADOR-018
     rule: "a YAML comment or a rule's prose mentioning an id does not define it"
     fixture: scripts/lookahead/dor_check.py#unit_checks
+    prediction: "A claim citing an id that a YAML file names only in a comment or in a rule's prose is RED."
+    test: "dor_check.py --self-test, case unit_checks (external check, run by hand; Rust port pending)"
     if_fails: "a retired or merely mentioned id reads as defined"
   - id: FALSIFY-LADOR-019
     rule: "a descending id range exits 2"
     fixture: scripts/lookahead/dor_check.py#unit_checks
+    prediction: "The renderer exits 2 on a falsifier claim with a descending id range (lo > hi)."
+    test: "dor_check.py --self-test, case unit_checks (external check, run by hand; Rust port pending)"
     if_fails: "a reversed range cites no ids and passes vacuously"
   - id: FALSIFY-LADOR-020
     rule: "a row whose only falsifier claim is staged renders falsifier*, never READY"
     fixture: scripts/lookahead/dor_check.py#unit_checks
+    prediction: "A row whose only falsifier claim is staged renders `falsifier*` and stays NOT READY."
+    test: "dor_check.py --self-test, case unit_checks (external check, run by hand; Rust port pending)"
     if_fails: "a row whose falsifiers exist only on a branch counts toward top10_ready"
   - id: FALSIFY-LADOR-021
     rule: "controls: an exact token outside YAML, a YAML id under a key other than falsification_tests, ids the branch adds and the ref lacks, and an ascending range are all accepted"
     fixture: scripts/lookahead/dor_check.py#unit_checks
+    prediction: "All four controls are accepted, so no real citation of those shapes is RED."
+    test: "dor_check.py --self-test, case unit_checks (external check, run by hand; Rust port pending)"
     if_fails: "the id rule is vacuously strict and every real citation is RED"
-verification: "python3 scripts/lookahead/dor_check.py --self-test --ref origin/main  # 2026-10-03 19:35Z: ok (17 falsifiers fire, 7 controls pass). 005-010: 6 mutants of the staged rule, all killed. 011-021: 15 mutants of the falsifier rule and 3 of the claim checks it moved (on_main paths, staged paths, nested YAML ids), all 18 killed (rc=2)"
+verification: "External check, by hand: python3 scripts/lookahead/dor_check.py --self-test --ref origin/main  # 2026-10-04 10:56Z: ok (17 falsifiers fire, 7 controls pass), and the 0.71 ledger renders at rc 0, top10_ready 0/10. 2026-10-03 19:35Z: ok (17 falsifiers fire, 7 controls pass). 005-010: 6 mutants of the staged rule, all killed. 011-021: 15 mutants of the falsifier rule and 3 of the claim checks it moved (on_main paths, staged paths, nested YAML ids), all 18 killed (rc=2)"
+qa_gate:
+  id: F-LADOR-QA-001
+  name: The DoR ledger renders only verified claims
+  description: >
+    Every planted falsifier fires for its own reason: the renderer exits 2, or names
+    exactly the planted field as NOT READY. Every control is accepted. Today it is an external check, run by hand on look-ahead
+    branches. Where its Rust port lives (a pv or apr subcommand, or a test over the
+    fixtures) is an open point.
+  checks:
+    - planted_falsifier_fires_for_its_own_reason
+    - control_accepted
+    - ledger_renders_without_red
+  pass_criteria: "the self-test prints ok (17 falsifiers fire, 7 controls pass), and the train's ledger renders at rc 0 against origin/main"
+  falsification: "Mutate any one rule of the renderer and the self-test exits 2. On 2026-10-03, 6 mutants of the staged rule, 15 of the falsifier rule and 3 of the claim checks were all killed"
