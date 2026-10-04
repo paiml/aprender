@@ -1329,6 +1329,13 @@ jobs:
         run: setsid --wait bash scripts/check_ci_gate_mutants_rule.sh
       - name: gate mutants rule can still go RED (#3676)
         run: setsid --wait bash scripts/check_ci_gate_mutants_rule.sh --self-test
+      # The coverage receipt's guard, for the same reason: guard_tree.sh files it
+      # as a cargo guard (a comment names `cargo llvm-cov`), but it runs the
+      # receipt producer on fixture logs and reads coverage-nightly.yml and the
+      # tracked tree, invoking no build tool. One run is its whole case table:
+      # behaviour rows, structure rows and every mutant (#4672, #4734).
+      - name: coverage receipt is sha-keyed and read only by the release gate (#4672)
+        run: setsid --wait bash scripts/check_coverage_receipt.sh
       # scripts/tests/guard_tree_test.sh is guard_tree.sh's OWN case table
       # (BSE-01, PMAT-1062) -- it proves guard_tree.sh's no-fail-fast
       # behaviour against a fixture, proves a fail-fast MUTANT of it goes RED
