@@ -69,6 +69,8 @@ impl InstructPipeline {
     ///
     /// Required for checkpointing after NF4 QLoRA training. Downloads A_q, B_q,
     /// A_v, B_v from each NF4 block and updates the corresponding CPU LoRA layers.
+    /// The block holds them as Aᵀ and s·Bᵀ, so B is unscaled and both are transposed
+    /// back to the PEFT layout (FALSIFY-CUDA-NF4-TRAIN-LOSS-PARITY-003).
     ///
     /// # Contract (C-QLORA-CKPT-001)
     ///
@@ -94,14 +96,10 @@ impl InstructPipeline {
                 let b_v_unscaled: Vec<f32> = b_v.iter().map(|&v| v * inv_scale).collect();
 
                 if q_lora_idx < self.lora_layers.len() {
-                    *self.lora_layers[q_lora_idx].lora_a_mut() = crate::Tensor::from_vec(a_q, true);
-                    *self.lora_layers[q_lora_idx].lora_b_mut() =
-                        crate::Tensor::from_vec(b_q_unscaled, true);
+                    self.lora_layers[q_lora_idx].set_from_device_layout(&a_q, &b_q_unscaled);
                 }
                 if v_lora_idx < self.lora_layers.len() {
-                    *self.lora_layers[v_lora_idx].lora_a_mut() = crate::Tensor::from_vec(a_v, true);
-                    *self.lora_layers[v_lora_idx].lora_b_mut() =
-                        crate::Tensor::from_vec(b_v_unscaled, true);
+                    self.lora_layers[v_lora_idx].set_from_device_layout(&a_v, &b_v_unscaled);
                 }
             }
         }

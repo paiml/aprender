@@ -338,9 +338,8 @@ impl InstructPipeline {
             .map(CudaBlock::Fp32);
         }
 
-        let q_lora = lora_slot(lora_layers, i * 2, "contiguous lora_a_q", "contiguous lora_b_q");
-        let v_lora =
-            lora_slot(lora_layers, i * 2 + 1, "contiguous lora_a_v", "contiguous lora_b_v");
+        let q_lora = lora_slot(lora_layers, i * 2);
+        let v_lora = lora_slot(lora_layers, i * 2 + 1);
         // ENT-270: QK-norm weights, if present
         let q_norm = optional_slice(layer.self_attn.q_norm.as_ref(), "contiguous q_norm");
         let k_norm = optional_slice(layer.self_attn.k_norm.as_ref(), "contiguous k_norm");
@@ -359,8 +358,8 @@ impl InstructPipeline {
             w_up,
             w_down,
             config.max_seq_len,
-            q_lora,
-            v_lora,
+            q_lora.as_ref().map(|(a, b)| (a.as_slice(), b.as_slice())),
+            v_lora.as_ref().map(|(a, b)| (a.as_slice(), b.as_slice())),
             config.lora_alpha / config.lora_rank as f32,
             config.lora_rank,
             q_norm,
@@ -539,19 +538,12 @@ impl InstructPipeline {
     }
 }
 
-/// The A and B weights of LoRA slot `idx`, or `None` past the last slot.
+/// The A and B weights of LoRA slot `idx` in the layout the NF4 block computes with, `(Aᵀ, Bᵀ)`,
+/// or `None` past the last slot. The block runs `(x·A)·B`, so the PEFT layout copied raw would
+/// be a different adapter (FALSIFY-CUDA-NF4-TRAIN-LOSS-PARITY-003).
 #[cfg(feature = "cuda")]
-fn lora_slot<'a>(
-    lora_layers: &'a [LoRALayer],
-    idx: usize,
-    a_what: &str,
-    b_what: &str,
-) -> Option<(&'a [f32], &'a [f32])> {
-    let layer = lora_layers.get(idx)?;
-    Some((
-        layer.lora_a().data().as_slice().expect(a_what),
-        layer.lora_b().data().as_slice().expect(b_what),
-    ))
+fn lora_slot(lora_layers: &[LoRALayer], idx: usize) -> Option<(Vec<f32>, Vec<f32>)> {
+    lora_layers.get(idx).map(LoRALayer::device_layout)
 }
 
 /// The data of an optional weight, such as a bias or a QK-norm, as a slice.
