@@ -334,7 +334,9 @@ step() { STEP="$1"; [ "${NIGHTLY_TRAIN_FAULT:-}" != "$1" ] || { STEP="$1 (plante
 no_token() {
     local ch="${CARGO_HOME:-$HOME/.cargo}"
     env | awk -F '=' '$1 == "CARGO_REGISTRY_TOKEN" || $1 ~ /^CARGO_REGISTRIES_[A-Za-z0-9_]+_TOKEN$/ { f = 1 } END { exit f }' || return 1
-    [ ! -e "$ch/credentials" ] && [ ! -e "$ch/credentials.toml" ]
+    [ ! -e "$ch/credentials" ] && [ ! -e "$ch/credentials.toml" ] || return 1
+    # a legacy token = line in CARGO_HOME config reaches cargo as well
+    ! grep -qsE '^[[:space:]]*token[[:space:]]*=' "$ch/config" "$ch/config.toml"
 }
 # verdict_rc LINE -> 0 for RELEASABLE, 1 for anything else (--exit-verdict: a green job means a releasable head)
 verdict_rc() { case "$1" in "RELEASABLE "*) return 0 ;; *) return 1 ;; esac; }
@@ -625,6 +627,11 @@ v-e;verdict;check E;-;-;-" "$d" 2026-10-04T06:00:00Z; cat "$d/line" "$d/lanes.ts
     row exit_verdict_maps_releasable_to_0 0 "rc=0 rc=1" "" -- eval 'verdict_rc "RELEASABLE H=$ST_C"; a=$?; verdict_rc "NOT RELEASABLE: v-a, 101"; echo "rc=$a rc=$?"'
     row exit_verdict_not_releasable_exits_1 1 "NOT RELEASABLE: ci-main" "nightly-train" -- \
         bash "$SCRIPT_PATH" --from "$d" --out "$tmp/ov" --exit-verdict --now 2026-10-04T06:00:00Z
+    row a_legacy_config_token_refuses 2 "NOT RELEASABLE: nightly-train, no-token failed" "RELEASABLE H=" -- \
+        eval 'mkdir -p "$tmp/cc"; printf "[registry]\ntoken = \"x\"\n" > "$tmp/cc/config.toml"; CARGO_HOME="$tmp/cc" bash "$SCRIPT_PATH" --from "$d" --out "$tmp/ot4" --now 2026-10-04T06:00:00Z'
+    d="$tmp/evg"; fixture "$d"
+    row exit_verdict_releasable_run_exits_0 0 "RELEASABLE H=$ST_C" "NOT RELEASABLE" -- \
+        eval '(LANES="$ST_LANES"; EXIT_VERDICT=1; NOW=2026-10-04T06:00:00Z; OUTDIR="$tmp/oev"; INBOXF=""; run_train "$d")'
     mkdir -p "$tmp/pb" && cp "$SCRIPT_PATH" "$HERE/red_age.sh" "$HERE/nightly_greens.sh" "$tmp/pb/" 2>/dev/null; chmod u+w "$tmp/pb"/*.sh
     printf 'train %s\ngreens %s\nredage %s\n' "$ST_C" "$ST_C" "$ST_C" > "$tmp/pb/PIN"
     (cd "$tmp/pb" && sha256sum nightly_train.sh nightly_greens.sh red_age.sh PIN > SHA256SUMS) 2>/dev/null
@@ -687,7 +694,9 @@ m34_token_guard_dropped	s/^    no_token || exit 1$/    :/
 m35_credentials_file_ignored	s/\[ ! -e "\$ch\/credentials" \] \&\& \[ ! -e "\$ch\/credentials.toml" \]/true/
 m36_named_registry_token_ignored	s/ || \$1 ~ \/\^CARGO_REGISTRIES_\[A-Za-z0-9_\]+_TOKEN\$\// /
 m37_exit_verdict_ignored	s/^    \[ -z "\$EXIT_VERDICT" \] || verdict_rc "\$line" || exit 1$/    :/
-m38_verdict_rc_always_red	s/"RELEASABLE "\*) return 0 ;;/"RELEASABLE "*) return 1 ;;/'
+m38_verdict_rc_always_red	s/"RELEASABLE "\*) return 0 ;;/"RELEASABLE "*) return 1 ;;/
+m39_exit_verdict_always_red	s/^    \[ -z "\$EXIT_VERDICT" \] || verdict_rc "\$line" || exit 1$/    [ -z "$EXIT_VERDICT" ] || exit 1/
+m40_config_token_ignored	s/^    ! grep -qsE .\^\[\[:space:\]\]\*token.*$/    :/'
 # each planted mutant must change the file, still parse, and turn at least one row RED
 mutants() {
     local tmp pass=0 fail=0 name expr o rc
