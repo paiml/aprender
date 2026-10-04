@@ -27,9 +27,11 @@ name: deep-nightly
 
 on:
   schedule:
-    # ~5h EARLY: GitHub dispatches schedules 3h51m-6h49m late on this account (#3292, see
-    # nightly.yml). 22:45 UTC lands near 03:45 UTC, ahead of the 04:45Z train read.
-    - cron: '45 22 * * *'
+    # EARLY, because GitHub fires schedules late on this account (#3292, see nightly.yml).
+    # Over 14 nights the 22:30-23:00Z slots fired as late as 02:11-02:31Z: ~2h15m before
+    # the 04:45Z train read, under these jobs' 4h timeouts. 20:30Z slots fired
+    # 22:38-00:29Z over the same 14 nights, leaving >4h.
+    - cron: '30 20 * * *'
   workflow_dispatch:
 
 permissions:
