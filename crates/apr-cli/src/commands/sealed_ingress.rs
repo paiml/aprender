@@ -328,6 +328,22 @@ mod tests {
             .expect_err("garbled")
             .to_string();
         assert!(err.contains("line 2"), "{err}");
+        // A well-formed line whose hunk list holds a digest that is not a
+        // sha256 is refused as well, not loaded without that hunk.
+        for hunks in [
+            format!("{SHA_B},not-a-sha256"),
+            format!("{SHA_B} {}", "g".repeat(64)),
+        ] {
+            let p = write(
+                &dir,
+                "bad-hunk.txt",
+                &format!("G-1 {SHA_A}\nG-2 {SHA_A} {hunks}\n"),
+            );
+            let err = gate("finetune", true, Some(&p))
+                .expect_err(&hunks)
+                .to_string();
+            assert!(err.contains("line 2"), "{hunks}: {err}");
+        }
     }
 
     #[test]
