@@ -228,7 +228,7 @@ cut_tag() {
     # nights of release-gates-nightly (L31); then this line becomes a die on rc 1 and rc 2.
     rc=0
     local tob; tob=$(bash "$REPO_ROOT/scripts/release/tag_on_bump.sh" "$v" --commit "$mc" --root "$REPO_ROOT" 2>&1) || rc=$?
-    say "TAG-ON-BUMP REPORT-ONLY rc=$rc $(printf '%s\n' "$tob" | head -n 1)"
+    say "TAG-ON-BUMP REPORT-ONLY rc=$rc $(printf '%s' "$tob" | tr '\n' ' ')"
     git tag -a "$t" -m "aprender $t" "$mc" >> "$LOG" 2>&1 || die "tag failed"
     git push origin "$t" >> "$LOG" 2>&1 || die "tag push failed"
 }
