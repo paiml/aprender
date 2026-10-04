@@ -12,8 +12,8 @@
   - 'CPU: Qwen35Model loads qwen35moe GGUFs (router, shared-expert gate, stacked experts split per expert) and computes the llama.cpp qwen35moe.cpp FFN: sigmoid(s.x)*shared SwiGLU + sum of top-k renormalized routed experts (the ONE route_top_k)'
   - 'CUDA: Qwen35CudaModel runs the same MoE FFN on the device (decode and batched prefill), in CPU order; MoE models never capture the decode graph; capacity counts the expert bytes'
   - 'capability: the qwen35moe GGUF tag is no longer refused for CUDA; the qwen3_5_moe spelling (not handled by the hybrid forward) still is'
-  - 'contract: model-capability-ladder-v1.yaml drops red_unsupported["Qwen3.5-35B-A3B*.gguf"] (#3977) -- a kept key turns the now-working row RED; operator sign-off batch row 16, do not merge before the operator signs (aprender-a7)'
-  - 'Measured: ladder --only inv:Qwen3.5-35B-A3B-UD-IQ4_XS.gguf is OK (qa cap+golden pass, backends cuda honoured) on lambda (RTX 4090) and gx10 (GB10), F2 guard passes on both'
+  - 'contract: model-capability-ladder-v1.yaml drops red_unsupported["Qwen3.5-35B-A3B*.gguf"] (#3977) -- a kept key turns the now-working row RED (check_model_ladder: declared RED-UNSUPPORTED but NOT OBSERVED). This is operator sign-off batch row 16 (aprender-a7, 2026-10-04): the review judges the diff; the MERGE is held until the operator signs, and the PR is never armed before that signature'
+  - 'Measured at apr 8d6e6cc8f2 (ladder --only inv:Qwen3.5-35B-A3B-UD-IQ4_XS.gguf, model sha256 745def08...e123, sha_ok on both): receipts committed under evidence/gh-4665-qwen35moe-ladder/ -- lambda RTX 4090 cc 8.9, 2026-10-04T11:26Z, executed=1 red=0, sha256 c96741a8f181b2e5d006d625101a48ba3b16bb2201f9ff6bc49631348f0a6acd; gx10 GB10 cc 12.1, 2026-10-04T11:00Z, executed=1 red=0, sha256 ccc804eecb74c7bce09352ee8f7743046c3711259c48895060003d02a9d5f5d1. Both rows: qa cap+golden pass, backends cuda honoured; the F2 GPU-vs-CPU guard ran fresh and passed on 13 positions on each host'
   phases: []
   subtasks: []
   estimated_effort: null
