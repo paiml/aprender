@@ -69,10 +69,10 @@ rows:
                load_page_cache_mode_undeclared_is_unmeasured, load_absent_manifest_is_unmeasured,
                load_pass_not_measured_carries_its_reason_and_no_sides],
          staged_at: origin/la-71/load-block, staged_path: scripts/lib/perf_receipt.py}
-      # All 17 load rows at load-block@eca952b489, which writes the six load_cold_start_*_is_unmeasured names out
+      # All 17 load rows at load-block@71bc6d2036, which writes the six load_cold_start_*_is_unmeasured names out
       # whole (at 1e52d7ac9f they were built at runtime, so no file defined them and only 11 were cited).
     baseline: null    # the §12 row 18 reference cell's load pass: per lane one discarded warm-up load, then one measured
-                      # --start load (scripts/parity_host_receipt.sh run_load at load-block@eca952b489)
+                      # --start load (scripts/parity_host_receipt.sh run_load at load-block@71bc6d2036)
     owner_proposed: perf-gate (PP-LLAMA-001 §12 owner) per R-71-6, not L1
     related: [PMAT-3718]
   - id: TTFT-RATIO
