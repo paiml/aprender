@@ -24073,7 +24073,7 @@ Not done, pending the ruling: moving the 31 fixture files to an obviously synthe
   acceptance_criteria:
   - 'SILICON_FLOORS carries an sm_121 entry as a ratchet at its measured value: 108.291/181.72 = 0.595922 (GB10 leg, cuda-nightly run 37161229337 @ 316dee2cd), floor 0.5959 rounded DOWN so it passes the run it was read from'
   - 'Falsifier: a test asserts the floor passes the recorded trials, sits within 5e-5 of them (cannot be loosened quietly), the run is the last GB10_OBSERVED row, and an unanswered probe still resolves to no floor'
-  - 'The aarch64 e2e logits budget is a ratchet at its measured 7.105e-2 (7.106e-2), not 8e-2; x86_64 unchanged; a device-free test asserts the ratchet gap'
+  - 'The aarch64 e2e logits budget ratchet (7.106e-2 over the measured 7.105e-2) is PMAT-4523''s criterion and lands with that row, not this one'
   - 'Informational, not blocking, until three green nights; nothing on the release path reads the beat; GB10 honesty at ~0.6x stays open (#2835)'
   phases: []
   subtasks: []
