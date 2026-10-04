@@ -39,6 +39,7 @@ on:
 permissions:
   contents: read
   issues: write   # to open/comment on the tracking issue
+  actions: read   # to download coverage-nightly's coverage-json artifact (#4715)
 
 concurrency:
   group: qwen-story-daily
@@ -129,6 +130,35 @@ jobs:
           }
           echo "apr pinned to: $APR"
           "$APR" --version
+
+      # #4715: the pmat hunt reads coverage gaps from coverage-nightly's
+      # coverage-json artifact for THIS commit, never from a fresh per-query run
+      # (>900 s each, which timed this 30-min job out). No such artifact - no
+      # run for this sha, the run still going, or it was cancelled - leaves
+      # STORY_COVERAGE_FILE unset, and the hunt then reports coverage gaps
+      # not_measured and fails. It never reads as a pass.
+      - name: Fetch coverage-nightly's coverage JSON for this commit
+        if: env.PMAT_HUNT == '1'
+        shell: bash
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          set -uo pipefail
+          dir="$RUNNER_TEMP/coverage-json"
+          rm -rf "${dir:?}"
+          run_id=$(gh run list -R "$GITHUB_REPOSITORY" -w coverage-nightly.yml --commit "$GITHUB_SHA" \
+            --limit 5 --json databaseId,status --jq '[.[] | select(.status == "completed")][0].databaseId // empty') || run_id=""
+          if [ -z "$run_id" ]; then
+            echo "::warning::no completed coverage-nightly run for $GITHUB_SHA - pmat hunt coverage gaps will be not_measured"
+            exit 0
+          fi
+          if ! gh run download "$run_id" -R "$GITHUB_REPOSITORY" -n coverage-json -D "$dir"; then
+            echo "::warning::coverage-nightly run $run_id has no coverage-json artifact - pmat hunt coverage gaps will be not_measured"
+            exit 0
+          fi
+          echo "STORY_COVERAGE_FILE=$dir/coverage.json" >> "$GITHUB_ENV"
+          echo "STORY_COVERAGE_SHA=$(cat "$dir/coverage.sha" 2>/dev/null)" >> "$GITHUB_ENV"
+          echo "coverage JSON from coverage-nightly run $run_id, measured on $(cat "$dir/coverage.sha" 2>/dev/null || echo '(none recorded)')"
 
       - name: Run scripts/qwen-story.sh
         id: story

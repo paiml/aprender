@@ -128,9 +128,22 @@ _pmat_hunt_emit() {
 # Outputs a compact manifest: top 3 coverage gaps, top 3 churn, top 3 faults per
 # path.
 #
-# Returns 0 when the manifest carried at least one row, 1 (and emit_fail) when
-# the header was printed with nothing under it. See "THE MANIFEST IS NO LONGER
-# ADVISORY" above.
+# Returns 0 when the manifest carried at least one row and the coverage gaps
+# were measured, 1 (and emit_fail) when the header was printed with nothing
+# under it or when the coverage gaps were not measured. See "THE MANIFEST IS NO
+# LONGER ADVISORY" above.
+#
+# COVERAGE GAPS READ A COVERAGE FILE, NEVER A FRESH RUN (#4715). Without
+# --coverage-file, `pmat query --coverage-gaps` derives coverage itself, and
+# measured on intel one such query ran out its 900 s timeout. Every beat runs
+# one per hunted path, so qwen-story-daily hit its job timeout and was
+# cancelled each night. The gaps now come only from STORY_COVERAGE_FILE (an
+# LLVM coverage JSON from coverage-nightly), and only when STORY_COVERAGE_SHA,
+# the commit that file was measured on, is this checkout's HEAD. In every
+# other case the gaps are not_measured, and not_measured fails the beat exactly
+# as an empty manifest does. A gap list measured on another commit is not a
+# measurement of this one, and silently dropping the gap block would turn a
+# red hunt green with nothing measured.
 #
 # Args: <beat-label> <source-path...>
 pmat_hunt() {
@@ -140,7 +153,13 @@ pmat_hunt() {
   fi
   printf '    -- pmat bug-hunt manifest (%s) --\n' "$beat"
   PMAT_HUNT_ROWS=0
-  local paths=$# missing="" q gaps churn faults
+  local paths=$# missing="" q gaps churn faults cov_why="" head
+  head=$(git rev-parse HEAD 2>/dev/null)
+  if [ -z "${STORY_COVERAGE_FILE:-}" ] || [ ! -s "${STORY_COVERAGE_FILE:-}" ]; then
+    cov_why="no coverage file (STORY_COVERAGE_FILE='${STORY_COVERAGE_FILE:-}' is unset, missing or empty)"
+  elif [ -z "$head" ] || [ "${STORY_COVERAGE_SHA:-}" != "$head" ]; then
+    cov_why="the coverage file was measured on '${STORY_COVERAGE_SHA:-(none recorded)}', this checkout is '${head:-(unknown)}'"
+  fi
   # Each pmat_rows call is ONE physical line. Splitting a command substitution
   # across a backslash continuation makes bashrs read the nested quotes as an
   # unterminated string (SC1078, 6 errors), and FALSIFY-QWEN-STORY-007 requires
@@ -151,7 +170,8 @@ pmat_hunt() {
     [ -e "$q" ] || missing="$missing $q"
     # No free-text query in any of the three: it is a relevance filter applied
     # BEFORE --path, and it collapses a module-scoped hunt to nothing. Cause 2.
-    gaps=$(pmat_rows "$PMAT_FILTER_GAP" --coverage-gaps --path "$q" --rank-by impact --limit 3)
+    gaps=""
+    [ -n "$cov_why" ] || gaps=$(pmat_rows "$PMAT_FILTER_GAP" --coverage-gaps --coverage-file "${STORY_COVERAGE_FILE:-}" --path "$q" --rank-by impact --limit 3)
     churn=$(pmat_rows "$PMAT_FILTER_CHURN" --path "$q" --churn --max-complexity 30 --limit 3)
     faults=$(pmat_rows "$PMAT_FILTER_FAULT" --path "$q" --faults --exclude-tests --limit 3)
     _pmat_hunt_emit "$gaps"
@@ -165,6 +185,13 @@ pmat_hunt() {
     else
       emit_fail "pmat-hunt $beat" "manifest header printed with 0 rows over $paths existing path(s) - the hunt is inert (#2356). Check the JSON field names pmat emits, and that --path is not being narrowed by a free-text query."
     fi
+    return 1
+  fi
+  if [ -n "$cov_why" ]; then
+    # Not indented like a row: the workflow's manifest extractor counts lines
+    # that start with whitespace + gap/churn/fault.
+    printf '    -- coverage gaps not_measured: %s --\n\n' "$cov_why"
+    emit_fail "pmat-hunt $beat" "coverage gaps not_measured: $cov_why"
     return 1
   fi
   return 0
