@@ -143,15 +143,18 @@ per row (block 2·d_v), with a pair shuffle for the row dot products.
 ## Falsifiers in `qwen35-train-cuda-v1` (PROPOSED, `[U]`)
 
 Each runs on a tiny fixture against the CPU oracle above: 3 key heads of width d_k = 8, 6 value heads of width
-d_v = 4, conv kernel 4, T ≥ 9, batch 2, random weights and a fixed seed. Not 2 and 4 heads: there the key-head count
-equals the ratio, so a kernel that uses one for the other still passes (§Value-head order). Not equal widths either:
-every local Qwen3.5 checkpoint has d_k = d_v = 128, so a kernel that uses one width for both passes on all of them,
-and on a fixture with equal widths. The CPU oracle's own tests at `80723cf206` (`gdn_tests.rs`, and the QTG-003
-gradcheck in `gdn_backward_tests.rs`) all use equal widths too, so they get a case at these widths first.
+d_v = 12, model width 16, conv kernel 4, T ≥ 9, batch 2, random weights and a fixed seed. Not 2 and 4 heads: there
+the key-head count equals the ratio, so a kernel that uses one for the other still passes (§Value-head order). Not
+equal widths either: every local Qwen3.5 checkpoint has d_k = d_v = 128, so a kernel that uses one width for both
+passes on all of them, and on a fixture with equal widths. Nor equal totals: at d_k = 8 and d_v = 4 the key and
+value blocks are both 24 wide, as they are on the 0.8B and the 2B (2048 and 2048), so a kernel that sizes or places
+the value block with the key total passes there. The 4B's are 2048 and 4096. The CPU oracle's own tests at
+`80723cf206` (`gdn_tests.rs`, and the QTG-003 gradcheck in `gdn_backward_tests.rs`) all use equal widths too, so
+they get a case at these widths first.
 
 | ID | Claim | Planted mutation that must turn it RED |
 |---|---|---|
-| QTC-001 | the CUDA GDN mixer's training forward equals `gdn_mixer_forward`, max abs diff ≤ 1e-5·max(scale, 1), from a zero state per sequence | state carried from one sequence to the next; the grouped head map in place of the tiled one; h mod 2 (the ratio) in place of h mod 3 |
+| QTC-001 | the CUDA GDN mixer's training forward equals `gdn_mixer_forward`, max abs diff ≤ 1e-5·max(scale, 1), from a zero state per sequence | state carried from one sequence to the next; the grouped head map in place of the tiled one; h mod 2 (the ratio) in place of h mod 3; d_v as a state row's length; the value block read from n_k·d_k + n_v·d_v instead of 2·n_k·d_k |
 | QTC-002 | the CUDA mixer backward equals `gdn_mixer_backward`: dX and the LoRA gradients of attn_qkv, attn_gate and ssm_out, relative L2 ≤ 1e-4 in f32 | drop the −β_t S̃ᵀdδ term of dk; reduce dq and dk over the grouped pairs |
 | QTC-003 | the checkpointed reverse scan (c ∈ {1, 8, T}, T = 13) is bit-identical to full history | the chunk replay restarts one step late |
 | QTC-004 | gated full attention on CUDA (query/gate split, sigmoid output gate, q/k norm, partial NeoX RoPE over head_dim/4) equals the CPU layer, forward and backward | full-width RoPE, which is today's kernel; the gate dropped |
