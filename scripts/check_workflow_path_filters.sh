@@ -36,7 +36,7 @@
 # five wrong guard regexes in this repo were caught by tables, none by review.
 #
 #   bash scripts/check_workflow_path_filters.sh            # check
-#   bash scripts/check_workflow_path_filters.sh --self-test # 4-case table
+#   bash scripts/check_workflow_path_filters.sh --self-test # 9-row table
 
 set -uo pipefail
 
@@ -44,6 +44,7 @@ SELF="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)/$(basename "${BASH_SOURCE[0]
 REPO_ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
 WF_DIR="${REPO_ROOT}/.github/workflows"
 FILTER_DUMP="${REPO_ROOT}/scripts/lib/workflow_path_filters.py"
+NIGHTLY_AWK="${REPO_ROOT}/scripts/lib/workflow_runs_nightly.awk"
 
 # Workflows that RUN code from a crate must watch that crate's source.
 # Format: <workflow basename>|<path prefix that must appear in both filters>
@@ -69,22 +70,23 @@ check_workflow() {
   rm -f /tmp/wfpf_err.$$
   [ -z "$out" ] && return 0
 
-  local push pr sched
+  local push pr
   push="$(printf '%s\n' "$out" | awk -F'\t' '$1=="PUSH"{print $2}' | sort -u)"
   pr="$(printf '%s\n' "$out" | awk -F'\t' '$1=="PR"{print $2}' | sort -u)"
-  sched="$(printf '%s\n' "$out" | awk -F'\t' '$1=="SCHEDULE"{print $2}')"
 
-  # Rule 3 (#3676): a path-FILTERED workflow must also run on `schedule:`. The
+  # Rule 3 (#3676): a path-FILTERED workflow must also run nightly: a `schedule:`
+  # cron, or the chain from "Nightly pick" the nightly producers start on (T44,
+  # #4686; scripts/lib/workflow_runs_nightly.awk). The
   # filter is a claim that nothing outside its paths can break the gate; the
   # nightly run is what turns a wrong claim into a red within a day instead of
   # the three months book.yml sat dark. Applies when either event is filtered.
   local filtered=0
   if [ -n "$push" ] && [ "$push" != '<unfiltered>' ]; then filtered=1; fi
   if [ -n "$pr" ] && [ "$pr" != '<unfiltered>' ]; then filtered=1; fi
-  if [ "$filtered" = 1 ] && [ "$sched" != yes ]; then
-    printf '\nFAIL %s: path-filtered, but no `schedule:` trigger.\n' "$name"
+  if [ "$filtered" = 1 ] && ! awk -f "$NIGHTLY_AWK" "$wf"; then
+    printf '\nFAIL %s: path-filtered, but no nightly trigger (a `schedule:` cron, or workflow_run on "Nightly pick").\n' "$name"
     printf '     A change outside the filter that breaks this gate is never seen;\n'
-    printf '     add a nightly cron so the claim is re-checked every day.\n'
+    printf '     add a nightly cron, or chain from "Nightly pick", so the claim is re-checked every day.\n'
     return 1
   fi
 
@@ -188,8 +190,25 @@ on:
     paths: ["book/**", "scripts/book-gate.sh"]
 YML
 
+  # 7 - symmetric, chained from "Nightly pick" instead of a cron (T44, #4686). MUST pass.
+  cat > "$TD/wf7.yml" <<'YML'
+on:
+  push:
+    paths: ["book/**"]
+  pull_request:
+    paths: ["book/**"]
+  workflow_run:
+    workflows: ["Nightly pick"]
+    types: [completed]
+    branches: [main]
+YML
+  # 8 - chained from some other workflow: not the nightly (rule 3). MUST fail.
+  sed 's/"Nightly pick"/"CI"/' "$TD/wf7.yml" > "$TD/wf8.yml"
+  # 9 - the chain commented out is no trigger (rule 3). MUST fail.
+  sed 's/^  workflow_run:/  # workflow_run:/; s/^    workflows:/    # workflows:/' "$TD/wf7.yml" > "$TD/wf9.yml"
+
   fails=0
-  for c in 1 4 5 6; do
+  for c in 1 4 5 6 8 9; do
     if check_workflow "$TD/wf${c}.yml" >/dev/null 2>&1; then
       printf 'FAIL  row %s NOT flagged - the guard is blind to a real defect shape\n' "$c"
       fails=$((fails + 1))
@@ -197,7 +216,7 @@ YML
       printf 'ok    row %s flagged (must turn RED)\n' "$c"
     fi
   done
-  for c in 2 3; do
+  for c in 2 3 7; do
     if check_workflow "$TD/wf${c}.yml" >/dev/null 2>&1; then
       printf 'ok    row %s clean (must stay GREEN)\n' "$c"
     else
@@ -207,9 +226,9 @@ YML
   done
 
   if [ "$fails" -ne 0 ]; then
-    printf '\nSELF-TEST FAILED (%s/6 wrong)\n' "$fails"; exit 1
+    printf '\nSELF-TEST FAILED (%s/9 wrong)\n' "$fails"; exit 1
   fi
-  printf '\nSELF-TEST PASSED (6/6)\n'
+  printf '\nSELF-TEST PASSED (9/9)\n'
   exit 0
 fi
 
