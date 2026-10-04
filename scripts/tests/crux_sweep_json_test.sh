@@ -1,5 +1,5 @@
 #!/usr/bin/env bash
-# check_crux_sweep_json.sh — the case table of scripts/lib/crux_sweep_json.sh, the bash + jq port of the
+# crux_sweep_json_test.sh — the case table of scripts/lib/crux_sweep_json.sh, the bash + jq port of the
 # JSON steps of scripts/crux_sweep_shards.sh, which now need no Python. Two checks:
 #
 #   1. CASES. Each case feeds a function a small synthetic input and compares its output, byte for byte,
@@ -8,21 +8,25 @@
 #   2. RATCHET. scripts/crux_sweep_shards.sh calls python3 for the judge only. When the judge is ported,
 #      this check moves to zero.
 #
-#   bash scripts/check_crux_sweep_json.sh              # both checks; exit 1 on any failure
-#   bash scripts/check_crux_sweep_json.sh --self-test  # every planted defect must turn a check RED
+#   bash scripts/tests/crux_sweep_json_test.sh              # both checks; exit 1 on any failure
+#   bash scripts/tests/crux_sweep_json_test.sh --self-test  # every planted defect must turn a check RED
 #
 # The self-test plants each defect in a copy of the library (or of the sweep), asserts the plant changed
 # the file, and requires the case table to FAIL on it. A plant that changes nothing, or a case table that
 # stays green, fails the self-test.
+#
+# Not wired yet. It lives under scripts/tests/ rather than scripts/check_*.sh because guard_tree.sh runs
+# every scripts/check_*.sh in the required CI job, and a new check blocks only after it has been run green
+# by hand for three nights. Wiring it is its own change.
 set -euo pipefail
-cd "$(dirname "$0")/.."
-PROG=check_crux_sweep_json
+cd "$(dirname "$0")/../.."
+PROG=crux_sweep_json_test
 LIB=scripts/lib/crux_sweep_json.sh
 SWEEP=scripts/crux_sweep_shards.sh
 case "${1:-}" in
   "" | --self-test) ;;
-  -h | --help) printf 'usage: bash scripts/%s.sh [--self-test]\n' "$PROG"; exit 0 ;;
-  *) printf '%s: usage: bash scripts/%s.sh [--self-test]\n' "$PROG" "$PROG" >&2; exit 2 ;;
+  -h | --help) printf 'usage: bash scripts/tests/%s.sh [--self-test]\n' "$PROG"; exit 0 ;;
+  *) printf '%s: usage: bash scripts/tests/%s.sh [--self-test]\n' "$PROG" "$PROG" >&2; exit 2 ;;
 esac
 command -v jq > /dev/null || { printf '%s: FAIL: jq not found; nothing was measured\n' "$PROG" >&2; exit 1; }
 T=$(mktemp -d)

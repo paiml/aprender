@@ -170,6 +170,13 @@ jobs:
         run: setsid --wait bash scripts/check_hermetic_stdin_tests.sh
       - name: Publish safety (binary/oversize files in published packages)
         run: setsid --wait bash scripts/check_publish_safety.sh
+      # REPORT-ONLY until it has been green for three nights: continue-on-error keeps the job green, and
+      # this step's own outcome is the night's receipt. Making it blocking is its own change.
+      - name: CRUX sweep JSON port case table and self-test (report-only)
+        continue-on-error: true
+        run: |
+          setsid --wait bash scripts/tests/crux_sweep_json_test.sh
+          setsid --wait bash scripts/tests/crux_sweep_json_test.sh --self-test
       - name: Perf gate can still discriminate (APR-PERF-GATE-001, case table)
         run: bash scripts/perf_gate.sh --selftest
       - name: Book rust examples compile

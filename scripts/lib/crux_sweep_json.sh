@@ -1,7 +1,7 @@
 # crux_sweep_json.sh — the JSON steps of scripts/crux_sweep_shards.sh in bash + jq, with no Python.
 #
 # Each function replaces one inline python3 snippet of the sweep and keeps its output. Where the two can
-# differ, the difference is listed here and pinned by a case in scripts/check_crux_sweep_json.sh:
+# differ, the difference is listed here and pinned by a case in scripts/tests/crux_sweep_json_test.sh:
 #
 #   - A JSON file the sweep rewrites (the merged meta, the greedy-only receipt) keeps Python's layout:
 #     same indent, ASCII-only escapes, no final newline. A number can come out in another form than
