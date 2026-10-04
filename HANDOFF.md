@@ -186,8 +186,10 @@ Neither lane found a path where `RELEASE_CUT_FROM_NIGHTLY=1` tags a sha that was
 
 Open, not fixed here:
 
-1. **r1 F2: the release-day block has no planted test.** It needs `gh` and judge stubs around a full autopilot run. That is the next item before `RELEASE_CUT_FROM_NIGHTLY` is used on a real release; until then it stays off.
+1. **r1 F2: the release-day block has no planted test** (a7: keep it off until this exists). It needs `gh` and judge stubs around a full autopilot run. That is the next item before `RELEASE_CUT_FROM_NIGHTLY` is used on a real release; until then it stays off.
 2. **r1 F4 (to aprender-a7: changes what a gate reports).** models_t1.sh checks `env` before `nogo`. A RED cell plus an unreachable host exits 2 (not measured), not 1. The effect today is a fallback re-run, not a bad tag.
+   - **RULING (aprender-a7, 2026-10-04): no change in 0.70.2.** Exit 2 before nogo stays: RED + an unreachable host costs only a fallback re-run, never a bad tag.
+   - PROPOSE 0.70.3: models_t1.sh checks `nogo` before `env`, so any RED cell exits 1. Decided by aprender-a7; reversible by a sign-off row.
 3. **r2 F1 + F5 (infra timer follow-up).**
    - The nightly must run from a dedicated checkout that the timer detaches to origin/main first, so the nightly runs the same autopilot release day will.
    - It must never share `target/` with a release train.
