@@ -1,0 +1,1040 @@
+{
+  "schema": "epic-hygiene-addendum/v1",
+  "note": "E2 (#3598) recounted under ISSUE-TREE-001 after R-71-8 was answered. Owner label values are reduced to a flag; no bodies. Live state moves: re-read before acting.",
+  "read": [
+    {
+      "taken_at": "2026-10-04T23:20:27Z",
+      "cost": 2,
+      "query": "query { rateLimit { cost remaining resetAt } repository(owner: \"paiml\", name: \"aprender\") { open: issues(states: OPEN) { totalCount } e2: issue(number: 3598) { number state milestone { title } subIssuesSummary { total completed } subIssues(first: 50) { totalCount nodes { number title state createdAt milestone { title } labels(first: 20) { nodes { name } } assignees(first: 5) { nodes { login } } parent { number } subIssuesSummary { total completed } subIssues(first: 10) { nodes { number state } } } } } } }"
+    },
+    {
+      "taken_at": "2026-10-04T23:21:06Z",
+      "cost": 3,
+      "query": "query { rateLimit { cost remaining } repository(owner: \"paiml\", name: \"aprender\") { i3174: issue(number: 3174) { ...I } i4564: issue(number: 4564) { ...I } i4566: issue(number: 4566) { ...I } i4570: issue(number: 4570) { ...I } i4496: issue(number: 4496) { ...I } i3596: issue(number: 3596) { ...I } i3994: issue(number: 3994) { ...I } i4381: issue(number: 4381) { ...I } i3725: issue(number: 3725) { ...I } i4220: issue(number: 4220) { ...I } i4557: issue(number: 4557) { ...I } i4487: issue(number: 4487) { ...I } i4354: issue(number: 4354) { ...I } i2880: issue(number: 2880) { ...I } } } fragment I on Issue { number title state closedAt milestone { title } parent { number } labels(first: 20) { nodes { name } } subIssuesSummary { total completed } subIssues(first: 20) { nodes { number state milestone { title } subIssuesSummary { total } assignees(first: 3) { nodes { login } } } } }"
+    }
+  ],
+  "open_issues_total": 357,
+  "e2": {
+    "number": 3598,
+    "title": "",
+    "state": "OPEN",
+    "milestone": "0.71.0",
+    "sub_total": 18,
+    "sub_completed": 7,
+    "subs": [
+      {
+        "number": 3546,
+        "title": "install.sh does not exist: /releases/latest/download/install.sh 404s, nothing in the tree provides i",
+        "state": "OPEN",
+        "milestone": "0.71.0",
+        "parent": 3598,
+        "has_owner_label": true,
+        "labels": [
+          "P1",
+          "bug",
+          "size:M"
+        ],
+        "sub_total": 0,
+        "sub_completed": 0
+      },
+      {
+        "number": 3585,
+        "title": "aprender-queue: register here before opening an aprender PR (one PR in CI at a time)",
+        "state": "CLOSED",
+        "milestone": "0.71.0",
+        "parent": 3598,
+        "has_owner_label": false,
+        "labels": [
+          "P1",
+          "kind:triage"
+        ],
+        "sub_total": 0,
+        "sub_completed": 0
+      },
+      {
+        "number": 3725,
+        "title": "Qwen3.5 CUDA long-context DECODE is slow: the decode attention kernel runs 16 blocks — split-K neede",
+        "state": "OPEN",
+        "milestone": "0.71.0",
+        "parent": 3598,
+        "has_owner_label": true,
+        "labels": [
+          "P0",
+          "size:M"
+        ],
+        "sub_total": 5,
+        "sub_completed": 0,
+        "subs": [
+          {
+            "number": 4313,
+            "title": "",
+            "state": "OPEN",
+            "milestone": null
+          },
+          {
+            "number": 3761,
+            "title": "",
+            "state": "OPEN",
+            "milestone": null
+          },
+          {
+            "number": 4483,
+            "title": "",
+            "state": "OPEN",
+            "milestone": null
+          },
+          {
+            "number": 4485,
+            "title": "",
+            "state": "OPEN",
+            "milestone": null
+          },
+          {
+            "number": 4325,
+            "title": "",
+            "state": "OPEN",
+            "milestone": null
+          }
+        ]
+      },
+      {
+        "number": 3859,
+        "title": "RandomForestRegressor/DecisionTreeRegressor carry the identical O(n²) split search — #3815's fix doe",
+        "state": "OPEN",
+        "milestone": "0.71.0",
+        "parent": 3598,
+        "has_owner_label": true,
+        "labels": [
+          "P1",
+          "performance",
+          "size:M"
+        ],
+        "sub_total": 0,
+        "sub_completed": 0
+      },
+      {
+        "number": 4220,
+        "title": "CRUX parity spike: apr serve vs ollama on Qwen3.5 (0.8B/2B/4B/9B/27B) — measure gap, name techniques",
+        "state": "OPEN",
+        "milestone": "0.71.0",
+        "parent": 3598,
+        "has_owner_label": true,
+        "labels": [
+          "P1",
+          "size:M"
+        ],
+        "sub_total": 5,
+        "sub_completed": 0,
+        "subs": [
+          {
+            "number": 4218,
+            "title": "",
+            "state": "OPEN",
+            "milestone": null
+          },
+          {
+            "number": 4442,
+            "title": "",
+            "state": "OPEN",
+            "milestone": null
+          },
+          {
+            "number": 4450,
+            "title": "",
+            "state": "OPEN",
+            "milestone": null
+          },
+          {
+            "number": 4376,
+            "title": "",
+            "state": "OPEN",
+            "milestone": null
+          },
+          {
+            "number": 4274,
+            "title": "",
+            "state": "OPEN",
+            "milestone": null
+          }
+        ]
+      },
+      {
+        "number": 3790,
+        "title": "apr qa tensor_contract holds the whole GGUF on the heap: 19.36 GB RssAnon on Qwen3-30B-A3B (rosetta ",
+        "state": "CLOSED",
+        "milestone": "backlog",
+        "parent": 3598,
+        "has_owner_label": false,
+        "labels": [
+          "P2",
+          "kind:code",
+          "parked"
+        ],
+        "sub_total": 0,
+        "sub_completed": 0
+      },
+      {
+        "number": 4445,
+        "title": "apr bench (qwen35 --fast) refuses every run with warmup+iterations > 1: one session reuses its own p",
+        "state": "CLOSED",
+        "milestone": "0.70.1",
+        "parent": 3598,
+        "has_owner_label": false,
+        "labels": [],
+        "sub_total": 0,
+        "sub_completed": 0
+      },
+      {
+        "number": 4551,
+        "title": "PERF-HIST-001 = build APR-OBS OBS-05 (apr-perf-ledger-v1): schema + checks; no second table",
+        "state": "CLOSED",
+        "milestone": "0.71.0",
+        "parent": 3598,
+        "has_owner_label": false,
+        "labels": [],
+        "sub_total": 0,
+        "sub_completed": 0
+      },
+      {
+        "number": 4555,
+        "title": "PVL-13: Aeneas binding spike — model_of from extracted Rust (scalar references)",
+        "state": "OPEN",
+        "milestone": "0.71.0",
+        "parent": 3598,
+        "has_owner_label": false,
+        "labels": [
+          "P1",
+          "size:M"
+        ],
+        "sub_total": 0,
+        "sub_completed": 0
+      },
+      {
+        "number": 4557,
+        "title": "TR-02: cbtop escalation (TRACE-001)",
+        "state": "OPEN",
+        "milestone": "0.71.0",
+        "parent": 3598,
+        "has_owner_label": true,
+        "labels": [
+          "P1",
+          "size:M"
+        ],
+        "sub_total": 5,
+        "sub_completed": 0,
+        "subs": [
+          {
+            "number": 4559,
+            "title": "",
+            "state": "OPEN",
+            "milestone": null
+          },
+          {
+            "number": 4565,
+            "title": "",
+            "state": "OPEN",
+            "milestone": null
+          },
+          {
+            "number": 4556,
+            "title": "",
+            "state": "OPEN",
+            "milestone": null
+          },
+          {
+            "number": 4558,
+            "title": "",
+            "state": "OPEN",
+            "milestone": null
+          },
+          {
+            "number": 4560,
+            "title": "",
+            "state": "OPEN",
+            "milestone": null
+          }
+        ]
+      },
+      {
+        "number": 4572,
+        "title": "APR-OBS-001 OBS-13: serve tier",
+        "state": "CLOSED",
+        "milestone": "0.71.0",
+        "parent": 3598,
+        "has_owner_label": false,
+        "labels": [],
+        "sub_total": 0,
+        "sub_completed": 0
+      },
+      {
+        "number": 4573,
+        "title": "APR-OBS-001 OBS-14: epochs + backfill",
+        "state": "CLOSED",
+        "milestone": "0.71.0",
+        "parent": 3598,
+        "has_owner_label": false,
+        "labels": [],
+        "sub_total": 0,
+        "sub_completed": 0
+      },
+      {
+        "number": 4574,
+        "title": "APR-OBS-001 OBS-15: kernel path",
+        "state": "CLOSED",
+        "milestone": "0.71.0",
+        "parent": 3598,
+        "has_owner_label": false,
+        "labels": [],
+        "sub_total": 0,
+        "sub_completed": 0
+      },
+      {
+        "number": 4487,
+        "title": "APR-OBS-001: dogfood observability (OBS-00 + row checklist)",
+        "state": "OPEN",
+        "milestone": "0.71.0",
+        "parent": 3598,
+        "has_owner_label": false,
+        "labels": [
+          "P1",
+          "size:M"
+        ],
+        "sub_total": 2,
+        "sub_completed": 0,
+        "subs": [
+          {
+            "number": 4522,
+            "title": "",
+            "state": "OPEN",
+            "milestone": null
+          },
+          {
+            "number": 4162,
+            "title": "",
+            "state": "OPEN",
+            "milestone": null
+          }
+        ]
+      },
+      {
+        "number": 3568,
+        "title": "Schema-constrained decoding in apr (--json-schema or grammar) — three customers: arbiter's quorum la",
+        "state": "OPEN",
+        "milestone": "backlog",
+        "parent": 3598,
+        "has_owner_label": true,
+        "labels": [
+          "P0",
+          "size:M"
+        ],
+        "sub_total": 0,
+        "sub_completed": 0
+      },
+      {
+        "number": 2880,
+        "title": "Class: the shipped CPU path runs a narrower kernel than the host supports — dispatch returns before ",
+        "state": "OPEN",
+        "milestone": "0.73.0",
+        "parent": 3598,
+        "has_owner_label": true,
+        "labels": [
+          "P0",
+          "pp-067",
+          "size:M"
+        ],
+        "sub_total": 5,
+        "sub_completed": 5,
+        "subs": [
+          {
+            "number": 2567,
+            "title": "",
+            "state": "CLOSED",
+            "milestone": null
+          },
+          {
+            "number": 2604,
+            "title": "",
+            "state": "CLOSED",
+            "milestone": null
+          },
+          {
+            "number": 2605,
+            "title": "",
+            "state": "CLOSED",
+            "milestone": null
+          },
+          {
+            "number": 2611,
+            "title": "",
+            "state": "CLOSED",
+            "milestone": null
+          },
+          {
+            "number": 2787,
+            "title": "",
+            "state": "CLOSED",
+            "milestone": null
+          }
+        ]
+      },
+      {
+        "number": 4354,
+        "title": "PROMETHEUS (PRM-001 v3) epic: Qwen 3.5 4B local lane — fast enough and good enough to break quorum t",
+        "state": "OPEN",
+        "milestone": "0.71.0",
+        "parent": 3598,
+        "has_owner_label": false,
+        "labels": [
+          "P0",
+          "size:M"
+        ],
+        "sub_total": 17,
+        "sub_completed": 14,
+        "subs": [
+          {
+            "number": 4355,
+            "title": "",
+            "state": "CLOSED",
+            "milestone": null
+          },
+          {
+            "number": 4356,
+            "title": "",
+            "state": "CLOSED",
+            "milestone": null
+          },
+          {
+            "number": 4357,
+            "title": "",
+            "state": "CLOSED",
+            "milestone": null
+          },
+          {
+            "number": 4358,
+            "title": "",
+            "state": "CLOSED",
+            "milestone": null
+          },
+          {
+            "number": 4359,
+            "title": "",
+            "state": "CLOSED",
+            "milestone": null
+          },
+          {
+            "number": 4360,
+            "title": "",
+            "state": "CLOSED",
+            "milestone": null
+          },
+          {
+            "number": 4361,
+            "title": "",
+            "state": "CLOSED",
+            "milestone": null
+          },
+          {
+            "number": 4362,
+            "title": "",
+            "state": "CLOSED",
+            "milestone": null
+          },
+          {
+            "number": 4363,
+            "title": "",
+            "state": "CLOSED",
+            "milestone": null
+          },
+          {
+            "number": 4364,
+            "title": "",
+            "state": "CLOSED",
+            "milestone": null
+          }
+        ]
+      },
+      {
+        "number": 3483,
+        "title": "FP8 batched prefill fails CPU parity at the post-prompt decode step — catastrophic on per-head-QK-no",
+        "state": "OPEN",
+        "milestone": "0.71.0",
+        "parent": 3598,
+        "has_owner_label": true,
+        "labels": [
+          "P1",
+          "bug",
+          "size:M"
+        ],
+        "sub_total": 0,
+        "sub_completed": 0
+      }
+    ]
+  },
+  "issues": [
+    {
+      "number": 3174,
+      "title": "aprender-train-canary is dark: workspace-excluded, in no CI job, pinned to burn 0.21.0-pre.2 — there",
+      "state": "OPEN",
+      "milestone": "0.71.0",
+      "parent": 2878,
+      "has_owner_label": true,
+      "labels": [
+        "P2",
+        "bug",
+        "size:M"
+      ],
+      "sub_total": 0,
+      "sub_completed": 0
+    },
+    {
+      "number": 4564,
+      "title": "TR-09: one trace schema (= APR-OBS OBS-17) (TRACE-001)",
+      "state": "OPEN",
+      "milestone": "0.71.0",
+      "parent": 4561,
+      "has_owner_label": true,
+      "labels": [
+        "P2",
+        "size:M"
+      ],
+      "sub_total": 0,
+      "sub_completed": 0
+    },
+    {
+      "number": 4566,
+      "title": "TR-11: new CRUX contracts (define) (TRACE-001)",
+      "state": "OPEN",
+      "milestone": "0.71.0",
+      "parent": 4561,
+      "has_owner_label": true,
+      "labels": [
+        "P2",
+        "size:M"
+      ],
+      "sub_total": 0,
+      "sub_completed": 0
+    },
+    {
+      "number": 4570,
+      "title": "TR-14: CRUX coverage for tracing (TRACE-001)",
+      "state": "OPEN",
+      "milestone": "0.71.0",
+      "parent": 4562,
+      "has_owner_label": true,
+      "labels": [
+        "P2",
+        "size:M"
+      ],
+      "sub_total": 0,
+      "sub_completed": 0
+    },
+    {
+      "number": 4496,
+      "title": "APR-OBS-001 OBS-09: serve tracing: X-Trace-Level runs inference_trace (first row of 0.71 serve epic)",
+      "state": "CLOSED",
+      "closed_at": "2026-10-04T08:56:00Z",
+      "milestone": "0.71.0",
+      "parent": null,
+      "has_owner_label": false,
+      "labels": [],
+      "sub_total": 0,
+      "sub_completed": 0
+    },
+    {
+      "number": 3596,
+      "title": "Time-to-first-token on Qwen3.5-4B-Q4_K_M is 14-16s vs llama.cpp's 1.8-2.9s on the same box (7.7x); a",
+      "state": "CLOSED",
+      "closed_at": "2026-09-25T20:04:31Z",
+      "milestone": "backlog",
+      "parent": null,
+      "has_owner_label": false,
+      "labels": [
+        "P1",
+        "bug",
+        "parked",
+        "performance"
+      ],
+      "sub_total": 0,
+      "sub_completed": 0
+    },
+    {
+      "number": 3994,
+      "title": "EPIC E3 0.71: Don't Leave Behind",
+      "state": "OPEN",
+      "milestone": "0.71.0",
+      "parent": null,
+      "has_owner_label": false,
+      "labels": [
+        "epic"
+      ],
+      "sub_total": 8,
+      "sub_completed": 1,
+      "subs": [
+        {
+          "number": 3602,
+          "title": "",
+          "state": "OPEN",
+          "milestone": "0.71.0",
+          "sub_total": 5
+        },
+        {
+          "number": 3693,
+          "title": "",
+          "state": "CLOSED",
+          "milestone": "0.71.0",
+          "sub_total": 0
+        },
+        {
+          "number": 3714,
+          "title": "",
+          "state": "OPEN",
+          "milestone": "0.71.0",
+          "sub_total": 3
+        },
+        {
+          "number": 3759,
+          "title": "",
+          "state": "OPEN",
+          "milestone": "0.71.0",
+          "sub_total": 5
+        },
+        {
+          "number": 3953,
+          "title": "",
+          "state": "OPEN",
+          "milestone": "0.71.0",
+          "sub_total": 4
+        },
+        {
+          "number": 3719,
+          "title": "",
+          "state": "OPEN",
+          "milestone": "0.71.0",
+          "sub_total": 5
+        },
+        {
+          "number": 4539,
+          "title": "",
+          "state": "OPEN",
+          "milestone": "0.71.0",
+          "sub_total": 1
+        },
+        {
+          "number": 3590,
+          "title": "",
+          "state": "OPEN",
+          "milestone": "backlog",
+          "sub_total": 1
+        }
+      ]
+    },
+    {
+      "number": 4381,
+      "title": "EPIC E4 0.71: Dogfood Model Lifecycle",
+      "state": "OPEN",
+      "milestone": "0.71.0",
+      "parent": null,
+      "has_owner_label": false,
+      "labels": [
+        "crux-competitor",
+        "dogfood",
+        "epic"
+      ],
+      "sub_total": 3,
+      "sub_completed": 0,
+      "subs": [
+        {
+          "number": 3555,
+          "title": "",
+          "state": "OPEN",
+          "milestone": "0.71.0",
+          "sub_total": 1
+        },
+        {
+          "number": 3558,
+          "title": "",
+          "state": "OPEN",
+          "milestone": "0.71.0",
+          "sub_total": 3
+        },
+        {
+          "number": 4382,
+          "title": "",
+          "state": "OPEN",
+          "milestone": "0.71.0",
+          "sub_total": 4
+        }
+      ]
+    },
+    {
+      "number": 3725,
+      "title": "Qwen3.5 CUDA long-context DECODE is slow: the decode attention kernel runs 16 blocks — split-K neede",
+      "state": "OPEN",
+      "milestone": "0.71.0",
+      "parent": 3598,
+      "has_owner_label": true,
+      "labels": [
+        "P0",
+        "size:M"
+      ],
+      "sub_total": 5,
+      "sub_completed": 0,
+      "subs": [
+        {
+          "number": 4313,
+          "title": "",
+          "state": "OPEN",
+          "milestone": "0.71.0",
+          "sub_total": 0
+        },
+        {
+          "number": 3761,
+          "title": "",
+          "state": "OPEN",
+          "milestone": "0.71.0",
+          "sub_total": 0
+        },
+        {
+          "number": 4483,
+          "title": "",
+          "state": "OPEN",
+          "milestone": "0.71.0",
+          "sub_total": 0
+        },
+        {
+          "number": 4485,
+          "title": "",
+          "state": "OPEN",
+          "milestone": "0.71.0",
+          "sub_total": 0
+        },
+        {
+          "number": 4325,
+          "title": "",
+          "state": "OPEN",
+          "milestone": "0.71.0",
+          "sub_total": 0
+        }
+      ]
+    },
+    {
+      "number": 4220,
+      "title": "CRUX parity spike: apr serve vs ollama on Qwen3.5 (0.8B/2B/4B/9B/27B) — measure gap, name techniques",
+      "state": "OPEN",
+      "milestone": "0.71.0",
+      "parent": 3598,
+      "has_owner_label": true,
+      "labels": [
+        "P1",
+        "size:M"
+      ],
+      "sub_total": 5,
+      "sub_completed": 0,
+      "subs": [
+        {
+          "number": 4218,
+          "title": "",
+          "state": "OPEN",
+          "milestone": "backlog",
+          "sub_total": 0
+        },
+        {
+          "number": 4442,
+          "title": "",
+          "state": "OPEN",
+          "milestone": "0.71.0",
+          "sub_total": 0
+        },
+        {
+          "number": 4450,
+          "title": "",
+          "state": "OPEN",
+          "milestone": "0.71.0",
+          "sub_total": 0
+        },
+        {
+          "number": 4376,
+          "title": "",
+          "state": "OPEN",
+          "milestone": "backlog",
+          "sub_total": 0
+        },
+        {
+          "number": 4274,
+          "title": "",
+          "state": "OPEN",
+          "milestone": "0.71.0",
+          "sub_total": 0
+        }
+      ]
+    },
+    {
+      "number": 4557,
+      "title": "TR-02: cbtop escalation (TRACE-001)",
+      "state": "OPEN",
+      "milestone": "0.71.0",
+      "parent": 3598,
+      "has_owner_label": true,
+      "labels": [
+        "P1",
+        "size:M"
+      ],
+      "sub_total": 5,
+      "sub_completed": 0,
+      "subs": [
+        {
+          "number": 4559,
+          "title": "",
+          "state": "OPEN",
+          "milestone": "0.71.0",
+          "sub_total": 0
+        },
+        {
+          "number": 4565,
+          "title": "",
+          "state": "OPEN",
+          "milestone": "0.71.0",
+          "sub_total": 0
+        },
+        {
+          "number": 4556,
+          "title": "",
+          "state": "OPEN",
+          "milestone": "0.71.0",
+          "sub_total": 0
+        },
+        {
+          "number": 4558,
+          "title": "",
+          "state": "OPEN",
+          "milestone": "0.71.0",
+          "sub_total": 0
+        },
+        {
+          "number": 4560,
+          "title": "",
+          "state": "OPEN",
+          "milestone": "0.71.0",
+          "sub_total": 0
+        }
+      ]
+    },
+    {
+      "number": 4487,
+      "title": "APR-OBS-001: dogfood observability (OBS-00 + row checklist)",
+      "state": "OPEN",
+      "milestone": "0.71.0",
+      "parent": 3598,
+      "has_owner_label": false,
+      "labels": [
+        "P1",
+        "size:M"
+      ],
+      "sub_total": 2,
+      "sub_completed": 0,
+      "subs": [
+        {
+          "number": 4522,
+          "title": "",
+          "state": "OPEN",
+          "milestone": "0.71.0",
+          "sub_total": 0
+        },
+        {
+          "number": 4162,
+          "title": "",
+          "state": "OPEN",
+          "milestone": "0.71.0",
+          "sub_total": 0
+        }
+      ]
+    },
+    {
+      "number": 4354,
+      "title": "PROMETHEUS (PRM-001 v3) epic: Qwen 3.5 4B local lane — fast enough and good enough to break quorum t",
+      "state": "OPEN",
+      "milestone": "0.71.0",
+      "parent": 3598,
+      "has_owner_label": false,
+      "labels": [
+        "P0",
+        "size:M"
+      ],
+      "sub_total": 17,
+      "sub_completed": 14,
+      "subs": [
+        {
+          "number": 4355,
+          "title": "",
+          "state": "CLOSED",
+          "milestone": "0.71.0",
+          "sub_total": 0
+        },
+        {
+          "number": 4356,
+          "title": "",
+          "state": "CLOSED",
+          "milestone": "0.70.1",
+          "sub_total": 0
+        },
+        {
+          "number": 4357,
+          "title": "",
+          "state": "CLOSED",
+          "milestone": "0.71.0",
+          "sub_total": 0
+        },
+        {
+          "number": 4358,
+          "title": "",
+          "state": "CLOSED",
+          "milestone": "0.71.0",
+          "sub_total": 0
+        },
+        {
+          "number": 4359,
+          "title": "",
+          "state": "CLOSED",
+          "milestone": "0.71.0",
+          "sub_total": 0
+        },
+        {
+          "number": 4360,
+          "title": "",
+          "state": "CLOSED",
+          "milestone": "0.71.0",
+          "sub_total": 0
+        },
+        {
+          "number": 4361,
+          "title": "",
+          "state": "CLOSED",
+          "milestone": "0.71.0",
+          "sub_total": 0
+        },
+        {
+          "number": 4362,
+          "title": "",
+          "state": "CLOSED",
+          "milestone": "0.71.0",
+          "sub_total": 0
+        },
+        {
+          "number": 4363,
+          "title": "",
+          "state": "CLOSED",
+          "milestone": "0.71.0",
+          "sub_total": 0
+        },
+        {
+          "number": 4364,
+          "title": "",
+          "state": "CLOSED",
+          "milestone": "0.71.0",
+          "sub_total": 0
+        },
+        {
+          "number": 4365,
+          "title": "",
+          "state": "CLOSED",
+          "milestone": "0.71.0",
+          "sub_total": 0
+        },
+        {
+          "number": 4366,
+          "title": "",
+          "state": "CLOSED",
+          "milestone": "0.71.0",
+          "sub_total": 0
+        },
+        {
+          "number": 4367,
+          "title": "",
+          "state": "CLOSED",
+          "milestone": "0.71.0",
+          "sub_total": 0
+        },
+        {
+          "number": 4444,
+          "title": "",
+          "state": "OPEN",
+          "milestone": "0.71.0",
+          "sub_total": 0
+        },
+        {
+          "number": 4026,
+          "title": "",
+          "state": "CLOSED",
+          "milestone": "backlog",
+          "sub_total": 0
+        },
+        {
+          "number": 4446,
+          "title": "",
+          "state": "OPEN",
+          "milestone": "0.71.0",
+          "sub_total": 0
+        },
+        {
+          "number": 4524,
+          "title": "",
+          "state": "OPEN",
+          "milestone": "0.71.0",
+          "sub_total": 0
+        }
+      ]
+    },
+    {
+      "number": 2880,
+      "title": "Class: the shipped CPU path runs a narrower kernel than the host supports — dispatch returns before ",
+      "state": "OPEN",
+      "milestone": "0.73.0",
+      "parent": 3598,
+      "has_owner_label": true,
+      "labels": [
+        "P0",
+        "pp-067",
+        "size:M"
+      ],
+      "sub_total": 5,
+      "sub_completed": 5,
+      "subs": [
+        {
+          "number": 2567,
+          "title": "",
+          "state": "CLOSED",
+          "milestone": "0.73.0",
+          "sub_total": 0
+        },
+        {
+          "number": 2604,
+          "title": "",
+          "state": "CLOSED",
+          "milestone": "0.73.0",
+          "sub_total": 0
+        },
+        {
+          "number": 2605,
+          "title": "",
+          "state": "CLOSED",
+          "milestone": "0.73.0",
+          "sub_total": 0
+        },
+        {
+          "number": 2611,
+          "title": "",
+          "state": "CLOSED",
+          "milestone": "0.73.0",
+          "sub_total": 0
+        },
+        {
+          "number": 2787,
+          "title": "",
+          "state": "CLOSED",
+          "milestone": "0.71.0",
+          "sub_total": 0
+        }
+      ]
+    }
+  ]
+}
