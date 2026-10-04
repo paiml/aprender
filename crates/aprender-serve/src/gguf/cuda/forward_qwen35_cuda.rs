@@ -73,6 +73,8 @@ struct CudaDeltaNetLayer {
     ffn_gate: CudaQuantWeight,
     ffn_up: CudaQuantWeight,
     ffn_down: CudaQuantWeight,
+    /// #4665: the routed experts of a Qwen3.5-MoE layer (`ffn_*` is then its shared expert).
+    moe: Option<Box<moe::CudaMoe>>,
 }
 
 /// One full-attention layer's device-resident weights.
@@ -88,6 +90,8 @@ struct CudaAttentionLayer {
     ffn_gate: CudaQuantWeight,
     ffn_up: CudaQuantWeight,
     ffn_down: CudaQuantWeight,
+    /// #4665: as [`CudaDeltaNetLayer::moe`].
+    moe: Option<Box<moe::CudaMoe>>,
 }
 
 /// One resident layer, of either kind — the GPU mirror of `Qwen35OwnedLayer`.
@@ -287,6 +291,8 @@ pub struct Qwen35CudaModel<'a> {
     /// #4233: route [`Self::forward_single`] through the captured graph.
     /// Starts from `QWEN35_CUDA_GRAPH=1`; [`Self::set_decode_graph`] overrides.
     use_decode_graph: bool,
+    /// #4665: the MoE combine's scratch; `None` on a dense model.
+    moe_scratch: Option<moe::MoeScratch>,
 }
 
 /// Why a projection cannot go on the GPU, stated so the user can act on it
@@ -403,7 +409,15 @@ impl<'a> Qwen35CudaModel<'a> {
             theta_scale,
             vocab_size: model.base.config.vocab_size as u32,
             hidden_dim: model.base.config.hidden_dim as u32,
-            intermediate_dim: model.base.config.intermediate_dim as u32,
+            // The layers' own dense FFN width: on a Qwen3.5-MoE file that is the shared
+            // expert's, which the config's dense `intermediate_dim` is not (#4665).
+            intermediate_dim: model
+                .layers
+                .first()
+                .map_or(model.base.config.intermediate_dim, |l| match l {
+                    Qwen35OwnedLayer::DeltaNet(d) => d.ffn_gate.out_dim,
+                    Qwen35OwnedLayer::Attention(a) => a.ffn_gate.out_dim,
+                }) as u32,
             conv_dim: (k_dim * 2 + v_dim) as u32,
             k_dim: k_dim as u32,
             v_dim: v_dim as u32,
@@ -443,21 +457,31 @@ impl<'a> Qwen35CudaModel<'a> {
         })
     }
 
-    /// #4665: the GPU layers carry only `ffn_*`, which on a Qwen3.5-MoE file is the shared
-    /// expert alone. Uploading such a layer would run without its routed experts — wrong
-    /// output, no error — so a MoE layer is refused until the GPU runs its experts.
-    fn check_moe_layers(model: &Qwen35Model<'_>) -> Result<()> {
-        match model.layers.iter().position(|l| l.moe().is_some()) {
-            None => Ok(()),
-            Some(il) => Err(RealizarError::UnsupportedOperation {
-                operation: "qwen35_cuda".to_string(),
-                reason: format!(
-                    "layer {il} is a Qwen3.5-MoE layer and the CUDA forward does not run its \
-                     routed experts yet (#4665); refusing rather than computing the shared \
-                     expert alone"
-                ),
-            }),
+    /// #4665: upload a layer's routed experts, if it has any.
+    fn upload_moe(
+        executor: &mut CudaExecutor,
+        il: usize,
+        ffn: Option<&crate::gguf::forward_qwen35::qwen35_moe::Qwen35MoeFfn>,
+        hidden: usize,
+    ) -> Result<Option<Box<moe::CudaMoe>>> {
+        ffn.map(|m| moe::upload(executor, il, m, hidden).map(Box::new))
+            .transpose()
+    }
+
+    /// #4665: a layer's routed experts, if it has any.
+    fn layer_moe(layer: &CudaLayer) -> Option<&moe::CudaMoe> {
+        match layer {
+            CudaLayer::DeltaNet(w) => w.moe.as_deref(),
+            CudaLayer::Attention(w) => w.moe.as_deref(),
         }
+    }
+
+    /// #4665: whether any layer routes experts. Such a layer reads its router logits on
+    /// the host mid-layer, which a captured CUDA graph cannot do, so a MoE model always
+    /// decodes eagerly.
+    #[must_use]
+    pub fn has_moe(&self) -> bool {
+        self.layers.iter().any(|l| Self::layer_moe(l).is_some())
     }
 
     /// Upload one `DeltaNet` layer's tensors.
@@ -488,6 +512,7 @@ impl<'a> Qwen35CudaModel<'a> {
             ffn_gate: q(executor, "ffn_gate.weight", &d.ffn_gate)?,
             ffn_up: q(executor, "ffn_up.weight", &d.ffn_up)?,
             ffn_down: q(executor, "ffn_down.weight", &d.ffn_down)?,
+            moe: Self::upload_moe(executor, il, d.moe.as_deref(), d.post_attention_norm.len())?,
         })
     }
 
@@ -516,6 +541,7 @@ impl<'a> Qwen35CudaModel<'a> {
             ffn_gate: q(executor, "ffn_gate.weight", &a.ffn_gate)?,
             ffn_up: q(executor, "ffn_up.weight", &a.ffn_up)?,
             ffn_down: q(executor, "ffn_down.weight", &a.ffn_down)?,
+            moe: Self::upload_moe(executor, il, a.moe.as_deref(), a.post_attention_norm.len())?,
         })
     }
 
@@ -586,7 +612,6 @@ impl<'a> Qwen35CudaModel<'a> {
     ) -> Result<Self> {
         let dims = Self::dims_of(model);
         Self::check_head_grouping(dims)?;
-        Self::check_moe_layers(model)?;
         if max_seq_len == 0 {
             return Err(RealizarError::InvalidShape {
                 reason: "qwen35_cuda: max_seq_len must be at least 1".to_string(),
@@ -661,6 +686,11 @@ impl<'a> Qwen35CudaModel<'a> {
         let out_normed = Self::zeros(&executor, dims.hidden_dim as usize)?;
         let logits_buf = Self::zeros(&executor, dims.vocab_size as usize)?;
         let hidden_buf = Some(Self::zeros(&executor, dims.hidden_dim as usize)?);
+        let moe_scratch = moe::build_scratch(
+            &executor,
+            layers.iter().filter_map(Self::layer_moe),
+            dims.hidden_dim as usize,
+        )?;
         let prefill_attention = prefill::default_prefill_attention(&executor, dims);
         // #3596: the model's OWN state serves only the single-layer handles
         // (`forward_attention_layer`, `upload_attention_kv`, …), never a generation —
@@ -690,7 +720,8 @@ impl<'a> Qwen35CudaModel<'a> {
             prefill_rows: prefill::PREFILL_MAX_CHUNK_ROWS,
             prefill_attention,
             decode_graph: None,
-            use_decode_graph: graph::graph_enabled(),
+            use_decode_graph: moe_scratch.is_none() && graph::graph_enabled(),
+            moe_scratch,
         };
         m.warm_prefill_weights();
         Ok(m)
@@ -1382,7 +1413,14 @@ impl<'a> Qwen35CudaModel<'a> {
             w.ffn_down.n,
             w.ffn_down.k,
         )?;
-        ex.residual_add_into(hidden, &s.ffn_down, hidden, d.hidden_dim)?;
+        let ffn_out = match (w.moe.as_deref(), self.moe_scratch.as_mut()) {
+            (Some(m), Some(ms)) => {
+                moe::combine(ex, m, ms, &s.post_normed, &s.ffn_down, d.hidden_dim)?;
+                &ms.acc
+            },
+            _ => &s.ffn_down,
+        };
+        ex.residual_add_into(hidden, ffn_out, hidden, d.hidden_dim)?;
 
         // NO sync here (#3090 review). Every op above is enqueued on the one
         // stream this model uses, so the next layer's first kernel is already
@@ -1668,7 +1706,14 @@ impl<'a> Qwen35CudaModel<'a> {
             w.ffn_down.n,
             w.ffn_down.k,
         )?;
-        ex.residual_add_into(hidden, &s.ffn_down, hidden, d.hidden_dim)?;
+        let ffn_out = match (w.moe.as_deref(), self.moe_scratch.as_mut()) {
+            (Some(m), Some(ms)) => {
+                moe::combine(ex, m, ms, &s.post_normed, &s.ffn_down, d.hidden_dim)?;
+                &ms.acc
+            },
+            _ => &s.ffn_down,
+        };
+        ex.residual_add_into(hidden, ffn_out, hidden, d.hidden_dim)?;
 
         // NO sync here — see `attention_layer_inner`. Stream order IS the
         // dependency; the host only has to wait where it reads.
@@ -1678,7 +1723,8 @@ impl<'a> Qwen35CudaModel<'a> {
     /// #4233: turn the captured-graph decode step on or off. Turning it off
     /// drops the captured graph and its IO buffers.
     pub fn set_decode_graph(&mut self, on: bool) {
-        self.use_decode_graph = on;
+        // #4665: a MoE model cannot be captured — see `has_moe`.
+        self.use_decode_graph = on && !self.has_moe();
         if !on {
             self.decode_graph = None;
         }
@@ -1892,6 +1938,10 @@ pub use prefill::{
 /// #4233: the decode step captured as one CUDA graph.
 #[path = "forward_qwen35_cuda_graph.rs"]
 mod graph;
+
+/// #4665: the Qwen3.5-MoE routed-expert FFN on the device.
+#[path = "forward_qwen35_cuda_moe.rs"]
+mod moe;
 
 /// Per-layer CPU parity on the real Qwen3.5-0.8B file.
 #[cfg(test)]

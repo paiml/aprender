@@ -222,7 +222,7 @@ mod forced_accelerator_refusal_tests {
     /// forward cannot run, so `--gpu` on it is still refused BY NAME, before a load.
     #[test]
     fn gpu_forced_on_qwen35_moe_is_still_refused_by_name() {
-        for arch in ["qwen35moe", "qwen3_5_moe", "Qwen3_5MoeForCausalLM"] {
+        for arch in ["qwen3_5_moe", "Qwen3_5MoeForCausalLM"] {
             let reason = forced_accelerator_refusal(true, Some(arch))
                 .unwrap_or_else(|| panic!("--gpu on {arch} must refuse"));
             assert!(reason.contains(arch), "{reason}");
@@ -230,6 +230,15 @@ mod forced_accelerator_refusal_tests {
             assert!(reason.contains("refusal, not a fallback"), "{reason}");
             assert!(reason.contains("--gpu"), "names the flag to drop: {reason}");
         }
+    }
+
+    /// #4665: the GGUF tag `qwen35moe` is never folded into `qwen3_moe` — it is the
+    /// hybrid forward's, whose CUDA model runs the routed experts — so `--gpu` reaches it.
+    #[test]
+    fn gpu_forced_on_the_qwen35moe_gguf_tag_reaches_the_hybrid() {
+        assert!(forced_accelerator_refusal(true, Some("qwen35moe")).is_none());
+        assert!(realizar::gguf::hybrid_forward_handles("qwen35moe"));
+        assert!(!realizar::gguf::moe_forward_handles("qwen35moe"));
     }
 
     /// done_when 2: the working CPU path must not be touched. Without the forced
@@ -270,10 +279,10 @@ mod forced_accelerator_refusal_tests {
     /// to be a refusal. This is what goes RED if the narrowing is undone.
     #[test]
     fn removing_the_qwen35_moe_refusal_would_route_a_hybrid_to_the_wrong_forward() {
-        let refused = forced_accelerator_refusal(true, Some("qwen35moe"));
+        let refused = forced_accelerator_refusal(true, Some("qwen3_5_moe"));
         assert!(
             refused.is_some(),
-            "MUTANT CAUGHT: --gpu on qwen35moe (Qwen3.5-35B-A3B) no longer refuses, and the \
+            "MUTANT CAUGHT: --gpu on qwen3_5_moe (Qwen3.5 MoE) no longer refuses, and the \
              normalizer folds it into qwen3_moe — so it would reach a forward that cannot run \
              its Gated-DeltaNet/SSM layers (#3714, #3817)."
         );

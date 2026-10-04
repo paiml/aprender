@@ -291,10 +291,14 @@ pub fn format_mismatch(architecture: &str, missing: &[RequiredOp]) -> String {
 /// incidentally, by the blanket refusal; deleting the arm outright would have
 /// routed them to a forward that cannot run them — wrong output, not a refusal.
 /// So the check reads the RAW spelling, which this function has always received.
-/// (The GGUF string of a real Qwen3.5-MoE file, `qwen35moe`, is caught here too.)
+///
+/// #4665: the GGUF string of a real Qwen3.5-MoE file, `qwen35moe`, is NOT refused any
+/// more. It is never folded into `qwen3_moe`; it goes to the hybrid forward
+/// ([`crate::gguf::hybrid_forward_handles`]), whose CUDA model now runs the routed
+/// experts. The HF spellings above still fold into `qwen3_moe` and stay refused.
 #[must_use]
 pub fn no_cuda_forward_reason(architecture: &str) -> Option<String> {
-    if is_qwen35_moe_spelling(architecture) {
+    if is_qwen35_moe_spelling(architecture) && !crate::gguf::hybrid_forward_handles(architecture) {
         return Some(format!(
             "this build has no CUDA forward for architecture '{architecture}': Qwen3.5 MoE is a \
              hybrid (Gated DeltaNet / SSM layers + mixture-of-experts), and the qwen3moe CUDA \
@@ -584,15 +588,13 @@ mod tests {
     /// Qwen3.5 MoE is folded into `qwen3_moe` by the normalizer but is a hybrid the
     /// qwen3moe forward cannot run. It must still be refused BY NAME — otherwise the
     /// fold that turned plain-MoE CUDA on would have silently routed it to that
-    /// forward. The last spelling is the GGUF string of a real file on lambda
-    /// (`Qwen3.5-35B-A3B-UD-IQ4_XS.gguf`).
+    /// forward. (#4665: the GGUF string `qwen35moe` left this list — see the next test.)
     #[test]
     fn every_qwen35_moe_spelling_is_still_refused_by_name() {
         for spelling in [
             "qwen3_5_moe",
             "Qwen3_5MoeForCausalLM",
             "Qwen3_5MoeForConditionalGeneration",
-            "qwen35moe",
         ] {
             let reason = no_cuda_forward_reason(spelling)
                 .unwrap_or_else(|| panic!("{spelling} is Qwen3.5 MoE and must be refused"));
@@ -606,6 +608,16 @@ mod tests {
                 "and that nothing ran: {reason}"
             );
         }
+    }
+
+    /// #4665: `qwen35moe`, the GGUF string of `Qwen3.5-35B-A3B-UD-IQ4_XS.gguf`, has a CUDA
+    /// forward — the hybrid one — so it is not refused, it IS routed to the hybrid, and
+    /// it is NOT routed to the qwen3moe forward that cannot run its SSM layers.
+    #[test]
+    fn the_qwen35moe_gguf_tag_goes_to_the_hybrid_cuda_forward() {
+        assert!(no_cuda_forward_reason("qwen35moe").is_none());
+        assert!(crate::gguf::hybrid_forward_handles("qwen35moe"));
+        assert!(!crate::gguf::moe_forward_handles("qwen35moe"));
     }
 
     /// The architectures that DO have a CUDA forward must not be refused. This

@@ -386,6 +386,9 @@ impl Qwen35CudaModel<'_> {
                 weights += bytes;
                 largest = largest.max(elems);
             }
+            // #4665: routed experts and router. Never a prefill GEMM operand (each row
+            // routes through GEMVs), so they leave `largest` alone.
+            weights += layer.moe().map_or(0, super::moe::moe_upload_bytes);
         }
         weights +=
             2 * f32s(model.base.output_norm_weight()) + quant_bytes(model.base.lm_head_weight()).0;
@@ -935,6 +938,7 @@ impl Qwen35CudaModel<'_> {
             rows,
             &w.post_attention_norm,
             [&w.ffn_gate, &w.ffn_up, &w.ffn_down],
+            w.moe.as_deref().zip(self.moe_scratch.as_mut()),
         )
     }
 
@@ -1101,11 +1105,13 @@ impl Qwen35CudaModel<'_> {
             rows,
             &w.post_attention_norm,
             [&w.ffn_gate, &w.ffn_up, &w.ffn_down],
+            w.moe.as_deref().zip(self.moe_scratch.as_mut()),
         )
     }
 
     /// post_attention_norm → SwiGLU FFN → the second residual, over `rows` rows. Both
-    /// layer kinds share it, as their per-token bodies do.
+    /// layer kinds share it, as their per-token bodies do. With `moe` (#4665) the SwiGLU
+    /// is the shared expert and each row then gets its routed experts.
     fn prefill_ffn_rows(
         ex: &mut crate::cuda::CudaExecutor,
         b: &PrefillBuffers,
@@ -1113,6 +1119,7 @@ impl Qwen35CudaModel<'_> {
         rows: u32,
         post_norm: &GpuBuffer<f32>,
         [gate, up, down]: [&super::CudaQuantWeight; 3],
+        moe: Option<(&super::moe::CudaMoe, &mut super::moe::MoeScratch)>,
     ) -> std::result::Result<(), trueno_gpu::GpuError> {
         ex.batched_rmsnorm_into(&b.x, post_norm, &b.post_normed, d.hidden_dim, rows, d.eps)?;
         ex.qwen35_project_rows(
@@ -1151,7 +1158,24 @@ impl Qwen35CudaModel<'_> {
             down.k,
             down.n,
         )?;
-        ex.residual_add_into(&b.x, &b.proj, &b.x, rows * d.hidden_dim)
+        let Some((m, ms)) = moe else {
+            return ex.residual_add_into(&b.x, &b.proj, &b.x, rows * d.hidden_dim);
+        };
+        // #4665: `b.proj` holds every row's shared-expert output; each row is routed on
+        // its own, through the decode path's combine (one router round trip per row).
+        let h = d.hidden_dim;
+        for r in 0..rows {
+            let x = super::Qwen35CudaModel::view(&b.post_normed, r * h, h);
+            let shared = super::Qwen35CudaModel::view(&b.proj, r * h, h);
+            let hidden = super::Qwen35CudaModel::view(&b.x, r * h, h);
+            let res = super::moe::combine(ex, m, ms, &x, &shared, h)
+                .and_then(|()| ex.residual_add_into(&hidden, &ms.acc, &hidden, h));
+            std::mem::forget(x);
+            std::mem::forget(shared);
+            std::mem::forget(hidden);
+            res?;
+        }
+        Ok(())
     }
 }
 
