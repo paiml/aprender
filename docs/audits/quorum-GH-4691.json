@@ -312,7 +312,7 @@
     "degraded": null,
     "prah": {
       "source": "install-receipt",
-      "path": "/home/noah/.claude/skills/paiml-implement/bin/prah"
+      "path": "~/.claude/skills/paiml-implement/bin/prah"
     },
     "tier1": {
       "agy_tier1_only": true,
@@ -333,7 +333,7 @@
       "builtin": "^skills/quorum-review/|(^|/)skills/paiml-implement/config\\.json$|(^|/)(modellib|lane-reduce|lane-fallback|lane-group|agy-lane|cc-lane|receipt-lint|route|quota)\\.sh$|^crates/prah-lint/"
     },
     "bucket": {
-      "ledger": "/home/noah/.local/state/paiml-implement/agy-bucket.jsonl",
+      "ledger": "~/.local/state/paiml-implement/agy-bucket.jsonl",
       "window_s": 18000,
       "pace": "off",
       "buckets": {
@@ -382,7 +382,7 @@
     "wall_s": 1,
     "collected_s": 314,
     "budget_s": 196,
-    "budget_basis": "ledger: 2 x p95 98 s over 126 gx10-cuda Verdict rows",
+    "budget_basis": "ledger: 2 x p95 98 s over 126 <gpu-host>-cuda Verdict rows",
     "brief": {
       "bytes": 21344,
       "sent_bytes": 21513,
@@ -394,10 +394,10 @@
     },
     "attempts": [
       {
-        "host": "gx10",
+        "host": "<gpu-host>",
         "ok": false,
         "wall_s": 1,
-        "error": "busy: executor yielded (unit inactive; last yield: 2026-10-03T00:47:22Z host=gx10-a5b5 event=stopped gpu-priority lock=/tmp/apr-gpu.priority)",
+        "error": "busy: executor yielded (unit inactive; last yield: 2026-10-03T00:47:22Z host=<gpu-host> event=stopped gpu-priority lock=/tmp/apr-gpu.priority)",
         "ts": "2026-10-04T11:45:18.864Z",
         "wall_ms": 355,
         "request_id": "01a106bb-940d-7f2a-b7e5-a8fa33607b99",
@@ -405,7 +405,7 @@
         "cold": null
       }
     ],
-    "ledger": "/home/noah/.local/state/paiml-implement/advisory-ledger.jsonl",
+    "ledger": "~/.local/state/paiml-implement/advisory-ledger.jsonl",
     "raw": "advisory.json",
     "agrees_with_counted": null,
     "counted": "PASS"
