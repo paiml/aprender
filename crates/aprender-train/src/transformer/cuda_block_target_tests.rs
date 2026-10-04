@@ -3,8 +3,13 @@
 //!
 //! An all_linear block takes q_proj and v_proj through `new` and the other five targets
 //! through `add_lora_adapter`. The scale is 2, so dividing B by it on upload and multiplying
-//! by it on download is exact and the round trips compare bits. Every test needs a CUDA
+//! by it on download is exact and the round trips compare bits. Every 005 test needs a CUDA
 //! device. Child module of `cuda_block` so it can read the private stores.
+//!
+//! FALSIFY-LORA_GRADIENT_FLOW_V1_007 (0.72 R15a C3): the block's forward and backward use
+//! every adapter it holds. Its two device tests check each adapter's gradients against
+//! central differences of the forward, and that adapters with B = 0 change no number of a
+//! q_proj, v_proj block. Its third test, the LoRA temp's size, needs no device.
 
 use super::*;
 use crate::autograd::cuda_training::CudaTrainer;
@@ -276,4 +281,200 @@ fn falsify_lora_target_selection_v1_005_qv_four_tuple_is_the_by_target_form() {
         block.download_lora_adapters().expect("download by target"),
         vec![(LoraTarget::Q, a_q, b_q), (LoraTarget::V, a_v, b_v)]
     );
+}
+
+// ── FALSIFY-LORA_GRADIENT_FLOW_V1_007 (0.72 R15a C3) ────────────────────────────────────
+
+const SEQ: usize = 4;
+const EPS: f32 = 1e-2;
+
+/// A scratch whose LoRA temp fits every target.
+fn all_targets_scratch(trainer: &CudaTrainer, config: &TransformerConfig) -> CudaBlockScratch {
+    CudaBlockScratch::new_for_targets(config, SEQ, trainer.context(), RANK, &LoraTarget::ALL)
+        .expect("all_linear scratch")
+}
+
+/// L = Σ g·y for the block output y, the loss whose gradient with respect to y is g.
+fn loss(
+    trainer: &CudaTrainer,
+    block: &CudaNf4TransformerBlock,
+    scratch: &mut CudaBlockScratch,
+    x: &GpuBuffer<f32>,
+    g: &[f32],
+) -> f64 {
+    let stream = trainer.stream();
+    scratch.zero_forward_buffers(stream);
+    let mut out = trainer.zeros(g.len()).expect("out");
+    block.forward(x, &mut out, SEQ, stream, scratch).expect("forward");
+    trainer.synchronize().expect("sync");
+    let y = trainer.download(&out).expect("download output");
+    y.iter().zip(g).map(|(y, g)| f64::from(*y) * f64::from(*g)).sum()
+}
+
+/// One forward and one backward with output gradient `g`, into a zeroed all_linear
+/// workspace. Returns the output, the input gradient and the workspace.
+fn forward_backward(
+    trainer: &CudaTrainer,
+    config: &TransformerConfig,
+    block: &CudaNf4TransformerBlock,
+    x: &GpuBuffer<f32>,
+    g: &[f32],
+) -> (Vec<f32>, Vec<f32>, CudaLoraGradWorkspace) {
+    let stream = trainer.stream();
+    let mut scratch = all_targets_scratch(trainer, config);
+    scratch.zero_forward_buffers(stream);
+    let mut out = trainer.zeros(g.len()).expect("out");
+    block.forward(x, &mut out, SEQ, stream, &mut scratch).expect("forward");
+    let mut ws = workspace(trainer, config);
+    for buf in ws.grad_lora.iter_mut().flat_map(|p| [&mut p.a, &mut p.b]) {
+        let n = buf.len();
+        buf.copy_from_host(&vec![0.0; n]).expect("zero gradient");
+    }
+    let grad_out = trainer.upload(g).expect("upload output gradient");
+    let mut grad_in = trainer.zeros(g.len()).expect("input gradient");
+    let mut out_scratch = trainer.zeros(g.len()).expect("output scratch");
+    block
+        .backward(x, &grad_out, &mut grad_in, &mut out_scratch, SEQ, stream, &mut scratch, &mut ws)
+        .expect("backward");
+    trainer.synchronize().expect("sync");
+    let down = |buf: &GpuBuffer<f32>| trainer.download(buf).expect("download");
+    (down(&out), down(&grad_in), ws)
+}
+
+/// `target`'s A (`b == false`) or B, as the device holds it.
+fn adapter_buf(
+    block: &mut CudaNf4TransformerBlock,
+    target: LoraTarget,
+    b: bool,
+) -> &mut GpuBuffer<f32> {
+    let pair = block.lora.iter_mut().find(|p| p.target == target).expect("adapter");
+    if b {
+        &mut pair.b
+    } else {
+        &mut pair.a
+    }
+}
+
+/// The central difference of L in element `i` of `target`'s A or B. Restores the weight.
+#[allow(clippy::too_many_arguments)]
+fn finite_difference(
+    trainer: &CudaTrainer,
+    block: &mut CudaNf4TransformerBlock,
+    scratch: &mut CudaBlockScratch,
+    x: &GpuBuffer<f32>,
+    g: &[f32],
+    target: LoraTarget,
+    b: bool,
+    i: usize,
+) -> f64 {
+    let weights = trainer.download(adapter_buf(block, target, b)).expect("download adapter");
+    let (up, dn) = (weights[i] + EPS, weights[i] - EPS);
+    let mut at = |v: f32| {
+        let mut w = weights.clone();
+        w[i] = v;
+        adapter_buf(block, target, b).copy_from_host(&w).expect("write adapter");
+        loss(trainer, block, scratch, x, g)
+    };
+    let (l_up, l_dn) = (at(up), at(dn));
+    adapter_buf(block, target, b).copy_from_host(&weights).expect("restore adapter");
+    (l_up - l_dn) / f64::from(up - dn)
+}
+
+/// Every adapter's A and B gradient is the derivative of the block's loss: checked at the
+/// largest element and at the middle one, against central differences of the forward.
+#[test]
+#[ignore = "needs a CUDA device; hold the GPU lock around the test binary"]
+fn falsify_lora_gradient_flow_v1_007_gradients_match_finite_differences() {
+    let config = TransformerConfig::tiny();
+    let trainer = CudaTrainer::new().expect("CUDA trainer");
+    let mut block = nf4_block(&trainer, &config, &LoraTarget::ALL);
+    let n = SEQ * config.hidden_size;
+    let x = trainer.upload(&vals(n, 7)).expect("upload input");
+    let g = vals(n, 8);
+    let (_, _, ws) = forward_backward(&trainer, &config, &block, &x, &g);
+    let mut scratch = all_targets_scratch(&trainer, &config);
+    for (slot, target) in LoraTarget::ALL.into_iter().enumerate() {
+        let pair = &ws.grad_lora[slot];
+        assert_eq!(pair.target, target, "gradient workspace slot order");
+        for (b, grad) in [(false, &pair.a), (true, &pair.b)] {
+            let analytic = trainer.download(grad).expect("download gradient");
+            let max = analytic.iter().fold(0.0f32, |m, v| m.max(v.abs()));
+            assert!(max > 1e-3, "{target:?} (B: {b}): the gradient is zero");
+            let top = analytic
+                .iter()
+                .enumerate()
+                .max_by(|l, r| l.1.abs().total_cmp(&r.1.abs()))
+                .map_or(0, |(i, _)| i);
+            for i in [top, analytic.len() / 2] {
+                let fd =
+                    finite_difference(&trainer, &mut block, &mut scratch, &x, &g, target, b, i);
+                let an = f64::from(analytic[i]);
+                let tol = 0.05 * f64::from(max) + 2e-3;
+                assert!(
+                    (fd - an).abs() <= tol,
+                    "{target:?} (B: {b}) [{i}]: backward {an}, finite difference {fd}"
+                );
+            }
+        }
+    }
+}
+
+/// A block whose k, o, gate, up and down adapters have B = 0 computes what the q_proj,
+/// v_proj block computes, number for number, and still gives those adapters a nonzero dB.
+/// A scratch built by `new` (q_proj, v_proj) is refused for the down_proj adapter.
+#[test]
+#[ignore = "needs a CUDA device; hold the GPU lock around the test binary"]
+fn falsify_lora_gradient_flow_v1_007_zero_b_adapters_change_no_number() {
+    let config = TransformerConfig::tiny();
+    let trainer = CudaTrainer::new().expect("CUDA trainer");
+    let qv = nf4_block(&trainer, &config, &[LoraTarget::Q, LoraTarget::V]);
+    let mut all = nf4_block(&trainer, &config, &LoraTarget::ALL);
+    let added = [LoraTarget::K, LoraTarget::O, LoraTarget::Gate, LoraTarget::Up, LoraTarget::Down];
+    for &t in &added {
+        let buf = adapter_buf(&mut all, t, true);
+        let n = buf.len();
+        buf.copy_from_host(&vec![0.0; n]).expect("zero B");
+    }
+    let n = SEQ * config.hidden_size;
+    let x = trainer.upload(&vals(n, 7)).expect("upload input");
+    let g = vals(n, 8);
+    let (out_qv, dx_qv, ws_qv) = forward_backward(&trainer, &config, &qv, &x, &g);
+    let (out_all, dx_all, ws_all) = forward_backward(&trainer, &config, &all, &x, &g);
+    assert_eq!(out_all, out_qv, "zero-B adapters changed the block output");
+    assert_eq!(dx_all, dx_qv, "zero-B adapters changed the input gradient");
+    let grads = |ws: &CudaLoraGradWorkspace, t: LoraTarget| {
+        let p = ws.grad_lora.iter().find(|p| p.target == t).expect("gradient pair");
+        let down = |buf: &GpuBuffer<f32>| trainer.download(buf).expect("download");
+        (down(&p.a), down(&p.b))
+    };
+    for t in [LoraTarget::Q, LoraTarget::V] {
+        assert_eq!(grads(&ws_all, t), grads(&ws_qv, t), "{t:?}: the gradients changed");
+    }
+    for t in added {
+        let (_, db) = grads(&ws_all, t);
+        assert!(db.iter().any(|v| *v != 0.0), "{t:?}: dB is zero, so the backward skipped it");
+    }
+    let stream = trainer.stream();
+    let mut small = CudaBlockScratch::new(&config, SEQ, trainer.context(), RANK).expect("scratch");
+    small.zero_forward_buffers(stream);
+    let mut out = trainer.zeros(n).expect("out");
+    assert!(config.intermediate_size > config.hidden_size.max(config.q_dim()));
+    assert!(
+        all.forward(&x, &mut out, SEQ, stream, &mut small).is_err(),
+        "a q_proj, v_proj scratch ran the down_proj adapter"
+    );
+}
+
+/// The LoRA temp row is the widest d_out or d_in over the targets. head_dim 16 puts q_dim
+/// (32) under hidden (64), so a temp sized by d_out alone is too small for q_proj's backward.
+#[test]
+fn falsify_lora_gradient_flow_v1_007_temp_fits_every_target() {
+    let config = TransformerConfig { head_dim_override: Some(16), ..TransformerConfig::tiny() };
+    let (h, q, i) = (config.hidden_size, config.q_dim(), config.intermediate_size);
+    assert!(q < h && h < i, "the config must separate q_dim, hidden and intermediate");
+    assert_eq!(lora_temp_dim(&config, &[LoraTarget::Q, LoraTarget::V]), h);
+    assert_eq!(lora_temp_dim(&config, &[LoraTarget::O]), h);
+    assert_eq!(lora_temp_dim(&config, &[LoraTarget::Down]), i);
+    assert_eq!(lora_temp_dim(&config, &LoraTarget::ALL), i);
+    assert_eq!(lora_temp_dim(&config, &[]), 0);
 }
