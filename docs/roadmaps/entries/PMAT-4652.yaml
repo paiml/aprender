@@ -13,7 +13,7 @@
   - 'stdout is the verdict line first, then the lane table (before the inbox write); lanes.txt equals the stdout tail. A run that fails before its history row prints only the trap line and no table (NT-INV-005 scopes the table to recorded runs)'
   - 'green lanes are listed (not only reds); a stale run names its own commit, not main head'
   - 'report-only: no verdict, exit code or streak rule changes'
-  - 'contract nightly-train-v1 NT-INV-005 states the new stdout shape; self-test rows and three plants (table not printed, other commit hidden, green lanes dropped) go RED'
+  - 'contract nightly-train-v1 NT-INV-005 states the new stdout shape; self-test rows and four plants (table not printed, other commit hidden, green lanes dropped, inbox write before the table) go RED'
   phases: []
   subtasks: []
   estimated_effort: null
