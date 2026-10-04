@@ -35,6 +35,23 @@ fn is_sha256(s: &str) -> bool {
     s.len() == 64 && s.bytes().all(|b| b.is_ascii_hexdigit())
 }
 
+/// One manifest line's item digest, then each of its hunk digests, all
+/// lowercase. `None` if any hunk is not a sha256.
+fn line_digests(sha: &str, hunks: &[&str]) -> Option<Vec<String>> {
+    let mut shas = vec![sha.to_ascii_lowercase()];
+    for hunk in hunks
+        .iter()
+        .flat_map(|h| h.split(','))
+        .filter(|h| !h.is_empty())
+    {
+        if !is_sha256(hunk) {
+            return None;
+        }
+        shas.push(hunk.to_ascii_lowercase());
+    }
+    Some(shas)
+}
+
 /// Parse a review-corpus-v1 test manifest: an optional title line, then
 /// `<id> <sha256> [hunk-sha256,...]` per item. Returns each id with its item
 /// and hunk digests (lowercase).
@@ -49,17 +66,7 @@ pub(crate) fn parse_manifest(text: &str) -> Result<Vec<(String, Vec<String>)>, S
         let fields: Vec<&str> = line.split_whitespace().collect();
         match fields.as_slice() {
             [id, sha, rest @ ..] if is_sha256(sha) => {
-                let mut shas = vec![sha.to_ascii_lowercase()];
-                for hunk in rest
-                    .iter()
-                    .flat_map(|h| h.split(','))
-                    .filter(|h| !h.is_empty())
-                {
-                    if !is_sha256(hunk) {
-                        return Err(bad());
-                    }
-                    shas.push(hunk.to_ascii_lowercase());
-                }
+                let shas = line_digests(sha, rest).ok_or_else(bad)?;
                 items.push(((*id).to_string(), shas));
             }
             _ if n == 0 && items.is_empty() => {}
