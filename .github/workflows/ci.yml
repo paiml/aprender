@@ -416,6 +416,27 @@ jobs:
           # the full shards' partitions would otherwise go unchecked.
           set -- $tiers
           [ "$1" = "$2" ] && [ "$2" = "$3" ] || { echo "::error::Σ: the shards disagree on the tier:$tiers"; exit 1; }
+          if [ "$1" = quick ]; then
+            # T46: the quick tier's tree readers ran as three hash partitions. Owed: every shard staged its
+            # junit (a skipped shard ran nothing), no id ran on two shards (a wrong partition index runs one
+            # partition twice and drops another), and the union is exactly the set shard 1 listed.
+            j=() ids="$d/quick-tree.ids"
+            : > "$ids"
+            for n in 1 2 3; do
+              f="$d/sigma-shard-$n/quick-tree.junit.xml"
+              [ -f "$f" ] || { echo "::error::Σ: shard $n staged no quick tree-reader junit: its partition was not run"; exit 1; }
+              grep -o '<testcase [^>]*' "$f" > "$d/tags" || true
+              awk '!/ name="/ || !/ classname="/ { bad = 1 } END { exit bad }' "$d/tags" \
+                || { echo "::error::Σ: shard $n has a testcase without a name or classname: its ids cannot be read"; exit 1; }
+              sed -E 's/.* classname="([^"]*)".*/\1/' "$d/tags" | paste -d' ' - <(sed -E 's/.* name="([^"]*)".*/\1/' "$d/tags") >> "$ids"
+              j+=(--junit "$f")
+            done
+            dup="$(sort "$ids" | uniq -d)"
+            [ -z "$dup" ] || { printf '%s\n' "$dup" | head -20 | sed 's/^/::error::Σ: run on more than one shard: /'; exit 1; }
+            echo "quick tree readers: $(wc -l < "$ids") ids over 3 shards, none run twice"
+            python3 scripts/ci/sigma_executed.py nextest --kind "quick tree readers (3 shards)" "${j[@]}" --list-json "$d/sigma-shard-1/quick-tree.list.json"
+            exit 0
+          fi
           [ "$1" = full ] || { echo "every shard ran tier '$1': the lib/explicit Σ is not owed"; exit 0; }
           j=() l=()
           for n in 1 2 3; do

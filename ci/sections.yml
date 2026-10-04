@@ -678,32 +678,6 @@ jobs:
           python3 scripts/ci/sigma_executed.py nextest --kind "nextest gpu" --junit "$sig/gpu.junit.xml" --list-json "$sig/gpu.list.json" || rc=1
           python3 scripts/ci/sigma_executed.py cargo --kind "compute" --log "${FAT_SECTION_LOG:?the fat driver sets FAT_SECTION_LOG}" --step "Compute tests" --list "$sig/compute.list.txt" --ignored "$sig/compute.ignored.txt" || rc=1
           exit "$rc"
-      # The shard's half of the cross-shard Σ (#4433). The tier file is written
-      # on every tier, so the verdict job can tell "not a full run" from "a
-      # shard's ids never arrived" -- a missing file there is RED, not a skip.
-      - name: "Σ-executed: stage this shard's executed ids for the fan-in (#4433)"
-        if: matrix.shards != 1
-        shell: bash
-        env:
-          TIER: ${{ steps.tier.outputs.tier }}
-        run: |
-          set -euo pipefail
-          sig="$RUNNER_TEMP/sigma"
-          mkdir -p sigma-shard
-          printf '%s\n' "$TIER" > sigma-shard/tier
-          if [ "$TIER" = full ]; then
-            cp "$sig/lib.junit.xml" sigma-shard/lib.junit.xml
-            cp "${FAT_SECTION_LOG:?the fat driver sets FAT_SECTION_LOG}" sigma-shard/section.log
-            if [ "$SHARD" = 1 ]; then
-              cp "$sig/lib.list.json" "$sig/explicit.list.txt" sigma-shard/
-            fi
-          fi
-      - uses: actions/upload-artifact@v7
-        if: matrix.shards != 1
-        with:
-          name: sigma-shard-${{ matrix.shard }}
-          path: sigma-shard/
-          if-no-files-found: error
       # PACK-001: the examples build used to be fragment 350 of the explicit
       # list. Measured on the first sharded full-tier run (35361149112, shard 1
       # on yoga): 489 s of that shard's 794 s integration phase was this ONE
@@ -814,7 +788,13 @@ jobs:
           mkdir -p "$RUNNER_TEMP/sigma"
           cp "/mnt/nvme-raid0/targets/aprender-ci/${PR_OR_REF}/run-${GITHUB_RUN_ID}/nextest/ci/junit.xml" "$RUNNER_TEMP/sigma/quick-sel.junit.xml"
       - name: "Quick tier: every test target that reads the tree (BSE-17)"
-        if: steps.tier.outputs.tier == 'quick' && matrix.shard == 1
+        if: steps.tier.outputs.tier == 'quick'
+        # T46 (#4678): on every shard, each running its own nextest hash partition, as the full tier's lib step
+        # does. Shard 1 alone used to run all of it while shards 2 and 3 idled: measured 2410 s of shard 1's
+        # 2580 s against 109 s for each sibling (run 37094246639), and under load this one step reached its
+        # x2-scaled 5400 s limit. The 45 min budget is unchanged. The verdict job's quick-tier Σ requires the
+        # union of the three partitions to be the listed set, each id run by exactly one shard. A partition
+        # can hold no test on a small selection, so --no-tests=warn: that shard's emptiness is judged there.
         # 45, not 20. Measured 2026-09-11 under train load, this PR's own runs never fit 20: run 34542045481 on
         # yoga-build2 compiled 811 crates in ~9 min (cold per-run target dir, warm shared sccache) and was part way
         # through 65,266 tests at the cap; attempt 2 on intel-clean-room-15 timed out at 20 min too. The ~6 min
@@ -858,8 +838,9 @@ jobs:
             -e CARGO_PROFILE_TEST_DEBUG=line-tables-only \
             -e CARGO_PROFILE_DEV_DEBUG=line-tables-only \
             -e CARGO_TERM_COLOR=never \
+            -e SHARD -e SHARDS \
             "$IMAGE" \
-            cargo nextest run --profile ci $pkgs --lib --tests -E "$EXPR"
+            cargo nextest run --profile ci $pkgs --lib --tests -E "$EXPR" --partition "hash:${SHARD}/${SHARDS}" --no-tests=warn
       # BSE-17 quick tier, part 3 (PMAT-1098 67-E2, #3084 — rule (i)): the
       # selection was OVER THE CAP (touched crates + their direct reverse
       # dependents exceed gate_touched_crates.sh's CAP=3). That used to escalate
@@ -876,7 +857,7 @@ jobs:
       # --locked: a quick tier that silently rewrites Cargo.lock would be a
       # different dependency graph from the one the PR is proposing.
       - name: "Σ-executed: keep the quick tree-reader junit (the next nextest run overwrites it)"
-        if: steps.tier.outputs.tier == 'quick' && matrix.shard == 1
+        if: steps.tier.outputs.tier == 'quick'
         # #4433: a PR merges on its QUICK tier (a merge_group whose tree equals the
         # PR head's reuses that result), so the quick tier's own runs are checked too.
         shell: bash
@@ -928,8 +909,46 @@ jobs:
           if [ -n "$CRATES" ]; then
             python3 scripts/ci/sigma_executed.py nextest --kind "quick selected crates" --junit "$sig/quick-sel.junit.xml" --list-json "$sig/quick-sel.list.json" || rc=1
           fi
-          python3 scripts/ci/sigma_executed.py nextest --kind "quick tree readers" --junit "$sig/quick-tree.junit.xml" --list-json "$sig/quick-tree.list.json" || rc=1
+          # T46: sharded, this shard ran one partition of the tree readers, so the listed set is owed by the
+          # UNION of the three shards: the workspace-test verdict job checks it. Unsharded, it is owed here.
+          if [ "$SHARDS" = 1 ]; then
+            python3 scripts/ci/sigma_executed.py nextest --kind "quick tree readers" --junit "$sig/quick-tree.junit.xml" --list-json "$sig/quick-tree.list.json" || rc=1
+          fi
           exit "$rc"
+      # The shard's half of the cross-shard Σ (#4433). The tier file is written
+      # on every tier, so the verdict job can tell "not a full run" from "a
+      # shard's ids never arrived" -- a missing file there is RED, not a skip.
+      # It runs after the quick tier's steps (T46), whose tree-reader partition
+      # it stages too: every shard its junit, shard 1 the listed set.
+      - name: "Σ-executed: stage this shard's executed ids for the fan-in (#4433)"
+        if: matrix.shards != 1
+        shell: bash
+        env:
+          TIER: ${{ steps.tier.outputs.tier }}
+        run: |
+          set -euo pipefail
+          sig="$RUNNER_TEMP/sigma"
+          mkdir -p sigma-shard
+          printf '%s\n' "$TIER" > sigma-shard/tier
+          if [ "$TIER" = full ]; then
+            cp "$sig/lib.junit.xml" sigma-shard/lib.junit.xml
+            cp "${FAT_SECTION_LOG:?the fat driver sets FAT_SECTION_LOG}" sigma-shard/section.log
+            if [ "$SHARD" = 1 ]; then
+              cp "$sig/lib.list.json" "$sig/explicit.list.txt" sigma-shard/
+            fi
+          fi
+          if [ "$TIER" = quick ]; then
+            cp "$sig/quick-tree.junit.xml" sigma-shard/quick-tree.junit.xml
+            if [ "$SHARD" = 1 ]; then
+              cp "$sig/quick-tree.list.json" sigma-shard/
+            fi
+          fi
+      - uses: actions/upload-artifact@v7
+        if: matrix.shards != 1
+        with:
+          name: sigma-shard-${{ matrix.shard }}
+          path: sigma-shard/
+          if-no-files-found: error
       - name: "Quick tier: cargo check --workspace (over-the-cap integration, BSE-17 rule (i))"
         if: steps.tier.outputs.tier == 'quick' && steps.tier.outputs.check_workspace == '1' && matrix.shard == 1
         timeout-minutes: 20
@@ -1329,6 +1348,16 @@ jobs:
         run: setsid --wait bash scripts/check_ci_gate_mutants_rule.sh
       - name: gate mutants rule can still go RED (#3676)
         run: setsid --wait bash scripts/check_ci_gate_mutants_rule.sh --self-test
+      # T46 (#4678): the quick tier's tree readers run as one hash partition per
+      # shard, and the workspace-test fan-in owes their union. This executes the
+      # fan-in step from ci.yml against planted shard artifacts and reads the
+      # partition, keep and staging steps out of this file. Reads only those two
+      # files, so it runs here, on every PR. Report-only until three green nights
+      # (L31): a RED prints a warning; the `|| echo` is dropped then, never before.
+      - name: quick-tier shards owe the union of their tree-reader partitions (#4678)
+        run: setsid --wait bash scripts/check_quick_tier_shard_sigma.sh || echo "::warning::quick-tier shard Σ table RED (report-only until three green nights, L31)"
+      - name: quick-tier shard Σ rule can still go RED (#4678)
+        run: setsid --wait bash scripts/check_quick_tier_shard_sigma.sh --self-test || echo "::warning::quick-tier shard Σ self-test RED (report-only until three green nights, L31)"
       # scripts/tests/guard_tree_test.sh is guard_tree.sh's OWN case table
       # (BSE-01, PMAT-1062) -- it proves guard_tree.sh's no-fail-fast
       # behaviour against a fixture, proves a fail-fast MUTANT of it goes RED
