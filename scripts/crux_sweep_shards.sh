@@ -23,6 +23,7 @@
 # greedy-only receipt is F9 evidence, never a CRUX verdict, and the plan file says so.
 set -uo pipefail
 cd "$(dirname "$0")/.." || exit 2
+. scripts/lib/crux_sweep_json.sh || exit 2   # the JSON steps, in bash + jq (no Python in the build)
 PROG=crux_sweep_shards
 die() { printf '%s: %s\n' "$PROG" "$1" >&2; exit 2; }
 
@@ -57,40 +58,7 @@ mkdir -p "$OUT/shards" || die "cannot create $OUT"
 PLAN="$OUT/$HOST-$BACKEND.plan.tsv"
 
 # The plan: one line per (model, mode) — RUN with its ids, or SKIP with the reason.
-python3 - "$CERT" "$PROMPTS" "$SCOPE" "$PLAN" "${MODEL_DIRS[@]}" <<'PY' || die "could not build the plan"
-import hashlib, json, os, sys
-cert, prompts, scope, plan = sys.argv[1:5]
-dirs = sys.argv[5:]
-c = json.load(open(cert))
-p = json.load(open(prompts))
-if c.get("prompts_sha256") and c["prompts_sha256"] != hashlib.sha256(open(prompts, "rb").read()).hexdigest():
-    sys.exit("the certification binds prompts sha %s, but %s is %s" % (c["prompts_sha256"][:12], prompts,
-             hashlib.sha256(open(prompts, "rb").read()).hexdigest()[:12]))
-controls = {x["id"] for x in p["prompts"] if x.get("control")}
-adm = c["admitted_by_sha_thinking"]
-local = {}
-for d in dirs:
-    for f in sorted(os.listdir(d)) if os.path.isdir(d) else []:
-        if f.endswith(".gguf"):
-            path = os.path.join(d, f)
-            h = hashlib.sha256()
-            with open(path, "rb") as fh:
-                for chunk in iter(lambda: fh.read(1 << 24), b""):
-                    h.update(chunk)
-            local.setdefault(h.hexdigest(), path)
-with open(plan, "w") as out:
-    for sha, modes in sorted(adm.items()):
-        if sha not in local:
-            out.write("ABSENT\t%s\t-\t-\tcertified, but no file with this sha256 in %s\n" % (sha, " ".join(dirs)))
-            continue
-        for mode in ("off", "on"):
-            ids = [i for i in modes.get(mode, []) if scope == "admitted" or i in controls]
-            if not ids:
-                why = "nothing admitted" if not modes.get(mode) else "no CONTROL admitted (scope=controls)"
-                out.write("SKIP\t%s\t%s\t%s\t%s\n" % (sha, mode, local[sha], why))
-            else:
-                out.write("RUN\t%s\t%s\t%s\t%s\n" % (sha, mode, local[sha], ",".join(ids)))
-PY
+crux_sweep_plan "$CERT" "$PROMPTS" "$SCOPE" "$PLAN" "${MODEL_DIRS[@]}" || die "could not build the plan"
 printf '%s: plan for %s (%s lane, scope %s) -> %s\n' "$PROG" "$HOST" "$BACKEND" "$SCOPE" "$PLAN"
 sed 's/^/  /' "$PLAN"
 [ "$GREEDY_ONLY" = 1 ] && { [ "${#GREEDY_MODELS[@]}" -gt 0 ] || die "--greedy-only needs at least one --greedy-model"; \
@@ -116,7 +84,7 @@ while [ "$MERGE_ONLY" = 0 ] && IFS=$'\t' read -r kind sha mode path ids; do
   run_shard "${sha:0:12}-$mode" --model "$path" --engines apr,llama.cpp,vllm,hf --verbs run,chat,serve,code \
     --thinking-modes "$mode" --only-prompts "$ids"
 done < "$PLAN"
-CTL=$(python3 -c 'import json,sys; print(next(p["id"] for p in json.load(open(sys.argv[1]))["prompts"] if p.get("control")))' "$PROMPTS")
+CTL=$(crux_first_control "$PROMPTS")
 for g in "${GREEDY_MODELS[@]}"; do
   [ "$MERGE_ONLY" = 1 ] && break
   run_shard "greedy-$(basename "$g" .gguf)" --model "$g" --engines apr,llama.cpp --verbs run --thinking-modes off \
@@ -129,9 +97,7 @@ META=""
 while IFS=$'\t' read -r name rc work; do
   [ -n "$work" ] && [ -f "$work/manifest.jsonl" ] || { printf '%s: shard %s kept no work dir (rc %s)\n' "$PROG" "$name" "$rc" >&2; continue; }
   case "$name" in
-    greedy-*) python3 -c 'import json,sys
-for l in open(sys.argv[1]):
-    if json.loads(l).get("kind") == "greedy": sys.stdout.write(l)' "$work/manifest.jsonl" >> "$MERGED" ;;
+    greedy-*) crux_greedy_rows "$work/manifest.jsonl" >> "$MERGED" ;;
     *) cat "$work/manifest.jsonl" >> "$MERGED"; [ -n "$META" ] || META="$work/meta.json" ;;
   esac
 done < "$OUT/shards.tsv"
@@ -143,24 +109,7 @@ fi
 # meta as-is left the judge knowing ONE model's format: every other model's cells went RED "a format-unknown file"
 # (measured on the freeze sweep, lambda: 2B and 4B-UD all RED in the merge, 30/34 GREEN in their own shards).
 MERGED_META="$OUT/$HOST-$BACKEND.meta.json"
-python3 - "$META" "$MERGED_META" "$OUT/shards.tsv" <<'PY' || die "could not merge the shard metas"
-import json, os, sys
-first, out, tsv = sys.argv[1:4]
-meta = json.load(open(first))
-models, seen = [], set()
-for line in open(tsv):
-    name, rc, work = (line.rstrip("\n").split("\t") + ["", "", ""])[:3]
-    if name.startswith("greedy-") or not work or not os.path.exists(os.path.join(work, "meta.json")):
-        continue
-    for m in json.load(open(os.path.join(work, "meta.json"))).get("models", []):
-        if m.get("sha256") not in seen:
-            seen.add(m.get("sha256")); models.append(m)
-if models:
-    meta["models"] = models
-meta["merged_shards"] = sum(1 for _ in open(tsv))
-json.dump(meta, open(out, "w"), indent=2)
-print("merged meta: %d model(s)" % len(meta.get("models", [])))
-PY
+crux_merge_meta "$META" "$MERGED_META" "$OUT/shards.tsv" || die "could not merge the shard metas"
 META="$MERGED_META"
 # A --greedy-only receipt is F9 evidence, never a host verdict (aprender-36's contract, fix/3957-f9-f10@09ea08424):
 # it is named <host>-<backend>-greedy.json so it cannot pass for the certified <host>-<backend>.json, and it says
@@ -172,19 +121,7 @@ python3 scripts/lib/crux_inference_judge.py collect --manifest "$MERGED" --promp
   --certification "$CERT" --out-json "$RECEIPT" --out-md "${RECEIPT%.json}.md"
 rc=$?
 if [ "$GREEDY_ONLY" = 1 ]; then
-  python3 - "$RECEIPT" <<'PY' || die "the greedy-only receipt could not be marked"
-import json, sys
-p = sys.argv[1]
-r = json.load(open(p))
-if r.get("cells"):
-    sys.exit("a greedy-only merge produced %d judged cells; it must produce none" % len(r["cells"]))
-if not r.get("greedy"):
-    sys.exit("a greedy-only receipt with an EMPTY greedy[] proves nothing")
-r["greedy_only"] = True
-r["cells"] = []
-json.dump(r, open(p, "w"), indent=1)
-print("greedy_only receipt: %d greedy entries, verdict %s" % (len(r["greedy"]), r["summary"].get("verdict")))
-PY
+  crux_mark_greedy_only "$RECEIPT" || die "the greedy-only receipt could not be marked"
   rc=0  # the judge's DECLINE ("no cell was measured") is the expected verdict of a receipt that claims no cell
 fi
 printf '%s: %s receipt %s (judge rc %s); shards: %s\n' "$PROG" "$HOST" "$RECEIPT" "$rc" "$OUT/shards.tsv"
