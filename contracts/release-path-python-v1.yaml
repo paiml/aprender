@@ -1,0 +1,137 @@
+metadata:
+  version: 1.0.0
+  created: '2026-10-04'
+  author: PAIML Engineering
+  description: "BLD-002 row R12, Python off the release path: the release path is computed from fixed entries at a git revision, the Python it runs is listed, and a check that walks base and head in one run is RED when Python joins the path. Replacing the Python already on the path is ticketed work; this row lists it and stops it growing."
+  kind: pattern
+  references:
+    - "scripts/check_release_path_python.sh — the walk (--inventory), the base and head comparison (--check), its case table (--selftest) and its planted mutants (--mutants)"
+    - "scripts/ci/fat_driver.py — the CI section driver that the gate job in .github/workflows/ci.yml runs; the largest Python file on the path at 316dee2cd4"
+    - "scripts/check_model_ladder.sh — the ladder check; it names scripts/lib/ladder_equiv.py and scripts/lib/crux_smoke_scope.py"
+
+five_whys:
+  symptom: "The release path runs Python in many places, and no list of them existed. At 316dee2cd4 the walk finds 60 Python files (21648 lines), 602 interpreter lines and 10 references to a .py that is not tracked, among 556 files on the path."
+  why_1: "Python was added where it was convenient: a helper module beside a shell script, a python3 line in a recipe, a module imported by another."
+  why_2: "No check looked at what a change brought onto the release path, so each addition was invisible at review."
+  why_3: "The release path had no computed definition: which files a release runs was known only by reading the scripts that run them."
+  why_4: "With no list there was no baseline, so a new Python file on the path could not be told from one that was already there."
+  why_5: "A rule of no new Python with no mechanism behind it holds only while every author and every reviewer remembers it."
+  root_cause: "The release path was never computed. The remedy walks it from fixed entries at a git revision, lists the Python it reaches, and judges base against head in one run with one scanner, so Python joining the path is RED by mechanism, not by memory."
+
+equations:
+  release_path:
+    formula: "path(R) = the least set that holds every entry present at revision R and, for each node n in it, every tracked file or make target that ref(n) names"
+    domain: "a git revision R and the entries fixed in the script; ref(n) reads the blob of n at R and follows a file path in a code line (from the repository root, from the directory of n, or a bare file name under scripts/, ci/ or .github/), a make target named after make or $(MAKE), a local action directory holding an action.yml or action.yaml, and a Python import of a module beside the importer or in scripts/lib/"
+    codomain: "a finite set of nodes, each with a kind in {python, code, make, data, none} and the node that first reached it"
+    invariants:
+      - "files are read at R with git cat-file, never from the work tree: an untracked or an edited file changes nothing"
+      - "a comment line is never read for references or for interpreter words"
+      - "make -C and make -f run another Makefile: no root target is followed from them"
+      - "the walk visits each node once, so it ends on a path with cycles"
+
+  kinds:
+    formula: "kind(n) = python if n ends in .py or its first line is a #! line naming python or uv run; code if n ends in .sh, .bash or .mk, is a .yml or .yaml under .github/ or ci/, or has any other #! line; make for a Makefile target; data for any other tracked file; none when R has no such file or target"
+    domain: "a node of path(R)"
+    codomain: "{python, code, make, data, none}"
+    invariants:
+      - "only python, code and make nodes are read; a data node is on the path and never read for references"
+      - "every YAML file outside .github/ and ci/ (contracts, roadmaps, test cases) is data: a script reads it, nothing runs it"
+      - "the imports and path tokens of a python node are followed; its own lines are never interpreter lines"
+
+  measures:
+    formula: "py(R) = { n ∈ path(R) : kind(n) = python }; interp(R) = the lines of code and make nodes of path(R), comments excluded, that name python, python3, python3.N, pytest, pip, pip3 or pipx as a word; unres(R) = the .py tokens of path(R) that name no tracked file"
+    domain: "path(R)"
+    codomain: "the Python files (path, blob, lines, referrer), the interpreter lines (node, line, text) and the unresolved .py references (node, token)"
+    invariants:
+      - "an interpreter behind a default, as in ${PY:-python3}, is an interpreter line"
+      - "a python word inside a string of a .py file is not an interpreter line"
+      - "--inventory prints all three lists, the entries with their state, and the steps no file in this repository runs"
+
+  no_growth:
+    formula: "RED(B, H) ⟺ joined(B, H) ≠ ∅ ∨ |interp(H)| > |interp(B)| ∨ |unres(H)| > |unres(B)| ∨ gone(B, H) ≠ ∅"
+    domain: "two revisions B (base) and H (head), both walked in one run by one copy of the script"
+    codomain: "{GREEN, RED}: exit 0 or 1, with a line for every finding"
+    invariants:
+      - "joined(B, H) is the Python files on the path at H and not at B, less the files that moved: a file at H with the bytes of a file at B that is no longer on the path; each file at B covers one move at most"
+      - "gone(B, H) is the set of entries read at B and not read at H"
+      - "no stored limit or baseline file is read: base and head are both measured in the run that judges them"
+      - "a Python file that leaves the path, and a fall in interpreter lines, are printed as info and are GREEN"
+
+  not_measured:
+    formula: "unreadable(B) ∨ unreadable(H) ⇒ exit(B, H) = 2"
+    domain: "a run of --inventory or --check"
+    codomain: "exit 2, with a FAIL line naming what could not be read"
+    invariants:
+      - "a tree that git ls-tree cannot list, a blob that git cat-file cannot read, or a scanner that fails is not measured and never GREEN"
+      - "a caller error (no command, two commands, an unknown argument, a revision that names no commit, a directory that is not a repository) exits 3"
+
+proof_obligations:
+  - id: RPY-INV-001
+    type: invariant
+    property: "A Python file that joins the release path is RED"
+    formal: "∀ B, H, p: p ∈ py(H) ∧ p ∉ py(B) ∧ ¬moved(p, B, H) ⇒ RED(B, H)"
+    applies_to: no_growth
+  - id: RPY-INV-002
+    type: invariant
+    property: "A byte-identical move is not a join, and one base file covers one move"
+    formal: "∀ p: p ∈ py(H) ∧ p ∉ py(B) ⇒ (moved(p, B, H) ⟺ ∃ q: q ∈ py(B) ∧ q ∉ py(H) ∧ blob(q) = blob(p) ∧ unclaimed(q))"
+    applies_to: no_growth
+  - id: RPY-INV-003
+    type: invariant
+    property: "Interpreter lines on the path never rise unseen"
+    formal: "∀ B, H: |interp(H)| > |interp(B)| ⇒ RED(B, H)"
+    applies_to: no_growth
+  - id: RPY-INV-004
+    type: invariant
+    property: "References to a .py that the walk cannot find never rise unseen"
+    formal: "∀ B, H: |unres(H)| > |unres(B)| ⇒ RED(B, H)"
+    applies_to: no_growth
+  - id: RPY-INV-005
+    type: invariant
+    property: "An entry read at base and missing at head is RED"
+    formal: "∀ e ∈ E: read(B, e) ∧ ¬read(H, e) ⇒ RED(B, H)"
+    applies_to: no_growth
+  - id: RPY-INV-006
+    type: invariant
+    property: "What cannot be read is not measured, never GREEN"
+    formal: "∀ B, H: unreadable(B) ∨ unreadable(H) ⇒ exit(B, H) = 2"
+    applies_to: not_measured
+  - id: RPY-INV-007
+    type: invariant
+    property: "The work tree never changes the path"
+    formal: "∀ R, T, T′: path_T(R) = path_T′(R)"
+    applies_to: release_path
+  - id: RPY-INV-008
+    type: invariant
+    property: "YAML outside the CI definitions is data"
+    formal: "∀ n ∈ path(R): ext(n) ∈ {yml, yaml} ∧ prefix(n) ∉ {.github/, ci/} ⇒ kind(n) = data"
+    applies_to: kinds
+  - id: RPY-INV-009
+    type: invariant
+    property: "A comment is never an interpreter line"
+    formal: "∀ l ∈ lines(path(R)): comment(l) ⇒ l ∉ interp(R)"
+    applies_to: measures
+
+falsification_tests:
+  - id: FALSIFY-RPY-001
+    rule: "The guard is right on every row of its case table"
+    prediction: "On a fixture repository: the inventory lists the entries, the Python files with the file that reached each, the interpreter lines and the two steps no file runs; a tree checked against itself is GREEN; a new .py run by its path with the word python never said, a python line added, a script that now reaches an off-path .py, an interpreter behind a default, a module imported beside a release .py, a make target reached by $(MAKE), an extensionless file with a python #! line, a .py swapped for one with other bytes, a copy whose source is still on the path, a reference to an untracked .py, a local action that runs pip, a CI definition under ci/ that runs Python and an entry renamed away are each RED; a byte-for-byte move, a python line removed, Python off the path, comments that name python, make -C and a contract YAML that names python are GREEN; an unreadable blob exits 2; each caller error exits 3"
+    test: "bash scripts/check_release_path_python.sh --selftest"
+    if_fails: "Python could join the release path unseen, or the guard could go RED on a change that adds none: the inventory would no longer be a baseline anyone can trust"
+
+  - id: FALSIFY-RPY-002
+    rule: "The case table can still fail on the defects it names"
+    prediction: "Each planted mutant (the interpreter word not matched, comments counted, the strings of a .py counted, data files scanned, the #! line not read, a recipe that never ends, make -C followed, the path relative to the naming file dropped, the bare-name lookup dropped, local actions dropped, imports dropped, make targets dropped, new Python never flagged, a copy claimed as a move, a move that ignores the bytes, the interpreter ratchet off, the unresolved ratchet off, a gone entry ignored, an unreadable blob ignored, YAML outside the CI definitions scanned, YAML under ci/ not scanned) breaks at least one row of --selftest"
+    test: "bash scripts/check_release_path_python.sh --mutants"
+    if_fails: "The case table is theater: it would pass a guard that lets Python onto the release path"
+
+qa_gate:
+  id: F-RPY-001
+  name: "No Python joins the release path unseen: a new .py, a new interpreter line or a new unresolved .py reference on the path is RED"
+  description: "scripts/check_release_path_python.sh computes the release path from fixed entries at a git revision, lists the Python files, interpreter lines and unresolved .py references on it, and with --check walks base and head in one run, RED when Python joins the path. Wiring it into CI is admission work (BLD-002 R7): a new check runs as shadow first."
+  checks:
+    - "release_path"
+    - "kinds"
+    - "measures"
+    - "no_growth"
+    - "not_measured"
