@@ -32,7 +32,7 @@
 # shape (aggregates, regressions, cross-run identity, cross-engine parity).
 # ─────────────────────────────────────────────────────────────────────────────
 metadata:
-  version: 1.1.0
+  version: 1.2.0
   created: '2026-04-23'
   last_modified: '2026-04-23'
   author: PAIML Engineering
@@ -708,3 +708,44 @@ falsification_tests:
       - non_finite_promoted_to_pass
       - out_of_range_measured_accepted
       - out_of_range_threshold_accepted
+  - id: FALSIFY-GATE-SHIP-012-RECEIPT
+    rule: >
+      The nightly coverage measurement leaves a receipt keyed by the commit it
+      measured: sha, floor, pct (two decimals, truncated, never rounded up), or
+      status not_measured with a reason and pct null. A previous run's log, a
+      run that printed DID NOT MEASURE, a log with no TOTAL line, zero
+      instrumented lines, or covered above total is not_measured, never a
+      number. SHADOW: no gate reads the receipt yet (#4672, RQ-1's producer half).
+    prediction: >
+      scripts/coverage_receipt.sh matches every row of
+      scripts/check_coverage_receipt.sh (17 rows); coverage-nightly touches a
+      marker before the coverage step, runs the receipt step after it with
+      if: always() and continue-on-error, keyed by git rev-parse HEAD with
+      COV_FLOOR as make resolves it, and uploads the receipt by its exact glob
+      with if: always(), continue-on-error and if-no-files-found: error;
+      nothing else in the tracked tree (contracts/ prose aside) reads it; each
+      of 27 mutants turns a row WRONG. The three steps are held to their
+      reviewed text exactly (comments and blank lines aside).
+    test: |
+      bash scripts/check_coverage_receipt.sh
+    if_fails: >
+      A release-day read of the nightly coverage receipt would accept a stale,
+      partial or rounded-up number for a commit it did not measure, or a gate
+      starts reading a shadow receipt before the RQ-1 ruling arms it.
+    spec_reference: ship-two-models-spec.md §6 GATE-SHIP-012
+    binds_to: GATE-SHIP-012
+    ship_blocking: false  # shadow artifact, read by no gate
+    discharge_status: PARTIAL_ALGORITHM_LEVEL
+    evidence_discharged_by:
+      - 'scripts/coverage_receipt.sh'
+      - 'scripts/check_coverage_receipt.sh (17 rows + 4 structural; 27 mutants)'
+      - '.github/workflows/coverage-nightly.yml (marker, receipt and upload steps)'
+    full_discharge_blocks_on: >
+      The RQ-1 ruling on the release-day read: release-day dogfood reads the
+      nightly receipt for the release commit instead of rerunning coverage.
+    counter_example_classes:
+      - stale_log_trusted
+      - did_not_measure_promoted_to_a_number
+      - pct_rounded_up_past_the_floor
+      - keyed_by_ref_not_sha
+      - shadow_receipt_read_by_a_gate
