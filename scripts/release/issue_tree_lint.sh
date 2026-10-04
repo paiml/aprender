@@ -76,16 +76,17 @@ snapshot_now() {
 fetch() {
     local dir="$1" repo="${2:-$REPO_DEFAULT}"
     local owner="${repo%%/*}" name="${repo##*/}"
-    mkdir -p "$dir"
-    # now.txt is the last file a fetch writes and one check needs. Removing the old one first means a fetch that
-    # stops part way, into a directory an earlier fetch filled, leaves one check refuses, never a new graph beside
-    # an old now. The now is taken before the first GraphQL call, so a bad SOURCE_DATE_EPOCH costs none, and through
-    # a variable, since a redirect would leave an empty now.txt. A branch pushed during the fetch is newer than the
-    # now; R4 counts it as in progress.
-    rm -f "${dir:?}/now.txt"
+    # The now comes first, before the directory is touched or any GraphQL call is made, so a bad SOURCE_DATE_EPOCH
+    # changes nothing and costs no call. It goes through a variable, since a redirect would leave an empty now.txt.
+    # A branch pushed during the fetch is newer than the now; R4 counts it as in progress.
     local now now_from=clock
     now=$(snapshot_now)
     [ -z "${SOURCE_DATE_EPOCH:-}" ] || now_from=SOURCE_DATE_EPOCH
+    # now.txt is the last file a fetch writes and one check needs. Removing the old one before the first call means
+    # a fetch that stops part way, into a directory an earlier fetch filled, leaves one check refuses, never a new
+    # graph beside an old now.
+    mkdir -p "$dir"
+    rm -f "${dir:?}/now.txt"
     : > "$dir/issues.jsonl"
     local cursor="" page
     # shellcheck disable=SC2016
@@ -337,6 +338,8 @@ stub_err() {
 calls_in() { wc -l < "${1:?}/calls" | tr -d ' '; }
 # "$@" with the tripwire gh in $T/trip next on PATH, where the real gh would be.
 with_trip() { local -x PATH="$T/trip:$PATH"; "$@"; }
+# "$@" with the stub gh failing the branches query, as gh fails a call GitHub drops, so a fetch stops part way.
+with_failing_branches() { local -x STUB_FAIL_BRANCHES=1; "$@"; }
 # "$@" in locale $1, exported to the fresh bash a stub run starts.
 in_locale() { local -x LC_ALL="${1:?}"; shift; "$@"; }
 # The now of a snapshot with SOURCE_DATE_EPOCH set to $1 (exported, as knob_rc does).
@@ -490,11 +493,15 @@ self_test() {
         "$(summary < "$T/orphan/v.json")"
 
     # The now of a snapshot. The stub gh answers every query with one empty, final page, so fetch and run go
-    # offline, and logs each call to the calls file beside it.
+    # offline, and logs each call to the calls file beside it. With STUB_FAIL_BRANCHES set, it fails the branches
+    # query (exit 1), as gh does.
     mkdir -p "$T/stub"
     cat > "$T/stub/gh" <<'STUB'
 #!/usr/bin/env bash
 printf 'call\n' >> "${0%/*}/calls"
+if [ -n "${STUB_FAIL_BRANCHES:-}" ]; then
+    case "$*" in *'refs(refPrefix'*) printf 'gh stub: the branches query fails\n' >&2; exit 1 ;; esac
+fi
 printf '%s\n' '{"data":{"repository":{"issues":{"pageInfo":{"hasNextPage":false},"nodes":[]},"refs":{"pageInfo":{"hasNextPage":false},"nodes":[]}}}}'
 STUB
     chmod +x "$T/stub/gh"
@@ -529,20 +536,31 @@ STUB
     expect "the last second of 9999 is still a now" "9999-12-31T23:59:59Z" "$(snap_with 253402300799)"
     expect "a SOURCE_DATE_EPOCH past 9999-12-31 fails the snapshot: check cannot take a five-digit year" "failed" \
         "$(snap_fails 253402300800)"
+    calls=$(calls_in "$T/stub")
     expect "fetch with SOURCE_DATE_EPOCH set runs (exit 0)" "0" "$(stub_rc fetch SOURCE_DATE_EPOCH=1790000000 "$T/pinned")"
+    # The calls file is how the cases below see a GraphQL call. The tripwire gh is a copy of the stub, so this shows
+    # its log works too.
+    expect "... calling gh twice, for a page of issues and a page of branches, each logged" "$((calls+2))" \
+        "$(calls_in "$T/stub")"
     expect "fetch writes the pinned now to now.txt" "2026-09-21T14:13:20Z" "$(cat "$T/pinned/now.txt")"
+    expect "check reads that directory: the empty graph of the stub is NO-DATA (exit 20)" "20" "$(check_rc "$T/pinned")"
     calls=$(calls_in "$T/stub")
     expect "fetch into that filled directory with a fractional SOURCE_DATE_EPOCH stops (exit 2)" "2" \
         "$(stub_rc fetch SOURCE_DATE_EPOCH=1.5 "$T/pinned")"
     expect "... before its first GraphQL call" "$calls" "$(calls_in "$T/stub")"
-    expect "... and removes the old now.txt: check never reads a new graph beside an old now" "absent" \
+    expect "... and before it touches the directory: the old now.txt stays, beside the graph it was written with" \
+        "2026-09-21T14:13:20Z" "$(cat "$T/pinned/now.txt" 2>/dev/null)"
+    expect "a fetch into that directory whose branches query fails stops with the exit code of gh (1)" "1" \
+        "$(with_failing_branches stub_rc fetch SOURCE_DATE_EPOCH=1790000000 "$T/pinned")"
+    expect "... and has removed the old now.txt: check never reads a new graph beside an old now" "absent" \
         "$(if [ -e "$T/pinned/now.txt" ]; then printf present; else printf absent; fi)"
+    expect "... so check refuses that directory (exit 2), not NO-DATA as before" "2" "$(check_rc "$T/pinned")"
     expect "fetch says where its now came from: SOURCE_DATE_EPOCH, when that is set" "1" \
         "$(stub_err fetch SOURCE_DATE_EPOCH=1790000000 "$T/said" | grep -c 'now 2026-09-21T14:13:20Z (SOURCE_DATE_EPOCH)$')"
     expect "... the clock, when it is unset" "1" "$(stub_err fetch ACTIVE_DAYS=7 "$T/said" | grep -c ' (clock)$')"
     expect "fetch with a fractional SOURCE_DATE_EPOCH stops (exit 2)" "2" "$(stub_rc fetch SOURCE_DATE_EPOCH=1.5 "$T/junk")"
-    expect "... and leaves no now.txt for check to read" "absent" \
-        "$(if [ -e "$T/junk/now.txt" ]; then printf present; else printf absent; fi)"
+    expect "... and makes no directory, so no now.txt for check to read" "absent" \
+        "$(if [ -e "$T/junk" ]; then printf present; else printf absent; fi)"
     expect "fetch with a SOURCE_DATE_EPOCH jq cannot date stops with exit 2, not the exit code of jq" "2" \
         "$(stub_rc fetch SOURCE_DATE_EPOCH=99999999999999999999 "$T/junk-far")"
     expect "run refuses a set SOURCE_DATE_EPOCH (exit 2) before it fetches" "2" "$(stub_rc run SOURCE_DATE_EPOCH=0 "$T/run-pinned")"
