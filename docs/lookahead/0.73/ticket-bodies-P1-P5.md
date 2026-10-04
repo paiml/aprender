@@ -94,7 +94,7 @@ These are bodies ready to file, one per bundle in `falsifier-landing-map.md`.
 **Hosts** C1 (wgpu adapter), train-inactive. CI has no GPU.
 **Out of scope**
 - Moving attention, RoPE and the LM head onto the device (R2 item 5).
-- The gated-delta route (R2 item 6, which may slip to 0.74).
+- The gated-delta route (R2 item 6, which may slip to 0.74). It is rank 6 in the landing map, and E1's WGPU and Metal legs wait on it.
 - The ledger sweep (M run: WGF-006, 007 and 010).
 
 ---
@@ -127,6 +127,6 @@ These runs produce receipts, not code. They are scheduled when a host is train-i
 ## Status (2026-10-03 22:15Z)
 - origin/main is 316dee2cd4. All file:line cites in R1–R5 and these bodies were re-checked there at 13:18Z (ac564391ab).
 - **Filing:** still under S-1 hold (operator C292): nothing is filed or opened until LIVE 0.70.1. After LIVE, 0.73 moves from the floor to normal cadence: P1..P5 go to the cop as PROPOSE-TICKET lines, and this branch gets its PR.
-- **Open rulings, not blocking (C293.3):** RQ-3, RQ-4 and RQ-6 are requested in the handoff. Work proceeds on provisional S-4 defaults: RQ-3 = E1 PASS + E2 PASS receipts on main; RQ-4 = a hybrid may pass E1, and E2/E6 name it; RQ-6 (gate the gx10 default route?) = info only, applied at c49bbb23cb. RQ-5 is ruled: `fp32_act` (cop, 2026-09-27 20:12Z).
+- **Open rulings, not blocking (C293.3):** RQ-3, RQ-4 and RQ-6 are requested in the handoff. Work proceeds on provisional S-4 defaults: RQ-3 = E1 PASS + E2 PASS receipts on main; RQ-4 = a hybrid may pass E1, and E2/E6 name it; RQ-6 (gate the gx10 default route?) = info only, applied at c49bbb23cb. RQ-5 is ruled: `fp32_act` (cop, 2026-09-27 20:12Z). Added 2026-10-04: RQ-7 (where P3's aarch64 PR-CI step goes; default: P3's tests run by hand on gx10) and RQ-8 (whether qwen35 on wgpu, landing-map row 6, goes above P5; default: it stays at 6).
 - **External blocker:** the OBS stack, #4487 and #4574, is unmerged, so P1's identity check stays NotRun until it merges.
 - **Side fixes:** S1..S3 (`ticket-bodies-side-fixes.md`) go out with P1..P5 at LIVE 0.70.1. They are not 0.73 gates, and none of P1..P5 waits on them.

@@ -10,7 +10,7 @@ Measured wgpu decode cosine is 0.955 against a floor of 0.995 (E1 per leg). R2 c
 3. **Qwen3 q_norm/k_norm in WGSL.** Today they are absent on the wgpu path [A]. This is the likely main source of the 0.955 cosine; confirm with `apr trace` layer diff before coding.
 4. **Q6_K, Q8_0 and Q4_0 WGSL GEMV.** Only Q4_K and F32 exist [V]. This removes the `wgpu_adapter.rs:339` refusal and the CPU fallback (F-R5-2). Note [V at 00052c0128]: Q6_K and Q5_K are not refused. `dequant_tensor_public` widens them to F32 on the host at load, and the device runs an F32 GEMV. op_placement reads `device` for that, so the receipt needs a per-tensor `device_qtype` to tell a widen from a native GEMV (wgpu-forward-v1 FALSIFY-WGF-004).
 5. **Move attention, RoPE, LM head and argmax onto the device** (F-R5-4). Until then, every wgpu receipt is `hybrid: true` (R1 §10; RQ-4 provisional default: E1 may pass hybrid, and E2/E6 name it).
-6. **gated-delta WGSL route** for qwen35 (`forward_qwen35.rs:1341`, the `delta_rule_head` call in `deltanet_mix_rows` [V at 316dee2cd4]). Needed for E3 on C1–C3; it may slip to 0.74.
+6. **gated-delta WGSL route** for qwen35 (`forward_qwen35.rs:1341`, the `delta_rule_head` call in `deltanet_mix_rows` [V at 316dee2cd4]). Needed for E1 and E4 on C1–C3, not E3: Qwen3.5-4B is E1's model, and E3's is the MoE. It may slip to 0.74. The landing map ranks it 6 (§Ranking, rows 6 to 20).
 
 ## Exit
 E1 ≥ 0.995 per leg on C1, C2 and C3 for Qwen3 Q4_K_M, with op_placement all-device for items 1–5.

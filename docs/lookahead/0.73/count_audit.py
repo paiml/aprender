@@ -6,8 +6,8 @@ states it is checked against the derived value. Per-contract totals come from `p
 The falsifier ids and their `test:` text come from the YAML, because pv does not print them.
 
 Sources: the four contracts in contracts-draft/, the FALSIFY-R4-NNN ids in
-R4-moe-gpu-wiring.md (R4 has no contract), the Assignment and Bundles tables in
-falsifier-landing-map.md, and the fixture table in P1-receipt-checker-spec.md §4.
+R4-moe-gpu-wiring.md (R4 has no contract), the Assignment, Bundles and Ranking tables in
+falsifier-landing-map.md (ranks 1 to 5, and rows 6 to 20 with the exit criteria they serve), and the fixture table in P1-receipt-checker-spec.md §4.
 
 Usage: python3 docs/lookahead/0.73/count_audit.py [--self-test]   (needs PyYAML, and pv on PATH or in $PV)
 Exit 0 when every check passes, 1 when one fails, 2 when a source is missing.
@@ -38,6 +38,8 @@ VERDICT = {True: "PASS", False: "FAIL"}
 ID_RE = re.compile(r"\b(BPM|NEON(?:-Q4K)?|WGF|R4|AQ)-(\d{3})((?:\s*(?:\.\.|,|/|,?\s+and)\s*\d{3}\b)*)")
 TAIL_RE = re.compile(r"(\.\.|,|/|and)\s*(\d{3})")
 FIX_RE = re.compile(r"\bf\d{3}[a-z]?\b")
+E_RE = re.compile(r"\bE([1-6])\b")
+UNRANKED = {"M", "F3", "S1", "S2", "S3"}
 failures = []
 
 
@@ -211,6 +213,28 @@ def audit_ranking(per_bundle, needs_p2):
     check("ranking P2 ids that need its fields", needs_p2, ids_in(p2[0]) if p2 else set(), where)
 
 
+
+def criteria(cell):
+    """The exit criteria E1..E6 that a cell names."""
+    return {f"E{n}" for n in E_RE.findall(cell)}
+
+
+def audit_ranking_tail():
+    """Rows 6 to 20 continue the Ranking: ranks 6..20 in order, no bundle or unranked item again, each row
+    serves an exit criterion, and with what ranks 1 to 5 serve they cover E1..E6."""
+    where = f"{LANDING} Ranking, rows 6 to 20"
+    rows = table_rows(LANDING, r"^## Ranking, rows 6 to 20$")
+    labels = {c[1].split()[0] for c in table_rows(LANDING, r"^## Ranking$")}
+    check("ranking rows 6 to 20 ranks", list(range(6, 21)), [int(c[0]) if c[0].isdigit() else -1 for c in rows], where)
+    check("ranking rows 6 to 20 repeat nothing", [], [c[0] for c in rows if c[1].split()[0] in labels | UNRANKED], where)
+    check("ranking rows 6 to 20 serve a criterion", [], [c[0] for c in rows if not criteria(c[2])], where)
+    m, at = find(LANDING, r"^Ranks 1 to 5 serve: (.+)$", re.M)
+    served = dict(re.findall(r"\b(P\d) ((?:E\d(?:, )?)+)", m.group(1)))
+    check("ranks 1 to 5 serve line", sorted(labels), sorted(served), at)
+    covered = set().union(*map(criteria, served.values()), *(criteria(c[2]) for c in rows))
+    check("ranking covers E1 to E6", {f"E{n}" for n in range(1, 7)}, covered, where)
+
+
 def audit_side_fixes(unwritten, gate):
     m, where = find(LANDING, r"(\w+) falsifiers sit outside the (\d+)")
     check("side fixes outside the gate set", len(unwritten["AQ"]), WORDS.get(m.group(1), -1), where)
@@ -281,6 +305,12 @@ MUTATIONS = [
     ("falsifier-landing-map.md", "| P4 wgpu fixes | R2 |", "| P4 wgpu fixes | R3 |", "ranking research rows"),
     ("falsifier-landing-map.md", "| R3 | 8 |", "| R3 | 9 |", "ranking P3 gate falsifiers"),
     ("falsifier-landing-map.md", "WGF-009 and WGF-004 need", "WGF-009 need", "ranking P2 ids that need its fields"),
+    ("falsifier-landing-map.md", "| 7 | OBS-18", "| 8 | OBS-18", "ranking rows 6 to 20 ranks"),
+    ("falsifier-landing-map.md", "| 20 | Batched MoE prefill", "| 20 | P5 batched MoE prefill", "ranking rows 6 to 20 repeat nothing"),
+    ("falsifier-landing-map.md", "| 17 | Sampling on the wgpu decoder (#3760) | E4 |", "| 17 | Sampling on the wgpu decoder (#3760) | none |",
+     "ranking rows 6 to 20 serve a criterion"),
+    ("falsifier-landing-map.md", "P5 E3, E4.", "P6 E3, E4.", "ranks 1 to 5 serve line"),
+    ("falsifier-landing-map.md", "| E5 |", "| E4 |", "ranking covers E1 to E6"),
     ("R4-moe-gpu-wiring.md", None, None, 2),
 ]
 
@@ -338,6 +368,7 @@ def main():
     per_bundle, needs_p2 = audit_landing_map(unwritten, gate)
     audit_count_line(gate, per_bundle, needs_p2)
     audit_ranking(per_bundle, needs_p2)
+    audit_ranking_tail()
     audit_side_fixes(unwritten, gate)
     files = audit_p1(per_bundle)
     audit_bodies(per_bundle)
