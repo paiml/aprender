@@ -1,8 +1,12 @@
-# DRAFT (branch-only during S-1). 0.71 exit criterion V3. Extends continuous-batching-v1
+# DRAFT (branch-only). 0.71 exit criterion V3. Extends continuous-batching-v1
 # (FALSIFY-CB-004/006/008) and the perf041 PP-26 v3.1 witness; does not replace them.
+# Checker: scripts/lookahead/v3_shape_check.py, an external check run by hand. No build,
+# test, gate or CI job invokes it. Before this file moves into contracts/, its cases port
+# to Rust with the fixtures as data, plus the five planted cases the qa_gate names.
 metadata:
   id: serving-shape-parity-v1
-  version: "0.1.0"
+  kind: schema
+  version: "0.2.0"
   created: "2026-10-03"
   author: la-0.71 (L1)
   status: draft
@@ -29,11 +33,70 @@ equations:
       - "a divergence from m=1 without a recorded margin is never explained"
       - "an empty witness is RED"
 falsification_tests:
-  - {id: FALSIFY-SSP-001, fixture: v3/admissible.json, expect: 0, rule: "control: full bands on blessed model admissible"}
-  - {id: FALSIFY-SSP-002, fixture: v3/near-tie.json, expect: 0, rule: "divergence at 3 with margin 0.01 is explained"}
-  - {id: FALSIFY-SSP-003, fixture: v3/short-band.json, expect: 1, rule: "c=16 with m_formed=14 is not admissible"}
-  - {id: FALSIFY-SSP-004, fixture: v3/wrong-model.json, expect: 1, rule: "non-blessed model is not admissible"}
-  - {id: FALSIFY-SSP-005, fixture: v3/unexplained-divergence.json, expect: 1, rule: "divergence without margin is not admissible"}
-  - {id: FALSIFY-SSP-006, fixture: v3/empty.json, expect: 2, rule: "empty witness is RED"}
-  - {id: FALSIFY-SSP-007, input: evidence/perf041/lambda/witness.json, expect: 1, rule: "real lambda witness (perf041 PASS) is not a V3 receipt: wrong model, m=14 at c=16, unexplained divergence at 3"}
-verification: "python3 scripts/lookahead/v3_shape_check.py --self-test  # 5/5 mutants killed (1 by crash), 2026-10-03"
+  - id: FALSIFY-SSP-001
+    rule: "control: full bands on blessed model admissible"
+    fixture: scripts/lookahead/fixtures/v3/admissible.json
+    expect: 0
+    prediction: "The checker exits 0 (ADMISSIBLE) and prints no reason."
+    test: "v3_shape_check.py --self-test, fixture admissible.json"
+    if_fails: "A rule fires on a clean witness: a band, identity or model check misreads a field it should accept."
+  - id: FALSIFY-SSP-002
+    rule: "divergence at 3 with margin 0.01 is explained"
+    fixture: scripts/lookahead/fixtures/v3/near-tie.json
+    expect: 0
+    prediction: "A band that diverges from m=1 at 3 with a recorded top-2 margin of 0.01, below epsilon, is explained, so the checker exits 0 and prints no reason."
+    test: "v3_shape_check.py --self-test, fixture near-tie.json"
+    if_fails: "explained() ignores the recorded margin, or compares it against the wrong epsilon."
+  - id: FALSIFY-SSP-003
+    rule: "c=16 with m_formed=14 is not admissible"
+    fixture: scripts/lookahead/fixtures/v3/short-band.json
+    expect: 1
+    prediction: "The checker exits 1 (NOT ADMISSIBLE) with the single reason 'c=16: m_formed 14 != c (shape not served)'."
+    test: "v3_shape_check.py --self-test, fixture short-band.json"
+    if_fails: "The m_formed == c check is missing or reads the wrong field."
+  - id: FALSIFY-SSP-004
+    rule: "non-blessed model is not admissible"
+    fixture: scripts/lookahead/fixtures/v3/wrong-model.json
+    expect: 1
+    prediction: "The checker exits 1 with the single reason that model 'qwen2.5-coder-1.5b-instruct-q4_k_m.gguf' is not the blessed Qwen3.5-4B."
+    test: "v3_shape_check.py --self-test, fixture wrong-model.json"
+    if_fails: "The blessed-model check reads another field or another prefix."
+  - id: FALSIFY-SSP-005
+    rule: "divergence without margin is not admissible"
+    fixture: scripts/lookahead/fixtures/v3/unexplained-divergence.json
+    expect: 1
+    prediction: "The checker exits 1 with the single reason 'c=4: diverges from m=1 at 3 < 64 with no near-tie margin recorded'."
+    test: "v3_shape_check.py --self-test, fixture unexplained-divergence.json"
+    if_fails: "A divergence with no recorded margin is treated as explained."
+  - id: FALSIFY-SSP-006
+    rule: "empty witness is RED"
+    fixture: scripts/lookahead/fixtures/v3/empty.json
+    expect: 2
+    prediction: "The checker exits 2 with 'RED: empty or unreadable witness', never ADMISSIBLE or NOT ADMISSIBLE."
+    test: "v3_shape_check.py --self-test, fixture empty.json"
+    if_fails: "An empty witness is evaluated as a witness with no bands instead of RED."
+  - id: FALSIFY-SSP-007
+    rule: "real lambda witness (perf041 PASS) is not a V3 receipt: wrong model, m=14 at c=16, unexplained divergence at 3"
+    input: evidence/perf041/lambda/witness.json
+    expect: 1
+    prediction: "On main's lambda witness the checker exits 1 with five reasons: the model is not the blessed Qwen3.5-4B; c=4, c=8 and c=16 diverge from m=1 at 3 < 64 with no margin recorded; and c=16 has m_formed 14."
+    test: "v3_shape_check.py evidence/perf041/lambda/witness.json, run by hand (the self-test does not run it)"
+    if_fails: "A perf041 PASS is read as a V3 receipt: a V3 rule is missing, or the witness on main changed."
+qa_gate:
+  id: F-SSP-QA-001
+  name: A V3 receipt is admitted only when every conjunct holds
+  description: >
+    Each planted fixture exits with its expected code, and each NOT ADMISSIBLE fixture
+    prints only its own reason. The self-test compares exit codes only, over 001-006; the
+    reasons were checked by hand on 2026-10-04, and 007 runs by hand. The planted set pins
+    the blessed-model prefix, m_formed = c, and a divergence explained only by a recorded
+    margin, plus RED on an empty witness. Five checks have no planted fixture yet: three
+    whole conjuncts (every band measured, result = PASS, identity complete) and two parts
+    of pinned ones (a model sha256 is present; epsilon's upper bound). See falsification.
+  checks:
+    - planted_fixture_exits_as_expected
+    - not_admissible_fixture_prints_only_its_own_reason
+    - real_witness_not_admissible
+  pass_criteria: "v3_shape_check.py --self-test prints 'self-test: ok (6 fixtures)', and main's lambda witness exits 1 with the five reasons in FALSIFY-SSP-007"
+  falsification: "Measured 2026-10-04: the self-test kills mutants that drop the m_formed check or the blessed-model check. Five mutants survive it, one per check with no planted fixture: the identity check, the model sha256 check, epsilon (NEAR_TIE_EPS raised to 1.0), the band result = PASS check, and the all-bands-measured check. PROPOSE for the Rust port: planted fixtures missing-identity, no-model-sha, margin-at-epsilon (margin 0.05, not explained), failed-band (result FAIL) and missing-band (no c=8)."
+verification: "External check, by hand: python3 scripts/lookahead/v3_shape_check.py --self-test  # 2026-10-04 11:05Z: self-test: ok (6 fixtures). 2026-10-03: 5/5 mutants killed (1 by crash). 2026-10-04: five more mutants survive, recorded under qa_gate."
