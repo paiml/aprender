@@ -68,6 +68,23 @@ code() { sed -e '/^[[:space:]]*#/d' -e 's/[[:space:]]#.*$//'; }
 # names a shard, is dead, or is merely reworded -- is RED until this table is changed with it.
 exact_if() { if [ "$1" = "$2" ]; then echo pass; else echo fail; fi; }
 
+# step_block <file> <step name> -> that step's lines up to the next step, as text
+step_block() {
+    awk -v want="- name: \"$2\"" '
+        index($0, want) && !found { found = 1; print; next }
+        found && /^ *- (name|uses):/ { exit }
+        found { print }' "$1"
+}
+# stage_run <script> <dir> <tier> <shard> -> the files the staging step ships, sorted, one line.
+# It EXECUTES the staging body against a planted $RUNNER_TEMP/sigma, so a flipped tier test or a
+# junit `cp` moved under `[ "$SHARD" = 1 ]` changes what ships -- text checks cannot see either.
+stage_run() {
+    local s=$1 d=$2
+    rm -rf -- "${d:?}/st"; mkdir -p "$d/st/rt/sigma" "$d/st/wd"
+    : > "$d/st/rt/sigma/quick-tree.junit.xml"; : > "$d/st/rt/sigma/quick-tree.list.json"
+    (cd "$d/st/wd" && RUNNER_TEMP="$d/st/rt" TIER="$3" SHARD="$4" bash -c "$s") > /dev/null 2>&1 || { echo "staging-failed"; return; }
+    find "$d/st/wd/sigma-shard" -type f -printf '%f\n' 2> /dev/null | sort | paste -sd' '
+}
 # The planted shard artifacts: a universe of six ids in two binaries.
 junit() { # junit <file> <binary:test>... -- nextest's attribute order, name first
     local id
@@ -125,6 +142,12 @@ table() { # table <workflow> <sections> -> 0 iff every row holds, 2 when a step 
     row pass "staging ships shard 1's listed tree set" "$(has "$stage" 'cp "$sig/quick-tree.list.json" sigma-shard/')"
     row pass "staging runs after the tree step and the quick Σ step" \
         "$(st test "$(step_line "$2" "$STAGE_STEP")" -gt "$(step_line "$2" "$QSIGMA_STEP")" -a "$(step_line "$2" "$QSIGMA_STEP")" -gt "$(step_line "$2" "$TREE_STEP")")"
+    row pass "staging on quick shard 2 ships its tree junit and tier, no listed set" \
+        "$(exact_if "$(stage_run "$stage" "$w" quick 2)" "quick-tree.junit.xml tier")"
+    row pass "staging on quick shard 1 ships its tree junit, the listed set and tier" \
+        "$(exact_if "$(stage_run "$stage" "$w" quick 1)" "quick-tree.junit.xml quick-tree.list.json tier")"
+    row pass "no tree, keep or staging step may continue on error (a red test must fail the shard)" \
+        "$(if step_block "$2" "$TREE_STEP" | code | grep -q 'continue-on-error:' || step_block "$2" "$KEEP_STEP" | code | grep -q 'continue-on-error:' || step_block "$2" "$STAGE_STEP" | code | grep -q 'continue-on-error:'; then echo fail; else echo pass; fi)"
     # ci.yml: the fan-in owes the union on tier=quick
     row pass "fan-in: three disjoint partitions, union == listed" "$(st fanin "$f" "$w" 'quick quick quick' "$P1" "$P2" "$P3")"
     row pass "fan-in: one shard's partition is empty, union == listed" "$(st fanin "$f" "$w" 'quick quick quick' "$P1 $P2" "" "$P3")"
@@ -189,9 +212,13 @@ if [ "${1:-}" = "--self-test" ]; then
     awk -v s="- name: \"$STAGE_STEP\"" 'index($0, s) { hit = 1 } hit && /upload-artifact/ { up = 1 } up && /^ *if: / { sub(/if: .*/, "if: ${{ 0 == 1 }}"); hit = up = 0 } 1' "$SEC" > "$d/updead0.yml"
     awk -v s="- name: \"$TREE_STEP\"" 'index($0, s) { hit = 1 } hit && /^ *if: / { sub(/ *$/, " \\&\\& endsWith(github.job, '"'"'1'"'"')"); hit = 0 } 1' "$SEC" > "$d/endsjob.yml"
     sed 's/name: sigma-shard-\${{ matrix.shard }}$/name: sigma-shard-${{ matrix.shard }}-x/' "$SEC" > "$d/upsuffix.yml"
+    # round 3 (lane A): the staging shell conditions and the tree step's failure semantics
+    sed 's/^\( *\)if \[ "\$TIER" = quick \]; then$/\1if [ "$TIER" = full ]; then/' "$SEC" > "$d/stagetier.yml"
+    awk '/^ *cp "\$sig\/quick-tree.junit.xml" sigma-shard\/quick-tree.junit.xml$/ { ind = $0; sub(/[^ ].*/, "", ind); print ind "if [ \"$SHARD\" = 1 ]; then"; print ind "  " substr($0, length(ind) + 1); print ind "fi"; next } 1' "$SEC" > "$d/stagejunit1.yml"
+    awk -v s="- name: \"$TREE_STEP\"" 'index($0, s) { hit = 1 } hit && /^ *if: / { print; ind = $0; sub(/[^ ].*/, "", ind); print ind "continue-on-error: true"; hit = 0; next } 1' "$SEC" > "$d/treecoe.yml"
     printf 'jobs: {}\n' > "$d/none.yml"
     bad=0
-    for m in exempt nojunit nodup twoj nounion tiermix nopart index shard1 keep1 nostage order stage1 updead upname envshard cmtpart cmtcp updead0 endsjob upsuffix; do
+    for m in exempt nojunit nodup twoj nounion tiermix nopart index shard1 keep1 nostage order stage1 updead upname envshard cmtpart cmtcp updead0 endsjob upsuffix stagetier stagejunit1 treecoe; do
         case "$m" in exempt | nojunit | nodup | twoj | nounion | tiermix) wf="$d/$m.yml" sec="$SEC" src="$WF" ;; *) wf="$WF" sec="$d/$m.yml" src="$SEC" ;; esac
         if cmp -s "$src" "$d/$m.yml"; then printf 'FAIL  the %s mutant did not apply (its anchor is gone)\n' "$m"; bad=1; continue; fi
         if table "$wf" "$sec" > "$d/out" 2>&1; then printf 'FAIL  the planted %s rule passed the table\n' "$m"; bad=1
