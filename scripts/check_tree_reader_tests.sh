@@ -135,7 +135,11 @@ module_of() { # module_of <root> <crate> <file> [depth] -> the module path; rc 1
     leaf=${cand##*::}
     if [ "$MUTATE_FLAT" = 1 ]; then cand=$leaf; fi
     idx=$(index_of "$root" "$c")
-    if awk -F'\t' -v n="$leaf" -v d="$owner" '$1 == "mod" && $2 == n && $4 == d { found = 1 } END { exit !found }' "$idx"; then
+    # ...or in the 2018-layout sibling FILE: `mod b;` for src/a/b.rs may live in
+    # src/a.rs (no src/a/mod.rs). Missing it sent aprender-contracts'
+    # ontology/extract/json/github.rs (declared in json.rs) to the whole-crate
+    # fallback, which then won over every module row of that crate.
+    if awk -F'\t' -v n="$leaf" -v d="$owner" -v s="$owner.rs" '$1 == "mod" && $2 == n && ($4 == d || $3 == s) { found = 1 } END { exit !found }' "$idx"; then
         printf '%s\n' "$cand"; return 0
     fi
     if [ "$MUTATE_NO_INCLUDE" != 1 ]; then
@@ -465,6 +469,7 @@ CASES
     row 0 "  ...src/deep/mod.rs -> deep" '^reader_mods	--lib	deep$' cat "$td/fx.out"
     row 0 "  ...src/deep/leaf.rs -> deep::leaf" '^reader_mods	--lib	deep::leaf$' cat "$td/fx.out"
     row 0 "  ...src/gen/part.rs, pulled by include!() from src/inc.rs -> inc (the INCLUDER's module)" '^reader_mods	--lib	inc$' cat "$td/fx.out"
+    row 0 "  ...src/flat/child.rs, declared in the 2018-layout sibling src/flat.rs -> flat::child" '^reader_mods	--lib	flat::child$' cat "$td/fx.out"
     row 0 "  ...src/attached.rs, declared #[path] as mod bolted from src/deep/mod.rs -> deep::bolted" '^reader_mods	--lib	deep::bolted$' cat "$td/fx.out"
     row 0 "  ...tests/it.rs -> --test it (integration rows unchanged)" '^reader_mods	--test	it$' cat "$td/fx.out"
     row 0 "  ...an unresolvable reader -> the WHOLE crate, 2 columns (fallback, never a guessed module)" '^reader_orphan	--lib$' cat "$td/fx.out"
