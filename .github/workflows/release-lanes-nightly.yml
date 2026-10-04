@@ -8,22 +8,27 @@
 # that dies writes no verdict, and its lane job is skipped the same way.
 #
 #   cleanroom-gpu   b2-gpu.yml called at C on yoga. The release-day dispatch of b2-gpu is unchanged.
-#   cleanroom-cpu   paiml/infra clean-room.yml's `clean-room (aprender)` job that tested C. It needs
-#                   the repository secret INFRA_ACTIONS_READ (paiml/infra, Actions: read) and reads
-#                   not_measured until it exists.
+#   cleanroom-cpu   paiml/infra clean-room.yml's `clean-room (aprender)` job that tested C. Its read
+#                   token is INFRA_ACTIONS_READ (paiml/infra, Actions: read), the secret of the
+#                   environment infra-read, which only main can use: a run from any other branch is
+#                   refused before the job starts, and the lane reads not_measured.
 #   publish-dryrun  rc_publish_gate.sh --verify on a worktree of C. not_measured while main's version
 #                   is at or below crates.io's newest: --verify at a published version is a false red.
 #
 # The judges and their case table are in the script; `case table` runs --self-test and --mutants,
 # and a measure job runs only when it is green: a judge that cannot refuse measures nothing.
 #
-# 03:15Z: infra's nightly clean-room ends by ~02:55Z, and the train reads at 04:45Z. Every job's
-# timeout ends the run before then; a run still going at 04:45Z reads not_measured.
+# 23:17Z: scheduled runs fire late on this account. Over 14 nights the 20:30–23:17Z slots fired
+# 22:38–02:36Z, and the 00:00–01:00Z slots 3h33m–5h48m late, past the train's 04:45Z read. From
+# a 02:36Z start every job's timeout ends the run before 04:45Z; a run still going then (a queue
+# wait is not timed) reads not_measured. Infra's nightly clean-room ends ~02:55Z, so a run that
+# fires before it finds infra's run on C only when main has not moved since; else cleanroom-cpu
+# reads not_measured.
 name: release-lanes-nightly
 
 on:
   schedule:
-    - cron: '15 3 * * *'
+    - cron: '17 23 * * *'
   workflow_dispatch:
 
 permissions:
@@ -90,6 +95,7 @@ jobs:
     name: 'measure: cleanroom-cpu'
     needs: case-table
     runs-on: [self-hosted, Linux, X64, clean-room]
+    environment: infra-read   # holds INFRA_ACTIONS_READ; only main may use it
     timeout-minutes: 15
     outputs:
       verdict: ${{ steps.m.outputs.verdict }}
