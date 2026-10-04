@@ -78,7 +78,7 @@ chmod +x "$T/probe"
 answer() { printf '%b' "$2" >"$T/ans/$1.out"; rm -f "$T/ans/$1.rc"; }  # answer <host> <text>
 answer_rc() { echo "$2" >"$T/ans/$1.rc"; }
 
-guard() { OUT="$(TIMER_GUARD_PROBE="$T/probe" bash "$GUARD" "$@" 2>&1)"; RC=$?; }
+guard() { OUT="$(TIMER_GUARD_PROBE="$T/probe" timeout 20 bash "$GUARD" "$@" 2>&1)"; RC=$?; }
 
 OPEN='MARKER present 0.70.2\n'
 SHUT='MARKER absent\n'
@@ -153,6 +153,23 @@ want "R10 empty timer list -> caller error, exit 3" 3 "$RC"
 printf 'crux-latest.timer; touch pwned\n' >"$T/evil.txt"
 OUT="$(TIMER_GUARD_PROBE="$T/probe" TIMER_GUARD_LIST="$T/evil.txt" bash "$GUARD" --ssh h1 2>&1)"; RC=$?
 want "R11 a list entry that is not a unit name -> caller error, exit 3" 3 "$RC"
+want_out "R11 names the bad entry" "is not a timer unit name"
+
+# A mutant can loop forever (shift 2 on one argument shifts nothing), so these rows are bounded.
+for flag in --local --ssh; do
+  OUT="$(timeout 20 bash "$GUARD" "$flag" 2>&1)"; RC=$?
+  want "R12 $flag with no host name -> caller error, exit 3" 3 "$RC"
+  want_out "R12 $flag names the missing host name" "$flag needs a host name"
+done
+
+OUT="$(timeout 20 bash "$GUARD" --ssh h1 --bogus 2>&1)"; RC=$?
+want "R13 an unknown argument -> caller error, exit 3" 3 "$RC"
+want_out "R13 names the argument" "unknown argument '--bogus'"
+
+answer h1 "${OPEN}${OFF}${BINS_OFF}END\n"
+OUT="$(TIMER_GUARD_PROBE="$T/probe" TIMER_GUARD_LIST="$T/no-such-list.txt" timeout 20 bash "$GUARD" --ssh h1 2>&1)"; RC=$?
+want "R14 an unreadable timer list -> caller error, exit 3" 3 "$RC"
+want_out "R14 names the unreadable list" "cannot read the tool-installing timer list"
 
 # -- several hosts: the worst verdict wins, armed over could-not-judge --------
 answer h1 "${OPEN}${OFF}${BINS_OFF}END\n"

@@ -102,17 +102,19 @@ main() {
     local hosts=() units=() u worst=0 rc
     while [ $# -gt 0 ]; do
         case "$1" in
-            --local) [ -n "${2:-}" ] || caller_error "--local needs a name"; hosts+=("local $2"); shift 2 ;;
-            --ssh)   [ -n "${2:-}" ] || caller_error "--ssh needs a host";  hosts+=("ssh $2");   shift 2 ;;
-            *) caller_error "unknown argument '$1' (usage: $PROG [--local NAME] [--ssh HOST]...)" ;;
+            --local|--ssh)
+                [ -n "${2:-}" ] || caller_error "$1 needs a host name" # R-NOHOSTNAME
+                hosts+=("${1#--} $2"); shift 2 ;;
+            *)
+                caller_error "unknown argument '$1' (usage: $PROG [--local NAME] [--ssh HOST]...)" ;; # R-BADARG
         esac
     done
     [ "${#hosts[@]}" -gt 0 ] || caller_error "no release host named: a check of zero hosts is vacuous" # R-NOHOSTS
-    [ -r "$LIST" ] || caller_error "cannot read the tool-installing timer list $LIST"
+    [ -r "$LIST" ] || caller_error "cannot read the tool-installing timer list $LIST" # R-NOLIST
     while read -r u; do
         u=${u%%#*}; u=${u//[[:space:]]/}
         [ -n "$u" ] || continue
-        [[ $u =~ ^[A-Za-z0-9@._-]+\.timer$ ]] || caller_error "'$u' in $LIST is not a timer unit name"
+        [[ $u =~ ^[A-Za-z0-9@._-]+\.timer$ ]] || caller_error "'$u' in $LIST is not a timer unit name" # R-BADUNIT
         units+=("$u")
     done <"$LIST"
     [ "${#units[@]}" -gt 0 ] || caller_error "$LIST names no timer: a check of zero timers is vacuous" # R-EMPTYLIST
