@@ -101,5 +101,10 @@ verify with `cargo kani`, then replicate across domains.
 ## Further Reading
 
 - Full design: `docs/specifications/sub/lean-kani-composition.md`
+- Kernel testing (KTEST-001): `ProvableContracts.Theorems.KernelTesting.Core` proves case K3 for
+  every stride and thread count: stride-slice stores are race-free and stay in bounds. It also holds
+  the K1b, K2 and K4 lemmas. KTEST-06 adds the Kani side, with bounded proofs of the Rust index-map
+  `const fn`s. Theorem table: Appendix A of
+  `docs/specifications/KTEST-001-kernel-testing-gpu-cpu-hardware.md`.
 - Kani Model Checker: <https://model-checking.github.io/kani/>
 - Lean 4 + Mathlib: <https://leanprover-community.github.io/>
