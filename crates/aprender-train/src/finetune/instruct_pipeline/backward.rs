@@ -122,8 +122,13 @@ impl InstructPipeline {
         let trainer = self.cuda_trainer.as_ref()?;
         let stream = trainer.stream();
 
-        // Either graph not enabled, seq_len changed, or first capture needed
-        let use_graph = super::super::backward_graph::use_backward_graph();
+        // Either graph not enabled, seq_len changed, or first capture needed.
+        // R15a C3b: a clipped backward is captured only when the fused clip runs inside it.
+        let use_graph = backward_graph_allowed(
+            super::super::backward_graph::use_backward_graph(),
+            self.config.gradient_clip_norm.is_some(),
+            self.lora_fused_clip.is_some(),
+        );
 
         let lr = self.optimizer.lr();
         let training_state = self.gpu_training.as_mut()?;
@@ -248,6 +253,15 @@ impl InstructPipeline {
     }
 }
 
+/// R15a C3b: whether the backward may run under graph capture.
+///
+/// The syncing clip cannot run inside a capture, so a backward with a clip set is captured only
+/// when the fused clip state exists (FALSIFY-LORA_TARGET_SELECTION_V1_006).
+#[cfg(feature = "cuda")]
+fn backward_graph_allowed(graph_enabled: bool, clips: bool, fused_clip: bool) -> bool {
+    graph_enabled && (!clips || fused_clip)
+}
+
 /// PMAT-488: starts capturing the backward into a graph; a failed start leaves it ungraphed.
 #[cfg(feature = "cuda")]
 fn begin_backward_capture(stream: &trueno_gpu::driver::CudaStream) {
@@ -288,5 +302,34 @@ fn record_layer_bwd_us(
 ) {
     if let (Some(start), Some(slot)) = (start, layer_bwd_us.get_mut(layer_idx)) {
         *slot = start.elapsed().as_micros() as u64;
+    }
+}
+
+#[cfg(all(test, feature = "cuda"))]
+mod tests {
+    use super::backward_graph_allowed;
+
+    /// FALSIFY-LORA_TARGET_SELECTION_V1_006: a backward with a clip set is captured only with the
+    /// fused clip.
+    #[test]
+    fn falsify_lora_target_selection_v1_006_clipped_backward_needs_fused_clip_to_capture() {
+        // (graphs on, clip set, fused clip present, captured)
+        let cases = [
+            (false, false, false, false),
+            (false, false, true, false),
+            (false, true, false, false),
+            (false, true, true, false),
+            (true, false, false, true),
+            (true, false, true, true),
+            (true, true, false, false),
+            (true, true, true, true),
+        ];
+        for (graph, clips, fused, captured) in cases {
+            assert_eq!(
+                backward_graph_allowed(graph, clips, fused),
+                captured,
+                "graphs on {graph}, clip set {clips}, fused clip {fused}"
+            );
+        }
     }
 }
