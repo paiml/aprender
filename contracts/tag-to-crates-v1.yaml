@@ -120,7 +120,7 @@ proof_obligations:
   - id: T2C-INV-013
     type: invariant
     property: "Only a 404 writes an empty created_at"
-    formal: "∀ r ∈ rows: created_at(r) = '' ⇔ status(crate(r)) = 404"
+    formal: "∀ r ∈ rows: created_at(r) = '' ⟺ status(crate(r)) = 404"
     applies_to: crates_io_read
   - id: T2C-INV-014
     type: invariant
