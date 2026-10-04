@@ -31,16 +31,18 @@ equations:
       - "a record whose body no longer hashes to its body-sha256 is refused as changed after it was written"
       - "an empty body is refused: a receipt that says nothing is not a receipt"
       - "get judges one copy of the record and prints that copy, so the bytes printed are the bytes judged"
+      - "get prints the body and nothing else on standard output; a refused get prints nothing there and its FAIL line on standard error, so a refusal is never read as a body"
 
   write_once:
-    formula: "put(H, kind, name, b): no record yet -> write it (a temporary file under STORE/.tmp/, then ln -T, which makes the record appear whole at exactly its path or not at all); a record with body b -> unchanged; a record with another body -> refused; a symlink, a directory or another non-file at the path -> refused"
+    formula: "put(H, kind, name, b): no record yet -> write it (a temporary file under STORE/.tmp/, flushed to disk with sync, then ln -T, which makes the record appear whole at exactly its path or not at all); a record with body b -> unchanged; a record with another body -> refused; a symlink, a directory or another non-file at the path -> refused"
     domain: "a put of body b under (H, kind, name) by the store's writer"
     codomain: "{recorded, unchanged, refused}"
     invariants:
       - "a record is never rewritten: a second put with another body is refused and the record stays byte for byte the same"
       - "a put of an empty body records nothing and makes nothing under STORE/<H>/"
       - "an unfinished write, of init or of put, lives only under STORE/.tmp/, which no reader reads; a STORE/.tmp that is a symlink is refused"
-      - "a put never replaces a file, never writes into a directory and never writes through a symlink, and a put through a symlinked H or kind directory is refused: whatever a put is refused for, it writes nothing outside the store"
+      - "a put never replaces a file, never writes into a directory and never writes through a symlink inside the store, and a put through a symlinked H or kind directory is refused: whatever a put is refused for, it writes nothing outside the store"
+      - "put reads its body from the file it is given, by path: a file named - is that file, never standard input"
 
   add_independence:
     formula: "for all records r and r′ ≠ r: valid(r) before put(r′) = valid(r) after put(r′)"
@@ -60,11 +62,12 @@ equations:
       - "a record is never read across code identities"
 
   verify_nonvacuous:
-    formula: "verify(H) exits 0 only if STORE/<H> is not a symlink, n(H) > 0 and bad(H) = 0, where n counts every entry under STORE/<H>/ and bad counts the refused ones"
-    domain: "the entries under STORE/<H>/"
-    codomain: "exit 0 or 1, one line per entry and a count line"
+    formula: "verify(H) exits 0 only if STORE/<H> is not a symlink, n(H) > 0 and bad(H) = 0, where n counts every STORE/<H>/<kind>/<name> and every entry of STORE/<H>/ that is not a kind directory, and bad counts the refused ones"
+    domain: "the entries counted under STORE/<H>/"
+    codomain: "exit 0 or 1, one line per counted entry and a count line"
     invariants:
       - "an H with no records is refused: nothing to verify is not a pass"
+      - "an empty kind directory, which a put killed after its mkdir can leave, holds no record and is not counted, so it voids nothing; an H that holds only empty kind directories has no records and is refused"
       - "an entry that is not a record kind or not a record name is counted and refused, never skipped"
       - "a symlink, a directory or a FIFO filed as a record is counted and refused, and a STORE/<H> that is a symlink is refused"
 
@@ -76,6 +79,7 @@ equations:
       - "init adopts an empty directory, or one that holds only the STORE/.tmp/ directory of an init that did not finish; it never adopts any other directory that has no WRITER"
       - "a second init with another writer is refused"
       - "a WRITER that is a symlink is never adopted: init refuses it, and put, get and verify treat the directory as no store"
+      - "STORE is the directory the caller names: a STORE path that is a symlink names the directory it points to, which must itself be a store, or for init an empty directory; the directories above STORE are where the store lives, which is the ruling on the store's location, not this contract"
       - "of two inits at once, one sets the writer; the other may be refused, and run again it reports the writer that was set"
       - "a put by another writer, or with no writer named, is refused"
       - "the writer is checked by name; stopping other processes from writing at all is the job of the store location's file permissions, decided with the ruling on where the store lives"
@@ -141,7 +145,7 @@ proof_obligations:
     applies_to: verify_nonvacuous
   - id: ESV-INV-011
     type: invariant
-    property: "Verify passes only when STORE/<H> is a real directory and every entry under it is a valid record"
+    property: "Verify passes only when STORE/<H> is a real directory and every entry it counts is a valid record; entries(S/H) is every STORE/<H>/<kind>/<name> and every entry of STORE/<H>/ that is not a kind directory"
     formal: "verify(H) = 0 ⟺ ¬symlink(S/H) ∧ entries(S/H) ≠ ∅ ∧ ∀ e ∈ entries(S/H): valid(e, H, W)"
     applies_to: verify_nonvacuous
   - id: ESV-INV-012
@@ -173,20 +177,20 @@ proof_obligations:
 falsification_tests:
   - id: FALSIFY-ESV-001
     rule: "The store is right on every row of its case table"
-    prediction: "init makes one writer and refuses a second; a put records once, says unchanged for the same body and refuses another body; a put of an empty body records nothing and makes nothing under STORE/<H>/; get returns the body byte for byte, with no final newline or with binary bytes; a name of 128 characters is a key and one of 129 is a caller error; a record asked for under another H is refused, naming in full every H it is filed under, even two that share a prefix; verify of an H with no records is refused; after four more records are added and a rewrite is refused, the earlier receipts read the same, byte for byte, in get and in verify; every planted bad record (a copy from another H, a symlink, an appended byte, a moved file, another writer, no header, an old header, a header with a NUL byte, an empty body, a stray directory and a stray file) is refused by name while the good records stay valid; a put or a get through a symlinked H or kind directory, onto a symlink or a directory, with a STORE/.tmp that links out of the store, or of a FIFO, is refused, and the refused puts write nothing outside the store; a WRITER that is a symlink is never adopted, and the STORE/.tmp/ of a killed init is"
+    prediction: "init makes one writer and refuses a second; a put records once, says unchanged for the same body and refuses another body; a put of an empty body records nothing and makes nothing under STORE/<H>/; get returns the body byte for byte, with no final newline or with binary bytes; a name of 128 characters is a key and one of 129 is a caller error; a record asked for under another H is refused, naming in full every H it is filed under, even two that share a prefix; verify of an H with no records is refused; after four more records are added and a rewrite is refused, the earlier receipts read the same, byte for byte, in get and in verify; every planted bad record (a copy from another H, a symlink, an appended byte, a moved file, another writer, no header, an old header, a header with a NUL byte, an empty body, a stray directory and a stray file) is refused by name while the good records stay valid; a put or a get through a symlinked H or kind directory, onto a symlink or a directory, with a STORE/.tmp that links out of the store, or of a FIFO, is refused, and the refused puts write nothing outside the store; a WRITER that is a symlink is never adopted, the STORE/.tmp/ of a killed init is taken over by the next init, and init over a STORE/.tmp that is a symlink or that has anything beside it is refused; a refused get prints nothing on standard output; a put of a file named - records that file, not standard input; an empty kind directory is not counted, and an H that holds only one is refused; a STORE that links to a directory that is not a store is refused and nothing is written there, and one that links to a store reads that store"
     test: "bash scripts/release/evidence_store.sh --selftest"
     if_fails: "Adding evidence could void a receipt, a receipt could be read for code it was not measured on, a write could land outside the store, or a store with no records could pass: the release would read evidence it cannot trust"
 
   - id: FALSIFY-ESV-002
     rule: "The case table can still fail on the defects it names"
-    prediction: "Each planted mutant (H, kind, name or writer not checked, the body not hashed, the header bytes not compared, an empty body kept, a symlink followed, the header not required, a record overwritten, ln without -T, any writer accepted, the other H not named or named by a prefix, an empty verify passing, a refusal not reaching the exit code, stray entries skipped, an H of any case or length, a dotted name, a name of any length or a limit off by one, init adopting a non-empty directory or a second writer, any kind, get or verify skipping the check, get, put or verify following a symlinked H or kind directory, put following a symlinked STORE/.tmp, put taking a symlink or a directory at the record's path, get reading a non-file, an empty put making directories, init or the reader following a symlinked WRITER, init counting STORE/.tmp/ or ignoring what else is there, init taking a symlinked STORE/.tmp) makes the case table print BROKE; a mutant that changes nothing, does not parse or does not run is never a kill; the harness exits 1 if any mutant survives"
+    prediction: "Each planted mutant (H, kind, name or writer not checked, the body not hashed, the header bytes not compared, an empty body kept, a symlink followed, the header not required, a record overwritten, ln without -T, any writer accepted, the other H not named or named by a prefix, an empty verify passing, a refusal not reaching the exit code, stray entries skipped, an H of any case or length, a dotted name, a name of any length or a limit off by one, init adopting a non-empty directory or a second writer, any kind, get or verify skipping the check, get, put or verify following a symlinked H or kind directory, put following a symlinked STORE/.tmp, put taking a symlink or a directory at the record's path, get reading a non-file, an empty put making directories, init or the reader following a symlinked WRITER, init counting STORE/.tmp/ or ignoring what else is there, init taking a symlinked STORE/.tmp, get printing its refusals on standard output, put reading a file named - as standard input, verify reading a non-file) makes the case table print BROKE; a mutant that changes nothing, does not parse or does not run is never a kill; the harness exits 1 if any mutant survives"
     test: "bash scripts/release/evidence_store.sh --mutants"
     if_fails: "The case table is theater: it would pass a store that serves a receipt for code it never measured"
 
 qa_gate:
   id: F-ESV-001
   name: "Evidence lives outside the code it judges: adding a record never voids a receipt, and a record for another code identity is refused by name"
-  description: "scripts/release/evidence_store.sh keeps receipts, rulings, known-failure marks and release notes under STORE/<H>/<kind>/<name>, written once by one writer, each checked by its own header bytes and body hash against the H asked for, with no symlink followed inside the store. Not decided and not claimed here: how H is computed (BLD-002 R1), where the store lives and who may write to it at the file-system level (BLD-002 RQ-6), and the publish check reading the store, which waits for that ruling; until then no check moves and no gate changes. The case table has no row for, and so does not claim, a symlink swapped in while a get reads (cp -P copies it as a symlink, which is refused), two inits at the same moment, or the signal traps that remove temporary files; a writer that edits the store by hand while another process reads it is outside this contract."
+  description: "scripts/release/evidence_store.sh keeps receipts, rulings, known-failure marks and release notes under STORE/<H>/<kind>/<name>, written once by one writer, each checked by its own header bytes and body hash against the H asked for, with no symlink followed inside the store. Not decided and not claimed here: how H is computed (BLD-002 R1), where the store lives and who may write to it at the file-system level (BLD-002 RQ-6), and the publish check reading the store, which waits for that ruling; until then no check moves and no gate changes. The case table has no row for, and so does not claim, a symlink swapped in while a get reads (cp -P copies it as a symlink, which is refused), two inits at the same moment, the signal traps that remove temporary files, or a power loss between a put's write and its ln (sync flushes the record first; no row can cut the power); a writer that edits the store by hand while another process reads it is outside this contract."
   checks:
     - "record_validity"
     - "write_once"

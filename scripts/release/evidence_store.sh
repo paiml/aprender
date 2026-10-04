@@ -15,7 +15,8 @@
 #                                        release-note
 #           STORE/.tmp/                  unfinished writes, never read
 #           H is 40 or 64 lowercase hex. How H is computed is not decided here (BLD-002 R1), and
-#           neither is where STORE lives: it is an argument.
+#           neither is where STORE lives: it is an argument. A STORE path that is a symlink names the
+#           directory it points to; inside the store, no symlink is ever followed.
 # RECORD    Seven header lines, then the body byte for byte:
 #             evidence-store-record/v1 | h <H> | kind <kind> | name <name> | writer <id> |
 #             body-sha256 <64 hex> | --
@@ -26,8 +27,9 @@
 # EXIT      0 done; 1 REFUSED, with a FAIL line naming every record or write refused; 3 caller error
 # USAGE     evidence_store.sh init STORE WRITER-ID
 #           EVIDENCE_STORE_WRITER=<id> evidence_store.sh put STORE H KIND NAME FILE
-#           evidence_store.sh get STORE H KIND NAME       prints the body; nothing when refused
-#           evidence_store.sh verify STORE H              one line per record under H
+#           evidence_store.sh get STORE H KIND NAME       prints the body on stdout; when refused,
+#                                                         nothing there, and its FAIL line on stderr
+#           evidence_store.sh verify STORE H              one line per entry it counts, then a count
 #           evidence_store.sh --selftest | --mutants | -h
 set -uo pipefail
 export LC_ALL=C
@@ -162,12 +164,15 @@ cmd_put() {
     # The body is copied first and hashed from the copy, so the hash is of the bytes recorded.
     TMPB="$(mktemp "$store/.tmp/body.XXXXXX")" || { refuse "mktemp failed in $store/.tmp"; return 1; }
     TMPF="$(mktemp "$store/.tmp/put.XXXXXX")" || { refuse "mktemp failed in $store/.tmp"; return 1; }
-    if ! cat -- "$src" > "$TMPB"; then refuse "could not copy $src"; return 1; fi
+    # Read by redirection: cat takes an operand - as stdin, even after --, so a file named - would be skipped.
+    if ! cat < "$src" > "$TMPB"; then refuse "could not copy $src"; return 1; fi
     if ! sum="$(sha256sum < "$TMPB")"; then refuse "could not hash $src"; return 1; fi
     sum="${sum%% *}"
     # Refused before anything is made under STORE/<H>/.
     if [ "$sum" = "$EMPTY_SHA256" ]; then refuse "$kind/$name for H=$(short "$h"): $src is empty, so nothing is recorded"; return 1; fi
-    if ! header "$h" "$kind" "$name" "$W" "$sum" > "$TMPF" || ! cat -- "$TMPB" >> "$TMPF"; then
+    # sync puts the bytes on disk before ln gives them a name, so a power loss cannot leave a short
+    # record at the path. No row can show a power loss: this is stated, not tested.
+    if ! header "$h" "$kind" "$name" "$W" "$sum" > "$TMPF" || ! cat -- "$TMPB" >> "$TMPF" || ! sync -- "$TMPF"; then
         refuse "could not write $kind/$name for H=$(short "$h")"; return 1
     fi
     if ! mkdir -p -- "$store/$h/$kind"; then refuse "could not create $store/$h/$kind"; return 1; fi
@@ -185,6 +190,8 @@ cmd_put() {
     ok "$kind/$name recorded for H=$(short "$h") body-sha256=$why"
 }
 
+# get runs with its stdout sent to stderr and the real stdout on fd 3 (see the dispatch at the end): only
+# the body goes to stdout, so a refusal can never be read as a body.
 cmd_get() {
     [ $# -eq 4 ] || caller_error "get needs STORE H KIND NAME"
     local store="$1" h="$2" kind="$3" name="$4" f d o others='' why
@@ -214,7 +221,7 @@ cmd_get() {
     TMPF="$(mktemp)" || { refuse "mktemp failed: $kind/$name was not read"; return 1; }
     if ! cp -P -- "$f" "$TMPF"; then refuse "$kind/$name for H=$(short "$h") could not be read"; return 1; fi
     if ! why="$(check_record "$TMPF" "$h" "$kind" "$name")"; then refuse "$kind/$name for H=$(short "$h") $why"; return 1; fi
-    tail -n +8 -- "$TMPF"
+    tail -n +8 -- "$TMPF" >&3
 }
 
 cmd_verify() {
@@ -247,7 +254,7 @@ cmd_verify() {
 selftest_cleanup() { case "${tmp:-}" in ''|/) return 0 ;; *) rm -rf -- "${tmp:?}" ;; esac; }
 
 selftest() {
-    local tmp pass=0 fail=0 s s2 s3 s5 s6 out before after rc b n128 n129
+    local tmp pass=0 fail=0 s s2 s3 s5 s6 s7 out before after rc b n128 n129 so here
     local H1=1111111111111111111111111111111111111111
     local H2=aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa
     local H3=ffffffffffffffffffffffffffffffffffffffff
@@ -469,6 +476,37 @@ selftest() {
     row 'FALSIFIER: init over .tmp and anything else' 1 'is not empty and has no WRITER' -- init "$tmp/tmpmore" train
     row 'FALSIFIER: init over a .tmp that is a symlink' 1 'is not empty and has no WRITER' -- init "$tmp/tmplink" train
 
+    echo "--- get's stdout, a file named -, empty kind directories, a STORE reached by a symlink ---"
+    s7="$tmp/store7"; here="$PWD"
+    bash "$SCRIPT_PATH" init "$s7" train > /dev/null 2>&1
+    rc=0; so="$(timeout 20 bash "$SCRIPT_PATH" get "$s7" "$H1" receipt r1 < /dev/null 2> "$tmp/err")" || rc=$?
+    if [ "$rc" = 1 ] && [ -z "$so" ] && grep -q -F 'FAIL  STORE receipt/r1 is not recorded' "$tmp/err"; then
+        printf '  ok    %-66s exit=1, stdout empty\n' 'FALSIFIER: a refused get prints nothing on stdout'; pass=$((pass + 1))
+    else
+        printf '  BROKE %-66s exit %s, stdout: %s\n' 'FALSIFIER: a refused get prints nothing on stdout' "$rc" "$so"; fail=$((fail + 1))
+    fi
+    mkdir -p "$tmp/dash"; printf 'the file named dash\n' > "$tmp/dash/-"
+    cd -- "$tmp/dash" || return 2
+    row 'FALSIFIER: put of a file named - records that file, not stdin' 0 'receipt/dash recorded for H=111111111111' -- put "$s7" "$H1" receipt dash -
+    cd -- "$here" || return 2
+    body_row 'get returns the bytes of the file named -' "$s7" "$H1" receipt dash "$tmp/dash/-"
+    mkdir -p "$s7/$H1/ruling" "$s7/$H3/receipt"
+    row 'verify does not count an empty kind directory' 0 '1 checked, 0 refused' -- verify "$s7" "$H1"
+    row 'FALSIFIER: verify an H that holds only an empty kind directory' 1 'nothing to verify is not a pass' -- verify "$s7" "$H3"
+    mkdir -p "$tmp/notastore"; printf 'x\n' > "$tmp/notastore/x"
+    ln -s -- "$tmp/notastore" "$tmp/storelink"
+    ln -s -- "$s7" "$tmp/store7link"
+    before="$(find "$tmp/notastore" | sort)"
+    row 'a STORE that links to a directory with files is not adopted' 1 'is not empty and has no WRITER' -- init "$tmp/storelink" train
+    row 'a STORE that links to a directory with no WRITER is not a store' 3 'it has no WRITER' -- put "$tmp/storelink" "$H1" receipt r1 "$tmp/r1"
+    after="$(find "$tmp/notastore" | sort)"
+    if [ "$before" = "$after" ]; then
+        printf '  ok    %-66s nothing\n' 'a STORE link to a non-store: nothing is written there'; pass=$((pass + 1))
+    else
+        printf '  BROKE %-66s\n  before %s\n  after  %s\n' 'a STORE link to a non-store: nothing is written there' "$before" "$after"; fail=$((fail + 1))
+    fi
+    body_row 'a STORE that links to a store reads that store' "$tmp/store7link" "$H1" receipt dash "$tmp/dash/-"
+
     printf -- '--- %s/%s rows ---\n' "$pass" "$((pass + fail))"
     [ "$fail" -eq 0 ]
 }
@@ -544,6 +582,9 @@ load_writer_follows_symlink /^load_writer() {$/,/^}$/s/if \[ -L "\$1\/WRITER" \]
 init_counts_tmp             /^cmd_init() {$/,/^}$/s/; then e=(); fi$/; then :; fi/
 init_ignores_tmp_and_more   /^cmd_init() {$/,/^}$/s/if \[ "\${#e\[@\]}" -eq 1 \] &&/if [ "${#e[@]}" -ge 1 ] \&\&/
 init_takes_tmp_symlink      /^cmd_init() {$/,/^}$/s/ && \[ ! -L "\${e\[0\]}" \]; then e=()/; then e=()/
+check_record_reads_non_file /^check_record() {$/,/^}$/s/if \[ ! -f "\$f" \]; then echo/if false; then echo/
+get_refusals_on_stdout      s/^    get) shift; cmd_get "\$@" 3>&1 1>&2 ;;$/    get) shift; cmd_get "$@" 3>\&1 ;;/
+put_reads_dash_as_stdin     /^cmd_put() {$/,/^}$/s/if ! cat < "\$src" > "\$TMPB"; then/if ! cat -- "$src" > "$TMPB"; then/
 MUTANTS
     printf -- '--- %s/%s mutants killed ---\n' "$pass" "$((pass + fail))"
     [ "$fail" -eq 0 ]
@@ -552,7 +593,7 @@ MUTANTS
 case "${1:-}" in
     init) shift; cmd_init "$@" ;;
     put) shift; cmd_put "$@" ;;
-    get) shift; cmd_get "$@" ;;
+    get) shift; cmd_get "$@" 3>&1 1>&2 ;;
     verify) shift; cmd_verify "$@" ;;
     --selftest) selftest ;;
     --mutants) mutants ;;
