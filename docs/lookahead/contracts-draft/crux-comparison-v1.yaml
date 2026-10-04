@@ -1,18 +1,24 @@
-# DRAFT (la-0.71 look-ahead, branch-only). EXT-24b. Checker:
-# scripts/lookahead/crux_gap_check.py. Landing it for real means a Rust rule in
-# crates/aprender-contracts/src/schema/ (its own ticket); this is the oracle.
+# DRAFT (look-ahead, branch-only). EXT-24b. Moves into contracts/ when EXT-24b is minted.
+# Checker: scripts/lookahead/crux_gap_check.py, an external check run by hand. No build,
+# test, gate or CI job invokes it. Landing it means a Rust rule in
+# crates/aprender-contracts/src/schema/ (its own ticket). Before this file moves into
+# contracts/, its self-test cases port to Rust with fixtures/crux_gap/ as data, plus the
+# planted cases the qa_gate proposes.
 metadata:
   id: crux-comparison-v1
-  version: "0.1.0-draft"
+  kind: schema
+  version: "0.2.0-draft"
   status: draft
   description: >
     Optional `crux_comparison:` block on a contracts/crux-*.yaml contract. It holds an
     EXT-001 §10 surface's arms, metric and R-15 gap delta. It reuses gap_effect
     (closes|widens|none, PR-REVIEW-SKILL-002 §3.C) and the comparator block
-    (§3.C.1) instead of minting new vocabulary.
+    (§3.C.1) instead of minting new vocabulary. The checker runs only on a contract
+    for a §10 surface; there, a missing block or an empty arm list is RED (G0).
   references:
   - 'docs/specifications/PR-REVIEW-SKILL-002-v2.md §3.C, §3.C.1 (origin/main)'
-  - 'cop-inbox/handoff/EXT-001-dogfood-model-lifecycle.md R-15..R-17, S-12..S-14, §10'
+  - 'docs/specifications/EXT-001-dogfood-model-lifecycle.md R-15..R-17, S-12..S-14, §10 (staged on la-71/4487-obs-00, not yet on main)'
+  - 'crates/aprender-contracts/src/schema/validator.rs CRUX_COMPETITORS (G8; a self-test run reads fixtures/crux_gap/registry.json instead)'
 equations:
   delta:
     formula: 'gap_effect = none if prev undefined or now = prev; widens if now is worse than prev under metric.direction; else closes'
@@ -20,20 +26,137 @@ equations:
     formula: 'gap_effect ∈ {closes, widens} ⇒ ∀ arm: comparator complete ∧ comparator ≠ unrunnable-hermetically'
 rules: [G0 block+arms present, G1 vocabulary, G2 comparator complete, G3 unrunnable report-only, G4 conceded no speed, G5 like-for-like quant, G6 delta agrees, G7 pin sha256, G8 registered competitor]
 falsification_tests:
-  - {id: FALSIFY-CRUXGAP-001, fixture: crux_gap/control-closes.yaml, expect: 0}
-  - {id: FALSIFY-CRUXGAP-002, fixture: crux_gap/control-first-record-none.yaml, expect: 0}
-  - {id: FALSIFY-CRUXGAP-003, fixture: crux_gap/control-unrunnable-report-only.yaml, expect: 0}
-  - {id: FALSIFY-CRUXGAP-004, fixture: crux_gap/G1-vocab.yaml, expect: 2, rule: G1}
-  - {id: FALSIFY-CRUXGAP-005, fixture: crux_gap/G2-gap-effect-no-comparator.yaml, expect: 2, rule: G2}
-  - {id: FALSIFY-CRUXGAP-006, fixture: crux_gap/G2-partial-comparator.yaml, expect: 2, rule: G2}
-  - {id: FALSIFY-CRUXGAP-007, fixture: crux_gap/G3-unrunnable-claims.yaml, expect: 2, rule: G3}
-  - {id: FALSIFY-CRUXGAP-008, fixture: crux_gap/G4-conceded-speed.yaml, expect: 2, rule: G4}
-  - {id: FALSIFY-CRUXGAP-009, fixture: crux_gap/G5-quant-mismatch-unlabelled.yaml, expect: 2, rule: G5}
-  - {id: FALSIFY-CRUXGAP-010, fixture: crux_gap/G6-says-closes-but-widened.yaml, expect: 2, rule: G6}
-  - {id: FALSIFY-CRUXGAP-011, fixture: crux_gap/G6-control-higher-is-better.yaml, expect: 0}
-  - {id: FALSIFY-CRUXGAP-012, fixture: crux_gap/G6-higher-is-better-flipped.yaml, expect: 2, rule: G6}
-  - {id: FALSIFY-CRUXGAP-013, fixture: crux_gap/G7-no-pin.yaml, expect: 2, rule: G7}
-  - {id: FALSIFY-CRUXGAP-014, fixture: crux_gap/G8-unregistered.yaml, expect: 2, rule: G8}
-  - {id: FALSIFY-CRUXGAP-015, fixture: crux_gap/G0-no-block.yaml, expect: 2, rule: G0}
-  - {id: FALSIFY-CRUXGAP-016, fixture: crux_gap/G0-no-arms.yaml, expect: 2, rule: G0}
-mutation_record: "15/15 sed mutants killed by --self-test (2026-10-03, la-0.71)"
+  - id: FALSIFY-CRUXGAP-001
+    rule: "control: a closing gap with full, pinned, like-for-like arms is accepted"
+    fixture: fixtures/crux_gap/control-closes.yaml
+    expect: 0
+    prediction: "Three registered arms, each with a full comparator and a pin sha256 (the UD-Q4_K_XL arm labelled separate_arm), and kl_divergence_vs_bf16 (lower is better) going from 0.02 to 0.015 with gap_effect closes: the checker exits 0 and prints no violation."
+    test: "crux_gap_check.py --self-test, case control-closes"
+    if_fails: "A rule fires on a conforming block: the comparator, pin, quant or delta check rejects a clean arm."
+  - id: FALSIFY-CRUXGAP-002
+    rule: "control: a first record, with no previous gap, is gap_effect none (R-15)"
+    fixture: fixtures/crux_gap/control-first-record-none.yaml
+    expect: 0
+    prediction: "gap {now: 0.015} with no previous value, and gap_effect none: the checker exits 0. The first record only sets the baseline."
+    test: "crux_gap_check.py --self-test, case control-first-record-none"
+    if_fails: "G6 reads a missing previous gap as a number, or wants closes or widens on a first record."
+  - id: FALSIFY-CRUXGAP-003
+    rule: "control: an unrunnable-hermetically arm is allowed while the block claims nothing (S-12)"
+    fixture: fixtures/crux_gap/control-unrunnable-report-only.yaml
+    expect: 0
+    prediction: "A fourth arm, wandb, has comparator unrunnable-hermetically and no pin; the gap is unchanged (0.02 to 0.02) and gap_effect is none. The checker exits 0: the arm is report-only, G3 does not fire, and G7 does not ask it for a pin."
+    test: "crux_gap_check.py --self-test, case control-unrunnable-report-only"
+    if_fails: "G3 fires without a claim, or G7 asks an unrunnable arm for a pin sha256."
+  - id: FALSIFY-CRUXGAP-004
+    rule: "G1: gap_effect is one of closes, widens, none (PR-REVIEW-SKILL-002 §3.C)"
+    fixture: fixtures/crux_gap/G1-vocab.yaml
+    expect: 2
+    prediction: "gap_effect improves: the checker exits 2 with one G1 line that names 'improves' and lists the three allowed values, and no other line."
+    test: "crux_gap_check.py --self-test, case G1-vocab"
+    if_fails: "The vocabulary is not checked, and an unknown effect passes every other rule unseen: G6 skips any effect outside the vocabulary."
+  - id: FALSIFY-CRUXGAP-005
+    rule: "G2: closes or widens needs a full comparator on every arm (§3.C.1)"
+    fixture: fixtures/crux_gap/G2-gap-effect-no-comparator.yaml
+    expect: 2
+    prediction: "gap_effect closes, and the bartowski arm has no comparator: the checker exits 2 with one line, 'G2 bartowski: gap_effect closes without a full comparator', followed by the five field names, and no other line."
+    test: "crux_gap_check.py --self-test, case G2-gap-effect-no-comparator"
+    if_fails: "G2 accepts an arm with no comparator, so a claim rests on an arm nobody ran."
+  - id: FALSIFY-CRUXGAP-006
+    rule: "G2: a comparator missing one field is not full"
+    fixture: fixtures/crux_gap/G2-partial-comparator.yaml
+    expect: 2
+    prediction: "The unsloth arm's comparator lacks env_sha256 and has the other four fields: the checker exits 2 with one G2 line for unsloth and no other line."
+    test: "crux_gap_check.py --self-test, case G2-partial-comparator (env_sha256 is the only field planted missing; see qa_gate)"
+    if_fails: "comparator_full wants some field, not all five, or does not check env_sha256."
+  - id: FALSIFY-CRUXGAP-007
+    rule: "G3: an unrunnable-hermetically arm is report-only and backs no claim (S-12)"
+    fixture: fixtures/crux_gap/G3-unrunnable-claims.yaml
+    expect: 2
+    prediction: "The wandb arm is unrunnable-hermetically in a block that says gap_effect closes: the checker exits 2 with the single line 'G3 wandb: unrunnable-hermetically arm carries gap_effect closes'."
+    test: "crux_gap_check.py --self-test, case G3-unrunnable-claims"
+    if_fails: "G3 does not fire, so a claim cites an arm that cannot be pinned, which S-12 forbids."
+  - id: FALSIFY-CRUXGAP-008
+    rule: "G4: a conceded arm gets no speed gate (R-16, S-13)"
+    fixture: fixtures/crux_gap/G4-conceded-speed.yaml
+    expect: 2
+    prediction: "The unsloth arm is conceded and the metric is train_step_s: the checker exits 2 with the single line 'G4 unsloth: conceded arm on speed metric train_step_s'. The two arms that are not conceded get no G4 line."
+    test: "crux_gap_check.py --self-test, case G4-conceded-speed (train_step_s is the only speed metric planted; see qa_gate)"
+    if_fails: "G4 lets a conceded arm race on speed, or flags every arm of a speed metric."
+  - id: FALSIFY-CRUXGAP-009
+    rule: "G5: an arm whose quant differs from the subject's is a labelled separate arm (R-17, S-14)"
+    fixture: fixtures/crux_gap/G5-quant-mismatch-unlabelled.yaml
+    expect: 2
+    prediction: "The unsloth UD-Q4_K_XL arm, against subject quant Q4_K_M, has no separate_arm label: the checker exits 2 with the single line 'G5 unsloth: quant UD-Q4_K_XL vs subject Q4_K_M, not labelled separate_arm'."
+    test: "crux_gap_check.py --self-test, case G5-quant-mismatch-unlabelled"
+    if_fails: "G5 compares unlike quants as one arm, which S-14 refuses."
+  - id: FALSIFY-CRUXGAP-010
+    rule: "G6: gap_effect agrees with the previous-to-now gap under the metric's direction (R-15)"
+    fixture: fixtures/crux_gap/G6-says-closes-but-widened.yaml
+    expect: 2
+    prediction: "kl_divergence_vs_bf16 (lower is better) goes from 0.02 to 0.03 and gap_effect says closes: the checker exits 2 with the single line 'G6 gap_effect closes but gap 0.02->0.03 (lower-is-better) is widens'."
+    test: "crux_gap_check.py --self-test, case G6-says-closes-but-widened"
+    if_fails: "G6 trusts the stated effect, so a widened gap reads as closing and never blocks."
+  - id: FALSIFY-CRUXGAP-011
+    rule: "control: on a higher-is-better metric, a rising value closes the gap"
+    fixture: fixtures/crux_gap/G6-control-higher-is-better.yaml
+    expect: 0
+    prediction: "top1_agreement (higher is better) goes from 0.95 to 0.97 and gap_effect says closes: the checker exits 0."
+    test: "crux_gap_check.py --self-test, case G6-control-higher-is-better"
+    if_fails: "G6 ignores metric.direction and reads every metric as lower-is-better."
+  - id: FALSIFY-CRUXGAP-012
+    rule: "G6: on a higher-is-better metric, a falling value widens the gap"
+    fixture: fixtures/crux_gap/G6-higher-is-better-flipped.yaml
+    expect: 2
+    prediction: "top1_agreement (higher is better) goes from 0.95 to 0.93 and gap_effect says closes: the checker exits 2 with the single line 'G6 gap_effect closes but gap 0.95->0.93 (higher-is-better) is widens'."
+    test: "crux_gap_check.py --self-test, case G6-higher-is-better-flipped"
+    if_fails: "The direction test is inverted for a higher-is-better metric."
+  - id: FALSIFY-CRUXGAP-013
+    rule: "G7: a runnable arm pins its artifact sha256"
+    fixture: fixtures/crux_gap/G7-no-pin.yaml
+    expect: 2
+    prediction: "The bartowski arm has a full comparator but no pin.sha256: the checker exits 2 with the single line 'G7 bartowski: runnable arm without pin.sha256'."
+    test: "crux_gap_check.py --self-test, case G7-no-pin"
+    if_fails: "G7 accepts an unpinned runnable arm, so the artifact under the claim can change."
+  - id: FALSIFY-CRUXGAP-014
+    rule: "G8: every arm's competitor is registered (the registry B1 reads)"
+    fixture: fixtures/crux_gap/G8-unregistered.yaml
+    expect: 2
+    prediction: "One arm names mistral_rs, which fixtures/crux_gap/registry.json does not list: the checker exits 2 with the single line 'G8 mistral_rs: competitor not registered'."
+    test: "crux_gap_check.py --self-test, case G8-unregistered"
+    if_fails: "G8 reads a registry other than the one passed, or skips a competitor it does not find."
+  - id: FALSIFY-CRUXGAP-015
+    rule: "G0: a surface contract with no crux_comparison block is RED, not vacuously green"
+    fixture: fixtures/crux_gap/G0-no-block.yaml
+    expect: 2
+    prediction: "A contract with metadata only: the checker exits 2 with the single line 'G0 no crux_comparison block'."
+    test: "crux_gap_check.py --self-test, case G0-no-block"
+    if_fails: "A missing block reads as an empty one, and every rule passes vacuously."
+  - id: FALSIFY-CRUXGAP-016
+    rule: "G0: a block with no arms is RED (vacuous)"
+    fixture: fixtures/crux_gap/G0-no-arms.yaml
+    expect: 2
+    prediction: "A block with arms [] and gap_effect closes: the checker exits 2 with the single line 'G0 crux_comparison has no arms (vacuous)'."
+    test: "crux_gap_check.py --self-test, case G0-no-arms"
+    if_fails: "The per-arm rules pass vacuously over no arms, so a claim stands with nothing measured."
+qa_gate:
+  id: F-CRUXGAP-QA-001
+  name: A crux_comparison block is accepted only when every rule holds
+  description: >
+    Every planted case exits with its expected code. For a RED case the self-test also
+    needs one violation that starts with the planted rule (G0 to G8); it does not check
+    that no other rule fires. On 2026-10-04 each RED case printed only lines of its own
+    rule and each control printed none. Three parts of the rules have no planted case:
+    four of the five comparator fields (only env_sha256 is planted missing), five of the
+    six speed metrics (only train_step_s is planted), and G4's conceded filter (no
+    control has a speed metric, so flagging an arm that is not conceded goes unseen).
+    See falsification.
+  checks:
+    - planted_case_exits_as_expected
+    - red_case_names_its_own_rule
+    - red_case_prints_only_its_own_rule
+    - control_accepted
+  pass_criteria: "crux_gap_check.py --self-test prints 'self-test: 16/16 ok', and each RED case prints only lines of its own rule"
+  falsification: "Measured 2026-10-04 with 30 in-memory mutants: one per rule check, exemption, comparator field and speed metric, plus G6's direction and its two none cases, comparator all to any, and the unrunnable token. 20 are killed, 2 of them by a crash, and 10 survive the self-test: dropping command, version, artifact_sha256 or log_path from the required comparator fields (4); dropping ttft_ms, itl_ms, e2e_ms, load_ms or tok_s from the speed metrics (5); and flagging every arm of a speed metric, not only the conceded ones (1). PROPOSE for the Rust port: a table of planted cases, one per comparator field (5) and one per speed metric (6), and a control with a speed metric and no conceded arm that must exit 0."
+mutation_record: "15/15 sed mutants killed by --self-test (2026-10-03). 10 of 30 in-memory mutants survive (2026-10-04), recorded under qa_gate."
+initial_state: "origin/main 316dee2cd4: none of the 318 contracts/crux-*.yaml carries a crux_comparison block or a gap_effect (2026-10-04). Pointed at one, e.g. crux-A-01-v1.yaml, the checker exits 2 through G0."
+verification: "External check, by hand: python3 scripts/lookahead/crux_gap_check.py --self-test  # 2026-10-04 11:24Z: self-test: 16/16 ok"
