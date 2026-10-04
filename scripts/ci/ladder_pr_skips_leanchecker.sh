@@ -22,38 +22,51 @@ mkdir -p "$TD/lean"
 printf '#!/usr/bin/env bash\nexit "${BUILD_RC:-0}"\n' > "$TD/lean/build.sh"
 printf '#!/usr/bin/env bash\necho "$*" >> "%s/argv"\n' "$TD" > "$TD/pv"
 chmod +x "$TD/pv"
+# A flock that records it was taken, then runs the command: the .lake must be locked on every path.
+mkdir -p "$TD/bin"
+printf "#!/usr/bin/env bash\ntouch \"%s/locked\"\nshift\nexec \"\$@\"\n" "$TD" > "$TD/bin/flock"
+chmod +x "$TD/bin/flock"
 
 fail=0
 row() { # row <name> <got> <want>
     if [ "$2" = "$3" ]; then echo "ok    $1"; else echo "FAIL  $1: got '$2', want '$3'"; fail=1; fi
 }
 
-# pv_argv <sut> <event> [build rc] -> "<rc>|<pv argv, or none>"
+# pv_argv <sut> <event> [build rc] -> "<rc>|<pv argv, or none>|<locked or unlocked>"
 pv_argv() {
     local rc=0
-    rm -f "$TD/argv"
-    ( cd "$TD" && EVENT="$2" BUILD_RC="${3:-0}" PV="$TD/pv" LEAN=lean LOCK="$TD/lock" \
+    rm -f "$TD/argv" "$TD/locked"
+    ( cd "$TD" && PATH="$TD/bin:$PATH" EVENT="$2" BUILD_RC="${3:-0}" PV="$TD/pv" LEAN=lean LOCK="$TD/lock" \
         LOG="$TD/log" bash "$1" discharge > /dev/null 2>&1 ) || rc=$?
-    echo "$rc|$(cat "$TD/argv" 2>/dev/null || echo none)"
+    echo "$rc|$(cat "$TD/argv" 2>/dev/null || echo none)|$([ -e "$TD/locked" ] && echo locked || echo unlocked)"
 }
 
 table() { # table <sut> <label> — the event rows
     local s="$1" l="$2"
     row "$l pull_request: check --strict --comparator, no leanchecker" \
-        "$(pv_argv "$s" pull_request)" "0|discharge check lean --strict --comparator"
+        "$(pv_argv "$s" pull_request)" "0|discharge check lean --strict --comparator|locked"
     row "$l merge_group: same as a PR" \
-        "$(pv_argv "$s" merge_group)" "0|discharge check lean --strict --comparator"
-    row "$l push: discharge run (leanchecker included)" "$(pv_argv "$s" push)" "0|discharge run lean"
-    row "$l schedule (nightly): discharge run" "$(pv_argv "$s" schedule)" "0|discharge run lean"
-    row "$l workflow_dispatch: discharge run" "$(pv_argv "$s" workflow_dispatch)" "0|discharge run lean"
-    row "$l empty event fails safe to the full run" "$(pv_argv "$s" '')" "0|discharge run lean"
+        "$(pv_argv "$s" merge_group)" "0|discharge check lean --strict --comparator|locked"
+    row "$l push: discharge run (leanchecker included)" "$(pv_argv "$s" push)" "0|discharge run lean|locked"
+    row "$l schedule (nightly): discharge run" "$(pv_argv "$s" schedule)" "0|discharge run lean|locked"
+    row "$l workflow_dispatch: discharge run" "$(pv_argv "$s" workflow_dispatch)" "0|discharge run lean|locked"
+    row "$l empty event fails safe to the full run" "$(pv_argv "$s" '')" "0|discharge run lean|locked"
     row "$l PR, build.sh declines (rc 2): rc 2, pv never runs" \
-        "$(pv_argv "$s" pull_request 2)" "2|none"
+        "$(pv_argv "$s" pull_request 2)" "2|none|locked"
     row "$l PR, build.sh fails (rc 1): rc 1, pv never runs" \
-        "$(pv_argv "$s" pull_request 1)" "1|none"
+        "$(pv_argv "$s" pull_request 1)" "1|none|locked"
 }
 
 table "$SUT" real
+
+# The wiring: the table above sets EVENT itself, so check the section hands the real event to
+# both steps that call the script. An unset EVENT would be safe (full) but would silently put
+# the 75-minute leanchecker back on every PR.
+sec="$(awk '/^  provable-ladder:/{on=1; next} on && /^  [a-z]/{exit} on' "$ROOT/ci/sections.yml")"
+row "wiring: both steps get EVENT from github.event_name" \
+    "$(grep -c '^ *EVENT: \${{ github.event_name }}$' <<< "$sec")" 2
+row "wiring: both steps call provable_ladder_discharge.sh (discharge, summary-fresh)" \
+    "$(grep -cE 'scripts/ci/provable_ladder_discharge\.sh (discharge|summary-fresh)$' <<< "$sec")" 2
 
 # summary-fresh rows, on a repo shaped like ours.
 G="$TD/repo"
@@ -92,7 +105,7 @@ if cmp -s "$SUT" "$TD/mutant.sh"; then
     echo "FAIL  mutant: the sed did not change the script (pattern drifted)"; fail=1
 else
     m="$(pv_argv "$TD/mutant.sh" push)"
-    if [ "$m" = "0|discharge run lean" ]; then
+    if [ "$m" = "0|discharge run lean|locked" ]; then
         echo "FAIL  mutant (all events -> pr) survived the push row"; fail=1
     else
         echo "ok    mutant (all events -> pr) caught by the push row ($m)"
