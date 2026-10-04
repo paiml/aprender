@@ -33,6 +33,7 @@
 #
 # Env: MAX_TICKETS=100 MAX_DEPTH=3 MAX_CHILDREN=5 MAX_WIP=2 ACTIVE_DAYS=7 (whole numbers; anything else exits 2)
 #      ROOT_LABEL=epic   ISSUE_TITLE="ISSUE-TREE-001 RED: issue graph lint"
+#      SOURCE_DATE_EPOCH=<whole seconds>  pins the now.txt a hand-run fetch writes (default: the clock); run refuses it
 #      ISSUE_PARENT=<n>  the filed RED issue is linked under it, so the lint's own ticket is never an orphan
 #      ISSUE_MILESTONE=backlog
 set -euo pipefail
@@ -52,10 +53,24 @@ die() { printf 'issue_tree_lint: %s\n' "$1" >&2; exit 2; }
 # The cap counts tickets now: a caller still setting the old knob would lose its cap without a word.
 if [ -n "${MAX_OPEN+set}" ]; then die "MAX_OPEN is gone: the cap is MAX_TICKETS and counts tickets only (ISSUE-TREE-001)"; fi
 # The knobs reach jq through --argjson, where jq sorts a string, [] or {} above every number, so a cap set
-# to one never fires; 1.5 and -1 are not counts either. Whole numbers only.
+# to one never fires; 1.5 and -1 are not counts either. Whole numbers only, spelled digit by digit: in a
+# locale like en_US.UTF-8 the ranges [1-9] and [0-9] also match other scripts' digits, which jq rejects.
+# The group keeps bashrs from reading "][" as an array subscript (SC2180).
 for knob in MAX_TICKETS MAX_DEPTH MAX_CHILDREN MAX_WIP ACTIVE_DAYS; do
-    [[ ${!knob} =~ ^(0|[1-9][0-9]*)$ ]] || die "$knob must be a whole number, got '${!knob}'"
+    [[ ${!knob} =~ ^(0|[123456789]([0123456789])*)$ ]] || die "$knob must be a whole number, got '${!knob}'"
 done
+
+# The snapshot's now: R4 counts a branch whose head is at most ACTIVE_DAYS older. DET002: SOURCE_DATE_EPOCH
+# pins it when set (a fetch run by hand, e.g. to rebuild a past night's window); otherwise the clock, which a
+# live snapshot records. Whole seconds as date +%s writes them, the knob rule: jq alone would also take 1.5,
+# -1, 1e9 or 007 as a time. At most 253402300799, the last second of 9999: check cannot take a five-digit year.
+# A time jq cannot write stops the fetch with exit 2, as any input error does. jq formats it because BSD date
+# has no `-d @`.
+snapshot_now() {
+    [[ ${SOURCE_DATE_EPOCH:-0} =~ ^(0|[123456789]([0123456789])*)$ ]] || die "SOURCE_DATE_EPOCH must be a whole number of seconds, got '${SOURCE_DATE_EPOCH-}'"
+    jq -nr --argjson t "${SOURCE_DATE_EPOCH:-$(date +%s)}" 'if $t > 253402300799 then error("past 9999") else $t | todate end' \
+        || die "SOURCE_DATE_EPOCH must be at most 253402300799 (9999-12-31T23:59:59Z), got '${SOURCE_DATE_EPOCH-}'"
+}
 
 fetch() {
     local dir="$1" repo="${2:-$REPO_DEFAULT}"
@@ -99,7 +114,11 @@ fetch() {
         [ "$(printf '%s' "$page" | jq -r '.data.repository.refs.pageInfo.hasNextPage')" = true ] || break
         cursor=$(printf '%s' "$page" | jq -r '.data.repository.refs.pageInfo.endCursor')
     done
-    date -u +%FT%TZ > "$dir/now.txt"
+    # Through a variable, not a redirect: a bad SOURCE_DATE_EPOCH stops the fetch before now.txt exists, where a
+    # redirect would leave an empty one for check to trip on.
+    local now
+    now=$(snapshot_now)
+    printf '%s\n' "$now" > "$dir/now.txt"
     printf '%s\n' "$repo" > "$dir/repo.txt"
     printf 'fetched %s issues, %s branches into %s\n' \
         "$(wc -l < "$dir/issues.jsonl")" "$(wc -l < "$dir/branches.jsonl")" "$dir" >&2
@@ -208,6 +227,9 @@ file_issue() {
 }
 
 run() {
+    # run reads the live graph, so its now is the clock. A SOURCE_DATE_EPOCH left in the environment (build
+    # tooling exports it) would make R4 count every branch since ACTIVE_DAYS before that date instead.
+    [ -z "${SOURCE_DATE_EPOCH:+set}" ] || die "run: SOURCE_DATE_EPOCH is set; it pins a hand-run fetch only, and run reads the live graph"
     local dir="$1"; shift
     local do_file=0 repo="$REPO_DEFAULT"
     for a in "$@"; do
@@ -285,6 +307,21 @@ third_ticket() { issue 6 '[]' 1 >> "$1/issues.jsonl"; }
 check_rc() { local rc=0; bash "$0" check "$1" >/dev/null 2>&1 || rc=$?; printf '%s' "$rc"; }
 # The exit code of a fresh `check` run with one env knob set: proves the knob reaches the check.
 knob_rc() { local -x "${1:?}"; check_rc "$2"; }
+# The stderr of a fresh `check` run with one env knob set, in locale $3 (a locale the host lacks falls back to C).
+knob_err() { local -x LC_ALL="${3:?}" "${1:?}"; bash "$0" check "$2" 2>&1 >/dev/null || :; }
+# yes when a fresh bash in locale $1 matches an Arabic-Indic digit with [0-9], as a knob check with ranges would.
+range_takes_wide_digit() { local -x LC_ALL="${1:?}"; bash -c 'if [[ ١ =~ ^[0-9]$ ]]; then printf yes; else printf no; fi'; }
+# A fresh `fetch` or `run` ($1) into dir $3 with env assignment $2, against the stub gh in $T/stub (never the
+# network), SOURCE_DATE_EPOCH unset unless $2 sets it. Prints the exit code.
+stub_rc() {
+    local rc=0
+    env -u SOURCE_DATE_EPOCH PATH="$T/stub:$PATH" "${2:?}" bash "$0" "${1:?}" "${3:?}" >/dev/null 2>&1 || rc=$?
+    printf '%s' "$rc"
+}
+# The now of a snapshot with SOURCE_DATE_EPOCH set to $1 (exported, as knob_rc does).
+snap_with() { local -x SOURCE_DATE_EPOCH="$1"; snapshot_now; }
+# failed when that snapshot fails. A die in it ends the command substitution it runs in, so read the status of that.
+snap_fails() { local now; if now=$(snap_with "$1" 2>/dev/null); then printf 'wrote %s' "$now"; else printf failed; fi; }
 
 verdict_of() { local rc=0; check "$1" > "$1/v.json" || rc=$?; printf '%s/%s' "$(jq -r .verdict "$1/v.json")" "$rc"; }
 rule_of() { jq -r ".rules.$2.ok" "$1/v.json"; }
@@ -310,6 +347,14 @@ self_test() {
     expect "an object MAX_CHILDREN stops the run (exit 2): no count is > {} in jq" "2" "$(knob_rc 'MAX_CHILDREN={}' "$T/green")"
     expect "a fractional MAX_WIP stops the run (exit 2)" "2" "$(knob_rc MAX_WIP=1.5 "$T/green")"
     expect "a negative ACTIVE_DAYS stops the run (exit 2): it would empty R4" "2" "$(knob_rc ACTIVE_DAYS=-1 "$T/green")"
+    expect "a zero-padded MAX_WIP stops the run (exit 2): 007 is not how a count is written" "2" "$(knob_rc MAX_WIP=007 "$T/green")"
+    # The next case is a test only where [0-9] matches an Arabic-Indic digit. A host without en_US.UTF-8 falls back
+    # to C, where it does not, and the case would pass with the ranges back; this one makes that host RED instead.
+    local wide_locale=en_US.UTF-8
+    expect "a fresh bash in $wide_locale matches an Arabic-Indic digit with [0-9], so the next case can fail" "yes" \
+        "$(range_takes_wide_digit "$wide_locale")"
+    expect "Arabic-Indic digits in MAX_TICKETS stop the run at the knob check, even in $wide_locale where [0-9] matches them" \
+        "1" "$(knob_err 'MAX_TICKETS=١٠٠' "$T/green" "$wide_locale" | grep -c 'MAX_TICKETS must be a whole number')"
     expect "the old MAX_OPEN knob stops the run (exit 2), never ignored" "2" "$(knob_rc MAX_OPEN=1 "$T/green")"
     expect "an empty MAX_OPEN stops the run too (the knob is gone, not defaulted)" "2" "$(knob_rc MAX_OPEN= "$T/green")"
 
@@ -419,6 +464,43 @@ self_test() {
 
     expect "summary line" "ISSUE-TREE-001 RED: tickets 2/100, orphans 1, depth>3 0, fanout>5 0, wip>2 0 workers; not capped: open 6, roots 1" \
         "$(summary < "$T/orphan/v.json")"
+
+    # The now of a snapshot. The stub gh answers every query with one empty, final page: fetch and run go offline.
+    mkdir -p "$T/stub"
+    cat > "$T/stub/gh" <<'STUB'
+#!/usr/bin/env bash
+printf '%s\n' '{"data":{"repository":{"issues":{"pageInfo":{"hasNextPage":false},"nodes":[]},"refs":{"pageInfo":{"hasNextPage":false},"nodes":[]}}}}'
+STUB
+    chmod +x "$T/stub/gh"
+    expect "SOURCE_DATE_EPOCH pins the now of the snapshot" "2026-09-21T14:13:20Z" "$(snap_with 1790000000)"
+    expect "an unset SOURCE_DATE_EPOCH is the clock: a now after 2026-10-04, the day this case was written" "true" \
+        "$(unset SOURCE_DATE_EPOCH; snapshot_now | jq -R 'fromdateiso8601 >= 1791072000')"
+    expect "an empty SOURCE_DATE_EPOCH is the clock too, as an unset one is" "true" \
+        "$(snap_with '' | jq -R 'fromdateiso8601 >= 1791072000')"
+    expect "a SOURCE_DATE_EPOCH that is not a number fails the snapshot: no now is written from it" "failed" "$(snap_fails x)"
+    expect "a fractional SOURCE_DATE_EPOCH fails the snapshot too: jq alone would write a now from 1.5" "failed" "$(snap_fails 1.5)"
+    expect "a negative SOURCE_DATE_EPOCH fails the snapshot" "failed" "$(snap_fails -1)"
+    expect "an exponent SOURCE_DATE_EPOCH fails the snapshot" "failed" "$(snap_fails 1e9)"
+    expect "a zero-padded SOURCE_DATE_EPOCH fails the snapshot: date +%s never pads, and jq would take 007 as 7" \
+        "failed" "$(snap_fails 007)"
+    expect "a whole number past the range of jq fails the snapshot, never falls back to the clock" "failed" \
+        "$(snap_fails 99999999999999999999)"
+    expect "the last second of 9999 is still a now" "9999-12-31T23:59:59Z" "$(snap_with 253402300799)"
+    expect "a SOURCE_DATE_EPOCH past 9999-12-31 fails the snapshot: check cannot take a five-digit year" "failed" \
+        "$(snap_fails 253402300800)"
+    expect "fetch with SOURCE_DATE_EPOCH set runs (exit 0)" "0" "$(stub_rc fetch SOURCE_DATE_EPOCH=1790000000 "$T/pinned")"
+    expect "fetch writes the pinned now to now.txt" "2026-09-21T14:13:20Z" "$(cat "$T/pinned/now.txt")"
+    expect "fetch with a fractional SOURCE_DATE_EPOCH stops (exit 2)" "2" "$(stub_rc fetch SOURCE_DATE_EPOCH=1.5 "$T/junk")"
+    expect "... and leaves no now.txt for check to read" "absent" \
+        "$(if [ -e "$T/junk/now.txt" ]; then printf present; else printf absent; fi)"
+    expect "fetch with a SOURCE_DATE_EPOCH jq cannot date stops with exit 2, not the exit code of jq" "2" \
+        "$(stub_rc fetch SOURCE_DATE_EPOCH=99999999999999999999 "$T/junk-far")"
+    expect "run refuses a set SOURCE_DATE_EPOCH (exit 2) before it fetches" "2" "$(stub_rc run SOURCE_DATE_EPOCH=0 "$T/run-pinned")"
+    expect "... and wrote nothing" "absent" "$(if [ -e "$T/run-pinned" ]; then printf present; else printf absent; fi)"
+    expect "run with no SOURCE_DATE_EPOCH fetches and checks: the empty graph of the stub is NO-DATA (exit 20)" "20" \
+        "$(stub_rc run ACTIVE_DAYS=7 "$T/run-clock")"
+    expect "run with an empty SOURCE_DATE_EPOCH goes on too: empty means unset, as in the snapshot" "20" \
+        "$(stub_rc run SOURCE_DATE_EPOCH= "$T/run-empty")"
 
     if [ "$SELF_FAILS" -eq 0 ]; then printf 'PASS  issue_tree_lint self-test\n'; else printf 'FAIL  %s case(s)\n' "$SELF_FAILS"; return 1; fi
 }
