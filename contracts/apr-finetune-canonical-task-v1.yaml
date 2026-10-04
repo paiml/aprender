@@ -61,7 +61,7 @@ falsification_tests:
   if_fails: 'a flag is parsed and ignored, so the receipt claims a recipe that did not run'
 - id: FALSIFY-FT-TASK-003
   rule: Planted falsifier — an unmatched target refuses
-  prediction: '--targets q_proj,nonexistent_proj exits non-zero before step 1, with a message that names nonexistent_proj, and writes no receipt, while the same run with --targets q_proj completes step 1. The control and the message make the refusal the matcher''s: at 316dee2cd4 apr finetune has no --targets flag, so clap refuses it as unknown (exit 2) before step 1 and writes no receipt, and a check on the exit code alone would pass there'
+  prediction: '--targets q_proj,v_proj,nonexistent_proj exits non-zero before step 1, with a message that names nonexistent_proj, and writes no receipt, while the same run with --targets q_proj,v_proj completes step 1. The control lists both q_proj and v_proj because, until R15 cell C3, the instruct pipeline refuses any other list, q_proj alone included (FALSIFY-LORA_TARGET_SELECTION_V1_004). The control and the message make the refusal the matcher''s: at 316dee2cd4 apr finetune has no --targets flag, so clap refuses it as unknown (exit 2) before step 1 and writes no receipt, and a check on the exit code alone would pass there'
   test: 'tiny CPU run'
   if_fails: 'a typo silently trains fewer adapters, the half-targets case T2 exists to catch'
 - id: FALSIFY-FT-TASK-004

@@ -5,7 +5,7 @@ metadata:
   registry: true
   references:
     - "Hu et al. (2022). LoRA: Low-Rank Adaptation of Large Language Models."
-    - "docs/specifications/aprender-train/r15-cuda-lora-cells.md (0.72 R15 cell C2; 1.1.0 adds FALSIFY-LORA_TARGET_SELECTION_V1_004)"
+    - "docs/specifications/aprender-train/r15-cuda-lora-cells.md (0.72 R15 cell C2; 1.1.0 adds the proposed rows FALSIFY-LORA_TARGET_SELECTION_V1_004 and _005)"
   description: "LoRA target module selection"
 
 name: lora-target-selection
@@ -38,7 +38,14 @@ falsification:
     evidence: "cargo test --lib"
 
   # Row 003 is R15a C2a's: a loaded PEFT adapter is routed by tensor name, or refused.
+  # Row 004 is R15a C2b's, the host half of cell C2; C2b replaces this wording with
+  # its own when it merges. Row 005 is C2c's, the rest of C2.
   - id: FALSIFY-LORA_TARGET_SELECTION_V1_004
-    description: "PROPOSED (0.72 R15 cell C2, la-0.72): on the CUDA NF4 instruct path, the five sites hard-coded to a_q, b_q, a_v, b_v at 316dee2cd4 (build_lora_layers constructors.rs:358, pushes :383/:397; inject_adapter_weights :428, idx*2 + !is_q; CudaLoraGradWorkspace cuda_block.rs:3853; GpuLoraOptimizerState :3954; gradient clipping :3902-3936) all take one target set from LoRAConfig (lora/config.rs: target_modules, or all_linear = q/k/v/o/gate/up/down). On a tiny dense NF4 model with L layers: q_proj,v_proj gives today's 4·L adapter tensors with the same names and shapes, and two steps are bit-identical to the C1 path, compared on step 2's gradients with the FALSIFY-LORA_GRADIENT_FLOW_V1_004 harness (at step 1, B = 0 makes every dA zero, so one step cannot see the A side); all_linear gives 14·L, an A and a B for each of the seven modules; the grad workspace, the optimizer state and the clip norm each cover exactly those 14·L tensors. On a hybrid model the count is one A/B pair per matched module, not 7 per layer. Planted: one site left Q/V-only (e.g. GpuLoraOptimizerState with 4 slots per layer) must be RED. An unmatched target name refuses before step 1 (FALSIFY-FT-TASK-003)"
-    test: "[U] not written; needs cargo + CUDA after LIVE 0.70.1, GPU lock around the test binary only"
+    description: "PROPOSED (0.72 R15 cell C2b, la-0.72): the instruct pipeline takes its LoRA targets from one list in InstructConfig. At 316dee2cd4 there is none: build_lora_layers (constructors.rs:358, pushes :383/:397) makes a q_proj and a v_proj adapter for every layer, and inject_adapter_weights (:428, idx*2 + !is_q) places only q_proj and v_proj tensors. The list is parsed from module names or the all_linear, attention, qv and mlp shorthands (lora/config.rs), in the order q, k, v, o, gate, up, down without repeats; an empty list or any other name is refused before step 1, naming it (FALSIFY-FT-TASK-003); the default is q_proj, v_proj. build_lora_layers makes one adapter per layer and target at slot |T|·layer + pos_T(target), with its projection's shape and base weight, and inject_adapter_weights places tensors by the same slot map: all_linear gives 7·L adapters, and q_proj, v_proj today's 2·L in the same slots. Until row 005 and cell C3 land, the forward, the CUDA blocks and their sync read only slot 2·layer as q_proj and 2·layer+1 as v_proj, so every constructor refuses any other list before it builds or loads a weight, naming each target that would not train and each one missing. Planted: build_lora_layers ignoring the list, routing by the q_proj and v_proj names alone, and removing the check from a constructor must each be RED."
+    test: "[U] not written on this branch; R15a C2b writes it (cargo, no GPU)"
+    evidence: "none yet; desk read of 316dee2cd4 (docs/specifications/aprender-train/r15-cuda-lora-cells.md, C2)"
+
+  - id: FALSIFY-LORA_TARGET_SELECTION_V1_005
+    description: "PROPOSED (0.72 R15 cell C2c, la-0.72): on the CUDA NF4 instruct path, the sites that row 004 leaves hard-coded to a_q, b_q, a_v, b_v (at 316dee2cd4: CudaLoraGradWorkspace cuda_block.rs:3853; GpuLoraOptimizerState :3954; gradient clipping :3902-3936; and the NF4 blocks' adapter fields, filled through lora_slot(2·layer) and lora_slot(2·layer + 1) and read back by sync_lora_to_cpu) all take their per-layer set from row 004's list, by its slot map. On a tiny dense NF4 model with L layers: q_proj,v_proj gives today's 4·L adapter tensors with the same names and shapes, and two steps are bit-identical to the C1 path, compared on step 2's gradients with the FALSIFY-LORA_GRADIENT_FLOW_V1_004 harness (at step 1, B = 0 makes every dA zero, so one step cannot see the A side); built for all_linear, the grad workspace, the optimizer state and the clip norm each cover exactly 14·L tensors, an A and a B for each of the seven modules. On a hybrid model the count is one A/B pair per matched module, not 7 per layer. Planted: one site left Q/V-only (e.g. GpuLoraOptimizerState with 4 slots per layer) must be RED. Row 004's constructor check stays until cell C3 trains every target the forward reads."
+    test: "[U] not written; needs cargo + CUDA, GPU lock around the test binary only"
     evidence: "none yet; desk read of 316dee2cd4 (docs/specifications/aprender-train/r15-cuda-lora-cells.md, C2)"
