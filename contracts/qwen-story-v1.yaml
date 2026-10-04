@@ -48,6 +48,7 @@ equations:
       - "A beat with PMAT_HUNT=1 emits AT LEAST ONE row: a header with nothing under it fails the beat"
       - "Row formatters read pmat's own JSON keys — function_name, impact_score, commit_count, fault_annotations"
       - "Hunts are scoped by --path alone; a free-text query is a relevance filter applied BEFORE --path and collapses a module-scoped hunt to nothing"
+      - "Gap, churn and fault rows come from ONE whole-tree pmat query per kind per story run, scoped to each hunted path by file_path; no pmat query is issued per path"
       - "Every path a beat hunts exists in the tree"
       - "Manifest is consumed by the daily cron to detect drift over time"
 

@@ -37,6 +37,8 @@ MODELS_DIR="${MODELS_DIR:-$HOME/models}"
 PMAT_HUNT="${PMAT_HUNT:-1}"  # 1 = run pmat full audit per beat
 TMPDIR_STORY="${TMPDIR_STORY:-/tmp/qwen-story-$$}"
 mkdir -p "$TMPDIR_STORY"
+# One whole-tree pmat dump per kind per run, shared by every beat's hunt (N1-B).
+export PMAT_DUMP_DIR="$TMPDIR_STORY"
 trap '[ -n "$TMPDIR_STORY" ] && [ "$TMPDIR_STORY" != "/" ] && rm -rf "$TMPDIR_STORY" 2>/dev/null; pkill -P $$ 2>/dev/null || true' EXIT
 
 # -- Model registry ------------------------------------------------------------

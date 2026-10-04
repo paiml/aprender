@@ -66,7 +66,18 @@ jobs:
     # TRADE-OFF: this lane is one agent wide, so the job can QUEUE behind
     # general clean-room work on that runner. See timeout-minutes below.
     runs-on: [self-hosted, X64, Linux, intel, perf-solo]   # perf-solo = intel-clean-room-16 ONLY; that runner carries no `clean-room` label any more (measured 2026-09-13: self-hosted,Linux,X64,intel,perf-solo,build), so a clean-room selector would match nothing
-    timeout-minutes: 45
+    # Measured need plus margin (N1-B). Queue time on perf-solo does not count
+    # against this: the clock starts when the runner takes the job. Runs that
+    # got the runner, from their step timestamps:
+    #   2026-09-26  completed 28m16s (preflight 1m03s, LinearRegression step
+    #               with the release compile 9m56s, the other beats ~17m)
+    #   2026-09-27  cancelled at 45m in LinearRegression (17m04s in that step)
+    #   2026-10-04  cancelled at 45m34s, LinearRegression still compiling after
+    #               35m11s on a host at load 80-200; with the ~17m of beats after
+    #               it, that run needed >= 62m
+    # 90 = the 62m lower bound plus ~45%. 45 cancelled every run that reached
+    # the runner since 2026-09-27, so the beat was never measured at all.
+    timeout-minutes: 90
     env:
       # Every beat step tees here; the final step audits it for completeness.
       #

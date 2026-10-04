@@ -45,6 +45,18 @@
 #      commands/serve/ directory). A hunt aimed at a deleted file is silent, and
 #      nothing said so.
 #
+#   4. COST: THE HUNT, NOT APR, BLEW THE 30-MINUTE TIMEOUT (N1-B). pmat 3.42.0
+#      rewrites .pmat/context.db after its manifest on every query, so the next
+#      query finds the index stale and rebuilds it (~94k functions): ~100 s per
+#      call, measured, whatever the query. 21 hunted paths x 3 kinds was ~100
+#      minutes a night, and qwen-story-daily was cancelled 8 nights of 8.
+#      So each kind is now dumped ONCE per story run, whole-tree (~100 s each),
+#      and each path takes its first 3 records out of the dump by file_path
+#      (that file, or any file under that directory). Gaps and churn come out
+#      identical to the per-path query, measured on a file and on a directory.
+#      Faults are unranked, so which 3 of a path's faults are listed can differ;
+#      the per-path query's pick was no better.
+#
 # THE MANIFEST IS NO LONGER ADVISORY.
 # -----------------------------------
 # It used to be, and `pmat_hunt` returned 0 unconditionally while `pmat_rows`
@@ -115,6 +127,36 @@ pmat_rows() {
   printf '%s\n' "$rows" | head -3
 }
 
+# pmat_dump <file> <query args...>: one whole-tree query, saved slim (only the
+# fields the row filters read). A file that already holds a dump is reused, so
+# a story run pays for each kind once. A failed query leaves [] - the hunt then
+# reports 0 rows, never a stale dump, and pmat is not asked again that run.
+pmat_dump() {
+  local out="$1"; shift
+  [ -s "$out" ] && return 0
+  if "${PMAT_BIN:-pmat}" query "$@" --format json > "$out.raw" 2>/dev/null; then
+    jq -c 'if type == "array" then [.[] | select(.file_path != null) | {file_path, function_name, impact_score, commit_count, fault_annotations}] else [] end' "$out.raw" > "$out" 2>/dev/null || printf '[]\n' > "$out"
+  else
+    printf '[]\n' > "$out"
+  fi
+  rm -f -- "${out:?}.raw"
+}
+
+# pmat_rows_in <filter> <dump> <path>: the first 3 dump records in <path> (that
+# file, or any file under that directory), formatted by <filter>. The dump keeps
+# pmat's order, so this is the per-path query's top 3 for ranked kinds.
+pmat_rows_in() {
+  local filter="$1" dump="$2" p="${3%/}" prog rows
+  [ -s "$dump" ] || return 0
+  prog=$(printf '%s\n%s\n%s' \
+    '[.[] | select(.file_path == $p or (.file_path | startswith($p + "/")))] | .[0:3] | .[]' \
+    '| select(.function_name != null)' \
+    "| $filter")
+  rows=$(jq -r --arg p "$p" "$prog" "$dump" 2>/dev/null)
+  [ -n "$rows" ] || return 0
+  printf '%s\n' "$rows" | head -3
+}
+
 # Print one block of rows and add its line count to PMAT_HUNT_ROWS.
 _pmat_hunt_emit() {
   [ -n "$1" ] || return 0
@@ -140,7 +182,18 @@ pmat_hunt() {
   fi
   printf '    -- pmat bug-hunt manifest (%s) --\n' "$beat"
   PMAT_HUNT_ROWS=0
-  local paths=$# missing="" q gaps churn faults
+  local paths=$# missing="" q gaps churn faults dir own=""
+  # Cost, section 4: gaps, churn and faults come from ONE whole-tree dump per story run,
+  # shared by every beat through PMAT_DUMP_DIR. Without it, each call gets a
+  # private dir that is removed on return - never a shared /tmp cache.
+  dir="${PMAT_DUMP_DIR:-}"
+  if [ -z "$dir" ]; then
+    dir=$(mktemp -d) || return 1
+    own=1
+  fi
+  pmat_dump "$dir/pmat-gaps.json" --coverage-gaps --rank-by impact --limit 1000000
+  pmat_dump "$dir/pmat-faults.json" --faults --exclude-tests --limit 1000000
+  pmat_dump "$dir/pmat-churn.json" --churn --max-complexity 30 --limit 1000000
   # Each pmat_rows call is ONE physical line. Splitting a command substitution
   # across a backslash continuation makes bashrs read the nested quotes as an
   # unterminated string (SC1078, 6 errors), and FALSIFY-QWEN-STORY-007 requires
@@ -151,13 +204,14 @@ pmat_hunt() {
     [ -e "$q" ] || missing="$missing $q"
     # No free-text query in any of the three: it is a relevance filter applied
     # BEFORE --path, and it collapses a module-scoped hunt to nothing. Cause 2.
-    gaps=$(pmat_rows "$PMAT_FILTER_GAP" --coverage-gaps --path "$q" --rank-by impact --limit 3)
-    churn=$(pmat_rows "$PMAT_FILTER_CHURN" --path "$q" --churn --max-complexity 30 --limit 3)
-    faults=$(pmat_rows "$PMAT_FILTER_FAULT" --path "$q" --faults --exclude-tests --limit 3)
+    gaps=$(pmat_rows_in "$PMAT_FILTER_GAP" "$dir/pmat-gaps.json" "$q")
+    churn=$(pmat_rows_in "$PMAT_FILTER_CHURN" "$dir/pmat-churn.json" "$q")
+    faults=$(pmat_rows_in "$PMAT_FILTER_FAULT" "$dir/pmat-faults.json" "$q")
     _pmat_hunt_emit "$gaps"
     _pmat_hunt_emit "$churn"
     _pmat_hunt_emit "$faults"
   done
+  [ -z "$own" ] || rm -rf -- "${dir:?}"
   printf '\n'
   if [ "$PMAT_HUNT_ROWS" -eq 0 ]; then
     if [ -n "$missing" ]; then

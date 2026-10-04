@@ -61,8 +61,10 @@ mkdir -p "$TMP/bin"
 printf '#!/usr/bin/env bash\n' > "$TMP/bin/pmat"
 cat >> "$TMP/bin/pmat" <<'STUB'
 # Stub pmat for check_story_pmat_hunt.sh.
+[ -z "${STUB_LOG:-}" ] || printf '%s\n' "$*" >> "$STUB_LOG"
 case "${STUB_MODE:-rows}" in
   empty) printf '[]\n'; exit 0 ;;
+  fail)  exit 1 ;;
   docs)  printf '{"documents":[{"path":"a.rs"},{"path":"b.rs"}]}\n'; exit 0 ;;
 esac
 shift  # drop the `query` subcommand
@@ -71,6 +73,36 @@ if [ "$#" -gt 0 ] && [ "${1#-}" = "$1" ]; then
   printf '[]\n'
   exit 0
 fi
+# No --path: a whole-tree dump. Ranked first are two decoys the per-path
+# scoping must drop - another file, and a name that only shares the prefix -
+# then three records in the hunted library and one under a directory. Each
+# kind's dump names its own top record, so a hunt that reads one kind's
+# dump for another kind's rows is caught.
+case " $* " in
+  *" --churn "*) top=hot_fn ;;
+  *" --faults "*) top=faulty_fn ;;
+  *) top=cache_path ;;
+esac
+case " $* " in
+  *" --path "*) ;;
+  *) sed "s/\"cache_path\"/\"$top\"/" <<'JSON'
+[
+  {"function_name":"decoy","file_path":"scripts/other.sh","impact_score":99,
+   "commit_count":9,"churn_score":0.9,"fault_annotations":["DECOY"]},
+  {"function_name":"prefix_decoy","file_path":"scripts/lib_story_pmat.sh.bak",
+   "impact_score":98,"commit_count":9,"churn_score":0.9,"fault_annotations":["DECOY"]},
+  {"function_name":"cache_path","file_path":"scripts/lib_story_pmat.sh","impact_score":42,
+   "commit_count":7,"churn_score":0.5,"fault_annotations":["CLONE","UNWRAP"]},
+  {"function_name":"parse","file_path":"scripts/lib_story_pmat.sh","impact_score":9,
+   "commit_count":3,"churn_score":0.1,"fault_annotations":null},
+  {"function_name":"ModelSource","file_path":"scripts/lib_story_pmat.sh","impact_score":0,
+   "commit_count":3,"churn_score":0.1,"fault_annotations":["PANIC"]},
+  {"function_name":"in_dir","file_path":"dirx/sub/a.rs","impact_score":5,
+   "commit_count":1,"churn_score":0.1,"fault_annotations":["UNSAFE"]}
+]
+JSON
+     exit 0 ;;
+esac
 cat <<'JSON'
 [
   {"function_name":"cache_path","file_path":"x.rs","impact_score":42,
@@ -152,6 +184,55 @@ for kind in gap churn fault; do
     bad "the hunt emitted $kind rows" ">= 1" "0 (whole manifest: $out)"
   fi
 done
+
+# -- 4b. Cost: one whole-tree dump per kind per story run (N1-B) -------------
+# Every pmat query rebuilt pmat's index (~100 s apiece on the real tree), 3
+# kinds x 21 paths a night: the story never fit its 30-minute timeout. Two
+# beats over three paths, sharing PMAT_DUMP_DIR as qwen-story.sh does, must
+# issue exactly ONE query per kind, none of them scoped by --path.
+: > "$FAILLOG"
+mkdir -p "$TMP/dump" "$TMP/own"
+STUB_LOG="$TMP/pmat.calls"
+export STUB_LOG
+out=$(PMAT_DUMP_DIR="$TMP/dump" PMAT_HUNT=1 pmat_hunt "b1" "$LIB" "$STORY"
+      PMAT_DUMP_DIR="$TMP/dump" PMAT_HUNT=1 pmat_hunt "b2" "$LIB")
+want "two beats share one gaps dump" "1" "$(grep -c -- '--coverage-gaps' "$STUB_LOG")"
+want "two beats share one faults dump" "1" "$(grep -c -- '--faults' "$STUB_LOG")"
+want "two beats share one churn dump" "1" "$(grep -c -- '--churn' "$STUB_LOG")"
+want "no hunt query is scoped by --path" "0" "$(grep -c -- '--path' "$STUB_LOG")"
+unset STUB_LOG
+want "the shared-dump hunt tallies no failure" "" "$(cat "$FAILLOG")"
+# Scoping: the two higher-ranked decoys (another file; a name that only shares
+# the prefix) must not appear, and the path's own top record leads.
+want "a dump record from another file never reaches a path's rows" "0" \
+  "$(printf '%s\n' "$out" | grep -c 'decoy')"
+want "the scoped gap block starts at the path's own top record" \
+  "        gap   cache_path (impact=42)" "$(printf '%s\n' "$out" | grep -m1 '^        gap ')"
+want "churn rows come from the churn dump" \
+  "        churn hot_fn (commits=7)" "$(printf '%s\n' "$out" | grep -m1 '^        churn ')"
+want "fault rows come from the faults dump" \
+  "        fault faulty_fn (CLONE,UNWRAP)" "$(printf '%s\n' "$out" | grep -m1 '^        fault ')"
+# A directory path takes every file under it, with or without a trailing slash,
+# and a bare name prefix does not.
+want "a directory path scopes to files under it" \
+  "        gap   in_dir (impact=5)" "$(pmat_rows_in "$PMAT_FILTER_GAP" "$TMP/dump/pmat-gaps.json" dirx)"
+want "a trailing slash on a directory path is the same path" \
+  "        gap   in_dir (impact=5)" "$(pmat_rows_in "$PMAT_FILTER_GAP" "$TMP/dump/pmat-gaps.json" dirx/)"
+want "a bare name prefix is not a directory" "" \
+  "$(pmat_rows_in "$PMAT_FILTER_GAP" "$TMP/dump/pmat-gaps.json" dir)"
+# A pmat that fails is asked once per kind per run, not once per beat: the
+# failed dump is recorded as [] and reused, and the hunt goes red on 0 rows.
+mkdir -p "$TMP/dumpfail"
+STUB_LOG="$TMP/pmat-fail.calls"
+export STUB_LOG
+for b in f1 f2; do
+  STUB_MODE=fail PMAT_DUMP_DIR="$TMP/dumpfail" PMAT_HUNT=1 pmat_hunt "$b" "$LIB" >/dev/null 2>&1
+done
+want "a failing pmat is queried once per kind across two beats" "3" "$(grep -c . "$STUB_LOG")"
+unset STUB_LOG
+# Without PMAT_DUMP_DIR the hunt makes its own scratch dir and removes it.
+TMPDIR="$TMP/own" PMAT_HUNT=1 pmat_hunt "own" "$LIB" >/dev/null 2>&1
+want "a hunt without PMAT_DUMP_DIR leaves no scratch behind" "" "$(ls -A "$TMP/own")"
 
 # -- 5. A hunt that finds NOTHING must go RED -------------------------------
 # The whole point of #2356: pmat_hunt used to `return 0` unconditionally, so
