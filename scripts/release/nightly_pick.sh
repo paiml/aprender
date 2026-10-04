@@ -81,13 +81,22 @@ self_test() {
     row a_refused_pick_publishes_no_ref 2 "has no pick" "" -- bash "$SCRIPT_PATH" resolve --repo "$W" --night 2026-10-06
     c3="$(commit "$W" racer)" && git -C "$W" push -q origin main && git -C "$W" push -q origin "$c3:refs/nightly/2026-10-07"
     row a_pick_never_overwrites_an_existing_ref 0 "C=$c3 KEPT night 2026-10-07" "PICKED" -- bash "$SCRIPT_PATH" pick --repo "$W" --night 2026-10-07 --sha "$c2"
-    # a race: the ref is absent when read and created by another picker before the push lands
-    mkdir -p "$FX/bin" && printf '%s\n' '#!/usr/bin/env bash' \
-        "case \" \$* \" in" \
-        "  *' ls-remote '*) [ -f '$FX/seen' ] || { : > '$FX/seen'; exit 0; } ;;" \
-        "  *' push '*) '$(command -v git)' -C '$FX/origin.git' update-ref refs/nightly/2026-10-10 '$c3' ;;" \
-        "esac" "exec '$(command -v git)' \"\$@\"" > "$FX/bin/git" && chmod +x "$FX/bin/git"
+    # a race: the ref is absent when read and created by another picker before the push lands. race_shim DIR NIGHT
+    # WINNER puts a git on PATH whose first ls-remote sees nothing and whose push first creates the ref at WINNER.
+    race_shim() {
+        mkdir -p "$1" && printf '%s\n' '#!/usr/bin/env bash' \
+            "case \" \$* \" in" \
+            "  *' ls-remote '*) [ -f '$1/seen' ] || { : > '$1/seen'; exit 0; } ;;" \
+            "  *' push '*) '$(command -v git)' -C '$FX/origin.git' update-ref refs/nightly/$2 '$3' ;;" \
+            "esac" "exec '$(command -v git)' \"\$@\"" > "$1/git" && chmod +x "$1/git"
+    }
+    race_shim "$FX/bin" 2026-10-10 "$c3"
     row a_lost_race_keeps_the_winner 0 "C=$c3 KEPT night 2026-10-10 (another pick won the race)" "PICKED" -- env PATH="$FX/bin:$PATH" bash "$SCRIPT_PATH" pick --repo "$W" --night 2026-10-10 --sha "$c2"
+    # the winner is an ANCESTOR of the loser's commit (main only moves forward), so a plain push would fast-forward it
+    race_shim "$FX/bin-ff" 2026-10-11 "$c1"
+    row a_lost_race_to_an_older_commit_keeps_the_winner 0 "C=$c1 KEPT night 2026-10-11 (another pick won the race)" "PICKED" -- env PATH="$FX/bin-ff:$PATH" bash "$SCRIPT_PATH" pick --repo "$W" --night 2026-10-11 --sha "$c3"
+    row a_lost_race_leaves_the_ref_at_the_winner 0 "$c1" "$c3" -- bash "$SCRIPT_PATH" resolve --repo "$W" --night 2026-10-11
+    row an_unknown_commit_is_not_measured 2 "cannot tell whether" "PICKED" -- bash "$SCRIPT_PATH" pick --repo "$W" --night 2026-10-12 --sha 0123456789abcdef0123456789abcdef01234567
     row unreachable_remote_is_not_measured 2 "NOT_MEASURED" "PICKED" -- bash "$SCRIPT_PATH" pick --repo "$W" --remote "$FX/absent.git" --night 2026-10-08 --sha "$c2"
     row unreachable_remote_resolve_is_not_measured 2 "cannot read" "" -- bash "$SCRIPT_PATH" resolve --repo "$W" --remote "$FX/absent.git" --night "$n"
     row malformed_night_is_a_caller_error 3 "not YYYY-MM-DD" "PICKED" -- bash "$SCRIPT_PATH" pick --repo "$W" --night 2026-1-4 --sha "$c1"
@@ -101,7 +110,7 @@ self_test() {
 
 # ------------------------------------------------------------------------------------ the mutants ----
 # name<TAB>sed expression on the lib. Each must change the lib and turn the case table RED.
-MUTANTS='m01_pick_moves_the_ref	s/push -q "\$2" "\$4:refs\/nightly\/\$3"/push -q -f "$2" "$4:refs\/nightly\/$3"/
+MUTANTS='m01_pick_moves_the_ref	s/--force-with-lease="refs\/nightly\/\$3:"/-f/
 m02_existing_ref_ignored	s/    if \[ "\$rc" -eq 0 \]; then$/    if false; then/
 m03_branch_commit_accepted	s/merge-base --is-ancestor "\$4" FETCH_HEAD 2>\/dev\/null ||/true ||/
 m04_verify_accepts_any_sha	s/if \[ "\$c" = "\$4" \]; then printf .NP OK/if true; then printf '"'"'NP OK/
@@ -110,7 +119,9 @@ m06_unreadable_is_absent	s/\[ "\$rc" -eq 0 \] || return 2$/[ "$rc" -eq 0 ] || re
 m07_night_is_the_fire_date	s/\$((e - 43200))/$e/
 m08_bad_night_accepted	s/grep -qxE .\[0-9\]{4}-\[0-9\]{2}-\[0-9\]{2}. || {/true || {/
 m09_bad_sha_accepted	s/grep -qxE .\[0-9a-f\]{40}. || {/true || {/
-m10_race_loser_claims_picked	s/printf .C=%s KEPT night %s (another pick won the race)\\n. "\$c" "\$3"$/printf '"'"'C=%s PICKED night %s\\n'"'"' "$c" "$3"/'
+m10_race_loser_claims_picked	s/printf .C=%s KEPT night %s (another pick won the race)\\n. "\$c" "\$3"$/printf '"'"'C=%s PICKED night %s\\n'"'"' "$c" "$3"/
+m11_plain_push_fast_forwards	s/ --force-with-lease="refs\/nightly\/\$3:"//
+m12_unknown_commit_is_red	/cannot tell whether/s/return 2 ;;/return 1 ;;/'
 mutants() {
     local tmp name expr killed=0 total=0 errors=0 out
     tmp="$(mktemp -d "${TMPDIR:-/tmp}/np-mu.XXXXXX")" || caller_error "no temp dir"

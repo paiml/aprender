@@ -1,5 +1,5 @@
 # shellcheck shell=bash
-# nightly_pick.sh (lib) — one candidate C per night, published as an immutable ref (#C310-2, see the checker).
+# nightly_pick.sh (lib) — one candidate C per night, published as an immutable ref (see scripts/release/nightly_pick.sh).
 #
 # SOURCED, so option-neutral: no shell options are changed here, nothing exits; every function fails by return status.
 #   . scripts/lib/nightly_pick.sh || exit 1
@@ -21,7 +21,7 @@ np_night() { # [EPOCH]
     local e="${1:-}"
     [ -n "$e" ] || e="$(date -u +%s)" || return 3
     case "$e" in '' | *[!0-9]*) printf 'NP caller error: epoch %s is not a number\n' "$e" >&2; return 3 ;; esac
-    date -u -d "@$((e - 43200))" +%F
+    date -u -d "@$((e - 43200))" +%F || return 3
 }
 
 np__args() { # NIGHT [SHA]
@@ -68,9 +68,16 @@ np_pick() { # REPO REMOTE NIGHT SHA
     [ "$rc" -eq 1 ] || { printf 'NP NOT_MEASURED: cannot read refs/nightly/%s; nothing picked\n' "$3"; return 2; }
     # C must be on main: a dispatch from a branch must never become the night
     git -C "$1" fetch -q "$2" main 2>/dev/null || { printf 'NP NOT_MEASURED: cannot fetch main; nothing picked\n'; return 2; }
-    git -C "$1" merge-base --is-ancestor "$4" FETCH_HEAD 2>/dev/null || { printf 'NP RED: %s is not on main; nothing picked\n' "${4:0:10}"; return 1; }
-    # create-only: no force, so a ref another picker created first is never overwritten
-    git -C "$1" push -q "$2" "$4:refs/nightly/$3" 2>/dev/null || rc=$?
+    rc=0; git -C "$1" merge-base --is-ancestor "$4" FETCH_HEAD 2>/dev/null || rc=$?
+    case "$rc" in
+        0) ;;
+        1) printf 'NP RED: %s is not on main; nothing picked\n' "${4:0:10}"; return 1 ;;
+        *) printf 'NP NOT_MEASURED: cannot tell whether %s is on main (merge-base rc=%s); nothing picked\n' "${4:0:10}" "$rc"; return 2 ;;
+    esac
+    # create-only: the lease with an empty expected value accepts the push only while the ref does not exist. A plain
+    # push is NOT create-only outside refs/heads and refs/tags: it fast-forwards an existing ref, and main only moves
+    # forward, so a racing later pick would move the night's C.
+    rc=0; git -C "$1" push -q --force-with-lease="refs/nightly/$3:" "$2" "$4:refs/nightly/$3" 2>/dev/null || rc=$?
     c="$(np__read "$1" "$2" "$3")" || { printf 'NP NOT_MEASURED: refs/nightly/%s absent or unreadable after the push (push rc=%s)\n' "$3" "$rc"; return 2; }
     if [ "$c" = "$4" ]; then printf 'C=%s PICKED night %s\n' "$c" "$3"; return 0; fi
     printf 'C=%s KEPT night %s (another pick won the race)\n' "$c" "$3"
