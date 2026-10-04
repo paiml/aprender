@@ -133,8 +133,8 @@ falsification_tests:
 
   - id: FALSIFY-TSMG-010
     rule: "The nightly rehearsal bumps and tags only a scratch clone, and its verdict is the judge's"
-    prediction: "The planted rows hold: a bump procedure that moves the root version passes; the source repository gains no tag, commit or change; a bump that misses the root version refuses; a failed or empty bump, a bad train version, the current version, or an unresolvable rev is NOT_MEASURED; each of the 5 mutants turns a row red"
-    test: "bash scripts/release/tag_on_bump_sandbox.sh --self-test | grep -qx 'tag_on_bump_sandbox self-test: mutants killed 5/5'"
+    prediction: "The planted rows hold: a bump procedure that moves the root version passes; the source repository stays byte-identical (refs, tags, HEAD, config, index), also with GIT_DIR, GIT_WORK_TREE and GIT_INDEX_FILE exported at it, and the rehearsal still passes under them; a bump that misses the root version refuses; a failed or empty bump, a bad train version, the current version, an unresolvable rev, or a v<V> tag already in the source is NOT_MEASURED; SIGTERM mid-bump removes the scratch clone; each of the 9 mutants turns a row red"
+    test: "bash scripts/release/tag_on_bump_sandbox.sh --self-test | grep -qx 'tag_on_bump_sandbox self-test: mutants killed 9/9'"
     if_fails: "A nightly that cannot fail, or one that writes a tag where a push could take it, would be counted toward the three green nights"
 
 qa_gate:
