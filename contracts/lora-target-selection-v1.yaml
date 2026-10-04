@@ -1,15 +1,16 @@
 metadata:
-  version: "1.1.0"
+  version: "1.2.0"
   created: "2026-04-13"
   author: PAIML Engineering
   registry: true
   references:
     - "Hu et al. (2022). LoRA: Low-Rank Adaptation of Large Language Models."
     - "0.72 R15a cell C2a (la-0.72): InstructPipeline::from_pretrained routes each tensor of a PEFT adapter by its name into the q_proj or v_proj LoRA layer of its layer, or refuses the load (crates/aprender-train/src/finetune/instruct_pipeline/constructors.rs); 1.1.0 adds adapter_routing and FALSIFY-LORA_TARGET_SELECTION_V1_003"
+    - "0.72 R15a cell C2b (la-0.72): InstructConfig.lora_targets selects the LoRA targets of the instruct pipeline, build_lora_layers and inject_adapter_weights share one slot map, and every constructor refuses a target set its forward does not train (crates/aprender-train/src/lora/target.rs, crates/aprender-train/src/finetune/instruct_pipeline/constructors.rs); 1.2.0 adds target_slots and trained_targets, generalizes adapter_routing to the selected targets, and adds FALSIFY-LORA_TARGET_SELECTION_V1_004"
   description: "LoRA target module selection"
 
 name: lora-target-selection
-version: "1.1.0"
+version: "1.2.0"
 scope: "crates/aprender-train/src/finetune/"
 
 description: |
@@ -26,7 +27,15 @@ equations:
 
   adapter_routing:
     description: "A loaded adapter tensor lands in the LoRA slot its name targets, or the whole load is refused and no slot changes"
-    formula: "∀ t ∈ adapter: proj(t) ∈ {q_proj, v_proj} ∧ layer(t) < L ∧ kind(t) ∈ {lora_A, lora_B} ∧ |t| = |slot(t)| ∧ slot(t) unique ⇒ slot(t) := t, with slot(t) = 2·layer(t) + [proj(t) = v_proj]; otherwise load → Err and ∀ slot: unchanged"
+    formula: "∀ t ∈ adapter: proj(t) ∈ T ∧ layer(t) < L ∧ kind(t) ∈ {lora_A, lora_B} ∧ |t| = |slot(t)| ∧ slot(t) unique ⇒ slot(t) := t, with slot(t) = |T|·layer(t) + pos_T(proj(t)); otherwise load → Err and ∀ slot: unchanged. For the default T = (q_proj, v_proj), slot(t) = 2·layer(t) + [proj(t) = v_proj]"
+
+  target_slots:
+    description: "The LoRA layers are one adapter per layer and selected target, in slot order, each shaped as the projection it adapts"
+    formula: "T = the selection sorted and deduplicated in the order (q_proj, k_proj, v_proj, o_proj, gate_proj, up_proj, down_proj); rank > 0 ⇒ |lora_layers| = |T|·L ∧ lora_layers[|T|·l + pos_T(p)] adapts projection p of layer l with (d_out, d_in) = (q, h), (kv, h), (kv, h), (h, q), (i, h), (i, h), (h, i) for q_proj … down_proj, where h = hidden, q = heads·head_dim, kv = kv_heads·head_dim, i = intermediate"
+
+  trained_targets:
+    description: "A pipeline is built only for the targets its forward and backward read"
+    formula: "construct(config) ⇒ T(config) = {q_proj, v_proj}; otherwise construction is refused before any weight is loaded, naming every t ∈ T ∖ {q_proj, v_proj} and every t ∈ {q_proj, v_proj} ∖ T"
 
 falsification:
   - id: FALSIFY-LORA_TARGET_SELECTION_V1_001
@@ -43,3 +52,8 @@ falsification:
     description: "InstructPipeline::from_pretrained places each tensor of adapter_model.safetensors by its name (0.72 R15a C2a). At 316dee2cd4 inject_adapter_weights sent every tensor whose name lacks q_proj to the V slot of its layer and treated every name without lora_A as lora_B, so an adapter that also carries k_proj, o_proj or MLP tensors overwrote the v_proj adapter, and which tensor won depended on the HashMap order of load_adapter_peft. Now a tensor goes to slot 2·layer for q_proj and 2·layer+1 for v_proj, as A or B by its lora_A or lora_B component, and only if its length equals that slot's tensor. A tensor that names another projection, a layer the model does not have, neither lora_A nor lora_B, a slot another tensor already took, or the wrong length (a rank mismatch, or bf16 bytes read as f32) refuses the whole load with an error that names it, and no LoRA layer changes. The test loads one adapter in two tensor orders and gets the same layers, with every slot holding its own distinct values; a k_proj tensor with exactly the V slot's length refuses and leaves every slot as it was; a lora_A of the wrong rank refuses. Planted: routing by the 316dee2cd4 rule, dropping the length check, and writing tensors before all are placed must each be RED."
     test: "crates/aprender-train/src/finetune/instruct_pipeline/constructors_adapter_tests.rs::falsify_lora_target_selection_v1_003_routes_by_name_in_any_order (with falsify_lora_target_selection_v1_003_unplaceable_tensor_refuses_and_changes_nothing and falsify_lora_target_selection_v1_003_wrong_rank_refuses in the same file)"
     evidence: "cargo test -p aprender-train --lib falsify_lora_target_selection_v1_003"
+
+  - id: FALSIFY-LORA_TARGET_SELECTION_V1_004
+    description: "The instruct pipeline takes its LoRA targets from InstructConfig.lora_targets (0.72 R15a C2b). At 9e54b96c6d InstructConfig had no target list: build_lora_layers made a q_proj and a v_proj adapter for every layer, and inject_adapter_weights placed only q_proj and v_proj tensors, so no other target could be asked for. Now LoraTargets::parse takes module names and the all_linear, attention, qv and mlp shorthands, keeps them in the order q, k, v, o, gate, up, down without repeats, and refuses an empty list or any name that is not one of the seven projections, naming it; the default is q_proj, v_proj. build_lora_layers makes one adapter per layer and target at slot |T|·layer + pos_T(target), with its projection's shape and base weight, and inject_adapter_weights places tensors by the same slot map. The CPU forward, the CUDA NF4 blocks and the sync between them still read only slot 2·layer as q_proj and 2·layer+1 as v_proj, so every constructor refuses any other target set before it loads weights: from_pretrained and from_apr return an error that names each target that would not train and each one missing, and new and MultiAdapterPipeline::add_adapter panic with it. The test builds all seven targets on a GQA model and checks each slot's shape and base weight; loads k_proj and down_proj tensors into their own slots under all_linear, while the default still refuses them; checks that the default slot map is the one the forward reads; and checks that all_linear and q_proj alone are refused by name in each constructor while the default reaches the weight load. Planted: build_lora_layers ignoring the targets, routing by the q_proj and v_proj names alone, parse dropping an unknown name, and removing the check from each constructor must each be RED."
+    test: "crates/aprender-train/src/finetune/instruct_pipeline/constructors_target_tests.rs::falsify_lora_target_selection_v1_004_builds_one_adapter_per_layer_and_target (with the other falsify_lora_target_selection_v1_004 tests in that file and in crates/aprender-train/src/lora/target.rs)"
+    evidence: "cargo test -p aprender-train --lib falsify_lora_target_selection_v1_004"
