@@ -20,8 +20,9 @@ metadata:
     back to the embedding, but an HF-convention loader that trusts the flag initialises a random head.
     Scope not measured. parse_hf_config sets use_bias only from attention_bias (data.rs:567), which Qwen2
     configs do not carry, so (1) needs a spec override use_bias true or a config with attention_bias true; (2)
-    covers runs from scratch. The dedicated pretraining path (train/pretrain_real.rs) sets the flag true and is
-    not affected. PROPOSED from a desk read; nothing is built or run.
+    covers runs from scratch. The dedicated pretraining path (train/pretrain_real.rs) is not affected:
+    save_config_and_metadata is private to helpers.rs, and the two save paths (:801, :846) are its only
+    callers. PROPOSED from a desk read; nothing is built or run.
   references:
   - crates/aprender-train/src/config/train/loader/helpers.rs (save_trained_model_cpu :768, save_trained_model_cuda :812, save_config_and_metadata :856)
   - crates/aprender-train/src/transformer/config.rs (ties_embeddings :434, the guess at :439, hf_architecture_name :403)
