@@ -12,11 +12,12 @@
 # Verification level:
 #   * L1 — scripts/check_determinism_wait.sh exists; its `check` mode reads the
 #          determinism job in .github/workflows/ci.yml.
-#   * L2 — falsification MEASURED by its case table (23 rows: planted ci.yml,
-#          driver and sections copies, planted receipts) and 10 mutants, every one
+#   * L2 — falsification MEASURED by its case table (26 rows: planted ci.yml,
+#          driver and sections copies, planted receipts) and 11 mutants, every one
 #          killed; the
 #          check is RED on the pre-T42 ci.yml (W1, W2, W3). W6-W8 read the driver,
-#          the gate and the compare section as source: structural, not executed.
+#          the gate and the compare section, W9 the compare download pattern, as
+#          source: structural, not executed.
 #          The end-to-end chain is measured by the first real run whose x86-main
 #          fails before its upload.
 #   * L3/L4 — NOT APPLICABLE: a workflow-scheduling rule, not a kernel.
@@ -41,7 +42,8 @@ metadata:
   last_modified: '2026-10-04'
   author: PAIML Engineering
   references:
-    - 'scripts/check_determinism_wait.sh — rules W1-W5 on ci.yml, W6 on scripts/ci/fat_driver.py, W7 on the gate job in ci.yml, W8 on ci/sections.yml · --selftest · --mutants'
+    - 'scripts/check_determinism_wait.sh — rules W1-W5 on ci.yml, W6 on scripts/ci/fat_driver.py, W7 on the gate job in ci.yml, W8-W9 on ci/sections.yml · --selftest · --mutants'
+    - 'ci/sections.yml determinism-compare — downloads pattern determinism-[AX]*64: the two host receipts, never its own determinism-receipt'
     - '.github/workflows/ci.yml — the determinism job (needs x86-main, if !cancelled(), FAT_ARTIFACT_WAIT_S "0")'
     - 'scripts/ci/fat_driver.py uses_download — reads FAT_ARTIFACT_WAIT_S (default 3600), sleeps 20 s between reads; unchanged'
     - 'scripts/ci/determinism-compare.sh — the verdict; unchanged'
@@ -78,6 +80,7 @@ equations:
     codomain: '{RED, GREEN}'
     invariants:
     - 'never a skip, never a pass, when the X64 raster is missing (W2, W6-W8; C3 measures only the compare refusing one receipt)'
+    - 'the compare downloads exactly the two host receipts (W9): a pattern that also takes an earlier attempt''s determinism-receipt (S2) or misses determinism-X64 (S3) is RED; C4 measures the compare refusing 3 receipts'
     - 'FAT_EXPECT_ARTIFACTS still names determinism-X64 and determinism-ARM64 (W4); the job still runs determinism[ARM64] and determinism-compare (W5)'
     - 'the driver returns failure on the first read past its deadline (W6), the gate needs determinism under always() and reads DET:determinism-compare (W7), the compare section has no continue-on-error (W8): read as source, not executed'
     preconditions:
@@ -121,21 +124,23 @@ falsification_tests:
       returns success past the deadline (D1) or no longer reads
       FAT_ARTIFACT_WAIT_S (D2), pads its deadline (D3) or sleeps before the deadline check (D4), a gate that drops DET:determinism-compare (G1)
       or is not always() (G2), and a compare section with continue-on-error
-      (S1) are RED. determinism-compare.sh on planted receipts: equal SVG
+      (S1), or whose download pattern also takes its own earlier receipt
+      (S2) or misses determinism-X64 (S3), are RED. determinism-compare.sh on planted receipts: equal SVG
       digests GREEN (C1), different SVG digests RED (C2), one receipt only
-      RED (C3).
+      RED (C3), an earlier attempt's determinism-receipt beside both host
+      receipts RED (C4).
     test: 'bash scripts/check_determinism_wait.sh --selftest && bash scripts/check_determinism_wait.sh --mutants'
     if_fails: >-
       a run whose X64 raster never came reads as skipped or green, or a real
       non-determinism passes
     mutation: >-
-      --mutants: noif noexpect nocompare nodriver nogate nocoe cmpnosvg (a compare that calls every SVG pair identical), killed; 10/10 with CDW-F-001's (2026-10-04).
+      --mutants: noif noexpect nocompare nodriver nogate nocoe nopattern cmpnosvg (a compare that calls every SVG pair identical), killed; 11/11 with CDW-F-001's (2026-10-04).
 
 non_goals:
   - "Making x86-main publish its raster sooner, or growing the x86 pool: a raster that never comes is reported RED at once, not waited for."
   - "Changing what the comparison decides: scripts/ci/determinism-compare.sh and the gate's DET:determinism-compare read are unchanged."
   - "An earlier determinism verdict. The job now starts when x86-main concludes, not when the X64 raster is uploaded, so the verdict arrives after x86-main's last section. The gate already needs x86-main, so the gate's own verdict moves later only by the determinism job's run after that (runner pickup, ~65 s ARM64 raster, the compare), not by x86-main's length."
-  - "Telling a raster from a previous attempt apart: after a re-run of failed jobs, an earlier attempt's determinism-X64 stays listed for the run. That was already so before T42; the single read neither adds nor removes it."
+  - "Telling a host raster from a previous attempt apart: after a re-run of failed jobs, an earlier attempt's determinism-X64 and determinism-ARM64 stay listed for the run; that was already so before T42. The compare's own determinism-receipt also stays listed; with needs: x86-main a re-run of a failed x86-main re-runs determinism, so the download names exactly the two host receipts (W9) and never takes it."
   - "Conditional (If-None-Match) artifact reads: with one read per job there is no poll to make conditional, and fat_driver.py does not grow."
 
 binding_registry:

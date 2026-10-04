@@ -19,11 +19,13 @@
 #      its deadline, before any sleep
 #   W7 the gate needs determinism, runs if: always(), and reads DET:determinism-compare
 #   W8 the determinism-compare section in ci/sections.yml carries no continue-on-error
+#   W9 its download pattern matches determinism-X64 and determinism-ARM64 and not its own
+#      determinism-receipt, which a re-run of the run still lists
 # The comparison itself is scripts/ci/determinism-compare.sh, unchanged; rows C1-C3 run it on planted
 # receipts so a hash mismatch and a missing X64 receipt are measured RED here too.
 #
 # Usage:
-#   check_determinism_wait.sh [ci.yml [fat_driver.py [sections.yml]]]   rules W1-W8 (defaults: this repo's
+#   check_determinism_wait.sh [ci.yml [fat_driver.py [sections.yml]]]   rules W1-W9 (defaults: this repo's
 #                                        files); prints the ARM64 seconds held per missing raster once the
 #                                        job has started, and REST calls per wait
 #   check_determinism_wait.sh --selftest   case table (planted ci.yml copies + planted receipts)
@@ -49,7 +51,7 @@ wait_s() {
 }
 
 check() {   # check <ci.yml>: rc 0 when W1-W5 hold
-    local f=$1 drvf="${2:-"$DRIVER"}" secf="${3:-"$SECTIONS"}" j g nc bad=0 w held calls n_step drv n_gate n_coe
+    local f=$1 drvf="${2:-"$DRIVER"}" secf="${3:-"$SECTIONS"}" j g nc bad=0 w held calls n_step drv n_gate n_coe pat
     [ -f "$f" ] || { printf 'ENV   no such file: %s\n' "$f"; return 2; }
     [ -f "$drvf" ] && [ -f "$secf" ] || { printf "ENV   missing %s or %s\n" "$drvf" "$secf"; return 2; }
     j=$(job "$f")
@@ -91,6 +93,13 @@ check() {   # check <ci.yml>: rc 0 when W1-W5 hold
         grep -v -E '^[[:space:]]*#' | grep -c 'continue-on-error')
     [ "$n_coe" = 0 ] ||   # m:nocoe
         { printf 'FAIL  W8 the determinism-compare section carries continue-on-error\n'; bad=1; }
+    # W9 the compare's download: both host receipts and nothing else. The compare uploads its own
+    # determinism-receipt, which stays listed for the run, so `determinism-*` hands a re-run 3 receipts.
+    pat=$(awk '/^  determinism-compare:$/{p=1; next} p && /^  [A-Za-z0-9_-]+:/{exit} p' "$secf" |
+        sed -n -E 's/^ +pattern: ([^ #]+)[[:space:]]*(#.*)?$/\1/p' | head -n 1)
+    # shellcheck disable=SC2053 # $pat is a glob on purpose: the driver's fnmatch reads it the same way
+    [[ -n "$pat" && determinism-X64 == $pat && determinism-ARM64 == $pat && determinism-receipt != $pat ]] ||   # m:nopattern
+        { printf 'FAIL  W9 the compare download pattern %s is not exactly the two host receipts\n' "${pat:-<none>}"; bad=1; }
     # The numbers T42 is measured by: ARM64 seconds held by one raster that never comes, REST calls per wait.
     held="$w"   # derived from the wait W3 checks, not measured; that the driver honours it is W6 (structural)
     calls=$(( w / POLL_S + 1 ))
@@ -172,6 +181,10 @@ selftest() {
     check "$d/g2.yml" > /dev/null 2>&1; row G2 RED $? "a gate that is skipped when determinism fails"
     plant_file "$SECTIONS" "$d/s1.yml" '/^  determinism-compare:$/a\    continue-on-error: true'
     check "$CI" "$DRIVER" "$d/s1.yml" > /dev/null 2>&1; row S1 RED $? "a compare section with continue-on-error"
+    plant_file "$SECTIONS" "$d/s2.yml" '/^  determinism-compare:$/,/^  [a-z]/{s/^( +pattern: ).*$/\1determinism-*/}'
+    check "$CI" "$DRIVER" "$d/s2.yml" > /dev/null 2>&1; row S2 RED $? "a compare download of determinism-* (also takes its own earlier receipt)"
+    plant_file "$SECTIONS" "$d/s3.yml" '/^  determinism-compare:$/,/^  [a-z]/{s/^( +pattern: ).*$/\1determinism-A*64/}'
+    check "$CI" "$DRIVER" "$d/s3.yml" > /dev/null 2>&1; row S3 RED $? "a compare download that misses determinism-X64"
 
     # The pre-T42 shape (no needs, no if, no wait override): the before numbers.
     plant "$d/old.yml" '/^    needs: \[x86-main\]$/d; /^    if: \$\{\{ !cancelled\(\) \}\}$/d; /^      FAT_ARTIFACT_WAIT_S: "0"$/d'
@@ -187,6 +200,9 @@ selftest() {
     bash "$CMP" "$d/c2" "$d/c2.json" > /dev/null 2>&1; row C2 RED $? "a planted SVG hash mismatch is RED"
     receipt "$d/c3" aarch64 a
     bash "$CMP" "$d/c3" "$d/c3.json" > /dev/null 2>&1; row C3 RED $? "the X64 receipt missing is RED, never a pass"
+    # What W9 prevents: the compare's own receipt from an earlier attempt beside the two host receipts.
+    mkdir -p "$d/c4"; receipt "$d/c4" x86_64 a; receipt "$d/c4" aarch64 a; bash "$CMP" "$d/c1" "$d/c4/determinism-receipt.json" > /dev/null 2>&1
+    bash "$CMP" "$d/c4" "$d/c4.json" > /dev/null 2>&1; row C4 RED $? "an earlier attempt's determinism-receipt beside both host receipts is RED"
 
     printf 'check_determinism_wait.sh --selftest: %s PASS, %s FAIL\n' "$PASS" "$FAIL"
     [ "$FAIL" = 0 ]
@@ -195,7 +211,7 @@ selftest() {
 # ---------------------------------------------------------------- mutants
 # Each mutant is a sed edit of this checker (or of the compare it runs); the planted copy's self-test
 # must FAIL. An edit that does not apply is an ERROR (exit 2), never a survivor.
-MUTANTS=(noneeds noif nowait noexpect nocompare nostepwait nodriver nogate nocoe cmpnosvg)   # each check line carries its tag: # m:<name>
+MUTANTS=(noneeds noif nowait noexpect nocompare nostepwait nodriver nogate nocoe nopattern cmpnosvg)   # each check line carries its tag: # m:<name>
 
 mutants() {
     local d m name killed=0 total=0 s

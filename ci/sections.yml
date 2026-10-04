@@ -3526,7 +3526,7 @@ jobs:
       - name: No font stack may be compiled into the raster path
         run: bash scripts/ci/raster-fontdb-ban.sh
 
-      # One artifact per arch carries both receipts, so the compare job's `determinism-*`
+      # One artifact per arch carries both receipts, so the compare job's
       # download sees them together. With two paths, `if-no-files-found` only fires when BOTH
       # are missing; a missing raster receipt is caught by raster-compare.sh's count instead.
       - name: Upload this host's receipts
@@ -3553,9 +3553,12 @@ jobs:
         with:
           persist-credentials: false
 
+      # Exactly the two host receipts, determinism-X64 and determinism-ARM64. Not `determinism-*`:
+      # that also matches this job's own determinism-receipt, which an earlier attempt of the run
+      # left behind, and a re-run then compares 3 receipts and goes RED.
       - uses: actions/download-artifact@v4
         with:
-          pattern: determinism-*
+          pattern: determinism-[AX]*64
           path: receipts
           merge-multiple: true
 
