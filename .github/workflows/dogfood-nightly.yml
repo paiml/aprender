@@ -6,8 +6,8 @@ name: dogfood-nightly
 # the pre-publish row set measured at the commit under test, H, with no OPEN state.
 # A row that cannot be measured at H (a lane receipt for another commit, or none;
 # a post-publish obligation) is NOT_MEASURED, and NOT_MEASURED is red. The version
-# row asks of the train's target, the lowest open X.Y.Z milestone above crates.io
-# (release_nightly_target in scripts/release/lib_release_params.sh), and is red
+# row asks of the train's target, the lowest open X.Y.Z milestone above the newest final
+# vX.Y.Z tag (release_train_version in scripts/release/lib_release_params.sh), and is red
 # unless that target is above what crates.io carries.
 # Then, as scripts/release/autopilot.sh does, the tree must still be clean and the
 # publish preflight's own R5 reader runs on the receipt -- here as a NEGATIVE
@@ -81,18 +81,18 @@ jobs:
             commit -q -m "planted: DET002 falsifier (job-local, never pushed)"
           echo "planted at $(git rev-parse --short HEAD)"
 
-      - name: The train target (lowest open X.Y.Z milestone above crates.io)
+      - name: The train target (lowest open X.Y.Z milestone above the newest final tag)
         env:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
         run: |
           set -uo pipefail
-          bash scripts/check_release_nightly_target.sh
+          bash scripts/check_release_train_version.sh
           . scripts/release/lib_release_params.sh || exit 2
           # A failed read or an empty set leaves the target unset: dogfood's version row is then
           # NOT_MEASURED, which is red. It is never defaulted here.
-          if got=$(release_nightly_target); then
-            read -r tv tms tmax <<< "$got"
-            echo "train target: V=$tv milestone=#$tms crates.io max=$tmax"
+          if got=$(release_train_version "$GITHUB_WORKSPACE"); then
+            read -r tv tms tlast <<< "$got"
+            echo "train target: V=$tv milestone=#$tms last final tag=v$tlast"
             echo "DOGFOOD_TARGET_VERSION=$tv" >> "$GITHUB_ENV"
           else
             echo "::warning::train target NOT_MEASURED (see the line above); the version row will read red"
