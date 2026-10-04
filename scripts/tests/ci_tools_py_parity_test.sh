@@ -27,7 +27,7 @@ set -euo pipefail
 ROOT="$(git rev-parse --show-toplevel)"
 cd "$ROOT" || exit 1
 PY="${PYTHON:-python3}"
-EXPECTED_CASES=47
+EXPECTED_CASES=54
 
 BIN="${CI_TOOLS_BIN:-}"
 if [[ -z "$BIN" ]]; then
@@ -110,9 +110,15 @@ printf '{"packages":[%s,{"name":"aprender","manifest_path":"/w/Cargo.toml"},%s,{
 check "publishable-crates order+root+bare" "$tmp/pc-order.json" "${PC_PY[@]}" -- "${PC_RS[@]}"
 printf '{"packages":[]}' >"$tmp/pc-zero.json"
 check "publishable-crates zero packages" "$tmp/pc-zero.json" "${PC_PY[@]}" -- "${PC_RS[@]}"
+# `for pkg in {}` / `in ""` runs zero times: rc 0, empty stdout (quorum r5 finding).
+printf '{"packages":{}}' >"$tmp/pc-zero-obj.json"
+check "publishable-crates packages={}" "$tmp/pc-zero-obj.json" "${PC_PY[@]}" -- "${PC_RS[@]}"
+printf '{"packages":""}' >"$tmp/pc-zero-str.json"
+check "publishable-crates packages=\"\"" "$tmp/pc-zero-str.json" "${PC_PY[@]}" -- "${PC_RS[@]}"
 n=0
 for bad in '{' '' '[]' '{"packages":[{"name":"x"}]}' '{"packages":[{"manifest_path":"/x/Cargo.toml"}]}' \
-    '{"packages":[{"name":1,"manifest_path":"/x/Cargo.toml"}]}'; do
+    '{"packages":[{"name":1,"manifest_path":"/x/Cargo.toml"}]}' '{"packages":{"a":1}}' '{"packages":"ab"}' \
+    '{"packages":null}' '{"packages":5}' '{"packages":[5]}'; do
     n=$((n + 1))
     printf '%s' "$bad" >"$tmp/pc-bad$n.json"
     check "publishable-crates refuses #$n" "$tmp/pc-bad$n.json" "${PC_PY[@]}" -- "${PC_RS[@]}"

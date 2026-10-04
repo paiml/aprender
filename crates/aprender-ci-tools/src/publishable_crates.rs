@@ -12,16 +12,26 @@ use serde_json::Value;
 /// must write them too.
 ///
 /// # Errors
-/// Input that is not JSON, has no `packages` list, or has a package without a string
+/// Input that is not JSON, has no `packages` the original could iterate (a list, or an
+/// empty dict or string, which yield nothing), or has a package without a string
 /// `name` or `manifest_path` (the original raised `KeyError`/`TypeError` on each).
 pub fn run(metadata: &str) -> Result<String, (String, String)> {
     let refuse = |reason: String| (String::new(), reason);
     let meta: Value =
         serde_json::from_str(metadata).map_err(|e| refuse(format!("metadata is not JSON: {e}")))?;
-    let packages = meta
-        .get("packages")
-        .and_then(Value::as_array)
-        .ok_or_else(|| refuse("metadata has no `packages` list".to_string()))?;
+    // `for pkg in meta["packages"]` iterates whatever is there: an empty dict or string
+    // runs zero times and succeeds; a non-empty one yields `str` items, which have no
+    // `.get`, so it raises before printing anything — as does a missing key or a scalar.
+    let packages = match meta.get("packages") {
+        Some(Value::Array(packages)) => packages,
+        Some(Value::Object(m)) if m.is_empty() => return Ok(String::new()),
+        Some(Value::String(s)) if s.is_empty() => return Ok(String::new()),
+        _ => {
+            return Err(refuse(
+                "metadata has no iterable `packages` of packages".to_string(),
+            ))
+        }
+    };
     let mut out = String::new();
     for pkg in packages {
         if pkg
@@ -95,7 +105,14 @@ mod tests {
 
     #[test]
     fn zero_packages_is_empty_and_ok() {
-        assert_eq!(run(r#"{"packages":[]}"#), Ok(String::new()));
+        // `{}` and `""` are as empty to the original's `for` loop as `[]`.
+        for empty in [
+            r#"{"packages":[]}"#,
+            r#"{"packages":{}}"#,
+            r#"{"packages":""}"#,
+        ] {
+            assert_eq!(run(empty), Ok(String::new()), "{empty}");
+        }
     }
 
     /// A bad package after good ones: the good lines were already printed (the original
@@ -117,7 +134,11 @@ mod tests {
             "",
             "{",
             "[]",
-            r#"{"packages":{}}"#,
+            r#"{"packages":{"a":1}}"#,
+            r#"{"packages":"ab"}"#,
+            r#"{"packages":null}"#,
+            r#"{"packages":5}"#,
+            r#"{"packages":[5]}"#,
             r#"{"packages":[{"name":"x"}]}"#,
             r#"{"packages":[{"manifest_path":"/x/Cargo.toml"}]}"#,
         ] {
