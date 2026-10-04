@@ -223,64 +223,114 @@ rc_of() { # rc_of CMD... -> CMD's exit status, its output dropped
     printf '%s' "$r"
 }
 self_test() {
-    local fails=0 rows=0 rc td
+    local fails=0 rows=0 rc td n f p k o
     PYRUN_TD=$(mktemp -d "${TMPDIR:-/tmp}/pyrun.XXXXXX"); td=$PYRUN_TD
     trap 'pyrun_cleanup' EXIT   # td is local; the trap runs after it is gone
-    mkdir -p "$td/bin" "$td/w/sub"
-    mkfifo "$td/fifo"
-    for n in python3 python3.11 uv; do
-        printf '#!/usr/bin/env bash\ncat > /dev/null 2>&1 || :\nexit 0\n' > "$td/bin/$n"
-        chmod 755 "$td/bin/$n"
+    # The fake interpreters open what CPython opens (lib/python_runcount/fakes/python).
+    # They sit AFTER the shim on PATH, so nothing real runs.
+    mkdir -p "$td/bin" "$td/w/sub" "$td/w/lanes" "$td/lib/encodings/__pycache__" "$td/lib/json/__pycache__" "$td/lib/__pycache__"
+    for f in encodings/__pycache__/__init__ json/__pycache__/__init__ json/__pycache__/tool __pycache__/compileall; do
+        : > "$td/lib/$f.cpython-313.pyc"
     done
+    for n in python3 python3.11 python3.13t pythonw pypy3 python3.12d; do
+        ln -sf "$LIB/fakes/python" "$td/bin/$n"
+    done
+    for n in uv uvx; do
+        ln -sf "$LIB/fakes/uv" "$td/bin/$n"
+    done
+    mkfifo "$td/fifo"
+    # The repo the lanes run in. Its tracked files key by path, anything else by content.
+    for f in tool a b c d; do
+        printf '# %s\n' "$f" > "$td/w/sub/$f.py"
+    done
+    printf '# t\n' > "$td/w/sub/$(printf 't\303\266\303\266l')".py
+    printf '# w\n' > "$td/w/sub/two words.py"
     printf '#!%s/bin/python3\n' "$td" > "$td/w/abs_tool"
     chmod 755 "$td/w/abs_tool"
+    cp "$LIB"/plants/*.sh "$td/w/lanes/"
+    git -C "$td/w" init -q && git -C "$td/w" add -A ||
+        { printf 'NOT_MEASURED: cannot make the plant repo (git)\n'; return 2; }
     _eq() {
         rows=$((rows + 1))
         if [ "$2" = "$3" ]; then printf 'ok    %s\n' "$1"
         else fails=$((fails + 1)); printf 'FAIL  %s: got "%s", wanted "%s"\n' "$1" "$3" "$2"; fi
     }
-    plant() { # plant NAME NO_TRACE(0|1) OUT -> runs plants/NAME.sh in $td/w into $td/o_OUT
+    # plant NAME NO_TRACE(0|1) OUT: run lanes/NAME.sh in the plant repo, into o_OUT
+    plant() {
         local o="$td/o_$3"
-        ( cd "$td/w" && PATH="$td/bin:$PATH" PYRUN_NO_TRACE="$2" PYRUN_TEST_FIFO="$td/fifo" timeout 60 bash "$SELF" --run "$o" -- bash "$LIB/plants/$1.sh" ) < /dev/null > /dev/null 2>&1 || :
-        count "$o" > /dev/null 2>&1 || :
+        ( cd "$td/w" && env "PATH=$td/bin:$PATH" "PYRUN_NO_TRACE=$2" "PYRUN_TEST_FIFO=$td/fifo" "PYRUN_FAKE_LIB=$td/lib" "PYRUN_FAKE_BIN=$td/bin" "PYRUN_ROOT=$td/w" timeout 60 bash "$SELF" --run "$o" -- bash "lanes/$1.sh" ) < /dev/null > /dev/null 2>&1 || :
+        PYRUN_ROOT=/nonexistent count "$o" > /dev/null 2>&1 || :   # the root is the run's (meta)
     }
+    synth() { # synth OUT META < TRACE -> a --run dir holding that trace, counted
+        mkdir -p "$td/o_$1"; printf '%s\n' "$2" > "$td/o_$1/meta"; : > "$td/o_$1/shim.log"
+        sed "s|@W@|$td/w|g" > "$td/o_$1/trace.raw"
+        count "$td/o_$1" > /dev/null 2>&1 || :
+    }
+    dup() { cp -r "$td/o_$1" "$td/o_$2"; }   # dup FROM TO: a copy of run o_FROM to break
     keys() { cut -f1 "$td/o_$1/keys" 2>/dev/null | paste -sd' ' -; }
     srcs() { cut -f2 "$td/o_$1/keys" 2>/dev/null | paste -sd' ' -; }
+    h() { printf "$1" | head -c 65536 | sha256sum | cut -c1-12; }   # the content key of a temp script
     if ! trace_usable; then
         printf 'NOT_MEASURED: strace cannot trace here; the trace rows cannot run\n'
         return 2
     fi
-    ROOT="$td/w"
-    for p in none env_call var_call heredoc inline module uv_run abs_shebang versioned twice cd_call renamed tmp_script tmp_caller multiline flag_forms daemon mflag tmp_names uv_flags; do
+    local -a lanes=(none env_call var_call heredoc inline module uv_run abs_shebang versioned twice cd_call renamed tmp_script tmp_caller
+        multiline flag_forms daemon mflag tmp_names uv_flags freethreaded interp_names octal first_match gone same_content two_inline)
+    for p in "${lanes[@]}"; do
         plant "$p" 0 "$p"
     done
     plant tmp_script 0 tmp_script2
     plant tmp_caller 0 tmp_caller2
+    plant tmp_names 0 tmp_names2
     plant abs_shebang 1 abs_noshim_trace
     plant none 1 none_notrace
     _eq 'P0 a lane with no Python counts 0, measured (the keys file exists)' '0 measured' "$(wc -l < "$td/o_none/keys" | tr -d ' ') $(meta "$td/o_none" trace)"
     _eq 'P1 env python3 tool.py counts the script' 'script:sub/tool.py' "$(keys env_call)"
     _eq 'P2 "$PY" (a variable) counts the script' 'script:sub/tool.py' "$(keys var_call)"
-    _eq 'P3 a heredoc on stdin counts, keyed by its lane' 'stdin@heredoc.sh' "$(keys heredoc)"
-    _eq 'P4 python3 -c counts, keyed by its lane' '-c@inline.sh' "$(keys inline)"
-    _eq 'P5 python3 -m counts the module' '-m:json.tool' "$(keys module)"
-    _eq 'P6 uv run tool.py counts' 'uv:run:script:sub/tool.py' "$(keys uv_run)"
+    _eq 'P3 a heredoc on stdin counts, keyed by its lane' 'inline@lanes/heredoc.sh' "$(keys heredoc)"
+    _eq 'P4 python3 -c counts, keyed by its lane' 'inline@lanes/inline.sh' "$(keys inline)"
+    _eq 'P5 python3 -m counts the module it opened' '-m:json.tool' "$(keys module)"
+    _eq 'P6 uv run counts uv at its call site, and the python it starts' 'script:sub/tool.py uv@lanes/uv_run.sh' "$(keys uv_run)"
     _eq 'P7 an absolute #! line counts (the trace sees it)' 'script:abs_tool' "$(keys abs_shebang)"
     _eq 'P8 an absolute #! line is trace-only: the shim alone misses it' 'trace' "$(srcs abs_shebang)"
     _eq 'P9 a versioned python3.11 (not shimmed) counts' 'script:sub/tool.py' "$(keys versioned)"
-    _eq 'P10 the shim and the trace agree on the key (one entry point, both saw it)' 'shim+trace' "$(srcs env_call)"
-    _eq 'P13 a lane that changes dir first: the trace follows chdir, both agree on one key' 'script:sub/tool.py shim+trace' "$(keys cd_call) $(srcs cd_call)"
-    _eq 'P14 a renamed argv[0] (exec -a) still counts: the trace keys on the file' 'script:sub/tool.py trace' "$(keys renamed) $(srcs renamed)"
-    _eq 'P15 a script in a fresh mktemp dir keys by name, so reruns agree' 'script:~tmp/cell.py' "$(keys tmp_script)"
-    _eq 'P16 inline Python in a mktemp script keys by one stable caller name' '-c@tmp.X' "$(keys tmp_caller)"
-    _eq 'P17 inline code with a newline and a tab is one shim record of 4 fields, one key' '-c@multiline.sh shim+trace 1 0' \
-        "$(keys multiline) $(srcs multiline) $(wc -l < "$td/o_multiline/shim.log" | tr -d ' ') $(awk -F'\t' 'NF != 4' "$td/o_multiline/shim.log" | wc -l | tr -d ' ')"
+    _eq 'P10 the shim and the trace agree on the process (one entry point, both saw it)' 'shim+trace' "$(srcs env_call)"
     _eq 'P11 the same script run twice is one entry point' '1' "$(wc -l < "$td/o_twice/keys" | tr -d ' ')"
     _eq 'P12 with no trace the absolute #! line is missed and says not_measured' '0 not_measured' "$(wc -l < "$td/o_abs_noshim_trace/keys" | tr -d ' ') $(meta "$td/o_abs_noshim_trace" trace)"
+    _eq 'P13 a lane that changes dir first: the trace follows chdir, both agree on one key' 'script:sub/tool.py shim+trace' "$(keys cd_call) $(srcs cd_call)"
+    _eq 'P14 a renamed argv[0] (exec -a) still counts: the trace keys on the file' 'script:sub/tool.py trace' "$(keys renamed) $(srcs renamed)"
+    _eq 'P15 a script in a fresh mktemp dir keys by its content, so reruns agree' "script:#$(h '')" "$(keys tmp_script)"
+    _eq 'P16 inline Python in a mktemp script keys by one stable caller' 'inline@~tmp' "$(keys tmp_caller)"
+    _eq 'P17 inline code with a newline and a tab is one shim record of 3 fields, one key' 'inline@lanes/multiline.sh shim+trace 1 0' \
+        "$(keys multiline) $(srcs multiline) $(wc -l < "$td/o_multiline/shim.log" | tr -d ' ') $(awk -F'\t' 'NF != 3' "$td/o_multiline/shim.log" | wc -l | tr -d ' ')"
+    _eq 'P18 -W/-X values, joined or not, are not -c/-m; code under bash -ec belongs to its lane' 'inline@lanes/flag_forms.sh script:sub/tool.py' "$(keys flag_forms)"
+    _eq 'P19 -m joined to other flags or to its module is the module (-mcompileall, -Im); -Bc is inline' '-m:compileall -m:json.tool inline@lanes/mflag.sh' "$(keys mflag)"
+    local want20
+    want20=$(for n in a b c d; do printf 'script:%s%s\n' '#' "$(h "\\043 $n\\n")"; done; printf 'inline@~tmp\n')
+    _eq 'P20 -XXXXXX suffixes, pid names, a mktemp dir and a mktemp file in the repo key by content' \
+        "$(printf '%s\n' "$want20" | sort | paste -sd' ' -)" "$(keys tmp_names)"
+    _eq 'P21 uv options that take a value are never read: uv keys by its call site' 'script:sub/tool.py uv@lanes/uv_flags.sh' "$(keys uv_flags)"
+    _eq 'P22 a free-threaded python3.13t counts' 'script:sub/tool.py' "$(keys freethreaded)"
+    _eq 'P23 pythonw, pypy3, python3.12d and env -u each count' 'script:sub/a.py script:sub/b.py script:sub/c.py script:sub/d.py' "$(keys interp_names)"
+    _eq 'P24 a name strace escapes (octal bytes, a space) keys as the shim saw it' \
+        "script:sub/two words.py script:sub/$(printf 't\303\266\303\266l').py shim+trace shim+trace" "$(keys octal) $(srcs octal)"
+    _eq 'P25 the entry point is the first file opened that the argv names, not a data file after it' '-m:compileall script:sub/tool.py' "$(keys first_match)"
+    _eq 'P26 a temp script no shim hashed, deleted before --count, keys as gone by its caller' 'script:gone@lanes/gone.sh' "$(keys gone)"
+    _eq 'N1 two temp scripts with the same code are one entry point (the contract: content, not name)' "script:#$(h '# same\n')" "$(keys same_content)"
+    _eq 'N2 inline code is keyed by the lane that holds it: two -c and a heredoc are one entry point' 'inline@lanes/two_inline.sh' "$(keys two_inline)"
+    _eq 'S1 two runs of the same lanes give the same keys (fresh mktemp names each run)' 'yes' \
+        "$( [ "$(keys tmp_script) $(keys tmp_caller) $(keys tmp_names)" = "$(keys tmp_script2) $(keys tmp_caller2) $(keys tmp_names2)" ] && echo yes || echo no)"
     # A descendant that daemonized must not hold the run open, nor leave the tracer behind.
     _eq 'D1 a daemonized descendant does not hang --run (rc, key)' '0 script:sub/tool.py' "$(meta "$td/o_daemon" rc) $(keys daemon)"
     _eq 'D2 the tracer is detached, not left running' 'yes 0' "$(meta "$td/o_daemon" detached) $(tracer_pids "$td/o_daemon/trace.raw" | wc -l | tr -d ' ')"
     timeout 5 bash -c 'printf x > "$1"' _ "$td/fifo" || :   # release the daemon
+    strace -qq -o "$td/d3.raw" sleep 30 > /dev/null 2>&1 &
+    p=$!
+    for n in 1 2 3 4 5 6 7 8 9 10; do
+        ! tracer_pids "$td/d3.raw" | grep -q . || break; sleep 0.2
+    done
+    _eq 'D3 tracer_pids finds a live strace by its -o file (pgrep)' '1' "$(tracer_pids "$td/d3.raw" | wc -l | tr -d ' ')"
+    kill "$p" 2>/dev/null || :; wait "$p" 2>/dev/null || :
     # --compare: never worse, head vs base; a shim-only side is NOT_MEASURED.
     rc=0; compare "$td/o_none" "$td/o_env_call" > "$td/c1" 2>&1 || rc=$?
     _eq 'C1 head adds an entry point -> RED (1), and names it' '1 yes' "$rc $(grep -q -e '^  script:sub/tool.py$' "$td/c1" && echo yes || echo no)"
@@ -290,59 +340,105 @@ self_test() {
     _eq 'C3 head = base -> GREEN (0)' '0' "$rc"
     rc=0; compare "$td/o_none_notrace" "$td/o_env_call" > /dev/null 2>&1 || rc=$?
     _eq 'C4 a side with no trace -> NOT_MEASURED (2), never a pass' '2' "$rc"
+    rc=0; compare "$td/o_env_call" "$td/o_heredoc" > "$td/c5" 2>&1 || rc=$?
+    _eq 'C5 a swap (one out, one in) is GREEN (0) and still names the new one' '0 yes' "$rc $(grep -q -e '^  inline@lanes/heredoc.sh$' "$td/c5" && echo yes || echo no)"
     rc=0
     ( cd "$td/w" && PATH="$td/bin:$PATH" bash "$SELF" --run "$td/o_rc" -- bash -c 'exit 7' ) > /dev/null 2>&1 || rc=$?
     _eq 'R1 --run exits with the command status' '7' "$rc"
-    _eq 'P18 joined -W/-X values do not read as -c/-m; bash -ec is an inline-shell caller' '-c@bash -c -c@flag_forms.sh script:sub/tool.py' "$(keys flag_forms)"
-    _eq 'S1 two runs of the same lanes give the same keys (fresh mktemp names each run)' 'yes' "$( [ "$(keys tmp_script) $(keys tmp_caller)" = "$(keys tmp_script2) $(keys tmp_caller2)" ] && echo yes || echo no)"
-    _eq 'P19 -m joined to other flags or to its module is -m, not -c (-mcompileall, -Im, -Bc)' '-c@mflag.sh -m:compileall -m:json.tool' "$(keys mflag)"
-    _eq 'P20 -XXXXXX suffixes, pid names and a mktemp dir in the repo key by one stable name' '-c@lane.X script:tmp.X.py script:wk.X/tool.py script:~tmp/cell.X script:~tmp/job.X.py' "$(keys tmp_names)"
-    _eq 'P21 uv options that take a value (--color, --index-strategy, -c) are not taken for the script' 'uv:run:script:sub/tool.py' "$(keys uv_flags)"
+    # Synthetic traces: what a live run cannot be made to do on demand.
+    k="trace=measured"$'\n'"cwd=$td/w"$'\n'"root=$td/w"$'\n'"tmpdir=/scratch/q"$'\n'"rc=0"
     # A pid the kernel reused is a new process: it must not inherit the old one's cwd or caller.
-    mkdir -p "$td/o_reuse"
-    printf 'trace=measured\ncwd=%s\nrc=0\n' "$td/w" > "$td/o_reuse/meta"
-    : > "$td/o_reuse/shim.log"
-    { printf '100 execve("/bin/bash", ["bash", "lane1.sh"], 0x7ffd /* 5 vars */) = 0\n'
-      printf '100 clone(child_stack=NULL, flags=SIGCHLD) = 200\n'
-      printf '200 chdir("/elsewhere") = 0\n'
-      printf '200 +++ exited with 0 +++\n'
-      printf '100 clone(child_stack=NULL, flags=SIGCHLD) = 300\n'
-      printf '300 execve("/bin/bash", ["bash", "lane2.sh"], 0x7ffd /* 5 vars */) = 0\n'
-      printf '300 clone(child_stack=NULL, flags=SIGCHLD) = 200\n'
-      printf '200 execve("/usr/bin/python3", ["python3", "tool.py"], 0x7ffd /* 5 vars */) = 0\n'
-      printf '100 +++ exited with 0 +++\n'
-    } > "$td/o_reuse/trace.raw"
-    count "$td/o_reuse" > /dev/null 2>&1 || :
-    _eq 'T1 a reused pid keys by its own cwd and caller, not the dead process'"'"'s' 'script:tool.py lane2.sh' "$(cut -f1,3 "$td/o_reuse/keys" 2>/dev/null | tr '\t' ' ')"
+    synth reuse "$k" <<'SYN'
+100 execve("/bin/bash", ["bash", "/opt/lanes/lane1.sh"], 0x7ffd /* 5 vars */) = 0
+100 openat(AT_FDCWD, "/opt/lanes/lane1.sh", O_RDONLY) = 3
+100 clone(child_stack=NULL, flags=SIGCHLD) = 200
+200 chdir("/elsewhere") = 0
+200 +++ exited with 0 +++
+100 clone(child_stack=NULL, flags=SIGCHLD) = 300
+300 execve("/bin/bash", ["bash", "/opt/lanes/lane2.sh"], 0x7ffd /* 5 vars */) = 0
+300 openat(AT_FDCWD, "/opt/lanes/lane2.sh", O_RDONLY) = 3
+300 clone(child_stack=NULL, flags=SIGCHLD) = 200
+200 execve("/usr/bin/python3", ["python3", "sub/tool.py"], 0x7ffd /* 5 vars */) = 0
+200 openat(AT_FDCWD, "@W@/sub/tool.py", O_RDONLY|O_CLOEXEC) = 3
+200 +++ exited with 0 +++
+300 +++ exited with 0 +++
+100 +++ exited with 0 +++
+SYN
+    _eq 'T1 a reused pid keys by its own cwd and caller, not the dead process'"'"'s' 'script:sub/tool.py lane2.sh' "$(cut -f1,3 "$td/o_reuse/keys" 2>/dev/null | tr '\t' ' ')"
     # The temp dir is the one the lane ran with (meta), not whatever TMPDIR --count sees.
-    mkdir -p "$td/o_tmpd"
-    printf 'trace=measured\ncwd=/\ntmpdir=/scratch/q\nrc=0\n' > "$td/o_tmpd/meta"
-    : > "$td/o_tmpd/shim.log"
-    { printf '100 execve("/bin/bash", ["bash", "lane.sh"], 0x7ffd /* 5 vars */) = 0\n'
-      printf '100 clone(child_stack=NULL, flags=SIGCHLD) = 200\n'
-      printf '200 execve("/usr/bin/python3", ["python3", "/scratch/q/x7/cell.py"], 0x7ffd /* 5 vars */) = 0\n'
-      printf '200 +++ exited with 0 +++\n'
-      printf '100 +++ exited with 0 +++\n'
-    } > "$td/o_tmpd/trace.raw"
+    mkdir -p "$td/o_tmpd"; printf '%s\n' "$k" > "$td/o_tmpd/meta"; : > "$td/o_tmpd/shim.log"
+    cat > "$td/o_tmpd/trace.raw" <<'SYN'
+100 execve("/bin/bash", ["bash", "/opt/lanes/lane.sh"], 0x7ffd /* 5 vars */) = 0
+100 openat(AT_FDCWD, "/opt/lanes/lane.sh", O_RDONLY) = 3
+100 clone(child_stack=NULL, flags=SIGCHLD) = 200
+200 execve("/usr/bin/python3", ["python3", "/scratch/q/x7/cell.py"], 0x7ffd /* 5 vars */) = 0
+200 openat(AT_FDCWD, "/scratch/q/x7/cell.py", O_RDONLY|O_CLOEXEC) = 3
+200 +++ exited with 0 +++
+100 +++ exited with 0 +++
+SYN
     TMPDIR=/elsewhere count "$td/o_tmpd" > /dev/null 2>&1 || :
-    _eq 'T2 a script under the TMPDIR of the run keys ~tmp/<name>, whatever TMPDIR --count has' 'script:~tmp/cell.py' "$(keys tmpd)"
+    _eq 'T2 a script under the TMPDIR of the run is a temp script, whatever TMPDIR --count has' 'script:gone@lane.sh' "$(keys tmpd)"
+    _eq 'T3 the repo root is the run'"'"'s (meta), not PYRUN_ROOT at count time' 'script:sub/tool.py' \
+        "$(PYRUN_ROOT=/nonexistent bash "$SELF" --count "$td/o_env_call" 2>/dev/null | sed -n '2p' | cut -f1)"
+    synth fchdir "$k" <<'SYN'
+100 execve("/bin/bash", ["bash", "/opt/lanes/lane.sh"], 0x7ffd /* 5 vars */) = 0
+100 openat(AT_FDCWD, "/opt/lanes/lane.sh", O_RDONLY) = 3
+100 openat(AT_FDCWD, "sub", O_RDONLY|O_NONBLOCK|O_CLOEXEC|O_DIRECTORY) = 4
+100 fchdir(4) = 0
+100 clone(child_stack=NULL, flags=SIGCHLD) = 200
+200 execve("/usr/bin/python3", ["python3", "tool.py"], 0x7ffd /* 5 vars */) = 0
+200 openat(AT_FDCWD, "@W@/sub/tool.py", O_RDONLY|O_CLOEXEC) = 3
+200 +++ exited with 0 +++
+100 +++ exited with 0 +++
+SYN
+    _eq 'T4 fchdir moves the working dir like chdir' 'script:sub/tool.py' "$(keys fchdir)"
+    synth execveat "$k" <<'SYN'
+100 execve("/bin/bash", ["bash", "/opt/lanes/lane.sh"], 0x7ffd /* 5 vars */) = 0
+100 openat(AT_FDCWD, "/opt/lanes/lane.sh", O_RDONLY) = 3
+100 clone(child_stack=NULL, flags=SIGCHLD) = 200
+200 execveat(AT_FDCWD, "/usr/bin/python3", ["python3", "sub/tool.py"], 0x7ffd /* 5 vars */, 0) = 0
+200 openat(AT_FDCWD, "@W@/sub/tool.py", O_RDONLY|O_CLOEXEC) = 3
+200 +++ exited with 0 +++
+100 +++ exited with 0 +++
+SYN
+    _eq 'T5 execveat starts a process like execve' 'script:sub/tool.py' "$(keys execveat)"
+    synth split "$k" <<'SYN'
+100 execve("/bin/bash", ["bash", "/opt/lanes/lane.sh"], 0x7ffd /* 5 vars */) = 0
+100 openat(AT_FDCWD, "/opt/lanes/lane.sh", O_RDONLY) = 3
+100 clone(child_stack=NULL, flags=SIGCHLD <unfinished ...>
+200 execve("/usr/bin/python3", ["python3", "sub/tool.py"], 0x7ffd /* 5 vars */ <unfinished ...>
+100 <... clone resumed>) = 200
+200 <... execve resumed>) = 0
+200 openat(AT_FDCWD, "@W@/sub/tool.py", O_RDONLY|O_CLOEXEC <unfinished ...>
+100 wait4(-1 <unfinished ...>
+200 <... openat resumed>) = 3
+200 +++ exited with 0 +++
+100 <... wait4 resumed>) = 200
+100 +++ exited with 0 +++
+SYN
+    _eq 'T6 a call strace split (<unfinished ...> / resumed) is read whole' 'script:sub/tool.py lane.sh' "$(cut -f1,3 "$td/o_split/keys" 2>/dev/null | tr '\t' ' ')"
+    _eq 'L1 keys do not depend on the locale --count is started in (strace octal bytes)' "$(keys octal)" \
+        "$(LC_ALL=C.UTF-8 bash "$SELF" --count "$td/o_octal" 2>/dev/null | sed '1d' | cut -f1 | paste -sd' ' -)"
     # Never a count from a broken measurement: each is exit 2, not GREEN 0.
-    cp -r "$td/o_none" "$td/o_e"
+    dup none e
     mkdir -p "$td/broken/lib"; cp "$SELF" "$td/broken/runcount.sh"; cp -r "$LIB" "$td/broken/lib/"
     printf '}\n' >> "$td/broken/lib/python_runcount/keys.awk"
-    rc=$(rc_of env PYRUN_ROOT="$td/w" bash "$td/broken/runcount.sh" --compare "$td/o_env_call" "$td/o_e")
+    rc=$(rc_of bash "$td/broken/runcount.sh" --compare "$td/o_env_call" "$td/o_e")
     _eq 'E1 a failing key stage is NOT_MEASURED (2), never count 0' '2' "$rc"
     : > "$td/o_e/trace.raw"
     _eq 'E2 trace=measured with no execve in the trace is NOT_MEASURED (2)' '2' "$(rc_of compare "$td/o_env_call" "$td/o_e")"
-    rm -rf "${td:?}/o_e"; cp -r "$td/o_none" "$td/o_e"
+    rm -rf "${td:?}/o_e"; dup none e
     sed -i 's/^rc=0$/rc=3/' "$td/o_e/meta"
     _eq 'E3 a head lane that exited 3 where base exited 0 is NOT_MEASURED (2)' '2' "$(rc_of compare "$td/o_env_call" "$td/o_e")"
-    cp -r "$td/o_env_call" "$td/o_e_base"; sed -i 's/^rc=0$/rc=3/' "$td/o_e_base/meta"
+    dup env_call e_base; sed -i 's/^rc=0$/rc=3/' "$td/o_e_base/meta"
     _eq 'E4 head and base ending with the same status are measured (GREEN 0)' '0' "$(rc_of compare "$td/o_e_base" "$td/o_e")"
     # A tracer killed mid-run leaves a cut trace: execs, but no exit line for the lane.
-    cp -r "$td/o_env_call" "$td/o_e5"
+    dup env_call e5
     head -n "$(( $(wc -l < "$td/o_env_call/trace.raw") / 2 ))" "$td/o_env_call/trace.raw" > "$td/o_e5/trace.raw"
     _eq 'E5 a cut trace (no exit line for the lane, rc 0) is NOT_MEASURED (2)' '2' "$(rc_of compare "$td/o_env_call" "$td/o_e5")"
+    dup env_call e6; sed -i "s|^root=.*|root=$td/bin|" "$td/o_e6/meta"
+    _eq 'E6 a repo root git cannot list (tracked files unknown) is NOT_MEASURED (2)' '2' "$(rc_of compare "$td/o_env_call" "$td/o_e6")"
+    _eq 'M0 --mutants with no green unmutated table is NOT_MEASURED (2), never killed=N' '2' "$(PYRUN_NO_TRACE=1 rc_of bash "$SELF" --mutants)"
     printf '\n%s row(s), %s red / %s\n' "$rows" "$fails" "$( [ "$fails" -eq 0 ] && echo GREEN || echo RED )"
     [ "$fails" -eq 0 ]
 }

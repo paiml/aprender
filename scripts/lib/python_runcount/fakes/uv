@@ -1,0 +1,9 @@
+#!/bin/bash
+# python_runcount.sh --self-test fake uv/uvx, installed as uv and uvx. Like
+# `uv run`, it starts python3 as a CHILD (not an exec) on its last argument when
+# that names a .py file. The count keys uv by its call site and never reads
+# its options; the python child is counted on its own.
+last="${*: -1}"
+case "$last" in *.py) python3 "$last" ;; esac
+cat > /dev/null 2>&1 || :
+exit 0

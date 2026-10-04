@@ -1,0 +1,53 @@
+#!/bin/bash
+# python_runcount.sh --self-test fake interpreter, installed as python3,
+# python3.11, python3.13t, pythonw, pypy3 and python3.12d. Nothing real runs.
+# It opens the files CPython opens, in CPython's order, because the count keys
+# on the files a Python process opens (measured on CPython 3.13 under strace):
+#   1. a stdlib module at start-up (encodings);
+#   2. the entry point: a script by its absolute path, or for -m each package's
+#      __init__ and then the module, as __pycache__/<name>.cpython-313.pyc;
+#      nothing for -c, - (stdin) or -V;
+#   3. any later argument that is a file (a script reading its data).
+# This argv walk is the FAKE's, so the fake behaves like CPython; the count
+# itself never parses argv. PYRUN_FAKE_LIB is the fake stdlib directory.
+lib="${PYRUN_FAKE_LIB:?}"
+op() { [ -e "$1" ] && [ ! -d "$1" ] && { exec 3< "$1"; exec 3<&-; }; return 0; }
+op "$lib/encodings/__pycache__/__init__.cpython-313.pyc"
+mode="" val="" i=1 n=$#
+args=("$@")
+while [ "$i" -le "$n" ]; do
+    a=${args[$((i - 1))]}
+    i=$((i + 1))
+    case "$a" in
+        -) mode=stdin; break ;;
+        -W|-X|--check-hash-based-pycs) i=$((i + 1)); continue ;;
+        -V|--version|-h|--help) mode=info; break ;;
+        --*) continue ;;
+        -*)
+            f=${a#-}
+            while [ -n "$f" ]; do
+                c=${f:0:1}; f=${f:1}
+                case "$c" in
+                    W|X) f="" ;;
+                    c) mode=inline; break 2 ;;
+                    m) mode=module; if [ -n "$f" ]; then val=$f; else val=${args[$((i - 1))]:-}; i=$((i + 1)); fi; break 2 ;;
+                esac
+            done
+            ;;
+        *) mode=script; val=$a; break ;;
+    esac
+done
+case "$mode" in
+    script) case "$val" in /*) op "$val" ;; *) op "$PWD/$val" ;; esac ;;
+    module)
+        d="$lib"; IFS=. read -r -a parts <<< "$val"
+        for p in "${parts[@]:0:${#parts[@]}-1}"; do d="$d/$p"; op "$d/__pycache__/__init__.cpython-313.pyc"; done
+        op "$d/__pycache__/${parts[${#parts[@]}-1]}.cpython-313.pyc"
+        ;;
+esac
+while [ "$i" -le "$n" ]; do
+    a=${args[$((i - 1))]}; i=$((i + 1))
+    case "$a" in -*) ;; /*) op "$a" ;; *) op "$PWD/$a" ;; esac
+done
+cat > /dev/null 2>&1 || :
+exit 0
