@@ -1,0 +1,83 @@
+{
+  "$schema": "https://docs.oasis-open.org/sarif/sarif/v2.1.0/errata01/os/schemas/sarif-schema-2.1.0.json",
+  "version": "2.1.0",
+  "runs": [
+    {
+      "tool": {
+        "driver": {
+          "name": "pmat"
+        }
+      },
+      "invocations": [
+        {
+          "executionSuccessful": true,
+          "toolExecutionNotifications": []
+        }
+      ],
+      "results": [
+        {
+          "ruleId": "complexity_not_measurable",
+          "level": "note",
+          "message": {
+            "text": "pmat analyze complexity has no analyzer for .yml (35 of 35 files under .github skipped), so complexity_delta is empty because nothing was measured, not because it is zero."
+          },
+          "properties": {
+            "grounding": "measured",
+            "command": [
+              "pmat",
+              "analyze",
+              "complexity",
+              "--path",
+              ".github"
+            ],
+            "exit_code": 1,
+            "stdout_sha256": "82cde2ba551f56bd536810d0de471770224bec96c47da601d79f5cf9279eab06",
+            "failure_scenario": "A reader could take an empty complexity_delta as a measured zero; for a workflow-only diff it is unmeasured.",
+            "precision_class": "advisory"
+          }
+        },
+        {
+          "ruleId": "target_dir_export_matches_later_steps",
+          "level": "note",
+          "message": {
+            "text": "`export CARGO_TARGET_DIR=\"$GITHUB_WORKSPACE/target\"` makes cargo write target/aarch64-apple-darwin/release/apr under the workspace, the exact relative path that strip, the version check, the arm64 proof and Package archive read. The export is step-local, and every later step uses the relative ./target path from the default workspace cwd, so none needs the variable. An env var overrides any config target-dir."
+          },
+          "properties": {
+            "grounding": "asserted",
+            "rationale": "read of .github/workflows/binary-release.yml:845-905 at head; not run (the lane needs a macOS arm64 mini-builder, none here)",
+            "failure_scenario": "If a later step used a non-workspace cwd the relative path would miss; none does, and no other job in the file builds on the mini lane (build-apr-darwin is the only runs-on mini-builder).",
+            "precision_class": "advisory"
+          }
+        }
+      ]
+    },
+    {
+      "tool": {
+        "driver": {
+          "name": "antigravity"
+        }
+      },
+      "invocations": [
+        {
+          "executionSuccessful": true,
+          "toolExecutionNotifications": []
+        }
+      ],
+      "results": [
+        {
+          "ruleId": "agy_macos_strip_breaks_signature",
+          "level": "warning",
+          "message": {
+            "text": "Running `strip` on an arm64 macOS binary invalidates its code signature, leading to a SIGKILL (`Killed: 9`) crash upon execution."
+          },
+          "properties": {
+            "grounding": "asserted",
+            "rationale": "raised by the antigravity reviewer (cited a signing claim, no measurement); the primary could not measure it without macOS and judges it contradicted: Apple's strip re-applies the ad-hoc arm64 signature, and the next step's `apr --version` fails the job visibly if it were killed, so it cannot ship a bad asset.",
+            "failure_scenario": "The patch correctly fixes the target path so that the `strip` command successfully finds and modifies the compiled binary. However, running `strip` on a compiled macOS arm64 executable invalidates the ad-hoc code signature applied by the linker. When the subsequent step runs `target/aarch64-apple-darwin/release/apr --version` to verify the tag, the macOS kernel will refuse to execute the unsigned binary and immediately terminate it with SIGKILL (`Killed: 9`), causing the workflow to fail.",
+            "precision_class": "advisory"
+          }
+        }
+      ]
+    }
+  ]
+}

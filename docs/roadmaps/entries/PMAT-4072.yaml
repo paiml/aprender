@@ -1,0 +1,18 @@
+- id: PMAT-4072
+  github_issue: 4072
+  item_type: task
+  title: 'ONT-3a: extract:code — bindings resolve fail-closed across the workspace, via syn'
+  status: completed
+  priority: high
+  assigned_to: aprender-ea
+  created: 2026-09-24T14:05:08Z
+  updated: 2026-09-24T18:00:00Z
+  spec: null
+  acceptance_criteria:
+  - paiml/infra docs/specifications/paiml-ontology.md row ONT-3a. `pv lint --gate bindings` fail-closed on the repo corpus (PV-ONT-028/029/030), ghosts allowlisted with a ticket (#4319), enforced by a lib test.
+  phases: []
+  subtasks: []
+  estimated_effort: null
+  labels:
+  - kind:code
+  notes: 'quorum 3/3 PASS on fe8c9dff7; proof:docs/audits/quorum-PMAT-4072-fe8c9dff7.json'

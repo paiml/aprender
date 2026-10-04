@@ -632,8 +632,8 @@ fn clean_chat_response(raw: &str) -> String {
     trimmed.to_string()
 }
 
-/// Detect format from magic bytes (more reliable than extension)
-#[cfg(feature = "inference")]
+/// Detect format from magic bytes (more reliable than extension). Pure, so not feature-gated: its caller
+/// `format_from_leading_bytes` is compiled in every build (#4041).
 fn detect_format_from_bytes(data: &[u8]) -> ModelFormat {
     if data.len() < 8 {
         return ModelFormat::Demo;

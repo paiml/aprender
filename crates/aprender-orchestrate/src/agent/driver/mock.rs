@@ -23,8 +23,11 @@ impl MockDriver {
     ///
     /// Responses are returned in order. If exhausted, returns
     /// a default "end of mock responses" response.
+    ///
+    /// The default window is 32768: it must exceed the default manifest's 4096-token output
+    /// reserve, or no input fits and the loop refuses every prompt as `ContextOverflow` (#4599).
     pub fn new(responses: Vec<CompletionResponse>) -> Self {
-        Self { responses: Mutex::new(responses), context_window: 4096, cost_per_token: 0.0 }
+        Self { responses: Mutex::new(responses), context_window: 32_768, cost_per_token: 0.0 }
     }
 
     /// Create a mock that returns a single text response.
@@ -217,7 +220,7 @@ mod tests {
     #[test]
     fn test_context_window() {
         let driver = MockDriver::single_response("hi");
-        assert_eq!(driver.context_window(), 4096);
+        assert_eq!(driver.context_window(), 32_768);
 
         let driver = driver.with_context_window(8192);
         assert_eq!(driver.context_window(), 8192);

@@ -14,11 +14,13 @@
 use super::*;
 use std::io::Write as _;
 
-/// `crates/apr-cli`'s `CARGO_MANIFEST_DIR` sibling to
-/// `crates/aprender-serve/benchmarks/qwen-coder/prompts-w1.jsonl`.
-fn w1_corpus_path() -> PathBuf {
-    PathBuf::from(env!("CARGO_MANIFEST_DIR"))
-        .join("../aprender-serve/benchmarks/qwen-coder/prompts-w1.jsonl")
+/// `crates/aprender-serve/benchmarks/qwen-coder/prompts-w1.jsonl`, a sibling crate's file: in
+/// tree it must exist, out of tree (the published tarball) the test skips by name (#4149).
+fn w1_corpus_path(test: &str) -> Option<PathBuf> {
+    provable_contracts::workspace_path_or_skip!(
+        test,
+        "crates/aprender-serve/benchmarks/qwen-coder/prompts-w1.jsonl",
+    )
 }
 
 /// A private, per-process scratch file — never the real corpus, never
@@ -35,7 +37,9 @@ fn write_tmp(name: &str, content: &str) -> PathBuf {
 
 #[test]
 fn the_real_w1_corpus_binds_to_the_w1_label() {
-    let path = w1_corpus_path();
+    let Some(path) = w1_corpus_path("the_real_w1_corpus_binds_to_the_w1_label") else {
+        return;
+    };
     let binding = bind_workload(Workload::W1, &path)
         .unwrap_or_else(|e| panic!("the real W1 corpus must bind to the W1 label: {e}"));
     assert_eq!(binding.label, Workload::W1);

@@ -1,0 +1,23 @@
+- id: PMAT-4070
+  github_issue: 4070
+  item_type: task
+  title: 'ONT-4d: subsumption in Σ; shapes inherit down the hierarchy'
+  status: in_progress
+  priority: high
+  assigned_to: aprender-19
+  created: 2026-09-23T21:40:00Z
+  updated: 2026-09-23T22:10:00Z
+  spec: paiml/infra docs/specifications/paiml-ontology.md@948ae923 (ONT-4d, line 619; R-19)
+  acceptance_criteria:
+  - 'Row ONT-4d RED, verbatim: "Σ `subsumes` with a cycle → exit 3 `error: subsumes cycle <path>`; a shape on `Code` rejects a `Kernel` instance that violates it (`focus_nodes_n` for the shape == instances of `Code` ∪ all sub-concepts); a sub-concept shape that *removes* a super-concept constraint → exit 1 `reject: <sub> weakens <super>.<constraint>`; `rdf:type` closure present in `contracts.nt` for every super-concept; export byte-identical across two runs."'
+  - 'Row ONT-4d change: "Σ `subsumes[]`; `extract:pv-contract` materializes the type closure; `shapes.rs` resolves `targetClass` through it; OWL writer emits `SubClassOf` axioms; `by_concept` in census."'
+  - 'Row ONT-4d mutation: "drop the closure materialization → the `Kernel`-under-`Code` fixture stops firing → RED."'
+  - 'Row ONT-4d probe: `present ''^subsumes:'' contracts/ontology.yaml && "$PV" lint contracts/ --gate shapes --format json` with `.inherited_shapes_applied>0 and .verdict=="Pass"`, and `rg -q ''SubClassOf'' contracts/ontology.ofn`.'
+  phases: []
+  subtasks: []
+  estimated_effort: null
+  labels:
+  - kind:code
+  - orch:fable
+  - orch-basis:state
+  notes: 'Stacked on PMAT-4071 (ONT-2c): the probe greps SubClassOf in contracts/ontology.ofn, which ONT-2c''s writer produces. Real Σ edges are read off the concepts'' own docs: Kernel ⊑ Contract, Symbol ⊑ Code.'

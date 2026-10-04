@@ -9,6 +9,16 @@
 //!    its projections into a recurrence, which compounds low-precision activation error
 //!    (`Qwen35CudaModel::pin_float_gemv` documents the measured DP4A failure). The
 //!    handle is `CUBLAS_PEDANTIC_MATH` (no TF32), so SGEMM here is fp32 in and out.
+//!    #4313 adds legs, chosen by `APR_QWEN35_PREFILL_GEMM`:
+//!    - `f16` caches each weight once as fp16 (prewarmed at load when it fits in
+//!      VRAM) and runs `gemm_f16_to_f32` (fp16 in, fp32 accumulate and out) on its own
+//!      tensor-op handle. The recurrence still reads fp32 outputs, and only the GEMM
+//!      inputs round to fp16 (10-bit mantissa, unlike DP4A's 8-bit activations).
+//!    - `dp4a` runs the Q4K int8 GEMM, measured slower than f32, and carries the
+//!      #3513 hazard.
+//!    - `f32` is this path, unchanged, and the escape hatch.
+//!    `f16` is the default (operator, 2026-09-25) and runs only where the prewarm
+//!    completed; a host without the VRAM, or a failed prewarm, keeps the f32 path.
 //! 2. **The row-batched Gated `DeltaNet` kernels** (`aprender-gpu` `kernels/gdn`): the
 //!    chunk-resident delta-rule scan, conv1d over a chunk, and the row twins of the L2
 //!    norm, gates and partial RoPE. Each is bitwise-equal to `T` launches of its
@@ -30,7 +40,8 @@ use trueno_gpu::kernels::gdn::{
     FLASH_HEAD_DIM,
 };
 use trueno_gpu::kernels::{
-    Q4KDequantKernel, Q5KDequantKernel, Q6KDequantKernel, Q8_0DequantKernel,
+    F16DequantKernel, Iq4XsDequantKernel, Q4KDequantKernel, Q5KDequantKernel, Q6KDequantKernel,
+    Q8_0DequantKernel,
 };
 
 impl CudaExecutor {
@@ -126,6 +137,20 @@ impl CudaExecutor {
                 self.qp_prepare(&key, &kern)?;
                 (key, "q8_0_dequant_to_f32", (n, k.div_ceil(32)))
             },
+            // #3715: `Qwen3.5-4B-UD-Q4_K_XL` (F16 ssm_alpha/beta, IQ4_XS FFN) and
+            // `Qwen3.5-0.8B-IQ4_XS` refused the CUDA prefill here and ran on the CPU.
+            WeightQuantType::F16 => {
+                let kern = F16DequantKernel::new(k, n);
+                let key = format!("qp_f16_dequant_{k}_{n}");
+                self.qp_prepare(&key, &kern)?;
+                (key, "f16_dequant_to_f32", (n, k.div_ceil(32)))
+            },
+            WeightQuantType::IQ4XS => {
+                let kern = Iq4XsDequantKernel::new(k, n);
+                let key = format!("qp_iq4xs_dequant_{k}_{n}");
+                self.qp_prepare(&key, &kern)?;
+                (key, "iq4_xs_dequant_to_f32", (n, k.div_ceil(256)))
+            },
             other => {
                 return Err(GpuError::InvalidParameter(format!(
                     "qwen35 prefill: no f32 dequant kernel for {other:?}"
@@ -158,6 +183,17 @@ impl CudaExecutor {
     ) -> Result<(), GpuError> {
         validate_device_ptr(x_ptr, "qwen35_project_rows x")?;
         validate_device_ptr(y_ptr, "qwen35_project_rows y")?;
+        match qwen35_prefill_gemm_mode() {
+            Qwen35PrefillGemm::F16 if self.qwen35_prefill_f16 => {
+                return self.qwen35_project_rows_f16(qtype, w_ptr, x_ptr, y_ptr, rows, n, k, ldc);
+            },
+            Qwen35PrefillGemm::Dp4a
+                if qtype == WeightQuantType::Q4K && ldc == n && k % 256 == 0 =>
+            {
+                return self.launch_dp4a_q4k_gemm(w_ptr, x_ptr, y_ptr, rows, n, k);
+            },
+            _ => {},
+        }
         let w_f32 = self.qwen35_dequant_f32(qtype, w_ptr, n, k)?;
         self.ensure_cublas()?;
         let handle = self.cublas_handle.as_ref().expect("cublas initialized");
@@ -172,6 +208,97 @@ impl CudaExecutor {
             w_f32,
             k as i32,
             x_ptr,
+            k as i32,
+            0.0,
+            y_ptr,
+            ldc as i32,
+        )
+    }
+
+    /// The cached FP16 copy of the `[n × k]` weight at `w_ptr`, made on first use by
+    /// the f32 dequant this module already owns, then one f32→f16 conversion.
+    /// Whether the f16 prefill GEMM may run: set after a complete prewarm, cleared
+    /// when a prewarm is skipped or fails.
+    pub(crate) fn set_qwen35_prefill_f16(&mut self, ready: bool) {
+        self.qwen35_prefill_f16 = ready;
+    }
+
+    /// Whether the f16 prefill GEMM is armed on this executor.
+    #[must_use]
+    pub(crate) fn qwen35_prefill_f16(&self) -> bool {
+        self.qwen35_prefill_f16
+    }
+
+    /// Drop fp16 cache entries (a failed prewarm's partial set).
+    pub(crate) fn drop_fp16_weights(&mut self, ptrs: &[u64]) {
+        for p in ptrs {
+            self.fp16_weight_cache.remove(p);
+        }
+    }
+
+    pub(crate) fn qwen35_fp16_weight(
+        &mut self,
+        qtype: WeightQuantType,
+        w_ptr: u64,
+        n: u32,
+        k: u32,
+    ) -> Result<u64, GpuError> {
+        if let Some(buf) = self.fp16_weight_cache.get(&w_ptr) {
+            return Ok(buf.as_ptr());
+        }
+        let w_f32 = self.qwen35_dequant_f32(qtype, w_ptr, n, k)?;
+        let count = n as usize * k as usize;
+        let buf = GpuBuffer::<u16>::new(&self.context, count)?;
+        let ptr = buf.as_ptr();
+        self.convert_f32_to_f16(w_f32, ptr, count as u32)?;
+        self.fp16_weight_cache.insert(w_ptr, buf);
+        Ok(ptr)
+    }
+
+    /// The FP16 twin of [`Self::qwen35_project_rows`]: the weight is dequantized to
+    /// FP16 once and cached (`fp16_weight_cache`, keyed by its device pointer), the
+    /// activation rows are rounded to FP16, and cuBLAS accumulates in FP32 on tensor
+    /// cores. Every qtype [`Self::qwen35_dequant_f32`] handles takes this leg.
+    #[allow(clippy::too_many_arguments)]
+    fn qwen35_project_rows_f16(
+        &mut self,
+        qtype: WeightQuantType,
+        w_ptr: u64,
+        x_ptr: u64,
+        y_ptr: u64,
+        rows: u32,
+        n: u32,
+        k: u32,
+        ldc: u32,
+    ) -> Result<(), GpuError> {
+        if self.cublas_f16_handle.is_none() {
+            let handle = trueno_gpu::driver::CublasHandle::new_with_tensor_cores(&self.context)?;
+            handle.set_stream(&self.stream)?;
+            self.cublas_f16_handle = Some(handle);
+        }
+        let w_f16 = self.qwen35_fp16_weight(qtype, w_ptr, n, k)?;
+        let count = rows as usize * k as usize;
+        self.ensure_fp16_activation_scratch(count)?;
+        let x_f16 = self
+            .fp16_activation_scratch
+            .as_ref()
+            .expect("fp16 activation scratch just ensured")
+            .as_ptr();
+        self.convert_f32_to_f16(x_ptr, x_f16, count as u32)?;
+        let handle = self
+            .cublas_f16_handle
+            .as_ref()
+            .expect("f16 cublas initialized");
+        handle.gemm_f16_to_f32(
+            trueno_gpu::driver::GemmOp::Trans,
+            trueno_gpu::driver::GemmOp::NoTrans,
+            n as i32,
+            rows as i32,
+            k as i32,
+            1.0,
+            w_f16,
+            k as i32,
+            x_f16,
             k as i32,
             0.0,
             y_ptr,
@@ -568,5 +695,91 @@ impl CudaExecutor {
             )?;
         }
         Ok(())
+    }
+}
+
+/// Which GEMM the Qwen3.5 prefill projections run (#4313), from
+/// `APR_QWEN35_PREFILL_GEMM` = `f16` (default) | `f32` | `dp4a`. Read once. `f16`
+/// runs only on an executor whose fp16 set was prewarmed completely
+/// (`set_qwen35_prefill_f16`); elsewhere the f32 path runs.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub(crate) enum Qwen35PrefillGemm {
+    F32,
+    F16,
+    Dp4a,
+}
+
+pub(crate) fn qwen35_prefill_gemm_mode() -> Qwen35PrefillGemm {
+    #[cfg(test)]
+    if let Some(m) = QWEN35_PREFILL_GEMM_OVERRIDE.with(std::cell::Cell::get) {
+        return m;
+    }
+    static MODE: std::sync::OnceLock<Qwen35PrefillGemm> = std::sync::OnceLock::new();
+    *MODE.get_or_init(
+        || match std::env::var("APR_QWEN35_PREFILL_GEMM").as_deref() {
+            Ok("f32") => Qwen35PrefillGemm::F32,
+            Ok("dp4a") => Qwen35PrefillGemm::Dp4a,
+            Ok("f16") | Err(_) => Qwen35PrefillGemm::F16,
+            Ok(other) => {
+                eprintln!(
+                    "[qwen35] APR_QWEN35_PREFILL_GEMM={other:?} is not f16|f32|dp4a; using f16"
+                );
+                Qwen35PrefillGemm::F16
+            },
+        },
+    )
+}
+
+#[cfg(test)]
+thread_local! {
+    /// Tests pin the prefill GEMM; production reads `APR_QWEN35_PREFILL_GEMM`.
+    pub(crate) static QWEN35_PREFILL_GEMM_OVERRIDE: std::cell::Cell<Option<Qwen35PrefillGemm>> =
+        const { std::cell::Cell::new(None) };
+}
+
+/// #3715 / #4621: model-free device tests for the dequant dispatch. The mutants-cuda
+/// shard runs on a GPU runner with no model files, so the kill tests for
+/// `qwen35_dequant_f32` cannot live only in the Qwen3.5-0.8B parity suite.
+#[cfg(test)]
+#[allow(clippy::expect_used)]
+mod dequant_dispatch_tests_4621 {
+    use super::*;
+
+    /// No device → the test cannot run; under mutation a skip survives and the
+    /// shard is RED, so it never passes vacuously there.
+    fn executor() -> Option<CudaExecutor> {
+        CudaExecutor::new(0).ok()
+    }
+
+    #[test]
+    fn f32_weight_is_returned_as_it_is() {
+        let Some(mut exec) = executor() else { return };
+        let w = GpuBuffer::from_host(&exec.context, &[1.0f32; 64]).expect("w");
+        let p = exec
+            .qwen35_dequant_f32(WeightQuantType::F32, w.as_ptr(), 2, 32)
+            .expect("f32 is a pass-through");
+        assert_eq!(p, w.as_ptr(), "an f32 weight needs no scratch copy");
+    }
+
+    #[test]
+    fn f16_weight_dequantizes_on_the_device() {
+        let Some(mut exec) = executor() else { return };
+        let (n, k) = (2u32, 64u32);
+        // Exactly representable in f16, distinct per element, signed.
+        let want: Vec<f32> = (0..n * k).map(|i| i as f32 * 0.5 - 16.0).collect();
+        let bytes: Vec<u8> = want
+            .iter()
+            .flat_map(|&v| half::f16::from_f32(v).to_le_bytes())
+            .collect();
+        let w = GpuBuffer::from_host(&exec.context, &bytes).expect("w");
+        let p = exec
+            .qwen35_dequant_f32(WeightQuantType::F16, w.as_ptr(), n, k)
+            .expect("F16 has a dequant kernel (#3715)");
+        exec.stream.synchronize().expect("sync");
+        let scratch = exec.dequant_scratch.as_ref().expect("scratch");
+        assert_eq!(p, scratch.as_ptr(), "the result is the dequant scratch");
+        let mut got = vec![0.0f32; scratch.len()];
+        scratch.copy_to_host(&mut got).expect("readback");
+        assert_eq!(&got[..want.len()], &want[..]);
     }
 }

@@ -3,7 +3,7 @@
 //!
 //! Pixel-perfect recreation of the cbtop/ttop terminal interface.
 //!
-//! Run with: cargo run -p presentar-terminal --example `system_dashboard`
+//! Run with: cargo run -p aprender-present-terminal --example `system_dashboard`
 
 use presentar_core::{Canvas, Color, Point, Rect, TextStyle, Widget};
 use presentar_terminal::direct::{CellBuffer, DiffRenderer, DirectTerminalCanvas};

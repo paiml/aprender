@@ -1,4 +1,3 @@
-
 /// SafeTensors generate handler
 #[cfg(feature = "inference")]
 pub(crate) async fn safetensors_generate_handler(
@@ -39,7 +38,18 @@ pub(crate) async fn safetensors_generate_handler(
         .get("temperature")
         .and_then(|t| t.as_f64())
         .unwrap_or(0.0) as f32;
-    let (output_ids, _budget) = {
+    // #4334: stop at the tokenizer's EOS / chat-turn end and honour the request's
+    // top_p, through the same config builder as the APR CPU path (#4265).
+    let top_p = request
+        .get("top_p")
+        .and_then(serde_json::Value::as_f64)
+        .map(|p| p as f32);
+    let stop_tokens = state
+        .tokenizer_info
+        .as_ref()
+        .map(super::handlers::tokenizer_info_stop_tokens)
+        .unwrap_or_default();
+    let (output_ids, gen_config) = {
         // PMAT-189: Handle transformer lock poisoning gracefully
         let t = match transformer.lock() {
             Ok(guard) => guard,
@@ -53,12 +63,16 @@ pub(crate) async fn safetensors_generate_handler(
                     .into_response();
             }
         };
+        // #3718 + #4334: the context budget caps max_tokens in the one config
+        // both st_cpu_generate and generated_reply_tokens read.
         let budget = match st_context_budget(&t, input_ids.len(), max_tokens) {
             Ok(budget) => budget,
             Err(refusal) => return refusal,
         };
-        match st_cpu_generate(&t, &input_ids, budget, temperature) {
-            Ok(ids) => (ids, budget),
+        let gen_config =
+            super::handlers::apr_cpu_generate_config(budget, temperature, top_p, stop_tokens);
+        match st_cpu_generate(&t, &input_ids, &gen_config) {
+            Ok(ids) => (ids, gen_config),
             Err(e) => {
                 return (
                     StatusCode::INTERNAL_SERVER_ERROR,
@@ -71,7 +85,8 @@ pub(crate) async fn safetensors_generate_handler(
     let elapsed = start.elapsed();
 
     // Decode using BPE tokenizer (PMAT-093)
-    let new_tokens = &output_ids[input_ids.len()..];
+    let new_tokens =
+        super::handlers::generated_reply_tokens(&output_ids, input_ids.len(), &gen_config);
     let output_text = if let Some(ref tok_info) = state.tokenizer_info {
         match tok_info.tokenizer.decode(new_tokens) {
             Ok(text) => text,

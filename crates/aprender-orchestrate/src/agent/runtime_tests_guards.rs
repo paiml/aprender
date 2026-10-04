@@ -257,7 +257,7 @@ async fn test_retry_exhaustion() {
             ))
         }
         fn context_window(&self) -> usize {
-            4096
+            32_768 // above the 4096 output reserve (#4599)
         }
         fn privacy_tier(&self) -> crate::serve::backends::PrivacyTier {
             crate::serve::backends::PrivacyTier::Sovereign

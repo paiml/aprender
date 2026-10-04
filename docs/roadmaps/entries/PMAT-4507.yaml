@@ -1,0 +1,20 @@
+- id: PMAT-4507
+  github_issue: 4507
+  item_type: task
+  title: 'fat_driver setup_workspace: a root-owned leftover section tree makes mkdir raise FileExistsError (runner poisoning)'
+  status: in_progress
+  priority: high
+  assigned_to: aprender-49
+  created: 2026-09-27 05:26:00+00:00
+  updated: '2026-09-27T05:26:00Z'
+  spec: null
+  acceptance_criteria:
+  - 'a self-test row plants an undeletable leftover ws and setup (make_section_dirs) yields a fresh _temp/home/ws'
+  - 'the rename-aside is written to the section log; older asides are retried, and past ASIDE_KEEP undeletable ones every setup warns'
+  - 'the mutant that restores rmtree-and-ignore then mkdir turns the self-test RED (FileExistsError row)'
+  phases: []
+  subtasks: []
+  estimated_effort: null
+  labels:
+  - kind:code
+  notes: 'Blocked #4479 (ONT-10 chain head) twice on framework16-2. 0.70.0 path; branch 49/4507-fat-ws-aside off car/0.70.0.'

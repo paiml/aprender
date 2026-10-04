@@ -1,3 +1,5 @@
+aprender-build-sha
+aprender-update
 apr-format
 aprender-common
 aprender-contracts-macros

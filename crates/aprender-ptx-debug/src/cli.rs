@@ -43,7 +43,7 @@ pub struct Cli {
 }
 
 /// Available subcommands.
-#[derive(Debug, Subcommand)]
+#[derive(Debug, Clone, Subcommand)]
 pub enum Command {
     /// Analyze PTX file for bugs and issues
     Analyze(AnalyzeArgs),
@@ -57,7 +57,7 @@ pub enum Command {
 }
 
 /// Arguments for the `analyze` subcommand.
-#[derive(Debug, Args)]
+#[derive(Debug, Clone, Args)]
 pub struct AnalyzeArgs {
     /// PTX file to analyze
     #[arg(value_name = "FILE")]
@@ -84,7 +84,7 @@ pub struct AnalyzeArgs {
 }
 
 /// Arguments for the `gen-fkr` subcommand.
-#[derive(Debug, Args)]
+#[derive(Debug, Clone, Args)]
 pub struct GenFkrArgs {
     /// PTX file to generate tests from
     #[arg(value_name = "FILE")]
@@ -105,13 +105,43 @@ pub fn version_string() -> String {
 /// Map a clap parse failure onto the process exit code.
 ///
 /// `--help` and `--version` are reported by clap as errors but are successful
-/// invocations. Every other parse failure exits 1, preserving the exit status
-/// the hand-rolled parser used for an unknown command, a missing argument, or a
-/// bad option value.
+/// invocations. Every other parse failure is a usage error and exits 2, the
+/// clap convention every other workspace binary follows, so a caller can tell a
+/// typo from an analysis that ran and failed (exit 1). ONT-10 S18, G1.2:
+/// FALSIFY-BIN-APRENDER-PTX-DEBUG-002.
 #[must_use]
 pub fn exit_code_for_parse_error(err: &clap::Error) -> i32 {
     match err.kind() {
         ErrorKind::DisplayHelp | ErrorKind::DisplayVersion => 0,
-        _ => 1,
+        _ => 2,
+    }
+}
+
+#[cfg(test)]
+mod exit_code_tests {
+    use super::*;
+
+    fn code_for(args: &[&str]) -> i32 {
+        let err = Cli::try_parse_from(args).expect_err("must not parse to a Cli");
+        exit_code_for_parse_error(&err)
+    }
+
+    #[test]
+    fn help_and_version_are_success() {
+        assert_eq!(code_for(&["aprender-ptx-debug", "--help"]), 0);
+        assert_eq!(code_for(&["aprender-ptx-debug", "--version"]), 0);
+    }
+
+    #[test]
+    fn version_string_names_the_package_version() {
+        let v = version_string();
+        assert!(v.contains(env!("CARGO_PKG_VERSION")), "{v}");
+        assert!(v.contains("aprender-ptx-debug"), "{v}");
+    }
+
+    #[test]
+    fn usage_errors_exit_two() {
+        assert_eq!(code_for(&["aprender-ptx-debug", "bogus-subcommand"]), 2);
+        assert_eq!(code_for(&["aprender-ptx-debug", "analyze"]), 2);
     }
 }

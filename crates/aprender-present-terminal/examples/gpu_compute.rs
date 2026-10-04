@@ -4,7 +4,7 @@
 //! Demonstrates GPU utilization monitoring for CUDA/ML workloads
 //! with memory, compute, and temperature visualization.
 //!
-//! Run with: cargo run -p presentar-terminal --example `gpu_compute`
+//! Run with: cargo run -p aprender-present-terminal --example `gpu_compute`
 
 use presentar_core::{Canvas, Color, Point, Rect, TextStyle, Widget};
 use presentar_terminal::direct::{CellBuffer, DiffRenderer, DirectTerminalCanvas};

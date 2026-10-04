@@ -1,4 +1,3 @@
-
 fn merge_special_tokens_into_vocab(
     added_tokens: Option<&Vec<serde_json::Value>>,
     vocab: &mut Vec<String>,
@@ -81,7 +80,8 @@ pub(crate) fn load_safetensors_tokenizer(path: &Path) -> Option<SafeTensorsToken
         .get("model")
         .and_then(|m| m.get("unk_token"))
         .and_then(|v| v.as_str());
-    let tokenizer = realizar::tokenizer::BPETokenizer::new(vocab.clone(), merges, unk_token).ok()?;
+    let tokenizer =
+        realizar::tokenizer::BPETokenizer::new(vocab.clone(), merges, unk_token).ok()?;
 
     Some(SafeTensorsTokenizerInfo {
         tokenizer: std::sync::Arc::new(tokenizer),
@@ -266,7 +266,18 @@ pub(crate) async fn safetensors_chat_completions_handler(
         .get("temperature")
         .and_then(|t| t.as_f64())
         .unwrap_or(0.0) as f32;
-    let (output_ids, max_tokens) = {
+    // #4334: stop at the tokenizer's EOS / chat-turn end and honour the request's
+    // top_p, through the same config builder as the APR CPU path (#4265).
+    let top_p = request
+        .get("top_p")
+        .and_then(serde_json::Value::as_f64)
+        .map(|p| p as f32);
+    let stop_tokens = state
+        .tokenizer_info
+        .as_ref()
+        .map(super::handlers::tokenizer_info_stop_tokens)
+        .unwrap_or_default();
+    let (output_ids, gen_config) = {
         // PMAT-189: Handle transformer lock poisoning gracefully
         let t = match transformer.lock() {
             Ok(guard) => guard,
@@ -280,12 +291,16 @@ pub(crate) async fn safetensors_chat_completions_handler(
                     .into_response();
             }
         };
+        // #3718 + #4334: the context budget caps max_tokens in the one config
+        // both st_cpu_generate and generated_reply_tokens read.
         let budget = match st_context_budget(&t, input_ids.len(), max_tokens) {
             Ok(budget) => budget,
             Err(refusal) => return refusal,
         };
-        match st_cpu_generate(&t, &input_ids, budget, temperature) {
-            Ok(ids) => (ids, budget),
+        let gen_config =
+            super::handlers::apr_cpu_generate_config(budget, temperature, top_p, stop_tokens);
+        match st_cpu_generate(&t, &input_ids, &gen_config) {
+            Ok(ids) => (ids, gen_config),
             Err(e) => {
                 return (
                     StatusCode::INTERNAL_SERVER_ERROR,
@@ -295,10 +310,12 @@ pub(crate) async fn safetensors_chat_completions_handler(
             }
         }
     };
+    let max_tokens = gen_config.max_tokens;
     let elapsed = start.elapsed();
 
     // Decode output using BPE tokenizer (PMAT-093)
-    let new_tokens = &output_ids[input_ids.len()..];
+    let new_tokens =
+        super::handlers::generated_reply_tokens(&output_ids, input_ids.len(), &gen_config);
     let output_text = if let Some(ref tok_info) = state.tokenizer_info {
         match tok_info.tokenizer.decode(new_tokens) {
             Ok(text) => text,
@@ -601,7 +618,10 @@ mod chat_helper_tests {
     fn parse_chat_completion_missing_messages_is_err() {
         let req = serde_json::json!({"model": "apr"});
         let result = parse_chat_completion_request(&req);
-        assert!(result.is_err(), "missing messages must yield a 400 response");
+        assert!(
+            result.is_err(),
+            "missing messages must yield a 400 response"
+        );
         let resp = result.err().expect("error response");
         assert_eq!(resp.status(), axum::http::StatusCode::BAD_REQUEST);
     }
@@ -811,19 +831,28 @@ mod chat_helper_tests {
             std::time::Duration::from_millis(1),
             1.0,
         );
-        let body = axum::body::to_bytes(resp.into_body(), usize::MAX).await.expect("body");
+        let body = axum::body::to_bytes(resp.into_body(), usize::MAX)
+            .await
+            .expect("body");
         let events: Vec<String> = String::from_utf8_lossy(&body)
             .lines()
             .filter_map(|l| l.strip_prefix("data: ").map(str::to_string))
             .collect();
-        assert_eq!(events.last().map(String::as_str), Some("[DONE]"), "must end with [DONE]: {events:?}");
+        assert_eq!(
+            events.last().map(String::as_str),
+            Some("[DONE]"),
+            "must end with [DONE]: {events:?}"
+        );
         let finish: Vec<serde_json::Value> = events
             .iter()
             .filter_map(|e| serde_json::from_str::<serde_json::Value>(e).ok())
             .map(|v| v["choices"][0]["finish_reason"].clone())
             .filter(|f| !f.is_null())
             .collect();
-        assert_eq!(finish, vec![serde_json::json!("stop")], "exactly one finish_reason before [DONE]: {events:?}");
+        assert_eq!(
+            finish,
+            vec![serde_json::json!("stop")],
+            "exactly one finish_reason before [DONE]: {events:?}"
+        );
     }
 }
-

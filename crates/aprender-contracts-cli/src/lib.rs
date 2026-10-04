@@ -22,11 +22,10 @@ use cli::Commands;
 /// Glance form, printed by `pv -V`. One line, and it names the tool.
 ///
 /// clap renders `{name} {version}`, so this yields
-/// `pv 0.69.0 (aa7c6ef03) (aprender provable-contracts verifier)` — the build
-/// SHA from `aprender-build-sha` (#4219), as every workspace binary prints.
-/// The bare semver stays the SECOND whitespace field because
-/// `scripts/pv_bin.sh` reads it positionally to prove a resolved binary was
-/// built from HEAD.
+/// `pv 0.70.0 (817d63361) (aprender provable-contracts verifier)`. The bare
+/// semver stays the SECOND whitespace field because `scripts/pv_bin.sh` reads it
+/// positionally; the sha (G0.1, #4476, from `build.rs`) is what tells two trees
+/// at the same workspace version apart.
 const SHORT_VERSION: &str = concat!(
     env!("CARGO_PKG_VERSION"),
     " (",
@@ -120,6 +119,8 @@ pub fn dispatch(command: Commands) -> Result<(), Box<dyn std::error::Error>> {
             contract, binding, ..
         } => commands::audit::run(&contract, binding.as_deref()),
         Commands::Diff { old, new } => commands::diff::run(&old, &new),
+        Commands::Discharge { action } => commands::discharge::run(action),
+        Commands::Challenge { action } => commands::challenge::run(action),
         Commands::Census {
             contract_dir,
             format,
@@ -132,13 +133,21 @@ pub fn dispatch(command: Commands) -> Result<(), Box<dyn std::error::Error>> {
             contract_dir,
             check,
             out,
+            cells_out,
             release,
         } => {
             let subject = release
                 .subject()
                 .map_err(crate::contract_walk::ReleaseArgsRefused)?;
-            commands::extract_rdf::run(&contract_dir, check, subject.as_ref(), out.as_deref())
+            commands::extract_rdf::run(
+                &contract_dir,
+                check,
+                subject.as_ref(),
+                out.as_deref(),
+                cells_out.as_deref(),
+            )
         }
+        Commands::Ontology { command } => commands::ontology::run(&command),
         Commands::Coverage {
             contract_dir,
             binding,
@@ -250,8 +259,12 @@ pub fn dispatch(command: Commands) -> Result<(), Box<dyn std::error::Error>> {
                 watch,
                 strict_test_binding,
                 armed_baseline_ref.as_deref(),
-                gate.as_deref(),
-                commands::lint::shapes_options(gate.as_deref(), shape, &release)?,
+                &gate,
+                commands::lint::shapes_options(
+                    gate.iter().any(|g| g == "shapes").then_some("shapes"),
+                    shape,
+                    &release,
+                )?,
             )
         }
         Commands::Score {
@@ -332,6 +345,7 @@ pub fn dispatch(command: Commands) -> Result<(), Box<dyn std::error::Error>> {
             contract_dir,
             top,
         } => commands::infer::run(&crate_dir, &binding, &contract_dir, top),
+        Commands::Obligations { root, gate } => commands::obligations::run(&root, gate),
         Commands::Unlock { contract, reason } => commands::unlock::run(&contract, &reason),
         Commands::Roofline {
             contract_dir,

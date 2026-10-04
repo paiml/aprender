@@ -44,13 +44,10 @@ struct Binding {
 ///
 /// `"softmax-kernel-v1.yaml"` + `"softmax"` → `"CONTRACT_SOFTMAX_KERNEL_V1_SOFTMAX"`
 fn env_var_name(contract: &str, equation: &str) -> String {
-    let stem = contract
-        .trim_end_matches(".yaml")
-        .trim_end_matches(".yml")
-        .to_uppercase()
-        .replace('-', "_");
-    let eq = equation.to_uppercase().replace('-', "_");
-    format!("CONTRACT_{stem}_{eq}")
+    provable_contracts::build_helper::env_key(
+        contract.trim_end_matches(".yaml").trim_end_matches(".yml"),
+        equation,
+    )
 }
 
 // ─────────────────────────────────────────────────────────────────────────────
@@ -267,20 +264,24 @@ fn main() {
     }
 }
 
+/// Watch `path` for changes, but only if it exists.
+///
+/// A watched path that does not exist makes Cargo rerun this script on every build,
+/// which rebuilds the crate and everything above it each time (the #4614 mutants
+/// timeouts). A helper, not an inline `if`, so callers do not grow in complexity.
+fn watch_if_exists(path: &Path) {
+    if path.exists() {
+        println!("cargo:rerun-if-changed={}", path.display());
+    }
+}
+
 /// Phase 2: Read binding.yaml and emit CONTRACT_* env vars for the proc macro.
 fn emit_contract_bindings() {
     // Re-run if binding.yaml changes
-    let binding_path = Path::new(env!("CARGO_MANIFEST_DIR"))
-        .join("..")
-        .join("..")
-        .join("..")
-        .join("provable-contracts")
-        .join("contracts")
-        .join("realizar")
-        .join("binding.yaml");
+    let binding_path = std::path::Path::new(env!("CARGO_MANIFEST_DIR"))
+        .join("../../contracts/realizar/binding.yaml");
 
-    // Always tell Cargo to re-run if the file appears or changes
-    println!("cargo:rerun-if-changed={}", binding_path.display());
+    watch_if_exists(&binding_path);
 
     if !binding_path.exists() {
         // Graceful fallback: CI/crates.io builds won't have the sibling repo.
@@ -500,7 +501,7 @@ fn generate_arch_requirements_file() {
         .join("contracts")
         .join("architecture-requirements-v1.yaml");
 
-    println!("cargo:rerun-if-changed={}", yaml_path.display());
+    watch_if_exists(&yaml_path);
 
     if !yaml_path.exists() {
         // Graceful fallback for CI/crates.io — write a stub generated file
@@ -811,7 +812,7 @@ fn generate_tensor_names_file() {
         .join("contracts")
         .join("tensor-names-v1.yaml");
 
-    println!("cargo:rerun-if-changed={}", yaml_path.display());
+    watch_if_exists(&yaml_path);
 
     std::fs::write(&out_path, include_str!("src/tensor_names_fallback.rs"))
         .expect("Failed to write tensor_names_generated.rs");
@@ -857,10 +858,8 @@ fn emit_contract_assertions() {
         let Ok(y): Result<ContractYaml, _> = serde_yaml_ng::from_str(&c) else {
             continue;
         };
-        let su = stem.to_uppercase().replace('-', "_");
         for (eq, e) in &y.equations {
-            let eu = eq.to_uppercase().replace('-', "_");
-            let k = format!("CONTRACT_{su}_{eu}");
+            let k = provable_contracts::build_helper::env_key(stem, eq);
             if !e.preconditions.is_empty() {
                 println!("cargo:rustc-env={k}_PRE_COUNT={}", e.preconditions.len());
                 for (i, v) in e.preconditions.iter().enumerate() {

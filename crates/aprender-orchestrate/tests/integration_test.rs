@@ -202,12 +202,16 @@ fn test_help_command() {
         .stdout(predicate::str::contains("build"));
 }
 
-/// Test CLI version
+/// Test CLI version: the binary's own name, not the pre-monorepo "batuta" (ONT-10 S4,
+/// contracts/bin-aprender-orchestrate--aprender-orchestrate-v1.yaml bin:versionString).
 #[test]
 fn test_version_command() {
     let mut cmd = batuta_cmd();
 
-    cmd.arg("--version").assert().success().stdout(predicate::str::contains("batuta"));
+    cmd.arg("--version")
+        .assert()
+        .success()
+        .stdout(predicate::str::starts_with("aprender-orchestrate "));
 }
 
 /// Test Renacer syscall tracing validation (BATUTA-011)

@@ -380,39 +380,28 @@ fn classify_bos_eos(content: &str) -> (bool, bool) {
 include!("chat.rs");
 include!("simple.rs");
 
+#[cfg(all(test, feature = "inference"))]
+#[path = "tests_safetensors_stop_4334.rs"]
+mod tests_safetensors_stop_4334;
 /// #4269 (workstream M of #4263): the ONE SafeTensors CPU generate both serve
 /// handlers (`/v1/chat/completions` in chat.rs, `/generate` in simple.rs) call,
 /// driven through the engine's `realizar::session::Session<StCpuForward>`
 /// instead of `AprTransformer::generate_with_cache`'s own decode loop.
 /// Returns the prompt followed by the generated tokens, as that loop did.
+/// #4334: the stop set and top_p come from the handler's `gen_config`
+/// (`handlers::apr_cpu_generate_config`): the tokenizer's EOS / chat-turn end,
+/// plus token 0, which `apr_transformer::generation::is_eos_token` (GH-330)
+/// stopped on unconditionally and Session has no builtin for.
 #[cfg(feature = "inference")]
 fn st_cpu_generate(
     model: &realizar::apr_transformer::AprTransformer,
     input_ids: &[u32],
-    max_tokens: usize,
-    temperature: f32,
+    gen_config: &realizar::gguf::QuantizedGenerateConfig,
 ) -> std::result::Result<Vec<u32>, String> {
     use realizar::safetensors_infer::StCpuForward;
     use realizar::session::Session;
-    let gen_config = realizar::gguf::QuantizedGenerateConfig {
-        max_tokens,
-        temperature,
-        top_k: 0,
-        top_p: 0.9,
-        // #3760: the sampler draws now; no seed is plumbed from this caller.
-        seed: realizar::apr_transformer::DEFAULT_SEED,
-        repeat_penalty: 1.0,
-        repeat_last_n: 0,
-        // apr_transformer::generation::is_eos_token (GH-330) stopped on token 0
-        // unconditionally; Session has no such builtin, so it is an explicit
-        // stop token here to keep the handlers' stopping behavior identical.
-        stop_tokens: vec![0],
-        trace: false,
-        logprobs: false,
-        cancel: realizar::generate::CancelToken::never(),
-    };
     Session::new(StCpuForward::new(model))
-        .generate(input_ids, &gen_config, &mut |_tok| true)
+        .generate(input_ids, gen_config, &mut |_tok| true)
         .map(|turn| turn.tokens)
         .map_err(|e| e.to_string())
 }

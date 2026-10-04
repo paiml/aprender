@@ -27,7 +27,7 @@ Following Gebru et al. (2021) "Datasheets for Datasets"
 
 ## Preprocessing
 
-- Exact deduplication (alimentar dedup)
+- Exact deduplication (aprender-data dedup)
 - Quality filtering (alnum ratio, line length, dup lines, entropy)
 - Optional FIM augmentation (50% PSM rate)
 - Optional curriculum learning (stage-based data mixing)

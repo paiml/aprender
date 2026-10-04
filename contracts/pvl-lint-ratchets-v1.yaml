@@ -1,0 +1,121 @@
+# ─────────────────────────────────────────────────────────────────────────────
+# pvl-lint-ratchets-v1 — theorem pairing + depends_on, shrink-only (PVL-001 EV-11)
+# (paiml/infra PVL-001 @00553b0b §EV-11; issue #4166; ticket PMAT-4166)
+#
+# WHAT IT GOVERNS
+#   provable_contracts::lint::ratchet_gates — PV-RAT-001 (theorem-pairing) and
+#   PV-RAT-002 (depends-on-present); `pv lint --gate theorem-pairing --gate
+#   depends-on-present` and gates 14/15 of the full run (R-8: computed
+#   everywhere, armed per repo); `make lint-ratchet` (scripts/lint_ratchet.sh),
+#   the only writer of the two baselines, which only turns them down.
+#
+# THE PAIRING RULE IS THIS ROW'S DESIGN. The row says "module name appears in
+# book/"; the full dotted module name on identifier boundaries is the reading
+# that cannot be satisfied by accident (the book names 80 of 165 file STEMS,
+# mostly as ordinary words; measured 2026-09-24).
+# ─────────────────────────────────────────────────────────────────────────────
+name: pvl-lint-ratchets
+version: "1.0.0"
+scope: >
+  Two debts that may fall and never rise: Lean theorem modules no book page names, and kernel-kind contracts
+  with an empty `metadata.depends_on`. Out of scope: whether a book page's mention is a real explanation, and
+  whether a declared dependency is the right one.
+status: active
+
+metadata:
+  version: "1.0.0"
+  kind: pattern
+  created: '2026-09-24'
+  last_modified: '2026-09-24'
+  author: PAIML Engineering
+  description: >
+    `pv lint --gate theorem-pairing` counts Lean theorem modules whose full module name no book page mentions;
+    `--gate depends-on-present` counts kernel-kind contracts with no depends_on. Each rejects a count above its
+    top-level baseline in contracts/lint-baseline.json, reports (never passes) with no baseline, declines when
+    nothing was measured, and never writes the file.
+  references:
+    - 'paiml/infra docs/specifications/pvl-001 @00553b0b §EV-11 (probe + mutation)'
+    - 'crates/aprender-contracts/src/lint/ratchet_gates.rs — PV-RAT-001, PV-RAT-002'
+    - 'scripts/lint_ratchet.sh — `make lint-ratchet`, the downward-only writer'
+
+relations:
+  depends_on: [ont-verdict-lattice-v1]
+
+equations:
+  shrink_only_ratchet:
+    formula: "admits(corpus) ⟺ baseline ≠ ⊥ ∧ debt(corpus) ≤ baseline"
+    domain: "a contract corpus, its repo root (lean/, book/) and contracts/lint-baseline.json"
+    codomain: "Pass | Fail | Unknown"
+    invariants:
+      - "no baseline is Unknown(Report) with the count printed, never Pass"
+      - "nothing measured (no Lean base, no module, no book page, no kernel contract) is a decline"
+    preconditions:
+      - "the baseline, when present, is a non-negative integer at the top level"
+    postconditions:
+      - "verdict ∈ {Pass, Fail, Unknown}"
+      - "contracts/lint-baseline.json is byte-identical after the gate"
+    lean_theorem: none — L4 not declared
+
+invariants:
+  - id: RAT-INV-001
+    property: the unpaired theorem module debt is shrink-only
+    formal: 'unpaired(corpus) ≤ baseline(unpaired_theorem_modules)'
+    prose: false
+  - id: RAT-INV-002
+    property: the kernel contracts without depends_on debt is shrink-only
+    formal: 'without_depends_on(corpus) ≤ baseline(contracts_without_depends_on)'
+    prose: false
+  - id: RAT-INV-003
+    property: a module is paired only by its full dotted name on identifier boundaries
+    formal: 'paired(m) ⟺ ∃ p ∈ book: mentions(p, name(m))'
+    prose: false
+  - id: RAT-INV-004
+    property: a gate never writes its baseline
+    formal: '¬(after_gate(baseline) ≠ before_gate(baseline))'
+    prose: false
+
+falsification_tests:
+  - id: FALSIFY-RAT-001
+    rule: the spec's mutation
+    prediction: adding an unpaired Theorem module turns `pv lint --gate theorem-pairing --gate depends-on-present` RED with PV-RAT-001
+    test: cargo test -p aprender-contracts-cli --test ev11_lint_ratchets
+    if_fails: a theorem module can be added that no book page names, unrecorded
+  - id: FALSIFY-RAT-002
+    rule: the depends_on ratchet
+    prediction: a kernel-kind contract with no depends_on above the baseline is PV-RAT-002; equal or lower passes
+    test: cargo test -p aprender-contracts --lib lint::ratchet_gates::tests::adding_a_kernel_contract_with_no_depends_on_is_red
+    if_fails: a kernel contract that names no composition can be added unrecorded
+  - id: FALSIFY-RAT-003
+    rule: the pairing boundary
+    prediction: a file stem, or a longer module name that starts with it, does not pair a module
+    test: cargo test -p aprender-contracts --lib lint::ratchet_gates::tests::the_file_stem_or_a_longer_name_does_not_pair_a_module
+    if_fails: the book's ordinary words pair modules by accident
+  - id: FALSIFY-RAT-004
+    rule: no baseline is reported, never judged
+    prediction: with no baseline key both gates are Unknown(Report), exit 2, the count printed
+    test: cargo test -p aprender-contracts --lib lint::ratchet_gates::tests::no_baseline_is_reported_and_never_a_pass
+    if_fails: deleting the baseline turns the ratchet into a pass
+  - id: FALSIFY-RAT-005
+    rule: the gates never write
+    prediction: the baseline is byte-identical after both gates, on fixtures and on the real corpus
+    test: cargo test -p aprender-contracts --lib lint::ratchet_gates::tests::neither_gate_writes_the_baseline
+    if_fails: a gate can raise its own baseline
+  - id: FALSIFY-RAT-006
+    rule: R-8
+    prediction: the full `pv lint` run computes theorem-pairing and depends-on-present, reported and not armed
+    test: cargo test -p aprender-contracts --lib lint::tests
+    if_fails: armed_gates could name a gate no run computes
+
+qa_gate:
+  id: F-RAT-001
+  name: lint ratchets
+  description: Theorem pairing and depends_on debts may fall, never rise (PVL-001 EV-11)
+  checks:
+    - unpaired_theorem_modules_shrink_only
+    - contracts_without_depends_on_shrink_only
+    - strict_pairing_boundary
+    - no_baseline_is_report
+    - gate_never_writes
+    - computed_in_every_run
+  pass_criteria: All 6 falsification tests pass; the EV-11 probe exits 0 on the real corpus and `git diff --exit-code contracts/lint-baseline.json` is clean after it
+  falsification: 'add lean/ProvableContracts/Theorems/S/B.lean named by no book page → exit 1, PV-RAT-001 (measured on a fixture 2026-09-24)'

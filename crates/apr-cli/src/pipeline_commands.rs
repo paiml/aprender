@@ -9,15 +9,15 @@ pub enum PipelineCommands {
     Plan {
         /// Path to forjar pipeline manifest (YAML)
         #[arg(value_name = "MANIFEST")]
-        manifest: PathBuf,
+        manifest: ConfigPath,
 
         /// Target specific machine
         #[arg(short, long)]
-        machine: Option<String>,
+        machine: Option<FreeText>,
 
         /// Filter to resources with this tag
         #[arg(short, long)]
-        tag: Option<String>,
+        tag: Option<FreeText>,
 
         /// Show estimated change cost per resource type
         #[arg(long)]
@@ -28,15 +28,15 @@ pub enum PipelineCommands {
     Apply {
         /// Path to forjar pipeline manifest (YAML)
         #[arg(value_name = "MANIFEST")]
-        manifest: PathBuf,
+        manifest: ConfigPath,
 
         /// Target specific machine
         #[arg(short, long)]
-        machine: Option<String>,
+        machine: Option<FreeText>,
 
         /// Filter to resources with this tag
         #[arg(short, long)]
-        tag: Option<String>,
+        tag: Option<FreeText>,
 
         /// Number of parallel SSH sessions (default: 5)
         #[arg(short, long)]
@@ -51,13 +51,13 @@ pub enum PipelineCommands {
     Status {
         /// Path to forjar pipeline manifest (YAML)
         #[arg(value_name = "MANIFEST")]
-        manifest: PathBuf,
+        manifest: ConfigPath,
     },
 
     /// Validate pipeline manifest without connecting to machines.
     Validate {
         /// Path to forjar pipeline manifest (YAML)
         #[arg(value_name = "MANIFEST")]
-        manifest: PathBuf,
+        manifest: ConfigPath,
     },
 }

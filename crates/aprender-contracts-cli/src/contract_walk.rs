@@ -193,6 +193,39 @@ impl fmt::Display for LintRejected {
 
 impl std::error::Error for LintRejected {}
 
+/// `pv obligations --gate` found problems (PVL-001 EV-10): measured, and failed. Exit 1.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub struct ObligationsRejected {
+    /// Problems reported.
+    pub problems: usize,
+    /// Contracts checked.
+    pub contracts: usize,
+}
+
+impl fmt::Display for ObligationsRejected {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        write!(
+            f,
+            "obligation gate failed ({} problem(s) over {} contracts)",
+            self.problems, self.contracts
+        )
+    }
+}
+
+impl std::error::Error for ObligationsRejected {}
+/// One `--gate` run measured and failed, and says WHAT failed: the line after `reject:` is the gate's own findings
+/// (ONT-4e: `reject: A refines B: precondition strengthened (PRE-1)`), not a gate count. Exit 1.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct GateRejected(pub String);
+
+impl fmt::Display for GateRejected {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        f.write_str(&self.0)
+    }
+}
+
+impl std::error::Error for GateRejected {}
+
 /// `pv lint --gate sigma` found Σ itself malformed (ONT-001 §5 ONT-2b): the DECLARATION is wrong, not the corpus,
 /// so it is `error:` at exit 3 and never `reject:`.
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -246,7 +279,11 @@ pub const ARMED_GATES_SHRANK_EXIT: i32 = 3;
 /// empty corpus or a declined lint meet, [`ARMED_GATES_SHRANK_EXIT`] for a shrunk
 /// armed set, 1 for everything else (a parse failure and a rejected meet included).
 pub fn exit_code_for(err: &(dyn std::error::Error + 'static)) -> i32 {
-    if err.downcast_ref::<ZeroContracts>().is_some() || err.downcast_ref::<LintDeclined>().is_some()
+    if err.downcast_ref::<ZeroContracts>().is_some()
+        || err.downcast_ref::<LintDeclined>().is_some()
+        || err
+            .downcast_ref::<crate::commands::discharge::DischargeDeclined>()
+            .is_some()
     {
         ZERO_CONTRACTS_EXIT
     } else if err.downcast_ref::<ArmedGatesShrank>().is_some()
@@ -267,11 +304,20 @@ pub fn exit_code_for(err: &(dyn std::error::Error + 'static)) -> i32 {
 /// ONT-1 asserts both halves of the line.
 #[must_use]
 pub fn verdict_for(err: &(dyn std::error::Error + 'static)) -> &'static str {
-    if err.downcast_ref::<ZeroContracts>().is_some() || err.downcast_ref::<LintDeclined>().is_some()
+    if err.downcast_ref::<ZeroContracts>().is_some()
+        || err.downcast_ref::<LintDeclined>().is_some()
+        || err
+            .downcast_ref::<crate::commands::discharge::DischargeDeclined>()
+            .is_some()
     {
         "decline"
     } else if err.downcast_ref::<ParseErrors>().is_some()
         || err.downcast_ref::<LintRejected>().is_some()
+        || err.downcast_ref::<ObligationsRejected>().is_some()
+        || err.downcast_ref::<GateRejected>().is_some()
+        || err
+            .downcast_ref::<crate::commands::discharge::DischargeRejected>()
+            .is_some()
     {
         "reject"
     } else {

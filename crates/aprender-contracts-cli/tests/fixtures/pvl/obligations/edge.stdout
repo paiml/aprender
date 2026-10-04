@@ -1,0 +1,4 @@
+::error::contracts/e-merge-v1.yaml: 2 test-bearing obligation(s) under `falsification:`, which pv cannot read — use `falsification_tests:`
+::error::contracts/f-falsy-v1.yaml: pv validate failed
+::error::contracts/h-false-doc-v1.yaml: pv validate failed
+pv obligation gate: 3 problem(s) over 4 contracts

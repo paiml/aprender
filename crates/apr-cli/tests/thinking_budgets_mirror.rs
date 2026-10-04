@@ -24,20 +24,8 @@ const MIRROR: &str = include_str!("../contracts/thinking-budgets-v1.yaml");
 
 /// The linted source, or `None` (after naming the skip) when out of tree.
 fn source_or_skip(test: &str) -> Option<String> {
-    let root = std::path::Path::new(env!("CARGO_MANIFEST_DIR")).join("../..");
-    if !root.join("contracts").is_dir() {
-        eprintln!(
-            "SKIP {test}: out of tree (no {} beside this crate) - the linted source lives in the \
-             workspace, which a published crate does not carry (#4129)",
-            root.join("contracts").display()
-        );
-        return None;
-    }
-    let path = root.join("contracts/thinking-budgets-v1.yaml");
-    Some(
-        std::fs::read_to_string(&path)
-            .unwrap_or_else(|e| panic!("in tree, {} must be readable: {e}", path.display())),
-    )
+    // The shared in-tree rule (#4175): in tree a missing source FAILS, out of tree it skips by name.
+    provable_contracts::workspace_file_or_skip!(test, "contracts/thinking-budgets-v1.yaml")
 }
 
 #[test]

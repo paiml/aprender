@@ -21,22 +21,22 @@ jobs:
         include:
           - target: x86_64-unknown-linux-gnu
             runner: ubuntu-latest
-            binary: verificar
+            binary: aprender-verify
             artifact: verificar-x86_64-linux
             use_cross: true
           - target: x86_64-apple-darwin
             runner: macos-latest
-            binary: verificar
+            binary: aprender-verify
             artifact: verificar-x86_64-macos
             use_cross: false
           - target: aarch64-apple-darwin
             runner: macos-latest
-            binary: verificar
+            binary: aprender-verify
             artifact: verificar-aarch64-macos
             use_cross: false
           - target: x86_64-pc-windows-msvc
             runner: windows-latest
-            binary: verificar.exe
+            binary: aprender-verify.exe
             artifact: verificar-x86_64-windows.exe
             use_cross: false
 

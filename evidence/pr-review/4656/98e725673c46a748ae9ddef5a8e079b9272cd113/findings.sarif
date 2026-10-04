@@ -1,0 +1,280 @@
+{
+  "$schema": "https://docs.oasis-open.org/sarif/sarif/v2.1.0/errata01/os/schemas/sarif-schema-2.1.0.json",
+  "version": "2.1.0",
+  "runs": [
+    {
+      "tool": {
+        "driver": {
+          "name": "pmat"
+        }
+      },
+      "invocations": [
+        {
+          "executionSuccessful": true,
+          "toolExecutionNotifications": []
+        }
+      ],
+      "results": [
+        {
+          "ruleId": "lock_only_commit",
+          "level": "note",
+          "message": {
+            "text": "PASS: git diff --name-only ab6843206a 98e725673c lists exactly one path, Cargo.lock (102 insertions, 102 deletions)"
+          },
+          "properties": {
+            "grounding": "measured",
+            "command": [
+              "git",
+              "diff",
+              "--name-only",
+              "ab6843206a",
+              "98e725673c"
+            ],
+            "exit_code": 0,
+            "stdout_sha256": "3e503ffd2d2f0c135bc5d8c97cba5aff82676478d90cb002333ed9583b92c5a0",
+            "failure_scenario": "If a source or manifest file rode along in a 'lock-only' bump it would ship unreviewed behaviour change.",
+            "precision_class": "advisory"
+          }
+        },
+        {
+          "ruleId": "moved_packages_patch_level_family",
+          "level": "note",
+          "message": {
+            "text": "PASS: 35 packages move, 0 added, 0 removed (1391 -> 1391, names identical), 0 minor/major moves, every source unchanged (crates.io registry), no checksum change on any unmoved package. Movers: 15 wasmtime 48.0.3->48.0.4 (wasmtime, wasmtime-environ, wasmtime-internal-*, pulley-*), 13 cranelift-* 0.135.3->0.135.4/0.135.5, 7 wasm-tools 0.254.0->0.254.2 (wasmparser, wasm-encoder, wasm-metadata, wasmprinter, wasm-compose, wit-component, wit-parser) which are wasmtime's own pinned deps"
+          },
+          "properties": {
+            "grounding": "measured",
+            "command": [
+              "python3",
+              "/tmp/w27-parse.py"
+            ],
+            "exit_code": 0,
+            "stdout_sha256": "8004a7042fd472467c71995ae26837adf79c9ef31a5e14a9a20a88dd0a72558b",
+            "failure_scenario": "A new crate, a different registry or an unrelated minor bump slipping in under the advisory fix is a supply-chain change.",
+            "precision_class": "advisory"
+          }
+        },
+        {
+          "ruleId": "lock_reproduces_from_cargo_update",
+          "level": "note",
+          "message": {
+            "text": "PASS: starting from the base Cargo.lock (ab6843206a), `cargo update -p wasmtime --precise 48.0.4` in a clean git-archive tree outside the repo exits 0 and yields a Cargo.lock byte-identical to 98e725673c's (cmp rc 0). The commit is therefore the deterministic cargo output, not a hand edit"
+          },
+          "properties": {
+            "grounding": "measured",
+            "command": [
+              "cargo",
+              "update",
+              "-p",
+              "wasmtime",
+              "--precise",
+              "48.0.4"
+            ],
+            "exit_code": 0,
+            "stdout_sha256": "0f14c62ee93f6f5206fce63ad3231c346d60851c1bdb0a825cac30a40e99d521",
+            "failure_scenario": "A hand-edited lock that cargo would not produce could fail --locked builds or hide a tampered checksum.",
+            "precision_class": "advisory"
+          }
+        },
+        {
+          "ruleId": "audit_red_on_base_lock",
+          "level": "note",
+          "message": {
+            "text": "PASS (red reproduced): cargo audit on the base lock (ab6843206a) exits 1 and reports RUSTSEC-2026-0325, 0326 and 0327"
+          },
+          "properties": {
+            "grounding": "measured",
+            "command": [
+              "cargo",
+              "audit"
+            ],
+            "exit_code": 1,
+            "stdout_sha256": "a1dcff4a4b409ffdb7b5ca8f0be3a981637235767de8a189be42079ccfa152a0",
+            "failure_scenario": "If the base lock did not trip the advisories the bump would not be the remedy for CI 37061601053.",
+            "precision_class": "advisory"
+          }
+        },
+        {
+          "ruleId": "audit_green_on_head",
+          "level": "note",
+          "message": {
+            "text": "PASS: cargo audit (cargo-audit 0.22.1) on 98e725673c exits 0; 0 mentions of RUSTSEC-2026-0325/6/7; 4 allowed warnings only (der, lru, spin x2: unsound/yanked, pre-existing and in the repo ignore list, none wasmtime)"
+          },
+          "properties": {
+            "grounding": "measured",
+            "command": [
+              "cargo",
+              "audit"
+            ],
+            "exit_code": 0,
+            "stdout_sha256": "d348be5fd4d90cca008396b0666834bbaf926abaf7f2ac5292e78d33812151df",
+            "failure_scenario": "If the advisories were still reported the x86-main sov.security job stays RED.",
+            "precision_class": "advisory"
+          }
+        },
+        {
+          "ruleId": "deny_advisories_green_on_head",
+          "level": "note",
+          "message": {
+            "text": "PASS: cargo deny check advisories (cargo-deny 0.19.0) on 98e725673c exits 0, 'advisories ok'"
+          },
+          "properties": {
+            "grounding": "measured",
+            "command": [
+              "cargo",
+              "deny",
+              "check",
+              "advisories"
+            ],
+            "exit_code": 0,
+            "stdout_sha256": "799fc05e6513bf365cc7565ea51cc5cb9ca6690b1cd1fe7777339be83437131b",
+            "failure_scenario": "deny and audit use different ignore handling; a deny-only advisory would still fail the gate.",
+            "precision_class": "advisory"
+          }
+        },
+        {
+          "ruleId": "dependency_edge_churn_unrelated_crates",
+          "level": "warning",
+          "message": {
+            "text": "FINDING (advisory, level warning): 18 packages outside the wasmtime family changed only their dependency EDGES, with no version, source or checksum change: windows-sys 0.61.2 -> 0.42/0.48/0.52/0.59/0.60.2 on 14 crates (errno, rustix, tempfile, socket2, ...), itertools 0.14.0 -> 0.10.5 on prost-derive 0.13.5 and 0.14.4, unicode-width 0.2.0 -> 0.1.11 on codespan-reporting, windows-link 0.2.1 -> 0.1.3 on generator. Every target version already existed in the lock and satisfies the dependents' declared ranges, and the lock is byte-identical to plain `cargo update -p wasmtime --precise 48.0.4`, so this is cargo's own re-resolution rather than an author edit. It touches Windows-only targets and one proc-macro"
+          },
+          "properties": {
+            "grounding": "measured",
+            "command": [
+              "python3",
+              "/tmp/w27-parse.py"
+            ],
+            "exit_code": 0,
+            "stdout_sha256": "8004a7042fd472467c71995ae26837adf79c9ef31a5e14a9a20a88dd0a72558b",
+            "failure_scenario": "prost-derive built against itertools 0.10.5 instead of 0.14.0 could change generated code or fail to compile; not observed here because no build or test was run on this host.",
+            "precision_class": "advisory"
+          }
+        },
+        {
+          "ruleId": "manifest_floor_still_48_0_3",
+          "level": "warning",
+          "message": {
+            "text": "FINDING (advisory, level warning): workspace Cargo.toml line 382 still reads wasmtime = \"48.0.3\" (a caret requirement) and the comment above it names 48.0.3 as the PATCHED line; the lock now holds 48.0.4 but the manifest floor still admits the affected 48.0.3, so a lock regeneration that held back or a --precise 48.0.3 would re-open RUSTSEC-2026-0325/6/7 without any manifest signal. The task's stated fix is >=48.0.4,<49; a manifest floor bump is outside this lock-only commit"
+          },
+          "properties": {
+            "grounding": "measured",
+            "command": [
+              "grep",
+              "-n",
+              "^wasmtime = ",
+              "Cargo.toml"
+            ],
+            "exit_code": 0,
+            "stdout_sha256": "87fe89c13778d1a2abbe614293766d2684106d5d0a59555a5ae99a268d4810bf",
+            "failure_scenario": "A lock regeneration or `cargo update -p wasmtime --precise 48.0.3` passes cargo and silently re-introduces the three advisories; only cargo audit would notice.",
+            "precision_class": "advisory"
+          }
+        },
+        {
+          "ruleId": "duplication_scan_clean",
+          "level": "note",
+          "message": {
+            "text": "PASS: scripts/pr_review_duplication_scan.sh over base..head with --rust-semantic: 6 filename needles, 0 hits, 1166/1166 sibling branches scanned, merge_base_to_main 0 files"
+          },
+          "properties": {
+            "grounding": "measured",
+            "command": [
+              "scripts/pr_review_duplication_scan.sh",
+              "--base",
+              "989cb012e57f92945ff1e699a59b659eb09e0f0f",
+              "--head",
+              "98e725673c46a748ae9ddef5a8e079b9272cd113",
+              "--rust-semantic",
+              "--json",
+              "/tmp/w27/dup.json"
+            ],
+            "exit_code": 0,
+            "stdout_sha256": "c2686bb689a34e2bbba1c2c691376e4f145c6baadc40c41de3ef7a158ba32e57",
+            "failure_scenario": "An existing equivalent change on a sibling branch would mean duplicated remediation work.",
+            "precision_class": "advisory"
+          }
+        }
+      ]
+    },
+    {
+      "tool": {
+        "driver": {
+          "name": "antigravity"
+        }
+      },
+      "invocations": [
+        {
+          "executionSuccessful": true,
+          "toolExecutionNotifications": []
+        }
+      ],
+      "results": [
+        {
+          "ruleId": "agy_cargo-lock-only",
+          "level": "note",
+          "message": {
+            "text": "The commit modifies only Cargo.lock."
+          },
+          "properties": {
+            "grounding": "asserted",
+            "rationale": "raised by the antigravity reviewer (agy marked it cited); not re-verified by the primary (reverified_by_primary: false)",
+            "failure_scenario": "Permits malicious code execution or logic bugs if source code files were altered under the guise of a pure dependency update.",
+            "precision_class": "advisory"
+          }
+        },
+        {
+          "ruleId": "agy_moved-packages",
+          "level": "note",
+          "message": {
+            "text": "Every moved package stays at a patch-level update (e.g. 48.0.3 to 48.0.4) and is strictly within the wasmtime, cranelift, and wasm-tools families."
+          },
+          "properties": {
+            "grounding": "asserted",
+            "rationale": "raised by the antigravity reviewer (agy marked it cited); not re-verified by the primary (reverified_by_primary: false)",
+            "failure_scenario": "Permits API breakage and compilation failures if minor/major version bumps were included, or permits supply-chain risks if unrelated packages were bumped.",
+            "precision_class": "advisory"
+          }
+        },
+        {
+          "ruleId": "agy_added-removed",
+          "level": "note",
+          "message": {
+            "text": "No packages, sources, or checksums were added or removed; existing packages only had their versions and corresponding checksums updated."
+          },
+          "properties": {
+            "grounding": "asserted",
+            "rationale": "raised by the antigravity reviewer (agy marked it measured); not re-verified by the primary (reverified_by_primary: false)",
+            "failure_scenario": "Permits supply-chain attacks if new untrusted package sources are added, or permits build failures if required packages are completely removed.",
+            "precision_class": "advisory"
+          }
+        },
+        {
+          "ruleId": "agy_dependency-churn",
+          "level": "warning",
+          "message": {
+            "text": "The churn in dependency edges for unrelated crates is a correctness concern, not a supply-chain concern, as cargo audit found 0 vulnerabilities."
+          },
+          "properties": {
+            "grounding": "asserted",
+            "rationale": "raised by the antigravity reviewer (agy marked it measured); not re-verified by the primary (reverified_by_primary: false)",
+            "failure_scenario": "Permits runtime bugs or undefined behavior by inadvertently downgrading unrelated crates (like itertools to 0.10.5) to older versions that may lack bugfixes, even though no known CVEs are introduced.",
+            "precision_class": "advisory"
+          }
+        },
+        {
+          "ruleId": "agy_cargo-toml-floor",
+          "level": "warning",
+          "message": {
+            "text": "The workspace Cargo.toml still specifies wasmtime = \"48.0.3\", which is a caret requirement that permits the affected version 48.0.3 to be resolved."
+          },
+          "properties": {
+            "grounding": "asserted",
+            "rationale": "raised by the antigravity reviewer (agy marked it cited); not re-verified by the primary (reverified_by_primary: false)",
+            "failure_scenario": "Permits downstream consumers of this crate to remain vulnerable to RUSTSEC-2026-0325/0326/0327 if their dependency resolution selects 48.0.3, because the floor was not explicitly bumped to >= 48.0.4.",
+            "precision_class": "advisory"
+          }
+        }
+      ]
+    }
+  ]
+}

@@ -1832,6 +1832,7 @@ mod tests {
             .expect("spawn parse thread")
             .join()
             .expect("parse thread must not panic")
+            .into()
     }
 
     #[test]
@@ -1900,6 +1901,7 @@ mod tests {
             .expect("spawn parse thread")
             .join()
             .expect("parse thread must not panic")
+            .map(Into::into)
     }
 
     /// FALSIFY-APR-PRETRAIN-INIT-001: --init flag exists in clap surface.

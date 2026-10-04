@@ -59,13 +59,8 @@ pub enum RelationsOutcome {
     },
 }
 
-/// One typed edge, as read from a contract's `relations:` block.
-#[derive(Debug, Clone, PartialEq, Eq, PartialOrd, Ord)]
-struct Edge {
-    from: String,
-    role: String,
-    to: String,
-}
+// One typed edge, as read from a contract's `relations:` block — the type ONT-5's witness hashes and encodes.
+use crate::ontology::witness::TypedEdge as Edge;
 
 /// Run the gate over `contract_dir`, reading Σ from `<contract_dir>/ontology.yaml`.
 #[must_use]
@@ -161,7 +156,60 @@ pub fn run_relations_gate(contract_dir: &Path) -> RelationsOutcome {
     }
 }
 
+/// ONT-5: the corpus as pv-sat and the `ont-consistency` gate read it. Only a Σ that parses and holds its own integrity
+/// yields a graph.
+#[derive(Debug)]
+pub enum TypedGraph {
+    /// No `ontology.yaml` under the corpus.
+    NoSigma,
+    /// Σ does not parse, or does not satisfy its own integrity rules.
+    Malformed(SigmaError),
+    /// Every contract id, and every typed edge that passes rules 1–4 (symmetric roles closed).
+    Read {
+        ids: BTreeSet<String>,
+        edges: BTreeSet<Edge>,
+    },
+}
+
+/// The well-formed typed edges and the id set. An edge the `relations` gate rejects is not an edge here: that
+/// gate reports it, and the consistency of a relation nobody could resolve is not a question.
+#[must_use]
+pub fn typed_graph(contract_dir: &Path) -> TypedGraph {
+    let sigma_path = contract_dir.join("ontology.yaml");
+    let Ok(text) = std::fs::read_to_string(&sigma_path) else {
+        return TypedGraph::NoSigma;
+    };
+    let sigma = match Sigma::from_yaml(&text) {
+        Ok(s) => s,
+        Err(e) => return TypedGraph::Malformed(e),
+    };
+    if let Err(e) = sigma.check_integrity() {
+        return TypedGraph::Malformed(e);
+    }
+    let (docs, stems) = read_corpus(contract_dir, &sigma_path);
+    let mut edges = BTreeSet::new();
+    for (stem, file, doc) in &docs {
+        if let Some(map) = doc.get("relations").and_then(serde_yaml::Value::as_mapping) {
+            let _ = check_block(&sigma, stem, file, map, &stems, &mut edges);
+        }
+    }
+    TypedGraph::Read { ids: stems, edges }
+}
+
 type Doc = (String, std::path::PathBuf, serde_yaml::Value);
+
+/// Every contract document the corpus parses, by stem, with its file (ONT-4e reads `requires`/`ensures`/`invariants`
+/// from them). `ontology.yaml` is not a contract and is left out; a file that does not parse is the `validate` gate's
+/// business and is left out too. A stem claimed by several files keeps the last in walk order, as `typed_graph` does.
+#[must_use]
+pub fn corpus_documents(
+    contract_dir: &Path,
+) -> BTreeMap<String, (std::path::PathBuf, serde_yaml::Value)> {
+    let (docs, _) = read_corpus(contract_dir, &contract_dir.join("ontology.yaml"));
+    docs.into_iter()
+        .map(|(stem, file, doc)| (stem, (file, doc)))
+        .collect()
+}
 
 /// Pass 1: every raw document the corpus parses, and every stem — so a target can be resolved against the set.
 fn read_corpus(contract_dir: &Path, sigma_path: &Path) -> (Vec<Doc>, BTreeSet<String>) {
@@ -270,6 +318,32 @@ fn cycle_sweep(sigma: &Sigma, edges: &BTreeSet<Edge>) -> (Vec<LintFinding>, Vec<
                 format!("contracts/{}.yaml", path[0]),
             ));
             cycles.push(format!("{role}: {shown}"));
+        }
+    }
+    // ONT-9: `depends_on ∪ supersedes` is acyclic as ONE relation (ont-self-v1 INV-2). A cycle that alternates the
+    // two roles is a cycle in neither alone, so the per-role sweep above passes it; only the union sees it. Reported
+    // only when neither role already closed a cycle of its own, so one defect is one finding.
+    let union_roles = ["depends_on", "supersedes"];
+    let per_role_hit = cycles
+        .iter()
+        .any(|c| union_roles.iter().any(|r| c.starts_with(&format!("{r}:"))));
+    if !per_role_hit {
+        let adj: BTreeMap<&str, Vec<&str>> = edges
+            .iter()
+            .filter(|e| union_roles.contains(&e.role.as_str()))
+            .fold(BTreeMap::new(), |mut m, e| {
+                m.entry(e.from.as_str()).or_default().push(e.to.as_str());
+                m
+            });
+        if let Some(path) = first_cycle(&adj) {
+            let shown = path.join(" -> ");
+            findings.push(LintFinding::new(
+                "PV-ONT-009",
+                RuleSeverity::Error,
+                format!("`depends_on ∪ supersedes` is acyclic (ont-self-v1 INV-2), and the corpus closes a cycle through the two roles together: {shown}"),
+                format!("contracts/{}.yaml", path[0]),
+            ));
+            cycles.push(format!("depends_on ∪ supersedes: {shown}"));
         }
     }
     (findings, cycles)
@@ -494,6 +568,22 @@ mod tests {
         assert_eq!(rules(&findings), vec!["PV-ONT-009"]);
         assert!(
             findings[0].message.contains("a -> b -> c -> a"),
+            "{}",
+            findings[0].message
+        );
+    }
+
+    /// ONT-9 (`ont-self-v1` ONTSELF-INV-002): `depends_on ∪ supersedes` is acyclic, not just each role alone.
+    /// `a depends_on b` and `b supersedes a` close a cycle through neither role by itself — the per-role sweep
+    /// passed it (measured on the pre-ONT-9 gate: `passed: true`, zero findings).
+    #[test]
+    fn a_cycle_through_depends_on_and_supersedes_together_is_rejected() {
+        let (result, findings) = ran("relations-mixed-cycle");
+        assert!(!result.passed, "{findings:?}");
+        assert_eq!(rules(&findings), vec!["PV-ONT-009"]);
+        assert!(
+            findings[0].message.contains("depends_on ∪ supersedes")
+                && findings[0].message.contains("a -> b -> a"),
             "{}",
             findings[0].message
         );

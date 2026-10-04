@@ -4,7 +4,7 @@
 //! Demonstrates monitoring multiple batch jobs with progress bars
 //! and completion estimates. Useful for data pipelines and ETL jobs.
 //!
-//! Run with: cargo run -p presentar-terminal --example `batch_progress`
+//! Run with: cargo run -p aprender-present-terminal --example `batch_progress`
 
 use presentar_core::{Canvas, Color, Point, Rect, TextStyle};
 use presentar_terminal::direct::{CellBuffer, DiffRenderer, DirectTerminalCanvas};

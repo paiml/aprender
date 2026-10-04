@@ -3,7 +3,7 @@
     #[test]
     fn test_extract_paths_tree_exempt() {
         let cmd = Commands::Extended(ExtendedCommands::Tree {
-            file: PathBuf::from("model.apr"),
+            file: PathBuf::from("model.apr").into(),
             filter: None,
             format: crate::commands::tree::TreeFormat::Ascii,
             sizes: false,
@@ -17,9 +17,9 @@
     #[test]
     fn test_extract_paths_flow_exempt() {
         let cmd = Commands::Extended(ExtendedCommands::Flow {
-            file: PathBuf::from("model.apr"),
+            file: PathBuf::from("model.apr").into(),
             layer: None,
-            component: "full".to_string(),
+            component: "full".to_string().into(),
             verbose: false,
             json: false,
         });
@@ -31,11 +31,11 @@
     #[test]
     fn test_extract_paths_publish_exempt() {
         let cmd = Commands::Extended(ExtendedCommands::Tools(ToolCommands::Publish {
-            directory: PathBuf::from("/tmp/models"),
-            repo_id: "org/repo".to_string(),
+            directory: PathBuf::from("/tmp/models").into(),
+            repo_id: "org/repo".to_string().into(),
             model_name: None,
-            license: "mit".to_string(),
-            pipeline_tag: "text-generation".to_string(),
+            license: "mit".to_string().into(),
+            pipeline_tag: "text-generation".to_string().into(),
             library_name: None,
             tags: None,
             message: None,
@@ -50,8 +50,8 @@
     #[test]
     fn test_extract_paths_tune_exempt() {
         let cmd = Commands::Extended(ExtendedCommands::Tune {
-            file: Some(PathBuf::from("model.apr")),
-            method: "auto".to_string(),
+            file: Some(PathBuf::from("model.apr").into()),
+            method: "auto".to_string().into(),
             rank: None,
             vram: 16.0,
             plan: false,
@@ -61,8 +61,8 @@
             json: false,
             task: None,
             budget: 10,
-            strategy: "tpe".to_string(),
-            scheduler: "asha".to_string(),
+            strategy: "tpe".to_string().into(),
+            scheduler: "asha".to_string().into(),
             scout: false,
             data: None,
             num_classes: 5,
@@ -79,7 +79,7 @@
     #[test]
     fn test_extract_paths_pull_exempt() {
         let cmd = Commands::Pull {
-            model_ref: "hf://org/repo".to_string(),
+            model_ref: "hf://org/repo".to_string().into(),
             repo: None,
             force: false,
             dry_run: false,
@@ -97,7 +97,7 @@
     #[test]
     fn test_extract_paths_rm_exempt() {
         let cmd = Commands::Rm {
-            model_ref: "model-name".to_string(),
+            model_ref: "model-name".to_string().into(),
         };
         let paths = extract_model_paths(&cmd);
         assert!(paths.is_empty(), "Rm is a diagnostic command (exempt)");
@@ -108,8 +108,8 @@
     fn test_extract_paths_canary_exempt() {
         let cmd = Commands::Canary {
             command: CanaryCommands::Check {
-                file: PathBuf::from("model.apr"),
-                canary: PathBuf::from("canary.json"),
+                file: PathBuf::from("model.apr").into(),
+                canary: PathBuf::from("canary.json").into(),
             },
         };
         let paths = extract_model_paths(&cmd);
@@ -120,7 +120,7 @@
     #[test]
     fn test_extract_paths_oracle_exempt() {
         let cmd = Commands::Extended(ExtendedCommands::Tools(ToolCommands::Oracle {
-            source: Some("model.gguf".to_string()),
+            source: Some("model.gguf".to_string().into()),
             family: None,
             size: None,
             compliance: false,
@@ -141,9 +141,9 @@
         let cmd = Commands::Extended(ExtendedCommands::Tools(ToolCommands::Showcase {
             auto_verify: false,
             step: None,
-            tier: "small".to_string(),
-            model_dir: PathBuf::from("./models"),
-            baseline: "llama-cpp,ollama".to_string(),
+            tier: "small".to_string().into(),
+            model_dir: PathBuf::from("./models").into(),
+            baseline: "llama-cpp,ollama".to_string().into(),
             zram: false,
             runs: 30,
             gpu: false,
@@ -163,8 +163,8 @@
     fn test_extract_paths_rosetta_convert() {
         let cmd = Commands::Extended(ExtendedCommands::Tools(ToolCommands::Rosetta {
             action: RosettaCommands::Convert {
-                source: PathBuf::from("model.gguf"),
-                target: PathBuf::from("out.safetensors"),
+                source: PathBuf::from("model.gguf").into(),
+                target: PathBuf::from("out.safetensors").into(),
                 quantize: None,
                 verify: false,
                 json: false,
@@ -180,9 +180,9 @@
     fn test_extract_paths_rosetta_chain() {
         let cmd = Commands::Extended(ExtendedCommands::Tools(ToolCommands::Rosetta {
             action: RosettaCommands::Chain {
-                source: PathBuf::from("model.gguf"),
-                formats: vec!["safetensors".to_string(), "apr".to_string()],
-                work_dir: PathBuf::from("/tmp"),
+                source: PathBuf::from("model.gguf").into(),
+                formats: vec!["safetensors".to_string().into(), "apr".to_string().into()],
+                work_dir: PathBuf::from("/tmp").into(),
                 json: false,
             },
         }));
@@ -195,8 +195,8 @@
     fn test_extract_paths_rosetta_verify() {
         let cmd = Commands::Extended(ExtendedCommands::Tools(ToolCommands::Rosetta {
             action: RosettaCommands::Verify {
-                source: PathBuf::from("model.apr"),
-                intermediate: "safetensors".to_string(),
+                source: PathBuf::from("model.apr").into(),
+                intermediate: "safetensors".to_string().into(),
                 tolerance: 1e-5,
                 json: false,
             },
@@ -210,9 +210,9 @@
     fn test_extract_paths_rosetta_compare_inference() {
         let cmd = Commands::Extended(ExtendedCommands::Tools(ToolCommands::Rosetta {
             action: RosettaCommands::CompareInference {
-                model_a: PathBuf::from("model_a.gguf"),
-                model_b: PathBuf::from("model_b.apr"),
-                prompt: "test".to_string(),
+                model_a: PathBuf::from("model_a.gguf").into(),
+                model_b: PathBuf::from("model_b.apr").into(),
+                prompt: "test".to_string().into(),
                 max_tokens: 5,
                 temperature: 0.0,
                 tolerance: 0.1,
@@ -231,7 +231,7 @@
     fn test_extract_paths_rosetta_inspect_exempt() {
         let cmd = Commands::Extended(ExtendedCommands::Tools(ToolCommands::Rosetta {
             action: RosettaCommands::Inspect {
-                file: PathBuf::from("model.gguf"),
+                file: PathBuf::from("model.gguf").into(),
                 hexdump: false,
                 json: false,
             },
@@ -248,8 +248,8 @@
     fn test_extract_paths_rosetta_diff_tensors_exempt() {
         let cmd = Commands::Extended(ExtendedCommands::Tools(ToolCommands::Rosetta {
             action: RosettaCommands::DiffTensors {
-                model_a: PathBuf::from("a.gguf"),
-                model_b: PathBuf::from("b.apr"),
+                model_a: PathBuf::from("a.gguf").into(),
+                model_b: PathBuf::from("b.apr").into(),
                 mismatches_only: false,
                 show_values: 0,
                 filter: None,
@@ -268,7 +268,7 @@
     fn test_extract_paths_rosetta_fingerprint_exempt() {
         let cmd = Commands::Extended(ExtendedCommands::Tools(ToolCommands::Rosetta {
             action: RosettaCommands::Fingerprint {
-                model: PathBuf::from("model.gguf"),
+                model: PathBuf::from("model.gguf").into(),
                 model_b: None,
                 output: None,
                 filter: None,
@@ -288,7 +288,7 @@
     fn test_extract_paths_rosetta_validate_stats_exempt() {
         let cmd = Commands::Extended(ExtendedCommands::Tools(ToolCommands::Rosetta {
             action: RosettaCommands::ValidateStats {
-                model: PathBuf::from("model.apr"),
+                model: PathBuf::from("model.apr").into(),
                 reference: None,
                 fingerprints: None,
                 threshold: 3.0,
@@ -353,7 +353,7 @@
     #[test]
     fn test_execute_inspect_file_not_found() {
         let cli = make_cli(Commands::Inspect {
-            file: PathBuf::from("/tmp/nonexistent_model_inspect_test.apr"),
+            file: PathBuf::from("/tmp/nonexistent_model_inspect_test.apr").into(),
             vocab: false,
             filters: false,
             weights: false,
@@ -371,7 +371,7 @@
     #[test]
     fn test_execute_debug_file_not_found() {
         let cli = make_cli(Commands::Debug {
-            file: Some(PathBuf::from("/tmp/nonexistent_model_debug_test.apr")),
+            file: Some(PathBuf::from("/tmp/nonexistent_model_debug_test.apr").into()),
             action: None,
             drama: false,
             hex: false,
@@ -386,7 +386,7 @@
     #[test]
     fn test_execute_validate_file_not_found() {
         let cli = make_cli(Commands::Validate {
-            file: PathBuf::from("/tmp/nonexistent_model_validate_test.apr"),
+            file: PathBuf::from("/tmp/nonexistent_model_validate_test.apr").into(),
             quality: false,
             strict: false,
             min_score: None,
@@ -402,8 +402,8 @@
     #[test]
     fn test_execute_diff_file_not_found() {
         let cli = make_cli(Commands::Diff {
-            file1: PathBuf::from("/tmp/nonexistent_model_diff1.apr"),
-            file2: PathBuf::from("/tmp/nonexistent_model_diff2.apr"),
+            file1: PathBuf::from("/tmp/nonexistent_model_diff1.apr").into(),
+            file2: PathBuf::from("/tmp/nonexistent_model_diff2.apr").into(),
             weights: false,
             values: false,
             filter: None,
@@ -422,7 +422,7 @@
     #[test]
     fn test_execute_tensors_file_not_found() {
         let cli = make_cli(Commands::Tensors {
-            file: PathBuf::from("/tmp/nonexistent_model_tensors_test.apr"),
+            file: PathBuf::from("/tmp/nonexistent_model_tensors_test.apr").into(),
             stats: false,
             filter: None,
             limit: 0,
@@ -439,7 +439,7 @@
     #[test]
     fn test_execute_lint_file_not_found() {
         let cli = make_cli(Commands::Lint {
-            file: PathBuf::from("/tmp/nonexistent_model_lint_test.apr"),
+            file: PathBuf::from("/tmp/nonexistent_model_lint_test.apr").into(),
                 strict: false,
         });
         let result = execute_command(&cli);
@@ -450,7 +450,7 @@
     #[test]
     fn test_execute_trace_file_not_found() {
         let cli = make_cli(Commands::Trace {
-            file: PathBuf::from("/tmp/nonexistent_model_trace_test.apr"),
+            file: PathBuf::from("/tmp/nonexistent_model_trace_test.apr").into(),
             layer: None,
             reference: None,
             json: false,
@@ -460,7 +460,7 @@
             interactive: false,
             save_tensor: None,
             save_tensor_dir: None,
-            save_tensor_layers: "0..1".to_string(),
+            save_tensor_layers: "0..1".to_string().into(),
         });
         let result = execute_command(&cli);
         assert!(result.is_err(), "Trace should fail with non-existent file");

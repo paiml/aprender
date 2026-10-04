@@ -1,0 +1,819 @@
+{
+  "entries": [
+    {
+      "symbol": "aprender::serialization::apr::AprReader::read",
+      "reason": "ghost: no `fn read` in an `impl AprReader` or `trait AprReader` in `crates/aprender-core/src/serialization/apr/mod.rs`",
+      "ticket": "#4502"
+    },
+    {
+      "symbol": "batuta::src::agent::driver::validate::tokenizer_encode::encode",
+      "reason": "ghost: no `mod src` or `use \u2026 src` in `crates/aprender-orchestrate/src/lib.rs`",
+      "ticket": "#4502"
+    },
+    {
+      "symbol": "batuta::src::agent::session::Session::new",
+      "reason": "ghost: no `mod src` or `use \u2026 src` in `crates/aprender-orchestrate/src/lib.rs`",
+      "ticket": "#4502"
+    },
+    {
+      "symbol": "batuta::src::cli::mod::build_transpiler_args",
+      "reason": "ghost: no `mod src` or `use \u2026 src` in `crates/aprender-orchestrate/src/lib.rs`",
+      "ticket": "#4502"
+    },
+    {
+      "symbol": "batuta::src::cli::pipeline_cmds::cmd_analyze",
+      "reason": "ghost: no `mod src` or `use \u2026 src` in `crates/aprender-orchestrate/src/lib.rs`",
+      "ticket": "#4502"
+    },
+    {
+      "symbol": "batuta::src::cli::pipeline_cmds_transpile::cmd_transpile",
+      "reason": "ghost: no `mod src` or `use \u2026 src` in `crates/aprender-orchestrate/src/lib.rs`",
+      "ticket": "#4502"
+    },
+    {
+      "symbol": "entrenar::accuracy",
+      "reason": "ghost: no `fn accuracy` (free or in an impl) or item `accuracy` in `crates/aprender-train/src/lib.rs`",
+      "ticket": "#4502"
+    },
+    {
+      "symbol": "entrenar::attention",
+      "reason": "ghost: no `fn attention` (free or in an impl) or item `attention` in `crates/aprender-train/src/lib.rs`",
+      "ticket": "#4502"
+    },
+    {
+      "symbol": "entrenar::autograd::cuda_training::ComputeDevice::auto_detect",
+      "reason": "ghost: no `mod ComputeDevice` or `use \u2026 ComputeDevice` in `crates/aprender-train/src/autograd/cuda_training.rs`",
+      "ticket": "#4502"
+    },
+    {
+      "symbol": "entrenar::autograd::tensor::Tensor::clone",
+      "reason": "ghost: no `fn clone` in an `impl Tensor` or `trait Tensor` in `crates/aprender-train/src/autograd/tensor.rs`",
+      "ticket": "#4502"
+    },
+    {
+      "symbol": "entrenar::bounds",
+      "reason": "ghost: no `fn bounds` (free or in an impl) or item `bounds` in `crates/aprender-train/src/lib.rs`",
+      "ticket": "#4502"
+    },
+    {
+      "symbol": "entrenar::confusion_matrix",
+      "reason": "ghost: no `fn confusion_matrix` (free or in an impl) or item `confusion_matrix` in `crates/aprender-train/src/lib.rs`",
+      "ticket": "#4502"
+    },
+    {
+      "symbol": "entrenar::finetune::classify_pipeline::estimate_wgpu_vram",
+      "reason": "ghost: no `fn estimate_wgpu_vram` (free or in an impl) or item `estimate_wgpu_vram` in `crates/aprender-train/src/finetune/classify_pipeline/mod.rs`",
+      "ticket": "#4502"
+    },
+    {
+      "symbol": "entrenar::finetune::classify_trainer::load_checkpoint",
+      "reason": "ghost: no `fn load_checkpoint` (free or in an impl) or item `load_checkpoint` in `crates/aprender-train/src/finetune/classify_trainer.rs`",
+      "ticket": "#4502"
+    },
+    {
+      "symbol": "entrenar::finetune::data_parallel::DataParallelCoordinator::allreduce",
+      "reason": "ghost: no `fn allreduce` in an `impl DataParallelCoordinator` or `trait DataParallelCoordinator` in `crates/aprender-train/src/finetune/data_parallel.rs`",
+      "ticket": "#4502"
+    },
+    {
+      "symbol": "entrenar::finetune::data_parallel::DataParallelCoordinator::shard_data",
+      "reason": "ghost: no `fn shard_data` in an `impl DataParallelCoordinator` or `trait DataParallelCoordinator` in `crates/aprender-train/src/finetune/data_parallel.rs`",
+      "ticket": "#4502"
+    },
+    {
+      "symbol": "entrenar::finetune::qlora_config::QLoraConfig::effective_batch_size",
+      "reason": "ghost: no `mod qlora_config` or `use \u2026 qlora_config` in `crates/aprender-train/src/finetune/mod.rs`",
+      "ticket": "#4502"
+    },
+    {
+      "symbol": "entrenar::finetune::qlora_config::QLoraConfig::epochs",
+      "reason": "ghost: no `mod qlora_config` or `use \u2026 qlora_config` in `crates/aprender-train/src/finetune/mod.rs`",
+      "ticket": "#4502"
+    },
+    {
+      "symbol": "entrenar::finetune::qlora_config::QLoraConfig::gradient_clip_norm",
+      "reason": "ghost: no `mod qlora_config` or `use \u2026 qlora_config` in `crates/aprender-train/src/finetune/mod.rs`",
+      "ticket": "#4502"
+    },
+    {
+      "symbol": "entrenar::finetune::qlora_config::QLoraConfig::learning_rate",
+      "reason": "ghost: no `mod qlora_config` or `use \u2026 qlora_config` in `crates/aprender-train/src/finetune/mod.rs`",
+      "ticket": "#4502"
+    },
+    {
+      "symbol": "entrenar::finetune::qlora_config::QLoraConfig::lora_alpha",
+      "reason": "ghost: no `mod qlora_config` or `use \u2026 qlora_config` in `crates/aprender-train/src/finetune/mod.rs`",
+      "ticket": "#4502"
+    },
+    {
+      "symbol": "entrenar::finetune::qlora_config::QLoraConfig::max_seq_len",
+      "reason": "ghost: no `mod qlora_config` or `use \u2026 qlora_config` in `crates/aprender-train/src/finetune/mod.rs`",
+      "ticket": "#4502"
+    },
+    {
+      "symbol": "entrenar::finetune::qlora_config::QLoraConfig::warmup_steps",
+      "reason": "ghost: no `mod qlora_config` or `use \u2026 qlora_config` in `crates/aprender-train/src/finetune/mod.rs`",
+      "ticket": "#4502"
+    },
+    {
+      "symbol": "entrenar::gelu",
+      "reason": "ghost: no `fn gelu` (free or in an impl) or item `gelu` in `crates/aprender-train/src/lib.rs`",
+      "ticket": "#4502"
+    },
+    {
+      "symbol": "entrenar::greedy",
+      "reason": "ghost: no `fn greedy` (free or in an impl) or item `greedy` in `crates/aprender-train/src/lib.rs`",
+      "ticket": "#4502"
+    },
+    {
+      "symbol": "entrenar::matmul",
+      "reason": "ghost: no `fn matmul` (free or in an impl) or item `matmul` in `crates/aprender-train/src/lib.rs`",
+      "ticket": "#4502"
+    },
+    {
+      "symbol": "entrenar::ndcg_at_k",
+      "reason": "ghost: no `fn ndcg_at_k` (free or in an impl) or item `ndcg_at_k` in `crates/aprender-train/src/lib.rs`",
+      "ticket": "#4502"
+    },
+    {
+      "symbol": "entrenar::output",
+      "reason": "ghost: no `fn output` (free or in an impl) or item `output` in `crates/aprender-train/src/lib.rs`",
+      "ticket": "#4502"
+    },
+    {
+      "symbol": "entrenar::predict",
+      "reason": "ghost: no `fn predict` (free or in an impl) or item `predict` in `crates/aprender-train/src/lib.rs`",
+      "ticket": "#4502"
+    },
+    {
+      "symbol": "entrenar::quantize",
+      "reason": "ghost: no `fn quantize` (free or in an impl) or item `quantize` in `crates/aprender-train/src/lib.rs`",
+      "ticket": "#4502"
+    },
+    {
+      "symbol": "entrenar::relu",
+      "reason": "ghost: no `fn relu` (free or in an impl) or item `relu` in `crates/aprender-train/src/lib.rs`",
+      "ticket": "#4502"
+    },
+    {
+      "symbol": "entrenar::rmse",
+      "reason": "ghost: no `fn rmse` (free or in an impl) or item `rmse` in `crates/aprender-train/src/lib.rs`",
+      "ticket": "#4502"
+    },
+    {
+      "symbol": "entrenar::sample",
+      "reason": "ghost: no `fn sample` (free or in an impl) or item `sample` in `crates/aprender-train/src/lib.rs`",
+      "ticket": "#4502"
+    },
+    {
+      "symbol": "entrenar::sigmoid",
+      "reason": "ghost: no `fn sigmoid` (free or in an impl) or item `sigmoid` in `crates/aprender-train/src/lib.rs`",
+      "ticket": "#4502"
+    },
+    {
+      "symbol": "entrenar::statistics",
+      "reason": "ghost: no `fn statistics` (free or in an impl) or item `statistics` in `crates/aprender-train/src/lib.rs`",
+      "ticket": "#4502"
+    },
+    {
+      "symbol": "entrenar::temperature",
+      "reason": "ghost: no `fn temperature` (free or in an impl) or item `temperature` in `crates/aprender-train/src/lib.rs`",
+      "ticket": "#4502"
+    },
+    {
+      "symbol": "entrenar::top_k",
+      "reason": "ghost: no `fn top_k` (free or in an impl) or item `top_k` in `crates/aprender-train/src/lib.rs`",
+      "ticket": "#4502"
+    },
+    {
+      "symbol": "entrenar::total_bytes",
+      "reason": "ghost: no `fn total_bytes` (free or in an impl) or item `total_bytes` in `crates/aprender-train/src/lib.rs`",
+      "ticket": "#4502"
+    },
+    {
+      "symbol": "entrenar::transformer::cuda_block::CudaTransformerBlock::gpu_forward",
+      "reason": "ghost: no `fn gpu_forward` in an `impl CudaTransformerBlock` or `trait CudaTransformerBlock` in `crates/aprender-train/src/transformer/cuda_block.rs`",
+      "ticket": "#4502"
+    },
+    {
+      "symbol": "entrenar::transformer::cuda_block::CudaTransformerBlock::swiglu_ffn",
+      "reason": "ghost: no `fn swiglu_ffn` in an `impl CudaTransformerBlock` or `trait CudaTransformerBlock` in `crates/aprender-train/src/transformer/cuda_block.rs`",
+      "ticket": "#4502"
+    },
+    {
+      "symbol": "entrenar::transpose",
+      "reason": "ghost: no `fn transpose` (free or in an impl) or item `transpose` in `crates/aprender-train/src/lib.rs`",
+      "ticket": "#4502"
+    },
+    {
+      "symbol": "entrenar::update",
+      "reason": "ghost: no `fn update` (free or in an impl) or item `update` in `crates/aprender-train/src/lib.rs`",
+      "ticket": "#4502"
+    },
+    {
+      "symbol": "presentar::crates::presentar-core::src::virtualization::cells_to_render",
+      "reason": "ghost: crate `presentar` is not a workspace member",
+      "ticket": "#4502"
+    },
+    {
+      "symbol": "presentar::crates::presentar-core::src::virtualization::render_count",
+      "reason": "ghost: crate `presentar` is not a workspace member",
+      "ticket": "#4502"
+    },
+    {
+      "symbol": "presentar::crates::presentar-core::src::virtualization::render_range",
+      "reason": "ghost: crate `presentar` is not a workspace member",
+      "ticket": "#4502"
+    },
+    {
+      "symbol": "presentar::crates::presentar-core::src::virtualization::should_render",
+      "reason": "ghost: crate `presentar` is not a workspace member",
+      "ticket": "#4502"
+    },
+    {
+      "symbol": "presentar::crates::presentar-core::src::virtualization::should_render_cell",
+      "reason": "ghost: crate `presentar` is not a workspace member",
+      "ticket": "#4502"
+    },
+    {
+      "symbol": "presentar::crates::presentar-layout::src::compute_block::render_order",
+      "reason": "ghost: crate `presentar` is not a workspace member",
+      "ticket": "#4502"
+    },
+    {
+      "symbol": "presentar::crates::presentar-terminal::src::app::record_render",
+      "reason": "ghost: crate `presentar` is not a workspace member",
+      "ticket": "#4502"
+    },
+    {
+      "symbol": "presentar::crates::presentar-terminal::src::compute_block::render",
+      "reason": "ghost: crate `presentar` is not a workspace member",
+      "ticket": "#4502"
+    },
+    {
+      "symbol": "presentar::crates::presentar-terminal::src::direct::diff_renderer::render_full",
+      "reason": "ghost: crate `presentar` is not a workspace member",
+      "ticket": "#4502"
+    },
+    {
+      "symbol": "presentar::crates::presentar-terminal::src::perf_trace::trackers::for_render",
+      "reason": "ghost: crate `presentar` is not a workspace member",
+      "ticket": "#4502"
+    },
+    {
+      "symbol": "presentar::crates::presentar-terminal::src::tools::bench::render_frame",
+      "reason": "ghost: crate `presentar` is not a workspace member",
+      "ticket": "#4502"
+    },
+    {
+      "symbol": "presentar::crates::presentar-terminal::src::widgets::micro_heat_bar::render_string",
+      "reason": "ghost: crate `presentar` is not a workspace member",
+      "ticket": "#4502"
+    },
+    {
+      "symbol": "presentar::crates::presentar-terminal::src::widgets::micro_heat_bar::render_text",
+      "reason": "ghost: crate `presentar` is not a workspace member",
+      "ticket": "#4502"
+    },
+    {
+      "symbol": "presentar::crates::presentar-terminal::src::widgets::ux::render_lines",
+      "reason": "ghost: crate `presentar` is not a workspace member",
+      "ticket": "#4502"
+    },
+    {
+      "symbol": "presentar::crates::presentar-widgets::src::list::render_with",
+      "reason": "ghost: crate `presentar` is not a workspace member",
+      "ticket": "#4502"
+    },
+    {
+      "symbol": "presentar::crates::presentar::src::browser::app::render_counter",
+      "reason": "ghost: crate `presentar` is not a workspace member",
+      "ticket": "#4502"
+    },
+    {
+      "symbol": "presentar::crates::presentar::src::browser::app::render_dashboard",
+      "reason": "ghost: crate `presentar` is not a workspace member",
+      "ticket": "#4502"
+    },
+    {
+      "symbol": "presentar::crates::presentar::src::browser::app::render_json",
+      "reason": "ghost: crate `presentar` is not a workspace member",
+      "ticket": "#4502"
+    },
+    {
+      "symbol": "presentar::crates::presentar::src::browser::app::render_widget",
+      "reason": "ghost: crate `presentar` is not a workspace member",
+      "ticket": "#4502"
+    },
+    {
+      "symbol": "presentar::crates::presentar::src::webgpu::render_instances",
+      "reason": "ghost: crate `presentar` is not a workspace member",
+      "ticket": "#4502"
+    },
+    {
+      "symbol": "realizar::api::cuda_batch_scheduler::CudaBatchScheduler::schedule_step",
+      "reason": "ghost: no `mod CudaBatchScheduler` or `use \u2026 CudaBatchScheduler` in `crates/aprender-serve/src/api/cuda_batch_scheduler.rs`",
+      "ticket": "#4502"
+    },
+    {
+      "symbol": "realizar::apr::cuda_part_02_part_03::AprV2ModelCuda::upload_quantized_weights_to_gpu",
+      "reason": "ghost: no `mod cuda_part_02_part_03` or `use \u2026 cuda_part_02_part_03` in `crates/aprender-serve/src/apr/mod.rs`",
+      "ticket": "#4502"
+    },
+    {
+      "symbol": "realizar::arch_requirements_fallback::WeightRole::field_name",
+      "reason": "ghost: no `mod arch_requirements_fallback` or `use \u2026 arch_requirements_fallback` in `crates/aprender-serve/src/arch_requirements.rs`",
+      "ticket": "#4502"
+    },
+    {
+      "symbol": "realizar::arch_requirements_fallback::required_roles",
+      "reason": "ghost: no `mod arch_requirements_fallback` or `use \u2026 arch_requirements_fallback` in `crates/aprender-serve/src/arch_requirements.rs`",
+      "ticket": "#4502"
+    },
+    {
+      "symbol": "realizar::bounds",
+      "reason": "ghost: no `fn bounds` (free or in an impl) or item `bounds` in `crates/aprender-serve/src/arch_requirements.rs`",
+      "ticket": "#4502"
+    },
+    {
+      "symbol": "realizar::cuda::executor::attention::paged_attention_into",
+      "reason": "ghost: no `fn paged_attention_into` (free or in an impl) or item `paged_attention_into` in `crates/aprender-serve/src/cuda/executor/attention.rs`",
+      "ticket": "#4502"
+    },
+    {
+      "symbol": "realizar::cuda::executor::executor_api::ExecutorApi::start_brick_id",
+      "reason": "ghost: no `mod ExecutorApi` or `use \u2026 ExecutorApi` in `crates/aprender-serve/src/cuda/executor/executor_api.rs`",
+      "ticket": "#4502"
+    },
+    {
+      "symbol": "realizar::cuda::executor::executor_api::ExecutorApi::stop_brick_id",
+      "reason": "ghost: no `mod ExecutorApi` or `use \u2026 ExecutorApi` in `crates/aprender-serve/src/cuda/executor/executor_api.rs`",
+      "ticket": "#4502"
+    },
+    {
+      "symbol": "realizar::cuda::executor::kv_cache::BlockAllocator::allocate",
+      "reason": "ghost: no `mod BlockAllocator` or `use \u2026 BlockAllocator` in `crates/aprender-serve/src/cuda/executor/kv_cache.rs`",
+      "ticket": "#4502"
+    },
+    {
+      "symbol": "realizar::cuda::executor::kv_cache::PagedKvCache::slot",
+      "reason": "ghost: no `mod PagedKvCache` or `use \u2026 PagedKvCache` in `crates/aprender-serve/src/cuda/executor/kv_cache.rs`",
+      "ticket": "#4502"
+    },
+    {
+      "symbol": "realizar::cuda::executor::kv_cache_part_02_part_03::flash_attention_cached",
+      "reason": "ghost: no `mod kv_cache_part_02_part_03` or `use \u2026 kv_cache_part_02_part_03` in `crates/aprender-serve/src/cuda/executor/mod.rs`",
+      "ticket": "#4502"
+    },
+    {
+      "symbol": "realizar::cuda::executor::layers::apply::apply_qk_norm",
+      "reason": "ghost: no `mod apply` or `use \u2026 apply` in `crates/aprender-serve/src/cuda/executor/layers/mod.rs`",
+      "ticket": "#4502"
+    },
+    {
+      "symbol": "realizar::cuda::executor::layers::graphed_capture::try_graph_capture",
+      "reason": "ghost: no `mod graphed_capture` or `use \u2026 graphed_capture` in `crates/aprender-serve/src/cuda/executor/layers/mod.rs`",
+      "ticket": "#4502"
+    },
+    {
+      "symbol": "realizar::cuda::executor::layers::prefill::CudaExecutor::chunked_prefill",
+      "reason": "ghost: no `fn chunked_prefill` in an `impl CudaExecutor` or `trait CudaExecutor` in `crates/aprender-serve/src/cuda/executor/layers/prefill.rs`",
+      "ticket": "#4502"
+    },
+    {
+      "symbol": "realizar::cuda::executor::q4k_mwv_gemv::CudaExecutor::batched_qkv_dp4a_q4k_gemv_into",
+      "reason": "ghost: no `mod q4k_mwv_gemv` or `use \u2026 q4k_mwv_gemv` in `crates/aprender-serve/src/cuda/executor/mod.rs`",
+      "ticket": "#4502"
+    },
+    {
+      "symbol": "realizar::cuda::kernel_generator::CudaKernels::generate_ptx",
+      "reason": "ghost: no `fn generate_ptx` in an `impl CudaKernels` or `trait CudaKernels` in `crates/aprender-serve/src/cuda/kernel_generator.rs`",
+      "ticket": "#4502"
+    },
+    {
+      "symbol": "realizar::effective_context",
+      "reason": "ghost: no `fn effective_context` (free or in an impl) or item `effective_context` in `crates/aprender-serve/src/arch_requirements.rs`",
+      "ticket": "#4502"
+    },
+    {
+      "symbol": "realizar::element_count",
+      "reason": "ghost: no `fn element_count` (free or in an impl) or item `element_count` in `crates/aprender-serve/src/arch_requirements.rs`",
+      "ticket": "#4502"
+    },
+    {
+      "symbol": "realizar::flash_attention",
+      "reason": "ghost: no `fn flash_attention` (free or in an impl) or item `flash_attention` in `crates/aprender-serve/src/arch_requirements.rs`",
+      "ticket": "#4502"
+    },
+    {
+      "symbol": "realizar::gelu",
+      "reason": "ghost: no `fn gelu` (free or in an impl) or item `gelu` in `crates/aprender-serve/src/arch_requirements.rs`",
+      "ticket": "#4502"
+    },
+    {
+      "symbol": "realizar::gguf::OwnedQuantizedModel::forward",
+      "reason": "ghost: no `mod OwnedQuantizedModel` or `use \u2026 OwnedQuantizedModel` in `crates/aprender-serve/src/gguf/inference_types.rs`",
+      "ticket": "#4502"
+    },
+    {
+      "symbol": "realizar::gguf::config::ArchConstraints::from_gguf_metadata",
+      "reason": "ghost: no `fn from_gguf_metadata` in an `impl ArchConstraints` or `trait ArchConstraints` in `crates/aprender-serve/src/gguf/config.rs`",
+      "ticket": "#4502"
+    },
+    {
+      "symbol": "realizar::gguf::cuda::generate_batched_streaming",
+      "reason": "ghost: no `fn generate_batched_streaming` (free or in an impl) or item `generate_batched_streaming` in `crates/aprender-serve/src/gguf/cuda/mod.rs`",
+      "ticket": "#4502"
+    },
+    {
+      "symbol": "realizar::gguf::inference::attention_part_02::flash_attention_tiled",
+      "reason": "ghost: no `mod attention_part_02` or `use \u2026 attention_part_02` in `crates/aprender-serve/src/gguf/inference/mod.rs`",
+      "ticket": "#4502"
+    },
+    {
+      "symbol": "realizar::gguf::inference::cached::single_flattened_batched_owned::flattened_batched_gemm",
+      "reason": "ghost: no `mod single_flattened_batched_owned` or `use \u2026 single_flattened_batched_owned` in `crates/aprender-serve/src/gguf/inference/cached/mod.rs`",
+      "ticket": "#4502"
+    },
+    {
+      "symbol": "realizar::gguf::inference::forward::Model::forward",
+      "reason": "ghost: no `mod Model` or `use \u2026 Model` in `crates/aprender-serve/src/gguf/inference/forward/mod.rs`",
+      "ticket": "#4502"
+    },
+    {
+      "symbol": "realizar::gguf::inference::forward::batch_part_02_part_03::prefill_batch",
+      "reason": "ghost: no `mod batch_part_02_part_03` or `use \u2026 batch_part_02_part_03` in `crates/aprender-serve/src/gguf/inference/forward/mod.rs`",
+      "ticket": "#4502"
+    },
+    {
+      "symbol": "realizar::gguf::inference::forward::generate_with_batched_prefill",
+      "reason": "ghost: no `fn generate_with_batched_prefill` (free or in an impl) or item `generate_with_batched_prefill` in `crates/aprender-serve/src/gguf/inference/forward/mod.rs`",
+      "ticket": "#4502"
+    },
+    {
+      "symbol": "realizar::gguf::token::GgufTokenizer::merge_rules",
+      "reason": "ghost: no `mod GgufTokenizer` or `use \u2026 GgufTokenizer` in `crates/aprender-serve/src/gguf/token.rs`",
+      "ticket": "#4502"
+    },
+    {
+      "symbol": "realizar::gpu::adapters::using::forward_layer",
+      "reason": "ghost: no `mod using` or `use \u2026 using` in `crates/aprender-serve/src/gpu/adapters/mod.rs`",
+      "ticket": "#4502"
+    },
+    {
+      "symbol": "realizar::gpu::scheduler::forward_from_model::forward_block_traced",
+      "reason": "ghost: no `mod forward_from_model` or `use \u2026 forward_from_model` in `crates/aprender-serve/src/gpu/scheduler/mod.rs`",
+      "ticket": "#4502"
+    },
+    {
+      "symbol": "realizar::gpu::scheduler::linear_attn::gated_delta_net_decay",
+      "reason": "ghost: no `fn gated_delta_net_decay` (free or in an impl) or item `gated_delta_net_decay` in `crates/aprender-serve/src/gpu/scheduler/linear_attn.rs`",
+      "ticket": "#4502"
+    },
+    {
+      "symbol": "realizar::gpu::scheduler::linear_attn::gated_delta_net_delta",
+      "reason": "ghost: no `fn gated_delta_net_delta` (free or in an impl) or item `gated_delta_net_delta` in `crates/aprender-serve/src/gpu/scheduler/linear_attn.rs`",
+      "ticket": "#4502"
+    },
+    {
+      "symbol": "realizar::gpu::scheduler::linear_attn::gated_delta_net_forward",
+      "reason": "ghost: no `fn gated_delta_net_forward` (free or in an impl) or item `gated_delta_net_forward` in `crates/aprender-serve/src/gpu/scheduler/linear_attn.rs`",
+      "ticket": "#4502"
+    },
+    {
+      "symbol": "realizar::gpu::scheduler::linear_attn::gated_delta_net_output",
+      "reason": "ghost: no `fn gated_delta_net_output` (free or in an impl) or item `gated_delta_net_output` in `crates/aprender-serve/src/gpu/scheduler/linear_attn.rs`",
+      "ticket": "#4502"
+    },
+    {
+      "symbol": "realizar::gpu::scheduler::linear_attn::gated_delta_net_read",
+      "reason": "ghost: no `fn gated_delta_net_read` (free or in an impl) or item `gated_delta_net_read` in `crates/aprender-serve/src/gpu/scheduler/linear_attn.rs`",
+      "ticket": "#4502"
+    },
+    {
+      "symbol": "realizar::gpu::scheduler::linear_attn::gated_delta_net_write",
+      "reason": "ghost: no `fn gated_delta_net_write` (free or in an impl) or item `gated_delta_net_write` in `crates/aprender-serve/src/gpu/scheduler/linear_attn.rs`",
+      "ticket": "#4502"
+    },
+    {
+      "symbol": "realizar::gpu::scheduler::model_forward_block_gpu::fused_qkv_projection",
+      "reason": "ghost: no `mod model_forward_block_gpu` or `use \u2026 model_forward_block_gpu` in `crates/aprender-serve/src/gpu/scheduler/mod.rs`",
+      "ticket": "#4502"
+    },
+    {
+      "symbol": "realizar::gpu_threshold",
+      "reason": "ghost: no `fn gpu_threshold` (free or in an impl) or item `gpu_threshold` in `crates/aprender-serve/src/arch_requirements.rs`",
+      "ticket": "#4502"
+    },
+    {
+      "symbol": "realizar::gqa",
+      "reason": "ghost: no `fn gqa` (free or in an impl) or item `gqa` in `crates/aprender-serve/src/arch_requirements.rs`",
+      "ticket": "#4502"
+    },
+    {
+      "symbol": "realizar::greedy",
+      "reason": "ghost: no `fn greedy` (free or in an impl) or item `greedy` in `crates/aprender-serve/src/arch_requirements.rs`",
+      "ticket": "#4502"
+    },
+    {
+      "symbol": "realizar::layers::position::ScaledRope::new",
+      "reason": "ghost: no `mod ScaledRope` or `use \u2026 ScaledRope` in `crates/aprender-serve/src/layers/position.rs`",
+      "ticket": "#4502"
+    },
+    {
+      "symbol": "realizar::matmul",
+      "reason": "ghost: no `fn matmul` (free or in an impl) or item `matmul` in `crates/aprender-serve/src/arch_requirements.rs`",
+      "ticket": "#4502"
+    },
+    {
+      "symbol": "realizar::position_embedding",
+      "reason": "ghost: no `fn position_embedding` (free or in an impl) or item `position_embedding` in `crates/aprender-serve/src/arch_requirements.rs`",
+      "ticket": "#4502"
+    },
+    {
+      "symbol": "realizar::predict",
+      "reason": "ghost: no `fn predict` (free or in an impl) or item `predict` in `crates/aprender-serve/src/arch_requirements.rs`",
+      "ticket": "#4502"
+    },
+    {
+      "symbol": "realizar::quantize",
+      "reason": "ghost: no `fn quantize` (free or in an impl) or item `quantize` in `crates/aprender-serve/src/arch_requirements.rs`",
+      "ticket": "#4502"
+    },
+    {
+      "symbol": "realizar::relu",
+      "reason": "ghost: no `fn relu` (free or in an impl) or item `relu` in `crates/aprender-serve/src/arch_requirements.rs`",
+      "ticket": "#4502"
+    },
+    {
+      "symbol": "realizar::rmsnorm",
+      "reason": "ghost: no `fn rmsnorm` (free or in an impl) or item `rmsnorm` in `crates/aprender-serve/src/arch_requirements.rs`",
+      "ticket": "#4502"
+    },
+    {
+      "symbol": "realizar::safetensors::safetensors_config::SafeTensorsConfig::is_hybrid_attention",
+      "reason": "ghost: no `mod safetensors_config` or `use \u2026 safetensors_config` in `crates/aprender-serve/src/safetensors/mod.rs`",
+      "ticket": "#4502"
+    },
+    {
+      "symbol": "realizar::sample",
+      "reason": "ghost: no `fn sample` (free or in an impl) or item `sample` in `crates/aprender-serve/src/arch_requirements.rs`",
+      "ticket": "#4502"
+    },
+    {
+      "symbol": "realizar::sigmoid",
+      "reason": "ghost: no `fn sigmoid` (free or in an impl) or item `sigmoid` in `crates/aprender-serve/src/arch_requirements.rs`",
+      "ticket": "#4502"
+    },
+    {
+      "symbol": "realizar::silu",
+      "reason": "ghost: no `fn silu` (free or in an impl) or item `silu` in `crates/aprender-serve/src/arch_requirements.rs`",
+      "ticket": "#4502"
+    },
+    {
+      "symbol": "realizar::softmax",
+      "reason": "ghost: no `fn softmax` (free or in an impl) or item `softmax` in `crates/aprender-serve/src/arch_requirements.rs`",
+      "ticket": "#4502"
+    },
+    {
+      "symbol": "realizar::standard_softmax",
+      "reason": "ghost: no `fn standard_softmax` (free or in an impl) or item `standard_softmax` in `crates/aprender-serve/src/arch_requirements.rs`",
+      "ticket": "#4502"
+    },
+    {
+      "symbol": "realizar::tensor_count",
+      "reason": "ghost: no `fn tensor_count` (free or in an impl) or item `tensor_count` in `crates/aprender-serve/src/arch_requirements.rs`",
+      "ticket": "#4502"
+    },
+    {
+      "symbol": "realizar::top_k",
+      "reason": "ghost: no `fn top_k` (free or in an impl) or item `top_k` in `crates/aprender-serve/src/arch_requirements.rs`",
+      "ticket": "#4502"
+    },
+    {
+      "symbol": "realizar::top_p",
+      "reason": "ghost: no `fn top_p` (free or in an impl) or item `top_p` in `crates/aprender-serve/src/arch_requirements.rs`",
+      "ticket": "#4502"
+    },
+    {
+      "symbol": "realizar::total_bytes",
+      "reason": "ghost: no `fn total_bytes` (free or in an impl) or item `total_bytes` in `crates/aprender-serve/src/arch_requirements.rs`",
+      "ticket": "#4502"
+    },
+    {
+      "symbol": "realizar::transpose",
+      "reason": "ghost: no `fn transpose` (free or in an impl) or item `transpose` in `crates/aprender-serve/src/arch_requirements.rs`",
+      "ticket": "#4502"
+    },
+    {
+      "symbol": "realizar::update",
+      "reason": "ghost: no `fn update` (free or in an impl) or item `update` in `crates/aprender-serve/src/arch_requirements.rs`",
+      "ticket": "#4502"
+    },
+    {
+      "symbol": "realizar::verification_specs::verify_kv_cache_size",
+      "reason": "ghost: no `mod verification_specs` or `use \u2026 verification_specs` in `crates/aprender-serve/src/arch_requirements.rs`",
+      "ticket": "#4502"
+    },
+    {
+      "symbol": "trueno::bounds",
+      "reason": "ghost: no `fn bounds` (free or in an impl) or item `bounds` in `crates/aprender-compute/src/lib.rs`",
+      "ticket": "#4502"
+    },
+    {
+      "symbol": "trueno::bytes_per_param",
+      "reason": "ghost: no `fn bytes_per_param` (free or in an impl) or item `bytes_per_param` in `crates/aprender-compute/src/lib.rs`",
+      "ticket": "#4502"
+    },
+    {
+      "symbol": "trueno::cbtop::adaptive_ml::types::ClassificationMetrics::precision",
+      "reason": "ghost: no `mod cbtop` or `use \u2026 cbtop` in `crates/aprender-compute/src/lib.rs`",
+      "ticket": "#4502"
+    },
+    {
+      "symbol": "trueno::cbtop::adaptive_ml::types::ClassificationMetrics::recall",
+      "reason": "ghost: no `mod cbtop` or `use \u2026 cbtop` in `crates/aprender-compute/src/lib.rs`",
+      "ticket": "#4502"
+    },
+    {
+      "symbol": "trueno::cbtop::quantize::gguf::GgufReader::tensor_count",
+      "reason": "ghost: no `mod cbtop` or `use \u2026 cbtop` in `crates/aprender-compute/src/lib.rs`",
+      "ticket": "#4502"
+    },
+    {
+      "symbol": "trueno::cbtop::roofline::HardwareProfile::theoretical_peak_at_oi",
+      "reason": "ghost: no `mod cbtop` or `use \u2026 cbtop` in `crates/aprender-compute/src/lib.rs`",
+      "ticket": "#4502"
+    },
+    {
+      "symbol": "trueno::crates::trueno_quant::quantize::quantize_q4_k",
+      "reason": "ghost: no `mod crates` or `use \u2026 crates` in `crates/aprender-compute/src/lib.rs`",
+      "ticket": "#4502"
+    },
+    {
+      "symbol": "trueno::eigenvector",
+      "reason": "ghost: no `fn eigenvector` (free or in an impl) or item `eigenvector` in `crates/aprender-compute/src/lib.rs`",
+      "ticket": "#4502"
+    },
+    {
+      "symbol": "trueno::embedding_lookup",
+      "reason": "ghost: no `fn embedding_lookup` (free or in an impl) or item `embedding_lookup` in `crates/aprender-compute/src/lib.rs`",
+      "ticket": "#4502"
+    },
+    {
+      "symbol": "trueno::gelu",
+      "reason": "ghost: no `fn gelu` (free or in an impl) or item `gelu` in `crates/aprender-compute/src/lib.rs`",
+      "ticket": "#4502"
+    },
+    {
+      "symbol": "trueno::log_softmax",
+      "reason": "ghost: no `fn log_softmax` (free or in an impl) or item `log_softmax` in `crates/aprender-compute/src/lib.rs`",
+      "ticket": "#4502"
+    },
+    {
+      "symbol": "trueno::matmul",
+      "reason": "ghost: no `fn matmul` (free or in an impl) or item `matmul` in `crates/aprender-compute/src/lib.rs`",
+      "ticket": "#4502"
+    },
+    {
+      "symbol": "trueno::predict",
+      "reason": "ghost: no `fn predict` (free or in an impl) or item `predict` in `crates/aprender-compute/src/lib.rs`",
+      "ticket": "#4502"
+    },
+    {
+      "symbol": "trueno::read",
+      "reason": "ghost: no `fn read` (free or in an impl) or item `read` in `crates/aprender-compute/src/lib.rs`",
+      "ticket": "#4502"
+    },
+    {
+      "symbol": "trueno::relu",
+      "reason": "ghost: no `fn relu` (free or in an impl) or item `relu` in `crates/aprender-compute/src/lib.rs`",
+      "ticket": "#4502"
+    },
+    {
+      "symbol": "trueno::sigmoid",
+      "reason": "ghost: no `fn sigmoid` (free or in an impl) or item `sigmoid` in `crates/aprender-compute/src/lib.rs`",
+      "ticket": "#4502"
+    },
+    {
+      "symbol": "trueno::silu",
+      "reason": "ghost: no `fn silu` (free or in an impl) or item `silu` in `crates/aprender-compute/src/lib.rs`",
+      "ticket": "#4502"
+    },
+    {
+      "symbol": "trueno::softmax",
+      "reason": "ghost: no `fn softmax` (free or in an impl) or item `softmax` in `crates/aprender-compute/src/lib.rs`",
+      "ticket": "#4502"
+    },
+    {
+      "symbol": "trueno::update",
+      "reason": "ghost: no `fn update` (free or in an impl) or item `update` in `crates/aprender-compute/src/lib.rs`",
+      "ticket": "#4502"
+    },
+    {
+      "symbol": "trueno::write",
+      "reason": "ghost: no `fn write` (free or in an impl) or item `write` in `crates/aprender-compute/src/lib.rs`",
+      "ticket": "#4502"
+    },
+    {
+      "symbol": "trueno_rag::src::chunk::mod::set_embedding",
+      "reason": "ghost: crate `trueno_rag` is not a workspace member",
+      "ticket": "#4502"
+    },
+    {
+      "symbol": "trueno_rag::src::metrics::average_precision",
+      "reason": "ghost: crate `trueno_rag` is not a workspace member",
+      "ticket": "#4502"
+    },
+    {
+      "symbol": "trueno_rag::src::metrics::compute",
+      "reason": "ghost: crate `trueno_rag` is not a workspace member",
+      "ticket": "#4502"
+    },
+    {
+      "symbol": "trueno_rag::src::metrics::f1_at_k",
+      "reason": "ghost: crate `trueno_rag` is not a workspace member",
+      "ticket": "#4502"
+    },
+    {
+      "symbol": "trueno_rag::src::metrics::hit_rate_at_k",
+      "reason": "ghost: crate `trueno_rag` is not a workspace member",
+      "ticket": "#4502"
+    },
+    {
+      "symbol": "trueno_rag::src::metrics::mean_reciprocal_rank",
+      "reason": "ghost: crate `trueno_rag` is not a workspace member",
+      "ticket": "#4502"
+    },
+    {
+      "symbol": "trueno_rag::src::metrics::ndcg_at_k",
+      "reason": "ghost: crate `trueno_rag` is not a workspace member",
+      "ticket": "#4502"
+    },
+    {
+      "symbol": "trueno_rag::src::metrics::precision_at_k",
+      "reason": "ghost: crate `trueno_rag` is not a workspace member",
+      "ticket": "#4502"
+    },
+    {
+      "symbol": "trueno_rag::src::metrics::recall_at_k",
+      "reason": "ghost: crate `trueno_rag` is not a workspace member",
+      "ticket": "#4502"
+    },
+    {
+      "symbol": "trueno_rag::src::multivector::codec::compress",
+      "reason": "ghost: crate `trueno_rag` is not a workspace member",
+      "ticket": "#4502"
+    },
+    {
+      "symbol": "trueno_rag::src::multivector::codec::find_nearest_centroid",
+      "reason": "ghost: crate `trueno_rag` is not a workspace member",
+      "ticket": "#4502"
+    },
+    {
+      "symbol": "trueno_rag::src::multivector::codec::train",
+      "reason": "ghost: crate `trueno_rag` is not a workspace member",
+      "ticket": "#4502"
+    },
+    {
+      "symbol": "trueno_rag::src::multivector::index::insert",
+      "reason": "ghost: crate `trueno_rag` is not a workspace member",
+      "ticket": "#4502"
+    },
+    {
+      "symbol": "trueno_rag::src::multivector::types::new",
+      "reason": "ghost: crate `trueno_rag` is not a workspace member",
+      "ticket": "#4502"
+    },
+    {
+      "symbol": "trueno_rag::src::retrieve::embedder",
+      "reason": "ghost: crate `trueno_rag` is not a workspace member",
+      "ticket": "#4502"
+    },
+    {
+      "symbol": "trueno_rag::src::retrieve::retrieve",
+      "reason": "ghost: crate `trueno_rag` is not a workspace member",
+      "ticket": "#4502"
+    },
+    {
+      "symbol": "trueno_rag::src::retrieve::retrieve_dense",
+      "reason": "ghost: crate `trueno_rag` is not a workspace member",
+      "ticket": "#4502"
+    },
+    {
+      "symbol": "trueno_rag::src::retrieve::retrieve_sparse",
+      "reason": "ghost: crate `trueno_rag` is not a workspace member",
+      "ticket": "#4502"
+    },
+    {
+      "symbol": "trueno_rag::src::sqlite::mod::chunk_count",
+      "reason": "ghost: crate `trueno_rag` is not a workspace member",
+      "ticket": "#4502"
+    },
+    {
+      "symbol": "trueno_rag::src::sqlite::mod::get_chunk",
+      "reason": "ghost: crate `trueno_rag` is not a workspace member",
+      "ticket": "#4502"
+    }
+  ]
+}

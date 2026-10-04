@@ -86,6 +86,7 @@ from __future__ import annotations
 import argparse
 import hashlib
 import json
+import os
 import sys
 import urllib.error
 import urllib.request
@@ -500,7 +501,18 @@ def sweep(a):
         else:
             p = classify(index)
             p["index"] = index
-    cells, not_applicable = [], []
+    cells, not_applicable, planned = [], [], []
+    p["prompts"] = [json.loads(x) for x in open(a.prompt_list) if x.strip()]
+    for pid, verbs in p["prompts"]:
+        prompt = json.load(open("%s/prompt-%s.json" % (a.prompt_dir, pid)))
+        for g in p["generation"]:
+            if history_refusal(g["route"], prompt):
+                continue
+            planned += [{"route": g["route"], "mode": m, "prompt_id": pid} for m in g["modes"] if MODE_VERB[m] in verbs]
+    # #4341: the plan is on disk BEFORE the first request and rewritten after every cell, so a
+    # sweep its timeout kills keeps every row it finished; `rows` refuses only the cells never driven.
+    p["planned"], p["complete"] = planned, False
+    save_plan(a.out_dir, p, cells, not_applicable)
     for pid, verbs in (json.loads(x) for x in open(a.prompt_list) if x.strip()):
         prompt = json.load(open("%s/prompt-%s.json" % (a.prompt_dir, pid)))
         for g in p["generation"]:
@@ -526,11 +538,19 @@ def sweep(a):
                     json.dump({"text": None, "refused": None, "reported": {"route": g["route"], "mode": mode},
                                "protocol_fault": "driver_crash: %s: %s" % (type(exc).__name__, exc)}, open(out, "w"))
                 cells.append({"route": g["route"], "mode": mode, "prompt_id": pid, "out": out, "rc": rc})
-    p["cells"] = cells
-    p["not_applicable"] = not_applicable
-    p["prompts"] = [json.loads(x) for x in open(a.prompt_list) if x.strip()]
-    json.dump(p, open("%s/plan.json" % a.out_dir, "w"), indent=1)
+                save_plan(a.out_dir, p, cells, not_applicable)
+    p["complete"] = True
+    save_plan(a.out_dir, p, cells, not_applicable)
     return 0
+
+
+def save_plan(out_dir, p, cells, not_applicable):
+    """plan.json via rename, so a kill mid-write leaves the previous plan, never a torn one."""
+    p["cells"], p["not_applicable"] = cells, not_applicable
+    tmp = "%s/plan.json.tmp" % out_dir
+    with open(tmp, "w") as fh:
+        json.dump(p, fh, indent=1)
+    os.replace(tmp, "%s/plan.json" % out_dir)
 
 
 def rows(a):
@@ -592,6 +612,13 @@ def rows(a):
                     refused = "refused"
             emit(c["prompt_id"], MODE_VERB[c["mode"]], c["mode"], c["route"],
                  None if refused else c["rc"], None if refused else c["out"], refused)
+        if p.get("complete") is False:
+            done = {(c["route"], c["mode"], c["prompt_id"]) for c in p.get("cells") or []}
+            left = [c for c in p.get("planned") or [] if (c["route"], c["mode"], c["prompt_id"]) not in done]
+            why = a.cell_why or ("the serve sweep was killed before this cell ran (%d of %d driven)"
+                                 % (len(done), len(p.get("planned") or [])))
+            for c in left:
+                emit(c["prompt_id"], MODE_VERB[c["mode"]], c["mode"], c["route"], None, None, why)
     with open(a.manifest, "a") as fh:
         for r in emitted:
             fh.write(json.dumps(r) + "\n")
