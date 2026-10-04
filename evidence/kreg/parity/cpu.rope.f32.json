@@ -1,5 +1,5 @@
 {
-  "build_identity": "9fe053979b",
+  "build_identity": "5c9341007d7ea1ebeff29c0aad3133311dc4d8e2",
   "host": "mac-server",
   "host_arch": "x86_64",
   "input_set": {
@@ -7,10 +7,10 @@
     "driver": "none",
     "oracle": "f64_definition:rope:norm+neox,d=128,theta=1e6,pos<32768,angle=pos*theta^(-2i/d)",
     "row_sha256": "53691828064511b5321f12f33782cba3bf648fd45e855473eaa11b1e9f5ab0f0",
-    "source_sha256": "3503a3cf16d8df209b7ff5b888edc39cfb7780638ae11c5ff8566eb654629348",
+    "source_sha256": "57a0c99030645c54a2d2c35b2d0da70a7f625e21b2459a083e65e88c8e9992bb",
     "toolchain": "1.93.0"
   },
-  "input_set_hash": "be2f399446634d65cefd9e79596f69216ea31c8e86caddf8d1e8c6b39ad6fcc4",
+  "input_set_hash": "1c3255d3d40ae0bb3a1f4ceb6f0cbaae76723af81169d9dca01ffd07a80f8506",
   "isa_detected": [
     "sse4.2",
     "avx",
@@ -20,6 +20,7 @@
     "avx512bw",
     "avx512vnni"
   ],
+  "isa_forced": "native",
   "kernel_id": "cpu.rope.f32",
   "margin": {
     "bound_rel": 0.008286646010608956,
@@ -38,7 +39,7 @@
   },
   "source_fn": "apply_rope",
   "tolerance_rel": 0.003,
-  "ts": "2026-09-29T05:33:31Z",
+  "ts": "2026-10-04T10:35:05Z",
   "workload": {
     "n": 512,
     "seed": 1161367296,

@@ -1,5 +1,5 @@
 {
-  "build_identity": "1d194fc5b0",
+  "build_identity": "5c9341007d7ea1ebeff29c0aad3133311dc4d8e2",
   "fp32_activations": {
     "max_abs_err": 0.000829568921290047,
     "max_rel_err": 1.3110594897372703e-6
@@ -11,10 +11,10 @@
     "driver": "none",
     "oracle": "in_tree_dequant_f64",
     "row_sha256": "de5b094f4d2fbf0011c236357f3c77120abc975f1ff37261386aec6e2b540275",
-    "source_sha256": "d0bf7b08c0f7613f9a026aba14a61a43035380199954b6e5fa19998b1bafd703",
+    "source_sha256": "64c61f0978294886449ed3ccc0179d546d48c10b8f146503356fa99750843d64",
     "toolchain": "1.93.0"
   },
-  "input_set_hash": "c9c2a19f8357e8c26835f9d1591da655f5b28a3f82cd1a1cd85e2d65321d3eda",
+  "input_set_hash": "4104d3fb0ef67ed44a30e9f2b74412c623adb35c9fcc397cd807237ab0e3aa4a",
   "isa_detected": [
     "sse4.2",
     "avx",
@@ -24,6 +24,7 @@
     "avx512bw",
     "avx512vnni"
   ],
+  "isa_forced": "native",
   "kernel_id": "cpu.matvec.q5_k",
   "margin": {
     "acc": "f32",
@@ -44,7 +45,7 @@
   },
   "source_fn": "fused_q5k_parallel_matvec",
   "tolerance_rel": 3e-6,
-  "ts": "2026-10-04T04:47:52Z",
+  "ts": "2026-10-04T10:30:07Z",
   "workload": {
     "in_dim": 2048,
     "out_dim": 256,
