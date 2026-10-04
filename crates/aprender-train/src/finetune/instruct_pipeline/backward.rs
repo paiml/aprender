@@ -114,25 +114,13 @@ impl InstructPipeline {
     #[cfg(feature = "cuda")]
     #[allow(unsafe_code)]
     fn backward_nf4_gpu_blocks_loop(&mut self, seq_len: usize) -> Option<()> {
+        // PMAT-488: Check for backward graph replay
+        if self.replay_backward_graph(seq_len)? {
+            return Some(());
+        }
+
         let trainer = self.cuda_trainer.as_ref()?;
         let stream = trainer.stream();
-
-        // PMAT-488: Check for backward graph replay
-        {
-            let training_state = self.gpu_training.as_ref()?;
-            if super::super::backward_graph::use_backward_graph() {
-                if let Some(ref state) = training_state.backward_graph_state {
-                    if state.cached_seq_len == seq_len {
-                        // Replay cached backward graph — all 28 layers in one launch
-                        super::super::backward_graph::replay_backward(state, stream)?;
-                        // Still need to increment step counter for LR scheduling
-                        self.nf4_lora_step += 1;
-                        stream.synchronize().ok()?;
-                        return Some(());
-                    }
-                }
-            }
-        }
 
         // Either graph not enabled, seq_len changed, or first capture needed
         let use_graph = super::super::backward_graph::use_backward_graph();
@@ -157,11 +145,7 @@ impl InstructPipeline {
 
         // PMAT-488: Begin graph capture if enabled
         if use_graph {
-            if let Err(e) = stream.begin_capture(trueno_gpu::driver::CaptureMode::ThreadLocal) {
-                eprintln!(
-                    "[CUDA] Backward graph capture begin failed: {e} — falling back to ungraphed"
-                );
-            }
+            begin_backward_capture(stream);
         }
 
         for layer_idx in (0..num_layers).rev() {
@@ -218,38 +202,91 @@ impl InstructPipeline {
                 .ok()?;
 
             // PMAT-483: Record per-layer backward time (skip during graph capture)
-            if let Some(start) = layer_bwd_start {
-                if layer_idx < training_state.profiler_layer_bwd_us.len() {
-                    training_state.profiler_layer_bwd_us[layer_idx] =
-                        start.elapsed().as_micros() as u64;
-                }
-            }
+            record_layer_bwd_us(
+                &mut training_state.profiler_layer_bwd_us,
+                layer_idx,
+                layer_bwd_start,
+            );
 
             grad_output_is_a = !grad_output_is_a;
         }
 
         // PMAT-488: End graph capture and cache
         if use_graph {
-            match stream.end_capture() {
-                Ok(graph) => match graph.instantiate() {
-                    Ok(exec) => {
-                        eprintln!(
-                            "[CUDA] Backward graph captured: seq_len={seq_len}, {num_layers} layers"
-                        );
-                        training_state.backward_graph_state =
-                            Some(super::super::backward_graph::BackwardGraphState {
-                                exec,
-                                cached_seq_len: seq_len,
-                            });
-                    }
-                    Err(e) => eprintln!("[CUDA] Backward graph instantiate failed: {e}"),
-                },
-                Err(e) => eprintln!("[CUDA] Backward graph end_capture failed: {e}"),
-            }
+            end_backward_capture(
+                stream,
+                seq_len,
+                num_layers,
+                &mut training_state.backward_graph_state,
+            );
         }
 
         stream.synchronize().ok()?;
 
         Some(())
+    }
+
+    /// PMAT-488: replays the backward graph captured at this `seq_len`, when there is one.
+    ///
+    /// Returns `Some(true)` when it replayed, leaving the loop nothing to run.
+    #[cfg(feature = "cuda")]
+    fn replay_backward_graph(&mut self, seq_len: usize) -> Option<bool> {
+        let stream = self.cuda_trainer.as_ref()?.stream();
+        let training_state = self.gpu_training.as_ref()?;
+        let Some(state) = training_state.backward_graph_state.as_ref() else {
+            return Some(false);
+        };
+        if !super::super::backward_graph::use_backward_graph() || state.cached_seq_len != seq_len {
+            return Some(false);
+        }
+        // Replay cached backward graph — all 28 layers in one launch
+        super::super::backward_graph::replay_backward(state, stream)?;
+        // Still need to increment step counter for LR scheduling
+        self.nf4_lora_step += 1;
+        stream.synchronize().ok()?;
+        Some(true)
+    }
+}
+
+/// PMAT-488: starts capturing the backward into a graph; a failed start leaves it ungraphed.
+#[cfg(feature = "cuda")]
+fn begin_backward_capture(stream: &trueno_gpu::driver::CudaStream) {
+    if let Err(e) = stream.begin_capture(trueno_gpu::driver::CaptureMode::ThreadLocal) {
+        eprintln!("[CUDA] Backward graph capture begin failed: {e} — falling back to ungraphed");
+    }
+}
+
+/// PMAT-488: ends the capture and caches the instantiated graph for `seq_len`.
+#[cfg(feature = "cuda")]
+fn end_backward_capture(
+    stream: &trueno_gpu::driver::CudaStream,
+    seq_len: usize,
+    num_layers: usize,
+    cache: &mut Option<super::super::backward_graph::BackwardGraphState>,
+) {
+    match stream.end_capture() {
+        Ok(graph) => match graph.instantiate() {
+            Ok(exec) => {
+                eprintln!("[CUDA] Backward graph captured: seq_len={seq_len}, {num_layers} layers");
+                *cache = Some(super::super::backward_graph::BackwardGraphState {
+                    exec,
+                    cached_seq_len: seq_len,
+                });
+            }
+            Err(e) => eprintln!("[CUDA] Backward graph instantiate failed: {e}"),
+        },
+        Err(e) => eprintln!("[CUDA] Backward graph end_capture failed: {e}"),
+    }
+}
+
+/// PMAT-483: records one layer's backward time, when it was timed (never under graph capture).
+#[cfg(feature = "cuda")]
+fn record_layer_bwd_us(
+    layer_bwd_us: &mut [u64],
+    layer_idx: usize,
+    start: Option<std::time::Instant>,
+) {
+    if let (Some(start), Some(slot)) = (start, layer_bwd_us.get_mut(layer_idx)) {
+        *slot = start.elapsed().as_micros() as u64;
     }
 }
