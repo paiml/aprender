@@ -93,8 +93,8 @@ proof_obligations:
     applies_to: lane_state
   - id: NT-INV-011
     type: invariant
-    property: "The read refuses before it spends: under the rate floor (a fifth of the token's own hourly limit, capped at RATE_FLOOR, so the fleet token keeps its 1000 reserve and a job token refuses under 200), past the call budget, or on a GraphQL error the read is failed"
-    formal: "remaining < min(RATE_FLOOR, ⌊limit / 5⌋) ∨ limit_unread ∨ calls ≥ MAX_CALLS ∨ graphql_errors ⇒ read ≠ ok"
+    property: "The read refuses before it spends: under the rate floor (fifth(limit): the token's own hourly limit divided by 5, rounded down, capped at RATE_FLOOR, so the fleet token keeps its 1000 reserve and a job token refuses under 200), past the call budget, or on a GraphQL error the read is failed"
+    formal: "remaining < min(RATE_FLOOR, fifth(limit)) ∨ limit_unread ∨ calls ≥ MAX_CALLS ∨ graphql_errors ⇒ read ≠ ok"
     applies_to: lane_state
   - id: NT-INV-012
     type: invariant
