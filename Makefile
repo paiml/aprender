@@ -1555,3 +1555,33 @@ oracle-owl:
 oracle-owl-check: oracle-owl
 	@git diff --exit-code tests/oracle/tbox-differential.json \
 	  || { echo "FAIL: tests/oracle/tbox-differential.json differs from a fresh run — commit it"; exit 1; }
+
+# ── BLD-002 R4: nightly evidence train (report-only) ────────────────────────────────────────────────────────
+# One line a night for main's head: RELEASABLE H=<C> or NOT RELEASABLE: <lane>, <run>. The timer runs a bundle copied
+# out of git at pinned shas, never the working tree. OUT (and optionally INBOX) come from the command line:
+#   make nightly-train-install OUT=<dir> [INBOX=<file>]   pin, self-test, install + enable the daily 04:45 UTC user timer
+#   make nightly-train-run                                 run the installed unit once, by hand, and print its line
+#   make nightly-train-show                                the unit, its next fire and linger
+NIGHTLY_TRAIN_HOME ?= $(HOME)/.local/share/aprender-nightly-train
+NIGHTLY_TRAIN_SHA ?= HEAD
+NIGHTLY_GREENS_SHA ?= 3045add39f
+RED_AGE_SHA ?= a0bc666676
+.PHONY: nightly-train-install nightly-train-run nightly-train-show nightly-train-self-test
+nightly-train-install:
+	@test -n "$(OUT)" || { echo "FAIL: OUT=<dir> is required"; exit 3; }
+	bash scripts/release/nightly_train.sh --install --home "$(NIGHTLY_TRAIN_HOME)" --out "$(OUT)" --inbox "$(INBOX)" \
+	  --train "$(NIGHTLY_TRAIN_SHA)" --greens "$(NIGHTLY_GREENS_SHA)" --redage "$(RED_AGE_SHA)"
+
+nightly-train-run:
+	systemctl --user start --wait aprender-nightly-train.service
+	@journalctl --user -u aprender-nightly-train.service -n 1 -o cat --no-pager
+
+nightly-train-show:
+	@systemctl --user cat aprender-nightly-train.service aprender-nightly-train.timer --no-pager
+	@systemctl --user list-timers aprender-nightly-train.timer --no-pager
+	@loginctl show-user "$$(id -un)" -p Linger
+
+nightly-train-self-test:
+	@test -n "$(BUNDLE)" || { echo "FAIL: BUNDLE=<pinned bundle dir> is required (the helpers live there)"; exit 3; }
+	bash "$(BUNDLE)/nightly_train.sh" --self-test
+	bash "$(BUNDLE)/nightly_train.sh" --mutants

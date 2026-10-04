@@ -1,0 +1,89 @@
+metadata:
+  version: 1.0.0
+  created: '2026-10-04'
+  author: PAIML Engineering
+  description: "BLD-002 row R4, the nightly evidence train: one entry point judges main's head C from the results its lanes' scheduled producers recorded for C, and prints one line, RELEASABLE H=<C> or NOT RELEASABLE: <lane>, <run>. scripts/release/nightly_train.sh is the judge. A lane that cannot be read prints not_measured, never pass. Report-only: it blocks nothing and no release script reads it."
+  kind: pattern
+  references:
+    - "scripts/release/nightly_train.sh — the judge, its case table (--self-test) and its planted mutants (--mutants)"
+    - "scripts/release/autopilot.sh — the release-day steps the verdict lanes mirror (wait, deep, dogfood, models, readiness, tag, cleanroom, assets, preflight, dryrun)"
+    - "scripts/check_publish_preflight.sh — rules R1-R8, part of the verdict"
+    - "docs/specifications/FLOW-003-queue-and-release-cycle-model.md — G4, CI retries planned 2 -> 0: why a retried green is not a green"
+
+five_whys:
+  symptom: "The 0.70 release path ran about a dozen long steps in series, each for the first time on release day and each bound to the exact commit; the train had 68 stalls of more than an hour."
+  why_1: "Every release-day step measured the code for the first time, so each failure was found on the critical path."
+  why_2: "No single place said whether main's head was releasable before release day; each step's result lived in its own workflow, script or receipt."
+  why_3: "Scheduled workflows on main already produced some of the evidence every night, but nothing read them together against the release-day checks."
+  why_4: "A check with no nightly producer looked like nothing to report, not like a gap, so the gaps stayed invisible until release day."
+  why_5: "Without one line per night, nobody could count releasable nights or rank the reds by the hours they cost."
+  root_cause: "Release readiness had no nightly measurement. The remedy is one judge over every release-day check, reading the night's evidence for main's head, where a missing, unfinished, retried or unreadable result is not_measured and only an all-green verdict set prints RELEASABLE."
+
+equations:
+  lane_state:
+    formula: "state(lane, C) = not_measured if the lane has no producer, the read failed, no run of the producer on main is for C, the newest such run is unfinished, no matched job ran, or its attempt is unread; red if a matched job ended failure, timed_out or startup_failure, or the run succeeded only at attempt 2 or later; else green"
+    domain: "one lane of the constant lane table, and the producer runs read for main's head C"
+    codomain: "{green, red, not_measured} for each lane"
+    invariants:
+      - "a run on another commit never stands for C"
+      - "an unfinished run, an unread attempt or a failed read is not_measured, never green"
+      - "a retried success is red: a retried green is not a green"
+      - "a run whose matched jobs were all skipped measured nothing, and the next older run for C is taken"
+
+  verdict_line:
+    formula: "RELEASABLE H=C iff every verdict lane is green; else NOT RELEASABLE: L, R where L is the first failing verdict lane, red before not_measured, then by hours lost, then table order, and R its run id or not_measured"
+    domain: "lane_state over the constant lane table; info lanes are read and reported but never enter the verdict"
+    codomain: "exactly one line on stdout per run"
+    invariants:
+      - "the verdict lanes are the checks release day enforces today, a constant in the script, neither an option nor an environment value"
+      - "an info lane, coverage included, never changes the verdict"
+      - "a failure part-way prints NOT RELEASABLE: nightly-train, <step>, never silence"
+      - "reds and not_measured lanes are ranked by hours lost, the age of each lane's current red stretch"
+
+proof_obligations:
+  - id: NT-INV-001
+    type: invariant
+    property: "RELEASABLE only when every verdict lane is green on C"
+    formal: "line = RELEASABLE(C) ⇒ ∀ l ∈ verdict: state(l, C) = green"
+    applies_to: verdict_line
+  - id: NT-INV-002
+    type: invariant
+    property: "A lane that cannot be read is never green"
+    formal: "∀ l: read_failed ∨ no_run(l, C) ∨ unfinished(l, C) ∨ attempt_unread(l, C) ⇒ state(l, C) = not_measured"
+    applies_to: lane_state
+  - id: NT-INV-003
+    type: invariant
+    property: "A retried success is red"
+    formal: "∀ l: success(run(l, C)) ∧ attempt(run(l, C)) ≥ 2 ⇒ state(l, C) = red"
+    applies_to: lane_state
+  - id: NT-INV-004
+    type: invariant
+    property: "Info lanes never vote"
+    formal: "∀ l ∈ info: verdict(states) = verdict(states[l := any])"
+    applies_to: verdict_line
+  - id: NT-INV-005
+    type: invariant
+    property: "Every run prints exactly one line"
+    formal: "∀ run: |stdout(run)| = 1"
+    applies_to: verdict_line
+
+falsification_tests:
+  - id: FALSIFY-NT-001
+    rule: "The judge is right on every row of its case table"
+    prediction: "All verdict lanes green is RELEASABLE; a removed lane, a run on another commit, a run in progress, an unread attempt or a failed read is NOT RELEASABLE with not_measured; a green at attempt 2 is red; an info lane red leaves the verdict; reds rank by hours lost; greens in a row follow the scheduled-nights rule; a planted fault prints the trap line"
+    test: "bash scripts/release/nightly_train.sh --self-test"
+    if_fails: "The train can print RELEASABLE for a commit some release-day check never measured, or stay silent when it fails"
+
+  - id: FALSIFY-NT-002
+    rule: "The case table can still fail on the defects it names"
+    prediction: "Each planted mutant (not_measured counted green, a run on any commit, an unfinished run counted, a retried green counted, a failed read counted, an unread attempt counted, no trap, info lanes voting, ranking reversed, total counted as streak, coverage made a verdict lane, a verdict lane dropped, the rollup dropped, a re-run job not counted) turns at least one row RED"
+    test: "bash scripts/release/nightly_train.sh --mutants"
+    if_fails: "The case table is theater: it would pass a judge that calls main releasable on evidence it never read"
+
+qa_gate:
+  id: F-NT-001
+  name: "Main's head is called releasable only from green evidence for every release-day check"
+  description: "scripts/release/nightly_train.sh reads the night's results for main's head and prints RELEASABLE H=<C> or NOT RELEASABLE: <lane>, <run>. Its case table pins every lane state and the verdict set; its mutants prove the table can fail."
+  checks:
+    - "lane_state"
+    - "verdict_line"
