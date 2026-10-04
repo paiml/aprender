@@ -172,13 +172,17 @@ rows:
       # ELK jar, on a JVM the host declares; (3) pv reads and writes Turtle and N-Triples, isomorphic to Jena riot on the same
       # input (the gate path has no Turtle reader, R-13); (4) pv returns a W3C sh:ValidationReport with every result field,
       # compared to Jena's; (5) tests/oracle stops scraping pv's lint messages for (focus, component), reads (4)'s report
-      # instead, and regenerates differential.json over every vendored case
+      # instead, and regenerates differential.json over every vendored case.
+      # Precondition, proposed separately on 2026-10-04: pv follows SHACL Core on sh:closed (no implicit rdf:type, W3C
+      # node/closed-001 vendored), the six closed shapes in contracts/shapes.ttl list rdf:type in sh:ignoredProperties,
+      # differential.json is regenerated, and oracle-check runs on a schedule. Listing rdf:type alone greens oracle-check
+      # but leaves pv short of SHACL Core on third-party closed shapes, the case (4) compares to Jena
     spec: {path: null, section: null, on_main: false}
     contract: {id: null, path: null, on_main: false}
     falsifier: []          # to draft with the contract: each case GREEN or RED with its coverage stated, positive and negative
                            # controls, one comparator per RED, never skipped; a host without a JVM is NOT MEASURED, never a pass
     baseline: {path: null, on_main: false,
-               note: "no Jena measurement exists. Nearest record on main: tests/oracle/, a crate outside the workspace run by the release gate, not by a PR check, that compares pv to the pinned shacl and rudof_rdf 0.3.21 crates on (focus, component) pairs only, read from pv's lint messages. Its differential.json was last written at daad9f7c53 (2026-09-19) with 16 W3C cases, 0 disagreements; crates/aprender-contracts/src/ontology/w3c.rs now vendors 19 (989cb012e5)"}
+               note: "no Jena measurement exists. Nearest record on main: tests/oracle/, a crate outside the workspace that compares pv to the pinned shacl and rudof_rdf 0.3.21 crates on (focus, component) pairs only, read from pv's lint messages. Only scripts/release/ont10_readiness.sh (ONT-10: is aprender-contracts-cli ready to publish) runs it, through make oracle-check; no workflow or PR check does. Its differential.json was last written at daad9f7c53 (2026-09-19) with 16 W3C cases, 0 disagreements, corpus 103 vs 103; crates/aprender-contracts/src/ontology/w3c.rs now vendors 19 (989cb012e5). A fresh run at 316dee2cd4 (aprender-cd, 2026-10-04, intel, pv built --locked) is RED, so make oracle-check fails: W3C 19/19 agree, but on the corpus the oracle finds 736 violations and pv 730. All 6 extra are component closed on an rdf:type value: shapes.rs check_closed admits rdf:type on every closed shape (w3c.rs NOT_VENDORED node/closed-001), SHACL Core does not. contracts/shapes.ttl has 6 closed shapes, all sh:targetClass, none with rdf:type in sh:ignoredProperties or as an sh:path. A probe that mutates pv's report finds the oracle blind to severity, message and shape id"}
     owner_proposed: aprender-cd for the sub-tickets, after KREG-B3; L1 tracks
   - id: JSON-SCHEMA
     ev_rank: 9
