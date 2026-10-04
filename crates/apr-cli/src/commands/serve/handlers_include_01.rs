@@ -67,7 +67,7 @@ fn start_apr_server_gpu(
 
     println!("{}", "Enabling fused CUDA acceleration (GH-87)...".cyan());
 
-    let mut cuda_model = OwnedQuantizedModelCuda::new(quantized, 0)
+    let mut cuda_model = serving_cuda_model(quantized)
         .map_err(|e| CliError::InferenceFailed(format!("CUDA init failed: {e}")))?;
 
     preload_gpu_weights(&mut cuda_model);
@@ -262,7 +262,7 @@ fn start_safetensors_server_gpu(
 
     println!("{}", "Enabling fused CUDA acceleration (GH-88)...".cyan());
 
-    let mut cuda_model = OwnedQuantizedModelCuda::new(quantized, 0)
+    let mut cuda_model = serving_cuda_model(quantized)
         .map_err(|e| CliError::InferenceFailed(format!("CUDA init failed: {e}")))?;
 
     preload_gpu_weights(&mut cuda_model);

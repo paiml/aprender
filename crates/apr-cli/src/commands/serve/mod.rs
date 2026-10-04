@@ -301,8 +301,13 @@ pub(crate) fn run(model_path: &Path, config: &ServerConfig) -> Result<()> {
         eprintln!("[PMAT-297] Thread pool config: {e} (may already be initialized)");
     }
 
-    // GH-286: Set env vars for realizr's KV cache and FP8 control
-    std::env::set_var("REALIZR_CONTEXT_LENGTH", config.context_length.to_string());
+    // GH-286: Set env vars for realizr's KV cache and FP8 control.
+    // K1 (#4603): only an operator-set `--context-length` is written. The 4096 default
+    // written unconditionally sized every GPU KV to 4096 whatever the model's context;
+    // unset, the GGUF CUDA path sizes the KV to the model's context within free VRAM.
+    if config.context_length != types::DEFAULT_CONTEXT_LENGTH {
+        std::env::set_var("REALIZR_CONTEXT_LENGTH", config.context_length.to_string());
+    }
     if config.no_fp8_cache {
         std::env::set_var("REALIZR_NO_FP8_CACHE", "1");
     }
