@@ -1,0 +1,142 @@
+diff --git a/contracts/release-readiness-v2.yaml b/contracts/release-readiness-v2.yaml
+index fc645b4a4b..33f82fb7e0 100644
+--- a/contracts/release-readiness-v2.yaml
++++ b/contracts/release-readiness-v2.yaml
+@@ -12,8 +12,8 @@
+ # THE CELLS
+ #   release:KernelParityCell  (host, kernel_id): kernel_id fixes backend and shape_class (KREG-001 registry row), the
+ #       host fixes arch/sm. Its parity receipt's judged fields sit ON the cell (verdict, withinBound, fresh,
+-#       archMatch), so a ModelCell reaches them through ONE level of sh:node (the engine's limit).
+-#   release:ModelCell   (host, model sha256): DERIVED. The extractor writes only release:usesKernel edges (the
++#       archMatch), so a ModelKernelCell reaches them through ONE level of sh:node (the engine's limit).
++#   release:ModelKernelCell   (host, model sha256): DERIVED. The extractor writes only release:usesKernel edges (the
+ #       static map: per-tensor ggml types through the registry, extract/kernel_cells.rs), unregisteredQtype for a
+ #       type no row serves, unpredictedKernel for a dispatched kernel the map did not predict, and the smoke edge.
+ #       It never writes a verdict: the shape below is the derivation.
+@@ -64,7 +64,7 @@ shapes:
+       - {path: release:fresh, minCount: 1, maxCount: 1, in: [true]}
+       - {path: release:archMatch, minCount: 1, maxCount: 1, in: [true]}
+   - id: release-readiness-v2.model
+-    targetClass: release:ModelCell
++    targetClass: release:ModelKernelCell
+     properties:
+       - {path: release:usesKernel, minCount: 1, nodeKind: IRI, class: release:KernelParityCell,
+          node: {properties: [{path: release:verdict, minCount: 1, maxCount: 1, in: [pass]},
+@@ -102,7 +102,7 @@ equations:
+     lean_theorem: none — L4 not declared
+   model_pass:
+     formula: "Pass(m, h) ⇔ uses(m, h) ≠ ∅ ∧ ∀ k ∈ uses(m, h): Pass(k, h) ∧ unregistered(m, h) = ∅ ∧ unpredicted(m, h) = ∅ ∧ |smoke(m, h)| = 1 ∧ Pass(smoke(m, h))"
+-    domain: "every release:ModelCell"
++    domain: "every release:ModelKernelCell"
+     codomain: "a violation naming the model cell, or none"
+     invariants:
+       - "Pass(k, h) ⇔ verdict = pass ∧ withinBound ∧ fresh ∧ archMatch, all present"
+diff --git a/crates/aprender-contracts/src/ontology/extract/kernel_cells.rs b/crates/aprender-contracts/src/ontology/extract/kernel_cells.rs
+index 2acd89bcc9..5fc1ca35e0 100644
+--- a/crates/aprender-contracts/src/ontology/extract/kernel_cells.rs
++++ b/crates/aprender-contracts/src/ontology/extract/kernel_cells.rs
+@@ -5,7 +5,7 @@
+ //! through the kernel registry (`crates/aprender-serve/kernel-registry.json`, KREG-001) for one host's
+ //! backend and arch. Each type becomes either `release:usesKernel` edges or a `release:unregisteredQtype`
+ //! literal. This module emits edges only, never a verdict: the release-readiness v2 shape derives the
+-//! ModelCell verdict through `sh:node` on the kernel cells, so a verdict computed here would be the check
++//! ModelKernelCell verdict through `sh:node` on the kernel cells, so a verdict computed here would be the check
+ //! checking itself.
+ //!
+ //! The registry is read as data (this crate cannot depend on `aprender-serve`). The map is a SUPERSET of
+@@ -274,11 +274,11 @@ pub fn smoke_cell(host: &str, model_sha256: &str) -> String {
+     iri_path("smoke-cell", &[host, model_sha256])
+ }
+ 
+-/// A `release:ModelCell` with one `release:usesKernel` edge per kernel and one `release:unregisteredQtype`
++/// A `release:ModelKernelCell` with one `release:usesKernel` edge per kernel and one `release:unregisteredQtype`
+ /// integer per type no row serves. Edges only: no verdict (module note).
+ pub fn emit_model_cell(g: &mut Graph, host: &str, model_sha256: &str, map: &KernelMap) {
+     let cell = model_cell(host, model_sha256);
+-    g.insert(cell.clone(), RDF_TYPE, Term::iri(rel("ModelCell")));
++    g.insert(cell.clone(), RDF_TYPE, Term::iri(rel("ModelKernelCell")));
+     for k in &map.uses {
+         g.insert(
+             cell.clone(),
+@@ -308,7 +308,7 @@ pub struct KernelEvidence {
+     pub arch_match: bool,
+ }
+ 
+-/// A `release:KernelParityCell`, with its receipt's fields on the cell itself so a ModelCell's one-level
++/// A `release:KernelParityCell`, with its receipt's fields on the cell itself so a ModelKernelCell's one-level
+ /// `sh:node` reaches them. `None` writes the cell with no fields: `minCount 1` rejects it (RR2-F1).
+ pub fn emit_kernel_cell(
+     g: &mut Graph,
+@@ -1030,7 +1030,7 @@ pub struct CellHost {
+     /// The arch the registry rows and receipts are matched on (see [`judge_parity_receipt`]).
+     pub arch: String,
+     /// Model sha256 → its per-tensor ggml types and architecture, or `None` when no receipt recorded the
+-    /// types. A `None` model gets a ModelCell with no `usesKernel` edge, which `minCount 1` rejects: unknown
++    /// types. A `None` model gets a ModelKernelCell with no `usesKernel` edge, which `minCount 1` rejects: unknown
+     /// is RED, never skipped.
+     pub models: BTreeMap<String, Option<ModelShape>>,
+     /// Kernel id → the judged receipt measured for this host.
+diff --git a/crates/aprender-contracts/src/ontology/extract/release_evidence_tests.rs b/crates/aprender-contracts/src/ontology/extract/release_evidence_tests.rs
+index 114364d6a3..782da9db71 100644
+--- a/crates/aprender-contracts/src/ontology/extract/release_evidence_tests.rs
++++ b/crates/aprender-contracts/src/ontology/extract/release_evidence_tests.rs
+@@ -1229,7 +1229,7 @@ fn v2_cells_join_the_release_graph_only_when_asked() {
+     let mut off = Graph::new();
+     extract(&mut off, &c, &subject()).expect("extracts");
+     assert!(
+-        !off.to_ntriples().contains(&rel("ModelCell")),
++        !off.to_ntriples().contains(&rel("ModelKernelCell")),
+         "v2 is opt-in: no dir, no v2 cells"
+     );
+ 
+diff --git a/docs/specifications/release-readiness-v2-kernel-cells.md b/docs/specifications/release-readiness-v2-kernel-cells.md
+index 2ec24cf3aa..26482701df 100644
+--- a/docs/specifications/release-readiness-v2-kernel-cells.md
++++ b/docs/specifications/release-readiness-v2-kernel-cells.md
+@@ -26,7 +26,7 @@ measured and which are derived.
+ | Cell | Key | Evidence | Cost |
+ |------|-----|----------|------|
+ | `release:KernelParityCell` | kernel_id × backend × shape_class | a `kernel-parity-receipt/v1` (KREG AC-3) whose `host_arch`/`sm` is the host's, `verdict` pass, fresh | seconds each (CPU receipts today: 0.1 s for 11 rows) |
+-| `release:ModelCell` | model × host | **derived**: one `release:usesKernel` edge per kernel on the model's dispatch path on that host's backend | 0: no run |
++| `release:ModelKernelCell` | model × host | **derived**: one `release:usesKernel` edge per kernel on the model's dispatch path on that host's backend | 0: no run |
+ | `release:SmokeCell` | model × host | one e2e `apr run` (short prompt, 1 context rung) `rr2-smoke-receipt/v1`, verdict pass, fresh, with a `kernel_path` from KREG | ~1–2 min each |
+ 
+ The class is `release:KernelParityCell`, not `release:KernelCell`. v1's extractor already emits
+@@ -48,18 +48,18 @@ The in-tree engine is SHACL **Core** only (`crates/aprender-contracts/src/ontolo
+ semantics from Core:
+ 
+ 1. The extractor (`ontology/extract/release_evidence.rs`, which already derives v1 cells) emits
+-   `ModelCell --release:usesKernel--> KernelParityCell` for every kernel on the model's dispatch path on
++   `ModelKernelCell --release:usesKernel--> KernelParityCell` for every kernel on the model's dispatch path on
+    that host's backend. It emits **edges only, never a verdict**. A verdict computed in Rust and then
+    checked by a shape would be the check checking itself.
+ 2. The shape does the derivation:
+    ```yaml
+-   release:ModelCell:
++   release:ModelKernelCell:
+      - {path: release:usesKernel, minCount: 1, node: release:KernelParityCellPass}   # sh:node, one level: supported
+      - {path: release:unregisteredQtype, maxCount: 0}
+      - {path: release:smoke, minCount: 1, node: release:SmokeCellPass}
+    release:KernelParityCellPass:   # verdict pass, withinBound, fresh, receipt minCount 1
+    ```
+-   A KernelParityCell with no receipt fails `KernelParityCellPass`, so every ModelCell that points at it fails
++   A KernelParityCell with no receipt fails `KernelParityCellPass`, so every ModelKernelCell that points at it fails
+    through `sh:node`. That is the first falsifier, enforced by the shape and not by the extractor.
+ 
+ ## 4. The model → kernel map (the load-bearing part)
+@@ -141,11 +141,11 @@ fresh when every KernelParityCell it uses is fresh and its smoke ran at the rele
+ 
+ | Id | Plant | Required RED |
+ |----|-------|--------------|
+-| RR2-F1 | delete one kernel receipt | exactly the ModelCells whose static set contains that kernel, and no others (the test asserts the set) |
+-| RR2-F2 | a model tensor with a qtype no row admits | that ModelCell, via `unregisteredQtype` |
+-| RR2-F3 | the smoke's `kernel_path` contains a kernel outside the static set | that ModelCell |
++| RR2-F1 | delete one kernel receipt | exactly the ModelKernelCells whose static set contains that kernel, and no others (the test asserts the set) |
++| RR2-F2 | a model tensor with a qtype no row admits | that ModelKernelCell, via `unregisteredQtype` |
++| RR2-F3 | the smoke's `kernel_path` contains a kernel outside the static set | that ModelKernelCell |
+ | RR2-F4 | kernel source changed, receipt input key stale | that KernelParityCell and its dependants |
+-| RR2-F5 | no smoke receipt for model × host | that ModelCell |
++| RR2-F5 | no smoke receipt for model × host | that ModelKernelCell |
+ | RR2-F6 | receipt measured on another arch/sm than the host's backend | that KernelParityCell |
+ | S-SAN | a cuda kernel with no, a dirty (any of memcheck/racecheck/initcheck/synccheck not CLEAN), or a > 7 d compute-sanitizer run (KTEST-05 `receipt.json`) | that KernelParityCell only (`release-readiness-v2.sanitizer`); cpu kernels are not asked |
+ 

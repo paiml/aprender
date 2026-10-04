@@ -1,0 +1,375 @@
+diff --git a/crates/aprender-contracts-cli/src/cli.rs b/crates/aprender-contracts-cli/src/cli.rs
+index 487a1247dadb2f81abb2bd7cc3e461bb79891bc3..c81d62d0a0c2389ae8c447058d80a8723ed5c5ca 100644
+--- a/crates/aprender-contracts-cli/src/cli.rs
++++ b/crates/aprender-contracts-cli/src/cli.rs
+@@ -674,6 +674,13 @@ pub struct ReleaseArgs {
+     /// The CRUX receipts, apr vs its comparators (default: evidence/crux/<version>/)
+     #[arg(long)]
+     pub crux_receipts: Option<PathBuf>,
++    /// aprender#3715 v2: the kernel-cell evidence dir (`input-sets.json`, `<host>/parity/*.json`). Adds the v2
++    /// kernel and model cells to the release graph; absent → none. Needs the kernel registry in the repo.
++    #[arg(long)]
++    pub v2_evidence: Option<PathBuf>,
++    /// The gate time (`YYYY-MM-DDTHH:MM:SSZ`) v2 sanitizer runs are aged against; absent → every run is stale
++    #[arg(long)]
++    pub gate_utc: Option<String>,
+ }
+ 
+ impl ReleaseArgs {
+@@ -689,6 +696,8 @@ impl ReleaseArgs {
+             || self.tokenizer_receipts.is_some()
+             || self.surface.is_some()
+             || self.crux_receipts.is_some()
++            || self.v2_evidence.is_some()
++            || self.gate_utc.is_some()
+     }
+ 
+     /// The subject, or `None` when no flag was passed. A partial set is refused, never completed by a default.
+@@ -718,6 +727,8 @@ impl ReleaseArgs {
+             .clone_from(&self.tokenizer_receipts);
+         s.surface.clone_from(&self.surface);
+         s.crux_receipts_dir.clone_from(&self.crux_receipts);
++        s.v2_dir.clone_from(&self.v2_evidence);
++        s.v2_gate_utc.clone_from(&self.gate_utc);
+         Ok(Some(s))
+     }
+ }
+diff --git a/crates/aprender-contracts-cli/tests/ont4b_shapes_gate.rs b/crates/aprender-contracts-cli/tests/ont4b_shapes_gate.rs
+index 6dc8235ee9c9a8fb28252acd4b141b627c14f945..7c4d36f35a59cd2a8a4d83f7f489a2d01d63bddc 100644
+--- a/crates/aprender-contracts-cli/tests/ont4b_shapes_gate.rs
++++ b/crates/aprender-contracts-cli/tests/ont4b_shapes_gate.rs
+@@ -247,10 +247,12 @@ fn the_tracked_repo_graph_is_fresh() {
+     // aprender-present, aprender-ptop, aprender-simulate, aprender-train-lora, aprender-train-shell) and
+     // binary-aprender-apr-http-mcp: 57 + 9 = 66.
+     // KREG-001 (#4539) adds `kernel-registry-v1`'s one shape, a row per dispatchable kernel: 67.
++    // #3715 v2 adds `release-readiness-v2{.kernel,.model,.sanitizer}` (like v1, a focus node only under
++    // `--v2-evidence`) and the per-forward `kernel-registry-v1.op`: 67 + 4 = 71.
+     assert_eq!(
+         v["shapes_n"],
+-        67,
+-        "ont-shapes-v1 + ladder-measured + ladder-green (ONT-4c1) + bound-symbols-resolve + lean-statements-grounded (ONT-4b2) + refusal-receipt-v1 (#3605) + parity-receipt-complete + parity-comparator-self + parity-comparator-oracle (parity-receipt-v2, #3600) + release-readiness-v1{{,.release,.host,.context,.model,.coverage,.tokenizer,.kernel,.refusal}} (#3715) + github-{{repo,issue,pull-request,milestone}} (#4330) + examples-well-formed (#3560 R1) + examples-model-current (#3560 R4) + readme-root + claude-md + model-setfit-slice + csv-train (ONT-4c, #3847) + binary-target + surface-audit-ledger + binary-apr-http-mcp + 15 binary-*-surface (ONT-10, #4502) + release-readiness-v1{{.effect,.probe,.model-cell,.effect-cell,.crux-verb,.crux,.sampling}} (#3745 S2) + capability-cells (ONT-4c5) + kernel-parity + kernel-timing + kernel-safety (ONT-4c4) + 8 binary-*-surface + binary-aprender-apr-http-mcp (ONT-10 rest, #4588) + kernel-registry-v1 (KREG-001, #4539)\n{}",
++        71,
++        "ont-shapes-v1 + ladder-measured + ladder-green (ONT-4c1) + bound-symbols-resolve + lean-statements-grounded (ONT-4b2) + refusal-receipt-v1 (#3605) + parity-receipt-complete + parity-comparator-self + parity-comparator-oracle (parity-receipt-v2, #3600) + release-readiness-v1{{,.release,.host,.context,.model,.coverage,.tokenizer,.kernel,.refusal}} (#3715) + github-{{repo,issue,pull-request,milestone}} (#4330) + examples-well-formed (#3560 R1) + examples-model-current (#3560 R4) + readme-root + claude-md + model-setfit-slice + csv-train (ONT-4c, #3847) + binary-target + surface-audit-ledger + binary-apr-http-mcp + 15 binary-*-surface (ONT-10, #4502) + release-readiness-v1{{.effect,.probe,.model-cell,.effect-cell,.crux-verb,.crux,.sampling}} (#3745 S2) + capability-cells (ONT-4c5) + kernel-parity + kernel-timing + kernel-safety (ONT-4c4) + 8 binary-*-surface + binary-aprender-apr-http-mcp (ONT-10 rest, #4588) + kernel-registry-v1{{,.op}} (KREG-001 #4539, #3715 v2) + release-readiness-v2{{.kernel,.model,.sanitizer}} (#3715 v2)\n{}",
+         show(&r)
+     );
+ }
+diff --git a/crates/aprender-contracts/src/ontology/extract/mod.rs b/crates/aprender-contracts/src/ontology/extract/mod.rs
+index 1e586f393bf4a1369a312b48d3e2aeb38a29cd64..aeac55bf37b82966c19f6e87e511fc0ac4813f1e 100644
+--- a/crates/aprender-contracts/src/ontology/extract/mod.rs
++++ b/crates/aprender-contracts/src/ontology/extract/mod.rs
+@@ -25,6 +25,7 @@ pub mod example;
+ pub mod gguf;
+ pub mod json;
+ pub mod kernel;
++pub mod kernel_cells;
+ pub mod lean;
+ pub mod llm_context;
+ pub mod parity_receipt;
+diff --git a/crates/aprender-contracts/src/ontology/extract/release_evidence.rs b/crates/aprender-contracts/src/ontology/extract/release_evidence.rs
+index 8a78af64ddfc16617bf0ebd07e7720c4da9cbaf8..53a2c6befb444341f3e05e86e7159bf85408b57b 100644
+--- a/crates/aprender-contracts/src/ontology/extract/release_evidence.rs
++++ b/crates/aprender-contracts/src/ontology/extract/release_evidence.rs
+@@ -316,6 +316,28 @@ pub fn extract(
+         receipts::read_dir(&subject.model_dir(&root), &root).map_err(ReleaseError::Receipt)?;
+     let kernel_receipts = inputs::read_kernel_receipts(&subject.kernel_dir(&root), &root)?;
+     let tok_receipts = inputs::read_tokenizer_receipts(&subject.tokenizer_dir(&root), &root)?;
++    let host_arch: Vec<(&str, &str)> = ladder
++        .hosts
++        .iter()
++        .map(|h| (h.id.as_str(), h.cc.as_str()))
++        .collect();
++    let v2 = subject
++        .v2_dir
++        .as_deref()
++        .map(|d| {
++            super::kernel_cells::read_v2(
++                &root,
++                d,
++                &host_arch,
++                subject.measured_commit(),
++                subject.v2_gate_utc.as_deref(),
++            )
++        })
++        .transpose()
++        .map_err(|e| ReleaseError::Input {
++            file: e.file,
++            what: e.what,
++        })?;
+     let dogfood = subject
+         .dogfood_receipt
+         .as_deref()
+@@ -348,6 +370,7 @@ pub fn extract(
+             ratchet,
+             crux_mapping: crux_mapping.as_ref(),
+             crux_rows: &crux_rows,
++            v2: v2.as_ref(),
+         },
+     ))
+ }
+@@ -368,6 +391,8 @@ pub struct Inputs<'a> {
+     /// S2.4: the CRUX correspondence file and the `:CruxCell` rows (#3739).
+     pub crux_mapping: Option<&'a release_crux::Mapping>,
+     pub crux_rows: &'a [release_crux::CruxRow],
++    /// aprender#3715 v2 kernel-cell evidence; `None` → no v2 cells.
++    pub v2: Option<&'a super::kernel_cells::V2Evidence>,
+ }
+ 
+ /// The release graph from parsed inputs: pure, no filesystem (R-15).
+@@ -407,6 +432,9 @@ pub fn build(g: &mut Graph, subject: &Subject, i: &Inputs<'_>) -> ReleaseStats {
+     }
+     emit_kernels(g, subject, &views, &mut stats);
+     emit_tokenizer(g, subject, &views, i.tok_receipts, &mut stats);
++    if let Some(v2) = i.v2 {
++        emit_v2(g, &views, v2);
++    }
+     stats
+ }
+ 
+@@ -556,6 +584,38 @@ fn dominating_secs(label: &str) -> u64 {
+         .unwrap_or(0)
+ }
+ 
++/// aprender#3715 v2: one `CellHost` per required host, over the same universe v1 grades. A model's tensor
++/// types come from any of the host's inventory rows with its hash; a ladder-only model has none and is RED.
++/// Sanitizer runs are attributed through their own `kernel_path` (`read_host_sanitizers`); a cuda kernel
++/// no run checked with every tool is RED on S-SAN.
++fn emit_v2(g: &mut Graph, views: &[HostView<'_>], v2: &super::kernel_cells::V2Evidence) {
++    let hosts: Vec<super::kernel_cells::CellHost> = views
++        .iter()
++        .map(|v| {
++            let types = super::kernel_cells::models_from_inventory(
++                &v.receipts
++                    .iter()
++                    .flat_map(|r| r.inventory.iter().cloned())
++                    .collect::<Vec<_>>(),
++            );
++            super::kernel_cells::CellHost {
++                id: v.decl.id.clone(),
++                backend: "cuda".to_string(),
++                arch: v.decl.cc.clone(),
++                models: v
++                    .models
++                    .keys()
++                    .map(|sha| (sha.clone(), types.get(sha).cloned().flatten()))
++                    .collect(),
++                kernels: v2.kernels.get(&v.decl.id).cloned().unwrap_or_default(),
++                smokes: v2.smokes.get(&v.decl.id).cloned().unwrap_or_default(),
++                sanitized: v2.sanitized.get(&v.decl.id).cloned().unwrap_or_default(),
++            }
++        })
++        .collect();
++    super::kernel_cells::build_cells(g, &v2.rows, &hosts);
++}
++
+ /// The positive control (R-3, PMAT-3704): drawn on EVERY gate run, with or without a release subject. One
+ /// required host holds one model that owes one cell; the SAMPLE receipt carries that cell's fresh Pass row, the
+ /// PLANTED one omits it. Fires iff the sample's cell has exactly one fresh row AND the planted cell still exists
+@@ -620,6 +680,7 @@ pub fn positive_control() -> bool {
+                 ratchet: None,
+                 crux_mapping: None,
+                 crux_rows: &[],
++                v2: None,
+             },
+         );
+         let is_cell = g
+diff --git a/crates/aprender-contracts/src/ontology/extract/release_evidence_tests.rs b/crates/aprender-contracts/src/ontology/extract/release_evidence_tests.rs
+index 9bef1c6b526002d3e10023bc5a85f68f1c403b74..114364d6a3cfe46799c5645fbe5ff4d88298b249 100644
+--- a/crates/aprender-contracts/src/ontology/extract/release_evidence_tests.rs
++++ b/crates/aprender-contracts/src/ontology/extract/release_evidence_tests.rs
+@@ -3,6 +3,7 @@
+ //! (`crates/aprender-contracts-cli/tests/ont_release_readiness.rs`).
+ 
+ use super::*;
++use crate::ontology::extract::kernel_cells;
+ use crate::ontology::extract::release_inputs::{derive_rungs, Consumer};
+ 
+ const MC: &str = "1111111111111111111111111111111111111111";
+@@ -1148,3 +1149,162 @@ fn emit_effects_observes_a_mode_only_where_the_effect_output_differs_from_its_ba
+         "only h1's output differs from its base"
+     );
+ }
++
++/// KTEST-08: `--v2-evidence` adds the #3715 v2 kernel cells to the same graph, over the same hosts and
++/// models; without it the graph has none.
++#[test]
++fn v2_cells_join_the_release_graph_only_when_asked() {
++    let (t, c) = repo(&format!(
++        "    - {{id: a, sha256: {SHA_A}, arch: qwen2, gguf: a.gguf, backends: [cuda], required: true}}\n"
++    ));
++    let inv = format!(r#"{{"file":"a.gguf","sha256":"{SHA_A}","tensor_types":[12]}}"#);
++    write_receipt(
++        t.path(),
++        "lambda",
++        &receipt(
++            "lambda",
++            MC,
++            &inv,
++            &row(&gen_id("lambda", "a.gguf", "off", "golden")),
++        ),
++    );
++    let reg = t.path().join(kernel_cells::REGISTRY_PATH);
++    std::fs::create_dir_all(reg.parent().expect("registry dir")).expect("mkdir");
++    std::fs::write(
++        &reg,
++        r#"{"kernels":[{"kernel_id":"cuda.gemv.q4_k","backend":"cuda","ggml_type":12,"layout":"row_major","arch":"any"}],"ops":[]}"#,
++    )
++    .expect("registry");
++    let h = "e".repeat(64);
++    let v2 = t.path().join("evidence/release-v2");
++    std::fs::create_dir_all(v2.join("lambda/parity")).expect("parity dir");
++    std::fs::write(
++        v2.join("input-sets.json"),
++        format!(
++            r#"{{"schema":"{}","build_identity":"{MC}","reuse":{{"fresh":1,"total":1}},
++               "input_sets":{{"cuda.gemv.q4_k":{{"receipt":"k.json","input_set_hash":"{h}","stale":[]}}}}}}"#,
++            kernel_cells::INPUT_SETS_SCHEMA
++        ),
++    )
++    .expect("input sets");
++    std::fs::write(
++        v2.join("lambda/parity/k.json"),
++        format!(
++            r#"{{"schema":"kernel-parity-receipt/v1","kernel_id":"cuda.gemv.q4_k","sm":"sm_89","input_set_hash":"{h}",
++               "oracle_independent":true,"served":{{"max_abs_err":2.7e-6,"max_rel_err":3.2e-7}},"tolerance_rel":7e-7}}"#
++        ),
++    )
++    .expect("parity receipt");
++    std::fs::create_dir_all(v2.join("lambda/smoke")).expect("smoke dir");
++    std::fs::write(
++        v2.join("lambda/smoke/a.json"),
++        format!(
++            r#"{{"schema":"{}","host":"lambda","model_sha256":"{SHA_A}","apr_sha":"{MC}","verdict":"pass",
++               "kernel_path":{{"source":"kreg","entries":[{{"op":"gemv","kernel_id":"cuda.gemv.q4_k","qtype":"q4_k",
++               "layout":"row_major","arch":"sm_89","shape_class":"m1","precision":"f32"}}]}}}}"#,
++            kernel_cells::SMOKE_SCHEMA
++        ),
++    )
++    .expect("smoke receipt");
++    std::fs::create_dir_all(v2.join("lambda/sanitizer")).expect("sanitizer dir");
++    let row = |tool: &str, filter: &str| {
++        format!(
++            r#"{{"tool":"{tool}","verdict":"CLEAN","filter":"{filter}","covers":["cuda.gemv.q4_k"]}}"#
++        )
++    };
++    std::fs::write(
++        v2.join("lambda/sanitizer/r.json"),
++        format!(
++            r#"{{"schema":"{}","host":"lambda","utc":"2026-09-28T12:00:00Z",
++               "kernel_path":{{"source":"kreg","entries":[{{"kernel_id":"cuda.gemv.q4_k"}}]}},"tools":[{},{},{},{}]}}"#,
++            kernel_cells::SANITIZER_SCHEMA_V2,
++            row("memcheck", "none"),
++            row("racecheck", "regex=gemv"),
++            row("initcheck", "none"),
++            row("synccheck", "none"),
++        ),
++    )
++    .expect("sanitizer run");
++
++    let mut off = Graph::new();
++    extract(&mut off, &c, &subject()).expect("extracts");
++    assert!(
++        !off.to_ntriples().contains(&rel("ModelCell")),
++        "v2 is opt-in: no dir, no v2 cells"
++    );
++
++    let mut s = subject();
++    s.v2_dir = Some(v2.clone());
++    let mut g = Graph::new();
++    extract(&mut g, &c, &s).expect("extracts with v2");
++    let lambda_kc = kernel_cells::kernel_cell("lambda", "cuda.gemv.q4_k");
++    let uses = g.objects(
++        &kernel_cells::model_cell("lambda", SHA_A),
++        &rel("usesKernel"),
++    );
++    assert_eq!(
++        uses,
++        vec![&Term::iri(lambda_kc.clone())],
++        "types from the inventory"
++    );
++    assert_eq!(
++        g.objects(&lambda_kc, &rel("fresh")),
++        vec![&Term::boolean(true)],
++        "judged against input-sets.json at the release commit"
++    );
++    assert_eq!(
++        g.objects(&lambda_kc, &rel("archMatch")),
++        vec![&Term::boolean(true)]
++    );
++    let smoke = kernel_cells::smoke_cell("lambda", SHA_A);
++    assert_eq!(
++        g.objects(&smoke, &rel("kernelPathKnown")),
++        vec![&Term::boolean(true)],
++        "the smoke read from <dir>/lambda/smoke"
++    );
++    assert!(
++        g.objects(
++            &kernel_cells::model_cell("lambda", SHA_A),
++            &rel("unpredictedKernel")
++        )
++        .is_empty(),
++        "it dispatched only the predicted kernel"
++    );
++    assert_eq!(
++        g.objects(&lambda_kc, &rel("sanitizerClean")),
++        vec![&Term::boolean(true)],
++        "the run read from <dir>/lambda/sanitizer, attributed by its kernel_path"
++    );
++    assert_eq!(
++        g.objects(&lambda_kc, &rel("sanitizerFresh")),
++        vec![&Term::boolean(false)],
++        "no --gate-utc: the extractor reads no clock, so the run is stale"
++    );
++    let mut dated = s.clone();
++    dated.v2_gate_utc = Some("2026-09-29T00:00:00Z".to_string());
++    let mut gd = Graph::new();
++    extract(&mut gd, &c, &dated).expect("extracts with a gate time");
++    assert_eq!(
++        gd.objects(&lambda_kc, &rel("sanitizerFresh")),
++        vec![&Term::boolean(true)]
++    );
++    dated.v2_gate_utc = Some("yesterday".to_string());
++    let err = extract(&mut Graph::new(), &c, &dated).expect_err("a malformed gate time");
++    assert!(
++        matches!(&err, ReleaseError::Input { file, .. } if file == "--gate-utc"),
++        "{err:?}"
++    );
++    let gx10_kc = kernel_cells::kernel_cell("gx10", "cuda.gemv.q4_k");
++    assert!(
++        g.objects(&gx10_kc, &rel("verdict")).is_empty(),
++        "gx10 has no parity dir: its kernel cell has no evidence"
++    );
++
++    // The registry is required once v2 is asked for.
++    std::fs::remove_file(&reg).expect("rm registry");
++    let err = extract(&mut Graph::new(), &c, &s).expect_err("no registry");
++    assert!(
++        matches!(&err, ReleaseError::Input { file, .. } if file == kernel_cells::REGISTRY_PATH),
++        "{err:?}"
++    );
++}
+diff --git a/crates/aprender-contracts/src/ontology/extract/release_inputs.rs b/crates/aprender-contracts/src/ontology/extract/release_inputs.rs
+index 5a5cc24abeccaf1b44832c3ad0893a5c8fdf6267..429f3630d0071da4e6648d011cec93fe0d2ce82e 100644
+--- a/crates/aprender-contracts/src/ontology/extract/release_inputs.rs
++++ b/crates/aprender-contracts/src/ontology/extract/release_inputs.rs
+@@ -48,6 +48,12 @@ pub struct Subject {
+     pub surface: Option<PathBuf>,
+     /// `--crux-receipts`: `None` → `evidence/crux/<version>/` (#3739's harness, S2.4).
+     pub crux_receipts_dir: Option<PathBuf>,
++    /// aprender#3715 v2: the kernel-cell evidence directory (`kernel_cells::read_v2`). `None` → no v2 cells in
++    /// the graph. Opt-in until P3, when v2 becomes the gate.
++    pub v2_dir: Option<PathBuf>,
++    /// `--gate-utc` (`YYYY-MM-DDTHH:MM:SSZ`): the time v2 sanitizer runs are aged against. The extractor reads
++    /// no clock, so `None` judges every sanitizer run stale (RED on S-SAN).
++    pub v2_gate_utc: Option<String>,
+ }
+ 
+ impl Subject {
+@@ -67,6 +73,8 @@ impl Subject {
+             tokenizer_receipts_dir: None,
+             surface: None,
+             crux_receipts_dir: None,
++            v2_dir: None,
++            v2_gate_utc: None,
+         })
+     }
+ 
