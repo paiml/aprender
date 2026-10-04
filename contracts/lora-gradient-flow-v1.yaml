@@ -1,5 +1,5 @@
 metadata:
-  version: "1.2.0"
+  version: "1.3.0"
   created: "2026-04-13"
   author: PAIML Engineering
   registry: true
@@ -8,9 +8,10 @@ metadata:
     - "Provable contract for lora-gradient-flow-v1"
     - "PMAT-805: CPU train_step routed through model.forward() (no LoRA) and apply_rope severed the autograd graph for the Q projection — both adapters silently untrained on the default q_proj+v_proj target set"
     - "0.72 R15a cell C1 (la-0.72): the CUDA Q and V LoRA backward of backward_nf4_attention run through one helper, lora_backward (crates/aprender-train/src/transformer/cuda_block.rs); 1.2.0 adds FALSIFY-LORA_GRADIENT_FLOW_V1_004"
+    - "K44 (la-0.72): the CUDA LoRA path applies alpha/rank in lora_forward and lora_backward (crates/aprender-train/src/transformer/cuda_block.rs) instead of pre-scaling B on upload; 1.3.0 adds the scaled_adapter equation and FALSIFY-LORA_GRADIENT_FLOW_V1_006 (005 is reserved for the R15 receipt row)"
 
 name: lora-gradient-flow
-version: "1.2.0"
+version: "1.3.0"
 scope: "crates/aprender-train/src/finetune/"
 
 description: |
@@ -32,6 +33,10 @@ equations:
     description: "RoPE is autograd-connected: grad_x = R(-θ)·grad_out (transpose rotation)"
     formula: "grad_x[i] = g[i]·cos(θ) + g[i+half]·sin(θ); grad_x[i+half] = -g[i]·sin(θ) + g[i+half]·cos(θ)"
 
+  scaled_adapter:
+    description: "The adapter adds alpha/rank·(x·A)·B and its gradients carry the same scale, on the CPU path, in PEFT and (since K44) on CUDA"
+    formula: "y = x·W + s·(x·A)·B with s = alpha/rank; dB = s·(x·A)ᵀ·dy; dA = s·xᵀ·(dy·Bᵀ); dX += s·(dy·Bᵀ)·Aᵀ"
+
 falsification:
   - id: FALSIFY-LORA_GRADIENT_FLOW_V1_001
     description: "∇W_base == 0 during LoRA training"
@@ -52,3 +57,8 @@ falsification:
     description: "Extracting the CUDA LoRA backward into lora_backward changes no number (0.72 R15a C1). backward_nf4_attention ran the Q and V LoRA backward inline at 316dee2cd4; both now call lora_backward(x, a, b, dy, da, db, dx, inter, temp, ...) with the buffers the inline code used. The test runs the helper and a copy of the 316dee2cd4 inline sequence (the same five GEMMs and the add, in the same order) on one device and the same inputs, at a Q-shaped width and a narrower V-shaped (GQA) one, with B nonzero and pre-scaled as the upload leaves it at alpha = 2·rank. dA, dB and dX must be bit-identical (raw f32 bits), and both must match an f64 replay of the chain rule (dB = (x·A)ᵀ·dy, dA = xᵀ·(dy·Bᵀ), dX += (dy·Bᵀ)·Aᵀ) within 1e-4 of the largest magnitude; the replayed dA, dB and dX share are nonzero, so the check has power. The helper's scratch starts as NaN, so reading it before writing it fails. Planted: computing dInter before dB inside the helper must be RED, because dInter is written over the x·A recompute that dB reads. K44's fix (qwen35-qlora-e2e-v1 QQE-011) lands after this as its own change and alters these gradients by design whenever alpha ≠ rank; this row then holds at alpha = rank."
     test: "crates/aprender-train/src/transformer/cuda_block_lora_backward_tests.rs::falsify_lora_gradient_flow_v1_004_lora_backward_is_the_inline_path (#[ignore]: needs a CUDA device; run it with the GPU lock around the test binary only)"
     evidence: "cargo test -p aprender-train --features cuda --lib falsify_lora_gradient_flow_v1_004 -- --ignored (written; not run yet: no GPU work runs while a train is active)"
+
+  - id: FALSIFY-LORA_GRADIENT_FLOW_V1_006
+    description: "The CUDA path applies alpha/rank where the CPU path and PEFT do (K44). Until K44 the NF4 block uploaded B' = (alpha/rank)·B, its forward computed (x·A)·B' and its backward had no scale, so AdamW stepped B' and alpha cancelled out of CUDA training: at the default alpha = 2·rank, B moved half as fast as on the CPU path. Now the device holds B. lora_forward computes y += scale·(x·A)·B, and lora_backward gives dB = scale·(x·A)ᵀ·dy, dA = scale·xᵀ·(dy·Bᵀ) and the dX share scale·(dy·Bᵀ)·Aᵀ. download_lora_weights still returns scale·B and upload_lora_weights divides it back out, so callers, adapter files and checkpoints keep their format. The helper test checks all four outputs against an f64 replay at scales 2 and 0.75. The block test checks the download, a download-upload round trip and the V forward at scale 2."
+    test: "crates/aprender-train/src/transformer/cuda_block_lora_backward_tests.rs::falsify_lora_gradient_flow_v1_006_helpers_apply_alpha_over_rank and ::falsify_lora_gradient_flow_v1_006_nf4_block_keeps_b_unscaled (both #[ignore]: need a CUDA device; run them with the GPU lock around the test binary only)"
+    evidence: "cargo test -p aprender-train --features cuda --lib falsify_lora_gradient_flow_v1_006 -- --ignored (written; not run yet: no GPU work runs while a train is active)"
