@@ -246,7 +246,7 @@ def twin_of(text, same, flats):
 def census(files, baseline=frozenset(), tree=None):
     """files: {repo path: text} with every .rs file and Cargo.toml in scope. Returns one row per crates/*/src
     file that is not reached: status orphan, virtual or no-manifest, and twin, plus the classes and suspects of
-    orphans."""
+    orphans. Also returns the number of crates/*/src .rs files, the gap sites, and the set of reached .rs files."""
     txt = {f: strip(t) for f, t in files.items() if f.endswith(".rs")}
     fs = set(txt)
     tomls = {pp.dirname(f): t for f, t in files.items() if pp.basename(f) == "Cargo.toml"}
@@ -265,7 +265,7 @@ def census(files, baseline=frozenset(), tree=None):
             f = row["path"]
             row.update(orphan_columns(f, txt[f], baseline, sorted(declarers[f])),
                        suspects=suspects_of(f, ctx, inline, by_mod, by_base))
-    return rows, len([f for f in fs if UNIVERSE_RE.fullmatch(f)]), gap_sites(txt, reach)
+    return rows, len([f for f in fs if UNIVERSE_RE.fullmatch(f)]), gap_sites(txt, reach), reach
 
 
 def git(*args, inp=None):
@@ -441,7 +441,7 @@ def classifier(rows):
 
 def self_test():
     fx = fixture()
-    rows, nsrc, gaps = census(fx, {"crates/p/src/m.rs"})
+    rows, nsrc, gaps, _ = census(fx, {"crates/p/src/m.rs"})
     r, cls = classifier(rows)
     cases = [
         ("1 lib.rs `mod a;` reaches src/a.rs", cls("p/src/a.rs") == "reached"),
@@ -525,7 +525,7 @@ def main():
         ap.error("--pin, --cites or --self-test")
     pin = git("rev-parse", "--short=10", a.pin).decode().strip()
     files, bl, tree = load(pin)
-    rows, nsrc, gaps = census(files, bl, tree)
+    rows, nsrc, gaps, _ = census(files, bl, tree)
     report(pin, rows, nsrc, gaps, bl, set(c.rstrip("/") for c in a.crate), a.tsv)
     return 0
 
