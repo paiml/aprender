@@ -1558,14 +1558,14 @@ oracle-owl-check: oracle-owl
 
 # ── BLD-002 R4: nightly evidence train (report-only) ────────────────────────────────────────────────────────
 # One line a night for main's head: RELEASABLE H=<C> or NOT RELEASABLE: <lane>, <run>. The timer runs a bundle copied
-# out of git at pinned shas, never the working tree. OUT (and optionally INBOX) come from the command line:
+# out of git at pinned shas, never the working tree; all three default to HEAD, since they ship in one tree. OUT (and optionally INBOX) come from the command line:
 #   make nightly-train-install OUT=<dir> [INBOX=<file>]   pin, self-test, install + enable the daily 04:45 UTC user timer
 #   make nightly-train-run                                 run the installed unit once, by hand, and print its line
 #   make nightly-train-show                                the unit, its next fire and linger
 NIGHTLY_TRAIN_HOME ?= $(HOME)/.local/share/aprender-nightly-train
 NIGHTLY_TRAIN_SHA ?= HEAD
-NIGHTLY_GREENS_SHA ?= 3045add39f
-RED_AGE_SHA ?= a0bc666676
+NIGHTLY_GREENS_SHA ?= HEAD
+RED_AGE_SHA ?= HEAD
 .PHONY: nightly-train-install nightly-train-run nightly-train-show nightly-train-self-test
 nightly-train-install:
 	@test -n "$(OUT)" || { echo "FAIL: OUT=<dir> is required"; exit 3; }
