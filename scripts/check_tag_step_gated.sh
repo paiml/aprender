@@ -37,7 +37,7 @@ SUBJECT="$ROOT/scripts/release/autopilot.sh"
 # it with stubs, print a transcript (SAY/DIE/GIT-TAG/GIT-PUSH lines, then the CALL order).
 # Returns 2 if the function is missing.
 run_cut_tag() {
-    local ap=$1 grc=$2 mrc=${3:-0} crc=${4:-0} rdy=${5:-pass} d fn
+    local ap=$1 grc=$2 mrc=${3:-0} crc=${4:-0} rdy=${5:-pass} tmr=${6:-pass} d fn
     d=$(mktemp -d) || return 2
     fn=$(awk '/^cut_tag\(\) \{/,/^\}/' "$ap")
     [ -n "$fn" ] || { rmtree "$d"; return 2; }
@@ -48,6 +48,15 @@ run_cut_tag() {
         report) printf 'WARN  R8 REPORT-ONLY release-readiness-v1 for 0.0.0: Fail, 3 violation(s)\n' > "$d/ap/readiness-t1.log" ;;
         stale)  printf 'ok    R8 #3715 ENFORCE PASS version=0.0.0 commit=cafef00d pv=pv_x out_sha256=0\n' > "$d/ap/readiness-t1.log" ;;
         absent) : ;;
+    esac
+    # #4670 R10: the timers step's log, as the T-1 `timers` step leaves it (or does not)
+    case "$tmr" in
+        pass)     printf 'ok    R10 h1: release open (present 0.0.0); all 2 tool-installing timer(s) disarmed\nok    R10 TIMERS PASS release=0.0.0 hosts=1 timers=2\n' > "$d/ap/timers-t1.log" ;;
+        other)    printf 'ok    R10 TIMERS PASS release=0.0.1 hosts=1 timers=2\n' > "$d/ap/timers-t1.log" ;;
+        nomarker) printf 'ok    R10 TIMERS PASS release=none hosts=1 timers=2\n' > "$d/ap/timers-t1.log" ;;
+        notmeas)  printf 'NOT_MEASURED R10 at least one release host could not be judged; not judged is not a pass\n' > "$d/ap/timers-t1.log" ;;
+        fail)     printf 'FAIL  R10 a tool-installing timer is armed on a release host while the release is open\n' > "$d/ap/timers-t1.log" ;;
+        absent)   : ;;
     esac
     printf '#!/usr/bin/env bash\nif [ "${2:-}" = --must-carry ]; then echo CALL-MUST-CARRY >> %q; exit %s; fi\necho CALL-STRICT >> %q; exit %s\n' \
         "$d/calls" "$mrc" "$d/calls" "$grc" > "$d/scripts/check_milestone_cut.sh"
@@ -109,6 +118,13 @@ judge() {
             printf 'FAIL  readiness %s -> a tag was cut or the milestone was touched without an enforced #3715 Pass\n%s\n' "$r" "$out" >&2; bad=1
         else printf 'ok    readiness %s -> no tag, nothing carried\n' "$r"; fi
     done
+    # #4670 R10: no timers PASS naming exactly this release -> no tag, nothing carried
+    for t in absent other nomarker notmeas fail; do
+        out=$(run_cut_tag "$ap" 0 0 0 pass "$t") || true
+        if grep -q 'GIT-TAG' <<< "$out" || grep -q 'CALL-' <<< "$out"; then
+            printf 'FAIL  timers %s -> a tag was cut or the milestone was touched without an R10 PASS for this release\n%s\n' "$t" "$out" >&2; bad=1
+        else printf 'ok    timers %s -> no tag, nothing carried\n' "$t"; fi
+    done
     return "$bad"
 }
 
@@ -164,13 +180,22 @@ if [ "${1:-}" = "--self-test" ]; then
         ok "mutant 5: carry call deleted -> RED"
     fi
     # M6 (#3715 B1): the readiness requirement deleted -> a skipped or report-mode readiness step tags.
-    sed '/ENFORCE PASS for\|index(\$0, n) == 1/d; /no .#3715 ENFORCE PASS/d' "$SUBJECT" > "$d/m6.sh"
+    sed '/ENFORCE PASS for\|readiness-t1\.log" 2>\/dev\/null/d; /no .#3715 ENFORCE PASS/d' "$SUBJECT" > "$d/m6.sh"
     if cmp -s "$SUBJECT" "$d/m6.sh"; then
         nok "MUTANT 6 could not be built -- the readiness check line did not match; vacuous"
     elif judge "$d/m6.sh" > "$d/m6.out" 2>&1; then
         nok "MUTANT 6 (readiness requirement deleted) PASSED"
     else
         ok "mutant 6: #3715 readiness requirement deleted -> RED"
+    fi
+    # M7 (#4670 R10): the timers requirement deleted -> a skipped or unjudged timers step tags.
+    sed '/R10 TIMERS PASS. for\|timers-t1\.log" 2>\/dev\/null/d' "$SUBJECT" > "$d/m7.sh"
+    if cmp -s "$SUBJECT" "$d/m7.sh"; then
+        nok "MUTANT 7 could not be built -- the timers check line did not match; vacuous"
+    elif judge "$d/m7.sh" > "$d/m7.out" 2>&1; then
+        nok "MUTANT 7 (R10 timers requirement deleted) PASSED"
+    else
+        ok "mutant 7: #4670 R10 timers requirement deleted -> RED"
     fi
     # the carry script's own case table: it lives in scripts/release/, where guard_tree cannot see it
     if bash "$ROOT/scripts/release/carry_milestone_items.sh" --self-test > "$d/carry.out" 2>&1; then

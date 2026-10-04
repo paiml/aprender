@@ -139,7 +139,7 @@ main() {
         [ "$rc" -eq 1 ] && worst=1
     done
     case "$worst" in
-        0) printf 'ok    R10 TIMERS PASS hosts=%s timers=%s\n' "${#hosts[@]}" "${#units[@]}" ;;
+        0) printf 'ok    R10 TIMERS PASS release=%s hosts=%s timers=%s\n' "${RELEASE:-none}" "${#hosts[@]}" "${#units[@]}" ;;
         1) printf 'FAIL  R10 a tool-installing timer is armed on a release host while the release is open\n' ;;
         *) printf 'NOT_MEASURED R10 at least one release host could not be judged; not judged is not a pass\n' ;;
     esac

@@ -14,6 +14,7 @@
   - Every refusal in the guard has a mutant that turns the case table red
   - 'The autopilot writes the marker: open sets it on every release host and reads it back, live clears it after post-publish GO; a stale marker (another version, or older than 24h) warns'
   - 'No marker writer, or --release with the marker unset or for another version, is NOT_MEASURED, never PASS'
+  - 'cut_tag refuses the tag (nothing carried) unless the timers log holds an R10 TIMERS PASS naming exactly this release; check_tag_step_gated.sh rows plus a mutant that deletes the check'
   - 'Out of scope: the timers'' own marker check and skip line (provisioned outside this repo), and any change to a timer on any host'
   phases: []
   subtasks: []

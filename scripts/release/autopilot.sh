@@ -236,6 +236,12 @@ cut_tag() {
     awk -v n="$need" 'index($0, n) == 1 { f = 1 } END { exit !f }' "${AP:-/nonexistent}/readiness-t1.log" 2>/dev/null \
         || die "no '#3715 ENFORCE PASS' for $v at $mc in ${AP:-<unset AP>}/readiness-t1.log -- release-readiness-v1 missing, skipped or not enforced; no tag"
     say "READINESS-GATE $(grep -F "$need" "$AP/readiness-t1.log" | tail -n 1)"
+    # #4670 R10: the timers step must have PASSED for exactly this release (the marker it read was ours).
+    # A run started past `timers`, a NOT_MEASURED, a FAIL, or another release's log -> no tag.
+    local r10="ok    R10 TIMERS PASS release=$v "
+    awk -v n="$r10" 'index($0, n) == 1 { f = 1 } END { exit !f }' "${AP:-/nonexistent}/timers-t1.log" 2>/dev/null \
+        || die "no 'R10 TIMERS PASS' for $v in ${AP:-<unset AP>}/timers-t1.log -- the timers step missing, skipped or not judged; no tag"
+    say "TIMERS-GATE $(grep -F "$r10" "$AP/timers-t1.log" | tail -n 1)"
     bash "$REPO_ROOT/scripts/check_milestone_cut.sh" "$v" --must-carry >> "$LOG" 2>&1 || rc=$?
     case "$rc" in
         0) say "MUST-CARRY $v: no open must-carry issue (check_milestone_cut.sh --must-carry rc=0)" ;;

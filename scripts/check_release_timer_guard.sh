@@ -191,6 +191,7 @@ want_out "N3 names both versions" "the marker is for 0.70.2, not the open releas
 
 guard --release 0.70.2 --ssh h1
 want "N4 --release with its own marker, timers disarmed -> pass, exit 0" 0 "$RC"
+want_out "N4 the PASS line names the release (cut_tag binds to it)" "ok    R10 TIMERS PASS release=0.70.2 hosts=1 "
 
 answer h1 "${OPEN}${ON}${BINS_OFF}END\n"
 guard --release 0.70.2 --ssh h1
@@ -221,7 +222,7 @@ guard --ssh h1 --ssh h3
 want "M2 one host clean, one unreachable -> could not judge, exit 2" 2 "$RC"
 guard --ssh h1 --local h1
 want "M3 every host clean -> pass, exit 0" 0 "$RC"
-want_out "M3 prints the PASS line" "R10 TIMERS PASS hosts=2 timers=2"
+want_out "M3 prints the PASS line" "R10 TIMERS PASS release=none hosts=2 timers=2"
 
 # -- the real probe, against a stub systemctl --------------------------------
 mkdir -p "$T/bin" "$T/state/apr"
