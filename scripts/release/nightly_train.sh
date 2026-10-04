@@ -9,6 +9,9 @@
 #     NOT RELEASABLE: nightly-train, <step> ...         the train itself failed part-way (the EXIT trap prints it)
 #   and every line ends with [C=<sha10> pin=<train>.<greens>.<redage>]: the commit judged and the shas of the three
 #   scripts that judged it. H is the commit id of C, main's head at the moment of the read.
+#   Beside the line, every morning (operator C310.1: "print the lane table: lane, state, reason, and the commit its run
+#   was on"), the lane table follows it on stdout and in D/lanes.txt: a header, then one row per lane, green included.
+#   The line stays the FIRST line, so `head -n 1` still reads the verdict.
 #
 # READ, DON'T RE-RUN. Night 1 runs nothing. Each lane takes the result its existing scheduled producer (a workflow on
 #   main and, optionally, a job-name pattern) recorded for C. A lane is
@@ -31,6 +34,7 @@
 #
 # OUTPUTS under --out DIR (or $OUT), per UTC date D:
 #     D/line         the line;
+#     D/lanes.txt    the lane table printed beside it (lane, state, reason, commit);
 #     D/bundle.tsv   per lane: lane, kind, state, producer, run id, run head, conclusion, attempt, started, ended,
 #                    hours lost, reason; then the tree of C, the command, the pins, the 6 h budget (info only);
 #     D/reds.tsv     red and not_measured lanes ranked by hours lost (red_age.sh's measure of the current stretch);
@@ -231,6 +235,25 @@ decide() {
             printf "NOT RELEASABLE: %s, %s%s\n", best, brun, (bad > 1 ? " (+" bad - 1 " more)" : "")
         }' "$raw/hours.tsv" "$raw/lanes.tsv" > "$raw/line"
 }
+# lane_table LANESTSV -> the morning lane table printed beside the line (operator C310.1: "lane, state, reason, and the
+#   commit its run was on"). commit = the head of the run the state came from; for a lane whose newest run is on another
+#   commit, that commit (from the reason); none when no run was read. Every lane, green ones included, in table order.
+lane_table() {
+    awk -F '\t' '
+        { n++; L[n] = $1; S[n] = $3
+          R[n] = ($11 != "" ? $11 : ($3 == "green" ? "green at attempt " $8 : "-"))
+          c = "none"
+          if ($6 ~ /^[0-9a-f]{40}$/) c = substr($6, 1, 10)
+          else if (match($11, / on [0-9a-f]{10}/)) c = substr($11, RSTART + 4, 10)
+          G[n] = c
+          if (length(L[n]) > wl) wl = length(L[n]); if (length(S[n]) > ws) ws = length(S[n]); if (length(R[n]) > wr) wr = length(R[n]) }
+        END {
+            if (wl < 4) wl = 4; if (ws < 5) ws = 5; if (wr < 6) wr = 6
+            f = "%-" wl "s  %-" ws "s  %-" wr "s  %s\n"
+            printf f, "lane", "state", "reason", "commit"
+            for (i = 1; i <= n; i++) printf f, L[i], S[i], R[i], G[i]
+        }' "$1"
+}
 # greens HISTORY DATE -> the streak of nightly-train in HISTORY by nightly_greens.sh's rules, or not_measured
 greens() {
     local o s
@@ -412,6 +435,8 @@ run_train() {
     step rank
     [ -s "$raw/line" ] || exit 1
     cp "$raw/reds.tsv" "$OUTDIR/$DAY/reds.tsv" || exit 1
+    step lanes
+    lane_table "$raw/lanes.tsv" > "$OUTDIR/$DAY/lanes.txt" && [ -s "$OUTDIR/$DAY/lanes.txt" ] || exit 1
     step greens
     line="$(cat "$raw/line") [C=${CSHA:0:10} pin=$PIN]"
     case "$line" in "RELEASABLE "*) concl=success ;; *) if awk -F '\t' '$2 == "verdict" && $3 == "red" { f = 1 } END { exit !f }' "$raw/lanes.tsv"; then concl=failure; else concl=neutral; fi ;; esac
@@ -438,6 +463,7 @@ run_train() {
     HISTDONE=1
     printf '%s\n' "$line" || exit 1; PRINTED=1
     inbox_line "$line" "$g" || exit 1
+    cat "$OUTDIR/$DAY/lanes.txt" || exit 1   # beside the line, every morning (C310.1)
     [ -z "$EXIT_VERDICT" ] || verdict_rc "$line" || exit 1
     exit 0
 }
@@ -603,8 +629,8 @@ self_test() {
         eval 'decide "$ST_LANES
 v-e;verdict;check E;-;-;-" "$d" 2026-10-04T06:00:00Z; cat "$d/line" "$d/lanes.tsv"'
     d="$tmp/green1"; fixture "$d"
-    row stdout_is_exactly_one_line 0 "lines=1" "" -- \
-        eval 'bash "$SCRIPT_PATH" --from "$d" --out "$tmp/o1" --now 2026-10-04T06:00:00Z | awk "END { print \"lines=\" NR }"'
+    row stdout_is_the_line_then_the_lane_table 0 "first=verdict lines=line+header+lanes" "" -- \
+        eval 'bash "$SCRIPT_PATH" --from "$d" --out "$tmp/o1" --now 2026-10-04T06:00:00Z > "$tmp/o1.out"; n=$(wc -l < "$tmp"/o1/*/raw/lanes.tsv); case "$(head -n 1 "$tmp/o1.out")" in "RELEASABLE "*|"NOT RELEASABLE"*) printf "first=verdict " ;; esac; [ "$(wc -l < "$tmp/o1.out")" -eq $((n + 2)) ] && echo "lines=line+header+lanes"'
     row a_fault_after_judging_leaves_one_history_row 0 "rows=1 failure=1" "" -- \
         eval 'NIGHTLY_TRAIN_FAULT=history bash "$SCRIPT_PATH" --from "$d" --out "$tmp/o3" --now 2026-10-04T06:00:00Z > /dev/null; awk -F "\t" "NR > 1 { n++; if (\$5 == \"failure\") f++ } END { print \"rows=\" n+0, \"failure=\" f+0 }" "$tmp/o3/history.tsv"'
     row a_fault_after_history_adds_no_second_row 0 "rows=1 failure=0" "" -- \
@@ -642,6 +668,15 @@ v-e;verdict;check E;-;-;-" "$d" 2026-10-04T06:00:00Z; cat "$d/line" "$d/lanes.ts
     row fetch_refuses_a_graphql_error 0 "failed: GraphQL errors" "" -- eval 'CALLS=0; st_fetch 3'
     row an_inbox_read_back_mismatch_exits_non_zero 1 "inbox: read-back mismatch" "" -- \
         bash "$SCRIPT_PATH" --from "$d" --out "$tmp/o9" --inbox /dev/null --now 2026-10-04T06:00:00Z
+    # C310.1: every morning the lane table is printed beside the line: lane, state, reason, the commit its run was on
+    d="$tmp/lt-green"; fixture "$d"
+    row lane_table_lists_green_lanes_with_their_commit 0 "v-a green green at attempt 1 aaaaaaaaaa" "" -- \
+        eval 'decide "$ST_LANES" "$d" 2026-10-04T06:00:00Z; lane_table "$d/lanes.tsv" | tr -s " "'
+    d="$tmp/lt-other"; fixture "$d"; sed -i "/\t101\t/s/$ST_C/$ST_X/" "$d/runs.tsv"
+    row lane_table_names_the_commit_of_a_stale_run 0 "v-a not_measured no run on C; newest run 101 on bbbbbbbbbb bbbbbbbbbb" "" -- \
+        eval 'decide "$ST_LANES" "$d" 2026-10-04T06:00:00Z; lane_table "$d/lanes.tsv" | tr -s " "'
+    row lane_table_follows_the_line_on_stdout 0 "not_measured (+ header=lane state reason commit deep-doctests=not_measured none rows=" "stdout table differs" -- \
+        eval 'bash "$SCRIPT_PATH" --from "$d" --out "$tmp/lt-o" --now 2026-10-04T06:00:00Z > "$tmp/lt.out"; printf "line=%s header=%s deep-doctests=%s rows=%s\n" "$(head -n 1 "$tmp/lt.out" | cut -c1-40)" "$(sed -n 2p "$tmp/lt.out" | tr -s " ")" "$(awk "\$1 == \"deep-doctests\" { print \$2, \$NF }" "$tmp/lt.out")" "$(($(wc -l < "$tmp/lt.out") - 2))"; cmp -s <(tail -n +2 "$tmp/lt.out") "$tmp"/lt-o/*/lanes.txt || echo "stdout table differs from lanes.txt"'
     row a_closed_stdout_keeps_the_real_verdict 0 "NOT RELEASABLE: ci-main, not_measured (+14 more) [C=aaaaaaaaaa pin=" "nightly-train" -- cat "$tmp/o5/2026-10-04/line"
     row a_registry_token_refuses_to_start 2 "NOT RELEASABLE: nightly-train, no-token failed" "RELEASABLE H=" -- \
         env CARGO_REGISTRY_TOKEN=x bash "$SCRIPT_PATH" --from "$d" --out "$tmp/ot1" --now 2026-10-04T06:00:00Z
@@ -728,6 +763,9 @@ m38_verdict_rc_always_red	s/"RELEASABLE "\*) return 0 ;;/"RELEASABLE "*) return 
 m39_exit_verdict_always_red	s/^    \[ -z "\$EXIT_VERDICT" \] || verdict_rc "\$line" || exit 1$/    [ -z "$EXIT_VERDICT" ] || exit 1/
 m40_config_token_ignored	s/^        if grep -qsE /        if false \&\& grep -qsE /
 m41_home_cargo_unchecked	s/ "\$HOME\/.cargo"; do$/; do/
+m43_lane_table_not_printed	s/^    cat "\$OUTDIR\/\$DAY\/lanes.txt" || exit 1   # beside/    : # beside/
+m44_lane_table_hides_the_other_commit	s/else if (match(\$11, \/ on \[0-9a-f\]{10}\/))/else if (0)/
+m45_lane_table_drops_green_lanes	s/^        { n++; L\[n\] = \$1; S\[n\] = \$3$/        $3 != "green" { n++; L[n] = $1; S[n] = $3/
 m42_floor_ignores_the_limit	s/fl=\$((lim \/ 5))/fl=$RATE_FLOOR/'
 # each planted mutant must change the file, still parse, and turn at least one row RED
 mutants() {
