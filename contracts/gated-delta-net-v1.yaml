@@ -191,12 +191,14 @@ verification_summary:
     to force L4. No obligation yet covers the recurrence's values: the scalar
     reference the tests call, gdn_recurrence_scalar, computes S ← αS + β k⊗v
     and o = qᵀS, with no v − Sᵀk term and no 1/√d_k. FALSIFY-GDN-006 states
-    the check that would catch that.
+    the check that would catch that; its test is not written yet.
+    KANI-GDN-001's harness, verify_decay_bound, also still checks the 1.0.0
+    sigmoid; l3_kani_proved is 0, so it is not counted.
 falsification_tests:
 - id: FALSIFY-GDN-001
   rule: Decay bound
   prediction: 'α = exp(softplus(a + dt_bias) × ssm_a) is finite and in [0, 1] for all finite a and dt_bias and every ssm_a < 0, and equals that expression evaluated in f64 within 1e-6. The range alone cannot see the 1.0.0 sigmoid decay, which is in (0, 1) too. Planted: the sigmoid decay restored turns it RED on the value; a flipped decay sign turns it RED on the range'
-  test: proptest with extreme values, checking the range and the f64 value
+  test: '[U] the 2.0.0 test is not written. Today FALSIFY-GDN-001 is aprender-core''s prop_decay_in_unit_interval (tests/contracts/gated_delta_net_contract.rs), which checks the 1.0.0 sigmoid''s range, so it does not count (GDN-BND-001 is wip). Planned: proptest with extreme values, checking the range and the f64 value'
   if_fails: Decay sign or softplus wrong; α > 1 makes the state grow without bound
 - id: FALSIFY-GDN-002
   rule: State shape
@@ -221,7 +223,7 @@ falsification_tests:
 - id: FALSIFY-GDN-006
   rule: Delta rule
   prediction: 'The scalar reference matches serve''s delta_rule_head step by step, including the v − S̃ᵀk correction and the 1/√d_k output scale. Planted: the reference scaling o by 1/√d_v, or using one width for both, turns it RED, which only unequal widths can show'
-  test: 'proptest over random q, k, v, β, g and up to 8 timesteps, comparing S_t and o_t, at d_k = 8 and d_v = 4, with serve driven through delta_rule_recurrence_gqa on one key head and one value head. Unequal widths, because every local Qwen3.5 checkpoint has d_k = d_v = 128, and at equal widths both plants pass. Through delta_rule_recurrence_gqa, because it computes the scale (1/√head_k_dim, forward_qwen35.rs:247 at 316dee2cd4); a scale the test computed and passed to delta_rule_head would check the reference against the test, not against serve'
+  test: '[U] not written. Planned: proptest over random q, k, v, β, g and up to 8 timesteps, comparing S_t and o_t, at d_k = 8 and d_v = 4, with serve driven through delta_rule_recurrence_gqa on one key head and one value head. Unequal widths, because every local Qwen3.5 checkpoint has d_k = d_v = 128, and at equal widths both plants pass. Through delta_rule_recurrence_gqa, because it computes the scale (1/√head_k_dim, forward_qwen35.rs:247 at 316dee2cd4); a scale the test computed and passed to delta_rule_head would check the reference against the test, not against serve'
   if_fails: The reference is not the served recurrence (at 1.0.0 it computed S ← αS + β k⊗v)
 kani_harnesses:
 - id: KANI-GDN-001
