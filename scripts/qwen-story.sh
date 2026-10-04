@@ -79,6 +79,10 @@ emit_skip(){ SKIP=$((SKIP+1)); printf '○ SKIP  %s  -  %s\n' "$1" "$2"; }
 # itself must not run `set`, which would leak options into this script.
 # shellcheck source=scripts/lib_story_run.sh
 . "$(dirname "${BASH_SOURCE[0]}")/lib_story_run.sh" || exit 1
+# The pinned throughput baseline B2 judges against (#4715) - see
+# scripts/check_story_perf_baseline.sh.
+# shellcheck source=scripts/lib_story_perf_baseline.sh
+. "$(dirname "${BASH_SOURCE[0]}")/lib_story_perf_baseline.sh" || exit 1
 
 # Print the captured output of the last run_cmd, indented, so it survives into
 # the story log (and therefore into the `story-log` CI artifact).
@@ -179,21 +183,37 @@ beat2_trust() {
     return
   fi
   # Use 1.5B APR (apr qa Golden Output gate works on this; 7B has #1864).
-  run_cmd 180 apr qa "$M_15B_APR"
-  # Retain the per-gate table regardless of verdict - it is the only record of
-  # which gates actually executed versus SKIPped, and `apr qa` prints
-  # "ALL GATES PASSED" even when gates skipped (GateResult::skipped sets
-  # passed:true). The grep below therefore cannot distinguish "everything ran
-  # and passed" from "half of it skipped".
-  emit_evidence "apr qa $M_15B_APR"
-  # RC_ALL: the banner is a human-facing line and apr is free to put it on
-  # either stream; this check is about presence, not about parsing.
-  if grep -q "ALL GATES PASSED" <<< "$RC_ALL" ; then
-    emit_pass "B2 apr qa"
+  # One --json run, judged twice (#4715): every gate but performance_regression
+  # here, and throughput against the PINNED baseline below. apr qa's own
+  # performance_regression gate compares against a cache that every run
+  # overwrites, with no commit or load recorded - a night at load 11.6 (3.6 tok/s)
+  # became the next night's reference. The load is sampled BEFORE the run: the
+  # run's own load is not the host's.
+  local load_before qa_json
+  load_before="$(perf_load1)"
+  run_cmd 180 apr qa "$M_15B_APR" --json
+  # Retain the per-gate JSON regardless of verdict - it is the only record of
+  # which gates actually executed versus SKIPped (GateResult::skipped sets
+  # passed:true).
+  emit_evidence "apr qa $M_15B_APR --json"
+  qa_json="$(mktemp)"
+  printf '%s\n' "$RC_OUT" >"$qa_json"
+  if qa_gates_pass_except_regression "$qa_json" ; then
+    emit_pass "B2 apr qa (all gates but performance_regression)"
   else
-    emit_fail "B2 apr qa" "no 'ALL GATES PASSED' line"
+    emit_fail "B2 apr qa" "a gate other than performance_regression failed, or no --json gates (apr qa exit=$RC_EC)"
+    rm -f "${qa_json:?}"
     return
   fi
+  perf_baseline_judge "$M_15B_APR" "$qa_json" "$load_before"
+  case "$PERF_VERDICT" in
+    pass) emit_pass "B2 throughput vs pinned baseline ($PERF_REASON)" ;;
+    fail) emit_fail "B2 throughput vs pinned baseline" "$PERF_REASON" ;;
+    # not_measured is never a pass (L25); it fails the job like a fail does,
+    # but says why, so a busy host is not mistaken for a regression.
+    *)    emit_fail "B2 throughput vs pinned baseline" "not_measured: $PERF_REASON" ;;
+  esac
+  rm -f "${qa_json:?}"
   check_format_parity_gguf
 
   run_cmd 60 apr validate "$M_15B_APR" --quality
