@@ -1,0 +1,45 @@
+diff --git a/crates/aprender-contracts/src/ontology/extract/kernel_cells_tests.rs b/crates/aprender-contracts/src/ontology/extract/kernel_cells_tests.rs
+index 521440b6fe..496b9fc9ec 100644
+--- a/crates/aprender-contracts/src/ontology/extract/kernel_cells_tests.rs
++++ b/crates/aprender-contracts/src/ontology/extract/kernel_cells_tests.rs
+@@ -593,6 +593,40 @@ mod rr2 {
+         assert_eq!(red, [mc("D")].iter().map(String::as_str).collect());
+     }
+ 
++    /// The mirror of `v2_cells_in_the_graph_leave_the_v1_gate_green` (aprender-contracts-cli
++    /// `tests/ont_release_readiness.rs`), which grades v2 cells with the v1 gate. Here the v1 classes meet the v2
++    /// shapes: one node per class a release-readiness-v1 shape targets, and no v2 shape may take any of them as
++    /// a focus node. Both model shapes once targeted `release:ModelCell`, so v2 graded every v1 model cell, which
++    /// has no `release:usesKernel` edge, and failed it.
++    #[test]
++    fn rr2_no_v2_shape_grades_a_node_of_a_v1_class() {
++        let path = std::path::Path::new(env!("CARGO_MANIFEST_DIR"))
++            .join("../../contracts/release-readiness-v1.yaml");
++        let text = std::fs::read_to_string(&path).expect("release-readiness-v1.yaml is committed");
++        let doc: serde_yaml::Value = serde_yaml::from_str(&text).expect("the contract is YAML");
++        let v1 =
++            parse_shapes("release-readiness-v1", &doc).expect("shapes inside the engine's subset");
++        assert!(
++            v1.iter().any(|s| s.id == "release-readiness-v1.model-cell"),
++            "v1 grades its model cells: the class v2 once shared"
++        );
++        let mut g = Graph::new();
++        for (i, s) in v1.iter().enumerate() {
++            g.insert(
++                rel(&format!("v1-node-{i}")),
++                RDF_TYPE,
++                Term::iri(s.target_class.clone()),
++            );
++        }
++        assert_eq!(
++            validate(&g, &v1).focus_nodes_n,
++            v1.len(),
++            "each v1 shape grades its node"
++        );
++        let report = validate(&g, &shapes());
++        assert_eq!(report.focus_nodes_n, 0, "{:#?}", report.results);
++    }
++
+     /// The RR2 inputs as one `CellHost`, for [`build_cells`].
+     fn cell_host(types_of_c: Option<&[u32]>, drop_kernel: Option<&str>) -> CellHost {
+         let rows = registry();
