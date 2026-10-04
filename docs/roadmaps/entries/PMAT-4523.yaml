@@ -9,7 +9,7 @@
   updated: 2026-09-27T00:00:00Z
   spec: null
   acceptance_criteria:
-  - 'LOGITS_BUDGET is derived per host CPU arch from measurement (worst reading rounded up to one significant figure): x86_64 7e-2, aarch64 8e-2; the cross-host table is in the doc comment'
+  - 'LOGITS_BUDGET is derived per host CPU arch from measurement (worst reading rounded up to one significant figure): x86_64 7e-2; aarch64, the looser arch, is a ratchet at its measured value, 7.106e-2 (the worst reading 7.105e-2 rounded up at its last printed digit), asserted by qwen35_cuda_logits_budget_is_a_ratchet_where_it_is_looser; the cross-host table is in the doc comment'
   - 'Falsifier: the old 7e-2 budget fails deterministically on gx10 (5/5); GPU sm_89 vs sm_121 logits agree to 6.466e-7, the CPU references differ by 2.602e-2'
   - 'cuda-nightly runs the qwen35 CUDA parity module on gx10 sm_121 and is RED on rc!=0, any SKIP/absent line, or 0 passed'
   phases: []
