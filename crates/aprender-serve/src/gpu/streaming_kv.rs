@@ -56,13 +56,22 @@ impl StreamingKVCache {
     #[must_use]
     pub fn new(num_layers: usize, max_positions: usize, num_heads: usize, head_dim: usize) -> Self {
         let kv_size = max_positions * num_heads * head_dim;
+        // One zeroed allocation per layer. `vec![vec![0.0; n]; layers]` clones layer 0 into every
+        // other layer, and a clone writes every byte, so a 32-layer 32K-context cache committed
+        // 34 GB at construction and was OOM-killed on a 30 GB host. `vec![0.0; n]` is a zeroed
+        // allocation the OS backs lazily, so memory is committed only as positions are written.
+        let zeroed = || {
+            (0..num_layers)
+                .map(|_| vec![0.0f32; kv_size])
+                .collect::<Vec<_>>()
+        };
         Self {
             num_layers,
             max_positions,
             num_heads,
             head_dim,
-            keys: vec![vec![0.0f32; kv_size]; num_layers],
-            values: vec![vec![0.0f32; kv_size]; num_layers],
+            keys: zeroed(),
+            values: zeroed(),
             position: 0,
             valid_positions: 0,
         }
@@ -223,13 +232,19 @@ impl StreamingKVCacheFp16 {
     #[must_use]
     pub fn new(num_layers: usize, max_positions: usize, num_heads: usize, head_dim: usize) -> Self {
         let kv_size = max_positions * num_heads * head_dim;
+        // One zeroed allocation per layer, as in `StreamingKVCache::new`: a cloned layer commits every byte.
+        let zeroed = || {
+            (0..num_layers)
+                .map(|_| vec![0u16; kv_size])
+                .collect::<Vec<_>>()
+        };
         Self {
             num_layers,
             max_positions,
             num_heads,
             head_dim,
-            keys: vec![vec![0u16; kv_size]; num_layers],
-            values: vec![vec![0u16; kv_size]; num_layers],
+            keys: zeroed(),
+            values: zeroed(),
             position: 0,
             valid_positions: 0,
         }
