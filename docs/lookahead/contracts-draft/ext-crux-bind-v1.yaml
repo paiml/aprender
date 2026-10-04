@@ -1,25 +1,86 @@
-# DRAFT (la-0.71 look-ahead, branch-only). Not in contracts/ until EXT-24 is
-# minted; checker: scripts/lookahead/crux_bind_check.py
+# DRAFT (look-ahead, branch-only). Moves into contracts/ when EXT-24 is minted.
+# Checker: scripts/lookahead/crux_bind_check.py, an external check run by hand. No
+# build, test, gate or CI job invokes it. Before this file moves into contracts/, its
+# self-test cases port to Rust with fixtures/crux_bind/ as data, and the port compares
+# violation lines, not only exit codes (see qa_gate).
 metadata:
   id: ext-crux-bind-v1
-  version: "0.1.0-draft"
+  kind: schema
+  version: "0.2.0-draft"
   status: draft
   description: >
     EXT-001 §10.1 EXT-24 precondition: the CRUX schema can express the C1-C7
     surfaces before EXT-25 writes contracts for them.
   references:
-  - 'cop-inbox/handoff/EXT-001-dogfood-model-lifecycle.md §10, §10.1 EXT-24/25'
+  - 'docs/specifications/EXT-001-dogfood-model-lifecycle.md §10, §10.1 EXT-24/25 (staged on la-71/4487-obs-00, not yet on main)'
   - 'crates/aprender-contracts/src/schema/validator.rs CRUX_COMPETITORS'
 equations:
   bound:
     formula: 'EXT_ARMS ⊆ CRUX_COMPETITORS  ∧  ∀ letter: |names(letter)| = 1'
 falsification_tests:
-  - {id: FALSIFY-CRUXBIND-001, fixture: crux_bind/cases.json#control-bound, expect: 0, rule: "control: full registry, one name per letter"}
-  - {id: FALSIFY-CRUXBIND-002, fixture: crux_bind/cases.json#B1-missing-arm, expect: 2, rule: "an EXT arm absent from CRUX_COMPETITORS is RED"}
-  - {id: FALSIFY-CRUXBIND-003, fixture: crux_bind/cases.json#B1-commented-arm-not-registered, expect: 2, rule: "a slug inside a // comment is not registered"}
-  - {id: FALSIFY-CRUXBIND-004, fixture: crux_bind/cases.json#B1-control-subset, expect: 0, rule: "control: the checked arm list is the one passed"}
-  - {id: FALSIFY-CRUXBIND-005, fixture: crux_bind/cases.json#B2-letter-collision, expect: 2, rule: "one letter, two category names is RED"}
-  - {id: FALSIFY-CRUXBIND-006, fixture: crux_bind/cases.json#B2-vacuous, expect: 2, rule: "no category at all is RED, not vacuously bound"}
-  - {id: FALSIFY-CRUXBIND-007, fixture: crux_bind/cases.json#B0-no-registry, expect: 2, rule: "registry not found is RED"}
-mutation_record: "7/7 sed mutants killed by --self-test (2026-10-03, la-0.71)"
-initial_state: "origin/main 316dee2cd4 is RED: 7 arms unregistered, 5 letters collide"
+  - id: FALSIFY-CRUXBIND-001
+    rule: "control: full registry, one name per letter"
+    fixture: fixtures/crux_bind/cases.json#control-bound
+    expect: 0
+    prediction: "With every EXT arm registered and one category name per letter, the checker exits 0 and prints no violation."
+    test: "crux_bind_check.py --self-test, case control-bound"
+    if_fails: "A rule fires on a clean registry: the registry parse drops a name, or the category regex reads one name as two."
+  - id: FALSIFY-CRUXBIND-002
+    rule: "an EXT arm absent from CRUX_COMPETITORS is RED"
+    fixture: fixtures/crux_bind/cases.json#B1-missing-arm
+    expect: 2
+    prediction: "On reg-partial.rs the checker exits 2 with one B1 line per unregistered EXT arm (unsloth, bartowski, mistral_rs, mlflow, dvc, wandb, qwen) and no other violation."
+    test: "crux_bind_check.py --self-test, case B1-missing-arm"
+    if_fails: "B1 reads a list other than CRUX_COMPETITORS, or counts an absent arm as registered."
+  - id: FALSIFY-CRUXBIND-003
+    rule: "a slug inside a // comment is not registered"
+    fixture: fixtures/crux_bind/cases.json#B1-commented-arm-not-registered
+    expect: 2
+    prediction: "With arms [unsloth], whose slug appears in reg-partial.rs only inside a // comment, the checker exits 2 with the single line 'B1 competitor not registered: unsloth'."
+    test: "crux_bind_check.py --self-test, case B1-commented-arm-not-registered"
+    if_fails: "The registry parse does not strip // comments, so a commented slug counts as registered."
+  - id: FALSIFY-CRUXBIND-004
+    rule: "control: the checked arm list is the one passed"
+    fixture: fixtures/crux_bind/cases.json#B1-control-subset
+    expect: 0
+    prediction: "With arms [llama_cpp, ollama], both registered in reg-partial.rs, the checker exits 0: B1 checks the arm list it is given, not the built-in one."
+    test: "crux_bind_check.py --self-test, case B1-control-subset"
+    if_fails: "B1 ignores the arms argument and always checks the built-in EXT_ARMS."
+  - id: FALSIFY-CRUXBIND-005
+    rule: "one letter, two category names is RED"
+    fixture: fixtures/crux_bind/cases.json#B2-letter-collision
+    expect: 2
+    prediction: "With k1.yaml and k2.yaml, which give letter K two names, the checker exits 2 with one B2 line that names both."
+    test: "crux_bind_check.py --self-test, case B2-letter-collision"
+    if_fails: "Names are not collected per letter, or the collision check never compares them."
+  - id: FALSIFY-CRUXBIND-006
+    rule: "no category at all is RED, not vacuously bound"
+    fixture: fixtures/crux_bind/cases.json#B2-vacuous
+    expect: 2
+    prediction: "On nocat.yaml, which has no category line, the checker exits 2 with 'B2 no crux category found (vacuous)' and does not report bound."
+    test: "crux_bind_check.py --self-test, case B2-vacuous"
+    if_fails: "B2 is vacuously true over an empty category set."
+  - id: FALSIFY-CRUXBIND-007
+    rule: "registry not found is RED"
+    fixture: fixtures/crux_bind/cases.json#B0-no-registry
+    expect: 2
+    prediction: "On reg-missing.rs, which has no CRUX_COMPETITORS array, the checker exits 2 with the single line 'B0 CRUX_COMPETITORS not found'."
+    test: "crux_bind_check.py --self-test, case B0-no-registry (exit code only today; see qa_gate)"
+    if_fails: "A missing registry is read as an empty set, so B1 flags every arm and the case exits 2 for the wrong reason."
+qa_gate:
+  id: F-CRUXBIND-QA-001
+  name: The CRUX bind census reports only real violations
+  description: >
+    Every planted case exits with its expected code, and each RED case prints only
+    violations of its own class (B0, B1 or B2). The self-test compares exit codes only.
+    On 2026-10-04 each RED case was run by hand and printed only lines of its own
+    class; the Rust port compares the lines too.
+  checks:
+    - planted_case_exits_as_expected
+    - red_case_prints_only_its_own_class
+    - control_accepted
+  pass_criteria: "crux_bind_check.py --self-test prints 'self-test: 7/7 ok', and each RED case prints only lines of its own class"
+  falsification: "Mutate one rule and the self-test exits 1: 7/7 sed mutants were killed on 2026-10-03. One mutant survives the exit-code-only self-test (checked 2026-10-04): reading a missing registry as an empty set still exits 2 through B1, so B0-no-registry passes for the wrong reason until the self-test compares lines"
+mutation_record: "7/7 sed mutants killed by --self-test (2026-10-03). One surviving mutant found 2026-10-04, recorded under qa_gate."
+initial_state: "origin/main 316dee2cd4 is RED: 7 arms unregistered, 5 letters collide (re-measured 2026-10-04 11:03Z over the 318 contracts/crux-*.yaml)"
+verification: "External check, by hand: python3 scripts/lookahead/crux_bind_check.py --self-test  # 2026-10-04 11:03Z: self-test: 7/7 ok"
