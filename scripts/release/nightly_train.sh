@@ -239,6 +239,18 @@ CALLS=0
 call_ok() { [ "$CALLS" -lt "$MAX_CALLS" ] || return 1; CALLS=$((CALLS + 1)); }
 
 # normalize GQL WORKFLOWS -> runs.tsv rows on stdout
+# gql_query LANES WFJSON -> the one GraphQL query; empty when a producer workflow is missing from the list.
+# jq 1.6 compatible (the timer PATH may find it first): no reserved words such as $or as variable names.
+gql_query() {
+    printf '%s\n' "$1" | awk -F ';' '$4 != "-" { print $4 }' | sort -u | jq -R -s --slurpfile wf "$2" -r --arg repo "$REPO" '
+        split("\n") | map(select(length > 0)) as $want
+        | ($wf | first | .workflows | map(select(.path as $x | $want | index($x))) ) as $hit
+        | if ($hit | length) != ($want | length) then error("producer workflow missing from the list") else . end
+        | ($repo | split("/")) as $own
+        | "query { repository(owner: \"\($own | first)\", name: \"\($own | last)\") { defaultBranchRef { name target { ... on Commit { oid tree { oid } statusCheckRollup { contexts(first: 100) { nodes { ... on CheckRun { name status conclusion startedAt completedAt checkSuite { status conclusion branch { name } workflowRun { databaseId event createdAt workflow { id } } } } } } } } } } } "
+          + ([$hit | to_entries[] | "w\(.key): node(id: \"\(.value.node_id)\") { ... on Workflow { id runs(first: 12) { nodes { databaseId createdAt event checkSuite { status conclusion branch { name } commit { oid } checkRuns(first: 60, filterBy: {checkType: ALL}) { nodes { name status conclusion startedAt completedAt } } } } } } }"] | join(" ")) + " }"' 2>/dev/null
+}
+
 normalize() {
     jq -r --slurpfile wf "$2" '
       ($wf | first | .workflows | map({key: .node_id, value: .path}) | from_entries) as $p
@@ -281,13 +293,7 @@ fetch() {
     else printf 'failed: workflow list HTTP %s\n' "${st:-none}" > "$raw/read"; return 0; fi
     cp "$cache/workflows.json" "$raw/workflows.json" 2>/dev/null || { printf 'failed: no workflow list\n' > "$raw/read"; return 0; }
     # one GraphQL query: every producer workflow's recent runs, and main's head with its check rollup
-    q="$(printf '%s\n' "$LANES" | awk -F ';' '$4 != "-" { print $4 }' | sort -u | jq -R -s --slurpfile wf "$raw/workflows.json" -r --arg repo "$REPO" '
-        split("\n") | map(select(length > 0)) as $want
-        | ($wf | first | .workflows | map(select(.path as $x | $want | index($x))) ) as $hit
-        | if ($hit | length) != ($want | length) then error("producer workflow missing from the list") else . end
-        | ($repo | split("/")) as $or
-        | "query { repository(owner: \"\($or | first)\", name: \"\($or | last)\") { defaultBranchRef { name target { ... on Commit { oid tree { oid } statusCheckRollup { contexts(first: 100) { nodes { ... on CheckRun { name status conclusion startedAt completedAt checkSuite { status conclusion branch { name } workflowRun { databaseId event createdAt workflow { id } } } } } } } } } } } "
-          + ([$hit | to_entries[] | "w\(.key): node(id: \"\(.value.node_id)\") { ... on Workflow { id runs(first: 12) { nodes { databaseId createdAt event checkSuite { status conclusion branch { name } commit { oid } checkRuns(first: 60, filterBy: {checkType: ALL}) { nodes { name status conclusion startedAt completedAt } } } } } } }"] | join(" ")) + " }"' 2>/dev/null)"
+    q="$(gql_query "$LANES" "$raw/workflows.json")"
     [ -n "$q" ] || { printf 'failed: a producer workflow is not in the workflow list\n' > "$raw/read"; return 0; }
     call_ok || { printf 'failed: call budget\n' > "$raw/read"; return 0; }
     gh api graphql -f query="$q" > "$raw/graphql.json" 2>/dev/null || { printf 'failed: GraphQL call\n' > "$raw/read"; return 0; }
@@ -416,11 +422,12 @@ install_timer() {
     git show "$r:scripts/release/red_age.sh" > "$dir/red_age.sh" || caller_error "no red_age.sh at $r"
     printf 'train %s\ngreens %s\nredage %s\n' "$t" "$g" "$r" > "$dir/PIN"
     chmod 0555 "$dir"/*.sh
-    bash "$dir/nightly_train.sh" --self-test > "$dir/self-test.out" 2>&1 || { tail -n 5 "$dir/self-test.out"; caller_error "the pinned self-test is RED; nothing installed"; }
+    # the self-test runs under the unit's own PATH: a tool the timer resolves differently (jq 1.6) must fail here
+    p="$(dirname "$(command -v gh)"):$(dirname "$(command -v jq)"):/usr/local/bin:/usr/bin:/bin"
+    PATH="$p" bash "$dir/nightly_train.sh" --self-test > "$dir/self-test.out" 2>&1 || { tail -n 5 "$dir/self-test.out"; caller_error "the pinned self-test is RED; nothing installed"; }
     tail -n 1 "$dir/self-test.out"
     unitdir="${XDG_CONFIG_HOME:-$HOME/.config}/systemd/user"
     mkdir -p "$unitdir" || caller_error "cannot create $unitdir"
-    p="$(dirname "$(command -v gh)"):$(dirname "$(command -v jq)"):/usr/local/bin:/usr/bin:/bin"
     {
         printf '[Unit]\nDescription=aprender nightly evidence train (BLD-002 R4), report-only\n\n[Service]\nType=oneshot\nNice=10\nTimeoutStartSec=900\n'
         printf 'Environment=OUT=%s\nEnvironment=INBOX=%s\nEnvironment=PATH=%s\nExecStart=/bin/bash %s/nightly_train.sh\n' "$out" "$inbox" "$p" "$dir"
@@ -514,6 +521,8 @@ self_test() {
     }
     row normalize_maps_runs_jobs_and_the_rollup 0 "$(printf 'rollup\t.github/workflows/c.yml\t301\tpush\tmain\t%s\tc\tCOMPLETED\tSUCCESS\tgate' "$ST_C")" "" -- st_norm
     row normalize_counts_a_rerun_job 0 "$(printf 'job-a\tCOMPLETED\tSUCCESS\ts1\te1\t2')" "" -- st_norm
+    row gql_query_names_every_producer 0 'w1: node(id: "WC")' "" -- gql_query "$(printf '%s\n' "$ST_LANES" | awk -F ';' '$4 ~ /[ac][.]yml$/')" "$tmp/wf.json"
+    row gql_query_refuses_a_missing_producer 5 "" "query" -- gql_query "$ST_LANES" "$tmp/wf.json"
     printf -- '--- %s/%s rows ---\n' "$pass" "$((pass + fail))"
     rm -rf -- "${tmp:?}"
     [ "$fail" -eq 0 ]
@@ -533,7 +542,8 @@ m10_greens_counts_total	s/match(\$0, \/streak=/match($0, \/total=/
 m11_coverage_gates	s/^coverage;info;/coverage;verdict;/
 m12_a_verdict_lane_dropped	/^milestone;verdict;/d
 m13_rollup_dropped	s/select(.checkSuite.workflowRun != null)/select(false)/
-m14_rerun_job_not_counted	s/(\[\$j | .\[\] | select(.name == \$k.name)\] | length)\]/1]/'
+m14_rerun_job_not_counted	s/(\[\$j | .\[\] | select(.name == \$k.name)\] | length)\]/1]/
+m15_missing_producer_not_refused	s/if (\$hit | length) != (\$want | length) then/if false then/'
 
 # each planted mutant must change the file, still parse, and turn at least one row RED
 mutants() {
