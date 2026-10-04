@@ -42,7 +42,6 @@ jobs:
     # 2.6 min) -> T = max(15, 68, 65) = 68, rounded up for a shared host. The first three runs replace this basis.
     timeout-minutes: 90
     env:
-      CI_CACHE: /mnt/nvme-raid0/ci-cache/pvl-conleche
       ELAN_VERSION: v4.2.4
       ELAN_SHA256: 42b94d4244e8353142c456ec0e4ca6528fd898a6c604d4059f494e706e431f63
       LEAN_NUM_THREADS: '8'
@@ -55,6 +54,10 @@ jobs:
       - name: Pinned elan in the job's own directory (sha256-checked, never a host install)
         run: |
           set -euo pipefail
+          # The cache lives under the runner user's own ~/.cache, the root conleche.sh defaults to. It was
+          # /mnt/nvme-raid0/ci-cache, which is root-owned on intel-clean-room: mkdir failed before any check ran
+          # (run 37163229207), so the job was red on the runner and never reached a verdict.
+          CI_CACHE="$HOME/.cache/pvl-conleche"
           export ELAN_HOME="$CI_CACHE/elan"
           mkdir -p "$CI_CACHE"
           if [ ! -x "$ELAN_HOME/bin/elan" ] || ! "$ELAN_HOME/bin/elan" --version | grep -q "${ELAN_VERSION#v}"; then
@@ -70,6 +73,7 @@ jobs:
         run: |
           set -uo pipefail
           rc=0
+          CI_CACHE="$HOME/.cache/pvl-conleche"
           PVL_CONLECHE_CACHE="$CI_CACHE/pins" bash crates/aprender-contracts-staging/lean/conleche.sh || rc=$?
           case "$rc" in
             0) ;;

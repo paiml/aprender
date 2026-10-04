@@ -1,0 +1,20 @@
+- id: PMAT-4758
+  github_issue: 4758
+  item_type: task
+  title: 'conleche-nightly red on intel-clean-room: hard-coded CI_CACHE under root-owned /mnt/nvme-raid0'
+  status: inprogress
+  priority: high
+  assigned_to: aprender-wmainred
+  created: 2026-10-04T19:05:00Z
+  updated: 2026-10-04T19:05:00Z
+  spec: null
+  acceptance_criteria:
+  - conleche-nightly no longer writes under /mnt/nvme-raid0; CI_CACHE is the runner user's $HOME/.cache/pvl-conleche, writable on every X64 clean-room runner
+  - Every step, the --self-test case table, the sha256-checked elan install and the con-leche verdict classes (0 pass, 1 RED, other NOT A VERDICT) are unchanged
+  - scripts/check_workflow_env_defined.sh stays green
+  phases: []
+  subtasks: []
+  estimated_effort: null
+  labels:
+  - kind:code
+  notes: 'Cause: run 37163229207 on intel-clean-room, mkdir /mnt/nvme-raid0/ci-cache Permission denied (root:root 755, runner User=noah). Red/green on intel as the runner user: base path mkdir RED, $HOME/.cache/pvl-conleche ok (9/9 clean-room units User=noah ProtectHome=no; 395G free).'
