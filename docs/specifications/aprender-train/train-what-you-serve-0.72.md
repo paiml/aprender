@@ -100,8 +100,9 @@ R4, and T2 needs R15b.
 
 ### R4 — QLoRA end to end on Qwen3.5-4B (CUDA) · contract `qwen35-qlora-e2e-v1` · K̂ 90 `[A]`
 - **Cell:** NF4 base; LoRA r16 on attention, MLP and GDN projections; 1,000-sample pinned set; seed 42; 200 steps; RTX 4090.
-- **Gates:** loss(last 10) ≤ 0.9 × loss(first 10), all finite. Served base+adapter equals the training-side merged forward
-  (cos ≥ 0.999, equal argmax).
+- **Gates:** loss(last 10) ≤ 0.9 × loss(first 10), all finite. Served base+adapter equals the training-side merged forward,
+  both on the base `apr finetune merge` reads (cos ≥ 0.999, equal argmax). The merged model's training loss is within 2%
+  of the trained model's, which ran on the NF4 base (QQE-010, row 28).
 - **Served side and merged file `[V]` (read at `316dee2cd4`):**
   - apr serves Qwen3.5 only from a qwen35 GGUF. `run`, `chat` and `serve` load no adapter; a Modelfile `ADAPTER` line
     is printed (`modelfile/mod.rs:122`) and never applied. QQE-003's served side is therefore the merged model exported
@@ -700,6 +701,39 @@ up, a new size changes its place, and a row already held on a branch drops out o
   - **Until it lands,** count the corpus with the model's tokenizer.json before a run, add K39 and K40's inflation
     (about 12% on the curated corpus), and set `--max-seq-len` above the longest sample, or drop the long samples by
     hand.
+- **Row 28, K43: a QLoRA run trains on one base, and the user is served another.** Desk read at `316dee2cd4`, plus an
+  NF4 round trip in numpy of Qwen3.5-4B's shipped bf16 weights. No apr code was run.
+  - **At `316dee2cd4`.**
+    - `apr finetune -m qlora` sets `quantize_nf4` (`finetune.rs:336`). The CUDA path then quantizes each frozen weight
+      to NF4 at upload (`transformer/cuda_block.rs:2943`): blocks of 64 values, one f32 absmax each, the QLoRA
+      codebook (aprender-gpu `kernels/quantize/nf4_cpu.rs:23,120`). The adapter's gradients flow through that base, so
+      the adapter learns a correction to NF4(W).
+    - `apr finetune merge` adds the adapter to the base file's own tensors (`finetune_display_next_validate.rs:469`),
+      so the user is served W + ΔW. Neither the merge nor any receipt names the base the run trained on.
+    - The code already keeps the two apart elsewhere. The CUDA parity probe passes the CPU model's weights through the
+      same NF4 round trip "so the replay isolates STRUCTURAL divergence from quantization noise"
+      (`instruct_pipeline/parity_probe.rs:121-133`), and QQE-005 puts both sides of R4's gradient oracle on the NF4
+      base (S-R4c).
+  - **Measured.** The round trip with the CUDA path's block layout (64 consecutive values, nearest NF4 code) was run on
+    the first 256 rows of each of R4's 10 target kinds: q, k, v and o and the three MLP projections in layer 3, and
+    `in_proj_qkv`, `in_proj_z` and `out_proj` in GDN layer 0. It moves each by 9.2–9.5% of its Frobenius norm (median
+    9.33%). The trained model and the merged model differ on every matrix the adapter touches.
+  - **Effect on 0.72.** R4's loss gates (QQE-001, QQE-004) score NF4(W) + ΔW, the model that was trained. The user
+    runs W + ΔW, from the GGUF exported from the merge. QQE-003 named no base. If its train side was the trainer's own
+    model, it compared two models that differ for a reason that is not a bug. If its train side was `merge_into` on
+    the file's base, it never saw the trained model. Either way, no gate asks whether the served model keeps what the
+    run learned. T2's bf16 cell trains and merges on one base and is unaffected, and so is QQE-004's LoRA reference.
+    A T4 rc built from a QLoRA adapter is affected.
+  - **Falsifiers (PROPOSED in `qwen35-qlora-e2e-v1` on `la-72/r15-receipt-ext` @75f11cd071).**
+    - QQE-003 now names its base: both sides are on the base `apr finetune merge` reads. The identity then measures
+      layout, scale, naming and export only.
+    - QQE-010: after R4's last step, on the first 20 pinned samples, the merged file, read back through row 4b's
+      loader, scores within 2% of the trained model on the training loss, and below its own base. The receipt names
+      both bases and the three losses. If the 2% clause fails, the merge takes the NF4 base instead and the receipt
+      says so. Planted: a merge that drops the adapter fails the second clause. A train side scored on the merge's
+      base passes vacuously, so the test first checks that the two bases differ by 5–15% in a QLoRA run.
+  - **Until it lands,** when R4 runs, score the merged file on the same 20 samples with the training loss and record
+    both losses before calling the run a pass.
 
 State is read from the branch tips on 2026-10-03. origin/main is `316dee2cd4` and no la-72 branch has landed. K̂ is
 minutes of worker time still left; `[A]` marks an assumption.
@@ -735,6 +769,7 @@ minutes of worker time still left; `[A]` marks an assumption.
 | 25 | K40 pre-tokenizer split | one regex pre-tokenizer shared by train, `apr chat` and .apr serve; TPP-001/002: train's tokenizer and `encode_text` give the HF reference ids on a frozen code fixture; TPP-003 keeps GGUF serve on them, on the file apr exports too | 80 `[A]` | contract PROPOSED @ae7a75b7f0 (pv 0/0); desk read at `316dee2cd4` plus a simulation on the Qwen3.5 vocabulary: 5 samples are 193 tokens in train against 160 under the regex, and .apr serve has the same count with different ids on indented code; CRUX-M-05 (draft) states the check and nothing implements it; PMAT-3803's branch moves Qwen3.5 training to .apr serve's no-split path, not the regex (the HF-sourced .apr has no `pre_type` and says `qwen3_5`); T2 is unaffected because its count is fixed by shape; must be green before R4's 200-step cell and any T4 run |
 | 26 | K41 Qwen3.5 rope base and dims | QFR-007: the imported .apr and the GGUF exported from its merge carry the source config's dims and rope base (1e7); QFR-008: `apr export` refuses a qwen35 .apr that disagrees with its source config; QFR-009: the qwen35 rope fallbacks, the 9B preset and the family contract say 1e7 | 40 `[A]` | QFR-007..009 PROPOSED @e6ea295728; desk read at `316dee2cd4` and on #4418's branch, plus header reads: S-R10's `hf.apr` says 10000 with no dims, and its GGUF says 10000, heads 16/8, ctx 0; the published 0.8B to 27B say 1e7; #4418 fixes a fresh import but exports an older .apr at 1e4 with no warning; QFR-006 checks fresh imports only, and QQE-003 cannot see it; re-import S-R10's base after #4418, never reuse it; must be green before R4's 200-step cell and any T4 run |
 | 27 | K42 training window | TSC-005: `train_step` and `evaluate` use a sample whole or refuse and count it, never a prefix; TSC-006: `apr finetune` counts the samples over `--max-seq-len` before step 1 and refuses unless told to drop them | 45 `[A]` | TSC-005/006 PROPOSED @275c009e4a (pv 0/0); desk read at `316dee2cd4` plus a simulation on the repo's SFT corpora: on main's train tokenizer the default 512 cuts 123 of the 124 curated samples, each losing part of `<\|im_end\|>` and 68 also the `>` that closes `</tool_call>`; with serve's ids all fit; the CUDA step reports only a prompt that fills the window; a `--features wgpu` build trains on raw text at a fixed 512; must be green before R4's 200-step cell and any T4 run |
+| 28 | K43 QLoRA merge base | QQE-010: the merged file scores within 2% of the trained model on the training loss, and below its own base; QQE-003 runs both sides on the base `apr finetune merge` reads | 40 `[A]` | QQE-010 PROPOSED @75f11cd071 on `la-72/r15-receipt-ext` (pv 0/0); desk read at `316dee2cd4`: `-m qlora` trains against the NF4 round trip of the base (`cuda_block.rs:2943`), and `apr finetune merge` adds the adapter to the unquantized file; the round trip moves each of R4's 10 target kinds by 9.2–9.5% (Frobenius, numpy on the bf16 weights); measured after R4's last step, so it gates R4's verdict and any T4 rc built from a QLoRA adapter; T2 unaffected |
 | — | R19 ROADMAP PMAT-711 stale | — | done | shaping @378ec8e920 |
 | — | R20 declarative recipe | — | out | RQ-3: stays in #4002 (E8, 0.75) |
 
@@ -747,6 +782,7 @@ R12 receipts ──────────────────────�
                                    └─► R15b C5–C7 (C5 = RQ-5) ─► R5 T2 verdict ─► R14
 R11 TIS ◄── TDD normaliser (PRM C7–C9) ─────► gates every R4/R6 run counted for 0.72
 K39 TSC, K40 TPP, K41 QFR-007..009, K42 ────► gate R4's 200-step cell and every T4 run
+K43 QQE-010 ────────────────────────────────► gates R4's verdict and any T4 rc built from a QLoRA adapter
 ```
 T2 trains Qwen3.5-4B, so its apr side needs R2, R3, R21 and 4b as well as R15a and R15b. It does not need R4. R21
 (400 + 25 `[A]`) is the largest row on both R4's path and T2's. Its LoRA wiring calls R15a's C1 helper, so C1
@@ -755,7 +791,8 @@ paths, because `apr finetune` trains from .apr only and the only Qwen3.5 .apr to
 permutation (QQE-007) is R4's alone, because T2's canonical cell targets no GDN projection. Rows 24–27 (K39 the chat
 format, K40 the pre-tokenizer split, K41 the rope base and dims, K42 the training window) are small, but none of R4's
 gates sees them, and each changes what the model learns, is given or computes. They gate R4's 200-step cell and every
-T4 run, not T2's ratio.
+T4 run, not T2's ratio. Row 28 (K43, the QLoRA merge base) is measured only after R4's last step, so it gates R4's
+verdict rather than the cell's start. It does not touch T2, which trains and merges on one base.
 
 ## §4 Rulings (S-4)
 Ruled by the cop on 2026-09-27 at 12:11Z (full text in the handoff file):
@@ -833,6 +870,7 @@ release commit.
 | all | TAH-001..004 (`train-arch-honesty-v1`): a qwen3_5 config is never silently built as dense | intel | 4/4, planted dense map RED | branch `la-72/4552-train-arch-honesty` not on main |
 | finetune | QQE-006 CPU pre-flight first, then QQE-001/002/003 on 4B (`qwen35-qlora-e2e-v1`). QQE-005 holds CUDA adapter gradients to the CPU reference | intel (006), lambda (001–005) | exit 0; loss(last 10) ≤ 0.9 × loss(first 10); served = merged (cos ≥ 0.999, equal argmax); QQE-002 frozen-step RED | QQE-006 not green, since no GPU time is spent before it is |
 | finetune (NF4) | QQE-004 (1.1.0): QLoRA's mean loss over the last 10 steps ≤ 1.05 × LoRA's, same cell, seed and data. The QLoRA receipt says `recipe.precision = nf4`, the LoRA one bf16 or fp32, and both carry the same `device.uuid` | lambda | ≤ 1.05, **or** a named refusal for qwen3.5 QLoRA (K10) | only one side ran; a side ran on the CPU (true of `-m lora` at `316dee2cd4`, until R15a C4); the sides ran on different GPUs; any other precision pair |
+| finetune (merge) | QQE-010 (PROPOSED, K43): after R4's last step, on the first 20 pinned samples, the merged file read back through row 4b's loader has a training loss ≤ 1.02 × the trained model's (NF4 base + adapter) and < its own base's. The receipt names both bases and the three losses | lambda | ≤ 1.02 and below the base, **or** the merge takes the NF4 base and the receipt says so | the train side was scored on the merge's base (the two bases differ by < 5%); the merged file was not read back through 4b's loader |
 | distill | `distill-batch-honesty-v1` (DBH) on the fold-dbh branches: batch B > 1 trains every row or refuses by name | intel (refusal), lambda (batched KD) | refusal green on CPU; batched KD matches B single-row steps | DBH-001/006/007/008 GPU halves not run |
 | merge | `merge-output-fidelity-v1` (MOF): `-o *.apr` writes an APR with metadata and a qwen3_5 arch | intel | MOF-002/003 green; the planted F32-safetensors writer RED | — |
 | quantize | the R8 GDN quantize policy cell, branch `79/r8-gdn-quant-policy` (another session's) | intel | owner's falsifiers green | that branch is not on main; L2 does not measure it |
@@ -917,7 +955,7 @@ as a refusal. It is honest, but it is not T1-green.
 2. R17: peak memory on the 4B.
 3. QQE-005: CUDA adapter gradients against the CPU reference, on 0.8B.
 4. DBH GPU halves.
-5. QQE-001..004 on 4B. QQE-004's LoRA reference needs R15a C4.
+5. QQE-001..004 on 4B. QQE-004's LoRA reference needs R15a C4. QQE-010 follows on the same run's adapter.
 6. The apr side of T2. It needs R15b.
 
 CPU rows (TAH, TRR, MOF, QFR on 0.8B, HRP dry-run, TIS-001/003/004/005) run on intel at any time, load1 ≤ 32.
