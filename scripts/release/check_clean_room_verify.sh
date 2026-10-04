@@ -89,9 +89,13 @@ rcpt_abbrev_sha@@scripts/release/lib_clean_room.sh@@if ! release_is_full_sha "$r
 rcpt_absent_commit_is_not_proof@@scripts/release/lib_clean_room.sh@@echo "DRY-RUN NOT-MEASURED: commit $rsha is not in $root (fetch it)"; return 2@@echo "DRY-RUN VERIFIED: unread"; return 0
 rcpt_no_file@@scripts/release/lib_clean_room.sh@@echo "receipt commit $rsha: no $path in it"; return 1@@echo "DRY-RUN VERIFIED: unread"; return 0
 rcpt_other_commit@@scripts/release/lib_clean_room.sh@@if [ "$tshas" != "$want" ]; then@@if false; then
-rcpt_flags@@scripts/release/lib_clean_room.sh@@if [[ "$row" != *--dry-run* || "$row" != *--no-verify* || "$row" != *--locked* ]]; then@@if false; then
+rcpt_flags@@scripts/release/lib_clean_room.sh@@if ! grep -qE '(^|[`| ])cargo publish --workspace --dry-run --no-verify --locked([`| ]|$)' <<< "$row"; then@@if false; then
+rcpt_flags_substring@@scripts/release/lib_clean_room.sh@@if ! grep -qE '(^|[`| ])cargo publish --workspace --dry-run --no-verify --locked([`| ]|$)' <<< "$row"; then@@if [[ "$row" != *--dry-run* || "$row" != *--no-verify* || "$row" != *--locked* ]]; then
+rcpt_rc_unbounded@@scripts/release/lib_clean_room.sh@@rcs=$(grep -oE '(^|[ ,(|])rc=\**[0-9]+\**([ ,)|]|$)' <<< "$row" | grep -oE '[0-9]+'@@rcs=$(grep -oE 'rc=\**[0-9]+' <<< "$row" | grep -oE '[0-9]+'
 rcpt_red@@scripts/release/lib_clean_room.sh@@if [ "$rcs" != 0 ]; then@@if false; then
-rcpt_tree_not_clean@@scripts/release/lib_clean_room.sh@@if [[ "$row" != *"tree clean"* ]]; then@@if false; then
+rcpt_tree_not_clean@@scripts/release/lib_clean_room.sh@@if ! grep -qE '(^|, |\| *)tree clean after([ ,(|]|$)' <<< "$row"; then@@if false; then
+rcpt_tree_substring@@scripts/release/lib_clean_room.sh@@if ! grep -qE '(^|, |\| *)tree clean after([ ,(|]|$)' <<< "$row"; then@@if [[ "$row" != *"tree clean"* ]]; then
+rcpt_tree_qualified@@scripts/release/lib_clean_room.sh@@if grep -qiE '(^|[^a-z])(not|dirty|unclean)([^a-z]|$)' <<< "$row"; then@@if false; then
 M
 }
 
@@ -170,6 +174,13 @@ receipt_commit RC_OTHER    "$SHA_B"          0   "$LOCKED"            "tree clea
 receipt_commit RC_TWO_SHAS "$SHA_A / $SHA_B" 0   "$LOCKED"            "tree clean after"
 receipt_commit RC_VERIFIED "$SHA_A"          0   "--dry-run --locked" "tree clean after"
 receipt_commit RC_DIRTY    "$SHA_A"          0   "$LOCKED"            "tree dirty after"
+# Quorum round 1 (R5c): substring tests took each of these as a green, clean, locked dry-run.
+receipt_commit RC_NO_LOCKED   "$SHA_A"       0   "--dry-run --no-verify --no-locked"   "tree clean after"
+receipt_commit RC_DRY_SKIPPED "$SHA_A"       0   "--dry-run-skipped --no-verify --locked" "tree clean after"
+receipt_commit RC_HEX_RC      "$SHA_A"       0x1 "$LOCKED"            "tree clean after"
+receipt_commit RC_SUBTREE     "$SHA_A"       0   "$LOCKED"            "subtree clean after"
+receipt_commit RC_NOT_CLEAN   "$SHA_A"       0   "$LOCKED"            "tree is not tree clean after"
+receipt_commit RC_CLEAN_NOT   "$SHA_A"       0   "$LOCKED"            "tree clean after (not checked before)"
 git -C "$WT" checkout -q --detach v1.2.3
 SHA_A=$(git -C "$WT" rev-parse 'v1.2.3^{commit}')
 [ "$SHA_B" != "$SHA_A" ] || { echo "FAIL  fixture: no second commit"; exit 1; }
@@ -293,6 +304,12 @@ f_rcpt_two_shas()      { f_green_on_tag; rcpt "${RC_TWO_SHAS}\n"; }
 f_rcpt_red()           { f_green_on_tag; rcpt "${RC_RED}\n"; }
 f_rcpt_verified()      { f_green_on_tag; rcpt "${RC_VERIFIED}\n"; }
 f_rcpt_dirty()         { f_green_on_tag; rcpt "${RC_DIRTY}\n"; }
+f_rcpt_no_locked()     { f_green_on_tag; rcpt "${RC_NO_LOCKED}\n"; }
+f_rcpt_dry_skipped()   { f_green_on_tag; rcpt "${RC_DRY_SKIPPED}\n"; }
+f_rcpt_hex_rc()        { f_green_on_tag; rcpt "${RC_HEX_RC}\n"; }
+f_rcpt_subtree()       { f_green_on_tag; rcpt "${RC_SUBTREE}\n"; }
+f_rcpt_not_clean()     { f_green_on_tag; rcpt "${RC_NOT_CLEAN}\n"; }
+f_rcpt_clean_not()     { f_green_on_tag; rcpt "${RC_CLEAN_NOT}\n"; }
 
 # ── the two doors; each prints ACCEPT, REFUSE or BROKEN:<why> ──
 door_ps() { # door_ps WHY -- REFUSE only when the STOP line names gate WHY
@@ -400,6 +417,12 @@ row rcpt_two_shas            ps   REFUSE "dry-run receipt"
 row rcpt_red                 ps   REFUSE "dry-run receipt"
 row rcpt_verified            ps   REFUSE "dry-run receipt"
 row rcpt_dirty               ps   REFUSE "dry-run receipt"
+row rcpt_no_locked           ps   REFUSE "dry-run receipt"
+row rcpt_dry_skipped         ps   REFUSE "dry-run receipt"
+row rcpt_hex_rc              ps   REFUSE "dry-run receipt"
+row rcpt_subtree             ps   REFUSE "dry-run receipt"
+row rcpt_not_clean           ps   REFUSE "dry-run receipt"
+row rcpt_clean_not           ps   REFUSE "dry-run receipt"
 row green_on_tag             both ACCEPT
 row green_on_tag_log_line    both ACCEPT
 

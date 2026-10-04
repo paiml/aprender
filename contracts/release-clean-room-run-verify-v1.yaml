@@ -37,8 +37,11 @@
 #   dryrun_receipt_verify FILE TAG WANT ROOT -- FILE records one full sha of a
 #     commit present in ROOT. That commit holds
 #     docs/audits/release/TAG/dry-run-receipt.md, whose tag row names exactly
-#     WANT and whose dry-run row records `--dry-run --no-verify --locked`, a
-#     single rc of 0, and the tree clean
+#     WANT and whose dry-run row records the exact token-bounded command
+#     `cargo publish --workspace --dry-run --no-verify --locked`, a single
+#     bounded rc of 0, and ", tree clean after" with no not/dirty/unclean
+#     qualifier anywhere in the row (substring tests took `--no-locked`,
+#     `--dry-run-skipped`, `rc=0x1` and "not tree clean")
 #
 # PROOF LADDER, STATED HONESTLY
 #   * L1 — scripts/release/check_clean_room_verify.sh runs ONE case table through
@@ -109,7 +112,7 @@ equations:
       receipt(c, tag, want) = 0  ⇔  c is one full sha of a commit in the checkout
                          ∧ c:docs/audits/release/tag/dry-run-receipt.md exists
                          ∧ tag row shas = {want}
-                         ∧ dry-run row ∋ --dry-run, --no-verify, --locked, "tree clean"
+                         ∧ dry-run row ∋ exact "cargo publish --workspace --dry-run --no-verify --locked", ", tree clean after", ∌ not|dirty|unclean
                          ∧ dry-run row rc values = {0}
       publish_strict opens  ⇔  verify = 0 ∧ b2 = 0 ∧ receipt = 0
     domain: 'the recorded B2-gpu run id and receipt commit, the tag and its commit, gh and git'
@@ -145,7 +148,7 @@ proof_obligations:
     statement: "A B2-gpu run id that is missing, not an id, red, unfinished, on another commit, without exactly one structured tested-sha record, or unreadable through gh refuses at publish_strict."
     discharged_by: falsification_tests[6]
   - id: CRV-OB-008
-    statement: "A dry-run receipt commit that is missing, not a full sha, absent, without the receipt file, on another commit, red, not --no-verify --locked, or not tree-clean refuses at publish_strict."
+    statement: "A dry-run receipt commit that is missing, not a full sha, absent, without the receipt file, on another commit, red (rc bounded, so rc=0x1 is red), not exactly cargo publish --workspace --dry-run --no-verify --locked, or not unqualified tree clean after refuses at publish_strict."
     discharged_by: falsification_tests[7]
   - id: CRV-OB-009
     statement: "A green B2-gpu run and a green committed receipt on the tag's commit are accepted."
@@ -196,10 +199,10 @@ falsification_tests:
     mutation: 'ps_b2_back_to_nonempty_file restores `[ -s "$AP/b2gpu-run-id" ]`; b2_job_not_completed, b2_tested_other_commit and the other b2_* mutants each drop one refusal; each turns a row from REFUSE to ACCEPT'
   - id: CRV-F-008
     rule: a bad dry-run receipt commit refuses
-    prediction: 'the 10 rcpt_* rows refuse at publish_strict with a STOP line naming the dry-run receipt'
+    prediction: 'the 16 rcpt_* rows refuse at publish_strict with a STOP line naming the dry-run receipt'
     test: 'bash scripts/release/check_clean_room_verify.sh'
     if_fails: 'a red, uncommitted, or other-commit dry-run opens a publish'
-    mutation: 'ps_receipt_back_to_nonempty_file restores `[ -s "$AP/dryrun-receipt-commit" ]`; rcpt_red, rcpt_other_commit and the other rcpt_* mutants each drop one refusal; each turns a row from REFUSE to ACCEPT'
+    mutation: 'ps_receipt_back_to_nonempty_file restores `[ -s "$AP/dryrun-receipt-commit" ]`; rcpt_red, rcpt_other_commit and the other rcpt_* mutants each drop one refusal, and rcpt_flags_substring, rcpt_rc_unbounded and rcpt_tree_substring restore the substring tests; each turns a row from REFUSE to ACCEPT'
   - id: CRV-F-009
     rule: green B2-gpu and receipt on the tag commit are accepted
     prediction: 'row green_on_tag passes publish_strict and prints B2-GPU VERIFIED and DRY-RUN VERIFIED (stub_engaged_r5c)'

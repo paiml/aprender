@@ -250,7 +250,8 @@ b2gpu_verify_run() {
 # The receipt is `docs/audits/release/TAG/dry-run-receipt.md` IN that commit,
 # read with `git show`, never from a working tree. Its two table rows decide:
 #   | tag / release commit | ... exactly one 40-hex sha, which must be WANT
-#   | packaging dry-run    | ... `--dry-run --no-verify --locked`, one rc=, 0, "tree clean"
+#   | packaging dry-run    | ... the exact `cargo publish --workspace --dry-run --no-verify --locked`,
+#                          one bounded rc= that is 0, ", tree clean after" unqualified
 # Same return contract: 0 VERIFIED, 1 measured and not proof, 2 NOT-MEASURED.
 dryrun_receipt_verify() {
   local rf=${1:-} tag=${2:-} want=${3:-} root=${4:-.} rn rsha="" path body row nrow tshas tns rcs nr
@@ -276,12 +277,15 @@ dryrun_receipt_verify() {
   row=$(grep -E '^\| *packaging dry-run *\|' <<< "$body" || true)
   nrow=$(grep -c . <<< "$row" || true)
   if [ "$nrow" != 1 ]; then echo "receipt commit $rsha: $path needs exactly one '| packaging dry-run |' row"; return 1; fi
-  if [[ "$row" != *--dry-run* || "$row" != *--no-verify* || "$row" != *--locked* ]]; then echo "receipt commit $rsha: the dry-run row does not record --dry-run --no-verify --locked"; return 1; fi
-  rcs=$(grep -oE 'rc=\**[0-9]+' <<< "$row" | tr -d 'rc=*' | sort -u || true)
+  # Exact command, token-bounded: a substring test took `--no-locked` and `--dry-run-skipped`.
+  if ! grep -qE '(^|[`| ])cargo publish --workspace --dry-run --no-verify --locked([`| ]|$)' <<< "$row"; then echo "receipt commit $rsha: the dry-run row does not record cargo publish --workspace --dry-run --no-verify --locked"; return 1; fi
+  rcs=$(grep -oE '(^|[ ,(|])rc=\**[0-9]+\**([ ,)|]|$)' <<< "$row" | grep -oE '[0-9]+' | sort -u || true)
   nr=$(grep -c . <<< "$rcs" || true); nr=${nr:-0}
   if [ "$nr" -ne 1 ]; then echo "receipt commit $rsha: the dry-run row records $nr exit status(es) (need exactly 1)"; return 1; fi
   if [ "$rcs" != 0 ]; then echo "receipt commit $rsha: the dry-run exited rc=$rcs"; return 1; fi
-  if [[ "$row" != *"tree clean"* ]]; then echo "receipt commit $rsha: the dry-run row does not record the tree clean"; return 1; fi
+  # "tree clean after" must open a clause, and nothing may qualify it: "not tree clean" is dirty.
+  if ! grep -qE '(^|, |\| *)tree clean after([ ,(|]|$)' <<< "$row"; then echo "receipt commit $rsha: the dry-run row does not record the tree clean after"; return 1; fi
+  if grep -qiE '(^|[^a-z])(not|dirty|unclean)([^a-z]|$)' <<< "$row"; then echo "receipt commit $rsha: the dry-run row qualifies its tree state (not/dirty/unclean)"; return 1; fi
   echo "DRY-RUN VERIFIED: $path at $rsha -- dry-run of $want rc=0, tree clean"
   return 0
 }
