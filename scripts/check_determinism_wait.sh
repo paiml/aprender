@@ -49,21 +49,22 @@ wait_s() {
 }
 
 check() {   # check <ci.yml>: rc 0 when W1-W5 hold
-    local f=$1 drvf="${2:-"$DRIVER"}" secf="${3:-"$SECTIONS"}" j g bad=0 w held calls n_step drv n_gate n_coe
+    local f=$1 drvf="${2:-"$DRIVER"}" secf="${3:-"$SECTIONS"}" j g nc bad=0 w held calls n_step drv n_gate n_coe
     [ -f "$f" ] || { printf 'ENV   no such file: %s\n' "$f"; return 2; }
     [ -f "$drvf" ] && [ -f "$secf" ] || { printf "ENV   missing %s or %s\n" "$drvf" "$secf"; return 2; }
     j=$(job "$f")
     [ -n "$j" ] || { printf 'FAIL  no determinism job in %s\n' "$f"; return 1; }
-    printf '%s\n' "$j" | grep -q -E '^    needs: \[([a-z0-9-]+, )*x86-main(, [a-z0-9-]+)*\]$' ||   # m:noneeds
+    grep -q -E '^    needs: \[([a-z0-9-]+, )*x86-main(, [a-z0-9-]+)*\]$' <<<"$j" ||   # m:noneeds
         { printf 'FAIL  W1 the determinism job does not need x86-main: it starts before the X64 raster can exist\n'; bad=1; }
-    printf '%s\n' "$j" | grep -q -E '^    if: \$\{\{ !cancelled\(\)( && [^}]*)? \}\}$' ||   # m:noif
+    grep -q -E '^    if: \$\{\{ !cancelled\(\)( && [^}]*)? \}\}$' <<<"$j" ||   # m:noif
         { printf 'FAIL  W2 the determinism job is not if: !cancelled(): a failed x86-main would skip it, not RED it\n'; bad=1; }
     w=$(wait_s "$j")
     [ "$w" = 0 ] ||   # m:nowait
         { printf 'FAIL  W3 FAT_ARTIFACT_WAIT_S is %s, not "0": the job polls for a raster after its producer ended\n' "$w"; bad=1; }
-    printf '%s\n' "$j" | grep -q -E '^      FAT_EXPECT_ARTIFACTS: determinism-X64,determinism-ARM64$' ||   # m:noexpect
+    grep -q -E '^      FAT_EXPECT_ARTIFACTS: determinism-X64,determinism-ARM64$' <<<"$j" ||   # m:noexpect
         { printf 'FAIL  W4 FAT_EXPECT_ARTIFACTS no longer names both rasters\n'; bad=1; }
-    printf '%s\n' "$j" | grep -v -E '^[[:space:]]*#' | grep -q -F -e "--sections 'determinism[ARM64],determinism-compare'" ||   # m:nocompare
+    nc=$(grep -v -E '^[[:space:]]*#' <<<"$j")
+    grep -q -F -e "--sections 'determinism[ARM64],determinism-compare'" <<<"$nc" ||   # m:nocompare
         { printf 'FAIL  W5 the job no longer runs determinism[ARM64] and determinism-compare\n'; bad=1; }
     # W3 at step level: a step env that sets the wait to anything but 0 overrides the job's "0".
     n_step=$(printf '%s\n' "$j" | grep -E '^ +FAT_ARTIFACT_WAIT_S:' | grep -c -v -E 'FAT_ARTIFACT_WAIT_S: "?0"?[[:space:]]*$')
@@ -94,7 +95,7 @@ check() {   # check <ci.yml>: rc 0 when W1-W5 hold
     held="$w"   # derived from the wait W3 checks, not measured; that the driver honours it is W6 (structural)
     calls=$(( w / POLL_S + 1 ))
     printf 'held_s_per_missing_x64=%s rest_calls_per_wait=%s starts_after_x86_main=%s\n' \
-        "$held" "$calls" "$(printf '%s\n' "$j" | grep -q -E '^    needs: .*x86-main' && echo yes || echo no)"
+        "$held" "$calls" "$(grep -q -E '^    needs: .*x86-main' <<<"$j" && echo yes || echo no)"
     [ "$bad" = 0 ] && printf 'ok    determinism job: starts after x86-main, never skipped, one artifact read; driver, gate and compare section read it RED\n'
     return "$bad"
 }
