@@ -151,7 +151,7 @@ No 0.73 model reaches it (R1 §11b). Neither scope caller at 316dee2cd4 reaches 
 ## S5 — every src file must compile: widen the #3809 dark-file guard to the whole tree
 **Refs** #3999 (R5 F-R5-6, and L25 row 5). #3809, the dark-test-file guard this widens. #4502: its 7981643bfa (2026-10-01) deleted 3 parity files that never compiled. S3 deletes two more files of this class; S5 is the guard and the rest.
 
-**Defect [V]** 138 of the 8,264 `.rs` files in the workspace's packages (53,211 lines, in 12 packages) are reached by no `mod`, `include!` or `#[path]` from any package root, so nothing compiles them (`orphan_census.py`; the list is `orphan-census-316dee2cd4.tsv`). All 138 sit under a package's `src/`. aprender-serve holds 111 of them (36,286 lines).
+**Defect [V]** 138 of the 8,264 `.rs` files in the workspace's packages (53,211 lines, in 12 packages) are reached by no `mod`, `include!` or `#[path]` from any package root, so nothing compiles them (`orphan_census.py`; the list is `orphan-census-316dee2cd4.tsv`). All 138 sit under a package's `src/`. aprender-serve holds 111 of them (36,286 lines). 27 of the 138 (15,241 lines) are copies: a compiled file holds their code, with the same text in 24 cases and the same text up to `//` comments and whitespace in 3. The TSV's twin column names each compiled copy.
 - **The #3809 guard sees 42.** `scripts/check_src_test_files_wired.sh` looks only at files that hold a test attribute. It counts a file as declared when any file of its crate names it, without asking whether that file compiles. Its baseline, `scripts/src_test_files_unwired_baseline.txt`, has 42 entries, all of them orphans, and `scripts/check_baseline_ratchets.sh:150` keeps that set shrink-only. The other 96 orphans are 27 test files whose only declarers are dark themselves, and 69 files with no test attribute.
 - **They read as live code** (Rule 8). Two R5 cells cited uncompiled copies (F-R5-6). The v0.69.3 merge-back #4338 converted the argmax module compiles in the uncompiled copy, reduces.rs, and the compiled copy kept the raw form.
 - **Live files point into them** [V at 316dee2cd4]:
@@ -164,12 +164,12 @@ No 0.73 model reaches it (R1 §11b). Neither scope caller at 316dee2cd4 reaches 
 - The #3809 guard and its baseline, above.
 - `module_of()` at `scripts/check_tree_reader_tests.sh:112`, a shell resolver for one file's module path.
 - The syn walk in `crates/aprender-contracts/src/ontology/extract/code.rs`: `crate_roots` (`:458`) finds a crate's roots, `splice` (`:498`) splices `include!` files in, and `child_file` (`:958`) resolves a `mod` and follows `#[path]` (`:964`).
-- `orphan_census.py` on this branch, as the oracle to diff the guard against. It has 31 self-test cases and 13 mutants, and it lists the sites it cannot resolve: one at 316dee2cd4, the `#[path = "."]` in `crates/aprender-core/src/nn/quantization_tests.rs`, checked by hand.
+- `orphan_census.py` on this branch, as the oracle to diff the guard against. It has 33 self-test cases and 18 mutants, and it lists the sites it cannot resolve: one at 316dee2cd4, the `#[path = "."]` in `crates/aprender-core/src/nn/quantization_tests.rs`, checked by hand.
 
 **Scope**
 - Widen the guard from files with a test attribute to every `.rs` under `crates/*/src`. A file counts as declared only when a chain of `mod`, `include!` or `#[path]` reaches it from a package root: `src/lib.rs`, `src/main.rs`, `build.rs`, `src/bin/`, the manifest's `path =` entries, and the test, bench and example targets.
 - Keep the files that are still dark in a new shrink-only baseline (for example `scripts/src_files_unreachable_baseline.txt`), registered in `check_baseline_ratchets.sh` beside the #3809 one, which it can replace.
-- Delete in batches. Diff each file against its compiled twin first; a fn with no twin needs a decision, not a delete. The first batch, checked at 316dee2cd4 by fn name only:
+- Delete in batches. The first batch is the 27 copies: deleting a `=` copy loses nothing and deleting a `~` copy loses only its `//` comments, so they need no decision. For each other file, diff its fns against the compiled ones first; a fn with no compiled copy needs a decision, not a delete. The next batch, checked at 316dee2cd4 by fn name only:
   - `gguf/inference/forward/debug.rs` (629 lines) and `gguf/inference/forward/cache.rs` (385): each fn name in them is also defined in a compiled file. The live `forward_single_with_cache` is at `crates/aprender-serve/src/gguf/inference/forward/ffn_block.rs:479`.
   - `cuda/executor/incremental_attention.rs` (208) and `cuda/executor/layers/reduces.rs` (550), from F-R5-6. `paged_attention_into` has no compiled twin: port it or drop its binding first. Either way, the allowlist's ghost entry goes in the same commit.
   - `cuda/executor/kernel.rs` (393): each fn name is also defined in a compiled file. Move the two contract cites to `rope_indirect.rs` first.
@@ -190,7 +190,7 @@ No 0.73 model reaches it (R1 §11b). Neither scope caller at 316dee2cd4 reaches 
 
 **Blocked by** Nothing. S3 can land first or fold into the first batch.
 **Hosts** x86 CI. The guard is a script and needs no GPU; no cargo on lambda.
-**Out of scope** `crates/aprender-present` and `crates/aprender-test`. Their manifests declare a workspace and no package, and the root `Cargo.toml` excludes both, so no package root can reach the 2 files under them (32,270 lines). Whether to keep them is a separate call.
+**Out of scope** `crates/aprender-present` and `crates/aprender-test`. Their manifests declare a workspace and no package, and the root `Cargo.toml` excludes both, so no package root can reach the 2 files under them (32,270 lines). Whether to keep them is a separate call. The aprender-test file is a `~` copy of `crates/aprender-test-lib/src/generated_contracts.rs` (the census twin line).
 
 ---
 

@@ -32,6 +32,9 @@ Guard classes follow scripts/check_src_test_files_wired.sh (#3809):
 - test-unlisted: the guard would fail on it; 0 is expected.
 - no-test: outside the guard's universe.
 Declarer class: declared-by-dark when some file has an edge to it (none of them is reached), else undeclared.
+Twin: a reached file that holds the dark file's code. `=path` has the same text; `~path` has the same text once
+// comments and all whitespace are removed (`flat`). A file with no code left after that has no twin. Deleting a
+`=` twin's dark copy loses nothing, and deleting a `~` one loses only its // comments.
 
 Usage:
   python3 docs/lookahead/0.73/orphan_census.py --pin SHA [--crate crates/NAME ...] [--tsv OUT]
@@ -218,9 +221,32 @@ def gap_sites(txt, reach):
                   | {f"{f}: {m}" for f in reach for m in MACMOD_RE.findall(txt[f])})
 
 
+def flat(text):
+    """The text without // comments and whitespace: two files that differ only there have the same flat()."""
+    return re.sub(r"\s+", "", strip(text))
+
+
+def twin_index(files, reach):
+    """({text: reached files}, {flat text: reached files}), each list sorted."""
+    same, flats = defaultdict(list), defaultdict(list)
+    for f in sorted(reach):
+        same[files[f]].append(f)
+        flats[flat(files[f])].append(f)
+    return same, flats
+
+
+def twin_of(text, same, flats):
+    """'=' + the first reached file with the same text, else '~' + the first with the same flat text, else ''."""
+    key = flat(text)
+    if not key:
+        return ""
+    return "=" + same[text][0] if same.get(text) else "~" + flats[key][0] if flats.get(key) else ""
+
+
 def census(files, baseline=frozenset(), tree=None):
     """files: {repo path: text} with every .rs file and Cargo.toml in scope. Returns one row per crates/*/src
-    file that is not reached: status orphan, virtual or no-manifest, plus the classes and suspects of orphans."""
+    file that is not reached: status orphan, virtual or no-manifest, and twin, plus the classes and suspects of
+    orphans."""
     txt = {f: strip(t) for f, t in files.items() if f.endswith(".rs")}
     fs = set(txt)
     tomls = {pp.dirname(f): t for f, t in files.items() if pp.basename(f) == "Cargo.toml"}
@@ -231,8 +257,10 @@ def census(files, baseline=frozenset(), tree=None):
     edges = {f: targets(t, dirs[f], fs) - {f} for f, t in txt.items()}
     reach = closure(find_roots(txt, tomls, pkgs), edges)
     declarers, by_mod, by_base = index(txt, edges, reach)
+    same, flats = twin_index(files, reach)
     rows = dark_rows(files, fs - reach, tomls, pkgs)
     for row in rows:
+        row["twin"] = twin_of(files[row["path"]], same, flats)
         if row["status"] == "orphan":
             f = row["path"]
             row.update(orphan_columns(f, txt[f], baseline, sorted(declarers[f])),
@@ -283,12 +311,20 @@ def print_sites(orph, gaps, crates):
     print(f"  gap sites in reached files: {len(gaps)}" + "".join(f"\n    {x}" for x in gaps))
 
 
+def print_twins(sel):
+    orph = [r for r in sel if r["status"] == "orphan" and r["twin"]]
+    same = sum(r["twin"].startswith("=") for r in orph)
+    print(f"  twins: {len(orph)} orphans, {sum(r['lines'] for r in orph):,} lines, have their code in a reached file: "
+          f"{same} with the same text, {len(orph) - same} the same without // comments and whitespace"
+          + "".join(f"\n    apart {r['path']} {r['twin']}" for r in sel if r["status"] != "orphan" and r["twin"]))
+
+
 def write_tsv(path, orph):
     with open(path, "w") as fh:
-        fh.write("crate\tpath\tlines\tguard\tdeclarer\tdeclarers\tsuspects\n")
+        fh.write("crate\tpath\tlines\tguard\tdeclarer\tdeclarers\tsuspects\ttwin\n")
         for r in orph:
             fh.write("\t".join([r["crate"], r["path"], str(r["lines"]), r["guard"], r["declarer"],
-                                ",".join(r["declarers"]) or "-", ",".join(r["suspects"]) or "-"]) + "\n")
+                                ",".join(r["declarers"]) or "-", ",".join(r["suspects"]) or "-", r["twin"] or "-"]) + "\n")
 
 
 def report(pin, rows, nsrc, gaps, baseline, crates, tsv):
@@ -299,6 +335,7 @@ def report(pin, rows, nsrc, gaps, baseline, crates, tsv):
           f"{sum(r['lines'] for r in orph):,} lines, in {len(pk)} packages")
     print_classes(orph, baseline, crates)
     print_sites(orph, gaps, crates)
+    print_twins(sel)
     apart = tally([r for r in sel if r["status"] != "orphan"], lambda r: (r["crate"], r["status"]))
     for (c, s), (n, ln) in sorted(apart.items()):
         print(f"  apart ({s}, no package): {c}/src {n} files, {ln:,} lines")
@@ -375,6 +412,9 @@ def fixture():
         "crates/v/Cargo.toml": "[workspace]\nmembers = []\n", "crates/v/src/generated.rs": "",
         "crates/nm/src/x.rs": "",
         "crates/p/src/zz/mod.rs": 'include!("../aa/mid.rs");\n', "crates/p/src/zz/deepy.rs": "",
+        # cases 30-31: twins of the reached tests.rs (h.rs has its text), and files with none
+        "crates/p/src/tc.rs": "// a copy of tests.rs\n#[test]\nfn  t()  {}\n", "crates/p/src/note.rs": "// a comment only\n",
+        "crates/p/src/dup1.rs": "fn d() {}\n", "crates/p/src/dup2.rs": "fn d() {}\n",
     }
 
 
@@ -452,6 +492,11 @@ def self_test():
         ("29 `\"#[path =\"` inside a string is no gap site",
          [x for x in gaps if x.startswith("crates/p/src/lib.rs")]
          == ['crates/p/src/lib.rs: #[path = "pdir"]', "crates/p/src/lib.rs: mod $n"]),
+        ("30 twins: h.rs has the text of the reached tests.rs (=), tc.rs its flat text (~)",
+         r["crates/p/src/h.rs"]["twin"] == "=crates/p/src/tests.rs"
+         and r["crates/p/src/tc.rs"]["twin"] == "~crates/p/src/tests.rs"),
+        ("31 no twin: no code (empty sub/i.rs, comment-only note.rs), or a copy of a dark file only (dup1, dup2)",
+         all(r["crates/p/src/" + f]["twin"] == "" for f in ("sub/i.rs", "note.rs", "dup1.rs", "dup2.rs"))),
         ("28 can_name table", all(can_name(lit, bases, tgt) == want for lit, bases, tgt, want in CAN_NAME_CASES)),
     ]
     bad = 0
