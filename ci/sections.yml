@@ -3623,9 +3623,8 @@ jobs:
   provable-ladder:
     runs-on: [self-hosted, Linux, clean-room, X64]
     timeout-minutes: 90
-    # #4433: a section in x86-main. ADVISORY there too: fat_driver's verdict skips a
-    # continue-on-error section, so a RED ladder does not turn the x86-main job red.
-    continue-on-error: true
+    # #4433: a section in x86-main. REQUIRED since PVL EV-9 (#4578): the gate job reads
+    # this section's result, and a RED ladder turns x86-main red.
     env:
       LEAN: crates/aprender-contracts-staging/lean
       SUMMARY: crates/aprender-contracts-staging/discharge-summary.json
@@ -3737,7 +3736,7 @@ jobs:
 
       # EV-9 finding a2-fat-driver-skip-is-success (operator 2026-09-28: "skipped ≠ pass"). A
       # skip ran nothing, so it must not leave the section `success`: fat_driver would report
-      # that as a ladder pass. RED here; the section stays continue-on-error (advisory).
+      # that as a ladder pass. RED here, and the gate requires this section (EV-9).
       - name: No verdict is not a pass -- a skipped ladder is RED
         if: ${{ !cancelled() && steps.pre.outputs.skip == 'true' }}
         shell: bash
@@ -3745,15 +3744,10 @@ jobs:
           echo "::error::provable-ladder SKIPPED (${{ steps.pre.outputs.skip_reason }}): no verdict, so not a pass" | tee -a "$GITHUB_STEP_SUMMARY"
           exit 1
 
-      - name: Advisory verdict
+      - name: Verdict
         if: always()
         shell: bash
-        run: |
-          {
-            echo "### provable-ladder (PVL-001 EV-9, #4083): ADVISORY, not in gate.needs"
-            echo "Job status: ${{ job.status }}. It becomes required only when this blocker is clear:"
-            echo "1. escape-allowlist.yaml: 7 entries are \`confirmed_by: pending\`, and a person must confirm them or delete the axioms (PVL-001 §5.3)"
-          } >> "$GITHUB_STEP_SUMMARY"
+        run: echo "### provable-ladder (PVL-001 EV-9, #4578): REQUIRED by ci / gate. Job status: ${{ job.status }}" >> "$GITHUB_STEP_SUMMARY"
 
   # Mutation testing — DIFF-SCOPED + BLOCKING on PRs (PMAT build-system audit gap #1).
   #

@@ -635,7 +635,7 @@ jobs:
           # cuda-unit were never in the gate; they still are not.
           # workspace-test is its own job now (three shard jobs + the Σ fan-in).
           [ "$WT" = success ] || { echo "workspace-test failed: $WT"; exit 1; }
-          for pair in X86:guard-tree X86:guard-cargo X86:sov.gate DET:determinism-compare; do
+          for pair in X86:guard-tree X86:guard-cargo X86:sov.gate X86:provable-ladder DET:determinism-compare; do
             job="${pair%%:*}" sec="${pair#*:}"
             r=$(res "${!job}" "$sec")
             if [ "$r" != success ]; then
