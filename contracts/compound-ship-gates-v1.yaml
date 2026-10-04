@@ -708,7 +708,7 @@ falsification_tests:
       - non_finite_promoted_to_pass
       - out_of_range_measured_accepted
       - out_of_range_threshold_accepted
-  - id: FALSIFY-GATE-SHIP-012-RECEIPT
+  - id: FALSIFY-GATE-SHIP-013
     rule: >
       The nightly coverage measurement leaves a receipt keyed by the commit it
       measured: sha, floor, pct (two decimals, truncated, never rounded up),
@@ -716,7 +716,7 @@ falsification_tests:
       a reason and pct and passed null. A previous run's log, a run that
       printed DID NOT MEASURE, a log with no TOTAL line, zero instrumented
       lines, zero tests run, or covered above total is not_measured, never a
-      number. Only the release gate (FALSIFY-GATE-SHIP-012-TAG) reads it
+      number. Only the release gate (FALSIFY-GATE-SHIP-014) reads it
       (#4672, #4734).
     prediction: >
       scripts/coverage_receipt.sh matches every row of
@@ -753,7 +753,7 @@ falsification_tests:
       - keyed_by_ref_not_sha
       - zero_tests_promoted_to_a_number
       - unreviewed_reader
-  - id: FALSIFY-GATE-SHIP-012-TAG
+  - id: FALSIFY-GATE-SHIP-014
     rule: >
       The release reads coverage-nightly's sha-keyed receipt for the release
       commit C, never the tag push's own coverage section, which went green on
