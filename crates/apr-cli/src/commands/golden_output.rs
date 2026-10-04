@@ -2690,6 +2690,25 @@ mod golden_refusal_4664 {
         assert!(run_golden_output_gate(Path::new("/nonexistent-dir/other.gguf"), &cfg).is_err());
     }
 
+    /// The hybrid and cpu_only routes (`qwen35` is hybrid on every default build) must refuse too.
+    #[test]
+    fn every_backend_route_refuses_the_named_file() {
+        let cfg = QaConfig::default();
+        let p = Path::new("/nonexistent-dir/Qwen3.5-0.8B-UD-IQ2_XXS.gguf");
+        for (cpu_only, hybrid) in [(false, false), (true, false), (false, true), (true, true)] {
+            let v = golden_gate_for(cpu_only, hybrid, p, &cfg).expect("refusal is a verdict");
+            assert!(
+                !v.passed && v.skipped,
+                "cpu_only={cpu_only} hybrid={hybrid}"
+            );
+            assert!(
+                v.message.contains("refused-by-ruling #4664"),
+                "{}",
+                v.message
+            );
+        }
+    }
+
     /// Every refusal in force carries a ticket and a public-safe receipt.
     #[test]
     fn every_refusal_in_force_has_a_ticket_and_a_public_receipt() {

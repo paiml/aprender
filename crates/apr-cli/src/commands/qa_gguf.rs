@@ -114,6 +114,10 @@ fn golden_gate_for(
     path: &Path,
     config: &QaConfig,
 ) -> Result<GateResult> {
+    // #4664: the ruling holds on every backend, so it is read before one is chosen.
+    if let Some(verdict) = golden_refusal_verdict(GOLDEN_REFUSALS, path, Instant::now()) {
+        return Ok(verdict);
+    }
     if cpu_only || hybrid {
         run_golden_output_gate_runtime(path, config, cpu_only)
     } else {
