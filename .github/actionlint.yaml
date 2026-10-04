@@ -26,3 +26,5 @@ self-hosted-runner:
     - mini
     # #4292 / infra#1042: the mini's dedicated repo-level release runner
     - mini-builder
+    # #4729 / infra#1388: one-box lane for pr-review-quorum `present` (intel-clean-room-15)
+    - review-light
