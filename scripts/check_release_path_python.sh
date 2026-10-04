@@ -15,8 +15,8 @@
 #           data: anything else, every other YAML file (contracts, roadmaps, fixtures) included: a script
 #           reads it, nothing runs it, so it is on the path but never scanned.
 # MEASURES  python files on the path, by path and blob; interpreter lines (a code line, not a comment,
-#           that names python, python3, python3.N, pytest, pip, pip3 or pipx); and references to a .py
-#           that the walk cannot find in the tree.
+#           that names python, python3, python3.N, pytest, pip, pip3, pipx, uv or uvx); and references
+#           to a .py that the walk cannot find in the tree.
 # THE RULE  Base and head are walked in one run, by this script's own entries and scanner. RED when a
 #           Python file joins the path (one that only moved, byte for byte, has not joined), when the
 #           path's interpreter lines rise in number, when references to a .py the walk cannot find rise
@@ -124,7 +124,7 @@ function maketargets(s,    rest, tail, n, i, w, words, ended) {
 }
 function code_line(s, lineno,    t) {
     if (s ~ /^[ \t]*(#|$)/) return
-    if (s ~ /(^|[^A-Za-z0-9_.-]|:-)(python(3(\.[0-9]+)?)?|pytest|pip3?|pipx)([^A-Za-z0-9_.-]|$)/)
+    if (s ~ /(^|[^A-Za-z0-9_.-]|:-)(python(3(\.[0-9]+)?)?|pytest|pip3?|pipx|uvx?)([^A-Za-z0-9_.-]|$)/)
         { t = substr(trim(s), 1, 160); gsub(/\t/, " ", t); printf "I\t%d\t%s\n", lineno, t }
     maketargets(s)
     tokens(s)
@@ -512,6 +512,8 @@ FX
         printf 'name: setup\nruns:\n  using: composite\n  steps:\n    - run: python3 -m pip --version\n      shell: bash\n' |
         put .github/actions/setup/action.yml && commit v-action || return 2
     variant v-make-C && printf 'make -C docs danger\n' >> "$r/scripts/dogfood.sh" && commit v-make-C || return 2
+    variant v-uv && printf 'uv tool install check-jsonschema\n' >> "$r/scripts/dogfood.sh" &&
+        printf '      - uses: astral-sh/setup-uv@v6\n' >> "$r/.github/workflows/ci.yml" && commit v-uv || return 2
     variant v-data-yaml && printf 'pv validate contracts/demo.yaml\n' >> "$r/scripts/release/autopilot.sh" &&
         printf 'id: demo\nrun: python3 scripts/tools/offpath.py\n' | put contracts/demo.yaml && commit v-data-yaml || return 2
     variant v-ci-yaml && printf '      - run: bash scripts/ci/run.sh ci/sections.yml\n' >> "$r/.github/workflows/ci.yml" &&
@@ -553,6 +555,7 @@ FX
     row 'make -C runs another Makefile: no root target is followed' 0 'interp_lines 3->3, unresolved_py 0->0)' -- --check --base main --head v-make-C "${at[@]}"
     row 'a YAML file a release script reads is data, never scanned' 0 'python_files 3->3, python_lines 4->4, interp_lines 3->3, unresolved_py 0->0)' -- --check --base main --head v-data-yaml "${at[@]}"
     row 'a CI definition under ci/ is scanned like a workflow' 1 'ci/sections.yml 0 -> 1' -- --check --base main --head v-ci-yaml "${at[@]}"
+    row 'uv is an interpreter word; setup-uv is not' 1 'RED   interpreter lines on the release path rose 3 -> 4' -- --check --base main --head v-uv "${at[@]}"
     row 'a blob the walk cannot read: not measured, never GREEN' 2 'FAIL  RELPY not measured: cannot read scripts/dogfood.sh' -- --inventory --rev main --repo "$tmp/broken"
     row 'a check that cannot read a blob: not measured' 2 'not measured' -- --check --base main --head main --repo "$tmp/broken"
     row 'caller: --check without --base' 3 '--check needs --base' -- --check "${at[@]}"
@@ -612,6 +615,7 @@ gone_entry_ignored          s/if (be\[k\] == "read" && he\[k\] != "read")/if (0)
 unread_blob_ignored         s@if ! g cat-file blob "\$b" > "\$out/cur"; then@g cat-file blob "$b" > "$out/cur"; if false; then@
 yaml_outside_ci_scanned     s@ && name ~ /^(\\.github|ci)\\//@@
 ci_yaml_not_code            s@(\\.github|ci)@(\\.github)@
+uv_word_blind               s@|pipx|uvx?)@|pipx)@
 MUTANTS
     printf -- '--- %s/%s mutants killed ---\n' "$pass" "$((pass + fail))"
     [ "$fail" -eq 0 ]

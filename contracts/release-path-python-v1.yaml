@@ -10,7 +10,7 @@ metadata:
     - "scripts/check_model_ladder.sh — the ladder check; it names scripts/lib/ladder_equiv.py and scripts/lib/crux_smoke_scope.py"
 
 five_whys:
-  symptom: "The release path runs Python in many places, and no list of them existed. At 316dee2cd4 the walk finds 60 Python files (21648 lines), 602 interpreter lines and 10 references to a .py that is not tracked, among 556 files on the path."
+  symptom: "The release path runs Python in many places, and no list of them existed. At 316dee2cd4 the walk finds 60 Python files (21648 lines), 614 interpreter lines and 10 references to a .py that is not tracked, among 556 files on the path."
   why_1: "Python was added where it was convenient: a helper module beside a shell script, a python3 line in a recipe, a module imported by another."
   why_2: "No check looked at what a change brought onto the release path, so each addition was invisible at review."
   why_3: "The release path had no computed definition: which files a release runs was known only by reading the scripts that run them."
@@ -28,6 +28,10 @@ equations:
       - "a comment line is never read for references or for interpreter words"
       - "make -C and make -f run another Makefile: no root target is followed from them"
       - "the walk visits each node once, so it ends on a path with cycles"
+      - "only a name written out in a line is followed: a name built at run time (a variable, a glob, make's automatic variables such as $<) is not"
+      - "a coarse match only adds nodes and lines, never removes them: a path or a word inside an echo or a prose string is followed or counted, and a bare file name that matches several tracked files reaches all of them"
+      - "a file reached by a coarse match at base is on the path at base, and is judged like any other node"
+      - "a symlink is read as its blob, which is the path it points to"
 
   kinds:
     formula: "kind(n) = python if n ends in .py or its first line is a #! line naming python or uv run; code if n ends in .sh, .bash or .mk, is a .yml or .yaml under .github/ or ci/, or has any other #! line; make for a Makefile target; data for any other tracked file; none when R has no such file or target"
@@ -39,12 +43,13 @@ equations:
       - "the imports and path tokens of a python node are followed; its own lines are never interpreter lines"
 
   measures:
-    formula: "py(R) = { n ∈ path(R) : kind(n) = python }; interp(R) = the lines of code and make nodes of path(R), comments excluded, that name python, python3, python3.N, pytest, pip, pip3 or pipx as a word; unres(R) = the .py tokens of path(R) that name no tracked file"
+    formula: "py(R) = { n ∈ path(R) : kind(n) = python }; interp(R) = the lines of code and make nodes of path(R), comments excluded, that name python, python3, python3.N, pytest, pip, pip3, pipx, uv or uvx as a word; unres(R) = the .py tokens of path(R) that name no tracked file"
     domain: "path(R)"
     codomain: "the Python files (path, blob, lines, referrer), the interpreter lines (node, line, text) and the unresolved .py references (node, token)"
     invariants:
       - "an interpreter behind a default, as in ${PY:-python3}, is an interpreter line"
       - "a python word inside a string of a .py file is not an interpreter line"
+      - "uv and uvx are interpreter words; a setup-uv action step is not an interpreter line, because the word must stand alone"
       - "--inventory prints all three lists, the entries with their state, and the steps no file in this repository runs"
 
   no_growth:
@@ -56,6 +61,8 @@ equations:
       - "gone(B, H) is the set of entries read at B and not read at H"
       - "no stored limit or baseline file is read: base and head are both measured in the run that judges them"
       - "a Python file that leaves the path, and a fall in interpreter lines, are printed as info and are GREEN"
+      - "a Python file already on the path that grows is GREEN: python_lines is printed and never judged, and replacing that file is ticketed work"
+      - "interpreter lines are judged as one total: a change that removes one and adds another is GREEN"
 
   not_measured:
     formula: "unreadable(B) ∨ unreadable(H) ⇒ exit(B, H) = 2"
@@ -115,13 +122,13 @@ proof_obligations:
 falsification_tests:
   - id: FALSIFY-RPY-001
     rule: "The guard is right on every row of its case table"
-    prediction: "On a fixture repository: the inventory lists the entries, the Python files with the file that reached each, the interpreter lines and the two steps no file runs; a tree checked against itself is GREEN; a new .py run by its path with the word python never said, a python line added, a script that now reaches an off-path .py, an interpreter behind a default, a module imported beside a release .py, a make target reached by $(MAKE), an extensionless file with a python #! line, a .py swapped for one with other bytes, a copy whose source is still on the path, a reference to an untracked .py, a local action that runs pip, a CI definition under ci/ that runs Python and an entry renamed away are each RED; a byte-for-byte move, a python line removed, Python off the path, comments that name python, make -C and a contract YAML that names python are GREEN; an unreadable blob exits 2; each caller error exits 3"
+    prediction: "On a fixture repository: the inventory lists the entries, the Python files with the file that reached each, the interpreter lines and the two steps no file runs; a tree checked against itself is GREEN; a new .py run by its path with the word python never said, a python line added, a script that now reaches an off-path .py, an interpreter behind a default, a module imported beside a release .py, a make target reached by $(MAKE), an extensionless file with a python #! line, a .py swapped for one with other bytes, a copy whose source is still on the path, a reference to an untracked .py, a local action that runs pip, a CI definition under ci/ that runs Python, a uv line (beside a setup-uv step that is not counted) and an entry renamed away are each RED; a byte-for-byte move, a python line removed, Python off the path, comments that name python, make -C and a contract YAML that names python are GREEN; an unreadable blob exits 2; each caller error exits 3"
     test: "bash scripts/check_release_path_python.sh --selftest"
     if_fails: "Python could join the release path unseen, or the guard could go RED on a change that adds none: the inventory would no longer be a baseline anyone can trust"
 
   - id: FALSIFY-RPY-002
     rule: "The case table can still fail on the defects it names"
-    prediction: "Each planted mutant (the interpreter word not matched, comments counted, the strings of a .py counted, data files scanned, the #! line not read, a recipe that never ends, make -C followed, the path relative to the naming file dropped, the bare-name lookup dropped, local actions dropped, imports dropped, make targets dropped, new Python never flagged, a copy claimed as a move, a move that ignores the bytes, the interpreter ratchet off, the unresolved ratchet off, a gone entry ignored, an unreadable blob ignored, YAML outside the CI definitions scanned, YAML under ci/ not scanned) breaks at least one row of --selftest"
+    prediction: "Each of the 22 planted mutants (the interpreter word not matched, uv not matched, comments counted, the strings of a .py counted, data files scanned, the #! line not read, a recipe that never ends, make -C followed, the path relative to the naming file dropped, the bare-name lookup dropped, local actions dropped, imports dropped, make targets dropped, new Python never flagged, a copy claimed as a move, a move that ignores the bytes, the interpreter ratchet off, the unresolved ratchet off, a gone entry ignored, an unreadable blob ignored, YAML outside the CI definitions scanned, YAML under ci/ not scanned) breaks at least one row of --selftest"
     test: "bash scripts/check_release_path_python.sh --mutants"
     if_fails: "The case table is theater: it would pass a guard that lets Python onto the release path"
 
