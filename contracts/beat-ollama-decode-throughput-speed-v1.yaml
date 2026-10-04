@@ -57,7 +57,7 @@ metadata:
     NOT a calibration and does not settle the open question (#2835): it only
     refuses a further drop on sm_121. The harness test
     gb10_floor_is_a_ratchet_at_its_measured_value pins the floor to the
-    recorded trials both ways (passes them; sits within 1e-4 of them).
+    recorded trials both ways (passes them; sits within 5e-5 of them).
 
     SCOPE: STEADY-STATE GPU DECODE only — marginal token-generation rate with
     model load + FP8-weight-cache build + CUDA-graph capture + prefill amortized

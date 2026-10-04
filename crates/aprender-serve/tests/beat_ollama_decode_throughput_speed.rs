@@ -22,11 +22,11 @@
 //! legs, so those four are the first executions it has ever had on this silicon.
 //!
 //! Every number below this line is an sm_89 number. That is now enforced rather than
-//! merely documented: `SILICON_FLOORS` is keyed by compute capability, sm_121 has no
-//! entry, and an uncalibrated silicon produces `UNCALIBRATED-SILICON` — a refusal to
-//! assert a threshold derived on other hardware. It is NOT a pass (that is the
-//! `ada-4090 only` skip that hid this gate for months) and NOT a claim that apr
-//! regressed.
+//! merely documented: `SILICON_FLOORS` is keyed by compute capability, sm_121 had no
+//! entry until the 2026-10-04 ratchet below, and an uncalibrated silicon produces
+//! `UNCALIBRATED-SILICON` — a refusal to assert a threshold derived on other hardware.
+//! It is NOT a pass (that is the `ada-4090 only` skip that hid this gate for months)
+//! and NOT a claim that apr regressed.
 //!
 //! The failure text was wrong in the same way. At ratio 0.619 it led with "very likely
 //! not decoding on the GPU at all", whose own cited signature is ~0.065 — a diagnosis
@@ -636,7 +636,7 @@ fn gb10_floor_is_a_ratchet_at_its_measured_value() {
         f.floor
     );
     assert!(
-        measured - f.floor < 1e-4,
+        measured - f.floor < 5e-5,
         "a ratchet sits AT today's value, not under it: measured {measured:.6}, floor {} \
          leaves {:.6} of slack, so a real drop would pass",
         f.floor,
