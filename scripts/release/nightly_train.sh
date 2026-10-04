@@ -42,13 +42,14 @@
 # GITHUB. At most MAX_CALLS REST/GraphQL calls per run: rate_limit (free), the workflow list (ETag; a 304 is free), ONE
 #   GraphQL query (every producer's recent runs with their check runs, plus main's head and its check rollup), and one
 #   run read per green verdict-lane candidate for run_attempt (GraphQL has no attempt field). Core remaining under
-#   RATE_FLOOR makes no further call: the read failed, every producer lane is not_measured.
+#   min(RATE_FLOOR, limit/5) makes no further call: the read failed, every producer lane is not_measured.
 #
 # EXIT  0 a verdict line was printed (RELEASABLE or NOT) · 2 the train failed part-way (trap line) · 3 caller error
 #   With --exit-verdict, NOT RELEASABLE exits 1 (a CI job is green only on a releasable head).
 # NO TOKEN. The train refuses to start (trap line "no-token") when a registry token is reachable: CARGO_REGISTRY_TOKEN
-#   or CARGO_REGISTRIES_*_TOKEN set, or $CARGO_HOME/credentials(.toml). The installed unit points CARGO_HOME at an
-#   empty directory in its bundle.
+#   or CARGO_REGISTRIES_*_TOKEN set, or credentials(.toml) or a config token line under $CARGO_HOME or ~/.cargo. The
+#   installed unit runs in a user namespace (PrivateUsers=) with an empty tmpfs over ~/.cargo and an empty CARGO_HOME;
+#   install proves inside that sandbox that no token is reachable (--probe-no-token), or installs nothing.
 #
 # USAGE
 #   nightly_train.sh --out DIR [--inbox FILE] [--from RAWDIR] [--now YYYY-MM-DDTHH:MM:SSZ] [--pinned] [--exit-verdict]
@@ -287,11 +288,14 @@ normalize() {
 # fetch RAW CACHE -> RAW/{C,tree,read,runs.tsv,attempts.tsv,graphql.json,workflows.json}; never fails: a failed read
 #   is recorded in RAW/read and makes every producer lane not_measured
 fetch() {
-    local raw="$1" cache="$2" rem hdr st q a ids r
+    local raw="$1" cache="$2" lim rem fl hdr st q a ids r
     printf 'failed: not read\n' > "$raw/read"; : > "$raw/C"; : > "$raw/tree"; : > "$raw/runs.tsv"; : > "$raw/attempts.tsv"
-    rem="$(gh api rate_limit --jq .resources.core.remaining 2>/dev/null)"
-    case "$rem" in ''|*[!0-9]*) printf 'failed: rate_limit unreadable\n' > "$raw/read"; return 0 ;; esac
-    [ "$rem" -ge "$RATE_FLOOR" ] || { printf 'failed: core remaining %s under %s\n' "$rem" "$RATE_FLOOR" > "$raw/read"; return 0; }
+    read -r lim rem <<< "$(gh api rate_limit --jq '"\(.resources.core.limit) \(.resources.core.remaining)"' 2>/dev/null)"
+    case "$lim:$rem" in *[!0-9:]*|:*|*:) printf 'failed: rate_limit unreadable\n' > "$raw/read"; return 0 ;; esac
+    # the floor is a fifth of the token's own hourly limit, capped at RATE_FLOOR: the fleet PAT (5000) keeps its 1000
+    #   reserve, a job's github.token (1000/h, an allowance of its own) refuses under 200
+    fl=$((lim / 5)); [ "$fl" -le "$RATE_FLOOR" ] || fl="$RATE_FLOOR"
+    [ "$rem" -ge "$fl" ] || { printf 'failed: core remaining %s under %s\n' "$rem" "$fl" > "$raw/read"; return 0; }
     mkdir -p "$cache"
     call_ok || { printf 'failed: call budget\n' > "$raw/read"; return 0; }
     hdr=()
@@ -328,15 +332,24 @@ fetch() {
 STEP="start"; PRINTED=""; HISTDONE=""; OUTDIR=""; INBOXF=""; DAY=""; CSHA=""; PIN=""; PINNED=""; EXIT_VERDICT=""
 step() { STEP="$1"; [ "${NIGHTLY_TRAIN_FAULT:-}" != "$1" ] || { STEP="$1 (planted fault)"; exit 1; }; }
 # no_token -> 0 when no registry token is reachable: no CARGO_REGISTRY_TOKEN or CARGO_REGISTRIES_*_TOKEN in the
-#   environment (set at all, even empty) and no credentials file under $CARGO_HOME (default ~/.cargo). The train
+#   environment (set at all, even empty), no credentials file and no config token line under $CARGO_HOME or ~/.cargo. The train
 #   runs no cargo, but the rule is structural: it must be unable to upload, so it refuses to start where a token
 #   exists. A flag alone is not a guard.
 no_token() {
-    local ch="${CARGO_HOME:-$HOME/.cargo}"
-    env | awk -F '=' '$1 == "CARGO_REGISTRY_TOKEN" || $1 ~ /^CARGO_REGISTRIES_[A-Za-z0-9_]+_TOKEN$/ { f = 1 } END { exit f }' || return 1
-    [ ! -e "$ch/credentials" ] && [ ! -e "$ch/credentials.toml" ] || return 1
-    # a legacy token = line in CARGO_HOME config reaches cargo as well
-    ! grep -qsE '^[[:space:]]*token[[:space:]]*=' "$ch/config" "$ch/config.toml"
+    local d
+    if ! env | awk -F '=' '$1 == "CARGO_REGISTRY_TOKEN" || $1 ~ /^CARGO_REGISTRIES_[A-Za-z0-9_]+_TOKEN$/ { f = 1 } END { exit f }'; then
+        echo "no-token: a registry token variable is set" >&2; return 1
+    fi
+    # CARGO_HOME and the uid's own ~/.cargo: pointing CARGO_HOME elsewhere does not make a token there unreachable
+    for d in "${CARGO_HOME:-$HOME/.cargo}" "$HOME/.cargo"; do
+        if [ -e "$d/credentials" ] || [ -e "$d/credentials.toml" ]; then
+            echo "no-token: a credentials file under $d is reachable (the unit hides ~/.cargo; a manager that cannot, refuses)" >&2; return 1
+        fi
+        # a legacy token = line in the config reaches cargo as well
+        if grep -qsE '^[[:space:]]*token[[:space:]]*=' "$d/config" "$d/config.toml"; then
+            echo "no-token: a token line in the config under $d is reachable" >&2; return 1
+        fi
+    done
 }
 # verdict_rc LINE -> 0 for RELEASABLE, 1 for anything else (--exit-verdict: a green job means a releasable head)
 verdict_rc() { case "$1" in "RELEASABLE "*) return 0 ;; *) return 1 ;; esac; }
@@ -436,7 +449,7 @@ span() {   # span START END -> XhYYm, or not_measured
 }
 # ---------------------------------------------------------------- install (the pinned bundle and the user timer) ----
 install_timer() {
-    local home="" out="" inbox="" t="" g="" r="" dir unitdir p
+    local home="" out="" inbox="" t="" g="" r="" dir unitdir p o v sb pr
     while [ $# -gt 0 ]; do
         case "$1" in
             --home) home="${2:-}"; shift 2 ;; --out) out="${2:-}"; shift 2 ;; --inbox) inbox="${2:-}"; shift 2 ;;
@@ -467,11 +480,20 @@ install_timer() {
     p="$(dirname "$(command -v gh)"):$(dirname "$(command -v jq)"):/usr/local/bin:/usr/bin:/bin"
     PATH="$p" bash "$dir/nightly_train.sh" --self-test > "$dir/self-test.out" 2>&1 || { tail -n 5 "$dir/self-test.out"; caller_error "the pinned self-test is RED; nothing installed"; }
     tail -n 1 "$dir/self-test.out"
+    # the unit's sandbox, one list for the unit file and the probe: a user namespace (a --user manager cannot mount
+    #   without one), an empty read-only tmpfs over ~/.cargo, and an empty CARGO_HOME of its own
+    sb=(PrivateUsers=yes "TemporaryFileSystem=$HOME/.cargo:ro" "Environment=CARGO_HOME=$dir/cargo")
+    pr=(); for v in "${sb[@]}"; do pr+=(-p "$v"); done
+    # the planted row that runs inside that sandbox: it must find no token, or nothing is installed
+    o="$(systemd-run --user --wait --pipe --quiet --collect "${pr[@]}" /bin/bash "$dir/nightly_train.sh" --probe-no-token 2>&1)" \
+        || caller_error "the unit sandbox does not hide every registry token ($o); nothing installed"
+    printf 'sandbox probe: %s; without the sandbox: %s\n' "$o" "$(bash "$dir/nightly_train.sh" --probe-no-token 2>&1)"
     unitdir="${XDG_CONFIG_HOME:-$HOME/.config}/systemd/user"
     mkdir -p "$unitdir" || caller_error "cannot create $unitdir"
     {
         printf '[Unit]\nDescription=aprender nightly evidence train (BLD-002 R4), report-only\n\n[Service]\nType=oneshot\nNice=10\nTimeoutStartSec=900\n'
-        printf 'Environment=OUT=%s\nEnvironment=INBOX=%s\nEnvironment=PATH=%s\nEnvironment=CARGO_HOME=%s/cargo\nExecStart=/bin/bash %s/nightly_train.sh --pinned\n' "$out" "$inbox" "$p" "$dir" "$dir"
+        printf '%s\n' "${sb[@]}"
+        printf 'Environment=OUT=%s\nEnvironment=INBOX=%s\nEnvironment=PATH=%s\nExecStart=/bin/bash %s/nightly_train.sh --pinned\n' "$out" "$inbox" "$p" "$dir"
     } > "$unitdir/$UNIT.service"
     printf '[Unit]\nDescription=aprender nightly evidence train, daily 04:45 UTC\n\n[Timer]\nOnCalendar=*-*-* 04:45:00 UTC\nPersistent=true\nUnit=%s.service\n\n[Install]\nWantedBy=timers.target\n' "$UNIT" > "$unitdir/$UNIT.timer"
     systemctl --user daemon-reload || caller_error "daemon-reload failed"
@@ -508,7 +530,7 @@ self_test() {
     tmp="$(mktemp -d)" || exit 3
     export INBOX="$tmp/inbox.md"   # whatever INBOX the caller set: a self-test never writes a real inbox
     # and no registry token: the rows run the train, which refuses to start where one is reachable
-    export CARGO_HOME="$tmp/cargo"; mkdir -p "$CARGO_HOME"; unset CARGO_REGISTRY_TOKEN
+    export CARGO_HOME="$tmp/cargo" HOME="$tmp/home"; mkdir -p "$CARGO_HOME" "$HOME"; unset CARGO_REGISTRY_TOKEN
     while read -r v; do unset "$v"; done < <(env | awk -F "=" '$1 ~ /^CARGO_REGISTRIES_[A-Za-z0-9_]+_TOKEN$/ { print $1 }')
     # row NAME EXPECT-RC NEEDLE FORBID -- CMD...
     row() {
@@ -606,13 +628,16 @@ v-e;verdict;check E;-;-;-" "$d" 2026-10-04T06:00:00Z; cat "$d/line" "$d/lanes.ts
     # fetch against a stub gh: the refusals happen before any real call could be made
     mkdir -p "$tmp/bin"
     printf '%s\n' '#!/bin/bash' 'case "$*" in' \
-        '  *rate_limit*) echo "${STUB_REM:-5000}" ;;' \
+        '  *rate_limit*) echo "${STUB_LIM-5000} ${STUB_REM:-5000}" ;;' \
         '  *actions/workflows*) printf "HTTP/2.0 200 OK\r\netag: \"e1\"\r\n\r\n"; cat "$STUB_WF" ;;' \
         '  *graphql*) echo "{\"errors\":[{\"message\":\"stub\"}]}" ;;' \
         '  *) echo 1 ;;' 'esac' > "$tmp/bin/gh"; chmod +x "$tmp/bin/gh"
     printf '{"workflows":[%s]}\n' '{"node_id":"WA","path":".github/workflows/a.yml"},{"node_id":"WB","path":".github/workflows/b.yml"},{"node_id":"WC","path":".github/workflows/c.yml"},{"node_id":"WD","path":".github/workflows/d.yml"}' > "$tmp/wfall.json"
     st_fetch() { mkdir -p "$tmp/f$1"; PATH="$tmp/bin:$PATH" STUB_WF="$tmp/wfall.json" LANES="$ST_LANES" fetch "$tmp/f$1" "$tmp/f$1/cache"; cat "$tmp/f$1/read"; }
     row fetch_refuses_under_the_rate_floor 0 "failed: core remaining 999 under 1000" "" -- eval 'STUB_REM=999 st_fetch 1'
+    row a_job_token_under_a_fifth_refuses 0 "failed: core remaining 199 under 200" "" -- eval 'STUB_LIM=1000 STUB_REM=199 st_fetch 4'
+    row a_job_token_at_a_fifth_reads 0 "failed: GraphQL errors" "under" -- eval 'CALLS=0; STUB_LIM=1000 STUB_REM=200 st_fetch 5'
+    row an_unreadable_limit_refuses 0 "failed: rate_limit unreadable" "" -- eval 'STUB_LIM= STUB_REM=5000 st_fetch 6'
     row fetch_refuses_past_the_call_budget 0 "failed: call budget" "" -- eval 'MAX_CALLS=0; st_fetch 2'
     row fetch_refuses_a_graphql_error 0 "failed: GraphQL errors" "" -- eval 'CALLS=0; st_fetch 3'
     row an_inbox_read_back_mismatch_exits_non_zero 1 "inbox: read-back mismatch" "" -- \
@@ -629,6 +654,11 @@ v-e;verdict;check E;-;-;-" "$d" 2026-10-04T06:00:00Z; cat "$d/line" "$d/lanes.ts
         bash "$SCRIPT_PATH" --from "$d" --out "$tmp/ov" --exit-verdict --now 2026-10-04T06:00:00Z
     row a_legacy_config_token_refuses 2 "NOT RELEASABLE: nightly-train, no-token failed" "RELEASABLE H=" -- \
         eval 'mkdir -p "$tmp/cc"; printf "[registry]\ntoken = \"x\"\n" > "$tmp/cc/config.toml"; CARGO_HOME="$tmp/cc" bash "$SCRIPT_PATH" --from "$d" --out "$tmp/ot4" --now 2026-10-04T06:00:00Z'
+    row a_home_credentials_file_refuses_whatever_cargo_home 2 "NOT RELEASABLE: nightly-train, no-token failed" "RELEASABLE H=" -- \
+        eval 'mkdir -p "$tmp/hh/.cargo"; : > "$tmp/hh/.cargo/credentials"; HOME="$tmp/hh" bash "$SCRIPT_PATH" --from "$d" --out "$tmp/ot5" --now 2026-10-04T06:00:00Z'
+    row a_home_config_token_refuses_whatever_cargo_home 1 "no-token: a token line in the config under $tmp/hc/.cargo" "clear" -- \
+        eval 'mkdir -p "$tmp/hc/.cargo"; printf "token=\"x\"\n" > "$tmp/hc/.cargo/config"; HOME="$tmp/hc" bash "$SCRIPT_PATH" --probe-no-token'
+    row the_probe_is_clear_where_no_token_is_reachable 0 "no-token: clear" "" -- bash "$SCRIPT_PATH" --probe-no-token
     d="$tmp/evg"; fixture "$d"
     row exit_verdict_releasable_run_exits_0 0 "RELEASABLE H=$ST_C" "NOT RELEASABLE" -- \
         eval '(LANES="$ST_LANES"; EXIT_VERDICT=1; NOW=2026-10-04T06:00:00Z; OUTDIR="$tmp/oev"; INBOXF=""; run_train "$d")'
@@ -685,18 +715,20 @@ m25_cut_rollup_read	s/if (\$c.statusCheckRollup.contexts.pageInfo.hasNextPage \/
 m26_day_set_late	/^    DAY=.*# before any step/d;s/^    step outdir$/    DAY="${NOW%%T*}"; step outdir/
 m27_pinned_not_required	s/if \[ -n "\$PINNED" \] || \[ -f "\$HERE\/PIN" \]; then/if [ -f "$HERE\/PIN" ]; then/
 m28_unhashed_pin_accepted	s/|| { PIN="unhashed"; exit 1; }/|| :/
-m29_rate_floor_ignored	s/\[ "\$rem" -ge "\$RATE_FLOOR" \]/[ 1 ]/
+m29_rate_floor_ignored	s/\[ "\$rem" -ge "\$fl" \]/[ 1 ]/
 m30_call_budget_ignored	s/call_ok() { \[ "\$CALLS" -lt "\$MAX_CALLS" \] || return 1;/call_ok() {/
 m31_graphql_errors_read	s/(.errors \/\/ \[\]) | length > 0/false/
 m32_inbox_mismatch_exits_0	s/inbox_line "\$line" "\$g" || exit 1/inbox_line "$line" "$g"/
 m33_info_attempt_claimed	s/out(i, "green", pick, "1?", /out(i, "green", pick, "1", /
 m34_token_guard_dropped	s/^    no_token || exit 1$/    :/
-m35_credentials_file_ignored	s/\[ ! -e "\$ch\/credentials" \] \&\& \[ ! -e "\$ch\/credentials.toml" \]/true/
+m35_credentials_file_ignored	s/if \[ -e "\$d\/credentials" \] || \[ -e "\$d\/credentials.toml" \]; then/if false; then/
 m36_named_registry_token_ignored	s/ || \$1 ~ \/\^CARGO_REGISTRIES_\[A-Za-z0-9_\]+_TOKEN\$\// /
 m37_exit_verdict_ignored	s/^    \[ -z "\$EXIT_VERDICT" \] || verdict_rc "\$line" || exit 1$/    :/
 m38_verdict_rc_always_red	s/"RELEASABLE "\*) return 0 ;;/"RELEASABLE "*) return 1 ;;/
 m39_exit_verdict_always_red	s/^    \[ -z "\$EXIT_VERDICT" \] || verdict_rc "\$line" || exit 1$/    [ -z "$EXIT_VERDICT" ] || exit 1/
-m40_config_token_ignored	s/^    ! grep -qsE .\^\[\[:space:\]\]\*token.*$/    :/'
+m40_config_token_ignored	s/^        if grep -qsE /        if false \&\& grep -qsE /
+m41_home_cargo_unchecked	s/ "\$HOME\/.cargo"; do$/; do/
+m42_floor_ignores_the_limit	s/fl=\$((lim \/ 5))/fl=$RATE_FLOOR/'
 # each planted mutant must change the file, still parse, and turn at least one row RED
 mutants() {
     local tmp pass=0 fail=0 name expr o rc
@@ -728,6 +760,7 @@ case "${1:-}" in
     --self-test) self_test; exit $? ;;
     --mutants) mutants; exit $? ;;
     --install) shift; install_timer "$@"; exit $? ;;
+    --probe-no-token) no_token && echo "no-token: clear"; exit $? ;;
 esac
 FROM=""; NOW=""; OUTDIR="${OUT:-}"; INBOXF="${INBOX:-}"
 # a planted fault is a drill: its line goes to a throwaway inbox, never the one the caller named
