@@ -6,20 +6,23 @@
 #           it lands no new Python may join the path. Nothing listed those places, so nothing could tell a
 #           new one from an old one.
 # THE PATH  Every tracked file reached from the ENTRIES below by a reference the release machinery
-#           follows: a file path in a script, a workflow or a Makefile recipe; a make target; a Python
-#           import of a module that sits next to the importer or in scripts/lib/. Files are read at a git
-#           revision, never from the work tree.
-# KINDS     python: a .py file, or a file whose first line is a #! line naming python. code: .sh .bash
-#           .mk, a .yml or .yaml under .github/ or ci/ (the CI definitions), a Makefile target, or a file
-#           with any other #! line; its lines are scanned.
+#           follows: a file path in a script, a workflow or a Makefile recipe (a name with a known
+#           extension, any path with a directory in it, or a bare file name under scripts/, ci/ or
+#           .github/); a make target, from a recipe, a prerequisite or $(MAKE); a local action; a Python
+#           import (dotted, relative, or a name after "from X import") of a module that sits next to
+#           the importer or in scripts/lib/. Files are read at a git revision, never from the work tree.
+# KINDS     python: a .py file, or a file whose first line is a #! line naming python or uv run. code:
+#           .sh .bash .mk, a .yml or .yaml under .github/ or ci/ (the CI definitions), an action.yml
+#           anywhere, a Makefile target, or a file with any other #! line; its lines are scanned.
 #           data: anything else, every other YAML file (contracts, roadmaps, fixtures) included: a script
 #           reads it, nothing runs it, so it is on the path but never scanned.
-# MEASURES  python files on the path, by path and blob; interpreter lines (a code line, not a comment,
-#           that names python, python3, python3.N, pytest, pip, pip3, pipx, uv or uvx); and references
-#           to a .py that the walk cannot find in the tree.
+# MEASURES  python files on the path, by path and blob; interpreter uses (in a code line, not a comment:
+#           each word python, python3, python3.N, python2, pytest, pip, pip3, pipx, pipenv, uv, uvx,
+#           poetry, pdm, hatch, tox, nox or conda, and each expansion of a PY, PYTHON, PIP or PYTEST
+#           variable, counts once); and references to a .py that the walk cannot find in the tree.
 # THE RULE  Base and head are walked in one run, by this script's own entries and scanner. RED when a
 #           Python file joins the path (one that only moved, byte for byte, has not joined), when the
-#           path's interpreter lines rise in number, when references to a .py the walk cannot find rise
+#           path's interpreter uses rise in number, when references to a .py the walk cannot find rise
 #           in number, or when an entry is gone at head.
 # NOT READ  The clean-room job (another repository runs it) and the GPU-host ladder and CRUX legs (host
 #           scripts, not files in this repository). Every inventory prints them as not read.
@@ -62,7 +65,7 @@ trap 'exit 143' TERM
 #   K kind | N lines | I lineno text | T token root-relative referrer-relative bare-name | M target | P module
 # (an empty T field prints as ".", which names no file, so bash can split the record on tabs)
 # The program reads a whole blob: kind comes from the name and the first line, then only code lines
-# (interpreter lines, make targets, path tokens) or python lines (imports, path tokens) are looked at.
+# (interpreter uses, make targets, path tokens) or python lines (imports, path tokens) are looked at.
 read -r -d '' SCAN_AWK <<'AWK'
 function trim(s) { sub(/^[ \t]+/, "", s); sub(/[ \t]+$/, "", s); return s }
 # PATH -> the path with "./", "//" and ".." folded; "" when ".." climbs above the root
@@ -96,7 +99,9 @@ function tokens(s,    t, u, k, n, i, w, c, ws, c1, c2, bare) {
         if (w == "" || (w in seen)) continue
         c = w
         while (c ~ /^(\.\/|\/)/) c = (substr(c, 1, 2) == "./") ? substr(c, 3) : substr(c, 2)
-        if (w !~ /[A-Za-z0-9_-]\.(sh|bash|py|yml|yaml)$/ && c !~ /^(scripts|ci|\.github)\//) continue
+        # a name with a known extension, or any path with a directory in it (an extensionless tool, a
+        # local action anywhere); a path that names no tracked file is dropped by the caller
+        if (w !~ /[A-Za-z0-9_-]\.(sh|bash|mk|py|yml|yaml)$/ && c !~ /[A-Za-z0-9_-]\/[A-Za-z0-9_.-]/) continue
         seen[w] = 1
         c1 = fold(c)
         c2 = (dir == "") ? c1 : fold(dir "/" c)
@@ -104,44 +109,97 @@ function tokens(s,    t, u, k, n, i, w, c, ws, c1, c2, bare) {
         printf "T\t%s\t%s\t%s\t%s\n", w, (c1 == "" ? "." : c1), (c2 == "" ? "." : c2), (bare == "" ? "." : bare)
     }
 }
-function maketargets(s,    rest, tail, n, i, w, words, ended) {
+function maketargets(s,    rest, tail, n, i, w, words, ended, nt, tg, other, k) {
     rest = s
     while (match(rest, /(^|[^A-Za-z0-9_.-])(make|\$\(MAKE\)|\$\{MAKE\})[ \t]+/)) {
         tail = substr(rest, RSTART + RLENGTH)
         rest = tail
         n = split(tail, words, /[ \t]+/)
+        # a -C or -f anywhere in the command, before or after the targets, runs another Makefile
+        nt = 0; other = 0
         for (i = 1; i <= n; i++) {
             w = words[i]
-            if (w ~ /^-(C|f|-directory|-file|-makefile)/) break
-            if (w ~ /^-/ || w ~ /=/ || w ~ /^[0-9]+$/) continue
+            if (w ~ /^-(C|f|-directory|-file|-makefile)/) { other = 1; break }
             ended = (w ~ /(;|&|\||\)|>)$/)
+            if (w ~ /^-/ || w ~ /=/ || w ~ /^[0-9]+$/) { if (ended) break; continue }
             gsub(/^["'(]+|["');&|>]+$/, "", w)
-            if (w ~ /^[a-z][A-Za-z0-9_.-]*$/) printf "M\t%s\n", w
+            if (w ~ /^[A-Za-z0-9_][A-Za-z0-9_.-]*$/) tg[++nt] = w
             else break
             if (ended) break
         }
+        if (!other) for (k = 1; k <= nt; k++) printf "M\t%s\n", tg[k]
     }
 }
-function code_line(s, lineno,    t) {
+# S -> how many interpreter uses S names. Each interpreter word counts once, so a second call on a line
+# counts; so does each expansion of an interpreter variable, one whose name is PY, PYTHON, PIP or PYTEST
+# (either case), maybe with digits, a prefix ending in _ or a suffix starting with _: $PYTHON, ${PY},
+# $(PYTHON), $HOST_PYTHON3, ${PY_BIN:-x}. ${PY:-python3} names both, so it counts twice.
+function interp_words(s,    n, t) {
+    n = 0
+    # one space either side, so the first and the last word each find a boundary
+    t = " " s " "
+    while (match(t, /([^A-Za-z0-9_.-]|:-|\$\{[A-Za-z0-9_]+[-=?+])(python([0-9]+(\.[0-9]+)?)?|pytest|pip[0-9]?|pipx|pipenv|uvx?|poetry|pdm|hatch|tox|nox|conda)[^A-Za-z0-9_.-]/)) {
+        n++; t = substr(t, RSTART + RLENGTH - 1)
+    }
+    t = s " "
+    while (match(t, /\$[{(]?([A-Za-z0-9]+_)*(PY|PYTHON|PIP|PYTEST|py|python|pip|pytest)[0-9]*(_[A-Za-z0-9_]*)?[^A-Za-z0-9_]/)) {
+        n++; t = substr(t, RSTART + RLENGTH)
+    }
+    return n
+}
+function code_line(s, lineno,    t, n, k) {
     if (s ~ /^[ \t]*(#|$)/) return
-    if (s ~ /(^|[^A-Za-z0-9_.-]|:-)(python(3(\.[0-9]+)?)?|pytest|pip3?|pipx|uvx?)([^A-Za-z0-9_.-]|$)/)
-        { t = substr(trim(s), 1, 160); gsub(/\t/, " ", t); printf "I\t%d\t%s\n", lineno, t }
+    n = interp_words(s)
+    if (n) { t = substr(trim(s), 1, 160); gsub(/\t/, " ", t); for (k = 1; k <= n; k++) printf "I\t%d\t%s\n", lineno, t }
     maketargets(s)
     tokens(s)
 }
-function imports(s,    m, n, i, a) {
-    if (match(s, /^[ \t]*from[ \t]+[.]*[A-Za-z_][A-Za-z0-9_]*/)) {
-        m = substr(s, RSTART, RLENGTH); sub(/^[ \t]*from[ \t]+[.]*/, "", m)
-        printf "P\t%s\n", m
-    } else if (s ~ /^[ \t]*from[ \t]+[.]+[ \t]+import[ \t]/) {
-        m = s; sub(/^[ \t]*from[ \t]+[.]+[ \t]+import[ \t]+/, "", m); sub(/#.*/, "", m); gsub(/[()]/, "", m)
-        n = split(m, a, ",")
-        for (i = 1; i <= n; i++) { sub(/^[ \t]+/, "", a[i]); sub(/[ \t].*$/, "", a[i]); if (a[i] ~ /^[A-Za-z_][A-Za-z0-9_]*$/) printf "P\t%s\n", a[i] }
+# MOD (dotted, a leading dot for each level of a relative import) -> one record per module it can load:
+# "P a", "P a/b" for a.b (the package, then the submodule); a relative import resolves against the
+# importer's directory here and prints "R <root-relative path>"
+function emitmod(m,    nd, i, n, a, p, base) {
+    nd = 0; while (substr(m, 1, 1) == ".") { nd++; m = substr(m, 2) }
+    if (nd) { base = dir; for (i = 1; i < nd; i++) base = base "/.." }
+    n = split(m, a, ".")
+    p = ""
+    for (i = 1; i <= n; i++) {
+        if (a[i] !~ /^[A-Za-z_][A-Za-z0-9_]*$/) return
+        p = p (i > 1 ? "/" : "") a[i]
+        if (!nd) printf "P\t%s\n", p
+        else if (fold(base "/" p) != "") printf "R\t%s\n", fold(base "/" p)
+    }
+}
+# the names after "from X import": each may be a submodule of X
+function fromnames(x, m,    n, i, a) {
+    sub(/#.*/, "", m); gsub(/[()\\]/, " ", m)
+    n = split(m, a, ",")
+    for (i = 1; i <= n; i++) {
+        sub(/^[ \t]+/, "", a[i]); sub(/[ \t].*$/, "", a[i])
+        if (a[i] ~ /^[A-Za-z_][A-Za-z0-9_]*$/) emitmod(x (x ~ /^[.]*$/ ? "" : ".") a[i])
+    }
+}
+function imports(s,    m, x, n, i, a) {
+    # the rest of a parenthesised or continued "from X import (" list
+    if (impx != "") { m = s; impx_end = (m ~ /\)/ || (m !~ /\\[ \t]*$/ && impx_paren == 0)); fromnames(impx, m); if (impx_end) impx = ""; return }
+    if (match(s, /^[ \t]*from[ \t]+[.]*([A-Za-z_][A-Za-z0-9_.]*)?[ \t]+import[ \t]/)) {
+        x = substr(s, RSTART, RLENGTH); sub(/^[ \t]*from[ \t]+/, "", x); sub(/[ \t]+import[ \t]$/, "", x)
+        m = substr(s, RSTART + RLENGTH)
+        if (x !~ /^[.]*$/) emitmod(x)
+        fromnames(x, m)
+        sub(/#.*/, "", m)
+        if (m ~ /\(/ && m !~ /\)/) { impx = x; impx_paren = 1 }
+        else if (m ~ /\\[ \t]*$/) { impx = x; impx_paren = 0 }
     } else if (s ~ /^[ \t]*import[ \t]/) {
         m = s; sub(/^[ \t]*import[ \t]+/, "", m); sub(/#.*/, "", m)
         n = split(m, a, ",")
-        for (i = 1; i <= n; i++) { sub(/^[ \t]+/, "", a[i]); sub(/[ \t.].*$/, "", a[i]); if (a[i] ~ /^[A-Za-z_][A-Za-z0-9_]*$/) printf "P\t%s\n", a[i] }
+        for (i = 1; i <= n; i++) { sub(/^[ \t]+/, "", a[i]); sub(/[ \t].*$/, "", a[i]); emitmod(a[i]) }
     }
+}
+# the prerequisites of a rule: each word that can name a target
+function prereqs(r,    n, k, pr) {
+    sub(/#.*/, "", r); gsub(/[|\\]/, " ", r)
+    n = split(r, pr, /[ \t]+/)
+    for (k = 1; k <= n; k++) if (pr[k] ~ /^[A-Za-z0-9_.\/-]+$/) printf "M\t%s\n", pr[k]
 }
 BEGIN {
     # the caller passes these through the environment: awk -v would make a backslash in a path an escape
@@ -149,8 +207,10 @@ BEGIN {
     if (target != "") kind = "make"
     else if (name ~ /\.py$/) kind = "python"
     else if (name ~ /\.(sh|bash|mk)$/ || (name ~ /\.(yml|yaml)$/ && name ~ /^(\.github|ci)\//)) kind = "code"
+    # a local action runs wherever it sits
+    else if (name ~ /(^|\/)action\.ya?ml$/) kind = "code"
     else kind = ""
-    inrec = 0; found = 0
+    inrec = 0; found = 0; rcont = 0; pcont = 0; impx = ""
 }
 NR == 1 && target == "" {
     if ($0 ~ /^#!/ && $0 ~ /(python|uv run)/) kind = "python"
@@ -160,11 +220,17 @@ NR == 1 && target == "" {
 kind == "python" { if ($0 !~ /^[ \t]*#/) { imports($0); tokens($0) }; next }
 kind == "code" { code_line($0, NR); next }
 kind == "make" {
+    # a recipe line continued with a backslash goes on, whatever the next line starts with
+    if (inrec && rcont) { s = $0; sub(/^\t/, "", s); rcont = (s ~ /\\$/); code_line(s, NR); next }
+    # a rule line continued with a backslash: the next line holds more prerequisites
+    if (inrec && pcont) { pcont = ($0 ~ /\\$/); prereqs($0); next }
     if ($0 ~ /^\t/) {
-        if (inrec) { s = substr($0, 2); sub(/^[@+-]+/, "", s); code_line(s, NR) }
+        if (inrec) { s = substr($0, 2); sub(/^[@+-]+/, "", s); rcont = (s ~ /\\$/); code_line(s, NR) }
         next
     }
     if ($0 ~ /^[ \t]*$/ || $0 ~ /^#/) next
+    # a conditional does not end a recipe: make keeps the lines inside it in the rule
+    if ($0 ~ /^[ \t]*(ifdef|ifndef|ifeq|ifneq|else|endif)([ \t(]|$)/) next
     inrec = 0
     if ($0 ~ /^[^ \t#][^=:]*:([^=]|$)/) {
         i = index($0, ":"); names = substr($0, 1, i - 1); rest = substr($0, i + 1)
@@ -175,10 +241,9 @@ kind == "make" {
             found = 1
             recipe = ""
             if (index(rest, ";") > 0) { recipe = substr(rest, index(rest, ";") + 1); rest = substr(rest, 1, index(rest, ";") - 1) }
-            sub(/#.*/, "", rest); gsub(/\|/, " ", rest)
-            n = split(rest, pr, /[ \t]+/)
-            for (k = 1; k <= n; k++) if (pr[k] ~ /^[A-Za-z0-9_.\/-]+$/) printf "M\t%s\n", pr[k]
-            if (recipe != "") code_line(recipe, NR)
+            else pcont = (rest ~ /\\$/)
+            prereqs(rest)
+            if (recipe != "") { rcont = (recipe ~ /\\$/); code_line(recipe, NR) }
         }
     }
     next
@@ -216,9 +281,9 @@ END {
     }
     for (j = 1; j <= bn; j++) { q = bord[j]; if (!(q in hpy) && !(q in claimed)) printf "info  left the release path: %s\n", q }
     if (hi > bi) {
-        printf "RED   interpreter lines on the release path rose %d -> %d\n", bi, hi; red++
+        printf "RED   interpreter uses on the release path rose %d -> %d\n", bi, hi; red++
         for (i = 1; i <= hnn; i++) { n = hnord[i]; if (hnode[n] > bnode[n] + 0) printf "        %s %d -> %d\n", n, bnode[n] + 0, hnode[n] }
-    } else if (hi < bi) printf "info  interpreter lines on the release path fell %d -> %d\n", bi, hi
+    } else if (hi < bi) printf "info  interpreter uses on the release path fell %d -> %d\n", bi, hi
     if (hu > bu) {
         printf "RED   references to a .py the walk cannot find rose %d -> %d\n", bu, hu; red++
         for (i = 1; i <= hu; i++) if (!(huord[i] in bun)) { split(huord[i], kv, "\t"); printf "        %s names %s\n", kv[1], kv[2] }
@@ -228,7 +293,7 @@ END {
         if (be[k] == "read" && he[k] != "read") { printf "RED   entry gone at head: %s\n", k; red++ }
         else if (he[k] == "read" && be[k] != "read") printf "info  entry missing at base: %s\n", k
     }
-    s = sprintf("(python_files %d->%d, python_lines %d->%d, interp_lines %d->%d, unresolved_py %d->%d)", bn, hn, bsum, hsum, bi, hi, bu, hu)
+    s = sprintf("(python_files %d->%d, python_lines %d->%d, interp_uses %d->%d, unresolved_py %d->%d)", bn, hn, bsum, hsum, bi, hi, bu, hu)
     if (red) { printf "RED   RELPY %d finding(s) base=%s head=%s %s\n", red, b12, h12, s; exit 1 }
     printf "GREEN RELPY base=%s head=%s: no new Python on the release path %s\n", b12, h12, s
 }
@@ -261,7 +326,7 @@ resolve() {
             if [ -n "$f" ]; then enq "$f" "$1"; hit=1; fi
         done <<< "${bybase[$5]}"
     fi
-    if [ "$hit" = 0 ]; then case "$2" in *.py) printf '%s\t%s\n' "$1" "$2" >> "$out/unres.tsv" ;; esac; fi
+    if [ "$hit" = 0 ]; then case "$2" in *.py) printf '%s\t%s\n' "$1" "$2" >> "$out/unres.tsv" || werr=1 ;; esac; fi
     return 0
 }
 
@@ -275,11 +340,20 @@ module() {
     return 0
 }
 
+# NODE PATH: a relative import, already resolved against the importer's directory
+relmodule() {
+    local c
+    for c in "$2.py" "$2/__init__.py"; do
+        if [ -n "${blob[$c]+x}" ]; then enq "$c" "$1"; return 0; fi
+    done
+    return 0
+}
+
 # REV OUT: walk the release path at REV into OUT: entries.tsv (step entry read|missing), nodes.tsv
-# (node kind via), py.tsv (node blob lines via), interp.tsv (node line text) and unres.tsv (node token).
+# (node kind via), py.tsv (node blob lines via), interp.tsv (node line text, once per interpreter use) and unres.tsv (node token).
 # Returns 2, having said why, when the tree, a blob or the scanner could not be read.
 walk() {
-    local rev="$1" out="$2" meta path step entry node name target d b kind nlines tag f1 f2 f3 f4 p state qi=0
+    local rev="$1" out="$2" meta path step entry node name target d b kind nlines tag f1 f2 f3 f4 p state qi=0 werr=0
     local -A blob=() bybase=() seen=() via=() nkind=() dirn=()
     local -a queue=() order=()
     if ! mkdir -p -- "$out"; then printf 'FAIL  RELPY not measured: cannot make %s\n' "$out"; return 2; fi
@@ -321,16 +395,17 @@ walk() {
                 case "$tag" in
                     K) kind="$f1" ;;
                     N) nlines="$f1" ;;
-                    I) printf '%s\t%s\t%s\n' "$node" "$f1" "$f2" >> "$out/interp.tsv" ;;
+                    I) printf '%s\t%s\t%s\n' "$node" "$f1" "$f2" >> "$out/interp.tsv" || werr=1 ;;
                     T) resolve "$node" "$f1" "$f2" "$f3" "$f4" ;;
                     M) enq "Makefile:$f1" "$node"; if [ -n "${blob[$f1]+x}" ]; then enq "$f1" "$node"; fi ;;
                     P) module "$node" "$d" "$f1" ;;
+                    R) relmodule "$node" "$f1" ;;
                 esac
             done < "$out/rec"
         fi
         nkind[$node]="$kind"
-        printf '%s\t%s\t%s\n' "$node" "$kind" "${via[$node]}" >> "$out/nodes.tsv"
-        if [ "$kind" = python ]; then printf '%s\t%s\t%s\t%s\n' "$node" "$b" "$nlines" "${via[$node]}" >> "$out/py.tsv"; fi
+        printf '%s\t%s\t%s\n' "$node" "$kind" "${via[$node]}" >> "$out/nodes.tsv" || werr=1
+        if [ "$kind" = python ]; then printf '%s\t%s\t%s\t%s\n' "$node" "$b" "$nlines" "${via[$node]}" >> "$out/py.tsv" || werr=1; fi
     done
     while read -r step entry; do
         if [ -z "$entry" ]; then continue; fi
@@ -340,8 +415,10 @@ walk() {
             */) if [ "${dirn[$entry]:-0}" -ge 1 ]; then state=read; fi ;;
             *) if [ -n "${blob[$entry]+x}" ]; then state=read; fi ;;
         esac
-        printf '%s\t%s\t%s\n' "$step" "$entry" "$state" >> "$out/entries.tsv"
+        printf '%s\t%s\t%s\n' "$step" "$entry" "$state" >> "$out/entries.tsv" || werr=1
     done <<< "$ENTRIES"
+    # a record that could not be written lowers a count, so a failed write is not measured
+    if [ "$werr" != 0 ]; then printf 'FAIL  RELPY not measured: cannot write the walk of %s into %s\n' "$rev" "$out"; return 2; fi
     return 0
 }
 
@@ -355,7 +432,7 @@ counts() {
         FILENAME == "py.tsv" { pf++; pl += $3 }
         FILENAME == "interp.tsv" { il++ }
         FILENAME == "unres.tsv" { u++ }
-        END { printf "entries=%d read=%d missing=%d not_read=%d nodes=%d python_files=%d python_lines=%d interp_lines=%d unresolved_py=%d\n", e + nr, r, m, nr, n, pf, pl, il, u }
+        END { printf "entries=%d read=%d missing=%d not_read=%d nodes=%d python_files=%d python_lines=%d interp_uses=%d unresolved_py=%d\n", e + nr, r, m, nr, n, pf, pl, il, u }
     ' entries.tsv nodes.tsv py.tsv interp.tsv unres.tsv)
 }
 
@@ -377,7 +454,7 @@ inventory() {
     printf '%s\n' "$NOT_READ" | awk 'NF { s = $1; t = $0; sub(/^[^ ]+ +/, "", t); printf "  %-9s %-9s %s\n", "not read", s, t }'
     printf 'python files (lines  path  via)\n'
     awk -F'\t' '{ printf "  %5d  %s  via %s\n", $3, $1, $4 }' < "$WORK/at/py.tsv"
-    printf 'interpreter lines (node:line  text)\n'
+    printf 'interpreter uses (node:line  text)\n'
     awk -F'\t' '{ printf "  %s:%s  %s\n", $1, $2, $3 }' < "$WORK/at/interp.tsv"
     printf 'references to a .py the walk cannot find (node  token)\n'
     awk -F'\t' '{ printf "  %s  %s\n", $1, $2 }' < "$WORK/at/unres.tsv"
@@ -518,6 +595,43 @@ FX
         printf 'id: demo\nrun: python3 scripts/tools/offpath.py\n' | put contracts/demo.yaml && commit v-data-yaml || return 2
     variant v-ci-yaml && printf '      - run: bash scripts/ci/run.sh ci/sections.yml\n' >> "$r/.github/workflows/ci.yml" &&
         printf 'gate:\n  run: python3 -m pytest\n' | put ci/sections.yml && commit v-ci-yaml || return 2
+    # round 1 of the review: each is a way Python could join the path that the walk did not see
+    variant v-recipe-cond &&
+        printf 'publish: prep\n\tcd scripts/lib && python3 universe.py\nifdef X\n\tpython3 -V\nendif\nprep:\n\t@echo prep\ndanger:\n\tpython3 scripts/tools/offpath.py\n' | put Makefile &&
+        commit v-recipe-cond || return 2
+    variant v-prereq-cont &&
+        printf 'publish: prep \\\n  extra\n\tcd scripts/lib && python3 universe.py\nprep:\n\t@echo prep\nextra:\n\tpython3 -V\ndanger:\n\tpython3 scripts/tools/offpath.py\n' | put Makefile &&
+        commit v-prereq-cont || return 2
+    variant v-recipe-cont &&
+        printf 'publish: prep\n\tcd scripts/lib && python3 universe.py && \\\necho more; python3 -V\nprep:\n\t@echo prep\ndanger:\n\tpython3 scripts/tools/offpath.py\n' | put Makefile &&
+        commit v-recipe-cont || return 2
+    variant v-make-upper && printf 'make Release\n' >> "$r/scripts/dogfood.sh" &&
+        printf 'publish: prep\n\tcd scripts/lib && python3 universe.py\nprep:\n\t@echo prep\nRelease:\n\tpython3 -V\ndanger:\n\tpython3 scripts/tools/offpath.py\n' | put Makefile &&
+        commit v-make-upper || return 2
+    variant v-make-after && printf 'make danger -C docs\n' >> "$r/scripts/dogfood.sh" && commit v-make-after || return 2
+    variant v-extless && printf 'tools/gen --run\n' >> "$r/scripts/dogfood.sh" &&
+        printf '#!/usr/bin/env python3\nprint(1)\n' | put tools/gen && commit v-extless || return 2
+    variant v-uv-shebang && printf '#!/usr/bin/env -S uv run --script\nprint(1)\n' | put scripts/release/uvtool && commit v-uv-shebang || return 2
+    variant v-action-out && printf '      - uses: ./actions/py\n' >> "$r/.github/workflows/ci.yml" &&
+        printf 'name: py\nruns:\n  using: composite\n  steps:\n    - run: python3 -V\n      shell: bash\n' |
+        put actions/py/action.yml && commit v-action-out || return 2
+    variant v-dotted && printf 'from pkg.sub import x\n' >> "$r/scripts/lib/judge.py" && printf '' | put scripts/lib/pkg/__init__.py &&
+        printf 'x = 1\n' | put scripts/lib/pkg/sub.py && commit v-dotted || return 2
+    variant v-relative && printf 'from . import newmod\n' >> "$r/scripts/lib/judge.py" && printf 'N = 1\n' | put scripts/lib/newmod.py &&
+        commit v-relative || return 2
+    variant v-paren && printf 'from pkg2 import (\n    a,\n    b,\n)\n' >> "$r/scripts/lib/judge.py" &&
+        printf 'B = 1\n' | put scripts/lib/pkg2/b.py && commit v-paren || return 2
+    variant v-pyvar2 && printf '"$PYTHON" -m json.tool < x\necho "${PIPESTATUS[0]}" "$COPY" "$PYPI_URL"\n' >> "$r/scripts/dogfood.sh" &&
+        commit v-pyvar2 || return 2
+    variant v-twice && swap scripts/release/autopilot.sh "python3 -c 'print(1)'" "python3 -c 'print(1)'; python3 -V" && commit v-twice || return 2
+    variant v-two-copies && fx mv scripts/lib/helper.py scripts/lib/helper2.py &&
+        cp -- "$r/scripts/lib/helper2.py" "$r/scripts/lib/helper3.py" &&
+        swap scripts/lib/judge.py 'import helper' 'import helper2, helper3' && commit v-two-copies || return 2
+    variant v-cycle && printf '#!/usr/bin/env bash\nbash scripts/release/b.sh\n' | put scripts/release/a.sh &&
+        printf '#!/usr/bin/env bash\nbash scripts/release/a.sh\n' | put scripts/release/b.sh && commit v-cycle || return 2
+    # the work tree is left dirty: an edit to a release script and an untracked release script, both
+    # running Python; every row reads at a revision, so neither may show
+    printf 'python3 -V\n' >> "$r/scripts/dogfood.sh" && printf 'python3 -V\n' > "$r/scripts/release/dirty.sh" || return 2
     # a copy of the repository with one blob of main deleted: nothing in it can be measured
     cp -a -- "$r" "$tmp/broken" || return 2
     b="$(git -C "$tmp/broken" rev-parse main:scripts/dogfood.sh)" || return 2
@@ -525,25 +639,25 @@ FX
     rm -f -- "${obj:?}"
 
     local -a at=(--repo "$r")
-    row 'inventory: the counts of the fixture path' 0 ' entries=12 read=10 missing=0 not_read=2 nodes=17 python_files=3 python_lines=4 interp_lines=3 unresolved_py=0' -- --inventory --rev main "${at[@]}"
+    row 'inventory: the counts of the fixture path' 0 ' entries=12 read=10 missing=0 not_read=2 nodes=17 python_files=3 python_lines=4 interp_uses=3 unresolved_py=0' -- --inventory --rev main "${at[@]}"
     row 'inventory: a module run by its bare name from a make recipe' 0 'scripts/lib/universe.py  via Makefile:publish' -- --inventory --rev main "${at[@]}"
     row 'inventory: a script path relative to the script that names it' 0 'scripts/lib/judge.py  via scripts/check_model_ladder.sh' -- --inventory --rev main "${at[@]}"
     row 'inventory: a module imported beside its importer' 0 'scripts/lib/helper.py  via scripts/lib/judge.py' -- --inventory --rev main "${at[@]}"
     row 'inventory: a data file is on the path and never scanned' 0 '!offpath' -- --inventory --rev main "${at[@]}"
-    row 'inventory: a comment that names python is not an interpreter line' 0 '!scripts/release/lib.sh:' -- --inventory --rev main "${at[@]}"
-    row 'inventory: a python string in a .py is not an interpreter line' 0 '!universe.py:' -- --inventory --rev main "${at[@]}"
+    row 'inventory: a comment that names python is not an interpreter use' 0 '!scripts/release/lib.sh:' -- --inventory --rev main "${at[@]}"
+    row 'inventory: a python string in a .py is not an interpreter use' 0 '!universe.py:' -- --inventory --rev main "${at[@]}"
     row 'inventory: the steps no file in this repository runs' 0 'not read  S04       the clean-room job' -- --inventory --rev main "${at[@]}"
     row 'inventory: an entry the tree does not have is printed' 0 'MISSING   S09       scripts/dogfood.sh' -- --inventory --rev v-rename-entry "${at[@]}"
     row 'check: a tree against itself is GREEN' 0 'GREEN RELPY' -- --check --base main --head main "${at[@]}"
     row 'FALSIFIER: a new .py run by its path, the word python never said' 1 'RED   new Python file on the release path: scripts/lib/newtool.py' -- --check --base main --head v-newpy "${at[@]}"
-    row 'a python line added to a release script' 1 'RED   interpreter lines on the release path rose 3 -> 4' -- --check --base main --head v-inline "${at[@]}"
+    row 'a python line added to a release script' 1 'RED   interpreter uses on the release path rose 3 -> 4' -- --check --base main --head v-inline "${at[@]}"
     row 'a release script now starts a script that runs Python' 1 'RED   new Python file on the release path: scripts/tools/offpath.py' -- --check --base main --head v-reach-offpath "${at[@]}"
-    row 'a python line removed is GREEN, and said' 0 'info  interpreter lines on the release path fell 3 -> 2' -- --check --base main --head v-fell "${at[@]}"
-    row 'python added to a script off the path is GREEN' 0 'interp_lines 3->3, unresolved_py 0->0)' -- --check --base main --head v-offpath-py "${at[@]}"
-    row 'comments that name python are GREEN' 0 'interp_lines 3->3, unresolved_py 0->0)' -- --check --base main --head v-comment "${at[@]}"
+    row 'a python line removed is GREEN, and said' 0 'info  interpreter uses on the release path fell 3 -> 2' -- --check --base main --head v-fell "${at[@]}"
+    row 'python added to a script off the path is GREEN' 0 'interp_uses 3->3, unresolved_py 0->0)' -- --check --base main --head v-offpath-py "${at[@]}"
+    row 'comments that name python are GREEN' 0 'interp_uses 3->3, unresolved_py 0->0)' -- --check --base main --head v-comment "${at[@]}"
     row 'an entry renamed away is RED' 1 'RED   entry gone at head: S09 scripts/dogfood.sh' -- --check --base main --head v-rename-entry "${at[@]}"
     row 'an entry that appears at head is GREEN, and said' 0 'info  entry missing at base: S09 scripts/dogfood.sh' -- --check --base v-rename-entry --head main "${at[@]}"
-    row 'the interpreter behind a default, ${PY:-python3}' 1 'RED   interpreter lines on the release path rose 3 -> 4' -- --check --base main --head v-pyvar "${at[@]}"
+    row 'the interpreter behind a default, ${PY:-python3}' 1 'RED   interpreter uses on the release path rose 3 -> 5' -- --check --base main --head v-pyvar "${at[@]}"
     row 'a module imported beside a release .py' 1 'RED   new Python file on the release path: scripts/lib/extra.py' -- --check --base main --head v-sibling-import "${at[@]}"
     row 'a make target reached by $(MAKE) from a release target' 1 'RED   new Python file on the release path: scripts/tools/offpath.py' -- --check --base main --head v-make-recursion "${at[@]}"
     row 'a .py that moved, byte for byte, is GREEN' 0 'info  moved: scripts/lib/helper.py -> scripts/lib/helper2.py' -- --check --base main --head v-move "${at[@]}"
@@ -551,11 +665,26 @@ FX
     row 'a .py swapped for one with other bytes is RED' 1 'RED   new Python file on the release path: scripts/lib/other.py' -- --check --base main --head v-swap "${at[@]}"
     row 'a copy whose source is still on the path is RED' 1 'RED   new Python file on the release path: scripts/lib/helper_copy.py' -- --check --base main --head v-copy "${at[@]}"
     row 'a reference to a .py that is not tracked' 1 'RED   references to a .py the walk cannot find rose 0 -> 1' -- --check --base main --head v-unres "${at[@]}"
-    row 'a local action reached from a workflow step' 1 '.github/actions/setup/action.yml 0 -> 1' -- --check --base main --head v-action "${at[@]}"
-    row 'make -C runs another Makefile: no root target is followed' 0 'interp_lines 3->3, unresolved_py 0->0)' -- --check --base main --head v-make-C "${at[@]}"
-    row 'a YAML file a release script reads is data, never scanned' 0 'python_files 3->3, python_lines 4->4, interp_lines 3->3, unresolved_py 0->0)' -- --check --base main --head v-data-yaml "${at[@]}"
-    row 'a CI definition under ci/ is scanned like a workflow' 1 'ci/sections.yml 0 -> 1' -- --check --base main --head v-ci-yaml "${at[@]}"
-    row 'uv is an interpreter word; setup-uv is not' 1 'RED   interpreter lines on the release path rose 3 -> 4' -- --check --base main --head v-uv "${at[@]}"
+    row 'a local action reached from a workflow step' 1 '.github/actions/setup/action.yml 0 -> 2' -- --check --base main --head v-action "${at[@]}"
+    row 'make -C runs another Makefile: no root target is followed' 0 'interp_uses 3->3, unresolved_py 0->0)' -- --check --base main --head v-make-C "${at[@]}"
+    row 'a YAML file a release script reads is data, never scanned' 0 'python_files 3->3, python_lines 4->4, interp_uses 3->3, unresolved_py 0->0)' -- --check --base main --head v-data-yaml "${at[@]}"
+    row 'a CI definition under ci/ is scanned like a workflow' 1 'ci/sections.yml 0 -> 2' -- --check --base main --head v-ci-yaml "${at[@]}"
+    row 'uv is an interpreter word; setup-uv is not' 1 'RED   interpreter uses on the release path rose 3 -> 4' -- --check --base main --head v-uv "${at[@]}"
+    row 'a recipe line inside a make conditional is still in the recipe' 1 'RED   interpreter uses on the release path rose 3 -> 4' -- --check --base main --head v-recipe-cond "${at[@]}"
+    row 'a prerequisite on a continued rule line is followed' 1 'Makefile:extra 0 -> 1' -- --check --base main --head v-prereq-cont "${at[@]}"
+    row 'a recipe line continued with a backslash is still in the recipe' 1 'RED   interpreter uses on the release path rose 3 -> 4' -- --check --base main --head v-recipe-cont "${at[@]}"
+    row 'a make target whose name starts with a capital is followed' 1 'Makefile:Release 0 -> 1' -- --check --base main --head v-make-upper "${at[@]}"
+    row 'make TARGET -C DIR runs another Makefile: no root target' 0 'interp_uses 3->3, unresolved_py 0->0)' -- --check --base main --head v-make-after "${at[@]}"
+    row 'an extensionless file outside scripts/, run by its path' 1 'RED   new Python file on the release path: tools/gen' -- --check --base main --head v-extless "${at[@]}"
+    row 'a file whose #! line runs uv run is Python' 1 'RED   new Python file on the release path: scripts/release/uvtool' -- --check --base main --head v-uv-shebang "${at[@]}"
+    row 'a local action outside .github/ is followed and scanned' 1 'actions/py/action.yml 0 -> 1' -- --check --base main --head v-action-out "${at[@]}"
+    row 'a dotted import reaches the submodule' 1 'RED   new Python file on the release path: scripts/lib/pkg/sub.py' -- --check --base main --head v-dotted "${at[@]}"
+    row 'from . import NAME reaches the module beside the importer' 1 'RED   new Python file on the release path: scripts/lib/newmod.py' -- --check --base main --head v-relative "${at[@]}"
+    row 'a parenthesised import list over several lines' 1 'RED   new Python file on the release path: scripts/lib/pkg2/b.py' -- --check --base main --head v-paren "${at[@]}"
+    row 'an interpreter variable counts; PIPESTATUS, COPY, PYPI_URL do not' 1 'RED   interpreter uses on the release path rose 3 -> 4' -- --check --base main --head v-pyvar2 "${at[@]}"
+    row 'a second python call on a counted line counts' 1 'RED   interpreter uses on the release path rose 3 -> 4' -- --check --base main --head v-twice "${at[@]}"
+    row 'one base file covers one move: the second copy has joined' 1 'RED   new Python file on the release path: scripts/lib/helper3.py' -- --check --base main --head v-two-copies "${at[@]}"
+    row 'a cycle of scripts ends the walk' 0 'interp_uses 3->3, unresolved_py 0->0)' -- --check --base main --head v-cycle "${at[@]}"
     row 'a blob the walk cannot read: not measured, never GREEN' 2 'FAIL  RELPY not measured: cannot read scripts/dogfood.sh' -- --inventory --rev main --repo "$tmp/broken"
     row 'a check that cannot read a blob: not measured' 2 'not measured' -- --check --base main --head main --repo "$tmp/broken"
     row 'caller: --check without --base' 3 '--check needs --base' -- --check "${at[@]}"
@@ -594,20 +723,37 @@ mutants() {
             *) printf '  BROKE %-34s exit %s with no broken row: not a kill\n%s\n' "$name" "$rc" "$o"; fail=$((fail + 1)) ;;
         esac
     done <<'MUTANTS'
-interpreter_word_blind      s/:-)(python(3/:-)(pythonQ(3/
+interpreter_word_blind      s/(python(\[0-9\]+/(pythonQ([0-9]+/
+second_use_uncounted        s/n++; t = substr(t, RSTART + RLENGTH - 1)/n++; t = ""/
+interp_variable_blind       s/(PY|PYTHON|PIP|PYTEST|py|python|pip|pytest)/(PYQ)/
 comment_lines_counted       s@if (s ~ /^\[ \\t\]\*(#|\$)/) return@if (0) return@
 python_strings_counted      s/{ imports(\$0); tokens(\$0) }/{ imports($0); code_line($0, NR) }/
 data_files_scanned          s/{ kind = "data"; exit }/{ kind = "code" }/
 shebang_not_read            s@if (\$0 ~ /^#!/ && \$0 ~ /(python|uv run)/) kind = "python"@if (0) kind = "python"@
+uv_shebang_blind            s@(python|uv run)/) kind@(python)/) kind@
 recipe_never_ends           s/^    inrec = 0$/    inrec = inrec/
-make_C_followed             s@if (w ~ /^-(C|f|-directory|-file|-makefile)/) break@if (0) break@
+conditional_ends_recipe     /(ifdef|ifndef|ifeq|ifneq|else|endif)(/d
+recipe_continuation_dropped s/if (inrec && rcont) {/if (0) {/
+prereq_continuation_dropped s/if (inrec && pcont) {/if (0) {/
+make_C_followed             s@{ other = 1; break }@continue@
+make_C_after_targets        s/if (!other) for/for/
+make_target_lowercase_only  s/if (w ~ \/^\[A-Za-z0-9_\]\[A-Za-z0-9_.-\]\*\$\/) tg/if (w ~ \/^[a-z0-9_][A-Za-z0-9_.-]*$\/) tg/
+path_token_needs_extension  s@ && c !~ /\[A-Za-z0-9_-]\\/\[A-Za-z0-9_.-]/) continue@) continue@
 referrer_path_dropped       s/for c in "\$3" "\$4"; do/for c in "$3"; do/
 bare_name_dropped           s/if \[ "\$hit" = 0 \] && \[ -n "\${bybase\[\$5\]+x}" \]; then/if false; then/
 action_dir_dropped          s@blob\[\$c/action.yml\]+x@blob[$c/action.ymlX]+x@
+action_yml_anywhere_dropped s@action\\.ya?ml\$/) kind@actionQ.ya?ml$/) kind@
 imports_dropped             s/P) module "\$node" "\$d" "\$f1" ;;/P) : ;;/
+dotted_prefix_dropped       s/if (!nd) printf "P/if (!nd \&\& i == 1) printf "P/
+relative_import_dropped     s/R) relmodule "\$node" "\$f1" ;;/R) : ;;/
+from_names_dropped          s/^        fromnames(x, m)$/        x = x/
+paren_import_dropped        s/{ impx = x; impx_paren = 1 }/{ impx_paren = 1 }/
 make_targets_dropped        s/M) enq "Makefile:\$f1" "\$node";/M) :;/
+cycle_unguarded             s/if \[ -n "\${seen\[\$1\]+x}" \]; then return 0; fi/:/
+worktree_read               s@if ! g cat-file blob "\$b" > "\$out/cur"; then@if ! cat -- "$REPO/$name" > "$out/cur"; then@
 new_python_never_flagged    s/if (p in bpy) continue/continue/
 copy_claims_moved           s/if (!(q in hpy) && !(q in claimed) && /if (/
+claim_not_kept              s/if (!(q in hpy) && !(q in claimed) && bpy/if (!(q in hpy) \&\& bpy/
 move_ignores_bytes          s/bpy\[q\] == hpy\[p\]/1/
 interp_ratchet_off          s/if (hi > bi) {/if (0) {/
 unresolved_ratchet_off      s/if (hu > bu) {/if (0) {/
@@ -615,7 +761,7 @@ gone_entry_ignored          s/if (be\[k\] == "read" && he\[k\] != "read")/if (0)
 unread_blob_ignored         s@if ! g cat-file blob "\$b" > "\$out/cur"; then@g cat-file blob "$b" > "$out/cur"; if false; then@
 yaml_outside_ci_scanned     s@ && name ~ /^(\\.github|ci)\\//@@
 ci_yaml_not_code            s@(\\.github|ci)@(\\.github)@
-uv_word_blind               s@|pipx|uvx?)@|pipx)@
+uv_word_blind               s@|pipenv|uvx?|@|pipenv|@
 MUTANTS
     printf -- '--- %s/%s mutants killed ---\n' "$pass" "$((pass + fail))"
     [ "$fail" -eq 0 ]
