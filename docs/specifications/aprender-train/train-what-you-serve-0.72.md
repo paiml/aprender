@@ -793,6 +793,11 @@ up, a new size changes its place, and a row already held on a branch drops out o
     (`accessors.rs:84-94`), `save_cuda_lora_adapter` (`cuda_trainer.rs:3281-3285`, `:3313-3317`) and classify's sync
     (`classify_pipeline/gpu.rs:1186-1206`). A fix that misses one leaves that path's saved B 1/s too small. Not built,
     not measured.
+    The fix also changes what a CUDA run trains whenever alpha ≠ rank, and both defaults are alpha = 2·rank
+    (`apr-cli` `finetune.rs:1378`; `classify_pipeline/mod.rs:206`). AdamW's steps barely depend on the gradient's
+    scale, so early in a run the merged delta comes out about s times today's. A CUDA recipe tuned at alpha ≠ rank was
+    tuned at an effective s of 1, so the fix PR re-checks its learning rate and re-runs any gate whose baseline came
+    from such a run.
     The wgpu pipeline already follows this rule and is an in-tree reference: its forward adds s·(x·A)·B
     (`finetune/wgpu_pipeline.rs:285`, `:812`), its backward scales both products by s (`:1115-1139`), and its export
     writes the raw B with alpha in the metadata (`:686-756`).
@@ -916,7 +921,8 @@ Order: after the whole-file-reads PR, the HRP fold and the MOF fold are all on m
 ## §6 Measurement plan: how each exit criterion is measured `[C]`
 
 L2 deliverable 3 (APR-LOOKAHEAD-001 §4). Written 2026-09-29 from contracts at the branch tips named below, and updated
-2026-10-03 for T2 contract 1.3.0 and QQE-004 in qwen35-qlora-e2e-v1 1.1.0. Each criterion names what measures it, where
+2026-10-03 for T2 contract 1.3.0 and QQE-004 in qwen35-qlora-e2e-v1 1.1.0, and on 2026-10-04 for the chat-format and
+pre-tokenizer rows (K39, K40, K42). Each criterion names what measures it, where
 it runs, what counts as green, and what counts as **NOT MEASURED**. NOT MEASURED is never green (L25). A criterion is
 green only when every row under it is green on **one** pinned `apr` binary (version + sha in the receipt), built from the
 release commit.
@@ -940,6 +946,7 @@ release commit.
 | finetune (NF4) | QQE-004 (1.1.0): QLoRA's mean loss over the last 10 steps ≤ 1.05 × LoRA's, same cell, seed and data. The QLoRA receipt says `recipe.precision = nf4`, the LoRA one bf16 or fp32, and both carry the same `device.uuid` | lambda | ≤ 1.05, **or** a named refusal for qwen3.5 QLoRA (K10) | only one side ran; a side ran on the CPU (true of `-m lora` at `316dee2cd4`, until R15a C4); the sides ran on different GPUs; any other precision pair |
 | finetune (merge) | QQE-010 (PROPOSED, K43): after R4's last step, on the first 20 pinned samples, the merged file read back through row 4b's loader has a training loss ≤ 1.02 × the trained model's (NF4 base + adapter) and < its own base's. The receipt names both bases and the three losses | lambda | ≤ 1.02 and below the base, **or** the merge takes the NF4 base and the receipt says so | the train side was scored on the merge's base (the two bases differ by < 5%); the merged file was not read back through 4b's loader |
 | finetune (LoRA scale) | QQE-011 (PROPOSED, K44): two one-step runs at alpha 16 and 32 (r16); the merged delta read from each written adapter doubles, on CUDA as on the CPU, and each trainer's loss equals its base plus the file's delta | lambda (CUDA), intel (CPU control) | ratio 2 ± 2e-2 and loss within 1e-4, on both devices | the two alphas were equal; Δ was read from the GPU buffers instead of the file |
+| finetune (chat format) | TSC-001..007 (PROPOSED, K39 and K42, `train-serve-chat-format-v1`): the ids `apr finetune` trains on for a sample equal serve's ids for the same messages (the model's own template, thinking off, ending in the eos), whole within `--max-seq-len`, on every route; a route that cannot do that refuses by name. TPP-001..003 (PROPOSED, K40, `tokenizer-pretokenize-parity-v1`): train, `apr run`/`apr serve` and GGUF serve split text as the model's regex does | intel; a wgpu adapter for TSC-007's ids half | 7/7 and 3/3, each planted row RED | branch `la-72/k39-k40-contracts` not on main; TSC-007's ids half while no CI job builds `--features wgpu` |
 | distill | `distill-batch-honesty-v1` (DBH) on the fold-dbh branches: batch B > 1 trains every row or refuses by name | intel (refusal), lambda (batched KD) | refusal green on CPU; batched KD matches B single-row steps | DBH-001/006/007/008 GPU halves not run |
 | merge | `merge-output-fidelity-v1` (MOF): `-o *.apr` writes an APR with metadata and a qwen3_5 arch | intel | MOF-002/003 green; the planted F32-safetensors writer RED | — |
 | quantize | the R8 GDN quantize policy cell, branch `79/r8-gdn-quant-policy` (another session's) | intel | owner's falsifiers green | that branch is not on main; L2 does not measure it |
