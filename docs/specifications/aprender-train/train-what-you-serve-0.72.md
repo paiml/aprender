@@ -761,8 +761,14 @@ up, a new size changes its place, and a row already held on a branch drops out o
       `adapter_gradient_reference` in `qwen35-qlora-e2e-v1` states. AdamW's step does not change when the gradient
       is rescaled (up to ε), so on CUDA B moves 1/s as far per step. `apr finetune` sets alpha = 2·rank
       (`apr-finetune-v1`, `alpha_rank_ratio`), so s = 2 by default. T2's canonical task also says alpha 32 at r16.
+    - The classify pipeline uses the same block. Under `--task classify -m qlora` it passes s at upload
+      (`classify_pipeline/gpu.rs:250`, `:328`) and divides B' by s when it syncs to the CPU (`:1180-1206`), so alpha
+      does not reach classify QLoRA training on CUDA either.
     - Two paths are not affected. The merge adds s·(B'/s)·A = B'·A, which is the function CUDA trained. The
-      transformer trainer's checkpoint saves and restores B' unchanged (`cuda_trainer.rs:3187-3210`, `:3396-3420`).
+      transformer trainer's checkpoint saves and restores B' unchanged (`cuda_trainer.rs:3187-3210`, `:3396-3420`;
+      the upload copies it raw, `cuda_block.rs:5207`). No other reader of that checkpoint's LoRA tensors applies s:
+      the delta-checkpoint loader skips them (`config/train/loader/data.rs:185`), `apr serve` loads no adapters, and
+      `apr eval` only finds the directory (`eval/mod.rs:235-271`).
   - **Effect on 0.72.**
     - One recipe trains one model on CUDA and another on the CPU, and the CUDA one also differs from what PEFT or
       Unsloth train at the same alpha. No gate sees this. `cuda-nf4-train-loss-parity-v1` compares at B = 0, and
@@ -783,7 +789,10 @@ up, a new size changes its place, and a row already held on a branch drops out o
         fails the loss check.
     - QQE-005 now compares dB as AdamW receives it, for the tensor the file stores, and never rescales it.
   - **The fix belongs in C1,** which already rewrites this code. Keep B unscaled on the GPU, apply s in the forward
-    and in both backward products, and drop the ×s at upload and the ÷s at save. Not built, not measured.
+    and in both backward products, and drop the ×s at upload and all three ÷s: the instruct save
+    (`accessors.rs:84-94`), `save_cuda_lora_adapter` (`cuda_trainer.rs:3281-3285`, `:3313-3317`) and classify's sync
+    (`classify_pipeline/gpu.rs:1186-1206`). A fix that misses one leaves that path's saved B 1/s too small. Not built,
+    not measured.
     The wgpu pipeline already follows this rule and is an in-tree reference: its forward adds s·(x·A)·B
     (`finetune/wgpu_pipeline.rs:285`, `:812`), its backward scales both products by s (`:1115-1139`), and its export
     writes the raw B with alpha in the metadata (`:686-756`).
@@ -825,7 +834,7 @@ minutes of worker time still left; `[A]` marks an assumption.
 | 26 | K41 Qwen3.5 rope base and dims | QFR-007: the imported .apr and the GGUF exported from its merge carry the source config's dims and rope base (1e7); QFR-008: `apr export` refuses a qwen35 .apr that disagrees with its source config; QFR-009: the qwen35 rope fallbacks, the 9B preset and the family contract say 1e7 | 40 `[A]` | QFR-007..009 PROPOSED @e6ea295728; desk read at `316dee2cd4` and on #4418's branch, plus header reads: S-R10's `hf.apr` says 10000 with no dims, and its GGUF says 10000, heads 16/8, ctx 0; the published 0.8B to 27B say 1e7; #4418 fixes a fresh import but exports an older .apr at 1e4 with no warning; QFR-006 checks fresh imports only, and QQE-003 cannot see it; re-import S-R10's base after #4418, never reuse it; must be green before R4's 200-step cell and any T4 run |
 | 27 | K42 training window | TSC-005: `train_step` and `evaluate` use a sample whole or refuse and count it, never a prefix; TSC-006: `apr finetune` counts the samples over `--max-seq-len` before step 1 and refuses unless told to drop them; TSC-007: the `--features wgpu` route does the same or refuses by name | 45 + 15 `[A]` | TSC-005/006 PROPOSED @275c009e4a, TSC-007 @c93f1a5112 (pv 0/0); desk read at `316dee2cd4` plus a simulation on the repo's SFT corpora: on main's train tokenizer the default 512 cuts 123 of the 124 curated samples, each losing part of `<\|im_end\|>` and 68 also the `>` that closes `</tool_call>`; with serve's ids all fit; the CUDA step reports only a prompt that fills the window; a `--features wgpu` build trains on raw text at a fixed 512; must be green before R4's 200-step cell and any T4 run |
 | 28 | K43 QLoRA merge base | QQE-010: the merged file scores within 2% of the trained model on the training loss, and below its own base; QQE-003 runs both sides on the base `apr finetune merge` reads | 40 `[A]` | QQE-010 PROPOSED @75f11cd071 on `la-72/r15-receipt-ext` (pv 0/0); desk read at `316dee2cd4`: `-m qlora` trains against the NF4 round trip of the base (`cuda_block.rs:2943`), and `apr finetune merge` adds the adapter to the unquantized file; the round trip moves each of R4's 10 target kinds by 9.2–9.5% (Frobenius, numpy on the bf16 weights); measured after R4's last step, so it gates R4's verdict and any T4 rc built from a QLoRA adapter; T2 unaffected |
-| 29 | K44 LoRA scale in training | QQE-011: doubling alpha doubles the first step's merged delta on CUDA as on the CPU, and the written adapter carries the trainer's own function; QQE-005 compares dB as AdamW receives it | 30 `[A]` | QQE-011 PROPOSED @5956c65452 on `la-72/r15-receipt-ext` (pv 0/0); desk read at `316dee2cd4`: the NF4 block bakes s into B at upload (`cuda_block.rs:3025-3038`) and never applies it again, so alpha is inert on CUDA and B moves 1/s as far per step as on the CPU; the merge and resume are consistent; the fix goes in R15a's C1; must be green before R4's 200-step cell; T2's ratio unaffected |
+| 29 | K44 LoRA scale in training | QQE-011: doubling alpha doubles the first step's merged delta on CUDA as on the CPU, and the written adapter carries the trainer's own function; QQE-005 compares dB as AdamW receives it | 30 `[A]` | QQE-011 PROPOSED @5956c65452 on `la-72/r15-receipt-ext` (pv 0/0); desk read at `316dee2cd4`: the NF4 block bakes s into B at upload (`cuda_block.rs:3025-3038`) and never applies it again, so alpha is inert on CUDA and B moves 1/s as far per step as on the CPU, for instruct and classify QLoRA alike; the merge and resume are consistent; the fix goes in R15a's C1 and drops three ÷s sites; must be green before R4's 200-step cell; T2's ratio unaffected |
 | — | R19 ROADMAP PMAT-711 stale | — | done | shaping @378ec8e920 |
 | — | R20 declarative recipe | — | out | RQ-3: stays in #4002 (E8, 0.75) |
 

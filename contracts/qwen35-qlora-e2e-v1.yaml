@@ -49,7 +49,10 @@ metadata:
     so s = 2 by default. The merge is not affected: it adds s·(B'/s)·A = B'·A, the function CUDA trained.
     Resume is not affected either: the transformer trainer's checkpoint saves B' and restores B' unchanged
     (cuda_trainer.rs:3187-3210, :3396-3420). QQE-011 checks that alpha scales the first step, and QQE-005
-    compares dB as AdamW receives it.
+    compares dB as AdamW receives it. The classify pipeline shares the block: under --task classify -m qlora it
+    passes s at upload (classify_pipeline/gpu.rs:250, :328) and divides B' by s at sync (:1180-1206). So a fix
+    that keeps B unscaled on the GPU drops three divisions by s, that one, the instruct save (accessors.rs:84-94)
+    and save_cuda_lora_adapter (cuda_trainer.rs:3281-3285, :3313-3317); a path it misses saves B 1/s too small.
   references:
   - docs/specifications/aprender-train/train-what-you-serve-0.72.md §R4
   - contracts/qwen35-train-gdn-v1.yaml
