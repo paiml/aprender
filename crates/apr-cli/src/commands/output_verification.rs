@@ -910,8 +910,20 @@ fn golden_output_runtime(
     prompt: &str,
     max_tokens: usize,
 ) -> Result<(String, bool, usize)> {
+    golden_output_runtime_with(path, prompt, max_tokens, None)
+}
+
+/// `golden_output_runtime` with an optional sampler: `None` is greedy, `Some((row, seed))`
+/// is a sampled thinking-ON run (#4696).
+#[cfg(feature = "inference")]
+fn golden_output_runtime_with(
+    path: &Path,
+    prompt: &str,
+    max_tokens: usize,
+    sampled: Option<(&ThinkingSampling, u64)>,
+) -> Result<(String, bool, usize)> {
     use realizar::gguf::MappedGGUFModel;
-    use realizar::{run_inference, InferenceConfig};
+    use realizar::run_inference;
 
     let prompt_tokens = {
         let mapped = MappedGGUFModel::from_path(path)
@@ -923,11 +935,7 @@ fn golden_output_runtime(
         })?
     };
 
-    let infer_config = InferenceConfig::new(path)
-        .with_input_tokens(prompt_tokens)
-        .with_max_tokens(max_tokens)
-        .with_temperature(0.0)
-        .with_top_k(1);
+    let infer_config = runtime_golden_infer_config(path, prompt_tokens, max_tokens, sampled);
     let result = run_inference(&infer_config)
         .map_err(|e| CliError::ValidationFailed(format!("Generation failed: {e}")))?;
     Ok((result.text, result.used_gpu, result.generated_token_count))
@@ -1101,6 +1109,27 @@ fn runtime_thinking_on_leg(
                 )))
             }
         };
+        // #4696: Qwen3.5 is a hybrid, so THIS is the leg its sampled row must reach — the
+        // first build wired only the dense leg, and a live `apr qa` on the Q4_K_M file still
+        // printed the greedy "think block unclosed" text.
+        let sampled = RuntimeSampledOnLeg {
+            path,
+            prompt: on_prompt.as_str(),
+            patterns: &on_patterns,
+            budget: on_budget,
+            gpu_not_run,
+        };
+        if let Some(verdict) = sampled.verdict(&model_file) {
+            return Ok(verdict.map_err(|r| {
+                GateResult::failed(
+                    "golden_output",
+                    &format!("{r} [budget basis — {budget_basis}]"),
+                    None,
+                    None,
+                    start.elapsed(),
+                )
+            }));
+        }
         let (on_text, on_used_gpu, on_tokens) =
             golden_output_runtime(path, on_prompt.as_str(), on_budget)?;
         let generated = on_text.strip_prefix(on_prompt.as_str()).unwrap_or(&on_text);

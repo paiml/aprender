@@ -152,6 +152,30 @@ fn judge_sampled_on_seeds(
     ))
 }
 
+/// Runs every seed. A seed the judge failed is counted; a FAULT (generation error, wrong
+/// backend) ends the leg with its own text. A fault is not a closure rate, and counting
+/// it would let a GPU fallback on all 8 seeds read as "0/8 passed", which the ladder's
+/// known_red clause covers (#4696 sign-off).
+#[cfg(feature = "inference")]
+fn run_sampled_seeds(
+    seeds: &[u64],
+    mut run: impl FnMut(u64) -> std::result::Result<Option<String>, String>,
+) -> std::result::Result<Vec<(u64, Option<String>)>, String> {
+    let mut results = Vec::with_capacity(seeds.len());
+    for &seed in seeds {
+        match run(seed) {
+            Ok(verdict) => results.push((seed, verdict)),
+            Err(fault) => {
+                return Err(format!(
+                    "golden_output_thinking_on: seed {seed} of the sampled leg hit a fault, \
+                     not a closure result (#4696) — {fault}"
+                ))
+            }
+        }
+    }
+    Ok(results)
+}
+
 /// The generation config for one seed: the row's sampler, never greedy. Pure, so the
 /// wiring from the contract row to the sampler is tested without a model.
 #[cfg(feature = "inference")]
@@ -185,28 +209,25 @@ struct SampledOnLeg<'a> {
 
 #[cfg(feature = "inference")]
 impl SampledOnLeg<'_> {
-    /// One seed's verdict: `None` passed. A generation error is that seed's failure.
-    fn seed_verdict(&self, seed: u64) -> Option<String> {
+    /// One seed's verdict: `Ok(None)` passed, `Ok(Some)` the judge failed it, `Err` a fault.
+    fn seed_verdict(&self, seed: u64) -> std::result::Result<Option<String>, String> {
         let gen_config =
             sampled_gen_config(self.rule, self.budget, seed, golden_stop_tokens(self.gguf));
         match golden_gguf_cpu_generate(self.mapped, self.gguf, self.prompt, &gen_config) {
-            Err(e) => Some(format!("generation error: {e}")),
+            Err(e) => Err(format!("generation error: {e}")),
             Ok((_, text)) => {
                 let generated = text.strip_prefix(self.prompt).unwrap_or(&text);
                 let judged = on_leg_judged_text(self.prompt, generated);
-                judge_thinking_on_output(&judged, self.patterns, self.budget)
+                Ok(judge_thinking_on_output(&judged, self.patterns, self.budget))
             }
         }
     }
 
     fn judge(&self) -> Option<String> {
-        let results: Vec<(u64, Option<String>)> = self
-            .rule
-            .seeds
-            .iter()
-            .map(|&seed| (seed, self.seed_verdict(seed)))
-            .collect();
-        judge_sampled_on_seeds(&results, self.rule, self.budget)
+        match run_sampled_seeds(&self.rule.seeds, |seed| self.seed_verdict(seed)) {
+            Err(fault) => Some(fault),
+            Ok(results) => judge_sampled_on_seeds(&results, self.rule, self.budget),
+        }
     }
 }
 
@@ -242,6 +263,84 @@ fn sampled_on_leg_verdict(
         rule: &rule,
     };
     Some(leg.judge())
+}
+
+/// The runtime config for one golden generation: greedy, or the row's sampler at `seed`.
+/// Pure, so the hybrid leg's wiring from the row to the sampler is tested without a model.
+#[cfg(feature = "inference")]
+fn runtime_golden_infer_config(
+    path: &Path,
+    prompt_tokens: Vec<u32>,
+    max_tokens: usize,
+    sampled: Option<(&ThinkingSampling, u64)>,
+) -> realizar::InferenceConfig {
+    let config = realizar::InferenceConfig::new(path)
+        .with_input_tokens(prompt_tokens)
+        .with_max_tokens(max_tokens);
+    match sampled {
+        None => config.with_temperature(0.0).with_top_k(1),
+        Some((rule, seed)) => config
+            .with_temperature(rule.temperature)
+            .with_top_k(rule.top_k)
+            .with_top_p(Some(rule.top_p))
+            .with_seed(seed),
+    }
+}
+
+/// The sampled thinking-ON leg on the HYBRID runtime path, which is where Qwen3.5 is
+/// judged. Each seed keeps the greedy leg's per-run checks: the backend, then the judge.
+#[cfg(feature = "inference")]
+struct RuntimeSampledOnLeg<'a> {
+    path: &'a Path,
+    prompt: &'a str,
+    patterns: &'a [&'a str],
+    budget: usize,
+    gpu_not_run: Option<&'static str>,
+}
+
+#[cfg(feature = "inference")]
+impl RuntimeSampledOnLeg<'_> {
+    /// One seed's verdict: `Ok(None)` passed, `Ok(Some)` the judge failed it, `Err` a fault
+    /// (a generation error, or a backend other than the one this build must use).
+    fn seed_verdict(
+        &self,
+        rule: &ThinkingSampling,
+        seed: u64,
+    ) -> std::result::Result<Option<String>, String> {
+        match golden_output_runtime_with(self.path, self.prompt, self.budget, Some((rule, seed)))
+        {
+            Err(e) => Err(format!("generation error: {e}")),
+            Ok((text, used_gpu, _)) => {
+                runtime_golden_backend(used_gpu, self.gpu_not_run)?;
+                let generated = text.strip_prefix(self.prompt).unwrap_or(&text);
+                let judged = on_leg_judged_text(self.prompt, generated);
+                Ok(judge_thinking_on_output(&judged, self.patterns, self.budget))
+            }
+        }
+    }
+
+    /// `None` when this model's row is greedy. Otherwise `Ok(pass note)` or
+    /// `Err(failure or refusal)`.
+    fn verdict(&self, model_file: &str) -> Option<std::result::Result<String, String>> {
+        let rule = match thinking_on_sampling_for(model_file) {
+            Ok(None) => return None,
+            Ok(Some(rule)) => rule,
+            Err(reason) => return Some(Err(format!("golden_output_thinking_on: {reason}"))),
+        };
+        let results = match run_sampled_seeds(&rule.seeds, |seed| self.seed_verdict(&rule, seed)) {
+            Ok(results) => results,
+            Err(fault) => return Some(Err(fault)),
+        };
+        if let Some(failure) = judge_sampled_on_seeds(&results, &rule, self.budget) {
+            return Some(Err(failure));
+        }
+        let passed = results.iter().filter(|(_, r)| r.is_none()).count();
+        Some(Ok(format!(
+            "; thinking-ON leg sampled (#4696): {passed}/{} seeds passed, {} required",
+            rule.seeds.len(),
+            rule.min_pass
+        )))
+    }
 }
 
 #[cfg(all(test, feature = "inference"))]
@@ -356,6 +455,79 @@ mod golden_thinking_sampling_tests {
         assert_eq!((a.seed, b.seed), (3, 4), "each run carries its own seed");
         assert_eq!(a.stop_tokens, vec![7]);
         assert!(a.temperature > 0.0 && a.top_k > 1, "a sampled run must not be greedy");
+    }
+
+    /// A judged failure is counted toward k/N; a fault stops the leg with text that is
+    /// not a closure rate, so the known_red clause `[0-3]/8 sampled runs passed` cannot
+    /// cover a GPU fallback or a generation error.
+    #[test]
+    fn a_fault_ends_the_leg_and_is_not_counted_as_a_closure_miss() {
+        let judged = run_sampled_seeds(&[0, 1, 2], |s| Ok((s == 1).then(|| "unclosed".into())))
+            .expect("judged failures are results, not faults");
+        assert_eq!(judged.len(), 3);
+        assert_eq!(judged[1], (1, Some("unclosed".to_string())));
+
+        let mut ran = Vec::new();
+        let fault = run_sampled_seeds(&[0, 1, 2], |s| {
+            ran.push(s);
+            if s == 1 {
+                Err("the GPU should have served this model".into())
+            } else {
+                Ok(None)
+            }
+        })
+        .expect_err("a fault ends the leg");
+        assert_eq!(ran, vec![0, 1], "no seed runs after a fault");
+        assert!(fault.contains("seed 1") && fault.contains("GPU should have served"));
+        assert!(
+            !fault.contains("sampled runs passed"),
+            "a fault must not read as a closure rate: {fault}"
+        );
+    }
+
+    /// The hybrid runtime path gets the same sampler, and `None` stays exactly greedy.
+    #[test]
+    fn the_runtime_leg_runs_the_rows_sampler_and_greedy_stays_greedy() {
+        let r = rule(4);
+        let p = Path::new("Qwen3.5-0.8B-Q4_K_M.gguf");
+        let s = runtime_golden_infer_config(p, vec![1, 2], 2048, Some((&r, 5)));
+        assert_eq!(
+            (s.max_tokens, s.temperature, s.top_k, s.top_p, s.seed),
+            (2048, 0.6, 20, Some(0.95), 5)
+        );
+        assert_eq!(s.input_tokens, Some(vec![1, 2]));
+        let g = runtime_golden_infer_config(p, vec![1, 2], 2048, None);
+        assert_eq!((g.temperature, g.top_k), (0.0, 1), "the greedy legs are unchanged");
+    }
+
+    /// #4696's first build reached only the dense leg; Qwen3.5 is judged on the hybrid
+    /// one, so a live run still printed the greedy text. BOTH ON-leg sites must consult
+    /// the sampled row. Scans code above each file's tests, never its own assertions.
+    #[test]
+    fn both_on_leg_sites_consult_the_sampled_row() {
+        let code = |file: &str| {
+            let path = format!("{}/src/commands/{file}", env!("CARGO_MANIFEST_DIR"));
+            let src = std::fs::read_to_string(&path).expect("own source readable");
+            src.split("#[cfg(test)]").next().unwrap_or_default().to_string()
+        };
+        let dense = code("golden_output.rs");
+        let hybrid = code("output_verification.rs");
+        assert!(
+            dense.contains("sampled_on_leg_verdict("),
+            "the dense ON leg must consult the sampled row (#4696)"
+        );
+        assert!(
+            hybrid.contains("sampled.verdict(&model_file)"),
+            "the hybrid ON leg — where Qwen3.5 is judged — must consult the sampled row (#4696)"
+        );
+        let sampled_at = hybrid.find("sampled.verdict(&model_file)").unwrap_or(usize::MAX);
+        let greedy_at = hybrid
+            .find("golden_output_runtime(path, on_prompt.as_str(), on_budget)")
+            .unwrap_or(0);
+        assert!(
+            sampled_at < greedy_at,
+            "the sampled verdict must be taken BEFORE the greedy generation (#4696)"
+        );
     }
 
     /// A row's `sampling` is found by the same glob as its budget, and a table
