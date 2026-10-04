@@ -1,0 +1,406 @@
+{
+  "ticket": "GH-4729",
+  "base": "316dee2cd4b3b3990ad47cc1a7a661c979a4e1d3",
+  "base_resolved": "316dee2cd4b3b3990ad47cc1a7a661c979a4e1d3",
+  "base_note": "no origin/316dee2cd4b3b3990ad47cc1a7a661c979a4e1d3 exists; judged against the local ref",
+  "head": "898a47c22eeb9fb7a2ec369b7b1c881a277d5711",
+  "diff_sha256": "34c163899184a5ed3338ac5cae0d0391597e2c790b5d0f93c5f274fe4807e6c7",
+  "width": 3,
+  "executor": "agy",
+  "prompt_mode": "inline",
+  "prompt_bytes": 6970,
+  "prompt_sha256": "b0aa39c72e418db28a1655843a07c3fe413f936c71fe15461ba70a93e1a8f44e",
+  "author": {
+    "model": "claude-opus-5-5",
+    "family": "claude",
+    "source": "flag"
+  },
+  "agreed": true,
+  "lanes": [
+    {
+      "lane": 1,
+      "status": "SUCCESS",
+      "verdict": "PASS",
+      "summary": "The diff implements the requirements from GH-4729 perfectly. It assigns `pr-review-quorum` to a dedicated `review-light` runner, adds the required exception to `scripts/check_runner_labels.sh` so it passes validation, adds the label to `.github/actionlint.yaml`, and documents everything properly in the roadmaps directory. No runner-side configs were added in the diff.",
+      "findings": [
+        {
+          "claim": "The cause is named from run and job data. Run 37191245180 was queued 09:09:33Z to 14:06:17Z with matching labels, and pre-job.sh admitted it (disk floor passed), so the queue was clean-room pool saturation, not labels or disk",
+          "file": ".github/workflows/pr-review-quorum.yml",
+          "fix": "",
+          "grounding": "cited",
+          "line": 52
+        },
+        {
+          "claim": "The present job runs on [self-hosted, Linux, review-light]. Its steps, permissions, timeout and Arm 4 are unchanged",
+          "file": ".github/workflows/pr-review-quorum.yml",
+          "fix": "",
+          "grounding": "cited",
+          "line": 69
+        },
+        {
+          "claim": "scripts/check_runner_labels.sh accepts review-light as a one-box discriminating label, like perf-solo, and is RED on this workflow if review-light is removed from DISCRIM (mutant run)",
+          "file": "scripts/check_runner_labels.sh",
+          "fix": "",
+          "grounding": "cited",
+          "line": 26
+        },
+        {
+          "claim": ".github/actionlint.yaml lists review-light, and actionlint is clean on pr-review-quorum.yml",
+          "file": ".github/actionlint.yaml",
+          "fix": "",
+          "grounding": "cited",
+          "line": 22
+        },
+        {
+          "claim": "The runner-side follow-up (a second review-light runner, or CPU weight for the one runner) goes to infra as ticket text, not in this diff",
+          "file": "docs/roadmaps/entries/GH-4729.yaml",
+          "fix": "",
+          "grounding": "cited",
+          "line": 15
+        }
+      ],
+      "raw_bytes": 5893,
+      "err_bytes": 0,
+      "envelope_status": "SUCCESS",
+      "verdict_source": "structured_output",
+      "grounding_check": "parity",
+      "role": "independent",
+      "model": "gemini-3.1-pro-high",
+      "model_measured": "gemini-3.1-pro-high",
+      "model_source": "measured",
+      "family": "gemini",
+      "executor": "agy",
+      "brief_sha256": "b0aa39c72e418db28a1655843a07c3fe413f936c71fe15461ba70a93e1a8f44e",
+      "trace": {
+        "input_sha256": "67d1a4e71a95857725b5898f49980490b095b35f9e97fccad0b68f4b89466d97",
+        "output_sha256": "947e3c47710805c90a96365d43210480fb060fd8d346f9ae125e66f02a68dea4",
+        "store": null,
+        "store_why": "almacen not provisioned yet (infra-27): the blobs stay in the round's gitignored .lanes dir"
+      },
+      "fallback": {
+        "judged_by": "gemini-3.1-pro-high",
+        "exhausted": false,
+        "attempts": [
+          {
+            "model": "gemini-3.1-pro-high",
+            "family": "gemini",
+            "outcome": "answered"
+          }
+        ],
+        "skipped": []
+      }
+    },
+    {
+      "lane": 2,
+      "status": "SUCCESS",
+      "verdict": "PASS",
+      "summary": "The diff does what GH-4729 asks. `present` moves to `[self-hosted, Linux, review-light]`, `check_runner_labels.sh` accepts `review-light` as a one-box label, and `actionlint.yaml` lists it. Steps, permissions, timeout and Arm 4 are untouched. I found nothing forbidden by the ticket and no test or gate that contradicts it. Two caveats are not provable from the diff: that a `review-light` runner exists, and that the mutant run was done.",
+      "findings": [
+        {
+          "file": ".github/workflows/pr-review-quorum.yml",
+          "line": 71,
+          "claim": "The diff asserts one dedicated `review-light` runner already exists and has run aprender jobs, but nothing in it shows that. The ticket defers any second runner to infra. If no online runner carries the label, `present` queues forever, which is worse than the current 2.5-5 h wait. Merge should wait until infra confirms the runner is online.",
+          "grounding": "asserted",
+          "fix": "Before arming merge, confirm one online runner carries `review-light` (e.g. `gh api` runners list). Merge only then."
+        },
+        {
+          "file": "scripts/check_runner_labels.sh",
+          "line": 26,
+          "claim": "Acceptance criterion 'RED on this workflow if review-light is removed from DISCRIM (mutant run)' has no evidence in the diff. The code change is correct: the label is added to DISCRIM, and the workflow's `runs-on` line contains only `self-hosted, Linux, review-light`, so removing the label would make the guard fail. The receipt must still carry the mutant result.",
+          "grounding": "measured"
+        },
+        {
+          "file": "scripts/check_runner_labels.sh",
+          "line": 33,
+          "claim": "The error and FAIL text still say 'need clean-room or a GPU/macOS label' and the header comment lists only clean-room, GPU and macOS labels. They omit perf-solo, mini-builder and now review-light. This is cosmetic and was already stale.",
+          "grounding": "cited"
+        }
+      ],
+      "raw_bytes": 4513,
+      "err_bytes": 0,
+      "envelope_status": "SUCCESS",
+      "verdict_source": "structured_output",
+      "executor": "claude-code",
+      "grounding_check": "parity",
+      "role": "counted",
+      "model": "claude-sonnet-5-5",
+      "model_measured": "claude-sonnet-5-5",
+      "model_source": "flag",
+      "family": "claude",
+      "brief_sha256": "b0aa39c72e418db28a1655843a07c3fe413f936c71fe15461ba70a93e1a8f44e",
+      "trace": {
+        "input_sha256": "9a5eeef31cbfe3074e6f274835fe38406ae5be447ea0a0a3d60b54248ec63306",
+        "output_sha256": "2a621b4244711083d3c50850eba6bb0435eb83e92f88a7e94179f6701f5a2368",
+        "store": null,
+        "store_why": "almacen not provisioned yet (infra-27): the blobs stay in the round's gitignored .lanes dir"
+      },
+      "fallback": {
+        "judged_by": "claude-sonnet-5-5",
+        "exhausted": false,
+        "attempts": [
+          {
+            "model": "claude-sonnet-5-5",
+            "family": "claude",
+            "outcome": "answered"
+          }
+        ],
+        "skipped": []
+      }
+    },
+    {
+      "lane": 3,
+      "status": "SUCCESS",
+      "verdict": "PASS",
+      "summary": "Diff correctly implements GH-4729: moves `present` job from clean-room FIFO to dedicated review-light runner, citing run 37191245180 (4h57m queued), with complete script and actionlint validation.",
+      "findings": [],
+      "raw_bytes": 1329,
+      "err_bytes": 0,
+      "envelope_status": "SUCCESS",
+      "verdict_source": "structured_output",
+      "executor": "claude-code",
+      "grounding_check": "parity",
+      "role": "counted",
+      "model": "claude-haiku-4-5",
+      "model_measured": "claude-haiku-4-5",
+      "model_source": "flag",
+      "family": "claude",
+      "brief_sha256": "b0aa39c72e418db28a1655843a07c3fe413f936c71fe15461ba70a93e1a8f44e",
+      "trace": {
+        "input_sha256": "00c86eebebd988f575b002e39b5cd8ba3e8f2ba9e5702a5075c3791ad881bf5d",
+        "output_sha256": "77c1f37c936444b5dd9cefb411270ea99f8b093ed01e4e640bca7d794fdf8d5b",
+        "store": null,
+        "store_why": "almacen not provisioned yet (infra-27): the blobs stay in the round's gitignored .lanes dir"
+      },
+      "fallback": {
+        "judged_by": "claude-haiku-4-5",
+        "exhausted": false,
+        "attempts": [
+          {
+            "model": "claude-haiku-4-5",
+            "family": "claude",
+            "outcome": "answered"
+          }
+        ],
+        "skipped": []
+      }
+    }
+  ],
+  "dissent": [],
+  "dedup": [
+    {
+      "file": ".github/actionlint.yaml",
+      "line": 22,
+      "lanes_agreeing": [
+        1
+      ],
+      "claims": [
+        ".github/actionlint.yaml lists review-light, and actionlint is clean on pr-review-quorum.yml"
+      ]
+    },
+    {
+      "file": ".github/workflows/pr-review-quorum.yml",
+      "line": 52,
+      "lanes_agreeing": [
+        1
+      ],
+      "claims": [
+        "The cause is named from run and job data. Run 37191245180 was queued 09:09:33Z to 14:06:17Z with matching labels, and pre-job.sh admitted it (disk floor passed), so the queue was clean-room pool saturation, not labels or disk"
+      ]
+    },
+    {
+      "file": ".github/workflows/pr-review-quorum.yml",
+      "line": 69,
+      "lanes_agreeing": [
+        1
+      ],
+      "claims": [
+        "The present job runs on [self-hosted, Linux, review-light]. Its steps, permissions, timeout and Arm 4 are unchanged"
+      ]
+    },
+    {
+      "file": ".github/workflows/pr-review-quorum.yml",
+      "line": 71,
+      "lanes_agreeing": [
+        2
+      ],
+      "claims": [
+        "The diff asserts one dedicated `review-light` runner already exists and has run aprender jobs, but nothing in it shows that. The ticket defers any second runner to infra. If no online runner carries the label, `present` queues forever, which is worse than the current 2.5-5 h wait. Merge should wait until infra confirms the runner is online."
+      ]
+    },
+    {
+      "file": "docs/roadmaps/entries/GH-4729.yaml",
+      "line": 15,
+      "lanes_agreeing": [
+        1
+      ],
+      "claims": [
+        "The runner-side follow-up (a second review-light runner, or CPU weight for the one runner) goes to infra as ticket text, not in this diff"
+      ]
+    },
+    {
+      "file": "scripts/check_runner_labels.sh",
+      "line": 26,
+      "lanes_agreeing": [
+        1,
+        2
+      ],
+      "claims": [
+        "Acceptance criterion 'RED on this workflow if review-light is removed from DISCRIM (mutant run)' has no evidence in the diff. The code change is correct: the label is added to DISCRIM, and the workflow's `runs-on` line contains only `self-hosted, Linux, review-light`, so removing the label would make the guard fail. The receipt must still carry the mutant result.",
+        "scripts/check_runner_labels.sh accepts review-light as a one-box discriminating label, like perf-solo, and is RED on this workflow if review-light is removed from DISCRIM (mutant run)"
+      ]
+    },
+    {
+      "file": "scripts/check_runner_labels.sh",
+      "line": 33,
+      "lanes_agreeing": [
+        2
+      ],
+      "claims": [
+        "The error and FAIL text still say 'need clean-room or a GPU/macOS label' and the header comment lists only clean-room, GPU and macOS labels. They omit perf-solo, mini-builder and now review-light. This is cosmetic and was already stale."
+      ]
+    }
+  ],
+  "uncovered": [],
+  "coverage_source": "lanes",
+  "partial": false,
+  "partial_reasons": [],
+  "fallback": {
+    "same_family_width": 2,
+    "chain": [
+      {
+        "model": "gemini-3.1-pro-high",
+        "family": "gemini",
+        "disposition": "configured"
+      },
+      {
+        "model": "claude-sonnet-5-5",
+        "family": "claude",
+        "disposition": "claude-code",
+        "why": "run by Claude Code on its own budget: a configured seat runs every round, a fallback step only when every non-Claude family is measured out (PMAT-360, operator standing rule)"
+      },
+      {
+        "model": "claude-haiku-4-5",
+        "family": "claude",
+        "disposition": "claude-code",
+        "why": "run by Claude Code on its own budget: a configured seat runs every round, a fallback step only when every non-Claude family is measured out (PMAT-360, operator standing rule)"
+      },
+      {
+        "model": "qwen3.5",
+        "family": "qwen",
+        "disposition": "not-run",
+        "why": "no quorum.local_lane in the config — the aprender lane has no model to load"
+      }
+    ],
+    "precheck": [
+      {
+        "family": "gemini",
+        "model": "gemini-3.1-pro-high",
+        "probe": 1,
+        "outcome": "live"
+      }
+    ],
+    "degraded": null,
+    "prah": {
+      "source": "install-receipt",
+      "path": "~/.claude/skills/paiml-implement/bin/prah"
+    },
+    "tier1": {
+      "agy_tier1_only": true,
+      "tier1": true,
+      "matched": [
+        ".github/workflows/pr-review-quorum.yml"
+      ],
+      "paths": 4,
+      "patterns": [
+        "^\\.github/workflows/",
+        "(^|/)release[^/]*\\.(ya?ml|sh|rs|toml)$",
+        "cuda|kernel|\\.cu$|\\.ptx$",
+        "(^|/)[^/]*(gate|guard)[^/]*\\.(sh|rs|py)$|^hooks/",
+        "security|secret|credential|(^|/)deny\\.toml$",
+        "^skills/quorum-review/|(^|/)(receipt-lint|roadmap-lint|release-lint|kind-gate|model-gate)[^/]*$|^crates/prah-lint/"
+      ],
+      "builtin": "^skills/quorum-review/|(^|/)skills/paiml-implement/config\\.json$|(^|/)(modellib|lane-reduce|lane-fallback|lane-group|agy-lane|cc-lane|receipt-lint|route|quota)\\.sh$|^crates/prah-lint/"
+    },
+    "bucket": {
+      "ledger": "~/.local/state/paiml-implement/agy-bucket.jsonl",
+      "window_s": 18000,
+      "pace": "off",
+      "buckets": {
+        "gemini": {
+          "bucket": "gemini",
+          "budget": 0,
+          "basis": "ledger: the calls served before the first 429 of the latest window that reached one",
+          "window_start": 1791130449,
+          "window_calls": 2,
+          "window_429": 0,
+          "hour_calls": 2,
+          "share": 1,
+          "want": 2,
+          "state": "empty",
+          "reason": "agy bucket gemini is empty: 2 calls in this window reach its budget 0 (ledger: the calls served before the first 429 of the latest window that reached one)"
+        }
+      },
+      "closed": []
+    }
+  },
+  "auto_merge": {
+    "checked": false,
+    "was_armed": false,
+    "disarmed": false,
+    "note": "no --pr given: nothing to disarm"
+  },
+  "cheap_seat": "claude-haiku-4-5",
+  "advisory_lane": {
+    "state": "unavailable",
+    "counts": false,
+    "row": {
+      "NotRun": "Busy"
+    },
+    "verdict": "unavailable",
+    "why": "no host answered inside the budget",
+    "served_by": null,
+    "gpu_proof": null,
+    "apr": null,
+    "apr_binary_sha256": null,
+    "apr_tag": null,
+    "apr_commit": null,
+    "apr_build_why": null,
+    "model": null,
+    "model_sha256": null,
+    "rc": 2,
+    "wall_s": 0,
+    "collected_s": 333,
+    "budget_s": 196,
+    "budget_basis": "ledger: 2 x p95 98 s over 126 <gpu-host>-cuda Verdict rows",
+    "brief": {
+      "bytes": 6970,
+      "sent_bytes": 7139,
+      "max_bytes": 196608
+    },
+    "trace": {
+      "input_sha256": "2bf7b28c3ad457d877f4ec79fa61d8760ca48b902cd2431fb0c795d58d771d7a",
+      "raw": "advisory.json"
+    },
+    "attempts": [
+      {
+        "host": "<gpu-host>",
+        "ok": false,
+        "wall_s": 0,
+        "error": "busy: executor yielded (unit inactive; last yield: 2026-10-03T00:47:22Z host=<gpu-host> event=stopped gpu-priority lock=/tmp/apr-gpu.priority)",
+        "ts": "2026-10-04T16:28:31.194Z",
+        "wall_ms": 559,
+        "request_id": "01a107be-dc58-70f5-a389-26b711017467",
+        "load1": 4.48,
+        "cold": null
+      }
+    ],
+    "ledger": "~/.local/state/paiml-implement/advisory-ledger.jsonl",
+    "raw": "advisory.json",
+    "agrees_with_counted": null,
+    "counted": "PASS"
+  },
+  "lint": {
+    "ok": true,
+    "output": "receipt complete: kind=artifact lanes=3 author=claude-opus-5-5/claude same_family=2/2"
+  }
+}
