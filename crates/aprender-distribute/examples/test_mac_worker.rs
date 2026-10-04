@@ -1,6 +1,6 @@
 //! Test remote worker on Mac Pro
 //!
-//! Run with: `cargo run --release --features remote --example test_mac_worker`
+//! Run with: `cargo run --release --features remote --example test_mac_worker -- <host:port>`
 
 use repartir::executor::remote::RemoteExecutor;
 use repartir::executor::Executor;
@@ -10,11 +10,15 @@ use repartir::task::{Backend, Task};
 async fn main() -> repartir::error::Result<()> {
     tracing_subscriber::fmt::init();
 
-    println!("Connecting to Mac Pro worker at 192.168.50.100:9000...");
+    let Some(worker) = std::env::args().nth(1) else {
+        eprintln!("Usage: test_mac_worker <host:port>   (e.g. 192.168.50.100:9000)");
+        std::process::exit(2);
+    };
+    println!("Connecting to Mac Pro worker at {worker}...");
 
     // Create remote executor and add worker
     let executor = RemoteExecutor::new().await?;
-    executor.add_worker("192.168.50.100:9000").await?;
+    executor.add_worker(&worker).await?;
 
     println!("Connected! Executor capacity: {} workers", executor.capacity());
 

@@ -12,6 +12,21 @@
 
 use std::time::Instant;
 
+/// Unoptimized builds run the pipeline 10-100x slower: a seq=50 forward pass on
+/// the 4-layer test model takes ~2 s, and the full suite outlasts any sane bound.
+/// They still run every stage, with a reduced workload; timings are only
+/// meaningful from `--release`.
+const REDUCED: bool = cfg!(debug_assertions);
+
+/// `release` iterations in an optimized build, 1 in a debug build.
+fn iters(release: usize) -> usize {
+    if REDUCED {
+        1
+    } else {
+        release
+    }
+}
+
 const RESET: &str = "\x1b[0m";
 const GREEN: &str = "\x1b[32m";
 const YELLOW: &str = "\x1b[33m";
@@ -113,7 +128,8 @@ fn bench_model_configs() {
         ),
     ];
 
-    for (name, config) in &configs {
+    // The 32000-vocab Medium model is skipped in a debug build.
+    for (name, config) in configs.iter().take(if REDUCED { 2 } else { configs.len() }) {
         let start = Instant::now();
         let model = Model::new(config.clone()).expect("model");
         let init_time = start.elapsed().as_secs_f64() * 1000.0;
@@ -145,17 +161,21 @@ fn bench_forward_pass(model: &realizar::layers::Model, _config: &realizar::layer
         "{DIM}\u{2500}\u{2500}\u{2500}\u{2500}\u{2500}\u{2500}\u{2500}\u{2500}\u{2500}\u{2500}\u{2500}\u{2500}\u{2500}\u{2500}\u{2500}\u{2500}\u{2500}\u{2500}\u{2500}\u{2500}\u{2500}\u{2500}\u{2500}\u{2500}\u{2500}\u{2500}\u{2500}\u{2500}\u{2500}\u{2500}\u{2500}\u{2500}\u{2500}\u{2500}\u{2500}\u{2500}\u{2500}\u{2500}\u{2500}\u{2500}\u{2500}\u{2500}\u{2500}\u{2500}\u{2500}\u{2500}\u{2500}\u{2500}\u{2500}\u{2500}\u{2500}\u{2500}\u{2500}\u{2500}\u{2500}\u{2500}\u{2500}\u{2500}\u{2500}\u{2500}\u{2500}\u{2500}\u{2500}\u{2500}\u{2500}{RESET}"
     );
 
-    let seq_lengths = [1, 5, 10, 20, 50];
+    let seq_lengths: &[usize] = if REDUCED {
+        &[1, 5, 10]
+    } else {
+        &[1, 5, 10, 20, 50]
+    };
 
-    for seq_len in seq_lengths {
+    for &seq_len in seq_lengths {
         let tokens: Vec<usize> = (0..seq_len).map(|i| i % 1000).collect();
 
         // Warmup
-        for _ in 0..3 {
+        for _ in 0..iters(3) {
             let _ = model.forward(&tokens);
         }
 
-        let iterations = 10;
+        let iterations = iters(10);
         let start = Instant::now();
         for _ in 0..iterations {
             let _ = model.forward(&tokens).expect("forward");
@@ -183,12 +203,18 @@ fn bench_text_generation(model: &realizar::layers::Model, _config: &realizar::la
     );
 
     let gen_configs = [
-        ("Greedy", GenerationConfig::default()),
+        (
+            "Greedy",
+            GenerationConfig {
+                max_tokens: iters(100),
+                ..GenerationConfig::default()
+            },
+        ),
         (
             "Top-k (k=5)",
             GenerationConfig {
                 cancel: realizar::generate::CancelToken::never(),
-                max_tokens: 20,
+                max_tokens: iters(20),
                 temperature: 1.0,
                 strategy: SamplingStrategy::TopK { k: 5 },
                 eos_token_id: None,
@@ -199,7 +225,7 @@ fn bench_text_generation(model: &realizar::layers::Model, _config: &realizar::la
             "Top-p (p=0.9)",
             GenerationConfig {
                 cancel: realizar::generate::CancelToken::never(),
-                max_tokens: 20,
+                max_tokens: iters(20),
                 temperature: 1.0,
                 strategy: SamplingStrategy::TopP { p: 0.9 },
                 eos_token_id: None,
@@ -253,11 +279,11 @@ fn bench_matrix_ops() {
         let vb = Vector::from_slice(&b);
 
         // Warmup
-        for _ in 0..3 {
+        for _ in 0..iters(3) {
             let _ = va.dot(&vb);
         }
 
-        let iterations = 100;
+        let iterations = iters(100);
         let start = Instant::now();
         for _ in 0..iterations {
             let _ = va.dot(&vb);
@@ -297,11 +323,11 @@ fn bench_matrix_ops() {
         let mb = Matrix::from_vec(k, n, b).expect("test");
 
         // Warmup
-        for _ in 0..3 {
+        for _ in 0..iters(3) {
             let _ = ma.matmul(&mb);
         }
 
-        let iterations = if m * k * n > 1_000_000 { 5 } else { 20 };
+        let iterations = iters(if m * k * n > 1_000_000 { 5 } else { 20 });
         let start = Instant::now();
         for _ in 0..iterations {
             let _ = ma.matmul(&mb).expect("test");
@@ -352,11 +378,11 @@ fn bench_activations() {
 
     for (name, func) in &activations {
         // Warmup
-        for _ in 0..3 {
+        for _ in 0..iters(3) {
             let _ = func(&v);
         }
 
-        let iterations = 50;
+        let iterations = iters(50);
         let start = Instant::now();
         for _ in 0..iterations {
             let _ = func(&v);
@@ -481,7 +507,7 @@ fn bench_throughput_summary(
     // Measure sustained generation throughput
     let gen_config = GenerationConfig {
         cancel: realizar::generate::CancelToken::never(),
-        max_tokens: 50,
+        max_tokens: iters(50),
         ..GenerationConfig::default()
     };
 
@@ -517,6 +543,10 @@ fn bench_throughput_summary(
 
 fn run_pipeline_tests() {
     use realizar::layers::{Model, ModelConfig};
+
+    if REDUCED {
+        println!("{YELLOW}debug build: reduced workload (1 iteration, short sequences, no Medium model); use --release for timings{RESET}\n");
+    }
 
     bench_model_configs();
 

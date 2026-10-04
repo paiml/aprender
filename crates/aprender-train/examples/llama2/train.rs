@@ -227,10 +227,13 @@ fn main() {
 
     // Parse command-line arguments
     let args: Vec<String> = std::env::args().collect();
+    // No default: a bare run used to read a crate-relative path that does not
+    // resolve from the workspace root, and would otherwise start a full training run.
     let config_path = if args.len() > 2 && args[1] == "--config" {
         &args[2]
     } else {
-        "examples/llama2/configs/124m.toml"
+        eprintln!("Usage: llama2-train --config <path.toml>   (e.g. crates/aprender-train/examples/llama2/configs/124m.toml)");
+        std::process::exit(2);
     };
 
     println!("📋 Loading config from {config_path}");

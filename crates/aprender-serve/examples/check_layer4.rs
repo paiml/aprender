@@ -1,7 +1,10 @@
 use realizar::gguf::MappedGGUFModel;
 
 fn main() {
-    let model_path = std::env::args().nth(1).unwrap();
+    let Some(model_path) = std::env::args().nth(1) else {
+        eprintln!("Usage: check_layer4 <model.gguf>");
+        std::process::exit(2);
+    };
     let mapped = MappedGGUFModel::from_path(&model_path).unwrap();
 
     println!("Layer 4 tensor types:");

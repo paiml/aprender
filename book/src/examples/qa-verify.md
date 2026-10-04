@@ -23,7 +23,7 @@ Comprehensive codebase verification (PMAT-QA-RUST-001). Replaces `qa-verify.sh`,
 ## Run
 
 ```bash
-cargo run --example qa_verify
+cargo run --example qa_verify -- --all
 cargo run --example qa_verify -- --section 1
 cargo run --example qa_verify -- --json
 ```
@@ -32,7 +32,7 @@ cargo run --example qa_verify -- --json
 
 ```rust,ignore
 // Run this example:
-//   cargo run --example qa_verify
+//   cargo run --example qa_verify -- --all
 //
 // See the CLI reference and source code in crates/ for implementation details.
 ```

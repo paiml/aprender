@@ -68,7 +68,10 @@ fn main() {
             ..Default::default()
         };
 
-        let result = hunt(Path::new("."), config);
+        // Scoped to one module: "." is the workspace root when run through cargo,
+        // and a debug-build scan of the whole monorepo is minutes.
+        let target = Path::new(env!("CARGO_MANIFEST_DIR")).join("src/bug_hunter");
+        let result = hunt(&target, config);
         let contract_findings: Vec<_> =
             result.findings.iter().filter(|f| f.id.starts_with("BH-CONTRACT")).collect();
 

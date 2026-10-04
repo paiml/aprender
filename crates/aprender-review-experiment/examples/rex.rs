@@ -76,7 +76,7 @@ fn to_exit_code(result: Result<(), String>, label: &str) -> ExitCode {
 /// Prints the top-level usage line and exits 2 (unknown/missing command).
 fn usage() -> ExitCode {
     eprintln!(
-        "usage: rex <prereg|prereg-check|corpus-build|review|not-run|score|admit|admission-check> (see the example docs)"
+        "Usage: rex <prereg|prereg-check|corpus-build|review|not-run|score|admit|admission-check> (see the example docs)"
     );
     ExitCode::from(2)
 }

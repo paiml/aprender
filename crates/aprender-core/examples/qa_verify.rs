@@ -22,7 +22,7 @@
 //! # Usage
 //!
 //! ```bash
-//! cargo run --example qa_verify
+//! cargo run --example qa_verify -- --all
 //! cargo run --example qa_verify -- --section 1
 //! cargo run --example qa_verify -- --json
 //! ```
@@ -349,12 +349,17 @@ fn print_summary(results: &[TestResult], json: bool, elapsed_secs: f64) {
 fn main() {
     let args: Vec<String> = env::args().collect();
     let mut config = QaConfig::default();
+    let mut run_all = false;
 
     let mut i = 1;
     while i < args.len() {
         match args[i].as_str() {
             "--json" => {
                 config.json = true;
+                i += 1;
+            }
+            "--all" => {
+                run_all = true;
                 i += 1;
             }
             "--section" if i + 1 < args.len() => {
@@ -368,6 +373,9 @@ fn main() {
             "--help" | "-h" => {
                 println!("Usage: cargo run --example qa_verify [OPTIONS]");
                 println!("  --json         JSON output");
+                println!(
+                    "  --all          Run every section (each runs whole-workspace cargo gates)"
+                );
                 println!("  --section N    Run specific section (1-4)");
                 println!("  --verbose      Verbose output");
                 return;
@@ -376,6 +384,16 @@ fn main() {
                 i += 1;
             }
         }
+    }
+
+    // Every section shells out to whole-workspace cargo test/build/clippy/doc, so a
+    // bare run is minutes of work. Ask for it explicitly instead of starting it
+    // by default from a run with no arguments.
+    if config.section.is_none() && !run_all {
+        eprintln!(
+            "Usage: cargo run --example qa_verify -- --all | --section N [--json] [--verbose]"
+        );
+        std::process::exit(2);
     }
 
     print_header(config.json);

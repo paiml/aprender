@@ -215,6 +215,27 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
     println!("  Measurement: {} iterations", MEASUREMENT_ITERATIONS);
     println!();
 
+    // The baseline is a live Ollama server. Probe it first, so a host without one
+    // says so instead of failing inside the HTTP client.
+    let ollama_addr = std::net::SocketAddr::from(([127, 0, 0, 1], 11434));
+    if std::net::TcpStream::connect_timeout(&ollama_addr, std::time::Duration::from_secs(2))
+        .is_err()
+    {
+        eprintln!("Ollama server not found at http://localhost:11434 (run `ollama serve` and `ollama pull phi2:2.7b`)");
+        std::process::exit(1);
+    }
+    // A running server without the model answers /api/generate with an error
+    // object, which the response decoder cannot read. /api/show is 404 then.
+    let has_model = reqwest::blocking::Client::new()
+        .post("http://localhost:11434/api/show")
+        .json(&serde_json::json!({ "model": "phi2:2.7b" }))
+        .send()
+        .is_ok_and(|r| r.status().is_success());
+    if !has_model {
+        eprintln!("Model not found: phi2:2.7b on the Ollama server (run `ollama pull phi2:2.7b`)");
+        std::process::exit(1);
+    }
+
     // Benchmark Ollama
     println!("[1/3] Benchmarking Ollama phi2:2.7b...");
     let ollama_result = benchmark_ollama()?;
