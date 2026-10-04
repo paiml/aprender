@@ -224,7 +224,9 @@ cov_case() { # name file sha want-rc want-coverage-query(yes|no) want-fail-text
   fi
 }
 cov_case "no coverage file"        ""              ""                 1 no  "coverage gaps not_measured: no coverage file"
+: > "$TMP/empty.json"   # zero bytes: exercises the -s branch, not the missing-file one
 cov_case "empty coverage file"     "$TMP/empty.json" "$HEAD_SHA"      1 no  "coverage gaps not_measured: no coverage file"
+cov_case "coverage path that does not exist" "$TMP/absent.json" "$HEAD_SHA" 1 no "coverage gaps not_measured: no coverage file"
 cov_case "file from another commit" "$COVFILE"     "0000000000000000000000000000000000000000" 1 no "measured on '0000000000000000000000000000000000000000'"
 cov_case "file with no recorded sha" "$COVFILE"    ""                 1 no  "measured on '(none recorded)'"
 cov_case "file from this commit"   "$COVFILE"      "$HEAD_SHA"        0 yes ""
