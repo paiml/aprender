@@ -793,6 +793,10 @@ up, a new size changes its place, and a row already held on a branch drops out o
     (`accessors.rs:84-94`), `save_cuda_lora_adapter` (`cuda_trainer.rs:3281-3285`, `:3313-3317`) and classify's sync
     (`classify_pipeline/gpu.rs:1186-1206`). A fix that misses one leaves that path's saved B 1/s too small. Not built,
     not measured.
+    C1 lands the extraction first, as its own commit, and shows it bit-identical at the default alpha on step 2's
+    gradients (FALSIFY-LORA_GRADIENT_FLOW_V1_004; at step 1, B = 0 makes dA zero on both sides). The fix follows,
+    since it changes the gradients by design whenever s ≠ 1, and the bit-identity test is then re-run at
+    alpha = rank, where the fix changes no number.
     The fix also changes what a CUDA run trains whenever alpha ≠ rank, and both defaults are alpha = 2·rank
     (`apr-cli` `finetune.rs:1378`; `classify_pipeline/mod.rs:206`). AdamW's steps barely depend on the gradient's
     scale, so early in a run the merged delta comes out about s times today's. A CUDA recipe tuned at alpha ≠ rank was

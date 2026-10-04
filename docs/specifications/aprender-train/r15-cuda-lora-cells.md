@@ -40,6 +40,8 @@ New in this read:
 - **The LoRA backward is written out inline, once per projection.**
   - It lives in `backward_nf4_attention` (`cuda_block.rs:4297`): Q at about `:4427-4485`, V at about `:4588-4625`.
   - It runs the same five GEMMs each time: recompute `X·A`, then `dB`, `dInter`, `dA` and `dX +=`.
+    `dInter` is written over the `X·A` scratch (`lora_inter`), so `dB` has to run first. No step applies
+    alpha/rank: the scale sits in B, which is uploaded already multiplied by s (K44, spec row 29).
   - The FFN backward (`backward_nf4_ffn`, `:4103`) has no LoRA code.
   - The AdamW kernel `adamw_step_cuda` (`autograd/cuda_optim.rs:182`) is generic over tensors; its callers are not.
 - **No timed-window plumbing.**
@@ -55,7 +57,7 @@ New in this read:
 
 | # | Cell | Serves | K̂ (min) | Falsifier |
 |---|---|---|---|---|
-| C1 | Extract `lora_backward(x, a, b, dy, da, db, dx)` from the inline Q block; switch Q and V to it | R4, T2 | 30 | Q/V adapter grads bit-identical before and after on a tiny NF4 run (the refactor changes nothing). FALSIFY-LORA_GRADIENT_FLOW_V1_004 |
+| C1 | Extract `lora_backward(x, a, b, dy, da, db, dx)` from the inline Q block; switch Q and V to it | R4, T2 | 30 | Q/V adapter grads of step 2 bit-identical before and after on a tiny NF4 run at alpha = 2·rank (the refactor changes nothing; at step 1, B = 0 makes dA zero on both sides). K44's fix lands after it as its own commit, and the test is then re-run at alpha = rank. FALSIFY-LORA_GRADIENT_FLOW_V1_004 |
 | C2 | Target list: the workspace, optimizer state, clipping and NF4 adapter fields become a `Vec` keyed by target kind; `build_lora_layers` and `inject_adapter_weights` read `LoRAConfig.target_modules` | R4, T2 | 60 | `--targets q_proj,v_proj` gives today's tensor set; `all_linear` gives 7 adapters per layer; a dropped target is RED (FALSIFY-FT-TASK-003). FALSIFY-LORA_TARGET_SELECTION_V1_003 |
 | C3 | Call C1 for k and o in the attention backward, and add LoRA to the FFN backward (gate, up, down) | R4, T2 | 60 | after N CUDA steps every one of the 7 adapter kinds has changed, and the loss moved (S-R15's own falsifier). FALSIFY-LORA_GRADIENT_FLOW_V1_005 |
 | C4 | Frozen-base non-NF4 LoRA block: the FP32 `CudaTransformerBlock` forward plus C1–C3 backward, base weights frozen (no full-weight AdamW), and `init_cuda` reached for `-m lora` | R4 (QQE-004 reference), T2 | 60 | base weight checksums unchanged after N steps; adapters changed; `finetune.rs:280` no longer falls back to the CPU. FALSIFY-LORA-ADAPTER-TRAINS-BASE-FROZEN-CUDA-003 |
