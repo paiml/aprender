@@ -27,7 +27,7 @@
 #   kfr_bundle DIR OUT           measured rows -> OUT (sha, leg, check, state); 0 ok, 2 not_measured
 #   kfr_judge LIST LBASE HEAD BASE
 #                                LIST is a list file; LBASE a list file or "none" (no list at the base
-#                                ref yet: BOOTSTRAP); HEAD a bundle dir; BASE a bundle dir or "none".
+#                                ref yet: BOOTSTRAP, never GREEN); HEAD a bundle dir; BASE a bundle dir or "none".
 #                                Prints its findings and ONE verdict line, starting "KFR GREEN",
 #                                "KFR RED" or "KFR NOT_MEASURED". Returns 0, 1 or 2.
 
@@ -81,20 +81,21 @@ kfr_judge() { # LIST LBASE HEAD BASE
     kfr_list "$1" "$t/list" || red=1
     : > "$t/lbase"
     if [ "$2" = none ]; then
-        printf '!     KFR BOOTSTRAP: no list at the base ref yet; the shrink-only floor arms when the list lands\n'
+        printf '!     KFR BOOTSTRAP: no list at the base ref yet, so shrink-only is not measured; the floor arms when the list lands\n'; nm=1
     else
         kfr_list "$2" "$t/lbase" > "$t/lbase.log" || { printf 'NM    KFR the list at the base ref is unreadable: shrink-only not measured\n'; nm=1; }
     fi
     : > "$t/head"
-    kfr_bundle "$3" "$t/head"; rc=$?
+    rc=0; kfr_bundle "$3" "$t/head" || rc=$?
     [ "$rc" -eq 0 ] || { nm=1; printf 'NM    KFR head bundle: not_measured, so no failure here is judged\n'; : > "$t/head"; touch "$t/head.nm"; }
     : > "$t/base"
     if [ "$4" = none ]; then
         printf '!     KFR no last-release bundle: a failure not on the list is UNLISTED, never excused\n'
     else
-        kfr_bundle "$4" "$t/base"; rc=$?
+        rc=0; kfr_bundle "$4" "$t/base" || rc=$?
         [ "$rc" -eq 0 ] || { nm=1; printf 'NM    KFR base bundle: not_measured, so NEW cannot be told from UNLISTED\n'; : > "$t/base"; }
     fi
+    rc=0
     LC_ALL=C awk -F '\t' -v OFS='\t' -v lbase_none="$([ "$2" = none ] && echo 1 || echo 0)" \
         -v head_nm="$([ -f "$t/head.nm" ] && echo 1 || echo 0)" -v red="$red" -v nm="$nm" '
         FILENAME == ARGV[1] { k = $1 OFS $2 OFS $3; L[k] = $4; LT[k] = $0; nl++; next }
@@ -111,6 +112,7 @@ kfr_judge() { # LIST LBASE HEAD BASE
                 for (k in L) {
                     if (!(k in H) || H[k] == "not_measured") { printf "NM    KFR %s %s: listed, not measured on the head\n", name(k), L[k]; nm = 1 }
                     else if (H[k] == "pass") { printf "FAIL  KFR STALE %s %s: listed, and it passes here -- delete the entry, a known failure must not outlive its defect\n", name(k), L[k]; red = 1 }
+                    else if (B[k] == "pass") { printf "FAIL  KFR NEW %s %s: listed, yet it passed in the last release bundle -- a regression since the release; the list cannot excuse it\n", name(k), L[k]; new++; red = 1 }
                     else { printf "KNOWN %s %s: fails, as listed -- counted RED with its ticket, never green\n", name(k), L[k]; known++ }
                 }
                 for (k in H) if (H[k] == "fail" && !(k in L)) {
@@ -125,8 +127,7 @@ kfr_judge() { # LIST LBASE HEAD BASE
             if (red) { printf "KFR RED: %s\n", s; exit 1 }
             if (nm) { printf "KFR NOT_MEASURED: %s\n", s; exit 2 }
             printf "KFR GREEN: %s\n", s; exit 0
-        }' "$t/list" "$t/lbase" "$t/head" "$t/base"
-    rc=$?
+        }' "$t/list" "$t/lbase" "$t/head" "$t/base" || rc=$?
     rm -rf -- "${t:?}"
     return "$rc"
 }

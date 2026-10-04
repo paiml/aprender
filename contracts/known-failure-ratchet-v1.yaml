@@ -2,7 +2,7 @@ metadata:
   version: 1.0.0
   created: '2026-10-04'
   author: PAIML Engineering
-  description: "A release may ship with failures that are already known, but only on a shrink-only list keyed by (model sha256, leg, check), each with its ticket. scripts/release/known_failure_ratchet.sh compares tonight's evidence bundle with that list and with the last release's bundle. Every failure is KNOWN (listed: still printed RED with its ticket, never green), NEW (it passed in the last release's bundle and fails here) or UNLISTED (any other failure off the list). NEW and UNLISTED are RED. The list is RED when it grew or a row was edited, when a listed key passes (a fixed entry left on the list), when a row has no ticket and when a key is listed twice. A missing or unreadable bundle is not_measured and never passes. The ratchet only sorts failures: it never adds to the list and never excuses a failure (#4689)."
+  description: "A release may ship with failures that are already known, but only on a shrink-only list keyed by (model sha256, leg, check), each with its ticket. scripts/release/known_failure_ratchet.sh compares tonight's evidence bundle with that list and with the last release's bundle. Every failure is NEW (it passed in the last release's bundle and fails here, listed or not), KNOWN (listed, and not a pass in the base bundle: still printed RED with its ticket, never green) or UNLISTED (any other failure off the list). NEW and UNLISTED are RED. The list is RED when it grew or a row was edited, when a listed key passes (a fixed entry left on the list), when a row has no ticket and when a key is listed twice. A missing or unreadable bundle is not_measured and never passes. The ratchet only sorts failures: it never adds to the list and never excuses a failure (#4689)."
   kind: pattern
   references:
     - "scripts/release/known_failure_ratchet.sh: the command line, the case table (--self-test) and the planted mutants (--mutants)"
@@ -22,7 +22,7 @@ five_whys:
 
 equations:
   classify:
-    formula: "for each key k with state_head(k) = fail: KNOWN if k ∈ list; else NEW if state_base(k) = pass; else UNLISTED"
+    formula: "for each key k with state_head(k) = fail: NEW if state_base(k) = pass (listed or not: a listed key cannot excuse a regression since the release); else KNOWN if k ∈ list; else UNLISTED"
     domain: "key = (model sha256, leg, check), a leg being a GPU architecture or a runner label; state ∈ {pass, fail, not_measured} read from DIR/checks.tsv of the head and the base bundle"
     codomain: "{KNOWN, NEW, UNLISTED} for each failing key"
     invariants:
@@ -32,7 +32,7 @@ equations:
 
   list_ratchet:
     formula: "RED if ∃ row ∈ list: row ∉ list_base (byte for byte on sha256, leg, check, ticket); RED if ∃ k ∈ list: state_head(k) = pass (STALE); RED if a row has no ticket or a ticket not of the form #<number>; RED if a key is listed twice"
-    domain: "the list at the head and the list at the base ref (none before the list lands: BOOTSTRAP)"
+    domain: "the list at the head and the list at the base ref (none before the list lands: BOOTSTRAP, which is not_measured and never GREEN)"
     codomain: "{RED, ok}"
     invariants:
       - "the list only shrinks: a deleted row is ok, an added or edited row is RED"
@@ -77,7 +77,7 @@ proof_obligations:
   - id: KFR-INV-006
     type: invariant
     property: "A head whose only failures are the listed ones is GREEN"
-    formal: "{k : state_head(k) = fail} = list ∧ list ⊆ list_base ∧ ∀ k ∈ list ∪ {k : state_base(k) = pass}: state_head(k) ∈ {pass, fail} ⇒ verdict = GREEN"
+    formal: "{k : state_head(k) = fail} = list ∧ list_base ≠ none ∧ list ⊆ list_base ∧ ∀ k ∈ list: state_base(k) ≠ pass ∧ ∀ k ∈ list ∪ {k : state_base(k) = pass}: state_head(k) ∈ {pass, fail} ⇒ verdict = GREEN"
     applies_to: verdict
 
 falsification_tests:
@@ -89,7 +89,7 @@ falsification_tests:
 
   - id: FALSIFY-KFR-002
     rule: "The case table can still fail on the defects it names"
-    prediction: "Each planted mutant (NEW not red, UNLISTED not red, STALE not red, ADDED not red, a row without a ticket accepted, a malformed ticket accepted, a duplicate accepted, a missing bundle passed, an unknown state accepted, an empty bundle measured, a listed key not measured ignored, a base pass gone ignored, NOT_MEASURED outranking RED, an unreadable head or base ignored, conflicting rows accepted, a known failure counted as not measured) turns --self-test RED; a mutant whose patch does not apply is an error, never a survivor"
+    prediction: "Each planted mutant (NEW not red, UNLISTED not red, STALE not red, ADDED not red, a row without a ticket accepted, a malformed ticket accepted, a duplicate accepted, a missing bundle passed, an unknown state accepted, an empty bundle measured, a listed key not measured ignored, a base pass gone ignored, NOT_MEASURED outranking RED, an unreadable head or base ignored, conflicting rows accepted, a known failure counted as not measured, a listed key that passed in the base bundle counted KNOWN, the lib aborting under a caller set -e before its verdict line, BOOTSTRAP counted GREEN) turns --self-test RED; a mutant whose patch does not apply is an error, never a survivor"
     test: "bash scripts/release/known_failure_ratchet.sh --mutants"
     if_fails: "The case table is theater: it would pass a ratchet that excuses a new failure or keeps a fixed one listed"
 

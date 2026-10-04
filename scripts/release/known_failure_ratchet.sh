@@ -59,7 +59,7 @@ bundle() { # DIR STATE-A STATE-B STATE-C   ('-' leaves the key out)
       [ "$4" = - ] || tsv "$SC" sm_89 capability_match "$4"; } > "$1/checks.tsv"
 }
 self_test() {
-    local FX
+    local FX out
     FX="$(mktemp -d "${TMPDIR:-/tmp}/kfr-st.XXXXXX")" || caller_error "no temp dir"
     # lists
     { printf 'sha256\tleg\tcheck\tticket\tmodel\n'; tsv "$SA" sm_89 golden_output '#1'; tsv "$SB" sm_121 serve_api_chat '#2'; } > "$FX/list"
@@ -71,6 +71,7 @@ self_test() {
     { printf 'sha256\tleg\tcheck\tticket\n'; tsv "$SA" sm_89 golden_output '#1'; } > "$FX/shrunk"
     # bundles: base = last release, head = tonight
     bundle "$FX/base" fail fail pass
+    bundle "$FX/base_apass" pass fail pass
     bundle "$FX/h_known" fail fail pass
     bundle "$FX/h_new" fail fail fail
     bundle "$FX/h_fixed" pass fail pass
@@ -110,6 +111,13 @@ self_test() {
     row unreadable_base_bundle_is_not_measured 2 "base bundle: not_measured" "KFR GREEN" -- "${L[@]}" --head "$FX/h_known" --base "$FX/absent"
     row red_outranks_not_measured 1 "KFR RED" "KFR NOT_MEASURED" -- --list "$FX/grew" --list-base "$FX/list" --head "$FX/absent" --base "$FX/base"
     row bootstrap_without_a_base_list_still_judges 1 "KFR BOOTSTRAP" "KFR GREEN" -- --list "$FX/list" --list-base none --head "$FX/h_fixed" --base "$FX/base"
+    row listed_key_that_passed_in_base_is_new 1 "KFR NEW aaaaaaaaaaaa sm_89 golden_output #1" "KFR GREEN" -- "${L[@]}" --head "$FX/h_known" --base "$FX/base_apass"
+    row bootstrap_with_a_clean_head_is_not_measured 2 "KFR BOOTSTRAP" "KFR GREEN" -- --list "$FX/list" --list-base none --head "$FX/h_known" --base "$FX/base"
+    # the lib under a caller's set -e still prints ONE verdict line before it returns non-zero
+    CASES=$((CASES + 1))
+    out="$(bash -c 'set -e; . "$1"; kfr_judge "$2" "$2" "$3" none' _ "$LIB" "$FX/list" "$FX/absent" 2>&1)"
+    if printf '%s\n' "$out" | grep -qF -e "KFR NOT_MEASURED"; then printf 'ok    %s\n' lib_under_set_e_prints_its_verdict
+    else printf 'RED   %-44s missing: KFR NOT_MEASURED\n' lib_under_set_e_prints_its_verdict; FAILED=$((FAILED + 1)); fi
     row missing_list_is_a_caller_error 3 "caller error" "KFR GREEN" -- --list "$FX/absent" --list-base none --head "$FX/h_known"
     row unknown_option_is_a_caller_error 3 "caller error" "" -- --head "$FX/h_known" --skip-stale
     # the committed seed: six tickets, nine (model, leg) rows, valid; tonight has no bundle yet
@@ -122,7 +130,7 @@ self_test() {
 
 # ------------------------------------------------------------------------------------ the mutants ----
 # name<TAB>sed expression on the lib. Each must change the lib and turn the case table RED.
-MUTANTS='m01_new_not_red	s/new++; red = 1/new++/
+MUTANTS='m01_new_not_red	/and fails here/s/new++; red = 1/new++/
 m02_unlisted_not_red	s/unl++; red = 1/unl++/
 m03_stale_not_red	s/H\[k\] == "pass") { printf "FAIL  KFR STALE/H[k] == "pass_never") { printf "FAIL  KFR STALE/
 m04_added_not_red	s/if (!(LT\[k\] in LB))/if (0)/
@@ -138,7 +146,10 @@ m13_nm_outranks_red	s/if (red) { printf "KFR RED/if (red \&\& !nm) { printf "KFR
 m14_head_nm_is_green	s/\[ "\$rc" -eq 0 \] || { nm=1; printf .NM    KFR head bundle/[ "$rc" -eq 0 ] || { printf '"'"'NM    KFR head bundle/
 m15_base_unreadable_ignored	s/\[ "\$rc" -eq 0 \] || { nm=1; printf .NM    KFR base bundle/[ "$rc" -eq 0 ] || { printf '"'"'NM    KFR base bundle/
 m16_conflict_accepted	s/if ((k in st) \&\& st\[k\] != $4)/if (0)/
-m17_known_counted_green	s/H\[k\] == "not_measured") { printf "NM    KFR %s %s: listed/H[k] == "fail") { printf "NM    KFR %s %s: listed/'
+m17_known_counted_green	s/H\[k\] == "not_measured") { printf "NM    KFR %s %s: listed/H[k] == "fail") { printf "NM    KFR %s %s: listed/
+m18_listed_regression_known	s/else if (B\[k\] == "pass") { printf "FAIL  KFR NEW/else if (0) { printf "FAIL  KFR NEW/
+m19_lib_aborts_under_set_e	s/rc=0; kfr_bundle "\$3" "\$t\/head" || rc=\$?/kfr_bundle "$3" "$t\/head"; rc=$?/
+m20_bootstrap_green	s/the floor arms when the list lands\\n'"'"'; nm=1/the floor arms when the list lands\\n'"'"'/'
 mutants() {
     local tmp name expr killed=0 total=0 errors=0 out
     tmp="$(mktemp -d "${TMPDIR:-/tmp}/kfr-mu.XXXXXX")" || caller_error "no temp dir"
