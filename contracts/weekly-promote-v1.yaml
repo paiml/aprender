@@ -1,0 +1,91 @@
+metadata:
+  version: 1.0.0
+  created: '2026-10-04'
+  author: PAIML Engineering
+  description: "The weekly cadence. On one fixed weekday a printer reads the nightly train's ledger for the last seven nights and prints one line: PROMOTE H=<sha> for the newest night whose train line is RELEASABLE for that night's pick (refs/heads/nightly/<night>), or SKIP: none RELEASABLE. A RELEASABLE line for any other commit never counts. A night that cannot be read is not_measured and is named in the SKIP line. The printer never tags, pushes or releases. Report-only: nothing reads its line yet (#4703)."
+  kind: pattern
+  references:
+    - "scripts/release/weekly_promote.sh: the printer, its case table (--self-test) and its planted mutants (--mutants)"
+    - "scripts/release/nightly_pick.sh: its resolve command gives the night's pick C; until it is on main every night is not_measured"
+    - "the nightly train's ledger: per run date D, D/line (RELEASABLE H=<C> or NOT RELEASABLE: ...) and D/bundle.tsv (rows # C and # as of)"
+
+five_whys:
+  symptom: "Nothing said, on a fixed day, which commit a release would promote; releases were cut from whatever main held when someone started one."
+  why_1: "The nightly train judges one night at a time and keeps no weekly view."
+  why_2: "Without a weekly line, a releasable night could pass unpromoted and a release could start from a commit no night judged."
+  why_3: "A RELEASABLE line names a commit, but nothing checked that the commit was the night's pick rather than main's head after a merge."
+  why_4: "A week with missing nights read the same as a week of red nights."
+  why_5: "A printer that could also tag would turn a report into a release step nobody ruled on."
+  root_cause: "The cadence had no single weekly decision tied to the nightly pick. The remedy is a printer that promotes only a night's own pick from a RELEASABLE line, names unmeasured nights, and never tags."
+
+equations:
+  night:
+    formula: "night(t) = UTC date of (t − 12 h); window(a) = the 7 nights ending with night(a)"
+    domain: "t = a train run's time from bundle.tsv # as of; a = the printer's --as-of"
+    codomain: "YYYY-MM-DD"
+    invariants:
+      - "the same rule as the pick, so a train run at 04:45Z judges the night picked the evening before"
+      - "when several runs fall on one night, the latest run time decides it"
+      - "an empty or unreadable run time is not counted, never read as today"
+
+  counts:
+    formula: "counts(n) iff line(n) starts RELEASABLE H=h with h 40 hex ∧ bundle_C(n) = h ∧ resolve(n) = h"
+    domain: "n a night in the window, resolve = nightly_pick.sh resolve"
+    codomain: "{counts, not counted, not_measured}"
+    invariants:
+      - "a RELEASABLE line for another commit (main's head after a merge) is not the night's C and never counts"
+      - "a NOT RELEASABLE line that contains the text RELEASABLE H= never counts"
+      - "a night with no pick is not counted; a pick that cannot be read, a missing run or a missing line is not_measured"
+
+  verdict:
+    formula: "PROMOTE H=h for the newest n in the window with counts(n); else SKIP: none RELEASABLE, with (not_measured: k of 7 nights) when k > 0"
+    domain: "the window's nights, newest first"
+    codomain: "exit 0 PROMOTE | 1 SKIP with every night measured | 2 SKIP with a night not measured | 3 caller error"
+    invariants:
+      - "stdout is exactly one line"
+      - "the printer never tags, pushes or releases"
+      - "a missing or empty ledger is not_measured, never a measured SKIP"
+
+proof_obligations:
+  - id: WP-INV-001
+    type: invariant
+    property: "Only a night's own pick is promoted"
+    formal: "line = PROMOTE H=h ⇒ ∃ n ∈ window: line(n) = RELEASABLE H=h ∧ bundle_C(n) = h ∧ resolve(n) = h"
+    applies_to: counts
+  - id: WP-INV-002
+    type: invariant
+    property: "The newest counting night wins"
+    formal: "line = PROMOTE H=h(n) ⇒ ¬∃ m ∈ window: m > n ∧ counts(m)"
+    applies_to: verdict
+  - id: WP-INV-003
+    type: invariant
+    property: "Not measured is never a measured SKIP"
+    formal: "(∃ n ∈ window: not_measured(n)) ∧ ¬∃ n: counts(n) ⇒ exit = 2"
+    applies_to: verdict
+  - id: WP-INV-004
+    type: invariant
+    property: "It never tags"
+    formal: "∀ run: no git tag, git push or gh release call"
+    applies_to: verdict
+
+falsification_tests:
+  - id: FALSIFY-WP-001
+    rule: "The printer is right on every row of its case table"
+    prediction: "A full week promotes the newest night; a newer red night promotes the older one; a week of red nights is a measured SKIP; a line or bundle for another commit, a night without a pick, an unreadable pick, a NOT RELEASABLE line containing RELEASABLE H= and a short sha are not counted; no pick command, no ledger, an empty ledger, a run without a line and a run without a run time are not_measured; nights before the window and after --as-of are not promoted; the latest run on a night decides it in either order; stdout is one line; the line reaches the inbox; git and gh on PATH see no tag, push or release call"
+    test: "bash scripts/release/weekly_promote.sh --self-test"
+    if_fails: "The printer can name a commit no night judged as its pick, hide unmeasured nights behind SKIP, or act on the release"
+
+  - id: FALSIFY-WP-002
+    rule: "The case table can still fail on the defects it names"
+    prediction: "Each planted mutant (any line read as releasable, the bundle commit ignored, the night's pick ignored, a night without a pick promoted, an unreadable pick counted, oldest night first, the first run deciding a night, the night taken as the run date, not_measured read as measured, the window widened, no ledger passing, a tag before the PROMOTE line, a missing line not counted as not_measured, an empty run time read as today) turns --self-test RED; a mutant whose patch does not apply is an error, never a survivor"
+    test: "bash scripts/release/weekly_promote.sh --mutants"
+    if_fails: "The case table is theater: it would pass a printer that promotes a commit the night never picked"
+
+qa_gate:
+  id: QA-WP-001
+  name: "The weekly line promotes only a RELEASABLE night's own pick, and never tags"
+  description: "scripts/release/weekly_promote.sh prints PROMOTE H=<newest RELEASABLE night's pick> or SKIP: none RELEASABLE, naming unmeasured nights. Report-only: no gate or release step reads it yet."
+  checks:
+    - "night"
+    - "counts"
+    - "verdict"
