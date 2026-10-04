@@ -37,7 +37,12 @@
 #
 # THE PLANTED FAILURE. A workflow_dispatch with plant_red=true makes the relay
 # print red whatever the bundle says, and the `models` job fails. That is the
-# proof the lane can go red; it is never on in a scheduled run.
+# proof the lane can go red; it is never on in a scheduled run, and a planted
+# run uploads no models-t1, so readiness never reads a plant as a receipt.
+#
+# ARTIFACT models-t1. On a verified green or red the bundle (lambda.json,
+# gx10.json, the models_t1 log, verdict, SHA256SUMS) is uploaded as models-t1
+# for readiness-nightly.yml, which reads the receipts' *.json at its root.
 #
 # RUNNER. [self-hosted, Linux, X64, clean-room]. The job reads git and runs
 # bash, jq and sha256sum on the host, with no cargo, so it needs no image beyond
@@ -105,13 +110,18 @@ jobs:
           plant=()
           case "$PLANT_RED" in true) plant=(--plant-red) ;; esac
           setsid --wait bash scripts/release/models_nightly.sh --relay --commit "$GITHUB_SHA" --out "$RUNNER_TEMP/models-relay" "${plant[@]}"
-      - name: Keep the bundle the verdict was read from
-        if: always()
+      - name: Publish the verified receipts for readiness-nightly (models-t1)
+        # readiness-nightly.yml reads artifact models-t1 from a run on main at
+        # its head and globs *.json at the artifact root, so the upload is the
+        # bundle dir itself. The relay names it only for a verified green or
+        # red with no plant: a not_measured bundle proved nothing, and a planted
+        # red is not a measurement.
+        if: steps.relay.outputs.bundle != ''
         uses: actions/upload-artifact@v7
         with:
-          name: models-relay-${{ github.run_id }}
-          path: ${{ runner.temp }}/models-relay
-          if-no-files-found: ignore
+          name: models-t1
+          path: ${{ steps.relay.outputs.bundle }}
+          if-no-files-found: error
           retention-days: 30
 
   # The column the nightly train reads (job regex ^models$). It runs only on a

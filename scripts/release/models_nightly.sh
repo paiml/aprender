@@ -148,7 +148,7 @@ verify() {
 }
 
 relay() { # relay COMMIT OUT EVIDENCE PLANT
-    local c=$1 out=$2 ev=$3 cls state reason
+    local c=$1 out=$2 ev=$3 cls state reason bundle=
     mkdir -p -- "$out" || die "cannot create $out"
     if [ -z "$ev" ]; then
         ev="$out/models/$c"
@@ -160,9 +160,12 @@ relay() { # relay COMMIT OUT EVIDENCE PLANT
     fi
     cls=$(verify "$ev" "$c")
     state=${cls%%$'\t'*}; reason=${cls#*$'\t'}
+    # bundle= is the dir readiness-nightly reads as artifact models-t1: a verified green or red only. Never
+    # not_measured (its files proved nothing) and never a planted run (a plant is not a measurement).
+    case $state in green|red) [ -n "$4" ] || bundle=$ev ;; esac
     [ -z "$4" ] || { reason="PLANTED red (plant_red), the bundle said $state: $reason"; state=red; }
     reason=$(printf '%s' "$reason" | tr -d '\r\n')
-    if [ -n "${GITHUB_OUTPUT:-}" ]; then printf 'state=%s\nreason=%s\n' "$state" "$reason" >> "$GITHUB_OUTPUT" || die "cannot write GITHUB_OUTPUT"; fi
+    if [ -n "${GITHUB_OUTPUT:-}" ]; then printf 'state=%s\nreason=%s\nbundle=%s\n' "$state" "$reason" "$bundle" >> "$GITHUB_OUTPUT" || die "cannot write GITHUB_OUTPUT"; fi
     say "RELAY $state at ${c:0:9}: $reason"
 }
 
@@ -392,16 +395,21 @@ STUB
     git clone -q "$bare" "$clone" || exit 3
     row e2e_relay_green 0 "RELAY green at ${c1:0:9}" "" -- bash -c "cd '$clone' && GITHUB_OUTPUT='$tmp/gho' bash '$SCRIPT_PATH' --relay --commit $c1 --out '$tmp/relay1'"
     row e2e_relay_wrote_github_output 0 "state=green" "" -- cat "$tmp/gho"
-    row e2e_relay_plant_red 0 "RELAY red at ${c1:0:9}: PLANTED red" "RELAY green" -- bash -c "cd '$clone' && bash '$SCRIPT_PATH' --relay --commit $c1 --out '$tmp/relay2' --plant-red"
+    row e2e_relay_green_gives_its_bundle 0 "bundle=$tmp/relay1/models/$c1" "" -- cat "$tmp/gho"
+    row e2e_models_t1_root_holds_the_receipts 0 "" "" -- test -f "$tmp/relay1/models/$c1/lambda.json" -a -f "$tmp/relay1/models/$c1/gx10.json"
+    row e2e_relay_plant_red 0 "RELAY red at ${c1:0:9}: PLANTED red" "RELAY green" -- bash -c "cd '$clone' && GITHUB_OUTPUT='$tmp/gho2' bash '$SCRIPT_PATH' --relay --commit $c1 --out '$tmp/relay2' --plant-red"
+    row e2e_planted_red_gives_no_bundle 0 "bundle=" "bundle=/" -- cat "$tmp/gho2"
     row e2e_published_skip 0 "SKIP: ${c1:0:9} is already measured green" "RUN " -- nightly --run --repo "$repo" --work "$work"
     echo red >> "$tmp/src/Cargo.toml"; git -C "$tmp/src" commit -q -am c2 && git -C "$tmp/src" push -q "$bare" main || exit 3
     c2=$(git -C "$tmp/src" rev-parse HEAD)
     row e2e_run_red 0 "RUN red at ${c2:0:9}" "" -- env STUB_MODE=red bash "$SCRIPT_PATH" --run --repo "$repo" --work "$work"
     row e2e_publish_keeps_the_last_n 0 "PUBLISHED" "" -- env MODELS_NIGHTLY_KEEP=1 bash "$SCRIPT_PATH" --publish --repo "$repo" --work "$work"
     git -C "$clone" fetch -q origin main && git -C "$clone" checkout -q "$c2" || exit 3
-    row e2e_relay_red 0 "RELAY red at ${c2:0:9}" "" -- bash -c "cd '$clone' && bash '$SCRIPT_PATH' --relay --commit $c2 --out '$tmp/relay3'"
+    row e2e_relay_red 0 "RELAY red at ${c2:0:9}" "" -- bash -c "cd '$clone' && GITHUB_OUTPUT='$tmp/gho4' bash '$SCRIPT_PATH' --relay --commit $c2 --out '$tmp/relay3'"
+    row e2e_relay_red_gives_its_bundle 0 "bundle=$tmp/relay3/models/$c2" "" -- cat "$tmp/gho4"
     row e2e_pruned_bundle_is_not_measured 0 "RELAY not_measured at ${c1:0:9}: no bundle" "" -- bash -c "cd '$clone' && bash '$SCRIPT_PATH' --relay --commit $c1 --out '$tmp/relay4'"
-    row e2e_relay_on_unmeasured_c_is_not_measured 0 "RELAY not_measured" "RELAY green" -- bash -c "cd '$clone' && bash '$SCRIPT_PATH' --relay --commit $c2 --out '$tmp/relay5' --evidence '$tmp/absent'"
+    row e2e_relay_on_unmeasured_c_is_not_measured 0 "RELAY not_measured" "RELAY green" -- bash -c "cd '$clone' && GITHUB_OUTPUT='$tmp/gho3' bash '$SCRIPT_PATH' --relay --commit $c2 --out '$tmp/relay5' --evidence '$tmp/absent'"
+    row e2e_not_measured_gives_no_bundle 0 "state=not_measured" "bundle=/" -- cat "$tmp/gho3"
     echo slow >> "$tmp/src/Cargo.toml"; git -C "$tmp/src" commit -q -am c3 && git -C "$tmp/src" push -q "$bare" main || exit 3
     c3=$(git -C "$tmp/src" rev-parse HEAD)
     row e2e_timeout_is_not_measured 0 "RUN not_measured at ${c3:0:9}" "" -- env STUB_MODE=slow bash "$SCRIPT_PATH" --run --repo "$repo" --work "$work" --timeout 2
@@ -473,7 +481,9 @@ m16_entry_unchecked	s/\[ -n "\$blob" \] && \[ "\$v" = "scripts\/release\/models_
 m17_unlisted_file_ignored	s/\[ "\$listed" = "\$have" \] [|][|]/true ||/
 m18_token_guard_dropped_from_run	0,/^    no_token [|][|] refuse/s/^    no_token [|][|] refuse/    true || refuse/
 m19_prune_kept_everything	s/^        tail -n "\$KEEP" -- "\$idx"/        cat -- "$idx"/
-m20_real_ps_never_read	s/else ps -eo pgid=,args=; fi/else :; fi/'
+m20_real_ps_never_read	s/else ps -eo pgid=,args=; fi/else :; fi/
+m21_plant_feeds_readiness	s/\[ -n "\$4" \] [|][|] bundle=\$ev/bundle=$ev/
+m22_unmeasured_feeds_readiness	s/case \$state in green[|]red[)] \[/case $state in *) [/'
 mutants() {
     local tmp pass=0 fail=0 name expr o rc
     tmp=$(mktemp -d) || exit 3
