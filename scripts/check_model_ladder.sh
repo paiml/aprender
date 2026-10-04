@@ -650,9 +650,9 @@ CASES
     MODEL_LADDER_ROOT="$PWD" MODEL_LADDER_INVENTORY_DIRS="$w/inv" MODEL_LADDER_GPU_LOCK="$w/lock" MODEL_LADDER_FREE_MIB=23332 \
       MODEL_LADDER_FIT="$w/nofit" MODEL_LADDER_FIT_PIN="$pin" DOGFOOD_ALLOW_UNPINNED=1 APR="$w/apr" \
       timeout 120 bash "$prod" --host fx --out "$w/out" --only "inv:$f" > "$w/run-$f.log" 2>&1
-    v=$(python3 -c 'import json,sys; r=json.load(open(sys.argv[1]))["rungs"][0]; print(r.get("refused"), r["fit"]["verdict"], r["green"])' "$w/out/fx.only-inv_$f.json" 2> /dev/null)
-    if [ "$v" = "$want_ref $want_v False" ]; then echo "ok    fit receipt row $f refused=$want_ref verdict=$want_v"
-    else echo "FAIL  fit receipt row $f: got '${v:-<no receipt>}', want '$want_ref $want_v False'"; bad=1; fi
+    v=$(jq -r '.rungs[0] | "\(.refused) \(.fit.verdict) \(.green)"' "$w/out/fx.only-inv_$f.json" 2> /dev/null)
+    if [ "$v" = "$want_ref $want_v false" ]; then echo "ok    fit receipt row $f refused=$want_ref verdict=$want_v"
+    else echo "FAIL  fit receipt row $f: got '${v:-<no receipt>}', want '$want_ref $want_v false'"; bad=1; fi
   done
   return "$bad"
 }
