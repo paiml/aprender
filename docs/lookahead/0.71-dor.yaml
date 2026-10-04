@@ -105,14 +105,14 @@ rows:
     # The withdrawn case table (FALSIFY-TTFT-001..015) has not moved. Failed requests and a summary-only lane are already
     # main's `completed_lt_requested` and `samples_stripped`. n below the replicate floor is staged as PP-35
     # (la-71/pp-llama-l3-status@ea3d55aad9): Arm L3 now reads the band `status` that both producers already write. A
-    # summary its samples contradict still needs a rule first (Arm L3 does not recompute it; R-71-9c), and a coarse load bracket
+    # summary its samples contradict still needs its rule drafted (Arm L3 does not recompute it; R-71-9c answered 2026-10-04: re-derive from samples[]), and a coarse load bracket
     # is row 3's.
     falsifier:
       - {ids: [l3_ttft_gated_at_c1, l3_ttft_within_delta_c1, l3_ttft_absent_at_c1, l3_ttft_unarmed_is_reporting],
          staged_at: origin/la-71/pp-llama-p8-gate, staged_path: scripts/perf_gate.sh}
       - {ids: [FALSIFY-PP-LLAMA-001-PERF-GATE-013], staged_at: origin/la-71/pp-llama-p8-gate,
          staged_path: contracts/pp-llama-001-perf-gate-v1.yaml}
-    baseline: null   # = PP-LLAMA-001 §12 row 18 reference cell (owner perf-gate, blocked on row 15). Model is R-71-7:
+    baseline: null   # = a new Qwen3.5-4B cell beside PP-LLAMA-001 §12 row 18's reference cell (R-71-7 answered 2026-10-04: ADD-CELL); the reference cell (owner perf-gate) is blocked on row 15. Context:
       # V1 names Qwen3.5-4B; §8 REFERENCE is Qwen2.5-Coder-7B Q4_K_M, which is what the pin-bump evidence used.
       # That evidence still fails its own validation (failed requests; prompt_tokens 144, not W1's 512).
     owner_proposed: perf-gate (PP-LLAMA-001 §12 owner) per R-71-6, not L1
@@ -204,7 +204,7 @@ rows:
       # is on origin/PMAT-3793-apr-run-json-schema only, stacked on release/0.69.1-batch-1: 2 own commits, 104 unmerged
       # patches vs main -> needs a rebase onto main before it can land. PR state not_measured (no GH call spent).
     baseline: "llama.cpp d1d3c3396 llama-cli --json-schema (same schema, same prompt), per EXT R-17 like-for-like"
-    owner_proposed: "#3568 ticket owner (PMAT-3747/3793 author), not L1"   # RULING R-71-1 still decides 0.71 vs 0.72
+    owner_proposed: "#3568 ticket owner (PMAT-3747/3793 author), not L1"   # R-71-1 answered 2026-10-04: 0.71 (review quorum)
   - id: OBS-00
     ev_rank: 10
     exit_criterion: [V1, V6]
@@ -223,27 +223,66 @@ rows:
                note: "B-7 schemas lint: sigma ratchet formal_prose<=1464; pv 0.70.0 2add1c644 measured 1463 at main 316dee2cd4 and at main+la-71/4487-obs-00@c291c0d02c, lint rc=0, 0 errors both (aprender-cd, /mnt/nvme-raid0/tmp/cd-4487-evidence.md)"}
     owner_proposed: L1
 rulings_needed:
+  # Answered 2026-10-04 by review quorum la-71-r71: claude-sonnet-5-5, claude-haiku-4-5 and a second
+  # claude-sonnet-5-5 sample (degraded: same-family; the two sonnet samples are one seat). Rule fixed before any
+  # reviewer ran: unanimous, or haiku plus exactly one sonnet sample (two-seat, dissent kept); otherwise open.
   - id: R-71-1
     question: "V4 --json-schema: 0.71 (APR-LOOKAHEAD §2a) or 0.72 (APR-EPIC-001 E5 'Agent Ready')?"
+    status: answered
+    answer: "0.71: V4 stays a 0.71 exit criterion; E5 keeps only its other parts."
+    quorum: {round: la-71-r71, date: 2026-10-04, outcome: unanimous}
   - id: R-71-2
     question: "docs/roadmaps/epics.yaml has three 0.71 epics (E2 #3598, E3 #3994, E4 #4381) and 0.72/0.73 epics named 'Agent Ready'/'llama.cpp Parity', not the 09-27 themes. Re-theme or re-train E3/E4/E5/E6?"
+    status: answered
+    answer: "2a ONE-EPIC-SUBEPICS: #3598 is the one themed 0.71 epic, and #3994 and #4381 become one-level sub-epics under it. 2b RULED-THEMES: epics.yaml is brought in line with the 09-27 themes (rename or re-map E5/E6 and their scope)."
+    quorum: {round: la-71-r71, date: 2026-10-04, outcome: unanimous}
   - id: R-71-3
     question: "Do the four small fixes on la-71/fold-pr-a@65b5875a8f open as the first 0.71 PR (default) or ship as a 0.70.x patch? trueno's Q6_K GEMV reads ql/qh in GGML's 128-element halves, repeat_penalty applies once per distinct token, and two are test and lint fixes. Neither runtime fix changes a default: trueno's Q6_K row-major kernel has no production caller and repeat_penalty defaults to 1.0."
+    status: answered
+    answer: "0.71-FIRST-PR: the four fixes open as the first 0.71 PR."
+    quorum: {round: la-71-r71, date: 2026-10-04, outcome: unanimous}
   - id: R-71-4
     question: "CRUX category letters collide on main: A, B, E, F and K each carry two or three labels across the 316 crux-<letter>-<nn> contracts (K: 'Ecosystem & Integration' 9, 'Deployment & Integration' 11). Normalize the labels (ids unchanged), or keep them as historical and give the EXT surfaces new letters?"
+    status: answered
+    answer: "NORMALIZE: one label per letter, ids unchanged; new surfaces use the normalized letters."
+    quorum: {round: la-71-r71, date: 2026-10-04, outcome: unanimous}
   - id: R-71-5
     question: "The CRUX gates need a schema extension (EXT-24b): at 316dee2cd4 a contract cannot hold comparator, metric or gap_effect. Does that extension need the gate-framework-new label, which 0.71 excludes? EXT-001 v1.2 section 11 item 1, staged on la-71/4487-obs-00."
+    status: answered
+    answer: "NO-LABEL: an optional block on the existing schema that reuses existing vocabularies extends existing gates, so it may land in 0.71."
+    quorum: {round: la-71-r71, date: 2026-10-04, outcome: two-seat, dissent: "first claude-sonnet-5-5 sample: NEEDS-LABEL"}
   - id: R-71-6
     question: "Where does the V1 gate live: the PP-LLAMA-001 P-8 bound with the value in perf-matrix.yaml (recommended, drafted on la-71/pp-llama-p8-ttft), or a standalone receipt? The V2 load_ms row folds in."
+    status: answered
+    answer: "P8-BOUND: V1 becomes the first PP-LLAMA-001 P-8 latency bound, with its value in perf-matrix.yaml, and V2 a §3 load_ms row (REPORTED); owner perf-gate."
+    quorum: {round: la-71-r71, date: 2026-10-04, outcome: unanimous}
   - id: R-71-7
     question: "Which model does V1 run on: add a Qwen3.5-4B cell beside the Qwen2.5-Coder-7B reference cell, switch the reference cell, or measure V1 on the reference cell?"
+    status: answered
+    answer: "ADD-CELL: add a Qwen3.5-4B cell beside the reference cell, and measure V1 there."
+    quorum: {round: la-71-r71, date: 2026-10-04, outcome: unanimous}
   - id: R-71-8
     question: "Which tree rule shapes the 0.71 epics: APR-EPIC-001 budgets (E2 parks to 7) or ISSUE-TREE-001 (tickets only, at most 5 sub-tickets per ticket)? See 0.71-epic-hygiene.md section 2."
+    status: answered
+    answer: "ISSUE-TREE-001: the ruling text governs, and the lint is fixed to match it."
+    quorum: {round: la-71-r71, date: 2026-10-04, outcome: unanimous}
   - id: R-71-9
     question: "Does Arm L3 FAIL (as drafted, PP-35 on la-71/pp-llama-l3-status@ea3d55aad9) or REPORT an armed metric on a band whose section 7.4 status is not MEASURED? Owner: the PP-LLAMA-001 spec owner. Under REPORT the three FAIL rows flip."
+    status: answered
+    answer: "FAIL: Arm L3 FAILs an armed metric on a band whose status is not MEASURED, as PP-35 drafts it."
+    quorum: {round: la-71-r71, date: 2026-10-04, outcome: unanimous}
   - id: R-71-9b
     question: "Does a band that is NONCONFORMANT-VALID for timeouts, conformance violations, short_of_n_predict, a stream that is not live or incomplete metrics feed PP-31's ratchet? Arm A skips only NA and INVALID-CORRECTNESS. Nothing drafted."
+    status: answered
+    answer: "EXCLUDE: such bands do not feed the ratchet; the rule tests nonconformance directly, not the top-ranked status."
+    quorum: {round: la-71-r71, date: 2026-10-04, outcome: unanimous}
   - id: R-71-9c
     question: "Does the gate re-derive a stated ratio from the band's own samples and FAIL on a mismatch? Window figures and PP-34's ttft re-derive exactly from samples[]; dec needs the per-token times in the gzipped samples_file. Nothing drafted."
+    status: answered
+    answer: "REDERIVE-SAMPLES: yes, for what samples[] gives; dec comes later."
+    quorum: {round: la-71-r71, date: 2026-10-04, outcome: unanimous}
   - id: R-71-10
     question: "Does H-4's standard (P0 only where the owner shows the issue blocks a V receipt) also demote existing P0s? Seven 0.71.0 P0s tie to no V receipt: #3574, #3714, #3759, #4096, #4418, #4444, #4486. The labels stay until it is ruled (APR-EPIC-001 rules 6 and 20). See 0.71-epic-hygiene.md section 5, H-15."
+    status: answered
+    answer: "GRANDFATHER: H-4 governs new P0 labels only, and the seven stay P0."
+    quorum: {round: la-71-r71, date: 2026-10-04, outcome: two-seat, dissent: "first claude-sonnet-5-5 sample: DEMOTE"}
