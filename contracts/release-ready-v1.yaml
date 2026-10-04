@@ -1,0 +1,207 @@
+# ─────────────────────────────────────────────────────────────────────────────
+# release-ready-v1
+#
+# ONE LIST IN CODE of what is required to merge, to tag and to publish (bar B4;
+# BLD-001 row 4; ticket #4688).
+#
+# WHY. The requirements of a release were stated in five places that nobody
+# compared: ci.yml's `gate` job, CLAUDE.md's required checks, autopilot.sh's
+# steps, check_publish_preflight.sh's rules and cascade-publish.sh's refusals.
+# Two of them disagreed on origin/main 316dee2cd4: the preflight header said
+# the R8 wrapper's committed mode "is `report`" while the wrapper has been
+# `enforce` since the operator ruling of 2026-09-28 (#3715 B1), and
+# autopilot.sh's header listed its steps without `readiness`.
+#
+# THE LIST is the `requirements:` block below: one flow map per line, with id,
+# applies_to (a subset of merge, tag, publish), anchor (what a surface states),
+# checker (path[#needle] that implements it), provenance (a ticket, a spec
+# section, or "operator ruling YYYY-MM-DD") and, for every publish requirement,
+# producer (the nightly_train.sh lane that proves it each night, BLD-001 row
+# 10; "-" never satisfies it).
+#
+# THE CHECKER is scripts/release/release_ready.sh (bash + awk, no Python). It
+# extracts every requirement the five surfaces state, and FAILS on:
+#   UNLISTED       a surface states a requirement the list lacks
+#   ORPHANED       a list entry whose checker is absent or lacks its needle, or
+#                  whose anchor no surface states any more
+#   CONTRADICTION  one key (a mode, a floor, a step list) with two values
+# A read-only probe (--probe) compares the merge set with GitHub's required
+# status checks in ONE read; changing the required checks is the operator's.
+#
+# BEFORE / AFTER (command: `bash scripts/release/release_ready.sh`):
+#   origin/main 316dee2cd4, no list: unlisted=45 orphaned=0 contradictions=2
+#   HEAD of this change:             unlisted=0  orphaned=0 contradictions=0
+#
+# REPORT-ONLY TODAY. No gate calls the checker. It becomes blocking only as a
+# ratchet after three green nights (L31), and only by an operator sign-off.
+# ─────────────────────────────────────────────────────────────────────────────
+name: release-ready
+version: "1.0.0"
+scope: >
+  The requirements to merge, tag and publish that the repository states in
+  .github/workflows/ci.yml (job `gate`), CLAUDE.md ("Required status checks"),
+  scripts/release/autopilot.sh (steps wait..dryrun and the top-level lines
+  between them), scripts/check_publish_preflight.sh (RULES R1..R8) and
+  scripts/cascade-publish.sh (`if !` refusals); plus the facts two of those
+  places can disagree on (R8 mode, autopilot's step list, the coverage floor).
+  Out of scope: requirements stated outside the repository, and the CONTENT of
+  each checker (each has its own contract).
+status: active
+
+metadata:
+  kind: pattern     # a cross-file inventory guard over scripts and workflow
+                    # YAML, not a math kernel. Explicit so `pv validate`'s
+                    # `kernel` default never silently applies.
+  version: "1.0.0"
+  created: '2026-10-04'
+  last_modified: '2026-10-04'
+  author: PAIML Engineering
+  references:
+    - 'scripts/release/release_ready.sh — the checker (extractors, verdict, probe, case table, mutants)'
+    - 'BLD-001 spec, row 4 (E4) — mechanism, falsifiers, first green'
+    - 'issue #4688 — R9, bar B4'
+  description: >
+    One list in code of what merge, tag and publish require. Every requirement a
+    surface states is on the list, every list entry has a checker that exists,
+    and no fact has two values.
+
+equations:
+  rr_listed_equals_stated:
+    formula: |
+      let S = anchors stated by the five surfaces (release_ready.sh --found)
+      let A = { e.anchor : e in requirements }
+      UNLISTED = S \ A,  ORPHANED_STALE = A \ S
+      |UNLISTED| = 0  and  |ORPHANED_STALE| = 0
+    domain: 'the tree the checker runs on (HEAD or origin/main, printed as tree=)'
+    codomain: 'bool'
+    invariants:
+      - 'a surface that cannot be read is not_measured (exit 2), never zero findings'
+  rr_every_checker_exists:
+    formula: |
+      for every e in requirements: file(e.checker) exists and contains needle(e.checker)
+    domain: 'requirements'
+    codomain: 'bool'
+    invariants:
+      - 'a publish requirement names a nightly producer, or the list is malformed (exit 3)'
+  rr_no_contradiction:
+    formula: |
+      for every key k over claims ∪ { (e.key, e.value) : e in requirements }:
+        |{ v : (k, v) }| = 1
+    domain: 'claims extracted from the surfaces plus key/value pairs the list states'
+    codomain: 'bool'
+
+proof_obligations:
+  - id: RR-OB-001
+    statement: "A requirement stated by a surface and absent from the list turns the checker RED (UNLISTED)."
+    discharged_by: falsification_tests[0]
+  - id: RR-OB-002
+    statement: "A list entry whose checker is deleted, or whose anchor no surface states, turns the checker RED (ORPHANED)."
+    discharged_by: falsification_tests[1]
+  - id: RR-OB-003
+    statement: "Two entries or two surfaces giving one key different values turn the checker RED (CONTRADICTION)."
+    discharged_by: falsification_tests[2]
+  - id: RR-OB-004
+    statement: "A missing or unreadable surface is not_measured (exit 2), never a pass; a publish entry without a producer is malformed (exit 3)."
+    discharged_by: falsification_tests[3]
+  - id: RR-OB-005
+    statement: "Each falsifier's check, once dropped from the checker, leaves the case table RED (mutants killed/total = total/total)."
+    discharged_by: falsification_tests[4]
+
+falsification_tests:
+  - id: RR-F-001
+    rule: plant a requirement in a script that the list lacks → red
+    prediction: >-
+      A fixture tree whose autopilot step gains `bash scripts/new_gate.sh`
+      (and one whose preflight gains rule R9, one whose ci.yml gate gains a
+      needs: job) exits 1 naming UNLISTED.
+    test: 'bash scripts/release/release_ready.sh --selftest'
+    if_fails: 'a new gate could ship that no one lists, and the list would read complete'
+    mutation: 'drop the UNLISTED loop of the verdict; the case table must turn RED'
+  - id: RR-F-002
+    rule: delete a listed checker → red
+    prediction: >-
+      A fixture tree whose listed checker file is deleted exits 1 naming
+      ORPHANED; so does one whose needle is gone, and one whose anchor is gone.
+    test: 'bash scripts/release/release_ready.sh --selftest'
+    if_fails: 'the list could name gates that no longer run'
+    mutation: 'drop the checker-exists check of the verdict; the case table must turn RED'
+  - id: RR-F-003
+    rule: plant two entries with conflicting thresholds → red
+    prediction: >-
+      Two list entries with key coverage.floor and values 89 and 90 exit 1
+      naming CONTRADICTION; so does a preflight header that says the R8 mode
+      is `report` while release_readiness.sh says enforce.
+    test: 'bash scripts/release/release_ready.sh --selftest'
+    if_fails: 'two places could state different bars and both read as the truth'
+    mutation: 'drop the CONTRADICTION loop of the verdict; the case table must turn RED'
+  - id: RR-F-004
+    rule: an unreadable surface or malformed list never passes
+    prediction: >-
+      A fixture tree without autopilot.sh exits 2; a list whose publish entry
+      has no producer exits 3.
+    test: 'bash scripts/release/release_ready.sh --selftest'
+    if_fails: 'a moved file would read as zero findings'
+    mutation: 'make the not_measured path return 0; the case table must turn RED'
+  - id: RR-F-005
+    rule: every falsifier has a killing mutant
+    prediction: 'bash scripts/release/release_ready.sh --mutants prints killed=N total=N and exits 0'
+    test: 'bash scripts/release/release_ready.sh --mutants'
+    if_fails: 'a check of the checker could be deleted with the case table still green'
+
+non_goals:
+  - "Running any checker. The list says what is required and where it is checked; each checker proves itself."
+  - "Changing GitHub's required status checks or rulesets. The probe reads them; the operator changes them."
+  - "Blocking any merge, tag or publish today. Wiring is a proposal (three green nights first, L31)."
+
+binding_registry:
+  checker: scripts/release/release_ready.sh
+  selftest: 'bash scripts/release/release_ready.sh --selftest'
+  issue: "https://github.com/paiml/aprender/issues/4688"
+
+# THE LIST. One requirement per line (the checker parses this block; keep one flow map per line).
+requirements:
+  - {id: RR-M01, applies_to: [merge], anchor: "merge:required-context/ci / gate", checker: ".github/workflows/ci.yml#  gate:", provenance: "CLAUDE.md Git Workflow; branch protection on main", producer: "ci-main"}
+  - {id: RR-M02, applies_to: [merge], anchor: "merge:required-context/workspace-test", checker: ".github/workflows/ci.yml#  workspace-test:", provenance: "CLAUDE.md Git Workflow; branch protection on main", producer: "ci-main"}
+  - {id: RR-M03, applies_to: [merge], anchor: "merge:ci.yml/gate/needs/x86-main", checker: ".github/workflows/ci.yml#  x86-main:", provenance: "ci.yml job gate (#3100)", producer: "ci-main"}
+  - {id: RR-M04, applies_to: [merge], anchor: "merge:ci.yml/gate/needs/workspace-test", checker: ".github/workflows/ci.yml#  workspace-test:", provenance: "ci.yml job gate (workspace-test fan-in)", producer: "ci-main"}
+  - {id: RR-M05, applies_to: [merge], anchor: "merge:ci.yml/gate/needs/determinism", checker: ".github/workflows/ci.yml#  determinism:", provenance: "ci.yml job gate", producer: "ci-main"}
+  - {id: RR-M06, applies_to: [merge], anchor: "merge:ci.yml/gate/needs/mutants-table-scope", checker: ".github/workflows/ci.yml#  mutants-table-scope:", provenance: "#4646 mutants ratchet (report-only, operator ruling 2026-10-01)", producer: "mutants", key: "merge.mutants.mode", value: "report"}
+  - {id: RR-M07, applies_to: [merge], anchor: "merge:ci.yml/gate/needs/mutants-table", checker: ".github/workflows/ci.yml#  mutants-table:", provenance: "#4646 mutants ratchet (report-only, operator ruling 2026-10-01)", producer: "mutants", key: "merge.mutants.mode", value: "report"}
+  - {id: RR-M08, applies_to: [merge], anchor: "merge:ci.yml/gate/needs/yoga", checker: ".github/workflows/ci.yml#  yoga:", provenance: "#4621 (needed for its mutants-cuda section alone)", producer: "cuda"}
+  - {id: RR-M09, applies_to: [merge], anchor: "merge:ci.yml/gate/section/guard-tree", checker: ".github/workflows/ci.yml#guard-tree", provenance: "ci.yml job gate (old gate needs: guard-tree)", producer: "guards"}
+  - {id: RR-M10, applies_to: [merge], anchor: "merge:ci.yml/gate/section/guard-cargo", checker: ".github/workflows/ci.yml#guard-cargo", provenance: "ci.yml job gate (old gate needs: guard-cargo)", producer: "guards"}
+  - {id: RR-M11, applies_to: [merge], anchor: "merge:ci.yml/gate/section/sov.gate", checker: ".github/workflows/ci.yml#sov.*", provenance: "ci.yml job gate (sovereign-ci gate)", producer: "ci-main"}
+  - {id: RR-M12, applies_to: [merge], anchor: "merge:ci.yml/gate/section/determinism-compare", checker: ".github/workflows/ci.yml#determinism-compare", provenance: "ci.yml job gate (old gate needs: determinism-compare)", producer: "ci-main"}
+  - {id: RR-T01, applies_to: [tag], anchor: "tag:autopilot/commit/git merge-base --is-ancestor", checker: "scripts/release/autopilot.sh#git merge-base --is-ancestor", provenance: "APR-RELEASE-001 T-0 (release commit on origin/main)", producer: "ci-main"}
+  - {id: RR-T02, applies_to: [tag], anchor: "tag:autopilot/commit/bash scripts/bump-version.sh --check", checker: "scripts/bump-version.sh#--check", provenance: "#3618 (version derived, workspaces agree)", producer: "ci-main"}
+  - {id: RR-T03, applies_to: [tag], anchor: "tag:autopilot/deep/cargo test --doc --workspace", checker: "scripts/release/autopilot.sh#cargo test --doc", provenance: "APR-RELEASE-001 T-1 deep", producer: "deep-doctests"}
+  - {id: RR-T04, applies_to: [tag], anchor: "tag:autopilot/deep/cargo check --workspace --no-default-features", checker: "scripts/release/autopilot.sh#--no-default-features", provenance: "APR-RELEASE-001 T-1 deep (#3176 class recorded)", producer: "deep-nodefault"}
+  - {id: RR-T05, applies_to: [tag], anchor: "tag:autopilot/deep/cargo build --workspace --examples", checker: "scripts/release/autopilot.sh#--examples", provenance: "APR-RELEASE-001 T-1 deep", producer: "deep-examples"}
+  - {id: RR-T06, applies_to: [tag], anchor: "tag:autopilot/deep/cargo build --locked --release", checker: "scripts/release/autopilot.sh#cargo build --locked --release", provenance: "APR-RELEASE-001 T-1 deep (bins)", producer: "deep-bins-build"}
+  - {id: RR-T07, applies_to: [tag], anchor: "tag:autopilot/deep/python3 scripts/nightly_manifest.py bins", checker: "scripts/nightly_manifest.py", provenance: "APR-RELEASE-001 T-1 deep (bins)", producer: "deep-bins-build"}
+  - {id: RR-T08, applies_to: [tag], anchor: "tag:autopilot/deep/python3 scripts/nightly_manifest.py smoke", checker: "scripts/nightly_manifest.py", provenance: "APR-RELEASE-001 T-1 deep (smoke)", producer: "deep-bins-smoke"}
+  - {id: RR-T09, applies_to: [tag], anchor: "tag:autopilot/dogfood/bash scripts/dogfood.sh --phase", checker: "scripts/dogfood.sh", provenance: "APR-RELEASE-001 T-1 dogfood GO (#3957)", producer: "dogfood"}
+  - {id: RR-T10, applies_to: [tag], anchor: "tag:autopilot/dogfood/bash scripts/check_publish_preflight.sh --receipt-only", checker: "scripts/check_publish_preflight.sh#--receipt-only", provenance: "APR-RELEASE-001 T-1 dogfood receipt (preflight R5)", producer: "dogfood"}
+  - {id: RR-T11, applies_to: [tag], anchor: "tag:autopilot/models/bash scripts/release/models_t1.sh", checker: "scripts/release/models_t1.sh", provenance: "#3717 #3712 model matrix", producer: "models"}
+  - {id: RR-T12, applies_to: [tag], anchor: "tag:autopilot/readiness/bash scripts/release/release_readiness.sh --root", checker: "scripts/release/release_readiness.sh#DEFAULT_MODE=enforce", provenance: "#3715 B1, operator ruling 2026-09-28", producer: "readiness", key: "publish.R8.mode", value: "enforce"}
+  - {id: RR-T13, applies_to: [tag], anchor: "tag:autopilot/tag/bash scripts/check_milestone_cut.sh", checker: "scripts/check_milestone_cut.sh", provenance: "milestone cut (#3715 tag gating in cut_tag)", producer: "milestone"}
+  - {id: RR-T14, applies_to: [tag], anchor: "tag:autopilot/tag/bash scripts/release/carry_milestone_items.sh", checker: "scripts/release/carry_milestone_items.sh", provenance: "milestone carry before the cut", producer: "milestone"}
+  - {id: RR-P01, applies_to: [publish], anchor: "publish:autopilot/cleanroom/gh-workflow clean-room.yml", checker: "scripts/release/autopilot.sh#clean-room.yml", provenance: "APR-RELEASE-001 T-3 (infra#621)", producer: "cleanroom-cpu"}
+  - {id: RR-P02, applies_to: [publish], anchor: "publish:autopilot/cleanroom/gh-workflow b2-gpu.yml", checker: ".github/workflows/b2-gpu.yml", provenance: "APR-RELEASE-001 T-3 GPU-host ladder legs", producer: "cleanroom-gpu"}
+  - {id: RR-P03, applies_to: [publish], anchor: "publish:autopilot/assets/gh-workflow binary-release.yml", checker: ".github/workflows/binary-release.yml", provenance: "#4657 #4659 release binaries", producer: "assets"}
+  - {id: RR-P04, applies_to: [publish], anchor: "publish:autopilot/assets/bash scripts/check_release_assets.sh", checker: "scripts/check_release_assets.sh", provenance: "APR-RELEASE-001 release assets verified", producer: "assets"}
+  - {id: RR-P05, applies_to: [publish], anchor: "publish:autopilot/preflight/bash scripts/release/tag_coverage_gate.sh", checker: "scripts/release/tag_coverage_gate.sh", provenance: "BLD-001 row 4 R13 (judges a ci / coverage job; see HANDOFF operator table)", producer: "preflight"}
+  - {id: RR-P06, applies_to: [publish], anchor: "publish:autopilot/preflight/bash scripts/check_publish_preflight.sh", checker: "scripts/check_publish_preflight.sh", provenance: "PMAT-745 publish preflight", producer: "preflight"}
+  - {id: RR-P07, applies_to: [publish], anchor: "publish:autopilot/dryrun/bash scripts/release/rc_publish_gate.sh --verify", checker: "scripts/release/rc_publish_gate.sh#--verify", provenance: "#4287 RC-DOGFOOD-001 §4.5 (compile every tarball, T-4)", producer: "publish-dryrun"}
+  - {id: RR-P08, applies_to: [publish], anchor: "publish:autopilot/dryrun/bash scripts/cascade-publish.sh --check", checker: "scripts/cascade-publish.sh#--check", provenance: "APR-RELEASE-001 T-4 dry-run receipt (operator ruling 2026-09-17)", producer: "publish-dryrun"}
+  - {id: RR-P09, applies_to: [publish], anchor: "publish:preflight/R1", checker: "scripts/check_publish_preflight.sh#FAIL  R1 ", provenance: "PMAT-745 R1 clean tree", producer: "preflight"}
+  - {id: RR-P10, applies_to: [publish], anchor: "publish:preflight/R2", checker: "scripts/check_publish_preflight.sh#FAIL  R2 ", provenance: "PMAT-745 R2 version from cargo metadata", producer: "preflight"}
+  - {id: RR-P11, applies_to: [publish], anchor: "publish:preflight/R3", checker: "scripts/check_publish_preflight.sh#FAIL  R3 ", provenance: "PMAT-745 R3 tag at HEAD", producer: "preflight"}
+  - {id: RR-P12, applies_to: [publish], anchor: "publish:preflight/R4", checker: "scripts/check_publish_preflight.sh#FAIL  R4 ", provenance: "#4286 #4224 R4 release-branch ancestry", producer: "preflight"}
+  - {id: RR-P13, applies_to: [publish], anchor: "publish:preflight/R5", checker: "scripts/check_publish_preflight.sh#FAIL  R5 ", provenance: "#3957 R5 dogfood receipt GO", producer: "dogfood"}
+  - {id: RR-P14, applies_to: [publish], anchor: "publish:preflight/R6", checker: "scripts/check_publish_preflight.sh#FAIL  R6 ", provenance: "PMAT-955 #3468 R6 no dev-dependency cycle", producer: "preflight"}
+  - {id: RR-P15, applies_to: [publish], anchor: "publish:preflight/R7", checker: "scripts/check_publish_preflight.sh#FAIL  R7 ", provenance: "#3717 #3712 R7 model matrix", producer: "models"}
+  - {id: RR-P16, applies_to: [publish], anchor: "publish:preflight/R8", checker: "scripts/check_publish_preflight.sh#FAIL  R8 ", provenance: "#3715 R8 readiness, operator ruling 2026-09-28", producer: "readiness", key: "publish.R8.mode", value: "enforce"}
+  - {id: RR-P17, applies_to: [publish], anchor: "publish:cascade/facade_upstream_ready", checker: "scripts/cascade-publish.sh#facade_upstream_ready() {", provenance: "cascade-publish facade waits for its upstream crates", producer: "publish-dryrun"}
+  - {id: RR-P18, applies_to: [publish], anchor: "publish:cascade/clean_room_gate", checker: "scripts/cascade-publish.sh#clean_room_gate() {", provenance: "infra#621 clean-room green on exactly the tag commit; operator ruling 2026-09-28", producer: "cleanroom-cpu"}
+  - {id: RR-P19, applies_to: [publish], anchor: "publish:cascade/scripts/check_publish_preflight.sh", checker: "scripts/check_publish_preflight.sh", provenance: "PMAT-745 cascade refuses without preflight", producer: "preflight"}

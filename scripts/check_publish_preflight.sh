@@ -41,8 +41,8 @@
 #       through scripts/release/release_readiness.sh -- the same wrapper autopilot's T-1 `models` step
 #       calls on its fresh receipts; here it reads the COMMITTED receipts at HEAD, with the dogfood
 #       receipt R5 judged. Any non-zero from the wrapper refuses. The wrapper's committed DEFAULT_MODE
-#       is `report` until #3712's cells[] producer lands: a Fail verdict then prints as a WARN row and
-#       exits 0; a decline, a caller error or a missing pv is a non-zero in either mode.
+#       is `enforce` (#3715 B1, operator ruling 2026-09-28; there is no report mode): a Fail verdict
+#       refuses, and a decline, a caller error or a missing pv is a non-zero too.
 #
 # EXIT  0 every rule holds · 1 a rule refused · 2 the box cannot answer
 #       (no git/cargo/python3, not a repository). 2 is not a pass.
