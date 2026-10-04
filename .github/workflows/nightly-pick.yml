@@ -1,7 +1,7 @@
 # Nightly pick: ONE job picks the night's candidate C and publishes it as refs/heads/nightly/<night>.
 #
 # Every producer measures that C, the nightly train prints its line for that C, and a release
-# promotes that C. The ref is created once and never moved (create-only push, never forced), so a
+# promotes that C. The ref is created once and never moved (a create-only push: its lease expects the ref absent), so a
 # merge to main after the pick cannot change the night's line. Contract: contracts/nightly-pick-v1.yaml.
 #
 # WHY A PICK, NOT CRON SPACING. Scheduled events here fire 1h43m to 5h48m late (14 nights measured),

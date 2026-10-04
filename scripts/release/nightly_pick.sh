@@ -134,7 +134,8 @@ m09_bad_sha_accepted	s/grep -qxE .\[0-9a-f\]{40}. || {/true || {/
 m10_race_loser_claims_picked	s/printf .C=%s KEPT night %s (another pick won the race)\\n. "\$c" "\$3"/printf '"'"'C=%s PICKED night %s\\n'"'"' "$c" "$3"/
 m11_plain_push_fast_forwards	s/ --force-with-lease="refs\/heads\/nightly\/\$3:"//
 m12_unknown_commit_is_red	/cannot tell whether/s/return 2 ;;/return 1 ;;/
-m13_ref_name_matched_by_tail	s/NF && \$2 != r { found = 1 }/NF \&\& 0 { found = 1 }/'
+m13_ref_name_matched_by_tail	s/NF && \$2 != r { found = 1 }/NF \&\& 0 { found = 1 }/
+m14_read_widened_to_the_rolling_tag	s/ls-remote --refs "\$2" "refs\/heads\/nightly\/\$3"/ls-remote --refs "\$2" "nightly"/'
 mutants() {
     local tmp name expr killed=0 total=0 errors=0 out
     tmp="$(mktemp -d "${TMPDIR:-/tmp}/np-mu.XXXXXX")" || caller_error "no temp dir"

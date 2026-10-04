@@ -87,7 +87,7 @@ falsification_tests:
 
   - id: FALSIFY-NP-002
     rule: "The case table can still fail on the defects it names"
-    prediction: "Each planted mutant (a force push that moves the ref, a plain push that fast-forwards a racing ref, an unreadable ancestry refused as RED, a decoy ref matched by its tail, an existing ref ignored, a branch commit accepted, verify accepting any commit, an unpicked night resolving, an unreadable remote read as absent, the night taken as the fire date, a malformed night or commit accepted, a lost race claimed as PICKED) turns --self-test RED; a mutant whose patch does not apply is an error, never a survivor"
+    prediction: "Each planted mutant (a force push that moves the ref, a plain push that fast-forwards a racing ref, an unreadable ancestry refused as RED, a decoy ref matched by its tail, a read widened so the rolling tag refs/tags/nightly is seen, an existing ref ignored, a branch commit accepted, verify accepting any commit, an unpicked night resolving, an unreadable remote read as absent, the night taken as the fire date, a malformed night or commit accepted, a lost race claimed as PICKED) turns --self-test RED; a mutant whose patch does not apply is an error, never a survivor"
     test: "bash scripts/release/nightly_pick.sh --mutants"
     if_fails: "The case table is theater: it would pass a picker that lets a merge move the night's C"
 
