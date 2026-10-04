@@ -1,0 +1,19 @@
+path	lines	absent_fns	called	verdict	called_names	uncalled_names
+crates/aprender-present-terminal/src/ptop/v2_sketch.rs	177	7	1	read	view	cpu_panel disk_panel memory_panel network_panel pressure_panel process_panel
+crates/aprender-serve/src/convert/q4k_conversion_stats.rs	409	1	0	drop		ggml_tensor_byte_size
+crates/aprender-serve/src/cuda/executor/incremental_attention.rs	208	1	0	drop		paged_attention_into
+crates/aprender-serve/src/cuda/executor/layers/forward_graphed_decode.rs	211	3	0	drop		prepare_capture_buffers should_use_eager_decode try_first_token_graph_capture
+crates/aprender-serve/src/cuda/executor/layers/loading.rs	52	1	0	drop		ensure_module
+crates/aprender-serve/src/cuda/executor/layers/prefill_logits.rs	85	1	0	drop		prefill_extract_all_logits
+crates/aprender-serve/src/gguf/cuda/loading.rs	347	6	1	read	cuda_err	collect_layer_norm_slices ensure_indexed_weights_and_workspace make_cuda_current preload_all_norm_weights preload_lm_head_bias_wrapped
+crates/aprender-serve/src/gguf/loading.rs	445	1	0	drop		apr_try_load_f32
+crates/aprender-serve/src/inference/simd_bf16_matmul.rs	88	1	0	drop		simd_bf16_matmul_streaming
+crates/aprender-serve/src/quantize/spin_pool.rs	37	2	0	drop		get_gemv_pool parallel_rows
+crates/aprender-shell/src/cli_dispatch.rs	453	15	0	drop		cmd_update find_history_file_graceful get_password_or_prompt get_train_password load_existing_model load_history_commands parse_history_graceful print_model_load_hint print_standard_model_stats prompt_password_or_exit save_model_or_exit save_model_to_disk train_paged_model train_standard_model validate_ngram
+crates/aprender-shell/src/daemon_action.rs	468	8	0	drop		cmd_daemon cmd_daemon_stop cmd_publish cmd_stream handle_daemon_request load_daemon_model load_stream_model write_suggestions
+crates/aprender-shell/src/diversity.rs	392	10	0	drop		category_name classify_commands cmd_augment filter_commands_by_quality print_category_counts print_category_samples print_complexity print_diversity_report print_top_bases print_workflow_profile
+crates/aprender-shell/src/main_cmd_daemon.rs	57	1	0	drop		cmd_daemon_status
+crates/aprender-shell/src/main_cmd_tune_name.rs	366	14	0	drop		chrono_lite_date cmd_inspect cmd_tune days_in_year load_inspect_model month_and_day print_card_description print_card_footer print_card_header print_card_hyperparameters print_card_metrics print_card_training_data render_model_card_text year_and_day_of_year
+crates/aprender-shell/src/remove.rs	366	9	0	drop		cmd_bash_widget cmd_fish_widget cmd_uninstall print_uninstall_summary remove_directory remove_model_files remove_single_file remove_widget_block uninstall_shell_widget
+crates/aprender-shell/src/suggestion_helpers.rs	414	13	1	read	cmd_export	cmd_import cmd_suggest cmd_zsh_widget output_suggestions print_paged_model_error_hint print_paging_stats print_standard_model_error_hint print_top_commands stats_paged stats_standard suggest_paged suggest_standard
+crates/aprender-train/src/finetune/training_plan_execute.rs	1208	4	0	drop		estimate_model_params execute_manual_trial record_hpo_trial_outcome run_single_trial
