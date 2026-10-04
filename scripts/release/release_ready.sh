@@ -68,13 +68,13 @@ ci_gate_found() {
         g && /^    needs:/ {
             s = $0; if (s !~ /\[.*\]/) { bad = 1; next }
             sub(/^[^[]*\[/, "", s); sub(/\].*/, "", s); n = split(s, a, /[ ,]+/)
-            for (i = 1; i <= n; i++) if (a[i] != "") { printf "merge:ci.yml/gate/needs/%s\t%s:%d\n", a[i], F, FNR; k++ }
+            for (i = 1; i <= n; i++) if (a[i] != "") { printf "merge:ci.yml/gate/needs/%s\t%s:%d\n", a[i], F, FNR; k++; kn++ }
         }
         g && /for pair in / {
             s = $0; sub(/.*for pair in /, "", s); sub(/;.*/, "", s); n = split(s, a, / +/)
-            for (i = 1; i <= n; i++) if (a[i] != "") { x = a[i]; sub(/^[^:]*:/, "", x); printf "merge:ci.yml/gate/section/%s\t%s:%d\n", x, F, FNR; k++ }
+            for (i = 1; i <= n; i++) if (a[i] != "") { x = a[i]; sub(/^[^:]*:/, "", x); printf "merge:ci.yml/gate/section/%s\t%s:%d\n", x, F, FNR; k++; kp++ }
         }
-        END { if (bad || k == 0) exit 2 }
+        END { if (bad || kn == 0 || kp == 0) exit 2 }
     ' "$1"
 }
 
@@ -97,9 +97,9 @@ autopilot_found() {
             out = ""
             if (line ~ /^[ \t]*#/) return ""
             s = line
-            while (match(s, /bash +"?(\$REPO_ROOT\/)?scripts\/[A-Za-z0-9_\/.-]+\.sh"?( +--[a-z][a-z-]*)?/)) {
+            while (match(s, /bash +"?(\$\{?[A-Za-z_]+\}?\/|\.\/)?scripts\/[A-Za-z0-9_\/.-]+\.sh"?( +--[a-z][a-z-]*)?/)) {
                 w = substr(s, RSTART, RLENGTH); s = substr(s, RSTART + RLENGTH)
-                gsub(/"/, "", w); sub(/\$REPO_ROOT\//, "", w); gsub(/ +/, " ", w); out = out "\n" w
+                gsub(/"/, "", w); sub(/\$\{?[A-Za-z_]+\}?\//, "", w); sub(/ \.\//, " ", w); gsub(/ +/, " ", w); out = out "\n" w
             }
             s = line
             while (match(s, /python3 +scripts\/[A-Za-z0-9_\/.-]+\.py( +[a-z][a-z-]*)?/)) {
@@ -125,7 +125,7 @@ autopilot_found() {
             ph = "tag"; stop = 0
             for (j = 1; j <= ns; j++) { PH[ST[j]] = stop ? "" : ph; if (ST[j] == "tag") ph = "publish"; if (ST[j] == "dryrun") stop = 1 }
             nf = 0
-            for (i = 1; i <= NR; i++) if (L[i] ~ /^[a-z_]+\(\) *\{/ && L[i] !~ /\}[ \t]*$/) {
+            for (i = 1; i <= NR; i++) if (L[i] ~ /^[A-Za-z_][A-Za-z0-9_]*\(\) *\{/ && L[i] !~ /\}[ \t]*$/) {
                 fn = L[i]; sub(/\(.*/, "", fn); FS0[fn] = i
                 for (e = i + 1; e <= NR && L[e] !~ /^\}/; e++) ; FE[fn] = e; FN[++nf] = fn
             }
@@ -173,21 +173,23 @@ preflight_found() {
     ' "$1"
 }
 
-# cascade_found FILE: every `if ! <function|bash script>` the cascade refuses on (gh and assignments are reads)
+# cascade_found FILE: every `if ! <function|bash script>` the cascade refuses on. A bare word counts only when the
+# file defines it as a function, so `if ! git …`, `if ! grep …` and `if ! gh …` (reads, not gates) are not anchors.
 cascade_found() {
     awk -v F="$2" '
+        NR == FNR { if ($0 ~ /^[A-Za-z_][A-Za-z0-9_]*\(\)/) { f = $0; sub(/\(.*/, "", f); DEF[f] = 1 }; next }
         /^[ \t]*#/ { next }
         /^[ \t]*if ! / {
             s = $0; sub(/^[ \t]*if ! /, "", s)
             if (s ~ /^bash /) { if (match(s, /scripts\/[A-Za-z0-9_\/.-]+\.sh/)) { printf "publish:cascade/%s\t%s:%d\n", substr(s, RSTART, RLENGTH), F, FNR; k++ } }
-            else if (s ~ /^[a-z_]+ / && s !~ /^gh /) { sub(/ .*/, "", s); printf "publish:cascade/%s\t%s:%d\n", s, F, FNR; k++ }
+            else { w = s; sub(/[ ;].*/, "", w); if (w in DEF) { printf "publish:cascade/%s\t%s:%d\n", w, F, FNR; k++ } }
         }
         END { if (k == 0) exit 2 }
-    ' "$1"
+    ' "$1" "$1"
 }
 
-# claims ROOT: "key<TAB>value<TAB>where" for every fact two places can disagree on
-claims() {
+# claims_raw ROOT: "key<TAB>value<TAB>where" for every fact two places can disagree on
+claims_raw() {
     local root=$1
     awk -v F="$RRW_REL" '/^DEFAULT_MODE=/ { v = $0; sub(/^DEFAULT_MODE=/, "", v); sub(/[ \t#].*/, "", v); printf "publish.R8.mode\t%s\t%s:%d\n", v, F, FNR }' "$root/$RRW_REL"
     awk -v F="$PRE_REL" '
@@ -202,6 +204,19 @@ claims() {
     ' "$root/$AUTO_REL"
     awk -v F="$MK_REL" '/^COV_FLOOR *:= *[0-9]+/ { v = $0; sub(/.*:= */, "", v); sub(/[^0-9].*/, "", v); printf "coverage.floor\t%s\t%s:%d\n", v, F, FNR }' "$root/$MK_REL"
     awk -v F="$DOC_REL" '{ s = $0; while (match(s, /COV_FLOOR := [0-9]+/)) { v = substr(s, RSTART, RLENGTH); sub(/.*:= /, "", v); printf "coverage.floor\t%s\t%s:%d\n", v, F, FNR; s = substr(s, RSTART + RLENGTH) } }' "$root/$DOC_REL"
+}
+
+# claims ROOT: claims_raw, and rc 2 unless every claim has both of its sides. A side that stops matching (a reworded
+# comment, a moved variable) would otherwise drop out and leave the other side agreeing with nothing.
+claims() {
+    local out
+    out=$(claims_raw "$1")
+    printf '%s\n' "$out" | awk -F '\t' -v W="publish.R8.mode:$RRW_REL publish.R8.mode:$PRE_REL autopilot.steps:$AUTO_REL autopilot.steps:$AUTO_REL coverage.floor:$MK_REL coverage.floor:$DOC_REL" '
+        NF >= 3 { f = $3; sub(/:[0-9]+$/, "", f); N[$1 ":" f]++ }
+        END { n = split(W, w, " "); for (i = 1; i <= n; i++) need[w[i]]++
+              for (x in need) if (N[x] < need[x]) { printf "claim side missing: %s (want %d, found %d)\n", x, need[x], N[x] + 0 > "/dev/stderr"; bad = 1 }
+              exit bad ? 2 : 0 }' || return 2
+    printf '%s\n' "$out"
 }
 
 # found ROOT: every anchor the surfaces state; rc 2 when a surface is missing or unreadable
@@ -254,7 +269,7 @@ verdict() {
     tmp=$(mktemp -d) || nm "mktemp"
     found "$root" > "$tmp/found" 2> "$tmp/err"; rc=$?
     [ "$rc" = 0 ] || { cat "$tmp/err"; rm -rf -- "${tmp:?}"; nm "a surface cannot be read"; }
-    claims "$root" > "$tmp/claims"
+    claims "$root" > "$tmp/claims" 2> "$tmp/err" || { cat "$tmp/err"; rm -rf -- "${tmp:?}"; nm "a claim has lost a side"; }
     : > "$tmp/list"
     if [ -f "$list" ]; then
         parse_list "$list" > "$tmp/list" 2> "$tmp/err"; rc=$?
@@ -360,11 +375,15 @@ SH
 echo "FAIL  R1 dirty"; echo "FAIL  R8 not ready"
 SH
     cat > "$d/$CAS_REL" <<'SH'
+new_refusal() {
+  return 0
+}
 clean_room_gate() {
   return 0
 }
 if ! gh api x > /dev/null; then echo read; fi
 if ! clean_room_gate "$ROOT"; then exit 1; fi
+if ! git diff --quiet; then exit 1; fi
 # --check
 SH
     printf '%s\n' 'DEFAULT_MODE=enforce' > "$d/$RRW_REL"
@@ -422,6 +441,10 @@ mutate() {
         nm-surface-missing) rm -f -- "${d:?}/$AUTO_REL" ;;
         nm-claim-surface-missing) rm -f -- "${d:?}/$MK_REL" ;;
         nm-needs-block-form) edit "$d" "$CI_REL" 's/needs: \[x86-main\]/needs:/' ;;
+        nm-gate-no-sections) edit "$d" "$CI_REL" '/for pair in/d' ;;
+        nm-claim-side-reworded) edit "$d" "$PRE_REL" 's/is `enforce`\./is the enforce mode./' ;;
+        unlisted-dotslash) edit "$d" "$AUTO_REL" '/^  echo waiting/a\  bash ./scripts/dotslash_gate.sh' ;;
+        unlisted-camel-function) edit "$d" "$AUTO_REL" 's/^helper() {/Helper2() {/; s/^  helper$/  Helper2/; /^  bash scripts\/helper_gate.sh/a\  bash scripts/camel_gate.sh' ;;
         nm-unknown-step) edit "$d" "$AUTO_REL" 's/^if run_step dryrun;/if run_step dryrnu;/' ;;
         malformed-no-producer) edit "$d" "$LIST_REL" 's|, producer: "preflight"||' ;;
         malformed-bad-phase) edit "$d" "$LIST_REL" 's/applies_to: \[merge\], anchor: "merge:ci.yml\/gate\/needs/applies_to: [deploy], anchor: "merge:ci.yml\/gate\/needs/' ;;
@@ -453,8 +476,12 @@ contradiction-r8-doc 1 CONTRADICTION publish.R8.mode
 contradiction-steps-doc 1 CONTRADICTION autopilot.steps
 contradiction-floor 1 CONTRADICTION coverage.floor
 nm-surface-missing 2 not_measured
-nm-claim-surface-missing 2 not_measured
+nm-claim-surface-missing 2 surface missing: Makefile
 nm-needs-block-form 2 not_measured
+nm-gate-no-sections 2 not_measured
+nm-claim-side-reworded 2 not_measured
+unlisted-dotslash 1 UNLISTED tag:autopilot/wait/bash scripts/dotslash_gate.sh
+unlisted-camel-function 1 UNLISTED tag:autopilot/tag/bash scripts/camel_gate.sh
 nm-unknown-step 2 not_measured
 malformed-no-producer 3 names no nightly producer
 malformed-bad-phase 3 applies_to must be a subset
@@ -506,7 +533,12 @@ M09 drop between-steps@@if (!(i in IN)) {@@if (0) {
 M10 drop no-checker@@if (ck == "" || ck == "-")@@if (0)
 M11 probe always equal@@[ -z "$lo$go" ]@@true
 M12 drop unknown-step@@if (!(st in PH)) { unk = 1; continue }@@if (!(st in PH)) { continue }
-M13 surface-missing passes@@[ -f "$root/$f" ] || { printf '"'"'surface missing: %s\n'"'"' "$f" >&2; return 2; }@@[ -f "$root/$f" ] || continue'
+M13 surface-missing passes@@[ -f "$root/$f" ] || { printf '"'"'surface missing: %s\n'"'"' "$f" >&2; return 2; }@@[ -f "$root/$f" ] || continue
+M14 gate sections optional@@if (bad || kn == 0 || kp == 0)@@if (bad || kn == 0)
+M15 claim side optional@@exit bad ? 2 : 0 }@@exit 0 }
+M16 cascade takes any word@@if (w in DEF)@@if (w != "")
+M17 dot-slash unseen@@(\$\{?[A-Za-z_]+\}?\/|\.\/)?scripts@@(\$\{?[A-Za-z_]+\}?\/)?scripts
+M18 lowercase functions only@@if (L[i] ~ /^[A-Za-z_][A-Za-z0-9_]*\(\) *\{/@@if (L[i] ~ /^[a-z_]+\(\) *\{/'
 
 mutants() {
     local tmp line id name from to killed=0 total=0 err=0

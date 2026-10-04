@@ -152,6 +152,8 @@ non_goals:
   - "Running any checker. The list says what is required and where it is checked; each checker proves itself."
   - "Changing GitHub's required status checks or rulesets. The probe reads them; the operator changes them."
   - "Blocking any merge, tag or publish today. Wiring is a proposal (three green nights first, L31)."
+  - "Resolving producer names. Each publish entry must name a producer (checked non-empty); the names are lanes of the nightly release train, which is not on main yet. Resolving them against that lane table is follow-up work, not done here."
+  - "Known extractor limits (a requirement written in these forms is not seen, so it cannot be flagged unlisted): a checker invoked across a backslash line continuation; a cascade refusal not written as `if ! <fn|bash script>`; a needle that survives only in a comment still counts as present; a function name inside an echo string counts as a call."
 
 binding_registry:
   checker: scripts/release/release_ready.sh
@@ -162,17 +164,17 @@ binding_registry:
 requirements:
   - {id: RR-M01, applies_to: [merge], anchor: "merge:required-context/ci / gate", checker: ".github/workflows/ci.yml#  gate:", provenance: "CLAUDE.md Git Workflow; branch protection on main", producer: "ci-main"}
   - {id: RR-M02, applies_to: [merge], anchor: "merge:required-context/workspace-test", checker: ".github/workflows/ci.yml#  workspace-test:", provenance: "CLAUDE.md Git Workflow; branch protection on main", producer: "ci-main"}
-  - {id: RR-M03, applies_to: [merge], anchor: "merge:ci.yml/gate/needs/x86-main", checker: ".github/workflows/ci.yml#  x86-main:", provenance: "ci.yml job gate (#3100)", producer: "ci-main"}
-  - {id: RR-M04, applies_to: [merge], anchor: "merge:ci.yml/gate/needs/workspace-test", checker: ".github/workflows/ci.yml#  workspace-test:", provenance: "ci.yml job gate (workspace-test fan-in)", producer: "ci-main"}
-  - {id: RR-M05, applies_to: [merge], anchor: "merge:ci.yml/gate/needs/determinism", checker: ".github/workflows/ci.yml#  determinism:", provenance: "ci.yml job gate", producer: "ci-main"}
+  - {id: RR-M03, applies_to: [merge], anchor: "merge:ci.yml/gate/needs/x86-main", checker: ".github/workflows/ci.yml#  x86-main:", provenance: "#4433 (5 fat jobs; gate needs)", producer: "ci-main"}
+  - {id: RR-M04, applies_to: [merge], anchor: "merge:ci.yml/gate/needs/workspace-test", checker: ".github/workflows/ci.yml#  workspace-test:", provenance: "#4433 (gate needs; workspace-test fan-in)", producer: "ci-main"}
+  - {id: RR-M05, applies_to: [merge], anchor: "merge:ci.yml/gate/needs/determinism", checker: ".github/workflows/ci.yml#  determinism:", provenance: "#4433 (gate needs)", producer: "ci-main"}
   - {id: RR-M06, applies_to: [merge], anchor: "merge:ci.yml/gate/needs/mutants-table-scope", checker: ".github/workflows/ci.yml#  mutants-table-scope:", provenance: "#4646 mutants ratchet (report-only, operator ruling 2026-10-01)", producer: "mutants", key: "merge.mutants.mode", value: "report"}
   - {id: RR-M07, applies_to: [merge], anchor: "merge:ci.yml/gate/needs/mutants-table", checker: ".github/workflows/ci.yml#  mutants-table:", provenance: "#4646 mutants ratchet (report-only, operator ruling 2026-10-01)", producer: "mutants", key: "merge.mutants.mode", value: "report"}
   - {id: RR-M08, applies_to: [merge], anchor: "merge:ci.yml/gate/needs/yoga", checker: ".github/workflows/ci.yml#  yoga:", provenance: "#4621 (needed for its mutants-cuda section alone)", producer: "cuda"}
-  - {id: RR-M09, applies_to: [merge], anchor: "merge:ci.yml/gate/section/guard-tree", checker: ".github/workflows/ci.yml#guard-tree", provenance: "ci.yml job gate (old gate needs: guard-tree)", producer: "guards"}
-  - {id: RR-M10, applies_to: [merge], anchor: "merge:ci.yml/gate/section/guard-cargo", checker: ".github/workflows/ci.yml#guard-cargo", provenance: "ci.yml job gate (old gate needs: guard-cargo)", producer: "guards"}
-  - {id: RR-M11, applies_to: [merge], anchor: "merge:ci.yml/gate/section/sov.gate", checker: ".github/workflows/ci.yml#sov.*", provenance: "ci.yml job gate (sovereign-ci gate)", producer: "ci-main"}
-  - {id: RR-M12, applies_to: [merge], anchor: "merge:ci.yml/gate/section/determinism-compare", checker: ".github/workflows/ci.yml#determinism-compare", provenance: "ci.yml job gate (old gate needs: determinism-compare)", producer: "ci-main"}
-  - {id: RR-T01, applies_to: [tag], anchor: "tag:autopilot/commit/git merge-base --is-ancestor", checker: "scripts/release/autopilot.sh#git merge-base --is-ancestor", provenance: "APR-RELEASE-001 T-0 (release commit on origin/main)", producer: "ci-main"}
+  - {id: RR-M09, applies_to: [merge], anchor: "merge:ci.yml/gate/section/guard-tree", checker: ".github/workflows/ci.yml#guard-tree", provenance: "#4433 (gate section pair; was gate need guard-tree)", producer: "guards"}
+  - {id: RR-M10, applies_to: [merge], anchor: "merge:ci.yml/gate/section/guard-cargo", checker: ".github/workflows/ci.yml#guard-cargo", provenance: "#4433 (gate section pair; was gate need guard-cargo)", producer: "guards"}
+  - {id: RR-M11, applies_to: [merge], anchor: "merge:ci.yml/gate/section/sov.gate", checker: ".github/workflows/ci.yml#sov.*", provenance: "#4433 (gate section pair; sovereign-ci gate)", producer: "ci-main"}
+  - {id: RR-M12, applies_to: [merge], anchor: "merge:ci.yml/gate/section/determinism-compare", checker: ".github/workflows/ci.yml#determinism-compare", provenance: "#4433 (gate section pair; was gate need determinism-compare)", producer: "ci-main"}
+  - {id: RR-T01, applies_to: [tag], anchor: "tag:autopilot/commit/git merge-base --is-ancestor", checker: "scripts/release/autopilot.sh#git merge-base --is-ancestor", provenance: "APR-RELEASE-001 T-0, #3599 (release commit on origin/main)", producer: "ci-main"}
   - {id: RR-T02, applies_to: [tag], anchor: "tag:autopilot/commit/bash scripts/bump-version.sh --check", checker: "scripts/bump-version.sh#--check", provenance: "#3618 (version derived, workspaces agree)", producer: "ci-main"}
   - {id: RR-T03, applies_to: [tag], anchor: "tag:autopilot/deep/cargo test --doc --workspace", checker: "scripts/release/autopilot.sh#cargo test --doc", provenance: "APR-RELEASE-001 T-1 deep", producer: "deep-doctests"}
   - {id: RR-T04, applies_to: [tag], anchor: "tag:autopilot/deep/cargo check --workspace --no-default-features", checker: "scripts/release/autopilot.sh#--no-default-features", provenance: "APR-RELEASE-001 T-1 deep (#3176 class recorded)", producer: "deep-nodefault"}
@@ -190,7 +192,7 @@ requirements:
   - {id: RR-P02, applies_to: [publish], anchor: "publish:autopilot/cleanroom/gh-workflow b2-gpu.yml", checker: ".github/workflows/b2-gpu.yml", provenance: "APR-RELEASE-001 T-3 GPU-host ladder legs", producer: "cleanroom-gpu"}
   - {id: RR-P03, applies_to: [publish], anchor: "publish:autopilot/assets/gh-workflow binary-release.yml", checker: ".github/workflows/binary-release.yml", provenance: "#4657 #4659 release binaries", producer: "assets"}
   - {id: RR-P04, applies_to: [publish], anchor: "publish:autopilot/assets/bash scripts/check_release_assets.sh", checker: "scripts/check_release_assets.sh", provenance: "APR-RELEASE-001 release assets verified", producer: "assets"}
-  - {id: RR-P05, applies_to: [publish], anchor: "publish:autopilot/preflight/bash scripts/release/tag_coverage_gate.sh", checker: "scripts/release/tag_coverage_gate.sh", provenance: "BLD-001 row 4 R13 (judges a ci / coverage job; see HANDOFF operator table)", producer: "preflight"}
+  - {id: RR-P05, applies_to: [publish], anchor: "publish:autopilot/preflight/bash scripts/release/tag_coverage_gate.sh", checker: "scripts/release/tag_coverage_gate.sh", provenance: "R13 #4691 (open: it judges a ci / coverage job that ci.yml no longer defines)", producer: "preflight"}
   - {id: RR-P06, applies_to: [publish], anchor: "publish:autopilot/preflight/bash scripts/check_publish_preflight.sh", checker: "scripts/check_publish_preflight.sh", provenance: "PMAT-745 publish preflight", producer: "preflight"}
   - {id: RR-P07, applies_to: [publish], anchor: "publish:autopilot/dryrun/bash scripts/release/rc_publish_gate.sh --verify", checker: "scripts/release/rc_publish_gate.sh#--verify", provenance: "#4287 RC-DOGFOOD-001 §4.5 (compile every tarball, T-4)", producer: "publish-dryrun"}
   - {id: RR-P08, applies_to: [publish], anchor: "publish:autopilot/dryrun/bash scripts/cascade-publish.sh --check", checker: "scripts/cascade-publish.sh#--check", provenance: "APR-RELEASE-001 T-4 dry-run receipt (operator ruling 2026-09-17)", producer: "publish-dryrun"}
