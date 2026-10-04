@@ -142,8 +142,11 @@ ladder:
   known_red:
     - rung: qwen35-0.8b-q4km
       sha256: bd258782e35f7f458f8aced1adc053e6e92e89bc735ba3be89d38a06121dc517
+      # #4696: this rung's thinking-ON leg is judged sampled (contracts/thinking-budgets-v1.yaml), so
+      # the greedy "think block unclosed" text can no longer be its failure. The clause covers the
+      # sampled failure only, below the signed 4-of-8; a pass leaves the entry STALE, as designed.
       clause:
-        - '^golden_output FAIL: golden_output_thinking_on: think block unclosed within 2048 tokens\b'
+        - '^golden_output FAIL: golden_output_thinking_on: [0-3]/8 sampled runs passed \(temperature 0\.6, top_k 20, top_p 0\.95, budget 2048\), below the required 4 \(#4696\);'
         - '^apr qa exited \d+ — gates_failed: golden_output \(#3898\)$'
       ticket: "#4030"
       ruling: "operator selection via aprender-cf 2026-09-23 on #3907: ship as known RED + ticket"

@@ -1,6 +1,6 @@
 metadata:
   id: C-THINKING-BUDGETS
-  version: "1.0.0"
+  version: "1.1.0"
   created: "2026-09-23"
   author: PAIML Engineering
   kind: pattern
@@ -86,11 +86,30 @@ models:
       the official template: UNCLOSED at 2048 / 4096 / 8192 / 16384 with 6,723 / 13,225 /
       26,243 / 52,290 chars; output grows linearly with the budget. The text is coherent,
       reaches "2 + 2 = 4", then loops ("Wait, I should check..."). So the budget is not what
-      fails and no budget makes this leg pass; it stays FAIL, known_red. A model property, not
+      fails and no budget makes the greedy leg pass; greedy, it stays FAIL. A model property, not
       apr: with Qwen's sampling (T 0.6, top-k 20, top-p 0.95, 8 seeds, 2048) llama.cpp closes
       2/8 and apr closes 5/8; llama.cpp greedy closes only because an early near-tie resolves
       differently across engines. Evidence (in-tree):
       evidence/thinking-budgets/qwen35-0.8b-thinking-on-2026-10-04.md.
+    # #4696 (GATE CHANGE): this row is judged SAMPLED, not greedy. The leg runs once per seed with
+    # Qwen's recommended thinking sampler and passes iff at least `min_pass` runs pass the unchanged
+    # per-run judge (closed block, >= 3 words of reasoning, right answer). A run that errors or never
+    # runs counts as a FAILED seed, never as not run.
+    sampling:
+      temperature: 0.6
+      top_k: 20
+      top_p: 0.95
+      seeds: [0, 1, 2, 3, 4, 5, 6, 7]
+      min_pass: 4
+      basis: |
+        #4696: apr greedy never closes the think block on this model at any budget from 2048 to
+        16384 tokens, while sampled runs do, so greedy measures a decoding mode the model does not
+        close in, not the model. Measured with Qwen's sampler (T 0.6, top_k 20, top_p 0.95), 8 seeds,
+        2048 tokens, official template: apr Q4_K_M closed 5/8; llama.cpp Q4_K_M 2/8 and IQ4_XS 4/8,
+        which reads as a model property. min_pass 4 of 8 sits one seed under apr's measured 5/8.
+        That measurement counted CLOSURE; this gate counts closure AND a right answer, so the
+        first sweep on a cut is the first measurement of the pass rate itself. IQ4_XS is NOT given a
+        sampled rule: apr was not measured on it, so its row stays fail-closed.
 
 # #4046 merge-back: the contract-integrity ratchet requires every contract to state its
 # equations. This is the resolution rule the golden gate's thinking_on_budget_for applies.
@@ -106,3 +125,14 @@ equations:
     invariants:
       - "a listed model never inherits the default"
       - "a budget without a basis is not a budget"
+  sampled_on_leg:
+    formula: >
+      pass(m) = |{ s in models[m].sampling.seeds : judge(generate(m, budget(m), sampler, s)) = PASS }|
+                >= models[m].sampling.min_pass,          if models[m].sampling is set;
+                judge(generate_greedy(m, budget(m))) = PASS,   otherwise
+    domain: "m = a model whose row resolves a budget; sampler = (temperature, top_k, top_p) from the row"
+    codomain: "PASS, or FAIL naming passes/seeds, the threshold and the first failing seed"
+    invariants:
+      - "an errored or missing seed run is a failed seed, never a skipped one"
+      - "1 <= min_pass <= |seeds|, temperature > 0 and a non-empty basis, else the leg refuses"
+      - "a model whose row has no `sampling` is judged greedy, exactly as before"
