@@ -1,6 +1,6 @@
 #!/usr/bin/env bash
 # check_coverage_receipt.sh -- the case table for the coverage receipt coverage-nightly writes (#4672,
-# RQ-1's producer half): scripts/coverage_receipt.sh says "commit H, floor F, pct P" or "not measured",
+# RQ-1's producer half): scripts/coverage_receipt.sh says "commit H, floor F, pct P over N tests" or "not measured",
 # and never a stale, partial or rounded-up number.
 #
 # BEHAVIOUR rows run the producer against fixture logs. STRUCTURE rows judge the workflow:
@@ -8,8 +8,8 @@
 #   S2  the receipt step runs AFTER it, if: always(), continue-on-error (shadow, L31), keyed by
 #       `git rev-parse HEAD`, floor = COV_FLOOR as make resolves it, and judged against the marker;
 #   S3  the receipt is uploaded by its exact glob, if: always(), continue-on-error, a missing one an upload error;
-#   S4  SHADOW: nothing else in the tracked tree (contracts/ prose aside) reads the receipt yet. The release-day read
-#       waits on the RQ-1 ruling and lands with a change to this row.
+#   S4  nothing in the tracked tree (contracts/ prose aside) reads the receipt except the release gate
+#       (scripts/release/tag_coverage_gate.sh, #4734) and its guard. A new reader lands with a change to this row.
 #   S1-S3 compare each step to the reviewed text below EXACTLY (comments and blank lines aside): a "contains"
 #   check let an added if: false, working-directory: or early exit through (review round 2).
 # Then each mutant (of the producer, or of a copy of the workflow) must turn at least one row WRONG.
@@ -34,28 +34,37 @@ run() {
   out=$(bash "$prod" "$d/cov.log" "$sha" "$floor" "$d/out" "$d/since" 2>/dev/null); rc=$?
   f="$d/out/coverage-receipt-$sha.json"
   if [ ! -s "$f" ]; then printf 'rc=%s nofile' "$rc"; return; fi
-  sed -E 's/.*"sha":"([^"]*)","floor":([^,]*),"pct":([^,]*),"covered":([^,]*),"total":([^,]*),"status":"([^"]*)","reason":(null|"[^"]*")}$/\6 pct=\3 floor=\2 \4\/\5 \1 \7/' "$f" \
-    | while read -r st p fl ct s rs; do
+  sed -E 's/.*"sha":"([^"]*)","floor":([^,]*),"pct":([^,]*),"covered":([^,]*),"total":([^,]*),"status":"([^"]*)","reason":(null|"[^"]*"),"passed":([^,}]*)}$/\6 pct=\3 floor=\2 \4\/\5 passed=\8 \1 \7/' "$f" \
+    | while read -r st p fl ct ps s rs; do
         k=BAD; [ "$s" = "$sha" ] && [ "$out" = "$(cat "$f")" ] && k=ok
-        printf 'rc=%s %s %s %s %s key=%s reason=%s' "$rc" "$st" "$p" "$fl" "$ct" "$k" "${rs//\"/}"
+        printf 'rc=%s %s %s %s %s %s key=%s reason=%s' "$rc" "$st" "$p" "$fl" "$ct" "$ps" "$k" "${rs//\"/}"
       done
 }
 NM='not_measured pct=null'
-CASES="measured_two_decimals|TOTAL: 786448/885829 lines covered (88%)\n|$SHA|89|fresh|rc=0 measured pct=88.78 floor=89 786448/885829 key=ok reason=null
-truncated_never_rounded_up|TOTAL: 999999/1000000 lines covered (99%)\n|$SHA|89|fresh|rc=0 measured pct=99.99 floor=89 999999/1000000 key=ok reason=null
-the_last_total_wins|TOTAL: 1/10 lines covered (10%)\nTOTAL: 9/10 lines covered (90%)\n|$SHA|89|fresh|rc=0 measured pct=90.00 floor=89 9/10 key=ok reason=null
-full_and_empty_coverage|TOTAL: 10/10 lines covered (100%)\n|$SHA|89|fresh|rc=0 measured pct=100.00 floor=89 10/10 key=ok reason=null
-zero_covered_is_a_number|TOTAL: 0/10 lines covered (0%)\n|$SHA|89|fresh|rc=0 measured pct=0.00 floor=89 0/10 key=ok reason=null
-unknown_floor_is_null|TOTAL: 9/10 lines covered (90%)\n|$SHA|unknown|fresh|rc=0 measured pct=90.00 floor=null 9/10 key=ok reason=null
-decimal_floor_kept|TOTAL: 9/10 lines covered (90%)\n|$SHA|88.5|fresh|rc=0 measured pct=90.00 floor=88.5 9/10 key=ok reason=null
-leading_zero_floor_is_null|TOTAL: 9/10 lines covered (90%)\n|$SHA|088|fresh|rc=0 measured pct=90.00 floor=null 9/10 key=ok reason=null
-a_previous_runs_log_is_not_this_run|ignored|$SHA|89|stale|rc=0 $NM floor=89 null/null key=ok reason=coverage log is not from this run
-no_log_is_not_measured|NONE|$SHA|89|fresh|rc=0 $NM floor=89 null/null key=ok reason=no coverage log
-did_not_measure_beats_a_total|TOTAL: 9/10 lines covered (90%)\n❌ coverage DID NOT MEASURE: killed\n|$SHA|89|fresh|rc=0 $NM floor=89 null/null key=ok reason=make coverage did not measure
-no_total_line_is_not_measured|running 12 tests\n|$SHA|89|fresh|rc=0 $NM floor=89 null/null key=ok reason=no TOTAL line in the coverage log
-an_indented_total_is_not_the_total|TOTAL: 9/10 lines covered (90%)\n  TOTAL: 1/10 lines covered (10%)\n|$SHA|89|fresh|rc=0 measured pct=90.00 floor=89 9/10 key=ok reason=null
-zero_instrumented_lines_is_not_measured|TOTAL: 0/0 lines covered (0%)\n|$SHA|89|fresh|rc=0 $NM floor=89 null/null key=ok reason=0 instrumented lines
-covered_above_total_is_not_measured|TOTAL: 11/10 lines covered (110%)\n|$SHA|89|fresh|rc=0 $NM floor=89 null/null key=ok reason=covered exceeds total
+# one libtest summary line, as `make coverage` (cargo llvm-cov test) prints it per test binary (#4734)
+TR='test result: ok. 7 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.01s\n'
+TR3='test result: ok. 3 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.01s\n'
+TRF4='test result: FAILED. 4 passed; 1 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.01s\n'
+TR0='test result: ok. 0 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.00s\n'
+CASES="measured_two_decimals|${TR}TOTAL: 786448/885829 lines covered (88%)\n|$SHA|89|fresh|rc=0 measured pct=88.78 floor=89 786448/885829 passed=7 key=ok reason=null
+truncated_never_rounded_up|${TR}TOTAL: 999999/1000000 lines covered (99%)\n|$SHA|89|fresh|rc=0 measured pct=99.99 floor=89 999999/1000000 passed=7 key=ok reason=null
+the_last_total_wins|${TR}TOTAL: 1/10 lines covered (10%)\nTOTAL: 9/10 lines covered (90%)\n|$SHA|89|fresh|rc=0 measured pct=90.00 floor=89 9/10 passed=7 key=ok reason=null
+full_and_empty_coverage|${TR}TOTAL: 10/10 lines covered (100%)\n|$SHA|89|fresh|rc=0 measured pct=100.00 floor=89 10/10 passed=7 key=ok reason=null
+zero_covered_is_a_number|${TR}TOTAL: 0/10 lines covered (0%)\n|$SHA|89|fresh|rc=0 measured pct=0.00 floor=89 0/10 passed=7 key=ok reason=null
+unknown_floor_is_null|${TR}TOTAL: 9/10 lines covered (90%)\n|$SHA|unknown|fresh|rc=0 measured pct=90.00 floor=null 9/10 passed=7 key=ok reason=null
+decimal_floor_kept|${TR}TOTAL: 9/10 lines covered (90%)\n|$SHA|88.5|fresh|rc=0 measured pct=90.00 floor=88.5 9/10 passed=7 key=ok reason=null
+leading_zero_floor_is_null|${TR}TOTAL: 9/10 lines covered (90%)\n|$SHA|088|fresh|rc=0 measured pct=90.00 floor=null 9/10 passed=7 key=ok reason=null
+a_previous_runs_log_is_not_this_run|ignored|$SHA|89|stale|rc=0 $NM floor=89 null/null passed=null key=ok reason=coverage log is not from this run
+no_log_is_not_measured|NONE|$SHA|89|fresh|rc=0 $NM floor=89 null/null passed=null key=ok reason=no coverage log
+did_not_measure_beats_a_total|TOTAL: 9/10 lines covered (90%)\n❌ coverage DID NOT MEASURE: killed\n|$SHA|89|fresh|rc=0 $NM floor=89 null/null passed=null key=ok reason=make coverage did not measure
+no_total_line_is_not_measured|running 12 tests\n|$SHA|89|fresh|rc=0 $NM floor=89 null/null passed=null key=ok reason=no TOTAL line in the coverage log
+an_indented_total_is_not_the_total|${TR}TOTAL: 9/10 lines covered (90%)\n  TOTAL: 1/10 lines covered (10%)\n|$SHA|89|fresh|rc=0 measured pct=90.00 floor=89 9/10 passed=7 key=ok reason=null
+zero_instrumented_lines_is_not_measured|TOTAL: 0/0 lines covered (0%)\n|$SHA|89|fresh|rc=0 $NM floor=89 null/null passed=null key=ok reason=0 instrumented lines
+covered_above_total_is_not_measured|${TR}TOTAL: 11/10 lines covered (110%)\n|$SHA|89|fresh|rc=0 $NM floor=89 null/null passed=null key=ok reason=covered exceeds total
+zero_tests_is_not_measured|${TR0}TOTAL: 9/10 lines covered (90%)\n|$SHA|89|fresh|rc=0 $NM floor=89 null/null passed=null key=ok reason=0 tests ran
+no_test_result_is_not_measured|TOTAL: 9/10 lines covered (90%)\n|$SHA|89|fresh|rc=0 $NM floor=89 null/null passed=null key=ok reason=0 tests ran
+passed_sums_every_binary|${TR3}${TRF4}TOTAL: 9/10 lines covered (90%)\n|$SHA|89|fresh|rc=0 measured pct=90.00 floor=89 9/10 passed=7 key=ok reason=null
+an_indented_test_result_is_not_counted|  ${TR}TOTAL: 9/10 lines covered (90%)\n|$SHA|89|fresh|rc=0 $NM floor=89 null/null passed=null key=ok reason=0 tests ran
 a_ref_name_is_not_a_sha|TOTAL: 9/10 lines covered (90%)\n|main|89|fresh|rc=2 nofile
 a_short_sha_is_not_a_sha|TOTAL: 9/10 lines covered (90%)\n|0123456789ab|89|fresh|rc=2 nofile"
 
@@ -85,7 +94,7 @@ MARK=$(cat <<'EOF'
 EOF
 )
 RECEIPT=$(cat <<'EOF'
-      - name: Coverage receipt keyed by sha (shadow, read by no gate)
+      - name: Coverage receipt keyed by sha (read by the release gate; never blocks the nightly)
         if: always()
         continue-on-error: true   # shadow (L31): it reports, it never turns the nightly red
         run: |
@@ -139,8 +148,8 @@ structure() {
   else
     readers=$(grep -rlE "$re" "$root" --exclude-dir=.git --exclude-dir=contracts 2>/dev/null | sed "s|^$root/||")
   fi
-  readers=$(grep -vxE '\.github/workflows/coverage-nightly\.yml|scripts/(check_)?coverage_receipt\.sh' <<< "$readers" | grep . | tr '\n' ' ')
-  if [ -z "$readers" ]; then srow S4_shadow_no_reader ok; else srow S4_shadow_no_reader "read by ${readers% }"; fi
+  readers=$(grep -vxE '\.github/workflows/coverage-nightly\.yml|scripts/(check_)?coverage_receipt\.sh|scripts/release/tag_coverage_gate\.sh|scripts/check_tag_coverage_gated\.sh' <<< "$readers" | grep . | tr '\n' ' ')
+  if [ -z "$readers" ]; then srow S4_known_readers_only ok; else srow S4_known_readers_only "read by ${readers% }"; fi
   return "$wrong"
 }
 
@@ -148,7 +157,7 @@ bad=0
 table "$PROD" || bad=1
 structure "$WF" "$ROOT" || bad=1
 rows=$(grep -c '|' <<< "$CASES")
-[ "$rows" -ge 17 ] || { printf 'VACUOUS %s row(s), fewer than the 17 declared\n' "$rows"; bad=1; }
+[ "$rows" -ge 21 ] || { printf 'VACUOUS %s row(s), fewer than the 21 declared\n' "$rows"; bad=1; }
 
 # pmutant <name> <sed expression>: a copy of the producer must turn a behaviour row WRONG
 pmutant() {
@@ -182,6 +191,10 @@ pmutant unanchored-total    "s/grep -E '\\^TOTAL: /grep -E 'TOTAL: /"
 pmutant floor-is-trusted    's/^\[\[ "\$floor" =~ .*/:/'
 pmutant no-log-is-measured  's/^if \[ ! -s "\$log" \]; then/if false; then/'
 pmutant floor-leading-zero  's/=~ ^(0|\[1-9\]\[0-9\]\*)(/=~ ^[0-9]+(/'
+pmutant zero-tests-ok       's/^    elif \[ "\$passed" -eq 0 \]; then/    elif false; then/'
+pmutant unanchored-tests    "s|sed -nE 's/^test result: |sed -nE 's/.*test result: |"
+pmutant last-binary-only    's/{ s += \$1 }/{ s = $1 }/'
+pmutant failed-not-counted  's/(ok|FAILED)\\\./(ok)\\./'
 wmutant no-marker            '/^        run: touch "\$RUNNER_TEMP\/cov-start"$/d'
 wmutant receipt-not-always   '/^      - name: Coverage receipt keyed by sha/{n;d}'
 wmutant receipt-blocks       '/^        continue-on-error: true   # shadow/d'
@@ -200,5 +213,5 @@ wmutant marker-elsewhere     '/^      - name: Mark the coverage step start/a\   
 wmutant receipt-exits-early  '/^      - name: Coverage receipt keyed by sha/,/set -uo pipefail/{/set -uo pipefail/a\          exit 0
 }'
 
-[ "$bad" = 0 ] && printf 'PASS  %s row(s) + 4 structural, every mutant killed: the coverage receipt is keyed by the commit measured, says not_measured rather than a stale or partial number, and no gate reads it yet (#4672)\n' "$rows"
+[ "$bad" = 0 ] && printf 'PASS  %s row(s) + 4 structural, every mutant killed: the coverage receipt is keyed by the commit measured, says not_measured rather than a stale or partial number, counts the tests that ran, and only the release gate reads it (#4672, #4734)\n' "$rows"
 exit "$bad"

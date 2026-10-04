@@ -19,7 +19,7 @@
 #     must-carry rc 1/2 -> no tag AND nothing carried (a blocker is never carried around)
 #     carry rc 2        -> no tag
 #     all clean         -> the carry ran BEFORE the strict gate, and the tag is cut
-# #4691 adds a fourth stub, the coverage-job resolution (tag_coverage_gate.sh --resolve), which runs
+# #4691 adds a fourth stub, the coverage resolution before the tag (tag_coverage_gate.sh --resolve), which runs
 # first after readiness: rc 1 -> no tag AND nothing carried.
 # --self-test then builds MUTANTS (gate calls removed, verdicts discarded, the carry call
 # removed) and requires this guard to go RED on each. It also runs the carry script's own
@@ -66,7 +66,7 @@ run_cut_tag() {
     } > "$d/harness.sh"
     bash "$d/harness.sh" 2>&1
     cat "$d/log" 2>/dev/null
-    printf 'ORDER %s\n' "$(tr '\n' ' ' < "$d/calls" 2>/dev/null)"
+    printf 'ORDER %s\n' "$(tr '\n' ' ' 2>/dev/null < "$d/calls")"
     rmtree "$d"
 }
 
@@ -112,7 +112,7 @@ judge() {
             printf 'FAIL  readiness %s -> a tag was cut or the milestone was touched without an enforced #3715 Pass\n%s\n' "$r" "$out" >&2; bad=1
         else printf 'ok    readiness %s -> no tag, nothing carried\n' "$r"; fi
     done
-    # #4691: the coverage job is not declared in ci.yml (1) or the gate could not run (2) -> no tag, nothing carried
+    # #4691: no coverage receipt holds the floor for the release commit (1) or the gate could not run (2) -> no tag, nothing carried
     for j in 1 2; do
         out=$(run_cut_tag "$ap" 0 0 0 pass "$j") || true
         if grep -q 'GIT-TAG' <<< "$out" || grep -qE 'CALL-(MUST-CARRY|CARRY|STRICT)' <<< "$out"; then
@@ -192,7 +192,7 @@ if [ "${1:-}" = "--self-test" ]; then
         ok "mutant 7: coverage-job resolve deleted -> RED"
     fi
     # M8 (#4691): the resolution runs but its verdict is discarded.
-    sed 's/|| die "the tag coverage job is not declared/|| true; : "/' "$SUBJECT" > "$d/m8.sh"
+    sed 's/|| die "no coverage receipt at or above COV_FLOOR/|| true; : "/' "$SUBJECT" > "$d/m8.sh"
     if cmp -s "$SUBJECT" "$d/m8.sh"; then
         nok "MUTANT 8 could not be built -- the --resolve die line did not match; vacuous"
     elif judge "$d/m8.sh" > "$d/m8.out" 2>&1; then

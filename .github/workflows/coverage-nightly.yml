@@ -227,7 +227,7 @@ jobs:
       # RQ-1's producer half (#4672): a receipt keyed by the commit measured -- sha, floor, pct, or
       # status not_measured with a reason. SHADOW: no gate reads it; the release-day read waits on
       # the RQ-1 ruling. Runs whatever the coverage verdict, so a red night still says why.
-      - name: Coverage receipt keyed by sha (shadow, read by no gate)
+      - name: Coverage receipt keyed by sha (read by the release gate; never blocks the nightly)
         if: always()
         continue-on-error: true   # shadow (L31): it reports, it never turns the nightly red
         run: |
