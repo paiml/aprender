@@ -67,13 +67,19 @@
 #       (scripts/lib/crux_smoke_scope.py) decides R7 from CRUX smoke receipts bound to the CUT --
 #       the commit the release binary was built from -- instead of the model matrix. The cut
 #       defaults to HEAD; when HEAD is not the cut (receipts committed on top, or main's squash
-#       of it), every PUBLISHED path -- crates/ src/ Cargo.toml Cargo.lock, R4's set -- must be
-#       equal to the cut's, or the published source is not the smoked binary's. The
+#       of it), HEAD must have the cut's code identity H (contracts/code-identity-v1.yaml:
+#       every tracked file except the root evidence/ path, #4673), or what is published is not
+#       what was smoked. Receipts may land on top of the cut; nothing else may. The
 #       model-matrix rows are still printed, as EVIDENCE, never as the verdict.
 set -uo pipefail
 
 PROG=${0##*/}
 SCRIPT_DIR="$(cd -- "$(dirname -- "${BASH_SOURCE[0]}")" && pwd)"
+# shellcheck source=release/lib_code_identity.sh
+if ! . "$SCRIPT_DIR/release/lib_code_identity.sh"; then
+    printf '%s: cannot source the code identity\n' "$PROG" >&2
+    exit 2
+fi
 
 die_env() { printf '%s: ENV %s\n' "$PROG" "$*" >&2; exit 2; }
 
@@ -263,9 +269,10 @@ for n, t, req in sorted(vdev):
 # R7 under a recorded operator emergency scope (0.69.1: CRUX smoke only). The scope is READ by the
 # judge (`--scope`, scripts/lib/crux_smoke_scope.py), never re-implemented here: it refuses another
 # release, receipts from another binary, and a missing host. This rule adds the one binding the judge
-# cannot see: the source being PUBLISHED (crates/ src/ Cargo.toml Cargo.lock, the paths R4 judges) is
-# the source the smoked binary was built from. Scripts, contracts and evidence may differ: the scope's
-# own contract entry and reader arrive after the cut.
+# cannot see: HEAD is the code the smoked binary was built from, by the ONE code identity H
+# (scripts/release/lib_code_identity.sh, #4673; operator ruling RQ-5 "tree"). Only evidence/ may
+# differ. Scripts and contracts are code here: a binding.yaml is a build.rs input, so the four
+# published paths this rule compared before called a changed build "the same source".
 # rule_r7_scope root version judge -> prints its rows; 0 accepted, 1 refused
 rule_r7_scope() {
     local root="$1" version="$2" judge="$3" cut head out rc ev evrc
@@ -275,11 +282,19 @@ rule_r7_scope() {
         echo "FAIL  R7 OPERATOR EMERGENCY SCOPE $SCOPE: the cut ${CUT_COMMIT:-HEAD} does not resolve in this tree"
         return 1
     fi
-    if [ "$cut" != "$head" ] && ! git -C "$root" diff --quiet "$cut" "$head" -- crates src Cargo.toml Cargo.lock 2>/dev/null; then
-        printf 'FAIL  R7 OPERATOR EMERGENCY SCOPE %s: HEAD %s differs from the cut %s in PUBLISHED paths -- the published source is not the smoked binary'"'"'s:\n%s\n' \
-            "$SCOPE" "${head:0:12}" "${cut:0:12}" \
-            "$(git -C "$root" diff --name-only "$cut" "$head" -- crates src Cargo.toml Cargo.lock | head -n 10 | sed 's/^/        /')"
-        return 1
+    if [ "$cut" != "$head" ]; then
+        rc=0
+        code_identity_same "$cut" "$head" "$root" || rc=$?
+        if [ "$rc" = 2 ]; then
+            echo "FAIL  R7 OPERATOR EMERGENCY SCOPE $SCOPE: the code identity of HEAD ${head:0:12} or the cut ${cut:0:12} is not_measured, and not_measured is not a pass"
+            return 1
+        fi
+        if [ "$rc" != 0 ]; then
+            printf 'FAIL  R7 OPERATOR EMERGENCY SCOPE %s: HEAD %s differs from the cut %s outside evidence/ (code identity H) -- what is published is not what was smoked:\n%s\n' \
+                "$SCOPE" "${head:0:12}" "${cut:0:12}" \
+                "$(git -C "$root" diff --name-only "$cut" "$head" -- . ':(exclude)evidence' | head -n 10 | sed 's/^/        /')"
+            return 1
+        fi
     fi
     out="$(cd "$root" && bash "$judge" --version "$version" --scope "$SCOPE" --cut-commit "$cut" 2>&1)"; rc=$?
     grep -E '^OPERATOR EMERGENCY SCOPE' <<< "$out" | head -n 1 | sed 's/^/        /'
@@ -753,8 +768,8 @@ FXREADY
     printf 'pub fn g() {}\n' >> "$d/src/lib.rs"
     git -C "$d" add -A; git -C "$d" -c core.hooksPath=/dev/null -c user.name=t -c user.email=t@t commit -qm 'src' >/dev/null
     git -C "$d" tag -f v1.2.3 >/dev/null; write_receipt "$d" GO "$(git -C "$d" rev-parse HEAD)" 1.2.3
-    FX_EXPECT_CUT="$cut" SCOPE=crux-smoke CUT_COMMIT="$cut" row scope_source_change_over_the_cut_refuses 1 "differs from the cut ${cut:0:12} in PUBLISHED paths" "$d"
-    # scripts/contracts arriving after the cut (the scope's own reader and entry do) are not published
+    FX_EXPECT_CUT="$cut" SCOPE=crux-smoke CUT_COMMIT="$cut" row scope_source_change_over_the_cut_refuses 1 "differs from the cut ${cut:0:12} outside evidence/" "$d"
+    # scripts/contracts arriving after the cut are code too (#4673, RQ-5 "tree"): they refuse
     d="$tmp/sc-tooling"; build_repo "$d"; cut="$(git -C "$d" rev-parse HEAD)"
     # bashrs SEC010: self-test fixture: $d is under this script's own mktemp -d dir.
     # bashrs disable-next-line=SEC010
@@ -762,7 +777,7 @@ FXREADY
     git -C "$d" add -A; git -C "$d" -c core.hooksPath=/dev/null -c user.name=t -c user.email=t@t commit -qm 'tooling' >/dev/null
     git -C "$d" update-ref refs/remotes/origin/release/1.2.3 HEAD  # R4 (#4286): the release branch carries the commit
     git -C "$d" tag -f v1.2.3 >/dev/null; write_receipt "$d" GO "$(git -C "$d" rev-parse HEAD)" 1.2.3
-    FX_EXPECT_CUT="$cut" SCOPE=crux-smoke CUT_COMMIT="$cut" row scope_tooling_after_the_cut_passes 0 "satisfied at the cut ${cut:0:12}" "$d"
+    FX_EXPECT_CUT="$cut" SCOPE=crux-smoke CUT_COMMIT="$cut" row scope_tooling_after_the_cut_refuses 1 "differs from the cut ${cut:0:12} outside evidence/" "$d"
     d="$tmp/sc-badcut"; build_repo "$d"
     SCOPE=crux-smoke CUT_COMMIT=0123456789abcdef0123456789abcdef01234567 row scope_unresolvable_cut_refuses 1 "does not resolve" "$d"
 

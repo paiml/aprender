@@ -39,6 +39,11 @@ set -uo pipefail
 
 PROG=${0##*/}
 SCRIPT_PATH="$(cd -- "$(dirname -- "${BASH_SOURCE[0]}")" && pwd)/${BASH_SOURCE[0]##*/}"
+# shellcheck source=lib_code_identity.sh
+if ! . "${SCRIPT_PATH%/*}/lib_code_identity.sh"; then
+    printf '%s: cannot source the code identity\n' "$PROG" >&2
+    exit 3
+fi
 DEFAULT_MODE=enforce  # flipped for 0.70 (#3715 B1, operator 2026-09-28): models_t1 now measures --cells on both hosts
 SHAPE=release-readiness-v1
 
@@ -56,7 +61,7 @@ resolve_mode() {
 
 # receipts_commit root receipts-dir release-commit -> prints X when earned; always prints a reason on fd 3
 receipts_commit() {
-    local root="$1" dir="$2" commit="$3" shas x
+    local root="$1" dir="$2" commit="$3" shas x same
     shas="$(python3 - "$dir" <<'PY' 2>/dev/null
 import glob, json, os, sys
 out = set()
@@ -88,7 +93,12 @@ PY
     if ! git -C "$root" cat-file -e "$x^{commit}" 2>/dev/null; then
         echo "        receipts-commit withheld: apr_sha ${x:0:12} does not resolve in this tree" >&3; return 1
     fi
-    if ! git -C "$root" diff --quiet "$x" "$commit" -- . ':(exclude)evidence' 2>/dev/null; then
+    # "Same code" is the ONE code identity H (lib_code_identity.sh, #4673): every tracked file except evidence/.
+    same=0; code_identity_same "$x" "$commit" "$root" || same=$?
+    if [ "$same" = 2 ]; then
+        echo "        receipts-commit withheld: the code identity of ${x:0:12} or ${commit:0:12} is not_measured" >&3; return 1
+    fi
+    if [ "$same" != 0 ]; then
         echo "        receipts-commit withheld: ${x:0:12} differs from ${commit:0:12} outside evidence/ ($(git -C "$root" diff --name-only "$x" "$commit" -- . ':(exclude)evidence' | wc -l) file(s)), so its receipts are stale for this release" >&3
         return 1
     fi

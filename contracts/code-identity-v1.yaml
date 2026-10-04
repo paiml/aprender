@@ -1,0 +1,128 @@
+metadata:
+  version: 1.0.0
+  created: '2026-10-04'
+  author: PAIML Engineering
+  description: "BLD-002 row R1, one code identity H. The operator ruled the identity is the tree (RQ-5 \"tree\"): every tracked file of a commit except the root evidence/ path. Recording a result never changes H; any other edit does, a contract, a binding.yaml, a script or a mode bit included. H has one home, scripts/release/lib_code_identity.sh, and every check that asks \"is this the same code\" asks it. This tightens the publish preflight's emergency rule R7, which compared four paths (crates, src, Cargo.toml, Cargo.lock) and so called a change to a build.rs input outside them the same source; that rule change waits for the operator's sign-off. How the nightly records H (BLD-002 PR-A) and how the evidence store files a record under it (BLD-002 R2) are not decided here."
+  kind: pattern
+  references:
+    - "scripts/release/lib_code_identity.sh — code_identity, code_identity_same, code_identity_bump_of: the one definition"
+    - "scripts/release/check_code_identity.sh — the case table (--selftest) and its planted mutants (--mutants)"
+    - "scripts/check_publish_preflight.sh — rule_r7_scope: HEAD must have the cut's H under the operator emergency scope"
+    - "scripts/release/release_readiness.sh — receipts_commit(): host receipts bind to a commit with the release commit's H"
+    - "contracts/evidence-store-v1.yaml — the store keyed by H (accepts 40 or 64 lowercase hex)"
+
+five_whys:
+  symptom: "Three private definitions of \"same code\" coexisted: the publish preflight's R7 compared crates, src, Cargo.toml and Cargo.lock; the readiness wrapper compared every tracked file outside evidence/; the nightly printed a commit sha. Over main's last 50 first-parent commits, 26 changed files the four-path rule calls not code while the tree rule calls them code. Twelve build.rs files read tracked inputs outside their crate (contracts/*/binding.yaml, contracts/model-families, contracts/arch-constraints-v1.yaml, scripts/perf-matrix.yaml); of those inputs the four paths cover only Cargo.toml."
+  why_1: "Each check wrote its own git diff with its own path list, chosen for the release it was written in."
+  why_2: "No function answered the question, so the answer was copied and then edited where it was copied."
+  why_3: "The four paths were chosen as \"what cargo publishes\", but what a build compiles also includes what build.rs reads, and those inputs sit outside the four paths."
+  why_4: "No case table held the definitions to one answer, and none planted a binding.yaml change under a cut."
+  why_5: "Code identity was treated as a detail of each check instead of a ruling with one home."
+  root_cause: "\"Same code\" had no single definition. The remedy is one function, H over the tracked tree minus the root evidence/ path, that every decision surface calls, held by a case table that drives those surfaces' real code."
+
+equations:
+  code_identity:
+    formula: "H(REV) = sha256( concat over e in ls_tree_r_z(REV) with path(e) ≠ 'evidence' and not prefix('evidence/', path(e)) of (mode(e) ' ' type(e) ' ' object(e) '\\t' path(e) '\\0') ), printed as H=<64 lowercase hex>"
+    domain: "REV, any name that resolves to a commit in the repository read"
+    codomain: "H=<64 lowercase hex> with rc 0, or rc 2 (not_measured)"
+    invariants:
+      - "H reads only committed objects: the worktree, the index and untracked files never change it"
+      - "only the ROOT evidence path is dropped: crates/x/evidence/, evidence-old/ and evidence.md are code"
+      - "the mode is hashed: a chmod +x changes H"
+      - "entries are NUL-terminated, so a path holding a newline or a tab is one entry; a path 'evidence\\nfoo' or 'x\\nevidence' is code"
+      - "two commits with one tree have one H: H is of the code, not of the commit"
+      - "a name that does not resolve, a missing object or a git failure is rc 2, never an H"
+
+  same_code:
+    formula: "same(A, B) = 0 if H(A) = H(B); 1 if both are measured and differ; 2 if either is not_measured. same(A, B) = 0 ⟺ git diff --quiet A B -- . ':(exclude)evidence'"
+    domain: "two revisions of one repository"
+    codomain: "{0 same, 1 different, 2 not_measured}"
+    invariants:
+      - "not_measured is never same: rc 2 on either side, in either argument order"
+      - "the readiness wrapper's former rule and H agree on every one of main's last 30 first-parent pairs"
+
+  one_home:
+    formula: "every decision surface that asks whether two commits are the same code calls code_identity_same; no script under scripts/ keeps a git diff --quiet over a private path list for that question"
+    domain: "scripts/**/*.sh, the publish preflight and the readiness wrapper"
+    codomain: "the set of scripts with a private rule; empty"
+    invariants:
+      - "publish preflight R7 under the emergency scope refuses a HEAD whose H differs from the cut's, naming the files outside evidence/ that differ"
+      - "R7 refuses a not_measured H: not_measured is not a pass"
+      - "R7 passes a HEAD that differs from the cut only under evidence/"
+      - "the readiness wrapper withholds a receipts-commit whose H differs from the release commit's, or whose H is not_measured"
+
+  version_only_bump:
+    formula: "bump_of(M, B, V) = 0 iff H(B) = H(tree of M after M's scripts/bump-version.sh V, in a temporary worktree); 1 iff measured and different; 2 when M or B does not resolve or the tool is missing or fails"
+    domain: "a base commit M, a candidate bump commit B and the version V"
+    codomain: "{0 reuse, 1 not a version-only bump, 2 not_measured}"
+    invariants:
+      - "a bump that also edits code is not a version-only bump"
+      - "a missing bump tool is not_measured, never 'different'"
+      - "the caller's checkout and worktree list are left as they were"
+      - "wired into no gate: it reports whether a release bump could reuse the evidence of its base"
+
+proof_obligations:
+  - id: CID-INV-001
+    type: invariant
+    property: "Recording a result never changes H"
+    formal: "∀ A, B: tree(A) and tree(B) differ only at paths p with p = 'evidence' or prefix('evidence/', p) ⇒ H(A) = H(B)"
+    applies_to: code_identity
+  - id: CID-INV-002
+    type: invariant
+    property: "Any edit outside the root evidence/ path changes H"
+    formal: "∀ A, B: ∃ e: (e ∈ ls_tree(A)) ≠ (e ∈ ls_tree(B)) ∧ path(e) ∉ evidence ⇒ H(A) ≠ H(B) (up to sha256 collision)"
+    applies_to: code_identity
+  - id: CID-INV-003
+    type: invariant
+    property: "H depends only on committed objects"
+    formal: "∀ REV, W, I: H(REV) with worktree W and index I = H(REV) with any other worktree and index"
+    applies_to: code_identity
+  - id: CID-INV-004
+    type: invariant
+    property: "not_measured is never same"
+    formal: "∀ A, B: H(A) undefined ∨ H(B) undefined ⇒ same(A, B) = 2"
+    applies_to: same_code
+  - id: CID-INV-005
+    type: invariant
+    property: "H agrees with the tree rule it replaces"
+    formal: "∀ A, B: same(A, B) = 0 ⟺ git diff --quiet A B -- . ':(exclude)evidence'"
+    applies_to: same_code
+  - id: CID-INV-006
+    type: invariant
+    property: "Every decision surface asks the one identity"
+    formal: "private_rules(scripts/) = ∅ ∧ (same(cut, HEAD) ≠ 0 ⇒ R7(cut, HEAD) refuses)"
+    applies_to: one_home
+  - id: CID-INV-007
+    type: invariant
+    property: "A version-only bump reuses H, and anything more does not"
+    formal: "bump_of(M, B, V) = 0 ⟺ H(B) = H(bump(M, V))"
+    applies_to: version_only_bump
+
+falsification_tests:
+  - id: FALSIFY-CID-001
+    rule: "H is right on every row of its case table, and the decision surfaces ask it"
+    prediction: "In temporary repositories: a binding.yaml edit and a perf-matrix edit change H; an evidence/ edit keeps it; a nested crates/a/evidence/ file, evidence-old/ and evidence.md change it; a chmod +x changes it; renaming a file without changing its bytes changes it; a newline-and-tab path under evidence/ keeps it, and the paths 'x\\nevidence' and 'evidence\\nfoo' change it; untracked, unstaged and staged changes leave it; two commits with one tree share it; an unknown rev, an unknown rev on either side of same and a missing object are rc 2; a version-only bump reuses it, a bump with a code edit does not, a missing bump tool is rc 2 and no worktree is left behind. The publish preflight's own rule_r7_scope refuses a binding.yaml change over the cut and passes an evidence-only one; no script keeps a private same-code rule; H agrees with the readiness tree rule on main's last 30 first-parent pairs, and fewer than 31 commits is not_measured, never a pass"
+    test: "bash scripts/release/check_code_identity.sh --selftest"
+    if_fails: "A release could publish code that differs from what was smoked or measured, or recording a receipt could void the evidence of the code it describes"
+
+  - id: FALSIFY-CID-002
+    rule: "The case table can still fail on the defects it names"
+    prediction: "Each planted mutant (the evidence filter dropped, matched without the slash, unanchored, or letting a newline end the path; the root argument ignored; the index hashed instead of REV; the mode column dropped; the path column dropped; an unknown rev falling back to HEAD; same returning 0 on not_measured; the pipeline status ignored; a bump always called a reuse; a missing bump tool called different; R7 back to the four paths; the readiness wrapper back to a private rule) makes the case table print BROKE; a mutant that does not apply or does not parse is never a kill; the harness exits 1 if any mutant survives"
+    test: "bash scripts/release/check_code_identity.sh --mutants"
+    if_fails: "The case table is theater: it would pass a definition of same code that calls a changed build the same"
+
+  - id: FALSIFY-CID-003
+    rule: "The tightened emergency rule is held by the preflight's own table"
+    prediction: "check_publish_preflight.sh --selftest refuses a source change and a scripts/contracts change over the cut, naming the cut, and passes receipts committed under evidence/ over the cut"
+    test: "bash scripts/check_publish_preflight.sh --selftest"
+    if_fails: "R7 would let a non-evidence change ride on top of the smoked cut"
+
+qa_gate:
+  id: F-CID-001
+  name: "One code identity: the tree minus the root evidence/ path, asked by every surface that compares code"
+  description: "scripts/release/lib_code_identity.sh computes H from committed objects only and is the one home of \"same code\"; the publish preflight's emergency rule R7 and the readiness wrapper's receipts-commit call it. Not decided and not claimed here: how the nightly prints H (BLD-002 PR-A prints a commit sha today; a PROPOSE line is in the row's handoff), the store's location (BLD-002 RQ-6), and whether code_identity_bump_of gates anything (it gates nothing). The R7 change is stricter than the rule it replaces and waits for the operator's sign-off. The case table has no row for, and so does not claim, git submodule entries (none are tracked) or a sha256 collision."
+  checks:
+    - "code_identity"
+    - "same_code"
+    - "one_home"
+    - "version_only_bump"
