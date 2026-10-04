@@ -141,3 +141,14 @@ Today's release-day order is deep → dogfood → models, run serially after the
 **Recommendation:** ship B first, because it is small and has no train-order change. Then add A's nightly as a second step only if B's measured critical path still misses the target.
 
 **Ruling asked of aprender-a7:** A, B, or B then A.
+
+## 7. RULING (aprender-a7, 2026-10-04): A, with B as the fallback for a late bump
+
+a7's words, verbatim: "RQ-2 F7 ruling: A (nightly 02:00Z; the release cuts at the measured sha), with B only as the fallback for a late version bump. Decided because A is the "release = a commit already green last night" rule; dissent B is faster for late bumps; reversible by re-ruling. Log it in your HANDOFF and build A."
+
+- **When B applies:** there is no usable post-bump nightly row, i.e. rows 4, 5, 7-9, 11, 12 or 15 hold. B then runs the three steps concurrently at release time, in place of today's serial run.
+- **Build order:**
+  1. `lib_ladders.sh` (F1).
+  2. `check_nightly_cut.sh` plus its planted rows (§3 + F5).
+  3. `release_ladders_nightly.sh`, gated on the version (F4).
+  4. The `autopilot --cut-from-nightly` wiring.
