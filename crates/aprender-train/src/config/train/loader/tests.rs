@@ -2209,7 +2209,7 @@ fn falsify_toc_002_run_without_a_head_saves_tied_flag() {
 
     let bytes = std::fs::read(output.join("model.safetensors")).expect("model.safetensors");
     let tensors = safetensors::SafeTensors::deserialize(&bytes).expect("model.safetensors parses");
-    assert!(!tensors.names().iter().any(|n| n.as_str() == "lm_head.weight"), "no head is saved");
+    assert!(!tensors.names().contains(&"lm_head.weight"), "no head is saved");
     assert!(toc_saved_tie_flag(&output), "config.json must say tied: there is no head to load");
 }
 
