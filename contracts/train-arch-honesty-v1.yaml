@@ -57,23 +57,23 @@ proof_obligations:
 falsification_tests:
 - id: FALSIFY-TAH-001
   rule: qwen35 is refused by name at the verb
-  prediction: "`apr finetune <qwen35.apr> -m qlora` and `apr distill --student <qwen35.apr>` exit non-zero, the error contains \"UnsupportedArch\", the arch as given, and \"Gated DeltaNet\"; no training step runs"
-  test: 'cargo test -p aprender-train --lib falsify_tah_001 (spelling case table) && cargo test -p apr-cli --lib falsify_tah_001 (qwen35 .apr fixture through resolve_transformer_config; the resolver apr finetune and apr pretrain --init share; apr distill calls refuse_unmodelled_apr on teacher and student before any read)'
+  prediction: "`apr finetune <qwen35.apr> -m qlora` and `apr distill --student <qwen35.apr>` exit non-zero, the error contains \"UnsupportedArch\", the arch as given, and \"Gated DeltaNet\"; no training step runs. Two tests measure it: a spelling case table in aprender-train, and in apr-cli a qwen35 .apr fixture through resolve_transformer_config, the resolver `apr finetune` and `apr pretrain --init` share. `apr distill` calls refuse_unmodelled_apr on teacher and student before any read"
+  test: 'cargo test -p aprender-train --lib falsify_tah_001 && cargo test -p apr-cli --lib falsify_tah_001'
   if_fails: the hybrid arch was coerced to a dense family (pretrain_real.rs alias or config.rs preset) and would train the wrong network
 - id: FALSIFY-TAH-002
   rule: Planted falsifier — re-adding the alias turns the gate RED
-  prediction: 'restoring `"qwen3_5" | "qwen3.5" => Some("qwen3")` in the family-slug map makes FALSIFY-TAH-001 fail'
-  test: 'cargo test -p aprender-train --lib falsify_tah_002 — asserts normalize_metadata_arch_family(qwen3_5) != qwen3 and the init cross-check refuses by name; mutation: re-add the alias, expect FAIL; revert'
+  prediction: 'restoring `"qwen3_5" | "qwen3.5" => Some("qwen3")` in the family-slug map makes FALSIFY-TAH-001 fail. falsify_tah_002 asserts normalize_metadata_arch_family("qwen3_5") != "qwen3" and that the init cross-check refuses by name. The planted mutation re-adds the alias, expects FAIL, then reverts'
+  test: 'cargo test -p aprender-train --lib falsify_tah_002'
   if_fails: the test does not actually exercise the alias map (vacuous gate)
 - id: FALSIFY-TAH-003
   rule: head_dim follows the family contract
-  prediction: 'for every size of every family YAML under contracts/model-families/ that declares head_dim, from_apr_metadata(family).with_head_dim(declared) yields it (qwen3_5 = 256); a hybrid is never given dense qwen3''s 128 by prefix; the APR-header and HF config.json resolvers in apr-cli carry head_dim (Qwen3-4B: 128, not 2560/32 = 80)'
-  test: 'cargo test -p aprender-train --lib falsify_tah_003 (table: >= 20 sizes, >= 1 hybrid, >= 3 with head_dim != hidden/heads) and cargo test -p apr-cli --lib falsify_tah_003. Mutations: with_head_dim a no-op -> all three FAIL; bare starts_with("qwen3") prefix restored -> the table FAILs on qwen3_5; revert'
+  prediction: 'for every size of every family YAML under contracts/model-families/ that declares head_dim, from_apr_metadata(family).with_head_dim(declared) yields it (qwen3_5 = 256); a hybrid is never given dense qwen3''s 128 by prefix; the APR-header and HF config.json resolvers in apr-cli carry head_dim (Qwen3-4B: 128, not 2560/32 = 80). The aprender-train table covers at least 20 sizes, at least 1 hybrid, and at least 3 with head_dim != hidden/heads. Planted mutations: making with_head_dim a no-op turns all three tests RED; restoring the bare starts_with("qwen3") prefix turns the table RED on qwen3_5'
+  test: 'cargo test -p aprender-train --lib falsify_tah_003 && cargo test -p apr-cli --lib falsify_tah_003'
   if_fails: a prefix rule overrides a sibling family (the qwen3 -> qwen3_5 head_dim=128 class), or a resolver reads head_dim and drops it
 - id: FALSIFY-TAH-004
   rule: Refusal precedes I/O
-  prediction: 'a qwen35 .apr whose tensor section is truncated still yields UnsupportedArch, not an I/O or shape error'
-  test: 'cargo test -p apr-cli --lib falsify_tah_004 — the fixture is cut right after its metadata section'
+  prediction: 'a qwen35 .apr whose tensor section is truncated still yields UnsupportedArch, not an I/O or shape error. The test''s fixture is cut right after its metadata section'
+  test: 'cargo test -p apr-cli --lib falsify_tah_004'
   if_fails: the arch check runs after weight loading, so the user sees a shape mismatch instead of the real cause
 qa_gate:
   certeza:
