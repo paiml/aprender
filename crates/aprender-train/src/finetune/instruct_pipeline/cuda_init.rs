@@ -138,7 +138,13 @@ impl InstructPipeline {
 
         // C-SCRATCH-001: Shared scratch for NF4
         let shared_scratch = if quantize_nf4 {
-            match CudaBlockScratch::new(model_config, max_seq_len, &ctx, config.lora_rank) {
+            match CudaBlockScratch::new_for_targets(
+                model_config,
+                max_seq_len,
+                &ctx,
+                config.lora_rank,
+                config.lora_targets.as_slice(),
+            ) {
                 Ok(s) => Some(s),
                 Err(e) => {
                     eprintln!("[CUDA] Failed to allocate shared scratch: {e} — using CPU");

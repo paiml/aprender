@@ -298,8 +298,8 @@ pub(crate) struct CudaBlockScratch {
     // === LoRA scratch buffers (ENT-153: QLoRA) ===
     /// LoRA intermediate: x @ A, sized [max_seq_len * max_lora_rank]
     lora_inter: GpuBuffer<f32>,
-    /// LoRA temp for scaled addition, sized [max_seq_len * max_proj_dim]
-    /// (reuses largest projection dimension for Q/V LoRA output)
+    /// LoRA temp, sized [max_seq_len * max(d_out, d_in)] over the targets the scratch was
+    /// built for (`new_for_targets`; `new` builds q_proj and v_proj)
     lora_temp: GpuBuffer<f32>,
     /// Sequential position indices [0, 1, ..., max_seq_len-1] for batched RoPE
     rope_positions: GpuBuffer<u32>,
@@ -365,6 +365,17 @@ impl CudaBlockScratch {
         ctx: &Arc<CudaContext>,
         lora_rank: usize,
     ) -> Result<Self> {
+        Self::new_for_targets(config, max_seq_len, ctx, lora_rank, &[LoraTarget::Q, LoraTarget::V])
+    }
+
+    /// [`Self::new`] with the LoRA temp sized for every target in `targets` (R15a C3).
+    pub(crate) fn new_for_targets(
+        config: &TransformerConfig,
+        max_seq_len: usize,
+        ctx: &Arc<CudaContext>,
+        lora_rank: usize,
+        targets: &[LoraTarget],
+    ) -> Result<Self> {
         let hidden_size = config.hidden_size;
         let q_dim = config.q_dim();
         let kv_hidden_size = config.num_kv_heads * config.head_dim();
@@ -372,8 +383,9 @@ impl CudaBlockScratch {
         let num_heads = config.num_attention_heads;
         let head_dim = config.head_dim();
 
-        // LoRA scratch: max(q_dim, kv_hidden) for the largest projection output
-        let max_proj_dim = q_dim.max(kv_hidden_size);
+        // LoRA temp: each target's forward needs [s, d_out] and its backward [s, d_in]
+        // (never smaller than the q_proj, v_proj forward's max(q_dim, kv_hidden) of before C3)
+        let max_proj_dim = lora_temp_dim(config, targets).max(q_dim.max(kv_hidden_size));
         // Minimum 1 element to avoid zero-size GPU allocation
         let lora_inter_size = (max_seq_len * lora_rank).max(1);
         let lora_temp_size = (max_seq_len * max_proj_dim).max(1);
@@ -2612,6 +2624,29 @@ fn lora_backward(
     n: u32,
     stream: &CudaStream,
 ) -> Result<()> {
+    lora_backward_weights(x, a, b, dy, da, db, inter, scale, s, h, r, n, stream)?;
+    lora_backward_input(a, dx, inter, temp, s, h, r, stream)
+}
+
+/// The weight half of [`lora_backward`]: `db`, then `dInter` over the recompute in `inter`,
+/// then `da`. It leaves `dInter` in `inter` for [`lora_backward_input`] (R15a C3).
+#[cfg(feature = "cuda")]
+#[allow(clippy::too_many_arguments)]
+fn lora_backward_weights(
+    x: &GpuBuffer<f32>,
+    a: &GpuBuffer<f32>,
+    b: &GpuBuffer<f32>,
+    dy: &GpuBuffer<f32>,
+    da: &mut GpuBuffer<f32>,
+    db: &mut GpuBuffer<f32>,
+    inter: &mut GpuBuffer<f32>,
+    scale: f32,
+    s: u32,
+    h: u32,
+    r: u32,
+    n: u32,
+    stream: &CudaStream,
+) -> Result<()> {
     // Recompute inter = scale·(x·A)  [s, r], as the forward computed it
     gemm_forward(x, a, inter, s, h, r, stream)?;
     cuda_scale_inplace(inter, scale, s as usize * r as usize, stream)?;
@@ -2621,10 +2656,139 @@ fn lora_backward(
     gemm_backward_a(dy, b, inter, s, n, r, stream)?;
     cuda_scale_inplace(inter, scale, s as usize * r as usize, stream)?;
     // da = xᵀ·dInter  [h, r]
-    gemm_backward_b(x, inter, da, s, h, r, stream)?;
+    gemm_backward_b(x, inter, da, s, h, r, stream)
+}
+
+/// The input half of [`lora_backward`]: `dx += dInter·Aᵀ`, with `dInter` in `inter` (R15a C3).
+#[cfg(feature = "cuda")]
+#[allow(clippy::too_many_arguments)]
+fn lora_backward_input(
+    a: &GpuBuffer<f32>,
+    dx: &mut GpuBuffer<f32>,
+    inter: &GpuBuffer<f32>,
+    temp: &mut GpuBuffer<f32>,
+    s: u32,
+    h: u32,
+    r: u32,
+    stream: &CudaStream,
+) -> Result<()> {
     // dx += dInter·Aᵀ  [s, h]
     gemm_backward_a(inter, a, temp, s, r, h, stream)?;
     cuda_add_inplace(dx, temp, s as usize * h as usize, stream)
+}
+
+/// The widest LoRA temp row any of `targets` needs: its d_out for the forward's `(x·A)·B` and
+/// its d_in for the backward's share of `dx` (R15a C3).
+#[cfg(feature = "cuda")]
+fn lora_temp_dim(config: &TransformerConfig, targets: &[LoraTarget]) -> usize {
+    targets.iter().map(|t| t.dims(config)).map(|(d_out, d_in)| d_out.max(d_in)).max().unwrap_or(0)
+}
+
+/// R15a C3: the forward and backward of every adapter the block holds. A q_proj, v_proj block
+/// skips all of these, so it runs the same kernels in the same order as before.
+#[cfg(feature = "cuda")]
+impl CudaNf4TransformerBlock {
+    /// `target`'s (d_out, d_in), refusing a LoRA temp too small for its `[s, d_out]` forward or
+    /// `[s, d_in]` backward. `CudaBlockScratch::new` sizes it for q_proj and v_proj only.
+    fn lora_dims_checked(
+        &self,
+        target: LoraTarget,
+        temp: &GpuBuffer<f32>,
+        seq_len: usize,
+    ) -> Result<(u32, u32)> {
+        let (d_out, d_in) = target.dims(&self.config);
+        let need = seq_len * d_out.max(d_in);
+        if temp.len() < need {
+            return Err(crate::autograd::cuda_tensor::CudaTensorError::KernelError(format!(
+                "LoRA temp holds {} elements and {target:?} needs {need}; build the scratch \
+                 with CudaBlockScratch::new_for_targets",
+                temp.len()
+            )));
+        }
+        Ok((saturating_u32(d_out), saturating_u32(d_in)))
+    }
+
+    /// `y += scale·(x·A)·B` with `target`'s adapter, when the block has one.
+    #[allow(clippy::too_many_arguments)]
+    fn lora_forward_target(
+        &self,
+        target: LoraTarget,
+        x: &GpuBuffer<f32>,
+        y: &mut GpuBuffer<f32>,
+        inter: &mut GpuBuffer<f32>,
+        temp: &mut GpuBuffer<f32>,
+        seq_len: usize,
+        stream: &CudaStream,
+    ) -> Result<()> {
+        let Some(LoraPair { a, b, .. }) = LoraPair::find(&self.lora, target) else {
+            return Ok(());
+        };
+        let (n, h) = self.lora_dims_checked(target, temp, seq_len)?;
+        let (s, r) = (saturating_u32(seq_len), saturating_u32(self.lora_rank));
+        lora_forward(x, a, b, y, inter, temp, self.lora_scale, s, h, r, n, stream)
+    }
+
+    /// [`lora_backward`] for `target`'s adapter, when the block has one: `x` is the
+    /// projection's input, `dy` its output's gradient and `dx` its input's gradient.
+    #[allow(clippy::too_many_arguments)]
+    fn lora_backward_target(
+        &self,
+        target: LoraTarget,
+        x: &GpuBuffer<f32>,
+        dy: &GpuBuffer<f32>,
+        dx: &mut GpuBuffer<f32>,
+        grad_lora: &mut CudaLoraGradWorkspace,
+        inter: &mut GpuBuffer<f32>,
+        temp: &mut GpuBuffer<f32>,
+        seq_len: usize,
+        stream: &CudaStream,
+    ) -> Result<()> {
+        let Some(LoraPair { a, b, .. }) = LoraPair::find(&self.lora, target) else {
+            return Ok(());
+        };
+        let (n, h) = self.lora_dims_checked(target, temp, seq_len)?;
+        let (s, r) = (saturating_u32(seq_len), saturating_u32(self.lora_rank));
+        let LoraPair { a: da, b: db, .. } = grad_lora.pair_mut(target)?;
+        lora_backward(x, a, b, dy, da, db, dx, inter, temp, self.lora_scale, s, h, r, n, stream)
+    }
+
+    /// The o_proj adapter's weight half. Its input is `attn_out`, which the O dX overwrites
+    /// with the gradient, so this runs before the O dX and [`Self::lora_o_input`] after it.
+    fn lora_o_weights(
+        &self,
+        dy: &GpuBuffer<f32>,
+        scratch: &mut CudaBlockScratch,
+        grad_lora: &mut CudaLoraGradWorkspace,
+        seq_len: usize,
+        stream: &CudaStream,
+    ) -> Result<()> {
+        let Some(LoraPair { a, b, .. }) = LoraPair::find(&self.lora, LoraTarget::O) else {
+            return Ok(());
+        };
+        let (n, h) = self.lora_dims_checked(LoraTarget::O, &scratch.lora_temp, seq_len)?;
+        let (s, r) = (saturating_u32(seq_len), saturating_u32(self.lora_rank));
+        let LoraPair { a: da, b: db, .. } = grad_lora.pair_mut(LoraTarget::O)?;
+        let (x, inter) = (&scratch.attn_out, &mut scratch.lora_inter);
+        lora_backward_weights(x, a, b, dy, da, db, inter, self.lora_scale, s, h, r, n, stream)
+    }
+
+    /// The o_proj adapter's share of the attention output's gradient, which the O dX has left
+    /// in `attn_out`. See [`Self::lora_o_weights`].
+    fn lora_o_input(
+        &self,
+        scratch: &mut CudaBlockScratch,
+        seq_len: usize,
+        stream: &CudaStream,
+    ) -> Result<()> {
+        let Some(LoraPair { a, .. }) = LoraPair::find(&self.lora, LoraTarget::O) else {
+            return Ok(());
+        };
+        let (_, h) = self.lora_dims_checked(LoraTarget::O, &scratch.lora_temp, seq_len)?;
+        let (s, r) = (saturating_u32(seq_len), saturating_u32(self.lora_rank));
+        let (dx, inter, temp) =
+            (&mut scratch.attn_out, &scratch.lora_inter, &mut scratch.lora_temp);
+        lora_backward_input(a, dx, inter, temp, s, h, r, stream)
+    }
 }
 
 // CPU fallback stub
@@ -3445,6 +3609,8 @@ impl CudaNf4TransformerBlock {
                 self.lora_scale, saturating_u32(seq_len), saturating_u32(hidden_size), saturating_u32(self.lora_rank),
                 saturating_u32(kv_hidden_size), stream)?;
         }
+        // R15a C3: k_proj LoRA on the projection's output, before QK-norm and RoPE
+        self.lora_forward_target(LoraTarget::K, &scratch.norm1_out, &mut scratch.k, &mut scratch.lora_inter, &mut scratch.lora_temp, seq_len, stream)?;
 
         nan_scan_layer(self.layer_idx, &[
             ("q-proj", &scratch.q, seq_len * q_dim),
@@ -3478,6 +3644,8 @@ impl CudaNf4TransformerBlock {
         }
 
         scratch.op_end(_t, OP_O_PROJ);
+        // R15a C3: o_proj LoRA on the attention output, before the residual add
+        self.lora_forward_target(LoraTarget::O, &scratch.attn_out, &mut scratch.o_proj_out, &mut scratch.lora_inter, &mut scratch.lora_temp, seq_len, stream)?;
 
         nan_scan_layer(self.layer_idx, &[("o-proj", &scratch.o_proj_out, seq_len * hidden_size)], stream);
 
@@ -3538,6 +3706,9 @@ impl CudaNf4TransformerBlock {
         }
 
         scratch.op_end(_t, OP_GATE_UP_GEMM);
+        // R15a C3: gate_proj and up_proj LoRA, before SwiGLU
+        self.lora_forward_target(LoraTarget::Gate, &scratch.norm2_out, &mut scratch.gate_out, &mut scratch.lora_inter, &mut scratch.lora_temp, seq_len, stream)?;
+        self.lora_forward_target(LoraTarget::Up, &scratch.norm2_out, &mut scratch.up_out, &mut scratch.lora_inter, &mut scratch.lora_temp, seq_len, stream)?;
 
         nan_scan_layer(self.layer_idx, &[
             ("gate", &scratch.gate_out, seq_len * intermediate_size),
@@ -3571,6 +3742,8 @@ impl CudaNf4TransformerBlock {
         }
 
         scratch.op_end(_t, OP_DOWN_GEMM);
+        // R15a C3: down_proj LoRA, before the residual add
+        self.lora_forward_target(LoraTarget::Down, &scratch.swiglu_out, &mut scratch.ffn_out, &mut scratch.lora_inter, &mut scratch.lora_temp, seq_len, stream)?;
 
         nan_scan_layer(self.layer_idx, &[("down", &scratch.ffn_out, seq_len * hidden_size)], stream);
 
@@ -4128,6 +4301,7 @@ impl CudaNf4TransformerBlock {
             intermediate_size,
             stream,
             scratch,
+            grad_lora,
         )?;
 
         // === Step 2: Post-attn norm backward ===
@@ -4148,7 +4322,7 @@ impl CudaNf4TransformerBlock {
         // grad_residual1 = grad_input (from norm backward) + grad_output (from residual skip)
         cuda_add_inplace(grad_input, grad_output, seq_len * hidden_size, stream)?;
 
-        // === Step 3: Attention backward (NF4 + LoRA for Q/V) ===
+        // === Step 3: Attention backward (NF4 + LoRA for q, k, v and o) ===
         self.backward_nf4_attention(
             grad_input, // grad coming into attention (from residual1)
             seq_len, stream, scratch, grad_lora,
@@ -4178,7 +4352,9 @@ impl CudaNf4TransformerBlock {
     ///
     /// Propagates gradient through: down_proj → SwiGLU → gate/up projections.
     /// Uses cuBLAS GEMM with pre-dequantized fp32 weights for correct layout.
-    /// No weight gradients for frozen NF4 weights.
+    /// No weight gradients for frozen NF4 weights. The gate_proj, up_proj and down_proj adapters
+    /// the block holds get their LoRA gradients in `grad_lora` (R15a C3).
+    #[allow(clippy::too_many_arguments)]
     fn backward_nf4_ffn(
         &self,
         grad_output: &GpuBuffer<f32>,
@@ -4187,6 +4363,7 @@ impl CudaNf4TransformerBlock {
         intermediate_size: usize,
         stream: &CudaStream,
         scratch: &mut CudaBlockScratch,
+        grad_lora: &mut CudaLoraGradWorkspace,
     ) -> Result<()> {
         let s = saturating_u32(seq_len);
         let h = saturating_u32(hidden_size);
@@ -4227,6 +4404,18 @@ impl CudaNf4TransformerBlock {
         }
 
         scratch.op_end(_t, OP_DOWN_BWD);
+        // R15a C3: down_proj LoRA. Its input, swiglu_out, still holds the forward's value here.
+        self.lora_backward_target(
+            LoraTarget::Down,
+            &scratch.swiglu_out,
+            grad_output,
+            &mut scratch.grad_swiglu,
+            grad_lora,
+            &mut scratch.lora_inter,
+            &mut scratch.lora_temp,
+            seq_len,
+            stream,
+        )?;
 
         // Step 2: SwiGLU backward: swiglu = silu(gate) * up
         // d_gate = d_swiglu * up * silu'(gate)
@@ -4364,6 +4553,30 @@ impl CudaNf4TransformerBlock {
             )?;
         }
         scratch.op_end(_t, OP_GATE_UP_BWD);
+        // R15a C3: gate_proj and up_proj LoRA. SwiGLU's backward left d_gate in up_out and d_up
+        // in gate_out, and both adapters read norm2_out, the projections' input.
+        self.lora_backward_target(
+            LoraTarget::Gate,
+            &scratch.norm2_out,
+            &scratch.up_out,
+            &mut scratch.grad_hidden,
+            grad_lora,
+            &mut scratch.lora_inter,
+            &mut scratch.lora_temp,
+            seq_len,
+            stream,
+        )?;
+        self.lora_backward_target(
+            LoraTarget::Up,
+            &scratch.norm2_out,
+            &scratch.gate_out,
+            &mut scratch.grad_hidden,
+            grad_lora,
+            &mut scratch.lora_inter,
+            &mut scratch.lora_temp,
+            seq_len,
+            stream,
+        )?;
 
         Ok(())
     }
@@ -4371,7 +4584,8 @@ impl CudaNf4TransformerBlock {
     /// Attention backward for NF4 blocks with LoRA gradient computation (ENT-287).
     ///
     /// Propagates gradient through O projection, attention mechanism, and Q/K/V projections.
-    /// Computes LoRA weight gradients for Q and V projections.
+    /// Computes the LoRA gradients of the attention adapters the block holds: q_proj, k_proj,
+    /// v_proj and o_proj (k_proj and o_proj since R15a C3).
     /// Uses cuBLAS GEMM with pre-dequantized fp32 weights.
     fn backward_nf4_attention(
         &self,
@@ -4398,6 +4612,10 @@ impl CudaNf4TransformerBlock {
             .get_or_init(|| std::env::var("NF4_TC_BWD_GEMM").as_deref() == Ok("1"));
 
         let _t = scratch.op_begin(); // OP_ATTN_BWD timing (O-proj + attention mechanism)
+
+        // R15a C3: the o_proj adapter's weight gradients read attn_out, which the O dX below
+        // overwrites with its gradient, so they come first and its input share after.
+        self.lora_o_weights(grad_residual1, scratch, grad_lora, seq_len, stream)?;
         if nf4_tc_bwd_o {
             crate::autograd::cuda_forward::gemm_nf4_tc_backward_a(
                 grad_residual1,
@@ -4422,6 +4640,8 @@ impl CudaNf4TransformerBlock {
                 &self.ctx,
             )?;
         }
+
+        self.lora_o_input(scratch, seq_len, stream)?;
 
         // Step 2: Attention mechanism backward
         // This is complex (softmax backward, batched GEMMs) — reuse the fp32 attention backward
@@ -4623,6 +4843,19 @@ impl CudaNf4TransformerBlock {
                 stream,
             )?;
         }
+
+        // R15a C3: k_proj LoRA, from the dK in scratch.k that the base K dX above read
+        self.lora_backward_target(
+            LoraTarget::K,
+            &scratch.norm1_out,
+            &scratch.k,
+            &mut scratch.o_proj_out,
+            grad_lora,
+            &mut scratch.lora_inter,
+            &mut scratch.lora_temp,
+            seq_len,
+            stream,
+        )?;
 
         // LoRA V backward: grad_A_v, grad_B_v, and the adapter's share of grad_norm1
         if let Some(LoraPair { a: a_v, b: b_v, .. }) = LoraPair::find(&self.lora, LoraTarget::V) {
