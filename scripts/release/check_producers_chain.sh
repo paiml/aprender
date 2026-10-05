@@ -171,6 +171,10 @@ p6() { # ROOT -> FAIL lines; the train's LANES must read a listed producer by it
               exit bad }' "$t"
 }
 
+# hasl TEXT GREP-ARGS...: does TEXT have a matching line. A here-string, never `printf | grep -q`: grep -q
+# exits at the first match, the printf dies of SIGPIPE, and pipefail turns a found line into a miss.
+hasl() { local text="$1"; shift; grep -q "$@" <<< "$text"; }
+
 judge() { # ROOT
     local root="$1" wf pick p rc=0 out listed
     wf="$root/.github/workflows"
@@ -188,7 +192,7 @@ judge() { # ROOT
         case " $(printf '%s' "$PRODUCERS" | tr '\n' ' ') " in *" $p "*) listed=1 ;; esac
         out="$(judge_file "$f" "$pick" "$listed")"
         [ -n "$out" ] && printf '%s\n' "$out"
-        printf '%s\n' "$out" | grep -q -e '^FAIL' && rc=1
+        hasl "$out" -e '^FAIL' && rc=1
     done
     p6 "$root" || rc=1
     if [ "$rc" -eq 0 ]; then printf 'PASS  every nightly producer chains from "%s" and measures its C\n' "$pick"
@@ -214,7 +218,7 @@ row() { # NAME WANT-RC MUST -- MUTATION-FN (run inside the fixture's workflows d
     out="$(judge "$fx" 2>&1)"; rc=$?
     CASES=$((CASES + 1))
     if [ "$rc" != "$want" ]; then printf 'RED   %-40s rc=%s want %s\n%s\n' "$name" "$rc" "$want" "$(printf '%s\n' "$out" | grep -e '^FAIL' | head -n 3)"; FAILED=$((FAILED + 1)); return; fi
-    if [ -n "$must" ] && ! printf '%s\n' "$out" | grep -qF -e "$must"; then printf 'RED   %-40s missing: %s\n' "$name" "$must"; FAILED=$((FAILED + 1)); return; fi
+    if [ -n "$must" ] && ! hasl "$out" -F -e "$must"; then printf 'RED   %-40s missing: %s\n' "$name" "$must"; FAILED=$((FAILED + 1)); return; fi
     printf 'ok    %s\n' "$name"
 }
 changed() { # FILE SED-EXPR: apply, and fail when nothing changed (a no-op mutation is an error, never a pass)
@@ -283,6 +287,13 @@ m_sha_bracket()   { changed qwen-story-daily.yml '0,/^    steps:$/s//    steps:\
 m_sha_case()      { changed qwen-story-daily.yml '0,/^    steps:$/s//    steps:\n      - run: echo "${{ GitHub.SHA }}"/'; }
 m_bystander()     { printf 'name: Other\non:\n  schedule:\n    - cron: "0 1 * * *"\njobs:\n  a:\n    runs-on: x\n    steps:\n      - uses: actions/checkout@v7\n      - run: echo "$GITHUB_SHA"\n' > other.yml; }
 
+sigpipe_row() { # a FAIL line, then 2 MiB: a pipe into grep -q loses it under pipefail (SIGPIPE), a here-string never does
+    local big=''; printf -v big '%s\n%2097152s' 'FAIL  first line' ''
+    CASES=$((CASES + 1))
+    if hasl "$big" -e '^FAIL'; then printf 'ok    %s\n' sigpipe_fail_before_2mib
+    else printf 'RED   %-40s a FAIL line ahead of 2 MiB of output was not seen\n' sigpipe_fail_before_2mib; FAILED=$((FAILED + 1)); fi
+}
+
 self_test() {
     TMP_ST="$(mktemp -d "${TMPDIR:-/tmp}/pc-st.XXXXXX")" || caller_error "no temp dir"
     echo "=== nightly producers chain: each rule must turn RED when its link breaks ==="
@@ -338,6 +349,7 @@ self_test() {
     row p6_no_lanes_table           1 'P6 no LANES table read'                 -- m_lanes_renamed
     row p6_listed_without_a_lane    1 'P6 listed producer book.yml has no lane' -- m_lane_dropped
     row p6_lanes_assigned_twice     1 'P6 LANES is assigned more than once'   -- m_lanes_twice
+    sigpipe_row
     rm -rf -- "${TMP_ST:?}"
     if [ "$FAILED" -eq 0 ]; then printf 'SELF-TEST PASSED: %s rows\n' "$CASES"; return 0; fi
     printf 'SELF-TEST FAILED: %s of %s rows\n' "$FAILED" "$CASES"; return 1
@@ -381,7 +393,8 @@ m35_unlisted_any_event	s/ && a\[5\] ~ \/workflow_run\/)/ \&\& 0)/
 m36_missing_train_read	s/\[ -f "\$t" \] ||/[ 1 ] ||/
 m37_no_table_ok	s/if (!done || !lanes) {/if (0) {/
 m38_a_listed_lane_may_be_missing	s/if (!(pp\[k\] in seen)) {/if (0) {/
-m39_a_second_table_ok	s/if (assigned > 1) {/if (0) {/'
+m39_a_second_table_ok	s/if (assigned > 1) {/if (0) {/
+m40_hasl_piped	s/\(grep -q "[^"]*"\) <<< \("[^"]*"\)/echo \2 | \1/'
 mutants() {
     local tmp name expr killed=0 total=0 errors=0 out cut reds
     cut="$(grep -n -m1 -e "^# -* the case table" "$SCRIPT_PATH" | cut -d: -f1)"
