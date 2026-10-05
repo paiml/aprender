@@ -2278,6 +2278,80 @@ jobs:
         run: setsid --wait bash scripts/check_no_claim_literals.sh
       - name: No claim-literal guard regression (case table)
         run: setsid --wait bash scripts/check_no_claim_literals.sh --selftest
+
+  # guard-cargo-b: the second half of guard-cargo's guard steps, split off so
+  # each half runs under its own 30-minute section wall (FAT_TIMEOUT_SCALE
+  # makes that 3600 s). A cold push run of the single job reached that wall
+  # before its last six rows ran. The rows are moved, never dropped: rows
+  # m0-m45 stay in guard-cargo-steps, rows m46-m76 are guard-cargo-b-steps, in
+  # their old order, and `gate` requires both sections. No wall is raised.
+  #
+  # Its own target dir, `run-<RUN_ID>-guards-b`: the two halves run at the same
+  # time inside the fat job, and cargo's lock on a shared target dir would
+  # serialise their builds. sccache and CARGO_HOME stay shared.
+  guard-cargo-b:
+    # Every setting below is guard-cargo's, read the comments there; only the target-dir suffix and the step's argument differ.
+    runs-on: [self-hosted, Linux, clean-room]   # arch-neutral: intel, yoga or gx10 (#3100)
+    timeout-minutes: 30
+    env:
+      IMAGE: localhost:5000/sovereign-ci:stable
+      PR_OR_REF: ${{ github.event.pull_request.number || github.ref_name }}
+      GUARD_TARGET_DIR: /mnt/nvme-raid0/targets/aprender-ci/${{ github.event.pull_request.number || github.ref_name }}/run-${{ github.run_id }}-guards-b
+      GUARD_CARGO_HOME: /mnt/nvme-raid0/cargo-ci/home/${{ github.event.pull_request.number || github.ref_name }}
+    steps:
+      - name: Pre-checkout ownership restore (EACCES self-heal)
+        run: |
+          if docker image inspect "$IMAGE" > /dev/null 2>&1; then
+            docker run --rm -v "${GITHUB_WORKSPACE}:/workspace" "$IMAGE" \
+              bash -c 'chown -R 1000:1000 /workspace 2>/dev/null || true'
+          else
+            echo "Image not cached — no prior docker job on this runner, nothing to restore"
+          fi
+      - uses: actions/checkout@v7
+        with:
+          fetch-depth: 1
+      - name: Fetch origin/main as the comparand for every ratchet in this job
+        run: |
+          git fetch --no-tags --depth=1 origin +refs/heads/main:refs/remotes/origin/main
+          if [ "${GITHUB_EVENT_NAME:-}" = push ]; then git fetch --no-tags --deepen=1 origin +refs/heads/main:refs/remotes/origin/main; fi
+      - id: guard-setup
+        name: Create this job's own target dir and CARGO_HOME (before any bind mount)
+        run: |
+          heal_path() {
+            local root=$1 path=$2 cur=$1 rel part
+            rel=${path#"$root"/}
+            IFS=/ read -ra parts <<< "$rel"
+            for part in "${parts[@]}"; do
+              cur="$cur/$part"
+              if [ -d "$cur" ] && [ ! -w "$cur" ]; then
+                docker run --rm -v "$(dirname "$cur"):/p" "$IMAGE" chown "$(id -u):$(id -g)" "/p/$(basename "$cur")"
+              fi
+            done
+            mkdir -p "$path"
+          }
+          if command -v ci-target-admit >/dev/null 2>&1; then
+            CI_TARGET_ADMIT_WAIT_S=300 ci-target-admit "$GUARD_TARGET_DIR" || exit 1
+          elif [ "${CI_TARGET_ADMIT_REQUIRED:-0}" = 1 ]; then
+            echo "::error::infra#1059: ci-target-admit is required on ${RUNNER_NAME:-this runner} and is missing"; exit 1
+          fi
+          heal_path /mnt/nvme-raid0/targets/aprender-ci "$GUARD_TARGET_DIR"
+          heal_path /mnt/nvme-raid0/cargo-ci/home "$GUARD_CARGO_HOME/registry"
+          printf 'target dir: %s\n' "$GUARD_TARGET_DIR"
+          printf 'cargo home: %s (registry/ .package-cache .package-cache-mutate travel together)\n' "$GUARD_CARGO_HOME"
+      - name: Every guard step runs, and every failure is reported (scripts/ci_guards.sh, #4415)
+        if: ${{ !cancelled() && steps.guard-setup.outcome == 'success' }}
+        env:
+          GITHUB_TOKEN: ${{ github.token }}
+          GH_TOKEN: ${{ github.token }}
+        run: bash scripts/ci_guards.sh guard-cargo-b
+
+  guard-cargo-b-steps:
+    # MANIFEST, never run by GitHub (`if: false`): guard-cargo-b's guard steps (rows m46-m76 of the
+    # unsplit guard-cargo), executed by `scripts/ci_guards.sh guard-cargo-b` and by
+    # `make guards-local`. Same rules as guard-cargo-steps: name/run/env only.
+    if: false
+    runs-on: [self-hosted, Linux, clean-room]
+    steps:
       # PERF-010, the receipt rule's namesake check. The guard above is the
       # NEGATIVE half -- a comparator ratio may not appear at all. This is the
       # POSITIVE half over the class that is allowed to stay: a speed comparison

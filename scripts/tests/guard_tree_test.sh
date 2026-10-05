@@ -247,13 +247,14 @@ fi
 
 # The guard-cargo job body: from its key to the next top-level job key.
 # guard-cargo AND its guard-cargo-steps manifest (#4415): the docker steps run by
-# scripts/ci_guards.sh guard-cargo live in the manifest.
-guard_cargo_job="$(awk '/^  guard-cargo(-steps)?:/{f=1;print;next} f&&/^  [a-z][a-z0-9_-]*:/{f=0} f' <<<"$ci_text")"
-n_job="$(grep -c 'guard-cargo:' <<<"$guard_cargo_job")"
+# scripts/ci_guards.sh guard-cargo live in the manifest. guard-cargo-b and
+# guard-cargo-b-steps are its second half (rows m46-m76), each under its own wall.
+guard_cargo_job="$(awk '/^  guard-cargo(-b)?(-steps)?:/{f=1;print;next} f&&/^  [a-z][a-z0-9_-]*:/{f=0} f' <<<"$ci_text")"
+n_job="$(grep -cE '^  guard-cargo(-b)?:$' <<<"$guard_cargo_job")"
 n_registry_only="$(grep -c -- ':/usr/local/cargo/registry' <<<"$guard_cargo_job")"
 n_cargo_home="$(grep -c -- '-e CARGO_HOME=' <<<"$guard_cargo_job")"
 
-if [ "${n_job:-0}" -eq 1 ] && [ "${n_registry_only:-0}" -eq 0 ] && [ "${n_cargo_home:-0}" -gt 0 ]; then
+if [ "${n_job:-0}" -eq 2 ] && [ "${n_registry_only:-0}" -eq 0 ] && [ "${n_cargo_home:-0}" -gt 0 ]; then
     pass_row "guard-cargo mounts the whole CARGO_HOME, never registry/ alone"
 else
     fail_row "guard-cargo mounts the whole CARGO_HOME, never registry/ alone" \
@@ -265,12 +266,13 @@ fi
 #    mounts run-<RUN_ID>; guard-cargo must mount run-<RUN_ID>-guards, or the
 #    dep-info race (aprender#2822) is back.
 # ---------------------------------------------------------------------------
-n_suffix="$(grep -c 'run-\${{ github.run_id }}-guards' <<<"$guard_cargo_job")"
-if [ "${n_suffix:-0}" -gt 0 ]; then
-    pass_row "guard-cargo has its own target dir suffix (run-<RUN_ID>-guards)"
+n_suffix="$(grep -cE 'run-\$\{\{ github\.run_id \}\}-guards$' <<<"$guard_cargo_job")"
+n_suffix_b="$(grep -cE 'run-\$\{\{ github\.run_id \}\}-guards-b$' <<<"$guard_cargo_job")"
+if [ "${n_suffix:-0}" -eq 1 ] && [ "${n_suffix_b:-0}" -eq 1 ]; then
+    pass_row "guard-cargo and guard-cargo-b have their own target dir suffixes (run-<RUN_ID>-guards, -guards-b)"
 else
-    fail_row "guard-cargo has its own target dir suffix (run-<RUN_ID>-guards)" \
-        "matches=${n_suffix:-0}"
+    fail_row "guard-cargo and guard-cargo-b have their own target dir suffixes (run-<RUN_ID>-guards, -guards-b)" \
+        "matches=${n_suffix:-0} b_matches=${n_suffix_b:-0}"
 fi
 
 # ---------------------------------------------------------------------------

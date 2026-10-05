@@ -6,3 +6,4 @@
 # takes both rows to 0. Counted by: bash scripts/lib/ci_guard_steps.sh check-run-all
 guard-cargo	0
 guard-tree	0
+guard-cargo-b	0

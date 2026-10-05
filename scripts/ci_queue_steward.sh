@@ -53,7 +53,7 @@ def q1:
   else empty end;
 
 def q2:
-  ["workspace-test", "guard-tree", "guard-cargo", "vendored-schemas", "ci / gate", "ci / test", "ci / lint", "ci / security", "ci / coverage", "ci / provenance"] as $reqs |
+  ["workspace-test", "guard-tree", "guard-cargo", "guard-cargo-b", "vendored-schemas", "ci / gate", "ci / test", "ci / lint", "ci / security", "ci / coverage", "ci / provenance"] as $reqs |
   ($s1|.[0]).data.repository.mergeQueue.entries.nodes[] | .pullRequest.number as $pr | .pullRequest.id as $pr_id | .headCommit.oid as $sha |
   (($s2|.[0])[] | select(.headBranch == "gh-readonly-queue/main/pr-\($pr)-\($sha)")) as $run |
   ($run.jobs // [] | select(length > 0)) |
