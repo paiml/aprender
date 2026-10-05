@@ -1,0 +1,153 @@
+{
+  "$schema": "https://docs.oasis-open.org/sarif/sarif/v2.1.0/errata01/os/schemas/sarif-schema-2.1.0.json",
+  "version": "2.1.0",
+  "runs": [
+    {
+      "tool": {
+        "driver": {
+          "name": "pmat"
+        }
+      },
+      "invocations": [
+        {
+          "executionSuccessful": true,
+          "toolExecutionNotifications": []
+        }
+      ],
+      "results": [
+        {
+          "ruleId": "complexity_not_measured_for_diff",
+          "level": "note",
+          "message": {
+            "text": "The pmat query at head returned the two changed constructors as TDG A+, O(1); no complexity or TDG delta was computed for the diff, so complexity_delta and tdg_delta are empty because nothing was measured, not because they are zero."
+          },
+          "properties": {
+            "grounding": "measured",
+            "command": [
+              "pmat",
+              "query",
+              "kv cache construction zeroed allocation per layer",
+              "--limit",
+              "5"
+            ],
+            "exit_code": 0,
+            "stdout_sha256": "0000000000000000000000000000000000000000000000000000000000000000",
+            "rationale": "The query output lists StreamingKVCache::new and layers::KVCache::new as TDG A+ and O(1) at head; it is a point reading, not a before/after delta.",
+            "failure_scenario": "A reader could take an empty complexity_delta as a measured zero; no delta was run.",
+            "precision_class": "advisory"
+          }
+        },
+        {
+          "ruleId": "primary_review_ctor_fix_is_sound",
+          "level": "note",
+          "message": {
+            "text": "Primary review: replacing the cloned layer with one vec![0.0f32; n] per layer makes each layer a calloc, which the OS backs lazily, so construction no longer writes the cache; the three constructors in the diff are all converted and the three #[ignore] lines are removed."
+          },
+          "properties": {
+            "grounding": "cited",
+            "source": "crates/aprender-serve/src/gpu/streaming_kv.rs at head, StreamingKVCache::new",
+            "excerpt": "        // One zeroed allocation per layer. `vec![vec![0.0; n]; layers]` clones layer 0 into every",
+            "excerpt_sha256": "73d1e005ab640e2744141fe71d08b84f9f153583a676931f900f1a4622f6a935",
+            "rationale": "vec![0.0f32; n] takes the zeroed-allocation path (IsZero), and the comment at the call site states the reason; behaviour is unchanged because every layer still starts as n zeros.",
+            "failure_scenario": "If the allocator zero-fills eagerly (a sanitizer or a malloc debug mode), the memory is committed again and the new RSS test fails there; it does not corrupt data.",
+            "precision_class": "advisory"
+          }
+        },
+        {
+          "ruleId": "same_defect_left_in_inference_kv_cache",
+          "level": "warning",
+          "message": {
+            "text": "The same cloned-layer pattern remains in the public inference::KVCache::new (kv_cache.rs lines 61-62) and OptimizedKVCache::new (lines 255-256): vec![vec![0.0; n]; num_layers] writes every layer at construction. They are outside this diff and not covered by falsify_kv_005."
+          },
+          "properties": {
+            "grounding": "cited",
+            "source": "crates/aprender-serve/src/inference/kv_cache.rs at head, KVCache::new",
+            "excerpt": "        let k_cache = vec![vec![0.0; max_seq_len * hidden_dim]; num_layers];",
+            "excerpt_sha256": "0c14cdfbfe237a245288049c0d5ff0be544575c0548493dd4e9d724bd612d621",
+            "rationale": "A caller sizing these caches to a long context commits num_layers times the layer size at construction, the failure #4769 fixed in the other three constructors.",
+            "failure_scenario": "inference::KVCache::new(32, 4096, 32768) commits about 17 GiB of f32 per side at construction; a follow-up ticket should convert both and extend the RSS test.",
+            "precision_class": "advisory"
+          }
+        },
+        {
+          "ruleId": "rss_test_environment_sensitivity",
+          "level": "note",
+          "message": {
+            "text": "falsify_kv_005 reads VmRSS and takes the least of three runs against a 64 MiB limit, which is robust to concurrent test threads; it can still mis-measure under a sanitizer or an allocator that pre-touches pages, and it is compiled only on Linux."
+          },
+          "properties": {
+            "grounding": "cited",
+            "source": "crates/aprender-serve/src/gpu/streaming_kv.rs at head, rss_growth_kib",
+            "excerpt": "    /// RSS growth in KiB while `build` is alive. The least of three runs, so an allocation made by",
+            "excerpt_sha256": "07f0c416ddaa3e7fe56867f4e045005539b4c0846c7aec6c9e22f21799c1427c",
+            "rationale": "The minimum of three runs removes noise from other threads allocating at the same instant; a constructor that commits its bytes grows RSS by the same amount in every run, so the minimum still fails it.",
+            "failure_scenario": "Run under ASan or valgrind the zero-page laziness is lost and the test would fail on correct code; CI does not run it that way.",
+            "precision_class": "advisory"
+          }
+        }
+      ]
+    },
+    {
+      "tool": {
+        "driver": {
+          "name": "cargo-mutants"
+        }
+      },
+      "invocations": [
+        {
+          "executionSuccessful": true,
+          "toolExecutionNotifications": []
+        }
+      ],
+      "results": [
+        {
+          "ruleId": "ctor_mutants_killed",
+          "level": "note",
+          "message": {
+            "text": "Each of the three constructors reverted alone to the cloned form makes falsify_kv_005_construction_commits_no_cache_memory fail; the unmutated tree passes. attempted 3, killed 3, no survivors. This is the author-side receipt, not re-run by this reviewer."
+          },
+          "properties": {
+            "grounding": "cited",
+            "source": "author mutation receipt for the PR, run on a dev host",
+            "excerpt": "grew RSS by 917568 KiB at construction",
+            "excerpt_sha256": "056fdd8c7895c473ae3de8f4319b607e6031430c3455d40001f181b96d978332",
+            "rationale": "The failure text shows the test measures the cloned form directly (917568 KiB, 896 MiB), so the test is not vacuous.",
+            "failure_scenario": "If the test could not fail, a reverted constructor would pass; each reverted constructor failed it.",
+            "precision_class": "advisory"
+          }
+        }
+      ]
+    },
+    {
+      "tool": {
+        "driver": {
+          "name": "antigravity"
+        }
+      },
+      "invocations": [
+        {
+          "executionSuccessful": false,
+          "toolExecutionNotifications": [
+            {
+              "level": "error",
+              "message": {
+                "text": "The cross-vendor (antigravity) reviewer was not consulted: the local budget probe for the gemini bucket reports state empty (budget 0). No agy call was made."
+              },
+              "properties": {
+                "grounding": "measured",
+                "command": [
+                  "bash",
+                  "-c",
+                  ". ~/.claude/skills/quorum-review/agy-bucket.sh && ab_state gemini 1"
+                ],
+                "exit_code": 0,
+                "stdout_sha256": "8916fabcdf5456aa1395757c4d09dd1d49dbe3df4014b7bc944d194cf1db248b"
+              }
+            }
+          ]
+        }
+      ],
+      "results": []
+    }
+  ]
+}

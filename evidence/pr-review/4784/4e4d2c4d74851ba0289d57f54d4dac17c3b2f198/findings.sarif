@@ -1,0 +1,216 @@
+{
+  "$schema": "https://docs.oasis-open.org/sarif/sarif/v2.1.0/errata01/os/schemas/sarif-schema-2.1.0.json",
+  "version": "2.1.0",
+  "runs": [
+    {
+      "tool": {
+        "driver": {
+          "name": "pmat"
+        }
+      },
+      "invocations": [
+        {
+          "executionSuccessful": true,
+          "toolExecutionNotifications": []
+        }
+      ],
+      "results": [
+        {
+          "ruleId": "no_second_tool_pin_mechanism",
+          "level": "note",
+          "message": {
+            "text": "pmat query at head for a pinned, sha256-verified tool download returns 5 results, none a workflow tool-pin helper this diff should have reused; the diff adds no symbol, so the duplication scan searched 0 needles over 1371/1371 sibling branches with 0 hits."
+          },
+          "properties": {
+            "grounding": "measured",
+            "command": [
+              "pmat",
+              "query",
+              "pin tool version sha256 verify download",
+              "--limit",
+              "5"
+            ],
+            "exit_code": 0,
+            "stdout_sha256": "b098ab9b9594d8cce707be34fd23caacffc81c3935413f0284ba6de71983fe50",
+            "rationale": "The only near match is a CWE-829 mutation template in aprender-verify-ml, which describes the curl-then-sha256sum pattern this step follows; it is not callable from a workflow.",
+            "failure_scenario": "If a shared tool-pin action existed, a second inline pin would drift from it; none exists.",
+            "precision_class": "advisory"
+          }
+        },
+        {
+          "ruleId": "primary_review_pin_fail_closed",
+          "level": "note",
+          "message": {
+            "text": "Primary review: GITHUB_PATH is written on the last line of the pin step, after sha256sum -c, the version check and the empty-input -e check, all under set -euo pipefail; the wrong-sha and jq-1.7.1 mutants leave GITHUB_PATH empty."
+          },
+          "properties": {
+            "grounding": "cited",
+            "source": ".github/workflows/ci.yml at head, line 169, step 'Pin jq 1.8.2 (sha256-verified, fail closed)'",
+            "excerpt": "          echo \"$d\" >> \"$GITHUB_PATH\"",
+            "excerpt_sha256": "7dbb87dbe65acab402dcd30105741fa93081be9abc5b9f60c4cac98181d117c0",
+            "rationale": "Writing PATH last means no failed check can leave an unverified jq on PATH for later steps.",
+            "failure_scenario": "If the append moved above a check, a failing check would still exit the job, but a later always() step would see the bad jq; it is last.",
+            "precision_class": "advisory"
+          }
+        },
+        {
+          "ruleId": "determinism_job_needs_no_pin",
+          "level": "note",
+          "message": {
+            "text": "Quorum round 1, haiku lane: FIX-FIRST on the determinism job (determinism-compare.sh calls jq). Answered by measurement, not code: that job runs on ARM64 runners, where the amd64 binary would not run, and determinism-compare.sh --self-test is 6/6 green under jq 1.6 in the runner image with its own mutant killed; its jq decisions are over strings, booleans and lengths. Round 2 haiku on the unchanged head: see quorum_round2."
+          },
+          "properties": {
+            "grounding": "cited",
+            "source": "scripts/ci/determinism-compare.sh at head, line 45",
+            "excerpt": "  jq -se 'all(.[]; (.svg_sha256|type==\"string\" and test(\"^[0-9a-f]{64}$\"))",
+            "excerpt_sha256": "2c45ca890c0b00aacd44a9e9028983f813e921397da59c507c1bf6777757c341",
+            "rationale": "jq 1.6 and 1.8.2 differ in how they print number literals; a type/regex test on strings and a unique|length comparison read the same on both.",
+            "failure_scenario": "A later jq call in that script that prints and compares a float would differ under 1.6; none exists today, and its self-test would show it.",
+            "precision_class": "advisory"
+          }
+        },
+        {
+          "ruleId": "gpu_touched_claim_is_the_planted_question",
+          "level": "note",
+          "message": {
+            "text": "Quorum round 1, sonnet lane: answered the planted contrary question correctly (GITHUB_PATH is per-job, so x86-main's pin does not reach gpu-touched). Its follow-on finding that the ci.yml comment makes that claim is a misread: the comment says the pin reaches later steps and fat_driver's host sections of the same job, and the PR body lists gpu-touched as not pinned because it reads string fields only."
+          },
+          "properties": {
+            "grounding": "cited",
+            "source": "quorum round 1, claude-sonnet-5-5 lane output on the local host",
+            "excerpt": "**3. The `gpu-touched` assertion: no.** `GITHUB_PATH` is per-job, not workflow-wide. Each job runs on its own runner and has its own `GITHUB_PATH` file, so `x86-main`'s pin does not reach `gpu-touched` (`ci.yml:309`). The conclusion still holds because nothing in that job needs jq 1.8.2:",
+            "excerpt_sha256": "99c990b345b43b0640e44612acc158fa11d018673d6088a9658dff803b64e9b6",
+            "rationale": "Both lanes rejected the planted assertion, so neither lane is void.",
+            "failure_scenario": "None at runtime: no gpu-touched step calls a jq-1.8-only feature.",
+            "precision_class": "advisory"
+          }
+        },
+        {
+          "ruleId": "planted_question_haiku",
+          "level": "note",
+          "message": {
+            "text": "Quorum round 1, haiku lane: also rejected the planted assertion."
+          },
+          "properties": {
+            "grounding": "cited",
+            "source": "quorum round 1, claude-haiku-4-5-20251001 lane output on the local host",
+            "excerpt": "3. **Author's assertion**: ✗ INCORRECT — GITHUB_PATH doesn't cross job boundaries; gpu-touched is a separate job that doesn't inherit x86-main's GITHUB_PATH edits",
+            "excerpt_sha256": "fcdb62e6a8f887a22e30f79091ef57cd8387886b1521d1fc03c47dfbafb97b3e",
+            "rationale": "A lane that agreed with the planted assertion would void the review; this one did not.",
+            "failure_scenario": "If both lanes had agreed, the review would carry no signal on the job-scope question.",
+            "precision_class": "advisory"
+          }
+        },
+        {
+          "ruleId": "amd64_only_binary",
+          "level": "note",
+          "message": {
+            "text": "Quorum round 1, sonnet lane (advisory): the URL and sha256 name jq-linux-amd64; x86-main runs on X64 runners, and a move to an ARM64 label would fail closed at sha256sum -c or exec, not pass silently. Kept as is."
+          },
+          "properties": {
+            "grounding": "cited",
+            "source": ".github/workflows/ci.yml at head, line 156",
+            "excerpt": "          JQ_URL: https://github.com/jqlang/jq/releases/download/jq-1.8.2/jq-linux-amd64",
+            "excerpt_sha256": "ae013c06065e4f13f96480c16269e915f8e8fcb87ca0b0f39779ef3a7c5a8943",
+            "rationale": "Fail closed is the intended behaviour for an unexpected architecture.",
+            "failure_scenario": "x86-main relabelled to ARM64 fails at the pin step with an exec error; nothing runs with the wrong jq.",
+            "precision_class": "advisory"
+          }
+        },
+        {
+          "ruleId": "quorum_round2",
+          "level": "note",
+          "message": {
+            "text": "Quorum round 2 (haiku, head unchanged) on the determinism measurement."
+          },
+          "properties": {
+            "grounding": "cited",
+            "source": "quorum round 2, claude-haiku-4-5-20251001 lane output on the local host",
+            "excerpt": "**VOTE: SHIP**",
+            "excerpt_sha256": "4833879541ad57489226cd359653474c153034378e466c2d7d6da4bb057224f9",
+            "rationale": "Round 2 re-read the determinism job and script against the measurement.",
+            "failure_scenario": "If round 2 had found a concrete jq-1.6 failure on that job, the PR would need an arm64 pin; see its vote.",
+            "precision_class": "advisory"
+          }
+        }
+      ]
+    },
+    {
+      "tool": {
+        "driver": {
+          "name": "cargo-mutants"
+        }
+      },
+      "invocations": [
+        {
+          "executionSuccessful": true,
+          "toolExecutionNotifications": []
+        }
+      ],
+      "results": [
+        {
+          "ruleId": "pin_mutants_killed",
+          "level": "note",
+          "message": {
+            "text": "Pin mutants, run in the jq-1.6 runner image with the pin and verify steps extracted verbatim from ci.yml: wrong sha256 -> rc 1 at sha256sum -c, GITHUB_PATH empty; jq-1.7.1 URL with its real sha256 -> rc 1 on the version check, GITHUB_PATH empty; verify without the pin -> rc 1. attempted 2, killed 2, no survivors. Author-side receipt."
+          },
+          "properties": {
+            "grounding": "cited",
+            "source": "author proof run for the PR, jq-1.6 runner image",
+            "excerpt": "pin[jq-1.7.1] rc=1 github_path='' :: ::error::the pinned jq reports 'jq-1.7.1', not jq-1.8.2",
+            "excerpt_sha256": "f7ebcfe1f82a54aec38726de2a3c8c6697f5c8f027b36dd8da6b5c47bf0f6565",
+            "rationale": "The version check fails a correctly checksummed wrong binary, so the pin is not only a checksum.",
+            "failure_scenario": "If the version check were absent, a sha bump to another jq release would pass silently; the jq-1.7.1 mutant shows it does not.",
+            "precision_class": "advisory"
+          }
+        },
+        {
+          "ruleId": "base_red_reproduced",
+          "level": "note",
+          "message": {
+            "text": "Base reproduction: tag_coverage_gate.sh --self-test under the image jq 1.6 is rc 1 with 5 e2e rows failing, and rc 0 with 0 failing rows on the pinned PATH."
+          },
+          "properties": {
+            "grounding": "cited",
+            "source": "author proof run for the PR, jq-1.6 runner image",
+            "excerpt": "self-test[red-image-jq] rc=1 :: tag_coverage_gate self-test: FAIL",
+            "excerpt_sha256": "368ccc1d2f3ab05fe5787d2b4c7b0962b2834c6b665da6939880503bf6de212c",
+            "rationale": "The red is the defect this PR contains; the green after the pin shows the pin is what moves it.",
+            "failure_scenario": "Without the pin, guard-tree goes red on any runner whose image ships jq 1.6.",
+            "precision_class": "advisory"
+          }
+        },
+        {
+          "ruleId": "wrong_sha_mutant",
+          "level": "note",
+          "message": {
+            "text": "Wrong-sha256 mutant output."
+          },
+          "properties": {
+            "grounding": "cited",
+            "source": "author proof run for the PR, jq-1.6 runner image",
+            "excerpt": "pin[wrong-sha] rc=1 github_path='' :: /tmp/tmp.PpGgRvSKZU/jq-1.8.2/jq: FAILED",
+            "excerpt_sha256": "2d339b5b05d3270e193f14e85eb4cb8cdc524474d2ed1f78f4f924b33e4cbf47",
+            "rationale": "sha256sum -c fails before chmod and before GITHUB_PATH.",
+            "failure_scenario": "A tampered or truncated download stops the job.",
+            "precision_class": "advisory"
+          }
+        }
+      ]
+    },
+    {
+      "tool": {
+        "driver": {
+          "name": "antigravity"
+        }
+      },
+      "invocations": [
+        {
+          "executionSuccessful": true,
+          "toolExecutionNotifications": []
+        }
+      ],
+      "results": []
+    }
+  ]
+}

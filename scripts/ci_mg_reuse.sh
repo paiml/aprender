@@ -331,7 +331,11 @@ STUB
   # The wiring: each skip and each refusal is where ci.yml decides it.
   job() { awk -v j="  $1:" '$0 == j {f = 1; next} f && /^  [A-Za-z0-9_-]+:$/ {exit} f' "$wf" 2> /dev/null; }
   wire() { # wire JOB FIXED_STRING
-    if job "$1" | grep -qF -- "$2"; then pass=$((pass + 1)); else
+    # Capture, then a here-string: never pipe into grep -q here. grep -q exits on its first
+    # match, job's awk takes SIGPIPE (141), and under this file's pipefail the pipeline is
+    # 141, a false FAIL though grep matched (scripts/check_no_pipe_into_grep_q.sh).
+    local t; t=$(job "$1")
+    if grep -qF -- "$2" <<<"$t"; then pass=$((pass + 1)); else
       fail=$((fail + 1)); echo "FAIL wiring: job '$1' lacks: $2"; fi
   }
   wire mg-reuse "if: github.event_name == 'merge_group'"
@@ -352,6 +356,18 @@ STUB
   wire gate 'MG-REUSE-VERDICT-BEGIN'
   wire gate 'mg-reuse, x86-main-advisories, mg-reuse-self-test]'
   wire gate '[ "$MST" = success ]'
+
+  # Positive control for wire itself: one job of more than 64 KiB (a pipe buffer) whose
+  # wanted line comes first. A pipe from job into grep -q takes SIGPIPE on this every
+  # time, so if wire ever pipes again this row FAILs deterministically.
+  local wf_real="$wf"
+  wf="$T/wire-big.yml"
+  { printf 'jobs:\n  wire-big:\n    needs: [mg-reuse]\n    steps:\n'
+    awk 'BEGIN { for (i = 0; i < 3000; i++) printf "      - run: echo wire-control-filler-%05d\n", i }'
+    printf '  after-big:\n    needs: [wire-big]\n'
+  } > "$wf"
+  wire wire-big 'needs: [mg-reuse]'
+  wf="$wf_real"
 
   rm -rf "${T:?}"
   echo "ci_mg_reuse self-test: $pass passed, $fail failed"
