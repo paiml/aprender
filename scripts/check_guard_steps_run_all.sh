@@ -265,8 +265,21 @@ manifest_rows() {
         'probe_tool' 'test "$FOO" = bar'
     RUNNER_TEMP="$d/rt" mrun "CI: GITHUB_PATH / GITHUB_ENV reach later steps" 0 '^SUMMARY: 0 failed / 4 ran'
     # shellcheck disable=SC2016 # expanded by the step's bash, not here
-    mfixture "$repo/ci/sections.yml" good 'trap "touch \"$RUNNER_TEMP/restored\"" EXIT; touch "$RUNNER_TEMP/armed"; sleep 30'
-    mkdir -p "$d/rt"; rm -f "${d:?}/rt/restored" "${d:?}/rt/armed"
+    # FLAKE-0 #4759 root cause: timeout(1) sent TERM to the step's bash and then a second TERM to
+    # its whole process group. When the second one landed while the EXIT trap ran, it killed the
+    # trap's own restore command (here `touch`): measured 84 of 300 with a 1 ms gap, every one
+    # with the trap's first line already run. The fixture makes that ordering observable on every
+    # run, not on a loaded runner only: a child of the step writes `early` if it is signalled while
+    # the step's bash is still alive, and the trap sleeps 1 s first, so a group TERM sent with the
+    # bash's TERM always lands inside it. The runner must signal the group only after the trap is done.
+    cat > "$d/child.sh" << 'CHILD'
+trap 'if kill -0 "$1" 2> /dev/null; then : > "$RUNNER_TEMP/early"; fi; : > "$RUNNER_TEMP/termed"; exit 0' TERM
+: > "$RUNNER_TEMP/child_up"
+while :; do sleep 0.05; done
+CHILD
+    # shellcheck disable=SC2016 # expanded by the step's bash, not here
+    mfixture "$repo/ci/sections.yml" good "bash \"$d/child.sh\""' "$$" & while [ ! -e "$RUNNER_TEMP/child_up" ]; do sleep 0.01; done; trap "sleep 1; touch \"$RUNNER_TEMP/restored\"" EXIT; touch "$RUNNER_TEMP/armed"; sleep 30'
+    mkdir -p "$d/rt"; rm -f "${d:?}/rt/restored" "${d:?}/rt/armed" "${d:?}/rt/early" "${d:?}/rt/termed" "${d:?}/rt/child_up"
     RUNNER_TEMP="$d/rt" mrun "CI: a timed-out step is TIMEOUT, not a crash" 1 'TIMEOUT' --step-timeout 1
     # FLAKE-0 #4759: a 1 s step timeout can fire on a loaded runner before the step's bash has
     # armed its trap, and "never armed" is not "armed and skipped". The step marks `armed` right
@@ -276,21 +289,28 @@ manifest_rows() {
     # armed = UNMEASURED (not measured, never ok).
     st=1
     while [ ! -e "$d/rt/armed" ] && [ "$st" -lt 16 ]; do
-        st=$((st * 2)); rm -f "${d:?}/rt/restored"
+        st=$((st * 2)); rm -f "${d:?}/rt/restored" "${d:?}/rt/early" "${d:?}/rt/termed" "${d:?}/rt/child_up"
         ( cd "$repo" && GITHUB_ACTIONS=true GITHUB_TOKEN=tok-123 GITHUB_STEP_SUMMARY="$d/msummary" RUNNER_TEMP="$d/rt" \
             CI_GUARDS_SCRATCH="$d/mscratch" bash "$LIB" run --step-timeout "$st" guard-x ) > "$d/out" 2>&1
     done
     v="a timed-out step still runs its EXIT trap (restores a mutant)"
-    # FLAKE-0 #4759, QUARANTINED again: the armed-marker precondition above (#4772) did not hold
-    # the row. On CI run 37348731047 attempt 1 (job x86-main, guard-tree m2, head be139e0ca0) the
-    # trap WAS armed and `restored` was missing at step-timeout 1s, a FAIL on a diff that does not
-    # touch this script. So the cause is not only "fired before the trap was armed". Until #4759
-    # finds and fixes it, the row runs and prints what it read but never fails the table and is
-    # counted as quarantined (qt, with its ticket), never as ok.
-    if [ ! -e "$d/rt/armed" ]; then r="trap never armed"
-    elif [ -e "$d/rt/restored" ]; then r="read ok"
-    else r="read FAIL"; fi
-    quarantine "#4759" "$v" "not measured; $r, step-timeout ${st}s"
+    if [ ! -e "$d/rt/armed" ]; then
+        q=$((q + 1)); printf 'UNMEASURED %-53s trap never armed by step-timeout %ss\n' "$v" "$st"
+    else
+        # The child handles its TERM between 50 ms sleeps; give it 5 s to report.
+        for _ in 1 2 3 4 5 6 7 8 9 10 11 12 13 14 15 16 17 18 19 20; do
+            [ -e "$d/rt/termed" ] && break; sleep 0.25
+        done
+        n=$((n + 1))
+        if [ -e "$d/rt/restored" ] && [ -e "$d/rt/termed" ] && [ ! -e "$d/rt/early" ]; then
+            printf 'ok   %-58s step-timeout %ss\n' "$v" "$st"
+        else
+            r=""; [ -e "$d/rt/restored" ] || r="$r restore did not run;"
+            [ -e "$d/rt/early" ] && r="$r its group was signalled while the trap ran;"
+            [ -e "$d/rt/termed" ] || r="$r a child it left was never signalled;"
+            printf 'FAIL %-58s step-timeout %ss:%s\n' "$v" "$st" "$r"; bad=1
+        fi
+    fi
     # shellcheck disable=SC2016
     mfixture "$repo/ci/sections.yml" good 'sleep 30 & echo $! > "$RUNNER_TEMP/child.pid"; sleep 30'
     t0=$SECONDS

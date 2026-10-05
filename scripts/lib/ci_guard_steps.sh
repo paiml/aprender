@@ -401,22 +401,32 @@ cmd_run() {
             log="$scratch/$tag.log"
             [ "$stream" = 1 ] && echo "::group::$job#$idx $name"
             t0="$(now)"
-            # timeout puts the step in its own process group and SIGKILLs the
-            # group, so its children (cargo, docker, sleep) die with it.
             local -a tcmd=()
             # TERM first, KILL 60 s later: a guard self-test that plants a mutant restores it
             # from an EXIT trap, and SIGKILL runs no trap -- a KILL-only timeout left
-            # check_clippy_cuda's planted import in a local tree (2026-09-26). timeout(1)
-            # signals its whole process group, so background children still die.
-            [ "$timeout" -gt 0 ] && tcmd=(timeout -s TERM -k 60 "$timeout")
+            # check_clippy_cuda's planted import in a local tree (2026-09-26).
+            # --foreground: the TERM goes to the step's bash ONLY. Without it timeout(1) sends a
+            # second TERM to its whole process group about a millisecond later, which lands while
+            # the EXIT trap runs and kills the trap's own restore command (cp, git, touch): 84 of
+            # 300 timed-out steps lost their restore that way, and the trap's first line had run
+            # in every one (#4759). The step runs in its own session (setsid), and the group it
+            # leaves behind (cargo, docker, sleep) is TERMed below once its bash has exited.
+            [ "$timeout" -gt 0 ] && tcmd=(setsid timeout --foreground -s TERM -k 60 "$timeout")
+            local spid
             if [ "$stream" = 1 ]; then
                 # bashrs disable-next-line=SEC010
-                (cd "$root" && env "${senv[@]}" "${tcmd[@]}" bash --noprofile --norc -eo pipefail -c "$run" < /dev/null 3<&-)
+                (cd "$root" && exec env "${senv[@]}" "${tcmd[@]}" bash --noprofile --norc -eo pipefail -c "$run" < /dev/null 3<&-) &
             else
                 # bashrs disable-next-line=SEC010
-                (cd "$root" && env "${senv[@]}" "${tcmd[@]}" bash --noprofile --norc -eo pipefail -c "$run" < /dev/null > "$log" 2>&1 3<&-)
+                (cd "$root" && exec env "${senv[@]}" "${tcmd[@]}" bash --noprofile --norc -eo pipefail -c "$run" < /dev/null > "$log" 2>&1 3<&-) &
             fi
-            rc=$?
+            spid=$!
+            wait "$spid"; rc=$?
+            # A timed-out step: its bash and EXIT trap are done; now end what it left running.
+            # setsid made spid the group leader, so -spid is the step's group and nothing else.
+            if [ "$timeout" -gt 0 ] && { [ "$rc" -eq 124 ] || [ "$rc" -eq 137 ]; }; then
+                kill -TERM -- "-$spid" 2> /dev/null || true
+            fi
             t1="$(now)"
             [ "$stream" = 1 ] && echo "::endgroup::"
             status=PASS
