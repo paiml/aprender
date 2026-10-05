@@ -24,7 +24,9 @@ rows:
     falsifier:
       - {ids: [FALSIFY-OBS-TRACE-001..003], staged_at: origin/la-71/4487-obs-00, staged_path: contracts/apr-trace-v1.yaml}
       # as defined in 828bc46eb6. feat/4496 tests 001/002's rules as FALSIFY-TRACE-001/002, ids main already defines twice (apr-chrome-trace-v1, pmat/tracing-observability-v1): relabel before its PR. + 13 proposed: la-71/obs-09-trace-v1 SUPERSEDED-apr-trace-v1.md
-    baseline: null
+    baseline: {path: docs/specifications/APR-OBS-001-dogfood-observability.md, on_main: false,
+               staged_at: origin/la-71/4487-obs-00, staged_marker: "| G6 | Serve tracing |",
+               note: "the before state is APR-OBS-001 §1 G6 [V]: X-Trace-Level returns a single wall total and inference_trace never runs in serve. OBS-09 is measured against that: a traced request returns per-layer rows whose sum stays within the request wall (apr-trace-v1). A timed traced-vs-untraced overhead number needs the feat/4496 tracer built, so it is not taken here"}
     owner_proposed: aprender-76 (OBS-09 owner, APR-OBS-001 v1.3 §8 row 2; tracer on feat/4496), not L1
     blocks: [V1, V3]        # §5.2: every 0.71 perf PR carries an apr-trace-v1 diff
   - id: KREG-001
@@ -132,7 +134,9 @@ rows:
       - {ids: [FALSIFY-OBS-PERF-001..012], staged_at: origin/a01/4492-obs05-ledger-checks,
          staged_path: contracts/apr-perf-ledger-v1.yaml}
       # + 7 proposed: la-71/obs-05-perf-ledger-v1 SUPERSEDED-apr-perf-ledger-v1.md
-    baseline: null
+    baseline: {path: docs/specifications/APR-OBS-001-dogfood-observability.md, on_main: false,
+               staged_at: origin/la-71/4487-obs-00, staged_marker: "| G4 | Per-binary perf ledger |",
+               note: "the before state is APR-OBS-001 §1 G4 [V]: no per-binary perf data file exists (infra#1057). There is no prior series to compare with: a new epoch takes a fresh 14-night calibration with no carried baseline (§2 epoch table), and the tag baseline is written once per tag by the release train (OBS-07). So the 0.71 baseline is the empty ledger plus that calibration rule, not a number"}
     owner_proposed: a01 (#4492 ticket worker), not L1
   - id: BATCH-DECODE-PARITY
     ev_rank: 6
