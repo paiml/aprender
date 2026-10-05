@@ -29,8 +29,9 @@ np_night() { # [EPOCH]
 }
 
 np__args() { # NIGHT [SHA]
-    printf '%s\n' "$1" | grep -qxE '[0-9]{4}-[0-9]{2}-[0-9]{2}' || { printf 'NP caller error: night %s is not YYYY-MM-DD\n' "$1" >&2; return 3; }
-    [ "$#" -lt 2 ] || printf '%s\n' "$2" | grep -qxE '[0-9a-f]{40}' || { printf 'NP caller error: sha %s is not 40 hex\n' "$2" >&2; return 3; }
+    # [[ =~ ]] anchors the whole string; `printf | grep -x` matched per line, so "2026-10-09<newline>x" passed
+    [[ $1 =~ ^[0-9]{4}-[0-9]{2}-[0-9]{2}$ ]] || { printf 'NP caller error: night %s is not YYYY-MM-DD\n' "$1" >&2; return 3; }
+    [ "$#" -lt 2 ] || [[ $2 =~ ^[0-9a-f]{40}$ ]] || { printf 'NP caller error: sha %s is not 40 hex\n' "$2" >&2; return 3; }
 }
 
 np__read() { # REPO REMOTE NIGHT -> the ref's sha on stdout; 0 found, 1 absent, 2 unreadable
