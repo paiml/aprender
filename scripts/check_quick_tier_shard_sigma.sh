@@ -408,7 +408,7 @@ jobs:' > "$d/c-env.yml"
     r5 0 "control: a new plain job that is not pinned stays GREEN (round 6)" "$WF" "$d/r6-ctl.yml"
     # round 7: a key behind a YAML-only line break inside a comment, in both files
     for u in '\xe2\x80\xa8' '\xe2\x80\xa9' '\xc2\x85'; do
-        { cat "$SEC"; printf "  # note$u  workspace-test-shard: {runs-on: shadow}\n"; } > "$d/r7-sec.yml"
+        { cat "$SEC"; printf '  # note%b  workspace-test-shard: {runs-on: shadow}\n' "$u"; } > "$d/r7-sec.yml"
         r5 2 "a key hidden behind a YAML-only line break ($u) in a sections comment (round 7)" "$WF" "$d/r7-sec.yml"
     done
     { cat "$WF"; printf '  # note\xe2\x80\xa8  workspace-test: {runs-on: shadow}\n'; } > "$d/r7-wf.yml"
