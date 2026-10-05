@@ -593,12 +593,21 @@ readme-sync-check: ## Fail if README.md is not what the generator produces
 # GREEN, which is what makes their RED load-bearing rather than incidental.
 # `--class complexity` and `--class satd` are stubs and exit 3, never 0.
 .PHONY: oracle-owl oracle-owl-check
-.PHONY: roadmap-aggregate roadmap-aggregate-check
+.PHONY: roadmap-aggregate roadmap-aggregate-check roadmap-writer-install
 roadmap-aggregate: ## Regenerate docs/roadmaps/roadmap.yaml from docs/roadmaps/entries/ (#3296)
 	@python3 scripts/lib/roadmap_fragments.py aggregate --write
 
 roadmap-aggregate-check: ## Fail if roadmap.yaml is not what the aggregator produces, or if it is not idempotent
 	@python3 scripts/lib/roadmap_fragments.py aggregate --check
+
+roadmap-writer-install: ## Install the nightly roadmap one writer as a systemd user timer (T21, RQ-8; operator-ruled identity)
+	@set -eu; clone="$$HOME/.local/share/roadmap-writer/aprender"; \
+	if [ ! -d "$$clone/.git" ]; then git clone -q "$$(git remote get-url origin)" "$$clone"; fi; \
+	install -D -m 0755 scripts/roadmap_writer_nightly.sh "$$HOME/.local/libexec/roadmap-writer/roadmap_writer_nightly.sh"; \
+	install -D -m 0644 scripts/roadmap-writer/roadmap-writer.service "$$HOME/.config/systemd/user/roadmap-writer.service"; \
+	install -D -m 0644 scripts/roadmap-writer/roadmap-writer.timer "$$HOME/.config/systemd/user/roadmap-writer.timer"; \
+	systemctl --user daemon-reload; systemctl --user enable --now roadmap-writer.timer; \
+	systemctl --user list-timers roadmap-writer.timer --no-pager
 
 .PHONY: ratchet-semantics-test
 ratchet-semantics-test: ## BSE-03: D2 ratchet polarity rows (--class readme)

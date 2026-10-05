@@ -1404,7 +1404,7 @@ jobs:
           python3 scripts/lib/roadmap_merge.py --selftest
           python3 scripts/nightly_manifest.py --self-test   # #4189 nightly gate/manifest/publish plan
       # One writer for docs/roadmaps/roadmap.yaml (T21, operator ruling RQ-8): the bash aggregator,
-      # the CI regen step, the writer-shape judge and the fragment converter each ship a hermetic
+      # the CI regen step, the writer-shape judge, the fragment converter and the nightly host-timer writer each ship a hermetic
       # case table and a mutant run that must kill every mutant. About 90 s, cargo-free.
       - name: One-writer roadmap case tables and mutants (T21)
         run: |
@@ -1415,6 +1415,8 @@ jobs:
           bash scripts/roadmap_one_writer_ci.sh --mutants
           setsid --wait bash scripts/check_roadmap_one_writer.sh --selftest
           setsid --wait bash scripts/check_roadmap_one_writer.sh --mutants
+          bash scripts/roadmap_writer_nightly.sh --selftest
+          bash scripts/roadmap_writer_nightly.sh --mutants
           bash scripts/roadmap_to_fragments.sh --selftest
           bash scripts/roadmap_to_fragments.sh --mutants
       # The one-writer judge, run BARE so it judges this PR (its --selftest/--mutants lines above are arguments, and
