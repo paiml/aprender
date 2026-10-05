@@ -143,17 +143,18 @@ selftest() {
     row one_home_no_private_same_code_rule "" "${out% }"
 
     # the readiness rule and H agree on this repository's history
-    local n=0 dis=0 p
+    local n=0 dis=0 p sample
+    sample=30   # how many first-parent pairs are sampled
     n="$(git -C "$REPO" rev-list --first-parent --count HEAD 2>/dev/null)" || n=0
-    if [ "$n" -gt 30 ]; then
+    if [ "$n" -gt "$sample" ]; then
         n=0
-        for c in $(git -C "$REPO" rev-list --first-parent -n 30 HEAD); do
+        for c in $(git -C "$REPO" rev-list --first-parent -n "$sample" HEAD); do
             p="$(git -C "$REPO" rev-parse "$c^1")"
             (cd "$REPO" && code_identity_same "$p" "$c"); e=$?
             git -C "$REPO" diff --quiet "$p" "$c" -- . ':(exclude)evidence'
             [ "$e" = "$?" ] || dis=$((dis + 1)); n=$((n + 1))
         done
-        row agrees_with_readiness "0/30" "$dis/$n" "(disagreements over the last 30 first-parent pairs)"
+        row agrees_with_readiness "0/$sample" "$dis/$n" "(disagreements over the last $sample first-parent pairs)"
     else
         not_measured agrees_with_readiness "fewer than 31 first-parent commits (shallow clone?)"
     fi

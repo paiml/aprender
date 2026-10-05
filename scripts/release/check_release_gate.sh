@@ -67,13 +67,14 @@ row() {
         nok "$name: preflight not asked unchanged about the root, or clean-room not asked about the tag: $(tr '\n' ';' < "$CALLS")"
     else ok "$name -> rc=$rc"; fi
 }
-V="tag=v1.2.3 sha=$HEAD_SHA"
-row both_green_passes            0 "RELEASE-GATE PASS preflight=PASS clean-room=PASS $V"                  0 green
-row preflight_red_refuses        1 "RELEASE-GATE REFUSE preflight=REFUSE clean-room=PASS $V -- no release"    1 green
-row cleanroom_other_sha_refuses  1 "RELEASE-GATE REFUSE preflight=PASS clean-room=REFUSE $V -- no release"    0 other
-row no_cleanroom_run_unmeasured  2 "RELEASE-GATE NOT_MEASURED preflight=PASS clean-room=NOT_MEASURED $V -- no release" 0 none
-row preflight_cannot_judge       2 "RELEASE-GATE NOT_MEASURED preflight=NOT_MEASURED clean-room=PASS $V -- no release" 2 green
-row refuse_beats_not_measured    1 "RELEASE-GATE REFUSE preflight=REFUSE clean-room=NOT_MEASURED $V -- no release" 1 none
+# the verdict line names the fixture tag and its commit (a fixture value, not a release identity)
+suffix="tag=v1.2.3 sha=$HEAD_SHA"
+row both_green_passes            0 "RELEASE-GATE PASS preflight=PASS clean-room=PASS $suffix"                  0 green
+row preflight_red_refuses        1 "RELEASE-GATE REFUSE preflight=REFUSE clean-room=PASS $suffix -- no release"    1 green
+row cleanroom_other_sha_refuses  1 "RELEASE-GATE REFUSE preflight=PASS clean-room=REFUSE $suffix -- no release"    0 other
+row no_cleanroom_run_unmeasured  2 "RELEASE-GATE NOT_MEASURED preflight=PASS clean-room=NOT_MEASURED $suffix -- no release" 0 none
+row preflight_cannot_judge       2 "RELEASE-GATE NOT_MEASURED preflight=NOT_MEASURED clean-room=PASS $suffix -- no release" 2 green
+row refuse_beats_not_measured    1 "RELEASE-GATE REFUSE preflight=REFUSE clean-room=NOT_MEASURED $suffix -- no release" 1 none
 
 # not a repository -> NOT_MEASURED, never a pass
 rc=0; out="$(CALLS="$WORK/c-nr" PF_RC=0 CR_MODE=green bash "$WORK/gate/release_gate.sh" v1.2.3 "$WORK/nope" 2>&1)" || rc=$?
