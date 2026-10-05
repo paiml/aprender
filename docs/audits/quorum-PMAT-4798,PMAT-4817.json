@@ -1,0 +1,275 @@
+{
+  "ticket": "PMAT-4798,PMAT-4817",
+  "base": "origin/main",
+  "base_resolved": "origin/main",
+  "base_note": "no origin/origin/main exists; judged against the local ref; brief_exclude (C45) kept out of the brief: docs/roadmaps/roadmap.yaml",
+  "head": "b32e98ae5e08f62da451c26b4b51450a184f1b4b",
+  "diff_sha256": "cc78570ca1d091dde407fde89f0e1b77bc65d31ff0f30a1bb579d4afa5ae2873",
+  "width": 3,
+  "executor": "agy",
+  "prompt_mode": "inline",
+  "prompt_bytes": 94874,
+  "prompt_sha256": "63a37cd91e68e4e7dc285b3c00de81c9050b99cd485313d69367f56666ee4055",
+  "author": {
+    "model": "claude-sonnet-5-5",
+    "family": "claude",
+    "source": "flag"
+  },
+  "agreed": true,
+  "lanes": [
+    {
+      "lane": 1,
+      "status": "SUCCESS",
+      "verdict": "PASS",
+      "summary": "I have reviewed the diff against the requirements of PMAT-4798 and PMAT-4817. The diff strictly adheres to the acceptance criteria without introducing any forbidden behavior:\n\n1. **J Selection**: The judge correctly evaluates the newest commit up to `MAX_LAG=6` behind the pick on which all verdict producers have a measured run. The `rank.tsv` is properly hydrated via `history(first: 7)`, and the lag calculation logic precisely bounds the search. If no commit qualifies, it safely falls back to the pick `C`. \n2. **Cop Ruling on PMAT-4817**: The `onc` function ensures a pin run acts as evidence strictly for the pick branch commit `C`, preventing `J` lag commits from incorrectly inheriting pin run results. \n3. **Line formatting**: The `(judged <sha10>, pick <sha10>, lag k commits)` text and `[main <sha10> +N]` gap string are correctly appended when `J != C`, and the script logic remains fail-safe if network/gh calls fail.\n4. **Resilience**: A `workflow_run` event correctly demands a successful `pin` job, preventing head mismatches, and `onc` properly confines valid pin runs strictly to the `[night 12:00Z, night+1 12:00Z)` window.\n\nAll edge cases are backed by new cases in the `--self-test` table which explicitly confirm proper behaviors for gap parsing, `rank.tsv` missing data, moved heads, partial coverage commits, and cross-night bounds. No gates are weakened and no assertions in the receipt contradict the diff.",
+      "findings": [],
+      "raw_bytes": 4219,
+      "err_bytes": 0,
+      "envelope_status": "SUCCESS",
+      "verdict_source": "structured_output",
+      "grounding_check": "parity",
+      "role": "independent",
+      "model": "gemini-3.1-pro-high",
+      "model_measured": "gemini-3.1-pro-high",
+      "model_source": "measured",
+      "family": "gemini",
+      "executor": "agy",
+      "brief_sha256": "63a37cd91e68e4e7dc285b3c00de81c9050b99cd485313d69367f56666ee4055",
+      "trace": {
+        "input_sha256": "89818ae71e3549f72f0b9165dba44c6c37f451da930da1a4e0ca1cc8bdf3bdef",
+        "output_sha256": "6e387a211a4ef70732b1e81fa92ed32602780819371f983521d7f73142fe0f48",
+        "store": null,
+        "store_why": "almacen not provisioned yet (infra-27): the blobs stay in the round's gitignored .lanes dir"
+      },
+      "fallback": {
+        "judged_by": "gemini-3.1-pro-high",
+        "exhausted": false,
+        "attempts": [
+          {
+            "model": "gemini-3.1-pro-high",
+            "family": "gemini",
+            "outcome": "answered"
+          }
+        ],
+        "skipped": []
+      }
+    },
+    {
+      "lane": 2,
+      "status": "SUCCESS",
+      "verdict": "PASS",
+      "summary": "PMAT-4798 correctly implements the nightly judge to select the newest commit (at most 6 behind the nightly pick) on which every verdict lane has a measured green or red run. The J-selection logic uses a rank list from GraphQL history, only proceeds when rank[0] matches the read pick, picks one commit for all lanes, and prints lag notes when J ≠ pick. Pin jobs are validated: succeed + created in night window [12:00Z, 12:00Z+24h) + head == pick = measured C. Workflow_run without pin is rejected. Self-test and mutant counts match the receipt (90/90 rows, 65/65 killed). The release path is unchanged.",
+      "findings": [],
+      "raw_bytes": 2144,
+      "err_bytes": 0,
+      "envelope_status": "SUCCESS",
+      "verdict_source": "structured_output",
+      "executor": "claude-code",
+      "grounding_check": "parity",
+      "role": "counted",
+      "model": "claude-haiku-4-5",
+      "model_measured": "claude-haiku-4-5",
+      "model_source": "flag",
+      "family": "claude",
+      "brief_sha256": "63a37cd91e68e4e7dc285b3c00de81c9050b99cd485313d69367f56666ee4055",
+      "trace": {
+        "input_sha256": "04d7ce34eda435c7a3c2985df6602ea4df771af501cb4d7e1516b53b4a46344b",
+        "output_sha256": "5483c0a957beb262b8ab15376f345aafd9848be5aef2182bb893c093820125fa",
+        "store": null,
+        "store_why": "almacen not provisioned yet (infra-27): the blobs stay in the round's gitignored .lanes dir"
+      },
+      "fallback": {
+        "judged_by": "claude-haiku-4-5",
+        "exhausted": false,
+        "attempts": [
+          {
+            "model": "claude-haiku-4-5",
+            "family": "claude",
+            "outcome": "answered"
+          }
+        ],
+        "skipped": []
+      }
+    },
+    {
+      "lane": 3,
+      "status": "SUCCESS",
+      "verdict": "PASS",
+      "summary": "All changes align with tickets PMAT-4798 and PMAT-4817. No test or gate weakening detected, and receipt claims are supported by the diff. No unintended behavior introduced.",
+      "findings": [],
+      "raw_bytes": 1606,
+      "err_bytes": 0,
+      "envelope_status": "SUCCESS",
+      "verdict_source": "structured_output",
+      "grounding_check": "parity",
+      "role": "independent",
+      "model": "gpt-oss-120b-medium",
+      "model_measured": "gpt-oss-120b-medium",
+      "model_source": "measured",
+      "family": "openai",
+      "executor": "agy",
+      "brief_sha256": "63a37cd91e68e4e7dc285b3c00de81c9050b99cd485313d69367f56666ee4055",
+      "trace": {
+        "input_sha256": "c57891d6761a8017c62532e17285ce85ab556a0564a358c97f92108f1ed0413f",
+        "output_sha256": "66f7d7a6803971285952b857e9d3e6cfe85a5a52b325d38326279f89e892e752",
+        "store": null,
+        "store_why": "almacen not provisioned yet (infra-27): the blobs stay in the round's gitignored .lanes dir"
+      },
+      "fallback": {
+        "judged_by": "gpt-oss-120b-medium",
+        "exhausted": false,
+        "attempts": [
+          {
+            "model": "gpt-oss-120b-medium",
+            "family": "openai",
+            "outcome": "answered"
+          }
+        ],
+        "skipped": []
+      }
+    }
+  ],
+  "dissent": [],
+  "dedup": [],
+  "uncovered": [],
+  "coverage_source": "lanes",
+  "partial": false,
+  "partial_reasons": [],
+  "fallback": {
+    "same_family_width": 2,
+    "chain": [
+      {
+        "model": "gemini-3.1-pro-high",
+        "family": "gemini",
+        "disposition": "configured"
+      },
+      {
+        "model": "claude-haiku-4-5",
+        "family": "claude",
+        "disposition": "claude-code",
+        "why": "run by Claude Code on its own budget: a configured seat runs every round, a fallback step only when every non-Claude family is measured out (PMAT-360, operator standing rule)"
+      },
+      {
+        "model": "gpt-oss-120b-medium",
+        "family": "openai",
+        "disposition": "configured"
+      },
+      {
+        "model": "claude-sonnet-5",
+        "family": "claude",
+        "disposition": "claude-code",
+        "why": "run by Claude Code on its own budget: a configured seat runs every round, a fallback step only when every non-Claude family is measured out (PMAT-360, operator standing rule)"
+      },
+      {
+        "model": "claude-opus-5-5",
+        "family": "claude",
+        "disposition": "claude-code",
+        "why": "run by Claude Code on its own budget: a configured seat runs every round, a fallback step only when every non-Claude family is measured out (PMAT-360, operator standing rule)"
+      },
+      {
+        "model": "qwen3.5",
+        "family": "qwen",
+        "disposition": "not-run",
+        "why": "no quorum.local_lane in the config — the aprender lane has no model to load"
+      }
+    ],
+    "precheck": [
+      {
+        "family": "gemini",
+        "model": "gemini-3.1-pro-high",
+        "probe": 1,
+        "outcome": "live"
+      },
+      {
+        "family": "openai",
+        "model": "gpt-oss-120b-medium",
+        "probe": 1,
+        "outcome": "live"
+      }
+    ],
+    "degraded": null,
+    "prah": {
+      "source": "none",
+      "path": null,
+      "why": "no --prah, none on PATH, and no install receipt at /mnt/nvme-raid0/tmp/w4798/install-receipt.json"
+    },
+    "bucket": {
+      "ledger": "/home/noah/.local/state/paiml-implement/agy-bucket.jsonl",
+      "window_s": 18000,
+      "pace": "off",
+      "buckets": {
+        "claude-gpt": {
+          "bucket": "claude-gpt",
+          "state": "unmeasured",
+          "reason": "agy-bucket.sh could not read the ledger; the bucket is not consulted this round"
+        },
+        "gemini": {
+          "bucket": "gemini",
+          "state": "unmeasured",
+          "reason": "agy-bucket.sh could not read the ledger; the bucket is not consulted this round"
+        }
+      },
+      "closed": []
+    }
+  },
+  "auto_merge": {
+    "checked": false,
+    "was_armed": false,
+    "disarmed": false,
+    "note": "no --pr given: nothing to disarm"
+  },
+  "cheap_seat": "claude-haiku-4-5",
+  "advisory_lane": {
+    "state": "unavailable",
+    "counts": false,
+    "row": {
+      "NotRun": "Busy"
+    },
+    "verdict": "unavailable",
+    "why": "no host answered inside the budget",
+    "served_by": null,
+    "gpu_proof": null,
+    "apr": null,
+    "apr_binary_sha256": null,
+    "apr_tag": null,
+    "apr_commit": null,
+    "apr_build_why": null,
+    "model": null,
+    "model_sha256": null,
+    "rc": 2,
+    "wall_s": 0,
+    "collected_s": 1779,
+    "budget_s": 196,
+    "budget_basis": "ledger: 2 x p95 98 s over 126 gx10-cuda Verdict rows",
+    "brief": {
+      "bytes": 94874,
+      "sent_bytes": 95043,
+      "max_bytes": 196608
+    },
+    "trace": {
+      "input_sha256": "f476583e736a15c1033860ea51d8195ac285827128fd47183462737e55c66ad7",
+      "raw": "advisory.json"
+    },
+    "attempts": [
+      {
+        "host": "gx10",
+        "ok": false,
+        "wall_s": 0,
+        "error": "busy: executor yielded (unit inactive; last yield: 2026-10-03T00:47:22Z host=gx10-a5b5 event=stopped gpu-priority lock=/tmp/apr-gpu.priority)",
+        "ts": "2026-10-05T20:20:21.220Z",
+        "wall_ms": 536,
+        "request_id": "01a10db9-7862-7c8a-88f5-d8fc3363cc8f",
+        "load1": 1.67,
+        "cold": null
+      }
+    ],
+    "ledger": "/home/noah/.local/state/paiml-implement/advisory-ledger.jsonl",
+    "raw": "advisory.json",
+    "agrees_with_counted": null,
+    "counted": "PASS"
+  },
+  "lint": {
+    "ok": true,
+    "output": "receipt complete: kind=artifact lanes=3 author=claude-sonnet-5-5/claude same_family=1/2"
+  }
+}
