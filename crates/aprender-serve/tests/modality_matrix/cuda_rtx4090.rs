@@ -36,7 +36,7 @@ fn test_cuda_kernel_execution() {
         return;
     }
 
-    force_backend(Backend::Cuda);
+    let _env = force_backend(Backend::Cuda);
 
     // Simulate trace that renacer would capture
     let mut trace = ExecutionTrace::new();
@@ -110,7 +110,7 @@ fn test_cuda_single_shot() {
         return;
     }
 
-    force_backend(Backend::Cuda);
+    let _env = force_backend(Backend::Cuda);
 
     let mut trace = ExecutionTrace::new();
     trace.add_span(TraceSpan::new("gpu_kernel:gemm_fp32", 2000).with_attr("gpu.backend", "cuda"));
@@ -140,7 +140,7 @@ fn test_cuda_batch_4() {
         return;
     }
 
-    force_backend(Backend::Cuda);
+    let _env = force_backend(Backend::Cuda);
 
     let mut trace = ExecutionTrace::new();
     trace.add_span(
@@ -173,7 +173,7 @@ fn test_cuda_batch_32() {
         return;
     }
 
-    force_backend(Backend::Cuda);
+    let _env = force_backend(Backend::Cuda);
 
     let mut trace = ExecutionTrace::new();
     trace.add_span(
@@ -223,7 +223,7 @@ fn test_cuda_batch_64() {
         return;
     }
 
-    force_backend(Backend::Cuda);
+    let _env = force_backend(Backend::Cuda);
 
     let mut trace = ExecutionTrace::new();
     trace.add_span(
@@ -285,7 +285,7 @@ fn test_cuda_no_scalar_fallback() {
         return;
     }
 
-    force_backend(Backend::Cuda);
+    let _env = force_backend(Backend::Cuda);
 
     let mut trace = ExecutionTrace::new();
     trace.add_span(TraceSpan::new("gpu_kernel:gemm_fp32", 3000).with_attr("gpu.backend", "cuda"));
@@ -393,7 +393,7 @@ mod integration {
     #[test]
     #[ignore = "Env var test is non-deterministic in parallel test runs due to global state"]
     fn test_force_cuda_env_var_set() {
-        force_backend(Backend::Cuda);
+        let _env = force_backend(Backend::Cuda);
 
         let val = std::env::var("REALIZAR_BACKEND");
         assert!(
