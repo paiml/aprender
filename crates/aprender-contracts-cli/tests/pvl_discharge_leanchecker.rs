@@ -106,6 +106,8 @@ impl Fx {
 
     /// Scoped (the #4348 default): only the row that proves the scope DECLINES uses it, with systemd-run stubbed
     /// to fail — the merge of 7c418eb75c and e85da1a039 left `check` unscoped, so that row never reached the scope.
+    /// The 1G ceiling: with no user bus pv may stand in the job's inherited cgroup memory.max, and only a cap
+    /// at or under 1G is accepted, so the row declines on every host whose inherited cap is looser than 1G.
     fn check_scoped(&self) -> (i32, String) {
         self.pv(&[
             "discharge",
@@ -114,6 +116,8 @@ impl Fx {
             "--leanchecker",
             "--leanchecker-timeout",
             "60",
+            "--leanchecker-memory-max-gib",
+            "1",
         ])
     }
 
@@ -176,8 +180,20 @@ fn scoped_without_user_systemd_declines_and_never_runs_the_checker() {
     fx.stub_lake(true, 1);
     fx.stub_no_user_systemd();
     let r = fx.check_scoped();
-    assert_rc(&r, 2, "`systemd-run --user --scope` is unavailable here");
-    assert!(!r.1.contains("stub leanchecker says"), "{}", r.1);
+    // A host whose own cgroup caps this process at or under 1G runs the stub under that cap instead; the line
+    // must then name the inherited bound. Anywhere else (every CI runner: memory.max is max or above 24G) it
+    // declines, and names why the inherited cap was refused.
+    if r.1.contains("inherited cgroup memory.max=") {
+        assert_rc(&r, 1, "FAIL  lake env leanchecker ProvableContracts");
+    } else {
+        assert_rc(
+            &r,
+            2,
+            "`systemd-run --user --scope` is unavailable here and ",
+        );
+        assert!(r.1.contains("not measured"), "{}", r.1);
+        assert!(!r.1.contains("stub leanchecker says"), "{}", r.1);
+    }
 }
 
 #[test]

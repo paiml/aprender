@@ -555,7 +555,8 @@ pub enum DischargeAction {
         #[arg(long, default_value_t = crate::commands::discharge::LEANCHECKER_THREADS, value_parser = clap::value_parser!(u32).range(1..=i64::from(crate::commands::discharge::LEANCHECKER_THREADS)), requires = "leanchecker")]
         leanchecker_threads: u32,
         /// `--leanchecker` inside `systemd-run --user --scope -p MemoryMax=<N>G -p CPUQuota=<Q>%`: this memory cap,
-        /// GiB, 1..=24: a caller may lower it, never raise it (#4348: the host must stay usable)
+        /// GiB, 1..=24: a caller may lower it, never raise it (#4348: the host must stay usable). With no user
+        /// bus (CI runner jobs) the job's inherited cgroup memory.max stands in only when finite and at or under it
         #[arg(long, default_value_t = crate::commands::discharge::LEANCHECKER_MEMORY_MAX_GIB, value_parser = clap::value_parser!(u32).range(1..=i64::from(crate::commands::discharge::LEANCHECKER_MEMORY_MAX_GIB)), requires = "leanchecker")]
         leanchecker_memory_max_gib: u32,
         /// `--leanchecker`'s scope CPU quota, percent of one core, 1..=800

@@ -209,6 +209,67 @@ pub const LEANCHECKER_CPU_QUOTA_PCT: u32 = 800;
 /// without that slice systemd creates it as a plain transient slice.
 const AGENT_SLICE: &str = "agent.slice";
 
+/// The cgroup v2 mount and this process's own membership file, read when `systemd-run --user` cannot make the
+/// scope. CI runner jobs have no user bus (no XDG_RUNTIME_DIR, no DBUS), so the scope is never available there.
+const CGROUP_ROOT: &str = "/sys/fs/cgroup";
+const PROC_SELF_CGROUP: &str = "/proc/self/cgroup";
+
+/// The tightest finite `memory.max` on the path from this process's cgroup up to (not including) the v2 root,
+/// with the directory that set it. `proc_self_cgroup` is the text of `/proc/self/cgroup`; only its v2 line
+/// (`0::<path>`) is read. `None` when there is no v2 line, the path climbs out (`..`), or no level is finite.
+fn tightest_memory_max(root: &Path, proc_self_cgroup: &str) -> Option<(u64, std::path::PathBuf)> {
+    let rel = proc_self_cgroup
+        .lines()
+        .find_map(|l| l.strip_prefix("0::"))?
+        .trim()
+        .trim_start_matches('/');
+    if Path::new(rel)
+        .components()
+        .any(|c| !matches!(c, std::path::Component::Normal(_)))
+    {
+        return None;
+    }
+    let mut best: Option<(u64, std::path::PathBuf)> = None;
+    let mut dir = root.join(rel);
+    while dir != root && dir.starts_with(root) {
+        if let Some(b) = std::fs::read_to_string(dir.join("memory.max"))
+            .ok()
+            .and_then(|t| t.trim().parse::<u64>().ok())
+        {
+            if best.as_ref().map_or(true, |(m, _)| b < *m) {
+                best = Some((b, dir.clone()));
+            }
+        }
+        if !dir.pop() {
+            break;
+        }
+    }
+    best
+}
+
+/// The bound the job's own cgroup already enforces, accepted in place of the scope only when it is finite and no
+/// looser than the scope's `MemoryMax` (24G by default; uncapped, the checker reached 71.6G on gx10). Anything
+/// else is a decline, so a run without a cap is never a verdict (L25).
+fn inherited_bound(
+    root: &Path,
+    proc_self_cgroup: &str,
+    s: Scope,
+) -> Result<(u64, std::path::PathBuf), String> {
+    let ceiling = u64::from(s.memory_max_gib) << 30;
+    match tightest_memory_max(root, proc_self_cgroup) {
+        None => Err(format!(
+            "no finite memory.max on this process's cgroup v2 path under {}",
+            root.display()
+        )),
+        Some((b, at)) if b > ceiling => Err(format!(
+            "the tightest inherited memory.max is {b} bytes at {}, above the {}G ceiling",
+            at.display(),
+            s.memory_max_gib
+        )),
+        Some(found) => Ok(found),
+    }
+}
+
 /// The script `sh -c` runs; `$1` ulimit, `$2` timeout, `$3` lake.
 const RECHECK_SH: &str = r#"if [ -n "$1" ]; then ulimit -v "$1" || exit 125; fi; exec timeout -k 30 "$2" "$3" env leanchecker ProvableContracts"#;
 
@@ -797,7 +858,10 @@ fn recheck(lake: Lake<'_>, lean_dir: &Path, lc: Leanchecker, r: &mut Report) {
         return;
     }
     // A scope that cannot be created would otherwise read as leanchecker's own non-zero exit: probe it first.
-    if lc.scope.is_some() {
+    // Without a user bus, a cap the job's own cgroup already enforces may stand in for it (bounded, never bare).
+    let mut lc = lc;
+    let mut bound = None;
+    if let Some(s) = lc.scope {
         let probe = Command::new("systemd-run")
             .args([
                 "--user",
@@ -809,12 +873,21 @@ fn recheck(lake: Lake<'_>, lean_dir: &Path, lc: Leanchecker, r: &mut Report) {
             ])
             .output();
         if !matches!(&probe, Ok(o) if o.status.success()) {
-            r.decline = Some(
-                "`systemd-run --user --scope` is unavailable here: leanchecker did not run (pass \
-                 --leanchecker-unscoped only on a host where an uncapped run cannot starve other work, #4348)"
-                    .to_string(),
-            );
-            return;
+            let proc_text = std::fs::read_to_string(PROC_SELF_CGROUP).unwrap_or_default();
+            match inherited_bound(Path::new(CGROUP_ROOT), &proc_text, s) {
+                Ok(found) => {
+                    lc.scope = None;
+                    bound = Some(found);
+                }
+                Err(why) => {
+                    r.decline = Some(format!(
+                        "`systemd-run --user --scope` is unavailable here and {why}: leanchecker did not run, \
+                         not measured (pass --leanchecker-unscoped only on a host where an uncapped run cannot \
+                         starve other work, #4348)"
+                    ));
+                    return;
+                }
+            }
         }
     }
     let argv = recheck_argv(lake.bin, lc);
@@ -823,14 +896,20 @@ fn recheck(lake: Lake<'_>, lean_dir: &Path, lc: Leanchecker, r: &mut Report) {
         .env("LEAN_NUM_THREADS", lc.threads.to_string())
         .current_dir(lean_dir)
         .output();
-    let what = format!(
-        "lake env leanchecker ProvableContracts (timeout {}s, {} threads, {})",
-        lc.timeout_s,
-        lc.threads,
-        lc.scope.map_or("unscoped".to_string(), |s| format!(
+    let cap = match (&bound, lc.scope) {
+        (Some((b, at)), _) => format!(
+            "inherited cgroup memory.max={b} at {} (no user bus)",
+            at.display()
+        ),
+        (None, Some(s)) => format!(
             "scope MemoryMax={}G CPUQuota={}%",
             s.memory_max_gib, s.cpu_quota_pct
-        ))
+        ),
+        (None, None) => "unscoped".to_string(),
+    };
+    let what = format!(
+        "lake env leanchecker ProvableContracts (timeout {}s, {} threads, {cap})",
+        lc.timeout_s, lc.threads
     );
     match out {
         Err(e) => {
@@ -1240,6 +1319,165 @@ mod tests {
             "{:?}",
             r.lines
         );
+    }
+
+    /// A fake cgroup v2 tree: `levels` are (relative dir, memory.max text or None for no file).
+    fn cgroup_tree(levels: &[(&str, Option<&str>)]) -> tempfile::TempDir {
+        let d = tempfile::tempdir().expect("tempdir");
+        for (dir, max) in levels {
+            let p = d.path().join(dir);
+            std::fs::create_dir_all(&p).expect("mkdir");
+            if let Some(m) = max {
+                std::fs::write(p.join("memory.max"), format!("{m}\n")).expect("w");
+            }
+        }
+        d
+    }
+
+    const G: u64 = 1 << 30;
+    const SCOPE24: Scope = Scope {
+        memory_max_gib: 24,
+        cpu_quota_pct: 800,
+    };
+    const JOB: &str = "0::/ci.slice/runners.slice/runner-1.service\n";
+
+    /// The no-user-bus case table: an inherited cap is accepted only when it is finite and at or under the
+    /// scope's MemoryMax. Each must-not-match row keeps a bare, uncapped run from ever reaching a verdict.
+    #[test]
+    fn inherited_bound_case_table() {
+        let tree = |svc: Option<&str>, runners: Option<&str>, ci: Option<&str>| {
+            cgroup_tree(&[
+                ("ci.slice", ci),
+                ("ci.slice/runners.slice", runners),
+                ("ci.slice/runners.slice/runner-1.service", svc),
+            ])
+        };
+        let g = |n: u64| (n * G).to_string();
+        // must match: (svc, runners, ci, proc text, expected bytes, expected level)
+        let ok: Vec<(
+            Option<String>,
+            Option<String>,
+            Option<String>,
+            &str,
+            u64,
+            &str,
+        )> = vec![
+            (
+                Some(g(24)),
+                Some("max".into()),
+                Some("max".into()),
+                JOB,
+                24 * G,
+                "ci.slice/runners.slice/runner-1.service",
+            ),
+            (
+                Some("max".into()),
+                Some(g(16)),
+                Some(g(270)),
+                JOB,
+                16 * G,
+                "ci.slice/runners.slice",
+            ),
+            (
+                Some(g(20)),
+                Some(g(8)),
+                Some(g(270)),
+                JOB,
+                8 * G,
+                "ci.slice/runners.slice",
+            ),
+            (None, None, Some(g(1)), JOB, G, "ci.slice"),
+            (
+                Some(g(24)),
+                None,
+                None,
+                "12:memory:/x\n0::/ci.slice/runners.slice/runner-1.service\n",
+                24 * G,
+                "ci.slice/runners.slice/runner-1.service",
+            ),
+        ];
+        for (n, (s, ru, c, proc_text, want, at)) in ok.iter().enumerate() {
+            let t = tree(s.as_deref(), ru.as_deref(), c.as_deref());
+            let got = inherited_bound(t.path(), proc_text, SCOPE24)
+                .unwrap_or_else(|e| panic!("ok row {n} refused: {e}"));
+            assert_eq!(got, (*want, t.path().join(at)), "ok row {n}");
+        }
+        // must NOT match: every level max/absent, the measured intel shape (270G at ci.slice), one byte over the
+        // ceiling, no v2 line (cgroup v1), a path that climbs out, an empty /proc/self/cgroup, junk in memory.max.
+        let over = (24 * G + 1).to_string();
+        let red: &[(Option<&str>, Option<&str>, Option<&str>, &str, &str)] = &[
+            (
+                Some("max"),
+                Some("max"),
+                Some("max"),
+                JOB,
+                "no finite memory.max",
+            ),
+            (
+                Some("max"),
+                Some("max"),
+                Some("289910292480"),
+                JOB,
+                "above the 24G ceiling",
+            ),
+            (
+                Some(over.as_str()),
+                None,
+                None,
+                JOB,
+                "above the 24G ceiling",
+            ),
+            (
+                Some("1073741824"),
+                None,
+                None,
+                "12:memory:/ci.slice/runners.slice/runner-1.service\n",
+                "no finite memory.max",
+            ),
+            (
+                Some("1073741824"),
+                None,
+                None,
+                "0::/../../etc\n",
+                "no finite memory.max",
+            ),
+            (Some("1073741824"), None, None, "", "no finite memory.max"),
+            (Some("lots"), None, None, JOB, "no finite memory.max"),
+            (None, None, None, JOB, "no finite memory.max"),
+        ];
+        for (n, (s, ru, c, proc_text, why)) in red.iter().enumerate() {
+            let t = tree(*s, *ru, *c);
+            match inherited_bound(t.path(), proc_text, SCOPE24) {
+                Ok(b) => panic!("red row {n} accepted {b:?}"),
+                Err(e) => assert!(e.contains(why), "red row {n}: {e}"),
+            }
+        }
+    }
+
+    /// The ceiling is the caller's own (lowered) MemoryMax, not a fixed 24G: 8G of inherited cap under a 4G
+    /// request is refused, and exactly 4G is accepted.
+    #[test]
+    fn inherited_bound_ceiling_follows_the_requested_memory_max() {
+        let four = Scope {
+            memory_max_gib: 4,
+            cpu_quota_pct: 800,
+        };
+        let t = cgroup_tree(&[("ci.slice", Some(&(8 * G).to_string()))]);
+        assert!(inherited_bound(t.path(), "0::/ci.slice\n", four).is_err());
+        let t = cgroup_tree(&[("ci.slice", Some(&(4 * G).to_string()))]);
+        assert_eq!(
+            inherited_bound(t.path(), "0::/ci.slice\n", four).expect("4G at a 4G ceiling"),
+            (4 * G, t.path().join("ci.slice"))
+        );
+    }
+
+    /// The v2 root's own memory.max is never read (the kernel has none there; a planted one must not count), and a
+    /// process in the root cgroup (`0::/`) has no level to read.
+    #[test]
+    fn the_v2_root_is_not_a_level() {
+        let t = cgroup_tree(&[("", Some("1073741824")), ("a.slice", Some("max"))]);
+        assert!(tightest_memory_max(t.path(), "0::/a.slice\n").is_none());
+        assert!(tightest_memory_max(t.path(), "0::/\n").is_none());
     }
 
     /// #4348: scoped, the arm is `systemd-run --user --scope` with the memory and CPU caps around the same `sh -c`;
