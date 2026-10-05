@@ -176,7 +176,7 @@ PY
                  printf 'UNMEASURED runner=%s reason=incapable pin=%s pv=%s version=%s -- the pinned pv refuses shape key %s, which this tree'"'"'s own pv parses (%s); the fleet pv (%s) is older than this tree (%s); fleet state, not a verdict\n' "$RUNNER" "$pin" "$PV_BIN" "$ver" "$comp" "${err1:-none}" "$ver" "$TREE_VER"
                  return 0
              fi
-             printf 'FAIL runner=%s reason=pv-no-verdict pin=%s pv=%s version=%s -- %s; pv exited %s, and only its exit 2 (a refusal of its input) or a shape key this tree parses, refused by a pv older than this tree (%s), is fleet state -- a panic or a signal can be caused by this tree; pv stderr: %s\n' "$RUNNER" "$pin" "$PV_BIN" "$ver" "${out#ENV }" "$pvrc" "$TREE_VER" "${err1:-none}" >&2
+             printf 'FAIL runner=%s reason=pv-no-verdict pin=%s pv=%s version=%s -- %s; pv exited %s, and only its exit 2 (a refusal of its input) or a shape key this tree parses, refused by a pv older than this tree (tree=%s; this one is not), is fleet state -- a panic or a signal can be caused by this tree; pv stderr: %s\n' "$RUNNER" "$pin" "$PV_BIN" "$ver" "${out#ENV }" "$pvrc" "$TREE_VER" "${err1:-none}" >&2
              return 1 ;;
         2:*) printf 'FAIL runner=%s reason=pv-no-verdict pin=%s pv=%s version=%s -- %s; pv exited %s, and only its exit 2 (a refusal of its input) is fleet state -- a panic or a signal can be caused by this tree; pv stderr: %s\n' "$RUNNER" "$pin" "$PV_BIN" "$ver" "${out#ENV }" "$pvrc" "${err1:-none}" >&2
            return 1 ;;
@@ -329,14 +329,18 @@ STUB
     done
     #     ...and the exemption is a measured claim, not a standing one: the pinned pv (0.68.2) refusing allowEmpty
     #     is fleet state only while it sorts BELOW this tree. A pin AT or PAST the tree that refuses it is RED.
-    for c in "0.68.2 equal" "0.68.1 newer" ""; do
+    for c in "0.68.2 equal" "0.68.1 newer"; do
         read -r tv how <<<"$c"
-        [ -n "$tv" ] || continue
         out=$(FLEET_PV_BIN="$d/pv_unsup" FLEET_PV_PIN="$d/pin" FLEET_PV_CONTRACTS="$d/contracts" FLEET_PV_SHAPES_SRC="$d/shapes.rs" FLEET_PV_TREE_VERSION="$tv" RUNNER_NAME=probe-runner bash "$0" 2>&1); rc=$?
         [ "$rc" -eq 1 ] && grep -q '^FAIL runner=probe-runner reason=pv-no-verdict .*pv exited 3[ ,].*allowEmpty' <<<"$out" && ! grep -qE '^(SUMMARY )?(PASS|UNMEASURED)' <<<"$out" && ok "pin 0.68.2 $how to the tree ($tv) refusing allowEmpty -> RED, never UNMEASURED" || nok "expected RED for pin $how to tree $tv, got rc=$rc: $out"
     done
     out=$(FLEET_PV_BIN="$d/pv_unsup" FLEET_PV_PIN="$d/pin" FLEET_PV_CONTRACTS="$d/contracts" FLEET_PV_SHAPES_SRC="$d/shapes.rs" FLEET_PV_TREE_VERSION=0.68.10 RUNNER_NAME=probe-runner bash "$0" 2>&1); rc=$?
     [ "$rc" -eq 0 ] && grep -q '^UNMEASURED .*reason=incapable .*(0.68.2) is older than this tree (0.68.10)' <<<"$out" && ok "pin 0.68.2 below the tree (0.68.10, a version sort, not a string sort) -> UNMEASURED" || nok "expected UNMEASURED for pin below tree 0.68.10, got rc=$rc: $out"
+    #     ...and no readable tree version fails closed: a copy run from $d has no ../Cargo.toml, and an empty
+    #     override falls back to it, so the refusal is RED, never UNMEASURED.
+    cp "$0" "$d/copy_nover.sh"
+    out=$(FLEET_PV_BIN="$d/pv_unsup" FLEET_PV_PIN="$d/pin" FLEET_PV_CONTRACTS="$d/contracts" FLEET_PV_SHAPES_SRC="$d/shapes.rs" FLEET_PV_TREE_VERSION= RUNNER_NAME=probe-runner bash "$d/copy_nover.sh" 2>&1); rc=$?
+    [ "$rc" -eq 1 ] && grep -q '^FAIL runner=probe-runner reason=pv-no-verdict .*tree=;.*allowEmpty' <<<"$out" && ! grep -qE '^(SUMMARY )?(PASS|UNMEASURED)' <<<"$out" && ok "no readable tree version -> the allowEmpty refusal is RED (fail closed)" || nok "expected RED with no tree version, got rc=$rc: $out"
     #     ...and the mutant that stops asking the version turns the pin-equal refusal UNMEASURED, exit 0
     sed 's/ && older_than_tree "\$ver"; then$/; then/' "$0" > "$d/mut_ver.sh"
     if cmp -s "$0" "$d/mut_ver.sh"; then nok "mutant (version not asked) did not apply; the pin-equal row proves nothing"
