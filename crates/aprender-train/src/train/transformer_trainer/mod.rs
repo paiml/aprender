@@ -34,6 +34,8 @@ pub mod zero;
 #[cfg(test)]
 mod falsify_lora_tests;
 #[cfg(test)]
+mod target_tests;
+#[cfg(test)]
 mod tests;
 
 // Re-export all public types

@@ -2,10 +2,10 @@
 
 use crate::autograd::{checkpoint, GradScaler};
 use crate::io::{save_model, Model, ModelFormat, ModelMetadata, SaveConfig};
-use crate::lora::LoRALayer;
+use crate::lora::{LoRAConfig, LoRALayer, LoraTarget, LoraTargets};
 use crate::optim::{clip_grad_norm_refs, AdamW, Optimizer};
 use crate::train::{CausalLMLoss, LossFn, MetricsTracker};
-use crate::transformer::Transformer;
+use crate::transformer::{Transformer, TransformerConfig};
 use crate::Tensor;
 use std::path::Path;
 
@@ -32,9 +32,12 @@ pub struct TransformerTrainer {
     accumulated_loss: f32,
     /// Number of accumulated batches
     accumulated_batches: usize,
-    /// LoRA layers (ENT-LoRA-001): [Q_0, V_0, Q_1, V_1, ...] per transformer layer
+    /// LoRA layers (ENT-LoRA-001): one per layer and target, at slot
+    /// `|T|·layer + pos_T(target)` for `T = lora_targets`
     /// None = full fine-tuning, Some = LoRA fine-tuning
     lora_layers: Option<Vec<LoRALayer>>,
+    /// The targets the LoRA layers are laid out by, which the forward reads
+    lora_targets: LoraTargets,
 }
 
 impl TransformerTrainer {
@@ -65,90 +68,13 @@ impl TransformerTrainer {
         let grad_scaler = GradScaler::from_config(&config.precision_config);
 
         // ENT-LoRA-001: Create LoRA layers when config has LoRA rank
-        let lora_layers = if let Some(rank) = config.lora_rank {
+        // ENT-LoRA-005 / R15a C4c: adapters laid out by the selected targets
+        let lora_targets = trainer_targets(config.lora_target_modules.as_deref());
+        let lora_layers = config.lora_rank.map(|rank| {
             let alpha = config.lora_alpha.unwrap_or(rank as f32 * 2.0);
-            let default_targets = vec!["q_proj".to_string(), "v_proj".to_string()];
-            // ENT-LoRA-005: Expand shorthand targets ("all_linear", "attention", etc.)
-            let raw_targets = config.lora_target_modules.as_deref().unwrap_or(&default_targets);
-            let expanded = crate::lora::LoRAConfig::expand_shorthand(raw_targets);
-            let target_modules = expanded.as_slice();
-
-            let mut layers = Vec::new();
-            let hidden_size = config.model_config.hidden_size;
-            let num_kv_heads = config.model_config.num_kv_heads;
-            let head_dim = config.model_config.head_dim();
-            let q_dim = config.model_config.q_dim();
-            let kv_hidden_size = num_kv_heads * head_dim;
-
-            let intermediate = config.model_config.intermediate_size;
-
-            for block in &model.layers {
-                // Attention projections (ENT-LoRA-005: flexible targets)
-                if target_modules.iter().any(|m| m == "q_proj") {
-                    layers.push(LoRALayer::new(
-                        block.self_attn.w_q.clone(),
-                        q_dim,
-                        hidden_size,
-                        rank,
-                        alpha,
-                    ));
-                }
-                if target_modules.iter().any(|m| m == "k_proj") {
-                    layers.push(LoRALayer::new(
-                        block.self_attn.w_k.clone(),
-                        kv_hidden_size,
-                        hidden_size,
-                        rank,
-                        alpha,
-                    ));
-                }
-                if target_modules.iter().any(|m| m == "v_proj") {
-                    layers.push(LoRALayer::new(
-                        block.self_attn.w_v.clone(),
-                        kv_hidden_size,
-                        hidden_size,
-                        rank,
-                        alpha,
-                    ));
-                }
-                if target_modules.iter().any(|m| m == "o_proj") {
-                    layers.push(LoRALayer::new(
-                        block.self_attn.w_o.clone(),
-                        hidden_size,
-                        q_dim,
-                        rank,
-                        alpha,
-                    ));
-                }
-                // MLP projections (ENT-LoRA-005)
-                if target_modules.iter().any(|m| m == "gate_proj") {
-                    layers.push(LoRALayer::new(
-                        block.ffn.w_gate.clone(),
-                        intermediate,
-                        hidden_size,
-                        rank,
-                        alpha,
-                    ));
-                }
-                if target_modules.iter().any(|m| m == "up_proj") {
-                    layers.push(LoRALayer::new(
-                        block.ffn.w_up.clone(),
-                        intermediate,
-                        hidden_size,
-                        rank,
-                        alpha,
-                    ));
-                }
-                if target_modules.iter().any(|m| m == "down_proj") {
-                    layers.push(LoRALayer::new(
-                        block.ffn.w_down.clone(),
-                        hidden_size,
-                        intermediate,
-                        rank,
-                        alpha,
-                    ));
-                }
-            }
+            let layers = lora_targets.as_ref().map_or_else(Vec::new, |targets| {
+                build_adapters(&model, &config.model_config, targets, rank, alpha)
+            });
 
             let lora_param_count: usize =
                 layers.iter().map(|l| l.rank() * (l.d_in() + l.d_out())).sum();
@@ -159,10 +85,9 @@ impl TransformerTrainer {
                 100.0 * lora_param_count as f64 / total_params as f64
             );
 
-            Some(layers)
-        } else {
-            None
-        };
+            layers
+        });
+        let lora_targets = lora_targets.unwrap_or_default();
 
         Self {
             model,
@@ -175,19 +100,21 @@ impl TransformerTrainer {
             accumulated_loss: 0.0,
             accumulated_batches: 0,
             lora_layers,
+            lora_targets,
         }
     }
 
     /// Forward pass on a single batch item
     ///
     /// Returns (loss_value, loss_tensor, logits)
-    /// When LoRA is active, routes through `forward_with_lora` so only
-    /// LoRA adapter gradients are accumulated.
+    /// When LoRA is active, routes through `forward_with_targets`, which reads
+    /// each adapter from the slot `build` gave it, so only LoRA adapter
+    /// gradients are accumulated.
     pub fn forward_single(&self, input_ids: &[u32], target_ids: &[u32]) -> (f32, Tensor, Tensor) {
         // Forward through transformer (LoRA or full)
         let logits = if let Some(ref lora) = self.lora_layers {
             // ENT-LoRA-001: Use LoRA forward path
-            self.model.forward_with_lora(input_ids, lora)
+            self.model.forward_with_targets(input_ids, lora, &self.lora_targets)
         } else if self.config.checkpoint_config.enabled {
             checkpoint(|_| self.model.forward(input_ids), &Tensor::zeros(1, false))
         } else {
@@ -409,6 +336,11 @@ impl TransformerTrainer {
         self.lora_layers.as_deref()
     }
 
+    /// The targets the LoRA layers are laid out by
+    pub(crate) fn lora_targets(&self) -> &LoraTargets {
+        &self.lora_targets
+    }
+
     /// Get mutable reference to LoRA layers
     pub fn lora_layers_mut(&mut self) -> Option<&mut Vec<LoRALayer>> {
         self.lora_layers.as_mut()
@@ -584,6 +516,46 @@ impl TransformerTrainer {
         }
         format!("{:x}", hasher.finalize())
     }
+}
+
+/// The targets of a trainer (`trainer_forward`): the names of `modules`
+/// (default q_proj, v_proj; shorthands expanded) that are one of the seven
+/// projections, in slot order, or none if no name is. Other names are skipped.
+fn trainer_targets(modules: Option<&[String]>) -> Option<LoraTargets> {
+    let default_targets = ["q_proj".to_string(), "v_proj".to_string()];
+    let expanded = LoRAConfig::expand_shorthand(modules.unwrap_or(&default_targets));
+    let known: Vec<&String> =
+        expanded.iter().filter(|n| LoraTarget::from_module_name(n).is_some()).collect();
+    LoraTargets::parse(&known).ok()
+}
+
+/// One adapter per layer and target, at slot `|T|·layer + pos_T(target)`, each
+/// shaped as the projection it adapts and wrapping its weight (`target_slots`).
+fn build_adapters(
+    model: &Transformer,
+    model_config: &TransformerConfig,
+    targets: &LoraTargets,
+    rank: usize,
+    alpha: f32,
+) -> Vec<LoRALayer> {
+    let mut layers = Vec::with_capacity(targets.per_layer() * model.layers.len());
+    for block in &model.layers {
+        let (attn, ffn) = (&block.self_attn, &block.ffn);
+        for &target in targets.as_slice() {
+            let base = match target {
+                LoraTarget::Q => &attn.w_q,
+                LoraTarget::K => &attn.w_k,
+                LoraTarget::V => &attn.w_v,
+                LoraTarget::O => &attn.w_o,
+                LoraTarget::Gate => &ffn.w_gate,
+                LoraTarget::Up => &ffn.w_up,
+                LoraTarget::Down => &ffn.w_down,
+            };
+            let (d_out, d_in) = target.dims(model_config);
+            layers.push(LoRALayer::new(base.clone(), d_out, d_in, rank, alpha));
+        }
+    }
+    layers
 }
 
 #[cfg(test)]
