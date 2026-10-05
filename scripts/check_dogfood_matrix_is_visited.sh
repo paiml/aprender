@@ -104,8 +104,8 @@ PY
     while IFS= read -r row; do
         [ -n "${row//[[:space:]]/}" ] || continue
         dec=$(cut -d: -f3 <<< "$row")
-        case "$dec" in
-            *[Pp]ending* | *[Rr]ecommend* | *[Pp]ropos* | *TBD*)
+        case "${dec,,}" in
+            *pending* | *recommend* | *propos* | *tbd*)
                 printf "FAIL  R5 NA_HOSTS row for %s is not decided (decided_by: %s): an absence nobody ruled on demands nothing\n" "$(cut -d: -f1 <<< "$row" | tr -d "[:space:]")" "$dec"
                 [ "$rc" -ne 0 ] || rc=1 ;;
         esac
@@ -147,8 +147,8 @@ if [ "${1:-}" = "--self-test" ]; then
     expect 'S6 an NA row without decider/date -> R4' "$TMP/f6" 1 'R4 NA_HOSTS row is not host:reason:decided_by:YYYY-MM-DD'
     fixture f6b "a b" "c:asset smoke only:a reviewer (recommendation, pending a ruling):2026-09-20" "$V3"
     expect "S6b an NA row whose decider is a pending recommendation -> R5" "$TMP/f6b" 1 "R5 NA_HOSTS row for c is not decided"
-    fixture f6c "a b" "e:gone:fleet:2026-01-01 | c:asset smoke only:TBD:2026-09-20" "$V3"
-    expect "S6c R5 reads every row, not only the first" "$TMP/f6c" 1 "R5 NA_HOSTS row for c is not decided"
+    fixture f6c "a b" "e:gone:fleet:2026-01-01 | c:asset smoke only:tbd:2026-09-20" "$V3"
+    expect "S6c R5 reads every row, not only the first, in any case (tbd)" "$TMP/f6c" 1 "R5 NA_HOSTS row for c is not decided"
     fixture f7 "a b" "c:asset smoke only:fleet:2026-09-20" "$V3" '          - target: x
             host: w
             labels: x'
@@ -177,7 +177,8 @@ PY
     mutant drop-r2 '    if h not in V: print(f"FAIL  R2' '    if False: print(f"FAIL  R2' 1 'R2 d is DEMANDED' "$TMP/f3"
     mutant drop-r3 '    if h in H: print(f"FAIL  R3' '    if False: print(f"FAIL  R3' 1 'R3 c is declared absent in NA_HOSTS and also in HOSTS' "$TMP/f4"
     mutant drop-r4 '    if len(f) != 4 or not all(x.strip() for x in f) or not re.fullmatch' '    if False and len(f) != 4 or not all(x.strip() for x in f) and not re.fullmatch' 1 'R4 NA_HOSTS row' "$TMP/f6"
-    mutant drop-r5 "            *[Pp]ending* | *[Rr]ecommend* | *[Pp]ropos* | *TBD*)" "            NEVER-MATCHES)" 1 "R5 NA_HOSTS row for c" "$TMP/f6b"
+    mutant drop-r5 "            *pending* | *recommend* | *propos* | *tbd*)" "            NEVER-MATCHES)" 1 "R5 NA_HOSTS row for c" "$TMP/f6b"
+    mutant r5-case-sensitive "        case \"\${dec,,}\" in" "        case \"\$dec\" in" 1 "R5 NA_HOSTS row for c" "$TMP/f6c"
     mutant r5-first-row-only "    done < <(tr \"|\" \"\\n\" <<< \"\$na\")" "    done <<< \"\${na%%|*}\"" 1 "R5 NA_HOSTS row for c" "$TMP/f6c"
     mutant drop-workflows '    wf=$(workflow_hosts "$r")' '    wf=""' 1 'R1 w is VISITED' "$TMP/f7"
 
