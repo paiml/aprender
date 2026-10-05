@@ -270,8 +270,10 @@ count_shapes_unarmed() { # count_shapes_unarmed BASELINE_FILE
 # set(merge-base) \ set(current)`). They are computed here, never typed: `--write` asks `pv lint --gate shapes`
 # for the live sets and sets `withdrawn` = set(merge-base) \ set(current), both sorted, each key on ONE line.
 # `--check` and the self-test carry the committed lines through untouched (they write nothing a gate reads).
-# A nonzero `pv lint` exit is tolerated — a stale set IS a failing F-33, and the restamp exists to clear it —
-# but output that is not a JSON object is refused: a set read from nothing would be ∅ and would pass.
+# A `pv lint` REJECT (exit 1) is tolerated — a stale set IS a failing F-33, and the restamp exists to clear it.
+# Nothing else is: exit 2 is a DECLINE (nothing measured), 3 a malformed/shrunk run, anything higher a crash,
+# and sets printed by such a run are not a measurement. Output that is not a JSON object is refused too:
+# a set read from nothing would be ∅ and would pass.
 measured_set_lines() { # measured_set_lines BASELINE_FILE -> `  "readme": {...},` lines (or nothing)
     local key
     if [ "${_ONT_MEASURE_SETS:-0}" != 1 ]; then
@@ -281,14 +283,19 @@ measured_set_lines() { # measured_set_lines BASELINE_FILE -> `  "readme": {...},
         done
         return 0
     fi
-    local pvbin out base cmp
+    local pvbin out base cmp rc
     # PV= wins (the case table's fake); otherwise pv_bin.sh, never PATH (check_apr_bin_pinned PATHRES-PV)
     if [ -z "${PV:-}" ]; then
         . "$REPO_ROOT/scripts/pv_bin.sh" || { printf 'NO-GO: pv_bin.sh resolved no pv — the measured sets cannot be computed\n' >&2; return 2; }
     fi
     pvbin="$PV"
     out="$(mktemp)"
-    "$pvbin" lint "$REPO_ROOT/contracts" --gate shapes --format json >"$out" 2>/dev/null || true
+    rc=0
+    "$pvbin" lint "$REPO_ROOT/contracts" --gate shapes --format json >"$out" 2>/dev/null || rc=$?
+    if [ "$rc" -ne 0 ] && [ "$rc" -ne 1 ]; then
+        printf "NO-GO: %s lint --gate shapes exited %s (not a measured pass/reject) -- its sets are not a measurement\n" "$pvbin" "$rc" >&2
+        rm -f "$out"; return 2
+    fi
     if ! jq -e 'type == "object" and (.readme.verified_commands | type) == "array" and (.claude_md.verified_commands | type) == "array"' "$out" >/dev/null 2>&1; then
         printf 'NO-GO: %s lint --gate shapes printed no readme/claude_md sets\n' "$pvbin" >&2
         rm -f "$out"; return 2
@@ -620,6 +627,26 @@ self_test() {
     set -e
     row "--write under an UNMEASURED probe writes decisions (rc 0)" "$rc" "0"
     row "...and stamps no consumer_present" "$(grep -c '"consumer_present"' "$t/wu.json" || true)" "0"
+    # The MEASURED path (--write's pv call), driven by a fake pv: only a measured pass (0) or reject (1)
+    # yields sets. A decline (2), a malformed run (3) or a crash (101) printing well-formed sets is refused.
+    printf '#!/usr/bin/env bash\nprintf %%s "$FAKE_PV_OUT"\nexit "$FAKE_PV_RC"\n' > "$t/fakepv"; chmod +x "$t/fakepv"
+    local sets_ok='{"readme":{"verified_commands":["a"]},"claude_md":{"verified_commands":[]}}' prc
+    for prc in 0 1 2 3 101; do
+        set +e
+        FAKE_PV_OUT="$sets_ok" FAKE_PV_RC="$prc" PV="$t/fakepv" _ONT_MEASURE_SETS=1 \
+            measured_set_lines "$t/armed.json" > "$t/ms.out" 2>/dev/null
+        rc=$?
+        set -e
+        case "$prc" in 0|1) row "pv exit $prc + sets -> measured (rc 0)" "$rc" "0"
+                            row "...and prints both set lines" "$(grep -c '"verified_commands"' "$t/ms.out")" "2" ;;
+                        *)  row "pv exit $prc + sets -> NO-GO (rc 2)" "$rc" "2" ;;
+        esac
+    done
+    set +e
+    FAKE_PV_OUT='not json' FAKE_PV_RC=0 PV="$t/fakepv" _ONT_MEASURE_SETS=1 measured_set_lines "$t/armed.json" >/dev/null 2>&1
+    rc=$?
+    set -e
+    row "pv exit 0 + no sets -> NO-GO (rc 2)" "$rc" "2"
     printf 'self-test: %s passed, %s failed\n' "$pass" "$fail"
     [ -n "$t" ] && [ -d "$t" ] && rm -rf "$t"
     [ "$fail" -eq 0 ]
