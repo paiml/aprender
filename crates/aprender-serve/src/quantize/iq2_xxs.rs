@@ -75,7 +75,7 @@ pub fn dequantize_iq2_xxs(data: &[u8]) -> Result<Vec<f32>> {
     }
     let nb = data.len() / IQ2_XXS_BLOCK_BYTES;
     let mut out = vec![0.0f32; nb * IQ2_XXS_BLOCK_ELEMS];
-    for (i, block) in data.chunks_exact(IQ2_XXS_BLOCK_BYTES).enumerate() {
+    for (i, block) in data.as_chunks::<IQ2_XXS_BLOCK_BYTES>().0.iter().enumerate() {
         dequantize_iq2_xxs_block(
             block,
             &mut out[i * IQ2_XXS_BLOCK_ELEMS..(i + 1) * IQ2_XXS_BLOCK_ELEMS],
@@ -99,6 +99,9 @@ mod tests {
     ];
 
     /// `dequantize_row_iq2_xxs` of IQ2_XXS_BLOCK, from ggml-quants.c.
+    // `%.9e` dumps of the ggml reference output, kept byte-for-byte so they diff
+    // against it; the values are exact in f32, only the digit count trips the lint.
+    #[allow(clippy::excessive_precision)]
     #[rustfmt::skip]
     const IQ2_XXS_EXPECTED: [f32; IQ2_XXS_BLOCK_ELEMS] = [
         -5.859375000e-01, 1.831054688e+00, -5.859375000e-01, -5.859375000e-01, -1.831054688e+00, -3.149414062e+00,
@@ -182,5 +185,15 @@ mod tests {
         let mut got = [1.0f32; IQ2_XXS_BLOCK_ELEMS];
         dequantize_iq2_xxs_block(&[0u8; IQ2_XXS_BLOCK_BYTES], &mut got);
         assert!(got.iter().all(|v| *v == 0.0), "zero scale must give zeros");
+    }
+
+    /// Fail fast: a non-empty run must yield a non-empty, correctly sized result.
+    #[test]
+    fn iq2_xxs_single_block_run_is_not_empty() {
+        let out = dequantize_iq2_xxs(&IQ2_XXS_BLOCK).expect("one whole block");
+        assert!(!out.is_empty(), "a block must dequantize to elements");
+        assert_eq!(out.len(), IQ2_XXS_BLOCK_ELEMS);
+        assert_eq!(out[1], IQ2_XXS_EXPECTED[1]);
+        assert!(dequantize_iq2_xxs(&[]).expect("empty run").is_empty());
     }
 }

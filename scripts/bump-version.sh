@@ -69,6 +69,39 @@ root_version() {  # root
     grep -E '^version = "' "$1/Cargo.toml" | head -1 | sed 's/.*"\(.*\)".*/\1/'
 }
 
+# facade_upstream_version <root> <manifest> - the version the facade's `upstream`
+# path crate actually carries. A crate on `version.workspace = true` (or with no
+# literal version) carries the root workspace version. #4587: the scoped pv set
+# (aprender-contracts{,-macros} 0.69.4) moves ahead of the 0.69.3 workspace, and a
+# facade pin must name the crate it re-exports, not the workspace it sits beside.
+facade_upstream_version() {  # root manifest
+    local rel dir v
+    rel="$(sed -n 's/^upstream *=.*path *= *"\([^"]*\)".*/\1/p' "$2" | head -1)"
+    [ -n "$rel" ] || { root_version "$1"; return 0; }
+    dir="$(dirname "$2")/$rel"
+    [ -f "$dir/Cargo.toml" ] || { printf 'MISSING:%s\n' "$dir/Cargo.toml"; return 0; }
+    v="$(sed -n 's/^version *= *"\([^"]*\)".*/\1/p' "$dir/Cargo.toml" | head -1)"
+    if [ -n "$v" ]; then printf '%s\n' "$v"; else root_version "$1"; fi
+}
+
+# check_facade_pins <root> - every pinned facade names its upstream crate's version.
+check_facade_pins() {  # root
+    local f got want rc=0
+    while IFS= read -r f; do
+        [ -n "$f" ] || continue
+        got="$(facade_pin "$f")"
+        want="$(facade_upstream_version "$1" "$f")"
+        if [ -n "$got" ] && [ "$got" = "$want" ]; then
+            printf 'ok    %s upstream pin %s\n' "${f#"$1"/}" "$got"
+        else
+            printf 'FAIL  %s upstream pin %s, the crate it re-exports is %s\n' \
+                "${f#"$1"/}" "$got" "$want"
+            rc=1
+        fi
+    done < <(facade_pinned_manifests "$1")
+    return "$rc"
+}
+
 # Rewrite every `upstream = { ..., version = "X", ... }` pin to $2. Anchored at
 # line start and scoped to the version field so it cannot touch the `path`, the
 # `package` rename, or any other key on the line.
@@ -151,8 +184,29 @@ if [ "${1:-}" = "--self-test" ]; then
         printf 'FAIL  row 6 re-running the bump changed the file again\n'; fails=1
     fi
 
+    # Rows 7-10: --check compares a pin with the crate it RE-EXPORTS (#4587).
+    mkdir -p "$TD/crates/up"   # ../../up from crates/facades/reexport
+    printf '[workspace.package]\nversion = "0.64.0"\n' > "$TD/Cargo.toml"
+    printf '[package]\nname = "up"\nversion = "0.64.1"\n' > "$TD/crates/up/Cargo.toml"
+    set_facade_pins "$TD" 0.64.1 >/dev/null
+    if check_facade_pins "$TD" >/dev/null; then
+        printf 'ok    row 7 pin 0.64.1 == upstream crate 0.64.1 (workspace 0.64.0) passes\n'
+    else printf 'FAIL  row 7 a pin equal to its upstream crate was refused\n'; fails=1; fi
+    set_facade_pins "$TD" 0.64.0 >/dev/null
+    if check_facade_pins "$TD" >/dev/null; then
+        printf 'FAIL  row 8 pin 0.64.0 vs upstream crate 0.64.1 was ACCEPTED\n'; fails=1
+    else printf 'ok    row 8 pin 0.64.0 == workspace but != upstream crate 0.64.1 is RED\n'; fi
+    printf '[package]\nname = "up"\nversion.workspace = true\n' > "$TD/crates/up/Cargo.toml"
+    if check_facade_pins "$TD" >/dev/null; then
+        printf 'ok    row 9 upstream on version.workspace = true: pin 0.64.0 == workspace passes\n'
+    else printf 'FAIL  row 9 a workspace-versioned upstream pinned at the workspace was refused\n'; fails=1; fi
+    set_facade_pins "$TD" 0.64.1 >/dev/null
+    if check_facade_pins "$TD" >/dev/null; then
+        printf 'FAIL  row 10 pin 0.64.1 vs a workspace-versioned upstream (0.64.0) was ACCEPTED\n'; fails=1
+    else printf 'ok    row 10 pin 0.64.1 vs a workspace-versioned upstream (0.64.0) is RED\n'; fi
+
     [ "$fails" -eq 0 ] || { printf '\nSELF-TEST FAILED\n'; exit 1; }
-    printf '\nSELF-TEST PASSED (6/6)\n'
+    printf '\nSELF-TEST PASSED (10/10)\n'
     exit 0
 fi
 
@@ -164,17 +218,7 @@ if [ "${1:-}" = "--check" ]; then
     printf 'crates/facades own version: %s  (INDEPENDENT by design, #2546)\n' \
         "$(facade_own_version "$REPO_ROOT")"
     rc=0
-    while IFS= read -r f; do
-        [ -n "$f" ] || continue
-        got="$(facade_pin "$f")"
-        if [ "$got" = "$WS" ]; then
-            printf 'ok    %s upstream pin %s\n' "${f#"$REPO_ROOT"/}" "$got"
-        else
-            printf 'FAIL  %s upstream pin %s, workspace is %s\n' \
-                "${f#"$REPO_ROOT"/}" "$got" "$WS"
-            rc=1
-        fi
-    done < <(facade_pinned_manifests "$REPO_ROOT")
+    check_facade_pins "$REPO_ROOT" || rc=1
     if ( cd "$REPO_ROOT/crates/facades" && cargo metadata --format-version 1 --locked ) >/dev/null 2>&1; then
         printf 'ok    crates/facades/Cargo.lock matches its manifests (--locked)\n'
     else

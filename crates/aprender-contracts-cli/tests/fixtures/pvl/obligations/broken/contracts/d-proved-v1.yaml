@@ -1,0 +1,28 @@
+metadata:
+  version: "1.0.0"
+  kind: pattern
+  references:
+    - "PVL-001 EV-10 golden fixture"
+  description: "CHECK 3b: proved_type Grade; grade_gate s file only says GradeTable and grade_prefixed s only TdgGrade; grade_ok s says Grade"
+  proved_type: Grade
+equations:
+  relu:
+    formula: "y_i = max(0, x_i)"
+    invariants:
+      - "y_i >= 0"
+
+proof_obligations:
+  - type: invariant
+    property: "gate is proved against Grade"
+    applies_to: grade_gate
+  - type: invariant
+    property: "prefixed is proved against Grade, but its file only says TdgGrade"
+    applies_to: grade_prefixed
+  - type: invariant
+    property: "control: reaches Grade"
+    applies_to: grade_ok
+falsification_tests:
+  - id: FALSIFY-OBL-001
+    rule: "Non-negativity"
+    prediction: "relu(x)_i >= 0"
+    if_fails: "Comparison inverted"

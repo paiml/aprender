@@ -1,0 +1,490 @@
+{
+  "version": "2.1.0",
+  "$schema": "https://raw.githubusercontent.com/oasis-tcs/sarif-spec/master/Schemata/sarif-schema-2.1.0.json",
+  "runs": [
+    {
+      "tool": {
+        "driver": {
+          "name": "pmat",
+          "informationUri": "https://github.com/paiml/pmat",
+          "version": "3.42.0",
+          "rules": []
+        }
+      },
+      "invocations": [
+        {
+          "executionSuccessful": true,
+          "commandLine": "pmat query \"default base tag head vs base\" --limit 5 (index refreshed at e7cff40986ba4069c5f185679acbc03679fd92ee, 90 s); scripts/pr_review_duplication_scan.sh --rust-semantic (37 s)"
+        }
+      ],
+      "results": [
+        {
+          "ruleId": "PRREV-CB200-DEFBASE-001",
+          "level": "warning",
+          "message": {
+            "text": "[carried from the 91ab26c39d review, code unchanged by 88720eec64, b47e216668 and e7cff40986] default_base picks the highest vX.Y.Z tag that does NOT contain HEAD, not the nearest ancestor release. Measured on the real tag set with the helper's own pipeline (git tag replaced by the equivalent git for-each-ref --no-contains, since this lane may not run git tag): for this PR head it returns v0.69.3, which is NOT an ancestor of HEAD (merge-base --is-ancestor rc=1; 701 commits of v0.69.3 are not on HEAD's line); the nearest ancestor release tag of HEAD is v0.69.0. Same on origin/release/pv-0.69.2 (v0.69.3, rc=1). So on main the default comparison is against a release-branch tree, and the FAIL message 'definitions added between <base> and <head>' is not literally true."
+          },
+          "locations": [
+            {
+              "physicalLocation": {
+                "artifactLocation": {
+                  "uri": "scripts/cb200_head_vs_base.sh"
+                },
+                "region": {
+                  "startLine": 84
+                }
+              }
+            }
+          ],
+          "properties": {
+            "grounding": "asserted",
+            "rationale": "Carried forward: 88720eec64, b47e216668 and e7cff40986 change only the selftest block of scripts/cb200_head_vs_base.sh; the finding's subject is outside it. Not re-measured in this run, so it stays asserted.",
+            "failure_scenario": "dogfood.sh on a main commit compares head against v0.69.3 (a release/0.69.3 cherry-pick line with 701 commits main lacks); a release branch that fixed definitions main never received makes main read RED, or one that added debt makes main read green, with no change on main's own lineage. Fix: select with git for-each-ref --merged HEAD (nearest ancestor tag) or document the cross-line comparison.",
+            "precision_class": "advisory"
+          }
+        },
+        {
+          "ruleId": "PRREV-CB200-POLICY-001",
+          "level": "warning",
+          "message": {
+            "text": "[carried from the 91ab26c39d review, code unchanged by 88720eec64, b47e216668 and e7cff40986] count_at scores each tree under that tree's OWN .pmat-gates.toml and pmat config; only [tdg] baseline is neutralised. min_grade, path excludes and ignore files travel with the head, so the change being judged also sets the ruler it is judged with. 'One scanner, one run' holds the binary fixed but not the policy."
+          },
+          "locations": [
+            {
+              "physicalLocation": {
+                "artifactLocation": {
+                  "uri": "scripts/cb200_head_vs_base.sh"
+                },
+                "region": {
+                  "startLine": 59
+                }
+              }
+            }
+          ],
+          "properties": {
+            "grounding": "asserted",
+            "rationale": "Carried forward: 88720eec64, b47e216668 and e7cff40986 change only the selftest block of scripts/cb200_head_vs_base.sh; the finding's subject is outside it. Not re-measured in this run, so it stays asserted.",
+            "failure_scenario": "A head that sets min_grade from B to C, or adds a crate to the TDG exclude list, drops its own count below the base count and dogfood.sh records CB-200 PASS on the release path while every previously failing definition is still below B. Fix: copy the base tree's gate config (or a pinned one) over the head worktree before counting.",
+            "precision_class": "advisory"
+          }
+        },
+        {
+          "ruleId": "PRREV-DOGFOOD-ARM-001",
+          "level": "warning",
+          "message": {
+            "text": "[carried from the 91ab26c39d review, code unchanged by 88720eec64, b47e216668 and e7cff40986] The new Warn|Fail) arm in scripts/dogfood.sh (dirty-tree NOT MEASURED, empty base NOT MEASURED, helper rc 0 -> PASS, else FAIL) has no fixture or case table: across scripts/ and tests/ the only files naming the CB-200 row (CM_CB200 / pmat-comply) are the helper and dogfood.sh itself; no test drives dogfood.sh. The helper's 14-row selftest does not execute this arm, so its rc mapping and the DOGFOOD_CB200_BASE override are untested."
+          },
+          "locations": [
+            {
+              "physicalLocation": {
+                "artifactLocation": {
+                  "uri": "scripts/dogfood.sh"
+                },
+                "region": {
+                  "startLine": 1216
+                }
+              }
+            }
+          ],
+          "properties": {
+            "grounding": "asserted",
+            "rationale": "Carried forward: 88720eec64, b47e216668 and e7cff40986 change only the selftest block of scripts/cb200_head_vs_base.sh; the finding's subject is outside it. Not re-measured in this run, so it stays asserted.",
+            "failure_scenario": "A later edit that maps helper rc 3 (NOT MEASURED) to PASS, or drops the dirty-tree check, turns the release-path CB-200 row green without measurement and no test goes red.",
+            "precision_class": "advisory"
+          }
+        },
+        {
+          "ruleId": "PRREV-EQUIV-001",
+          "level": "note",
+          "message": {
+            "text": "[carried from the 91ab26c39d review, code unchanged by 88720eec64, b47e216668 and e7cff40986] The git_patch_id.py refactor is behaviour-identical on the tested stream: base vs head versions over git log -p --binary --no-merges -n 200 at the merge-base (8 binary patches) produce identical output in --stable, --verbatim and --unstable (200 ids each, cmp identical). stdout_sha256 is over the three base outputs concatenated."
+          },
+          "locations": [
+            {
+              "physicalLocation": {
+                "artifactLocation": {
+                  "uri": "scripts/lib/git_patch_id.py"
+                },
+                "region": {
+                  "startLine": 134
+                }
+              }
+            }
+          ],
+          "properties": {
+            "grounding": "asserted",
+            "rationale": "Carried forward: 88720eec64, b47e216668 and e7cff40986 change only the selftest block of scripts/cb200_head_vs_base.sh; the finding's subject is outside it. Not re-measured in this run, so it stays asserted.",
+            "failure_scenario": "If the split changed hunk or binary-marker handling, patch ids would change and Arm 4 would stop matching signed receipts to diffs; the differential would show a cmp difference.",
+            "precision_class": "advisory"
+          }
+        },
+        {
+          "ruleId": "PRREV-CPLX-001",
+          "level": "note",
+          "message": {
+            "text": "[carried from the 91ab26c39d review, code unchanged by 88720eec64, b47e216668 and e7cff40986] Complexity strictly improves in all four refactored functions (pmat analyze complexity, base vs head files): coverage_serve_shards main 27->14 cyclomatic, get_one_patchid 27->18, nightly_manifest main 24->4, check_valid_under 15->4; every new function is <=9. get_one_patchid is still 18, above .pmat-gates.toml max_complexity 10. Shell files return 0 functions: pmat does not grade the new helper."
+          },
+          "locations": [
+            {
+              "physicalLocation": {
+                "artifactLocation": {
+                  "uri": "scripts/lib/git_patch_id.py"
+                },
+                "region": {
+                  "startLine": 134
+                }
+              }
+            }
+          ],
+          "properties": {
+            "grounding": "asserted",
+            "rationale": "Carried forward: 88720eec64, b47e216668 and e7cff40986 change only the selftest block of scripts/cb200_head_vs_base.sh; the finding's subject is outside it. Not re-measured in this run, so it stays asserted.",
+            "failure_scenario": "A reader of the receipt concludes the four over-complexity definitions are fixed; get_one_patchid remains over the per-function cap and still counts toward CB-200.",
+            "precision_class": "advisory"
+          }
+        },
+        {
+          "ruleId": "PRREV-CB200-CLEANUP-001",
+          "level": "note",
+          "message": {
+            "text": "[carried from the 91ab26c39d review, code unchanged by 88720eec64, b47e216668 and e7cff40986] count_at registers git worktrees under mktemp; cleanup relies on an EXIT trap, which bash does not run on an untrapped SIGTERM/SIGKILL (e.g. the 900 s timeout of an outer job)."
+          },
+          "locations": [
+            {
+              "physicalLocation": {
+                "artifactLocation": {
+                  "uri": "scripts/cb200_head_vs_base.sh"
+                },
+                "region": {
+                  "startLine": 46
+                }
+              }
+            }
+          ],
+          "properties": {
+            "grounding": "asserted",
+            "rationale": "Carried forward: 88720eec64, b47e216668 and e7cff40986 change only the selftest block of scripts/cb200_head_vs_base.sh; the finding's subject is outside it. Not re-measured in this run, so it stays asserted.",
+            "failure_scenario": "A cancelled dogfood run leaves registered worktrees in /tmp; later git worktree add of the same tag works but git worktree list accumulates prunable entries on the runner.",
+            "precision_class": "advisory"
+          }
+        },
+        {
+          "ruleId": "PRREV-DUP-001",
+          "level": "note",
+          "message": {
+            "text": "Duplication scan re-run at this head (lexical + rust semantic, 1156/1156 sibling branches, 32 symbols, 0 merge-base-to-main files): 3 hits, the same name collisions as rounds 1-3 (cmd_publish, build_parser), not duplicated logic."
+          },
+          "locations": [
+            {
+              "physicalLocation": {
+                "artifactLocation": {
+                  "uri": "scripts/cb200_head_vs_base.sh"
+                },
+                "region": {
+                  "startLine": 1
+                }
+              }
+            }
+          ],
+          "properties": {
+            "grounding": "measured",
+            "command": [
+              "bash",
+              "scripts/pr_review_duplication_scan.sh",
+              "--base",
+              "00052c01284caa74c70b287088a79c6dee2959b9",
+              "--head",
+              "e7cff40986ba4069c5f185679acbc03679fd92ee",
+              "--rust-semantic",
+              "--json",
+              "dup4.json"
+            ],
+            "exit_code": 0,
+            "stdout_sha256": "f50864828257ce1a20757aaa3ed4b309c67fea051f59dc53ab64f41b07067290",
+            "failure_scenario": "Had a hit been prior art rather than a name collision, the PR would re-implement an existing helper; none of the 3 is.",
+            "precision_class": "advisory"
+          }
+        },
+        {
+          "ruleId": "PRREV-CB200-HERMETIC-001",
+          "level": "note",
+          "message": {
+            "text": "Selftest at this head: rc=0, 16/16 ok, '--- 0 bad' (run from the worktree and from a scratch copy, identical output digest); scripts/check_cb200_head_vs_base.sh rc=0. Still depends on the ambient git config/hooks for the fixture's git commit/tag calls (not re-examined beyond round 2)."
+          },
+          "locations": [
+            {
+              "physicalLocation": {
+                "artifactLocation": {
+                  "uri": "scripts/cb200_head_vs_base.sh"
+                },
+                "region": {
+                  "startLine": 136
+                }
+              }
+            }
+          ],
+          "properties": {
+            "grounding": "measured",
+            "command": [
+              "bash",
+              "scripts/cb200_head_vs_base.sh",
+              "--selftest"
+            ],
+            "exit_code": 0,
+            "stdout_sha256": "c63f93cbb2987a029f46bc5a7330dbe2a779c69103a60537146d1f1b3ac126c0",
+            "failure_scenario": "A host whose global git hooks fail or are slow makes the fixture's git commit fail, the subshell returns 3 and the guard goes red for a reason unrelated to the helper.",
+            "precision_class": "advisory"
+          }
+        }
+      ]
+    },
+    {
+      "tool": {
+        "driver": {
+          "name": "cargo-mutants",
+          "informationUri": "https://github.com/sourcefrog/cargo-mutants",
+          "rules": []
+        }
+      },
+      "invocations": [
+        {
+          "executionSuccessful": true,
+          "commandLine": "derived guard mutation set: round-3's M01..M29 re-applied as diffs to e7cff40986, each run as bash <mutant> --selftest from a scratch copy outside the repo (cargo-mutants itself not run: see receipt mutation.rust_in_diff)"
+        }
+      ],
+      "results": [
+        {
+          "ruleId": "PRREV-B3-004",
+          "level": "note",
+          "message": {
+            "text": "Guard mutation score 25/28 on scripts/cb200_head_vs_base.sh at e7cff40986 (the round-3 set M01..M29 re-applied as patches; M20 equivalent, excluded). The round-3 blocker is resolved: M11 ('$' anchor dropped), M13 (sort -V -> sort) and M25 (final-tag grep dropped) are all KILLED, each by the 'default-base numeric sort, skips rc+HEAD' row (want v1.10.0; v1.11.0-rc.1 now sits above the newest final). No mutant killed at b47e216668 survives here. Real repo: head --default-base prints v0.69.3; the M11 and M25 copies print v0.69.5-rc.1, so the row now guards a real release-path difference."
+          },
+          "locations": [
+            {
+              "physicalLocation": {
+                "artifactLocation": {
+                  "uri": "scripts/cb200_head_vs_base.sh"
+                },
+                "region": {
+                  "startLine": 84
+                }
+              }
+            }
+          ],
+          "properties": {
+            "grounding": "measured",
+            "command": [
+              "bash",
+              "-c",
+              "for m in mut4/m*.sh; do bash \"$m\" --selftest; done   # rc 0 = SURVIVED; mutants = round-3 set (M01..M29) re-applied as patches to e7cff40986"
+            ],
+            "exit_code": 0,
+            "stdout_sha256": "0c76b02fa55170014875d81afa495f6fbba19e497d9abff5917c373c9b9fc72b",
+            "failure_scenario": "Without the v1.11.0-rc.1 fixture tag, loosening default_base's final-tag filter would let scripts/dogfood.sh compare HEAD against v0.69.5-rc.1 instead of v0.69.3 with the selftest green; that path is now red.",
+            "precision_class": "advisory"
+          }
+        },
+        {
+          "ruleId": "PRREV-CB200-FAKE-RC-001",
+          "level": "warning",
+          "message": {
+            "text": "Survivor M24 ('|| true' -> '|| exit 0' at the comply call) still survives: the fake pmat never exits non-zero, while the real pinned pmat 3.42.0 comply exits 1 whenever any check fails (measured in round 2). Fails closed on the release path (empty count -> integer test error -> FAIL rc 1, misreported as new debt rather than NOT MEASURED). Advisory per round-2 disposition."
+          },
+          "locations": [
+            {
+              "physicalLocation": {
+                "artifactLocation": {
+                  "uri": "scripts/cb200_head_vs_base.sh"
+                },
+                "region": {
+                  "startLine": 64
+                }
+              }
+            }
+          ],
+          "properties": {
+            "grounding": "measured",
+            "command": [
+              "bash",
+              "-c",
+              "for m in mut4/m*.sh; do bash \"$m\" --selftest; done   # rc 0 = SURVIVED; mutants = round-3 set (M01..M29) re-applied as patches to e7cff40986"
+            ],
+            "exit_code": 0,
+            "stdout_sha256": "0c76b02fa55170014875d81afa495f6fbba19e497d9abff5917c373c9b9fc72b",
+            "failure_scenario": "An edit treating a non-zero comply exit as fatal makes every real run fail while the selftest stays green. Fix: make the fake exit 1 in ok/nocount modes.",
+            "precision_class": "advisory"
+          }
+        },
+        {
+          "ruleId": "PRREV-CB200-PREFIX-001",
+          "level": "note",
+          "message": {
+            "text": "Survivor M21 (startswith('CB-200') -> startswith('CB-')) still survives; fails closed in production (round-2 measurement: first CB- row in real output is CB-030 with no count -> rc 3). Advisory."
+          },
+          "locations": [
+            {
+              "physicalLocation": {
+                "artifactLocation": {
+                  "uri": "scripts/cb200_head_vs_base.sh"
+                },
+                "region": {
+                  "startLine": 69
+                }
+              }
+            }
+          ],
+          "properties": {
+            "grounding": "measured",
+            "command": [
+              "bash",
+              "-c",
+              "for m in mut4/m*.sh; do bash \"$m\" --selftest; done   # rc 0 = SURVIVED; mutants = round-3 set (M01..M29) re-applied as patches to e7cff40986"
+            ],
+            "exit_code": 0,
+            "stdout_sha256": "0c76b02fa55170014875d81afa495f6fbba19e497d9abff5917c373c9b9fc72b",
+            "failure_scenario": "A pmat release with a counted CB-2xx row before CB-200 would be read under a widened selector; fixture cannot see it. Fix: fake emits a decoy CB-201 row first.",
+            "precision_class": "advisory"
+          }
+        },
+        {
+          "ruleId": "PRREV-CB200-HEADDEFAULT-001",
+          "level": "note",
+          "message": {
+            "text": "Survivor M29 (HEAD_REF default 'HEAD' -> ''): every non-usage row passes --head. Not on the release path: scripts/dogfood.sh:1228 passes --head HEAD explicitly. Same subject as agy's CB200_ST_HEAD_DEFAULT. Advisory."
+          },
+          "locations": [
+            {
+              "physicalLocation": {
+                "artifactLocation": {
+                  "uri": "scripts/cb200_head_vs_base.sh"
+                },
+                "region": {
+                  "startLine": 19
+                }
+              }
+            }
+          ],
+          "properties": {
+            "grounding": "measured",
+            "command": [
+              "bash",
+              "-c",
+              "for m in mut4/m*.sh; do bash \"$m\" --selftest; done   # rc 0 = SURVIVED; mutants = round-3 set (M01..M29) re-applied as patches to e7cff40986"
+            ],
+            "exit_code": 0,
+            "stdout_sha256": "0c76b02fa55170014875d81afa495f6fbba19e497d9abff5917c373c9b9fc72b",
+            "failure_scenario": "A manual 'cb200_head_vs_base.sh --base vX' run with a broken default measures the wrong tree or refuses; no selftest row fails.",
+            "precision_class": "advisory"
+          }
+        }
+      ]
+    },
+    {
+      "tool": {
+        "driver": {
+          "name": "antigravity",
+          "informationUri": "https://github.com/paiml/aprender",
+          "rules": []
+        }
+      },
+      "invocations": [
+        {
+          "executionSuccessful": true,
+          "commandLine": "agy -p <prompt file> --output-format json --json-schema .pr-review-schema.json --model gemini-3.1-pro-high --print-timeout 30m --dangerously-skip-permissions --add-dir <disposable tree>"
+        }
+      ],
+      "results": [
+        {
+          "ruleId": "AGY-CB200_ST_UNKNOWN_ARG",
+          "level": "warning",
+          "message": {
+            "text": "Selftest does not measure usage error on unknown arguments"
+          },
+          "locations": [
+            {
+              "physicalLocation": {
+                "artifactLocation": {
+                  "uri": "scripts/cb200_head_vs_base.sh"
+                },
+                "region": {
+                  "startLine": 131
+                }
+              }
+            }
+          ],
+          "properties": {
+            "grounding": "measured",
+            "command": [
+              "bash",
+              "-c",
+              "sed -i 's/.*unknown argument.*/        *) exit 0 ;;/g' scripts/cb200_head_vs_base.sh && scripts/cb200_head_vs_base.sh --selftest"
+            ],
+            "failure_scenario": "If the script is modified to ignore or accept unknown arguments (e.g. exiting 0 instead of 2 in the case statement), the selftest continues to pass, demonstrating it fails to enforce the stated 'Exit 2: usage' rule for unknown arguments.",
+            "precision_class": "advisory",
+            "reverified_by_primary": false
+          }
+        },
+        {
+          "ruleId": "AGY-CB200_ST_DANGLING_HEAD",
+          "level": "warning",
+          "message": {
+            "text": "Selftest does not measure usage error on a dangling --head argument"
+          },
+          "locations": [
+            {
+              "physicalLocation": {
+                "artifactLocation": {
+                  "uri": "scripts/cb200_head_vs_base.sh"
+                },
+                "region": {
+                  "startLine": 131
+                }
+              }
+            }
+          ],
+          "properties": {
+            "grounding": "measured",
+            "command": [
+              "bash",
+              "-c",
+              "sed -i 's/--head) \\[ $# -ge 2 \\] || {.*exit 2; };/--head) \\[ $# -ge 2 \\] || { exit 0; };/g' scripts/cb200_head_vs_base.sh && scripts/cb200_head_vs_base.sh --selftest"
+            ],
+            "failure_scenario": "If the script is modified to ignore a missing value for --head (e.g. exiting 0 instead of 2), the selftest still passes, leaving this usage rule unmeasured.",
+            "precision_class": "advisory",
+            "reverified_by_primary": false
+          }
+        },
+        {
+          "ruleId": "AGY-CB200_ST_HEAD_DEFAULT",
+          "level": "warning",
+          "message": {
+            "text": "Selftest does not measure that --head defaults to HEAD"
+          },
+          "locations": [
+            {
+              "physicalLocation": {
+                "artifactLocation": {
+                  "uri": "scripts/cb200_head_vs_base.sh"
+                },
+                "region": {
+                  "startLine": 131
+                }
+              }
+            }
+          ],
+          "properties": {
+            "grounding": "measured",
+            "command": [
+              "bash",
+              "-c",
+              "sed -i 's/HEAD_REF=\"HEAD\"/HEAD_REF=\"something\"/g' scripts/cb200_head_vs_base.sh && scripts/cb200_head_vs_base.sh --selftest"
+            ],
+            "failure_scenario": "If the script is modified so that HEAD_REF defaults to a different value (e.g. \"something\"), the selftest still passes, failing to enforce the stated 'head defaults to HEAD' behavior.",
+            "precision_class": "advisory",
+            "reverified_by_primary": false
+          }
+        }
+      ]
+    }
+  ]
+}

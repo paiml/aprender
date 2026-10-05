@@ -1,0 +1,45 @@
+metadata:
+  version: 1.0.0
+  kind: schema
+  description: |
+    PROMETHEUS (PRM-001, was REX-001) REX-04 per-cell admission, spec §2.1/§7. One JSONL
+    row per §2.1 device cell (C1 intel-wgpu, C2 intel-cpu, C3 lambda-cpu, C4 gx10-cuda,
+    C5a mini-cpu, C5b mini-metal) written by `rex admit` (crates/aprender-review-experiment:
+    admission.rs). A file is admissible only if every cell has exactly one row, each
+    row names its declared host and backend, carries the apr tag, the apr and weights
+    sha256, the model id and the locked prereg sha, and resolves to Admitted (a parity
+    receipt sha, an oracle, a cosine at or above a threshold with a cited basis),
+    Refused{removed_by}, or NotRun{reason}. A silent cell rejects the whole file. When
+    no cell is Admitted, the summary raises S-7 and `rex admission-check` exits 10.
+  references:
+    - "docs/specifications/review-experiment-protocol.md"
+    - "docs/audits/rex-001/rex-04-receipt.md"
+    - "https://github.com/paiml/aprender/issues/4359"
+
+equations:
+  resolved:
+    formula: "∀ c ∈ CELLS: |rows(c)| = 1 ∧ state(c) ∈ {Admitted, Refused, NotRun}"
+  admitted:
+    formula: "Admitted(c) ⇒ cosine(c) ≥ threshold(c) ∧ receipt_sha256(c) is 64-hex ∧ threshold_basis(c) ≠ ∅"
+  s7:
+    formula: "S-7 ⇔ |{c : Admitted(c)}| = 0"
+
+falsification_tests:
+  - id: FALSIFY-RCA-001
+    name: a_silent_cell_rejects_the_file
+    prediction: "dropping any one of the six rows (or duplicating one) makes the admission file inadmissible"
+    test_harness: "cargo test -p aprender-review-experiment --lib falsify_rca_001"
+    expected_output: "exit 0"
+    if_fails: "A cell could vanish from the report without a refusal or NotRun on record (0 silent cells, §7 REX-04)."
+  - id: FALSIFY-RCA-002
+    name: admitted_needs_a_passing_parity_receipt
+    prediction: "Admitted below threshold, with a NaN cosine, or without a receipt, basis or oracle is rejected; Refused without removed_by is rejected"
+    test_harness: "cargo test -p aprender-review-experiment --lib falsify_rca_002"
+    expected_output: "exit 0"
+    if_fails: "A cell that diverges from the oracle would be admitted into the hardware ruling."
+  - id: FALSIFY-RCA-003
+    name: no_admitted_cell_raises_s7
+    prediction: "a file whose cells are all Refused or NotRun is admissible and raises S-7"
+    test_harness: "cargo test -p aprender-review-experiment --lib falsify_rca_003"
+    expected_output: "exit 0"
+    if_fails: "The experiment would proceed to REX-05 with no admissible cell for (A)."

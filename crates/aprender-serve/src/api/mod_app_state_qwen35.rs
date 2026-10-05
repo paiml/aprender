@@ -82,6 +82,7 @@ impl AppState {
                 session: std::sync::Mutex::new(session),
             })),
             cached_eos_token_id: eos_token_id,
+            cached_serving_context: None,
             verbose: false,
             trace: false,
             model_source: None,

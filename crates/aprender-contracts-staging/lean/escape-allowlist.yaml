@@ -1,0 +1,5 @@
+# PVL-001 EV-6a (#4139): every compiler/logic escape in ProvableContracts/** that `pv discharge check` allows.
+# {file, decl, kind, reason, ticket, confirmed_by}. `confirmed_by: pending` is PENDING: `pv discharge check --strict`
+# (the EV-9 gate) stays RED until a person confirms the entry or the axiom is proved/deleted. The scanner and its
+# exemptions are never confirmed by the same run (PVL-001 §5.3). #4347 (2026-09-25): all 7 DRAFTED entries were
+# removed by proof -- NF4 + f16 (aprender-57) and DPO (pvl-b). The list is empty; a new escape must be added here.

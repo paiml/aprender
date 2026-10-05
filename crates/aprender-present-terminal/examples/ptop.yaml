@@ -4,7 +4,7 @@
 # Copy this file to ~/.config/ptop/config.yaml and customize as needed.
 # ptop will automatically reload the config when the file changes.
 #
-# Generate a default config with: ptop --dump-config > ~/.config/ptop/config.yaml
+# Generate a default config with: aprender-ptop --dump-config > ~/.config/ptop/config.yaml
 
 # Refresh interval in milliseconds
 refresh_ms: 1000

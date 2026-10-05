@@ -1,0 +1,194 @@
+{
+  "host": "mini",
+  "arch": "arm64",
+  "os": "Darwin 25.6.0",
+  "cpu": "Apple M4",
+  "nproc": 10,
+  "accelerator": "Apple M4 (Metal)",
+  "driver": "n/a (macOS)",
+  "version_tested": "0.68.2",
+  "date": "2026-09-21",
+  "produced_by": "scripts/release/host_receipt.sh (the release train, #3731)",
+  "provenance": "crates.io",
+  "asset": "aprender-0.68.2.crate",
+  "install_command": "cargo install aprender --version =0.68.2 --locked --root <scratch>",
+  "install_rc": 0,
+  "install_wall_seconds": 243,
+  "crates_compiled": 532,
+  "sha256_published": "5dc9e30761d0fa2c7b82f69d4a2da16a6301c1273f4f7878f85243758a44ae85",
+  "sha256_measured": "5dc9e30761d0fa2c7b82f69d4a2da16a6301c1273f4f7878f85243758a44ae85",
+  "binary_path": "/var/folders/kq/w2p_fc85343bjq5gb5qg9md80000gn/T/tmp.hSykkEOw3k/.receipt-work/root/bin/apr",
+  "binary_sha256": "006bdf0738aeca08b1cdfee3fb6c1be207d1b85569ef6580f002319a2e1df09a",
+  "binary_version_output": "apr 0.68.2 (v0.68.2+no-git)",
+  "devices": {
+    "schema": "apr-devices-v1",
+    "discovered_at_unix": 1790028571,
+    "source": "machine",
+    "reserve_bytes": 3758096384,
+    "reserve_basis": "[U] default until master row 6 measures vram_peak",
+    "entries": [
+      {
+        "kind": "cpu",
+        "api": "cpu",
+        "device_index": null,
+        "device_uid": "host-cpu",
+        "device_name": "aarch64 host cpu, 10 threads",
+        "vendor": "host",
+        "vendor_id": null,
+        "device_type": "cpu",
+        "mem_total": null,
+        "mem_free": null,
+        "mem_kind": {
+          "kind": "unified",
+          "working_set_limit": null
+        },
+        "compute_class": "neon",
+        "caps": [],
+        "source": {
+          "kind": "compiled-in"
+        },
+        "status": {
+          "state": "ready"
+        },
+        "transport": null
+      },
+      {
+        "kind": "cuda",
+        "api": "cuda-driver",
+        "device_index": null,
+        "device_uid": null,
+        "device_name": "",
+        "vendor": "",
+        "vendor_id": null,
+        "device_type": "",
+        "mem_total": null,
+        "mem_free": null,
+        "mem_kind": {
+          "kind": "discrete"
+        },
+        "compute_class": null,
+        "caps": [],
+        "source": {
+          "kind": "not-compiled"
+        },
+        "status": {
+          "state": "unavailable",
+          "kind": "not-compiled"
+        },
+        "transport": null
+      },
+      {
+        "kind": "wgpu",
+        "api": "wgpu",
+        "device_index": 0,
+        "device_uid": "unknown:apple-m4",
+        "device_name": "Apple M4",
+        "vendor": "unknown",
+        "vendor_id": null,
+        "device_type": "integrated-gpu",
+        "mem_total": null,
+        "mem_free": null,
+        "mem_kind": {
+          "kind": "unified",
+          "working_set_limit": 9534832640
+        },
+        "compute_class": null,
+        "caps": [
+          "max_buffer_size=9534832640"
+        ],
+        "source": {
+          "kind": "compiled-in"
+        },
+        "status": {
+          "state": "ready"
+        },
+        "transport": "metal"
+      },
+      {
+        "kind": "metal",
+        "api": "metal",
+        "device_index": null,
+        "device_uid": null,
+        "device_name": "",
+        "vendor": "",
+        "vendor_id": null,
+        "device_type": "",
+        "mem_total": null,
+        "mem_free": null,
+        "mem_kind": {
+          "kind": "discrete"
+        },
+        "compute_class": null,
+        "caps": [],
+        "source": {
+          "kind": "not-compiled"
+        },
+        "status": {
+          "state": "unavailable",
+          "kind": "no-backend",
+          "vendor": "no native Metal backend in 0.66 (a Metal adapter appears under wgpu)"
+        },
+        "transport": null
+      },
+      {
+        "kind": "hip",
+        "api": "hip",
+        "device_index": null,
+        "device_uid": null,
+        "device_name": "",
+        "vendor": "",
+        "vendor_id": null,
+        "device_type": "",
+        "mem_total": null,
+        "mem_free": null,
+        "mem_kind": {
+          "kind": "discrete"
+        },
+        "compute_class": null,
+        "caps": [],
+        "source": {
+          "kind": "not-compiled"
+        },
+        "status": {
+          "state": "unavailable",
+          "kind": "no-backend",
+          "vendor": "no HIP backend in 0.66"
+        },
+        "transport": null
+      }
+    ],
+    "selected": {
+      "kind": "wgpu",
+      "device_index": 0,
+      "device_uid": "unknown:apple-m4",
+      "reason": "first Ready non-cpu entry; 1 physical device(s) Ready"
+    }
+  },
+  "unmeasured": [
+    "accel lane: the crates.io build carries no `cuda` feature (apr-cli default features), so no CUDA lane is measured in this receipt; the CUDA binary is the release asset, which the train's hosts step runs",
+    "generate: apr's accelerated path was not used: warning: GPU (wgpu) path rejected, attempting fallback: cosine vs CPU = 0.955169 (< 0.99) at step 2/3",
+    "bench: bench_host_receipt.sh refused (rc 1)",
+    "parity: parity_host_receipt.sh refused (rc 1)"
+  ],
+  "generate": {
+    "model": "qwen2.5-coder-1.5b-instruct-q4_k_m.gguf",
+    "model_sha256": "cc324af070c2ecbfd324a30884d2f951a7ff756aba85cb811a6ec436933bb046",
+    "backend_line_verbatim": "Backend: wgpu (Vulkan)",
+    "fallback_line_verbatim": "warning: GPU (wgpu) path rejected, attempting fallback: cosine vs CPU = 0.955169 (< 0.99) at step 2/3",
+    "used_gpu": false,
+    "tokens": 1,
+    "wall_ms": 12003,
+    "output_sane": true,
+    "prompt": "What is 2+2? Answer with just the number."
+  },
+  "bench_attempt": {
+    "status": "refused",
+    "rc": 1,
+    "reason": "FAIL  apr bench exited non-zero; NOT writing a bench block. |       A receipt that records a failed measurement as a measurement is |       the fabricated-measurement shape (F12)."
+  },
+  "parity_attempt": {
+    "status": "refused",
+    "rc": 1,
+    "reason": "        band[8].aggregate_tok_per_sec.subject.aggregate_tok_per_sec: contains a non-positive rate -- a throughput of zero or less is not a measurement |         band[16].aggregate_tok_per_sec.subject.aggregate_tok_per_sec: contains a non-positive rate -- a throughput of zero or less is not a measurement | REPORT exit 1: work directory kept for diagnosis: /var/folders/kq/w2p_fc85343bjq5gb5qg9md8000"
+  }
+}

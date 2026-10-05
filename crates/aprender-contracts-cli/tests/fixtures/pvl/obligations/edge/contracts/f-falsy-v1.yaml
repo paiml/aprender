@@ -1,0 +1,38 @@
+metadata:
+  version: "1.0.0"
+  kind: pattern
+  references:
+    - "PVL-001 EV-10 golden fixture"
+  description: "Python falsiness: a falsy proved_type is no proved_type, and falsy applies_to values are skipped like an absent one; real_fn is bound and never checked against a type"
+  proved_type: 0
+equations:
+  relu:
+    formula: "y_i = max(0, x_i)"
+    invariants:
+      - "y_i >= 0"
+
+proof_obligations:
+  - type: invariant
+    property: "zero"
+    applies_to: 0
+  - type: invariant
+    property: "empty list"
+    applies_to: []
+  - type: invariant
+    property: "empty map"
+    applies_to: {}
+  - type: invariant
+    property: "false"
+    applies_to: false
+  - type: invariant
+    property: "empty string"
+    applies_to: ""
+  - type: invariant
+    property: "bound, and not checked against the falsy type"
+    applies_to: real_fn
+falsification: []
+falsification_tests:
+  - id: FALSIFY-OBL-001
+    rule: "Non-negativity"
+    prediction: "relu(x)_i >= 0"
+    if_fails: "Comparison inverted"

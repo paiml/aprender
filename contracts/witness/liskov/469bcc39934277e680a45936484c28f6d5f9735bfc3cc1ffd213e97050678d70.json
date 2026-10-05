@@ -1,0 +1,36 @@
+{
+  "liskov_sha256": "469bcc39934277e680a45936484c28f6d5f9735bfc3cc1ffd213e97050678d70",
+  "pairs_checked": 1,
+  "reasoner_git_sha": "c0435711a3bad24afd55b108ee71253e22d079d0",
+  "pc_reasoner": "fired",
+  "pairs": [
+    {
+      "a": "online-softmax-v1",
+      "b": "softmax-kernel-v1",
+      "obligations": [
+        {
+          "kind": "pre",
+          "chain": [
+            {
+              "clause": "PRE-1",
+              "from": "PRE-1"
+            }
+          ]
+        },
+        {
+          "kind": "post",
+          "chain": [
+            {
+              "clause": "POST-1",
+              "from": "POST-1"
+            }
+          ]
+        },
+        {
+          "kind": "inv",
+          "chain": []
+        }
+      ]
+    }
+  ]
+}

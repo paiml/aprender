@@ -119,19 +119,19 @@ println!("Total: {} rows across {} nodes", stats.total_rows, stats.node_count);
 
 ```bash
 # Basic split
-alimentar fed split data.parquet --train 0.8 --test 0.2
+aprender-data fed split data.parquet --train 0.8 --test 0.2
 
 # Stratified split
-alimentar fed split data.parquet --stratify label --train 0.8 --test 0.2
+aprender-data fed split data.parquet --stratify label --train 0.8 --test 0.2
 
 # Create node manifest
-alimentar fed manifest data.parquet --node-id node1
+aprender-data fed manifest data.parquet --node-id node1
 
 # Plan federated distribution
-alimentar fed plan --nodes 10 --strategy iid data.parquet
+aprender-data fed plan --nodes 10 --strategy iid data.parquet
 
 # Verify manifests
-alimentar fed verify manifest1.json manifest2.json
+aprender-data fed verify manifest1.json manifest2.json
 ```
 
 ## Key Concepts

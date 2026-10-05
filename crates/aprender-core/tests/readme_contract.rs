@@ -645,3 +645,38 @@ fn test_no_doc_advertises_the_retired_100_point_validate_score() {
         violations.join("\n")
     );
 }
+
+/// PVL-001 EV-3 (PMAT-4081): every copy of the verification-ladder doc carries the block
+/// generated from `ProofLevel`, and pairs no level with the wrong tool outside it.
+///
+/// Lives here, not in `aprender-contracts`'s lib tests, because it reads files outside that
+/// crate, and the infra clean-room copies the tree with `tar --exclude=book`, which drops
+/// the `book/` copy. A crate test that reads outside its crate fails there; this one runs
+/// where the whole tree is (the `readme_contract` fragment in `ci/explicit-test-commands.d/`).
+#[test]
+fn ladder_doc_copies_carry_the_enum_block() {
+    use provable_contracts::levels::{ladder_block, stale_level_pairings};
+    const LADDER_COPIES: [&str; 3] = [
+        "crates/aprender-contracts-staging/docs/specifications/sub/verification-ladder.md",
+        "crates/aprender-contracts-staging/book/src/verification-ladder.md",
+        "docs/specifications/aprender-contracts-staging/sub/verification-ladder.md",
+    ];
+    let root = workspace_root();
+    let block = ladder_block();
+    for path in LADDER_COPIES {
+        let text = std::fs::read_to_string(root.join(path))
+            .unwrap_or_else(|e| panic!("{path}: {e} (PVL-001 EV-3 reads all three copies)"));
+        let stale = stale_level_pairings(&text);
+        assert!(
+            stale.is_empty(),
+            "{path} still pairs a level with the wrong tool outside the generated block \
+             (Kani is L3, Lean alone is L4):\n{}",
+            stale.join("\n")
+        );
+        assert!(
+            text.contains(&block),
+            "{path} does not carry the block generated from ProofLevel. Replace its \
+             proof-level table with:\n{block}"
+        );
+    }
+}

@@ -1,0 +1,22 @@
+- id: PMAT-4071
+  github_issue: 4071
+  item_type: task
+  title: 'ONT-2c: in-house OWL 2 EL writer; TBox check via the oracle, advisory'
+  status: in_progress
+  priority: high
+  assigned_to: aprender-19
+  created: 2026-09-23T18:30:00Z
+  updated: 2026-09-23T20:50:00Z
+  spec: paiml/infra docs/specifications/paiml-ontology.md@948ae923 (ONT-2c, line 626; §3.8)
+  acceptance_criteria:
+  - 'Row ONT-2c RED, verbatim: "writer output re-parsed by the oracle equals the fixture''s axiom set; two writes byte-identical; every Σ key mapped or in `not_expressible`; `acyclic` yields no axiom; `tbox-report.json` has `advisory: true`; gate maps it to `Unknown{Advisory}`; inferred subsumption between distinct Σ concepts → `unintended_subsumptions` non-empty."'
+  - 'Row ONT-2c mutation: "write `acyclic` as transitive + irreflexive → oracle round-trip RED."'
+  - 'Cop ruling 2026-09-23 (aprender-cf, refined per infra-83): (B) told-closure in-tree, precondition-guarded, advisory; (A) ELK 0.4.3 via a JVM as the independent oracle, agreement required at the RELEASE gate only; no JVM is a `decline:` NOT MEASURED, RED at release; a planted unintended subsumption must go RED in both.'
+  phases: []
+  subtasks: []
+  estimated_effort: null
+  labels:
+  - kind:code
+  - orch:fable
+  - orch-basis:state
+  notes: 'ONT-001 R-22: kind:code,orch:fable,orch-basis:state admits Fable or Opus. No Rust EL reasoner exists (infra ont-oracle-ledger [V 2026-09-14]); ELK 0.4.3 pinned (zip 965ad946…, jar de1fffaf…, Apache-2.0), sent to infra-83 for the ledger. The OWL oracle is its own detached crate tests/oracle/owl/: oxigraph (via shacl) enables oxrdf Triple and breaks horned-owl''s horned-pretty-rdf under feature unification (E0004, measured).'

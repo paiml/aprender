@@ -88,6 +88,7 @@ async fn sse_deltas_reassemble_with_whitespace_intact() {
         256,
         0,
         None,
+        None,
     );
 
     let bytes = axum::body::to_bytes(response.into_body(), usize::MAX)

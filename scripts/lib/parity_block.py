@@ -956,7 +956,26 @@ def build(args):
              "lanes": lanes}
     if executor:
         _finalize_executor_block(block, args)
+    absent = _accel_absent(args.work)
+    if absent:
+        block["accel_absent"] = absent
     return block
+
+
+def _accel_absent(work):
+    """The producer's `accel-absent.txt`, carried into the block (#3805).
+
+    parity_host_receipt.sh writes it when the installed apr resolved no GPU
+    layers, so no accel lane could be measured. Until this read existed the
+    file was written and dropped, and the release gate demanded a cuda lane
+    from a crates.io binary that has no cuda feature to emit one."""
+    path = os.path.join(work, "accel-absent.txt")
+    if not os.path.exists(path):
+        return None
+    with open(path, encoding="utf-8") as handle:
+        reason = handle.read().strip()
+    return {"reason": reason or "no-accelerator-resolved",
+            "source": "scripts/parity_host_receipt.sh probe_accel (0 gpu layers resolved)"}
 
 
 def _build_argparser():

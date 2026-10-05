@@ -44,7 +44,7 @@ falsification_tests:
   if_fails: "apr-cli coverage below 95%"
 
 verification_summary:
-  total_obligations: 1
+  total_obligations: 0
   proven: 0
   tested: 0
   status: pending

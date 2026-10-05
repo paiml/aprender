@@ -225,11 +225,43 @@ ladder:
           now refuses it by name at pre-load rather than silently falling back to CPU, so a
           long-rung representative for it would owe cells no code can satisfy and a
           RefusalCell would be a false arithmetic claim. Restore this key with #3714.
+    # #4590 (operator 2026-09-28, #3715): an arch the release does NOT claim on one host. Only these cells
+    # leave the owed set, on that host only; the judge prints the entry on every run, and apr warns at load.
+    declaimed:
+      - arch: qwen3
+        host: gx10
+        issue: 4590
+        until: "0.70.1"
+        why: >-
+          correct but 27-34x slower than Qwen3.5 on GB10 sm_121 (8k think-on: Qwen3-1.7B 967 s, Qwen3-8B
+          2163 s vs Qwen3.5-9B 63-80 s; serial prefill, the sm12x default). 0.70.1 P0 ships native sm_121
+          SASS and re-tests batched prefill on GB10. lambda still owes every Qwen3 cell.
+      # G2 (operator ruling 2026-09-28 16:15Z): R1 was Qwen3 only; this widens it to EVERY dense arch gx10 holds.
+      # Serial prefill is the default for every arch at cc>=120 (select_prefill_path), not only Qwen3.
+      - arch: qwen2
+        host: gx10
+        issue: 4590
+        until: "0.70.1"
+        why: >-
+          GB10 dense models: prompt processing unbatched (11.4 tok/s); fixed in 0.70.1 (#4590). Correct output,
+          prefill speed only: sm_12x prefills every dense arch one token at a time (select_prefill_path). Withdrawn,
+          not waived: lambda still owes every Qwen2 cell, and gx10 still owes every Qwen3.5 (hybrid) cell.
+      # #3715 H4 (cop 2026-09-28 20:26Z, scope = qwen3moe on gx10 only; STAGED, branch-only, operator rules 07:30Z):
+      # arch-level DATA is clean here -- no named rung and no long-rung representative is qwen3moe.
+      - arch: qwen3moe
+        host: gx10
+        issue: 3715
+        until: "0.70.1"
+        why: >-
+          Qwen3-30B-A3B (and Coder-30B-A3B) on GB10 sm_121: every verb hits the 600 s cell timeout at the
+          20k rung (0d H4 19:51Z, 12+12 cells). The 0.69.1 pre-load refusal is gone in 0.70.0-dev, so the
+          cells run and time out. Withdrawn, not waived: lambda holds both files and still owes every
+          qwen3moe cell; gx10 still owes every Qwen3.5 (hybrid) cell. Operator D1 APPROVED 2026-09-28 20:10Z.
     long_rungs_for:
       families: [qwen35]                      # every consumer's family: the full rung set, through declared
       representatives:                        # one file per other arch the fleet holds
-        qwen2: qwen2.5-coder-7b-instruct-q4_k_m.gguf      # lambda + gx10
-        qwen3: Qwen3-8B-Q4_K_M.gguf                       # lambda + gx10
+        qwen2: qwen2.5-coder-7b-instruct-q4_k_m.gguf      # lambda (gx10 de-claimed, #4590)
+        qwen3: Qwen3-8B-Q4_K_M.gguf                       # lambda (gx10 de-claimed, #4590)
         # qwen3moe: REMOVED for 0.69.1 (#3817). Not a fit question — this build has no CUDA
         # forward for the architecture at all (#3714, lands 0.70.0), so `apr run --gpu` refuses
         # pre-load by name and there is no GPU cell to owe. The CPU path is unchanged and works.
@@ -240,6 +272,7 @@ ladder:
       arch: qwen2
       gguf: qwen2.5-1.5b-instruct-q4_k_m.gguf
       sha256: 6a1a2eb6d15622bf3c96857206351ba97e1af16c30d7a74ee38970e434e9407e
+      hosts: [lambda]   # gx10 DE-CLAIMED for 0.70 (#4590, cells.declaimed, G2); restore to every host in 0.70.1
       backends: [cpu, cuda]
       required: true
       note: "control rung — the architecture every other gate already exercises; if this is red the host is broken, not the model"
@@ -248,6 +281,7 @@ ladder:
       arch: qwen3
       gguf: Qwen3-1.7B-Q4_K_M.gguf
       sha256: b139949c5bd74937ad8ed8c8cf3d9ffb1e99c866c823204dc42c0d91fa181897
+      hosts: [lambda]   # gx10 DE-CLAIMED for 0.70 (#4590, cells.declaimed); restore to every host in 0.70.1
       backends: [cpu, cuda]
       required: true
       note: "dense Qwen3 (per-head QK RMSNorm) — RED on cuda at 4a538ddef on both hosts (#3413)"
@@ -256,6 +290,7 @@ ladder:
       arch: qwen3
       gguf: Qwen3-8B-Q4_K_M.gguf
       sha256: d98cdcbd03e17ce47681435b5150e34c1417f50b5c0019dd560e4882c5745785
+      hosts: [lambda]   # gx10 DE-CLAIMED for 0.70 (#4590, cells.declaimed); restore to every host in 0.70.1
       backends: [cpu, cuda]
       required: true    # flipped 2026-09-22 (#3724): the empty-output defect this key was hiding is FIXED
                         # and MEASURED green 8/8 on BOTH lambda (where it failed) and gx10 at 3ebb1c61e.
@@ -458,6 +493,11 @@ falsification_tests:
     prediction: "check_model_ladder.sh --self-test: green-cells passes (20 owed on lambda, 12 pass, 8 honest refusals); a missing cell, a duplicate row, a fallback, a thinking block that never closed, a prompt under its rung, an empty answer, a co-tenant refusal, an OOM instead of a refusal, a rung that passes nowhere, thinking_modes that disagree with the template, a missing context_length (#3733), no cells, a consumer without a number, a missing context-rungs file, a dropped cells block or verb, a rung id or consumer dropped from context-rungs.json vs origin/main, an arch with no held representative, and a pass where the declared arithmetic says the cell cannot fit (the arithmetic decides what is owed, so it must be right) are each RED naming it; 11 module mutants are each killed by their case"
     test: "bash scripts/check_model_ladder.sh --self-test"
     if_fails: "a release dogfoods one verb at one short prompt with thinking off and calls the model family working"
+  - id: FALSIFY-MCL-017
+    rule: "A recorded emergency scope applies to the gate called with no --scope, and is SAID; none recorded is the full ladder (#4086)"
+    prediction: "check_model_ladder.sh --self-test: the select table (no scope / another release / a prefix of the release -> the full ladder; one scope -> it applies; two scopes or a nameless one -> RED) lands on crux_smoke_scope.recorded_scope, and 4 module mutants are each killed; end to end, NO recorded scope judges the full ladder beside CRUX smoke receipts that would satisfy a scope (RED, no SCOPED: line), a recorded scope prints `SCOPED: <name>` and returns the SCOPE's verdict (green and red), --scope none and a scope for another release judge the full ladder, two scopes are RED judging neither, and the receipts are found through MODEL_LADDER_CRUX_DIR; 4 dispatch mutants are each killed. check_dogfood_no_defer.sh: a declared gate's `SCOPED:` line is carried into its dogfood row, green or red, and a row with none stays plain (3 mutants)"
+    test: "bash scripts/check_model_ladder.sh --self-test && bash scripts/check_dogfood_no_defer.sh --self-test"
+    if_fails: "the dogfood's declared ladder gate judges the full ladder while the release gate judges the recorded scope -- two gates, one release, opposite verdicts (0.69.1, #4086) -- or a scoped pass reads as `exit=0`, indistinguishable from every rung green"
 
 qa_gate:
   id: F-MCL-001
@@ -473,3 +513,14 @@ qa_gate:
     - every_inventory_model_measured_and_green_on_cuda
   pass_criteria: "check_model_ladder.sh exits 0 with executed >= 1 and a non-empty measured inventory on every required host"
   falsification: "plant a receipt with cuda.fallback=true → exit 1"
+
+# ONT-8: one evidence block — PROV-O names, one L-enum (ProofLevel). The level is MEASURED, not declared: it is what
+# the cited command printed for this contract at the time below. Checked by `pv lint --gate evidence`.
+evidence:
+  level: L2
+  mark: C
+  provenance:
+    wasGeneratedBy:
+      command: "pv proof-status contracts/ --format json"
+    wasAttributedTo: pv
+    generatedAtTime: "2026-09-24T08:22:07Z"

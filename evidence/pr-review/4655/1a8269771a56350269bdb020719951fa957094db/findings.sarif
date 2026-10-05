@@ -1,0 +1,117 @@
+{
+ "$schema": "https://json.schemastore.org/sarif-2.1.0.json",
+ "version": "2.1.0",
+ "runs": [
+  {
+   "tool": {
+    "driver": {
+     "name": "manual-delta-review",
+     "informationUri": "https://github.com/paiml/aprender",
+     "rules": []
+    }
+   },
+   "invocations": [
+    {
+     "executionSuccessful": true,
+     "commandLine": "bash guards + docker rust:1.95-slim on the C218 new scope of PR 4655 (654995fa48..1a8269771a)"
+    }
+   ],
+   "results": [
+    {
+     "ruleId": "review.census-equals-main",
+     "level": "note",
+     "message": {
+      "text": "85b91b9403 restores contracts/census.json to origin/main 430be6524f bytes; check_census_derived PASS."
+     },
+     "properties": {
+      "grounding": "measured",
+      "command": [
+       "bash",
+       "scripts/check_census_derived.sh"
+      ],
+      "exit_code": 0,
+      "stdout_sha256": "63d659a61481d4133e989454e0c62ef30a113df65482f547ecdf06e49f4e254b",
+      "failure_scenario": "A census.json differing from its derivation would make README/contract counts lie; the check pins it to main."
+     }
+    },
+    {
+     "ruleId": "review.cb200-wired-by-wrapper",
+     "level": "note",
+     "message": {
+      "text": "80ff8e62d8: cb200_head_vs_base.sh takes --case-table (no --selftest) arm), so the meta-guard no longer counts the helper as a second, unwired guard; unwired 3, baseline untouched. Its wrapper check_cb200_head_vs_base.sh is dispatched by guard_tree.sh --no-cargo from ci.yml."
+     },
+     "properties": {
+      "grounding": "measured",
+      "command": [
+       "bash",
+       "scripts/check_guards_are_wired.sh"
+      ],
+      "exit_code": 0,
+      "stdout_sha256": "483012440849a411fdfd4c2bc29fb84dd3b4fef63305ea38817a4dfa8810189d",
+      "failure_scenario": "If the wrapper were not dispatched, the case table would run nowhere; check_guards_are_wired would then list check_cb200_head_vs_base.sh."
+     }
+    },
+    {
+     "ruleId": "review.cb200-case-table-runs",
+     "level": "note",
+     "message": {
+      "text": "The wrapper execs the helper's case table via --case-table: 0 bad."
+     },
+     "properties": {
+      "grounding": "measured",
+      "command": [
+       "bash",
+       "scripts/check_cb200_head_vs_base.sh"
+      ],
+      "exit_code": 0,
+      "stdout_sha256": "c1c4b8330ab36b2b9f09e6c1f4e4da7ecc8c88f0875be5c248c73e65294550de",
+      "failure_scenario": "A wrapper/helper flag mismatch exits 2 (unknown argument) and turns the guard red."
+     }
+    },
+    {
+     "ruleId": "review.roadmap-additive",
+     "level": "note",
+     "message": {
+      "text": "32f01547f0 restores the PMAT-4445 title (fragment + aggregate) to main's text; the roadmap diff is additive again."
+     },
+     "properties": {
+      "grounding": "measured",
+      "command": [
+       "bash",
+       "scripts/check_roadmap_diff_additive.sh"
+      ],
+      "exit_code": 0,
+      "stdout_sha256": "be5dec8a2dfe641bf789b89271ab9ca13c27f4d58d4a602ed918f12efc03576f",
+      "failure_scenario": "A non-lifecycle field edit in a PR rewrites another ticket's history; PMAT-980 refuses it."
+     }
+    },
+    {
+     "ruleId": "review.discharge-kill-slim",
+     "level": "note",
+     "message": {
+      "text": "1a8269771a: kill_group signals the process group through sh's builtin kill. In rust:1.95-slim (the clean-room image, no kill executable) the pre-fix lib test binary (32f01547f0) fails both discharge tests with 'outlived the kill' exactly as clean-room run 36980397248; the fixed binary passes 2/2. pgid is the child's own group (process_group(0)) and is passed as $1, never interpolated. No timeout changed."
+     },
+     "properties": {
+      "grounding": "measured",
+      "command": [
+       "docker",
+       "run",
+       "--rm",
+       "--init",
+       "-v",
+       "bin-new:/pv:ro",
+       "rust:1.95-slim",
+       "/pv",
+       "--exact",
+       "commands::discharge::tests::a_hung_elaboration_rejects_within_its_bound_and_kills_its_process_group",
+       "commands::discharge::tests::every_lake_call_is_bounded_and_a_held_pipe_cannot_stall_it"
+      ],
+      "exit_code": 0,
+      "stdout_sha256": "e226c1962cc0e008ef531a482ffe87abbaa09eefb54792620b389a5520f0e794",
+      "failure_scenario": "Without the fix a hung lake/lean in a procps-less image leaves its grandchildren running past the bound (orphaned sleep/lean holding pipes and CPU)."
+     }
+    }
+   ]
+  }
+ ]
+}

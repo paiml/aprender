@@ -1,0 +1,97 @@
+{
+ "$schema": "https://json.schemastore.org/sarif-2.1.0.json",
+ "version": "2.1.0",
+ "runs": [
+  {
+   "tool": {
+    "driver": {
+     "name": "manual-delta-review",
+     "informationUri": "https://github.com/paiml/aprender",
+     "rules": []
+    }
+   },
+   "invocations": [
+    {
+     "executionSuccessful": true,
+     "commandLine": "git/python3 on 654995fa48..771cdbca3e of PR 4655"
+    }
+   ],
+   "results": [
+    {
+     "ruleId": "review.survivor-table-refactor",
+     "level": "note",
+     "message": {
+      "text": "6a4d92f909 split load_equiv/check/self_test of scripts/ci/mutants_survivor_table.py into helpers. Read line by line against the old bodies: the row checks, their order, messages, the shard-collect order (meta errs, runs, universe compare, outcome tally), _verdict (killed first, unkilled+proof=equivalent, else survived), summary print before survivor errors, and all 24 self-test rows (14 table + 10 equivalents, same names/why strings) are preserved. --self-test: 24 ok, PASS."
+     },
+     "properties": {
+      "grounding": "measured",
+      "command": [
+       "python3",
+       "scripts/ci/mutants_survivor_table.py",
+       "--self-test"
+      ],
+      "exit_code": 0,
+      "stdout_sha256": "2233c599f79e957e34239137716d76eda8a11b248a070c826162b455438e80e0",
+      "failure_scenario": "A reordered or dropped check would change which RED message fires; each self-test row pins its reason string and all pass.",
+      "precision_class": "advisory"
+     }
+    },
+    {
+     "ruleId": "review.discharge-kill-group",
+     "level": "note",
+     "message": {
+      "text": "1a8269771a kill_group now runs sh -c 'kill -s KILL -- \"-$1\"' sh <pgid>. pgid is a u32 passed as a positional argument, never interpolated into the script: no injection. Throwaway harness under dash: a start_new_session child with two sleeping grandchildren, killed by pgid, left 0 members in the group; the sh helper is not in the target group. Fallback child.kill()/wait() kept. Target is -pgid of the child's own pid, not a pattern."
+     },
+     "properties": {
+      "grounding": "measured",
+      "command": [
+       "python3",
+       "harness: kill -s KILL -- -pgid via dash"
+      ],
+      "exit_code": 0,
+      "stdout_sha256": "3ed68f83b6c1fa96e624953ff9bcafe8c88eded0e4e8f1824362e36dc3019a1b",
+      "failure_scenario": "A missing builtin or leaked group would leave pgrep -g non-empty; it was empty.",
+      "precision_class": "advisory"
+     }
+    },
+    {
+     "ruleId": "review.levels-assertion-moved",
+     "level": "note",
+     "message": {
+      "text": "771cdbca3e: the 3-copy loop (stale_level_pairings empty AND text.contains(ladder_block)) moved verbatim, same two assert messages, same three paths, into readme_contract::ladder_doc_copies_carry_the_enum_block; unreadable copy still panics. The lib test keeps the enum half. stale_level_pairings made pub (levels is pub mod); provable-contracts is a dev-dependency of aprender-core and workspace_root() exists. Assertion moved, not weakened or deleted. Not compiled here (no cargo, by instruction)."
+     },
+     "properties": {
+      "grounding": "measured",
+      "command": [
+       "git",
+       "show",
+       "771cdbca3e"
+      ],
+      "exit_code": 0,
+      "stdout_sha256": "19b05a3af8d8b001067d1d32752b19bafb39413bc4105996e80b0b51bcec5f17",
+      "failure_scenario": "A weakened move would drop the contains(block) or stale checks; both present.",
+      "precision_class": "advisory"
+     }
+    },
+    {
+     "ruleId": "review.fold-bookkeeping",
+     "level": "note",
+     "message": {
+      "text": "85b91b9403 (census.json to main), 80ff8e62d8 (cb200 helper --selftest -> --case-table; the only caller check_cb200_head_vs_base.sh updated; check_guards_are_wired.sh PASS ratcheted), 32f01547f0 (PMAT-4445 title text restored to main in fragment and aggregate identically), 3fd0873ac4 evidence-only. No gate weakened."
+     },
+     "properties": {
+      "grounding": "measured",
+      "command": [
+       "bash",
+       "scripts/check_guards_are_wired.sh"
+      ],
+      "exit_code": 0,
+      "stdout_sha256": "b232631229567e665162818e0de1c42fb53fd9f2f80f89afcaaaa06bd7677f83",
+      "failure_scenario": "A leftover --selftest caller would exit 2; none found.",
+      "precision_class": "advisory"
+     }
+    }
+   ]
+  }
+ ]
+}

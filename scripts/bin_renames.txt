@@ -1,0 +1,14 @@
+# Declared [[bin]] renames: <old> <new>. The dogfood ledger gate (G2.2/G2.3,
+# scripts/lib/dogfood_coverage_gate.py) compares the comparand's <old> rows as
+# rows of <new>. #4430: every shipped bin is aprender-*. Old names to retire
+# from the fleet are exactly the left column.
+alimentar            aprender-data
+presentar            aprender-present
+ptop                 aprender-ptop
+score                aprender-score
+simular              aprender-simulate
+trueno-rag           aprender-rag
+trueno-zram          aprender-zram
+verificar            aprender-verify
+apr-qa-readme-sync   aprender-qa-readme-sync
+apr-corpus-ingest    aprender-corpus-ingest

@@ -95,7 +95,7 @@ theorem list_roundtrip (bs : List Block) (h : ∀ b ∈ bs, anthNative b) :
   induction bs with
   | nil => rfl
   | cons b bs ih =>
-      have hb : anthNative b := h b (List.mem_cons_self b bs)
+      have hb : anthNative b := h b (List.mem_cons_self)
       have hbs : ∀ b' ∈ bs, anthNative b' := fun b' hb' =>
         h b' (List.mem_cons_of_mem b hb')
       simp only [List.map_cons, block_roundtrip b hb, ih hbs]
@@ -151,7 +151,7 @@ theorem gem_list_roundtrip (bs : List Block) (h : ∀ b ∈ bs, gemNative b) :
   induction bs with
   | nil => rfl
   | cons b bs ih =>
-      have hb : gemNative b := h b (List.mem_cons_self b bs)
+      have hb : gemNative b := h b (List.mem_cons_self)
       have hbs : ∀ b' ∈ bs, gemNative b' := fun b' hb' =>
         h b' (List.mem_cons_of_mem b hb')
       simp only [List.map_cons, gem_block_roundtrip b hb, ih hbs]
@@ -188,7 +188,7 @@ theorem cross_harness_list (bs : List Block) (h : ∀ b ∈ bs, sharedCore b) :
   induction bs with
   | nil => rfl
   | cons b bs ih =>
-      have hb : sharedCore b := h b (List.mem_cons_self b bs)
+      have hb : sharedCore b := h b (List.mem_cons_self)
       have hbs : ∀ b' ∈ bs, sharedCore b' := fun b' hb' =>
         h b' (List.mem_cons_of_mem b hb')
       simp only [List.map_cons, cross_harness_block b hb, ih hbs]

@@ -1,6 +1,6 @@
 //! Update README.md certification table from models.csv.
 //!
-//! Usage: apr-qa-readme-sync [--csv PATH] [--readme PATH]
+//! Usage: aprender-qa-readme-sync [--csv PATH] [--readme PATH]
 //!
 //! Argument parsing is DECLARATIVE (clap derive). It used to be a hand-rolled
 //! `while i < args.len()` loop whose `_ => {}` catch-all silently swallowed
@@ -35,7 +35,7 @@ fn find_project_root() -> Option<PathBuf> {
 /// Update the README.md certification table from models.csv.
 #[derive(Debug, Parser)]
 #[command(
-    name = "apr-qa-readme-sync",
+    name = "aprender-qa-readme-sync",
     version = concat!(env!("CARGO_PKG_VERSION"), " (", env!("APR_GIT_SHA"), ")"),
     about = "Updates README.md certification table from models.csv",
     long_about = None
@@ -134,7 +134,7 @@ mod tests {
 
     #[test]
     fn test_no_args_leaves_both_paths_unset() {
-        let cli = Cli::try_parse_from(["apr-qa-readme-sync"]).expect("no args must parse");
+        let cli = Cli::try_parse_from(["aprender-qa-readme-sync"]).expect("no args must parse");
         assert!(cli.csv.is_none(), "csv default is resolved at runtime");
         assert!(
             cli.readme.is_none(),
@@ -145,7 +145,7 @@ mod tests {
     #[test]
     fn test_both_flags_are_honoured() {
         let cli = Cli::try_parse_from([
-            "apr-qa-readme-sync",
+            "aprender-qa-readme-sync",
             "--csv",
             "/tmp/models.csv",
             "--readme",
@@ -162,8 +162,11 @@ mod tests {
     /// silently dropped and the tool ran with defaults.
     #[test]
     fn test_unknown_flag_is_error() {
-        let err = Cli::try_parse_from(["apr-qa-readme-sync", "--definitely-not-a-real-flag-xyz"])
-            .expect_err("an unknown flag must be rejected");
+        let err = Cli::try_parse_from([
+            "aprender-qa-readme-sync",
+            "--definitely-not-a-real-flag-xyz",
+        ])
+        .expect_err("an unknown flag must be rejected");
         assert_eq!(err.kind(), ErrorKind::UnknownArgument);
         assert_ne!(err.exit_code(), 0, "must exit non-zero");
     }
@@ -171,7 +174,7 @@ mod tests {
     /// A near-miss of a real flag must be rejected too, not silently ignored.
     #[test]
     fn test_misspelled_known_flag_is_error() {
-        let err = Cli::try_parse_from(["apr-qa-readme-sync", "--csvv", "/tmp/models.csv"])
+        let err = Cli::try_parse_from(["aprender-qa-readme-sync", "--csvv", "/tmp/models.csv"])
             .expect_err("--csvv must be rejected");
         assert_ne!(err.exit_code(), 0, "must exit non-zero");
     }
@@ -180,7 +183,7 @@ mod tests {
     /// and the hand-rolled loop ignored them.
     #[test]
     fn test_stray_positional_is_error() {
-        let err = Cli::try_parse_from(["apr-qa-readme-sync", "models.csv"])
+        let err = Cli::try_parse_from(["aprender-qa-readme-sync", "models.csv"])
             .expect_err("a stray positional must be rejected");
         assert_ne!(err.exit_code(), 0, "must exit non-zero");
     }
@@ -191,7 +194,7 @@ mod tests {
     #[test]
     fn test_flag_without_value_is_error() {
         for flag in ["--csv", "--readme"] {
-            let parsed = Cli::try_parse_from(["apr-qa-readme-sync", flag]);
+            let parsed = Cli::try_parse_from(["aprender-qa-readme-sync", flag]);
             assert!(
                 parsed.is_err(),
                 "{flag} with no value must be an error, not a silent default"
@@ -213,7 +216,7 @@ mod tests {
     /// `--help` must exit 0 and print real help.
     #[test]
     fn test_help_exits_zero_with_substantial_output() {
-        let err = Cli::try_parse_from(["apr-qa-readme-sync", "--help"])
+        let err = Cli::try_parse_from(["aprender-qa-readme-sync", "--help"])
             .expect_err("--help short-circuits parsing via an Err carrying the help text");
         assert_eq!(err.kind(), ErrorKind::DisplayHelp);
         assert_eq!(err.exit_code(), 0, "--help must exit 0");
@@ -235,7 +238,7 @@ mod tests {
     /// `-h` was accepted by the old parser and must still be.
     #[test]
     fn test_short_help_still_accepted() {
-        let err = Cli::try_parse_from(["apr-qa-readme-sync", "-h"])
+        let err = Cli::try_parse_from(["aprender-qa-readme-sync", "-h"])
             .expect_err("-h short-circuits parsing");
         assert_eq!(err.kind(), ErrorKind::DisplayHelp);
         assert_eq!(err.exit_code(), 0, "-h must exit 0");

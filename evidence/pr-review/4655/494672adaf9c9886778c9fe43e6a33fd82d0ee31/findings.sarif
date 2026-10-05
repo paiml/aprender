@@ -1,0 +1,203 @@
+{
+  "$schema": "https://docs.oasis-open.org/sarif/sarif/v2.1.0/errata01/os/schemas/sarif-schema-2.1.0.json",
+  "version": "2.1.0",
+  "runs": [
+    {
+      "tool": {
+        "driver": {
+          "name": "pmat"
+        }
+      },
+      "invocations": [
+        {
+          "executionSuccessful": true,
+          "toolExecutionNotifications": []
+        }
+      ],
+      "results": [
+        {
+          "ruleId": "complexity_delta",
+          "level": "note",
+          "message": {
+            "text": "pmat complexity: 184 function/rule entries above threshold are new or increased vs the merge-base (127 in new files, 57 increases in modified files); worst new cognitive 255 scripts/token_usage_report.py::claude. Advisory under C218 scope."
+          },
+          "properties": {
+            "grounding": "measured",
+            "command": [
+              "pmat",
+              "analyze",
+              "complexity",
+              "--format",
+              "json",
+              "--path",
+              "."
+            ],
+            "exit_code": 0,
+            "stdout_sha256": "04bcf01e0031c2d291d22d2d0ae64f8b0fb61edeae4c8a262d59dea865b29342",
+            "failure_scenario": "Hard-to-review high-cognitive helper scripts (Python/Rust) raise the chance a later edit breaks them unnoticed; no behavioural failure is claimed.",
+            "precision_class": "advisory"
+          }
+        },
+        {
+          "ruleId": "fg_vacuity",
+          "level": "warning",
+          "message": {
+            "text": "scripts/check_mutants_feature_groups.sh:103: `done < ci/mutants-feature-groups.txt` runs under `set -uo pipefail` (no -e); a missing or empty groups file skips the loop with bad=0 and the script prints PASS (loop shape reproduced; agy raised the same)."
+          },
+          "properties": {
+            "grounding": "measured",
+            "command": [
+              "bash",
+              "-c",
+              "set -uo pipefail; bad=0; while read -r x; do bad=1; done < /nonexistent/file 2>/dev/null; echo \"bad=$bad\""
+            ],
+            "exit_code": 0,
+            "stdout_sha256": "ef6b8267de4470cd3f7e17f90a04055e85d316f7057fc75ab7be2d9e3def5421",
+            "failure_scenario": "If ci/mutants-feature-groups.txt is deleted, renamed or truncated to zero bytes, the real-groups-file arm of ci.yml:464 reports PASS having checked zero rows, so a broken or cuda-bearing groups table is never refused.",
+            "precision_class": "advisory"
+          }
+        },
+        {
+          "ruleId": "shfl_full_mask_uniform",
+          "level": "note",
+          "message": {
+            "text": "emit_scores_warp issues shfl.sync.down with membermask 0xFFFFFFFF inside a loop gated by `pp < n_c` where pp starts at the warp id and steps by WARPS: the predicate is warp-uniform, so every lane reaches the shuffle (no UB from non-participating lanes)."
+          },
+          "properties": {
+            "grounding": "cited",
+            "source": "nvidia-cuda-docs MCP search_cuda_docs: PTX ISA \u00a79.7.10.6 shfl.sync",
+            "excerpt": "`shfl.sync` will cause executing thread to wait until all non-exited threads corresponding to `membermask` have executed `shfl.sync` with the same qualifiers and same `membermask` value before resuming execution.",
+            "excerpt_sha256": "85c61796b98536350e0c918c72bb9d405e93df1ca2bdc792e3d63f2ea9b0e555",
+            "failure_scenario": "If the loop predicate were lane-dependent, lanes outside the membermask would source undefined registers and corrupt the attention score; it is not lane-dependent here.",
+            "precision_class": "advisory"
+          }
+        },
+        {
+          "ruleId": "ptx_global_init_align",
+          "level": "note",
+          "message": {
+            "text": "iq3s/kvalues_iq4nl tables are emitted as `.global .align 4 .u32 name[N] = { ... }`: initializers on .global arrays of .u32 with a power-of-two .align are valid PTX."
+          },
+          "properties": {
+            "grounding": "cited",
+            "source": "nvidia-cuda-docs MCP search_cuda_docs: PTX ISA \u00a75.4 variable initializers",
+            "excerpt": "Currently, variable initialization is supported only for constant and global state spaces. Variables in constant and global state spaces with no explicit initializer are initialized to zero by default.",
+            "excerpt_sha256": "079565b5c71a6916f8c63c95c698a8f354d8f8edc2a21e051afb53600e23ad44",
+            "failure_scenario": "A table in an unsupported state space or with a non-power-of-two alignment would make ptxas reject the module at load and take the whole quantised GPU path down.",
+            "precision_class": "advisory"
+          }
+        }
+      ]
+    },
+    {
+      "tool": {
+        "driver": {
+          "name": "nvidia-cuda-docs"
+        }
+      },
+      "invocations": [
+        {
+          "executionSuccessful": true,
+          "toolExecutionNotifications": []
+        }
+      ],
+      "results": []
+    },
+    {
+      "tool": {
+        "driver": {
+          "name": "crux"
+        }
+      },
+      "invocations": [
+        {
+          "executionSuccessful": true,
+          "toolExecutionNotifications": []
+        }
+      ],
+      "results": [
+        {
+          "ruleId": "crux_coverage_none",
+          "level": "note",
+          "message": {
+            "text": "The diff adds CLI subcommands `ptx-debug` and `surface` to contracts/apr-cli-commands-v1.yaml; no contracts/crux-*.yaml names ptx-debug (crux_coverage: none, itself a finding per \u00a73.C)."
+          },
+          "properties": {
+            "grounding": "asserted",
+            "rationale": "grep over contracts/crux-*.yaml for ptx-debug/ptx_debug returned no file; competitor behaviour for these surfaces was not compared.",
+            "failure_scenario": "A user-facing ptx-debug CLI ships with no CRUX comparison, so a competitive-gap regression on that surface would not be detected by the crux ladder.",
+            "precision_class": "advisory"
+          }
+        }
+      ]
+    },
+    {
+      "tool": {
+        "driver": {
+          "name": "cargo-mutants"
+        }
+      },
+      "invocations": [
+        {
+          "executionSuccessful": true,
+          "toolExecutionNotifications": []
+        }
+      ],
+      "results": []
+    },
+    {
+      "tool": {
+        "driver": {
+          "name": "antigravity"
+        }
+      },
+      "invocations": [
+        {
+          "executionSuccessful": true,
+          "toolExecutionNotifications": []
+        }
+      ],
+      "results": [
+        {
+          "ruleId": "agy_ci_mutants_feature_groups_vacuity",
+          "level": "warning",
+          "message": {
+            "text": "`check_mutants_feature_groups.sh` suffers from vacuous success if `ci/mutants-feature-groups.txt` is empty."
+          },
+          "properties": {
+            "grounding": "asserted",
+            "rationale": "raised by the antigravity reviewer; asserted by it, not re-verified by the primary (reverified_by_primary: false)",
+            "failure_scenario": "If `ci/mutants-feature-groups.txt` is empty, the validation loop will simply not execute and the script will exit with a 0 status (success). This violates the CI generation best practices rule for anti-vacuity, as the absence of files to check is treated as a success rather than a failure.",
+            "precision_class": "advisory"
+          }
+        },
+        {
+          "ruleId": "agy_ci_scripts_missing_self_test",
+          "level": "warning",
+          "message": {
+            "text": "Multiple CI checker scripts are missing the required `--self-test` mechanism."
+          },
+          "properties": {
+            "grounding": "asserted",
+            "rationale": "raised by the antigravity reviewer; asserted by it, not re-verified by the primary (reverified_by_primary: false)",
+            "failure_scenario": "The scripts `check_shell_lint_ratchet.sh`, `check_surface_audit_bins.sh`, `check_release_wall_time.sh`, and `check_mutants_feature_groups.sh` do not implement the required `--self-test` flag. If the scripts' validation logic breaks or regresses, it could silently fail to catch broken code or invalid data since its own failure modes are never asserted against known-bad data.",
+            "precision_class": "advisory"
+          }
+        },
+        {
+          "ruleId": "agy_gpu_param_type_mismatch",
+          "level": "warning",
+          "message": {
+            "text": "CUDA launch configuration passes 64-bit integers to 32-bit PTX kernel parameters."
+          },
+          "properties": {
+            "grounding": "asserted",
+            "rationale": "raised by the antigravity reviewer; asserted by it, not re-verified by the primary (reverified_by_primary: false)",
+            "failure_scenario": "In `qwen35_dequant_f32`, `k` and `n` are passed as `u64` via the `args` array into `qp_launch`, which casts them to `*mut c_void`. However, the corresponding PTX kernel prototypes (`f16_dequant_to_f32`, `iq4_xs_dequant_to_f32`, etc.) declare these parameters as `.u32`. This creates a type and size mismatch between host memory (8 bytes) and device parameters (4 bytes), which relies on little-endian truncation and could lead to incorrect kernel reads or memory safety issues on different driver versions or layouts.",
+            "precision_class": "advisory"
+          }
+        }
+      ]
+    }
+  ]
+}

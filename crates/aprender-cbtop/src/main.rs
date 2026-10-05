@@ -16,7 +16,7 @@ use clap::{Parser, Subcommand};
 
 /// Compute Block Top - Real-time load testing and hardware monitoring TUI
 #[derive(Parser, Debug)]
-#[command(name = "cbtop")]
+#[command(name = "aprender-cbtop")]
 #[command(author = "Trueno Engineering")]
 #[command(version = concat!(env!("CARGO_PKG_VERSION"), " (", env!("APR_GIT_SHA"), ")"))]
 #[command(about = "Real-time load testing and hardware monitoring TUI", long_about = None)]
@@ -33,16 +33,16 @@ struct Cli {
     #[arg(short, long, default_value = "0")]
     device: u32,
 
-    /// Compute backend: simd, wgpu, cuda, all
-    #[arg(short, long, default_value = "all")]
+    /// Compute backend
+    #[arg(short, long, default_value = "all", value_parser = BACKENDS, ignore_case = true)]
     backend: String,
 
-    /// Load profile: idle, light, medium, heavy, stress
-    #[arg(short, long, default_value = "idle")]
+    /// Load profile
+    #[arg(short, long, default_value = "idle", value_parser = LOADS, ignore_case = true)]
     load: String,
 
-    /// Workload type: gemm, conv, attention, bandwidth, elementwise, reduction, all
-    #[arg(short, long, default_value = "gemm")]
+    /// Workload type
+    #[arg(short, long, default_value = "gemm", value_parser = WORKLOADS, ignore_case = true)]
     workload: String,
 
     /// Problem size in elements
@@ -69,8 +69,8 @@ struct Cli {
     #[arg(long)]
     headless: bool,
 
-    /// Output format for headless mode: json, text
-    #[arg(long, default_value = "text")]
+    /// Output format for headless mode
+    #[arg(long, default_value = "text", value_parser = FORMATS, ignore_case = true)]
     format: String,
 
     /// Benchmark duration in seconds (headless mode)
@@ -86,12 +86,12 @@ struct Cli {
 enum Commands {
     /// Run benchmark in headless mode
     Bench {
-        /// Compute backend: simd, wgpu, cuda, all
-        #[arg(short, long, default_value = "simd")]
+        /// Compute backend
+        #[arg(short, long, default_value = "simd", value_parser = BACKENDS, ignore_case = true)]
         backend: String,
 
-        /// Workload type: gemm, dot, elementwise, reduction
-        #[arg(short, long, default_value = "gemm")]
+        /// Workload type
+        #[arg(short, long, default_value = "gemm", value_parser = WORKLOADS, ignore_case = true)]
         workload: String,
 
         /// Problem size in elements
@@ -102,8 +102,8 @@ enum Commands {
         #[arg(short, long, default_value = "5")]
         duration: u64,
 
-        /// Output format: json, text
-        #[arg(short, long, default_value = "json")]
+        /// Output format
+        #[arg(short, long, default_value = "json", value_parser = FORMATS, ignore_case = true)]
         format: String,
 
         /// Output file path
@@ -118,8 +118,8 @@ enum Commands {
         #[arg(long, default_value = "5.0")]
         fail_on_regression: f64,
 
-        /// Compare multiple backends (comma-separated)
-        #[arg(long)]
+        /// Compare multiple backends (comma-separated: simd, wgpu, cuda, all)
+        #[arg(long, value_parser = parse_backend_list)]
         compare: Option<String>,
     },
 
@@ -153,8 +153,8 @@ pub(crate) enum OptimizeAction {
         #[arg(short, long, default_value = "benchmarks/baseline.json")]
         baseline: std::path::PathBuf,
 
-        /// Output format: text, json
-        #[arg(short, long, default_value = "text")]
+        /// Output format
+        #[arg(short, long, default_value = "text", value_parser = FORMATS)]
         format: String,
 
         /// Output file (stdout if not specified)
@@ -176,10 +176,40 @@ pub(crate) enum OptimizeAction {
         #[arg(long)]
         quick: bool,
 
-        /// Output format: text, json
-        #[arg(short, long, default_value = "text")]
+        /// Output format
+        #[arg(short, long, default_value = "text", value_parser = FORMATS)]
         format: String,
     },
+}
+
+// G1.3: every enumerated flag is checked by clap, so a typo is a usage error (exit 2)
+// instead of a silent fallback in the parse_* functions below.
+const BACKENDS: [&str; 4] = ["simd", "wgpu", "cuda", "all"];
+const LOADS: [&str; 5] = ["idle", "light", "medium", "heavy", "stress"];
+const WORKLOADS: [&str; 8] = [
+    "gemm",
+    "conv",
+    "conv2d",
+    "attention",
+    "bandwidth",
+    "elementwise",
+    "reduction",
+    "all",
+];
+const FORMATS: [&str; 2] = ["text", "json"];
+
+/// `--compare` takes a comma-separated backend list; each item must be one of [`BACKENDS`].
+fn parse_backend_list(s: &str) -> Result<String, String> {
+    for item in s.split(',') {
+        let item = item.trim().to_lowercase();
+        if !BACKENDS.contains(&item.as_str()) {
+            return Err(format!(
+                "invalid backend '{item}' [possible values: {}]",
+                BACKENDS.join(", ")
+            ));
+        }
+    }
+    Ok(s.to_string())
 }
 
 fn parse_backend(s: &str) -> ComputeBackend {
@@ -286,4 +316,56 @@ fn main() -> Result<(), CbtopError> {
 
     let mut app = CbtopApp::new(config)?;
     app.run()
+}
+
+#[cfg(test)]
+mod g13_tests {
+    use super::Cli;
+    use clap::{CommandFactory, Parser};
+
+    fn rejects(args: &[&str]) -> bool {
+        Cli::try_parse_from(args).is_err()
+    }
+
+    #[test]
+    fn g13_name_is_the_target_name() {
+        assert_eq!(Cli::command().get_name(), "aprender-cbtop");
+    }
+
+    #[test]
+    fn g13_bogus_enumerated_values_are_usage_errors() {
+        for bad in [
+            &["aprender-cbtop", "bench", "--backend", "nosuch"][..],
+            &["aprender-cbtop", "bench", "--workload", "dot"],
+            &["aprender-cbtop", "bench", "--format", "nosuch"],
+            &["aprender-cbtop", "bench", "--compare", "simd,nosuch"],
+            &["aprender-cbtop", "--load", "nosuch"],
+            &["aprender-cbtop", "--backend", "nosuch"],
+            &["aprender-cbtop", "--workload", "nosuch"],
+            &["aprender-cbtop", "--format", "nosuch"],
+            &[
+                "aprender-cbtop",
+                "optimize",
+                "analyze",
+                "--format",
+                "nosuch",
+            ],
+            &["aprender-cbtop", "optimize", "check", "--format", "nosuch"],
+        ] {
+            assert!(rejects(bad), "accepted {bad:?}");
+        }
+    }
+
+    #[test]
+    fn g13_valid_values_parse_case_insensitively() {
+        for ok in [
+            &["aprender-cbtop", "bench", "--backend", "SIMD"][..],
+            &["aprender-cbtop", "bench", "--workload", "conv2d"],
+            &["aprender-cbtop", "bench", "--compare", "simd, all"],
+            &["aprender-cbtop", "--load", "stress", "--format", "json"],
+            &["aprender-cbtop", "optimize", "check", "--format", "json"],
+        ] {
+            assert!(!rejects(ok), "rejected {ok:?}");
+        }
+    }
 }

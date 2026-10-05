@@ -209,7 +209,8 @@ print(par["prompt_ids"], par["template_prompt_ids"], par["prompt_ids_equal"], "|
 #     official must still run on the template's ids, and --prompt-source apr on apr's. (A mutant that let the
 #     official row reuse apr's ids survived the table until this case: the lib never passes apr's stderr there.)
 hp=$(python3 -c 'import socket;s=socket.socket();s.bind(("127.0.0.1",0));print(s.getsockname()[1])')
-"$BIN/llama-server" -m /stub --port "$hp" > "$TMP/helper-srv.log" 2>&1 &
+stub_srv="$BIN/llama-server"  # the stub, reached through a variable like every comparator binary (R1)
+"$stub_srv" -m /stub --port "$hp" > "$TMP/helper-srv.log" 2>&1 &
 hsp=$!
 for _ in $(seq 1 50); do python3 -c 'import sys,urllib.request;urllib.request.urlopen("http://127.0.0.1:%s/health"%sys.argv[1],timeout=1)' "$hp" 2>/dev/null && break; sleep 0.1; done
 printf '[DEBUG] add_bos=true, encoded 4 tokens: [7, 9, 9, 1]\n' > "$TMP/drift.err"

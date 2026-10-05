@@ -1,0 +1,7 @@
+# Declared ledger FEATURE renames: <bin>TAB<old feature>TAB<new feature>. The dogfood gate (G2.2/G2.3,
+# scripts/lib/dogfood_coverage_gate.py) compares the comparand's <old> row as the <new> row. The old text
+# still in the ledger, or a <new> the ledger lacks, is RED. Lines starting with # are comments.
+# S13 (cop ruling): aprender-simulate's web routes are a library feature no command serves; reworded, not dropped.
+aprender-simulate	GET / (visualization UI)	unserved: GET / (visualization UI; library feature web; no aprender-simulate command starts the server)
+aprender-simulate	GET /health (visualization)	unserved: GET /health (visualization; library feature web; no aprender-simulate command starts the server)
+aprender-simulate	GET /ws (visualization, WebSocket)	unserved: GET /ws (visualization WebSocket; library feature web; no aprender-simulate command starts the server)

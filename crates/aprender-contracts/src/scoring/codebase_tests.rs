@@ -225,6 +225,7 @@ kani_harnesses:
                 function: None,
                 signature: None,
                 notes: None,
+                kernel: false,
             },
             crate::binding::KernelBinding {
                 contract: "test-v1.yaml".into(),
@@ -234,6 +235,7 @@ kani_harnesses:
                 function: None,
                 signature: None,
                 notes: None,
+                kernel: false,
             },
         ],
     };
@@ -261,4 +263,77 @@ kani_harnesses:
         dimensions.contains(&"binding_coverage"),
         "Expected unimpl binding gap: {dimensions:?}"
     );
+}
+
+#[test]
+fn proof_depth_is_exact_for_falsified_obligations_of_bound_contracts() {
+    let yaml = r#"
+metadata:
+  version: "1.0.0"
+  description: "Depth"
+equations:
+  f:
+    formula: "f(x) = x"
+proof_obligations:
+  - type: invariant
+    property: "one"
+  - type: invariant
+    property: "two"
+falsification_tests:
+  - id: FALSIFY-D-001
+    rule: "r"
+    prediction: "p"
+    test: "t"
+    if_fails: "f"
+"#;
+    let contract = crate::schema::parse_contract_str(yaml).expect("parses");
+    let contracts = vec![
+        ("bound.yaml".to_string(), &contract),
+        ("unbound.yaml".to_string(), &contract),
+    ];
+    let bound: BTreeSet<&str> = ["bound.yaml"].into_iter().collect();
+    // Per obligation: 0.1 (type system) + 0.3 (L2); no Kani, no Lean -> mean 0.4.
+    let d = super::compute_proof_depth(&contracts, &bound);
+    assert!((d - 0.4).abs() < 1e-9, "depth={d}");
+    let none: BTreeSet<&str> = BTreeSet::new();
+    assert!(super::compute_proof_depth(&contracts, &none).abs() < 1e-12);
+}
+
+/// Kills `+=` -> `-=` / `*=` on the Kani (L3) and Lean (L4) weights in `compute_proof_depth`:
+/// with every level present the sum is exact and stays under the 1.0 cap.
+#[test]
+fn proof_depth_counts_kani_and_proved_lean_exactly() {
+    let yaml = r#"
+metadata:
+  version: "1.0.0"
+  description: "Depth L3/L4"
+equations:
+  f:
+    formula: "f(x) = x"
+proof_obligations:
+  - type: invariant
+    property: "one"
+    lean:
+      theorem: Depth.one
+      module: ProvableContracts.Depth
+      status: proved
+  - type: invariant
+    property: "two"
+falsification_tests:
+  - id: FALSIFY-D-002
+    rule: "r"
+    prediction: "p"
+    test: "t"
+    if_fails: "f"
+kani_harnesses:
+  - id: KANI-D-001
+    obligation: OBL-001
+    bound: 4
+"#;
+    let contract = crate::schema::parse_contract_str(yaml).expect("parses");
+    let contracts = vec![("bound.yaml".to_string(), &contract)];
+    let bound: BTreeSet<&str> = ["bound.yaml"].into_iter().collect();
+    // (0.1 + 0.3 + 0.4 + 0.2) + (0.1 + 0.3 + 0.4) = 1.8 over 2 obligations -> 0.9.
+    let d = super::compute_proof_depth(&contracts, &bound);
+    assert!((d - 0.9).abs() < 1e-9, "depth={d}");
 }

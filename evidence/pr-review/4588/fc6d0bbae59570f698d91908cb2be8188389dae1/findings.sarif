@@ -1,0 +1,303 @@
+{
+  "version": "2.1.0",
+  "$schema": "https://raw.githubusercontent.com/oasis-tcs/sarif-spec/master/Schemata/sarif-schema-2.1.0.json",
+  "runs": [
+    {
+      "tool": {
+        "driver": {
+          "name": "pmat",
+          "informationUri": "https://github.com/paiml/aprender",
+          "version": "checkout",
+          "rules": []
+        }
+      },
+      "invocations": [
+        {
+          "executionSuccessful": false,
+          "commandLine": "pmat query (index rebuilt at HEAD); dup sweep not run",
+          "toolExecutionNotifications": [
+            {
+              "level": "error",
+              "message": {
+                "text": "pmat duplication sweep (pr_review_duplication_scan.sh) NOT run at this head: it timed out at 420 s (rc 124) on the 15 MB merge-base diff at the previous head and was not re-attempted; pmat analyze complexity/tdg/satd not run (host load ~15). Only the index half ran: pmat query rebuilt the index at HEAD, rc 0. duplication_hits [] is non-measurement, not a clean search."
+              },
+              "properties": {
+                "grounding": "measured",
+                "command": [
+                  "pmat",
+                  "query",
+                  "cmd_viz_dashboard",
+                  "--limit",
+                  "3"
+                ],
+                "exit_code": 0,
+                "stdout_sha256": "c0f035166118e92165f3feb3e3d705166ee8660439a373d49b3a41e0c442c6e4"
+              }
+            }
+          ]
+        }
+      ],
+      "results": [
+        {
+          "ruleId": "PRREV-4588-DUP-NOT-RUN",
+          "level": "warning",
+          "message": {
+            "text": "Duplication sweep not run at this head (see pmat notification); duplication_hits [] is non-measurement. Index rebuilt at HEAD."
+          },
+          "properties": {
+            "grounding": "measured",
+            "command": [
+              "pmat",
+              "query",
+              "cmd_viz_dashboard",
+              "--limit",
+              "3"
+            ],
+            "exit_code": 0,
+            "stdout_sha256": "c0f035166118e92165f3feb3e3d705166ee8660439a373d49b3a41e0c442c6e4",
+            "failure_scenario": "This PR re-implements something already on main or a sibling branch and nothing here would say so.",
+            "precision_class": "advisory"
+          }
+        }
+      ]
+    },
+    {
+      "tool": {
+        "driver": {
+          "name": "cuda-docs-reviewer",
+          "informationUri": "https://github.com/paiml/aprender",
+          "version": "checkout",
+          "rules": []
+        }
+      },
+      "invocations": [
+        {
+          "executionSuccessful": true,
+          "commandLine": "search_cuda_docs x1 (primary seat; cuda-docs-reviewer agent not dispatched)"
+        }
+      ],
+      "results": [
+        {
+          "ruleId": "PRREV-4588-CUDA-NO-AUTHORITY",
+          "level": "note",
+          "message": {
+            "text": "gpu_profile.rs touch (S3.B trigger): doc-comment only, it REMOVES the 27-34x GB10 Qwen3/Qwen3.5 speed claim and adds no device-behaviour claim. The one query returned no authority for that ratio, which is consistent with removing it."
+          },
+          "properties": {
+            "grounding": "asserted",
+            "rationale": "The delta in a2625055cd for gpu_profile.rs is 2 comment lines; no code or device-behaviour assertion is added. The docs MCP holds no per-model GB10 throughput data, so there is nothing to cite for or against the removed ratio.",
+            "failure_scenario": "If the comment still asserted an unmeasured GB10 speed ratio, a reader would take it as a measured fact.",
+            "precision_class": "advisory"
+          }
+        }
+      ]
+    },
+    {
+      "tool": {
+        "driver": {
+          "name": "crux",
+          "informationUri": "https://github.com/paiml/aprender",
+          "version": "checkout",
+          "rules": []
+        }
+      },
+      "invocations": [
+        {
+          "executionSuccessful": false,
+          "commandLine": "not completed",
+          "toolExecutionNotifications": [
+            {
+              "level": "error",
+              "message": {
+                "text": "CRUX not completed for this head: the PR as a whole changes CLI surface (aprender-ptx-debug, apr-cli) and surface-to-contract mapping to crux-*.yaml was not redone. Recorded unreachable, never 'covers nothing'. Comparative-ratio grep over this delta's added lines: 0 hits (rc 1)."
+              },
+              "properties": {
+                "grounding": "measured",
+                "command": [
+                  "bash",
+                  "-c",
+                  "grep -ciE \"[0-9.]+ ?(x|×) ?(ollama|llama.cpp|vllm)\" <(git diff b2c1869663 HEAD -- README.md CHANGELOG.md crates/aprender-serve/src/cuda/gpu_profile.rs | grep ^+)"
+                ],
+                "exit_code": 1,
+                "stdout_sha256": "9a271f2a916b0b6ee6cecb2426f0b3206ef074578be55d9bc94f6f3fe3ab86aa"
+              }
+            }
+          ]
+        }
+      ],
+      "results": []
+    },
+    {
+      "tool": {
+        "driver": {
+          "name": "mutation",
+          "informationUri": "https://github.com/paiml/aprender",
+          "version": "checkout",
+          "rules": []
+        }
+      },
+      "invocations": [
+        {
+          "executionSuccessful": false,
+          "commandLine": "not run at this head",
+          "toolExecutionNotifications": [
+            {
+              "level": "error",
+              "message": {
+                "text": "Mutation consultation not run at this head. The PR touches guard scripts overall; the only script changed since the previous receipt is release_readiness.sh (its selftest, listed by the measured command). The receipt guard's 237-mutant set did not finish at the previous head and was not re-run: not_measured, never a pass."
+              },
+              "properties": {
+                "grounding": "measured",
+                "command": [
+                  "git",
+                  "diff",
+                  "--name-only",
+                  "b2c1869663",
+                  "HEAD",
+                  "--",
+                  "scripts/"
+                ],
+                "exit_code": 0,
+                "stdout_sha256": "57e9e8f4c48b2234b8ad2c09e903566fb05d716c9e2949303511548b0564a73f"
+              }
+            }
+          ]
+        }
+      ],
+      "results": []
+    },
+    {
+      "tool": {
+        "driver": {
+          "name": "antigravity",
+          "informationUri": "https://github.com/paiml/aprender",
+          "version": "checkout",
+          "rules": []
+        }
+      },
+      "invocations": [
+        {
+          "executionSuccessful": false,
+          "commandLine": "agy not run (permission denied by harness)",
+          "toolExecutionNotifications": [
+            {
+              "level": "error",
+              "message": {
+                "text": "agy was NOT run for this head: the harness permission classifier denied the headless agy invocation (needs --dangerously-skip-permissions) in this review seat, so no second-vendor review exists. Not retried or worked around. The binary resolves and reports a version."
+              },
+              "properties": {
+                "grounding": "measured",
+                "command": [
+                  "agy",
+                  "--version"
+                ],
+                "exit_code": 0,
+                "stdout_sha256": "22e988bfb2127d8584cc829f76868c2c85e138af32fe0989b29f7580b88a00a5"
+              }
+            }
+          ]
+        }
+      ],
+      "results": []
+    },
+    {
+      "tool": {
+        "driver": {
+          "name": "primary-delta-review",
+          "informationUri": "https://github.com/paiml/aprender",
+          "version": "checkout",
+          "rules": []
+        }
+      },
+      "invocations": [
+        {
+          "executionSuccessful": true,
+          "commandLine": "release_readiness --selftest; check_bashrs_gate; check_perf_claims_cite_receipts; manual diff read"
+        }
+      ],
+      "results": [
+        {
+          "ruleId": "PRREV-4588-RR-SELFTEST-SAME",
+          "level": "note",
+          "message": {
+            "text": "release_readiness.sh --selftest prints 30/30 rows at HEAD and the row names/order are identical to the pre-change file (a2625055cd^), so the SEC010 mkdir move did not drop or alter a case; mk's default 2nd arg mkdirs src, which already exists."
+          },
+          "properties": {
+            "grounding": "measured",
+            "command": [
+              "bash",
+              "scripts/release/release_readiness.sh",
+              "--selftest"
+            ],
+            "exit_code": 0,
+            "stdout_sha256": "6686503842ae89e6fd1a82cdd46747c6989703e9e5a5b276019e6deb1c2a5981",
+            "failure_scenario": "If the mk refactor had dropped a mkdir, the vault/crux selftest rows would fail or pass vacuously and the gate would look tested when it was not.",
+            "precision_class": "advisory"
+          }
+        },
+        {
+          "ruleId": "PRREV-4588-BASHRS-GATE",
+          "level": "note",
+          "message": {
+            "text": "scripts/check_bashrs_gate.sh exits 0: 490 files linted, 0 SEC/DET/IDEM errors, so the SEC010 fix cleared the gate without suppressing it."
+          },
+          "properties": {
+            "grounding": "measured",
+            "command": [
+              "bash",
+              "scripts/check_bashrs_gate.sh"
+            ],
+            "exit_code": 0,
+            "stdout_sha256": "fda9e2e969621b8b6b4ef02eb049ed53b1e379ca39ce829258c487a3cff7a095",
+            "failure_scenario": "A weakened or suppressed SEC010 rule would let unsafe shell merge under a green gate.",
+            "precision_class": "advisory"
+          }
+        },
+        {
+          "ruleId": "PRREV-4588-PERF-CLAIMS",
+          "level": "note",
+          "message": {
+            "text": "scripts/check_perf_claims_cite_receipts.sh exits 0: no new uncited speed comparison. The delta REMOVES the uncited 11.4 tok/s (README.md, CHANGELOG.md) and the 27-34x Qwen3 vs Qwen3.5 ratio (gpu_profile.rs doc comment); no 11.4 tok/s literal remains in those three files."
+          },
+          "properties": {
+            "grounding": "measured",
+            "command": [
+              "bash",
+              "scripts/check_perf_claims_cite_receipts.sh"
+            ],
+            "exit_code": 0,
+            "stdout_sha256": "9cc5a76b7bb3e51a21619716898a6794b888132e89aa6796f9a8d06023eea6e7",
+            "failure_scenario": "An uncited performance number left in README/CHANGELOG would publish a claim with no evidence receipt.",
+            "precision_class": "advisory"
+          }
+        },
+        {
+          "ruleId": "PRREV-4588-VIZ-TESTS",
+          "level": "note",
+          "message": {
+            "text": "5fbb267705 viz.rs dashboard tests match cmd_viz_dashboard by reading: config format emits port:, theme: \"..\", data_source type/path, URI prefixes trueno-db:// and prometheus:// are stripped, fs::write(?) propagates the error for a missing parent dir; tempfile is a dev-dependency of aprender-orchestrate. NOT compiled or run here (no cargo on this host)."
+          },
+          "properties": {
+            "grounding": "asserted",
+            "rationale": "Read cmd_viz_dashboard and Cargo.toml [dev-dependencies]; author reports cargo test on intel exit 0 at this head, which this review did not measure.",
+            "failure_scenario": "If a test asserted a literal the formatter does not emit, the test would fail in CI and block the merge queue.",
+            "precision_class": "advisory"
+          }
+        },
+        {
+          "ruleId": "PRREV-4588-NO-GATE-WEAKENED",
+          "level": "note",
+          "message": {
+            "text": "No gate weakened in the author commits since b2c1869663: census/contracts.nt/supported.yaml are regenerations (counts 1860->1889, one README contractCount line, README citation line numbers shifted by the README edit), README contract_count 1889 tracks the census, and the only script change is the selftest mkdir refactor. Regenerated values were not independently re-derived here (pv census needs intel)."
+          },
+          "properties": {
+            "grounding": "asserted",
+            "rationale": "Read all diffs of 50e84558d8, 52ea4f3b39, 2778ed5292, fc6d0bbae5, a2625055cd; the merge of intel/c196-4c4 (shapes_gate.rs / refines_gate_tests.rs) conflict resolution was NOT read in depth.",
+            "failure_scenario": "A regenerated artifact that silently bakes in a wrong count would let a stale gate read green.",
+            "precision_class": "advisory"
+          }
+        }
+      ]
+    }
+  ]
+}

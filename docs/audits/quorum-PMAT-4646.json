@@ -1,0 +1,272 @@
+{
+  "ticket": "PMAT-4646,PMAT-4651",
+  "base": "origin/main",
+  "base_resolved": "origin/main",
+  "base_note": "no origin/origin/main exists; judged against the local ref; brief_exclude (C45) kept out of the brief: docs/roadmaps/roadmap.yaml",
+  "head": "ce8036ebc14c1d54f90507c8b2686f993897a699",
+  "diff_sha256": "0c24a2f8e6681b31e8e7e5bfbe83edadb3c74f0d0879b70a29622e1ad74370f6",
+  "width": 3,
+  "executor": "agy",
+  "prompt_mode": "file",
+  "prompt_bytes": 238989,
+  "prompt_sha256": "164ada2b7f8e85a203342ec3fcb8b0573e270ee4cd2d5a1988aaa5f455efc14c",
+  "author": {
+    "model": "claude-opus-5-5",
+    "family": "claude",
+    "source": "flag"
+  },
+  "agreed": true,
+  "lanes": [
+    {
+      "lane": 1,
+      "status": "SUCCESS",
+      "verdict": "PASS",
+      "summary": "Diff correctly implements PMAT-4646 (mutants gate -> report-only ratchet, shrink-only debt file) and PMAT-4651 (re-date PP-LLAMA-001 rows 13/15/18/19/21 to 2026-10-15). Verified directly against the live tree: the ci.yml MUTANTS-RATCHET block's `exit 0` sits after WT/guard-tree/guard-cargo/sov.gate/determinism-compare are already enforced (lines 445-466 of .github/workflows/ci.yml), so no other required section is bypassed; only the now-dead GATE-MUTANTS-RULE block below it is skipped, exactly as the ticket requires. scripts/check_mutants_debt_ratchet.sh correctly implements shrink-only semantics including the zero-row edge case (command-substitution newline stripping makes the \"added\" comparison correctly empty when head shrinks to 0 rows), and its --self-test case table (R1-R16) matches the claimed regression coverage, including R14/R15/R16 targeting the three specific guard weaknesses (empty run id, mid-string file match, 6-field row) named by the embedded prior review. check_mutants_debt_ratchet.sh matches the `scripts/check_*.sh` glob that guard_tree.sh's `guard_universe()` enumerates, so it auto-wires with no further ci.yml change, confirming the roadmap AC. The pr-review-quorum.yml Arm 4 fix (pull-requests: read + ARM4_PR_HEAD_SHA falling back to the pulls API on merge_group) is correctly consumed by check_pr_review_arm4.sh's documented fallback (line 176-177), addressing the real defect that queued PRs read UNSIGNED. ci/mutants-debt.tsv (590 data rows) cites both source CI runs (36703131059 and 36725778557) as the roadmap claims. derived_expiries.json changes exactly the five entries keyed 13, 15, 18, 19, 21 (confirmed by tracing JSON key context around each hunk, including the lexicographic \"19\" < \"2\" < \"20\" < \"21\" ordering that made the last hunk's target non-obvious from the diff alone). No gate was weakened beyond what the ticket authorizes, no other section's behavior changed, and the diff's file set matches the AC's stated scope (ci.yml, debt file, guard script, roadmap entries, and the one queue-only pr-review-quorum.yml fix, plus generated evidence/roadmap outputs).",
+      "findings": [],
+      "raw_bytes": 5206,
+      "err_bytes": 0,
+      "envelope_status": "SUCCESS",
+      "verdict_source": "structured_output",
+      "executor": "claude-code",
+      "grounding_check": "parity",
+      "role": "counted",
+      "model": "claude-sonnet-5",
+      "model_measured": "claude-sonnet-5",
+      "model_source": "flag",
+      "family": "claude",
+      "brief_sha256": "164ada2b7f8e85a203342ec3fcb8b0573e270ee4cd2d5a1988aaa5f455efc14c",
+      "trace": {
+        "input_sha256": "9fc965b78c82c51a89aca2e97e9439408285eb392131c6759d3c91969e6a09ef",
+        "output_sha256": "012418627691494566b80f7a0794a60b428363bfeb05947ef41725ee91a53059",
+        "store": null,
+        "store_why": "almacen not provisioned yet (infra-27): the blobs stay in the round's gitignored .lanes dir"
+      },
+      "fallback": {
+        "judged_by": "claude-sonnet-5",
+        "exhausted": false,
+        "attempts": [
+          {
+            "model": "claude-sonnet-5",
+            "family": "claude",
+            "outcome": "answered"
+          }
+        ],
+        "skipped": []
+      }
+    },
+    {
+      "lane": 2,
+      "status": "SUCCESS",
+      "verdict": "PASS",
+      "summary": "The diff correctly implements both tickets. It converts the mutants gate to a ratchet mode backed by a shrink-only `ci/mutants-debt.tsv` and `check_mutants_debt_ratchet.sh` (as requested by PMAT-4646), without affecting other gates. It applies the explicitly requested `pr-review-quorum.yml` queue-only fix. It also redates the five specified speed rows (13, 15, 18, 19, 21) in `PP-LLAMA-001-MASTER.md` to 2026-10-15 and updates `derived_expiries.json` and Appendix D accordingly (as requested by PMAT-4651). No contradictions, unauthorized weakening, or unrequested changes were found.",
+      "findings": [],
+      "raw_bytes": 2487,
+      "err_bytes": 0,
+      "envelope_status": "SUCCESS",
+      "verdict_source": "structured_output",
+      "grounding_check": "parity",
+      "role": "independent",
+      "model": "gemini-3.1-pro-high",
+      "model_measured": "gemini-3.1-pro-high",
+      "model_source": "measured",
+      "family": "gemini",
+      "executor": "agy",
+      "brief_sha256": "164ada2b7f8e85a203342ec3fcb8b0573e270ee4cd2d5a1988aaa5f455efc14c",
+      "trace": {
+        "input_sha256": "7a35960478869a956b536cad6296722a614bc3f1a0db6604bdad62482f958e82",
+        "output_sha256": "67efbd6ff463feae3b4e653be236b4846338bfafdb729bcaa32695cae9a88949",
+        "store": null,
+        "store_why": "almacen not provisioned yet (infra-27): the blobs stay in the round's gitignored .lanes dir"
+      },
+      "fallback": {
+        "judged_by": "gemini-3.1-pro-high",
+        "exhausted": false,
+        "attempts": [
+          {
+            "model": "gemini-3.1-pro-high",
+            "family": "gemini",
+            "outcome": "answered"
+          }
+        ],
+        "skipped": []
+      }
+    },
+    {
+      "lane": 3,
+      "status": "SUCCESS",
+      "verdict": "PASS",
+      "summary": "The diff correctly implements PMAT-4646 (mutants ratchet mode with shrink-only debt file) and PMAT-4651 (spec re-dating). The ratchet logic is sound: ci/mutants-debt.tsv establishes a baseline of known survivors, check_mutants_debt_ratchet.sh enforces shrink-only semantics with 16 self-test cases, and ci.yml makes mutants report-only until RESTORE PR #4648. The receipt shows proper attestation and evidence collection. No refuting findings.",
+      "findings": [],
+      "raw_bytes": 1828,
+      "err_bytes": 0,
+      "envelope_status": "SUCCESS",
+      "verdict_source": "structured_output",
+      "executor": "claude-code",
+      "grounding_check": "parity",
+      "role": "counted",
+      "model": "claude-haiku-4-5",
+      "model_measured": "claude-haiku-4-5",
+      "model_source": "flag",
+      "family": "claude",
+      "brief_sha256": "164ada2b7f8e85a203342ec3fcb8b0573e270ee4cd2d5a1988aaa5f455efc14c",
+      "trace": {
+        "input_sha256": "1961d8432a8f3d7fd5893e1d9fa2ef99b7f213280286d40c357dd0fd68442c1a",
+        "output_sha256": "3bc3a6423130c921c12c186412da2ba8f2f42a99acbc07fbea08349dd4e7b53e",
+        "store": null,
+        "store_why": "almacen not provisioned yet (infra-27): the blobs stay in the round's gitignored .lanes dir"
+      },
+      "fallback": {
+        "judged_by": "claude-haiku-4-5",
+        "exhausted": false,
+        "attempts": [
+          {
+            "model": "claude-haiku-4-5",
+            "family": "claude",
+            "outcome": "answered"
+          }
+        ],
+        "skipped": []
+      }
+    }
+  ],
+  "dissent": [],
+  "dedup": [],
+  "uncovered": [],
+  "coverage_source": "lanes",
+  "partial": false,
+  "partial_reasons": [],
+  "fallback": {
+    "same_family_width": 2,
+    "chain": [
+      {
+        "model": "claude-sonnet-5",
+        "family": "claude",
+        "disposition": "claude-code",
+        "why": "run by Claude Code on its own budget: a configured seat runs every round, a fallback step only when every non-Claude family is measured out (PMAT-360, operator standing rule)"
+      },
+      {
+        "model": "gemini-3.1-pro-high",
+        "family": "gemini",
+        "disposition": "configured"
+      },
+      {
+        "model": "claude-haiku-4-5",
+        "family": "claude",
+        "disposition": "claude-code",
+        "why": "run by Claude Code on its own budget: a configured seat runs every round, a fallback step only when every non-Claude family is measured out (PMAT-360, operator standing rule)"
+      },
+      {
+        "model": "claude-opus-5-5",
+        "family": "claude",
+        "disposition": "excluded-self-review",
+        "why": "the author's own model id (claude-opus-5-5) — a model never reviews its own diff, at any width (R-15a identity bar)"
+      },
+      {
+        "model": "qwen3.5",
+        "family": "qwen",
+        "disposition": "not-run",
+        "why": "no quorum.local_lane in the config — the aprender lane has no model to load"
+      }
+    ],
+    "precheck": [
+      {
+        "family": "gemini",
+        "model": "gemini-3.1-pro-high",
+        "probe": 1,
+        "outcome": "live"
+      }
+    ],
+    "degraded": null,
+    "prah": {
+      "source": "install-receipt",
+      "path": "/home/noah/.claude/skills/paiml-implement/bin/prah"
+    },
+    "tier1": {
+      "agy_tier1_only": true,
+      "tier1": true,
+      "matched": [
+        ".github/workflows/ci.yml",
+        ".github/workflows/pr-review-quorum.yml"
+      ],
+      "paths": 18,
+      "patterns": [
+        "^\\.github/workflows/",
+        "(^|/)release[^/]*\\.(ya?ml|sh|rs|toml)$",
+        "cuda|kernel|\\.cu$|\\.ptx$",
+        "(^|/)[^/]*(gate|guard)[^/]*\\.(sh|rs|py)$|^hooks/",
+        "security|secret|credential|(^|/)deny\\.toml$",
+        "^skills/quorum-review/|(^|/)(receipt-lint|roadmap-lint|release-lint|kind-gate|model-gate)[^/]*$|^crates/prah-lint/"
+      ],
+      "builtin": "^skills/quorum-review/|(^|/)skills/paiml-implement/config\\.json$|(^|/)(modellib|lane-reduce|lane-fallback|lane-group|agy-lane|cc-lane|receipt-lint|route|quota)\\.sh$|^crates/prah-lint/"
+    },
+    "bucket": {
+      "ledger": "/home/noah/.local/state/paiml-implement/agy-bucket.jsonl",
+      "window_s": 18000,
+      "pace": "off",
+      "buckets": {
+        "gemini": {
+          "bucket": "gemini",
+          "budget": 0,
+          "basis": "ledger: the calls served before the first 429 of the latest window that reached one",
+          "window_start": 1790861697,
+          "window_calls": 10,
+          "window_429": 0,
+          "hour_calls": 2,
+          "share": 1,
+          "want": 2,
+          "state": "empty",
+          "reason": "agy bucket gemini is empty: 10 calls in this window reach its budget 0 (ledger: the calls served before the first 429 of the latest window that reached one)"
+        }
+      },
+      "closed": []
+    }
+  },
+  "auto_merge": {
+    "checked": true,
+    "was_armed": false,
+    "disarmed": false,
+    "note": "auto-merge not armed"
+  },
+  "cheap_seat": "claude-haiku-4-5",
+  "canary": {
+    "skipped": "brief 238989 bytes > 24576"
+  },
+  "advisory_lane": {
+    "state": "not-run",
+    "counts": false,
+    "row": {
+      "NotRun": "ContextOverflow"
+    },
+    "verdict": "unavailable",
+    "why": "the brief is 238989 bytes, over quorum.advisory_lane.max_brief_bytes=196608; a cut brief is a different question, so the lane was not launched",
+    "served_by": null,
+    "gpu_proof": null,
+    "apr": null,
+    "apr_binary_sha256": null,
+    "apr_tag": null,
+    "apr_commit": null,
+    "apr_build_why": null,
+    "model": null,
+    "model_sha256": null,
+    "rc": 0,
+    "wall_s": 0,
+    "collected_s": 0,
+    "budget_s": 196,
+    "budget_basis": "ledger: 2 x p95 98 s over 126 gx10-cuda Verdict rows",
+    "brief": {
+      "bytes": 238989,
+      "sent_bytes": 0,
+      "max_bytes": 196608
+    },
+    "trace": null,
+    "attempts": [],
+    "ledger": "/home/noah/.local/state/paiml-implement/advisory-ledger.jsonl",
+    "raw": "advisory.json",
+    "agrees_with_counted": null,
+    "counted": "PASS"
+  },
+  "lint": {
+    "ok": true,
+    "output": "receipt complete: kind=artifact lanes=3 author=claude-opus-5-5/claude same_family=2/2"
+  }
+}
