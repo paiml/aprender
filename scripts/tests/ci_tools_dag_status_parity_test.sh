@@ -18,7 +18,7 @@ set -euo pipefail
 ROOT="$(git rev-parse --show-toplevel)"
 cd "$ROOT" || exit 1
 PY="${PYTHON:-python3}"
-EXPECTED_CASES=24
+EXPECTED_CASES=25
 
 . scripts/ci_tools_bin.sh || exit 1
 BIN="$CI_TOOLS_BIN"
@@ -39,17 +39,26 @@ d7 = ds.d7_typed_status(root, {rid: r for rid, r in pairs})
 print(json.dumps({"status": status, "d7": d7}, separators=(",", ":"), sort_keys=True, ensure_ascii=False))
 PY
 
-# same ROOTDIR ROWS_JSON -> 0 when both sides agree on status class and stdout bytes
+# same WANT ROOTDIR ROWS_JSON -> 0 when both sides exit as WANT says (ok: 0 with
+# non-empty stdout; refuse: non-zero) and their stdout bytes match. Two sides that
+# both fail on a normal case are a failure, never an agreement.
 same() {
-    local root="$1" rows="$2" py_s=0 rs_s=0
+    local want="$1" root="$2" rows="$3" py_s=0 rs_s=0
     printf '%s' "$rows" >"$tmp/in.json"
     "$PY" "$tmp/driver.py" "$ROOT/scripts/lib" "$root" <"$tmp/in.json" >"$tmp/py.out" 2>/dev/null || py_s=1
     "$BIN" dag-status --root "$root" <"$tmp/in.json" >"$tmp/rs.out" 2>/dev/null || rs_s=1
-    [[ "$py_s" == "$rs_s" ]] && cmp -s "$tmp/py.out" "$tmp/rs.out"
+    if [[ "$want" == ok ]]; then
+        [[ "$py_s" == 0 && "$rs_s" == 0 && -s "$tmp/py.out" ]] || return 1
+    else
+        [[ "$py_s" == 1 && "$rs_s" == 1 ]] || return 1
+    fi
+    cmp -s "$tmp/py.out" "$tmp/rs.out"
 }
 
-check() { # NAME ROOTDIR ROWS_JSON
-    if same "$2" "$3"; then
+check() { # NAME ROOTDIR ROWS_JSON  (a NAME starting "BAD INPUT" must be refused)
+    local want=ok
+    [[ "$1" == "BAD INPUT"* ]] && want=refuse
+    if same "$want" "$2" "$3"; then
         pass=$((pass + 1))
     else
         fail=$((fail + 1))
@@ -108,6 +117,8 @@ check "D7: typed agrees, typed disagrees, typed partial" "$R" \
     '[["a",{"pmat_id":"C","status":"complete"}],["b",{"pmat_id":"P","status":"complete"}],["c",{"pmat_id":"P","status":"partial"}]]'
 check "D7: typed bool, null, int, list, sorted dict" "$R" \
     '[["a",{"pmat_id":"C","status":true}],["b",{"status":null}],["c",{"pmat_id":"C","status":1}],["d",{"status":["x",1.5]}],["e",{"status":{"a":1,"b":"c"}}]]'
+check "D7: dict keys keep input order, repeated key keeps its first slot" "$R" \
+    '[["a",{"status":{"b":1,"a":{"z":2,"y":3},"b":4}}],["b",{"pmat_id":{"q":1,"p":2}}]]'
 check "D7: no pmat_id prints None" "$R" '[["a",{"status":"complete"}]]'
 check "int and non-ASCII row ids, order kept" "$R" '[["z",{"pmat_id":"C"}],[3,{"pmat_id":"P"}],["é—\u001c",{"status":"x"}]]'
 check "no rows" "$R" '[]'
