@@ -80,7 +80,11 @@ CODE_IDENTITY_RECEIPT_GLOBS=(
 # code_identity_unclassified_reads [ROOT] -> prints each evidence/ file in HEAD that HEAD's code
 # names by its exact path and that is neither a gate input nor a receipt; rc 0 (the list
 # may be empty), 2 when git fails. Over-inclusive on purpose: a path named only in a
-# comment still needs a class.
+# comment still needs a class. BLIND SPOT, stated: it sees only a literal full path. A
+# gate that walks a directory (evidence/parity/**), globs (evidence/qa/*.json) or builds
+# the path from a variable ("evidence/crux/$VERSION/...") is NOT seen; the case table
+# pins that with rows that must stay undetected (scan_blind_*). Such a read is classified
+# only by review.
 code_identity_unclassified_reads() {
     local root="${1:-.}" refs tracked p g ok
     tracked="$(git -C "$root" ls-tree -r --name-only --full-tree HEAD -- evidence 2>/dev/null)" || return 2

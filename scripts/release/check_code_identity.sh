@@ -126,6 +126,14 @@ selftest() {
     row scan_names_an_unclassified_read "evidence/parity/r.json" "$(code_identity_unclassified_reads "$s" | tr '\n' ' ' | sed 's/ $//')"
     o="$(g "$s" rev-parse HEAD:scripts/gate2.sh)"; o="${o:?}"; chmod u+w -- "${s:?}/.git/objects/${o:0:2}/${o:2}"; : > "${s:?}/.git/objects/${o:0:2}/${o:2}"
     code_identity_unclassified_reads "$s" >/dev/null 2>&1; row scan_git_error_not_measured 2 "$?" "(a blob git grep cannot read)"
+    # the stated blind spot: these gates read evidence/parity/r.json (unclassified), and
+    # the scan does NOT see them. Expected empty; a row going red means the scan learned
+    # to see the read, so update the blind-spot note in the lib and the contract.
+    s="$tmp/blind"; fixture "$s"
+    printf 'for f in evidence/parity/*; do cat "$f"; done\n' > "$s/scripts/walk.sh"
+    printf 'cat evidence/parity/*.json\n' > "$s/scripts/glob.sh"
+    printf 'n=r.json\ncat "evidence/parity/$n"\ncat evidence/parity/"r.json"\n' > "$s/scripts/var.sh"; commit "$s" blind >/dev/null
+    row scan_blind_dir_walk_glob_and_var_reads "" "$(code_identity_unclassified_reads "$s" | tr '\n' ' ')" "(documented blind spot: review classifies these)"
     row scan_this_repository_is_clean "" "$(code_identity_unclassified_reads "$REPO" | tr '\n' ' ' | sed 's/ $//')"
     out="$(sed -n '/^  gate_inputs:/,/^  [a-z_]*:/p' "$REPO/contracts/code-identity-v1.yaml" | sed -n 's/^    - //p' | tr -d '"' | sort | tr '\n' ' ')"
     row contract_lists_the_gate_inputs "$(printf '%s\n' "${CODE_IDENTITY_GATE_INPUTS[@]}" | sort | tr '\n' ' ')" "$out"
