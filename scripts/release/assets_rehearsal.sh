@@ -212,7 +212,7 @@ lint() {
         echo "lint: an upload, a release write or a release-event input"; bad=1
     fi
     for v in $BUILD_JOBS; do
-        "$YQ" -e ".jobs[\"$v\"].steps[] | select(.uses == \"actions/upload-artifact*\")" "$f" > /dev/null 2>&1 \
+        "$YQ" -e ".jobs[\"$v\"].steps[] | select(.uses // \"\" | test(\"^actions/upload-artifact@\"))" "$f" > /dev/null 2>&1 \
             || { echo "lint: build job $v keeps no checksums"; bad=1; }
     done
     [ "$bad" -eq 0 ] && echo "ok: ${f#"$ROOT"/} cannot upload"
@@ -291,7 +291,7 @@ self_test() {
     out=$(lint "$d/m.yml"); row "a planted upload step -> lint red" 1 $? 'upload' "$out"
     mut 'del(.jobs["build-apr-darwin"].steps[0])'
     out=$(lint "$d/m.yml"); row "a job without the guard -> lint red" 1 $? 'credential guard' "$out"
-    mut 'del(.jobs.build.steps[] | select(.uses == "actions/upload-artifact*"))'
+    mut 'del(.jobs.build.steps[] | select(.uses // "" | test("^actions/upload-artifact@")))'
     out=$(lint "$d/m.yml"); row "a build job that keeps nothing -> lint red" 1 $? 'keeps no checksums' "$out"
 
     # The guard, extracted from the generated workflow and run as the runner would.
