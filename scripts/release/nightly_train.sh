@@ -16,7 +16,7 @@
 #   which every verdict producer has a measured run, and the line adds " (judged <sha10>, pick <sha10>, lag k commits)".
 #   A run counts for a commit behind C only if it is a plain run of that commit (no pin job). All lanes are judged on that
 #   one commit, never a per-lane mix. None within MAX_LAG = C, which reads not_measured for a lane with no run there;
-#   there is no other fallback (#4798). The gap of the pick to main is printed on a pinned night.
+#   there is no other fallback (#4798). The gap of the pick to main is printed on every night.
 #
 # READ, DON'T RE-RUN. Night 1 runs nothing. Each lane takes the result its existing scheduled producer (a workflow on
 #   main or on the pick branch, and optionally a job-name pattern) recorded for C. A run measured C when it has a job

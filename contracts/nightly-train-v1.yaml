@@ -21,7 +21,7 @@ five_whys:
 
 equations:
   lane_state:
-    formula: "state(lane, J) = not_measured if the lane has no producer, the read failed, no run of the producer on main is for J, the newest such run is unfinished, no matched job ran, or its attempt is unread; red if any matched job (every leg of a repeated name votes) ended failure, timed_out or startup_failure, or the run succeeded only at attempt 2 or later; else green"
+    formula: "state(lane, J) = not_measured if the lane has no producer, the read failed, no run of the producer on main or on the pick branch is for J, the newest such run is unfinished, no matched job ran, or its attempt is unread; red if any matched job (every leg of a repeated name votes) ended failure, timed_out or startup_failure, or the run succeeded only at attempt 2 or later; else green"
     domain: "one lane of the constant lane table, and the producer runs read for the judged commit J, the one commit every lane is judged on, at most 6 commits behind the nightly pick C, in the history of the pick"
     codomain: "{green, red, not_measured} for each lane"
     invariants:
@@ -132,7 +132,7 @@ falsification_tests:
 
 qa_gate:
   id: F-NT-001
-  name: "Main's head is called releasable only from green evidence for every release-day check"
+  name: "The judged commit is called releasable only from green evidence for every release-day check"
   description: "scripts/release/nightly_train.sh reads the night's results for one judged commit J (the nightly pick, or the newest commit up to 6 behind it in its history that every verdict producer ran on) and prints RELEASABLE H=<J> or NOT RELEASABLE: <lane>, <run>. Its case table pins every lane state and the verdict set; its mutants prove the table can fail."
   checks:
     - "lane_state"
