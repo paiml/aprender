@@ -33,7 +33,7 @@ set -euo pipefail
 ROOT="$(git rev-parse --show-toplevel)"
 cd "$ROOT" || exit 1
 PY="${PYTHON:-python3}"
-EXPECTED_CASES=115
+EXPECTED_CASES=149
 
 BIN="${CI_TOOLS_BIN:-}"
 if [[ -z "$BIN" ]]; then
@@ -477,6 +477,131 @@ check_tbe "unit separator in path" "$t/us.log"
 check_tbe "error codes" "$t/code.log"
 check_tbe "nested pkgs" "$t/nested.log"
 check_tbe "non-ascii crate" "$t/unicode.log"
+
+# --- 6. perf041-report ---
+# No caller anywhere in the tree, so no gate path; the .py stays as this table's validator
+# until the port is released. A case is a directory of band records; exit 0 report, 1 no
+# band / no fast c=1 band, 1 where the original raised (after the lines it had printed).
+P41_PY=("$PY" scripts/perf041_report.py)
+p41="$tmp/p41"
+rec() { # DIR FILE JSON
+    mkdir -p "$p41/$1"
+    printf '%s\n' "$3" >"$p41/$1/$2"
+}
+band() { # DIR FILE LABEL C LAT AGG TOK_P50 TOK_MIN TOK_MAX
+    rec "$1" "$2" "{\"label\": \"$3\", \"c\": $4, \"latency_p50_s\": $5, \"agg_tok_s\": $6, \"tokens_p50\": $7, \"tokens_min\": $8, \"tokens_max\": $9}"
+}
+check_p41() { # NAME ARGS... (the same args go to both sides)
+    local name="$1" prc rrc
+    shift
+    "${P41_PY[@]}" "$@" </dev/null >/dev/null 2>&1 && prc=0 || prc=$?
+    "$BIN" perf041-report "$@" </dev/null >/dev/null 2>&1 && rrc=0 || rrc=$?
+    if [[ "$prc" -ne "$rrc" ]]; then
+        fail=$((fail + 1))
+        echo "MISMATCH: perf041-report $name exit code (py $prc, rust $rrc)" >&2
+        return
+    fi
+    check "perf041-report $name (rc $prc)" "$tmp/empty" \
+        "${P41_PY[@]}" "$@" -- "$BIN" perf041-report "$@"
+}
+# A full sweep: fast c=1,2,4 and forced c=1, two replicates each (even medians).
+for r in 1 2; do
+    band full "fast-c1-r$r.json" fast-c1 1 "0.5$r" "40.$r" 64 60 "6$r"
+    band full "fast-c2-r$r.json" fast-c2 2 "0.7$r" "71.$r" 64 58 66
+    band full "fast-c4-r$r.json" fast-c4 4 "1.3$r" "110.$r" 63 50 70
+    band full "forced-c1-r$r.json" forced-c1 1 "0.6$r" "35.$r" 64 61 64
+done
+mkdir -p "$p41/noforced" "$p41/nofast1" "$p41/empty"
+cp "$p41"/full/fast-* "$p41/noforced/"
+cp "$p41"/full/fast-c2-* "$p41"/full/fast-c4-* "$p41"/full/forced-* "$p41/nofast1/"
+# Skips: not JSON, an error record (any value type), a BOM, a hidden file, other extensions.
+cp -r "$p41/full" "$p41/skips"
+rec skips a-bad.json '{"label": '
+rec skips b-err.json '{"error": "connection refused", "c": 1}'
+rec skips c-err.json '{"error": {"code": 7, "why": [1.5, null, true, 1e16, 1e-05, "it'"'"'s"]}}'
+rec skips d-err.json '{"error": null}'
+rec skips e-bom.json $'\xef\xbb\xbf{"c": 1}'
+rec skips .hidden.json '[]'
+rec skips notes.txt '[]'
+rec skips x.JSON '[]'
+# Medians: ints and bools, odd and even counts, an even median rounding half to even.
+band ints m1.json fast-1 1 1 true 2 2 9
+band ints m2.json fast-1 1 2 2 3 2.0 9
+band ints m3.json fast-1 1 4 3 3 5 9
+band ints m4.json fast-1 1 3 4 2 3 9
+# Modes: no dash, empty, absent, null, false, 0, leading dash, sorting by code point.
+band modes a.json fastest 1 0.5 10 1 1 1
+band modes b.json "" 3 0.5 10 1 1 1
+rec modes c.json '{"c": 10, "latency_p50_s": 1, "agg_tok_s": 2, "tokens_p50": 3, "tokens_min": 1, "tokens_max": 1}'
+rec modes d.json '{"label": null, "c": 9, "latency_p50_s": 1, "agg_tok_s": 2, "tokens_p50": 3, "tokens_min": 1, "tokens_max": 1}'
+rec modes e.json '{"label": false, "c": 9, "latency_p50_s": 1, "agg_tok_s": 2, "tokens_p50": 3, "tokens_min": 1, "tokens_max": 1}'
+rec modes f.json '{"label": 0, "c": 9, "latency_p50_s": 1, "agg_tok_s": 2, "tokens_p50": 3, "tokens_min": 1, "tokens_max": 1}'
+band modes g.json -fast 2 0.5 10 1 1 1
+band modes h.json "Zeta-1" 1 0.5 10 1 1 1
+band modes i.json "épsilon-1" 1 0.5 10 1 1 1
+band modes j.json fast-1 1 0.25 20 1 1 1
+band modes k.json fast-10 10 2.5 60 1 1 1
+band modes l.json fast-9 9 2 50 1 1 1
+# c as Python int() takes it: padded, signed and underscored strings, floats, a bool, a
+# repeated key (the last one wins).
+band cforms a.json fast-1 '" 1 "' 0.5 10 1 1 1
+band cforms b.json fast-10 '"1_0"' 1.5 30 1 1 1
+band cforms c.json fast-2 2.9 1 18 1 1 1
+band cforms d.json fast-1 true 0.4 11 1 1 1
+band cforms e.json fast-3 '"+3"' 1.2 25 1 1 1
+band cforms f.json fast-7 '"-7"' 1.2 25 1 1 1
+rec cforms g.json '{"label": "fast-4", "c": 1, "c": 4, "latency_p50_s": 1, "agg_tok_s": 2, "tokens_p50": 3, "tokens_min": 1, "tokens_max": 1}'
+band cforms h.json fast-0 -0.5 1 2 1 1 1
+# tokens_min/max: the FIRST extreme decides whether :d sees an int.
+band tokint a.json fast-1 1 0.5 10 1 2 3
+band tokint b.json fast-1 1 0.5 10 1 2.0 3.0
+band tokflt a.json fast-1 1 0.5 10 1 2.0 3
+band tokflt b.json fast-1 1 0.5 10 1 2 3
+band tokmax a.json fast-1 1 0.5 10 1 2 3
+band tokmax b.json fast-1 1 0.5 10 1 2 3.5
+# Formatting: rounding ties, negative zero, overflow to inf, inf/inf = nan.
+band fmt a.json fast-1 1 0.0005 0.25 2.5 1 1
+band fmt b.json fast-2 2 -0.0 -0.04 -0.4 1 1
+band fmt c.json forced-1 1 0.00049 1e308 0.5 1 1
+band fmt d.json fast-4 4 1e308 1e308 1 1 1
+band nan a.json fast-1 1 1.7e308 5 1 1 1
+band nan b.json fast-1 1 1.7e308 5 1 1 1
+band nan c.json fast-2 2 1.7e308 5 1 1 1
+band nan d.json fast-2 2 1.7e308 5 1 1 1
+# Zero divisors (Python raises), and a zero penalty (no division: scaling is nan).
+band z1 a.json fast-1 1 0 10 1 1 1
+band z1 b.json forced-1 1 0.5 10 1 1 1
+band z2 a.json fast-1 1 0 10 1 1 1
+band z3 a.json fast-1 1 0.5 10 1 1 1
+band z3 b.json fast-2 2 0.5 0 1 1 1
+band z4 a.json fast-1 1 0.5 10 1 1 1
+band z4 b.json forced-1 1 0 10 1 1 1
+band z4 c.json fast-2 2 0.9 18 1 1 1
+# Where the original raised, after what it had printed.
+cp -r "$p41/skips" "$p41/notobj" && rec notobj z.json '[1, 2]'
+cp -r "$p41/skips" "$p41/strobj" && rec strobj z.json '"error"'
+cp -r "$p41/skips" "$p41/noc" && rec noc z.json '{"label": "fast-1"}'
+band badc a.json fast-1 '"2.0"' 0.5 10 1 1 1
+band nullc a.json fast-1 null 0.5 10 1 1 1
+rec lblint a.json '{"label": 5, "c": 1}'
+cp -r "$p41/full" "$p41/nolat" && rec nolat fast-c4-r3.json '{"label": "fast-4", "c": 4}'
+cp -r "$p41/full" "$p41/strlat" && band strlat fast-c4-r1.json fast-4 4 '"1.3"' 1 1 1 1
+cp -r "$p41/full" "$p41/listtok" && band listtok fast-c2-r1.json fast-2 2 1 1 1 '[1]' 1
+mkdir -p "$p41/isdir/x.json" && band isdir a.json fast-1 1 0.5 10 1 1 1
+band badutf8 a.json fast-1 1 0.5 10 1 1 1 && printf '{"label": "\xff"}\n' >"$p41/badutf8/b.json"
+
+for d in full noforced nofast1 empty skips ints modes cforms tokint tokflt tokmax fmt nan \
+    z1 z2 z3 z4 notobj strobj noc badc nullc lblint nolat strlat listtok isdir badutf8; do
+    check_p41 "$d" "$p41/$d"
+done
+check_p41 "missing dir" "$p41/nope"
+check_p41 "a file, not a dir" "$p41/full/fast-c1-r1.json"
+check_p41 "trailing slash" "$p41/full/"
+check_p41 "extra arguments ignored" "$p41/full" extra --more
+check_p41 "hyphen argument" "-x"
+check "perf041-report empty argument is the cwd" "$tmp/empty" \
+    env -C "$p41/full" "$PY" "$ROOT/scripts/perf041_report.py" "" -- \
+    env -C "$p41/full" "$BIN" perf041-report ""
 
 ran=$((pass + fail))
 echo "ci_tools_py_parity: $pass/$ran identical (declared $EXPECTED_CASES)"

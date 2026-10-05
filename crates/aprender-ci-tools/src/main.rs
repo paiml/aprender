@@ -1,8 +1,8 @@
 //! `aprender-ci-tools`: one binary, one subcommand per ported Python helper.
 
 use aprender_ci_tools::{
-    coverage_report_scope, dag_status, git_patch_id, package_include_diff, publishable_crates,
-    tarball_build_errors, tarball_shrink_report, tarball_workspace,
+    coverage_report_scope, dag_status, git_patch_id, package_include_diff, perf041_report,
+    publishable_crates, tarball_build_errors, tarball_shrink_report, tarball_workspace,
 };
 use clap::{ArgGroup, Parser, Subcommand};
 use std::io::{Read, Write};
@@ -84,6 +84,14 @@ enum Cmd {
         /// --stable, --verbatim or --unstable (the default), as git spells them.
         #[arg(allow_hyphen_values = true, value_name = "MODE")]
         mode: Option<String>,
+    },
+    /// The PERF-041 band table and the serialization index, decomposed (was
+    /// scripts/perf041_report.py). Decides nothing. Exit 1 with no band or no fast c=1 band.
+    Perf041Report {
+        /// The directory of `*.json` band records (default /tmp/perf041). Arguments after
+        /// the first are ignored, as the original ignored them.
+        #[arg(num_args = 0.., allow_hyphen_values = true, trailing_var_arg = true)]
+        out_dir: Vec<String>,
     },
 }
 
@@ -183,6 +191,14 @@ fn run(cmd: Cmd) -> Result<String, Refusal> {
                 .map_err(|e| nothing_printed(format!("stdin: {e}")))?;
             dag_status::run(&root, &rows).map_err(nothing_printed)
         }
+        Cmd::Perf041Report { out_dir } => {
+            let o = perf041_report::run(out_dir.first().map(String::as_str));
+            if o.code == 0 {
+                Ok(o.stdout)
+            } else {
+                Err((o.stdout, o.code, o.stderr))
+            }
+        }
     }
 }
 
@@ -211,7 +227,9 @@ fn main() -> ExitCode {
     match refusal {
         None => ExitCode::SUCCESS,
         Some((code, reason)) => {
-            eprintln!("{reason}");
+            if !reason.is_empty() {
+                eprintln!("{reason}");
+            }
             ExitCode::from(code)
         }
     }

@@ -13,6 +13,7 @@ CI helpers ported from `scripts/**/*.py` to Rust (C301: no Python in the build).
 | `tarball-build-errors LOG` | `scripts/lib/tarball_build_errors.py` (kept: its caller `scripts/package_tarball_build.sh` is on the publish gate path, N-1) |
 | `dag-status --root DIR` (reads `[id, row]` JSON pairs on stdin) | `scripts/lib/dag_status.py` (kept for now, see below) |
 | `git-patch-id [--stable\|--unstable\|--verbatim]` (reads a diff on stdin) | `scripts/lib/git_patch_id.py` (kept: callers `scripts/lib/pr_review_patch_id.sh` and `scripts/check_pr_review_arm4.sh` not yet switched) |
+| `perf041-report [OUT_DIR]` (default `/tmp/perf041`; a report, decides nothing) | `scripts/perf041_report.py` (kept as the parity test's validator; it has no caller in the tree, so no gate path) |
 
 Each port must print the same stdout as its original and agree with it on success
 or failure. `scripts/tests/ci_tools_py_parity_test.sh` checks this. The Python
@@ -49,6 +50,24 @@ none of the callers uses these forms:
 | `tarball-shrink-report`, a Unicode `Other_Alphabetic` character that is not a letter or digit (a combining mark, a circled letter such as `Ⓐ`) before `_or_skip(` or `fn` | not a word character | a word character |
 | `tarball-workspace --name` alone | `--name` taken as DIR | usage error, exit 1 |
 | `tarball-build-errors --help` / `-h` | read as the LOG path: cannot read, exit 2 | help, exit 0 (every other argv, `--` and `-x` included, matches: parity cases) |
+
+## Where `perf041-report` differs (by design, not parity-checked)
+
+A record file the original could read but the port cannot is skipped by the port, as if it
+were not JSON. The port's report then lacks that record; the original's has it, or crashed on it.
+
+| Input | Original | Port |
+|-------|----------|------|
+| `NaN`, `Infinity`, `-Infinity` or a number beyond f64 (`1e400`) in a record | parsed (`1e400` is `inf`) | file skipped |
+| a lone surrogate escape (`"\ud800"`) in a record | parsed | file skipped |
+| JSON nested more than 128 levels | parsed (to Python's recursion limit) | file skipped |
+| an integer beyond 64 bits | exact | read as the nearest f64 |
+| a `c` (number or string) of magnitude 2^127 or more | read exactly by `int()` | a stop, exit 1 |
+| a record file name that is not UTF-8 | listed | not listed |
+| glob metacharacters (`*?[`) in `OUT_DIR` | expanded by `glob` | taken literally |
+| non-ASCII Unicode digits in a string `c` (`"١"`) | read by `int()` | a stop, exit 1 |
+| `-h` / `--help` | taken as `OUT_DIR` | help, exit 0 |
+| the reason for a stop (stderr) | a Python traceback | one line naming the exception |
 
 ## Where `tarball-workspace` output differs (by design; the parity test maps or skips each)
 

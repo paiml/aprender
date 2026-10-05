@@ -1,0 +1,18 @@
+- id: PMAT-4818
+  github_issue: 4818
+  item_type: task
+  title: 'PY-PORT-2f: port perf041_report.py to aprender-ci-tools perf041-report (C301)'
+  status: planned
+  priority: medium
+  assigned_to: null
+  created: 2026-10-05T16:22:14Z
+  updated: 2026-10-05T16:22:14Z
+  spec: null
+  acceptance_criteria: []
+  phases: []
+  subtasks: []
+  estimated_effort: null
+  labels:
+  - kind:code
+  notes: null
+  epic: 4741
