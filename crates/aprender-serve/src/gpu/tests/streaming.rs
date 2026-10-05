@@ -33,7 +33,6 @@ fn test_streaming_kv_cache_32768_positions() {
 }
 
 #[test]
-#[ignore = "FLAKE-0 #4769"]
 fn test_mega_long_context_memory_bound() {
     // Verify 32768 context memory stays bounded
     let num_layers = 32;
