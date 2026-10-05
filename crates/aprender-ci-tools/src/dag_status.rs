@@ -243,8 +243,12 @@ pub fn run(root: &str, input: &str) -> Result<String, String> {
             }
         }
     }
-    let out = serde_json::json!({ "status": status, "d7": d7 });
-    Ok(format!("{out}\n"))
+    // `json!` expands to `Result::unwrap`, which the workspace disallows. Map is
+    // key-sorted, so this prints `{"d7":..,"status":..}` as the driver does.
+    let mut out = serde_json::Map::new();
+    out.insert("status".to_owned(), Value::Array(status));
+    out.insert("d7".to_owned(), Value::Array(d7));
+    Ok(format!("{}\n", Value::Object(out)))
 }
 
 #[cfg(test)]
