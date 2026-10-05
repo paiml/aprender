@@ -1,0 +1,19 @@
+- id: PMAT-4834
+  github_issue: 4834
+  item_type: task
+  title: 'pmat_hunt: an absent pmat binary is not_measured, never a pass'
+  status: inprogress
+  priority: high
+  assigned_to: aprender-b3
+  created: 2026-10-05T00:00:00Z
+  updated: 2026-10-05T00:00:00Z
+  acceptance_criteria:
+  - With PMAT_HUNT=1 and no pmat binary, pmat_hunt prints a not_measured line naming the binary, calls emit_fail, prints no manifest header and returns 1
+  - PMAT_HUNT=0 still returns 0 and prints nothing, whether or not pmat is present
+  - check_story_pmat_hunt.sh carries the case table and fails on the base library; mutate_story_pmat_hunt_guard.sh kills every mutant with a GREEN baseline
+  phases: []
+  subtasks: []
+  estimated_effort: null
+  labels:
+  - kind:ci
+  notes: 'L25: a skip is not_measured, never a pass. Assigned by cop aprender-a3.'

@@ -189,6 +189,48 @@ want "PMAT_HUNT=0 returns 0" "0" "$rc"
 want "PMAT_HUNT=0 prints nothing" "" "$out"
 want "PMAT_HUNT=0 tallies no failure" "" "$(cat "$FAILLOG")"
 
+# -- 7b. An ABSENT pmat is not_measured, never a pass (#4834) ---------------
+# It used to share PMAT_HUNT=0's `return 0`, so a host without pmat passed every
+# hunt with zero paths hunted and printed nothing. Case table:
+#   PMAT_BIN                    PMAT_HUNT  rc  emit_fail          output
+#   /nonexistent/pmat (path)    1          1   not_measured+name  not_measured line, no header
+#   pmat-absent-xyz (bare name) 1          1   not_measured+name  not_measured line, no header
+#   /nonexistent/pmat           0          0   none               nothing (the opt-out wins)
+#   $TMP/bin/pmat (present)     1          0   none               manifest with rows
+absent_row() { # label pmat_bin
+  : > "$FAILLOG"
+  out=$(PMAT_BIN="$2" PMAT_HUNT=1 pmat_hunt "check" "$LIB"); rc=$?
+  want "$1: returns 1" "1" "$rc"
+  if grep -q "^pmat-hunt check :: not_measured: pmat binary '$2' not found" "$FAILLOG"; then
+    ok "$1: emit_fail tallies not_measured naming $2"
+  else
+    bad "$1: emit_fail tallies not_measured naming $2" "a not_measured failure naming $2" "$(cat "$FAILLOG")"
+  fi
+  if grep -q "not_measured - no pmat binary $2" <<< "$out"; then
+    ok "$1: prints a not_measured line"
+  else
+    bad "$1: prints a not_measured line" "not_measured - no pmat binary $2" "$out"
+  fi
+  if grep -q -- '-- pmat bug-hunt manifest' <<< "$out"; then
+    bad "$1: prints no manifest header" "no header" "$out"
+  else
+    ok "$1: prints no manifest header"
+  fi
+}
+absent_row "absent PMAT_BIN path" "$TMP/no-such-dir/pmat"
+absent_row "absent PMAT_BIN bare name" "pmat-absent-4834"
+
+: > "$FAILLOG"
+out=$(PMAT_BIN="$TMP/no-such-dir/pmat" PMAT_HUNT=0 pmat_hunt "check" "$LIB"); rc=$?
+want "absent pmat under PMAT_HUNT=0 returns 0 (the opt-out wins)" "0" "$rc"
+want "absent pmat under PMAT_HUNT=0 prints nothing" "" "$out"
+want "absent pmat under PMAT_HUNT=0 tallies no failure" "" "$(cat "$FAILLOG")"
+
+: > "$FAILLOG"
+out=$(PMAT_BIN="$TMP/bin/pmat" PMAT_HUNT=1 pmat_hunt "check" "$LIB"); rc=$?
+want "a present PMAT_BIN given as a path returns 0" "0" "$rc"
+want "a present PMAT_BIN given as a path tallies no failure" "" "$(cat "$FAILLOG")"
+
 # -- 8. Every path the story hunts still exists -----------------------------
 # Cause 3. Static, because a path can rot without anyone running the nightly.
 if [ -f "$STORY" ]; then

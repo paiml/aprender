@@ -128,15 +128,25 @@ _pmat_hunt_emit() {
 # Outputs a compact manifest: top 3 coverage gaps, top 3 churn, top 3 faults per
 # path.
 #
-# Returns 0 when the manifest carried at least one row, 1 (and emit_fail) when
-# the header was printed with nothing under it. See "THE MANIFEST IS NO LONGER
-# ADVISORY" above.
+# Returns 0 when the manifest carried at least one row or PMAT_HUNT=0 opted out;
+# 1 (and emit_fail) when the header was printed with nothing under it, or when
+# the pmat binary is absent (not_measured, #4834). See "THE MANIFEST IS NO
+# LONGER ADVISORY" above.
 #
 # Args: <beat-label> <source-path...>
 pmat_hunt() {
   local beat="$1"; shift
-  if [ "${PMAT_HUNT:-1}" != "1" ] || ! command -v "${PMAT_BIN:-pmat}" >/dev/null 2>&1; then
-    return 0
+  # PMAT_HUNT=0 is the deliberate opt-out: silent and green, no header.
+  [ "${PMAT_HUNT:-1}" = "1" ] || return 0
+  # An ABSENT pmat is not the opt-out. It used to share the opt-out's `return 0`,
+  # so a host without pmat reported every hunt as passed with zero paths hunted
+  # (#4834). A skip is not_measured, never a pass: name the binary, tally it
+  # through emit_fail like the zero-row andon below, and return 1. The line
+  # carries no manifest header, so the nightly's row extractor counts nothing.
+  if ! command -v "${PMAT_BIN:-pmat}" >/dev/null 2>&1; then
+    printf '    pmat-hunt (%s): not_measured - no pmat binary %s\n' "$beat" "${PMAT_BIN:-pmat}"
+    emit_fail "pmat-hunt $beat" "not_measured: pmat binary '${PMAT_BIN:-pmat}' not found; 0 of $# path(s) hunted (#4834)"
+    return 1
   fi
   printf '    -- pmat bug-hunt manifest (%s) --\n' "$beat"
   PMAT_HUNT_ROWS=0
