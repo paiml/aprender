@@ -11,7 +11,7 @@
   acceptance_criteria:
   - 'chat_stop_tokens returns completion_stop_tokens(tokenizer, Some(eos)), so every chat path (quantized CPU, CUDA dense, CUDA MoE, Qwen3.5, cached, GPU) stops on the same set as /v1/completions; ignore_eos still empties it'
   - 'Unit test chat_stops_on_every_eog_marker_not_just_eos goes through chat_quantized_config (signature unchanged), is RED on the parent commit and GREEN on the fix'
-  - 'The 30B "What is 2+2?" chat request stops at 8 tokens for seeds 1, 5 and 42 on the CUDA serve path'
+  - 'End-to-end A/B, recorded in docs/audits/impl-PMAT-4810-receipt.md: the 30B MoE "What is 2+2?" chat request, served with --gpu, stops at 8 tokens for seeds 1, 5 and 42 where the parent runs to the 256-token limit'
   - 'try_cuda_backend passes the pmat complexity gate (cognitive <= 25) through a behaviour-neutral extraction; cargo test -p aprender-serve --lib is green'
   phases: []
   subtasks: []
