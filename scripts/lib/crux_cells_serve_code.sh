@@ -35,7 +35,7 @@
 #   llama.cpp  the same prompt through llama-server's OpenAI chat route
 #   ollama     (non-streaming), the ggml vote.
 #   plugins    `gen --verb code`, the hf / vllm votes.
-# The oracle for every code row is EXECUTION (the judge's code_tests oracle). The
+# The oracle for every code row is EXECUTION (crux_oracles.py code_tests). The
 # producer never looks inside the reply.
 
 crux_plugin_engines() { # the plugin engine list: the driver's, else the pre-#3952 pair

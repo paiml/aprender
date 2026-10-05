@@ -1,13 +1,8 @@
 #!/usr/bin/env bash
 # check_crux_inference_judge.sh: the case table for the CRUX inference judge
-# (#3739), the `collect` subcommand of the CRUX judge binary
-# (tools/aprender-crux-judge). Hermetic: every engine output is a fixture
-# written under mktemp, so it needs no model, GPU or comparator and runs bare
-# wherever guard_tree runs it.
-#
-# python3 writes the fixtures and reads the receipts back. It is not the system
-# under test: every verdict comes from the binary, and every mutant below is the
-# binary rebuilt from a mutated copy of its sources.
+# (scripts/lib/crux_inference_judge.py, #3739). Hermetic: every engine output
+# is a fixture written under mktemp, so it needs no model, GPU or comparator
+# and runs bare wherever guard_tree runs it.
 #
 # WHY A TABLE. The judge's one rule, "a comparator right and apr wrong is RED",
 # is only a gate if it has been seen to go RED. Row 2 is the falsifier #3715
@@ -32,14 +27,14 @@ case "${1:-}" in -h|--help) printf 'usage: bash scripts/check_crux_inference_jud
 ROOT=$(cd "$(dirname "$0")/.." && pwd) || exit 2
 PROG=check_crux_inference_judge
 command -v python3 >/dev/null 2>&1 || { printf '%s: ENV - python3 is missing\n' "$PROG" >&2; exit 2; }
-. "$ROOT/scripts/lib/crux_judge_bin.sh" || { printf '%s: ENV - no CRUX judge binary\n' "$PROG" >&2; exit 2; }
+JUDGE="${CRUX_JUDGE_OVERRIDE:-$ROOT/scripts/lib/crux_inference_judge.py}"
 # #3957 F6: the verdict cases run on a v2 FIXTURE prompt set (constrained <answer> oracles, #3962)
 # written below, certified by a fixture receipt. The REAL v1 set is still what the golden_output.rs
 # drift check (row 12) reads.
 PROMPTS_V1="$ROOT/scripts/crux_inference_prompts.json"
 PROMPTS="$PROMPTS_V1"
 GOLDEN="$ROOT/crates/apr-cli/src/commands/golden_output.rs"
-for f in "$PROMPTS_V1" "$GOLDEN"; do
+for f in "$JUDGE" "$PROMPTS_V1" "$GOLDEN"; do
   [ -f "$f" ] || { printf '%s: ENV - %s not found\n' "$PROG" "$f" >&2; exit 2; }
 done
 
@@ -80,14 +75,15 @@ PY
 # ...and its certification (#3962 J2): the fixture receipt covers exactly these bytes.
 CERT="$TMP/cert.json"
 cert_for() { # cert_for <prompts> <receipt>: a fixture certification covering exactly those bytes
-python3 - "$1" "$2" <<'PY'
+python3 - "$ROOT/scripts/lib" "$1" "$2" <<'PY'
 import hashlib, json, sys
-json.dump({"schema": "crux-prompt-certification/v1", "prompts": sys.argv[1], "prompts_sha256": hashlib.sha256(open(sys.argv[1], "rb").read()).hexdigest(),
+sys.path.insert(0, sys.argv[1]); import crux_prompt_certify as c
+json.dump({"schema": c.SCHEMA, "prompts": sys.argv[2], "prompts_sha256": hashlib.sha256(open(sys.argv[2], "rb").read()).hexdigest(),
            "admitted": {"fixture/Q4_K_M": ["golden-2plus2", "golden-greeting", "golden-paris", "chat-arith-2turn"]},
            "admitted_by_sha": {"a" * 64: __import__("os").environ.get("ADMIT", "golden-2plus2,golden-greeting,golden-paris,chat-arith-2turn").split(",")},
            **({"admitted_by_sha_thinking": {"a" * 64: json.loads(__import__("os").environ["ADMIT_THINKING"])}}
               if __import__("os").environ.get("ADMIT_THINKING") else {}),
-           "rejected": {}, "uncontrolled": [], "cells": []}, open(sys.argv[2], "w"))
+           "rejected": {}, "uncontrolled": [], "cells": []}, open(sys.argv[3], "w"))
 PY
 }
 cert_for "$PROMPTS" "$CERT"
@@ -217,7 +213,7 @@ if unpin:
 json.dump(meta, open(out, "w"))
 PY
   seal "$1/manifest.jsonl"
-  "$CRUX_JUDGE" collect --manifest "$1/manifest.jsonl" --prompts "$PROMPTS" --meta "$1/meta.json" \
+  PYTHONPATH="$ROOT/scripts/lib" python3 "$JUDGE" collect --manifest "$1/manifest.jsonl" --prompts "$PROMPTS" --meta "$1/meta.json" \
     ${CERT:+--certification "$CERT"} --out-json "$1/receipt.json" --out-md "$1/receipt.md" > "$1/judge.out" 2> "$1/judge.err"
 }
 verdict_of() { # verdict_of <case dir> <prompt id>
@@ -797,8 +793,25 @@ field_is "a working install the harness could not NAME is not_on_PATH" \
 field_is "an absent binary is binary_not_found_at_path"  \
   "$d" $P 'c["engines"]["ollama"]["not_ran_reason"]' binary_not_found_at_path
 
-# The mutant collapsing the two reasons to one, as the receipt used to, is
-# reason-collapsed in the mutant table at the end: the row above must break.
+# MUTANT: collapse the two reasons to one, as the receipt used to. The row above
+# must go RED — otherwise the distinction is decoration.
+mut="$TMP/judge-collapsed.py"
+sed 's/("command not found", "not_on_PATH")/("command not found", "binary_not_found_at_path")/' "$JUDGE" > "$mut"
+if ! cmp -s "$JUDGE" "$mut"; then
+  mut_got=$(JUDGE="$mut" PYTHONPATH="$ROOT/scripts/lib" python3 "$mut" collect --manifest "$d/manifest.jsonl" --prompts "$PROMPTS" \
+              --meta "$d/meta.json" --out-json "$d/mut.json" --out-md "$d/mut.md" > /dev/null 2>&1;
+            python3 -c 'import json,sys
+r = json.load(open(sys.argv[1]))
+c = next(x for x in r["cells"] if x["key"]["prompt_id"] == sys.argv[2])
+print(c["engines"]["llama.cpp"]["not_ran_reason"])' "$d/mut.json" $P 2>/dev/null)
+  if [ "$mut_got" = "binary_not_found_at_path" ]; then
+    ok "MUTANT collapsing not_on_PATH into binary_not_found_at_path is detected (got $mut_got)"
+  else
+    broke "MUTANT not detected: collapsing the reasons still reported '$mut_got'"
+  fi
+else
+  broke "MUTANT could not be planted: the not_on_PATH pattern was not found in $JUDGE"
+fi
 
 # ── #3957 F6: the quorum-revised oracle. Each row below was a WRONG verdict on the unfixed judge
 # (recorded before the fix: a comparator that answered wrong corroborated apr, ALL_WRONG was not
@@ -1019,7 +1032,7 @@ unset META_ENGINES
 
 # ── #3962 B2: thinking ON with the OFFICIAL template prefills `<think>\n` in the prompt (#3990), so apr's
 # reply starts INSIDE the block, and llama-cli prints `[Start thinking] ... [End thinking]`. The judge
-# re-attaches the tags; the oracles' strip_think decides. Measured: every ON cell of the smoke (apr
+# re-attaches the tags; crux_oracles.strip_think decides. Measured: every ON cell of the smoke (apr
 # c08437cdd) was RED "answer_not_int" because the REASONING was judged as the answer.
 OPEN_RENDER='<|im_start|>user\nq<|im_end|>\n<|im_start|>assistant\n<think>\n'
 b2() { # b2 <case> <apr reply> <llama answer> [apr render]: one thinking-ON run cell, apr + llama.cpp + hf
@@ -1063,75 +1076,57 @@ reason_has "  ...named as undecidable, never judged on the reasoning" "$d" $P "n
 d=$(b2 b2_floored_cut "Two and two make <answer>4</answer>" "$LL_CLOSED" "x$(printf '水%.0s' $(seq 1 66))"); run_judge "$d"; GOT_RC=$?
 expect "B2: a rendering floored to a char boundary (199 bytes) is NOT read as whole -- unknown, so RED by name" "$d" 1 $P RED
 
-# ── #3957 F6 MUTANTS. Each rule deleted in a copy of the judge's sources, rebuilt; the WHOLE table
-# must then break.
+# ── #3957 F6 MUTANTS. Each rule deleted in a copy of the judge; the WHOLE table must then break.
 if [ -z "${CRUX_NO_MUTANTS:-}" ]; then
-  # label|the row that MUST break (#3887: a kill for the wrong reason is no kill)|source file|sed deleting the rule
-  # Each mutant re-runs the whole table, and 24 of them serially were ~900 s of CI's guard-tree
+  # label|the row that MUST break (#3887: a kill for the wrong reason is no kill)|sed deleting the rule
+  # Each mutant re-runs the whole table (~40 s), and 24 of them serially were ~900 s of CI's guard-tree
   # (#4429 x86-main: guard_tree.sh 1409 s). They share nothing but read-only inputs -- every re-run makes
   # its own mktemp -- so they run CRUX_MUT_JOBS at a time; verdicts are still read and printed in table order.
-  # The builds are serial (one target dir) and overlap the runs of the mutants already built.
   MUT_JOBS="${CRUX_MUT_JOBS:-$(nproc 2>/dev/null || echo 4)}"; [ "$MUT_JOBS" -gt 8 ] && MUT_JOBS=8
   MUT_ROWS=()
-  CRATE="$ROOT/tools/aprender-crux-judge"
-  MSRC="$TMP/mut-src"; mkdir -p "$MSRC"; cp "$CRATE/Cargo.toml" "$CRATE/Cargo.lock" "$MSRC/"
-  if ! command -v cargo >/dev/null 2>&1; then
-    broke "F6 mutants need cargo to rebuild the judge, and it is missing: not measured, never a pass"
-  else
-  while IFS='|' read -r label must file expr; do
+  while IFS='|' read -r label must expr; do
     [ -n "$label" ] || continue
     MUT_ROWS+=("$label|$must")
-    rm -rf -- "${MSRC:?}/src"; cp -R "$CRATE/src" "$MSRC/src"
-    sed "$expr" "$CRATE/src/$file" > "$MSRC/src/$file"
-    if cmp -s "$CRATE/src/$file" "$MSRC/src/$file"; then : > "$TMP/mut-$label.noapply"; continue; fi
-    if ! cargo build --quiet --release --locked --manifest-path "$MSRC/Cargo.toml" --target-dir "$TMP/mut-target" \
-        > "$TMP/mut-$label.log" 2>&1; then
-      : > "$TMP/mut-$label.nobuild"; continue
-    fi
-    cp "$TMP/mut-target/release/aprender-crux-judge" "$TMP/mut-$label.bin"
+    m="$TMP/mut-$label.py"; sed "$expr" "$JUDGE" > "$m"
+    if cmp -s "$JUDGE" "$m"; then : > "$TMP/mut-$label.noapply"; continue; fi
     while [ "$(jobs -rp | wc -l)" -ge "$MUT_JOBS" ]; do wait -n; done
-    CRUX_JUDGE_BIN="$TMP/mut-$label.bin" CRUX_NO_MUTANTS=1 bash "$ROOT/scripts/check_crux_inference_judge.sh" > "$TMP/mut-$label.log" 2>&1 &
+    CRUX_JUDGE_OVERRIDE="$m" CRUX_NO_MUTANTS=1 bash "$ROOT/scripts/check_crux_inference_judge.sh" > "$TMP/mut-$label.log" 2>&1 &
   done <<'MUT'
-reason-collapsed|could not NAME is not_on_PATH|judge.rs|s/^    ("command not found", "not_on_PATH"),$/    ("command not found", "binary_not_found_at_path"),/
-bad-control-ignored|the only control a token loop|judge.rs|s/^    if bad.is_empty() {$/    if true {/
-no-control-ok|is no control: RED|judge.rs|s/^    if ctl.is_empty() {$/    if false {/
-split-ignored|is a SPLIT|judge.rs|s/^    } else if more_than_one(&values) || values.iter().any(Val::is_none) {$/    } else if false {/
-apr-differs-ignored|ANSWERED but WRONG does not corroborate|judge.rs|s/^    } else if entry_of(entries, "apr")?.get("answered")?.truthy() && py_ne(&apr_ext, &first) {$/    } else if false {/
-token-loop-off|named DEGENERATE|judge.rs|s/^    top as f64 >= 0.9 \* chars.len() as f64 || token_loop(text).is_some()$/    top as f64 >= 0.9 * chars.len() as f64/
-b2-no-opener|a prefilled block that NEVER closes is RED|judge.rs|s/^        p.put("answer", Val::Str(format!("<think>\\n{answer}")));$/        {}/
-b2-no-llama-map|llama-cli \[Start thinking\] with no \[End thinking\]|judge.rs|s/^        ans = ans.replace(marker, tag);$/        let _ = (marker, tag);/
-b2-chars-not-bytes|a CJK rendering cut at 200 bytes|judge.rs|s/^    Ok(if utf8_len(&raw)? < FORMATTED_PROMPT_WHOLE_BELOW {$/    Ok(if raw.len() < 180 {/
-b2-floor-margin|floored to a char boundary|judge.rs|s/^const FORMATTED_PROMPT_WHOLE_BELOW: usize = 197;$/const FORMATTED_PROMPT_WHOLE_BELOW: usize = 200;/
-b2-unknown-judged|nothing shows whether the prompt opened a block|judge.rs|s/^    } else if opened.is_none() && !think_either().is_match(&answer) {$/    } else if false {/
-negative-control-off|the lane is blind|collect.rs|s/^        if nv != "RED" {$/        if false {/
-per-verb-control-off|does not control the serve lane|collect.rs|s/^        if !covered {$/        if false {/
-reasoning-not-rebuilt|read as UNCLOSED|judge.rs|s/^            if !reasoning.is_empty() {$/            if false {/
-route-not-keyed|J\/R1 route key|collect.rs|s/^        r.get("route")?.or(Val::str("")),$/        Val::str(""),/
-b4-borrow-off|J\/B4 oracle pairing|collect.rs|s/^        rows_of_mut(by_key, k).put(eng, Val::Dict(row));$/        let _ = row;/
-b4-native-overwritten|J\/B4 native wins|collect.rs|s/^            if !rows_of(by_key, k).has(eng) {$/            if true {/
-b4-modeless-off|J\/B4 plugin stream|collect.rs|s/^    \[tup(s1), tup(s2), tup(s3)\]$/    let _ = s3; [tup(s1), tup(s2.clone()), tup(s2)]/
-b4-lent-kept|J\/B4 plugin stream|collect.rs|s/^        if rows_k.has("apr") || rows_k.is_empty() || !lent_all {$/        if true {/
-b4-stream-not-serve|J\/B4 plugin stream|judge.rs|s/^    if one_of(&verb, &\["serve run", "serve stream"\]) {$/    if one_of(\&verb, \&["serve run"]) {/
-code-comparator-cli|J\/code comparator json|judge.rs|s/^    } else if is(&verb, "code") && one_of(engine, &COMPARATORS) {$/    } else if false {/
-b4-unmapped-borrows|J\/B4 unmapped route|collect.rs|s/^        let orc = oracle_route(part(k, 7));$/        let orc = oracle_route(part(k, 7)).or(Some("POST \/v1\/chat\/completions"));/
-admission-mode-off|admitted only for thinking ON|collect.rs|s/^    if let Some(am) = &adm.admitted_mode {$/    if let Some(am) = None::<\&Dict> {/
-admission-off|NOT admitted for this model is RED|collect.rs|s/^    if allowed.contains(part(k, 5))? {$/    if true {/
-certification-off|no certification receipt declines|collect.rs|s/^        certification_ok(&args.prompts, args.certification.as_deref())?$/        Val::Bool(true)/
-serve-mode-dropped|serve green|collect.rs|s/^        m if m.truthy() => m,$/        _ if false => Val::None,/;s/^            "nonstream"$/            ""/
-serve-backend-flag-dropped|serve green|judge.rs|/^fn parse_serve(/,/^}/s/^        e.put("backend_verified", Val::Bool(false));$/        {}/
+bad-control-ignored|the only control a token loop|s/^        if bad:$/        if False:/
+no-control-ok|is no control: RED|s/^    if not ctl:$/    if False:/
+split-ignored|is a SPLIT|s/^        elif len(set(vals.values())) > 1 or None in vals.values():$/        elif False:/
+apr-differs-ignored|ANSWERED but WRONG does not corroborate|s/^        elif a.get("answered") and ext.get("apr") != next(iter(vals.values())):$/        elif False:/
+token-loop-off|named DEGENERATE|s/^    return top >= 0.9 \* len(chars) or token_loop(text) is not None$/    return top >= 0.9 * len(chars)/
+b2-no-opener|a prefilled block that NEVER closes is RED|s/^            p\["answer"\] = "<think>\\n" + p\["answer"\]$/            pass/
+b2-no-llama-map|llama-cli \[Start thinking\] with no \[End thinking\]|s/^        ans = ans.replace(marker, tag)$/        pass/
+b2-chars-not-bytes|a CJK rendering cut at 200 bytes|s/^    return False if len(raw.encode("utf-8")) < FORMATTED_PROMPT_WHOLE_BELOW else None$/    return False if len(rendered) < 180 else None/
+b2-floor-margin|floored to a char boundary|s/^FORMATTED_PROMPT_WHOLE_BELOW = FORMATTED_PROMPT_LOG_BYTES - 3$/FORMATTED_PROMPT_WHOLE_BELOW = FORMATTED_PROMPT_LOG_BYTES/
+b2-unknown-judged|nothing shows whether the prompt opened a block|s/^        elif opened is None and not re.search(r"<\/?think>", p\["answer"\], re.I):$/        elif False:/
+negative-control-off|the lane is blind|s/^    blind = sorted(v for v, r in negative.items() if r\["verdict"\] != "RED")$/    blind = []/
+per-verb-control-off|does not control the serve lane|s/^    uncontrolled = \["%s/    uncontrolled = [] and ["%s/
+reasoning-not-rebuilt|read as UNCLOSED|s/^    if isinstance(doc, dict) and isinstance(doc.get("reasoning"), str) and doc.get("reasoning"):$/    if False:/
+route-not-keyed|J\/R1 route key|s/, mode, r.get("route") or "")$/, mode, "")/
+b4-borrow-off|J\/B4 oracle pairing|s/^                    by_key\[k\]\[eng\] = dict(by_key\[src\]\[eng\], borrowed_from_route=src\[7\] or "(route-less plugin row)")$/                    pass/
+b4-native-overwritten|J\/B4 native wins|s/^            if eng in by_key\[k\]:$/            if False:/
+b4-modeless-off|J\/B4 plugin stream|s/^        sources = \[k\[:7\] + (orc,), k\[:7\] + ("",), k\[:6\] + ("", "")\]$/        sources = [k[:7] + (orc,), k[:7] + ("",)]/
+b4-lent-kept|J\/B4 plugin stream|s/^            or not all((k, e) in lent for e in by_key\[k\])\]$/            or True]/
+b4-stream-not-serve|J\/B4 plugin stream|s/^    if row.get("verb") in ("serve run", "serve stream"):$/    if row.get("verb") == "serve run":/
+code-comparator-cli|J\/code comparator json|s/^    elif row.get("verb") == "code" and engine in COMPARATORS:$/    elif False:/
+b4-unmapped-borrows|J\/B4 unmapped route|s/^        orc = crux_serve_routes.oracle_route(k\[7\])$/        orc = crux_serve_routes.oracle_route(k[7]) or "POST \/v1\/chat\/completions"/
+admission-mode-off|admitted only for thinking ON|s/^        if admitted_mode is not None:$/        if False:/
+admission-off|NOT admitted for this model is RED|s/^        elif admitted is not None and k\[5\] not in admitted.get(k\[0\], ()):$/        elif False:/
+certification-off|no certification receipt declines|s/^        certified = certification_ok(args.prompts, getattr(args, "certification", None))$/        certified = True/
+serve-mode-dropped|serve green|s/^        mode = r.get("mode") or ("nonstream" if r\["verb"\] == "serve run" else "")$/        mode = ""/
+serve-backend-flag-dropped|serve green|/apr serve's responses report no backend/{n;s/^            e\["backend_verified"\] = False$/            pass/}
 MUT
   wait
-  # Zero mutants would make this section a pass that tested nothing.
-  [ "${#MUT_ROWS[@]}" -gt 0 ] || broke "F6 mutant table is EMPTY: no mutant was run"
   for r in "${MUT_ROWS[@]}"; do
     label=${r%%|*}; must=${r#*|}
     if [ -e "$TMP/mut-$label.noapply" ]; then broke "F6 mutant $label did not apply"; continue; fi
-    if [ -e "$TMP/mut-$label.nobuild" ]; then broke "F6 mutant $label did not build: $(grep -m1 '^error' "$TMP/mut-$label.log")"; continue; fi
     nb=$(grep -c '^  BROKE' "$TMP/mut-$label.log")
     if grep -q "^  BROKE.*$must" "$TMP/mut-$label.log"; then ok "F6 mutant $label killed by '$must' ($nb row(s) broke)"
     else broke "F6 mutant $label SURVIVED: '$must' stayed ok ($nb other row(s) broke)"; fi
   done
-  fi
 fi
 
 printf '%s: %d ok, %d broke\n' "$PROG" "$PASS" "$FAIL"

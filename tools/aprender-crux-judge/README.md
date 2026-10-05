@@ -2,10 +2,14 @@
 
 A hand-written Rust port of the CRUX inference judge, its answer oracles and
 its prompt certifier. It reads a CRUX run manifest and writes the receipt
-JSON and the Markdown table, byte-identical to the Python judge it replaced.
-The three Python modules are deleted; this binary is the only copy:
+JSON and the Markdown table, byte-identical to the Python judge it ports.
+The three Python modules stay for now: their callers (the `check_crux_*.sh` case
+tables, `crux_inference_dogfood.sh`, `crux_sweep_shards.sh`) are gate and
+release-decision paths, and a gate keeps its `.py` until a released tool carries
+the port (N-1). They switch to this binary, and the `.py` are deleted, in the
+first change after that release:
 
-| Retired Python module | Rust module | Subcommands |
+| Python module (kept, N-1) | Rust module | Subcommands |
 |-----------------------|-------------|-------------|
 | `scripts/lib/crux_inference_judge.py` | `collect.rs`, `judge.rs`, `main.rs` | `collect` |
 | `scripts/lib/crux_oracles.py` | `oracles.rs`, `sandbox.rs` | `eval`, `extract`, `lint` |
@@ -23,9 +27,9 @@ The crate is not a workspace member (the root `Cargo.toml` excludes it). Its
 binary-debt row is in `contracts/binary-debt-v1.yaml`. Scripts reach it
 through `scripts/lib/crux_judge_bin.sh`, which builds it from the calling
 tree (`cargo build --release --locked`, target dir inside the crate) and
-exports `$CRUX_JUDGE`; `CRUX_JUDGE_BIN=<path>` skips the build. Its callers
-are `scripts/crux_inference_dogfood.sh`, `scripts/crux_sweep_shards.sh` and
-the two case tables.
+exports `$CRUX_JUDGE`; `CRUX_JUDGE_BIN=<path>` skips the build. It has no
+caller yet: `scripts/crux_inference_dogfood.sh`, `scripts/crux_sweep_shards.sh`
+and the two case tables switch to it in the N-1 change above.
 
 ## Usage
 

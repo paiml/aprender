@@ -64,6 +64,8 @@ display	scripts/generate_golden_traces.py|32e68fd4|0	print(f"Processing: {test_i
 display	scripts/invariance.py|4ae75dee|0	print(f" {n}: {results[n][:300]!r}")
 display	scripts/invariance.py|b8440556|0	print(f"INVARIANCE_FAIL all transports agree but the payload is not JSON: {first[:200]!r}")
 display	scripts/invariance.py|e8ea38ec|0	print(f" {names[0]}: {first[:300]!r}")
+display	scripts/lib/crux_inference_judge.py|75527fee|0	lines += ["", "Greedy divergence (REPORTED, not judged): %s" % json.dumps(r["greedy"])[:600]]
+display	scripts/lib/crux_inference_judge.py|877ad529|0	e["why"] = "degenerate output (one character is >=90%% of it): %r" % p["answer"][:24]
 display	scripts/lib/crux_openai_client.py|72931f36|0	out["error"] = "HTTP %s: %s" % (exc.code, exc.read().decode("utf-8", "replace")[:300])
 display	scripts/lib/dogfood_coverage_gate.py|37f625cd|0	+ "\n".join(f" - {b}" for b in bad[:10]))
 display	scripts/lib/dogfood_coverage_gate.py|5bcaa073|0	+ "\n".join(f" - {b}: {f}" for b, f in gone[:20])
