@@ -1,7 +1,12 @@
 #!/usr/bin/env bash
-# check_crux_oracles.sh: the case table for the CRUX answer oracles
-# (scripts/lib/crux_oracles.py, #3962). Hermetic: every reply is a fixture, so it
-# needs no model, GPU or engine.
+# check_crux_oracles.sh: the case table for the CRUX answer oracles and the prompt
+# certifier (#3962), both subcommands of the CRUX judge binary
+# (tools/aprender-crux-judge: `eval`, `extract`, `lint`, `certify`, `check`).
+# Hermetic: every reply is a fixture, so it needs no model, GPU or engine.
+#
+# python3 is the fixture language of this table and the interpreter the
+# code_tests sandbox runs replies in. It is not the system under test: every
+# verdict below comes from the binary.
 #
 # WHY A TABLE. An oracle is only a gate if it has been seen to say WRONG. Every
 # must-RED row below is a way a wrong or unjudgeable reply could be scored
@@ -24,16 +29,45 @@ set -uo pipefail
 ROOT=$(cd "$(dirname "$0")/.." && pwd) || exit 2
 PROG=check_crux_oracles
 command -v python3 >/dev/null 2>&1 || { printf '%s: ENV - python3 is missing\n' "$PROG" >&2; exit 2; }
-ORACLES="$ROOT/scripts/lib/crux_oracles.py"
+. "$ROOT/scripts/lib/crux_judge_bin.sh" || { printf '%s: ENV - no CRUX judge binary\n' "$PROG" >&2; exit 2; }
 PROMPTS="$ROOT/scripts/crux_inference_prompts.v2.json"
-for f in "$ORACLES" "$PROMPTS"; do
+for f in "$PROMPTS"; do
   [ -f "$f" ] || { printf '%s: ENV - %s not found\n' "$PROG" "$f" >&2; exit 2; }
 done
 
-python3 - "$ORACLES" <<'PY'
-import importlib.util, json, sys
-spec = importlib.util.spec_from_file_location("crux_oracles", sys.argv[1])
-o = importlib.util.module_from_spec(spec); spec.loader.exec_module(o)
+python3 - "$CRUX_JUDGE" <<'PY'
+import json, os, subprocess, sys, tempfile
+BIN = sys.argv[1]
+
+# The binary's oracle subcommands, called the way the Python module used to be.
+def _run(*args):
+    return subprocess.run([BIN, *args], capture_output=True, text=True)
+def _files(prompt, reply):
+    d = tempfile.mkdtemp()
+    for name, doc in (("p.json", prompt), ("r.json", reply)):
+        with open(os.path.join(d, name), "w", encoding="utf-8") as fh:
+            json.dump(doc, fh)
+    return os.path.join(d, "p.json"), os.path.join(d, "r.json")
+class o:
+    SCHEMA = "crux-inference-prompts/v2"
+    # Must list every verb: the minimal-set lint row below needs a control for each.
+    VERBS = ("run", "chat", "code", "serve run", "serve stream")
+    @staticmethod
+    def evaluate(prompt, text, turns=None):
+        r = _run("eval", *_files(prompt, {"text": text, **({"turns": turns} if turns is not None else {})}))
+        assert r.returncode in (0, 1), f"eval rc {r.returncode}: {r.stderr}"
+        return json.loads(r.stdout)
+    @staticmethod
+    def extract(prompt, text):
+        r = _run("extract", *_files(prompt, {"text": text}))
+        assert r.returncode == 0, f"extract rc {r.returncode}: {r.stderr}"
+        return json.loads(r.stdout)
+    @staticmethod
+    def validate_set(doc):
+        p, _ = _files(doc, {})
+        r = _run("lint", p)
+        assert r.returncode in (0, 1), f"lint rc {r.returncode}: {r.stderr}"
+        return r.stdout.splitlines()
 
 ASK = "Reply with the final answer inside <answer></answer>."
 def ans(expect, norm="casefold_strip"):
@@ -122,9 +156,7 @@ for name, doc, want in LINT:
     print(f"  {'ok   ' if good else 'BROKE'} lint: {name}  ->  {(errs[0] + (f' … and {len(errs) - 1} more error(s)' if len(errs) > 1 else '')) if errs else 'valid'}")
     fail += not good
 
-# The certifier (crux_prompt_certify.py): admission needs EVERY leg correct; missing is never agreement.
-import os, subprocess, tempfile
-CERT = os.path.join(os.path.dirname(sys.argv[1]), "crux_prompt_certify.py")
+# The certifier: admission needs EVERY leg correct; missing is never agreement.
 SRC = {"repo": "Q/M", "revision": "r1"}
 MODEL = {"model": "M", "source": SRC, "bf16_gguf": "b" * 64, "quants": {"Q4": "q" * 64}, "thinking": ["off"]}
 PSET = {"schema": o.SCHEMA, "prompts": [
@@ -149,7 +181,7 @@ def certify(d, drop=(), wrong=(), source=SRC):
     for f, doc in (("m.jsonl", None), ("p.json", PSET), ("i.json", [MODEL])):
         with open(os.path.join(d, f), "w") as fh:
             fh.write("".join(json.dumps(r) + "\n" for r in rows) if doc is None else json.dumps(doc))
-    r = subprocess.run([sys.executable, CERT, "certify", "--prompts", f"{d}/p.json", "--inventory", f"{d}/i.json",
+    r = subprocess.run([BIN, "certify", "--prompts", f"{d}/p.json", "--inventory", f"{d}/i.json",
                         "--apr-commit", "c" * 40, "-o", f"{d}/r.json", f"{d}/m.jsonl"], capture_output=True, text=True)
     assert r.returncode == 0, r.stderr
     return json.load(open(f"{d}/r.json"))
@@ -204,7 +236,7 @@ def think_cert(d, hf_doc):
     for f, doc in (("m.jsonl", None), ("p.json", {"schema": o.SCHEMA, "prompts": [PSET["prompts"][0]]}), ("i.json", [m])):
         with open(os.path.join(d, f), "w") as fh:
             fh.write("".join(json.dumps(r) + "\n" for r in rows) if doc is None else json.dumps(doc))
-    subprocess.run([sys.executable, CERT, "certify", "--prompts", f"{d}/p.json", "--inventory", f"{d}/i.json",
+    subprocess.run([BIN, "certify", "--prompts", f"{d}/p.json", "--inventory", f"{d}/i.json",
                     "--apr-commit", "c" * 40, "-o", f"{d}/r.json", f"{d}/m.jsonl"], capture_output=True, check=True)
     r = json.load(open(f"{d}/r.json"))
     return r["admitted"]["M/Q4"], r["think_closure"]["M/Q4|ctl"]["hf@bf16:hf"]
@@ -245,7 +277,7 @@ with tempfile.TemporaryDirectory() as d:
     for f, doc in (("m.jsonl", None), ("p.json", {"schema": o.SCHEMA, "prompts": [PSET["prompts"][0]]}), ("i.json", [m])):
         with open(os.path.join(d, f), "w") as fh:
             fh.write("".join(json.dumps(r) + "\n" for r in rows) if doc is None else json.dumps(doc))
-    subprocess.run([sys.executable, CERT, "certify", "--prompts", f"{d}/p.json", "--inventory", f"{d}/i.json",
+    subprocess.run([BIN, "certify", "--prompts", f"{d}/p.json", "--inventory", f"{d}/i.json",
                     "--apr-commit", "c" * 40, "-o", f"{d}/r.json", f"{d}/m.jsonl"], capture_output=True, check=True)
     r = json.load(open(f"{d}/r.json"))
     got = (r["admitted_by_sha"]["q" * 64], r["admitted_by_sha_thinking"]["q" * 64])
@@ -257,7 +289,7 @@ with tempfile.TemporaryDirectory() as d:
 with tempfile.TemporaryDirectory() as d:
     certify(d)
     def chk():
-        return subprocess.run([sys.executable, CERT, "check", "--prompts", f"{d}/p.json", "--receipt", f"{d}/r.json"],
+        return subprocess.run([BIN, "check", "--prompts", f"{d}/p.json", "--receipt", f"{d}/r.json"],
                               capture_output=True, text=True).returncode
     rc_same = chk()
     r = json.load(open(f"{d}/r.json")); r["uncontrolled"] = ["M/Q4"]
@@ -307,7 +339,7 @@ drift=$?
 if [ "$drift" -eq 0 ]; then printf '  ok    drift vs golden_output.rs: %s\n' "$DRIFT_OUT"
 else printf '  BROKE drift vs golden_output.rs:\n'; printf '%s\n' "$DRIFT_OUT" | sed 's/^/          /'; fi
 
-LINT_OUT=$(python3 "$ORACLES" lint "$PROMPTS" 2>&1)
+LINT_OUT=$("$CRUX_JUDGE" lint "$PROMPTS" 2>&1)
 lint=$?
 if [ "$lint" -eq 0 ]; then
   printf '  ok    %s is a valid v2 prompt set\n' "${PROMPTS#"$ROOT"/}"

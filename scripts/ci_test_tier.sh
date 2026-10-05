@@ -39,11 +39,19 @@
 #   reuse  merge_group only: HEAD^{tree} equals the PR head's tree AND that
 #          head's workspace-test check-run concluded success — the same tree
 #          measured twice is the definition of waste. Any doubt -> full.
+#          push (T36): the merge queue tested this very commit and main was
+#          moved to it, so the push run would measure the same sha twice. With
+#          --mg-run/--mg-sha/--mg-conclusion (scripts/ci_mg_workspace_result.sh
+#          reads them from the merge_group run) a push reuses when that run's
+#          workspace-test concluded success AND its sha is HEAD (and GITHUB_SHA,
+#          when set). Any doubt -> the push's own tier, below, unchanged; the
+#          reason says why it was not reused. Only workspace-test is reused:
+#          every other push job runs as before.
 #
 # Output: KEY=VALUE lines — tier, crates (space list), targets (crate:--lib,
 # crate:--lib:module, crate:--bins or crate:--test:name; space list),
-# check_workspace (1, only under rule (i)), reason, cite (the PR head sha on
-# reuse).
+# check_workspace (1, only under rule (i)), reason, cite (on reuse: the PR head
+# sha for a merge_group, the merge_group run id for a push).
 # Feature-gated suites (model-tests, setfit, ...) belong to the full tier only;
 # the quick tier runs default features. Exit 2 on ENV (unknown event, registry
 # drift); 0 otherwise. `--self-test` runs the case table.
@@ -96,7 +104,7 @@
 #          is emitted.
 set -euo pipefail
 
-EVENT=""; COMPARAND=""; DIFF_FROM=""; PR_HEAD=""; PR_CONCLUSION=""; REGISTRY="scripts/tree_reader_tests.txt"; ROOT="."
+EVENT=""; COMPARAND=""; DIFF_FROM=""; PR_HEAD=""; PR_CONCLUSION=""; MG_RUN=""; MG_SHA=""; MG_CONCLUSION=""; MG_GIVEN=0; REGISTRY="scripts/tree_reader_tests.txt"; ROOT="."
 # The sibling scripts and the registry always come from the checkout this script
 # runs in (cwd = repo root, in ci.yml and in the case table alike); --repo-root
 # re-points only the GIT queries — HEAD, its parents, their trees — which is how
@@ -110,6 +118,9 @@ while [ $# -gt 0 ]; do
         --diff-from) DIFF_FROM=$2; shift 2 ;;
         --pr-head) PR_HEAD=$2; shift 2 ;;
         --pr-head-conclusion) PR_CONCLUSION=$2; shift 2 ;;
+        --mg-run) MG_RUN=$2; MG_GIVEN=1; shift 2 ;;
+        --mg-sha) MG_SHA=$2; MG_GIVEN=1; shift 2 ;;
+        --mg-conclusion) MG_CONCLUSION=$2; MG_GIVEN=1; shift 2 ;;
         --registry) REGISTRY=$2; shift 2 ;;
         --repo-root) ROOT=$2; shift 2 ;;
         --tsv) TSV=$2; shift 2 ;;
@@ -119,7 +130,7 @@ while [ $# -gt 0 ]; do
         # optional operand: `--filterset 'a:--lib b:--test:c'`, or nothing and the
         # list comes from stdin (how ci.yml pipes steps.tier.outputs.targets in).
         --filterset) FILTERSET=1; shift; if [ $# -gt 0 ]; then FS_TARGETS=$1; shift; fi ;;
-        *) printf 'usage: %s --event EVENT [--comparand REF] [--diff-from FILE] [--pr-head SHA --pr-head-conclusion C] [--registry FILE] [--repo-root DIR] | --filterset [TARGETS] | --tier-of-record [--tsv FILE] [--union-touched --event pull_request --comparand REF] | --self-test\n' "$0" >&2; exit 2 ;;
+        *) printf 'usage: %s --event EVENT [--comparand REF] [--diff-from FILE] [--pr-head SHA --pr-head-conclusion C] [--mg-run ID --mg-sha SHA --mg-conclusion C] [--registry FILE] [--repo-root DIR] | --filterset [TARGETS] | --tier-of-record [--tsv FILE] [--union-touched --event pull_request --comparand REF] | --self-test\n' "$0" >&2; exit 2 ;;
     esac
 done
 
@@ -252,6 +263,19 @@ diff_into() { # $1 = out file, $2 = base rev
     git -C "$ROOT" diff --no-renames --name-only "$2" HEAD > "$1" 2>/dev/null
 }
 
+# push_reuse_why: prints nothing when a push may reuse the merge_group result
+# it was handed (T36); otherwise ONE line saying why not. Each refusal ends in a
+# `# R-<NAME>` marker for scripts/check_ci_push_reuse.sh --self-test.
+push_reuse_why() {
+    local head gsha
+    gsha=$(printenv GITHUB_SHA || true)  # the event's own sha, when Actions set one
+    [[ $MG_RUN =~ ^[0-9]+$ ]] || { echo "no merge_group workspace-test run to reuse (run id '${MG_RUN:-none}')"; return; } # R-MGRUN
+    head=$(git -C "$ROOT" rev-parse -q --verify HEAD 2>/dev/null || true)
+    [ -n "$head" ] && [ "$MG_SHA" = "$head" ] || { echo "merge_group run $MG_RUN tested ${MG_SHA:-no sha}, not HEAD ${head:-?}"; return; } # R-MGSHA
+    [ -z "$gsha" ] || [ "$gsha" = "$head" ] || { echo "GITHUB_SHA $gsha is not HEAD $head"; return; } # R-GHSHA
+    [ "$MG_CONCLUSION" = success ] || { echo "merge_group run $MG_RUN's workspace-test concluded ${MG_CONCLUSION:-nothing}, not success"; return; } # R-MGCONCL
+}
+
 decide() {
     local df rc=0
     case "$EVENT" in
@@ -262,7 +286,14 @@ decide() {
             # diff is HEAD^1..HEAD. It used to be a flat `full`, which is how every
             # landing paid an hour for work the PR and the queue had both already
             # measured.
-            local base how
+            local base how why=""
+            if [ "$MG_GIVEN" = 1 ]; then
+                why=$(push_reuse_why)
+                if [ -z "$why" ]; then
+                    printf 'tier=reuse\ncite=%s\nreason=push: merge_group run %s tested this very commit (%s) and its workspace-test succeeded -- the same sha measured twice (T36)\n' "$MG_RUN" "$MG_RUN" "${MG_SHA:0:9}"
+                    return 0
+                fi
+            fi
             if git -C "$ROOT" rev-parse -q --verify 'HEAD^2' >/dev/null 2>&1; then
                 base='HEAD^1'; how="the merge commit's own diff, HEAD^1..HEAD"
             elif git -C "$ROOT" rev-parse -q --verify 'origin/main@{1}' >/dev/null 2>&1; then
@@ -277,6 +308,7 @@ decide() {
             else
                 printf 'tier=full\nreason=push: no parent at all (a root commit) and no previous origin/main in the reflog -- the pushed diff cannot be derived, so this falls closed to full\n'; return 0
             fi
+            [ -z "$why" ] || how="$how; merge_group not reused: $why"
             df=$(mktemp "${TMPDIR:-/tmp}/ci-tier-diff.XXXXXX")
             if ! diff_into "$df" "$base"; then rm -f "$df"; printf 'tier=full\nreason=push: git diff %s..HEAD failed -- the pushed diff cannot be derived, so this falls closed to full\n' "$base"; return 0; fi
             selection "push: $how" "$df" || rc=$?

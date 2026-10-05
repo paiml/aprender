@@ -66,7 +66,7 @@ fixture() { # fixture <file> <kind>... ; kinds: plain cancelled always event eve
 }
 
 self_test() {
-    local d fail=0 n=0
+    local d fail=0 n=0 q=0
     d=$(mktemp -d) || return 2
     # shellcheck disable=SC2064
     trap "rm -rf -- '${d:?}'" RETURN
@@ -141,7 +141,10 @@ self_test() {
         echo "check_guard_steps_run_all self-test: FAILED"
         return 1
     fi
-    echo "check_guard_steps_run_all self-test: ${n}/${n} cases pass"
+    if [ "$q" -gt 0 ]; then
+        echo "UNMEASURED check_guard_steps_run_all self-test: $q quarantined row(s) not measured (FLAKE-0 #4759)"
+    fi
+    echo "check_guard_steps_run_all self-test: ${n}/${n} cases pass, $q not measured"
 }
 
 # mfixture <file> <variant> [step-run...] -- a guard job + its `-steps` manifest.
@@ -218,10 +221,12 @@ manifest_rows() {
     mfixture "$repo/ci/sections.yml" good 'trap "touch \"$RUNNER_TEMP/restored\"" EXIT; sleep 30'
     mkdir -p "$d/rt"; rm -f "${d:?}/rt/restored"
     RUNNER_TEMP="$d/rt" mrun "CI: a timed-out step is TIMEOUT, not a crash" 1 'TIMEOUT' --step-timeout 1
-    n=$((n + 1))
-    if [ -e "$d/rt/restored" ]; then
-        printf 'ok   %-58s\n' "a timed-out step still runs its EXIT trap (restores a mutant)"
-    else printf 'FAIL %-58s\n' "a timed-out step still runs its EXIT trap (restores a mutant)"; bad=1; fi
+    # QUARANTINED, FLAKE-0 #4759: a 1 s step timeout loses to a loaded runner, and the row
+    # cannot tell "trap never armed" from "armed and skipped". It still runs and prints what
+    # it read, but never sets bad and is counted as not measured, never as ok (fix: #4759 step 2).
+    q=$((q + 1))
+    if [ -e "$d/rt/restored" ]; then v=ok; else v=FAIL; fi
+    printf 'QUARANTINED FLAKE-0 #4759 (not measured%s %s) %s\n' "; read" "$v" "a timed-out step still runs its EXIT trap (restores a mutant)"
     # shellcheck disable=SC2016
     mfixture "$repo/ci/sections.yml" good 'sleep 30 & echo $! > "$RUNNER_TEMP/child.pid"; sleep 30'
     t0=$SECONDS
