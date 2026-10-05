@@ -1,0 +1,26 @@
+# vendored: tests/core/targets/targetSubjectsOf-002.ttl
+id: targets/targetSubjectsOf-002
+label: "Test of sh:targetSubjectsOf 002"
+prefix: "http://datashapes.org/sh/tests/core/targets/targetSubjectsOf-002.test#"
+targeting: "sh:targetClass ex:MyClass and sh:targetSubjectsOf ex:myProperty as written (#4814 slice 4); the focus set is their union, InvalidInstance1 once"
+shapes:
+  - id: TestShape
+    targetClass: ex:MyClass
+    targetSubjectsOf: ex:myProperty
+    properties:
+      - {path: ex:myProperty, maxCount: 1}
+data: |
+  ex:InvalidInstance1 rdf:type ex:MyClass .
+  ex:InvalidInstance1 ex:myProperty "A" .
+  ex:InvalidInstance1 ex:myProperty "B" .
+  ex:InvalidInstance2 ex:myProperty "A" .
+  ex:InvalidInstance2 ex:myProperty "B" .
+  ex:MyClass rdf:type rdfs:Class .
+  ex:ValidInstance1 rdf:type ex:MyClass .
+  ex:ValidInstance1 ex:myProperty "A" .
+  ex:ValidInstance2 ex:myProperty "A" .
+expect:
+  conforms: false
+  results:
+    - {focus: ex:InvalidInstance1, path: ex:myProperty, component: maxCount}
+    - {focus: ex:InvalidInstance2, path: ex:myProperty, component: maxCount}

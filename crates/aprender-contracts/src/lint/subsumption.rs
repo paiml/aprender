@@ -456,6 +456,7 @@ mod tests {
         NodeShape {
             id: id.into(),
             target_class: target.into(),
+            targets: crate::ontology::shapes::Targets::default(),
             closed: false,
             ignored_properties: vec![],
             properties: vec![],

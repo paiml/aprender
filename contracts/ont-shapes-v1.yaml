@@ -105,7 +105,7 @@ falsification_tests:
     if_fails: a component the table claims is silently vacuous
   - id: FALSIFY-SHP-003
     rule: the subset is exact
-    prediction: targetNode, qualifiedValueShape, languageIn, a sequence path, or/and/not, and a nested node two levels deep are each refused at parse by name
+    prediction: qualifiedValueShape, languageIn, a sequence path, or/and/not, and a nested node two levels deep are each refused at parse by name; a targetNode, targetSubjectsOf or targetObjectsOf in a contract shape is refused by the gate by name (FALSIFY-SHP-004)
     test: cargo test -p aprender-contracts --lib ontology::shapes::tests::unsupported_components_are_refused_at_parse_by_name
     if_fails: a shape reports conforms for a constraint it never checked
   - id: FALSIFY-SHP-004

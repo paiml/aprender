@@ -141,6 +141,7 @@ pub fn collect_shapes(
     for (stem, rel, doc) in pv_contract::documents(contract_dir) {
         checked += 1;
         for shape in shapes::parse_shapes_with(&stem, &doc, &targets)? {
+            refuse_non_class_target(&shape)?;
             if let Some((_, other)) = shapes.iter().find(|(s, _)| s.id == shape.id) {
                 return Err(ShapeError::Malformed {
                     shape: shape.id.clone(),
@@ -151,6 +152,28 @@ pub fn collect_shapes(
         }
     }
     Ok((shapes, checked))
+}
+
+/// #4814 slice 4: a contract shape may target only a class. The gate's plant (`validate_with_plant`) and its
+/// vacuity count (`focus_of`) read `targetClass` alone, so a `targetNode`, `targetSubjectsOf` or `targetObjectsOf`
+/// shape would be neither planted nor counted: it is refused until both read [`shapes::focus_nodes`].
+/// The component is the bare key, so the refusal reads exactly as the parser's did before slice 4 (exit 3, same text).
+fn refuse_non_class_target(shape: &NodeShape) -> Result<(), ShapeError> {
+    let t = &shape.targets;
+    let named = [
+        ("targetNode", t.nodes.is_empty()),
+        ("targetSubjectsOf", t.subjects_of.is_empty()),
+        ("targetObjectsOf", t.objects_of.is_empty()),
+    ]
+    .into_iter()
+    .find(|(_, empty)| !empty);
+    match named {
+        Some((k, _)) => Err(ShapeError::Unsupported {
+            shape: shape.id.clone(),
+            component: k.to_string(),
+        }),
+        None => Ok(()),
+    }
 }
 
 /// `(shape id, declaring file)` for every shape in the corpus — the arming ratchet's view of "what exists".
@@ -1145,6 +1168,7 @@ mod tests {
         NodeShape {
             id: id.to_string(),
             target_class: crate::ontology::rdf::ont("KernelSymbol"),
+            targets: shapes::Targets::default(),
             closed: false,
             ignored_properties: Vec::new(),
             properties: Vec::new(),
@@ -1419,6 +1443,26 @@ mod tests {
                 assert_eq!(component, "targetNode");
             }
             other => panic!("expected Unsupported, got {other:?}"),
+        }
+    }
+
+    #[test]
+    fn a_contract_shape_with_a_non_class_target_is_refused_by_the_bare_key() {
+        // #4814 slice 4: the parser reads these now; the gate still refuses them (plant and vacuity read targetClass)
+        let mut s = kernel_shape("k");
+        assert!(refuse_non_class_target(&s).is_ok());
+        for k in ["targetNode", "targetSubjectsOf", "targetObjectsOf"] {
+            s.targets = shapes::Targets::default();
+            let one = vec![crate::ontology::rdf::ont("x")];
+            match k {
+                "targetNode" => s.targets.nodes = one,
+                "targetSubjectsOf" => s.targets.subjects_of = one,
+                _ => s.targets.objects_of = one,
+            }
+            match refuse_non_class_target(&s) {
+                Err(ShapeError::Unsupported { component, .. }) => assert_eq!(component, k),
+                other => panic!("{k}: expected Unsupported, got {other:?}"),
+            }
         }
     }
 

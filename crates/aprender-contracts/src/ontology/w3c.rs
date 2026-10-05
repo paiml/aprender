@@ -10,9 +10,11 @@
 //!
 //! Two translations are semantic, and each case that uses one says so in its `targeting:` line: (1) a
 //! `sh:targetNode` set becomes a class — every target node is typed `<case>#Focus` and the shape targets it,
-//! which yields the same focus nodes; (2) a data blank node is skolemized to a named node under the case prefix,
-//! which changes no result the case expects. What is NOT vendored is listed in [`NOT_VENDORED`], one line per
-//! case with the component or form that puts it outside the subset — so the count reported is a count over the
+//! which yields the same focus nodes (since #4814 slice 4 the `targets/` cases write `targetNode` and
+//! `targetSubjectsOf` as W3C does; the older cases keep the rewrite, which is equivalent); (2) a data blank node
+//! is skolemized to a named node under the case prefix, which changes no result the case expects.
+//! What is NOT vendored is listed in [`NOT_VENDORED`], one line per case with the component or form that puts it
+//! outside the subset — so the count reported is a count over the
 //! cases the subset claims, and a case the validator refuses by design is never scored as a failure.
 //!
 //! A case fails when `conforms` or the multiset of `(focus, path, component)` differs from the expected report.
@@ -88,6 +90,18 @@ pub const CASES: &[(&str, &str)] = &[
     (
         "targets/targetClass-001",
         include_str!("../../w3c/targets-targetClass-001.yaml"),
+    ),
+    (
+        "targets/targetNode-001",
+        include_str!("../../w3c/targets-targetNode-001.yaml"),
+    ),
+    (
+        "targets/targetSubjectsOf-001",
+        include_str!("../../w3c/targets-targetSubjectsOf-001.yaml"),
+    ),
+    (
+        "targets/targetSubjectsOf-002",
+        include_str!("../../w3c/targets-targetSubjectsOf-002.yaml"),
     ),
     // #3611: the property-pair components, added after ONT-0's table of 32
     (
@@ -215,12 +229,9 @@ pub const NOT_VENDORED: &[(&str, &str)] = &[
     ("property/qualifiedValueShapesDisjoint-001", "sh:qualifiedValueShape — refused by name (slice 9)"),
     ("property/uniqueLang-001", "sh:uniqueLang; the term model drops language tags (slice 10)"),
     ("property/uniqueLang-002", "sh:uniqueLang; the term model drops language tags (slice 10)"),
-    ("targets/multipleTargets-001", "sh:targetSubjectsOf (slice 4)"),
-    ("targets/targetClassImplicit-001", "an implicit class target (a shape that is also an rdfs:Class) (slice 4)"),
-    ("targets/targetNode-001", "tests sh:targetNode itself; the targetNode-to-class rewrite would make it vacuous (slice 4)"),
-    ("targets/targetObjectsOf-001", "sh:targetObjectsOf (slice 4)"),
-    ("targets/targetSubjectsOf-001", "sh:targetSubjectsOf (slice 4)"),
-    ("targets/targetSubjectsOf-002", "sh:targetSubjectsOf (slice 4)"),
+    ("targets/multipleTargets-001", "sh:in on the node shape itself; its targetSubjectsOf is read since slice 4 (slice 5)"),
+    ("targets/targetClassImplicit-001", "an implicit class target (a shape that is also an rdfs:Class); the YAML dialect has no way to say a shape is a class"),
+    ("targets/targetObjectsOf-001", "sh:datatype on the node shape itself; its targetObjectsOf is read since slice 4 (slice 5)"),
     ("validation-reports/shared", "one property shape reached from two node shapes; the YAML dialect has no shared shape reference (slice 8)"),
 ];
 
@@ -614,7 +625,7 @@ mod tests {
         }
         // the ratchet (#4814 plan step 4): the vendored count only grows from its measured value
         assert!(
-            CASES.len() >= 26,
+            CASES.len() >= 29,
             "vendored W3C cases dropped below 26: the #4814 baseline 19, slice 1's four value-range cases, slice 2's equals and disjoint, slice 3's hasValue"
         );
     }

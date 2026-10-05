@@ -5,7 +5,7 @@
 //!
 //! | implemented | refused at parse (`error: shape uses unsupported <x>`, exit 3) |
 //! |---|---|
-//! | `targetClass` | `targetNode`, `targetSubjectsOf`, `targetObjectsOf` |
+//! | `targetClass`; `targetNode`, `targetSubjectsOf`, `targetObjectsOf` (a string or a list of them, #4814) | the implicit class target; a non-class target in a CONTRACT shape (the gate's plant reads only `targetClass`) |
 //! | `minCount`, `maxCount` | the `qualifiedValueShape` family |
 //! | `datatype`, `class`, `nodeKind` | — |
 //! | `in`, `pattern`, `minLength`, `maxLength` | `languageIn`, `uniqueLang` |
@@ -154,6 +154,8 @@ pub struct NodeShape {
     /// The contract that declares it (its stem); nested `node` shapes are `<stem>/node`.
     pub id: String,
     pub target_class: String,
+    /// The targets beside `targetClass` (#4814 slice 4). Their focus nodes are added to the class's.
+    pub targets: Targets,
     pub closed: bool,
     pub ignored_properties: Vec<String>,
     pub properties: Vec<PropertyShape>,
@@ -162,6 +164,21 @@ pub struct NodeShape {
     /// verdict, but the shape is still named in the gate's `declines[]`. Not SHACL; pv's own key, and it
     /// must carry its reason: an exemption with no reason is a silent one.
     pub allow_empty: Option<String>,
+}
+
+/// `sh:targetNode`, `sh:targetSubjectsOf`, `sh:targetObjectsOf`: full IRIs, in the order written.
+#[derive(Debug, Clone, Default, PartialEq, Eq)]
+pub struct Targets {
+    pub nodes: Vec<String>,
+    pub subjects_of: Vec<String>,
+    pub objects_of: Vec<String>,
+}
+
+impl Targets {
+    #[must_use]
+    pub fn is_empty(&self) -> bool {
+        self.nodes.is_empty() && self.subjects_of.is_empty() && self.objects_of.is_empty()
+    }
 }
 
 /// One `sh:ValidationResult`.
@@ -221,6 +238,9 @@ pub fn expand(name: &str) -> String {
 
 const NODE_KEYS: &[&str] = &[
     "targetClass",
+    "targetNode",
+    "targetSubjectsOf",
+    "targetObjectsOf",
     "closed",
     "ignoredProperties",
     "properties",
@@ -406,9 +426,12 @@ fn parse_node_shape(
             });
         }
     }
+    let targets = targets_of(id, map, depth)?;
     let target_class = match str_key(id, map, "targetClass")? {
         Some(t) => expand(t),
         None => match (depth, default_target) {
+            // explicit targets name the focus nodes; the entity-type default class does not widen them
+            (0, _) if !targets.is_empty() => String::new(),
             (0, Some(t)) => t,
             (0, None) => {
                 return Err(ShapeError::Malformed {
@@ -462,10 +485,46 @@ fn parse_node_shape(
     Ok(NodeShape {
         id: id.to_string(),
         target_class,
+        targets,
         closed,
         ignored_properties,
         properties,
         allow_empty: allow_empty_of(id, map, depth)?,
+    })
+}
+
+/// `targetNode` / `targetSubjectsOf` / `targetObjectsOf`: each a string or a non-empty list of strings, expanded.
+/// A nested `node` shape has no focus set of its own, so a target there is malformed, not ignored.
+fn targets_of(id: &str, map: &serde_yaml::Mapping, depth: usize) -> Result<Targets, ShapeError> {
+    let list = |k: &str| -> Result<Vec<String>, ShapeError> {
+        let Some(v) = map.get(k) else {
+            return Ok(Vec::new());
+        };
+        if depth > 0 {
+            return Err(malformed_in(
+                id,
+                format!("`{k}` on a nested `node` shape, which has no focus set"),
+            ));
+        }
+        let bad = || {
+            malformed_in(
+                id,
+                format!("`{k}` is not a string or a non-empty list of strings"),
+            )
+        };
+        match v {
+            serde_yaml::Value::String(s) => Ok(vec![expand(s)]),
+            serde_yaml::Value::Sequence(seq) if !seq.is_empty() => seq
+                .iter()
+                .map(|x| x.as_str().map(expand).ok_or_else(bad))
+                .collect(),
+            _ => Err(bad()),
+        }
+    };
+    Ok(Targets {
+        nodes: list("targetNode")?,
+        subjects_of: list("targetSubjectsOf")?,
+        objects_of: list("targetObjectsOf")?,
     })
 }
 
@@ -796,13 +855,38 @@ pub fn instances_closed(graph: &Graph, class: &str) -> Vec<String> {
     out.into_iter().collect()
 }
 
-/// Validate `graph` against `shapes`. Focus nodes of a shape are the instances of its target class.
+/// A shape's focus nodes, unique, in byte order: the instances of its target class (subclasses included), each
+/// `targetNode` (whether or not the graph mentions it, as SHACL says), each subject of a `targetSubjectsOf`
+/// predicate and each object of a `targetObjectsOf` predicate. A literal object is a focus node too; it is named by
+/// its N-Triples form, which no IRI can equal, and it has no values on any path.
+#[must_use]
+pub fn focus_nodes(graph: &Graph, shape: &NodeShape) -> Vec<String> {
+    let mut out: BTreeSet<String> = BTreeSet::new();
+    if !shape.target_class.is_empty() {
+        out.extend(instances_closed(graph, &shape.target_class));
+    }
+    out.extend(shape.targets.nodes.iter().cloned());
+    for t in graph.iter() {
+        if shape.targets.subjects_of.contains(&t.predicate) {
+            out.insert(t.subject.clone());
+        }
+        if shape.targets.objects_of.contains(&t.predicate) {
+            out.insert(match &t.object {
+                Term::Iri(s) => s.clone(),
+                lit @ Term::Literal { .. } => lit.to_string(),
+            });
+        }
+    }
+    out.into_iter().collect()
+}
+
+/// Validate `graph` against `shapes`. Focus nodes of a shape are [`focus_nodes`].
 #[must_use]
 pub fn validate(graph: &Graph, shapes: &[NodeShape]) -> Report {
     let mut report = Report::default();
     let mut focus_seen: BTreeSet<String> = BTreeSet::new();
     for shape in shapes {
-        for focus in instances_closed(graph, &shape.target_class) {
+        for focus in focus_nodes(graph, shape) {
             let focus = focus.as_str();
             focus_seen.insert(focus.to_string());
             validate_focus(graph, shape, focus, &mut report.results);
@@ -1428,6 +1512,15 @@ fn turtle_node(s: &NodeShape, subject: &str) -> String {
     if !s.target_class.is_empty() {
         o.push_str(&format!("    sh:targetClass <{}> ;\n", s.target_class));
     }
+    for (pred, list) in [
+        ("targetNode", &s.targets.nodes),
+        ("targetSubjectsOf", &s.targets.subjects_of),
+        ("targetObjectsOf", &s.targets.objects_of),
+    ] {
+        for t in list {
+            o.push_str(&format!("    sh:{pred} <{t}> ;\n"));
+        }
+    }
     if s.closed {
         o.push_str("    sh:closed true ;\n");
         if !s.ignored_properties.is_empty() {
@@ -1927,6 +2020,79 @@ mod tests {
     }
 
     #[test]
+    fn targets_beside_target_class_parse_as_a_string_or_a_list_and_never_widen_to_the_default() {
+        // #4814 slice 4: an explicit target names the focus nodes; the entity-type default class is not added
+        let s = shape("entity: {type: pv-contract}\nshape:\n  targetNode: ont:a\n  targetSubjectsOf: [ont:p, ont:q]\n  targetObjectsOf: ont:r\n  properties: []\n");
+        assert_eq!(s.target_class, "");
+        assert_eq!(s.targets.nodes, vec![ont("a")]);
+        assert_eq!(s.targets.subjects_of, vec![ont("p"), ont("q")]);
+        assert_eq!(s.targets.objects_of, vec![ont("r")]);
+        // beside an explicit targetClass both are kept
+        let both =
+            shape("shape:\n  targetClass: ont:A\n  targetSubjectsOf: ont:p\n  properties: []\n");
+        assert_eq!(both.target_class, ont("A"));
+        assert_eq!(both.targets.subjects_of, vec![ont("p")]);
+        assert!(shape("shape:\n  targetClass: ont:A\n  properties: []\n")
+            .targets
+            .is_empty());
+        let parse =
+            |y: &str| parse_shape_with("t", &serde_yaml::from_str(y).expect("yaml"), &pv_map());
+        for (y, want) in [
+            ("shape:\n  targetNode: []\n  properties: []\n", "not a string"),
+            ("shape:\n  targetNode: [ont:a, 3]\n  properties: []\n", "not a string"),
+            ("shape:\n  targetSubjectsOf: {a: b}\n  properties: []\n", "not a string"),
+            ("shape:\n  targetObjectsOf: ~\n  properties: []\n", "not a string"),
+            (
+                "entity: {type: pv-contract}\nshape:\n  properties: [{path: ont:x, node: {targetNode: ont:a, properties: []}}]\n",
+                "nested",
+            ),
+        ] {
+            match parse(y) {
+                Err(ShapeError::Malformed { what, .. }) => assert!(what.contains(want), "{y}: {what}"),
+                other => panic!("{y}: expected Malformed, got {other:?}"),
+            }
+        }
+    }
+
+    #[test]
+    fn focus_nodes_are_the_union_of_every_target_without_repeats() {
+        let s = shape("shape:\n  targetClass: ont:A\n  targetNode: [ont:a, ont:ghost]\n  targetSubjectsOf: ont:p\n  targetObjectsOf: ont:r\n  properties: []\n");
+        let mut g = Graph::new();
+        g.insert(ont("a"), RDF_TYPE, Term::iri(ont("A")));
+        g.insert(ont("b"), ont("p"), Term::string("x"));
+        g.insert(ont("a"), ont("p"), Term::string("y"));
+        g.insert(ont("c"), ont("r"), Term::iri(ont("d")));
+        g.insert(ont("c"), ont("r"), Term::string("lit"));
+        g.insert(ont("e"), ont("q"), Term::iri(ont("f")));
+        let mut want = vec![
+            ont("a"),
+            ont("b"),
+            ont("d"),
+            ont("ghost"),
+            Term::string("lit").to_string(),
+        ];
+        want.sort();
+        assert_eq!(
+            focus_nodes(&g, &s),
+            want,
+            "a once; ghost though absent; c and e never"
+        );
+        // a targetNode absent from the graph is still checked, so its minCount fires
+        let m = shape("entity: {type: pv-contract}\nshape:\n  targetNode: ont:ghost\n  properties: [{path: ont:x, minCount: 1}]\n");
+        let r = validate(&g, std::slice::from_ref(&m));
+        assert_eq!(r.results.len(), 1);
+        assert_eq!(r.results[0].focus, ont("ghost"));
+        let t = to_turtle(std::slice::from_ref(&s));
+        for line in [
+            format!("sh:targetNode <{}>", ont("ghost")),
+            format!("sh:targetSubjectsOf <{}>", ont("p")),
+            format!("sh:targetObjectsOf <{}>", ont("r")),
+        ] {
+            assert!(t.contains(&line), "{line} in {t}");
+        }
+    }
+
+    #[test]
     fn compare_terms_orders_numbers_across_types_and_refuses_mixed_kinds() {
         use std::cmp::Ordering::{Equal, Greater, Less};
         let lit = |v: &str, t: &str| Term::Literal {
@@ -1978,7 +2144,6 @@ mod tests {
     #[test]
     fn unsupported_components_are_refused_at_parse_by_name() {
         for (yaml, want) in [
-            ("shape:\n  targetNode: x\n", "targetNode"),
             ("entity: {type: pv-contract}\nshape:\n  properties: [{path: ont:x, qualifiedValueShape: {}}]\n", "qualifiedValueShape"),
             ("entity: {type: pv-contract}\nshape:\n  properties: [{path: ont:x, languageIn: [en]}]\n", "languageIn"),
             ("entity: {type: pv-contract}\nshape:\n  properties: [{path: 'ont:a/ont:b'}]\n", "path `ont:a/ont:b`"),

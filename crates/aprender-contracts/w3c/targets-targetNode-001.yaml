@@ -1,0 +1,18 @@
+# vendored: tests/core/targets/targetNode-001.ttl
+id: targets/targetNode-001
+label: "Test of sh:targetNode 001"
+prefix: "http://datashapes.org/sh/tests/core/targets/targetNode-001.test#"
+targeting: "sh:targetNode ex:InvalidResource1, ex:ValidResource1 as written (#4814 slice 4), no class rewrite"
+shapes:
+  - id: TestShape
+    targetNode: [ex:InvalidResource1, ex:ValidResource1]
+    properties:
+      - {path: rdfs:label, datatype: xsd:string, maxCount: 0}
+data: |
+  ex:InvalidResource1 rdf:type rdfs:Resource .
+  ex:InvalidResource1 rdfs:label "Invalid resource 1" .
+  ex:ValidResource1 rdf:type rdfs:Resource .
+expect:
+  conforms: false
+  results:
+    - {focus: ex:InvalidResource1, path: rdfs:label, component: maxCount}
