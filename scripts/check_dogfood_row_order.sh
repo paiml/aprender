@@ -12,7 +12,7 @@
 #   O2  every long row named in DOGFOOD_LONG_ROWS exists in the runner;
 #   O3  nothing between the first row and the receipt can stop the run early, or skip a
 #       row because an earlier one was red: no `set -e` and no ERR trap; no exit or
-#       `kill $$` (in the main flow or any helper), no top-level return, eval or exec,
+#       `kill $$` (in the main flow or any helper), no top-level return, exec or eval,
 #       and no break/continue after the first long row, outside the DOGFOOD_GATES_ONLY
 #       partial-run block; and the main flow never reads FAILED, RESULTS or NAMES
 #       before the verdict. A lint against an accidental reorder, not a proof
@@ -179,12 +179,12 @@ behaviour() {
     }
     out=$(drive FAIL)
     for name in "${LONG[@]}"; do
-        printf '%s\n' "$out" | grep -qx "ROW $name PASS" ||
+        grep -qx "ROW $name PASS" <<< "$out" ||
             { printf 'FAIL  O4 after a red cheap row the long row "%s" did not run\n' "$name"; bad=1; }
     done
-    printf '%s\n' "$out" | grep -qx 'VERDICT=NO-GO' ||
+    grep -qx 'VERDICT=NO-GO' <<< "$out" ||
         { printf 'FAIL  O4 a red cheap row with green long rows gave %s, not NO-GO\n' "$(printf '%s\n' "$out" | grep -m1 '^VERDICT=' || echo 'no verdict')"; bad=1; }
-    printf '%s\n' "$(drive PASS)" | grep -qx 'VERDICT=GO' ||
+    grep -qx 'VERDICT=GO' <<< "$(drive PASS)" ||
         { printf 'FAIL  O4 the all-green control was not GO -- the proof row cannot discriminate\n'; bad=1; }
     rm -rf -- "${d:?}"
     [ "$bad" = 0 ] && printf 'ok    O4 a red cheap row: every long row (%s) still ran, verdict NO-GO; all-green control GO\n' "$long"
