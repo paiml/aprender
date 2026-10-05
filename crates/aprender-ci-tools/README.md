@@ -28,6 +28,6 @@ none of the callers uses these forms:
 | `package-include-diff A B EXTRA` | `EXTRA` ignored | usage error, exit 1 |
 | any usage error | the original's message | clap's message (stderr only; exit 1 on both) |
 | `tarball-shrink-report` usage error | exit 2 | exit 1 (a missing input file still exits 2 on both) |
-| `tarball-shrink-report`, a non-ASCII combining mark (Unicode `Other_Alphabetic`) next to `_or_skip(` | not a word character | a word character |
+| `tarball-shrink-report`, a Unicode `Other_Alphabetic` character that is not a letter or digit (a combining mark, a circled letter such as `Ⓐ`) before `_or_skip(` or `fn` | not a word character | a word character |
 
 Part of the [aprender monorepo](https://github.com/paiml/aprender).

@@ -12,7 +12,7 @@
   - crates/aprender-ci-tools has a tarball-shrink-report subcommand ported from scripts/lib/tarball_shrink_report.py
   - scripts/tests/ci_tools_py_parity_test.sh runs every case through the original (read from git at its last commit on main, as external validator) and the Rust bin. stdout is byte-identical and the exit code agrees, covering empty inputs, a full fixture, missing inputs (exit 2), one bad input (a directory named x.rs, exit 1) and the live crates/ tree. A planted defect in the port turns it red
   - scripts/package_tarball_build.sh, the only caller, runs the subcommand, and scripts/lib/tarball_shrink_report.py is deleted
-  - The crate README lists the deliberate differences (usage error exit 1 under clap; Unicode combining marks as word characters)
+  - The crate README lists the deliberate differences (usage error exit 1 under clap; Unicode Other_Alphabetic characters as word characters)
   phases: []
   subtasks: []
   estimated_effort: null
