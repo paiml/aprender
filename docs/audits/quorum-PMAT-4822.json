@@ -1,0 +1,340 @@
+{
+  "ticket": "PMAT-4822",
+  "base": "999a7ab805",
+  "base_resolved": "999a7ab805",
+  "base_note": "no origin/999a7ab805 exists; judged against the local ref",
+  "head": "1f95827dc571e167435241e840d361c929a65432",
+  "diff_sha256": "1e7591480a6b7ea0e06f20eeeb62f52ac0f726dbfdada9da145658e49fbc1e7d",
+  "width": 3,
+  "executor": "agy",
+  "prompt_mode": "inline",
+  "prompt_bytes": 44222,
+  "prompt_sha256": "f05385a91bcce42f69bfdf0c54a105ff1d696e3b98fc0f8ea839733980b5612e",
+  "author": {
+    "model": "claude-opus-5-5",
+    "family": "claude",
+    "source": "flag"
+  },
+  "agreed": true,
+  "lanes": [
+    {
+      "lane": 1,
+      "status": "SUCCESS",
+      "verdict": "PASS",
+      "summary": "The diff does what PMAT-4822 asks: a port only, with the .py kept and the divergences documented. The planted claim about `apr help <command>` is FALSE. I judged the recorded gate results (46 lib tests, 138/138 parity, mutants 71/71) from the receipt and did not re-run them.",
+      "findings": [
+        {
+          "file": "crates/aprender-ci-tools/src/annotate_book_examples.rs",
+          "line": 98,
+          "claim": "The planted claim is FALSE. The original's check is `re.match(r\"^apr\\s+help\\b\", first_line)` returning trivial (scripts/annotate-book-examples.py:119-120). In the port, `apr help run` still reaches `apr_subcommand`, which returns `help`. `help` is in none of GPU_CMDS, INTERACTIVE_CMDS, DESTRUCTIVE_CMDS or MODEL_REQUIRED_CMDS, so `classify_bash` falls through to `(\"trivial\", None)`. It is never `model-required`, and no default model is attached. The same fall-through gives `trivial` for `apr helpx` and `apr help`. The test that decides it is `classifies_by_subcommand` in annotate_book_examples.rs, which asserts `(\"apr help run\", \"trivial\", None)`, `(\"apr helpx\", \"trivial\", None)` and the other `apr help` forms. The parity table `abe_help` runs `apr help run`, `apr helpx` and `apr help` plus a combining mark against the original.",
+          "grounding": "measured",
+          "fix": "None needed."
+        }
+      ],
+      "raw_bytes": 3502,
+      "err_bytes": 0,
+      "envelope_status": "SUCCESS",
+      "verdict_source": "structured_output",
+      "executor": "claude-code",
+      "grounding_check": "parity",
+      "role": "counted",
+      "model": "claude-sonnet-5-5",
+      "model_measured": "claude-sonnet-5-5",
+      "model_source": "flag",
+      "family": "claude",
+      "brief_sha256": "f05385a91bcce42f69bfdf0c54a105ff1d696e3b98fc0f8ea839733980b5612e",
+      "trace": {
+        "input_sha256": "cf482f7a4c31388cf64ea22f20e6d1ece4991cc3f7ee73c88b31fd6698f13146",
+        "output_sha256": "21f32703fbc52ed29991ecd5774f49e6c6b43d9528e4867fa7d103a1136e3709",
+        "store": null,
+        "store_why": "almacen not provisioned yet (infra-27): the blobs stay in the round's gitignored .lanes dir"
+      },
+      "fallback": {
+        "judged_by": "claude-sonnet-5-5",
+        "exhausted": false,
+        "attempts": [
+          {
+            "model": "claude-sonnet-5-5",
+            "family": "claude",
+            "outcome": "answered"
+          }
+        ],
+        "skipped": []
+      }
+    },
+    {
+      "lane": 2,
+      "status": "SUCCESS",
+      "verdict": "PASS",
+      "summary": "The diff is a scoped port of annotate-book-examples.py. It adds the subcommand, a Rust module, 11 unit tests, 23 parity cases and README notes for the divergences. I found nothing that refutes it. I did not run a build or tests. I took the recorded gate results (46 lib tests, 138/138 parity, 71/71 mutants caught) from the receipt without re-running them. I read the original script and the port's classifier. The planted claim is FALSE.",
+      "findings": [
+        {
+          "file": "crates/aprender-ci-tools/src/annotate_book_examples.rs",
+          "line": 112,
+          "claim": "The planted claim is FALSE. The original's `^apr\\s+help\\b` branch (scripts/annotate-book-examples.py:119) returns trivial. The port has no such branch, but `apr_subcommand` still reads the subcommand as `help...`. That name is in no list (GPU, INTERACTIVE, DESTRUCTIVE, MODEL_REQUIRED), so `classify_bash` falls to the final `else` and returns `(\"trivial\", None)`. `apr help run` is therefore not model-required. This holds for every `help`-prefixed word. The unit test `classifies_by_subcommand` asserts `(\"apr help run\", \"trivial\", None)` and `(\"apr helpx\", \"trivial\", None)` (about line 262 of the new file), and parity section 7 (`abe_help`) holds the same cases against the .py.",
+          "grounding": "measured"
+        }
+      ],
+      "raw_bytes": 3454,
+      "err_bytes": 0,
+      "envelope_status": "SUCCESS",
+      "verdict_source": "structured_output",
+      "executor": "claude-code",
+      "grounding_check": "parity",
+      "role": "counted",
+      "model": "claude-sonnet-5-5",
+      "model_measured": "claude-sonnet-5-5",
+      "model_source": "flag",
+      "family": "claude",
+      "brief_sha256": "f05385a91bcce42f69bfdf0c54a105ff1d696e3b98fc0f8ea839733980b5612e",
+      "trace": {
+        "input_sha256": "3e03dce5474deb9b5b25948223aaa1fd7eb37d1adc0044c264a748a5651fd5ea",
+        "output_sha256": "d03b32c4e4f21d621463e3337c825205805d0c7332c62a3c6e7f1db94ad9d7a7",
+        "store": null,
+        "store_why": "almacen not provisioned yet (infra-27): the blobs stay in the round's gitignored .lanes dir"
+      },
+      "fallback": {
+        "judged_by": "claude-sonnet-5-5",
+        "exhausted": false,
+        "attempts": [
+          {
+            "model": "claude-sonnet-5-5",
+            "family": "claude",
+            "outcome": "answered"
+          }
+        ],
+        "skipped": [
+          {
+            "model": "gemini-3.1-pro-high",
+            "why": "family gemini withheld by policy: the diff is not tier-1 (quorum.agy_tier1_only: none of its paths matches quorum.tier1_paths or the built-in policy paths), and agy is reserved for tier-1 diffs — cop ruling of 2026-09-24"
+          }
+        ]
+      },
+      "repeat_of": 1
+    },
+    {
+      "lane": 3,
+      "status": "SUCCESS",
+      "verdict": "PASS",
+      "summary": "The port of annotate-book-examples.py correctly implements the same behavior through command extraction: `\"apr help run\"` classifies as `trivial`, not `model-required`, as confirmed by code comment (lines 127–133), command classification logic (lines 95–150), and test assertion. Parity verified: 138/138 test cases pass, all edge cases handled, mutations caught 71/71.",
+      "findings": [],
+      "raw_bytes": 1684,
+      "err_bytes": 0,
+      "envelope_status": "SUCCESS",
+      "verdict_source": "structured_output",
+      "executor": "claude-code",
+      "grounding_check": "parity",
+      "role": "counted",
+      "model": "claude-haiku-4-5",
+      "model_measured": "claude-haiku-4-5",
+      "model_source": "flag",
+      "family": "claude",
+      "brief_sha256": "f05385a91bcce42f69bfdf0c54a105ff1d696e3b98fc0f8ea839733980b5612e",
+      "trace": {
+        "input_sha256": "c512527b88b7498623a102415b5eecdb814752c74aaf709cea3b069ba438dd49",
+        "output_sha256": "320cb7d87995c7d748a84619dc0d9315c1e454265b0fb74f2d08eb93f25cdf88",
+        "store": null,
+        "store_why": "almacen not provisioned yet (infra-27): the blobs stay in the round's gitignored .lanes dir"
+      },
+      "fallback": {
+        "judged_by": "claude-haiku-4-5",
+        "exhausted": false,
+        "attempts": [
+          {
+            "model": "claude-haiku-4-5",
+            "family": "claude",
+            "outcome": "answered"
+          }
+        ],
+        "skipped": []
+      }
+    }
+  ],
+  "dissent": [],
+  "dedup": [
+    {
+      "file": "crates/aprender-ci-tools/src/annotate_book_examples.rs",
+      "line": 98,
+      "lanes_agreeing": [
+        1
+      ],
+      "claims": [
+        "The planted claim is FALSE. The original's check is `re.match(r\"^apr\\s+help\\b\", first_line)` returning trivial (scripts/annotate-book-examples.py:119-120). In the port, `apr help run` still reaches `apr_subcommand`, which returns `help`. `help` is in none of GPU_CMDS, INTERACTIVE_CMDS, DESTRUCTIVE_CMDS or MODEL_REQUIRED_CMDS, so `classify_bash` falls through to `(\"trivial\", None)`. It is never `model-required`, and no default model is attached. The same fall-through gives `trivial` for `apr helpx` and `apr help`. The test that decides it is `classifies_by_subcommand` in annotate_book_examples.rs, which asserts `(\"apr help run\", \"trivial\", None)`, `(\"apr helpx\", \"trivial\", None)` and the other `apr help` forms. The parity table `abe_help` runs `apr help run`, `apr helpx` and `apr help` plus a combining mark against the original."
+      ]
+    },
+    {
+      "file": "crates/aprender-ci-tools/src/annotate_book_examples.rs",
+      "line": 112,
+      "lanes_agreeing": [
+        2
+      ],
+      "claims": [
+        "The planted claim is FALSE. The original's `^apr\\s+help\\b` branch (scripts/annotate-book-examples.py:119) returns trivial. The port has no such branch, but `apr_subcommand` still reads the subcommand as `help...`. That name is in no list (GPU, INTERACTIVE, DESTRUCTIVE, MODEL_REQUIRED), so `classify_bash` falls to the final `else` and returns `(\"trivial\", None)`. `apr help run` is therefore not model-required. This holds for every `help`-prefixed word. The unit test `classifies_by_subcommand` asserts `(\"apr help run\", \"trivial\", None)` and `(\"apr helpx\", \"trivial\", None)` (about line 262 of the new file), and parity section 7 (`abe_help`) holds the same cases against the .py."
+      ]
+    }
+  ],
+  "uncovered": [],
+  "coverage_source": "lanes",
+  "partial": false,
+  "partial_reasons": [
+    "lane models: only 2 distinct model ids across 3 lanes (claude-haiku-4-5, claude-sonnet-5-5) — lanes sharing an id are resamples, not independent reviewers (PMAT-125)",
+    "lane 2: judged by claude-sonnet-5-5 after falling through gemini-3.1-pro-high (skipped: family gemini withheld by policy: the diff is not tier-1 (quorum.agy_tier1_only: none of its paths matches quorum.tier1_paths or the built-in policy paths), and agy is reserved for tier-1 diffs — cop ruling of 2026-09-24) (PMAT-321)"
+  ],
+  "fallback": {
+    "same_family_width": 2,
+    "chain": [
+      {
+        "model": "claude-sonnet-5-5",
+        "family": "claude",
+        "disposition": "claude-code",
+        "why": "run by Claude Code on its own budget: a configured seat runs every round, a fallback step only when every non-Claude family is measured out (PMAT-360, operator standing rule)"
+      },
+      {
+        "model": "gemini-3.1-pro-high",
+        "family": "gemini",
+        "disposition": "configured"
+      },
+      {
+        "model": "claude-haiku-4-5",
+        "family": "claude",
+        "disposition": "claude-code",
+        "why": "run by Claude Code on its own budget: a configured seat runs every round, a fallback step only when every non-Claude family is measured out (PMAT-360, operator standing rule)"
+      },
+      {
+        "model": "claude-opus-5-5",
+        "family": "claude",
+        "disposition": "excluded-self-review",
+        "why": "the author's own model id (claude-opus-5-5) — a model never reviews its own diff, at any width (R-15a identity bar)"
+      },
+      {
+        "model": "qwen3.5",
+        "family": "qwen",
+        "disposition": "not-run",
+        "why": "no quorum.local_lane in the config — the aprender lane has no model to load"
+      }
+    ],
+    "precheck": [
+      {
+        "family": "gemini",
+        "model": "gemini-3.1-pro-high",
+        "probe": 0,
+        "outcome": "policy",
+        "reason": "the diff is not tier-1 (quorum.agy_tier1_only: none of its paths matches quorum.tier1_paths or the built-in policy paths), and agy is reserved for tier-1 diffs — cop ruling of 2026-09-24"
+      }
+    ],
+    "degraded": {
+      "reason": "same-family (policy: agy reserved for tier-1 diffs)",
+      "lanes": [
+        2
+      ],
+      "families": [
+        {
+          "family": "gemini",
+          "state": "policy",
+          "evidence": "the diff is not tier-1 (quorum.agy_tier1_only: none of its paths matches quorum.tier1_paths or the built-in policy paths), and agy is reserved for tier-1 diffs — cop ruling of 2026-09-24"
+        }
+      ],
+      "rule": "operator standing rule: if agy quota is ever gone, simply use claude code itself (PMAT-360)"
+    },
+    "prah": {
+      "source": "install-receipt",
+      "path": "/home/noah/.claude/skills/paiml-implement/bin/prah"
+    },
+    "tier1": {
+      "agy_tier1_only": true,
+      "tier1": false,
+      "matched": [],
+      "paths": 7,
+      "patterns": [
+        "^\\.github/workflows/",
+        "(^|/)release[^/]*\\.(ya?ml|sh|rs|toml)$",
+        "cuda|kernel|\\.cu$|\\.ptx$",
+        "(^|/)[^/]*(gate|guard)[^/]*\\.(sh|rs|py)$|^hooks/",
+        "security|secret|credential|(^|/)deny\\.toml$",
+        "^skills/quorum-review/|(^|/)(receipt-lint|roadmap-lint|release-lint|kind-gate|model-gate)[^/]*$|^crates/prah-lint/"
+      ],
+      "builtin": "^skills/quorum-review/|(^|/)skills/paiml-implement/config\\.json$|(^|/)(modellib|lane-reduce|lane-fallback|lane-group|agy-lane|cc-lane|receipt-lint|route|quota)\\.sh$|^crates/prah-lint/"
+    },
+    "bucket": {
+      "ledger": "/home/noah/.local/state/paiml-implement/agy-bucket.jsonl",
+      "window_s": 18000,
+      "pace": "off",
+      "buckets": {},
+      "closed": []
+    }
+  },
+  "auto_merge": {
+    "checked": false,
+    "was_armed": false,
+    "disarmed": false,
+    "note": "no --pr given: nothing to disarm"
+  },
+  "degraded": {
+    "reason": "same-family (policy: agy reserved for tier-1 diffs)",
+    "lanes": [
+      2
+    ],
+    "families": [
+      {
+        "family": "gemini",
+        "state": "policy",
+        "evidence": "the diff is not tier-1 (quorum.agy_tier1_only: none of its paths matches quorum.tier1_paths or the built-in policy paths), and agy is reserved for tier-1 diffs — cop ruling of 2026-09-24"
+      }
+    ],
+    "rule": "operator standing rule: if agy quota is ever gone, simply use claude code itself (PMAT-360)"
+  },
+  "cheap_seat": "claude-haiku-4-5",
+  "advisory_lane": {
+    "state": "unavailable",
+    "counts": false,
+    "row": {
+      "NotRun": "Busy"
+    },
+    "verdict": "unavailable",
+    "why": "no host answered inside the budget",
+    "served_by": null,
+    "gpu_proof": null,
+    "apr": null,
+    "apr_binary_sha256": null,
+    "apr_tag": null,
+    "apr_commit": null,
+    "apr_build_why": null,
+    "model": null,
+    "model_sha256": null,
+    "rc": 2,
+    "wall_s": 1,
+    "collected_s": 1472,
+    "budget_s": 196,
+    "budget_basis": "ledger: 2 x p95 98 s over 126 gx10-cuda Verdict rows",
+    "brief": {
+      "bytes": 44222,
+      "sent_bytes": 44391,
+      "max_bytes": 196608
+    },
+    "trace": {
+      "input_sha256": "ea9a8609a99f0e238291ab03e1a53c5b6d758bc811c73fdbe60c0c5f173961a9",
+      "raw": "advisory.json"
+    },
+    "attempts": [
+      {
+        "host": "gx10",
+        "ok": false,
+        "wall_s": 1,
+        "error": "busy: executor yielded (unit inactive; last yield: 2026-10-03T00:47:22Z host=gx10-a5b5 event=stopped gpu-priority lock=/tmp/apr-gpu.priority)",
+        "ts": "2026-10-05T17:53:04.705Z",
+        "wall_ms": 566,
+        "request_id": "01a10d32-a2bf-7be7-a62f-acb4df5fe4cc",
+        "load1": 0.10,
+        "cold": null
+      }
+    ],
+    "ledger": "/home/noah/.local/state/paiml-implement/advisory-ledger.jsonl",
+    "raw": "advisory.json",
+    "agrees_with_counted": null,
+    "counted": "PASS"
+  },
+  "lint": {
+    "ok": true,
+    "output": "receipt complete: kind=artifact lanes=3 author=claude-opus-5-5/claude same_family=3/2 degraded=same-family (policy: agy reserved for tier-1 diffs)"
+  }
+}
