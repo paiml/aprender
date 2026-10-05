@@ -826,6 +826,11 @@ v-e;verdict;check E;-;-;-" "$d" 2026-10-04T06:00:00Z; cat "$d/line" "$d/lanes.ts
     # a red on J is a red, named with the head and the lag
     d="$tmp/movedred"; fixture "$d"; sed -i "s/$ST_C/$ST_X/g; /\t201\t/s/\tx\tCOMPLETED\tSUCCESS\t/\tx\tCOMPLETED\tFAILURE\t/" "$d/runs.tsv"; ranks "$d" "$ST_C" "$ST_X"
     row a_red_on_the_judged_commit_is_red 0 "NOT RELEASABLE: v-b, 201 (judged bbbbbbbbbb, pick aaaaaaaaaa, lag 1 commits)" "RELEASABLE H=" -- st_decide "$d"
+    # a pin run measures the pick C only (joint rule): behind C, J = X, a newer pin run of v-a on C must not stand for X
+    d="$tmp/pinj"; fixture "$d"; sed -i "s/$ST_C/$ST_X/g" "$d/runs.tsv"; ranks "$d" "$ST_C" "$ST_X"
+    printf 'wf\t.github/workflows/a.yml\t111\tschedule\tmain\t%s\t2026-10-04T05:00:00Z\tCOMPLETED\tSUCCESS\tjob-a\tCOMPLETED\tSUCCESS\t2026-10-04T05:01:00Z\t2026-10-04T05:30:00Z\t1\n' "$ST_C" >> "$d/runs.tsv"
+    printf 'wf\t.github/workflows/a.yml\t111\tschedule\tmain\t%s\t2026-10-04T05:00:00Z\tCOMPLETED\tSUCCESS\tpin\tCOMPLETED\tSUCCESS\t2026-10-04T05:01:00Z\t2026-10-04T05:02:00Z\t1\n' "$ST_C" >> "$d/runs.tsv"
+    row a_pin_run_stands_for_the_pick_not_for_an_older_j 0 "$(printf 'v-a\tverdict\tgreen\t.github/workflows/a.yml ^job-a$\t101\t')" "$(printf '\t111\t')" -- st_decide "$d"
     # the lookback is capped at MAX_LAG commits behind the head: rank 6 is judged, rank 7 is not_measured, not a stale verdict
     d="$tmp/edge"; fixture "$d"; sed -i "s/$ST_C/$ST_X/g" "$d/runs.tsv"; ranks "$d" "$ST_C" "$ST_Y" "$ST_Y" "$ST_Y" "$ST_Y" "$ST_Y" "$ST_X"
     row a_judged_commit_at_the_lag_cap_is_judged 0 "RELEASABLE H=$ST_X (judged bbbbbbbbbb, pick aaaaaaaaaa, lag 6 commits)" "NOT RELEASABLE" -- st_decide "$d"
@@ -997,7 +1002,8 @@ m60_head_read_twice	s/ | select(.oid != \$c.oid)\]/]/
 m61_cap_off_by_one	s/k <= MAXLAG/k < MAXLAG/
 m62_rank_head_unchecked	s/readok \&\& RKO\[0\] == C/readok/
 m63_oldest_commit_wins	s/if (all) { J = h; LAG = k; break }/if (all) { J = h; LAG = k }/
-m64_rank_history_dropped	s/\[(\$c.history.nodes \/\/ \[\])\[\] | .oid | select(. != \$c.oid)\]/[]/'
+m64_rank_history_dropped	s/\[(\$c.history.nodes \/\/ \[\])\[\] | .oid | select(. != \$c.oid)\]/[]/
+m65_pin_run_stands_for_older_j	s/if (h != C) { OW/if (0) { OW/'
 # each planted mutant must change the file, still parse, and turn at least one row RED
 mutants() {
     local tmp pass=0 fail=0 name expr o rc
