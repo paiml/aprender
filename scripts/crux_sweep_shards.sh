@@ -1,3 +1,6 @@
+# The judge that merges the shards, built from this tree before any shard runs (each shard's dogfood
+# resolves the same binary; cargo finds it fresh).
+. scripts/lib/crux_judge_bin.sh || die "no CRUX judge binary (scripts/lib/crux_judge_bin.sh)"
 #!/usr/bin/env bash
 # crux_sweep_shards.sh — the 0.69.1 final CRUX sweep for ONE host: every CERTIFIED model on it, each thinking mode,
 # exactly that (model, mode)'s admitted prompts; then ONE judge receipt for the host (#3962, final sweep).
@@ -12,7 +15,7 @@
 # set's controls under --scope controls, the cop's default). A (model, mode) with nothing admitted is skipped BY
 # NAME in the plan, never silently. A certified sha absent from this host is listed as absent, not run.
 #
-# MERGE. Every shard keeps its work dir. The host receipt is ONE `crux_inference_judge.py collect` over the
+# MERGE. Every shard keeps its work dir. The host receipt is ONE judge `collect` (tools/aprender-crux-judge) over the
 # concatenated shard manifests, with the certification, at <out>/<host>-<backend>.json.
 # --greedy-model (#3957 F9) runs greedy-only shards (--greedy --greedy-prompts <first control>, thinking OFF):
 # their GREEDY rows join the merge, their gen cells DO NOT — those models are not certified, so their gen cells
@@ -50,6 +53,9 @@ done
 case "$SCOPE" in controls|admitted) ;; *) die "--scope is controls or admitted" ;; esac
 [ -x "$APR_BIN" ] || die "--apr $APR_BIN is not executable"
 [ -f "$CERT" ] || die "certification receipt $CERT not found"
+# The judge that merges the shards, built from this tree before any shard runs (each shard's
+# dogfood resolves the same binary, which cargo then finds fresh).
+. scripts/lib/crux_judge_bin.sh || die "no CRUX judge binary (scripts/lib/crux_judge_bin.sh)"
 [ "${#MODEL_DIRS[@]}" -gt 0 ] || MODEL_DIRS=("$HOME/models")
 # bashrs SEC010: $OUT is the operator's required --out argument; writing there is the script's contract.
 # bashrs disable-next-line=SEC010
@@ -168,7 +174,7 @@ META="$MERGED_META"
 # greedy[]. Without the marker the ladder globs it, sees DECLINE, and FAILS the cut (measured by 36 in the code).
 RECEIPT="$OUT/$HOST-$BACKEND.json"
 [ "$GREEDY_ONLY" = 1 ] && RECEIPT="$OUT/$HOST-$BACKEND-greedy.json"
-python3 scripts/lib/crux_inference_judge.py collect --manifest "$MERGED" --prompts "$PROMPTS" --meta "$META" \
+"$CRUX_JUDGE" collect --manifest "$MERGED" --prompts "$PROMPTS" --meta "$META" \
   --certification "$CERT" --out-json "$RECEIPT" --out-md "${RECEIPT%.json}.md"
 rc=$?
 if [ "$GREEDY_ONLY" = 1 ]; then

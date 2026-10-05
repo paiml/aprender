@@ -6,6 +6,10 @@
 //! `aprender-crux-judge sandbox` (port only, not in the usage line) probes the
 //! code_tests sandbox and prints the interpreter version a receipt records:
 //! rc 0 when the sandbox works, rc 2 `sandbox_unavailable: <why>` when not.
+//!
+//! The retired Python CLIs live on as subcommands, with their own exit codes:
+//! `eval` / `lint` (`crux_oracles.py`, see `oracles::cli`; `extract` is new) and `certify` /
+//! `check` (`crux_prompt_certify.py`, see `certify::cli`).
 
 mod certify;
 mod collect;
@@ -204,6 +208,11 @@ fn main() -> ExitCode {
                 )));
             }
         }
+    }
+    match argv.first().map(String::as_str) {
+        Some("eval" | "extract" | "lint") => return ExitCode::from(oracles::cli(&argv)),
+        Some("certify" | "check") => return ExitCode::from(certify::cli(&argv)),
+        _ => {}
     }
     if argv.first().map(String::as_str) == Some("sandbox") {
         if let Some(extra) = argv.get(1) {

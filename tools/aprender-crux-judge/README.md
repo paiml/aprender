@@ -1,24 +1,31 @@
 # aprender-crux-judge
 
-A hand-written Rust port of the CRUX inference judge. It reads a CRUX run
-manifest and writes the receipt JSON and the Markdown table, byte-identical
-to the Python judge it replaces:
+A hand-written Rust port of the CRUX inference judge, its answer oracles and
+its prompt certifier. It reads a CRUX run manifest and writes the receipt
+JSON and the Markdown table, byte-identical to the Python judge it replaced.
+The three Python modules are deleted; this binary is the only copy:
 
-| Python source | Rust module |
-|---------------|-------------|
-| `scripts/lib/crux_inference_judge.py` | `collect.rs`, `judge.rs`, `main.rs` |
-| `scripts/lib/crux_oracles.py` | `oracles.rs`, `sandbox.rs` |
-| `scripts/lib/crux_prompt_certify.py` (`check` only) | `certify.rs` |
-| `scripts/lib/crux_serve_routes.py` | `serve_routes.rs` |
+| Retired Python module | Rust module | Subcommands |
+|-----------------------|-------------|-------------|
+| `scripts/lib/crux_inference_judge.py` | `collect.rs`, `judge.rs`, `main.rs` | `collect` |
+| `scripts/lib/crux_oracles.py` | `oracles.rs`, `sandbox.rs` | `eval`, `extract`, `lint` |
+| `scripts/lib/crux_prompt_certify.py` | `certify.rs` | `certify`, `check` |
+
+`serve_routes.rs` ports the one table the judge reads from
+`scripts/lib/crux_serve_routes.py`, which stays: the serve driver uses it.
 
 `pyval.rs`, `pyjson.rs`, `pyio.rs`, `pyre.rs` and `pyerr.rs` carry the
 Python semantics the judge leans on: dynamic values and their errors,
 `json.loads`/`json.dump`, strict UTF-8 file reads with universal newlines,
 `re` character classes, and exception kinds and messages.
 
-The crate is not a workspace member (the root `Cargo.toml` excludes it) and
-is not wired into CI or the Makefile. Its binary-debt row is in
-`contracts/binary-debt-v1.yaml`.
+The crate is not a workspace member (the root `Cargo.toml` excludes it). Its
+binary-debt row is in `contracts/binary-debt-v1.yaml`. Scripts reach it
+through `scripts/lib/crux_judge_bin.sh`, which builds it from the calling
+tree (`cargo build --release --locked`, target dir inside the crate) and
+exports `$CRUX_JUDGE`; `CRUX_JUDGE_BIN=<path>` skips the build. Its callers
+are `scripts/crux_inference_dogfood.sh`, `scripts/crux_sweep_shards.sh` and
+the two case tables.
 
 ## Usage
 
@@ -26,10 +33,22 @@ is not wired into CI or the Makefile. Its binary-debt row is in
 aprender-crux-judge collect --manifest MANIFEST --prompts PROMPTS --meta META \
     --out-json OUT_JSON --out-md OUT_MD [--certification CERTIFICATION]
 aprender-crux-judge sandbox
+aprender-crux-judge eval <prompt.json> <reply.json>
+aprender-crux-judge extract <prompt.json> <reply.json>
+aprender-crux-judge lint <prompts.json>
+aprender-crux-judge certify --prompts P --inventory I --apr-commit SHA -o OUT MANIFEST...
+aprender-crux-judge check --prompts P --receipt R
 ```
 
 `collect` takes the same flags and has the same exit codes as the Python
 judge: 0 PASS, 1 RED, 2 DECLINE.
+
+`eval` and `lint` are the oracle module's CLI: one JSON verdict line, or the
+schema errors of a v2 prompt set; rc 0 correct (or valid), 1 wrong (or
+invalid), 2 usage. `extract` is new: it prints the JSON unit a same-file
+comparison compares, which the oracle case table used to read by importing
+the module. `certify` and `check` are the certifier's CLI, flags and exit
+codes unchanged.
 
 `sandbox` exists only in the port. It probes the `code_tests` sandbox and
 prints the interpreter version a receipt should record, for example
@@ -61,7 +80,7 @@ trailing whitespace stripped, ends with the sentinel.
 | Scrubbed environment | `env_clear`, `PATH=/usr/bin:/bin` | env ⊆ {PATH, LC_CTYPE} → PASS; planted `HOME` → AssertionError |
 | No stdin | `/dev/null` | fd 0 is the `/dev/null` device → PASS; planted check → AssertionError |
 | Address space 1 GiB | `prlimit --as` | `bytearray(2<<30)` → MemoryError |
-| CPU seconds | `prlimit --cpu=t:t` | busy loop, t=1 → `rc=-9` |
+| CPU seconds | `prlimit --cpu=t:t` | `getrlimit(RLIMIT_CPU) == (t, t)` → PASS; planted → AssertionError. The limit is read, not provoked: a busy-loop row flaked to `tests_timeout` on a loaded host |
 | File size 16 MiB | `prlimit --fsize` | 32 MiB write → `File too large` |
 | Wall clock `t + 5` s | killed by the judge | `sleep(60)`, t=1 → `tests_timeout` |
 | Sentinel | printed after the last assert | failing assert → AssertionError; `sys.exit(0)` before it → `rc=0` |
@@ -128,6 +147,10 @@ place it happens.
   points count as unassigned, so `repr` escapes them where CPython 3.13
   would print them.
 - **A crash prints `crash: <Kind>: <msg>`** and exits 1, with no traceback.
+  The kind is the bare class name: `JSONDecodeError`, where the traceback
+  ended `json.decoder.JSONDecodeError`. This holds for every subcommand.
+- **Program names.** Usage lines name `aprender-crux-judge`, where argparse
+  named `crux_prompt_certify.py` or the oracle CLI named its file.
 - **Path arguments.** Python opens an `int` or `bool` as a file descriptor;
   the port raises TypeError (`pyio::path_arg`).
 - **Command-line errors.** The usage line and the invalid-choice text match
@@ -153,7 +176,15 @@ the 11 golden cases: receipt JSON, Markdown and exit code, with `judged_at`
 masked, against the receipts the Python judge wrote under CPython 3.13.1.
 Each case must also leave stderr empty and print the same Markdown to stdout.
 The `code_tests` cases must run their asserts in the sandbox. Both case
-tables (the oracle tests and the sandbox case table) must be green.
+tables must be green against this binary: `scripts/check_crux_oracles.sh`
+(oracles, lint and the certifier) and `scripts/check_crux_inference_judge.sh`
+(the judge, with its mutants rebuilt from mutated copies of these sources).
+
+Before the Python modules were deleted, `certify` was run against the
+Python certifier on the real certification manifests (receipt and stdout
+identical, all four `check` combinations rc 0), and `eval`/`lint` against
+the Python oracle CLI on 620 inputs; the only difference was the crash form
+above.
 
 ```
 cargo test --release --manifest-path tools/aprender-crux-judge/Cargo.toml

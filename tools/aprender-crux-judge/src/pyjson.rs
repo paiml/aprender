@@ -474,8 +474,13 @@ impl Enc {
 
 /// `json.dump(v, fh, indent=2, ensure_ascii=False)`.
 pub fn dump_indent2(v: &Val) -> PyResult<String> {
+    dump_indent(v, 2)
+}
+
+/// `json.dumps(v, indent=n, ensure_ascii=False)`.
+pub fn dump_indent(v: &Val, n: usize) -> PyResult<String> {
     let e = Enc {
-        indent: Some(2),
+        indent: Some(n),
         item_sep: ",",
         key_sep: ": ",
         ensure_ascii: false,
