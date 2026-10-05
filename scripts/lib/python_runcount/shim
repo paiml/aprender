@@ -9,7 +9,7 @@
 # deleted before --count still keys by its content. No argument is parsed.
 name="${0##*/}"
 log="${PYRUN_LOG:-}"
-shimdir="${PYRUN_SHIM_DIR:-}"
+self="${BASH_SOURCE[0]}"
 if [ -n "$log" ]; then
     t=$'\t'
     here=$(pwd -P)
@@ -24,13 +24,16 @@ if [ -n "$log" ]; then
     done
     printf '%s\n' "$rec" >> "$log"
 fi
-# The real tool: the first executable of this name on PATH outside the shim dir.
+# The real tool: the first executable of this name on PATH that is not this shim. A
+# nested --run puts a second shim dir on PATH; -ef skips every copy that links here,
+# so a shim never execs a shim (one dir skipped by name looped for ever, #4754).
 real=""
 IFS=: read -r -a dirs <<< "$PATH"
 for d in "${dirs[@]}"; do
     [ -n "$d" ] || continue
-    [ "$d" != "$shimdir" ] || continue
-    if [ -x "$d/$name" ] && [ ! -d "$d/$name" ]; then real="$d/$name"; break; fi
+    [ -x "$d/$name" ] && [ ! -d "$d/$name" ] || continue
+    [ "$d/$name" -ef "$self" ] && continue
+    real="$d/$name"; break
 done
 if [ -z "$real" ]; then
     printf 'python_runcount shim: no real %s on PATH\n' "$name" >&2

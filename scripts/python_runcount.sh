@@ -102,12 +102,12 @@ run_cmd() { # run_cmd OUT CMD...
     m=$(printf 'cwd=%s\nroot=%s\ntmpdir=%s\nshim=%s' "$(pwd -P)" "$root" "$tmpd" "$out/shim")
     if trace_usable; then
         printf 'trace=measured\n%s\n' "$m" > "$out/meta"
-        PATH="$out/shim:$PATH" PYRUN_LOG="$out/shim.log" PYRUN_SHIM_DIR="$out/shim" \
+        PATH="$out/shim:$PATH" PYRUN_LOG="$out/shim.log" \
             strace -D -I 2 -f -q -s 4096 -e signal=none -e 'trace=execve,execveat,?open,openat,chdir,fchdir,clone,clone3,fork,vfork' -o "$out/trace.raw" "$@" || rc=$?
         stop_tracer "$out"
     else
         printf 'trace=not_measured\n%s\n' "$m" > "$out/meta"
-        PATH="$out/shim:$PATH" PYRUN_LOG="$out/shim.log" PYRUN_SHIM_DIR="$out/shim" "$@" || rc=$?
+        PATH="$out/shim:$PATH" PYRUN_LOG="$out/shim.log" "$@" || rc=$?
     fi
     printf 'rc=%s\n' "$rc" >> "$out/meta"
     return "$rc"
@@ -172,6 +172,15 @@ count() { # count OUT -> OUT/keys, OUT/summary; prints the summary line
     printf 'PYRUN count=%s shim=%s trace=%s trace=%s rc=%s\n' "${n// /}" "${s// /}" "${t// /}" "$(meta "$out" trace)" "$(meta "$out" rc)" > "$out/summary" ||
         { err2 "cannot write $out/summary"; return; }
     cat "$out/summary"
+}
+
+# --count prints what it found either way, but a run with no trace misses every
+# absolute-path call, so its count is never a measurement: exit 2 (#4754).
+count_cli() { # count_cli OUT
+    count "$1" || return 2
+    cat < "$1/keys" || return 2
+    [ "$(meta "$1" trace)" = measured ] ||
+        { err2 "$1 has trace=not_measured: printed, but a shim-only count is not a measurement"; return; }
 }
 
 compare() { # compare BASE HEAD
@@ -340,9 +349,20 @@ self_test() {
     _eq 'C4 a side with no trace -> NOT_MEASURED (2), never a pass' '2' "$rc"
     rc=0; compare "$td/o_env_call" "$td/o_heredoc" > "$td/c5" 2>&1 || rc=$?
     _eq 'C5 a swap (one out, one in) is GREEN (0) and still names the new one' '0 yes' "$rc $(grep -q -e '^  inline@lanes/heredoc.sh$' "$td/c5" && echo yes || echo no)"
+    local tpath="$td/bin:$PATH"
     rc=0
     ( cd "$td/w" && PATH="$td/bin:$PATH" bash "$SELF" --run "$td/o_rc" -- bash -c 'exit 7' ) > /dev/null 2>&1 || rc=$?
     _eq 'R1 --run exits with the command status' '7' "$rc"
+    _eq 'R2 --count on a measured run exits 0' '0' "$(rc_of bash "$SELF" --count "$td/o_env_call")"
+    _eq 'R3 --count on a trace=not_measured run exits 2, never a count' '2' "$(rc_of bash "$SELF" --count "$td/o_none_notrace")"
+    # A --run inside a --run: two shim dirs on PATH. A shim that execs the other shim loops for ever.
+    nest() {
+        cd "$td/w" || return
+        env PATH="$tpath" PYRUN_FAKE_LIB="$td/lib" timeout 60 bash "$SELF" --run "$td/o_nest_out" -- \
+            bash "$SELF" --run "$td/o_nest_in" -- python3 -c pass < /dev/null
+    }
+    _eq 'R4 a --run nested in a --run ends with the command status (no shim-to-shim loop)' '0 1' \
+        "$(rc_of nest) $(grep -c "$(printf '^shim\t')" "$td/o_nest_in/shim.log" 2>/dev/null)"
     # Synthetic traces: what a live run cannot be made to do on demand.
     k="trace=measured"$'\n'"cwd=$td/w"$'\n'"root=$td/w"$'\n'"tmpdir=/scratch/q"$'\n'"rc=0"
     # A pid the kernel reused is a new process: it must not inherit the old one's cwd or caller.
@@ -510,7 +530,7 @@ mutants() {
             errors=$((errors + 1)); printf 'ERROR     %s: the patch did not apply\n' "$id"; continue
         fi
         out="$PYRUN_MT/out"
-        if bash "$PYRUN_MT/t/${SELF##*/}" --self-test > "$out" 2>&1; then
+        if bash "$PYRUN_MT/t/${SELF##*/}" --self-test < /dev/null > "$out" 2>&1; then   # stdin is the table
             printf 'SURVIVED  %s\n' "$id"
         elif grep -q -e "^FAIL  ${want}[: ]" "$out"; then
             killed=$((killed + 1))   # a kill is the NAMED row going red, nothing less
@@ -572,6 +592,9 @@ M46 the shim dir not passed to the trace|P4|python_runcount.sh|s/ -v shimdir="\$
 M47 opens not traced|P1|python_runcount.sh|s/,?open,openat,/,/
 M48 no hash at --count|T8|python_runcount.sh|s/^        printf '%s\\t%s\\n' "\$f" "\${s:0:12}" >> "\$out\/hashes" ||/        : ||/
 M49 no TMPDIR makes every path a temp path|T9|lib/python_runcount/keys.awk|s/(tmpd != "" ? tmpd : "\/tmp")/tmpd/
+M50 a shim that execs another shim (nested --run loops)|R4|lib/python_runcount/shim|/-ef "\$self"/d
+M51 --count on a not_measured run exits 0|R3|python_runcount.sh|s/\[ "\$(meta "\$1" trace)" = measured \] ||/true ||/
+M52 --count fails a measured run|R2|python_runcount.sh|s/\[ "\$(meta "\$1" trace)" = measured \] ||/false ||/
 TABLE
     printf '\nkilled=%s total=%s errors=%s\n' "$killed" "$total" "$errors"
     [ "$killed" -eq "$total" ] && [ "$errors" -eq 0 ]
@@ -583,7 +606,7 @@ case "${1:-}" in
         out="$2"; shift 3
         run_cmd "$out" "$@"
         ;;
-    --count) [ "$#" -eq 2 ] || usage; count "$2" && cat "$2/keys" ;;
+    --count) [ "$#" -eq 2 ] || usage; count_cli "$2" ;;
     --compare) [ "$#" -eq 3 ] || usage; compare "$2" "$3" ;;
     --self-test) self_test ;;
     --mutants) mutants ;;

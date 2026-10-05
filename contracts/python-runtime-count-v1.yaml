@@ -56,6 +56,8 @@
 #   v2 new: split syscalls T6; deleted temp script P26; untracked root E6;
 #   data file after the entry point P25; still running at the end T7;
 #   untracked repo script hashed at --count T8; no TMPDIR means /tmp only T9.
+#   v3 (redesign r1): a --run nested in a --run ends (no shim-to-shim loop) R4;
+#   --count on a run with no trace exits 2 R3, on a measured run 0 R2.
 #
 # REPORT-ONLY TODAY. It lands as a ratchet from the measured value (head vs
 # base, never worse) and blocks only after three green nights, by sign-off.
@@ -154,7 +156,7 @@ proof_obligations:
     statement: "A descendant that outlives the lane (a daemon) neither holds --run open nor leaves the tracer running."
     discharged_by: falsification_tests[5]
   - id: PRC-OB-007
-    statement: "A broken measurement is never a count: a failing stage, a trace with no execve or no exit line for the lane, a root git cannot list, or a head lane that exited other than 0 or as base did is NOT_MEASURED (exit 2)."
+    statement: "A broken measurement is never a count: a failing stage, a trace with no execve or no exit line for the lane, a root git cannot list, a head lane that exited other than 0 or as base did, or --count on a run with no trace is NOT_MEASURED (exit 2)."
     discharged_by: falsification_tests[6]
 
 falsification_tests:
