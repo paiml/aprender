@@ -10,31 +10,43 @@
 #
 # Per lane, in order; the first rule that fires makes the lane VOID:
 #   shadow       role "shadow" is advisory and never counted (listed, not void)
+#   role-X       any role but independent, counted or width (advisory, observer, ...) is
+#                not counted; an absent role reads as counted
 #   no-verdict   verdict is not PASS or FAIL
 #   inexact-id   model is not an exact id: lowercase, dash-separated, holds a digit, no
 #                alias, and not FAMILY-VERSION alone (claude-5). No allowlist: an invented
 #                id that has this shape passes (stated residual)
 #   author-seat  model is the author's own model id, compared lowercased, trimmed and
-#                without a -YYYYMMDD suffix (no author.model = not_measured)
+#                without a -YYYYMMDD suffix
 #   family-mismatch  the lane's family label is not the family its model id names
 #                (first token; gpt-* = openai): a label never makes a second family
-#   seat-unknown a fallback happened (an attempt names another model) and judged_by does
-#                not name the seat that answered, or model_measured names another model
+#   seat-unknown model_measured is absent or names another model, or a fallback happened
+#                (an attempt names another model) and judged_by does not name the seat
+#   plant-contradiction  the lane is recorded as catching the plant but its verdict is
+#                PASS: the plant is a defect in the diff, so a lane that caught it FAILs
 #   plant-missed the lane did not catch the round's plant
 # The seat is always printed as REQUESTED->SEAT, so a fallback is visible (gpt-oss->sonnet).
 #
+# The author: author.model must reduce (lowercased, trimmed, undated) to an exact id, or be
+# "human". Absent or decorated (anthropic/claude-opus-5-5, claude-opus-5-5[1m]) is
+# not_measured: the author's own seat cannot be excluded.
+#
 # The plant: every round carries one planted defect at FILE:LINE, given by --plant or by
 # the receipt's plant{file,line}. A lane CATCHES it when it records plant_verdict "caught",
-# or, when it records none, when its verdict is FAIL and one finding names FILE:LINE
-# (file "F:L", file F with line L, or "F:L" cited in its claim or grounding with no
-# path character before it and no digit after, so src/a.rs:70 is not src/a.rs:7). A
-# round without a plant is not_measured: nothing shows any lane reads. plant_verdict
-# is trusted as written; it is meant to be written by the quorum tool, not by a lane.
+# or, when it records none, when its verdict is FAIL and one finding's own location is
+# the plant: file "F:L", or file F with line L. Prose is not read: a claim that says
+# "src/a.rs:7 is fine" names the line and does not fault it, and no text match can tell
+# the two apart. A round without a plant is not_measured: nothing shows any lane reads.
+# plant_verdict is trusted as written; it is meant to be written by the quorum tool, not
+# by a lane (stated residual).
 #
 # The round, over the lanes that are not void and not shadow:
 #   VALID independent  the valid lanes span >= 2 families
-#   VALID degraded     one family only, but >= 2 distinct models, every valid lane gives
-#                      the same verdict, and the receipt declares `degraded`
+#   VALID degraded     one family only, but >= 2 distinct models (a dated id and its
+#                      undated twin are one model), and the receipt declares `degraded`
+#                      as a non-empty object or true (0, "false", "no" and {} are not a
+#                      declaration). The verdict is unanimous by construction: a valid
+#                      lane caught the plant, so it FAILs
 #   INVALID            anything else; the reason is printed
 #
 # Exit: report-only by default, so 0 after printing the verdict ("REPORT: would be RED"
@@ -55,7 +67,6 @@ _qr_lanes() {
         | .lanes[]?
         | . as $l
         | (($F + ":" + $L)) as $fl
-        | ($fl | gsub("(?<c>[.^$*+?()\\[\\]{}|\\\\])"; "\\\(.c)")) as $fre
         | ([.fallback.attempts[]?.model // empty] | map(select(. != $l.model)) | length) as $other
         | {
             lane: (.lane // "?" | tostring),
@@ -65,14 +76,13 @@ _qr_lanes() {
             family: (.family // ""),
             requested: (.requested_model // .fallback.attempts[0].model // .model // ""),
             seat: (if $other > 0 then (.fallback.judged_by // "") else (.model // "") end),
-            measured: (.model_measured // .model // ""),
+            measured: (.model_measured // ""),
             plant: (
                 if (.plant_verdict // "") != "" then .plant_verdict
                 elif $F == "" then "unrecorded"
                 elif .verdict == "FAIL" and ([.findings[]? | select(
-                        ((.file // "") == $fl)
-                        or (((.file // "") == $F) and (((.line // "") | tostring) == $L))
-                        or ((((.claim // "") | tostring) + " " + ((.grounding // "") | tostring)) | test("(^|[^A-Za-z0-9_/.-])" + $fre + "([^0-9]|$)"))
+                        (((.file // "") | tostring) == $fl)
+                        or ((((.file // "") | tostring) == $F) and (((.line // "") | tostring) == $L))
                     )] | length) > 0 then "caught"
                 else "missed" end),
             am: $am
@@ -119,10 +129,15 @@ _qr_family() {
 # rc 0 valid, 1 invalid, 2 not_measured
 check_quorum_receipt() {
     local f="$1" plant="${2:-}" pf pl rows lane role verdict model family requested seat measured pv am
-    local why valid=0 models="" families="" verdicts="" degraded n_models n_fam n_verd
+    local why valid=0 models="" families="" degraded n_models n_fam
     jq -e '.lanes | type == "array"' "$f" >/dev/null 2>&1 || { echo "ROUND not_measured: not a quorum receipt (no lanes[])"; return 2; }
     if ! jq -e '(.author.model // "") != ""' "$f" >/dev/null 2>&1; then
         echo "ROUND not_measured: no author.model; the author's own seat cannot be excluded"
+        return 2
+    fi
+    am="$(jq -r '.author.model | tostring | ascii_downcase | gsub("^\\s+|\\s+$"; "") | sub("-[0-9]{8}$"; "")' "$f")"
+    if [ "$am" != human ] && ! _qr_exact_id "$am"; then
+        echo "ROUND not_measured: author.model '$am' is not an exact id; the author's own seat cannot be excluded"
         return 2
     fi
     if [ -z "$plant" ]; then
@@ -139,11 +154,13 @@ check_quorum_receipt() {
     [ "$pf" != "$plant" ] && [ -n "$pf" ] || { echo "ROUND not_measured: plant '$plant' is not FILE:LINE"; return 2; }
     rows="$(_qr_lanes "$f" "$pf" "$pl")" || { echo "ROUND not_measured: jq could not read the lanes"; return 2; }
     [ -n "$rows" ] || { echo "ROUND not_measured: no lanes"; return 2; }
-    degraded="$(jq -r 'if (.degraded // null) == null or .degraded == false then "" else "yes" end' "$f")"
+    degraded="$(jq -r 'if .degraded == true or ((.degraded | type) == "object" and (.degraded | length) > 0) then "yes" else "" end' "$f")"
     while IFS=$'\t' read -r lane role verdict model family requested seat measured pv am; do
         why=""
         if [ "$role" = shadow ]; then
             why="shadow"
+        elif [ "$role" != independent ] && [ "$role" != counted ] && [ "$role" != width ]; then
+            why="VOID role-$role"
         elif [ "$verdict" != PASS ] && [ "$verdict" != FAIL ]; then
             why="VOID no-verdict"
         elif ! _qr_exact_id "$model"; then
@@ -154,6 +171,8 @@ check_quorum_receipt() {
             why="VOID family-mismatch"
         elif [ "$seat" != "$model" ] || [ "$measured" != "$model" ]; then
             why="VOID seat-unknown"
+        elif [ "$pv" = caught ] && [ "$verdict" = PASS ]; then
+            why="VOID plant-contradiction"
         elif [ "$pv" != caught ]; then
             why="VOID plant-missed"
         fi
@@ -161,13 +180,11 @@ check_quorum_receipt() {
             "$lane" "$role" "$verdict" "$requested" "$seat" "$family" "$pv" "${why:-valid}"
         [ -z "$why" ] || continue
         valid=$((valid + 1))
-        models="$models$model"$'\n'
+        models="$models${model%-[0-9][0-9][0-9][0-9][0-9][0-9][0-9][0-9]}"$'\n'
         families="$families$family"$'\n'
-        verdicts="$verdicts$verdict"$'\n'
     done <<< "$rows"
     n_models="$(printf '%s' "$models" | sort -u | grep -c .)"
     n_fam="$(printf '%s' "$families" | sort -u | grep -c .)"
-    n_verd="$(printf '%s' "$verdicts" | sort -u | grep -c .)"
     if [ "$n_fam" -ge 2 ]; then
         echo "ROUND VALID independent: $valid valid lane(s), $n_fam families"
         return 0
@@ -178,10 +195,6 @@ check_quorum_receipt() {
     fi
     if [ "$n_models" -lt 2 ]; then
         echo "ROUND INVALID: one family and $n_models distinct model(s); degraded needs >= 2"
-        return 1
-    fi
-    if [ "$n_verd" != 1 ]; then
-        echo "ROUND INVALID: one family and the valid lanes disagree; degraded needs a unanimous verdict"
         return 1
     fi
     if [ -z "$degraded" ]; then
@@ -208,8 +221,8 @@ row() { # NAME WANT GOT [NOTE]
 ln() {
     local fnd="[]"
     [ -z "${5:-}" ] || fnd="[{\"claim\":\"planted\",\"file\":\"$5\"}]"
-    printf '{"lane":%s,"model":"%s","family":"%s","role":"counted","verdict":"%s","findings":%s%s}' \
-        "$1" "$2" "$3" "$4" "$fnd" "${6:-}"
+    printf '{"lane":%s,"model":"%s","model_measured":"%s","family":"%s","role":"counted","verdict":"%s","findings":%s%s}' \
+        "$1" "$2" "$2" "$3" "$4" "$fnd" "${6:-}"
 }
 # receipt JSON: AUTHOR-MODEL EXTRA-TOP LANE...
 rc_json() {
@@ -278,8 +291,11 @@ selftest() {
     row fail_on_another_line_missed_the_plant "plant-missed" "$(lane_tag "$f" 1)"
     rc_json "$A" "" "$(ln 1 claude-sonnet-5-5 claude FAIL src/a.rs:70)" "$(ln 2 gemini-3.1-pro-high gemini FAIL "$C")" > "$f"
     row line_70_is_not_line_7 "plant-missed" "$(lane_tag "$f" 1)"
-    rc_json "$A" "" "$(ln 1 claude-sonnet-5-5 claude PASS "" ',"plant_verdict":"caught"')" "$(ln 2 gemini-3.1-pro-high gemini PASS "" ',"plant_verdict":"caught"')" > "$f"
-    row recorded_plant_verdict_counts "rc=0 VALID independent" "$(verdict "$f")" "(code PASS, plant caught)"
+    rc_json "$A" "" "$(ln 1 claude-sonnet-5-5 claude FAIL "" ',"plant_verdict":"caught"')" "$(ln 2 gemini-3.1-pro-high gemini FAIL "" ',"plant_verdict":"caught"')" > "$f"
+    row recorded_plant_verdict_counts "rc=0 VALID independent" "$(verdict "$f")" "(the tool's record, no finding re-read)"
+    rc_json "$A" "" "$(ln 1 claude-sonnet-5-5 claude PASS "" ',"plant_verdict":"caught"')" "$(ln 2 gemini-3.1-pro-high gemini FAIL "$C")" > "$f"
+    row pass_with_plant_caught_is_void "plant-contradiction" "$(lane_tag "$f" 1)" "(must fail: a lane that caught a defect does not PASS)"
+    row pass_with_plant_caught_breaks_quorum "rc=1 INVALID" "$(verdict "$f")"
 
     rc_json "$A" "" "$(ln 1 claude-sonnet-5-5 claude FAIL "$C")" "$(ln 2 gemini-3.1-pro-high gemini FAIL "$C")" > "$f"
     jq 'del(.plant)' "$f" > "$t/np.json"
@@ -292,21 +308,47 @@ selftest() {
     row degraded_unanimous_counts "rc=0 VALID degraded" "$(verdict "$f")"
     rc_json "$A" '' "$(ln 1 claude-sonnet-5-5 claude FAIL "$C")" "$(ln 2 claude-haiku-4-5 claude FAIL "$C")" > "$f"
     row undeclared_degraded_invalid "rc=1 INVALID" "$(verdict "$f")" "(must fail: same-family not marked)"
-    rc_json "$A" ',"degraded":{"reason":"same-family"}' "$(ln 1 claude-sonnet-5-5 claude FAIL "$C")" "$(ln 2 claude-haiku-4-5 claude PASS "" ',"plant_verdict":"caught"')" > "$f"
+    rc_json "$A" ',"degraded":{"reason":"same-family"}' "$(ln 1 claude-sonnet-5-5 claude FAIL "$C")" "$(ln 2 claude-haiku-4-5 claude PASS)" > "$f"
     row degraded_split_invalid "rc=1 INVALID" "$(verdict "$f")" "(must fail: same-family and not unanimous)"
+    for d in 0 '"false"' '"no"' '{}' false; do
+        rc_json "$A" ",\"degraded\":$d" "$(ln 1 claude-sonnet-5-5 claude FAIL "$C")" "$(ln 2 claude-haiku-4-5 claude FAIL "$C")" > "$f"
+        row "degraded_${d//\"/}_is_not_declared" "rc=1 INVALID" "$(verdict "$f")" "(must fail: $d declares nothing)"
+    done
+    rc_json "$A" ',"degraded":true' "$(ln 1 claude-sonnet-5-5 claude FAIL "$C")" "$(ln 2 claude-haiku-4-5 claude FAIL "$C")" > "$f"
+    row degraded_true_is_declared "rc=0 VALID degraded" "$(verdict "$f")"
+    rc_json "$A" ',"degraded":{"reason":"same-family"}' "$(ln 1 claude-sonnet-5-5 claude FAIL "$C")" "$(ln 2 claude-sonnet-5-5-20260901 claude FAIL "$C")" > "$f"
+    row degraded_dated_twin_is_one_model "rc=1 INVALID" "$(verdict "$f")" "(must fail: a dated twin is the same model)"
     rc_json "$A" ',"degraded":{"reason":"same-family"}' "$(ln 1 claude-sonnet-5-5 claude FAIL "$C")" "$(ln 2 claude-sonnet-5-5 claude FAIL "$C")" > "$f"
     row degraded_one_model_twice_invalid "rc=1 INVALID" "$(verdict "$f")" "(must fail: a repeat is not a second reviewer)"
     rc_json "$A" ',"degraded":{"reason":"same-family"}' "$(ln 1 claude-sonnet-5-5 claude FAIL "$C")" \
         "$(ln 2 gemini-3.1-pro-high gemini FAIL "$C" ',"role":"shadow"')" > "$f"
     row shadow_lane_never_counts "rc=1 INVALID" "$(verdict "$f")" "(a shadow gemini does not make two families)"
 
-    cl() { printf '{"lane":%s,"model":"%s","family":"%s","role":"counted","verdict":"FAIL","findings":[{"claim":"%s"}]}' "$1" "$2" "$3" "$4"; }
-    rc_json "$A" "" "$(cl 1 claude-sonnet-5-5 claude 'bug at src/a.rs:70')" "$(ln 2 gemini-3.1-pro-high gemini FAIL "$C")" > "$f"
-    row claim_line_70_is_not_line_7 "plant-missed" "$(lane_tag "$f" 1)" "(must fail: a substring is not a citation)"
-    rc_json "$A" "" "$(cl 1 claude-sonnet-5-5 claude 'see xsrc/a.rs:7')" "$(ln 2 gemini-3.1-pro-high gemini FAIL "$C")" > "$f"
-    row claim_longer_path_is_not_the_plant "plant-missed" "$(lane_tag "$f" 1)"
+    cl() { printf '{"lane":%s,"model":"%s","model_measured":"%s","family":"%s","role":"counted","verdict":"FAIL","findings":[{"file":"src/z.rs:1","claim":"%s"}]}' "$1" "$2" "$2" "$3" "$4"; }
+    rc_json "$A" "" "$(cl 1 claude-sonnet-5-5 claude 'src/a.rs:7 is fine')" "$(ln 2 gemini-3.1-pro-high gemini FAIL "$C")" > "$f"
+    row negated_citation_is_not_a_catch "plant-missed" "$(lane_tag "$f" 1)" "(must fail: naming the line is not faulting it)"
     rc_json "$A" "" "$(cl 1 claude-sonnet-5-5 claude 'off by one (src/a.rs:7).')" "$(ln 2 gemini-3.1-pro-high gemini FAIL "$C")" > "$f"
-    row claim_citing_the_plant_catches "valid" "$(lane_tag "$f" 1)"
+    row prose_citation_is_not_read "plant-missed" "$(lane_tag "$f" 1)" "(only a finding's own location counts)"
+    rc_json "$A" "" "$(ln 1 claude-sonnet-5-5 claude FAIL "" ',"findings":[{"file":"src/a.rs","line":7}]')" "$(ln 2 gemini-3.1-pro-high gemini FAIL "$C")" > "$f"
+    row file_and_line_catch "valid" "$(lane_tag "$f" 1)"
+
+    for r in advisory observer; do
+        rc_json "$A" "" "$(ln 1 claude-sonnet-5-5 claude FAIL "$C")" "$(ln 2 gemini-3.1-pro-high gemini FAIL "$C" ",\"role\":\"$r\"")" > "$f"
+        row "role_${r}_is_not_counted" "rc=1 INVALID" "$(verdict "$f")" "(must fail: only independent, counted, width count)"
+    done
+    rc_json "$A" "" "$(ln 1 claude-sonnet-5-5 claude FAIL "$C" ',"role":"independent"')" "$(ln 2 gemini-3.1-pro-high gemini FAIL "$C" ',"role":"width"')" > "$f"
+    row known_roles_count "rc=0 VALID independent" "$(verdict "$f")"
+
+    rc_json "$A" "" "$(ln 1 claude-sonnet-5-5 claude FAIL "$C")" "$(ln 2 gemini-3.1-pro-high gemini FAIL "$C")" > "$f"
+    jq '.lanes[0] |= del(.model_measured)' "$f" > "$t/nm.json"
+    row unmeasured_seat_is_void "seat-unknown" "$(lane_tag "$t/nm.json" 1)" "(must fail: the claim is not the measurement)"
+
+    for a in anthropic/claude-opus-5-5 'claude-opus-5-5[1m]' opus; do
+        rc_json "$a" "" "$(ln 1 claude-opus-5-5 claude FAIL "$C")" "$(ln 2 gemini-3.1-pro-high gemini FAIL "$C")" > "$f"
+        row "author_${a//[^a-z0-9]/_}_not_measured" "rc=2 not_measured author.model" "$(verdict "$f")" "(must fail: decorated author hides the seat)"
+    done
+    rc_json human "" "$(ln 1 claude-opus-5-5 claude FAIL "$C")" "$(ln 2 gemini-3.1-pro-high gemini FAIL "$C")" > "$f"
+    row human_author_has_no_seat "rc=0 VALID independent" "$(verdict "$f")"
 
     rc_json "$A" "" "$(ln 1 claude-haiku-4-5 gemini FAIL "$C")" "$(ln 2 claude-sonnet-5-5 claude FAIL "$C")" > "$f"
     row spoofed_family_is_void "family-mismatch" "$(lane_tag "$f" 1)"
@@ -349,14 +391,12 @@ MUTANTS=(
     'seat_unchecked|s/elif \[ "\$seat" != "\$model" \] || \[ "\$measured" != "\$model" \]; then/elif false; then/'
     'plant_unchecked|s/elif \[ "\$pv" != caught \]; then/elif false; then/'
     'plant_any_fail|s/elif .verdict == "FAIL" and (\[.findings/elif .verdict == "FAIL" or ([.findings/'
-    'plant_prefix_match|s/((.file \/\/ "") == \$fl)/((.file \/\/ "") | startswith($fl))/'
+    'plant_prefix_match|s/(((.file \/\/ "") | tostring) == \$fl)/(((.file \/\/ "") | tostring) | startswith($fl))/'
     'one_family_ok|s/if \[ "\$n_fam" -ge 2 \]; then/if [ "$n_fam" -ge 1 ]; then/'
-    'split_ok|s/if \[ "\$n_verd" != 1 \]; then/if false; then/'
     'undeclared_ok|s/if \[ -z "\$degraded" \]; then/if false; then/'
     'repeat_ok|s/if \[ "\$n_models" -lt 2 \]; then/if false; then/'
     'shadow_counts|s/            why="shadow"/            why=""/'
     'no_plant_ok|/no plant recorded/{n;s/return 2/:/}'
-    'claim_substring|s/| test("(^|\[^A-Za-z0-9_\/.-\])" + \$fre + "(\[^0-9\]|\$)"))/| contains($fl))/'
     'family_trusted|s/elif \[ "\$family" != "\$(_qr_family "\$model")" \]; then/elif false; then/'
     'family_version_ok|s/        \*\[!0-9.\]\*) return 0 ;;/        *) return 0 ;;/'
     'no_author_ok|s/if ! jq -e .(.author.model \/\/ "") != "". "\$f"/if false/'
@@ -366,6 +406,12 @@ MUTANTS=(
     'gpt_not_openai|s/        gpt-\*) printf .openai. ;;//'
     'measured_unchecked|s/ || \[ "\$measured" != "\$model" \]//'
     'no_verdict_ok|s/elif \[ "\$verdict" != PASS \] \&\& \[ "\$verdict" != FAIL \]; then/elif false; then/'
+    'any_role_counts|s/elif \[ "\$role" != independent \] \&\& \[ "\$role" != counted \] \&\& \[ "\$role" != width \]; then/elif false; then/'
+    'contradiction_ok|s/elif \[ "\$pv" = caught \] \&\& \[ "\$verdict" = PASS \]; then/elif false; then/'
+    'degraded_truthy|s/then "yes" else "" end. "\$f")"$/then "yes" elif .degraded != null and .degraded != false then "yes" else "" end'"'"' "$f")"/'
+    'dated_twin_two|s/models="\$models\${model%-\[0-9\]\[0-9\]\[0-9\]\[0-9\]\[0-9\]\[0-9\]\[0-9\]\[0-9\]}"/models="$models$model"/'
+    'measured_from_claim|s/measured: (.model_measured \/\/ ""),/measured: (.model_measured \/\/ .model \/\/ ""),/'
+    'decorated_author_ok|s/if \[ "\$am" != human \] \&\& ! _qr_exact_id "\$am"; then/if false; then/'
 )
 mutants() {
     local t m name expr killed=0 total=0 out
