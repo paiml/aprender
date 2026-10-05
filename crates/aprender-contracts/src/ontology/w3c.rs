@@ -126,6 +126,10 @@ pub const CASES: &[(&str, &str)] = &[
         "property/disjoint-001",
         include_str!("../../w3c/property-disjoint-001.yaml"),
     ),
+    (
+        "property/hasValue-001",
+        include_str!("../../w3c/property-hasValue-001.yaml"),
+    ),
 ];
 
 /// Every case id of the W3C SHACL Core suite, as vendored in `w3c/core-suite.txt` (the header says how it was
@@ -201,7 +205,6 @@ pub const NOT_VENDORED: &[(&str, &str)] = &[
     ("path/path-zeroOrOne-001", "sh:zeroOrOnePath (slice 7)"),
     ("path/path-unused-001", "expects an ill-formed path in an unused shape to be ignored; pv refuses every ill-formed path at parse, by design (fail closed) — permanent"),
     ("property/and-001", "sh:and — refused by name (slice 8)"),
-    ("property/hasValue-001", "sh:hasValue — refused by name (slice 3)"),
     ("property/languageIn-001", "sh:languageIn; the term model drops language tags (slice 10)"),
     ("property/not-001", "sh:not — refused by name (slice 8)"),
     ("property/or-001", "sh:or — refused by name (slice 8)"),
@@ -611,8 +614,8 @@ mod tests {
         }
         // the ratchet (#4814 plan step 4): the vendored count only grows from its measured value
         assert!(
-            CASES.len() >= 25,
-            "vendored W3C cases dropped below 25: the #4814 baseline 19, slice 1's four value-range cases, slice 2's equals and disjoint"
+            CASES.len() >= 26,
+            "vendored W3C cases dropped below 26: the #4814 baseline 19, slice 1's four value-range cases, slice 2's equals and disjoint, slice 3's hasValue"
         );
     }
 

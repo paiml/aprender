@@ -176,9 +176,14 @@ fn weakened_disjoint(sup: &PropertyShape, sub: &PropertyShape) -> Option<&'stati
     (sup.disjoint.is_some() && sup.disjoint != sub.disjoint).then_some("disjoint")
 }
 
+/// `hasValue` weakens iff `sup` constrains it and `sub` drops it or names another term.
+fn weakened_has_value(sup: &PropertyShape, sub: &PropertyShape) -> Option<&'static str> {
+    (sup.has_value.is_some() && sup.has_value != sub.has_value).then_some("hasValue")
+}
+
 /// The components of `sup` that `sub` drops or loosens, on the same path.
 fn weakened(sup: &PropertyShape, sub: &PropertyShape) -> Vec<&'static str> {
-    let checks: [fn(&PropertyShape, &PropertyShape) -> Option<&'static str>; 15] = [
+    let checks: [fn(&PropertyShape, &PropertyShape) -> Option<&'static str>; 16] = [
         weakened_min_count,
         weakened_max_count,
         weakened_datatype,
@@ -194,6 +199,7 @@ fn weakened(sup: &PropertyShape, sub: &PropertyShape) -> Vec<&'static str> {
         weakened_max_inclusive,
         weakened_equals,
         weakened_disjoint,
+        weakened_has_value,
     ];
     checks.iter().filter_map(|f| f(sup, sub)).collect()
 }
@@ -259,6 +265,7 @@ mod tests {
             less_than_or_equals: None,
             equals: None,
             disjoint: None,
+            has_value: None,
             min_exclusive: None,
             min_inclusive: None,
             max_exclusive: None,
@@ -403,21 +410,32 @@ mod tests {
         }
     }
 
-    /// #4814 slice 2: an `equals` or `disjoint` pair is weakened when dropped or pointed at another predicate.
+    /// #4814 slices 2 and 3: `equals`, `disjoint` and `hasValue` are weakened when dropped or pointed elsewhere.
     #[test]
-    fn ont4d_weakened_covers_equals_and_disjoint() {
+    fn ont4d_weakened_covers_equals_disjoint_and_has_value() {
         let mut sup = p("x");
         sup.equals = Some("y".into());
         sup.disjoint = Some("z".into());
+        sup.has_value = Some(InEntry {
+            lexical: "v".into(),
+            datatype: "http://www.w3.org/2001/XMLSchema#string".into(),
+        });
         assert!(
             weakened(&sup, &sup.clone()).is_empty(),
             "equal is not weaker"
         );
-        let cases: [Case; 4] = [
+        let cases: [Case; 6] = [
             ("equals", |b| b.equals = None),
             ("equals", |b| b.equals = Some("w".into())),
             ("disjoint", |b| b.disjoint = None),
             ("disjoint", |b| b.disjoint = Some("w".into())),
+            ("hasValue", |b| b.has_value = None),
+            ("hasValue", |b| {
+                b.has_value = Some(InEntry {
+                    lexical: "v".into(),
+                    datatype: "http://www.w3.org/2001/XMLSchema#integer".into(),
+                })
+            }),
         ];
         for (want, mutate) in cases {
             let mut sub = sup.clone();

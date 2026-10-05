@@ -1,0 +1,22 @@
+# vendored: w3c/data-shapes@gh-pages data-shapes-test-suite/tests/core/property/hasValue-001.ttl (tests/oracle/w3c/property/hasValue-001.ttl)
+id: property/hasValue-001
+label: "Test of sh:hasValue at property shape 001"
+prefix: "http://datashapes.org/sh/tests/core/property/hasValue-001.test#"
+targeting: "sh:targetClass ex:MalePerson as written"
+shapes:
+  - id: PersonShape
+    targetClass: ex:MalePerson
+    properties:
+      - {path: ex:gender, datatype: xsd:string, hasValue: male}
+data: |
+  ex:InvalidMalePerson rdf:type ex:MalePerson .
+  ex:InvalidMalePerson ex:gender "female" .
+  ex:ValidMalePerson1 rdf:type ex:MalePerson .
+  ex:ValidMalePerson1 ex:gender "male" .
+  ex:ValidMalePerson2 rdf:type ex:MalePerson .
+  ex:ValidMalePerson2 ex:gender "female" .
+  ex:ValidMalePerson2 ex:gender "male" .
+expect:
+  conforms: false
+  results:
+    - {focus: ex:InvalidMalePerson, path: ex:gender, component: hasValue}

@@ -12,6 +12,7 @@
 //! | `minExclusive`, `minInclusive`, `maxExclusive`, `maxInclusive` (a YAML scalar bound, #4814) | a typed bound (`"2026-01-01"^^xsd:date`) |
 //! | `node` (one level) | recursive / cyclic shapes |
 //! | `closed`, `ignoredProperties` | — |
+//! | `hasValue` (a YAML scalar, #4814) | an IRI value |
 //! | `lessThan`, `lessThanOrEquals`, `equals`, `disjoint` (property pairs) | a language-tagged value (F9: the tag is not kept) |
 //! | a single predicate `path` | sequence, alternative, inverse, `*`/`+` paths |
 //! | — | `and`/`or`/`not`/`xone`, `sparql`, and every component not in this table |
@@ -134,6 +135,8 @@ pub struct PropertyShape {
     pub equals: Option<String>,
     /// `sh:disjoint`: the value set must share no term with this predicate's value set on the same focus node.
     pub disjoint: Option<String>,
+    /// `sh:hasValue`: at least one value must be exactly this term (#4814). A literal only, typed as an `in` entry is.
+    pub has_value: Option<InEntry>,
     /// `sh:minExclusive` / `sh:minInclusive` / `sh:maxExclusive` / `sh:maxInclusive` (SHACL §4.3): each value must
     /// compare, by SPARQL `<`, `>` / `>=` / `<` / `<=` the bound. A value that does not compare (an IRI, a string
     /// against a number) is a result, never a skip (#4814).
@@ -239,6 +242,7 @@ const PROPERTY_KEYS: &[&str] = &[
     "lessThanOrEquals",
     "equals",
     "disjoint",
+    "hasValue",
     "minExclusive",
     "minInclusive",
     "maxExclusive",
@@ -536,6 +540,7 @@ fn parse_property(
         less_than_or_equals: iri_opt("lessThanOrEquals")?,
         equals: iri_opt("equals")?,
         disjoint: iri_opt("disjoint")?,
+        has_value: bound(shape, pm, "hasValue")?,
         min_exclusive: bound(shape, pm, "minExclusive")?,
         min_inclusive: bound(shape, pm, "minInclusive")?,
         max_exclusive: bound(shape, pm, "maxExclusive")?,
@@ -829,6 +834,7 @@ fn validate_focus(graph: &Graph, shape: &NodeShape, focus: &str, out: &mut Vec<V
         }
         check_pairs(graph, focus, p, &values, &mut push);
         check_sets(graph, focus, p, &values, &mut push);
+        check_has_value(p, &values, &mut push);
     }
     if shape.closed {
         check_closed(graph, shape, focus, &mut push);
@@ -979,6 +985,26 @@ fn check_sets(
                 ),
             );
         }
+    }
+}
+
+/// `sh:hasValue` (SHACL §4.8.2) on one property of one focus node: one result when no value is exactly the term,
+/// none for a value that differs (W3C property/hasValue-001: `"female"` beside `"male"` conforms). A
+/// language-tagged value never matches, since the term is never `rdf:langString`, so F9 cannot make it pass.
+fn check_has_value(
+    p: &PropertyShape,
+    values: &[&Term],
+    push: &mut impl FnMut(Severity, Option<&str>, &'static str, String),
+) {
+    let Some(want) = &p.has_value else { return };
+    let want = want.term();
+    if !values.iter().any(|v| **v == want) {
+        push(
+            p.severity,
+            Some(&p.path),
+            "hasValue",
+            format!("{}: no value is {}", short(&p.path), term_short(&want)),
+        );
     }
 }
 
@@ -1457,6 +1483,9 @@ fn turtle_string_and_pair_lines(p: &PropertyShape) -> Vec<String> {
     if let Some(o) = &p.disjoint {
         lines.push(format!("sh:disjoint <{o}>"));
     }
+    if let Some(v) = &p.has_value {
+        lines.push(format!("sh:hasValue {}", turtle_entry(v)));
+    }
     for (b, k) in [
         (&p.min_exclusive, "minExclusive"),
         (&p.min_inclusive, "minInclusive"),
@@ -1473,10 +1502,12 @@ fn turtle_string_and_pair_lines(p: &PropertyShape) -> Vec<String> {
 /// A YAML-typed term as a Turtle literal: typed unless it is an `xsd:string`, because `sh:in` is term equality and a
 /// range bound compares by its datatype — an untyped `"40"` would be a string the oracle cannot order against 39.
 fn turtle_entry(v: &InEntry) -> String {
+    // escaped as `sh:pattern` is: a `"` or `\` in the lexical form would otherwise end or break the literal
+    let lexical = v.lexical.replace('\\', "\\\\").replace('"', "\\\"");
     if v.datatype == XSD_STRING_IRI {
-        format!("\"{}\"", v.lexical)
+        format!("\"{lexical}\"")
     } else {
-        format!("\"{}\"^^<{}>", v.lexical, v.datatype)
+        format!("\"{lexical}\"^^<{}>", v.datatype)
     }
 }
 
@@ -1841,6 +1872,61 @@ mod tests {
     }
 
     #[test]
+    fn has_value_needs_one_exact_term_and_ignores_the_others() {
+        // #4814 slice 3 (#3715): at least one value is the term; other values do not matter
+        let s = shape(
+            "shape:\n  targetClass: ont:Part\n  properties:\n    - {path: ont:g, hasValue: male}\n    - {path: ont:n, hasValue: 3}\n",
+        );
+        let part = |id: &str, pairs: &[(&str, Term)]| {
+            let mut g = Graph::new();
+            let s = iri("part", id);
+            g.insert(s.clone(), RDF_TYPE, Term::iri(ont("Part")));
+            for (p, o) in pairs {
+                g.insert(s.clone(), ont(p), o.clone());
+            }
+            g
+        };
+        let comps = |g: &Graph| -> Vec<&'static str> {
+            validate(g, std::slice::from_ref(&s))
+                .results
+                .iter()
+                .map(|r| r.component)
+                .collect()
+        };
+        let int = |v: &str| Term::Literal {
+            value: v.into(),
+            datatype: format!("{XSD_NS}integer"),
+        };
+        let ok = part(
+            "ok",
+            &[
+                ("g", Term::string("female")),
+                ("g", Term::string("male")),
+                ("n", int("3")),
+            ],
+        );
+        assert!(comps(&ok).is_empty(), "one exact value is enough");
+        // absent; the right lexical form with the wrong datatype; a language-tagged "male" (F9)
+        let tagged = Term::Literal {
+            value: "male".into(),
+            datatype: RDF_LANG_STRING.into(),
+        };
+        let bad = part("bad", &[("g", tagged), ("n", Term::string("3"))]);
+        assert_eq!(comps(&bad), vec!["hasValue", "hasValue"]);
+        assert_eq!(comps(&part("none", &[])), vec!["hasValue", "hasValue"]);
+        let t = to_turtle(std::slice::from_ref(&s));
+        assert!(t.contains("sh:hasValue \"male\""), "{t}");
+        assert!(
+            t.contains(&format!("sh:hasValue \"3\"^^<{XSD_NS}integer>")),
+            "{t}"
+        );
+        // a quote or backslash in the term is escaped, so the exported literal still parses
+        let q = shape("shape:\n  targetClass: ont:Part\n  properties:\n    - {path: ont:g, hasValue: 'a\"b\\c'}\n");
+        let t = to_turtle(std::slice::from_ref(&q));
+        assert!(t.contains(r#"sh:hasValue "a\"b\\c""#), "{t}");
+    }
+
+    #[test]
     fn compare_terms_orders_numbers_across_types_and_refuses_mixed_kinds() {
         use std::cmp::Ordering::{Equal, Greater, Less};
         let lit = |v: &str, t: &str| Term::Literal {
@@ -1915,7 +2001,7 @@ mod tests {
                 "entity: {{type: pv-contract}}\nshape:\n  properties: [{{path: ont:x, {prop}}}]\n"
             )
         };
-        let rows: [(&str, String, String); 17] = [
+        let rows: [(&str, String, String); 18] = [
             ("F1 targetClass", "shape:\n  targetClass: [ont:A]\n  properties: []\n".into(), "shape:\n  targetClass: ont:A\n  properties: []\n".into()),
             ("F2 datatype", p("datatype: 5"), p("datatype: xsd:string")),
             ("F2 class", p("class: [ont:A]"), p("class: ont:A")),
@@ -1933,6 +2019,7 @@ mod tests {
             ("slice 1 maxInclusive", p("maxInclusive: [true]"), p("maxInclusive: true")),
             ("slice 2 equals", p("equals: [ont:y]"), p("equals: ont:y")),
             ("slice 2 disjoint", p("disjoint: 3"), p("disjoint: ont:y")),
+            ("slice 3 hasValue", p("hasValue: [male]"), p("hasValue: male")),
         ];
         for (row, bad, ok) in rows {
             let parse =
