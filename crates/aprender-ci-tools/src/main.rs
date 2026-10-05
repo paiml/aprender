@@ -2,8 +2,9 @@
 
 use aprender_ci_tools::{
     coverage_report_scope, package_include_diff, publishable_crates, tarball_shrink_report,
+    tarball_workspace,
 };
-use clap::{Parser, Subcommand};
+use clap::{ArgGroup, Parser, Subcommand};
 use std::io::{Read, Write};
 use std::path::PathBuf;
 use std::process::{Command, ExitCode};
@@ -46,6 +47,19 @@ enum Cmd {
         package_log: PathBuf,
         /// The tarball workspace; its crates are under `pkgs/`.
         ws_dir: PathBuf,
+    },
+    /// Turn DIR/pkgs/<name>-<ver>/ (unpacked .crate files) into one workspace and print
+    /// `<name>\t<version>\t<dir>` per crate (was scripts/lib/tarball_workspace.py).
+    #[command(group(ArgGroup::new("mode").required(true).args(["dir", "name", "target_dir"])))]
+    TarballWorkspace {
+        /// Write DIR/Cargo.toml over every crate under DIR/pkgs.
+        dir: Option<String>,
+        /// Print the [package] name of the unpacked crate in this directory.
+        #[arg(long, value_name = "DIR")]
+        name: Option<String>,
+        /// Print `target_directory` of the `cargo metadata` JSON on stdin.
+        #[arg(long)]
+        target_dir: bool,
     },
 }
 
@@ -99,6 +113,23 @@ fn run(cmd: Cmd) -> Result<String, Refusal> {
             ws_dir,
         } => tarball_shrink_report::report(&package_log, &ws_dir)
             .map_err(|(code, reason)| (String::new(), code, reason)),
+        Cmd::TarballWorkspace {
+            target_dir: true, ..
+        } => {
+            let mut meta = Vec::new();
+            std::io::stdin()
+                .read_to_end(&mut meta)
+                .map_err(|e| nothing_printed(format!("stdin: {e}")))?;
+            tarball_workspace::target_dir(&meta).map_err(nothing_printed)
+        }
+        Cmd::TarballWorkspace {
+            name: Some(dir), ..
+        } => tarball_workspace::package_name(&dir).map_err(nothing_printed),
+        Cmd::TarballWorkspace { dir, .. } => {
+            // The required `mode` group leaves DIR as the only other way in.
+            let dir = dir.ok_or_else(|| nothing_printed("tarball-workspace: no DIR".to_owned()))?;
+            tarball_workspace::write_workspace(&dir).map_err(nothing_printed)
+        }
     }
 }
 

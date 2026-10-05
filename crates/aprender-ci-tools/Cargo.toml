@@ -13,6 +13,7 @@ publish = false
 [dependencies]
 clap = { workspace = true }
 serde_json = { workspace = true }
+toml = { workspace = true }
 
 [build-dependencies]
 aprender-build-sha = { workspace = true }  # #4219: APR_GIT_SHA for --version
