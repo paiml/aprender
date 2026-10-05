@@ -1,8 +1,8 @@
 //! `aprender-ci-tools`: one binary, one subcommand per ported Python helper.
 
 use aprender_ci_tools::{
-    coverage_report_scope, dag_status, git_patch_id, package_include_diff, publishable_crates,
-    tarball_build_errors, tarball_shrink_report, tarball_workspace,
+    coverage_report_scope, dag_status, git_patch_id, obligation_ids, package_include_diff,
+    publishable_crates, tarball_build_errors, tarball_shrink_report, tarball_workspace,
 };
 use clap::{ArgGroup, Parser, Subcommand};
 use std::io::{Read, Write};
@@ -69,6 +69,15 @@ enum Cmd {
         /// original, so the count is checked by the port and not by clap (which exits 1).
         #[arg(num_args = 0.., allow_hyphen_values = true, trailing_var_arg = true)]
         log: Vec<PathBuf>,
+    },
+    /// Deterministic ids for anonymous proof obligations (was
+    /// scripts/lib/obligation_ids.py). Exit 0 done, 1 `--check` found one or a crash point
+    /// of the original, 2 a usage error or an input the port will not guess at. Its
+    /// arguments go to the port's own argparse reading, `--` and `-h` included.
+    #[command(disable_help_flag = true)]
+    ObligationIds {
+        #[arg(num_args = 0.., allow_hyphen_values = true, trailing_var_arg = true)]
+        args: Vec<String>,
     },
     /// Each DAG row's status, derived from its receipt, and the D7 lines for a typed
     /// `status:` that disagrees (was scripts/lib/dag_status.py). Reads the rows as a JSON
@@ -176,6 +185,7 @@ fn run(cmd: Cmd) -> Result<String, Refusal> {
                 Err((o.stdout, o.code, o.stderr))
             }
         }
+        Cmd::ObligationIds { args } => outcome(&obligation_ids::run(&args)),
         Cmd::DagStatus { root } => {
             let mut rows = String::new();
             std::io::stdin()
@@ -186,7 +196,33 @@ fn run(cmd: Cmd) -> Result<String, Refusal> {
     }
 }
 
+fn outcome(o: &obligation_ids::Outcome) -> Result<String, Refusal> {
+    if o.code == 0 {
+        Ok(o.stdout.clone())
+    } else {
+        Err((o.stdout.clone(), o.code, o.stderr.clone()))
+    }
+}
+
 fn main() -> ExitCode {
+    // clap would take a leading `--` for itself; the original's argparse keeps it.
+    let argv: Vec<_> = std::env::args_os().skip(1).collect();
+    if argv.first().is_some_and(|a| a == "obligation-ids") {
+        let args: Option<Vec<String>> = argv[1..]
+            .iter()
+            .map(|a| a.to_str().map(str::to_owned))
+            .collect();
+        return finish(args.map_or_else(
+            || {
+                Err((
+                    String::new(),
+                    2,
+                    "obligation-ids: refusing: a non-UTF-8 argument".to_owned(),
+                ))
+            },
+            |args| outcome(&obligation_ids::run(&args)),
+        ));
+    }
     let cli = match Cli::try_parse() {
         Ok(cli) => cli,
         // --help/--version exit 0; a usage error exits 1, as the originals' did.
@@ -196,7 +232,11 @@ fn main() -> ExitCode {
             return ExitCode::from(code);
         }
     };
-    let (out, refusal) = match run(cli.cmd) {
+    finish(run(cli.cmd))
+}
+
+fn finish(result: Result<String, Refusal>) -> ExitCode {
+    let (out, refusal) = match result {
         Ok(out) => (out, None),
         Err((printed, code, reason)) => (printed, Some((code, reason))),
     };
