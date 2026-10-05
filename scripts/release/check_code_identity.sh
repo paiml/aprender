@@ -127,13 +127,17 @@ selftest() {
     o="$(g "$s" rev-parse HEAD:scripts/gate2.sh)"; o="${o:?}"; chmod u+w -- "${s:?}/.git/objects/${o:0:2}/${o:2}"; : > "${s:?}/.git/objects/${o:0:2}/${o:2}"
     code_identity_unclassified_reads "$s" >/dev/null 2>&1; row scan_git_error_not_measured 2 "$?" "(a blob git grep cannot read)"
     # the stated blind spot: these gates read evidence/parity/r.json (unclassified), and
-    # the scan does NOT see them. Expected empty; a row going red means the scan learned
-    # to see the read, so update the blind-spot note in the lib and the contract.
-    s="$tmp/blind"; fixture "$s"
+    # the scan does NOT see them. A literal read of a second unclassified file, s.json, in
+    # the same fixture MUST be seen, so the row cannot pass on a scan that sees nothing.
+    # Expected: s.json alone, rc 0. r.json appearing means the scan learned to see the
+    # read, so update the blind-spot note in the lib and the contract.
+    s="$tmp/blind"; fixture "$s"; printf '{}\n' > "$s/evidence/parity/s.json"
     printf 'for f in evidence/parity/*; do cat "$f"; done\n' > "$s/scripts/walk.sh"
     printf 'cat evidence/parity/*.json\n' > "$s/scripts/glob.sh"
-    printf 'n=r.json\ncat "evidence/parity/$n"\ncat evidence/parity/"r.json"\n' > "$s/scripts/var.sh"; commit "$s" blind >/dev/null
-    row scan_blind_dir_walk_glob_and_var_reads "" "$(code_identity_unclassified_reads "$s" | tr '\n' ' ')" "(documented blind spot: review classifies these)"
+    printf 'n=r.json\ncat "evidence/parity/$n"\ncat evidence/parity/"r.json"\n' > "$s/scripts/var.sh"
+    printf 'cat evidence/parity/s.json\n' > "$s/scripts/lit.sh"; commit "$s" blind >/dev/null
+    out="$(code_identity_unclassified_reads "$s")"; o=$?
+    row scan_blind_dir_walk_glob_and_var_reads "rc=0 evidence/parity/s.json" "rc=$o $(tr '\n' ' ' <<< "$out" | sed 's/ $//')" "(literal read seen; walk, glob and var reads are the documented blind spot)"
     row scan_this_repository_is_clean "" "$(code_identity_unclassified_reads "$REPO" | tr '\n' ' ' | sed 's/ $//')"
     out="$(sed -n '/^  gate_inputs:/,/^  [a-z_]*:/p' "$REPO/contracts/code-identity-v1.yaml" | sed -n 's/^    - //p' | tr -d '"' | sort | tr '\n' ' ')"
     row contract_lists_the_gate_inputs "$(printf '%s\n' "${CODE_IDENTITY_GATE_INPUTS[@]}" | sort | tr '\n' ' ')" "$out"
