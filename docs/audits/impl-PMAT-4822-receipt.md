@@ -49,6 +49,26 @@ differs"): which book (the script's own repo vs ROOT); arguments (ignored by the
 before any file is touched); stop reasons on stderr (one line, not a traceback). No parity case
 covers them, by design.
 
+## Review round 2 (independent read-review, after the fold note)
+
+- Divergence found: a NON-`.md` entry with a non-UTF-8 name. Python's glob skips it; the port
+  refused the whole run (exit 1) because it tested UTF-8 before the suffix. Fixed: the suffix is
+  tested on the raw bytes first (`chapters`), so only a non-UTF-8 `.md` name is refused, the
+  recorded difference. New unit test `run_skips_a_non_utf8_name_that_is_not_a_chapter` and a
+  parity row "a non-utf-8 name that is not a chapter" (`\xff.txt`, `a.md\xff`, `\xff.MD`).
+  With the fix removed the row is RED (py exit 0, rust exit 1) and two unit tests fail.
+- The harness compared only stdout and success vs failure, and dropped stderr. It now has
+  `check_exact`: the exact exit status, and stderr empty on both sides or on neither. Stderr TEXT
+  is not compared, because where the original dies it prints a traceback (recorded above). This
+  section uses `check_exact`. Liars: one per comparison (stdout, success, exact status, stderr
+  present, stderr absent), each paired with a twin that must pass so that exact mode alone is
+  what catches it. Each comparison was deleted in turn from a copy of the harness, and each copy
+  stopped at its liar.
+- The tree comparison now has its own liar: one stray file on the Rust side only, so stdout
+  agrees and only `diff -r` can fail.
+- Parity: 139/139 identical, against python 3.13 (`PYTHON` pins it; the default is `python3`).
+- cargo-mutants 27.1.0 on `annotate_book_examples.rs` after the fix: 72 mutants tested, 72 caught.
+
 ## Planted contrary question (reviewers MUST answer, with file:line)
 Claim: "The port drops the original's `apr help <command>` check, so a fence whose first line is
 `apr help run` is now annotated `model-required` with the default model instead of `trivial`."

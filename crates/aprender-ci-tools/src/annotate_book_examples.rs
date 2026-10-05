@@ -212,6 +212,10 @@ fn chapters(root: &Path, sub: &str) -> Result<Vec<String>, String> {
     let mut names = Vec::new();
     for e in entries.flatten() {
         let name = e.file_name();
+        // The suffix first: glob skips a non-.md name whatever its bytes.
+        if !name.as_encoded_bytes().ends_with(b".md") {
+            continue;
+        }
         let Some(name) = name.to_str() else {
             return Err(format!(
                 "{}: a file name that is not UTF-8: {}",
@@ -219,9 +223,7 @@ fn chapters(root: &Path, sub: &str) -> Result<Vec<String>, String> {
                 name.to_string_lossy()
             ));
         };
-        if name.ends_with(".md") {
-            names.push(format!("book/src/{sub}/{name}"));
-        }
+        names.push(format!("book/src/{sub}/{name}"));
     }
     names.sort();
     Ok(names)
@@ -518,5 +520,26 @@ mod tests {
         assert!(reason.contains("not UTF-8"), "{reason}");
         let a = std::fs::read_to_string(t.path().join("book/src/cli/a.md")).expect("read");
         assert_eq!(a, "```rust\n");
+    }
+
+    #[cfg(unix)]
+    #[test]
+    fn run_skips_a_non_utf8_name_that_is_not_a_chapter() {
+        use std::os::unix::ffi::OsStrExt;
+        let body: &[u8] = b"```bash\napr tui\n```\n";
+        let plain = tree("plainname", &[("book/src/cli/a.md", body)]);
+        let t = tree("otherbadname", &[("book/src/cli/a.md", body)]);
+        for name in [&b"\xff.txt"[..], b"\xff", b"a.md\xff", b"\xff.MD"] {
+            let p = t
+                .path()
+                .join("book/src/cli")
+                .join(std::ffi::OsStr::from_bytes(name));
+            std::fs::write(p, b"").expect("write");
+        }
+        let want = run(plain.path());
+        assert!(want.is_ok(), "{want:?}");
+        assert_eq!(run(t.path()), want);
+        let read = |d: &Path| std::fs::read(d.join("book/src/cli/a.md")).expect("read");
+        assert_eq!(read(t.path()), read(plain.path()));
     }
 }

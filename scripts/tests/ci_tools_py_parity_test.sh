@@ -35,7 +35,7 @@ set -euo pipefail
 ROOT="$(git rev-parse --show-toplevel)"
 cd "$ROOT" || exit 1
 PY="${PYTHON:-python3}"
-EXPECTED_CASES=138
+EXPECTED_CASES=139
 
 BIN="${CI_TOOLS_BIN:-}"
 if [[ -z "$BIN" ]]; then
@@ -64,20 +64,22 @@ pass=0
 fail=0
 
 # run_side OUT STDIN -- CMD...: stdout to OUT, return the command's status class (0/1).
-run_side() {
-    local out="$1" in="$2"
+run_side() { # OUT IN -- CMD...: stdout to OUT, stderr to OUT.err, prints the exit status
+    local out="$1" in="$2" rc=0
     shift 3
-    if "$@" <"$in" >"$out" 2>/dev/null; then
-        echo 0
-    else
-        echo 1
-    fi
+    "$@" <"$in" >"$out" 2>"$out.err" || rc=$?
+    echo "$rc"
 }
 
-# check NAME STDIN PYCMD... -- RSCMD...
-check() {
-    local name="$1" in="$2"
-    shift 2
+# check NAME STDIN PYCMD... -- RSCMD...: identical stdout, and success vs failure alike.
+# check_exact (same arguments) also wants the exact exit status, and stderr empty on both
+# sides or on neither. Its TEXT is not compared: where the original dies, it prints a
+# traceback and the port one line (each tool's README table records that).
+check() { check_with class "$@"; }
+check_exact() { check_with exact "$@"; }
+check_with() {
+    local mode="$1" name="$2" in="$3"
+    shift 3
     local py=() rs=()
     while [[ "$1" != "--" ]]; do
         py+=("$1")
@@ -85,29 +87,54 @@ check() {
     done
     shift
     rs=("$@")
-    local py_status rs_status
-    py_status="$(run_side "$tmp/py.out" "$in" -- "${py[@]}")"
-    rs_status="$(run_side "$tmp/rs.out" "$in" -- "${rs[@]}")"
-    if [[ "$py_status" == "$rs_status" ]] && cmp -s "$tmp/py.out" "$tmp/rs.out"; then
+    local py_rc rs_rc same=1
+    py_rc="$(run_side "$tmp/py.out" "$in" -- "${py[@]}")"
+    rs_rc="$(run_side "$tmp/rs.out" "$in" -- "${rs[@]}")"
+    cmp -s "$tmp/py.out" "$tmp/rs.out" || same=0
+    if [[ "$mode" == exact ]]; then
+        [[ "$py_rc" == "$rs_rc" ]] || same=0
+        [[ -s "$tmp/py.out.err" ]] && [[ ! -s "$tmp/rs.out.err" ]] && same=0
+        [[ ! -s "$tmp/py.out.err" ]] && [[ -s "$tmp/rs.out.err" ]] && same=0
+    elif [[ "$((py_rc == 0))" != "$((rs_rc == 0))" ]]; then
+        same=0
+    fi
+    if [[ "$same" -eq 1 ]]; then
         pass=$((pass + 1))
     else
         fail=$((fail + 1))
-        echo "MISMATCH: $name (py status $py_status, rust status $rs_status)" >&2
+        echo "MISMATCH: $name (py status $py_rc, rust status $rs_rc)" >&2
         diff <(od -c "$tmp/py.out") <(od -c "$tmp/rs.out") 2>&1 | head -8 >&2 || true
+        echo "  py stderr: $(head -c 200 "$tmp/py.out.err" | tail -n 1)" >&2
+        echo "  rs stderr: $(head -c 200 "$tmp/rs.out.err" | tail -n 1)" >&2
     fi
 }
 
 : >"$tmp/empty"
 
 # --- The harness must see a planted mismatch, or its passes mean nothing. ---------
+# One liar per thing it compares: stdout, success vs failure, and, in check_exact, the
+# exact status and stderr presence. Each must be reported, and the stdout-only twins of
+# the last two must pass under check, or exact mode is not what catches them.
 printf 'a\n' >"$tmp/plant"
-before=$fail
-check "plant" "$tmp/plant" cat -- printf 'b\n' 2>/dev/null
-if [[ "$fail" -ne "$((before + 1))" ]]; then
-    echo "FAIL: the planted mismatch was not reported; the harness is blind" >&2
-    exit 1
-fi
-fail="$before"
+liar() { # EXPECT(pass|fail) CHECKER ARGS...
+    local want="$1" p0=$pass f0=$fail
+    shift
+    "$@" 2>/dev/null
+    if [[ "$want" == fail && "$fail" -ne "$((f0 + 1))" ]] || [[ "$want" == pass && "$pass" -ne "$((p0 + 1))" ]]; then
+        echo "FAIL: planted case '$2' did not $want; the harness is blind" >&2
+        exit 1
+    fi
+    pass=$p0
+    fail=$f0
+}
+liar fail check "plant stdout" "$tmp/plant" cat -- printf 'b\n'
+liar fail check "plant success" "$tmp/plant" cat -- bash -c 'cat; exit 1'
+liar pass check "plant status twin" "$tmp/plant" bash -c 'cat; exit 1' -- bash -c 'cat; exit 2'
+liar fail check_exact "plant status" "$tmp/plant" bash -c 'cat; exit 1' -- bash -c 'cat; exit 2'
+liar pass check "plant stderr twin" "$tmp/plant" cat -- bash -c 'cat; echo x >&2'
+liar fail check_exact "plant stderr" "$tmp/plant" cat -- bash -c 'cat; echo x >&2'
+liar fail check_exact "plant stderr gone" "$tmp/plant" bash -c 'cat; echo x >&2' -- cat
+liar pass check_exact "plant agree" "$tmp/plant" bash -c 'cat; echo x >&2; exit 3' -- bash -c 'cat; echo y >&2; exit 3'
 
 # --- 1. publishable-crates -------------------------------------------------------
 PC_PY=("$PY" scripts/lib/publishable_crates.py)
@@ -497,7 +524,7 @@ abe_case() { # NAME SETUP_FN [SETUP ARGS...]: SETUP_FN DIR builds book/src under
     "$setup" "$d/py" "$@"
     "$setup" "$d/rs" "$@"
     before=$fail
-    check "annotate-book-examples $name" "$tmp/empty" \
+    check_exact "annotate-book-examples $name" "$tmp/empty" \
         "$PY" "$d/py/scripts/annotate-book-examples.py" -- "$BIN" annotate-book-examples "$d/rs"
     if [[ "$fail" -eq "$before" ]] && ! diff -r --no-dereference -x scripts "$d/py" "$d/rs" >"$tmp/abe.diff" 2>&1; then
         pass=$((pass - 1))
@@ -562,6 +589,7 @@ abe_fences() {
 abe_order() {
     local n
     for n in b.md a.md A.md .h.md .md y.md.md c.MD 'n\n.md' 'é.md' 'z z.md'; do
+        # shellcheck disable=SC2059 # the name IS a printf fixture
         ch "$1" cli "$(printf "$n")" '```rust\n'
     done
     ch "$1" lib a.md '```bash\napr tui\n```\n'
@@ -609,6 +637,20 @@ abe_case "a directory named .md" abe_dirmd
 abe_case "dangling link" abe_dangling
 abe_case "link to a chapter" abe_symlink
 abe_case "read-only chapter" abe_readonly
+abe_badother() { # glob skips a non-.md name whatever its bytes; the chapter still gets annotated
+    ch "$1" cli a.md '```bash\napr tui\n```\n'
+    printf 'x\n' >"$1/book/src/cli/$(printf '\xff.txt')"
+    printf 'x\n' >"$1/book/src/cli/$(printf 'a.md\xff')"
+    printf 'x\n' >"$1/book/src/cli/$(printf '\xff.MD')"
+}
+abe_case "a non-utf-8 name that is not a chapter" abe_badother
+# The tree diff must see a planted difference that stdout cannot: one stray file, Rust side only.
+abe_plant() {
+    ch "$1" cli a.md '```bash\napr tui\n```\n'
+    [[ "$1" == */rs ]] && printf 'x\n' >"$1/book/src/cli/stray.txt"
+    return 0
+}
+liar fail abe_case "plant tree" abe_plant
 chmod -R u+w "$tmp/abe"
 
 
