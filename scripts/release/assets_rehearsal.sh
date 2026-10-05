@@ -15,23 +15,34 @@
 # The workflow is GENERATED from binary-release.yml (`gen`), never copied by hand: the build
 # jobs (pv, all [[bin]]s, apr cuda, apr cpu, apr darwin) keep their own steps, runners and
 # checks. Only these differ: the triggers (schedule + dispatch); the tag (below); the
-# permissions (contents: read, no `secrets.`, no environment); each "Upload assets to
+# permissions (contents: read, no `secrets` or `vars`, no environment); each "Upload assets to
 # release" step, which becomes a step that checks every archive against its .sha256 and
 # keeps the checksums as a run artifact; the release-reading jobs, replaced by `verify`; and
 # the credential guard at the start of every job. The rehearsal's first job regenerates and
 # compares as canonical JSON (--check), so a binary-release.yml edit without a regen turns
 # the rehearsal red instead of letting it rehearse a stale build.
 #
-# It cannot upload. `lint` checks every property that keeps it so: workflow permissions
-# exactly contents: read, no job-level permissions, no environment, triggers exactly
-# schedule + dispatch, no `secrets.` reference, no upload, release write or release-event
-# input, every job starting with the credential guard, no step `if:` at all (it can
-# run past the guard), workflow and job keys and job env names from an allowlist (no
-# workflow env, defaults, container or services), and every build job keeping its
-# checksums as a run artifact. The guard looks for the credential itself (a flag is not a
-# guard): it refuses to run when GH_TOKEN, GITHUB_TOKEN, a cargo registry token, an OIDC
-# request token or a cargo credentials file is present. The case table runs lint and the
-# guard over a fixture workflow built from the real step bodies.
+# It cannot upload, because nothing in it holds a credential that can write. `lint`
+# rests that on two closed properties, not on spotting upload commands:
+#   - the token cannot write: workflow permissions exactly contents: read, no job-level
+#     permissions, no environment (environment secrets), no reusable-workflow call;
+#   - no credential is reachable from an expression: the words `secrets` and `vars`
+#     appear nowhere in the file, in any case or access form (secrets.X, secrets['X'],
+#     toJSON(secrets)), and inside ${{ }} `github` is read one named property at a
+#     time, never `token` (so no github['token'], toJSON(github) or format() form). A
+#     context is an identifier; an expression cannot build its name from a string, so
+#     there is no other spelling.
+# A step that POSTs in any form then has nothing to write with. The rest is the
+# envelope: triggers exactly schedule + dispatch, every job starting with the
+# credential guard, no step `if:` at all (it can run past the guard), workflow and job
+# keys and job env names from an allowlist (no workflow env, defaults, container or
+# services), actions from an allowlist, and every build job keeping its checksums as a
+# run artifact. The upload pattern (gh release, uploads.github.com, -X POST, ...) is a
+# tripwire, not the guarantee. The guard covers what lint cannot see, a credential on
+# the runner (a flag is not a guard): it refuses to run when GH_TOKEN, GITHUB_TOKEN, a
+# cargo registry token, an OIDC request token or a cargo credentials file is present.
+# The case table runs lint and the guard over a fixture workflow built from the real
+# step bodies.
 #
 # The verdict: `tag` names the rehearsal's tag, v<workspace version>-rc.0, so
 # the rc stamp runs as it does on a real rc. `verify` judges one night:
@@ -143,7 +154,17 @@ lint() {
     [ -z "$v" ] || { echo "lint: job key(s) outside the allowlist (they act before the credential guard): $v"; bad=1; }
     v=$("$YQ" '[.jobs[] | (.env // {}) | keys[] | select(test("^(MACOSX_DEPLOYMENT_TARGET)$") | not)] | unique | join(" ")' "$f")
     [ -z "$v" ] || { echo "lint: job env name(s) outside the allowlist (they act before the credential guard): $v"; bad=1; }
-    if grep -n -E 'secrets\.' "$f"; then echo "lint: a secrets. reference"; bad=1; fi
+    # No credential is reachable from an expression. `secrets` and `vars` are banned as
+    # words anywhere in the file, in any case, so every access form is caught (secrets.X,
+    # secrets['X'], toJSON(secrets)). Inside ${{ }}, `github` may only be read one named
+    # property at a time and never `token`: github['token'] or toJSON(github) would
+    # reach the job token another way.
+    if grep -n -i -E '(^|[^A-Za-z0-9_])(secrets|vars)([^A-Za-z0-9_]|$)' "$f"; then
+        echo "lint: a secrets or vars reference (a credential reachable from an expression)"; bad=1
+    fi
+    if grep -o -i -E '\$\{\{.*\}\}' "$f" | grep -i -E '(^|[^A-Za-z0-9_.])github( *[^ .A-Za-z0-9_]| *$| *\. *token([^A-Za-z0-9_]|$))'; then
+        echo "lint: the job token reachable from an expression (github.token, github[...] or a whole github context)"; bad=1
+    fi
     if grep -n -E 'uploads\.github\.com|-X ?.?(POST|PUT|PATCH|DELETE)|--request[ =].?(POST|PUT|PATCH|DELETE)|gh (release|api)|cargo publish|github\.event\.release|inputs\.tag' "$f"; then
         echo "lint: an upload, a release write or a release-event input"; bad=1
     fi
@@ -343,8 +364,32 @@ self_test() {
     out=$(lint "$d/m.yml"); row "an environment -> lint red" 1 $? 'environment' "$out"
     mut '.on.release = {"types": ["published"]}'
     out=$(lint "$d/m.yml"); row "release trigger -> lint red" 1 $? 'triggers' "$out"
-    mut '.jobs["build-apr-cpu"].steps[-1].env = {"GH_TOKEN": "${{ secrets.GITHUB_TOKEN }}"}'
-    out=$(lint "$d/m.yml"); row "a secrets. reference -> lint red" 1 $? 'secrets' "$out"
+    # Every way to reach a credential from an expression is red. The planted step is the
+    # one a review found: a later step that maps the credential into its env and POSTs
+    # with curl -d, which no upload pattern names.
+    credrow() {
+        V="$1" "$YQ" '.jobs["build-apr-cpu"].steps[1].env.T = strenv(V) | .jobs["build-apr-cpu"].steps[1].run = "curl -H \"authorization: token $T\" -d @x https://api.github.com/repos/o/r/releases"' "$d/fx.yml" > "$d/m.yml"
+        out=$(lint "$d/m.yml"); row "a later step with env T: $1 and curl -d -> lint red" 1 $? "$2" "$out"
+    }
+    credrow '${{ secrets.GITHUB_TOKEN }}' 'secrets or vars'
+    credrow "\${{ secrets['GH_TOKEN'] }}" 'secrets or vars'
+    credrow '${{ toJSON(secrets) }}' 'secrets or vars'
+    credrow '${{ Secrets.GH_TOKEN }}' 'secrets or vars'
+    credrow '${{ vars.RELEASE_TOKEN }}' 'secrets or vars'
+    credrow '${{ github.token }}' 'job token reachable'
+    credrow '${{ GitHub . Token }}' 'job token reachable'
+    credrow "\${{ github['token'] }}" 'job token reachable'
+    credrow '${{ toJSON(github) }}' 'job token reachable'
+    credrow '${{ fromJSON(toJSON(github)).token }}' 'job token reachable'
+    credrow "\${{ format('{0}', github) }}" 'job token reachable'
+    # Without a credential the same POST has nothing to write with: lint stays green, and
+    # the reading of github that the release's steps use stays green with it.
+    credrow_green() {
+        V="$1" "$YQ" '.jobs["build-apr-cpu"].steps[1].env.T = strenv(V) | .jobs["build-apr-cpu"].steps[1].run = "curl -d @x https://example.invalid/"' "$d/fx.yml" > "$d/m.yml"
+        out=$(lint "$d/m.yml"); row "a later step with env T: $1 and curl -d, no credential -> still cannot upload" 0 $? 'cannot upload' "$out"
+    }
+    credrow_green '${{ github.sha }}'
+    credrow_green '${{ github.job }}-${{ github.run_id }}'
     mut '.jobs["build-apr-cuda"].steps += [{"name": "up", "run": "curl -sSf -X POST --data-binary @a https://uploads.github.com/x"}]'
     out=$(lint "$d/m.yml"); row "a planted upload step -> lint red" 1 $? 'upload' "$out"
     mut '.jobs["build-apr-cuda"].steps += [{"name": "up", "run": "gh release upload v1 a.tar.gz"}]'
