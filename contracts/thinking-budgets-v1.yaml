@@ -83,8 +83,8 @@ models:
       fails and no budget makes this leg pass; it stays FAIL, known_red. A model property, not
       apr: with Qwen's sampling (T 0.6, top-k 20, top-p 0.95, 8 seeds, 2048) llama.cpp closes
       2/8 and apr closes 5/8; llama.cpp greedy closes only because an early near-tie resolves
-      differently across engines. Evidence: cop-inbox/handoff/c298-4663-4666-evidence.md
-      (raw: /mnt/nvme-raid0/tmp/fix-4663/).
+      differently across engines. Evidence (in-tree):
+      evidence/thinking-budgets/qwen35-0.8b-thinking-on-2026-10-04.md.
 
 # #4046 merge-back: the contract-integrity ratchet requires every contract to state its
 # equations. This is the resolution rule the golden gate's thinking_on_budget_for applies.
