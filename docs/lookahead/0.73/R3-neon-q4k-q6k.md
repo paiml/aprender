@@ -212,4 +212,4 @@ Where a CI step could go. This is a REQUEST in the handoff (APR-LOOKAHEAD-001 §
 - (b) A test step in mac-check, and mac-check added to `gate`'s needs (ci.yml:617). Every PR would then wait on one Mac mini. The mini's CPU features were not probed [U].
 - (c) A line in cuda-nightly.yml. It is not a PR gate: a wrong arm is found the next day, after the merge.
 
-Ruled (a) by quorum, 3-0, 2026-10-05 (RQ-7), filtered to P3's test module so that it builds and runs the minimum. Until that ci.yml edit lands, after its operator check-in, the P3 ticket says the tests are run by hand on gx10 (ticket-bodies-P1-P5.md, P3 **Hosts**).
+Ruled (a) by quorum, 3-0, 2026-10-05 (RQ-7), filtered to P3's test module so that it builds and runs the minimum. The ci.yml edit is operator-approved (C299 Q4, "all recommended"; cop ruling 2026-10-05 15:06Z), so it needs no new check-in if it does only what RQ-7 says and keeps every gate, with red/green proof and a quorum. Until it lands, the P3 ticket says the tests are run by hand on gx10 (ticket-bodies-P1-P5.md, P3 **Hosts**).
