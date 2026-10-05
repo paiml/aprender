@@ -254,7 +254,7 @@ fn test_wgpu_in_common_infrastructure() {
     let backend = Backend::Wgpu;
 
     // Verify env var handling
-    super::common::force_backend(backend);
+    let _env = super::common::force_backend(backend);
     let env_val = std::env::var("REALIZAR_BACKEND");
     assert_eq!(
         env_val,

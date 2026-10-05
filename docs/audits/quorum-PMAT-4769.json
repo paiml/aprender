@@ -1,0 +1,341 @@
+{
+  "ticket": "PMAT-4769",
+  "base": "origin/main",
+  "base_resolved": "origin/main",
+  "base_note": "no origin/origin/main exists; judged against the local ref",
+  "head": "2467f1a81f3a1a311f1920c4e9d70edcfe89ffdc",
+  "diff_sha256": "028ef3dffacdefa2ba90e9a1b295113f2885592feff49ca660aa734aa786ad9d",
+  "width": 3,
+  "executor": "agy",
+  "prompt_mode": "inline",
+  "prompt_bytes": 8104,
+  "prompt_sha256": "c8ae88e32b775c8e21c9cfd0cbed6d2e65ef28e5499c8cf6c0d8c29bc642a845",
+  "author": {
+    "model": "claude-opus-5-5",
+    "family": "claude",
+    "source": "flag"
+  },
+  "agreed": true,
+  "lanes": [
+    {
+      "lane": 1,
+      "status": "SUCCESS",
+      "verdict": "PASS",
+      "summary": "Diff replaces `vec![vec![0.0; n]; layers]` (which clones layer 0 into every other layer, forcing a full memcpy that commits physical pages) with per-layer `vec![0.0; n]` allocations (which specialize to a lazy, zero-filled mmap) in StreamingKVCache, StreamingKVCacheFp16, and layers::KVCache — exactly the construction-time commit defect PMAT-4769 describes. The three previously `#[ignore = \"FLAKE-0 #4769\"]` memory-bound tests are restored (they only construct the cache and check a computed `memory_bytes()` value, never filling positions, so they no longer OOM under the lazy allocation). A new FALSIFY-KV-005 test measures RSS growth via /proc/self/status across all three ctors on 1 GiB caches and asserts <64 MiB growth, which is correctly sized math (8 layers × kv_size × 2 × 4 or 2 bytes = 1 GiB in each case) and backed by a legitimate technique (min of 3 runs to dodge noise). The layers::KVCache change is in scope — it is literally referenced by ticket #4769 per the already-landed commit in gitStatus (\"layers::KVCache had the same cloned-layer ctor; FALSIFY-KV-005 pins all three\"). No gate was weakened, no test asserts the opposite of the ticket, and nothing outside the ticket's stated scope was touched.",
+      "findings": [
+        {
+          "file": "crates/aprender-serve/src/gpu/streaming_kv.rs",
+          "line": 489,
+          "claim": "FALSIFY-KV-005 is gated #[cfg(target_os = \"linux\")], so it never compiles/runs on a non-Linux CI runner (e.g. macOS).",
+          "fix": "Not a defect relative to the ticket (the OOM is a Linux-runner problem and /proc/self/status is Linux-only); noting only as a minor coverage limitation, not a reason to fail.",
+          "grounding": "cited"
+        }
+      ],
+      "raw_bytes": 4235,
+      "err_bytes": 0,
+      "envelope_status": "SUCCESS",
+      "verdict_source": "structured_output",
+      "executor": "claude-code",
+      "grounding_check": "parity",
+      "role": "counted",
+      "model": "claude-sonnet-5",
+      "model_measured": "claude-sonnet-5",
+      "model_source": "flag",
+      "family": "claude",
+      "brief_sha256": "c8ae88e32b775c8e21c9cfd0cbed6d2e65ef28e5499c8cf6c0d8c29bc642a845",
+      "trace": {
+        "input_sha256": "b0d5191dd2f8bb9de9b70dc8c052ff3b8c412a3741c16432905c7e497d721785",
+        "output_sha256": "83644fc44e52eede230d56a977bcdf1371351144fb4c5b4a590f14bc30c71aa6",
+        "store": null,
+        "store_why": "almacen not provisioned yet (infra-27): the blobs stay in the round's gitignored .lanes dir"
+      },
+      "fallback": {
+        "judged_by": "claude-sonnet-5",
+        "exhausted": false,
+        "attempts": [
+          {
+            "model": "claude-sonnet-5",
+            "family": "claude",
+            "outcome": "answered"
+          }
+        ],
+        "skipped": [
+          {
+            "model": "gemini-3.1-pro-high",
+            "why": "family gemini withheld by policy: the diff is not tier-1 (quorum.agy_tier1_only: none of its paths matches quorum.tier1_paths or the built-in policy paths), and agy is reserved for tier-1 diffs — cop ruling of 2026-09-24"
+          }
+        ]
+      },
+      "repeat_of": 2
+    },
+    {
+      "lane": 2,
+      "status": "SUCCESS",
+      "verdict": "PASS",
+      "summary": "The diff replaces vec![vec![0.0; n]; layers] (which clones one fully-materialized layer into every other layer, forcing every byte to be physically committed) with a per-layer vec![0.0; n] allocation in all three affected constructors (StreamingKVCache, StreamingKVCacheFp16, layers::KVCache). This matches Rust's zero-specialization fast path (alloc_zeroed, lazily-backed zero pages), which is the documented root cause for the OOM described in PMAT-4769. A new falsification test (FALSIFY-KV-005) pins all three constructors to under 64 MiB RSS growth at construction, sized and computed consistently (1 GiB caches, verified by hand). The three ignore markers removed are exactly the ones a prior commit on this same ticket had added, and their assertions are unchanged (not weakened) -- they test memory_bytes/memory_mb metadata math, which was already correct; the fix makes their construction no longer OOM. No test assertions were loosened and no gate was removed; scope including layers::KVCache (not named in the ticket title) is justified by the identical clone-every-layer bug pattern and is pinned by the same new falsification test.",
+      "findings": [
+        {
+          "file": "crates/aprender-serve/src/gpu/streaming_kv.rs",
+          "line": 500,
+          "claim": "FALSIFY-KV-005 measures RSS growth via a min-of-3 sampling loop inside the same test-binary process. If cargo test runs this unit-test binary with its default multi-threaded harness, concurrent allocation by other tests running at the same time could inflate the measured delta and intermittently trip the 64 MiB threshold, despite the min-of-3 mitigation reducing but not eliminating that risk.",
+          "failure_scenario": "Under default parallel cargo test --lib execution, another test thread allocates and writes a large buffer during all 3 sampling windows of rss_growth_kib, inflating grown past 64 MiB for one of the three caches and failing FALSIFY-KV-005 even though the underlying fix is correct, a flaky-test outcome the project's own zero-tolerance-flaky-tests policy treats as a defect.",
+          "grounding": "asserted"
+        }
+      ],
+      "raw_bytes": 5018,
+      "err_bytes": 0,
+      "envelope_status": "SUCCESS",
+      "verdict_source": "structured_output",
+      "executor": "claude-code",
+      "grounding_check": "parity",
+      "role": "counted",
+      "model": "claude-sonnet-5",
+      "model_measured": "claude-sonnet-5",
+      "model_source": "flag",
+      "family": "claude",
+      "brief_sha256": "c8ae88e32b775c8e21c9cfd0cbed6d2e65ef28e5499c8cf6c0d8c29bc642a845",
+      "trace": {
+        "input_sha256": "fa8f16ebc003d5986a90038ea5b3cd0aed16db93ae0ac0b2bd9d281f390bd891",
+        "output_sha256": "9b7a5ae2d880e4316f011a53242fd07f4f05fe93d109b4a0e0b0940beaec4ed9",
+        "store": null,
+        "store_why": "almacen not provisioned yet (infra-27): the blobs stay in the round's gitignored .lanes dir"
+      },
+      "fallback": {
+        "judged_by": "claude-sonnet-5",
+        "exhausted": false,
+        "attempts": [
+          {
+            "model": "claude-sonnet-5",
+            "family": "claude",
+            "outcome": "answered"
+          }
+        ],
+        "skipped": []
+      }
+    },
+    {
+      "lane": 3,
+      "status": "SUCCESS",
+      "verdict": "PASS",
+      "summary": "Diff correctly implements PMAT-4769 fix: replaces vec![vec![0.0; n]; layers] cloning pattern with independent allocations in all 3 KV cache constructors (StreamingKVCache, StreamingKVCacheFp16, layers::KVCache). Adds verification test (falsify_kv_005_construction_commits_no_cache_memory) measuring RSS growth at construction with reasonable 64 MiB threshold. Re-enables 3 previously-ignored memory-bound tests. All changes semantically correct and consistent.",
+      "findings": [],
+      "raw_bytes": 1861,
+      "err_bytes": 0,
+      "envelope_status": "SUCCESS",
+      "verdict_source": "structured_output",
+      "executor": "claude-code",
+      "grounding_check": "parity",
+      "role": "counted",
+      "model": "claude-haiku-4-5",
+      "model_measured": "claude-haiku-4-5",
+      "model_source": "flag",
+      "family": "claude",
+      "brief_sha256": "c8ae88e32b775c8e21c9cfd0cbed6d2e65ef28e5499c8cf6c0d8c29bc642a845",
+      "trace": {
+        "input_sha256": "79b28058d304b8892d73252aed765dc2267beaa6d14fcc45d90efdae717ca797",
+        "output_sha256": "82f379a6b0000241768b01e3ed7f989a28f2abf85ac693d2c857dab37ac57ba5",
+        "store": null,
+        "store_why": "almacen not provisioned yet (infra-27): the blobs stay in the round's gitignored .lanes dir"
+      },
+      "fallback": {
+        "judged_by": "claude-haiku-4-5",
+        "exhausted": false,
+        "attempts": [
+          {
+            "model": "claude-haiku-4-5",
+            "family": "claude",
+            "outcome": "answered"
+          }
+        ],
+        "skipped": []
+      }
+    }
+  ],
+  "dissent": [],
+  "dedup": [
+    {
+      "file": "crates/aprender-serve/src/gpu/streaming_kv.rs",
+      "line": 489,
+      "lanes_agreeing": [
+        1
+      ],
+      "claims": [
+        "FALSIFY-KV-005 is gated #[cfg(target_os = \"linux\")], so it never compiles/runs on a non-Linux CI runner (e.g. macOS)."
+      ]
+    },
+    {
+      "file": "crates/aprender-serve/src/gpu/streaming_kv.rs",
+      "line": 500,
+      "lanes_agreeing": [
+        2
+      ],
+      "claims": [
+        "FALSIFY-KV-005 measures RSS growth via a min-of-3 sampling loop inside the same test-binary process. If cargo test runs this unit-test binary with its default multi-threaded harness, concurrent allocation by other tests running at the same time could inflate the measured delta and intermittently trip the 64 MiB threshold, despite the min-of-3 mitigation reducing but not eliminating that risk."
+      ]
+    }
+  ],
+  "uncovered": [],
+  "coverage_source": "lanes",
+  "partial": false,
+  "partial_reasons": [
+    "lane models: only 2 distinct model ids across 3 lanes (claude-haiku-4-5, claude-sonnet-5) — lanes sharing an id are resamples, not independent reviewers (PMAT-125)",
+    "lane 1: judged by claude-sonnet-5 after falling through gemini-3.1-pro-high (skipped: family gemini withheld by policy: the diff is not tier-1 (quorum.agy_tier1_only: none of its paths matches quorum.tier1_paths or the built-in policy paths), and agy is reserved for tier-1 diffs — cop ruling of 2026-09-24) (PMAT-321)"
+  ],
+  "fallback": {
+    "same_family_width": 2,
+    "chain": [
+      {
+        "model": "gemini-3.1-pro-high",
+        "family": "gemini",
+        "disposition": "configured"
+      },
+      {
+        "model": "claude-sonnet-5",
+        "family": "claude",
+        "disposition": "claude-code",
+        "why": "run by Claude Code on its own budget: a configured seat runs every round, a fallback step only when every non-Claude family is measured out (PMAT-360, operator standing rule)"
+      },
+      {
+        "model": "claude-haiku-4-5",
+        "family": "claude",
+        "disposition": "claude-code",
+        "why": "run by Claude Code on its own budget: a configured seat runs every round, a fallback step only when every non-Claude family is measured out (PMAT-360, operator standing rule)"
+      },
+      {
+        "model": "claude-opus-5-5",
+        "family": "claude",
+        "disposition": "excluded-self-review",
+        "why": "the author's own model id (claude-opus-5-5) — a model never reviews its own diff, at any width (R-15a identity bar)"
+      },
+      {
+        "model": "qwen3.5",
+        "family": "qwen",
+        "disposition": "not-run",
+        "why": "no quorum.local_lane in the config — the aprender lane has no model to load"
+      }
+    ],
+    "precheck": [
+      {
+        "family": "gemini",
+        "model": "gemini-3.1-pro-high",
+        "probe": 0,
+        "outcome": "policy",
+        "reason": "the diff is not tier-1 (quorum.agy_tier1_only: none of its paths matches quorum.tier1_paths or the built-in policy paths), and agy is reserved for tier-1 diffs — cop ruling of 2026-09-24"
+      }
+    ],
+    "degraded": {
+      "reason": "same-family (policy: agy reserved for tier-1 diffs)",
+      "lanes": [
+        1
+      ],
+      "families": [
+        {
+          "family": "gemini",
+          "state": "policy",
+          "evidence": "the diff is not tier-1 (quorum.agy_tier1_only: none of its paths matches quorum.tier1_paths or the built-in policy paths), and agy is reserved for tier-1 diffs — cop ruling of 2026-09-24"
+        }
+      ],
+      "rule": "operator standing rule: if agy quota is ever gone, simply use claude code itself (PMAT-360)"
+    },
+    "prah": {
+      "source": "install-receipt",
+      "path": "/home/noah/.claude/skills/paiml-implement/bin/prah"
+    },
+    "tier1": {
+      "agy_tier1_only": true,
+      "tier1": false,
+      "matched": [],
+      "paths": 4,
+      "patterns": [
+        "^\\.github/workflows/",
+        "(^|/)release[^/]*\\.(ya?ml|sh|rs|toml)$",
+        "cuda|kernel|\\.cu$|\\.ptx$",
+        "(^|/)[^/]*(gate|guard)[^/]*\\.(sh|rs|py)$|^hooks/",
+        "security|secret|credential|(^|/)deny\\.toml$",
+        "^skills/quorum-review/|(^|/)(receipt-lint|roadmap-lint|release-lint|kind-gate|model-gate)[^/]*$|^crates/prah-lint/"
+      ],
+      "builtin": "^skills/quorum-review/|(^|/)skills/paiml-implement/config\\.json$|(^|/)(modellib|lane-reduce|lane-fallback|lane-group|agy-lane|cc-lane|receipt-lint|route|quota)\\.sh$|^crates/prah-lint/"
+    },
+    "bucket": {
+      "ledger": "/home/noah/.local/state/paiml-implement/agy-bucket.jsonl",
+      "window_s": 18000,
+      "pace": "off",
+      "buckets": {},
+      "closed": []
+    }
+  },
+  "auto_merge": {
+    "checked": false,
+    "was_armed": false,
+    "disarmed": false,
+    "note": "no --pr given: nothing to disarm"
+  },
+  "degraded": {
+    "reason": "same-family (policy: agy reserved for tier-1 diffs)",
+    "lanes": [
+      1
+    ],
+    "families": [
+      {
+        "family": "gemini",
+        "state": "policy",
+        "evidence": "the diff is not tier-1 (quorum.agy_tier1_only: none of its paths matches quorum.tier1_paths or the built-in policy paths), and agy is reserved for tier-1 diffs — cop ruling of 2026-09-24"
+      }
+    ],
+    "rule": "operator standing rule: if agy quota is ever gone, simply use claude code itself (PMAT-360)"
+  },
+  "cheap_seat": "claude-haiku-4-5",
+  "advisory_lane": {
+    "state": "unavailable",
+    "counts": false,
+    "row": {
+      "NotRun": "Busy"
+    },
+    "verdict": "unavailable",
+    "why": "no host answered inside the budget",
+    "served_by": null,
+    "gpu_proof": null,
+    "apr": null,
+    "apr_binary_sha256": null,
+    "apr_tag": null,
+    "apr_commit": null,
+    "apr_build_why": null,
+    "model": null,
+    "model_sha256": null,
+    "rc": 2,
+    "wall_s": 1,
+    "collected_s": 476,
+    "budget_s": 196,
+    "budget_basis": "ledger: 2 x p95 98 s over 126 gx10-cuda Verdict rows",
+    "brief": {
+      "bytes": 8104,
+      "sent_bytes": 8273,
+      "max_bytes": 196608
+    },
+    "trace": {
+      "input_sha256": "3e24c234a767ee5d7dcafe966d9c90221fdbbe75088a1ac3c141595ba534ec82",
+      "raw": "advisory.json"
+    },
+    "attempts": [
+      {
+        "host": "gx10",
+        "ok": false,
+        "wall_s": 1,
+        "error": "busy: executor yielded (unit inactive; last yield: 2026-10-03T00:47:22Z host=gx10-a5b5 event=stopped gpu-priority lock=/tmp/apr-gpu.priority)",
+        "ts": "2026-10-05T06:27:36.624Z",
+        "wall_ms": 628,
+        "request_id": "01a10abf-122d-78fd-ba32-291d632b1f36",
+        "load1": 1.32,
+        "cold": null
+      }
+    ],
+    "ledger": "/home/noah/.local/state/paiml-implement/advisory-ledger.jsonl",
+    "raw": "advisory.json",
+    "agrees_with_counted": null,
+    "counted": "PASS"
+  },
+  "lint": {
+    "ok": true,
+    "output": "receipt complete: kind=artifact lanes=3 author=claude-opus-5-5/claude same_family=3/2 degraded=same-family (policy: agy reserved for tier-1 diffs)"
+  }
+}
