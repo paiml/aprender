@@ -22,7 +22,7 @@ five_whys:
 equations:
   night:
     formula: "night(t) = UTC date of (t − 12 h)"
-    domain: "t = the pick's wall-clock time in UTC"
+    domain: "t = the pick run's created_at in UTC, which a rerun keeps and every chained producer reads (check_producers_chain P7)"
     codomain: "YYYY-MM-DD"
     invariants:
       - "a night runs from 12:00Z to 12:00Z, so a pick that fires hours late still lands on the night it was meant for"

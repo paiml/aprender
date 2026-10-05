@@ -269,6 +269,13 @@ jobs:
           NIGHTLY_PICK_AT: ${{ github.event.workflow_run.created_at }}
           NIGHTLY_PICK_CONCLUSION: ${{ github.event.workflow_run.conclusion }}
         run: bash scripts/release/nightly_c_checkout.sh --at "$NIGHTLY_PICK_AT" --pick-conclusion "$NIGHTLY_PICK_CONCLUSION"
+      # the night table on this runner's own BSD userland: a GNU-only call there (date -d) fails the C step above
+      # every night and skips publish-darwin; the case tables name it on any event, not only on a chained night
+      - name: Night table self-test on macOS (BSD userland)
+        run: |
+          set -euo pipefail
+          bash scripts/release/nightly_pick.sh --self-test
+          bash scripts/release/nightly_c_checkout.sh --self-test
 
       - name: Build apr (host-native, pinned toolchain)
         run: |

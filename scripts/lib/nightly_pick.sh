@@ -16,16 +16,53 @@
 # Return codes: 0 ok; 1 refused (RED); 2 not_measured (could not read or write the remote); 3 caller error.
 #
 #   np_night [EPOCH]              print the night of EPOCH (default now)
+#   np_date DAYS                  print the UTC date DAYS after 1970-01-01 (no date -d: portable to BSD date)
+#   np_days YYYY-MM-DD            print its days after 1970-01-01; 3 for a day the calendar lacks
+#   np_epoch YYYY-MM-DDTHH:MM:SSZ print its epoch; 3 for any other form. No date -d anywhere: the darwin runner has BSD date
 #   np_pick REPO REMOTE NIGHT SHA create refs/heads/nightly/NIGHT -> SHA unless it exists; prints "C=<sha>" + PICKED|KEPT
 #   np_resolve REPO REMOTE NIGHT  print the night's C; 2 when the night has no pick
 #   np_verify REPO REMOTE NIGHT SHA
 #                                 0 when SHA is the night's C, 1 when it is not, 2 when the night has no pick
 
 np_night() { # [EPOCH]
-    local e="${1:-}"
+    local e="${1:-}" s
     [ -n "$e" ] || e="$(date -u +%s)" || return 3
     case "$e" in '' | *[!0-9]*) printf 'NP caller error: epoch %s is not a number\n' "$e" >&2; return 3 ;; esac
-    date -u -d "@$((e - 43200))" +%F || return 3
+    s=$((e - 43200))
+    np_date $((s >= 0 ? s / 86400 : -((86399 - s) / 86400)))
+}
+
+np_date() { # DAYS since 1970-01-01 -> YYYY-MM-DD, in integer arithmetic: date -d @N is GNU-only and the darwin
+    # runner's BSD date refuses it (H. Hinnant's civil_from_days, proleptic Gregorian)
+    local z era doe yoe doy mp m
+    z=$(($1 + 719468))
+    era=$(((z >= 0 ? z : z - 146096) / 146097)); doe=$((z - era * 146097))
+    yoe=$(((doe - doe / 1460 + doe / 36524 - doe / 146096) / 365))
+    doy=$((doe - (365 * yoe + yoe / 4 - yoe / 100))); mp=$(((5 * doy + 2) / 153))
+    m=$((mp < 10 ? mp + 3 : mp - 9))
+    printf '%04d-%02d-%02d\n' $((yoe + era * 400 + (m <= 2))) "$m" $((doy - (153 * mp + 2) / 5 + 1))
+}
+
+np_days() { # YYYY-MM-DD -> days since 1970-01-01 (H. Hinnant's days_from_civil); 3 for a date the calendar lacks
+    local y m d days back
+    [[ $1 =~ ^([0-9]{4})-([0-9]{2})-([0-9]{2})$ ]] || return 3
+    # a leading 1 keeps "08" decimal: 108 - 100
+    y=$((1${BASH_REMATCH[1]} - 10000)); m=$((1${BASH_REMATCH[2]} - 100)); d=$((1${BASH_REMATCH[3]} - 100))
+    [ "$m" -gt 2 ] || y=$((y - 1))
+    days=$(((y / 400) * 146097 + (y % 400) * 365 + (y % 400) / 4 - (y % 400) / 100 + (153 * (m > 2 ? m - 3 : m + 9) + 2) / 5 + d - 1 - 719468))
+    # back through np_date: 2026-02-30 comes back 2026-03-02, so it is refused
+    back="$(np_date "$days")"
+    [ "$back" = "$1" ] || return 3
+    printf '%s\n' "$days"
+}
+
+np_epoch() { # YYYY-MM-DDTHH:MM:SSZ (the form workflow_run.created_at takes) -> epoch; 3 for any other form
+    local ymd hh mm ss days
+    [[ $1 =~ ^([0-9]{4}-[0-9]{2}-[0-9]{2})T([0-9]{2}):([0-9]{2}):([0-9]{2})Z$ ]] || return 3
+    ymd="${BASH_REMATCH[1]}"; hh=$((1${BASH_REMATCH[2]} - 100)); mm=$((1${BASH_REMATCH[3]} - 100)); ss=$((1${BASH_REMATCH[4]} - 100))
+    (( hh < 24 && mm < 60 && ss < 60 )) || return 3
+    days="$(np_days "$ymd")" || return 3
+    printf '%s\n' $((days * 86400 + hh * 3600 + mm * 60 + ss))
 }
 
 np__args() { # NIGHT [SHA]
