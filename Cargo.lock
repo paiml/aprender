@@ -428,6 +428,7 @@ dependencies = [
  "aprender-build-sha",
  "clap",
  "serde_json",
+ "sha1 0.10.6",
  "toml 0.8.23",
 ]
 

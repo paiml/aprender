@@ -6,8 +6,8 @@
 # Every case runs one diff through both sides in one mode; stdout must be byte-identical
 # and the exit status equal. Inputs are hand-written edge cases plus real diffs made in a
 # scratch repo (the pr_review_patch_id.sh self-test fixture, multi-commit `git log -p` and
-# `git format-patch` streams). Where the git on PATH has the mode (--stable/--unstable
-# everywhere, --verbatim from 2.40), the bin is also compared with native `git patch-id`.
+# `git format-patch` streams). The bin is then also compared with native `git patch-id`
+# on PATH: every input and mode on git >= 2.40, the text-only inputs on older git.
 #
 # Its own script rather than a section of ci_tools_py_parity_test.sh: the sibling ports on
 # this crate each bump that file's EXPECTED_CASES, and a shared counter is a merge conflict.
@@ -23,8 +23,7 @@ cd "$ROOT" || exit 1
 PY="${PYTHON:-python3}"
 GPID_PY="$ROOT/scripts/lib/git_patch_id.py"
 MODES=(--stable --verbatim --unstable "")
-EXPECTED_CASES=110
-EXPECTED_NATIVE_MIN=12
+EXPECTED_CASES=111
 
 BIN="${CI_TOOLS_BIN:-}"
 if [[ -z "$BIN" ]]; then
@@ -42,7 +41,6 @@ tmp="$(mktemp -d)"
 trap 'rm -rf "${tmp:?}"' EXIT
 pass=0
 fail=0
-native=0
 
 # side OUT IN CMD...: stdout to OUT, print the exit status.
 side() {
@@ -141,9 +139,11 @@ hw "non-UTF-8 bytes" 'diff --git a/x b/x\n--- a/x\n+++ b/x\n@@ -1 +1 @@\n-\377\3
     git log -p --no-color --full-index >"$tmp/log.diff"
     git log -p --no-color --full-index --binary --reverse >"$tmp/logrev.diff"
     git format-patch -q --stdout --root >"$tmp/fp.diff"
+    # Commits 3..5 only: hunks, a rename and a mode change, no binary hunk.
+    git log -p --no-color --full-index HEAD~4..HEAD~1 >"$tmp/text.diff"
 ) || { echo "FAIL: could not build the scratch repo diffs" >&2; exit 1; }
 
-for f in ws wsbin log logrev fp; do
+for f in ws wsbin log logrev fp text; do
     # Inside `( ) ||` set -e is off, so a failed git leaves an empty file that both
     # sides would "agree" on.
     if [[ ! -s "$tmp/$f.diff" ]]; then
@@ -151,20 +151,6 @@ for f in ws wsbin log logrev fp; do
         exit 1
     fi
     all_modes "repo:$f" "$tmp/$f.diff"
-done
-
-# The self-test's pinned golden ids (native git 2.53.0), checked on the bin directly.
-for g in --verbatim:4866d77a6281c72194256e3826f262bcf982de28 \
-         --stable:1379117dba9a33896e4076e98048a064488ae8db \
-         --unstable:92a2dd2834633681d83627e08e08cd2b6b4c6ab4; do
-    want="${g#*:}"
-    got="$("$BIN" git-patch-id "${g%%:*}" <"$tmp/ws.diff")"
-    if [[ "${got%% *}" == "$want" ]]; then
-        pass=$((pass + 1))
-    else
-        fail=$((fail + 1))
-        echo "MISMATCH: golden ${g%%:*} want=$want bin=[$got]" >&2
-    fi
 done
 
 # The bad input: an unknown mode is refused by both with status 2 and no stdout.
@@ -179,25 +165,8 @@ for bad in --bogus stable -s; do
     fi
 done
 
-# --- Native git, where it has the mode (outside the declared count: it varies by git). --
-for m in --stable --unstable --verbatim; do
-    if ! git patch-id "$m" </dev/null >/dev/null 2>&1; then
-        echo "native: $(git --version) has no patch-id $m; SKIPPED for that mode"
-        continue
-    fi
-    for f in "$tmp"/ws.diff "$tmp"/wsbin.diff "$tmp"/log.diff "$tmp"/logrev.diff "$tmp"/fp.diff "$tmp"/plant.diff; do
-        a="$(git patch-id "$m" <"$f")"
-        b="$("$BIN" git-patch-id "$m" <"$f")"
-        native=$((native + 1))
-        if [[ "$a" != "$b" ]]; then
-            fail=$((fail + 1))
-            echo "MISMATCH: native ${f##*/} $m native=[$a] bin=[$b]" >&2
-        fi
-    done
-done
-
 ran=$((pass + fail))
-echo "git-patch-id parity: $pass passed, $fail failed, $ran of $EXPECTED_CASES declared; $native native comparisons"
+echo "git-patch-id parity: $pass passed, $fail failed, $ran of $EXPECTED_CASES declared"
 if [[ "$fail" -ne 0 ]]; then
     exit 1
 fi
@@ -205,7 +174,41 @@ if [[ "$ran" -ne "$EXPECTED_CASES" ]]; then
     echo "FAIL: ran $ran cases, the table declares $EXPECTED_CASES" >&2
     exit 1
 fi
-if [[ "$native" -lt "$EXPECTED_NATIVE_MIN" ]]; then
-    echo "FAIL: only $native native comparisons; want >= $EXPECTED_NATIVE_MIN (--stable and --unstable on 6 diffs exist on every supported git)" >&2
+
+# --- Native git on PATH: its own verdict, never part of the count above. ----------------
+# The port follows git 2.53. A git without --verbatim (< 2.40) hashes binary hunks by
+# an older rule (measured on 2.34.1: every diff with a binary hunk differs, every
+# text-only one matches), so there only the text-only inputs are compared and the
+# binary-bearing ones are NOT_MEASURED, never a pass.
+native=0
+native_fail=0
+native_cmp() { # MODE DIFF
+    local a b
+    a="$(git patch-id "$1" <"$2")"
+    b="$("$BIN" git-patch-id "$1" <"$2")"
+    native=$((native + 1))
+    if [[ -z "$a" || "$a" != "$b" ]]; then
+        native_fail=$((native_fail + 1))
+        echo "MISMATCH: native ${2##*/} $1 native=[$a] bin=[$b]" >&2
+    fi
+}
+if git patch-id --verbatim </dev/null >/dev/null 2>&1; then
+    native_modes=(--stable --unstable --verbatim)
+    native_diffs=(ws wsbin log logrev fp text plant)
+    native_want=21
+    unmeasured=""
+else
+    native_modes=(--stable --unstable)
+    native_diffs=(text plant)
+    native_want=4
+    unmeasured="; binary-bearing ws wsbin log logrev fp and --verbatim: NOT_MEASURED (git < 2.40)"
+fi
+for m in "${native_modes[@]}"; do
+    for d in "${native_diffs[@]}"; do
+        native_cmp "$m" "$tmp/$d.diff"
+    done
+done
+echo "native: $((native - native_fail)) of $native equal to $(git --version)$unmeasured"
+if [[ "$native_fail" -ne 0 || "$native" -ne "$native_want" ]]; then
     exit 1
 fi
