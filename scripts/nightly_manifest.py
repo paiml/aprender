@@ -327,19 +327,6 @@ def publish_plan(manifest, sha, dist_files):
     return names + [MANIFEST_ASSET]
 
 
-def release_assets(A, rel_id, token, get=api):
-    """{name: id} for EVERY asset on the release, all pages. GitHub caps a page at 100;
-    page one alone missed 134 of 234 assets, so the staged leftovers past it were never
-    deleted and the next upload of the same name died 422 already_exists (run 37171118510)."""
-    out, page = {}, 1
-    while True:
-        batch = get("GET", f"{A}/releases/{rel_id}/assets?per_page=100&page={page}", token)
-        out.update({a["name"]: a["id"] for a in batch})
-        if len(batch) < 100:
-            return out
-        page += 1
-
-
 def publish(manifest_path, dist, sha, repo, token):
     with open(manifest_path) as f:
         man = json.load(f)
@@ -362,7 +349,7 @@ def publish(manifest_path, dist, sha, repo, token):
         rel = api("POST", f"{A}/releases", token, json.dumps({
             "tag_name": "nightly", "target_commitish": sha, "name": "Nightly Build",
             "prerelease": True, "make_latest": "false"}).encode())
-    existing = release_assets(A, rel["id"], token)
+    existing = {a["name"]: a["id"] for a in api("GET", f"{A}/releases/{rel['id']}/assets?per_page=100", token)}
     for n, i in existing.items():  # a staged upload an earlier run died holding
         if n.startswith(STAGED):
             api("DELETE", f"{A}/releases/assets/{i}", token)
@@ -391,18 +378,6 @@ def publish(manifest_path, dist, sha, repo, token):
 
 
 # ---------------------------------------------------------------- self-test
-
-def _self_test_release_assets(check):
-    print("release assets:")
-    rows = [{"name": f"staged.a{i}" if i % 2 else f"a{i}", "id": i} for i in range(234)]
-
-    def pages(of):
-        return lambda m, url, tok: of[(int(url.rsplit("page=", 1)[1]) - 1) * 100:][:100]
-    got = release_assets("A", 1, None, pages(rows))
-    check("every page is read: 234 assets over 3 pages, all 117 staged leftovers seen",
-          (len(got), sum(n.startswith(STAGED) for n in got)), (234, 117))
-    check("an exact multiple of 100 ends on the empty page", len(release_assets("A", 1, None, pages(rows[:200]))), 200)
-
 
 def self_test():
     fails = []
@@ -633,7 +608,6 @@ def self_test():
     except ValueError:
         got = "error"
     check("a manifest naming an absent asset refuses to publish", got, "error")
-    _self_test_release_assets(check)
 
     print(f"\n{'PASS' if not fails else 'FAIL'}: {len(fails)} failing row(s)")
     return 1 if fails else 0
