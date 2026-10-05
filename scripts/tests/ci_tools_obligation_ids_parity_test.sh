@@ -24,7 +24,7 @@ ROOT="$(git rev-parse --show-toplevel)"
 cd "$ROOT" || exit 1
 PY="${PYTHON:-python3}"
 ORIG="$ROOT/scripts/lib/obligation_ids.py"
-EXPECTED_CASES=30
+EXPECTED_CASES=38
 
 . scripts/ci_tools_bin.sh || exit 1
 BIN="$CI_TOOLS_BIN"
@@ -47,15 +47,16 @@ new_case() {
     mkdir -p "$F/contracts"
 }
 
-# run_side SIDE ARGS...: copy $F to $C/SIDE, run there, keep rc and stdout.
+# run_side SIDE ARGS...: copy $F to $C/SIDE, run there (COLUMNS unset, stdout a file, so
+# argparse wraps its help at 80), keep rc, stdout and stderr.
 run_side() {
     local side="$1" rc=0
     shift
     cp -a "$F" "$C/$side"
     if [[ "$side" == py ]]; then
-        (cd "$C/py" && "$PY" "$ORIG" "$@") >"$C/py.out" 2>/dev/null || rc=$?
+        (cd "$C/py" && env -u COLUMNS "$PY" "$ORIG" "$@") >"$C/py.out" 2>"$C/py.err" || rc=$?
     else
-        (cd "$C/rs" && "$BIN" obligation-ids "$@") >"$C/rs.out" 2>/dev/null || rc=$?
+        (cd "$C/rs" && env -u COLUMNS "$BIN" obligation-ids "$@") >"$C/rs.out" 2>"$C/rs.err" || rc=$?
     fi
     printf '%s\n' "$rc" >"$C/$side.rc"
 }
@@ -67,10 +68,11 @@ same() {
     cmp -s "$C/py.rc" "$C/rs.rc" && cmp -s "$C/py.out" "$C/rs.out" && diff -r "$C/py" "$C/rs" >/dev/null
 }
 
-# refused ARGS...: the binary exits 2, prints nothing, writes nothing.
+# refused ARGS...: the binary refuses (exit 2, `refusing:`), prints nothing, writes nothing.
 refused() {
     run_side rs "$@"
-    [[ "$(cat "$C/rs.rc")" == 2 && ! -s "$C/rs.out" ]] && diff -r "$F" "$C/rs" >/dev/null
+    [[ "$(cat "$C/rs.rc")" == 2 && ! -s "$C/rs.out" ]] &&
+        grep -q 'refusing:' "$C/rs.err" && diff -r "$F" "$C/rs" >/dev/null
 }
 
 # check NAME ARGS...: score the case just built.
@@ -96,19 +98,31 @@ check() {
 
 ANON='k: 0\nproof_obligations:\n- type: invariant\n  property: one\n- property: two\n'
 
-# --- the planted mismatch must be caught before any real case counts -------------
+# --- planted liars must be caught by the real comparators before any case counts ---
+# A "binary" that runs the original and then changes one minted id, and one that is the
+# original itself (which never refuses).
+REAL_BIN="$BIN"
+printf '#!/bin/sh\nshift\n"%s" "%s" "$@"; rc=$?\nsed -i s/AB-INV-001/AB-INV-002/ contracts/a-b-v1.yaml\nexit $rc\n' \
+    "$PY" "$ORIG" >"$tmp/liar"
+printf '#!/bin/sh\nshift\nexec "%s" "%s" "$@"\n' "$PY" "$ORIG" >"$tmp/original"
+chmod +x "$tmp/liar" "$tmp/original"
 new_case
 fx a-b-v1.yaml "$ANON"
 C="$(dirname "$F")"
-run_side py
-cp -a "$C/py" "$C/rs"
-printf '%s\n' 0 >"$C/rs.rc"
-cp "$C/py.out" "$C/rs.out"
-sed -i 's/AB-INV-001/AB-INV-002/' "$C/rs/contracts/a-b-v1.yaml"
-if cmp -s "$C/py.rc" "$C/rs.rc" && cmp -s "$C/py.out" "$C/rs.out" && diff -r "$C/py" "$C/rs" >/dev/null; then
-    echo "FAIL: the planted mismatch (AB-INV-001 vs AB-INV-002) compared identical" >&2
+BIN="$tmp/liar"
+if same; then
+    echo "FAIL: same() passed a binary that mints AB-INV-002 for AB-INV-001" >&2
     exit 1
 fi
+new_case
+fx a-b-v1.yaml 'k: 1\nproof_obligations:\n- id: yes\n'
+C="$(dirname "$F")"
+BIN="$tmp/original"
+if refused; then
+    echo "FAIL: refused() passed the original, which never refuses" >&2
+    exit 1
+fi
+BIN="$REAL_BIN"
 
 new_case
 fx gated-delta-net-v1.yaml "kind: kernel\n$ANON- type: Bound \n  property: three\n- type: weird-kind 9\n  property: four\nnext_key: v\n"
@@ -245,6 +259,36 @@ check "RS REFUSES: a merge key"
 new_case
 fx ñu-v1.yaml "$ANON"
 check "RS REFUSES: a non-ASCII contract stem"
+
+new_case
+check "-h prints argparse's help" -h
+
+new_case
+check "--help after an unknown option still prints help" --bogus --help
+
+new_case
+check "-h=x is a usage error" -h=x
+
+new_case
+fx a-b-v1.yaml "$ANON"
+check "-5 is the root, not an option" -5
+
+new_case
+fx a-b-v1.yaml "k: '='\nq: \"=\"\n${ANON#k: 0\\n}"
+check "a quoted = is a plain string to both"
+
+new_case
+fx a-b-v1.yaml 'k: 1\nproof_obligations:\n- id: 7\n  property: one\n- property: two\n'
+check "RS REFUSES: a number id"
+
+new_case
+fx a-b-v1.yaml 'k: =\nproof_obligations:\n- property: one\n'
+check "RS REFUSES: an unquoted = scalar"
+
+new_case
+fx a-b-v1.yaml "$ANON"
+fx b-c-v1.yaml 'k: 1\nproof_obligations:\n- type: 2024-01-01\n  property: one\n'
+check "RS REFUSES: a late refusal still writes nothing, not even the earlier file"
 
 # --- the repo's own contracts -----------------------------------------------------
 new_case

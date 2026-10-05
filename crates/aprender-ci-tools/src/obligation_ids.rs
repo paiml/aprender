@@ -18,7 +18,8 @@
 //! Where the original crashed (a truthy non-list `kani_harnesses:`, an unhashable `id:`, a
 //! candidate with no `\nproof_obligations:\n` line, a failed write) the port exits 1 with
 //! nothing on stdout, having written exactly the files the original had written by then.
-//! `--help` prints the original's usage line, not its whole help text.
+//! `--help` prints the help argparse prints at its default 80 columns; the original rewraps it
+//! to `COLUMNS` or the terminal width, the port does not.
 
 use crate::pystr::{py_path_str, py_strip};
 use regex::Regex;
@@ -67,6 +68,41 @@ pub enum Stop {
 }
 
 const USAGE: &str = "usage: obligation_ids.py [-h] [--check] [--selftest] [root]";
+/// argparse's help at its default 80 columns (no `COLUMNS`, stdout not a terminal).
+const HELP: &str = r#"usage: obligation_ids.py [-h] [--check] [--selftest] [root]
+
+Deterministic ids for anonymous proof obligations. An obligation with no `id:`
+cannot be cited — not by a kani harness, not by a test, not by a receipt, not
+by a commit. 3,622 of them were anonymous, and `pv validate` reported `0
+error(s)` for every one (#3314). THE RULE <PREFIX>-<TYPE>-<NNN> NNN the
+obligation's 1-based position in proof_obligations TYPE from the obligation's
+own `type:` field PREFIX the prefix this file's kani harnesses ALREADY cite,
+if any; otherwise the initials of the contract's name parts. The initials rule
+is not invented: it reproduces both prefixes a human chose in this tree
+(gated-delta-net-v1 -> GDN, qwen35-hybrid-forward-v1 -> QHF). COLLISIONS. 111
+initials-prefixes are claimed by more than one contract. That is cosmetic only
+while nothing cites across files — and it stops being cosmetic the first time
+something does. So the id space is made global on day one: when a base prefix
+is claimed by more than one file, every claimant that is not already committed
+to it by its own kani harnesses takes a 4-hex suffix derived from its own
+path. Keying the suffix to the file's OWN path (not to the set of colliders)
+is what makes it stable: adding a contract later can never renumber one that
+already exists. NEVER RENAMES. A file whose obligations all carry ids is
+skipped entirely — its convention is its own (52 such files use REG-OB-001,
+PO-HEH-001, OBLIG-DATA-QUALITY-007-..., none of which this rule would
+reproduce). Within a partially-named file, existing ids are untouched and a
+computed id that would collide with one is bumped. IDEMPOTENT. Running twice
+is a no-op: the second pass sees every file fully named and skips it.
+`--check` asserts that and exits non-zero if not.
+
+positional arguments:
+  root
+
+options:
+  -h, --help  show this help message and exit
+  --check     exit 1 if any anonymous obligation remains (idempotence gate)
+  --selftest
+"#;
 
 const TYPE_CODE: &[(&str, &str)] = &[
     ("invariant", "INV"),
@@ -912,10 +948,7 @@ fn usage_error(msg: &str) -> (u8, String) {
 }
 
 fn help() -> (u8, String) {
-    (
-        0,
-        format!("{USAGE}\n\nDeterministic ids for anonymous proof obligations.\n"),
-    )
+    (0, HELP.to_owned())
 }
 
 /// One `--long[=value]` argument: an exact name, or the unique option it abbreviates.
@@ -932,7 +965,8 @@ fn long_option(a: &str) -> Result<Token, (u8, String)> {
     };
     match (hits.as_slice(), explicit) {
         ([opt], Some(v)) => Err(usage_error(&format!(
-            "argument {opt}: ignored explicit argument '{v}'"
+            "argument {}: ignored explicit argument '{v}'",
+            if *opt == "--help" { "-h/--help" } else { opt }
         ))),
         (["--check"], None) => Ok(Token::Check),
         (["--selftest"], None) => Ok(Token::Selftest),
@@ -952,6 +986,10 @@ fn token(a: &str) -> Result<Token, (u8, String)> {
         Ok(Token::Positional)
     } else if a == "--" {
         Ok(Token::Dashes)
+    } else if let Some(v) = a.strip_prefix("-h=") {
+        Err(usage_error(&format!(
+            "argument -h/--help: ignored explicit argument '{v}'"
+        )))
     } else if a.starts_with("-h") {
         Err(help())
     } else if a.starts_with("--") {
@@ -991,7 +1029,7 @@ pub fn parse_args(argv: &[String]) -> Result<Args, (u8, String)> {
         .map(|s| s.as_str())
         .collect();
     if !extra.is_empty() {
-        return Err(usage_error(format!(
+        return Err(usage_error(&format!(
             "unrecognized arguments: {}",
             extra.join(" ")
         )));
@@ -1343,6 +1381,12 @@ mod tests {
         assert_eq!(parsed(&["--ch"]), ok("contracts", true, false));
         assert_eq!(parsed(&["--c=1"]), Err(2));
         assert_eq!(parsed(&["-hx"]), Err(0));
+        assert_eq!(parsed(&["-h=x"]), Err(2));
+        assert_eq!(parsed(&["--help=1"]), Err(2));
+        assert_eq!(
+            parse_args(&argv(&["-h"])).map_err(|(_, t)| t.len()),
+            Err(1962)
+        );
         assert_eq!(parsed(&["--bogus", "-h"]), Err(0));
         assert_eq!(parsed(&["--check=1", "-h"]), Err(2));
         assert_eq!(parsed(&["-"]), ok("-", false, false));
