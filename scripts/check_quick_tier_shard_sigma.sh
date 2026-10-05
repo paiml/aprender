@@ -101,17 +101,23 @@ sections jobs workspace-test-shard"
 # printed only if the job goes on, so `  # note` inside a job cannot cut its tail out of the
 # digest (lane E, round 4). A second <job> key under <parent> is rc=3: a YAML loader keeps the
 # last duplicate, which is not the block pinned here. The duplicate is counted in every spelling
-# a loader reads as the same key -- quoted, `key :`, `key: # c` (lane G, round 5).
+# a loader reads as the same key -- quoted, `key :`, `key: # c` (lane G, round 5). And it is an
+# ALLOWLIST (round 6): every non-comment line at indent 2 under <parent> must be a plain
+# `name:` key, so an anchor (&a key:), a tag (!!str key:), a complex key (? key), an escape
+# ("a\x2db":), a CR, or a tab or 1-space indent there is rc=4 -- a key this awk cannot read
+# is a key it cannot count, so it is never a pass.
 job_block() {
     awk -v p="$2:" -v j="  $3:" -v k="$3" '
         BEGIN { dk = "^  [\"'"'"']?" k "[\"'"'"']?[ \t]*:([ \t]|$)" }
+        inp && (/\r/ || /^\t/ || /^ [^ ]/) { bad = 1 }
+        inp && /^  [^ #]/ && !/^  [A-Za-z0-9_-]+:([ \t]|$)/ { bad = 1 }
         $0 == p { inp = 1; next }
         inp && /^[^ #]/ { inp = 0 }
         inp && $0 ~ dk { seen++ }
         inb && !/^[[:space:]]*#/ && (/^[^ ]/ || /^ [^ ]/ || /^  [^ ]/) { inb = 0; done = 1 }
         inp && !inb && !done && $0 == j { inb = 1 }
         inb { if ($0 ~ /^[[:space:]]*(#.*)?$/) { held = held $0 "\n"; next } printf "%s%s\n", held, $0; held = "" }
-        END { if (seen > 1) exit 3 }' "$1"
+        END { if (bad) exit 4; if (seen > 1) exit 3 }' "$1"
 }
 # outside_jobs <file> -> every top-level key line, plus every non-comment line of every top-level
 # block but `jobs:`. That pins by VALUE what reaches every pinned job without touching one of
@@ -129,6 +135,7 @@ golden_compute() {
         if [ "$role" = workflow ]; then file=$1; else file=$2; fi
         rc=0; block=$(job_block "$file" "$parent" "$job") || rc=$?
         [ "$rc" = 3 ] && { printf 'ENV   pinned job %s.%s is keyed twice in the %s: cannot judge, not a pass\n' "$parent" "$job" "$role" >&2; return 2; }
+        [ "$rc" = 4 ] && { printf 'ENV   a key under %s in the %s is not a plain `name:` key (anchor, tag, `?`, quote, escape, CR, tab): cannot count it, not a pass\n' "$parent" "$role" >&2; return 2; }
         [ -n "$block" ] || { printf 'ENV   pinned job %s.%s is missing from the %s: cannot judge, not a pass\n' "$parent" "$job" "$role" >&2; return 2; }
         printf '%s  %s:%s.%s\n' "$(printf '%s\n' "$block" | sha256sum | cut -c1-64)" "$role" "$parent" "$job"
     done <<< "$PINNED"
@@ -377,6 +384,20 @@ jobs:' > "$d/c-env.yml"
     done
     { cat "$WF"; printf '  workspace-test-shard: # dup\n    runs-on: shadow\n'; } > "$d/r5-wfdup.yml"
     r5 2 "a commented second workspace-test-shard key appended to the workflow" "$d/r5-wfdup.yml" "$SEC"
+    # round 6: the key is an ALLOWLIST, so spellings nobody listed are RED too. Each was rc 0 with
+    # the round-5 regex while a loader read it as the pinned key.
+    for k in '&a workspace-test-shard:' '!!str workspace-test-shard:' '? workspace-test-shard' '"workspace\x2dtest-shard":'; do
+        edit "$SEC" '  workspace-test:' '  workspace-test:' sub "  $k
+    runs-on: shadow
+  workspace-test:" > "$d/r6-dup.yml"
+        r5 2 "a second key spelt  $k  under jobs (round 6)" "$WF" "$d/r6-dup.yml"
+    done
+    { cat "$SEC"; printf '  workspace-test-shard:\r\n    runs-on: shadow\n'; } > "$d/r6-crlf.yml"
+    r5 2 "a second workspace-test-shard key ending in CRLF (round 6)" "$WF" "$d/r6-crlf.yml"
+    { cat "$WF"; printf '  &a workspace-test:\n    runs-on: shadow\n'; } > "$d/r6-wfanchor.yml"
+    r5 2 "an anchored second workspace-test key appended to the workflow (round 6)" "$d/r6-wfanchor.yml" "$SEC"
+    { cat "$SEC"; printf '  r6-unrelated-job:\n    runs-on: x\n'; } > "$d/r6-ctl.yml"
+    r5 0 "control: a new plain job that is not pinned stays GREEN (round 6)" "$WF" "$d/r6-ctl.yml"
     { cat "$WF"; printf 'jobs:\n  other:\n    runs-on: shadow\n'; } > "$d/r5-jobs2.yml"
     r5 1 "a second top-level jobs: (a loader keeps it in place of the first)" "$d/r5-jobs2.yml" "$SEC"
     edit "$WF" 'merge_group:' 'workflow_dispatch:' after '  schedule: [{cron: "0 0 * * *"}]' > "$d/r5-on.yml"
