@@ -144,7 +144,7 @@ fn falsify_lora_target_selection_v1_011_new_gets_q_and_v_and_add_gets_the_rest()
 #[test]
 fn falsify_lora_target_selection_v1_012_prewarm_dims_are_the_selected_targets() {
     let config = model_config();
-    let targets = nf4_targets(Some(&names(&["q_proj", "o_proj", "down_proj"])));
+    let modules = names(&["q_proj", "o_proj", "down_proj"]);
     let want: Vec<(u32, u32)> = [LoraTarget::Q, LoraTarget::O, LoraTarget::Down]
         .iter()
         .map(|t| {
@@ -152,12 +152,13 @@ fn falsify_lora_target_selection_v1_012_prewarm_dims_are_the_selected_targets() 
             (d_out as u32, d_in as u32)
         })
         .collect();
-    assert_eq!(lora_prewarm_dims(&config, &targets), want);
-    assert!(lora_prewarm_dims(&config, &[]).is_empty());
+    assert_eq!(lora_prewarm_dims(&config, Some(&modules)), want);
+    assert!(lora_prewarm_dims(&config, Some(&names(&["lm_head"]))).is_empty());
 
     // Every target's four backward GEMMs are warmed, at its own (d_out, d_in).
     let (s, r) = (64, RANK as u32);
-    let warmed = lora_backward_gemms(&lora_prewarm_dims(&config, &LoraTarget::ALL), s, r);
+    let all: Vec<String> = LoraTarget::ALL.iter().map(|t| t.module_name().to_string()).collect();
+    let warmed = lora_backward_gemms(&lora_prewarm_dims(&config, Some(&all)), s, r);
     for t in LoraTarget::ALL {
         let (d_out, d_in) = t.dims(&config);
         let (d_out, d_in) = (d_out as u32, d_in as u32);

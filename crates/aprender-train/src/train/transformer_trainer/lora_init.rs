@@ -18,13 +18,14 @@ pub(crate) fn nf4_targets(modules: Option<&[String]>) -> Vec<LoraTarget> {
     trainer_targets(modules).map(|t| t.as_slice().to_vec()).unwrap_or_default()
 }
 
-/// `(d_out, d_in)` of each of `targets`, in that order: the shapes the trainer
-/// pre-warms the LoRA backward GEMMs for (R15a C6, FALSIFY-LORA_TARGET_SELECTION_V1_012).
+/// `(d_out, d_in)` of each target of [`nf4_targets`]`(modules)`, in slot order: the
+/// shapes the trainer pre-warms the LoRA backward GEMMs for (R15a C6,
+/// FALSIFY-LORA_TARGET_SELECTION_V1_012).
 pub(crate) fn lora_prewarm_dims(
     config: &TransformerConfig,
-    targets: &[LoraTarget],
+    modules: Option<&[String]>,
 ) -> Vec<(u32, u32)> {
-    targets
+    nf4_targets(modules)
         .iter()
         .map(|t| {
             let (d_out, d_in) = t.dims(config);

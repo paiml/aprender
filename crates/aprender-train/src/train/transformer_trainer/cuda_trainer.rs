@@ -424,9 +424,9 @@ impl CudaTransformerTrainer {
 
             // R15a C6: the LoRA backward GEMMs of every NF4 target, not only q/v
             if config.quantize_nf4 && config.is_lora() {
-                let targets = super::lora_init::nf4_targets(config.lora_target_modules.as_deref());
+                let modules = config.lora_target_modules.as_deref();
                 crate::autograd::cuda_backward::pre_warm_lora_target_backward_kernels(
-                    &super::lora_init::lora_prewarm_dims(mc, &targets),
+                    &super::lora_init::lora_prewarm_dims(mc, modules),
                     max_seq_len,
                     config.lora_rank.unwrap_or(0),
                 )
