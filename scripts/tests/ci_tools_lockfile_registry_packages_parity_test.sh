@@ -12,9 +12,9 @@
 # does not, and argv taken verbatim (`--` and `-h` as file names, extra arguments ignored,
 # a non-UTF-8 file name). The repo's own Cargo.lock is one case, and must list packages.
 #
-# Not vacuous (L25): the run fails if fewer cases ran than the table declares, and two
-# planted liars (one extra stdout line, one wrong exit status) must be reported as
-# mismatches before any real case counts.
+# Not vacuous (L25): the run fails if fewer cases ran than the table declares, and four
+# planted liars (an extra stdout line, a wrong exit status, a failure with no stderr,
+# stderr on a clean run) must be reported as mismatches before any real case counts.
 #
 # Usage: scripts/tests/ci_tools_lockfile_registry_packages_parity_test.sh
 #        (CI_TOOLS_BIN=<path> to skip the build)
@@ -55,8 +55,9 @@ side() {
     echo "$rc"
 }
 
-# same ARGS...: 0 when both sides agree on stdout and status, and a failing side wrote a
-# reason to stderr.
+# same ARGS...: 0 when both sides agree on stdout and status, a failing side wrote a reason
+# to stderr, and a succeeding side wrote nothing there. (A Python traceback cannot be
+# matched byte for byte, so on failure the port only has to say something.)
 same() {
     local a b
     a="$(side "$tmp/py" "$PY" "$LRP_PY" "$@")"
@@ -65,6 +66,8 @@ same() {
     cmp -s "$tmp/py.out" "$tmp/rs.out" || return 1
     if [[ "$a" != 0 ]]; then
         [[ -s "$tmp/py.err" && -s "$tmp/rs.err" ]] || return 1
+    else
+        [[ ! -s "$tmp/py.err" && ! -s "$tmp/rs.err" ]] || return 1
     fi
     return 0
 }
@@ -90,7 +93,7 @@ fx() {
 REG='registry+https://github.com/rust-lang/crates.io-index'
 fx basic.lock "version = 4\n\n[[package]]\nname = \"a\"\nversion = \"0.1.0\"\n\n[[package]]\nname = \"serde\"\nversion = \"1.0.0\"\nsource = \"$REG\"\n\n[[package]]\nname = \"g\"\nsource = \"git+https://github.com/o/g#abc\"\n\n[[package]]\nname = \"ws\"\n"
 
-# --- planted liars: the comparator must catch both before any case counts ---
+# --- planted liars: the comparator must catch every one before any case counts ---
 liar="$tmp/liar"
 printf '#!/usr/bin/env bash\nshift\n"%s" "%s" "$@"\nrc=$?\necho planted\nexit "$rc"\n' "$PY" "$LRP_PY" >"$liar"
 chmod +x "$liar"
@@ -109,6 +112,12 @@ printf '#!/usr/bin/env bash\nshift\n"%s" "%s" "$@" 2>/dev/null\n' "$PY" "$LRP_PY
 BIN="$liar"
 if same no-such.lock; then
     echo "FAIL: a planted silent failure (no stderr) was not detected" >&2
+    exit 1
+fi
+printf '#!/usr/bin/env bash\nshift\n"%s" "%s" "$@"\nrc=$?\necho planted >&2\nexit "$rc"\n' "$PY" "$LRP_PY" >"$liar"
+BIN="$liar"
+if same basic.lock; then
+    echo "FAIL: a planted stderr line on a clean run was not detected" >&2
     exit 1
 fi
 BIN="$REAL_BIN"
