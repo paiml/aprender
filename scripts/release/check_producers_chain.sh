@@ -10,8 +10,10 @@
 #   P2  lacks the chain: workflow_run with workflows: [<the name nightly-pick.yml declares>], types: [completed],
 #       branches: [main];
 #   P3  checks this repo out (actions/checkout, unless `repository:` names another repo literally) and the next step, after an optional
-#       "Preflight…" step, is not the C step: run `bash scripts/release/nightly_c_checkout.sh --at "$NIGHTLY_PICK_AT"`,
-#       env NIGHTLY_PICK_AT from github.event.workflow_run.run_started_at, and if exactly
+#       "Preflight…" step, is not the C step: run `bash scripts/release/nightly_c_checkout.sh --at "$NIGHTLY_PICK_AT" --pick-conclusion "$NIGHTLY_PICK_CONCLUSION"`,
+#       env NIGHTLY_PICK_AT from github.event.workflow_run.created_at (the pick run's own time, which a rerun of either
+#       run keeps; run_started_at moves on a rerun) and NIGHTLY_PICK_CONCLUSION from github.event.workflow_run.conclusion
+#       (a failed pick names no night to measure), and if exactly
 #       `github.event_name == 'workflow_run'`, or `github.event_name == 'workflow_run' && (<the checkout's if>)`;
 #       the C step carries nothing else (no continue-on-error, no other env), a checkout's if must be a bare
 #       expression the C step can copy, a listed producer has at least one checkout of this repo, and no job of it
@@ -67,7 +69,7 @@ judge_file() {
                 if (i == 1) { k = s; sub(/^ *- /, "", k) }
                 else if (ind(s) == p) k = substr(s, p + 1)
                 else { gsub(/^[[:space:]]+|[[:space:]]+$/, "", s)
-                       if (s == "NIGHTLY_PICK_AT: ${{ github.event.workflow_run.run_started_at }}") continue; return s }
+                       if (s == "NIGHTLY_PICK_AT: ${{ github.event.workflow_run.created_at }}" || s == "NIGHTLY_PICK_CONCLUSION: ${{ github.event.workflow_run.conclusion }}") continue; return s }
                 sub(/:.*/, "", k); if (k !~ /^(name|if|env|run)$/) return k
             }
             return ""
@@ -98,14 +100,16 @@ judge_file() {
                 want = (cif == "\001") ? "github.event_name == \047workflow_run\047" \
                                        : "github.event_name == \047workflow_run\047 && (" cif ")"
                 if (j > n) { fail("P3 checkout in job step " k " is not followed by the C step (end of steps)"); continue }
-                if (key(S[j], "run") != "bash scripts/release/nightly_c_checkout.sh --at \"$NIGHTLY_PICK_AT\"") {
+                if (key(S[j], "run") != "bash scripts/release/nightly_c_checkout.sh --at \"$NIGHTLY_PICK_AT\" --pick-conclusion \"$NIGHTLY_PICK_CONCLUSION\"") {
                     fail("P3 checkout in job step " k " is not followed by the C step (step " j " runs something else)"); continue }
-                if (!hasline(S[j], "NIGHTLY_PICK_AT: ${{ github.event.workflow_run.run_started_at }}"))
-                    fail("P3 the C step after job step " k " does not take NIGHTLY_PICK_AT from workflow_run.run_started_at")
+                if (!hasline(S[j], "NIGHTLY_PICK_AT: ${{ github.event.workflow_run.created_at }}"))
+                    fail("P3 the C step after job step " k " does not take NIGHTLY_PICK_AT from workflow_run.created_at")
+                if (!hasline(S[j], "NIGHTLY_PICK_CONCLUSION: ${{ github.event.workflow_run.conclusion }}"))
+                    fail("P3 the C step after job step " k " does not take NIGHTLY_PICK_CONCLUSION from workflow_run.conclusion")
                 if (unq(key(S[j], "if")) != want)
                     fail("P3 the C step after job step " k " has if: " key(S[j], "if") " -- want: " want)
                 if ((sx = stray(S[j])) != "")
-                    fail("P3 the C step after job step " k " carries " sx " -- only name, if, env NIGHTLY_PICK_AT, run")
+                    fail("P3 the C step after job step " k " carries " sx " -- only name, if, env NIGHTLY_PICK_AT and NIGHTLY_PICK_CONCLUSION, run")
             }
             n = 0; ii = -1
         }
@@ -224,14 +228,14 @@ row() { # NAME WANT-RC MUST -- MUTATION-FN (run inside the fixture's workflows d
 changed() { # FILE SED-EXPR: apply, and fail when nothing changed (a no-op mutation is an error, never a pass)
     local before; before="$(cat "$1")"; sed -i -e "$2" "$1" || return 1; [ "$before" != "$(cat "$1")" ]
 }
-CSTEP='bash scripts/release/nightly_c_checkout.sh --at "$NIGHTLY_PICK_AT"'
+CSTEP='bash scripts/release/nightly_c_checkout.sh --at "$NIGHTLY_PICK_AT" --pick-conclusion "$NIGHTLY_PICK_CONCLUSION"'
 synth() { # FILE: a minimal chained producer, built by the caller-supplied steps on stdin
     { printf 'name: Synth\non:\n  workflow_run:\n    workflows: ["Nightly pick"]\n    types: [completed]\n    branches: [main]\n  workflow_dispatch:\n'
       printf 'jobs:\n  a:\n    runs-on: x\n    steps:\n'; cat; } > "$1"
 }
 cstep() { # [IF]: the C step text, with the checkout's if when given
     local cif="github.event_name == 'workflow_run'"; [ -n "${1:-}" ] && cif="$cif && ($1)"
-    printf '      - name: Measure the night'"'"'s C, not main'"'"'s head (T44)\n        if: %s\n        env:\n          NIGHTLY_PICK_AT: ${{ github.event.workflow_run.run_started_at }}\n        run: %s\n' "$cif" "$CSTEP"
+    printf '      - name: Measure the night'"'"'s C, not main'"'"'s head (T44)\n        if: %s\n        env:\n          NIGHTLY_PICK_AT: ${{ github.event.workflow_run.created_at }}\n          NIGHTLY_PICK_CONCLUSION: ${{ github.event.workflow_run.conclusion }}\n        run: %s\n' "$cif" "$CSTEP"
 }
 m_none()          { :; }
 m_sched_back()    { changed nightly.yml 's/^  workflow_run:$/  schedule:\n    - cron: "0 3 * * *"\n  workflow_run:/'; }
@@ -258,7 +262,11 @@ m_no_cstep()      { changed toolchain-ceiling.yml '/- name: Measure the night.s 
 m_cstep_or()      { changed install-script.yml "0,/if: github.event_name == 'workflow_run'\$/s//if: github.event_name == 'workflow_run' || true/"; }
 m_cstep_ifdrop()  { changed cuda-nightly.yml "s/if: github.event_name == 'workflow_run' && (.*)\$/if: github.event_name == 'workflow_run'/"; }
 m_cstep_noat()    { changed nightly-bench.yml '0,/nightly_c_checkout.sh --at "\$NIGHTLY_PICK_AT"/s//nightly_c_checkout.sh/'; }
-m_cstep_wrongat() { changed coverage-nightly.yml '0,/workflow_run.run_started_at/s//workflow_run.head_commit.timestamp/'; }
+m_cstep_wrongat() { changed coverage-nightly.yml '0,/workflow_run.created_at/s//workflow_run.head_commit.timestamp/'; }
+m_cstep_started() { changed coverage-nightly.yml '0,/workflow_run.created_at/s//workflow_run.run_started_at/'; }
+m_cstep_noconcl() { changed nightly-bench.yml '0,/^ *NIGHTLY_PICK_CONCLUSION: .*$/{//d}'; }
+m_cstep_badconcl() { changed book.yml '0,/workflow_run.conclusion }}/s//workflow_run.event }}/'; }
+m_cstep_noconcarg() { changed install-script.yml '0,/ --pick-conclusion "\$NIGHTLY_PICK_CONCLUSION"/s///'; }
 m_step_between()  { changed examples-nightly.yml '0,/- name: Measure the night.s C/s//- run: make bench\n      - name: Measure the night'"'"'s C/'; }
 m_repo_exempt()   { synth nightly.yml <<< "$(printf '      - uses: actions/checkout@v7\n'; cstep; printf '      - uses: actions/checkout@v7\n        with:\n          repository: paiml/other\n')"; }
 m_preflight_ok()  { synth nightly.yml <<< "$(printf '      - uses: actions/checkout@v7\n      - name: Preflight — tools\n        run: true\n'; cstep)"; }
@@ -269,8 +277,8 @@ m_sha_plain()     { changed qwen-story-daily.yml '0,/^    steps:$/s//    steps:\
 m_sha_env()       { changed beat-speed-nightly.yml '0,/^    steps:$/s//    steps:\n      - run: git diff "$GITHUB_SHA"/'; }
 m_sha_comment()   { changed beat-speed-nightly.yml '0,/^    steps:$/s//    steps:\n      # measured at $GITHUB_SHA, before T44/'; }
 m_sha_c()         { changed beat-speed-nightly.yml '0,/^    steps:$/s//    steps:\n      - run: echo "${NIGHTLY_C:-$GITHUB_SHA}"/'; }
-m_cstep_coe()     { changed install-script.yml '0,/nightly_c_checkout.sh --at "\$NIGHTLY_PICK_AT"$/s//&\n        continue-on-error: true/'; }
-m_cstep_envx()    { changed nightly-bench.yml '0,/NIGHTLY_PICK_AT: \${{ github.event.workflow_run.run_started_at }}$/s//&\n          GIT_DIR: \/elsewhere/'; }
+m_cstep_coe()     { changed install-script.yml '0,/--pick-conclusion "\$NIGHTLY_PICK_CONCLUSION"$/s//&\n        continue-on-error: true/'; }
+m_cstep_envx()    { changed nightly-bench.yml '0,/NIGHTLY_PICK_AT: \${{ github.event.workflow_run.created_at }}$/s//&\n          GIT_DIR: \/elsewhere/'; }
 m_cstep_qif_ok()  { synth nightly.yml <<< "$(printf '      - uses: actions/checkout@v7\n'; cstep | sed -e "s/if: \(.*\)\$/if: \"\1\"/")"; }
 m_quoted_uses()   { synth nightly.yml <<< "$(printf '      - uses: "actions/checkout@v7"\n      - run: make bench\n')"; }
 m_no_checkout()   { synth nightly.yml <<< '      - run: make bench'; }
@@ -314,6 +322,10 @@ self_test() {
     row p3_if_drops_checkout_if     1 'cuda-nightly.yml: P3'                   -- m_cstep_ifdrop
     row p3_no_at                    1 'nightly-bench.yml: P3'                  -- m_cstep_noat
     row p3_at_from_head_commit      1 'does not take NIGHTLY_PICK_AT'         -- m_cstep_wrongat
+    row p3_at_from_run_started_at   1 'does not take NIGHTLY_PICK_AT'         -- m_cstep_started
+    row p3_no_conclusion_env        1 'does not take NIGHTLY_PICK_CONCLUSION' -- m_cstep_noconcl
+    row p3_conclusion_from_event    1 'does not take NIGHTLY_PICK_CONCLUSION' -- m_cstep_badconcl
+    row p3_conclusion_not_passed    1 'install-script.yml: P3'               -- m_cstep_noconcarg
     row p3_step_between             1 'examples-nightly.yml: P3'               -- m_step_between
     row p3_last_step_checkout       1 'end of steps'                           -- m_last_step
     row p3_other_repo_exempt        0 'PASS'                                   -- m_repo_exempt
@@ -363,6 +375,7 @@ m05_no_preflight_skip	s/nm ~ \/^Preflight\/) j++/0) j++/
 m06_no_repo_exempt	s/ || other(S\[k\])) continue/) continue/
 m07_any_if	s/if (unq(key(S\[j\], "if")) != want)/if (0)/
 m08_any_at_source	s/if (!hasline(S\[j\], "NIGHTLY_PICK_AT/if (0 \&\& !hasline(S[j], "NIGHTLY_PICK_AT/
+m41_any_conclusion_source	s/if (!hasline(S\[j\], "NIGHTLY_PICK_CONCLUSION/if (0 \&\& !hasline(S[j], "NIGHTLY_PICK_CONCLUSION/
 m09_no_sha_rule	s|if (tolower(c) ~|if (0 \&\& tolower(c) ~|
 m10_sha_no_exemption	s| \&\& c !~ /NIGHTLY_C\|workflow_run\\.head_sha/)|)|
 m11_no_missing_rule	/P5 listed producer is missing/s/; rc=1; }/; }/
@@ -378,7 +391,7 @@ m20_job_uses_ok	s/listed \&\& live(L) \&\& L ~ \/^    uses:\//0 \&\& \/^    uses
 m21_checkout_if_any	s/if (cif ~ \/\\\$\\{\\{|^\[>|\]\/) {/if (0) {/
 m22_comment_exempts	s/c = L; sub(\/\[\[:space:\]\]#\.\*\/, "", c)/c = L/
 m23_no_workflow_sha	s/(workflow_)?sha|github_/sha|github_/
-m24_env_any_line	s/if (s == "NIGHTLY_PICK_AT: \${{ github.event.workflow_run.run_started_at }}") continue; return s }/continue }/
+m24_env_any_line	s/if (s == "NIGHTLY_PICK_AT: \${{ github.event.workflow_run.created_at }}" || s == "NIGHTLY_PICK_CONCLUSION: \${{ github.event.workflow_run.conclusion }}") continue; return s }/continue }/
 m25_cstep_if_quoted_no	s/if (unq(key(S\[j\], "if")) != want)/if (key(S[j], "if") != want)/
 m26_dash_at_si_ends	s/(ind(L) < si || (ind(L) == si && L !~ \/^ \*- \/))/ind(L) <= si/
 m27_any_repo_exempt	s/ || other(S\[k\])) continue/ || S[k] ~ \/repository:\/) continue/

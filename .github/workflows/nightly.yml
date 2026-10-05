@@ -77,8 +77,9 @@ jobs:
       - name: Measure the night's C, not main's head (T44)
         if: github.event_name == 'workflow_run'
         env:
-          NIGHTLY_PICK_AT: ${{ github.event.workflow_run.run_started_at }}
-        run: bash scripts/release/nightly_c_checkout.sh --at "$NIGHTLY_PICK_AT"
+          NIGHTLY_PICK_AT: ${{ github.event.workflow_run.created_at }}
+          NIGHTLY_PICK_CONCLUSION: ${{ github.event.workflow_run.conclusion }}
+        run: bash scripts/release/nightly_c_checkout.sh --at "$NIGHTLY_PICK_AT" --pick-conclusion "$NIGHTLY_PICK_CONCLUSION"
 
       - name: Case table
         run: python3 scripts/nightly_manifest.py --self-test
@@ -123,8 +124,9 @@ jobs:
       - name: Measure the night's C, not main's head (T44)
         if: github.event_name == 'workflow_run'
         env:
-          NIGHTLY_PICK_AT: ${{ github.event.workflow_run.run_started_at }}
-        run: bash scripts/release/nightly_c_checkout.sh --at "$NIGHTLY_PICK_AT"
+          NIGHTLY_PICK_AT: ${{ github.event.workflow_run.created_at }}
+          NIGHTLY_PICK_CONCLUSION: ${{ github.event.workflow_run.conclusion }}
+        run: bash scripts/release/nightly_c_checkout.sh --at "$NIGHTLY_PICK_AT" --pick-conclusion "$NIGHTLY_PICK_CONCLUSION"
 
       # A sibling container through the mounted socket, as in binary-release.yml's
       # CPU lanes: every bind-mount path must exist on the HOST (the work root is
@@ -264,8 +266,9 @@ jobs:
       - name: Measure the night's C, not main's head (T44)
         if: github.event_name == 'workflow_run'
         env:
-          NIGHTLY_PICK_AT: ${{ github.event.workflow_run.run_started_at }}
-        run: bash scripts/release/nightly_c_checkout.sh --at "$NIGHTLY_PICK_AT"
+          NIGHTLY_PICK_AT: ${{ github.event.workflow_run.created_at }}
+          NIGHTLY_PICK_CONCLUSION: ${{ github.event.workflow_run.conclusion }}
+        run: bash scripts/release/nightly_c_checkout.sh --at "$NIGHTLY_PICK_AT" --pick-conclusion "$NIGHTLY_PICK_CONCLUSION"
 
       - name: Build apr (host-native, pinned toolchain)
         run: |
@@ -311,8 +314,9 @@ jobs:
       - name: Measure the night's C, not main's head (T44)
         if: github.event_name == 'workflow_run'
         env:
-          NIGHTLY_PICK_AT: ${{ github.event.workflow_run.run_started_at }}
-        run: bash scripts/release/nightly_c_checkout.sh --at "$NIGHTLY_PICK_AT"
+          NIGHTLY_PICK_AT: ${{ github.event.workflow_run.created_at }}
+          NIGHTLY_PICK_CONCLUSION: ${{ github.event.workflow_run.conclusion }}
+        run: bash scripts/release/nightly_c_checkout.sh --at "$NIGHTLY_PICK_AT" --pick-conclusion "$NIGHTLY_PICK_CONCLUSION"
 
       # A runner that died uploaded nothing; merge records that arch red, so
       # an empty download must not stop the other arch from publishing.

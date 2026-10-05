@@ -185,8 +185,9 @@ jobs:
       - name: Measure the night's C, not main's head (T44)
         if: github.event_name == 'workflow_run' && (steps.decide.outputs.proceed == 'true')
         env:
-          NIGHTLY_PICK_AT: ${{ github.event.workflow_run.run_started_at }}
-        run: bash scripts/release/nightly_c_checkout.sh --at "$NIGHTLY_PICK_AT"
+          NIGHTLY_PICK_AT: ${{ github.event.workflow_run.created_at }}
+          NIGHTLY_PICK_CONCLUSION: ${{ github.event.workflow_run.conclusion }}
+        run: bash scripts/release/nightly_c_checkout.sh --at "$NIGHTLY_PICK_AT" --pick-conclusion "$NIGHTLY_PICK_CONCLUSION"
 
       # PP-26's release-phase marker gate (scripts/check_perf041_marker.sh, a
       # dogfood gate) may not be named in a REQUIRED workflow
@@ -801,8 +802,9 @@ jobs:
       - name: Measure the night's C, not main's head (T44)
         if: github.event_name == 'workflow_run'
         env:
-          NIGHTLY_PICK_AT: ${{ github.event.workflow_run.run_started_at }}
-        run: bash scripts/release/nightly_c_checkout.sh --at "$NIGHTLY_PICK_AT"
+          NIGHTLY_PICK_AT: ${{ github.event.workflow_run.created_at }}
+          NIGHTLY_PICK_CONCLUSION: ${{ github.event.workflow_run.conclusion }}
+        run: bash scripts/release/nightly_c_checkout.sh --at "$NIGHTLY_PICK_AT" --pick-conclusion "$NIGHTLY_PICK_CONCLUSION"
 
       - name: Put the runner's Rust toolchain on PATH
         run: echo "$HOME/.cargo/bin" >> "$GITHUB_PATH"

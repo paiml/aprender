@@ -47,8 +47,9 @@ jobs:
       - name: Measure the night's C, not main's head (T44)
         if: github.event_name == 'workflow_run'
         env:
-          NIGHTLY_PICK_AT: ${{ github.event.workflow_run.run_started_at }}
-        run: bash scripts/release/nightly_c_checkout.sh --at "$NIGHTLY_PICK_AT"
+          NIGHTLY_PICK_AT: ${{ github.event.workflow_run.created_at }}
+          NIGHTLY_PICK_CONCLUSION: ${{ github.event.workflow_run.conclusion }}
+        run: bash scripts/release/nightly_c_checkout.sh --at "$NIGHTLY_PICK_AT" --pick-conclusion "$NIGHTLY_PICK_CONCLUSION"
       - name: Everything merged since the last nightly that JUDGED main, as a diff
         id: day
         # Not a rolling "24 hours ago" window: that has no memory, so one missed or failed run would drop a day of
