@@ -4,18 +4,20 @@
 #
 # WHAT IT GOVERNS
 #   Pull requests commit docs/roadmaps/entries/<ID>.yaml only. CI regenerates
-#   the aggregate before any reader runs, ONE writer PR changes roadmap.yaml
-#   and nothing else, and the publish preflight refuses a tag whose committed
-#   roadmap.yaml is not the aggregate. The per-PR comparison "committed ==
+#   the aggregate before any reader runs, and ONE writer PR changes
+#   roadmap.yaml and nothing else. The per-PR comparison "committed ==
 #   aggregate" (check_roadmap_fragment_required.sh rule 2) moves to the writer
-#   PR and the tag: the one move RQ-8 rules.
+#   PR: the one move RQ-8 rules.
 #
 #   THIS VERSION IS THE RULE ALONE (BLD-001 split, PR1). The nightly host-timer
 #   writer that opens the writer PR lands in a follow-up pull request. Until
 #   then the writer PR is a hand-opened aggregate refresh, at most one a day,
-#   holding roadmap.yaml and nothing else. A lagging committed aggregate is
-#   safe meanwhile: every reader judges the fresh copy, and R9 refuses a tag
-#   whose committed copy lags, so a release never ships a stale file.
+#   holding roadmap.yaml and nothing else. Every reader judges the fresh copy,
+#   so a lagging committed aggregate changes no verdict. A tag-time check that
+#   refuses a lagging committed copy is NOT part of this rule: it is a new
+#   blocking publish check, so it follows separately (see non_goals). Until it
+#   lands, a release cut between a fragment landing and the next writer PR
+#   carries a roadmap.yaml that lags its fragments.
 #
 #   One writer cleans 0 of the pull requests open when it lands; it prevents
 #   the next re-dirty of the generated file.
@@ -27,10 +29,9 @@
 #          16 / 9, check_roadmap_one_writer.sh 13 / 8,
 #          roadmap_to_fragments.sh 11 / 7,
 #          check_roadmap_fragment_required.sh 23 / 2,
-#          check_publish_preflight.sh R9 7 rows, check_row_pr_write_set.sh
-#          17 / 1; every mutant killed.
+#          check_row_pr_write_set.sh 17 / 1; every mutant killed.
 #   * L3/L4 — NOT APPLICABLE: a generated YAML data file, not a kernel.
-#   * WHAT BLOCKS FROM THE START: R9; every EXISTING verdict moved onto the
+#   * WHAT BLOCKS FROM THE START: every EXISTING verdict moved onto the
 #     fresh copy (R3 and R4 on fresh refs, pmat work validate on the fresh
 #     roadmap.yaml, fragments the generator refuses); every environment gap
 #     behind them (exit 2, never a pass). The bash aggregator refuses exactly
@@ -66,7 +67,6 @@ metadata:
     - 'scripts/roadmap_one_writer_ci.sh — guard-tree step before every reader: regen, pmat work validate, fresh-ref diff guards'
     - 'scripts/check_roadmap_one_writer.sh — PR-side: names a roadmap.yaml edit outside the writer shape (shadow)'
     - 'scripts/check_roadmap_fragment_required.sh — R4: rule 1 writer licence, rule 2 moved (RQ-8)'
-    - 'scripts/check_publish_preflight.sh — R9: committed == aggregate at the tag'
     - 'scripts/roadmap_to_fragments.sh — converts a pmat-style roadmap.yaml edit into fragments, roadmap.yaml back at base'
   description: >
     Eleven open pull requests carried hand-merged copies of roadmap.yaml (239
@@ -125,22 +125,7 @@ equations:
     - 'A ROW PR (agent/<DAG-row>) writes no fragment either: check_row_pr_write_set.sh rule 2 reads docs/roadmaps/entries/ as it reads roadmap.yaml, so the move to fragments makes that guard compare no less (round-3 L; its row 14, mutant nofrag).'
     preconditions: []
     postconditions:
-    - 'the tag check still requires committed == fresh'
-
-  the_tag_is_fresh:
-    formula: |
-      check_publish_preflight R9: the COMMITTED tree at HEAD (git archive, never the worktree),
-        judged by the roadmap_aggregate.sh next to the preflight, never the tag's own copy
-      stale ⇒ refuse · aggregator absent ⇒ refuse · aggregator rc 2 ⇒ refuse · no fragment ⇒ refuse
-    domain: 'the tagged tree at T-4'
-    codomain: 'bool'
-    invariants:
-    - 'ONLY R9 MAY REFUSE in its rows: the release ref is advanced so R4 cannot mask it.'
-    - 'A TAG CANNOT JUDGE ITSELF: an aggregator that exits 0 committed at the tag beside a stale roadmap.yaml still refuses.'
-    preconditions: []
-    postconditions:
-    - 'unwiring rule_r9 breaks every R9 refusal row'
-    - 'remedy on a release branch: a roadmap.yaml-only regen commit there, then re-tag (the writer targets main)'
+    - 'the writer PR still requires committed == fresh (fresh path) or a fragment-faithful stale copy'
 
 proof_obligations:
   - id: RMOW-OB-001
@@ -152,9 +137,6 @@ proof_obligations:
   - id: RMOW-OB-003
     statement: "A PR edit of roadmap.yaml outside the writer shape is named; the writer PR is accepted, stale or not, and a hand edit in it is named."
     discharged_by: falsification_tests[2]
-  - id: RMOW-OB-004
-    statement: "A tag whose committed roadmap.yaml is not the aggregate is refused by publish preflight R9."
-    discharged_by: falsification_tests[3]
 
 falsification_tests:
 
@@ -211,27 +193,13 @@ falsification_tests:
       nameall names every change, so the control rows W1, W3, W5 can turn RED;
       R4 --mutants: movednovalid nomb, all killed.
 
-  - id: RMOW-F-004
-    rule: the tag is fresh
-    prediction: >-
-      A fragment landed without regenerating, then tagged, refuses at R9;
-      an absent aggregator, an absent roadmap and an entries/ with no
-      fragment refuse; a stale commit with a regenerated worktree still
-      refuses (the committed tree is judged); a tag shipping a no-op aggregator
-      beside a stale roadmap.yaml refuses; the fresh fixture prints 'ok    R9'.
-    test: 'bash scripts/check_publish_preflight.sh --selftest'
-    if_fails: >-
-      a release ships a roadmap.yaml that is not the aggregate of its fragments
-    mutation: >-
-      replace the rule_r9 call with ':'; every R9 refusal row turns BROKE.
-
 non_goals:
   - "Cleaning the PRs open when this lands: one writer cleans 0 of them; it prevents the next re-dirty."
   - "Blocking on the NEW verdict (writer shape) before the admission PR cites three green nights of the shape judge; existing verdicts moved onto the fresh copy block from the start."
   - "The nightly host-timer writer: a follow-up pull request (BLD-001 PR2); until it lands, at most one hand-opened aggregate refresh PR a day."
   - "Changing pmat's writer: `pmat work add/complete` still rewrites roadmap.yaml; scripts/roadmap_to_fragments.sh converts that diff."
+  - "A publish preflight check that refuses a tag whose committed roadmap.yaml is not the aggregate: a new blocking publish check, so it is a separate follow-up that lands report-only, runs clean-room first, and blocks only after three green nights."
 
 binding_registry:
   guard: scripts/check_roadmap_one_writer.sh
   ci_step: "ci/sections.yml guard-tree: 'Regenerate the roadmap aggregate before any reader (one writer, T21)' and 'One-writer roadmap case tables and mutants (T21)'"
-  tag_check: scripts/check_publish_preflight.sh R9

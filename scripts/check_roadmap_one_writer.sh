@@ -5,7 +5,7 @@
 # commits the aggregate, two PRs that each add one fragment both rewrite the same file and the second one
 # conflicts (measured 2026-10-04: roadmap.yaml was a conflicted file in 9 of 21 open PRs). Under one writer a PR
 # commits only its fragment; CI regenerates the aggregate before any reader (scripts/roadmap_one_writer_ci.sh);
-# the nightly writer PR on main and the tag check (check_publish_preflight.sh R9) compare committed == fresh.
+# the writer PR on main compares committed == fresh (a tag-time check is a separate follow-up, not in this rule).
 #
 # RULE. When merge-base..HEAD changes roadmap.yaml, the change is allowed only in the WRITER SHAPE: every changed
 # path is a generated file (today: roadmap.yaml) AND the committed roadmap.yaml is byte-equal to
@@ -93,7 +93,7 @@ judge() {
     rm -rf -- "${td:?}"
     case "$rc" in
         0) printf 'ok    %s: writer shape — only generated files change and %s == aggregate(head)\n' "$PROG" "$RM"; return 0 ;;
-        3) printf 'ok    %s: writer shape, stale — fragments landed after it; every entry it wrote is fragment-covered (aggregate(head copy) == aggregate(base copy)); the tag check (R9) still needs committed == fresh\n' "$PROG"; return 0 ;;
+        3) printf 'ok    %s: writer shape, stale — fragments landed after it; every entry it wrote is fragment-covered (aggregate(head copy) == aggregate(base copy)); committed == fresh is compared by the writer PR\n' "$PROG"; return 0 ;;
         1) printf 'FAIL  %s is written by this PR and is NOT aggregate(head): a hand edit of the generated file; edit the fragment instead\n' "$RM"; return 1 ;;
         *) printf 'ENV   %s: roadmap_aggregate.sh could not answer (rc %s)\n' "$PROG" "$rc"; return 2 ;;
     esac
