@@ -9,8 +9,8 @@
 #   P1  still has a `schedule:` trigger (a live line in its on: block);
 #   P2  lacks the chain: workflow_run with workflows: [<the name nightly-pick.yml declares>], types: [completed],
 #       branches: [main];
-#   P3  checks this repo out (actions/checkout, unless `repository:` names another repo literally) and the next step, after an optional
-#       "Preflight…" step, is not the C step: run `bash scripts/release/nightly_c_checkout.sh --at "$NIGHTLY_PICK_AT" --pick-conclusion "$NIGHTLY_PICK_CONCLUSION"`,
+#   P3  checks this repo out (actions/checkout, unless `repository:` names another repo literally) and the very next step
+#       is not the C step (a host preflight goes after it, so it runs C's own copy): run `bash scripts/release/nightly_c_checkout.sh --at "$NIGHTLY_PICK_AT" --pick-conclusion "$NIGHTLY_PICK_CONCLUSION"`,
 #       env NIGHTLY_PICK_AT from github.event.workflow_run.created_at (the pick run's own time, which a rerun of either
 #       run keeps; run_started_at moves on a rerun) and NIGHTLY_PICK_CONCLUSION from github.event.workflow_run.conclusion
 #       (a failed pick names no night to measure), and if exactly
@@ -85,15 +85,14 @@ judge_file() {
             for (i = 1; i <= m; i++) { s = a[i]; gsub(/^[[:space:]]+|[[:space:]]+$/, "", s); if (s == want) return 1 }
             return 0
         }
-        function flush(   k, j, cif, want, nm) {
+        function flush(   k, j, cif, want) {
             if (!listed) { n = 0; ii = -1; return }   # only a listed producer owes the C step
             for (k = 1; k <= n; k++) {
                 if (unq(key(S[k], "uses")) ~ /^\.\//) {
                     fail("P3 job step " k " uses a local action -- a checkout inside it cannot be judged here"); continue }
                 if (unq(key(S[k], "uses")) !~ /^actions\/checkout@/ || other(S[k])) continue
                 checkouts++
-                j = k + 1; nm = key(S[j], "name")
-                if (j <= n && nm ~ /^Preflight/) j++
+                j = k + 1
                 cif = unq(key(S[k], "if"))
                 if (cif ~ /\$\{\{|^[>|]/) {
                     fail("P3 checkout in job step " k " has an if: the C step cannot copy (${{ }} or a block): " cif); continue }
@@ -269,7 +268,7 @@ m_cstep_badconcl() { changed book.yml '0,/workflow_run.conclusion }}/s//workflow
 m_cstep_noconcarg() { changed install-script.yml '0,/ --pick-conclusion "\$NIGHTLY_PICK_CONCLUSION"/s///'; }
 m_step_between()  { changed examples-nightly.yml '0,/- name: Measure the night.s C/s//- run: make bench\n      - name: Measure the night'"'"'s C/'; }
 m_repo_exempt()   { synth nightly.yml <<< "$(printf '      - uses: actions/checkout@v7\n'; cstep; printf '      - uses: actions/checkout@v7\n        with:\n          repository: paiml/other\n')"; }
-m_preflight_ok()  { synth nightly.yml <<< "$(printf '      - uses: actions/checkout@v7\n      - name: Preflight — tools\n        run: true\n'; cstep)"; }
+m_preflight_between()  { synth nightly.yml <<< "$(printf '      - uses: actions/checkout@v7\n      - name: Preflight — tools\n        run: true\n'; cstep)"; }
 m_flow_if_ok()    { synth nightly.yml <<< "$(printf '      - uses: actions/checkout@v7\n        if: a || b\n'; cstep 'a || b')"; }
 m_flow_if_bare()  { synth nightly.yml <<< "$(printf '      - uses: actions/checkout@v7\n        if: a || b\n'; cstep | sed -e "s/'workflow_run'\$/'workflow_run' \&\& a || b/")"; }
 m_last_step()     { synth nightly.yml <<< '      - uses: actions/checkout@v7'; }
@@ -329,7 +328,7 @@ self_test() {
     row p3_step_between             1 'examples-nightly.yml: P3'               -- m_step_between
     row p3_last_step_checkout       1 'end of steps'                           -- m_last_step
     row p3_other_repo_exempt        0 'PASS'                                   -- m_repo_exempt
-    row p3_preflight_between        0 'nightly.yml: chained'                   -- m_preflight_ok
+    row p3_preflight_between        1 'nightly.yml: P3'                        -- m_preflight_between
     row p3_checkout_if_with_or      0 'nightly.yml: chained'                   -- m_flow_if_ok
     row p3_unparenthesised_or       1 'nightly.yml: P3'                        -- m_flow_if_bare
     row p4_github_sha               1 'qwen-story-daily.yml: P4'               -- m_sha_plain
@@ -371,7 +370,7 @@ MUTANTS='m01_no_schedule_rule	s/if (sched) fail/if (0) fail/
 m02_any_branch	s/list1(L) == "main") cb = 1/1) cb = 1/
 m03_any_type	s/list1(L) == "completed") ct = 1/1) ct = 1/
 m04_any_workflow	s/list1(L) == pick) cw = 1/1) cw = 1/
-m05_no_preflight_skip	s/nm ~ \/^Preflight\/) j++/0) j++/
+m05_preflight_skipped	s/^                j = k + 1$/&; if (j <= n && key(S[j], "name") ~ \/^Preflight\/) j++/
 m06_no_repo_exempt	s/ || other(S\[k\])) continue/) continue/
 m07_any_if	s/if (unq(key(S\[j\], "if")) != want)/if (0)/
 m08_any_at_source	s/if (!hasline(S\[j\], "NIGHTLY_PICK_AT/if (0 \&\& !hasline(S[j], "NIGHTLY_PICK_AT/
