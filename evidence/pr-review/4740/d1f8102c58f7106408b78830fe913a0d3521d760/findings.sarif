@@ -1,0 +1,118 @@
+{
+  "$schema": "https://docs.oasis-open.org/sarif/sarif/v2.1.0/errata01/os/schemas/sarif-schema-2.1.0.json",
+  "version": "2.1.0",
+  "runs": [
+    {
+      "tool": {
+        "driver": {
+          "name": "pmat"
+        }
+      },
+      "results": [
+        {
+          "ruleId": "guard_table_pass",
+          "level": "note",
+          "message": {
+            "text": "bash scripts/check_quick_tier_shard_sigma.sh at head d1f8102c58: rc 0, PASS (26 ok rows, 0 FAIL)."
+          },
+          "properties": {
+            "grounding": "measured",
+            "command": [
+              "bash",
+              "scripts/check_quick_tier_shard_sigma.sh"
+            ],
+            "exit_code": 0,
+            "stdout_sha256": "8255f170153fcb679b42d76e441e091e22f7a2c94d289d8dcc8b09447dd214f6",
+            "failure_scenario": "A false RED on the real tree would block every PR; none observed.",
+            "precision_class": "advisory"
+          }
+        },
+        {
+          "ruleId": "guard_self_test_passes",
+          "level": "note",
+          "message": {
+            "text": "--self-test at head d1f8102c58: SELF-TEST PASSED, rc 0 (about 2.5 min, 75 ok rows, 0 FAIL), including the round-8 CR rows."
+          },
+          "properties": {
+            "grounding": "measured",
+            "command": [
+              "bash",
+              "scripts/check_quick_tier_shard_sigma.sh",
+              "--self-test"
+            ],
+            "exit_code": 0,
+            "stdout_sha256": "c892f7973936f4076324d92f3d38d110356939caa38f3317e65c17ca9527e06d",
+            "failure_scenario": "A planted mutant that did not apply would print FAIL; none did.",
+            "precision_class": "advisory"
+          }
+        },
+        {
+          "ruleId": "round8_lone_cr_now_env",
+          "level": "note",
+          "message": {
+            "text": "Round-8 blocking finding is closed: ci.yml with `# x<CR>concurrency: {group: z, cancel-in-progress: false}` before jobs: and ci/sections.yml with `# x<CR>sovereign-ci: {uses: evil/x@1}` before matrix-pins: both give guard ENV rc 2 (previously rc 0 while yaml.safe_load saw the override)."
+          },
+          "properties": {
+            "grounding": "measured",
+            "command": [
+              "env",
+              "QUICK_SIGMA_SECTIONS=<ci/sections.yml with a comment line  # x<CR>sovereign-ci: {uses: evil/x@1}  inserted before matrix-pins:>",
+              "bash",
+              "scripts/check_quick_tier_shard_sigma.sh"
+            ],
+            "exit_code": 2,
+            "stdout_sha256": "31016d060d9cbfe91c5cf728b6ebeba025e422e8673e84d85259812b33ce2984",
+            "failure_scenario": "If the CR rejection were absent a PR could replace the workspace-level concurrency/on or the sovereign-ci pin through a CR-hidden duplicate key while the guard stays green; the rejection fires on both files.",
+            "precision_class": "advisory"
+          }
+        },
+        {
+          "ruleId": "trailing_comment_in_last_block_scalar_unpinned",
+          "level": "warning",
+          "message": {
+            "text": "Carried from round 8, unchanged by round 9, still advisory. Comment-looking or blank lines appended after the last line of a pinned job whose last step is a `run: |` scalar are scalar content for the loader but are dropped by job_block (held lines print only if the job continues). Measured at ci.yml:450 (after `exit \"$rc\"`, job workspace-test) and ci/sections.yml:1044 (after the `bash -c '...'` last line of jobs.workspace-test-shard): guard rc 0 and golden unchanged; yaml.safe_load run gains the line. Variants that change the loaded script with rc 0: `          # x`, `          #`, a 20-space comment, two comments, a 12-space whitespace-only line, a U+2003-only line, and `# ${{ fromJSON(1) }}` (an Actions expression inside a comment is still expanded). Variants with NO loader change: empty line, a 10-space line, and a comment at indent <= 5. Effect today is nil or fail-only: both pinned scripts end in a complete command (`exit` and a closed `bash -c '...'`), a `#` line is inert, a U+2003 line would only make the section end 127 (RED, not green). It becomes a real bypass only if a pinned script ever ends in a backslash continuation, an open heredoc or an open quote. Suggested fix, not required to merge: in job_block's END, also print held lines whose indent is >= 3, which leaves the indent-2 `# note` comments between jobs out of the digest."
+          },
+          "properties": {
+            "grounding": "measured",
+            "command": [
+              "env",
+              "QUICK_SIGMA_WORKFLOW=<ci.yml + `          # injected trailing` after line 449>",
+              "bash",
+              "scripts/check_quick_tier_shard_sigma.sh"
+            ],
+            "exit_code": 0,
+            "stdout_sha256": "8255f170153fcb679b42d76e441e091e22f7a2c94d289d8dcc8b09447dd214f6",
+            "failure_scenario": "A trailing line in a pinned scalar changes loader-visible script text with the golden still green; harmless today because both scripts end in a complete command, unsafe only if a future last line is a continuation, heredoc or open quote.",
+            "precision_class": "advisory"
+          }
+        },
+        {
+          "ruleId": "no_new_class_found",
+          "level": "note",
+          "message": {
+            "text": "Beyond the line-break class and the trailing-scalar advisory, 1620 mutants found no second class. Every change to a non-comment line outside jobs or inside a pinned job moves a digest (rc 1) or is ENV (rc 2). Tried and killed: jobs: # c, `jobs :`, `\"jobs\":` (all ENV rc 2); a flow value on concurrency spanning into jobs (rc 1, loader ParserError); `name: |2` (rc 1); duplicate top-level key in 9 spellings (quoted, `key :`, `? key`, !!str, &anchor, escape, tab, trailing comment; rc 1) and sovereign-ci in 3 (rc 1); a second workspace-test in 7 spellings incl. CRLF (rc 2); a flow/quote/block opener on the line before a pinned job (rc 0 or 1, loader ParserError or digest change, never a clean override); BOM, formfeed, VT in comments (PyYAML ReaderError or neutral); U+00A0 and U+2003 and U+FEFF lines (rc 1 or 2). A systematic insertion sweep of 17 comment/blank/tab line shapes at 92 positions across both files found no loader-visible, golden-blind change inside a pinned job except at the trailing edge (the advisory) and outside jobs (none)."
+          },
+          "properties": {
+            "grounding": "asserted",
+            "rationale": "Measured sweep with PyYAML safe_load as the oracle; the claim is the absence of a finding, so it carries judgement and is advisory.",
+            "failure_scenario": "An un-sampled position or a loader behaviour this sweep did not cover could still hide a change; the sweep samples every 60th/80th line plus every pinned-job boundary.",
+            "precision_class": "advisory"
+          }
+        },
+        {
+          "ruleId": "no_gate_loosened",
+          "level": "note",
+          "message": {
+            "text": "Diff 32aef3ac0e..d1f8102c58 in scripts/check_quick_tier_shard_sigma.sh: one added grep alternative (-e $'\\r') widening the existing ENV rejection from U+0085/U+2028/U+2029 to also CR in either file, the message text, a comment, and two self-test rows. No row, pin, golden entry, exit code or anchor is removed or relaxed. ci/, golden and workflow files are unchanged."
+          },
+          "properties": {
+            "grounding": "asserted",
+            "rationale": "Read the diff 32aef3ac0e..d1f8102c58; every guard-logic change is an addition. A CRLF checkout of either file now exits ENV rc 2 instead of a table verdict, which is stricter, and CI is Linux with LF.",
+            "failure_scenario": "If a loosened gate existed, a previously RED mutant would turn rc 0; the --self-test and the real-tree run both pass, and the r8 mutants now go ENV.",
+            "precision_class": "advisory"
+          }
+        }
+      ]
+    }
+  ]
+}
