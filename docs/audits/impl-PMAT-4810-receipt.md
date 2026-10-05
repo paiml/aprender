@@ -10,28 +10,44 @@ Chat routes stop on every end-of-generation marker, not only the declared EOS
 | `3bba10b0c7` | roadmap entry |
 | `9dbcdf975a` | this receipt (quorum round 1) |
 | `7491a6f3e4` | every chat path calls `chat_stop_tokens`; the helper `stop_tokens_unless_ignore_eos` is removed (quorum round 2) |
+| `396e565312` | this receipt: call-site table and the complete lib run |
+| `bb85cec112` | APR Q4K, SafeTensors CUDA and APR transformer reach `chat_stop_tokens` (C314 review) |
 
 ## AC 1: one stop set for every chat path
 
 `chat_stop_tokens(request, tokenizer, eos: Option<u32>)`
 (`crates/aprender-serve/src/api/openai_handlers.rs`) returns
 `completion_stop_tokens(tokenizer, eos)`, or an empty set when `ignore_eos` is
-set. Each chat path reaches it as follows. Line numbers are at `7491a6f3e4`:
+set. Each chat path reaches it as follows, in dispatch order. Line numbers are at
+`bb85cec112`:
 
 | Path | Call |
 |------|------|
-| CUDA dense, `try_cuda_backend` | `chat_quantized_config` at `cuda_chat_backend.rs:137` |
-| quantized CPU, `try_quantized_backend` | `chat_quantized_config` at `cuda_chat_backend.rs:423` |
-| `chat_quantized_config` itself | `chat_stop_tokens` at `openai_handlers.rs:283` |
-| CUDA MoE, `moe_gen_config` | `chat_stop_tokens` at `cuda_chat_backend.rs:1175` |
 | Qwen3.5, `try_qwen35_backend` | `chat_stop_tokens` at `qwen35_chat_backend.rs:144` |
-| GPU, `try_gpu_backend` | `chat_stop_tokens` at `openai_handlers.rs:1140` |
-| cached, `try_cached_backend` | `chat_stop_tokens` at `openai_handlers.rs:1254` |
+| CUDA MoE, `moe_gen_config` | `chat_stop_tokens` at `cuda_chat_backend.rs:1164` |
+| GPU, `try_gpu_backend` | `chat_stop_tokens` at `openai_handlers.rs:1266` |
+| cached, `try_cached_backend` | `chat_stop_tokens` at `openai_handlers.rs:1380` |
+| CUDA dense, `try_cuda_backend` | `chat_quantized_config` at `cuda_chat_backend.rs:137` |
+| APR Q4K, `try_apr_q4k_chat_backend` | `apr_q4k_chat_eos_ids` at `cuda_chat_backend.rs:878`, which calls `chat_stop_tokens` at `openai_handlers.rs:187` |
+| SafeTensors CUDA, `try_safetensors_cuda_backend` | `safetensors_cuda_stop_ids` at `cuda_chat_backend.rs:43`, which calls `chat_stop_tokens` at `openai_handlers.rs:208` |
+| quantized CPU, `try_quantized_backend` | `chat_quantized_config` at `cuda_chat_backend.rs:423` |
+| APR transformer, `try_apr_transformer_backend` | `apr_transformer_gen_config` at `cuda_chat_backend.rs:578`, which calls `chat_stop_tokens` at `openai_handlers.rs:229` |
+| `chat_quantized_config` itself | `chat_stop_tokens` at `openai_handlers.rs:351` |
 
-The first two rows are in code this branch does not change, which is why the
-diff alone does not show them. No other non-test code builds a chat stop set:
-`stop_tokens_unless_ignore_eos` is gone, and `chat_stop_tokens` is its only
-replacement. So every chat path stops on the same set as `/v1/completions`.
+The C314 review of `396e565312` found that the APR Q4K, SafeTensors CUDA and APR
+transformer rows did not reach `chat_stop_tokens`: APR Q4K sent the model's EOS
+only, SafeTensors CUDA hard-coded `151645` (the Qwen2 `<|im_end|>` id) for every
+model, and APR transformer left `stop_tokens` empty, so it stopped only on token 0.
+`bb85cec112` routes all three through it, with one test row each. Two
+behaviours are kept on purpose:
+- APR Q4K keeps its `[0, 2]` fallback for a model that declares no EOS.
+- SafeTensors CUDA keeps `151645` only for a vocabulary that has no end marker.
+
+`registry_fallback`, the last arm, is the one chat path outside this set: its
+demo models have no BPE vocabulary to read markers from.
+`stop_tokens_unless_ignore_eos` is gone. Outside chat, `/stream/generate` and the
+Qwen3.5 completions and raw-generate paths still stop on the EOS only; this ticket
+does not claim them.
 
 ## AC 2: RED on the parent, GREEN on the fix
 
@@ -97,3 +113,13 @@ For that commit, the third row covers the module that holds every chat path.
 `moe_gen_config` and `try_qwen35_backend`; `--features cuda` adds
 `try_cuda_backend`. The full 16,281-test suite was not run again at
 `7491a6f3e4`.
+
+At `bb85cec112`, on the same host (nice 19, `-j4`):
+`cargo test -p aprender-serve --lib api::openai_handlers -- --skip qwen35_serve_tests`
+gave 55 passed, 0 failed, exit 0. That is the 52 tests of the
+`7491a6f3e4` row plus the three new rows `apr_q4k_chat_stops_on_every_eog_marker`,
+`safetensors_cuda_chat_stops_on_every_eog_marker` and
+`apr_transformer_chat_stops_on_every_eog_marker`. `cargo check` and
+`cargo clippy -- -D warnings` on `--lib --tests` were clean with and without
+`--features cuda`; the SafeTensors CUDA and APR Q4K call sites compile only in the
+`cuda` build.
