@@ -227,6 +227,14 @@ dr=""; while [ $# -gt 0 ]; do case "$1" in --dogfood-receipt) dr=$2; shift 2 ;; 
 printf '%s\n' "${FX_RR_LINE:-ok    R8 release-readiness-v1 Pass (fixture)}"
 exit "${FX_RR_RC:-0}"
 STUB
+    # check_census_ratchet.sh stub (#4709): records its argv; prints FX_CR_LINE (default a PASS row)
+    # and exits FX_CR_RC (1 = short, 2 = NOT_MEASURED; both must stop before the tag)
+    cat > "$r/scripts/check_census_ratchet.sh" <<'STUB'
+#!/usr/bin/env bash
+printf 'census %s\n' "$*" >> "$FX_LOG"
+printf '%s\n' "${FX_CR_LINE:-PASS  census ratchet (fixture)}"
+exit "${FX_CR_RC:-0}"
+STUB
     printf 'target/\n.dogfood/\n' > "$r/.gitignore"
     printf '[package]\nname = "fx"\nversion = "9.9.8"\nedition = "2021"\n' > "$r/Cargo.toml"
     git init -q --bare -b main "$d/origin.git" && git -C "$r" init -q -b main \
@@ -353,6 +361,9 @@ r_goes() { # TAG AUTOPILOT MODELS_T1 WORD LINE ENV... -> 0 when the step continu
     grep -qF -- "--surface $d/ap/surface-t1.json" "$d/wrap.log" \
         || { printf 'the wrapper was not given the candidate surface: %s\n' "$(grep '^readiness' "$d/wrap.log")"; return 1; }
     grep -qF '"fixture":true' "$d/ap/surface-t1.json" 2>/dev/null || { printf 'surface-t1.json is not the release apr surface\n'; return 1; }
+    grep -qxF -- "census --release 9.9.9 --commit $mc" "$d/wrap.log" \
+        || { printf 'the census ratchet was not asked about the release: %s\n' "$(grep '^census' "$d/wrap.log")"; return 1; }
+    grep -qF 'PASS  census ratchet (fixture)' "$d/ap/STATUS" || { printf 'the census row never reached STATUS\n'; return 1; }
     return 0
 }
 r_stops() { # TAG AUTOPILOT MODELS_T1 NEEDLE ENV... -> 0 when the step STOPped naming NEEDLE
@@ -366,6 +377,8 @@ r_pass()    { r_goes "rpass-$1" "$2" "$3" ok "ok    R8 release-readiness-v1 Pass
 r_warn()    { r_stops "rwarn-$1" "$2" "$3" "T-1 release-readiness-v1 printed a WARN R8 row" 'FX_RR_LINE=WARN  R8 REPORT-ONLY fixture Fail'; }
 r_fail()    { r_stops "rfail-$1" "$2" "$3" "T-1 release-readiness-v1 rc=1" FX_RR_RC=1 'FX_RR_LINE=FAIL  R8 fixture Fail'; }
 r_decline() { r_stops "rdecl-$1" "$2" "$3" "T-1 release-readiness-v1 rc=2" FX_RR_RC=2 'FX_RR_LINE=FAIL  R8 fixture decline'; }
+r_cr_fail() { r_stops "rcrf-$1" "$2" "$3" "T-1 census ratchet rc=1" FX_CR_RC=1 'FX_CR_LINE=FAIL  census short (fixture)'; }
+r_cr_nm()   { r_stops "rcrn-$1" "$2" "$3" "T-1 census ratchet rc=2" FX_CR_RC=2 'FX_CR_LINE=NOT_MEASURED census (fixture)'; }
 r_no_dr()   { r_stops "rnodr-$1" "$2" "$3" "T-1 readiness: no dogfood receipt" FX_NO_DR=1; }
 r_stale()   { # an apr built from another commit: its surface would derive another release's cells
     r_stops "rstale-$1" "$2" "$3" "T-1 readiness: $TMP/rstale-$1/repo/target/release/apr is not built from" FX_APR_SHA=000000000 || return $?
@@ -381,7 +394,8 @@ for spec in "green-pair green_pair" "gx10-unreachable unreachable" "build-fails 
 done
 for spec in "readiness-pass r_pass" "readiness-warn-stops r_warn" "readiness-fail-stops r_fail" \
             "readiness-decline-stops r_decline" "readiness-no-dogfood-receipt r_no_dr" \
-            "readiness-stale-apr-stops r_stale"; do
+            "readiness-stale-apr-stops r_stale" "census-short-stops r_cr_fail" \
+            "census-not-measured-stops r_cr_nm"; do
     set -- $spec
     msg=$($2 real "$AUTOPILOT" "$MODELS"); row "$1" "$?" "$msg"
 done
