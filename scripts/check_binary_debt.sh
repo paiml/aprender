@@ -274,6 +274,16 @@ self_test() {
     mut_dotted_bin_path() { printf '[[bin]]\nname = "dotted"\npath.x = "src/main.rs"\n' >> crates/alpha/Cargo.toml; }
     mut_arm_yes() { mut_arm_and_bump && sed -i 's/armed: true/armed: yes/' ledger.yaml; }
     mut_docs_rs() { printf '\n[package.metadata."docs.rs"]\nall-features = true\n' >> crates/alpha/Cargo.toml; }
+    mut_crlf() { sed -i 's/$/\r/' crates/alpha/Cargo.toml; }
+    mut_escaped_ml() { printf 'description = """\n\\"""\n[[bin]]\nname = "ghost"\n"""\n' >> crates/alpha/Cargo.toml; }
+    mut_tab_name() { sed -i "s/^name = \"alpha\"/name = \"al$(printf '\t')pha\"/" crates/alpha/Cargo.toml; }
+    mut_bare_cr() { sed -i "s/^name = \"alpha\"/name = \"al$(printf '\r')pha\"/" crates/alpha/Cargo.toml; }
+    mut_escaped_ml_open() { printf 'description = """x\\"""\n[[bin]]\nname = "ghost"\n"""\n' >> crates/alpha/Cargo.toml; }
+    mut_ml_extra_quote() { printf 'description = """x"""" # "[\n[[bin]]\nname = "ghost"\n' >> crates/alpha/Cargo.toml; }
+    mut_tab_exclude() { sed -i "s|\"tools/extra\"|\"tools/ex$(printf '\t')tra\"|" Cargo.toml; }
+    mut_tab_ledger() { sed -i "s/{crate: alpha, bin: alpha,/{crate: alpha, bin: al$(printf '\t')pha,/" ledger.yaml; }
+    mut_tab_class() { sed -i "s/, DECIDE\]/, DE$(printf '\t')CIDE]/" ledger.yaml; }
+    mut_anchor_armed() { mut_arm_and_bump && sed -i 's/armed: true/armed: \&a true/' ledger.yaml; }
     # row <want rc> <must-print-or-empty> <label> <mutation command + args...>
     row() {
         local want=$1 needle=$2 label=$3; shift 3
@@ -344,6 +354,19 @@ self_test() {
     row 2 "REFUSE" "a dotted cargo-fuzz with spaces around the dot is refused, never skipped" sed -i 's/^\[package.metadata\]/[package]\nmetadata . cargo-fuzz = true\n[x]/; s/^cargo-fuzz = true$//' fuzz/Cargo.toml
     row 2 "REFUSE" "a quoted top-level package key is refused" sed -i '1i "package".autobins = false' crates/alpha/Cargo.toml
     row 0 "5 binaries in the universe" "a quoted key deeper in a package header is another table" mut_docs_rs
+    row 0 "5 binaries in the universe" "a CRLF manifest reads as its LF twin" mut_crlf
+    row 0 "5 binaries in the universe" "an escaped \"\"\" does not close a multi-line string" mut_escaped_ml
+    row 2 "REFUSE" "a tab inside a manifest string is refused" mut_tab_name
+    row 2 "REFUSE" "a carriage return inside a manifest line is refused" mut_bare_cr
+    row 0 "5 binaries in the universe" "an escaped \"\"\" on the opening line does not close the string" mut_escaped_ml_open
+    row 1 "NEW      alpha/ghost" "a \"\"\" string may close with extra quotes; a [ in the comment after it opens nothing" mut_ml_extra_quote
+    row 2 "REFUSE" "a tab inside a workspace array string is refused" mut_tab_exclude
+    row 2 "REFUSE" "a tab inside a ledger value is refused" mut_tab_ledger
+    row 2 "REFUSE" "a tab inside a class is refused" mut_tab_class
+    row 2 "REFUSE" "a class starting with a YAML indicator is refused" sed -i 's/, DECIDE\]/, DECIDE, *x]/' ledger.yaml
+    row 2 "REFUSE" "an anchored ledger value (&a true reads as true) is refused" mut_anchor_armed
+    row 2 "REFUSE" "an aliased ledger value is refused" sed -i 's/{crate: alpha, bin: alpha,/{crate: alpha, bin: *alpha,/' ledger.yaml
+    row 1 "CEILING  LEGACY_NAMES 2 > 1" "sunset: no is falsy to YAML 1.1 and counts" sed -i 's/sunset: 0.69.0/sunset: no/' ledger.yaml
     printf '%s  check_binary_debt self-test: %d rows, %d broke\n' "$([ "$fails" -eq 0 ] && echo PASS || echo FAIL)" "$rows" "$fails"
     [ "$fails" -eq 0 ]
 }

@@ -29,10 +29,17 @@ function refuse(why) {
 
 function trim(s) { sub(/^[ \t]+/, "", s); sub(/[ \t]+$/, "", s); return s }
 
+function indicator(v) { return v ~ /^[*!&|>%@`#]/ }
+
 function unquote(v) {
     v = trim(v); QUOTED = 0
+    # A tab is legal inside a YAML value, but the rows are tab-separated.
+    if (index(v, "\t")) refuse("a value holding a tab: " v)
     if (v ~ /^"[^"\\]*"$/ || v ~ /^'[^']*'$/) { QUOTED = 1; return substr(v, 2, length(v) - 2) }
     if (v ~ /^["']/) refuse("a quoted value this reader does not read: " v)
+    # An anchor (&a v reads as v), alias, tag, block scalar, directive, comment or reserved
+    # indicator: PyYAML does not read these as the plain text.
+    if (indicator(v)) refuse("a value starting with a YAML indicator: " v)
     return v
 }
 
@@ -97,7 +104,7 @@ function yaml_true(key) { return !FQ[key] && F[key] ~ /^(true|True|TRUE|yes|Yes|
         if (v !~ /^\[[^]\[{}"']*\]$/) refuse("classes is not a one-line flow sequence of plain scalars: " v)
         v = substr(v, 2, length(v) - 2); nc = split(v, cs, ",")
         for (j = 1; j <= nc; j++) if (trim(cs[j]) != "") {
-            if (typed_word(trim(cs[j]))) refuse("a class is not a string to YAML: " trim(cs[j]))
+            if (typed_word(trim(cs[j])) || indicator(trim(cs[j])) || index(trim(cs[j]), "\t")) refuse("a class is not a plain string to YAML: " trim(cs[j]))
             print "class\t" trim(cs[j]); ncls++
         }
         if (!ncls) refuse("classes is empty")

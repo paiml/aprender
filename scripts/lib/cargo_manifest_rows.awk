@@ -30,7 +30,7 @@ function refuse(why) {
 # scan(s): walk s once, honouring "..." and '...' strings. Sets CODE (s with any trailing
 # comment removed), DEPTH_DELTA ([ minus ], outside strings), OPEN_ML (a """ or ''' was left
 # open). Basic strings with a backslash are refused by the callers that read them.
-function scan(s,    i, c, n, q, out) {
+function scan(s,    i, c, n, q, out, e) {
     CODE = ""; DEPTH_DELTA = 0; OPEN_ML = ""
     n = length(s); q = ""; out = ""
     for (i = 1; i <= n; i++) {
@@ -44,7 +44,8 @@ function scan(s,    i, c, n, q, out) {
             else if (c == "[") DEPTH_DELTA++
             else if (c == "]") DEPTH_DELTA--
         } else if (length(q) == 3) {
-            if (substr(s, i, 3) == q) { out = out q; i += 2; q = ""; continue }
+            if (q == "\"\"\"" && c == "\\") { out = out c; i++; c = substr(s, i, 1) }
+            else if (substr(s, i, 3) == q) { e = ml_quotes(s, i, q); out = out substr(s, i, e); i += e - 1; q = ""; continue }
         } else if (q == "\"" && c == "\\") {
             out = out c; i++; c = substr(s, i, 1)
         } else if (c == q) {
@@ -56,11 +57,32 @@ function scan(s,    i, c, n, q, out) {
     CODE = out
 }
 
+# ml_quotes(s, i, q): the length of the closing delimiter at s[i]: q, plus up to two more of its quote
+# character, which TOML reads as content ("""a"""" is the string a").
+function ml_quotes(s, i, q,    e) {
+    e = 3
+    while (e < 5 && substr(s, i + e, 1) == substr(q, 1, 1)) e++
+    return e
+}
+
+# ml_end(s, q): the position just past the """ or ''' that closes a multi-line string open
+# before s, or 0 when s does not close it. In a """ string a backslash escapes the next character.
+function ml_end(s, q,    i, n) {
+    n = length(s)
+    for (i = 1; i <= n; i++) {
+        if (q == "\"\"\"" && substr(s, i, 1) == "\\") { i++; continue }
+        if (substr(s, i, 3) == q) return i + ml_quotes(s, i, q)
+    }
+    return 0
+}
+
 function trim(s) { sub(/^[ \t]+/, "", s); sub(/[ \t]+$/, "", s); return s }
 
 # str(v): the value of a one-line string, or refuse.
 function str(v, key) {
     v = trim(v)
+    # A tab is legal inside a TOML string, but the rows are tab-separated.
+    if (index(v, "\t")) refuse(key " holds a tab: " v)
     if (v ~ /^"[^"\\]*"$/ || v ~ /^'[^']*'$/) return substr(v, 2, length(v) - 2)
     refuse(key " is not a one-line string without escapes: " v)
 }
@@ -78,6 +100,7 @@ function emit_array(kind, body,    rest, m) {
     while (match(rest, /^[ \t,]*("[^"\\]*"|'[^']*')/)) {
         m = substr(rest, RSTART, RLENGTH)
         sub(/^[ \t,]*/, "", m)
+        if (index(m, "\t")) refuse(kind " array holds a tab: " m)
         print kind "\t" substr(m, 2, length(m) - 2)
         rest = substr(rest, RSTART + RLENGTH)
     }
@@ -88,10 +111,14 @@ BEGIN { table = ""; bins = 0; ml = ""; depth = 0; acc = ""; acc_key = "" }
 
 {
     line = $0
+    # A CRLF line ending is a newline to TOML; any other carriage return is not TOML.
+    sub(/\r$/, "", line)
+    if (index(line, "\r")) refuse("a carriage return inside a line")
     # Inside a multi-line string another key opened: skip to its close.
     if (ml != "") {
-        if (index(line, ml) == 0) next
-        line = substr(line, index(line, ml) + 3); ml = ""
+        p = ml_end(line, ml)
+        if (p == 0) next
+        line = substr(line, p); ml = ""
         scan(line); if (OPEN_ML != "") ml = OPEN_ML
         next
     }
