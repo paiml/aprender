@@ -1257,6 +1257,25 @@ fn cta64_sweep_row(ctx: &CudaContext, stream: &CudaStream, handle: &CublasHandle
     eprintln!("{row}");
 }
 
+/// The sweep's one assertion, kept in the normal suite while the sweep is FLAKE-0 ignored (#4593):
+/// the 64×128 mma.sync kernel alone at n = 256, timed the way the sweep times it, then checked
+/// against K. A PTX load failure fails here; the sweep skipped the check silently.
+#[test]
+fn cta64_mma128_all_ones_at_256() {
+    let n = 256;
+    let ctx = CudaContext::new(0).expect("CUDA context");
+    let stream = CudaStream::new(&ctx).expect("stream");
+    let a = GpuBuffer::from_host(&ctx, &vec![0x3C00u16; n * n]).expect("A");
+    let b = GpuBuffer::from_host(&ctx, &vec![0x3C00u16; n * n]).expect("B");
+    let c = GpuBuffer::from_host(&ctx, &vec![0.0f32; n * n]).expect("C");
+    let case = cta64_sweep_cases(n)
+        .into_iter()
+        .find(|case| case.label == "mma128")
+        .expect("the sweep has an mma128 case at n = 256");
+    time_fp16_gemm(&ctx, &stream, &case, (&a, &b, &c), n, 50).expect("64x128 mma PTX loads");
+    assert_all_ones_gemm(&c, n);
+}
+
 /// 64×64 CTA WMMA: single-buf vs double-buf vs 32×32 vs cp.async vs mma.sync vs cuBLAS FP16.
 ///
 /// PERF-CTA64-001: 2× compute-to-load ratio (32 FLOP/byte).
