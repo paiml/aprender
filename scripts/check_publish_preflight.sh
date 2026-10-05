@@ -43,6 +43,11 @@
 #       receipt R5 judged. Any non-zero from the wrapper refuses. The wrapper's committed DEFAULT_MODE
 #       is `report` until #3712's cells[] producer lands: a Fail verdict then prints as a WARN row and
 #       exits 0; a decline, a caller error or a missing pv is a non-zero in either mode.
+#   R9  docs/roadmaps/roadmap.yaml COMMITTED at the tag is the aggregate of its fragments (T21, operator
+#       ruling RQ-8: one writer). PRs commit fragments only and the nightly writer regenerates, so the
+#       per-PR "committed == aggregate" comparison moved here and to the writer PR. Judged by the in-tree
+#       scripts/roadmap_aggregate.sh --check, run from THIS checkout's copy (the tag's own copy could be a
+#       no-op), over the committed tree at HEAD; stale, absent aggregator, or rc 2 all refuse.
 #
 # EXIT  0 every rule holds · 1 a rule refused · 2 the box cannot answer
 #       (no git/cargo/python3, not a repository). 2 is not a pass.
@@ -328,6 +333,40 @@ rule_r8() {
     return 0
 }
 
+# R9, one writer (T21, RQ-8): the committed roadmap at the tag == the aggregate of its fragments.
+# It judges the COMMITTED tree at HEAD (git archive), never the worktree, and an entries/ with no fragment is
+# refused: "committed == aggregate of nothing" would pass vacuously. The judge is the aggregator next to this
+# script, never the one in the judged tree: a tag that ships an aggregator which exits 0 would judge itself
+# (quorum r2 F). The tag must still commit one, since the nightly writer and CI run it from the tree.
+# rule_r9 root -> prints its row; 0 accepted, 1 refused
+rule_r9() {
+    local root="$1" td out rc n
+    if ! git -C "$root" cat-file -e HEAD:scripts/roadmap_aggregate.sh 2>/dev/null; then
+        echo "FAIL  R9 no roadmap aggregator committed at scripts/roadmap_aggregate.sh: committed == fresh cannot be judged"
+        return 1
+    fi
+    n="$(git -C "$root" ls-tree --name-only HEAD docs/roadmaps/entries/ 2>/dev/null | grep -c -e '\.yaml$')"
+    if [ "${n:-0}" = 0 ]; then
+        echo "FAIL  R9 HEAD commits no docs/roadmaps/entries/*.yaml: an aggregate of no fragments proves nothing"
+        return 1
+    fi
+    td="$(mktemp -d)" || { echo "FAIL  R9 mktemp failed, and that is not a pass"; return 1; }
+    if ! git -C "$root" archive HEAD docs/roadmaps | tar -x -C "$td" 2>/dev/null; then
+        rm -rf -- "${td:?}"
+        echo "FAIL  R9 could not read docs/roadmaps from the committed tree at HEAD, and that is not a pass"
+        return 1
+    fi
+    out="$(bash "$SCRIPT_DIR/roadmap_aggregate.sh" --check --roadmap "$td/docs/roadmaps/roadmap.yaml" --entries "$td/docs/roadmaps/entries" 2>&1)"; rc=$?
+    rm -rf -- "${td:?}"
+    case "$rc" in
+        0) echo "ok    R9 docs/roadmaps/roadmap.yaml committed at HEAD == aggregate of its $n fragments (one writer, RQ-8)"; return 0 ;;
+        1) printf 'FAIL  R9 docs/roadmaps/roadmap.yaml at the tag is NOT the aggregate of its fragments. On the release branch, commit `bash scripts/roadmap_aggregate.sh --write` (a roadmap.yaml-only commit, the writer shape) and re-tag:\n%s\n' \
+               "$(printf '%s\n' "$out" | tail -n 5)" ;;
+        *) printf 'FAIL  R9 the roadmap aggregator could not judge (rc %s), and that is not a pass:\n%s\n' "$rc" "$(printf '%s\n' "$out" | tail -n 5)" ;;
+    esac
+    return 1
+}
+
 gate() {
     local root="${PUBLISH_PREFLIGHT_ROOT:-}" release_ref
     local fails=0 status version tags head
@@ -393,6 +432,9 @@ gate() {
 
     # R8 release-readiness-v1 over the committed evidence (#3715)
     rule_r8 "$root" "$version" "$head" || fails=1
+
+    # R9 one writer: committed roadmap.yaml == aggregate at the tag (T21, RQ-8)
+    rule_r9 "$root" || fails=1
 
     if [ "$fails" -ne 0 ]; then
         echo "REFUSE $PROG: publishing is not allowed from this tree (see the FAIL rows)."
@@ -487,6 +529,7 @@ selftest() {
         printf 'pub fn f() {}\n' > "$d/src/lib.rs"
         printf '.dogfood/\n' > "$d/.gitignore"
         write_judge "$d"
+        write_roadmap "$d"
         git -C "$d" init -q -b fixture-main
         git -C "$d" -c user.name=t -c user.email=t@t config commit.gpgsign false
         ( cd "$d" && cargo metadata --no-deps --offline --format-version 1 >/dev/null 2>&1 )
@@ -496,6 +539,14 @@ selftest() {
         git -C "$d" update-ref refs/remotes/origin/release/1.2.3 HEAD
         mkdir -p "$d/.dogfood"
         write_receipt "$d" GO "$(git -C "$d" rev-parse HEAD)" 1.2.3
+    }
+    # R9's input, committed in every fixture: the REAL aggregator, a base roadmap and one fragment that
+    # supersedes its entry, so the committed file is fresh. A row then lands a fragment without regenerating.
+    write_roadmap() { # dir
+        mkdir -p "$1/scripts" "$1/docs/roadmaps/entries"
+        cp -- "$SCRIPT_DIR/roadmap_aggregate.sh" "$1/scripts/roadmap_aggregate.sh"
+        printf -- "- id: FX-1\n  title: 'one'\n  status: planned\n" > "$1/docs/roadmaps/roadmap.yaml"
+        printf -- "- id: FX-1\n  title: 'one'\n  status: planned\n" > "$1/docs/roadmaps/entries/FX-1.yaml"
     }
     # R7's judge, committed in every fixture: it must be asked about THIS version (1.2.3), and it
     # answers FX_LADDER_RC (default 0). A judge asked about anything else is red.
@@ -555,6 +606,7 @@ FXREADY
         printf 'pub fn b() {}\n' > "$d/b/src/lib.rs"
         printf '.dogfood/\n' > "$d/.gitignore"
         write_judge "$d"
+        write_roadmap "$d"
         git -C "$d" init -q -b fixture-main
         git -C "$d" -c user.name=t -c user.email=t@t config commit.gpgsign false
         ( cd "$d" && cargo metadata --no-deps --offline --format-version 1 >/dev/null 2>&1 )
@@ -720,6 +772,46 @@ FXREADY
     git -C "$d" -c core.hooksPath=/dev/null -c user.name=t -c user.email=t@t commit -qm 'no wrapper' >/dev/null
     git -C "$d" tag -f v1.2.3 >/dev/null; write_receipt "$d" GO "$(git -C "$d" rev-parse HEAD)" 1.2.3
     row r8_wrapper_absent_refuses      1 "FAIL  R8 no release-readiness wrapper" "$d"
+    # R9 (T21, RQ-8): committed roadmap.yaml == aggregate at the tag. all_rules_hold is the green row.
+    d="$tmp/r9"; build_repo "$d"
+    row r9_fresh_is_named                 0 "ok    R9 docs/roadmaps/roadmap.yaml committed at HEAD == aggregate of its 1 fragments" "$d"
+    d="$tmp/r9-stale"; build_repo "$d"
+    printf -- "- id: FX-2\n  title: 'two'\n  status: planned\n" > "$d/docs/roadmaps/entries/FX-2.yaml"
+    git -C "$d" add -A; git -C "$d" -c core.hooksPath=/dev/null -c user.name=t -c user.email=t@t commit -qm 'fragment, no regen' >/dev/null
+    git -C "$d" update-ref refs/remotes/origin/release/1.2.3 HEAD   # only R9 may refuse here
+    git -C "$d" tag -f v1.2.3 >/dev/null; write_receipt "$d" GO "$(git -C "$d" rev-parse HEAD)" 1.2.3
+    row r9_stale_committed_refuses        1 "FAIL  R9 docs/roadmaps/roadmap.yaml at the tag is NOT the aggregate" "$d"
+    d="$tmp/r9-absent"; build_repo "$d"; git -C "$d" rm -q scripts/roadmap_aggregate.sh
+    git -C "$d" -c core.hooksPath=/dev/null -c user.name=t -c user.email=t@t commit -qm 'no aggregator' >/dev/null
+    git -C "$d" update-ref refs/remotes/origin/release/1.2.3 HEAD   # only R9 may refuse here
+    git -C "$d" tag -f v1.2.3 >/dev/null; write_receipt "$d" GO "$(git -C "$d" rev-parse HEAD)" 1.2.3
+    row r9_aggregator_absent_refuses      1 "FAIL  R9 no roadmap aggregator" "$d"
+    d="$tmp/r9-nojudge"; build_repo "$d"; git -C "$d" rm -q docs/roadmaps/roadmap.yaml
+    git -C "$d" -c core.hooksPath=/dev/null -c user.name=t -c user.email=t@t commit -qm 'no roadmap' >/dev/null
+    git -C "$d" update-ref refs/remotes/origin/release/1.2.3 HEAD   # only R9 may refuse here
+    git -C "$d" tag -f v1.2.3 >/dev/null; write_receipt "$d" GO "$(git -C "$d" rev-parse HEAD)" 1.2.3
+    row r9_could_not_judge_refuses        1 "FAIL  R9 the roadmap aggregator could not judge" "$d"
+    # F: the tag ships an aggregator that exits 0 beside a stale roadmap.yaml -> still RED (the judge is not the tag's)
+    d="$tmp/r9-noop"; build_repo "$d"
+    printf -- "- id: FX-2\n  title: 'two'\n  status: planned\n" > "$d/docs/roadmaps/entries/FX-2.yaml"
+    printf '#!/usr/bin/env bash\nexit 0\n' > "$d/scripts/roadmap_aggregate.sh"
+    git -C "$d" add -A; git -C "$d" -c core.hooksPath=/dev/null -c user.name=t -c user.email=t@t commit -qm 'no-op aggregator' >/dev/null
+    git -C "$d" update-ref refs/remotes/origin/release/1.2.3 HEAD   # only R9 may refuse here
+    git -C "$d" tag -f v1.2.3 >/dev/null; write_receipt "$d" GO "$(git -C "$d" rev-parse HEAD)" 1.2.3
+    row r9_noop_tag_aggregator_refuses    1 "FAIL  R9 docs/roadmaps/roadmap.yaml at the tag is NOT the aggregate" "$d"
+    d="$tmp/r9-empty"; build_repo "$d"; git -C "$d" rm -q -r docs/roadmaps/entries
+    git -C "$d" -c core.hooksPath=/dev/null -c user.name=t -c user.email=t@t commit -qm 'no fragments' >/dev/null
+    git -C "$d" update-ref refs/remotes/origin/release/1.2.3 HEAD   # only R9 may refuse here
+    git -C "$d" tag -f v1.2.3 >/dev/null; write_receipt "$d" GO "$(git -C "$d" rev-parse HEAD)" 1.2.3
+    row r9_no_fragments_refuses           1 "FAIL  R9 HEAD commits no docs/roadmaps/entries" "$d"
+    # the committed blob is judged, never the worktree: stale at HEAD, regenerated (uncommitted) in the worktree
+    d="$tmp/r9-wt"; build_repo "$d"
+    printf -- "- id: FX-2\n  title: 'two'\n  status: planned\n" > "$d/docs/roadmaps/entries/FX-2.yaml"
+    git -C "$d" add -A; git -C "$d" -c core.hooksPath=/dev/null -c user.name=t -c user.email=t@t commit -qm 'fragment, no regen' >/dev/null
+    git -C "$d" update-ref refs/remotes/origin/release/1.2.3 HEAD
+    git -C "$d" tag -f v1.2.3 >/dev/null; write_receipt "$d" GO "$(git -C "$d" rev-parse HEAD)" 1.2.3
+    bash "$d/scripts/roadmap_aggregate.sh" --write --roadmap "$d/docs/roadmaps/roadmap.yaml" --entries "$d/docs/roadmaps/entries" >/dev/null 2>&1
+    row r9_judges_committed_not_worktree  1 "FAIL  R9 docs/roadmaps/roadmap.yaml at the tag is NOT the aggregate" "$d"
     # the wrapper's own table: modes, exit mapping, the receipts-commit rule (runs wherever this selftest runs)
     if ( TMPDIR="${TMPDIR:-/tmp}" bash "$SCRIPT_DIR/release/release_readiness.sh" --selftest >/dev/null 2>&1 ); then
         printf '  ok    %-36s release_readiness.sh --selftest green\n' r8_wrapper_selftest; pass=$((pass + 1))

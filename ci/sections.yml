@@ -1326,6 +1326,15 @@ jobs:
       # check_dag_invariants <path> --min-slack-days, check_row_pr_write_set
       # --event/--branch, check_hardcoded_paths --full-if-capable) keep their
       # own steps below: an argument is a claim this runner cannot derive.
+      # T21 one writer (RQ-8): a PR commits docs/roadmaps/entries/<ID>.yaml and
+      # not the generated docs/roadmaps/roadmap.yaml, so it is regenerated HERE,
+      # in this clone and before any reader below (never committed, never
+      # pushed). The worktree readers in guard_tree.sh then judge aggregate(head),
+      # and the entry guards also run on fresh refs aggregate(base)..aggregate(head).
+      # Every verdict here is an existing one and blocks (fragments the generator
+      # refuses too); the one NEW verdict, the writer shape, is the shadow step below.
+      - name: Regenerate the roadmap aggregate before any reader (one writer, T21)
+        run: bash scripts/roadmap_one_writer_ci.sh
       - name: Every cargo-free guard runs, and every failure is reported
         # infra#721: the guards that read GitHub (check_silicon_coverage.sh's job
         # ledger, check_roadmap_completion_is_cited.sh's `gh pr view`) used the
@@ -1394,6 +1403,24 @@ jobs:
           bash scripts/ci_resolve_dirty.sh --selftest
           python3 scripts/lib/roadmap_merge.py --selftest
           python3 scripts/nightly_manifest.py --self-test   # #4189 nightly gate/manifest/publish plan
+      # One writer for docs/roadmaps/roadmap.yaml (T21, operator ruling RQ-8): the bash aggregator,
+      # the CI regen step, the writer-shape judge and the fragment converter each ship a hermetic
+      # case table and a mutant run that must kill every mutant. About 90 s, cargo-free.
+      - name: One-writer roadmap case tables and mutants (T21)
+        run: |
+          set -euo pipefail
+          bash scripts/roadmap_aggregate.sh --selftest
+          bash scripts/roadmap_aggregate.sh --mutants
+          bash scripts/roadmap_one_writer_ci.sh --selftest
+          bash scripts/roadmap_one_writer_ci.sh --mutants
+          setsid --wait bash scripts/check_roadmap_one_writer.sh --selftest
+          setsid --wait bash scripts/check_roadmap_one_writer.sh --mutants
+          bash scripts/roadmap_to_fragments.sh --selftest
+          bash scripts/roadmap_to_fragments.sh --mutants
+      # The one-writer judge, run BARE so it judges this PR (its --selftest/--mutants lines above are arguments, and
+      # guard_tree.sh skips a guard that only has those as wired-with-args). Shadow until the RQ-8 admission PR.
+      - name: One-writer judge on this PR (T21, shadow)
+        run: setsid --wait bash scripts/check_roadmap_one_writer.sh
       - name: "target-watch: before-cargo-install-bashrs"
         # aprender#2822 boundary probe (2 stat, 1 readdir, 1 df, 1 pgrep).
         # Instrumentation, never a gate: the script always exits 0.
@@ -1498,6 +1525,8 @@ jobs:
         run: setsid --wait bash scripts/check_dag_invariants.sh docs/specifications/pp-066-dag.yaml --min-slack-days 6
       - name: A row PR writes no shared file (G-11, PMAT-1062)
         run: setsid --wait bash scripts/check_row_pr_write_set.sh --event "${GITHUB_EVENT_NAME:-pull_request}" --branch "${GITHUB_HEAD_REF:-}"
+      - name: The row-PR write-set case table kills its mutant (T21 fragment rule)
+        run: setsid --wait bash scripts/check_row_pr_write_set.sh --mutants
       # PP-066 SPEC-2.0: scripts/release_criteria.sh is a decision surface
       # (`--all` is the first RELEASE step), and it is NOT a scripts/check_*.sh
       # file, so guard_tree.sh's universe (`git ls-files 'scripts/check_*.sh'`)
