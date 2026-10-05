@@ -155,7 +155,7 @@ fn try_init_wgpu_batch(
 
     let mut fwd = trueno::backends::gpu::WgslForwardPass::new(
         gpu.device, gpu.queue,
-        hidden_dim, num_heads, num_kv_heads, head_dim, intermediate_dim,
+        hidden_dim, num_heads, num_kv_heads, head_dim, intermediate_dim, cfg.rope_theta,
     );
     // #4056: the WGSL RMSNorm takes the model's eps (it hardcoded 1e-6).
     fwd.set_rms_norm_eps(cfg.eps);

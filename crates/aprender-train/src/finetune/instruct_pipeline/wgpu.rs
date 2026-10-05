@@ -173,6 +173,7 @@ impl InstructPipeline {
             num_kv_heads as usize,
             head_dim as usize,
             inter as usize,
+            _model_config.rope_theta,
         );
         // #4056: the WGSL RMSNorm takes the model's eps (it hardcoded 1e-6).
         fwd.set_rms_norm_eps(_model_config.rms_norm_eps);

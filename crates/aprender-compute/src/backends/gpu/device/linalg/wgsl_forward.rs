@@ -112,10 +112,55 @@ pub struct WgslForwardPass {
     /// [`DEFAULT_RMS_NORM_EPS`]; callers set the model's value with
     /// [`WgslForwardPass::set_rms_norm_eps`] (#4056: Llama-family models use 1e-5).
     rms_norm_eps: f32,
+    /// RoPE base, from the model config. A constructor argument with no default
+    /// (#4832: a hardcoded Qwen2 1e6 rotated Llama/Mistral wrongly); both RoPE
+    /// shaders and the CPU rotation read it.
+    rope_theta: f32,
 }
 
 /// Default RMSNorm epsilon: the constant the shader hardcoded before #4056.
 pub const DEFAULT_RMS_NORM_EPS: f32 = 1e-6;
+
+/// #4832: a RoPE base is usable only if finite and positive; anything else
+/// means the config did not carry one.
+fn check_rope_theta(rope_theta: f32) -> Result<f32, String> {
+    if rope_theta.is_finite() && rope_theta > 0.0 {
+        Ok(rope_theta)
+    } else {
+        Err(format!("rope_theta must be finite and > 0, got {rope_theta}"))
+    }
+}
+
+/// NeoX-style RoPE (first half pairs with second half of each head), in place,
+/// over `num_heads` heads of `head_dim` at `position`, with base `rope_theta`.
+fn rope_neox_in_place(
+    x: &mut [f32],
+    num_heads: usize,
+    head_dim: usize,
+    position: usize,
+    rope_theta: f64,
+) {
+    let half = head_dim / 2;
+    for h in 0..num_heads {
+        let offset = h * head_dim;
+        for i in 0..half {
+            let theta = rope_theta.powf(-((2 * i) as f64) / head_dim as f64);
+            let angle = position as f64 * theta;
+            let cos_a = angle.cos() as f32;
+            let sin_a = angle.sin() as f32;
+            let x0 = x[offset + i];
+            let x1 = x[offset + i + half];
+            x[offset + i] = x0 * cos_a - x1 * sin_a;
+            x[offset + i + half] = x0 * sin_a + x1 * cos_a;
+        }
+    }
+}
+
+/// Uniform params for the batch RoPE shader:
+/// `(seq_len, num_heads, head_dim, rope_theta as f32 bits)`.
+fn batch_rope_params(seq_len: u32, num_heads: u32, head_dim: u32, rope_theta: f32) -> [u32; 4] {
+    [seq_len, num_heads, head_dim, rope_theta.to_bits()]
+}
 
 /// Uniform params for the RMSNorm shader: `(dim, eps as f32 bits, 0, 0)`.
 fn rmsnorm_params(dim: u32, eps: f32) -> [u32; 4] {
@@ -215,7 +260,7 @@ struct RopeParams {
     seq_len: u32,
     num_heads: u32,
     head_dim: u32,
-    _pad: u32,
+    rope_theta_bits: u32, // #4832: the model's RoPE base, f32 bits
 }
 
 @group(0) @binding(1) var<uniform> params: RopeParams;
@@ -239,7 +284,7 @@ fn main(@builtin(global_invocation_id) gid: vec3<u32>) {
     // Only process the first half of each head (pairs with second half)
     if (pos_in_head >= half_hd) { return; }
 
-    let theta = pow(1000000.0, -f32(pos_in_head * 2u) / f32(head_dim));
+    let theta = pow(bitcast<f32>(params.rope_theta_bits), -f32(pos_in_head * 2u) / f32(head_dim));
     let angle = f32(position) * theta;
     let cos_a = cos(angle);
     let sin_a = sin(angle);
@@ -258,7 +303,7 @@ fn main(@builtin(global_invocation_id) gid: vec3<u32>) {
 // RoPE shader (NeoX-style interleaved) — single position (inference)
 const ROPE_SHADER: &str = r#"
 @group(0) @binding(0) var<storage, read_write> qk: array<f32>;
-@group(0) @binding(1) var<uniform> params: vec4<u32>; // (dim, position, num_heads, head_dim)
+@group(0) @binding(1) var<uniform> params: vec4<u32>; // (dim, position, rope_theta f32 bits, head_dim) — #4832
 
 @compute @workgroup_size(256)
 fn main(@builtin(global_invocation_id) gid: vec3<u32>) {
@@ -275,7 +320,7 @@ fn main(@builtin(global_invocation_id) gid: vec3<u32>) {
 
     if (pos_in_head >= half_hd) { return; }
 
-    let theta = pow(1000000.0, -f32(pos_in_head * 2u) / f32(head_dim));
+    let theta = pow(bitcast<f32>(params.z), -f32(pos_in_head * 2u) / f32(head_dim));
     let angle = f32(position) * theta;
     let cos_a = cos(angle);
     let sin_a = sin(angle);
@@ -301,6 +346,8 @@ impl WgslForwardPass {
     pub fn residual_shader() -> &'static str {
         RESIDUAL_SHADER
     }
+    /// Single-position RoPE. Uniform: `(dim, position, rope_theta as f32 bits,
+    /// head_dim)` — the base is the caller's model config (#4832).
     pub fn rope_shader() -> &'static str {
         ROPE_SHADER
     }
@@ -309,6 +356,12 @@ impl WgslForwardPass {
     ///
     /// Compiles all shader pipelines and allocates persistent intermediate buffers.
     /// Call once at model init. All GPU resources persist until dropped.
+    /// `rope_theta` is the model's configured RoPE base (#4832).
+    ///
+    /// # Panics
+    /// If `rope_theta` is not finite and positive: a wrong base gives wrong
+    /// output, not an error, so it is refused here instead.
+    #[allow(clippy::too_many_arguments)]
     pub fn new(
         device: wgpu::Device,
         queue: wgpu::Queue,
@@ -317,7 +370,12 @@ impl WgslForwardPass {
         num_kv_heads: usize,
         head_dim: usize,
         intermediate_dim: usize,
+        rope_theta: f32,
     ) -> Self {
+        let rope_theta = match check_rope_theta(rope_theta) {
+            Ok(t) => t,
+            Err(e) => panic!("WgslForwardPass: {e}"),
+        };
         let q_dim = num_heads * head_dim;
         let kv_dim = num_kv_heads * head_dim;
 
@@ -562,7 +620,14 @@ impl WgslForwardPass {
             head_dim: head_dim as u32,
             intermediate_dim: intermediate_dim as u32,
             rms_norm_eps: DEFAULT_RMS_NORM_EPS,
+            rope_theta,
         }
+    }
+
+    /// The RoPE base this forward pass uses.
+    #[must_use]
+    pub fn rope_theta(&self) -> f32 {
+        self.rope_theta
     }
 
     /// Set the RMSNorm epsilon every norm in this forward pass uses — pass the
@@ -965,41 +1030,12 @@ impl WgslForwardPass {
         }
 
         // PMAT-343: Apply RoPE (NeoX-style interleaved) to Q and K
+        // #4832: the base is the model's rope_theta (was a hardcoded Qwen2 1e6).
         let head_dim = self.head_dim as usize;
         let position = _position; // Use the position parameter
-        let rope_theta = 1_000_000.0f64; // Qwen2 rope_theta
-
-        // RoPE on Q (num_heads × head_dim)
-        for h in 0..(self.num_heads as usize) {
-            let offset = h * head_dim;
-            let half = head_dim / 2;
-            for i in 0..half {
-                let theta = rope_theta.powf(-((2 * i) as f64) / head_dim as f64);
-                let angle = position as f64 * theta;
-                let cos_a = angle.cos() as f32;
-                let sin_a = angle.sin() as f32;
-                let x0 = q_data[offset + i];
-                let x1 = q_data[offset + i + half];
-                q_data[offset + i] = x0 * cos_a - x1 * sin_a;
-                q_data[offset + i + half] = x0 * sin_a + x1 * cos_a;
-            }
-        }
-
-        // RoPE on K (num_kv_heads × head_dim)
-        for h in 0..(self.num_kv_heads as usize) {
-            let offset = h * head_dim;
-            let half = head_dim / 2;
-            for i in 0..half {
-                let theta = rope_theta.powf(-((2 * i) as f64) / head_dim as f64);
-                let angle = position as f64 * theta;
-                let cos_a = angle.cos() as f32;
-                let sin_a = angle.sin() as f32;
-                let x0 = k_data[offset + i];
-                let x1 = k_data[offset + i + half];
-                k_data[offset + i] = x0 * cos_a - x1 * sin_a;
-                k_data[offset + i + half] = x0 * sin_a + x1 * cos_a;
-            }
-        }
+        let rope_theta = f64::from(self.rope_theta);
+        rope_neox_in_place(&mut q_data, self.num_heads as usize, head_dim, position, rope_theta);
+        rope_neox_in_place(&mut k_data, self.num_kv_heads as usize, head_dim, position, rope_theta);
 
         // PMAT-344: Append K,V to cache and compute full attention
         let head_dim = self.head_dim as usize;
@@ -1823,15 +1859,7 @@ impl WgslForwardPass {
         num_heads: u32,
         head_dim: u32,
     ) {
-        #[repr(C)]
-        #[derive(Copy, Clone, bytemuck::Pod, bytemuck::Zeroable)]
-        struct RopeParams {
-            seq_len: u32,
-            num_heads: u32,
-            head_dim: u32,
-            _pad: u32,
-        }
-        let params = RopeParams { seq_len, num_heads, head_dim, _pad: 0 };
+        let params = batch_rope_params(seq_len, num_heads, head_dim, self.rope_theta);
         let params_buf = self.device.create_buffer(&wgpu::BufferDescriptor {
             label: Some("batch_rope_params"),
             size: 16,
@@ -2212,5 +2240,141 @@ mod rmsnorm_eps_tests {
         });
         let err = pollster::block_on(gpu.device.pop_error_scope());
         assert!(err.is_none(), "RMSNORM_SHADER failed validation: {err:?}");
+    }
+}
+
+#[cfg(test)]
+mod rope_theta_tests {
+    use super::{batch_rope_params, rope_neox_in_place, BATCH_ROPE_SHADER, ROPE_SHADER};
+
+    /// The rotation an independent f64 reference gives for pair `i` of a
+    /// `head_dim` head at `position`, base `theta`, applied to `(x0, x1)`.
+    fn reference(
+        x0: f32,
+        x1: f32,
+        i: usize,
+        head_dim: usize,
+        position: usize,
+        theta: f64,
+    ) -> (f32, f32) {
+        let angle = position as f64 * theta.powf(-((2 * i) as f64) / head_dim as f64);
+        let (s, c) = angle.sin_cos();
+        let (x0, x1) = (f64::from(x0), f64::from(x1));
+        ((x0 * c - x1 * s) as f32, (x0 * s + x1 * c) as f32)
+    }
+
+    fn rotated(theta: f64) -> Vec<f32> {
+        // 2 heads × head_dim 4: pair i=1 turns by position·theta^-1/2.
+        let mut x = vec![1.0, 0.5, -0.25, 2.0, 0.75, -1.0, 1.5, 0.125];
+        rope_neox_in_place(&mut x, 2, 4, 7, theta);
+        x
+    }
+
+    /// #4832: Llama's base 1e4 must rotate by 1e4's angles — a hardcoded 1e6
+    /// turns pair i=1 by 0.007 rad instead of 0.07 and this goes RED.
+    #[test]
+    fn cpu_rope_uses_the_configured_base() {
+        let x = rotated(1e4);
+        for h in 0..2 {
+            let o = h * 4;
+            let src = [[1.0f32, 0.5, -0.25, 2.0], [0.75, -1.0, 1.5, 0.125]][h];
+            for i in 0..2 {
+                let (e0, e1) = reference(src[i], src[i + 2], i, 4, 7, 1e4);
+                assert!((x[o + i] - e0).abs() < 1e-6, "head {h} pair {i}: {} vs {e0}", x[o + i]);
+                assert!(
+                    (x[o + i + 2] - e1).abs() < 1e-6,
+                    "head {h} pair {i}: {} vs {e1}",
+                    x[o + i + 2]
+                );
+            }
+        }
+    }
+
+    /// #4832 AC: two configs whose rope_theta differ give different rotations.
+    #[test]
+    fn cpu_rope_differs_between_bases() {
+        let (a, b) = (rotated(1e4), rotated(1e6));
+        let pair1 = (a[1] - b[1]).abs() + (a[3] - b[3]).abs();
+        assert!(pair1 > 1e-2, "1e4 and 1e6 rotated pair 1 alike: {a:?} vs {b:?}");
+        // Pair 0 has exponent 0: its angle is the position for every base.
+        assert!((a[0] - b[0]).abs() < 1e-6 && (a[2] - b[2]).abs() < 1e-6);
+    }
+
+    /// #4832: the batch shader reads the base from the 4th uniform word.
+    #[test]
+    fn batch_rope_params_carry_theta_bits() {
+        let p = batch_rope_params(5, 14, 64, 1e4);
+        assert_eq!(&p[..3], &[5, 14, 64]);
+        assert_eq!(f32::from_bits(p[3]), 1e4);
+        assert_eq!(f32::from_bits(batch_rope_params(1, 1, 2, 5e5)[3]), 5e5);
+    }
+
+    /// #4832 AC: no literal RoPE base remains in either shader.
+    #[test]
+    fn shaders_take_the_base_from_params() {
+        for (name, src) in [("BATCH_ROPE_SHADER", BATCH_ROPE_SHADER), ("ROPE_SHADER", ROPE_SHADER)]
+        {
+            assert!(
+                !src.contains("1000000") && !src.contains("10000.0"),
+                "{name} has a literal base"
+            );
+            assert!(
+                src.contains("pow(bitcast<f32>(params."),
+                "{name} does not read its base from params"
+            );
+        }
+    }
+
+    /// #4832: a missing (0), negative or non-finite base is refused, never used.
+    #[test]
+    fn a_missing_base_is_refused() {
+        for bad in [0.0f32, -1e4, f32::NAN, f32::INFINITY] {
+            assert!(super::check_rope_theta(bad).is_err(), "{bad} accepted");
+        }
+        for good in [1e4f32, 5e5, 1e6] {
+            assert_eq!(super::check_rope_theta(good), Ok(good));
+        }
+    }
+
+    /// #4832 AC on device: the batch shader rotates by the configured base,
+    /// matching the CPU rotation for 1e4 and 1e6, and the two differ.
+    /// Without an adapter this prints NOT_MEASURED and returns.
+    #[test]
+    fn batch_shader_matches_cpu_for_each_base() {
+        let mut out = Vec::new();
+        for theta in [1e4f32, 1e6] {
+            let Ok(gpu) = crate::backends::gpu::GpuDevice::new() else {
+                eprintln!("NOT_MEASURED: no GPU adapter for the #4832 device row");
+                return;
+            };
+            let fwd = super::WgslForwardPass::new(gpu.device, gpu.queue, 8, 2, 2, 4, 16, theta);
+            // seq_len 3 × 2 heads × head_dim 4.
+            let src: Vec<f32> = (0..24).map(|v| (v as f32 - 11.0) / 7.0).collect();
+            fwd.queue.write_buffer(&fwd.q_buf, 0, bytemuck::cast_slice(&src));
+            let mut enc = fwd.device.create_command_encoder(&Default::default());
+            fwd.encode_batch_rope(&mut enc, &fwd.q_buf, 3, 2, 4);
+            let staging = fwd.device.create_buffer(&wgpu::BufferDescriptor {
+                label: Some("rope_theta_readback"),
+                size: 96,
+                usage: wgpu::BufferUsages::MAP_READ | wgpu::BufferUsages::COPY_DST,
+                mapped_at_creation: false,
+            });
+            enc.copy_buffer_to_buffer(&fwd.q_buf, 0, &staging, 0, 96);
+            fwd.queue.submit(Some(enc.finish()));
+            let slice = staging.slice(..);
+            slice.map_async(wgpu::MapMode::Read, |_| {});
+            fwd.device.poll(wgpu::PollType::Wait { submission_index: None, timeout: None }).ok();
+            let got: Vec<f32> = bytemuck::cast_slice(&slice.get_mapped_range()).to_vec();
+            let mut want = src.clone();
+            for pos in 0..3 {
+                rope_neox_in_place(&mut want[pos * 8..pos * 8 + 8], 2, 4, pos, f64::from(theta));
+            }
+            for (k, (g, w)) in got.iter().zip(&want).enumerate() {
+                assert!((g - w).abs() < 1e-4, "theta {theta} elem {k}: gpu {g} vs cpu {w}");
+            }
+            out.push(got);
+        }
+        let diff: f32 = out[0].iter().zip(&out[1]).map(|(a, b)| (a - b).abs()).sum();
+        assert!(diff > 1e-3, "1e4 and 1e6 rotated alike on device");
     }
 }

@@ -766,6 +766,7 @@ fn serve_wgpu_backend(
         dims.num_kv_heads,
         dims.head_dim,
         dims.intermediate_dim,
+        quantized.config().rope_theta,
     );
     // #4056: the WGSL RMSNorm takes the model's eps (it hardcoded 1e-6).
     fwd.set_rms_norm_eps(quantized.config().eps);

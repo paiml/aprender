@@ -648,7 +648,14 @@ fn execute_training_wgpu(
     let num_layers = model_config.num_hidden_layers;
 
     let mut fwd = trueno::backends::gpu::WgslForwardPass::new(
-        gpu.device, gpu.queue, hidden, heads, kv_heads, head_dim, inter,
+        gpu.device,
+        gpu.queue,
+        hidden,
+        heads,
+        kv_heads,
+        head_dim,
+        inter,
+        model_config.rope_theta,
     );
     // #4056: the WGSL RMSNorm takes the model's eps (it hardcoded 1e-6).
     fwd.set_rms_norm_eps(model_config.rms_norm_eps as f32);
