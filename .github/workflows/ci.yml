@@ -356,18 +356,25 @@ jobs:
           --results "$RUNNER_TEMP/fat/results.json"
 
   determinism:
-    needs: [mg-reuse]
+    needs: [mg-reuse, x86-main]
     if: ${{ !cancelled() && needs.mg-reuse.outputs.det != '1' }}
     runs-on: [self-hosted, Linux, clean-room, ARM64]
     timeout-minutes: 120
+    # T42: start only once x86-main has concluded. The ARM64 raster takes about a minute; before
+    # this, the job sat on one of the two ARM64 clean-room runners for the full artifact wait (3600 s)
+    # whenever x86-main was queued or failed early. !cancelled(): a failed x86-main still runs this
+    # job, so a missing X64 raster is a RED here, never a skip (scripts/check_determinism_wait.sh).
+    # mg-reuse skips this job and x86-main together (one reuse unit), so needs lists both.
     outputs:
       results: ${{ steps.wait.outputs.results }}
     env:
       GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
       FAT_VARS_JSON: ${{ toJSON(vars) }}
-      # determinism-compare downloads both rasters; the X64 one is uploaded by
-      # x86-main mid-run, and the driver polls this run's artifacts for it.
+      # determinism-compare downloads both rasters. x86-main has concluded by the time this
+      # job starts, so the X64 raster is either listed or never will be: the driver reads the
+      # artifact list once (wait 0, one REST call) and a missing raster fails the download.
       FAT_EXPECT_ARTIFACTS: determinism-X64,determinism-ARM64
+      FAT_ARTIFACT_WAIT_S: "0"
     steps:
       - uses: actions/checkout@v7
         with:

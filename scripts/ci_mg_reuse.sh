@@ -340,7 +340,7 @@ STUB
   wire mg-reuse-self-test 'bash scripts/ci_mg_reuse.sh --self-test'
   wire x86-main 'needs: [mg-reuse]'
   wire x86-main "if: \${{ !cancelled() && needs.mg-reuse.outputs.x86 != '1' }}"
-  wire determinism 'needs: [mg-reuse]'
+  wire determinism 'needs: [mg-reuse, x86-main]'  # T42: determinism also waits on x86-main
   wire determinism "if: \${{ !cancelled() && needs.mg-reuse.outputs.det != '1' }}"
   wire mac-check 'needs: [mg-reuse]'
   wire mac-check "if: \${{ !cancelled() && needs.mg-reuse.outputs.mac != '1' }}"

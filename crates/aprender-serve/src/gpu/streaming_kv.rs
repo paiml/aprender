@@ -482,4 +482,57 @@ mod kv_contract_tests {
             "FALSIFIED KV-001b: FP16 ({f16_bytes}) * 2 != FP32 ({f32_bytes})"
         );
     }
+
+    /// Resident set size in KiB. `VmRSS` is the counter `/proc/self/statm` reports in pages,
+    /// already in KiB, so no page size is assumed.
+    #[cfg(target_os = "linux")]
+    fn rss_kib() -> u64 {
+        let status = std::fs::read_to_string("/proc/self/status").expect("read /proc/self/status");
+        status
+            .lines()
+            .find_map(|l| l.strip_prefix("VmRSS:"))
+            .and_then(|v| v.trim().trim_end_matches("kB").trim().parse().ok())
+            .expect("VmRSS line")
+    }
+
+    /// RSS growth in KiB while `build` is alive. The least of three runs, so an allocation made by
+    /// another test thread at the same moment cannot fail the test; a cache that commits its bytes
+    /// grows RSS by the same amount every time.
+    #[cfg(target_os = "linux")]
+    fn rss_growth_kib<T>(build: impl Fn() -> T) -> u64 {
+        (0..3)
+            .map(|_| {
+                let before = rss_kib();
+                let cache = build();
+                let grown = rss_kib().saturating_sub(before);
+                drop(cache);
+                grown
+            })
+            .min()
+            .expect("three runs")
+    }
+
+    /// FALSIFY-KV-005 (#4769): constructing a 1 GiB, 8-layer cache commits < 64 MiB.
+    ///
+    /// `vec![vec![0; n]; layers]` clones layer 0 into the other layers and a clone writes every
+    /// byte, so the old constructors grew RSS by 7/8 of the cache (896 MiB) before a token was
+    /// written. Each ctor here is sized to 1 GiB of keys plus values.
+    #[cfg(target_os = "linux")]
+    #[test]
+    fn falsify_kv_005_construction_commits_no_cache_memory() {
+        const LIMIT_KIB: u64 = 64 * 1024;
+        let f32_cache = rss_growth_kib(|| StreamingKVCache::new(8, 4096, 32, 128));
+        let f16_cache = rss_growth_kib(|| StreamingKVCacheFp16::new(8, 8192, 32, 128));
+        let layers_cache = rss_growth_kib(|| crate::layers::KVCache::new(8, 131_072, 128));
+        for (name, grown) in [
+            ("StreamingKVCache", f32_cache),
+            ("StreamingKVCacheFp16", f16_cache),
+            ("layers::KVCache", layers_cache),
+        ] {
+            assert!(
+                grown < LIMIT_KIB,
+                "FALSIFIED KV-005: {name} grew RSS by {grown} KiB at construction (limit {LIMIT_KIB} KiB)"
+            );
+        }
+    }
 }

@@ -18462,6 +18462,27 @@ roadmap:
   labels:
   - ont-0.70
   notes: The PVL-001 EV-10 probe greps .github/workflows/ci.yml and uses repo-root tests/ paths; aprender wires integration tests via ci/explicit-test-commands.d fragments and the test lives under crates/aprender-contracts-cli/tests/. Reported to the PVL-001 owner (infra) as a stale probe. The src/ fixture files end .rs.txt because ten aprender gates scan tracked .rs files.
+- id: GH-4691
+  github_issue: 4691
+  item_type: task
+  title: 'tag_coverage_gate.sh waits for a CI job that no longer exists: resolve it before the tag or refuse'
+  status: inprogress
+  priority: high
+  assigned_to: null
+  created: 2026-10-04T00:00:00+00:00
+  updated: 2026-10-04T00:00:00+00:00
+  spec: null
+  acceptance_criteria:
+  - 'the coverage job name lives in one function and is resolved against the jobs of .github/workflows/ci.yml at the release commit before any tag step'
+  - 'absent or renamed job = FAIL naming the job and the file, with 0 GitHub calls (must-RED: origin/main waited for the run, then refused after the tag)'
+  - 'unreadable/empty ci.yml, no jobs, or a reusable-workflow caller = NOT_MEASURED, which refuses'
+  - 'present + green passes; present + red refuses; gh failing refuses'
+  - 'autopilot cut_tag calls --resolve before must-carry/carry/strict; check_tag_step_gated.sh order row and two plants (call removed, die neutered) go RED'
+  phases: []
+  subtasks: []
+  estimated_effort: null
+  labels: []
+  notes: 'Before: v0.70.1 tag run completed 25 min after start with no ci / coverage job; the gate refused only at preflight, after the tag and the GitHub release were public (up to 90 tries x 60 s, 2 gh calls/try). After: refused at cut_tag, 0 gh calls, 0 s. NOTE: ci.yml today declares no ci / coverage job (coverage runs inside x86-main), so every release refuses at cut_tag until one is declared or the gate is retargeted.'
 - id: PMAT-3351
   github_issue: 3347
   item_type: task
@@ -24079,3 +24100,22 @@ Not done, pending the ruling: moving the 31 fixture files to an obviously synthe
   - kind:code
   notes: null
   epic: 4678
+- id: PMAT-4769
+  github_issue: 4769
+  item_type: task
+  title: 'FLAKE-0: StreamingKVCache memory-bound tests commit up to 34 GB and are OOM-killed on smaller runners'
+  status: inprogress
+  priority: high
+  assigned_to: aprender-wmainred
+  created: 2026-10-04T23:34:00Z
+  updated: 2026-10-04T23:50:00Z
+  spec: null
+  acceptance_criteria:
+  - 'Step 1: the three long-context memory-bound tests (ultra, super, mega) carry #[ignore = "FLAKE-0 #4769"] and nothing else changes; every other aprender-serve lib test passes'
+  - 'Step 2: StreamingKVCache and StreamingKVCacheFp16 allocate each layer as its own zeroed buffer, the three tests are un-ignored and pass under a 24 GB memory cap, and decode throughput shows no regression beyond noise'
+  phases: []
+  subtasks: []
+  estimated_effort: null
+  labels:
+  - kind:code
+  notes: 'Cause: vec![vec![0; n]; layers] clones layer 0 into every layer, writing every byte, so construction commits 8.6 / 17.2 / 34.4 GB; nextest KILLed the tests on a 30 GB runner (run 37241931271, workspace-test shard 1).'
