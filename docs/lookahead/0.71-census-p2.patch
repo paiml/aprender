@@ -1,0 +1,193 @@
+diff --git a/crates/aprender-contracts/src/lint/gates.rs b/crates/aprender-contracts/src/lint/gates.rs
+index 7b413902f9..09683a02c5 100644
+--- a/crates/aprender-contracts/src/lint/gates.rs
++++ b/crates/aprender-contracts/src/lint/gates.rs
+@@ -60,7 +60,24 @@ pub(crate) fn load_contracts(dir: &Path) -> (Vec<(String, Contract)>, Vec<(Strin
+     (contracts, parse_errors)
+ }
+ 
+-/// Recursively collect `.yaml` contract files, skipping non-contract directories.
++/// The directory names [`collect_yaml_files`] does not enter, at any depth. One list, so `pv census` can count
++/// what the walk leaves out (#4709 P-2) from the same names the walk skips.
++///
++/// `publish-manifests/` holds PublishManifest artifacts (model ship metadata keyed by `model_id:`), not
++/// Contract schemas; validating them here would fail on missing `metadata.` root. `quarantine/` holds
++/// contracts ONT-001 ONT-1 pulled OUT of the corpus precisely because they do not parse; walking them would
++/// make every gate reject on the files quarantine exists to hold. `kaizen`, `legacy` and `pipelines` arrived
++/// with the monorepo merge (21d8c4d8b4) with no stated reason; on main the 46 files under the two `kaizen/`
++/// directories all pass `pv validate`.
++pub const SKIPPED_DIRS: [&str; 5] = [
++    "kaizen",
++    "legacy",
++    "pipelines",
++    "publish-manifests",
++    "quarantine",
++];
++
++/// Recursively collect `.yaml` contract files, skipping non-contract directories ([`SKIPPED_DIRS`]).
+ ///
+ /// Emits entries in `read_dir` order, which is UNSPECIFIED. Every caller must
+ /// impose its own total order before deriving a verdict from the result.
+@@ -72,16 +89,7 @@ pub fn collect_yaml_files(dir: &Path, out: &mut Vec<std::path::PathBuf>) {
+         let path = entry.path();
+         if path.is_dir() {
+             let dirname = path.file_name().and_then(|n| n.to_str()).unwrap_or("");
+-            // `publish-manifests/` holds PublishManifest artifacts (model
+-            // ship metadata keyed by `model_id:`), not Contract schemas;
+-            // validating them here would fail on missing `metadata.` root.
+-            if matches!(
+-                dirname,
+-                // `quarantine/` holds contracts ONT-001 ONT-1 pulled OUT of the
+-                // corpus precisely because they do not parse; walking them would
+-                // make every gate reject on the files quarantine exists to hold.
+-                "kaizen" | "legacy" | "pipelines" | "publish-manifests" | "quarantine"
+-            ) {
++            if SKIPPED_DIRS.contains(&dirname) {
+                 continue;
+             }
+             collect_yaml_files(&path, out);
+diff --git a/crates/aprender-contracts/src/lint/mod.rs b/crates/aprender-contracts/src/lint/mod.rs
+index eb8c5f4d8b..139c1b6615 100644
+--- a/crates/aprender-contracts/src/lint/mod.rs
++++ b/crates/aprender-contracts/src/lint/mod.rs
+@@ -18,7 +18,7 @@ pub mod duplicate_stems;
+ pub mod evidence_gate;
+ pub mod finding;
+ mod gates;
+-pub use gates::collect_yaml_files;
++pub use gates::{collect_yaml_files, SKIPPED_DIRS};
+ pub mod bindings_gate;
+ mod gates_extended;
+ pub mod ratchet_gates;
+diff --git a/crates/aprender-contracts-cli/src/commands/census.rs b/crates/aprender-contracts-cli/src/commands/census.rs
+--- a/crates/aprender-contracts-cli/src/commands/census.rs
++++ b/crates/aprender-contracts-cli/src/commands/census.rs
+@@ -35,7 +35,7 @@
+ use serde::Serialize;
+ use sha2::{Digest, Sha256};
+ 
+-use provable_contracts::lint::collect_yaml_files;
++use provable_contracts::lint::{collect_yaml_files, SKIPPED_DIRS};
+ use provable_contracts::schema::parse_contract;
+ /// The declaration's shape, defined ONCE — in the schema module, beside the
+ /// `pv validate` rules that check it (PMAT-1098). It used to be declared here,
+@@ -118,6 +118,9 @@
+     pub n_parse_errors: usize,
+     pub parse_errors: Vec<String>,
+     pub quarantined_n: usize,
++    /// #4709 P-2: `.yaml` files under a directory the walk skips by name (`kaizen/`, `publish-manifests/`, ...),
++    /// by that name. Not in `n_files`; reported so the total the census does not describe is visible.
++    pub skipped_by_name: BTreeMap<String, usize>,
+     pub by_kind: BTreeMap<String, usize>,
+     pub by_entity_type: BTreeMap<String, usize>,
+     /// ONT-4d: instances per Σ concept in the extracted graph AFTER the subsumption closure, so a concept
+@@ -290,6 +293,7 @@
+     }
+     files.sort();
+     let mut census = empty_census(files.len(), quarantined_n(dir));
++    census.skipped_by_name = skipped_by_name(dir);
+     let mut errors = Vec::new();
+     let mut ids = BTreeSet::new();
+     let resolved = resolved_symbols(dir);
+@@ -335,6 +339,34 @@
+     out.len()
+ }
+ 
++/// #4709 P-2: the `.yaml` files the shared walker leaves out because a directory on their path is named in
++/// `SKIPPED_DIRS`, by that name. The top-level `quarantine/` is `quarantined_n`'s and is not counted twice; a
++/// nested `quarantine/` is counted here, since `quarantined_n` never sees it. Counted, never parsed: the
++/// number says how much of the tree the census does not describe.
++fn skipped_by_name(root: &Path) -> BTreeMap<String, usize> {
++    let mut out = BTreeMap::new();
++    walk_skipped(root, root, &mut out);
++    out
++}
++
++fn walk_skipped(root: &Path, dir: &Path, out: &mut BTreeMap<String, usize>) {
++    let Ok(entries) = std::fs::read_dir(dir) else {
++        return;
++    };
++    for path in entries.flatten().map(|e| e.path()).filter(|p| p.is_dir()) {
++        let name = path.file_name().and_then(|n| n.to_str()).unwrap_or("");
++        if !SKIPPED_DIRS.contains(&name) {
++            walk_skipped(root, &path, out);
++        } else if path != root.join(QUARANTINE_DIR) {
++            let mut files = Vec::new();
++            collect_quarantined(&path, &mut files);
++            if !files.is_empty() {
++                *out.entry(name.to_string()).or_default() += files.len();
++            }
++        }
++    }
++}
++
+ fn collect_quarantined(dir: &Path, out: &mut Vec<PathBuf>) {
+     let Ok(entries) = std::fs::read_dir(dir) else {
+         return;
+@@ -358,6 +390,7 @@
+         n_parse_errors: 0,
+         parse_errors: Vec::new(),
+         quarantined_n,
++        skipped_by_name: BTreeMap::new(),
+         by_kind: BTreeMap::new(),
+         by_entity_type: BTreeMap::new(),
+         by_concept: BTreeMap::new(),
+@@ -434,6 +467,14 @@
+         "contracts: {} parsed ({} file(s), {} parse error(s), {} quarantined)",
+         census.n_parsed, census.n_files, census.n_parse_errors, census.quarantined_n
+     );
++    if !census.skipped_by_name.is_empty() {
++        let skipped: Vec<String> = census
++            .skipped_by_name
++            .iter()
++            .map(|(name, n)| format!("{name}/ {n}"))
++            .collect();
++        let _ = writeln!(out, "skipped by name: {}", skipped.join(", "));
++    }
+     let _ = writeln!(out, "id_set_sha256: {}", census.id_set_sha256);
+     let _ = writeln!(out, "\nby_anchoring");
+     let _ = writeln!(
+@@ -700,6 +741,35 @@
+         let c = census_of(tmp.path()).expect("censuses");
+         assert_eq!(c.n_files, 1);
+         assert_eq!(c.quarantined_n, 1);
++        assert!(
++            c.skipped_by_name.is_empty(),
++            "quarantine is not counted twice"
++        );
++    }
++
++    #[test]
++    fn files_skipped_by_directory_name_are_counted_by_that_name() {
++        let tmp = corpus(&[
++            "a.yaml",
++            "entrenar/kaizen/k1.yaml",
++            "trueno/kaizen/k2.yaml",
++            "publish-manifests/m.yaml",
++            "x/quarantine/q.yaml",
++        ]);
++        let c = census_of(tmp.path()).expect("censuses");
++        assert_eq!(c.n_files, 1, "the walk is unchanged");
++        assert_eq!(
++            c.skipped_by_name,
++            BTreeMap::from([
++                ("kaizen".to_string(), 2),
++                ("publish-manifests".to_string(), 1),
++                ("quarantine".to_string(), 1),
++            ])
++        );
++        assert_eq!(
++            c.quarantined_n, 0,
++            "only the top-level quarantine/ is quarantined_n's"
++        );
+     }
+ 
+     #[test]
+@@ -740,6 +810,7 @@
+             "n_parse_errors",
+             "parse_errors",
+             "quarantined_n",
++            "skipped_by_name",
+             "by_kind",
+             "by_entity_type",
+             "by_anchoring",
