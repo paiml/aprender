@@ -106,7 +106,7 @@ EOF
 
 # lint FILE: every property that keeps the rehearsal from uploading. One line per failure.
 lint() {
-    local f=$1 bad=0 v
+    local f=$1 bad=0 v g
     need_yq
     [ -f "$f" ] || die "lint: no such file $f"
     v=$("$YQ" -o=json -I=0 '.permissions' "$f")
@@ -117,12 +117,21 @@ lint() {
     [ "$v" = 0 ] || { echo "lint: $v job(s) name an environment (environment secrets)"; bad=1; }
     v=$("$YQ" '.on | keys | sort | join(",")' "$f")
     [ "$v" = "schedule,workflow_dispatch" ] || { echo "lint: triggers are '$v', not schedule,workflow_dispatch"; bad=1; }
-    v=$("$YQ" '[.jobs[] | select((.steps[0].name // "") != "'"$GUARD_NAME"'")] | length' "$f")
+    # The guard is matched on its name AND its body, so a step that only borrows the name
+    # (a hollow guard) does not count.
+    g=$(mktemp) || die "mktemp failed"
+    guard_step > "$g"
+    v=$(G=$g "$YQ" '[.jobs[] | select((.steps[0].name // "") != load(strenv(G)).name or (.steps[0].run // "") != load(strenv(G)).run)] | length' "$f")
+    rm -f "${g:?}"
     [ "$v" = 0 ] || { echo "lint: $v job(s) do not start with the credential guard"; bad=1; }
     if grep -n -E 'secrets\.' "$f"; then echo "lint: a secrets. reference"; bad=1; fi
-    if grep -n -E 'uploads\.github\.com|-X (POST|PUT|PATCH|DELETE)|gh release|cargo publish|github\.event\.release|inputs\.tag' "$f"; then
+    if grep -n -E 'uploads\.github\.com|-X (POST|PUT|PATCH|DELETE)|gh (release|api)|cargo publish|github\.event\.release|inputs\.tag' "$f"; then
         echo "lint: an upload, a release write or a release-event input"; bad=1
     fi
+    # Actions are allowlisted, not denylisted: a release-upload action under any name is
+    # outside the list. These three are all the release workflow and the rehearsal use.
+    v=$("$YQ" '[.jobs[].steps[] | select(has("uses")) | .uses | sub("@.*"; "") | select(test("^actions/(checkout|upload-artifact|download-artifact)$") | not)] | unique | join(" ")' "$f")
+    [ -z "$v" ] || { echo "lint: an action outside the allowlist (an upload path): $v"; bad=1; }
     for v in $BUILD_JOBS; do
         "$YQ" -e ".jobs[\"$v\"].steps[] | select(.uses // \"\" | test(\"^actions/upload-artifact@\"))" "$f" > /dev/null 2>&1 \
             || { echo "lint: build job $v keeps no checksums"; bad=1; }
@@ -262,6 +271,8 @@ verify() {
     done
     if [ -n "$red" ]; then echo "verdict: red — build job(s) failed:$red"; return 1; fi
     if [ -n "$nm" ]; then echo "verdict: not_measured — build job(s) did not run to a result:$nm"; return 1; fi
+    # A build job keeps an archive's .sha256 only after checking the archive against it
+    # (`shasum -c` in its keep step), so a kept .sha256 stands for its archive too.
     list=$(mktemp) || die "mktemp failed"
     for s in "$dir"/*.sha256; do
         [ -f "$s" ] || continue
@@ -271,7 +282,7 @@ verify() {
     bash "$ROOT/scripts/check_release_assets.sh" "$tagv" --assets-from "$list"; rc=$?
     rm -f "${list:?}"
     case "$rc" in
-        0) echo "verdict: green — every asset the release owes was built, and none was uploaded"; return 0 ;;
+        0) echo "verdict: green — every asset the release owes was built"; return 0 ;;
         1) echo "verdict: red — the build left an owed asset out"; return 1 ;;
         *) echo "verdict: not_measured — check_release_assets.sh exit $rc"; return 1 ;;
     esac
@@ -319,6 +330,12 @@ self_test() {
     out=$(lint "$d/m.yml"); row "a planted upload step -> lint red" 1 $? 'upload' "$out"
     mut '.jobs["build-apr-cuda"].steps += [{"name": "up", "run": "gh release upload v1 a.tar.gz"}]'
     out=$(lint "$d/m.yml"); row "a planted gh release upload -> lint red" 1 $? 'upload' "$out"
+    mut '.jobs["build-apr-cuda"].steps += [{"name": "up", "run": "gh api repos/o/r/releases/1/assets --input a.tar.gz"}]'
+    out=$(lint "$d/m.yml"); row "a planted gh api call -> lint red" 1 $? 'upload' "$out"
+    mut '.jobs["build-apr-cuda"].steps += [{"name": "up", "uses": "softprops/action-gh-release@v2", "with": {"files": "a.tar.gz"}}]'
+    out=$(lint "$d/m.yml"); row "a planted release-upload action -> lint red" 1 $? 'outside the allowlist' "$out"
+    mut '.jobs["build-apr-darwin"].steps[0].run = "true"'
+    out=$(lint "$d/m.yml"); row "a hollow guard (right name, empty body) -> lint red" 1 $? 'credential guard' "$out"
     mut 'del(.jobs["build-apr-darwin"].steps[0])'
     out=$(lint "$d/m.yml"); row "a job without the guard -> lint red" 1 $? 'credential guard' "$out"
     mut 'del(.jobs.build.steps[] | select(.uses // "" | test("^actions/upload-artifact@")))'
@@ -343,13 +360,17 @@ self_test() {
     bash "$ROOT/scripts/check_release_assets.sh" --list v9.9.9-rc.0 | grep '\.sha256$' | while read -r n; do : > "$d/got/$n"; done
     : > "$d/got/aprender-shell-v9.9.9-rc.0-x86_64-unknown-linux-gnu.tar.gz.sha256"
     out=$(NEEDS=$full verify v9.9.9-rc.0 "$d/got"); row "verify: every asset built -> green" 0 $? 'verdict: green' "$out"
-    rm -f "$d/got/apr-v9.9.9-rc.0-aarch64-apple-darwin-cpu.tar.gz.sha256"
-    out=$(NEEDS=$full verify v9.9.9-rc.0 "$d/got"); row "verify: darwin asset missing -> red" 1 $? 'verdict: red' "$out"
+    # The job-result rows run over the COMPLETE asset set, so only the job result can turn
+    # them: a result that slipped through to the asset check would read green and fail the row.
     out=$(NEEDS=${full/'"build-apr-cpu":{"result":"success"}'/'"build-apr-cpu":{"result":"failure"}'} verify v9.9.9-rc.0 "$d/got")
-    row "verify: a failed build job -> red" 1 $? 'verdict: red — build job' "$out"
+    row "verify: a failed build job, assets complete -> red" 1 $? 'verdict: red — build job' "$out"
     out=$(NEEDS=${full/'"build-apr-cuda":{"result":"success"}'/'"build-apr-cuda":{"result":"skipped"}'} verify v9.9.9-rc.0 "$d/got")
-    row "verify: a skipped build job -> not_measured, never green" 1 $? 'not_measured' "$out"
-    out=$(NEEDS='' verify v9.9.9-rc.0 "$d/got"); row "verify: unreadable needs -> not_measured" 1 $? 'not_measured' "$out"
+    row "verify: a skipped build job, assets complete -> not_measured, never green" 1 $? 'verdict: not_measured' "$out"
+    out=$(NEEDS=${full/'"build-apr-darwin":{"result":"success"}'/'"build-apr-darwin":{"result":"cancelled"}'} verify v9.9.9-rc.0 "$d/got")
+    row "verify: a cancelled build job, assets complete -> not_measured" 1 $? 'verdict: not_measured' "$out"
+    out=$(NEEDS='' verify v9.9.9-rc.0 "$d/got"); row "verify: unreadable needs, assets complete -> not_measured" 1 $? 'verdict: not_measured' "$out"
+    rm -f "$d/got/apr-v9.9.9-rc.0-aarch64-apple-darwin-cpu.tar.gz.sha256"
+    out=$(NEEDS=$full verify v9.9.9-rc.0 "$d/got"); row "verify: darwin asset missing -> red" 1 $? 'verdict: red — the build left' "$out"
 
     out=$(tag); row "tag: workspace version -> vX.Y.Z-rc.0" 0 $? '^tag=v[0-9]+\.[0-9]+\.[0-9]+-rc\.0$' "$out"
 
