@@ -66,6 +66,8 @@ for a Llama-config model. Whether `gguf_gpu_generate` (T5) reaches W:970 is [U].
 5. Argmax on device: a two-pass max-reduce (per-workgroup max and index, then one
    workgroup), so a greedy token reads back 4 bytes, not `vocab x 4`. Sampling (T8,
    row 17) stays on the host and reads back the logits only when it needs them.
+   Device argmax is for the greedy route only; a sampled route keeps the logits
+   read back (R17-2 in `R17-wgpu-sampling.md`), and row 17 lands first.
 6. Embedding on device: a gather from the uploaded table, last, since it is one row.
 
 ## Falsifiers
