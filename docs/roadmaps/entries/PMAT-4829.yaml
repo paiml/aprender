@@ -1,0 +1,21 @@
+- id: PMAT-4829
+  github_issue: 4829
+  item_type: task
+  title: 'tree-reader registry: 2018-layout module declarations fall back to the whole crate (BSE-17 rows 6/90/91 red in guards-nightly)'
+  status: inprogress
+  priority: high
+  assigned_to: aprender-w4578
+  created: 2026-10-05T18:55:00Z
+  updated: 2026-10-05T18:55:00Z
+  spec: null
+  acceptance_criteria:
+  - 'scripts/check_tree_reader_tests.sh resolves a reader whose `mod NAME;` is declared in the 2018-layout sibling file <dir>.rs, not only in <dir>/mod.rs'
+  - 'a fixture case (src/sib.rs declaring src/sib/kid.rs) pins it: main''s resolver fails the fixture goldens, the fix passes the tree-reader self-test'
+  - 'scripts/tree_reader_tests.txt is regenerated with --update: the whole-lib `aprender-contracts --lib` row becomes `aprender-contracts --lib ontology::extract::json::github`'
+  - 'scripts/ci_test_tier.sh --self-test (BSE-17) is 93/0 on the head while main fails rows 6, 90 and 91 in the same run'
+  phases: []
+  subtasks: []
+  estimated_effort: null
+  labels:
+  - kind:code
+  notes: 'Effect: the quick tier for aprender-contracts returns from the whole lib to its module atoms (state before #4655); full tier unchanged. Changes what blocks on the quick tier, so it carries an operator sign-off before arming.'
