@@ -59,7 +59,7 @@ default:
 models:
   "Qwen3.5-0.8B-IQ4_XS.gguf":
     # NO `budget` KEY ON PURPOSE. This is the model that exposed the defect, and the
-    # honest state is that we do not know its budget yet. Refusing names that, where
+    # measured state is that NO budget closes it (see why_unmeasured). Refusing names that, where
     # inheriting 2048 would republish an 8B's number as this model's measurement.
     why_unmeasured: |
       Generated 8,901 chars without closing at 2048 on lambda (#3907). MEASURED since

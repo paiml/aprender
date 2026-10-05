@@ -18,7 +18,8 @@ thinking on, `What is 2+2?`, 17 prompt tokens on both engines.
 | IQ4_XS | unclosed, 8,910 chars | 17,795 | 35,574 | 71,140 |
 | Q4_K_M | unclosed, 6,723 chars | 13,225 | 26,243 | 52,290 |
 
-Output grows linearly with the budget (about 4.35 chars per token). The text is
+Output grows linearly with the budget (about 4.35 chars per token for IQ4_XS, 3.2
+to 3.3 for Q4_K_M). The text is
 coherent, reaches "2 + 2 = 4" early, then loops ("Wait, I should check...").
 
 ## 2. The loop is the model's, not apr's
