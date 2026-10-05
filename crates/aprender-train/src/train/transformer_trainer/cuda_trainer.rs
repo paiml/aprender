@@ -670,22 +670,7 @@ impl CudaTransformerTrainer {
 
         // ALB-091: GPU-resident gradient accumulation (eliminates D2H bottleneck).
         // Falls back to CPU accum if GPU allocation fails.
-        let gpu_grad_accum = if config.accumulation_steps > 1 {
-            match super::gpu_grad_accumulator::GpuGradientAccumulator::new(&ctx, mc) {
-                Ok(accum) => {
-                    println!("  ✓ GPU gradient accumulation enabled (ALB-091)");
-                    Some(accum)
-                }
-                Err(e) => {
-                    eprintln!(
-                        "  [WARN] GPU gradient accumulation failed ({e}), using CPU fallback"
-                    );
-                    None
-                }
-            }
-        } else {
-            None
-        };
+        let gpu_grad_accum = Self::init_gpu_grad_accum(&ctx, &config, mc);
 
         // KAIZEN-059: Pre-allocate D2H staging buffer for gradient accumulation
         // downloads. Only needed when GPU accum is unavailable (CPU fallback path).
@@ -895,6 +880,28 @@ impl CudaTransformerTrainer {
     }
 
     /// ALB-078: Initialize fused gradient clipping state (extracted for complexity).
+    /// ALB-091: GPU gradient accumulator when accumulating over more than one step; `None`
+    /// (CPU fallback) when it is not needed or its allocation fails.
+    fn init_gpu_grad_accum(
+        ctx: &std::sync::Arc<trueno_gpu::driver::CudaContext>,
+        config: &TransformerTrainConfig,
+        mc: &crate::transformer::TransformerConfig,
+    ) -> Option<super::gpu_grad_accumulator::GpuGradientAccumulator> {
+        if config.accumulation_steps <= 1 {
+            return None;
+        }
+        match super::gpu_grad_accumulator::GpuGradientAccumulator::new(ctx, mc) {
+            Ok(accum) => {
+                println!("  ✓ GPU gradient accumulation enabled (ALB-091)");
+                Some(accum)
+            }
+            Err(e) => {
+                eprintln!("  [WARN] GPU gradient accumulation failed ({e}), using CPU fallback");
+                None
+            }
+        }
+    }
+
     fn init_fused_clip(
         ctx: &std::sync::Arc<trueno_gpu::driver::CudaContext>,
         config: &TransformerTrainConfig,
@@ -1376,6 +1383,192 @@ impl CudaTransformerTrainer {
         vocab_size: usize,
         accumulate_only: bool,
     ) -> Option<bool> {
+        self.gpu_backward_head(seq_len, hidden_size, vocab_size, accumulate_only)?;
+
+        let stream = self.cuda_trainer.stream();
+        let max_grad_norm = self.config.base.max_grad_norm;
+        let lr = self.current_lr();
+        // ALB-072: No inv_scale needed — loss_scale no longer includes grad_scaler.
+        let beta1 = self.config.beta1;
+        let beta2 = self.config.beta2;
+        let weight_decay = self.config.weight_decay;
+
+        // Backward through blocks in reverse, with interleaved clip + optimizer.
+        // Each block's backward writes weight gradients to shared CudaGradWorkspace.
+        //
+        // SAFETY: grad_buf_a and grad_buf_b are disjoint fields. Raw pointers
+        // allow alternating read/write without violating aliasing rules.
+        self.profiler.begin(StepProfiler::BLK_BWD);
+        let grad_a_ptr: *mut GpuBuffer<f32> = &raw mut self.gpu_training.grad_buf_a;
+        let grad_b_ptr: *mut GpuBuffer<f32> = &raw mut self.gpu_training.grad_buf_b;
+        let mut grad_output_is_a = true;
+        let use_nf4 = self.config.quantize_nf4 && self.config.is_lora();
+        // entrenar#264: the NF4 LoRA step's lr, scaled by 1/accum_steps for micro-batches.
+        let effective_lr =
+            if accumulate_only { lr / self.config.accumulation_steps as f32 } else { lr };
+
+        for layer_idx in (0..self.cuda_blocks.len()).rev() {
+            // Activation checkpointing: if this layer's input wasn't saved during
+            // forward, recompute the segment from the nearest checkpoint.
+            if !self.gpu_training.saved_layer_mask[layer_idx] {
+                Self::recompute_segment(
+                    &mut self.gpu_training,
+                    &mut self.cuda_blocks,
+                    &mut self.nf4_shared_scratch,
+                    layer_idx,
+                    seq_len,
+                    stream,
+                )?;
+            }
+
+            // SAFETY: ping-pong double-buffering. The two raw pointers reference distinct, non-overlapping device buffers (the `_a`/`_b` scratch pair); the boolean flag picks one as `&` input and the other as `&mut` output, so the resulting references never alias the same allocation.
+            let (grad_output, grad_input) = unsafe {
+                if grad_output_is_a {
+                    (&*grad_a_ptr, &mut *grad_b_ptr)
+                } else {
+                    (&*grad_b_ptr, &mut *grad_a_ptr)
+                }
+            };
+
+            self.profiler.begin_layer();
+            if use_nf4 {
+                // ENT-263: NF4 backward — LoRA gradient computation
+                // Uses backward_nf4() which computes gradients for LoRA weights and norms only.
+                // We need a separate output_scratch. Reuse blocks_output as scratch since
+                // it was already consumed for norm backward above.
+                self.cuda_blocks[layer_idx]
+                    .backward_nf4(
+                        &self.gpu_training.layer_inputs[layer_idx],
+                        grad_output,
+                        grad_input,
+                        &mut self.gpu_training.blocks_output, // reuse as output_scratch
+                        seq_len,
+                        stream,
+                        self.nf4_shared_scratch.as_mut().expect("NF4 requires shared scratch"),
+                        self.nf4_lora_grad_workspace
+                            .as_mut()
+                            .expect("NF4 requires LoRA grad workspace"),
+                    )
+                    .inspect_err(|e| {
+                        eprintln!(
+                            "[backward_nf4] Layer {} FAILED: {:?} (seq_len={}, hidden={})",
+                            layer_idx, e, seq_len, self.config.model_config.hidden_size
+                        );
+                    })
+                    .ok()?;
+
+                // ENT-265: Clip LoRA gradients before optimizer step.
+                // Without this, NF4 LoRA grads are unbounded — causes weight
+                // divergence and embedding grad explosion (Run 7c: 26M at step 225).
+                if let Some(max_norm) = max_grad_norm {
+                    self.nf4_lora_grad_workspace
+                        .as_mut()
+                        .expect("NF4 requires LoRA grad ws")
+                        .clip_gradients(max_norm, stream);
+                }
+
+                // NF4 LoRA optimizer step — always runs, even during accumulation.
+                //
+                // BUG FIX (entrenar#264): Previously gated by `if !accumulate_only`.
+                // Design: NF4 LoRA has ~6M params, so we scale lr by 1/accum_steps
+                // for micro-batches instead of accumulating gradients.
+                {
+                    let step = self.gpu_training.step;
+                    if let Some(ref mut opt_states) = self.nf4_lora_optimizer_states {
+                        let _ = self.cuda_blocks[layer_idx].lora_optimizer_step(
+                            &mut opt_states[layer_idx],
+                            step,
+                            effective_lr,
+                            beta1,
+                            beta2,
+                            1e-8,
+                            weight_decay,
+                            stream,
+                            self.nf4_lora_grad_workspace
+                                .as_ref()
+                                .expect("NF4 requires LoRA grad ws"),
+                        );
+                    }
+                }
+            } else {
+                // Standard fp32 backward path
+                self.cuda_blocks[layer_idx]
+                    .backward(
+                        &self.gpu_training.layer_inputs[layer_idx],
+                        grad_output,
+                        grad_input,
+                        seq_len,
+                        stream,
+                        &mut self.cuda_grad_workspace,
+                    )
+                    .ok()?;
+
+                // C-CLIP-001 / entrenar#312: DISABLED per-block gradient clipping.
+                // Per-block clipping distorts gradient flow across layers.
+
+                // C-BACKPARITY-001: Per-block gradient norm tracing for parity testing.
+                // Only runs when ENTRENAR_TRACE_GRADIENTS=1 — zero overhead in production.
+                if std::env::var("ENTRENAR_TRACE_GRADIENTS").is_ok() {
+                    let (_, block_gnorm) = compute_workspace_clip_scale_gpu(
+                        &self.cuda_grad_workspace,
+                        f32::MAX,
+                        stream,
+                    );
+                    // Also trace the activation gradient (flows between blocks)
+                    let act_sq = squared_sum_cuda(grad_input, grad_input.len() as u32, stream)
+                        .unwrap_or(0.0);
+                    let act_gnorm = act_sq.sqrt();
+                    eprintln!(
+                        "[grad-trace] block={layer_idx} weight_gnorm={block_gnorm:.6} act_gnorm={act_gnorm:.6}"
+                    );
+                }
+
+                // R-038: Either accumulate workspace grads or run optimizer per-block.
+                if accumulate_only {
+                    Self::accumulate_block_grads(
+                        &mut self.gpu_grad_accum,
+                        &mut self.grad_accum,
+                        &self.cuda_grad_workspace,
+                        layer_idx,
+                        &mut self.d2h_staging,
+                        stream,
+                    )?;
+                } else {
+                    // Per-block optimizer step: consume workspace gradients before next block overwrites
+                    let step = self.gpu_training.step;
+                    let _ = self.cuda_blocks[layer_idx].optimizer_step(
+                        &mut self.gpu_training.optimizer_states[layer_idx],
+                        step,
+                        lr,
+                        beta1,
+                        beta2,
+                        1e-8,
+                        weight_decay,
+                        stream,
+                        &self.cuda_grad_workspace,
+                    );
+                }
+            }
+
+            self.profiler.end_layer_bwd(layer_idx);
+            grad_output_is_a = !grad_output_is_a;
+        }
+
+        stream.synchronize().ok()?;
+        self.profiler.end(StepProfiler::BLK_BWD);
+
+        Some(grad_output_is_a)
+    }
+
+    /// LM head and final-norm backward (with clipping), then either accumulate their
+    /// gradients or step their optimizer. The first half of `gpu_backward`.
+    fn gpu_backward_head(
+        &mut self,
+        seq_len: usize,
+        hidden_size: usize,
+        vocab_size: usize,
+        accumulate_only: bool,
+    ) -> Option<()> {
         let stream = self.cuda_trainer.stream();
         let max_grad_norm = self.config.base.max_grad_norm;
         let lr = self.current_lr();
@@ -1506,191 +1699,29 @@ impl CudaTransformerTrainer {
             );
         }
 
-        // Backward through blocks in reverse, with interleaved clip + optimizer.
-        // Each block's backward writes weight gradients to shared CudaGradWorkspace.
-        //
-        // SAFETY: grad_buf_a and grad_buf_b are disjoint fields. Raw pointers
-        // allow alternating read/write without violating aliasing rules.
-        self.profiler.begin(StepProfiler::BLK_BWD);
-        let grad_a_ptr: *mut GpuBuffer<f32> = &raw mut self.gpu_training.grad_buf_a;
-        let grad_b_ptr: *mut GpuBuffer<f32> = &raw mut self.gpu_training.grad_buf_b;
-        let mut grad_output_is_a = true;
-        let use_nf4 = self.config.quantize_nf4 && self.config.is_lora();
+        Some(())
+    }
 
-        for layer_idx in (0..self.cuda_blocks.len()).rev() {
-            // Activation checkpointing: if this layer's input wasn't saved during
-            // forward, recompute the segment from the nearest checkpoint.
-            if !self.gpu_training.saved_layer_mask[layer_idx] {
-                Self::recompute_segment(
-                    &mut self.gpu_training,
-                    &mut self.cuda_blocks,
-                    &mut self.nf4_shared_scratch,
-                    layer_idx,
-                    seq_len,
-                    stream,
-                )?;
-            }
-
-            // SAFETY: ping-pong double-buffering. The two raw pointers reference distinct, non-overlapping device buffers (the `_a`/`_b` scratch pair); the boolean flag picks one as `&` input and the other as `&mut` output, so the resulting references never alias the same allocation.
-            let (grad_output, grad_input) = unsafe {
-                if grad_output_is_a {
-                    (&*grad_a_ptr, &mut *grad_b_ptr)
-                } else {
-                    (&*grad_b_ptr, &mut *grad_a_ptr)
-                }
-            };
-
-            self.profiler.begin_layer();
-            if use_nf4 {
-                // ENT-263: NF4 backward — LoRA gradient computation
-                // Uses backward_nf4() which computes gradients for LoRA weights and norms only.
-                // output_scratch reuses grad_buf_a/b as temporary storage for recomputed forward.
-                let _output_scratch_ptr: *mut GpuBuffer<f32> = if grad_output_is_a {
-                    grad_b_ptr // grad_input is in b, use as output_scratch too (will be overwritten)
-                } else {
-                    grad_a_ptr
-                };
-                // We need a separate output_scratch. Reuse blocks_output as scratch since
-                // it was already consumed for norm backward above.
-                match self.cuda_blocks[layer_idx].backward_nf4(
-                    &self.gpu_training.layer_inputs[layer_idx],
-                    grad_output,
-                    grad_input,
-                    &mut self.gpu_training.blocks_output, // reuse as output_scratch
-                    seq_len,
-                    stream,
-                    self.nf4_shared_scratch.as_mut().expect("NF4 requires shared scratch"),
-                    self.nf4_lora_grad_workspace
-                        .as_mut()
-                        .expect("NF4 requires LoRA grad workspace"),
-                ) {
-                    Ok(()) => {}
-                    Err(e) => {
-                        eprintln!(
-                            "[backward_nf4] Layer {} FAILED: {:?} (seq_len={}, hidden={})",
-                            layer_idx, e, seq_len, self.config.model_config.hidden_size
-                        );
-                        return None;
-                    }
-                }
-
-                // ENT-265: Clip LoRA gradients before optimizer step.
-                // Without this, NF4 LoRA grads are unbounded — causes weight
-                // divergence and embedding grad explosion (Run 7c: 26M at step 225).
-                if let Some(max_norm) = max_grad_norm {
-                    self.nf4_lora_grad_workspace
-                        .as_mut()
-                        .expect("NF4 requires LoRA grad ws")
-                        .clip_gradients(max_norm, stream);
-                }
-
-                // NF4 LoRA optimizer step — always runs, even during accumulation.
-                //
-                // BUG FIX (entrenar#264): Previously gated by `if !accumulate_only`.
-                // Design: NF4 LoRA has ~6M params, so we scale lr by 1/accum_steps
-                // for micro-batches instead of accumulating gradients.
-                {
-                    let step = self.gpu_training.step;
-                    let effective_lr = if accumulate_only {
-                        lr / self.config.accumulation_steps as f32
-                    } else {
-                        lr
-                    };
-                    if let Some(ref mut opt_states) = self.nf4_lora_optimizer_states {
-                        let _ = self.cuda_blocks[layer_idx].lora_optimizer_step(
-                            &mut opt_states[layer_idx],
-                            step,
-                            effective_lr,
-                            beta1,
-                            beta2,
-                            1e-8,
-                            weight_decay,
-                            stream,
-                            self.nf4_lora_grad_workspace
-                                .as_ref()
-                                .expect("NF4 requires LoRA grad ws"),
-                        );
-                    }
-                }
-            } else {
-                // Standard fp32 backward path
-                self.cuda_blocks[layer_idx]
-                    .backward(
-                        &self.gpu_training.layer_inputs[layer_idx],
-                        grad_output,
-                        grad_input,
-                        seq_len,
-                        stream,
-                        &mut self.cuda_grad_workspace,
-                    )
-                    .ok()?;
-
-                // C-CLIP-001 / entrenar#312: DISABLED per-block gradient clipping.
-                // Per-block clipping distorts gradient flow across layers.
-
-                // C-BACKPARITY-001: Per-block gradient norm tracing for parity testing.
-                // Only runs when ENTRENAR_TRACE_GRADIENTS=1 — zero overhead in production.
-                if std::env::var("ENTRENAR_TRACE_GRADIENTS").is_ok() {
-                    let (_, block_gnorm) = compute_workspace_clip_scale_gpu(
-                        &self.cuda_grad_workspace,
-                        f32::MAX,
-                        stream,
-                    );
-                    // Also trace the activation gradient (flows between blocks)
-                    let act_sq = squared_sum_cuda(grad_input, grad_input.len() as u32, stream)
-                        .unwrap_or(0.0);
-                    let act_gnorm = act_sq.sqrt();
-                    eprintln!(
-                        "[grad-trace] block={layer_idx} weight_gnorm={block_gnorm:.6} act_gnorm={act_gnorm:.6}"
-                    );
-                }
-
-                // R-038: Either accumulate workspace grads or run optimizer per-block.
-                if accumulate_only {
-                    // ALB-091: GPU-resident accumulation (no sync, no D2H) or CPU fallback.
-                    if let Some(ref mut gpu_accum) = self.gpu_grad_accum {
-                        let _ = gpu_accum.accumulate_block(
-                            &self.cuda_grad_workspace,
-                            layer_idx,
-                            stream,
-                        );
-                    } else {
-                        // CPU fallback: SYNC + D2H (ALB-065 / Rule 6).
-                        stream.synchronize().ok()?;
-                        if let Some(accum) = &mut self.grad_accum {
-                            Self::download_workspace_to_accum(
-                                &self.cuda_grad_workspace,
-                                accum,
-                                layer_idx,
-                                &mut self.d2h_staging,
-                            )?;
-                        }
-                    }
-                } else {
-                    // Per-block optimizer step: consume workspace gradients before next block overwrites
-                    let step = self.gpu_training.step;
-                    let _ = self.cuda_blocks[layer_idx].optimizer_step(
-                        &mut self.gpu_training.optimizer_states[layer_idx],
-                        step,
-                        lr,
-                        beta1,
-                        beta2,
-                        1e-8,
-                        weight_decay,
-                        stream,
-                        &self.cuda_grad_workspace,
-                    );
-                }
-            }
-
-            self.profiler.end_layer_bwd(layer_idx);
-            grad_output_is_a = !grad_output_is_a;
+    /// R-038 / ALB-091: accumulate one block's workspace gradients, GPU-resident (no sync, no
+    /// D2H) when the GPU accumulator exists, else the CPU fallback: SYNC + D2H (ALB-065 /
+    /// Rule 6).
+    fn accumulate_block_grads(
+        gpu_grad_accum: &mut Option<super::gpu_grad_accumulator::GpuGradientAccumulator>,
+        grad_accum: &mut Option<super::grad_accumulator::PerBlockGradientAccumulator>,
+        workspace: &CudaGradWorkspace,
+        layer_idx: usize,
+        d2h_staging: &mut [f32],
+        stream: &CudaStream,
+    ) -> Option<()> {
+        if let Some(gpu_accum) = gpu_grad_accum {
+            let _ = gpu_accum.accumulate_block(workspace, layer_idx, stream);
+            return Some(());
         }
-
         stream.synchronize().ok()?;
-        self.profiler.end(StepProfiler::BLK_BWD);
-
-        Some(grad_output_is_a)
+        if let Some(accum) = grad_accum {
+            Self::download_workspace_to_accum(workspace, accum, layer_idx, d2h_staging)?;
+        }
+        Some(())
     }
 
     /// R-038: Download non-block (LM head + final norm) gradients to CPU accumulator.
@@ -2212,11 +2243,7 @@ impl CudaTransformerTrainer {
                 total_loss += loss;
                 valid_count += 1;
                 if accumulating {
-                    if let Some(accum) = &mut self.gpu_grad_accum {
-                        accum.accumulated_count += 1;
-                    } else if let Some(accum) = &mut self.grad_accum {
-                        accum.accumulated_count += 1;
-                    }
+                    self.count_accumulated_sample();
                 }
             }
         }
@@ -2235,18 +2262,33 @@ impl CudaTransformerTrainer {
         self.accumulated_batches += 1;
 
         if self.accumulated_batches >= self.config.accumulation_steps {
-            if accumulating {
-                // ALB-091: Prefer GPU-resident accum path (zero D2H), fall back to CPU.
-                if self.gpu_grad_accum.is_some() {
-                    self.gpu_optimizer_from_gpu_accum();
-                } else {
-                    self.gpu_optimizer_from_accum();
-                }
-            }
-            self.optimizer_step();
+            self.finish_accumulation_window(accumulating);
         }
 
         avg_loss
+    }
+
+    /// R-038: count one accumulated sample on the GPU accumulator, or else the CPU one.
+    fn count_accumulated_sample(&mut self) {
+        if let Some(accum) = &mut self.gpu_grad_accum {
+            accum.accumulated_count += 1;
+        } else if let Some(accum) = &mut self.grad_accum {
+            accum.accumulated_count += 1;
+        }
+    }
+
+    /// End of an accumulation window: apply the accumulated gradients (when accumulating),
+    /// then step the optimizer.
+    fn finish_accumulation_window(&mut self, accumulating: bool) {
+        if accumulating {
+            // ALB-091: Prefer GPU-resident accum path (zero D2H), fall back to CPU.
+            if self.gpu_grad_accum.is_some() {
+                self.gpu_optimizer_from_gpu_accum();
+            } else {
+                self.gpu_optimizer_from_accum();
+            }
+        }
+        self.optimizer_step();
     }
 
     /// R-005: Evaluate a batch without backward pass or weight updates.
@@ -2777,55 +2819,7 @@ impl CudaTransformerTrainer {
         // ALB-130 style: parse vocab + merges + special token IDs and
         // set as well-known metadata keys.
         if let Some(dir) = tokenizer_dir {
-            let tok_path = dir.join("tokenizer.json");
-            if let Ok(json_bytes) = std::fs::read(&tok_path) {
-                if let Ok(tok) = serde_json::from_slice::<Jv>(&json_bytes) {
-                    if let Some(model) = tok.get("model") {
-                        if let Some(vocab_obj) = model.get("vocab").and_then(|v| v.as_object()) {
-                            let mut vocab_pairs: Vec<(String, u64)> = vocab_obj
-                                .iter()
-                                .filter_map(|(k, v)| Some((k.clone(), v.as_u64()?)))
-                                .collect();
-                            vocab_pairs.sort_by_key(|(_, id)| *id);
-                            let vocab: Vec<Jv> =
-                                vocab_pairs.into_iter().map(|(k, _)| Jv::String(k)).collect();
-                            writer.set_metadata("tokenizer.vocabulary", Jv::Array(vocab));
-                        }
-                        if let Some(merges_arr) = model.get("merges").and_then(|m| m.as_array()) {
-                            let merges: Vec<Jv> = merges_arr
-                                .iter()
-                                .filter_map(|v| v.as_str().map(|s| Jv::String(s.to_string())))
-                                .collect();
-                            writer.set_metadata("tokenizer.merges", Jv::Array(merges));
-                        }
-                    }
-                    // BOS / EOS from added_tokens (HF format).
-                    if let Some(added) = tok.get("added_tokens").and_then(|a| a.as_array()) {
-                        for entry in added {
-                            let content =
-                                entry.get("content").and_then(|c| c.as_str()).unwrap_or("");
-                            let id = entry.get("id").and_then(|i| i.as_u64());
-                            if let Some(id) = id {
-                                match content {
-                                    "<s>" | "<|im_start|>" | "<|begin_of_text|>" => {
-                                        writer.set_metadata(
-                                            "tokenizer.bos_token_id",
-                                            Jv::Number(serde_json::Number::from(id)),
-                                        );
-                                    }
-                                    "</s>" | "<|im_end|>" | "<|end_of_text|>" | "<|endoftext|>" => {
-                                        writer.set_metadata(
-                                            "tokenizer.eos_token_id",
-                                            Jv::Number(serde_json::Number::from(id)),
-                                        );
-                                    }
-                                    _ => {}
-                                }
-                            }
-                        }
-                    }
-                }
-            }
+            set_tokenizer_metadata(&mut writer, dir);
         }
 
         // Tensors — reuse io::save's shape inference for 2D weight handling.
@@ -2871,17 +2865,14 @@ impl CudaTransformerTrainer {
         }
     }
 
-    fn snapshot_lora_data(&self) -> Vec<(usize, Vec<f32>, Vec<f32>, Vec<f32>, Vec<f32>)> {
+    /// Every NF4 block's LoRA adapters by target, as (layer, [(target, A, alpha/rank·B)])
+    /// (R15a C5a).
+    fn snapshot_lora_data(&self) -> Vec<(usize, super::lora_checkpoint::DeviceAdapters)> {
         if self.config.quantize_nf4 && self.config.is_lora() {
             self.cuda_blocks
                 .iter()
                 .enumerate()
-                .filter_map(|(i, block)| {
-                    block
-                        .download_lora_weights()
-                        .ok()
-                        .map(|(a_q, b_q, a_v, b_v)| (i, a_q, b_q, a_v, b_v))
-                })
+                .filter_map(|(i, block)| block.download_lora_adapters().ok().map(|a| (i, a)))
                 .collect()
         } else {
             Vec::new()
@@ -3184,31 +3175,9 @@ impl CudaTransformerTrainer {
             }
 
             // ENT-276: Save LoRA adapter weights (QLoRA checkpoint resume)
-            for (layer_idx, a_q, b_q, a_v, b_v) in &lora_data {
-                if !a_q.is_empty() {
-                    writer.add_tensor_f32(
-                        format!("lora.{layer_idx}.q_proj.lora_a"),
-                        vec![a_q.len()],
-                        a_q,
-                    );
-                    writer.add_tensor_f32(
-                        format!("lora.{layer_idx}.q_proj.lora_b"),
-                        vec![b_q.len()],
-                        b_q,
-                    );
-                }
-                if !a_v.is_empty() {
-                    writer.add_tensor_f32(
-                        format!("lora.{layer_idx}.v_proj.lora_a"),
-                        vec![a_v.len()],
-                        a_v,
-                    );
-                    writer.add_tensor_f32(
-                        format!("lora.{layer_idx}.v_proj.lora_b"),
-                        vec![b_v.len()],
-                        b_v,
-                    );
-                }
+            // R15a C5a: every adapter under its target's name, lora.{l}.{module}.lora_{a,b}
+            for (layer_idx, adapters) in &lora_data {
+                super::lora_checkpoint::write_apr_adapters(&mut writer, *layer_idx, adapters);
             }
 
             // Write APR checkpoint to file
@@ -3245,91 +3214,26 @@ impl CudaTransformerTrainer {
 
         let lora_rank = self.config.lora_rank.unwrap_or(16);
         let lora_alpha = self.config.lora_alpha.unwrap_or(2.0 * lora_rank as f32);
-        let lora_scale = lora_alpha / lora_rank as f32;
-        let hidden_size = self.config.model_config.hidden_size;
-        let head_dim = self.config.model_config.head_dim();
-        let q_dim = self.config.model_config.num_attention_heads * head_dim;
-        let kv_hidden = self.config.model_config.num_kv_heads * head_dim;
 
+        // R15a C5a: every adapter each NF4 block holds, by target, with its own (d_out, d_in);
+        // GPU A [d_in, rank] → PEFT [rank, d_in], GPU alpha/rank·B [rank, d_out] → PEFT
+        // [d_out, rank] unscaled.
+        let lora_data = self.snapshot_lora_data();
+        let target_modules =
+            super::lora_checkpoint::held_module_names(lora_data.iter().map(|(_, held)| held));
         let lora_config =
-            crate::lora::LoRAConfig::new(lora_rank, lora_alpha).target_qv_projections();
+            crate::lora::LoRAConfig::new(lora_rank, lora_alpha).target_modules(&target_modules);
 
         let mut adapters: Vec<(String, crate::lora::LoRALayer)> = Vec::new();
-
-        for (i, block) in self.cuda_blocks.iter().enumerate() {
-            let (a_q, b_q_scaled, a_v, b_v_scaled) = match block.download_lora_weights() {
-                Ok(weights) => weights,
-                Err(_) => continue, // Skip non-NF4 blocks
-            };
-
-            if a_q.is_empty() && a_v.is_empty() {
-                continue;
-            }
-
-            // Q projection LoRA
-            if !a_q.is_empty() {
-                // GPU stores A_q as [hidden, rank] row-major, PEFT expects [rank, hidden]
-                let mut a_transposed = vec![0.0f32; lora_rank * hidden_size];
-                for r in 0..hidden_size {
-                    for c in 0..lora_rank {
-                        a_transposed[c * hidden_size + r] = a_q[r * lora_rank + c];
-                    }
-                }
-
-                // GPU stores B_q as [rank, q_dim] pre-scaled by lora_scale
-                // PEFT expects [q_dim, rank] un-scaled
-                let inv_scale = if lora_scale.abs() > 1e-10 { 1.0 / lora_scale } else { 1.0 };
-                let mut b_transposed = vec![0.0f32; q_dim * lora_rank];
-                for r in 0..lora_rank {
-                    for c in 0..q_dim {
-                        b_transposed[c * lora_rank + r] = b_q_scaled[r * q_dim + c] * inv_scale;
-                    }
-                }
-
-                let base_weight = crate::autograd::Tensor::zeros(q_dim * hidden_size, false);
-                let mut layer = crate::lora::LoRALayer::new(
-                    base_weight,
-                    q_dim,
-                    hidden_size,
+        for (i, held) in &lora_data {
+            for (target, a, sigma_b) in held.iter().filter(|(_, a, _)| !a.is_empty()) {
+                adapters.push(super::lora_checkpoint::peft_adapter(
+                    *i,
+                    (*target, a, sigma_b),
+                    &self.config.model_config,
                     lora_rank,
                     lora_alpha,
-                );
-                // Overwrite the A and B data with trained weights
-                layer.lora_a_mut().data_mut().assign(&ndarray::Array1::from(a_transposed));
-                layer.lora_b_mut().data_mut().assign(&ndarray::Array1::from(b_transposed));
-
-                adapters.push((format!("model.layers.{i}.self_attn.q_proj"), layer));
-            }
-
-            // V projection LoRA
-            if !a_v.is_empty() {
-                let mut a_transposed = vec![0.0f32; lora_rank * hidden_size];
-                for r in 0..hidden_size {
-                    for c in 0..lora_rank {
-                        a_transposed[c * hidden_size + r] = a_v[r * lora_rank + c];
-                    }
-                }
-
-                let inv_scale = if lora_scale.abs() > 1e-10 { 1.0 / lora_scale } else { 1.0 };
-                let mut b_transposed = vec![0.0f32; kv_hidden * lora_rank];
-                for r in 0..lora_rank {
-                    for c in 0..kv_hidden {
-                        b_transposed[c * lora_rank + r] = b_v_scaled[r * kv_hidden + c] * inv_scale;
-                    }
-                }
-
-                let base_weight = crate::autograd::Tensor::zeros(kv_hidden * hidden_size, false);
-                let mut layer = crate::lora::LoRALayer::new(
-                    base_weight,
-                    kv_hidden,
-                    hidden_size,
-                    lora_rank,
-                    lora_alpha,
-                );
-                layer.lora_a_mut().data_mut().assign(&ndarray::Array1::from(a_transposed));
-                layer.lora_b_mut().data_mut().assign(&ndarray::Array1::from(b_transposed));
-
-                adapters.push((format!("model.layers.{i}.self_attn.v_proj"), layer));
+                ));
             }
         }
 
@@ -3392,8 +3296,9 @@ impl CudaTransformerTrainer {
 
     /// ENT-276: Restore LoRA adapter weights from APR checkpoint.
     ///
-    /// Reads `lora.{layer}.{q,v}_proj.lora_{a,b}` tensors from the APR file
-    /// and uploads them to the NF4 CUDA blocks, replacing the fresh random init.
+    /// Reads `lora.{layer}.{module}.lora_{a,b}` for each target a block holds (R15a C5a;
+    /// q/v-only checkpoints use the same names) and uploads them to the NF4 CUDA blocks,
+    /// replacing the fresh init. A target the file lacks keeps its init.
     /// Returns (layers_restored, layers_total).
     pub fn restore_lora_from_apr(&mut self, apr_path: &std::path::Path) -> (usize, usize) {
         let reader = match aprender::serialization::apr::AprReader::open(apr_path) {
@@ -3403,20 +3308,15 @@ impl CudaTransformerTrainer {
 
         let mut restored = 0usize;
         for (i, block) in self.cuda_blocks.iter_mut().enumerate() {
-            let a_q =
-                reader.read_tensor_f32(&format!("lora.{i}.q_proj.lora_a")).unwrap_or_default();
-            let b_q =
-                reader.read_tensor_f32(&format!("lora.{i}.q_proj.lora_b")).unwrap_or_default();
-            let a_v =
-                reader.read_tensor_f32(&format!("lora.{i}.v_proj.lora_a")).unwrap_or_default();
-            let b_v =
-                reader.read_tensor_f32(&format!("lora.{i}.v_proj.lora_b")).unwrap_or_default();
-
-            if a_q.is_empty() {
+            let held = block.lora_targets();
+            let saved = super::lora_checkpoint::read_apr_adapters(&reader, i, &held);
+            if saved.is_empty() {
                 continue; // No LoRA data for this layer in checkpoint
             }
 
-            if let Err(e) = block.upload_lora_weights(&a_q, &b_q, &a_v, &b_v) {
+            let refs: Vec<(crate::lora::LoraTarget, &[f32], &[f32])> =
+                saved.iter().map(|(t, a, b)| (*t, a.as_slice(), b.as_slice())).collect();
+            if let Err(e) = block.upload_lora_adapters(&refs) {
                 eprintln!("Warning: failed to restore LoRA for layer {i}: {e}");
                 continue;
             }
@@ -3437,14 +3337,42 @@ impl CudaTransformerTrainer {
         };
 
         // Restore step count from metadata
-        if let Some(step_val) = reader.get_metadata("optimizer_step") {
-            if let Some(step_str) = step_val.as_str() {
-                if let Ok(step) = step_str.parse::<u64>() {
-                    self.embed_optimizer.set_step_count(step);
-                }
-            }
+        let step = reader
+            .get_metadata("optimizer_step")
+            .and_then(|v| v.as_str())
+            .and_then(|s| s.parse::<u64>().ok());
+        if let Some(step) = step {
+            self.embed_optimizer.set_step_count(step);
         }
 
+        self.restore_embed_moments(&reader);
+        let blocks_restored = self.restore_block_optimizer_states(&reader);
+
+        // ALB-118: Restore LM head and final norm optimizer state
+        restore_buffer(&reader, "__training__.lm_head_optimizer.m", &mut self.lm_head_m);
+        restore_buffer(&reader, "__training__.lm_head_optimizer.v", &mut self.lm_head_v);
+        restore_buffer(&reader, "__training__.final_norm_optimizer.m", &mut self.final_norm_m);
+        restore_buffer(&reader, "__training__.final_norm_optimizer.v", &mut self.final_norm_v);
+
+        // ALB-132: Report restore results — don't silently swallow failures
+        if blocks_restored > 0 {
+            println!(
+                "  ✓ GPU block optimizer states restored ({blocks_restored}/{} blocks)",
+                self.gpu_training.optimizer_states.len()
+            );
+        } else if !self.gpu_training.optimizer_states.is_empty() {
+            println!(
+                "  [WARN] GPU block optimizer states NOT restored (0/{} blocks — zeroed m/v)",
+                self.gpu_training.optimizer_states.len()
+            );
+        }
+
+        true
+    }
+
+    /// Restore the CPU embedding optimizer's first (m) and second (v) moments, up to the first
+    /// missing or empty index.
+    fn restore_embed_moments(&mut self, reader: &aprender::serialization::apr::AprReader) {
         // Restore first moments (m)
         for i in 0..128 {
             let name = format!("__training__.embed_optimizer.m.{i}");
@@ -3466,8 +3394,14 @@ impl CudaTransformerTrainer {
                 _ => break,
             }
         }
+    }
 
-        // ALB-118: Restore GPU block optimizer states (m/v moments for all blocks)
+    /// ALB-118: Restore GPU block optimizer states (m/v moments for all blocks). Returns the
+    /// number of blocks restored.
+    fn restore_block_optimizer_states(
+        &mut self,
+        reader: &aprender::serialization::apr::AprReader,
+    ) -> usize {
         let suffixes = [
             "m.w_q",
             "v.w_q",
@@ -3490,59 +3424,20 @@ impl CudaTransformerTrainer {
         ];
         let mut blocks_restored = 0usize;
         for (layer_idx, state) in self.gpu_training.optimizer_states.iter_mut().enumerate() {
-            let mut data = std::collections::HashMap::new();
-            for suffix in &suffixes {
-                let name = format!("__training__.block_optimizer.{layer_idx}.{suffix}");
-                if let Ok(tensor_data) = reader.read_tensor_f32(&name) {
-                    if !tensor_data.is_empty() {
-                        data.insert(suffix.to_string(), tensor_data);
-                    }
-                }
-            }
+            let data: std::collections::HashMap<String, Vec<f32>> = suffixes
+                .iter()
+                .filter_map(|suffix| {
+                    let name = format!("__training__.block_optimizer.{layer_idx}.{suffix}");
+                    let tensor_data = reader.read_tensor_f32(&name).ok()?;
+                    (!tensor_data.is_empty()).then(|| (suffix.to_string(), tensor_data))
+                })
+                .collect();
             if !data.is_empty() {
                 let _ = state.restore_from_host(&data);
                 blocks_restored += 1;
             }
         }
-
-        // ALB-118: Restore LM head optimizer state
-        if let Ok(m_data) = reader.read_tensor_f32("__training__.lm_head_optimizer.m") {
-            if m_data.len() == self.lm_head_m.len() {
-                let _ = self.lm_head_m.copy_from_host(&m_data);
-            }
-        }
-        if let Ok(v_data) = reader.read_tensor_f32("__training__.lm_head_optimizer.v") {
-            if v_data.len() == self.lm_head_v.len() {
-                let _ = self.lm_head_v.copy_from_host(&v_data);
-            }
-        }
-
-        // ALB-118: Restore final norm optimizer state
-        if let Ok(m_data) = reader.read_tensor_f32("__training__.final_norm_optimizer.m") {
-            if m_data.len() == self.final_norm_m.len() {
-                let _ = self.final_norm_m.copy_from_host(&m_data);
-            }
-        }
-        if let Ok(v_data) = reader.read_tensor_f32("__training__.final_norm_optimizer.v") {
-            if v_data.len() == self.final_norm_v.len() {
-                let _ = self.final_norm_v.copy_from_host(&v_data);
-            }
-        }
-
-        // ALB-132: Report restore results — don't silently swallow failures
-        if blocks_restored > 0 {
-            println!(
-                "  ✓ GPU block optimizer states restored ({blocks_restored}/{} blocks)",
-                self.gpu_training.optimizer_states.len()
-            );
-        } else if !self.gpu_training.optimizer_states.is_empty() {
-            println!(
-                "  [WARN] GPU block optimizer states NOT restored (0/{} blocks — zeroed m/v)",
-                self.gpu_training.optimizer_states.len()
-            );
-        }
-
-        true
+        blocks_restored
     }
 
     /// R-001: Load CPU embedding optimizer state from `optimizer_state.json`.
@@ -3603,6 +3498,61 @@ fn restore_moment_buffers(
         if !floats.is_empty() {
             set_fn(idx, ndarray::Array1::from_vec(floats));
         }
+    }
+}
+
+/// Copy APR tensor `name` into `buf` when the file holds it at `buf`'s length (ALB-118).
+#[cfg(feature = "cuda")]
+fn restore_buffer(
+    reader: &aprender::serialization::apr::AprReader,
+    name: &str,
+    buf: &mut GpuBuffer<f32>,
+) {
+    if let Ok(data) = reader.read_tensor_f32(name) {
+        if data.len() == buf.len() {
+            let _ = buf.copy_from_host(&data);
+        }
+    }
+}
+
+/// SPEC-SHIP-TWO-001 §81 P0-D: set the tokenizer metadata keys (vocabulary, merges, BOS/EOS
+/// ids) from `dir/tokenizer.json`. A missing or unparsable file sets nothing.
+#[cfg(feature = "cuda")]
+fn set_tokenizer_metadata(
+    writer: &mut aprender::serialization::apr::AprWriter,
+    dir: &std::path::Path,
+) {
+    use serde_json::Value as Jv;
+
+    let Ok(json_bytes) = std::fs::read(dir.join("tokenizer.json")) else { return };
+    let Ok(tok) = serde_json::from_slice::<Jv>(&json_bytes) else { return };
+    if let Some(model) = tok.get("model") {
+        if let Some(vocab_obj) = model.get("vocab").and_then(|v| v.as_object()) {
+            let mut vocab_pairs: Vec<(String, u64)> =
+                vocab_obj.iter().filter_map(|(k, v)| Some((k.clone(), v.as_u64()?))).collect();
+            vocab_pairs.sort_by_key(|(_, id)| *id);
+            let vocab: Vec<Jv> = vocab_pairs.into_iter().map(|(k, _)| Jv::String(k)).collect();
+            writer.set_metadata("tokenizer.vocabulary", Jv::Array(vocab));
+        }
+        if let Some(merges_arr) = model.get("merges").and_then(|m| m.as_array()) {
+            let merges: Vec<Jv> = merges_arr
+                .iter()
+                .filter_map(|v| v.as_str().map(|s| Jv::String(s.to_string())))
+                .collect();
+            writer.set_metadata("tokenizer.merges", Jv::Array(merges));
+        }
+    }
+    // BOS / EOS from added_tokens (HF format).
+    let added = tok.get("added_tokens").and_then(|a| a.as_array());
+    for entry in added.into_iter().flatten() {
+        let content = entry.get("content").and_then(|c| c.as_str()).unwrap_or("");
+        let Some(id) = entry.get("id").and_then(|i| i.as_u64()) else { continue };
+        let key = match content {
+            "<s>" | "<|im_start|>" | "<|begin_of_text|>" => "tokenizer.bos_token_id",
+            "</s>" | "<|im_end|>" | "<|end_of_text|>" | "<|endoftext|>" => "tokenizer.eos_token_id",
+            _ => continue,
+        };
+        writer.set_metadata(key, Jv::Number(serde_json::Number::from(id)));
     }
 }
 

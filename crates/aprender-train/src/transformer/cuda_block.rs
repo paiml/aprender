@@ -3003,6 +3003,15 @@ impl CudaBlock {
         }
     }
 
+    /// The targets an NF4 block holds LoRA adapters for, in slot order; none for fp32
+    /// (R15a C5a).
+    pub fn lora_targets(&self) -> Vec<LoraTarget> {
+        match self {
+            CudaBlock::Nf4(b) => b.lora_targets(),
+            CudaBlock::Fp32(_) => Vec::new(),
+        }
+    }
+
     /// Download every LoRA adapter of an NF4 block in slot order as (target, A, alpha/rank·B)
     /// (R15a C4a).
     pub fn download_lora_adapters(&self) -> Result<Vec<(LoraTarget, Vec<f32>, Vec<f32>)>> {
@@ -3026,6 +3035,20 @@ impl CudaBlock {
             CudaBlock::Nf4(b) => b.upload_lora_weights(a_q, b_q, a_v, b_v),
             CudaBlock::Fp32(_) => Err(crate::autograd::cuda_tensor::CudaTensorError::KernelError(
                 "upload_lora_weights only supported on NF4 blocks".into(),
+            )),
+        }
+    }
+
+    /// Upload LoRA adapters by target, each B as alpha/rank·B, to an NF4 block for checkpoint
+    /// resume (R15a C5a).
+    pub fn upload_lora_adapters(
+        &mut self,
+        adapters: &[(LoraTarget, &[f32], &[f32])],
+    ) -> Result<()> {
+        match self {
+            CudaBlock::Nf4(b) => b.upload_lora_adapters(adapters),
+            CudaBlock::Fp32(_) => Err(crate::autograd::cuda_tensor::CudaTensorError::KernelError(
+                "upload_lora_adapters only supported on NF4 blocks".into(),
             )),
         }
     }
@@ -5414,6 +5437,11 @@ impl CudaNf4TransformerBlock {
         let (a_q, b_q) = take(LoraTarget::Q);
         let (a_v, b_v) = take(LoraTarget::V);
         Ok((a_q, b_q, a_v, b_v))
+    }
+
+    /// The targets this block holds LoRA adapters for, in slot order (R15a C5a).
+    pub fn lora_targets(&self) -> Vec<LoraTarget> {
+        LoraPair::targets(&self.lora)
     }
 
     /// Download every LoRA adapter in slot order as (target, A, alpha/rank·B), B scaled
