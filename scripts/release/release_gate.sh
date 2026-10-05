@@ -21,8 +21,11 @@
 #       tag yet, a preflight that cannot judge, no repository, tag not at HEAD of ROOT).
 #       2 is not a pass.
 #
-# SEAM (the self-test only; production never sets it):
-#   RELEASE_PREFLIGHT   the preflight script (default: ROOT/scripts/check_publish_preflight.sh)
+# NO SEAM. The preflight is always ROOT/scripts/check_publish_preflight.sh. This gate
+# used to take RELEASE_PREFLIGHT from the environment, so any caller whose environment
+# carried it would have had a stub judge the release (#4833, the class of the PRE_TAG
+# leak). RELEASE_PREFLIGHT set at all, even empty, is now NOT_MEASURED: an attempted
+# override is refused, never silently ignored.
 #
 # Self-test: scripts/release/check_release_gate.sh
 set -uo pipefail
@@ -32,6 +35,7 @@ HERE="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 TAG="${1:-}"
 ROOT="${2:-$PWD}"
 [ -n "$TAG" ] || { echo "usage: $PROG <tag> [ROOT]" >&2; exit 2; }
+[ -z "${RELEASE_PREFLIGHT+set}" ] || { echo "NOT_MEASURED $PROG: RELEASE_PREFLIGHT is set in the environment; this gate takes no preflight override (#4833)"; exit 2; }
 
 # shellcheck source=scripts/release/lib_clean_room_gate.sh
 . "$HERE/lib_clean_room_gate.sh" || { echo "NOT_MEASURED $PROG: cannot load lib_clean_room_gate.sh"; exit 2; }
@@ -40,7 +44,7 @@ head="$(git -C "$ROOT" rev-parse --verify --quiet 'HEAD^{commit}' 2>/dev/null)" 
 [ -n "$head" ] || { echo "NOT_MEASURED $PROG: $ROOT is not a git repository with a HEAD"; exit 2; }
 tagged="$(git -C "$ROOT" rev-parse --verify --quiet "refs/tags/${TAG}^{commit}" 2>/dev/null)" || tagged=""
 [ "$tagged" = "$head" ] || { echo "NOT_MEASURED $PROG: tag $TAG names '${tagged:-nothing}', not HEAD $head of $ROOT"; exit 2; }
-preflight="${RELEASE_PREFLIGHT:-"$ROOT/scripts/check_publish_preflight.sh"}"
+preflight="$ROOT/scripts/check_publish_preflight.sh"
 echo "$PROG: judging $TAG = $head in $ROOT before the release"
 
 # 1. the publish preflight, unchanged, on HEAD (= the tag)
