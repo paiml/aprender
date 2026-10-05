@@ -1,0 +1,191 @@
+metadata:
+  version: 1.0.0
+  created: '2026-10-03'
+  author: PAIML Engineering
+  description: "BLD-002 row R0, the release baseline: for each release, one table of its steps with duration, wait before it, first-pass yes/no and who decided, and the rolled first-pass yield (RTY) over the releases. The planted falsifier the row names: a step with no measured duration is listed UNMEASURED, never estimated. scripts/release/step_table.sh is the calculator. It reads sourced step and question rows, prints a duration only where both ends of a run were measured, prints UNMEASURED everywhere else, and refuses any time cell that is not a UTC instant with a source, so a '~', an ETA or a 'by' time can never enter a table."
+  kind: pattern
+  references:
+    - "scripts/release/step_table.sh — the calculator, its case table (--selftest) and its planted mutants (--mutants)"
+    - "scripts/release/release_wall_time.py — the earlier reader of release anchors (freeze, cut, tag, cascade, release): spans for one release, no step list, no first-pass mark and no yield"
+    - "scripts/release/publish-order.txt — the crates step S12 (crates.io publish) covers"
+
+five_whys:
+  symptom: "The release path's step times were quoted with '~', 'assumed' and 'estimate' (PR CI ~90 min, merge queue ~90 min assumed, publish ~50 min estimate), and its first-pass yield was asserted as under 10%: no number in the baseline could be re-run."
+  why_1: "Step times were read off status messages and timelines by hand, while the release ran, by whoever drove it."
+  why_2: "No record kept both ends of every run with a source, so a duration was often one known end and a guess."
+  why_3: "Nothing refused a guessed time, so an estimate and a measurement looked the same in a table."
+  why_4: "Without both ends of each run and a first-pass mark per run, neither the wait before a step nor the rolled first-pass yield could be computed; both could only be asserted."
+  why_5: "The release process had no baseline row before BLD-002 R0, so the before numbers each later row must beat did not exist."
+  root_cause: "Release step times had no judge: no fixed step list, no rule for an unknown end and no refusal of an estimate. The remedy is a calculator over sourced rows: a fixed step list S01..S13, a duration only where both ends of a run were measured, UNMEASURED everywhere else, and a refusal of any time that is not a UTC instant with a source."
+
+equations:
+  time_cell:
+    formula: "cell(t, src) = unknown if t = ''; accepted if t is YYYY-MM-DDTHH:MMZ or YYYY-MM-DDTHH:MM:SSZ naming a real date and time and src ≠ ''; refused otherwise"
+    domain: "every start, end, running@, asked and answered cell of the step and question rows, with the source cell beside it"
+    codomain: "{unknown, accepted, refused}; any refused cell makes the whole run exit 1 with REFUSED lines and no table"
+    invariants:
+      - "an estimate ('~', 'ETA', 'by') is refused, never read as a time"
+      - "a date that does not exist (a 29 February outside a leap year, hour 24) is refused"
+      - "a time with no source is refused"
+      - "an end before its start, an answer before its question, a running@ instant before the start, a not-run row with a time and a running row with an end are refused"
+      - "one refused row in any input file withholds every table, of every file"
+
+  step_duration:
+    formula: "run(r) = end(r) − start(r) if both are accepted, else UNMEASURED; run_min(step) = the median of the measured runs, printed with their range and measured/runs; span(step) = latest known instant − earliest known instant over its runs, printed as '>=' when any run lacks an end or a start"
+    domain: "the runs of one step of one release; a run is a row whose result is not not-run"
+    codomain: "minutes to 0.1, or UNMEASURED"
+    invariants:
+      - "a run with an unknown end has no duration: it is never read as zero and never filled in"
+      - "a step with no row, or with no run measured at both ends, prints UNMEASURED"
+      - "a span that includes a run with an unknown end is a lower bound"
+      - "seconds are counted, and dates cross month ends and leap days"
+
+  first_pass:
+    formula: "FP(step) = no if any run says no; else UNMEASURED if any run says UNMEASURED or the step has no run; else yes"
+    domain: "the first_pass marks of the runs of one step of one release"
+    codomain: "{yes, no, UNMEASURED}"
+    invariants:
+      - "one no makes the step no, whichever run carries it"
+      - "a step with no run is UNMEASURED, never yes"
+
+  wait:
+    formula: "L = the run of the step with the latest start; wait(step) = start(L) − max{end(m) : m a run of an input step, end(m) ≤ start(L)}; UNMEASURED if no run has a start, if a run with no start could be the last one, if an input run's end is unknown and could fall at or before start(L), or if no input run ended at or before start(L)"
+    domain: "the step's runs and the runs of its input steps: S02 after S01; S03 after S02; S04..S08 after S01; S09 and S09c after S05, S06 and S07; S10 after S04, S08 and S09; S11 after S10; S12 after S11; S13 after S12. S01 has no input and prints n/a"
+    codomain: "minutes to 0.1, n/a or UNMEASURED"
+    invariants:
+      - "the wait runs from the NEWEST input end at or before the start, never the oldest"
+      - "an input run still running at the start, or started after it, is not an end before it"
+      - "an input run whose end is unknown and could fall before the start makes the wait UNMEASURED"
+
+  release_share:
+    formula: "share(release) = yes / (yes + no) over the steps S01..S13 without S09c, counted on FP"
+    domain: "FP of each step of one release"
+    codomain: "a fraction yes/(yes+no), printed with the yes, no and unmeasured counts"
+    invariants:
+      - "an UNMEASURED step is counted apart, never as yes and never as no"
+      - "S09c is inside S09 and is not counted"
+
+  rty:
+    formula: "y(step) = yes / (yes + no) over the releases, on FP; RTY = ∏ y(step) over the steps with yes + no > 0"
+    domain: "FP of each step S01..S13 without S09c, in every release given"
+    codomain: "RTY to 0.001 over m of 13 steps, the steps with y = 0 and the steps never measured; UNMEASURED if m = 0"
+    invariants:
+      - "RTY is a product, never a sum or a mean"
+      - "a step never measured is listed and left out, never counted as 1 or as 0"
+
+  question_wait:
+    formula: "wait(q) = answered(q) − asked(q) if both are accepted, else UNMEASURED; for a release: the median, minimum and maximum of the measured waits, their sum, and the length of the union of their intervals; sum and union print '>=' when any question lacks a time"
+    domain: "the operator questions of one release; a question is answered when its answered time is not empty"
+    codomain: "minutes to 0.1, or UNMEASURED"
+    invariants:
+      - "overlapping waits count once in the union"
+      - "a question with no answer time is named in no_answer_ids, never counted as answered"
+      - "a sum or union that leaves out a question with a missing time is a lower bound"
+
+proof_obligations:
+  - id: RSB-INV-001
+    type: invariant
+    property: "An estimate never enters a table: a time cell that is not a UTC instant is refused and no table is printed"
+    formal: "∃ cell t ≠ '' : ¬ utc_instant(t) ⇒ exit = 1 ∧ no table"
+    applies_to: time_cell
+  - id: RSB-INV-002
+    type: invariant
+    property: "A time with no source is refused"
+    formal: "∀ cell t ≠ '': src(t) = '' ⇒ refused(t)"
+    applies_to: time_cell
+  - id: RSB-INV-003
+    type: invariant
+    property: "Only real calendar instants are times"
+    formal: "∀ t: utc_instant(t) ⇒ civil(days(date(t))) = date(t) ∧ hour(t) ≤ 23 ∧ minute(t) ≤ 59 ∧ second(t) ≤ 59"
+    applies_to: time_cell
+  - id: RSB-INV-004
+    type: invariant
+    property: "An end before its start is refused"
+    formal: "∀ r: start(r) ≠ '' ∧ end(r) ≠ '' ∧ end(r) < start(r) ⇒ refused(r)"
+    applies_to: time_cell
+  - id: RSB-INV-005
+    type: invariant
+    property: "A step that never ran has no time"
+    formal: "∀ r: result(r) = not-run ∧ (start(r) ≠ '' ∨ end(r) ≠ '') ⇒ refused(r)"
+    applies_to: time_cell
+  - id: RSB-INV-006
+    type: invariant
+    property: "A duration exists only where both ends were measured"
+    formal: "∀ r: run(r) ≠ UNMEASURED ⟺ start(r) ≠ '' ∧ end(r) ≠ ''"
+    applies_to: step_duration
+  - id: RSB-INV-007
+    type: invariant
+    property: "A span over a run with an unknown end or start is printed as a lower bound"
+    formal: "∃ r ∈ runs(step): start(r) = '' ∨ end(r) = '' ⇒ span(step) printed '>='"
+    applies_to: step_duration
+  - id: RSB-INV-008
+    type: invariant
+    property: "One no makes the step no"
+    formal: "∃ r ∈ runs(step): fp(r) = no ⇒ FP(step) = no"
+    applies_to: first_pass
+  - id: RSB-INV-009
+    type: invariant
+    property: "A step with no run is UNMEASURED, never yes"
+    formal: "runs(step) = ∅ ⇒ FP(step) = UNMEASURED"
+    applies_to: first_pass
+  - id: RSB-INV-010
+    type: invariant
+    property: "The wait runs from the newest input end at or before the last start"
+    formal: "wait(step) ≠ UNMEASURED ⇒ wait(step) = start(L) − max{end(m) : m ∈ inputs(step), end(m) ≤ start(L)}"
+    applies_to: wait
+  - id: RSB-INV-011
+    type: invariant
+    property: "An input run whose end is unknown and could fall before the start makes the wait UNMEASURED"
+    formal: "∃ m ∈ inputs(step): end(m) = '' ∧ ¬(seen_running(m) ≥ start(L) ∨ start(m) > start(L)) ⇒ wait(step) = UNMEASURED"
+    applies_to: wait
+  - id: RSB-INV-012
+    type: invariant
+    property: "A run with no start that could be the last run makes the wait UNMEASURED"
+    formal: "∃ r ∈ runs(step): start(r) = '' ∧ (bound(r) = '' ∨ bound(r) > start(L)) ⇒ wait(step) = UNMEASURED"
+    applies_to: wait
+  - id: RSB-INV-013
+    type: invariant
+    property: "The share counts yes and no only"
+    formal: "share(release) = |{s : FP(s) = yes}| / |{s : FP(s) ∈ {yes, no}}|"
+    applies_to: release_share
+  - id: RSB-INV-014
+    type: invariant
+    property: "RTY is the product of the per-step yields over the steps measured at least once"
+    formal: "M = {s : yes(s) + no(s) > 0} ∧ ∀ s ∈ M: y(s) = yes(s) / (yes(s) + no(s)) ∧ RTY = product(y(s) for s ∈ M)"
+    applies_to: rty
+  - id: RSB-INV-015
+    type: invariant
+    property: "Overlapping question waits count once"
+    formal: "union = |⋃_q [asked(q), answered(q)]| ≤ Σ_q wait(q)"
+    applies_to: question_wait
+  - id: RSB-INV-016
+    type: invariant
+    property: "A question sum or union that leaves out a question is a lower bound"
+    formal: "∃ q: asked(q) = '' ∨ answered(q) = '' ⇒ sum and union printed '>='"
+    applies_to: question_wait
+
+falsification_tests:
+  - id: FALSIFY-RSB-001
+    rule: "The calculator is right on every row of its case table"
+    prediction: "Seconds count (00:00:30 to 00:02:00 is 1.5 min); a step with two runs prints their median, range and span, and its wait from the newest input end; a run with no start makes the span '>=' and the wait UNMEASURED; a step with no row or a not-run row is UNMEASURED; one no makes a step no; share is yes/(yes+no); y is over the releases and RTY is their product; extras are counted, and printed only with --extras; a running row gives a '>=' span and no duration; an input with an unknown end makes the wait UNMEASURED; a leap day counts; an estimated, ETA or by time, a time with no source, an end before its start, an impossible date, hour 24, an unknown result, a running row with an end or before its start, a not-run row with a time, an unknown first_pass, decided_by or step id, a decided_by with no source, a short row, a wrong header and an empty file are each REFUSED with no table, every bad row named; one bad file withholds every table; question waits give the median, sum and union, with '>=' for a missing time; an answer before its question and an estimated question time are refused; no --steps, a flag with no file, a missing file and an unknown option are caller errors"
+    test: "bash scripts/release/step_table.sh --selftest"
+    if_fails: "The baseline can print an estimate as a measurement, a missing end as zero, or a yield that counts unmeasured steps: the before numbers every BLD-002 row is judged against would be wrong"
+
+  - id: FALSIFY-RSB-002
+    rule: "The case table can still fail on the defects it names"
+    prediction: "Each planted mutant (any text accepted as a time, the source not required, seconds or leap years ignored, an end before its start or a not-run row with a time accepted, a missing end read as zero, first pass taken from the last run, a span not marked as a lower bound, a run with no start ignored, an input with an unknown end ignored, the wait taken from the oldest input end, unmeasured steps counted in the share, RTY taken as a sum, the question union taken as the sum, a question sum not marked as a lower bound) turns --selftest RED; a mutant that changes nothing, does not parse or makes awk fail is itself a failure"
+    test: "bash scripts/release/step_table.sh --mutants"
+    if_fails: "The case table is theater: it would pass a calculator that prints an estimate as a measured duration"
+
+qa_gate:
+  id: F-RSB-001
+  name: "The release baseline prints only measured durations: a step with no measured duration is UNMEASURED, never estimated"
+  description: "scripts/release/step_table.sh reads sourced step and question rows and prints, per release, each step's runs, results, first pass, run time, span, wait and who decided, then the rolled first-pass yield over the releases, and the operator question waits. Its case table pins the UNMEASURED rules, the refusal of estimates and the yield arithmetic, and its planted mutants prove the table can fail."
+  checks:
+    - "time_cell"
+    - "step_duration"
+    - "first_pass"
+    - "wait"
+    - "release_share"
+    - "rty"
+    - "question_wait"

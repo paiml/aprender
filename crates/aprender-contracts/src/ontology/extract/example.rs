@@ -214,7 +214,18 @@ pub fn walk(root: &Path) -> (Vec<Example>, ExampleStats) {
         ..ExampleStats::default()
     };
     let mut out = Vec::new();
-    for manifest in manifests(root) {
+    // Without a `[workspace]` table cargo builds only the root package; a manifest below it is another project. So the
+    // walk does not descend: a contract dir whose parent is a shared scratch dir would otherwise admit every package
+    // other jobs leave there, and two extractions of the same corpus would differ (T34).
+    let candidates = if membership.is_some() {
+        manifests(root)
+    } else {
+        Some(root.join("Cargo.toml"))
+            .filter(|m| m.is_file())
+            .into_iter()
+            .collect()
+    };
+    for manifest in candidates {
         let dir = manifest.parent().unwrap_or(root);
         let package = std::fs::read_to_string(&manifest)
             .ok()
