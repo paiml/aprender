@@ -242,6 +242,7 @@ rulings_needed:
     status: answered
     answer: "0.71-FIRST-PR: the four fixes open as the first 0.71 PR."
     quorum: {round: la-71-r71, date: 2026-10-04, outcome: unanimous}
+    scoped: {date: 2026-10-05, by: maintainer, ruling: KEEP}
   - id: R-71-4
     question: "CRUX category letters collide on main: A, B, E, F and K each carry two or three labels across the 316 crux-<letter>-<nn> contracts (K: 'Ecosystem & Integration' 9, 'Deployment & Integration' 11). Normalize the labels (ids unchanged), or keep them as historical and give the EXT surfaces new letters?"
     status: answered
@@ -252,6 +253,7 @@ rulings_needed:
     status: answered
     answer: "NO-LABEL: an optional block on the existing schema that reuses existing vocabularies extends existing gates, so it may land in 0.71."
     quorum: {round: la-71-r71, date: 2026-10-04, outcome: two-seat, dissent: "first claude-sonnet-5-5 sample: NEEDS-LABEL"}
+    scoped: {date: 2026-10-05, by: maintainer, ruling: KEEP}
   - id: R-71-6
     question: "Where does the V1 gate live: the PP-LLAMA-001 P-8 bound with the value in perf-matrix.yaml (recommended, drafted on la-71/pp-llama-p8-ttft), or a standalone receipt? The V2 load_ms row folds in."
     status: answered
@@ -285,5 +287,7 @@ rulings_needed:
   - id: R-71-10
     question: "Does H-4's standard (P0 only where the owner shows the issue blocks a V receipt) also demote existing P0s? Seven 0.71.0 P0s tie to no V receipt: #3574, #3714, #3759, #4096, #4418, #4444, #4486. The labels stay until it is ruled (APR-EPIC-001 rules 6 and 20). See 0.71-epic-hygiene.md section 5, H-15."
     status: answered
-    answer: "GRANDFATHER: H-4 governs new P0 labels only, and the seven stay P0."
+    answer: "PROVE: the owner of each of the seven writes one line, the V exit criterion it blocks or the harm if 0.71 ships without it, by 2026-10-07T12:00Z; a P0 with no line becomes P1."
+    quorum_answer: "GRANDFATHER: H-4 governs new P0 labels only, and the seven stay P0."
     quorum: {round: la-71-r71, date: 2026-10-04, outcome: two-seat, dissent: "first claude-sonnet-5-5 sample: DEMOTE"}
+    scoped: {date: 2026-10-05, by: maintainer, ruling: PROVE, due: "2026-10-07T12:00Z", lines: "0.71-epic-hygiene.md H-15"}
