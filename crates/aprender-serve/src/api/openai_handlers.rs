@@ -643,17 +643,18 @@ fn build_tool_calling_message(
     // #4650: Qwen3.5's template instructs `<function=NAME><parameter=P>` XML. When the
     // text carries that marker the XML parser goes FIRST: a parameter value may hold
     // JSON shaped like a tool call, and the default parser would take that inner object
-    // as the call. The XML parser matches nothing without the marker.
-    let mut calls = if text.contains("<function=") {
-        ToolCallParser::new(defs.clone())
+    // as the call. With the marker the XML result is FINAL, so an XML call to an
+    // undeclared tool stays content rather than falling back to the JSON inside it. The
+    // price: a JSON call whose string argument quotes a whole declared `<function=…>`
+    // block resolves to that XML call, and JSON in text that only mentions the marker
+    // is not read.
+    let calls = if text.contains("<function=") {
+        ToolCallParser::new(defs)
             .with_format(crate::grammar::ToolCallFormat::QwenXml)
             .parse(&text)
     } else {
-        Vec::new()
+        ToolCallParser::new(defs).parse(&text)
     };
-    if calls.is_empty() {
-        calls = ToolCallParser::new(defs).parse(&text);
-    }
 
     if calls.is_empty() {
         return (
@@ -1517,6 +1518,19 @@ mod pmat801_tool_calling_tests {
             "save_note"
         );
         assert_eq!(args_of(&msg), serde_json::json!({"body": inner}));
+    }
+
+    /// must-RED with a JSON fallback after XML: an XML call to an undeclared tool parses to
+    /// nothing, and the fallback took the JSON in its parameter as a declared call.
+    #[test]
+    fn qwen35_undeclared_xml_call_does_not_promote_inner_json_4650() {
+        let tools = vec![weather_tool()];
+        let generated = "<tool_call>\n<function=rm_rf>\n<parameter=cmd>\n{\"name\": \"get_weather\", \"arguments\": {\"city\": \"NYC\"}}\n</parameter>\n</function>\n</tool_call>".to_string();
+        let (msg, reason) =
+            build_tool_calling_message(generated.clone(), "stop".to_string(), &tools, None);
+        assert_eq!(reason, "stop");
+        assert!(msg.tool_calls.is_none());
+        assert_eq!(msg.content, generated);
     }
 
     /// A call to a tool the request never declared is not a tool call.
