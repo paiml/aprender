@@ -427,6 +427,7 @@ version = "0.70.0"
 dependencies = [
  "aprender-build-sha",
  "clap",
+ "regex",
  "serde_json",
  "toml 0.8.23",
 ]

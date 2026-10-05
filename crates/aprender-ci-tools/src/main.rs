@@ -1,8 +1,8 @@
 //! `aprender-ci-tools`: one binary, one subcommand per ported Python helper.
 
 use aprender_ci_tools::{
-    coverage_report_scope, package_include_diff, publishable_crates, tarball_shrink_report,
-    tarball_workspace,
+    coverage_report_scope, llama_fit_verdict, package_include_diff, publishable_crates,
+    tarball_shrink_report, tarball_workspace,
 };
 use clap::{ArgGroup, Parser, Subcommand};
 use std::io::{Read, Write};
@@ -60,6 +60,16 @@ enum Cmd {
         /// Print `target_directory` of the `cargo metadata` JSON on stdin.
         #[arg(long)]
         target_dir: bool,
+    },
+    /// llama.cpp's fit verdict for one model-ladder cell, one JSON line (was
+    /// scripts/lib/llama_fit_verdict.py). `--help` is an argument here, as it was there; use
+    /// `aprender-ci-tools help llama-fit-verdict`.
+    #[command(disable_help_flag = true)]
+    LlamaFitVerdict {
+        /// tool_found(0/1) pin rc free_mib version_file stdout_file model_path. `-` or an
+        /// empty path reads as empty. Any other count exits 1, as the original's unpacking did.
+        #[arg(num_args = 0.., allow_hyphen_values = true, trailing_var_arg = true)]
+        args: Vec<String>,
     },
 }
 
@@ -130,6 +140,7 @@ fn run(cmd: Cmd) -> Result<String, Refusal> {
             let dir = dir.ok_or_else(|| nothing_printed("tarball-workspace: no DIR".to_owned()))?;
             tarball_workspace::write_workspace(&dir).map_err(nothing_printed)
         }
+        Cmd::LlamaFitVerdict { args } => llama_fit_verdict::run(&args).map_err(nothing_printed),
     }
 }
 

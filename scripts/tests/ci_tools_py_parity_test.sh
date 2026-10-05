@@ -14,6 +14,9 @@
 #   tarball-workspace       vs scripts/lib/tarball_workspace.py, read from git (the file is
 #                           deleted; its callers are switched). Its written Cargo.toml is
 #                           compared too, mapping only the one header line that names it.
+#   llama-fit-verdict       vs scripts/lib/llama_fit_verdict.py (kept: model_ladder.sh's
+#                           certification path still calls it), exact exit code too, run
+#                           under CPython 3.12/3.13 (LFV_PYTHON=) whose Unicode it follows.
 #
 # coverage_report_scope.py runs `cargo metadata` itself, so its fixture cases put a
 # fake `cargo` first on PATH that prints the fixture; both sides then read the same
@@ -32,7 +35,7 @@ set -euo pipefail
 ROOT="$(git rev-parse --show-toplevel)"
 cd "$ROOT" || exit 1
 PY="${PYTHON:-python3}"
-EXPECTED_CASES=91
+EXPECTED_CASES=177
 
 BIN="${CI_TOOLS_BIN:-}"
 if [[ -z "$BIN" ]]; then
@@ -397,6 +400,196 @@ printf '{' >"$tmp/tw-meta-bad.json"
 tw_case "--target-dir bad JSON" "$tmp/tw-meta-bad.json" "$tmp/twfix/nopkgs" --target-dir
 tw_case "--target-dir empty stdin" "$tmp/empty" "$tmp/twfix/nopkgs" --target-dir
 tw_case "--target-dir LIVE" "$tmp/live-meta.json" "$tmp/twfix/nopkgs" --target-dir
+
+# --- 6. llama-fit-verdict ---
+# The original raises (exit 1, nothing printed) on a bad argv, rc, free_mib or input file;
+# these cases compare the exact exit code first, then the bytes.
+# Which characters are digits, and how deep the GGUF walk recurses, are the interpreter's:
+# the port follows CPython 3.12/3.13 (Unicode 15), what the ladder's hosts run, so this
+# section refuses any other (LFV_PYTHON=<python3.12 or 3.13>).
+LFV_PY=scripts/lib/llama_fit_verdict.py
+LFV_INTERP="${LFV_PYTHON:-$PY}"
+if ! "$LFV_INTERP" -c 'import sys, unicodedata; sys.exit(not (sys.version_info[:2] in ((3, 12), (3, 13)) and unicodedata.unidata_version.startswith("15.")))'; then
+    echo "FAIL: not measured: $LFV_INTERP is not CPython 3.12/3.13 (set LFV_PYTHON=)" >&2
+    exit 1
+fi
+lfv() { # NAME -- the seven (or any number of) argv words, the same on both sides
+    local name="$1" prc rrc
+    shift
+    "$LFV_INTERP" "$LFV_PY" "$@" </dev/null >/dev/null 2>&1 && prc=0 || prc=$?
+    "$BIN" llama-fit-verdict "$@" </dev/null >/dev/null 2>&1 && rrc=0 || rrc=$?
+    if [[ "$prc" -ne "$rrc" ]]; then
+        fail=$((fail + 1))
+        echo "MISMATCH: llama-fit-verdict $name exit code (py $prc, rust $rrc)" >&2
+        return
+    fi
+    check "llama-fit-verdict $name" "$tmp/empty" "$LFV_INTERP" "$LFV_PY" "$@" -- "$BIN" llama-fit-verdict "$@"
+}
+# le VALUE BYTES: VALUE little-endian (two's complement), as raw bytes.
+le() {
+    local v="$1" n="$2" i
+    for ((i = 0; i < n; i++)); do
+        # shellcheck disable=SC2059
+        printf "\\x$(printf '%02x' $(((v >> (8 * i)) & 255)))"
+    done
+}
+gstr() { le "${#1}" 8; printf '%s' "$1"; }                     # a GGUF string (ASCII)
+ghead() { printf 'GGUF'; le "${2:-3}" 4; le 0 8; le "$1" 8; }  # N_KV [VERSION]
+ctxkv() { gstr llama.context_length; le "$1" 4; le "$2" "$3"; } # TYPE VALUE BYTES
+g="$tmp/lfv"
+mkdir -p "$g/dir"
+{ # every skip path before the answer: a string, a string array, a u32 array, a nested array
+    ghead 5
+    gstr general.name; le 8 4; gstr 'x y'
+    gstr tokenizer.tokens; le 9 4; le 8 4; le 2 8; gstr ab; gstr c
+    gstr tokenizer.scores; le 9 4; le 4 4; le 3 8; le 1 12
+    gstr nested; le 9 4; le 9 4; le 2 8; le 8 4; le 1 8; gstr q; le 0 4; le 1 8; le 7 1
+    ctxkv 4 32768 4
+} >"$g/v3.gguf"
+{ ghead 1 2; ctxkv 4 2048 4; } >"$g/v2-2048.gguf"
+{ ghead 1; ctxkv 4 0 4; } >"$g/zero.gguf"
+{ ghead 1; ctxkv 5 -5 4; } >"$g/i32-neg.gguf"
+{ ghead 1; ctxkv 10 -1 8; } >"$g/u64-max.gguf"
+{ ghead 1; ctxkv 11 -7 8; } >"$g/i64-neg.gguf"
+{ ghead 2; ctxkv 6 0 4; ctxkv 12 0 8; } >"$g/float-ctx.gguf"
+{ ghead 1 1; ctxkv 4 8192 4; } >"$g/v1.gguf"
+{ ghead 2; gstr a.b; le 13 4; ctxkv 4 8192 4; } >"$g/bad-type.gguf"
+{ ghead 1; gstr llama.context_length; le 4 4; le 7 2; } >"$g/truncated.gguf"
+{ ghead 1; le 40 8; printf 'short'; } >"$g/short-key.gguf"
+{ ghead 2; gstr big; le 9 4; le 4 4; le $((1 << 61)) 8; ctxkv 4 8192 4; } >"$g/seek-overflow.gguf"
+{ ghead 2; gstr big; le 9 4; le 4 4; le $((1 << 40)) 8; ctxkv 4 8192 4; } >"$g/seek-past-eof.gguf"
+{ ghead 1; le 18 8; printf '\xe2.context_length'; le 4 4; le 999 4; } >"$g/bad-utf8-key.gguf"
+{ ghead 1; ctxkv 4 3000 4; ctxkv 4 9 4; } >"$g/first-wins.gguf"
+printf 'GGUF' >"$g/magic-only.gguf"
+printf 'not a model\n' >"$g/text.gguf"
+nest() { # DEPTH: DEPTH nested arrays, then the answer; CPython's recursion limit decides
+    local i
+    ghead 2
+    gstr deep; le 9 4
+    for ((i = 0; i < $1; i++)); do le 9 4; le 1 8; done
+    le 4 4; le 1 8; le 0 4
+    gstr x.context_length; le 4 4; le 777 4
+}
+nest 996 >"$g/nest-996.gguf"
+nest 997 >"$g/nest-997.gguf"
+PIN=a1b2c3d4e5f60718
+printf 'version: 7000 (a1b2c3d4e5)\nbuilt with cc\n' >"$g/ver"
+printf 'version: 1 (0123456)\n' >"$g/ver-other"
+printf 'llama.cpp commit a1b2c3d4e5f60718ff\n' >"$g/ver-commit"
+printf 'version (A1B2C3D) commit a1b2c3d\n' >"$g/ver-upper"
+printf 'llama.cpp\n' >"$g/ver-none"
+printf '\xff\xfe (a1b2c3d)\r\n' >"$g/ver-bytes"
+printf 'load ...\nfitted:\n-c 8192 -ngl -1\n' >"$g/fits"
+printf '  -c 8192 -ngl -1  \n\n\n' >"$g/fits-ws"
+printf 'a\r\n-c 8192 -ngl -1\r\n' >"$g/fits-crlf"
+printf -- '-c 8192 -ngl 33\n' >"$g/partial-ngl"
+printf -- '-c 8192 -ngl -1 -ot "blk=CPU"\n' >"$g/partial-ot"
+printf -- '-c 8192 -ngl -1 -ts 1,1\n' >"$g/partial-ts"
+printf -- '-c 8192 -ngl -1 -ot\n' >"$g/partial-ot-end"
+printf -- '-c 8192 -ngl -1 -otx\n' >"$g/ot-word"
+printf -- '-c 2048 -ngl -1\n' >"$g/c2048"
+printf -- '-c 2047 -ngl -1\n' >"$g/c2047"
+printf -- '-c 0004096 -ngl -0001\n' >"$g/zeros"
+printf -- '-c 8192 -ngl -1\nnoise after\n' >"$g/not-last"
+printf -- '-ngl -1 -c 8192\n' >"$g/reordered"
+printf -- '-c8192 -ngl -1\n' >"$g/no-space"
+printf -- '-c 8192\x0b-ngl -1\n' >"$g/vt-split"
+printf -- '-c 8192\x1f-ngl -1\x1c\n' >"$g/py-only-space"
+printf -- '-c 8192\xe2\x80\xa8-ngl -1\n' >"$g/u2028-split"
+printf -- '-c \xd9\xa8\xd9\xa1\xd9\xa9\xd9\xa2 -ngl -\xd9\xa1\n' >"$g/arabic-digits"
+printf -- '-c \xf0\x91\xbd\x98\xf0\x91\xbd\x99\xf0\x91\xbd\x99\xf0\x91\xbd\x99\xf0\x91\xbd\x99 -ngl -1\n' >"$g/kawi-digits"
+printf -- '-c \xf0\x9c\xb3\xb8\xf0\x9c\xb3\xb1\xf0\x9c\xb3\xb9\xf0\x9c\xb3\xb2 -ngl -1\n' >"$g/outlined-digits"
+printf -- '-c \xc2\xb28192 -ngl -1\n' >"$g/superscript"
+printf -- '-c %s -ngl -1\n' "$(printf '9%.0s' {1..4301})" >"$g/huge-ctx"
+printf -- '-c %s -ngl -1\n' "$(printf '9%.0s' {1..60})" >"$g/big-ctx"
+{ printf '"tab\there" \\ \x01 \xc3\xa9 \xf0\x9f\x98\x80 \xff '; printf 'z%.0s' {1..400}; printf '\n-c 8192 -ngl -1\n'; } >"$g/raw-escapes"
+printf '\n \t\n' >"$g/blank"
+lfv "fits, trained 32768 v3 (every skip path)" 1 "$PIN" 0 24000 "$g/ver" "$g/fits" "$g/v3.gguf"
+lfv "tool absent" 0 "$PIN" 0 24000 "$g/ver" "$g/fits" "$g/v3.gguf"
+lfv "tool_found not 1" true "$PIN" 0 24000 "$g/ver" "$g/fits" "$g/v3.gguf"
+lfv "unpinned: other commit" 1 "$PIN" 0 24000 "$g/ver-other" "$g/fits" -
+lfv "unpinned: no commit printed" 1 "$PIN" 0 24000 "$g/ver-none" "$g/fits" -
+lfv "unpinned: no version file" 1 "$PIN" 0 24000 - "$g/fits" -
+lfv "unpinned: pin under 7 chars" 1 a1b2c3 0 24000 "$g/ver" "$g/fits" -
+lfv "unpinned: upper-case hex" 1 "$PIN" 0 24000 "$g/ver-upper" "$g/fits" -
+lfv "pinned via commit form, built longer than pin" 1 "$PIN" 0 24000 "$g/ver-commit" "$g/fits" -
+lfv "pinned, pin longer than built" 1 a1b2c3d4e5ffffff 0 24000 "$g/ver" "$g/fits" -
+lfv "non-UTF-8 version bytes" 1 a1b2c3d 0 24000 "$g/ver-bytes" "$g/fits" -
+lfv "non-ASCII pin" 1 "a1b2c3d4e5é" 0 24000 "$g/ver" "$g/fits" -
+lfv "rc 1" 1 "$PIN" 1 24000 "$g/ver" "$g/fits" -
+lfv "rc ' -3 '" 1 "$PIN" " -3 " 24000 "$g/ver" "$g/fits" -
+lfv "rc +0_0" 1 "$PIN" +0_0 24000 "$g/ver" "$g/fits" -
+lfv "rc arabic one" 1 "$PIN" "١" 24000 "$g/ver" "$g/fits" -
+lfv "rc nbsp-padded 0" 1 "$PIN" $'\u00a00\u00a0' 24000 "$g/ver" "$g/fits" -
+lfv "rc 1_ (raises)" 1 "$PIN" 1_ 24000 "$g/ver" "$g/fits" -
+lfv "rc \\x1c0 (raises)" 1 "$PIN" $'\x1c0' 24000 "$g/ver" "$g/fits" -
+lfv "rc empty (raises)" 1 "$PIN" "" 24000 "$g/ver" "$g/fits" -
+lfv "rc 4301 digits (raises)" 1 "$PIN" "$(printf '0%.0s' {1..4301})" 24000 "$g/ver" "$g/fits" -
+lfv "free -12" 1 "$PIN" 0 -12 "$g/ver" "$g/fits" -
+lfv "free unknown" 1 "$PIN" 0 unknown "$g/ver" "$g/fits" -
+lfv "free empty" 1 "$PIN" 0 "" "$g/ver" "$g/fits" -
+lfv "free -" 1 "$PIN" 0 - "$g/ver" "$g/fits" -
+lfv "free +5" 1 "$PIN" 0 +5 "$g/ver" "$g/fits" -
+lfv "free ' 5'" 1 "$PIN" 0 " 5" "$g/ver" "$g/fits" -
+lfv "free arabic 3" 1 "$PIN" 0 "٣" "$g/ver" "$g/fits" -
+lfv "free 007" 1 "$PIN" 0 007 "$g/ver" "$g/fits" -
+lfv "free --5 (raises)" 1 "$PIN" 0 --5 "$g/ver" "$g/fits" -
+lfv "free superscript (raises)" 1 "$PIN" 0 "²" "$g/ver" "$g/fits" -
+lfv "free 4301 digits (raises)" 1 "$PIN" 0 "$(printf '1%.0s' {1..4301})" "$g/ver" "$g/fits" -
+lfv "free 40 digits" 1 "$PIN" 0 "$(printf '9%.0s' {1..40})" "$g/ver" "$g/fits" -
+lfv "fits, padded" 1 "$PIN" 0 1 "$g/ver" "$g/fits-ws" -
+lfv "fits, CRLF" 1 "$PIN" 0 1 "$g/ver" "$g/fits-crlf" -
+lfv "partial: ngl 33" 1 "$PIN" 0 1 "$g/ver" "$g/partial-ngl" -
+lfv "partial: -ot" 1 "$PIN" 0 1 "$g/ver" "$g/partial-ot" -
+lfv "partial: -ts" 1 "$PIN" 0 1 "$g/ver" "$g/partial-ts" -
+lfv "partial: -ot at the end" 1 "$PIN" 0 1 "$g/ver" "$g/partial-ot-end" -
+lfv "-otx is not -ot" 1 "$PIN" 0 1 "$g/ver" "$g/ot-word" -
+lfv "ctx 2048 < floor 4096" 1 "$PIN" 0 1 "$g/ver" "$g/c2048" "$g/v3.gguf"
+lfv "ctx 2048 = floor, trained 2048 v2" 1 "$PIN" 0 1 "$g/ver" "$g/c2048" "$g/v2-2048.gguf"
+lfv "ctx 2047 < floor, trained 2048" 1 "$PIN" 0 1 "$g/ver" "$g/c2047" "$g/v2-2048.gguf"
+lfv "trained 0 is falsy" 1 "$PIN" 0 1 "$g/ver" "$g/c2048" "$g/zero.gguf"
+lfv "trained i32 -5" 1 "$PIN" 0 1 "$g/ver" "$g/c2048" "$g/i32-neg.gguf"
+lfv "trained u64 max" 1 "$PIN" 0 1 "$g/ver" "$g/c2048" "$g/u64-max.gguf"
+lfv "trained i64 -7" 1 "$PIN" 0 1 "$g/ver" "$g/fits" "$g/i64-neg.gguf"
+lfv "float ctx keys skipped" 1 "$PIN" 0 1 "$g/ver" "$g/c2048" "$g/float-ctx.gguf"
+lfv "gguf v1" 1 "$PIN" 0 1 "$g/ver" "$g/c2048" "$g/v1.gguf"
+lfv "unknown value type" 1 "$PIN" 0 1 "$g/ver" "$g/c2048" "$g/bad-type.gguf"
+lfv "truncated value" 1 "$PIN" 0 1 "$g/ver" "$g/c2048" "$g/truncated.gguf"
+lfv "short key" 1 "$PIN" 0 1 "$g/ver" "$g/c2048" "$g/short-key.gguf"
+lfv "array seek overflow" 1 "$PIN" 0 1 "$g/ver" "$g/c2048" "$g/seek-overflow.gguf"
+lfv "array seek past EOF" 1 "$PIN" 0 1 "$g/ver" "$g/c2048" "$g/seek-past-eof.gguf"
+lfv "non-UTF-8 key" 1 "$PIN" 0 1 "$g/ver" "$g/c2048" "$g/bad-utf8-key.gguf"
+lfv "first context_length wins" 1 "$PIN" 0 1 "$g/ver" "$g/c2048" "$g/first-wins.gguf"
+lfv "magic only" 1 "$PIN" 0 1 "$g/ver" "$g/c2048" "$g/magic-only.gguf"
+lfv "not GGUF" 1 "$PIN" 0 1 "$g/ver" "$g/c2048" "$g/text.gguf"
+lfv "model is a directory" 1 "$PIN" 0 1 "$g/ver" "$g/c2048" "$g/dir"
+lfv "model missing" 1 "$PIN" 0 1 "$g/ver" "$g/c2048" "$g/no-such.gguf"
+lfv "996 nested arrays parse" 1 "$PIN" 0 1 "$g/ver" "$g/c2048" "$g/nest-996.gguf"
+lfv "997 nested arrays hit the recursion limit" 1 "$PIN" 0 1 "$g/ver" "$g/c2048" "$g/nest-997.gguf"
+lfv "zero-padded numbers" 1 "$PIN" 0 1 "$g/ver" "$g/zeros" -
+lfv "missing: verdict line not last" 1 "$PIN" 0 1 "$g/ver" "$g/not-last" -
+lfv "reordered flags" 1 "$PIN" 0 1 "$g/ver" "$g/reordered" -
+lfv "missing: -c8192" 1 "$PIN" 0 1 "$g/ver" "$g/no-space" -
+lfv "missing: \\v splits the line" 1 "$PIN" 0 1 "$g/ver" "$g/vt-split" -
+lfv "\\x1c/\\x1f are \\s" 1 "$PIN" 0 1 "$g/ver" "$g/py-only-space" -
+lfv "missing: U+2028 splits the line" 1 "$PIN" 0 1 "$g/ver" "$g/u2028-split" -
+lfv "arabic-indic digits" 1 "$PIN" 0 1 "$g/ver" "$g/arabic-digits" -
+lfv "Kawi digits (Unicode 15)" 1 "$PIN" 0 1 "$g/ver" "$g/kawi-digits" -
+lfv "missing: outlined digits (Unicode 16)" 1 "$PIN" 0 1 "$g/ver" "$g/outlined-digits" -
+lfv "missing: superscript digit" 1 "$PIN" 0 1 "$g/ver" "$g/superscript" -
+lfv "ctx 60 digits" 1 "$PIN" 0 1 "$g/ver" "$g/big-ctx" -
+lfv "ctx 4301 digits (raises)" 1 "$PIN" 0 1 "$g/ver" "$g/huge-ctx" -
+lfv "raw: escapes, bad bytes, 300-char cut" 1 "$PIN" 0 1 "$g/ver" "$g/raw-escapes" -
+lfv "missing: blank stdout" 1 "$PIN" 0 1 "$g/ver" "$g/blank" -
+lfv "missing: no stdout file given" 1 "$PIN" 0 1 "$g/ver" "" -
+lfv "version file missing (raises)" 1 "$PIN" 0 1 "$g/no-such" "$g/fits" -
+lfv "stdout file missing (raises)" 1 "$PIN" 0 1 "$g/ver" "$g/no-such" -
+lfv "no args (raises)"
+lfv "six args (raises)" 1 "$PIN" 0 1 "$g/ver" "$g/fits"
+lfv "eight args (raises)" 1 "$PIN" 0 1 "$g/ver" "$g/fits" - extra
+lfv "--help alone (raises)" --help
+lfv "-h among seven" 1 "$PIN" 0 1 "$g/ver" "$g/fits" -h
+lfv "--version alone (raises)" --version
 
 ran=$((pass + fail))
 echo "ci_tools_py_parity: $pass/$ran identical (declared $EXPECTED_CASES)"
