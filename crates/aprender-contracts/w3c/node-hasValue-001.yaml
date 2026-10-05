@@ -1,0 +1,17 @@
+# vendored: tests/core/node/hasValue-001.ttl
+id: node/hasValue-001
+label: "Test of sh:hasValue at node shape 001"
+prefix: "http://datashapes.org/sh/tests/core/node/hasValue-001.test#"
+targeting: "sh:targetNode \"Invalid String\", \"Test\" as written, xsd:string literals (#4814 slice 5)"
+shapes:
+  - id: TestShape
+    hasValue: Test
+    targetNode:
+      - {literal: "Invalid String", datatype: xsd:string}
+      - {literal: "Test", datatype: xsd:string}
+data: |
+  # the data graph is empty: every focus node is a target literal
+expect:
+  conforms: false
+  results:
+    - {focus: {literal: "Invalid String", datatype: xsd:string}, component: hasValue}

@@ -19,6 +19,7 @@ use std::collections::BTreeMap;
 use std::path::{Path, PathBuf};
 
 use rudof_rdf::rdf_core::RDFFormat;
+use rudof_rdf::rdf_core::term::Object;
 use rudof_rdf::rdf_impl::ReaderMode;
 use shacl::ir::IRSchema;
 use shacl::validator::processor::{GraphValidation, ShaclProcessor};
@@ -72,13 +73,30 @@ fn oracle_pairs(data: &Path, shapes: &Path) -> Result<Vec<Pair>, String> {
         .iter()
         .map(|r| {
             (
-                r.focus_node().to_string().trim_matches(['<', '>']).to_string(),
+                focus_name(r.focus_node()),
                 short_component(&r.constraint_component().to_string()),
             )
         })
         .collect();
     pairs.sort();
     Ok(pairs)
+}
+
+const XSD_NS: &str = "http://www.w3.org/2001/XMLSchema#";
+
+/// How pv names a focus node (`shapes::focus_name`): an IRI as itself, a literal by its N-Triples form
+/// `"lexical"^^<datatype>` (#4814 slice 5, a literal `sh:targetNode`). The datatype is expanded if the library prints it
+/// prefixed, so the two sides compare by term and not by how a library spells it.
+fn focus_name(o: &Object) -> String {
+    match o {
+        Object::Literal(lit) => {
+            let dt = lit.datatype().to_string();
+            let dt = dt.trim_matches(['<', '>']);
+            let dt = dt.strip_prefix("xsd:").map_or_else(|| dt.to_string(), |l| format!("{XSD_NS}{l}"));
+            format!("\"{}\"^^<{dt}>", lit.lexical_form())
+        }
+        other => other.to_string().trim_matches(['<', '>']).to_string(),
+    }
 }
 
 /// The expectation a translation states: `(focus, component)` pairs, expanded with the case's prefix.
@@ -102,6 +120,14 @@ fn expected_pairs(yaml: &Path) -> Result<(String, Vec<Pair>), String> {
         .and_then(|r| r.as_sequence())
     {
         for r in list {
+            // a literal focus is written `{literal, datatype}`, as a literal `targetNode` is (#4814 slice 5)
+            if let Some(lit) = r.get("focus").and_then(|v| v.get("literal")).and_then(|v| v.as_str()) {
+                let dt = r.get("focus").and_then(|v| v.get("datatype")).and_then(|v| v.as_str()).unwrap_or_default();
+                let dt = dt.strip_prefix("xsd:").map_or_else(|| dt.to_string(), |l| format!("{XSD_NS}{l}"));
+                let component = r.get("component").and_then(|v| v.as_str()).unwrap_or_default().to_string();
+                pairs.push((format!("\"{lit}\"^^<{dt}>"), component));
+                continue;
+            }
             let focus = r.get("focus").and_then(|v| v.as_str()).unwrap_or_default();
             let component = r
                 .get("component")

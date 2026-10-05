@@ -1,0 +1,17 @@
+# vendored: tests/core/node/disjoint-001.ttl
+id: node/disjoint-001
+label: "Test of sh:disjoint at node shape 001"
+prefix: "http://datashapes.org/sh/tests/core/node/disjoint-001.test#"
+targeting: "sh:targetNode ex:InvalidResource1, ex:ValidResource1 as written"
+shapes:
+  - id: TestShape
+    disjoint: ex:property
+    targetNode: [ex:InvalidResource1, ex:ValidResource1]
+data: |
+  ex:InvalidResource1 ex:property ex:InvalidResource1 .
+  ex:InvalidResource1 ex:property ex:ValidResource1 .
+  ex:ValidResource1 ex:property ex:InvalidResource1 .
+expect:
+  conforms: false
+  results:
+    - {focus: ex:InvalidResource1, component: disjoint}

@@ -159,6 +159,8 @@ pub struct NodeShape {
     pub closed: bool,
     pub ignored_properties: Vec<String>,
     pub properties: Vec<PropertyShape>,
+    /// The constraints written on the node shape itself (#4814 slice 5), if any.
+    pub own: Option<Box<NodeLevel>>,
     /// `allowEmpty: "<why>"` (#3610): this shape's target class is empty BY DESIGN in the good state — a
     /// `release:RefusalCell` exists only when a cell does not fit. Zero focus nodes then does not refuse the
     /// verdict, but the shape is still named in the gate's `declines[]`. Not SHACL; pv's own key, and it
@@ -166,10 +168,20 @@ pub struct NodeShape {
     pub allow_empty: Option<String>,
 }
 
-/// `sh:targetNode`, `sh:targetSubjectsOf`, `sh:targetObjectsOf`: full IRIs, in the order written.
+/// Constraints on the node shape itself (SHACL §2.1, #4814 slice 5): the value set is `{focus}`, and a result has
+/// no `resultPath`. Held as a [`PropertyShape`] whose `path` is empty and never read as a predicate, beside the keys
+/// as written, so that a refusal can name the key it refuses.
+#[derive(Debug, Clone)]
+pub struct NodeLevel {
+    pub keys: Vec<String>,
+    pub constraints: PropertyShape,
+}
+
+/// `sh:targetNode` (an IRI, or since #4814 slice 5 a literal), then `sh:targetSubjectsOf` and `sh:targetObjectsOf`
+/// (full IRIs), in the order written.
 #[derive(Debug, Clone, Default, PartialEq, Eq)]
 pub struct Targets {
-    pub nodes: Vec<String>,
+    pub nodes: Vec<Term>,
     pub subjects_of: Vec<String>,
     pub objects_of: Vec<String>,
 }
@@ -245,6 +257,26 @@ const NODE_KEYS: &[&str] = &[
     "ignoredProperties",
     "properties",
     "allowEmpty",
+];
+/// The value components a node shape may carry on itself (#4814 slice 5). Each one means what it means on a
+/// property shape, applied to the value set `{focus}`. `languageIn` stays refused until a term keeps its tag (F9,
+/// slice 10). The counts and the property pairs (`lessThan`, `lessThanOrEquals`) are property-shape components.
+const NODE_LEVEL_KEYS: &[&str] = &[
+    "class",
+    "datatype",
+    "nodeKind",
+    "in",
+    "pattern",
+    "minLength",
+    "maxLength",
+    "minExclusive",
+    "minInclusive",
+    "maxExclusive",
+    "maxInclusive",
+    "hasValue",
+    "equals",
+    "disjoint",
+    "node",
 ];
 const PROPERTY_KEYS: &[&str] = &[
     "path",
@@ -419,7 +451,7 @@ fn parse_node_shape(
 ) -> Result<NodeShape, ShapeError> {
     for key in map.keys() {
         let k = key.as_str().unwrap_or("?");
-        if !NODE_KEYS.contains(&k) {
+        if !NODE_KEYS.contains(&k) && !NODE_LEVEL_KEYS.contains(&k) {
             return Err(ShapeError::Unsupported {
                 shape: id.to_string(),
                 component: k.to_string(),
@@ -489,14 +521,41 @@ fn parse_node_shape(
         closed,
         ignored_properties,
         properties,
+        own: node_level_of(id, map, depth)?,
         allow_empty: allow_empty_of(id, map, depth)?,
     })
 }
 
-/// `targetNode` / `targetSubjectsOf` / `targetObjectsOf`: each a string or a non-empty list of strings, expanded.
+/// The [`NODE_LEVEL_KEYS`] written on the node shape itself, parsed as a property shape's would be, with no path.
+fn node_level_of(
+    id: &str,
+    map: &serde_yaml::Mapping,
+    depth: usize,
+) -> Result<Option<Box<NodeLevel>>, ShapeError> {
+    let own: serde_yaml::Mapping = map
+        .iter()
+        .filter(|(k, _)| k.as_str().is_some_and(|k| NODE_LEVEL_KEYS.contains(&k)))
+        .map(|(k, v)| (k.clone(), v.clone()))
+        .collect();
+    if own.is_empty() {
+        return Ok(None);
+    }
+    Ok(Some(Box::new(NodeLevel {
+        keys: own
+            .keys()
+            .filter_map(|k| k.as_str().map(String::from))
+            .collect(),
+        constraints: parse_constraints(id, &own, depth, String::new())?,
+    })))
+}
+
+/// `targetNode` / `targetSubjectsOf` / `targetObjectsOf`: each one entry or a non-empty list of them. An entry is a
+/// string, expanded to an IRI; a `targetNode` entry may instead be a literal, written `{literal: "7", datatype:
+/// xsd:integer}` (#4814 slice 5). A bare YAML scalar stays an IRI, because in `in` and `hasValue` the same scalar
+/// is a literal typed by its YAML type, and one spelling cannot mean both.
 /// A nested `node` shape has no focus set of its own, so a target there is malformed, not ignored.
 fn targets_of(id: &str, map: &serde_yaml::Mapping, depth: usize) -> Result<Targets, ShapeError> {
-    let list = |k: &str| -> Result<Vec<String>, ShapeError> {
+    let list = |k: &str, literal_ok: bool| -> Result<Vec<Term>, ShapeError> {
         let Some(v) = map.get(k) else {
             return Ok(Vec::new());
         };
@@ -509,22 +568,53 @@ fn targets_of(id: &str, map: &serde_yaml::Mapping, depth: usize) -> Result<Targe
         let bad = || {
             malformed_in(
                 id,
-                format!("`{k}` is not a string or a non-empty list of strings"),
+                format!(
+                    "`{k}` is not {} or a non-empty list of them",
+                    if literal_ok {
+                        "a string, a {literal, datatype} mapping,"
+                    } else {
+                        "a string"
+                    }
+                ),
             )
         };
+        let entry = |x: &serde_yaml::Value| -> Result<Term, ShapeError> {
+            match x {
+                serde_yaml::Value::String(s) => Ok(Term::iri(expand(s))),
+                serde_yaml::Value::Mapping(m) if literal_ok => target_literal(m).ok_or_else(bad),
+                _ => Err(bad()),
+            }
+        };
         match v {
-            serde_yaml::Value::String(s) => Ok(vec![expand(s)]),
-            serde_yaml::Value::Sequence(seq) if !seq.is_empty() => seq
-                .iter()
-                .map(|x| x.as_str().map(expand).ok_or_else(bad))
-                .collect(),
-            _ => Err(bad()),
+            serde_yaml::Value::Sequence(seq) if !seq.is_empty() => seq.iter().map(entry).collect(),
+            serde_yaml::Value::Sequence(_) => Err(bad()),
+            one => Ok(vec![entry(one)?]),
         }
     };
+    let iris = |k: &str| -> Result<Vec<String>, ShapeError> {
+        Ok(list(k, false)?
+            .into_iter()
+            .filter_map(|t| t.as_iri().map(String::from))
+            .collect())
+    };
     Ok(Targets {
-        nodes: list("targetNode")?,
-        subjects_of: list("targetSubjectsOf")?,
-        objects_of: list("targetObjectsOf")?,
+        nodes: list("targetNode", true)?,
+        subjects_of: iris("targetSubjectsOf")?,
+        objects_of: iris("targetObjectsOf")?,
+    })
+}
+
+/// `{literal: "<lexical>", datatype: <prefixed or full IRI>}`, exactly those two keys, both strings. No default
+/// datatype: a focus literal written without one would be an `xsd:string` by accident, as F11 found for numbers.
+fn target_literal(m: &serde_yaml::Mapping) -> Option<Term> {
+    if m.len() != 2 {
+        return None;
+    }
+    let value = m.get("literal")?.as_str()?;
+    let datatype = m.get("datatype")?.as_str()?;
+    Some(Term::Literal {
+        value: value.to_string(),
+        datatype: expand(datatype),
     })
 }
 
@@ -555,12 +645,22 @@ fn parse_property(
     pm: &serde_yaml::Mapping,
     depth: usize,
 ) -> Result<PropertyShape, ShapeError> {
+    check_property_keys(shape, pm)?;
+    let path = expand(parse_path(shape, pm)?);
+    parse_constraints(shape, pm, depth, path)
+}
+
+/// Every constraint of one property shape, or of a node shape itself (`path` empty, #4814 slice 5).
+fn parse_constraints(
+    shape: &str,
+    pm: &serde_yaml::Mapping,
+    depth: usize,
+    path: String,
+) -> Result<PropertyShape, ShapeError> {
     let malformed = |what: String| ShapeError::Malformed {
         shape: shape.to_string(),
         what,
     };
-    check_property_keys(shape, pm)?;
-    let path = parse_path(shape, pm)?;
     let count = |k: &str| -> Result<Option<usize>, ShapeError> {
         match pm.get(k) {
             None => Ok(None),
@@ -584,7 +684,7 @@ fn parse_property(
     let node = parse_nested_node(shape, pm, depth)?;
     let severity = parse_severity(shape, str_key(shape, pm, "severity")?)?;
     Ok(PropertyShape {
-        path: expand(path),
+        path,
         min_count: count("minCount")?,
         max_count: count("maxCount")?,
         datatype: iri_opt("datatype")?,
@@ -861,23 +961,38 @@ pub fn instances_closed(graph: &Graph, class: &str) -> Vec<String> {
 /// its N-Triples form, which no IRI can equal, and it has no values on any path.
 #[must_use]
 pub fn focus_nodes(graph: &Graph, shape: &NodeShape) -> Vec<String> {
-    let mut out: BTreeSet<String> = BTreeSet::new();
+    focus_terms(graph, shape).iter().map(focus_name).collect()
+}
+
+/// The focus nodes of a shape as terms: [`focus_nodes`] before naming, so that a literal focus keeps its datatype
+/// for the node shape's own constraints (#4814 slice 5).
+fn focus_terms(graph: &Graph, shape: &NodeShape) -> BTreeSet<Term> {
+    let mut out: BTreeSet<Term> = BTreeSet::new();
     if !shape.target_class.is_empty() {
-        out.extend(instances_closed(graph, &shape.target_class));
+        out.extend(
+            instances_closed(graph, &shape.target_class)
+                .into_iter()
+                .map(Term::Iri),
+        );
     }
     out.extend(shape.targets.nodes.iter().cloned());
     for t in graph.iter() {
         if shape.targets.subjects_of.contains(&t.predicate) {
-            out.insert(t.subject.clone());
+            out.insert(Term::Iri(t.subject.clone()));
         }
         if shape.targets.objects_of.contains(&t.predicate) {
-            out.insert(match &t.object {
-                Term::Iri(s) => s.clone(),
-                lit @ Term::Literal { .. } => lit.to_string(),
-            });
+            out.insert(t.object.clone());
         }
     }
-    out.into_iter().collect()
+    out
+}
+
+/// How a focus node is named in a result: an IRI as itself, a literal by its N-Triples form, which no IRI equals.
+fn focus_name(t: &Term) -> String {
+    match t {
+        Term::Iri(s) => s.clone(),
+        lit @ Term::Literal { .. } => lit.to_string(),
+    }
 }
 
 /// Validate `graph` against `shapes`. Focus nodes of a shape are [`focus_nodes`].
@@ -886,10 +1001,9 @@ pub fn validate(graph: &Graph, shapes: &[NodeShape]) -> Report {
     let mut report = Report::default();
     let mut focus_seen: BTreeSet<String> = BTreeSet::new();
     for shape in shapes {
-        for focus in focus_nodes(graph, shape) {
-            let focus = focus.as_str();
-            focus_seen.insert(focus.to_string());
-            validate_focus(graph, shape, focus, &mut report.results);
+        for focus in focus_terms(graph, shape) {
+            focus_seen.insert(focus_name(&focus));
+            validate_focus(graph, shape, &focus, &mut report.results);
         }
     }
     report.focus_nodes_n = focus_seen.len();
@@ -898,19 +1012,33 @@ pub fn validate(graph: &Graph, shapes: &[NodeShape]) -> Report {
     report
 }
 
-fn validate_focus(graph: &Graph, shape: &NodeShape, focus: &str, out: &mut Vec<ValidationResult>) {
+fn validate_focus(graph: &Graph, shape: &NodeShape, focus: &Term, out: &mut Vec<ValidationResult>) {
+    // A literal focus is no subject, so it has no values on any path; its name matches no triple.
+    let name = focus_name(focus);
     let mut push =
         |severity: Severity, path: Option<&str>, component: &'static str, message: String| {
             out.push(ValidationResult {
                 severity,
-                focus: focus.to_string(),
+                focus: name.clone(),
                 shape: shape.id.clone(),
                 path: path.map(String::from),
                 component,
                 message,
             });
         };
+    let focus_s = name.as_str();
+    if let Some(own) = &shape.own {
+        // SHACL §2.1: the value set of a node shape is {focus}, and its results carry no resultPath
+        let mut no_path =
+            |s: Severity, _: Option<&str>, c: &'static str, m: String| push(s, None, c, m);
+        let p = &own.constraints;
+        let values = [focus];
+        check_value(graph, p, focus, &mut no_path);
+        check_sets(graph, focus_s, p, &values, &mut no_path);
+        check_has_value(p, &values, &mut no_path);
+    }
     for p in &shape.properties {
+        let focus = focus_s;
         let values = graph.objects(focus, &p.path);
         check_counts(p, &values, &mut push);
         for v in &values {
@@ -921,7 +1049,7 @@ fn validate_focus(graph: &Graph, shape: &NodeShape, focus: &str, out: &mut Vec<V
         check_has_value(p, &values, &mut push);
     }
     if shape.closed {
-        check_closed(graph, shape, focus, &mut push);
+        check_closed(graph, shape, focus_s, &mut push);
     }
 }
 
@@ -1136,7 +1264,7 @@ fn check_value(
                 // One `sh:NodeConstraintComponent` result per VALUE that fails the nested shape, on the outer
                 // path, with the nested findings as its detail (SHACL §4.6.2; W3C property/node-001, -002).
                 let mut nested = Vec::new();
-                validate_focus(graph, inner, i, &mut nested);
+                validate_focus(graph, inner, &Term::iri(i), &mut nested);
                 let violations: Vec<String> = nested
                     .iter()
                     .filter(|r| r.severity == Severity::Violation)
@@ -1512,8 +1640,11 @@ fn turtle_node(s: &NodeShape, subject: &str) -> String {
     if !s.target_class.is_empty() {
         o.push_str(&format!("    sh:targetClass <{}> ;\n", s.target_class));
     }
+    for t in &s.targets.nodes {
+        // a Term displays in N-Triples form, `<iri>` or `"lexical"^^<datatype>`, which is valid Turtle
+        o.push_str(&format!("    sh:targetNode {t} ;\n"));
+    }
     for (pred, list) in [
-        ("targetNode", &s.targets.nodes),
         ("targetSubjectsOf", &s.targets.subjects_of),
         ("targetObjectsOf", &s.targets.objects_of),
     ] {
@@ -1535,11 +1666,22 @@ fn turtle_node(s: &NodeShape, subject: &str) -> String {
             ));
         }
     }
+    if let Some(own) = &s.own {
+        for l in constraint_lines(&own.constraints) {
+            o.push_str(&format!("    {l} ;\n"));
+        }
+    }
     for p in &s.properties {
         o.push_str(&turtle_property(p));
     }
     o.push_str(".\n\n");
-    for inner in s.properties.iter().filter_map(|p| p.node.as_deref()) {
+    let own_node = s.own.as_ref().and_then(|n| n.constraints.node.as_deref());
+    for inner in s
+        .properties
+        .iter()
+        .filter_map(|p| p.node.as_deref())
+        .chain(own_node)
+    {
         o.push_str(&turtle_node(
             inner,
             &format!("<{}shape/{}>", crate::ontology::rdf::ONT_BASE, inner.id),
@@ -1607,8 +1749,18 @@ fn turtle_entry(v: &InEntry) -> String {
 /// One `sh:property [ … ] ;` block. Every implemented component has a line; nothing else is emitted.
 fn turtle_property(p: &PropertyShape) -> String {
     let mut o = String::from("    sh:property [\n");
-    let mut line = |s: String| o.push_str(&format!("        {s} ;\n"));
-    line(format!("sh:path <{}>", p.path));
+    o.push_str(&format!("        sh:path <{}> ;\n", p.path));
+    for l in constraint_lines(p) {
+        o.push_str(&format!("        {l} ;\n"));
+    }
+    o.push_str("    ] ;\n");
+    o
+}
+
+/// Every constraint line of a property shape, or of a node shape itself, without the path and without the `;`.
+fn constraint_lines(p: &PropertyShape) -> Vec<String> {
+    let mut o = Vec::new();
+    let mut line = |s: String| o.push(s);
     if let Some(n) = p.min_count {
         line(format!("sh:minCount {n}"));
     }
@@ -1649,7 +1801,6 @@ fn turtle_property(p: &PropertyShape) -> String {
             inner.id
         ));
     }
-    o.push_str("    ] ;\n");
     o
 }
 
@@ -2024,7 +2175,7 @@ mod tests {
         // #4814 slice 4: an explicit target names the focus nodes; the entity-type default class is not added
         let s = shape("entity: {type: pv-contract}\nshape:\n  targetNode: ont:a\n  targetSubjectsOf: [ont:p, ont:q]\n  targetObjectsOf: ont:r\n  properties: []\n");
         assert_eq!(s.target_class, "");
-        assert_eq!(s.targets.nodes, vec![ont("a")]);
+        assert_eq!(s.targets.nodes, vec![Term::iri(ont("a"))]);
         assert_eq!(s.targets.subjects_of, vec![ont("p"), ont("q")]);
         assert_eq!(s.targets.objects_of, vec![ont("r")]);
         // beside an explicit targetClass both are kept
@@ -2052,6 +2203,69 @@ mod tests {
                 other => panic!("{y}: expected Malformed, got {other:?}"),
             }
         }
+    }
+
+    #[test]
+    fn a_literal_target_node_is_a_typed_mapping_and_a_bare_scalar_stays_an_iri() {
+        // #4814 slice 5: `{literal, datatype}`, exactly those two keys, and only under targetNode
+        let s = shape("shape:\n  targetNode: [ont:a, {literal: '7', datatype: xsd:integer}]\n  minInclusive: 8\n");
+        assert_eq!(s.targets.nodes, vec![Term::iri(ont("a")), Term::integer(7)]);
+        let parse =
+            |y: &str| parse_shape_with("t", &serde_yaml::from_str(y).expect("yaml"), &pv_map());
+        for y in [
+            "shape:\n  targetNode: {literal: '7'}\n",
+            "shape:\n  targetNode: {literal: '7', datatype: xsd:integer, lang: en}\n",
+            "shape:\n  targetNode: {literal: 7, datatype: xsd:integer}\n",
+            "shape:\n  targetSubjectsOf: {literal: '7', datatype: xsd:integer}\n",
+        ] {
+            match parse(y) {
+                Err(ShapeError::Malformed { what, .. }) => {
+                    assert!(what.contains("not a string"), "{y}: {what}")
+                }
+                other => panic!("{y}: expected Malformed, got {other:?}"),
+            }
+        }
+    }
+
+    #[test]
+    fn a_node_shape_constrains_its_focus_itself_with_no_result_path() {
+        // #4814 slice 5: the value set is {focus}; a literal focus is named by its N-Triples form
+        let s = shape("shape:\n  targetNode: [ont:a, {literal: '7', datatype: xsd:integer}, {literal: '9', datatype: xsd:integer}]\n  minInclusive: 8\n  nodeKind: Literal\n");
+        let own = s.own.as_ref().expect("node-level constraints");
+        assert_eq!(own.keys, vec!["minInclusive", "nodeKind"]);
+        let r = validate(&Graph::new(), std::slice::from_ref(&s));
+        let got: Vec<(&str, Option<&str>, &str)> = r
+            .results
+            .iter()
+            .map(|x| (x.focus.as_str(), x.path.as_deref(), x.component))
+            .collect();
+        let seven = Term::integer(7).to_string();
+        let a = ont("a");
+        let mut want = vec![
+            (a.as_str(), None, "minInclusive"),
+            (a.as_str(), None, "nodeKind"),
+            (seven.as_str(), None, "minInclusive"),
+        ];
+        want.sort_unstable();
+        let mut got = got;
+        got.sort_unstable();
+        assert_eq!(got, want, "{:?}", r.results);
+        assert_eq!(r.focus_nodes_n, 3);
+        // the export writes the literal target and the constraints on the node shape itself
+        let t = to_turtle(std::slice::from_ref(&s));
+        assert!(
+            t.contains(&format!("sh:targetNode \"7\"^^<{XSD_NS}integer> ;")),
+            "{t}"
+        );
+        assert!(t.contains("    sh:nodeKind sh:Literal ;\n"), "{t}");
+        // languageIn stays refused on a node shape too
+        let doc: serde_yaml::Value =
+            serde_yaml::from_str("shape:\n  targetNode: ont:a\n  languageIn: [en]\n")
+                .expect("yaml");
+        assert!(matches!(
+            parse_shape_with("t", &doc, &pv_map()),
+            Err(ShapeError::Unsupported { component, .. }) if component == "languageIn"
+        ));
     }
 
     #[test]

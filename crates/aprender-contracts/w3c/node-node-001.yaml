@@ -1,0 +1,23 @@
+# vendored: tests/core/node/node-001.ttl
+id: node/node-001
+label: "Test of sh:node at node shape 001"
+prefix: "http://datashapes.org/sh/tests/core/node/node-001.test#"
+targeting: "implicit class target (ex:TestClass is rdfs:Class and sh:NodeShape) → targetClass ex:TestClass; the anonymous sh:node shape is written inline"
+shapes:
+  - id: TestClass
+    targetClass: ex:TestClass
+    node:
+      class: ex:OtherClass
+data: |
+  ex:InvalidInstance rdf:type ex:TestClass .
+  ex:InvalidInstance rdfs:label "Invalid instance" .
+  ex:TestClass rdf:type rdfs:Class .
+  ex:TestClass rdfs:label "Test class" .
+  ex:TestClass rdfs:subClassOf rdfs:Resource .
+  ex:ValidInstance rdf:type ex:OtherClass .
+  ex:ValidInstance rdf:type ex:TestClass .
+  ex:ValidInstance rdfs:label "Valid instance" .
+expect:
+  conforms: false
+  results:
+    - {focus: ex:InvalidInstance, component: node}

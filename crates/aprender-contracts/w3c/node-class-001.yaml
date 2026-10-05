@@ -1,0 +1,22 @@
+# vendored: tests/core/node/class-001.ttl
+id: node/class-001
+label: "Test of sh:class at node shape 001"
+prefix: "http://datashapes.org/sh/tests/core/node/class-001.test#"
+targeting: "sh:targetNode ex:John, ex:Quokki, ex:Someone, ex:Typeless as written"
+shapes:
+  - id: TestShape
+    class: ex:Person
+    targetNode: [ex:John, ex:Quokki, ex:Someone, ex:Typeless]
+data: |
+  ex:John rdf:type ex:MalePerson .
+  ex:MalePerson rdf:type rdfs:Class .
+  ex:MalePerson rdfs:subClassOf ex:Person .
+  ex:Person rdf:type rdfs:Class .
+  ex:Person rdfs:subClassOf rdfs:Resource .
+  ex:Quokki rdf:type ex:Animal .
+  ex:Someone rdf:type ex:Person .
+expect:
+  conforms: false
+  results:
+    - {focus: ex:Quokki, component: class}
+    - {focus: ex:Typeless, component: class}

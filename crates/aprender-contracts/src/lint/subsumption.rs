@@ -460,6 +460,7 @@ mod tests {
             closed: false,
             ignored_properties: vec![],
             properties: vec![],
+            own: None,
             allow_empty: None,
         }
     }

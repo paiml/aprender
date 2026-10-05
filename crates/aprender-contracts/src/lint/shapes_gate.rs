@@ -142,6 +142,7 @@ pub fn collect_shapes(
         checked += 1;
         for shape in shapes::parse_shapes_with(&stem, &doc, &targets)? {
             refuse_non_class_target(&shape)?;
+            refuse_node_level(&shape)?;
             if let Some((_, other)) = shapes.iter().find(|(s, _)| s.id == shape.id) {
                 return Err(ShapeError::Malformed {
                     shape: shape.id.clone(),
@@ -174,6 +175,23 @@ fn refuse_non_class_target(shape: &NodeShape) -> Result<(), ShapeError> {
         }),
         None => Ok(()),
     }
+}
+
+/// #4814 slice 5: a contract shape, or a `node` shape nested in one, may not carry constraints on itself yet. The
+/// gate's plant names a property path for every result it expects, and a node-level result has none, so such a shape
+/// would go unplanted. Refused by the first key as written: the same exit 3 and text the parser gave before slice 5.
+fn refuse_node_level(shape: &NodeShape) -> Result<(), ShapeError> {
+    if let Some(k) = shape.own.as_ref().and_then(|o| o.keys.first()) {
+        return Err(ShapeError::Unsupported {
+            shape: shape.id.clone(),
+            component: k.clone(),
+        });
+    }
+    shape
+        .properties
+        .iter()
+        .filter_map(|p| p.node.as_deref())
+        .try_for_each(refuse_node_level)
 }
 
 /// `(shape id, declaring file)` for every shape in the corpus — the arming ratchet's view of "what exists".
@@ -1172,6 +1190,7 @@ mod tests {
             closed: false,
             ignored_properties: Vec::new(),
             properties: Vec::new(),
+            own: None,
             allow_empty: None,
         }
     }
@@ -1454,14 +1473,44 @@ mod tests {
         for k in ["targetNode", "targetSubjectsOf", "targetObjectsOf"] {
             s.targets = shapes::Targets::default();
             let one = vec![crate::ontology::rdf::ont("x")];
+            let x = crate::ontology::rdf::Term::iri(crate::ontology::rdf::ont("x"));
             match k {
-                "targetNode" => s.targets.nodes = one,
+                "targetNode" => s.targets.nodes = vec![x],
                 "targetSubjectsOf" => s.targets.subjects_of = one,
                 _ => s.targets.objects_of = one,
             }
             match refuse_non_class_target(&s) {
                 Err(ShapeError::Unsupported { component, .. }) => assert_eq!(component, k),
                 other => panic!("{k}: expected Unsupported, got {other:?}"),
+            }
+        }
+    }
+
+    #[test]
+    fn a_contract_shape_with_constraints_on_itself_is_refused_by_its_first_key() {
+        // #4814 slice 5: the parser reads them now; the gate refuses them, on the shape and on a nested `node`
+        let parse = |y: &str| {
+            shapes::parse_shapes_with(
+                "t",
+                &serde_yaml::from_str(y).expect("yaml"),
+                &shapes::TargetMap::new(),
+            )
+            .expect("parses")
+            .remove(0)
+        };
+        let ok =
+            parse("shape:\n  targetClass: ont:A\n  properties: [{path: ont:p, class: ont:B}]\n");
+        assert!(refuse_node_level(&ok).is_ok());
+        for (y, want) in [
+            ("shape:\n  targetClass: ont:A\n  pattern: '^x'\n  class: ont:B\n", "pattern"),
+            (
+                "shape:\n  targetClass: ont:A\n  properties: [{path: ont:p, node: {hasValue: x}}]\n",
+                "hasValue",
+            ),
+        ] {
+            match refuse_node_level(&parse(y)) {
+                Err(ShapeError::Unsupported { component, .. }) => assert_eq!(component, want, "{y}"),
+                other => panic!("{y}: expected Unsupported, got {other:?}"),
             }
         }
     }

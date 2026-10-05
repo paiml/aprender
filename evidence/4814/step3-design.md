@@ -149,3 +149,21 @@ Expected unlock: up to 18 of the 21, if the literal `targetNode` and the mapping
 are `in-001` and `node-001` (no target) and `nodeKind-001` (blank-node kinds). `languageIn-001` is not among the 21;
 it waits on slice 10.
 Each count is to be re-measured against the vendored YAML before the commit says so.
+
+## Slice 5 as built (measured, not compiled yet)
+
+- Node-level constraints (SHACL §2.1): a node shape may carry `class, datatype, nodeKind, in, pattern, minLength,
+  maxLength, min/maxExclusive, min/maxInclusive, hasValue, equals, disjoint, node`. The value set is `{focus}` and
+  the result has no `resultPath`. `languageIn` stays `Unsupported` there too.
+- Literal `targetNode`: `{literal: "7", datatype: xsd:integer}`, exactly those two keys and no default datatype. A
+  bare scalar stays an IRI. The mapping form is accepted only under `targetNode`. The `in`/`hasValue` mapping and the
+  bare-float `Malformed` above are NOT in this slice. They tighten the gate, so they wait for their own sign-off row.
+- The gate (`shapes_gate::refuse_node_level`) refuses node-level constraints in a contract shape, nested `node`
+  shapes included, with `Unsupported{component: first key}`. No contract's verdict can change, so there is no
+  sign-off row for this slice.
+- Unlock measured against the vendored YAML: 7 cases, not 18. They are node/class-001, disjoint-001, equals-001,
+  hasValue-001, minInclusive-001, node-001 and nodeKind-001. CASES goes from 29 to 36 and NOT_VENDORED loses 7. The
+  rest keep written reasons: blank-node focus (R-15), language tags (F9), IRI `in` members, two `sh:class` values,
+  `sh:flags`, dateTime time zones, and the Warning-only harness. The 18 estimate counted cases that need those.
+- The mutant for the receipt (MUTANT 7) is to skip the `own` block in `validate_focus`. It must turn
+  `every_embedded_case_parses_and_passes` RED.

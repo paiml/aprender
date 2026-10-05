@@ -1,0 +1,18 @@
+# vendored: tests/core/node/minInclusive-001.ttl
+id: node/minInclusive-001
+label: "Test of sh:minInclusive at node shape 001"
+prefix: "http://datashapes.org/sh/tests/core/node/minInclusive-001.test#"
+targeting: "sh:targetNode 7, 8, 9 as written; each is an xsd:integer literal, so it is a {literal, datatype} mapping (#4814 slice 5)"
+shapes:
+  - id: TestShape
+    minInclusive: 8
+    targetNode:
+      - {literal: "7", datatype: xsd:integer}
+      - {literal: "8", datatype: xsd:integer}
+      - {literal: "9", datatype: xsd:integer}
+data: |
+  # the data graph is empty: every focus node is a target literal
+expect:
+  conforms: false
+  results:
+    - {focus: {literal: "7", datatype: xsd:integer}, component: minInclusive}

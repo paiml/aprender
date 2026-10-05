@@ -88,6 +88,34 @@ pub const CASES: &[(&str, &str)] = &[
         include_str!("../../w3c/node-closed-002.yaml"),
     ),
     (
+        "node/class-001",
+        include_str!("../../w3c/node-class-001.yaml"),
+    ),
+    (
+        "node/disjoint-001",
+        include_str!("../../w3c/node-disjoint-001.yaml"),
+    ),
+    (
+        "node/equals-001",
+        include_str!("../../w3c/node-equals-001.yaml"),
+    ),
+    (
+        "node/hasValue-001",
+        include_str!("../../w3c/node-hasValue-001.yaml"),
+    ),
+    (
+        "node/minInclusive-001",
+        include_str!("../../w3c/node-minInclusive-001.yaml"),
+    ),
+    (
+        "node/node-001",
+        include_str!("../../w3c/node-node-001.yaml"),
+    ),
+    (
+        "node/nodeKind-001",
+        include_str!("../../w3c/node-nodeKind-001.yaml"),
+    ),
+    (
         "targets/targetClass-001",
         include_str!("../../w3c/targets-targetClass-001.yaml"),
     ),
@@ -162,18 +190,15 @@ pub fn core_suite_ids() -> impl Iterator<Item = &'static str> {
 /// guessed: ONT-0 counted 32 by component name; 16 of them use a FORM the subset does not attach. #4814 added the
 /// other 63 suite cases, so every id in [`CORE_SUITE`] is in [`CASES`] or here, and this list only shrinks.
 pub const NOT_VENDORED: &[(&str, &str)] = &[
-    ("node/class-001", "sh:class on the node shape itself; the subset attaches constraints to property shapes"),
-    ("node/class-002", "sh:class on the node shape itself"),
-    ("node/class-003", "sh:class on the node shape itself"),
-    ("node/datatype-001", "sh:datatype on the node shape itself"),
-    ("node/datatype-002", "sh:datatype on the node shape itself"),
-    ("node/in-001", "sh:in on the node shape itself"),
-    ("node/pattern-001", "sh:pattern on the node shape itself"),
-    ("node/pattern-002", "sh:pattern on the node shape itself"),
-    ("node/minLength-001", "sh:minLength on the node shape itself"),
-    ("node/maxLength-001", "sh:maxLength on the node shape itself"),
-    ("node/nodeKind-001", "sh:nodeKind on the node shape itself, with sh:BlankNode variants"),
-    ("node/node-001", "sh:node on the node shape itself"),
+    ("node/class-002", "a blank-node focus (an instance of the targetClass); the graph has no blank node (R-15)"),
+    ("node/class-003", "two sh:class values on one shape; the subset holds one class per shape"),
+    ("node/datatype-001", "a blank-node focus (an instance of the targetClass); the graph has no blank node (R-15)"),
+    ("node/datatype-002", "language-tagged focus literals; the term model drops language tags (F9, slice 10)"),
+    ("node/in-001", "sh:in with IRI members; the subset reads an sh:in entry as a literal"),
+    ("node/pattern-001", "a blank-node focus (R-15) and a language-tagged target literal (F9, slice 10)"),
+    ("node/pattern-002", "sh:flags, refused by name"),
+    ("node/minLength-001", "a blank-node focus (R-15) and a language-tagged target literal (F9, slice 10)"),
+    ("node/maxLength-001", "a blank-node focus (R-15) and a language-tagged target literal (F9, slice 10)"),
     ("node/closed-001", "expects an rdf:type violation under sh:closed; the subset always admits rdf:type on a closed shape (every extracted node is typed, §3.6) — closed-002, with sh:ignoredProperties (rdf:type), is the vendored form"),
     ("property/datatype-003", "sh:or — outside the subset, refused by name"),
     ("property/nodeKind-001", "data blank nodes and sh:BlankNode / sh:IRIOrLiteral kinds — the graph has no blank node (R-15) and the subset knows IRI and Literal"),
@@ -185,20 +210,16 @@ pub const NOT_VENDORED: &[(&str, &str)] = &[
     ("misc/deactivated-001", "sh:deactivated — refused by name (slice 11)"),
     ("misc/deactivated-002", "sh:deactivated on the node shape itself (slices 5, 11)"),
     ("misc/message-001", "sh:message and sh:resultMessage — refused by name (slice 11)"),
-    ("misc/severity-001", "sh:datatype on the node shape itself (slice 5)"),
+    ("misc/severity-001", "its one result is an sh:Warning, and the case harness compares violations only"),
     ("misc/severity-002", "sh:Info and sh:BlankNode — refused by name (slice 11)"),
     ("node/and-001", "sh:and — refused by name (slice 8)"),
     ("node/and-002", "sh:and — refused by name (slice 8)"),
-    ("node/disjoint-001", "sh:disjoint on the node shape itself (slices 2, 5)"),
-    ("node/equals-001", "sh:equals on the node shape itself (slices 2, 5)"),
-    ("node/hasValue-001", "sh:hasValue on the node shape itself (slices 3, 5)"),
     ("node/languageIn-001", "sh:languageIn on the node shape itself; the term model drops language tags (slices 5, 10)"),
-    ("node/maxExclusive-001", "sh:maxExclusive on the node shape itself (slice 5; the component is slice 1)"),
-    ("node/maxInclusive-001", "sh:maxInclusive on the node shape itself (slice 5; the component is slice 1)"),
-    ("node/minExclusive-001", "sh:minExclusive on the node shape itself (slice 5; the component is slice 1)"),
-    ("node/minInclusive-001", "sh:minInclusive on the node shape itself (slice 5; the component is slice 1)"),
-    ("node/minInclusive-002", "sh:minInclusive on the node shape itself (slice 5; the component is slice 1)"),
-    ("node/minInclusive-003", "sh:minInclusive on the node shape itself (slice 5; the component is slice 1)"),
+    ("node/maxExclusive-001", "a blank-node focus (an instance of the targetClass); the graph has no blank node (R-15)"),
+    ("node/maxInclusive-001", "a blank-node focus (an instance of the targetClass); the graph has no blank node (R-15)"),
+    ("node/minExclusive-001", "a blank-node focus (an instance of the targetClass); the graph has no blank node (R-15)"),
+    ("node/minInclusive-002", "xsd:dateTime with and without a time zone; the subset orders a dateTime by its lexical form"),
+    ("node/minInclusive-003", "xsd:dateTime with and without a time zone; the subset orders a dateTime by its lexical form"),
     ("node/not-001", "sh:not — refused by name (slice 8)"),
     ("node/not-002", "sh:not — refused by name (slice 8)"),
     ("node/or-001", "sh:or — refused by name (slice 8)"),
@@ -409,6 +430,27 @@ fn object_term(o: &str, prefix: &str) -> Result<Term, CaseError> {
     Ok(Term::iri(iri_term(o, prefix)))
 }
 
+/// An expected focus: a name like `ex:x`, expanded, or a literal written `{literal, datatype}` as a literal `targetNode`
+/// is (#4814 slice 5), named by its N-Triples form as the validator names a literal focus.
+fn expected_focus(v: Option<&serde_yaml::Value>, prefix: &str) -> String {
+    match v {
+        Some(serde_yaml::Value::Mapping(m)) => {
+            let s = |k: &str| {
+                m.get(k)
+                    .and_then(serde_yaml::Value::as_str)
+                    .unwrap_or_default()
+            };
+            Term::Literal {
+                value: s("literal").to_string(),
+                datatype: expand_term(s("datatype"), prefix),
+            }
+            .to_string()
+        }
+        Some(other) => expand_term(other.as_str().unwrap_or_default(), prefix),
+        None => String::new(),
+    }
+}
+
 /// Parse one embedded case.
 pub fn parse_case(id: &str, yaml: &str) -> Result<Case, CaseError> {
     let doc: serde_yaml::Value =
@@ -449,17 +491,14 @@ pub fn parse_case(id: &str, yaml: &str) -> Result<Case, CaseError> {
         .and_then(serde_yaml::Value::as_sequence)
     {
         for r in list {
-            let focus = r
-                .get("focus")
-                .and_then(serde_yaml::Value::as_str)
-                .unwrap_or_default();
+            let focus = expected_focus(r.get("focus"), &prefix);
             let path = r.get("path").and_then(serde_yaml::Value::as_str);
             let component = r
                 .get("component")
                 .and_then(serde_yaml::Value::as_str)
                 .unwrap_or_default();
             expected.push(Expected {
-                focus: expand_term(focus, &prefix),
+                focus,
                 path: path.map(|p| expand_term(p, &prefix)),
                 component: component.to_string(),
             });
@@ -625,8 +664,8 @@ mod tests {
         }
         // the ratchet (#4814 plan step 4): the vendored count only grows from its measured value
         assert!(
-            CASES.len() >= 29,
-            "vendored W3C cases dropped below 26: the #4814 baseline 19, slice 1's four value-range cases, slice 2's equals and disjoint, slice 3's hasValue"
+            CASES.len() >= 36,
+            "vendored W3C cases dropped below 36: the #4814 baseline 19, slice 1's four value-range cases, slice 2's equals and disjoint, slice 3's hasValue, slice 4's three targets, slice 5's seven node-shape cases"
         );
     }
 

@@ -1,0 +1,17 @@
+# vendored: tests/core/node/nodeKind-001.ttl
+id: node/nodeKind-001
+label: "Test of sh:nodeKind at node shape 001"
+prefix: "http://datashapes.org/sh/tests/core/node/nodeKind-001.test#"
+targeting: "sh:targetNode ex:John and the literal \"true\"^^xsd:boolean as written (#4814 slice 5)"
+shapes:
+  - id: IRITestShape
+    nodeKind: IRI
+    targetNode:
+      - ex:John
+      - {literal: "true", datatype: xsd:boolean}
+data: |
+  # the data graph is empty: every focus node is a target node
+expect:
+  conforms: false
+  results:
+    - {focus: {literal: "true", datatype: xsd:boolean}, component: nodeKind}
