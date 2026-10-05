@@ -43,6 +43,11 @@
 #       receipt R5 judged. Any non-zero from the wrapper refuses. The wrapper's committed DEFAULT_MODE
 #       is `report` until #3712's cells[] producer lands: a Fail verdict then prints as a WARN row and
 #       exits 0; a decline, a caller error or a missing pv is a non-zero in either mode.
+#       Under a RECORDED operator emergency scope (the ladder contract records exactly NAME for exactly
+#       this release; engaged by `--scope NAME`, or with no flag by that record itself -- C280.4, Q1,
+#       0.70.1) the wrapper still runs and its verdict and rc are printed as EVIDENCE, as the model
+#       matrix is under R7's scope: it is not the gate for that release. A missing wrapper still
+#       refuses. Without a recorded scope R8 is unchanged.
 #
 # EXIT  0 every rule holds · 1 a rule refused · 2 the box cannot answer
 #       (no git/cargo/python3, not a repository). 2 is not a pass.
@@ -63,13 +68,18 @@
 #   bash scripts/check_publish_preflight.sh --graph-only    # R2+R6 only: the rc cut (#4287)
 #   bash scripts/check_publish_preflight.sh --scope crux-smoke [--cut-commit SHA]
 #       R7 under a RECORDED operator emergency scope (contracts/model-capability-ladder-v1.yaml
-#       `ladder.emergency_scopes`; 0.69.1 only): the judge's own `--scope` path
+#       `ladder.emergency_scopes`; only the release its entry names -- 0.69.1, 0.70.1): the judge's own `--scope` path
 #       (scripts/lib/crux_smoke_scope.py) decides R7 from CRUX smoke receipts bound to the CUT --
 #       the commit the release binary was built from -- instead of the model matrix. The cut
 #       defaults to HEAD; when HEAD is not the cut (receipts committed on top, or main's squash
 #       of it), every PUBLISHED path -- crates/ src/ Cargo.toml Cargo.lock, R4's set -- must be
 #       equal to the cut's, or the published source is not the smoked binary's. The
-#       model-matrix rows are still printed, as EVIDENCE, never as the verdict.
+#       model-matrix rows are still printed, as EVIDENCE, never as the verdict. When the contract
+#       records NAME for this release, R8's release-readiness verdict is printed as EVIDENCE too.
+#       With NO --scope (cascade-publish.sh and autopilot's T-4 run this gate bare), a scope the
+#       contract RECORDS for this release engages by itself, as the judge's own auto-scope does for
+#       the dogfood (#4086; Q1): it is printed `SCOPED:` and the cut is HEAD. No record = the full
+#       gate. An unusable record (two for one release, no name, an unreadable contract) refuses.
 set -uo pipefail
 
 PROG=${0##*/}
@@ -285,7 +295,9 @@ rule_r7_scope() {
     grep -E '^OPERATOR EMERGENCY SCOPE' <<< "$out" | head -n 1 | sed 's/^/        /'
     # The model matrix, reported as EVIDENCE only: under the scope it is not the verdict, and a
     # stale or red row must still be visible.
-    ev="$(cd "$root" && bash "$judge" --version "$version" 2>&1)"; evrc=$?
+    # `--scope none`: since #4086 a bare call on a release with a RECORDED scope judges the scope again,
+    # and the matrix rows (the old failures, C280.6) would never be printed.
+    ev="$(cd "$root" && bash "$judge" --version "$version" --scope none 2>&1)"; evrc=$?
     if [ "$evrc" != 0 ]; then
         printf '        evidence only (NOT the verdict under the emergency scope): model matrix rc %s\n%s\n' "$evrc" \
             "$(grep -E '^FAIL' <<< "$ev" | head -n 10 | sed 's/^/          evidence /')"
@@ -299,7 +311,55 @@ rule_r7_scope() {
     return 1
 }
 
+# C280 (operator, 2026-10-03, 0.70.1): a scope is RECORDED only when the ladder contract names exactly
+# this scope for exactly this release, as read by the judge's own reader (crux_smoke_scope.recorded_scope).
+# `--scope` alone is not a record. Anything unreadable is "not recorded", so R8 stays enforced.
+# scope_recorded root version scope -> 0 recorded, 1 not
+scope_recorded() {
+    local root="$1" version="$2" scope="$3"
+    [ -n "$scope" ] || return 1
+    ( cd "$root" && PYTHONDONTWRITEBYTECODE=1 python3 -c 'import sys, yaml
+sys.path.insert(0, "scripts/lib"); import crux_smoke_scope
+name, why = crux_smoke_scope.recorded_scope(yaml.safe_load(open("contracts/model-capability-ladder-v1.yaml"))["ladder"], sys.argv[1])
+sys.exit(0 if why is None and name == sys.argv[2] else 1)' "$version" "$scope" ) >/dev/null 2>&1
+}
+
+# Q1 (operator, 2026-10-03, 0.70.1): the scope RECORDED for this release, for a caller that passed no
+# --scope. cascade-publish.sh and autopilot's T-4 run this gate bare, as the dogfood runs the judge bare,
+# and the judge's own auto-scope (#4086) already serves that caller. Read by the judge's own reader;
+# never inferred. No contract at all = no record: the full gate.
+# recorded_scope_name root version -> sets REC_NAME (the name) or REC_WHY (why it is unusable);
+#   0 one record, 1 no record, 2 unusable
+recorded_scope_name() {
+    local root="$1" version="$2" rec_out rec_rc py
+    REC_NAME=""; REC_WHY=""
+    [ -f "$root/contracts/model-capability-ladder-v1.yaml" ] || return 1
+    py='import sys
+try:
+    import yaml
+    sys.path.insert(0, "scripts/lib"); import crux_smoke_scope
+    name, why = crux_smoke_scope.recorded_scope(yaml.safe_load(open("contracts/model-capability-ladder-v1.yaml"))["ladder"], sys.argv[1])
+except Exception as e:
+    print(f"the ladder contract could not be loaded ({type(e).__name__}: {e})"); sys.exit(2)
+if why:
+    print(why); sys.exit(2)
+if not name:
+    sys.exit(1)
+print(name)'
+    # bashrs PERF002: not a loop body -- the reader runs once, from gate().
+    # bashrs disable-next-line=PERF002
+    rec_out="$(cd "$root" && PYTHONDONTWRITEBYTECODE=1 python3 -c "$py" "$version" 2>/dev/null)"; rec_rc=$?
+    case "$rec_rc" in
+        0) REC_NAME="$rec_out" ;;
+        1) return 1 ;;
+        *) REC_WHY="${rec_out:-the reader exited $rec_rc and printed no reason}"; return 2 ;;
+    esac
+}
+
 # R8, release-readiness-v1 (#3715): the committed receipts at HEAD, graded by the shape.
+# Under a RECORDED operator emergency scope (C280.4) the wrapper still runs and its verdict is printed
+# as EVIDENCE, exactly as the model matrix is under R7's scope: it is not the gate for that release.
+# Without a recorded scope R8 is unchanged: ENFORCE PASS or refuse.
 # rule_r8 root version head -> prints its rows; 0 accepted, 1 refused
 rule_r8() {
     local root="$1" version="$2" head="$3" wrapper receipt out rc
@@ -310,6 +370,13 @@ rule_r8() {
     fi
     receipt="$(newest_receipt "${PUBLISH_PREFLIGHT_RECEIPT_DIR:-$root/.dogfood}")"
     out="$(bash "$wrapper" --root "$root" --version "$version" --commit "$head" ${receipt:+--dogfood-receipt "$receipt"} 2>&1)"; rc=$?
+    if scope_recorded "$root" "$version" "${SCOPE:-}"; then
+        printf '        evidence only (NOT the verdict under the emergency scope): release-readiness wrapper rc %s\n%s\n' "$rc" \
+            "$(printf '%s\n' "$out" | sed 's/^/          evidence /')"
+        echo "ok    R8 OPERATOR EMERGENCY SCOPE $SCOPE recorded for $version: release-readiness ran (rc $rc), printed above as EVIDENCE; it is NOT the gate for $version"
+        R8_SCOPED=1
+        return 0
+    fi
     printf '%s\n' "$out"
     if [ "$rc" -ne 0 ]; then
         echo "FAIL  R8 the release-readiness wrapper exited $rc (1 Fail, 2 could not judge, 3 caller error): none is a pass"
@@ -333,6 +400,7 @@ rule_r8() {
 gate() {
     local root="${PUBLISH_PREFLIGHT_ROOT:-}" release_ref
     local fails=0 status version tags head
+    R8_SCOPED=""
     for t in git cargo python3; do
         command -v "$t" >/dev/null 2>&1 || die_env "$t is not on PATH"
     done
@@ -359,6 +427,20 @@ gate() {
         fails=1
     else
         echo "ok    R2 version $version (cargo metadata, root manifest)"
+    fi
+
+    # Q1: no --scope on a release whose contract RECORDS one -> that scope, for R7 and R8, at the cut
+    # HEAD -- as the judge's own auto-scope (#4086) does. An unusable record refuses.
+    if [ -z "${SCOPE:-}" ] && [ -n "$version" ]; then
+        local rrc
+        recorded_scope_name "$root" "$version"; rrc=$?
+        case "$rrc" in
+            0) SCOPE="$REC_NAME"
+               echo "SCOPED: $SCOPE -- the operator emergency scope recorded for release $version in contracts/model-capability-ladder-v1.yaml applies (no --scope given): R7 and R8 judge under it, at the cut HEAD" ;;
+            1) : ;;
+            *) echo "FAIL  R7/R8 the emergency scope recorded for $version is unusable, so neither the scope nor the full gate can be chosen: $REC_WHY"
+               fails=1 ;;
+        esac
     fi
 
     # R3 the tag points at HEAD
@@ -401,7 +483,7 @@ gate() {
         return 1
     fi
     if [ -n "${SCOPE:-}" ]; then
-        echo "PASS  $PROG: clean, versioned, tagged, on $release_ref, dogfood GO, OPERATOR EMERGENCY SCOPE $SCOPE satisfied (the model matrix was NOT the gate)"
+        echo "PASS  $PROG: clean, versioned, tagged, on $release_ref, dogfood GO, OPERATOR EMERGENCY SCOPE $SCOPE satisfied (the model matrix was NOT the gate${R8_SCOPED:+; release-readiness was NOT the gate})"
     else
         echo "PASS  $PROG: clean, versioned, tagged, on $release_ref, dogfood GO, model matrix green"
     fi
@@ -508,7 +590,7 @@ selftest() {
         mkdir -p "$1/scripts"
         cat > "$1/scripts/check_model_ladder.sh" <<'FXJUDGE'
 #!/usr/bin/env bash
-if [ "${3:-}" = "--scope" ]; then
+if [ "${3:-}" = "--scope" ] && [ "${4:-}" != none ]; then
     [ "${1:-} ${2:-} ${4:-} ${5:-}" = "--version 1.2.3 crux-smoke --cut-commit" ] || { echo "FAIL  judge scope call: $*"; exit 1; }
     [ "${6:-}" = "$(git rev-parse "${FX_EXPECT_CUT:-HEAD}")" ] || { echo "FAIL  judge asked about cut ${6:-}"; exit 1; }
     echo "OPERATOR EMERGENCY SCOPE: CRUX smoke only -- release 1.2.3 (fixture)"
@@ -516,6 +598,11 @@ if [ "${3:-}" = "--scope" ]; then
     exit "${FX_SCOPE_RC:-0}"
 fi
 [ "${1:-} ${2:-}" = "--version 1.2.3" ] || { echo "FAIL  judge asked about: $*"; exit 1; }
+# the real judge's #4086: a bare call on a release the contract records a scope for judges that SCOPE,
+# not the matrix; `--scope none` forces the matrix
+if [ -z "${3:-}" ] && grep -qs 'release: "1.2.3"' contracts/model-capability-ladder-v1.yaml; then
+    echo "SCOPED: crux-smoke (fixture)"; exit "${FX_SCOPE_RC:-0}"
+fi
 [ "${FX_LADDER_RC:-0}" = 0 ] || echo "FAIL  fx-rung red on lambda"
 exit "${FX_LADDER_RC:-0}"
 FXJUDGE
@@ -725,6 +812,76 @@ FXREADY
     git -C "$d" -c core.hooksPath=/dev/null -c user.name=t -c user.email=t@t commit -qm 'no wrapper' >/dev/null
     git -C "$d" tag -f v1.2.3 >/dev/null; write_receipt "$d" GO "$(git -C "$d" rev-parse HEAD)" 1.2.3
     row r8_wrapper_absent_refuses      1 "FAIL  R8 no release-readiness wrapper" "$d"
+    # R8 under a RECORDED operator emergency scope (C280.4, 0.70.1): the wrapper still runs, its verdict
+    # and rc are printed as EVIDENCE (as R7's model matrix is), and it is not the gate. "Recorded" = the
+    # ladder contract names exactly this scope for exactly this release, read by the judge's OWN reader
+    # (copied from this checkout). `--scope` alone is not a record, and a record alone relaxes nothing.
+    record_scope() { # dir, release... -- one crux-smoke entry per release given, committed on top
+        local d="$1"; shift
+        # bashrs SEC010: self-test fixture: $d is under this script's own mktemp -d dir.
+        # bashrs disable-next-line=SEC010
+        mkdir -p "$d/contracts" "$d/scripts/lib"
+        # bashrs SEC010,SEC014: the sources are this checkout's own reader files; $d is the mktemp -d fixture above.
+        # bashrs disable-next-line=SEC010,SEC014
+        cp -- "$SCRIPT_DIR/lib/crux_smoke_scope.py" "$SCRIPT_DIR/lib/model_ladder_crux.py" "$d/scripts/lib/"
+        printf 'ladder:\n  emergency_scopes:\n' > "$d/contracts/model-capability-ladder-v1.yaml"
+        printf '    - name: crux-smoke\n      release: "%s"\n' "$@" >> "$d/contracts/model-capability-ladder-v1.yaml"
+        git -C "$d" add -A; git -C "$d" -c core.hooksPath=/dev/null -c user.name=t -c user.email=t@t commit -qm 'scope' >/dev/null
+        git -C "$d" update-ref refs/remotes/origin/release/1.2.3 HEAD
+        git -C "$d" tag -f v1.2.3 >/dev/null; write_receipt "$d" GO "$(git -C "$d" rev-parse HEAD)" 1.2.3
+    }
+    d="$tmp/r8-scoped"; build_repo "$d"; record_scope "$d" 1.2.3
+    FX_READINESS_RC=1 SCOPE=crux-smoke row r8_scoped_fail_is_evidence 0 "ok    R8 OPERATOR EMERGENCY SCOPE crux-smoke recorded for 1.2.3: release-readiness ran (rc 1)" "$d"
+    FX_READINESS_RC=1 SCOPE=crux-smoke row r8_scoped_prints_the_wrapper_rc 0 "evidence only (NOT the verdict under the emergency scope): release-readiness wrapper rc 1" "$d"
+    FX_READINESS_WARN=1 SCOPE=crux-smoke row r8_scoped_prints_the_wrapper_rows 0 "evidence WARN  R8 REPORT-ONLY release-readiness-v1 for 1.2.3: Fail" "$d"
+    FX_READINESS_NO_ENFORCE=1 SCOPE=crux-smoke row r8_scoped_no_enforce_pass_is_evidence 0 "release-readiness ran (rc 0)" "$d"
+    FX_READINESS_RC=2 SCOPE=crux-smoke row r8_scoped_could_not_judge_is_evidence 0 "release-readiness ran (rc 2)" "$d"
+    FX_READINESS_RC=3 SCOPE=crux-smoke row r8_scoped_caller_error_is_evidence 0 "release-readiness ran (rc 3)" "$d"
+    SCOPE=crux-smoke row r8_scoped_pass_is_printed_too 0 "evidence ok    R8 #3715 ENFORCE PASS version=1.2.3" "$d"
+    FX_READINESS_RC=1 SCOPE=crux-smoke row r8_scoped_gate_names_readiness 0 "release-readiness was NOT the gate" "$d"
+    # ... and the other way: every case that is not a recorded scope keeps R8 exactly as it was
+    # (a record with NO --scope engages the scope since Q1: its rows are the auto_scope_* block below)
+    FX_READINESS_RC=1 SCOPE=other-scope row r8_unrecorded_scope_name_refuses 1 "FAIL  R8 the release-readiness wrapper exited 1" "$d"
+    FX_READINESS_RC=1 SCOPE=crux-smoke row r8_scope_without_a_contract_refuses 1 "FAIL  R8 the release-readiness wrapper exited 1" "$tmp/r8"
+    d="$tmp/r8-other-release"; build_repo "$d"; record_scope "$d" 0.69.1
+    FX_READINESS_RC=1 SCOPE=crux-smoke row r8_scope_of_another_release_refuses 1 "FAIL  R8 the release-readiness wrapper exited 1" "$d"
+    FX_READINESS_NO_ENFORCE=1 SCOPE=crux-smoke row r8_scope_of_another_release_no_enforce_refuses 1 "without '#3715 ENFORCE PASS'" "$d"
+    d="$tmp/r8-two-records"; build_repo "$d"; record_scope "$d" 1.2.3 1.2.3
+    FX_READINESS_RC=1 SCOPE=crux-smoke row r8_two_records_for_one_release_refuse 1 "FAIL  R8 the release-readiness wrapper exited 1" "$d"
+    d="$tmp/r8-scoped-absent"; build_repo "$d"; record_scope "$d" 1.2.3; git -C "$d" rm -q scripts/release/release_readiness.sh
+    git -C "$d" -c core.hooksPath=/dev/null -c user.name=t -c user.email=t@t commit -qm 'no wrapper' >/dev/null
+    git -C "$d" update-ref refs/remotes/origin/release/1.2.3 HEAD
+    git -C "$d" tag -f v1.2.3 >/dev/null; write_receipt "$d" GO "$(git -C "$d" rev-parse HEAD)" 1.2.3
+    SCOPE=crux-smoke row r8_scoped_wrapper_absent_refuses 1 "FAIL  R8 no release-readiness wrapper" "$d"
+    # Q1: NO --scope on a release whose contract records one. cascade-publish.sh and autopilot's T-4 run
+    # this gate bare; the record alone engages the scope, as the judge's #4086 auto-scope does, at the cut HEAD.
+    d="$tmp/auto-scoped"; build_repo "$d"; record_scope "$d" 1.2.3
+    row auto_scope_is_printed 0 "SCOPED: crux-smoke -- the operator emergency scope recorded for release 1.2.3" "$d"
+    FX_READINESS_RC=1 row auto_scope_r8_readiness_is_evidence 0 "ok    R8 OPERATOR EMERGENCY SCOPE crux-smoke recorded for 1.2.3: release-readiness ran (rc 1)" "$d"
+    FX_READINESS_WARN=1 row auto_scope_r8_warn_is_evidence 0 "evidence WARN  R8 REPORT-ONLY release-readiness-v1 for 1.2.3: Fail" "$d"
+    FX_LADDER_RC=1 row auto_scope_r7_judges_the_scope_at_head 0 "CRUX smoke satisfied at the cut" "$d"
+    FX_SCOPE_RC=1 row auto_scope_red_refuses 1 "FAIL  R7 OPERATOR EMERGENCY SCOPE crux-smoke NOT satisfied" "$d"
+    FX_SCOPE_RC=2 row auto_scope_decline_refuses 1 "the judge DECLINED" "$d"
+    FX_READINESS_RC=1 row auto_scope_pass_names_both 0 "release-readiness was NOT the gate" "$d"
+    # ... and the other way: no record for THIS release, or a record that cannot be used, never relaxes
+    d="$tmp/auto-other-release"; build_repo "$d"; record_scope "$d" 0.69.1
+    FX_READINESS_RC=1 row auto_scope_other_release_r8_enforced 1 "FAIL  R8 the release-readiness wrapper exited 1" "$d"
+    FX_LADDER_RC=1 row auto_scope_other_release_r7_is_matrix 1 "FAIL  R7 model matrix NOT green" "$d"
+    FX_READINESS_RC=1 row auto_scope_no_contract_r8_enforced 1 "FAIL  R8 the release-readiness wrapper exited 1" "$tmp/r8"
+    d="$tmp/auto-two"; build_repo "$d"; record_scope "$d" 1.2.3 1.2.3
+    row auto_scope_two_records_refuse 1 "FAIL  R7/R8 the emergency scope recorded for 1.2.3 is unusable" "$d"
+    d="$tmp/auto-unreadable"; build_repo "$d"; record_scope "$d" 1.2.3
+    printf 'ladder: [\n' > "$d/contracts/model-capability-ladder-v1.yaml"
+    git -C "$d" add -A; git -C "$d" -c core.hooksPath=/dev/null -c user.name=t -c user.email=t@t commit -qm 'unreadable' >/dev/null
+    git -C "$d" update-ref refs/remotes/origin/release/1.2.3 HEAD
+    # bashrs PERF002: not a loop body -- one fixture line, run once.
+    # bashrs disable-next-line=PERF002
+    git -C "$d" tag -f v1.2.3 >/dev/null; write_receipt "$d" GO "$(git -C "$d" rev-parse HEAD)" 1.2.3
+    row auto_scope_unreadable_contract_refuses 1 "the ladder contract could not be loaded" "$d"
+    # the model matrix is still EVIDENCE on a recorded release, scope engaged by the record or by the flag
+    d="$tmp/auto-scoped"
+    FX_LADDER_RC=1 row auto_scope_keeps_the_matrix_as_evidence 0 "evidence FAIL  fx-rung red on lambda" "$d"
+    FX_LADDER_RC=1 SCOPE=crux-smoke row scope_on_a_recorded_release_keeps_matrix 0 "evidence FAIL  fx-rung red on lambda" "$d"
     # the wrapper's own table: modes, exit mapping, the receipts-commit rule (runs wherever this selftest runs)
     if ( TMPDIR="${TMPDIR:-/tmp}" bash "$SCRIPT_DIR/release/release_readiness.sh" --selftest >/dev/null 2>&1 ); then
         printf '  ok    %-36s release_readiness.sh --selftest green\n' r8_wrapper_selftest; pass=$((pass + 1))
