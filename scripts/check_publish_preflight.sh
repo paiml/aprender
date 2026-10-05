@@ -68,7 +68,7 @@
 #   bash scripts/check_publish_preflight.sh --graph-only    # R2+R6 only: the rc cut (#4287)
 #   bash scripts/check_publish_preflight.sh --scope crux-smoke [--cut-commit SHA]
 #       R7 under a RECORDED operator emergency scope (contracts/model-capability-ladder-v1.yaml
-#       `ladder.emergency_scopes`; only the release its entry names -- 0.69.1, 0.70.1): the judge's own `--scope` path
+#       `ladder.emergency_scopes`; only the release its entry names AND SCOPE_PIN below pins, 0.70.1; R-a): the judge's own `--scope` path
 #       (scripts/lib/crux_smoke_scope.py) decides R7 from CRUX smoke receipts bound to the CUT --
 #       the commit the release binary was built from -- instead of the model matrix. The cut
 #       defaults to HEAD; when HEAD is not the cut (receipts committed on top, or main's squash
@@ -201,7 +201,8 @@ rule_r7() {
         rule_r7_scope "$root" "$version" "$judge"
         return $?
     fi
-    out="$(cd "$root" && bash "$judge" --version "$version" 2>&1)"; rc=$?
+    # R-a: a refused pin forces the matrix; a bare call would let the judge auto-scope (#4086) instead.
+    out="$(cd "$root" && bash "$judge" --version "$version" ${PIN_REFUSED:+--scope none} 2>&1)"; rc=$?
     case "$rc" in
         0) echo "ok    R7 model matrix green for $version (committed receipts, $(basename "$judge"))"; return 0 ;;
         2) echo "FAIL  R7 the model-matrix judge DECLINED (rc 2), and a decline is not a pass: $(tail -n 1 <<< "$out")" ;;
@@ -441,6 +442,14 @@ gate() {
         esac
     fi
 
+    # R-a: the scope engages for ONE release, pinned in this script (SCOPE_PIN), never from the contract
+    # alone. A record or a --scope for any other release is refused and the full gate runs, so adding an
+    # emergency_scopes entry cannot relax R7/R8 without a visible edit here.
+    if [ -n "${SCOPE:-}" ] && [ "$version" != "$SCOPE_PIN" ]; then
+        echo "FAIL  R7/R8 the emergency scope $SCOPE is pinned to release $SCOPE_PIN; it does not engage for ${version:-?} (the pin is SCOPE_PIN in $PROG), so the full gate runs"
+        SCOPE=""; PIN_REFUSED=1; fails=1
+    fi
+
     # R3 the tag points at HEAD
     tags="$(git -C "$root" tag --points-at HEAD 2>/dev/null)"
     # -F: the version is a string, not a pattern. With -x alone `v1-2-3` on HEAD
@@ -545,6 +554,9 @@ receipt_gate() {
 # --------------------------------------------------------------- selftest ---
 selftest() {
     local tmp pass=0 fail=0
+    # R-a: the fixtures are release 1.2.3, so the scope rows run with the pin moved there; the pin rows
+    # below put it back to the shipped value and want the scope refused.
+    local SCOPE_PIN=1.2.3
     tmp="$(mktemp -d)"
     case "$tmp" in /tmp/*|/var/folders/*|/mnt/*) : ;; *) die_env "mktemp gave ${tmp:-<empty>}, refusing to rm -rf it" ;; esac
     # SEC011: the delete is guarded by the same case the creation was, and an
@@ -877,6 +889,15 @@ FXREADY
     d="$tmp/auto-scoped"
     FX_LADDER_RC=1 row auto_scope_keeps_the_matrix_as_evidence 0 "evidence FAIL  fx-rung red on lambda" "$d"
     FX_LADDER_RC=1 SCOPE=crux-smoke row scope_on_a_recorded_release_keeps_matrix 0 "evidence FAIL  fx-rung red on lambda" "$d"
+    # R-a: the shipped pin, and a record or --scope for any other release, which must NOT engage
+    pin_is_shipped() { grep -qx 'SCOPE_PIN="0.70.1"' "$0" && echo "SCOPE_PIN=0.70.1"; }
+    pin_from_env() { SCOPE_PIN=1.2.3 bash "$0"; }
+    row pin_shipped_is_0_70_1 0 "SCOPE_PIN=0.70.1" "$d" pin_is_shipped
+    SCOPE_PIN=0.70.1 row pin_record_other_release_refused 1 "is pinned to release 0.70.1; it does not engage for 1.2.3" "$d"
+    SCOPE_PIN=0.70.1 SCOPE=crux-smoke row pin_flag_other_release_refused 1 "is pinned to release 0.70.1; it does not engage for 1.2.3" "$d"
+    SCOPE_PIN=0.70.1 FX_READINESS_RC=1 row pin_other_release_r8_enforced 1 "FAIL  R8 the release-readiness wrapper exited 1" "$d"
+    SCOPE_PIN=0.70.1 FX_SCOPE_RC=0 FX_LADDER_RC=1 row pin_other_release_r7_is_matrix 1 "FAIL  R7 model matrix NOT green" "$d"
+    row pin_env_cannot_move_it 1 "is pinned to release 0.70.1; it does not engage for 1.2.3" "$d" pin_from_env
     # the wrapper's own table: modes, exit mapping, the receipts-commit rule (runs wherever this selftest runs)
     if ( TMPDIR="${TMPDIR:-/tmp}" bash "$SCRIPT_DIR/release/release_readiness.sh" --selftest >/dev/null 2>&1 ); then
         printf '  ok    %-36s release_readiness.sh --selftest green\n' r8_wrapper_selftest; pass=$((pass + 1))
@@ -946,7 +967,10 @@ FXREADY
     [ "$fail" -eq 0 ]
 }
 
-SCOPE=""; CUT_COMMIT=""; MODE=""
+# R-a: the ONE release an operator emergency scope may engage for. Assigned here, never read from the
+# environment; a new emergency release is an edit to this line, with its own review.
+SCOPE_PIN="0.70.1"
+SCOPE=""; PIN_REFUSED=""; CUT_COMMIT=""; MODE=""
 while [ $# -gt 0 ]; do
     case "$1" in
         --scope) [ $# -ge 2 ] || { printf '%s: --scope needs a name\n' "$PROG" >&2; exit 2; }; SCOPE="$2"; shift 2 ;;
