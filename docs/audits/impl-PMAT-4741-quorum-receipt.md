@@ -64,13 +64,13 @@ an independent count. The independent evidence is that the harness refuses a mis
 at runtime (`ran -ne EXPECTED_CASES` → exit 1, lines 481–484), and that PF9 below ran
 it green at the batch head.
 
-## Pre-flight PF9 (intel, 30871fad90 = branch head 8b684297c2 + origin/main 11f844a772, merged in locally)
+## Pre-flight PF9 (pre-flight host, 30871fad90 = branch head 8b684297c2 + origin/main 11f844a772, merged in locally)
 
 - 19 of the 20 steps passed (rc=0): fmt, build, build_locked, deny_advisories,
   gpid_parity, dag_parity, sourced_neutral, graph_check, ci_tools_test, clippy,
   contracts_lib, contracts_cli, invariants, crux_test, crux_clippy, crux_clippy_bin,
   pkg_selftest, binary_debt, parsers.
-- `parity` under intel's default `python3` (3.10): **not_measured**. The harness
+- `parity` under the pre-flight host's default `python3` (3.10): **not_measured**. The harness
   refused because "python3 has no tomllib". That is the refusal working as designed,
   not a pass.
 - `parity` under `PYTHON=python3.13`, run as external validation (the Python is the
