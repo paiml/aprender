@@ -523,6 +523,10 @@ pub fn certify(a: &CertifyArgs) -> PyResult<u8> {
         .collect();
     uncontrolled.sort();
     uncontrolled.dedup();
+    // The receipt's fallible steps in the certifier's order: prompts sha,
+    // inventory sha, manifest shas, then the admissions keyed by sha.
+    let prompts_sha = sha256_path(&a.prompts)?;
+    let inventory_sha = sha256_path(&a.inventory)?;
     let mut manifests = Dict::new();
     for m in &a.manifests {
         manifests.put(m, Val::Str(sha256_path(m)?));
@@ -532,9 +536,9 @@ pub fn certify(a: &CertifyArgs) -> PyResult<u8> {
     let receipt = dict(vec![
         ("schema", Val::str(SCHEMA)),
         ("prompts", Val::Str(pathlib_str(&a.prompts))),
-        ("prompts_sha256", Val::Str(sha256_path(&a.prompts)?)),
+        ("prompts_sha256", Val::Str(prompts_sha)),
         ("apr_commit", Val::str(a.apr_commit.as_str())),
-        ("inventory_sha256", Val::Str(sha256_path(&a.inventory)?)),
+        ("inventory_sha256", Val::Str(inventory_sha)),
         ("manifests", Val::Dict(manifests)),
         ("admitted", Val::Dict(admitted.clone())),
         ("admitted_by_sha", Val::Dict(by_sha)),

@@ -21,7 +21,7 @@
 #   --out      receipt dir (default evidence/crux/<version>); writes <host>-<backend>.{json,md}
 #   --prompts  default scripts/crux_inference_prompts.v2.json when present (#3962), else v1
 #   --certification  the prompt-certification receipt handed to the judge (default
-#              evidence/crux/<version>/prompt-certification.json, when the judge takes one)
+#              evidence/crux/<version>/prompt-certification.json; always passed, the judge requires it for a v2 set)
 #
 # Exit: 0 no RED, no UNJUDGED cell, every model's positive control measured and
 # not ALL_WRONG · 1 any RED · 2 decline (a cell no comparator answered, a broken

@@ -1,6 +1,3 @@
-# The judge that merges the shards, built from this tree before any shard runs (each shard's dogfood
-# resolves the same binary; cargo finds it fresh).
-. scripts/lib/crux_judge_bin.sh || die "no CRUX judge binary (scripts/lib/crux_judge_bin.sh)"
 #!/usr/bin/env bash
 # crux_sweep_shards.sh — the 0.69.1 final CRUX sweep for ONE host: every CERTIFIED model on it, each thinking mode,
 # exactly that (model, mode)'s admitted prompts; then ONE judge receipt for the host (#3962, final sweep).

@@ -5,8 +5,9 @@
 # Sourceable:  . scripts/lib/crux_judge_bin.sh || exit 2
 #
 # The judge, the answer oracles and the prompt certifier are one Rust binary.
-# It replaced crux_inference_judge.py, crux_oracles.py and crux_prompt_certify.py
-# byte for byte (tools/aprender-crux-judge/README.md lists where it differs).
+# It replaced crux_inference_judge.py, crux_oracles.py and crux_prompt_certify.py,
+# byte-identical on the golden receipts (tools/aprender-crux-judge/README.md lists
+# where it differs: the crash form and the program names).
 #
 # BUILT FROM THIS TREE, EVERY TIME. The default is `cargo build --release
 # --locked` with an explicit --target-dir inside this checkout. The flag
