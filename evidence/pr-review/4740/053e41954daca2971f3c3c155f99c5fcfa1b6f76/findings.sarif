@@ -1,0 +1,138 @@
+{
+  "$schema": "https://docs.oasis-open.org/sarif/sarif/v2.1.0/errata01/os/schemas/sarif-schema-2.1.0.json",
+  "version": "2.1.0",
+  "runs": [
+    {
+      "tool": {
+        "driver": {
+          "name": "pmat"
+        }
+      },
+      "results": [
+        {
+          "ruleId": "guard_table_pass",
+          "level": "note",
+          "message": {
+            "text": "bash scripts/check_quick_tier_shard_sigma.sh at head 053e41954d: rc 0, 26 ok rows, 0 FAIL rows, PASS. No false RED on the real tree."
+          },
+          "properties": {
+            "grounding": "measured",
+            "command": [
+              "bash",
+              "scripts/check_quick_tier_shard_sigma.sh"
+            ],
+            "exit_code": 0,
+            "stdout_sha256": "8255f170153fcb679b42d76e441e091e22f7a2c94d289d8dcc8b09447dd214f6",
+            "failure_scenario": "A false RED on the real tree would block every PR; none observed.",
+            "precision_class": "advisory"
+          }
+        },
+        {
+          "ruleId": "guard_self_test_passes",
+          "level": "note",
+          "message": {
+            "text": "--self-test: 64 output lines, 62 ok rows, SELF-TEST PASSED; includes the four round-5 duplicate spellings (rc=2) and the six outside-jobs rows (5 x rc=1, 1 x rc=0 comment)."
+          },
+          "properties": {
+            "grounding": "measured",
+            "command": [
+              "bash",
+              "scripts/check_quick_tier_shard_sigma.sh",
+              "--self-test"
+            ],
+            "exit_code": 0,
+            "stdout_sha256": "229678437d744832788a6f27f7657410911320a9fbbb3080ab59ec64231f57f8",
+            "failure_scenario": "A planted mutant that did not apply would print FAIL; none did.",
+            "precision_class": "advisory"
+          }
+        },
+        {
+          "ruleId": "round5_duplicate_spellings_closed",
+          "level": "note",
+          "message": {
+            "text": "Claim 1, the four round-5 spellings, verified on scratch copies of ci/sections.yml: a second workspace-test-shard key spelt double-quoted, single-quoted, `key :`, or `key: # c` each give rc 2 (ENV). Also killed: `key\\t:` (tab before colon), `key:\\t# x`, `\"key\" :`, and a flow-mapping value `key: {runs-on: shadow}`, all rc 2."
+          },
+          "properties": {
+            "grounding": "measured",
+            "command": [
+              "env",
+              "QUICK_SIGMA_SECTIONS=<ci/sections.yml + double-quoted second workspace-test-shard key>",
+              "bash",
+              "scripts/check_quick_tier_shard_sigma.sh"
+            ],
+            "exit_code": 2,
+            "stdout_sha256": "6b7ab039a45563c57172f476e026daa1cfd97bba6cf98b09fbccf061ab5cc5c0",
+            "failure_scenario": "If the round-5 fix had not landed, any of these four would stay rc 0; they do not.",
+            "precision_class": "advisory"
+          }
+        },
+        {
+          "ruleId": "outside_jobs_pin_holds",
+          "level": "note",
+          "message": {
+            "text": "Claim 2 (values of top-level keys pinned) verified: on scratch copies of ci/sections.yml and ci.yml each of these gives rc 1 (golden RED): a second top-level `\"jobs\":`, `jobs :`, `jobs: {}`, `&a jobs:`, a trailing space on a line under on:, a tab-only top-level line, a CR added to a non-jobs line. A trigger added under on:, concurrency cancel-in-progress edited and sovereign-ci use_nextest turned off are covered by the in-script rows and pass --self-test. Nothing outside jobs: that changes a non-comment line goes unseen."
+          },
+          "properties": {
+            "grounding": "measured",
+            "command": [
+              "env",
+              "QUICK_SIGMA_WORKFLOW=<ci.yml + a second top-level `jobs :` block>",
+              "bash",
+              "scripts/check_quick_tier_shard_sigma.sh"
+            ],
+            "exit_code": 1,
+            "stdout_sha256": "a2cb319cf14e4e3ddf061b37fad9b83e567a147717032b50864541e907c9dc43",
+            "failure_scenario": "A workflow-level env/permissions/on edit reaching every pinned job would stay GREEN; it goes RED.",
+            "precision_class": "advisory"
+          }
+        },
+        {
+          "ruleId": "no_gate_loosened",
+          "level": "note",
+          "message": {
+            "text": "Commit 053e41954d changes only scripts/check_quick_tier_shard_sigma.sh and ci/goldens/quick-tier-shard-sigma.sha256. The old workflow:top-level-keys and sections:top-level-keys rows (key NAMES, via cut -d: -f1) are replaced by workflow:outside-jobs and sections:outside-jobs (every top-level key line plus every non-comment line of every non-jobs block): a strict superset of what the old rows saw. job_block's duplicate test widened from an exact-line match to a regex. Nothing in the diff weakens an existing row, and --update-golden is not run by CI."
+          },
+          "properties": {
+            "grounding": "asserted",
+            "rationale": "Read git diff eb88f14c37 053e41954d line by line; the new digest input contains the old one's key names.",
+            "failure_scenario": "If a gate had been loosened, a mutant the old rows caught would pass; every old mutant is still RED in --self-test.",
+            "precision_class": "advisory"
+          }
+        },
+        {
+          "ruleId": "duplicate_key_spelling_survivors",
+          "level": "error",
+          "message": {
+            "text": "Claim 1 does NOT hold in general: the new regex dk = ^  [\"']?KEY[\"']?[ \\t]*:([ \\t]|$) is another enumeration of spellings. A second `workspace-test-shard` key that a YAML loader reads as the same key still returns rc 0 with stdout byte-identical to the real tree (digest 8255f170) for: m1 anchored key `  &a workspace-test-shard:`; m2 tagged key `  !!str workspace-test-shard:`; m3 complex key `  ? workspace-test-shard` + `  : {runs-on: shadow}`; m4 double-quoted escape `  \"workspace\\x2dtest-shard\":`; m5 a CRLF line `  workspace-test-shard:\\r` (the \\r after the colon is neither [ \\t] nor end of line). PyYAML safe_load of each mutated ci/sections.yml returns runs-on: shadow for jobs.workspace-test-shard, i.e. the LAST duplicate wins, as in round 5. m6: the same anchored duplicate appended to ci.yml for `workspace-test` (and `workspace-test-shard`) is rc 0 too, so all four pinned jobs are exposed. Each mutant is the real file with the duplicate block appended at the end of jobs (or inserted before `  workspace-test:`; both rc 0)."
+          },
+          "properties": {
+            "grounding": "measured",
+            "command": [
+              "env",
+              "QUICK_SIGMA_SECTIONS=<scratch ci/sections.yml + '  &a workspace-test-shard:\\n    runs-on: shadow\\n'>",
+              "bash",
+              "scripts/check_quick_tier_shard_sigma.sh"
+            ],
+            "exit_code": 0,
+            "stdout_sha256": "8255f170153fcb679b42d76e441e091e22f7a2c94d289d8dcc8b09447dd214f6",
+            "failure_scenario": "A PR appends `  &a workspace-test-shard:` (or `? ` complex key, a \\x2d-escaped key, or a CRLF line) with a shadow body at the end of jobs in ci/sections.yml; every table row and the whole-job golden stay GREEN while the fat driver loads the shadow section, so the quick tier shards run no tree readers and merge green. The round-5 duplicate-key row (ENV rc 2) cannot fail for any spelling the regex does not list.",
+            "precision_class": "blocking"
+          }
+        },
+        {
+          "ruleId": "self_test_enumerates_same_spellings",
+          "level": "warning",
+          "message": {
+            "text": "The new self-test loop plants exactly the four spellings the regex was written for, so it cannot fail for the next spelling (anchor, tag, `? `, escape, CRLF). Fix by construction rather than by list: after the parent line, require every indent-2 non-comment line to match `^  [A-Za-z0-9_-]+:([ \\t]|$)` plain-key form (anything else is ENV rc 2), then count that plain form; or parse with a YAML loader that rejects duplicate keys."
+          },
+          "properties": {
+            "grounding": "asserted",
+            "rationale": "Reading r5() and the for-loop at scripts/check_quick_tier_shard_sigma.sh in the 053e41954d self-test block; the survivors m1-m5 are outside its list.",
+            "failure_scenario": "Each round closes the spellings the last reviewer listed; the guard stays a blocklist of spellings while a loader reads an unbounded set.",
+            "precision_class": "advisory"
+          }
+        }
+      ]
+    }
+  ]
+}
