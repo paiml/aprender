@@ -27,7 +27,7 @@ models:
   size: 1.5b
   cited_by_count: 1
   cited_by:
-  - README.md:83
+  - README.md:138
 - name: qwen2-7b
   family: qwen2
   size: 7b
@@ -45,9 +45,9 @@ models:
   size: 0.5b
   cited_by_count: 6
   cited_by:
-  - README.md:100
-  - README.md:101
-  - README.md:102
+  - README.md:155
+  - README.md:156
+  - README.md:157
   - book/src/tools/mcp-server.md:131
   - book/src/tools/mcp-server.md:214
   - book/src/tools/mcp-server.md:342
@@ -73,11 +73,14 @@ models:
 - name: qwen2.5-coder-0.5b-instruct
   family: qwen2.5
   size: 0.5b
-  cited_by_count: 8
+  cited_by_count: 11
   cited_by:
-  - README.md:93
-  - README.md:107
-  - README.md:181
+  - README.md:44
+  - README.md:55
+  - README.md:58
+  - README.md:148
+  - README.md:162
+  - README.md:236
   - book/src/cli/pull.md:17
   - book/src/cli/pull.md:19
   - book/src/examples/apr-cli-commands.md:221
@@ -86,11 +89,9 @@ models:
 - name: qwen2.5-coder-1.5b
   family: qwen2.5
   size: 1.5b
-  cited_by_count: 40
+  cited_by_count: 38
   cited_by:
-  - README.md:45
-  - README.md:46
-  - README.md:110
+  - README.md:165
   - docs/BEATS.md:131
   - docs/BEATS.md:138
   - book/src/cli/chat.md:17
@@ -100,24 +101,26 @@ models:
   - book/src/cli/serve.md:17
   - book/src/cli/serve.md:19
   - book/src/cli/tokenize.md:17
-  # … and 28 more
+  - book/src/cli/tokenize.md:19
+  - book/src/examples/ptx-parity-validation.md:136
+  # … and 26 more
 - name: qwen2.5-coder-1.5b-instruct
   family: qwen2.5
   size: 1.5b
   cited_by_count: 104
   cited_by:
-  - README.md:94
-  - README.md:95
-  - README.md:96
-  - README.md:97
-  - README.md:108
-  - README.md:109
-  - README.md:188
-  - README.md:189
-  - README.md:190
-  - README.md:196
-  - README.md:197
-  - README.md:198
+  - README.md:149
+  - README.md:150
+  - README.md:151
+  - README.md:152
+  - README.md:163
+  - README.md:164
+  - README.md:243
+  - README.md:244
+  - README.md:245
+  - README.md:251
+  - README.md:252
+  - README.md:253
   # … and 92 more
 - name: qwen2.5-coder-32b
   family: qwen2.5
@@ -130,7 +133,7 @@ models:
   size: 32b
   cited_by_count: 1
   cited_by:
-  - README.md:98
+  - README.md:153
 - name: qwen2.5-coder-7b
   family: qwen2.5
   size: 7b
@@ -142,23 +145,23 @@ models:
   size: 7b
   cited_by_count: 4
   cited_by:
-  - README.md:99
-  - README.md:230
-  - README.md:232
+  - README.md:154
+  - README.md:285
+  - README.md:287
   - book/src/lib/text.md:48
 - name: qwen3-1.7b
   family: qwen3
   size: 1.7b
   cited_by_count: 1
   cited_by:
-  - README.md:84
+  - README.md:139
 - name: qwen3-30b
   family: qwen3
   size: 30b
   cited_by_count: 3
   cited_by:
-  - README.md:91
-  - README.md:243
+  - README.md:146
+  - README.md:298
   - docs/BEATS.md:201
 - name: qwen3-4b
   family: qwen3
@@ -172,23 +175,23 @@ models:
   size: 8b
   cited_by_count: 1
   cited_by:
-  - README.md:85
+  - README.md:140
 - name: qwen3-coder-30b
   family: qwen3
   size: 30b
   cited_by_count: 4
   cited_by:
-  - README.md:92
-  - README.md:238
-  - README.md:239
-  - README.md:243
+  - README.md:147
+  - README.md:293
+  - README.md:294
+  - README.md:298
 - name: qwen3.5-0.8b
   family: qwen3.5
   size: 0.8b
   cited_by_count: 8
   cited_by:
-  - README.md:103
-  - README.md:104
+  - README.md:158
+  - README.md:159
   - book/src/cli/embed-viz.md:46
   - book/src/cli/embed-viz.md:69
   - book/src/cli/embed-viz.md:71
@@ -200,13 +203,13 @@ models:
   size: 35b
   cited_by_count: 1
   cited_by:
-  - README.md:105
+  - README.md:160
 - name: qwen3.5-4b
   family: qwen3.5
   size: 4b
   cited_by_count: 1
   cited_by:
-  - README.md:106
+  - README.md:161
 - name: qwen3.5-9b
   family: qwen3.5
   size: 9b

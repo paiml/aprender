@@ -61,7 +61,16 @@ jobs:
     # from the same pinned tarball, and dies loudly on anything else), and
     # scripts/check_pr_review_arm4.sh contains no arch reference at all. The
     # pin was inherited, not derived.
-    runs-on: [self-hosted, Linux, clean-room]
+    #
+    # OWN LIGHT LANE (#4729, 2026-10-04): MEASURED 09:09Z-11:35Z, this
+    # seconds-long job sat QUEUED for 2.5 h behind 24 CI + 25 quorum runs with
+    # all 19 clean-room runners busy, and it was the ONLY check holding six
+    # armed PRs. `review-light` is a dedicated runner on the same intel
+    # clean-room box, unit and isolation, in the aprender-reserved group. It
+    # deliberately does NOT carry the `clean-room` label: build jobs on main
+    # select bare [self-hosted, Linux, clean-room], so any runner with that
+    # label is back in the build FIFO. The job's steps are unchanged.
+    runs-on: [self-hosted, review-light]
     timeout-minutes: 20
     # B1 (#4512): read the pr-review-signature check run. Job-scoped, read-only.
     # pull-requests: read - in the queue Arm 4 must name the PR's head, which the

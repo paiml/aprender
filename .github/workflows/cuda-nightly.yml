@@ -707,6 +707,11 @@ jobs:
         if: ${{ !cancelled() && steps.decide.outputs.proceed == 'true' }}
         run: |
           set -uo pipefail
+          # -e OFF, as in the perf041 step: the default shell is `bash -e {0}`, so the
+          # RED control's expected exit 101 aborted the step at `; r=$?` before its
+          # assertions ran (run 37161229337: GREEN passed, step failed 101, no ::error::).
+          # Every failure path below is guarded explicitly.
+          set +e
           t=api::openai_handlers::qwen35_serve_tests::gpu_every_serve_route_prefills_through_the_batched_prefill
           model="$HOME/models/Qwen3.5-0.8B-Q4_K_M.gguf"
           [ -f "$model" ] || { echo "::error::#4250 UNMEASURABLE on ${{ matrix.name }} (provisioning): $model is absent"; exit 1; }
