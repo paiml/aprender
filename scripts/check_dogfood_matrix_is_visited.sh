@@ -147,8 +147,8 @@ if [ "${1:-}" = "--self-test" ]; then
     expect 'S6 an NA row without decider/date -> R4' "$TMP/f6" 1 'R4 NA_HOSTS row is not host:reason:decided_by:YYYY-MM-DD'
     fixture f6b "a b" "c:asset smoke only:a reviewer (recommendation, pending a ruling):2026-09-20" "$V3"
     expect "S6b an NA row whose decider is a pending recommendation -> R5" "$TMP/f6b" 1 "R5 NA_HOSTS row for c is not decided"
-    fixture f6c "a b" "e:gone:fleet:2026-01-01 | c:asset smoke only:tbd:2026-09-20" "$V3"
-    expect "S6c R5 reads every row, not only the first, in any case (tbd)" "$TMP/f6c" 1 "R5 NA_HOSTS row for c is not decided"
+    fixture f6c "a b" "e:gone:fleet:2026-01-01 | c:asset smoke only:TBD:2026-09-20" "$V3"
+    expect "S6c R5 reads every row, not only the first, in any case (TBD vs the lower-case pattern)" "$TMP/f6c" 1 "R5 NA_HOSTS row for c is not decided"
     fixture f7 "a b" "c:asset smoke only:fleet:2026-09-20" "$V3" '          - target: x
             host: w
             labels: x'
