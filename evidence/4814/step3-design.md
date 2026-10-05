@@ -106,3 +106,46 @@ recorded here and not folded into slice 2.
 Slice 2 applies the F9 rule locally: a language-tagged value is a result on both components, never a pass,
 because `Term` cannot tell `"a"@en` from `"a"@fr`. The general fail-closed rule (for `in`, `hasValue`, and the
 range components, which already refuse it through `compare_terms`) is still part of slice 10.
+
+## Slice 5 design: constraints on a node shape itself (written 18:55Z, before slices 1 to 4 have compiled)
+
+Survey of the 21 `node/*` cases that wait on slice 5 (from the suite @ `976ed12ad3`):
+
+- 19 of the 21 name their focus with `sh:targetNode`, and at least 14 of those 19 target a **literal** (counted from the
+  first non-`ex:` `targetNode` line of each file only) (`7`, `3.9`,
+  `"Aldi"`, `"…"^^xsd:dateTime`, `"<span>…</span>"^^rdf:HTML`, `"true"^^xsd:boolean`). Two (`in-001`,
+  `node-001`) have no target at all, so they need no slice-5 work on targets. They need the implicit class
+  target or none, and they stay out.
+- So slice 5 needs a **literal `targetNode`** first. Slice 4 reads `targetNode` as an IRI only. A YAML string
+  cannot mean both, because in `in` and `hasValue` a YAML string is an `xsd:string` literal. So the literal form
+  is a mapping, `{literal: "7", datatype: xsd:integer}`, and a bare string stays an IRI. `Targets::nodes` becomes
+  `Vec<Term>`. A literal focus is still named by its N-Triples form, as `targetObjectsOf` names it in slice 4.
+
+Engine:
+
+- `NODE_KEYS` gains the value components that make sense on the focus node: class, datatype, nodeKind,
+  `in`, pattern, minLength, maxLength, the four range bounds, hasValue, equals, disjoint, node.
+  `languageIn` stays refused (slice 10, F9).
+- A node shape's value set is `{focus}`. `check_value` is factored so it takes the value set and a path that is
+  an `Option`. A node-level result has no `resultPath` (W3C: none), which `Expected.path: None` already models.
+- equals and disjoint on a node shape compare `{focus}` with the focus's values of the named property.
+- The gate still refuses every node-level constraint in a contract shape, as it refuses non-class targets since
+  slice 4. Its plant creates an IRI node of the target class, so a node-level `datatype` or `pattern` would be
+  planted against a value it can never match. The contract gate's accepted set stays unchanged.
+
+### Finding F11: YAML numbers are not Turtle numbers
+
+`in_entry` types a YAML float as `xsd:double`. In Turtle a bare `3.9` is an `xsd:decimal`, and a bare `7` is an
+`xsd:integer`, which agrees. The range components compare across numeric types (`compare_terms`), so the
+mismatch is harmless there. But `in` and `hasValue` compare terms exactly, so `hasValue: 3.9` never matches a
+decimal `3.9` in the data. That is a silent wrong answer, not a refusal.
+
+Proposal: in slice 5, the `{literal, datatype}` mapping is accepted wherever a scalar term is (`in`, `hasValue`,
+`targetNode`), so a translation can write the exact type. A bare YAML float in `in` or `hasValue` becomes
+`Malformed` ("write `{literal, datatype}`"). That is a tightening: today no contract uses a float there. It
+changes what the gate accepts, so it gets its own sign-off row and is not folded silently into slice 5.
+
+Expected unlock: up to 18 of the 21, if the literal `targetNode` and the mapping form land with slice 5. Excluded
+are `in-001` and `node-001` (no target) and `nodeKind-001` (blank-node kinds). `languageIn-001` is not among the 21;
+it waits on slice 10.
+Each count is to be re-measured against the vendored YAML before the commit says so.
