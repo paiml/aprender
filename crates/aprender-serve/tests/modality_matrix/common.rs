@@ -441,8 +441,33 @@ impl ModalityTestResult {
     }
 }
 
-/// Force a specific backend via environment variable
-pub fn force_backend(backend: Backend) {
+/// One lock for every test in this binary that sets or reads the backend env vars (#4727).
+///
+/// `set_var`/`remove_var` are process-wide and the test harness runs tests on parallel
+/// threads, so without it one test's `force_backend` erased another's between its set
+/// and its read.
+static BACKEND_ENV_LOCK: std::sync::Mutex<()> = std::sync::Mutex::new(());
+
+/// Holds [`BACKEND_ENV_LOCK`] while a test runs on a forced backend; clears the
+/// forcing env vars on drop, so a panicking test leaves nothing behind.
+#[must_use = "the backend env is only yours while the guard is alive"]
+pub struct BackendEnvGuard {
+    _lock: std::sync::MutexGuard<'static, ()>,
+}
+
+impl Drop for BackendEnvGuard {
+    fn drop(&mut self) {
+        clear_backend_forcing();
+    }
+}
+
+/// Force a specific backend via environment variable. Keep the returned guard alive
+/// for as long as the test depends on the env: it serializes every such test.
+pub fn force_backend(backend: Backend) -> BackendEnvGuard {
+    // A test that panicked while holding the lock poisons it; the env is reset below.
+    let lock = BACKEND_ENV_LOCK
+        .lock()
+        .unwrap_or_else(std::sync::PoisonError::into_inner);
     // Clear all backend env vars first
     std::env::remove_var("REALIZAR_FORCE_SCALAR");
     std::env::remove_var("REALIZAR_FORCE_SIMD");
@@ -450,6 +475,7 @@ pub fn force_backend(backend: Backend) {
 
     // Set the requested backend
     std::env::set_var(backend.env_var(), backend.env_value());
+    BackendEnvGuard { _lock: lock }
 }
 
 /// Clear all backend forcing env vars

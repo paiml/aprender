@@ -31,7 +31,7 @@ fn test_simd_avx2_single_shot() {
         return;
     }
 
-    force_backend(Backend::Simd);
+    let _env = force_backend(Backend::Simd);
 
     let mut trace = ExecutionTrace::new();
     trace.add_span(
@@ -80,7 +80,7 @@ fn test_simd_avx2_batch_4() {
         return;
     }
 
-    force_backend(Backend::Simd);
+    let _env = force_backend(Backend::Simd);
 
     let mut trace = ExecutionTrace::new();
     for i in 0..4 {
@@ -118,7 +118,7 @@ fn test_simd_avx2_batch_32() {
         return;
     }
 
-    force_backend(Backend::Simd);
+    let _env = force_backend(Backend::Simd);
 
     let mut trace = ExecutionTrace::new();
     for i in 0..32 {
@@ -154,7 +154,7 @@ fn test_simd_avx2_batch_64() {
         return;
     }
 
-    force_backend(Backend::Simd);
+    let _env = force_backend(Backend::Simd);
 
     let mut trace = ExecutionTrace::new();
     for i in 0..64 {
@@ -260,7 +260,7 @@ mod integration {
     #[test]
     #[ignore = "flaky due to env var manipulation conflicting with parallel tests"]
     fn test_force_simd_env_var_set() {
-        force_backend(Backend::Simd);
+        let _env = force_backend(Backend::Simd);
 
         let val = std::env::var("REALIZAR_FORCE_SIMD");
         assert!(
