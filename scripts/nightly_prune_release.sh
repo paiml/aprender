@@ -150,7 +150,7 @@ STUB
       | ($o | map(.[0])) as $skip
       | {run_id: 7, targets: ({
           g: {status: "green", green_sha: "S", built_run_id: 7,
-              tools: ([$all[] | select(. as $n | $skip | index($n) | not)] | map({key: ., value: {asset: .}}) | from_entries)}}
+              tools: ([$all | .[] | select(. as $n | $skip | index($n) | not)] | map({key: ., value: {asset: .}}) | from_entries)}}
         + ($o | map({key: ("o-" + .[0]), value: {status: .[1], green_sha: .[2], built_run_id: (.[3] | tonumber),
                                                  tools: {x: {asset: .[0]}}}}) | from_entries))}' > "$tmp/manifest"
   }
