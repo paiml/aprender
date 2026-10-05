@@ -8,7 +8,8 @@
 #
 #   publishable-crates      vs scripts/lib/publishable_crates.py
 #   package-include-diff    vs its frozen golden outputs (the .py is deleted, callers switched)
-#   coverage-report-scope   vs scripts/coverage_report_scope.py
+#   coverage-report-scope   vs scripts/coverage_report_scope.py (deleted from the tree once its
+#                           callers moved to the bin; read back from git by its pinned blob)
 #
 # coverage_report_scope.py runs `cargo metadata` itself, so its fixture cases put a
 # fake `cargo` first on PATH that prints the fixture; both sides then read the same
@@ -42,6 +43,15 @@ fi
 
 tmp="$(mktemp -d)"
 trap 'rm -rf "${tmp:?}"' EXIT
+
+# The deleted original, byte-for-byte as it last stood on main (d326bc1fb7). A clone that
+# lacks the blob (shallow) fails here rather than skipping the section.
+CRS_PY_BLOB=106561a2bfce54484d816665c797de5ea6335910
+CRS_PY="$tmp/coverage_report_scope.py"
+if ! git cat-file blob "$CRS_PY_BLOB" >"$CRS_PY" 2>/dev/null; then
+    echo "FAIL: blob $CRS_PY_BLOB (scripts/coverage_report_scope.py) not in this clone; fetch full history" >&2
+    exit 1
+fi
 pass=0
 fail=0
 
@@ -185,7 +195,7 @@ crs_case() { # NAME ARGS...
     local name="$1"
     shift
     check "coverage-report-scope $name" "$tmp/empty" \
-        env PATH="$tmp/fakebin:$PATH" FAKE_META="$tmp/crs.json" "$PY" scripts/coverage_report_scope.py "$@" -- \
+        env PATH="$tmp/fakebin:$PATH" FAKE_META="$tmp/crs.json" "$PY" "$CRS_PY" "$@" -- \
         env PATH="$tmp/fakebin:$PATH" FAKE_META="$tmp/crs.json" "$BIN" coverage-report-scope "$@"
 }
 crs_case "no args"
@@ -199,11 +209,11 @@ crs_case "exclude all" --exclude A --exclude a-z --exclude aprender-gpu --exclud
 crs_case "positional" stray
 crs_case "unknown flag" --frob
 check "coverage-report-scope cargo fails" "$tmp/empty" \
-    env PATH="$tmp/fakebin:$PATH" FAKE_META="$tmp/crs.json" FAKE_CARGO_FAIL=1 "$PY" scripts/coverage_report_scope.py -- \
+    env PATH="$tmp/fakebin:$PATH" FAKE_META="$tmp/crs.json" FAKE_CARGO_FAIL=1 "$PY" "$CRS_PY" -- \
     env PATH="$tmp/fakebin:$PATH" FAKE_META="$tmp/crs.json" FAKE_CARGO_FAIL=1 "$BIN" coverage-report-scope
-check "coverage-report-scope LIVE" "$tmp/empty" "$PY" scripts/coverage_report_scope.py -- "$BIN" coverage-report-scope
+check "coverage-report-scope LIVE" "$tmp/empty" "$PY" "$CRS_PY" -- "$BIN" coverage-report-scope
 check "coverage-report-scope LIVE exclude gpu" "$tmp/empty" \
-    "$PY" scripts/coverage_report_scope.py --exclude aprender-gpu -- "$BIN" coverage-report-scope --exclude aprender-gpu
+    "$PY" "$CRS_PY" --exclude aprender-gpu -- "$BIN" coverage-report-scope --exclude aprender-gpu
 
 ran=$((pass + fail))
 echo "ci_tools_py_parity: $pass/$ran identical (declared $EXPECTED_CASES)"

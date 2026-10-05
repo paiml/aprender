@@ -31,7 +31,7 @@ enum Cmd {
         includes: PathBuf,
     },
     /// The `-p <crate>` list scoping `cargo llvm-cov report` (was
-    /// scripts/coverage_report_scope.py).
+    /// scripts/coverage_report_scope.py, deleted once callers moved here).
     CoverageReportScope {
         /// A workspace member to leave out; repeatable. Must name a member.
         #[arg(long, value_name = "NAME", allow_hyphen_values = true)]

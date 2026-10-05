@@ -7,7 +7,7 @@ CI helpers ported from `scripts/**/*.py` to Rust (C301: no Python in the build).
 |------------|-------------|
 | `publishable-crates` (reads `cargo metadata` JSON on stdin) | `scripts/lib/publishable_crates.py` |
 | `package-include-diff <LISTING> <INCLUDES>` | `scripts/lib/package_include_diff.py` (deleted; caller `scripts/check_package_includes.sh` switched) |
-| `coverage-report-scope [--exclude NAME]...` | `scripts/coverage_report_scope.py` |
+| `coverage-report-scope [--exclude NAME]...` | `scripts/coverage_report_scope.py` (deleted; parity harness reads it from git blob 106561a2) |
 
 Each port must print the same stdout as its original and agree with it on success
 or failure. `scripts/tests/ci_tools_py_parity_test.sh` checks this. The Python

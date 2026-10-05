@@ -565,7 +565,7 @@ COV_CARGO_ENV := $(if $(COV_TARGET_DIR),CARGO_TARGET_DIR=$(COV_TARGET_DIR))
 # #4023 brings two-phase BACK, deliberately: aprender-serve's lib tests cannot run in one
 # process on a 28 GB runner (#4028), so they run as several --no-report processes and one
 # report merges them. It is safe because every report is now scoped by an explicit `-p` list
-# DERIVED from `cargo metadata` (scripts/coverage_report_scope.py), the verified alternative
+# DERIVED from `cargo metadata` (`aprender-ci-tools coverage-report-scope`), the verified alternative
 # above, and scripts/check_coverage_report_scoped.sh refuses any unscoped `llvm-cov report`. profraw
 # survive it (31 present afterwards), so coverage-html still has data to work from.
 .PHONY: coverage-check contracts census
@@ -728,7 +728,7 @@ coverage: ## Coverage summary + threshold check (warm: ~3min)
 	@# SCOPE IS EXPLICIT: an unscoped `report` covers only the root facade (empty lcov, run
 	@# 35892421393 and the single-phase note above); `report --exclude` is rejected by 0.9.0 (run
 	@# 35901458111) and `report --workspace` by older versions. A derived `-p` list works on both.
-	@$(COV_CARGO_ENV) cargo llvm-cov report $$(python3 scripts/coverage_report_scope.py --exclude aprender-gpu) \
+	@$(COV_CARGO_ENV) cargo llvm-cov report $$(cargo run -q -p aprender-ci-tools -- coverage-report-scope --exclude aprender-gpu) \
 		--lcov --output-path $(CURDIR)/target/coverage/lcov.info \
 		--ignore-filename-regex "$$(cat target/coverage/.exclude-re)" 2>&1 | tee -a target/coverage/test.log; \
 	rc=$${PIPESTATUS[0]}; \
@@ -790,8 +790,8 @@ coverage-html: ## Generate HTML + LCOV reports from last coverage run
 	$(COV_REFUSE_GLOBAL_MOLD)
 	@mkdir -p target/coverage
 	@printf '%s' '$(COVERAGE_EXCLUDE_REGEX)' > target/coverage/.exclude-re
-	@$(COV_CARGO_ENV) cargo llvm-cov report $$(python3 scripts/coverage_report_scope.py --exclude aprender-gpu) --html --output-dir target/coverage/html --ignore-filename-regex "$$(cat target/coverage/.exclude-re)"
-	@$(COV_CARGO_ENV) cargo llvm-cov report $$(python3 scripts/coverage_report_scope.py --exclude aprender-gpu) --lcov --output-path target/coverage/lcov.info --ignore-filename-regex "$$(cat target/coverage/.exclude-re)"
+	@$(COV_CARGO_ENV) cargo llvm-cov report $$(cargo run -q -p aprender-ci-tools -- coverage-report-scope --exclude aprender-gpu) --html --output-dir target/coverage/html --ignore-filename-regex "$$(cat target/coverage/.exclude-re)"
+	@$(COV_CARGO_ENV) cargo llvm-cov report $$(cargo run -q -p aprender-ci-tools -- coverage-report-scope --exclude aprender-gpu) --lcov --output-path target/coverage/lcov.info --ignore-filename-regex "$$(cat target/coverage/.exclude-re)"
 	@echo "📍 HTML: target/coverage/html/index.html"
 
 # Full coverage: All features (for CI, slower)
@@ -806,10 +806,10 @@ coverage-full: ## Full coverage report (all features, CI only)
 		$(COV_CARGO_ENV) cargo llvm-cov test --no-report --workspace --lib --all-features \
 		--ignore-filename-regex "$$(cat target/coverage/.exclude-re)" \
 		-- --skip prop_gbm_expected_value --skip slow --skip heavy --skip benchmark --skip h12_ --skip j2_
-	@$(COV_CARGO_ENV) cargo llvm-cov report $$(python3 scripts/coverage_report_scope.py) --html --output-dir target/coverage/html --ignore-filename-regex "$$(cat target/coverage/.exclude-re)"
-	@$(COV_CARGO_ENV) cargo llvm-cov report $$(python3 scripts/coverage_report_scope.py) --lcov --output-path target/coverage/lcov.info --ignore-filename-regex "$$(cat target/coverage/.exclude-re)"
+	@$(COV_CARGO_ENV) cargo llvm-cov report $$(cargo run -q -p aprender-ci-tools -- coverage-report-scope) --html --output-dir target/coverage/html --ignore-filename-regex "$$(cat target/coverage/.exclude-re)"
+	@$(COV_CARGO_ENV) cargo llvm-cov report $$(cargo run -q -p aprender-ci-tools -- coverage-report-scope) --lcov --output-path target/coverage/lcov.info --ignore-filename-regex "$$(cat target/coverage/.exclude-re)"
 	@echo ""
-	@$(COV_CARGO_ENV) cargo llvm-cov report $$(python3 scripts/coverage_report_scope.py) --summary-only --ignore-filename-regex "$$(cat target/coverage/.exclude-re)"
+	@$(COV_CARGO_ENV) cargo llvm-cov report $$(cargo run -q -p aprender-ci-tools -- coverage-report-scope) --summary-only --ignore-filename-regex "$$(cat target/coverage/.exclude-re)"
 
 # Open coverage report in browser
 coverage-open: ## Open HTML coverage report in browser
