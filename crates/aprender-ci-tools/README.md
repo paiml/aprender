@@ -13,6 +13,7 @@ CI helpers ported from `scripts/**/*.py` to Rust (C301: no Python in the build).
 | `tarball-build-errors LOG` | `scripts/lib/tarball_build_errors.py` (kept: its caller `scripts/package_tarball_build.sh` is on the publish gate path, N-1) |
 | `dag-status --root DIR` (reads `[id, row]` JSON pairs on stdin) | `scripts/lib/dag_status.py` (kept for now, see below) |
 | `git-patch-id [--stable\|--unstable\|--verbatim]` (reads a diff on stdin) | `scripts/lib/git_patch_id.py` (kept: callers `scripts/lib/pr_review_patch_id.sh` and `scripts/check_pr_review_arm4.sh` not yet switched) |
+| `extract-book-examples [ROOT]` (default `.`; JSON lines for the bash/rust blocks in `ROOT/book/src/{cli,lib}/*.md`) | `scripts/extract_book_examples.py` (kept: its wrapper `scripts/extract-book-examples.sh` feeds `check_book_examples_executable.sh`, which `dogfood-book.sh` runs, and `_build_rust_compile_test.py`, so it switches once a released `aprender-ci-tools` carries the port, N-1) |
 
 Each port must print the same stdout as its original and agree with it on success
 or failure. `scripts/tests/ci_tools_py_parity_test.sh` checks this. The Python
@@ -49,6 +50,14 @@ none of the callers uses these forms:
 | `tarball-shrink-report`, a Unicode `Other_Alphabetic` character that is not a letter or digit (a combining mark, a circled letter such as `Ⓐ`) before `_or_skip(` or `fn` | not a word character | a word character |
 | `tarball-workspace --name` alone | `--name` taken as DIR | usage error, exit 1 |
 | `tarball-build-errors --help` / `-h` | read as the LOG path: cannot read, exit 2 | help, exit 0 (every other argv, `--` and `-x` included, matches: parity cases) |
+
+## Where `extract-book-examples` differs (by design, not parity-checked)
+
+| Input | Original | Port |
+|-------|----------|------|
+| which book | the one under the script's own repo | the one under `ROOT` |
+| arguments | ignored (even `--help`) | `ROOT`, or help / a usage error |
+| the reason for a stop (stderr) | a Python traceback | one line naming the chapter and the reason |
 
 ## Where `tarball-workspace` output differs (by design; the parity test maps or skips each)
 

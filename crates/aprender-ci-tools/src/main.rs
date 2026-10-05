@@ -1,8 +1,8 @@
 //! `aprender-ci-tools`: one binary, one subcommand per ported Python helper.
 
 use aprender_ci_tools::{
-    coverage_report_scope, dag_status, git_patch_id, package_include_diff, publishable_crates,
-    tarball_build_errors, tarball_shrink_report, tarball_workspace,
+    coverage_report_scope, dag_status, extract_book_examples, git_patch_id, package_include_diff,
+    publishable_crates, tarball_build_errors, tarball_shrink_report, tarball_workspace,
 };
 use clap::{ArgGroup, Parser, Subcommand};
 use std::io::{Read, Write};
@@ -84,6 +84,13 @@ enum Cmd {
         /// --stable, --verbatim or --unstable (the default), as git spells them.
         #[arg(allow_hyphen_values = true, value_name = "MODE")]
         mode: Option<String>,
+    },
+    /// One JSON line per bash/rust block in `ROOT/book/src/{cli,lib}/*.md`, with the cost
+    /// class read from the comment above it (was scripts/extract_book_examples.py).
+    ExtractBookExamples {
+        /// The repository root the book lives under.
+        #[arg(default_value = ".")]
+        root: PathBuf,
     },
 }
 
@@ -182,6 +189,9 @@ fn run(cmd: Cmd) -> Result<String, Refusal> {
                 .read_to_string(&mut rows)
                 .map_err(|e| nothing_printed(format!("stdin: {e}")))?;
             dag_status::run(&root, &rows).map_err(nothing_printed)
+        }
+        Cmd::ExtractBookExamples { root } => {
+            extract_book_examples::run(&root).map_err(|(printed, reason)| (printed, 1, reason))
         }
     }
 }
