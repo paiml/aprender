@@ -36,6 +36,13 @@ set -euo pipefail
 ROOT="$(git rev-parse --show-toplevel)"
 cd "$ROOT" || exit 1
 PY="${PYTHON:-python3}"
+# Every validator needs Python >= 3.11 (tarball_workspace's real TOML parser is tomllib;
+# toml_compat's 3.10 fallback reads only single-line [package] strings). Checked before any
+# case runs, so an old interpreter is one clear line, not a failure midway through the table.
+if ! "$PY" -c 'import sys, tomllib; sys.exit(sys.version_info < (3, 11))' 2>/dev/null; then
+    echo "FAIL: not measured: PYTHON=$PY is not Python >= 3.11 with tomllib (set PYTHON=)" >&2
+    exit 1
+fi
 EXPECTED_CASES=199
 
 BIN="${CI_TOOLS_BIN:-}"
@@ -329,12 +336,6 @@ if ! git cat-file -e "$TW_PY_BLOB" 2>/dev/null || ! git cat-file -e "$TW_COMPAT_
 fi
 git cat-file blob "$TW_PY_BLOB" >"$tmp/pyval/tarball_workspace.py"
 git cat-file blob "$TW_COMPAT_BLOB" >"$tmp/pyval/toml_compat.py"
-# toml_compat's 3.10 fallback reads only single-line [package] strings; the validator is
-# the real TOML parser, so an interpreter without tomllib cannot validate.
-if ! "$PY" -c 'import tomllib' 2>/dev/null; then
-    echo "FAIL: not measured: $PY has no tomllib (needs >= 3.11; set PYTHON=)" >&2
-    exit 1
-fi
 TW_PY=("$PY" "$tmp/pyval/tarball_workspace.py")
 TW_RS=("$BIN" tarball-workspace)
 TW_CWD="$ROOT"
