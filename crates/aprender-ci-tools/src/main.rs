@@ -1,6 +1,8 @@
 //! `aprender-ci-tools`: one binary, one subcommand per ported Python helper.
 
-use aprender_ci_tools::{coverage_report_scope, package_include_diff, publishable_crates};
+use aprender_ci_tools::{
+    coverage_report_scope, package_include_diff, publishable_crates, tarball_shrink_report,
+};
 use clap::{Parser, Subcommand};
 use std::io::{Read, Write};
 use std::path::PathBuf;
@@ -37,6 +39,14 @@ enum Cmd {
         #[arg(long, value_name = "NAME", allow_hyphen_values = true)]
         exclude: Vec<String>,
     },
+    /// What the published tarballs do NOT test: dropped integration targets and run-time
+    /// `*_or_skip(` sites (was scripts/lib/tarball_shrink_report.py). Exit 2 on a missing input.
+    TarballShrinkReport {
+        /// `cargo package` output.
+        package_log: PathBuf,
+        /// The tarball workspace; its crates are under `pkgs/`.
+        ws_dir: PathBuf,
+    },
 }
 
 fn cargo_metadata() -> Result<String, String> {
@@ -54,23 +64,26 @@ fn cargo_metadata() -> Result<String, String> {
     String::from_utf8(out.stdout).map_err(|e| format!("cargo metadata is not UTF-8: {e}"))
 }
 
-fn nothing_printed(reason: String) -> (String, String) {
-    (String::new(), reason)
+/// `(already printed, exit code, reason)`.
+type Refusal = (String, u8, String);
+
+fn nothing_printed(reason: String) -> Refusal {
+    (String::new(), 1, reason)
 }
 
 fn read(path: &PathBuf) -> Result<Vec<u8>, String> {
     std::fs::read(path).map_err(|e| format!("{}: {e}", path.display()))
 }
 
-/// The output, or `(already printed, reason)` on a refusal.
-fn run(cmd: Cmd) -> Result<String, (String, String)> {
+/// The output, or a refusal.
+fn run(cmd: Cmd) -> Result<String, Refusal> {
     match cmd {
         Cmd::PublishableCrates => {
             let mut meta = String::new();
             std::io::stdin()
                 .read_to_string(&mut meta)
-                .map_err(|e| (String::new(), format!("stdin: {e}")))?;
-            publishable_crates::run(&meta)
+                .map_err(|e| nothing_printed(format!("stdin: {e}")))?;
+            publishable_crates::run(&meta).map_err(|(printed, reason)| (printed, 1, reason))
         }
         Cmd::PackageIncludeDiff { listing, includes } => {
             let listing = read(&listing).map_err(nothing_printed)?;
@@ -81,6 +94,11 @@ fn run(cmd: Cmd) -> Result<String, (String, String)> {
             let meta = cargo_metadata().map_err(nothing_printed)?;
             coverage_report_scope::scope(&meta, &exclude).map_err(nothing_printed)
         }
+        Cmd::TarballShrinkReport {
+            package_log,
+            ws_dir,
+        } => tarball_shrink_report::report(&package_log, &ws_dir)
+            .map_err(|(code, reason)| (String::new(), code, reason)),
     }
 }
 
@@ -96,7 +114,7 @@ fn main() -> ExitCode {
     };
     let (out, refusal) = match run(cli.cmd) {
         Ok(out) => (out, None),
-        Err((printed, reason)) => (printed, Some(reason)),
+        Err((printed, code, reason)) => (printed, Some((code, reason))),
     };
     let mut stdout = std::io::stdout().lock();
     if let Err(e) = stdout
@@ -108,9 +126,9 @@ fn main() -> ExitCode {
     }
     match refusal {
         None => ExitCode::SUCCESS,
-        Some(reason) => {
+        Some((code, reason)) => {
             eprintln!("{reason}");
-            ExitCode::FAILURE
+            ExitCode::from(code)
         }
     }
 }

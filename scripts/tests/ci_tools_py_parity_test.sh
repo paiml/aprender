@@ -1,6 +1,6 @@
 #!/usr/bin/env bash
 # ci_tools_py_parity_test.sh -- PY-PORT-2: the identical-output case table for the
-# first three ports into crates/aprender-ci-tools (C301: no Python in the build).
+# ports into crates/aprender-ci-tools (C301: no Python in the build).
 #
 # Every case runs through BOTH the .py original and the Rust subcommand; stdout must
 # be byte-identical and both must agree on success vs failure. The .py files are the
@@ -9,6 +9,8 @@
 #   publishable-crates      vs scripts/lib/publishable_crates.py
 #   package-include-diff    vs scripts/lib/package_include_diff.py
 #   coverage-report-scope   vs scripts/coverage_report_scope.py
+#   tarball-shrink-report   vs scripts/lib/tarball_shrink_report.py, read from git at its last
+#                           commit on main: the file itself is deleted (C301)
 #
 # coverage_report_scope.py runs `cargo metadata` itself, so its fixture cases put a
 # fake `cargo` first on PATH that prints the fixture; both sides then read the same
@@ -27,7 +29,7 @@ set -euo pipefail
 ROOT="$(git rev-parse --show-toplevel)"
 cd "$ROOT" || exit 1
 PY="${PYTHON:-python3}"
-EXPECTED_CASES=54
+EXPECTED_CASES=63
 
 BIN="${CI_TOOLS_BIN:-}"
 if [[ -z "$BIN" ]]; then
@@ -200,6 +202,77 @@ check "coverage-report-scope cargo fails" "$tmp/empty" \
 check "coverage-report-scope LIVE" "$tmp/empty" "$PY" scripts/coverage_report_scope.py -- "$BIN" coverage-report-scope
 check "coverage-report-scope LIVE exclude gpu" "$tmp/empty" \
     "$PY" scripts/coverage_report_scope.py --exclude aprender-gpu -- "$BIN" coverage-report-scope --exclude aprender-gpu
+
+# --- 4. tarball-shrink-report (the .py is deleted; its last version on main validates) ---
+# The original refuses a missing input with exit 2, not 1, and the script documents it,
+# so these cases also compare the exact exit code.
+TSR_PY_SHA=989cb012e57f92945ff1e699a59b659eb09e0f0f
+git show "$TSR_PY_SHA:scripts/lib/tarball_shrink_report.py" >"$tmp/tarball_shrink_report.py" || {
+    echo "FAIL: cannot read the original at $TSR_PY_SHA (a shallow clone?); nothing to validate against" >&2
+    exit 1
+}
+check_rc() { # NAME -- PYARGS... (the same args go to both sides)
+    local name="$1" prc rrc
+    shift
+    "$PY" "$tmp/tarball_shrink_report.py" "$@" </dev/null >/dev/null 2>&1 && prc=0 || prc=$?
+    "$BIN" tarball-shrink-report "$@" </dev/null >/dev/null 2>&1 && rrc=0 || rrc=$?
+    if [[ "$prc" -ne "$rrc" ]]; then
+        fail=$((fail + 1))
+        echo "MISMATCH: tarball-shrink-report $name exit code (py $prc, rust $rrc)" >&2
+        return
+    fi
+    check "tarball-shrink-report $name" "$tmp/empty" \
+        "$PY" "$tmp/tarball_shrink_report.py" "$@" -- "$BIN" tarball-shrink-report "$@"
+}
+w="$tmp/tsr"
+mkdir -p "$w/empty/pkgs" "$w/full/pkgs/a/tests/deep" "$w/full/pkgs/b-crate/src" "$w/full/pkgs/c/src" \
+    "$w/full/pkgs/a-very-long-crate-name-past-thirty-two-columns/src" "$w/elsewhere" "$w/bad/pkgs/z/x.rs"
+: >"$w/empty.log"
+cat >"$w/full.log" <<'LOG'
+warning: ignoring test `pre` as `tests/pre.rs` is not included in the published package
+   Packaging a v0.1.0 (/w/a)
+warning: ignoring test `t1` as `tests/t1.rs` is not included in the published package
+warning: ignoring test `t2` as `tests/t2.rs` is not included in the published package, trailing
+ warning: ignoring test `t3` as `tests/t3.rs` is not included in the published package
+warning: ignoring test `` as `tests/t4.rs` is not included in the published package
+Packaging nope v1
+LOG
+printf '\tPackaging b-crate v2\n' >>"$w/full.log"
+for i in 1 2 3 4 5 6 7; do
+    printf 'warning: ignoring test `m%s` as `tests/m%s.rs` is not included in the published package\r\n' "$i" "$i" >>"$w/full.log"
+done
+printf '  Packaging a v0.1.0\fwarning: ignoring test `ff` as `tests/ff.rs` is not included in the published package\n\xff\n' >>"$w/full.log"
+printf 'fn path_or_skip(p: &str) {}\nlet a = path_or_skip("x"); let b = y_or_skip(1);\n_or_skip(z)\n' >"$w/full/pkgs/a/tests/t.rs"
+printf 'x_or_skip(1)\rx_or_skip(2)\fx_or_skip(3)\n\xff a_or_skip(4)\n' >"$w/full/pkgs/a/tests/deep/crlf.rs"
+printf 'h_or_skip(1)\n' >"$w/full/pkgs/a/.hidden.rs"
+printf 'h_or_skip(1)\n' >"$w/full/pkgs/a/notes.txt"
+printf 'pub fn dir_or_skip (p) {}\n  dir_or_skip(p);\n' >"$w/full/pkgs/b-crate/src/lib.rs"
+printf 'fn main() {}\n' >"$w/full/pkgs/c/src/main.rs"
+printf 'q_or_skip()\n' >"$w/full/pkgs/a-very-long-crate-name-past-thirty-two-columns/src/lib.rs"
+printf 'q_or_skip()\n' >"$w/full/pkgs/stray-file.rs"
+printf 'q_or_skip()\nq_or_skip()\n' >"$w/elsewhere/lib.rs"
+ln -sfn "$w/elsewhere" "$w/full/pkgs/a/linked"
+ln -sfn "$w/elsewhere" "$w/full/pkgs/linked-crate"
+check_rc "empty log, empty pkgs" "$w/empty.log" "$w/empty"
+check_rc "full fixture" "$w/full.log" "$w/full"
+check_rc "missing log" "$w/nope.log" "$w/full"
+check_rc "log is a directory" "$w/full" "$w/full"
+check_rc "missing pkgs" "$w/full.log" "$w/elsewhere"
+check_rc "unnormalised paths in the refusal" "$w//./nope.log" "$w/./elsewhere/"
+check_rc "bad input: a directory named x.rs" "$w/full.log" "$w/bad"
+check "tarball-shrink-report one argument" "$tmp/empty" \
+    "$PY" "$tmp/tarball_shrink_report.py" "$w/full.log" -- "$BIN" tarball-shrink-report "$w/full.log"
+if ! "$BIN" tarball-shrink-report "$w/full.log" "$w/full" | grep -q '^SHRINK: 11 integration'; then
+    echo "FAIL: the planted not-shipped targets were not counted" >&2
+    fail=$((fail + 1))
+fi
+mkdir -p "$w/live"
+ln -sfn "$ROOT/crates" "$w/live/pkgs"
+check_rc "LIVE crates/ as pkgs" "$w/empty.log" "$w/live"
+if ! "$BIN" tarball-shrink-report "$w/empty.log" "$w/live" | grep -q '^SKIP SITES'; then
+    echo "FAIL: live tarball-shrink-report found no skip site (vacuous)" >&2
+    fail=$((fail + 1))
+fi
 
 ran=$((pass + fail))
 echo "ci_tools_py_parity: $pass/$ran identical (declared $EXPECTED_CASES)"

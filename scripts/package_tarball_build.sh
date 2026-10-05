@@ -27,8 +27,8 @@
 #      still ships (cargo drops the targets whose files are excluded). That is what
 #      `cargo test --no-run` compiles, but `cargo test` has no --keep-going, and one crate's error must
 #      not hide the next crate's.
-#   4. scripts/lib/tarball_shrink_report.py prints what the tarballs do NOT test: integration targets
-#      cargo drops (its own "ignoring test" warning) and run-time `*_or_skip(` sites, per crate, with
+#   4. `aprender-ci-tools tarball-shrink-report` prints what the tarballs do NOT test: integration
+#      targets cargo drops (its own "ignoring test" warning) and run-time `*_or_skip(` sites, per crate, with
 #      totals. A test surface may shrink only where this line shows it.
 #   5. scripts/lib/tarball_build_errors.py names every error by crate and file:line.
 #
@@ -83,6 +83,11 @@ done
 for t in cargo python3 tar sha256sum; do
   command -v "$t" > /dev/null || { echo "  cannot check: $t is not on PATH" >&2; exit 2; }
 done
+# C301: ported helpers are Rust (crates/aprender-ci-tools), built here so a broken helper refuses
+# before the long build rather than after it.
+ci_tools() { cargo run -q --manifest-path "$SCRIPT_DIR/../Cargo.toml" -p aprender-ci-tools -- "$@"; }
+cargo build -q --manifest-path "$SCRIPT_DIR/../Cargo.toml" -p aprender-ci-tools \
+  || { echo "  cannot check: aprender-ci-tools does not build" >&2; exit 2; }
 # SEC010: canonicalize the caller-supplied root before any cd/cp, and refuse a traversal
 ROOT="$(realpath -e -- "$ROOT" 2>/dev/null)" || { echo "  cannot check: no directory for --root" >&2; exit 2; }
 case "$ROOT" in /?*) ;; *) echo "  cannot check: --root resolved to '$ROOT'" >&2; exit 2 ;; esac
@@ -205,7 +210,7 @@ brc=$?
 
 # 4. what the tarballs do NOT test is printed, never silent (#4114/#4129/#4130): integration targets
 #    cargo dropped, and run-time *_or_skip( sites that SKIP out of tree. A missing report is not a pass.
-shrink="$(python3 "$SCRIPT_DIR/lib/tarball_shrink_report.py" "$T/package.log" "$T/ws")" \
+shrink="$(ci_tools tarball-shrink-report "$T/package.log" "$T/ws")" \
   || { echo "  cannot check: the shrink report could not be produced" >&2; exit 2; }
 printf '%s\n' "$shrink"
 

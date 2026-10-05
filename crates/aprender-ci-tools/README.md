@@ -8,6 +8,7 @@ CI helpers ported from `scripts/**/*.py` to Rust (C301: no Python in the build).
 | `publishable-crates` (reads `cargo metadata` JSON on stdin) | `scripts/lib/publishable_crates.py` |
 | `package-include-diff <LISTING> <INCLUDES>` | `scripts/lib/package_include_diff.py` |
 | `coverage-report-scope [--exclude NAME]...` | `scripts/coverage_report_scope.py` |
+| `tarball-shrink-report <PACKAGE_LOG> <WS_DIR>` | `scripts/lib/tarball_shrink_report.py` (deleted; the parity test reads it from git) |
 
 Each port must print the same stdout as its original and agree with it on success
 or failure. `scripts/tests/ci_tools_py_parity_test.sh` checks this. The Python
@@ -16,7 +17,7 @@ files stay only as that test's external validator.
 ## Where the argv surface differs from the originals (by design, not parity-checked)
 
 Arguments are parsed by clap derive (`scripts/check_no_hand_rolled_parsers.sh`), so a
-usage line differs from the originals' hand-rolled loops in four ways. Parity covers
+usage line differs from the originals' hand-rolled loops in the ways below. Parity covers
 what each subcommand prints and whether it fails on the inputs its callers pass, and
 none of the callers uses these forms:
 
@@ -26,5 +27,7 @@ none of the callers uses these forms:
 | `coverage-report-scope --exclude=NAME` | usage refusal, exit 1 | same as `--exclude NAME` |
 | `package-include-diff A B EXTRA` | `EXTRA` ignored | usage error, exit 1 |
 | any usage error | the original's message | clap's message (stderr only; exit 1 on both) |
+| `tarball-shrink-report` usage error | exit 2 | exit 1 (a missing input file still exits 2 on both) |
+| `tarball-shrink-report`, a non-ASCII combining mark (Unicode `Other_Alphabetic`) next to `_or_skip(` | not a word character | a word character |
 
 Part of the [aprender monorepo](https://github.com/paiml/aprender).

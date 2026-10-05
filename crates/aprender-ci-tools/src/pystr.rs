@@ -26,13 +26,67 @@ pub fn py_dirname(p: &str) -> &str {
     }
 }
 
+/// A file read in text mode (`open(path, encoding="utf-8", errors="replace").read()`):
+/// invalid UTF-8 becomes U+FFFD, and universal newlines turn `\r\n` and a lone `\r` into `\n`.
+pub fn py_read_text(bytes: &[u8]) -> String {
+    String::from_utf8_lossy(bytes)
+        .replace("\r\n", "\n")
+        .replace('\r', "\n")
+}
+
+/// `str.splitlines()`: splits on every line boundary CPython knows, not only `\n`, and drops
+/// the terminators. A trailing boundary does not start an empty last line.
+pub fn py_splitlines(s: &str) -> Vec<&str> {
+    let mut out = Vec::new();
+    let mut start = 0;
+    let mut it = s.char_indices().peekable();
+    while let Some((i, c)) = it.next() {
+        let end = match c {
+            '\r' if it.peek().is_some_and(|&(_, n)| n == '\n') => {
+                it.next();
+                i + 2
+            }
+            '\n' | '\r' | '\x0b' | '\x0c' | '\x1c' | '\x1d' | '\x1e' | '\u{85}' | '\u{2028}'
+            | '\u{2029}' => i + c.len_utf8(),
+            _ => continue,
+        };
+        out.push(&s[start..i]);
+        start = end;
+    }
+    if start < s.len() {
+        out.push(&s[start..]);
+    }
+    out
+}
+
+/// `str(pathlib.PurePosixPath(p))`: empty and `.` components dropped, repeated slashes
+/// collapsed (a leading `//`, exactly two, is kept), and an empty result is `.`.
+pub fn py_path_str(p: &std::path::Path) -> String {
+    let s = p.to_string_lossy();
+    let root = if s.starts_with("//") && !s.starts_with("///") {
+        "//"
+    } else if s.starts_with('/') {
+        "/"
+    } else {
+        ""
+    };
+    let parts: Vec<&str> = s
+        .split('/')
+        .filter(|c| !c.is_empty() && *c != ".")
+        .collect();
+    let joined = format!("{root}{}", parts.join("/"));
+    if joined.is_empty() {
+        ".".to_owned()
+    } else {
+        joined
+    }
+}
+
 /// Iterate a file read in text mode (`open(path, encoding="utf-8", errors="replace")`):
 /// invalid UTF-8 becomes U+FFFD, and universal newlines turn `\r\n` and a lone `\r` into
 /// `\n`. Each item keeps its `\n` terminator, as CPython's line iterator does.
 pub fn py_text_lines(bytes: &[u8]) -> Vec<String> {
-    let text = String::from_utf8_lossy(bytes)
-        .replace("\r\n", "\n")
-        .replace('\r', "\n");
+    let text = py_read_text(bytes);
     text.split_inclusive('\n').map(str::to_owned).collect()
 }
 
