@@ -183,7 +183,7 @@ fi
 #     green. It runs BEFORE the tag (#4805): the tag step's pre-tag gate requires this run green on
 #     exactly $MC, and cascade-publish.sh re-derives it fail-closed on the tag (same commit) before T-4.
 if run_step cleanroom; then
-  # B2-cpu: paiml/infra clean-room.yml on the tag. Attach to a run already dispatched (cleanroom-attach) or dispatch.
+  # B2-cpu: paiml/infra clean-room.yml on the release sha $MC. Attach to a run already dispatched (cleanroom-attach) or dispatch.
   if [ -s "$AP/cleanroom-attach" ]; then
     crun=$(cat "$AP/cleanroom-attach"); say "CLEANROOM attached to run $crun"
   else

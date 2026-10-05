@@ -75,6 +75,9 @@
 set -uo pipefail
 
 PROG=${0##*/}
+SELF_PATH=$0
+# --pre-tag is the ONLY way into the pre-tag R3 variant: an inherited PRE_TAG=1 must not reach the publish gate.
+PRE_TAG=0
 SCRIPT_DIR="$(cd -- "$(dirname -- "${BASH_SOURCE[0]}")" && pwd)"
 # shellcheck source=release/lib_code_identity.sh
 if ! . "$SCRIPT_DIR/release/lib_code_identity.sh"; then
@@ -813,6 +816,13 @@ FXREADY
     row pre_tag_untagged_all_rules_pass 0 "PASS  $PROG --pre-tag: every rule holds on HEAD $(git -C "$d" rev-parse HEAD)" "$d" pre_tag_gate
     d="$tmp/pt-full"; build_repo "$d"; untag "$d"
     row pre_tag_untagged_full_gate_refuses 1 "FAIL  R3 tag v1.2.3 does not point at HEAD" "$d"
+    # an inherited PRE_TAG=1 must not reach the publish gate: a separate process, as a caller's env would
+    local envrc=0 envout
+    envout="$(PRE_TAG=1 PUBLISH_PREFLIGHT_ROOT="$d" bash "$SELF_PATH" 2>&1)" || envrc=$?
+    case "$envrc:$envout" in
+        1:*"FAIL  R3 tag v1.2.3 does not point at HEAD"*) printf '  ok    %-36s exit=1 R3 still judged\n' pre_tag_inherited_env_refuses; pass=$((pass + 1)) ;;
+        *) printf '  BROKE %-36s an inherited PRE_TAG=1 changed the publish gate (exit %s)\n' pre_tag_inherited_env_refuses "$envrc"; fail=$((fail + 1)) ;;
+    esac
     d="$tmp/pt-onhead"; build_repo "$d"
     row pre_tag_tag_on_head_passes      0 "ok    R3 pre-tag: v1.2.3 already names HEAD" "$d" pre_tag_gate
     d="$tmp/pt-tagelse"; build_repo "$d"; untag "$d"
