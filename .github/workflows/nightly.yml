@@ -333,7 +333,7 @@ jobs:
       - name: Prune the release to what publish can see
         env:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
-        run: bash scripts/nightly_prune_release.sh dist
+        run: bash scripts/nightly_prune_release.sh dist nightly-manifest.json "$NIGHTLY_SHA"
 
       # REST, not `gh`: the fleet boxes carry no gh (binary-release.yml, run 34448908554).
       - name: Publish green arches, then nightly-manifest.json
