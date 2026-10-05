@@ -18,7 +18,8 @@
 # Values may be plain or "double"/'single' quoted; commas inside quotes are kept.
 # Output, tab-separated:
 #   class C | current BD LN | release R BD LN ARMED | legacy NAME SUNSET | row CRATE BIN CLASS
-# SUNSET is empty for null, ~ or "". ARMED is true only for a YAML 1.1 true (PyYAML's reading).
+# SUNSET is empty when python reads it as falsy (absent, null, ~, "", false). ARMED is true only
+# for an UNQUOTED YAML 1.1 true (PyYAML reads it as bool True; the guard tests `is True`).
 
 function refuse(why) {
     printf "REFUSE %s:%d: %s\n", FILENAME, FNR, why > "/dev/stderr"
@@ -29,15 +30,16 @@ function refuse(why) {
 function trim(s) { sub(/^[ \t]+/, "", s); sub(/[ \t]+$/, "", s); return s }
 
 function unquote(v) {
-    v = trim(v)
-    if (v ~ /^"[^"\\]*"$/ || v ~ /^'[^']*'$/) return substr(v, 2, length(v) - 2)
+    v = trim(v); QUOTED = 0
+    if (v ~ /^"[^"\\]*"$/ || v ~ /^'[^']*'$/) { QUOTED = 1; return substr(v, 2, length(v) - 2) }
     if (v ~ /^["']/) refuse("a quoted value this reader does not read: " v)
     return v
 }
 
-# flow(s): parse "{k: v, k: v}" (an optional trailing # comment) into F[k]; refuse otherwise.
-function flow(s,    i, c, n, q, part, parts, np, k, colon) {
-    split("", F)
+# flow(s): parse "{k: v, k: v}" (an optional trailing # comment) into F[k], and FQ[k] = 1 when that
+# value was quoted (PyYAML reads a quoted "true" or "null" as a string, not a bool or null); refuse otherwise.
+function flow(s,    i, c, n, q, part, parts, np, k, colon, key) {
+    split("", F); split("", FQ)
     s = trim(s)
     if (s !~ /^\{/) refuse("not a one-line flow map: " s)
     n = length(s); q = ""; part = ""; np = 0
@@ -57,7 +59,8 @@ function flow(s,    i, c, n, q, part, parts, np, k, colon) {
     for (k = 1; k <= np; k++) {
         colon = index(parts[k], ":")
         if (colon == 0) refuse("a flow-map entry without a key: " parts[k])
-        F[trim(substr(parts[k], 1, colon - 1))] = unquote(substr(parts[k], colon + 1))
+        key = trim(substr(parts[k], 1, colon - 1))
+        F[key] = unquote(substr(parts[k], colon + 1)); FQ[key] = QUOTED
     }
 }
 
@@ -65,7 +68,8 @@ function need(key, where) { if (!(key in F)) refuse(where " row has no " key) }
 
 function int_of(v, what) { if (v !~ /^[0-9]+$/) refuse(what " is not a non-negative integer: " v); return v + 0 }
 
-function yaml_true(v) { return v ~ /^(true|True|TRUE|yes|Yes|YES|on|On|ON)$/ }
+# armed binds only when PyYAML reads a bool True: an UNQUOTED YAML 1.1 true word (the guard tests `is True`).
+function yaml_true(key) { return !FQ[key] && F[key] ~ /^(true|True|TRUE|yes|Yes|YES|on|On|ON)$/ }
 
 /^[ \t]*(#.*)?$/ { next }
 
@@ -75,7 +79,8 @@ function yaml_true(v) { return v ~ /^(true|True|TRUE|yes|Yes|YES|on|On|ON)$/ }
         v = $0; sub(/^classes:[ \t]*/, "", v); sub(/[ \t]+#.*$/, "", v); v = trim(v)
         if (v !~ /^\[[^]\[{}"']*\]$/) refuse("classes is not a one-line flow sequence of plain scalars: " v)
         v = substr(v, 2, length(v) - 2); nc = split(v, cs, ",")
-        for (j = 1; j <= nc; j++) if (trim(cs[j]) != "") print "class\t" trim(cs[j])
+        for (j = 1; j <= nc; j++) if (trim(cs[j]) != "") { print "class\t" trim(cs[j]); ncls++ }
+        if (!ncls) refuse("classes is empty")
         seen["classes"] = 1
     } else if ($0 ~ /^ceilings:[ \t]*(#.*)?$/) { sec = "ceilings"; seen["ceilings"] = 1 }
     else if ($0 ~ /^legacy_names:[ \t]*(#.*)?$/) sec = "legacy"
@@ -94,15 +99,21 @@ sec == "ceilings" {
     else if ($0 ~ /^    - / && sub_ == "releases") {
         v = $0; sub(/^    - /, "", v); flow(v)
         need("release", "ceilings.releases"); need("binary_debt", "ceilings.releases"); need("legacy_names", "ceilings.releases")
-        print "release\t" F["release"] "\t" int_of(F["binary_debt"], "release binary_debt") "\t" int_of(F["legacy_names"], "release legacy_names") "\t" (yaml_true(F["armed"]) ? "true" : "false")
+        print "release\t" F["release"] "\t" int_of(F["binary_debt"], "release binary_debt") "\t" int_of(F["legacy_names"], "release legacy_names") "\t" (yaml_true("armed") ? "true" : "false")
     } else refuse("a ceilings line this reader does not read: " $0)
     next
 }
 
 sec == "legacy" {
-    v = $0; sub(/^  - /, "", v); flow(v); need("name", "legacy_names")
-    s = ("sunset" in F) ? F["sunset"] : ""
-    if (s == "null" || s == "~" || s == "Null" || s == "NULL") s = ""
+    v = $0; sub(/^  - /, "", v); flow(v)
+    if (F["name"] == "") refuse("a legacy_names row with no or an empty name: " v)
+    s = F["sunset"]
+    # The guard counts a row whose sunset is falsy to python: absent, null, "", false. An unquoted
+    # value that YAML could read as a number (0, 0.0, 1e3) is refused rather than guessed.
+    if (!FQ["sunset"]) {
+        if (s ~ /^(null|Null|NULL|~|false|False|FALSE|no|No|NO|off|Off|OFF)$/) s = ""
+        else if (s ~ /^[-+.0-9]/ && s !~ /^[0-9]+\.[0-9]+\.[0-9]+([-+].*)?$/) refuse("a sunset YAML may read as a number: " s)
+    }
     print "legacy\t" F["name"] "\t" s
     next
 }

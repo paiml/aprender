@@ -124,6 +124,7 @@ judge() {
     local -A dirs=([.]=1) universe=() keyed=() classes=()
     local -a bad=() releases=() order=()
     [ -f "$root/Cargo.toml" ] || { printf 'ENV   check_binary_debt: no Cargo.toml under %s\n' "$root" >&2; return 2; }
+    rel_of / / > /dev/null 2>&1 || { printf 'ENV   check_binary_debt: realpath -m --relative-to (GNU coreutils) is required\n' >&2; return 2; }
     rows=$(awk -f "$MANIFEST_AWK" "$root/Cargo.toml") || return 2
     for m in "$root"/crates/*/Cargo.toml; do
         [ -f "$m" ] || continue
@@ -134,8 +135,13 @@ judge() {
             members|exclude) while IFS= read -r m; do dirs[$(rel_of "$root" "$m")]=1; done < <(compgen -G "$root/$a" || :) ;;
             wsversion) ver="$a" ;;
             pkgversion) pkgver="$a" ;;
+            pkgversion_other) pkgver=OTHER ;;
         esac
     done <<< "$rows"
+    if [ -z "$ver" ] && [ "$pkgver" = OTHER ]; then
+        printf 'REFUSE %s/Cargo.toml: [package] version is not a string and no [workspace.package] version is set\n' "$root" >&2
+        return 2
+    fi
     ver="${ver:-${pkgver:-0.0.0}}"
     while IFS= read -r rel; do
         [ -f "$root/$rel/Cargo.toml" ] || continue
@@ -261,6 +267,11 @@ self_test() {
     mut_no_binaries() { sed -i '/^binaries:/,$d' ledger.yaml; }
     mut_classless_row() { printf '  - {crate: alpha, bin: alpha}\n' >> ledger.yaml; }
     mut_release_lowers_legacy() { mut_arm_and_bump && sed -i "s/legacy_names: 1, armed/legacy_names: 0, armed/" ledger.yaml; }
+    mut_zero_pad_version() { mut_arm_and_bump && sed -i 's/version = "0.70.0"/version = "0.070.0"/' Cargo.toml; }
+    mut_quoted_armed() { mut_arm_and_bump && sed -i 's/armed: true/armed: "true"/' ledger.yaml; }
+    mut_root_version_ws() { sed -i 's/^version = "0.69.3"/version.workspace = true/' Cargo.toml; }
+    mut_ws_inline_package() { sed -i 's/^\[workspace\]/[workspace]\npackage = { version = "0.70.0" }/' Cargo.toml; }
+    mut_dotted_bin_path() { printf '[[bin]]\nname = "dotted"\npath.x = "src/main.rs"\n' >> crates/alpha/Cargo.toml; }
     # row <want rc> <must-print-or-empty> <label> <mutation command + args...>
     row() {
         local want=$1 needle=$2 label=$3; shift 3
@@ -310,6 +321,19 @@ self_test() {
     row 2 "REFUSE" "a ledger with no binaries section is refused" mut_no_binaries
     row 2 "REFUSE" "a ledger row with no class is refused" mut_classless_row
     row 2 "REFUSE" "a ceiling that is not an integer is refused" sed -i 's/current: {binary_debt: 2,/current: {binary_debt: two,/' ledger.yaml
+    row 1 "CEILING  BINARY_DEBT 2 > 1 (ceiling: 0.70.0)" "a zero-padded version component is decimal, never octal" mut_zero_pad_version
+    row 0 "" "a QUOTED armed: \"true\" is a string, not a bool: the ceiling stays unarmed" mut_quoted_armed
+    row 1 "CEILING  LEGACY_NAMES 2 > 1" "sunset: false is falsy: the name still counts" sed -i 's/sunset: 0.69.0/sunset: false/' ledger.yaml
+    row 0 "LEGACY_NAMES 0/1" "a QUOTED sunset: \"null\" is a string: the name is sunset" sed -i 's/sunset: null/sunset: "null"/' ledger.yaml
+    row 2 "REFUSE" "a sunset YAML could read as a number is refused" sed -i 's/sunset: 0.69.0/sunset: 0/' ledger.yaml
+    row 2 "REFUSE" "an empty classes list is refused" sed -i 's/^classes: .*/classes: []/' ledger.yaml
+    row 2 "REFUSE" "a root [package] version that is not a string, with no workspace version, is refused" mut_root_version_ws
+    row 2 "REFUSE" "a [workspace] package key (inline or dotted) is refused" mut_ws_inline_package
+    row 2 "REFUSE" "a quoted key in a package header is refused" sed -i 's/^\[package.metadata\]/[package."metadata"]/' fuzz/Cargo.toml
+    row 2 "REFUSE" "a single-quoted cargo-fuzz key is refused" sed -i "s/^cargo-fuzz = true/'cargo-fuzz' = true/" fuzz/Cargo.toml
+    row 2 "REFUSE" "a dotted [[bin]] path key is refused, never read as a pathless bin" mut_dotted_bin_path
+    row 2 "REFUSE" "a quoted \"autobins\" key is refused, never skipped" sed -i 's/^name = "alpha"/name = "alpha"\n"autobins" = false/' crates/alpha/Cargo.toml
+    row 2 "REFUSE" "an inline-table root [package] version, with no workspace version, is refused" sed -i 's/^version = "0.69.3"/version = { workspace = true }/' Cargo.toml
     printf '%s  check_binary_debt self-test: %d rows, %d broke\n' "$([ "$fails" -eq 0 ] && echo PASS || echo FAIL)" "$rows" "$fails"
     [ "$fails" -eq 0 ]
 }

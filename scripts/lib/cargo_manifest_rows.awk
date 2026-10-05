@@ -111,6 +111,7 @@ BEGIN { table = ""; bins = 0; ml = ""; depth = 0; acc = ""; acc_key = "" }
         # A quoted FIRST key could spell package, bin or workspace: refuse it. A quote later
         # in the header ([target.'cfg(unix)'.dependencies]) is some other table.
         if (h ~ /^\[\[?["']/) refuse("quoted table header: " code)
+        if (h ~ /["']/ && h ~ /^\[\[?(package|workspace|bin)[.]/) refuse("quoted key in a package, workspace or bin header: " code)
         if (h ~ /["']/) { table = "other"; next }
         if (h == "[[bin]]") { table = "bin"; bins++; print "bintable\t" bins; next }
         if (h ~ /^\[\[/) { table = "other"; next }
@@ -125,6 +126,10 @@ BEGIN { table = ""; bins = 0; ml = ""; depth = 0; acc = ""; acc_key = "" }
     if (OPEN_ML != "") ml = OPEN_ML
 
     if (table == "" && (key ~ /^(package|bin|workspace)([.]|$)/)) refuse("top-level " key " is a form this reader does not read")
+    # A quoted key, or a dotted name/path/autobins/members/exclude, in a table this reader reads could spell a key it
+    # reads under another form; refuse it rather than skip it.
+    if (table ~ /^(package|package[.]metadata|bin|workspace|workspace[.]package)$/ && (key ~ /["']/ || key ~ /^(name|path|autobins|members|exclude)[ \t]*[.]/))
+        refuse(table "." key " is a form this reader does not read")
 
     if (table == "package") {
         if (key == "name") print "name\t" str(val, "package.name")
@@ -133,15 +138,15 @@ BEGIN { table = ""; bins = 0; ml = ""; depth = 0; acc = ""; acc_key = "" }
             if (val ~ /^["']/) print "pkgversion\t" str(val, "package.version"); else print "pkgversion_other"
         }
         else if (key ~ /^version[.]/) print "pkgversion_other"
-        else if (key ~ /^(name|autobins)[.]/ || key ~ /^metadata[.]"?cargo-fuzz/ || (key == "metadata" && val ~ /cargo-fuzz/))
+        else if (key ~ /^(name|autobins)[.]/ || key ~ /^metadata[.]["']?cargo-fuzz/ || (key == "metadata" && val ~ /cargo-fuzz/))
             refuse("package." key " is a form this reader does not read")
     } else if (table == "package.metadata") {
         if (key == "cargo-fuzz") print "fuzz\t" boolean(val, "package.metadata.cargo-fuzz")
-        else if (key ~ /^"?cargo-fuzz/) refuse("package.metadata." key " is a form this reader does not read")
     } else if (table == "bin") {
         if (key == "name") print "bin\t" bins "\tname\t" str(val, "bin.name")
         else if (key == "path") print "bin\t" bins "\tpath\t" str(val, "bin.path")
     } else if (table == "workspace") {
+        if (key ~ /^["']?package([.]|["']?$)/) refuse("workspace." key " is a form this reader does not read")
         if (key == "members" || key == "exclude") {
             if (val !~ /^\[/) refuse("workspace." key " is not an array")
             if (DEPTH_DELTA > 0) { depth = DEPTH_DELTA; acc_key = key; acc = val; next }
