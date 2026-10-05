@@ -2,8 +2,8 @@
 
 use aprender_ci_tools::{
     annotate_book_examples, coverage_report_scope, dag_status, extract_book_examples, git_patch_id,
-    package_include_diff, perf041_report, publishable_crates, tarball_build_errors,
-    tarball_shrink_report, tarball_workspace,
+    llama_fit_verdict, package_include_diff, perf041_report, publishable_crates,
+    tarball_build_errors, tarball_shrink_report, tarball_workspace,
 };
 use clap::{ArgGroup, Parser, Subcommand};
 use std::io::{Read, Write};
@@ -108,6 +108,16 @@ enum Cmd {
         /// The repository root the book lives under.
         #[arg(default_value = ".")]
         root: PathBuf,
+    },
+    /// llama.cpp's fit verdict for one model-ladder cell, one JSON line (was
+    /// scripts/lib/llama_fit_verdict.py). `--help` is an argument here, as it was there; use
+    /// `aprender-ci-tools help llama-fit-verdict`.
+    #[command(disable_help_flag = true)]
+    LlamaFitVerdict {
+        /// tool_found(0/1) pin rc free_mib version_file stdout_file model_path. `-` or an
+        /// empty path reads as empty. Any other count exits 1, as the original's unpacking did.
+        #[arg(num_args = 0.., allow_hyphen_values = true, trailing_var_arg = true)]
+        args: Vec<String>,
     },
 }
 
@@ -221,6 +231,7 @@ fn run(cmd: Cmd) -> Result<String, Refusal> {
         Cmd::ExtractBookExamples { root } => {
             extract_book_examples::run(&root).map_err(|(printed, reason)| (printed, 1, reason))
         }
+        Cmd::LlamaFitVerdict { args } => llama_fit_verdict::run(&args).map_err(nothing_printed),
     }
 }
 

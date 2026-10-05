@@ -16,6 +16,7 @@ CI helpers ported from `scripts/**/*.py` to Rust (C301: no Python in the build).
 | `perf041-report [OUT_DIR]` (default `/tmp/perf041`; a report, decides nothing) | `scripts/perf041_report.py` (kept as the parity test's validator; it has no caller in the tree, so no gate path) |
 | `annotate-book-examples [ROOT]` (default `.`; rewrites `ROOT/book/src/{cli,lib}/*.md` in place) | `scripts/annotate-book-examples.py` (kept as the parity test's validator; it has no caller in the tree, so no gate path) |
 | `extract-book-examples [ROOT]` (default `.`; JSON lines for the bash/rust blocks in `ROOT/book/src/{cli,lib}/*.md`) | `scripts/extract_book_examples.py` (kept: its wrapper `scripts/extract-book-examples.sh` feeds `check_book_examples_executable.sh`, which `dogfood-book.sh` runs, and `_build_rust_compile_test.py`, so it switches once a released `aprender-ci-tools` carries the port, N-1) |
+| `llama-fit-verdict TOOL_FOUND PIN RC FREE_MIB VERSION_FILE STDOUT_FILE MODEL` | `scripts/lib/llama_fit_verdict.py` (kept: `scripts/model_ladder.sh` calls it on the certification path, and `scripts/check_model_ladder.sh` mutates copies of it) |
 
 Each port must print the same stdout as its original and agree with it on success
 or failure. `scripts/tests/ci_tools_py_parity_test.sh` checks this. The Python
@@ -24,11 +25,12 @@ a released `aprender-ci-tools` carries the port (N-1). A port whose callers are 
 switched deletes its `.py`, and the test reads that original from git.
 
 `dag-status` is checked by `scripts/tests/ci_tools_dag_status_parity_test.sh` against
-the working-tree `scripts/lib/dag_status.py`. The shell callers (`session_docs_commit.sh`,
-`pp066_state.sh`) call the binary. `render_dag.py` and `lib/dag_invariants.py` still
-import the `.py`: they run in cargo-free CI steps, which only use released tool
-versions. They switch, and the `.py` is deleted, in the first change after a released
-`aprender-ci-tools` carries `dag-status`.
+the working-tree `scripts/lib/dag_status.py`. Every caller still imports the `.py`
+(`session_docs_commit.sh` and `pp066_state.sh` in inline Python, `render_dag.py`,
+`lib/dag_invariants.py`). The shell scripts keep main's inline Python unchanged, and the
+last two run in cargo-free CI steps, which only use released tool versions. They switch,
+and the `.py` is deleted, in the first change after a released `aprender-ci-tools`
+carries `dag-status`.
 
 `git-patch-id` is checked by `scripts/tests/ci_tools_git_patch_id_parity_test.sh`, which
 compares the bin with the `.py` and counts those cases on its own. Native `git patch-id`
@@ -44,7 +46,8 @@ none of the callers uses these forms:
 
 | Argv | Original | Port |
 |------|----------|------|
-| `--help` / `--version` | usage refusal, exit 1 | help or version, exit 0 (dogfood surface probe) |
+| `--help` / `--version` | usage refusal, exit 1 | help or version, exit 0 (dogfood surface probe), except `llama-fit-verdict`, where both are arguments as they were in the original (`aprender-ci-tools help llama-fit-verdict` prints its help) |
+| `llama-fit-verdict` with a non-UTF-8 argument | read with `surrogateescape`; a non-UTF-8 pin prints as `\udcXX` | usage error, exit 1 (the caller passes a hex pin and plain paths) |
 | `coverage-report-scope --exclude=NAME` | usage refusal, exit 1 | same as `--exclude NAME` |
 | `package-include-diff A B EXTRA` | `EXTRA` ignored | usage error, exit 1 |
 | any usage error | the original's message | clap's message (stderr only; exit 1 on both) |
@@ -90,6 +93,17 @@ It never prints a different answer.
 | which book | the one under the script's own repo | the one under `ROOT` |
 | arguments | ignored (even `--help`) | `ROOT`, or help / a usage error |
 | the reason for a stop (stderr) | a Python traceback | one line naming the chapter and the reason |
+
+## `llama-fit-verdict` follows one interpreter
+
+Two of the original's answers depend on which `python3` runs it: which characters
+`int()`, `isdigit()` and the `\d` in its `-c N -ngl N` match accept as digits (the
+interpreter's Unicode version), and how many nested GGUF arrays its recursive skip walks
+before `RecursionError` turns the trained context into `null`. The port follows CPython
+3.12 and 3.13, which agree on both (Unicode 15; 996 nested arrays parse, 997 do not) and
+are what the ladder's hosts run. Under 3.10 or 3.14 the original itself answers those
+edges differently, so the parity test refuses any interpreter but 3.12/3.13 for this
+section (`LFV_PYTHON=`).
 
 ## Where `tarball-workspace` output differs (by design; the parity test maps or skips each)
 

@@ -21,7 +21,7 @@
 #   --out      receipt dir (default evidence/crux/<version>); writes <host>-<backend>.{json,md}
 #   --prompts  default scripts/crux_inference_prompts.v2.json when present (#3962), else v1
 #   --certification  the prompt-certification receipt handed to the judge (default
-#              evidence/crux/<version>/prompt-certification.json; always passed, the judge requires it for a v2 set)
+#              evidence/crux/<version>/prompt-certification.json, when the judge takes one)
 #
 # Exit: 0 no RED, no UNJUDGED cell, every model's positive control measured and
 # not ALL_WRONG · 1 any RED · 2 decline (a cell no comparator answered, a broken
@@ -49,7 +49,7 @@
 #   sampling temperature, seed and context come from scripts/llama_pin.toml
 #           [protocol], the declaration the parity gates already read.
 #
-# NO RATE IS COMPUTED HERE. The judge (`collect` of tools/aprender-crux-judge)
+# NO RATE IS COMPUTED HERE. The judge (scripts/lib/crux_inference_judge.py)
 # copies the token counts and rates each engine prints about itself into the
 # receipt, labelled by engine, and judges none of them. Nothing in this file
 # reads a clock. A throughput CLAIM goes through scripts/perf_gate.sh (PERF-009).
@@ -136,9 +136,6 @@ done
 want() { case ",$ENGINES," in *",$1,"*) return 0 ;; *) return 1 ;; esac; }
 want apr || decline "apr is the subject; --engines must include it"
 [ -f "$PROMPTS" ] || decline "prompt set $PROMPTS not found"
-# The judge binary, resolved (built from this tree) before any engine runs, so a broken build declines
-# in seconds rather than after the sweep.
-. scripts/lib/crux_judge_bin.sh || decline "no CRUX judge binary (scripts/lib/crux_judge_bin.sh)"
 
 # ---- apr: pinned, and the version asked for ------------------------------------
 if [ "${DOGFOOD_ALLOW_UNPINNED:-0}" = "1" ] && [ -n "${APR:-}" ]; then
@@ -819,9 +816,14 @@ esac
 OUT_DIR=$(realpath -m -- "$OUT_DIR") || decline "cannot resolve --out path"
 mkdir -p "$OUT_DIR" || decline "cannot create $OUT_DIR"
 # The prompt-certification receipt (#3962 Q1): default evidence/crux/<version>/prompt-certification.json.
-# It is always passed. A missing receipt is the judge's to refuse, never skipped here.
-CERT_ARGS=(--certification "${CERT:-evidence/crux/$VERSION/prompt-certification.json}")
-"$CRUX_JUDGE" collect --manifest "$MANIFEST" --prompts "$PROMPTS" "${CERT_ARGS[@]}" \
+# It is passed whenever the judge takes it. A missing receipt is the judge's to refuse, never skipped here.
+CERT_ARGS=()
+if grep -q -- '--certification' scripts/lib/crux_inference_judge.py; then
+  CERT_ARGS=(--certification "${CERT:-evidence/crux/$VERSION/prompt-certification.json}")
+elif [ -n "$CERT" ]; then
+  decline "--certification given, but this tree's judge does not take one"
+fi
+python3 scripts/lib/crux_inference_judge.py collect --manifest "$MANIFEST" --prompts "$PROMPTS" "${CERT_ARGS[@]}" \
   --meta "$WORK/meta.json" --out-json "$OUT_DIR/$HOST-$BACKEND.json" --out-md "$OUT_DIR/$HOST-$BACKEND.md"
 rc=$?
 printf 'receipt: %s/%s-%s.json (judge rc %s)\n' "$OUT_DIR" "$HOST" "$BACKEND" "$rc"

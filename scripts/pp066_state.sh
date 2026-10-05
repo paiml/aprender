@@ -4,7 +4,7 @@
 #
 # Prints, from live sources only (nothing is state until read):
 #   1. head row  — the lowest-expiry open 0.66 row whose blockers are all complete
-#                  (status DERIVED from docs/audits/impl-<pmat_id>-receipt.md, `aprender-ci-tools dag-status`),
+#                  (status DERIVED from docs/audits/impl-<pmat_id>-receipt.md, scripts/lib/dag_status.py),
 #                  whose host is under the WIP cap, and that is not past expiry
 #                  without an amendment row naming it;
 #   2. complete receipts (derived), and every open row with an open PR;
@@ -19,21 +19,19 @@ set -euo pipefail
 ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
 PROG=pp066_state
 DAG="$ROOT/docs/specifications/pp-066-dag.yaml"; TODAY=""; NOGH=0; JSON=0
-. "$ROOT/scripts/ci_tools_bin.sh" || { printf '%s: ENV - no aprender-ci-tools binary\n' "$PROG" >&2; exit 2; }
 
 head_rows() { # head_rows <dag> <root> <today> -> TSV: id, expiry, host, pmat_id, gh_issue, blockers-complete?, reason
     python3 - "$1" "$2" "$3" <<'PY'
-import sys, os, json, subprocess, yaml, datetime
+import sys, os, yaml, datetime
 dag, root, today = sys.argv[1], sys.argv[2], sys.argv[3]
 sys.path.insert(0, os.path.join(root, "scripts", "lib"))
+import dag_status as ds
 from dag_invariants import resolved_expiries, rows_by_id
 d = yaml.safe_load(open(dag, encoding="utf-8")); rows = rows_by_id(d)
 today = datetime.date.fromisoformat(today) if today else datetime.date.today()
 exp, _ = resolved_expiries(rows)
 amended = {a.get("row") for a in (d.get("amendments") or [])}
-out = subprocess.run([os.environ["CI_TOOLS_BIN"], "dag-status", "--root", root], check=True, stdout=subprocess.PIPE, encoding="utf-8",
-                     input=json.dumps(list(rows.items()), default=str)).stdout
-status = dict(json.loads(out)["status"])
+status = {rid: ds.derived_status(root, r) for rid, r in rows.items()}
 cap_host_busy = set()   # a host with an armed speed row is under cap; the caller passes PR states, so this is advisory here
 cands = []
 for rid, r in rows.items():
@@ -93,12 +91,10 @@ printf -- '--- past expiry without an amendment (RED in pmat comply, never start
 rm -f "${TMPDIR:-/tmp}/pp066-rows.$$"
 printf -- '--- complete (derived from receipts): '
 python3 - "$DAG" "$ROOT" <<'PY'
-import sys, os, json, subprocess, yaml
+import sys, os, yaml
+sys.path.insert(0, os.path.join(sys.argv[2], "scripts", "lib")); import dag_status as ds
 d = yaml.safe_load(open(sys.argv[1], encoding="utf-8"))
-out = subprocess.run([os.environ["CI_TOOLS_BIN"], "dag-status", "--root", sys.argv[2]], check=True, stdout=subprocess.PIPE, encoding="utf-8",
-                     input=json.dumps(list(enumerate(d["rows"])), default=str)).stdout
-status = dict(json.loads(out)["status"])
-done = [r["id"] for i, r in enumerate(d["rows"]) if status[i] == "complete"]
+done = [r["id"] for r in d["rows"] if ds.derived_status(sys.argv[2], r) == "complete"]
 lane = [r for r in d["rows"] if str(r.get("lane")) == "0.66"]
 print(f"{len(done)} ({', '.join(done)}); 0.66 rows {len(lane)}")
 PY
