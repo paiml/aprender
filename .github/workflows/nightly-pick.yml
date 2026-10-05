@@ -10,8 +10,9 @@
 # night) and runs `scripts/release/nightly_pick.sh verify --night N --sha <what it built>`.
 #
 # The schedule below is a fallback trigger only. A dispatch is the reliable one, and a re-pick is
-# idempotent: it prints KEPT and leaves the ref as it is. The night is the UTC date of (now - 12h),
-# so a pick that fires late still lands on its own night.
+# idempotent: it prints KEPT and leaves the ref as it is. The night is the UTC date of (created_at - 12h)
+# of this run, so a pick that fires late still lands on its own night, and a rerun the next evening
+# lands on the night its producers build (they read the same created_at), never on the next one.
 #
 # The ref is a BRANCH because repository rulesets cover only branches and tags; a ruleset on refs/heads/nightly/*
 # (update, deletion and non-fast-forward refused; creation allowed; no bypass) keeps it immutable on the server. It is
@@ -27,6 +28,7 @@ on:
 
 permissions:
   contents: write
+  actions: read # this run's own created_at, which is the night (a rerun keeps it)
 
 concurrency:
   group: nightly-pick
@@ -52,9 +54,14 @@ jobs:
 
       - name: Pick C for the night
         id: pick
+        env:
+          GH_TOKEN: ${{ github.token }}
         run: |
           set -euo pipefail
-          night="$(bash scripts/release/nightly_pick.sh night)"
+          # the clock the producers read (workflow_run.created_at), not now: a rerun after noon UTC the next
+          # day would otherwise pick the next night while every chained producer builds this one
+          at="$(gh api "repos/$GITHUB_REPOSITORY/actions/runs/$GITHUB_RUN_ID" --jq .created_at)"
+          night="$(bash scripts/release/nightly_pick.sh night --at "$at")"
           rc=0
           bash scripts/release/nightly_pick.sh pick --night "$night" --sha "$GITHUB_SHA" || rc=$?
           [ "$rc" -eq 0 ] || { echo "pick exited $rc"; exit "$rc"; }

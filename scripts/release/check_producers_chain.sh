@@ -6,7 +6,8 @@
 # them instead: each one starts on the pick's workflow_run and, after every checkout, switches the tree to the commit
 # the pick pinned at nightly/<night> (scripts/release/nightly_c_checkout.sh). This guard reads the workflow text and
 # is RED when a producer:
-#   P1  still has a `schedule:` trigger (a live line in its on: block);
+#   P1  still has a `schedule:` trigger (a live line in its on: block; the key quoted or with a space before its colon
+#       is the same key to GitHub);
 #   P2  lacks the chain: workflow_run with workflows: [<the name nightly-pick.yml declares>], types: [completed],
 #       branches: [main];
 #   P3  checks this repo out (actions/checkout, unless `repository:` names another repo literally) and the very next step
@@ -24,6 +25,9 @@
 #   P6  is read by a lane of scripts/release/nightly_train.sh's LANES table whose event pattern is not exactly
 #       ^workflow_run$ (its scheduled runs are gone), or a lane reads workflow_run runs of a workflow not listed,
 #       or a listed producer has no lane, or LANES is assigned more than once.
+#   P7  (nightly-pick.yml itself) does not take its night from its own run's created_at, the clock every producer
+#       reads: a rerun after noon UTC the next day would pick the next night while the producers build this one.
+# A listed or unlisted workflow this file cannot read is RED, never a silent pass.
 # Limits: it reads the workflow text, not the scripts a step calls, so a later run step that fetches or checks out
 # main again is not seen; an origin/main a step fetches as a declared comparand (guards-nightly's SATD ceiling) is
 # not a measurement and is not judged here. It reads `on:` as a block mapping with keys at indent 2; any other
@@ -117,7 +121,7 @@ judge_file() {
         /^on:[[:space:]]*$/ { inon = 1; next }
         inon && live(L) && ind(L) == 0 { inon = 0; wr = 0 }
         inon && live(L) {
-            if (L ~ /^  schedule:/) sched = 1
+            if (L ~ /^  ["\047]?schedule["\047]?[[:space:]]*:/) sched = 1   # "schedule": is the same key to GitHub
             if (L ~ /^  workflow_run:/) { wr = 1; next }
             if (ind(L) <= 2) wr = 0
             if (wr && L ~ /^    workflows:/ && list1(L) == pick) cw = 1
@@ -150,6 +154,19 @@ judge_file() {
         }' "$1"
 }
 
+P7_AT='at="$(gh api "repos/$GITHUB_REPOSITORY/actions/runs/$GITHUB_RUN_ID" --jq .created_at)"'
+P7_NIGHT='night="$(bash scripts/release/nightly_pick.sh night --at "$at")"'
+p7() { # PICKFILE -> FAIL lines; the pick takes its night from its own run's created_at, the clock every producer reads
+    local t
+    t="$(sed -e 's/^[[:space:]]*//' "$1")" || { printf 'FAIL  nightly-pick.yml: P7 unreadable\n'; return 1; }
+    # both lines live and exact, and no other live night call (one taking the clock, not created_at)
+    if hasl "$t" -x -F -e "$P7_AT" && hasl "$t" -x -F -e "$P7_NIGHT" && ! printf '%s\n' "$t" | grep -e 'nightly_pick\.sh night' | grep -v -e '^#' | grep -q -v -x -F -e "$P7_NIGHT"; then
+        return 0
+    fi
+    printf 'FAIL  nightly-pick.yml: P7 the night is not taken from this run'"'"'s created_at (want %s, then %s)\n' "$P7_AT" "$P7_NIGHT"
+    return 1
+}
+
 p6() { # ROOT -> FAIL lines; the train's LANES must read a listed producer by its workflow_run runs, and only those
     local t="$1/scripts/release/nightly_train.sh"
     [ -f "$t" ] || { printf 'FAIL  nightly_train.sh: P6 missing, so its LANES table cannot be read\n'; return 1; }
@@ -179,7 +196,7 @@ p6() { # ROOT -> FAIL lines; the train's LANES must read a listed producer by it
 hasl() { local text="$1"; shift; grep -q "$@" <<< "$text"; }
 
 judge() { # ROOT
-    local root="$1" wf pick p rc=0 out listed
+    local root="$1" wf pick p rc=0 out listed jr
     wf="$root/.github/workflows"
     [ -f "$wf/nightly-pick.yml" ] || { printf 'FAIL  nightly-pick.yml is missing: there is no pick to chain from\n'; return 1; }
     pick="$(sed -n -e 's/^name:[[:space:]]*//p' "$wf/nightly-pick.yml" | head -n 1 | sed -e 's/[[:space:]]*$//' -e 's/^"\(.*\)"$/\1/' -e "s/^'\(.*\)'\$/\1/")"
@@ -193,11 +210,14 @@ judge() { # ROOT
         [ "$p" = nightly-pick ] && continue
         listed=0
         case " $(printf '%s' "$PRODUCERS" | tr '\n' ' ') " in *" $p "*) listed=1 ;; esac
-        out="$(judge_file "$f" "$pick" "$listed")"
+        out="$(judge_file "$f" "$pick" "$listed" 2>&1)"; jr=$?
+        # a file awk cannot open was judged by nothing: it is RED, never a silent pass
+        [ "$jr" -eq 0 ] || printf -v out '%s\nFAIL  %s.yml: unreadable (exit %s), so it was not judged' "$out" "$p" "$jr"
         [ -n "$out" ] && printf '%s\n' "$out"
         hasl "$out" -e '^FAIL' && rc=1
     done
     p6 "$root" || rc=1
+    p7 "$wf/nightly-pick.yml" || rc=1
     if [ "$rc" -eq 0 ]; then printf 'PASS  every nightly producer chains from "%s" and measures its C\n' "$pick"
     else printf 'RED   a nightly producer is not chained to the pick, or does not measure its C\n'; fi
     return "$rc"
@@ -239,6 +259,14 @@ cstep() { # [IF]: the C step text, with the checkout's if when given
 m_none()          { :; }
 m_sched_back()    { changed nightly.yml 's/^  workflow_run:$/  schedule:\n    - cron: "0 3 * * *"\n  workflow_run:/'; }
 m_sched_comment() { changed nightly.yml 's/^  workflow_run:$/  # schedule:\n  #   - cron: "0 3 * * *"\n  workflow_run:/'; }
+m_sched_quoted()  { changed book.yml 's/^  workflow_run:$/  "schedule":\n    - cron: "0 3 * * *"\n  workflow_run:/'; }
+m_sched_spaced()  { changed nightly.yml 's/^  workflow_run:$/  schedule :\n    - cron: "0 3 * * *"\n  workflow_run:/'; }
+m_unreadable()    { chmod 000 book.yml && ! [ -r book.yml ]; }   # as root the file stays readable: the row fails closed
+m_pick_clock()    { changed nightly-pick.yml 's/ night --at "\$at")"$/ night)"/'; }
+m_pick_no_at()    { changed nightly-pick.yml '/^ *at="\$(gh api /d'; }
+m_pick_at_cmt()   { changed nightly-pick.yml 's/^\( *\)at="\$(gh api /\1# at="$(gh api /'; }
+m_pick_2nd_call() { changed nightly-pick.yml 's/^\( *\)rc=0$/\1n2="$(bash scripts\/release\/nightly_pick.sh night)"\n\1rc=0/'; }
+m_pick_cmt_ok()   { changed nightly-pick.yml 's/^\( *\)rc=0$/\1# was: night="$(bash scripts\/release\/nightly_pick.sh night)"\n\1rc=0/'; }
 m_chain_other()   { changed book.yml 's/workflows: \["Nightly pick"\]/workflows: ["Nightly"]/'; }
 m_chain_two()     { changed book.yml 's/workflows: \["Nightly pick"\]/workflows: ["Nightly pick", "CI"]/'; }
 m_chain_type()    { changed book.yml '0,/types: \[completed\]/s//types: [requested]/'; }
@@ -307,6 +335,14 @@ self_test() {
     row base_real_producers         0 'PASS'                                   -- m_none
     row p1_schedule_back            1 'P1 still has a schedule'                -- m_sched_back
     row p1_schedule_commented       0 'PASS'                                   -- m_sched_comment
+    row p1_schedule_quoted          1 'book.yml: P1 still has a schedule'      -- m_sched_quoted
+    row p1_schedule_spaced_colon    1 'nightly.yml: P1 still has a schedule'   -- m_sched_spaced
+    row p5_unreadable_producer      1 'book.yml: unreadable'                   -- m_unreadable
+    row p7_pick_night_from_clock    1 'nightly-pick.yml: P7'                   -- m_pick_clock
+    row p7_pick_without_created_at  1 'nightly-pick.yml: P7'                   -- m_pick_no_at
+    row p7_pick_created_at_comment  1 'nightly-pick.yml: P7'                   -- m_pick_at_cmt
+    row p7_pick_second_night_call   1 'nightly-pick.yml: P7'                   -- m_pick_2nd_call
+    row p7_pick_old_call_in_comment 0 'PASS'                                   -- m_pick_cmt_ok
     row p2_other_workflow           1 'book.yml: P2'                           -- m_chain_other
     row p2_two_workflows            1 'book.yml: P2'                           -- m_chain_two
     row p2_requested_type           1 'book.yml: P2'                           -- m_chain_type
@@ -406,7 +442,14 @@ m36_missing_train_read	s/\[ -f "\$t" \] ||/[ 1 ] ||/
 m37_no_table_ok	s/if (!done || !lanes) {/if (0) {/
 m38_a_listed_lane_may_be_missing	s/if (!(pp\[k\] in seen)) {/if (0) {/
 m39_a_second_table_ok	s/if (assigned > 1) {/if (0) {/
-m40_hasl_piped	s/\(grep -q "[^"]*"\) <<< \("[^"]*"\)/echo \2 | \1/'
+m40_hasl_piped	s/\(grep -q "[^"]*"\) <<< \("[^"]*"\)/echo \2 | \1/
+m41_quoted_schedule_unseen	s|\["\\047\]?schedule\["\\047\]?|schedule|
+m42_spaced_colon_unseen	s|schedule\["\\047\]?\[\[:space:\]\]\*:|schedule["\\047]?:|
+m43_unreadable_passes	s/^        \[ "\$jr" -eq 0 \] || printf -v out /        true || printf -v out /
+m44_no_p7	s/^    p7 "\$wf\/nightly-pick.yml" || rc=1$/    true/
+m45_p7_other_night_call_ok	s/grep -q -v -x -F -e "\$P7_NIGHT"; then/false; then/
+m46_p7_at_not_exact	s/hasl "\$t" -x -F -e "\$P7_AT"/hasl "$t" -F -e "$P7_AT"/
+m47_p7_comment_counts	s/ | grep -v -e .\^#. | / | /'
 mutants() {
     local tmp name expr killed=0 total=0 errors=0 out cut reds
     cut="$(grep -n -m1 -e "^# -* the case table" "$SCRIPT_PATH" | cut -d: -f1)"
