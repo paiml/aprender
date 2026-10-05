@@ -1,5 +1,5 @@
 metadata:
-  version: "1.9.0"
+  version: "1.10.0"
   created: "2026-04-13"
   author: PAIML Engineering
   registry: true
@@ -14,10 +14,11 @@ metadata:
     - "0.72 R15a cell C4c (la-0.72): TransformerTrainer builds its LoRA layers by the selected targets and its forward reads each adapter from that same slot (crates/aprender-train/src/train/transformer_trainer/trainer.rs); 1.7.0 adds trainer_forward and FALSIFY-LORA_TARGET_SELECTION_V1_009"
     - "0.72 R15a cell C5a (la-0.72): the CUDA trainer's APR checkpoint, its resume and its PEFT adapter save name and lay out every adapter a block holds by its target (crates/aprender-train/src/train/transformer_trainer/cuda_trainer.rs, lora_checkpoint.rs); 1.8.0 adds checkpoint_names and FALSIFY-LORA_TARGET_SELECTION_V1_010"
     - "0.72 R15a cell C5b (la-0.72): the CUDA trainer's NF4 blocks, its LoRA scratch and its LoRA gradient workspace hold one adapter per selected target, each initialised by target, and q_proj and v_proj keep the init they had (crates/aprender-train/src/train/transformer_trainer/lora_init.rs)"
+    - "0.72 R15a cell C6 (la-0.72): the backward GEMM cache key and the dims its kernel is built with come from one function the runtime and the pre-warm both call, and the CUDA trainer pre-warms the LoRA backward GEMMs of every selected target (crates/aprender-train/src/autograd/cuda_backward_keys.rs); 1.10.0 adds lora_backward_prewarm and FALSIFY-LORA_TARGET_SELECTION_V1_012"
   description: "LoRA target module selection"
 
 name: lora-target-selection
-version: "1.9.0"
+version: "1.10.0"
 scope: "crates/aprender-train/src/finetune/"
 
 description: |
@@ -72,6 +73,9 @@ equations:
   nf4_init_targets:
     description: "The CUDA trainer gives each NF4 block one adapter per selected target, sizes its LoRA scratch and LoRA gradient workspace for those targets, and keeps the q_proj and v_proj init it had"
     formula: "T = the trainer's targets as in trainer_forward; ∀ block l: lora_targets(l) = T, and ∀ t ∈ T with (d_out, d_in) as in target_slots: A_t[j] = sin((j + φ(l, t))·0.1)·0.01 for j < d_in·r, and B_t = 0 of length r·d_out, where φ(l, q_proj) = 1000·l, φ(l, v_proj) = 2000·l + 500 and φ(l, t) = 1000·l + 100000·p(t) + 333 for every other t, p(t) its position in q, k, v, o, gate, up, down; q_proj and v_proj go to the block through new and every other t through add_lora_adapter; the shared LoRA scratch and gradient workspace are built for T. For T = (q_proj, v_proj) every A and B is the one built before, bit for bit"
+  lora_backward_prewarm:
+    description: "A backward GEMM's cache key and its kernel dims come from one function, and the CUDA trainer pre-warms the LoRA backward GEMMs of every selected target"
+    formula: "gemm_backward_x(m, k, n) for x ∈ {a, b}, called as the runtime calls it, has key gemm_backward_x_{m}_{k}_{n} and kernel GemmBackwardXKernel::tiled_unrolled(m, n, k); the runtime and the pre-warm both take key and kernel from it. For each t ∈ T with (d_out, d_in) as in target_slots, the LoRA backward of t asks for gemm_backward_b(s, r, d_out), gemm_backward_a(s, d_out, r), gemm_backward_b(s, d_in, r) and gemm_backward_a(s, r, d_in), with s = max_seq_len and r the rank; lora_backward_gemms(T) is the union over T, sorted by key with no repeat, and the CUDA trainer pre-warms it before it uploads a block. For T = (q_proj, v_proj) the keys are the six warmed before"
 
 falsification:
   - id: FALSIFY-LORA_TARGET_SELECTION_V1_001
@@ -126,3 +130,7 @@ falsification:
     description: "The CUDA trainer builds its NF4 blocks with one adapter per selected target (0.72 R15a C5b). At 7449d608a7 upload_blocks gave every NF4 block a q_proj and a v_proj adapter through CudaNf4TransformerBlock::new and nothing else, and with_model built the shared LoRA scratch and gradient workspace for q_proj, v_proj, whatever lora_target_modules said. The CPU trainer (C4c) and the checkpoint (C5a) already follow the targets, so a CUDA run asked for all_linear trained and saved q and v only. Now T comes from lora_target_modules as in the CPU trainer (trainer_targets), nf4_init_adapters builds each block's adapters in slot order with A_t[j] = sin((j + φ(l, t))·0.1)·0.01 and B_t = 0 at the target's dims, q_proj and v_proj go to new and every other target to add_lora_adapter, and the scratch and the gradient workspace are built by new_for_targets with T. The optimizer state already follows the adapters a block holds. Falsified if a q_proj or v_proj A or B differs by one bit from the pre-C5b init, if a target's A or B has the wrong length or B is not zero, if two adapters of one block or of two layers get the same A, if the adapters are not in T's order, if a target outside T is built, if new is not given exactly the q_proj and v_proj adapters T holds, or if the default, all_linear, a shorthand and unknown names do not give the CPU trainer's T. Planted mutants that must be RED: v_proj with q_proj's phase, every other target with q_proj's phase, A built with d_out for d_in, the adapters always q_proj and v_proj, and add_lora_adapter also given q_proj. The NF4 block calls themselves need a CUDA device and are covered by the #[ignore] tests of row 005."
     test: "crates/aprender-train/src/train/transformer_trainer/lora_init_tests.rs::falsify_lora_target_selection_v1_011_qv_init_is_the_old_init (with the other falsify_lora_target_selection_v1_011 tests there; no device)"
     evidence: "cargo test -p aprender-train --lib falsify_lora_target_selection_v1_011"
+  - id: FALSIFY-LORA_TARGET_SELECTION_V1_012
+    description: "The backward GEMM cache key and its kernel dims come from one function, and the CUDA trainer pre-warms the LoRA backward GEMMs of every selected target (0.72 R15a C6). At 96e2f7b2a1 the runtime (cuda_backward/gemm.rs) built GemmBackward{A,B}Kernel::tiled_unrolled(m, n, k) under key gemm_backward_{a,b}_{m}_{k}_{n} and took a cached module first, while pre_warm_lora_backward_kernels compiled tiled_unrolled(m, k, n) under that same key. The kernel bakes its dims into the PTX, so on the PTX path (no cuBLAS handle) every pre-warmed shape with k != n ran with n and k swapped: the LoRA q_proj and v_proj shapes and the fp32 attention and FFN shapes. And the trainer pre-warmed only the q_proj and v_proj LoRA shapes, whatever lora_target_modules said. Now cuda_backward_keys::gemm_backward_a and gemm_backward_b give the key and the (m, n, k) together, the runtime and the pre-warm both build from them, lora_backward_gemms gives the four GEMMs of each target at its dims, and the trainer pre-warms them for T. Falsified if a key and its kernel dims disagree with the runtime's (m, n, k) for that key, if a target's four GEMMs are missing or at the wrong dims, if the set repeats a key or holds a key no target in T asks for, if T = (q_proj, v_proj) does not give the six keys warmed before, or if the dims the trainer passes are not those of its targets. Planted mutants that must be RED: the kernel built with (m, k, n), the d_in GEMMs dropped, d_out used for d_in, and the trainer passing q_proj and v_proj dims whatever T is. Compiling and running a kernel needs a CUDA device; these tests check the keys and dims the device code builds from."
+    test: "crates/aprender-train/src/autograd/cuda_backward_keys/tests.rs::falsify_lora_target_selection_v1_012_key_and_kernel_dims_agree (with the other falsify_lora_target_selection_v1_012 tests there and in transformer_trainer/lora_init_tests.rs; no device)"
+    evidence: "cargo test -p aprender-train --lib falsify_lora_target_selection_v1_012"
