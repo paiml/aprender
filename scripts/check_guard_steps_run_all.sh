@@ -162,6 +162,11 @@ selftest_verdict() {
         echo "check_guard_steps_run_all self-test: FAILED"
         return 1
     fi
+    # Zero cases ran: a table that measured nothing is not a pass (L25), whatever else it read.
+    if [ "$n" -eq 0 ]; then
+        echo "NOT_MEASURED check_guard_steps_run_all self-test: 0 cases ran; not a pass"
+        return 3
+    fi
     if [ "$q" -gt 0 ]; then
         echo "NOT_MEASURED check_guard_steps_run_all self-test: ${n} cases pass, $q row(s) not measured: a precondition never held; not a pass"
         return 3
@@ -176,7 +181,8 @@ selftest_verdict() {
 # verdict_rows: selftest_verdict's and quarantine's own case table, both polarities, every exit code.
 verdict_rows() {
     local bad=0 row f nn qq t tn want got qt qnt qtix
-    for row in "0 5 0 0 0 0" "0 5 1 0 0 3" "0 5 7 0 0 3" "1 5 0 0 0 1" "1 5 1 0 0 1" "0 0 0 0 0 0" \
+    for row in "0 5 0 0 0 0" "0 5 1 0 0 3" "0 5 7 0 0 3" "1 5 0 0 0 1" "1 5 1 0 0 1" "0 0 0 0 0 3" \
+        "0 0 0 1 0 3" "1 0 0 0 0 1" \
         "0 5 0 1 0 0" "0 5 0 1 1 3" "0 5 0 3 1 3" "0 5 1 1 0 3" "1 5 0 1 1 1"; do
         read -r f nn qq t tn want <<< "$row"
         selftest_verdict "$f" "$nn" "$qq" "$t" "$tn" > /dev/null; got=$?
