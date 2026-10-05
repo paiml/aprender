@@ -1,16 +1,17 @@
 #!/usr/bin/env bash
 # lib_clean_room_gate.sh -- the clean-room gate, shared by the publish cascade and
-# the tag step.
+# the release step.
 #
 #   . scripts/release/lib_clean_room_gate.sh || exit 1
-#   clean_room_gate ROOT TAG          # scripts/cascade-publish.sh, before any upload
-#   clean_room_gate_sha ROOT SHA LBL  # scripts/release/pretag_gate.sh, before `git tag`
+#   clean_room_gate ROOT TAG          # scripts/cascade-publish.sh, before any upload, and
+#                                     # scripts/release/release_gate.sh, before the GitHub release
+#   clean_room_gate_sha ROOT SHA LBL  # the same gate on a commit named by its full sha
 #
 # Both answer the same question with the same code: is there a green
 # `clean-room (aprender)` job in paiml/infra clean-room.yml that tested exactly
 # this commit? clean_room_gate resolves the tag and asks clean_room_gate_sha.
-# Moved here verbatim from scripts/cascade-publish.sh (PMAT-4805) so the tag step
-# can ask the question on the bump commit before the tag exists.
+# Moved here verbatim from scripts/cascade-publish.sh (PMAT-4805) so the release
+# step asks the question with the code the cascade runs.
 #
 # Option-neutral: sourced, so no `set` at file scope. Failure is the return status.
 
@@ -186,8 +187,8 @@ clean_room_gate() {
 }
 
 # clean_room_gate_sha ROOT SHA LABEL: the same gate on a commit named by its full
-# sha, for the tag step (PMAT-4805): the bump commit is judged before `git tag`,
-# and the cascade later re-judges the tag, which resolves to this same sha.
+# sha (PMAT-4805). clean_room_gate resolves the tag and asks this; the checks are
+# the cascade's, unchanged.
 # LABEL only words the messages. An abbreviated or non-commit SHA refuses.
 clean_room_gate_sha() {
   local root=$1 want=$2 what=$3
