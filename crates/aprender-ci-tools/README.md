@@ -6,7 +6,7 @@ CI helpers ported from `scripts/**/*.py` to Rust (C301: no Python in the build).
 | Subcommand | Ported from |
 |------------|-------------|
 | `publishable-crates` (reads `cargo metadata` JSON on stdin) | `scripts/lib/publishable_crates.py` |
-| `package-include-diff <LISTING> <INCLUDES>` | `scripts/lib/package_include_diff.py` |
+| `package-include-diff <LISTING> <INCLUDES>` | `scripts/lib/package_include_diff.py` (deleted; caller `scripts/check_package_includes.sh` switched) |
 | `coverage-report-scope [--exclude NAME]...` | `scripts/coverage_report_scope.py` |
 | `tarball-shrink-report <PACKAGE_LOG> <WS_DIR>` | `scripts/lib/tarball_shrink_report.py` (kept: its caller runs on a gate path, so it switches once a released `aprender-ci-tools` carries the port) |
 
