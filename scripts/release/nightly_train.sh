@@ -68,20 +68,20 @@ UNIT="aprender-nightly-train"
 # lane;kind;release-day check;producer workflow;event pattern;job-name pattern[;required job names, default 1]
 # ('-' producer: none yet). A run with fewer distinct matched job names than required measures nothing (void).
 LANES='ci-main;verdict;ci / gate + workspace-test (merge, autopilot wait);.github/workflows/ci.yml;^push$;^(ci / gate|workspace-test)$;2
-deep-doctests;verdict;autopilot deep: cargo test --doc --workspace;-;-;-
-deep-nodefault;verdict;autopilot deep: cargo check --workspace --no-default-features;-;-;-
+deep-doctests;verdict;autopilot deep: cargo test --doc --workspace;.github/workflows/deep-nightly.yml;^schedule$;^deep-doctests$
+deep-nodefault;verdict;autopilot deep: cargo check --workspace --no-default-features;.github/workflows/deep-nightly.yml;^schedule$;^deep-nodefault$
 deep-examples;verdict;autopilot deep: cargo build --workspace --examples;.github/workflows/examples-nightly.yml;^schedule$;^examples$
 deep-bins-build;verdict;autopilot deep: all-bins cargo build --locked --release;.github/workflows/nightly.yml;^schedule$;-unknown-linux-gnu on 
-deep-bins-smoke;verdict;autopilot deep: nightly_manifest.py smoke;-;-;-
+deep-bins-smoke;verdict;autopilot deep: nightly_manifest.py smoke;.github/workflows/deep-nightly.yml;^schedule$;^deep-bins-smoke$
 dogfood;verdict;dogfood.sh --phase pre-publish + preflight R5;-;-;-
-models;verdict;models_t1.sh GPU-host ladder legs, preflight R7;-;-;-
-readiness;verdict;release_readiness.sh, preflight R8;-;-;-
-milestone;verdict;check_milestone_cut.sh --must-carry;-;-;-
-cleanroom-cpu;verdict;clean-room (aprender) on the tag;-;-;-
-cleanroom-gpu;verdict;b2-gpu.yml on the tag;-;-;-
+models;verdict;models_t1.sh GPU-host ladder legs, preflight R7;.github/workflows/models-nightly.yml;^schedule$;^models$
+readiness;verdict;release_readiness.sh, preflight R8;.github/workflows/readiness-nightly.yml;^workflow_run$;^readiness$
+milestone;verdict;check_milestone_cut.sh --must-carry;.github/workflows/release-gates-nightly.yml;^schedule$;^milestone$
+cleanroom-cpu;verdict;clean-room (aprender) on the tag;.github/workflows/release-lanes-nightly.yml;^schedule$;^cleanroom-cpu$
+cleanroom-gpu;verdict;b2-gpu.yml on the tag;.github/workflows/release-lanes-nightly.yml;^schedule$;^cleanroom-gpu$
 assets;verdict;binary-release.yml + check_release_assets.sh;-;-;-
-preflight;verdict;check_publish_preflight.sh R1-R8;-;-;-
-publish-dryrun;verdict;rc_publish_gate.sh --verify + cascade-publish.sh --check;-;-;-
+preflight;verdict;check_publish_preflight.sh R1-R8;.github/workflows/release-gates-nightly.yml;^schedule$;^preflight$
+publish-dryrun;verdict;rc_publish_gate.sh --verify + cascade-publish.sh --check;.github/workflows/release-lanes-nightly.yml;^schedule$;^publish-dryrun$
 coverage;info;tag_coverage_gate.sh (C291.1: not gating);.github/workflows/coverage-nightly.yml;^schedule$;^coverage$
 guards;info;guards-nightly;.github/workflows/guards-nightly.yml;^schedule$;
 mutants;info;mutants-nightly;.github/workflows/mutants-nightly.yml;^schedule$;
