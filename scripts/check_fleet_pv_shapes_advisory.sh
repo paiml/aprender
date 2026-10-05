@@ -100,6 +100,10 @@ tree_component() { # tree_component <pv stderr line> -> the key, when the tree's
 TREE_VER="${FLEET_PV_TREE_VERSION:-$(awk '/^\[workspace\.package\]/{on=1; next} /^\[/{on=0} on && $1 == "version" {gsub(/"/, "", $3); print $3; exit}' "$ROOT/Cargo.toml" 2>/dev/null)}"
 older_than_tree() { # older_than_tree <ver> -> 0 iff ver < TREE_VER (sort -V)
     [ -n "$1" ] && [ -n "$TREE_VER" ] && [ "$1" != "$TREE_VER" ] || return 1
+    # sort -V is not semver: it puts 0.71.0 BEFORE 0.71.0-rc.1, so a final pin would read as older than
+    # a prerelease tree and its refusal would pass as fleet state. A prerelease or build suffix on either
+    # side is refused (fail closed: RED), never sorted.
+    case "$1$TREE_VER" in *[-+]*) return 1 ;; esac
     [ "$(printf '%s\n%s\n' "$1" "$TREE_VER" | sort -V | head -1)" = "$1" ]
 }
 
@@ -329,7 +333,7 @@ STUB
     done
     #     ...and the exemption is a measured claim, not a standing one: the pinned pv (0.68.2) refusing allowEmpty
     #     is fleet state only while it sorts BELOW this tree. A pin AT or PAST the tree that refuses it is RED.
-    for c in "0.68.2 equal" "0.68.1 newer"; do
+    for c in "0.68.2 equal" "0.68.1 newer" "0.68.2-rc.1 prerelease-tree" "0.68.3+b1 build-suffixed-tree"; do
         read -r tv how <<<"$c"
         out=$(FLEET_PV_BIN="$d/pv_unsup" FLEET_PV_PIN="$d/pin" FLEET_PV_CONTRACTS="$d/contracts" FLEET_PV_SHAPES_SRC="$d/shapes.rs" FLEET_PV_TREE_VERSION="$tv" RUNNER_NAME=probe-runner bash "$0" 2>&1); rc=$?
         [ "$rc" -eq 1 ] && grep -q '^FAIL runner=probe-runner reason=pv-no-verdict .*pv exited 3[ ,].*allowEmpty' <<<"$out" && ! grep -qE '^(SUMMARY )?(PASS|UNMEASURED)' <<<"$out" && ok "pin 0.68.2 $how to the tree ($tv) refusing allowEmpty -> RED, never UNMEASURED" || nok "expected RED for pin $how to tree $tv, got rc=$rc: $out"
