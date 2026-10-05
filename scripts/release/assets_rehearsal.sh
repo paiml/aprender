@@ -234,6 +234,25 @@ self_test() {
     out=$(lint "$d/m.yml"); row "contents: write -> lint red" 1 $? 'permissions' "$out"
     mut '.jobs.build.permissions = {"contents": "write"}'
     out=$(lint "$d/m.yml"); row "job-level permissions -> lint red" 1 $? 'set their own permissions' "$out"
+    # The token every action takes implicitly (default inputs) is the workflow's: exactly
+    # contents: read. A missing block falls back to the repository default, which can be
+    # write; a job-level block, even a read one, replaces the workflow's for that job.
+    mut 'del(.permissions)'
+    out=$(lint "$d/m.yml"); row "no workflow permissions (repo default token) -> lint red" 1 $? 'workflow permissions' "$out"
+    mut '.permissions = "write-all"'
+    out=$(lint "$d/m.yml"); row "permissions: write-all -> lint red" 1 $? 'workflow permissions' "$out"
+    mut '.permissions = "read-all"'
+    out=$(lint "$d/m.yml"); row "permissions: read-all (not exactly contents: read) -> lint red" 1 $? 'workflow permissions' "$out"
+    mut '.permissions.id-token = "write"'
+    out=$(lint "$d/m.yml"); row "id-token write added to the read-only block -> lint red" 1 $? 'workflow permissions' "$out"
+    mut '.jobs.build.permissions.contents = "read"'
+    out=$(lint "$d/m.yml"); row "a job-level block, even a read-only one (replaces the workflow's) -> lint red" 1 $? 'set their own permissions' "$out"
+    mut '.jobs.build.steps[1] = {"name": "co", "uses": "actions/checkout@v4"}'
+    out=$(lint "$d/m.yml"); row "an allowlisted action taking the implicit token -> still cannot upload (contents: read)" 0 $? 'cannot upload' "$out"
+    mut '.jobs.build.steps[1] = {"name": "co", "uses": "actions/checkout@v4", "with": {"token": "${{ github.token }}"}}'
+    out=$(lint "$d/m.yml"); row "an action handed github.token explicitly -> lint red" 1 $? 'job token reachable' "$out"
+    mut '.jobs.build.steps[1] = {"name": "rel", "uses": "softprops/action-gh-release@v2"}'
+    out=$(lint "$d/m.yml"); row "a release action taking the implicit token -> lint red" 1 $? 'outside the allowlist' "$out"
     mut '.jobs.build.environment = "release"'
     out=$(lint "$d/m.yml"); row "an environment -> lint red" 1 $? 'environment' "$out"
     mut '.on.release = {"types": ["published"]}'
