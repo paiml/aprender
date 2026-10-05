@@ -1,6 +1,8 @@
 //! `aprender-ci-tools`: one binary, one subcommand per ported Python helper.
 
-use aprender_ci_tools::{coverage_report_scope, package_include_diff, publishable_crates};
+use aprender_ci_tools::{
+    coverage_report_scope, package_include_diff, publishable_crates, tarball_build_errors,
+};
 use clap::{Parser, Subcommand};
 use std::io::{Read, Write};
 use std::path::PathBuf;
@@ -37,6 +39,15 @@ enum Cmd {
         #[arg(long, value_name = "NAME", allow_hyphen_values = true)]
         exclude: Vec<String>,
     },
+    /// Attribute a tarball-workspace build's errors to the crates that own them (was
+    /// scripts/lib/tarball_build_errors.py). Exit 0 no error, 1 a crate is RED, 2 bad input,
+    /// 3 only unowned errors, 4 the build host failed.
+    TarballBuildErrors {
+        /// The `cargo build --message-format short` log. Exactly one, else exit 2 as the
+        /// original, so the count is checked by the port and not by clap (which exits 1).
+        #[arg(num_args = 0.., allow_hyphen_values = true, trailing_var_arg = true)]
+        log: Vec<PathBuf>,
+    },
 }
 
 fn cargo_metadata() -> Result<String, String> {
@@ -54,23 +65,26 @@ fn cargo_metadata() -> Result<String, String> {
     String::from_utf8(out.stdout).map_err(|e| format!("cargo metadata is not UTF-8: {e}"))
 }
 
-fn nothing_printed(reason: String) -> (String, String) {
-    (String::new(), reason)
+/// `(already printed, exit code, reason)`.
+type Refusal = (String, u8, String);
+
+fn nothing_printed(reason: String) -> Refusal {
+    (String::new(), 1, reason)
 }
 
 fn read(path: &PathBuf) -> Result<Vec<u8>, String> {
     std::fs::read(path).map_err(|e| format!("{}: {e}", path.display()))
 }
 
-/// The output, or `(already printed, reason)` on a refusal.
-fn run(cmd: Cmd) -> Result<String, (String, String)> {
+/// The output, or a refusal.
+fn run(cmd: Cmd) -> Result<String, Refusal> {
     match cmd {
         Cmd::PublishableCrates => {
             let mut meta = String::new();
             std::io::stdin()
                 .read_to_string(&mut meta)
-                .map_err(|e| (String::new(), format!("stdin: {e}")))?;
-            publishable_crates::run(&meta)
+                .map_err(|e| nothing_printed(format!("stdin: {e}")))?;
+            publishable_crates::run(&meta).map_err(|(printed, reason)| (printed, 1, reason))
         }
         Cmd::PackageIncludeDiff { listing, includes } => {
             let listing = read(&listing).map_err(nothing_printed)?;
@@ -80,6 +94,14 @@ fn run(cmd: Cmd) -> Result<String, (String, String)> {
         Cmd::CoverageReportScope { exclude } => {
             let meta = cargo_metadata().map_err(nothing_printed)?;
             coverage_report_scope::scope(&meta, &exclude).map_err(nothing_printed)
+        }
+        Cmd::TarballBuildErrors { log } => {
+            let o = tarball_build_errors::run(&log);
+            if o.code == 0 {
+                Ok(o.stdout)
+            } else {
+                Err((o.stdout, o.code, o.stderr))
+            }
         }
     }
 }
@@ -96,7 +118,7 @@ fn main() -> ExitCode {
     };
     let (out, refusal) = match run(cli.cmd) {
         Ok(out) => (out, None),
-        Err((printed, reason)) => (printed, Some(reason)),
+        Err((printed, code, reason)) => (printed, Some((code, reason))),
     };
     let mut stdout = std::io::stdout().lock();
     if let Err(e) = stdout
@@ -108,9 +130,9 @@ fn main() -> ExitCode {
     }
     match refusal {
         None => ExitCode::SUCCESS,
-        Some(reason) => {
+        Some((code, reason)) => {
             eprintln!("{reason}");
-            ExitCode::FAILURE
+            ExitCode::from(code)
         }
     }
 }
