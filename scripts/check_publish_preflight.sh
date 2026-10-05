@@ -312,6 +312,12 @@ rule_r7_scope() {
     return 1
 }
 
+# R-a: the release is the pin EXACTLY, as a whole string: 0.70.10 and 0.70.1-rc.1 are other releases.
+# pin_holds version -> 0 when it is SCOPE_PIN, 1 otherwise
+pin_holds() {
+    [ -n "$1" ] && [ "$1" = "$SCOPE_PIN" ]
+}
+
 # C280 (operator, 2026-10-03, 0.70.1): a scope is RECORDED only when the ladder contract names exactly
 # this scope for exactly this release, as read by the judge's own reader (crux_smoke_scope.recorded_scope).
 # `--scope` alone is not a record. Anything unreadable is "not recorded", so R8 stays enforced.
@@ -445,7 +451,7 @@ gate() {
     # R-a: the scope engages for ONE release, pinned in this script (SCOPE_PIN), never from the contract
     # alone. A record or a --scope for any other release is refused and the full gate runs, so adding an
     # emergency_scopes entry cannot relax R7/R8 without a visible edit here.
-    if [ -n "${SCOPE:-}" ] && [ "$version" != "$SCOPE_PIN" ]; then
+    if [ -n "${SCOPE:-}" ] && ! pin_holds "$version"; then
         echo "FAIL  R7/R8 the emergency scope $SCOPE is pinned to release $SCOPE_PIN; it does not engage for ${version:-?} (the pin is SCOPE_PIN in $PROG), so the full gate runs"
         SCOPE=""; PIN_REFUSED=1; fails=1
     fi
@@ -897,6 +903,18 @@ FXREADY
     SCOPE_PIN=0.70.1 SCOPE=crux-smoke row pin_flag_other_release_refused 1 "is pinned to release 0.70.1; it does not engage for 1.2.3" "$d"
     SCOPE_PIN=0.70.1 FX_READINESS_RC=1 row pin_other_release_r8_enforced 1 "FAIL  R8 the release-readiness wrapper exited 1" "$d"
     SCOPE_PIN=0.70.1 FX_SCOPE_RC=0 FX_LADDER_RC=1 row pin_other_release_r7_is_matrix 1 "FAIL  R7 model matrix NOT green" "$d"
+    # the pin is matched whole, never as a prefix, in either direction
+    pin_says() { if pin_holds "$1"; then echo "pin $SCOPE_PIN holds for $1"; else echo "pin $SCOPE_PIN refuses $1"; fi; }
+    pin_0_70_10() { SCOPE_PIN=0.70.1 pin_says 0.70.10; }
+    pin_0_70_1_rc() { SCOPE_PIN=0.70.1 pin_says 0.70.1-rc.1; }
+    pin_0_70_1() { SCOPE_PIN=0.70.1 pin_says 0.70.1; }
+    pin_0_70() { SCOPE_PIN=0.70.1 pin_says 0.70; }
+    row pin_refuses_0_70_10 0 "pin 0.70.1 refuses 0.70.10" "$d" pin_0_70_10
+    row pin_refuses_0_70_1_rc_1 0 "pin 0.70.1 refuses 0.70.1-rc.1" "$d" pin_0_70_1_rc
+    row pin_holds_0_70_1 0 "pin 0.70.1 holds for 0.70.1" "$d" pin_0_70_1
+    row pin_refuses_0_70 0 "pin 0.70.1 refuses 0.70" "$d" pin_0_70
+    SCOPE_PIN=1.2 row pin_prefix_of_release_refused 1 "is pinned to release 1.2; it does not engage for 1.2.3" "$d"
+    SCOPE_PIN=1.2.3-rc.1 row pin_release_prefix_of_pin_refused 1 "is pinned to release 1.2.3-rc.1; it does not engage for 1.2.3" "$d"
     row pin_env_cannot_move_it 1 "is pinned to release 0.70.1; it does not engage for 1.2.3" "$d" pin_from_env
     # the wrapper's own table: modes, exit mapping, the receipts-commit rule (runs wherever this selftest runs)
     if ( TMPDIR="${TMPDIR:-/tmp}" bash "$SCRIPT_DIR/release/release_readiness.sh" --selftest >/dev/null 2>&1 ); then
