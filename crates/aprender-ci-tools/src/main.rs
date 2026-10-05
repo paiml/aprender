@@ -1,8 +1,8 @@
 //! `aprender-ci-tools`: one binary, one subcommand per ported Python helper.
 
 use aprender_ci_tools::{
-    coverage_report_scope, dag_status, git_patch_id, package_include_diff, publishable_crates,
-    tarball_build_errors, tarball_shrink_report, tarball_workspace,
+    coverage_report_scope, dag_status, git_patch_id, package_include_diff, privscan,
+    publishable_crates, tarball_build_errors, tarball_shrink_report, tarball_workspace,
 };
 use clap::{ArgGroup, Parser, Subcommand};
 use std::io::{Read, Write};
@@ -84,6 +84,14 @@ enum Cmd {
         /// --stable, --verbatim or --unstable (the default), as git spells them.
         #[arg(allow_hyphen_values = true, value_name = "MODE")]
         mode: Option<String>,
+    },
+    /// Flag lines that would leak private detail: `FILE:LINE:pattern-N` per hit, then
+    /// `privscan: N hit(s)` (replaces the untracked per-worktree `privscan.sh`). Exit 0 no
+    /// hit, 1 any hit, 2 a path that cannot be read or no path.
+    Privscan {
+        /// Files, or directories walked in name order.
+        #[arg(num_args = 0..)]
+        paths: Vec<PathBuf>,
     },
 }
 
@@ -182,6 +190,20 @@ fn run(cmd: Cmd) -> Result<String, Refusal> {
                 .read_to_string(&mut rows)
                 .map_err(|e| nothing_printed(format!("stdin: {e}")))?;
             dag_status::run(&root, &rows).map_err(nothing_printed)
+        }
+        Cmd::Privscan { paths } => {
+            if paths.is_empty() {
+                return Err((
+                    String::new(),
+                    2,
+                    "usage: aprender-ci-tools privscan PATH...".to_owned(),
+                ));
+            }
+            match privscan::run(&paths) {
+                Err(reason) => Err((String::new(), 2, reason)),
+                Ok((out, 0)) => Ok(out),
+                Ok((out, hits)) => Err((out, 1, format!("privscan: exit 1 on {hits} hit(s)"))),
+            }
         }
     }
 }

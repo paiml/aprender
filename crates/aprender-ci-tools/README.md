@@ -1,3 +1,4 @@
+| `privscan PATH...` (exit 0 clean, 1 any hit, 2 unreadable or no path) | the untracked per-worktree `privscan.sh` (its 7 rules are the spec, verbatim) plus what `privscan.py` added: tokens, MAC addresses, any-TLD e-mail (#4678). No caller yet; the copies switch to it once a released `aprender-ci-tools` carries it (N-1) |
 # aprender-ci-tools
 
 CI helpers ported from `scripts/**/*.py` to Rust (C301: no Python in the build).
