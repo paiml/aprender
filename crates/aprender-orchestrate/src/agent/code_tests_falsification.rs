@@ -188,6 +188,12 @@ fn falsify_4599_005_code_window_is_the_models_context_length() {
 
 /// TinyLlama-1.1B-Chat's context window, derived from the model's own published config: the
 /// `model_max_length` of its `tokenizer_config.json`, kept in-tree as a chat-template fixture.
+///
+/// Reading it at test time does not make the tests below vacuous. The value is written into a
+/// GGUF header and read back by the driver through `model_context_length`, so a parse regression
+/// fails the window check in falsify 010. The expected reserve in falsify 009 (`max_tokens` 512)
+/// and the uncapped-reserve refusal in falsify 010 are stated literally, not derived from this
+/// value, so a fixture that drifts turns them RED.
 #[cfg(feature = "inference")]
 fn tinyllama_context() -> u32 {
     let path = concat!(
