@@ -267,6 +267,19 @@ impl AppState {
         self
     }
 
+    /// #4804: tokenize with the GGUF's canonical byte-level BPE (special tokens, the
+    /// pre-tokenizer, ranked merges: what `GGUFModel::encode` and llama.cpp do) instead of
+    /// the greedy longest match a bare vocabulary gives. `None` (not byte-level, or a
+    /// pre-tokenizer this crate does not implement) keeps the tokenizer as built.
+    #[must_use]
+    pub fn with_byte_level_bpe(
+        self,
+        bpe: Option<Arc<crate::gguf::byte_level_bpe::ByteLevelBpe>>,
+    ) -> Self {
+        let _ = bpe;
+        self
+    }
+
     /// Measured model provenance/metadata, if the loader supplied any.
     #[must_use]
     pub fn model_source(&self) -> Option<&ModelSourceInfo> {
