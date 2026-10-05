@@ -1,0 +1,271 @@
+metadata:
+  version: 1.0.0
+  kind: pattern
+  created: '2026-10-05'
+  author: PAIML Engineering
+  references:
+  - 'docs/specifications/APR-OBS-001-dogfood-observability.md v1.3 §10 (the provable model: E1, T1, T1b, E3, E4, T4, E6, L6, E7, E9, E10) and §10.2 (the obligation register)'
+  - 'contracts/apr-ledger-anchor-v1.yaml — owns KANI-OBS-CHAIN (T5) and KANI-OBS-REPLAY (E13); not restated here'
+  - 'contracts/apr-perf-ledger-v1.yaml — the nightly ledger whose rows these rules read'
+  - 'aprender#4487 — OBS-00: this declaration'
+  description: >
+    The §10 provable model of the dogfood observability recorder, declared and
+    not yet discharged. It holds the statistics the recorder and the RED rules
+    compute, and the obligations that make them sound: ABBA drift cancellation
+    (E1, T1, T1b), the rolling and baseline drift rules (E3, E4, T4), the
+    serial-server signature (E6, L6), liveness (E7), the provisional threshold
+    after a failed epoch bridge (E9) and the publish gate (E10).
+
+    Status. Spec §10.2 lists every obligation as "declared"; pv has no such
+    status, so the Lean-backed ones carry lean status wip. Each names the
+    theorem and module the spec gives under ProvableContracts.Theorems.Obs.
+    Those modules are not in the Lean tree yet: the terms elaborate at the
+    pinned toolchain, but as hand-written real-number statements they carry no
+    extraction or simulation model of recorder code, and the refinement gate
+    (PV-ONT-033) rejects a new theorem-bearing module without one. They land
+    with a model of the recorder code they describe, once that code exists.
+    The Kani-backed obligations name their harness with no harness function
+    yet. No obligation here earns credit until a fresh discharge-summary.json
+    or a Kani run says so.
+
+equations:
+  e1_abba_block:
+    formula: |
+      block b: slots t, t+w, t+2w, t+3w; order u ~ Bernoulli(1/2) from the recorded seed
+      u = 0 (ABBA): pairs (A@t, B@t+w) and (A@t+3w, B@t+2w)
+      u = 1 (BAAB): pairs (A@t+w, B@t) and (A@t+2w, B@t+3w)
+      ℓ_b = 1/2 · [ln(x_A(t_A1)/x_B(t_B1)) + ln(x_A(t_A2)/x_B(t_B2))]
+      T1:  ln x_A(t) = α + s·t,  ln x_B(t) = β + s·t  ⇒  ℓ_b = α − β for both orders
+      T1b: the blocked design (n runs of A, then n runs of B) has bias −s·n·w
+    domain: 'one block of four timed runs of two arms A and B, spaced w apart'
+    codomain: 'ℓ_b ∈ ℝ, the block log-ratio estimate of A against B'
+    invariants:
+    - 'T1: under a shared log-linear drift the block estimate is exact for both orders, for every s, t and w.'
+    - 'T1b: the blocked design is biased by −s·n·w, so the recorder never uses it.'
+
+  e3_threshold:
+    formula: |
+      θ = max(θ_min, k·σ̂),  θ_min = −ln 0.95 = 0.05129,  k = 3
+      σ̂ = 1.4826·MAD over the calibration window
+    domain: 'one series after its calibration window'
+    codomain: 'θ > 0, the RED threshold on log-ratio drops'
+    invariants:
+    - 'θ ≥ θ_min for every series, whatever its noise.'
+
+  e4_rolling_and_baseline:
+    formula: |
+      D_n = L_n − med_7(L_{n−7}, …, L_{n−1})
+      RollingRED_n ⟺ (D_n < −θ ∧ D_{n−1} < −θ) ∨ D_n < −2θ
+      B_n = L_tag − med_3(L_{n−2}, L_{n−1}, L_n)
+      T4, a noise-free linear slowdown L_n = L_tag − s·n with s > 0:
+        D_n = −4s for every n ≥ 7, so RollingRED never fires when s ≤ θ/4
+        B_n = s·(n−1), which first exceeds θ at N* = ⌊θ/s⌋ + 2
+      worked: 3%/week is s = −ln(0.97)/7 = 0.0043513/night; with θ = 0.051293
+        rolling needs s > θ/4 = 0.012823 (blind), and N* = ⌊11.788⌋ + 2 = 13 ≤ 28
+    domain: 'one series of nightly log throughputs L_n and its release-tag value L_tag'
+    codomain: 'bool per night: RollingRED_n, and the baseline statistic B_n ∈ ℝ'
+    invariants:
+    - 'T4: the rolling rule is blind to a slow linear slowdown; the release-tag baseline detects it in N* nights.'
+    - 'The step "the median of an arithmetic progression is its middle term" is KANI-OBS-MED on the recorder med_k, not a Lean theorem.'
+
+  e6_concurrency:
+    formula: |
+      η(c) = agg(c) / (c · agg(1));   ς(c) = dec_ratio(c) / agg_ratio(c)
+      L6: a serial server has agg(c) = agg(1), so η(c) = 1/c and c·η(c) = 1
+    domain: 'one engine at concurrency c ≥ 1 with aggregate throughput agg(c) > 0'
+    codomain: 'η(c) > 0, the concurrency efficiency'
+    invariants:
+    - 'L6: c·η(c) = 1 is the serial signature; a value near 1 at every c reads as serial admission.'
+    - 'η_apr(16) is gated as a ratchet; η_llama(16) is recorded, not gated.'
+
+  e7_liveness:
+    formula: |
+      state(n) ∈ {admissible, skipped, missing, unproven}
+      LiveRED_n ⟺ missing(n) ∨ #{skipped in [n−13, n]} > 1 ∨ (skipped(n) ∧ skipped(n−1))
+      the ≥ 13/14 liveness target counts admissible nights only
+    domain: 'the trailing 14 nightly states of one series'
+    codomain: 'bool, LiveRED_n'
+    invariants:
+    - 'skipped and unproven are never admissible.'
+    - 'two consecutive skips are always RED.'
+
+  e9_epoch_bridge:
+    formula: |
+      Δ_e = med_{j=1..3}(L^{e′}_j − L^e_j)
+      bridge_ok ⟺ 1.4826 · MAD_j(L^{e′}_j − L^e_j) ≤ σ̂_e
+      bridge_ok ⇒ L^{e′}_tag = L^e_tag + Δ_e
+      ¬bridge_ok ⇒ provisional mode once n_e ≥ 3:
+        θ_prov(n_e) = max(θ_min, k·σ̂_{e′}(n_e)·(1 + 2·1.166/√n_e)) + u_Δ
+        u_Δ = k·1.2533·σ̂_bridge/√3
+      at n_e = 14 the E3 threshold replaces θ_prov
+    domain: 'a series crossing an epoch boundary e → e′ (toolchain, driver or host change)'
+    codomain: 'the bridged tag value, or θ_prov ∈ ℝ in provisional mode'
+    invariants:
+    - 'E9 prov_ge: θ_prov ≥ max(θ_min, k·σ̂), so provisional mode is never looser than E3.'
+    - 'A model change or a workload change never bridges; it starts a new series.'
+
+  e10_publish:
+    formula: |
+      publish_ok(tag) ⟺ ⋀_{κ ∈ K_gate} (calibrated ∧ chain_ok ∧ anchor_ok ∧ ¬BaselineRED ∧ ¬LiveRED ∧ first_green)
+      a conjunction, so monotone: any conjunct false ⇒ publish_ok false; ¬calibrated ⇒ ¬publish_ok
+    domain: 'one release tag and the gated series set K_gate'
+    codomain: bool
+    invariants:
+    - 'Evaluated in the base-owned CI path after the clean-room gate, never in the PR head: the producer is never the gate.'
+
+falsification_tests:
+  - id: FALSIFY-OBS-MODEL-001
+    rule: e4_rolling_and_baseline
+    prediction: 'on the T4 worked example (3%/week, s = 0.0043513/night, θ = 0.051293) the rolling rule never fires and the release-tag baseline fires by night 13, inside the 28-night window'
+    test: 'planted RED→GREEN in the OBS-07 PR (spec §10 T4, the OBS-07 falsifier); NotRun{NoDeclaredExecutor} until then'
+    if_fails: 'a 3%/week regression ships unflagged, the case the baseline exists for'
+  - id: FALSIFY-OBS-MODEL-002
+    rule: e7_liveness
+    prediction: 'a series with two consecutive skipped nights is RED, and a skipped night never counts toward the 13/14 target'
+    test: 'planted RED→GREEN with the recorder liveness code (spec §10 E7); NotRun{NoDeclaredExecutor} until then'
+    if_fails: 'a lane that skips every other night reads as live'
+  - id: FALSIFY-OBS-MODEL-003
+    rule: e10_publish
+    prediction: 'with every conjunct true except calibrated on one gated series, publish_ok is false'
+    test: 'planted RED→GREEN with the publish gate (spec §10 E10); NotRun{NoDeclaredExecutor} until then'
+    if_fails: 'an uncalibrated series lets a release publish'
+
+proof_obligations:
+  - id: OBS-MODEL-INV-001
+    type: invariant
+    property: 'T1, order ABBA: the block estimate equals α − β under a shared linear drift'
+    formal: '∀ α, β, s, t, w ∈ ℝ: ((α + s·t) − (β + s·(t+w)) + (α + s·(t+3w)) − (β + s·(t+2w))) / 2 = α − β'
+    applies_to: all
+    lean:
+      theorem: Obs.abba_cancel
+      module: ProvableContracts.Theorems.Obs.Abba
+      status: wip
+      notes: 'Spec §10.2 status: declared. The term elaborates at the pinned toolchain but is not in the Lean tree: the refinement gate (PV-ONT-033) rejects the module until a model of recorder code exists. Credit only from a fresh discharge-summary.json.'
+  - id: OBS-MODEL-INV-002
+    type: invariant
+    property: 'T1, order BAAB: the block estimate equals α − β under a shared linear drift'
+    formal: '∀ α, β, s, t, w ∈ ℝ: ((α + s·(t+w)) − (β + s·t) + (α + s·(t+2w)) − (β + s·(t+3w))) / 2 = α − β'
+    applies_to: all
+    lean:
+      theorem: Obs.baab_cancel
+      module: ProvableContracts.Theorems.Obs.Abba
+      status: wip
+      notes: 'As OBS-MODEL-INV-001.'
+  - id: OBS-MODEL-INV-003
+    type: invariant
+    property: 'T1b: the blocked design (n runs of A, then n runs of B) is biased by −s·n·w'
+    formal: '∀ n ≥ 1: mean_{i<n}(α + s·(t + i·w)) − mean_{i<n}(β + s·(t + (n+i)·w)) = α − β − s·n·w'
+    applies_to: all
+    lean:
+      theorem: Obs.blocked_bias
+      module: ProvableContracts.Theorems.Obs.Abba
+      status: wip
+      notes: 'As OBS-MODEL-INV-001.'
+  - id: OBS-MODEL-INV-004
+    type: invariant
+    property: 'T4.1: on a linear slowdown the rolling statistic is −4s, the gap to the middle of its 7-night window'
+    formal: '∀ c, s ∈ ℝ, n ≥ 7: (c − s·n) − (c − s·(n−4)) = −4·s'
+    applies_to: all
+    lean:
+      theorem: Obs.rolling_linear
+      module: ProvableContracts.Theorems.Obs.Drift
+      status: wip
+      notes: 'As OBS-MODEL-INV-001. That med_7 of the window is its middle term L_{n−4} is OBS-MODEL-INV-010 (KANI-OBS-MED).'
+  - id: OBS-MODEL-INV-005
+    type: invariant
+    property: 'T4.2: when s ≤ θ/4 the rolling rule never fires on a linear slowdown'
+    formal: '∀ s, θ ∈ ℝ: s ≤ θ/4 ⇒ ¬(−4·s < −θ)'
+    applies_to: all
+    lean:
+      theorem: Obs.rolling_blind
+      module: ProvableContracts.Theorems.Obs.Drift
+      status: wip
+      notes: 'As OBS-MODEL-INV-001. With θ ≥ 0 the D_n < −2θ disjunct is excluded too, since −2θ ≤ −θ.'
+  - id: OBS-MODEL-INV-006
+    type: invariant
+    property: 'T4.3: on a linear slowdown the baseline statistic is s·(n−1), the gap to the middle of its 3-night window'
+    formal: '∀ L_tag, s ∈ ℝ, n ≥ 2: L_tag − (L_tag − s·(n−1)) = s·(n−1)'
+    applies_to: all
+    lean:
+      theorem: Obs.baseline_linear
+      module: ProvableContracts.Theorems.Obs.Drift
+      status: wip
+      notes: 'As OBS-MODEL-INV-001. That med_3 of the window is its middle term L_{n−1} is OBS-MODEL-INV-010 (KANI-OBS-MED).'
+  - id: OBS-MODEL-INV-007
+    type: invariant
+    property: 'L6: a serial server has c·η(c) = 1'
+    formal: '∀ a ∈ ℝ, c ∈ ℕ: a > 0 ∧ c ≥ 1 ⇒ a/(c·a) · c = 1'
+    applies_to: all
+    lean:
+      theorem: Obs.serial_eta
+      module: ProvableContracts.Theorems.Obs.Serial
+      status: wip
+      notes: 'As OBS-MODEL-INV-001. The spec names no file for L6; it sits with the other §10 theorems.'
+  - id: OBS-MODEL-BND-008
+    type: bound
+    property: 'E9: the provisional threshold is never below the E3 threshold'
+    formal: 'k ≥ 0 ∧ σ_e ≥ 0 ∧ f ≥ 1 ∧ u ≥ 0 ⇒ max(θ_min, k·σ_e) ≤ max(θ_min, k·σ_e·f) + u'
+    applies_to: all
+    lean:
+      theorem: Obs.prov_ge
+      module: ProvableContracts.Theorems.Obs.Epoch
+      status: wip
+      notes: 'As OBS-MODEL-INV-001. f = 1 + 2·1.166/√n_e ≥ 1 and u = u_Δ ≥ 0 by construction.'
+  - id: OBS-MODEL-INV-009
+    type: invariant
+    property: 'E1 exactness: the recorder fixed-point i64 E1 returns exactly α − β for both orders (KANI-OBS-ABBA)'
+    formal: '∀ bounded α, β, s, t, w ∈ i64, u ∈ {0, 1}: abba_i64(α, β, s, t, w, u) = α − β'
+    applies_to: all
+  - id: OBS-MODEL-INV-010
+    type: invariant
+    property: 'med_k for k ∈ {3, 7} returns the middle of the sorted input, and the middle term of an arithmetic progression (KANI-OBS-MED)'
+    formal: '∀ k ∈ {3, 7}, x ∈ i64^k: med_k(x) = sort(x)[(k−1)/2] ∧ (x an arithmetic progression ⇒ med_k(x) = x[(k−1)/2])'
+    applies_to: all
+  - id: OBS-MODEL-INV-011
+    type: invariant
+    property: 'E7: over 14-night state sequences, skipped and unproven nights are never admissible, and two consecutive skips are RED (KANI-OBS-LIVE)'
+    formal: '∀ q ∈ State^14: count_admissible(q) = #{n : q_n = admissible} ∧ ∀ n: (q_n = skipped ∧ q_{n−1} = skipped ⇒ LiveRED_n)'
+    applies_to: all
+  - id: OBS-MODEL-INV-012
+    type: invariant
+    property: 'E10: publish_ok holds exactly when every conjunct holds for every gated series (KANI-OBS-GATE)'
+    formal: '|K_gate| ≤ 6 ⇒ (publish_ok ⟺ ∀ κ ∈ K_gate: calibrated(κ) ∧ chain_ok(κ) ∧ anchor_ok(κ) ∧ ¬BaselineRED(κ) ∧ ¬LiveRED(κ) ∧ first_green(κ))'
+    applies_to: all
+
+kani_harnesses:
+- id: KANI-OBS-ABBA
+  obligation: OBS-MODEL-INV-009
+  property: 'the recorder fixed-point i64 implementation of E1 returns exactly α−β for all bounded (α, β, s, t, w), for both orders (spec §10 E1)'
+  bound: 4
+  strategy: bounded_int
+- id: KANI-OBS-MED
+  obligation: OBS-MODEL-INV-010
+  property: 'the recorder med_k for k ∈ {3, 7} returns the middle element of the sorted input, and for any arithmetic progression returns its middle term (spec §10 E4)'
+  bound: 7
+  strategy: bounded_int
+- id: KANI-OBS-LIVE
+  obligation: OBS-MODEL-INV-011
+  property: 'over all state sequences of length 14, the admissible count never includes a skipped or unproven night, and two consecutive skips always yield RED (spec §10 E7)'
+  bound: 14
+  strategy: exhaustive
+- id: KANI-OBS-GATE
+  obligation: OBS-MODEL-INV-012
+  property: 'over all Boolean assignments to the conjuncts for |K_gate| ≤ 6, publish_ok = true iff every conjunct is true (spec §10 E10)'
+  bound: 6
+  strategy: exhaustive
+
+verification_summary:
+  total_obligations: 12
+  proven: 0
+  tested: 0
+  status: proposed
+  notes: >
+    Declaration only (OBS-00). Eight Lean-backed obligations carry lean status
+    wip, which pv lists, with the theorem and module spec §10 names; the terms
+    are held back from the Lean tree by the refinement gate until a model of the
+    recorder code exists. Four Kani-backed obligations name their harness with
+    no harness function yet; KANI-OBS-CHAIN and KANI-OBS-REPLAY are declared in
+    apr-ledger-anchor-v1. The spec gives no bound for KANI-OBS-ABBA; 4 is the
+    run count of one block, and the harness author sets the real unwind. The
+    three falsifiers are NotRun until the recorder,
+    liveness and publish-gate code lands. Nothing here is proven or tested.
