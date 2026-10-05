@@ -180,6 +180,13 @@ self_test() {
     ck b-in-name     P-RELEASE      "$(d 'scripts/release/x b/y.sh')"
     # must-not-match: code-only PRs.
     ck b-in-name-neg -              "$(d 'docs/x b/scripts/check_y.sh')"
+    # KNOWN FALSE POSITIVES, pinned on purpose: a prose-only edit of a contract
+    # (the shapes of #4676/#4677: a note:/owed_by: measurement record) still
+    # flags. The path rule cannot tell a record from a threshold, and erring
+    # strict is the ruled default; if a contract-field rule replaces it, these
+    # two rows are the ones that must flip to "-".
+    ck fp-4676-prose P-CONTRACT     "$(d contracts/thinking-budgets-v1.yaml '-      Generated 8,901 chars without closing at 2048 on the bench host. Whether a larger budget' '+      Generated 8,901 chars without closing at 2048 on the bench host (#3907). MEASURED since')"
+    ck fp-4677-prose P-CONTRACT     "$(d contracts/thinking-budgets-v1.yaml '-      Measured on the bench host (RTX 4090, cuda), #3948 receipt' '+      Measured on the bench host (RTX 4090, cuda), re-measured receipt')"
     ck serve-4276    -              "$(d crates/aprender-serve/src/gguf/prefill.rs '+    let n = 1;')"
     ck readme-4467   -              "$(d README.md)"
     ck dep-4632      -              "$(d Cargo.toml '-wasmtime = "47.0.4"' '+wasmtime = "48.0.3"')"
@@ -297,7 +304,7 @@ self_test() {
 
     rm -rf "${tmp:?}"
     if [ "$fails" -ne 0 ]; then printf 'self-test FAILED: %s of %s case(s).\n' "$fails" "$cases" >&2; return 1; fi
-    if [ "$cases" -lt 82 ]; then printf 'self-test VACUOUS: %s case(s) ran, fewer than the 82 this table shipped with.\n' "$cases" >&2; return 1; fi
+    if [ "$cases" -lt 84 ]; then printf 'self-test VACUOUS: %s case(s) ran, fewer than the 84 this table shipped with.\n' "$cases" >&2; return 1; fi
     printf 'self-test OK: %s case(s).\n' "$cases"
 }
 
