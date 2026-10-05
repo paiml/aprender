@@ -1,0 +1,73 @@
+diff --git a/crates/aprender-gpu/src/driver/budget_query.rs b/crates/aprender-gpu/src/driver/budget_query.rs
+index 8159a454a2..fd3f6eebf4 100644
+--- a/crates/aprender-gpu/src/driver/budget_query.rs
++++ b/crates/aprender-gpu/src/driver/budget_query.rs
+@@ -3,8 +3,8 @@
+ //! Split deliberately: the *policy* (`crate::launch_budget::validate_launch`) is pure and
+ //! ungated so its case table runs in the required check; only these *queries* need a
+ //! device. Putting the policy here would have made it untestable in CI, because the whole
+-//! `driver` module is `#[cfg(feature = "cuda")]` — the same trap that leaves
+-//! `driver::ptx_patch`'s GH-480 tests dark despite its comment claiming otherwise.
++//! `driver` module is `#[cfg(feature = "cuda")]` — the same trap that kept
++//! `ptx_patch`'s GH-480 tests dark until #4096 moved it to the crate root.
+ 
+ use super::sys::{
+     CUdevice, CUfunction, CudaDriver, CU_DEVICE_ATTRIBUTE_MAX_REGISTERS_PER_BLOCK,
+diff --git a/crates/aprender-gpu/src/driver/mod.rs b/crates/aprender-gpu/src/driver/mod.rs
+index 8ee6fb649c..237402f9a0 100644
+--- a/crates/aprender-gpu/src/driver/mod.rs
++++ b/crates/aprender-gpu/src/driver/mod.rs
+@@ -102,14 +102,11 @@ mod cublaslt;
+ )]
+ pub mod cublaslt_sys;
+ 
+-// GH-480: PTX backward branch patcher (not feature-gated — pure string transform)
+ // CUDA-backed queries that FEED launch_budget (the policy itself is ungated at
+ // crate::launch_budget so its case table runs in the required check).
+ #[cfg(feature = "cuda")]
+ pub mod budget_query;
+ 
+-pub(crate) mod ptx_patch;
+-
+ // PTX disk cache utilities (not feature-gated — SHA-256, cache I/O testable without CUDA)
+ pub(crate) mod ptx_cache;
+ 
+diff --git a/crates/aprender-gpu/src/driver/module.rs b/crates/aprender-gpu/src/driver/module.rs
+index 99e8b5e598..98b39510dd 100644
+--- a/crates/aprender-gpu/src/driver/module.rs
++++ b/crates/aprender-gpu/src/driver/module.rs
+@@ -32,11 +32,11 @@ use std::os::raw::c_uint;
+ 
+ use super::context::{get_driver, CudaContext};
+ use super::ptx_cache::{load_cached_cubin, ptx_cache_dir, ptx_cache_key, save_cached_cubin};
+-use super::ptx_patch::patch_backward_branches_sm121;
+ use super::sys::{
+     CUfunction, CUmodule, CudaDriver, CU_JIT_ERROR_LOG_BUFFER, CU_JIT_ERROR_LOG_BUFFER_SIZE_BYTES,
+     CU_JIT_INPUT_PTX, CU_JIT_TARGET,
+ };
++use crate::ptx_patch::patch_backward_branches_sm121;
+ use crate::GpuError;
+ 
+ /// CU_JIT_INFO_LOG_BUFFER - Pointer to buffer for info log
+diff --git a/crates/aprender-gpu/src/lib.rs b/crates/aprender-gpu/src/lib.rs
+index 77912f031b..f3758e0759 100644
+--- a/crates/aprender-gpu/src/lib.rs
++++ b/crates/aprender-gpu/src/lib.rs
+@@ -158,6 +158,13 @@ pub mod error;
+ /// entirety): the policy is pure, so its case table runs in the required check.
+ pub mod launch_budget;
+ 
++/// GH-480 sm_121 backward-branch rewriter. A pure string transform, so it lives
++/// here and not under `driver` (#4096): there it was cuda-gated, its tests never
++/// ran in the required check, and a `.reg` written into a `.global` initializer
++/// shipped. Only `driver::module` calls it, hence the non-cuda allow.
++#[cfg_attr(not(feature = "cuda"), allow(dead_code))]
++pub(crate) mod ptx_patch;
++
+ /// E2E visual testing framework for GPU kernels
+ pub mod testing;
+ 
+diff --git a/crates/aprender-gpu/src/driver/ptx_patch.rs b/crates/aprender-gpu/src/ptx_patch.rs
+similarity index 100%
+rename from crates/aprender-gpu/src/driver/ptx_patch.rs
+rename to crates/aprender-gpu/src/ptx_patch.rs
