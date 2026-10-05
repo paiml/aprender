@@ -137,14 +137,36 @@ self_test() {
     manifest_rows || fail=1
     reader_rows || fail=1
 
+    verdict_rows || fail=1
+    selftest_verdict "$fail" "$n" "$q"
+}
+
+# selftest_verdict FAIL N Q -> rc 0 pass, 1 a row failed, 3 a row was not measured.
+# A row that was not measured is not a pass (L25): before this, Q > 0 printed a note and
+# exited 0, so a self-test whose EXIT-trap row never ran read green in CI.
+selftest_verdict() {
+    local fail=$1 n=$2 q=$3
     if [ "$fail" -ne 0 ]; then
         echo "check_guard_steps_run_all self-test: FAILED"
         return 1
     fi
     if [ "$q" -gt 0 ]; then
-        echo "UNMEASURED check_guard_steps_run_all self-test: $q row(s) not measured: a precondition never held (FLAKE-0 #4759)"
+        echo "NOT_MEASURED check_guard_steps_run_all self-test: ${n} cases pass, $q row(s) not measured: a precondition never held (FLAKE-0 #4759); not a pass"
+        return 3
     fi
-    echo "check_guard_steps_run_all self-test: ${n}/${n} cases pass, $q not measured"
+    echo "check_guard_steps_run_all self-test: ${n}/${n} cases pass, 0 not measured"
+}
+
+# verdict_rows: selftest_verdict's own case table, both polarities, every exit code.
+verdict_rows() {
+    local bad=0 row f nn qq want got
+    for row in "0 5 0 0" "0 5 1 3" "0 5 7 3" "1 5 0 1" "1 5 1 1" "0 0 0 0"; do
+        read -r f nn qq want <<< "$row"
+        selftest_verdict "$f" "$nn" "$qq" > /dev/null; got=$?
+        if [ "$got" = "$want" ]; then printf 'ok   %-58s rc=%s\n' "verdict fail=$f n=$nn q=$qq" "$got"
+        else printf 'FAIL %-58s rc=%s (wanted %s)\n' "verdict fail=$f n=$nn q=$qq" "$got" "$want"; bad=1; fi
+    done
+    return "$bad"
 }
 
 # mfixture <file> <variant> [step-run...] -- a guard job + its `-steps` manifest.
