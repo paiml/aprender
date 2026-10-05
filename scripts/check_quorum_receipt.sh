@@ -11,8 +11,12 @@
 # Per lane, in order; the first rule that fires makes the lane VOID:
 #   shadow       role "shadow" is advisory and never counted (listed, not void)
 #   no-verdict   verdict is not PASS or FAIL
-#   inexact-id   model is not an exact id: lowercase, dash-separated, holds a digit, no alias
-#   author-seat  model is the author's own model id
+#   inexact-id   model is not an exact id: lowercase, dash-separated, holds a digit, no
+#                alias, and not FAMILY-VERSION alone (claude-5). No allowlist: an invented
+#                id that has this shape passes (stated residual)
+#   author-seat  model is the author's own model id (no author.model = not_measured)
+#   family-mismatch  the lane's family label is not the family its model id names
+#                (first token; gpt-* = openai): a label never makes a second family
 #   seat-unknown a fallback happened (an attempt names another model) and judged_by does
 #                not name the seat that answered, or model_measured names another model
 #   plant-missed the lane did not catch the round's plant
@@ -21,8 +25,10 @@
 # The plant: every round carries one planted defect at FILE:LINE, given by --plant or by
 # the receipt's plant{file,line}. A lane CATCHES it when it records plant_verdict "caught",
 # or, when it records none, when its verdict is FAIL and one finding names FILE:LINE
-# (file "F:L", file F with line L, or "F:L" in its claim or grounding). A round without a
-# plant is not_measured: nothing shows any lane reads.
+# (file "F:L", file F with line L, or "F:L" cited in its claim or grounding with no
+# path character before it and no digit after, so src/a.rs:70 is not src/a.rs:7). A
+# round without a plant is not_measured: nothing shows any lane reads. plant_verdict
+# is trusted as written; it is meant to be written by the quorum tool, not by a lane.
 #
 # The round, over the lanes that are not void and not shadow:
 #   VALID independent  the valid lanes span >= 2 families
@@ -48,6 +54,7 @@ _qr_lanes() {
         | .lanes[]?
         | . as $l
         | (($F + ":" + $L)) as $fl
+        | ($fl | gsub("(?<c>[.^$*+?()\\[\\]{}|\\\\])"; "\\\(.c)")) as $fre
         | ([.fallback.attempts[]?.model // empty] | map(select(. != $l.model)) | length) as $other
         | {
             lane: (.lane // "?" | tostring),
@@ -64,7 +71,7 @@ _qr_lanes() {
                 elif .verdict == "FAIL" and ([.findings[]? | select(
                         ((.file // "") == $fl)
                         or (((.file // "") == $F) and (((.line // "") | tostring) == $L))
-                        or ((((.claim // "") | tostring) + " " + ((.grounding // "") | tostring)) | contains($fl))
+                        or ((((.claim // "") | tostring) + " " + ((.grounding // "") | tostring)) | test("(^|[^A-Za-z0-9_/.-])" + $fre + "([^0-9]|$)"))
                     )] | length) > 0 then "caught"
                 else "missed" end),
             am: $am
@@ -82,9 +89,23 @@ _qr_exact_id() {
         *) return 1 ;;
     esac
     case "$1" in
-        *-*) return 0 ;;
+        *-*) ;;
+        *) return 1 ;;
+    esac
+    # FAMILY-VERSION alone (claude-5, gemini-3.1) names a generation, not a model
+    case "${1#*-}" in
+        *[!0-9.]*) return 0 ;;
     esac
     return 1
+}
+
+# _qr_family ID -> the family the id itself names (its first token; gpt-* is openai).
+# The receipt's own family label is never trusted: it must agree with this.
+_qr_family() {
+    case "$1" in
+        gpt-*) printf 'openai' ;;
+        *) printf '%s' "${1%%-*}" ;;
+    esac
 }
 
 # check_quorum_receipt RECEIPT [PLANT] -> prints lane lines and a ROUND line;
@@ -93,6 +114,10 @@ check_quorum_receipt() {
     local f="$1" plant="${2:-}" pf pl rows lane role verdict model family requested seat measured pv am
     local why valid=0 models="" families="" verdicts="" degraded n_models n_fam n_verd
     jq -e '.lanes | type == "array"' "$f" >/dev/null 2>&1 || { echo "ROUND not_measured: not a quorum receipt (no lanes[])"; return 2; }
+    if ! jq -e '(.author.model // "") != ""' "$f" >/dev/null 2>&1; then
+        echo "ROUND not_measured: no author.model; the author's own seat cannot be excluded"
+        return 2
+    fi
     if [ -z "$plant" ]; then
         plant="$(jq -r 'if (.plant.file // "") != "" and (.plant.line // "") != "" then "\(.plant.file):\(.plant.line)" else "" end' "$f")"
     fi
@@ -118,6 +143,8 @@ check_quorum_receipt() {
             why="VOID inexact-id"
         elif [ "$model" = "$am" ]; then
             why="VOID author-seat"
+        elif [ "$family" != "$(_qr_family "$model")" ]; then
+            why="VOID family-mismatch"
         elif [ "$seat" != "$model" ] || [ "$measured" != "$model" ]; then
             why="VOID seat-unknown"
         elif [ "$pv" != caught ]; then
@@ -260,6 +287,38 @@ selftest() {
         "$(ln 2 gemini-3.1-pro-high gemini FAIL "$C" ',"role":"shadow"')" > "$f"
     row shadow_lane_never_counts "rc=1 INVALID" "$(verdict "$f")" "(a shadow gemini does not make two families)"
 
+    cl() { printf '{"lane":%s,"model":"%s","family":"%s","role":"counted","verdict":"FAIL","findings":[{"claim":"%s"}]}' "$1" "$2" "$3" "$4"; }
+    rc_json "$A" "" "$(cl 1 claude-sonnet-5-5 claude 'bug at src/a.rs:70')" "$(ln 2 gemini-3.1-pro-high gemini FAIL "$C")" > "$f"
+    row claim_line_70_is_not_line_7 "plant-missed" "$(lane_tag "$f" 1)" "(must fail: a substring is not a citation)"
+    rc_json "$A" "" "$(cl 1 claude-sonnet-5-5 claude 'see xsrc/a.rs:7')" "$(ln 2 gemini-3.1-pro-high gemini FAIL "$C")" > "$f"
+    row claim_longer_path_is_not_the_plant "plant-missed" "$(lane_tag "$f" 1)"
+    rc_json "$A" "" "$(cl 1 claude-sonnet-5-5 claude 'off by one (src/a.rs:7).')" "$(ln 2 gemini-3.1-pro-high gemini FAIL "$C")" > "$f"
+    row claim_citing_the_plant_catches "valid" "$(lane_tag "$f" 1)"
+
+    rc_json "$A" "" "$(ln 1 claude-haiku-4-5 gemini FAIL "$C")" "$(ln 2 claude-sonnet-5-5 claude FAIL "$C")" > "$f"
+    row spoofed_family_is_void "family-mismatch" "$(lane_tag "$f" 1)"
+    row spoofed_family_is_not_two_families "rc=1 INVALID" "$(verdict "$f")" "(must fail: a label is not a family)"
+    rc_json "$A" "" "$(ln 1 gpt-oss-120b openai FAIL "$C")" "$(ln 2 claude-sonnet-5-5 claude FAIL "$C")" > "$f"
+    row gpt_ids_are_openai "rc=0 VALID independent" "$(verdict "$f")"
+    rc_json "$A" "" "$(ln 1 claude-5 claude FAIL "$C")" "$(ln 2 gemini-3.1 gemini FAIL "$C")" > "$f"
+    row family_version_alone_is_void "inexact-id inexact-id" "$(lane_tag "$f" 1) $(lane_tag "$f" 2)" "(must fail: claude-5 names no model)"
+
+    rc_json "$A" "" "$(ln 1 claude-sonnet-5-5 claude FAIL "$C")" "$(ln 2 gemini-3.1-pro-high gemini FAIL "$C")" > "$f"
+    jq 'del(.author)' "$f" > "$t/na.json"
+    row no_author_is_not_measured "rc=2 not_measured no" "$(verdict "$t/na.json")" "(must fail: author seat unknowable)"
+
+    rc_json "$A" "" "$(ln 1 claude-sonnet-5-5 claude PASS)" "$(ln 2 gemini-3.1-pro-high gemini FAIL "$C")" > "$f"
+    bash "$SELF" "$f" > "$t/o" 2>&1
+    row report_only_exits_0 "rc=0 REPORT" "rc=$? $(grep -o '^REPORT' "$t/o")"
+    bash "$SELF" --enforce "$f" > /dev/null 2>&1
+    row enforce_invalid_exits_1 "rc=1" "rc=$?"
+    bash "$SELF" --enforce "$t/np.json" > /dev/null 2>&1
+    row enforce_not_measured_exits_2 "rc=2" "rc=$?"
+    bash "$SELF" --enforce --plant "$C" "$t/np.json" > /dev/null 2>&1
+    row enforce_valid_exits_0 "rc=0" "rc=$?"
+    bash "$SELF" --bogus > /dev/null 2>&1
+    row caller_error_exits_3 "rc=3" "rc=$?"
+
     printf '{"lanes":"x"}\n' > "$f"
     row not_a_receipt_not_measured "rc=2 not_measured not" "$(verdict "$f")"
 
@@ -284,6 +343,11 @@ MUTANTS=(
     'repeat_ok|s/if \[ "\$n_models" -lt 2 \]; then/if false; then/'
     'shadow_counts|s/            why="shadow"/            why=""/'
     'no_plant_ok|/no plant recorded/{n;s/return 2/:/}'
+    'claim_substring|s/| test("(^|\[^A-Za-z0-9_\/.-\])" + \$fre + "(\[^0-9\]|\$)"))/| contains($fl))/'
+    'family_trusted|s/elif \[ "\$family" != "\$(_qr_family "\$model")" \]; then/elif false; then/'
+    'family_version_ok|s/        \*\[!0-9.\]\*) return 0 ;;/        *) return 0 ;;/'
+    'no_author_ok|s/if ! jq -e .(.author.model \/\/ "") != "". "\$f"/if false/'
+    'enforce_ignored|s/if \[ "\$enforce" = 1 \]; then exit "\$rc"; fi/:/'
     'no_verdict_ok|s/elif \[ "\$verdict" != PASS \] \&\& \[ "\$verdict" != FAIL \]; then/elif false; then/'
 )
 mutants() {
