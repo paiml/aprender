@@ -288,7 +288,7 @@ gql_query() {
         | ($wf | first | .workflows | map(select(.path as $x | $want | index($x))) ) as $hit
         | if ($hit | length) != ($want | length) then error("producer workflow missing from the list") else . end
         | ($repo | split("/")) as $own
-        | "query { repository(owner: \"\($own | first)\", name: \"\($own | last)\") { defaultBranchRef { name target { ... on Commit { oid tree { oid } statusCheckRollup { contexts(first: 100) { pageInfo { hasNextPage } nodes { ... on CheckRun { name status conclusion startedAt completedAt checkSuite { status conclusion branch { name } workflowRun { databaseId event createdAt workflow { id } } } } } } } } } } } "
+        | "query { repository(owner: \"\($own | first)\", name: \"\($own | last)\") { defaultBranchRef { name target { ... on Commit { oid tree { oid } statusCheckRollup { contexts(first: 100) { pageInfo { hasNextPage } nodes { ... on CheckRun { name status conclusion startedAt completedAt checkSuite { status conclusion branch { name } workflowRun { databaseId event createdAt workflow { id } } } } } } } history(first: 7) { nodes { oid statusCheckRollup { contexts(first: 100) { pageInfo { hasNextPage } nodes { ... on CheckRun { name status conclusion startedAt completedAt checkSuite { status conclusion branch { name } workflowRun { databaseId event createdAt workflow { id } } } } } } } } } } } } } "
           + ([$hit | to_entries[] | "w\(.key): node(id: \"\(.value.node_id)\") { ... on Workflow { id runs(first: 12) { nodes { databaseId createdAt event checkSuite { status conclusion branch { name } commit { oid } checkRuns(first: 100, filterBy: {checkType: ALL}) { pageInfo { hasNextPage } nodes { name status conclusion startedAt completedAt } } } } } } }"] | join(" ")) + " }"' 2>/dev/null
 }
 normalize() {
@@ -310,16 +310,18 @@ normalize() {
               ["wf", ($p | .[$w.id]), $r.databaseId, $r.event, ($r.checkSuite.branch.name // ""), $r.checkSuite.commit.oid, $r.createdAt,
                $r.checkSuite.status, ($r.checkSuite.conclusion // ""), "#truncated", "COMPLETED", "TRUNCATED", "", "", 1]
              else empty end) ),
-        ( ($c.statusCheckRollup.contexts.nodes // [])[] | select(.checkSuite.workflowRun != null)
-          | .checkSuite.workflowRun.workflow.id as $wid | ["rollup", ($p | .[$wid]), .checkSuite.workflowRun.databaseId, .checkSuite.workflowRun.event,
-             (.checkSuite.branch.name // ""), $c.oid, .checkSuite.workflowRun.createdAt, .checkSuite.status, (.checkSuite.conclusion // ""),
-             .name, .status, (.conclusion // ""), (.startedAt // ""), (.completedAt // ""), 1] ),
-        ( if ($c.statusCheckRollup.contexts.pageInfo.hasNextPage // false) then
-            [($c.statusCheckRollup.contexts.nodes // [])[] | select(.checkSuite.workflowRun != null)] | unique_by(.checkSuite.workflowRun.databaseId) | .[]
-            | .checkSuite.workflowRun.workflow.id as $wid | ["rollup", ($p | .[$wid]), .checkSuite.workflowRun.databaseId, .checkSuite.workflowRun.event,
-               (.checkSuite.branch.name // ""), $c.oid, .checkSuite.workflowRun.createdAt, .checkSuite.status, (.checkSuite.conclusion // ""),
-               "#truncated", "COMPLETED", "TRUNCATED", "", "", 1]
-          else empty end )
+        # the head and the newer history of main (#4798): a push run on an older main commit can fall out of the 12 newest runs of its workflow
+        ( [$c] + [($c.history.nodes // [])[] | select(.oid != $c.oid)] | .[] | . as $x
+          | ( ($x.statusCheckRollup.contexts.nodes // [])[] | select(.checkSuite.workflowRun != null)
+              | .checkSuite.workflowRun.workflow.id as $wid | ["rollup", ($p | .[$wid]), .checkSuite.workflowRun.databaseId, .checkSuite.workflowRun.event,
+                 (.checkSuite.branch.name // ""), $x.oid, .checkSuite.workflowRun.createdAt, .checkSuite.status, (.checkSuite.conclusion // ""),
+                 .name, .status, (.conclusion // ""), (.startedAt // ""), (.completedAt // ""), 1] ),
+            ( if ($x.statusCheckRollup.contexts.pageInfo.hasNextPage // false) then
+                [($x.statusCheckRollup.contexts.nodes // [])[] | select(.checkSuite.workflowRun != null)] | unique_by(.checkSuite.workflowRun.databaseId) | .[]
+                | .checkSuite.workflowRun.workflow.id as $wid | ["rollup", ($p | .[$wid]), .checkSuite.workflowRun.databaseId, .checkSuite.workflowRun.event,
+                   (.checkSuite.branch.name // ""), $x.oid, .checkSuite.workflowRun.createdAt, .checkSuite.status, (.checkSuite.conclusion // ""),
+                   "#truncated", "COMPLETED", "TRUNCATED", "", "", 1]
+              else empty end ) )
       | map(tostring) | join("\t")' "$1"
 }
 # fetch RAW CACHE -> RAW/{C,tree,read,runs.tsv,attempts.tsv,graphql.json,workflows.json}; never fails: a failed read
@@ -653,6 +655,13 @@ self_test() {
         normalize "$tmp/cut.json" "$tmp/wf.json"
     }
     row normalize_marks_a_cut_job_list 0 "$(printf '#truncated\tCOMPLETED\tTRUNCATED')" "" -- st_cut
+    st_hist() {
+        local ctx='{"pageInfo":{"hasNextPage":false},"nodes":[{"name":"gate","status":"COMPLETED","conclusion":"SUCCESS","startedAt":"s","completedAt":"e","checkSuite":{"status":"COMPLETED","conclusion":"SUCCESS","branch":{"name":"main"},"workflowRun":{"databaseId":RID,"event":"push","createdAt":"c","workflow":{"id":"WC"}}}}]}'
+        printf '%s' '{"data":{"repository":{"defaultBranchRef":{"name":"main","target":{"oid":"'"$ST_C"'","tree":{"oid":"t"},"statusCheckRollup":{"contexts":'"${ctx/RID/301}"'},"history":{"nodes":[{"oid":"'"$ST_C"'","statusCheckRollup":{"contexts":'"${ctx/RID/301}"'}},{"oid":"'"$ST_X"'","statusCheckRollup":{"contexts":'"${ctx/RID/302}"'}}]}}}}}}' > "$tmp/hist.json"
+        normalize "$tmp/hist.json" "$tmp/wf.json" | cut -f1,3,6 | sort | uniq -c
+    }
+    # #4798: a push run on an older main commit is read from the history rollup, and the head is not read twice
+    row normalize_reads_main_history_rollups 0 "$(printf '1 rollup\t302\t%s' "$ST_X")" "$(printf '2 rollup\t301')" -- st_hist
     d="$tmp/noprod"; fixture "$d"
     st_a_lane_without_a_producer_is_not_measured() { decide "$ST_LANES
 v-e;verdict;check E;-;-;-" "$d" 2026-10-04T06:00:00Z; cat "$d/line" "$d/lanes.tsv"; }
@@ -823,7 +832,7 @@ m21_failure_row_after_history	s/\[ -z "\$PRINTED\$HISTDONE" \]/[ -z "$PRINTED" ]
 m22_self_test_inbox_inherited	s/^    export INBOX="\$tmp\/inbox.md"   # whatever/    : # whatever/
 m23_drill_writes_named_inbox	s/then INBOXF="\$(mktemp)" || exit 3; DRILL=1;/then DRILL="";/
 m24_one_leg_hides_another	/fb\[JN\[r, k\]\] = 1; bad = bad/d
-m25_cut_rollup_read	s/if (\$c.statusCheckRollup.contexts.pageInfo.hasNextPage \/\/ false) then/if false then/
+m25_cut_rollup_read	s/if (\$x.statusCheckRollup.contexts.pageInfo.hasNextPage \/\/ false) then/if false then/
 m26_day_set_late	/^    DAY=.*# before any step/d;s/^    step outdir$/    DAY="${NOW%%T*}"; step outdir/
 m27_pinned_not_required	s/if \[ -n "\$PINNED" \] || \[ -f "\$HERE\/PIN" \]; then/if [ -f "$HERE\/PIN" ]; then/
 m28_unhashed_pin_accepted	s/|| { PIN="unhashed"; exit 1; }/|| :/
@@ -845,7 +854,9 @@ m43_judge_only_the_head	s/if (LAG <= MAXLAG) J = best; else LAG = 0/LAG = 0/
 m44_lag_cap_ignored	s/if (LAG <= MAXLAG) J = best;/if (1) J = best;/
 m45_lag_not_printed	s/note = (C != HEAD \&\& /note = (0 \&\& /
 m46_a_partial_commit_counts	s/!((h, i) in HAS)) all = 0/0) all = 0/
-m47_bundle_keeps_the_head	s/\[\[ "\${j:-}" =~ \^\[0-9a-f\]{40}\$ \]\] \&\& CSHA="\$j"/:/'
+m47_bundle_keeps_the_head	s/\[\[ "\${j:-}" =~ \^\[0-9a-f\]{40}\$ \]\] \&\& CSHA="\$j"/:/
+m48_history_not_read	s/\[\$c\] + \[(\$c.history.nodes \/\/ \[\])\[\] | select(.oid != \$c.oid)\]/[$c]/
+m49_head_read_twice	s/ | select(.oid != \$c.oid)\]/]/'
 # each planted mutant must change the file, still parse, and turn at least one row RED
 mutants() {
     local tmp pass=0 fail=0 name expr o rc
