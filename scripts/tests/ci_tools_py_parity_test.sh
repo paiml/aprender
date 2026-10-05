@@ -206,14 +206,17 @@ check "coverage-report-scope LIVE exclude gpu" "$tmp/empty" \
     "$PY" scripts/coverage_report_scope.py --exclude aprender-gpu -- "$BIN" coverage-report-scope --exclude aprender-gpu
 
 # --- 4. tarball-workspace (its .py is deleted: the validator is read from git) ---------
-TW_REV=eb60aef156667e2da9aab6e3a78ed1ae1540d648
+# Pinned by BLOB id, not by commit: the blob is in main's history (every commit that carried
+# scripts/lib/tarball_workspace.py), so any full clone has it whichever way a branch merges.
+TW_PY_BLOB=86d653ebf2c2b678a40dca40ab144c91a9cf0bb2   # scripts/lib/tarball_workspace.py
+TW_COMPAT_BLOB=9eca16fb1c018730f3c002d22ef888ec3054e20e # scripts/lib/toml_compat.py
 mkdir -p "$tmp/pyval" "$tmp/twfix"
-if ! git cat-file -e "$TW_REV:scripts/lib/tarball_workspace.py" 2>/dev/null; then
-    echo "FAIL: not measured: $TW_REV is not in this clone, so the original cannot run (fetch it)" >&2
+if ! git cat-file -e "$TW_PY_BLOB" 2>/dev/null || ! git cat-file -e "$TW_COMPAT_BLOB" 2>/dev/null; then
+    echo "FAIL: not measured: the original's blobs are not in this clone (shallow? fetch main's history)" >&2
     exit 1
 fi
-git show "$TW_REV:scripts/lib/tarball_workspace.py" >"$tmp/pyval/tarball_workspace.py"
-git show "$TW_REV:scripts/lib/toml_compat.py" >"$tmp/pyval/toml_compat.py"
+git cat-file blob "$TW_PY_BLOB" >"$tmp/pyval/tarball_workspace.py"
+git cat-file blob "$TW_COMPAT_BLOB" >"$tmp/pyval/toml_compat.py"
 # toml_compat's 3.10 fallback reads only single-line [package] strings; the validator is
 # the real TOML parser, so an interpreter without tomllib cannot validate.
 if ! "$PY" -c 'import tomllib' 2>/dev/null; then
