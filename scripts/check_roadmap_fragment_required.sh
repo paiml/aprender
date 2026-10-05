@@ -230,8 +230,8 @@ judge() {
     # --- RULE 2: the aggregate at head is REGENERATED, not drifting ----------
     # ONE WRITER (T21, operator ruling RQ-8): a diff that changes fragments but not
     # roadmap.yaml is the one-writer PR shape. Its committed == fresh comparison
-    # MOVES to the nightly writer PR (which writes roadmap.yaml, so it lands in the
-    # branch below) and to the tag (check_publish_preflight.sh R9); on the PR, CI
+    # MOVES to the writer PR (which writes roadmap.yaml, so it lands in the
+    # branch below); a tag-time check is a separate follow-up. On the PR, CI
     # regenerates before any reader (scripts/roadmap_one_writer_ci.sh). A diff that
     # DOES write roadmap.yaml keeps this rule exactly as before.
     # Only the committed == fresh COMPARISON moves: the fragments must still aggregate (quorum r2 C), or a local
@@ -263,7 +263,7 @@ judge() {
     # copy, so committed != aggregate(head). Its copy is still fragment-faithful iff it equals aggregate(its copy,
     # the head fragments of the ids it CONTAINS): fragments it never saw are left out, every entry it holds must be
     # its fragment's bytes (a hand edit of a fragment-covered entry differs; a base-only edit is rule 1's).
-    # committed == fresh is then proved at the tag (check_publish_preflight.sh R9).
+    # committed == fresh is then proved by the next writer PR.
     # A fragment main EDITED after the writer branched (planned -> completed) is held at its older version, which
     # was main's at the writer's merge-base (quorum r2 E). So an entry may be its fragment's bytes at head OR at that
     # merge-base: both were on main. The version whose bytes the copy holds is chosen; a hand edit matches neither.
@@ -287,7 +287,7 @@ judge() {
         if bash "$AGG" --print --roadmap "$td/head.yaml" --entries "$td/held" >"$td/a0" 2>/dev/null &&
            cmp -s -- "$td/head.yaml" "$td/a0"; then
             rc=0
-            printf 'ok    STALE WRITER: only %s changes; every entry it holds is its fragment at head or at its merge-base (fragments landed after it are R9-checked at the tag)\n' "$ROADMAP_FILE"
+            printf 'ok    STALE WRITER: only %s changes; every entry it holds is its fragment at head or at its merge-base (fragments landed after it belong to the next writer PR)\n' "$ROADMAP_FILE"
         fi
     fi
     rm -rf -- "${td:?}"
