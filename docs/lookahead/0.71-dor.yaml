@@ -204,7 +204,9 @@ rows:
       # CLI path: PR 2/4 = PMAT-3793 (b61ba3251b, apr run --json-schema/--grammar on CPU loops, constrained_run_tests.rs)
       # is on origin/PMAT-3793-apr-run-json-schema only, stacked on release/0.69.1-batch-1: 2 own commits, 104 unmerged
       # patches vs main -> needs a rebase onto main before it can land. PR state not_measured (no GH call spent).
-    baseline: "llama.cpp d1d3c3396 llama-cli --json-schema (same schema, same prompt), per EXT R-17 like-for-like"
+    baseline: {path: docs/lookahead/0.71-json-schema-baseline.md, on_main: false,
+               staged_at: origin/la-71/dor-071, staged_marker: "003 is beyond the reference",
+               note: "measured 2026-10-05 on lambda CPU, llama-server b3daa077a (d1d3c3396 + 426), qwen2.5-coder-0.5b Q4_K_M, CRUX-I-11 schemas verbatim: 001 10/10, 002 10/10, controls 0/10; 003 is HTTP 200 {} at the reference (keyword silently dropped), so 003 is a beat, not parity. Like-for-like is the server path, not llama-cli"}
     owner_proposed: "#3568 ticket owner (PMAT-3747/3793 author), not L1"   # R-71-1 answered 2026-10-04: 0.71 (review quorum)
   - id: OBS-00
     ev_rank: 10

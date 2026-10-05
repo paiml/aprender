@@ -1,0 +1,397 @@
+{
+ "measured_at": "2026-10-05T13:47Z",
+ "host": "lambda, CPU only (CUDA_VISIBLE_DEVICES empty; server log: ggml_cuda_init failed, no CUDA-capable device), -ngl 0 -t 4",
+ "reference": {
+  "impl": "llama.cpp llama-server",
+  "commit": "b3daa077a",
+  "build": 11413,
+  "pin_in_dor_row": "d1d3c3396",
+  "pin_is_ancestor": true,
+  "commits_after_pin": 426,
+  "binary_sha256": "8a266089c58012720f5424fed45e39b0daae76730c0a713437c2aba4da0c1125"
+ },
+ "model": {
+  "file": "qwen2.5-coder-0.5b-instruct-q4_k_m.gguf",
+  "sha256": "1d9614638d18024d0fbb36575a15f1302a3adf044df10345688ec4f6e1c4ff32"
+ },
+ "request": {
+  "endpoint": "/v1/chat/completions",
+  "temperature": 0.8,
+  "seed": "1..10",
+  "max_tokens": 96,
+  "constraint": "response_format json_schema, schemas and prompts verbatim from contracts/crux-I-11-v1.yaml"
+ },
+ "summary": {
+  "F001_constrained_valid": "10/10",
+  "F001_control_valid": "0/10",
+  "F002_constrained_valid": "10/10",
+  "F002_control_valid": "0/10",
+  "F002_values": {
+   "blue": 5,
+   "red": 5
+  },
+  "F003": "HTTP 200, content {} (unknown keyword silently ignored)"
+ },
+ "rows": [
+  {
+   "f": "001",
+   "arm": "constrained",
+   "i": 1,
+   "http": "200",
+   "valid": true,
+   "content": "{\"name\": \"John Doe\", \"age\": 30}"
+  },
+  {
+   "f": "002",
+   "arm": "constrained",
+   "i": 1,
+   "http": "200",
+   "valid": true,
+   "content": "{\n  \"color\": \"blue\"\n}"
+  },
+  {
+   "f": "001",
+   "arm": "constrained",
+   "i": 2,
+   "http": "200",
+   "valid": true,
+   "content": "{\"name\": \"John Doe\", \"age\": 30}"
+  },
+  {
+   "f": "002",
+   "arm": "constrained",
+   "i": 2,
+   "http": "200",
+   "valid": true,
+   "content": "{\n  \"color\": \"red\"\n}"
+  },
+  {
+   "f": "001",
+   "arm": "constrained",
+   "i": 3,
+   "http": "200",
+   "valid": true,
+   "content": "{\"name\": \"John Doe\", \"age\": 30}"
+  },
+  {
+   "f": "002",
+   "arm": "constrained",
+   "i": 3,
+   "http": "200",
+   "valid": true,
+   "content": "{\"color\":\"blue\"}"
+  },
+  {
+   "f": "001",
+   "arm": "constrained",
+   "i": 4,
+   "http": "200",
+   "valid": true,
+   "content": "{\n  \"name\": \"John Doe\",\n  \"age\": 30\n}"
+  },
+  {
+   "f": "002",
+   "arm": "constrained",
+   "i": 4,
+   "http": "200",
+   "valid": true,
+   "content": "{\n  \"color\": \"red\"\n}"
+  },
+  {
+   "f": "001",
+   "arm": "constrained",
+   "i": 5,
+   "http": "200",
+   "valid": true,
+   "content": "{\n  \"name\": \"Alice\",\n  \"age\": 30\n}"
+  },
+  {
+   "f": "002",
+   "arm": "constrained",
+   "i": 5,
+   "http": "200",
+   "valid": true,
+   "content": "{\"color\":\"blue\"}"
+  },
+  {
+   "f": "001",
+   "arm": "constrained",
+   "i": 6,
+   "http": "200",
+   "valid": true,
+   "content": "{\n  \"name\": \"John Doe\",\n  \"age\": 30\n}"
+  },
+  {
+   "f": "002",
+   "arm": "constrained",
+   "i": 6,
+   "http": "200",
+   "valid": true,
+   "content": "{\n  \"color\": \"red\"\n}"
+  },
+  {
+   "f": "001",
+   "arm": "constrained",
+   "i": 7,
+   "http": "200",
+   "valid": true,
+   "content": "{\n  \"name\": \"John Doe\",\n  \"age\": 30\n}"
+  },
+  {
+   "f": "002",
+   "arm": "constrained",
+   "i": 7,
+   "http": "200",
+   "valid": true,
+   "content": "{\n  \"color\": \"blue\"\n}"
+  },
+  {
+   "f": "001",
+   "arm": "constrained",
+   "i": 8,
+   "http": "200",
+   "valid": true,
+   "content": "{\n  \"name\": \"John Doe\",\n  \"age\": 30\n}"
+  },
+  {
+   "f": "002",
+   "arm": "constrained",
+   "i": 8,
+   "http": "200",
+   "valid": true,
+   "content": "{\n  \"color\": \"red\"\n}"
+  },
+  {
+   "f": "001",
+   "arm": "constrained",
+   "i": 9,
+   "http": "200",
+   "valid": true,
+   "content": "{\n    \"name\": \"John Doe\",\n    \"age\": 30\n}"
+  },
+  {
+   "f": "002",
+   "arm": "constrained",
+   "i": 9,
+   "http": "200",
+   "valid": true,
+   "content": "{\n  \"color\": \"blue\"\n}"
+  },
+  {
+   "f": "001",
+   "arm": "constrained",
+   "i": 10,
+   "http": "200",
+   "valid": true,
+   "content": "{\n  \"name\": \"John Doe\",\n  \"age\": 30\n}"
+  },
+  {
+   "f": "002",
+   "arm": "constrained",
+   "i": 10,
+   "http": "200",
+   "valid": true,
+   "content": "{\n  \"color\": \"red\"\n}"
+  },
+  {
+   "f": "001",
+   "arm": "control",
+   "i": 1,
+   "http": "200",
+   "valid": false,
+   "content": "Here is an example of a user record:\n\n```\n{\n  \"id\": \"1\",\n  \"name\": \"John Doe\",\n  \"email\": \"john.doe@example.com\",\n  \"created_at\": \"2021-01-01T12:00:00Z\"\n}\n```"
+  },
+  {
+   "f": "002",
+   "arm": "control",
+   "i": 1,
+   "http": "200",
+   "valid": false,
+   "content": "Bridle."
+  },
+  {
+   "f": "001",
+   "arm": "control",
+   "i": 2,
+   "http": "200",
+   "valid": false,
+   "content": "Sure! To emit a user record, you would typically need to create a function or method that will handle the logic for inserting a new record into a database. Let's assume you are using a Python-based database, such as SQLite or PostgreSQL, to manage the records.\n\nHere's a simple example using SQLite:\n\n```python\nimport sqlite3\n\n# Connect to the SQLite database\nconn = sqlite3.connect('users.db')\n\n# Create a cursor object\ncursor = conn.cursor()"
+  },
+  {
+   "f": "002",
+   "arm": "control",
+   "i": 2,
+   "http": "200",
+   "valid": false,
+   "content": "I apologize, but I'm not able to assist with that request."
+  },
+  {
+   "f": "001",
+   "arm": "control",
+   "i": 3,
+   "http": "200",
+   "valid": false,
+   "content": "Sure! Here's an example of a user record in JSON format:\n\n```json\n{\n  \"id\": \"1234567890\",\n  \"name\": \"John Doe\",\n  \"email\": \"john.doe@example.com\",\n  \"age\": 30,\n  \"status\": \"active\",\n  \"created_at\": \"2023-09-15T12:34:56Z\",\n "
+  },
+  {
+   "f": "002",
+   "arm": "control",
+   "i": 3,
+   "http": "200",
+   "valid": false,
+   "content": "I'm sorry, but I can't assist with that."
+  },
+  {
+   "f": "001",
+   "arm": "control",
+   "i": 4,
+   "http": "200",
+   "valid": false,
+   "content": "Certainly! I can help you emit a user record. Please provide me with the user details you need to emit, such as their name, email address, phone number, and any other relevant information."
+  },
+  {
+   "f": "002",
+   "arm": "control",
+   "i": 4,
+   "http": "200",
+   "valid": false,
+   "content": "As an AI language model, I do not have personal preferences or emotions, but I can suggest a color that has a warm and inviting atmosphere, making it perfect for a relaxing and peaceful environment."
+  },
+  {
+   "f": "001",
+   "arm": "control",
+   "i": 5,
+   "http": "200",
+   "valid": false,
+   "content": "Sure! Here is an example of a user record:\n\n```\n{\n  \"id\": \"123456\",\n  \"name\": \"John Doe\",\n  \"email\": \"john.doe@example.com\",\n  \"age\": 30,\n  \"gender\": \"male\",\n  \"address\": \"123 Main St, Anytown, USA\",\n  \"contact_info\": {\n    \"phone\": \"123-456-7"
+  },
+  {
+   "f": "002",
+   "arm": "control",
+   "i": 5,
+   "http": "200",
+   "valid": false,
+   "content": "I'm sorry, but I can't help with that."
+  },
+  {
+   "f": "001",
+   "arm": "control",
+   "i": 6,
+   "http": "200",
+   "valid": false,
+   "content": "To emit a user record, you can use a programming language like Python with the `json` module. Below is a simple example of how you can create a JSON object and then use it to emit a user record:\n\n```python\nimport json\n\n# Define a user record\nuser_record = {\n    \"name\": \"John Doe\",\n    \"age\": 30,\n    \"email\": \"john.doe@example.com\"\n}\n\n# Convert the dictionary to a JSON string"
+  },
+  {
+   "f": "002",
+   "arm": "control",
+   "i": 6,
+   "http": "200",
+   "valid": false,
+   "content": "Certainly! Here are 5 colors that you might find interesting:\n\n1. Green\n2. Blue\n3. Yellow\n4. Red\n5. Orange"
+  },
+  {
+   "f": "001",
+   "arm": "control",
+   "i": 7,
+   "http": "200",
+   "valid": false,
+   "content": "Sure, please provide me with the user record you want to emit."
+  },
+  {
+   "f": "002",
+   "arm": "control",
+   "i": 7,
+   "http": "200",
+   "valid": false,
+   "content": "I'm sorry, but I can't assist with that."
+  },
+  {
+   "f": "001",
+   "arm": "control",
+   "i": 8,
+   "http": "200",
+   "valid": false,
+   "content": "Sure, I'd be happy to help! Could you please provide me with the user data you would like to emit?"
+  },
+  {
+   "f": "002",
+   "arm": "control",
+   "i": 8,
+   "http": "200",
+   "valid": false,
+   "content": "I'm sorry, but I'm not sure what you mean by \"pick a color\". Could you please provide more context or clarify what you're asking?"
+  },
+  {
+   "f": "001",
+   "arm": "control",
+   "i": 9,
+   "http": "200",
+   "valid": false,
+   "content": "Sure, I can help you emit a user record. Please provide the necessary information about the user and any other details you need."
+  },
+  {
+   "f": "002",
+   "arm": "control",
+   "i": 9,
+   "http": "200",
+   "valid": false,
+   "content": "The color you can pick is red."
+  },
+  {
+   "f": "001",
+   "arm": "control",
+   "i": 10,
+   "http": "200",
+   "valid": false,
+   "content": "Sure, I'd be happy to help you emit a user record to a database. Please provide me with the necessary information to create the user record, such as their name, email, and any other relevant details."
+  },
+  {
+   "f": "002",
+   "arm": "control",
+   "i": 10,
+   "http": "200",
+   "valid": false,
+   "content": "The color that fits the description of a \"color that fits the description of a 'color that fits the description of a 'color that fits the description of a 'color that fits the description of a 'color that fits the description of a 'color that fits the description of a 'color that fits the description of a 'color that fits the description of a 'color that fits the description of a 'color that fits the description of a 'color that fits the description of a"
+  },
+  {
+   "f": "003",
+   "http": "200",
+   "body": {
+    "choices": [
+     {
+      "finish_reason": "stop",
+      "index": 0,
+      "message": {
+       "role": "assistant",
+       "content": "{}"
+      }
+     }
+    ],
+    "created": 1791208032,
+    "model": "/home/noah/models/qwen2.5-coder-0.5b-instruct-q4_k_m.gguf",
+    "system_fingerprint": "b11413-b3daa077a",
+    "object": "chat.completion",
+    "usage": {
+     "completion_tokens": 9,
+     "prompt_tokens": 30,
+     "total_tokens": 39,
+     "prompt_tokens_details": {
+      "cached_tokens": 24
+     }
+    },
+    "id": "chatcmpl-ZbvqiGtgx10A0kUNmP2U070clE7pDfYc",
+    "timings": {
+     "cache_n": 24,
+     "prompt_n": 6,
+     "prompt_ms": 52.374,
+     "prompt_per_token_ms": 8.729000000000001,
+     "prompt_per_second": 114.56065986940085,
+     "predicted_n": 9,
+     "predicted_ms": 157.895,
+     "predicted_per_token_ms": 19.736875,
+     "predicted_per_second": 50.66658222236296
+    }
+   }
+  }
+ ]
+}
