@@ -1,0 +1,183 @@
+diff --git a/crates/aprender-contracts-cli/src/commands/census.rs b/crates/aprender-contracts-cli/src/commands/census.rs
+index 56e8c29f1f..d92ed2c5a0 100644
+--- a/crates/aprender-contracts-cli/src/commands/census.rs
++++ b/crates/aprender-contracts-cli/src/commands/census.rs
+@@ -126,6 +126,12 @@ pub struct Census {
+     #[serde(default)]
+     pub by_concept: BTreeMap<String, usize>,
+     pub by_anchoring: AnchoringCounts,
++    /// #4709 P-3: contracts whose `entity:` is `{ type: code, ref }` but whose ref is
++    /// not a symbol `pv extract` resolved, by path. `entity.ref` is a literal to the
++    /// extractor, so before this a ref to nothing counted as bound. Each one is
++    /// counted `unanchored` (a ref to nothing anchors nothing) and adds nothing to
++    /// `by_entity_type`, so `by_anchoring` keeps its three keys and its sum.
++    pub instance_unresolved: Vec<String>,
+     /// sha256 over the sorted, unique contract ids (file stems), newline
+     /// separated. Two corpora with the same ids hash the same; adding, removing
+     /// or renaming one changes it.
+@@ -204,6 +210,29 @@ fn scalar_field(block: &str, key: &str) -> Option<String> {
+     }
+ }
+ 
++/// The `ref:` of the top-level `entity:` block, or None.
++fn entity_ref(yaml: &str) -> Option<String> {
++    scalar_field(&entity_block(yaml)?, "ref")
++}
++
++/// Every symbol `pv extract` resolved: the subjects of `sym:resolved true` in the
++/// committed graph beside the corpus (`<dir>/contracts.nt`). No readable graph is
++/// an EMPTY set, never "everything resolves": every `type: code` ref then lands in
++/// `instance_unresolved`, so a missing graph can only lower the bound count.
++fn resolved_symbols(dir: &Path) -> BTreeSet<String> {
++    const SYMBOL: &str = "<https://ont.paiml.dev/v1alpha1/symbol/";
++    const RESOLVED: &str = "> <https://ont.paiml.dev/v1alpha1/sym/resolved> \"true\"";
++    let Ok(nt) = std::fs::read_to_string(dir.join("contracts.nt")) else {
++        return BTreeSet::new();
++    };
++    nt.lines()
++        .filter_map(|line| {
++            let (sym, _) = line.strip_prefix(SYMBOL)?.split_once(RESOLVED)?;
++            Some(sym.to_string())
++        })
++        .collect()
++}
++
+ fn stem_of(path: &Path) -> String {
+     path.file_stem()
+         .and_then(|s| s.to_str())
+@@ -263,8 +292,9 @@ pub fn census_of(dir: &Path) -> Result<Census, Box<dyn std::error::Error>> {
+     let mut census = empty_census(files.len(), quarantined_n(dir));
+     let mut errors = Vec::new();
+     let mut ids = BTreeSet::new();
++    let resolved = resolved_symbols(dir);
+     for path in &files {
+-        tally(path, &mut census, &mut ids, &mut errors);
++        tally(path, &resolved, &mut census, &mut ids, &mut errors);
+     }
+     if !errors.is_empty() {
+         return Err(ParseErrors {
+@@ -332,6 +362,7 @@ fn empty_census(n_files: usize, quarantined_n: usize) -> Census {
+         by_entity_type: BTreeMap::new(),
+         by_concept: BTreeMap::new(),
+         by_anchoring: AnchoringCounts::default(),
++        instance_unresolved: Vec::new(),
+         id_set_sha256: String::new(),
+         declared_external: Vec::new(),
+         timing: Timing::default(),
+@@ -342,6 +373,7 @@ fn empty_census(n_files: usize, quarantined_n: usize) -> Census {
+ /// what it is anchored to.
+ fn tally(
+     path: &Path,
++    resolved: &BTreeSet<String>,
+     census: &mut Census,
+     ids: &mut BTreeSet<String>,
+     errors: &mut Vec<(PathBuf, String)>,
+@@ -365,7 +397,15 @@ fn tally(
+         census.by_anchoring.unanchored += 1;
+         return;
+     };
+-    let (anchoring, ty) = classify(&text);
++    let (mut anchoring, mut ty) = classify(&text);
++    if anchoring == Anchoring::Instance
++        && ty.as_deref() == Some("code")
++        && !entity_ref(&text).is_some_and(|r| resolved.contains(&r))
++    {
++        census.instance_unresolved.push(path.display().to_string());
++        anchoring = Anchoring::Unanchored;
++        ty = None;
++    }
+     match anchoring {
+         Anchoring::Unanchored => census.by_anchoring.unanchored += 1,
+         Anchoring::Class => census.by_anchoring.class += 1,
+@@ -411,6 +451,14 @@ fn render_table(census: &Census) -> String {
+         "  instance   {:>6}   (entity: {{type, ref}} — one named thing)",
+         census.by_anchoring.instance
+     );
++    let _ = writeln!(
++        out,
++        "  unresolved {:>6}   (entity: {{type: code, ref}} naming no resolved symbol; counted unanchored)",
++        census.instance_unresolved.len()
++    );
++    for path in &census.instance_unresolved {
++        let _ = writeln!(out, "    {path}");
++    }
+     let _ = writeln!(out, "\nby_entity_type");
+     if census.by_entity_type.is_empty() {
+         let _ = writeln!(
+@@ -584,6 +632,68 @@ mod tests {
+         assert_eq!(c.by_kind.get("kernel"), Some(&1), "kind defaults to kernel");
+     }
+ 
++    // ---- #4709 P-3: a code ref counts as bound only when the graph resolves it ----
++
++    fn anchored(dir: &Path, name: &str, ty: &str, r: &str) {
++        std::fs::write(
++            dir.join(name),
++            format!("metadata:\n  version: 1.0.0\n  description: P-3 fixture\nentity:\n  type: {ty}\n  ref: {r}\n"),
++        )
++        .expect("fixture contract is writable");
++    }
++
++    fn graph(dir: &Path, rows: &[(&str, &str)]) {
++        let nt: String = rows
++            .iter()
++            .map(|(sym, v)| {
++                format!("<https://ont.paiml.dev/v1alpha1/symbol/{sym}> <https://ont.paiml.dev/v1alpha1/sym/resolved> \"{v}\"^^<http://www.w3.org/2001/XMLSchema#boolean> .\n")
++            })
++            .collect();
++        std::fs::write(dir.join("contracts.nt"), nt).expect("fixture graph is writable");
++    }
++
++    #[test]
++    fn a_code_ref_is_bound_only_when_the_graph_resolves_it() {
++        let tmp = tempfile::tempdir().expect("temp dir is creatable");
++        anchored(tmp.path(), "real.yaml", "code", "x::y::f");
++        anchored(tmp.path(), "ghost.yaml", "code", "no::such::symbol");
++        anchored(tmp.path(), "stale.yaml", "code", "x::y::gone");
++        graph(tmp.path(), &[("x::y::f", "true"), ("x::y::gone", "false")]);
++        let c = census_of(tmp.path()).expect("censuses");
++        assert_eq!(c.by_anchoring.instance, 1, "only the resolved ref is bound");
++        assert_eq!(c.by_anchoring.unanchored, 2);
++        assert_eq!(c.instance_unresolved.len(), 2);
++        assert!(c
++            .instance_unresolved
++            .iter()
++            .any(|p| p.ends_with("ghost.yaml")));
++        assert!(c
++            .instance_unresolved
++            .iter()
++            .any(|p| p.ends_with("stale.yaml")));
++        assert_eq!(c.by_entity_type.get("code"), Some(&1));
++        let a = c.by_anchoring;
++        assert_eq!(a.unanchored + a.class + a.instance, c.n_parsed);
++    }
++
++    #[test]
++    fn without_a_graph_every_code_ref_is_unresolved() {
++        let tmp = tempfile::tempdir().expect("temp dir is creatable");
++        anchored(tmp.path(), "real.yaml", "code", "x::y::f");
++        let c = census_of(tmp.path()).expect("censuses");
++        assert_eq!(c.by_anchoring.instance, 0, "no graph proves nothing");
++        assert_eq!(c.instance_unresolved.len(), 1);
++    }
++
++    #[test]
++    fn a_ref_of_another_entity_type_is_not_judged_by_the_graph() {
++        let tmp = tempfile::tempdir().expect("temp dir is creatable");
++        anchored(tmp.path(), "model.yaml", "gguf", "models/x.gguf");
++        let c = census_of(tmp.path()).expect("censuses");
++        assert_eq!(c.by_anchoring.instance, 1);
++        assert!(c.instance_unresolved.is_empty());
++    }
++
+     #[test]
+     fn quarantined_contracts_are_counted_and_not_censused() {
+         let tmp = corpus(&["a.yaml", "quarantine/broken.yaml"]);
+@@ -633,6 +743,7 @@ mod tests {
+             "by_kind",
+             "by_entity_type",
+             "by_anchoring",
++            "instance_unresolved",
+             "id_set_sha256",
+             "declared_external",
+             "timing",
