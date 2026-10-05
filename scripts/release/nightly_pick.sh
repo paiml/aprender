@@ -32,8 +32,8 @@ row() { # NAME WANT-RC MUST MUSTNOT -- CMD...
     out="$("$@" 2>&1)"; rc=$?
     CASES=$((CASES + 1))
     if [ "$rc" != "$want" ]; then printf 'RED   %-44s rc=%s want %s\n' "$name" "$rc" "$want"; FAILED=$((FAILED + 1)); return; fi
-    if [ -n "$must" ] && ! printf '%s\n' "$out" | grep -qF -e "$must"; then printf 'RED   %-44s missing: %s\n' "$name" "$must"; FAILED=$((FAILED + 1)); return; fi
-    if [ -n "$mustnot" ] && printf '%s\n' "$out" | grep -qF -e "$mustnot"; then printf 'RED   %-44s forbidden: %s\n' "$name" "$mustnot"; FAILED=$((FAILED + 1)); return; fi
+    if [ -n "$must" ] && ! grep -qF -e "$must" <<< "$out"; then printf 'RED   %-44s missing: %s\n' "$name" "$must"; FAILED=$((FAILED + 1)); return; fi
+    if [ -n "$mustnot" ] && grep -qF -e "$mustnot" <<< "$out"; then printf 'RED   %-44s forbidden: %s\n' "$name" "$mustnot"; FAILED=$((FAILED + 1)); return; fi
     printf 'ok    %s\n' "$name"
 }
 same() { # NAME A B : two outputs must be equal
