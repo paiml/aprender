@@ -199,7 +199,7 @@ evaluate() {
                 else if (pick == "" && pwhy == "") pwhy = WHY
             }
             if (pick == "") {
-                if (MODE == "final") out(i, "not_measured", "", "", (pwhy != "" ? pwhy : "no run on C") (other != "" ? "; newest run " other : (m == 0 ? "; no run on main" : "")))
+                if (MODE == "final") out(i, "not_measured", "", "", (pwhy != "" ? pwhy : "no run on the judged commit") (other != "" ? "; newest run " other : (m == 0 ? "; no run on main" : "")))
                 continue
             }
             ST = pS; EN = pE
