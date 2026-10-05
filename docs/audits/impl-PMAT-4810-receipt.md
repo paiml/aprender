@@ -1,16 +1,37 @@
 # PMAT-4810 implementation receipt
 
 Chat routes stop on every end-of-generation marker, not only the declared EOS
-(sub-ticket of #4661). Fix commit `611d5fb846`, test commit `450940a338`,
-parent `cf84e9def9`.
+(sub-ticket of #4661). Parent `cf84e9def9`. Commits:
+
+| Commit | What |
+|--------|------|
+| `611d5fb846` | the fix: chat paths use `completion_stop_tokens` |
+| `450940a338` | the RED/GREEN unit test |
+| `3bba10b0c7` | roadmap entry |
+| `9dbcdf975a` | this receipt (quorum round 1) |
+| `7491a6f3e4` | every chat path calls `chat_stop_tokens`; the helper `stop_tokens_unless_ignore_eos` is removed (quorum round 2) |
 
 ## AC 1: one stop set for every chat path
 
-`chat_stop_tokens(request, tokenizer, eos)` returns
-`completion_stop_tokens(tokenizer, Some(eos))`, or an empty set when
-`ignore_eos` is set. The quantized CPU, CUDA dense, CUDA MoE (`moe_gen_config`),
-Qwen3.5, cached and GPU chat paths all call it, so they stop on the same set as
-`/v1/completions`.
+`chat_stop_tokens(request, tokenizer, eos: Option<u32>)`
+(`crates/aprender-serve/src/api/openai_handlers.rs`) returns
+`completion_stop_tokens(tokenizer, eos)`, or an empty set when `ignore_eos` is
+set. Each chat path reaches it as follows. Line numbers are at `7491a6f3e4`:
+
+| Path | Call |
+|------|------|
+| CUDA dense, `try_cuda_backend` | `chat_quantized_config` at `cuda_chat_backend.rs:137` |
+| quantized CPU, `try_quantized_backend` | `chat_quantized_config` at `cuda_chat_backend.rs:423` |
+| `chat_quantized_config` itself | `chat_stop_tokens` at `openai_handlers.rs:283` |
+| CUDA MoE, `moe_gen_config` | `chat_stop_tokens` at `cuda_chat_backend.rs:1175` |
+| Qwen3.5, `try_qwen35_backend` | `chat_stop_tokens` at `qwen35_chat_backend.rs:144` |
+| GPU, `try_gpu_backend` | `chat_stop_tokens` at `openai_handlers.rs:1140` |
+| cached, `try_cached_backend` | `chat_stop_tokens` at `openai_handlers.rs:1254` |
+
+The first two rows are in code this branch does not change, which is why the
+diff alone does not show them. No other non-test code builds a chat stop set:
+`stop_tokens_unless_ignore_eos` is gone, and `chat_stop_tokens` is its only
+replacement. So every chat path stops on the same set as `/v1/completions`.
 
 ## AC 2: RED on the parent, GREEN on the fix
 
@@ -57,10 +78,22 @@ pre-commit gate (limit 25). Two blocks were moved into helpers without changing
 behaviour: the non-streaming batch/fallback path became `collect_cuda_turn` and
 the streaming path became `dispatch_cuda_stream`. The commit then passed the gate.
 
-`cargo test -p aprender-serve --lib` at `450940a338` ran 16,281 tests. It was
-stopped to free a shared test host after 16,215 had passed, 64 were ignored and
-0 had failed. The 2 tests that had not reported yet, both slow Qwen3.5 tests
-(`second_chat_turn_resumes_from_the_first_turns_checkpoint_4274` and
-`falsify_4228_005_prefill_bit_identical_4b`), are being re-run by name on the
-same built test binary. This receipt will be updated with that result. Until
-then, AC 4's "green" is partly measured.
+The lib suite was measured in three runs:
+
+| Head | Run | Result |
+|------|-----|--------|
+| `450940a338` | `cargo test -p aprender-serve --lib` (16,281 tests), stopped to free a shared test host | 16,215 passed, 64 ignored, 0 failed. 2 had not reported yet |
+| `450940a338` | those 2, by name with `--exact`, on the same built test binary: `second_chat_turn_resumes_from_the_first_turns_checkpoint_4274` and `falsify_4228_005_prefill_bit_identical_4b` | 2 passed, 0 failed, exit 0, 3440 s |
+| `7491a6f3e4` | rebuilt; `cargo test -p aprender-serve --lib api::openai_handlers -- --skip qwen35_serve_tests` | 52 passed, 0 failed, exit 0. Includes `chat_stops_on_every_eog_marker_not_just_eos` and all of `perf039_ignore_eos_tests` |
+
+Together, the first two rows are the complete lib suite at `450940a338`:
+16,217 passed, 64 ignored, 0 failed.
+
+`7491a6f3e4` changes only how the stop set is reached, not what it contains.
+For that commit, the third row covers the module that holds every chat path.
+`cargo check -p aprender-serve --lib --tests`, with and without
+`--features cuda`, and `cargo clippy -p aprender-serve --lib --features cuda --
+-D warnings` were both clean. The default build already compiles
+`moe_gen_config` and `try_qwen35_backend`; `--features cuda` adds
+`try_cuda_backend`. The full 16,281-test suite was not run again at
+`7491a6f3e4`.
