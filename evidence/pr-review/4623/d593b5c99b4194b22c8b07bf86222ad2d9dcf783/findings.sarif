@@ -1,0 +1,249 @@
+{
+  "$schema": "https://docs.oasis-open.org/sarif/sarif/v2.1.0/errata01/os/schemas/sarif-schema-2.1.0.json",
+  "version": "2.1.0",
+  "runs": [
+    {
+      "tool": {
+        "driver": {
+          "name": "pmat"
+        }
+      },
+      "invocations": [
+        {
+          "executionSuccessful": true,
+          "toolExecutionNotifications": []
+        }
+      ],
+      "results": [
+        {
+          "ruleId": "complexity_build_increase",
+          "level": "note",
+          "message": {
+            "text": "build() in gguf/cuda/mod.rs rose from cyclomatic 6 / cognitive 11 (base 316dee2c) to cyclomatic 8 / cognitive 13 (head); it grew from 125 to 147 lines. Cyclomatic stays under the repo threshold of 10; the new fns for_session (1/0), session_kv_len (1/1), resident_estimate (5/4) are small."
+          },
+          "properties": {
+            "grounding": "measured",
+            "command": [
+              "pmat",
+              "analyze",
+              "complexity",
+              "--file",
+              "h1/mod.rs",
+              "--format",
+              "json"
+            ],
+            "exit_code": 0,
+            "stdout_sha256": "1cbe46acfab44f29d52d02a0063bc3b9028cd6d991c90badd0c18d1789eb28b0",
+            "failure_scenario": "build() keeps absorbing sizing and fallback logic (KvLen match, fit check, eprintln); the next branch added to it crosses the cyclomatic threshold of 10 and lands in the hotspot list.",
+            "precision_class": "advisory"
+          }
+        },
+        {
+          "ruleId": "tdg_mod_rs_decrease",
+          "level": "note",
+          "message": {
+            "text": "pmat tdg grade for gguf/cuda/mod.rs stays A but its score fell from 94.76 (base) to 90.85 (head); duplication_ratio 17.75 is the largest component. The two new files grade A+ (session_kv.rs 96.82, resident.rs 98.64) and gpu_profile.rs is flat (86.87 to 86.82)."
+          },
+          "properties": {
+            "grounding": "measured",
+            "command": [
+              "pmat",
+              "tdg",
+              "h1/mod.rs",
+              "--format",
+              "json"
+            ],
+            "exit_code": 0,
+            "stdout_sha256": "e3ea95dbf4a80345c8a64809b20814cac8a8ce176359c31b11019847a65c999e",
+            "failure_scenario": "No gate fails today (min_grade is B); the score drifts down with each PR that adds to mod.rs and the grade drops to A- or B within a few more.",
+            "precision_class": "advisory"
+          }
+        },
+        {
+          "ruleId": "sibling_session_kv_add_add_conflict",
+          "level": "warning",
+          "message": {
+            "text": "Five unmerged sibling branches (origin/devont/k1-serve-kv, devont/k1-kv-only, pr/4630, pr/4631, verify/6a-4606) carry crates/aprender-serve/src/gguf/cuda/session_kv.rs as blob cd1bced264, a different file from this PR head blob e2659c70ab. The sibling blob also defines session_kv_len and adds serving_kv_len / SERVE_BATCH_SLOTS / SERVE_FLOOR (serve-side sizing, #4630). Whichever lands second hits an add/add conflict on the same path and the same function name."
+          },
+          "properties": {
+            "grounding": "measured",
+            "command": [
+              "git",
+              "ls-tree",
+              "refs/remotes/origin/<branch>",
+              "--",
+              "crates/aprender-serve/src/gguf/cuda/session_kv.rs"
+            ],
+            "exit_code": 0,
+            "stdout_sha256": "d0e0d23bb18c21eac750f5874a9c01cf800fcb3806821c9fc2eb45b529dbacd5",
+            "failure_scenario": "#4630 and #4623 both merge to main; the second PR is DIRTY with an add/add conflict in session_kv.rs and its author hand-merges two different session_kv_len bodies, risking the serve-side floor and the chat-session floor of 2048 being silently unified.",
+            "precision_class": "advisory"
+          }
+        },
+        {
+          "ruleId": "memory_probe_failure_reads_as_zero_free",
+          "level": "warning",
+          "message": {
+            "text": "mod.rs:798 `executor.memory_info().unwrap_or((0, 0))` turns a failed cudaMemGetInfo into 0 bytes free. Line 807 then sizes KV to the 2048 floor, and line 819 passes free=0 to serial_when_fp16_prefill_does_not_fit, so every QK-norm model satisfies need > free and is silently forced onto Serial prefill, the path whose 26k-token prefill timed out per the PR doc comment. The stderr line would read 0.0 GB is free."
+          },
+          "properties": {
+            "grounding": "asserted",
+            "rationale": "The unwrap_or line and its two uses were read at HEAD (git grep, rc 0, below); the failure mode needs memory_info() to return Err on a live device, which was not provoked (no GPU on this lane).",
+            "command": [
+              "git",
+              "grep",
+              "-n",
+              "memory_info().unwrap_or((0, 0))",
+              "HEAD",
+              "--",
+              "crates/aprender-serve/src/gguf/cuda/mod.rs"
+            ],
+            "exit_code": 0,
+            "stdout_sha256": "767eb5efc79b46d6975e8c346a4a1839952dd062ac58937d5f23b4189dbfc659",
+            "failure_scenario": "cudaMemGetInfo returns an error (context lost or driver reset) on a QK-norm model; build() proceeds with free=0, picks the 2048-position floor, prints 0.0 GB is free and forces Serial prefill, so the chat session is slow and short for a reason the log misattributes to VRAM. Guard: skip the fit check and the floor-clamp when memory_info() is Err.",
+            "precision_class": "advisory"
+          }
+        },
+        {
+          "ruleId": "kv_not_recomputed_after_serial_fallback",
+          "level": "note",
+          "message": {
+            "text": "After the fit check flips prefill to Serial (mod.rs:~814-826), max_seq_len is not recomputed. resident_estimate subtracted 3.5 GB of GH-178 workspace plus PREFILL_SCORES_BUDGET_BYTES (1 GiB, forward_qwen35_cuda_prefill.rs:49); only the 1 GiB score budget is recoverable on the serial path, about 7,000 positions at an 8B KV size, not the 4.6 GB the antigravity lane claims."
+          },
+          "properties": {
+            "grounding": "asserted",
+            "rationale": "Agrees with the antigravity direction, disagrees with its magnitude. Read from source (git grep of the constant, rc 0); the position count is arithmetic from the PR doc comment KV size, not a run.",
+            "failure_scenario": "A QK-norm model that fits only with a 1 GiB smaller reserve gets a KV capacity that many positions short after fallback; a long chat turn hits the context limit earlier than it needed to.",
+            "precision_class": "advisory"
+          }
+        },
+        {
+          "ruleId": "fp16_message_printed_on_forced_serial",
+          "level": "note",
+          "message": {
+            "text": "The [#3413] FP16 batched prefill message prints even when the path is Serial because BATCHED_PREFILL=0 was set explicitly."
+          },
+          "properties": {
+            "grounding": "asserted",
+            "rationale": "Read from the diff only; the message ordering relative to the fit check was not run.",
+            "failure_scenario": "An operator sets BATCHED_PREFILL=0, reads the FP16 batched prefill line in the log and concludes batched prefill is active; they chase a Serial-path slowdown in the wrong place.",
+            "precision_class": "advisory"
+          }
+        }
+      ]
+    },
+    {
+      "tool": {
+        "driver": {
+          "name": "nvidia-cuda-docs"
+        }
+      },
+      "invocations": [
+        {
+          "executionSuccessful": true,
+          "toolExecutionNotifications": []
+        }
+      ],
+      "results": [
+        {
+          "ruleId": "cuda_malloc_unused_memory_supports_fit_check",
+          "level": "note",
+          "message": {
+            "text": "NVIDIA docs say cudaMalloc allocates from unused device memory and list the allocation limit as available device memory; the PR sizing weights + cache + reserve + KV against free VRAM is consistent with that. No finding is raised; the query is recorded so asked-and-confirmed is distinguishable from not-asked."
+          },
+          "properties": {
+            "grounding": "cited",
+            "source": "nvidia-cuda-docs MCP (search_cuda_docs), cudaMalloc allocation limit = available device memory",
+            "excerpt": "When invoked from the host, `cudaMalloc()` allocates a new region from unused device memory.",
+            "excerpt_sha256": "db4535d33c03d0fdddf16b29704abc9b8ba150caba3f6a16b321bec599a25c55",
+            "failure_scenario": "If free VRAM were not the bound on allocation, the fit check would admit a configuration that then fails at cudaMalloc; the docs excerpt says it is the bound.",
+            "precision_class": "advisory"
+          }
+        }
+      ]
+    },
+    {
+      "tool": {
+        "driver": {
+          "name": "cargo-mutants"
+        }
+      },
+      "invocations": [
+        {
+          "executionSuccessful": false,
+          "toolExecutionNotifications": [
+            {
+              "level": "error",
+              "message": {
+                "text": "cargo mutants was not run: the review tree is on this host only (no shared filesystem with intel, probe 1) and intel load average was 153.83 / 155.12 / 182.28 on 32 cores (probe 2), so a bounded in-diff run would be NOT_MEASURED. The host running this lane may not run cargo."
+              },
+              "properties": {
+                "grounding": "measured",
+                "command": [
+                  "ssh",
+                  "-o",
+                  "BatchMode=yes",
+                  "-o",
+                  "ConnectTimeout=8",
+                  "intel",
+                  "command -v cargo-mutants; test -d /mnt/nvme-raid0/agent-wt/rv-4623 && echo shared-fs || echo no-shared-fs; nproc"
+                ],
+                "exit_code": 0,
+                "stdout_sha256": "d0d5fc393f65ec744c88be0701ea4317c832de9f20f758cb87fa63e3a71bdb64"
+              }
+            },
+            {
+              "level": "error",
+              "message": {
+                "text": "intel load probe: /proc/loadavg 153.83 155.12 182.28 164/2596; /tmp/78-rv absent on intel."
+              },
+              "properties": {
+                "grounding": "measured",
+                "command": [
+                  "ssh",
+                  "-o",
+                  "BatchMode=yes",
+                  "-o",
+                  "ConnectTimeout=8",
+                  "intel",
+                  "cat /proc/loadavg; ls /tmp/78-rv 2>&1 | head -1"
+                ],
+                "exit_code": 0,
+                "stdout_sha256": "895cebccaf557baedb310e668e4e5e916d9906ef9b1069e018f92504ea3022bd"
+              }
+            }
+          ]
+        }
+      ],
+      "results": []
+    },
+    {
+      "tool": {
+        "driver": {
+          "name": "antigravity"
+        }
+      },
+      "invocations": [
+        {
+          "executionSuccessful": true,
+          "toolExecutionNotifications": []
+        }
+      ],
+      "results": [
+        {
+          "ruleId": "agy_unrecalculated_session_kv_len",
+          "level": "warning",
+          "message": {
+            "text": "After the fit check switches to Serial, max_seq_len is not recomputed and the batched-prefill reserve stays subtracted (mod.rs:814)."
+          },
+          "properties": {
+            "grounding": "asserted",
+            "rationale": "Raised by the antigravity reviewer, which marked it measured (a rustc test in its own tree); the primary did not re-run that test. The primary agrees with the direction and puts the recoverable amount at the 1 GiB score budget, not the 4.6 GB claimed.",
+            "failure_scenario": "When a QK-norm model cannot fit the FP16 batched prefill in VRAM, session_kv_len initially clamps the context length to a floor of 2048 because it subtracts the 4.6GB batched reserve. serial_when_fp16_prefill_does_not_fit then switches the prefill path to Serial. However, max_seq_len is never recalculated for the Serial path (which does not need the 4.6GB reserve), and resident_estimate hardcodes the reserve unconditionally. As a result, the session is artificially limited to 2048 tokens and will time out or fall back to CPU on long chat turns, wasting ~4.6GB of available VRAM that could have supported ~14,000 additional tokens.",
+            "precision_class": "advisory"
+          }
+        }
+      ]
+    }
+  ]
+}
