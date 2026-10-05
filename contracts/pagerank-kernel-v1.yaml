@@ -167,9 +167,9 @@ qa_gate:
   pass_criteria: All 6 falsification tests pass + Kani harnesses verify
   falsification: Skip normalization after matrix-vector multiply
 
-# #4709 CENSUS-RATCHET: the type-qualified method contracts/binding.yaml binds this
-# contract to (a row in the binding file of this file's own directory), which
-# `pv extract` resolves (sym:resolved true in contracts.nt).
+# #4709 CENSUS-RATCHET: the type-qualified method that the binding file in this
+# file's directory binds this contract to, which `pv extract` resolves
+# (sym:resolved true in contracts.nt).
 entity:
   type: code
   ref: aprender::graph::centrality::Graph::pagerank

@@ -364,9 +364,9 @@ toyota_way_principles:
     Falsification uses real malformed models: prime hidden_size,
     missing norm tensors, off-by-one embeddings. Not synthetic assertions.
 
-# #4709 CENSUS-RATCHET: the type-qualified method contracts/binding.yaml binds this
-# contract to (a row in the binding file of this file's own directory), which
-# `pv extract` resolves (sym:resolved true in contracts.nt).
+# #4709 CENSUS-RATCHET: the type-qualified method that the binding file in this
+# file's directory binds this contract to, which `pv extract` resolves
+# (sym:resolved true in contracts.nt).
 entity:
   type: code
   ref: aprender::format::gguf::api::GgufModelConfig::warn_out_of_bounds

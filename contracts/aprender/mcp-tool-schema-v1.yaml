@@ -283,9 +283,9 @@ toyota_way_principles:
     appear in tools/list with correct schema. Adding a tool with incorrect
     schema is a compile error (type mismatch between handler params and schema).
 
-# #4709 CENSUS-RATCHET: the free function contracts/aprender/binding.yaml binds this
-# contract to (a row in the binding file of this file's own directory), which
-# `pv extract` resolves (sym:resolved true in contracts.nt).
+# #4709 CENSUS-RATCHET: the free function that the binding file in this
+# file's directory binds this contract to, which `pv extract` resolves
+# (sym:resolved true in contracts.nt).
 entity:
   type: code
   ref: apr_cli::commands::serve::types::extract_tool_call
