@@ -190,7 +190,7 @@ git ls-files crates/aprender-ci-tools >"$tmp/live-l"
 check "package-include-diff LIVE+plant" "$tmp/empty" \
     printf '%s' $'crates/aprender-ci-tools/src/planted.rs\tlib.rs\n' -- \
     "$BIN" package-include-diff "$tmp/live-l" "$tmp/live-i"
-if ! "$BIN" package-include-diff "$tmp/live-l" "$tmp/live-i" | grep -q 'planted.rs'; then
+if ! pid_out=$("$BIN" package-include-diff "$tmp/live-l" "$tmp/live-i") || ! grep -q 'planted.rs' <<<"$pid_out"; then
     echo "FAIL: the planted missing include was not reported" >&2
     fail=$((fail + 1))
 fi
@@ -278,14 +278,14 @@ check_rc "unnormalised paths in the refusal" "$w//./nope.log" "$w/./elsewhere/"
 check_rc "bad input: a directory named x.rs" "$w/full.log" "$w/bad"
 check "tarball-shrink-report one argument" "$tmp/empty" \
     "$PY" scripts/lib/tarball_shrink_report.py "$w/full.log" -- "$BIN" tarball-shrink-report "$w/full.log"
-if ! "$BIN" tarball-shrink-report "$w/full.log" "$w/full" | grep -q '^SHRINK: 11 integration'; then
+if ! tsr_out=$("$BIN" tarball-shrink-report "$w/full.log" "$w/full") || ! grep -q '^SHRINK: 11 integration' <<<"$tsr_out"; then
     echo "FAIL: the planted not-shipped targets were not counted" >&2
     fail=$((fail + 1))
 fi
 mkdir -p "$w/live"
 ln -sfn "$ROOT/crates" "$w/live/pkgs"
 check_rc "LIVE crates/ as pkgs" "$w/empty.log" "$w/live"
-if ! "$BIN" tarball-shrink-report "$w/empty.log" "$w/live" | grep -q '^SKIP SITES'; then
+if ! live_out=$("$BIN" tarball-shrink-report "$w/empty.log" "$w/live") || ! grep -q '^SKIP SITES' <<<"$live_out"; then
     echo "FAIL: live tarball-shrink-report found no skip site (vacuous)" >&2
     fail=$((fail + 1))
 fi
