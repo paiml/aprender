@@ -1,6 +1,6 @@
 # Receipt: PMAT-4798 (aprender#4798) nightly judge: newest commit every verdict lane ran on
 
-Change: `scripts/release/nightly_train.sh` only.
+Change: `scripts/release/nightly_train.sh`, plus the matching amendment of `contracts/nightly-train-v1.yaml` (C becomes J), one `Makefile` comment, and the roadmap entry `docs/roadmaps/entries/PMAT-4798.yaml`. Not touched: `.github/workflows/nightly-train.yml`, whose step label still says "main's head" (cosmetic; a workflow edit needs its own gate-keeping proof).
 
 ## Ticket intent
 The nightly judged C = main's head at the read and counted a lane only from a run on C, so any merge after the
