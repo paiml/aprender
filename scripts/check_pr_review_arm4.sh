@@ -190,13 +190,16 @@ check_signature() {
     # attempt that signed nothing for $name must not hide an earlier one that did.
     # Nothing is loosened by it - whatever is picked must still verify under the
     # repository key and name exactly pr, head and pid below.
+    # The newest run that NAMES $name decides: if it carries anything but a signature
+    # string (null, a number - a refusal or a malformed entry), no older attempt is
+    # read past it. Only runs that say nothing about $name are skipped.
     sig=$(printf '%s' "$runs" | jq -r --arg h "$sh" --arg k "$name" '
         [.check_runs[]? | select(.name == "pr-review-signature" and .head_sha == $h
                                  and .app.slug == "github-actions" and .conclusion == "success")]
         | sort_by(.completed_at // "")
         | map((.output.text // "{}") | (fromjson? // {})
-              | if type == "object" then (.[$k] // empty) else empty end | select(type == "string"))
-        | last // empty' 2>/dev/null)
+              | if type == "object" and has($k) then .[$k] else empty end)
+        | last // empty | select(type == "string")' 2>/dev/null)
     if [ -z "$sig" ]; then
         echo "  A2b $src is UNSIGNED: no committed .minisig and no pr-review-signature" >&2
         echo "      check run on $sh carries a signature for $name." >&2
@@ -603,7 +606,7 @@ self_test() {
     # B1 (#4512): the SAME receipt with NO committed .minisig; its signature arrives
     # as a pr-review-signature check run instead. check_runs <file> <check sha> <sig>
     # writes the API listing shape Arm 4 reads (ARM4_CHECK_RUNS_FILE injects it).
-    local csig="$ST_ROOT/check-sig" cev cs
+    local csig="$ST_ROOT/check-sig" cev cs nv
     cp -a "$repo" "$csig"
     cev="$csig/evidence/pr-review/999/$head"
     rm -f -- "${cev:?}/receipt.intoto.jsonl.minisig"
@@ -652,6 +655,14 @@ self_test() {
         conclusion: "success", completed_at: "2026-09-28T17:00:00Z",
         app: {slug: "github-actions"}, output: {text: "[]"}}]' \
         "$cs/prior-good.json" > "$cs/prior-array.json"
+    # A newer run that NAMES this receipt but carries no signature string for it: the
+    # earlier signature must not be read past it.
+    for nv in null 5; do
+        jq --arg h "$tip" --arg k "$head" --argjson v "$nv" '.check_runs += [{name: "pr-review-signature", head_sha: $h,
+            conclusion: "success", completed_at: "2026-09-28T17:00:00Z",
+            app: {slug: "github-actions"}, output: {text: ({($k): $v} | tojson)}}]' \
+            "$cs/prior-good.json" > "$cs/prior-named-$nv.json"
+    done
     # The API itself, not an injected file: a `gh` shim on PATH answers the listing
     # the way GitHub does - filter=all returns every attempt, anything else returns
     # only the newest (unsigned) runs. Without this row, deleting filter=all from
@@ -774,6 +785,10 @@ self_test() {
         "$csig"   999 "$tip"  ARM4_CHECK_RUNS_FILE="$cs/prior-other.json"
     row check-sig-prior-array-text 0 "#4618: a newer run's text is a JSON array, not an object; the earlier signature still reads" \
         "$csig"   999 "$tip"  ARM4_CHECK_RUNS_FILE="$cs/prior-array.json"
+    row check-sig-prior-named-null 1 "a newer run NAMES the receipt with null; the earlier signature is not read past it" \
+        "$csig"   999 "$tip"  ARM4_CHECK_RUNS_FILE="$cs/prior-named-null.json"
+    row check-sig-prior-named-num 1 "a newer run NAMES the receipt with a number; the earlier signature is not read past it" \
+        "$csig"   999 "$tip"  ARM4_CHECK_RUNS_FILE="$cs/prior-named-5.json"
     row check-sig-api-all-attempts 0 "#4618: through the API (gh shim), not a file: only filter=all sees the earlier attempt's signature" \
         "$csig"   999 "$tip"  PATH="$ghshim:$PATH" GITHUB_REPOSITORY=paiml/aprender
     row check-sig-queue           0 "B1: merge_group squash; the signature is looked up on the PR head" \
