@@ -191,10 +191,10 @@
     "prah": {
       "source": "none",
       "path": null,
-      "why": "no --prah, none on PATH, and no install receipt at /mnt/nvme-raid0/tmp/w4798/install-receipt.json"
+      "why": "no --prah, none on PATH, and no install receipt at <tmp>/install-receipt.json"
     },
     "bucket": {
-      "ledger": "/home/noah/.local/state/paiml-implement/agy-bucket.jsonl",
+      "ledger": "~/.local/state/paiml-implement/agy-bucket.jsonl",
       "window_s": 18000,
       "pace": "off",
       "buckets": {
@@ -256,7 +256,7 @@
     "wall_s": 0,
     "collected_s": 510,
     "budget_s": 196,
-    "budget_basis": "ledger: 2 x p95 98 s over 126 gx10-cuda Verdict rows",
+    "budget_basis": "ledger: 2 x p95 98 s over 126 <host>-cuda Verdict rows",
     "brief": {
       "bytes": 70064,
       "sent_bytes": 70233,
@@ -268,10 +268,10 @@
     },
     "attempts": [
       {
-        "host": "gx10",
+        "host": "<host>",
         "ok": false,
         "wall_s": 0,
-        "error": "busy: executor yielded (unit inactive; last yield: 2026-10-03T00:47:22Z host=gx10-a5b5 event=stopped gpu-priority lock=/tmp/apr-gpu.priority)",
+        "error": "busy: executor yielded (unit inactive; last yield: 2026-10-03T00:47:22Z host=<host> event=stopped gpu-priority lock=/tmp/apr-gpu.priority)",
         "ts": "2026-10-05T17:06:46.159Z",
         "wall_ms": 433,
         "request_id": "01a10d08-3d0d-7fa0-b3bc-24ce9d0dd367",
@@ -279,7 +279,7 @@
         "cold": null
       }
     ],
-    "ledger": "/home/noah/.local/state/paiml-implement/advisory-ledger.jsonl",
+    "ledger": "~/.local/state/paiml-implement/advisory-ledger.jsonl",
     "raw": "advisory.json",
     "agrees_with_counted": null,
     "counted": "PASS"
