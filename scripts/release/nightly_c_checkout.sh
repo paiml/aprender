@@ -141,6 +141,11 @@ self_test() {
     row n3_created_1158z_started_after_noon 0 "night=$n" "" -- bash "$SCRIPT_PATH" checkout --repo "$W" --at 2026-10-05T11:58:00Z --pick-conclusion success
     row n5_last_second_is_still_the_night 0 "night=$n" "" -- bash "$SCRIPT_PATH" checkout --repo "$W" --at 2026-10-05T11:59:59Z --pick-conclusion success
     row n6_noon_is_the_next_night 2 "has no pick" "NIGHTLY C=" -- bash "$SCRIPT_PATH" checkout --repo "$W" --at 2026-10-05T12:00:00Z --pick-conclusion success
+    # ...and names it positively: once night N+1 has its own pick, 12:00:00Z measures that pick, not night N's
+    git -C "$A" push -q origin "$c2:refs/heads/nightly/2026-10-05" || caller_error "fixture next pick"
+    git -C "$W" -c advice.detachedHead=false checkout -q --detach "$c1"
+    row n6_noon_measures_the_next_pick 0 "night=2026-10-05" "night=$n" -- bash "$SCRIPT_PATH" checkout --repo "$W" --at 2026-10-05T12:00:00Z --pick-conclusion success
+    same n6_noon_tree_is_the_next_pick "$(git -C "$W" rev-parse HEAD)" "$c2"
     # a pick that did not succeed names no night: not_measured, never main's head, nothing exported, the tree untouched
     git -C "$W" -c advice.detachedHead=false checkout -q --detach "$c2"; : > "$env"
     row n9_failed_pick_is_not_measured 2 "the pick concluded failure" "NIGHTLY C=" -- env GITHUB_ENV="$env" bash "$SCRIPT_PATH" checkout --repo "$W" --at "$at" --pick-conclusion failure
