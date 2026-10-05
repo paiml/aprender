@@ -187,7 +187,8 @@ check_signature() {
     name=$(basename "$src")
     runs=$(check_runs_json "$sh") || { echo "  A2b could not list check runs on $sh." >&2; return 1; }
     # The LATEST run that CARRIES this receipt's key, not the latest run: a later
-    # attempt that signed nothing for $name must not hide an earlier one that did.
+    # attempt that says NOTHING about $name (no key) must not hide an earlier one that
+    # signed it.
     # Nothing is loosened by it - whatever is picked must still verify under the
     # repository key and name exactly pr, head and pid below.
     # The newest run that NAMES $name decides: if it carries anything but a signature
