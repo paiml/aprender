@@ -13,6 +13,7 @@ publish = false
 [dependencies]
 clap = { workspace = true }
 serde_json = { workspace = true }
+sha1 = "0.10"  # git_patch_id: git's patch-id is SHA-1 by definition
 toml = { workspace = true }
 
 [build-dependencies]

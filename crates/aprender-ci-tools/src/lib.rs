@@ -4,6 +4,7 @@
 //! runs the same cases through both, with the `.py` original as the external validator.
 
 pub mod coverage_report_scope;
+pub mod git_patch_id;
 pub mod package_include_diff;
 pub mod publishable_crates;
 pub mod pystr;
