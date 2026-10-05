@@ -80,3 +80,32 @@ conflict-resolution hunks. A clean merge was reviewed through its second parent.
   rc=0, run inside a capped scope (TasksMax=8192).
 - PF9's tree includes 8b684297c2 (crux N-1 restore). That commit's own proofs are
   judge 131/131, oracles 88206/88206 and certify 1595/1595.
+
+**R4 ruling (train lead).** R4c clears 61801f0c2a: two families (sonnet and gemini) PASS,
+the plant was caught and the cites hold. The haiku count of about 103 is logged as a
+same-family dissent.
+
+## Why the N-1 gate-path Python is refactored, not main's bytes
+
+A non-author review found that the five gate-path `.py` files kept for N-1 are
+refactors, not main's bytes:
+- `scripts/coverage_report_scope.py`
+- `scripts/lib/crux_inference_judge.py`, `crux_oracles.py`, `crux_prompt_certify.py` and `tarball_workspace.py`
+
+They were restored in 999a7ab805 and 8b684297c2. The same review measured their
+outputs as identical to main's. Their shell callers are byte-identical to `origin/main`.
+
+**Why not main's bytes.** Restoring main's exact bytes was tried on 2026-10-05, and the
+repo's pre-commit hook refused the commit. The hook runs a complexity check on every
+staged `.py` file (`PMAT_MAX_CYCLOMATIC_COMPLEXITY=30`, `PMAT_MAX_COGNITIVE_COMPLEXITY=25`),
+and main's `scripts/lib/tarball_workspace.py` fails it ("Complexity exceeds thresholds"):
+main's bytes predate the hook, and re-adding a file stages it again. Committing with
+`--no-verify` is banned, and a hook refusal is logged, never routed around. So the
+only committable form is a behaviour-preserving split of the over-threshold functions,
+which is what the files hold.
+
+**What the refactor changes.** Function boundaries, plus comments and docstrings on the new helpers and a module note in
+`coverage_report_scope.py` naming its N-1 retirement. It was meant to change no flag, output or exit code, and the non-author review measured the outputs as identical.
+The parity harness does not depend on the refactor, because it reads its Python
+oracle from main's blobs (`106561a2bf`, `86d653ebf2`), not from the tree. The files are
+deleted when a released tool carries each port (retire at 0.71+1).
