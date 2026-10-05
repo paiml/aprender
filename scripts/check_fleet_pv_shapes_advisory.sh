@@ -25,7 +25,7 @@
 #               (reason=pv-no-verdict): the pinned binary gave no JSON and exited with anything
 #               but 2 -- a panic or a signal can be caused by a contract in this tree (#3671).
 #   UNMEASURED  FLEET STATE, not a verdict -- exit 0, with `reason=` naming which:
-#                 no-pin        this runner was never converged (infra#708)
+#                 no-pin        this runner was never converged (infra#1204)
 #                 no-binary     the pin declares pv and no fleet path has it (forjar drift)
 #                 pin-mismatch  the fleet binary is not the pinned version
 #                 incapable     the pinned binary cannot do `--gate` / `extract`
@@ -104,7 +104,7 @@ resolve_fleet_pv() {
 judge() {
     local pin ver why out rc pvrc d PV_BIN comp
     if [ ! -r "$PV_PIN" ]; then
-        printf 'UNMEASURED runner=%s reason=no-pin pin=%s -- this runner was never converged (infra#708); the shapes gate is not measured here, and this row is not a pass\n' "$RUNNER" "$PV_PIN"
+        printf 'UNMEASURED runner=%s reason=no-pin pin=%s -- this runner was never converged (infra#1204); the shapes gate is not measured here, and this row is not a pass\n' "$RUNNER" "$PV_PIN"
         return 0
     fi
     # Quorum lane 1 (gemini-3.1-pro-high) on #3633, MEASURED: `tr -d '[:space:]'` without the
@@ -222,9 +222,9 @@ STUB
     out=$(FLEET_PV_BIN="$d/does-not-exist" FLEET_PV_PIN="$d/pin" FLEET_PV_CONTRACTS="$d/contracts" bash "$0" 2>&1); rc=$?
     [ "$rc" -eq 0 ] && grep -q '^UNMEASURED .*reason=no-binary .*none of the fleet paths has it' <<<"$out" && ! grep -qE '^(SUMMARY )?PASS' <<<"$out" && ok "pin present, no fleet path has the binary -> UNMEASURED reason=no-binary, never PASS" || nok "expected UNMEASURED reason=no-binary, got rc=$rc: $out"
 
-    # 5. no pin -> UNMEASURED, exit 0, the row says so and names the runner and infra#708
+    # 5. no pin -> UNMEASURED, exit 0, the row says so and names the runner and infra#1204
     out=$(FLEET_PV_BIN="$d/pv_ok" FLEET_PV_PIN="$d/no-such-pin" FLEET_PV_CONTRACTS="$d/contracts" RUNNER_NAME=never-converged bash "$0" 2>&1); rc=$?
-    [ "$rc" -eq 0 ] && grep -q '^UNMEASURED runner=never-converged.*infra#708' <<<"$out" && ! grep -qE '^(SUMMARY )?PASS' <<<"$out" && ok "no pin -> UNMEASURED row (exit 0, never a PASS line)" || nok "expected UNMEASURED row, got rc=$rc: $out"
+    [ "$rc" -eq 0 ] && grep -q '^UNMEASURED runner=never-converged.*infra#1204' <<<"$out" && ! grep -qE '^(SUMMARY )?PASS' <<<"$out" && ok "no pin -> UNMEASURED row (exit 0, never a PASS line)" || nok "expected UNMEASURED row, got rc=$rc: $out"
 
     # 6. pv's own control silent (pc_shape != fired) -> RED even with verdict=Pass
     mkpv "$d/pv_silent" capable Pass silent
