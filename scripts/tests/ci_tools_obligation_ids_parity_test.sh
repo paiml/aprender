@@ -4,7 +4,9 @@
 #
 # Each case is a contracts/ tree. Both sides run on their own copy of it, from the copy's
 # root, with the same arguments: the exit code, the stdout bytes and every byte of the
-# tree afterwards must match. obligation_ids.py is the EXTERNAL VALIDATOR, never a build
+# tree afterwards must match. stderr must match byte for byte where Python wrote
+# argparse text, be non-empty on both sides where it wrote a traceback, and be empty on
+# both sides where it wrote nothing. obligation_ids.py is the EXTERNAL VALIDATOR, never a build
 # step.
 #
 # A case named "RS REFUSES ..." is input the port declines to guess at (PyYAML's YAML 1.1
@@ -14,8 +16,10 @@
 # The last two cases run both sides over the repo's own contracts/ (git archive HEAD),
 # in --check mode and in write mode.
 #
-# Not vacuous (L25): the run fails if fewer cases ran than the table declares, and a
-# planted mismatch must be reported as one before any real case counts.
+# Not vacuous (L25): the run fails if fewer cases ran than the table declares, and five
+# planted liars (a wrong minted id, a binary that never refuses, stderr where Python is
+# silent, a dropped usage error, a crash with no word) must each be reported before any
+# real case counts.
 #
 # Usage: scripts/tests/ci_tools_obligation_ids_parity_test.sh   (CI_TOOLS_BIN=<path> to skip the build)
 set -euo pipefail
@@ -24,7 +28,7 @@ ROOT="$(git rev-parse --show-toplevel)"
 cd "$ROOT" || exit 1
 PY="${PYTHON:-python3}"
 ORIG="$ROOT/scripts/lib/obligation_ids.py"
-EXPECTED_CASES=38
+EXPECTED_CASES=52
 
 . scripts/ci_tools_bin.sh || exit 1
 BIN="$CI_TOOLS_BIN"
@@ -61,11 +65,25 @@ run_side() {
     printf '%s\n' "$rc" >"$C/$side.rc"
 }
 
-# same ARGS...: both sides agree on rc, stdout and the tree they leave.
+# same_err: both sides agree on stderr. argparse's own text (`usage:` first) is ported
+# byte for byte, so it must match exactly. A Python traceback cannot be matched, so
+# there the port must still say something. Silence must be met with silence.
+same_err() {
+    if [[ ! -s "$C/py.err" ]]; then
+        [[ ! -s "$C/rs.err" ]]
+    elif [[ "$(head -c 6 "$C/py.err")" == "usage:" ]]; then
+        cmp -s "$C/py.err" "$C/rs.err"
+    else
+        [[ -s "$C/rs.err" ]]
+    fi
+}
+
+# same ARGS...: both sides agree on rc, stdout, stderr and the tree they leave.
 same() {
     run_side py "$@"
     run_side rs "$@"
-    cmp -s "$C/py.rc" "$C/rs.rc" && cmp -s "$C/py.out" "$C/rs.out" && diff -r "$C/py" "$C/rs" >/dev/null
+    cmp -s "$C/py.rc" "$C/rs.rc" && cmp -s "$C/py.out" "$C/rs.out" && same_err &&
+        diff -r "$C/py" "$C/rs" >/dev/null
 }
 
 # refused ARGS...: the binary refuses (exit 2, `refusing:`), prints nothing, writes nothing.
@@ -92,6 +110,7 @@ check() {
         fail=$((fail + 1))
         echo "FAIL: $name (rc py=$(cat "$C/py.rc" 2>/dev/null) rs=$(cat "$C/rs.rc"))" >&2
         diff "$C/py.out" "$C/rs.out" >&2 2>/dev/null || true
+        diff "$C/py.err" "$C/rs.err" >&2 2>/dev/null || true
         diff -r "$C/py" "$C/rs" >&2 2>/dev/null || true
     fi
 }
@@ -120,6 +139,33 @@ C="$(dirname "$F")"
 BIN="$tmp/original"
 if refused; then
     echo "FAIL: refused() passed the original, which never refuses" >&2
+    exit 1
+fi
+# Three stderr liars: one adds a line to a run Python keeps silent, one swallows
+# argparse's usage error, one swallows a crash. Each must fail same().
+printf '#!/bin/sh\nshift\n"%s" "%s" "$@"; rc=$?\necho noise >&2\nexit $rc\n' "$PY" "$ORIG" >"$tmp/noisy"
+printf '#!/bin/sh\nshift\nexec "%s" "%s" "$@" 2>/dev/null\n' "$PY" "$ORIG" >"$tmp/mute"
+chmod +x "$tmp/noisy" "$tmp/mute"
+new_case
+fx a-b-v1.yaml "$ANON"
+C="$(dirname "$F")"
+BIN="$tmp/noisy"
+if same; then
+    echo "FAIL: same() passed a binary that writes to stderr where Python is silent" >&2
+    exit 1
+fi
+new_case
+C="$(dirname "$F")"
+BIN="$tmp/mute"
+if same a b; then
+    echo "FAIL: same() passed a binary that drops argparse's usage error" >&2
+    exit 1
+fi
+new_case
+fx a-b-v1.yaml 'k: 1\nproof_obligations:\n- property: one\nkani_harnesses: true\n'
+C="$(dirname "$F")"
+if same; then
+    echo "FAIL: same() passed a binary that crashes without a word" >&2
     exit 1
 fi
 BIN="$REAL_BIN"
@@ -289,6 +335,79 @@ new_case
 fx a-b-v1.yaml "$ANON"
 fx b-c-v1.yaml 'k: 1\nproof_obligations:\n- type: 2024-01-01\n  property: one\n'
 check "RS REFUSES: a late refusal still writes nothing, not even the earlier file"
+
+# --- the bump loop (plan_file: `while cand in taken`) --------------------------------
+new_case
+fx a-b-v1.yaml 'k: 1\nproof_obligations:\n- type: invariant\n  property: one\n- type: invariant\n  property: two\n- id: AB-INV-002\n- id: AB-INV-003\n'
+check "bump loop: two existing ids push a row up twice"
+
+new_case
+fx a-b-v1.yaml 'k: 1\nproof_obligations:\n- type: invariant\n- id: AB-INV-003\n- type: invariant\n- type: invariant\n'
+check "bump loop: a bumped id lands on one minted earlier in the file"
+
+new_case
+fx a-b-v1.yaml 'k: 1\nproof_obligations:\n- id: AB-BND-002\n- type: invariant\n- id: ab-inv-002\n- type: invariant\n'
+check "bump loop: another type code or another case is not a collision"
+
+new_case
+big='k: 1\nproof_obligations:\n- id: AB-INV-999\n'
+for i in $(seq 2 998); do big+="- id: X-Y-$i\n"; done
+big+='- type: invariant\n- type: invariant\n'
+fx a-b-v1.yaml "$big"
+check "bump loop: past 999 the number widens to four digits"
+
+# --- nested lists and how rewrite() finds the items -----------------------------------
+new_case
+fx a-b-v1.yaml 'k: 1\nproof_obligations:\n- type: invariant\n  steps:\n  - a\n  - b\n- property: two\n  refs:\n    - p\n    - - deep\n'
+check "nested lists inside an item are not items"
+
+new_case
+fx a-b-v1.yaml 'k: 1\nproof_obligations:\n  - type: bound\n    steps:\n    - a\n    - b\n  - property: two\n    refs: [p, q]\nnext: 1\n'
+fx c-d-v1.yaml 'k: 1\nproof_obligations:\n    - property: deep indent\n      steps:\n        - a\n    - property: two\n'
+check "nested lists under an indented item list"
+
+new_case
+fx a-b-v1.yaml 'k: 1\nproof_obligations:\n-\n  type: invariant\n  property: one\n- property: two\n'
+check "a dash alone on its line still opens an item"
+
+new_case
+fx a-b-v1.yaml 'k: 1\nproof_obligations:\n# a comment before the first item\n- property: one\n  # a comment inside\n- property: two\n'
+check "comments before and inside the items"
+
+new_case
+fx a-b-v1.yaml 'k: 1\nproof_obligations:\n- property: one\n"quoted": 1\n_under: 2\n'
+fx c-d-v1.yaml 'k: 1\nproof_obligations:\n- property: one'
+check "the block ends at an _ key, not a quoted one, or at EOF with no newline"
+
+new_case
+fx a-b-v1.yaml 'k: 1\nproof_obligations:\n- property: one\nsteps:\n- not an obligation\n'
+check "a top-level list after the block is left alone"
+
+# --- type codes and initials ----------------------------------------------------------
+new_case
+fx a-b-v1.yaml 'k: 1\nproof_obligations:\n- type: "1-2"\n- type: BouND\n- type: "  "\n- type: "a b c d e f"\n- type: Bounds\n'
+check "type codes: no letters, mixed case, blank, long, an alias"
+
+new_case
+fx v2-v3.yaml "$ANON"
+fx 9lives-x-v1.yaml "$ANON"
+fx _-a.yaml "$ANON"
+fx +x-y-v1.yaml "$ANON"
+fx a.b_c-v10.yaml "$ANON"
+fx v1x-v1.yaml "$ANON"
+check "initials: only versions, leading digit, empty part, punctuation, separators"
+
+# --- prefix ownership -----------------------------------------------------------------
+new_case
+fx a-b-v1.yaml "${ANON}kani_harnesses:\n- obligation: XY-INV-001\n"
+fx x-y-v1.yaml 'k: 1\nproof_obligations:\n- id: XY-INV-005\n'
+check "a cited prefix another file already owns gets a hash"
+
+new_case
+fx p-q-v1.yaml 'k: 1\nproof_obligations:\n- id: XY-INV-001\n'
+fx a-c-v1.yaml 'k: 1\nproof_obligations:\n- id: XY-BND-001\n- property: anon\n'
+fx x-y-v1.yaml "$ANON"
+check "two files hold a fixed prefix, the first of them owns it"
 
 # --- the repo's own contracts -----------------------------------------------------
 new_case

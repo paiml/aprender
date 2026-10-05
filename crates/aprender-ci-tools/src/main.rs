@@ -251,7 +251,11 @@ fn finish(result: Result<String, Refusal>) -> ExitCode {
     match refusal {
         None => ExitCode::SUCCESS,
         Some((code, reason)) => {
-            eprintln!("{reason}");
+            // An exit 1 that is a verdict, not a failure (`--check` found an anonymous file),
+            // carries no reason: the original wrote nothing to stderr there, so neither do we.
+            if !reason.is_empty() {
+                eprintln!("{reason}");
+            }
             ExitCode::from(code)
         }
     }
