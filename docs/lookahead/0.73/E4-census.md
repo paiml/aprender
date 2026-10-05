@@ -58,4 +58,7 @@ an open question (RQ-10 below).
 - **RQ-10:** does E1's "Metal" leg mean wgpu on the Metal transport (today's only
   route), or a native Metal backend? Default: wgpu on Metal, which needs no new row.
   A native backend would be a new bundle and is not in 0.73 scope.
+  A (quorum, 2026-10-05, degraded: same-family, agy 503): (a) wgpu on Metal, 2-0
+  (sonnet, haiku; planted false claim caught by both). Receipt: cop handoff
+  `quorum-0.73-rq10.md`.
 - Not read: the parity and bench code paths beyond the cites above.

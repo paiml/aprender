@@ -58,5 +58,5 @@ separate llama.cpp cosine receipt is the question left for PRM-001's owner.
 3. Ranked as today: after the rows that produce C1 and C3 receipts.
 
 ## Open
-- RQ-10 (Metal meaning) decides A16-2. Put to quorum with this evidence.
+- RQ-10 (Metal meaning) decides A16-2. A (quorum, 2026-10-05, degraded: same-family): (a) wgpu on Metal, 2-0; and C5b should say `wgpu`, 2-0, which is a PRM-001 owner call to make.
 - RQ-3 stays conditional: A16-3 is the evidence to hand PRM-001's owner.
