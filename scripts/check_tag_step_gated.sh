@@ -33,11 +33,11 @@ ROOT="$(cd "$(dirname "$0")/.." && pwd)" || exit 2
 rmtree() { case "${1:-}" in ''|/) return 0 ;; *) [ -d "$1" ] && rm -rf -- "$1" ;; esac; return 0; }
 SUBJECT="$ROOT/scripts/release/autopilot.sh"
 
-# run_cut_tag <autopilot> <strict-rc> [<must-carry-rc> [<carry-rc> [<readiness>]]] -- extract cut_tag(), run
+# run_cut_tag <autopilot> <strict-rc> [<must-carry-rc> [<carry-rc> [<readiness> [<pretag-rc>]]]] -- extract cut_tag(), run
 # it with stubs, print a transcript (SAY/DIE/GIT-TAG/GIT-PUSH lines, then the CALL order).
 # Returns 2 if the function is missing.
 run_cut_tag() {
-    local ap=$1 grc=$2 mrc=${3:-0} crc=${4:-0} rdy=${5:-pass} d fn
+    local ap=$1 grc=$2 mrc=${3:-0} crc=${4:-0} rdy=${5:-pass} prc=${6:-0} d fn
     d=$(mktemp -d) || return 2
     fn=$(awk '/^cut_tag\(\) \{/,/^\}/' "$ap")
     [ -n "$fn" ] || { rmtree "$d"; return 2; }
@@ -52,9 +52,12 @@ run_cut_tag() {
     printf '#!/usr/bin/env bash\nif [ "${2:-}" = --must-carry ]; then echo CALL-MUST-CARRY >> %q; exit %s; fi\necho CALL-STRICT >> %q; exit %s\n' \
         "$d/calls" "$mrc" "$d/calls" "$grc" > "$d/scripts/check_milestone_cut.sh"
     printf '#!/usr/bin/env bash\necho CALL-CARRY >> %q\nexit %s\n' "$d/calls" "$crc" > "$d/scripts/release/carry_milestone_items.sh"
+    # #4805: the pre-tag gate must be asked about the release worktree; it prints its PASS line only on 0
+    printf '#!/usr/bin/env bash\n[ "${1:-}" = %q ] || { echo "pretag asked about ${1:-nothing}"; exit 3; }\necho CALL-PRETAG >> %q\n[ %s = 0 ] && echo "PRETAG PASS preflight=PASS clean-room=PASS sha=deadbeef"\nexit %s\n' \
+        "$d/wt" "$d/calls" "$prc" "$prc" > "$d/scripts/release/pretag_gate.sh"
     {
         printf 'set -uo pipefail\n'
-        printf 'REPO_ROOT=%q\nLOG=%q\nAP=%q\n' "$d" "$d/log" "$d/ap"
+        printf 'REPO_ROOT=%q\nLOG=%q\nAP=%q\nWT=%q\n' "$d" "$d/log" "$d/ap" "$d/wt"
         printf 'say() { printf "SAY %%s\\n" "$*"; }\n'
         printf 'die() { printf "DIE %%s\\n" "$*"; exit 1; }\n'
         printf 'git() { printf "GIT-%%s %%s\\n" "$(printf %%s "$1" | tr "a-z" "A-Z")" "$*"; }\n'
@@ -63,7 +66,7 @@ run_cut_tag() {
     } > "$d/harness.sh"
     bash "$d/harness.sh" 2>&1
     cat "$d/log" 2>/dev/null
-    printf 'ORDER %s\n' "$(tr '\n' ' ' < "$d/calls" 2>/dev/null)"
+    printf 'ORDER %s\n' "$(tr '\n' ' ' 2>/dev/null < "$d/calls")"
     rmtree "$d"
 }
 
@@ -89,9 +92,16 @@ judge() {
     else printf 'ok    gate rc=2 (Unknown) -> no tag\n'; fi
     # #3459 part 2: the must-carry gate, the carry, and their ORDER
     out=$(run_cut_tag "$ap" 0) || true
-    if grep -q '^ORDER CALL-MUST-CARRY CALL-CARRY CALL-STRICT $' <<< "$out" && grep -q 'GIT-TAG' <<< "$out"; then
-        printf 'ok    all clean -> must-carry, then the carry, then STRICT, then the tag\n'
-    else printf 'FAIL  all clean did not run must-carry -> carry -> strict -> tag\n%s\n' "$out" >&2; bad=1; fi
+    if grep -q '^ORDER CALL-PRETAG CALL-MUST-CARRY CALL-CARRY CALL-STRICT $' <<< "$out" && grep -q 'GIT-TAG' <<< "$out"; then
+        printf 'ok    all clean -> pre-tag gate, must-carry, the carry, STRICT, then the tag\n'
+    else printf 'FAIL  all clean did not run pretag -> must-carry -> carry -> strict -> tag\n%s\n' "$out" >&2; bad=1; fi
+    # #4805: the pre-tag gate (preflight --pre-tag + clean-room by sha) refusing or not measured -> no tag, nothing carried
+    for p in 1 2; do
+        out=$(run_cut_tag "$ap" 0 0 0 pass "$p") || true
+        if grep -q 'GIT-TAG' <<< "$out" || grep -qE 'CALL-(MUST-CARRY|CARRY|STRICT)' <<< "$out"; then
+            printf 'FAIL  pre-tag gate rc=%s -> a tag was cut or the milestone was touched\n%s\n' "$p" "$out" >&2; bad=1
+        else printf 'ok    pre-tag gate rc=%s -> nothing carried, no tag\n' "$p"; fi
+    done
     for m in 1 2; do
         out=$(run_cut_tag "$ap" 0 "$m") || true
         if grep -q 'GIT-TAG' <<< "$out" || grep -q 'CALL-CARRY' <<< "$out"; then
@@ -172,11 +182,35 @@ if [ "${1:-}" = "--self-test" ]; then
     else
         ok "mutant 6: #3715 readiness requirement deleted -> RED"
     fi
+    # M7 (#4805): the pre-tag gate call deleted -> a commit no publish gate has judged is tagged.
+    sed '/scripts\/release\/pretag_gate\.sh" "\$WT"/d' "$SUBJECT" > "$d/m7.sh"
+    if cmp -s "$SUBJECT" "$d/m7.sh"; then
+        nok "MUTANT 7 could not be built -- the pre-tag gate call line did not match; vacuous"
+    elif judge "$d/m7.sh" > "$d/m7.out" 2>&1; then
+        nok "MUTANT 7 (pre-tag gate call deleted) PASSED"
+    else
+        ok "mutant 7: pre-tag gate call deleted -> RED"
+    fi
+    # M8 (#4805): the pre-tag verdict discarded AND its PASS-line check deleted -> a red gate tags.
+    sed 's#\(pretag_gate\.sh" "$WT" >> "$LOG" 2>&1\) || rc=$?#\1 || true#; /grep -qx "PRETAG PASS/,/|| die "pre-tag gate passed/d' "$SUBJECT" > "$d/m8.sh"
+    if cmp -s "$SUBJECT" "$d/m8.sh" || grep -q 'PRETAG PASS preflight' "$d/m8.sh"; then
+        nok "MUTANT 8 could not be built -- the pre-tag verdict lines did not match; vacuous"
+    elif judge "$d/m8.sh" > "$d/m8.out" 2>&1; then
+        nok "MUTANT 8 (pre-tag verdict discarded) PASSED"
+    else
+        ok "mutant 8: pre-tag verdict discarded -> RED"
+    fi
     # the carry script's own case table: it lives in scripts/release/, where guard_tree cannot see it
     if bash "$ROOT/scripts/release/carry_milestone_items.sh" --self-test > "$d/carry.out" 2>&1; then
         ok "carry_milestone_items.sh case table ($(grep -c '^ok ' "$d/carry.out") rows)"
     else
         nok "carry_milestone_items.sh case table FAILED"; cat "$d/carry.out" >&2
+    fi
+    # #4805: the pre-tag gate's own case table, same reason
+    if bash "$ROOT/scripts/release/check_pretag_gate.sh" --self-test > "$d/pretag.out" 2>&1; then
+        ok "check_pretag_gate.sh case table ($(grep -c '^ok ' "$d/pretag.out") rows)"
+    else
+        nok "check_pretag_gate.sh case table FAILED"; cat "$d/pretag.out" >&2
     fi
     # M3: cut_tag() removed entirely -> ENV (2), never a pass.
     awk '/^cut_tag\(\) \{/,/^\}/ {next} {print}' "$SUBJECT" > "$d/m3.sh"

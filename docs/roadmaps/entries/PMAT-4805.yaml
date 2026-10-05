@@ -1,0 +1,18 @@
+- id: PMAT-4805
+  github_issue: 4805
+  item_type: task
+  title: '0.70.2 B5: tag-time path is publish-only'
+  status: planned
+  priority: critical
+  assigned_to: null
+  created: 2026-10-05T15:13:25Z
+  updated: 2026-10-05T15:13:25Z
+  spec: null
+  acceptance_criteria: []
+  phases: []
+  subtasks: []
+  estimated_effort: null
+  labels:
+  - kind:code
+  notes: null
+  epic: 4678

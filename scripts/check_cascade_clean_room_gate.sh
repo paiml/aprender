@@ -4,7 +4,8 @@
 # `clean_room_gate` in scripts/cascade-publish.sh refuses to start a publish
 # unless infra's clean-room.yml `clean-room (aprender)` job concluded success on
 # EXACTLY the tag's commit. This is its falsifier: a hermetic case table, both
-# polarities, run against the REAL functions (extracted from cascade-publish.sh,
+# polarities, run against the REAL functions (extracted from the shared lib
+# scripts/release/lib_clean_room_gate.sh, which cascade-publish.sh sources,
 # never re-implemented -- rename or delete them and extraction fails here).
 #
 # EVERY ROW RUNS AGAINST A STUB `gh` placed first on PATH, with GH_CONFIG_DIR
@@ -24,8 +25,10 @@ esac
 
 REPO_ROOT=$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)
 CASCADE="${CASCADE_UNDER_TEST:-$REPO_ROOT/scripts/cascade-publish.sh}"
+GATE_LIB="${GATE_LIB_UNDER_TEST:-$REPO_ROOT/scripts/release/lib_clean_room_gate.sh}"
 echo "=== cascade clean-room gate (check_cascade_clean_room_gate.sh) ==="
 [ -f "$CASCADE" ] || { echo "FAIL: $CASCADE not found"; exit 1; }
+[ -f "$GATE_LIB" ] || { echo "FAIL: $GATE_LIB not found"; exit 1; }
 
 WORK=$(mktemp -d)
 case "$WORK" in
@@ -36,9 +39,9 @@ trap 'rm -rf "${WORK:?}"' EXIT
 
 FNS="$WORK/fns.sh"
 : > "$FNS"
-for fn in clean_room_parse_runs clean_room_parse_job clean_room_tested_abbrevs clean_room_tested_shas clean_room_gate; do
-  sed -n "/^${fn}() {/,/^}/p" "$CASCADE" >> "$FNS"
-  grep -q "^${fn}() {" "$FNS" || { echo "FAIL: could not extract '$fn' from $CASCADE"; exit 1; }
+for fn in clean_room_parse_runs clean_room_parse_job clean_room_tested_abbrevs clean_room_tested_shas clean_room_gate clean_room_gate_sha; do
+  sed -n "/^${fn}() {/,/^}/p" "$GATE_LIB" >> "$FNS"
+  grep -q "^${fn}() {" "$FNS" || { echo "FAIL: could not extract '$fn' from $GATE_LIB"; exit 1; }
 done
 # shellcheck disable=SC1090
 . "$FNS"
@@ -141,7 +144,7 @@ fail() { printf 'FAIL  %s\n' "$1"; rc=1; }
 LAST_OUT=""
 LAST_STUB=""
 
-# row NAME EXPECT_RC NEEDLE SETUP [TAG]
+# row NAME EXPECT_RC NEEDLE SETUP [TAG]   (TAG "@<sha>" runs clean_room_gate_sha on that sha, as the tag step does)
 row() {
   local name=$1 expect=$2 needle=$3 setup=$4 tag=${5:-v1.2.3} out got
   S="$WORK/stub-$name"; mkdir -p "$S"; : > "$S/calls"
@@ -150,7 +153,10 @@ row() {
   out=$(
     export PATH="$BIN:$PATH" STUB_DIR="$S" GH_CONFIG_DIR="$WORK/ghconfig"
     unset GH_TOKEN GITHUB_TOKEN GH_ENTERPRISE_TOKEN
-    clean_room_gate "$FIX" "$tag" 2>&1
+    case "$tag" in
+      @*) clean_room_gate_sha "$FIX" "${tag#@}" "pre-tag" 2>&1 ;;
+      *)  clean_room_gate "$FIX" "$tag" 2>&1 ;;
+    esac
   ) || got=$?
   LAST_OUT=$out; LAST_STUB=$S
   if grep -q '^UNEXPECTED' "$S/calls"; then
@@ -242,6 +248,16 @@ row two_structured_shas_refuses           1 "2 structured tested-sha record(s)" 
 row structured_sha_assert_failed_refuses  1 "step is completed/failure"                s_struct_assert_failed
 row structured_sha_assert_absent_refuses  1 "step is absent"                           s_struct_assert_absent
 
+# The same gate on a bare sha (PMAT-4805): the tag step asks it about the bump
+# commit before any tag exists. $SHA_B carries no tag.
+row sha_green_on_untagged_bump_proceeds    0 "tested $SHA_B = $SHA_B (pre-tag)"       s_struct_other  "@$SHA_B"
+row sha_green_on_other_commit_refuses      1 "tested $SHA_B"                          s_struct_other  "@$SHA_A"
+row sha_no_runs_refuses                    1 "found none"                             s_no_runs       "@$SHA_B"
+row sha_failed_on_bump_refuses             1 "conclusion=failure"                     s_failed_tag    "@$SHA_A"
+row sha_abbreviated_refuses                1 "is not a full lowercase sha"            s_struct_other  "@$AB_B"
+row sha_uppercase_refuses                  1 "is not a full lowercase sha"            s_struct_tag    "@$UP_A"
+row sha_unknown_commit_refuses             1 "is not a full lowercase sha of a commit" s_struct_tag   "@0000000000000000000000000000000000000000"
+
 # No bypass: the variables anyone would reach for change nothing.
 s_bypass() { s_no_runs; }
 SKIP_CLEAN_ROOM=1 CLEAN_ROOM_SKIP=1 SKIP_TESTS=1 CASCADE_SKIP_CLEAN_ROOM=1 \
@@ -260,7 +276,13 @@ fi
 
 # Wiring: the gate is called on the publishing path, BEFORE the preflight, and
 # nothing in the script names a way to skip it.
+src_ln=$(grep -n '^\. "\$REPO_ROOT/scripts/release/lib_clean_room_gate.sh" || {' "$CASCADE" | head -1 | cut -d: -f1)
 gate_ln=$(grep -n 'if ! clean_room_gate "\$REPO_ROOT" "v\$TARGET_VERSION"; then' "$CASCADE" | head -1 | cut -d: -f1)
+if [ -n "$src_ln" ] && [ -n "$gate_ln" ] && [ "$src_ln" -lt "$gate_ln" ] && ! grep -q '^clean_room_gate() {' "$CASCADE"; then
+  pass "gate_lib_sourced (cascade line $src_ln sources the lib the rows ran; no local copy of the gate)"
+else
+  fail "gate_lib_sourced: source line '${src_ln:-none}', gate line '${gate_ln:-none}', or cascade-publish.sh still defines its own clean_room_gate"
+fi
 pre_ln=$(grep -n 'if ! bash "\$REPO_ROOT/scripts/check_publish_preflight.sh"; then' "$CASCADE" | head -1 | cut -d: -f1)
 skip_hits=$(grep -ciE 'skip[-_]?clean[-_]?room|clean[-_]?room[-_]?skip|CLEAN_ROOM_(BYPASS|OVERRIDE|OFF)' "$CASCADE" || true)
 if [ -n "$gate_ln" ] && [ -n "$pre_ln" ] && [ "$gate_ln" -lt "$pre_ln" ] && [ "${skip_hits:-0}" -eq 0 ]; then
