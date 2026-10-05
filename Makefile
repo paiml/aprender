@@ -1557,7 +1557,7 @@ oracle-owl-check: oracle-owl
 	  || { echo "FAIL: tests/oracle/tbox-differential.json differs from a fresh run — commit it"; exit 1; }
 
 # ── BLD-002 R4: nightly evidence train (report-only) ────────────────────────────────────────────────────────
-# One line a night for main's head: RELEASABLE H=<C> or NOT RELEASABLE: <lane>, <run>. The timer runs a bundle copied
+# One line a night for main: RELEASABLE H=<J>, J the head unless the line prints a lag note or NOT RELEASABLE: <lane>, <run>. The timer runs a bundle copied
 # out of git at pinned shas, never the working tree; all three default to HEAD, since they ship in one tree. OUT (and optionally INBOX) come from the command line:
 #   make nightly-train-install OUT=<dir> [INBOX=<file>]   pin, self-test, install + enable the daily 04:45 UTC user timer
 #   make nightly-train-run                                 run the installed unit once, by hand, and print its line

@@ -280,12 +280,12 @@ call_ok() { [ "$CALLS" -lt "$MAX_CALLS" ] || return 1; CALLS=$((CALLS + 1)); }
 # gql_query LANES WFJSON -> the one GraphQL query; empty when a producer workflow is missing from the list.
 # jq 1.6 compatible (the timer PATH may find it first): no reserved words such as $or as variable names.
 gql_query() {
-    printf '%s\n' "$1" | awk -F ';' '$4 != "-" { print $4 }' | sort -u | jq -R -s --slurpfile wf "$2" -r --arg repo "$REPO" '
+    printf '%s\n' "$1" | awk -F ';' '$4 != "-" { print $4 }' | sort -u | jq -R -s --slurpfile wf "$2" -r --arg repo "$REPO" --argjson hn "$((MAX_LAG + 1))" '
         split("\n") | map(select(length > 0)) as $want
         | ($wf | first | .workflows | map(select(.path as $x | $want | index($x))) ) as $hit
         | if ($hit | length) != ($want | length) then error("producer workflow missing from the list") else . end
         | ($repo | split("/")) as $own
-        | "query { repository(owner: \"\($own | first)\", name: \"\($own | last)\") { defaultBranchRef { name target { ... on Commit { oid tree { oid } statusCheckRollup { contexts(first: 100) { pageInfo { hasNextPage } nodes { ... on CheckRun { name status conclusion startedAt completedAt checkSuite { status conclusion branch { name } workflowRun { databaseId event createdAt workflow { id } } } } } } } history(first: 7) { nodes { oid statusCheckRollup { contexts(first: 100) { pageInfo { hasNextPage } nodes { ... on CheckRun { name status conclusion startedAt completedAt checkSuite { status conclusion branch { name } workflowRun { databaseId event createdAt workflow { id } } } } } } } } } } } } } "
+        | "query { repository(owner: \"\($own | first)\", name: \"\($own | last)\") { defaultBranchRef { name target { ... on Commit { oid tree { oid } statusCheckRollup { contexts(first: 100) { pageInfo { hasNextPage } nodes { ... on CheckRun { name status conclusion startedAt completedAt checkSuite { status conclusion branch { name } workflowRun { databaseId event createdAt workflow { id } } } } } } } history(first: \($hn)) { nodes { oid statusCheckRollup { contexts(first: 100) { pageInfo { hasNextPage } nodes { ... on CheckRun { name status conclusion startedAt completedAt checkSuite { status conclusion branch { name } workflowRun { databaseId event createdAt workflow { id } } } } } } } } } } } } } "
           + ([$hit | to_entries[] | "w\(.key): node(id: \"\(.value.node_id)\") { ... on Workflow { id runs(first: 12) { nodes { databaseId createdAt event checkSuite { status conclusion branch { name } commit { oid } checkRuns(first: 100, filterBy: {checkType: ALL}) { pageInfo { hasNextPage } nodes { name status conclusion startedAt completedAt } } } } } } }"] | join(" ")) + " }"' 2>/dev/null
 }
 normalize() {
@@ -392,7 +392,7 @@ no_token() {
         fi
     done
 }
-# verdict_rc LINE -> 0 for RELEASABLE, 1 for anything else (--exit-verdict: a green job means a releasable head)
+# verdict_rc LINE -> 0 for RELEASABLE, 1 for anything else (--exit-verdict: a green job means a releasable judged commit J, named with the head and the lag when J is not the head)
 verdict_rc() { case "$1" in "RELEASABLE "*) return 0 ;; *) return 1 ;; esac; }
 inbox_line() {   # inbox_line LINE GREENS -> append <= 300 bytes and read it back
     local l who="${NIGHTLY_TRAIN_REPORTER:-nightly-r4}"   # the reporter is a role, named by the caller, never written here
