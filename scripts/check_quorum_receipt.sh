@@ -72,7 +72,7 @@ nm() { printf 'check_quorum_receipt: not_measured: %s; nothing was linted\n' "$1
 # lane role verdict model family requested seat measured plant author_model
 _qr_lanes() {
     jq -r --arg F "$2" --arg L "$3" '
-        ((.author.model // "") | ascii_downcase | gsub("^\\s+|\\s+$"; "") | sub("-[0-9]{8}$"; "")) as $am
+        ((.author.model // "") | ascii_downcase | gsub("^\\s+|\\s+$"; "")) as $am
         | .lanes[]?
         | . as $l
         | (($F + ":" + $L)) as $fl
@@ -119,10 +119,19 @@ _qr_exact_id() {
     return 1
 }
 
-# _qr_is_author MODEL AM -> rc 0 iff MODEL, less a -YYYYMMDD date suffix, is the author's
-# model (AM arrives lowercased, trimmed and undated from _qr_lanes)
+# _qr_key ID -> the id as one model's identity: no -YYYYMMDD date suffix, and dots read as
+# dashes. The quorum tool's model_canon writes gemini-3.1-pro-high as gemini-3-1-pro-high,
+# so an author recorded that way and its raw lane id are one seat (C314 review of 0bb7147459).
+# Only identity compares use it; _qr_exact_id still reads the id as written.
+_qr_key() {
+    local k="${1%-[0-9][0-9][0-9][0-9][0-9][0-9][0-9][0-9]}"
+    printf '%s' "${k//./-}"
+}
+
+# _qr_is_author MODEL AM -> rc 0 iff MODEL and the author's model (AM arrives lowercased and
+# trimmed, not undated, from _qr_lanes) are one model under _qr_key, which drops the date
 _qr_is_author() {
-    [ "${1%-[0-9][0-9][0-9][0-9][0-9][0-9][0-9][0-9]}" = "$2" ]
+    [ "$(_qr_key "$1")" = "$(_qr_key "$2")" ]
 }
 
 # _qr_family ID -> the family the id itself names (its first token; gpt-* is openai).
@@ -201,7 +210,7 @@ check_quorum_receipt() {
             "$lane" "$role" "$verdict" "$requested" "$seat" "$family" "$pv" "${why:-valid}"
         [ -z "$why" ] || continue
         valid=$((valid + 1))
-        models="$models${model%-[0-9][0-9][0-9][0-9][0-9][0-9][0-9][0-9]}"$'\n'
+        models="$models$(_qr_key "$model")"$'\n'
         families="$families$family"$'\n'
     done <<< "$rows"
     n_models="$(printf '%s' "$models" | sort -u | grep -c .)"
@@ -415,6 +424,14 @@ selftest() {
     row same_file_other_line_missed "plant-missed" "$(lane_tag "$f" 1)"
     rc_json "$A" "" "$(ln 1 claude--sonnet-5 claude FAIL "$C")" "$(ln 2 gemini-3.1-pro-high gemini FAIL "$C")" > "$f"
     row double_dash_id_is_void "inexact-id" "$(lane_tag "$f" 1)"
+    # model_canon writes gemini-3.1-pro-high as gemini-3-1-pro-high: one seat, one model.
+    rc_json "gemini-3-1-pro-high" "" "$(ln 1 gemini-3.1-pro-high gemini FAIL "$C")" "$(ln 2 claude-sonnet-5-5 claude FAIL "$C")" > "$f"
+    row dashed_author_owns_dotted_lane "author-seat" "$(lane_tag "$f" 1)"
+    row dashed_author_round_invalid "rc=1 INVALID" "$(verdict "$f")" "(must fail: the author's own gemini-3.1 seat)"
+    rc_json "gemini-3.1-pro-high" "" "$(ln 1 gemini-3-1-pro-high gemini FAIL "$C")" "$(ln 2 claude-sonnet-5-5 claude FAIL "$C")" > "$f"
+    row dotted_author_owns_dashed_lane "author-seat" "$(lane_tag "$f" 1)"
+    rc_json "$A" ',"degraded":{"why":"x"}' "$(ln 1 gemini-3.1-pro-high gemini FAIL "$C")" "$(ln 2 gemini-3-1-pro-high gemini FAIL "$C")" > "$f"
+    row dotted_and_dashed_are_one_model "rc=1 INVALID" "$(verdict "$f")" "(degraded needs 2 models)"
     # Canonical as the quorum tool's model_canon / model_family: fable-* is claude, o<N>-* is openai.
     rc_json "fable-5-1" "" "$(ln 1 claude-fable-5-1 claude FAIL "$C")" "$(ln 2 gemini-3.1-pro-high gemini FAIL "$C")" > "$f"
     row fable_alias_author_is_author_seat "author-seat" "$(lane_tag "$f" 1)"
@@ -468,14 +485,14 @@ MUTANTS=(
     'no_author_ok|s/if ! jq -e .(.author.model \/\/ "") != "". "\$f"/if false/'
     'enforce_ignored|s/if \[ "\$enforce" = 1 \]; then exit "\$rc"; fi/:/'
     'author_case_kept|s/| ascii_downcase | gsub/| gsub/'
-    'author_date_kept|s/| sub("-\[0-9\]{8}\$"; "")) as \$am/) as $am/'
     'gpt_not_openai|s/        gpt-\* | o\[0-9\]\*-\*) printf .openai. ;;//'
     'measured_unchecked|s/ || \[ "\$measured" != "\$model" \]//'
     'no_verdict_ok|s/elif \[ "\$verdict" != PASS \] \&\& \[ "\$verdict" != FAIL \]; then/elif false; then/'
     'any_role_counts|s/elif \[ "\$role" != independent \] \&\& \[ "\$role" != counted \] \&\& \[ "\$role" != width \]; then/elif false; then/'
     'contradiction_ok|s/elif \[ "\$pv" = caught \] \&\& \[ "\$verdict" = PASS \]; then/elif false; then/'
     'degraded_truthy|s/then "yes" else "" end. "\$f")"$/then "yes" elif .degraded != null and .degraded != false then "yes" else "" end'"'"' "$f")"/'
-    'dated_twin_two|s/models="\$models\${model%-\[0-9\]\[0-9\]\[0-9\]\[0-9\]\[0-9\]\[0-9\]\[0-9\]\[0-9\]}"/models="$models$model"/'
+    'dated_twin_two|s/    local k="\${1%-\[0-9\]\[0-9\]\[0-9\]\[0-9\]\[0-9\]\[0-9\]\[0-9\]\[0-9\]}"/    local k="$1"/'
+    'dots_not_dashes|s/"\${k\/\/.\/-}"/"$k"/'
     'measured_from_claim|s/measured: (.model_measured \/\/ ""),/measured: (.model_measured \/\/ .model \/\/ ""),/'
     'decorated_author_ok|s/if \[ "\$am" != human \] \&\& ! _qr_exact_id "\$am"; then/if false; then/'
     'alias_not_canon|s/        opus-\* | sonnet-\* | haiku-\* | fable-\* | mythos-\*) printf .claude-%s. "\$1" ;;//'
