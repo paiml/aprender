@@ -48,21 +48,23 @@ conflict-resolution hunks. A clean merge was reviewed through its second parent.
 | R1 | 8b7d6a04c5, 5096a27b07, 4ec3e303c1, 5509934e88, b791ffbf58 | 8b7d6a04c5 deleted `scripts/check_package_includes.sh` | caught: FALSE, `git ls-tree` blob b054bfb1d9, gate still runs at line 588 | caught: FALSE, same blob | **FAIL, both lanes**: 5509934e88 moved the crux gate-path callers to a Rust binary built from the tree (`crux_judge_bin.sh:8`, `check_crux_inference_judge.sh:35,220`), which breaks N-1. Fixed by **8b684297c2**, itself reviewed in the planted 17:50 round above. No other defect |
 | R2 | 7e1d0afa91, d676d83079, b7257a2b9b | at d676d83079, main.rs declares `DagStatus` but has no `Cmd::DagStatus` arm | caught: FALSE, `main.rs:76,158` | caught: FALSE | PASS |
 | R3 | 7504b6af1a | 7504b6af1a resolved the parity test to `EXPECTED_CASES=63`, dropping tarball-workspace | caught: FALSE, `ci_tools_py_parity_test.sh:35` = 91 | caught: FALSE, line 35 | PASS |
-| R4 | 61801f0c2a | the Cargo.toml resolution added `serde_yaml` | caught: FALSE, deps are clap/regex/serde_json/toml | caught: FALSE | PASS (see the note on haiku Q2) |
+| R4 (void) | 61801f0c2a | the Cargo.toml resolution added `serde_yaml` | caught: FALSE, deps are clap/regex/serde_json/toml | caught: FALSE | **void**. The haiku lane returned FAIL on Q2, then changed to PASS after the coordinator gave it a recount, so it was no longer independent |
+| R4b | 61801f0c2a | the `target_dir: true` arm was dropped in the main.rs resolution | caught: FALSE, `main.rs:125` | caught: FALSE | **split**: sonnet PASS, Q2 counted 115 from a stubbed run; haiku FAIL, Q2 "~103". A split one-family round is no answer (C312) |
+| R4c (tie-break, second family) | 61801f0c2a | the README.md resolution dropped the `tarball-workspace` row | gemini lane: caught, FALSE, `README.md:12` | (n/a) | **gemini PASS** on Q1–Q4. See the note below |
 
-**Note on R4, haiku Q2.** The haiku lane first returned FAIL: "declared 115, run 105".
-The coordinator recounted from the code at 61801f0c2a:
+**Note on R4c.** A single agy lane with no recount given.
+- Recorded id: `gemini-3.1-pro-high` (what was passed). Self-reported: `gemini-3.1-pro`.
+- Status ERROR, because one API attempt hit a 502, but the run finished with a full response: 941 s, 1612 chars.
+- An earlier launch at the same brief failed its eligibility check (503) with no response and counts for nothing.
+- Citations verified at 61801f0c2a: arm order `main.rs:125,134,137`; `TarballBuildErrors` code/stderr mapping at `main.rs:142-148`; `EXPECTED_CASES=115` at `ci_tools_py_parity_test.sh:36`; the plant refuted at `README.md:12`.
+- Weakness: its Q2 PASS states "115 executed" but cites only the declaration line, with no per-group count.
+- The R4 tally on Q2 is sonnet 115, gemini 115, haiku ~103.
 
-- the publish loop (lines 119–123) runs `check` 6 times, and the refusal loop (lines 135–141) runs it 11 times;
-- the `check` lines at 162, 203, 237, 332 and 418 are inside helper bodies, not invocations;
-- lines 372–373 are tw_case calls written with a `TW_CWD=` prefix;
-- the plant at line 103 resets `fail` at line 108.
-
-That gives 24 + 17 + 13 + 9 + 28 + 24 = 115. The lane re-checked and returned PASS.
-Its re-check partly repeats the coordinator's figures, so this is weaker evidence than
-an independent count. The independent evidence is that the harness refuses a mismatch
-at runtime (`ran -ne EXPECTED_CASES` → exit 1, lines 481–484), and that PF9 below ran
-it green at the batch head.
+**Supporting evidence, not a lane.** A run of the 61801f0c2a harness with `check` stubbed to a counter (`PYTHON=true`, `CI_TOOLS_BIN=/usr/bin/true`):
+- 115 distinct `check` calls: publishable-crates 24, package-include-diff 17, coverage-report-scope 13, tarball-shrink-report 9, tarball-workspace 28, tarball-build-errors 24.
+- `ran` was 120, because the 5 anti-vacuity guards fire on the stubs' empty output.
+- The harness itself refuses a mismatch at runtime: `ran -ne EXPECTED_CASES` exits 1, lines 481–484.
+- The real harness run at 61801f0c2a on the pre-flight host is queued in the host lock order; its result is not yet recorded.
 
 ## Pre-flight PF9 (pre-flight host, 30871fad90 = branch head 8b684297c2 + origin/main 11f844a772, merged in locally)
 
