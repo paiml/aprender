@@ -7,7 +7,7 @@
 # EXTERNAL VALIDATOR here (C301 allows that), never a build step.
 #
 #   publishable-crates      vs scripts/lib/publishable_crates.py
-#   package-include-diff    vs scripts/lib/package_include_diff.py
+#   package-include-diff    vs its frozen golden outputs (the .py is deleted, callers switched)
 #   coverage-report-scope   vs scripts/coverage_report_scope.py (deleted from the tree once its
 #                           callers moved to the bin; read back from git by its pinned blob)
 #
@@ -147,35 +147,39 @@ if [[ "$("${PC_RS[@]}" <"$tmp/live-meta.json" | wc -l)" -lt 1 ]]; then
 fi
 
 # --- 2. package-include-diff -----------------------------------------------------
-pid_case() { # NAME LISTING_PRINTF INCLUDES_PRINTF
+# The .py original is DELETED (callers switched); its outputs for every row below were
+# captured from it before removal and are frozen here as the expected stdout. A row is
+# `printf '%s' EXPECTED` on the oracle side, so `check` still compares bytes + status.
+pid_case() { # NAME LISTING_PRINTF INCLUDES_PRINTF EXPECTED_STDOUT
     printf "$2" >"$tmp/l"
     printf "$3" >"$tmp/i"
     check "package-include-diff $1" "$tmp/empty" \
-        "$PY" scripts/lib/package_include_diff.py "$tmp/l" "$tmp/i" -- \
+        printf '%s' "$4" -- \
         "$BIN" package-include-diff "$tmp/l" "$tmp/i"
 }
-pid_case "all present" 'a.rs\nb.rs\n' 'a.rs\tm.rs\nb.rs\tm.rs\n'
-pid_case "one missing" 'a.rs\n' 'a.rs\tm.rs\nb.rs\tn.rs\n'
-pid_case "empty listing" '' 'a.rs\tm.rs\n'
-pid_case "empty includes" 'a.rs\n' ''
-pid_case "duplicates kept" '' 'x\ty\nx\ty\n'
-pid_case "no tab" '' 'lonely\n'
-pid_case "second tab" '' 't\ts\tz\n'
-pid_case "CRLF" 'a.rs\r\n' 'a.rs\tm.rs\r\nq\tr\r\n'
-pid_case "lone CR" 'a.rs\rb.rs' 'b.rs\tm\ra.rs\tm\rc\td'
-pid_case "blank includes" '' '\n\n'
-pid_case "whitespace include row" '' '  \n'
-pid_case "whitespace listing" '  \n\x1c\n' '  \tm\n\x1c\tn\n'
-pid_case "inner spaces" ' a.rs \n' ' a.rs \tm\n'
-pid_case "no final newline" 'a.rs' 'a.rs\tm'
-pid_case "bad utf8" '\xff.rs\n' '\xff.rs\tm\n\xfe\tq\n\xe2\x82\tr\n'
+pid_case "all present" 'a.rs\nb.rs\n' 'a.rs\tm.rs\nb.rs\tm.rs\n' ''
+pid_case "one missing" 'a.rs\n' 'a.rs\tm.rs\nb.rs\tn.rs\n' $'b.rs\tn.rs\n'
+pid_case "empty listing" '' 'a.rs\tm.rs\n' $'a.rs\tm.rs\n'
+pid_case "empty includes" 'a.rs\n' '' ''
+pid_case "duplicates kept" '' 'x\ty\nx\ty\n' $'x\ty\nx\ty\n'
+pid_case "no tab" '' 'lonely\n' $'lonely\t\n'
+pid_case "second tab" '' 't\ts\tz\n' $'t\ts\tz\n'
+pid_case "CRLF" 'a.rs\r\n' 'a.rs\tm.rs\r\nq\tr\r\n' $'q\tr\n'
+pid_case "lone CR" 'a.rs\rb.rs' 'b.rs\tm\ra.rs\tm\rc\td' $'c\td\n'
+pid_case "blank includes" '' '\n\n' ''
+pid_case "whitespace include row" '' '  \n' $'  \t\n'
+pid_case "whitespace listing" '  \n\x1c\n' '  \tm\n\x1c\tn\n' $'  \tm\n\x1c\tn\n'
+pid_case "inner spaces" ' a.rs \n' ' a.rs \tm\n' ''
+pid_case "no final newline" 'a.rs' 'a.rs\tm' ''
+pid_case "bad utf8" '\xff.rs\n' '\xff.rs\tm\n\xfe\tq\n\xe2\x82\tr\n' $'\xef\xbf\xbd\tq\n\xef\xbf\xbd\tr\n'
+# A listing that cannot be opened: the original raised (status 1, empty stdout).
 check "package-include-diff missing listing" "$tmp/empty" \
-    "$PY" scripts/lib/package_include_diff.py "$tmp/nope" "$tmp/i" -- \
+    false -- \
     "$BIN" package-include-diff "$tmp/nope" "$tmp/i"
 git ls-files crates/aprender-ci-tools >"$tmp/live-l"
 { sed 's/$/\tsrc.rs/' "$tmp/live-l"; printf 'crates/aprender-ci-tools/src/planted.rs\tlib.rs\n'; } >"$tmp/live-i"
 check "package-include-diff LIVE+plant" "$tmp/empty" \
-    "$PY" scripts/lib/package_include_diff.py "$tmp/live-l" "$tmp/live-i" -- \
+    printf '%s' $'crates/aprender-ci-tools/src/planted.rs\tlib.rs\n' -- \
     "$BIN" package-include-diff "$tmp/live-l" "$tmp/live-i"
 if ! "$BIN" package-include-diff "$tmp/live-l" "$tmp/live-i" | grep -q 'planted.rs'; then
     echo "FAIL: the planted missing include was not reported" >&2
