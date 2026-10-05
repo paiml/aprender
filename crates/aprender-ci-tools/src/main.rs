@@ -1,9 +1,9 @@
 //! `aprender-ci-tools`: one binary, one subcommand per ported Python helper.
 
 use aprender_ci_tools::{
-    annotate_book_examples, coverage_report_scope, dag_status, git_patch_id, package_include_diff,
-    perf041_report, publishable_crates, tarball_build_errors, tarball_shrink_report,
-    tarball_workspace,
+    annotate_book_examples, coverage_report_scope, dag_status, extract_book_examples, git_patch_id,
+    package_include_diff, perf041_report, publishable_crates, tarball_build_errors,
+    tarball_shrink_report, tarball_workspace,
 };
 use clap::{ArgGroup, Parser, Subcommand};
 use std::io::{Read, Write};
@@ -99,6 +99,13 @@ enum Cmd {
     /// scripts/annotate-book-examples.py, which used its own repo as ROOT).
     AnnotateBookExamples {
         /// The repository root holding `book/src`.
+        #[arg(default_value = ".")]
+        root: PathBuf,
+    },
+    /// One JSON line per bash/rust block in `ROOT/book/src/{cli,lib}/*.md`, with the cost
+    /// class read from the comment above it (was scripts/extract_book_examples.py).
+    ExtractBookExamples {
+        /// The repository root the book lives under.
         #[arg(default_value = ".")]
         root: PathBuf,
     },
@@ -210,6 +217,9 @@ fn run(cmd: Cmd) -> Result<String, Refusal> {
         }
         Cmd::AnnotateBookExamples { root } => {
             annotate_book_examples::run(&root).map_err(|(printed, reason)| (printed, 1, reason))
+        }
+        Cmd::ExtractBookExamples { root } => {
+            extract_book_examples::run(&root).map_err(|(printed, reason)| (printed, 1, reason))
         }
     }
 }

@@ -17,6 +17,7 @@
 #   tarball-build-errors    vs scripts/lib/tarball_build_errors.py
 #   annotate-book-examples  vs scripts/annotate-book-examples.py (no caller; it rewrites
 #                           book chapters, so each case also compares the two rewritten trees)
+#   extract-book-examples   vs scripts/extract_book_examples.py
 #
 # coverage_report_scope.py runs `cargo metadata` itself, so its fixture cases put a
 # fake `cargo` first on PATH that prints the fixture; both sides then read the same
@@ -35,7 +36,7 @@ set -euo pipefail
 ROOT="$(git rev-parse --show-toplevel)"
 cd "$ROOT" || exit 1
 PY="${PYTHON:-python3}"
-EXPECTED_CASES=178
+EXPECTED_CASES=199
 
 BIN="${CI_TOOLS_BIN:-}"
 if [[ -z "$BIN" ]]; then
@@ -506,7 +507,6 @@ check_tbe "unit separator in path" "$t/us.log"
 check_tbe "error codes" "$t/code.log"
 check_tbe "nested pkgs" "$t/nested.log"
 check_tbe "non-ascii crate" "$t/unicode.log"
-
 # --- 6. perf041-report ---
 # No caller anywhere in the tree, so no gate path; the .py stays as this table's validator
 # until the port is released. A case is a directory of band records; exit 0 report, 1 no
@@ -792,6 +792,115 @@ abe_plant() {
 }
 liar fail abe_case "plant tree" abe_plant
 chmod -R u+w "$tmp/abe"
+
+# --- 8. extract-book-examples ---
+# The .py reads the book under its OWN repo (ROOT = the script's grandparent), so each case
+# builds one tree, copies the .py into its scripts/ and points the port at the same tree.
+# Neither side writes, so check_exact (stdout, exact status, stderr present) is the whole
+# comparison.
+EBE_PY_SRC="$ROOT/scripts/extract_book_examples.py"
+ebe_n=0
+ebe_case() { # NAME SETUP_FN: SETUP_FN DIR builds book/src under DIR
+    local name="$1" setup="$2" d
+    ebe_n=$((ebe_n + 1))
+    d="$tmp/ebe/$ebe_n"
+    mkdir -p "$d/scripts"
+    cp "$EBE_PY_SRC" "$d/scripts/extract_book_examples.py"
+    "$setup" "$d"
+    check_exact "extract-book-examples $name" "$tmp/empty" \
+        "$PY" "$d/scripts/extract_book_examples.py" -- "$BIN" extract-book-examples "$d"
+}
+ebe_ch() { # DIR SUB NAME PRINTF-FORMAT [ARGS...]: one chapter, its bytes from printf
+    local dir="$1" sub="$2" name="$3" fmt="$4"
+    shift 4
+    mkdir -p "$dir/book/src/$sub"
+    # shellcheck disable=SC2059 # the format IS the fixture
+    printf "$fmt" "$@" >"$dir/book/src/$sub/$name"
+}
+ebe_none() { :; }
+ebe_clifile() { mkdir -p "$1/book/src" && printf 'x\n' >"$1/book/src/cli"; }
+ebe_emptydirs() { mkdir -p "$1/book/src/cli" "$1/book/src/lib"; }
+ebe_live() { mkdir -p "$1/book/src" && cp -r "$ROOT/book/src/cli" "$ROOT/book/src/lib" "$1/book/src/"; }
+ebe_costs() {
+    local c
+    for c in trivial model-required gpu destructive interactive skip Trivial bogus; do
+        ebe_ch "$1" cli "c-$c.md" '<!-- example-cost: %s -->\n```bash\napr x\n```\n' "$c"
+    done
+    ebe_ch "$1" lib m.md '<!-- example-cost: model-required model: qwen2.5 -->\n```bash\n```\n<!-- example-cost: model: m -->\n```bash\n```\n<!-- example-cost: gpu model: -->\n```bash\n```\n<!-- example-cost: gpu model: a model: b -->\n```bash\n```\n<!-- example-cost: gpu x model: model: -->\n```bash\n```\n<!-- example-cost:\xe3\x80\x80gpu\x1fmodel:\xc2\xa0\xc3\xa9"\\x -->\n```rust\n```\n<!-- example-cost: gpu MODEL: m model:x -->\n```rust\n```\n'
+}
+ebe_costlines() {
+    ebe_ch "$1" cli k.md '<!--example-cost:gpu-->\n```rust\n```\n<!-- \x1c example-cost: gpu -->\n```rust\n```\n<!--example-cost:-->\n```rust\n```\n<!-- example-cost: a>b -->\n```rust\n```\n<!-- example-cost: gpu --> y\n```rust\n```\n<!-- cost: gpu -->\n```rust\n```\nx<!-- example-cost: gpu -->\n```rust\n```\n<!-- example-cost: gpu ->\n```rust\n```\n<!--\xc2\xa0example-cost:\xe3\x80\x80gpu\xe2\x80\x80-->\n```rust\n```\n<!-- example-cost: gpu -->\xe2\x80\x83\n```rust\n```\n<!-- example-cost: gpu --->\n```rust\n```\n'
+}
+ebe_emptycost() { # the original's parts[0] IndexError: stops after a.md, b.md prints nothing
+    ebe_ch "$1" cli a.md '```rust\n```\n'
+    ebe_ch "$1" cli b.md '```rust\n```\n<!-- example-cost: \t -->\n```bash\n```\n'
+    ebe_ch "$1" cli c.md '```rust\n```\n'
+}
+ebe_emptycost_unread() { # an empty cost line no fence looks back to is never parsed
+    ebe_ch "$1" cli a.md '<!-- example-cost:  -->\nx\n```rust\n```\n<!-- example-cost:  -->\n\n\n```rust\n```\n<!-- example-cost:  -->\n```sh\n```\n'
+}
+ebe_lookback() {
+    ebe_ch "$1" cli l.md '<!-- example-cost: gpu -->\n\n```bash\n```\n<!-- example-cost: gpu -->\n\n\n```bash\n```\n<!-- example-cost: gpu -->\ntext\n```rust\n```\n   <!-- example-cost: skip -->  \n \t\x1f\n```bash\n```\n```bash\n```\n```rust\n```\n'
+}
+ebe_fences() {
+    ebe_ch "$1" cli f.md '```bash \t\x1f\xc2\xa0\napr gpu\n```\n```Bash\n```\n ```bash\n```\n``` bash\n```\n```bashx\n```\n````bash\n```\n```sh\n```\n```bash\na\n```rust\nb\n``` \xc2\xa0\n```rust\n\n```\n```bash\n ```\n````\n```x\n```\n```bash\nnever closed\n'
+    ebe_ch "$1" cli g.md '```bash\n```'
+}
+ebe_escapes() {
+    ebe_ch "$1" cli e.md '```bash\nsay "hi" \\ back\ttab\x7fdel\x01\x08\x1b \xc3\xa9 \xf0\x9f\x98\x80 \xef\xbf\xbf\n\x1f\n```\n'
+}
+ebe_breaks() {
+    ebe_ch "$1" cli crlf.md 'Text\r\n```bash\r\napr tui\r\n\r\n```\r\n'
+    ebe_ch "$1" cli cr.md '```rust\rfn f(){}\r```\r'
+    ebe_ch "$1" cli u.md '<!-- example-cost: gpu -->\x0b```bash\x1capr\x1dgpu\xe2\x80\xa8x\xc2\x85```\x1ed\xe2\x80\xa9'
+}
+ebe_order() {
+    local n
+    for n in b.md a.md A.md .h.md .md y.md.md c.MD 'n\n.md' 'r\r.md' '\xc3\xa9.md' 'z z.md' '\xff.md' '\xee\x80\x80.md' '\xf0\x9f\x98\x80.md' 'a\xc3.md'; do
+        # shellcheck disable=SC2059 # the name IS a printf fixture
+        ebe_ch "$1" cli "$(printf "$n")" '```rust\n```\n'
+    done
+    ebe_ch "$1" lib a.md '```bash\napr tui\n```\n'
+    ebe_ch "$1" other o.md '```rust\n```\n'
+}
+ebe_libonly() { ebe_ch "$1" lib only.md 'x\n```bash\napr eval m.apr\n```\n'; }
+ebe_bom() { ebe_ch "$1" cli bom.md '\xef\xbb\xbf```bash\n```\n\xef\xbb\xbf<!-- example-cost: gpu -->\n```rust\n```\n'; }
+ebe_badutf8() {
+    ebe_ch "$1" cli a.md '```rust\n```\n'
+    ebe_ch "$1" cli b.md '```rust\n```\nbad \xff utf-8\n'
+    ebe_ch "$1" cli c.md '```rust\n```\n'
+}
+ebe_surrogate() { ebe_ch "$1" cli s.md '```rust\n\xed\xa0\x80\n```\n'; }
+ebe_dirmd() { ebe_ch "$1" cli a.md '```rust\n```\n' && mkdir -p "$1/book/src/cli/d.md"; }
+ebe_dangling() { ebe_ch "$1" cli a.md '```rust\n```\n' && ln -s nowhere "$1/book/src/cli/l.md"; }
+ebe_symlink() { ebe_ch "$1" cli real.txt '```rust\n```\n' && ln -s real.txt "$1/book/src/cli/l.md"; }
+ebe_unreadable() {
+    ebe_ch "$1" cli a.md '```rust\n```\n'
+    ebe_ch "$1" cli b.md '```rust\n```\n'
+    chmod 000 "$1/book/src/cli/b.md"
+}
+ebe_case "no book" ebe_none
+ebe_case "cli is a file" ebe_clifile
+ebe_case "empty dirs" ebe_emptydirs
+ebe_case "live book" ebe_live
+ebe_case "cost classes and models" ebe_costs
+ebe_case "cost-line forms" ebe_costlines
+ebe_case "an empty cost line stops the run" ebe_emptycost
+ebe_case "an empty cost line nothing reads" ebe_emptycost_unread
+ebe_case "look-back" ebe_lookback
+ebe_case "fence forms" ebe_fences
+ebe_case "json escapes" ebe_escapes
+ebe_case "line breaks" ebe_breaks
+ebe_case "order and names" ebe_order
+ebe_case "lib only" ebe_libonly
+ebe_case "BOM" ebe_bom
+ebe_case "invalid utf-8 stops the run" ebe_badutf8
+ebe_case "encoded surrogate" ebe_surrogate
+ebe_case "a directory named .md" ebe_dirmd
+ebe_case "dangling link" ebe_dangling
+ebe_case "link to a chapter" ebe_symlink
+ebe_case "unreadable chapter" ebe_unreadable
+chmod -R u+rw "$tmp/ebe"
 
 
 ran=$((pass + fail))

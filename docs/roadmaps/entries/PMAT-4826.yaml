@@ -1,0 +1,18 @@
+- id: PMAT-4826
+  github_issue: 4826
+  item_type: task
+  title: 'PY-PORT-2h: port extract_book_examples.py to aprender-ci-tools extract-book-examples (C301)'
+  status: planned
+  priority: medium
+  assigned_to: null
+  created: 2026-10-05T18:20:37Z
+  updated: 2026-10-05T18:20:37Z
+  spec: null
+  acceptance_criteria: []
+  phases: []
+  subtasks: []
+  estimated_effort: null
+  labels:
+  - kind:code
+  notes: 'Fold note (aprender-0d, 2026-10-05): this branch adds harness section 8 (21 cases, EXPECTED_CASES 136 from base 115) and the check_exact helper with its liars. PMAT-4818 (section 6) and PMAT-4822 (section 7) edit the same harness from the same base; a fold keeps all three sections and check_exact once, with EXPECTED_CASES = 115 + the cases each section adds.'
+  epic: 4741

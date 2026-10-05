@@ -6,6 +6,7 @@
 pub mod annotate_book_examples;
 pub mod coverage_report_scope;
 pub mod dag_status;
+pub mod extract_book_examples;
 pub mod git_patch_id;
 pub mod package_include_diff;
 pub mod perf041_report;
