@@ -10,6 +10,11 @@
 # shebang in CI, so the defect cannot come back unseen.
 set -euo pipefail
 
+# git feeds the pushed refs on stdin. Read them FIRST: every command below
+# inherits stdin, and one that drains it would leave the prediction step with
+# no refs, so it would silently pass (#4791 quorum, lane 2).
+pushed_refs="$(cat)"
+
 echo "── SF-10: Supply Chain Security ──"
 cargo deny check sources 2>/dev/null || echo "WARN: cargo-deny not installed"
 cargo deny check advisories 2>/dev/null || echo "WARN: cargo-deny not installed"
@@ -44,8 +49,8 @@ echo "── BLD-001 K1 (#4791): merge prediction (scripts/predict_merge.sh --ch
 # not_measured) and a recorded FAIL (1) all refuse the push.
 #
 # The record is about HEAD, so a pushed branch ref must be HEAD. Deletions and
-# tags are not merged into main and are not predicted. git feeds the refs on
-# stdin: <local ref> <local sha> <remote ref> <remote sha>.
+# tags are not merged into main and are not predicted. Each pushed_refs line:
+# <local ref> <local sha> <remote ref> <remote sha>.
 zero=0000000000000000000000000000000000000000
 head_sha="$(git rev-parse HEAD)"
 need_predict=0
@@ -59,7 +64,7 @@ while read -r local_ref local_sha _remote_ref _remote_sha; do
         exit 1
     fi
     need_predict=1
-done
+done <<< "$pushed_refs"
 if [ "$need_predict" = 1 ]; then
     rc=0; bash scripts/predict_merge.sh --check || rc=$?
     case "$rc" in

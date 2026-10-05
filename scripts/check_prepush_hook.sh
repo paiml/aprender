@@ -46,11 +46,13 @@ make_fixture() {
     local hook="$1" fx="$2" b
     mkdir -p "$fx/.githooks" "$fx/scripts" "$fx/stubbin" || return 2
     cp "$hook" "$fx/.githooks/pre-push" && chmod +x "$fx/.githooks/pre-push" || return 2
-    printf '#!/usr/bin/env bash\nexit 0\n' > "$fx/scripts/ci_guards.sh"
+    # Every stub drains stdin, as a real tool may: the hook must not depend on
+    # git's ref list surviving the commands that run before the prediction.
+    printf '#!/usr/bin/env bash\ncat > /dev/null\nexit 0\n' > "$fx/scripts/ci_guards.sh"
     # The predict stub records that it ran and exits with the rc in .rc.
     printf '#!/usr/bin/env bash\necho called >> "%s/.called"\nexit "$(cat "%s/.rc")"\n' "$fx" "$fx" \
         > "$fx/scripts/predict_merge.sh"
-    for b in pmat cargo; do printf '#!/bin/sh\nexit 0\n' > "$fx/stubbin/$b"; chmod +x "$fx/stubbin/$b"; done
+    for b in pmat cargo; do printf '#!/bin/sh\ncat > /dev/null\nexit 0\n' > "$fx/stubbin/$b"; chmod +x "$fx/stubbin/$b"; done
     git -C "$fx" init -q && git -C "$fx" -c user.name=t -c user.email=t@t -c core.hooksPath=/dev/null \
         -c commit.gpgsign=false commit -q --allow-empty -m fixture || return 2
 }
@@ -128,6 +130,11 @@ self_test() {
     if cmp -s "$t/advisory" "$REPO_ROOT/.githooks/pre-push"; then echo "FAIL self-test: mutant C did not apply"; fail=1
     elif case_table "$t/advisory" > /dev/null; then echo "FAIL self-test: advisory prediction passed"; fail=1
     else echo "ok   self-test: advisory prediction is RED"; fi
+    # Mutant D: refs read from stdin AFTER the other tools ran (pre-quorum order).
+    sed -e '/^pushed_refs="\$(cat)"$/d' -e 's/^done <<< "\$pushed_refs"$/done/' "$REPO_ROOT/.githooks/pre-push" > "$t/late-stdin"
+    if cmp -s "$t/late-stdin" "$REPO_ROOT/.githooks/pre-push"; then echo "FAIL self-test: mutant D did not apply"; fail=1
+    elif case_table "$t/late-stdin" > /dev/null; then echo "FAIL self-test: late stdin read passed"; fail=1
+    else echo "ok   self-test: late stdin read is RED"; fi
     # The real hook must be GREEN, or the RED rows above prove nothing.
     if case_table "$REPO_ROOT/.githooks/pre-push" > /dev/null; then echo "ok   self-test: the real hook is GREEN"
     else echo "FAIL self-test: the real hook is RED"; fail=1; fi
