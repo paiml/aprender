@@ -1,8 +1,8 @@
 //! `aprender-ci-tools`: one binary, one subcommand per ported Python helper.
 
 use aprender_ci_tools::{
-    coverage_report_scope, package_include_diff, publishable_crates, tarball_shrink_report,
-    tarball_workspace,
+    coverage_report_scope, package_include_diff, publishable_crates, tarball_build_errors,
+    tarball_shrink_report, tarball_workspace,
 };
 use clap::{ArgGroup, Parser, Subcommand};
 use std::io::{Read, Write};
@@ -60,6 +60,15 @@ enum Cmd {
         /// Print `target_directory` of the `cargo metadata` JSON on stdin.
         #[arg(long)]
         target_dir: bool,
+    },
+    /// Attribute a tarball-workspace build's errors to the crates that own them (was
+    /// scripts/lib/tarball_build_errors.py). Exit 0 no error, 1 a crate is RED, 2 bad input,
+    /// 3 only unowned errors, 4 the build host failed.
+    TarballBuildErrors {
+        /// The `cargo build --message-format short` log. Exactly one, else exit 2 as the
+        /// original, so the count is checked by the port and not by clap (which exits 1).
+        #[arg(num_args = 0.., allow_hyphen_values = true, trailing_var_arg = true)]
+        log: Vec<PathBuf>,
     },
 }
 
@@ -129,6 +138,14 @@ fn run(cmd: Cmd) -> Result<String, Refusal> {
             // The required `mode` group leaves DIR as the only other way in.
             let dir = dir.ok_or_else(|| nothing_printed("tarball-workspace: no DIR".to_owned()))?;
             tarball_workspace::write_workspace(&dir).map_err(nothing_printed)
+        }
+        Cmd::TarballBuildErrors { log } => {
+            let o = tarball_build_errors::run(&log);
+            if o.code == 0 {
+                Ok(o.stdout)
+            } else {
+                Err((o.stdout, o.code, o.stderr))
+            }
         }
     }
 }
