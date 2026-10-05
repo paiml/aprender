@@ -1,14 +1,15 @@
 #!/usr/bin/env bash
-# mutate_facade_compat_guard.sh - prove check_facade_compat.sh's SCOPED-RELEASE allowlist turns RED.
+# mutate_facade_compat_guard.sh - prove check_facade_compat.sh's pub_ver (workspace version ONLY) turns RED.
 #
 # PR-REVIEW-SKILL-002 v2 S3.D / S6.4: "Mechanically flip each validation branch and drop
 # each required-field check. Target: 100% kill." The scoped-release change (#4604) let six
 # crates sit off the workspace version, each pinned at exactly 0.69.4, through two
 # functions: scoped_ver() (the closed list) and pub_ver() (the version this tree publishes
-# for a crate, or rc 1). A widened allowlist is the one change to this guard that turns a
-# RED into a GREEN, so every rule in it is mutated here.
+# for a crate, or rc 1). That scoped release was dropped and the allowlist REMOVED: pub_ver now
+# admits the workspace version only. Re-admitting any other version is the one change to this
+# guard that turns a RED into a GREEN, so every rule left in pub_ver is mutated here.
 #
-# SCOPE: ONLY the scoped-allowlist branches that change added - scoped_ver() and pub_ver().
+# SCOPE: ONLY pub_ver().
 # The guard's structural rows (R1-R7) are covered by its own fixture table and are not
 # re-mutated here. NOT COVERED, and said so rather than hidden: the two CALL SITES
 # (CURRENCY's `if WANT_PUB=$(pub_ver ...)` and PUBLISH ORDER's `[ -n "$up_pub" ] && ...`).
@@ -124,7 +125,7 @@ mutant() {
     fi
 }
 
-printf 'mutate_facade_compat_guard.sh - S3.D mutation set for %s (scoped allowlist)\n\n' "$GUARD_REL"
+printf 'mutate_facade_compat_guard.sh - S3.D mutation set for %s (pub_ver, workspace-only)\n\n' "$GUARD_REL"
 
 # --- M0: discrimination case -------------------------------------------------
 d="$(stage M0)"
@@ -135,26 +136,15 @@ else
     exit 1
 fi
 
-# --- scoped_ver(): the closed list, one crate at a time -------------------------
-mutant list-drop-build-sha           'aprender-build-sha|aprender-update|' 'aprender-update|'
-mutant list-drop-update              '|aprender-update|' '|'
-mutant list-drop-contracts-macros    '|aprender-contracts-macros|' '|'
-mutant list-drop-common              '|aprender-common|' '|'
-mutant list-drop-contracts           '|aprender-contracts|' '|'
-mutant list-drop-contracts-cli       '|aprender-contracts-cli) echo' ') echo'
-mutant list-pin-moved                'echo 0.69.4 ;;' 'echo 0.69.5 ;;'
-mutant list-default-admits-any       '*) return 1 ;;' '*) echo 0.69.4 ;;'
-
-# --- pub_ver(): the rules -------------------------------------------------------
+# --- pub_ver(): workspace version ONLY ----------------------------------------
+# NOT a mutant, and said so: dropping `[ -n "$WS_VER" ]` is EQUIVALENT now. An empty WS_VER
+# can only equal an empty v, which `[ -n "$v" ]` already refuses, so no input can tell them apart.
 mutant flip-nonempty-guard           '[ -n "$v" ] && [ -n "$WS_VER" ] || return 1' '[ -n "$v" ] && [ -n "$WS_VER" ] && return 1'
-mutant drop-ws-nonempty              '[ -n "$v" ] && [ -n "$WS_VER" ] ||' '[ -n "$v" ] ||'
-mutant flip-ws-equality              '[ "$v" = "$WS_VER" ] &&' '[ "$v" != "$WS_VER" ] &&'
-mutant drop-ws-shortcut              '[ "$v" = "$WS_VER" ] && { printf' 'false && { printf'
-mutant ws-shortcut-prints-nothing    '{ printf '"'"'%s\n'"'"' "$v"; return 0; }' '{ return 0; }'
-mutant flip-scoped-lookup            'sv=$(scoped_ver "$1") || return 1' 'sv=$(scoped_ver "$1") && return 1'
-mutant drop-exact-pin                '[ "$v" = "$sv" ] || return 1' 'true || return 1'
-mutant flip-exact-pin                '[ "$v" = "$sv" ] || return 1' '[ "$v" != "$sv" ] || return 1'
-mutant scoped-path-prints-nothing    '|| return 1
+mutant drop-ws-equality              '[ "$v" = "$WS_VER" ] || return 1' 'true || return 1'
+mutant flip-ws-equality              '[ "$v" = "$WS_VER" ] || return 1' '[ "$v" != "$WS_VER" ] || return 1'
+mutant readmit-dropped-pin           '[ "$v" = "$WS_VER" ] || return 1' '[ "$v" = "$WS_VER" ] || [ "$v" = 0.69.4 ] || return 1'
+mutant readmit-one-crate             '[ "$v" = "$WS_VER" ] || return 1' '[ "$v" = "$WS_VER" ] || [ "$1" = aprender-contracts-cli ] || return 1'
+mutant prints-nothing                '|| return 1
     printf '"'"'%s\n'"'"' "$v"
 }' '|| return 1
     true
@@ -163,7 +153,7 @@ mutant scoped-path-prints-nothing    '|| return 1
 total=$((killed + survived + invalid))
 printf '\nmutants: %s killed, %s survived, %s invalid (of %s)\n' "$killed" "$survived" "$invalid" "$total"
 if [ "$total" -eq 0 ] || [ "$survived" -ne 0 ] || [ "$invalid" -ne 0 ]; then
-    printf 'FAIL: %s scoped allowlist is not proved to turn RED for every rule it states.\n' "$GUARD_REL"
+    printf 'FAIL: %s pub_ver is not proved to turn RED for every rule it states.\n' "$GUARD_REL"
     exit 1
 fi
 printf 'guard_mutation_score = 100%% (%s/%s)\n' "$killed" "$total"

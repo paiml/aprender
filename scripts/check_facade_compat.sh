@@ -126,24 +126,18 @@ FACADE_WS="${REPO_ROOT}/crates/facades"
 # the defect class this repo names most often. The claim just has to be true.
 . "${REPO_ROOT}/scripts/cargo_classify.sh" || exit 1
 
-# SCOPED RELEASES (#4604): the ONLY crates allowed off the workspace version, each at ONE exact
-# version. A crate listed here but back on the workspace version passes as before; a crate off the
-# workspace version that is not listed, or at any other version, is RED. Edit with the scoped bump.
-# Defined ABOVE --self-test so its scoped-allowlist rows can reach them; pub_ver reads the globals
-# WS_VER and ROOT_MD, which the main path sets below and each self-test row sets for itself.
-scoped_ver() {
-    case $1 in
-        aprender-build-sha|aprender-update|aprender-contracts-macros|aprender-common|aprender-contracts|aprender-contracts-cli) echo 0.69.4 ;;
-        *) return 1 ;;
-    esac
-}
-pub_ver() { # pub_ver <crate> -> the version this tree publishes for it, or rc 1 (unreadable, or off-workspace undeclared)
-    local v sv
+# SCOPED RELEASES: NONE. #4604 let six crates sit off the workspace version at 0.69.4; that scoped
+# release was dropped and #4604 closed as obsolete, and every one of the six is back on
+# `version.workspace = true`. The allowlist is therefore REMOVED, not left empty: a crate off the
+# workspace version, at any version, is RED. Re-introducing an off-workspace crate is a change to
+# what this gate accepts and needs its own reviewed change, with the S1-S6 rows below rewritten.
+# Defined ABOVE --self-test so its rows can reach it; pub_ver reads the globals WS_VER and ROOT_MD,
+# which the main path sets below and each self-test row sets for itself.
+pub_ver() { # pub_ver <crate> -> the version this tree publishes for it (= the workspace version), or rc 1
+    local v
     v=$( python3 "$FACTS" --version-of "$ROOT_MD" "$1" ) || return 1
     [ -n "$v" ] && [ -n "$WS_VER" ] || return 1
-    [ "$v" = "$WS_VER" ] && { printf '%s\n' "$v"; return 0; }
-    sv=$(scoped_ver "$1") || return 1
-    [ "$v" = "$sv" ] || return 1
+    [ "$v" = "$WS_VER" ] || return 1
     printf '%s\n' "$v"
 }
 
@@ -201,11 +195,11 @@ if [ "${1:-}" = "--self-test" ]; then
     # once: break the regex and THIS self-test turns red too.
     cargo_classify_selftest || fails=1
 
-    # ---- The SCOPED-RELEASE allowlist (#4604): scoped_ver / pub_ver ----------
-    # A widened allowlist is the one edit that turns a RED here into a GREEN, so each
-    # rule gets a row that only it can fail: every listed crate at its pin (S1-S6), the
-    # workspace path (S7), an unlisted crate at the pin (S8), a listed crate OFF its pin
-    # (S9), an unreadable workspace version (S10), a crate the metadata lacks (S11).
+    # ---- pub_ver: workspace version ONLY (the #4604 scoped allowlist is removed) ----
+    # Re-admitting an off-workspace version is the one edit that turns a RED here into a
+    # GREEN. S1-S6: each formerly scoped crate at the dropped 0.69.4 pin is now REJECTED.
+    # S7: the workspace path. S8: another crate at 0.69.4. S9: a third version. S10: an
+    # unreadable workspace version. S11: a crate the metadata lacks.
     # Mutation set: scripts/mutate_facade_compat_guard.sh.
     scoped_rows=0
     pub_case() {  # name want_rc ws_ver fixture crate want_stdout
@@ -220,20 +214,20 @@ if [ "${1:-}" = "--self-test" ]; then
         fi
         printf 'ok    %s\n' "$1"
     }
-    pub_case 'S1 scoped aprender-build-sha at its pin is published'        0 0.70.0 root_scoped.json aprender-build-sha 0.69.4
-    pub_case 'S2 scoped aprender-update at its pin is published'           0 0.70.0 root_scoped.json aprender-update 0.69.4
-    pub_case 'S3 scoped aprender-contracts-macros at its pin is published' 0 0.70.0 root_scoped.json aprender-contracts-macros 0.69.4
-    pub_case 'S4 scoped aprender-common at its pin is published'           0 0.70.0 root_scoped.json aprender-common 0.69.4
-    pub_case 'S5 scoped aprender-contracts at its pin is published'        0 0.70.0 root_scoped.json aprender-contracts 0.69.4
-    pub_case 'S6 scoped aprender-contracts-cli at its pin is published'    0 0.70.0 root_scoped.json aprender-contracts-cli 0.69.4
+    pub_case 'S1 aprender-build-sha at the dropped 0.69.4 pin is REJECTED' 1 0.70.0 root_scoped.json aprender-build-sha ''
+    pub_case 'S2 aprender-update at the dropped 0.69.4 pin is REJECTED' 1 0.70.0 root_scoped.json aprender-update ''
+    pub_case 'S3 aprender-contracts-macros at the dropped 0.69.4 pin is REJECTED' 1 0.70.0 root_scoped.json aprender-contracts-macros ''
+    pub_case 'S4 aprender-common at the dropped 0.69.4 pin is REJECTED' 1 0.70.0 root_scoped.json aprender-common ''
+    pub_case 'S5 aprender-contracts at the dropped 0.69.4 pin is REJECTED' 1 0.70.0 root_scoped.json aprender-contracts ''
+    pub_case 'S6 aprender-contracts-cli at the dropped 0.69.4 pin is REJECTED' 1 0.70.0 root_scoped.json aprender-contracts-cli ''
     pub_case 'S7 a crate at the workspace version is published'            0 0.70.0 root_scoped.json aprender-core 0.70.0
-    pub_case 'S8 an UNLISTED crate at the scoped pin is REJECTED'          1 0.70.0 root_scoped.json aprender-serve ''
-    pub_case 'S9 a listed crate OFF its pin is REJECTED'                   1 0.70.0 root_scoped_drift.json aprender-contracts ''
+    pub_case 'S8 another crate at 0.69.4 is REJECTED' 1 0.70.0 root_scoped.json aprender-serve ''
+    pub_case 'S9 a once-listed crate at a third version is REJECTED' 1 0.70.0 root_scoped_drift.json aprender-contracts ''
     pub_case 'S10 an unreadable workspace version is REJECTED'             1 ''     root_scoped.json aprender-contracts ''
     pub_case 'S11 a crate the metadata does not list is REJECTED'          1 0.70.0 root_scoped.json aprender-nosuch ''
 
     [ "$fails" -eq 0 ] || { printf '\nSELF-TEST FAILED\n'; exit 1; }
-    printf '\nSELF-TEST PASSED (8/8 structural + %s/%s scoped-allowlist + classifier table above)\n' "$scoped_rows" "$scoped_rows"
+    printf '\nSELF-TEST PASSED (8/8 structural + %s/%s pub_ver + classifier table above)\n' "$scoped_rows" "$scoped_rows"
     exit 0
 fi
 
@@ -450,15 +444,14 @@ WS_VER="$(awk -F'\"' '/^version *=/{print $2; exit}' Cargo.toml)"
 
 # CURRENCY did not disappear -- it moved to the crate that now owns the name.
 printf -- '\n--- CURRENCY: the tool the facade points AT is the current one -------\n'
-# "Current" = the workspace version, or EXACTLY the version a declared scoped release pins
-# (scoped_ver, above). A crate off the workspace version at any other version is RED, so the only
-# input this admits that the old workspace-only check refused is the declared set itself.
+# "Current" = the workspace version. No scoped releases are declared (pub_ver, above), so a crate
+# off the workspace version, at any version, is RED.
 WANT="$( python3 "$FACTS" --version-of "$ROOT_MD" aprender-contracts-cli )"
 if WANT_PUB=$(pub_ver aprender-contracts-cli); then
     printf 'ok    aprender-contracts-cli is at %s, the version this tree publishes for it\n' "$WANT_PUB"
 else
-    printf 'FAIL  aprender-contracts-cli is at %s: neither the workspace version (%s) nor its declared\n' "${WANT:-<unread>}" "$WS_VER"
-    printf '      scoped version (%s) -- the\n' "$(scoped_ver aprender-contracts-cli || echo none)"
+    printf 'FAIL  aprender-contracts-cli is at %s: not the workspace version (%s)\n' "${WANT:-<unread>}" "$WS_VER"
+    printf '      (no scoped releases are declared) -- the\n'
     printf '      redirect would install a version this tree never published\n'; rc=1
 fi
 
@@ -482,8 +475,8 @@ for pkg in provable-contracts provable-contracts-macros provable-contracts-cli; 
     up_ver=$(awk -F'"' '/^upstream *=/{for(i=1;i<=NF;i++) if($i ~ /^[0-9]+\.[0-9]+\.[0-9]+$/){print $i; exit}}' \
         "crates/facades/$pkg/Cargo.toml" 2>/dev/null)
     [ -n "$up_ver" ] || { printf 'ok    %s: no pinned upstream version\n' "$pkg"; continue; }
-    # The version THIS tree publishes for the fronted crate (pub_ver: workspace, or its exact
-    # declared scoped version). Unreadable or undeclared -> FAIL, never a pass.
+    # The version THIS tree publishes for the fronted crate (pub_ver: the workspace version;
+    # no scoped releases are declared). Unreadable or undeclared -> FAIL, never a pass.
     up_pub=$(pub_ver "aprender-${pkg#provable-}") || up_pub=""
     if [ -n "$up_pub" ] && [ "$up_ver" = "$up_pub" ]; then
         printf 'ok    %s: upstream pinned to the version this tree publishes (%s)\n' "$pkg" "$up_ver"
