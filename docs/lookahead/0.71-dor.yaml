@@ -18,7 +18,7 @@ rows:
     title: per-layer serve tracing (X-Trace-Level step|layer), first row of the 0.71 serve epic
     ticket: 4496            # tracer on feat/4496-obs09-trace-serve (aprender-76), commits "(#4496)"; APR-OBS-001 v1.3 G17 + §8 row 2. Issue state not read (GH call budget)
     spec: {path: docs/specifications/APR-OBS-001-dogfood-observability.md, section: "§7 OBS-09, §5.2", on_main: false,
-           staged_at: origin/la-71/4487-obs-00}   # ffb4a348bd: c1 + APR-OBS-001 v1.3 + TRACE-001 v1.2 + EXT-001 v1.2 (aprender-cd)
+           staged_at: origin/la-71/4487-obs-00}   # e264bdf1e1 (ffb4a348bd is its ancestor): c1 + APR-OBS-001 v1.3 + TRACE-001 v1.2 + EXT-001 v1.2, then perf-ledger, 22-field identity, §10 model (aprender-cd)
     contract: {id: apr-trace-v1, path: contracts/apr-trace-v1.yaml, on_main: false,
                staged_at: origin/la-71/4487-obs-00}   # blob 828bc46eb6 = #4487 (c1 294b8c9ac8 + c291c0d02c), which lands before OBS-09. Census of all 1213 origin refs, 18:44Z and again 18:49Z: 5 blobs on 13 refs (0.71-dor.md); the a01/4492 copy 23f0305863 is fold/88's, the older #4487
     falsifier:
@@ -124,7 +124,7 @@ rows:
     title: nightly perf ledger with §2.1 identity block (raw samples)
     ticket: 4551
     spec: {path: docs/specifications/APR-OBS-001-dogfood-observability.md, section: "§2.1, §2.4", on_main: false,
-           staged_at: origin/la-71/4487-obs-00}   # ffb4a348bd: c1 + APR-OBS-001 v1.3 + TRACE-001 v1.2 + EXT-001 v1.2 (aprender-cd)
+           staged_at: origin/la-71/4487-obs-00}   # e264bdf1e1 (ffb4a348bd is its ancestor): c1 + APR-OBS-001 v1.3 + TRACE-001 v1.2 + EXT-001 v1.2, then perf-ledger, 22-field identity, §10 model (aprender-cd)
     contract: {id: apr-raw-samples-v1, path: contracts/apr-raw-samples-v1.yaml, on_main: false,
                staged_at: origin/la-71/4551-raw-samples}
     falsifier:   # the row's contract, then the ledger checks on the #4492 ticket branch (bde14e59; #4494 a304d19f diverges)
@@ -156,7 +156,7 @@ rows:
     title: EXT-001 CRUX bind + per-surface crux contracts (EXT-25 must-carry, D-8)
     ticket: null           # EXT-001 §11: the epic and children are minted later
     spec: {path: docs/specifications/EXT-001-dogfood-model-lifecycle.md, section: "§10, §10.1, §11", on_main: false,
-           staged_at: origin/la-71/4487-obs-00}   # EXT-001 v1.2, ffb4a348bd
+           staged_at: origin/la-71/4487-obs-00}   # EXT-001 v1.2, e264bdf1e1
     contract: {id: crux-competitive-research-ux-v1, path: contracts/crux-competitive-research-ux-v1.yaml, on_main: true}
     falsifier:   # CRUXBIND is the bind precondition; RED on main (7 arms unregistered, 5 letters collide, no gap_effect schema)
       - {ids: [FALSIFY-CRUX-001], path: contracts/crux-competitive-research-ux-v1.yaml, on_main: true}
@@ -212,9 +212,9 @@ rows:
     title: fold APR-OBS-001 + EXT-001 specs and the §2.1 identity schemas into the repo
     ticket: "#4487 (aprender-cd adopts c1/4487-obs-00)"
     spec: {path: docs/specifications/APR-OBS-001-dogfood-observability.md, section: "§7 OBS-00", on_main: false,
-           staged_at: origin/la-71/4487-obs-00}   # ffb4a348bd: c1 + APR-OBS-001 v1.3 + TRACE-001 v1.2 + EXT-001 v1.2 (aprender-cd)
+           staged_at: origin/la-71/4487-obs-00}   # e264bdf1e1 (ffb4a348bd is its ancestor): c1 + APR-OBS-001 v1.3 + TRACE-001 v1.2 + EXT-001 v1.2, then perf-ledger, 22-field identity, §10 model (aprender-cd)
     contract: {id: apr-obs-row-identity-v1, path: contracts/apr-obs-row-identity-v1.yaml, on_main: false,
-               staged_at: origin/la-71/4487-obs-00}   # c1 leaves apr-perf-ledger-v1 to #4551
+               staged_at: origin/la-71/4487-obs-00}   # apr-perf-ledger-v1 now staged there too (42c38268ba)
     falsifier:   # the schema contracts this row folds: row identity (APR-OBS-001 §2.1), lane and serve rows (§2.2).
       # apr-trace-v1's ids are OBS-09's. It cited "schemas lint" and "R-2 empty is RED": checks, not ids (B-7 is the baseline)
       - {ids: [FALSIFY-OBS-ID-001..004], staged_at: origin/la-71/4487-obs-00, staged_path: contracts/apr-obs-row-identity-v1.yaml}
@@ -222,6 +222,12 @@ rows:
       - {ids: [FALSIFY-OBS-SERVE-001..003], staged_at: origin/la-71/4487-obs-00, staged_path: contracts/apr-serve-timing-v1.yaml}
     baseline: {path: contracts/lint-baseline.json, on_main: true,
                note: "B-7 schemas lint: sigma ratchet formal_prose<=1464; pv 0.70.0 2add1c644 measured 1463 at main 316dee2cd4 and at main+la-71/4487-obs-00@c291c0d02c, lint rc=0, 0 errors both (aprender-cd, /mnt/nvme-raid0/tmp/cd-4487-evidence.md)"}
+    acceptance: >-
+      Default set 2026-10-05 by aprender-cd, not vetoed: the §10 provable model is declared in
+      contracts/apr-obs-provable-model-v1.yaml (FALSIFY-OBS-MODEL-001..003, Lean obligations at status
+      wip, Kani stubs), staged on the same branch. The Lean terms elaborate but stay out of the Lean tree
+      because PV-ONT-033 refuses a theorem module that has no extraction or simulation model; they land
+      with a model of the recorder code (OBS-05/07/14).
     owner_proposed: L1
 rulings_needed:
   # Answered 2026-10-04 by review quorum la-71-r71: claude-sonnet-5-5, claude-haiku-4-5 and a second
