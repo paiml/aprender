@@ -14,5 +14,5 @@
   estimated_effort: null
   labels:
   - kind:code
-  notes: 'Fold note (aprender-0d, 2026-10-05): this branch adds harness section 8 (21 cases, EXPECTED_CASES 136 from base 115) and the check_exact helper with its liars. PMAT-4818 (section 6) and PMAT-4822 (section 7) edit the same harness from the same base; a fold keeps all three sections and check_exact once, with EXPECTED_CASES = 115 + the cases each section adds.'
+  notes: 'Folded (aprender-0d, 2026-10-06) on batch/0702/py-port-2-fold-4818-4822-4826 with PMAT-4818, PMAT-4822 and PMAT-4826: harness sections 6 (perf041-report, 39 cases), 7 (annotate-book-examples, 24) and 8 (extract-book-examples, 21) on base 115, check_exact once, EXPECTED_CASES 199; parity 199/199 and 86 aprender-ci-tools lib tests on the folded head.'
   epic: 4741
