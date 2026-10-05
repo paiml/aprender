@@ -434,16 +434,8 @@ impl CudaTransformerTrainer {
 
         // Step 3: Upload transformer blocks to GPU
         let use_nf4 = config.quantize_nf4 && config.is_lora();
-        let cuda_blocks = Self::upload_blocks(
-            &model,
-            mc,
-            &config,
-            &ctx,
-            use_nf4,
-            num_layers,
-            hidden_size,
-            max_seq_len,
-        )?;
+        let cuda_blocks =
+            Self::upload_blocks(&model, mc, &config, &ctx, use_nf4, num_layers, max_seq_len)?;
 
         // Step 4: Allocate shared gradient workspace
         let cuda_grad_workspace = CudaGradWorkspace::new(&ctx, mc).map_err(|e| {
@@ -597,18 +589,25 @@ impl CudaTransformerTrainer {
         // ENT-263: Allocate NF4 infrastructure (shared scratch, LoRA grad workspace, optimizer states)
         let (nf4_shared_scratch, nf4_lora_grad_workspace, nf4_lora_optimizer_states) = if use_nf4 {
             let lora_rank = config.lora_rank.unwrap_or(16);
+            // R15a C5b: sized for the targets the blocks hold
+            let targets = super::lora_init::nf4_targets(config.lora_target_modules.as_deref());
 
             // C-SCRATCH-001: Shared scratch for NF4 blocks (reused across all layers)
-            let scratch = CudaBlockScratch::new(mc, max_seq_len, &ctx, lora_rank).map_err(|e| {
-                crate::error::Error::ConfigError(format!("NF4 shared scratch alloc failed: {e:?}"))
-            })?;
+            let scratch =
+                CudaBlockScratch::new_for_targets(mc, max_seq_len, &ctx, lora_rank, &targets)
+                    .map_err(|e| {
+                        crate::error::Error::ConfigError(format!(
+                            "NF4 shared scratch alloc failed: {e:?}"
+                        ))
+                    })?;
 
             // LoRA gradient workspace (shared, reused per-block like CudaGradWorkspace)
-            let grad_ws = CudaLoraGradWorkspace::new(&ctx, mc, lora_rank).map_err(|e| {
-                crate::error::Error::ConfigError(format!(
-                    "NF4 LoRA grad workspace alloc failed: {e:?}"
-                ))
-            })?;
+            let grad_ws = CudaLoraGradWorkspace::new_for_targets(&ctx, mc, lora_rank, &targets)
+                .map_err(|e| {
+                    crate::error::Error::ConfigError(format!(
+                        "NF4 LoRA grad workspace alloc failed: {e:?}"
+                    ))
+                })?;
 
             // Per-block LoRA optimizer states
             let mut lora_opt_states = Vec::with_capacity(num_layers);
@@ -748,7 +747,6 @@ impl CudaTransformerTrainer {
         ctx: &std::sync::Arc<trueno_gpu::driver::CudaContext>,
         use_nf4: bool,
         num_layers: usize,
-        hidden_size: usize,
         max_seq_len: usize,
     ) -> crate::Result<Vec<CudaBlock>> {
         let mut cuda_blocks: Vec<CudaBlock> = Vec::with_capacity(num_layers);
@@ -757,19 +755,11 @@ impl CudaTransformerTrainer {
             let lora_rank = config.lora_rank.unwrap_or(16);
             let lora_alpha = config.lora_alpha.unwrap_or(2.0 * lora_rank as f32);
             let lora_scale = lora_alpha / lora_rank as f32;
-            let head_dim = mc.head_dim();
-            let q_dim = mc.num_attention_heads * head_dim;
-            let kv_hidden = mc.num_kv_heads * head_dim;
+            // R15a C5b: one adapter per selected target (q_proj, v_proj by default)
+            let targets = super::lora_init::nf4_targets(config.lora_target_modules.as_deref());
 
             for (i, layer) in model.layers.iter().enumerate() {
-                let lora_a_q: Vec<f32> = (0..hidden_size * lora_rank)
-                    .map(|j| ((j as f32 + i as f32 * 1000.0) * 0.1).sin() * 0.01)
-                    .collect();
-                let lora_b_q = vec![0.0f32; lora_rank * q_dim];
-                let lora_a_v: Vec<f32> = (0..hidden_size * lora_rank)
-                    .map(|j| ((j as f32 + i as f32 * 2000.0 + 500.0) * 0.1).sin() * 0.01)
-                    .collect();
-                let lora_b_v = vec![0.0f32; lora_rank * kv_hidden];
+                let adapters = super::lora_init::nf4_init_adapters(mc, i, &targets, lora_rank);
 
                 let q_norm_data = layer
                     .self_attn
@@ -799,7 +789,7 @@ impl CudaTransformerTrainer {
                     .as_ref()
                     .map(|t| t.data().as_slice().expect("contiguous b_v").to_vec());
 
-                let block = crate::transformer::CudaNf4TransformerBlock::new(
+                let mut block = crate::transformer::CudaNf4TransformerBlock::new(
                     mc,
                     i,
                     ctx.clone(),
@@ -813,8 +803,8 @@ impl CudaTransformerTrainer {
                     layer.ffn.w_up.data().as_slice().expect("contiguous"),
                     layer.ffn.w_down.data().as_slice().expect("contiguous"),
                     max_seq_len,
-                    Some((&lora_a_q, &lora_b_q)),
-                    Some((&lora_a_v, &lora_b_v)),
+                    super::lora_init::adapter_pair(&adapters, crate::lora::LoraTarget::Q),
+                    super::lora_init::adapter_pair(&adapters, crate::lora::LoraTarget::V),
                     lora_scale,
                     lora_rank,
                     q_norm_data.as_deref(),
@@ -826,6 +816,14 @@ impl CudaTransformerTrainer {
                 .map_err(|e| {
                     crate::error::Error::ConfigError(format!("NF4 block {i} upload failed: {e:?}"))
                 })?;
+                for (target, a, b) in super::lora_init::added_adapters(&adapters) {
+                    block.add_lora_adapter(*target, a, b).map_err(|e| {
+                        crate::error::Error::ConfigError(format!(
+                            "NF4 block {i} {} adapter failed: {e:?}",
+                            target.module_name()
+                        ))
+                    })?;
+                }
                 cuda_blocks.push(CudaBlock::Nf4(block));
             }
             println!("  ✓ {num_layers} NF4 transformer blocks uploaded (LoRA rank={lora_rank}, alpha={lora_alpha})");

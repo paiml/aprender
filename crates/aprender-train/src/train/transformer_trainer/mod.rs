@@ -13,6 +13,8 @@ pub mod gpu_grad_accumulator;
 pub mod grad_accumulator;
 #[cfg(any(feature = "cuda", test))]
 mod lora_checkpoint;
+#[cfg(any(feature = "cuda", test))]
+mod lora_init;
 pub mod pipeline;
 pub mod sequence_parallel;
 pub mod step_profiler;
@@ -37,6 +39,8 @@ pub mod zero;
 mod falsify_lora_tests;
 #[cfg(test)]
 mod lora_checkpoint_tests;
+#[cfg(test)]
+mod lora_init_tests;
 #[cfg(test)]
 mod target_tests;
 #[cfg(test)]

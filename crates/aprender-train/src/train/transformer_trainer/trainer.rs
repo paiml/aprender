@@ -522,7 +522,7 @@ impl TransformerTrainer {
 /// The targets of a trainer (`trainer_forward`): the names of `modules`
 /// (default q_proj, v_proj; shorthands expanded) that are one of the seven
 /// projections, in slot order, or none if no name is. Other names are skipped.
-fn trainer_targets(modules: Option<&[String]>) -> Option<LoraTargets> {
+pub(super) fn trainer_targets(modules: Option<&[String]>) -> Option<LoraTargets> {
     let default_targets = ["q_proj".to_string(), "v_proj".to_string()];
     let expanded = LoRAConfig::expand_shorthand(modules.unwrap_or(&default_targets));
     let known: Vec<&String> =
