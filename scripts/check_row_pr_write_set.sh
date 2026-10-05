@@ -58,12 +58,16 @@ judge() { # judge <repo> <base> <head> <branch> <event> <dag> <readme> -> 0 clea
     esac
     git -C "$repo" cat-file -e "$base:$dag" 2>/dev/null || { printf '%s: ENV - %s is missing at the base %.9s (the box cannot answer)\n' "$PROG" "$dag" "$base" >&2; return 2; }
     local changed; changed=$(git -C "$repo" diff --no-renames --name-only "$base" "$head" --) || { printf '%s: ENV - git diff %s %s failed\n' "$PROG" "$base" "$head" >&2; return 2; }
-    if printf '%s' "$branch" | grep -qE -- "$ORCHESTRATOR_RE"; then
+    # Here-strings, never a pipe into grep -q, for every test of $branch and $changed below:
+    # under pipefail grep -q exits on its first match, the printf feeding it takes SIGPIPE and
+    # the pipeline reads as NO match. On a PR with more than a few KiB of changed paths that is
+    # a row PR writing a shared file, and a PASS (scripts/check_no_pipe_into_grep_q.sh).
+    if grep -qE -- "$ORCHESTRATOR_RE" <<< "$branch"; then
         printf 'ok    %s: `%s` is an orchestrator branch; it owns the DAG, the spec block, the roadmap and the README counts\n' "$PROG" "$branch"; return 0
     fi
     # rule 1: the DAG and the spec are orchestrator-only on EVERY branch
     for f in docs/specifications/pp-066-dag.yaml docs/specifications/PP-066-release-spec.md; do
-        if printf '%s\n' "$changed" | grep -qxF -- "$f"; then
+        if grep -qxF -- "$f" <<< "$changed"; then
             printf 'FAIL  %s: branch %s writes %s — orchestrator-only (agent/pp-066-*); the status of a row is derived from its receipt and the spec block is rendered\n' "$PROG" "${branch:-<none>}" "$f"; rc=1
         fi
     done
@@ -75,10 +79,10 @@ judge() { # judge <repo> <base> <head> <branch> <event> <dag> <readme> -> 0 clea
     if ! row_ids "$repo" "$base" "$dag" | grep -qxF -- "$id"; then
         [ "$rc" = 0 ] && printf 'ok    %s: `%s` names no DAG row; the roadmap/README-count rule binds row PRs only\n' "$PROG" "$branch"; return "$rc"
     fi
-    if printf '%s\n' "$changed" | grep -qxF -- docs/roadmaps/roadmap.yaml; then
+    if grep -qxF -- docs/roadmaps/roadmap.yaml <<< "$changed"; then
         printf 'FAIL  %s: row PR %s writes docs/roadmaps/roadmap.yaml — pmat work complete and the ticket edits belong to the orchestrator docs commit\n' "$PROG" "$branch"; rc=1
     fi
-    if printf '%s\n' "$changed" | grep -qxF -- "$readme"; then
+    if grep -qxF -- "$readme" <<< "$changed"; then
         local hits; hits=$(git -C "$repo" diff "$base" "$head" -- "$readme" | grep -E '^[-+][^-+]' | grep -E -- "$COUNT_RE" || true)
         if [ -n "$hits" ]; then
             printf 'FAIL  %s: row PR %s edits a README count line (the orchestrator docs commit regenerates counts; check_readme_claims.sh lets the README lag, never overstate):\n' "$PROG" "$branch"
@@ -106,7 +110,7 @@ if [ "${1:-}" = "--self-test" ]; then
     }
     cleanup() { safe_rm_scratch "$TD" 'rowpr-selftest.'; }
     trap cleanup EXIT
-    R="$TD/repo"; mkdir -p "$R/docs/specifications" "$R/docs/roadmaps" "$R/crates/x/src"
+    R="$TD/repo"; mkdir -p "$R/docs/specifications" "$R/docs/roadmaps" "$R/crates/x/src" "$R/zz"   # zz/: the 1 MiB controls
     ( cd "$R" && git init -q . && git config user.email t@t && git config user.name t && git config core.hooksPath /dev/null )
     printf 'rows:\n- {id: G-11, pmat_id: PMAT-1062}\n- {id: R-0, pmat_id: PMAT-989}\n' > "$R/docs/specifications/pp-066-dag.yaml"
     printf -- '- id: PMAT-1\n  title: a\n' > "$R/docs/roadmaps/roadmap.yaml"
@@ -116,10 +120,10 @@ if [ "${1:-}" = "--self-test" ]; then
     ( cd "$R" && git add -A && git commit -qm base )
     BASE=$(git -C "$R" rev-parse HEAD)
     n=0; red=0
-    row() { # row <want rc> <label> <branch> <event> <shell mutating the tree>
-        local want=$1 label=$2 branch=$3 event=$4 mut=$5 rc=0
+    row() { # row <want rc> <label> <branch> <event> <shell mutating the tree> [<commit to mutate; default BASE>]
+        local want=$1 label=$2 branch=$3 event=$4 mut=$5 from=${6:-$BASE} rc=0
         n=$((n + 1))
-        ( cd "$R" && git checkout -q --detach "$BASE" && bash -c "$mut" && git add -A && git commit -qm "$label" --allow-empty ) >/dev/null 2>&1
+        ( cd "$R" && git checkout -q --detach "$from" && bash -c "$mut" && git add -A && git commit -qm "$label" --allow-empty ) >/dev/null 2>&1
         judge "$R" "$BASE" "$(git -C "$R" rev-parse HEAD)" "$branch" "$event" docs/specifications/pp-066-dag.yaml README.md > "$TD/out.$n" 2>&1 || rc=$?
         if [ "$rc" = "$want" ]; then printf 'ok    row %-2s rc=%s  %s\n' "$n" "$rc" "$label"
         else printf 'FAIL  row %-2s rc=%s (wanted %s)  %s\n' "$n" "$rc" "$want" "$label"; sed 's/^/        /' "$TD/out.$n"; red=1; fi
@@ -139,6 +143,16 @@ if [ "${1:-}" = "--self-test" ]; then
     row 0 "push shape: REPORT, exit 0"                                                agent/G-11 push        'echo "- {id: Z-1}" >> docs/specifications/pp-066-dag.yaml'
     for i in 12 13; do grep -q '^REPORT' "$TD/out.$i" || { printf 'FAIL  row %-2s printed no REPORT line: a silent skip\n' "$i"; red=1; }; done
     grep -q 'pp-066-dag.yaml' "$TD/out.11" || { printf 'FAIL  row 11 did not name the renamed file\n'; red=1; }
+    # Positive controls for judge()'s here-strings: ~1 MiB of changed paths (5200 x 209 B under
+    # zz/) with the shared file FIRST in git's path order (README.md and docs/ sort before zz/).
+    # Through a pipe, grep -q exits on that first line, printf takes SIGPIPE, pipefail reads the
+    # match as a miss and the row PR passes: each of these rows is RED on every run.
+    pad=$(printf '%0200d' 0 | tr 0 p)
+    ( cd "$R" && git checkout -q --detach "$BASE" && for i in $(seq -w 1 5200); do : > "zz/$pad.$i"; done && git add -A && git commit -qm filler ) >/dev/null 2>&1
+    FILLER=$(git -C "$R" rev-parse HEAD)
+    row 1 "1 MiB control: row PR writing the DAG under 5200 other paths: RED"            agent/G-11 pull_request 'echo "- {id: Z-1}" >> docs/specifications/pp-066-dag.yaml' "$FILLER"
+    row 1 "1 MiB control: row PR writing roadmap.yaml under 5200 other paths: RED"       agent/R-0  pull_request 'echo "- id: PMAT-2" >> docs/roadmaps/roadmap.yaml' "$FILLER"
+    row 1 "1 MiB control: row PR bumping a README count under 5200 other paths: RED"     agent/G-11 pull_request 'sed -i "s/1812/1813/" README.md' "$FILLER"
     n2=$((n + 1)); rc=0; judge "$R" "$BASE" "$BASE" agent/G-11 pull_request docs/specifications/nope.yaml README.md >"$TD/out.$n2" 2>&1 || rc=$?
     if [ "$rc" = 2 ]; then printf 'ok    row %-2s rc=2  a DAG missing at the base is ENV (exit 2), never a pass\n' "$n2"; else printf 'FAIL  row %-2s rc=%s (wanted 2)  a missing DAG\n' "$n2" "$rc"; red=1; fi
     printf '%s/%s rows\n' "$((n2 - red))" "$n2"
