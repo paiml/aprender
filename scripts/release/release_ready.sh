@@ -29,8 +29,10 @@
 #   CONTRADICTION  one key carries two or more values across the claims and the list
 #   then one line: `release-ready: unlisted=U orphaned=O contradictions=C tree=<sha|nogit>`.
 #
-# PROBE (--probe). ONE GitHub read: the rules on main's branch (`repos/R/rules/branches/main`), its
-#   required_status_checks contexts compared with the list's `merge:required-context/*` anchors. Read-only:
+# PROBE (--probe). TWO GitHub reads, because both enforce on main: the ruleset rules on its branch
+#   (`repos/R/rules/branches/main`) and the classic branch protection (`repos/R/branches/main/protection/
+#   required_status_checks`). The union of their required contexts is compared with the list's
+#   `merge:required-context/*` anchors. Read-only:
 #   changing the required checks is the operator's.
 #
 # EXIT  0 zero findings (probe: sets equal) · 1 a finding (probe: sets differ) · 2 not_measured (a surface is
@@ -307,14 +309,17 @@ verdict() {
     return "$rc"
 }
 
-# ---------------------------------------------------------------- the probe (one GitHub read) ---------------------
+# ---------------------------------------------------------------- the probe (two GitHub reads) --------------------
 probe() {
-    local root=$1 list=$2 gh=${GH:-gh} repo=${RR_REPO:-paiml/aprender} got want lo go
+    local root=$1 list=$2 gh=${GH:-gh} repo=${RR_REPO:-paiml/aprender} got bp want lo go
     [ -f "$list" ] || caller_error "no list $list"
     want=$(parse_list "$list" | awk -F'\t' '$3 ~ /^merge:required-context\// { sub(/^merge:required-context\//, "", $3); print $3 }' | LC_ALL=C sort -u) \
         || caller_error "malformed list $list"
     got=$("$gh" api "repos/$repo/rules/branches/main" --jq '.[] | select(.type == "required_status_checks") | .parameters.required_status_checks[].context' 2> /dev/null) \
         || { printf 'release-ready probe: not_measured: the read of %s rules failed\n' "$repo"; return 2; }
+    bp=$("$gh" api "repos/$repo/branches/main/protection/required_status_checks" --jq '.contexts[]' 2> /dev/null) \
+        || { printf 'release-ready probe: not_measured: the read of %s branch protection failed\n' "$repo"; return 2; }
+    got=$(printf '%s\n%s\n' "$got" "$bp")
     got=$(printf '%s\n' "$got" | awk 'NF' | LC_ALL=C sort -u)
     [ -n "$got" ] || { printf 'release-ready probe: not_measured: %s main carries no required_status_checks rule\n' "$repo"; return 2; }
     lo=$(LC_ALL=C comm -23 <(printf '%s\n' "$want") <(printf '%s\n' "$got") | paste -sd, -)
@@ -500,16 +505,31 @@ selftest() {
         if [ "$rc" = "$want" ] && [[ "$out" == *"$pat"* ]]; then pass=$((pass + 1))
         else fail=$((fail + 1)); printf 'FAIL  %-28s want rc=%s and "%s"; got rc=%s: %s\n' "$c" "$want" "$pat" "$rc" "$(printf '%s' "$out" | tr '\n' ' ' | cut -c1-200)"; fi
     done <<< "$CASES"
-    # the probe: a stub gh answers the one read
+    # the probe: a stub gh answers the two reads. STUB_CTX is the ruleset's contexts, STUB_BP the classic
+    # protection's (unset: the same as STUB_CTX). STUB_FAIL=1 fails both reads, STUB_FAIL=bp only the second.
     mkdir -p "$tmp/bin"
-    printf '#!/usr/bin/env bash\n[ -n "${STUB_FAIL:-}" ] && exit 1\nprintf "%%s\\n" "$STUB_CTX" | tr , "\\n"\n' > "$tmp/bin/gh"
+    cat > "$tmp/bin/gh" <<'STUB'
+#!/usr/bin/env bash
+case "$*" in
+    *protection*) [ -n "${STUB_FAIL:-}" ] && exit 1; printf '%s\n' "${STUB_BP-$STUB_CTX}" | tr , '\n' ;;
+    *) [ "${STUB_FAIL:-}" = 1 ] && exit 1; printf '%s\n' "$STUB_CTX" | tr , '\n' ;;
+esac
+STUB
     chmod +x "$tmp/bin/gh"
-    for line in 'probe-equal 0 list-only=[] github-only=[]|ci / gate,workspace-test|' \
-                'probe-github-extra 1 github-only=[extra]|ci / gate,workspace-test,extra|' \
-                'probe-list-extra 1 list-only=[workspace-test]|ci / gate|' \
-                'probe-read-failed 2 not_measured|ci / gate|1'; do
+    # row: case rc pattern|ruleset contexts|protection contexts ("-" = the same)|STUB_FAIL
+    for line in 'probe-equal 0 list-only=[] github-only=[]|ci / gate,workspace-test|-|' \
+                'probe-github-extra 1 github-only=[extra]|ci / gate,workspace-test,extra|-|' \
+                'probe-list-extra 1 list-only=[workspace-test]|ci / gate|-|' \
+                'probe-union-of-both 1 list-only=[] github-only=[gate]|gate,workspace-test|ci / gate,workspace-test|' \
+                'probe-read-failed 2 not_measured|ci / gate|-|1' \
+                'probe-protection-failed 2 branch protection failed|ci / gate,workspace-test|-|bp'; do
         c=${line%% *}; line=${line#* }; want=${line%% *}; line=${line#* }; pat=${line%%|*}; line=${line#*|}; n=$((n + 1))
-        out=$(GH="$tmp/bin/gh" STUB_CTX="${line%%|*}" STUB_FAIL="${line#*|}" bash "$SCRIPT_PATH" --probe --root "$tmp/base" 2>&1); rc=$?
+        ctx=${line%%|*}; line=${line#*|}; bp=${line%%|*}; sf=${line#*|}
+        if [ "$bp" = - ]; then
+            out=$(GH="$tmp/bin/gh" STUB_CTX="$ctx" STUB_FAIL="$sf" bash "$SCRIPT_PATH" --probe --root "$tmp/base" 2>&1); rc=$?
+        else
+            out=$(GH="$tmp/bin/gh" STUB_CTX="$ctx" STUB_BP="$bp" STUB_FAIL="$sf" bash "$SCRIPT_PATH" --probe --root "$tmp/base" 2>&1); rc=$?
+        fi
         if [ "$rc" = "$want" ] && [[ "$out" == *"$pat"* ]]; then pass=$((pass + 1))
         else fail=$((fail + 1)); printf 'FAIL  %-28s want rc=%s and "%s"; got rc=%s: %s\n' "$c" "$want" "$pat" "$rc" "$(printf '%s' "$out" | tr '\n' ' ' | cut -c1-200)"; fi
     done
@@ -538,7 +558,8 @@ M14 gate sections optional@@if (bad || kn == 0 || kp == 0)@@if (bad || kn == 0)
 M15 claim side optional@@exit bad ? 2 : 0 }@@exit 0 }
 M16 cascade takes any word@@if (w in DEF)@@if (w != "")
 M17 dot-slash unseen@@(\$\{?[A-Za-z_]+\}?\/|\.\/)?scripts@@(\$\{?[A-Za-z_]+\}?\/)?scripts
-M18 lowercase functions only@@if (L[i] ~ /^[A-Za-z_][A-Za-z0-9_]*\(\) *\{/@@if (L[i] ~ /^[a-z_]+\(\) *\{/'
+M18 lowercase functions only@@if (L[i] ~ /^[A-Za-z_][A-Za-z0-9_]*\(\) *\{/@@if (L[i] ~ /^[a-z_]+\(\) *\{/
+M19 drop protection read@@got=$(printf '"'"'%s\n%s\n'"'"' "$got" "$bp")@@got=$(printf '"'"'%s\n'"'"' "$got")'
 
 mutants() {
     local tmp line id name from to killed=0 total=0 err=0

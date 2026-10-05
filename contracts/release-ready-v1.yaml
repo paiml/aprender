@@ -26,13 +26,16 @@
 #                  whose anchor no surface states any more
 #   CONTRADICTION  one key (a mode, a floor, a step list) with two values
 # A read-only probe (--probe) compares the merge set with GitHub's required
-# status checks in ONE read; changing the required checks is the operator's.
+# status checks in two reads (the ruleset and the classic branch protection);
+# changing the required checks is the operator's.
 #
 # BEFORE / AFTER (command: `bash scripts/release/release_ready.sh`):
 #   origin/main 316dee2cd4, no list: unlisted=45 orphaned=0 contradictions=2
 #   HEAD of this change:             unlisted=0  orphaned=0 contradictions=0
 #   after merging main c7569afd3d:   unlisted=4  (main added mg-reuse, mg-reuse-self-test,
 #     x86-main-advisories, tag_coverage_gate.sh); RR-M13..M15 + RR-T15 -> unlisted=0
+#   C129 review: --probe read only the ruleset (github=[gate,workspace-test]) while classic
+#     protection requires ci / gate; now it reads both and the list carries gate (RR-M16)
 #
 # REPORT-ONLY TODAY. No gate calls the checker. It becomes blocking only as a
 # ratchet after three green nights (L31), and only by an operator sign-off.
@@ -164,7 +167,7 @@ binding_registry:
 
 # THE LIST. One requirement per line (the checker parses this block; keep one flow map per line).
 requirements:
-  - {id: RR-M01, applies_to: [merge], anchor: "merge:required-context/ci / gate", checker: ".github/workflows/ci.yml#  gate:", provenance: "CLAUDE.md Git Workflow; branch protection on main", producer: "ci-main"}
+  - {id: RR-M01, applies_to: [merge], anchor: "merge:required-context/ci / gate", checker: ".github/workflows/ci.yml#    name: ci / gate", provenance: "CLAUDE.md Git Workflow; classic branch protection on main", producer: "ci-main"}
   - {id: RR-M02, applies_to: [merge], anchor: "merge:required-context/workspace-test", checker: ".github/workflows/ci.yml#  workspace-test:", provenance: "CLAUDE.md Git Workflow; branch protection on main", producer: "ci-main"}
   - {id: RR-M03, applies_to: [merge], anchor: "merge:ci.yml/gate/needs/x86-main", checker: ".github/workflows/ci.yml#  x86-main:", provenance: "#4433 (5 fat jobs; gate needs)", producer: "ci-main"}
   - {id: RR-M04, applies_to: [merge], anchor: "merge:ci.yml/gate/needs/workspace-test", checker: ".github/workflows/ci.yml#  workspace-test:", provenance: "#4433 (gate needs; workspace-test fan-in)", producer: "ci-main"}
@@ -179,6 +182,7 @@ requirements:
   - {id: RR-M13, applies_to: [merge], anchor: "merge:ci.yml/gate/needs/mg-reuse", checker: ".github/workflows/ci.yml#  mg-reuse:", provenance: "#4753 T43 (merge_group reuses the head run on the same tree)", producer: "ci-main"}
   - {id: RR-M14, applies_to: [merge], anchor: "merge:ci.yml/gate/needs/mg-reuse-self-test", checker: ".github/workflows/ci.yml#  mg-reuse-self-test:", provenance: "#4753 T43 (the reuse reader's own case table)", producer: "ci-main"}
   - {id: RR-M15, applies_to: [merge], anchor: "merge:ci.yml/gate/needs/x86-main-advisories", checker: ".github/workflows/ci.yml#  x86-main-advisories:", provenance: "#4753 T43 (advisories run whenever mg-reuse skips x86-main)", producer: "ci-main"}
+  - {id: RR-M16, applies_to: [merge], anchor: "merge:required-context/gate", checker: ".github/workflows/ci.yml#  gate:", provenance: "CLAUDE.md Git Workflow; org ruleset on main (ci/sections.yml: rulesets need the exact name gate)", producer: "ci-main"}
   - {id: RR-T01, applies_to: [tag], anchor: "tag:autopilot/commit/git merge-base --is-ancestor", checker: "scripts/release/autopilot.sh#git merge-base --is-ancestor", provenance: "APR-RELEASE-001 T-0, #3599 (release commit on origin/main)", producer: "ci-main"}
   - {id: RR-T02, applies_to: [tag], anchor: "tag:autopilot/commit/bash scripts/bump-version.sh --check", checker: "scripts/bump-version.sh#--check", provenance: "#3618 (version derived, workspaces agree)", producer: "ci-main"}
   - {id: RR-T03, applies_to: [tag], anchor: "tag:autopilot/deep/cargo test --doc --workspace", checker: "scripts/release/autopilot.sh#cargo test --doc", provenance: "APR-RELEASE-001 T-1 deep", producer: "deep-doctests"}
