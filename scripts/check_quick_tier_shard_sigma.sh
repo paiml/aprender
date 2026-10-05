@@ -131,6 +131,14 @@ outside_jobs() {
 # keyed twice. It also pins each file's lines outside `jobs:` (outside_jobs).
 golden_compute() {
     local role parent job file block rc
+    # Round 7: YAML also breaks lines at U+0085, U+2028 and U+2029, and awk does not. One inside a
+    # comment hides a whole key from every line rule here while the loader reads it. Neither file
+    # carries one, so any is ENV: a line this awk cannot split is a line it cannot judge.
+    for file in "$1" "$2"; do
+        if LC_ALL=C grep -qa -e $'\xc2\x85' -e $'\xe2\x80\xa8' -e $'\xe2\x80\xa9' "$file"; then
+            printf 'ENV   %s holds a YAML-only line break (U+0085, U+2028 or U+2029): cannot judge, not a pass\n' "$file" >&2; return 2
+        fi
+    done
     while read -r role parent job; do
         if [ "$role" = workflow ]; then file=$1; else file=$2; fi
         rc=0; block=$(job_block "$file" "$parent" "$job") || rc=$?
@@ -398,6 +406,13 @@ jobs:' > "$d/c-env.yml"
     r5 2 "an anchored second workspace-test key appended to the workflow (round 6)" "$d/r6-wfanchor.yml" "$SEC"
     { cat "$SEC"; printf '  r6-unrelated-job:\n    runs-on: x\n'; } > "$d/r6-ctl.yml"
     r5 0 "control: a new plain job that is not pinned stays GREEN (round 6)" "$WF" "$d/r6-ctl.yml"
+    # round 7: a key behind a YAML-only line break inside a comment, in both files
+    for u in '\xe2\x80\xa8' '\xe2\x80\xa9' '\xc2\x85'; do
+        { cat "$SEC"; printf "  # note$u  workspace-test-shard: {runs-on: shadow}\n"; } > "$d/r7-sec.yml"
+        r5 2 "a key hidden behind a YAML-only line break ($u) in a sections comment (round 7)" "$WF" "$d/r7-sec.yml"
+    done
+    { cat "$WF"; printf '  # note\xe2\x80\xa8  workspace-test: {runs-on: shadow}\n'; } > "$d/r7-wf.yml"
+    r5 2 "a key hidden behind U+2028 in a workflow comment (round 7)" "$d/r7-wf.yml" "$SEC"
     { cat "$WF"; printf 'jobs:\n  other:\n    runs-on: shadow\n'; } > "$d/r5-jobs2.yml"
     r5 1 "a second top-level jobs: (a loader keeps it in place of the first)" "$d/r5-jobs2.yml" "$SEC"
     edit "$WF" 'merge_group:' 'workflow_dispatch:' after '  schedule: [{cron: "0 0 * * *"}]' > "$d/r5-on.yml"
