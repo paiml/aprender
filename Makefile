@@ -619,7 +619,9 @@ coverage-check: coverage
 coverage-json: ## LLVM coverage JSON + measured sha from the last `make coverage` profiles (pmat --coverage-file)
 	@[ -s target/coverage/lcov.info ] || { echo "❌ coverage-json: no lcov.info - run make coverage first"; exit 1; }
 	rm -f target/coverage/coverage.json target/coverage/coverage.sha || exit 1
-	$(COV_CARGO_ENV) cargo llvm-cov report $$(python3 scripts/coverage_report_scope.py --exclude aprender-gpu) \
+	scripts/coverage_report_scope.sh --self-test > /dev/null || { echo "❌ coverage-json: coverage_report_scope.sh self-test failed"; exit 1; }
+	scripts/coverage_report_scope.sh --exclude aprender-gpu > /dev/null || { echo "❌ coverage-json: no derived report scope"; exit 1; }
+	$(COV_CARGO_ENV) cargo llvm-cov report $$(scripts/coverage_report_scope.sh --exclude aprender-gpu) \
 		--json --output-path $(CURDIR)/target/coverage/coverage.json \
 		--ignore-filename-regex "$$(cat target/coverage/.exclude-re)" || exit 1
 	[ -s target/coverage/coverage.json ] || { echo "❌ coverage-json: no JSON was written"; exit 1; }

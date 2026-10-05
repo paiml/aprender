@@ -212,9 +212,9 @@ cov_case() { # name file sha want-rc want-coverage-query(yes|no) want-fail-text
   want "$1: coverage-gaps query ran = $5" "$5" "$ran"
   if [ -n "$6" ]; then
     if grep -q -- "$6" "$FAILLOG"; then ok "$1: failure says '$6'"; else bad "$1: failure says '$6'" "$6" "$(cat "$FAILLOG")"; fi
-    if ! printf '%s\n' "$out" | grep -q -- '-- coverage gaps not_measured:'; then
+    if ! grep -q -- '-- coverage gaps not_measured:' <<<"$out"; then
       bad "$1: the manifest prints the not_measured line" "a '-- coverage gaps not_measured:' line" "$out"
-    elif printf '%s\n' "$out" | grep -qE '^[[:space:]]+(gap|churn|fault)[[:space:]].*not_measured'; then
+    elif grep -qE '^[[:space:]]+(gap|churn|fault)[[:space:]].*not_measured' <<<"$out"; then
       bad "$1: the not_measured line is not counted as a manifest row" "no row-shaped line" "$out"
     else
       ok "$1: the not_measured line is not counted as a manifest row"
