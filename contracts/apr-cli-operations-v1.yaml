@@ -324,3 +324,10 @@ qa_gate:
     Run read-only command with filesystem watcher to detect mutations.
     Force inference error and measure GPU memory leak.
     Run two greedy inferences and diff output.
+
+# #4709 CENSUS-RATCHET: the free function contracts/binding.yaml binds this
+# contract to (a row in the binding file of this file's own directory), which
+# `pv extract` resolves (sym:resolved true in contracts.nt).
+entity:
+  type: code
+  ref: apr_cli::dispatch_core_command

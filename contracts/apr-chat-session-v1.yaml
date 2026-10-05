@@ -243,3 +243,10 @@ qa_gate:
   - validation
   - falsification
   pass_criteria: All 8 falsification tests pass
+
+# #4709 CENSUS-RATCHET: the free function contracts/binding.yaml binds this
+# contract to (a row in the binding file of this file's own directory), which
+# `pv extract` resolves (sym:resolved true in contracts.nt).
+entity:
+  type: code
+  ref: apr_cli::commands::chat::run

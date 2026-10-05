@@ -237,3 +237,10 @@ kani_harnesses:
   bound: 8
   strategy: exhaustive
   harness: verify_byte_encoder_coverage
+
+# #4709 CENSUS-RATCHET: the free function contracts/aprender/binding.yaml binds this
+# contract to (a row in the binding file of this file's own directory), which
+# `pv extract` resolves (sym:resolved true in contracts.nt).
+entity:
+  type: code
+  ref: aprender::format::converter::import::load_tokenizer_from_explicit_path

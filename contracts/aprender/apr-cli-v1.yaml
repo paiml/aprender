@@ -796,3 +796,10 @@ toyota_way_principles:
     "Continuous improvement" — the plan/apply pattern for both training and tokenizer
     commands separates validation (plan) from execution (apply), enabling incremental
     improvements to resource estimation without changing the execution path.
+
+# #4709 CENSUS-RATCHET: the free function contracts/aprender/binding.yaml binds this
+# contract to (a row in the binding file of this file's own directory), which
+# `pv extract` resolves (sym:resolved true in contracts.nt).
+entity:
+  type: code
+  ref: apr_cli::execute_command

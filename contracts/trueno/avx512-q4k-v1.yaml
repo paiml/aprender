@@ -111,3 +111,10 @@ qa_gate:
   checks:
   - validation
   - falsification
+
+# #4709 CENSUS-RATCHET: the free function contracts/trueno/binding.yaml binds this
+# contract to (a row in the binding file of this file's own directory), which
+# `pv extract` resolves (sym:resolved true in contracts.nt).
+entity:
+  type: code
+  ref: trueno::backends::q4k::gemv::avx512::matmul_q4k_f32_avx512

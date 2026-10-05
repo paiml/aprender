@@ -199,3 +199,10 @@ simd_dispatch:
     scalar: attention_scalar
     avx2: attention_avx2
     ptx: attention_ptx
+
+# #4709 CENSUS-RATCHET: the free function contracts/binding.yaml binds this
+# contract to (a row in the binding file of this file's own directory), which
+# `pv extract` resolves (sym:resolved true in contracts.nt).
+entity:
+  type: code
+  ref: aprender::nn::transformer::scaled_dot_product_attention

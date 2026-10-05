@@ -153,3 +153,10 @@ qa_gate:
   checks:
   - validation
   - falsification
+
+# #4709 CENSUS-RATCHET: the type-qualified method contracts/trueno/binding.yaml binds this
+# contract to (a row in the binding file of this file's own directory), which
+# `pv extract` resolves (sym:resolved true in contracts.nt).
+entity:
+  type: code
+  ref: trueno::backends::gpu::batch::execute::GpuCommandBatch::execute

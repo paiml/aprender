@@ -113,3 +113,10 @@ qa_gate:
   - rmsnorm_unit
   pass_criteria: All 3 falsification tests pass
   falsification: Remove 1/sqrt(d_k) scaling from attention
+
+# #4709 CENSUS-RATCHET: the free function contracts/realizar/binding.yaml binds this
+# contract to (a row in the binding file of this file's own directory), which
+# `pv extract` resolves (sym:resolved true in contracts.nt).
+entity:
+  type: code
+  ref: realizar::apr::helpers::simple_attention

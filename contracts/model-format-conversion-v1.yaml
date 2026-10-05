@@ -328,3 +328,10 @@ qa_gate:
     Convert a model, count tensors, verify all preserved.
     Quantize with extreme values, check error bounds.
     Merge incompatible models, verify rejection.
+
+# #4709 CENSUS-RATCHET: the free function contracts/binding.yaml binds this
+# contract to (a row in the binding file of this file's own directory), which
+# `pv extract` resolves (sym:resolved true in contracts.nt).
+entity:
+  type: code
+  ref: apr_cli::commands::convert::run
