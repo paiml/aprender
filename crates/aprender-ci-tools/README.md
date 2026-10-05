@@ -11,11 +11,19 @@ CI helpers ported from `scripts/**/*.py` to Rust (C301: no Python in the build).
 | `tarball-shrink-report <PACKAGE_LOG> <WS_DIR>` | `scripts/lib/tarball_shrink_report.py` (kept: its caller runs on a gate path, so it switches once a released `aprender-ci-tools` carries the port) |
 | `tarball-workspace DIR` · `--name DIR` · `--target-dir` (reads `cargo metadata` JSON on stdin) | `scripts/lib/tarball_workspace.py` (deleted; the parity test reads it from git) |
 | `tarball-build-errors LOG` | `scripts/lib/tarball_build_errors.py` (kept: its caller `scripts/package_tarball_build.sh` is on the publish gate path, N-1) |
+| `dag-status --root DIR` (reads `[id, row]` JSON pairs on stdin) | `scripts/lib/dag_status.py` (kept for now, see below) |
 
 Each port must print the same stdout as its original and agree with it on success
 or failure. `scripts/tests/ci_tools_py_parity_test.sh` checks this. The Python
 files stay only as that test's external validator; a port whose callers are all
 switched deletes its `.py`, and the test reads that original from git.
+
+`dag-status` is checked by `scripts/tests/ci_tools_dag_status_parity_test.sh` against
+the working-tree `scripts/lib/dag_status.py`. The shell callers (`session_docs_commit.sh`,
+`pp066_state.sh`) call the binary. `render_dag.py` and `lib/dag_invariants.py` still
+import the `.py`: they run in cargo-free CI steps, which only use released tool
+versions. They switch, and the `.py` is deleted, in the first change after a released
+`aprender-ci-tools` carries `dag-status`.
 
 ## Where the argv surface differs from the originals (by design, not parity-checked)
 

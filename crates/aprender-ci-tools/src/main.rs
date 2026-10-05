@@ -1,8 +1,8 @@
 //! `aprender-ci-tools`: one binary, one subcommand per ported Python helper.
 
 use aprender_ci_tools::{
-    coverage_report_scope, package_include_diff, publishable_crates, tarball_build_errors,
-    tarball_shrink_report, tarball_workspace,
+    coverage_report_scope, dag_status, package_include_diff, publishable_crates,
+    tarball_build_errors, tarball_shrink_report, tarball_workspace,
 };
 use clap::{ArgGroup, Parser, Subcommand};
 use std::io::{Read, Write};
@@ -69,6 +69,14 @@ enum Cmd {
         /// original, so the count is checked by the port and not by clap (which exits 1).
         #[arg(num_args = 0.., allow_hyphen_values = true, trailing_var_arg = true)]
         log: Vec<PathBuf>,
+    },
+    /// Each DAG row's status, derived from its receipt, and the D7 lines for a typed
+    /// `status:` that disagrees (was scripts/lib/dag_status.py). Reads the rows as a JSON
+    /// array of `[id, row]` pairs on stdin.
+    DagStatus {
+        /// The repository root the `docs/audits/` receipts live under.
+        #[arg(long, value_name = "DIR")]
+        root: String,
     },
 }
 
@@ -146,6 +154,13 @@ fn run(cmd: Cmd) -> Result<String, Refusal> {
             } else {
                 Err((o.stdout, o.code, o.stderr))
             }
+        }
+        Cmd::DagStatus { root } => {
+            let mut rows = String::new();
+            std::io::stdin()
+                .read_to_string(&mut rows)
+                .map_err(|e| nothing_printed(format!("stdin: {e}")))?;
+            dag_status::run(&root, &rows).map_err(nothing_printed)
         }
     }
 }
