@@ -16,7 +16,8 @@
 //! | — | `and`/`or`/`not`/`xone`, `sparql`, and every component not in this table |
 //!
 //! A key the table does not name is REFUSED, not ignored: an ignored constraint is a shape that reports "conforms"
-//! for something it never checked, which is the vacuity R-2 exists to end. `resolves:` is ours, not SHACL — it is
+//! for something it never checked, which is the vacuity R-2 exists to end. A key the table DOES name, holding a
+//! value of the wrong YAML type (`datatype: 5`, `targetClass: [x]`), is malformed for the same reason (#4814). `resolves:` is ours, not SHACL — it is
 //! accepted here and checked by the extractor (§3.6), so a shape may carry it.
 //!
 //! Prefixes: `ont:` → `https://ont.paiml.dev/v1alpha1/`, `xsd:`, `rdf:`, `prov:` → their namespaces, and any other
@@ -375,7 +376,7 @@ fn parse_node_shape(
             });
         }
     }
-    let target_class = match map.get("targetClass").and_then(serde_yaml::Value::as_str) {
+    let target_class = match str_key(id, map, "targetClass")? {
         Some(t) => expand(t),
         None => match (depth, default_target) {
             (0, Some(t)) => t,
@@ -406,9 +407,13 @@ fn parse_node_shape(
                 what: "`ignoredProperties` is not a list".into(),
             })?
             .iter()
-            .filter_map(serde_yaml::Value::as_str)
-            .map(expand)
-            .collect(),
+            .map(|x| {
+                x.as_str().map(expand).ok_or_else(|| ShapeError::Malformed {
+                    shape: id.to_string(),
+                    what: "an `ignoredProperties` entry is not a string".into(),
+                })
+            })
+            .collect::<Result<_, _>>()?,
     };
     let mut properties = Vec::new();
     if let Some(list) = map.get("properties") {
@@ -477,11 +482,8 @@ fn parse_property(
                 .ok_or_else(|| malformed(format!("`{k}` is not a non-negative integer"))),
         }
     };
-    let iri_opt = |k: &str| pm.get(k).and_then(serde_yaml::Value::as_str).map(expand);
-    let node_kind = parse_node_kind(
-        shape,
-        pm.get("nodeKind").and_then(serde_yaml::Value::as_str),
-    )?;
+    let iri_opt = |k: &str| str_key(shape, pm, k).map(|v| v.map(expand));
+    let node_kind = parse_node_kind(shape, str_key(shape, pm, "nodeKind")?)?;
     // `sh:in` is TERM equality (SHACL §4.5.1), and a term carries its datatype. The YAML scalar's own type is
     // what gives it one: `in: [true]` is `"true"^^xsd:boolean`, `in: [1]` is `xsd:integer`, `in: [a, b]` is
     // `xsd:string`. This used to collapse every entry to its lexical form and compare strings, so a shape
@@ -491,28 +493,22 @@ fn parse_property(
     let r#in = parse_in(shape, pm)?;
     let pattern = parse_pattern(shape, pm)?;
     let node = parse_nested_node(shape, pm, depth)?;
-    let severity = parse_severity(
-        shape,
-        pm.get("severity").and_then(serde_yaml::Value::as_str),
-    )?;
+    let severity = parse_severity(shape, str_key(shape, pm, "severity")?)?;
     Ok(PropertyShape {
         path: expand(path),
         min_count: count("minCount")?,
         max_count: count("maxCount")?,
-        datatype: iri_opt("datatype"),
-        class: iri_opt("class"),
+        datatype: iri_opt("datatype")?,
+        class: iri_opt("class")?,
         node_kind,
         r#in,
         pattern,
         min_length: count("minLength")?,
         max_length: count("maxLength")?,
         node,
-        less_than: iri_opt("lessThan"),
-        less_than_or_equals: iri_opt("lessThanOrEquals"),
-        resolves: pm
-            .get("resolves")
-            .and_then(serde_yaml::Value::as_str)
-            .map(String::from),
+        less_than: iri_opt("lessThan")?,
+        less_than_or_equals: iri_opt("lessThanOrEquals")?,
+        resolves: str_key(shape, pm, "resolves")?.map(String::from),
         severity,
     })
 }
@@ -521,6 +517,23 @@ fn malformed_in(shape: &str, what: String) -> ShapeError {
     ShapeError::Malformed {
         shape: shape.to_string(),
         what,
+    }
+}
+
+/// A key whose value must be a string: absent is `None`, any other YAML type is malformed (#4814). Reading a
+/// `datatype: 5` or a `targetClass: [x]` as absent drops the constraint — the shape then reports conforms for
+/// what it never checked, the same vacuity as an ignored unknown key.
+fn str_key<'a>(
+    shape: &str,
+    m: &'a serde_yaml::Mapping,
+    k: &str,
+) -> Result<Option<&'a str>, ShapeError> {
+    match m.get(k) {
+        None => Ok(None),
+        Some(v) => v
+            .as_str()
+            .map(Some)
+            .ok_or_else(|| malformed_in(shape, format!("`{k}` is not a string"))),
     }
 }
 
@@ -544,7 +557,16 @@ fn parse_path<'a>(shape: &str, pm: &'a serde_yaml::Mapping) -> Result<&'a str, S
         .get("path")
         .and_then(serde_yaml::Value::as_str)
         .ok_or_else(|| malformed_in(shape, "a property has no `path`".into()))?;
-    if path.contains(['/', '|', '^', '*', '+']) && !path.starts_with("http") {
+    // A full IRI keeps its `/`, `*` and `+`, but it can never hold whitespace or `|^<>"{}\` (RFC 3987): such a
+    // string is a path expression or a list written with full IRIs, and reading it as one predicate checks a
+    // property no data carries (#4814). A prefixed name with whitespace is the same thing.
+    let iri = path.starts_with("http");
+    let expression = if iri {
+        path.contains(|c: char| c.is_whitespace() || "|^<>\"{}\\`".contains(c))
+    } else {
+        path.contains(|c: char| c.is_whitespace() || "/|^*+".contains(c))
+    };
+    if expression {
         return Err(ShapeError::Unsupported {
             shape: shape.to_string(),
             component: format!("path `{path}` (only a single predicate is a path here)"),
@@ -566,11 +588,18 @@ fn parse_in(shape: &str, pm: &serde_yaml::Mapping) -> Result<Option<Vec<InEntry>
     let seq = v
         .as_sequence()
         .ok_or_else(|| malformed_in(shape, "`in` is not a list".into()))?;
-    Ok(Some(seq.iter().map(in_entry).collect()))
+    seq.iter()
+        .map(|x| {
+            in_entry(x).ok_or_else(|| malformed_in(shape, "an `in` entry is not a scalar".into()))
+        })
+        .collect::<Result<_, _>>()
+        .map(Some)
 }
 
-fn in_entry(x: &serde_yaml::Value) -> InEntry {
-    match x {
+/// A YAML scalar as a term; `None` for a mapping, a list or null, which name no term (#4814: these were read as
+/// the empty string, so a malformed list was accepted).
+fn in_entry(x: &serde_yaml::Value) -> Option<InEntry> {
+    Some(match x {
         serde_yaml::Value::String(s) => InEntry {
             lexical: s.clone(),
             datatype: XSD_STRING_IRI.to_string(),
@@ -587,18 +616,15 @@ fn in_entry(x: &serde_yaml::Value) -> InEntry {
             lexical: b.to_string(),
             datatype: format!("{XSD_NS}boolean"),
         },
-        _ => InEntry {
-            lexical: String::new(),
-            datatype: XSD_STRING_IRI.to_string(),
-        },
-    }
+        _ => return None,
+    })
 }
 
 fn parse_pattern(
     shape: &str,
     pm: &serde_yaml::Mapping,
 ) -> Result<Option<(String, regex::Regex)>, ShapeError> {
-    let Some(p) = pm.get("pattern").and_then(serde_yaml::Value::as_str) else {
+    let Some(p) = str_key(shape, pm, "pattern")? else {
         return Ok(None);
     };
     let re = regex::Regex::new(p)
@@ -1655,6 +1681,68 @@ mod tests {
     }
 
     #[test]
+    fn a_known_key_with_a_wrong_typed_value_is_refused_never_read_as_absent() {
+        // #4814 fail-closed: each row was dropped without an error before (F1–F8 of evidence/4814/baseline.md).
+        // `ok` is the same key, well typed, so a row that passes only because the shape never parses is caught.
+        let p = |prop: &str| {
+            format!(
+                "entity: {{type: pv-contract}}\nshape:\n  properties: [{{path: ont:x, {prop}}}]\n"
+            )
+        };
+        let rows: [(&str, String, String); 11] = [
+            ("F1 targetClass", "shape:\n  targetClass: [ont:A]\n  properties: []\n".into(), "shape:\n  targetClass: ont:A\n  properties: []\n".into()),
+            ("F2 datatype", p("datatype: 5"), p("datatype: xsd:string")),
+            ("F2 class", p("class: [ont:A]"), p("class: ont:A")),
+            ("F2 lessThan", p("lessThan: {a: 1}"), p("lessThan: ont:y")),
+            ("F2 lessThanOrEquals", p("lessThanOrEquals: 1"), p("lessThanOrEquals: ont:y")),
+            ("F3 pattern", p("pattern: 7"), p("pattern: '^a'")),
+            ("F4 nodeKind", p("nodeKind: [IRI]"), p("nodeKind: IRI")),
+            ("F5 severity", p("severity: 1"), p("severity: warning")),
+            ("F6 ignoredProperties", "entity: {type: pv-contract}\nshape:\n  closed: true\n  ignoredProperties: [rdf:type, 3]\n  properties: []\n".into(), "entity: {type: pv-contract}\nshape:\n  closed: true\n  ignoredProperties: [rdf:type]\n  properties: []\n".into()),
+            ("F7 in", p("in: [a, {b: 1}]"), p("in: [a, b]")),
+            ("F2 resolves", p("resolves: [x]"), p("resolves: x")),
+        ];
+        for (row, bad, ok) in rows {
+            let parse =
+                |y: &str| parse_shape_with("t", &serde_yaml::from_str(y).expect("yaml"), &pv_map());
+            assert!(
+                parse(&ok).is_ok(),
+                "{row}: control must parse: {:?}",
+                parse(&ok)
+            );
+            match parse(&bad) {
+                Err(ShapeError::Malformed { what, .. }) => {
+                    assert!(what.contains("not a"), "{row}: {what}")
+                }
+                other => panic!("{row}: expected Malformed, got {other:?}"),
+            }
+        }
+        // F8: a path expression or two predicates written so they look like one predicate
+        for path in [
+            "'http://x/a|http://x/b'",
+            "'^http://x/a'",
+            "'http://x/a http://x/b'",
+            "'ont:a ont:b'",
+        ] {
+            let doc: serde_yaml::Value =
+                serde_yaml::from_str(&p(&format!("minCount: 0}}, {{path: {path}"))).expect("yaml");
+            assert!(
+                matches!(
+                    parse_shape_with("t", &doc, &pv_map()),
+                    Err(ShapeError::Unsupported { .. })
+                ),
+                "F8 {path}"
+            );
+        }
+        let doc: serde_yaml::Value =
+            serde_yaml::from_str(&p("minCount: 0}, {path: 'https://x.org/a/b*c+d'")).expect("yaml");
+        assert!(
+            parse_shape_with("t", &doc, &pv_map()).is_ok(),
+            "F8 control: a full IRI keeps / * +"
+        );
+    }
+
+    #[test]
     fn a_shape_with_no_target_and_no_pv_contract_entity_is_malformed() {
         let doc: serde_yaml::Value = serde_yaml::from_str("shape:\n  properties: []\n").unwrap();
         assert!(matches!(
@@ -1695,7 +1783,7 @@ mod tests {
     fn in_entry_types_each_yaml_scalar_by_its_own_kind() {
         let e = |y: &str| {
             let v: serde_yaml::Value = serde_yaml::from_str(y).expect("yaml");
-            let x = in_entry(&v);
+            let x = in_entry(&v).expect("a scalar");
             (x.lexical, x.datatype)
         };
         let xsd = |t: &str| format!("{XSD_NS}{t}");
@@ -1704,7 +1792,10 @@ mod tests {
         assert_eq!(e("true"), ("true".to_string(), xsd("boolean")));
         assert_eq!(e("false"), ("false".to_string(), xsd("boolean")));
         assert_eq!(e("a"), ("a".to_string(), XSD_STRING_IRI.to_string()));
-        assert_eq!(e("[1]"), (String::new(), XSD_STRING_IRI.to_string()));
+        for y in ["[1]", "{a: 1}", "~"] {
+            let v: serde_yaml::Value = serde_yaml::from_str(y).expect("yaml");
+            assert!(in_entry(&v).is_none(), "{y} names no term");
+        }
     }
 
     #[test]
