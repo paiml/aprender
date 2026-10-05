@@ -209,3 +209,9 @@ qa_gate:
   - request_immutability
   pass_criteria: All 8 falsification tests pass + 5 Kani harnesses verify
   falsification: Inject chaos at provider boundary
+
+# #4709 CENSUS-RATCHET: the type-qualified method contracts/*/binding.yaml binds this contract
+# to, which `pv extract` resolves (sym:resolved true in contracts.nt).
+entity:
+  type: code
+  ref: batuta::agent::driver::remote::RemoteDriver::estimate_cost

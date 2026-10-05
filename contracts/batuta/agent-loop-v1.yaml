@@ -291,3 +291,9 @@ qa_gate:
   - memory_refetch
   pass_criteria: All 9 falsification tests pass + 6 Kani harnesses verify
   falsification: Adversarial LLM mock that tries to escape loop, sandbox, and context bounds
+
+# #4709 CENSUS-RATCHET: the type-qualified method contracts/*/binding.yaml binds this contract
+# to, which `pv extract` resolves (sym:resolved true in contracts.nt).
+entity:
+  type: code
+  ref: batuta::agent::session::SessionStore::resume

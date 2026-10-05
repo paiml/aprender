@@ -203,3 +203,9 @@ simd_dispatch:
     scalar: rope_scalar
     avx2: rope_avx2
     ptx: rope_ptx
+
+# #4709 CENSUS-RATCHET: the type-qualified method contracts/*/binding.yaml binds this contract
+# to, which `pv extract` resolves (sym:resolved true in contracts.nt).
+entity:
+  type: code
+  ref: aprender::nn::transformer::attention_helpers::RotaryPositionEmbedding::apply

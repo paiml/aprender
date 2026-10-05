@@ -176,3 +176,9 @@ qa_gate:
   - simd_equivalence
   pass_criteria: All 6 falsification tests pass + Kani harnesses verify
   falsification: Use random assignment instead of nearest centroid
+
+# #4709 CENSUS-RATCHET: the type-qualified method contracts/*/binding.yaml binds this contract
+# to, which `pv extract` resolves (sym:resolved true in contracts.nt).
+entity:
+  type: code
+  ref: aprender::cluster::kmeans_impl::KMeans::fit

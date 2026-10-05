@@ -224,3 +224,9 @@ verification_summary:
   uncovered_obligations:
   - property: Temperature scaling effect
     reason: 'entropy(softmax(z/T)) monotonic in T is a genuine analytic inequality (dH/dbeta = -beta*Var_p(z) <= 0) but is NOT YET proven in Lean; classified analytic-but-unproven, so the contract honestly remains L3 (not marked N/A)'
+
+# #4709 CENSUS-RATCHET: the type-qualified method contracts/*/binding.yaml binds this contract
+# to, which `pv extract` resolves (sym:resolved true in contracts.nt).
+entity:
+  type: code
+  ref: aprender::models::qwen2::Embedding::forward

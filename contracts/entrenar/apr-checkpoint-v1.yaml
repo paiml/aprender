@@ -383,3 +383,9 @@ proof_obligations:
   property: Atomic write safety
   formal: crash during save does not corrupt existing checkpoint
   applies_to: all
+
+# #4709 CENSUS-RATCHET: the type-qualified method contracts/*/binding.yaml binds this contract
+# to, which `pv extract` resolves (sym:resolved true in contracts.nt).
+entity:
+  type: code
+  ref: aprender::serialization::apr::AprWriter::write

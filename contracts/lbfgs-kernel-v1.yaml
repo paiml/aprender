@@ -249,3 +249,9 @@ qa_gate:
   - objective_decrease
   pass_criteria: All 9 falsification tests pass + Kani harnesses verify
   falsification: Reverse loop order in two-loop recursion
+
+# #4709 CENSUS-RATCHET: the type-qualified method contracts/*/binding.yaml binds this contract
+# to, which `pv extract` resolves (sym:resolved true in contracts.nt).
+entity:
+  type: code
+  ref: aprender::optim::lbfgs::LbfgsImpl::compute_direction

@@ -21,13 +21,13 @@ bindings:
   notes: '#4369: #[contract] site at crates/aprender-core/src/metaheuristics/cmaes_include_01.rs:5 had no binding row; row added when the binding moved in-tree'
 - contract: cma-es-kernel-v1.yaml
   equation: sample
-  module_path: aprender::metaheuristics::cmaes
+  module_path: aprender::metaheuristics::cmaes::CmaEs
   function: sample
   status: implemented
   notes: '#4369: #[contract] site at crates/aprender-core/src/metaheuristics/cmaes.rs:274 had no binding row; row added when the binding moved in-tree'
 - contract: conv1d-kernel-v1.yaml
   equation: conv1d
-  module_path: aprender::nn::conv
+  module_path: aprender::nn::conv::Conv1d
   function: forward
   status: implemented
   notes: '#4369: #[contract] site at crates/aprender-core/src/nn/conv/mod.rs:292 had no binding row; row added when the binding moved in-tree'
@@ -45,7 +45,7 @@ bindings:
   notes: '#4369: #[contract] site at crates/aprender-core/src/nn/functional.rs:307 had no binding row; row added when the binding moved in-tree'
 - contract: embedding-algebra-v1.yaml
   equation: embedding_lookup
-  module_path: aprender::models::qwen2
+  module_path: aprender::models::qwen2::Embedding
   function: forward
   status: implemented
   notes: '#4369: #[contract] site at crates/aprender-core/src/models/qwen2/mod.rs:121 had no binding row; row added when the binding moved in-tree'
@@ -69,7 +69,7 @@ bindings:
   notes: '#4369: #[contract] site at crates/aprender-core/src/cluster/kmeans_impl.rs:406 had no binding row; row added when the binding moved in-tree'
 - contract: kmeans-kernel-v1.yaml
   equation: update
-  module_path: aprender::cluster::kmeans_impl
+  module_path: aprender::cluster::kmeans_impl::KMeans
   function: fit
   status: implemented
   notes: '#4369: #[contract] site at crates/aprender-core/src/cluster/kmeans_impl.rs:362 had no binding row; row added when the binding moved in-tree'
@@ -93,7 +93,7 @@ bindings:
   notes: '#4369: #[contract] site at crates/aprender-core/src/nn/normalization/group_norm.rs:348 had no binding row; row added when the binding moved in-tree'
 - contract: rope-kernel-v1.yaml
   equation: rope
-  module_path: aprender::nn::transformer::attention_helpers
+  module_path: aprender::nn::transformer::attention_helpers::RotaryPositionEmbedding
   function: apply
   status: implemented
   notes: '#4369: #[contract] site at crates/aprender-core/src/nn/transformer/attention_helpers.rs:268 had no binding row; row added when the binding moved in-tree'
@@ -1047,7 +1047,7 @@ bindings:
 # --- contrastive-pair-protocol-v1: determinism primitives (D-20/D-21) ---
 - contract: lbfgs-kernel-v1.yaml
   equation: two_loop_recursion
-  module_path: aprender::optim::lbfgs
+  module_path: aprender::optim::lbfgs::LbfgsImpl
   function: compute_direction
   signature: 'fn compute_direction(&self, grad: &Vector<T>) -> Vector<T>'
   status: implemented

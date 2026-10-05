@@ -15,7 +15,7 @@ bindings:
   notes: '#4369: #[contract] site at crates/aprender-serve/src/gguf/inference/cached/single_flattened_batched_owned.rs:19 had no binding row, and contracts/gemm-v1.yaml does not exist in-tree: the annotation cites no contract'
 - contract: gpu-multi-backend-parity-v1.yaml
   equation: multi_backend_parity
-  module_path: realizar::infer::batch_wgpu
+  module_path: realizar::infer::batch_wgpu::WgpuBatchState
   function: generate
   status: implemented
   notes: '#4369: #[contract] site at crates/aprender-serve/src/infer/batch_wgpu.rs:44 had no binding row; row added when the binding moved in-tree'

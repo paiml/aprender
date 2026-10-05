@@ -154,3 +154,9 @@ qa_gate:
   - fused_kernel
   pass_criteria: All 6 falsification tests pass
   falsification: Corrupt one KV cache entry to break equivalence
+
+# #4709 CENSUS-RATCHET: the type-qualified method contracts/*/binding.yaml binds this contract
+# to, which `pv extract` resolves (sym:resolved true in contracts.nt).
+entity:
+  type: code
+  ref: realizar::paged_kv::mod_paged::PagedKvCache::new

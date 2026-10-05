@@ -139,3 +139,9 @@ qa_gate:
   - batched_single_transition
   pass_criteria: All 5 falsification tests pass (PTP-001 through PTP-005)
   falsification: Revert CudaKernels to ::new() to break PTP-002; add .emit_ptx() call to break PTP-001
+
+# #4709 CENSUS-RATCHET: the type-qualified method contracts/*/binding.yaml binds this contract
+# to, which `pv extract` resolves (sym:resolved true in contracts.nt).
+entity:
+  type: code
+  ref: realizar::cuda::executor::core::CudaExecutor::compile_ptx

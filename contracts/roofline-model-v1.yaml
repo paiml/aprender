@@ -145,3 +145,9 @@ qa_gate:
   - monotonicity
   pass_criteria: All 5 falsification tests pass
   falsification: Set bandwidth to 0 to trigger division by zero
+
+# #4709 CENSUS-RATCHET: the type-qualified method contracts/*/binding.yaml binds this contract
+# to, which `pv extract` resolves (sym:resolved true in contracts.nt).
+entity:
+  type: code
+  ref: realizar::brick::fused::CoalescedDp4aBrick::arithmetic_intensity

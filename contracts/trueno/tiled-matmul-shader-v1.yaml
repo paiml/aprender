@@ -169,3 +169,9 @@ qa_gate:
   checks:
   - validation
   - falsification
+
+# #4709 CENSUS-RATCHET: the type-qualified method contracts/*/binding.yaml binds this contract
+# to, which `pv extract` resolves (sym:resolved true in contracts.nt).
+entity:
+  type: code
+  ref: trueno::backends::gpu::batch::execute::dispatch::GpuCommandBatch::encode_matmul_op

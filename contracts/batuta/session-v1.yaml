@@ -186,3 +186,9 @@ kani_harnesses:
   property: JSONL roundtrip preserves message count and content
   bound: 8
   strategy: exhaustive
+
+# #4709 CENSUS-RATCHET: the type-qualified method contracts/*/binding.yaml binds this contract
+# to, which `pv extract` resolves (sym:resolved true in contracts.nt).
+entity:
+  type: code
+  ref: batuta::agent::session::SessionStore::append_messages

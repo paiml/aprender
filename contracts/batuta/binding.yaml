@@ -121,7 +121,7 @@ bindings:
 - contract: provider-routing-v1.yaml
   equation: cost_budget
   function: estimate_cost
-  module_path: batuta::agent::driver::remote::estimate_cost
+  module_path: batuta::agent::driver::remote::RemoteDriver
   status: pending
 - contract: provider-routing-v1.yaml
   equation: backoff_jitter
@@ -161,7 +161,7 @@ bindings:
 - contract: agent-loop-v1.yaml
   equation: session_crash_recovery
   function: resume
-  module_path: batuta::agent::session::resume
+  module_path: batuta::agent::session::SessionStore
   status: pending
 - contract: agent-loop-v1.yaml
   equation: hook_ordering
@@ -267,7 +267,7 @@ bindings:
 - contract: session-v1.yaml
   equation: jsonl_roundtrip
   function: append_messages
-  module_path: batuta::agent::session::append_messages
+  module_path: batuta::agent::session::SessionStore
   status: implemented
   notes: JSONL append-only persistence
 - contract: session-v1.yaml

@@ -236,3 +236,9 @@ enforcement:
     description: Never bypass the parity gate
     check: SKIP_PARITY_GATE=1 is forbidden in production
     severity: CRITICAL — bypassing produces garbage output (cosine=-0.005)
+
+# #4709 CENSUS-RATCHET: the type-qualified method contracts/*/binding.yaml binds this contract
+# to, which `pv extract` resolves (sym:resolved true in contracts.nt).
+entity:
+  type: code
+  ref: realizar::infer::batch_wgpu::WgpuBatchState::generate

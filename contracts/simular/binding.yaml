@@ -89,7 +89,7 @@ bindings:
 - contract: iterator-v1.yaml
   equation: step
   function: run_periods
-  module_path: simular::demos::harmonic_oscillator::run_periods
+  module_path: simular::demos::harmonic_oscillator::HarmonicOscillatorDemo
   status: implemented
 - contract: iterator-v1.yaml
   equation: step

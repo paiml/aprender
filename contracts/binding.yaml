@@ -586,7 +586,7 @@ bindings:
 # ── Pillar-4 (BEAT Ollama): tensor-transpose round-trip → L5.
 - contract: tensor-transpose-roundtrip-v1.yaml
   equation: tensor_transpose_reindex
-  module_path: aprender::format::layout_contract
+  module_path: aprender::format::layout_contract::LayoutContract
   function: should_transpose_gguf
   signature: 'fn should_transpose_gguf(&self, name: &str) -> bool'
   status: implemented

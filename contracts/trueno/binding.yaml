@@ -39,7 +39,7 @@ bindings:
   notes: 'Dispatch: ceil(M/16) x ceil(N/16) x 1 workgroups'
 - contract: tiled-matmul-shader-v1.yaml
   equation: execute_matmul_op
-  module_path: trueno::backends::gpu::batch::execute::dispatch
+  module_path: trueno::backends::gpu::batch::execute::dispatch::GpuCommandBatch
   function: encode_matmul_op
   signature: 'pub(crate) fn encode_matmul_op(&self, encoder: &mut CommandEncoder, cache:
     &mut PipelineCache, shader_source: &str, label: &str, a: &BufferId, b: &BufferId,

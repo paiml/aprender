@@ -134,3 +134,9 @@ qa_gate:
   - requant_tolerance
   pass_criteria: All 4 falsification tests pass + Lean involution proofs compile sorry-free
   falsification: Swap the reindex to out[r*cols+c]=in[r*cols+c] (identity) to verify test catches lost transpose
+
+# #4709 CENSUS-RATCHET: the type-qualified method contracts/*/binding.yaml binds this contract
+# to, which `pv extract` resolves (sym:resolved true in contracts.nt).
+entity:
+  type: code
+  ref: aprender::format::layout_contract::LayoutContract::should_transpose_gguf
