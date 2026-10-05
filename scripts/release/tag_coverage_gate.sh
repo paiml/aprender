@@ -212,7 +212,7 @@ STUB
     # #4735, each B + one more change: EA adds a model-ladder receipt for the version cut (0.1.1),
     # EM modifies one C already held, EO adds one for another version, EN adds a file off the surface,
     # ED deletes CHANGELOG.md.
-    local g="$d/repo" C B X D N A EA EM EO EN ED MV MX AD
+    local g="$d/repo" C B X D N A EA EM EO EN ED MV MX AD IH
     git init -q "$g" && git -C "$g" config user.email t@t && git -C "$g" config user.name t \
         && git -C "$g" config core.hooksPath /dev/null || return 1
     printf 'COV_FLOOR := 89\n' > "$g/Makefile"; mkdir -p "$g/crates/a" "$g/evidence/dogfood/models/0.1.1"
@@ -239,6 +239,9 @@ STUB
         && git -C "$g" commit -qam MX && git -C "$g" rev-parse HEAD)
     AD=$(git -C "$g" checkout -q "$B" && sed -i '/^version = "0\.1\.1"/a build = "evil.rs"' "$g/crates/a/Cargo.toml" \
         && git -C "$g" commit -qam AD && git -C "$g" rev-parse HEAD)
+    # IH moves the c line up into [dependencies]: one hunk, the -c and +c separated by context lines
+    IH=$(git -C "$g" checkout -q "$B" && sed -i -e '/^c = /d' -e '/^b = /a c = { path = "../c", version = "0.1.1" }' "$g/crates/a/Cargo.toml" \
+        && git -C "$g" commit -qam IH && git -C "$g" rev-parse HEAD)
     git -C "$g" checkout -q "$B"
     printf 'fn f() { g() }\n' > "$g/lib.rs"; git -C "$g" commit -qam X && X=$(git -C "$g" rev-parse HEAD)
     git -C "$g" checkout -q "$C" && sed -i -e 's|path = "../b"|path = "../evil"|' -e 's/0\.1\.0/0.1.1/g' "$g/crates/a/Cargo.toml"
@@ -301,6 +304,7 @@ STUB
     e2e 1 "e2e: a dependency line MOVED between sections beside a version bump is not a bump" "$MV" "7:$C:$T1" "7:$C:$OK"
     e2e 1 "e2e: a dependency line MOVED to another Cargo file is not a bump" "$MX" "7:$C:$T1" "7:$C:$OK"
     e2e 1 "e2e: a line ADDED in a version line's hunk is not a bump" "$AD" "7:$C:$T1" "7:$C:$OK"
+    e2e 1 "e2e: a dependency line MOVED across a section header inside one hunk is not a bump" "$IH" "7:$C:$T1" "7:$C:$OK"
     echo "$PROG self-test: --resolve SHA, before the tag (#4691)"
     mode="--resolve"
     e2e 0 "e2e: --resolve passes on a release commit whose receipt holds the floor" "$B" "7:$C:$T1" "7:$C:$OK"
