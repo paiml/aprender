@@ -126,6 +126,11 @@ pub struct Census {
     #[serde(default)]
     pub by_concept: BTreeMap<String, usize>,
     pub by_anchoring: AnchoringCounts,
+    /// `entity:` blocks counted `unanchored` because they bind nothing: a type Σ does not implement, or a `ref`
+    /// that resolves to nothing (#4712 review). Table only: `census.json` keeps its keys, and the three
+    /// `by_anchoring` counts still sum to `n_parsed`.
+    #[serde(skip)]
+    pub ungrounded: usize,
     /// sha256 over the sorted, unique contract ids (file stems), newline
     /// separated. Two corpora with the same ids hash the same; adding, removing
     /// or renaming one changes it.
@@ -149,6 +154,97 @@ pub fn classify(yaml: &str) -> (Anchoring, Option<String>) {
         // `entity:` present but naming no type is not an anchor. Reporting it as
         // one would let a malformed block inflate the ratchet.
         (None, _) => (Anchoring::Unanchored, None),
+    }
+}
+
+/// `entity.ref` of ONE raw YAML document, read like [`classify`] reads `type`.
+#[must_use]
+pub fn entity_ref(yaml: &str) -> Option<String> {
+    scalar_field(&entity_block(yaml)?, "ref")
+}
+
+/// Whether a declared anchor binds anything (#4712 review: `entity: {type: zzz_bogus}` counted as class and
+/// `entity: {type: binary, ref: no_such_thing_xyz}` as instance, so the census ratchet could be paid with
+/// two-line YAML edits that bind nothing). A declaration is only a claim; this is the check.
+///
+/// - The type must be one Σ (`contracts/ontology.yaml`) declares `implemented: true`. No well-formed Σ is no
+///   implemented type, so nothing is grounded: the ratchet reads short, never long.
+/// - An instance's `ref` must resolve: a `binary` ref to a `binary/<package>/<target>` node `extract:binary`
+///   emitted; any other ref to a path that exists under the repo root, never outside it (no `..`, not absolute).
+///
+/// What it does NOT check: that a file ref is a file OF that type (a `csv` ref naming README.md resolves).
+pub struct Grounding {
+    implemented: BTreeSet<String>,
+    nodes: BTreeSet<String>,
+    root: PathBuf,
+}
+
+impl Grounding {
+    #[must_use]
+    pub fn new(
+        dir: &Path,
+        sigma: Option<&provable_contracts::ontology::sigma::Sigma>,
+        graph: Option<&provable_contracts::ontology::rdf::Graph>,
+    ) -> Self {
+        let implemented = sigma
+            .map(|s| {
+                s.entity_types
+                    .iter()
+                    .filter(|t| t.implemented)
+                    .map(|t| t.name.clone())
+                    .collect()
+            })
+            .unwrap_or_default();
+        let nodes = graph
+            .map(|g| g.iter().map(|t| t.subject.clone()).collect())
+            .unwrap_or_default();
+        Self {
+            implemented,
+            nodes,
+            root: dir.parent().unwrap_or(dir).to_path_buf(),
+        }
+    }
+
+    /// The anchoring a declaration EARNS: `declared` when it binds something, else `Unanchored`.
+    #[must_use]
+    pub fn ground(&self, declared: Anchoring, ty: Option<&str>, r: Option<&str>) -> Anchoring {
+        let earned = match (declared, ty) {
+            (Anchoring::Unanchored, _) | (_, None) => false,
+            (_, Some(t)) if !self.implemented.contains(t) => false,
+            (Anchoring::Class, Some(_)) => true,
+            (Anchoring::Instance, Some(t)) => r.is_some_and(|r| self.resolves(t, r)),
+        };
+        if earned {
+            declared
+        } else {
+            Anchoring::Unanchored
+        }
+    }
+
+    fn resolves(&self, ty: &str, r: &str) -> bool {
+        if ty == "binary" {
+            let Some(rest) = r.strip_prefix("binary/") else {
+                return false;
+            };
+            let segs: Vec<&str> = rest.split('/').collect();
+            return segs.len() == 2
+                && segs.iter().all(|s| !s.is_empty())
+                && self
+                    .nodes
+                    .contains(&provable_contracts::ontology::rdf::iri_path(
+                        "binary", &segs,
+                    ));
+        }
+        let p = Path::new(r);
+        !r.is_empty()
+            && p.is_relative()
+            && p.components().all(|c| {
+                matches!(
+                    c,
+                    std::path::Component::Normal(_) | std::path::Component::CurDir
+                )
+            })
+            && self.root.join(p).exists()
     }
 }
 
@@ -260,11 +356,14 @@ pub fn census_of(dir: &Path) -> Result<Census, Box<dyn std::error::Error>> {
         .into());
     }
     files.sort();
+    let sigma = provable_contracts::ontology::extract::sigma_of(dir);
+    let extraction = provable_contracts::ontology::extract::all(dir).ok();
+    let grounding = Grounding::new(dir, sigma.as_ref(), extraction.as_ref().map(|x| &x.graph));
     let mut census = empty_census(files.len(), quarantined_n(dir));
     let mut errors = Vec::new();
     let mut ids = BTreeSet::new();
     for path in &files {
-        tally(path, &mut census, &mut ids, &mut errors);
+        tally(path, &mut census, &mut ids, &mut errors, &grounding);
     }
     if !errors.is_empty() {
         return Err(ParseErrors {
@@ -276,14 +375,17 @@ pub fn census_of(dir: &Path) -> Result<Census, Box<dyn std::error::Error>> {
     }
     census.id_set_sha256 = id_set_sha256(&ids);
     census.declared_external = declared_external(dir)?;
-    census.by_concept = by_concept(dir);
+    census.by_concept = by_concept(sigma.as_ref(), extraction.as_ref());
     Ok(census)
 }
 
 /// ONT-4d: `concept → instances` over the closed graph (see [`Census::by_concept`]).
-fn by_concept(dir: &Path) -> BTreeMap<String, usize> {
-    use provable_contracts::ontology::{extract, rdf::ont};
-    let (Some(sigma), Ok(x)) = (extract::sigma_of(dir), extract::all(dir)) else {
+fn by_concept(
+    sigma: Option<&provable_contracts::ontology::sigma::Sigma>,
+    x: Option<&provable_contracts::ontology::extract::Extraction>,
+) -> BTreeMap<String, usize> {
+    use provable_contracts::ontology::rdf::ont;
+    let (Some(sigma), Some(x)) = (sigma, x) else {
         return BTreeMap::new();
     };
     sigma
@@ -332,6 +434,7 @@ fn empty_census(n_files: usize, quarantined_n: usize) -> Census {
         by_entity_type: BTreeMap::new(),
         by_concept: BTreeMap::new(),
         by_anchoring: AnchoringCounts::default(),
+        ungrounded: 0,
         id_set_sha256: String::new(),
         declared_external: Vec::new(),
         timing: Timing::default(),
@@ -345,6 +448,7 @@ fn tally(
     census: &mut Census,
     ids: &mut BTreeSet<String>,
     errors: &mut Vec<(PathBuf, String)>,
+    grounding: &Grounding,
 ) {
     let contract = match parse_contract(path) {
         Ok(c) => c,
@@ -365,7 +469,11 @@ fn tally(
         census.by_anchoring.unanchored += 1;
         return;
     };
-    let (anchoring, ty) = classify(&text);
+    let (declared, ty) = classify(&text);
+    let anchoring = grounding.ground(declared, ty.as_deref(), entity_ref(&text).as_deref());
+    if anchoring != declared {
+        census.ungrounded += 1;
+    }
     match anchoring {
         Anchoring::Unanchored => census.by_anchoring.unanchored += 1,
         Anchoring::Class => census.by_anchoring.class += 1,
@@ -410,6 +518,11 @@ fn render_table(census: &Census) -> String {
         out,
         "  instance   {:>6}   (entity: {{type, ref}} — one named thing)",
         census.by_anchoring.instance
+    );
+    let _ = writeln!(
+        out,
+        "  ungrounded {:>6}   (inside unanchored: entity: names a type Σ does not implement, or a ref that resolves to nothing)",
+        census.ungrounded
     );
     let _ = writeln!(out, "\nby_entity_type");
     if census.by_entity_type.is_empty() {
@@ -713,5 +826,99 @@ mod tests {
     fn a_missing_directory_is_a_decline_not_a_zero_census() {
         let err = census_of(Path::new("/nonexistent/contracts")).expect_err("refused");
         assert_eq!(exit_code_for(err.as_ref()), ZERO_CONTRACTS_EXIT);
+    }
+
+    // ---- grounding: a declared anchor counts only when it binds something (#4712 review) ----
+
+    fn grounding(types: &[&str], nodes: &[String], root: &Path) -> Grounding {
+        Grounding {
+            implemented: types.iter().map(|t| (*t).to_string()).collect(),
+            nodes: nodes.iter().cloned().collect(),
+            root: root.to_path_buf(),
+        }
+    }
+
+    fn bin_node(pkg: &str, target: &str) -> String {
+        provable_contracts::ontology::rdf::iri_path("binary", &[pkg, target])
+    }
+
+    #[test]
+    fn a_type_sigma_does_not_implement_binds_nothing() {
+        let g = grounding(&["readme"], &[], Path::new("/"));
+        assert_eq!(
+            g.ground(Anchoring::Class, Some("zzz_bogus"), None),
+            Anchoring::Unanchored
+        );
+        assert_eq!(
+            g.ground(Anchoring::Class, Some("readme"), None),
+            Anchoring::Class
+        );
+    }
+
+    #[test]
+    fn no_sigma_grounds_nothing() {
+        let g = grounding(&[], &[], Path::new("/"));
+        assert_eq!(
+            g.ground(Anchoring::Class, Some("readme"), None),
+            Anchoring::Unanchored
+        );
+    }
+
+    #[test]
+    fn a_binary_ref_must_name_an_extracted_node() {
+        let g = grounding(&["binary"], &[bin_node("apr-cli", "apr")], Path::new("/"));
+        let ground = |r| g.ground(Anchoring::Instance, Some("binary"), Some(r));
+        assert_eq!(ground("binary/apr-cli/apr"), Anchoring::Instance);
+        assert_eq!(ground("no_such_thing_xyz"), Anchoring::Unanchored);
+        assert_eq!(ground("binary/apr-cli/no_such_bin"), Anchoring::Unanchored);
+        assert_eq!(ground("binary/apr-cli/apr/x"), Anchoring::Unanchored);
+    }
+
+    #[test]
+    fn a_file_ref_must_exist_inside_the_root() {
+        let tmp = tempfile::tempdir().expect("temp dir is creatable");
+        std::fs::write(tmp.path().join("README.md"), "x").expect("fixture is writable");
+        let g = grounding(&["readme"], &[], tmp.path());
+        let ground = |r| g.ground(Anchoring::Instance, Some("readme"), Some(r));
+        assert_eq!(ground("README.md"), Anchoring::Instance);
+        assert_eq!(ground("MISSING.md"), Anchoring::Unanchored);
+        assert_eq!(ground("../README.md"), Anchoring::Unanchored);
+        assert_eq!(ground("/etc/hostname"), Anchoring::Unanchored);
+    }
+
+    /// The live corpus: every `entity:` it declares binds (0 ungrounded), and the #4712-review repro does not.
+    #[test]
+    fn every_anchor_in_the_corpus_binds_and_the_repro_does_not() {
+        let dir = Path::new(env!("CARGO_MANIFEST_DIR")).join("../../contracts");
+        let real = census_of(&dir).expect("the corpus censuses");
+        assert_eq!(
+            real.ungrounded, 0,
+            "a contract declares an entity: that binds nothing"
+        );
+        let sigma = provable_contracts::ontology::extract::sigma_of(&dir);
+        let x = provable_contracts::ontology::extract::all(&dir).ok();
+        let g = Grounding::new(&dir, sigma.as_ref(), x.as_ref().map(|x| &x.graph));
+        for (yaml, want) in [
+            ("entity: {type: zzz_bogus}\n", Anchoring::Unanchored),
+            (
+                "entity: {type: binary, ref: no_such_thing_xyz}\n",
+                Anchoring::Unanchored,
+            ),
+            (
+                "entity: {type: binary, ref: binary/apr-cli/apr}\n",
+                Anchoring::Instance,
+            ),
+            (
+                "entity: {type: readme, ref: README.md}\n",
+                Anchoring::Instance,
+            ),
+        ] {
+            let (a, t) = classify(yaml);
+            assert_eq!(
+                g.ground(a, t.as_deref(), entity_ref(yaml).as_deref()),
+                want,
+                "{yaml}"
+            );
+        }
     }
 }
