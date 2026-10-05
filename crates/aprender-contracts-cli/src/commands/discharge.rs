@@ -1387,6 +1387,15 @@ mod tests {
                 "ci.slice/runners.slice",
             ),
             (None, None, Some(g(1)), JOB, G, "ci.slice"),
+            // a tie names the deepest level that sets it, the unit the job runs in (kills `<` -> `<=`)
+            (
+                Some(g(16)),
+                Some(g(16)),
+                Some(g(270)),
+                JOB,
+                16 * G,
+                "ci.slice/runners.slice/runner-1.service",
+            ),
             (
                 Some(g(24)),
                 None,
