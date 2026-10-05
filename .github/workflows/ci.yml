@@ -143,6 +143,36 @@ jobs:
       FAT_VARS_JSON: ${{ toJSON(vars) }}
       FAT_SECRET_PR_REVIEW_SIGNING_KEY_B64: ${{ secrets.PR_REVIEW_SIGNING_KEY_B64 }}
     steps:
+      # The fleet pins jq 1.8.2. Runners in this clean-room pool whose image ships jq 1.6
+      # print a number literal such as 90.00 as 90, so the guard-tree section turns RED
+      # (scripts/release/tag_coverage_gate.sh --self-test, run by check_tag_coverage_gated.sh).
+      # This step puts the pinned jq first on PATH for every later step, and through it for
+      # every section fat_driver runs on the host (step_env copies the driver's PATH; a
+      # section with a job container gets the image's PATH, and none of those calls jq).
+      # Fail closed: a checksum, version or behaviour mismatch stops the job. The sha256 is
+      # the one in the upstream release's sha256sum.txt for jq-linux-amd64.
+      - name: Pin jq 1.8.2 (sha256-verified, fail closed)
+        env:
+          JQ_URL: https://github.com/jqlang/jq/releases/download/jq-1.8.2/jq-linux-amd64
+          JQ_SHA256: b1c22172dd303f3be49e935aa56aa48a8b7a46e0bc838b4997d3bb451495870f
+        run: |
+          set -euo pipefail
+          d="$RUNNER_TEMP/jq-1.8.2"
+          mkdir -p "$d"
+          curl -fsSL --retry 3 --retry-delay 5 -o "$d/jq" "$JQ_URL"
+          printf '%s  %s\n' "$JQ_SHA256" "$d/jq" | sha256sum -c -
+          chmod +x "$d/jq"
+          v=$("$d/jq" --version)
+          [ "$v" = "jq-1.8.2" ] || { echo "::error::the pinned jq reports '$v', not jq-1.8.2"; exit 1; }
+          rc=0; "$d/jq" -e . < /dev/null > /dev/null || rc=$?
+          [ "$rc" = 4 ] || { echo "::error::the pinned jq exits $rc on empty input with -e, not 4"; exit 1; }
+          echo "$d" >> "$GITHUB_PATH"
+      - name: jq on PATH is the pinned one
+        run: |
+          set -euo pipefail
+          command -v jq; jq --version
+          [ "$(command -v jq)" = "$RUNNER_TEMP/jq-1.8.2/jq" ] || { echo "::error::jq on PATH is $(command -v jq), not the pinned one"; exit 1; }
+          [ "$(jq --version)" = "jq-1.8.2" ] || { echo "::error::jq on PATH reports $(jq --version)"; exit 1; }
       # Full history: a section whose own checkout asked for depth 1 (the default)
       # is cut back to exactly that by the driver; one asking for 0 needs it all.
       - uses: actions/checkout@v7
