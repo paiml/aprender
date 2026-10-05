@@ -1,0 +1,138 @@
+{
+  "$schema": "https://docs.oasis-open.org/sarif/sarif/v2.1.0/errata01/os/schemas/sarif-schema-2.1.0.json",
+  "version": "2.1.0",
+  "runs": [
+    {
+      "tool": {
+        "driver": {
+          "name": "pmat"
+        }
+      },
+      "results": [
+        {
+          "ruleId": "guard_table_pass",
+          "level": "note",
+          "message": {
+            "text": "bash scripts/check_quick_tier_shard_sigma.sh at head 5303a45365: rc 0, PASS (26 ok rows, 0 FAIL); stdout byte-identical to round 9 (same sha256), so the golden digests did not move."
+          },
+          "properties": {
+            "grounding": "measured",
+            "command": [
+              "bash",
+              "scripts/check_quick_tier_shard_sigma.sh"
+            ],
+            "exit_code": 0,
+            "stdout_sha256": "8255f170153fcb679b42d76e441e091e22f7a2c94d289d8dcc8b09447dd214f6",
+            "failure_scenario": "A false RED on the real tree would block every PR; none observed.",
+            "precision_class": "advisory"
+          }
+        },
+        {
+          "ruleId": "guard_self_test_passes",
+          "level": "note",
+          "message": {
+            "text": "--self-test at head 5303a45365: SELF-TEST PASSED, rc 0 (77 ok rows, 0 FAIL), including the two new round-9 rows (rc=1 for a trailing comment in the last script line of workspace-test and of workspace-test-shard)."
+          },
+          "properties": {
+            "grounding": "measured",
+            "command": [
+              "bash",
+              "scripts/check_quick_tier_shard_sigma.sh",
+              "--self-test"
+            ],
+            "exit_code": 0,
+            "stdout_sha256": "11ddab35b71af306967c45f31051b8f4708f32e6b30a07774fa4dc0a08691803",
+            "failure_scenario": "A planted mutant that did not apply would print FAIL; none did.",
+            "precision_class": "advisory"
+          }
+        },
+        {
+          "ruleId": "round9_advisory_closed",
+          "level": "note",
+          "message": {
+            "text": "The round-9 advisory (trailing lines after the last script line of a pinned job were dropped from the digest) is closed. Every variant round 9 listed now exits non-zero, at both the ci.yml:449 (workspace-test) and ci/sections.yml:1043 (workspace-test-shard) boundaries, inserted both directly after the last line and after the following empty line: `          # injected`, a bare `          #`, a 20-space comment, two comments, a 12-space whitespace-only line, a 10-space+U+2003 line, `          # ${{ fromJSON(1) }}`, plus 10-space+NBSP, 10-space+U+200B, 10-space+U+2003+`# x`, comment+empty, empty+comment: all guard rc 1 (digest moved), each a PyYAML-visible change of the loaded document. Line shapes with a leading tab, a leading single space, a column-0 or indent-2 U+2003, U+0085, FF/VT give rc 1 or 2 and PyYAML ERR, as before."
+          },
+          "properties": {
+            "grounding": "measured",
+            "command": [
+              "env",
+              "QUICK_SIGMA_WORKFLOW=<ci.yml + `          # injected` after line 449>",
+              "bash",
+              "scripts/check_quick_tier_shard_sigma.sh"
+            ],
+            "exit_code": 1,
+            "stdout_sha256": "7d29585b7f24960707770107b04439581adfbf64a8df04558dec5e840bf2595c",
+            "failure_scenario": "If trail() missed a shape, a trailing scalar line would change the loaded script with rc 0; 37 shapes x 2 files x 2 positions (148 mutants) all gave rc 1 or 2 when the loader sees a change or fails.",
+            "precision_class": "advisory"
+          }
+        },
+        {
+          "ruleId": "no_false_red_on_neutral_lines",
+          "level": "note",
+          "message": {
+            "text": "Lines that do not change what the loader sees stay GREEN where they are outside the digest rule: an indent-2 `  # note` and a column-0 `# x` after the last line, an empty line, a 1-space and a 2-space whitespace-only line all give rc 0 with PyYAML 'same'. The real tree, whose job tails are an empty line plus indent-2 comments, is still byte-identical (PASS, same stdout sha)."
+          },
+          "properties": {
+            "grounding": "measured",
+            "command": [
+              "env",
+              "QUICK_SIGMA_WORKFLOW=<ci.yml + `  # x` after line 449>",
+              "bash",
+              "scripts/check_quick_tier_shard_sigma.sh"
+            ],
+            "exit_code": 0,
+            "stdout_sha256": "8255f170153fcb679b42d76e441e091e22f7a2c94d289d8dcc8b09447dd214f6",
+            "failure_scenario": "A false RED on a neutral indent-2 comment between jobs would break every PR that edits a nearby comment; none occurs.",
+            "precision_class": "advisory"
+          }
+        },
+        {
+          "ruleId": "conservative_red_on_deeper_neutral_lines",
+          "level": "note",
+          "message": {
+            "text": "Information, not a defect. Held trailing lines at indent >= 3 that the loader reads as inert are now RED where they were GREEN: `   # x` (3 spaces), `    # x` (4), `         # x` (9), and whitespace-only lines of 3 and 10 spaces all give guard rc 1 with PyYAML 'same'. This only affects lines that sit inside the pinned job's indent range, where any other edit (a comment between two script lines) already moves the digest, so the new behaviour matches the existing rule and the fix is the golden regeneration in the same diff. The two new self-test rows plant only a 10-space comment; the whitespace-only and U+2003 shapes are covered by this review, not by a row."
+          },
+          "properties": {
+            "grounding": "measured",
+            "command": [
+              "env",
+              "QUICK_SIGMA_WORKFLOW=<ci.yml + `    # x` after line 449>",
+              "bash",
+              "scripts/check_quick_tier_shard_sigma.sh"
+            ],
+            "exit_code": 1,
+            "stdout_sha256": "7d29585b7f24960707770107b04439581adfbf64a8df04558dec5e840bf2595c",
+            "failure_scenario": "A harmless 3 to 9 space comment or whitespace line added after a pinned job's last script line fails the guard until the golden is regenerated; noisy but fails safe, never green.",
+            "precision_class": "advisory"
+          }
+        },
+        {
+          "ruleId": "no_new_blind_spot",
+          "level": "note",
+          "message": {
+            "text": "Non-trailing held lines are unchanged: they still print only when the job continues (trail() runs only on the block's end line or EOF and only touches held lines that never printed). trail() is called before the block is closed on the ending line and after `held = \"\"` resets, so a held line is never printed twice. The held-line match is `^   ` (3 spaces); lines indented 0 to 2 are the ones a loader reads as outside the last scalar, and all of them (indent-2 `# note`, column-0 `# x`, empty, 1-2 space blank) measured loader-same at rc 0. Lines starting with a tab or one space are rejected earlier (`bad`, rc 2)."
+          },
+          "properties": {
+            "grounding": "asserted",
+            "rationale": "Read the diff 5303a45365 vs d1f8102c58 (20 lines in scripts/check_quick_tier_shard_sigma.sh) and measured 148 mutants with PyYAML safe_load as the oracle.",
+            "failure_scenario": "An un-sampled mix of leading whitespace the awk [[:space:]] class and YAML disagree on could still slip; the sweep covered spaces, tab, FF, VT, NBSP, U+2003, U+200B, U+0085.",
+            "precision_class": "advisory"
+          }
+        },
+        {
+          "ruleId": "no_gate_loosened",
+          "level": "note",
+          "message": {
+            "text": "Diff d1f8102c58..5303a45365 in scripts/check_quick_tier_shard_sigma.sh: one added awk function trail(), two added call sites, and two self-test rows. No row, pin, golden entry, exit code, anchor or regex is removed or relaxed. Golden and ci/ files unchanged, and the real-tree output is byte-identical to round 9."
+          },
+          "properties": {
+            "grounding": "asserted",
+            "rationale": "Read the diff; every guard-logic change is an addition, and the real-tree stdout sha is equal to the round-9 sha.",
+            "failure_scenario": "If a loosened gate existed, a previously RED mutant would turn rc 0; the --self-test and the real-tree run both pass.",
+            "precision_class": "advisory"
+          }
+        }
+      ]
+    }
+  ]
+}
