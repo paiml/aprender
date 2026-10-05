@@ -192,11 +192,14 @@ fi
 #
 # #3459 part 2 (cop ruling 2026-09-24): three steps, in this order, all ahead of `git tag`:
 #   (a) --must-carry: an open ISSUE labelled must-carry BLOCKS the cut. It is never carried.
-#   (b) carry_milestone_items.sh MOVES every other open item (to the next release when its epic
-#       lists it, else to backlog, one comment each). It runs only when (a) is clean.
-#   (c) STRICT: the milestone now holds nothing open but its release epic. An item the carry
-#       missed, or one that reappeared, is RED here: a tagged milestone is never left with an
-#       open item.
+#   (b) carry_milestone_items.sh --dry-run PLANS the move of every other open item into the log and
+#       MOVES NOTHING. Only when (a) is clean. The cut no longer carries on its own: an automatic
+#       carry let a milestone with open items reach a tag by emptying it first, with no human
+#       deciding any single item. Carrying is an explicit, separate act (run the script without
+#       --dry-run, by hand), and the autopilot is then re-run.
+#   (c) STRICT: the milestone holds nothing open but its release epic. Any other open item is RED
+#       here, the dry-run plan above names where it would go: a tagged milestone is never left with
+#       an open item, and is never emptied by the tag step itself.
 cut_tag() {
     local v=$1 t=$2 mc=$3 rc=0
     # #3715 B1 (operator 2026-09-28: "missing or skipped step -> release refused"). FIRST, ahead of the
@@ -219,9 +222,9 @@ cut_tag() {
         *) die "milestone $v could not be judged for must-carry (rc=$rc) -- nothing carried, no tag; Unknown is not a pass" ;;
     esac
     rc=0
-    bash "$REPO_ROOT/scripts/release/carry_milestone_items.sh" "$v" >> "$LOG" 2>&1 || rc=$?
-    [ "$rc" -eq 0 ] || die "carrying the open items out of $v failed (carry_milestone_items.sh rc=$rc) -- no tag"
-    say "CARRIED the non-must-carry open items out of $v"
+    bash "$REPO_ROOT/scripts/release/carry_milestone_items.sh" "$v" --dry-run >> "$LOG" 2>&1 || rc=$?
+    [ "$rc" -eq 0 ] || die "planning the carry for $v failed (carry_milestone_items.sh --dry-run rc=$rc) -- no tag"
+    say "CARRY PLAN for $v logged (--dry-run, nothing moved); the STRICT gate decides"
     rc=0
     bash "$REPO_ROOT/scripts/check_milestone_cut.sh" "$v" >> "$LOG" 2>&1 || rc=$?
     case "$rc" in

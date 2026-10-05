@@ -28,12 +28,12 @@
 #
 # TWO MODES (#3459 part 2, cop ruling 2026-09-24):
 #   --must-carry  the BLOCKING set: open ISSUES labelled `must-carry`. Pull requests and
-#                 unlabelled issues do not block; each is listed as TO CARRY, because the
-#                 release autopilot MOVES it (scripts/release/carry_milestone_items.sh) before
-#                 the tag. Nothing is silently left behind: see strict.
+#                 unlabelled issues do not block HERE; each is listed as TO CARRY. The release
+#                 autopilot only PLANS that carry (carry_milestone_items.sh --dry-run) and moves
+#                 nothing, so each one still blocks at strict until someone carries it by hand.
 #   (default)     STRICT: the milestone holds nothing open but its release epic. cut_tag() runs
-#                 it AFTER the carry, so an item the carry missed, or an item nobody carried,
-#                 is RED at the tag. A tagged milestone with an open item is never clean.
+#                 it AFTER the dry-run plan, so any open item, carried by nobody, is RED at the
+#                 tag. A tagged milestone with an open item is never clean.
 #
 # Exit 0 = zero open items in the milestone.
 # Exit 1 = at least one open item; each is named with its remedy.

@@ -18,7 +18,8 @@
 # stubs answer each call separately and record the ORDER they ran in:
 #     must-carry rc 1/2 -> no tag AND nothing carried (a blocker is never carried around)
 #     carry rc 2        -> no tag
-#     all clean         -> the carry ran BEFORE the strict gate, and the tag is cut
+#     all clean         -> the carry ran as a --dry-run PLAN (it moves nothing) BEFORE the strict
+#                          gate, and the tag is cut. A WRITE carry is RED (mutant 9).
 # #4691 adds a fourth stub, the coverage resolution before the tag (tag_coverage_gate.sh --resolve), which runs
 # first after readiness: rc 1 -> no tag AND nothing carried.
 # --self-test then builds MUTANTS (gate calls removed, verdicts discarded, the carry call
@@ -53,7 +54,7 @@ run_cut_tag() {
     esac
     printf '#!/usr/bin/env bash\nif [ "${2:-}" = --must-carry ]; then echo CALL-MUST-CARRY >> %q; exit %s; fi\necho CALL-STRICT >> %q; exit %s\n' \
         "$d/calls" "$mrc" "$d/calls" "$grc" > "$d/scripts/check_milestone_cut.sh"
-    printf '#!/usr/bin/env bash\necho CALL-CARRY >> %q\nexit %s\n' "$d/calls" "$crc" > "$d/scripts/release/carry_milestone_items.sh"
+    printf '#!/usr/bin/env bash\ncase " $* " in *" --dry-run "*) echo CALL-CARRY-DRY >> %q ;; *) echo CALL-CARRY-WRITE >> %q ;; esac\nexit %s\n' "$d/calls" "$d/calls" "$crc" > "$d/scripts/release/carry_milestone_items.sh"
     printf '#!/usr/bin/env bash\necho CALL-COVJOB >> %q\nexit %s\n' "$d/calls" "$jrc" > "$d/scripts/release/tag_coverage_gate.sh"
     {
         printf 'set -uo pipefail\n'
@@ -92,9 +93,9 @@ judge() {
     else printf 'ok    gate rc=2 (Unknown) -> no tag\n'; fi
     # #3459 part 2: the must-carry gate, the carry, and their ORDER
     out=$(run_cut_tag "$ap" 0) || true
-    if grep -q '^ORDER CALL-COVJOB CALL-MUST-CARRY CALL-CARRY CALL-STRICT $' <<< "$out" && grep -q 'GIT-TAG' <<< "$out"; then
-        printf 'ok    all clean -> coverage job, must-carry, the carry, STRICT, then the tag\n'
-    else printf 'FAIL  all clean did not run coverage job -> must-carry -> carry -> strict -> tag\n%s\n' "$out" >&2; bad=1; fi
+    if grep -q '^ORDER CALL-COVJOB CALL-MUST-CARRY CALL-CARRY-DRY CALL-STRICT $' <<< "$out" && grep -q 'GIT-TAG' <<< "$out"; then
+        printf 'ok    all clean -> coverage job, must-carry, the carry PLAN (--dry-run), STRICT, then the tag\n'
+    else printf 'FAIL  all clean did not run coverage job -> must-carry -> carry --dry-run -> strict -> tag (a WRITE carry empties the milestone the strict gate then judges)\n%s\n' "$out" >&2; bad=1; fi
     for m in 1 2; do
         out=$(run_cut_tag "$ap" 0 "$m") || true
         if grep -q 'GIT-TAG' <<< "$out" || grep -q 'CALL-CARRY' <<< "$out"; then
@@ -172,6 +173,16 @@ if [ "${1:-}" = "--self-test" ]; then
         nok "MUTANT 5 (carry call deleted) PASSED"
     else
         ok "mutant 5: carry call deleted -> RED"
+    fi
+    # M9: --dry-run dropped -> the tag step MOVES the open items itself, then judges the emptied
+    # milestone clean. The loosened reading the strict restore removed; it must be RED.
+    sed 's#carry_milestone_items\.sh" "\$v" --dry-run#carry_milestone_items.sh" "\$v"#' "$SUBJECT" > "$d/m9.sh"
+    if cmp -s "$SUBJECT" "$d/m9.sh"; then
+        nok "MUTANT 9 could not be built -- the carry --dry-run line did not match; vacuous"
+    elif judge "$d/m9.sh" > "$d/m9.out" 2>&1; then
+        nok "MUTANT 9 (carry --dry-run dropped: the tag step writes) PASSED"
+    else
+        ok "mutant 9: carry --dry-run dropped -> RED"
     fi
     # M6 (#3715 B1): the readiness requirement deleted -> a skipped or report-mode readiness step tags.
     sed '/ENFORCE PASS for\|index(\$0, n) == 1/d; /no .#3715 ENFORCE PASS/d' "$SUBJECT" > "$d/m6.sh"
