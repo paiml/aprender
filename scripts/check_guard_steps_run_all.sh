@@ -66,7 +66,7 @@ fixture() { # fixture <file> <kind>... ; kinds: plain cancelled always event eve
 }
 
 self_test() {
-    local d fail=0 n=0
+    local d fail=0 n=0 q=0
     d=$(mktemp -d) || return 2
     # shellcheck disable=SC2064
     trap "rm -rf -- '${d:?}'" RETURN
@@ -141,7 +141,10 @@ self_test() {
         echo "check_guard_steps_run_all self-test: FAILED"
         return 1
     fi
-    echo "check_guard_steps_run_all self-test: ${n}/${n} cases pass"
+    if [ "$q" -gt 0 ]; then
+        echo "UNMEASURED check_guard_steps_run_all self-test: $q row(s) not measured: a precondition never held (FLAKE-0 #4759)"
+    fi
+    echo "check_guard_steps_run_all self-test: ${n}/${n} cases pass, $q not measured"
 }
 
 # mfixture <file> <variant> [step-run...] -- a guard job + its `-steps` manifest.
@@ -177,7 +180,7 @@ mfixture() {
 
 # The A4 rows. Uses self_test's $d, $n, case_row.
 manifest_rows() {
-    local v bad=0 got repo="$d/mrepo" t0 t1
+    local v bad=0 got repo="$d/mrepo" t0 t1 st
     printf 'guard-x 0\n' > "$d/mbase"
     mfixture "$d/m_good.yml" good "true"
     case_row "manifest if:false + runner step -> pass" 0 "$d/m_good.yml" "$d/mbase"
@@ -215,13 +218,29 @@ manifest_rows() {
         'probe_tool' 'test "$FOO" = bar'
     RUNNER_TEMP="$d/rt" mrun "CI: GITHUB_PATH / GITHUB_ENV reach later steps" 0 '^SUMMARY: 0 failed / 4 ran'
     # shellcheck disable=SC2016 # expanded by the step's bash, not here
-    mfixture "$repo/ci/sections.yml" good 'trap "touch \"$RUNNER_TEMP/restored\"" EXIT; sleep 30'
-    mkdir -p "$d/rt"; rm -f "${d:?}/rt/restored"
+    mfixture "$repo/ci/sections.yml" good 'trap "touch \"$RUNNER_TEMP/restored\"" EXIT; touch "$RUNNER_TEMP/armed"; sleep 30'
+    mkdir -p "$d/rt"; rm -f "${d:?}/rt/restored" "${d:?}/rt/armed"
     RUNNER_TEMP="$d/rt" mrun "CI: a timed-out step is TIMEOUT, not a crash" 1 'TIMEOUT' --step-timeout 1
-    n=$((n + 1))
-    if [ -e "$d/rt/restored" ]; then
-        printf 'ok   %-58s\n' "a timed-out step still runs its EXIT trap (restores a mutant)"
-    else printf 'FAIL %-58s\n' "a timed-out step still runs its EXIT trap (restores a mutant)"; bad=1; fi
+    # FLAKE-0 #4759: a 1 s step timeout can fire on a loaded runner before the step's bash has
+    # armed its trap, and "never armed" is not "armed and skipped". The step marks `armed` right
+    # after its trap, and the row is judged only once that precondition holds: a missing marker
+    # re-runs the step with a doubled timeout (2..16 s) -- the precondition escalates, the
+    # assertion is never retried. armed + restored = ok; armed + no restored = FAIL; never
+    # armed = UNMEASURED (not measured, never ok).
+    st=1
+    while [ ! -e "$d/rt/armed" ] && [ "$st" -lt 16 ]; do
+        st=$((st * 2)); rm -f "${d:?}/rt/restored"
+        ( cd "$repo" && GITHUB_ACTIONS=true GITHUB_TOKEN=tok-123 GITHUB_STEP_SUMMARY="$d/msummary" RUNNER_TEMP="$d/rt" \
+            CI_GUARDS_SCRATCH="$d/mscratch" bash "$LIB" run --step-timeout "$st" guard-x ) > "$d/out" 2>&1
+    done
+    v="a timed-out step still runs its EXIT trap (restores a mutant)"
+    if [ ! -e "$d/rt/armed" ]; then
+        q=$((q + 1)); printf 'UNMEASURED %-53s trap never armed by step-timeout %ss\n' "$v" "$st"
+    else
+        n=$((n + 1))
+        if [ -e "$d/rt/restored" ]; then printf 'ok   %-58s step-timeout %ss\n' "$v" "$st"
+        else printf 'FAIL %-58s step-timeout %ss\n' "$v" "$st"; bad=1; fi
+    fi
     # shellcheck disable=SC2016
     mfixture "$repo/ci/sections.yml" good 'sleep 30 & echo $! > "$RUNNER_TEMP/child.pid"; sleep 30'
     t0=$SECONDS
