@@ -120,6 +120,15 @@ with:
 EOF
 }
 
+# lint_q ARGS...: one yq query over lint's exploded document $x (read by dynamic scope).
+# Its status is yq's, so a caller can tell a query that failed from one that found nothing.
+lint_q() { "$YQ" "$@" - <<< "$x"; }
+
+# lint_unmeasured NAME: a query yq could not evaluate is red. Its empty answer is never
+# read as "nothing found": a job `env:` written as a string makes `keys` error, and an
+# empty list of disallowed names is what every allowlist check reads as a pass.
+lint_unmeasured() { echo "lint: yq could not evaluate the $1 check (a check that cannot be measured is red)"; bad=1; }
+
 # lint FILE: every property that keeps the rehearsal from uploading. One line per failure.
 lint() {
     local f=$1 bad=0 v g t x
@@ -127,14 +136,16 @@ lint() {
     [ -f "$f" ] || die "lint: no such file $f"
     # Every structural query reads the parsed document with aliases expanded, so a step,
     # job or key reached through an anchor (`- *a`, `<<: *a`) is checked as Actions sees it.
+    # Every yq call fails closed: a parse error, a failed query (lint_unmeasured) and a
+    # `-e` query that errors or matches nothing are each red.
     x=$("$YQ" --yaml-fix-merge-anchor-to-spec=true 'explode(.)' "$f" 2>/dev/null) || { echo "lint: yq cannot parse $f"; bad=1; }
-    v=$("$YQ" -o=json -I=0 '.permissions' - <<< "$x")
+    v=$(lint_q -o=json -I=0 '.permissions') || lint_unmeasured "workflow permissions"
     [ "$v" = '{"contents":"read"}' ] || { echo "lint: workflow permissions are $v, not exactly contents: read"; bad=1; }
-    v=$("$YQ" '[.jobs[] | select(has("permissions"))] | length' - <<< "$x")
+    v=$(lint_q '[.jobs[] | select(has("permissions"))] | length') || lint_unmeasured "job permissions"
     [ "$v" = 0 ] || { echo "lint: $v job(s) set their own permissions"; bad=1; }
-    v=$("$YQ" '[.jobs[] | select(has("environment"))] | length' - <<< "$x")
+    v=$(lint_q '[.jobs[] | select(has("environment"))] | length') || lint_unmeasured "job environment"
     [ "$v" = 0 ] || { echo "lint: $v job(s) name an environment (environment secrets)"; bad=1; }
-    v=$("$YQ" '.on | keys | sort | join(",")' - <<< "$x")
+    v=$(lint_q '.on | keys | sort | join(",")') || lint_unmeasured "trigger"
     [ "$v" = "schedule,workflow_dispatch" ] || { echo "lint: triggers are '$v', not schedule,workflow_dispatch"; bad=1; }
     # The guard is matched on its name AND its body, so a step that only borrows the name
     # (a hollow guard) does not count. Its keys must be exactly the guard's keys: an `if:` can
@@ -142,23 +153,23 @@ lint() {
     # `env:` changes what its body does, so any extra key is a guard that may not hold.
     g=$(mktemp) || die "mktemp failed"
     guard_step > "$g"
-    v=$(G=$g "$YQ" '[.jobs[] | select((.steps[0] // {} | keys | sort | join(",")) != (load(strenv(G)) | keys | sort | join(",")) or (.steps[0].name // "") != load(strenv(G)).name or (.steps[0].shell // "") != load(strenv(G)).shell or (.steps[0].run // "") != load(strenv(G)).run)] | length' - <<< "$x")
+    v=$(G=$g lint_q '[.jobs[] | select((.steps[0] // {} | keys | sort | join(",")) != (load(strenv(G)) | keys | sort | join(",")) or (.steps[0].name // "") != load(strenv(G)).name or (.steps[0].shell // "") != load(strenv(G)).shell or (.steps[0].run // "") != load(strenv(G)).run)] | length') || lint_unmeasured "credential guard"
     rm -f "${g:?}"
     [ "$v" = 0 ] || { echo "lint: $v job(s) do not start with the credential guard"; bad=1; }
     # No step carries an `if:` at all. A step `if:` loses its implicit success() as soon as
     # the expression mentions any status function, so `success() || true`, `!success()`,
     # always() or failure() all run on past the guard's refusal, and a pattern over the
     # expression cannot list every form. The release's build steps use none.
-    v=$("$YQ" '[.jobs[].steps[] | select(has("if"))] | length' - <<< "$x")
+    v=$(lint_q '[.jobs[].steps[] | select(has("if"))] | length') || lint_unmeasured "step if"
     [ "$v" = 0 ] || { echo "lint: $v step(s) carry an if: (a step if: can run past the credential guard)"; bad=1; }
     # What acts before or around the guard is allowlisted: the workflow's and every job's keys,
     # and job env names. A workflow or job env (BASH_ENV runs before the guard's bash),
     # defaults, container or services is outside the list.
-    v=$("$YQ" '[keys[] | select(test("^(name|on|permissions|concurrency|jobs)$") | not)] | join(" ")' - <<< "$x")
+    v=$(lint_q '[keys[] | select(test("^(name|on|permissions|concurrency|jobs)$") | not)] | join(" ")') || lint_unmeasured "workflow key"
     [ -z "$v" ] || { echo "lint: workflow key(s) outside the allowlist (they act before the credential guard): $v"; bad=1; }
-    v=$("$YQ" '[.jobs[] | keys[] | select(test("^(name|runs-on|timeout-minutes|outputs|steps|needs|strategy|env|if)$") | not)] | unique | join(" ")' - <<< "$x")
+    v=$(lint_q '[.jobs[] | keys[] | select(test("^(name|runs-on|timeout-minutes|outputs|steps|needs|strategy|env|if)$") | not)] | unique | join(" ")') || lint_unmeasured "job key"
     [ -z "$v" ] || { echo "lint: job key(s) outside the allowlist (they act before the credential guard): $v"; bad=1; }
-    v=$("$YQ" '[.jobs[] | (.env // {}) | keys[] | select(test("^(MACOSX_DEPLOYMENT_TARGET)$") | not)] | unique | join(" ")' - <<< "$x")
+    v=$(lint_q '[.jobs[] | (.env // {}) | keys[] | select(test("^(MACOSX_DEPLOYMENT_TARGET)$") | not)] | unique | join(" ")') || lint_unmeasured "job env"
     [ -z "$v" ] || { echo "lint: job env name(s) outside the allowlist (they act before the credential guard): $v"; bad=1; }
     # No credential is reachable from an expression. The text checked is the file plus
     # the parsed document (aliases expanded, one-line JSON), so a `$` or a letter written
@@ -176,12 +187,13 @@ lint() {
     if printf '%s\n' "$t" | sed -e 's/\${{ github\.job }}/ /g' -e 's/\${{ github\.sha }}/ /g' -e 's#https://github\.com/# #g' | grep -n -i -E '(^|[^A-Za-z0-9_])github([^A-Za-z0-9_]|$)'; then
         echo "lint: the job token reachable from an expression (a github reference outside \${{ github.job }}, \${{ github.sha }} and a github.com URL)"; bad=1
     fi
-    if grep -n -E 'uploads\.github\.com|-X ?.?(POST|PUT|PATCH|DELETE)|--request[ =].?(POST|PUT|PATCH|DELETE)|gh (release|api)|cargo publish|github\.event\.release|inputs\.tag' "$f"; then
+    # The upload tripwire reads the same decoded text, so `run: "\x63argo publish"` is caught.
+    if printf '%s\n' "$t" | grep -n -E 'uploads\.github\.com|-X ?.?(POST|PUT|PATCH|DELETE)|--request[ =].?(POST|PUT|PATCH|DELETE)|gh (release|api)|cargo publish|github\.event\.release|inputs\.tag'; then
         echo "lint: an upload, a release write or a release-event input"; bad=1
     fi
     # Actions are allowlisted, not denylisted: a release-upload action under any name is
     # outside the list. These three are all the release workflow and the rehearsal use.
-    v=$("$YQ" '[.jobs[].steps[] | select(has("uses")) | .uses | sub("@.*"; "") | select(test("^actions/(checkout|upload-artifact|download-artifact)$") | not)] | unique | join(" ")' - <<< "$x")
+    v=$(lint_q '[.jobs[].steps[] | select(has("uses")) | .uses | sub("@.*"; "") | select(test("^actions/(checkout|upload-artifact|download-artifact)$") | not)] | unique | join(" ")') || lint_unmeasured "action allowlist"
     [ -z "$v" ] || { echo "lint: an action outside the allowlist (an upload path): $v"; bad=1; }
     for v in $BUILD_JOBS; do
         "$YQ" -e ".jobs[\"$v\"].steps[] | select(.uses // \"\" | test(\"^actions/upload-artifact@\"))" - <<< "$x" > /dev/null 2>&1 \
@@ -426,6 +438,12 @@ self_test() {
     esc_dollar=$(printf '\\%s' u0024); esc_g=$(printf '\\%s' u0067); esc_s=$(printf '\\%s' u0073)
     escrow "${esc_dollar}{{ ${esc_g}ithub.token }}" 'job token reachable'
     escrow "${esc_dollar}{{ ${esc_s}ecrets.GH_TOKEN }}" 'secrets or vars'
+    # The upload tripwire reads the decoded text too: a run written with an escaped letter
+    # is the same command once Actions has read the YAML.
+    esc_c=$(printf '\\%s' x63)
+    V=PLANTED "$YQ" '.jobs["build-apr-cuda"].steps[4].name = "up" | .jobs["build-apr-cuda"].steps[4].run = strenv(V)' "$d/fx.yml" > "$d/m0.yml"
+    y=$(< "$d/m0.yml"); printf '%s\n' "${y/PLANTED/"\"${esc_c}argo publish\""}" > "$d/m.yml"
+    out=$(lint "$d/m.yml"); row "a run of cargo publish with an escaped first letter -> lint red" 1 $? 'an upload' "$out"
     # Without a credential the same POST has nothing to write with: lint stays green, and
     # the reading of github that the release's steps use stays green with it.
     credrow_green() {
@@ -457,6 +475,27 @@ self_test() {
     chmod +x "$d/oldyq"
     out=$(REAL_YQ="$YQ" "$d/oldyq" '.name' "$d/fx.yml"); row "control: that yq still answers a call without the flag" 0 $? '.' "$out"
     out=$(REAL_YQ="$YQ" YQ="$d/oldyq" lint "$d/fx.yml"); row "a yq that does not know the merge-to-spec flag -> lint red" 1 $? 'cannot parse' "$out"
+    # Every yq call in lint fails closed. A yq that fails one query (picked by a substring
+    # only that call's arguments hold) must turn lint red with that check's message.
+    printf '%s\n' '#!/bin/sh' 'case " $* " in *"$FAILQ"*) echo "planted yq failure" >&2; exit 1;; esac' '"$REAL_YQ" "$@"' > "$d/failyq"
+    chmod +x "$d/failyq"
+    out=$(REAL_YQ="$YQ" YQ="$d/failyq" FAILQ='no such query' lint "$d/fx.yml"); row "control: the failing-yq stub with no match -> still cannot upload" 0 $? 'cannot upload' "$out"
+    failrow() { # failrow SUBSTRING PATTERN
+        out=$(REAL_YQ="$YQ" YQ="$d/failyq" FAILQ="$1" lint "$d/fx.yml" 2>/dev/null); row "yq fails the query holding '$1' -> lint red" 1 $? "$2" "$out"
+    }
+    failrow 'spec=true explode(.)' 'cannot parse'
+    failrow '-I=0 explode(.)' 'cannot parse'
+    failrow '-I=0 .permissions' 'evaluate the workflow permissions check'
+    failrow 'has("permissions")' 'evaluate the job permissions check'
+    failrow 'has("environment")' 'evaluate the job environment check'
+    failrow '.on | keys' 'evaluate the trigger check'
+    failrow 'load(strenv(G))' 'evaluate the credential guard check'
+    failrow 'has("if")' 'evaluate the step if check'
+    failrow 'concurrency|jobs)$' 'evaluate the workflow key check'
+    failrow 'strategy|env|if)$' 'evaluate the job key check'
+    failrow 'MACOSX_DEPLOYMENT_TARGET)$' 'evaluate the job env check'
+    failrow 'download-artifact)$' 'evaluate the action allowlist check'
+    failrow 'upload-artifact@' 'keeps no checksums'
     mut '.jobs["build-apr-darwin"].steps[0].run = "true"'
     out=$(lint "$d/m.yml"); row "a hollow guard (right name, empty body) -> lint red" 1 $? 'credential guard' "$out"
     mut 'del(.jobs["build-apr-darwin"].steps[0])'
@@ -487,6 +526,10 @@ self_test() {
     ifrow 'true'
     mut '.jobs.build.env.BASH_ENV = "x.sh"'
     out=$(lint "$d/m.yml"); row "a job env BASH_ENV -> lint red" 1 $? 'job env name.*BASH_ENV' "$out"
+    # A job env written as an expression string has no keys for yq to read; the query fails,
+    # and a failed query is red, never an empty list of names.
+    V="\${{ fromJSON('{\"BASH_ENV\":\"x.sh\"}') }}" "$YQ" '.jobs["build-apr-cuda"].env = strenv(V)' "$d/fx.yml" > "$d/m.yml"
+    out=$(lint "$d/m.yml"); row "a job env written as an expression string -> lint red" 1 $? 'evaluate the job env check' "$out"
     mut '.jobs["build-apr-darwin"].env.MACOSX_DEPLOYMENT_TARGET = "11.0"'
     out=$(lint "$d/m.yml"); row "the release's own job env (MACOSX_DEPLOYMENT_TARGET) -> still cannot upload" 0 $? 'cannot upload' "$out"
     mut '.env.BASH_ENV = "x.sh"'
