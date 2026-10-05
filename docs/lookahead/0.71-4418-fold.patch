@@ -1,0 +1,1598 @@
+diff --git a/crates/aprender-core/src/format/converter/gguf_export_config.rs b/crates/aprender-core/src/format/converter/gguf_export_config.rs
+index 24db6c485f..464f1e7f60 100644
+--- a/crates/aprender-core/src/format/converter/gguf_export_config.rs
++++ b/crates/aprender-core/src/format/converter/gguf_export_config.rs
+@@ -510,6 +510,10 @@ fn export_to_gguf(
+     use std::fs::File;
+     use std::io::BufWriter;
+ 
++    if super::qwen35_gguf::is_qwen35_tensor_set(tensors) {
++        return export_qwen35_to_gguf(tensors, output, input, quantize);
++    }
++
+     let tokenizer = super::import::load_tokenizer_from_json(input);
+ 
+     let apr_metadata = if input.extension().and_then(|e| e.to_str()) == Some("apr") {
+@@ -582,6 +586,168 @@ fn export_to_gguf(
+     export_tensors_to_gguf(&mut writer, &gguf_tensors, &metadata)
+ }
+ 
++/// Qwen3.5 hybrid export (#4418): the generic mapper has no `qwen35` table,
++/// so these checkpoints take their own name map, value transforms, metadata
++/// and Q4_K_M policy (see `qwen35_gguf.rs`).
++fn export_qwen35_to_gguf(
++    tensors: &BTreeMap<String, (Vec<f32>, Vec<usize>)>,
++    output: &Path,
++    input: &Path,
++    quantize: Option<&QuantizationType>,
++) -> Result<()> {
++    use super::qwen35_gguf as q35;
++    use crate::format::v2::AprV2Reader;
++
++    let apr_metadata = if input.extension().and_then(|e| e.to_str()) == Some("apr") {
++        fs::read(input)
++            .ok()
++            .and_then(|d| AprV2Reader::from_bytes(&d).ok())
++            .map(|r| r.metadata().clone())
++    } else {
++        None
++    };
++    let json_cfg = super::import::load_model_config_from_json(input);
++    let base = qwen35_base(apr_metadata.as_ref(), json_cfg.as_ref());
++    let hparams = apr_metadata
++        .as_ref()
++        .and_then(|m| m.custom.get("linear_attn_hparams"))
++        .and_then(|v| v.as_object().cloned())
++        .or_else(|| {
++            json_cfg
++                .as_ref()
++                .and_then(|c| c.linear_attn_hparams.clone())
++        })
++        .ok_or_else(|| AprenderError::FormatError {
++            message: "[#4418] qwen35 export: no linear_attn_hparams in the APR metadata and no \
++                      config.json next to the input; re-import with this apr"
++                .to_string(),
++        })?;
++    let hp = q35::resolve_qwen35_hparams(&base, &hparams, tensors)?;
++    let use_q4k = matches!(
++        quantize,
++        Some(QuantizationType::Q4K | QuantizationType::Int4)
++    );
++    let name = apr_metadata
++        .as_ref()
++        .and_then(|m| m.name.clone())
++        .unwrap_or_else(|| "model".to_string());
++
++    let mut metadata = q35::qwen35_config_metadata(&hp, &name, use_q4k);
++    let vocab = tensors
++        .iter()
++        .find(|(k, _)| k.ends_with("embed_tokens.weight"))
++        .and_then(|(_, (_, s))| s.first().copied())
++        .unwrap_or(0);
++    let tokenizer = super::import::load_tokenizer_from_json(input);
++    append_tokenizer_to_metadata(
++        &mut metadata,
++        tokenizer.as_ref(),
++        apr_metadata.as_ref(),
++        "qwen35",
++        &name,
++        vocab,
++        input,
++    );
++    let added = qwen35_added_tokens(input);
++    q35::fill_added_token_holes(&mut metadata, &added);
++    q35::fix_qwen35_tokenizer_metadata(&mut metadata);
++    q35::apply_added_token_types(&mut metadata, &added);
++    if let Some(tpl) = qwen35_chat_template(apr_metadata.as_ref(), input) {
++        metadata.push((
++            "tokenizer.chat_template".to_string(),
++            crate::format::gguf::GgufValue::String(tpl),
++        ));
++    }
++
++    let gguf_tensors = q35::build_qwen35_tensors(tensors, hp.dims, hp.n_layer, use_q4k)?;
++    eprintln!(
++        "[#4418] qwen35 GGUF: {} tensors, {} layers, ssm nk={} nv={} dk={} dv={}, {}",
++        gguf_tensors.len(),
++        hp.n_layer,
++        hp.dims.nk,
++        hp.dims.nv,
++        hp.dims.dk,
++        hp.dims.dv,
++        if use_q4k { "Q4_K_M" } else { "F32" }
++    );
++    let file = fs::File::create(output).map_err(|e| AprenderError::FormatError {
++        message: format!("Failed to create output file: {e}"),
++    })?;
++    let mut writer = std::io::BufWriter::new(file);
++    crate::format::gguf::export_tensors_to_gguf(&mut writer, &gguf_tensors, &metadata)
++}
++
++/// Standard dims: APR metadata first, then the config.json beside the input.
++fn qwen35_base(
++    apr: Option<&crate::format::v2::AprV2Metadata>,
++    cfg: Option<&crate::format::gguf::GgufModelConfig>,
++) -> super::qwen35_gguf::Qwen35Base {
++    super::qwen35_gguf::Qwen35Base {
++        n_layer: apr
++            .and_then(|m| m.num_layers)
++            .or_else(|| cfg.and_then(|c| c.num_layers)),
++        hidden: apr
++            .and_then(|m| m.hidden_size)
++            .or_else(|| cfg.and_then(|c| c.hidden_size)),
++        ffn: apr
++            .and_then(|m| m.intermediate_size)
++            .or_else(|| cfg.and_then(|c| c.intermediate_size)),
++        n_head: apr
++            .and_then(|m| m.num_heads)
++            .or_else(|| cfg.and_then(|c| c.num_heads)),
++        n_head_kv: apr
++            .and_then(|m| m.num_kv_heads)
++            .or_else(|| cfg.and_then(|c| c.num_kv_heads)),
++        head_dim: apr
++            .and_then(|m| m.head_dim)
++            .or_else(|| cfg.and_then(|c| c.head_dim)),
++        ctx: apr
++            .and_then(|m| m.max_position_embeddings)
++            .or_else(|| cfg.and_then(|c| c.max_position_embeddings)),
++        rope_theta: apr
++            .and_then(|m| m.rope_theta)
++            .or_else(|| cfg.and_then(|c| c.rope_theta)),
++        eps: apr
++            .and_then(|m| m.rms_norm_eps)
++            .or_else(|| cfg.and_then(|c| c.rms_norm_eps)),
++    }
++}
++
++/// `added_tokens_decoder` of the `tokenizer_config.json` beside the input.
++fn qwen35_added_tokens(input: &Path) -> Vec<super::qwen35_gguf::AddedToken> {
++    let Ok(text) = fs::read_to_string(input.with_file_name("tokenizer_config.json")) else {
++        return Vec::new();
++    };
++    let Ok(json) = serde_json::from_str::<serde_json::Value>(&text) else {
++        return Vec::new();
++    };
++    json.get("added_tokens_decoder")
++        .and_then(serde_json::Value::as_object)
++        .map(|m| {
++            m.iter()
++                .filter_map(|(id, v)| {
++                    Some(super::qwen35_gguf::AddedToken {
++                        id: id.parse().ok()?,
++                        content: v.get("content")?.as_str()?.to_string(),
++                        special: v
++                            .get("special")
++                            .and_then(serde_json::Value::as_bool)
++                            .unwrap_or(false),
++                    })
++                })
++                .collect()
++        })
++        .unwrap_or_default()
++}
++
++/// Chat template: APR metadata, else `chat_template.jinja` beside the input.
++fn qwen35_chat_template(
++    apr: Option<&crate::format::v2::AprV2Metadata>,
++    input: &Path,
++) -> Option<String> {
++    apr.and_then(|m| m.chat_template.clone())
++        .or_else(|| fs::read_to_string(input.with_file_name("chat_template.jinja")).ok())
++}
+ 
+ #[cfg(test)]
+ mod q4k_divisibility_tests {
+diff --git a/crates/aprender-core/src/format/converter/import.rs b/crates/aprender-core/src/format/converter/import.rs
+index e6f758adf0..57a97475f4 100644
+--- a/crates/aprender-core/src/format/converter/import.rs
++++ b/crates/aprender-core/src/format/converter/import.rs
+@@ -430,6 +430,10 @@ fn enforce_arch_completeness_gate_f32(
+         return Ok(());
+     }
+     let names: Vec<&str> = tensors.keys().map(String::as_str).collect();
++    // #4418: a Qwen3.5 hybrid stack alternates full and linear attention.
++    if super::qwen35_gguf::is_qwen35_tensor_set(tensors) {
++        return super::qwen35_gguf::enforce_hybrid_layer_completeness(&names, num_layers);
++    }
+     crate::format::layout_contract::enforce_architecture_completeness(&names, arch_key, num_layers)
+         .map_err(|e| AprenderError::FormatError {
+             message: format!("GH-279 architecture completeness gate: {e}"),
+@@ -717,6 +721,7 @@ fn streaming_sharded_import(
+     if let Some(ref tok) = tokenizer {
+         super::write::insert_f32_tokenizer_metadata(tok, &mut custom);
+     }
++    super::write::insert_linear_attn_hparams(model_config.as_ref(), &mut custom);
+ 
+     let metadata = AprV2Metadata {
+         model_type: format!("{metadata_arch:?}"),
+diff --git a/crates/aprender-core/src/format/converter/infer_q4k_config.rs b/crates/aprender-core/src/format/converter/infer_q4k_config.rs
+index 4093c82e6e..1c4e27cff3 100644
+--- a/crates/aprender-core/src/format/converter/infer_q4k_config.rs
++++ b/crates/aprender-core/src/format/converter/infer_q4k_config.rs
+@@ -1,4 +1,3 @@
+-
+ /// Update inferred config from a single tensor's name and shape.
+ fn infer_q4k_single_tensor(cfg: &mut InferredQ4kConfig, name: &str, shape: &[usize]) {
+     // Infer hidden_size from norm weights (1D tensor of hidden_dim)
+@@ -186,6 +185,9 @@ pub use import::apr_import;
+ mod export;
+ pub use export::{apr_export, ExportFormat, ExportOptions, ExportReport};
+ 
++// Qwen3.5 hybrid GGUF export (#4418)
++mod qwen35_gguf;
++
+ // Merge functionality extracted to merge.rs (PMAT-197)
+ mod merge;
+ pub use merge::{apr_merge, MergeOptions, MergeReport, MergeStrategy};
+diff --git a/crates/aprender-core/src/format/converter/qwen35_gguf.rs b/crates/aprender-core/src/format/converter/qwen35_gguf.rs
+new file mode 100644
+index 0000000000..6fa33e90e1
+--- /dev/null
++++ b/crates/aprender-core/src/format/converter/qwen35_gguf.rs
+@@ -0,0 +1,723 @@
++//! Qwen3.5 (`qwen35`) GGUF export (#4418).
++//!
++//! Qwen3.5 is a hybrid: Gated DeltaNet linear-attention layers with a full
++//! (gated) attention layer every `full_attention_interval` layers. The generic
++//! exporter knew none of its tensor names, so every tensor passed through under
++//! its HF name, the conv kernel stayed 3-D, and the metadata said
++//! `qwen3_5` / 0 heads: llama.cpp refused the file.
++//!
++//! This module is the llama.cpp `convert_hf_to_gguf.py` `Qwen3_5TextModel`
++//! contract, checked element-wise against a reference GGUF written by
++//! llama.cpp `d1d3c3396` from a seeded tiny checkpoint:
++//!
++//! * names: `model.language_model.layers.N.*` -> `blk.N.*` ([`qwen35_gguf_name`]);
++//!   `mtp.*` and `model.visual.*` are dropped (the published Q4_K_M ships neither)
++//! * values ([`transform_qwen35_tensor`]): `+1` on the RMSNorm weights that HF
++//!   stores zero-centred (never on `linear_attn.norm`), `A_log -> -exp(A_log)`,
++//!   the conv kernel squeezed `[C,1,K] -> [C,K]`, and every V-head-indexed axis
++//!   regrouped from key-head-major to value-head-major ([`reorder_v_heads`])
++//! * metadata: `qwen35.ssm.*`, `full_attention_interval`, M-RoPE sections,
++//!   partial rotary dims, and a `gpt2`/`qwen35` tokenizer with token types
++//! * quantization ([`qwen35_q4km_type`]): llama.cpp's Q4_K_M layer policy
++
++use crate::error::{AprenderError, Result};
++use crate::format::gguf::{GgmlType, GgufTensor, GgufValue};
++use std::collections::BTreeMap;
++
++/// True when the tensor set is a Qwen3.5 hybrid checkpoint.
++pub(crate) fn is_qwen35_tensor_set(tensors: &BTreeMap<String, (Vec<f32>, Vec<usize>)>) -> bool {
++    tensors.keys().any(|k| k.contains(".linear_attn.A_log"))
++}
++
++/// GH-279 for a hybrid stack. The dense `qwen3` completeness key demands
++/// `self_attn.*` in every layer, which a Qwen3.5 linear-attention layer never
++/// has. Each layer must instead carry ONE token mixer (full `self_attn` or
++/// Gated-DeltaNet `linear_attn`, complete) plus its norms and SwiGLU MLP.
++pub(crate) fn enforce_hybrid_layer_completeness(names: &[&str], num_layers: usize) -> Result<()> {
++    const COMMON: &[&str] = &[
++        "input_layernorm.weight",
++        "post_attention_layernorm.weight",
++        "mlp.gate_proj.weight",
++        "mlp.up_proj.weight",
++        "mlp.down_proj.weight",
++    ];
++    for i in 0..num_layers {
++        let has = |suffix: &str| {
++            let want = format!("layers.{i}.{suffix}");
++            names
++                .iter()
++                .any(|n| n.ends_with(&want) && !n.starts_with("mtp."))
++        };
++        let mixer: Vec<&str> = if has("linear_attn.A_log") {
++            QWEN35_LAYER_NAME_MAP
++                .iter()
++                .map(|(h, _)| *h)
++                .filter(|h| h.starts_with("linear_attn."))
++                .collect()
++        } else {
++            QWEN35_LAYER_NAME_MAP
++                .iter()
++                .map(|(h, _)| *h)
++                .filter(|h| h.starts_with("self_attn."))
++                .collect()
++        };
++        if let Some(missing) = COMMON.iter().copied().chain(mixer).find(|s| !has(s)) {
++            return Err(AprenderError::FormatError {
++                message: format!("hybrid qwen3_5 layer {i} is missing '{missing}' ({num_layers} layers declared)"),
++            });
++        }
++    }
++    Ok(())
++}
++
++/// HF per-layer suffix -> GGUF per-layer suffix. This table IS the name map;
++/// `qwen35_name_map_is_pinned` fails if a row is dropped or altered.
++pub(crate) const QWEN35_LAYER_NAME_MAP: &[(&str, &str)] = &[
++    ("input_layernorm.weight", "attn_norm.weight"),
++    (
++        "post_attention_layernorm.weight",
++        "post_attention_norm.weight",
++    ),
++    ("mlp.gate_proj.weight", "ffn_gate.weight"),
++    ("mlp.up_proj.weight", "ffn_up.weight"),
++    ("mlp.down_proj.weight", "ffn_down.weight"),
++    ("linear_attn.in_proj_qkv.weight", "attn_qkv.weight"),
++    ("linear_attn.in_proj_z.weight", "attn_gate.weight"),
++    ("linear_attn.in_proj_a.weight", "ssm_alpha.weight"),
++    ("linear_attn.in_proj_b.weight", "ssm_beta.weight"),
++    ("linear_attn.A_log", "ssm_a"),
++    ("linear_attn.dt_bias", "ssm_dt.bias"),
++    ("linear_attn.conv1d.weight", "ssm_conv1d.weight"),
++    ("linear_attn.norm.weight", "ssm_norm.weight"),
++    ("linear_attn.out_proj.weight", "ssm_out.weight"),
++    ("self_attn.q_proj.weight", "attn_q.weight"),
++    ("self_attn.k_proj.weight", "attn_k.weight"),
++    ("self_attn.v_proj.weight", "attn_v.weight"),
++    ("self_attn.o_proj.weight", "attn_output.weight"),
++    ("self_attn.q_norm.weight", "attn_q_norm.weight"),
++    ("self_attn.k_norm.weight", "attn_k_norm.weight"),
++];
++
++/// Strip the language-model prefix; `None` for vision-tower and MTP tensors.
++fn strip_lm_prefix(hf: &str) -> Option<&str> {
++    if hf.starts_with("mtp.") || hf.contains("visual.") {
++        return None;
++    }
++    Some(
++        hf.strip_prefix("model.language_model.")
++            .or_else(|| hf.strip_prefix("language_model.model."))
++            .or_else(|| hf.strip_prefix("model."))
++            .unwrap_or(hf),
++    )
++}
++
++/// Map one HF tensor name to its GGUF name, or `None` when it is not exported.
++pub(crate) fn qwen35_gguf_name(hf: &str) -> Option<String> {
++    let base = strip_lm_prefix(hf)?;
++    match base {
++        "embed_tokens.weight" => return Some("token_embd.weight".to_string()),
++        "norm.weight" => return Some("output_norm.weight".to_string()),
++        "lm_head.weight" => return Some("output.weight".to_string()),
++        _ => {}
++    }
++    let rest = base.strip_prefix("layers.")?;
++    let (idx, suffix) = rest.split_once('.')?;
++    let layer: usize = idx.parse().ok()?;
++    QWEN35_LAYER_NAME_MAP
++        .iter()
++        .find(|(h, _)| *h == suffix)
++        .map(|(_, g)| format!("blk.{layer}.{g}"))
++}
++
++/// Hybrid-block dimensions the value transforms need.
++#[derive(Debug, Clone, Copy, PartialEq, Eq)]
++pub(crate) struct LinearAttnDims {
++    /// Key heads (`linear_num_key_heads`, GGUF `ssm.group_count`).
++    pub nk: usize,
++    /// Value heads (`linear_num_value_heads`, GGUF `ssm.time_step_rank`).
++    pub nv: usize,
++    /// Key head dim (`linear_key_head_dim`, GGUF `ssm.state_size`).
++    pub dk: usize,
++    /// Value head dim (`linear_value_head_dim`).
++    pub dv: usize,
++}
++
++/// Regroup `nv` value heads of `hd` elements, stored key-head-major
++/// (`[nk, nv/nk, hd]`), into value-head-major order (`[nv/nk, nk, hd]`), the
++/// layout llama.cpp's broadcast of `nk` key heads over `nv` value heads reads.
++/// `src` holds `nv * hd` items of `item` elements each. Identity when `nv == nk`.
++pub(crate) fn reorder_v_heads(
++    src: &[f32],
++    nk: usize,
++    nv: usize,
++    hd: usize,
++    item: usize,
++) -> Vec<f32> {
++    let nvpk = nv / nk;
++    let mut dst = vec![0.0f32; src.len()];
++    for k in 0..nk {
++        for j in 0..nvpk {
++            for c in 0..hd {
++                let s = ((k * nvpk + j) * hd + c) * item;
++                let d = ((j * nk + k) * hd + c) * item;
++                dst[d..d + item].copy_from_slice(&src[s..s + item]);
++            }
++        }
++    }
++    dst
++}
++
++/// Column form of [`reorder_v_heads`]: regroup the `nv * hd` columns of a
++/// `[rows, nv * hd]` row-major matrix (`out_proj`).
++fn reorder_v_head_cols(src: &[f32], rows: usize, nk: usize, nv: usize, hd: usize) -> Vec<f32> {
++    let cols = nv * hd;
++    let mut dst = Vec::with_capacity(src.len());
++    for r in 0..rows {
++        dst.extend(reorder_v_heads(
++            &src[r * cols..(r + 1) * cols],
++            nk,
++            nv,
++            hd,
++            1,
++        ));
++    }
++    dst
++}
++
++/// Reorder the rows after the first `head_rows` rows (the q/k part of the fused
++/// qkv projection and conv kernel stays put; only the v part is per-value-head).
++fn reorder_tail_rows(
++    data: &[f32],
++    row_len: usize,
++    head_rows: usize,
++    d: LinearAttnDims,
++) -> Vec<f32> {
++    let split = head_rows * row_len;
++    let mut out = data[..split].to_vec();
++    out.extend(reorder_v_heads(&data[split..], d.nk, d.nv, d.dv, row_len));
++    out
++}
++
++/// HF suffixes whose RMSNorm weight is stored zero-centred (`w - 1`).
++/// `linear_attn.norm` is deliberately absent: it is a plain gated RMSNorm.
++const PLUS_ONE_NORMS: &[&str] = &[
++    "input_layernorm.weight",
++    "post_attention_layernorm.weight",
++    "self_attn.q_norm.weight",
++    "self_attn.k_norm.weight",
++];
++
++/// Apply the llama.cpp value transform for one tensor. Returns the new data
++/// and the (row-major) shape to write.
++pub(crate) fn transform_qwen35_tensor(
++    hf: &str,
++    data: &[f32],
++    shape: &[usize],
++    d: LinearAttnDims,
++) -> Result<(Vec<f32>, Vec<usize>)> {
++    let base = strip_lm_prefix(hf).unwrap_or(hf);
++    let suffix = base
++        .strip_prefix("layers.")
++        .and_then(|r| r.split_once('.'))
++        .map_or(base, |(_, s)| s);
++    let qk_rows = 2 * d.nk * d.dk;
++    let out = match suffix {
++        s if PLUS_ONE_NORMS.contains(&s) || base == "norm.weight" => {
++            (data.iter().map(|v| v + 1.0).collect(), shape.to_vec())
++        }
++        "linear_attn.A_log" => {
++            let neg: Vec<f32> = data.iter().map(|v| -v.exp()).collect();
++            (reorder_v_heads(&neg, d.nk, d.nv, 1, 1), shape.to_vec())
++        }
++        "linear_attn.dt_bias" => (reorder_v_heads(data, d.nk, d.nv, 1, 1), shape.to_vec()),
++        "linear_attn.in_proj_a.weight" | "linear_attn.in_proj_b.weight" => (
++            reorder_v_heads(data, d.nk, d.nv, 1, row_len(shape)?),
++            shape.to_vec(),
++        ),
++        "linear_attn.in_proj_z.weight" => (
++            reorder_v_heads(data, d.nk, d.nv, d.dv, row_len(shape)?),
++            shape.to_vec(),
++        ),
++        "linear_attn.in_proj_qkv.weight" => (
++            reorder_tail_rows(data, row_len(shape)?, qk_rows, d),
++            shape.to_vec(),
++        ),
++        "linear_attn.conv1d.weight" => {
++            let (c, k) = conv_dims(shape)?;
++            (reorder_tail_rows(data, k, qk_rows, d), vec![c, k])
++        }
++        "linear_attn.out_proj.weight" => {
++            let rows = *shape.first().unwrap_or(&0);
++            (
++                reorder_v_head_cols(data, rows, d.nk, d.nv, d.dv),
++                shape.to_vec(),
++            )
++        }
++        _ => (data.to_vec(), shape.to_vec()),
++    };
++    Ok(out)
++}
++
++fn row_len(shape: &[usize]) -> Result<usize> {
++    match shape {
++        [_, cols] => Ok(*cols),
++        _ => Err(AprenderError::FormatError {
++            message: format!("[#4418] qwen35: expected a 2-D projection, got shape {shape:?}"),
++        }),
++    }
++}
++
++/// `[C, 1, K]` (HF) or `[C, K]` -> `(C, K)`.
++fn conv_dims(shape: &[usize]) -> Result<(usize, usize)> {
++    match shape {
++        [c, 1, k] | [c, k] => Ok((*c, *k)),
++        _ => Err(AprenderError::FormatError {
++            message: format!("[#4418] qwen35: conv1d shape {shape:?} is not [C,1,K]"),
++        }),
++    }
++}
++
++/// llama.cpp `use_more_bits`: the first and last eighth of the layers, and
++/// every third layer between, get the larger quant in Q4_K_M.
++pub(crate) fn use_more_bits(i: usize, n: usize) -> bool {
++    i < n / 8 || i >= 7 * n / 8 || (i >= n / 8 && (i - n / 8) % 3 == 2)
++}
++
++/// Q4_K_M tensor type, mirroring llama.cpp `llama_tensor_get_type` for this
++/// architecture (and the published unsloth Q4_K_M: token_embd Q6_K, attn_qkv
++/// and ssm_out Q5_K, attn_v / ffn_down Q6_K on `use_more_bits` layers).
++/// `attn_v_rank` is the tensor's index among the `attn_v` tensors; llama.cpp
++/// counts it against `n_layer`, not against the number of attn_v tensors.
++/// ssm_alpha/ssm_beta stay F32: llama.cpp uses Q8_0 there and trueno_quant has
++/// no Q8_0 encoder (they are 2 x nv x hidden, well under 1% of the file).
++pub(crate) fn qwen35_q4km_type(
++    gguf: &str,
++    layer: Option<usize>,
++    attn_v_rank: usize,
++    n_layer: usize,
++) -> GgmlType {
++    let kind = gguf.rsplit_once('.').map_or(gguf, |(head, tail)| {
++        if tail == "weight" {
++            head.rsplit('.').next().unwrap_or(head)
++        } else {
++            tail
++        }
++    });
++    match kind {
++        "token_embd" | "output" => GgmlType::Q6K,
++        "attn_qkv" | "ssm_out" => GgmlType::Q5K,
++        "ssm_alpha" | "ssm_beta" => GgmlType::F32,
++        "attn_v" if use_more_bits(attn_v_rank, n_layer) => GgmlType::Q6K,
++        "ffn_down" if layer.is_some_and(|l| use_more_bits(l, n_layer)) => GgmlType::Q6K,
++        _ => GgmlType::Q4K,
++    }
++}
++
++/// Encode one tensor. 1-D tensors, the conv kernel, and any matrix whose row
++/// is not a multiple of the 256-element super-block stay F32.
++fn encode(data: &[f32], shape: &[usize], want: GgmlType) -> (GgmlType, Vec<u8>) {
++    let quantizable = shape.len() == 2 && shape[1] % 256 == 0;
++    match want {
++        GgmlType::Q4K if quantizable => (want, super::quantize_q4_k_matrix(data, shape)),
++        GgmlType::Q5K if quantizable => (want, trueno_quant::quantize_q5_k_matrix(data, shape)),
++        GgmlType::Q6K if quantizable => (want, trueno_quant::quantize_q6_k_matrix(data, shape)),
++        _ => (
++            GgmlType::F32,
++            data.iter().flat_map(|f| f.to_le_bytes()).collect(),
++        ),
++    }
++}
++
++/// Row-major `[rows, cols]` -> GGUF `[ne0 = cols, ne1 = rows]`.
++fn gguf_shape(shape: &[usize]) -> Vec<u64> {
++    shape.iter().rev().map(|&d| d as u64).collect()
++}
++
++fn layer_of(gguf: &str) -> Option<usize> {
++    gguf.strip_prefix("blk.")?.split('.').next()?.parse().ok()
++}
++
++/// Map, transform and encode every exported tensor. `quantize` selects Q4_K_M;
++/// otherwise every tensor is written F32.
++pub(crate) fn build_qwen35_tensors(
++    tensors: &BTreeMap<String, (Vec<f32>, Vec<usize>)>,
++    d: LinearAttnDims,
++    n_layer: usize,
++    quantize: bool,
++) -> Result<Vec<GgufTensor>> {
++    let embed = tensors
++        .iter()
++        .find(|(k, _)| k.ends_with("embed_tokens.weight"))
++        .map(|(_, v)| v);
++    let mut mapped: Vec<(usize, String, &String)> = Vec::new();
++    for hf in tensors.keys() {
++        let Some(g) = qwen35_gguf_name(hf) else {
++            continue;
++        };
++        // Tied (the APR import materialises lm_head as a copy of the
++        // embedding): llama.cpp falls back to token_embd for the output.
++        if g == "output.weight" && embed.is_some_and(|e| e.0 == tensors[hf].0) {
++            continue;
++        }
++        mapped.push((layer_of(&g).unwrap_or(usize::MAX), g, hf));
++    }
++    mapped.sort_by(|a, b| a.0.cmp(&b.0).then_with(|| a.1.cmp(&b.1)));
++    let mut out = Vec::with_capacity(mapped.len());
++    let mut attn_v_rank = 0usize;
++    for (_, g, hf) in mapped {
++        let (data, shape) = &tensors[hf];
++        let (data, shape) = transform_qwen35_tensor(hf, data, shape, d)?;
++        let want = if quantize {
++            qwen35_q4km_type(&g, layer_of(&g), attn_v_rank, n_layer)
++        } else {
++            GgmlType::F32
++        };
++        if g.ends_with(".attn_v.weight") {
++            attn_v_rank += 1;
++        }
++        let (dtype, bytes) = encode(&data, &shape, want);
++        out.push(GgufTensor {
++            name: g,
++            shape: gguf_shape(&shape),
++            dtype,
++            data: bytes,
++        });
++    }
++    Ok(out)
++}
++
++/// Everything the `qwen35.*` metadata block needs.
++#[derive(Debug, Clone, PartialEq)]
++pub(crate) struct Qwen35Hparams {
++    pub n_layer: usize,
++    pub hidden: usize,
++    pub ffn: usize,
++    pub n_head: usize,
++    pub n_head_kv: usize,
++    pub head_dim: usize,
++    pub ctx: usize,
++    pub rope_theta: f32,
++    pub eps: f32,
++    pub rot_dim: usize,
++    pub mrope: [i32; 4],
++    pub conv_kernel: usize,
++    pub full_attn_interval: usize,
++    pub dims: LinearAttnDims,
++}
++
++fn hp_usize(h: &serde_json::Map<String, serde_json::Value>, k: &str) -> Result<usize> {
++    h.get(k)
++        .and_then(serde_json::Value::as_u64)
++        .map(|v| v as usize)
++        .ok_or_else(|| AprenderError::FormatError {
++            message: format!(
++                "[#4418] qwen35 export: `{k}` missing from linear_attn_hparams \
++                 (re-import from a config.json that has it; no default is guessed)"
++            ),
++        })
++}
++
++fn need(v: Option<usize>, what: &str) -> Result<usize> {
++    v.filter(|&x| x > 0)
++        .ok_or_else(|| AprenderError::FormatError {
++            message: format!("[#4418] qwen35 export: model config has no `{what}`"),
++        })
++}
++
++/// First dimension of the tensor whose name ends with `suffix`.
++fn dim0(tensors: &BTreeMap<String, (Vec<f32>, Vec<usize>)>, suffix: &str) -> Option<usize> {
++    tensors
++        .iter()
++        .find(|(k, _)| k.ends_with(suffix))
++        .and_then(|(_, (_, s))| s.first().copied())
++}
++
++/// Standard fields of the resolved model config (APR metadata or config.json).
++#[derive(Debug, Clone, Default)]
++pub(crate) struct Qwen35Base {
++    pub n_layer: Option<usize>,
++    pub hidden: Option<usize>,
++    pub ffn: Option<usize>,
++    pub n_head: Option<usize>,
++    pub n_head_kv: Option<usize>,
++    pub head_dim: Option<usize>,
++    pub ctx: Option<usize>,
++    pub rope_theta: Option<f32>,
++    pub eps: Option<f32>,
++}
++
++/// Resolve the hyperparameters, cross-checking the hparams against the tensor
++/// shapes (a mismatch is a loud error, never a silently wrong file).
++pub(crate) fn resolve_qwen35_hparams(
++    base: &Qwen35Base,
++    h: &serde_json::Map<String, serde_json::Value>,
++    tensors: &BTreeMap<String, (Vec<f32>, Vec<usize>)>,
++) -> Result<Qwen35Hparams> {
++    let dims = LinearAttnDims {
++        nk: hp_usize(h, "linear_num_key_heads")?,
++        nv: hp_usize(h, "linear_num_value_heads")?,
++        dk: hp_usize(h, "linear_key_head_dim")?,
++        dv: hp_usize(h, "linear_value_head_dim")?,
++    };
++    check_dim(
++        dim0(tensors, "linear_attn.A_log"),
++        dims.nv,
++        "A_log length vs linear_num_value_heads",
++    )?;
++    check_dim(
++        dim0(tensors, "linear_attn.norm.weight"),
++        dims.dv,
++        "linear_attn.norm vs linear_value_head_dim",
++    )?;
++    if dims.nk == 0 || dims.nv % dims.nk != 0 {
++        return Err(AprenderError::FormatError {
++            message: format!(
++                "[#4418] qwen35: {} value heads not a multiple of {} key heads",
++                dims.nv, dims.nk
++            ),
++        });
++    }
++    let head_dim = need(
++        base.head_dim
++            .or_else(|| dim0(tensors, "self_attn.q_norm.weight")),
++        "head_dim",
++    )?;
++    let partial = h
++        .get("partial_rotary_factor")
++        .and_then(serde_json::Value::as_f64)
++        .unwrap_or(1.0);
++    Ok(Qwen35Hparams {
++        n_layer: need(base.n_layer, "num_hidden_layers")?,
++        hidden: need(base.hidden, "hidden_size")?,
++        ffn: need(base.ffn, "intermediate_size")?,
++        n_head: need(base.n_head, "num_attention_heads")?,
++        n_head_kv: need(base.n_head_kv, "num_key_value_heads")?,
++        head_dim,
++        ctx: base.ctx.unwrap_or(0),
++        rope_theta: base.rope_theta.unwrap_or(10_000_000.0),
++        eps: base.eps.unwrap_or(1e-6),
++        rot_dim: (head_dim as f64 * partial).round() as usize,
++        mrope: mrope_sections(h),
++        conv_kernel: hp_usize(h, "linear_conv_kernel_dim")?,
++        full_attn_interval: hp_usize(h, "full_attention_interval")?,
++        dims,
++    })
++}
++
++fn check_dim(got: Option<usize>, want: usize, what: &str) -> Result<()> {
++    match got {
++        Some(g) if g != want => Err(AprenderError::FormatError {
++            message: format!("[#4418] qwen35: {what}: tensor says {g}, config says {want}"),
++        }),
++        _ => Ok(()),
++    }
++}
++
++/// M-RoPE sections padded to 4 (llama.cpp default `[11, 11, 10, 0]`).
++fn mrope_sections(h: &serde_json::Map<String, serde_json::Value>) -> [i32; 4] {
++    let mut out = [11, 11, 10, 0];
++    if let Some(arr) = h.get("mrope_section").and_then(serde_json::Value::as_array) {
++        out = [0; 4];
++        for (slot, v) in out.iter_mut().zip(arr) {
++            *slot = v.as_i64().unwrap_or(0) as i32;
++        }
++    }
++    out
++}
++
++/// The `general.*` + `qwen35.*` metadata block.
++pub(crate) fn qwen35_config_metadata(
++    hp: &Qwen35Hparams,
++    name: &str,
++    quantize: bool,
++) -> Vec<(String, GgufValue)> {
++    let u = |v: usize| GgufValue::Uint32(v as u32);
++    let a = "qwen35";
++    let d = hp.dims;
++    vec![
++        ("general.architecture".into(), GgufValue::String(a.into())),
++        ("general.type".into(), GgufValue::String("model".into())),
++        ("general.name".into(), GgufValue::String(name.into())),
++        ("general.file_type".into(), u(if quantize { 15 } else { 0 })),
++        ("general.quantization_version".into(), u(2)),
++        (format!("{a}.block_count"), u(hp.n_layer)),
++        (format!("{a}.context_length"), u(hp.ctx)),
++        (format!("{a}.embedding_length"), u(hp.hidden)),
++        (format!("{a}.feed_forward_length"), u(hp.ffn)),
++        (format!("{a}.attention.head_count"), u(hp.n_head)),
++        (format!("{a}.attention.head_count_kv"), u(hp.n_head_kv)),
++        (format!("{a}.attention.key_length"), u(hp.head_dim)),
++        (format!("{a}.attention.value_length"), u(hp.head_dim)),
++        (
++            format!("{a}.attention.layer_norm_rms_epsilon"),
++            GgufValue::Float32(hp.eps),
++        ),
++        (
++            format!("{a}.rope.freq_base"),
++            GgufValue::Float32(hp.rope_theta),
++        ),
++        (format!("{a}.rope.dimension_count"), u(hp.rot_dim)),
++        (
++            format!("{a}.rope.dimension_sections"),
++            GgufValue::ArrayInt32(hp.mrope.to_vec()),
++        ),
++        (format!("{a}.ssm.conv_kernel"), u(hp.conv_kernel)),
++        (format!("{a}.ssm.state_size"), u(d.dk)),
++        (format!("{a}.ssm.group_count"), u(d.nk)),
++        (format!("{a}.ssm.time_step_rank"), u(d.nv)),
++        (format!("{a}.ssm.inner_size"), u(d.nv * d.dv)),
++        (
++            format!("{a}.full_attention_interval"),
++            u(hp.full_attn_interval),
++        ),
++    ]
++}
++
++/// llama.cpp token types.
++const TT_NORMAL: i32 = 1;
++const TT_CONTROL: i32 = 3;
++const TT_USER_DEFINED: i32 = 4;
++const TT_UNUSED: i32 = 5;
++
++fn is_special(tok: &str) -> bool {
++    tok.len() > 4 && tok.starts_with("<|") && tok.ends_with("|>")
++}
++
++/// Qwen3.5 lists seven audio/TTS specials (`<|audio_start|>` ..) only in
++/// `tokenizer_config.json` `added_tokens_decoder`, never in `tokenizer.json`,
++/// so the vocab arrives with filler holes at their ids. Fill those holes
++/// (and only those) so the vocab matches `convert_hf_to_gguf.py`.
++/// One `added_tokens_decoder` entry of `tokenizer_config.json`.
++#[derive(Debug, Clone)]
++pub(crate) struct AddedToken {
++    pub(crate) id: usize,
++    pub(crate) content: String,
++    pub(crate) special: bool,
++}
++
++pub(crate) fn fill_added_token_holes(metadata: &mut [(String, GgufValue)], added: &[AddedToken]) {
++    let Some(tokens) = metadata.iter_mut().find_map(|(k, v)| match v {
++        GgufValue::ArrayString(t) if k == "tokenizer.ggml.tokens" => Some(t),
++        _ => None,
++    }) else {
++        return;
++    };
++    for AddedToken { id, content, .. } in added {
++        if let Some(t) = tokens.get_mut(*id) {
++            // Hole fillers: `<|pad_<id>|>` (APR vocab padded to the embed rows,
++            // metadata.rs), `<unk>` / `<unk>_N` (tokenizer.json loader + GH-279
++            // dedup), `[PAD<id>]` (GH-277). Qwen has no real token of any form.
++            let hole = *t == format!("<|pad_{id}|>")
++                || t == "<unk>"
++                || t.starts_with("<unk>_")
++                || *t == format!("[PAD{id}]");
++            if hole {
++                t.clone_from(content);
++            }
++        }
++    }
++}
++
++/// `convert_hf_to_gguf.py` types an added token CONTROL when its config entry
++/// says `special` or it looks like `<|..|>`, else USER_DEFINED; `fix_qwen35_tokenizer_metadata` can only
++/// guess from the `<|..|>` shape (`<tts_pad>` is special, `<think>` is not).
++pub(crate) fn apply_added_token_types(metadata: &mut [(String, GgufValue)], added: &[AddedToken]) {
++    let tokens = metadata.iter().find_map(|(k, v)| match v {
++        GgufValue::ArrayString(t) if k == "tokenizer.ggml.tokens" => Some(t.clone()),
++        _ => None,
++    });
++    let Some(tokens) = tokens else { return };
++    let Some(types) = metadata.iter_mut().find_map(|(k, v)| match v {
++        GgufValue::ArrayInt32(t) if k == "tokenizer.ggml.token_type" => Some(t),
++        _ => None,
++    }) else {
++        return;
++    };
++    for a in added {
++        if tokens.get(a.id) == Some(&a.content) {
++            if let Some(ty) = types.get_mut(a.id) {
++                // conversion/base.py: `special or does_token_look_special(token)`
++                *ty = if a.special || is_special(&a.content) {
++                    TT_CONTROL
++                } else {
++                    TT_USER_DEFINED
++                };
++            }
++        }
++    }
++}
++
++/// Rewrite the generic tokenizer block into what llama.cpp's `qwen35` loader
++/// expects: model `gpt2`, pre `qwen35`, `[PADn]` placeholders typed UNUSED,
++/// a `token_type` array, eos = `<|im_end|>`, padding = `<|endoftext|>`, and
++/// no BOS. Added tokens start at the first `<|...|>` id: from there `<|...|>`
++/// is CONTROL and anything else USER_DEFINED (`<think>`, `<tool_call>`, ...).
++pub(crate) fn fix_qwen35_tokenizer_metadata(metadata: &mut Vec<(String, GgufValue)>) {
++    let Some(tokens) = metadata.iter_mut().find_map(|(k, v)| match v {
++        GgufValue::ArrayString(t) if k == "tokenizer.ggml.tokens" => Some(t),
++        _ => None,
++    }) else {
++        return;
++    };
++    let mut types = Vec::with_capacity(tokens.len());
++    let first_added = tokens
++        .iter()
++        .position(|t| is_special(t))
++        .unwrap_or(tokens.len());
++    for (i, t) in tokens.iter_mut().enumerate() {
++        if t.starts_with("<|pad_") && t.ends_with("|>") {
++            *t = format!("[PAD{i}]");
++            types.push(TT_UNUSED);
++        } else if i < first_added {
++            types.push(TT_NORMAL);
++        } else if is_special(t) {
++            types.push(TT_CONTROL);
++        } else {
++            types.push(TT_USER_DEFINED);
++        }
++    }
++    let id_of = |name: &str| tokens.iter().position(|t| t == name).map(|i| i as u32);
++    let eos = id_of("<|im_end|>");
++    let pad = id_of("<|endoftext|>");
++    metadata.retain(|(k, _)| {
++        !matches!(
++            k.as_str(),
++            "tokenizer.ggml.model"
++                | "tokenizer.ggml.pre"
++                | "tokenizer.ggml.token_type"
++                | "tokenizer.ggml.bos_token_id"
++                | "tokenizer.ggml.eos_token_id"
++                | "tokenizer.ggml.padding_token_id"
++                | "tokenizer.ggml.add_bos_token"
++        )
++    });
++    metadata.push((
++        "tokenizer.ggml.model".into(),
++        GgufValue::String("gpt2".into()),
++    ));
++    metadata.push((
++        "tokenizer.ggml.pre".into(),
++        GgufValue::String("qwen35".into()),
++    ));
++    metadata.push((
++        "tokenizer.ggml.token_type".into(),
++        GgufValue::ArrayInt32(types),
++    ));
++    if let Some(e) = eos {
++        metadata.push(("tokenizer.ggml.eos_token_id".into(), GgufValue::Uint32(e)));
++    }
++    if let Some(p) = pad {
++        metadata.push((
++            "tokenizer.ggml.padding_token_id".into(),
++            GgufValue::Uint32(p),
++        ));
++    }
++    metadata.push((
++        "tokenizer.ggml.add_bos_token".into(),
++        GgufValue::Bool(false),
++    ));
++}
++
++#[cfg(test)]
++#[path = "qwen35_gguf_tests.rs"]
++mod tests;
+diff --git a/crates/aprender-core/src/format/converter/qwen35_gguf_tests.rs b/crates/aprender-core/src/format/converter/qwen35_gguf_tests.rs
+new file mode 100644
+index 0000000000..121622e96e
+--- /dev/null
++++ b/crates/aprender-core/src/format/converter/qwen35_gguf_tests.rs
+@@ -0,0 +1,448 @@
++//! #4418: the qwen35 GGUF name map, value transforms and Q4_K_M policy.
++//!
++//! The name-map fixture is the contract with llama.cpp `d1d3c3396`: each GGUF
++//! name below was read from `convert_hf_to_gguf.py` output on a seeded tiny
++//! Qwen3.5 checkpoint. Deleting or editing any row of `QWEN35_LAYER_NAME_MAP`
++//! turns `qwen35_name_map_is_pinned` RED.
++
++use super::*;
++
++const P: &str = "model.language_model.";
++
++/// (HF name, GGUF name) for every exported tensor kind, both layer types.
++const PINNED: &[(&str, &str)] = &[
++    (
++        "model.language_model.embed_tokens.weight",
++        "token_embd.weight",
++    ),
++    ("model.language_model.norm.weight", "output_norm.weight"),
++    ("lm_head.weight", "output.weight"),
++    (
++        "model.language_model.layers.0.input_layernorm.weight",
++        "blk.0.attn_norm.weight",
++    ),
++    (
++        "model.language_model.layers.0.post_attention_layernorm.weight",
++        "blk.0.post_attention_norm.weight",
++    ),
++    (
++        "model.language_model.layers.0.mlp.gate_proj.weight",
++        "blk.0.ffn_gate.weight",
++    ),
++    (
++        "model.language_model.layers.0.mlp.up_proj.weight",
++        "blk.0.ffn_up.weight",
++    ),
++    (
++        "model.language_model.layers.0.mlp.down_proj.weight",
++        "blk.0.ffn_down.weight",
++    ),
++    (
++        "model.language_model.layers.0.linear_attn.in_proj_qkv.weight",
++        "blk.0.attn_qkv.weight",
++    ),
++    (
++        "model.language_model.layers.0.linear_attn.in_proj_z.weight",
++        "blk.0.attn_gate.weight",
++    ),
++    (
++        "model.language_model.layers.0.linear_attn.in_proj_a.weight",
++        "blk.0.ssm_alpha.weight",
++    ),
++    (
++        "model.language_model.layers.0.linear_attn.in_proj_b.weight",
++        "blk.0.ssm_beta.weight",
++    ),
++    (
++        "model.language_model.layers.0.linear_attn.A_log",
++        "blk.0.ssm_a",
++    ),
++    (
++        "model.language_model.layers.0.linear_attn.dt_bias",
++        "blk.0.ssm_dt.bias",
++    ),
++    (
++        "model.language_model.layers.0.linear_attn.conv1d.weight",
++        "blk.0.ssm_conv1d.weight",
++    ),
++    (
++        "model.language_model.layers.0.linear_attn.norm.weight",
++        "blk.0.ssm_norm.weight",
++    ),
++    (
++        "model.language_model.layers.0.linear_attn.out_proj.weight",
++        "blk.0.ssm_out.weight",
++    ),
++    (
++        "model.language_model.layers.31.self_attn.q_proj.weight",
++        "blk.31.attn_q.weight",
++    ),
++    (
++        "model.language_model.layers.31.self_attn.k_proj.weight",
++        "blk.31.attn_k.weight",
++    ),
++    (
++        "model.language_model.layers.31.self_attn.v_proj.weight",
++        "blk.31.attn_v.weight",
++    ),
++    (
++        "model.language_model.layers.31.self_attn.o_proj.weight",
++        "blk.31.attn_output.weight",
++    ),
++    (
++        "model.language_model.layers.31.self_attn.q_norm.weight",
++        "blk.31.attn_q_norm.weight",
++    ),
++    (
++        "model.language_model.layers.31.self_attn.k_norm.weight",
++        "blk.31.attn_k_norm.weight",
++    ),
++    // text-only checkpoints drop the `language_model.` level
++    (
++        "model.layers.3.self_attn.q_proj.weight",
++        "blk.3.attn_q.weight",
++    ),
++];
++
++#[test]
++fn qwen35_name_map_is_pinned() {
++    for (hf, want) in PINNED {
++        assert_eq!(qwen35_gguf_name(hf).as_deref(), Some(*want), "{hf}");
++    }
++    // Every row of the table is exercised by the fixture (no untested row).
++    for (h, _) in QWEN35_LAYER_NAME_MAP {
++        assert!(
++            PINNED.iter().any(|(hf, _)| hf.ends_with(h)),
++            "row {h} has no fixture"
++        );
++    }
++    // No HF name leaks through: every mapped name is a GGUF name.
++    for (hf, _) in PINNED {
++        let g = qwen35_gguf_name(hf).expect("mapped");
++        assert!(
++            !g.contains("layers.") && !g.contains("proj") && !g.contains("linear_attn"),
++            "{g}"
++        );
++    }
++}
++
++#[test]
++fn qwen35_drops_mtp_visual_and_unknown() {
++    for hf in [
++        "mtp.fc.weight",
++        "mtp.layers.0.self_attn.q_proj.weight",
++        "model.visual.blocks.0.attn.qkv.weight",
++        "model.language_model.layers.0.linear_attn.mystery.weight",
++    ] {
++        assert_eq!(qwen35_gguf_name(hf), None, "{hf}");
++    }
++}
++
++#[test]
++fn reorder_v_heads_is_key_major_to_value_major() {
++    // nk=2, nv=4 (2 value heads per key head), hd=1: [k0j0 k0j1 k1j0 k1j1] -> [k0j0 k1j0 k0j1 k1j1]
++    assert_eq!(
++        reorder_v_heads(&[0., 1., 2., 3.], 2, 4, 1, 1),
++        vec![0., 2., 1., 3.]
++    );
++    // hd=2 keeps each head's elements together
++    let src: Vec<f32> = (0..8).map(|v| v as f32).collect();
++    assert_eq!(
++        reorder_v_heads(&src, 2, 4, 2, 1),
++        vec![0., 1., 4., 5., 2., 3., 6., 7.]
++    );
++    // item=2 moves whole rows
++    assert_eq!(
++        reorder_v_heads(&src, 2, 4, 1, 2),
++        vec![0., 1., 4., 5., 2., 3., 6., 7.]
++    );
++    // identity when there is one value head per key head
++    assert_eq!(reorder_v_heads(&src, 4, 4, 2, 1), src);
++}
++
++#[test]
++fn reorder_v_heads_is_not_its_own_inverse() {
++    // nk=3, nv=6 (nv/nk=2 != nk): the permutation differs from its inverse,
++    // so a swap of nk and nv/nk returns [0, 3, 1, 4, 2, 5] and fails here.
++    let src: Vec<f32> = (0..6).map(|v| v as f32).collect();
++    assert_eq!(
++        reorder_v_heads(&src, 3, 6, 1, 1),
++        vec![0., 2., 4., 1., 3., 5.]
++    );
++    // hd=2 at the same sizes keeps each head's pair together
++    let src: Vec<f32> = (0..12).map(|v| v as f32).collect();
++    assert_eq!(
++        reorder_v_heads(&src, 3, 6, 2, 1),
++        vec![0., 1., 4., 5., 8., 9., 2., 3., 6., 7., 10., 11.]
++    );
++}
++
++const D: LinearAttnDims = LinearAttnDims {
++    nk: 2,
++    nv: 4,
++    dk: 1,
++    dv: 1,
++};
++
++fn xf(suffix: &str, data: &[f32], shape: &[usize]) -> (Vec<f32>, Vec<usize>) {
++    transform_qwen35_tensor(&format!("{P}layers.0.{suffix}"), data, shape, D).expect("transform")
++}
++
++#[test]
++fn a_log_becomes_negative_exp_then_reordered() {
++    let (v, _) = xf("linear_attn.A_log", &[0., 1., 2., 3.], &[4]);
++    let e = |x: f32| -x.exp();
++    assert_eq!(v, vec![e(0.), e(2.), e(1.), e(3.)]);
++}
++
++#[test]
++fn zero_centred_norms_get_plus_one_but_ssm_norm_does_not() {
++    for s in [
++        "input_layernorm.weight",
++        "post_attention_layernorm.weight",
++        "self_attn.q_norm.weight",
++    ] {
++        assert_eq!(xf(s, &[0.5], &[1]).0, vec![1.5], "{s}");
++    }
++    let (v, _) =
++        transform_qwen35_tensor(&format!("{P}norm.weight"), &[0.25], &[1], D).expect("final norm");
++    assert_eq!(v, vec![1.25]);
++    assert_eq!(xf("linear_attn.norm.weight", &[0.5], &[1]).0, vec![0.5]);
++}
++
++#[test]
++fn conv1d_is_squeezed_and_only_the_v_rows_move() {
++    // qk rows = 2*nk*dk = 4 rows stay; the 4 v rows (nv*dv) are regrouped. K = 2.
++    let src: Vec<f32> = (0..16).map(|v| v as f32).collect();
++    let (v, shape) = xf("linear_attn.conv1d.weight", &src, &[8, 1, 2]);
++    assert_eq!(shape, vec![8, 2]);
++    assert_eq!(&v[..8], &src[..8]);
++    assert_eq!(&v[8..], &[8., 9., 12., 13., 10., 11., 14., 15.]);
++}
++
++#[test]
++fn out_proj_regroups_columns() {
++    let (v, _) = xf(
++        "linear_attn.out_proj.weight",
++        &[0., 1., 2., 3., 4., 5., 6., 7.],
++        &[2, 4],
++    );
++    assert_eq!(v, vec![0., 2., 1., 3., 4., 6., 5., 7.]);
++}
++
++#[test]
++fn use_more_bits_matches_published_q4_k_m() {
++    // ffn_down Q6_K layers of the published Qwen3.5-4B Q4_K_M (unsloth, 32 layers)
++    let q6: Vec<usize> = (0..32).filter(|&i| use_more_bits(i, 32)).collect();
++    assert_eq!(
++        q6,
++        vec![0, 1, 2, 3, 6, 9, 12, 15, 18, 21, 24, 27, 28, 29, 30, 31]
++    );
++    // its 8 attn_v tensors: Q6 Q6 Q6 Q6 Q4 Q4 Q6 Q4
++    let v: Vec<GgmlType> = (0..8)
++        .map(|r| qwen35_q4km_type("blk.3.attn_v.weight", Some(3), r, 32))
++        .collect();
++    use GgmlType::{Q4K, Q6K};
++    assert_eq!(v, vec![Q6K, Q6K, Q6K, Q6K, Q4K, Q4K, Q6K, Q4K]);
++}
++
++#[test]
++fn q4_k_m_policy_never_passes_embed_through_f32() {
++    assert_eq!(
++        qwen35_q4km_type("token_embd.weight", None, 0, 32),
++        GgmlType::Q6K
++    );
++    assert_eq!(
++        qwen35_q4km_type("blk.0.attn_qkv.weight", Some(0), 0, 32),
++        GgmlType::Q5K
++    );
++    assert_eq!(
++        qwen35_q4km_type("blk.0.ssm_out.weight", Some(0), 0, 32),
++        GgmlType::Q5K
++    );
++    assert_eq!(
++        qwen35_q4km_type("blk.7.ffn_down.weight", Some(7), 0, 32),
++        GgmlType::Q4K
++    );
++    assert_eq!(
++        qwen35_q4km_type("blk.0.attn_gate.weight", Some(0), 0, 32),
++        GgmlType::Q4K
++    );
++}
++
++#[test]
++fn tokenizer_fixup_types_pads_and_ids() {
++    let toks = [
++        "a",
++        "b",
++        "<|endoftext|>",
++        "<|im_end|>",
++        "<think>",
++        "<|pad_5|>",
++    ];
++    let mut md = vec![
++        (
++            "tokenizer.ggml.model".to_string(),
++            GgufValue::String("bpe".into()),
++        ),
++        (
++            "tokenizer.ggml.tokens".to_string(),
++            GgufValue::ArrayString(toks.iter().map(|s| s.to_string()).collect()),
++        ),
++    ];
++    fix_qwen35_tokenizer_metadata(&mut md);
++    let get = |k: &str| md.iter().find(|(n, _)| n == k).map(|(_, v)| v.clone());
++    assert!(matches!(get("tokenizer.ggml.model"), Some(GgufValue::String(s)) if s == "gpt2"));
++    assert!(matches!(get("tokenizer.ggml.pre"), Some(GgufValue::String(s)) if s == "qwen35"));
++    assert!(
++        matches!(get("tokenizer.ggml.token_type"), Some(GgufValue::ArrayInt32(t)) if t == vec![1, 1, 3, 3, 4, 5])
++    );
++    assert!(matches!(
++        get("tokenizer.ggml.eos_token_id"),
++        Some(GgufValue::Uint32(3))
++    ));
++    assert!(matches!(
++        get("tokenizer.ggml.padding_token_id"),
++        Some(GgufValue::Uint32(2))
++    ));
++    assert!(
++        matches!(get("tokenizer.ggml.tokens"), Some(GgufValue::ArrayString(t)) if t[5] == "[PAD5]")
++    );
++}
++
++#[test]
++fn hparams_refuse_a_config_that_disagrees_with_the_tensors() {
++    let mut t = BTreeMap::new();
++    t.insert(
++        format!("{P}layers.0.linear_attn.A_log"),
++        (vec![0.0; 4], vec![4]),
++    );
++    let h: serde_json::Map<String, serde_json::Value> = serde_json::from_str(
++        r#"{"linear_num_key_heads":2,"linear_num_value_heads":8,"linear_key_head_dim":1,
++            "linear_value_head_dim":1,"linear_conv_kernel_dim":4,"full_attention_interval":4}"#,
++    )
++    .expect("json");
++    let base = Qwen35Base {
++        n_layer: Some(4),
++        hidden: Some(8),
++        ffn: Some(8),
++        n_head: Some(2),
++        n_head_kv: Some(1),
++        head_dim: Some(4),
++        ..Default::default()
++    };
++    let err = resolve_qwen35_hparams(&base, &h, &t).expect_err("nv=8 vs A_log len 4");
++    assert!(err.to_string().contains("A_log"), "{err}");
++}
++
++fn hybrid_names() -> Vec<String> {
++    let mut v = Vec::new();
++    for (i, mixer) in [(0, "linear_attn."), (1, "self_attn.")] {
++        for (h, _) in QWEN35_LAYER_NAME_MAP {
++            if h.starts_with(mixer)
++                || !(h.starts_with("linear_attn.") || h.starts_with("self_attn."))
++            {
++                v.push(format!("{P}layers.{i}.{h}"));
++            }
++        }
++    }
++    v
++}
++
++#[test]
++fn hybrid_completeness_accepts_alternating_mixers() {
++    let names = hybrid_names();
++    let refs: Vec<&str> = names.iter().map(String::as_str).collect();
++    enforce_hybrid_layer_completeness(&refs, 2).expect("complete hybrid stack");
++}
++
++#[test]
++fn hybrid_completeness_names_the_missing_tensor() {
++    for drop in [
++        "layers.0.linear_attn.dt_bias",
++        "layers.1.self_attn.k_proj.weight",
++        "layers.1.mlp.down_proj.weight",
++    ] {
++        let names = hybrid_names();
++        let refs: Vec<&str> = names
++            .iter()
++            .map(String::as_str)
++            .filter(|n| !n.ends_with(drop))
++            .collect();
++        let err = enforce_hybrid_layer_completeness(&refs, 2).expect_err(drop);
++        let tail = drop
++            .split_once('.')
++            .and_then(|(_, r)| r.split_once('.'))
++            .map_or(drop, |(_, r)| r);
++        assert!(err.to_string().contains(tail), "{drop}: {err}");
++    }
++    // a declared layer that is absent entirely
++    let names = hybrid_names();
++    let refs: Vec<&str> = names.iter().map(String::as_str).collect();
++    assert!(enforce_hybrid_layer_completeness(&refs, 3).is_err());
++}
++
++fn added(id: usize, content: &str, special: bool) -> AddedToken {
++    AddedToken {
++        id,
++        content: content.to_string(),
++        special,
++    }
++}
++
++#[test]
++fn added_token_holes_are_filled_but_real_tokens_are_not_overwritten() {
++    let toks = ["a", "[PAD1]", "<|im_end|>", "<unk>", "<unk>_1", "<|pad_5|>"]
++        .map(String::from)
++        .to_vec();
++    let mut md = vec![(
++        "tokenizer.ggml.tokens".to_string(),
++        GgufValue::ArrayString(toks),
++    )];
++    let add = [
++        added(1, "<|audio_start|>", true),
++        added(2, "clobber", true),
++        added(3, "<tts_pad>", true),
++        added(4, "<|audio_end|>", true),
++        added(5, "<|audio_pad|>", true),
++        added(9, "x", true),
++    ];
++    fill_added_token_holes(&mut md, &add);
++    let want = [
++        "a",
++        "<|audio_start|>",
++        "<|im_end|>",
++        "<tts_pad>",
++        "<|audio_end|>",
++        "<|audio_pad|>",
++    ];
++    assert!(matches!(&md[0].1, GgufValue::ArrayString(t) if t == &want));
++}
++
++#[test]
++fn added_token_types_follow_the_special_flag() {
++    let toks = ["a", "<|im_end|>", "<tts_pad>", "<think>", "<|fim_pad|>"]
++        .map(String::from)
++        .to_vec();
++    let mut md = vec![(
++        "tokenizer.ggml.tokens".to_string(),
++        GgufValue::ArrayString(toks),
++    )];
++    fix_qwen35_tokenizer_metadata(&mut md);
++    // `<|fim_pad|>` is `special: false` in the config and still CONTROL
++    let add = [
++        added(1, "<|im_end|>", true),
++        added(2, "<tts_pad>", true),
++        added(3, "<think>", false),
++        added(4, "<|fim_pad|>", false),
++    ];
++    apply_added_token_types(&mut md, &add);
++    let ty = md
++        .iter()
++        .find(|(k, _)| k == "tokenizer.ggml.token_type")
++        .map(|(_, v)| v.clone());
++    assert!(
++        matches!(&ty, Some(GgufValue::ArrayInt32(t)) if *t == vec![1, 3, 3, 4, 3]),
++        "{ty:?}"
++    );
++}
+diff --git a/crates/aprender-core/src/format/converter/safe_tensors_load_result.rs b/crates/aprender-core/src/format/converter/safe_tensors_load_result.rs
+index 998367013d..f24f5d89f4 100644
+--- a/crates/aprender-core/src/format/converter/safe_tensors_load_result.rs
++++ b/crates/aprender-core/src/format/converter/safe_tensors_load_result.rs
+@@ -74,6 +74,7 @@ pub(crate) fn infer_model_config_from_tensors(
+         num_experts: None,
+         num_experts_per_tok: None,
+         moe_intermediate_size: None,
++        linear_attn_hparams: None,
+     })
+ }
+ 
+diff --git a/crates/aprender-core/src/format/converter/source_load_result.rs b/crates/aprender-core/src/format/converter/source_load_result.rs
+index 10d08acee4..82e17116dc 100644
+--- a/crates/aprender-core/src/format/converter/source_load_result.rs
++++ b/crates/aprender-core/src/format/converter/source_load_result.rs
+@@ -284,7 +284,8 @@ pub(crate) fn load_model_config_from_json(model_path: &Path) -> Option<GgufModel
+ 
+     let content = fs::read_to_string(&config_path).ok()?;
+     let sanitized = sanitize_hf_json(&content);
+-    let json: serde_json::Value = serde_json::from_str(&sanitized).ok()?;
++    let raw: serde_json::Value = serde_json::from_str(&sanitized).ok()?;
++    let json = merge_text_config(&raw);
+ 
+     // Parse HuggingFace config.json format using alias lookup tables
+     let hidden_size = json_usize_with_aliases(&json, CONFIG_ALIASES_HIDDEN_SIZE);
+@@ -300,7 +301,13 @@ pub(crate) fn load_model_config_from_json(model_path: &Path) -> Option<GgufModel
+ 
+     let max_position_embeddings = json_usize_with_aliases(&json, CONFIG_ALIASES_MAX_POS);
+ 
+-    let rope_theta = json_f64_with_aliases(&json, &["rope_theta"], 10000.0);
++    // Qwen3.5 moved rope_theta under `rope_parameters` (#4418).
++    let rope_theta = json
++        .get("rope_parameters")
++        .and_then(|r| r.get("rope_theta"))
++        .and_then(serde_json::Value::as_f64)
++        .filter(|_| json.get("rope_theta").is_none())
++        .unwrap_or_else(|| json_f64_with_aliases(&json, &["rope_theta"], 10000.0));
+     let rms_norm_eps = json_f64_with_aliases(&json, CONFIG_ALIASES_NORM_EPS, 1e-6);
+ 
+     // MoE + explicit head_dim — these are present in HF config.json but were previously
+@@ -362,9 +369,74 @@ pub(crate) fn load_model_config_from_json(model_path: &Path) -> Option<GgufModel
+         num_experts,
+         num_experts_per_tok,
+         moe_intermediate_size,
++        linear_attn_hparams: linear_attn_hparams_from_config(&json),
+     })
+ }
+ 
++/// Multimodal HF configs (Qwen3.5 `Qwen3_5ForConditionalGeneration`) nest the
++/// language model's dimensions under `text_config`. Merge it in as the base so
++/// the alias lookups see them; top-level keys win, so `model_type` stays the
++/// outer family name (`qwen3_5`). Without this the import recorded no
++/// hidden_size / num_heads at all (#4418).
++fn merge_text_config(raw: &serde_json::Value) -> serde_json::Value {
++    let (Some(top), Some(text)) = (
++        raw.as_object(),
++        raw.get("text_config")
++            .and_then(serde_json::Value::as_object),
++    ) else {
++        return raw.clone();
++    };
++    let mut merged = text.clone();
++    for (k, v) in top {
++        merged.insert(k.clone(), v.clone());
++    }
++    serde_json::Value::Object(merged)
++}
++
++/// Keys of the Qwen3.5 hybrid (Gated DeltaNet + full attention) block that
++/// `GgufModelConfig` does not model. The GGUF exporter needs every one of them
++/// to write `qwen35.ssm.*`, `full_attention_interval` and the rope sections.
++const LINEAR_ATTN_HPARAM_KEYS: &[&str] = &[
++    "linear_conv_kernel_dim",
++    "linear_key_head_dim",
++    "linear_num_key_heads",
++    "linear_num_value_heads",
++    "linear_value_head_dim",
++    "full_attention_interval",
++    "layer_types",
++    "mtp_num_hidden_layers",
++];
++
++/// Collect the hybrid linear-attention hyperparameters, or `None` for a model
++/// that has none (every non-hybrid architecture).
++pub(crate) fn linear_attn_hparams_from_config(
++    json: &serde_json::Value,
++) -> Option<serde_json::Map<String, serde_json::Value>> {
++    json.get("linear_num_value_heads")?;
++    let mut out = serde_json::Map::new();
++    for &k in LINEAR_ATTN_HPARAM_KEYS {
++        if let Some(v) = json.get(k) {
++            out.insert(k.to_string(), v.clone());
++        }
++    }
++    // partial_rotary_factor and mrope_section live under rope_parameters in
++    // Qwen3.5 (older configs put them at the top level or in rope_scaling).
++    for src in ["rope_parameters", "rope_scaling"] {
++        if let Some(r) = json.get(src).and_then(serde_json::Value::as_object) {
++            for k in ["partial_rotary_factor", "mrope_section"] {
++                if let Some(v) = r.get(k) {
++                    out.entry(k.to_string()).or_insert_with(|| v.clone());
++                }
++            }
++        }
++    }
++    if let Some(v) = json.get("partial_rotary_factor") {
++        out.entry("partial_rotary_factor".to_string())
++            .or_insert_with(|| v.clone());
++    }
++    Some(out)
++}
++
+ /// Parse tokenizer from already-loaded JSON content.
+ ///
+ /// Extracted from `load_tokenizer_from_json` for testability. This is the pure
+diff --git a/crates/aprender-core/src/format/converter/write.rs b/crates/aprender-core/src/format/converter/write.rs
+index 431b79c453..5079fa93cf 100644
+--- a/crates/aprender-core/src/format/converter/write.rs
++++ b/crates/aprender-core/src/format/converter/write.rs
+@@ -146,6 +146,20 @@ pub(super) fn insert_f32_tokenizer_metadata(
+     }
+ }
+ 
++/// #4418: carry the hybrid linear-attention hyperparameters (Qwen3.5) into APR
++/// custom metadata so the GGUF exporter can write `qwen35.ssm.*`.
++pub(super) fn insert_linear_attn_hparams(
++    model_config: Option<&GgufModelConfig>,
++    custom: &mut std::collections::HashMap<String, serde_json::Value>,
++) {
++    if let Some(h) = model_config.and_then(|c| c.linear_attn_hparams.as_ref()) {
++        custom.insert(
++            "linear_attn_hparams".to_string(),
++            serde_json::Value::Object(h.clone()),
++        );
++    }
++}
++
+ /// Build the custom metadata map for the F32 tensor import path.
+ ///
+ /// Combines tensor shapes, user metadata, tied-embedding flags, and tokenizer data
+@@ -348,12 +362,13 @@ pub(crate) fn write_apr_file(
+         })
+         .sum();
+ 
+-    let custom = build_f32_custom_metadata(
++    let mut custom = build_f32_custom_metadata(
+         &tensors_with_lm_head,
+         user_metadata,
+         has_tied_embeddings,
+         tokenizer,
+     );
++    insert_linear_attn_hparams(model_config, &mut custom);
+ 
+     // Extract transformer config from model_config (CRITICAL for inference)
+     let metadata = AprV2Metadata {
+diff --git a/crates/aprender-core/src/format/gguf/api.rs b/crates/aprender-core/src/format/gguf/api.rs
+index eba45f1764..158b406bd2 100644
+--- a/crates/aprender-core/src/format/gguf/api.rs
++++ b/crates/aprender-core/src/format/gguf/api.rs
+@@ -116,6 +116,12 @@ pub struct GgufModelConfig {
+     pub num_experts_per_tok: Option<usize>,
+     /// MoE expert intermediate/FFN dimension
+     pub moe_intermediate_size: Option<usize>,
++    /// Hybrid linear-attention hyperparameters (Qwen3.5 Gated DeltaNet) copied
++    /// verbatim from `config.json` (`text_config` merged): `linear_*`,
++    /// `full_attention_interval`, `partial_rotary_factor`, `mrope_section`,
++    /// `mtp_num_hidden_layers`. Stored as APR custom `linear_attn_hparams` so
++    /// `apr export --format gguf` can write the `qwen35.ssm.*` keys (#4418).
++    pub linear_attn_hparams: Option<serde_json::Map<String, serde_json::Value>>,
+ }
+ 
+ impl GgufModelConfig {
+@@ -241,6 +247,7 @@ pub fn load_gguf_with_tokenizer<P: AsRef<Path>>(path: P) -> Result<GgufLoadResul
+         num_experts: None,
+         num_experts_per_tok: None,
+         moe_intermediate_size: None,
++        linear_attn_hparams: None,
+     };
+ 
+     Ok(GgufLoadResult {
+@@ -334,6 +341,7 @@ pub fn load_gguf_raw<P: AsRef<Path>>(path: P) -> Result<GgufRawLoadResult> {
+         num_experts: None,
+         num_experts_per_tok: None,
+         moe_intermediate_size: None,
++        linear_attn_hparams: None,
+     };
+ 
+     // Contract: apr-inspect-metadata-propagation-v1 F-INSPECT-META-001 (paiml/aprender#622).
