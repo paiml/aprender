@@ -145,3 +145,69 @@ fn falsify_lora_target_selection_v1_003_wrong_rank_refuses() {
         assert_eq!(snapshot(&layers), before, "len {len}: no LoRA layer may change");
     }
 }
+
+/// FALSIFY-LORA_TARGET_SELECTION_V1_014 (R15a C8): an adapter that leaves a LoRA
+/// place (slot, A or B) without a tensor refuses the whole load, names each place
+/// it left, and no LoRA layer changes. Before C8 the place kept its fresh init.
+#[test]
+fn falsify_lora_target_selection_v1_014_partial_adapter_refuses_and_changes_nothing() {
+    let (num_layers, fresh) = tiny_layers();
+    let adapter = full_adapter(num_layers, &fresh);
+    let without = |pred: &dyn Fn(&str) -> bool| -> Vec<(String, Vec<f32>)> {
+        adapter.iter().filter(|(n, _)| !pred(n)).cloned().collect()
+    };
+    let cases: [(&str, Vec<(String, Vec<f32>)>, &[&str]); 3] = [
+        (
+            "no v_proj",
+            without(&|n| n.contains(".v_proj.")),
+            &["layers.0.v_proj.lora_A", "layers.0.v_proj.lora_B", "layers.1.v_proj.lora_B"],
+        ),
+        (
+            "no layer 1",
+            without(&|n| n.contains(".layers.1.")),
+            &["layers.1.q_proj.lora_A", "layers.1.v_proj.lora_B"],
+        ),
+        (
+            "one B missing",
+            without(&|n| *n == peft_name(0, "q_proj", "lora_B")),
+            &["layers.0.q_proj.lora_B"],
+        ),
+    ];
+    for (case, weights, places) in cases {
+        let (_, mut layers) = tiny_layers();
+        let before = snapshot(&layers);
+        let Err(err) = InstructPipeline::inject_adapter_weights(
+            &mut layers,
+            &weights,
+            &LoraTargets::default(),
+        ) else {
+            panic!("{case}: a partial adapter must refuse the load");
+        };
+        for place in places {
+            assert!(err.to_string().contains(place), "{case}: the error names {place}: {err}");
+        }
+        assert_eq!(snapshot(&layers), before, "{case}: no LoRA layer may change");
+    }
+}
+
+/// Only the places an adapter leaves are named: one missing B names that B alone,
+/// and an empty adapter names all 2·slots places.
+#[test]
+fn falsify_lora_target_selection_v1_014_names_exactly_the_unfilled_places() {
+    let (num_layers, fresh) = tiny_layers();
+    let mut weights = full_adapter(num_layers, &fresh);
+    weights.retain(|(n, _)| *n != peft_name(1, "v_proj", "lora_B"));
+    let (_, mut layers) = tiny_layers();
+    let err =
+        InstructPipeline::inject_adapter_weights(&mut layers, &weights, &LoraTargets::default())
+            .expect_err("one B missing must refuse");
+    let msg = err.to_string();
+    assert!(msg.contains("1 of 8 LoRA places have no tensor"), "{msg}");
+    assert!(msg.contains("layers.1.v_proj.lora_B"), "{msg}");
+    assert!(!msg.contains("layers.1.v_proj.lora_A"), "a filled place is not named: {msg}");
+    assert!(!msg.contains("fit no LoRA layer"), "no tensor was unplaced: {msg}");
+
+    let err = InstructPipeline::inject_adapter_weights(&mut layers, &[], &LoraTargets::default())
+        .expect_err("an empty adapter must refuse");
+    assert!(err.to_string().contains("8 of 8 LoRA places have no tensor"), "{err}");
+}

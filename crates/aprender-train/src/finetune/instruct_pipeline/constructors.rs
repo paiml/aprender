@@ -470,8 +470,12 @@ impl InstructPipeline {
     /// its slot (a rank mismatch, or bf16/f16 bytes read as f32) refuses the whole load,
     /// and no LoRA layer changes.
     ///
+    /// The adapter must also fill every place, the A and the B of every slot; a place it
+    /// leaves refuses the load too, so no slot keeps its fresh init
+    /// (`FALSIFY-LORA_TARGET_SELECTION_V1_014`).
+    ///
     /// # Errors
-    /// Returns `Error::ConfigError` naming every tensor that could not be placed.
+    /// Returns `Error::ConfigError` naming every tensor that could not be placed. and every place left unfilled.
     fn inject_adapter_weights(
         lora_layers: &mut [LoRALayer],
         weights: &[(String, Vec<f32>)],
@@ -489,15 +493,28 @@ impl InstructPipeline {
                 None => unplaced.push(name),
             }
         }
+        unplaced.sort_unstable();
+        let unfilled = unfilled_places(lora_layers.len(), &placed, targets);
+        let mut parts = Vec::new();
         if !unplaced.is_empty() {
-            unplaced.sort_unstable();
-            return Err(crate::Error::ConfigError(format!(
-                "adapter: {} of {} tensors fit no LoRA layer of this model (targets \
-                 {targets}; wrong projection, layer, rank or dtype, or a repeated slot): {}",
+            parts.push(format!(
+                "{} of {} tensors fit no LoRA layer of this model (targets {targets}; \
+                 wrong projection, layer, rank or dtype, or a repeated slot): {}",
                 unplaced.len(),
                 weights.len(),
                 unplaced.join(", ")
-            )));
+            ));
+        }
+        if !unfilled.is_empty() {
+            parts.push(format!(
+                "{} of {} LoRA places have no tensor, so they would keep their fresh init: {}",
+                unfilled.len(),
+                2 * lora_layers.len(),
+                unfilled.join(", ")
+            ));
+        }
+        if !parts.is_empty() {
+            return Err(crate::Error::ConfigError(format!("adapter: {}", parts.join("; "))));
         }
         for &(idx, is_a, data) in &placed {
             let tensor = Tensor::from_vec(data.to_vec(), true);
@@ -531,6 +548,29 @@ fn adapter_slot(name: &str, targets: &LoraTargets) -> Option<(usize, bool)> {
         _ => return None,
     };
     Some((targets.slot(layer, target)?, is_a))
+}
+
+/// Every LoRA place (slot, A or B) of `num_slots` slots that `placed` leaves without a
+/// tensor, as `layers.{l}.{target}.lora_{A|B}` with l = slot / |T| and target =
+/// T[slot mod |T|] (R15a C8, FALSIFY-LORA_TARGET_SELECTION_V1_014).
+fn unfilled_places(
+    num_slots: usize,
+    placed: &[(usize, bool, &[f32])],
+    targets: &LoraTargets,
+) -> Vec<String> {
+    let per_layer = targets.per_layer().max(1);
+    (0..num_slots)
+        .flat_map(|idx| [(idx, true), (idx, false)])
+        .filter(|&(idx, is_a)| !placed.iter().any(|&(i, a, _)| i == idx && a == is_a))
+        .map(|(idx, is_a)| {
+            let module = targets
+                .as_slice()
+                .get(idx % per_layer)
+                .map_or("?", |t| LoraTarget::module_name(*t));
+            let kind = if is_a { "lora_A" } else { "lora_B" };
+            format!("layers.{}.{module}.{kind}", idx / per_layer)
+        })
+        .collect()
 }
 
 /// Length of the A or B tensor of LoRA slot `idx`, or `None` past the last slot.
