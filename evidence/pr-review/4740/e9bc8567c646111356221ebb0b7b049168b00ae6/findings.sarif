@@ -1,0 +1,125 @@
+{
+  "$schema": "https://docs.oasis-open.org/sarif/sarif/v2.1.0/errata01/os/schemas/sarif-schema-2.1.0.json",
+  "version": "2.1.0",
+  "runs": [
+    {
+      "tool": {
+        "driver": {
+          "name": "pmat"
+        }
+      },
+      "results": [
+        {
+          "ruleId": "guard_table_pass",
+          "level": "note",
+          "message": {
+            "text": "bash scripts/check_quick_tier_shard_sigma.sh at head e9bc8567c6: rc 0, 26 ok rows, 0 FAIL, PASS. The allowlist does not false-RED the real tree."
+          },
+          "properties": {
+            "grounding": "measured",
+            "command": [
+              "bash",
+              "scripts/check_quick_tier_shard_sigma.sh"
+            ],
+            "exit_code": 0,
+            "stdout_sha256": "8255f170153fcb679b42d76e441e091e22f7a2c94d289d8dcc8b09447dd214f6",
+            "failure_scenario": "A false RED on the real tree would block every PR; none observed.",
+            "precision_class": "advisory"
+          }
+        },
+        {
+          "ruleId": "guard_self_test_passes",
+          "level": "note",
+          "message": {
+            "text": "--self-test at head e9bc8567c6: SELF-TEST PASSED, rc 0, 0 FAIL lines (about 2.5 min), including the round-6 allowlist rows (anchor, tag, ?, escape, CRLF, workflow anchor, unrelated-job control)."
+          },
+          "properties": {
+            "grounding": "measured",
+            "command": [
+              "bash",
+              "scripts/check_quick_tier_shard_sigma.sh",
+              "--self-test"
+            ],
+            "exit_code": 0,
+            "stdout_sha256": "81241672747d80d149a23c5818e2f8f33c6eb781f11c0eb183f5217efa533d2f",
+            "failure_scenario": "A planted mutant that did not apply would print FAIL; none did.",
+            "precision_class": "advisory"
+          }
+        },
+        {
+          "ruleId": "round6_spellings_closed",
+          "level": "note",
+          "message": {
+            "text": "The six round-6 survivors (&a key, !!str key, ? key, \"workspace\\x2dtest-shard\", CRLF, anchored key in ci.yml) are each rc 2 now (self-test rows). Also rc!=0 on scratch copies: BOM prefix (rc 1), merge key `<<:` at indent 2 (rc 2), flow mapping on the `jobs:` line (rc 2, loader also errors), appended `---` document (rc 1, loader errors: expected a single document)."
+          },
+          "properties": {
+            "grounding": "measured",
+            "command": [
+              "env",
+              "QUICK_SIGMA_WORKFLOW=<ci.yml + '  <<: {workspace-test-shard: {runs-on: x}}'>",
+              "bash",
+              "scripts/check_quick_tier_shard_sigma.sh"
+            ],
+            "exit_code": 2,
+            "stdout_sha256": "9350d9319f8591cc97d15f26e6fc77a4b6acd4e325a92bd97da4da195d1eba0a",
+            "failure_scenario": "Any of these left at rc 0 would be a second loader-visible key under jobs.",
+            "precision_class": "advisory"
+          }
+        },
+        {
+          "ruleId": "no_gate_loosened",
+          "level": "note",
+          "message": {
+            "text": "Diff 053e41954d..e9bc8567c6 touches only scripts/check_quick_tier_shard_sigma.sh (25 lines) plus the round-6 evidence. The change adds a rejection path (awk exit 4 -> ENV rc 2) and one self-test block; no row, pin, golden entry or exit code is removed or relaxed, and the golden file is unchanged."
+          },
+          "properties": {
+            "grounding": "asserted",
+            "rationale": "Read git diff 053e41954d e9bc8567c6 line by line: every changed script line is an addition except the comment line and END{} which gain `if (bad) exit 4;`.",
+            "failure_scenario": "A loosened gate would let a mutant the previous head killed pass; the self-test still kills every old mutant.",
+            "precision_class": "advisory"
+          }
+        },
+        {
+          "ruleId": "unicode_line_break_hides_duplicate_key",
+          "level": "error",
+          "message": {
+            "text": "A second `workspace-test-shard` (or `workspace-test`) key hidden behind a YAML 1.1 line break the awk does not see as one: appending U+2028 (also U+0085 NEL, U+2029) plus `  workspace-test-shard: {runs-on: shadow}` to the END of an existing comment line inside an unpinned region keeps the file one physical line, so every awk test (allowlist, dk, outside_jobs, block digest) sees only the comment, but PyYAML (the fat driver's yaml.safe_load, scripts/ci/fat_driver.py:346) breaks the comment at the separator and reads a new indent-2 key under jobs. Measured: ci/sections.yml line `  # reuse lookup by check_name ...` (above the pinned workspace-test-shard) + U+2028 + key: guard rc 0, no ENV/FAIL line; PyYAML jobs.workspace-test-shard count = 2 (last wins, runs-on shadow). U+0085 and U+2029 identical. Same in .github/workflows/ci.yml line 348 (comment `# The section body is ci/sections.yml ...`): workspace-test-shard count 2 and workspace-test count 2, guard rc 0 for each."
+          },
+          "properties": {
+            "grounding": "measured",
+            "command": [
+              "env",
+              "QUICK_SIGMA_SECTIONS=<ci/sections.yml with U+2028 + '  workspace-test-shard: {runs-on: shadow}' appended to the comment line '  # reuse lookup by check_name -- is the fan-in job ...'>",
+              "bash",
+              "scripts/check_quick_tier_shard_sigma.sh"
+            ],
+            "exit_code": 0,
+            "stdout_sha256": "8255f170153fcb679b42d76e441e091e22f7a2c94d289d8dcc8b09447dd214f6",
+            "failure_scenario": "A PR hides a second workspace-test-shard (shadow runs-on, no partition) in a comment tail in ci/sections.yml; the guard stays green and the fat driver runs the shadow job, so the quick-tier shard Sigma is not enforced. The allowlist is line-based while the loader's line-break set is wider than LF; fix by rejecting any non-ASCII-printable byte under the parent (or any of U+0085, U+2028, U+2029) as rc 4, or by loading both files with a duplicate-key-rejecting YAML loader.",
+            "precision_class": "blocking"
+          }
+        },
+        {
+          "ruleId": "sections_workspace_test_dup_unpinned",
+          "level": "warning",
+          "message": {
+            "text": "Not pinned by design (control row r6-ctl: an unpinned job stays GREEN): a plain second `  workspace-test:` appended under jobs in ci/sections.yml gives guard rc 0 and PyYAML jobs.workspace-test = 2, because PINNED has no `sections jobs workspace-test` entry and job_block is never called for it. The fan-in job of the fat driver is therefore replaceable in sections.yml while the guard stays green; ci.yml's workspace-test is pinned."
+          },
+          "properties": {
+            "grounding": "measured",
+            "command": [
+              "env",
+              "QUICK_SIGMA_SECTIONS=<ci/sections.yml + '  workspace-test:\\n    runs-on: shadow\\n'>",
+              "bash",
+              "scripts/check_quick_tier_shard_sigma.sh"
+            ],
+            "exit_code": 0,
+            "stdout_sha256": "8255f170153fcb679b42d76e441e091e22f7a2c94d289d8dcc8b09447dd214f6",
+            "failure_scenario": "The sections.yml workspace-test body is replaced by a shadow with the same name; if the fat driver reads it, the fan-in verdict is whatever the shadow says.",
+            "precision_class": "advisory"
+          }
+        }
+      ]
+    }
+  ]
+}
