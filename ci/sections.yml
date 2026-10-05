@@ -1394,6 +1394,7 @@ jobs:
           bash scripts/ci_resolve_dirty.sh --selftest
           python3 scripts/lib/roadmap_merge.py --selftest
           python3 scripts/nightly_manifest.py --self-test   # #4189 nightly gate/manifest/publish plan
+          bash scripts/nightly_prune_release.sh --self-test   # nightly publish overflowed page one (422)
       - name: "target-watch: before-cargo-install-bashrs"
         # aprender#2822 boundary probe (2 stat, 1 readdir, 1 df, 1 pgrep).
         # Instrumentation, never a gate: the script always exits 0.
