@@ -19,7 +19,10 @@
             "grounding": "cited",
             "citation": ".github/workflows/qwen-story-daily.yml:15-27; .github/workflows/release-lanes-nightly.yml:47-150 timeout-minutes; .github/workflows/b2-gpu.yml:59",
             "failure_scenario": "A night where the 23:17Z event dispatches at 03:30Z: the run ends no earlier than 05:15Z in the worst chain, the train reads at 04:45Z, and the three lanes read not_measured that night. Not a wrong verdict, a missing one.",
-            "precision_class": "advisory"
+            "precision_class": "advisory",
+            "source": ".github/workflows/qwen-story-daily.yml:18-20 (#3292: the in-tree measurement of schedule dispatch delay)",
+            "excerpt": "    # SHIFTED so it actually runs at night (#3292). GitHub dispatches\n    # schedule events 3h51m-6h49m late on this account (28 runs, 10\n    # workflows, 3 nights, zero on time), so a 04:17 cron fired mid-",
+            "excerpt_sha256": "729f04b09ae089b3455bf4ca24e0619ce6c1672c4c3f33a08bd3ab8d812060fb"
           }
         },
         {
@@ -32,7 +35,10 @@
             "grounding": "cited",
             "citation": "scripts/release/release_lanes.sh:32,245",
             "failure_scenario": "An operator reading the lane reason on a not_measured night is told to look for a repository secret and does not find the environment one.",
-            "precision_class": "advisory"
+            "precision_class": "advisory",
+            "source": "scripts/release/release_lanes.sh:245 (the no-token not_measured reason)",
+            "excerpt": "[ -n \"${INFRA_TOKEN:-}\" ] || { printf 'not_measured\\tno infra read token: repository secret INFRA_ACTIONS_READ is unset, and paiml/infra is private\\n'; return; }",
+            "excerpt_sha256": "5e9ede8d6ac6a8370eaee2cfcd5a258919864a231191ff820a1e6551591fb38f"
           }
         },
         {
@@ -49,7 +55,8 @@
               "repos/paiml/aprender/environments/infra-read/deployment-branch-policies"
             ],
             "exit_code": 0,
-            "precision_class": "advisory"
+            "precision_class": "advisory",
+            "failure_scenario": "If infra-read allowed any branch, a run from a PR branch could read INFRA_ACTIONS_READ; the measured policy allows main only, so such a run is refused and its lane reads not_measured."
           }
         },
         {
@@ -67,7 +74,8 @@
             ],
             "exit_code": 0,
             "stdout_sha256": "d78d910d82a50d153ca79c2ee32b9082afaa014165e6ee47651233fc26fec53e",
-            "precision_class": "advisory"
+            "precision_class": "advisory",
+            "failure_scenario": "If the delta had changed a job, needs, if:, timeout or run line, a gate could loosen behind a header-only description; the measured diff touches only comments, the cron and one environment: line."
           }
         },
         {
@@ -85,7 +93,8 @@
             ],
             "exit_code": 0,
             "stdout_sha256": "cdcd6de9fc49e51ea95581fb6c32eee315125eac204b55468617a46ffcee3b89",
-            "precision_class": "advisory"
+            "precision_class": "advisory",
+            "failure_scenario": "A judge in release_lanes.sh that a planted mutant leaves green would let a wrong verdict through the case table; all 25 mutants were killed on the head."
           }
         }
       ]
