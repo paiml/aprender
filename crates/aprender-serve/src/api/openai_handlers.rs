@@ -640,13 +640,19 @@ fn build_tool_calling_message(
 
     let defs: Vec<crate::grammar::ToolDefinition> =
         tools.iter().map(super::OpenAiTool::to_grammar).collect();
-    let mut calls = ToolCallParser::new(defs.clone()).parse(&text);
-    if calls.is_empty() {
-        // #4650: Qwen3.5's template instructs `<function=NAME><parameter=P>` XML, which
-        // carries no JSON for the default parser to find.
-        calls = ToolCallParser::new(defs)
+    // #4650: Qwen3.5's template instructs `<function=NAME><parameter=P>` XML. When the
+    // text carries that marker the XML parser goes FIRST: a parameter value may hold
+    // JSON shaped like a tool call, and the default parser would take that inner object
+    // as the call. The XML parser matches nothing without the marker.
+    let mut calls = if text.contains("<function=") {
+        ToolCallParser::new(defs.clone())
             .with_format(crate::grammar::ToolCallFormat::QwenXml)
-            .parse(&text);
+            .parse(&text)
+    } else {
+        Vec::new()
+    };
+    if calls.is_empty() {
+        calls = ToolCallParser::new(defs).parse(&text);
     }
 
     if calls.is_empty() {
@@ -1480,6 +1486,37 @@ mod pmat801_tool_calling_tests {
             args_of(&msg),
             serde_json::json!({"zip": "02134", "days": 3})
         );
+    }
+
+    /// must-RED with JSON parsed first: an XML call whose parameter value is itself a
+    /// JSON tool-call object. The default parser took the inner object as the call and
+    /// the real XML call was lost.
+    #[test]
+    fn qwen35_xml_call_wins_over_json_inside_a_parameter_4650() {
+        let note = OpenAiTool {
+            tool_type: "function".to_string(),
+            function: OpenAiFunctionDef {
+                name: "save_note".to_string(),
+                description: "Save a note".to_string(),
+                parameters: Some(serde_json::json!({
+                    "type": "object",
+                    "properties": { "body": { "type": "string" } },
+                    "required": ["body"],
+                })),
+            },
+        };
+        let tools = vec![weather_tool(), note];
+        let inner = r#"{"name": "get_weather", "arguments": {"city": "NYC"}}"#;
+        let generated = format!(
+            "<tool_call>\n<function=save_note>\n<parameter=body>\n{inner}\n</parameter>\n</function>\n</tool_call>"
+        );
+        let (msg, reason) = build_tool_calling_message(generated, "stop".to_string(), &tools, None);
+        assert_eq!(reason, "tool_calls");
+        assert_eq!(
+            msg.tool_calls.as_ref().expect("calls")[0].function.name,
+            "save_note"
+        );
+        assert_eq!(args_of(&msg), serde_json::json!({"body": inner}));
     }
 
     /// A call to a tool the request never declared is not a tool call.
