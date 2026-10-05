@@ -104,7 +104,7 @@ metadata:
     - 'scripts/check_pr_review_wiring.sh — the sibling guard for the job-level-if / not-path-filtered rule; used here only as the discrimination witness'
     - 'PP-066 §1 F-28 class — the phantom-required-check-deadlock twin: not a check nothing runs, but one whose verdict the subject controls'
     - 'PP-066 DAG row C0-5, epic #2873, issue #2982'
-    - 'scripts/ci_mg_reuse.sh — T43 merge_group reuse key (decide, resolve, 67-row --self-test), Refs #4678'
+    - 'scripts/ci_mg_reuse.sh — T43 merge_group reuse key (decide, resolve, 79-row --self-test), Refs #4678'
   description: >
     A check that judges a pull request's own review receipt, and any check
     the required `gate` job waits on, must be DEFINED BY THE BASE branch — a
