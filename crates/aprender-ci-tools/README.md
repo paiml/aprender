@@ -53,18 +53,21 @@ none of the callers uses these forms:
 
 ## Where `perf041-report` differs (by design, not parity-checked)
 
-A record file the original could read but the port cannot is skipped by the port, as if it
-were not JSON. The port's report then lacks that record; the original's has it, or crashed on it.
+The port reads records as Python's `json` does (`NaN`, `Infinity`, `-Infinity`, `1e400` as
+`inf`, integers beyond 64 bits exactly) and compares and divides them as Python does; parity
+rows cover each. Where the original computes something the port cannot carry, the port
+STOPS with exit 1 and a `not supported: ...` line on stderr, after the lines already printed.
+It never prints a different answer.
 
 | Input | Original | Port |
 |-------|----------|------|
-| `NaN`, `Infinity`, `-Infinity` or a number beyond f64 (`1e400`) in a record | parsed (`1e400` is `inf`) | file skipped |
-| a lone surrogate escape (`"\ud800"`) in a record | parsed | file skipped |
-| JSON nested more than 128 levels | parsed (to Python's recursion limit) | file skipped |
-| an integer beyond 64 bits | exact | read as the nearest f64 |
-| a `c` (number or string) of magnitude 2^127 or more | read exactly by `int()` | a stop, exit 1 |
-| a record file name that is not UTF-8 | listed | not listed |
-| glob metacharacters (`*?[`) in `OUT_DIR` | expanded by `glob` | taken literally |
+| an integer of magnitude 2^127 or more anywhere in a record (a `c` string too) | read exactly | a stop, exit 1 |
+| a lone surrogate escape (`"\ud800"`) in a record | parsed (it fails only if printed) | a stop, exit 1 |
+| JSON nested more than 512 levels | parsed (to Python's recursion limit) | a stop, exit 1 |
+| a median of 3 or more replicates with a `NaN` among them | depends on where the NaN sits in the sort | a stop, exit 1 |
+| two integers beyond 2^53 divided (`int / int`), or `c * agg_tok_s` of 2^127 or more | exact, rounded once | a stop, exit 1 |
+| a record file name that is not UTF-8, printed in a skip line | depends on the locale's stdout error handler | a stop, exit 1 (read and sorted as Python does otherwise: parity row) |
+| glob metacharacters (`*?[`) in `OUT_DIR` | expanded by `glob` | taken literally (unit test `out_dir_is_a_directory_not_a_pattern`) |
 | non-ASCII Unicode digits in a string `c` (`"١"`) | read by `int()` | a stop, exit 1 |
 | `-h` / `--help` | taken as `OUT_DIR` | help, exit 0 |
 | the reason for a stop (stderr) | a Python traceback | one line naming the exception |

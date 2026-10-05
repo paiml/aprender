@@ -33,7 +33,7 @@ set -euo pipefail
 ROOT="$(git rev-parse --show-toplevel)"
 cd "$ROOT" || exit 1
 PY="${PYTHON:-python3}"
-EXPECTED_CASES=149
+EXPECTED_CASES=154
 
 BIN="${CI_TOOLS_BIN:-}"
 if [[ -z "$BIN" ]]; then
@@ -62,20 +62,22 @@ pass=0
 fail=0
 
 # run_side OUT STDIN -- CMD...: stdout to OUT, return the command's status class (0/1).
-run_side() {
-    local out="$1" in="$2"
+run_side() { # OUT IN -- CMD...: stdout to OUT, stderr to OUT.err, prints the exit status
+    local out="$1" in="$2" rc=0
     shift 3
-    if "$@" <"$in" >"$out" 2>/dev/null; then
-        echo 0
-    else
-        echo 1
-    fi
+    "$@" <"$in" >"$out" 2>"$out.err" || rc=$?
+    echo "$rc"
 }
 
-# check NAME STDIN PYCMD... -- RSCMD...
-check() {
-    local name="$1" in="$2"
-    shift 2
+# check NAME STDIN PYCMD... -- RSCMD...: identical stdout, and success vs failure alike.
+# check_exact (same arguments) also wants the exact exit status, and stderr empty on both
+# sides or on neither. Its TEXT is not compared: where the original dies, it prints a
+# traceback and the port one line (each tool's README table records that).
+check() { check_with class "$@"; }
+check_exact() { check_with exact "$@"; }
+check_with() {
+    local mode="$1" name="$2" in="$3"
+    shift 3
     local py=() rs=()
     while [[ "$1" != "--" ]]; do
         py+=("$1")
@@ -83,29 +85,54 @@ check() {
     done
     shift
     rs=("$@")
-    local py_status rs_status
-    py_status="$(run_side "$tmp/py.out" "$in" -- "${py[@]}")"
-    rs_status="$(run_side "$tmp/rs.out" "$in" -- "${rs[@]}")"
-    if [[ "$py_status" == "$rs_status" ]] && cmp -s "$tmp/py.out" "$tmp/rs.out"; then
+    local py_rc rs_rc same=1
+    py_rc="$(run_side "$tmp/py.out" "$in" -- "${py[@]}")"
+    rs_rc="$(run_side "$tmp/rs.out" "$in" -- "${rs[@]}")"
+    cmp -s "$tmp/py.out" "$tmp/rs.out" || same=0
+    if [[ "$mode" == exact ]]; then
+        [[ "$py_rc" == "$rs_rc" ]] || same=0
+        [[ -s "$tmp/py.out.err" ]] && [[ ! -s "$tmp/rs.out.err" ]] && same=0
+        [[ ! -s "$tmp/py.out.err" ]] && [[ -s "$tmp/rs.out.err" ]] && same=0
+    elif [[ "$((py_rc == 0))" != "$((rs_rc == 0))" ]]; then
+        same=0
+    fi
+    if [[ "$same" -eq 1 ]]; then
         pass=$((pass + 1))
     else
         fail=$((fail + 1))
-        echo "MISMATCH: $name (py status $py_status, rust status $rs_status)" >&2
+        echo "MISMATCH: $name (py status $py_rc, rust status $rs_rc)" >&2
         diff <(od -c "$tmp/py.out") <(od -c "$tmp/rs.out") 2>&1 | head -8 >&2 || true
+        echo "  py stderr: $(head -c 200 "$tmp/py.out.err" | tail -n 1)" >&2
+        echo "  rs stderr: $(head -c 200 "$tmp/rs.out.err" | tail -n 1)" >&2
     fi
 }
 
 : >"$tmp/empty"
 
 # --- The harness must see a planted mismatch, or its passes mean nothing. ---------
+# One liar per thing it compares: stdout, success vs failure, and, in check_exact, the
+# exact status and stderr presence. Each must be reported, and the stdout-only twins of
+# the last two must pass under check, or exact mode is not what catches them.
 printf 'a\n' >"$tmp/plant"
-before=$fail
-check "plant" "$tmp/plant" cat -- printf 'b\n' 2>/dev/null
-if [[ "$fail" -ne "$((before + 1))" ]]; then
-    echo "FAIL: the planted mismatch was not reported; the harness is blind" >&2
-    exit 1
-fi
-fail="$before"
+liar() { # EXPECT(pass|fail) CHECKER ARGS...
+    local want="$1" p0=$pass f0=$fail
+    shift
+    "$@" 2>/dev/null
+    if [[ "$want" == fail && "$fail" -ne "$((f0 + 1))" ]] || [[ "$want" == pass && "$pass" -ne "$((p0 + 1))" ]]; then
+        echo "FAIL: planted case '$2' did not $want; the harness is blind" >&2
+        exit 1
+    fi
+    pass=$p0
+    fail=$f0
+}
+liar fail check "plant stdout" "$tmp/plant" cat -- printf 'b\n'
+liar fail check "plant success" "$tmp/plant" cat -- bash -c 'cat; exit 1'
+liar pass check "plant status twin" "$tmp/plant" bash -c 'cat; exit 1' -- bash -c 'cat; exit 2'
+liar fail check_exact "plant status" "$tmp/plant" bash -c 'cat; exit 1' -- bash -c 'cat; exit 2'
+liar pass check "plant stderr twin" "$tmp/plant" cat -- bash -c 'cat; echo x >&2'
+liar fail check_exact "plant stderr" "$tmp/plant" cat -- bash -c 'cat; echo x >&2'
+liar fail check_exact "plant stderr gone" "$tmp/plant" bash -c 'cat; echo x >&2' -- cat
+liar pass check_exact "plant agree" "$tmp/plant" bash -c 'cat; echo x >&2; exit 3' -- bash -c 'cat; echo y >&2; exit 3'
 
 # --- 1. publishable-crates -------------------------------------------------------
 PC_PY=("$PY" scripts/lib/publishable_crates.py)
@@ -492,16 +519,9 @@ band() { # DIR FILE LABEL C LAT AGG TOK_P50 TOK_MIN TOK_MAX
     rec "$1" "$2" "{\"label\": \"$3\", \"c\": $4, \"latency_p50_s\": $5, \"agg_tok_s\": $6, \"tokens_p50\": $7, \"tokens_min\": $8, \"tokens_max\": $9}"
 }
 check_p41() { # NAME ARGS... (the same args go to both sides)
-    local name="$1" prc rrc
+    local name="$1"
     shift
-    "${P41_PY[@]}" "$@" </dev/null >/dev/null 2>&1 && prc=0 || prc=$?
-    "$BIN" perf041-report "$@" </dev/null >/dev/null 2>&1 && rrc=0 || rrc=$?
-    if [[ "$prc" -ne "$rrc" ]]; then
-        fail=$((fail + 1))
-        echo "MISMATCH: perf041-report $name exit code (py $prc, rust $rrc)" >&2
-        return
-    fi
-    check "perf041-report $name (rc $prc)" "$tmp/empty" \
+    check_exact "perf041-report $name" "$tmp/empty" \
         "${P41_PY[@]}" "$@" -- "$BIN" perf041-report "$@"
 }
 # A full sweep: fast c=1,2,4 and forced c=1, two replicates each (even medians).
@@ -589,9 +609,31 @@ cp -r "$p41/full" "$p41/strlat" && band strlat fast-c4-r1.json fast-4 4 '"1.3"' 
 cp -r "$p41/full" "$p41/listtok" && band listtok fast-c2-r1.json fast-2 2 1 1 1 '[1]' 1
 mkdir -p "$p41/isdir/x.json" && band isdir a.json fast-1 1 0.5 10 1 1 1
 band badutf8 a.json fast-1 1 0.5 10 1 1 1 && printf '{"label": "\xff"}\n' >"$p41/badutf8/b.json"
+# Literals json reads: NaN and the infinities in bands of one or two replicates (Python's
+# sort leaves those in place), a float beyond the double range, NaN as a skipped error.
+band nanlit a.json fast-1 1 0.5 40 1 1 1
+band nanlit b.json fast-1 1 NaN Infinity 2 1 NaN
+band nanlit c.json fast-2 2 1e400 -Infinity NaN 2 3
+band nanlit d.json forced-1 1 Infinity 5 1 1 1
+rec nanlit e.json '{"error": [NaN, Infinity, -Infinity]}'
+# Integers beyond 64 bits stay exact: min/max compare an int with a double exactly (the
+# double 2^64 first, the int 2^64+1 wins), c beyond 64 bits as an int and as a str.
+band bigint a.json fast-1 1 0.5 40.5 18446744073709551617 18446744073709551617 18446744073709551616.0
+band bigint b.json fast-1 1 0.5 40.5 18446744073709551618 18446744073709551616 18446744073709551617
+band bigint c.json fast-36893488147419103232 36893488147419103232 1.0 2.5 1 1 170141183460469231731687303715884105727
+band bigint d.json fast-x '"-36893488147419103232"' 1.0 2.5 1 -170141183460469231731687303715884105728 1
+# Only error records: their skip lines, then no band.
+rec erronly a.json '{"error": "x"}'
+rec erronly b.json '{"error": 1e400}'
+# File names that are not UTF-8: read, and sorted as Python's str (\xff is U+DCFF, before
+# U+E000); the first of a tie decides int or float.
+band badname a.json fast-1 1 0.5 40 1 1 1
+band badname $'\xff.json' fast-3 3 1.5 90 3 5 7
+band badname $'\xee\x80\x80.json' fast-3 3 1.6 91 3 5.0 7.0
 
 for d in full noforced nofast1 empty skips ints modes cforms tokint tokflt tokmax fmt nan \
-    z1 z2 z3 z4 notobj strobj noc badc nullc lblint nolat strlat listtok isdir badutf8; do
+    z1 z2 z3 z4 notobj strobj noc badc nullc lblint nolat strlat listtok isdir badutf8 \
+    nanlit bigint erronly badname; do
     check_p41 "$d" "$p41/$d"
 done
 check_p41 "missing dir" "$p41/nope"
@@ -599,7 +641,8 @@ check_p41 "a file, not a dir" "$p41/full/fast-c1-r1.json"
 check_p41 "trailing slash" "$p41/full/"
 check_p41 "extra arguments ignored" "$p41/full" extra --more
 check_p41 "hyphen argument" "-x"
-check "perf041-report empty argument is the cwd" "$tmp/empty" \
+check_p41 "no argument (the default directory)"
+check_exact "perf041-report empty argument is the cwd" "$tmp/empty" \
     env -C "$p41/full" "$PY" "$ROOT/scripts/perf041_report.py" "" -- \
     env -C "$p41/full" "$BIN" perf041-report ""
 

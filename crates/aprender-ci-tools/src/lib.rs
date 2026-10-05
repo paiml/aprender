@@ -9,6 +9,7 @@ pub mod git_patch_id;
 pub mod package_include_diff;
 pub mod perf041_report;
 pub mod publishable_crates;
+pub mod pyjson;
 pub mod pystr;
 pub mod tarball_build_errors;
 pub mod tarball_shrink_report;

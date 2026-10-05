@@ -138,8 +138,11 @@ fn py_repr_value(v: &Py) -> String {
 }
 
 /// `repr(float)`: shortest round-trip digits, exponent form outside `1e-4 <= |f| < 1e16`
-/// with a signed, at-least-two-digit exponent (`1e+16`, `1e-05`).
+/// with a signed, at-least-two-digit exponent (`1e+16`, `1e-05`); `nan`, `inf`, `-inf`.
 fn py_float_repr(f: f64) -> String {
+    if f.is_nan() {
+        return "nan".to_owned();
+    }
     let s = format!("{f:?}");
     let Some((mant, exp)) = s.split_once('e') else {
         return s;

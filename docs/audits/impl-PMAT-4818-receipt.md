@@ -33,12 +33,44 @@ Found while writing the divergence table: a `c` of magnitude 2^127 or more was r
 saturating `as`, so it landed in a wrong band. It is now a stop (exit 1). Test:
 `c_beyond_i128_stops_instead_of_saturating`. Python reads it exactly; the README lists this.
 
-Known divergences, all in crates/aprender-ci-tools/README.md ("Where `perf041-report` differs"):
-NaN/Infinity/1e400 literals, lone surrogates and JSON nested past 128 levels (file skipped by the
-port); integers beyond 64 bits (nearest f64); `c` at or beyond 2^127 (a stop); non-UTF-8 file names
-(not listed); glob metacharacters in OUT_DIR (literal); non-ASCII digits in a string `c` (a stop);
-`-h`/`--help` (help); stop reasons on stderr (one line, not a traceback). No parity case covers them,
-by design: each would fail parity.
+Known divergences, all in crates/aprender-ci-tools/README.md ("Where `perf041-report` differs").
+Superseded by review round 2 below: the port now reads what Python's json reads.
+
+## Review round 2 (independent read-review)
+
+Divergences found: NaN/Infinity literals (file skipped by the port, read by Python), glob
+metacharacters in OUT_DIR, and integers beyond u64 (nearest f64). Each is now fixed or a stop:
+- New `pyjson.rs`: Python's `json.loads` (strict): `NaN`, `Infinity`, `-Infinity`, `1e400` as
+  `inf`, integers exact to i128, last value of a duplicate key, Python's whitespace only. What a
+  `Py` cannot carry (an integer of magnitude 2^127 or more, a lone surrogate escape, nesting past
+  512) is `LoadError::Unsupported`, and the report STOPS (exit 1, `not supported: ...`) instead of
+  skipping a file Python reads.
+- Numbers stay `int` or `float` as in Python: int/float comparisons are exact (`Num::lt`), the
+  median of an even count sums two ints exactly, the median keeps Python's stable order for ties,
+  `nan`/`inf` print as Python prints them. Where Python's result depends on where a NaN lands in
+  its sort (3 or more replicates) or needs exact big-int arithmetic (int/int beyond 2^53, a product
+  of 2^127 or more), the port stops.
+- File names: listed by bytes, sorted as Python's surrogateescape str; a non-UTF-8 name is read.
+  Printing one in a skip line stops (Python's outcome depends on the locale's error handler).
+- OUT_DIR is a directory, never a glob pattern: recorded in the README, unit test
+  `out_dir_is_a_directory_not_a_pattern`.
+- Harness section 6 compares exact exit status and stderr presence (`check_exact`). New rows:
+  nanlit, bigint, erronly, badname, and no argument. Parity 154/154 against python 3.13. Against
+  the previous commit's binary the new harness is RED, 150/154 (nanlit, bigint, erronly, badname).
+- cargo test -p aprender-ci-tools --lib: 64 passed. clippy -D warnings and fmt clean. ZeroDivisionError text
+  now follows Python (`division by zero` for int/int, `float division by zero` otherwise).
+- cargo-mutants 27.1.0, -f perf041_report.rs -f pyjson.rs: 290 tested, 267 caught, 12 unviable,
+  6 timeouts (each an index step that never advances: the tests hang, so the mutant is detected),
+  5 missed. One was a real gap (object depth `>` to `>=`): a test now parses objects nested exactly
+  512 deep, and a targeted re-run of `object`/`array` caught all 15 viable mutants. The other four
+  are equivalent: `Num::lt` int/int `<` to `<=` and `int_half_sum`'s `x < 0` to `<=` (equal ints are
+  identical values, and the overflow branch needs both nonzero), and `digits`' `-` to `+` (an
+  exponent with no digits is a decode error whether or not the position is reset).
+- pmat complexity (pre-commit hook ON): the first commit attempt was refused (pyjson `object`
+  cognitive 29); the member loop shared by arrays and objects, the escape, the `"key": value`
+  member and the fraction/exponent are now their own functions (max cognitive 17). Re-measured on
+  that code: lib tests 64 passed, parity 154/154, cargo-mutants -f pyjson.rs 126 tested, 111
+  caught, 7 unviable, 7 timeouts, 1 missed (the equivalent `digits` mutant above).
 
 ## Planted contrary question (reviewers MUST answer, with file:line)
 Claim: "`band_c` converts a float `c` with `f.trunc() as i128` and no bound, so a record with
