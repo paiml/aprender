@@ -33,6 +33,28 @@ changes what a gate accepts, stricter included, needs the operator's sign-off.
 - Ontology extract: the example walk no longer admits packages under a non-workspace root, so the extract is byte-identical run to run (#4773).
 - 0.70.1 merge-back: the publish preflight now handles a recorded emergency scope. When the ladder contract records a scope for the release being published, the release-readiness verdict is printed as evidence rather than gating, and a bare preflight engages that recorded scope (#4776).
 
+### Checks loosened or moved, and what happens to each
+
+Each check is listed by name. Each one is fixed on its own branch, reclassified with a measurement, or covered by a recorded operator ruling. Every fix branch passes its own self-test plus mutants and gets two independent reviews against a planted defect. Each one waits for the operator's sign-off.
+
+From the 0.70.0 fold (#4655) and the PRs merged before 0.70.1:
+
+- `check_facade_compat.sh`: six crates were still pinned at 0.69.4 under a 0.70.x facade. **Fixed** on `fix/facade-scoped-ver-strict`.
+- `autopilot.sh` `cut_tag`: open items that are not must-carry were moved to the next milestone before the strict gate ran. **Fixed** on `fix/autopilot-carry-strict`.
+- `release-readiness-v1.yaml` `allow_empty` (zero refusal cells passes): **Reclassified, not looser.** With zero refusal cells, every cell is still graded by the stricter cell shape and cell vacuity still refuses. Removing the exemption would refuse every release whose cells all fit.
+- `check_fleet_pv_shapes_advisory.sh`: a pinned `pv` exit 3 on a shape key this tree parses read as UNMEASURED with no end date. **Fixed** on `fix/pv-shapes-advisory-strict`. The exemption now holds only while the pinned `pv` sorts strictly below the workspace version. An equal or newer pin, or an unreadable tree version, is RED. The blocking twin, `contracts_gate.sh shapes`, was always fail-closed.
+- `check_dogfood_matrix_is_visited.sh` / `NA_HOSTS`: a visited host was declared absent on a recommendation that was still pending a ruling, so no receipt was demanded. **Fixed** on its own branch with a new rule, R5: a declared absence whose decider is pending, a recommendation, proposed or TBD is RED. The tree stays RED until that host is ruled absent or joins the matrix.
+- `binding-allowlist.json` (163 entries exempt from PV-ONT-028): **Covered** by operator ruling L31 (2026-10-01): a new blocking gate is adopted with a measured, shrink-only baseline. The gate and its allowlist were born together, and PV-ONT-029 enforces shrink-only. The list has 163 entries, unchanged since then, with 0 ghosts.
+- 16 bindings `implemented` → `not_implemented`: **Reclassified, not looser.** Restoring all 16 makes the bindings gate report 16 ghosts and resolve nothing new, so every one of those claims was false.
+- `check_pr_review_arm4.sh` (#4618), signature from an earlier check-run attempt: **Narrowed** on `fix/pr-review-arm4-strict`. Reverting would bring back the measured attempt race. Now the newest attempt that names the signer decides, and only an attempt that says nothing about it falls through.
+- PR-review signature moved from a committed `.minisig` to a check run on the head sha (#4512): **Covered** by the operator's recorded review plan. The move keeps the pr, head and pid binding.
+- `check_ont_ratchet.sh` `measured_set_lines` (#4427): a `pv lint` failure of any kind fed its sets to `--write`. **Fixed** on `fix/ont-restamp-strict`. Only a measured pass (0) or reject (1) is read. A decline, malformed output or panic is a NO-GO.
+- `nightly.yml` artifact download `continue-on-error` (#4427): **Reclassified, not looser.** A missing fragment is merged as red (`no-fragment`), and the train ends build-failed with exit 1.
+- Mutants gate made report-only with a shrink-only debt baseline (#4647), and its rules placed after `exit 0`: **Covered** by operator rulings L31 and C188.
+- `check_multiplatform_dogfood.sh` 0.69.1 report-only rows and the 0.63–0.65.2 receipt grandfather: **Gone in effect.** Neither matches a 0.70.x release.
+
+In 0.70.2 itself, every PR in the Gate list above that changes what a gate accepts is on the operator's sign-off list. These are the result reuse in #4753 and #4763, the runner move in #4730 and #4755, the report-only nightly checks in #4731, the version-only coverage bump in #4738, and the emergency-scope evidence path in #4776.
+
 ### Code
 
 - Serve: KV caches no longer commit every byte at construction. This re-enables the three StreamingKVCache memory-bound tests, which #4771 had ignored after they ran out of memory on a 30 GB runner (#4771, #4778).
