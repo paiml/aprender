@@ -6,7 +6,7 @@ CI helpers ported from `scripts/**/*.py` to Rust (C301: no Python in the build).
 | Subcommand | Ported from |
 |------------|-------------|
 | `publishable-crates` (reads `cargo metadata` JSON on stdin) | `scripts/lib/publishable_crates.py` |
-| `package-include-diff <LISTING> <INCLUDES>` | `scripts/lib/package_include_diff.py` |
+| `package-include-diff <LISTING> <INCLUDES>` | `scripts/lib/package_include_diff.py` (deleted; caller `scripts/check_package_includes.sh` switched) |
 | `coverage-report-scope [--exclude NAME]...` | `scripts/coverage_report_scope.py` |
 | `tarball-workspace DIR` · `--name DIR` · `--target-dir` (reads `cargo metadata` JSON on stdin) | `scripts/lib/tarball_workspace.py` (deleted; the parity test reads it from git) |
 
