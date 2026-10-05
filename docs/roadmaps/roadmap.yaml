@@ -24119,3 +24119,22 @@ Not done, pending the ruling: moving the 31 fixture files to an obviously synthe
   labels:
   - kind:code
   notes: 'Cause: vec![vec![0; n]; layers] clones layer 0 into every layer, writing every byte, so construction commits 8.6 / 17.2 / 34.4 GB; nextest KILLed the tests on a 30 GB runner (run 37241931271, workspace-test shard 1).'
+- id: PMAT-4783
+  github_issue: 4783
+  item_type: task
+  title: 'inference::KVCache and OptimizedKVCache commit the whole cache at construction (cloned-layer form, follow-up to #4769)'
+  status: inprogress
+  priority: medium
+  assigned_to: aprender-wmainred
+  created: 2026-10-05T00:00:00Z
+  updated: 2026-10-05T00:00:00Z
+  spec: null
+  acceptance_criteria:
+  - 'KVCache::new and OptimizedKVCache::new in inference/kv_cache.rs allocate each layer as its own zeroed buffer, in the #4778 form'
+  - 'FALSIFY-KV-005 covers both constructors: a 1 GiB, 8-layer cache grows RSS by < 64 MiB, and reverting either constructor to the cloned form turns it RED'
+  phases: []
+  subtasks: []
+  estimated_effort: null
+  labels:
+  - kind:code
+  notes: 'Found by the independent review of #4778: the same vec![vec![0; n]; layers] form at kv_cache.rs:61-62 and 255-256. No current test is OOM-killed by it.'

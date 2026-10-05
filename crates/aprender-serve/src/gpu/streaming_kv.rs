@@ -512,7 +512,7 @@ mod kv_contract_tests {
             .expect("three runs")
     }
 
-    /// FALSIFY-KV-005 (#4769): constructing a 1 GiB, 8-layer cache commits < 64 MiB.
+    /// FALSIFY-KV-005 (#4769, #4783): constructing a 1 GiB, 8-layer cache commits < 64 MiB.
     ///
     /// `vec![vec![0; n]; layers]` clones layer 0 into the other layers and a clone writes every
     /// byte, so the old constructors grew RSS by 7/8 of the cache (896 MiB) before a token was
@@ -524,10 +524,15 @@ mod kv_contract_tests {
         let f32_cache = rss_growth_kib(|| StreamingKVCache::new(8, 4096, 32, 128));
         let f16_cache = rss_growth_kib(|| StreamingKVCacheFp16::new(8, 8192, 32, 128));
         let layers_cache = rss_growth_kib(|| crate::layers::KVCache::new(8, 131_072, 128));
+        let inference_cache = rss_growth_kib(|| crate::inference::KVCache::new(8, 128, 131_072));
+        let optimized_cache =
+            rss_growth_kib(|| crate::inference::OptimizedKVCache::new(8, 128, 131_072));
         for (name, grown) in [
             ("StreamingKVCache", f32_cache),
             ("StreamingKVCacheFp16", f16_cache),
             ("layers::KVCache", layers_cache),
+            ("inference::KVCache", inference_cache),
+            ("inference::OptimizedKVCache", optimized_cache),
         ] {
             assert!(
                 grown < LIMIT_KIB,

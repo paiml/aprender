@@ -58,8 +58,15 @@ impl KVCache {
     /// * `max_seq_len` - Maximum sequence length to cache
     #[must_use]
     pub fn new(num_layers: usize, hidden_dim: usize, max_seq_len: usize) -> Self {
-        let k_cache = vec![vec![0.0; max_seq_len * hidden_dim]; num_layers];
-        let v_cache = vec![vec![0.0; max_seq_len * hidden_dim]; num_layers];
+        // One zeroed allocation per layer: `vec![vec![0.0; n]; layers]` clones layer 0 and a clone
+        // writes every byte, committing the whole cache at construction (#4769).
+        let zeroed = || {
+            (0..num_layers)
+                .map(|_| vec![0.0; max_seq_len * hidden_dim])
+                .collect::<Vec<_>>()
+        };
+        let k_cache = zeroed();
+        let v_cache = zeroed();
         Self {
             k_cache,
             v_cache,
@@ -252,8 +259,14 @@ impl OptimizedKVCache {
     /// Create a new optimized KV cache
     #[must_use]
     pub fn new(num_layers: usize, hidden_dim: usize, max_seq_len: usize) -> Self {
-        let k_cache = vec![vec![0.0; max_seq_len * hidden_dim]; num_layers];
-        let v_cache = vec![vec![0.0; hidden_dim * max_seq_len]; num_layers];
+        // One zeroed allocation per layer, as in `KVCache::new`: a cloned layer commits every byte.
+        let zeroed = || {
+            (0..num_layers)
+                .map(|_| vec![0.0; max_seq_len * hidden_dim])
+                .collect::<Vec<_>>()
+        };
+        let k_cache = zeroed();
+        let v_cache = zeroed();
         Self {
             k_cache,
             v_cache,
