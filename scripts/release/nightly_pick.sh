@@ -116,6 +116,8 @@ self_test() {
     # a multi-line argument: one well-formed line must not carry another past the check (grep -x matches per line)
     row multiline_night_is_a_caller_error 3 "not YYYY-MM-DD" "PICKED" -- bash "$SCRIPT_PATH" pick --repo "$W" --night "2026-10-09"$'\n'"x" --sha "$c1"
     row multiline_sha_is_a_caller_error 3 "not 40 hex" "PICKED" -- bash "$SCRIPT_PATH" pick --repo "$W" --night 2026-10-09 --sha "$c1"$'\n'"x"
+    row trailing_newline_night_is_a_caller_error 3 "not YYYY-MM-DD" "PICKED" -- bash "$SCRIPT_PATH" pick --repo "$W" --night "2026-10-09"$'\n' --sha "$c1"
+    row trailing_newline_sha_is_a_caller_error 3 "not 40 hex" "PICKED" -- bash "$SCRIPT_PATH" pick --repo "$W" --night 2026-10-09 --sha "$c1"$'\n'
     row pick_without_sha_is_a_caller_error 3 "caller error" "PICKED" -- bash "$SCRIPT_PATH" pick --repo "$W" --night 2026-10-09
     row unknown_command_is_a_caller_error 3 "caller error" "" -- bash "$SCRIPT_PATH" repick
     rm -rf -- "${FX:?}"
@@ -136,11 +138,11 @@ m08_bad_night_accepted	s/\[\[ \$1 =~ .*\$ \]\] || {/true || {/
 m09_bad_sha_accepted	s/\[\[ \$2 =~ .*\$ \]\] || {/true || {/
 m10_race_loser_claims_picked	s/printf .C=%s KEPT night %s (another pick won the race)\\n. "\$c" "\$3"/printf '"'"'C=%s PICKED night %s\\n'"'"' "$c" "$3"/
 m11_plain_push_fast_forwards	s/ --force-with-lease="refs\/heads\/nightly\/\$3:"//
-m15_night_checked_per_line	s/\[\[ \$1 =~ \(.*\) \]\] ||/printf "%s\\n" "$1" | grep -qxE "\1" ||/
-m16_sha_checked_per_line	s/\[\[ \$2 =~ \(.*\) \]\] ||/printf "%s\\n" "$2" | grep -qxE "\1" ||/
 m12_unknown_commit_is_red	/cannot tell whether/s/return 2 ;;/return 1 ;;/
 m13_ref_name_matched_by_tail	s/NF && \$2 != r { found = 1 }/NF \&\& 0 { found = 1 }/
-m14_read_widened_to_the_rolling_tag	s/ls-remote --refs "\$2" "refs\/heads\/nightly\/\$3"/ls-remote --refs "\$2" "nightly"/'
+m14_read_widened_to_the_rolling_tag	s/ls-remote --refs "\$2" "refs\/heads\/nightly\/\$3"/ls-remote --refs "\$2" "nightly"/
+m15_night_checked_per_line	s/\[\[ \$1 =~ \(.*\) \]\] ||/printf "%s\\n" "$1" | grep -qxE "\1" ||/
+m16_sha_checked_per_line	s/\[\[ \$2 =~ \(.*\) \]\] ||/printf "%s\\n" "$2" | grep -qxE "\1" ||/'
 mutants() {
     local tmp name expr killed=0 total=0 errors=0 out
     tmp="$(mktemp -d "${TMPDIR:-/tmp}/np-mu.XXXXXX")" || caller_error "no temp dir"
