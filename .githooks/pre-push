@@ -1,6 +1,13 @@
-#!/bin/sh
-# Aprender Pre-Push Hook (SF-10, JA-08, JA-09, JA-10)
+#!/usr/bin/env bash
+# Aprender Pre-Push Hook (SF-10, JA-08, JA-09, JA-10, BLD-001 K1)
 # Install: git config core.hooksPath .githooks
+#
+# THE SHEBANG IS LOAD-BEARING, exactly as in .githooks/pre-commit (B4, #3047).
+# This file said `#!/bin/sh` until #4791 while running `set -euo pipefail`. On
+# dash (Ubuntu's /bin/sh, this fleet's) that line exits 2, so an installed hook
+# refused EVERY push before running a check. pre-commit was fixed; this file was
+# not. scripts/check_prepush_hook.sh now executes this file through its own
+# shebang in CI, so the defect cannot come back unseen.
 set -euo pipefail
 
 echo "── SF-10: Supply Chain Security ──"
@@ -27,6 +34,40 @@ rc=0; bash scripts/ci_guards.sh --check-coverage || rc=$?
 [ "$rc" -eq 0 ] || echo "WARN: guard drift check could not run (rc=$rc)"
 if [ "${APR_PREPUSH_GUARDS:-0}" = 1 ]; then
     bash scripts/ci_guards.sh || exit 1
+fi
+
+echo "── BLD-001 K1 (#4791): merge prediction (scripts/predict_merge.sh --check) ──"
+# `make predict` builds merge(origin/main, HEAD) in a throwaway worktree and runs
+# the cargo-free guard universe and the touched-crate plan on THAT tree, the one
+# CI builds. Its --check replays the recorded verdict in seconds and refuses a
+# stale one. Fail-closed: a stale or missing record (3), a fetch failure (4,
+# not_measured) and a recorded FAIL (1) all refuse the push.
+#
+# The record is about HEAD, so a pushed branch ref must be HEAD. Deletions and
+# tags are not merged into main and are not predicted. git feeds the refs on
+# stdin: <local ref> <local sha> <remote ref> <remote sha>.
+zero=0000000000000000000000000000000000000000
+head_sha="$(git rev-parse HEAD)"
+need_predict=0
+while read -r local_ref local_sha _remote_ref _remote_sha; do
+    [ -n "${local_ref:-}" ] || continue
+    [ "$local_sha" = "$zero" ] && continue
+    case "$local_ref" in refs/tags/*) continue ;; esac
+    if [ "$local_sha" != "$head_sha" ]; then
+        echo "REFUSED: pushing $local_ref ($local_sha), but HEAD is $head_sha." >&2
+        echo "  The merge prediction covers HEAD only; check out that branch and push from it." >&2
+        exit 1
+    fi
+    need_predict=1
+done
+if [ "$need_predict" = 1 ]; then
+    rc=0; bash scripts/predict_merge.sh --check || rc=$?
+    case "$rc" in
+        0) echo "predict-check: fresh PASS for HEAD on current origin/main" ;;
+        3) echo "REFUSED: no fresh merge prediction for HEAD. Run: make predict" >&2; exit 1 ;;
+        4) echo "REFUSED: git fetch origin main failed; the prediction is not_measured. Retry when the network is back." >&2; exit 1 ;;
+        *) echo "REFUSED: the recorded merge prediction is not a PASS (rc=$rc). Fix it, then: make predict" >&2; exit 1 ;;
+    esac
 fi
 
 echo "✅ Pre-push passed"
