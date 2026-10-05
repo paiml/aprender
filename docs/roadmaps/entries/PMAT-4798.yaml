@@ -1,0 +1,20 @@
+- id: PMAT-4798
+  github_issue: 4798
+  item_type: task
+  title: 'nightly_train: judge the newest commit all verdict producers share, not main''s head'
+  status: inprogress
+  priority: high
+  assigned_to: aprender-w4798
+  created: 2026-10-05T14:47:26Z
+  updated: 2026-10-05T14:47:26Z
+  spec: null
+  acceptance_criteria:
+  - 'The nightly judge judges the newest commit, at most 6 behind main''s head, on which every verdict lane has a measured run; none = the head (not_measured); lag printed (judged, head, lag k commits)'
+  - 'Self-test and mutants pin it; the release path is unchanged'
+  phases: []
+  subtasks: []
+  estimated_effort: null
+  labels:
+  - kind:code
+  notes: 'Landing waits on Q5 shared (operator, via the cop).'
+  epic: 4678

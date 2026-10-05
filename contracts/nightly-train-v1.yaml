@@ -2,7 +2,7 @@ metadata:
   version: 1.0.0
   created: '2026-10-04'
   author: PAIML Engineering
-  description: "BLD-002 row R4, the nightly evidence train: one entry point judges main's head C from the results its lanes' nightly producers recorded for C (a producer chained from the nightly pick is read by its workflow_run runs only, and only when the pick of the night the run was created in, and of the night before for a run created 12:00Z-17:59Z, is C), and prints one line, RELEASABLE H=<C> or NOT RELEASABLE: <lane>, <run>. scripts/release/nightly_train.sh is the judge. A lane that cannot be read prints not_measured, never pass. Report-only: it blocks nothing and no release script reads it."
+  description: "BLD-002 row R4, the nightly evidence train: one entry point judges one commit J of main from the results its lanes' nightly producers recorded for J (a plain producer by the run on J; a producer chained from the nightly pick by its workflow_run runs only, and only when the pick of the night the run was created in, and of the night before for a run created 12:00Z-17:59Z, is J), and prints one line, RELEASABLE H=<J> or NOT RELEASABLE: <lane>, <run>. scripts/release/nightly_train.sh is the judge. A lane that cannot be read prints not_measured, never pass. J is the head C unless the head lacks a measured run from some verdict producer; then J is the newest commit at most 6 behind C on which every verdict producer has a green or red run, and the line adds (judged J, head C, lag k commits); none such means J = C. A night with no pick ref is not_measured for a chained lane; a pick read that failed is not_measured for every lane and never falls back to that. Report-only: it blocks nothing and no release script reads it."
   kind: pattern
   references:
     - "scripts/release/nightly_train.sh — the judge, its case table (--self-test) and its planted mutants (--mutants)"
@@ -21,17 +21,17 @@ five_whys:
 
 equations:
   lane_state:
-    formula: "state(lane, C) = not_measured if the lane has no producer, the read failed, no run of the producer on main is for C, the newest such run is unfinished, no matched job ran, or its attempt is unread; red if any matched job (every leg of a repeated name votes) ended failure, timed_out or startup_failure, or the run succeeded only at attempt 2 or later; else green"
-    domain: "one lane of the constant lane table, and the producer runs read for main's head C"
+    formula: "state(lane, J) = not_measured if the lane has no producer, the read failed, no run of the producer on main is for J, the newest such run is unfinished, no matched job ran, or its attempt is unread; red if any matched job (every leg of a repeated name votes) ended failure, timed_out or startup_failure, or the run succeeded only at attempt 2 or later; else green"
+    domain: "one lane of the constant lane table, and the producer runs read for the judged commit J, the one commit every lane is judged on, at most 6 commits behind main's head C"
     codomain: "{green, red, not_measured} for each lane"
     invariants:
-      - "a run on another commit never stands for C"
+      - "a run on another commit never stands for J; all lanes are judged on the one J, never a per-lane mix"
       - "an unfinished run, an unread attempt or a failed read is not_measured, never green"
       - "a retried success is red: a retried green is not a green"
       - "a run whose matched jobs were skipped, cancelled or neutral, or fewer than the lane requires, measured nothing, and the next older run for C is taken; only the matched jobs decide, the run's own conclusion is not read"
 
   verdict_line:
-    formula: "RELEASABLE H=C iff every verdict lane is green; else NOT RELEASABLE: L, R where L is the first failing verdict lane, red before not_measured, then by hours lost, then table order, and R its run id or not_measured"
+    formula: "RELEASABLE H=J iff every verdict lane is green; else NOT RELEASABLE: L, R where L is the first failing verdict lane, red before not_measured, then by hours lost, then table order, and R its run id or not_measured"
     domain: "lane_state over the constant lane table; info lanes are read and reported but never enter the verdict"
     codomain: "exactly one line on stdout per run"
     invariants:
@@ -43,18 +43,18 @@ equations:
 proof_obligations:
   - id: NT-INV-001
     type: invariant
-    property: "RELEASABLE only when every verdict lane is green on C"
-    formal: "line = RELEASABLE(C) ⇒ ∀ l ∈ verdict: state(l, C) = green"
+    property: "RELEASABLE only when every verdict lane is green on J"
+    formal: "line = RELEASABLE(J) ⇒ ∀ l ∈ verdict: state(l, J) = green"
     applies_to: verdict_line
   - id: NT-INV-002
     type: invariant
     property: "A lane that cannot be read is never green"
-    formal: "∀ l: read_failed ∨ no_run(l, C) ∨ unfinished(l, C) ∨ attempt_unread(l, C) ∨ job_list_truncated(l, C) ∨ rollup_truncated(C) ∨ no_producer(l) ⇒ state(l, C) = not_measured"
+    formal: "∀ l: read_failed ∨ no_run(l, J) ∨ unfinished(l, J) ∨ attempt_unread(l, J) ∨ job_list_truncated(l, J) ∨ rollup_truncated(J) ∨ no_producer(l) ⇒ state(l, J) = not_measured"
     applies_to: lane_state
   - id: NT-INV-003
     type: invariant
     property: "A retried success is red"
-    formal: "∀ l: success(run(l, C)) ∧ attempt(run(l, C)) ≥ 2 ⇒ state(l, C) = red"
+    formal: "∀ l: success(run(l, J)) ∧ attempt(run(l, J)) ≥ 2 ⇒ state(l, J) = red"
     applies_to: lane_state
   - id: NT-INV-004
     type: invariant
@@ -68,8 +68,8 @@ proof_obligations:
     applies_to: verdict_line
   - id: NT-INV-006
     type: invariant
-    property: "A void run is never the evidence; the next older run on C is read instead. Void is decided by the matched jobs only"
-    formal: "∀ r: (matched_jobs(r) = ∅ ∨ (¬failed(r) ∧ ∃ j ∈ matched_jobs(r): conclusion(j) ∈ {skipped, cancelled, neutral}) ∨ (¬failed(r) ∧ |distinct_jobs(r)| < need(l))) ⇒ pick(l, C) ≠ r"
+    property: "A void run is never the evidence; the next older run on J is read instead. Void is decided by the matched jobs only"
+    formal: "∀ r: (matched_jobs(r) = ∅ ∨ (¬failed(r) ∧ ∃ j ∈ matched_jobs(r): conclusion(j) ∈ {skipped, cancelled, neutral}) ∨ (¬failed(r) ∧ |distinct_jobs(r)| < need(l))) ⇒ pick(l, J) ≠ r"
     applies_to: lane_state
   - id: NT-INV-007
     type: invariant
@@ -114,13 +114,13 @@ proof_obligations:
   - id: NT-INV-015
     type: invariant
     property: "Under --exit-verdict exit 0 means RELEASABLE and every NOT RELEASABLE exits non-zero; a RELEASABLE run still exits non-zero when a later step fails (inbox read-back, NT-INV-013); without the flag the status says only whether the train ran"
-    formal: "exit_verdict(run) ⇒ (exit(run) = 0 ⇒ line(run) = RELEASABLE(C)) ∧ (line(run) ≠ RELEASABLE(C) ⇒ exit(run) ≠ 0)"
+    formal: "exit_verdict(run) ⇒ (exit(run) = 0 ⇒ line(run) = RELEASABLE(J)) ∧ (line(run) ≠ RELEASABLE(J) ⇒ exit(run) ≠ 0)"
     applies_to: verdict_line
 
 falsification_tests:
   - id: FALSIFY-NT-001
     rule: "The judge is right on every row of its case table"
-    prediction: "All verdict lanes green is RELEASABLE; a removed lane, a run on another commit, a run in progress, an unread attempt or a failed read is NOT RELEASABLE with not_measured; a green at attempt 2 is red; an info lane red leaves the verdict; reds rank by hours lost; greens in a row follow the scheduled-nights rule; a planted fault prints the trap line; a void newer run falls to the older run on C; a lane missing a required job, a cut job list or no producer is not_measured; stdout is one line; a fault or a closed stdout after the history row adds no second row; an edited bundle refuses and still leaves its line and one history row; under --pinned a missing PIN, an edited PIN or sums that omit PIN refuse while an intact pinned bundle judges; a failed parallel leg of one name is red; a cut rollup is marked; the read refuses under the rate floor, past the call budget and on a GraphQL error; an info lane attempt not read shows 1?; an inbox read-back mismatch exits non-zero; a closed stdout keeps the real verdict; a registry token variable, an empty named one or a credentials file or a legacy config token, under CARGO_HOME or ~/.cargo, refuses to start and the probe is clear only where none is reachable; the read refuses at 999 of 5000 and 199 of 1000, reads at 200 of 1000, and refuses an unread limit; --exit-verdict maps RELEASABLE to 0 and NOT RELEASABLE to 1, and a full RELEASABLE run under it exits 0; a self-test and a planted fault write only a throwaway inbox; a lane chained from the pick is green on its workflow_run run and not_measured on a schedule run, on a run whose night picked another commit or whose pick was not read, and on a run created 12:00Z-17:59Z whose night before picked another commit; a schedule lane ignores the picks; the query reads refs/heads/nightly/ and only dated night names count"
+    prediction: "All verdict lanes green is RELEASABLE; a removed lane, a run on another commit, a run in progress, an unread attempt or a failed read is NOT RELEASABLE with not_measured; a green at attempt 2 is red; an info lane red leaves the verdict; reds rank by hours lost; greens in a row follow the scheduled-nights rule; a planted fault prints the trap line; a void newer run falls to the older run on J; a lane missing a required job, a cut job list or no producer is not_measured; stdout is one line; a fault or a closed stdout after the history row adds no second row; an edited bundle refuses and still leaves its line and one history row; under --pinned a missing PIN, an edited PIN or sums that omit PIN refuse while an intact pinned bundle judges; a failed parallel leg of one name is red; a cut rollup is marked; the read refuses under the rate floor, past the call budget and on a GraphQL error; an info lane attempt not read shows 1?; an inbox read-back mismatch exits non-zero; a closed stdout keeps the real verdict; a registry token variable, an empty named one or a credentials file or a legacy config token, under CARGO_HOME or ~/.cargo, refuses to start and the probe is clear only where none is reachable; the read refuses at 999 of 5000 and 199 of 1000, reads at 200 of 1000, and refuses an unread limit; --exit-verdict maps RELEASABLE to 0 and NOT RELEASABLE to 1, and a full RELEASABLE run under it exits 0; a self-test and a planted fault write only a throwaway inbox; a lane chained from the pick is green on its workflow_run run and not_measured on a schedule run, on a run whose night picked another commit or whose pick was not read, and on a run created 12:00Z-17:59Z whose night before picked another commit; a schedule lane ignores the picks; the query reads refs/heads/nightly/ and only dated night names count; the judged commit is the newest of the last 7 on which every verdict producer has a measured run, a newer partial commit never wins, the lag cap counts commits without runs, and a red on J is red; a night with no pick ref is not_measured for a chained lane while a pick read that failed is not_measured for every lane and never the fallback"
     test: "bash scripts/release/nightly_train.sh --self-test"
     if_fails: "The train can print RELEASABLE for a commit some release-day check never measured, or stay silent when it fails"
 
@@ -133,7 +133,7 @@ falsification_tests:
 qa_gate:
   id: F-NT-001
   name: "Main's head is called releasable only from green evidence for every release-day check"
-  description: "scripts/release/nightly_train.sh reads the night's results for main's head and prints RELEASABLE H=<C> or NOT RELEASABLE: <lane>, <run>. Its case table pins every lane state and the verdict set; its mutants prove the table can fail."
+  description: "scripts/release/nightly_train.sh reads the night's results for one judged commit J of main (the head, or the newest commit up to 6 behind it that every verdict producer ran on) and prints RELEASABLE H=<J> or NOT RELEASABLE: <lane>, <run>. Its case table pins every lane state and the verdict set; its mutants prove the table can fail."
   checks:
     - "lane_state"
     - "verdict_line"
