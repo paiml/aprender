@@ -25,9 +25,9 @@
 # It cannot upload. `lint` checks every property that keeps it so: workflow permissions
 # exactly contents: read, no job-level permissions, no environment, triggers exactly
 # schedule + dispatch, no `secrets.` reference, no upload, release write or release-event
-# input, every job starting with the credential guard, no step that runs past it (a step
-# if: calling always(), failure() or cancelled()), workflow and job keys and job env names
-# from an allowlist (no workflow env, defaults, container or services), and every build job keeping its
+# input, every job starting with the credential guard, no step `if:` at all (it can
+# run past the guard), workflow and job keys and job env names from an allowlist (no
+# workflow env, defaults, container or services), and every build job keeping its
 # checksums as a run artifact. The guard looks for the credential itself (a flag is not a
 # guard): it refuses to run when GH_TOKEN, GITHUB_TOKEN, a cargo registry token, an OIDC
 # request token or a cargo credentials file is present. The case table runs lint and the
@@ -128,11 +128,12 @@ lint() {
     v=$(G=$g "$YQ" '[.jobs[] | select((.steps[0] // {} | keys | sort | join(",")) != (load(strenv(G)) | keys | sort | join(",")) or (.steps[0].name // "") != load(strenv(G)).name or (.steps[0].shell // "") != load(strenv(G)).shell or (.steps[0].run // "") != load(strenv(G)).run)] | length' "$f")
     rm -f "${g:?}"
     [ "$v" = 0 ] || { echo "lint: $v job(s) do not start with the credential guard"; bad=1; }
-    # A step `if:` gets an implicit success() unless it calls a status function, so always(),
-    # failure() or cancelled() is a step that runs on past the guard's refusal. Expression
-    # function names are case-insensitive.
-    v=$("$YQ" '[.jobs[].steps[] | select(.if // "" | tostring | test("(?i)(always|failure|cancelled)[[:space:]]*\\("))] | length' "$f")
-    [ "$v" = 0 ] || { echo "lint: $v step(s) run past the credential guard (if: always/failure/cancelled)"; bad=1; }
+    # No step carries an `if:` at all. A step `if:` loses its implicit success() as soon as
+    # the expression mentions any status function, so `success() || true`, `!success()`,
+    # always() or failure() all run on past the guard's refusal, and a pattern over the
+    # expression cannot list every form. The release's build steps use none.
+    v=$("$YQ" '[.jobs[].steps[] | select(has("if"))] | length' "$f")
+    [ "$v" = 0 ] || { echo "lint: $v step(s) carry an if: (a step if: can run past the credential guard)"; bad=1; }
     # What acts before or around the guard is allowlisted: the workflow's and every job's keys,
     # and job env names. A workflow or job env (BASH_ENV runs before the guard's bash),
     # defaults, container or services is outside the list.
@@ -366,14 +367,20 @@ self_test() {
     out=$(lint "$d/m.yml"); row "a planted curl -XDELETE -> lint red" 1 $? 'upload' "$out"
     mut '.jobs["build-apr-cuda"].steps += [{"name": "up", "run": "curl -sSf --request POST https://api.github.com/x"}]'
     out=$(lint "$d/m.yml"); row "a planted curl --request POST -> lint red" 1 $? 'upload' "$out"
-    mut '.jobs.build.steps[1].if = "${{ always() }}"'
-    out=$(lint "$d/m.yml"); row "a later step under if: always() -> lint red" 1 $? 'run past the credential guard' "$out"
-    mut '.jobs["build-apr-cpu"].steps[1].if = "failure()"'
-    out=$(lint "$d/m.yml"); row "a later step under if: failure() -> lint red" 1 $? 'run past the credential guard' "$out"
-    mut '.jobs["build-apr-cuda"].steps[2].if = "${{ !Cancelled() }}"'
-    out=$(lint "$d/m.yml"); row "a later step under if: !Cancelled() (any case) -> lint red" 1 $? 'run past the credential guard' "$out"
-    mut '.jobs.build.steps[1].if = "${{ success() && github.event_name == '"'"'schedule'"'"' }}"'
-    out=$(lint "$d/m.yml"); row "a later step under if: success() && ... -> still cannot upload" 0 $? 'cannot upload' "$out"
+    # Every form of a step if: is red, the ones a pattern would miss among them.
+    ifrow() {
+        V="$1" "$YQ" '.jobs.build.steps[1].if = strenv(V)' "$d/fx.yml" > "$d/m.yml"
+        out=$(lint "$d/m.yml"); row "a later step under if: $1 -> lint red" 1 $? 'carry an if:' "$out"
+    }
+    ifrow '${{ always() }}'
+    ifrow 'failure()'
+    ifrow '${{ !Cancelled() }}'
+    ifrow '${{ success() || true }}'
+    ifrow '${{ !success() }}'
+    ifrow "\${{ format('{0}', 'true') }}"
+    ifrow "\${{ success() && github.event_name == 'schedule' }}"
+    ifrow 'success()'
+    ifrow 'true'
     mut '.jobs.build.env.BASH_ENV = "x.sh"'
     out=$(lint "$d/m.yml"); row "a job env BASH_ENV -> lint red" 1 $? 'job env name.*BASH_ENV' "$out"
     mut '.jobs["build-apr-darwin"].env.MACOSX_DEPLOYMENT_TARGET = "11.0"'
