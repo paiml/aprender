@@ -1411,6 +1411,12 @@ jobs:
         run: setsid --wait bash scripts/check_mutants_memory_cap.sh
       - name: memory-cap guard can still go RED (C137)
         run: setsid --wait bash scripts/check_mutants_memory_cap.sh --self-test
+      # The nightly full mutation job runs on the mutants pool, never the
+      # clean-room pool (C108). Same reason, same place: text only.
+      - name: The nightly mutation job runs on the mutants pool (C108)
+        run: setsid --wait bash scripts/check_mutants_pool.sh
+      - name: mutants-pool guard can still go RED (C108)
+        run: setsid --wait bash scripts/check_mutants_pool.sh --self-test
       - name: Every DAG row marked complete has a receipt whose marker says so (C0-7)
         run: setsid --wait bash scripts/check_receipt_complete.sh --dag docs/specifications/pp-066-dag.yaml
       # APR-PERF-GATE-001's PRIMARY gate — Arms A/B1/B2/C/D/E and
