@@ -1,0 +1,23 @@
+- id: PMAT-4838
+  github_issue: 4838
+  item_type: task
+  title: 'CRUX-001: declarative recipe schema for finetune/distill/merge (pv contract + typed loader)'
+  status: planned
+  priority: medium
+  assigned_to: null
+  created: 2026-10-05T21:53:09Z
+  updated: 2026-10-05T21:53:09Z
+  spec: null
+  acceptance_criteria:
+  - 'pv validate contracts/apr-recipe-v1.yaml passes'
+  - 'Unknown keys, a wrong recipe version, sections that do not belong to the kind, and out-of-range numbers are each rejected with the rule id (RCP-001..008)'
+  - 'A recipe with several faults reports all of them in one error (RCP-009)'
+  - 'Reordering keys, adding comments, or writing a default explicitly does not change the recipe hash; changing any value does (RCP-010)'
+  - 'cargo test -p apr-cli --lib recipe passes'
+  phases: []
+  subtasks: []
+  estimated_effort: null
+  labels:
+  - kind:code
+  notes: null
+  epic: 4002

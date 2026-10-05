@@ -1,0 +1,94 @@
+metadata:
+  version: 1.0.0
+  kind: schema
+  description: |
+    Declarative recipe for `apr finetune`, `apr distill` and `apr merge` (PMAT-4838, epic E8).
+    One YAML file (`recipe: apr.recipe/v1`, `kind: finetune|distill|merge`) names the base
+    model (the student for distill), the teacher, the method and LoRA settings, the data,
+    the training and distillation settings, the merge inputs, the eval and the output.
+    The loader (crates/apr-cli/src/commands/train_recipe.rs) parses it, fills defaults (training: epochs 3,
+    batch_size 16, learning_rate 0.0002, max_seq_len 512, seed 42; distillation: temperature
+    4.0, alpha 0.7, the `apr distill --config` defaults), and checks rules RCP-001..008
+    before any run. It reports every violation in one error. The recipe hash is the SHA-256
+    of the canonical JSON form (sorted keys, defaults filled), so receipts can show that two
+    runs used the same recipe. Driving the three commands from a recipe is a later ticket.
+  references:
+    - "https://github.com/paiml/aprender/issues/4838"
+    - "https://github.com/paiml/aprender/issues/4002"
+    - "contracts/apr-cli-distill-train-v1.yaml"
+
+equations:
+  sections:
+    formula: "required(kind) ⊆ present(r) ∧ forbidden(kind) ∩ present(r) = ∅, with required(finetune) = {base, method, data}, required(distill) = {base, teacher, data}, required(merge) = {merge}"
+  lora:
+    formula: "present(lora) ⇔ method ∈ {lora, qlora} ∧ rank ≥ 1 ∧ alpha > 0 ∧ dropout ∈ [0, 1)"
+  ranges:
+    formula: "epochs, batch_size, max_seq_len ≥ 1 ∧ learning_rate > 0 ∧ temperature > 0 ∧ kd_alpha ∈ [0, 1], all finite"
+  merge:
+    formula: "|models| ≥ 2 ∧ (strategy = weighted ⇒ weights present) ∧ (strategy ∈ {average, ties} ⇒ weights absent) ∧ (weights present ⇒ |weights| = |models| ∧ ∀w: w ≥ 0)"
+  report:
+    formula: "validate(r) = { v : rule v is broken by r }, the whole set, not its first element"
+  hash:
+    formula: "hash(r) = sha256(canonical_json(fill_defaults(parse(r)))); parse(a) = parse(b) ⇒ hash(a) = hash(b); any changed value ⇒ different hash"
+
+falsification_tests:
+  - id: FALSIFY-RCP-001
+    name: wrong_version_is_rejected
+    prediction: "a recipe whose `recipe:` key is not apr.recipe/v1 is rejected with RCP-001"
+    test_harness: "cargo test -p apr-cli --lib train_recipe::tests::falsify_rcp_001"
+    expected_output: "exit 0"
+    if_fails: "A recipe written for another schema version would run under this one's meaning."
+  - id: FALSIFY-RCP-002
+    name: unknown_keys_and_values_do_not_parse
+    prediction: "an unknown key at any level (a typo such as `rnak`), an unknown kind, or method `auto` is a parse error"
+    test_harness: "cargo test -p apr-cli --lib train_recipe::tests::falsify_rcp_002"
+    expected_output: "exit 0"
+    if_fails: "A misspelt setting would be dropped silently and the run would use the default."
+  - id: FALSIFY-RCP-003
+    name: sections_match_the_kind
+    prediction: "a missing required section or a forbidden one (teacher in finetune, data or training in merge) is rejected with RCP-003"
+    test_harness: "cargo test -p apr-cli --lib train_recipe::tests::falsify_rcp_003"
+    expected_output: "exit 0"
+    if_fails: "A section that the kind ignores would look like it took effect."
+  - id: FALSIFY-RCP-004
+    name: lora_section_iff_lora_method
+    prediction: "method lora/qlora without `lora`, `lora` with method full, rank 0, alpha 0 or dropout 1 are each rejected with RCP-004"
+    test_harness: "cargo test -p apr-cli --lib train_recipe::tests::falsify_rcp_004"
+    expected_output: "exit 0"
+    if_fails: "A LoRA run could start with no rank, or a full fine-tune could carry LoRA settings it ignores."
+  - id: FALSIFY-RCP-005
+    name: training_ranges
+    prediction: "epochs, batch_size or max_seq_len of 0, and a learning_rate that is negative or NaN, are rejected with RCP-005"
+    test_harness: "cargo test -p apr-cli --lib train_recipe::tests::falsify_rcp_005"
+    expected_output: "exit 0"
+    if_fails: "A run would start that cannot train, and fail or do nothing after loading the model."
+  - id: FALSIFY-RCP-006
+    name: distillation_ranges
+    prediction: "temperature 0 or alpha 1.5 is rejected with RCP-006; temperature 1 with alpha 0, and alpha 1, are accepted"
+    test_harness: "cargo test -p apr-cli --lib train_recipe::tests::falsify_rcp_006"
+    expected_output: "exit 0"
+    if_fails: "The KD loss would divide by zero or weight the hard-label term negatively."
+  - id: FALSIFY-RCP-007
+    name: merge_weights_agree_with_the_strategy
+    prediction: "weighted without weights, a weight count that differs from the model count, a negative weight, weights on average, or a single model are each rejected with RCP-007; slerp with weights is accepted"
+    test_harness: "cargo test -p apr-cli --lib train_recipe::tests::falsify_rcp_007"
+    expected_output: "exit 0"
+    if_fails: "A merge would ignore or misapply the weights the recipe states."
+  - id: FALSIFY-RCP-008
+    name: blank_fields_are_rejected
+    prediction: "a blank name or output path is rejected with RCP-008"
+    test_harness: "cargo test -p apr-cli --lib train_recipe::tests::falsify_rcp_008"
+    expected_output: "exit 0"
+    if_fails: "A run would write to an empty path or carry no name in its receipt."
+  - id: FALSIFY-RCP-009
+    name: every_violation_is_reported_at_once
+    prediction: "a recipe that breaks RCP-001, RCP-004 and RCP-008 reports all three in one error"
+    test_harness: "cargo test -p apr-cli --lib train_recipe::tests::falsify_rcp_009"
+    expected_output: "exit 0"
+    if_fails: "Fixing a recipe would take one run per fault."
+  - id: FALSIFY-RCP-010
+    name: hash_is_canonical
+    prediction: "reordered keys, comments, quoting and written-out defaults give the same 64-hex hash; changing rank, alpha, data path, metric, name or seed changes it"
+    test_harness: "cargo test -p apr-cli --lib train_recipe::tests::falsify_rcp_010"
+    expected_output: "exit 0"
+    if_fails: "Receipts could not show that two runs used the same recipe, or would show it for different recipes."
