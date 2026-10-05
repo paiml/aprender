@@ -13,7 +13,7 @@
 # (a branch name is free to choose). Anything else is named: `FAIL  roadmap.yaml is written by this PR …`.
 #
 # MODE. A new check lands in SHADOW (operator ruling RQ-8): it prints `SHADOW FAIL …` and exits 0. It blocks
-# only after three green nights of the nightly writer, flipped by its own PR that cites those runs (MODE below).
+# only after three green nights, flipped by its own PR that cites those runs (MODE below).
 #
 # USAGE   bash scripts/check_roadmap_one_writer.sh [<base> [<head>]]   (default: resolve_base HEAD)
 #         bash scripts/check_roadmap_one_writer.sh --selftest | --mutants
@@ -103,7 +103,7 @@ verdict() {   # verdict <judge-rc> -> exit code under MODE
     case "$1" in
         0) return 0 ;;
         1) if [ "$MODE" = enforce ]; then return 1; fi
-           printf 'SHADOW FAIL  %s: the line above WOULD block in enforce mode; shadow until three green writer nights (RQ-8)\n' "$PROG"; return 0 ;;
+           printf 'SHADOW FAIL  %s: the line above WOULD block in enforce mode; shadow until three green nights (RQ-8)\n' "$PROG"; return 0 ;;
         *) if [ "$MODE" = enforce ]; then return 2; fi
            printf 'SHADOW ENV  %s: could not answer (not_measured, not a pass); shadow mode does not block on it\n' "$PROG"; return 0 ;;
     esac
@@ -199,7 +199,7 @@ HEAD_REF="${2:-HEAD}"
 if [ -n "${1:-}" ]; then BASE_REF=$1; BASE_HOW=argument
 else
     # shellcheck source=scripts/lib/resolve_base.sh
-    . "$REPO_ROOT/scripts/lib/resolve_base.sh" || exit 2
+    . "$REPO_ROOT/scripts/lib/resolve_base.sh" || { printf 'ENV   %s: scripts/lib/resolve_base.sh could not be sourced\n' "$PROG"; verdict 2; exit $?; }
     if ! git -C "$REPO_ROOT" rev-parse --verify -q origin/main > /dev/null; then
         printf 'ENV   %s: origin/main is not resolvable here; fetch it (git fetch origin main)\n' "$PROG"; verdict 2; exit $?
     fi
