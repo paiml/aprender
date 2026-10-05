@@ -1,0 +1,22 @@
+- id: PMAT-4593
+  github_issue: 4593
+  item_type: task
+  title: 'FLAKE-0: cta64_vs_cta32_vs_cublas_fp16 dies with CUDA_ERROR_OUT_OF_MEMORY in the cuda-unit section'
+  status: inprogress
+  priority: medium
+  assigned_to: aprender-wmainred
+  created: 2026-09-28T00:00:00Z
+  updated: 2026-10-05T09:30:00Z
+  spec: null
+  acceptance_criteria:
+  - 'cta64_vs_cta32_vs_cublas_fp16 carries #[ignore = "FLAKE-0 #4593"]; no other test changes'
+  - 'The test keeps the same assertion: the n=256 all-ones check on the 64x128 mma.sync output (max_err < 1.0 vs K), same message, still inside the sweep'
+  - 'No function in cublas_tests.rs exceeds cyclomatic 30 / cognitive 25 (the pre-commit complexity hook)'
+  - 'Every sweep kernel keeps its PTX entry name, target (sm_80 or default), tile grid, block and shared-memory size; CTA32/CTA64/Dbuf64 compile failures still skip the size row'
+  - 'REVIEWER CHECK (answer explicitly in your summary): the author claims the n=256 correctness check now runs as a separate normal #[test]. Is that true? Cite the line. A lane that does not answer is void'
+  phases: []
+  subtasks: []
+  estimated_effort: null
+  labels:
+  - kind:code
+  notes: 'Second sighting: PR #4776 run 37283283269, yoga job, OOM at the 4096 input allocation while mutants-cuda shared the device.'
