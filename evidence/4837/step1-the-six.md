@@ -35,3 +35,16 @@ corpus, so it yields no result on either side.
 - B. **Make pv follow SHACL.** Drop the implicit `rdf:type` allowance, and add `rdf:type` to `ignoredProperties` in
   the 5 contracts. This is stricter, because a closed shape that omits it now fails. It changes what the gate
   accepts, so it is a sign-off row.
+
+## Ruling: B (C314 question round, 2026-10-05 22:45Z)
+
+Lanes gemini-3.1-pro-high and gpt-oss-120b-medium both answered YES on B and both prefer it. They split on A: gpt-oss
+said NO, calling it "printing instead of enforcing". Both answered NO on the decoy, a filter in the oracle diff that
+hid the 6, so both lanes count. B is stricter, so it is a gate change and waits for a non-author sign-off round on its
+final commit, 2 non-author reviews and green CI.
+
+What B needed beyond the five contracts:
+- The 16 inline nested `node: {closed: true, ...}` shapes in the tool-status fixtures also list rdf:type. Their value
+  nodes are typed through `vocabulary.nested`, so without the list they would fail.
+- node/closed-001 stays NOT_VENDORED, with its reason corrected: pv now gives the rdf:type violation, but the case
+  selects its focus nodes by sh:targetNode, which main does not have until #4814 slice 4.

@@ -119,7 +119,7 @@ pub const NOT_VENDORED: &[(&str, &str)] = &[
     ("node/maxLength-001", "sh:maxLength on the node shape itself"),
     ("node/nodeKind-001", "sh:nodeKind on the node shape itself, with sh:BlankNode variants"),
     ("node/node-001", "sh:node on the node shape itself"),
-    ("node/closed-001", "expects an rdf:type violation under sh:closed; the subset always admits rdf:type on a closed shape (every extracted node is typed, §3.6) — closed-002, with sh:ignoredProperties (rdf:type), is the vendored form"),
+    ("node/closed-001", "expects an rdf:type violation under sh:closed, which pv now gives (#4837); its focus nodes are selected by sh:targetNode, outside this subset until #4814 slice 4 lands — closed-002, with sh:ignoredProperties (rdf:type), is the vendored form"),
     ("property/datatype-003", "sh:or — outside the subset, refused by name"),
     ("property/nodeKind-001", "data blank nodes and sh:BlankNode / sh:IRIOrLiteral kinds — the graph has no blank node (R-15) and the subset knows IRI and Literal"),
     ("property/pattern-002", "sh:flags — outside the subset, refused by name"),
