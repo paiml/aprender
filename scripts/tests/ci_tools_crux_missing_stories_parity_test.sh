@@ -12,6 +12,9 @@
 # the port cannot render as Python did (a list or object, -0, a magnitude of 2^63 or
 # more). The port refuses those with exit 2; see the module doc of crux_missing_stories.rs.
 #
+# The .py reads stdin as strict UTF-8, as under a UTF-8 locale: under C/POSIX it read
+# invalid UTF-8 through.
+#
 # Not vacuous (L25): the run fails if fewer cases ran than the table declares, and a
 # planted lying binary must be reported as exactly one failure before any case counts.
 #
@@ -22,7 +25,7 @@ ROOT="$(git rev-parse --show-toplevel)"
 cd "$ROOT" || exit 1
 PY="${PYTHON:-python3}"
 CMS="$ROOT/scripts/crux_missing_stories.py"
-EXPECTED_CASES=105
+EXPECTED_CASES=114
 
 . scripts/ci_tools_bin.sh || exit 1
 BIN="$CI_TOOLS_BIN"
@@ -37,7 +40,7 @@ n=0
 run_case() {
     local name="$1" want="$2" rows="$3" input="$4" py_rc=0 rs_rc=0 ok=1 got
     shift 4
-    "$PY" "$CMS" "$@" <"$input" >"$tmp/py.out" 2>/dev/null || py_rc=$?
+    PYTHONIOENCODING=utf-8:strict "$PY" "$CMS" "$@" <"$input" >"$tmp/py.out" 2>/dev/null || py_rc=$?
     "$BIN" crux-missing-stories "$@" <"$input" >"$tmp/rs.out" 2>/dev/null || rs_rc=$?
     [[ "$py_rc" == "$want" && "$rs_rc" == "$want" ]] || ok=0
     got="$(wc -l <"$tmp/py.out")"
@@ -75,6 +78,8 @@ f() {
     done
     printf '%s}' "$out"
 }
+# d N -> an integer literal of N digits
+d() { printf '1%.0s' $(seq 1 "$1"); }
 OK="$(st A-0 missing)"
 
 # --- the planted lying binary must be caught before any real case counts --------
@@ -183,6 +188,15 @@ c "RAISE: competitor is a list" 1 0 "[$(f competitor '["C"]')]"
 c "RAISE: id is a bool, after two rows" 1 2 "[$OK,$OK,$(f id true)]"
 c "RAISE: competitor missing AND score is a list" 1 0 "[$(f competitor @drop | sed 's/"demand_score":3/"demand_score":[1]/')]"
 c "RAISE: id an int AND score -0" 1 0 "[$(f id 1 | sed 's/"demand_score":3/"demand_score":-0/')]"
+c "RAISE: NaN, then the list is not closed" 1 0 '[{"x":NaN}'
+c "RAISE: NaN, then a trailing comma" 1 0 '[{"x":NaN},]'
+c "RAISE: -NaN is not a constant" 1 0 '[{"x":-NaN}]'
+c "RAISE: +Infinity is not a constant" 1 0 '[{"x":+Infinity}]'
+c "RAISE: lone surrogate, then a trailing comma" 1 0 '[{"x":"\\ud800"},]'
+c "RAISE: 1e400, then garbage" 1 0 '[{"x":1e400} x]'
+c "RAISE: an integer of 4301 digits" 1 0 "[{\"x\":$(d 4301)}]"
+c "RAISE: an integer of 4301 digits, negative" 1 0 "[{\"x\":-$(d 4301)}]"
+c "RAISE: an integer of 4301 digits after a missing story prints nothing" 1 0 "[$OK,{\"x\":$(d 4301)}]"
 
 # --- BADJSON: invalid JSON or UTF-8 is a raise, nothing printed ---------------------
 c "BADJSON: empty stdin" 1 0 ''

@@ -13,12 +13,20 @@
 //!
 //! Deliberate differences, all refused with exit 2 rather than printed differently:
 //! - Input Python's `json` takes and `serde_json` does not: `NaN`/`Infinity`, lone surrogate
-//!   escapes, numbers beyond f64, nesting deeper than 128.
+//!   escapes, numbers beyond f64, nesting deeper than 128. A document that holds one of
+//!   these and is otherwise valid JSON is refused whole, whatever Python then did with it
+//!   (it raised printing a lone surrogate, and on its own recursion limit about 1000 levels
+//!   down); nesting past 128 is refused even where the rest is not valid.
+//!   Where Python raised anyway (a syntax error elsewhere, an integer literal of more than
+//!   4300 digits) the exit is its 1.
 //! - A printed `demand_score` that `serde_json` cannot render the way Python did: a list or
 //!   object (Python printed its `repr`), `-0.0` (Python printed `0` for the literal `-0`),
 //!   and a magnitude of 2^63 or more (an integer literal beyond i64/u64 arrives as a float).
 //!
 //! The stories come from `yq -o json`, which writes none of these.
+//!
+//! Invalid UTF-8 is exit 1, as under a UTF-8 locale; under a C/POSIX locale Python read such
+//! bytes through and printed them.
 
 use crate::pystr::py_float_repr;
 use serde_json::Value;
@@ -26,34 +34,116 @@ use serde_json::Value;
 /// `(already printed, exit code, reason)`.
 pub type Refusal = (String, u8, String);
 
-/// The `serde_json` refusals of input that Python's `json` accepts.
-const PY_ONLY: [&str; 4] = [
-    "number out of range",
-    "recursion limit exceeded",
-    "lone leading surrogate in hex escape",
-    "unexpected end of hex escape",
-];
+/// `sys.get_int_max_str_digits()`: the longest integer literal Python's `json` converts. A
+/// longer one raised `ValueError` (a float has no such limit).
+const PY_INT_MAX_DIGITS: usize = 4300;
 
-/// True when `text` holds a `NaN` or `Infinity` token outside a string: JSON has neither,
-/// Python's `json` takes both.
-fn has_py_only_constant(text: &str) -> bool {
-    let b = text.as_bytes();
-    let (mut in_str, mut escaped) = (false, false);
-    for (i, &c) in b.iter().enumerate() {
-        if in_str {
-            match (escaped, c) {
-                (true, _) => escaped = false,
-                (false, b'\\') => escaped = true,
-                (false, b'"') => in_str = false,
-                _ => {}
-            }
-        } else if c == b'"' {
-            in_str = true;
-        } else if b[i..].starts_with(b"NaN") || b[i..].starts_with(b"Infinity") {
-            return true;
+/// True for a number token Python's `json` took: JSON's number grammar, and for an integer
+/// at most [`PY_INT_MAX_DIGITS`] digits. Python raised on any other run of number characters.
+fn python_took_number(n: &[u8]) -> bool {
+    let digits = |s: &[u8]| s.iter().take_while(|c| c.is_ascii_digit()).count();
+    let mut i = usize::from(n.first() == Some(&b'-'));
+    let int = digits(&n[i..]);
+    if int == 0 || (int > 1 && n[i] == b'0') {
+        return false;
+    }
+    i += int;
+    let is_int = i == n.len();
+    if n.get(i) == Some(&b'.') {
+        let frac = digits(&n[i + 1..]);
+        if frac == 0 {
+            return false;
+        }
+        i += 1 + frac;
+    }
+    if matches!(n.get(i), Some(b'e' | b'E')) {
+        i += 1 + usize::from(matches!(n.get(i + 1), Some(b'+' | b'-')));
+        let exp = digits(&n[i..]);
+        if exp == 0 {
+            return false;
+        }
+        i += exp;
+    }
+    i == n.len() && !(is_int && int > PY_INT_MAX_DIGITS)
+}
+
+/// True for the four hex digits of a surrogate escape (`\uD800`–`\uDFFF`).
+fn is_surrogate(hex: &[u8]) -> bool {
+    hex.len() >= 4
+        && hex[..4].iter().all(u8::is_ascii_hexdigit)
+        && matches!(hex[0], b'd' | b'D')
+        && matches!(hex[1], b'8'..=b'9' | b'a'..=b'f' | b'A'..=b'F')
+}
+
+/// A token of [`masked_for_serde`]: its length in bytes and what replaces it, if anything.
+type Token = (usize, Option<&'static str>);
+
+/// The token at the start of `rest`, inside a string.
+fn string_token(rest: &[u8]) -> Token {
+    match rest {
+        [b'\\', b'u', hex @ ..] if is_surrogate(hex) => (6, Some("\\u0041")),
+        [b'\\', _, ..] => (2, None),
+        _ => (1, None),
+    }
+}
+
+/// The token at the start of `rest`, outside a string; `None` where Python raised.
+fn value_token(rest: &[u8]) -> Option<Token> {
+    for constant in [&b"-Infinity"[..], b"Infinity", b"NaN"] {
+        if rest.starts_with(constant) {
+            return Some((constant.len(), Some("0")));
         }
     }
-    false
+    if !matches!(rest.first(), Some(b'-' | b'0'..=b'9')) {
+        return Some((1, None));
+    }
+    let n = rest
+        .iter()
+        .take_while(|c| matches!(c, b'-' | b'+' | b'.' | b'e' | b'E' | b'0'..=b'9'))
+        .count();
+    python_took_number(&rest[..n]).then_some((n, Some("0")))
+}
+
+/// `text` with what Python's `json` took and `serde_json` does not made plain JSON:
+/// `NaN`/`Infinity`/`-Infinity` and every number become `0`, every surrogate escape
+/// `A`. `None` where Python raised while tokenizing: a run of number characters that is
+/// not a number it took.
+fn masked_for_serde(text: &str) -> Option<String> {
+    let b = text.as_bytes();
+    let mut out = String::with_capacity(text.len());
+    let (mut i, mut copied, mut in_str) = (0, 0, false);
+    while i < b.len() {
+        let rest = &b[i..];
+        let (len, with) = if in_str {
+            string_token(rest)
+        } else {
+            value_token(rest)?
+        };
+        // A token that starts with `"` is the quote itself, which opens or closes a string.
+        if rest[0] == b'"' {
+            in_str = !in_str;
+        }
+        // Every replaced token starts and ends on an ASCII byte, so both cuts are char
+        // boundaries.
+        if let Some(with) = with {
+            out.push_str(&text[copied..i]);
+            out.push_str(with);
+            copied = i + len;
+        }
+        i += len;
+    }
+    out.push_str(&text[copied..]);
+    Some(out)
+}
+
+/// Whether Python's `json` took a document `serde_json` refused: exit 2 if so, else the
+/// exit 1 of Python's own raise. Nesting past `serde_json`'s 128 levels counts as taken
+/// whatever else the document holds.
+fn python_took(text: &str) -> bool {
+    masked_for_serde(text).is_some_and(|m| match serde_json::from_str::<Value>(&m) {
+        Ok(_) => true,
+        Err(e) => e.to_string().contains("recursion limit exceeded"),
+    })
 }
 
 /// `str(demand_score)`, or why it is refused.
@@ -146,10 +236,8 @@ pub fn run(input: &[u8]) -> Result<String, Refusal> {
     let text = std::str::from_utf8(input)
         .map_err(|e| refuse("", 1, format!("crux_missing_stories: stdin: {e}")))?;
     let top: Value = serde_json::from_str(text).map_err(|e| {
-        let msg = e.to_string();
-        let py_only = PY_ONLY.iter().any(|p| msg.contains(p)) || has_py_only_constant(text);
-        let code = if py_only { 2 } else { 1 };
-        refuse("", code, format!("crux_missing_stories: {msg}"))
+        let code = if python_took(text) { 2 } else { 1 };
+        refuse("", code, format!("crux_missing_stories: {e}"))
     })?;
     let mut out = String::new();
     for story in stories(&top).map_err(|why| refuse("", 1, why))? {
@@ -238,16 +326,55 @@ mod tests {
             r#"["\ud800"]"#,
             r#"["\udc00"]"#,
             &format!("{}{}", "[".repeat(200), "]".repeat(200)),
+            &format!("{}{}", "[".repeat(200), "]".repeat(199)),
         ] {
             assert_eq!(r(input), "rc=2", "{input}");
         }
         assert_eq!(r(r#"["NaN"]"#), "", "NaN inside a string is only text");
+        let int4300 = "1".repeat(4300);
+        assert_eq!(r(&format!(r#"[{{"x":{int4300}}}]"#)), "rc=2", "4300 digits");
+        assert_eq!(r(&format!(r#"[{{"x":-{int4300}1.5}}]"#)), "rc=2", "a float");
         for score in ["[1]", "{}", "-0", "-0.0", "1e19", "-9223372036854775809"] {
             assert_eq!(
                 r(&format!(r#"[{{{M},"demand_score":{score}}}]"#)),
                 "rc=2",
                 "{score}"
             );
+        }
+    }
+
+    #[test]
+    fn what_python_raised_on_anyway_stays_exit_1() {
+        let int4301 = "1".repeat(4301);
+        for input in [
+            "[NaN",
+            "[NaN,]",
+            "[-NaN]",
+            "[+Infinity]",
+            "[- Infinity]",
+            "[NaNx]",
+            "{NaN:1}",
+            r#"["\ud800", ]"#,
+            r#"["\udc00""#,
+            "[1e400 x]",
+            "[1e400, 01]",
+            &format!(r#"[{{"x":{int4301}}}]"#),
+            &format!(r#"[{{"x":-{int4301}}}]"#),
+        ] {
+            assert_eq!(r(input), "rc=1", "{input:.40}");
+        }
+        assert!(python_took_number(b"-0.5E+10"));
+        for bad in [
+            &b"-"[..],
+            b"1.",
+            b".5",
+            b"1e",
+            b"1e+",
+            b"01",
+            b"1-2",
+            b"--1",
+        ] {
+            assert!(!python_took_number(bad), "{bad:?}");
         }
     }
 }
