@@ -141,10 +141,7 @@ async fn try_qwen35_backend(
     let budget = max_tokens.min(context_length - prompt_token_count);
 
     // #4661/#4662: every EOG marker, not just the declared EOS (see `chat_stop_tokens`).
-    let stop_tokens = stop_tokens_unless_ignore_eos(
-        request,
-        super::realize_handlers::completion_stop_tokens(&tokenizer, state.model_eos_token_id()),
-    );
+    let stop_tokens = chat_stop_tokens(request, &tokenizer, state.model_eos_token_id());
     // The context-bounded budget, not the request's number: what is decoded and what
     // `finish_reason` is judged against are the same count.
     let gen_config = gen_config_from_request(request, budget, stop_tokens.clone(), cancel.clone());

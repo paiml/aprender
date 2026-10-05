@@ -148,15 +148,19 @@ fn chat_gen_params(
 /// `<|endoftext|>`; with only the EOS live, `/v1/chat/completions` and
 /// `/api/chat` decoded past it into `Human: …` / ` | | |` runs until
 /// `max_tokens`, while `/v1/completions` on the same prompt stopped.
+///
+/// `eos_token_id` is `None` when the model declares no EOS; the set is then the
+/// vocabulary's end-of-generation markers alone. Every chat path calls this one
+/// function, so no path can drift back to a single-id stop set.
 fn chat_stop_tokens(
     request: &ChatCompletionRequest,
     tokenizer: &crate::tokenizer::BPETokenizer,
-    eos_token_id: u32,
+    eos_token_id: Option<u32>,
 ) -> Vec<u32> {
     if request.ignore_eos.unwrap_or(false) {
         Vec::new()
     } else {
-        super::realize_handlers::completion_stop_tokens(tokenizer, Some(eos_token_id))
+        super::realize_handlers::completion_stop_tokens(tokenizer, eos_token_id)
     }
 }
 
@@ -276,7 +280,7 @@ fn chat_quantized_config(
         repeat_penalty: request.repeat_penalty.unwrap_or(defaults.repeat_penalty),
         repeat_last_n: request.repeat_last_n.unwrap_or(defaults.repeat_last_n),
         seed: request.seed.unwrap_or(defaults.seed),
-        stop_tokens: chat_stop_tokens(request, tokenizer, eos_token_id),
+        stop_tokens: chat_stop_tokens(request, tokenizer, Some(eos_token_id)),
         trace,
         cancel: cancel.clone(),
         ..defaults
@@ -350,13 +354,16 @@ mod perf039_ignore_eos_tests {
 
     #[test]
     fn absent_ignore_eos_keeps_eos_stopping() {
-        assert_eq!(chat_stop_tokens(&request(None), &tokenizer(), 7), vec![7]);
+        assert_eq!(
+            chat_stop_tokens(&request(None), &tokenizer(), Some(7)),
+            vec![7]
+        );
     }
 
     #[test]
     fn explicit_false_keeps_eos_stopping() {
         assert_eq!(
-            chat_stop_tokens(&request(Some(false)), &tokenizer(), 7),
+            chat_stop_tokens(&request(Some(false)), &tokenizer(), Some(7)),
             vec![7]
         );
     }
@@ -364,7 +371,7 @@ mod perf039_ignore_eos_tests {
     #[test]
     fn ignore_eos_empties_the_stop_set() {
         assert!(
-            chat_stop_tokens(&request(Some(true)), &tokenizer(), 7).is_empty(),
+            chat_stop_tokens(&request(Some(true)), &tokenizer(), Some(7)).is_empty(),
             "an empty stop set is what every decode loop reads as ignore-EOS"
         );
     }
@@ -1130,7 +1137,7 @@ fn try_gpu_backend(
         top_k: resolve_chat_top_k(temperature, request.top_k),
         // #3760: the OpenAI `seed` reaches the GpuModel sampler, as it does the others.
         seed: request.seed.unwrap_or(crate::sampling::DEFAULT_SEED),
-        stop_tokens: chat_stop_tokens(request, &tokenizer, eos_token_id)
+        stop_tokens: chat_stop_tokens(request, &tokenizer, Some(eos_token_id))
             .into_iter()
             .map(|t| t as usize)
             .collect(),
@@ -1244,7 +1251,7 @@ fn try_cached_backend(
         max_tokens,
         temperature,
         top_k: resolve_chat_top_k(temperature, request.top_k),
-        stop_tokens: chat_stop_tokens(request, &tokenizer, eos_token_id),
+        stop_tokens: chat_stop_tokens(request, &tokenizer, Some(eos_token_id)),
         trace: state.should_trace(trace_level),
         cancel: cancel.clone(),
         ..Default::default()

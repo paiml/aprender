@@ -1097,23 +1097,6 @@ fn cpu_chat_backends(
     registry_fallback(state, request, request_id, start, cancel)
 }
 
-/// PERF-039: `ignore_eos: true` empties the stop set, which every decode loop
-/// reads as "never stop on a token". `max_tokens` still bounds the loop.
-///
-/// Extracted rather than written inline so that merging PERF-039 does not move
-/// `try_qwen3_moe_backend`'s cognitive complexity (26 on main, already over the
-/// pre-commit hook's threshold of 25) even by one.
-fn stop_tokens_unless_ignore_eos(
-    request: &ChatCompletionRequest,
-    eos: impl IntoIterator<Item = u32>,
-) -> Vec<u32> {
-    if request.ignore_eos.unwrap_or(false) {
-        Vec::new()
-    } else {
-        eos.into_iter().collect()
-    }
-}
-
 /// aprender#1789 Option B: qwen3_moe MoE-aware dispatch for /v1/chat/completions.
 ///
 /// Detects qwen3_moe architecture + dispatches inference through
@@ -1189,10 +1172,7 @@ fn moe_gen_config(
             .or_else(|| tokenizer.get_token_id("<|endoftext|>"))
     });
     // #4661/#4662: every EOG marker, not just the declared EOS (see `chat_stop_tokens`).
-    let stop_tokens: Vec<u32> = stop_tokens_unless_ignore_eos(
-        request,
-        super::realize_handlers::completion_stop_tokens(tokenizer, eos_id),
-    );
+    let stop_tokens = chat_stop_tokens(request, tokenizer, eos_id);
     QuantizedGenerateConfig {
         max_tokens,
         temperature: request.temperature.unwrap_or(defaults.temperature),
