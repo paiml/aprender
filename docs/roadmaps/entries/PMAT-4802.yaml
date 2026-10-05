@@ -12,7 +12,7 @@
   - 'The binary''s collect, eval, extract, lint, certify and check subcommands replace crux_inference_judge.py, crux_oracles.py and crux_prompt_certify.py, which are deleted; every caller resolves the binary through scripts/lib/crux_judge_bin.sh'
   - 'All 11 golden receipts are byte-identical (receipt JSON, Markdown, exit code); scripts/check_crux_oracles.sh and scripts/check_crux_inference_judge.sh are green against the binary, and every F6 mutant is rebuilt from mutated Rust sources and killed'
   - 'run_python_cell is the one python3 seam: only the model reply plus the asserts, under unshare -rn, rlimits, python3 -I, a scrubbed env and a sentinel; each property has a planted-failure row; a missing sandbox is sandbox_unavailable, never correct'
-  - 'Checklist row, open: the crate''s tests carry 48 .unwrap() calls (certify 5, collect 3, judge 20, oracles 9, pyjson 4, pyval 7); the crate is outside the workspace, so the disallowed-methods lint never runs on it; replace them with expect or ? and enforce the lint on the crate'
+  - 'Checklist row, done: the crate''s tests carried 48 .unwrap() calls (certify 5, collect 3, judge 20, oracles 9, pyjson 4, pyval 7); the crate is outside the workspace, so the disallowed-methods lint never runs on it; each is now an expect with its reason, and the crate''s clippy.toml carries the disallowed-methods ban, which a planted unwrap proves fires'
   phases: []
   subtasks: []
   estimated_effort: null

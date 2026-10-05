@@ -1,0 +1,10 @@
+# The repo's unwrap ban (root .clippy.toml, GH-41), carried by this crate so it
+# holds wherever the crate is linted: it is outside the workspace, and clippy
+# reads only the nearest clippy.toml, so this file shadows the root one here.
+[[disallowed-methods]]
+path = "core::option::Option::unwrap"
+reason = "Use .expect() with descriptive message or proper error handling with ?. See GH-41."
+
+[[disallowed-methods]]
+path = "core::result::Result::unwrap"
+reason = "Use .expect() with descriptive message or proper error handling with ?. See GH-41."

@@ -191,6 +191,11 @@ cargo test --release --manifest-path tools/aprender-crux-judge/Cargo.toml
 cargo clippy --release --all-targets --manifest-path tools/aprender-crux-judge/Cargo.toml -- -D warnings
 ```
 
+The crate is outside the workspace, so the workspace lint run never reaches
+it. Its own `clippy.toml` carries the repo's `unwrap()` ban (`disallowed-methods`,
+GH-41), so the clippy command above enforces it, tests included. Clippy reads
+only the nearest config file, so this one shadows the root `.clippy.toml` here.
+
 ## Regenerating the Unicode tables
 
 ```

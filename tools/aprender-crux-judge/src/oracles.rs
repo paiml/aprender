@@ -596,17 +596,19 @@ mod tests {
     fn normalizers() {
         let int = Val::str("int");
         assert!(py_eq(
-            &normalize(" 1,234. ", &int).unwrap(),
+            &normalize(" 1,234. ", &int).expect("a grouped int normalizes"),
             &Val::int(1234)
         ));
-        assert!(normalize("12a", &int).unwrap().is_none());
+        assert!(normalize("12a", &int)
+            .expect("a non-int normalizes to None")
+            .is_none());
         assert!(py_eq(
-            &normalize("\u{661}\u{662}", &int).unwrap(),
+            &normalize("\u{661}\u{662}", &int).expect("Arabic-Indic digits normalize"),
             &Val::int(12)
         ));
         let cf = Val::str("casefold_strip");
         assert_eq!(
-            py_str(&normalize("  Paris  Is..", &cf).unwrap()),
+            py_str(&normalize("  Paris  Is..", &cf).expect("a casefold answer normalizes")),
             "paris is"
         );
         assert_eq!(
@@ -620,18 +622,23 @@ mod tests {
         let pr = p(
             r#"{"oracle": {"type": "answer", "expect": 4, "normalize": "int"}, "messages": [{"role": "user", "content": "x"}]}"#,
         );
-        let v = evaluate(&pr, &Val::str("<think>no</think><answer>4</answer>"), None).unwrap();
+        let v = evaluate(&pr, &Val::str("<think>no</think><answer>4</answer>"), None)
+            .expect("a think-wrapped answer evaluates");
         assert!(v.correct && v.why.is_none());
-        let v = evaluate(&pr, &Val::str("4"), None).unwrap();
+        let v = evaluate(&pr, &Val::str("4"), None).expect("a bare answer evaluates");
         assert_eq!(v.why.as_deref(), Some("no_answer_tag"));
         let turns = Val::List(vec![Val::str("a"), Val::str("b")]);
-        let v = evaluate(&pr, &Val::str("x"), Some(&turns)).unwrap();
+        let v = evaluate(&pr, &Val::str("x"), Some(&turns)).expect("a turns answer evaluates");
         assert_eq!(v.why.as_deref(), Some("turns_missing: got 2 want 1"));
         let st = p(r#"{"oracle": {"type": "structure", "lines": ["a", "b"]}}"#);
-        let v = evaluate(&st, &Val::str("<answer>\n a\n\n c \n</answer>"), None).unwrap();
+        let v = evaluate(&st, &Val::str("<answer>\n a\n\n c \n</answer>"), None)
+            .expect("a multi-line set answer evaluates");
         assert_eq!(v.why.as_deref(), Some("lines_differ_at_1: got 2 want 2"));
         assert_eq!(
-            py_str(&extract(&st, &Val::str("<answer> a \n b</answer>")).unwrap()),
+            py_str(
+                &extract(&st, &Val::str("<answer> a \n b</answer>"))
+                    .expect("a set answer extracts")
+            ),
             "a\nb"
         );
     }

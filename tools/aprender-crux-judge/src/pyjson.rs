@@ -539,19 +539,20 @@ mod tests {
 
     #[test]
     fn surrogate_pair_joins() {
-        let v = loads("\"\\ud83d\\ude00x\"").unwrap();
+        let v = loads("\"\\ud83d\\ude00x\"").expect("a surrogate pair decodes");
         assert_eq!(v.as_str(), Some("😀x"));
     }
 
     #[test]
     fn dump_shapes() {
-        let v = loads("{\"a\": [1, 2.5, \"\\u00e9\\u007f\"], \"b\": {}, \"c\": []}").unwrap();
+        let v = loads("{\"a\": [1, 2.5, \"\\u00e9\\u007f\"], \"b\": {}, \"c\": []}")
+            .expect("the nested document decodes");
         assert_eq!(
-            dump_indent2(&v).unwrap(),
+            dump_indent2(&v).expect("the document dumps with indent 2"),
             "{\n  \"a\": [\n    1,\n    2.5,\n    \"é\u{7f}\"\n  ],\n  \"b\": {},\n  \"c\": []\n}"
         );
         assert_eq!(
-            dumps(&v, true).unwrap(),
+            dumps(&v, true).expect("the document dumps ASCII-escaped"),
             "{\"a\": [1, 2.5, \"\\u00e9\\u007f\"], \"b\": {}, \"c\": []}"
         );
     }

@@ -1800,25 +1800,30 @@ mod tests {
 
     #[test]
     fn undebug_and_rendered_think() {
-        let cps = undebug(r#"a\n\u{263a}\"\q"#).unwrap();
-        let s: String = cps.iter().map(|c| char::from_u32(*c).unwrap()).collect();
+        let cps = undebug(r#"a\n\u{263a}\"\q"#).expect("the debug string decodes");
+        let s: String = cps
+            .iter()
+            .map(|c| char::from_u32(*c).expect("a decoded code point is a char"))
+            .collect();
         assert_eq!(s, "a\n\u{263a}\"\\q");
         assert_eq!(
             undebug(r"\u{110000}").unwrap_err().msg,
             "chr() arg not in range(0x110000)"
         );
         assert!(matches!(
-            rendered_opens_think(&Val::str(r"x<think>\n")).unwrap(),
+            rendered_opens_think(&Val::str(r"x<think>\n")).expect("a str template renders"),
             Val::Bool(true)
         ));
         assert!(matches!(
-            rendered_opens_think(&Val::str("short")).unwrap(),
+            rendered_opens_think(&Val::str("short")).expect("a short str template renders"),
             Val::Bool(false)
         ));
         assert!(rendered_opens_think(&Val::str("x".repeat(197)))
-            .unwrap()
+            .expect("a 197-char template renders")
             .is_none());
-        assert!(rendered_opens_think(&Val::int(1)).unwrap().is_none());
+        assert!(rendered_opens_think(&Val::int(1))
+            .expect("a non-str template is None")
+            .is_none());
         let e = rendered_opens_think(&Val::str(r"a\u{d800}\u{dc00}b")).unwrap_err();
         assert_eq!(
             e.msg,
@@ -1847,23 +1852,42 @@ mod tests {
             "junk\n> hi\n[Start thinking]x[End thinking] 4 \n[ Prompt: 1.5 t/s | Generation: 2. t/s ]",
             &Val::str("hi"),
         )
-        .unwrap();
-        assert_eq!(py_str(p.get_str("answer").unwrap()), "<think>x</think> 4");
+        .expect("the llama.cpp CLI output parses");
+        assert_eq!(
+            py_str(p.get_str("answer").expect("the parse has an answer")),
+            "<think>x</think> 4"
+        );
         let p = parse_ollama(
             "  Paris \n",
             "eval count: 12 token(s)\neval rate: 3.5 tokens/s\n",
         )
-        .unwrap();
-        let rep = p.get_str("reported").unwrap();
-        assert_eq!(py_repr(&rep.get("completion_tokens").unwrap()), "12");
-        assert_eq!(py_repr(&rep.get("decode_rate").unwrap()), "3.5");
-        let p = parse_apr_chat("Assistant: one\nYou: q\nAssistant: two\n");
-        assert_eq!(py_repr(p.get_str("turns").unwrap()), "['one', 'two']");
-        let p = parse_engine_json(r#"{"reasoning": "r", "text": ""}"#).unwrap();
-        assert_eq!(py_str(p.get_str("answer").unwrap()), "<think>r");
-        let p = parse_engine_json("nope").unwrap();
+        .expect("the ollama output parses");
+        let rep = p.get_str("reported").expect("the parse has reported");
         assert_eq!(
-            py_str(p.get_str("why").unwrap()),
+            py_repr(
+                &rep.get("completion_tokens")
+                    .expect("reported has completion_tokens")
+            ),
+            "12"
+        );
+        assert_eq!(
+            py_repr(&rep.get("decode_rate").expect("reported has decode_rate")),
+            "3.5"
+        );
+        let p = parse_apr_chat("Assistant: one\nYou: q\nAssistant: two\n");
+        assert_eq!(
+            py_repr(p.get_str("turns").expect("the parse has turns")),
+            "['one', 'two']"
+        );
+        let p = parse_engine_json(r#"{"reasoning": "r", "text": ""}"#)
+            .expect("engine JSON with reasoning parses");
+        assert_eq!(
+            py_str(p.get_str("answer").expect("the parse has an answer")),
+            "<think>r"
+        );
+        let p = parse_engine_json("nope").expect("non-JSON engine output is a parse result");
+        assert_eq!(
+            py_str(p.get_str("why").expect("a failed parse says why")),
             "stdout is not the contract's JSON: Expecting value: line 1 column 1 (char 0)"
         );
     }
@@ -1879,12 +1903,18 @@ mod tests {
     #[test]
     fn npy_header_literal() {
         let v = literal_eval("{'descr': '<f4', 'fortran_order': False, 'shape': (3, 5), }   \n")
-            .unwrap();
+            .expect("the npy header dict evaluates");
         assert_eq!(
             py_repr(&v),
             "{'descr': '<f4', 'fortran_order': False, 'shape': (3, 5)}"
         );
-        assert_eq!(py_repr(&literal_eval("(7,)").unwrap()), "(7,)");
-        assert_eq!(py_repr(&literal_eval("(7)").unwrap()), "7");
+        assert_eq!(
+            py_repr(&literal_eval("(7,)").expect("a one-tuple evaluates")),
+            "(7,)"
+        );
+        assert_eq!(
+            py_repr(&literal_eval("(7)").expect("a parenthesised int evaluates")),
+            "7"
+        );
     }
 }
