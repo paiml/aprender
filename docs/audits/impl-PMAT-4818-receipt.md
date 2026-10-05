@@ -44,3 +44,13 @@ by design: each would fail parity.
 Claim: "`band_c` converts a float `c` with `f.trunc() as i128` and no bound, so a record with
 `\"c\": 1e39` silently lands in the i128::MAX band instead of stopping."
 Is this claim TRUE or FALSE? Cite the line and the test that decides it.
+
+Quorum (PMAT-4818, judged head f9690c8e47, base 999a7ab805): AGREED 3/3 PASS. claude-sonnet-5-5 (x2),
+claude-haiku-4-5, measured == declared; author claude-opus-5-5; degraded: same-family (agy policy: not a
+tier-1 diff). All three lanes answered the planted claim FALSE. The haiku lane cited the guard at the
+wrong lines (269-279); it is perf041_report.rs:164 (`Py::Float(f) if f.abs() < i128::MAX as f64`), decided
+by the test `c_beyond_i128_stops_instead_of_saturating`. Artifact sha256 99fd4f41bf13d755… kept out of
+tree (local paths).
+
+Pre-push (x86 build host, f9690c8e47): cargo fmt --all -- --check rc 0; cargo test -p aprender-contracts --lib
+2289 passed, 0 failed; cargo deny check advisories ok.
