@@ -24,6 +24,8 @@
 #                                                                when the host joins the matrix, or
 #                                                                when nothing visits it any more)
 #   R4  every NA row carries a reason, a decider and a YYYY-MM-DD date
+#   R5  the decider is a DECISION: a row whose decided_by is pending, a recommendation, proposed or TBD
+#       declares an absence nobody decided, so the host is neither demanded nor ruled out (RED)
 #   R0  VISITED is non-empty and HOSTS is non-empty (vacuity is RED)
 #
 #   bash scripts/check_dogfood_matrix_is_visited.sh              # the tree
@@ -98,6 +100,16 @@ for p in pools: print(f"REPORT pool   {p}: a pool label names no host; whichever
 sys.exit(bad)
 PY
     rc=$?
+    local row dec
+    while IFS= read -r row; do
+        [ -n "${row//[[:space:]]/}" ] || continue
+        dec=$(cut -d: -f3 <<< "$row")
+        case "$dec" in
+            *[Pp]ending* | *[Rr]ecommend* | *[Pp]ropos* | *TBD*)
+                printf "FAIL  R5 NA_HOSTS row for %s is not decided (decided_by: %s): an absence nobody ruled on demands nothing\n" "$(cut -d: -f1 <<< "$row" | tr -d "[:space:]")" "$dec"
+                [ "$rc" -ne 0 ] || rc=1 ;;
+        esac
+    done < <(tr "|" "\n" <<< "$na")
     return "$rc"
 }
 
@@ -133,6 +145,10 @@ if [ "${1:-}" = "--self-test" ]; then
     expect 'S5 an NA host nothing visits -> R3 stale NA' "$TMP/f5" 1 'R3 e is declared absent in NA_HOSTS but nothing visits it'
     fixture f6 "a b" "c:asset smoke only" "$V3"
     expect 'S6 an NA row without decider/date -> R4' "$TMP/f6" 1 'R4 NA_HOSTS row is not host:reason:decided_by:YYYY-MM-DD'
+    fixture f6b "a b" "c:asset smoke only:a reviewer (recommendation, pending a ruling):2026-09-20" "$V3"
+    expect "S6b an NA row whose decider is a pending recommendation -> R5" "$TMP/f6b" 1 "R5 NA_HOSTS row for c is not decided"
+    fixture f6c "a b" "e:gone:fleet:2026-01-01 | c:asset smoke only:TBD:2026-09-20" "$V3"
+    expect "S6c R5 reads every row, not only the first" "$TMP/f6c" 1 "R5 NA_HOSTS row for c is not decided"
     fixture f7 "a b" "c:asset smoke only:fleet:2026-09-20" "$V3" '          - target: x
             host: w
             labels: x'
@@ -161,6 +177,8 @@ PY
     mutant drop-r2 '    if h not in V: print(f"FAIL  R2' '    if False: print(f"FAIL  R2' 1 'R2 d is DEMANDED' "$TMP/f3"
     mutant drop-r3 '    if h in H: print(f"FAIL  R3' '    if False: print(f"FAIL  R3' 1 'R3 c is declared absent in NA_HOSTS and also in HOSTS' "$TMP/f4"
     mutant drop-r4 '    if len(f) != 4 or not all(x.strip() for x in f) or not re.fullmatch' '    if False and len(f) != 4 or not all(x.strip() for x in f) and not re.fullmatch' 1 'R4 NA_HOSTS row' "$TMP/f6"
+    mutant drop-r5 "            *[Pp]ending* | *[Rr]ecommend* | *[Pp]ropos* | *TBD*)" "            NEVER-MATCHES)" 1 "R5 NA_HOSTS row for c" "$TMP/f6b"
+    mutant r5-first-row-only "    done < <(tr \"|\" \"\\n\" <<< \"\$na\")" "    done <<< \"\${na%%|*}\"" 1 "R5 NA_HOSTS row for c" "$TMP/f6c"
     mutant drop-workflows '    wf=$(workflow_hosts "$r")' '    wf=""' 1 'R1 w is VISITED' "$TMP/f7"
 
     [ "$fails" -eq 0 ] || { printf '\nSELF-TEST FAILED (%s of %s)\n' "$fails" "$rows"; exit 1; }
