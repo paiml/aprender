@@ -1,0 +1,63 @@
+{
+  "cases": 20,
+  "corpus": {
+    "agree": false,
+    "only_oracle": [
+      [
+        "https://ont.paiml.dev/v1alpha1/csv/csv-train",
+        "closed"
+      ],
+      [
+        "https://ont.paiml.dev/v1alpha1/llm/claude-md",
+        "closed"
+      ],
+      [
+        "https://ont.paiml.dev/v1alpha1/model/4a75ee8031b3fbe0b17e1706a248aabbf158420c06f082bc29a89e2103d4057e",
+        "closed"
+      ],
+      [
+        "https://ont.paiml.dev/v1alpha1/model/4a75ee8031b3fbe0b17e1706a248aabbf158420c06f082bc29a89e2103d4057e",
+        "closed"
+      ],
+      [
+        "https://ont.paiml.dev/v1alpha1/readme/readme-root",
+        "closed"
+      ],
+      [
+        "https://ont.paiml.dev/v1alpha1/refusal/refusal-receipt-v1.refusals.0",
+        "closed"
+      ]
+    ],
+    "only_pv": [],
+    "oracle_violations": 736,
+    "pv_violations": 730,
+    "ran": true
+  },
+  "detail": [
+    "corpus: oracle 736 violation(s), pv 730; 6 only in the oracle [(\"https://ont.paiml.dev/v1alpha1/csv/csv-train\", \"closed\"), (\"https://ont.paiml.dev/v1alpha1/llm/claude-md\", \"closed\"), (\"https://ont.paiml.dev/v1alpha1/model/4a75ee8031b3fbe0b17e1706a248aabbf158420c06f082bc29a89e2103d4057e\", \"closed\"), (\"https://ont.paiml.dev/v1alpha1/model/4a75ee8031b3fbe0b17e1706a248aabbf158420c06f082bc29a89e2103d4057e\", \"closed\"), (\"https://ont.paiml.dev/v1alpha1/readme/readme-root\", \"closed\"), (\"https://ont.paiml.dev/v1alpha1/refusal/refusal-receipt-v1.refusals.0\", \"closed\")]; 0 only in pv []"
+  ],
+  "disagreements": 1,
+  "oracle": "shacl 0.3.21 (pinned, out of gate — ONT-0, R-13)",
+  "schema": "ont-oracle-differential/v1",
+  "w3c": {
+    "node/closed-002": "agree",
+    "property/class-001": "agree",
+    "property/datatype-001": "agree",
+    "property/datatype-002": "agree",
+    "property/datatype-ill-formed": "agree",
+    "property/in-001": "agree",
+    "property/lessThan-001": "agree",
+    "property/lessThan-002": "agree",
+    "property/lessThanOrEquals-001": "agree",
+    "property/maxCount-001": "agree",
+    "property/maxCount-002": "agree",
+    "property/maxLength-001": "agree",
+    "property/minCount-001": "agree",
+    "property/minCount-002": "agree",
+    "property/minLength-001": "agree",
+    "property/node-001": "agree",
+    "property/node-002": "agree",
+    "property/pattern-001": "agree",
+    "targets/targetClass-001": "agree"
+  }
+}
