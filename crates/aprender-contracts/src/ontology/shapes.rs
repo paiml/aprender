@@ -12,7 +12,7 @@
 //! | `minExclusive`, `minInclusive`, `maxExclusive`, `maxInclusive` (a YAML scalar bound, #4814) | a typed bound (`"2026-01-01"^^xsd:date`) |
 //! | `node` (one level) | recursive / cyclic shapes |
 //! | `closed`, `ignoredProperties` | — |
-//! | `lessThan`, `lessThanOrEquals` (property pairs) | `equals`, `disjoint` |
+//! | `lessThan`, `lessThanOrEquals`, `equals`, `disjoint` (property pairs) | a language-tagged value (F9: the tag is not kept) |
 //! | a single predicate `path` | sequence, alternative, inverse, `*`/`+` paths |
 //! | — | `and`/`or`/`not`/`xone`, `sparql`, and every component not in this table |
 //!
@@ -31,7 +31,7 @@
 
 use std::collections::{BTreeMap, BTreeSet};
 
-use crate::ontology::rdf::{ont, Graph, Term, RDF_TYPE};
+use crate::ontology::rdf::{ont, Graph, Term, RDF_LANG_STRING, RDF_TYPE};
 
 pub const XSD_NS: &str = "http://www.w3.org/2001/XMLSchema#";
 pub const RDF_NS: &str = "http://www.w3.org/1999/02/22-rdf-syntax-ns#";
@@ -130,6 +130,10 @@ pub struct PropertyShape {
     pub less_than: Option<String>,
     /// `sh:lessThanOrEquals`: every value must be `<=` every value of this predicate on the same focus node.
     pub less_than_or_equals: Option<String>,
+    /// `sh:equals`: the value set must equal this predicate's value set on the same focus node (#4814).
+    pub equals: Option<String>,
+    /// `sh:disjoint`: the value set must share no term with this predicate's value set on the same focus node.
+    pub disjoint: Option<String>,
     /// `sh:minExclusive` / `sh:minInclusive` / `sh:maxExclusive` / `sh:maxInclusive` (SHACL §4.3): each value must
     /// compare, by SPARQL `<`, `>` / `>=` / `<` / `<=` the bound. A value that does not compare (an IRI, a string
     /// against a number) is a result, never a skip (#4814).
@@ -233,6 +237,8 @@ const PROPERTY_KEYS: &[&str] = &[
     "node",
     "lessThan",
     "lessThanOrEquals",
+    "equals",
+    "disjoint",
     "minExclusive",
     "minInclusive",
     "maxExclusive",
@@ -528,6 +534,8 @@ fn parse_property(
         node,
         less_than: iri_opt("lessThan")?,
         less_than_or_equals: iri_opt("lessThanOrEquals")?,
+        equals: iri_opt("equals")?,
+        disjoint: iri_opt("disjoint")?,
         min_exclusive: bound(shape, pm, "minExclusive")?,
         min_inclusive: bound(shape, pm, "minInclusive")?,
         max_exclusive: bound(shape, pm, "maxExclusive")?,
@@ -820,6 +828,7 @@ fn validate_focus(graph: &Graph, shape: &NodeShape, focus: &str, out: &mut Vec<V
             check_value(graph, p, v, &mut push);
         }
         check_pairs(graph, focus, p, &values, &mut push);
+        check_sets(graph, focus, p, &values, &mut push);
     }
     if shape.closed {
         check_closed(graph, shape, focus, &mut push);
@@ -914,6 +923,61 @@ fn check_pairs(
                     );
                 }
             }
+        }
+    }
+}
+
+/// `sh:equals` / `sh:disjoint` (SHACL §4.5.1/§4.5.2) on one property of one focus node: one result per VALUE that
+/// breaks the relation (W3C property/equals-001 expects five from four resources), named in the message so
+/// `validate`'s dedup keeps them apart. Equality is RDF term equality, (lexical, datatype) exact. A language-tagged
+/// value is a result on both components, never a pass: `Term` drops the tag (F9), so `"a"@en` and `"a"@fr` would
+/// read as one term, and pv refuses to decide a comparison it cannot see until the tag is kept (#4814 slice 10).
+fn check_sets(
+    graph: &Graph,
+    focus: &str,
+    p: &PropertyShape,
+    values: &[&Term],
+    push: &mut impl FnMut(Severity, Option<&str>, &'static str, String),
+) {
+    let lang =
+        |t: &Term| matches!(t, Term::Literal { datatype, .. } if datatype == RDF_LANG_STRING);
+    if let Some(other) = p.equals.as_deref() {
+        let others = graph.objects(focus, other);
+        let mut unmatched = |t: &Term, from: &str, to: &str| {
+            push(
+                p.severity,
+                Some(&p.path),
+                "equals",
+                format!(
+                    "{}: {} of {} has no equal in {}",
+                    short(&p.path),
+                    term_short(t),
+                    short(from),
+                    short(to)
+                ),
+            );
+        };
+        for v in values.iter().filter(|v| lang(v) || !others.contains(v)) {
+            unmatched(v, &p.path, other);
+        }
+        for w in others.iter().filter(|w| lang(w) || !values.contains(w)) {
+            unmatched(w, other, &p.path);
+        }
+    }
+    if let Some(other) = p.disjoint.as_deref() {
+        let others = graph.objects(focus, other);
+        for v in values.iter().filter(|v| lang(v) || others.contains(v)) {
+            push(
+                p.severity,
+                Some(&p.path),
+                "disjoint",
+                format!(
+                    "{}: {} is also a value of {}",
+                    short(&p.path),
+                    term_short(v),
+                    short(other)
+                ),
+            );
         }
     }
 }
@@ -1387,6 +1451,12 @@ fn turtle_string_and_pair_lines(p: &PropertyShape) -> Vec<String> {
     if let Some(o) = &p.less_than_or_equals {
         lines.push(format!("sh:lessThanOrEquals <{o}>"));
     }
+    if let Some(o) = &p.equals {
+        lines.push(format!("sh:equals <{o}>"));
+    }
+    if let Some(o) = &p.disjoint {
+        lines.push(format!("sh:disjoint <{o}>"));
+    }
     for (b, k) in [
         (&p.min_exclusive, "minExclusive"),
         (&p.min_inclusive, "minInclusive"),
@@ -1691,6 +1761,86 @@ mod tests {
     }
 
     #[test]
+    fn equals_and_disjoint_compare_whole_value_sets_and_refuse_a_language_tag() {
+        // #4814 slice 2 (#4600): equals is set equality, disjoint is an empty intersection, both by exact term
+        let s = shape(
+            "shape:\n  targetClass: ont:Part\n  properties:\n    - {path: ont:a, equals: ont:b}\n    - {path: ont:c, disjoint: ont:d}\n",
+        );
+        let part = |id: &str, pairs: &[(&str, Term)]| {
+            let mut g = Graph::new();
+            let s = iri("part", id);
+            g.insert(s.clone(), RDF_TYPE, Term::iri(ont("Part")));
+            for (p, o) in pairs {
+                g.insert(s.clone(), ont(p), o.clone());
+            }
+            g
+        };
+        let comps = |g: &Graph| -> Vec<&'static str> {
+            let mut c: Vec<_> = validate(g, std::slice::from_ref(&s))
+                .results
+                .iter()
+                .map(|r| r.component)
+                .collect();
+            c.sort_unstable();
+            c
+        };
+        let int = |v: &str| Term::Literal {
+            value: v.into(),
+            datatype: format!("{XSD_NS}integer"),
+        };
+        let ok = part(
+            "ok",
+            &[
+                ("a", Term::string("x")),
+                ("a", Term::string("y")),
+                ("b", Term::string("y")),
+                ("b", Term::string("x")),
+                ("c", Term::string("x")),
+                ("d", Term::string("z")),
+            ],
+        );
+        assert!(
+            comps(&ok).is_empty(),
+            "{{x,y}} = {{y,x}}; {{x}} and {{z}} share nothing"
+        );
+        assert!(
+            comps(&part("empty", &[])).is_empty(),
+            "two empty sets are equal and disjoint"
+        );
+        // one value each way, and a shared term: "1"^^integer is not "1"^^string, so that pair is not shared
+        let bad = part(
+            "bad",
+            &[
+                ("a", Term::string("x")),
+                ("b", Term::string("w")),
+                ("c", Term::string("s")),
+                ("d", Term::string("s")),
+                ("c", int("1")),
+                ("d", Term::string("1")),
+            ],
+        );
+        assert_eq!(comps(&bad), vec!["disjoint", "equals", "equals"]);
+        // F9: a language-tagged value is never read as equal (the tag is dropped), so it is a result on both
+        let lang = Term::Literal {
+            value: "x".into(),
+            datatype: RDF_LANG_STRING.into(),
+        };
+        let tagged = part(
+            "tagged",
+            &[
+                ("a", lang.clone()),
+                ("b", lang.clone()),
+                ("c", lang),
+                ("d", Term::string("q")),
+            ],
+        );
+        assert_eq!(comps(&tagged), vec!["disjoint", "equals", "equals"]);
+        let t = to_turtle(std::slice::from_ref(&s));
+        assert!(t.contains(&format!("sh:equals <{}>", ont("b"))), "{t}");
+        assert!(t.contains(&format!("sh:disjoint <{}>", ont("d"))), "{t}");
+    }
+
+    #[test]
     fn compare_terms_orders_numbers_across_types_and_refuses_mixed_kinds() {
         use std::cmp::Ordering::{Equal, Greater, Less};
         let lit = |v: &str, t: &str| Term::Literal {
@@ -1765,7 +1915,7 @@ mod tests {
                 "entity: {{type: pv-contract}}\nshape:\n  properties: [{{path: ont:x, {prop}}}]\n"
             )
         };
-        let rows: [(&str, String, String); 15] = [
+        let rows: [(&str, String, String); 17] = [
             ("F1 targetClass", "shape:\n  targetClass: [ont:A]\n  properties: []\n".into(), "shape:\n  targetClass: ont:A\n  properties: []\n".into()),
             ("F2 datatype", p("datatype: 5"), p("datatype: xsd:string")),
             ("F2 class", p("class: [ont:A]"), p("class: ont:A")),
@@ -1781,6 +1931,8 @@ mod tests {
             ("slice 1 minInclusive", p("minInclusive: {a: 1}"), p("minInclusive: 1.5")),
             ("slice 1 maxExclusive", p("maxExclusive: ~"), p("maxExclusive: 'z'")),
             ("slice 1 maxInclusive", p("maxInclusive: [true]"), p("maxInclusive: true")),
+            ("slice 2 equals", p("equals: [ont:y]"), p("equals: ont:y")),
+            ("slice 2 disjoint", p("disjoint: 3"), p("disjoint: ont:y")),
         ];
         for (row, bad, ok) in rows {
             let parse =

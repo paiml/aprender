@@ -1,0 +1,38 @@
+# vendored: w3c/data-shapes@gh-pages data-shapes-test-suite/tests/core/property/equals-001.ttl (tests/oracle/w3c/property/equals-001.ttl)
+id: property/equals-001
+label: "Test of sh:equals at property shape 001"
+prefix: "http://datashapes.org/sh/tests/core/property/equals-001.test#"
+targeting: "sh:targetNode → rdf:type ex:Focus + targetClass. One result per value missing from the other side: InvalidResource1 has two (A, B)"
+shapes:
+  - id: TestShape
+    targetClass: ex:Focus
+    properties:
+      - {path: ex:property1, equals: ex:property2}
+data: |
+  ex:InvalidResource1 rdf:type ex:Focus .
+  ex:InvalidResource2 rdf:type ex:Focus .
+  ex:InvalidResource3 rdf:type ex:Focus .
+  ex:InvalidResource4 rdf:type ex:Focus .
+  ex:ValidResource1 rdf:type ex:Focus .
+  ex:ValidResource2 rdf:type ex:Focus .
+  ex:InvalidResource1 ex:property1 "A" .
+  ex:InvalidResource1 ex:property2 "B" .
+  ex:InvalidResource2 ex:property1 "A" .
+  ex:InvalidResource3 ex:property2 "A" .
+  ex:InvalidResource4 ex:property1 "A" .
+  ex:InvalidResource4 ex:property1 "B" .
+  ex:InvalidResource4 ex:property2 "A" .
+  ex:ValidResource1 ex:property1 "A" .
+  ex:ValidResource1 ex:property2 "A" .
+  ex:ValidResource2 ex:property1 "A" .
+  ex:ValidResource2 ex:property1 "B" .
+  ex:ValidResource2 ex:property2 "A" .
+  ex:ValidResource2 ex:property2 "B" .
+expect:
+  conforms: false
+  results:
+    - {focus: ex:InvalidResource1, path: ex:property1, component: equals}
+    - {focus: ex:InvalidResource1, path: ex:property1, component: equals}
+    - {focus: ex:InvalidResource2, path: ex:property1, component: equals}
+    - {focus: ex:InvalidResource3, path: ex:property1, component: equals}
+    - {focus: ex:InvalidResource4, path: ex:property1, component: equals}

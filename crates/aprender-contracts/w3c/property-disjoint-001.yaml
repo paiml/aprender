@@ -1,0 +1,31 @@
+# vendored: w3c/data-shapes@gh-pages data-shapes-test-suite/tests/core/property/disjoint-001.ttl (tests/oracle/w3c/property/disjoint-001.ttl)
+id: property/disjoint-001
+label: "Test of sh:disjoint at property shape 001"
+prefix: "http://datashapes.org/sh/tests/core/property/disjoint-001.test#"
+targeting: "sh:targetNode → rdf:type ex:Focus + targetClass"
+shapes:
+  - id: TestShape
+    targetClass: ex:Focus
+    properties:
+      - {path: ex:property1, disjoint: ex:property2}
+data: |
+  ex:InvalidResource1 rdf:type ex:Focus .
+  ex:InvalidResource2 rdf:type ex:Focus .
+  ex:ValidResource1 rdf:type ex:Focus .
+  ex:ValidResource2 rdf:type ex:Focus .
+  ex:InvalidResource1 ex:property1 "A" .
+  ex:InvalidResource1 ex:property2 "A" .
+  ex:InvalidResource2 ex:property1 "A" .
+  ex:InvalidResource2 ex:property1 "B" .
+  ex:InvalidResource2 ex:property2 "A" .
+  ex:ValidResource1 ex:property1 "A" .
+  ex:ValidResource1 ex:property2 "B" .
+  ex:ValidResource2 ex:property1 "A" .
+  ex:ValidResource2 ex:property1 "B" .
+  ex:ValidResource2 ex:property2 "C" .
+  ex:ValidResource2 ex:property2 "D" .
+expect:
+  conforms: false
+  results:
+    - {focus: ex:InvalidResource1, path: ex:property1, component: disjoint}
+    - {focus: ex:InvalidResource2, path: ex:property1, component: disjoint}

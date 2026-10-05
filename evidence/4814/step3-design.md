@@ -81,3 +81,17 @@ gate accepts, so it goes in the same sign-off row as step 2.
   "this receipt field has exactly this value". I have not checked this assumption yet.
 - **#3611 lessThan:** done on main, with 3 cases vendored. Its only gap is the stale `differential.json`, which
   slice 1's first `make oracle` regeneration closes. Check it, but do not close it (brief).
+
+## Finding during slice 2: subsumption never checks the property pairs (F10)
+
+`lint/subsumption.rs::weakened` covers counts, datatype, class, nodeKind, pattern, in, the lengths, and, from
+slices 1 and 2, the range bounds and `equals`/`disjoint`. It has no `lessThan` or `lessThanOrEquals` row (#3611
+added the components but not their weakening checks). So a sub-shape that drops a super-shape's `lessThan` is
+not reported. Adding the two rows is stricter, so it changes what the gate accepts and needs a sign-off row. It is
+recorded here and not folded into slice 2.
+
+## Slice 2 note: language tags (F9) on `equals` / `disjoint`
+
+Slice 2 applies the F9 rule locally: a language-tagged value is a result on both components, never a pass,
+because `Term` cannot tell `"a"@en` from `"a"@fr`. The general fail-closed rule (for `in`, `hasValue`, and the
+range components, which already refuse it through `compare_terms`) is still part of slice 10.

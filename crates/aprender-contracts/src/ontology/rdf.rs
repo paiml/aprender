@@ -20,6 +20,8 @@ pub const XSD_STRING: &str = "http://www.w3.org/2001/XMLSchema#string";
 pub const XSD_INTEGER: &str = "http://www.w3.org/2001/XMLSchema#integer";
 pub const XSD_BOOLEAN: &str = "http://www.w3.org/2001/XMLSchema#boolean";
 pub const XSD_DOUBLE: &str = "http://www.w3.org/2001/XMLSchema#double";
+/// A language-tagged literal's datatype. `Term` keeps no tag (F9 of #4814), so comparing components refuse it.
+pub const RDF_LANG_STRING: &str = "http://www.w3.org/1999/02/22-rdf-syntax-ns#langString";
 
 /// A term: an IRI or a typed literal. There is no blank-node variant, by construction.
 #[derive(Debug, Clone, PartialEq, Eq, PartialOrd, Ord)]
