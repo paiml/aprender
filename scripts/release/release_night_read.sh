@@ -16,7 +16,8 @@
 #   RED           any night of H holds the lane red. A later green on the same commit never outvotes it.
 #   GO            the newest read night of H holds it green, from a run on H (run_head == H), at attempt 1.
 #   NOT_MEASURED  everything else, and it REFUSES: no night of H at all; H's nights unreadable (a cut-short
-#                 bundle with no "# C" line could be H's, so any such night refuses too); the lane row missing,
+#                 bundle whose "# C" is not a 40-hex sha could be H's; a dir that is not a UTC day; a missing
+#                 column or a state the train never writes, on any night of H); the lane row missing,
 #                 duplicated, not_measured, or any other state; a green from a run on another commit; a green
 #                 at attempt 2 or later. not_measured is never a pass, and release day runs no ladder to make
 #                 up for it here: the caller falls back to running the steps itself (RQ-2 ruling B).
@@ -47,34 +48,50 @@ nm() { echo "NOT_MEASURED $*"; exit 2; }
 # meta FILE KEY -> the value of the "# KEY<TAB>value" line, or empty
 meta() { awk -F'\t' -v k="# $2" '$1 == k { print $2; exit }' "$1" 2> /dev/null; }
 
-# H's nights, newest first. A night with no readable "# C" line may be H's: it refuses.
+# H's nights, newest first. Each dir under DIR is a UTC day (YYYY-MM-DD), or the train's fetch cache. Any
+# other dir refuses: the reader cannot tell whose it is. A day with no bundle.tsv (a failed train night writes
+# only its "line") holds no row, so it cannot hide a red and is passed over. A bundle whose "# C" is not a
+# 40-hex sha (missing, empty, CRLF, trailing space) may be H's: it refuses.
+export LC_ALL=C   # the glob sorts the day dirs; C collation makes ascending explicit
 [ -d "$LEDGER" ] || nm "night: no ledger at $LEDGER"
 nights=""
-for b in "$LEDGER"/*/bundle.tsv; do
+for d in "$LEDGER"/*/; do
+    [ -d "$d" ] || continue
+    day=$(basename "$d")
+    [ "$day" = cache ] && continue
+    [[ $day =~ ^[0-9]{4}-[0-9]{2}-[0-9]{2}$ ]] || nm "night: '$day' is not a UTC day dir"
+    b="$LEDGER/$day/bundle.tsv"
     [ -f "$b" ] || continue
     c=$(meta "$b" C)
-    if [ -z "$c" ]; then nm "night: $(basename "$(dirname "$b")") has no '# C' line, it may be H's"; fi
-    [ "$c" = "$H" ] && nights="$(basename "$(dirname "$b")") $nights"
+    [[ $c =~ ^[0-9a-f]{40}$ ]] || nm "night: $day '# C' is '$c', not a 40-hex sha; it may be H's"
+    [ "$c" = "$H" ] && nights="$day $nights"
 done
 [ -n "$nights" ] || nm "night: no night measured ${H:0:10}"
 newest=${nights%% *}
 
-# row FILE LANE -> "<count>|<state>|<run_head>|<attempt>|<red run id or empty>", columns by the header's names.
-# "|", not a tab: read merges runs of a whitespace IFS, so an empty run_head would shift attempt into it.
-# The red field is set if ANY row of the lane is red, so a duplicate row cannot hide one.
+# row FILE LANE -> "<count>|<state>|<run_head>|<attempt>|<red run id or empty>|<bad or empty>", columns by the
+# header's names. "|", not a tab: read merges runs of a whitespace IFS, so an empty run_head would shift
+# attempt into it. The red field is set if ANY row of the lane is red, so a duplicate row cannot hide one.
+# bad is set when a required column is missing, or a row's state is not one the train writes: either could
+# hide a red, so it refuses.
 row() {
     awk -F'\t' -v l="$2" '
-        NR == 1 { for (i = 1; i <= NF; i++) col[$i] = i; next }
-        /^#/ { next }
+        NR == 1 { for (i = 1; i <= NF; i++) col[$i] = i
+                  if (!("lane" in col) || !("state" in col) || !("run_head" in col) || !("attempt" in col) || !("run_id" in col)) bad = "missing column"
+                  next }
+        /^#/ || bad != "" { next }
         $col["lane"] == l { n++; s = $col["state"]; h = $col["run_head"]; a = $col["attempt"]
+                          if (s != "green" && s != "red" && s != "not_measured" && bad == "") bad = "state " s
                           if (s == "red" && red == "") red = ($col["run_id"] == "" ? "none" : $col["run_id"]) }
-        END { printf "%d|%s|%s|%s|%s\n", n, s, h, a, red }' "$1"
+        END { printf "%d|%s|%s|%s|%s|%s\n", n, s, h, a, red, bad }' "$1"
 }
 
 # RED first, over every night of H: a red is never outvoted by a later green on the same commit.
 for d in $nights; do
     for l in $LANES; do
-        IFS="|" read -r _ _ _ _ r <<< "$(row "$LEDGER/$d/bundle.tsv" "$l")"
+        o=$(row "$LEDGER/$d/bundle.tsv" "$l") || nm "night: $d bundle unreadable"
+        IFS="|" read -r _ _ _ _ r x <<< "$o"
+        [ -n "$x" ] && nm "$l: night $d has a $x; a red could be hiding"
         [ -n "$r" ] && { echo "RED $l night=$d run=$r"; exit 1; }
     done
 done
@@ -82,7 +99,7 @@ done
 b="$LEDGER/$newest/bundle.tsv"
 [ "$(meta "$b" read)" = ok ] || nm "night: $newest read '$(meta "$b" read)', not ok"
 for l in $LANES; do
-    IFS="|" read -r n s h a _ <<< "$(row "$b" "$l")"
+    IFS="|" read -r n s h a _ _ <<< "$(row "$b" "$l")"
     [ "$n" = 1 ] || nm "$l: $n rows in night $newest"
     [ "$s" = green ] || nm "$l: state '$s' in night $newest"
     [ "$h" = "$H" ] || nm "$l: green from a run on '${h:0:10}', not ${H:0:10}"

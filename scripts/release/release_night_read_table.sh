@@ -97,6 +97,28 @@ table() { # table <sut> <label>
     fresh; night 2026-10-05 "$H"
     awk -F'\t' 'BEGIN { OFS = "\t" } /^#/ { print; next } { t = $3; $3 = $6; $6 = t; print }' "$L/2026-10-05/bundle.tsv" > "$L/x" && mv "$L/x" "$L/2026-10-05/bundle.tsv"
     row "$l columns reordered: read by header name -> GO" "$(run "$s")" "0|GO"
+    fresh; night 2026-10-04 "$H"$'\r' ok "models=red,$H,1"; night 2026-10-05 "$H"
+    row "$l older night's '# C' ends in CR (it may be H's) -> refuse" "$(run "$s")" "2|NOT_MEASURED"
+    fresh; night 2026-10-04 "$H " ok "models=red,$H,1"; night 2026-10-05 "$H"
+    row "$l older night's '# C' has a trailing space -> refuse" "$(run "$s")" "2|NOT_MEASURED"
+    fresh; night 2026-10-04 "$H" ok "models=red,$H,1"; night 2026-10-05 "$H"
+    sed -i '1s/\tstate\t/\tstatus\t/' "$L/2026-10-04/bundle.tsv"
+    row "$l older night of H has no 'state' column -> refuse (a red could hide)" "$(run "$s")" "2|NOT_MEASURED"
+    fresh; night 2026-10-04 "$H" ok "models=red,$H,1"; night 2026-10-05 "$H"
+    sed -i '1s/\trun_id\t/\trun\t/' "$L/2026-10-04/bundle.tsv"
+    row "$l older night of H has no 'run_id' column -> refuse, never a guessed run" "$(run "$s")" "2|NOT_MEASURED"
+    fresh; night 2026-10-05 "$H" ok "models=not_measured,$H,1"
+    row "$l newest night: lane not_measured though run_head and attempt look right -> refuse" "$(run "$s")" "2|NOT_MEASURED"
+    fresh; night 2026-10-04 "$H" ok "models=RED,$H,1"; night 2026-10-05 "$H"
+    row "$l older night of H holds a state the train never writes -> refuse" "$(run "$s")" "2|NOT_MEASURED"
+    fresh; night 2026-10-05 "$H"; mkdir -p "$L/2026-10-04 x"
+    row "$l a dir that is not a UTC day -> refuse" "$(run "$s")" "2|NOT_MEASURED"
+    fresh; night 2026-10-05 "$H"; mkdir -p "$L/cache"; : > "$L/history.tsv"
+    row "$l the train's cache dir and history.tsv are not nights -> GO" "$(run "$s")" "0|GO"
+    fresh; night 2026-10-04 "$H"; mkdir -p "$L/2026-10-05"; echo "NOT RELEASABLE" > "$L/2026-10-05/line"
+    row "$l a failed night with no bundle holds no row -> passed over, older green GO" "$(run "$s")" "0|GO"
+    fresh; mkdir -p "$L/2026-10-05"; echo "NOT RELEASABLE" > "$L/2026-10-05/line"
+    row "$l only a failed night with no bundle -> refuse" "$(run "$s")" "2|NOT_MEASURED"
     fresh; night 2026-10-05 "$H"
     row "$l short head -> caller error" "$(rc=0; bash "$s" --ledger "$L" --head "${H:0:9}" > /dev/null 2>&1 || rc=$?; echo "$rc")" 3
 }
@@ -116,7 +138,12 @@ mutant no-red-scan          's/^        \[ -n "\$r" \] \&\& {/        false \&\&
 mutant red-only-last-row    's/if (s == "red" \&\& red == "")/if (0)/'
 mutant oldest-night-wins    's/^newest=\${nights%% \*}$/newest=${nights% }; newest=${newest##* }/'
 mutant no-read-ok           's/^\[ "\$(meta "\$b" read)" = ok \] || nm/true || nm/'
-mutant no-c-line-refusal    's/if \[ -z "\$c" \]; then nm/if false; then nm/'
+mutant no-c-line-refusal    's/\[\[ \$c .. ^\[0-9a-f\]{40}\$ \]\] || nm/true || nm/'
+mutant no-bad-row-refusal   's/^        \[ -n "\$x" \] \&\& nm/        false \&\& nm/'
+mutant no-state-whitelist   's/if (s != "green" \&\& s != "red" \&\& s != "not_measured" \&\& bad == "")/if (0)/'
+mutant no-column-check      's/bad = "missing column"/bad = ""/'
+mutant any-dir-is-a-night   's/|| nm "night: .\$day. is not a UTC day dir"/|| true/'
+mutant state-not-checked    's/^    \[ "\$s" = green \] || nm/    true || nm/'
 mutant duplicates-allowed   's/^    \[ "\$n" = 1 \] || nm/    [ "$n" -ge 1 ] || nm/'
 mutant models-dropped       's/ dogfood models"$/ dogfood"/'
 mutant positional-columns   's/col\[\$i\] = i/col[$i] = 0/'
