@@ -3,8 +3,11 @@
 //! keep the init they had. No device: these drive the pure helpers `upload_blocks` and
 //! `with_model` call; the block calls themselves are row 005's #[ignore] tests.
 
-use super::lora_init::{adapter_pair, added_adapters, nf4_init_adapters, nf4_targets};
+use super::lora_init::{
+    adapter_pair, added_adapters, lora_prewarm_dims, nf4_init_adapters, nf4_targets,
+};
 use super::trainer::trainer_targets;
+use crate::autograd::cuda_backward_keys::{gemm_backward_a, gemm_backward_b, lora_backward_gemms};
 use crate::lora::LoraTarget;
 use crate::transformer::TransformerConfig;
 
@@ -136,4 +139,35 @@ fn falsify_lora_target_selection_v1_011_new_gets_q_and_v_and_add_gets_the_rest()
     assert!(adapter_pair(&k_down, LoraTarget::V).is_none());
     assert_eq!(added_adapters(&k_down).count(), 2);
     assert!(adapter_pair(&k_down, LoraTarget::O).is_none());
+}
+
+#[test]
+fn falsify_lora_target_selection_v1_012_prewarm_dims_are_the_selected_targets() {
+    let config = model_config();
+    let targets = nf4_targets(Some(&names(&["q_proj", "o_proj", "down_proj"])));
+    let want: Vec<(u32, u32)> = [LoraTarget::Q, LoraTarget::O, LoraTarget::Down]
+        .iter()
+        .map(|t| {
+            let (d_out, d_in) = t.dims(&config);
+            (d_out as u32, d_in as u32)
+        })
+        .collect();
+    assert_eq!(lora_prewarm_dims(&config, &targets), want);
+    assert!(lora_prewarm_dims(&config, &[]).is_empty());
+
+    // Every target's four backward GEMMs are warmed, at its own (d_out, d_in).
+    let (s, r) = (64, RANK as u32);
+    let warmed = lora_backward_gemms(&lora_prewarm_dims(&config, &LoraTarget::ALL), s, r);
+    for t in LoraTarget::ALL {
+        let (d_out, d_in) = t.dims(&config);
+        let (d_out, d_in) = (d_out as u32, d_in as u32);
+        for g in [
+            gemm_backward_b(s, r, d_out),
+            gemm_backward_a(s, d_out, r),
+            gemm_backward_b(s, d_in, r),
+            gemm_backward_a(s, r, d_in),
+        ] {
+            assert!(warmed.contains(&g), "{t:?}: {} not warmed", g.key);
+        }
+    }
 }

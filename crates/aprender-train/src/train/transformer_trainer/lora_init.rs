@@ -18,6 +18,21 @@ pub(crate) fn nf4_targets(modules: Option<&[String]>) -> Vec<LoraTarget> {
     trainer_targets(modules).map(|t| t.as_slice().to_vec()).unwrap_or_default()
 }
 
+/// `(d_out, d_in)` of each of `targets`, in that order: the shapes the trainer
+/// pre-warms the LoRA backward GEMMs for (R15a C6, FALSIFY-LORA_TARGET_SELECTION_V1_012).
+pub(crate) fn lora_prewarm_dims(
+    config: &TransformerConfig,
+    targets: &[LoraTarget],
+) -> Vec<(u32, u32)> {
+    targets
+        .iter()
+        .map(|t| {
+            let (d_out, d_in) = t.dims(config);
+            (d_out as u32, d_in as u32)
+        })
+        .collect()
+}
+
 /// `(j + φ(layer, target))·0.1`, the argument of A's sinusoid at index `j`. q_proj and
 /// v_proj add in the order the pre-C5b init did, so their A is the same bit for bit.
 fn init_arg(j: usize, layer: usize, target: LoraTarget) -> f32 {

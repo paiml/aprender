@@ -38,7 +38,9 @@ mod tests;
 
 #[cfg(feature = "cuda")]
 pub(crate) use cache::set_backward_cublas_stream;
-pub use cache::{init_kernel_cache, pre_warm_lora_backward_kernels};
+pub use cache::{
+    init_kernel_cache, pre_warm_lora_backward_kernels, pre_warm_lora_target_backward_kernels,
+};
 pub use elementwise::{gelu_backward, relu_backward, silu_backward};
 pub use gemm::{
     gemm_backward_a, gemm_backward_a_accumulate, gemm_backward_a_fp16_dispatch,

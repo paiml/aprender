@@ -15,6 +15,7 @@ use trueno_gpu::driver::{CublasHandle, CudaContext, CudaModule, CudaStream};
 // Add [patch.crates-io] trueno-gpu = { path = "../trueno/trueno-gpu" } to Cargo.toml.
 
 use super::super::cuda_tensor::{CudaTensorError, Result};
+use crate::autograd::cuda_backward_keys as keys;
 
 /// Cached compiled CUDA modules for backward kernels
 #[cfg(feature = "cuda")]
@@ -168,8 +169,8 @@ pub fn pre_warm_lora_backward_kernels(
     quantize_nf4: bool,
 ) -> Result<()> {
     use trueno_gpu::kernels::backward::{
-        BatchedRmsNormBackwardKernel, BatchedSoftmaxBackwardKernel, GemmBackwardAKernel,
-        GemmBackwardBKernel, RmsNormGammaReduceKernel, SiluBackwardKernel,
+        BatchedRmsNormBackwardKernel, BatchedSoftmaxBackwardKernel, RmsNormGammaReduceKernel,
+        SiluBackwardKernel,
     };
     use trueno_gpu::kernels::Kernel;
 
@@ -216,83 +217,35 @@ pub fn pre_warm_lora_backward_kernels(
         }};
     }
 
-    // Tile size must match BACKWARD_TILE_SIZE in gemm.rs (C-TILE-BWD-007)
-    let tile: u32 = 16;
+    // Key and kernel dims both come from `cuda_backward_keys`, as in gemm.rs
+    // (R15a C6, FALSIFY-LORA_TARGET_SELECTION_V1_012). Building the kernel here
+    // with (m, k, n) under the runtime's {m}_{k}_{n} key swapped n and k.
+    let mut gemms = Vec::new();
 
-    // ── LoRA backward shapes (LoRA training only) ──
+    // ── LoRA backward shapes (LoRA training only): q and v ──
     if is_lora {
-        // gemm_backward_b: weight gradients
-        warm!(
-            format!("gemm_backward_b_{s}_{r}_{qd}"),
-            GemmBackwardBKernel::tiled_unrolled(s, r, qd, tile)
-        );
-        if kv != qd {
-            warm!(
-                format!("gemm_backward_b_{s}_{r}_{kv}"),
-                GemmBackwardBKernel::tiled_unrolled(s, r, kv, tile)
-            );
-        }
-        warm!(
-            format!("gemm_backward_b_{s}_{h}_{r}"),
-            GemmBackwardBKernel::tiled_unrolled(s, h, r, tile)
-        );
-
-        // gemm_backward_a: input gradients
-        warm!(
-            format!("gemm_backward_a_{s}_{qd}_{r}"),
-            GemmBackwardAKernel::tiled_unrolled(s, qd, r, tile)
-        );
-        if kv != qd {
-            warm!(
-                format!("gemm_backward_a_{s}_{kv}_{r}"),
-                GemmBackwardAKernel::tiled_unrolled(s, kv, r, tile)
-            );
-        }
-        warm!(
-            format!("gemm_backward_a_{s}_{r}_{h}"),
-            GemmBackwardAKernel::tiled_unrolled(s, r, h, tile)
-        );
+        gemms.extend(keys::lora_backward_gemms(&[(qd, h), (kv, h)], s, r));
     }
 
     // ── Full fp32 backward shapes (non-NF4 mode) ──
     if !quantize_nf4 {
         // Attention backward: Q/O (S,H,H), K/V (S,kv,H)
-        warm!(
-            format!("gemm_backward_a_{s}_{h}_{h}"),
-            GemmBackwardAKernel::tiled_unrolled(s, h, h, tile)
-        );
-        warm!(
-            format!("gemm_backward_b_{s}_{h}_{h}"),
-            GemmBackwardBKernel::tiled_unrolled(s, h, h, tile)
-        );
+        gemms.extend([keys::gemm_backward_a(s, h, h), keys::gemm_backward_b(s, h, h)]);
         if kv != h {
-            warm!(
-                format!("gemm_backward_a_{s}_{kv}_{h}"),
-                GemmBackwardAKernel::tiled_unrolled(s, kv, h, tile)
-            );
-            warm!(
-                format!("gemm_backward_b_{s}_{kv}_{h}"),
-                GemmBackwardBKernel::tiled_unrolled(s, kv, h, tile)
-            );
+            gemms.extend([keys::gemm_backward_a(s, kv, h), keys::gemm_backward_b(s, kv, h)]);
         }
-
         // FFN backward: gate/up (S,H,I), down (S,I,H)
-        warm!(
-            format!("gemm_backward_a_{s}_{h}_{i}"),
-            GemmBackwardAKernel::tiled_unrolled(s, h, i, tile)
-        );
-        warm!(
-            format!("gemm_backward_b_{s}_{h}_{i}"),
-            GemmBackwardBKernel::tiled_unrolled(s, h, i, tile)
-        );
-        warm!(
-            format!("gemm_backward_a_{s}_{i}_{h}"),
-            GemmBackwardAKernel::tiled_unrolled(s, i, h, tile)
-        );
-        warm!(
-            format!("gemm_backward_b_{s}_{i}_{h}"),
-            GemmBackwardBKernel::tiled_unrolled(s, i, h, tile)
-        );
+        gemms.extend([
+            keys::gemm_backward_a(s, h, i),
+            keys::gemm_backward_b(s, h, i),
+            keys::gemm_backward_a(s, i, h),
+            keys::gemm_backward_b(s, i, h),
+        ]);
+    }
+
+    for gemm in &gemms {
+        warm_backward_gemm(&mut cache, &target, gemm)?;
+        count += 1;
     }
 
     // ── Activation backward: SiLU ──

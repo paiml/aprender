@@ -421,6 +421,21 @@ impl CudaTransformerTrainer {
                 crate::error::Error::ConfigError(format!("Backward kernel pre-warm failed: {e:?}"))
             })?;
             eprintln!("  ✓ Backward kernels pre-warmed (silu_backward, rms_norm_backward, etc.)");
+
+            // R15a C6: the LoRA backward GEMMs of every NF4 target, not only q/v
+            if config.quantize_nf4 && config.is_lora() {
+                let targets = super::lora_init::nf4_targets(config.lora_target_modules.as_deref());
+                crate::autograd::cuda_backward::pre_warm_lora_target_backward_kernels(
+                    &super::lora_init::lora_prewarm_dims(mc, &targets),
+                    max_seq_len,
+                    config.lora_rank.unwrap_or(0),
+                )
+                .map_err(|e| {
+                    crate::error::Error::ConfigError(format!(
+                        "LoRA target backward pre-warm failed: {e:?}"
+                    ))
+                })?;
+            }
         }
 
         // Step 2b: Bind cuBLAS handles to training stream (ALB-075)

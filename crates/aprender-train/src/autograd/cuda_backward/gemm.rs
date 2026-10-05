@@ -13,6 +13,7 @@ use trueno_gpu::kernels::Kernel;
 use super::super::cuda_tensor::{CudaTensorError, Result};
 #[cfg(feature = "cuda")]
 use super::cache::KERNEL_CACHE;
+use crate::autograd::cuda_backward_keys as keys;
 
 // cuBLAS backward dispatch (ALB-075)
 #[cfg(feature = "cuda")]
@@ -24,7 +25,7 @@ use crate::autograd::cuda_forward::{
 ///
 /// Must be divisible by 4 (unroll factor). Shared memory per block = 2 * TILE^2 * 4 bytes.
 /// TILE=16: 2KB smem, 256 threads/block. Safe for all dimensions including LoRA rank=16.
-const BACKWARD_TILE_SIZE: u32 = 16;
+pub(super) const BACKWARD_TILE_SIZE: u32 = 16;
 
 /// GEMM backward pass for matrix A on GPU (trueno#109: tiled)
 ///
@@ -58,10 +59,11 @@ pub fn gemm_backward_a(
 
     let tile = BACKWARD_TILE_SIZE;
     // Kernel object needed for name(); cheap struct creation, PTX deferred.
-    let kernel = GemmBackwardAKernel::tiled_unrolled(m, n, k, tile);
+    let gemm = keys::gemm_backward_a(m, k, n);
+    let kernel = GemmBackwardAKernel::tiled_unrolled(gemm.m, gemm.n, gemm.k, tile);
     let kernel_name = kernel.name();
 
-    let key = format!("gemm_backward_a_{m}_{k}_{n}");
+    let key = gemm.key;
     let module = match cache.get_cached(&key) {
         Some(m) => m,
         None => {
@@ -136,10 +138,11 @@ pub fn gemm_backward_b(
 
     let tile = BACKWARD_TILE_SIZE;
     // Kernel object needed for name(); cheap struct creation, PTX deferred.
-    let kernel = GemmBackwardBKernel::tiled_unrolled(m, n, k, tile);
+    let gemm = keys::gemm_backward_b(m, k, n);
+    let kernel = GemmBackwardBKernel::tiled_unrolled(gemm.m, gemm.n, gemm.k, tile);
     let kernel_name = kernel.name();
 
-    let key = format!("gemm_backward_b_{m}_{k}_{n}");
+    let key = gemm.key;
     let module = match cache.get_cached(&key) {
         Some(m) => m,
         None => {

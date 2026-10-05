@@ -28,6 +28,9 @@ pub mod checkpoint;
 mod context;
 #[cfg(feature = "cuda")]
 pub mod cuda_backward;
+/// Backward-cache GEMM keys and kernel dims (R15a C6) — not behind `cuda`, for the
+/// same reason as [`cuda_forward_keys`].
+pub mod cuda_backward_keys;
 #[cfg(feature = "cuda")]
 pub mod cuda_forward;
 
