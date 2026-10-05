@@ -104,8 +104,21 @@ pub const CASES: &[(&str, &str)] = &[
     ),
 ];
 
-/// The cases of ONT-0's table that the subset cannot run, each with the reason — measured at this row, not
-/// guessed: ONT-0 counted 32 by component name; 16 of them use a FORM the subset does not attach.
+/// Every case id of the W3C SHACL Core suite, as vendored in `w3c/core-suite.txt` (the header says how it was
+/// derived from the suite's manifests).
+pub const CORE_SUITE: &str = include_str!("../../w3c/core-suite.txt");
+
+/// The ids of [`CORE_SUITE`], comment lines skipped.
+pub fn core_suite_ids() -> impl Iterator<Item = &'static str> {
+    CORE_SUITE
+        .lines()
+        .map(str::trim)
+        .filter(|l| !l.is_empty() && !l.starts_with('#'))
+}
+
+/// The cases of the W3C Core suite that the subset cannot run, each with the reason — measured at this row, not
+/// guessed: ONT-0 counted 32 by component name; 16 of them use a FORM the subset does not attach. #4814 added the
+/// other 63 suite cases, so every id in [`CORE_SUITE`] is in [`CASES`] or here, and this list only shrinks.
 pub const NOT_VENDORED: &[(&str, &str)] = &[
     ("node/class-001", "sh:class on the node shape itself; the subset attaches constraints to property shapes"),
     ("node/class-002", "sh:class on the node shape itself"),
@@ -123,6 +136,71 @@ pub const NOT_VENDORED: &[(&str, &str)] = &[
     ("property/datatype-003", "sh:or — outside the subset, refused by name"),
     ("property/nodeKind-001", "data blank nodes and sh:BlankNode / sh:IRIOrLiteral kinds — the graph has no blank node (R-15) and the subset knows IRI and Literal"),
     ("property/pattern-002", "sh:flags — outside the subset, refused by name"),
+    // #4814 slice 0: the other 63 cases of the W3C Core suite (98 in all), so every suite case is in one list or the
+    // other. The parenthesised slice is the #4814 step-3 slice that would vendor it (evidence/4814/step3-design.md).
+    ("complex/personexample", "sh:inversePath (slice 6)"),
+    ("complex/shacl-shacl", "the SHACL-for-SHACL shapes graph, read as RDF; the gate path has no Turtle reader (R-13) — permanent"),
+    ("misc/deactivated-001", "sh:deactivated — refused by name (slice 11)"),
+    ("misc/deactivated-002", "sh:deactivated on the node shape itself (slices 5, 11)"),
+    ("misc/message-001", "sh:message and sh:resultMessage — refused by name (slice 11)"),
+    ("misc/severity-001", "sh:datatype on the node shape itself (slice 5)"),
+    ("misc/severity-002", "sh:Info and sh:BlankNode — refused by name (slice 11)"),
+    ("node/and-001", "sh:and — refused by name (slice 8)"),
+    ("node/and-002", "sh:and — refused by name (slice 8)"),
+    ("node/disjoint-001", "sh:disjoint on the node shape itself (slices 2, 5)"),
+    ("node/equals-001", "sh:equals on the node shape itself (slices 2, 5)"),
+    ("node/hasValue-001", "sh:hasValue on the node shape itself (slices 3, 5)"),
+    ("node/languageIn-001", "sh:languageIn on the node shape itself; the term model drops language tags (slices 5, 10)"),
+    ("node/maxExclusive-001", "sh:maxExclusive on the node shape itself (slices 1, 5)"),
+    ("node/maxInclusive-001", "sh:maxInclusive on the node shape itself (slices 1, 5)"),
+    ("node/minExclusive-001", "sh:minExclusive on the node shape itself (slices 1, 5)"),
+    ("node/minInclusive-001", "sh:minInclusive on the node shape itself (slices 1, 5)"),
+    ("node/minInclusive-002", "sh:minInclusive on the node shape itself (slices 1, 5)"),
+    ("node/minInclusive-003", "sh:minInclusive on the node shape itself (slices 1, 5)"),
+    ("node/not-001", "sh:not — refused by name (slice 8)"),
+    ("node/not-002", "sh:not — refused by name (slice 8)"),
+    ("node/or-001", "sh:or — refused by name (slice 8)"),
+    ("node/xone-001", "sh:xone — refused by name (slice 8)"),
+    ("node/xone-duplicate", "sh:xone — refused by name (slice 8)"),
+    ("node/qualified-001", "sh:qualifiedValueShape on the node shape itself (slice 9)"),
+    ("path/path-alternative-001", "sh:alternativePath (slice 7)"),
+    ("path/path-complex-001", "sh:zeroOrMorePath and sh:hasValue (slices 3, 7)"),
+    ("path/path-complex-002", "sh:inversePath (slice 6)"),
+    ("path/path-inverse-001", "sh:inversePath (slice 6)"),
+    ("path/path-oneOrMore-001", "sh:oneOrMorePath (slice 7)"),
+    ("path/path-sequence-001", "a sequence path (slice 7)"),
+    ("path/path-sequence-002", "a sequence path (slice 7)"),
+    ("path/path-sequence-duplicate-001", "a sequence path (slice 7)"),
+    ("path/path-strange-001", "sh:inversePath (slice 6)"),
+    ("path/path-strange-002", "sh:inversePath (slice 6)"),
+    ("path/path-zeroOrMore-001", "sh:zeroOrMorePath (slice 7)"),
+    ("path/path-zeroOrOne-001", "sh:zeroOrOnePath (slice 7)"),
+    ("path/path-unused-001", "expects an ill-formed path in an unused shape to be ignored; pv refuses every ill-formed path at parse, by design (fail closed) — permanent"),
+    ("property/and-001", "sh:and — refused by name (slice 8)"),
+    ("property/disjoint-001", "sh:disjoint — refused by name (slice 2)"),
+    ("property/equals-001", "sh:equals — refused by name (slice 2)"),
+    ("property/hasValue-001", "sh:hasValue — refused by name (slice 3)"),
+    ("property/languageIn-001", "sh:languageIn; the term model drops language tags (slice 10)"),
+    ("property/maxExclusive-001", "sh:maxExclusive — refused by name (slice 1)"),
+    ("property/maxInclusive-001", "sh:maxInclusive — refused by name (slice 1)"),
+    ("property/minExclusive-001", "sh:minExclusive — refused by name (slice 1)"),
+    ("property/minExclusive-002", "sh:minExclusive — refused by name (slice 1)"),
+    ("property/not-001", "sh:not — refused by name (slice 8)"),
+    ("property/or-001", "sh:or — refused by name (slice 8)"),
+    ("property/or-datatypes-001", "sh:or — refused by name (slice 8)"),
+    ("property/property-001", "sh:property nested in a property shape; the subset nests only sh:node, one level (slice 8)"),
+    ("property/qualifiedMinCountDisjoint-001", "sh:qualifiedValueShape — refused by name (slice 9)"),
+    ("property/qualifiedValueShape-001", "sh:qualifiedValueShape — refused by name (slice 9)"),
+    ("property/qualifiedValueShapesDisjoint-001", "sh:qualifiedValueShape — refused by name (slice 9)"),
+    ("property/uniqueLang-001", "sh:uniqueLang; the term model drops language tags (slice 10)"),
+    ("property/uniqueLang-002", "sh:uniqueLang; the term model drops language tags (slice 10)"),
+    ("targets/multipleTargets-001", "sh:targetSubjectsOf (slice 4)"),
+    ("targets/targetClassImplicit-001", "an implicit class target (a shape that is also an rdfs:Class) (slice 4)"),
+    ("targets/targetNode-001", "tests sh:targetNode itself; the targetNode-to-class rewrite would make it vacuous (slice 4)"),
+    ("targets/targetObjectsOf-001", "sh:targetObjectsOf (slice 4)"),
+    ("targets/targetSubjectsOf-001", "sh:targetSubjectsOf (slice 4)"),
+    ("targets/targetSubjectsOf-002", "sh:targetSubjectsOf (slice 4)"),
+    ("validation-reports/shared", "one property shape reached from two node shapes; the YAML dialect has no shared shape reference (slice 8)"),
 ];
 
 /// One expected `sh:ValidationResult`, as the case states it (component as W3C's short name, lower camel).
@@ -481,12 +559,19 @@ mod tests {
 
     #[test]
     fn the_table_of_ont_0_is_accounted_for_case_by_case() {
-        // ONT-0 enumerated 32 cases over the subset's components; #3611 added the three property-pair cases
+        // #4814 slice 0: the denominator is the W3C suite itself (98 cases at 976ed12ad3), read from the vendored
+        // id list — no longer the 35 cases of ONT-0 + #3611. Every suite case is vendored or excused with a reason,
+        // never both, and neither list names a case the suite does not have.
+        let suite: Vec<&str> = core_suite_ids().collect();
+        let mut sorted = suite.clone();
+        sorted.sort_unstable();
+        sorted.dedup();
         assert_eq!(
-            CASES.len() + NOT_VENDORED.len(),
-            35,
-            "ONT-0's 32 cases plus #3611's lessThan-001/-002 and lessThanOrEquals-001"
+            sorted.len(),
+            suite.len(),
+            "the suite list names no case twice"
         );
+        assert_eq!(suite.len(), 98, "w3c/data-shapes 976ed12ad3: complex 2, misc 5, node 32, path 13, property 38, targets 7, validation-reports 1");
         let mut ids: Vec<&str> = CASES
             .iter()
             .map(|(id, _)| *id)
@@ -494,7 +579,23 @@ mod tests {
             .collect();
         ids.sort_unstable();
         ids.dedup();
-        assert_eq!(ids.len(), 35, "no case is both vendored and excused");
+        assert_eq!(
+            ids.len(),
+            CASES.len() + NOT_VENDORED.len(),
+            "no case is both vendored and excused, nor listed twice"
+        );
+        assert_eq!(
+            ids, sorted,
+            "CASES and NOT_VENDORED together are exactly the suite"
+        );
+        for (id, why) in NOT_VENDORED {
+            assert!(!why.trim().is_empty(), "{id} is excused without a reason");
+        }
+        // the ratchet (#4814 plan step 4): the vendored count only grows from its measured value
+        assert!(
+            CASES.len() >= 19,
+            "vendored W3C cases dropped below the 19 measured at the #4814 baseline"
+        );
     }
 
     #[test]
