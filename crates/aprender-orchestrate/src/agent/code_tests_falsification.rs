@@ -186,9 +186,19 @@ fn falsify_4599_005_code_window_is_the_models_context_length() {
     assert_eq!(code_context_window(None, &dir.path().join("absent.gguf")), 32_768);
 }
 
-/// TinyLlama-1.1B-Chat's GGUF `llama.context_length`.
+/// TinyLlama-1.1B-Chat's context window, derived from the model's own published config: the
+/// `model_max_length` of its `tokenizer_config.json`, kept in-tree as a chat-template fixture.
 #[cfg(feature = "inference")]
-const TINYLLAMA_CONTEXT: u32 = 2048;
+fn tinyllama_context() -> u32 {
+    let path = concat!(
+        env!("CARGO_MANIFEST_DIR"),
+        "/../aprender-serve/src/fixtures/chat_template_3990/tinyllama_tokenizer_config.json"
+    );
+    let text = std::fs::read_to_string(path).expect("read the TinyLlama tokenizer config");
+    let config: serde_json::Value = serde_json::from_str(&text).expect("parse it");
+    let max = config["model_max_length"].as_u64().expect("model_max_length is a number");
+    u32::try_from(max).expect("model_max_length fits a u32")
+}
 
 /// The manifest `apr code -p --model <tinyllama>` runs with: the default manifest, the model
 /// path, the small-model system prompt (PMAT-198), and the #4599 reserve cap.
@@ -214,7 +224,7 @@ fn falsify_4599_009_output_reserve_never_takes_a_model_window() {
     {
         let dir = tempfile::tempdir().expect("tempdir");
         let model = dir.path().join("tinyllama-1.1b-chat-v1.0.Q4_K_M.gguf");
-        std::fs::write(&model, gguf_header("llama", Some(TINYLLAMA_CONTEXT))).expect("write");
+        std::fs::write(&model, gguf_header("llama", Some(tinyllama_context()))).expect("write");
         assert_eq!(tinyllama_manifest(&model).model.max_tokens, 512);
 
         let mut explicit = build_default_manifest();
@@ -238,10 +248,10 @@ async fn falsify_4599_010_small_window_fits_a_short_prompt_and_refuses_an_oversi
 
     let dir = tempfile::tempdir().expect("tempdir");
     let model = dir.path().join("tinyllama-1.1b-chat-v1.0.Q4_K_M.gguf");
-    std::fs::write(&model, gguf_header("llama", Some(TINYLLAMA_CONTEXT))).expect("write");
+    std::fs::write(&model, gguf_header("llama", Some(tinyllama_context()))).expect("write");
     let m = tinyllama_manifest(&model);
     let window = code_driver_window(&m, &model);
-    assert_eq!(window, TINYLLAMA_CONTEXT as usize, "the window is the model's");
+    assert_eq!(window, tinyllama_context() as usize, "the window is the model's");
     let tools = build_code_tools(&m);
     let run = |manifest: AgentManifest, prompt: String| {
         let tools = &tools;

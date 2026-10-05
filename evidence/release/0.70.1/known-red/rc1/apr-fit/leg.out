@@ -1,7 +1,0 @@
-== RC1 apr 0.69.5-rc.1 (5660b0877) sha256=d7dc9fcd6960a3c3 START 2026-10-03T08:58:53Z
-qwen2.5-coder-0.5b-instruct.apr rc=2 2026-10-03T09:05:47Z ::   [REFUSE] inv:qwen2.5-coder-0.5b-instruct.apr fit: does-not-fit -- llama-fit-params exit 1: the model does not fit this host's free memory
-qwen2.5-coder-1.5b-instruct-q4k-v2.apr rc=2 2026-10-03T09:12:24Z ::   [REFUSE] inv:qwen2.5-coder-1.5b-instruct-q4k-v2.apr fit: does-not-fit -- llama-fit-params exit 1: the model does not fit this host's free memory
-qwen2.5-coder-1.5b-instruct-q4k.apr rc=2 2026-10-03T09:18:58Z ::   [REFUSE] inv:qwen2.5-coder-1.5b-instruct-q4k.apr fit: does-not-fit -- llama-fit-params exit 1: the model does not fit this host's free memory
-qwen2.5-coder-1.5b-instruct-st.apr rc=2 2026-10-03T09:25:15Z ::   [REFUSE] inv:qwen2.5-coder-1.5b-instruct-st.apr fit: does-not-fit -- llama-fit-params exit 1: the model does not fit this host's free memory
-qwen2.5-coder-1.5b-q4k.apr rc=2 2026-10-03T09:31:51Z ::   [REFUSE] inv:qwen2.5-coder-1.5b-q4k.apr fit: does-not-fit -- llama-fit-params exit 1: the model does not fit this host's free memory
-DONE

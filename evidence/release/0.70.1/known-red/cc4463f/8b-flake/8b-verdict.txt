@@ -1,4 +1,0 @@
-qwen3-8b-q4km lambda cuda serve -- verdict: NOT A DEFECT (flake from GPU contention); neither old nor new 5b, needs no known_red entry.
-- cells-run failure (cc4463f, 07:3xZ, during the ladder sweep): "serve NOT PROBED: died after 7s ... Refusing to serve on the CPU" after CUDA_ERROR_OUT_OF_MEMORY (log /tmp/tmp.GXsi0OWVAW/serve-qwen3-8b-q4km-cuda.log). GPU shared with other processes.
-- rerun alone, same binary apr 0.70.1 (cc4463f7a6), GPU 917/24564 MiB used at start: [ OK ] qa cap+golden pass, backends cpu,cuda honoured (rc=0, 08:47-08:58Z, /mnt/nvme-raid0/tmp/evid-0701b/rerun8b-fix.log).
-- the row was also OK at 291c. rc.1 comparison not run: /mnt/nvme-raid0/targets/screen-0695/release/apr is gone (cop: not needed).
