@@ -93,6 +93,16 @@ tree_component() { # tree_component <pv stderr line> -> the key, when the tree's
     printf '%s' "${BASH_REMATCH[1]}"
 }
 
+# "The fleet pv is older than the contracts" is a claim, so MEASURE it: the exemption above holds only
+# while the pinned pv's version sorts strictly BELOW this tree's workspace version. A pin at or past the
+# tree that still refuses a key the tree parses is not "older" -- that is a defect, and it stays RED.
+# No readable tree version -> not older (fail closed).
+TREE_VER="${FLEET_PV_TREE_VERSION:-$(awk '/^\[workspace\.package\]/{on=1; next} /^\[/{on=0} on && $1 == "version" {gsub(/"/, "", $3); print $3; exit}' "$ROOT/Cargo.toml" 2>/dev/null)}"
+older_than_tree() { # older_than_tree <ver> -> 0 iff ver < TREE_VER (sort -V)
+    [ -n "$1" ] && [ -n "$TREE_VER" ] && [ "$1" != "$TREE_VER" ] || return 1
+    [ "$(printf '%s\n%s\n' "$1" "$TREE_VER" | sort -V | head -1)" = "$1" ]
+}
+
 # resolve_fleet_pv -> prints the first candidate that exists and is executable; rc 1 if none
 resolve_fleet_pv() {
     local c; local IFS=:
@@ -162,11 +172,11 @@ PY
         1:*) printf '%s runner=%s pin=%s pv=%s version=%s\n' "$out" "$RUNNER" "$pin" "$PV_BIN" "$ver" >&2 ;;
         2:2) printf 'UNMEASURED runner=%s reason=pv-env pin=%s pv=%s version=%s -- %s; pv stderr: %s; fleet state, not a verdict\n' "$RUNNER" "$pin" "$PV_BIN" "$ver" "${out:-no output}" "${err1:-none}"
            return 0 ;;
-        2:3) if comp=$(tree_component "$err1"); then
-                 printf 'UNMEASURED runner=%s reason=incapable pin=%s pv=%s version=%s -- the pinned pv refuses shape key %s, which this tree'"'"'s own pv parses (%s); the fleet pv is older than the contracts; fleet state, not a verdict\n' "$RUNNER" "$pin" "$PV_BIN" "$ver" "$comp" "${err1:-none}"
+        2:3) if comp=$(tree_component "$err1") && older_than_tree "$ver"; then
+                 printf 'UNMEASURED runner=%s reason=incapable pin=%s pv=%s version=%s -- the pinned pv refuses shape key %s, which this tree'"'"'s own pv parses (%s); the fleet pv (%s) is older than this tree (%s); fleet state, not a verdict\n' "$RUNNER" "$pin" "$PV_BIN" "$ver" "$comp" "${err1:-none}" "$ver" "$TREE_VER"
                  return 0
              fi
-             printf 'FAIL runner=%s reason=pv-no-verdict pin=%s pv=%s version=%s -- %s; pv exited %s, and only its exit 2 (a refusal of its input) or a shape key this tree parses is fleet state -- a panic or a signal can be caused by this tree; pv stderr: %s\n' "$RUNNER" "$pin" "$PV_BIN" "$ver" "${out#ENV }" "$pvrc" "${err1:-none}" >&2
+             printf 'FAIL runner=%s reason=pv-no-verdict pin=%s pv=%s version=%s -- %s; pv exited %s, and only its exit 2 (a refusal of its input) or a shape key this tree parses, refused by a pv older than this tree (%s), is fleet state -- a panic or a signal can be caused by this tree; pv stderr: %s\n' "$RUNNER" "$pin" "$PV_BIN" "$ver" "${out#ENV }" "$pvrc" "$TREE_VER" "${err1:-none}" >&2
              return 1 ;;
         2:*) printf 'FAIL runner=%s reason=pv-no-verdict pin=%s pv=%s version=%s -- %s; pv exited %s, and only its exit 2 (a refusal of its input) is fleet state -- a panic or a signal can be caused by this tree; pv stderr: %s\n' "$RUNNER" "$pin" "$PV_BIN" "$ver" "${out#ENV }" "$pvrc" "${err1:-none}" >&2
            return 1 ;;
@@ -186,6 +196,10 @@ if [ "${1:-}" = "--self-test" ]; then
     bad=0; n=0
     ok()  { n=$((n+1)); printf 'ok    row %-2s %s\n' "$n" "$*"; }
     nok() { n=$((n+1)); printf 'FAIL  row %-2s %s\n' "$n" "$*" >&2; bad=1; }
+    # Mutant copies run from $d, whose ../Cargo.toml does not exist: hand every child THIS tree's version
+    # (rows that test the version set their own). An unreadable version here is a broken harness, not a row.
+    [ -n "$TREE_VER" ] || { echo "self-test: no workspace version in $ROOT/Cargo.toml" >&2; exit 2; }
+    export FLEET_PV_TREE_VERSION="$TREE_VER"
     mkpv() { # mkpv <path> <mode: capable|old> <verdict for lint json: Pass|Fail> [pc_shape|omit] [version]
         local p=$1 mode=$2 verdict=$3 pc=${4:-fired} v=${5:-0.68.2} pcfield
         if [ "$pc" = omit ]; then pcfield=""; else pcfield="\"pc_shape\":\"$pc\","; fi
@@ -313,6 +327,21 @@ STUB
         out=$(FLEET_PV_BIN="$d/$stub" FLEET_PV_PIN="$d/pin" FLEET_PV_CONTRACTS="$d/contracts" FLEET_PV_SHAPES_SRC="$d/shapes.rs" RUNNER_NAME=probe-runner bash "$0" 2>&1); rc=$?
         [ "$rc" -eq 1 ] && grep -q "^FAIL runner=probe-runner reason=pv-no-verdict .*pv exited 3[ ,].*pv stderr: .*$err" <<<"$out" && ! grep -qE '^(SUMMARY )?(PASS|UNMEASURED)' <<<"$out" && ok "exit 3 with '$err' (no shape key the tree parses) -> RED, never UNMEASURED" || nok "expected RED for exit-3 $stub, got rc=$rc: $out"
     done
+    #     ...and the exemption is a measured claim, not a standing one: the pinned pv (0.68.2) refusing allowEmpty
+    #     is fleet state only while it sorts BELOW this tree. A pin AT or PAST the tree that refuses it is RED.
+    for c in "0.68.2 equal" "0.68.1 newer" ""; do
+        read -r tv how <<<"$c"
+        [ -n "$tv" ] || continue
+        out=$(FLEET_PV_BIN="$d/pv_unsup" FLEET_PV_PIN="$d/pin" FLEET_PV_CONTRACTS="$d/contracts" FLEET_PV_SHAPES_SRC="$d/shapes.rs" FLEET_PV_TREE_VERSION="$tv" RUNNER_NAME=probe-runner bash "$0" 2>&1); rc=$?
+        [ "$rc" -eq 1 ] && grep -q '^FAIL runner=probe-runner reason=pv-no-verdict .*pv exited 3[ ,].*allowEmpty' <<<"$out" && ! grep -qE '^(SUMMARY )?(PASS|UNMEASURED)' <<<"$out" && ok "pin 0.68.2 $how to the tree ($tv) refusing allowEmpty -> RED, never UNMEASURED" || nok "expected RED for pin $how to tree $tv, got rc=$rc: $out"
+    done
+    out=$(FLEET_PV_BIN="$d/pv_unsup" FLEET_PV_PIN="$d/pin" FLEET_PV_CONTRACTS="$d/contracts" FLEET_PV_SHAPES_SRC="$d/shapes.rs" FLEET_PV_TREE_VERSION=0.68.10 RUNNER_NAME=probe-runner bash "$0" 2>&1); rc=$?
+    [ "$rc" -eq 0 ] && grep -q '^UNMEASURED .*reason=incapable .*(0.68.2) is older than this tree (0.68.10)' <<<"$out" && ok "pin 0.68.2 below the tree (0.68.10, a version sort, not a string sort) -> UNMEASURED" || nok "expected UNMEASURED for pin below tree 0.68.10, got rc=$rc: $out"
+    #     ...and the mutant that stops asking the version turns the pin-equal refusal UNMEASURED, exit 0
+    sed 's/ && older_than_tree "\$ver"; then$/; then/' "$0" > "$d/mut_ver.sh"
+    if cmp -s "$0" "$d/mut_ver.sh"; then nok "mutant (version not asked) did not apply; the pin-equal row proves nothing"
+    else out=$(FLEET_PV_BIN="$d/pv_unsup" FLEET_PV_PIN="$d/pin" FLEET_PV_CONTRACTS="$d/contracts" FLEET_PV_SHAPES_SRC="$d/shapes.rs" FLEET_PV_TREE_VERSION=0.68.2 bash "$d/mut_ver.sh" 2>&1); rc=$?
+         [ "$rc" -eq 0 ] && grep -q '^UNMEASURED .*reason=incapable .*allowEmpty' <<<"$out" && ok "mutant that does not ask the version turns the pin-equal refusal UNMEASURED exit 0 -- the pin-equal row would go RED under it" || nok "mutant (version not asked) did not reproduce the hole: rc=$rc: $out"; fi
     #     ...and the mutant that stops asking the tree turns the typo UNMEASURED, exit 0
     sed 's/^\( *\)awk -v k=.* || return 1$/\1true/' "$0" > "$d/mut_tree.sh"
     if cmp -s "$0" "$d/mut_tree.sh"; then nok "mutant (tree not asked) did not apply; the typo row proves nothing"
