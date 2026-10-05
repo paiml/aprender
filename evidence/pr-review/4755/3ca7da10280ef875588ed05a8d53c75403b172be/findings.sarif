@@ -1,0 +1,206 @@
+{
+  "$schema": "https://docs.oasis-open.org/sarif/sarif/v2.1.0/errata01/os/schemas/sarif-schema-2.1.0.json",
+  "version": "2.1.0",
+  "runs": [
+    {
+      "tool": {
+        "driver": {
+          "name": "pmat"
+        }
+      },
+      "invocations": [
+        {
+          "executionSuccessful": true,
+          "toolExecutionNotifications": []
+        }
+      ],
+      "results": [
+        {
+          "ruleId": "complexity_not_measurable",
+          "level": "note",
+          "message": {
+            "text": "pmat analyze complexity finds no source files with an analyzable extension in the changed shell guard (and none in the YAML), so complexity_delta is empty because nothing was measured, not because it is zero."
+          },
+          "properties": {
+            "grounding": "measured",
+            "command": [
+              "pmat",
+              "analyze",
+              "complexity",
+              "--path",
+              "scripts/check_determinism_wait.sh"
+            ],
+            "exit_code": 5,
+            "stdout_sha256": "dbfa4135e8c0d31f5d21aee405eeba2227cc47b8d96fc4a7ca5e8bc930140d66",
+            "failure_scenario": "A reader could take an empty complexity_delta as a measured zero; for a shell and YAML diff it is unmeasured.",
+            "precision_class": "advisory"
+          }
+        },
+        {
+          "ruleId": "w9_scope",
+          "level": "note",
+          "message": {
+            "text": "Quorum (sonnet lane, info, no action): W9 proves the pattern takes both host receipt names and not determinism-receipt; it cannot see a future artifact whose name happens to match determinism-[AX]*64. The contract states the pattern names exactly the two host receipts."
+          },
+          "properties": {
+            "grounding": "asserted",
+            "precision_class": "advisory",
+            "failure_scenario": "A future artifact named determinism-<two capitals>64 that is not a host raster would be downloaded by the compare job; W9 checks only today's names."
+          }
+        },
+        {
+          "ruleId": "wiring_row_substring",
+          "level": "note",
+          "message": {
+            "text": "Quorum (sonnet lane, low): the T43 wiring row matches its needs line as a fixed string, so a comment carrying the same text could satisfy it. The row is strictly stronger than before (it was GREEN on the duplicate-key workflow and is RED now); a line-anchored match is left for a follow-up."
+          },
+          "properties": {
+            "grounding": "asserted",
+            "precision_class": "advisory",
+            "failure_scenario": "A comment in the determinism block containing needs: [mg-reuse, x86-main] could satisfy the T43 wiring row while the real needs line differs."
+          }
+        },
+        {
+          "ruleId": "commit_message_scope",
+          "level": "note",
+          "message": {
+            "text": "Quorum (sonnet lane, low): the fix commit message does not mention the regenerated contracts.nt; the regeneration is mechanical (contracts gate 8/8 at head)."
+          },
+          "properties": {
+            "grounding": "asserted",
+            "precision_class": "advisory",
+            "failure_scenario": "A reader of the fix commit message would not learn that contracts.nt was regenerated in the same commit."
+          }
+        },
+        {
+          "ruleId": "merge_semantic_conflict",
+          "level": "note",
+          "message": {
+            "text": "Merging main auto-merged the determinism job into duplicate needs/if keys (no textual conflict). Fixed at head: needs both mg-reuse and x86-main, if keeps the merge-group reuse condition; both guards fail on the duplicate-key workflow."
+          },
+          "properties": {
+            "grounding": "measured",
+            "precision_class": "advisory",
+            "command": [
+              "bash",
+              "scripts/check_determinism_wait.sh",
+              "--selftest"
+            ],
+            "exit_code": 0,
+            "failure_scenario": "Without the fix, the merged workflow carries duplicate needs/if keys in the determinism job; a YAML loader keeps the last of each, so the job runs without waiting on x86-main or without the merge-group reuse condition."
+          }
+        },
+        {
+          "ruleId": "zero_tolerance_artifact_listing",
+          "level": "note",
+          "message": {
+            "text": "With FAT_ARTIFACT_WAIT_S 0 the driver reads the run artifact list exactly once. If the REST artifact list were ever briefly stale after x86-main uploaded determinism-X64, a present raster would read as missing and the job would go RED once, where the old poll would have absorbed the lag. The job starts after x86-main concluded, so the upload has finished, which makes this unlikely."
+          },
+          "properties": {
+            "grounding": "asserted",
+            "rationale": "read of scripts/ci/fat_driver.py uses_download (single read then deadline check) and the ci.yml determinism job at head; not run, it needs a live Actions run.",
+            "failure_scenario": "A transient stale artifact list gives a false-RED determinism check that a re-run clears; it can never give a false green.",
+            "precision_class": "advisory"
+          }
+        },
+        {
+          "ruleId": "verdict_arrives_later",
+          "level": "note",
+          "message": {
+            "text": "The determinism verdict now arrives after x86-main concludes rather than when its raster uploads, so the gate waits for the whole x86-main plus a short ARM64 job. The contract records this as a stated non-goal."
+          },
+          "properties": {
+            "grounding": "asserted",
+            "rationale": "read of the needs edge in ci.yml and of the non_goals list in contracts/ci-determinism-wait-v1.yaml; wall time not measured.",
+            "failure_scenario": "Gate wall time grows by the ARM64 job time (about a minute plus pickup) on green runs; no correctness effect.",
+            "precision_class": "advisory"
+          }
+        },
+        {
+          "ruleId": "quorum_merge_round",
+          "level": "note",
+          "message": {
+            "text": "The Claude Code quorum on the merge and its fix (claude-sonnet-5-5 and claude-haiku-4-5-20251001) returned SHIP-TO-BRANCH from both lanes with low-severity notes only, recorded above; the primary re-ran the guard selftest (26 PASS) and its mutation set (11/11) at this head."
+          },
+          "properties": {
+            "grounding": "measured",
+            "precision_class": "advisory",
+            "command": [
+              "bash",
+              "scripts/check_determinism_wait.sh",
+              "--mutants"
+            ],
+            "exit_code": 0,
+            "failure_scenario": "Had a lane returned BLOCK, the push would have been held; both returned SHIP-TO-BRANCH."
+          }
+        }
+      ]
+    },
+    {
+      "tool": {
+        "driver": {
+          "name": "cargo-mutants",
+          "version": "unversioned",
+          "rules": []
+        }
+      },
+      "invocations": [
+        {
+          "executionSuccessful": true,
+          "toolExecutionNotifications": []
+        }
+      ],
+      "results": [
+        {
+          "ruleId": "guard_mutation_set_killed",
+          "level": "note",
+          "message": {
+            "text": "Run via the guard's own committed mutation set (scripts/check_determinism_wait.sh --mutants), not cargo-mutants: 11 of 11 mutants killed, 0 survivors, each mutant turning the 26-row case table RED."
+          },
+          "properties": {
+            "grounding": "measured",
+            "precision_class": "advisory",
+            "command": [
+              "bash",
+              "scripts/check_determinism_wait.sh",
+              "--mutants"
+            ],
+            "exit_code": 0,
+            "failure_scenario": "A surviving mutant would mean the case table cannot see that edit to the guard; none survived."
+          }
+        }
+      ]
+    },
+    {
+      "tool": {
+        "driver": {
+          "name": "antigravity"
+        }
+      },
+      "invocations": [
+        {
+          "executionSuccessful": false,
+          "toolExecutionNotifications": [
+            {
+              "level": "error",
+              "message": {
+                "text": "The cross-vendor (antigravity) reviewer was not consulted: the local budget probe for the gemini bucket reports state empty (budget 0, from the last window 429). No agy call was made."
+              },
+              "properties": {
+                "grounding": "measured",
+                "command": [
+                  "bash",
+                  "-c",
+                  ". ~/.claude/skills/quorum-review/agy-bucket.sh && ab_state gemini 1"
+                ],
+                "exit_code": 0,
+                "stdout_sha256": "1c9448d3a72173042f2c209346550412ffc174f9e8a922181a0bde129c62e3e2"
+              }
+            }
+          ]
+        }
+      ],
+      "results": []
+    }
+  ]
+}

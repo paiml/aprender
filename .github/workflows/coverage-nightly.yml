@@ -164,6 +164,11 @@ jobs:
           # Ahead of ~/.cargo/bin for every later step in this job.
           echo "$COV_TOOLS/bin" >> "$GITHUB_PATH"
 
+      # The coverage receipt (below) must never carry a previous run's number: /tmp/cov.log
+      # outlives the job, so a log that is not newer than this marker is not this run's.
+      - name: Mark the coverage step start (receipt freshness)
+        run: touch "$RUNNER_TEMP/cov-start"
+
       # Data + summary via the maintained Makefile machinery (handles the
       # mold-linker/config.toml dance + slow-test skips correctly). Non-blocking.
       # COV_TARGET_DIR= forces the writable workspace-local ./target: the Makefile
@@ -218,6 +223,28 @@ jobs:
           # Still fails the job on a real coverage regression: the gate stays
           # ARMED, it just reports a value first.
           exit "$cov_rc"
+
+      # RQ-1's producer half (#4672): a receipt keyed by the commit measured -- sha, floor, pct, or
+      # status not_measured with a reason. SHADOW: no gate reads it; the release-day read waits on
+      # the RQ-1 ruling. Runs whatever the coverage verdict, so a red night still says why.
+      - name: Coverage receipt keyed by sha (read by the release gate; never blocks the nightly)
+        if: always()
+        continue-on-error: true   # shadow (L31): it reports, it never turns the nightly red
+        run: |
+          set -uo pipefail
+          # shellcheck disable=SC2016 # $(COV_FLOOR) is for make, not the shell
+          floor="$(make -s --eval='print-floor: ; @echo $(COV_FLOOR)' print-floor 2>/dev/null || echo unknown)"
+          bash scripts/coverage_receipt.sh /tmp/cov.log "$(git rev-parse HEAD)" "$floor" \
+            "$RUNNER_TEMP/cov-receipt" "$RUNNER_TEMP/cov-start"
+
+      - name: Publish the coverage receipt
+        if: always()
+        continue-on-error: true
+        uses: actions/upload-artifact@v7
+        with:
+          name: coverage-receipt
+          path: ${{ runner.temp }}/cov-receipt/coverage-receipt-*.json
+          if-no-files-found: error
 
       # pmat (crates.io) for the dogfooded gap analysis — BEST-EFFORT. cargo isn't
       # on PATH for raw run: steps on these runners, so source the cargo env; and

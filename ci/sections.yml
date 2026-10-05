@@ -398,6 +398,19 @@ jobs:
                 args+=(--pr-head "$head" --pr-head-conclusion "${concl:-none}")
               fi
               ;;
+            push)
+              # T36: the merge queue already tested this very sha. Hand its
+              # workspace-test result to the tier script, which reuses it only
+              # on a success for HEAD itself. A failed lookup is the push's own
+              # tier, as before -- never a reuse, never a red step.
+              mg=$(bash scripts/ci_mg_workspace_result.sh "${GITHUB_REPOSITORY}" "${GITHUB_SHA}") || mg=""
+              if [ -n "$mg" ]; then
+                mapfile -t mgargs <<<"$mg"
+                args+=("${mgargs[@]}")
+              else
+                printf 'no merge_group workspace-test result for %s: the tier is decided from the push diff\n' "${GITHUB_SHA}"
+              fi
+              ;;
           esac
           bash scripts/ci_test_tier.sh "${args[@]}" | tee "$RUNNER_TEMP/tier.txt"
           grep -E '^(tier|crates|targets|check_workspace|reason|cite)=' "$RUNNER_TEMP/tier.txt" >> "$GITHUB_OUTPUT"
@@ -960,11 +973,16 @@ jobs:
       # workspace-test already succeeded; measuring it again is waste, not
       # evidence. The tier step proved both facts (trees compared by hash, the
       # check-run's conclusion read from GitHub); this step records the citation.
-      - name: "Reuse: this tree already passed workspace-test on the PR head (BSE-17)"
+      # T36: on a push the citation is instead the merge_group run that tested
+      # this very sha, so the label names what is cited for each event.
+      - name: "Reuse: this tree already passed workspace-test (BSE-17 PR head / T36 merge queue)"
         if: steps.tier.outputs.tier == 'reuse'
         run: |
           printf 'workspace-test REUSED: %s\n' "${{ steps.tier.outputs.reason }}"
-          printf 'cited PR head: %s\n' "${{ steps.tier.outputs.cite }}"
+          case "${{ github.event_name }}" in
+            push) printf 'cited merge_group run: %s\n' "${{ steps.tier.outputs.cite }}" ;;
+            *) printf 'cited PR head: %s\n' "${{ steps.tier.outputs.cite }}" ;;
+          esac
       # #3658 NONE: the tier step proved the change gives workspace-test nothing
       # to measure -- every touched path is under docs/roadmaps/ or docs/audits/
       # and present at HEAD (no Rust source, test or tree reader reads them), or
@@ -1329,6 +1347,13 @@ jobs:
         run: setsid --wait bash scripts/check_ci_gate_mutants_rule.sh
       - name: gate mutants rule can still go RED (#3676)
         run: setsid --wait bash scripts/check_ci_gate_mutants_rule.sh --self-test
+      # The coverage receipt's guard, for the same reason: guard_tree.sh files it
+      # as a cargo guard (a comment names `cargo llvm-cov`), but it runs the
+      # receipt producer on fixture logs and reads coverage-nightly.yml and the
+      # tracked tree, invoking no build tool. One run is its whole case table:
+      # behaviour rows, structure rows and every mutant (#4672, #4734).
+      - name: coverage receipt is sha-keyed and read only by the release gate (#4672)
+        run: setsid --wait bash scripts/check_coverage_receipt.sh
       # scripts/tests/guard_tree_test.sh is guard_tree.sh's OWN case table
       # (BSE-01, PMAT-1062) -- it proves guard_tree.sh's no-fail-fast
       # behaviour against a fixture, proves a fail-fast MUTANT of it goes RED
@@ -3526,7 +3551,7 @@ jobs:
       - name: No font stack may be compiled into the raster path
         run: bash scripts/ci/raster-fontdb-ban.sh
 
-      # One artifact per arch carries both receipts, so the compare job's `determinism-*`
+      # One artifact per arch carries both receipts, so the compare job's
       # download sees them together. With two paths, `if-no-files-found` only fires when BOTH
       # are missing; a missing raster receipt is caught by raster-compare.sh's count instead.
       - name: Upload this host's receipts
@@ -3553,9 +3578,12 @@ jobs:
         with:
           persist-credentials: false
 
+      # Exactly the two host receipts, determinism-X64 and determinism-ARM64. Not `determinism-*`:
+      # that also matches this job's own determinism-receipt, which an earlier attempt of the run
+      # left behind, and a re-run then compares 3 receipts and goes RED.
       - uses: actions/download-artifact@v4
         with:
-          pattern: determinism-*
+          pattern: determinism-[AX]*64
           path: receipts
           merge-multiple: true
 
