@@ -24032,27 +24032,6 @@ Not done, pending the ruling: moving the 31 fixture files to an obviously synthe
   labels:
   - kind:code
   notes: 'Cop ruling 2026-09-29 12:0xZ: P0 main fix, Cargo bump only, PR open by 13:00Z.'
-- id: PMAT-4636
-  github_issue: 4636
-  item_type: task
-  title: 'K1: apr serve sizes the GPU KV from the model''s context within free VRAM, not a fixed 4096'
-  status: inprogress
-  priority: critical
-  assigned_to: aprender-kv
-  created: 2026-09-29T18:41:06Z
-  updated: 2026-09-29T18:41:06Z
-  spec: null
-  acceptance_criteria:
-  - 'apr serve builds the CUDA model with OwnedQuantizedModelCuda::for_serving; with no --context-length the device KV = serving_kv_len = min(model context, what free VRAM holds with SERVE_BATCH_SLOTS=2 batched slots budgeted), floored at 4096 (or the model context when shorter)'
-  - 'An explicit --context-length (not the default) still sizes the KV via REALIZR_CONTEXT_LENGTH'
-  - 'The D5 refusal limit (PMAT-4616) is the serving context this KV yields: at the limit 200 whole, one past it 400, never 500; api/tests/serve_kv_limit_k1.rs checks it on the device with an 8192-context model, so a return to the fixed 4096 fails'
-  - 'gguf/cuda/session_kv.rs unit tests: a small model gets its whole context; a model that fills the card keeps the 4096 floor; partial room is used and never exceeded'
-  phases: []
-  subtasks: []
-  estimated_effort: null
-  labels:
-  - kind:code
-  notes: 'ruling-3715 K1. Child of #3715. Carried by PR #4630 with D5 (PMAT-4616); the D5 limit N is the serving context K1 sizes.'
 - id: PMAT-4641
   github_issue: 4641
   item_type: task
