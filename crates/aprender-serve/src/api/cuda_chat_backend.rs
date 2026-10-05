@@ -152,49 +152,10 @@ async fn try_cuda_backend(
         let (timing_tx, timing_rx) =
             tokio::sync::oneshot::channel::<crate::api::PhaseTimings>();
 
-        // PMAT-044: Use batch scheduler if available (continuous batching)
-        if let Some(batch_tx) = state.cuda_batch_tx() {
-            let batch_req = super::cuda_batch_scheduler::CudaBatchRequest {
-                prompt_ids,
-                config: q_config,
-                token_tx: tx,
-                non_streaming: false,
-                enqueue_time: std::time::Instant::now(),
-                timing_tx: Some(timing_tx),
-            };
-            if let Err(e) = batch_tx.try_send(batch_req) {
-                // §5.2: this 503 is the one admission REFUSAL this server has
-                // (the policy is otherwise `queue`), so it is counted where it
-                // is returned — `kv.admission_rejected` reads this counter.
-                state.record_admission_rejected();
-                return Some(fail_response(
-                    state,
-                    StatusCode::SERVICE_UNAVAILABLE,
-                    format!("Batch queue full: {e}"),
-                ));
-            }
-        } else {
-            // Fallback: direct RwLock path (serialized)
-            let cuda_model_clone = cuda_model_lock.clone();
-            let prompt_ids_clone = prompt_ids.clone();
-            let q_config_clone = q_config.clone();
-            let sink_metrics = state.metrics.clone();
-
-            tokio::task::spawn_blocking(move || {
-                let mut cuda_model = cuda_model_clone.write().expect("operation failed");
-                let generate_start = std::time::Instant::now();
-                // Stops when the client goes away — see `streaming_token_sink`.
-                let sink =
-                    crate::api::openai_handlers::streaming_token_sink(tx.clone(), sink_metrics);
-                let result =
-                    dense_cuda_turn(&mut cuda_model, &prompt_ids_clone, &q_config_clone, sink);
-                // Taken under the SAME write lock the request ran under, so the
-                // split belongs to this request and to no other.
-                let _ = timing_tx.send(phase_split(&mut cuda_model, generate_start));
-                if let Err(e) = result {
-                    let _ = tx.blocking_send(Err(e.to_string()));
-                }
-            });
+        if let Err(r) =
+            dispatch_cuda_stream(state, cuda_model_lock, prompt_ids, q_config, tx, timing_tx)
+        {
+            return Some(r);
         }
 
         return Some(true_streaming_sse_response(
@@ -213,54 +174,19 @@ async fn try_cuda_backend(
 
     // Non-streaming CUDA — route through batch scheduler when available (realizr#211)
     let (timing_tx, timing_rx) = tokio::sync::oneshot::channel::<crate::api::PhaseTimings>();
-    let (token_ids, completion_tokens, response_text) = if let Some(batch_tx) = state.cuda_batch_tx() {
-        // Use batch scheduler: submit request and collect all tokens
-        // realizr#212: capacity 512 for bulk-send after non-streaming generation
-        let (tx, mut rx) = tokio::sync::mpsc::channel::<Result<u32, String>>(512);
-        let batch_req = super::cuda_batch_scheduler::CudaBatchRequest {
-            prompt_ids,
-            config: q_config,
-            token_tx: tx,
-            non_streaming: true, // realizr#212: scheduler accumulates + bulk-sends
-            enqueue_time: std::time::Instant::now(),
-            timing_tx: Some(timing_tx),
-        };
-        if let Err(e) = batch_tx.try_send(batch_req) {
-            // §5.2: counted at the refusal, as above.
-            state.record_admission_rejected();
-            return Some(fail_response(
-                state,
-                StatusCode::SERVICE_UNAVAILABLE,
-                format!("Batch queue full: {e}"),
-            ));
-        }
-        // Collect all tokens via async receive (realizr#211)
-        let mut tokens = Vec::new();
-        while let Some(result) = rx.recv().await {
-            match result {
-                Ok(token_id) => tokens.push(token_id),
-                // D5: `fit_serving_context` above already refused an over-context
-                // prompt with a 400; the scheduler's errors are strings, and what
-                // reaches here is a server fault.
-                Err(e) => return Some(fail_response(state, StatusCode::INTERNAL_SERVER_ERROR, e)),
-            }
-        }
-        let n = tokens.len();
-        let text = tokenizer.decode(&tokens).unwrap_or_else(|_| String::new());
-        (tokens, n, clean_chat_output(&text))
-    } else {
-        // Fallback: direct RwLock path (serialized, no batch scheduler)
-        let mut cuda_model = cuda_model_lock.write().expect("operation failed");
-        let generate_start = std::time::Instant::now();
-        let generated = match dense_cuda_turn(&mut cuda_model, &prompt_ids, &q_config, |_| true) {
-            Ok(g) => g,
-            Err(e) => return Some(fail_response(state, crate::api::generation_error_status(&e), e)),
-        };
-        let _ = timing_tx.send(phase_split(&mut cuda_model, generate_start));
-        let tokens: Vec<u32> = generated.iter().skip(prompt_tokens).copied().collect();
-        let n = tokens.len();
-        let text = tokenizer.decode(&tokens).unwrap_or_else(|_| String::new());
-        (tokens, n, clean_chat_output(&text))
+    let (token_ids, completion_tokens, response_text) = match collect_cuda_turn(
+        state,
+        cuda_model_lock,
+        prompt_ids,
+        q_config,
+        prompt_tokens,
+        &tokenizer,
+        timing_tx,
+    )
+    .await
+    {
+        Ok(t) => t,
+        Err(r) => return Some(r),
     };
 
     let latency = start.elapsed();
@@ -285,6 +211,134 @@ async fn try_cuda_backend(
         timings,
         None,
     ))
+}
+
+/// The non-streaming CUDA turn: through the batch scheduler when one runs
+/// (realizr#211), else on the serialized model. Returns the generated ids, their
+/// count and the cleaned text. Extracted from `try_cuda_backend` (complexity
+/// ratchet, as #4046); behaviour unchanged.
+#[cfg(feature = "cuda")]
+#[allow(clippy::result_large_err)]
+async fn collect_cuda_turn(
+    state: &AppState,
+    cuda_model_lock: &Arc<std::sync::RwLock<crate::gguf::OwnedQuantizedModelCuda>>,
+    prompt_ids: Vec<u32>,
+    q_config: crate::gguf::QuantizedGenerateConfig,
+    prompt_tokens: usize,
+    tokenizer: &BPETokenizer,
+    timing_tx: tokio::sync::oneshot::Sender<crate::api::PhaseTimings>,
+) -> Result<(Vec<u32>, usize, String), Response> {
+    let turn = if let Some(batch_tx) = state.cuda_batch_tx() {
+        // Use batch scheduler: submit request and collect all tokens
+        // realizr#212: capacity 512 for bulk-send after non-streaming generation
+        let (tx, mut rx) = tokio::sync::mpsc::channel::<Result<u32, String>>(512);
+        let batch_req = super::cuda_batch_scheduler::CudaBatchRequest {
+            prompt_ids,
+            config: q_config,
+            token_tx: tx,
+            non_streaming: true, // realizr#212: scheduler accumulates + bulk-sends
+            enqueue_time: std::time::Instant::now(),
+            timing_tx: Some(timing_tx),
+        };
+        if let Err(e) = batch_tx.try_send(batch_req) {
+            // §5.2: counted at the refusal, as above.
+            state.record_admission_rejected();
+            return Err(fail_response(
+                state,
+                StatusCode::SERVICE_UNAVAILABLE,
+                format!("Batch queue full: {e}"),
+            ));
+        }
+        // Collect all tokens via async receive (realizr#211)
+        let mut tokens = Vec::new();
+        while let Some(result) = rx.recv().await {
+            match result {
+                Ok(token_id) => tokens.push(token_id),
+                // D5: `fit_serving_context` above already refused an over-context
+                // prompt with a 400; the scheduler's errors are strings, and what
+                // reaches here is a server fault.
+                Err(e) => return Err(fail_response(state, StatusCode::INTERNAL_SERVER_ERROR, e)),
+            }
+        }
+        let n = tokens.len();
+        let text = tokenizer.decode(&tokens).unwrap_or_else(|_| String::new());
+        (tokens, n, clean_chat_output(&text))
+    } else {
+        // Fallback: direct RwLock path (serialized, no batch scheduler)
+        let mut cuda_model = cuda_model_lock.write().expect("operation failed");
+        let generate_start = std::time::Instant::now();
+        let generated = match dense_cuda_turn(&mut cuda_model, &prompt_ids, &q_config, |_| true) {
+            Ok(g) => g,
+            Err(e) => return Err(fail_response(state, crate::api::generation_error_status(&e), e)),
+        };
+        let _ = timing_tx.send(phase_split(&mut cuda_model, generate_start));
+        let tokens: Vec<u32> = generated.iter().skip(prompt_tokens).copied().collect();
+        let n = tokens.len();
+        let text = tokenizer.decode(&tokens).unwrap_or_else(|_| String::new());
+        (tokens, n, clean_chat_output(&text))
+    };
+    Ok(turn)
+}
+
+/// The streaming CUDA dispatch: hand the turn to the batch scheduler when one
+/// runs, else generate on the serialized model behind a blocking task. Tokens and
+/// the phase split go out on `tx` / `timing_tx`. Extracted from `try_cuda_backend`
+/// (complexity ratchet, as #4046); behaviour unchanged.
+#[cfg(feature = "cuda")]
+#[allow(clippy::result_large_err)]
+fn dispatch_cuda_stream(
+    state: &AppState,
+    cuda_model_lock: &Arc<std::sync::RwLock<crate::gguf::OwnedQuantizedModelCuda>>,
+    prompt_ids: Vec<u32>,
+    q_config: crate::gguf::QuantizedGenerateConfig,
+    tx: tokio::sync::mpsc::Sender<Result<u32, String>>,
+    timing_tx: tokio::sync::oneshot::Sender<crate::api::PhaseTimings>,
+) -> Result<(), Response> {
+    // PMAT-044: Use batch scheduler if available (continuous batching)
+    if let Some(batch_tx) = state.cuda_batch_tx() {
+        let batch_req = super::cuda_batch_scheduler::CudaBatchRequest {
+            prompt_ids,
+            config: q_config,
+            token_tx: tx,
+            non_streaming: false,
+            enqueue_time: std::time::Instant::now(),
+            timing_tx: Some(timing_tx),
+        };
+        if let Err(e) = batch_tx.try_send(batch_req) {
+            // §5.2: this 503 is the one admission REFUSAL this server has
+            // (the policy is otherwise `queue`), so it is counted where it
+            // is returned — `kv.admission_rejected` reads this counter.
+            state.record_admission_rejected();
+            return Err(fail_response(
+                state,
+                StatusCode::SERVICE_UNAVAILABLE,
+                format!("Batch queue full: {e}"),
+            ));
+        }
+    } else {
+        // Fallback: direct RwLock path (serialized)
+        let cuda_model_clone = cuda_model_lock.clone();
+        let prompt_ids_clone = prompt_ids.clone();
+        let q_config_clone = q_config.clone();
+        let sink_metrics = state.metrics.clone();
+
+        tokio::task::spawn_blocking(move || {
+            let mut cuda_model = cuda_model_clone.write().expect("operation failed");
+            let generate_start = std::time::Instant::now();
+            // Stops when the client goes away — see `streaming_token_sink`.
+            let sink =
+                crate::api::openai_handlers::streaming_token_sink(tx.clone(), sink_metrics);
+            let result =
+                dense_cuda_turn(&mut cuda_model, &prompt_ids_clone, &q_config_clone, sink);
+            // Taken under the SAME write lock the request ran under, so the
+            // split belongs to this request and to no other.
+            let _ = timing_tx.send(phase_split(&mut cuda_model, generate_start));
+            if let Err(e) = result {
+                let _ = tx.blocking_send(Err(e.to_string()));
+            }
+        });
+    }
+    Ok(())
 }
 
 /// §3: pair the engine's prefill measurement with the decode remainder.
@@ -1134,7 +1188,11 @@ fn moe_gen_config(
             .get_token_id("<|im_end|>")
             .or_else(|| tokenizer.get_token_id("<|endoftext|>"))
     });
-    let stop_tokens: Vec<u32> = stop_tokens_unless_ignore_eos(request, eos_id);
+    // #4661/#4662: every EOG marker, not just the declared EOS (see `chat_stop_tokens`).
+    let stop_tokens: Vec<u32> = stop_tokens_unless_ignore_eos(
+        request,
+        super::realize_handlers::completion_stop_tokens(tokenizer, eos_id),
+    );
     QuantizedGenerateConfig {
         max_tokens,
         temperature: request.temperature.unwrap_or(defaults.temperature),

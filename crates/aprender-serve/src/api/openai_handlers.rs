@@ -141,11 +141,22 @@ fn chat_gen_params(
 /// APR-PERF-GATE-001 v2.2 §4.3.1 pins W1 at `max_tokens = 128` with ignore-EOS
 /// precisely so the work per band is fixed. `max_tokens` still bounds the loop,
 /// so `ignore_eos` cannot produce an unbounded generation.
-fn chat_stop_tokens(request: &ChatCompletionRequest, eos_token_id: u32) -> Vec<u32> {
+///
+/// #4661/#4662: the set is `completion_stop_tokens`, the model's EOS plus every
+/// end-of-generation marker the vocabulary has — not the one EOS id. A Qwen
+/// instruct GGUF declares `<|im_end|>` as EOS, yet a chat turn can end on
+/// `<|endoftext|>`; with only the EOS live, `/v1/chat/completions` and
+/// `/api/chat` decoded past it into `Human: …` / ` | | |` runs until
+/// `max_tokens`, while `/v1/completions` on the same prompt stopped.
+fn chat_stop_tokens(
+    request: &ChatCompletionRequest,
+    tokenizer: &crate::tokenizer::BPETokenizer,
+    eos_token_id: u32,
+) -> Vec<u32> {
     if request.ignore_eos.unwrap_or(false) {
         Vec::new()
     } else {
-        vec![eos_token_id]
+        super::realize_handlers::completion_stop_tokens(tokenizer, Some(eos_token_id))
     }
 }
 
@@ -265,7 +276,7 @@ fn chat_quantized_config(
         repeat_penalty: request.repeat_penalty.unwrap_or(defaults.repeat_penalty),
         repeat_last_n: request.repeat_last_n.unwrap_or(defaults.repeat_last_n),
         seed: request.seed.unwrap_or(defaults.seed),
-        stop_tokens: chat_stop_tokens(request, eos_token_id),
+        stop_tokens: chat_stop_tokens(request, tokenizer, eos_token_id),
         trace,
         cancel: cancel.clone(),
         ..defaults
@@ -308,20 +319,47 @@ mod perf039_ignore_eos_tests {
     //  Some(false)  | [eos]       | explicit opt-out is not an opt-in
     //  Some(true)   | []          | every decode loop then never stops on a token
 
+    /// #4661/#4662: a ChatML vocabulary stops a chat turn on BOTH turn ends.
+    /// With only the declared EOS (`<|im_end|>`) live, a turn the model closed
+    /// with `<|endoftext|>` decoded on to `max_tokens`.
+    #[test]
+    fn chat_stops_on_every_eog_marker_not_just_eos() {
+        let tok = BPETokenizer::new(
+            vec![
+                "<unk>".to_string(),
+                "<|endoftext|>".to_string(),
+                "<|im_end|>".to_string(),
+            ],
+            vec![],
+            "<unk>",
+        )
+        .expect("test tokenizer");
+        let stops = chat_stop_tokens(&request(None), &tok, 2);
+        assert!(stops.contains(&2), "the declared EOS stays live: {stops:?}");
+        assert!(
+            stops.contains(&1),
+            "<|endoftext|> must end a chat turn: {stops:?}"
+        );
+        assert!(chat_stop_tokens(&request(Some(true)), &tok, 2).is_empty());
+    }
+
     #[test]
     fn absent_ignore_eos_keeps_eos_stopping() {
-        assert_eq!(chat_stop_tokens(&request(None), 7), vec![7]);
+        assert_eq!(chat_stop_tokens(&request(None), &tokenizer(), 7), vec![7]);
     }
 
     #[test]
     fn explicit_false_keeps_eos_stopping() {
-        assert_eq!(chat_stop_tokens(&request(Some(false)), 7), vec![7]);
+        assert_eq!(
+            chat_stop_tokens(&request(Some(false)), &tokenizer(), 7),
+            vec![7]
+        );
     }
 
     #[test]
     fn ignore_eos_empties_the_stop_set() {
         assert!(
-            chat_stop_tokens(&request(Some(true)), 7).is_empty(),
+            chat_stop_tokens(&request(Some(true)), &tokenizer(), 7).is_empty(),
             "an empty stop set is what every decode loop reads as ignore-EOS"
         );
     }
@@ -1087,7 +1125,7 @@ fn try_gpu_backend(
         top_k: resolve_chat_top_k(temperature, request.top_k),
         // #3760: the OpenAI `seed` reaches the GpuModel sampler, as it does the others.
         seed: request.seed.unwrap_or(crate::sampling::DEFAULT_SEED),
-        stop_tokens: chat_stop_tokens(request, eos_token_id)
+        stop_tokens: chat_stop_tokens(request, &tokenizer, eos_token_id)
             .into_iter()
             .map(|t| t as usize)
             .collect(),
@@ -1201,7 +1239,7 @@ fn try_cached_backend(
         max_tokens,
         temperature,
         top_k: resolve_chat_top_k(temperature, request.top_k),
-        stop_tokens: chat_stop_tokens(request, eos_token_id),
+        stop_tokens: chat_stop_tokens(request, &tokenizer, eos_token_id),
         trace: state.should_trace(trace_level),
         cancel: cancel.clone(),
         ..Default::default()
