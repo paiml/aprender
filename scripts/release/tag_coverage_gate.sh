@@ -20,7 +20,8 @@
 #
 # VERSION-ONLY (#4735). H is an ancestor of SHA and every path changed in H..SHA is one of:
 #   - a Cargo file bump-version.sh rewrites (SURFACE, measured from a real bump), MODIFIED, in
-#     which every removed and added line is the same once its `version = "..."` value is blanked;
+#     which each hunk rewrites lines IN PLACE, the i-th removed line equal to the i-th added
+#     line once its `version = "..."` value is blanked (#4819: a moved line is not a bump);
 #   - CHANGELOG.md, MODIFIED;
 #   - an ADDED evidence/dogfood/models/<V>/<host>.json, V the version Cargo.toml sets at SHA:
 #     prepare_bump.sh commits the model-ladder receipts for the version being cut (#3708).
@@ -75,8 +76,24 @@ floor_at() {
     [[ $v =~ ^[0-9]+$ ]] && echo "$v"
 }
 
-# blank_versions -> stdin's lines with every version = "..." value blanked, sorted
-blank_versions() { sed -E 's/version = "[^"]*"/version = ""/g' | sort; }
+# bump_in_place -> rc 0 iff the `git diff -U0` on stdin only rewrites `version = "..."` values in
+# place: every hunk removes as many lines as it adds, and its i-th removed line equals its i-th
+# added line once each version value is blanked (#4819). A line moved to another hunk, section
+# or file is a removal in one hunk and an addition in another, so it is not a bump.
+bump_in_place() {
+    awk -v e='version = ""' '
+        function blank(s) { gsub(/version = "[^"]*"/, e, s); return s }
+        function flush(   i) {
+            if (nm != np) bad = 1
+            else for (i = 1; i <= nm; i++) if (m[i] != p[i]) bad = 1
+            nm = 0; np = 0
+        }
+        /^diff --git / { flush(); inh = 0; next }
+        /^@@ / { flush(); inh = 1; next }
+        inh && /^-/ { m[++nm] = blank(substr($0, 2)); next }
+        inh && /^\+/ { p[++np] = blank(substr($0, 2)); next }
+        END { flush(); exit bad }'
+}
 
 # version_at SHA -> the [workspace.package] version Cargo.toml sets at SHA, or ''
 version_at() {
@@ -103,8 +120,7 @@ version_only() {
     [ -n "$cargo" ] || return 0
     # shellcheck disable=SC2086 # one path per line, none with spaces (the SURFACE list)
     d=$("$GIT" diff -U0 "$h" "$sha" -- $cargo 2>/dev/null) || return 1
-    [ "$(grep -E '^-' <<< "$d" | grep -vE '^--- ' | cut -c2- | blank_versions)" = \
-      "$(grep -E '^\+' <<< "$d" | grep -vE '^\+\+\+ ' | cut -c2- | blank_versions)" ]
+    bump_in_place <<< "$d"
 }
 
 # find_run SHA -> "<run id> <commit>" of the newest completed nightly on SHA or on a commit SHA
@@ -196,12 +212,12 @@ STUB
     # #4735, each B + one more change: EA adds a model-ladder receipt for the version cut (0.1.1),
     # EM modifies one C already held, EO adds one for another version, EN adds a file off the surface,
     # ED deletes CHANGELOG.md.
-    local g="$d/repo" C B X D N A EA EM EO EN ED
+    local g="$d/repo" C B X D N A EA EM EO EN ED MV MX AD
     git init -q "$g" && git -C "$g" config user.email t@t && git -C "$g" config user.name t \
         && git -C "$g" config core.hooksPath /dev/null || return 1
     printf 'COV_FLOOR := 89\n' > "$g/Makefile"; mkdir -p "$g/crates/a" "$g/evidence/dogfood/models/0.1.1"
     printf '[workspace]\nmembers = ["crates/a"]\n\n[workspace.package]\nversion = "0.1.0"\n' > "$g/Cargo.toml"
-    printf '[package]\nname = "a"\nversion = "0.1.0"\n\n[dependencies]\nb = { path = "../b", version = "0.1.0" }\n' > "$g/crates/a/Cargo.toml"
+    printf '[package]\nname = "a"\nversion = "0.1.0"\n\n[dependencies]\nb = { path = "../b", version = "0.1.0" }\n\n[dev-dependencies]\nc = { path = "../c", version = "0.1.0" }\n' > "$g/crates/a/Cargo.toml"
     printf '[[package]]\nname = "a"\nversion = "0.1.0"\n' > "$g/Cargo.lock"; printf 'fn f() {}\n' > "$g/lib.rs"; printf '# log\n' > "$g/CHANGELOG.md"
     printf '{"host":"early"}\n' > "$g/evidence/dogfood/models/0.1.1/early.json"
     git -C "$g" add -A && git -C "$g" commit -qm C && C=$(git -C "$g" rev-parse HEAD)
@@ -215,6 +231,14 @@ STUB
     EO=$(on_b EO evidence/dogfood/models/0.1.0/intel.json '{"host":"intel"}')
     EN=$(on_b EN docs/notes.md 'not a version')
     ED=$(git -C "$g" checkout -q "$B" && git -C "$g" rm -q CHANGELOG.md && git -C "$g" commit -qm ED && git -C "$g" rev-parse HEAD)
+    # #4819, each B + a Cargo change the old sorted-set compare took for a bump: MV swaps the b and c
+    # dependency lines between [dependencies] and [dev-dependencies]; MX moves the c line out of
+    # crates/a/Cargo.toml into the root Cargo.toml; AD adds a line right after a bumped version.
+    MV=$(on_b MV crates/a/Cargo.toml "$(printf '[package]\nname = "a"\nversion = "0.1.1"\n\n[dependencies]\nc = { path = "../c", version = "0.1.1" }\n\n[dev-dependencies]\nb = { path = "../b", version = "0.1.1" }')")
+    MX=$(git -C "$g" checkout -q "$B" && sed -i '/^c = /d' "$g/crates/a/Cargo.toml" && printf 'c = { path = "../c", version = "0.1.1" }\n' >> "$g/Cargo.toml" \
+        && git -C "$g" commit -qam MX && git -C "$g" rev-parse HEAD)
+    AD=$(git -C "$g" checkout -q "$B" && sed -i '/^version = "0\.1\.1"/a build = "evil.rs"' "$g/crates/a/Cargo.toml" \
+        && git -C "$g" commit -qam AD && git -C "$g" rev-parse HEAD)
     git -C "$g" checkout -q "$B"
     printf 'fn f() { g() }\n' > "$g/lib.rs"; git -C "$g" commit -qam X && X=$(git -C "$g" rev-parse HEAD)
     git -C "$g" checkout -q "$C" && sed -i -e 's|path = "../b"|path = "../evil"|' -e 's/0\.1\.0/0.1.1/g' "$g/crates/a/Cargo.toml"
@@ -273,6 +297,10 @@ STUB
     e2e 1 "e2e: any other path is not a bump" "$EN" "7:$C:$T1" "7:$C:$OK"
     e2e 1 "e2e: a DELETED surface file is not a bump" "$ED" "7:$C:$T1" "7:$C:$OK"
     e2e 1 "e2e: a receipt for a later version-only bump does not cover the commit before it" "$C" "7:$B:$T1" "7:$B:$(rec "$B" 90.00 87772 9 10)"
+    echo "$PROG self-test: a bump rewrites lines in place (#4819)"
+    e2e 1 "e2e: a dependency line MOVED between sections beside a version bump is not a bump" "$MV" "7:$C:$T1" "7:$C:$OK"
+    e2e 1 "e2e: a dependency line MOVED to another Cargo file is not a bump" "$MX" "7:$C:$T1" "7:$C:$OK"
+    e2e 1 "e2e: a line ADDED in a version line's hunk is not a bump" "$AD" "7:$C:$T1" "7:$C:$OK"
     echo "$PROG self-test: --resolve SHA, before the tag (#4691)"
     mode="--resolve"
     e2e 0 "e2e: --resolve passes on a release commit whose receipt holds the floor" "$B" "7:$C:$T1" "7:$C:$OK"
@@ -281,6 +309,12 @@ STUB
     e2e 1 "e2e: --resolve refuses when gh fails" "$C" "7:$C:$T1" "7:$C:$OK" down
     mode=v9.9.9
     printf 'rate limited' > "$d/runs.json"; rm -f -- "${d:?}/down"
+    echo "$PROG self-test: SHA is a full 40-hex commit id (#4819)"
+    local u
+    for u in "v9.9.9 ${C:0:12}" "v9.9.9 HEAD" "--resolve HEAD" "--resolve ${C^^}" "--resolve ${C}0"; do
+        (cd "$g" && FIX=$d GH=$d/gh bash "$SELF" "${u% *}" "${u#* }") > /dev/null 2>&1; rc=$?
+        if [ "$rc" = 2 ]; then echo "  ok   usage: '$u' is refused (rc 2)"; else echo "  FAIL usage: '$u' wanted rc 2, got $rc"; fail=1; fi
+    done
     if (cd "$g" && FIX=$d GH=$d/gh bash "$SELF" v9.9.9 "$C") > /dev/null 2>&1; then echo "  FAIL e2e: gh answering garbage passed"; fail=1
     else echo "  ok   e2e: gh answering garbage refuses"; fi
     rm -rf -- "${d:?}"
@@ -291,8 +325,8 @@ STUB
 case "${1:-}" in
     --self-test) self_test ;;
     -h|--help) sed -n '2,/^set -uo/p' "$0" | sed '$d'; exit 0 ;;
-    --resolve) [ "$#" -eq 2 ] || { echo "usage: $0 --resolve SHA" >&2; exit 2; }
+    --resolve) [ "$#" -eq 2 ] && [[ $2 =~ ^[0-9a-f]{40}$ ]] || { echo "usage: $0 --resolve SHA(40-hex)" >&2; exit 2; }
        gate "the release commit $2" "$2" "no tag, nothing carried" ;;
-    *) [ "$#" -eq 2 ] || { echo "usage: $0 TAG SHA | --resolve SHA | --self-test" >&2; exit 2; }
+    *) [ "$#" -eq 2 ] && [[ $2 =~ ^[0-9a-f]{40}$ ]] || { echo "usage: $0 TAG SHA(40-hex) | --resolve SHA(40-hex) | --self-test" >&2; exit 2; }
        gate "$1 at $2" "$2" "no preflight, no cascade" ;;
 esac

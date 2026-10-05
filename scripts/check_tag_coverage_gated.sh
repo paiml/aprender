@@ -63,7 +63,11 @@ surface file may be added or deleted|[ "$st" = M ] || return 1|true || return 1
 model-ladder receipt may be modified|[ "$st" = A ] || return 1|true || return 1
 any path rides on a bump|else return 1; fi|else :; fi
 any version's receipt dir rides on a bump|${v//./\\.}|[^/]+
-Cargo diff not compared|blank_versions() { sed -E 's/version = "[^"]*"/version = ""/g' \| sort; }|blank_versions() { :; }
+Cargo diff not compared|    bump_in_place <<< "$d"|    true
+Cargo lines compared as a set, not pairwise in place (#4819)|if (m[i] != p[i]) bad = 1|if (0) bad = 1
+a hunk may add more lines than it removes (#4819)|if (nm != np) bad = 1|if (0) bad = 1
+--resolve takes any ref, not a 40-hex sha (#4819)|[[ $2 =~ ^[0-9a-f]{40}$ ]] \|\| { echo "usage: $0 --resolve|true \|\| { echo "usage: $0 --resolve
+TAG SHA takes any ref, not a 40-hex sha (#4819)|[[ $2 =~ ^[0-9a-f]{40}$ ]] \|\| { echo "usage: $0 TAG|true \|\| { echo "usage: $0 TAG
 oldest run picked, not newest|sort_by(.createdAt) \| reverse \||sort_by(.createdAt) \|
 --resolve always passes|gate "the release commit $2" "$2" "no tag, nothing carried" ;;|exit 0 ;;
 EOF
