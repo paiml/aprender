@@ -23,7 +23,7 @@
 use std::collections::BTreeMap;
 
 use crate::ontology::rdf::{ont, Graph};
-use crate::ontology::shapes::{NodeShape, PropertyShape};
+use crate::ontology::shapes::{compare_terms, InEntry, NodeShape, PropertyShape};
 use crate::ontology::sigma::Sigma;
 
 /// The Σ concept a `targetClass` IRI names, if it names one.
@@ -123,9 +123,52 @@ fn weakened_max_length(sup: &PropertyShape, sub: &PropertyShape) -> Option<&'sta
         .then_some("maxLength")
 }
 
+/// A range bound weakens iff `sup` set it and `sub` drops it, or sets the SAME key looser (a lower floor, a higher
+/// ceiling) or to a value the two cannot be compared on (#4814). Trading `minInclusive 5` for `minExclusive 5` is
+/// reported too: stricter, but this check compares one key at a time and does not reason across them.
+fn range_loosened(sup: Option<&InEntry>, sub: Option<&InEntry>, floor: bool) -> bool {
+    use std::cmp::Ordering::{Greater, Less};
+    let Some(a) = sup else { return false };
+    let Some(b) = sub else { return true };
+    match compare_terms(&b.term(), &a.term()) {
+        Some(Less) => floor,
+        Some(Greater) => !floor,
+        Some(_) => false,
+        None => true,
+    }
+}
+
+fn weakened_min_exclusive(sup: &PropertyShape, sub: &PropertyShape) -> Option<&'static str> {
+    range_loosened(sup.min_exclusive.as_ref(), sub.min_exclusive.as_ref(), true)
+        .then_some("minExclusive")
+}
+
+fn weakened_min_inclusive(sup: &PropertyShape, sub: &PropertyShape) -> Option<&'static str> {
+    range_loosened(sup.min_inclusive.as_ref(), sub.min_inclusive.as_ref(), true)
+        .then_some("minInclusive")
+}
+
+fn weakened_max_exclusive(sup: &PropertyShape, sub: &PropertyShape) -> Option<&'static str> {
+    range_loosened(
+        sup.max_exclusive.as_ref(),
+        sub.max_exclusive.as_ref(),
+        false,
+    )
+    .then_some("maxExclusive")
+}
+
+fn weakened_max_inclusive(sup: &PropertyShape, sub: &PropertyShape) -> Option<&'static str> {
+    range_loosened(
+        sup.max_inclusive.as_ref(),
+        sub.max_inclusive.as_ref(),
+        false,
+    )
+    .then_some("maxInclusive")
+}
+
 /// The components of `sup` that `sub` drops or loosens, on the same path.
 fn weakened(sup: &PropertyShape, sub: &PropertyShape) -> Vec<&'static str> {
-    let checks: [fn(&PropertyShape, &PropertyShape) -> Option<&'static str>; 9] = [
+    let checks: [fn(&PropertyShape, &PropertyShape) -> Option<&'static str>; 13] = [
         weakened_min_count,
         weakened_max_count,
         weakened_datatype,
@@ -135,6 +178,10 @@ fn weakened(sup: &PropertyShape, sub: &PropertyShape) -> Vec<&'static str> {
         weakened_in,
         weakened_min_length,
         weakened_max_length,
+        weakened_min_exclusive,
+        weakened_min_inclusive,
+        weakened_max_exclusive,
+        weakened_max_inclusive,
     ];
     checks.iter().filter_map(|f| f(sup, sub)).collect()
 }
@@ -198,6 +245,10 @@ mod tests {
             node: None,
             less_than: None,
             less_than_or_equals: None,
+            min_exclusive: None,
+            min_inclusive: None,
+            max_exclusive: None,
+            max_inclusive: None,
             resolves: None,
             severity: crate::ontology::shapes::Severity::Violation,
         }
@@ -280,6 +331,56 @@ mod tests {
                 }])
             }),
             ("in", |b| b.r#in = None),
+        ];
+        for (want, mutate) in cases {
+            let mut sub = sup.clone();
+            mutate(&mut sub);
+            assert_eq!(weakened(&sup, &sub), vec![want], "loosening {want}");
+        }
+    }
+
+    /// #4814 slice 1: each range bound is named alone when dropped, loosened, or set to a value it cannot be
+    /// compared with; an equal or a tighter bound names nothing.
+    #[test]
+    fn ont4d_weakened_covers_the_value_range_bounds() {
+        use crate::ontology::shapes::InEntry;
+        // a fn, not a closure: the case table holds fn pointers, which cannot capture
+        fn int(n: i64) -> Option<InEntry> {
+            Some(InEntry {
+                lexical: n.to_string(),
+                datatype: "http://www.w3.org/2001/XMLSchema#integer".into(),
+            })
+        }
+        let mut sup = p("x");
+        sup.min_exclusive = int(0);
+        sup.min_inclusive = int(1);
+        sup.max_exclusive = int(10);
+        sup.max_inclusive = int(9);
+        assert!(
+            weakened(&sup, &sup.clone()).is_empty(),
+            "equal is not weaker"
+        );
+        let mut tighter = sup.clone();
+        tighter.min_exclusive = int(1);
+        tighter.min_inclusive = int(2);
+        tighter.max_exclusive = int(9);
+        tighter.max_inclusive = int(8);
+        assert!(weakened(&sup, &tighter).is_empty(), "stricter is allowed");
+        let cases: [Case; 9] = [
+            ("minExclusive", |b| b.min_exclusive = None),
+            ("minExclusive", |b| b.min_exclusive = int(-1)),
+            ("minInclusive", |b| b.min_inclusive = int(0)),
+            ("minInclusive", |b| b.min_inclusive = None),
+            ("maxExclusive", |b| b.max_exclusive = int(11)),
+            ("maxExclusive", |b| b.max_exclusive = None),
+            ("maxInclusive", |b| b.max_inclusive = int(10)),
+            ("maxInclusive", |b| b.max_inclusive = None),
+            ("maxInclusive", |b| {
+                b.max_inclusive = Some(InEntry {
+                    lexical: "a".into(),
+                    datatype: "http://www.w3.org/2001/XMLSchema#string".into(),
+                })
+            }),
         ];
         for (want, mutate) in cases {
             let mut sub = sup.clone();

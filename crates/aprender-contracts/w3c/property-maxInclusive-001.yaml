@@ -1,0 +1,24 @@
+# vendored: w3c/data-shapes@gh-pages data-shapes-test-suite/tests/core/property/maxInclusive-001.ttl (tests/oracle/w3c/property/maxInclusive-001.ttl)
+id: property/maxInclusive-001
+label: "Test of sh:maxInclusive at property shape 001"
+prefix: "http://datashapes.org/sh/tests/core/property/maxInclusive-001.test#"
+targeting: "sh:targetNode → rdf:type ex:Focus + targetClass"
+shapes:
+  - id: TestShape
+    targetClass: ex:Focus
+    properties:
+      - {path: ex:property, maxInclusive: 1}
+data: |
+  ex:InvalidResource1 rdf:type ex:Focus .
+  ex:InvalidResource2 rdf:type ex:Focus .
+  ex:ValidResource1 rdf:type ex:Focus .
+  ex:ValidResource2 rdf:type ex:Focus .
+  ex:InvalidResource1 ex:property 2 .
+  ex:InvalidResource2 ex:property "a" .
+  ex:ValidResource1 ex:property 0 .
+  ex:ValidResource2 ex:property 1 .
+expect:
+  conforms: false
+  results:
+    - {focus: ex:InvalidResource1, path: ex:property, component: maxInclusive}
+    - {focus: ex:InvalidResource2, path: ex:property, component: maxInclusive}

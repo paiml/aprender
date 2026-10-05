@@ -9,6 +9,7 @@
 //! | `minCount`, `maxCount` | the `qualifiedValueShape` family |
 //! | `datatype`, `class`, `nodeKind` | — |
 //! | `in`, `pattern`, `minLength`, `maxLength` | `languageIn`, `uniqueLang` |
+//! | `minExclusive`, `minInclusive`, `maxExclusive`, `maxInclusive` (a YAML scalar bound, #4814) | a typed bound (`"2026-01-01"^^xsd:date`) |
 //! | `node` (one level) | recursive / cyclic shapes |
 //! | `closed`, `ignoredProperties` | — |
 //! | `lessThan`, `lessThanOrEquals` (property pairs) | `equals`, `disjoint` |
@@ -81,6 +82,14 @@ pub struct InEntry {
 }
 
 impl InEntry {
+    /// This entry as a literal term (a range bound is compared as one).
+    #[must_use]
+    pub fn term(&self) -> Term {
+        Term::Literal {
+            value: self.lexical.clone(),
+            datatype: self.datatype.clone(),
+        }
+    }
     /// Does `value` (a literal's lexical form and datatype) equal this term?
     #[must_use]
     pub fn matches_literal(&self, value: &str, datatype: &str) -> bool {
@@ -121,6 +130,13 @@ pub struct PropertyShape {
     pub less_than: Option<String>,
     /// `sh:lessThanOrEquals`: every value must be `<=` every value of this predicate on the same focus node.
     pub less_than_or_equals: Option<String>,
+    /// `sh:minExclusive` / `sh:minInclusive` / `sh:maxExclusive` / `sh:maxInclusive` (SHACL §4.3): each value must
+    /// compare, by SPARQL `<`, `>` / `>=` / `<` / `<=` the bound. A value that does not compare (an IRI, a string
+    /// against a number) is a result, never a skip (#4814).
+    pub min_exclusive: Option<InEntry>,
+    pub min_inclusive: Option<InEntry>,
+    pub max_exclusive: Option<InEntry>,
+    pub max_inclusive: Option<InEntry>,
     pub resolves: Option<String>,
     pub severity: Severity,
 }
@@ -217,6 +233,10 @@ const PROPERTY_KEYS: &[&str] = &[
     "node",
     "lessThan",
     "lessThanOrEquals",
+    "minExclusive",
+    "minInclusive",
+    "maxExclusive",
+    "maxInclusive",
     "resolves",
     "severity",
 ];
@@ -508,6 +528,10 @@ fn parse_property(
         node,
         less_than: iri_opt("lessThan")?,
         less_than_or_equals: iri_opt("lessThanOrEquals")?,
+        min_exclusive: bound(shape, pm, "minExclusive")?,
+        min_inclusive: bound(shape, pm, "minInclusive")?,
+        max_exclusive: bound(shape, pm, "maxExclusive")?,
+        max_inclusive: bound(shape, pm, "maxInclusive")?,
         resolves: str_key(shape, pm, "resolves")?.map(String::from),
         severity,
     })
@@ -594,6 +618,14 @@ fn parse_in(shape: &str, pm: &serde_yaml::Mapping) -> Result<Option<Vec<InEntry>
         })
         .collect::<Result<_, _>>()
         .map(Some)
+}
+
+/// A value-range bound (`minExclusive: 40`): a YAML scalar, typed as an `in` entry is. Anything else is malformed,
+/// never absent (#4814).
+fn bound(shape: &str, pm: &serde_yaml::Mapping, k: &str) -> Result<Option<InEntry>, ShapeError> {
+    pm.get(k)
+        .map(|v| in_entry(v).ok_or_else(|| malformed_in(shape, format!("`{k}` is not a scalar"))))
+        .transpose()
 }
 
 /// A YAML scalar as a term; `None` for a mapping, a list or null, which name no term (#4814: these were read as
@@ -923,6 +955,7 @@ fn check_value(
 ) {
     check_kind_and_type(graph, p, v, push);
     check_lexical(p, v, push);
+    check_range(p, v, push);
     if let Some(inner) = &p.node {
         match v.as_iri() {
             Some(i) => {
@@ -953,6 +986,38 @@ fn check_value(
                 "node",
                 format!("{v} is a literal; `node` needs an IRI"),
             ),
+        }
+    }
+}
+
+/// `sh:minExclusive` / `sh:minInclusive` / `sh:maxExclusive` / `sh:maxInclusive` (SHACL §4.3) on one value. SHACL
+/// counts a value as conforming only when the SPARQL comparison against the bound is TRUE, so a value it cannot
+/// compare (an IRI, a string against a number: W3C property/minExclusive-002, maxExclusive-001) is a result.
+fn check_range(
+    p: &PropertyShape,
+    v: &Term,
+    push: &mut impl FnMut(Severity, Option<&str>, &'static str, String),
+) {
+    use std::cmp::Ordering::{Equal, Greater, Less};
+    for (bound, component, op, holds) in [
+        (&p.min_exclusive, "minExclusive", ">", &[Greater][..]),
+        (
+            &p.min_inclusive,
+            "minInclusive",
+            ">=",
+            &[Greater, Equal][..],
+        ),
+        (&p.max_exclusive, "maxExclusive", "<", &[Less][..]),
+        (&p.max_inclusive, "maxInclusive", "<=", &[Less, Equal][..]),
+    ] {
+        let Some(b) = bound else { continue };
+        if !compare_terms(v, &b.term()).is_some_and(|o| holds.contains(&o)) {
+            push(
+                p.severity,
+                Some(&p.path),
+                component,
+                format!("{}: {} is not {op} {b}", short(&p.path), term_short(v)),
+            );
         }
     }
 }
@@ -1322,7 +1387,27 @@ fn turtle_string_and_pair_lines(p: &PropertyShape) -> Vec<String> {
     if let Some(o) = &p.less_than_or_equals {
         lines.push(format!("sh:lessThanOrEquals <{o}>"));
     }
+    for (b, k) in [
+        (&p.min_exclusive, "minExclusive"),
+        (&p.min_inclusive, "minInclusive"),
+        (&p.max_exclusive, "maxExclusive"),
+        (&p.max_inclusive, "maxInclusive"),
+    ] {
+        if let Some(b) = b {
+            lines.push(format!("sh:{k} {}", turtle_entry(b)));
+        }
+    }
     lines
+}
+
+/// A YAML-typed term as a Turtle literal: typed unless it is an `xsd:string`, because `sh:in` is term equality and a
+/// range bound compares by its datatype — an untyped `"40"` would be a string the oracle cannot order against 39.
+fn turtle_entry(v: &InEntry) -> String {
+    if v.datatype == XSD_STRING_IRI {
+        format!("\"{}\"", v.lexical)
+    } else {
+        format!("\"{}\"^^<{}>", v.lexical, v.datatype)
+    }
 }
 
 /// One `sh:property [ … ] ;` block. Every implemented component has a line; nothing else is emitted.
@@ -1354,16 +1439,7 @@ fn turtle_property(p: &PropertyShape) -> String {
     if let Some(list) = &p.r#in {
         // Typed, because `sh:in` is term equality: an untyped `"true"` is an xsd:string and would not match
         // the xsd:boolean the extractor writes — the difference `make oracle` measures.
-        let items: Vec<String> = list
-            .iter()
-            .map(|v| {
-                if v.datatype == XSD_STRING_IRI {
-                    format!("\"{}\"", v.lexical)
-                } else {
-                    format!("\"{}\"^^<{}>", v.lexical, v.datatype)
-                }
-            })
-            .collect();
+        let items: Vec<String> = list.iter().map(turtle_entry).collect();
         line(format!("sh:in ( {} )", items.join(" ")));
     }
     for l in turtle_string_and_pair_lines(p) {
@@ -1689,7 +1765,7 @@ mod tests {
                 "entity: {{type: pv-contract}}\nshape:\n  properties: [{{path: ont:x, {prop}}}]\n"
             )
         };
-        let rows: [(&str, String, String); 11] = [
+        let rows: [(&str, String, String); 15] = [
             ("F1 targetClass", "shape:\n  targetClass: [ont:A]\n  properties: []\n".into(), "shape:\n  targetClass: ont:A\n  properties: []\n".into()),
             ("F2 datatype", p("datatype: 5"), p("datatype: xsd:string")),
             ("F2 class", p("class: [ont:A]"), p("class: ont:A")),
@@ -1701,6 +1777,10 @@ mod tests {
             ("F6 ignoredProperties", "entity: {type: pv-contract}\nshape:\n  closed: true\n  ignoredProperties: [rdf:type, 3]\n  properties: []\n".into(), "entity: {type: pv-contract}\nshape:\n  closed: true\n  ignoredProperties: [rdf:type]\n  properties: []\n".into()),
             ("F7 in", p("in: [a, {b: 1}]"), p("in: [a, b]")),
             ("F2 resolves", p("resolves: [x]"), p("resolves: x")),
+            ("slice 1 minExclusive", p("minExclusive: [1]"), p("minExclusive: 1")),
+            ("slice 1 minInclusive", p("minInclusive: {a: 1}"), p("minInclusive: 1.5")),
+            ("slice 1 maxExclusive", p("maxExclusive: ~"), p("maxExclusive: 'z'")),
+            ("slice 1 maxInclusive", p("maxInclusive: [true]"), p("maxInclusive: true")),
         ];
         for (row, bad, ok) in rows {
             let parse =

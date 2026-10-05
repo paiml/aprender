@@ -1,0 +1,20 @@
+# vendored: w3c/data-shapes@gh-pages data-shapes-test-suite/tests/core/property/minExclusive-002.ttl (tests/oracle/w3c/property/minExclusive-002.ttl)
+id: property/minExclusive-002
+label: "Test of sh:minExclusive at property shape 002"
+prefix: "http://datashapes.org/sh/tests/core/property/minExclusive-002.test#"
+targeting: "implicit class target (ex:TestShape is rdfs:Class and sh:NodeShape) → targetClass ex:TestShape"
+shapes:
+  - id: TestShape
+    targetClass: ex:TestShape
+    properties:
+      - {path: ex:testProperty, minExclusive: 40}
+data: |
+  ex:InvalidInstance1 rdf:type ex:TestShape .
+  ex:InvalidInstance1 ex:testProperty "A string" .
+  ex:InvalidInstance2 rdf:type ex:TestShape .
+  ex:InvalidInstance2 ex:testProperty rdfs:Resource .
+expect:
+  conforms: false
+  results:
+    - {focus: ex:InvalidInstance1, path: ex:testProperty, component: minExclusive}
+    - {focus: ex:InvalidInstance2, path: ex:testProperty, component: minExclusive}

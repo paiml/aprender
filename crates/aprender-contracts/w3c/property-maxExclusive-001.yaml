@@ -1,0 +1,27 @@
+# vendored: w3c/data-shapes@gh-pages data-shapes-test-suite/tests/core/property/maxExclusive-001.ttl (tests/oracle/w3c/property/maxExclusive-001.ttl)
+id: property/maxExclusive-001
+label: "Test of sh:maxExclusive at property shape 001"
+prefix: "http://datashapes.org/sh/tests/core/property/maxExclusive-001.test#"
+targeting: "sh:targetNode → rdf:type ex:Focus + targetClass"
+shapes:
+  - id: TestShape
+    targetClass: ex:Focus
+    properties:
+      - {path: ex:property, maxExclusive: 1}
+data: |
+  ex:InvalidResource1 rdf:type ex:Focus .
+  ex:InvalidResource2 rdf:type ex:Focus .
+  ex:InvalidResource3 rdf:type ex:Focus .
+  ex:ValidResource1 rdf:type ex:Focus .
+  ex:ValidResource2 rdf:type ex:Focus .
+  ex:InvalidResource1 ex:property 1 .
+  ex:InvalidResource2 ex:property 2 .
+  ex:InvalidResource3 ex:property "a" .
+  ex:ValidResource1 ex:property 0 .
+  ex:ValidResource2 ex:property -1 .
+expect:
+  conforms: false
+  results:
+    - {focus: ex:InvalidResource1, path: ex:property, component: maxExclusive}
+    - {focus: ex:InvalidResource2, path: ex:property, component: maxExclusive}
+    - {focus: ex:InvalidResource3, path: ex:property, component: maxExclusive}

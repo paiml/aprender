@@ -102,6 +102,22 @@ pub const CASES: &[(&str, &str)] = &[
         "property/lessThanOrEquals-001",
         include_str!("../../w3c/property-lessThanOrEquals-001.yaml"),
     ),
+    (
+        "property/minExclusive-001",
+        include_str!("../../w3c/property-minExclusive-001.yaml"),
+    ),
+    (
+        "property/minExclusive-002",
+        include_str!("../../w3c/property-minExclusive-002.yaml"),
+    ),
+    (
+        "property/maxExclusive-001",
+        include_str!("../../w3c/property-maxExclusive-001.yaml"),
+    ),
+    (
+        "property/maxInclusive-001",
+        include_str!("../../w3c/property-maxInclusive-001.yaml"),
+    ),
 ];
 
 /// Every case id of the W3C SHACL Core suite, as vendored in `w3c/core-suite.txt` (the header says how it was
@@ -151,12 +167,12 @@ pub const NOT_VENDORED: &[(&str, &str)] = &[
     ("node/equals-001", "sh:equals on the node shape itself (slices 2, 5)"),
     ("node/hasValue-001", "sh:hasValue on the node shape itself (slices 3, 5)"),
     ("node/languageIn-001", "sh:languageIn on the node shape itself; the term model drops language tags (slices 5, 10)"),
-    ("node/maxExclusive-001", "sh:maxExclusive on the node shape itself (slices 1, 5)"),
-    ("node/maxInclusive-001", "sh:maxInclusive on the node shape itself (slices 1, 5)"),
-    ("node/minExclusive-001", "sh:minExclusive on the node shape itself (slices 1, 5)"),
-    ("node/minInclusive-001", "sh:minInclusive on the node shape itself (slices 1, 5)"),
-    ("node/minInclusive-002", "sh:minInclusive on the node shape itself (slices 1, 5)"),
-    ("node/minInclusive-003", "sh:minInclusive on the node shape itself (slices 1, 5)"),
+    ("node/maxExclusive-001", "sh:maxExclusive on the node shape itself (slice 5; the component is slice 1)"),
+    ("node/maxInclusive-001", "sh:maxInclusive on the node shape itself (slice 5; the component is slice 1)"),
+    ("node/minExclusive-001", "sh:minExclusive on the node shape itself (slice 5; the component is slice 1)"),
+    ("node/minInclusive-001", "sh:minInclusive on the node shape itself (slice 5; the component is slice 1)"),
+    ("node/minInclusive-002", "sh:minInclusive on the node shape itself (slice 5; the component is slice 1)"),
+    ("node/minInclusive-003", "sh:minInclusive on the node shape itself (slice 5; the component is slice 1)"),
     ("node/not-001", "sh:not — refused by name (slice 8)"),
     ("node/not-002", "sh:not — refused by name (slice 8)"),
     ("node/or-001", "sh:or — refused by name (slice 8)"),
@@ -181,10 +197,6 @@ pub const NOT_VENDORED: &[(&str, &str)] = &[
     ("property/equals-001", "sh:equals — refused by name (slice 2)"),
     ("property/hasValue-001", "sh:hasValue — refused by name (slice 3)"),
     ("property/languageIn-001", "sh:languageIn; the term model drops language tags (slice 10)"),
-    ("property/maxExclusive-001", "sh:maxExclusive — refused by name (slice 1)"),
-    ("property/maxInclusive-001", "sh:maxInclusive — refused by name (slice 1)"),
-    ("property/minExclusive-001", "sh:minExclusive — refused by name (slice 1)"),
-    ("property/minExclusive-002", "sh:minExclusive — refused by name (slice 1)"),
     ("property/not-001", "sh:not — refused by name (slice 8)"),
     ("property/or-001", "sh:or — refused by name (slice 8)"),
     ("property/or-datatypes-001", "sh:or — refused by name (slice 8)"),
@@ -593,8 +605,8 @@ mod tests {
         }
         // the ratchet (#4814 plan step 4): the vendored count only grows from its measured value
         assert!(
-            CASES.len() >= 19,
-            "vendored W3C cases dropped below the 19 measured at the #4814 baseline"
+            CASES.len() >= 23,
+            "vendored W3C cases dropped below 23: the #4814 baseline 19, plus slice 1's four value-range cases"
         );
     }
 
