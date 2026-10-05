@@ -19,7 +19,9 @@
 #   author-seat  model is the author's own model id, compared lowercased, trimmed and
 #                without a -YYYYMMDD suffix
 #   family-mismatch  the lane's family label is not the family its model id names
-#                (first token; gpt-* = openai): a label never makes a second family
+#                (first token; gpt-* and o<N>-* = openai): a label never makes a second family.
+#                Every id is canonical first, as the quorum tool's model_canon does: opus-*,
+#                sonnet-*, haiku-*, fable-* and mythos-* are claude-*
 #   seat-unknown model_measured is absent or names another model, or a fallback happened
 #                (an attempt names another model) and judged_by does not name the seat
 #   plant-contradiction  the lane is recorded as catching the plant but its verdict is
@@ -52,7 +54,10 @@
 # Exit: report-only by default, so 0 after printing the verdict ("REPORT: would be RED"
 # when it is not valid). --enforce: 0 valid, 1 invalid, 2 not_measured. 3 caller error.
 #   check_quorum_receipt.sh [--enforce] [--plant FILE:LINE] RECEIPT.json
-#   check_quorum_receipt.sh --selftest | --mutants
+#   check_quorum_receipt.sh --selftest | --mutants | --help
+# A bare run (no argument) runs --selftest and exits its rc: guard-tree runs every
+# scripts/check_*.sh bare, and a usage error there would turn ci / gate red. --help prints
+# this header at rc 0.
 set -uo pipefail
 
 SELF="${BASH_SOURCE[0]}"
@@ -120,7 +125,7 @@ _qr_is_author() {
 # The receipt's own family label is never trusted: it must agree with this.
 _qr_family() {
     case "$1" in
-        gpt-*) printf 'openai' ;;
+        gpt-* | o[0-9]*-*) printf 'openai' ;;
         *) printf '%s' "${1%%-*}" ;;
     esac
 }
@@ -130,7 +135,7 @@ _qr_family() {
 # than the author's (C314 review of ed3739e516). Every id is compared only after it.
 _qr_canon() {
     case "$1" in
-        opus-* | sonnet-* | haiku-*) printf 'claude-%s' "$1" ;;
+        opus-* | sonnet-* | haiku-* | fable-* | mythos-*) printf 'claude-%s' "$1" ;;
         *) printf '%s' "$1" ;;
     esac
 }
@@ -259,7 +264,10 @@ lane_tag() { # FILE LANE -> the lane's last field
     check_quorum_receipt "$1" | awk -v l="$2" '$1 == "lane" && $2 == l {print $NF}'
 }
 
+usage() { awk 'NR > 1 && !/^#/ {exit} NR > 1 {sub(/^# ?/, ""); print}' "$SELF"; }
+
 selftest() {
+    export QR_SELFTEST_DEPTH=1
     local t f A="claude-opus-5-5" C="src/a.rs:7"
     t="$(mktemp -d "${TMPDIR:-/tmp}/qr-selftest.XXXXXX")" || exit 2
     f="$t/r.json"
@@ -403,6 +411,14 @@ selftest() {
     row same_file_other_line_missed "plant-missed" "$(lane_tag "$f" 1)"
     rc_json "$A" "" "$(ln 1 claude--sonnet-5 claude FAIL "$C")" "$(ln 2 gemini-3.1-pro-high gemini FAIL "$C")" > "$f"
     row double_dash_id_is_void "inexact-id" "$(lane_tag "$f" 1)"
+    # Canonical as the quorum tool's model_canon / model_family: fable-* is claude, o<N>-* is openai.
+    rc_json "fable-5-1" "" "$(ln 1 claude-fable-5-1 claude FAIL "$C")" "$(ln 2 gemini-3.1-pro-high gemini FAIL "$C")" > "$f"
+    row fable_alias_author_is_author_seat "author-seat" "$(lane_tag "$f" 1)"
+    rc_json "$A" "" "$(ln 1 o3-mini openai FAIL "$C")" "$(ln 2 gemini-3.1-pro-high gemini FAIL "$C")" > "$f"
+    row oseries_family_is_openai "rc=0 VALID independent" "$(verdict "$f")"
+    # guard-tree runs every scripts/check_*.sh bare: a bare run is the self-test, never rc 3.
+    row bare_run_is_the_selftest "rc=0 1" "$(bash "$SELF" > "$t/o" 2>&1; echo "rc=$? $(grep -c 'nested, not re-entered' "$t/o")")"
+    row help_is_rc0_and_names_selftest "rc=0 1" "$(bash "$SELF" --help > "$t/o" 2>&1; echo "rc=$? $(grep -c -- '--selftest | --mutants' "$t/o")")"
 
     printf '{"lanes":"x"}\n' > "$f"
     row not_a_receipt_not_measured "rc=2 not_measured not" "$(verdict "$f")"
@@ -433,7 +449,7 @@ MUTANTS=(
     'enforce_ignored|s/if \[ "\$enforce" = 1 \]; then exit "\$rc"; fi/:/'
     'author_case_kept|s/| ascii_downcase | gsub/| gsub/'
     'author_date_kept|s/| sub("-\[0-9\]{8}\$"; "")) as \$am/) as $am/'
-    'gpt_not_openai|s/        gpt-\*) printf .openai. ;;//'
+    'gpt_not_openai|s/        gpt-\* | o\[0-9\]\*-\*) printf .openai. ;;//'
     'measured_unchecked|s/ || \[ "\$measured" != "\$model" \]//'
     'no_verdict_ok|s/elif \[ "\$verdict" != PASS \] \&\& \[ "\$verdict" != FAIL \]; then/elif false; then/'
     'any_role_counts|s/elif \[ "\$role" != independent \] \&\& \[ "\$role" != counted \] \&\& \[ "\$role" != width \]; then/elif false; then/'
@@ -442,7 +458,11 @@ MUTANTS=(
     'dated_twin_two|s/models="\$models\${model%-\[0-9\]\[0-9\]\[0-9\]\[0-9\]\[0-9\]\[0-9\]\[0-9\]\[0-9\]}"/models="$models$model"/'
     'measured_from_claim|s/measured: (.model_measured \/\/ ""),/measured: (.model_measured \/\/ .model \/\/ ""),/'
     'decorated_author_ok|s/if \[ "\$am" != human \] \&\& ! _qr_exact_id "\$am"; then/if false; then/'
-    'alias_not_canon|s/        opus-\* | sonnet-\* | haiku-\*) printf .claude-%s. "\$1" ;;//'
+    'alias_not_canon|s/        opus-\* | sonnet-\* | haiku-\* | fable-\* | mythos-\*) printf .claude-%s. "\$1" ;;//'
+    'fable_not_canon|s/ | fable-\* | mythos-\*)/)/'
+    'oseries_not_openai|s/        gpt-\* | o\[0-9\]\*-\*) printf/        gpt-*) printf/'
+    'bare_is_caller_error|s/^    if \[ "\$#" = 0 \]; then$/    if false; then/'
+    'help_is_caller_error|s/^            -h | --help) usage; exit 0 ;;$//'
     'plant_line_ignored|s/ and (((.line \/\/ "") | tostring) == \$L)//'
     'double_dash_ok|s/ | \*--\*) return 1 ;;/) return 1 ;;/'
 )
@@ -471,9 +491,15 @@ mutants() {
 
 main() {
     local enforce=0 plant="" f="" out rc
+    if [ "$#" = 0 ]; then
+        # guard-tree runs this bare; a nested bare run (from a self-test row) never re-enters
+        if [ -n "${QR_SELFTEST_DEPTH:-}" ]; then echo "bare run: selftest (nested, not re-entered)"; exit 0; fi
+        selftest; exit $?
+    fi
     while [ "$#" -gt 0 ]; do
         case "$1" in
             --selftest) selftest; exit $? ;;
+            -h | --help) usage; exit 0 ;;
             --mutants)
                 [ -z "${QR_NO_MUTANTS:-}" ] || die "--mutants inside a mutant run"
                 mutants; exit $? ;;
