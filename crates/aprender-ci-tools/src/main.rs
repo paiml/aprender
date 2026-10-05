@@ -1,8 +1,8 @@
 //! `aprender-ci-tools`: one binary, one subcommand per ported Python helper.
 
 use aprender_ci_tools::{
-    coverage_report_scope, dag_status, git_patch_id, package_include_diff, publishable_crates,
-    tarball_build_errors, tarball_shrink_report, tarball_workspace,
+    annotate_book_examples, coverage_report_scope, dag_status, git_patch_id, package_include_diff,
+    publishable_crates, tarball_build_errors, tarball_shrink_report, tarball_workspace,
 };
 use clap::{ArgGroup, Parser, Subcommand};
 use std::io::{Read, Write};
@@ -84,6 +84,14 @@ enum Cmd {
         /// --stable, --verbatim or --unstable (the default), as git spells them.
         #[arg(allow_hyphen_values = true, value_name = "MODE")]
         mode: Option<String>,
+    },
+    /// Insert an `<!-- example-cost: ... -->` line above every unannotated bash/rust fence in
+    /// ROOT/book/src/{cli,lib}/*.md and rewrite each chapter (was
+    /// scripts/annotate-book-examples.py, which used its own repo as ROOT).
+    AnnotateBookExamples {
+        /// The repository root holding `book/src`.
+        #[arg(default_value = ".")]
+        root: PathBuf,
     },
 }
 
@@ -182,6 +190,9 @@ fn run(cmd: Cmd) -> Result<String, Refusal> {
                 .read_to_string(&mut rows)
                 .map_err(|e| nothing_printed(format!("stdin: {e}")))?;
             dag_status::run(&root, &rows).map_err(nothing_printed)
+        }
+        Cmd::AnnotateBookExamples { root } => {
+            annotate_book_examples::run(&root).map_err(|(printed, reason)| (printed, 1, reason))
         }
     }
 }

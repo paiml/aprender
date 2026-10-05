@@ -13,6 +13,7 @@ CI helpers ported from `scripts/**/*.py` to Rust (C301: no Python in the build).
 | `tarball-build-errors LOG` | `scripts/lib/tarball_build_errors.py` (kept: its caller `scripts/package_tarball_build.sh` is on the publish gate path, N-1) |
 | `dag-status --root DIR` (reads `[id, row]` JSON pairs on stdin) | `scripts/lib/dag_status.py` (kept for now, see below) |
 | `git-patch-id [--stable\|--unstable\|--verbatim]` (reads a diff on stdin) | `scripts/lib/git_patch_id.py` (kept: callers `scripts/lib/pr_review_patch_id.sh` and `scripts/check_pr_review_arm4.sh` not yet switched) |
+| `annotate-book-examples [ROOT]` (default `.`; rewrites `ROOT/book/src/{cli,lib}/*.md` in place) | `scripts/annotate-book-examples.py` (kept as the parity test's validator; it has no caller in the tree, so no gate path) |
 
 Each port must print the same stdout as its original and agree with it on success
 or failure. `scripts/tests/ci_tools_py_parity_test.sh` checks this. The Python
@@ -49,6 +50,15 @@ none of the callers uses these forms:
 | `tarball-shrink-report`, a Unicode `Other_Alphabetic` character that is not a letter or digit (a combining mark, a circled letter such as `Ⓐ`) before `_or_skip(` or `fn` | not a word character | a word character |
 | `tarball-workspace --name` alone | `--name` taken as DIR | usage error, exit 1 |
 | `tarball-build-errors --help` / `-h` | read as the LOG path: cannot read, exit 2 | help, exit 0 (every other argv, `--` and `-x` included, matches: parity cases) |
+
+## Where `annotate-book-examples` differs (by design, not parity-checked)
+
+| Input | Original | Port |
+|-------|----------|------|
+| which book it rewrites | the one in its own repository (the script's grandparent directory) | `ROOT`, default the current directory |
+| any argument (`--help`, a path, anything) | ignored: the book is rewritten | `-h`/`--help` print help, one path is `ROOT`, more are a usage error (exit 1) |
+| a chapter file name that is not UTF-8 | processed (sorted by its surrogate-escaped name); if it gained an annotation, printing its name crashes under a UTF-8 locale after the file is rewritten, and prints the raw bytes under the C locale (UTF-8 mode) | a stop before any file is touched, exit 1 |
+| the reason for a stop (stderr) | a Python traceback | one line naming the file and the error |
 
 ## Where `tarball-workspace` output differs (by design; the parity test maps or skips each)
 

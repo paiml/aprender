@@ -1,0 +1,18 @@
+- id: PMAT-4822
+  github_issue: 4822
+  item_type: task
+  title: 'PY-PORT-2g: port annotate-book-examples.py to aprender-ci-tools annotate-book-examples (C301)'
+  status: planned
+  priority: medium
+  assigned_to: null
+  created: 2026-10-05T17:29:42Z
+  updated: 2026-10-05T17:29:42Z
+  spec: null
+  acceptance_criteria: []
+  phases: []
+  subtasks: []
+  estimated_effort: null
+  labels:
+  - kind:code
+  notes: null
+  epic: 4741
