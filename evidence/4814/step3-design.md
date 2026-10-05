@@ -75,10 +75,21 @@ gate accepts, so it goes in the same sign-off row as step 2.
 
 ## Uses (plan step 5), checked against the slices
 
-- **#4600 sh:equals:** slice 2 (property-level). If #4600 needs equality on the focus node itself, it also needs
-  slice 5.
-- **#3715 release-readiness shape:** to be read when slice 3 lands. hasValue plus the existing min/maxCount covers
-  "this receipt field has exactly this value". I have not checked this assumption yet.
+- **#4600 sh:equals (checked 17:55Z against the issue body):** the shape is `sh:equals (:inputBytesSent
+  :inputBytesConsumed)` on every verb receipt, and "a Pass without these fields is a violation". Slice 2 gives the
+  first half. `equals` alone passes when BOTH fields are absent (two empty sets are equal), so the second half is
+  `minCount: 1` on each field, which pv already has. Equality is exact on the term: the extractor must write both
+  counts with the same datatype (`xsd:integer`), or a correct receipt reads as a violation. Slice 5 is not needed.
+- **#3715 release-readiness (checked 17:56Z):** `hasValue` (slice 3) covers `verdict=Pass`, `backend=cuda` and
+  `fallback=false` (YAML `false` is `xsd:boolean`, so the extractor must type it the same way). It does not cover the
+  rest:
+  - "exactly one `:Receipt` per (verb, context rung)" is `qualifiedValueShape` + `qualifiedMinCount 1` /
+    `qualifiedMaxCount 1`: **slice 9**, which needs slice 8.
+  - "`apr_sha` = release commit" is a value known only at release time: either a generated `hasValue` or an
+    `equals` against a release node's property. That is a design question for #3715, not for #4814.
+  - "focus = every `:Model` in the inventory of every required `:Host`" is a `targetObjectsOf` target: **slice 4**.
+  - `hasValue` has no IRI form yet. If the extractor writes `verdict` as an IRI (`ont:Pass`), slice 3 cannot express
+    it and an IRI form must come first.
 - **#3611 lessThan:** done on main, with 3 cases vendored. Its only gap is the stale `differential.json`, which
   slice 1's first `make oracle` regeneration closes. Check it, but do not close it (brief).
 
