@@ -1,0 +1,105 @@
+{
+  "$schema": "https://docs.oasis-open.org/sarif/sarif/v2.1.0/errata01/os/schemas/sarif-schema-2.1.0.json",
+  "version": "2.1.0",
+  "runs": [
+    {
+      "tool": {
+        "driver": {
+          "name": "pmat"
+        }
+      },
+      "results": [
+        {
+          "ruleId": "guard_table_pass",
+          "level": "note",
+          "message": {
+            "text": "bash scripts/check_quick_tier_shard_sigma.sh at head 32aef3ac0e: rc 0, PASS (26 ok rows, 0 FAIL)."
+          },
+          "properties": {
+            "grounding": "measured",
+            "command": [
+              "bash",
+              "scripts/check_quick_tier_shard_sigma.sh"
+            ],
+            "exit_code": 0,
+            "stdout_sha256": "8255f170153fcb679b42d76e441e091e22f7a2c94d289d8dcc8b09447dd214f6",
+            "failure_scenario": "A false RED on the real tree would block every PR; none observed.",
+            "precision_class": "advisory"
+          }
+        },
+        {
+          "ruleId": "guard_self_test_passes",
+          "level": "note",
+          "message": {
+            "text": "--self-test at head 32aef3ac0e: SELF-TEST PASSED, rc 0 (about 2.5 min), including the round-7 line-break rows now printed via %b (SC2059 fix)."
+          },
+          "properties": {
+            "grounding": "measured",
+            "command": [
+              "bash",
+              "scripts/check_quick_tier_shard_sigma.sh",
+              "--self-test"
+            ],
+            "exit_code": 0,
+            "stdout_sha256": "b464b3491c06eeed6f3a7cad56b3966f25b6a0325824fc8c8d2ebb3d6eedb1de",
+            "failure_scenario": "A planted mutant that did not apply would print FAIL; none did.",
+            "precision_class": "advisory"
+          }
+        },
+        {
+          "ruleId": "lone_cr_in_toplevel_comment_hides_duplicate_key",
+          "level": "error",
+          "message": {
+            "text": "A lone CR (U+000D not followed by LF) inside a TOP-LEVEL comment line hides a second top-level key from the awk (awk splits on LF only; outside_jobs drops comment lines from the digest; the /\\r/ rejection in job_block fires only while `inp`, i.e. under a pinned parent). PyYAML breaks the comment at the CR and reads the key. Measured: ci.yml, line `# x<CR>concurrency: {group: z, cancel-in-progress: false}` inserted between the concurrency block and `jobs:` (line 47): guard rc 0, no ENV/FAIL; yaml.safe_load concurrency = {group: z, cancel-in-progress: false}. ci/sections.yml, line `# x<CR>sovereign-ci: {uses: evil/x@1}` inserted before `matrix-pins:` (line 35): guard rc 0; yaml.safe_load sovereign-ci = {uses: evil/x@1}, replacing the pinned `uses:` pin and `use_nextest`. The same works for a hidden second `on:` after the on block. A CR appended at the end of the file is caught (rc 2) only because `jobs:` is the last top-level key and `inp` is still set; that is accidental, not designed."
+          },
+          "properties": {
+            "grounding": "measured",
+            "command": [
+              "env",
+              "QUICK_SIGMA_SECTIONS=<ci/sections.yml with a comment line  # x<CR>sovereign-ci: {uses: evil/x@1}  inserted before line 35>",
+              "bash",
+              "scripts/check_quick_tier_shard_sigma.sh"
+            ],
+            "exit_code": 0,
+            "stdout_sha256": "8255f170153fcb679b42d76e441e091e22f7a2c94d289d8dcc8b09447dd214f6",
+            "failure_scenario": "A PR replaces the workspace-level concurrency/on of ci.yml or the sovereign-ci pin/use_nextest of ci/sections.yml through a CR-hidden duplicate key in a comment; the guard stays green while the fat driver loads the replacement, so what outside_jobs claims to pin by value is not pinned. Round-7 fix covered only U+0085/U+2028/U+2029; the ASCII CR is the same class. Fix: reject any CR (and in general any char outside LF/space/printable ASCII + non-break UTF-8) anywhere in either file as ENV rc 2, not only under a parent.",
+            "precision_class": "blocking"
+          }
+        },
+        {
+          "ruleId": "trailing_comment_in_last_block_scalar_unpinned",
+          "level": "warning",
+          "message": {
+            "text": "Comment-looking lines appended directly after the last line of a pinned job whose last step is a `run: |` scalar (ci.yml workspace-test, after line 449 `exit \"$rc\"`) are inside the scalar for the loader but dropped by job_block (held comments are printed only if the job continues). Guard rc 0; yaml.safe_load steps[3].run gains `\\n# injected trailing\\n`. A non-comment line there is caught (rc 1, golden). Effect today is nil (the line follows `exit`), but the golden is not byte-identical over the effective script."
+          },
+          "properties": {
+            "grounding": "measured",
+            "command": [
+              "env",
+              "QUICK_SIGMA_WORKFLOW=<ci.yml + `          # injected trailing` after line 449>",
+              "bash",
+              "scripts/check_quick_tier_shard_sigma.sh"
+            ],
+            "exit_code": 0,
+            "stdout_sha256": "8255f170153fcb679b42d76e441e091e22f7a2c94d289d8dcc8b09447dd214f6",
+            "failure_scenario": "A trailing comment line in a pinned scalar changes loader-visible content unpinned; harmless after `exit`, but a pinned job whose script ends inside a heredoc or open quote would execute it as data or text.",
+            "precision_class": "advisory"
+          }
+        },
+        {
+          "ruleId": "no_gate_loosened",
+          "level": "note",
+          "message": {
+            "text": "Diff e9bc8567c6..32aef3ac0e: 1756dbb68f adds a rejection (ENV rc 2 on U+0085/U+2028/U+2029 in either file) and self-test rows; 32aef3ac0e only moves the break into a %b argument of an existing self-test row. No row, pin, golden entry or exit code is removed or relaxed."
+          },
+          "properties": {
+            "grounding": "asserted",
+            "rationale": "Read the two commits; every change to guard logic is an addition.",
+            "failure_scenario": "A loosened gate would let a mutant the previous head killed pass; the self-test still kills every old mutant.",
+            "precision_class": "advisory"
+          }
+        }
+      ]
+    }
+  ]
+}
