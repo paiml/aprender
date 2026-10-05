@@ -1,0 +1,21 @@
+- id: GH-4691
+  github_issue: 4691
+  item_type: task
+  title: 'tag_coverage_gate.sh waits for a CI job that no longer exists: resolve it before the tag or refuse'
+  status: inprogress
+  priority: high
+  assigned_to: null
+  created: 2026-10-04T00:00:00+00:00
+  updated: 2026-10-04T00:00:00+00:00
+  spec: null
+  acceptance_criteria:
+  - 'the coverage job name lives in one function and is resolved against the jobs of .github/workflows/ci.yml at the release commit before any tag step'
+  - 'absent or renamed job = FAIL naming the job and the file, with 0 GitHub calls (must-RED: origin/main waited for the run, then refused after the tag)'
+  - 'unreadable/empty ci.yml, no jobs, or a reusable-workflow caller = NOT_MEASURED, which refuses'
+  - 'present + green passes; present + red refuses; gh failing refuses'
+  - 'autopilot cut_tag calls --resolve before must-carry/carry/strict; check_tag_step_gated.sh order row and two plants (call removed, die neutered) go RED'
+  phases: []
+  subtasks: []
+  estimated_effort: null
+  labels: []
+  notes: 'Before: v0.70.1 tag run completed 25 min after start with no ci / coverage job; the gate refused only at preflight, after the tag and the GitHub release were public (up to 90 tries x 60 s, 2 gh calls/try). After: refused at cut_tag, 0 gh calls, 0 s. NOTE: ci.yml today declares no ci / coverage job (coverage runs inside x86-main), so every release refuses at cut_tag until one is declared or the gate is retargeted.'

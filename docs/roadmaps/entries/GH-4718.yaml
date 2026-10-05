@@ -1,0 +1,17 @@
+- id: GH-4718
+  github_issue: 4718
+  item_type: task
+  title: '0702-P1: nightly producers for the deep lanes (deep-doctests, deep-nodefault, deep-bins-smoke)'
+  status: inprogress
+  priority: critical
+  assigned_to: null
+  created: 2026-10-04T09:17:34.904751550+00:00
+  updated: 2026-10-04T09:17:34.904751550+00:00
+  spec: null
+  acceptance_criteria: []
+  phases: []
+  subtasks: []
+  estimated_effort: null
+  labels:
+  - P0
+  notes: null

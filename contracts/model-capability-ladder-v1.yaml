@@ -98,6 +98,12 @@ ladder:
   # control, receipts bound to the cut exactly. Refused for any other release.
   emergency_scopes:
     - name: crux-smoke
+      release: "0.70.1"
+      date: "2026-10-03"
+      quote: '"0.70.1 ships on CRUX smoke on lambda and gx10 GPU. Everything bigger is nightly."'
+      hosts: [lambda, gx10]
+      thinking: ["off", "on"]
+    - name: crux-smoke
       release: "0.69.1"
       date: "2026-09-23"
       quote: '"for this particular release we need emergency surgery.  after a binary is build we really only care about CRUX on gx10 and lambda (but "smoke test") style.  anything huge, must be nightly only"'

@@ -569,6 +569,12 @@ pub fn cmd_code_with(
         }
     }
 
+    // #4599 regression (0.70.1): the default output reserve must leave a small-context model
+    // an input budget. An explicit `--manifest` keeps its own values.
+    if manifest_path.is_none() {
+        cap_output_reserve_to_model_window(&mut manifest);
+    }
+
     // Contract: no_model_error — never silently use MockDriver
     if manifest.model.resolve_model_path().is_none() && manifest_path.is_none() {
         exit_no_model(json_document, started);
@@ -918,6 +924,31 @@ fn code_context_window(manifest_window: Option<usize>, model_path: &Path) -> usi
     manifest_window
         .or_else(|| model_context_length(model_path))
         .unwrap_or(CODE_DEFAULT_CONTEXT_WINDOW)
+}
+
+/// The largest share of a model-sized window the default output reserve may take.
+const CODE_OUTPUT_RESERVE_DIVISOR: usize = 4;
+
+/// #4599 regression (0.70.1): the default manifest's output reserve (`max_tokens`), capped to a
+/// quarter of the window. Once the window became the model's own context length, the fixed 4096
+/// reserve took all of any window <= 4096 (TinyLlama: 2048), so every prompt was refused with
+/// "available 0".
+fn code_output_reserve(max_tokens: u32, window: usize) -> u32 {
+    let cap = u32::try_from(window / CODE_OUTPUT_RESERVE_DIVISOR).unwrap_or(u32::MAX);
+    max_tokens.min(cap)
+}
+
+/// Applies [`code_output_reserve`] when the window comes from the model. An explicit
+/// `context_window` keeps its reserve, as before. A prompt that does not fit the remaining
+/// budget is still refused (`context_overflow`), never dropped.
+fn cap_output_reserve_to_model_window(manifest: &mut AgentManifest) {
+    if manifest.model.context_window.is_some() {
+        return;
+    }
+    if let Some(model_path) = manifest.model.resolve_model_path() {
+        let window = code_driver_window(manifest, &model_path);
+        manifest.model.max_tokens = code_output_reserve(manifest.model.max_tokens, window);
+    }
 }
 
 /// The GGUF header's `<arch>.context_length`. Reads a bounded prefix (header, metadata and
