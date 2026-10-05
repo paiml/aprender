@@ -125,6 +125,16 @@ _qr_family() {
     esac
 }
 
+# _qr_canon ID -> the id with a family-less Claude alias given its family: opus-5-5 is
+# claude-opus-5-5. Without this an alias reads as its own family ("opus") and as a seat other
+# than the author's (C314 review of ed3739e516). Every id is compared only after it.
+_qr_canon() {
+    case "$1" in
+        opus-* | sonnet-* | haiku-*) printf 'claude-%s' "$1" ;;
+        *) printf '%s' "$1" ;;
+    esac
+}
+
 # check_quorum_receipt RECEIPT [PLANT] -> prints lane lines and a ROUND line;
 # rc 0 valid, 1 invalid, 2 not_measured
 check_quorum_receipt() {
@@ -156,6 +166,8 @@ check_quorum_receipt() {
     [ -n "$rows" ] || { echo "ROUND not_measured: no lanes"; return 2; }
     degraded="$(jq -r 'if .degraded == true or ((.degraded | type) == "object" and (.degraded | length) > 0) then "yes" else "" end' "$f")"
     while IFS=$'\t' read -r lane role verdict model family requested seat measured pv am; do
+        model="$(_qr_canon "$model")"; seat="$(_qr_canon "$seat")"
+        measured="$(_qr_canon "$measured")"; am="$(_qr_canon "$am")"
         why=""
         if [ "$role" = shadow ]; then
             why="shadow"
@@ -374,6 +386,24 @@ selftest() {
     bash "$SELF" --bogus > /dev/null 2>&1
     row caller_error_exits_3 "rc=3" "rc=$?"
 
+    # Family-less Claude aliases (C314 review of ed3739e516): each passed --enforce as independent.
+    rc_json "opus-5-5" "" "$(ln 1 claude-opus-5-5 claude FAIL "$C")" "$(ln 2 gemini-3.1-pro-high gemini FAIL "$C")" > "$f"
+    row author_alias_is_author_seat "author-seat" "$(lane_tag "$f" 1)"
+    row author_alias_round_invalid "rc=1 INVALID" "$(verdict "$f")" "(must fail: author opus-5-5 is claude-opus-5-5)"
+    rc_json "$A" "" "$(ln 1 opus-5-5 opus FAIL "$C")" "$(ln 2 gemini-3.1-pro-high gemini FAIL "$C")" > "$f"
+    row lane_alias_of_author_round_invalid "rc=1 INVALID" "$(verdict "$f")" "(must fail: lane opus-5-5 is the author's seat)"
+    rc_json "$A" "" "$(ln 1 sonnet-5-5 sonnet FAIL "$C")" "$(ln 2 claude-haiku-4-5 claude FAIL "$C")" > "$f"
+    row alias_family_label_is_void "family-mismatch" "$(lane_tag "$f" 1)"
+    row claude_alias_two_families_invalid "rc=1 INVALID" "$(verdict "$f")" "(must fail: 'sonnet' is no second family)"
+    rc_json "$A" "" "$(ln 1 sonnet-5-5 claude FAIL "$C")" "$(ln 2 gemini-3.1-pro-high gemini FAIL "$C")" > "$f"
+    row claude_alias_with_its_family_counts "rc=0 VALID independent" "$(verdict "$f")"
+    # A finding on the plant's file at another line is not the plant.
+    rc_json "$A" "" '{"lane":1,"model":"claude-sonnet-5-5","model_measured":"claude-sonnet-5-5","family":"claude","role":"counted","verdict":"FAIL","findings":[{"file":"src/a.rs","line":8}]}' \
+        "$(ln 2 gemini-3.1-pro-high gemini FAIL "$C")" > "$f"
+    row same_file_other_line_missed "plant-missed" "$(lane_tag "$f" 1)"
+    rc_json "$A" "" "$(ln 1 claude--sonnet-5 claude FAIL "$C")" "$(ln 2 gemini-3.1-pro-high gemini FAIL "$C")" > "$f"
+    row double_dash_id_is_void "inexact-id" "$(lane_tag "$f" 1)"
+
     printf '{"lanes":"x"}\n' > "$f"
     row not_a_receipt_not_measured "rc=2 not_measured not" "$(verdict "$f")"
 
@@ -412,6 +442,9 @@ MUTANTS=(
     'dated_twin_two|s/models="\$models\${model%-\[0-9\]\[0-9\]\[0-9\]\[0-9\]\[0-9\]\[0-9\]\[0-9\]\[0-9\]}"/models="$models$model"/'
     'measured_from_claim|s/measured: (.model_measured \/\/ ""),/measured: (.model_measured \/\/ .model \/\/ ""),/'
     'decorated_author_ok|s/if \[ "\$am" != human \] \&\& ! _qr_exact_id "\$am"; then/if false; then/'
+    'alias_not_canon|s/        opus-\* | sonnet-\* | haiku-\*) printf .claude-%s. "\$1" ;;//'
+    'plant_line_ignored|s/ and (((.line \/\/ "") | tostring) == \$L)//'
+    'double_dash_ok|s/ | \*--\*) return 1 ;;/) return 1 ;;/'
 )
 mutants() {
     local t m name expr killed=0 total=0 out
