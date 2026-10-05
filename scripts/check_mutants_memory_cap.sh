@@ -9,6 +9,8 @@
 # Rule: each `docker run` whose body runs `cargo mutants` or scripts/mutants_diff_gate.sh must carry
 # --memory=<N>g and --memory-swap=<N>g with the same N (swap = memory, so the cap is not a swap escape),
 # 1 <= N <= 16 (docker reads --memory=0 as unlimited), each flag given exactly once (docker honours the last).
+# A native run (the mutants-cuda section) is capped instead by `systemd-run --scope -p MemoryMax=<N>G
+# -p MemorySwapMax=0` on one line, 1 <= N <= 16, each once. A mutation run with neither cap is a FAIL.
 # Known limit: a tripwire against a cap being dropped by accident, not against an author who hides one.
 #
 #   check_mutants_memory_cap.sh [file...]  default: mutants-nightly.yml, ci/sections.yml and ci.yml (mutants-shard);
@@ -20,14 +22,23 @@ ROOT="$(cd "$(dirname "$0")/.." && pwd)" || exit 2
 # runs <file> -> one line per mutation docker run: "<lineno> <ok|BAD> <header flags>"
 runs() {
     awk '
-    function flush() { if (start && mut) { ok = (m != "" && mc == 1 && sc == 1 && s == m && m + 0 >= 1 && m + 0 <= 16); print start, (ok ? "ok" : "BAD"), "memory=" m "g swap=" s "g" } start = 0; mut = 0; m = ""; s = ""; mc = 0; sc = 0 }
-    /docker run/ { flush(); start = NR; inhdr = 1 }
+    function flush() { if (start && mut) { if (kind == "scope") ok = (m != "" && mc == 1 && sc == 1 && s == "0" && m + 0 >= 1 && m + 0 <= 16)
+                                           else ok = (m != "" && mc == 1 && sc == 1 && s == m && m + 0 >= 1 && m + 0 <= 16)
+                                           print start, (ok ? "ok" : "BAD"), kind " memory=" m "g swap=" s (kind == "scope" ? "" : "g") }
+                       start = 0; mut = 0; m = ""; s = ""; mc = 0; sc = 0; kind = "" }
+    /^[[:space:]]*#/ { next }
+    /docker run/ { flush(); start = NR; inhdr = 1; kind = "docker" }
+    /systemd-run .*--scope/ { flush(); start = NR; inhdr = 0; kind = "scope"; r = $0
+                     while (match(r, /-p MemoryMax=[0-9]+G/)) { m = substr(r, RSTART + 13, RLENGTH - 14); mc++; r = substr(r, RSTART + RLENGTH) }
+                     r = $0
+                     while (match(r, /-p MemorySwapMax=[0-9]+/)) { s = substr(r, RSTART + 17, RLENGTH - 17); sc++; r = substr(r, RSTART + RLENGTH) } }
     start && inhdr { r = $0
                      while (match(r, /--memory=[0-9]+g/)) { m = substr(r, RSTART + 9, RLENGTH - 10); mc++; r = substr(r, RSTART + RLENGTH) }
                      r = $0
                      while (match(r, /--memory-swap=[0-9]+g/)) { s = substr(r, RSTART + 14, RLENGTH - 15); sc++; r = substr(r, RSTART + RLENGTH) }
                      if ($0 ~ /IMAGE/) inhdr = 0 }
-    start && ($0 ~ /cargo mutants / && $0 !~ /--version/ || $0 ~ /mutants_(diff_gate|table_shard)\.sh/) { mut = 1 }
+    ($0 ~ /cargo mutants / && $0 !~ /--version/ || $0 ~ /mutants_(diff_gate|table_shard)\.sh/ && $0 !~ /mutants_[a-z_]+\.sh --(exempt-ref|self-test)/) {
+                     if (start) mut = 1; else print NR, "BAD", "native: no capped docker run or systemd-run scope" }
     /^ *- name:/ { flush() }
     END { flush() }' "$1"
 }
@@ -68,6 +79,7 @@ if [ "${1:-}" = "--self-test" ]; then
     row 1 toobig   '--memory=64g --memory-swap=64g'
     row 1 zero     '--memory=0g --memory-swap=0g'
     row 1 dupflag  '--memory=16g --memory-swap=16g --memory=128g --memory-swap=128g'
+    row 1 dupwithin '--memory=8g --memory-swap=8g --memory=16g --memory-swap=16g'   # each value in range: only the once-only clause fails it
     printf 'x: 1\n' > "$d/none.yml"; rc=0; check "$d/none.yml" > /dev/null 2>&1 || rc=$?
     [ "$rc" = 2 ] && echo "ok    no mutation run is ENV rc=2" || { echo "FAIL  no run gave rc=$rc"; bad=1; }
     # Every listed file is judged on its own: a missing file, or one with no run, is never carried by another.
@@ -84,6 +96,19 @@ if [ "${1:-}" = "--self-test" ]; then
     mrow 1 shardnocap  "$d/shard.yml"
     sed -i 's#-v /a:/b#--memory=16g --memory-swap=16g#' "$d/shard.yml"
     mrow 0 shardcapped "$d/shard.yml"
+    # A native run (no container) is capped by a user scope: MemoryMax 1..16G, MemorySwapMax=0, each once.
+    sc() { # sc <name> <systemd-run line>
+        printf '    steps:\n      - name: c\n        run: |\n          %s bash -c '"'"'exec "$@"'"'"' cap \\\n            bash scripts/mutants_diff_gate.sh pr.diff --jobs 1\n' "$2" > "$d/$1.yml"
+    }
+    sc scope     'systemd-run --user --scope -q -p MemoryMax=16G -p MemorySwapMax=0';       mrow 0 scope     "$d/scope.yml"
+    sc scopeswap 'systemd-run --user --scope -q -p MemoryMax=16G';                          mrow 1 scopeswap "$d/scopeswap.yml"
+    sc scopebig  'systemd-run --user --scope -q -p MemoryMax=64G -p MemorySwapMax=0';       mrow 1 scopebig  "$d/scopebig.yml"
+    sc scopezero 'systemd-run --user --scope -q -p MemoryMax=0G -p MemorySwapMax=0';        mrow 1 scopezero "$d/scopezero.yml"
+    sc scopedup  'systemd-run --user --scope -q -p MemoryMax=8G -p MemoryMax=16G -p MemorySwapMax=0'; mrow 1 scopedup "$d/scopedup.yml"
+    sc native    'nice -n 19';                                                              mrow 1 native    "$d/native.yml"
+    # Query modes and comments are not mutation runs: a file holding only them has no run to judge.
+    printf '    steps:\n      - name: q\n        run: |\n          # bash scripts/mutants_diff_gate.sh pr.diff\n          bash scripts/mutants_diff_gate.sh --exempt-ref "$R" a b\n' > "$d/query.yml"
+    mrow 2 queryonly   "$d/query.yml"
     [ "$bad" = 0 ] && { echo "SELF-TEST PASSED"; exit 0; }
     echo "SELF-TEST FAILED" >&2; exit 1
 fi

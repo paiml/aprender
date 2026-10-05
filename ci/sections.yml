@@ -3441,8 +3441,19 @@ jobs:
           EXCL=$(grep -m1 -E "^[[:space:]]+cargo nextest run --profile ci --workspace --lib" ci/sections.yml \
             | grep -oE -- "--exclude [a-z0-9_-]+" | sed "s/^--exclude /--exclude-crate /" | tr "\n" " ")
           [ -n "$EXCL" ] || { echo "::error::no --exclude list found on the workspace-test nextest line"; exit 1; }
-          # shellcheck disable=SC2086
-          nice -n 19 bash scripts/mutants_diff_gate.sh pr.diff --features aprender-serve/cuda --gated-only \
+          # C137: this run is native (no container), so it gets the containers' cap as a user scope: 16G, no
+          # swap. A mutant's test binary reached 12.3 GB on this host. The runner service has no login
+          # session, so point systemd-run at the lingering user's runtime dir. The scope proves its own cap
+          # before running: an uncapped run fails the step, it is never measured as a pass.
+          if [ -z "${XDG_RUNTIME_DIR:-}" ] && [ -O "/run/user/$(id -u)" ]; then
+            export XDG_RUNTIME_DIR="/run/user/$(id -u)"
+          fi
+          # shellcheck disable=SC2016,SC2086
+          nice -n 19 systemd-run --user --scope -q -p MemoryMax=16G -p MemorySwapMax=0 bash -c '
+            c=$(sed -n "s/^0:://p" /proc/self/cgroup); m=$(cat "/sys/fs/cgroup$c/memory.max"); s=$(cat "/sys/fs/cgroup$c/memory.swap.max")
+            [ "$m" = 17179869184 ] && [ "$s" = 0 ] || { echo "::error::mutation scope not capped: memory.max=$m swap.max=$s"; exit 1; }
+            echo "mutation scope $c: memory.max=$m swap.max=$s"; exec "$@"' cap \
+            bash scripts/mutants_diff_gate.sh pr.diff --features aprender-serve/cuda --gated-only \
             --test-names "$t/cuda-only.txt" --cap "$MUTANTS_CAP" --jobs 1 --timeout 900 \
             --max-missed "$MUTANTS_MAX_MISSED" --out mutants-cuda-gate $EXCL
       - name: The measured set -- the gate job compares its sha with the CPU section's deferred set
