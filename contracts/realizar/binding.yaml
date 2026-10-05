@@ -546,7 +546,7 @@ bindings:
   notes: 'PMAT-405: Slot state machine. Also CommandSlotState for GPU path'
 - contract: continuous-batching-v1.yaml
   equation: scheduling_fairness
-  module_path: realizar::scheduler::mod_max_scheduler
+  module_path: realizar::scheduler::mod_max_scheduler::Scheduler
   function: handle_preemption
   signature: 'fn handle_preemption(&mut self, output: &mut SchedulerOutput, kv_cache: &mut PagedKvCache)'
   status: implemented

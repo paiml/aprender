@@ -1221,3 +1221,9 @@ qa_gate:
   - no_empty_outputs
   pass_criteria: All 13 falsification tests pass + 3 Kani harnesses verify
   falsification: Schedule more tokens than budget to break throughput invariant
+
+# #4709 CENSUS-RATCHET: the type-qualified method contracts/*/binding.yaml binds this contract
+# to, which `pv extract` resolves (sym:resolved true in contracts.nt).
+entity:
+  type: code
+  ref: realizar::scheduler::mod_max_scheduler::Scheduler::handle_preemption

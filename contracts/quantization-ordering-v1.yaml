@@ -145,3 +145,9 @@ qa_gate:
   - concrete_sizes
   pass_criteria: All 5 falsification tests pass
   falsification: Swap Q6K and Q8_0 block sizes to break ordering
+
+# #4709 CENSUS-RATCHET: the trait (kind trait, not a fn) contracts/*/binding.yaml binds this contract
+# to, which `pv extract` resolves (sym:resolved true in contracts.nt).
+entity:
+  type: code
+  ref: realizar::quantize::format_trait::QuantBlockFormat
