@@ -1,12 +1,14 @@
 //! `aprender-ci-tools`: one binary, one subcommand per ported Python helper.
 
 use aprender_ci_tools::{
-    coverage_report_scope, dag_status, git_patch_id, package_include_diff, publishable_crates,
-    tarball_build_errors, tarball_shrink_report, tarball_workspace,
+    coverage_report_scope, dag_status, git_patch_id, lockfile_registry_packages,
+    package_include_diff, publishable_crates, tarball_build_errors, tarball_shrink_report,
+    tarball_workspace,
 };
 use clap::{ArgGroup, Parser, Subcommand};
+use std::ffi::OsString;
 use std::io::{Read, Write};
-use std::path::PathBuf;
+use std::path::{Path, PathBuf};
 use std::process::{Command, ExitCode};
 
 #[derive(Parser)]
@@ -85,6 +87,15 @@ enum Cmd {
         #[arg(allow_hyphen_values = true, value_name = "MODE")]
         mode: Option<String>,
     },
+    /// The name of every crates.io-sourced package in a Cargo.lock, one per line (was
+    /// scripts/lib/lockfile_registry_packages.py). As there, only the first argument is
+    /// read, verbatim: `-h` and `--` are file names, and extra arguments are ignored.
+    #[command(disable_help_flag = true)]
+    LockfileRegistryPackages {
+        /// The Cargo.lock path.
+        #[arg(num_args = 0.., allow_hyphen_values = true, trailing_var_arg = true)]
+        args: Vec<OsString>,
+    },
 }
 
 fn cargo_metadata() -> Result<String, String> {
@@ -107,6 +118,17 @@ type Refusal = (String, u8, String);
 
 fn nothing_printed(reason: String) -> Refusal {
     (String::new(), 1, reason)
+}
+
+/// `lockfile_registry_packages.py <path> [ignored...]`: no argument or an unreadable path
+/// exits 1 with nothing printed, as the original's traceback did.
+fn lockfile_registry(path: Option<&OsString>) -> Result<String, Refusal> {
+    let path = path.ok_or_else(|| {
+        nothing_printed("lockfile-registry-packages: missing <Cargo.lock path>".to_owned())
+    })?;
+    let lock = std::fs::read(path)
+        .map_err(|e| nothing_printed(format!("{}: {e}", Path::new(path).display())))?;
+    Ok(lockfile_registry_packages::run(&lock))
 }
 
 fn read(path: &PathBuf) -> Result<Vec<u8>, String> {
@@ -183,10 +205,20 @@ fn run(cmd: Cmd) -> Result<String, Refusal> {
                 .map_err(|e| nothing_printed(format!("stdin: {e}")))?;
             dag_status::run(&root, &rows).map_err(nothing_printed)
         }
+        Cmd::LockfileRegistryPackages { args } => lockfile_registry(args.first()),
     }
 }
 
 fn main() -> ExitCode {
+    // Before clap, which would eat a `--` and read `-h` as a flag: the original took
+    // sys.argv[1] as it came.
+    let argv: Vec<OsString> = std::env::args_os().collect();
+    if argv
+        .get(1)
+        .is_some_and(|a| a == "lockfile-registry-packages")
+    {
+        return finish(lockfile_registry(argv.get(2)));
+    }
     let cli = match Cli::try_parse() {
         Ok(cli) => cli,
         // --help/--version exit 0; a usage error exits 1, as the originals' did.
@@ -196,7 +228,12 @@ fn main() -> ExitCode {
             return ExitCode::from(code);
         }
     };
-    let (out, refusal) = match run(cli.cmd) {
+    finish(run(cli.cmd))
+}
+
+/// Print the output, then the refusal reason if any, and exit with its code.
+fn finish(result: Result<String, Refusal>) -> ExitCode {
+    let (out, refusal) = match result {
         Ok(out) => (out, None),
         Err((printed, code, reason)) => (printed, Some((code, reason))),
     };
