@@ -41,6 +41,12 @@ Mutant 1 is the step-2 RED proof (due 22:00Z).
 - **Lead:** pv admits `rdf:type` on every closed shape (baseline §1, `closed` is partial). The exported closed
   shapes carry no `sh:ignoredProperties rdf:type`, so the oracle reports it. The closed shapes have 5 focus
   nodes between them, so this explains at most 5 of the 6. Not proven.
-- **Decisive check:** queued. It runs `main`'s pv (merge-base `11f844a772`) through the same oracle binary on the
-  same graph.
-- `tests/oracle/differential.json` is **not** updated until that check answers.
+- **Decisive check, done 21:20Z:** `main`'s pv (merge-base `11f844a772f7`, built in its own target dir) through the same
+  oracle binary on the same graph gives the **same** result: oracle 736, pv 730, and the same first difference at
+  index 45. So the corpus disagreement **is already on `main`**, and slices 0 to 4 do not cause it. They change no
+  corpus verdict.
+- **Finding F12, on `main`:** the tracked `tests/oracle/differential.json` says `disagreements: 0` (103 = 103,
+  2026-09-19), but a fresh `make oracle` on `main` disagrees. The tracked file is stale, so the row probe
+  (`cases>0 and disagreements==0`) reads a pass that the oracle no longer gives.
+- `tests/oracle/differential.json` is **not** regenerated on this branch. Committing the fresh file would turn that
+  probe RED, which changes a gate verdict, so it is a ruling for the cop, not a slice commit.
