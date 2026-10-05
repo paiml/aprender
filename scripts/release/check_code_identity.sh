@@ -133,6 +133,16 @@ selftest() {
     printf '{"r":1}\n' > "$d/evidence/x/r.json"; commit "$d" receipts >/dev/null
     out="$(r7 "$d" "$b")"
     row r7_evidence_after_cut_passes rc=0 "$(head -n 1 <<< "$out")"
+    # a 0.70.2-shaped fix: only a script changes after the cut. The four published
+    # paths call that "same code"; H does not, so R7 refuses. The escape path is a
+    # re-cut: smoke again AT the fix, so CUT_COMMIT is the head and H(cut) = H(head).
+    d="$tmp/r7sh"; fixture "$d"; b="$(g "$d" rev-parse HEAD)"
+    printf '#!/usr/bin/env bash\necho fixed\n' > "$d/scripts/release-fix.sh"; c="$(commit "$d" scripts-only-fix)"
+    out="$(r7 "$d" "$b")"
+    row r7_scripts_only_fix_after_cut_refuses rc=1 "$(head -n 1 <<< "$out")" "(0.70.2 shape: no crates/src/Cargo change)"
+    row r7_scripts_only_refusal_names_the_file 1 "$(grep -c 'scripts/release-fix.sh' <<< "$out")"
+    out="$(r7 "$d" "$c")"
+    row r7_escape_is_recut_at_the_fix rc=0 "$(head -n 1 <<< "$out")" "(re-smoke with CUT_COMMIT = the fix)"
 
     # one home: no script keeps a private definition of "same code"
     out="$(grep -rnE "diff --quiet[^|;]*(:\(exclude\)evidence|-- crates src Cargo\.toml Cargo\.lock)" \
