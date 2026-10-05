@@ -66,7 +66,24 @@ function flow(s,    i, c, n, q, part, parts, np, k, colon, key) {
 
 function need(key, where) { if (!(key in F)) refuse(where " row has no " key) }
 
-function int_of(v, what) { if (v !~ /^[0-9]+$/) refuse(what " is not a non-negative integer: " v); return v + 0 }
+# An integer field: an UNQUOTED decimal with no leading zero. PyYAML reads 010 as octal 8 and 08
+# or '05' as a string, so those are refused rather than read as decimal.
+function int_of(key, what,    v) {
+    v = F[key]
+    if (FQ[key] || v !~ /^(0|[1-9][0-9]*)$/) refuse(what " is not an unquoted non-negative integer: " v)
+    return v + 0
+}
+
+# A string field written plain must be one PyYAML also reads as a string: not a bool or null word,
+# and not a number, date or other form starting with a digit or sign (an X.Y.Z version is a string).
+function typed_word(v) {
+    return v ~ /^(true|True|TRUE|false|False|FALSE|yes|Yes|YES|no|No|NO|on|On|ON|off|Off|OFF|null|Null|NULL|~)$/ ||
+        (v ~ /^[-+.0-9]/ && v !~ /^[0-9]+\.[0-9]+\.[0-9]+([-+][0-9A-Za-z.-]*)?$/)
+}
+function plain_str(key, where) {
+    if (!FQ[key] && typed_word(F[key])) refuse(where "." key " is not a string to YAML (quote it): " F[key])
+    return F[key]
+}
 
 # armed binds only when PyYAML reads a bool True: an UNQUOTED YAML 1.1 true word (the guard tests `is True`).
 function yaml_true(key) { return !FQ[key] && F[key] ~ /^(true|True|TRUE|yes|Yes|YES|on|On|ON)$/ }
@@ -79,7 +96,10 @@ function yaml_true(key) { return !FQ[key] && F[key] ~ /^(true|True|TRUE|yes|Yes|
         v = $0; sub(/^classes:[ \t]*/, "", v); sub(/[ \t]+#.*$/, "", v); v = trim(v)
         if (v !~ /^\[[^]\[{}"']*\]$/) refuse("classes is not a one-line flow sequence of plain scalars: " v)
         v = substr(v, 2, length(v) - 2); nc = split(v, cs, ",")
-        for (j = 1; j <= nc; j++) if (trim(cs[j]) != "") { print "class\t" trim(cs[j]); ncls++ }
+        for (j = 1; j <= nc; j++) if (trim(cs[j]) != "") {
+            if (typed_word(trim(cs[j]))) refuse("a class is not a string to YAML: " trim(cs[j]))
+            print "class\t" trim(cs[j]); ncls++
+        }
         if (!ncls) refuse("classes is empty")
         seen["classes"] = 1
     } else if ($0 ~ /^ceilings:[ \t]*(#.*)?$/) { sec = "ceilings"; seen["ceilings"] = 1 }
@@ -93,13 +113,13 @@ sec == "ceilings" {
     if ($0 ~ /^  current:/) {
         v = $0; sub(/^  current:/, "", v); flow(v)
         need("binary_debt", "ceilings.current"); need("legacy_names", "ceilings.current")
-        print "current\t" int_of(F["binary_debt"], "ceilings.current.binary_debt") "\t" int_of(F["legacy_names"], "ceilings.current.legacy_names")
+        print "current\t" int_of("binary_debt", "ceilings.current.binary_debt") "\t" int_of("legacy_names", "ceilings.current.legacy_names")
         seen["current"] = 1
     } else if ($0 ~ /^  releases:[ \t]*(#.*)?$/) sub_ = "releases"
     else if ($0 ~ /^    - / && sub_ == "releases") {
         v = $0; sub(/^    - /, "", v); flow(v)
         need("release", "ceilings.releases"); need("binary_debt", "ceilings.releases"); need("legacy_names", "ceilings.releases")
-        print "release\t" F["release"] "\t" int_of(F["binary_debt"], "release binary_debt") "\t" int_of(F["legacy_names"], "release legacy_names") "\t" (yaml_true("armed") ? "true" : "false")
+        print "release\t" plain_str("release", "ceilings.releases") "\t" int_of("binary_debt", "release binary_debt") "\t" int_of("legacy_names", "release legacy_names") "\t" (yaml_true("armed") ? "true" : "false")
     } else refuse("a ceilings line this reader does not read: " $0)
     next
 }
@@ -114,7 +134,7 @@ sec == "legacy" {
         if (s ~ /^(null|Null|NULL|~|false|False|FALSE|no|No|NO|off|Off|OFF)$/) s = ""
         else if (s ~ /^[-+.0-9]/ && s !~ /^[0-9]+\.[0-9]+\.[0-9]+([-+].*)?$/) refuse("a sunset YAML may read as a number: " s)
     }
-    print "legacy\t" F["name"] "\t" s
+    print "legacy\t" plain_str("name", "legacy_names") "\t" s
     next
 }
 
@@ -122,7 +142,7 @@ sec == "binaries" {
     v = $0; sub(/^  - /, "", v); flow(v)
     # flow() refuses any line that is not "  - {...}". A missing key reads as "", so one test covers both.
     if (F["crate"] == "" || F["bin"] == "" || F["class"] == "") refuse("a binaries row with no or an empty crate, bin or class: " v)
-    print "row\t" F["crate"] "\t" F["bin"] "\t" F["class"]
+    print "row\t" plain_str("crate", "binaries") "\t" plain_str("bin", "binaries") "\t" plain_str("class", "binaries")
     next
 }
 

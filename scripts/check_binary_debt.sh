@@ -272,6 +272,8 @@ self_test() {
     mut_root_version_ws() { sed -i 's/^version = "0.69.3"/version.workspace = true/' Cargo.toml; }
     mut_ws_inline_package() { sed -i 's/^\[workspace\]/[workspace]\npackage = { version = "0.70.0" }/' Cargo.toml; }
     mut_dotted_bin_path() { printf '[[bin]]\nname = "dotted"\npath.x = "src/main.rs"\n' >> crates/alpha/Cargo.toml; }
+    mut_arm_yes() { mut_arm_and_bump && sed -i 's/armed: true/armed: yes/' ledger.yaml; }
+    mut_docs_rs() { printf '\n[package.metadata."docs.rs"]\nall-features = true\n' >> crates/alpha/Cargo.toml; }
     # row <want rc> <must-print-or-empty> <label> <mutation command + args...>
     row() {
         local want=$1 needle=$2 label=$3; shift 3
@@ -334,6 +336,14 @@ self_test() {
     row 2 "REFUSE" "a dotted [[bin]] path key is refused, never read as a pathless bin" mut_dotted_bin_path
     row 2 "REFUSE" "a quoted \"autobins\" key is refused, never skipped" sed -i 's/^name = "alpha"/name = "alpha"\n"autobins" = false/' crates/alpha/Cargo.toml
     row 2 "REFUSE" "an inline-table root [package] version, with no workspace version, is refused" sed -i 's/^version = "0.69.3"/version = { workspace = true }/' Cargo.toml
+    row 1 "CEILING  BINARY_DEBT 2 > 1 (ceiling: 0.70.0)" "armed: yes is a YAML 1.1 true: the ceiling binds" mut_arm_yes
+    row 2 "REFUSE" "a leading-zero ceiling (YAML octal) is refused" sed -i 's/current: {binary_debt: 2,/current: {binary_debt: 02,/' ledger.yaml
+    row 2 "REFUSE" "a quoted ceiling (a YAML string) is refused" sed -i "s/current: {binary_debt: 2,/current: {binary_debt: '2',/" ledger.yaml
+    row 2 "REFUSE" "a plain ledger value YAML reads as a bool is refused" sed -i 's/{crate: alpha, bin: alpha,/{crate: alpha, bin: on,/' ledger.yaml
+    row 2 "REFUSE" "a class YAML reads as null is refused" sed -i 's/, DECIDE\]/, DECIDE, null]/' ledger.yaml
+    row 2 "REFUSE" "a dotted cargo-fuzz with spaces around the dot is refused, never skipped" sed -i 's/^\[package.metadata\]/[package]\nmetadata . cargo-fuzz = true\n[x]/; s/^cargo-fuzz = true$//' fuzz/Cargo.toml
+    row 2 "REFUSE" "a quoted top-level package key is refused" sed -i '1i "package".autobins = false' crates/alpha/Cargo.toml
+    row 0 "5 binaries in the universe" "a quoted key deeper in a package header is another table" mut_docs_rs
     printf '%s  check_binary_debt self-test: %d rows, %d broke\n' "$([ "$fails" -eq 0 ] && echo PASS || echo FAIL)" "$rows" "$fails"
     [ "$fails" -eq 0 ]
 }

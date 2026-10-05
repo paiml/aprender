@@ -111,7 +111,9 @@ BEGIN { table = ""; bins = 0; ml = ""; depth = 0; acc = ""; acc_key = "" }
         # A quoted FIRST key could spell package, bin or workspace: refuse it. A quote later
         # in the header ([target.'cfg(unix)'.dependencies]) is some other table.
         if (h ~ /^\[\[?["']/) refuse("quoted table header: " code)
-        if (h ~ /["']/ && h ~ /^\[\[?(package|workspace|bin)[.]/) refuse("quoted key in a package, workspace or bin header: " code)
+        # A quote in the SECOND key ([package."metadata"], [workspace."package"]) could spell a table this
+        # reader reads; a quote deeper ([package.metadata."docs.rs"]) is some other table.
+        if (h ~ /^\[\[?(package|workspace|bin)[.]["']/) refuse("quoted key in a package, workspace or bin header: " code)
         if (h ~ /["']/) { table = "other"; next }
         if (h == "[[bin]]") { table = "bin"; bins++; print "bintable\t" bins; next }
         if (h ~ /^\[\[/) { table = "other"; next }
@@ -123,9 +125,11 @@ BEGIN { table = ""; bins = 0; ml = ""; depth = 0; acc = ""; acc_key = "" }
     eq = index(code, "=")
     if (eq == 0) refuse("not a key = value line: " code)
     key = trim(substr(code, 1, eq - 1)); val = trim(substr(code, eq + 1))
+    # TOML allows whitespace around the dots of a dotted key: "metadata . cargo-fuzz" is metadata.cargo-fuzz.
+    gsub(/[ \t]*[.][ \t]*/, ".", key)
     if (OPEN_ML != "") ml = OPEN_ML
 
-    if (table == "" && (key ~ /^(package|bin|workspace)([.]|$)/)) refuse("top-level " key " is a form this reader does not read")
+    if (table == "" && (key ~ /^["']?(package|bin|workspace)["']?([.]|$)/)) refuse("top-level " key " is a form this reader does not read")
     # A quoted key, or a dotted name/path/autobins/members/exclude, in a table this reader reads could spell a key it
     # reads under another form; refuse it rather than skip it.
     if (table ~ /^(package|package[.]metadata|bin|workspace|workspace[.]package)$/ && (key ~ /["']/ || key ~ /^(name|path|autobins|members|exclude)[ \t]*[.]/))
