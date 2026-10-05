@@ -38,117 +38,154 @@ set -euo pipefail
 
 ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
 SELF="$ROOT/scripts/check_binary_debt.sh"
-# shellcheck source=lib/python_fleet_state.sh
-. "$ROOT/scripts/lib/python_fleet_state.sh" || exit 2
+MANIFEST_AWK="$ROOT/scripts/lib/cargo_manifest_rows.awk"
+LEDGER_AWK="$ROOT/scripts/lib/binary_debt_ledger_rows.awk"
 
 usage() {
     sed -n '2,36p' "$SELF" | sed 's/^# \{0,1\}//'
     printf '\n--self-test runs the case table over throwaway workspaces.\n'
 }
 
+# rel_of ROOT PATH -> PATH relative to ROOT, lexically ("." for ROOT itself), as python's relpath.
+rel_of() { realpath -ms --relative-to="$1" "$2"; }
+
+# semver_ok V -> 0 when V (before any "-") is MAJOR.MINOR.PATCH, all digits.
+semver_ok() { [[ "${1%%-*}" =~ ^[0-9]+\.[0-9]+\.[0-9]+$ ]]; }
+
+# semver_ge A B -> 0 when A >= B (both already semver_ok).
+semver_ge() {
+    local a b i
+    IFS=. read -r -a a <<< "${1%%-*}"; IFS=. read -r -a b <<< "${2%%-*}"
+    for i in 0 1 2; do
+        if ((10#${a[i]} != 10#${b[i]})); then ((10#${a[i]} > 10#${b[i]})); return; fi
+    done
+    return 0
+}
+
+# package_bins ROOT REL -> adds REL's shipped binaries to the caller's `universe`; rc 2 on a
+# manifest form the reader refuses. A cargo-fuzz harness and a package-less manifest add none.
+package_bins() {
+    local root=$1 rel=$2 d="$1/$2" rows k a b c pkg="" haspkg=0 fuzz=false autobins=true f n nb=0 path name
+    local -A found=() bname=() bpath=()
+    rows=$(awk -f "$MANIFEST_AWK" "$d/Cargo.toml") || return 2
+    while IFS=$'\t' read -r k a b c; do
+        case "$k" in
+            haspkg) haspkg=1 ;;
+            name) pkg="$a" ;;
+            autobins) autobins="$a" ;;
+            fuzz) fuzz="$a" ;;
+            bintable) nb="$a" ;;
+            bin)
+                if [ "$b" = name ]; then
+                    bname["$a"]="$c"
+                else
+                    bpath["$a"]="$c"
+                fi ;;
+        esac
+    done <<< "$rows"
+    [ "$haspkg" -eq 1 ] && [ "$fuzz" != true ] || return 0
+    if [ -z "$pkg" ]; then printf 'REFUSE %s/Cargo.toml: [package] has no name\n' "$rel" >&2; return 2; fi
+    if [ "$autobins" = true ]; then
+        if [ -f "$d/src/main.rs" ]; then
+            found["$pkg"]=src/main.rs
+        fi
+        for f in "$d"/src/bin/*.rs; do
+            [ -e "$f" ] || continue
+            n="${f##*/}"
+            found["${n%.rs}"]="src/bin/$n"
+        done
+        for f in "$d"/src/bin/*/main.rs; do
+            [ -e "$f" ] || continue
+            n="${f%/main.rs}"
+            n="${n##*/}"
+            found["$n"]="src/bin/$n/main.rs"
+        done
+    fi
+    # A [[bin]] whose path is an auto-discovered file replaces that auto entry.
+    for ((n = 1; n <= nb; n++)); do
+        if [ -z "${bname[$n]+set}" ]; then printf 'REFUSE %s/Cargo.toml: [[bin]] #%d has no name\n' "$rel" "$n" >&2; return 2; fi
+        name="${bname[$n]}" path="${bpath[$n]-}"
+        if [ -n "$path" ]; then
+            for k in "${!found[@]}"; do [ "${found[$k]}" = "$path" ] && unset 'found[$k]'; done
+            found["$name"]="$path"
+        else
+            found["$name"]="${found[$name]-?}"
+        fi
+    done
+    for k in "${!found[@]}"; do universe["$pkg"$'\t'"$k"]="$rel"; done
+}
+
+# judge ROOT LEDGER -> rc 0 PASS, 1 a finding, 2 a manifest or ledger form the readers refuse.
+# bash + awk only. The python reader this replaced needed tomllib; on a runner without it the
+# guard printed UNMEASURED and exited 0, so CI never saw it judge a tree.
 judge() {
-    local root=$1 ledger=$2 pyrc=0
-    py_fleet_state check_binary_debt yaml tomllib || pyrc=$?
-    [ "$pyrc" -eq 0 ] || { [ "$pyrc" -eq 3 ] && return 0; return "$pyrc"; }
-    "${PY_FLEET_PYTHON:-python3}" - "$root" "$ledger" <<'PY'
-import glob, os, sys, tomllib, yaml
+    local root=$1 ledger=$2 rows rel m entry k a b c d ver="" pkgver="" rel_ver
+    local debt=0 legacy=0 nrows=0 ceil_debt="" ceil_legacy="" bound=current classes_txt
+    local -A dirs=([.]=1) universe=() keyed=() classes=()
+    local -a bad=() releases=() order=()
+    [ -f "$root/Cargo.toml" ] || { printf 'ENV   check_binary_debt: no Cargo.toml under %s\n' "$root" >&2; return 2; }
+    rows=$(awk -f "$MANIFEST_AWK" "$root/Cargo.toml") || return 2
+    for m in "$root"/crates/*/Cargo.toml; do
+        [ -f "$m" ] || continue
+        dirs["$(rel_of "$root" "${m%/Cargo.toml}")"]=1
+    done
+    while IFS=$'\t' read -r k a; do
+        case "$k" in
+            members|exclude) while IFS= read -r m; do dirs[$(rel_of "$root" "$m")]=1; done < <(compgen -G "$root/$a" || :) ;;
+            wsversion) ver="$a" ;;
+            pkgversion) pkgver="$a" ;;
+        esac
+    done <<< "$rows"
+    ver="${ver:-${pkgver:-0.0.0}}"
+    while IFS= read -r rel; do
+        [ -f "$root/$rel/Cargo.toml" ] || continue
+        package_bins "$root" "$rel" || return 2
+    done < <(printf '%s\n' "${!dirs[@]}" | LC_ALL=C sort)
 
-root, ledger_path = sys.argv[1], sys.argv[2]
+    rows=$(awk -f "$LEDGER_AWK" "$ledger") || return 2
+    while IFS=$'\t' read -r k a b c d; do
+        case "$k" in
+            class) classes["$a"]=1 ;;
+            current) ceil_debt="$a" ceil_legacy="$b" ;;
+            release) releases+=("$a"$'\t'"$b"$'\t'"$c"$'\t'"$d") ;;
+            legacy) [ -n "$b" ] || legacy=$((legacy + 1)) ;;
+            row) order+=("$a"$'\t'"$b"$'\t'"$c") ;;
+        esac
+    done <<< "$rows"
+    classes_txt=$(printf '%s\n' "${!classes[@]}" | LC_ALL=C sort | sed "s/.*/'&'/" | paste -sd, - | sed 's/,/, /g')
+    for m in "${order[@]}"; do
+        IFS=$'\t' read -r a b c <<< "$m"
+        nrows=$((nrows + 1))
+        [ "$c" = KEEP ] || debt=$((debt + 1))
+        [ -z "${keyed[$a$'\t'$b]+set}" ] || bad+=("DUP      $a/$b has two ledger rows")
+        keyed["$a"$'\t'"$b"]=1
+        [ -n "${classes[$c]+set}" ] || bad+=("CLASS    $a/$b: class '$c' is not one of [$classes_txt]")
+    done
+    while IFS=$'\t' read -r a b; do
+        [ -n "$a" ] && [ -z "${keyed[$a$'\t'$b]+set}" ] && bad+=("NEW      $a/$b (${universe[$a$'\t'$b]}) ships but has no row in the ledger: classify it")
+    done < <(printf '%s\n' "${!universe[@]}" | LC_ALL=C sort)
+    while IFS=$'\t' read -r a b; do
+        [ -n "$a" ] && [ -z "${universe[$a$'\t'$b]+set}" ] && bad+=("STALE    $a/$b has a ledger row but no longer ships: delete the row")
+    done < <(printf '%s\n' "${!keyed[@]}" | LC_ALL=C sort)
 
-def load_toml(p):
-    with open(p, "rb") as fh:
-        return tomllib.load(fh)
+    # MAJOR.MINOR.PATCH exactly: a 4th component is refused loudly, never dropped.
+    semver_ok "$ver" || { printf "FAIL: workspace version '%s' is not MAJOR.MINOR.PATCH\n" "$ver" >&2; return 1; }
+    for m in "${releases[@]}"; do
+        IFS=$'\t' read -r rel_ver b c d <<< "$m"
+        semver_ok "$rel_ver" || { printf "FAIL: ceiling release '%s' is not MAJOR.MINOR.PATCH\n" "$rel_ver" >&2; return 1; }
+        if [ "$d" = true ] && semver_ge "$ver" "$rel_ver"; then
+            { [ "$b" -lt "$ceil_debt" ] || [ "$c" -lt "$ceil_legacy" ]; } && bound="$rel_ver"
+            [ "$b" -lt "$ceil_debt" ] && ceil_debt="$b"
+            [ "$c" -lt "$ceil_legacy" ] && ceil_legacy="$c"
+        fi
+    done
+    [ "$debt" -le "$ceil_debt" ] || bad+=("CEILING  BINARY_DEBT $debt > $ceil_debt (ceiling: $bound)")
+    [ "$legacy" -le "$ceil_legacy" ] || bad+=("CEILING  LEGACY_NAMES $legacy > $ceil_legacy (ceiling: $bound)")
 
-def manifests():
-    top = load_toml(os.path.join(root, "Cargo.toml"))
-    ws = top.get("workspace", {})
-    dirs = {"."} | {os.path.dirname(os.path.relpath(m, root))
-                    for m in glob.glob(os.path.join(root, "crates", "*", "Cargo.toml"))}
-    for entry in ws.get("members", []) + ws.get("exclude", []):
-        for d in glob.glob(os.path.join(root, entry)):
-            dirs.add(os.path.relpath(d, root))
-    return sorted(d for d in dirs if os.path.isfile(os.path.join(root, d, "Cargo.toml")))
-
-def package_bins(rel):
-    d = os.path.join(root, rel)
-    t = load_toml(os.path.join(d, "Cargo.toml"))
-    pkg = t.get("package")
-    if not pkg or (pkg.get("metadata") or {}).get("cargo-fuzz") is True:
-        return None, {}
-    out = {}
-    if pkg.get("autobins", True):
-        if os.path.isfile(os.path.join(d, "src", "main.rs")):
-            out[pkg["name"]] = "src/main.rs"
-        for f in glob.glob(os.path.join(d, "src", "bin", "*.rs")):
-            out[os.path.basename(f)[:-3]] = os.path.relpath(f, d)
-        for f in glob.glob(os.path.join(d, "src", "bin", "*", "main.rs")):
-            out[os.path.basename(os.path.dirname(f))] = os.path.relpath(f, d)
-    for b in t.get("bin", []):
-        path = b.get("path")
-        for k in [k for k, v in out.items() if path and v == path]:
-            del out[k]
-        out[b["name"]] = path or out.get(b["name"], "?")
-    return pkg["name"], out
-
-universe = {}
-for rel in manifests():
-    name, bins = package_bins(rel)
-    for b in bins:
-        universe[(name, b)] = rel
-
-with open(ledger_path) as fh:
-    c = yaml.safe_load(fh)
-classes = set(c["classes"])
-rows = c["binaries"]
-keyed = {}
-bad = []
-for r in rows:
-    k = (r["crate"], r["bin"])
-    if k in keyed:
-        bad.append("DUP      %s/%s has two ledger rows" % k)
-    keyed[k] = r
-    if r["class"] not in classes:
-        bad.append("CLASS    %s/%s: class %r is not one of %s" % (k + (r["class"], sorted(classes))))
-for k in sorted(set(universe) - set(keyed)):
-    bad.append("NEW      %s/%s (%s) ships but has no row in the ledger: classify it" % (k + (universe[k],)))
-for k in sorted(set(keyed) - set(universe)):
-    bad.append("STALE    %s/%s has a ledger row but no longer ships: delete the row" % k)
-
-debt = sum(1 for r in rows if r["class"] != "KEEP")
-legacy = sum(1 for r in c.get("legacy_names", []) if not r.get("sunset"))
-ceil_debt = c["ceilings"]["current"]["binary_debt"]
-ceil_legacy = c["ceilings"]["current"]["legacy_names"]
-top = load_toml(os.path.join(root, "Cargo.toml"))
-ver = (top.get("workspace", {}).get("package", {}).get("version")
-       or top.get("package", {}).get("version") or "0.0.0")
-def semver_key(v, what):
-    # MAJOR.MINOR.PATCH exactly: a 4th component is refused loudly, never dropped
-    parts = str(v).split("-")[0].split(".")
-    if len(parts) != 3 or not all(x.isdigit() for x in parts):
-        sys.exit("FAIL: %s %r is not MAJOR.MINOR.PATCH" % (what, v))
-    return tuple(int(x) for x in parts)
-
-
-vkey = semver_key(ver, "workspace version")
-bound = "current"
-for rel in c["ceilings"].get("releases", []):
-    rkey = semver_key(rel["release"], "ceiling release")
-    if rel.get("armed") is True and vkey >= rkey:
-        if rel["binary_debt"] < ceil_debt or rel["legacy_names"] < ceil_legacy:
-            bound = rel["release"]
-        ceil_debt = min(ceil_debt, rel["binary_debt"])
-        ceil_legacy = min(ceil_legacy, rel["legacy_names"])
-if debt > ceil_debt:
-    bad.append("CEILING  BINARY_DEBT %d > %d (ceiling: %s)" % (debt, ceil_debt, bound))
-if legacy > ceil_legacy:
-    bad.append("CEILING  LEGACY_NAMES %d > %d (ceiling: %s)" % (legacy, ceil_legacy, bound))
-
-for line in bad:
-    print("FAIL  " + line)
-print("%s  binary debt: %d binaries in the universe, %d ledger rows; BINARY_DEBT %d/%d, LEGACY_NAMES %d/%d (version %s)"
-      % ("FAIL" if bad else "PASS", len(universe), len(rows), debt, ceil_debt, legacy, ceil_legacy, ver))
-sys.exit(1 if bad else 0)
-PY
+    for m in "${bad[@]}"; do printf 'FAIL  %s\n' "$m"; done
+    printf '%s  binary debt: %d binaries in the universe, %d ledger rows; BINARY_DEBT %d/%d, LEGACY_NAMES %d/%d (version %s)\n' \
+        "$([ "${#bad[@]}" -eq 0 ] && echo PASS || echo FAIL)" "${#universe[@]}" "$nrows" "$debt" "$ceil_debt" "$legacy" "$ceil_legacy" "$ver"
+    [ "${#bad[@]}" -eq 0 ]
 }
 
 # ---- the case table ---------------------------------------------------------
@@ -206,14 +243,25 @@ self_test() {
     td=$(mktemp -d "${TMPDIR:-/tmp}/binary-debt-selftest.XXXXXX")
     BD_TD=$td
     trap _rm_td EXIT
-    py_fleet_state check_binary_debt yaml tomllib || { rc=$?; [ "$rc" -eq 3 ] && return 0; return "$rc"; }
     # Mutations that need a redirect or two steps are functions, so `row` runs
     # its argv directly (bashrs SEC001: no eval).
     mut_newbin() { mkdir -p crates/alpha/src/bin && printf 'fn main(){}\n' > crates/alpha/src/bin/newbin.rs; }
     mut_drop_alpha_main() { rm -f -- crates/alpha/src/main.rs; }
     mut_arm_and_bump() { sed -i 's/armed: false/armed: true/' ledger.yaml && sed -i 's/version = "0.69.3"/version = "0.70.0"/' Cargo.toml; }
     mut_dup_alpha() { printf '  - {crate: alpha, bin: alpha, class: KEEP}\n' >> ledger.yaml; }
-    # row <want 0|1> <must-print-or-empty> <label> <mutation command + args...>
+    # The readers are a TOML/YAML subset: a form outside it is refused (rc 2), never guessed.
+    mut_ghost_bin() { printf 'description = """\n[[bin]]\nname = "ghost"\n"""\n' >> crates/alpha/Cargo.toml; }
+    mut_ml_exclude() { sed -i 's|^exclude = .*|exclude = [\n    "tools/extra",  # a crate outside the members\n    "fuzz",\n]|' Cargo.toml; }
+    mut_inline_fuzz() { sed -i '/^version/a metadata = { cargo-fuzz = true }' crates/alpha/Cargo.toml; }
+    mut_nameless_bin() { printf '[[bin]]\npath = "src/main.rs"\n' >> crates/alpha/Cargo.toml; }
+    mut_block_row() { printf '  - crate: alpha\n    bin: alpha\n' >> ledger.yaml; }
+    mut_pathless_bin() { printf '[[bin]]\nname = "pathless"\n' >> crates/alpha/Cargo.toml; }
+    mut_ws_version() { printf '\n[workspace.package]\nversion = "0.70.0"\n' >> Cargo.toml && sed -i 's/armed: false/armed: true/' ledger.yaml; }
+    mut_top_dotted() { sed -i '1i package.autobins = false' crates/alpha/Cargo.toml; }
+    mut_no_binaries() { sed -i '/^binaries:/,$d' ledger.yaml; }
+    mut_classless_row() { printf '  - {crate: alpha, bin: alpha}\n' >> ledger.yaml; }
+    mut_release_lowers_legacy() { mut_arm_and_bump && sed -i "s/legacy_names: 1, armed/legacy_names: 0, armed/" ledger.yaml; }
+    # row <want rc> <must-print-or-empty> <label> <mutation command + args...>
     row() {
         local want=$1 needle=$2 label=$3; shift 3
         rows=$((rows + 1)); ws="$td/ws$rows"; fixture "$ws"
@@ -241,6 +289,27 @@ self_test() {
     row 0 "" "an ARMED release ceiling does not bind BEFORE its version" sed -i 's/armed: false/armed: true/' ledger.yaml
     row 1 "NEW      fuzzer/fuzzer" "only the cargo-fuzz MARKER keeps a harness out" sed -i '/cargo-fuzz/d' fuzz/Cargo.toml
     row 1 "DUP      alpha/alpha" "a binary with two rows" mut_dup_alpha
+    row 0 "5 binaries in the universe" "a [[bin]] line inside a multi-line string is not a table" mut_ghost_bin
+    row 0 "5 binaries in the universe" "a multi-line exclude array with comments is read whole" mut_ml_exclude
+    row 0 "5 binaries in the universe" "a comma inside a quoted ledger value is not a field separator" sed -i 's/class: DECIDE}/class: DECIDE, why: "a, b: c"}/' ledger.yaml
+    row 2 "REFUSE" "a dotted package.name (name.workspace) is refused" sed -i 's/^name = "alpha"/name.workspace = true/' crates/alpha/Cargo.toml
+    row 2 "REFUSE" "cargo-fuzz in an inline metadata table is refused" mut_inline_fuzz
+    row 2 "REFUSE" "a non-string workspace member is refused" sed -i 's|"crates/\*"\]|"crates/*", 3]|' Cargo.toml
+    row 2 "REFUSE" "a [[bin]] with no name is refused" mut_nameless_bin
+    row 2 "REFUSE" "a block-style ledger row is refused" mut_block_row
+    row 1 "NEW      alpha/pathless (crates/alpha)" "a [[bin]] with a name and no path ships" mut_pathless_bin
+    row 1 "(ceiling: 0.70.0)" "[workspace.package] version wins over [package] version" mut_ws_version
+    row 1 "CEILING  LEGACY_NAMES 1 > 0 (ceiling: 0.70.0)" "an ARMED release lowers the LEGACY_NAMES ceiling too" mut_release_lowers_legacy
+    row 2 "REFUSE" "a ledger row with an empty class is refused" sed -i "s/class: DECIDE}/class: \"\"}/" ledger.yaml
+    row 2 "REFUSE" "a legacy_names row with no name is refused" sed -i "s/{name: oldname, sunset: null}/{sunset: null}/" ledger.yaml
+    row 1 "is not MAJOR.MINOR.PATCH" "a version that is not MAJOR.MINOR.PATCH fails loudly" sed -i 's/version = "0.69.3"/version = "0.69"/' Cargo.toml
+    row 2 "REFUSE" "a quoted table header is refused" sed -i 's/^\[package.metadata\]/["package".metadata]/' fuzz/Cargo.toml
+    row 2 "REFUSE" "an inline-table package.name is refused" sed -i 's/^name = "alpha"/name = { workspace = true }/' crates/alpha/Cargo.toml
+    row 2 "REFUSE" "a string cargo-fuzz is refused, never read as truthy" sed -i 's/cargo-fuzz = true/cargo-fuzz = "true"/' fuzz/Cargo.toml
+    row 2 "REFUSE" "a top-level dotted package key is refused" mut_top_dotted
+    row 2 "REFUSE" "a ledger with no binaries section is refused" mut_no_binaries
+    row 2 "REFUSE" "a ledger row with no class is refused" mut_classless_row
+    row 2 "REFUSE" "a ceiling that is not an integer is refused" sed -i 's/current: {binary_debt: 2,/current: {binary_debt: two,/' ledger.yaml
     printf '%s  check_binary_debt self-test: %d rows, %d broke\n' "$([ "$fails" -eq 0 ] && echo PASS || echo FAIL)" "$rows" "$fails"
     [ "$fails" -eq 0 ]
 }
