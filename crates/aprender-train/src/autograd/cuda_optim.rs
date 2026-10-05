@@ -121,13 +121,6 @@ pub fn pre_warm_lora_adamw_kernels(
         return Ok(());
     }
 
-    let cache = OPTIM_KERNEL_CACHE.get().ok_or(CudaTensorError::DeviceNotInitialized)?;
-    let mut cache = cache.lock().map_err(|_err| {
-        CudaTensorError::KernelError("Failed to acquire optim kernel cache lock".to_string())
-    })?;
-
-    let target = cache.sm_target().to_string();
-
     let mut sizes: Vec<u32> = vec![
         (hidden_size * lora_rank) as u32,    // A_q, A_v
         (lora_rank * q_dim) as u32,          // B_q
@@ -150,14 +143,25 @@ pub fn pre_warm_lora_adamw_kernels(
 
     sizes.sort_unstable();
     sizes.dedup();
+    pre_warm_adamw_sizes(&sizes)
+}
 
-    for n in sizes {
+/// Pre-warm `adamw_step_{n}` for each parameter count in `sizes`, the key and kernel
+/// [`adamw_step_cuda`] builds on a miss (R15a C7: the CUDA trainer's NF4 LoRA sizes
+/// by target, contract `lora-target-selection-v1` equation `lora_adamw_prewarm`).
+#[cfg(feature = "cuda")]
+pub fn pre_warm_adamw_sizes(sizes: &[u32]) -> Result<()> {
+    let cache = OPTIM_KERNEL_CACHE.get().ok_or(CudaTensorError::DeviceNotInitialized)?;
+    let mut cache = cache.lock().map_err(|_err| {
+        CudaTensorError::KernelError("Failed to acquire optim kernel cache lock".to_string())
+    })?;
+    let target = cache.sm_target().to_string();
+    for &n in sizes {
         let kernel = AdamWStepKernel::new(n);
         let ptx = kernel.emit_ptx_for_target(&target);
         let key = format!("adamw_step_{n}");
         cache.get_or_compile(&key, &ptx)?;
     }
-
     Ok(())
 }
 

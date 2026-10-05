@@ -34,6 +34,31 @@ pub(crate) fn lora_prewarm_dims(
         .collect()
 }
 
+/// Every parameter count the NF4 LoRA optimizer step (`lora_optimizer_step`) asks
+/// `adamw_step_cuda` for: A_t (d_in·r) and B_t (r·d_out) of each target of
+/// [`nf4_targets`]`(modules)`, and the two norm weights (hidden), sorted with no
+/// repeat (R15a C7, FALSIFY-LORA_TARGET_SELECTION_V1_013).
+pub(crate) fn lora_adamw_sizes(
+    config: &TransformerConfig,
+    modules: Option<&[String]>,
+    rank: usize,
+) -> Vec<u32> {
+    if rank == 0 {
+        return Vec::new();
+    }
+    let mut sizes: Vec<u32> = nf4_targets(modules)
+        .iter()
+        .flat_map(|t| {
+            let (d_out, d_in) = t.dims(config);
+            [(d_in * rank) as u32, (rank * d_out) as u32]
+        })
+        .collect();
+    sizes.push(config.hidden_size as u32);
+    sizes.sort_unstable();
+    sizes.dedup();
+    sizes
+}
+
 /// `(j + φ(layer, target))·0.1`, the argument of A's sinusoid at index `j`. q_proj and
 /// v_proj add in the order the pre-C5b init did, so their A is the same bit for bit.
 fn init_arg(j: usize, layer: usize, target: LoraTarget) -> f32 {

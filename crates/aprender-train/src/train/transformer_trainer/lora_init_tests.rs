@@ -4,7 +4,8 @@
 //! `with_model` call; the block calls themselves are row 005's #[ignore] tests.
 
 use super::lora_init::{
-    adapter_pair, added_adapters, lora_prewarm_dims, nf4_init_adapters, nf4_targets,
+    adapter_pair, added_adapters, lora_adamw_sizes, lora_prewarm_dims, nf4_init_adapters,
+    nf4_targets,
 };
 use super::trainer::trainer_targets;
 use crate::autograd::cuda_backward_keys::{gemm_backward_a, gemm_backward_b, lora_backward_gemms};
@@ -171,4 +172,56 @@ fn falsify_lora_target_selection_v1_012_prewarm_dims_are_the_selected_targets() 
             assert!(warmed.contains(&g), "{t:?}: {} not warmed", g.key);
         }
     }
+}
+
+/// Row 013's rank: 3 keeps h·r, q_dim·r, kv·r and hidden apart on `model_config`.
+const R13: usize = 3;
+
+/// The counts `lora_optimizer_step` steps for `targets`: each adapter's A and B as
+/// `nf4_init_adapters` builds them, then the norm weights (hidden), sorted, no repeat.
+fn stepped_sizes(config: &TransformerConfig, targets: &[LoraTarget], rank: usize) -> Vec<u32> {
+    let mut sizes: Vec<u32> = nf4_init_adapters(config, 0, targets, rank)
+        .iter()
+        .flat_map(|(_, a, b)| [a.len() as u32, b.len() as u32])
+        .collect();
+    sizes.push(config.hidden_size as u32);
+    sizes.sort_unstable();
+    sizes.dedup();
+    sizes
+}
+
+#[test]
+fn falsify_lora_target_selection_v1_013_adamw_sizes_are_the_optimizer_steps() {
+    let config = model_config();
+    let modules = names(&["q_proj", "o_proj", "down_proj"]);
+    let got = lora_adamw_sizes(&config, Some(&modules), R13);
+    assert_eq!(got, stepped_sizes(&config, &[LoraTarget::Q, LoraTarget::O, LoraTarget::Down], R13));
+    assert!(got.windows(2).all(|w| w[0] < w[1]), "unsorted or repeated: {got:?}");
+
+    let all: Vec<String> = LoraTarget::ALL.iter().map(|t| t.module_name().to_string()).collect();
+    assert_eq!(
+        lora_adamw_sizes(&config, Some(&all), R13),
+        stepped_sizes(&config, &LoraTarget::ALL, R13)
+    );
+}
+
+#[test]
+fn falsify_lora_target_selection_v1_013_qv_gives_the_pre_warm_lora_adamw_sizes() {
+    let config = model_config();
+    let (h, r) = (config.hidden_size, R13);
+    let (qd, kv) = (LoraTarget::Q.dims(&config).0, LoraTarget::V.dims(&config).0);
+    let mut want = vec![(h * r) as u32, (r * qd) as u32, (r * kv) as u32, h as u32];
+    want.sort_unstable();
+    want.dedup();
+    assert_eq!(want.len(), 4, "R13 must keep the four counts apart");
+    assert_eq!(lora_adamw_sizes(&config, Some(&names(&["q_proj", "v_proj"])), R13), want);
+    assert_eq!(lora_adamw_sizes(&config, None, R13), want, "the default selection is q, v");
+}
+
+#[test]
+fn falsify_lora_target_selection_v1_013_no_adapter_sizes_without_rank_or_targets() {
+    let config = model_config();
+    assert!(lora_adamw_sizes(&config, None, 0).is_empty());
+    let none = names(&["lm_head"]);
+    assert_eq!(lora_adamw_sizes(&config, Some(&none), R13), vec![config.hidden_size as u32]);
 }

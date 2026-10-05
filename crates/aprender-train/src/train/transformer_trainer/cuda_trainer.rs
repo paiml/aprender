@@ -435,6 +435,15 @@ impl CudaTransformerTrainer {
                         "LoRA target backward pre-warm failed: {e:?}"
                     ))
                 })?;
+
+                // R15a C7: the AdamW step at every count lora_optimizer_step asks for
+                let rank = config.lora_rank.unwrap_or(0);
+                crate::autograd::cuda_optim::pre_warm_adamw_sizes(
+                    &super::lora_init::lora_adamw_sizes(mc, modules, rank),
+                )
+                .map_err(|e| {
+                    crate::error::Error::ConfigError(format!("LoRA AdamW pre-warm failed: {e:?}"))
+                })?;
             }
         }
 
