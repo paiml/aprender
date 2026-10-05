@@ -150,8 +150,11 @@ fn chat_gen_params(
 /// `max_tokens`, while `/v1/completions` on the same prompt stopped.
 ///
 /// `eos_token_id` is `None` when the model declares no EOS; the set is then the
-/// vocabulary's end-of-generation markers alone. Every chat path calls this one
-/// function, so no path can drift back to a single-id stop set.
+/// vocabulary's end-of-generation markers alone. Every chat path that stops on
+/// a token set builds it here, directly or through `chat_quantized_config`,
+/// `apr_q4k_chat_eos_ids`, `safetensors_cuda_stop_ids` or
+/// `apr_transformer_gen_config`. `registry_fallback` is the one chat path
+/// outside it: its demo models have no BPE vocabulary to read markers from.
 fn chat_stop_tokens(
     request: &ChatCompletionRequest,
     tokenizer: &crate::tokenizer::BPETokenizer,
@@ -161,6 +164,71 @@ fn chat_stop_tokens(
         Vec::new()
     } else {
         super::realize_handlers::completion_stop_tokens(tokenizer, eos_token_id)
+    }
+}
+
+/// #4661: the APR Q4K scheduler's `eos_ids` for a chat request.
+///
+/// `model_eos_ids` is `AppState::model_eos_ids`, which falls back to `[0, 2]`
+/// when the model declares no EOS. That fallback stays live, and the
+/// `chat_stop_tokens` set is added to it, so this path stops on every
+/// end-of-generation marker like the others. `ignore_eos` still empties it.
+#[cfg(any(feature = "cuda", test))]
+fn apr_q4k_chat_eos_ids(
+    request: &ChatCompletionRequest,
+    tokenizer: &crate::tokenizer::BPETokenizer,
+    model_eos: Option<u32>,
+    model_eos_ids: Vec<u32>,
+) -> Vec<u32> {
+    if request.ignore_eos.unwrap_or(false) {
+        return Vec::new();
+    }
+    let mut ids = model_eos_ids;
+    for id in chat_stop_tokens(request, tokenizer, model_eos) {
+        if !ids.contains(&id) {
+            ids.push(id);
+        }
+    }
+    ids
+}
+
+/// #4661: the SafeTensors CUDA stop set for a chat request.
+///
+/// This path used to hard-code `151645` (Qwen2 `<|im_end|>`) whatever the
+/// model was. That id is kept only for a vocabulary with no end marker at all,
+/// so such a model still stops where it did before. `ignore_eos` never reaches
+/// here: `reject_unsupported_ignore_eos` refuses it first.
+#[cfg(any(feature = "cuda", test))]
+fn safetensors_cuda_stop_ids(
+    request: &ChatCompletionRequest,
+    tokenizer: &crate::tokenizer::BPETokenizer,
+    model_eos: Option<u32>,
+) -> Vec<u32> {
+    const LEGACY_QWEN2_IM_END: u32 = 151_645;
+    let ids = chat_stop_tokens(request, tokenizer, model_eos);
+    if ids.is_empty() {
+        vec![LEGACY_QWEN2_IM_END]
+    } else {
+        ids
+    }
+}
+
+/// #4661: the APR transformer `GenerateConfig` for a chat request.
+///
+/// `GenerateConfig::default()` has an empty `stop_tokens`, so this path used to
+/// stop only on token 0 and otherwise ran to `max_tokens`.
+fn apr_transformer_gen_config(
+    request: &ChatCompletionRequest,
+    tokenizer: &crate::tokenizer::BPETokenizer,
+    model_eos: Option<u32>,
+    cancel: &crate::generate::CancelToken,
+) -> crate::apr_transformer::GenerateConfig {
+    crate::apr_transformer::GenerateConfig {
+        max_tokens: request.max_tokens.unwrap_or(256),
+        temperature: request.temperature.unwrap_or(0.7),
+        stop_tokens: chat_stop_tokens(request, tokenizer, model_eos),
+        cancel: cancel.clone(),
+        ..Default::default()
     }
 }
 
@@ -289,7 +357,10 @@ fn chat_quantized_config(
 
 #[cfg(test)]
 mod perf039_ignore_eos_tests {
-    use super::{chat_quantized_config, chat_stop_tokens, ChatCompletionRequest, ChatMessage};
+    use super::{
+        apr_q4k_chat_eos_ids, apr_transformer_gen_config, chat_quantized_config, chat_stop_tokens,
+        safetensors_cuda_stop_ids, ChatCompletionRequest, ChatMessage,
+    };
     use crate::tokenizer::BPETokenizer;
 
     fn tokenizer() -> BPETokenizer {
@@ -350,6 +421,61 @@ mod perf039_ignore_eos_tests {
         );
         let ignored = chat_quantized_config(&request(Some(true)), &tok, Some(2), false, &cancel);
         assert!(ignored.stop_tokens.is_empty());
+    }
+
+    fn chatml_tokenizer() -> BPETokenizer {
+        BPETokenizer::new(
+            vec![
+                "<unk>".to_string(),
+                "<|endoftext|>".to_string(),
+                "<|im_end|>".to_string(),
+            ],
+            vec![],
+            "<unk>",
+        )
+        .expect("test tokenizer")
+    }
+
+    /// #4661, APR Q4K path: the `[0, 2]` no-EOS fallback stays and every
+    /// end-of-generation marker joins it.
+    #[test]
+    fn apr_q4k_chat_stops_on_every_eog_marker() {
+        let tok = chatml_tokenizer();
+        let ids = apr_q4k_chat_eos_ids(&request(None), &tok, Some(2), vec![2]);
+        assert!(ids.contains(&2) && ids.contains(&1), "{ids:?}");
+        let fallback = apr_q4k_chat_eos_ids(&request(None), &tok, None, vec![0, 2]);
+        assert!(
+            fallback.contains(&0) && fallback.contains(&1),
+            "{fallback:?}"
+        );
+        assert!(apr_q4k_chat_eos_ids(&request(Some(true)), &tok, Some(2), vec![2]).is_empty());
+    }
+
+    /// #4661, SafeTensors CUDA path: the vocabulary's markers, not the
+    /// hard-coded Qwen2 id; that id survives only when no marker exists.
+    #[test]
+    fn safetensors_cuda_chat_stops_on_every_eog_marker() {
+        let ids = safetensors_cuda_stop_ids(&request(None), &chatml_tokenizer(), None);
+        assert!(ids.contains(&1) && ids.contains(&2), "{ids:?}");
+        assert!(!ids.contains(&151_645), "{ids:?}");
+        assert_eq!(
+            safetensors_cuda_stop_ids(&request(None), &tokenizer(), None),
+            vec![151_645]
+        );
+    }
+
+    /// #4661, APR transformer path: `stop_tokens` was empty, so a chat turn
+    /// stopped only on token 0.
+    #[test]
+    fn apr_transformer_chat_stops_on_every_eog_marker() {
+        let cancel = crate::generate::CancelToken::never();
+        let cfg = apr_transformer_gen_config(&request(None), &chatml_tokenizer(), Some(2), &cancel);
+        assert!(
+            cfg.stop_tokens.contains(&1) && cfg.stop_tokens.contains(&2),
+            "{:?}",
+            cfg.stop_tokens
+        );
+        assert_eq!(cfg.max_tokens, 256);
     }
 
     #[test]

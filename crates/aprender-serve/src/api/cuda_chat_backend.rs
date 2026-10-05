@@ -39,8 +39,8 @@ fn try_safetensors_cuda_backend(
     let input_ids = tokenizer.encode(&prompt);
     let max_tokens = request.max_tokens.unwrap_or(256).min(4096) as usize;
 
-    // Qwen2 EOS: 151645 (<|endoftext|>)
-    let eos_id = 151645u32;
+    // #4661: every end-of-generation marker, not one hard-coded Qwen2 id.
+    let stop_ids = super::openai_handlers::safetensors_cuda_stop_ids(request, &tokenizer, state.model_eos_token_id());
 
     let mut model = match model_lock.lock() {
         Ok(m) => m,
@@ -55,7 +55,7 @@ fn try_safetensors_cuda_backend(
         }
     };
 
-    let output_ids = match model.generate(&input_ids, max_tokens, eos_id) {
+    let output_ids = match model.generate_until(&input_ids, max_tokens, &stop_ids) {
         Ok(ids) => ids,
         Err(e) => {
             let msg = format!("SafeTensors CUDA generation failed: {e}");
@@ -552,8 +552,6 @@ fn try_apr_transformer_backend(
     start: Instant,
     cancel: &CancelToken,
 ) -> Option<Response> {
-    use crate::apr_transformer::GenerateConfig;
-
     // Residency first, as in `try_safetensors_cuda_backend` (aprender#3956).
     let apr_transformer = state.apr_transformer()?;
     // PERF-039: fail closed rather than silently dropping `ignore_eos`.
@@ -577,12 +575,7 @@ fn try_apr_transformer_backend(
     let prompt_tokens = prompt_ids.len();
     let max_tokens = request.max_tokens.unwrap_or(256);
 
-    let gen_config = GenerateConfig {
-        max_tokens,
-        temperature: request.temperature.unwrap_or(0.7),
-        cancel: cancel.clone(),
-        ..Default::default()
-    };
+    let gen_config = super::openai_handlers::apr_transformer_gen_config(request, &tokenizer, state.model_eos_token_id(), cancel);
 
     let generated = match apr_transformer.generate_with_cache(&prompt_ids, &gen_config) {
         Ok(g) => g,
@@ -881,12 +874,8 @@ async fn try_apr_q4k_chat_backend(
     let prompt_tokens = prompt_ids.len();
     let (max_tokens, temperature, _eos_single) =
         chat_gen_params(request, &tokenizer, state.model_eos_token_id());
-    // PERF-039: ignore_eos empties the stop set for this backend too.
-    let eos_ids = if request.ignore_eos.unwrap_or(false) {
-        Vec::new()
-    } else {
-        state.model_eos_ids()
-    };
+    // PERF-039: ignore_eos empties the stop set; #4661: every end-of-generation marker.
+    let eos_ids = super::openai_handlers::apr_q4k_chat_eos_ids(request, &tokenizer, state.model_eos_token_id(), state.model_eos_ids());
 
     let (response_tx, response_rx) = tokio::sync::oneshot::channel();
 
