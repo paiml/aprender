@@ -1,0 +1,388 @@
+{
+  "ticket": "PMAT-4798",
+  "base": "origin/main",
+  "base_resolved": "origin/main",
+  "base_note": "no origin/origin/main exists; judged against the local ref",
+  "head": "bd99ffe515fcde801dd4ae78db82ea08b75df576",
+  "diff_sha256": "c9f3d01538fcfb43cdd17ca1513c475c6e842b827ec728cc9a3d82bff1d89fd5",
+  "width": 3,
+  "executor": "agy",
+  "prompt_mode": "inline",
+  "prompt_bytes": 49480,
+  "prompt_sha256": "46eb3e9feecc3d8b0eb4fac82451e0b4dd9f5cca3f681b2fd15fbf389d69b25e",
+  "author": {
+    "model": "claude-sonnet-5-5",
+    "family": "claude",
+    "source": "flag"
+  },
+  "agreed": true,
+  "lanes": [
+    {
+      "lane": 1,
+      "status": "SUCCESS",
+      "verdict": "PASS",
+      "summary": "Lane 1 review of PMAT-4798 (judge the newest commit every verdict lane ran on). I found nothing in the diff that refutes the ticket. The change does what the ticket asks: J is the newest of ranks 0..MAX_LAG (6) on which every verdict producer has a green or red run; J falls back to the head when none qualifies; one J for all lanes; the line prints (judged, head, lag) when J is not the head; the release path (no release script touched) is unchanged. Read-only checks: lst() does not depend on attempts, so the cand-mode and final-mode J selections agree; the planted-mutant count is 53 (m01..m53) and matches the receipt; the self-test row count could not be confirmed (65 `row` lines by grep, receipt claims 70/70; I did not run it). Bash was disabled in this session, so I could not read the lane witness file; the witness path under the gitdir does not exist at the path I could reach, and I did not invent a token. Minor, not refuting: the `judged` file is not cleared before decide, so a stale file could survive if evaluate fails before writing it (decide's fallback only checks the format of the stale value). The workflow step label still says \"main's head\", which the receipt already discloses.",
+      "findings": [],
+      "raw_bytes": 3356,
+      "err_bytes": 0,
+      "envelope_status": "SUCCESS",
+      "verdict_source": "structured_output",
+      "executor": "claude-code",
+      "grounding_check": "parity",
+      "role": "counted",
+      "model": "claude-sonnet-5",
+      "model_measured": "claude-sonnet-5",
+      "model_source": "flag",
+      "family": "claude",
+      "brief_sha256": "46eb3e9feecc3d8b0eb4fac82451e0b4dd9f5cca3f681b2fd15fbf389d69b25e",
+      "trace": {
+        "input_sha256": "e6e91239c80bd36a2b80eca061ace826cd870903575c65b79602b3d3de279752",
+        "output_sha256": "4974945b0c2d3bdf3c818dddf31558ad863baf41bec5ca80719f9979cf04c79f",
+        "store": null,
+        "store_why": "almacen not provisioned yet (infra-27): the blobs stay in the round's gitignored .lanes dir"
+      },
+      "fallback": {
+        "judged_by": "claude-sonnet-5",
+        "exhausted": false,
+        "attempts": [
+          {
+            "model": "claude-sonnet-5",
+            "family": "claude",
+            "outcome": "answered"
+          }
+        ],
+        "skipped": [
+          {
+            "model": "gemini-3.1-pro-high",
+            "why": "family gemini withheld by policy: the diff is not tier-1 (quorum.agy_tier1_only: none of its paths matches quorum.tier1_paths or the built-in policy paths), and agy is reserved for tier-1 diffs — cop ruling of 2026-09-24"
+          },
+          {
+            "model": "claude-haiku-4-5",
+            "why": "claude-code: claude-haiku-4-5 is already another lane's seat, and a degraded round still needs distinct reviewers (PMAT-125) — a repeat is taken only once every non-author seat is held"
+          },
+          {
+            "model": "gpt-oss-120b-medium",
+            "why": "family openai withheld by policy: the diff is not tier-1 (quorum.agy_tier1_only: none of its paths matches quorum.tier1_paths or the built-in policy paths), and agy is reserved for tier-1 diffs — cop ruling of 2026-09-24"
+          }
+        ]
+      }
+    },
+    {
+      "lane": 2,
+      "status": "SUCCESS",
+      "verdict": "PASS",
+      "summary": "PMAT-4798 correctly implements the new nightly judge logic: selects the newest commit (at most MAX_LAG=6 behind main's head) on which every verdict lane has a measured run; prints lag note when judged commit ≠ head; updates contracts to use J; adds 13 test rows + 11 mutants (70/70, 53/53 total); preserves release path unchanged.",
+      "findings": [],
+      "raw_bytes": 1598,
+      "err_bytes": 0,
+      "envelope_status": "SUCCESS",
+      "verdict_source": "structured_output",
+      "executor": "claude-code",
+      "grounding_check": "parity",
+      "role": "counted",
+      "model": "claude-haiku-4-5",
+      "model_measured": "claude-haiku-4-5",
+      "model_source": "flag",
+      "family": "claude",
+      "brief_sha256": "46eb3e9feecc3d8b0eb4fac82451e0b4dd9f5cca3f681b2fd15fbf389d69b25e",
+      "trace": {
+        "input_sha256": "676e4c03bf579a8d477b102341a1b290a62dd66f95e305e7fb63274838bd74ef",
+        "output_sha256": "5b4b6e161fef3f433d2606e86373c66bb9f4d82c5fb0b51bb6fe0055e448cc7d",
+        "store": null,
+        "store_why": "almacen not provisioned yet (infra-27): the blobs stay in the round's gitignored .lanes dir"
+      },
+      "fallback": {
+        "judged_by": "claude-haiku-4-5",
+        "exhausted": false,
+        "attempts": [
+          {
+            "model": "claude-haiku-4-5",
+            "family": "claude",
+            "outcome": "answered"
+          }
+        ],
+        "skipped": []
+      }
+    },
+    {
+      "lane": 3,
+      "status": "SUCCESS",
+      "verdict": "PASS",
+      "summary": "The diff does what PMAT-4798 asks. J is the newest commit within ranks 0..MAX_LAG (6) on which every verdict lane that has a producer has a green or red run. The candidates come from a rank list read in the same query (history(first: 7)); the head is rank 0 and appears once. A rank list whose rank 0 is not C is ignored. All lanes are picked on the one J (RH[r] != J). When no commit qualifies, J = C. The line prints \"(judged, head, lag k commits)\" when J is not the head. A red on J counts as measured, so moving J cannot pick a commit just because it is green. The release path is not touched. The receipt's counts match the tree: 70 `row` calls in self_test, and 53 planted mutants (m01..m53). I did not run the self-test or the mutants, as the lane rules require, so 70/70 and 53/53 killed are the receipt's claims. Two cosmetic leftovers, neither a refutation. Note: the paiml-lane-witness file does not exist at /home/noah/src/aprender/.git/worktrees/aprender-w4798/paiml-lane-witness (also searched with a glob), so I left tree_witness empty. agy-lane.sh may void this lane for that reason.",
+      "findings": [
+        {
+          "file": "scripts/release/nightly_train.sh",
+          "line": 171,
+          "claim": "A lane counts as covered on a commit (HAS) if any completed green or red run exists there. The per-lane pick, however, takes the newest non-void run on J. So if a newer run on J is still pending, J can be chosen and that lane then reads not_measured, while an older commit within the cap had every lane complete. The ticket's wording ('has a measured run') allows this, and it fails closed, so it is not a defect.",
+          "grounding": "cited",
+          "fix": "Optional: build HAS from the same newest-non-void pick the final pass uses, so the chosen J never yields a pending lane."
+        },
+        {
+          "file": "scripts/release/nightly_train.sh",
+          "line": 202,
+          "claim": "The not_measured reason text still says 'no run on C' although the lane is now judged on J. This is cosmetic: J equals C unless the line carries a lag note.",
+          "grounding": "measured",
+          "fix": "Change the text to 'no run on the judged commit'."
+        }
+      ],
+      "raw_bytes": 5030,
+      "err_bytes": 0,
+      "envelope_status": "SUCCESS",
+      "verdict_source": "structured_output",
+      "executor": "claude-code",
+      "grounding_check": "parity",
+      "role": "counted",
+      "model": "claude-opus-5-5",
+      "model_measured": "claude-opus-5-5",
+      "model_source": "flag",
+      "family": "claude",
+      "brief_sha256": "46eb3e9feecc3d8b0eb4fac82451e0b4dd9f5cca3f681b2fd15fbf389d69b25e",
+      "trace": {
+        "input_sha256": "3fd656f61dbd7d445ab3068e0354e151414e7f44ed53b0636fc114e0dacea250",
+        "output_sha256": "554d0c22e5845b018ab951b4c149f26cec9b4f3c545e4a0bf5b55f596d80b5cd",
+        "store": null,
+        "store_why": "almacen not provisioned yet (infra-27): the blobs stay in the round's gitignored .lanes dir"
+      },
+      "fallback": {
+        "judged_by": "claude-opus-5-5",
+        "exhausted": false,
+        "attempts": [
+          {
+            "model": "claude-opus-5-5",
+            "family": "claude",
+            "outcome": "answered"
+          }
+        ],
+        "skipped": [
+          {
+            "model": "gpt-oss-120b-medium",
+            "why": "family openai withheld by policy: the diff is not tier-1 (quorum.agy_tier1_only: none of its paths matches quorum.tier1_paths or the built-in policy paths), and agy is reserved for tier-1 diffs — cop ruling of 2026-09-24"
+          },
+          {
+            "model": "gemini-3.1-pro-high",
+            "why": "family gemini withheld by policy: the diff is not tier-1 (quorum.agy_tier1_only: none of its paths matches quorum.tier1_paths or the built-in policy paths), and agy is reserved for tier-1 diffs — cop ruling of 2026-09-24"
+          },
+          {
+            "model": "claude-haiku-4-5",
+            "why": "claude-code: claude-haiku-4-5 is already another lane's seat, and a degraded round still needs distinct reviewers (PMAT-125) — a repeat is taken only once every non-author seat is held"
+          },
+          {
+            "model": "claude-sonnet-5",
+            "why": "claude-code: claude-sonnet-5 is already another lane's seat, and a degraded round still needs distinct reviewers (PMAT-125) — a repeat is taken only once every non-author seat is held"
+          }
+        ]
+      }
+    }
+  ],
+  "dissent": [],
+  "dedup": [
+    {
+      "file": "scripts/release/nightly_train.sh",
+      "line": 171,
+      "lanes_agreeing": [
+        3
+      ],
+      "claims": [
+        "A lane counts as covered on a commit (HAS) if any completed green or red run exists there. The per-lane pick, however, takes the newest non-void run on J. So if a newer run on J is still pending, J can be chosen and that lane then reads not_measured, while an older commit within the cap had every lane complete. The ticket's wording ('has a measured run') allows this, and it fails closed, so it is not a defect."
+      ]
+    },
+    {
+      "file": "scripts/release/nightly_train.sh",
+      "line": 202,
+      "lanes_agreeing": [
+        3
+      ],
+      "claims": [
+        "The not_measured reason text still says 'no run on C' although the lane is now judged on J. This is cosmetic: J equals C unless the line carries a lag note."
+      ]
+    }
+  ],
+  "uncovered": [],
+  "coverage_source": "lanes",
+  "partial": false,
+  "partial_reasons": [
+    "lane 1: judged by claude-sonnet-5 after falling through gemini-3.1-pro-high (skipped: family gemini withheld by policy: the diff is not tier-1 (quorum.agy_tier1_only: none of its paths matches quorum.tier1_paths or the built-in policy paths), and agy is reserved for tier-1 diffs — cop ruling of 2026-09-24); claude-haiku-4-5 (skipped: claude-code: claude-haiku-4-5 is already another lane's seat, and a degraded round still needs distinct reviewers (PMAT-125) — a repeat is taken only once every non-author seat is held); gpt-oss-120b-medium (skipped: family openai withheld by policy: the diff is not tier-1 (quorum.agy_tier1_only: none of its paths matches quorum.tier1_paths or the built-in policy paths), and agy is reserved for tier-1 diffs — cop ruling of 2026-09-24) (PMAT-321)",
+    "lane 3: judged by claude-opus-5-5 after falling through gpt-oss-120b-medium (skipped: family openai withheld by policy: the diff is not tier-1 (quorum.agy_tier1_only: none of its paths matches quorum.tier1_paths or the built-in policy paths), and agy is reserved for tier-1 diffs — cop ruling of 2026-09-24); gemini-3.1-pro-high (skipped: family gemini withheld by policy: the diff is not tier-1 (quorum.agy_tier1_only: none of its paths matches quorum.tier1_paths or the built-in policy paths), and agy is reserved for tier-1 diffs — cop ruling of 2026-09-24); claude-haiku-4-5 (skipped: claude-code: claude-haiku-4-5 is already another lane's seat, and a degraded round still needs distinct reviewers (PMAT-125) — a repeat is taken only once every non-author seat is held); claude-sonnet-5 (skipped: claude-code: claude-sonnet-5 is already another lane's seat, and a degraded round still needs distinct reviewers (PMAT-125) — a repeat is taken only once every non-author seat is held) (PMAT-321)"
+  ],
+  "fallback": {
+    "same_family_width": 2,
+    "chain": [
+      {
+        "model": "gemini-3.1-pro-high",
+        "family": "gemini",
+        "disposition": "configured"
+      },
+      {
+        "model": "claude-haiku-4-5",
+        "family": "claude",
+        "disposition": "claude-code",
+        "why": "run by Claude Code on its own budget: a configured seat runs every round, a fallback step only when every non-Claude family is measured out (PMAT-360, operator standing rule)"
+      },
+      {
+        "model": "gpt-oss-120b-medium",
+        "family": "openai",
+        "disposition": "configured"
+      },
+      {
+        "model": "claude-sonnet-5",
+        "family": "claude",
+        "disposition": "claude-code",
+        "why": "run by Claude Code on its own budget: a configured seat runs every round, a fallback step only when every non-Claude family is measured out (PMAT-360, operator standing rule)"
+      },
+      {
+        "model": "claude-opus-5-5",
+        "family": "claude",
+        "disposition": "claude-code",
+        "why": "run by Claude Code on its own budget: a configured seat runs every round, a fallback step only when every non-Claude family is measured out (PMAT-360, operator standing rule)"
+      },
+      {
+        "model": "qwen3.5",
+        "family": "qwen",
+        "disposition": "not-run",
+        "why": "no quorum.local_lane in the config — the aprender lane has no model to load"
+      }
+    ],
+    "precheck": [
+      {
+        "family": "gemini",
+        "model": "gemini-3.1-pro-high",
+        "probe": 0,
+        "outcome": "policy",
+        "reason": "the diff is not tier-1 (quorum.agy_tier1_only: none of its paths matches quorum.tier1_paths or the built-in policy paths), and agy is reserved for tier-1 diffs — cop ruling of 2026-09-24"
+      },
+      {
+        "family": "openai",
+        "model": "gpt-oss-120b-medium",
+        "probe": 0,
+        "outcome": "policy",
+        "reason": "the diff is not tier-1 (quorum.agy_tier1_only: none of its paths matches quorum.tier1_paths or the built-in policy paths), and agy is reserved for tier-1 diffs — cop ruling of 2026-09-24"
+      }
+    ],
+    "degraded": {
+      "reason": "same-family (policy: agy reserved for tier-1 diffs)",
+      "lanes": [
+        1,
+        3
+      ],
+      "families": [
+        {
+          "family": "gemini",
+          "state": "policy",
+          "evidence": "the diff is not tier-1 (quorum.agy_tier1_only: none of its paths matches quorum.tier1_paths or the built-in policy paths), and agy is reserved for tier-1 diffs — cop ruling of 2026-09-24"
+        },
+        {
+          "family": "openai",
+          "state": "policy",
+          "evidence": "the diff is not tier-1 (quorum.agy_tier1_only: none of its paths matches quorum.tier1_paths or the built-in policy paths), and agy is reserved for tier-1 diffs — cop ruling of 2026-09-24"
+        }
+      ],
+      "rule": "operator standing rule: if agy quota is ever gone, simply use claude code itself (PMAT-360)"
+    },
+    "prah": {
+      "source": "install-receipt",
+      "path": "/home/noah/.claude/skills/paiml-implement/bin/prah"
+    },
+    "tier1": {
+      "agy_tier1_only": true,
+      "tier1": false,
+      "matched": [],
+      "paths": 5,
+      "patterns": [
+        "^\\.github/workflows/",
+        "(^|/)release[^/]*\\.(ya?ml|sh|rs|toml)$",
+        "cuda|kernel|\\.cu$|\\.ptx$",
+        "(^|/)[^/]*(gate|guard)[^/]*\\.(sh|rs|py)$|^hooks/",
+        "security|secret|credential|(^|/)deny\\.toml$",
+        "^skills/quorum-review/|(^|/)(receipt-lint|roadmap-lint|release-lint|kind-gate|model-gate)[^/]*$|^crates/prah-lint/"
+      ],
+      "builtin": "^skills/quorum-review/|(^|/)skills/paiml-implement/config\\.json$|(^|/)(modellib|lane-reduce|lane-fallback|lane-group|agy-lane|cc-lane|receipt-lint|route|quota)\\.sh$|^crates/prah-lint/"
+    },
+    "bucket": {
+      "ledger": "/home/noah/.local/state/paiml-implement/agy-bucket.jsonl",
+      "window_s": 18000,
+      "pace": "off",
+      "buckets": {},
+      "closed": []
+    }
+  },
+  "auto_merge": {
+    "checked": false,
+    "was_armed": false,
+    "disarmed": false,
+    "note": "no --pr given: nothing to disarm"
+  },
+  "degraded": {
+    "reason": "same-family (policy: agy reserved for tier-1 diffs)",
+    "lanes": [
+      1,
+      3
+    ],
+    "families": [
+      {
+        "family": "gemini",
+        "state": "policy",
+        "evidence": "the diff is not tier-1 (quorum.agy_tier1_only: none of its paths matches quorum.tier1_paths or the built-in policy paths), and agy is reserved for tier-1 diffs — cop ruling of 2026-09-24"
+      },
+      {
+        "family": "openai",
+        "state": "policy",
+        "evidence": "the diff is not tier-1 (quorum.agy_tier1_only: none of its paths matches quorum.tier1_paths or the built-in policy paths), and agy is reserved for tier-1 diffs — cop ruling of 2026-09-24"
+      }
+    ],
+    "rule": "operator standing rule: if agy quota is ever gone, simply use claude code itself (PMAT-360)"
+  },
+  "cheap_seat": "claude-haiku-4-5",
+  "advisory_lane": {
+    "state": "unavailable",
+    "counts": false,
+    "row": {
+      "NotRun": "Busy"
+    },
+    "verdict": "unavailable",
+    "why": "no host answered inside the budget",
+    "served_by": null,
+    "gpu_proof": null,
+    "apr": null,
+    "apr_binary_sha256": null,
+    "apr_tag": null,
+    "apr_commit": null,
+    "apr_build_why": null,
+    "model": null,
+    "model_sha256": null,
+    "rc": 2,
+    "wall_s": 0,
+    "collected_s": 921,
+    "budget_s": 196,
+    "budget_basis": "ledger: 2 x p95 98 s over 126 gx10-cuda Verdict rows",
+    "brief": {
+      "bytes": 49480,
+      "sent_bytes": 49649,
+      "max_bytes": 196608
+    },
+    "trace": {
+      "input_sha256": "404309efbcf3ebaf2ac704745f7bf1290864f5f0e7b195147706977d4bbc8f40",
+      "raw": "advisory.json"
+    },
+    "attempts": [
+      {
+        "host": "gx10",
+        "ok": false,
+        "wall_s": 0,
+        "error": "busy: executor yielded (unit inactive; last yield: 2026-10-03T00:47:22Z host=gx10-a5b5 event=stopped gpu-priority lock=/tmp/apr-gpu.priority)",
+        "ts": "2026-10-05T16:19:48.349Z",
+        "wall_ms": 337,
+        "request_id": "01a10cdd-3df9-7f0e-afd7-9a38f12f7f2a",
+        "load1": 0.22,
+        "cold": null
+      }
+    ],
+    "ledger": "/home/noah/.local/state/paiml-implement/advisory-ledger.jsonl",
+    "raw": "advisory.json",
+    "agrees_with_counted": null,
+    "counted": "PASS"
+  },
+  "lint": {
+    "ok": true,
+    "output": "receipt complete: kind=artifact lanes=3 author=claude-sonnet-5-5/claude same_family=3/2 degraded=same-family (policy: agy reserved for tier-1 diffs)"
+  }
+}
