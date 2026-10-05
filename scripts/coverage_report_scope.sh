@@ -19,7 +19,7 @@ scope() { # metadata-json, then exclude names
   local meta=$1; shift
   local excl unknown names
   excl=[]; [ $# -eq 0 ] || excl=$(printf "%s\n" "$@" | jq -R . | jq -s .) || return 1
-  unknown=$(jq -r --argjson ex "$excl" '[.packages[].name] as $n | $ex[] | select(. as $e | $n | index($e) | not)' <<<"$meta") || return 1
+  unknown=$(jq -r --argjson ex "$excl" '[.packages[].name] as $n | $ex | .[] | select(. as $e | $n | index($e) | not)' <<<"$meta") || return 1
   if [ -n "$unknown" ]; then
     echo "coverage_report_scope: --exclude names no workspace member: $(tr '\n' ' ' <<<"$unknown")" >&2
     return 1

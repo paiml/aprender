@@ -74,6 +74,7 @@ case " $* " in
       fail)    exit 3 ;;
       nonjson) printf 'error: cannot parse coverage file\n'; exit 0 ;;
       empty)   printf '[]\n'; exit 0 ;;
+      blank)   printf 'pmat: coverage file unreadable\n' >&2; exit 0 ;;
     esac ;;
 esac
 shift  # drop the `query` subcommand
@@ -240,9 +241,10 @@ cov_case "file from another commit" "$COVFILE"     "0000000000000000000000000000
 cov_case "file with no recorded sha" "$COVFILE"    ""                 1 no  "measured on '(none recorded)'"
 cov_case "file from this commit"   "$COVFILE"      "$HEAD_SHA"        0 yes ""
 # The file is this commit's, but the gap query itself is not a measurement: pmat
-# fails on it, or prints no JSON. Churn and fault rows alone must not pass the beat.
+# fails on it, prints no JSON, or exits 0 with an empty stdout (a real pmat failure mode: stderr only). Churn and fault rows alone must not pass the beat.
 GAP_MODE=fail    cov_case "gap query exits non-zero" "$COVFILE" "$HEAD_SHA" 1 yes "coverage gaps not_measured: the coverage-gaps query failed"
 GAP_MODE=nonjson cov_case "gap query prints non-JSON" "$COVFILE" "$HEAD_SHA" 1 yes "coverage gaps not_measured: the coverage-gaps query on"
+GAP_MODE=blank   cov_case "gap query prints nothing" "$COVFILE" "$HEAD_SHA" 1 yes "coverage gaps not_measured: the coverage-gaps query on"
 # A parsed [] is a measured zero: no gaps on this path, and churn + fault carry the manifest.
 GAP_MODE=empty   cov_case "gap query returns []"     "$COVFILE" "$HEAD_SHA" 0 yes ""
 cov_case "file from this commit, again" "$COVFILE" "$HEAD_SHA"        0 yes ""
