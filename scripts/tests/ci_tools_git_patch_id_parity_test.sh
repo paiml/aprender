@@ -144,6 +144,12 @@ hw "non-UTF-8 bytes" 'diff --git a/x b/x\n--- a/x\n+++ b/x\n@@ -1 +1 @@\n-\377\3
 ) || { echo "FAIL: could not build the scratch repo diffs" >&2; exit 1; }
 
 for f in ws wsbin log logrev fp; do
+    # Inside `( ) ||` set -e is off, so a failed git leaves an empty file that both
+    # sides would "agree" on.
+    if [[ ! -s "$tmp/$f.diff" ]]; then
+        echo "FAIL: scratch repo diff $f.diff is empty" >&2
+        exit 1
+    fi
     all_modes "repo:$f" "$tmp/$f.diff"
 done
 
