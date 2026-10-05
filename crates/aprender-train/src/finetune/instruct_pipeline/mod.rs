@@ -27,6 +27,8 @@ mod generate;
 mod training;
 mod wgpu;
 
+#[cfg(test)]
+mod cpu_targets_tests;
 #[cfg(all(test, feature = "cuda"))]
 mod eval_sync_probe;
 #[cfg(all(test, feature = "cuda"))]

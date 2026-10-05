@@ -7,6 +7,7 @@ use crate::Tensor;
 use std::collections::HashMap;
 
 use super::config::TransformerConfig;
+use super::layer_lora::{add_lora, LayerLora};
 
 /// Position-wise Feed-Forward Network
 pub struct FeedForward {
@@ -97,14 +98,29 @@ impl FeedForward {
     /// # Returns
     /// Output tensor (seq_len * hidden_size, flattened)
     pub fn forward(&self, x: &Tensor, seq_len: usize) -> Tensor {
+        self.forward_with_lora(x, seq_len, &LayerLora::default())
+    }
+
+    /// Forward pass with a LoRA adapter on any of gate_proj, up_proj and
+    /// down_proj (R15a C4b; `lora-target-selection-v1`, cpu_forward).
+    ///
+    /// gate_proj and up_proj add their delta before SwiGLU, and down_proj on
+    /// the SwiGLU product, before the residual add.
+    pub(crate) fn forward_with_lora(
+        &self,
+        x: &Tensor,
+        seq_len: usize,
+        lora: &LayerLora<'_>,
+    ) -> Tensor {
         let hidden_size = self.config.hidden_size;
         let intermediate_size = self.config.intermediate_size;
 
-        // Gate projection — HF weights [intermediate, hidden] (ENT-269)
-        let gate = matmul_nt(x, &self.w_gate, seq_len, hidden_size, intermediate_size);
-
-        // Up projection — HF weights [intermediate, hidden] (ENT-269)
-        let up = matmul_nt(x, &self.w_up, seq_len, hidden_size, intermediate_size);
+        // Gate and up projections — HF weights [intermediate, hidden] (ENT-269)
+        let gate_base = matmul_nt(x, &self.w_gate, seq_len, hidden_size, intermediate_size);
+        let gate =
+            add_lora(lora.gate.as_ref(), gate_base, x, seq_len, hidden_size, intermediate_size);
+        let up_base = matmul_nt(x, &self.w_up, seq_len, hidden_size, intermediate_size);
+        let up = add_lora(lora.up.as_ref(), up_base, x, seq_len, hidden_size, intermediate_size);
 
         // SwiGLU: SiLU(gate) * up
         let gate_activated = crate::autograd::swish(&gate);
@@ -112,7 +128,8 @@ impl FeedForward {
         contract_post_swiglu!(hidden.data().as_slice().unwrap_or(&[]));
 
         // Down projection — HF weights [hidden, intermediate] (ENT-269)
-        matmul_nt(&hidden, &self.w_down, seq_len, intermediate_size, hidden_size)
+        let down_base = matmul_nt(&hidden, &self.w_down, seq_len, intermediate_size, hidden_size);
+        add_lora(lora.down.as_ref(), down_base, &hidden, seq_len, intermediate_size, hidden_size)
     }
 
     /// Get all parameters as a vector

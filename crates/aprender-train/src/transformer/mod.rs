@@ -17,6 +17,7 @@ mod encoder;
 mod encoder_block;
 mod feedforward;
 pub mod init;
+mod layer_lora;
 mod model;
 mod norm;
 pub(crate) mod weights;

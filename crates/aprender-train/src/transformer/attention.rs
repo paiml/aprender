@@ -10,6 +10,7 @@ use std::collections::HashMap;
 use std::rc::Rc;
 
 use super::config::{ModelArchitecture, TransformerConfig};
+use super::layer_lora::{add_lora, LayerLora, LoraDelta};
 
 /// Add a bias vector to a projected tensor: output[s] += bias for each sequence position.
 /// Input shape: (seq_len × dim) flattened. Bias shape: (dim).
@@ -641,6 +642,27 @@ impl MultiHeadAttention {
         lora_rank: usize,
         lora_scale: f32,
     ) -> Tensor {
+        let delta = |a, b| LoraDelta { a, b, rank: lora_rank, scale: lora_scale };
+        let lora = LayerLora {
+            q: Some(delta(lora_a_q, lora_b_q)),
+            v: Some(delta(lora_a_v, lora_b_v)),
+            ..LayerLora::default()
+        };
+        self.forward_with_layer_lora(x, seq_len, &lora)
+    }
+
+    /// Forward pass with a LoRA adapter on any of q_proj, k_proj, v_proj and
+    /// o_proj (R15a C4b; `lora-target-selection-v1`, cpu_forward).
+    ///
+    /// Each adapter adds `scale·(x·Aᵀ)·Bᵀ` where its projection's output is
+    /// formed: q_proj and k_proj before the bias, QK-norm and RoPE, v_proj
+    /// before the bias, and o_proj on the heads' concatenation.
+    pub(crate) fn forward_with_layer_lora(
+        &self,
+        x: &Tensor,
+        seq_len: usize,
+        lora: &LayerLora<'_>,
+    ) -> Tensor {
         contract_pre_lora_forward!();
         let hidden_size = self.config.hidden_size;
         let num_heads = self.config.num_attention_heads;
@@ -649,30 +671,15 @@ impl MultiHeadAttention {
         let q_dim = self.config.q_dim();
         let kv_hidden_size = num_kv_heads * head_dim;
 
-        // Q projection with LoRA: Q = x @ W_q + scale * (x @ A_q^T) @ B_q^T
-        //
-        // KAIZEN-011: Use matmul_nt to compute x @ A^T directly on the ORIGINAL
-        // LoRA tensors. Previous impl created transposed copies via Tensor::from_vec
-        // which broke gradient flow — gradients accumulated on ephemeral copies
-        // instead of the actual trainable LoRA parameters.
-        //
-        // LoRA layout: A is (rank, d_in), B is (d_out, rank)
-        // matmul_nt(x, A, seq, d_in, rank) computes x @ A^T = (seq, d_in) @ (d_in, rank) = (seq, rank)
-        // matmul_nt(mid, B, seq, rank, d_out) computes mid @ B^T = (seq, rank) @ (rank, d_out) = (seq, d_out)
+        // Q, K, V projections, each with its adapter if it has one:
+        // P = x @ W_p^T + scale * (x @ A_p^T) @ B_p^T (`add_lora`, KAIZEN-011).
+        // HF weights are [out, in] (ENT-269).
         let q_base = matmul_nt(x, &self.w_q, seq_len, hidden_size, q_dim);
-        let q_mid = crate::autograd::matmul_nt(x, lora_a_q, seq_len, hidden_size, lora_rank);
-        let q_lora = crate::autograd::matmul_nt(&q_mid, lora_b_q, seq_len, lora_rank, q_dim);
-        let q = crate::autograd::add_scaled(&q_base, &q_lora, lora_scale);
-
-        // K projection (no LoRA) — HF weights [out, in] (ENT-269)
-        let k = matmul_nt(x, &self.w_k, seq_len, hidden_size, kv_hidden_size);
-
-        // V projection with LoRA (same pattern as Q)
+        let q = add_lora(lora.q.as_ref(), q_base, x, seq_len, hidden_size, q_dim);
+        let k_base = matmul_nt(x, &self.w_k, seq_len, hidden_size, kv_hidden_size);
+        let k = add_lora(lora.k.as_ref(), k_base, x, seq_len, hidden_size, kv_hidden_size);
         let v_base = matmul_nt(x, &self.w_v, seq_len, hidden_size, kv_hidden_size);
-        let v_mid = crate::autograd::matmul_nt(x, lora_a_v, seq_len, hidden_size, lora_rank);
-        let v_lora =
-            crate::autograd::matmul_nt(&v_mid, lora_b_v, seq_len, lora_rank, kv_hidden_size);
-        let v = crate::autograd::add_scaled(&v_base, &v_lora, lora_scale);
+        let v = add_lora(lora.v.as_ref(), v_base, x, seq_len, hidden_size, kv_hidden_size);
 
         // FALSIFY-CPU-LORA-QKV-BIAS-001: apply the SAME Q/K/V projection
         // biases forward() applies (Qwen2-family use_bias=true). Dropping
@@ -835,8 +842,10 @@ impl MultiHeadAttention {
             concat_tensor.set_backward_op(backward_op);
         }
 
-        // Output projection — w_o is [hidden_size, q_dim] in HF (ENT-269)
-        let result = matmul_nt(&concat_tensor, &self.w_o, seq_len, q_dim, hidden_size);
+        // Output projection — w_o is [hidden_size, q_dim] in HF (ENT-269),
+        // with the o_proj adapter on the same input, the heads' concatenation
+        let o_base = matmul_nt(&concat_tensor, &self.w_o, seq_len, q_dim, hidden_size);
+        let result = add_lora(lora.o.as_ref(), o_base, &concat_tensor, seq_len, q_dim, hidden_size);
         contract_post_lora_forward!(result);
         result
     }

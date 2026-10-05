@@ -75,7 +75,7 @@ impl InstructPipeline {
         let logits = if self.lora_layers.is_empty() {
             self.model.forward(&full_ids)
         } else {
-            self.model.forward_with_lora(&full_ids, &self.lora_layers)
+            self.model.forward_with_targets(&full_ids, &self.lora_layers, &self.config.lora_targets)
         };
         let logits_data = logits.data().as_slice().expect("contiguous logits").to_vec();
 
@@ -561,7 +561,11 @@ impl InstructPipeline {
                 let logits = if self.lora_layers.is_empty() {
                     self.model.forward(&full_ids)
                 } else {
-                    self.model.forward_with_lora(&full_ids, &self.lora_layers)
+                    self.model.forward_with_targets(
+                        &full_ids,
+                        &self.lora_layers,
+                        &self.config.lora_targets,
+                    )
                 };
                 logits.data().as_slice().expect("contiguous logits").to_vec()
             };

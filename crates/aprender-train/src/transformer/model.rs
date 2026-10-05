@@ -12,6 +12,7 @@ use std::path::Path;
 use super::block::TransformerBlock;
 use super::config::TransformerConfig;
 use super::embedding::Embedding;
+use super::layer_lora::LayerLora;
 use super::norm::RMSNorm;
 use super::weights::{load_safetensors_weights, validate_weights, Architecture};
 
@@ -497,6 +498,68 @@ impl Transformer {
         let hidden_size = self.config.hidden_size;
 
         let hidden = self.forward_hidden_with_lora(token_ids, lora_layers);
+        let lm_weight = self.lm_head.as_ref().unwrap_or(&self.embed_tokens.weight);
+        let result = matmul_nt(&hidden, lm_weight, seq_len, hidden_size, self.config.vocab_size);
+        contract_post_embedding_lookup!(result.data().as_slice().unwrap_or(&[]));
+        result
+    }
+
+    /// Forward pass returning hidden states, with the LoRA adapters of every
+    /// selected target (R15a C4b; `lora-target-selection-v1`, cpu_forward).
+    ///
+    /// `lora_layers` is laid out by `targets`: layer l's adapter for target t
+    /// is slot `|T|·l + pos_T(t)`. Each adapter adds its delta to its own
+    /// projection (see `MultiHeadAttention::forward_with_layer_lora` and
+    /// `FeedForward::forward_with_lora`). A layer whose slots run past
+    /// `lora_layers` runs without LoRA. Under `q_proj`, `v_proj` this is
+    /// `forward_hidden_with_lora`.
+    pub(crate) fn forward_hidden_with_targets(
+        &self,
+        token_ids: &[u32],
+        lora_layers: &[crate::lora::LoRALayer],
+        targets: &crate::lora::LoraTargets,
+    ) -> Tensor {
+        contract_pre_embedding_lookup!(token_ids);
+        let seq_len = token_ids.len();
+        let hidden_size = self.config.hidden_size;
+
+        let mut hidden = self.embed_tokens.forward(token_ids);
+
+        for (layer_idx, layer) in self.layers.iter().enumerate() {
+            let lora = LayerLora::from_slots(lora_layers, targets, layer_idx);
+            let norm1 = layer.input_norm.forward_batched(&hidden, seq_len, hidden_size);
+            let attn_out = match &lora {
+                Some(l) => layer.self_attn.forward_with_layer_lora(&norm1, seq_len, l),
+                None => layer.self_attn.forward(&norm1, seq_len),
+            };
+
+            let residual = crate::autograd::add(&hidden, &attn_out);
+            let norm2 = layer.post_attn_norm.forward_batched(&residual, seq_len, hidden_size);
+            let ffn_out = match &lora {
+                Some(l) => layer.ffn.forward_with_lora(&norm2, seq_len, l),
+                None => layer.ffn.forward(&norm2, seq_len),
+            };
+            hidden = crate::autograd::add(&residual, &ffn_out);
+        }
+
+        let result = self.norm.forward_batched(&hidden, seq_len, hidden_size);
+        contract_post_embedding_lookup!(result.data().as_slice().unwrap_or(&[]));
+        result
+    }
+
+    /// Full logits (seq_len * vocab_size) with the LoRA adapters of every
+    /// selected target; see `forward_hidden_with_targets`.
+    pub(crate) fn forward_with_targets(
+        &self,
+        token_ids: &[u32],
+        lora_layers: &[crate::lora::LoRALayer],
+        targets: &crate::lora::LoraTargets,
+    ) -> Tensor {
+        contract_pre_embedding_lookup!(token_ids);
+        let seq_len = token_ids.len();
+        let hidden_size = self.config.hidden_size;
+
+        let hidden = self.forward_hidden_with_targets(token_ids, lora_layers, targets);
         let lm_weight = self.lm_head.as_ref().unwrap_or(&self.embed_tokens.weight);
         let result = matmul_nt(&hidden, lm_weight, seq_len, hidden_size, self.config.vocab_size);
         contract_post_embedding_lookup!(result.data().as_slice().unwrap_or(&[]));

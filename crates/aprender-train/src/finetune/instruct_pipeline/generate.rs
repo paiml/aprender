@@ -37,7 +37,11 @@ impl InstructPipeline {
             }
 
             // Forward pass with LoRA
-            let hidden = self.model.forward_hidden_with_lora(&token_ids, &self.lora_layers);
+            let hidden = self.model.forward_hidden_with_targets(
+                &token_ids,
+                &self.lora_layers,
+                &self.config.lora_targets,
+            );
             let seq_len = token_ids.len();
             let hidden_size = self.model.config().hidden_size;
 
