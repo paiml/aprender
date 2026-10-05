@@ -1,0 +1,28 @@
+diff --git a/crates/aprender-core/src/format/converter/qwen35_gguf_tests.rs b/crates/aprender-core/src/format/converter/qwen35_gguf_tests.rs
+index 0e71c9ecee..121622e96e 100644
+--- a/crates/aprender-core/src/format/converter/qwen35_gguf_tests.rs
++++ b/crates/aprender-core/src/format/converter/qwen35_gguf_tests.rs
+@@ -160,6 +160,23 @@ fn reorder_v_heads_is_key_major_to_value_major() {
+     assert_eq!(reorder_v_heads(&src, 4, 4, 2, 1), src);
+ }
+ 
++#[test]
++fn reorder_v_heads_is_not_its_own_inverse() {
++    // nk=3, nv=6 (nv/nk=2 != nk): the permutation differs from its inverse,
++    // so a swap of nk and nv/nk returns [0, 3, 1, 4, 2, 5] and fails here.
++    let src: Vec<f32> = (0..6).map(|v| v as f32).collect();
++    assert_eq!(
++        reorder_v_heads(&src, 3, 6, 1, 1),
++        vec![0., 2., 4., 1., 3., 5.]
++    );
++    // hd=2 at the same sizes keeps each head's pair together
++    let src: Vec<f32> = (0..12).map(|v| v as f32).collect();
++    assert_eq!(
++        reorder_v_heads(&src, 3, 6, 2, 1),
++        vec![0., 1., 4., 5., 8., 9., 2., 3., 6., 7., 10., 11.]
++    );
++}
++
+ const D: LinearAttnDims = LinearAttnDims {
+     nk: 2,
+     nv: 4,
