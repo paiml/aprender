@@ -201,3 +201,9 @@ qa_gate:
   - concurrent_isolation
   pass_criteria: All 3 falsification tests pass
   falsification: Remove SIGTERM handler to cause hanging on shutdown
+
+# #4709 CENSUS-RATCHET: the free function contracts/*/binding.yaml binds this contract to,
+# which `pv extract` resolves (sym:resolved true in contracts.nt).
+entity:
+  type: code
+  ref: apr_cli::commands::serve::run

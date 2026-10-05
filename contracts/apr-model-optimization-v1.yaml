@@ -438,3 +438,9 @@ toyota_way_principles:
     combined loss) logged per epoch for trend analysis. Pruning sensitivity
     analysis cached for incremental re-pruning. Checkpoint metadata enables
     reproducible experiment comparison across runs.
+
+# #4709 CENSUS-RATCHET: the free function contracts/*/binding.yaml binds this contract to,
+# which `pv extract` resolves (sym:resolved true in contracts.nt).
+entity:
+  type: code
+  ref: apr_cli::commands::distill::run

@@ -388,3 +388,9 @@ qa_gate:
   - logit_finiteness
   pass_criteria: All 12 falsification tests pass, including the two in-band negative controls (FALSIFY-MH-002, FALSIFY-MH-006)
   falsification: Substitute lambda*W for 2*lambda*W in the gradient, or 1/(C*n) for 1/(2*C*n) in the relation
+
+# #4709 CENSUS-RATCHET: the free function contracts/*/binding.yaml binds this contract to,
+# which `pv extract` resolves (sym:resolved true in contracts.nt).
+entity:
+  type: code
+  ref: aprender::classification::multinomial::argmax_lowest_index

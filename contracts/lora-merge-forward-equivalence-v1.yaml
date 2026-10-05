@@ -178,3 +178,9 @@ qa_gate:
   falsification: >
     Flip the B@A order to A@B in merge() → FALSIFY-001 must fail and
     matvec_matmul_assoc must no longer typecheck against the merge identity.
+
+# #4709 CENSUS-RATCHET: the free function contracts/*/binding.yaml binds this contract to,
+# which `pv extract` resolves (sym:resolved true in contracts.nt).
+entity:
+  type: code
+  ref: entrenar::autograd::matmul

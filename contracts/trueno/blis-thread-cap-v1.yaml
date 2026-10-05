@@ -129,3 +129,9 @@ qa_gate:
   checks:
   - validation
   - falsification
+
+# #4709 CENSUS-RATCHET: the free function contracts/*/binding.yaml binds this contract to,
+# which `pv extract` resolves (sym:resolved true in contracts.nt).
+entity:
+  type: code
+  ref: trueno::blis::parallel::gemm_blis_parallel

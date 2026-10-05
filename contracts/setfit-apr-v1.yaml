@@ -1318,3 +1318,9 @@ qa_gate:
     go red by naming the new path, and it must go red in aprender-train rather than on the first
     production artifact. Separately, replace the backend identity with a trueno capability detection:
     FALSIFY-APR-017's source scan must go red.
+
+# #4709 CENSUS-RATCHET: the free function contracts/*/binding.yaml binds this contract to,
+# which `pv extract` resolves (sym:resolved true in contracts.nt).
+entity:
+  type: code
+  ref: aprender::setfit::artifact::canonical_name_for_hf

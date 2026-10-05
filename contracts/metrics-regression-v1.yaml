@@ -221,3 +221,9 @@ qa_gate:
   - mse_symmetry
   pass_criteria: All 7 falsification tests pass
   falsification: Swap numerator/denominator in R² formula
+
+# #4709 CENSUS-RATCHET: the free function contracts/*/binding.yaml binds this contract to,
+# which `pv extract` resolves (sym:resolved true in contracts.nt).
+entity:
+  type: code
+  ref: aprender::metrics::mae

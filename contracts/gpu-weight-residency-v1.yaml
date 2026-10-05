@@ -137,3 +137,9 @@ qa_gate:
   - output_parity
   pass_criteria: All 5 falsification tests pass + throughput ≥ 180 tok/s
   falsification: Force weights to host memory — measure throughput delta
+
+# #4709 CENSUS-RATCHET: the free function contracts/*/binding.yaml binds this contract to,
+# which `pv extract` resolves (sym:resolved true in contracts.nt).
+entity:
+  type: code
+  ref: realizar::infer::batch_wgpu::try_init_wgpu_batch

@@ -259,3 +259,9 @@ qa_gate:
   - simd_equivalence
   pass_criteria: All 7 falsification tests pass + Kani harnesses verify
   falsification: Replace sigmoid with constant 0.5
+
+# #4709 CENSUS-RATCHET: the free function contracts/*/binding.yaml binds this contract to,
+# which `pv extract` resolves (sym:resolved true in contracts.nt).
+entity:
+  type: code
+  ref: aprender::nn::functional::sigmoid

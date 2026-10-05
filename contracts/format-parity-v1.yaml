@@ -147,3 +147,9 @@ qa_gate:
   - roundtrip
   pass_criteria: All 5 falsification tests pass
   falsification: Swap shape elements in wrong order
+
+# #4709 CENSUS-RATCHET: the free function contracts/*/binding.yaml binds this contract to,
+# which `pv extract` resolves (sym:resolved true in contracts.nt).
+entity:
+  type: code
+  ref: realizar::contract_gate::transpose_f32

@@ -754,3 +754,9 @@ toyota_way_principles:
     the graph with SSM nodes. The architecture is additive: new node types
     compose with existing validation. Each new family adds its own falsification
     tests to the test suite.
+
+# #4709 CENSUS-RATCHET: the free function contracts/*/binding.yaml binds this contract to,
+# which `pv extract` resolves (sym:resolved true in contracts.nt).
+entity:
+  type: code
+  ref: aprender::nn::transformer::scaled_dot_product_attention

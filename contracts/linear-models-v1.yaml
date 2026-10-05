@@ -163,3 +163,9 @@ qa_gate:
   - logistic_probs_sum_to_one
   pass_criteria: All 5 falsification tests pass + Kani harnesses verify
   falsification: Omit intercept or use wrong matrix inverse
+
+# #4709 CENSUS-RATCHET: the free function contracts/*/binding.yaml binds this contract to,
+# which `pv extract` resolves (sym:resolved true in contracts.nt).
+entity:
+  type: code
+  ref: batuta::bug_hunter::model_parity::analyze_model_parity_gaps

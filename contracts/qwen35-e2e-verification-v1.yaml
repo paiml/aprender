@@ -261,3 +261,9 @@ qa_gate:
   - contract_composition
   pass_criteria: All 8 falsification tests pass; FALSIFY-QE2E-008 is read from the per-host ladder receipts + 100% obligation coverage
   falsification: Remove one layer from parameter count to break total
+
+# #4709 CENSUS-RATCHET: the free function contracts/*/binding.yaml binds this contract to,
+# which `pv extract` resolves (sym:resolved true in contracts.nt).
+entity:
+  type: code
+  ref: aprender::format::model_arithmetic::contract_composition

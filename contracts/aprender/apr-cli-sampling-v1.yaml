@@ -348,3 +348,9 @@ verification_summary:
   l4_lean_proved: 3
   l4_sorry_count: 0
   l4_not_applicable: 4
+
+# #4709 CENSUS-RATCHET: the free function contracts/*/binding.yaml binds this contract to,
+# which `pv extract` resolves (sym:resolved true in contracts.nt).
+entity:
+  type: code
+  ref: apr_cli::commands::eval::inference::sample_token

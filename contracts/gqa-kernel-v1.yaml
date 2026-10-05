@@ -267,3 +267,9 @@ qa_gate:
   - simd_equivalence
   pass_criteria: All 9 falsification tests pass + Kani harnesses verify
   falsification: Skip KV head broadcasting, use wrong head index
+
+# #4709 CENSUS-RATCHET: the free function contracts/*/binding.yaml binds this contract to,
+# which `pv extract` resolves (sym:resolved true in contracts.nt).
+entity:
+  type: code
+  ref: realizar::apr::helpers::simple_attention

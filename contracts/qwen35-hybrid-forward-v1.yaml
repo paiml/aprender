@@ -245,3 +245,9 @@ qa_gate:
   - gradient_flow
   pass_criteria: All 9 falsification tests pass; FALSIFY-QHF-008 and FALSIFY-QHF-009 are read from the per-host ladder receipts
   falsification: Remove RMSNorm before attention to trigger gradient explosion
+
+# #4709 CENSUS-RATCHET: the free function contracts/*/binding.yaml binds this contract to,
+# which `pv extract` resolves (sym:resolved true in contracts.nt).
+entity:
+  type: code
+  ref: realizar::quantize::quantize_rmsnorm_into::fused_swiglu_simd

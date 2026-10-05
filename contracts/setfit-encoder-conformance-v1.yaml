@@ -876,3 +876,9 @@ qa_gate:
     Revert any forward intermediate to a Tensor::new rebuild — the affected component's
     aggregate gradient norm must drop to exactly zero and FALSIFY-SETFIT-ENC-008 must
     turn RED.
+
+# #4709 CENSUS-RATCHET: the free function contracts/*/binding.yaml binds this contract to,
+# which `pv extract` resolves (sym:resolved true in contracts.nt).
+entity:
+  type: code
+  ref: aprender::autograd::ops::embedding::embedding_gather

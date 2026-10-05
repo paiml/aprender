@@ -218,3 +218,9 @@ qa_gate:
   - repeat_penalty_demotes_repeated_token
   pass_criteria: All falsification tests pass (incl. FALSIFY-SA-008 repeat_penalty)
   falsification: Set K=0 to observe empty filtered set
+
+# #4709 CENSUS-RATCHET: the free function contracts/*/binding.yaml binds this contract to,
+# which `pv extract` resolves (sym:resolved true in contracts.nt).
+entity:
+  type: code
+  ref: realizar::gpu::scheduler::ops::sample_topk

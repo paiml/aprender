@@ -254,3 +254,9 @@ simd_dispatch:
     scalar: gdn_recurrence_scalar
     avx2: gdn_recurrence_avx2
     ptx: gated_delta_net_ptx
+
+# #4709 CENSUS-RATCHET: the free function contracts/*/binding.yaml binds this contract to,
+# which `pv extract` resolves (sym:resolved true in contracts.nt).
+entity:
+  type: code
+  ref: gated_rmsnorm_oxide::kernels::gated_rmsnorm

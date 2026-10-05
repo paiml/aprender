@@ -221,3 +221,9 @@ qa_gate:
   - micro_average_identity
   pass_criteria: All 8 falsification tests pass
   falsification: Swap TP and FP in precision formula
+
+# #4709 CENSUS-RATCHET: the free function contracts/*/binding.yaml binds this contract to,
+# which `pv extract` resolves (sym:resolved true in contracts.nt).
+entity:
+  type: code
+  ref: aprender::metrics::classification::accuracy

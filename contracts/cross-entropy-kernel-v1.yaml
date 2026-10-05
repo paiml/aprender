@@ -392,3 +392,9 @@ qa_gate:
   - simd_equivalence
   pass_criteria: All 16 falsification tests pass + Kani harnesses verify
   falsification: Remove max subtraction from log-sum-exp
+
+# #4709 CENSUS-RATCHET: the free function contracts/*/binding.yaml binds this contract to,
+# which `pv extract` resolves (sym:resolved true in contracts.nt).
+entity:
+  type: code
+  ref: aprender::nn::functional::log_softmax

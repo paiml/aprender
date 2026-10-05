@@ -1326,3 +1326,9 @@ qa_gate:
     CanonicalPair::new so (x, x) becomes constructible — FALSIFY-CPP-019 must turn RED.
     Independently, silently clamp an explicit over-cap budget instead of returning
     BudgetExceedsHardCap — FALSIFY-CPP-009 must turn RED.
+
+# #4709 CENSUS-RATCHET: the free function contracts/*/binding.yaml binds this contract to,
+# which `pv extract` resolves (sym:resolved true in contracts.nt).
+entity:
+  type: code
+  ref: aprender_contrastive_data::dedup::coalesced_exclusions

@@ -229,3 +229,9 @@ verification_summary:
   # left UNCOVERED (analytic-unproven), NOT marked N/A. Because
   # l4_lean_proved(6) + l4_not_applicable(0) < total(7), the contract honestly
   # remains L3 — a truthful L3, not a manufactured L4.
+
+# #4709 CENSUS-RATCHET: the free function contracts/*/binding.yaml binds this contract to,
+# which `pv extract` resolves (sym:resolved true in contracts.nt).
+entity:
+  type: code
+  ref: aprender::nn::functional::softmax

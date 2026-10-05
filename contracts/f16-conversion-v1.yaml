@@ -147,3 +147,9 @@ verification_summary:
     (bit-exact parity vs the `half` crate over all 2^32 inputs including subnormals,
     overflow-to-Inf and NaN payloads — IEEE runtime rounding, not an analytic
     identity; FALSIFY-F16-005). 3 proved + 2 N/A = 5 total, proved > 0 ⇒ L4.
+
+# #4709 CENSUS-RATCHET: the free function contracts/*/binding.yaml binds this contract to,
+# which `pv extract` resolves (sym:resolved true in contracts.nt).
+entity:
+  type: code
+  ref: aprender::format::gguf::dequant::f16_to_f32

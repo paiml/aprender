@@ -141,3 +141,9 @@ qa_gate:
   - bpe_roundtrip
   pass_criteria: All 5 falsification tests pass
   falsification: Pass element count just below threshold to test boundary
+
+# #4709 CENSUS-RATCHET: the free function contracts/*/binding.yaml binds this contract to,
+# which `pv extract` resolves (sym:resolved true in contracts.nt).
+entity:
+  type: code
+  ref: realizar::inference_trace::mod_get_top_compute::is_garbage_output

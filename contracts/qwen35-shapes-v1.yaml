@@ -183,3 +183,9 @@ qa_gate:
   - rope_frequencies
   pass_criteria: All 7 falsification tests pass
   falsification: Change n_kv from 4 to 3 to break GQA divisibility
+
+# #4709 CENSUS-RATCHET: the free function contracts/*/binding.yaml binds this contract to,
+# which `pv extract` resolves (sym:resolved true in contracts.nt).
+entity:
+  type: code
+  ref: realizar::gpu::simd_ops::rope_frequency_table

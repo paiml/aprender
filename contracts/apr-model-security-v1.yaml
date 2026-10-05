@@ -295,3 +295,9 @@ toyota_way_principles:
     Falsification tests use real byte-level tampering: flipping every byte
     position in ciphertext, modifying tensor data after manifest generation,
     and verifying key derivation with distinct salts. No mocks — real crypto.
+
+# #4709 CENSUS-RATCHET: the free function contracts/*/binding.yaml binds this contract to,
+# which `pv extract` resolves (sym:resolved true in contracts.nt).
+entity:
+  type: code
+  ref: apr_cli::commands::publish::execute

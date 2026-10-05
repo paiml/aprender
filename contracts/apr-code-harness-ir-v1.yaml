@@ -219,3 +219,9 @@ binding_registry: contracts/binding.yaml
 non_goals:
   - 'NOT a claim the wire proxies are shipped — apr-claude-proxy-v1 / apr-gemini-proxy-v1 are DRAFT. This contract proves the TRANSLATION core they will use; it is independently ENFORCED because its tests run today.'
   - 'Cross-harness equivalence is on the SEMANTIC projection (ids stripped) and the shared core (text + tool call name/args) — the content the model acts on. Anthropic-only tool_result names / Gemini-absent ids are conversation-layer pairing metadata, out of scope here (honest asymmetry, documented in the module).'
+
+# #4709 CENSUS-RATCHET: the free function contracts/*/binding.yaml binds this contract to,
+# which `pv extract` resolves (sym:resolved true in contracts.nt).
+entity:
+  type: code
+  ref: realizar::harness_ir::from_anthropic

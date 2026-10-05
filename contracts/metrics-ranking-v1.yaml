@@ -146,3 +146,9 @@ qa_gate:
   - ndcg_bounded
   pass_criteria: All 4 falsification tests pass + Kani harnesses verify
   falsification: NDCG exceeds 1.0 due to IDCG computation using wrong sort order
+
+# #4709 CENSUS-RATCHET: the free function contracts/*/binding.yaml binds this contract to,
+# which `pv extract` resolves (sym:resolved true in contracts.nt).
+entity:
+  type: code
+  ref: aprender::metrics::ranking::hit_at_k

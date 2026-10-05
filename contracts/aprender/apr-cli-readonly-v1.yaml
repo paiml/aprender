@@ -189,3 +189,9 @@ qa_gate:
   - exit_code_on_error
   pass_criteria: All 3 falsification tests pass
   falsification: Write a log file from check command to break no_side_effects
+
+# #4709 CENSUS-RATCHET: the free function contracts/*/binding.yaml binds this contract to,
+# which `pv extract` resolves (sym:resolved true in contracts.nt).
+entity:
+  type: code
+  ref: apr_cli::dispatch_inspection_commands

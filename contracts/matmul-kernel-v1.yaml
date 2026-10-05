@@ -179,3 +179,9 @@ simd_dispatch:
     scalar: matmul_scalar
     avx2: matmul_avx2
     ptx: matmul_ptx
+
+# #4709 CENSUS-RATCHET: the free function contracts/*/binding.yaml binds this contract to,
+# which `pv extract` resolves (sym:resolved true in contracts.nt).
+entity:
+  type: code
+  ref: realizar::quantize::fused_k::fused_q4k_dot

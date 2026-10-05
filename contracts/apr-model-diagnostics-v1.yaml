@@ -397,3 +397,9 @@ toyota_way_principles:
     Falsification tests use real tensor data with injected defects: NaN
     injection into specific layers, oversized models against small GPUs,
     randomized tensor names for oracle confusion. Not mock objects.
+
+# #4709 CENSUS-RATCHET: the free function contracts/*/binding.yaml binds this contract to,
+# which `pv extract` resolves (sym:resolved true in contracts.nt).
+entity:
+  type: code
+  ref: apr_cli::commands::hex::run

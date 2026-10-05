@@ -185,3 +185,9 @@ qa_gate:
   - bsum_independence
   pass_criteria: All 7 falsification tests pass
   falsification: Change Q4K block size to 143 to break element count
+
+# #4709 CENSUS-RATCHET: the free function contracts/*/binding.yaml binds this contract to,
+# which `pv extract` resolves (sym:resolved true in contracts.nt).
+entity:
+  type: code
+  ref: realizar::quantize::bsum_precompute::precompute_q8k_bsums

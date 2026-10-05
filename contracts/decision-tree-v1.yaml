@@ -230,3 +230,9 @@ qa_gate:
   - split_search_subquadratic
   pass_criteria: All 9 falsification tests pass + Kani harnesses verify
   falsification: Use entropy instead of Gini or omit class count normalization
+
+# #4709 CENSUS-RATCHET: the free function contracts/*/binding.yaml binds this contract to,
+# which `pv extract` resolves (sym:resolved true in contracts.nt).
+entity:
+  type: code
+  ref: aprender::tree::helpers::compute_mse
