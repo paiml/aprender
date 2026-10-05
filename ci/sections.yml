@@ -1403,6 +1403,14 @@ jobs:
         run: bash scripts/bump-version.sh --self-test
       - name: Every workspace is at a consistent version
         run: bash scripts/bump-version.sh --check
+      # Every cargo-mutants container is memory-capped (C137). The guard reads
+      # only workflow and section text and invokes no build tool, so it runs
+      # here, on every PR, and not as an unisolated step inside the mutants job,
+      # which `make guards-local` cannot reach.
+      - name: Every mutation container is memory-capped (C137)
+        run: setsid --wait bash scripts/check_mutants_memory_cap.sh
+      - name: memory-cap guard can still go RED (C137)
+        run: setsid --wait bash scripts/check_mutants_memory_cap.sh --self-test
       - name: Every DAG row marked complete has a receipt whose marker says so (C0-7)
         run: setsid --wait bash scripts/check_receipt_complete.sh --dag docs/specifications/pp-066-dag.yaml
       # APR-PERF-GATE-001's PRIMARY gate — Arms A/B1/B2/C/D/E and
@@ -3907,8 +3915,6 @@ jobs:
             sleep "$delay"
             delay=$((delay + 6))
           done
-      - name: Every mutation container is memory-capped (C137)
-        run: bash scripts/check_mutants_memory_cap.sh
       - name: Install cargo-mutants
         if: steps.prdiff.outputs.has_rs == 'true'
         run: |
