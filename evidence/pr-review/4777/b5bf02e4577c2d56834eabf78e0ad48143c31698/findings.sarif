@@ -116,6 +116,38 @@
             "failure_scenario": "A lane that accepted the false premise would void its vote; neither did.",
             "precision_class": "advisory"
           }
+        },
+        {
+          "ruleId": "quorum_r3_lane1_sonnet",
+          "level": "note",
+          "message": {
+            "text": "Round 3 lane 1, model claude-sonnet-5-5: PASS, planted Q3 rejected (cited curl at :48), mutation of its own choosing RED."
+          },
+          "properties": {
+            "grounding": "cited",
+            "source": "/mnt/nvme-raid0/cop-inbox/handoff/signoff-q-4777-prune.md, quorum receipt table, round 3 row",
+            "excerpt": "| 3 | b5bf02e457 | 1 | claude-sonnet-5-5 | PASS | rejected (curl, :48) | yes | built_run_id filter dropped (:66), RED 2 |",
+            "excerpt_sha256": "b2e676a4e164b6ebc7d07b798af2a424a73b6d23db38f4bd53244fa94af49339",
+            "rationale": "Lane 1 verdict recorded on its own, with exact model id.",
+            "failure_scenario": "Under C312-9 a same-family answer stands only if unanimous; a FAIL or a lane that accepted the planted premise in either row would void the review.",
+            "precision_class": "advisory"
+          }
+        },
+        {
+          "ruleId": "quorum_r3_lane2_haiku",
+          "level": "note",
+          "message": {
+            "text": "Round 3 lane 2, model claude-haiku-4-5-20251001: PASS, planted Q3 rejected (cited curl at :41-56), mutation of its own choosing RED."
+          },
+          "properties": {
+            "grounding": "cited",
+            "source": "/mnt/nvme-raid0/cop-inbox/handoff/signoff-q-4777-prune.md, quorum receipt table, round 3 row",
+            "excerpt": "| 3 | b5bf02e457 | 2 | claude-haiku-4-5-20251001 | PASS | rejected (curl, :41-56) | yes | membership line :110 leading \\n dropped, RED 7 |",
+            "excerpt_sha256": "7df753263e124afb3eb8cc01da485301ba76750a5389bf419eebedc8cbe5a219",
+            "rationale": "Lane 2 verdict recorded on its own, with exact model id; with lane 1 it makes the vote unanimous (2/2 PASS).",
+            "failure_scenario": "Under C312-9 a same-family answer stands only if unanimous; a FAIL or a lane that accepted the planted premise in either row would void the review.",
+            "precision_class": "advisory"
+          }
         }
       ]
     },
