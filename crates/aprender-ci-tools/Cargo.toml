@@ -15,6 +15,7 @@ clap = { workspace = true }
 regex = { workspace = true }
 serde = { workspace = true }
 serde_json = { workspace = true }
+sha1 = { workspace = true }
 toml = { workspace = true }
 
 [build-dependencies]

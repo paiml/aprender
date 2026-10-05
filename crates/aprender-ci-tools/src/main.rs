@@ -1,7 +1,7 @@
 //! `aprender-ci-tools`: one binary, one subcommand per ported Python helper.
 
 use aprender_ci_tools::{
-    coverage_report_scope, dag_status, package_include_diff, publishable_crates,
+    coverage_report_scope, dag_status, git_patch_id, package_include_diff, publishable_crates,
     tarball_build_errors, tarball_shrink_report, tarball_workspace,
 };
 use clap::{ArgGroup, Parser, Subcommand};
@@ -78,6 +78,13 @@ enum Cmd {
         #[arg(long, value_name = "DIR")]
         root: String,
     },
+    /// `<patch-id> <commit-oid>` per patch in the diff on stdin, byte-exact with
+    /// `git patch-id` (was scripts/lib/git_patch_id.py). Exit 2 on an unknown mode.
+    GitPatchId {
+        /// --stable, --verbatim or --unstable (the default), as git spells them.
+        #[arg(allow_hyphen_values = true, value_name = "MODE")]
+        mode: Option<String>,
+    },
 }
 
 fn cargo_metadata() -> Result<String, String> {
@@ -109,6 +116,20 @@ fn read(path: &PathBuf) -> Result<Vec<u8>, String> {
 /// The output, or a refusal.
 fn run(cmd: Cmd) -> Result<String, Refusal> {
     match cmd {
+        Cmd::GitPatchId { mode } => {
+            let mode = git_patch_id::Mode::parse(mode.as_deref()).ok_or_else(|| {
+                (
+                    String::new(),
+                    2,
+                    "usage: git_patch_id.py --stable|--verbatim|--unstable".to_owned(),
+                )
+            })?;
+            let mut diff = Vec::new();
+            std::io::stdin()
+                .read_to_end(&mut diff)
+                .map_err(|e| nothing_printed(format!("stdin: {e}")))?;
+            Ok(git_patch_id::run(&diff, mode))
+        }
         Cmd::PublishableCrates => {
             let mut meta = String::new();
             std::io::stdin()
