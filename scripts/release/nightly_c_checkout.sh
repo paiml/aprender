@@ -28,10 +28,11 @@ LIB="$HERE/../lib/nightly_pick.sh"
 
 caller_error() { printf 'nightly_c_checkout: caller error: %s\n' "$1" >&2; exit 3; }
 
-to_epoch() { # ISO8601|EPOCH -> epoch
+to_epoch() { # YYYY-MM-DDTHH:MM:SSZ|EPOCH -> epoch. The ISO form is the one workflow_run.created_at takes, read by the
+    # lib in integer arithmetic (date -d is GNU-only and the darwin runner's BSD date refuses it)
     case "$1" in
         '') return 3 ;;
-        *[!0-9]*) date -u -d "$1" +%s 2>/dev/null || return 3 ;;
+        *[!0-9]*) np_epoch "$1" || return 3 ;;
         *) printf '%s\n' "$1" ;;
     esac
 }
@@ -155,6 +156,10 @@ self_test() {
     row missing_conclusion_is_a_caller_error 3 "--pick-conclusion" "" -- bash "$SCRIPT_PATH" checkout --repo "$W" --at "$at"
     row missing_at_is_a_caller_error 3 "--at" "" -- bash "$SCRIPT_PATH" checkout --repo "$W"
     row bad_at_is_a_caller_error 3 "not a time" "" -- bash "$SCRIPT_PATH" checkout --repo "$W" --at yesterday-ish --pick-conclusion success
+    # --at is read in integer arithmetic (BSD date has no -d): only created_at's form, and only a day the calendar has
+    row at_on_a_day_the_calendar_lacks_is_a_caller_error 3 "not a time" "NIGHTLY C=" -- bash "$SCRIPT_PATH" checkout --repo "$W" --at 2026-02-30T01:00:00Z --pick-conclusion success
+    row at_hour_24_is_a_caller_error 3 "not a time" "NIGHTLY C=" -- bash "$SCRIPT_PATH" checkout --repo "$W" --at 2026-10-04T24:00:00Z --pick-conclusion success
+    row at_without_its_zone_is_a_caller_error 3 "not a time" "NIGHTLY C=" -- bash "$SCRIPT_PATH" checkout --repo "$W" --at "2026-10-04 20:31:07" --pick-conclusion success
     row unknown_command_is_a_caller_error 3 "caller error" "" -- bash "$SCRIPT_PATH" measure
     rm -rf -- "${FX:?}"
     printf '%s %s/%s case rows green\n' "$([ "$FAILED" -eq 0 ] && echo SELF-TEST-GREEN || echo SELF-TEST-RED)" "$((CASES - FAILED))" "$CASES"
@@ -171,7 +176,7 @@ m04_no_pick_is_ok	s/    c="\$(np_resolve "\$repo" "\$remote" "\$night")" || retu
 m05_night_from_the_clock	s/    night="\$(np_night "\$epoch")" || return 3/    night="$(np_night)" || return 3/
 m06_fetches_main	s/"+refs\/heads\/nightly\/\$night:refs\/remotes\/\$remote\/nightly\/\$night"/main/
 m07_switch_failure_ignored	s/|| { printf .NC RED: cannot switch/|| true || { printf '"'"'NC RED: cannot switch/
-m08_bad_at_accepted	s/date -u -d "\$1" +%s 2>\/dev\/null || return 3/date -u +%s/
+m08_bad_at_accepted	s/np_epoch "\$1" || return 3/date -u +%s/
 m09_env_before_verify	/^    np_verify "\$repo"/{h;d};/^    printf .NIGHTLY C=%s night=%s/{x;G}
 m10_pick_conclusion_ignored	s/^    \[ "\$4" = success \] || {.*$/    true/'
 mutants() {

@@ -10,8 +10,8 @@
 # one pick instead: producers start on the pick (workflow_run or dispatch) and verify the commit they were handed.
 #
 # Usage:
-#   nightly_pick.sh night   [--at EPOCH]
-#   nightly_pick.sh pick    [--repo DIR] [--remote NAME] [--night N | --at EPOCH] --sha SHA
+#   nightly_pick.sh night   [--at EPOCH|YYYY-MM-DDTHH:MM:SSZ]
+#   nightly_pick.sh pick    [--repo DIR] [--remote NAME] [--night N | --at EPOCH|YYYY-MM-DDTHH:MM:SSZ] --sha SHA
 #   nightly_pick.sh resolve [--repo DIR] [--remote NAME] --night N
 #   nightly_pick.sh verify  [--repo DIR] [--remote NAME] --night N --sha SHA
 #   nightly_pick.sh --self-test | --mutants
@@ -59,6 +59,21 @@ self_test() {
     row night_mid_evening_is_today 0 "2026-10-04" "" -- bash "$SCRIPT_PATH" night --at 1791154800      # 2026-10-04T23:00Z
     row night_late_fire_is_still_the_night 0 "2026-10-04" "" -- bash "$SCRIPT_PATH" night --at 1791179280  # 2026-10-05T05:48Z
     row night_turns_at_noon 0 "2026-10-05" "" -- bash "$SCRIPT_PATH" night --at 1791201600            # 2026-10-05T12:00Z
+    # the night is integer arithmetic, not `date -d` (GNU-only): it must turn months, years and both leap rules
+    row night_turns_the_year 0 "2026-12-31" "" -- bash "$SCRIPT_PATH" night --at 1798801200             # 2027-01-01T11:00Z
+    row night_ends_a_short_february 0 "2026-02-28" "" -- bash "$SCRIPT_PATH" night --at 1772366399    # 2026-03-01T11:59:59Z
+    row night_of_a_leap_day 0 "2028-02-29" "" -- bash "$SCRIPT_PATH" night --at 1835503200             # 2028-03-01T06:00Z
+    row night_of_a_400_year_leap_day 0 "2000-02-29" "" -- bash "$SCRIPT_PATH" night --at 951890400     # 2000-03-01T06:00Z
+    row night_skips_a_century_leap_day 0 "2100-02-28" "" -- bash "$SCRIPT_PATH" night --at 4107564000  # 2100-03-01T06:00Z
+    row night_opens_a_century_year 0 "2100-03-01" "" -- bash "$SCRIPT_PATH" night --at 4107650400     # 2100-03-02T06:00Z
+    row night_before_the_epoch_day 0 "1969-12-31" "" -- bash "$SCRIPT_PATH" night --at 0
+    # --at as workflow_run.created_at gives it, read by np_epoch: the same night as its epoch, and only real UTC times
+    row night_from_created_at 0 "2026-10-04" "" -- bash "$SCRIPT_PATH" night --at 2026-10-05T11:59:59Z
+    row night_from_created_at_turns_at_noon 0 "2026-10-05" "" -- bash "$SCRIPT_PATH" night --at 2026-10-05T12:00:00Z
+    row night_from_created_at_in_a_leap_year 0 "2028-02-29" "" -- bash "$SCRIPT_PATH" night --at 2028-03-01T06:00:00Z
+    row night_at_a_day_the_calendar_lacks_is_a_caller_error 3 "is not an epoch" "" -- bash "$SCRIPT_PATH" night --at 2026-02-30T01:00:00Z
+    row night_at_hour_24_is_a_caller_error 3 "is not an epoch" "" -- bash "$SCRIPT_PATH" night --at 2026-10-04T24:00:00Z
+    row night_at_without_its_zone_is_a_caller_error 3 "is not an epoch" "" -- bash "$SCRIPT_PATH" night --at "2026-10-04 23:00:00"
     row unpicked_night_is_not_measured 2 "has no pick" "" -- bash "$SCRIPT_PATH" resolve --repo "$W" --night "$n"
     row first_pick_publishes_the_ref 0 "C=$c1 PICKED night $n" "" -- bash "$SCRIPT_PATH" pick --repo "$W" --night "$n" --sha "$c1"
     row the_ref_is_on_the_remote 0 "$c1" "" -- git -C "$W" ls-remote "$FX/origin.git" "refs/heads/nightly/$n"
@@ -142,7 +157,13 @@ m12_unknown_commit_is_red	/cannot tell whether/s/return 2 ;;/return 1 ;;/
 m13_ref_name_matched_by_tail	s/NF && \$2 != r { found = 1 }/NF \&\& 0 { found = 1 }/
 m14_read_widened_to_the_rolling_tag	s/ls-remote --refs "\$2" "refs\/heads\/nightly\/\$3"/ls-remote --refs "\$2" "nightly"/
 m15_night_checked_per_line	s/\[\[ \$1 =~ \(.*\) \]\] ||/printf "%s\\n" "$1" | grep -qxE "\1" ||/
-m16_sha_checked_per_line	s/\[\[ \$2 =~ \(.*\) \]\] ||/printf "%s\\n" "$2" | grep -qxE "\1" ||/'
+m16_sha_checked_per_line	s/\[\[ \$2 =~ \(.*\) \]\] ||/printf "%s\\n" "$2" | grep -qxE "\1" ||/
+m17_no_century_rule	s/ + doe \/ 36524 - doe \/ 146096) \/ 365/) \/ 365/
+m18_jan_feb_keep_the_march_year	s/ + (m <= 2))) "$m"/)) "$m"/
+m19_negative_rounds_toward_zero	s/s >= 0 ? s \/ 86400 : -((86399 - s) \/ 86400)/s \/ 86400/
+m20_calendar_unchecked	s/^    \[ "\$back" = "\$1" \] || return 3$/    true/
+m21_clock_unchecked	s/^    (( hh < 24 .*$/    true/
+m22_no_leap_days	s/ + (y % 400) \/ 4 - (y % 400) \/ 100//'
 mutants() {
     local tmp name expr killed=0 total=0 errors=0 out
     tmp="$(mktemp -d "${TMPDIR:-/tmp}/np-mu.XXXXXX")" || caller_error "no temp dir"
@@ -186,11 +207,13 @@ while [ "$#" -gt 0 ]; do
         --repo) repo="${2:-}"; shift 2 || caller_error "--repo DIR" ;;
         --remote) remote="${2:-}"; shift 2 || caller_error "--remote NAME" ;;
         --night) night="${2:-}"; shift 2 || caller_error "--night YYYY-MM-DD" ;;
-        --at) at="${2:-}"; shift 2 || caller_error "--at EPOCH" ;;
+        --at) at="${2:-}"; shift 2 || caller_error "--at EPOCH|YYYY-MM-DDTHH:MM:SSZ" ;;
         --sha) sha="${2:-}"; shift 2 || caller_error "--sha SHA" ;;
         *) caller_error "unknown option '$1'" ;;
     esac
 done
+# an ISO --at is read by the lib in integer arithmetic, so the night is the same on GNU and BSD date
+case "$at" in *[!0-9]*) e="$(np_epoch "$at")" || caller_error "--at $at is not an epoch or YYYY-MM-DDTHH:MM:SSZ"; at="$e" ;; esac
 if [ "$cmd" = night ]; then np_night "$at"; exit $?; fi
 if [ -z "$night" ]; then
     [ "$cmd" = pick ] || caller_error "--night YYYY-MM-DD"
