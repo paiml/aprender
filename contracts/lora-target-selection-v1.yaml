@@ -1,5 +1,5 @@
 metadata:
-  version: "1.11.0"
+  version: "1.12.0"
   created: "2026-04-13"
   author: PAIML Engineering
   registry: true
@@ -16,10 +16,11 @@ metadata:
     - "0.72 R15a cell C5b (la-0.72): the CUDA trainer's NF4 blocks, its LoRA scratch and its LoRA gradient workspace hold one adapter per selected target, each initialised by target, and q_proj and v_proj keep the init they had (crates/aprender-train/src/train/transformer_trainer/lora_init.rs)"
     - "0.72 R15a cell C6 (la-0.72): the backward GEMM cache key and the dims its kernel is built with come from one function the runtime and the pre-warm both call, and the CUDA trainer pre-warms the LoRA backward GEMMs of every selected target (crates/aprender-train/src/autograd/cuda_backward_keys.rs); 1.10.0 adds lora_backward_prewarm and FALSIFY-LORA_TARGET_SELECTION_V1_012"
     - "0.72 R15a cell C7 (la-0.72): the CUDA trainer pre-warms the AdamW step kernel at every parameter count its NF4 LoRA optimizer step asks for, by the selected targets (crates/aprender-train/src/train/transformer_trainer/lora_init.rs lora_adamw_sizes, autograd/cuda_optim.rs pre_warm_adamw_sizes); 1.11.0 adds lora_adamw_prewarm and FALSIFY-LORA_TARGET_SELECTION_V1_013"
+    - "0.72 R15a cell C8 (la-0.72): InstructPipeline::from_pretrained loads a trained adapter only when it fills every LoRA slot, A and B (crates/aprender-train/src/finetune/instruct_pipeline/constructors.rs inject_adapter_weights); 1.12.0 adds adapter_load_complete and FALSIFY-LORA_TARGET_SELECTION_V1_014"
   description: "LoRA target module selection"
 
 name: lora-target-selection
-version: "1.11.0"
+version: "1.12.0"
 scope: "crates/aprender-train/src/finetune/"
 
 description: |
@@ -80,6 +81,9 @@ equations:
   lora_adamw_prewarm:
     description: "The CUDA trainer pre-warms the AdamW step kernel at every parameter count the NF4 LoRA optimizer step of its selected targets asks for"
     formula: "adamw_step_cuda(.., n) looks up adamw_step_{n} and compiles AdamWStepKernel::new(n) on a miss. CudaNf4TransformerBlock::lora_optimizer_step steps, per adapter t of the block in slot order, A_t (d_in(t)·r values) and B_t (r·d_out(t) values), then the two RMSNorm weights (hidden values each). lora_adamw_sizes(config, modules, r) = sorted, no repeat, {d_in(t)·r, r·d_out(t) : t ∈ nf4_targets(modules)} ∪ {hidden}, with (d_out, d_in) = LoraTarget::dims. Under NF4 LoRA the trainer pre-warms adamw_step_{n} for each n in it before block upload. For T = (q_proj, v_proj) it is {hidden·r, r·q_dim, r·kv_dim, hidden}, the NF4 LoRA sizes of pre_warm_lora_adamw_kernels."
+  adapter_load_complete:
+    description: "A trained adapter loads only whole: every LoRA slot of the selected targets gets its A and its B from the adapter, or nothing loads"
+    formula: "Let W be the tensors of adapter_model.safetensors and P ⊆ slots × {A, B} the places they fill (adapter_slot, lengths equal, no place twice). inject_adapter_weights writes W iff every tensor of W has a place and P = {0..|lora_layers|} × {A, B}. Otherwise it returns ConfigError naming every unplaced tensor and every unfilled place as layers.{l}.{target}.lora_{A|B}, l = idx / |T| and target = T[idx mod |T|], and no LoRA layer changes."
 
 falsification:
   - id: FALSIFY-LORA_TARGET_SELECTION_V1_001
@@ -143,3 +147,8 @@ falsification:
     description: "The CUDA trainer pre-warms the AdamW step kernel at every parameter count its NF4 LoRA optimizer step asks for (0.72 R15a C7). At 352a3ec700 the trainer never called a pre-warm of the optim kernel cache, so adamw_step_cuda compiled adamw_step_{n} on its first miss, inside the first optimizer step, for every adapter size and the norm size: the on-demand JIT during active GPU work that C-PREWARM-001 forbids (trueno#200). Since C5b the adapter sizes follow lora_target_modules. Now lora_adamw_sizes gives every count lora_optimizer_step asks for, by target, and the trainer pre-warms them through cuda_optim::pre_warm_adamw_sizes. Falsified if a selected target's A or B count is missing or wrong, if the hidden (norm) count is missing, if the list repeats a count or is unsorted, if T = (q_proj, v_proj) does not give {hidden·r, r·q_dim, r·kv_dim, hidden}, or if the sizes ignore the selected targets. Planted mutants that must be RED: A counted as d_out·r, B dropped, the norm count dropped, and the targets always q_proj and v_proj. Compiling the kernel needs a CUDA device; these tests check the counts the device code builds from."
     test: "crates/aprender-train/src/train/transformer_trainer/lora_init_tests.rs::falsify_lora_target_selection_v1_013_adamw_sizes_are_the_optimizer_steps (with the other falsify_lora_target_selection_v1_013 tests there)"
     evidence: "cargo test -p aprender-train --lib falsify_lora_target_selection_v1_013"
+
+  - id: FALSIFY-LORA_TARGET_SELECTION_V1_014
+    description: "InstructPipeline::from_pretrained loads a trained adapter only when the adapter fills every LoRA slot, A and B (0.72 R15a C8). At f022ec643b inject_adapter_weights refused a tensor it could not place, but it never checked that every slot was filled: an adapter with no v_proj tensors, with fewer layers than the model, or with only lora_A loaded without error, and every slot it left kept its fresh init (A random, B zero), so the model served and trained on was not the adapter that was trained. Now a place left unfilled refuses the whole load and names it, and no LoRA layer changes. Falsified if an adapter missing a target, a layer, or the B of one slot loads, if the error does not name the unfilled place, if any layer changes on a refusal, or if a full adapter (q/v, or all seven targets) no longer loads."
+    test: "crates/aprender-train/src/finetune/instruct_pipeline/constructors_adapter_tests.rs::falsify_lora_target_selection_v1_014_partial_adapter_refuses_and_changes_nothing (with the other falsify_lora_target_selection_v1_014 tests there)"
+    evidence: "cargo test -p aprender-train --lib falsify_lora_target_selection_v1_014"
