@@ -113,7 +113,7 @@ lint() {
     [ -f "$f" ] || die "lint: no such file $f"
     # Every structural query reads the parsed document with aliases expanded, so a step,
     # job or key reached through an anchor (`- *a`, `<<: *a`) is checked as Actions sees it.
-    x=$("$YQ" 'explode(.)' "$f" 2>/dev/null) || { echo "lint: yq cannot parse $f"; bad=1; }
+    x=$("$YQ" --yaml-fix-merge-anchor-to-spec=true 'explode(.)' "$f" 2>/dev/null) || { echo "lint: yq cannot parse $f"; bad=1; }
     v=$("$YQ" -o=json -I=0 '.permissions' - <<< "$x")
     [ "$v" = '{"contents":"read"}' ] || { echo "lint: workflow permissions are $v, not exactly contents: read"; bad=1; }
     v=$("$YQ" '[.jobs[] | select(has("permissions"))] | length' - <<< "$x")
@@ -155,7 +155,7 @@ lint() {
     # `${{ github.sha }}` and an https://github.com/ URL, each blanked to a space first:
     # github.token, github['token'], github.*, toJSON(github) and format() all leave a
     # `github` word behind. No expression is parsed, so there is no parse to get wrong.
-    t=$(cat "$f" && "$YQ" -o=json -I=0 'explode(.)' "$f") || { echo "lint: yq cannot parse $f"; bad=1; }
+    t=$(cat "$f" && "$YQ" --yaml-fix-merge-anchor-to-spec=true -o=json -I=0 'explode(.)' "$f") || { echo "lint: yq cannot parse $f"; bad=1; }
     if printf '%s\n' "$t" | grep -n -i -E '(^|[^A-Za-z0-9_])(secrets|vars)([^A-Za-z0-9_]|$)'; then
         echo "lint: a secrets or vars reference (a credential reachable from an expression)"; bad=1
     fi
@@ -322,6 +322,15 @@ self_test() {
     out=$(lint "$d/m.yml"); row "a whole-step alias whose anchor carries if: always() -> lint red" 1 $? 'carry an if:' "$out"
     mut 'with(.jobs["build-apr-cuda"].steps; . = . + [{"name": "h", "run": "true", "env": {"name": "up", "uses": "softprops/action-gh-release@v2"}}] | .[-1].env anchor = "a" | . = . + [null] | .[-1] alias = "a")'
     out=$(lint "$d/m.yml"); row "a whole-step alias whose anchor carries an unlisted uses: -> lint red" 1 $? 'outside the allowlist' "$out"
+    # A merge key (`<<: *a`) after the step's own key: the step's own value wins under the
+    # YAML spec, and lint must read it that way (yq's default lets the anchor win).
+    mut 'with(.jobs["build-apr-cuda"].steps; . = . + [{"name": "c", "uses": "actions/checkout@v4"}] | .[-1] anchor = "a" | . = . + [{"name": "m", "uses": "softprops/action-gh-release@v2", "<<": "x"}] | .[-1]["<<"] alias = "a")'
+    out=$(lint "$d/m.yml"); row "an unlisted uses: written before a merge key whose anchor is allowlisted -> lint red" 1 $? 'outside the allowlist' "$out"
+    # A yq without the spec flag refuses the call, and lint reads that as red, never green.
+    printf '%s\n' '#!/bin/sh' 'case " $* " in *" --yaml-fix-merge-anchor-to-spec"*) echo "unknown flag" >&2; exit 1;; esac' '"$REAL_YQ" "$@"' > "$d/oldyq"
+    chmod +x "$d/oldyq"
+    out=$(REAL_YQ="$YQ" "$d/oldyq" '.name' "$d/fx.yml"); row "control: that yq still answers a call without the flag" 0 $? '.' "$out"
+    out=$(REAL_YQ="$YQ" YQ="$d/oldyq" lint "$d/fx.yml"); row "a yq that does not know the merge-to-spec flag -> lint red" 1 $? 'cannot parse' "$out"
     mut '.jobs["build-apr-darwin"].steps[0].run = "true"'
     out=$(lint "$d/m.yml"); row "a hollow guard (right name, empty body) -> lint red" 1 $? 'credential guard' "$out"
     mut 'del(.jobs["build-apr-darwin"].steps[0])'
