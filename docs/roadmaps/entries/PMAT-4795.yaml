@@ -1,0 +1,21 @@
+- id: PMAT-4795
+  github_issue: 4795
+  item_type: task
+  title: 'FLAKE-0 P0: ci_gpu_touched.sh and dogfood.sh C14 read a found line as a miss (pipe into grep -q)'
+  status: inprogress
+  priority: critical
+  assigned_to: aprender-a7r
+  created: 2026-10-05T12:46:50Z
+  updated: 2026-10-05T12:46:50Z
+  spec: null
+  acceptance_criteria:
+  - 'ci_gpu_touched.sh :111, :116 and the self-test row helper :162 read a here-string; each has a row with the match ahead of ~2 MiB that goes RED on the old line'
+  - 'dogfood.sh C14 (:1786, :1788) is judged by c14_verdict(), and scripts/check_dogfood_c14_verdict.sh runs it over a case table with a FAIL-ahead-of-2-MiB row that goes RED on the old pipe; its self-test turns every planted mutant RED'
+  - 'scripts/pipe_grep_q_baseline.txt is lowered to the measured count in its own commit'
+  phases: []
+  subtasks: []
+  estimated_effort: null
+  labels:
+  - kind:code
+  notes: null
+  epic: 4780

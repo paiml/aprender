@@ -225,6 +225,15 @@ gate() { # gate <name> <cmd...> — runs cmd, records pass/fail
 # receipt as OPEN and never as passed. In any other phase an OPEN row is an unmet obligation
 # and FAILs, which is what makes the post-publish dogfood discharge it. The list is closed.
 POST_PUBLISH_OBLIGATIONS="publish-dry-run declared:check_multiplatform_dogfood"
+# c14_verdict RC OUT -> sets C14_VERDICT to PASS, FAIL or REPORT: how row model-parity reads check_model_parity.sh.
+# Here-strings, never `printf | grep -q`: grep -q exits at its first match, printf takes SIGPIPE,
+# and pipefail turned a FOUND `FAIL` line into a REPORT (scripts/check_dogfood_c14_verdict.sh).
+c14_verdict() {
+  if [ "$1" -eq 0 ] && grep -q '^PASS ' <<< "$2"; then C14_VERDICT=PASS
+  elif grep -qE '^FAIL |^override:' <<< "$2"; then C14_VERDICT=FAIL
+  else C14_VERDICT=REPORT
+  fi
+}
 mark() { # mark <name> <PASS|FAIL|SKIP|REPORT|WARN|MANUAL|OPEN> <note>
   local st="$2" note="$3"
   if [ "$st" = DEFER ]; then
@@ -1783,13 +1792,18 @@ if [ -f scripts/check_model_parity.sh ]; then
     mark model-parity FAIL "C14: this host has a CUDA device but the --features cuda build failed ($WORKLOG/c14-build.log) — claim 2 cannot be measured here"
   else
     if C14_OUT=$(bash scripts/check_model_parity.sh --manifest --apr "$C14_BIN" --out "$C14_DIR" 2>&1); then C14_RC=0; else C14_RC=$?; fi
-    if [ "$C14_RC" -eq 0 ] && printf '%s\n' "$C14_OUT" | grep -q '^PASS '; then
-      mark model-parity PASS "C14: $(printf '%s\n' "$C14_OUT" | grep -c '^PASS ') manifest model(s) measured over >= 64 positions on $(hostname -s) with $C14_NOTE"
-    elif printf '%s\n' "$C14_OUT" | grep -q -E '^FAIL |^override:'; then
-      mark model-parity FAIL "C14: $(printf '%s\n' "$C14_OUT" | grep -E '^FAIL |^override:' | head -1 | cut -c1-160)"
-    else
-      mark model-parity REPORT "C14 UNMEASURED on $(hostname -s): $(printf '%s\n' "$C14_OUT" | tail -1 | cut -c1-120) — proven on lambda and gx10 by make fleet-verify ROW=release, never here"
-    fi
+    c14_verdict "$C14_RC" "$C14_OUT"
+    case "$C14_VERDICT" in
+      PASS)
+        mark model-parity PASS "C14: $(printf '%s\n' "$C14_OUT" | grep -c '^PASS ') manifest model(s) measured over >= 64 positions on $(hostname -s) with $C14_NOTE"
+        ;;
+      FAIL)
+        mark model-parity FAIL "C14: $(printf '%s\n' "$C14_OUT" | grep -E '^FAIL |^override:' | head -1 | cut -c1-160)"
+        ;;
+      *)
+        mark model-parity REPORT "C14 UNMEASURED on $(hostname -s): $(printf '%s\n' "$C14_OUT" | tail -1 | cut -c1-120) — proven on lambda and gx10 by make fleet-verify ROW=release, never here"
+        ;;
+    esac
   fi
 else
   mark model-parity FAIL "scripts/check_model_parity.sh is missing — claim 2 (GPU = CPU per manifest model) is unmeasured"

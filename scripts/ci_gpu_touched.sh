@@ -107,13 +107,15 @@ decide() {
         return 2
     fi
 
+    # Here-strings, never `printf | grep -q`: grep -q exits at its first match, printf takes SIGPIPE, and
+    # pipefail turns a FOUND GPU path into a miss, so a large diff skipped the GPU lane (the 2 MiB rows).
     for crate in $GPU_CRATES; do
-        if printf '%s\n' "$diff" | grep -q "^crates/${crate}/"; then
+        if grep -q "^crates/${crate}/" <<< "$diff"; then
             hit_crates="${hit_crates}${crate} "
         fi
     done
     for f in $GPU_WORKFLOWS; do
-        if printf '%s\n' "$diff" | grep -qx "$f"; then
+        if grep -qx "$f" <<< "$diff"; then
             hit_wf="${hit_wf}${f} "
         fi
     done
@@ -149,7 +151,8 @@ decide() {
 }
 
 self_test() {
-    local td n=0 red=0 out rc T="$0"
+    local td n=0 red=0 out rc
+    local T="$0"
     td=$(mktemp -d "${TMPDIR:-/tmp}/ci-gpu.XXXXXX")
     # shellcheck disable=SC2064
     trap "rm -rf '${td:?}'" RETURN
@@ -159,7 +162,8 @@ self_test() {
         n=$((n + 1))
         rc=0
         out=$("$@" 2>&1) || rc=$?
-        if [ "$rc" = "$want" ] && printf '%s\n' "$out" | grep -qE -- "$pat"; then
+        # A here-string: a pipe into grep -q lost an early match in long output (row "the row helper reads a match ...").
+        if [ "$rc" = "$want" ] && grep -qE -- "$pat" <<< "$out"; then
             printf 'ok    row %-2s rc=%s  %s\n' "$n" "$rc" "$label"
         else
             printf 'FAIL  row %-2s rc=%s (wanted %s, must match /%s/)  %s\n' "$n" "$rc" "$want" "$pat" "$label"
@@ -173,6 +177,17 @@ self_test() {
         '^gpu_touched=1$' bash "$T" --diff-from "$td/serve.txt"
     row 0 "  ...naming the crate, so the log says WHY the GPU runner was claimed" \
         '^gpu_crates=aprender-serve$' bash "$T" --diff-from "$td/serve.txt"
+
+    # The row helper itself: its pattern matches the FIRST of ~2 MiB of output lines.
+    row 0 "the row helper reads a match ahead of ~2 MiB of output as a match" \
+        '^first-line$' awk 'BEGIN { print "first-line"; for (i = 1; i <= 40000; i++) print "padding-to-push-the-output-past-the-pipe-buffer-of-the-row-helper" }'
+    # SIGPIPE: the GPU path is the FIRST of ~2 MiB of diff; a pipe into grep -q lost it and answered 0.
+    { printf 'crates/aprender-serve/src/gguf/cuda/matmul.rs\n'; awk 'BEGIN { for (i = 1; i <= 40000; i++) print "crates/aprender-core/src/padding_to_push_the_diff_past_the_pipe_buffer.rs" }'; } > "$td/servebig.txt"
+    row 0 "a GPU crate path ahead of ~2 MiB of other paths -> gpu_touched=1 (not lost to SIGPIPE)" \
+        '^gpu_crates=aprender-serve$' bash "$T" --diff-from "$td/servebig.txt"
+    { printf '.github/workflows/cuda-nightly.yml\n'; awk 'BEGIN { for (i = 1; i <= 40000; i++) print "crates/aprender-core/src/padding_to_push_the_diff_past_the_pipe_buffer.rs" }'; } > "$td/wfbig.txt"
+    row 0 "the GPU-host workflow ahead of ~2 MiB of other paths -> gpu_touched=1 (not lost to SIGPIPE)" \
+        '^gpu_touched=1$' bash "$T" --diff-from "$td/wfbig.txt"
 
     printf 'crates/aprender-core/src/lib.rs\ncrates/aprender-core/src/traits.rs\n' > "$td/core.txt"
     row 0 "a diff under crates/aprender-core/ ONLY -> gpu_touched=0 (no GPU path)" \
