@@ -1,0 +1,22 @@
+- id: PMAT-4810
+  github_issue: 4810
+  item_type: task
+  title: 'Chat routes stop on every end-of-generation marker, not only the declared EOS (sub-ticket of #4661)'
+  status: inprogress
+  priority: high
+  assigned_to: aprender-a7f
+  created: 2026-10-05T15:48:07Z
+  updated: 2026-10-05T15:48:07Z
+  spec: null
+  acceptance_criteria:
+  - 'chat_stop_tokens returns completion_stop_tokens(tokenizer, Some(eos)), so every chat path (quantized CPU, CUDA dense, CUDA MoE, Qwen3.5, cached, GPU) stops on the same set as /v1/completions; ignore_eos still empties it'
+  - 'Unit test chat_stops_on_every_eog_marker_not_just_eos goes through chat_quantized_config (signature unchanged), is RED on the parent commit and GREEN on the fix'
+  - 'The 30B "What is 2+2?" chat request stops at 8 tokens for seeds 1, 5 and 42 on the CUDA serve path'
+  - 'try_cuda_backend passes the pmat complexity gate (cognitive <= 25) through a behaviour-neutral extraction; cargo test -p aprender-serve --lib is green'
+  phases: []
+  subtasks: []
+  estimated_effort: null
+  labels:
+  - kind:code
+  notes: 'Branch-only, no PR; joins the B6 fold.'
+  epic: 4661
