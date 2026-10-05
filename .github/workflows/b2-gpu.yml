@@ -22,7 +22,8 @@
 #      ZERO hardware tests.
 #   4. vacuity floor: fewer than `min_tests` passed is RED (the featureless run above).
 #
-# Dispatch only. Not a required check; nothing here gates a pull request.
+# Dispatch, or called nightly at main's head by release-lanes-nightly.yml (the cleanroom-gpu lane).
+# Not a required check; nothing here gates a pull request.
 name: b2-gpu
 
 on:
@@ -34,6 +35,16 @@ on:
         type: string
       min_tests:
         description: 'Vacuity floor: minimum passed tests (measured 2604 on v0.68.1)'
+        default: '2500'
+        type: string
+  # The nightly cleanroom-gpu lane (release-lanes-nightly.yml, #4720) calls this same job on main's
+  # head every night, so release day finds a verdict on the commit instead of a first run.
+  workflow_call:
+    inputs:
+      ref:
+        required: true
+        type: string
+      min_tests:
         default: '2500'
         type: string
 

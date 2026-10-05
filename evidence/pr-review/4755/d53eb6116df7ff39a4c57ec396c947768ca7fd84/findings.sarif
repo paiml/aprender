@@ -1,0 +1,163 @@
+{
+  "$schema": "https://docs.oasis-open.org/sarif/sarif/v2.1.0/errata01/os/schemas/sarif-schema-2.1.0.json",
+  "version": "2.1.0",
+  "runs": [
+    {
+      "tool": {
+        "driver": {
+          "name": "pmat"
+        }
+      },
+      "invocations": [
+        {
+          "executionSuccessful": true,
+          "toolExecutionNotifications": []
+        }
+      ],
+      "results": [
+        {
+          "ruleId": "complexity_not_measurable",
+          "level": "note",
+          "message": {
+            "text": "pmat analyze complexity finds no source files with an analyzable extension in the changed shell guard (and none in the YAML), so complexity_delta is empty because nothing was measured, not because it is zero."
+          },
+          "properties": {
+            "grounding": "measured",
+            "command": [
+              "pmat",
+              "analyze",
+              "complexity",
+              "--path",
+              "scripts/check_determinism_wait.sh"
+            ],
+            "exit_code": 5,
+            "stdout_sha256": "dbfa4135e8c0d31f5d21aee405eeba2227cc47b8d96fc4a7ca5e8bc930140d66",
+            "failure_scenario": "A reader could take an empty complexity_delta as a measured zero; for a shell and YAML diff it is unmeasured.",
+            "precision_class": "advisory"
+          }
+        }
+      ]
+    },
+    {
+      "tool": {
+        "driver": {
+          "name": "mutation"
+        }
+      },
+      "invocations": [
+        {
+          "executionSuccessful": true,
+          "toolExecutionNotifications": []
+        }
+      ],
+      "results": [
+        {
+          "ruleId": "guard_mutation_set_killed",
+          "level": "note",
+          "message": {
+            "text": "The committed mutation set of scripts/check_determinism_wait.sh was run on the local host: 10 of 10 mutants killed, 0 survivors, each mutant turning the 23-row case table RED."
+          },
+          "properties": {
+            "grounding": "measured",
+            "command": [
+              "bash",
+              "scripts/check_determinism_wait.sh",
+              "--mutants"
+            ],
+            "exit_code": 0,
+            "stdout_sha256": "7c384a1601ececbe77d7372e628ee081bda02c2d6cca733cfa383ae445ea6888",
+            "failure_scenario": "A surviving mutant would be a W-rule the guard states and nothing tests; none survived.",
+            "precision_class": "advisory"
+          }
+        }
+      ]
+    },
+    {
+      "tool": {
+        "driver": {
+          "name": "antigravity"
+        }
+      },
+      "invocations": [
+        {
+          "executionSuccessful": false,
+          "toolExecutionNotifications": [
+            {
+              "level": "error",
+              "message": {
+                "text": "The cross-vendor (antigravity) reviewer was not consulted: the local budget probe for the gemini bucket reports state empty (budget 0, from the last window 429). No agy call was made."
+              },
+              "properties": {
+                "grounding": "measured",
+                "command": [
+                  "bash",
+                  "-c",
+                  ". ~/.claude/skills/quorum-review/agy-bucket.sh && ab_state gemini 1"
+                ],
+                "exit_code": 0,
+                "stdout_sha256": "1c9448d3a72173042f2c209346550412ffc174f9e8a922181a0bde129c62e3e2"
+              }
+            }
+          ]
+        }
+      ],
+      "results": []
+    },
+    {
+      "tool": {
+        "driver": {
+          "name": "primary-review"
+        }
+      },
+      "invocations": [
+        {
+          "executionSuccessful": true,
+          "toolExecutionNotifications": []
+        }
+      ],
+      "results": [
+        {
+          "ruleId": "quorum_round4_no_findings",
+          "level": "note",
+          "message": {
+            "text": "Round 4 of the Claude Code quorum on this head (claude-sonnet-5-5 and claude-haiku-4-5-20251001) returned no findings; the primary re-ran the guard selftest (23 PASS) and mutants (10/10) itself."
+          },
+          "properties": {
+            "grounding": "cited",
+            "source": "quorum round 4, claude-sonnet-5-5 lane output on the local host",
+            "excerpt": "Remaining checks: the default run is `ok` (rc 0) and `--selftest` is 23 PASS, 0 FAIL. (4) Nothing else wrong in the delta.",
+            "excerpt_sha256": "1434938012e8e1f5cfe10558d39b66b3fcdc0ef2190ed16a993bb6b832dfded3",
+            "failure_scenario": "If the lanes shared a blind spot (same family), a defect could pass all of them; the verdict is DEGRADED for that reason.",
+            "precision_class": "advisory"
+          }
+        },
+        {
+          "ruleId": "zero_tolerance_artifact_listing",
+          "level": "note",
+          "message": {
+            "text": "With FAT_ARTIFACT_WAIT_S 0 the driver reads the run artifact list exactly once. If the REST artifact list were ever briefly stale after x86-main uploaded determinism-X64, a present raster would read as missing and the job would go RED once, where the old poll would have absorbed the lag. The job starts after x86-main concluded, so the upload has finished, which makes this unlikely."
+          },
+          "properties": {
+            "grounding": "asserted",
+            "rationale": "read of scripts/ci/fat_driver.py uses_download (single read then deadline check) and the ci.yml determinism job at head; not run, it needs a live Actions run.",
+            "failure_scenario": "A transient stale artifact list gives a false-RED determinism check that a re-run clears; it can never give a false green.",
+            "precision_class": "advisory"
+          }
+        },
+        {
+          "ruleId": "verdict_arrives_later",
+          "level": "note",
+          "message": {
+            "text": "The determinism verdict now arrives after x86-main concludes rather than when its raster uploads, so the gate waits for the whole x86-main plus a short ARM64 job. The contract records this as a stated non-goal."
+          },
+          "properties": {
+            "grounding": "asserted",
+            "rationale": "read of the needs edge in ci.yml and of the non_goals list in contracts/ci-determinism-wait-v1.yaml; wall time not measured.",
+            "failure_scenario": "Gate wall time grows by the ARM64 job time (about a minute plus pickup) on green runs; no correctness effect.",
+            "precision_class": "advisory"
+          }
+        }
+      ]
+    }
+  ]
+}

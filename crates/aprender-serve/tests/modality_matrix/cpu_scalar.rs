@@ -16,7 +16,7 @@ use super::common::*;
 #[test]
 fn test_cpu_scalar_single_shot() {
     // Force scalar backend
-    force_backend(Backend::Scalar);
+    let _env = force_backend(Backend::Scalar);
 
     // Create mock trace (in real impl, renacer captures this)
     let mut trace = ExecutionTrace::new();
@@ -60,7 +60,7 @@ fn test_cpu_scalar_single_shot() {
 /// PARITY-111-CPU-02: CPU scalar batch-4 inference
 #[test]
 fn test_cpu_scalar_batch_4() {
-    force_backend(Backend::Scalar);
+    let _env = force_backend(Backend::Scalar);
 
     let mut trace = ExecutionTrace::new();
     // Batch of 4 prompts
@@ -94,7 +94,7 @@ fn test_cpu_scalar_batch_4() {
 /// PARITY-111-CPU-03: CPU scalar batch-32 inference
 #[test]
 fn test_cpu_scalar_batch_32() {
-    force_backend(Backend::Scalar);
+    let _env = force_backend(Backend::Scalar);
 
     let mut trace = ExecutionTrace::new();
     for i in 0..32 {
@@ -126,7 +126,7 @@ fn test_cpu_scalar_batch_32() {
 /// PARITY-111-CPU-04: CPU scalar batch-64 inference
 #[test]
 fn test_cpu_scalar_batch_64() {
-    force_backend(Backend::Scalar);
+    let _env = force_backend(Backend::Scalar);
 
     let mut trace = ExecutionTrace::new();
     for i in 0..64 {
@@ -205,7 +205,7 @@ mod integration {
     /// Integration test: Verify REALIZAR_FORCE_SCALAR env var is respected
     #[test]
     fn test_force_scalar_env_var_set() {
-        force_backend(Backend::Scalar);
+        let _env = force_backend(Backend::Scalar);
 
         let val = std::env::var("REALIZAR_FORCE_SCALAR");
         assert!(

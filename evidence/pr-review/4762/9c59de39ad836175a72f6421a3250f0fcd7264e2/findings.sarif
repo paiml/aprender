@@ -1,0 +1,171 @@
+{
+  "$schema": "https://docs.oasis-open.org/sarif/sarif/v2.1.0/errata01/os/schemas/sarif-schema-2.1.0.json",
+  "version": "2.1.0",
+  "runs": [
+    {
+      "tool": {
+        "driver": {
+          "name": "pmat"
+        }
+      },
+      "invocations": [
+        {
+          "executionSuccessful": true,
+          "toolExecutionNotifications": []
+        }
+      ],
+      "results": [
+        {
+          "ruleId": "complexity_not_measurable",
+          "level": "note",
+          "message": {
+            "text": "pmat analyze complexity finds no source file with an analyzable extension in the changed shell guard, so complexity_delta is empty because nothing was measured, not because it is zero."
+          },
+          "properties": {
+            "grounding": "measured",
+            "command": [
+              "pmat",
+              "analyze",
+              "complexity",
+              "--path",
+              "scripts/check_guard_steps_run_all.sh"
+            ],
+            "exit_code": 5,
+            "stdout_sha256": "a6bd8475d907f88935b6a5d8c70f0522f75c2ad25b19fedba8e3102216ac8793",
+            "failure_scenario": "A reader could take an empty complexity_delta as a measured zero; for a shell diff it is unmeasured.",
+            "precision_class": "advisory"
+          }
+        }
+      ]
+    },
+    {
+      "tool": {
+        "driver": {
+          "name": "mutation"
+        }
+      },
+      "invocations": [
+        {
+          "executionSuccessful": true,
+          "toolExecutionNotifications": []
+        }
+      ],
+      "results": [
+        {
+          "ruleId": "other_row_mutant_killed",
+          "level": "note",
+          "message": {
+            "text": "A local copy of the guard with another self-test row mutated (the timeout-returned-promptly threshold -lt 15 to -lt 0) turns the case table RED (rc 1): quarantining one row leaves the rest of the table able to fail."
+          },
+          "properties": {
+            "grounding": "measured",
+            "command": [
+              "bash",
+              "<mutant copy>/check_guard_steps_run_all.sh",
+              "--self-test"
+            ],
+            "exit_code": 1,
+            "stdout_sha256": "e2d260e16e51664fc0d836bf4fb95c3fb881334614d15108887cf0c7e256f715",
+            "failure_scenario": "If the quarantine had disabled the whole table, this mutant would survive; it was killed.",
+            "precision_class": "advisory"
+          }
+        },
+        {
+          "ruleId": "quarantined_row_cannot_fail_by_design",
+          "level": "note",
+          "message": {
+            "text": "A local copy without the EXIT trap leaves the quarantined row reading FAIL but the table at rc 0. This is the quarantine working as specified (the row is not measured), and it is why #4759 stays open for its step 2 fix."
+          },
+          "properties": {
+            "grounding": "measured",
+            "command": [
+              "bash",
+              "<no-trap copy>/check_guard_steps_run_all.sh",
+              "--self-test"
+            ],
+            "exit_code": 0,
+            "stdout_sha256": "93f92a8735a07b74a8351d53fd4a13d0e3d4fd01a1dd983c03bd56e3e9e016c9",
+            "failure_scenario": "Until #4759 step 2 lands, a regression that stops a timed-out step running its EXIT trap is printed (read FAIL) but does not fail the self-test.",
+            "precision_class": "advisory"
+          }
+        }
+      ]
+    },
+    {
+      "tool": {
+        "driver": {
+          "name": "antigravity"
+        }
+      },
+      "invocations": [
+        {
+          "executionSuccessful": false,
+          "toolExecutionNotifications": [
+            {
+              "level": "error",
+              "message": {
+                "text": "The cross-vendor (antigravity) reviewer was not consulted: the local budget probe for the gemini bucket reports state empty (budget 0). No agy call was made."
+              },
+              "properties": {
+                "grounding": "measured",
+                "command": [
+                  "bash",
+                  "-c",
+                  ". ~/.claude/skills/quorum-review/agy-bucket.sh && ab_state gemini 1"
+                ],
+                "exit_code": 0,
+                "stdout_sha256": "5990ae7d4b48b6381e5a8a3c219afe889014f5528ec0ff738c381ab732b52526"
+              }
+            }
+          ]
+        }
+      ],
+      "results": []
+    },
+    {
+      "tool": {
+        "driver": {
+          "name": "primary-review"
+        }
+      },
+      "invocations": [
+        {
+          "executionSuccessful": true,
+          "toolExecutionNotifications": []
+        }
+      ],
+      "results": [
+        {
+          "ruleId": "quorum_round1_ship",
+          "level": "note",
+          "message": {
+            "text": "Round 1 of the Claude Code quorum on this head (claude-sonnet-5-5 and claude-haiku-4-5-20251001) returned SHIP-TO-BRANCH from both lanes with no blocking findings; the sonnet lane ran the self-test itself (rc 0, 46/46, 1 not measured)."
+          },
+          "properties": {
+            "grounding": "cited",
+            "source": "quorum round 1, claude-sonnet-5-5 lane output on the local host",
+            "excerpt": "VERDICT: SHIP-TO-BRANCH",
+            "excerpt_sha256": "2b038601a9194a6e7367a78db50b9845dab7a00018a565e7a2ec0eb8cda385c6",
+            "failure_scenario": "If the lanes shared a blind spot (same family), a defect could pass both; the verdict is DEGRADED for that reason.",
+            "precision_class": "advisory"
+          }
+        },
+        {
+          "ruleId": "split_printf_argument_kept",
+          "level": "note",
+          "message": {
+            "text": "The sonnet lane flagged the split \"; read\" printf argument as a readability nit. It is kept: inlining it trips a bashrs 7.4.1 false positive that raises the warning count above main's."
+          },
+          "properties": {
+            "grounding": "cited",
+            "source": "quorum round 1, claude-sonnet-5-5 lane output on the local host",
+            "excerpt": "Nit: `printf '... (not measured%s %s)' \"; read\" \"$v\"` splits the string for no reason.",
+            "excerpt_sha256": "f02d76b94677fd177b2bb6b0f0ec355864e88a97f02b373a4842a2482bc1b30a",
+            "failure_scenario": "None at runtime; the printed line is identical either way.",
+            "precision_class": "advisory"
+          }
+        }
+      ]
+    }
+  ]
+}
