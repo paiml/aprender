@@ -104,6 +104,33 @@ fn a_workspace_root_that_read_nothing_is_an_error_and_one_with_no_examples_is_no
     assert!(walk(bare.path()).1.errors.is_empty());
 }
 
+/// T34: a root with no `[workspace]` is a scratch dir or a single package, never the union of every project below it.
+/// A contract dir's parent can be a shared temp dir; the walk must not admit the packages other jobs leave there.
+#[test]
+fn a_root_without_a_workspace_admits_only_its_own_package() {
+    let scratch = tempfile::tempdir().unwrap();
+    let r = scratch.path();
+    write(r, "other-job/Cargo.toml", "[package]\nname = \"foreign\"\n");
+    write(r, "other-job/examples/leak.rs", "fn main() {}\n");
+    let (examples, stats) = walk(r);
+    assert!(
+        examples.is_empty(),
+        "a foreign package was admitted: {examples:?}"
+    );
+    assert_eq!((stats.members, stats.non_member_examples), (0, 0));
+    assert!(stats.errors.is_empty(), "{:?}", stats.errors);
+    // A single-package root still yields its own examples, and still not the nested project's.
+    write(r, "Cargo.toml", "[package]\nname = \"solo\"\n");
+    write(r, "examples/own.rs", "fn main() {}\n");
+    let (examples, stats) = walk(r);
+    let got: Vec<(&str, &str)> = examples
+        .iter()
+        .map(|e| (e.krate.as_str(), e.file.as_str()))
+        .collect();
+    assert_eq!(got, [("solo", "examples/own.rs")]);
+    assert_eq!(stats.members, 1);
+}
+
 #[test]
 fn every_example_is_one_well_formed_node() {
     let d = planted();
