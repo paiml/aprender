@@ -3,6 +3,7 @@
 //! reads .rs text, so cargo never sees this tree.
 pub mod deep;
 pub mod inc;
+pub mod sib;
 
 /// A reader in the crate ROOT module (src/lib.rs) -> the row's module is `<root>`.
 pub fn root_reader() -> bool {

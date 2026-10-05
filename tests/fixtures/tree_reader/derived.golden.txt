@@ -3,5 +3,6 @@ reader_mods	--lib	deep
 reader_mods	--lib	deep::bolted
 reader_mods	--lib	deep::leaf
 reader_mods	--lib	inc
+reader_mods	--lib	sib::kid
 reader_mods	--test	it
 reader_orphan	--lib
