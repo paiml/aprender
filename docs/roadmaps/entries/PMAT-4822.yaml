@@ -1,0 +1,18 @@
+- id: PMAT-4822
+  github_issue: 4822
+  item_type: task
+  title: 'PY-PORT-2g: port annotate-book-examples.py to aprender-ci-tools annotate-book-examples (C301)'
+  status: planned
+  priority: medium
+  assigned_to: null
+  created: 2026-10-05T17:29:42Z
+  updated: 2026-10-05T18:20:08Z
+  spec: null
+  acceptance_criteria: []
+  phases: []
+  subtasks: []
+  estimated_effort: null
+  labels:
+  - kind:code
+  notes: 'Fold note (aprender-0d, 2026-10-05): PMAT-4818 (perf041-report, harness section 6, EXPECTED_CASES 149) and PMAT-4822 (annotate-book-examples, section 7, EXPECTED_CASES 138) both edit scripts/tests/ci_tools_py_parity_test.sh from base 999a7ab805 (115 cases). A fold of both needs EXPECTED_CASES = 172 (115 + 34 + 23) and both sections kept.'
+  epic: 4741

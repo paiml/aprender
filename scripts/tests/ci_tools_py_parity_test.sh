@@ -15,6 +15,8 @@
 #                           deleted; its callers are switched). Its written Cargo.toml is
 #                           compared too, mapping only the one header line that names it.
 #   tarball-build-errors    vs scripts/lib/tarball_build_errors.py
+#   annotate-book-examples  vs scripts/annotate-book-examples.py (no caller; it rewrites
+#                           book chapters, so each case also compares the two rewritten trees)
 #
 # coverage_report_scope.py runs `cargo metadata` itself, so its fixture cases put a
 # fake `cargo` first on PATH that prints the fixture; both sides then read the same
@@ -33,7 +35,7 @@ set -euo pipefail
 ROOT="$(git rev-parse --show-toplevel)"
 cd "$ROOT" || exit 1
 PY="${PYTHON:-python3}"
-EXPECTED_CASES=154
+EXPECTED_CASES=178
 
 BIN="${CI_TOOLS_BIN:-}"
 if [[ -z "$BIN" ]]; then
@@ -645,6 +647,152 @@ check_p41 "no argument (the default directory)"
 check_exact "perf041-report empty argument is the cwd" "$tmp/empty" \
     env -C "$p41/full" "$PY" "$ROOT/scripts/perf041_report.py" "" -- \
     env -C "$p41/full" "$BIN" perf041-report ""
+# --- 7. annotate-book-examples ---
+# The .py rewrites the chapters under its OWN repo (ROOT = the script's grandparent), so
+# each case builds the same tree twice: the .py is copied into one copy's scripts/, the
+# port is pointed at the other. stdout and success/failure are compared as everywhere,
+# and then the two trees, so a chapter rewritten differently (or not at all) is a mismatch.
+ABE_PY_SRC="$ROOT/scripts/annotate-book-examples.py"
+abe_n=0
+abe_case() { # NAME SETUP_FN [SETUP ARGS...]: SETUP_FN DIR builds book/src under DIR
+    local name="$1" setup="$2" d before
+    shift 2
+    abe_n=$((abe_n + 1))
+    d="$tmp/abe/$abe_n"
+    mkdir -p "$d/py/scripts" "$d/rs"
+    cp "$ABE_PY_SRC" "$d/py/scripts/annotate-book-examples.py"
+    "$setup" "$d/py" "$@"
+    "$setup" "$d/rs" "$@"
+    before=$fail
+    check_exact "annotate-book-examples $name" "$tmp/empty" \
+        "$PY" "$d/py/scripts/annotate-book-examples.py" -- "$BIN" annotate-book-examples "$d/rs"
+    if [[ "$fail" -eq "$before" ]] && ! diff -r --no-dereference -x scripts "$d/py" "$d/rs" >"$tmp/abe.diff" 2>&1; then
+        pass=$((pass - 1))
+        fail=$((fail + 1))
+        echo "MISMATCH: annotate-book-examples $name (the rewritten trees differ)" >&2
+        head -8 "$tmp/abe.diff" >&2
+    fi
+}
+ch() { # DIR SUB NAME PRINTF-FORMAT [ARGS...]: one chapter, its bytes from printf
+    local dir="$1" sub="$2" name="$3" fmt="$4"
+    shift 4
+    mkdir -p "$dir/book/src/$sub"
+    # shellcheck disable=SC2059 # the format IS the fixture
+    printf "$fmt" "$@" >"$dir/book/src/$sub/$name"
+}
+abe_none() { :; }
+abe_clifile() { mkdir -p "$1/book/src" && printf 'x\n' >"$1/book/src/cli"; }
+abe_emptydirs() { mkdir -p "$1/book/src/cli" "$1/book/src/lib"; }
+abe_live() { mkdir -p "$1/book/src" && cp -r "$ROOT/book/src/cli" "$ROOT/book/src/lib" "$1/book/src/"; }
+abe_stripped() { # the live book with every annotation removed, so all are re-derived
+    abe_live "$1"
+    local f
+    for f in "$1"/book/src/cli/*.md "$1"/book/src/lib/*.md; do
+        grep -v 'example-cost:' "$f" >"$f.tmp" || true
+        mv "$f.tmp" "$f"
+    done
+}
+abe_classes() {
+    ch "$1" cli c.md '# Classes\n\nIntro.\n```bash\napr gpu status\n```\n```bash\napr ptx-map m.gguf\n```\n```bash\napr code\n```\n```bash\napr publish x\n```\n```bash\napr rm x\n```\n```bash\napr frobnicate\n```\n```bash\nls -la\n```\n```bash\naprun x\n```\n```bash\napr\n```\n```bash\napr Run m.gguf\n```\n```bash\napr 9run\n```\n```bash\n```\n```rust\nfn main() {}\n```\n'
+}
+abe_models() {
+    ch "$1" cli m.md '```bash\napr run\n```\n```bash\napr run -m x.gguf\n```\n```bash\napr run --x a.apr b.gguf\n```\n```bash\napr qa m.safetensors\n```\n```bash\napr pull hf://Qwen/x\n```\n```bash\napr pull qwen2\n```\n```bash\napr pull Qwen2\n```\n```bash\napr pull other\n```\n```bash\napr run-x m.gguf\n```\n```bash\napr run:x m.gguf\n```\n```bash\napr run.gguf\n```\n'
+}
+abe_prompts() {
+    ch "$1" cli p.md '```bash\n$ apr chat m.gguf\n```\n```bash\n  \n$ apr tui\napr run\n```\n```bash\napr run\nm.gguf\n```\n```bash\napr\xe3\x80\x80run\x1fm.gguf\n```\n```bash\napr\x1crun\n```\n```bash\necho x\napr gpu\n```\n```bash\n$apr gpu\n```\n'
+}
+abe_help() {
+    ch "$1" cli h.md '```bash\napr run --help\n```\n```bash\napr serve --version\n```\n```bash\napr help run\n```\n```bash\napr helpx\n```\n```bash\napr help\xcc\x81 gpu\n```\n```bash\nfoo --help\napr gpu\n```\n'
+}
+abe_breaks() {
+    ch "$1" cli crlf.md 'Text\r\n```bash\r\napr tui\r\n```\r\n'
+    ch "$1" cli cr.md 'Text\r```rust\rfn f(){}\r```\r'
+    ch "$1" cli u.md 'a\x0bb\x0c```bash\x1capr gpu\xe2\x80\xa8```\xc2\x85c\xe2\x80\xa9d\x1de\x1ef'
+    ch "$1" cli us.md 'a\x1fb\n```rust\n'
+}
+abe_tails() {
+    ch "$1" cli t1.md 'a\n\n\n'
+    ch "$1" cli t2.md '```rust\n```'
+    ch "$1" cli t3.md ''
+    ch "$1" cli t4.md '\n'
+    ch "$1" cli t5.md 'a\x0c'
+}
+abe_lookback() {
+    ch "$1" cli l.md '<!-- example-cost: gpu -->\n\n```bash\n```\n<!-- example-cost: gpu -->\n\n\n```bash\n```\n<!-- example-cost: gpu -->\ntext\n```rust\n```\n<!-- example-cost: x -->\n```rust\n```\n   \n<!-- example-cost: nonsense words -->  \n \t\n```bash\napr run\n```\n'
+}
+abe_costlines() {
+    ch "$1" cli k.md '<!--example-cost:x-->\n```rust\n```\n<!-- \x1c example-cost: -->\n```rust\n```\n<!--example-cost:-->\n```rust\n```\n<!-- example-cost: a>b -->\n```rust\n```\n<!-- example-cost: x --> y\n```rust\n```\n<!-- cost: x -->\n```rust\n```\nx<!-- example-cost: x -->\n```rust\n```\n<!-- example-cost: x ->\n```rust\n```\n<!--\xc2\xa0example-cost:\xe3\x80\x80y\xe2\x80\xa8-->\n```rust\n```\n'
+}
+abe_fences() {
+    ch "$1" cli f.md '```bash \t\x1f\xc2\xa0\napr gpu\n```\n```Bash\napr gpu\n```\n ```bash\napr gpu\n```\n``` bash\n```\n```bashx\n```\n````bash\n```\n```bash\napr gpu\n```rust\n```\napr tui\n```bash\n'
+}
+abe_order() {
+    local n
+    for n in b.md a.md A.md .h.md .md y.md.md c.MD 'n\n.md' 'é.md' 'z z.md'; do
+        # shellcheck disable=SC2059 # the name IS a printf fixture
+        ch "$1" cli "$(printf "$n")" '```rust\n'
+    done
+    ch "$1" lib a.md '```bash\napr tui\n```\n'
+    ch "$1" other o.md '```rust\n'
+}
+abe_libonly() { ch "$1" lib only.md 'x\n```bash\napr eval m.apr\n```\n'; }
+abe_bom() { ch "$1" cli bom.md '\xef\xbb\xbf```bash\napr gpu\n```\n\xef\xbb\xbfx\n```rust\n```\n'; }
+abe_badutf8() {
+    ch "$1" cli a.md '```rust\n'
+    ch "$1" cli b.md 'bad \xff utf-8\n```rust\n'
+    ch "$1" cli c.md '```rust\n'
+}
+abe_surrogate() { ch "$1" cli s.md '```rust\n\xed\xa0\x80\n'; }
+abe_dirmd() { ch "$1" cli a.md '```rust\n' && mkdir -p "$1/book/src/cli/d.md"; }
+abe_dangling() { ch "$1" cli a.md '```rust\n' && ln -s nowhere "$1/book/src/cli/l.md"; }
+abe_symlink() { # a chapter that is a link: the TARGET is rewritten, the link kept
+    ch "$1" cli real.txt '```rust\n'
+    ln -s real.txt "$1/book/src/cli/l.md"
+}
+abe_readonly() {
+    ch "$1" cli a.md '```rust\n'
+    ch "$1" cli b.md 'no fences\n'
+    chmod 444 "$1/book/src/cli/b.md"
+}
+abe_case "no book" abe_none
+abe_case "cli is a file" abe_clifile
+abe_case "empty dirs" abe_emptydirs
+abe_case "live book" abe_live
+abe_case "live book, annotations stripped" abe_stripped
+abe_case "cost classes" abe_classes
+abe_case "model names" abe_models
+abe_case "prompts and whitespace" abe_prompts
+abe_case "help and version" abe_help
+abe_case "line breaks" abe_breaks
+abe_case "trailing newlines" abe_tails
+abe_case "look-back" abe_lookback
+abe_case "cost-line forms" abe_costlines
+abe_case "fence forms" abe_fences
+abe_case "order and names" abe_order
+abe_case "lib only" abe_libonly
+abe_case "BOM" abe_bom
+abe_case "invalid utf-8 stops the run" abe_badutf8
+abe_case "encoded surrogate" abe_surrogate
+abe_case "a directory named .md" abe_dirmd
+abe_case "dangling link" abe_dangling
+abe_case "link to a chapter" abe_symlink
+abe_case "read-only chapter" abe_readonly
+abe_badother() { # glob skips a non-.md name whatever its bytes; the chapter still gets annotated
+    ch "$1" cli a.md '```bash\napr tui\n```\n'
+    printf 'x\n' >"$1/book/src/cli/$(printf '\xff.txt')"
+    printf 'x\n' >"$1/book/src/cli/$(printf 'a.md\xff')"
+    printf 'x\n' >"$1/book/src/cli/$(printf '\xff.MD')"
+}
+abe_case "a non-utf-8 name that is not a chapter" abe_badother
+# The tree diff must see a planted difference that stdout cannot: one stray file, Rust side only.
+abe_plant() {
+    ch "$1" cli a.md '```bash\napr tui\n```\n'
+    [[ "$1" == */rs ]] && printf 'x\n' >"$1/book/src/cli/stray.txt"
+    return 0
+}
+liar fail abe_case "plant tree" abe_plant
+chmod -R u+w "$tmp/abe"
+
 
 ran=$((pass + fail))
 echo "ci_tools_py_parity: $pass/$ran identical (declared $EXPECTED_CASES)"

@@ -3,6 +3,7 @@
 //! byte-for-byte what its original printed; `scripts/tests/ci_tools_py_parity_test.sh`
 //! runs the same cases through both, with the `.py` original as the external validator.
 
+pub mod annotate_book_examples;
 pub mod coverage_report_scope;
 pub mod dag_status;
 pub mod git_patch_id;
