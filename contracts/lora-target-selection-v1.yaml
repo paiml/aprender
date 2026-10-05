@@ -1,5 +1,5 @@
 metadata:
-  version: "1.10.0"
+  version: "1.11.0"
   created: "2026-04-13"
   author: PAIML Engineering
   registry: true
@@ -15,10 +15,11 @@ metadata:
     - "0.72 R15a cell C5a (la-0.72): the CUDA trainer's APR checkpoint, its resume and its PEFT adapter save name and lay out every adapter a block holds by its target (crates/aprender-train/src/train/transformer_trainer/cuda_trainer.rs, lora_checkpoint.rs); 1.8.0 adds checkpoint_names and FALSIFY-LORA_TARGET_SELECTION_V1_010"
     - "0.72 R15a cell C5b (la-0.72): the CUDA trainer's NF4 blocks, its LoRA scratch and its LoRA gradient workspace hold one adapter per selected target, each initialised by target, and q_proj and v_proj keep the init they had (crates/aprender-train/src/train/transformer_trainer/lora_init.rs)"
     - "0.72 R15a cell C6 (la-0.72): the backward GEMM cache key and the dims its kernel is built with come from one function the runtime and the pre-warm both call, and the CUDA trainer pre-warms the LoRA backward GEMMs of every selected target (crates/aprender-train/src/autograd/cuda_backward_keys.rs); 1.10.0 adds lora_backward_prewarm and FALSIFY-LORA_TARGET_SELECTION_V1_012"
+    - "0.72 R15a cell C7 (la-0.72): the CUDA trainer pre-warms the AdamW step kernel at every parameter count its NF4 LoRA optimizer step asks for, by the selected targets (crates/aprender-train/src/train/transformer_trainer/lora_init.rs lora_adamw_sizes, autograd/cuda_optim.rs pre_warm_adamw_sizes); 1.11.0 adds lora_adamw_prewarm and FALSIFY-LORA_TARGET_SELECTION_V1_013"
   description: "LoRA target module selection"
 
 name: lora-target-selection
-version: "1.10.0"
+version: "1.11.0"
 scope: "crates/aprender-train/src/finetune/"
 
 description: |
@@ -76,6 +77,9 @@ equations:
   lora_backward_prewarm:
     description: "A backward GEMM's cache key and its kernel dims come from one function, and the CUDA trainer pre-warms the LoRA backward GEMMs of every selected target"
     formula: "gemm_backward_x(m, k, n) for x ∈ {a, b}, called as the runtime calls it, has key gemm_backward_x_{m}_{k}_{n} and kernel GemmBackwardXKernel::tiled_unrolled(m, n, k); the runtime and the pre-warm both take key and kernel from it. For each t ∈ T with (d_out, d_in) as in target_slots, the LoRA backward of t asks for gemm_backward_b(s, r, d_out), gemm_backward_a(s, d_out, r), gemm_backward_b(s, d_in, r) and gemm_backward_a(s, r, d_in), with s = max_seq_len and r the rank; lora_backward_gemms(T) is the union over T, sorted by key with no repeat, and the CUDA trainer pre-warms it before it uploads a block. For T = (q_proj, v_proj) the keys are the six warmed before"
+  lora_adamw_prewarm:
+    description: "The CUDA trainer pre-warms the AdamW step kernel at every parameter count the NF4 LoRA optimizer step of its selected targets asks for"
+    formula: "adamw_step_cuda(.., n) looks up adamw_step_{n} and compiles AdamWStepKernel::new(n) on a miss. CudaNf4TransformerBlock::lora_optimizer_step steps, per adapter t of the block in slot order, A_t (d_in(t)·r values) and B_t (r·d_out(t) values), then the two RMSNorm weights (hidden values each). lora_adamw_sizes(config, modules, r) = sorted, no repeat, {d_in(t)·r, r·d_out(t) : t ∈ nf4_targets(modules)} ∪ {hidden}, with (d_out, d_in) = LoraTarget::dims. Under NF4 LoRA the trainer pre-warms adamw_step_{n} for each n in it before block upload. For T = (q_proj, v_proj) it is {hidden·r, r·q_dim, r·kv_dim, hidden}, the NF4 LoRA sizes of pre_warm_lora_adamw_kernels."
 
 falsification:
   - id: FALSIFY-LORA_TARGET_SELECTION_V1_001
@@ -134,3 +138,8 @@ falsification:
     description: "The backward GEMM cache key and its kernel dims come from one function, and the CUDA trainer pre-warms the LoRA backward GEMMs of every selected target (0.72 R15a C6). At 96e2f7b2a1 the runtime (cuda_backward/gemm.rs) built GemmBackward{A,B}Kernel::tiled_unrolled(m, n, k) under key gemm_backward_{a,b}_{m}_{k}_{n} and took a cached module first, while pre_warm_lora_backward_kernels compiled tiled_unrolled(m, k, n) under that same key. The kernel bakes its dims into the PTX, so on the PTX path (no cuBLAS handle) every pre-warmed shape with k != n ran with n and k swapped: the LoRA q_proj and v_proj shapes and the fp32 attention and FFN shapes. And the trainer pre-warmed only the q_proj and v_proj LoRA shapes, whatever lora_target_modules said. Now cuda_backward_keys::gemm_backward_a and gemm_backward_b give the key and the (m, n, k) together, the runtime and the pre-warm both build from them, lora_backward_gemms gives the four GEMMs of each target at its dims, and the trainer pre-warms them for T. Falsified if a key and its kernel dims disagree with the runtime's (m, n, k) for that key, if a target's four GEMMs are missing or at the wrong dims, if the set repeats a key or holds a key no target in T asks for, if T = (q_proj, v_proj) does not give the six keys warmed before, or if the dims the trainer passes are not those of its targets. Planted mutants that must be RED: the kernel built with (m, k, n), the d_in GEMMs dropped, d_out used for d_in, and the trainer passing q_proj and v_proj dims whatever T is. Compiling and running a kernel needs a CUDA device; these tests check the keys and dims the device code builds from."
     test: "crates/aprender-train/src/autograd/cuda_backward_keys/tests.rs::falsify_lora_target_selection_v1_012_key_and_kernel_dims_agree (with the other falsify_lora_target_selection_v1_012 tests there and in transformer_trainer/lora_init_tests.rs; no device)"
     evidence: "cargo test -p aprender-train --lib falsify_lora_target_selection_v1_012"
+
+  - id: FALSIFY-LORA_TARGET_SELECTION_V1_013
+    description: "The CUDA trainer pre-warms the AdamW step kernel at every parameter count its NF4 LoRA optimizer step asks for (0.72 R15a C7). At 352a3ec700 the trainer never called a pre-warm of the optim kernel cache, so adamw_step_cuda compiled adamw_step_{n} on its first miss, inside the first optimizer step, for every adapter size and the norm size: the on-demand JIT during active GPU work that C-PREWARM-001 forbids (trueno#200). Since C5b the adapter sizes follow lora_target_modules. Now lora_adamw_sizes gives every count lora_optimizer_step asks for, by target, and the trainer pre-warms them through cuda_optim::pre_warm_adamw_sizes. Falsified if a selected target's A or B count is missing or wrong, if the hidden (norm) count is missing, if the list repeats a count or is unsorted, if T = (q_proj, v_proj) does not give {hidden·r, r·q_dim, r·kv_dim, hidden}, or if the sizes ignore the selected targets. Planted mutants that must be RED: A counted as d_out·r, B dropped, the norm count dropped, and the targets always q_proj and v_proj. Compiling the kernel needs a CUDA device; these tests check the counts the device code builds from."
+    test: "crates/aprender-train/src/train/transformer_trainer/lora_init_tests.rs::falsify_lora_target_selection_v1_013_adamw_sizes_are_the_optimizer_steps (with the other falsify_lora_target_selection_v1_013 tests there)"
+    evidence: "cargo test -p aprender-train --lib falsify_lora_target_selection_v1_013"
