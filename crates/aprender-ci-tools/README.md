@@ -22,11 +22,12 @@ a released `aprender-ci-tools` carries the port (N-1). A port whose callers are 
 switched deletes its `.py`, and the test reads that original from git.
 
 `dag-status` is checked by `scripts/tests/ci_tools_dag_status_parity_test.sh` against
-the working-tree `scripts/lib/dag_status.py`. The shell callers (`session_docs_commit.sh`,
-`pp066_state.sh`) call the binary. `render_dag.py` and `lib/dag_invariants.py` still
-import the `.py`: they run in cargo-free CI steps, which only use released tool
-versions. They switch, and the `.py` is deleted, in the first change after a released
-`aprender-ci-tools` carries `dag-status`.
+the working-tree `scripts/lib/dag_status.py`. Every caller still imports the `.py`
+(`session_docs_commit.sh` and `pp066_state.sh` in inline Python, `render_dag.py`,
+`lib/dag_invariants.py`). The shell scripts keep main's inline Python unchanged, and the
+last two run in cargo-free CI steps, which only use released tool versions. They switch,
+and the `.py` is deleted, in the first change after a released `aprender-ci-tools`
+carries `dag-status`.
 
 `git-patch-id` is checked by `scripts/tests/ci_tools_git_patch_id_parity_test.sh`, which
 compares the bin with the `.py` and counts those cases on its own. Native `git patch-id`
