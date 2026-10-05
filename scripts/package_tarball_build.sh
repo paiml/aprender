@@ -18,7 +18,7 @@
 #      cargo's freshness check is by mtime, so an archived mtime older than a warm target dir's
 #      artifact would reuse a build of DIFFERENT sources of the same name+version: a false green,
 #      measured in this gate's own case table) and makes them ONE workspace
-#      (`aprender-ci-tools tarball-workspace`). Every sibling is patched to its unpacked tarball through
+#      (scripts/lib/tarball_workspace.py). Every sibling is patched to its unpacked tarball through
 #      [patch.crates-io]: before a publish the siblings are not on crates.io at this version. The
 #      patch is printed, not hidden. The repository's Cargo.lock and rust-toolchain.toml are copied
 #      in, so third-party versions and the compiler match the release.
@@ -64,15 +64,6 @@
 set -uo pipefail
 SCRIPT_DIR="$(cd -- "$(dirname -- "${BASH_SOURCE[0]}")" && pwd)"
 ROOT="$(cd -- "$SCRIPT_DIR/.." && pwd)"
-# The tarball workspace helper (crates/aprender-ci-tools; C301: no Python in the build). It is
-# built from THIS script's checkout, never from --root's. CI_TOOLS_BIN names a prebuilt binary.
-tarball_workspace() {
-  if [ -n "${CI_TOOLS_BIN:-}" ]; then
-    "$CI_TOOLS_BIN" tarball-workspace "$@"
-  else
-    cargo run -q --manifest-path "$SCRIPT_DIR/../Cargo.toml" -p aprender-ci-tools -- tarball-workspace "$@"
-  fi
-}
 CRATE_FILES=(); NEG=0; DIRTY=(); RUN=0
 NEG_URL="https://static.crates.io/crates/aprender-serve/aprender-serve-0.69.1.crate"
 NEG_SHA="22a710f0bbce7c0e67a90f255e51cec37a4f0390ce9c2561fa3750a7c89e8d9a"
@@ -106,7 +97,7 @@ if [ -n "${TARBALL_BUILD_TARGET_DIR:-}" ]; then
   BUILD_TARGET="$TARBALL_BUILD_TARGET_DIR"
 else
   BUILD_TARGET="$( (cd "$ROOT" && cargo metadata --no-deps --format-version 1 2>/dev/null) \
-                   | tarball_workspace --target-dir)" \
+                   | python3 "$SCRIPT_DIR/lib/tarball_workspace.py" --target-dir)" \
     || { echo "  cannot check: cargo metadata names no target_directory for $ROOT" >&2; exit 2; }
   BUILD_TARGET="$BUILD_TARGET/tarball-build"
 fi
@@ -184,12 +175,12 @@ for f in "${CRATE_FILES[@]}"; do
   mkdir -p "$stage" || { echo "  cannot check: mkdir $stage" >&2; exit 2; }
   tar -xzmf "$f" -C "$stage" || { echo "  cannot check: could not unpack $f" >&2; exit 2; }
   # the name comes from the MANIFEST, never from splitting "$top" on '-' (0.70.0-rc.1)
-  cname=$(tarball_workspace --name "$stage/$top") \
+  cname=$(python3 "$SCRIPT_DIR/lib/tarball_workspace.py" --name "$stage/$top") \
     || { echo "  cannot check: $f carries no readable [package] name" >&2; exit 2; }
   replaced=0
   for old in "$T"/ws/pkgs/*; do
     [ -d "$old" ] || continue
-    oname=$(tarball_workspace --name "$old") || continue
+    oname=$(python3 "$SCRIPT_DIR/lib/tarball_workspace.py" --name "$old") || continue
     if [ "$oname" = "$cname" ]; then
       case "$old" in
         "$T"/ws/pkgs/?*) rm -rf -- "${old:?}"; replaced=$((replaced + 1)) ;;
@@ -202,7 +193,7 @@ for f in "${CRATE_FILES[@]}"; do
 done
 
 # 2. one workspace of tarballs, siblings patched to their unpacked copies
-rows="$(tarball_workspace "$T/ws")" || { echo "  cannot check: could not write the tarball workspace" >&2; exit 2; }
+rows="$(python3 "$SCRIPT_DIR/lib/tarball_workspace.py" "$T/ws")" || { echo "  cannot check: could not write the tarball workspace" >&2; exit 2; }
 cp "$ROOT/Cargo.lock" "$T/ws/Cargo.lock" 2>/dev/null
 [ -f "$ROOT/rust-toolchain.toml" ] && cp "$ROOT/rust-toolchain.toml" "$T/ws/"
 echo "PATCH: $(grep -c . <<< "$rows") crate(s) resolved from their unpacked tarballs via [patch.crates-io] — before a publish the siblings are not on crates.io at this version; nothing is read from $ROOT's sources"

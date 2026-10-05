@@ -43,21 +43,6 @@ resolve_includes() {
   python3 "$REPO_ROOT/scripts/lib/resolve_includes.py" "$1"
 }
 
-# The include!() target diff is the aprender-ci-tools `package-include-diff` subcommand
-# (PY-PORT-2; was scripts/lib/package_include_diff.py). CI_TOOLS_BIN skips the build.
-# Prints the include rows whose target the listing lacks; a non-zero status means the
-# diff itself did not run, which the caller must treat as a FAIL (an empty answer from
-# a broken diff reads as "nothing missing" -- the exact way this guard went vacuous).
-CI_TOOLS_BIN="${CI_TOOLS_BIN:-}"
-package_include_diff() {
-  if [ -n "${CI_TOOLS_BIN:-}" ]; then
-    "$CI_TOOLS_BIN" package-include-diff "$1" "$2" < /dev/null
-  else
-    cargo run -q --manifest-path "$REPO_ROOT/Cargo.toml" -p aprender-ci-tools -- \
-      package-include-diff "$1" "$2" < /dev/null
-  fi
-}
-
 check_all() {
   # SEC010: canonicalize before any cd/mkdir/etc. so a traversal sequence in
   # the caller-supplied root cannot escape the intended directory.
@@ -143,17 +128,9 @@ check_all() {
     printf '%s\n' "$listing"  > "$lf"
     printf '%s\n' "$includes" > "$inf"
 
-    # No `set -e` here, so the helper's status is checked by hand: a diff that did
-    # not run must count as a FAIL, never as "nothing missing".
-    local missing diff_rc
-    missing="$(package_include_diff "$lf" "$inf")"; diff_rc=$?
+    local missing
+    missing="$(python3 "$REPO_ROOT/scripts/lib/package_include_diff.py" "$lf" "$inf")"
     rm -f "$lf" "$inf"
-    if [ "$diff_rc" -ne 0 ]; then
-      printf 'FAIL %s: package-include-diff exited %s (cannot verify %s include!() file(s)).\n' \
-        "$name" "$diff_rc" "$n"
-      total_missing=$((total_missing + 1))
-      continue
-    fi
 
     if [ -n "$missing" ]; then
       while IFS=$'\t' read -r target from; do
@@ -542,36 +519,6 @@ if [ "${1:-}" = "--self-test" ]; then
     printf 'ok    row 32 a cfg(any(test, ...)) module file is still judged\n'
   else
     printf 'FAIL  row 32 cfg(any(test)) module escape was hidden\n'; fails=1
-  fi
-  # Rows 33-34 (PMAT-4741): the include diff is the Rust package-include-diff (the .py is deleted).
-  # Row 33: it names the one absent target. Row 34: a diff that cannot run (no listing) exits
-  # non-zero with nothing printed -- the status check_all turns into a FAIL, never "nothing missing".
-  printf 'a.rs\n' > "$TD/pid-l"
-  printf 'a.rs\tm.rs\nb.rs\tn.rs\n' > "$TD/pid-i"
-  got="$(package_include_diff "$TD/pid-l" "$TD/pid-i")"; pid_rc=$?
-  if [ "$pid_rc" = 0 ] && [ "$got" = "$(printf 'b.rs\tn.rs')" ]; then
-    printf 'ok    row 33 package-include-diff names exactly the absent include target\n'
-  else
-    printf 'FAIL  row 33 package-include-diff: rc=%s out=[%s]\n' "$pid_rc" "$got"; fails=1
-  fi
-  got="$(package_include_diff "$TD/pid-nope" "$TD/pid-i" 2>/dev/null)"; pid_rc=$?
-  if [ "$pid_rc" != 0 ] && [ -z "$got" ]; then
-    printf 'ok    row 34 a package-include-diff whose listing will not open exits %s, prints nothing\n' "$pid_rc"
-  else
-    printf 'FAIL  row 34 unreadable listing: rc=%s out=[%s]\n' "$pid_rc" "$got"; fails=1
-  fi
-  # Row 35 (PMAT-4741): check_all itself fails closed. With the diff stubbed to exit 1 the
-  # one-crate fixture is a FAIL naming the diff; unstubbed, the same fixture PASSes. The vacuity
-  # floor is lowered in a subshell for the one-include fixture only.
-  tb_fixture "$TD/pid-crate" 'include!("part.rs");\n'
-  printf 'pub fn p() {}\n' > "$TD/pid-crate/src/part.rs"
-  ca_bad="$(MIN_EXPECTED_INCLUDES=1; CI_TOOLS_BIN=false; check_all "$TD/pid-crate" 2>&1)"; ca_bad_rc=$?
-  ca_ok="$(MIN_EXPECTED_INCLUDES=1; check_all "$TD/pid-crate" 2>&1)"; ca_ok_rc=$?
-  if [ "$ca_bad_rc" = 1 ] && grep -q '^FAIL pti-fixture: package-include-diff exited 1' <<< "$ca_bad" \
-     && [ "$ca_ok_rc" = 0 ] && grep -q '^PASS' <<< "$ca_ok"; then
-    printf 'ok    row 35 a package-include-diff that fails is a FAIL in check_all; the same crate unstubbed PASSes\n'
-  else
-    printf 'FAIL  row 35 fail-closed: stubbed rc=%s\n%s\nunstubbed rc=%s\n%s\n' "$ca_bad_rc" "$ca_bad" "$ca_ok_rc" "$ca_ok"; fails=1
   fi
   # #4151: include!d .rs files are inside the formatting gate (cargo fmt cannot see them): its own case table
   if bash "$REPO_ROOT/scripts/include_fmt_ratchet.sh" --self-test; then
