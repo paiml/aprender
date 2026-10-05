@@ -20,8 +20,9 @@
 //!   Where Python raised anyway (a syntax error elsewhere, an integer literal of more than
 //!   4300 digits) the exit is its 1.
 //! - A printed `demand_score` that `serde_json` cannot render the way Python did: a list or
-//!   object (Python printed its `repr`), `-0.0` (Python printed `0` for the literal `-0`),
-//!   and a magnitude of 2^63 or more (an integer literal beyond i64/u64 arrives as a float).
+//!   object (Python printed its `repr`), `-0` and `-0.0` (which `serde_json` reads alike, and
+//!   Python printed as `0` and `-0.0`), and a magnitude of 2^63 or more, float literals
+//!   included (an integer literal beyond i64/u64 arrives as a float too).
 //!
 //! The stories come from `yq -o json`, which writes none of these.
 //!
@@ -91,7 +92,8 @@ fn string_token(rest: &[u8]) -> Token {
 fn value_token(rest: &[u8]) -> Option<Token> {
     for constant in [&b"-Infinity"[..], b"Infinity", b"NaN"] {
         if rest.starts_with(constant) {
-            return Some((constant.len(), Some("0")));
+            // Spaced, so a following `.5` or `e5`, which Python raised on, cannot join it.
+            return Some((constant.len(), Some(" 0 ")));
         }
     }
     if !matches!(rest.first(), Some(b'-' | b'0'..=b'9')) {
@@ -105,7 +107,7 @@ fn value_token(rest: &[u8]) -> Option<Token> {
 }
 
 /// `text` with what Python's `json` took and `serde_json` does not made plain JSON:
-/// `NaN`/`Infinity`/`-Infinity` and every number become `0`, every surrogate escape
+/// `NaN`/`Infinity`/`-Infinity` become ` 0 `, every number `0`, every surrogate escape
 /// `A`. `None` where Python raised while tokenizing: a run of number characters that is
 /// not a number it took.
 fn masked_for_serde(text: &str) -> Option<String> {
@@ -353,6 +355,10 @@ mod tests {
             "[+Infinity]",
             "[- Infinity]",
             "[NaNx]",
+            "[NaN.5]",
+            "[NaNe5]",
+            "[Infinitye5]",
+            "[-Infinity.5]",
             "{NaN:1}",
             r#"["\ud800", ]"#,
             r#"["\udc00""#,

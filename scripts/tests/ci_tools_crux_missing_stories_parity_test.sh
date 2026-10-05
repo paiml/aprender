@@ -25,7 +25,7 @@ ROOT="$(git rev-parse --show-toplevel)"
 cd "$ROOT" || exit 1
 PY="${PYTHON:-python3}"
 CMS="$ROOT/scripts/crux_missing_stories.py"
-EXPECTED_CASES=114
+EXPECTED_CASES=117
 
 . scripts/ci_tools_bin.sh || exit 1
 BIN="$CI_TOOLS_BIN"
@@ -192,6 +192,9 @@ c "RAISE: NaN, then the list is not closed" 1 0 '[{"x":NaN}'
 c "RAISE: NaN, then a trailing comma" 1 0 '[{"x":NaN},]'
 c "RAISE: -NaN is not a constant" 1 0 '[{"x":-NaN}]'
 c "RAISE: +Infinity is not a constant" 1 0 '[{"x":+Infinity}]'
+c "RAISE: NaN then .5 is not a number" 1 0 '[{"x":NaN.5}]'
+c "RAISE: Infinity then e5 is not a number" 1 0 '[{"x":Infinitye5}]'
+c "RAISE: -Infinity then .5 is not a number" 1 0 '[{"x":-Infinity.5}]'
 c "RAISE: lone surrogate, then a trailing comma" 1 0 '[{"x":"\\ud800"},]'
 c "RAISE: 1e400, then garbage" 1 0 '[{"x":1e400} x]'
 c "RAISE: an integer of 4301 digits" 1 0 "[{\"x\":$(d 4301)}]"
