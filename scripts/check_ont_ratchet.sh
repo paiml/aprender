@@ -642,11 +642,13 @@ self_test() {
                         *)  row "pv exit $prc + sets -> NO-GO (rc 2)" "$rc" "2" ;;
         esac
     done
-    set +e
-    FAKE_PV_OUT='not json' FAKE_PV_RC=0 PV="$t/fakepv" _ONT_MEASURE_SETS=1 measured_set_lines "$t/armed.json" >/dev/null 2>&1
-    rc=$?
-    set -e
-    row "pv exit 0 + no sets -> NO-GO (rc 2)" "$rc" "2"
+    for prc in 0 1; do
+        set +e
+        FAKE_PV_OUT="not json" FAKE_PV_RC="$prc" PV="$t/fakepv" _ONT_MEASURE_SETS=1 measured_set_lines "$t/armed.json" >/dev/null 2>&1
+        rc=$?
+        set -e
+        row "pv exit $prc + no sets -> NO-GO (rc 2)" "$rc" "2"
+    done
     printf 'self-test: %s passed, %s failed\n' "$pass" "$fail"
     [ -n "$t" ] && [ -d "$t" ] && rm -rf "$t"
     [ "$fail" -eq 0 ]
