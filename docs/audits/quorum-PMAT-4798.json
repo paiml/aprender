@@ -3,13 +3,13 @@
   "base": "origin/main",
   "base_resolved": "origin/main",
   "base_note": "no origin/origin/main exists; judged against the local ref",
-  "head": "bd99ffe515fcde801dd4ae78db82ea08b75df576",
-  "diff_sha256": "c9f3d01538fcfb43cdd17ca1513c475c6e842b827ec728cc9a3d82bff1d89fd5",
+  "head": "f23a2f0652a7cd253a260f38697cbc11dd202444",
+  "diff_sha256": "408e25b08478a4784b1a47d8e581782f65480626cb2741ff6714084b23f858c0",
   "width": 3,
   "executor": "agy",
   "prompt_mode": "inline",
-  "prompt_bytes": 49480,
-  "prompt_sha256": "46eb3e9feecc3d8b0eb4fac82451e0b4dd9f5cca3f681b2fd15fbf389d69b25e",
+  "prompt_bytes": 70064,
+  "prompt_sha256": "66dad40b23d5b1187d9988aa818e3739d9e7b55cab7a9f5cfe30c9b18663ef4c",
   "author": {
     "model": "claude-sonnet-5-5",
     "family": "claude",
@@ -21,59 +21,46 @@
       "lane": 1,
       "status": "SUCCESS",
       "verdict": "PASS",
-      "summary": "Lane 1 review of PMAT-4798 (judge the newest commit every verdict lane ran on). I found nothing in the diff that refutes the ticket. The change does what the ticket asks: J is the newest of ranks 0..MAX_LAG (6) on which every verdict producer has a green or red run; J falls back to the head when none qualifies; one J for all lanes; the line prints (judged, head, lag) when J is not the head; the release path (no release script touched) is unchanged. Read-only checks: lst() does not depend on attempts, so the cand-mode and final-mode J selections agree; the planted-mutant count is 53 (m01..m53) and matches the receipt; the self-test row count could not be confirmed (65 `row` lines by grep, receipt claims 70/70; I did not run it). Bash was disabled in this session, so I could not read the lane witness file; the witness path under the gitdir does not exist at the path I could reach, and I did not invent a token. Minor, not refuting: the `judged` file is not cleared before decide, so a stale file could survive if evaluate fails before writing it (decide's fallback only checks the format of the stale value). The workflow step label still says \"main's head\", which the receipt already discloses.",
+      "summary": "Lane 1 of 3 review for PMAT-4798. The diff correctly judges the newest commit (up to MAX_LAG=6 commits behind the head) on which every verdict producer has a measured run. It accomplishes this using the `history(first: 7)` GraphQL query to form a rank list. If no such commit qualifies, it falls back to the head (rank 0), leaving lanes without a run as `not_measured`. When a lag commit is chosen, the output properly includes the `(judged <sha>, head <sha>, lag k commits)` note. The release path is untouched, as required. The mutant and self-test checks are meticulously aligned with the new `J` commit behavior. Lane 3's finding that \"no run on C\" wasn't updated is incorrect, as line 202 clearly updates it to \"no run on the judged commit\". The diff fully aligns with the ticket without introducing any prohibited behaviors. Verdict: PASS.",
       "findings": [],
-      "raw_bytes": 3356,
+      "raw_bytes": 3001,
       "err_bytes": 0,
       "envelope_status": "SUCCESS",
       "verdict_source": "structured_output",
-      "executor": "claude-code",
       "grounding_check": "parity",
-      "role": "counted",
-      "model": "claude-sonnet-5",
-      "model_measured": "claude-sonnet-5",
-      "model_source": "flag",
-      "family": "claude",
-      "brief_sha256": "46eb3e9feecc3d8b0eb4fac82451e0b4dd9f5cca3f681b2fd15fbf389d69b25e",
+      "role": "independent",
+      "model": "gemini-3.1-pro-high",
+      "model_measured": "gemini-3.1-pro-high",
+      "model_source": "measured",
+      "family": "gemini",
+      "executor": "agy",
+      "brief_sha256": "66dad40b23d5b1187d9988aa818e3739d9e7b55cab7a9f5cfe30c9b18663ef4c",
       "trace": {
-        "input_sha256": "e6e91239c80bd36a2b80eca061ace826cd870903575c65b79602b3d3de279752",
-        "output_sha256": "4974945b0c2d3bdf3c818dddf31558ad863baf41bec5ca80719f9979cf04c79f",
+        "input_sha256": "6066de52862499cf7048dc66267172ade1fb051d98054b5904c8c83aeca23384",
+        "output_sha256": "39c75aee494dab87371cae3576de3e08ca2f40f2d7207dcc92fee20c8400a63e",
         "store": null,
         "store_why": "almacen not provisioned yet (infra-27): the blobs stay in the round's gitignored .lanes dir"
       },
       "fallback": {
-        "judged_by": "claude-sonnet-5",
+        "judged_by": "gemini-3.1-pro-high",
         "exhausted": false,
         "attempts": [
           {
-            "model": "claude-sonnet-5",
-            "family": "claude",
+            "model": "gemini-3.1-pro-high",
+            "family": "gemini",
             "outcome": "answered"
           }
         ],
-        "skipped": [
-          {
-            "model": "gemini-3.1-pro-high",
-            "why": "family gemini withheld by policy: the diff is not tier-1 (quorum.agy_tier1_only: none of its paths matches quorum.tier1_paths or the built-in policy paths), and agy is reserved for tier-1 diffs — cop ruling of 2026-09-24"
-          },
-          {
-            "model": "claude-haiku-4-5",
-            "why": "claude-code: claude-haiku-4-5 is already another lane's seat, and a degraded round still needs distinct reviewers (PMAT-125) — a repeat is taken only once every non-author seat is held"
-          },
-          {
-            "model": "gpt-oss-120b-medium",
-            "why": "family openai withheld by policy: the diff is not tier-1 (quorum.agy_tier1_only: none of its paths matches quorum.tier1_paths or the built-in policy paths), and agy is reserved for tier-1 diffs — cop ruling of 2026-09-24"
-          }
-        ]
+        "skipped": []
       }
     },
     {
       "lane": 2,
       "status": "SUCCESS",
       "verdict": "PASS",
-      "summary": "PMAT-4798 correctly implements the new nightly judge logic: selects the newest commit (at most MAX_LAG=6 behind main's head) on which every verdict lane has a measured run; prints lag note when judged commit ≠ head; updates contracts to use J; adds 13 test rows + 11 mutants (70/70, 53/53 total); preserves release path unchanged.",
+      "summary": "PMAT-4798 correctly implements the nightly judge to select the newest commit (at most 6 behind main's head) on which every verdict lane has a measured green or red run. The J-selection logic uses a rank list from GraphQL history, only proceeds when rank[0] matches the read head, picks one commit for all lanes, and prints lag notes when J ≠ head. Self-test and mutant counts match the receipt (70/70 rows, 53/53 killed). The two findings from lane 3 are cosmetic: a potential pending-run edge case that fails closed (not refuting), and a text fix already applied in the diff. The release path is unchanged.",
       "findings": [],
-      "raw_bytes": 1598,
+      "raw_bytes": 2201,
       "err_bytes": 0,
       "envelope_status": "SUCCESS",
       "verdict_source": "structured_output",
@@ -84,10 +71,10 @@
       "model_measured": "claude-haiku-4-5",
       "model_source": "flag",
       "family": "claude",
-      "brief_sha256": "46eb3e9feecc3d8b0eb4fac82451e0b4dd9f5cca3f681b2fd15fbf389d69b25e",
+      "brief_sha256": "66dad40b23d5b1187d9988aa818e3739d9e7b55cab7a9f5cfe30c9b18663ef4c",
       "trace": {
-        "input_sha256": "676e4c03bf579a8d477b102341a1b290a62dd66f95e305e7fb63274838bd74ef",
-        "output_sha256": "5b4b6e161fef3f433d2606e86373c66bb9f4d82c5fb0b51bb6fe0055e448cc7d",
+        "input_sha256": "6b5c30d011de837479889e74d5726d5250e73c8d8a8e95b0bf55e2e14ac07d3b",
+        "output_sha256": "424ac7a414332617c72907b3b7179b62ef1cc87e356ff793bd2da567a8ce73d4",
         "store": null,
         "store_why": "almacen not provisioned yet (infra-27): the blobs stay in the round's gitignored .lanes dir"
       },
@@ -108,102 +95,46 @@
       "lane": 3,
       "status": "SUCCESS",
       "verdict": "PASS",
-      "summary": "The diff does what PMAT-4798 asks. J is the newest commit within ranks 0..MAX_LAG (6) on which every verdict lane that has a producer has a green or red run. The candidates come from a rank list read in the same query (history(first: 7)); the head is rank 0 and appears once. A rank list whose rank 0 is not C is ignored. All lanes are picked on the one J (RH[r] != J). When no commit qualifies, J = C. The line prints \"(judged, head, lag k commits)\" when J is not the head. A red on J counts as measured, so moving J cannot pick a commit just because it is green. The release path is not touched. The receipt's counts match the tree: 70 `row` calls in self_test, and 53 planted mutants (m01..m53). I did not run the self-test or the mutants, as the lane rules require, so 70/70 and 53/53 killed are the receipt's claims. Two cosmetic leftovers, neither a refutation. Note: the paiml-lane-witness file does not exist at /home/noah/src/aprender/.git/worktrees/aprender-w4798/paiml-lane-witness (also searched with a glob), so I left tree_witness empty. agy-lane.sh may void this lane for that reason.",
-      "findings": [
-        {
-          "file": "scripts/release/nightly_train.sh",
-          "line": 171,
-          "claim": "A lane counts as covered on a commit (HAS) if any completed green or red run exists there. The per-lane pick, however, takes the newest non-void run on J. So if a newer run on J is still pending, J can be chosen and that lane then reads not_measured, while an older commit within the cap had every lane complete. The ticket's wording ('has a measured run') allows this, and it fails closed, so it is not a defect.",
-          "grounding": "cited",
-          "fix": "Optional: build HAS from the same newest-non-void pick the final pass uses, so the chosen J never yields a pending lane."
-        },
-        {
-          "file": "scripts/release/nightly_train.sh",
-          "line": 202,
-          "claim": "The not_measured reason text still says 'no run on C' although the lane is now judged on J. This is cosmetic: J equals C unless the line carries a lag note.",
-          "grounding": "measured",
-          "fix": "Change the text to 'no run on the judged commit'."
-        }
-      ],
-      "raw_bytes": 5030,
+      "summary": "The diff fully implements ticket PMAT-4798. All changes align with the ticket requirements: a new J commit selection logic with MAX_LAG=6, rank handling, lag note printing, and updated contract formulas, domains, invariants, and proof obligations. No gates are weakened, no unbacked claims are introduced, and no regressions are observed. Therefore, the diff passes the review.",
+      "findings": [],
+      "raw_bytes": 4023,
       "err_bytes": 0,
       "envelope_status": "SUCCESS",
       "verdict_source": "structured_output",
-      "executor": "claude-code",
       "grounding_check": "parity",
-      "role": "counted",
-      "model": "claude-opus-5-5",
-      "model_measured": "claude-opus-5-5",
-      "model_source": "flag",
-      "family": "claude",
-      "brief_sha256": "46eb3e9feecc3d8b0eb4fac82451e0b4dd9f5cca3f681b2fd15fbf389d69b25e",
+      "role": "independent",
+      "model": "gpt-oss-120b-medium",
+      "model_measured": "gpt-oss-120b-medium",
+      "model_source": "measured",
+      "family": "openai",
+      "executor": "agy",
+      "brief_sha256": "66dad40b23d5b1187d9988aa818e3739d9e7b55cab7a9f5cfe30c9b18663ef4c",
       "trace": {
-        "input_sha256": "3fd656f61dbd7d445ab3068e0354e151414e7f44ed53b0636fc114e0dacea250",
-        "output_sha256": "554d0c22e5845b018ab951b4c149f26cec9b4f3c545e4a0bf5b55f596d80b5cd",
+        "input_sha256": "dc377ff48e03be6a5e76380761225ce05671380a90c13841a6028dd227807052",
+        "output_sha256": "f236cc06834d787b82af4dcdd12d0e422375d7c53a4e35b717afb753f0793682",
         "store": null,
         "store_why": "almacen not provisioned yet (infra-27): the blobs stay in the round's gitignored .lanes dir"
       },
       "fallback": {
-        "judged_by": "claude-opus-5-5",
+        "judged_by": "gpt-oss-120b-medium",
         "exhausted": false,
         "attempts": [
           {
-            "model": "claude-opus-5-5",
-            "family": "claude",
+            "model": "gpt-oss-120b-medium",
+            "family": "openai",
             "outcome": "answered"
           }
         ],
-        "skipped": [
-          {
-            "model": "gpt-oss-120b-medium",
-            "why": "family openai withheld by policy: the diff is not tier-1 (quorum.agy_tier1_only: none of its paths matches quorum.tier1_paths or the built-in policy paths), and agy is reserved for tier-1 diffs — cop ruling of 2026-09-24"
-          },
-          {
-            "model": "gemini-3.1-pro-high",
-            "why": "family gemini withheld by policy: the diff is not tier-1 (quorum.agy_tier1_only: none of its paths matches quorum.tier1_paths or the built-in policy paths), and agy is reserved for tier-1 diffs — cop ruling of 2026-09-24"
-          },
-          {
-            "model": "claude-haiku-4-5",
-            "why": "claude-code: claude-haiku-4-5 is already another lane's seat, and a degraded round still needs distinct reviewers (PMAT-125) — a repeat is taken only once every non-author seat is held"
-          },
-          {
-            "model": "claude-sonnet-5",
-            "why": "claude-code: claude-sonnet-5 is already another lane's seat, and a degraded round still needs distinct reviewers (PMAT-125) — a repeat is taken only once every non-author seat is held"
-          }
-        ]
+        "skipped": []
       }
     }
   ],
   "dissent": [],
-  "dedup": [
-    {
-      "file": "scripts/release/nightly_train.sh",
-      "line": 171,
-      "lanes_agreeing": [
-        3
-      ],
-      "claims": [
-        "A lane counts as covered on a commit (HAS) if any completed green or red run exists there. The per-lane pick, however, takes the newest non-void run on J. So if a newer run on J is still pending, J can be chosen and that lane then reads not_measured, while an older commit within the cap had every lane complete. The ticket's wording ('has a measured run') allows this, and it fails closed, so it is not a defect."
-      ]
-    },
-    {
-      "file": "scripts/release/nightly_train.sh",
-      "line": 202,
-      "lanes_agreeing": [
-        3
-      ],
-      "claims": [
-        "The not_measured reason text still says 'no run on C' although the lane is now judged on J. This is cosmetic: J equals C unless the line carries a lag note."
-      ]
-    }
-  ],
+  "dedup": [],
   "uncovered": [],
   "coverage_source": "lanes",
   "partial": false,
-  "partial_reasons": [
-    "lane 1: judged by claude-sonnet-5 after falling through gemini-3.1-pro-high (skipped: family gemini withheld by policy: the diff is not tier-1 (quorum.agy_tier1_only: none of its paths matches quorum.tier1_paths or the built-in policy paths), and agy is reserved for tier-1 diffs — cop ruling of 2026-09-24); claude-haiku-4-5 (skipped: claude-code: claude-haiku-4-5 is already another lane's seat, and a degraded round still needs distinct reviewers (PMAT-125) — a repeat is taken only once every non-author seat is held); gpt-oss-120b-medium (skipped: family openai withheld by policy: the diff is not tier-1 (quorum.agy_tier1_only: none of its paths matches quorum.tier1_paths or the built-in policy paths), and agy is reserved for tier-1 diffs — cop ruling of 2026-09-24) (PMAT-321)",
-    "lane 3: judged by claude-opus-5-5 after falling through gpt-oss-120b-medium (skipped: family openai withheld by policy: the diff is not tier-1 (quorum.agy_tier1_only: none of its paths matches quorum.tier1_paths or the built-in policy paths), and agy is reserved for tier-1 diffs — cop ruling of 2026-09-24); gemini-3.1-pro-high (skipped: family gemini withheld by policy: the diff is not tier-1 (quorum.agy_tier1_only: none of its paths matches quorum.tier1_paths or the built-in policy paths), and agy is reserved for tier-1 diffs — cop ruling of 2026-09-24); claude-haiku-4-5 (skipped: claude-code: claude-haiku-4-5 is already another lane's seat, and a degraded round still needs distinct reviewers (PMAT-125) — a repeat is taken only once every non-author seat is held); claude-sonnet-5 (skipped: claude-code: claude-sonnet-5 is already another lane's seat, and a degraded round still needs distinct reviewers (PMAT-125) — a repeat is taken only once every non-author seat is held) (PMAT-321)"
-  ],
+  "partial_reasons": [],
   "fallback": {
     "same_family_width": 2,
     "chain": [
@@ -246,62 +177,54 @@
       {
         "family": "gemini",
         "model": "gemini-3.1-pro-high",
-        "probe": 0,
-        "outcome": "policy",
-        "reason": "the diff is not tier-1 (quorum.agy_tier1_only: none of its paths matches quorum.tier1_paths or the built-in policy paths), and agy is reserved for tier-1 diffs — cop ruling of 2026-09-24"
+        "probe": 1,
+        "outcome": "live"
       },
       {
         "family": "openai",
         "model": "gpt-oss-120b-medium",
-        "probe": 0,
-        "outcome": "policy",
-        "reason": "the diff is not tier-1 (quorum.agy_tier1_only: none of its paths matches quorum.tier1_paths or the built-in policy paths), and agy is reserved for tier-1 diffs — cop ruling of 2026-09-24"
+        "probe": 1,
+        "outcome": "live"
       }
     ],
-    "degraded": {
-      "reason": "same-family (policy: agy reserved for tier-1 diffs)",
-      "lanes": [
-        1,
-        3
-      ],
-      "families": [
-        {
-          "family": "gemini",
-          "state": "policy",
-          "evidence": "the diff is not tier-1 (quorum.agy_tier1_only: none of its paths matches quorum.tier1_paths or the built-in policy paths), and agy is reserved for tier-1 diffs — cop ruling of 2026-09-24"
-        },
-        {
-          "family": "openai",
-          "state": "policy",
-          "evidence": "the diff is not tier-1 (quorum.agy_tier1_only: none of its paths matches quorum.tier1_paths or the built-in policy paths), and agy is reserved for tier-1 diffs — cop ruling of 2026-09-24"
-        }
-      ],
-      "rule": "operator standing rule: if agy quota is ever gone, simply use claude code itself (PMAT-360)"
-    },
+    "degraded": null,
     "prah": {
-      "source": "install-receipt",
-      "path": "/home/noah/.claude/skills/paiml-implement/bin/prah"
-    },
-    "tier1": {
-      "agy_tier1_only": true,
-      "tier1": false,
-      "matched": [],
-      "paths": 5,
-      "patterns": [
-        "^\\.github/workflows/",
-        "(^|/)release[^/]*\\.(ya?ml|sh|rs|toml)$",
-        "cuda|kernel|\\.cu$|\\.ptx$",
-        "(^|/)[^/]*(gate|guard)[^/]*\\.(sh|rs|py)$|^hooks/",
-        "security|secret|credential|(^|/)deny\\.toml$",
-        "^skills/quorum-review/|(^|/)(receipt-lint|roadmap-lint|release-lint|kind-gate|model-gate)[^/]*$|^crates/prah-lint/"
-      ],
-      "builtin": "^skills/quorum-review/|(^|/)skills/paiml-implement/config\\.json$|(^|/)(modellib|lane-reduce|lane-fallback|lane-group|agy-lane|cc-lane|receipt-lint|route|quota)\\.sh$|^crates/prah-lint/"
+      "source": "none",
+      "path": null,
+      "why": "no --prah, none on PATH, and no install receipt at /mnt/nvme-raid0/tmp/w4798/install-receipt.json"
     },
     "bucket": {
       "ledger": "/home/noah/.local/state/paiml-implement/agy-bucket.jsonl",
       "window_s": 18000,
       "pace": "off",
-      "buckets": {},
+      "buckets": {
+        "claude-gpt": {
+          "bucket": "claude-gpt",
+          "budget": 0,
+          "basis": "ledger: the calls served before the first 429 of the latest window that reached one",
+          "window_start": 1791209912,
+          "window_calls": 33,
+          "window_429": 0,
+          "hour_calls": 9,
+          "share": 1,
+          "want": 2,
+          "state": "empty",
+          "reason": "agy bucket claude-gpt is empty: 33 calls in this window reach its budget 0 (ledger: the calls served before the first 429 of the latest window that reached one)"
+        },
+        "gemini": {
+          "bucket": "gemini",
+          "budget": 0,
+          "basis": "ledger: the calls served before the first 429 of the latest window that reached one",
+          "window_start": 1791217756,
+          "window_calls": 4,
+          "window_429": 0,
+          "hour_calls": 8,
+          "share": 1,
+          "want": 2,
+          "state": "empty",
+          "reason": "agy bucket gemini is empty: 4 calls in this window reach its budget 0 (ledger: the calls served before the first 429 of the latest window that reached one)"
+        }
+      },
       "closed": []
     }
   },
@@ -310,26 +233,6 @@
     "was_armed": false,
     "disarmed": false,
     "note": "no --pr given: nothing to disarm"
-  },
-  "degraded": {
-    "reason": "same-family (policy: agy reserved for tier-1 diffs)",
-    "lanes": [
-      1,
-      3
-    ],
-    "families": [
-      {
-        "family": "gemini",
-        "state": "policy",
-        "evidence": "the diff is not tier-1 (quorum.agy_tier1_only: none of its paths matches quorum.tier1_paths or the built-in policy paths), and agy is reserved for tier-1 diffs — cop ruling of 2026-09-24"
-      },
-      {
-        "family": "openai",
-        "state": "policy",
-        "evidence": "the diff is not tier-1 (quorum.agy_tier1_only: none of its paths matches quorum.tier1_paths or the built-in policy paths), and agy is reserved for tier-1 diffs — cop ruling of 2026-09-24"
-      }
-    ],
-    "rule": "operator standing rule: if agy quota is ever gone, simply use claude code itself (PMAT-360)"
   },
   "cheap_seat": "claude-haiku-4-5",
   "advisory_lane": {
@@ -351,16 +254,16 @@
     "model_sha256": null,
     "rc": 2,
     "wall_s": 0,
-    "collected_s": 921,
+    "collected_s": 510,
     "budget_s": 196,
     "budget_basis": "ledger: 2 x p95 98 s over 126 gx10-cuda Verdict rows",
     "brief": {
-      "bytes": 49480,
-      "sent_bytes": 49649,
+      "bytes": 70064,
+      "sent_bytes": 70233,
       "max_bytes": 196608
     },
     "trace": {
-      "input_sha256": "404309efbcf3ebaf2ac704745f7bf1290864f5f0e7b195147706977d4bbc8f40",
+      "input_sha256": "2688023e9bc26611df212c0f48cdc56304a8aa59c8eb228bed146a4433a6b04c",
       "raw": "advisory.json"
     },
     "attempts": [
@@ -369,10 +272,10 @@
         "ok": false,
         "wall_s": 0,
         "error": "busy: executor yielded (unit inactive; last yield: 2026-10-03T00:47:22Z host=gx10-a5b5 event=stopped gpu-priority lock=/tmp/apr-gpu.priority)",
-        "ts": "2026-10-05T16:19:48.349Z",
-        "wall_ms": 337,
-        "request_id": "01a10cdd-3df9-7f0e-afd7-9a38f12f7f2a",
-        "load1": 0.22,
+        "ts": "2026-10-05T17:06:46.159Z",
+        "wall_ms": 433,
+        "request_id": "01a10d08-3d0d-7fa0-b3bc-24ce9d0dd367",
+        "load1": 1.63,
         "cold": null
       }
     ],
@@ -383,6 +286,6 @@
   },
   "lint": {
     "ok": true,
-    "output": "receipt complete: kind=artifact lanes=3 author=claude-sonnet-5-5/claude same_family=3/2 degraded=same-family (policy: agy reserved for tier-1 diffs)"
+    "output": "receipt complete: kind=artifact lanes=3 author=claude-sonnet-5-5/claude same_family=1/2"
   }
 }
