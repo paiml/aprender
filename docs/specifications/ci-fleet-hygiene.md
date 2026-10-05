@@ -201,6 +201,13 @@ derives `crate<TAB>--lib<TAB>module::path` (src/a/b.rs → `a::b`, src/a/mod.rs 
 resolve falls back to the whole crate (2 columns) **and prints `WARN unresolved-include` on stderr** — a silent
 fallback restores the 88 % without anyone noticing.
 
+A `mod b;` for src/a/b.rs is found in src/a/mod.rs **or in the Rust-2018 sibling file src/a.rs** (no
+src/a/mod.rs). The derivation once read only the directory, so aprender-contracts'
+`ontology/extract/json/github.rs` (declared in `json.rs`) fell back whole, and that whole-lib row then won over
+all 44 module rows of the crate. Fixture: `reader_mods/src/flat.rs` declares `pub mod child;` for
+`src/flat/child.rs` → `flat::child`. Falsifier: `--self-test` with `TREE_READER_MUTATE_NO_2018=1` (the scanner
+before this rule) must lose exactly `flat::child` to `reader_mods --lib`.
+
 The narrowing is a **TOKEN** extension of the ONE build graph #3089 built (PMAT-1098 —
 `cargo nextest run --workspace --lib --tests -E "$EXPR"`): `targets=` gains
 `crate:--lib:module::path` beside `crate:--lib`, `crate:--bins` and `crate:--test:NAME`, and
