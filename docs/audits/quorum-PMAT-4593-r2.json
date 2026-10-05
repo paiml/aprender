@@ -1,0 +1,232 @@
+{
+  "ticket": "PMAT-4593",
+  "base": "origin/main",
+  "base_resolved": "origin/main",
+  "base_note": "no origin/origin/main exists; judged against the local ref; brief_exclude (C45) kept out of the brief: docs/roadmaps/roadmap.yaml",
+  "head": "471044b263cf6efc07bd34780390127be2f82645",
+  "diff_sha256": "aaa22ee5272df4739aa3f0a092816c3bf8748d059ed3dde1a86fd33a758e5758",
+  "width": 2,
+  "executor": "agy",
+  "prompt_mode": "inline",
+  "prompt_bytes": 52494,
+  "prompt_sha256": "d89f81907b50ef4fe7e6397defbbf21d62e1e0e4aeec87ed5b1d0a57f5c20698",
+  "author": {
+    "model": "claude-opus-5-5",
+    "family": "claude",
+    "source": "flag"
+  },
+  "agreed": false,
+  "lanes": [
+    {
+      "lane": 1,
+      "status": "SUCCESS",
+      "verdict": "PASS",
+      "summary": "REVIEWER CHECK answer: the author's claim is FALSE. `cta64_mma128_all_ones_at_256` builds only the \"mma128\" case via `cta64_sweep_cases(n).into_iter().find(|case| case.label == \"mma128\")`, times it, then calls `assert_all_ones_gemm(&c, n)` on a fresh C buffer. The CTA32 kernel (`gemm_cta_wmma_fp16`) is never launched there, so its output is not checked. The original test never checked CTA32 output either, so no assertion was lost. Judged against the round 2 scope: (a) the only assertion in the original test, `max_err < 1.0` at n=256 on the mma128 output, is still run by a non-ignored test. It is also still run inside the ignored sweep via `assert_all_ones_gemm`. The new standalone test is stricter than the original, because C starts at 0 and only mma128 writes to it. A PTX load failure now fails the test, where the sweep silently skipped the check. (b) The helper keeps the condition `max_err < 1.0`, the expected value `n as f32` (K, since the matrix is square), and the message `\"64x128 correctness FAILED at {n}: max_err={max_err}, expected={expected}\"` exactly. (c) The marker is `#[ignore = \"FLAKE-0 #4593\"]`. I also compared the per-kernel launch shapes (PTX entry, sm_80 target, grid, block, shared memory) against the original and they match. CTA32, CTA64 and Dbuf64 compile failures still skip the size row (`None if case.required => return`). The other kernels read ∞ on failure. Gaps: the roadmap acceptance criteria still say \"no other test changes\" and carry the superseded REVIEWER CHECK wording, which is cosmetic under the round 2 scope. GPU execution is not_measured, as the receipt says. The OOM fix is out of scope.",
+      "findings": [
+        {
+          "file": "crates/aprender-gpu/src/driver/cublas_tests.rs",
+          "line": 1255,
+          "claim": "The author's claim that cta64_mma128_all_ones_at_256 checks the CTA32 output is false: the test selects only the mma128 case via `.find(|case| case.label == \"mma128\")` and asserts on that kernel's C buffer; gemm_cta_wmma_fp16 is never launched there. Nothing is lost, since the original also never checked CTA32 output.",
+          "grounding": "cited"
+        }
+      ],
+      "raw_bytes": 5135,
+      "err_bytes": 0,
+      "envelope_status": "SUCCESS",
+      "verdict_source": "structured_output",
+      "executor": "claude-code",
+      "grounding_check": "parity",
+      "role": "counted",
+      "model": "claude-sonnet-5-5",
+      "model_measured": "claude-sonnet-5-5",
+      "model_source": "flag",
+      "family": "claude",
+      "brief_sha256": "d89f81907b50ef4fe7e6397defbbf21d62e1e0e4aeec87ed5b1d0a57f5c20698",
+      "trace": {
+        "input_sha256": "3c059af18a5607547798d70949f67bb954ef1f4388f89bb42ada7c81d42cc15c",
+        "output_sha256": "99fccd44a1fa5136a30d4da4b87a02a911e6c58b3efe96021d98551b9cba6930",
+        "store": null,
+        "store_why": "almacen not provisioned yet (infra-27): the blobs stay in the round's gitignored .lanes dir"
+      },
+      "fallback": {
+        "judged_by": "claude-sonnet-5-5",
+        "exhausted": false,
+        "attempts": [
+          {
+            "model": "claude-sonnet-5-5",
+            "family": "claude",
+            "outcome": "answered"
+          }
+        ],
+        "skipped": []
+      }
+    },
+    {
+      "lane": 2,
+      "status": "SUCCESS",
+      "verdict": "PASS",
+      "summary": "The diff satisfies all five acceptance criteria for PMAT-4593. The test `cta64_vs_cta32_vs_cublas_fp16` is correctly marked with `#[ignore = \"FLAKE-0 #4593\"]`. The n=256 all-ones correctness assertion is preserved in both the ignored sweep (line ~1239 via `cta64_sweep_row`) and in a new separate normal test `cta64_mma128_all_ones_at_256()` with identical condition and message. All kernel configurations (PTX entry names, SM targets, tile sizes, block dimensions, shared memory) are preserved. Pre-commit complexity checks passed. The correctness check now runs in CI via the non-ignored test, meeting criterion 5.",
+      "findings": [],
+      "raw_bytes": 2181,
+      "err_bytes": 0,
+      "envelope_status": "SUCCESS",
+      "verdict_source": "structured_output",
+      "executor": "claude-code",
+      "grounding_check": "parity",
+      "role": "counted",
+      "model": "claude-haiku-4-5",
+      "model_measured": "claude-haiku-4-5",
+      "model_source": "flag",
+      "family": "claude",
+      "brief_sha256": "d89f81907b50ef4fe7e6397defbbf21d62e1e0e4aeec87ed5b1d0a57f5c20698",
+      "trace": {
+        "input_sha256": "5dfa2788b0b76f4b05f571570cf3d00c3ebfcd10442f083e62fc9f4ca5572510",
+        "output_sha256": "3e76a5b2bad44d2ff1d022f199540b073de0deeedf5590ac477fc8421251180c",
+        "store": null,
+        "store_why": "almacen not provisioned yet (infra-27): the blobs stay in the round's gitignored .lanes dir"
+      },
+      "fallback": {
+        "judged_by": "claude-haiku-4-5",
+        "exhausted": false,
+        "attempts": [
+          {
+            "model": "claude-haiku-4-5",
+            "family": "claude",
+            "outcome": "answered"
+          }
+        ],
+        "skipped": []
+      }
+    }
+  ],
+  "dissent": [],
+  "dedup": [
+    {
+      "file": "crates/aprender-gpu/src/driver/cublas_tests.rs",
+      "line": 1255,
+      "lanes_agreeing": [
+        1
+      ],
+      "claims": [
+        "The author's claim that cta64_mma128_all_ones_at_256 checks the CTA32 output is false: the test selects only the mma128 case via `.find(|case| case.label == \"mma128\")` and asserts on that kernel's C buffer; gemm_cta_wmma_fp16 is never launched there. Nothing is lost, since the original also never checked CTA32 output."
+      ]
+    }
+  ],
+  "uncovered": [],
+  "coverage_source": "lanes",
+  "partial": true,
+  "partial_reasons": [
+    "receipt-lint refused the artifact (PMAT-124/#128): FAIL quorum artifact: 2 lanes share the author's family ('claude-opus-5-5'/claude) and no lane OUTSIDE it answered — the same-family cap is reachable only behind an independent lane that actually returned a verdict (R-15a answered-third)"
+  ],
+  "fallback": {
+    "same_family_width": 2,
+    "chain": [
+      {
+        "model": "claude-sonnet-5-5",
+        "family": "claude",
+        "disposition": "claude-code",
+        "why": "run by Claude Code on its own budget: a configured seat runs every round, a fallback step only when every non-Claude family is measured out (PMAT-360, operator standing rule)"
+      },
+      {
+        "model": "claude-haiku-4-5",
+        "family": "claude",
+        "disposition": "claude-code",
+        "why": "run by Claude Code on its own budget: a configured seat runs every round, a fallback step only when every non-Claude family is measured out (PMAT-360, operator standing rule)"
+      },
+      {
+        "model": "qwen3.5",
+        "family": "qwen",
+        "disposition": "not-run",
+        "why": "no quorum.local_lane in the config — the aprender lane has no model to load"
+      }
+    ],
+    "precheck": [],
+    "degraded": null,
+    "prah": {
+      "source": "install-receipt",
+      "path": "/home/noah/.claude/skills/paiml-implement/bin/prah"
+    },
+    "tier1": {
+      "agy_tier1_only": true,
+      "tier1": false,
+      "matched": [],
+      "paths": 4,
+      "patterns": [
+        "^\\.github/workflows/",
+        "(^|/)release[^/]*\\.(ya?ml|sh|rs|toml)$",
+        "cuda|kernel|\\.cu$|\\.ptx$",
+        "(^|/)[^/]*(gate|guard)[^/]*\\.(sh|rs|py)$|^hooks/",
+        "security|secret|credential|(^|/)deny\\.toml$",
+        "^skills/quorum-review/|(^|/)(receipt-lint|roadmap-lint|release-lint|kind-gate|model-gate)[^/]*$|^crates/prah-lint/"
+      ],
+      "builtin": "^skills/quorum-review/|(^|/)skills/paiml-implement/config\\.json$|(^|/)(modellib|lane-reduce|lane-fallback|lane-group|agy-lane|cc-lane|receipt-lint|route|quota)\\.sh$|^crates/prah-lint/"
+    },
+    "bucket": {
+      "ledger": "/home/noah/.local/state/paiml-implement/agy-bucket.jsonl",
+      "window_s": 18000,
+      "pace": "off",
+      "buckets": {},
+      "closed": []
+    }
+  },
+  "auto_merge": {
+    "checked": false,
+    "was_armed": false,
+    "disarmed": false,
+    "note": "no --pr given: nothing to disarm"
+  },
+  "cheap_seat": "claude-haiku-4-5",
+  "advisory_lane": {
+    "state": "unavailable",
+    "counts": false,
+    "row": {
+      "NotRun": "Busy"
+    },
+    "verdict": "unavailable",
+    "why": "no host answered inside the budget",
+    "served_by": null,
+    "gpu_proof": null,
+    "apr": null,
+    "apr_binary_sha256": null,
+    "apr_tag": null,
+    "apr_commit": null,
+    "apr_build_why": null,
+    "model": null,
+    "model_sha256": null,
+    "rc": 2,
+    "wall_s": 1,
+    "collected_s": 134,
+    "budget_s": 196,
+    "budget_basis": "ledger: 2 x p95 98 s over 126 gx10-cuda Verdict rows",
+    "brief": {
+      "bytes": 52494,
+      "sent_bytes": 52663,
+      "max_bytes": 196608
+    },
+    "trace": {
+      "input_sha256": "593373dc4163c17cea1893e10cfc9aa820b02722bc87dcbcbdab8cdcde145ce8",
+      "raw": "advisory.json"
+    },
+    "attempts": [
+      {
+        "host": "gx10",
+        "ok": false,
+        "wall_s": 1,
+        "error": "busy: executor yielded (unit inactive; last yield: 2026-10-03T00:47:22Z host=gx10-a5b5 event=stopped gpu-priority lock=/tmp/apr-gpu.priority)",
+        "ts": "2026-10-05T09:25:16.786Z",
+        "wall_ms": 381,
+        "request_id": "01a10b61-bb6f-7dd5-a0b9-35de4c95ca0f",
+        "load1": 0.21,
+        "cold": null
+      }
+    ],
+    "ledger": "/home/noah/.local/state/paiml-implement/advisory-ledger.jsonl",
+    "raw": "advisory.json",
+    "agrees_with_counted": null,
+    "counted": "NOT-AGREED"
+  },
+  "lint": {
+    "ok": false,
+    "output": "FAIL quorum artifact: 2 lanes share the author's family ('claude-opus-5-5'/claude) and no lane OUTSIDE it answered — the same-family cap is reachable only behind an independent lane that actually returned a verdict (R-15a answered-third)"
+  }
+}
