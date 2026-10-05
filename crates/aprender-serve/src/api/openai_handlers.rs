@@ -334,13 +334,18 @@ mod perf039_ignore_eos_tests {
             "<unk>",
         )
         .expect("test tokenizer");
-        let stops = chat_stop_tokens(&request(None), &tok, 2);
+        // Through `chat_quantized_config`, whose signature predates the fix, so
+        // the same test compiles on the parent commit and is RED there.
+        let cancel = crate::generate::CancelToken::never();
+        let stops =
+            chat_quantized_config(&request(None), &tok, Some(2), false, &cancel).stop_tokens;
         assert!(stops.contains(&2), "the declared EOS stays live: {stops:?}");
         assert!(
             stops.contains(&1),
             "<|endoftext|> must end a chat turn: {stops:?}"
         );
-        assert!(chat_stop_tokens(&request(Some(true)), &tok, 2).is_empty());
+        let ignored = chat_quantized_config(&request(Some(true)), &tok, Some(2), false, &cancel);
+        assert!(ignored.stop_tokens.is_empty());
     }
 
     #[test]
