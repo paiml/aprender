@@ -317,11 +317,13 @@ rule_r8() {
     fi
     # R10/L19 (operator 2026-09-28): report-only is a waiver and a waiver is a stop. rc 0 alone is not
     # a pass: the wrapper must have printed the enforced Pass for exactly this version and HEAD.
-    if printf '%s\n' "$out" | grep -qE '^WARN +R8 '; then
+    # A here-string, never `printf | grep -q`: grep -q exits at its first match, printf takes SIGPIPE,
+    # and pipefail turns a FOUND WARN row into a miss (row r8_warn_ahead_of_2mib_refuses).
+    if grep -qE '^WARN +R8 ' <<< "$out"; then
         echo "FAIL  R8 the release-readiness wrapper printed a WARN R8 row: report-only is a waiver, not a pass"
         return 1
     fi
-    if ! printf '%s\n' "$out" | grep -qF "ok    R8 #3715 ENFORCE PASS version=$version commit=$head pv="; then
+    if ! grep -qF "ok    R8 #3715 ENFORCE PASS version=$version commit=$head pv=" <<< "$out"; then
         echo "FAIL  R8 the release-readiness wrapper exited 0 without '#3715 ENFORCE PASS' for $version at $head"
         return 1
     fi
@@ -529,6 +531,8 @@ me="$(cd "$(dirname "$0")/../.." && pwd -P)"
 want="--version 1.2.3 --commit $(git -C "$me" rev-parse HEAD) --dogfood-receipt"
 case "${*:3}" in "$want "*.dogfood/receipt-*.json) : ;; *) echo "FAIL  R8 wrapper asked: $*"; exit 3 ;; esac
 [ "${FX_READINESS_WARN:-0}" = 1 ] && echo "WARN  R8 REPORT-ONLY release-readiness-v1 for 1.2.3: Fail, 3 violation(s): cell=3"
+# FX_READINESS_WARN_BIG=1: a WARN R8 row, then 2 MiB, then the Pass lines and exit 0 (a pipe into grep -q loses the WARN)
+[ "${FX_READINESS_WARN_BIG:-0}" = 1 ] && { echo "WARN  R8 REPORT-ONLY release-readiness-v1 for 1.2.3: Fail, 1 violation(s): cell=1"; head -c 2097152 /dev/zero | tr '\0' '\n'; }
 [ "${FX_READINESS_RC:-0}" = 0 ] && [ "${FX_READINESS_WARN:-0}" = 0 ] && echo "ok    R8 release-readiness-v1 for 1.2.3: Pass"
 [ "${FX_READINESS_RC:-0}" = 0 ] && [ "${FX_READINESS_WARN:-0}" = 0 ] && [ "${FX_READINESS_NO_ENFORCE:-0}" = 0 ] \
     && echo "ok    R8 #3715 ENFORCE PASS version=1.2.3 commit=$(git -C "$me" rev-parse HEAD) pv=pv-fixture out_sha256=0"
@@ -712,6 +716,7 @@ FXREADY
     d="$tmp/r8"; build_repo "$d"
     row r8_pass_is_named                  0 "ok    R8 release-readiness-v1 for 1.2.3: Pass" "$d"
     FX_READINESS_WARN=1 row r8_report_mode_warn_refuses 1 "report-only is a waiver" "$d"
+    FX_READINESS_WARN_BIG=1 row r8_warn_ahead_of_2mib_refuses 1 "report-only is a waiver" "$d"
     FX_READINESS_NO_ENFORCE=1 row r8_rc0_without_enforce_pass_refuses 1 "without '#3715 ENFORCE PASS'" "$d"
     FX_READINESS_RC=1 row r8_enforced_fail_refuses 1 "FAIL  R8 the release-readiness wrapper exited 1" "$d"
     FX_READINESS_RC=2 row r8_could_not_judge_refuses 1 "FAIL  R8 the release-readiness wrapper exited 2" "$d"
