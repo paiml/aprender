@@ -137,14 +137,36 @@ self_test() {
     manifest_rows || fail=1
     reader_rows || fail=1
 
-    if [ "$fail" -ne 0 ]; then
+    # The verdict itself, both ways (#4821): an unmeasured row is never exit 0.
+    local vr vf vq vw
+    for vr in "0 0 0" "1 0 1" "0 1 1" "1 1 1"; do
+        read -r vf vq vw <<< "$vr"
+        n=$((n + 1))
+        if self_test_verdict "$vf" "$vq" 0 > /dev/null; then got=0; else got=1; fi
+        if [ "$got" -eq "$vw" ]; then
+            printf "ok   %-58s rc=%s\n" "verdict fail=$vf unmeasured=$vq -> rc $vw" "$got"
+        else
+            printf "FAIL %-58s rc=%s want %s\n" "verdict fail=$vf unmeasured=$vq -> rc $vw" "$got" "$vw"
+            fail=1
+        fi
+    done
+
+    self_test_verdict "$fail" "$q" "$n"
+}
+
+# self_test_verdict FAIL Q N -- rc 0 only when no row failed AND every row was measured.
+# An UNMEASURED row (a precondition that never held, FLAKE-0 #4759) is not a pass (L25):
+# ci/sections.yml reads only this exit code, so a 0 here would carry it through the gate (#4821).
+self_test_verdict() {
+    if [ "$1" -ne 0 ]; then
         echo "check_guard_steps_run_all self-test: FAILED"
         return 1
     fi
-    if [ "$q" -gt 0 ]; then
-        echo "UNMEASURED check_guard_steps_run_all self-test: $q row(s) not measured: a precondition never held (FLAKE-0 #4759)"
+    if [ "$2" -gt 0 ]; then
+        echo "UNMEASURED check_guard_steps_run_all self-test: $2 row(s) not measured: a precondition never held (FLAKE-0 #4759) -- not a pass"
+        return 1
     fi
-    echo "check_guard_steps_run_all self-test: ${n}/${n} cases pass, $q not measured"
+    echo "check_guard_steps_run_all self-test: ${3}/${3} cases pass, 0 not measured"
 }
 
 # mfixture <file> <variant> [step-run...] -- a guard job + its `-steps` manifest.
