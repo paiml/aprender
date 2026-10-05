@@ -15,8 +15,11 @@
 #   K2  B has exactly one parent: main moves only by squash commits
 #   K3  B is an ancestor of the PR head H
 #   K4  M^{tree} == H^{tree}: the queue tests exactly the tree the head tested
-#   K5  the newest ci.yml pull_request run on H is completed; the run and job
-#       lists are complete (no unread page), and every job is that run's, on H
+#   K5  the newest ci.yml pull_request run on H is completed and is THIS PR's
+#       run against main (its pull_requests[] holds number N with base.ref
+#       main; a run on H for another PR or another base compared another
+#       origin -- #4820); the run and job lists are complete (no unread page),
+#       and every job is that run's, on H
 #   K6  the same-named job succeeded there. x86-main and determinism are ONE unit:
 #       determinism-compare waits on x86-main's X64 artifact and the gate reads
 #       both jobs' section results, so they are reused together, and only when
@@ -31,7 +34,7 @@
 # x86-main is skipped.
 #
 #   ci_mg_reuse.sh decide  --event E --queue-head M --base B --pr-head H
-#                          --runs FILE --jobs FILE [--repo-root DIR]
+#                          --pr-number N --runs FILE --jobs FILE [--repo-root DIR]
 #   ci_mg_reuse.sh resolve --event E --ref QUEUE_REF --queue-head M --base B
 #                          --repo OWNER/NAME [--repo-root DIR]   (3 gh api calls)
 #   ci_mg_reuse.sh --self-test [--workflow FILE]
@@ -47,12 +50,14 @@ emit() { printf 'x86=%s\ndet=%s\nmac=%s\ncite=%s\npr_head=%s\nreason=%s\n' "$1" 
 refuse() { emit 0 0 0 "" "$PRH" "$1"; }
 usage() { echo "usage: ci_mg_reuse.sh decide|resolve [opts] | --self-test [--workflow FILE]" >&2; exit 2; }
 
-# The newest ci.yml pull_request run on $2 in runs file $1: "id<TAB>status<TAB>attempt".
+# The newest ci.yml pull_request run on $2 in runs file $1: "id<TAB>status<TAB>attempt<TAB>bound",
+# bound = true only when that run's pull_requests[] holds PR $3 against main (#4820). The newest
+# run is picked first and then judged, never filtered down to an older bound one: stricter only.
 pick_run() {
-  jq -r --arg h "$2" --arg p "$CI_WORKFLOW_PATH" '
+  jq -r --arg h "$2" --arg p "$CI_WORKFLOW_PATH" --arg n "$3" '
     [.workflow_runs[]? | select(.path == $p and .event == "pull_request" and .head_sha == $h)]
     | sort_by([.created_at, .id]) | last // empty
-    | "\(.id)\t\(.status)\t\(.run_attempt // 1)"' "$1" 2> /dev/null
+    | "\(.id)\t\(.status)\t\(.run_attempt // 1)\t\(any(.pull_requests[]?; (.number | tostring) == $n and .base.ref == "main"))"' "$1" 2> /dev/null
 }
 
 # The conclusion of the ONE job named $2 in jobs file $1; any other count is not success.
@@ -62,13 +67,14 @@ concl() {
 }
 
 decide() {
-  local ev="" m="" b="" h="" runs="" jobs="" root="."
+  local ev="" m="" b="" h="" pn="" runs="" jobs="" root="."
   while [ $# -gt 0 ]; do
     case "$1" in
       --event) ev="${2-}" ;;
       --queue-head) m="${2-}" ;;
       --base) b="${2-}" ;;
       --pr-head) h="${2-}" ;;
+      --pr-number) pn="${2-}" ;;
       --runs) runs="${2-}" ;;
       --jobs) jobs="${2-}" ;;
       --repo-root) root="${2-}" ;;
@@ -94,9 +100,10 @@ decide() {
   h=$(git -C "$root" rev-parse --verify --quiet "$h^{commit}" 2> /dev/null)
   PRH="$h"
   jq -e '(.total_count // -1) == ([.workflow_runs[]?] | length)' "$runs" > /dev/null 2>&1 || { refuse "K5: the run list for the PR head is unreadable or has an unread page"; return 0; } # R:k5-runs-complete
-  local rid st att
-  IFS=$'\t' read -r rid st att <<< "$(pick_run "$runs" "$h")"
+  local rid st att bound
+  IFS=$'\t' read -r rid st att bound <<< "$(pick_run "$runs" "$h" "$pn")"
   [ "$st" = completed ] || { refuse "K5: the newest ci.yml pull_request run on the PR head is '${st:-absent}' (run ${rid:-none})"; return 0; } # R:k5-completed
+  [ "$bound" = true ] || { refuse "K5: run $rid on the PR head is not PR #${pn:-none}'s run against main"; return 0; } # R:k5-pr-bound
   jq -e '(.total_count // -1) == ([.jobs[]?] | length)' "$jobs" > /dev/null 2>&1 || { refuse "K5: the job list of run $rid is unreadable or has an unread page"; return 0; } # R:k5-jobs-complete
   jq -e --arg id "$rid" --arg h "$h" '([.jobs[]?] | length) > 0 and all(.jobs[]; (.run_id | tostring) == $id and .head_sha == $h)' "$jobs" > /dev/null 2>&1 || { refuse "K5: the job list is not run $rid's on the PR head"; return 0; } # R:k5-jobs-run
   local why="" x mc
@@ -139,11 +146,11 @@ resolve() {
   if ! gh api "repos/$repo/actions/runs?head_sha=$h&event=pull_request&per_page=100" > "$w/runs.json" 2> /dev/null; then
     refuse "lookup failed: the PR head's runs"; rm -rf "${w:?}"; return 0
   fi
-  IFS=$'\t' read -r rid _ _ <<< "$(pick_run "$w/runs.json" "$h")"
+  IFS=$'\t' read -r rid _ _ _ <<< "$(pick_run "$w/runs.json" "$h" "$n")"
   if [ -z "$rid" ] || ! gh api "repos/$repo/actions/runs/$rid/jobs?filter=latest&per_page=100" > "$w/jobs.json" 2> /dev/null; then
     refuse "lookup failed: the jobs of run '${rid:-none}'"; rm -rf "${w:?}"; return 0
   fi
-  decide --event "$ev" --queue-head "$m" --base "$b" --pr-head "$h" \
+  decide --event "$ev" --queue-head "$m" --base "$b" --pr-head "$h" --pr-number "$n" \
     --runs "$w/runs.json" --jobs "$w/jobs.json" --repo-root "$root"
   rm -rf "${w:?}"
 }
@@ -162,11 +169,13 @@ jobs_json() {
      | {name: .[0], conclusion: .[1], status: "completed", run_id: $rid, head_sha: $h}]
     | {total_count: (length + $extra), jobs: .}'
 }
-# run_obj ID HEAD STATUS [PATH] [EVENT] [CREATED]
+# run_obj ID HEAD STATUS [PATH] [EVENT] [CREATED] [PULL_REQUESTS_JSON]; the default binds PR 4655 to main
+PRS_4655_MAIN='[{"number":4655,"base":{"ref":"main"}}]'
 run_obj() {
   jq -n --argjson id "$1" --arg h "$2" --arg s "$3" --arg p "${4:-$CI_WORKFLOW_PATH}" \
     --arg e "${5:-pull_request}" --arg c "${6:-2026-10-01T00:00:00Z}" \
-    '{id: $id, path: $p, event: $e, status: $s, head_sha: $h, run_attempt: 1, created_at: $c}'
+    --argjson prs "${7:-$PRS_4655_MAIN}" \
+    '{id: $id, path: $p, event: $e, status: $s, head_sha: $h, run_attempt: 1, created_at: $c, pull_requests: $prs}'
 }
 # runs_json EXTRA_TOTAL < run objects
 runs_json() { jq -s --argjson extra "$1" '{total_count: (length + $extra), workflow_runs: .}'; }
@@ -210,6 +219,15 @@ self_test() {
   run_obj 1001 "$H" completed .github/workflows/other.yml | runs_json 0 > "$F/runs.otherwf"
   run_obj 1001 "$H" completed "" push | runs_json 0 > "$F/runs.push"
   jobs_json "$H" 1001 1 <<< "$GREEN_JOBS" > "$F/jobs.partial"
+  # #4820: the newest run on H must be THIS PR's (4655), against main
+  local P4656='[{"number":4656,"base":{"ref":"main"}}]'
+  run_obj 1001 "$H" completed "" "" "" "$P4656" | runs_json 0 > "$F/runs.other-pr"
+  run_obj 1001 "$H" completed "" "" "" '[{"number":4655,"base":{"ref":"release/x"}}]' | runs_json 0 > "$F/runs.other-base"
+  run_obj 1001 "$H" completed "" "" "" '[]' | runs_json 0 > "$F/runs.no-prs"
+  run_obj 1001 "$H" completed "" "" "" 'null' | runs_json 0 > "$F/runs.null-prs"
+  run_obj 1001 "$H" completed "" "" "" '[{"number":4656,"base":{"ref":"main"}},{"number":4655,"base":{"ref":"main"}}]' | runs_json 0 > "$F/runs.two-prs"
+  # an older bound run is never fallen back to when the newest run is another PR's (stricter only)
+  { run_obj 1001 "$H" completed; run_obj 1002 "$H" completed "" "" 2026-10-02T00:00:00Z "$P4656"; } | runs_json 0 > "$F/runs.newest-other-pr"
   jobs_json "$H" 999 0 <<< "$GREEN_JOBS" > "$F/jobs.otherrun"
   jobs_json "$B" 1001 0 <<< "$GREEN_JOBS" > "$F/jobs.otherhead"
   printf '{"total_count":0,"jobs":[]}\n' > "$F/jobs.empty"
@@ -228,8 +246,8 @@ self_test() {
     if [ "$got" = "$want" ]; then pass=$((pass + 1)); else
       fail=$((fail + 1)); echo "FAIL $n: want '$want' got '$got' -- $(kv reason "$out")"; fi
   }
-  dr() { local n="$1" want="$2" ev="$3" m="$4" b="$5" h="$6" r="$7" j="$8"
-    row "$n" "$want" --event "$ev" --queue-head "$m" --base "$b" --pr-head "$h" --runs "$F/$r" --jobs "$F/$j"; }
+  dr() { local n="$1" want="$2" ev="$3" m="$4" b="$5" h="$6" r="$7" j="$8" pn="${9-4655}"
+    row "$n" "$want" --event "$ev" --queue-head "$m" --base "$b" --pr-head "$h" --pr-number "$pn" --runs "$F/$r" --jobs "$F/$j"; }
 
   dr planted-4655-must-run      "0 0 1" merge_group "$M" "$B" "$H" runs.4655 jobs.4655
   dr positive-reuse             "1 1 1" merge_group "$M" "$B" "$H" runs.ok jobs.ok
@@ -256,7 +274,17 @@ self_test() {
   dr k5-jobs-on-another-head    "0 0 0" merge_group "$M" "$B" "$H" runs.ok jobs.otherhead
   dr k5-jobs-empty              "0 0 0" merge_group "$M" "$B" "$H" runs.ok jobs.empty
   dr k5-jobs-garbage            "0 0 0" merge_group "$M" "$B" "$H" runs.ok garbage
-  dr k6-determinism-failed      "0 0 1" merge_group "$M" "$B" "$H" runs.ok jobs.fail-determinism
+  dr k5-run-is-another-prs      "0 0 0" merge_group "$M" "$B" "$H" runs.other-pr jobs.ok
+  dr k5-run-against-release-x   "0 0 0" merge_group "$M" "$B" "$H" runs.other-base jobs.ok
+  dr k5-run-no-pull-requests    "0 0 0" merge_group "$M" "$B" "$H" runs.no-prs jobs.ok
+  dr k5-run-null-pull-requests  "0 0 0" merge_group "$M" "$B" "$H" runs.null-prs jobs.ok
+  dr k5-newest-run-other-pr     "0 0 0" merge_group "$M" "$B" "$H" runs.newest-other-pr jobs.ok
+  dr k5-pr-number-empty         "0 0 0" merge_group "$M" "$B" "$H" runs.ok jobs.ok ""
+  dr k5-pr-number-other         "0 0 0" merge_group "$M" "$B" "$H" runs.ok jobs.ok 4656
+  dr k5-pr-number-prefix        "0 0 0" merge_group "$M" "$B" "$H" runs.ok jobs.ok 465
+  dr positive-run-lists-two-prs "1 1 1" merge_group "$M" "$B" "$H" runs.two-prs jobs.ok
+  row k5-pr-number-absent       "0 0 0" --event merge_group --queue-head "$M" --base "$B" --pr-head "$H" --runs "$F/runs.ok" --jobs "$F/jobs.ok"
+  dr k6-determinism-failed     "0 0 1" merge_group "$M" "$B" "$H" runs.ok jobs.fail-determinism
   dr k6-determinism-missing     "0 0 1" merge_group "$M" "$B" "$H" runs.ok jobs.no-det
   dr k6-head-gate-failed        "0 0 1" merge_group "$M" "$B" "$H" runs.ok jobs.fail-gate
   dr k6-head-ci-gate-failed     "0 0 1" merge_group "$M" "$B" "$H" runs.ok jobs.fail-ci___gate
@@ -295,6 +323,7 @@ STUB
   rrow gh-pulls-fails    "0 0 0" "pulls/"  "$H" "$QREF"
   rrow gh-runs-fails     "0 0 0" "head_sha=" "$H" "$QREF"
   rrow gh-jobs-fails     "0 0 0" "/jobs"   "$H" "$QREF"
+  rrow pr-of-another-number "0 0 0" ""      "$H" "refs/heads/gh-readonly-queue/main/pr-4656-${B}"
   rrow head-unfetchable  "0 0 0" ""        0123456789abcdef0123456789abcdef01234567 "$QREF"
 
   # The verdict block, run exactly as ci.yml carries it in ci-gate and gate.
