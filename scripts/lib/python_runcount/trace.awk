@@ -161,11 +161,15 @@ function do_open(pid, rest,    a, d, fd, p, r, i, m) {
 # Pass 1 (the log is read twice): who forked whom. strace may print a child's
 # lines before its parent's clone result, so the tree must be known up front.
 # The kernel reuses pids, so the tree is kept per LIFETIME: pid P after its Nth
-# exit line is a new process, with its own parent, image and working dir.
+# exit line is a new process, with its own parent, image and working dir. A
+# child's Nth lifetime is the Nth clone that returned its pid, counted per pid,
+# never its exit count at the clone line: a child can exit before its parent's
+# clone result is printed (T10). The first pid is the root, made by no clone.
 NR == FNR {
-    if ($0 ~ /^[0-9]+ +\+\+\+ (exited|killed) /) { life1[$1]++; next }
+    if (!root1) { root1 = $1; ncl[root1] = 1 }
+    if ($0 ~ /^[0-9]+ +\+\+\+ (exited|killed) /) next
     if ($0 ~ / (clone3?|v?fork)\(/ || $0 ~ /<\.\.\. (clone3?|v?fork) resumed>/) if ($0 ~ /= [0-9]+$/) {
-        c = $0; sub(/^.*= /, "", c); if (c + 0 > 0) par1[c, life1[c] + 0] = $1
+        c = $0; sub(/^.*= /, "", c); if (c + 0 > 0) par1[c, ncl[c]++] = $1
     }
     next
 }

@@ -354,7 +354,8 @@ self_test() {
     ( cd "$td/w" && PATH="$td/bin:$PATH" bash "$SELF" --run "$td/o_rc" -- bash -c 'exit 7' ) > /dev/null 2>&1 || rc=$?
     _eq 'R1 --run exits with the command status' '7' "$rc"
     _eq 'R2 --count on a measured run exits 0' '0' "$(rc_of bash "$SELF" --count "$td/o_env_call")"
-    _eq 'R3 --count on a trace=not_measured run exits 2, never a count' '2' "$(rc_of bash "$SELF" --count "$td/o_none_notrace")"
+    _eq 'R3 --count on a trace=not_measured run exits 2 and says why, never a count' '2 1' \
+        "$(rc_of bash "$SELF" --count "$td/o_none_notrace") $(bash "$SELF" --count "$td/o_none_notrace" 2>&1 > /dev/null | grep -c -e 'trace=not_measured')"
     # A --run inside a --run: two shim dirs on PATH. A shim that execs the other shim loops for ever.
     nest() {
         cd "$td/w" || return
@@ -383,6 +384,19 @@ self_test() {
 100 +++ exited with 0 +++
 SYN
     _eq 'T1 a reused pid keys by its own cwd and caller, not the dead process'"'"'s' 'script:sub/tool.py lane2.sh' "$(cut -f1,3 "$td/o_reuse/keys" 2>/dev/null | tr '\t' ' ')"
+    # A child can exit before its parent's clone result is printed: it is still that clone's child (lifetime 0).
+    synth early "$k" <<'SYN'
+100 execve("/bin/bash", ["bash", "/opt/lanes/lane.sh"], 0x7ffd /* 5 vars */) = 0
+100 openat(AT_FDCWD, "/opt/lanes/lane.sh", O_RDONLY) = 3
+100 chdir("@W@/sub") = 0
+100 clone(child_stack=NULL, flags=SIGCHLD <unfinished ...>
+200 execve("/usr/bin/python3", ["python3", "tool.py"], 0x7ffd /* 5 vars */) = 0
+200 openat(AT_FDCWD, "tool.py", O_RDONLY|O_CLOEXEC) = 3
+200 +++ exited with 0 +++
+100 <... clone resumed>) = 200
+100 +++ exited with 0 +++
+SYN
+    _eq 'T10 a child that exits before its clone result keys by the cwd and caller of its parent' 'script:sub/tool.py lane.sh' "$(cut -f1,3 2>/dev/null < "$td/o_early/keys" | tr '\t' ' ')"
     # The temp dir is the one the lane ran with (meta), not whatever TMPDIR --count sees.
     mkdir -p "$td/o_tmpd"; printf '%s\n' "$k" > "$td/o_tmpd/meta"; : > "$td/o_tmpd/shim.log"
     cat > "$td/o_tmpd/trace.raw" <<'SYN'
@@ -595,6 +609,8 @@ M49 no TMPDIR makes every path a temp path|T9|lib/python_runcount/keys.awk|s/(tm
 M50 a shim that execs another shim (nested --run loops)|R4|lib/python_runcount/shim|/-ef "\$self"/d
 M51 --count on a not_measured run exits 0|R3|python_runcount.sh|s/\[ "\$(meta "\$1" trace)" = measured \] ||/true ||/
 M52 --count fails a measured run|R2|python_runcount.sh|s/\[ "\$(meta "\$1" trace)" = measured \] ||/false ||/
+M53 a child's lifetime read from its own exit count at the clone line|T10|lib/python_runcount/trace.awk|s/(exited|killed) \/) next$/(exited|killed) \/) { dl[$1]++; next }/;s/par1\[c, ncl\[c\]++\]/par1[c, dl[c] + 0]/
+M54 the shim skips only its own directory, not every link to itself|R4|lib/python_runcount/shim|s/\[ "\$d\/\$name" -ef "\$self" \]/[ "$d" = "${self%\/*}" ]/
 TABLE
     printf '\nkilled=%s total=%s errors=%s\n' "$killed" "$total" "$errors"
     [ "$killed" -eq "$total" ] && [ "$errors" -eq 0 ]

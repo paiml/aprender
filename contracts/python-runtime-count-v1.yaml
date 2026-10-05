@@ -58,6 +58,8 @@
 #   untracked repo script hashed at --count T8; no TMPDIR means /tmp only T9.
 #   v3 (redesign r1): a --run nested in a --run ends (no shim-to-shim loop) R4;
 #   --count on a run with no trace exits 2 R3, on a measured run 0 R2.
+#   v4 (redesign r2): a child that exits before its parent's clone result is
+#   printed keeps its parent's cwd and caller T10; --count names trace=not_measured R3.
 #
 # REPORT-ONLY TODAY. It lands as a ratchet from the measured value (head vs
 # base, never worse) and blocks only after three green nights, by sign-off.
@@ -247,6 +249,11 @@ non_goals:
   - "A script path holding a newline or a tab is not hashed by the shim; such a temp script keys by count-time content, or gone@caller."
   - "Which entry points changed, as a gate. The ratchet is on the count; added keys are listed even when GREEN."
   - "A head lane that stopped early with the same exit status as base. The status is the only completion evidence; the ratchet's lane must run to its end."
+  - "Python -c or stdin code that execs another program before it exits leaves no key: the exec is read as the shim handing over, which it must not count twice."
+  - "Python reached by absolute path under a name that is not python-like (a renamed symlink, no #! line) is not seen as Python."
+  - "A -m run whose argv also holds a word equal to a package it imports can key by that word (-m json.tool json keys -m:json); one key, stable run to run, like the start-up module tokens above."
+  - "A data file opened by -c or stdin code and named on its argv keys as that script (fail-safe: an extra key can only raise the count)."
+  - "A numeric dirfd (openat(N, ...), fchdir, execveat) of a pid the kernel reused within one run can resolve against the dead process's fd."
   - "Judging an entry point. The count says what runs; porting each to Rust is separate work."
 
 binding_registry:
