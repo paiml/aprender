@@ -6,6 +6,7 @@
 pub mod coverage_report_scope;
 pub mod dag_status;
 pub mod git_patch_id;
+pub mod llama_fit_verdict;
 pub mod package_include_diff;
 pub mod publishable_crates;
 pub mod pystr;
