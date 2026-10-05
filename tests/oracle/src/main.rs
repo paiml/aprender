@@ -189,18 +189,24 @@ fn main() {
                     .map(|v| pv_violations(&v))
                     .unwrap_or_default();
                 let agree = got == pv;
+                let (only_oracle, only_pv) = multiset_difference(&got, &pv);
                 corpus = serde_json::json!({
                     "ran": true,
                     "oracle_violations": got.len(),
                     "pv_violations": pv.len(),
                     "agree": agree,
+                    "only_oracle": only_oracle,
+                    "only_pv": only_pv,
                 });
                 if !agree {
                     disagreements.push(format!(
-                        "corpus: oracle {} violation(s), pv {} — first difference: {:?}",
+                        "corpus: oracle {} violation(s), pv {}; {} only in the oracle {:?}; {} only in pv {:?}",
                         got.len(),
                         pv.len(),
-                        first_difference(&got, &pv)
+                        only_oracle.len(),
+                        only_oracle,
+                        only_pv.len(),
+                        only_pv
                     ));
                 }
             }
@@ -271,12 +277,49 @@ fn pv_violations(v: &serde_json::Value) -> Vec<Pair> {
     out
 }
 
-fn first_difference(a: &[Pair], b: &[Pair]) -> String {
-    for (i, x) in a.iter().enumerate() {
-        match b.get(i) {
-            Some(y) if y == x => {}
-            other => return format!("at {i}: oracle {x:?} vs pv {other:?}"),
+/// Every pair that one sorted list holds more times than the other, as (only in `a`, only in `b`). A
+/// multiset difference, not a set one: the same pair reported twice by one side and once by the other is a
+/// disagreement. The old "first difference" named one index and hid the rest, so a 736-against-730 corpus
+/// could not be explained pair by pair (#4837).
+fn multiset_difference(a: &[Pair], b: &[Pair]) -> (Vec<Pair>, Vec<Pair>) {
+    let (mut only_a, mut only_b) = (Vec::new(), Vec::new());
+    let (mut i, mut j) = (0, 0);
+    while i < a.len() && j < b.len() {
+        match a[i].cmp(&b[j]) {
+            std::cmp::Ordering::Equal => {
+                i += 1;
+                j += 1;
+            }
+            std::cmp::Ordering::Less => {
+                only_a.push(a[i].clone());
+                i += 1;
+            }
+            std::cmp::Ordering::Greater => {
+                only_b.push(b[j].clone());
+                j += 1;
+            }
         }
     }
-    format!("pv has {} extra", b.len().saturating_sub(a.len()))
+    only_a.extend_from_slice(&a[i..]);
+    only_b.extend_from_slice(&b[j..]);
+    (only_a, only_b)
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    fn p(f: &str, c: &str) -> Pair {
+        (f.to_string(), c.to_string())
+    }
+
+    #[test]
+    fn the_difference_names_every_pair_and_counts_repeats() {
+        let a = [p("x", "closed"), p("x", "in"), p("x", "in"), p("y", "minCount")];
+        let b = [p("x", "in"), p("y", "minCount"), p("z", "datatype")];
+        let (oa, ob) = multiset_difference(&a, &b);
+        assert_eq!(oa, vec![p("x", "closed"), p("x", "in")]);
+        assert_eq!(ob, vec![p("z", "datatype")]);
+        assert_eq!(multiset_difference(&b, &b), (vec![], vec![]));
+    }
 }
