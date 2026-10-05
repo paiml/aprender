@@ -11,7 +11,8 @@
 # 1 <= N <= 16 (docker reads --memory=0 as unlimited), each flag given exactly once (docker honours the last).
 # Known limit: a tripwire against a cap being dropped by accident, not against an author who hides one.
 #
-#   check_mutants_memory_cap.sh [file...]  default: mutants-nightly.yml and ci/sections.yml
+#   check_mutants_memory_cap.sh [file...]  default: mutants-nightly.yml, ci/sections.yml and ci.yml (mutants-shard);
+#                                          each file must be readable and hold a mutation run, else rc 2
 #   check_mutants_memory_cap.sh --self-test
 set -uo pipefail
 ROOT="$(cd "$(dirname "$0")/.." && pwd)" || exit 2
@@ -26,20 +27,24 @@ runs() {
                      r = $0
                      while (match(r, /--memory-swap=[0-9]+g/)) { s = substr(r, RSTART + 14, RLENGTH - 15); sc++; r = substr(r, RSTART + RLENGTH) }
                      if ($0 ~ /IMAGE/) inhdr = 0 }
-    start && ($0 ~ /cargo mutants / && $0 !~ /--version/ || $0 ~ /mutants_diff_gate\.sh/) { mut = 1 }
+    start && ($0 ~ /cargo mutants / && $0 !~ /--version/ || $0 ~ /mutants_(diff_gate|table_shard)\.sh/) { mut = 1 }
     /^ *- name:/ { flush() }
     END { flush() }' "$1"
 }
-check() { # check <file...> -> 0 iff at least one mutation run exists across the files and all are capped
-    local f n=0 bad=0 line
+check() { # check <file...> -> 0 iff every file is readable, holds a mutation run, and all runs are capped
+    local f n bad=0 line out
     for f in "$@"; do
+        # A file the guard cannot read, or one with no mutation run, was not judged: never a pass.
+        [ -f "$f" ] && [ -r "$f" ] || { printf 'ENV   %s is missing or unreadable -- cannot judge, not a pass\n' "$f" >&2; return 2; }
+        out=$(runs "$f") || { printf 'ENV   cannot parse %s -- cannot judge, not a pass\n' "$f" >&2; return 2; }
+        n=0
         while read -r line; do
             [ -n "$line" ] || continue
             n=$((n + 1))
             case "$line" in *" ok "*) printf 'ok    %s:%s\n' "$f" "$line" ;; *) printf 'FAIL  %s:%s\n' "$f" "$line" >&2; bad=1 ;; esac
-        done < <(runs "$f")
+        done <<< "$out"
+        [ "$n" -gt 0 ] || { printf 'ENV   no mutation docker run found in: %s -- cannot judge, not a pass\n' "$f" >&2; return 2; }
     done
-    [ "$n" -gt 0 ] || { printf 'ENV   no mutation docker run found in: %s -- cannot judge, not a pass\n' "$*" >&2; return 2; }
     return "$bad"
 }
 
@@ -65,7 +70,21 @@ if [ "${1:-}" = "--self-test" ]; then
     row 1 dupflag  '--memory=16g --memory-swap=16g --memory=128g --memory-swap=128g'
     printf 'x: 1\n' > "$d/none.yml"; rc=0; check "$d/none.yml" > /dev/null 2>&1 || rc=$?
     [ "$rc" = 2 ] && echo "ok    no mutation run is ENV rc=2" || { echo "FAIL  no run gave rc=$rc"; bad=1; }
+    # Every listed file is judged on its own: a missing file, or one with no run, is never carried by another.
+    mrow() { # mrow <want rc> <name> <file...>
+        local want=$1 name=$2 rc=0; shift 2; check "$@" > /dev/null 2>&1 || rc=$?
+        if [ "$rc" = "$want" ]; then printf 'ok    %-14s rc=%s\n' "$name" "$rc"; else printf 'FAIL  %-14s wanted rc=%s got %s\n' "$name" "$want" "$rc"; bad=1; fi
+    }
+    mrow 2 missing     "$d/capped.yml" "$d/gone.yml"
+    mrow 2 missingonly "$d/gone.yml"
+    mrow 2 onerunless  "$d/capped.yml" "$d/none.yml"
+    mrow 0 twocapped   "$d/capped.yml" "$d/smaller.yml"
+    # The per-PR shard runs cargo-mutants inside scripts/mutants_table_shard.sh (ci.yml mutants-shard).
+    printf '    steps:\n      - name: s\n        run: |\n          docker run --rm \\\n            %s \\\n            -w /workspace "$IMAGE" \\\n            bash -c '"'"'bash scripts/mutants_table_shard.sh pr.diff 1 16 2 out'"'"'\n' '-v /a:/b' > "$d/shard.yml"
+    mrow 1 shardnocap  "$d/shard.yml"
+    sed -i 's#-v /a:/b#--memory=16g --memory-swap=16g#' "$d/shard.yml"
+    mrow 0 shardcapped "$d/shard.yml"
     [ "$bad" = 0 ] && { echo "SELF-TEST PASSED"; exit 0; }
     echo "SELF-TEST FAILED" >&2; exit 1
 fi
-if [ "$#" -gt 0 ]; then check "$@"; else check "$ROOT/.github/workflows/mutants-nightly.yml" "$ROOT/ci/sections.yml"; fi
+if [ "$#" -gt 0 ]; then check "$@"; else check "$ROOT/.github/workflows/mutants-nightly.yml" "$ROOT/ci/sections.yml" "$ROOT/.github/workflows/ci.yml"; fi
