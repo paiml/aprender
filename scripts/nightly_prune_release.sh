@@ -70,7 +70,10 @@ prune() { # DIST
   page=1
   while :; do
     batch=$(api GET "$A/releases/$rel/assets?per_page=$PAGE&page=$page") || die "listing assets page $page failed"
-    batch=$(printf '%s' "$batch" | jq -er '.[] | "\(.id)\t\(.name)"' 2>/dev/null) || batch=""
+    # a 200 whose body is not an array (a proxy's HTML, an error object) is a listing
+    # that could not be read, never the empty page that ends it
+    jq -e 'type == "array"' <<< "$batch" >/dev/null 2>&1 || die "assets page $page is not a JSON array"
+    batch=$(printf '%s' "$batch" | jq -r '.[] | "\(.id)\t\(.name)"') || die "reading assets page $page failed"
     n=0
     [ -z "$batch" ] || n=$(printf '%s\n' "$batch" | wc -l)
     [ -z "$batch" ] || all+="$batch"$'\n'
@@ -115,7 +118,9 @@ d="$(dirname "$0")"
 case "$1 $2" in
   "GET "*/releases/tags/nightly) [ ! -e "$d/norel" ] || exit 4; echo '{"id": 7}' ;;
   "GET "*/assets\?per_page=*)
-    p=${2##*page=}; s=$(( (p - 1) * 100 + 1 )); e=$(( p * 100 ))
+    p=${2##*page=}
+    [ ! -e "$d/badpage$p" ] || { echo '<html>bad gateway</html>'; exit 0; }
+    s=$(( (p - 1) * 100 + 1 )); e=$(( p * 100 ))
     sed -n "${s},${e}p" "$d/assets" | jq -Rn '[inputs | split("\t") | {id: (.[0]|tonumber), name: .[1]}]' ;;
   "DELETE "*) echo "${2##*/}" >> "$d/deleted" ;;
   *) exit 1 ;;
@@ -171,6 +176,9 @@ STUB
   rm -f "$tmp/norel"; touch "$tmp/fail"; run
   check "an API failure is never an empty release: exit nonzero" "$rc" 1
   rm -f "$tmp/fail"
+  touch "$tmp/badpage2"; run
+  check "a page that is not a JSON array (HTTP 200 HTML) is never the empty last page: exit nonzero" "$rc" 1
+  rm -f "$tmp/badpage2"
   check "a missing dist dir: exit nonzero" \
     "$( (GITHUB_REPOSITORY=o/r NIGHTLY_PRUNE_API="$tmp/api" prune "$tmp/nope") >/dev/null 2>&1; echo $?)" 1
 
