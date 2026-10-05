@@ -66,7 +66,7 @@ fixture() { # fixture <file> <kind>... ; kinds: plain cancelled always event eve
 }
 
 self_test() {
-    local d fail=0 n=0 q=0
+    local d fail=0 n=0 q=0 qt=0 qnt=0 qtix=""
     d=$(mktemp -d) || return 2
     # shellcheck disable=SC2064
     trap "rm -rf -- '${d:?}'" RETURN
@@ -138,33 +138,58 @@ self_test() {
     reader_rows || fail=1
 
     verdict_rows || fail=1
-    selftest_verdict "$fail" "$n" "$q"
+    selftest_verdict "$fail" "$n" "$q" "$qt" "$qnt" "$qtix"
 }
 
-# selftest_verdict FAIL N Q -> rc 0 pass, 1 a row failed, 3 a row was not measured.
+# quarantine TICKET LABEL READ -- a FLAKE-0 row. It still runs and prints what it read, but it
+# is counted in QT only: never in N (not ok), never in Q (not "a precondition never held"), and
+# it never fails the table. A quarantined row whose TICKET is not "#NNNN" is counted in QNT, and
+# the self-test exits 3 on it: a quarantine nobody owns is a row switched off, not a flake held.
+# Uses the caller's qt, qnt, qtix.
+quarantine() {
+    qt=$((qt + 1))
+    if [[ $1 =~ ^#[0-9]+$ ]]; then qtix="${qtix:+$qtix }$1"; else qnt=$((qnt + 1)); fi
+    printf 'QUARANTINED FLAKE-0 %-6s %-40s (%s)\n' "${1:-NO-TICKET}" "$2" "$3"
+}
+
+# selftest_verdict FAIL N Q QT QNT [TICKETS] -> rc 0 pass, 1 a row failed, 3 not measured.
 # A row that was not measured is not a pass (L25): before this, Q > 0 printed a note and
-# exited 0, so a self-test whose EXIT-trap row never ran read green in CI.
+# exited 0, so a self-test whose EXIT-trap row never ran read green in CI. A quarantined row
+# (QT) is held apart from Q and passes only when every one of them names its ticket (QNT = 0).
 selftest_verdict() {
-    local fail=$1 n=$2 q=$3
+    local fail=$1 n=$2 q=$3 qt=$4 qnt=$5 tix=${6:-}
     if [ "$fail" -ne 0 ]; then
         echo "check_guard_steps_run_all self-test: FAILED"
         return 1
     fi
     if [ "$q" -gt 0 ]; then
-        echo "NOT_MEASURED check_guard_steps_run_all self-test: ${n} cases pass, $q row(s) not measured: a precondition never held (FLAKE-0 #4759); not a pass"
+        echo "NOT_MEASURED check_guard_steps_run_all self-test: ${n} cases pass, $q row(s) not measured: a precondition never held; not a pass"
         return 3
     fi
-    echo "check_guard_steps_run_all self-test: ${n}/${n} cases pass, 0 not measured"
+    if [ "$qnt" -gt 0 ]; then
+        echo "NOT_MEASURED check_guard_steps_run_all self-test: ${n} cases pass, $qnt of $qt quarantined row(s) name no ticket; not a pass"
+        return 3
+    fi
+    echo "check_guard_steps_run_all self-test: ${n}/${n} cases pass, 0 not measured, $qt quarantined${tix:+ ($tix)}"
 }
 
-# verdict_rows: selftest_verdict's own case table, both polarities, every exit code.
+# verdict_rows: selftest_verdict's and quarantine's own case table, both polarities, every exit code.
 verdict_rows() {
-    local bad=0 row f nn qq want got
-    for row in "0 5 0 0" "0 5 1 3" "0 5 7 3" "1 5 0 1" "1 5 1 1" "0 0 0 0"; do
-        read -r f nn qq want <<< "$row"
-        selftest_verdict "$f" "$nn" "$qq" > /dev/null; got=$?
-        if [ "$got" = "$want" ]; then printf 'ok   %-58s rc=%s\n' "verdict fail=$f n=$nn q=$qq" "$got"
-        else printf 'FAIL %-58s rc=%s (wanted %s)\n' "verdict fail=$f n=$nn q=$qq" "$got" "$want"; bad=1; fi
+    local bad=0 row f nn qq t tn want got qt qnt qtix
+    for row in "0 5 0 0 0 0" "0 5 1 0 0 3" "0 5 7 0 0 3" "1 5 0 0 0 1" "1 5 1 0 0 1" "0 0 0 0 0 0" \
+        "0 5 0 1 0 0" "0 5 0 1 1 3" "0 5 0 3 1 3" "0 5 1 1 0 3" "1 5 0 1 1 1"; do
+        read -r f nn qq t tn want <<< "$row"
+        selftest_verdict "$f" "$nn" "$qq" "$t" "$tn" > /dev/null; got=$?
+        if [ "$got" = "$want" ]; then printf 'ok   %-58s rc=%s\n' "verdict fail=$f n=$nn q=$qq qt=$t qnt=$tn" "$got"
+        else printf 'FAIL %-58s rc=%s (wanted %s)\n' "verdict fail=$f n=$nn q=$qq qt=$t qnt=$tn" "$got" "$want"; bad=1; fi
+    done
+    # quarantine counts a row in qt; only a "#NNNN" ticket keeps it out of qnt.
+    for row in "#4759 0" "- 1" "4759 1" "#47x9 1" "#4759x 1"; do
+        read -r t want <<< "$row"; [ "$t" = - ] && t=""
+        qt=0 qnt=0 qtix=""
+        quarantine "$t" "row" "read ok" > /dev/null
+        if [ "$qt" = 1 ] && [ "$qnt" = "$want" ]; then printf 'ok   %-58s qnt=%s\n' "quarantine ticket '${t}'" "$qnt"
+        else printf 'FAIL %-58s qt=%s qnt=%s (wanted 1 %s)\n' "quarantine ticket '${t}'" "$qt" "$qnt" "$want"; bad=1; fi
     done
     return "$bad"
 }
@@ -261,12 +286,11 @@ manifest_rows() {
     # trap WAS armed and `restored` was missing at step-timeout 1s, a FAIL on a diff that does not
     # touch this script. So the cause is not only "fired before the trap was armed". Until #4759
     # finds and fixes it, the row runs and prints what it read but never fails the table and is
-    # counted as not measured, never as ok.
-    q=$((q + 1))
+    # counted as quarantined (qt, with its ticket), never as ok.
     if [ ! -e "$d/rt/armed" ]; then r="trap never armed"
     elif [ -e "$d/rt/restored" ]; then r="read ok"
     else r="read FAIL"; fi
-    printf 'QUARANTINED FLAKE-0 #4759 %-40s (not measured; %s, step-timeout %ss)\n' "$v" "$r" "$st"
+    quarantine "#4759" "$v" "not measured; $r, step-timeout ${st}s"
     # shellcheck disable=SC2016
     mfixture "$repo/ci/sections.yml" good 'sleep 30 & echo $! > "$RUNNER_TEMP/child.pid"; sleep 30'
     t0=$SECONDS
