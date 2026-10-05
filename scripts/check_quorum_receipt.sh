@@ -14,7 +14,8 @@
 #   inexact-id   model is not an exact id: lowercase, dash-separated, holds a digit, no
 #                alias, and not FAMILY-VERSION alone (claude-5). No allowlist: an invented
 #                id that has this shape passes (stated residual)
-#   author-seat  model is the author's own model id (no author.model = not_measured)
+#   author-seat  model is the author's own model id, compared lowercased, trimmed and
+#                without a -YYYYMMDD suffix (no author.model = not_measured)
 #   family-mismatch  the lane's family label is not the family its model id names
 #                (first token; gpt-* = openai): a label never makes a second family
 #   seat-unknown a fallback happened (an attempt names another model) and judged_by does
@@ -50,7 +51,7 @@ die() { printf 'check_quorum_receipt: caller error: %s\n' "$1" >&2; exit 3; }
 # lane role verdict model family requested seat measured plant author_model
 _qr_lanes() {
     jq -r --arg F "$2" --arg L "$3" '
-        (.author.model // "") as $am
+        ((.author.model // "") | ascii_downcase | gsub("^\\s+|\\s+$"; "") | sub("-[0-9]{8}$"; "")) as $am
         | .lanes[]?
         | . as $l
         | (($F + ":" + $L)) as $fl
@@ -99,6 +100,12 @@ _qr_exact_id() {
     return 1
 }
 
+# _qr_is_author MODEL AM -> rc 0 iff MODEL, less a -YYYYMMDD date suffix, is the author's
+# model (AM arrives lowercased, trimmed and undated from _qr_lanes)
+_qr_is_author() {
+    [ "${1%-[0-9][0-9][0-9][0-9][0-9][0-9][0-9][0-9]}" = "$2" ]
+}
+
 # _qr_family ID -> the family the id itself names (its first token; gpt-* is openai).
 # The receipt's own family label is never trusted: it must agree with this.
 _qr_family() {
@@ -141,7 +148,7 @@ check_quorum_receipt() {
             why="VOID no-verdict"
         elif ! _qr_exact_id "$model"; then
             why="VOID inexact-id"
-        elif [ "$model" = "$am" ]; then
+        elif _qr_is_author "$model" "$am"; then
             why="VOID author-seat"
         elif [ "$family" != "$(_qr_family "$model")" ]; then
             why="VOID family-mismatch"
@@ -254,6 +261,12 @@ selftest() {
 
     rc_json "$A" "" "$(ln 1 claude-opus-5-5 claude FAIL "$C")" "$(ln 2 gemini-3.1-pro-high gemini FAIL "$C")" > "$f"
     row author_model_is_void "author-seat" "$(lane_tag "$f" 1)" "(must fail: never the author's own id)"
+    rc_json "Claude-Opus-5-5 " "" "$(ln 1 claude-opus-5-5 claude FAIL "$C")" "$(ln 2 gemini-3.1-pro-high gemini FAIL "$C")" > "$f"
+    row author_case_and_space_still_author "author-seat" "$(lane_tag "$f" 1)" "(must fail: case is not a second model)"
+    rc_json "claude-opus-5-5-20260101" "" "$(ln 1 claude-opus-5-5 claude FAIL "$C")" "$(ln 2 gemini-3.1-pro-high gemini FAIL "$C")" > "$f"
+    row author_dated_id_still_author "author-seat" "$(lane_tag "$f" 1)"
+    rc_json "$A" "" "$(ln 1 claude-opus-5-5-20260101 claude FAIL "$C")" "$(ln 2 gemini-3.1-pro-high gemini FAIL "$C")" > "$f"
+    row lane_dated_author_id_still_author "author-seat" "$(lane_tag "$f" 1)"
 
     rc_json "$A" "" "$(ln 1 claude-sonnet-5-5 claude NO-VERDICT)" "$(ln 2 gemini-3.1-pro-high gemini FAIL "$C")" > "$f"
     row no_verdict_is_void "no-verdict" "$(lane_tag "$f" 1)"
@@ -332,7 +345,7 @@ selftest() {
 # error, never a survivor (fail closed).
 MUTANTS=(
     'alias_ok|s/^        \*\[0-9\]\*) ;;$/        *) ;;/'
-    'author_seat_ignored|s/elif \[ "\$model" = "\$am" \]; then/elif false; then/'
+    'author_seat_ignored|s/elif _qr_is_author "\$model" "\$am"; then/elif false; then/'
     'seat_unchecked|s/elif \[ "\$seat" != "\$model" \] || \[ "\$measured" != "\$model" \]; then/elif false; then/'
     'plant_unchecked|s/elif \[ "\$pv" != caught \]; then/elif false; then/'
     'plant_any_fail|s/elif .verdict == "FAIL" and (\[.findings/elif .verdict == "FAIL" or ([.findings/'
@@ -348,6 +361,10 @@ MUTANTS=(
     'family_version_ok|s/        \*\[!0-9.\]\*) return 0 ;;/        *) return 0 ;;/'
     'no_author_ok|s/if ! jq -e .(.author.model \/\/ "") != "". "\$f"/if false/'
     'enforce_ignored|s/if \[ "\$enforce" = 1 \]; then exit "\$rc"; fi/:/'
+    'author_case_kept|s/| ascii_downcase | gsub/| gsub/'
+    'author_date_kept|s/| sub("-\[0-9\]{8}\$"; "")) as \$am/) as $am/'
+    'gpt_not_openai|s/        gpt-\*) printf .openai. ;;//'
+    'measured_unchecked|s/ || \[ "\$measured" != "\$model" \]//'
     'no_verdict_ok|s/elif \[ "\$verdict" != PASS \] \&\& \[ "\$verdict" != FAIL \]; then/elif false; then/'
 )
 mutants() {
