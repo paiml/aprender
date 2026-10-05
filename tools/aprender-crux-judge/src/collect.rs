@@ -1314,9 +1314,15 @@ mod tests {
 
     #[test]
     fn short_cuts_by_chars() {
-        assert_eq!(short(&Val::str("  a \n b "), 48).unwrap(), "a b");
-        assert_eq!(short(&Val::None, 48).unwrap(), "");
-        assert_eq!(short(&Val::str("é".repeat(5)), 3).unwrap(), "éé…");
+        assert_eq!(
+            short(&Val::str("  a \n b "), 48).expect("a str shortens"),
+            "a b"
+        );
+        assert_eq!(short(&Val::None, 48).expect("None shortens to empty"), "");
+        assert_eq!(
+            short(&Val::str("é".repeat(5)), 3).expect("a multibyte str shortens"),
+            "éé…"
+        );
         assert_eq!(
             short(&Val::int(3), 48).unwrap_err().msg,
             "'int' object has no attribute 'split'"

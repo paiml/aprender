@@ -1005,10 +1005,12 @@ mod tests {
     fn parse_like_argparse() {
         let (v, pos) = CERTIFY
             .parse(&args("--pro p --inv i --apr-commit=c -oOUT m1 -- -m2"))
-            .unwrap();
+            .expect("the certify argv parses");
         assert_eq!(v, args("p i c OUT"));
         assert_eq!(pos, args("m1 -m2"));
-        let (v, _) = CHECK.parse(&args("--receipt r --prompts p")).unwrap();
+        let (v, _) = CHECK
+            .parse(&args("--receipt r --prompts p"))
+            .expect("the check argv parses");
         assert_eq!(v, args("p r"));
         // Missing manifests is a required-argument error (2), like a flag.
         assert_eq!(CERTIFY.parse(&args("--prompts p")), Err(2));
@@ -1023,10 +1025,14 @@ mod tests {
     #[test]
     fn join_and_digest() {
         assert_eq!(
-            py_join(", ", &Val::List(vec![Val::str("run"), Val::str("chat")])).unwrap(),
+            py_join(", ", &Val::List(vec![Val::str("run"), Val::str("chat")]))
+                .expect("a list of str joins"),
             "run, chat"
         );
-        assert_eq!(py_join(", ", &Val::str("ab")).unwrap(), "a, b");
+        assert_eq!(
+            py_join(", ", &Val::str("ab")).expect("a str joins per character"),
+            "a, b"
+        );
         assert_eq!(
             py_join(", ", &Val::List(vec![Val::int(1)]))
                 .unwrap_err()
@@ -1038,7 +1044,9 @@ mod tests {
             "can only join an iterable"
         );
         assert_eq!(
-            certification_ok("x", None).unwrap().as_str(),
+            certification_ok("x", None)
+                .expect("no certification is a str verdict")
+                .as_str(),
             Some("no --certification receipt was given")
         );
     }

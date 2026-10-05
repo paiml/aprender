@@ -988,20 +988,22 @@ mod tests {
     #[test]
     fn dict_keeps_first_key_and_position() {
         let mut d = Dict::new();
-        d.set(Val::int(1), Val::str("a")).unwrap();
-        d.set(Val::str("x"), Val::None).unwrap();
-        d.set(Val::Float(1.0), Val::str("b")).unwrap();
-        d.set(Val::Bool(true), Val::str("c")).unwrap();
+        d.set(Val::int(1), Val::str("a")).expect("an int key sets");
+        d.set(Val::str("x"), Val::None).expect("a str key sets");
+        d.set(Val::Float(1.0), Val::str("b"))
+            .expect("a float key sets");
+        d.set(Val::Bool(true), Val::str("c"))
+            .expect("a bool key sets");
         assert_eq!(py_repr(&Val::Dict(d)), "{1: 'c', 'x': None}");
     }
 
     #[test]
     fn int_float_ordering_is_exact() {
-        let big = Val::Int(PyInt::parse_digits("9007199254740993").unwrap());
-        assert!(py_lt(&Val::Float(9007199254740992.0), &big).unwrap());
+        let big = Val::Int(PyInt::parse_digits("9007199254740993").expect("the digits parse"));
+        assert!(py_lt(&Val::Float(9007199254740992.0), &big).expect("float < big int compares"));
         assert!(!py_eq(&Val::Float(9007199254740992.0), &big));
         assert!(py_eq(&Val::Float(2.0), &Val::int(2)));
-        assert!(py_lt(&Val::int(2), &Val::Float(2.5)).unwrap());
+        assert!(py_lt(&Val::int(2), &Val::Float(2.5)).expect("int < float compares"));
     }
 
     #[test]
