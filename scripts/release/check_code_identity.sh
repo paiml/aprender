@@ -36,13 +36,15 @@ commit() { g "$1" add -A >/dev/null 2>&1; g "$1" commit -q --allow-empty -m "$2"
 # fixture REPO-DIR -> a repo with code, a binding yaml, the perf matrix, evidence and a bump tool
 fixture() {
     local d="$1"
-    mkdir -p "$d/crates/a/src" "$d/contracts/a" "$d/scripts" "$d/evidence/x"
+    mkdir -p "$d/crates/a/src" "$d/contracts/a" "$d/scripts" "$d/evidence/x" "$d/evidence/parity"
     git init -q "$d"
     printf '[package]\nname = "a"\nversion = "1.0.0"\n' > "$d/Cargo.toml"
     printf 'pub fn f() {}\n' > "$d/crates/a/src/lib.rs"
     printf 'k: 1\n' > "$d/contracts/a/binding.yaml"
     printf 'm: 1\n' > "$d/scripts/perf-matrix.yaml"
     printf '{}\n' > "$d/evidence/x/r.json"
+    printf 'min_positions: 64\n' > "$d/evidence/parity/thresholds.yaml"
+    printf '{}\n' > "$d/evidence/parity/r.json"
     printf '#!/usr/bin/env bash\nsed -i "s/^version = .*/version = \\"$1\\"/" Cargo.toml\n' > "$d/scripts/bump-version.sh"
     commit "$d" base >/dev/null
 }
@@ -71,7 +73,7 @@ r7() {
 selftest() {
     # shellcheck disable=SC1090
     . "$LIB" || { echo "FAIL  cannot source $LIB"; exit 2; }
-    local tmp d b c e out
+    local tmp d s o b c e out
     tmp="$(mktemp -d "${TMPDIR:-/tmp}/check-code-identity.XXXXXX")" || exit 2
     # shellcheck disable=SC2064
     trap "rm -rf -- '${tmp:?}'" EXIT
@@ -99,6 +101,35 @@ selftest() {
     row newline_path_ending_in_evidence_changes_H 1 "$(same "$d" "$b" "$c")"
     b="$c"; printf 'x\n' > "$d/"$'evidence\nfoo'; c="$(commit "$d" nlpath3)"
     row newline_path_starting_with_evidence_changes_H 1 "$(same "$d" "$b" "$c")"
+    b="$c"; printf 'x\n' > "$d/evidence"$'\n'; c="$(commit "$d" nlpath4)"
+    row root_evidence_newline_file_changes_H 1 "$(same "$d" "$b" "$c")" "(a file 'evidence<NL>' is not the evidence path)"
+    # gate inputs under evidence/ (train-lead ruling 2026-10-05): listed files are code
+    b="$c"; printf 'min_positions: 32\n' > "$d/evidence/parity/thresholds.yaml"; c="$(commit "$d" threshold)"
+    row gate_input_edit_changes_H 1 "$(same "$d" "$b" "$c")" "(evidence/parity/thresholds.yaml is a gate input)"
+    row gate_input_diff_names_only_it "evidence/parity/thresholds.yaml" "$(cd "$d" && code_identity_diff "$b" "$c" | tr '\n' ' ' | sed 's/ $//')"
+    b="$c"; printf '{"a":2}\n' > "$d/evidence/parity/r.json"; c="$(commit "$d" receipt)"
+    row receipt_beside_gate_input_keeps_H 0 "$(same "$d" "$b" "$c")" "(a receipt in the same dir is still a result)"
+    row receipt_diff_is_empty "" "$(cd "$d" && code_identity_diff "$b" "$c")"
+    b="$c"; printf 'x\n' > "$d/evidence/parity/thresholds.yaml.bak"; printf 'x\n' > "$d/evidence/parity/thresholds-yaml"
+    mkdir -p "$d/evidence/x/evidence/parity"; printf 'x\n' > "$d/evidence/x/evidence/parity/thresholds.yaml"; c="$(commit "$d" gi-lookalike)"
+    row gate_input_lookalike_keeps_H 0 "$(same "$d" "$b" "$c")" "(.bak, a dot-for-dash twin, a nested copy)"
+    b="$c"; printf 'x\n' > "$d/evidence/parity/thresholds.yaml"$'\n'; c="$(commit "$d" gi-nl)"
+    row gate_input_newline_suffix_keeps_H 0 "$(same "$d" "$b" "$c")"
+    (cd "$d" && CODE_IDENTITY_GATE_INPUTS=(crates/a/src/lib.rs) && code_identity HEAD >/dev/null); row gate_input_outside_evidence_not_measured 2 "$?"
+    (cd "$d" && CODE_IDENTITY_GATE_INPUTS=(evidence/x/../../crates/a/src/lib.rs) && code_identity HEAD >/dev/null); row gate_input_dotdot_not_measured 2 "$?"
+
+    # every evidence/ file code names is classified: a gate input or a listed receipt
+    s="$tmp/scan"; fixture "$s"
+    printf 'cat evidence/parity/thresholds.yaml\n' > "$s/scripts/gate.sh"; commit "$s" gate >/dev/null
+    row scan_classified_fixture_is_clean "" "$(code_identity_unclassified_reads "$s" | tr '\n' ' ')" "(names only a gate input)"
+    printf 'cat evidence/parity/r.json\n' > "$s/scripts/gate2.sh"; commit "$s" gate2 >/dev/null
+    row scan_names_an_unclassified_read "evidence/parity/r.json" "$(code_identity_unclassified_reads "$s" | tr '\n' ' ' | sed 's/ $//')"
+    o="$(g "$s" rev-parse HEAD:scripts/gate2.sh)"; o="${o:?}"; chmod u+w -- "${s:?}/.git/objects/${o:0:2}/${o:2}"; : > "${s:?}/.git/objects/${o:0:2}/${o:2}"
+    code_identity_unclassified_reads "$s" >/dev/null 2>&1; row scan_git_error_not_measured 2 "$?" "(a blob git grep cannot read)"
+    row scan_this_repository_is_clean "" "$(code_identity_unclassified_reads "$REPO" | tr '\n' ' ' | sed 's/ $//')"
+    out="$(sed -n '/^  gate_inputs:/,/^  [a-z_]*:/p' "$REPO/contracts/code-identity-v1.yaml" | sed -n 's/^    - //p' | tr -d '"' | sort | tr '\n' ' ')"
+    row contract_lists_the_gate_inputs "$(printf '%s\n' "${CODE_IDENTITY_GATE_INPUTS[@]}" | sort | tr '\n' ' ')" "$out"
+    [ -n "$out" ] || not_measured contract_gate_inputs "no gate_inputs list in contracts/code-identity-v1.yaml"
     b="$c"; out="$(h "$d" HEAD)"
     printf 'pub fn dirty() {}\n' >> "$d/crates/a/src/lib.rs"; printf 'u\n' > "$d/untracked.rs"
     printf 's\n' > "$d/staged.rs"; g "$d" add staged.rs >/dev/null
@@ -133,6 +164,16 @@ selftest() {
     printf '{"r":1}\n' > "$d/evidence/x/r.json"; commit "$d" receipts >/dev/null
     out="$(r7 "$d" "$b")"
     row r7_evidence_after_cut_passes rc=0 "$(head -n 1 <<< "$out")"
+    # a gate input moves after the cut: refuse, and name it; a receipt beside it: pass
+    d="$tmp/r7gi"; fixture "$d"; b="$(g "$d" rev-parse HEAD)"
+    printf 'min_positions: 1\n' > "$d/evidence/parity/thresholds.yaml"; commit "$d" threshold >/dev/null
+    out="$(r7 "$d" "$b")"
+    row r7_thresholds_after_cut_refuses rc=1 "$(head -n 1 <<< "$out")" "(a looser threshold is not the smoked code)"
+    row r7_thresholds_refusal_names_the_file 1 "$(grep -c 'evidence/parity/thresholds.yaml' <<< "$out")"
+    d="$tmp/r7rc"; fixture "$d"; b="$(g "$d" rev-parse HEAD)"
+    printf '{"r":2}\n' > "$d/evidence/parity/r.json"; commit "$d" receipt >/dev/null
+    out="$(r7 "$d" "$b")"
+    row r7_receipt_only_after_cut_passes rc=0 "$(head -n 1 <<< "$out")" "(beside a gate input)"
     # a 0.70.2-shaped fix: only a script changes after the cut. The four published
     # paths call that "same code"; H does not, so R7 refuses. The escape path is a
     # re-cut: smoke again AT the fix, so CUT_COMMIT is the head and H(cut) = H(head).
@@ -160,7 +201,9 @@ selftest() {
         for c in $(git -C "$REPO" rev-list --first-parent -n 30 HEAD); do
             p="$(git -C "$REPO" rev-parse "$c^1")"
             (cd "$REPO" && code_identity_same "$p" "$c"); e=$?
-            git -C "$REPO" diff --quiet "$p" "$c" -- . ':(exclude)evidence'
+            # an independent oracle: git's own pathspecs, not the lib's regex
+            git -C "$REPO" diff --quiet "$p" "$c" -- . ':(exclude)evidence' &&
+                git -C "$REPO" diff --quiet "$p" "$c" -- "${CODE_IDENTITY_GATE_INPUTS[@]/#/:(literal)}"
             [ "$e" = "$?" ] || dis=$((dis + 1)); n=$((n + 1))
         done
         row agrees_with_readiness "0/30" "$dis/$n" "(disagreements over the last 30 first-parent pairs)"
@@ -198,14 +241,27 @@ mutants() {
         fi
     }
     printf -- '--- %s --mutants ---\n' "$PROG"
-    mutant drop_evidence_filter lib '\tevidence(/|$)' '\t__never__(/|$)'
-    mutant evidence_glob_no_slash lib '\tevidence(/|$)' '\tevidence'
-    mutant evidence_unanchored lib "\$'^[^\\t]*\\tevidence(/|\$)'" "'evidence(/|\$)'"
-    mutant evidence_dollar_multiline lib "\$'^[^\\t]*\\tevidence(/|\$)'" "\$'^[^\\t]*\\tevidence(/|\$|[[:space:]])'"
+    mutant drop_evidence_filter lib ')evidence(?:/|\\z)' ')__never__(?:/|\\z)'
+    mutant evidence_glob_no_slash lib ')evidence(?:/|\\z)' ')evidence'
+    mutant evidence_unanchored lib 'grep -zvP "^[^\\t]*\\t$re"' 'grep -zvP "$re"'
+    mutant evidence_newline_ends_path lib ')evidence(?:/|\\z)' ')evidence(?:/|\n|\\z)'
+    mutant gate_inputs_ignored lib "printf '%s' \"(?!(?:"'$alt'")\\\\z)" "printf '%s' \"(?!(*FAIL))"
+    mutant gate_input_prefix_match lib '(?!(?:$alt)\\z)' '(?!(?:$alt))'
+    mutant gate_input_dot_unescaped lib 'alt="${alt:+$alt|}${p//./\\.}"' 'alt="${alt:+$alt|}$p"'
+    mutant gate_input_not_under_evidence lib '            evidence/[A-Za-z0-9_]*) ;;
+            *) return 2 ;;' '            *) ;;'
+    mutant gate_input_dotdot_allowed lib ' | */.. | */../* |' ' |'
+    mutant drop_thresholds_input lib '    evidence/parity/thresholds.yaml
+' ''
+    mutant scan_ignores_gate_inputs lib '"$p" = "$g" ] && ok=1' '"$p" = "$g" ] && ok=0'
+    mutant scan_everything_is_receipt lib '                $g) ok=1 ;;' '                *) ok=1 ;;'
+    mutant scan_untracked_ok lib 'grep -qxF -- "$p" <<< "$tracked" || continue' ':'
+    mutant scan_git_error_hidden lib '[ "$?" -le 1 ] || return 2' ':'
+    mutant diff_names_nothing lib '[ -z "$out" ] || printf' '[ -n "$out" ] || printf'
     mutant ignores_root lib 'local rev="${1:-}" root="${2:-.}"' 'local rev="${1:-}" root=.'
     mutant hash_the_index lib 'git "$@" ls-tree -r -z --full-tree "$treeish"' 'git "$@" ls-files -s -z'
     mutant drop_path_column lib '            sha256sum' "            sed -z 's/\\t.*//' | sha256sum"
-    mutant drop_mode_column lib 'LC_ALL=C grep -zvE' "sed -z 's/^[0-7]* //' | LC_ALL=C grep -zvE"
+    mutant drop_mode_column lib 'LC_ALL=C grep -zvP' "sed -z 's/^[0-7]* //' | LC_ALL=C grep -zvP"
     mutant unknown_rev_falls_back lib '"${rev}^{commit}" 2>/dev/null)" || return 2' '"${rev}^{commit}" 2>/dev/null)" || c=HEAD'
     mutant same_on_not_measured lib 'a="$(code_identity "${1:-}" "${3:-.}")" || return 2' 'a="$(code_identity "${1:-}" "${3:-.}")" || return 0'
     mutant pipestatus_ignored lib '|| exit 2' '|| :'

@@ -292,7 +292,7 @@ rule_r7_scope() {
         if [ "$rc" != 0 ]; then
             printf 'FAIL  R7 OPERATOR EMERGENCY SCOPE %s: HEAD %s differs from the cut %s outside evidence/ (code identity H) -- what is published is not what was smoked:\n%s\n' \
                 "$SCOPE" "${head:0:12}" "${cut:0:12}" \
-                "$(git -C "$root" diff --name-only "$cut" "$head" -- . ':(exclude)evidence' | head -n 10 | sed 's/^/        /')"
+                "$(code_identity_diff "$cut" "$head" "$root" | head -n 10 | sed 's/^/        /')"
             return 1
         fi
     fi

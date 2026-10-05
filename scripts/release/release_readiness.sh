@@ -99,7 +99,7 @@ PY
         echo "        receipts-commit withheld: the code identity of ${x:0:12} or ${commit:0:12} is not_measured" >&3; return 1
     fi
     if [ "$same" != 0 ]; then
-        echo "        receipts-commit withheld: ${x:0:12} differs from ${commit:0:12} outside evidence/ ($(git -C "$root" diff --name-only "$x" "$commit" -- . ':(exclude)evidence' | wc -l) file(s)), so its receipts are stale for this release" >&3
+        echo "        receipts-commit withheld: ${x:0:12} differs from ${commit:0:12} outside evidence/ ($(code_identity_diff "$x" "$commit" "$root" | wc -l) file(s)), so its receipts are stale for this release" >&3
         return 1
     fi
     echo "        receipts-commit ${x:0:12}: equal to ${commit:0:12} outside evidence/" >&3
