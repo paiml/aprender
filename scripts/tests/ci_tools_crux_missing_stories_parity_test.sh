@@ -15,8 +15,9 @@
 # The .py reads stdin as strict UTF-8, as under a UTF-8 locale: under C/POSIX it read
 # invalid UTF-8 through.
 #
-# Not vacuous (L25): the run fails if fewer cases ran than the table declares, and a
-# planted lying binary must be reported as exactly one failure before any case counts.
+# Not vacuous (L25): the run fails if fewer cases ran than the table declares, and three
+# planted lying binaries (wrong stdout, stderr on a clean run, no stderr on a raise) must
+# be reported as exactly three failures before any case counts.
 #
 # Usage: scripts/tests/ci_tools_crux_missing_stories_parity_test.sh   (CI_TOOLS_BIN=<path> to skip the build)
 set -euo pipefail
@@ -37,21 +38,29 @@ fail=0
 n=0
 
 # run_case NAME WANT_RC WANT_ROWS INPUT ARGS... -> pass/fail on exit codes, row count, bytes
+# and stderr: a clean run writes nothing there on either side, a raising one writes a
+# reason on both (a Python traceback cannot be matched byte for byte).
 run_case() {
     local name="$1" want="$2" rows="$3" input="$4" py_rc=0 rs_rc=0 ok=1 got
     shift 4
-    PYTHONIOENCODING=utf-8:strict "$PY" "$CMS" "$@" <"$input" >"$tmp/py.out" 2>/dev/null || py_rc=$?
-    "$BIN" crux-missing-stories "$@" <"$input" >"$tmp/rs.out" 2>/dev/null || rs_rc=$?
+    PYTHONIOENCODING=utf-8:strict "$PY" "$CMS" "$@" <"$input" >"$tmp/py.out" 2>"$tmp/py.err" || py_rc=$?
+    "$BIN" crux-missing-stories "$@" <"$input" >"$tmp/rs.out" 2>"$tmp/rs.err" || rs_rc=$?
     [[ "$py_rc" == "$want" && "$rs_rc" == "$want" ]] || ok=0
     got="$(wc -l <"$tmp/py.out")"
     [[ "$got" -eq "$rows" ]] || ok=0
     cmp -s "$tmp/py.out" "$tmp/rs.out" || ok=0
+    if [[ "$want" == 0 ]]; then
+        [[ ! -s "$tmp/py.err" && ! -s "$tmp/rs.err" ]] || ok=0
+    else
+        [[ -s "$tmp/py.err" && -s "$tmp/rs.err" ]] || ok=0
+    fi
     if [[ "$ok" == 1 ]]; then
         pass=$((pass + 1))
     else
         fail=$((fail + 1))
         echo "FAIL: $name (want rc $want rows $rows; py rc $py_rc rows $got, rs rc $rs_rc)" >&2
         diff "$tmp/py.out" "$tmp/rs.out" >&2 || true
+        diff "$tmp/py.err" "$tmp/rs.err" >&2 || true
     fi
 }
 
@@ -88,8 +97,17 @@ chmod +x "$tmp/liar"
 real_bin="$BIN"
 BIN="$tmp/liar"
 c "planted lying binary (this one FAIL line is expected)" 0 1 "[$OK]"
-if [[ "$fail" != 1 || "$pass" != 0 ]]; then
-    echo "FAIL: the planted lying binary was not caught as exactly one failure" >&2
+# Two stderr liars run the real .py: one adds a line to a clean run, one drops the
+# reason a raising run gives.
+printf '#!/usr/bin/env bash\nshift\nPYTHONIOENCODING=utf-8:strict "%s" "%s" "$@"; rc=$?\necho planted >&2\nexit "$rc"\n' "$PY" "$CMS" >"$tmp/noisy"
+printf '#!/usr/bin/env bash\nshift\nPYTHONIOENCODING=utf-8:strict exec "%s" "%s" "$@" 2>/dev/null\n' "$PY" "$CMS" >"$tmp/mute"
+chmod +x "$tmp/noisy" "$tmp/mute"
+BIN="$tmp/noisy"
+c "planted noisy binary (this FAIL line is expected)" 0 1 "[$OK]"
+BIN="$tmp/mute"
+c "planted mute binary (this FAIL line is expected)" 1 0 '[nan]'
+if [[ "$fail" != 3 || "$pass" != 0 ]]; then
+    echo "FAIL: the three planted lying binaries were not caught as exactly three failures" >&2
     exit 1
 fi
 BIN="$real_bin"
