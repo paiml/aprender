@@ -8,18 +8,26 @@
 #     NOT RELEASABLE: <lane>, <run id|not_measured>     the first failing verdict lane, then (+N more)
 #     NOT RELEASABLE: nightly-train, <step> ...         the train itself failed part-way (the EXIT trap prints it)
 #   and every line ends with [C=<sha10> pin=<train>.<greens>.<redage>]: the commit judged and the shas of the three
-#   scripts that judged it. H is the commit id of C. C is the head of main at the moment of the read, unless the head has
-#   no measured run from some verdict producer: then C is the newest commit, at most MAX_LAG commits behind the head,
-#   on which every verdict producer has a measured run, and the line adds " (judged <sha10>, head <sha10>, lag k
-#   commits)". All lanes are judged on that one commit, never a per-lane mix. None within MAX_LAG = the head, which
-#   reads not_measured for a lane with no run there; there is no other fallback (#4798).
+#   scripts that judged it. C is tonight's nightly pick: the commit of branch nightly/<night>, night = the UTC date of
+#   (now - 12 h), created once by the pick and never moved (contract nightly-pick-v1). The pick is read by its exact
+#   name; no tag and no prefix listing is read. No pick for tonight, or a pick of another night, is a failed read: every
+#   producer lane is not_measured. H is the commit id of J, the judged commit. J is C, unless C has no measured run from
+#   some verdict producer: then J is the newest commit in the history of the pick, at most MAX_LAG commits behind C, on
+#   which every verdict producer has a measured run, and the line adds " (judged <sha10>, pick <sha10>, lag k commits)".
+#   A run counts for a commit behind C only if it is a plain run of that commit (no pin job). All lanes are judged on that
+#   one commit, never a per-lane mix. None within MAX_LAG = C, which reads not_measured for a lane with no run there;
+#   there is no other fallback (#4798). The gap of the pick to main is printed on a pinned night.
 #
 # READ, DON'T RE-RUN. Night 1 runs nothing. Each lane takes the result its existing scheduled producer (a workflow on
-#   main and, optionally, a job-name pattern) recorded for C. A lane is
+#   main or on the pick branch, and optionally a job-name pattern) recorded for C. A run measured C when it has a job
+#   named `pin` (nightly_pick.sh verify on its own checkout) and every pin job succeeded and the run was created inside
+#   the night [night 12:00Z, night+1 12:00Z); a run with no pin job measured its own head, and a workflow_run run
+#   (whose head is main at trigger time, not what it checked out) with no pin job measured nothing. A lane is
 #     green         the newest completed run of its producer on C ran every matched job to success, at attempt 1;
 #     red           a matched job ended failure, timed_out or startup_failure, or the run succeeded only at attempt 2
 #                   or later (a retried green is not a green: FLOW-003 G4, CI retries 2 -> 0);
-#     not_measured  no producer exists; no run on main for C (the newest is on another commit); the run is still in
+#     not_measured  no producer exists; no run that measured C (another commit, a failed or missing pin, created outside
+#                   the night); no pick for tonight; the run is still in
 #                   progress; no job matched or every matched job was skipped/cancelled; the attempt could not be
 #                   read; or the read failed (rate limit, GraphQL error, network). not_measured is never a pass.
 #   A run whose matched jobs were all skipped (nightly.yml's `reused` decision) measured nothing; the next older run on
@@ -44,7 +52,8 @@
 #   Rows carry event "${GITHUB_EVENT_NAME:-timer}": a user timer's runs never count as scheduled nights.
 #
 # GITHUB. At most MAX_CALLS REST/GraphQL calls per run: rate_limit (free), the workflow list (ETag; a 304 is free), ONE
-#   GraphQL query (every producer's recent runs with their check runs, plus main's head and its check rollup), and one
+#   GraphQL query (every producer's recent runs with their check runs, plus the pick nightly/<night> and its check
+#   rollup), and one
 #   run read per green verdict-lane candidate for run_attempt (GraphQL has no attempt field). Core remaining under
 #   min(RATE_FLOOR, limit/5) makes no further call: the read failed, every producer lane is not_measured.
 #
@@ -75,8 +84,8 @@ UNIT="aprender-nightly-train"
 LANES='ci-main;verdict;ci / gate + workspace-test (merge, autopilot wait);.github/workflows/ci.yml;^push$;^(ci / gate|workspace-test)$;2
 deep-doctests;verdict;autopilot deep: cargo test --doc --workspace;-;-;-
 deep-nodefault;verdict;autopilot deep: cargo check --workspace --no-default-features;-;-;-
-deep-examples;verdict;autopilot deep: cargo build --workspace --examples;.github/workflows/examples-nightly.yml;^schedule$;^examples$
-deep-bins-build;verdict;autopilot deep: all-bins cargo build --locked --release;.github/workflows/nightly.yml;^schedule$;-unknown-linux-gnu on 
+deep-examples;verdict;autopilot deep: cargo build --workspace --examples;.github/workflows/examples-nightly.yml;^(schedule|workflow_run|workflow_dispatch)$;^examples$
+deep-bins-build;verdict;autopilot deep: all-bins cargo build --locked --release;.github/workflows/nightly.yml;^(schedule|workflow_run|workflow_dispatch)$;-unknown-linux-gnu on 
 deep-bins-smoke;verdict;autopilot deep: nightly_manifest.py smoke;-;-;-
 dogfood;verdict;dogfood.sh --phase pre-publish + preflight R5;-;-;-
 models;verdict;models_t1.sh GPU-host ladder legs, preflight R7;-;-;-
@@ -87,31 +96,50 @@ cleanroom-gpu;verdict;b2-gpu.yml on the tag;-;-;-
 assets;verdict;binary-release.yml + check_release_assets.sh;-;-;-
 preflight;verdict;check_publish_preflight.sh R1-R8;-;-;-
 publish-dryrun;verdict;rc_publish_gate.sh --verify + cascade-publish.sh --check;-;-;-
-coverage;info;tag_coverage_gate.sh (C291.1: not gating);.github/workflows/coverage-nightly.yml;^schedule$;^coverage$
-guards;info;guards-nightly;.github/workflows/guards-nightly.yml;^schedule$;
-mutants;info;mutants-nightly;.github/workflows/mutants-nightly.yml;^schedule$;
-toolchain-ceiling;info;toolchain-ceiling;.github/workflows/toolchain-ceiling.yml;^schedule$;
-cuda;info;cuda-nightly;.github/workflows/cuda-nightly.yml;^schedule$;
-silicon;info;silicon-nightly;.github/workflows/silicon-nightly.yml;^schedule$;
-qwen-story;info;qwen-story-daily;.github/workflows/qwen-story-daily.yml;^schedule$;
-beat-speed;info;beat-speed-nightly;.github/workflows/beat-speed-nightly.yml;^schedule$;
-conleche;info;conleche-nightly;.github/workflows/conleche-nightly.yml;^schedule$;
-bench;info;nightly-bench;.github/workflows/nightly-bench.yml;^schedule$;
-book;info;book;.github/workflows/book.yml;^schedule$;
-book-contracts;info;book-contracts;.github/workflows/book-contracts.yml;^schedule$;
-install-script;info;install-script;.github/workflows/install-script.yml;^schedule$;
-fleet-toolset;info;fleet-toolset;.github/workflows/fleet-toolset.yml;^schedule$;'
+coverage;info;tag_coverage_gate.sh (C291.1: not gating);.github/workflows/coverage-nightly.yml;^(schedule|workflow_run|workflow_dispatch)$;^coverage$
+guards;info;guards-nightly;.github/workflows/guards-nightly.yml;^(schedule|workflow_run|workflow_dispatch)$;
+mutants;info;mutants-nightly;.github/workflows/mutants-nightly.yml;^(schedule|workflow_run|workflow_dispatch)$;
+toolchain-ceiling;info;toolchain-ceiling;.github/workflows/toolchain-ceiling.yml;^(schedule|workflow_run|workflow_dispatch)$;
+cuda;info;cuda-nightly;.github/workflows/cuda-nightly.yml;^(schedule|workflow_run|workflow_dispatch)$;
+silicon;info;silicon-nightly;.github/workflows/silicon-nightly.yml;^(schedule|workflow_run|workflow_dispatch)$;
+qwen-story;info;qwen-story-daily;.github/workflows/qwen-story-daily.yml;^(schedule|workflow_run|workflow_dispatch)$;
+beat-speed;info;beat-speed-nightly;.github/workflows/beat-speed-nightly.yml;^(schedule|workflow_run|workflow_dispatch)$;
+conleche;info;conleche-nightly;.github/workflows/conleche-nightly.yml;^(schedule|workflow_run|workflow_dispatch)$;
+bench;info;nightly-bench;.github/workflows/nightly-bench.yml;^(schedule|workflow_run|workflow_dispatch)$;
+book;info;book;.github/workflows/book.yml;^(schedule|workflow_run|workflow_dispatch)$;
+book-contracts;info;book-contracts;.github/workflows/book-contracts.yml;^(schedule|workflow_run|workflow_dispatch)$;
+install-script;info;install-script;.github/workflows/install-script.yml;^(schedule|workflow_run|workflow_dispatch)$;
+fleet-toolset;info;fleet-toolset;.github/workflows/fleet-toolset.yml;^(schedule|workflow_run|workflow_dispatch)$;'
 caller_error() { printf 'NOT RELEASABLE: nightly-train, caller error: %s\n' "$*"; exit 3; }
 # ---------------------------------------------------------------- judgement (pure: files in, files out) ----------
-# evaluate LANESFILE RAW MODE -> MODE=cand: run ids of green verdict candidates; MODE=final: lanes.tsv rows and
-#   RAW/hist_redage.tsv. RAW holds C, read, runs.tsv, attempts.tsv.
+# night_of NOW -> the night NOW belongs to, YYYY-MM-DD: the UTC date of NOW - 12 h (nightly-pick-v1 `night`), so the
+#   04:45Z train judges the pick made the evening before. Fails on an unreadable NOW.
+night_of() {
+    local s
+    s="$(date -u -d "$1" +%s 2>/dev/null)" && [ -n "$s" ] || return 1
+    date -u -d "@$((s - 43200))" +%F
+}
+# pick_why PICK NIGHT -> nothing when PICK is tonight's pick, else why the read failed. Only the exact branch
+#   nightly/<night> is C: a missing pick, another night's pick or another name is not a C.
+pick_why() {
+    if [ -z "$2" ]; then printf 'failed: no clock to name the night\n'
+    elif [ -z "$1" ]; then printf 'failed: no nightly pick nightly/%s\n' "$2"
+    elif [ "$1" != "nightly/$2" ]; then printf 'failed: the pick %s is not nightly/%s\n' "$1" "$2"; fi
+}
+# evaluate LANESFILE RAW MODE NOW -> MODE=cand: run ids of green verdict candidates; MODE=final: lanes.tsv rows and
+#   RAW/hist_redage.tsv. RAW holds C, pick, read, runs.tsv, attempts.tsv.
 evaluate() {
-    local c rd
+    local c rd n w0="" w1=""
     c="$(cat "$2/C" 2>/dev/null)"; rd="$(cat "$2/read" 2>/dev/null)"
+    n="$(night_of "$4")" || n=""
+    # a good read of the wrong pick is a failed read: every producer lane is not_measured
+    [ "$rd" != "ok" ] || rd="$(pick_why "$(cat "$2/pick" 2>/dev/null)" "$n")"
+    rd="${rd:-ok}"
+    if [ -n "$n" ]; then w0="${n}T12:00:00Z"; w1="$(date -u -d "@$(($(date -u -d "$w0" +%s) + 86400))" +%Y-%m-%dT%H:%M:%SZ)"; fi
     [ -f "$2/attempts.tsv" ] || : > "$2/attempts.tsv"
     [ -f "$2/runs.tsv" ] || : > "$2/runs.tsv"
     [ -f "$2/rank.tsv" ] || : > "$2/rank.tsv"
-    awk -F '\t' -v OFS='\t' -v C="$c" -v RD="${rd:-failed: no read status}" -v MODE="$3" -v HIST="$2/hist_redage.tsv" -v JOUT="$2/judged" -v MAXLAG="$MAX_LAG" '
+    awk -F '\t' -v OFS='\t' -v C="$c" -v PB="nightly/$n" -v NIGHT="$n" -v W0="$w0" -v W1="$w1" -v RD="${rd:-failed: no read status}" -v MODE="$3" -v HIST="$2/hist_redage.tsv" -v JOUT="$2/judged" -v MAXLAG="$MAX_LAG" '
     FILENAME == ARGV[1] { split($0, a, ";"); n++; L[n] = a[1]; K[n] = a[2]; CK[n] = a[3]; WF[n] = a[4]; EV[n] = a[5]; RE[n] = a[6]; NEED[n] = (a[7] ~ /^[0-9]+$/ ? a[7] + 0 : 1); next }
     FILENAME == ARGV[2] { AT[$1] = $2; next }
     FILENAME == ARGV[3] { RKO[$1 + 0] = $2; NRK++; next }
@@ -148,16 +176,35 @@ evaluate() {
         if (ok == tot) return "green"
         WHY = "run " r ": matched job(s) skipped or cancelled"; return "void"
     }
+    # onc(r): did run r measure C? A run with a job named pin (nightly_pick.sh verify on its own checkout) measured C
+    #   iff every pin job succeeded and the run was created inside this night; a pin job is the only evidence for a
+    #   workflow_run run, whose head is the default branch at trigger time, not the commit it checked out. Any other
+    #   run measured its own head. Sets OW, why not.
+    function onc(r, h,    k, np, okp) {
+        OW = ""
+        for (k = 1; k <= nj[r]; k++) if (JN[r, k] == "pin") { np++; if (JS[r, k] == "COMPLETED" && JC[r, k] == "SUCCESS") okp++ }
+        if (np > 0) {
+            if (okp < np) { OW = r ": its pin job did not succeed, so it did not prove it measured C"; return 0 }
+            if (!(RC[r] >= W0 && RC[r] < W1)) { OW = r ": created " RC[r] ", outside night " NIGHT; return 0 }
+            if (h != C) { OW = r ": a pin run measures the pick, not " substr(h, 1, 10); return 0 }
+            return 1
+        }
+        if (REV[r] == "workflow_run") { OW = r ": a workflow_run with no pin job, its head is not what it measured"; return 0 }
+        if (RH[r] != h) { OW = r " on " substr(RH[r], 1, 10); return 0 }
+        return 1
+    }
+    # pinned(r): does run r carry a pin job
+    function pinned(r,    k) { for (k = 1; k <= nj[r]; k++) if (JN[r, k] == "pin") return 1; return 0 }
     function out(i, state, r, att, why) {
         print L[i], K[i], state, (WF[i] == "-" ? "none" : WF[i] " " RE[i]), (r == "" ? "not_measured" : r), (r == "" ? "" : RH[r]), (r == "" ? "" : tolower(RCO[r])), att, ST, EN, why
     }
     END {
         if (MODE == "final") print "check", "run_id", "created_at", "branch", "event", "conclusion", "attempt" > HIST
         readok = (RD == "ok" && C ~ /^[0-9a-f]{40}$/)
-        # J, the commit judged (#4798): the newest commit on main, at or before the read, on which EVERY verdict lane with
+        # J, the commit judged (#4798): the newest commit in the pick history, at or before the read, on which EVERY verdict lane with
         #   a producer has a measured (green or red) run; C itself when it has them. One commit for all lanes, never a
-        #   per-lane mix. The candidates are rank.tsv: the head of main (rank 0) and its history, newest first, read in the
-        #   same query; LAG is the rank of J, the commits between J and the head. Only ranks 0..MAXLAG are candidates. None
+        #   per-lane mix. The candidates are rank.tsv: the pick C (rank 0) and its history, newest first, read in the
+        #   same query; LAG is the rank of J, the commits between J and C. Only ranks 0..MAXLAG are candidates. None
         #   qualifies (or no rank list): J = C and every lane reads as it would on C, which is not_measured for a lane
         #   with no run there. Nothing falls back past MAXLAG.
         J = C; LAG = 0
@@ -168,7 +215,7 @@ evaluate() {
                 nprod++
                 for (q = 1; q <= nr; q++) {
                     r = RID[q]
-                    if (RW[r] == WF[i] && REV[r] ~ EV[i] && RBR[r] == "main") { s = lst(i, r); if (s == "green" || s == "red") HAS[RH[r], i] = 1 }
+                    if (RW[r] == WF[i] && REV[r] ~ EV[i] && (RBR[r] == "main" || RBR[r] == PB)) { hm = (pinned(r) ? C : RH[r]); s = lst(i, r); if ((s == "green" || s == "red") && onc(r, hm)) HAS[hm, i] = 1 }
                 }
             }
             for (k = 0; k <= MAXLAG && k < NRK && nprod > 0; k++) {
@@ -182,9 +229,9 @@ evaluate() {
             ST = ""; EN = ""
             if (WF[i] == "-") { if (MODE == "final") out(i, "not_measured", "", "", "no nightly producer on main yet"); continue }
             if (!readok) { if (MODE == "final") out(i, "not_measured", "", "", "read " RD); continue }
-            # this lane'"'"'s runs on main, newest first
+            # this lane'"'"'s runs on main or on the pick branch, newest first
             m = 0; split("", S)
-            for (q = 1; q <= nr; q++) { r = RID[q]; if (RW[r] == WF[i] && REV[r] ~ EV[i] && RBR[r] == "main") S[++m] = r }
+            for (q = 1; q <= nr; q++) { r = RID[q]; if (RW[r] == WF[i] && REV[r] ~ EV[i] && (RBR[r] == "main" || RBR[r] == PB)) S[++m] = r }
             for (p = 2; p <= m; p++) for (q = p; q > 1 && RC[S[q]] > RC[S[q - 1]]; q--) { t = S[q]; S[q] = S[q - 1]; S[q - 1] = t }
             pick = ""; pst = ""; pwhy = ""; other = ""
             for (q = 1; q <= m; q++) {
@@ -194,12 +241,12 @@ evaluate() {
                     hc = (s == "green" ? "success" : (s == "red" ? "failure" : "cancelled"))
                     print L[i], r, RC[r], "main", REV[r], hc, ha > HIST
                 }
-                if (RH[r] != J) { if (other == "") other = r " on " substr(RH[r], 1, 10); continue }
+                if (!onc(r, J)) { if (other == "") other = OW; continue }
                 if (pick == "" && s != "void") { pick = r; pst = s; pwhy = WHY; pS = ST; pE = EN; pD = DUP }
                 else if (pick == "" && pwhy == "") pwhy = WHY
             }
             if (pick == "") {
-                if (MODE == "final") out(i, "not_measured", "", "", (pwhy != "" ? pwhy : "no run on the judged commit") (other != "" ? "; newest run " other : (m == 0 ? "; no run on main" : "")))
+                if (MODE == "final") out(i, "not_measured", "", "", (pwhy != "" ? pwhy : "no run on the judged commit") (other != "" ? "; newest run " other : (m == 0 ? "; no run on main or " PB : "")))
                 continue
             }
             ST = pS; EN = pE
@@ -237,8 +284,8 @@ hours() {
 decide() {
     local raw="$2" c j lag
     c="$(cat "$raw/C" 2>/dev/null)"
-    evaluate "$1" "$raw" final > "$raw/lanes.tsv" || return 1
-    # the judged commit J and its lag (#4798); the line names main's head and the lag whenever J is not the head
+    evaluate "$1" "$raw" final "$3" > "$raw/lanes.tsv" || return 1
+    # the judged commit J and its lag in the pick's history (#4798); the line names the pick and the lag whenever J is not C
     read -r j _ lag < "$raw/judged" 2>/dev/null; [[ "$j" =~ ^[0-9a-f]{40}$ && "$lag" =~ ^[0-9]+$ ]] || { j="$c"; lag=0; }
     : > "$raw/redage.out"
     if [ -x "$HERE/red_age.sh" ] || [ -f "$HERE/red_age.sh" ]; then
@@ -253,12 +300,13 @@ decide() {
         "$raw/hours.tsv" "$raw/lanes.tsv" | sort -t "$(printf '\t')" -k1,1gr -k2,2n -k3,3n -k4,4n \
         | awk -F '\t' -v OFS='\t' 'BEGIN { print "rank", "lane", "kind", "state", "hours_lost", "run_id", "reason" } { print NR, $5, $6, $7, $8, $9, $10 }' > "$raw/reds.tsv"
     # the line: the first failing verdict lane (red before not_measured, then hours lost, then table order)
-    awk -F '\t' -v C="$j" -v HEAD="$c" -v LAG="${lag:-0}" 'FILENAME == ARGV[1] { H[$1] = $2; next }
+    awk -F '\t' -v C="$j" -v HEAD="$c" -v LAG="${lag:-0}" -v GAP="$(cat "$raw/gap" 2>/dev/null)" 'FILENAME == ARGV[1] { H[$1] = $2; next }
         $2 == "verdict" { nv++; if ($3 == "green") next
             bad++; h = ($1 in H) ? H[$1] + 0 : -1; s = ($3 == "red" ? 1 : 0)
             if (best == "" || s > bs || (s == bs && h > bh)) { best = $1; brun = ($3 == "red" ? $5 : "not_measured"); bs = s; bh = h } }
         END {
-            note = (C != HEAD && HEAD != "" ? " (judged " substr(C, 1, 10) ", head " substr(HEAD, 1, 10) ", lag " LAG " commits)" : "")
+            note = (C != HEAD && HEAD != "" ? " (judged " substr(C, 1, 10) ", pick " substr(HEAD, 1, 10) ", lag " LAG " commits)" : "")
+            if (GAP != "") note = note " [main " GAP "]"
             if (nv == 0) { print "NOT RELEASABLE: nightly-train, the lane table has no verdict lane"; exit }
             if (bad == 0 && C ~ /^[0-9a-f]{40}$/) { print "RELEASABLE H=" C note; exit }
             if (bad == 0) { print "NOT RELEASABLE: nightly-train, no commit read"; exit }
@@ -277,21 +325,23 @@ greens() {
 CALLS=0
 call_ok() { [ "$CALLS" -lt "$MAX_CALLS" ] || return 1; CALLS=$((CALLS + 1)); }
 # normalize GQL WORKFLOWS -> runs.tsv rows on stdout
-# gql_query LANES WFJSON -> the one GraphQL query; empty when a producer workflow is missing from the list.
+# gql_query LANES WFJSON NIGHT -> the one GraphQL query; empty when a producer workflow is missing from the list or
+#   NIGHT is not YYYY-MM-DD. The pick is read by its exact name, never by a prefix or an order.
 # jq 1.6 compatible (the timer PATH may find it first): no reserved words such as $or as variable names.
 gql_query() {
-    printf '%s\n' "$1" | awk -F ';' '$4 != "-" { print $4 }' | sort -u | jq -R -s --slurpfile wf "$2" -r --arg repo "$REPO" --argjson hn "$((MAX_LAG + 1))" '
+    printf '%s\n' "$1" | awk -F ';' '$4 != "-" { print $4 }' | sort -u | jq -R -s --slurpfile wf "$2" -r --arg repo "$REPO" --argjson hn "$((MAX_LAG + 1))" --arg night "${3:-}" '
         split("\n") | map(select(length > 0)) as $want
         | ($wf | first | .workflows | map(select(.path as $x | $want | index($x))) ) as $hit
         | if ($hit | length) != ($want | length) then error("producer workflow missing from the list") else . end
+        | if ($night | test("^[0-9]{4}-[0-9]{2}-[0-9]{2}$") | not) then error("no night") else . end
         | ($repo | split("/")) as $own
-        | "query { repository(owner: \"\($own | first)\", name: \"\($own | last)\") { defaultBranchRef { name target { ... on Commit { oid tree { oid } statusCheckRollup { contexts(first: 100) { pageInfo { hasNextPage } nodes { ... on CheckRun { name status conclusion startedAt completedAt checkSuite { status conclusion branch { name } workflowRun { databaseId event createdAt workflow { id } } } } } } } history(first: \($hn)) { nodes { oid statusCheckRollup { contexts(first: 100) { pageInfo { hasNextPage } nodes { ... on CheckRun { name status conclusion startedAt completedAt checkSuite { status conclusion branch { name } workflowRun { databaseId event createdAt workflow { id } } } } } } } } } } } } } "
+        | "query { repository(owner: \"\($own | first)\", name: \"\($own | last)\") { main: defaultBranchRef { target { ... on Commit { oid } } } pick: ref(qualifiedName: \"refs/heads/nightly/\($night)\") { name target { ... on Commit { oid tree { oid } statusCheckRollup { contexts(first: 100) { pageInfo { hasNextPage } nodes { ... on CheckRun { name status conclusion startedAt completedAt checkSuite { status conclusion branch { name } workflowRun { databaseId event createdAt workflow { id } } } } } } } history(first: \($hn)) { nodes { oid statusCheckRollup { contexts(first: 100) { pageInfo { hasNextPage } nodes { ... on CheckRun { name status conclusion startedAt completedAt checkSuite { status conclusion branch { name } workflowRun { databaseId event createdAt workflow { id } } } } } } } } } } } } } "
           + ([$hit | to_entries[] | "w\(.key): node(id: \"\(.value.node_id)\") { ... on Workflow { id runs(first: 12) { nodes { databaseId createdAt event checkSuite { status conclusion branch { name } commit { oid } checkRuns(first: 100, filterBy: {checkType: ALL}) { pageInfo { hasNextPage } nodes { name status conclusion startedAt completedAt } } } } } } }"] | join(" ")) + " }"' 2>/dev/null
 }
 normalize() {
     jq -r --slurpfile wf "$2" '
       ($wf | first | .workflows | map({key: .node_id, value: .path}) | from_entries) as $p
-      | .data.repository.defaultBranchRef.target as $c
+      | (.data.repository.pick.target // {}) as $c
       | ( .data | to_entries[] | select(.key | test("^w[0-9]+$")) | .value as $w | ($w.runs.nodes // [])[] | . as $r
           | ($r.checkSuite.checkRuns.nodes // []) as $j
           | if ($j | length) == 0 then
@@ -321,15 +371,15 @@ normalize() {
               else empty end ) )
       | map(tostring) | join("\t")' "$1"
 }
-# rank_rows GQL -> "rank<TAB>oid", the head of main (rank 0) and then its history, newest first, the head once (#4798)
+# rank_rows GQL -> "rank<TAB>oid", the nightly pick (rank 0) and then its history, newest first, the pick once (#4798)
 rank_rows() {
-    jq -r '.data.repository.defaultBranchRef.target as $c | ([$c.oid] + [($c.history.nodes // [])[] | .oid | select(. != $c.oid)]) | to_entries[] | "\(.key)\t\(.value)"' "$1"
+    jq -r '.data.repository.pick.target as $c | ([$c.oid] + [($c.history.nodes // [])[] | .oid | select(. != $c.oid)]) | to_entries[] | "\(.key)\t\(.value)"' "$1"
 }
-# fetch RAW CACHE -> RAW/{C,tree,read,runs.tsv,attempts.tsv,graphql.json,workflows.json}; never fails: a failed read
+# fetch RAW CACHE -> RAW/{C,pick,tree,gap,read,runs.tsv,attempts.tsv,rank.tsv,graphql.json,workflows.json}; never fails: a failed read
 #   is recorded in RAW/read and makes every producer lane not_measured
 fetch() {
-    local raw="$1" cache="$2" lim rem fl hdr st q a ids r
-    printf 'failed: not read\n' > "$raw/read"; : > "$raw/C"; : > "$raw/tree"; : > "$raw/runs.tsv"; : > "$raw/attempts.tsv"; : > "$raw/rank.tsv"
+    local raw="$1" cache="$2" lim rem fl hdr st q a ids r n mo ab
+    printf 'failed: not read\n' > "$raw/read"; : > "$raw/C"; : > "$raw/pick"; : > "$raw/tree"; : > "$raw/gap"; : > "$raw/runs.tsv"; : > "$raw/attempts.tsv"; : > "$raw/rank.tsv"
     read -r lim rem <<< "$(gh api rate_limit --jq '"\(.resources.core.limit) \(.resources.core.remaining)"' 2>/dev/null)"
     case "$lim:$rem" in *[!0-9:]*|:*|*:) printf 'failed: rate_limit unreadable\n' > "$raw/read"; return 0 ;; esac
     # the floor is a fifth of the token's own hourly limit, capped at RATE_FLOOR: the fleet PAT (5000) keeps its 1000
@@ -348,20 +398,32 @@ fetch() {
     elif [ "$st" = "304" ]; then CALLS=$((CALLS - 1))
     else printf 'failed: workflow list HTTP %s\n' "${st:-none}" > "$raw/read"; return 0; fi
     cp "$cache/workflows.json" "$raw/workflows.json" 2>/dev/null || { printf 'failed: no workflow list\n' > "$raw/read"; return 0; }
-    # one GraphQL query: every producer workflow's recent runs, and main's head with its check rollup
-    q="$(gql_query "$LANES" "$raw/workflows.json")"
+    # one GraphQL query: every producer workflow's recent runs, and tonight's pick nightly/<night> (C) with its rollup
+    n="$(night_of "$NOW")" || { printf 'failed: no clock to name the night\n' > "$raw/read"; return 0; }
+    q="$(gql_query "$LANES" "$raw/workflows.json" "$n")"
     [ -n "$q" ] || { printf 'failed: a producer workflow is not in the workflow list\n' > "$raw/read"; return 0; }
     call_ok || { printf 'failed: call budget\n' > "$raw/read"; return 0; }
     gh api graphql -f query="$q" > "$raw/graphql.json" 2>/dev/null || { printf 'failed: GraphQL call\n' > "$raw/read"; return 0; }
     if jq -e '(.errors // []) | length > 0' "$raw/graphql.json" > /dev/null 2>&1; then printf 'failed: GraphQL errors\n' > "$raw/read"; return 0; fi
-    jq -r '.data.repository.defaultBranchRef | select(.name == "main") | .target.oid // empty' "$raw/graphql.json" > "$raw/C" 2>/dev/null
-    jq -r '.data.repository.defaultBranchRef.target.tree.oid // empty' "$raw/graphql.json" > "$raw/tree" 2>/dev/null
-    grep -q -E '^[0-9a-f]{40}$' "$raw/C" || { printf 'failed: no head of main in the response\n' > "$raw/read"; return 0; }
+    jq -r '.data.repository.pick.name // empty' "$raw/graphql.json" > "$raw/pick" 2>/dev/null
+    jq -r '.data.repository.pick.target.oid // empty' "$raw/graphql.json" > "$raw/C" 2>/dev/null
+    jq -r '.data.repository.pick.target.tree.oid // empty' "$raw/graphql.json" > "$raw/tree" 2>/dev/null
+    grep -q -E '^[0-9a-f]{40}$' "$raw/C" || { printf 'failed: no nightly pick nightly/%s\n' "$n" > "$raw/read"; return 0; }
+    # the gap of the pick to main, printed on the line: main's head and the commits it is ahead of the pick (one call, best effort)
+    mo="$(jq -r '.data.repository.main.target.oid // empty' "$raw/graphql.json" 2>/dev/null)"
+    if [[ "$mo" =~ ^[0-9a-f]{40}$ ]]; then
+        if [ "$mo" = "$(cat "$raw/C")" ]; then printf '%s +0\n' "${mo:0:10}" > "$raw/gap"
+        else
+            ab=""; if call_ok; then ab="$(gh api "repos/$REPO/compare/$(cat "$raw/C")...$mo" --jq .ahead_by 2>/dev/null)"; fi
+            case "$ab" in ''|*[!0-9]*) ab="?" ;; esac
+            printf '%s +%s\n' "${mo:0:10}" "$ab" > "$raw/gap"
+        fi
+    fi
     normalize "$raw/graphql.json" "$raw/workflows.json" > "$raw/runs.tsv" 2>/dev/null || { printf 'failed: response did not normalize\n' > "$raw/read"; return 0; }
     rank_rows "$raw/graphql.json" > "$raw/rank.tsv" 2>/dev/null || : > "$raw/rank.tsv"
     printf 'ok\n' > "$raw/read"
     # run_attempt for each green verdict candidate (GraphQL has none); an unread attempt stays unread -> not_measured
-    ids="$(evaluate "$LANES" "$raw" cand | sort -u)"
+    ids="$(evaluate "$LANES" "$raw" cand "$NOW" | sort -u)"
     for r in $ids; do
         call_ok || break
         a="$(gh api "repos/$REPO/actions/runs/$r" --jq .run_attempt 2>/dev/null)"
@@ -446,7 +508,7 @@ run_train() {
     mkdir -p "$raw" || exit 1
     step read
     if [ -n "$from" ]; then
-        for f in C read runs.tsv attempts.tsv tree rank.tsv; do [ "$from/$f" -ef "$raw/$f" ] || cp "$from/$f" "$raw/$f" 2>/dev/null || : > "$raw/$f"; done
+        for f in C pick read runs.tsv attempts.tsv tree rank.tsv gap; do [ "$from/$f" -ef "$raw/$f" ] || cp "$from/$f" "$raw/$f" 2>/dev/null || : > "$raw/$f"; done
     else fetch "$raw" "$OUTDIR/cache"; fi
     CSHA="$(cat "$raw/C" 2>/dev/null)"
     step judge
@@ -558,17 +620,17 @@ install_timer() {
     loginctl show-user "$(id -un)" -p Linger 2>/dev/null
 }
 # ---------------------------------------------------------------- the case table ----------------------------------
-ST_LANES='v-a;verdict;check A;.github/workflows/a.yml;^schedule$;^job-a$
+ST_LANES='v-a;verdict;check A;.github/workflows/a.yml;^(schedule|workflow_run)$;^job-a$
 v-b;verdict;check B;.github/workflows/b.yml;^schedule$;
 v-c;verdict;check C;.github/workflows/c.yml;^push$;^(gate|test)$;2
 i-d;info;check D;.github/workflows/d.yml;^schedule$;'
 ST_C="$(printf 'a%.0s' $(seq 40))"
 ST_X="$(printf 'b%.0s' $(seq 40))"
 ST_Y="$(printf 'd%.0s' $(seq 40))"
-# fixture DIR -> every lane green on C, attempt 1
+# fixture DIR -> every lane green on C, attempt 1; the pick is nightly/2026-10-03, the night of the 06:00Z train
 fixture() {
     mkdir -p "$1"
-    printf '%s\n' "$ST_C" > "$1/C"; printf 'ok\n' > "$1/read"; printf '%s\n' "$(printf 'c%.0s' $(seq 40))" > "$1/tree"
+    printf '%s\n' "$ST_C" > "$1/C"; printf 'ok\n' > "$1/read"; printf 'nightly/2026-10-03\n' > "$1/pick"; printf '%s\n' "$(printf 'c%.0s' $(seq 40))" > "$1/tree"
     {
         printf 'wf\t.github/workflows/a.yml\t101\tschedule\tmain\t%s\t2026-10-04T01:00:00Z\tCOMPLETED\tSUCCESS\tjob-a\tCOMPLETED\tSUCCESS\t2026-10-04T01:01:00Z\t2026-10-04T01:30:00Z\t1\n' "$ST_C"
         printf 'wf\t.github/workflows/a.yml\t101\tschedule\tmain\t%s\t2026-10-04T01:00:00Z\tCOMPLETED\tSUCCESS\tother\tCOMPLETED\tFAILURE\t2026-10-04T01:01:00Z\t2026-10-04T01:02:00Z\t1\n' "$ST_C"
@@ -606,6 +668,43 @@ self_test() {
     row one_lane_removed_names_it 0 "NOT RELEASABLE: v-b, not_measured" "RELEASABLE H=" -- st_decide "$d"
     d="$tmp/other"; fixture "$d"; sed -i "/\t101\t/s/$ST_C/$ST_X/" "$d/runs.tsv"
     row run_on_another_commit_is_not_measured 0 "newest run 101 on bbbbbbbbbb" "RELEASABLE H=" -- st_decide "$d"
+    # st_pin DIR EVENT BRANCH HEAD CREATED PIN JOB -> run 101 (lane v-a) rewritten; PIN is its pin job's conclusion, or
+    #   - for no pin job; JOB is job-a's conclusion
+    st_pin() {
+        fixture "$1"
+        awk -F '\t' -v OFS='\t' -v E="$2" -v B="$3" -v H="$4" -v T="$5" -v P="$6" -v J="$7" '
+            $3 == 101 { $4 = E; $5 = B; $6 = H; $7 = T; if ($10 == "job-a") $12 = J; print; if ($10 == "job-a" && P != "-") { $10 = "pin"; $12 = P; print }; next }
+            { print }' "$1/runs.tsv" > "$1/runs.new" && mv "$1/runs.new" "$1/runs.tsv"
+    }
+    # a workflow_run run records main's head, not what it checked out: only its pin job says it measured C
+    d="$tmp/pinok"; st_pin "$d" workflow_run main "$ST_X" 2026-10-04T01:00:00Z SUCCESS SUCCESS
+    row a_succeeded_pin_is_a_run_on_c 0 "RELEASABLE H=$ST_C" "NOT RELEASABLE" -- st_decide "$d"
+    d="$tmp/pinbad"; st_pin "$d" workflow_run main "$ST_C" 2026-10-04T01:00:00Z FAILURE SUCCESS
+    row a_failed_pin_is_not_measured 0 "101: its pin job did not succeed" "RELEASABLE H=" -- st_decide "$d"
+    d="$tmp/pinskip"; st_pin "$d" workflow_run main "$ST_C" 2026-10-04T01:00:00Z SKIPPED SUCCESS
+    row a_skipped_pin_is_not_measured 0 "101: its pin job did not succeed" "RELEASABLE H=" -- st_decide "$d"
+    d="$tmp/pinnone"; st_pin "$d" workflow_run main "$ST_C" 2026-10-04T01:00:00Z - SUCCESS
+    row a_workflow_run_with_no_pin_is_not_measured 0 "101: a workflow_run with no pin job" "RELEASABLE H=" -- st_decide "$d"
+    d="$tmp/pinred"; st_pin "$d" workflow_run main "$ST_X" 2026-10-04T01:00:00Z SUCCESS FAILURE
+    row a_failure_on_c_is_red 0 "NOT RELEASABLE: v-a, 101" "not_measured" -- st_decide "$d"
+    d="$tmp/pinbranch"; st_pin "$d" workflow_run nightly/2026-10-03 "$ST_X" 2026-10-04T01:00:00Z SUCCESS SUCCESS
+    row a_run_on_the_pick_branch_is_read 0 "RELEASABLE H=$ST_C" "NOT RELEASABLE" -- st_decide "$d"
+    d="$tmp/pinother"; st_pin "$d" workflow_run nightly/2026-10-02 "$ST_C" 2026-10-04T01:00:00Z SUCCESS SUCCESS
+    row a_run_on_another_branch_is_not_read 0 "no run on main or nightly/2026-10-03" "RELEASABLE H=" -- st_decide "$d"
+    # a pin proves C only for its own night: [night 12:00Z, night+1 12:00Z)
+    d="$tmp/pinearly"; st_pin "$d" workflow_run main "$ST_X" 2026-10-03T11:59:59Z SUCCESS SUCCESS
+    row a_pin_before_the_night_is_not_measured 0 "created 2026-10-03T11:59:59Z, outside night 2026-10-03" "RELEASABLE H=" -- st_decide "$d"
+    d="$tmp/pinopen"; st_pin "$d" workflow_run main "$ST_X" 2026-10-03T12:00:00Z SUCCESS SUCCESS
+    row a_pin_at_the_nights_start_is_on_c 0 "RELEASABLE H=$ST_C" "NOT RELEASABLE" -- st_decide "$d"
+    d="$tmp/pinlate"; st_pin "$d" workflow_run main "$ST_X" 2026-10-04T12:00:00Z SUCCESS SUCCESS
+    row a_pin_after_the_night_is_not_measured 0 "outside night 2026-10-03" "RELEASABLE H=" -- st_decide "$d"
+    # no pick for tonight, or another night's pick, is a failed read: no producer lane is judged
+    d="$tmp/nopick"; fixture "$d"; : > "$d/pick"
+    row no_pick_is_not_measured 0 "read failed: no nightly pick nightly/2026-10-03" "RELEASABLE H=" -- st_decide "$d"
+    d="$tmp/stalepick"; fixture "$d"; printf 'nightly/2026-10-02\n' > "$d/pick"
+    row a_stale_pick_is_not_measured 0 "read failed: the pick nightly/2026-10-02 is not nightly/2026-10-03" "RELEASABLE H=" -- st_decide "$d"
+    d="$tmp/tagpick"; fixture "$d"; printf 'refs/tags/nightly/2026-10-03\n' > "$d/pick"
+    row a_tag_named_pick_is_not_measured 0 "is not nightly/2026-10-03" "RELEASABLE H=" -- st_decide "$d"
     d="$tmp/running"; fixture "$d"; sed -i '/\t101\t/s/\tCOMPLETED\tSUCCESS\tjob-a/\tIN_PROGRESS\t\tjob-a/' "$d/runs.tsv"
     row run_in_progress_is_not_measured 0 "in progress: run 101 is in_progress" "RELEASABLE H=" -- st_decide "$d"
     d="$tmp/retry"; fixture "$d"; sed -i 's/^101\t1$/101\t2/' "$d/attempts.tsv"
@@ -640,13 +739,22 @@ self_test() {
         st_verdict_lanes_are_release_day_checks
     st_norm() {
         printf '{"workflows":[{"node_id":"WA","path":".github/workflows/a.yml"},{"node_id":"WC","path":".github/workflows/c.yml"}]}\n' > "$tmp/wf.json"
-        printf '%s' '{"data":{"repository":{"defaultBranchRef":{"name":"main","target":{"oid":"'"$ST_C"'","tree":{"oid":"t"},"statusCheckRollup":{"contexts":{"nodes":[{},{"name":"gate","status":"COMPLETED","conclusion":"SUCCESS","startedAt":"s","completedAt":"e","checkSuite":{"status":"COMPLETED","conclusion":"SUCCESS","branch":{"name":"main"},"workflowRun":{"databaseId":301,"event":"push","createdAt":"c","workflow":{"id":"WC"}}}}]}}}}},"w0":{"id":"WA","runs":{"nodes":[{"databaseId":101,"createdAt":"c1","event":"schedule","checkSuite":{"status":"COMPLETED","conclusion":"SUCCESS","branch":{"name":"main"},"commit":{"oid":"'"$ST_C"'"},"checkRuns":{"nodes":[{"name":"job-a","status":"COMPLETED","conclusion":"SUCCESS","startedAt":"s1","completedAt":"e1"},{"name":"job-a","status":"COMPLETED","conclusion":"FAILURE","startedAt":"s0","completedAt":"e0"}]}}}]}}}}' > "$tmp/gql.json"
+        printf '%s' '{"data":{"repository":{"pick":{"name":"nightly/2026-10-03","target":{"oid":"'"$ST_C"'","tree":{"oid":"t"},"statusCheckRollup":{"contexts":{"nodes":[{},{"name":"gate","status":"COMPLETED","conclusion":"SUCCESS","startedAt":"s","completedAt":"e","checkSuite":{"status":"COMPLETED","conclusion":"SUCCESS","branch":{"name":"main"},"workflowRun":{"databaseId":301,"event":"push","createdAt":"c","workflow":{"id":"WC"}}}}]}}}}},"w0":{"id":"WA","runs":{"nodes":[{"databaseId":101,"createdAt":"c1","event":"schedule","checkSuite":{"status":"COMPLETED","conclusion":"SUCCESS","branch":{"name":"main"},"commit":{"oid":"'"$ST_C"'"},"checkRuns":{"nodes":[{"name":"job-a","status":"COMPLETED","conclusion":"SUCCESS","startedAt":"s1","completedAt":"e1"},{"name":"job-a","status":"COMPLETED","conclusion":"FAILURE","startedAt":"s0","completedAt":"e0"}]}}}]}}}}' > "$tmp/gql.json"
         normalize "$tmp/gql.json" "$tmp/wf.json"
     }
     row normalize_maps_runs_jobs_and_the_rollup 0 "$(printf 'rollup\t.github/workflows/c.yml\t301\tpush\tmain\t%s\tc\tCOMPLETED\tSUCCESS\tgate' "$ST_C")" "" -- st_norm
     row normalize_counts_a_rerun_job 0 "$(printf 'job-a\tCOMPLETED\tSUCCESS\ts1\te1\t2')" "" -- st_norm
-    row gql_query_names_every_producer 0 'w1: node(id: "WC")' "" -- gql_query "$(printf '%s\n' "$ST_LANES" | awk -F ';' '$4 ~ /[ac][.]yml$/')" "$tmp/wf.json"
-    row gql_query_refuses_a_missing_producer 5 "" "query" -- gql_query "$ST_LANES" "$tmp/wf.json"
+    row gql_query_names_every_producer 0 'w1: node(id: "WC")' "" -- gql_query "$(printf '%s\n' "$ST_LANES" | awk -F ';' '$4 ~ /[ac][.]yml$/')" "$tmp/wf.json" 2026-10-03
+    row gql_query_refuses_a_missing_producer 5 "" "query" -- gql_query "$ST_LANES" "$tmp/wf.json" 2026-10-03
+    # the pick is read by its exact name: never a tag, never a prefix listing whose order picks the commit
+    row gql_query_reads_the_exact_pick 0 'pick: ref(qualifiedName: "refs/heads/nightly/2026-10-03")' "refs/tags" -- \
+        gql_query "$(printf '%s\n' "$ST_LANES" | awk -F ';' '$4 ~ /[ac][.]yml$/')" "$tmp/wf.json" 2026-10-03
+    row gql_query_refuses_no_night 5 "" "query" -- gql_query "$(printf '%s\n' "$ST_LANES" | awk -F ';' '$4 ~ /[ac][.]yml$/')" "$tmp/wf.json" ""
+    row gql_query_refuses_a_malformed_night 5 "" "query" -- gql_query "$(printf '%s\n' "$ST_LANES" | awk -F ';' '$4 ~ /[ac][.]yml$/')" "$tmp/wf.json" '2026-10-03") { x'
+    # the night is the UTC date of now - 12 h: the 04:45Z train judges the evening before, the boundary is 12:00Z
+    row night_before_noon_is_yesterday 0 "2026-10-03" "" -- night_of 2026-10-04T11:59:59Z
+    row night_at_noon_is_today 0 "2026-10-04" "" -- night_of 2026-10-04T12:00:00Z
+    row night_of_an_unreadable_clock_fails 1 "" "" -- night_of not-a-time
     d="$tmp/voidnew"; fixture "$d"
     printf 'wf\t.github/workflows/a.yml\t102\tschedule\tmain\t%s\t2026-10-04T05:00:00Z\tCOMPLETED\tCANCELLED\tjob-a\tCOMPLETED\tCANCELLED\t\t\t1\n' "$ST_C" >> "$d/runs.tsv"
     row a_void_newer_run_falls_to_the_older_green 0 "RELEASABLE H=$ST_C" "NOT RELEASABLE" -- st_decide "$d"
@@ -656,13 +764,13 @@ self_test() {
     printf 'wf\t.github/workflows/a.yml\t101\tschedule\tmain\t%s\t2026-10-04T01:00:00Z\tCOMPLETED\tSUCCESS\t#truncated\tCOMPLETED\tTRUNCATED\t\t\t1\n' "$ST_C" >> "$d/runs.tsv"
     row a_cut_job_list_is_not_measured 0 "its job list was cut" "RELEASABLE H=" -- st_decide "$d"
     st_cut() {
-        printf '%s' '{"data":{"repository":{"defaultBranchRef":{"name":"main","target":{"oid":"'"$ST_C"'","tree":{"oid":"t"},"statusCheckRollup":{"contexts":{"pageInfo":{"hasNextPage":false},"nodes":[]}}}}},"w0":{"id":"WA","runs":{"nodes":[{"databaseId":101,"createdAt":"c1","event":"schedule","checkSuite":{"status":"COMPLETED","conclusion":"SUCCESS","branch":{"name":"main"},"commit":{"oid":"'"$ST_C"'"},"checkRuns":{"pageInfo":{"hasNextPage":true},"nodes":[{"name":"job-a","status":"COMPLETED","conclusion":"SUCCESS","startedAt":"s","completedAt":"e"}]}}}]}}}}' > "$tmp/cut.json"
+        printf '%s' '{"data":{"repository":{"pick":{"name":"nightly/2026-10-03","target":{"oid":"'"$ST_C"'","tree":{"oid":"t"},"statusCheckRollup":{"contexts":{"pageInfo":{"hasNextPage":false},"nodes":[]}}}}},"w0":{"id":"WA","runs":{"nodes":[{"databaseId":101,"createdAt":"c1","event":"schedule","checkSuite":{"status":"COMPLETED","conclusion":"SUCCESS","branch":{"name":"main"},"commit":{"oid":"'"$ST_C"'"},"checkRuns":{"pageInfo":{"hasNextPage":true},"nodes":[{"name":"job-a","status":"COMPLETED","conclusion":"SUCCESS","startedAt":"s","completedAt":"e"}]}}}]}}}}' > "$tmp/cut.json"
         normalize "$tmp/cut.json" "$tmp/wf.json"
     }
     row normalize_marks_a_cut_job_list 0 "$(printf '#truncated\tCOMPLETED\tTRUNCATED')" "" -- st_cut
     st_hist() {
         local ctx='{"pageInfo":{"hasNextPage":false},"nodes":[{"name":"gate","status":"COMPLETED","conclusion":"SUCCESS","startedAt":"s","completedAt":"e","checkSuite":{"status":"COMPLETED","conclusion":"SUCCESS","branch":{"name":"main"},"workflowRun":{"databaseId":RID,"event":"push","createdAt":"c","workflow":{"id":"WC"}}}}]}'
-        printf '%s' '{"data":{"repository":{"defaultBranchRef":{"name":"main","target":{"oid":"'"$ST_C"'","tree":{"oid":"t"},"statusCheckRollup":{"contexts":'"${ctx/RID/301}"'},"history":{"nodes":[{"oid":"'"$ST_C"'","statusCheckRollup":{"contexts":'"${ctx/RID/301}"'}},{"oid":"'"$ST_X"'","statusCheckRollup":{"contexts":'"${ctx/RID/302}"'}}]}}}}}}' > "$tmp/hist.json"
+        printf '%s' '{"data":{"repository":{"pick":{"name":"nightly/2026-10-03","target":{"oid":"'"$ST_C"'","tree":{"oid":"t"},"statusCheckRollup":{"contexts":'"${ctx/RID/301}"'},"history":{"nodes":[{"oid":"'"$ST_C"'","statusCheckRollup":{"contexts":'"${ctx/RID/301}"'}},{"oid":"'"$ST_X"'","statusCheckRollup":{"contexts":'"${ctx/RID/302}"'}}]}}}}}}' > "$tmp/hist.json"
         normalize "$tmp/hist.json" "$tmp/wf.json" | cut -f1,3,6 | sort | uniq -c
     }
     # #4798: a push run on an older main commit is read from the history rollup, and the head is not read twice
@@ -700,27 +808,27 @@ v-e;verdict;check E;-;-;-" "$d" 2026-10-04T06:00:00Z; cat "$d/line" "$d/lanes.ts
     row a_failed_parallel_leg_of_the_same_name_is_red 0 "NOT RELEASABLE: v-a, 101" "RELEASABLE H=" -- st_decide "$d"
     # J (#4798): main moved after the producers ran, so the head has no run; every verdict producer ran on one commit.
     d="$tmp/moved"; fixture "$d"; sed -i "s/$ST_C/$ST_X/g" "$d/runs.tsv"; ranks "$d" "$ST_C" "$ST_X"
-    row a_moved_head_judges_the_commit_every_producer_ran_on 0 "RELEASABLE H=$ST_X (judged bbbbbbbbbb, head aaaaaaaaaa, lag 1 commits)" "NOT RELEASABLE" -- st_decide "$d"
+    row a_moved_head_judges_the_commit_every_producer_ran_on 0 "RELEASABLE H=$ST_X (judged bbbbbbbbbb, pick aaaaaaaaaa, lag 1 commits)" "NOT RELEASABLE" -- st_decide "$d"
     # one commit for every lane, never a per-lane mix: v-a ran on X only, the rest on Y only
     d="$tmp/split"; fixture "$d"; sed -i "s/$ST_C/$ST_Y/g; /\t101\t/s/$ST_Y/$ST_X/" "$d/runs.tsv"; ranks "$d" "$ST_C" "$ST_X" "$ST_Y"
     row producers_split_across_commits_are_not_measured 0 "NOT RELEASABLE: v-a, not_measured (+2 more)" "RELEASABLE H=" -- st_decide "$d"
     # a newer commit that only some producers ran on does not win; the lag counts it and the head
     d="$tmp/partial"; fixture "$d"; sed -i "s/$ST_C/$ST_X/g" "$d/runs.tsv"; ranks "$d" "$ST_C" "$ST_Y" "$ST_X"
     printf 'wf\t.github/workflows/a.yml\t102\tschedule\tmain\t%s\t2026-10-04T05:00:00Z\tCOMPLETED\tSUCCESS\tjob-a\tCOMPLETED\tSUCCESS\t2026-10-04T05:01:00Z\t2026-10-04T05:30:00Z\t1\n' "$ST_Y" >> "$d/runs.tsv"
-    row a_newer_partial_commit_does_not_win 0 "RELEASABLE H=$ST_X (judged bbbbbbbbbb, head aaaaaaaaaa, lag 2 commits)" "NOT RELEASABLE" -- st_decide "$d"
+    row a_newer_partial_commit_does_not_win 0 "RELEASABLE H=$ST_X (judged bbbbbbbbbb, pick aaaaaaaaaa, lag 2 commits)" "NOT RELEASABLE" -- st_decide "$d"
     # a commit with no run at all still counts in the lag: the lag is the history position, not the commits seen in runs
     d="$tmp/gap"; fixture "$d"; sed -i "s/$ST_C/$ST_X/g" "$d/runs.tsv"; ranks "$d" "$ST_C" "$ST_Y" "$ST_X"
-    row a_commit_without_runs_counts_in_the_lag 0 "(judged bbbbbbbbbb, head aaaaaaaaaa, lag 2 commits)" "NOT RELEASABLE" -- st_decide "$d"
+    row a_commit_without_runs_counts_in_the_lag 0 "(judged bbbbbbbbbb, pick aaaaaaaaaa, lag 2 commits)" "NOT RELEASABLE" -- st_decide "$d"
     # newest = nearest the head in history, not the latest run time: the older commit's runs started later
     d="$tmp/order"; fixture "$d"; sed -i "s/$ST_C/$ST_X/g" "$d/runs.tsv"; ranks "$d" "$ST_C" "$ST_X" "$ST_Y"
     awk -F '\t' -v OFS='\t' -v y="$ST_Y" '{ $3 = $3 + 1000; $6 = y; $7 = "2026-10-05T01:00:00Z"; print }' "$d/runs.tsv" >> "$d/runs.tsv.y" && cat "$d/runs.tsv.y" >> "$d/runs.tsv"
-    row the_nearest_commit_wins_not_the_latest_run 0 "H=$ST_X (judged bbbbbbbbbb, head aaaaaaaaaa, lag 1 commits)" "NOT RELEASABLE" -- st_decide "$d"
+    row the_nearest_commit_wins_not_the_latest_run 0 "H=$ST_X (judged bbbbbbbbbb, pick aaaaaaaaaa, lag 1 commits)" "NOT RELEASABLE" -- st_decide "$d"
     # a red on J is a red, named with the head and the lag
     d="$tmp/movedred"; fixture "$d"; sed -i "s/$ST_C/$ST_X/g; /\t201\t/s/\tx\tCOMPLETED\tSUCCESS\t/\tx\tCOMPLETED\tFAILURE\t/" "$d/runs.tsv"; ranks "$d" "$ST_C" "$ST_X"
-    row a_red_on_the_judged_commit_is_red 0 "NOT RELEASABLE: v-b, 201 (judged bbbbbbbbbb, head aaaaaaaaaa, lag 1 commits)" "RELEASABLE H=" -- st_decide "$d"
+    row a_red_on_the_judged_commit_is_red 0 "NOT RELEASABLE: v-b, 201 (judged bbbbbbbbbb, pick aaaaaaaaaa, lag 1 commits)" "RELEASABLE H=" -- st_decide "$d"
     # the lookback is capped at MAX_LAG commits behind the head: rank 6 is judged, rank 7 is not_measured, not a stale verdict
     d="$tmp/edge"; fixture "$d"; sed -i "s/$ST_C/$ST_X/g" "$d/runs.tsv"; ranks "$d" "$ST_C" "$ST_Y" "$ST_Y" "$ST_Y" "$ST_Y" "$ST_Y" "$ST_X"
-    row a_judged_commit_at_the_lag_cap_is_judged 0 "RELEASABLE H=$ST_X (judged bbbbbbbbbb, head aaaaaaaaaa, lag 6 commits)" "NOT RELEASABLE" -- st_decide "$d"
+    row a_judged_commit_at_the_lag_cap_is_judged 0 "RELEASABLE H=$ST_X (judged bbbbbbbbbb, pick aaaaaaaaaa, lag 6 commits)" "NOT RELEASABLE" -- st_decide "$d"
     d="$tmp/stale"; fixture "$d"; sed -i "s/$ST_C/$ST_X/g" "$d/runs.tsv"; ranks "$d" "$ST_C" "$ST_Y" "$ST_Y" "$ST_Y" "$ST_Y" "$ST_Y" "$ST_Y" "$ST_X"
     row a_judged_commit_past_the_lag_cap_is_not_measured 0 "NOT RELEASABLE: v-a, not_measured (+2 more)" "RELEASABLE H=" -- st_decide "$d"
     # no history read (an old raw, a failed history): only the head is a candidate, as before
@@ -728,7 +836,7 @@ v-e;verdict;check E;-;-;-" "$d" 2026-10-04T06:00:00Z; cat "$d/line" "$d/lanes.ts
     row no_history_judges_only_the_head 0 "NOT RELEASABLE: v-a, not_measured (+2 more)" "RELEASABLE H=" -- st_decide "$d"
     st_moved_bundle() {
         local m="$tmp/mb/raw" t='\t'
-        mkdir -p "$m"; printf '0\t%s\n1\t%s\n' "$ST_C" "$ST_X" > "$m/rank.tsv"; printf '%s\n' "$ST_C" > "$m/C"; printf 'ok\n' > "$m/read"; printf 'cccc\n' > "$m/tree"; printf '501\t1\n502\t1\n503\t1\n' > "$m/attempts.tsv"
+        mkdir -p "$m"; printf '0\t%s\n1\t%s\n' "$ST_C" "$ST_X" > "$m/rank.tsv"; printf '%s\n' "$ST_C" > "$m/C"; printf "nightly/2026-10-03\n" > "$m/pick"; printf 'ok\n' > "$m/read"; printf 'cccc\n' > "$m/tree"; printf '501\t1\n502\t1\n503\t1\n' > "$m/attempts.tsv"
         {
             printf "rollup${t}.github/workflows/ci.yml${t}501${t}push${t}main${t}%s${t}2026-10-03T23:00:00Z${t}COMPLETED${t}SUCCESS${t}ci / gate${t}COMPLETED${t}SUCCESS${t}${t}${t}1\n" "$ST_X"
             printf "rollup${t}.github/workflows/ci.yml${t}501${t}push${t}main${t}%s${t}2026-10-03T23:00:00Z${t}COMPLETED${t}SUCCESS${t}workspace-test${t}COMPLETED${t}SUCCESS${t}${t}${t}1\n" "$ST_X"
@@ -738,11 +846,11 @@ v-e;verdict;check E;-;-;-" "$d" 2026-10-04T06:00:00Z; cat "$d/line" "$d/lanes.ts
         bash "$SCRIPT_PATH" --out "$tmp/mbout" --from "$m" --now 2026-10-04T06:00:00Z > /dev/null 2>&1
         cat "$tmp/mbout/2026-10-04/line"; grep -E '^(ci-main|deep-examples|deep-bins-build)	|^# (head|C|tree)	' "$tmp/mbout/2026-10-04/bundle.tsv"
     }
-    row a_moved_head_bundle_names_judged_and_head 0 "(judged bbbbbbbbbb, head aaaaaaaaaa, lag 1 commits) [C=bbbbbbbbbb pin=" "$(printf '# tree\tcccc')" -- st_moved_bundle
+    row a_moved_head_bundle_names_judged_and_head 0 "(judged bbbbbbbbbb, pick aaaaaaaaaa, lag 1 commits) [C=bbbbbbbbbb pin=" "$(printf '# tree\tcccc')" -- st_moved_bundle
     d="$tmp/infoatt"; fixture "$d"
     row an_info_lane_attempt_is_marked_inferred 0 "$(printf 'i-d\tinfo\tgreen\t.github/workflows/d.yml \t401\t%s\tsuccess\t1?' "$ST_C")" "" -- st_decide "$d"
     st_rcut() {
-        printf '%s' '{"data":{"repository":{"defaultBranchRef":{"name":"main","target":{"oid":"'"$ST_C"'","tree":{"oid":"t"},"statusCheckRollup":{"contexts":{"pageInfo":{"hasNextPage":true},"nodes":[{"name":"gate","status":"COMPLETED","conclusion":"SUCCESS","startedAt":"s","completedAt":"e","checkSuite":{"status":"COMPLETED","conclusion":"SUCCESS","branch":{"name":"main"},"workflowRun":{"databaseId":301,"event":"push","createdAt":"c","workflow":{"id":"WC"}}}}]}}}}}}}' > "$tmp/rcut.json"
+        printf '%s' '{"data":{"repository":{"pick":{"name":"nightly/2026-10-03","target":{"oid":"'"$ST_C"'","tree":{"oid":"t"},"statusCheckRollup":{"contexts":{"pageInfo":{"hasNextPage":true},"nodes":[{"name":"gate","status":"COMPLETED","conclusion":"SUCCESS","startedAt":"s","completedAt":"e","checkSuite":{"status":"COMPLETED","conclusion":"SUCCESS","branch":{"name":"main"},"workflowRun":{"databaseId":301,"event":"push","createdAt":"c","workflow":{"id":"WC"}}}}]}}}}}}}' > "$tmp/rcut.json"
         normalize "$tmp/rcut.json" "$tmp/wf.json"
     }
     row normalize_marks_a_cut_rollup 0 "$(printf 'rollup\t.github/workflows/c.yml\t301\tpush\tmain\t%s\tc\tCOMPLETED\tSUCCESS\t#truncated\tCOMPLETED\tTRUNCATED' "$ST_C")" "" -- st_rcut
@@ -757,7 +865,7 @@ v-e;verdict;check E;-;-;-" "$d" 2026-10-04T06:00:00Z; cat "$d/line" "$d/lanes.ts
     st_fetch() {
         local f; f="$(realpath -m -s -- "$tmp/f$1")"
         mkdir -p "$f"
-        PATH="$tmp/bin:$PATH" STUB_WF="$tmp/wfall.json" LANES="$ST_LANES" fetch "$f" "$f/cache"
+        PATH="$tmp/bin:$PATH" STUB_WF="$tmp/wfall.json" LANES="$ST_LANES" NOW=2026-10-04T06:00:00Z fetch "$f" "$f/cache"
         cat "$f/read"
     }
     st_fetch_refuses_under_the_rate_floor() { STUB_REM=999 st_fetch 1; }
@@ -827,7 +935,7 @@ v-e;verdict;check E;-;-;-" "$d" 2026-10-04T06:00:00Z; cat "$d/line" "$d/lanes.ts
 }
 # the planted mutants: name, TAB, a sed expression applied to this file
 NT_MUTANTS='m01_not_measured_counts_as_green	s/nv++; if (\$3 == "green") next/nv++; if ($3 != "red") next/
-m02_run_on_any_commit	s/if (RH\[r\] != J) {/if (0) {/
+m02_run_on_any_commit	s/if (RH\[r\] != h) { OW/if (0) { OW/
 m03_in_progress_run_counts	s/if (RST\[r\] != "COMPLETED") {/if (0) {/
 m04_retried_green_is_green	s/if (att > 1) out/if (att > 9) out/
 m05_failed_read_is_read	s/readok = (RD == "ok" \&\& /readok = (/
@@ -868,17 +976,28 @@ m39_exit_verdict_always_red	s/^    \[ -z "\$EXIT_VERDICT" \] || verdict_rc "\$li
 m40_config_token_ignored	s/^        if grep -qsE /        if false \&\& grep -qsE /
 m41_home_cargo_unchecked	s/ "\$HOME\/.cargo"; do$/; do/
 m42_floor_ignores_the_limit	s/fl=\$((lim \/ 5))/fl=$RATE_FLOOR/
-m43_judge_only_the_head	s/if (all) { J = h; LAG = k; break }/if (all \&\& k == 0) { J = h; LAG = k; break }/
-m44_lag_cap_ignored	s/k <= MAXLAG \&\& k < NRK/k < NRK/
-m45_lag_not_printed	s/note = (C != HEAD \&\& /note = (0 \&\& /
-m46_a_partial_commit_counts	s/!((h, i) in HAS)) all = 0/0) all = 0/
-m47_bundle_keeps_the_head	s/\[\[ "\${j:-}" =~ \^\[0-9a-f\]{40}\$ \]\] \&\& CSHA="\$j"/:/
-m48_history_not_read	s/\[\$c\] + \[(\$c.history.nodes \/\/ \[\])\[\] | select(.oid != \$c.oid)\]/[$c]/
-m49_head_read_twice	s/ | select(.oid != \$c.oid)\]/]/
-m50_cap_off_by_one	s/k <= MAXLAG/k < MAXLAG/
-m51_rank_head_unchecked	s/readok \&\& RKO\[0\] == C/readok/
-m52_oldest_commit_wins	s/if (all) { J = h; LAG = k; break }/if (all) { J = h; LAG = k }/
-m53_rank_history_dropped	s/\[(\$c.history.nodes \/\/ \[\])\[\] | .oid | select(. != \$c.oid)\]/[]/'
+m43_failed_pin_trusted	s/if (okp < np) {/if (0) {/
+m44_pin_of_any_night	s/if (!(RC\[r\] >= W0 \&\& RC\[r\] < W1)) {/if (0) {/
+m45_night_end_inclusive	s/RC\[r\] < W1/RC[r] <= W1/
+m46_night_start_exclusive	s/RC\[r\] >= W0/RC[r] > W0/
+m47_workflow_run_head_trusted	s/if (REV\[r\] == "workflow_run") {/if (0) {/
+m48_pick_never_checked	s/^    \[ "\$rd" != "ok" \] || rd=.*$/    :/
+m49_any_night_pick_accepted	s/elif \[ "\$1" != "nightly\/\$2" \]; then/elif false; then/
+m50_any_branch_read	s/(RBR\[r\] == "main" || RBR\[r\] == PB)/(1)/
+m51_pick_read_from_tags	s|refs/heads/nightly/|refs/tags/nightly/|
+m52_night_is_the_clock_date	s/\$((s - 43200))/$s/
+m53_query_without_a_night	/then error("no night") else \. end$/d
+m54_judge_only_the_head	s/if (all) { J = h; LAG = k; break }/if (all \&\& k == 0) { J = h; LAG = k; break }/
+m55_lag_cap_ignored	s/k <= MAXLAG \&\& k < NRK/k < NRK/
+m56_lag_not_printed	s/note = (C != HEAD \&\& /note = (0 \&\& /
+m57_a_partial_commit_counts	s/!((h, i) in HAS)) all = 0/0) all = 0/
+m58_bundle_keeps_the_head	s/\[\[ "\${j:-}" =~ \^\[0-9a-f\]{40}\$ \]\] \&\& CSHA="\$j"/:/
+m59_history_not_read	s/\[\$c\] + \[(\$c.history.nodes \/\/ \[\])\[\] | select(.oid != \$c.oid)\]/[$c]/
+m60_head_read_twice	s/ | select(.oid != \$c.oid)\]/]/
+m61_cap_off_by_one	s/k <= MAXLAG/k < MAXLAG/
+m62_rank_head_unchecked	s/readok \&\& RKO\[0\] == C/readok/
+m63_oldest_commit_wins	s/if (all) { J = h; LAG = k; break }/if (all) { J = h; LAG = k }/
+m64_rank_history_dropped	s/\[(\$c.history.nodes \/\/ \[\])\[\] | .oid | select(. != \$c.oid)\]/[]/'
 # each planted mutant must change the file, still parse, and turn at least one row RED
 mutants() {
     local tmp pass=0 fail=0 name expr o rc

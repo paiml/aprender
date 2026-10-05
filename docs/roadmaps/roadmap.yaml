@@ -24119,3 +24119,22 @@ Not done, pending the ruling: moving the 31 fixture files to an obviously synthe
   labels:
   - kind:code
   notes: 'Cause: vec![vec![0; n]; layers] clones layer 0 into every layer, writing every byte, so construction commits 8.6 / 17.2 / 34.4 GB; nextest KILLed the tests on a 30 GB runner (run 37241931271, workspace-test shard 1).'
+- id: PMAT-4817
+  github_issue: 4817
+  item_type: task
+  title: 'B1 nightly: the train judges only nightly-pick''s C'
+  status: inprogress
+  priority: high
+  assigned_to: null
+  created: 2026-10-05T16:21:07Z
+  updated: 2026-10-05T16:21:22.182331463+00:00
+  spec: null
+  acceptance_criteria:
+  - 'nightly_train.sh takes C from refs/heads/nightly/<night> (the nightly pick) and judges only C; case table: sha != C -> not_measured, FAIL on C -> red, missing/stale pick -> not_measured. Refs #4749.'
+  phases: []
+  subtasks: []
+  estimated_effort: null
+  labels:
+  - kind:code
+  notes: null
+  epic: 4678
