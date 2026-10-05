@@ -133,10 +133,12 @@ golden_compute() {
     local role parent job file block rc
     # Round 7: YAML also breaks lines at U+0085, U+2028 and U+2029, and awk does not. One inside a
     # comment hides a whole key from every line rule here while the loader reads it. Neither file
-    # carries one, so any is ENV: a line this awk cannot split is a line it cannot judge.
+    # carries one, so any is ENV: a line this awk cannot split is a line it cannot judge. Round 8: so is a
+    # CR ANYWHERE -- job_block only sees CRs under a pinned parent, and `# x<CR>concurrency: ...` before
+    # `jobs:` overrode a top-level key the outside-jobs digest skips as a comment.
     for file in "$1" "$2"; do
-        if LC_ALL=C grep -qa -e $'\xc2\x85' -e $'\xe2\x80\xa8' -e $'\xe2\x80\xa9' "$file"; then
-            printf 'ENV   %s holds a YAML-only line break (U+0085, U+2028 or U+2029): cannot judge, not a pass\n' "$file" >&2; return 2
+        if LC_ALL=C grep -qa -e $'\xc2\x85' -e $'\xe2\x80\xa8' -e $'\xe2\x80\xa9' -e $'\r' "$file"; then
+            printf 'ENV   %s holds a YAML-only line break (CR, U+0085, U+2028 or U+2029): cannot judge, not a pass\n' "$file" >&2; return 2
         fi
     done
     while read -r role parent job; do
@@ -413,6 +415,11 @@ jobs:' > "$d/c-env.yml"
     done
     { cat "$WF"; printf '  # note\xe2\x80\xa8  workspace-test: {runs-on: shadow}\n'; } > "$d/r7-wf.yml"
     r5 2 "a key hidden behind U+2028 in a workflow comment (round 7)" "$d/r7-wf.yml" "$SEC"
+    # round 8: a lone CR in a TOP-LEVEL comment outside every pinned parent, overriding a key
+    awk '/^jobs:/ { printf "# x\rconcurrency: {group: z, cancel-in-progress: false}\n" } { print }' "$WF" > "$d/r8-wf.yml"
+    r5 2 "a top-level key hidden behind a lone CR in a workflow comment (round 8)" "$d/r8-wf.yml" "$SEC"
+    awk '/^matrix-pins:/ { printf "# x\rsovereign-ci: {uses: evil/x@1}\n" } { print }' "$SEC" > "$d/r8-sec.yml"
+    r5 2 "a top-level key hidden behind a lone CR in a sections comment (round 8)" "$WF" "$d/r8-sec.yml"
     { cat "$WF"; printf 'jobs:\n  other:\n    runs-on: shadow\n'; } > "$d/r5-jobs2.yml"
     r5 1 "a second top-level jobs: (a loader keeps it in place of the first)" "$d/r5-jobs2.yml" "$SEC"
     edit "$WF" 'merge_group:' 'workflow_dispatch:' after '  schedule: [{cron: "0 0 * * *"}]' > "$d/r5-on.yml"
