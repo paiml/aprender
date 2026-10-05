@@ -313,9 +313,8 @@ printf '{' >"$tmp/tw-meta-bad.json"
 tw_case "--target-dir bad JSON" "$tmp/tw-meta-bad.json" "$tmp/twfix/nopkgs" --target-dir
 tw_case "--target-dir empty stdin" "$tmp/empty" "$tmp/twfix/nopkgs" --target-dir
 tw_case "--target-dir LIVE" "$tmp/live-meta.json" "$tmp/twfix/nopkgs" --target-dir
-if [[ "$("${TW_RS[@]}" "$tmp/twfix/multi" 2>/dev/null | wc -l)" -ne 0 ]] || [[ -f "$tmp/twfix/multi/pkgs/Cargo.toml" ]]; then
-    : # the fixture itself is never run in place; this only proves the side wrapper copies
-fi
+
+ran=$((pass + fail))
 echo "ci_tools_py_parity: $pass/$ran identical (declared $EXPECTED_CASES)"
 if [[ "$ran" -ne "$EXPECTED_CASES" ]]; then
     echo "FAIL: ran $ran cases, the table declares $EXPECTED_CASES" >&2
