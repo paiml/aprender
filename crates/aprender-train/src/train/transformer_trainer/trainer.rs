@@ -336,8 +336,9 @@ impl TransformerTrainer {
         self.lora_layers.as_deref()
     }
 
-    /// The targets the LoRA layers are laid out by
-    pub(crate) fn lora_targets(&self) -> &LoraTargets {
+    /// The targets the LoRA layers are laid out by: layer l's adapter for
+    /// target t is `lora_layers()[|T|·l + pos_T(t)]`
+    pub fn lora_targets(&self) -> &LoraTargets {
         &self.lora_targets
     }
 
