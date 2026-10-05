@@ -19,6 +19,7 @@
 # The judge's LANES rows (filled once nightly-train.yml is on main):
 #   milestone;verdict;check_milestone_cut.sh --must-carry;.github/workflows/release-gates-nightly.yml;^schedule$;^milestone$
 #   preflight;verdict;check_publish_preflight.sh --graph-only (R6; R1/R3/R4 at publish);.github/workflows/release-gates-nightly.yml;^schedule$;^preflight$
+#   tag-on-bump;verdict;tag_on_bump_sandbox.sh <train> (#4692, report-only until 3 green nights);.github/workflows/release-gates-nightly.yml;^schedule$;^tag-on-bump$
 name: release-gates-nightly
 
 on:
@@ -84,3 +85,39 @@ jobs:
           rc=0
           setsid --wait bash scripts/check_publish_preflight.sh --graph-only || rc=$?
           [ "$rc" -eq 0 ] || { echo "::error::publish preflight --graph-only refused rc=$rc (1 = a rule refused, 2 = could not answer)"; exit 1; }
+
+  # #4692 (signed: "At release, with the tag on the bump commit"): rehearse release day on main HEAD in a
+  # remote-less scratch clone (bump-version.sh <train>, one commit, tag v<train>), then tag_on_bump.sh judges
+  # that tag. REPORT-ONLY until three green nights (L31): continue-on-error keeps the workflow's own status,
+  # the job's conclusion is still the verdict. rc 0 PASS, 1 REFUSE, 2 NOT_MEASURED (never a pass, L25).
+  tag-on-bump:
+    runs-on: [self-hosted, X64, Linux, clean-room, intel]
+    timeout-minutes: 20
+    continue-on-error: true
+    steps:
+      - uses: actions/checkout@v7
+        with:
+          fetch-depth: 0   # the judge reads the bump commit's parent and the tags
+
+      - name: tag_on_bump_sandbox.sh <train> (report-only)
+        env:
+          GH_TOKEN: ${{ github.token }}
+          REPO: ${{ github.repository }}
+        run: |
+          set -uo pipefail
+          # the train, derived exactly as the milestone job derives it
+          titles=$(gh api "repos/$REPO/milestones?state=open&per_page=100" --paginate --jq '.[].title') \
+            || { echo "::error::milestone list could not be read: NOT_MEASURED"; exit 2; }
+          last=$(git tag -l 'v*' | grep -E '^v[0-9]+\.[0-9]+\.[0-9]+$' | sed 's/^v//' | sort -V | tail -n 1)
+          [ -n "$last" ] || { echo "::error::no final vX.Y.Z tag: NOT_MEASURED"; exit 2; }
+          train=$(printf '%s\n' "$titles" | grep -E '^[0-9]+\.[0-9]+\.[0-9]+$' | sort -V \
+            | while IFS= read -r t; do [ "$t" != "$last" ] && [ "$(printf '%s\n%s\n' "$last" "$t" | sort -V | tail -n 1)" = "$t" ] && { echo "$t"; break; }; done)
+          [ -n "$train" ] || { echo "::error::no open X.Y.Z milestone above v$last: NOT_MEASURED"; exit 2; }
+          echo "train: $train (above v$last)"
+          rc=0
+          setsid --wait bash scripts/release/tag_on_bump_sandbox.sh "$train" --root . --rev HEAD || rc=$?
+          case $rc in
+            0) echo "TAG-ON-BUMP $train: PASS (rc=0)" ;;
+            1) echo "::error::TAG-ON-BUMP $train: REFUSE (rc=1)"; exit 1 ;;
+            *) echo "::error::TAG-ON-BUMP $train: NOT_MEASURED (rc=$rc)"; exit 2 ;;
+          esac
