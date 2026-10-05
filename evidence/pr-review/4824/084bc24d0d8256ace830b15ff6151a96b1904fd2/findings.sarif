@@ -1,0 +1,184 @@
+{
+  "$schema": "https://json.schemastore.org/sarif-2.1.0.json",
+  "version": "2.1.0",
+  "runs": [
+    {
+      "tool": {
+        "driver": {
+          "name": "pmat"
+        }
+      },
+      "invocations": [
+        {
+          "executionSuccessful": true,
+          "toolExecutionNotifications": []
+        }
+      ],
+      "results": [
+        {
+          "ruleId": "no_existing_recursion_guard_to_reuse",
+          "level": "note",
+          "message": {
+            "text": "pmat query at head for a self-test recursion/depth guard returns 5 results, all Rust (none a shell self-test helper this diff should reuse); the lexical duplication scan searched 1 symbol over 1427/1427 sibling branches with 0 hits."
+          },
+          "properties": {
+            "grounding": "measured",
+            "command": [
+              "pmat",
+              "query",
+              "self test recursion depth guard environment flag",
+              "--limit",
+              "5"
+            ],
+            "exit_code": 0,
+            "stdout_sha256": "9a5ee9e856d54dbb033cf69dc75faa9325fe840db73f23876872dd20189fa4b9",
+            "rationale": "The guard is a three-line env marker local to this script; no shared helper exists.",
+            "failure_scenario": "If a shared self-test guard existed, a second private one could drift from it; none was found.",
+            "precision_class": "advisory"
+          }
+        },
+        {
+          "ruleId": "repro_on_base",
+          "level": "note",
+          "message": {
+            "text": "main's script under SELF_TEST=1, capped at TasksMax=64 on intel: the scope hit its task cap within 5 s with 66 nested copies of the script, rc 124, empty log."
+          },
+          "properties": {
+            "grounding": "cited",
+            "source": "author proof run, intel, systemd-run --user --scope -p TasksMax=64 timeout 60 env SELF_TEST=1 bash <main's ci_test_tier.sh>",
+            "excerpt": "t=5s TasksCurrent=64 TasksMax=64 nested_selftest_bash=66",
+            "excerpt_sha256": "0aef6e8e4c472c885ac510769fff7f18dc1ca4796d03ef6f5540f5069af7c423",
+            "rationale": "Reproduces the 2026-10-05 fan-out inside a cap, so the fix is judged against the real mechanism.",
+            "failure_scenario": "Without the reproduction the fix could target a different path than the one that fork-bombed the host.",
+            "precision_class": "advisory"
+          }
+        },
+        {
+          "ruleId": "no_verdict_change",
+          "level": "note",
+          "message": {
+            "text": "Full --self-test, head vs main, both capped: the same three rows fail on both (head 10/94/95 = main 6/90/91, shifted by the four new rows) - the pre-existing registry red on main; the four new rows pass."
+          },
+          "properties": {
+            "grounding": "cited",
+            "source": "author proof run, intel, full --self-test of head and main",
+            "excerpt": "FAIL  row 94 rc=0 (wanted 0, must match /^targets=.*aprender-contracts:--lib:lint::strict_test_binding/)  the ",
+            "excerpt_sha256": "df8f289a6bc1346255dddc1d936d3bfee97fce23d8dfacb2da259df2db98201d",
+            "rationale": "Identical failure set on head and base means the PR changes no existing verdict.",
+            "failure_scenario": "If the fix altered decision output, a row green on main would turn red on head; none did.",
+            "precision_class": "advisory"
+          }
+        },
+        {
+          "ruleId": "quorum_sonnet",
+          "level": "note",
+          "message": {
+            "text": "Independent review lane claude-sonnet-5-5 (read-only): approve; answered the planted question - no caller nests self-tests, so a depth-1 counter would reopen the fan-out."
+          },
+          "properties": {
+            "grounding": "cited",
+            "source": "review lane claude-sonnet-5-5, local host",
+            "excerpt": "VERDICT: APPROVE",
+            "excerpt_sha256": "0cde9d46f35ea77000d1bf06e3458040ea21723f5931d700b65504bcfab971d3",
+            "rationale": "Checked unset/export semantics, every path into self_test, and all callers.",
+            "failure_scenario": "If a caller nested self-tests, the depth guard would refuse it wrongly; the lane found none.",
+            "precision_class": "advisory"
+          }
+        },
+        {
+          "ruleId": "quorum_haiku",
+          "level": "note",
+          "message": {
+            "text": "Independent review lane claude-haiku-4-5 (read-only): request-changes on three points, all answered in the PR body: dispatch ${SELF_TEST:-0} is equivalent after the reset (kept so the mutant proof stays exact); callers listed; row 4 is proven by the export mutant."
+          },
+          "properties": {
+            "grounding": "cited",
+            "source": "review lane claude-haiku-4-5-20251001, local host",
+            "excerpt": "VERDICT: REQUEST-CHANGES",
+            "excerpt_sha256": "4007b5021c4e09d262f13f0b37c63f027717c9de434a7df5746f961caa3bd90b",
+            "rationale": "Its findings were cosmetic or already measured; none named a failing input.",
+            "failure_scenario": "If the dispatch default could re-read the env, row 2 would be green under the env-reset mutant; it is red.",
+            "precision_class": "advisory"
+          }
+        }
+      ]
+    },
+    {
+      "tool": {
+        "driver": {
+          "name": "cargo-mutants"
+        }
+      },
+      "invocations": [
+        {
+          "executionSuccessful": true,
+          "toolExecutionNotifications": []
+        }
+      ],
+      "results": [
+        {
+          "ruleId": "mutant_depth_guard",
+          "level": "note",
+          "message": {
+            "text": "Mutant: depth guard deleted -> row 1 FAIL (rc 124, bounded by timeout 30), rows 2-4 ok."
+          },
+          "properties": {
+            "grounding": "cited",
+            "source": "author mutant run, intel, TasksMax=64",
+            "excerpt": "FAIL  row 1  rc=124 (wanted 2, must match /refusing a nested self-test/)  a nested --self-test refuses at once (depth guard), never a second case tabl",
+            "excerpt_sha256": "6f18ce20a185ec57982656374250441d8b45a750d849bb7b3c11d85c3b57c2d7",
+            "rationale": "The nested-self-test row is the only row that sees the guard, and it goes red without it.",
+            "failure_scenario": "Without this row a deleted guard would pass the table and the next env leak would fan out again.",
+            "precision_class": "advisory"
+          }
+        },
+        {
+          "ruleId": "mutant_env_reset",
+          "level": "note",
+          "message": {
+            "text": "Mutant: the unset/reset of SELF_TEST/FILTERSET deleted -> rows 2 and 3 FAIL, rows 1 and 4 ok."
+          },
+          "properties": {
+            "grounding": "cited",
+            "source": "author mutant run, intel, TasksMax=64",
+            "excerpt": "FAIL  row 2  rc=2 (wanted 0, must match /^\\(package\\(apr-cli\\) & kind\\(lib\\)\\)$/)  SELF_TEST=1 in the environment is ignored: the --filterset that was",
+            "excerpt_sha256": "9d4a9aa722aa1d723d056582d0634230ce7fa0b6abba630c7de7637afee3a8bb",
+            "rationale": "Env SELF_TEST=1 / FILTERSET=1 hijack the mode without the reset, and the rows catch both.",
+            "failure_scenario": "Without these rows the original defect could return unnoticed.",
+            "precision_class": "advisory"
+          }
+        },
+        {
+          "ruleId": "mutant_export",
+          "level": "note",
+          "message": {
+            "text": "Mutant: export SELF_TEST added inside self_test -> row 4 FAIL, rows 1-3 ok."
+          },
+          "properties": {
+            "grounding": "cited",
+            "source": "author mutant run, intel, TasksMax=64",
+            "excerpt": "FAIL  row 4  rc=0 (wanted 0, must match /^UNSET$/)  a self-test case's child inherits no SELF_TEST",
+            "excerpt_sha256": "f50b4f4d42ab0bb3c950c93bb1e0ad005ea2127fd1a3598ba456787d5bfe879c",
+            "rationale": "Row 4 observes the child environment directly.",
+            "failure_scenario": "Without it a later export would hand the flag to every case again.",
+            "precision_class": "advisory"
+          }
+        }
+      ]
+    },
+    {
+      "tool": {
+        "driver": {
+          "name": "antigravity"
+        }
+      },
+      "invocations": [
+        {
+          "executionSuccessful": true,
+          "toolExecutionNotifications": []
+        }
+      ],
+      "results": []
+    }
+  ]
+}

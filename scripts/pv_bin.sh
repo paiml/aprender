@@ -378,16 +378,125 @@ pv_bin_version_ok() {
     return 1
 }
 
+# The resolved pv must be a file no build can change under the gate (#4768).
+# cargo links a new pv by removing the old name and hard-linking the new one
+# in its place (the "uplift"), so the name is ABSENT for a moment, and it does
+# that while holding `<profile>/.cargo-lock` -- flock(2), the same lock
+# flock(1) takes. A guard section that probed `target/debug/pv` while another
+# section on the same runner rebuilt it read an EMPTY version and failed a
+# good binary as STALE, rc=1, one run in four.
+#
+# So the candidate is checked, attributed and SNAPSHOTTED while holding that
+# lock shared: no uplift can be half-done while we hold it, and the snapshot
+# is a hard link to the inode the name had at that instant. Every probe after
+# this, and every run of the gate, uses the snapshot. cargo and the linker
+# replace the name rather than write into its inode, so later builds cannot
+# change it (a tool that rewrote the file in place would; none in the build
+# does). pv-sat is taken in the same breath, because callers find it beside
+# pv, and the snapshot is keyed by BOTH inodes: the two are separate bins, and
+# either one can be relinked alone. Nothing here retries: one deadline,
+# PV_BIN_LOCK_WAIT_S (default 900 s) from the start of a resolution, bounds
+# every lock wait in it, a candidate whose lock is not free in time fails
+# closed, and an empty read of the snapshot is still an empty read.
+#
+# No lock file (a fixture, `cargo install`'s bin dir), no flock(1), or a
+# symlink candidate: the old path, unchanged. Prints "<origin> <path>".
+pv_bin_snapshot_locked() {
+    pv_bin_sl_cand="$1"
+    if [ ! -f "$pv_bin_sl_cand" ] || [ ! -x "$pv_bin_sl_cand" ]; then
+        return 1
+    fi
+    pv_bin_sl_origin=$(pv_bin_origin "$pv_bin_sl_cand") || pv_bin_sl_origin="unknown"
+    pv_bin_sl_prof="${pv_bin_sl_cand%/*}"
+    pv_bin_sl_sat="$pv_bin_sl_prof/pv-sat"
+    pv_bin_sl_key=$(command ls -i -- "$pv_bin_sl_cand" 2>/dev/null | awk '{print $1; exit}') || pv_bin_sl_key=""
+    pv_bin_sl_satkey="none"
+    if [ -f "$pv_bin_sl_sat" ]; then
+        pv_bin_sl_satkey=$(command ls -i -- "$pv_bin_sl_sat" 2>/dev/null | awk '{print $1; exit}') || pv_bin_sl_satkey=""
+    fi
+    pv_bin_sl_dir="${pv_bin_sl_prof%/*}/.pv-snapshot/$pv_bin_sl_key-$pv_bin_sl_satkey/${pv_bin_sl_prof##*/}"
+    pv_bin_sl_out="$pv_bin_sl_cand"
+    if [ -n "$pv_bin_sl_key" ] && [ -n "$pv_bin_sl_satkey" ] && [ ! -L "$pv_bin_sl_cand" ] \
+        && mkdir -p "$pv_bin_sl_dir" 2>/dev/null; then
+        # Touched BEFORE it is trusted, so the age prune cannot take it
+        # between this check and its use.
+        touch "${pv_bin_sl_dir%/*}" 2>/dev/null || true
+        # A snapshot pins its inodes, so neither number can be reused while
+        # the directory exists: `-ef` is enough to trust an earlier one.
+        if [ "$pv_bin_sl_dir/pv" -ef "$pv_bin_sl_cand" ] \
+            && { [ "$pv_bin_sl_satkey" = none ] || [ "$pv_bin_sl_dir/pv-sat" -ef "$pv_bin_sl_sat" ]; }; then
+            pv_bin_sl_out="$pv_bin_sl_dir/pv"
+        elif { [ "$pv_bin_sl_satkey" = none ] || pv_bin_snapshot_one "$pv_bin_sl_sat" "$pv_bin_sl_dir/pv-sat"; } \
+            && pv_bin_snapshot_one "$pv_bin_sl_cand" "$pv_bin_sl_dir/pv"; then
+            pv_bin_sl_out="$pv_bin_sl_dir/pv"
+        fi
+    fi
+    # No snapshot (an unwritable target dir, a refused link, a symlink): the
+    # name itself, exactly as before this change -- never a weaker check, only
+    # an unfixed race, and said so.
+    if [ "$pv_bin_sl_out" = "$pv_bin_sl_cand" ]; then
+        printf 'pv_bin.sh: no snapshot of %s could be taken; probing the name itself\n' "$pv_bin_sl_cand" >&2
+    fi
+    printf '%s %s\n' "$pv_bin_sl_origin" "$pv_bin_sl_out"
+    return 0
+}
+
+# Hard-link to a temp name in the destination dir, then rename(2) it into
+# place, so a concurrent resolver sees the old snapshot or the new one, never
+# a partial file.
+pv_bin_snapshot_one() {
+    pv_bin_so_tmp="$2.tmp.$$"
+    ln -f -- "$1" "$pv_bin_so_tmp" 2>/dev/null || return 1
+    mv -f -- "$pv_bin_so_tmp" "$2"
+}
+
+# Snapshots are pruned by age, not by owner. Six hours is far past the longest
+# job that resolves pv here (guard-cargo's budget is 30 min), and every
+# resolution touches the snapshot it hands out, so only one no job is using
+# goes. Each kept one costs a pv + pv-sat that has since been relinked.
+pv_bin_snapshot_prune() {
+    if [ -d "$1" ]; then
+        find "$1" -mindepth 1 -maxdepth 1 -type d -mmin +360 -exec rm -rf {} + 2>/dev/null || true
+    fi
+}
+
 # One candidate, one mode. Prints the path and returns 0 on a match.
 pv_bin_try() {
     pv_bin_try_want="$1"
     pv_bin_try_cand="$2"
-    # -f as well as -x: `[ -x DIR ]` is TRUE for any searchable directory, so a
-    # stray directory named `pv` would be "found" and then fail to run.
-    if [ ! -f "$pv_bin_try_cand" ] || [ ! -x "$pv_bin_try_cand" ]; then
-        return 1
+    pv_bin_try_lock="${pv_bin_try_cand%/*}/.cargo-lock"
+    if [ -f "$pv_bin_try_lock" ] && command -v flock >/dev/null 2>&1; then
+        # Under cargo's own build lock, shared (#4768). The lock is fd 9 of a
+        # subshell, so it is released as soon as the snapshot is taken. The
+        # wait is what is LEFT of this resolution's deadline, not a fresh one
+        # per candidate and per pass.
+        pv_bin_try_now=$(date +%s)
+        if [ -z "${pv_bin_lock_deadline:-}" ]; then
+            pv_bin_lock_deadline=$((pv_bin_try_now + ${PV_BIN_LOCK_WAIT_S:-900}))
+        fi
+        pv_bin_try_left=$((pv_bin_lock_deadline - pv_bin_try_now))
+        if [ "$pv_bin_try_left" -lt 0 ]; then
+            pv_bin_try_left=0
+        fi
+        pv_bin_try_snap=$( { flock -s -w "$pv_bin_try_left" 9 || exit 3; pv_bin_snapshot_locked "$pv_bin_try_cand"; } 9< "$pv_bin_try_lock" ) || pv_bin_try_snap=""
+        if [ -z "$pv_bin_try_snap" ]; then
+            if [ -f "$pv_bin_try_cand" ] && [ -x "$pv_bin_try_cand" ]; then
+                printf 'pv_bin.sh: %s: %s was not free within PV_BIN_LOCK_WAIT_S=%ss; not used\n' \
+                    "$pv_bin_try_cand" "$pv_bin_try_lock" "${PV_BIN_LOCK_WAIT_S:-900}" >&2
+            fi
+            return 1
+        fi
+        pv_bin_try_origin="${pv_bin_try_snap%% *}"
+        pv_bin_try_cand="${pv_bin_try_snap#* }"
+        pv_bin_snapshot_prune "${pv_bin_try_lock%/*/*}/.pv-snapshot"
+    else
+        # -f as well as -x: `[ -x DIR ]` is TRUE for any searchable directory, so a
+        # stray directory named `pv` would be "found" and then fail to run.
+        if [ ! -f "$pv_bin_try_cand" ] || [ ! -x "$pv_bin_try_cand" ]; then
+            return 1
+        fi
+        pv_bin_try_origin=$(pv_bin_origin "$pv_bin_try_cand") || pv_bin_try_origin="unknown"
     fi
-    pv_bin_try_origin=$(pv_bin_origin "$pv_bin_try_cand") || pv_bin_try_origin="unknown"
     case "$pv_bin_try_want" in
         foreign)
             if [ "$pv_bin_try_origin" != "foreign" ]; then return 1; fi
@@ -645,6 +754,9 @@ pv_bin_resolve() {
     #   3. this tree, older version       — honestly STALE, and says so
     #   4. unattributable, older version  — STALE, as before
     # A foreign binary appears in none of these passes.
+    # One lock deadline for the whole scan below (#4768), started after the
+    # build so the build's own wait on the same lock is not charged to it.
+    pv_bin_lock_deadline=""
     pv_bin_scan own-fresh && return 0
     pv_bin_scan any-fresh && return 0
     pv_bin_scan own && return 0

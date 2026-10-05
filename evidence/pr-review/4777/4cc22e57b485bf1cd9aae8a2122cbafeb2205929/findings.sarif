@@ -1,0 +1,232 @@
+{
+  "$schema": "https://docs.oasis-open.org/sarif/sarif/v2.1.0/errata01/os/schemas/sarif-schema-2.1.0.json",
+  "version": "2.1.0",
+  "runs": [
+    {
+      "tool": {
+        "driver": {
+          "name": "pmat"
+        }
+      },
+      "invocations": [
+        {
+          "executionSuccessful": true,
+          "toolExecutionNotifications": []
+        }
+      ],
+      "results": [
+        {
+          "ruleId": "no_existing_paginated_prune",
+          "level": "note",
+          "message": {
+            "text": "pmat query at head for paginated deletion of stale release assets returns 5 results; the nearest is nightly_manifest.py publish, which lists one page only, and none paginates or prunes. The duplication scan searched 12 needles over 1380/1380 sibling branches with 0 hits."
+          },
+          "properties": {
+            "grounding": "measured",
+            "command": [
+              "pmat",
+              "query",
+              "paginate release assets delete stale",
+              "--limit",
+              "5"
+            ],
+            "exit_code": 0,
+            "stdout_sha256": "8b607c9c54be06b5796a61cbc2edc00cd53724230579ef1c29344a9e30dae4d5",
+            "rationale": "No helper exists to reuse; the script fills the gap publish leaves past page one.",
+            "failure_scenario": "If a paginated prune existed elsewhere, a second one would drift from it; none was found.",
+            "precision_class": "advisory"
+          }
+        },
+        {
+          "ruleId": "plan_mirrors_publish_plan",
+          "level": "note",
+          "message": {
+            "text": "The plan mirror selects green targets at SHA built by this run, as publish_plan does."
+          },
+          "properties": {
+            "grounding": "cited",
+            "source": "scripts/nightly_prune_release.sh at head, line 66",
+            "excerpt": "      | select(.status == \"green\" and .green_sha == $sha and .built_run_id == $r)",
+            "excerpt_sha256": "eb797e09f2aa3f3f39583a574fb88f67d7bd1881b67daac7e518139c8360115b",
+            "rationale": "The jq select applies the three filters publish_plan applies at scripts/nightly_manifest.py:320, so only names publish re-uploads lose their old copy.",
+            "failure_scenario": "If a filter were dropped, an asset outside the plan (red, stale sha, reused run) would be deleted and not replaced; mutants m4/m5/m6 each turn 2 self-test rows red.",
+            "precision_class": "advisory"
+          }
+        },
+        {
+          "ruleId": "publish_plan_filter_source",
+          "level": "note",
+          "message": {
+            "text": "publish_plan's own selection, cited as the reference the mirror is checked against."
+          },
+          "properties": {
+            "grounding": "cited",
+            "source": "scripts/nightly_manifest.py at head, line 320",
+            "excerpt": "        if e[\"status\"] != \"green\" or e[\"green_sha\"] != sha or e.get(\"built_run_id\") != manifest[\"run_id\"]:",
+            "excerpt_sha256": "a17d4cc48e1b62552ed9d0a0de37f08b40e430f45c6463e5396254b26cbc8ab2",
+            "rationale": "This is the line the script mirrors; the review compared them field by field.",
+            "failure_scenario": "A divergence here would let the prune delete what publish skips; both lanes found no divergence on a well-formed manifest.",
+            "precision_class": "advisory"
+          }
+        },
+        {
+          "ruleId": "non_array_page_fails_closed",
+          "level": "note",
+          "message": {
+            "text": "A 200 asset page that is not a JSON array exits nonzero."
+          },
+          "properties": {
+            "grounding": "cited",
+            "source": "scripts/nightly_prune_release.sh at head, line 88",
+            "excerpt": "    jq -e 'type == \"array\"' <<< \"$batch\" >/dev/null 2>&1 || die \"assets page $page is not a JSON array\"",
+            "excerpt_sha256": "7608f5eb023d469aabda327d4d11a5c06b58e87c74bd56e7c2efdb83eb1bbd59",
+            "rationale": "Round 1 lane 1 (claude-sonnet-5-5) found a non-array 200 page read as the empty last page; this guard closes it and the self-test row answers {} so only the guard can catch it.",
+            "failure_scenario": "Without the guard a {} page ends the listing early and past-page-one copies survive to a rename 422; mutant m1 turns 1 row red.",
+            "precision_class": "advisory"
+          }
+        },
+        {
+          "ruleId": "exact_membership",
+          "level": "note",
+          "message": {
+            "text": "Membership in the plan is an exact whole-line match."
+          },
+          "properties": {
+            "grounding": "cited",
+            "source": "scripts/nightly_prune_release.sh at head, line 110",
+            "excerpt": "    if [[ \"$up\" == *$'\\n'\"$name\"$'\\n'* ]]; then",
+            "excerpt_sha256": "4530bc84d68b9c99990c3a3b3de473a7cf6c6577f438f1aaa4ce7b95c192e08d",
+            "rationale": "Membership is newline-delimited so a planned name that contains another as a substring does not match it.",
+            "failure_scenario": "A substring match deletes a234 because a234.old is planned; mutant m10 turns 5 rows red.",
+            "precision_class": "advisory"
+          }
+        },
+        {
+          "ruleId": "jq_rewrite_equivalent",
+          "level": "note",
+          "message": {
+            "text": "58b6456d07 rewrites the self-test fixture's $all[] as $all | .[]; the same jq program, measured equal on a sample (jq -n: [1,2,3] as $all | [$all[]|select(.>1)] == [$all|.[]|select(.>1)] -> true)."
+          },
+          "properties": {
+            "grounding": "cited",
+            "source": "scripts/nightly_prune_release.sh at head, line 153",
+            "excerpt": "              tools: ([$all | .[] | select(. as $n | $skip | index($n) | not)] | map({key: ., value: {asset: .}}) | from_entries)}}",
+            "excerpt_sha256": "c21fd10a4f40fec7eb572c5dc90e0b1f6fed8dcbb6a782564e4f026bbdc3af18",
+            "rationale": "A syntax-only change in the self-test fixture so CI's bashrs 7.4.1 stops reporting SC1087; the production path is unchanged and the self-test still passes with 21 rows.",
+            "failure_scenario": "If the rewrite changed the fixture's target set, the self-test rows built from it would test a different manifest than intended.",
+            "precision_class": "advisory"
+          }
+        },
+        {
+          "ruleId": "planted_question_rejected",
+          "level": "note",
+          "message": {
+            "text": "Quorum round 4: unanimous PASS, degraded: same-family; the planted question was rejected by both lanes."
+          },
+          "properties": {
+            "grounding": "cited",
+            "source": "git show --stat --format= 58b6456d07 (first line)",
+            "excerpt": " scripts/nightly_prune_release.sh | 2 +-",
+            "excerpt_sha256": "c001cb6a0e49c11a718987ec225f31ac8bc6356f4769ffbe68a0c2262de5cc8d",
+            "rationale": "The planted contrary question Q3 claimed 58b6456d07 also changed the production delete loop near line 110; both round-4 lanes (claude-sonnet-5-5, claude-haiku-4-5-20251001) rejected it: the commit is one line in, one out, at self-test line 153.",
+            "failure_scenario": "If 58b6456d07 had touched the delete loop, the plan-membership guarantee reviewed in round 3 would no longer be the code at head.",
+            "precision_class": "advisory"
+          }
+        },
+        {
+          "ruleId": "quorum_r4_lane1_sonnet",
+          "level": "note",
+          "message": {
+            "text": "Round 4 lane 1, model claude-sonnet-5-5: PASS, planted Q3 rejected, mutation of its own choosing RED."
+          },
+          "properties": {
+            "grounding": "cited",
+            "source": "/mnt/nvme-raid0/cop-inbox/handoff/signoff-q-4777-prune.md, quorum receipt table, round 4 row",
+            "excerpt": "| 4 | 4cc22e57b4 | 1 | claude-sonnet-5-5 | PASS | rejected (58b6456d07 = 1+/1-, line 153 only; loop :102-112 untouched) | yes | :110 membership test -> `if true`, RED 10 |",
+            "excerpt_sha256": "6d3961b47255553f2c091182a8661d4fe580288d61cb1dd8c80af266b285b332",
+            "rationale": "Lane 1 verdict recorded on its own, with exact model id.",
+            "failure_scenario": "Under C312-9 a same-family answer stands only if unanimous; a FAIL or a lane that accepted the planted premise in either row would void the review.",
+            "precision_class": "advisory"
+          }
+        },
+        {
+          "ruleId": "quorum_r4_lane2_haiku",
+          "level": "note",
+          "message": {
+            "text": "Round 4 lane 2, model claude-haiku-4-5-20251001: PASS, planted Q3 rejected, mutation of its own choosing RED."
+          },
+          "properties": {
+            "grounding": "cited",
+            "source": "/mnt/nvme-raid0/cop-inbox/handoff/signoff-q-4777-prune.md, quorum receipt table, round 4 row",
+            "excerpt": "| 4 | 4cc22e57b4 | 2 | claude-haiku-4-5-20251001 | PASS | rejected (only line 153 changed; zero delete-loop lines) | yes | :110 leading newline dropped, RED 7 |",
+            "excerpt_sha256": "74709a1bba35c570fead2330a17707a1e6e35faa028bdf3ebd6e7b08eb323ba4",
+            "rationale": "Lane 2 verdict recorded on its own, with exact model id; its first reply was verdict-only and was asked once for cited answers. With lane 1 it makes the vote unanimous (2/2 PASS).",
+            "failure_scenario": "Under C312-9 a same-family answer stands only if unanimous; a FAIL or a lane that accepted the planted premise in either row would void the review.",
+            "precision_class": "advisory"
+          }
+        }
+      ]
+    },
+    {
+      "tool": {
+        "driver": {
+          "name": "cargo-mutants"
+        }
+      },
+      "invocations": [
+        {
+          "executionSuccessful": true,
+          "toolExecutionNotifications": []
+        }
+      ],
+      "results": [
+        {
+          "ruleId": "guard_mutants_killed",
+          "level": "note",
+          "message": {
+            "text": "Self-test at head: 21 ok rows, PASS."
+          },
+          "properties": {
+            "grounding": "cited",
+            "source": "author mutant run at head 4cc22e57b4 (scripts/nightly_prune_release.sh --self-test)",
+            "excerpt": "head: 21 ok, nightly_prune_release self-test: PASS",
+            "excerpt_sha256": "33217b4d9b0db767ffea077dff8b6bfd2816b902b75428fd50e3dfdbb4437df6",
+            "rationale": "The unmutated script passes all 21 self-test rows.",
+            "failure_scenario": "If the self-test were vacuous, mutants would pass; see the next result.",
+            "precision_class": "advisory"
+          }
+        },
+        {
+          "ruleId": "guard_mutants_all_red",
+          "level": "note",
+          "message": {
+            "text": "10 of 10 guard mutants killed."
+          },
+          "properties": {
+            "grounding": "cited",
+            "source": "author mutant run at head 4cc22e57b4, 10 mutants",
+            "excerpt": "m1-no-array-guard: nightly_prune_release self-test: FAIL (1)\nm2-dist-only: nightly_prune_release self-test: FAIL (6)\nm3-plan-read-open: nightly_prune_release self-test: FAIL (1)\nm4-no-status: nightly_prune_release self-test: FAIL (2)\nm5-no-sha: nightly_prune_release self-test: FAIL (2)\nm6-no-run: nightly_prune_release self-test: FAIL (2)\nm7-page-one-only: nightly_prune_release self-test: FAIL (10)\nm8-no-staged-purge: nightly_prune_release self-test: FAIL (2)\nm9-no-manifest-name: nightly_prune_release self-test: FAIL (1)\nm10-substring-match: nightly_prune_release self-test: FAIL (5)",
+            "excerpt_sha256": "5dd9f7cabbb2ffc1c35f72e6d5cf22a63f76c5771ffebd2e3abc7d0e65695194",
+            "rationale": "Each of 10 mutants (array guard, dist-only membership, plan read open, status/sha/run filters, page-one-only, staged purge, manifest name, substring match) turns the self-test red; each mutant copy parses.",
+            "failure_scenario": "A surviving mutant would mark a row that cannot fail; none survived.",
+            "precision_class": "advisory"
+          }
+        }
+      ]
+    },
+    {
+      "tool": {
+        "driver": {
+          "name": "antigravity"
+        }
+      },
+      "invocations": [
+        {
+          "executionSuccessful": true,
+          "toolExecutionNotifications": []
+        }
+      ],
+      "results": []
+    }
+  ]
+}

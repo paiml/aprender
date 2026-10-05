@@ -1,5 +1,5 @@
 metadata:
-  version: 1.0.0
+  version: 1.1.0
   created: '2026-09-10'
   author: PAIML Engineering
   description: "Release schedule 0.67.0 → 0.70.0 — the property that the schedule is a mechanism, not a memo. A release train leaves in a fixed 48–72 h window; every tag carries four apr binaries ({cuda,cpu} × {x86_64,aarch64}); a PR's tests fit in 20 minutes and the FULL tier runs only nightly on main and in the pre-publish dogfood; every row of the plan is a GitHub-epic row with an acceptance command; and the specification describes the tree it governs (every path it cites resolves, every train section carries its epic and its release row). v0.66.0 shipped with zero apr binaries because the asset set lived in a decision row nobody's gate read — this contract is the gate."
@@ -10,6 +10,7 @@ metadata:
     - "contracts/apr-docs-v1.yaml — the docs contract whose path-gate row names the schedule"
     - ".github/workflows/binary-release.yml — the release lane: build-apr-cuda, verify-cuda-assets (67-A1 widens it to four apr assets)"
     - "scripts/ci_test_tier.sh — the BSE-17 tier decision the 20-minute budget (67-E1/E2) is applied to"
+    - "scripts/ci_mg_workspace_result.sh — the merge queue's workspace-test result on a sha, read by the push tier step (T36)"
     - "docs/specifications/PP-066-release-spec.md — §4 release criteria C0–C13; C13 is narrowed by row 67-A1"
     - "docs/audits/impl-PMAT-1096-receipt.md — the 0.66.0 cut this schedule's release-day protocol (§4) is derived from"
 
@@ -76,6 +77,16 @@ equations:
       - "An empty milestone, an unresolvable or duplicate title, a read that disagrees with open_issues, or two open items claiming to be the release epic is exit 2, never a pass"
       - "The release epic is admitted, never silently: it is printed as ADMITTED; a topic epic, a PR, an unlabelled look-alike or another train's epic is an ordinary open item"
 
+
+  push_reuses_merge_group_result:
+    formula: "for a push run of ci.yml on sha S: tier(push, S) = reuse iff a merge_group run R exists with workspace-test(R).head_sha = S = HEAD = GITHUB_SHA and workspace-test(R).conclusion = success; otherwise tier(push, S) = the tier of the push's own diff, unchanged"
+    domain: "push events on main; the merge_group check suites on S, read through the checks API (scripts/ci_mg_workspace_result.sh, two calls)"
+    codomain: "scripts/ci_test_tier.sh output: tier=reuse with cite=<R's run id>, or the push's own tier with the reason it was not reused"
+    invariants:
+      - "Only a merge-queue suite's workspace-test counts: a push suite or another app's suite on the same sha is not the queue's measurement"
+      - "A failed, cancelled, unfinished or absent result, a failed lookup, a run id that is not a number, or a sha that is not HEAD (or not GITHUB_SHA) is today's tier, never a reuse"
+      - "merge_group and pull_request decisions never read the merge_group run arguments"
+      - "Only workspace-test is reused; the aggregator still refuses three shards that disagree on the tier"
 proof_obligations:
   - id: RS0-INV-001
     type: invariant
@@ -112,6 +123,11 @@ proof_obligations:
     property: "No tag is cut while its milestone holds an open issue or pull request other than the train's own release epic"
     formal: "scripts/check_milestone_cut.sh X.Y.0 exit 0 immediately before `git tag vX.Y.0`; its self-test exits 0 and each of its five recorded mutations turns it RED"
     applies_to: milestone_settled_at_cut
+  - id: RS0-INV-008
+    type: invariant
+    property: "A push to main reuses workspace-test only from a merge-queue success on the same sha (T36)"
+    formal: "bash scripts/check_ci_push_reuse.sh exit 0, and its --self-test kills every `# R-*` refusal in ci_mg_workspace_result.sh and ci_test_tier.sh"
+    applies_to: push_reuses_merge_group_result
 
 falsification_tests:
   - id: FALSIFY-REL-06X-001
@@ -174,6 +190,18 @@ falsification_tests:
     test: "grep -q 'check_milestone_cut.sh' docs/specifications/06x-release-schedule.md && grep -q 'check_milestone_cut.sh' docs/specifications/APR-RELEASE-001-train-and-build-kaizen.md"
     if_fails: "The gate exists and no protocol calls it — the release step that cuts the tag reads nothing again"
 
+  - id: FALSIFY-REL-06X-011
+    rule: "A push reuses only the merge queue's workspace-test success on its own sha (T36)"
+    prediction: "check_ci_push_reuse.sh exits 0: a same-sha merge-queue success reuses and cites the run id; failure, cancelled, absent, a failed lookup, another sha, a GITHUB_SHA that is not HEAD and a bad run id each keep today's tier; merge_group and pull_request ignore the arguments; a split shard tier is still RED"
+    test: "bash scripts/check_ci_push_reuse.sh"
+    if_fails: "A push could cite a result that measured another commit, or a red one, and skip workspace-test on main"
+
+  - id: FALSIFY-REL-06X-012
+    rule: "Every refusal of the push reuse is load-bearing (T36)"
+    prediction: "check_ci_push_reuse.sh --self-test exits 0: deleting each `# R-*` refusal line turns the table RED"
+    test: "bash scripts/check_ci_push_reuse.sh --self-test"
+    if_fails: "A refusal can be removed and the table stays green: the reuse would then pass on a case nobody tested"
+
 qa_gate:
   id: F-REL-06X-001
   name: "06x release schedule — trains leave in their window, every tag carries four apr binaries, PRs fit in 20 minutes, the spec describes the tree"
@@ -185,3 +213,4 @@ qa_gate:
     - "spec_describes_the_tree"
     - "obligation_dag_is_acyclic_and_forward"
     - "milestone_settled_at_cut"
+    - "push_reuses_merge_group_result"

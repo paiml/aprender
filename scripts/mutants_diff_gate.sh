@@ -94,7 +94,11 @@ gate() { # gate <diff> <cap> <jobs> <max-missed> <out> [excluded crate...]
     return 1
   fi
   echo "mutating $n mutant(s) across the workspace, -j $jobs"
-  "$cargo" mutants --workspace "${ex[@]}" --no-times --timeout "$TIMEOUT" -j "$jobs" --in-diff "$diff" --output "$out" -- "${ta[@]}"; rc=$?
+  # --copy-vcs true: the scratch copy keeps .git, so a test that compares HEAD with origin/main (the contracts lint
+  # refinement gate) runs as it does in workspace-test. Without it that test fails the unmutated baseline and the
+  # gate tests 0 of the listed mutants (the shard fix, mutants_table_shard.sh). The --list call above runs no
+  # test and builds nothing, so it does not need the flag.
+  "$cargo" mutants --workspace "${ex[@]}" --no-times --timeout "$TIMEOUT" -j "$jobs" --in-diff "$diff" --copy-vcs true --output "$out" -- "${ta[@]}"; rc=$?
   oc="$out/mutants.out/outcomes.json"
   if [ ! -f "$oc" ]; then
     echo "RED   cargo mutants exited $rc and wrote no outcomes.json although $n mutant(s) were listed: the run died"
@@ -236,6 +240,8 @@ case " $* " in
     di=${STUB_DEPINFO:-}; case " $* " in *" --features "*) di=${STUB_DEPINFO_FEATURE:-$di} ;; esac
     mkdir -p "$td/debug/deps"; printf '%b' "$di" > "$td/debug/deps/x.d"; exit "${STUB_CHECK_RC:-0}" ;;
 esac
+# a run without --copy-vcs has no .git in its scratch copy: the real baseline fails, so the stub dies before outcomes
+case " $* " in *" --copy-vcs true "*) ;; *) echo "stub: no --copy-vcs true, the unmutated baseline FAILED" >&2; exit 4 ;; esac
 out=""; prev=""
 for a in "$@"; do [ "$prev" = "--output" ] && out=$a; prev=$a; done
 [ "${STUB_OUTCOMES:-none}" = none ] && exit "${STUB_RUN_RC:-0}"
@@ -256,6 +262,7 @@ STUB
   row() { # row <name> <want rc> <needle> [ENV=VAL...] -- runs THIS script's gate against the stub
     local name=$1 want=$2 needle=$3 out rc; shift 3
     : > "$T/args-$name"   # a fresh log per row: a stale one would answer for a mutant that never ran
+    rm -rf -- "${T:?}/out-${name:?}"   # and a fresh --out: a stale outcomes.json would answer for a run that died
     out=$(cd "$T/tree" && env MUTANTS_GATE_CARGO="$T/cargo" STUB_ARGS="$T/args-$name" \
           STUB_DEPINFO="$T/tree/target/x: $T/tree/src/x.rs $T/tree/crates/foo/src/built.rs\n" "$@" \
           bash "$GATE_SCRIPT" "${GATE_DIFF:-$T/pr.diff}" --cap 3 --jobs 2 --max-missed "${MAXM:-0}" --out "$T/out-$name" ${EXCL:-} ${GATE_OPTS:-} 2>&1); rc=$?
@@ -371,6 +378,7 @@ compact-json-only-parser~real-outcomes-shape-is-parsed~  grep -oE "\"$2\": ?[0-9
 missing-field-is-zero~unparseable-outcomes-is-red~  if [ -z "$total" ] || [ -z "$missed" ] || [ -z "$timeout" ]; then~  total=${total:-2}; missed=${missed:-0}; timeout=${timeout:-0}; if false; then
 count-mismatch-ok~tested-count-mismatch-is-red~  if [ "$total" -ne "$n" ]; then~  if false; then
 timeout-not-counted~timeout-counts-as-uncaught~  if [ $((missed + timeout)) -gt "$max" ]; then~  if [ "$missed" -gt "$max" ]; then
+copy-vcs-dropped-on-run~all-caught-passes~ --in-diff "$diff" --copy-vcs true --output~ --in-diff "$diff" --output
 exclusion-dropped-on-run~exclusion-on-list-and-run~  "$cargo" mutants --workspace "${ex[@]}" --no-times~  "$cargo" mutants --workspace --no-times
 exclusion-dropped-on-list~exclusion-on-list-and-run~  "$cargo" mutants --workspace "${ex[@]}" --in-diff "$diff" --list~  "$cargo" mutants --workspace --in-diff "$diff" --list
 car-glob-widened~nested-car-is-judged~  [[ $1 == car/?* ]] || return 1~  [[ $1 == *car/?* ]] || return 1
