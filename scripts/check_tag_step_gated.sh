@@ -33,7 +33,7 @@ ROOT="$(cd "$(dirname "$0")/.." && pwd)" || exit 2
 rmtree() { case "${1:-}" in ''|/) return 0 ;; *) [ -d "$1" ] && rm -rf -- "$1" ;; esac; return 0; }
 SUBJECT="$ROOT/scripts/release/autopilot.sh"
 
-# run_cut_tag <autopilot> <strict-rc> [<must-carry-rc> [<carry-rc> [<readiness> [<pretag-rc>]]]] -- extract cut_tag(), run
+# run_cut_tag <autopilot> <strict-rc> [<must-carry-rc> [<carry-rc> [<readiness> [<preflight-rc>]]]] -- extract cut_tag(), run
 # it with stubs, print a transcript (SAY/DIE/GIT-TAG/GIT-PUSH lines, then the CALL order).
 # Returns 2 if the function is missing.
 run_cut_tag() {
@@ -41,7 +41,7 @@ run_cut_tag() {
     d=$(mktemp -d) || return 2
     fn=$(awk '/^cut_tag\(\) \{/,/^\}/' "$ap")
     [ -n "$fn" ] || { rmtree "$d"; return 2; }
-    mkdir -p "$d/scripts/release" "$d/ap"
+    mkdir -p "$d/scripts/release" "$d/ap" "$d/wt/scripts"
     # #3715 B1: the readiness step's log, as the T-1 `readiness` step leaves it (or does not)
     case "$rdy" in
         pass)   printf 'ok    R8 release-readiness-v1 for 0.0.0: Pass\nok    R8 #3715 ENFORCE PASS version=0.0.0 commit=deadbeef pv=pv_x out_sha256=0\n' > "$d/ap/readiness-t1.log" ;;
@@ -52,9 +52,9 @@ run_cut_tag() {
     printf '#!/usr/bin/env bash\nif [ "${2:-}" = --must-carry ]; then echo CALL-MUST-CARRY >> %q; exit %s; fi\necho CALL-STRICT >> %q; exit %s\n' \
         "$d/calls" "$mrc" "$d/calls" "$grc" > "$d/scripts/check_milestone_cut.sh"
     printf '#!/usr/bin/env bash\necho CALL-CARRY >> %q\nexit %s\n' "$d/calls" "$crc" > "$d/scripts/release/carry_milestone_items.sh"
-    # #4805: the pre-tag gate must be asked about the release worktree; it prints its PASS line only on 0
-    printf '#!/usr/bin/env bash\n[ "${1:-}" = %q ] || { echo "pretag asked about ${1:-nothing}"; exit 3; }\necho CALL-PRETAG >> %q\n[ %s = 0 ] && echo "PRETAG PASS preflight=PASS clean-room=PASS sha=deadbeef"\nexit %s\n' \
-        "$d/wt" "$d/calls" "$prc" "$prc" > "$d/scripts/release/pretag_gate.sh"
+    # #4805: the unchanged publish preflight, run on the release worktree with the local tag in place
+    printf '#!/usr/bin/env bash\n[ "${PUBLISH_PREFLIGHT_ROOT:-}" = %q ] || { echo "preflight asked about ${PUBLISH_PREFLIGHT_ROOT:-nothing}"; exit 3; }\n[ $# = 0 ] || { echo "preflight given a mode: $*"; exit 3; }\necho CALL-PREFLIGHT >> %q\nexit %s\n' \
+        "$d/wt" "$d/calls" "$prc" > "$d/wt/scripts/check_publish_preflight.sh"
     {
         printf 'set -uo pipefail\n'
         printf 'REPO_ROOT=%q\nLOG=%q\nAP=%q\nWT=%q\n' "$d" "$d/log" "$d/ap" "$d/wt"
@@ -70,11 +70,37 @@ run_cut_tag() {
     rmtree "$d"
 }
 
+# run_cut_release <autopilot> <gate-rc> [<pass-sha> [<tag-sha>]] -- #4805: extract cut_release(), run it
+# with a stub release_gate.sh (rc, and a PASS line naming <pass-sha>) and a git whose rev-parse
+# answers <tag-sha>. Prints SAY/DIE/GH lines and the CALL order. Returns 2 if the function is missing.
+run_cut_release() {
+    local ap=$1 grc=$2 psha=${3:-deadbeef} tsha=${4:-deadbeef} d fn
+    d=$(mktemp -d) || return 2
+    fn=$(awk '/^cut_release\(\) \{/,/^\}/' "$ap")
+    [ -n "$fn" ] || { rmtree "$d"; return 2; }
+    mkdir -p "$d/scripts/release" "$d/ap"
+    printf '#!/usr/bin/env bash\n[ "${1:-}" = v0.0.0 ] && [ "${2:-}" = %q ] || { echo "release gate asked about $*"; exit 3; }\necho CALL-RELEASE-GATE >> %q\n[ %s = 0 ] && echo "RELEASE-GATE PASS preflight=PASS clean-room=PASS tag=v0.0.0 sha=%s"\nexit %s\n' \
+        "$d/wt" "$d/calls" "$grc" "$psha" "$grc" > "$d/scripts/release/release_gate.sh"
+    {
+        printf 'set -uo pipefail\n'
+        printf 'REPO_ROOT=%q\nLOG=%q\nAP=%q\nWT=%q\nREPO=o/r\n' "$d" "$d/log" "$d/ap" "$d/wt"
+        printf 'say() { printf "SAY %%s\\n" "$*"; }\n'
+        printf 'die() { printf "DIE %%s\\n" "$*"; exit 1; }\n'
+        printf 'git() { [ "$1" = rev-parse ] && { echo %s; return 0; }; printf "GIT %%s\\n" "$*"; }\n' "$tsha"
+        printf 'gh() { printf "GH-%%s %%s\\n" "$(printf %%s "$1" | tr "a-z" "A-Z")" "$*"; echo CALL-GH-RELEASE >> %q; }\n' "$d/calls"
+        printf '%s\n' "$fn"
+        printf 'cut_release v0.0.0 deadbeef\n'
+    } > "$d/harness.sh"
+    bash "$d/harness.sh" 2>&1
+    printf 'ORDER %s\n' "$(tr '\n' ' ' 2>/dev/null < "$d/calls")"
+    rmtree "$d"
+}
+
 # judge <autopilot> -- 0 when every gate outcome behaves; 1 otherwise. Prints rows.
 judge() {
     local ap=$1 out bad=0
-    if ! grep -q '^cut_tag() {' "$ap"; then
-        printf 'FAIL  %s has no cut_tag() -- the tag path moved and this guard is judging nothing\n' "$ap" >&2
+    if ! grep -q '^cut_tag() {' "$ap" || ! grep -q '^cut_release() {' "$ap"; then
+        printf 'FAIL  %s has no cut_tag() or no cut_release() -- the tag path moved and this guard is judging nothing\n' "$ap" >&2
         return 2
     fi
     out=$(run_cut_tag "$ap" 0) || true
@@ -92,16 +118,31 @@ judge() {
     else printf 'ok    gate rc=2 (Unknown) -> no tag\n'; fi
     # #3459 part 2: the must-carry gate, the carry, and their ORDER
     out=$(run_cut_tag "$ap" 0) || true
-    if grep -q '^ORDER CALL-PRETAG CALL-MUST-CARRY CALL-CARRY CALL-STRICT $' <<< "$out" && grep -q 'GIT-TAG' <<< "$out"; then
-        printf 'ok    all clean -> pre-tag gate, must-carry, the carry, STRICT, then the tag\n'
-    else printf 'FAIL  all clean did not run pretag -> must-carry -> carry -> strict -> tag\n%s\n' "$out" >&2; bad=1; fi
-    # #4805: the pre-tag gate (preflight --pre-tag + clean-room by sha) refusing or not measured -> no tag, nothing carried
+    if grep -q '^ORDER CALL-MUST-CARRY CALL-CARRY CALL-STRICT CALL-PREFLIGHT $' <<< "$out" && grep -q 'GIT-TAG' <<< "$out" && grep -q 'GIT-PUSH' <<< "$out"; then
+        printf 'ok    all clean -> must-carry, the carry, STRICT, the local tag, the preflight, then the push\n'
+    else printf 'FAIL  all clean did not run must-carry -> carry -> strict -> tag -> preflight -> push\n%s\n' "$out" >&2; bad=1; fi
+    # #4805: the unchanged publish preflight red or unjudged on the local tag -> local tag removed, nothing pushed
     for p in 1 2; do
         out=$(run_cut_tag "$ap" 0 0 0 pass "$p") || true
-        if grep -q 'GIT-TAG' <<< "$out" || grep -qE 'CALL-(MUST-CARRY|CARRY|STRICT)' <<< "$out"; then
-            printf 'FAIL  pre-tag gate rc=%s -> a tag was cut or the milestone was touched\n%s\n' "$p" "$out" >&2; bad=1
-        else printf 'ok    pre-tag gate rc=%s -> nothing carried, no tag\n' "$p"; fi
+        if grep -q 'GIT-PUSH' <<< "$out" || ! grep -q '^GIT-TAG tag -d v0.0.0' <<< "$out"; then
+            printf 'FAIL  preflight rc=%s on the local tag -> the tag was PUSHED, or the local tag was left behind\n%s\n' "$p" "$out" >&2; bad=1
+        else printf 'ok    preflight rc=%s on the local tag -> local tag removed, nothing pushed\n' "$p"; fi
     done
+    # #4805: the GitHub release waits for the release gate (publish preflight + clean-room on the tag)
+    out=$(run_cut_release "$ap" 0) || true
+    if grep -q '^ORDER CALL-RELEASE-GATE CALL-GH-RELEASE $' <<< "$out"; then printf 'ok    release gate rc=0 -> gate, then the release\n'
+    else printf 'FAIL  release gate rc=0 -> no release, or not gate-first\n%s\n' "$out" >&2; bad=1; fi
+    for g in 1 2; do
+        out=$(run_cut_release "$ap" "$g") || true
+        if grep -q 'CALL-GH-RELEASE' <<< "$out"; then printf 'FAIL  release gate rc=%s -> A RELEASE WAS MADE\n%s\n' "$g" "$out" >&2; bad=1
+        else printf 'ok    release gate rc=%s -> no release\n' "$g"; fi
+    done
+    out=$(run_cut_release "$ap" 0 cafef00d) || true
+    if grep -q 'CALL-GH-RELEASE' <<< "$out"; then printf 'FAIL  release gate PASS for another sha -> A RELEASE WAS MADE\n%s\n' "$out" >&2; bad=1
+    else printf 'ok    release gate PASS names another sha -> no release\n'; fi
+    out=$(run_cut_release "$ap" 0 deadbeef cafef00d) || true
+    if grep -q 'CALL-' <<< "$out"; then printf 'FAIL  tag names another commit -> the gate was asked or a release made\n%s\n' "$out" >&2; bad=1
+    else printf 'ok    tag names another commit -> no gate, no release\n'; fi
     for m in 1 2; do
         out=$(run_cut_tag "$ap" 0 "$m") || true
         if grep -q 'GIT-TAG' <<< "$out" || grep -q 'CALL-CARRY' <<< "$out"; then
@@ -182,35 +223,29 @@ if [ "${1:-}" = "--self-test" ]; then
     else
         ok "mutant 6: #3715 readiness requirement deleted -> RED"
     fi
-    # M7 (#4805): the pre-tag gate call deleted -> a commit no publish gate has judged is tagged.
-    sed '/scripts\/release\/pretag_gate\.sh" "\$WT"/d' "$SUBJECT" > "$d/m7.sh"
-    if cmp -s "$SUBJECT" "$d/m7.sh"; then
-        nok "MUTANT 7 could not be built -- the pre-tag gate call line did not match; vacuous"
-    elif judge "$d/m7.sh" > "$d/m7.out" 2>&1; then
-        nok "MUTANT 7 (pre-tag gate call deleted) PASSED"
+    # #4805 mutants. Each must turn the judge RED, or the rows above cannot see the line they guard.
+    mutant() { # mutant <n> <what> <sed-script>
+        sed "$3" "$SUBJECT" > "$d/m$1.sh"
+        if cmp -s "$SUBJECT" "$d/m$1.sh"; then nok "MUTANT $1 could not be built -- its line did not match; vacuous"
+        elif judge "$d/m$1.sh" > "$d/m$1.out" 2>&1; then nok "MUTANT $1 ($2) PASSED"
+        else ok "mutant $1: $2 -> RED"; fi
+    }
+    mutant 7 "preflight-at-tag call deleted" '/PUBLISH_PREFLIGHT_ROOT="\$WT" bash "\$WT\/scripts\/check_publish_preflight.sh"/d'
+    mutant 8 "preflight-at-tag verdict discarded" 's#\(check_publish_preflight\.sh" >> "$LOG" 2>&1\) || rc=$?#\1 || true#'
+    mutant 9 "release gate call deleted" '/scripts\/release\/release_gate\.sh" "\$t" "\$WT"/d'
+    mutant 10 "release gate verdict + PASS-line check discarded" 's#\(release_gate\.sh" "$t" "$WT" >> "$LOG" 2>&1\) || rc=$?#\1 || true#; /grep -qx "RELEASE-GATE PASS/,/|| die "release gate passed/d'
+    mutant 11 "release tag-identity check deleted" '/refs\/tags\/\${t}^{commit}/,/|| die "tag \$t does not name/d'
+    # the release gate's own case table, same reason as the carry table below
+    if bash "$ROOT/scripts/release/check_release_gate.sh" --self-test > "$d/rgate.out" 2>&1; then
+        ok "check_release_gate.sh case table ($(grep -c '^ok ' "$d/rgate.out") rows)"
     else
-        ok "mutant 7: pre-tag gate call deleted -> RED"
-    fi
-    # M8 (#4805): the pre-tag verdict discarded AND its PASS-line check deleted -> a red gate tags.
-    sed 's#\(pretag_gate\.sh" "$WT" >> "$LOG" 2>&1\) || rc=$?#\1 || true#; /grep -qx "PRETAG PASS/,/|| die "pre-tag gate passed/d' "$SUBJECT" > "$d/m8.sh"
-    if cmp -s "$SUBJECT" "$d/m8.sh" || grep -q 'PRETAG PASS preflight' "$d/m8.sh"; then
-        nok "MUTANT 8 could not be built -- the pre-tag verdict lines did not match; vacuous"
-    elif judge "$d/m8.sh" > "$d/m8.out" 2>&1; then
-        nok "MUTANT 8 (pre-tag verdict discarded) PASSED"
-    else
-        ok "mutant 8: pre-tag verdict discarded -> RED"
+        nok "check_release_gate.sh case table FAILED"; cat "$d/rgate.out" >&2
     fi
     # the carry script's own case table: it lives in scripts/release/, where guard_tree cannot see it
     if bash "$ROOT/scripts/release/carry_milestone_items.sh" --self-test > "$d/carry.out" 2>&1; then
         ok "carry_milestone_items.sh case table ($(grep -c '^ok ' "$d/carry.out") rows)"
     else
         nok "carry_milestone_items.sh case table FAILED"; cat "$d/carry.out" >&2
-    fi
-    # #4805: the pre-tag gate's own case table, same reason
-    if bash "$ROOT/scripts/release/check_pretag_gate.sh" --self-test > "$d/pretag.out" 2>&1; then
-        ok "check_pretag_gate.sh case table ($(grep -c '^ok ' "$d/pretag.out") rows)"
-    else
-        nok "check_pretag_gate.sh case table FAILED"; cat "$d/pretag.out" >&2
     fi
     # M3: cut_tag() removed entirely -> ENV (2), never a pass.
     awk '/^cut_tag\(\) \{/,/^\}/ {next} {print}' "$SUBJECT" > "$d/m3.sh"

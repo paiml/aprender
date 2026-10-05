@@ -61,7 +61,6 @@
 #   bash scripts/check_publish_preflight.sh --selftest  # case table, both polarities
 #   bash scripts/check_publish_preflight.sh --receipt-only  # R2+R5 only: T-1, before the tag (#3708)
 #   bash scripts/check_publish_preflight.sh --graph-only    # R2+R6 only: the rc cut (#4287)
-#   bash scripts/check_publish_preflight.sh --pre-tag       # every rule but R3 on HEAD: before the tag (#4805)
 #   bash scripts/check_publish_preflight.sh --scope crux-smoke [--cut-commit SHA]
 #       R7 under a RECORDED operator emergency scope (contracts/model-capability-ladder-v1.yaml
 #       `ladder.emergency_scopes`; 0.69.1 only): the judge's own `--scope` path
@@ -75,9 +74,6 @@
 set -uo pipefail
 
 PROG=${0##*/}
-SELF_PATH=$0
-# --pre-tag is the ONLY way into the pre-tag R3 variant: an inherited PRE_TAG=1 must not reach the publish gate.
-PRE_TAG=0
 SCRIPT_DIR="$(cd -- "$(dirname -- "${BASH_SOURCE[0]}")" && pwd)"
 # shellcheck source=release/lib_code_identity.sh
 if ! . "$SCRIPT_DIR/release/lib_code_identity.sh"; then
@@ -349,7 +345,7 @@ rule_r8() {
 
 gate() {
     local root="${PUBLISH_PREFLIGHT_ROOT:-}" release_ref
-    local fails=0 status version tags head tagged
+    local fails=0 status version tags head
     for t in git cargo python3; do
         command -v "$t" >/dev/null 2>&1 || die_env "$t is not on PATH"
     done
@@ -382,18 +378,7 @@ gate() {
     tags="$(git -C "$root" tag --points-at HEAD 2>/dev/null)"
     # -F: the version is a string, not a pattern. With -x alone `v1-2-3` on HEAD
     # satisfied `v1.2.3` (second review of #2859, tag-regex-injection).
-    if [ "${PRE_TAG:-0}" = 1 ]; then
-        # --pre-tag (#4805): the tag step asks before `git tag`, so the tag cannot
-        # exist yet. What it CAN check: no v<version> names another commit. R3 proper
-        # is still judged at publish, on the tag, which then resolves to this HEAD.
-        tagged="$(git -C "$root" rev-parse --verify --quiet "refs/tags/v${version:-?}^{commit}" 2>/dev/null)" || tagged=""
-        if [ -n "$version" ] && { [ -z "$tagged" ] || [ "$tagged" = "$head" ]; }; then
-            echo "ok    R3 pre-tag: v$version ${tagged:+already }names ${tagged:+HEAD}${tagged:-no commit yet}; R3 itself is judged at publish"
-        else
-            printf 'FAIL  R3 pre-tag: v%s already names %s, not HEAD %s\n' "${version:-?}" "${tagged:-?}" "${head:0:9}"
-            fails=1
-        fi
-    elif [ -n "$version" ] && grep -Fqx -- "v$version" <<<"$tags"; then
+    if [ -n "$version" ] && grep -Fqx -- "v$version" <<<"$tags"; then
         echo "ok    R3 tag v$version points at HEAD ${head:0:9}"
     else
         printf 'FAIL  R3 tag v%s does not point at HEAD %s (tags here: %s)\n' \
@@ -427,10 +412,6 @@ gate() {
     if [ "$fails" -ne 0 ]; then
         echo "REFUSE $PROG: publishing is not allowed from this tree (see the FAIL rows)."
         return 1
-    fi
-    if [ "${PRE_TAG:-0}" = 1 ]; then
-        echo "PASS  $PROG --pre-tag: every rule holds on HEAD $head; R3 (tag at HEAD) is judged at publish"
-        return 0
     fi
     if [ -n "${SCOPE:-}" ]; then
         echo "PASS  $PROG: clean, versioned, tagged, on $release_ref, dogfood GO, OPERATOR EMERGENCY SCOPE $SCOPE satisfied (the model matrix was NOT the gate)"
@@ -492,14 +473,6 @@ receipt_gate() {
     fi
     echo "PASS  $PROG --receipt-only: R5 holds for ${head:0:9} at $version (R1/R3/R4/R6 are judged at publish)"
     return 0
-}
-
-# --pre-tag (#4805): the full gate on HEAD BEFORE `git tag`, for the tag step
-# (scripts/release/pretag_gate.sh). R1 R2 R4 R5 R6 R7 R8 are judged exactly as at
-# publish; R3 is replaced by "no v<version> tag names another commit", and R3
-# itself is still judged at publish, where the tag resolves to this same HEAD.
-pre_tag_gate() {
-    PRE_TAG=1 gate
 }
 
 # --------------------------------------------------------------- selftest ---
@@ -607,7 +580,7 @@ FXREADY
         mkdir -p "$d/.dogfood"
         write_receipt "$d" GO "$(git -C "$d" rev-parse HEAD)" 1.2.3
     }
-    row() { # name, expect(0|1), needle, dir [, gate|receipt_gate|pre_tag_gate]
+    row() { # name, expect(0|1), needle, dir [, gate|receipt_gate]
         local name="$1" expect="$2" needle="$3" d="$4" mode="${5:-gate}" out rc=0
         out="$( PUBLISH_PREFLIGHT_ROOT="$d" "$mode" 2>&1 )" || rc=$?
         if [ "$rc" != "$expect" ]; then
@@ -808,39 +781,6 @@ FXREADY
     d="$tmp/sc-badcut"; build_repo "$d"
     SCOPE=crux-smoke CUT_COMMIT=0123456789abcdef0123456789abcdef01234567 row scope_unresolvable_cut_refuses 1 "does not resolve" "$d"
 
-    # --pre-tag (#4805): the tag step's end of the gate. Every rule runs on HEAD; R3
-    # alone cannot (there is no tag yet) and is replaced by "no v<version> names
-    # another commit". Each rule still refuses on its own red, untagged.
-    untag() { git -C "$1" tag -d v1.2.3 >/dev/null; }
-    d="$tmp/pt-ok"; build_repo "$d"; untag "$d"
-    row pre_tag_untagged_all_rules_pass 0 "PASS  $PROG --pre-tag: every rule holds on HEAD $(git -C "$d" rev-parse HEAD)" "$d" pre_tag_gate
-    d="$tmp/pt-full"; build_repo "$d"; untag "$d"
-    row pre_tag_untagged_full_gate_refuses 1 "FAIL  R3 tag v1.2.3 does not point at HEAD" "$d"
-    # an inherited PRE_TAG=1 must not reach the publish gate: a separate process, as a caller's env would
-    local envrc=0 envout
-    envout="$(PRE_TAG=1 PUBLISH_PREFLIGHT_ROOT="$d" bash "$SELF_PATH" 2>&1)" || envrc=$?
-    case "$envrc:$envout" in
-        1:*"FAIL  R3 tag v1.2.3 does not point at HEAD"*) printf '  ok    %-36s exit=1 R3 still judged\n' pre_tag_inherited_env_refuses; pass=$((pass + 1)) ;;
-        *) printf '  BROKE %-36s an inherited PRE_TAG=1 changed the publish gate (exit %s)\n' pre_tag_inherited_env_refuses "$envrc"; fail=$((fail + 1)) ;;
-    esac
-    d="$tmp/pt-onhead"; build_repo "$d"
-    row pre_tag_tag_on_head_passes      0 "ok    R3 pre-tag: v1.2.3 already names HEAD" "$d" pre_tag_gate
-    d="$tmp/pt-tagelse"; build_repo "$d"; untag "$d"
-    printf 'pub fn h() {}\n' >> "$d/src/lib.rs"; git -C "$d" -c core.hooksPath=/dev/null -c user.name=t -c user.email=t@t commit -qam 'second' >/dev/null
-    git -C "$d" tag v1.2.3 HEAD~1; git -C "$d" update-ref refs/remotes/origin/release/1.2.3 HEAD
-    write_receipt "$d" GO "$(git -C "$d" rev-parse HEAD)" 1.2.3
-    row pre_tag_tag_on_other_commit_refuses 1 "FAIL  R3 pre-tag: v1.2.3 already names" "$d" pre_tag_gate
-    d="$tmp/pt-dirty"; build_repo "$d"; untag "$d"; printf 'x\n' > "$d/stray.out"
-    row pre_tag_dirty_refuses           1 "FAIL  R1" "$d" pre_tag_gate
-    d="$tmp/pt-offbranch"; build_repo "$d"; untag "$d"; git -C "$d" update-ref -d refs/remotes/origin/release/1.2.3
-    row pre_tag_no_release_ref_refuses  1 "FAIL  R4" "$d" pre_tag_gate
-    d="$tmp/pt-nogo"; build_repo "$d"; untag "$d"; write_receipt "$d" NO-GO "$(git -C "$d" rev-parse HEAD)" 1.2.3
-    row pre_tag_no_go_refuses           1 "FAIL  R5" "$d" pre_tag_gate
-    d="$tmp/pt-r7"; build_repo "$d"; untag "$d"
-    FX_LADDER_RC=1 row pre_tag_model_matrix_red_refuses 1 "FAIL  R7 model matrix NOT green" "$d" pre_tag_gate
-    d="$tmp/pt-r8"; build_repo "$d"; untag "$d"
-    FX_READINESS_RC=1 row pre_tag_readiness_fail_refuses 1 "FAIL  R8 the release-readiness wrapper exited 1" "$d" pre_tag_gate
-
     # --receipt-only (#3708): the T-1 end of R5. An UNTAGGED tree with a GO
     # receipt passes it (the full gate refuses the same tree on R3 -- the row
     # above -- which is why T-1 cannot run the full gate), and every receipt
@@ -877,7 +817,6 @@ case "$MODE" in
     --selftest) selftest ;;
     --receipt-only) receipt_gate ;;
     --graph-only) graph_gate ;;
-    --pre-tag)  pre_tag_gate ;;
     '')         gate ;;
     -h|--help)  sed -n '2,48p' "$0" ;;
     *)          printf '%s: unknown argument %s\n' "$PROG" "$MODE" >&2; exit 2 ;;

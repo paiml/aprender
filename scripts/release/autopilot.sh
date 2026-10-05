@@ -6,7 +6,7 @@
 # one argument; milestone, epic and the state dir AP are read from GitHub and the repo, never literals.
 #
 #   autopilot.sh <version> <bump-pr> [from-step] [to-step]
-#   steps: wait deep dogfood models readiness cleanroom tag assets preflight dryrun cascade install hosts postpub ledger close
+#   steps: wait deep dogfood models readiness tag cleanroom release assets preflight dryrun cascade install hosts postpub ledger close
 #   T-4 for THIS train (operator 2026-09-17): cascade DRY-RUN receipt, then STOP and report — the cascade
 #   itself is the operator's step. Default to-step is dryrun; `cascade` and later run only when named.
 #   T-1 'ci / deep' has no workflow on main, so `deep` runs the equivalent locally on the release commit.
@@ -38,7 +38,7 @@ fi
 release_params "${1:-}" "$REPO_ROOT" || { echo "usage: autopilot.sh <version> <bump-pr> [from-step] [to-step]" >&2; exit 2; }
 STATUS="$AP/STATUS"; LOG="$AP/autopilot.log"
 PR="${2:?usage: autopilot.sh <version> <bump-pr> [from-step] [to-step]}"; FROM="${3:-wait}"; TO="${4:-dryrun}"
-STEPS=(wait deep dogfood models readiness cleanroom tag assets preflight dryrun cascade install hosts postpub ledger close)
+STEPS=(wait deep dogfood models readiness tag cleanroom release assets preflight dryrun cascade install hosts postpub ledger close)
 say() { printf '%s %s\n' "$(date -u +%FT%TZ)" "$*" | tee -a "$STATUS" >> "$LOG"; }
 die() { say "STOP $*"; exit 1; }
 run_step() { # run_step <name>: true when <name> is at or after FROM and at or before TO
@@ -178,56 +178,7 @@ if run_step readiness; then
     || die "T-1 release-readiness-v1 printed a WARN R8 row (report-only = waiver = stop): nothing is tagged ($AP/readiness-t1.log)"
   say "READINESS ok at $MC"
 fi
-# 3a. cleanroom (T-3): dispatch paiml/infra clean-room.yml ON THE RELEASE COMMIT, by sha (infra#621 ref
-#     input takes a tag or a full sha), record the run id, wait, require the `clean-room (aprender)` job
-#     green. It runs BEFORE the tag (#4805): the tag step's pre-tag gate requires this run green on
-#     exactly $MC, and cascade-publish.sh re-derives it fail-closed on the tag (same commit) before T-4.
-if run_step cleanroom; then
-  # B2-cpu: paiml/infra clean-room.yml on the release sha $MC. Attach to a run already dispatched (cleanroom-attach) or dispatch.
-  if [ -s "$AP/cleanroom-attach" ]; then
-    crun=$(cat "$AP/cleanroom-attach"); say "CLEANROOM attached to run $crun"
-  else
-    t0=$(date -u +%s)  # bashrs disable-line=DET002
-    gh workflow run clean-room.yml --repo $INFRA -f repos=aprender -f ref="$MC" >> "$LOG" 2>&1 || die "clean-room.yml dispatch on $MC failed"
-    say "CLEANROOM dispatched on $MC"
-    crun=""; for _ in $(seq 1 30); do
-      crun=$(gh run list --repo $INFRA --workflow clean-room.yml --event workflow_dispatch --limit 10 --json databaseId,createdAt --jq "[.[] | select((.createdAt | fromdateiso8601) >= $t0 - 30)] | sort_by(.createdAt) | last | .databaseId // empty")
-      [ -n "$crun" ] && break; sleep 20
-    done
-    [ -n "$crun" ] || die "no clean-room.yml workflow_dispatch run appeared after the dispatch"
-    say "CLEANROOM RUN $crun"
-  fi
-  # B2-gpu: paiml/aprender b2-gpu.yml on the same ref (the org GPU runner groups admit aprender only). In parallel.
-  if [ -s "$AP/b2gpu-attach" ]; then
-    grun=$(cat "$AP/b2gpu-attach"); say "B2-GPU attached to run $grun"
-  else
-    t1=$(date -u +%s)  # bashrs disable-line=DET002
-    gh workflow run b2-gpu.yml --repo $REPO --ref main -f ref="$MC" >> "$LOG" 2>&1 || die "b2-gpu.yml dispatch on $MC failed (is aprender#3467 merged?)"
-    grun=""; for _ in $(seq 1 30); do
-      grun=$(gh run list --repo $REPO --workflow b2-gpu.yml --event workflow_dispatch --limit 10 --json databaseId,createdAt --jq "[.[] | select((.createdAt | fromdateiso8601) >= $t1 - 30)] | sort_by(.createdAt) | last | .databaseId // empty")
-      [ -n "$grun" ] && break; sleep 20
-    done
-    [ -n "$grun" ] || die "no b2-gpu.yml run appeared after the dispatch"
-    say "B2-GPU RUN $grun"
-  fi
-  # the JOB conclusion, not the run status: a sibling job that can never start must not hold the verdict hostage
-  jc=""; for _ in $(seq 1 240); do
-    jc=$(gh run view "$crun" --repo $INFRA --json jobs --jq '.jobs[] | select(.name=="clean-room (aprender)") | select(.status=="completed") | .conclusion' | head -1)
-    [ -n "$jc" ] && break; sleep 60
-  done
-  [ "$jc" = success ] || die "clean-room (aprender) on $MC concluded '${jc:-absent}' (run $crun)"
-  say "B2-CPU GREEN on $MC (infra run $crun)"
-  gc=""; for _ in $(seq 1 120); do
-    gs=$(gh run view "$grun" --repo $REPO --json status,conclusion,headSha --jq '"\(.status) \(.conclusion)"'); case "$gs" in completed*) gc=${gs#completed }; break;; esac; sleep 60
-  done
-  [ "$gc" = success ] || die "b2-gpu on $MC concluded '${gc:-absent}' (aprender run $grun)"
-  ok=0; for _ in 1 2 3 4 5 6; do gh run view "$grun" --repo $REPO --log > "$AP/b2gpu-run.log" 2>/dev/null; grep -q "tested-sha: $MC" "$AP/b2gpu-run.log" && { ok=1; break; }; sleep 30; done; [ $ok = 1 ] || die "b2-gpu run $grun did not test $MC"
-  printf '%s\n' "$crun" > "$AP/cleanroom-run-id"; printf '%s\n' "$grun" > "$AP/b2gpu-run-id"
-  say "CLEANROOM GREEN on $MC: B2-cpu infra run $crun + B2-gpu aprender run $grun, both on $MC"
-fi
-
-
-# 3. tag + release (binary-release.yml fires on release: published, from the TAG's workflow file)
+# 3. tag (the release itself is step 3c; binary-release.yml fires on release: published, from the TAG's workflow file)
 # cut_tag <version> <tag> <commit> -- PMAT-3459. The milestone gate lives INSIDE the
 # function that tags, ahead of `git tag`, so the tag cannot be cut without it: there is
 # no path through cut_tag() that reaches `git tag` with the gate unsatisfied. v0.68.1
@@ -255,15 +206,6 @@ cut_tag() {
     awk -v n="$need" 'index($0, n) == 1 { f = 1 } END { exit !f }' "${AP:-/nonexistent}/readiness-t1.log" 2>/dev/null \
         || die "no '#3715 ENFORCE PASS' for $v at $mc in ${AP:-<unset AP>}/readiness-t1.log -- release-readiness-v1 missing, skipped or not enforced; no tag"
     say "READINESS-GATE $(grep -F "$need" "$AP/readiness-t1.log" | tail -n 1)"
-    # #4805: the commit is publishable BEFORE it is tagged. The publish preflight (every rule but R3,
-    # which needs the tag) and a green clean-room job, both on exactly $mc -- the `cleanroom` step ran
-    # ahead of this one, on the sha. 1 = a gate refused, 2 = not measured: no tag, nothing carried.
-    # cascade-publish.sh re-runs both gates on the tag, which resolves to this same commit.
-    bash "$REPO_ROOT/scripts/release/pretag_gate.sh" "$WT" >> "$LOG" 2>&1 || rc=$?
-    [ "$rc" -eq 0 ] || die "pre-tag gate rc=$rc on $mc (preflight --pre-tag + clean-room by sha; $LOG) -- nothing carried, no tag"
-    grep -qx "PRETAG PASS preflight=PASS clean-room=PASS sha=$mc" "$LOG" \
-        || die "pre-tag gate passed, but not on $mc (no 'PRETAG PASS ... sha=$mc' in $LOG) -- nothing carried, no tag"
-    say "PRETAG-GATE preflight + clean-room green on $mc"
     bash "$REPO_ROOT/scripts/check_milestone_cut.sh" "$v" --must-carry >> "$LOG" 2>&1 || rc=$?
     case "$rc" in
         0) say "MUST-CARRY $v: no open must-carry issue (check_milestone_cut.sh --must-carry rc=0)" ;;
@@ -282,16 +224,102 @@ cut_tag() {
         *) die "milestone $v could not be judged (check_milestone_cut.sh rc=$rc) -- no tag; Unknown is not a pass" ;;
     esac
     git tag -a "$t" -m "aprender $t" "$mc" >> "$LOG" 2>&1 || die "tag failed"
+    # #4805: the publish preflight, UNCHANGED (R3 included -- the local tag now names HEAD), on the
+    # release worktree BEFORE the tag leaves this machine. Red or unjudged -> the unpushed local tag
+    # is removed and nothing is pushed. The same script runs again at the `preflight` step and in
+    # cascade-publish.sh; this is one more run of it, earlier, not a replacement.
+    rc=0
+    PUBLISH_PREFLIGHT_ROOT="$WT" bash "$WT/scripts/check_publish_preflight.sh" >> "$LOG" 2>&1 || rc=$?
+    if [ "$rc" -ne 0 ]; then
+        git tag -d "$t" >> "$LOG" 2>&1 || die "publish preflight rc=$rc on local $t, AND the unpushed local tag could not be removed -- remove it by hand; nothing pushed"
+        die "publish preflight rc=$rc on local $t at $mc ($LOG) -- local tag removed, nothing pushed"
+    fi
+    say "PREFLIGHT-AT-TAG every rule (R3 included) green on local $t at $mc"
     git push origin "$t" >> "$LOG" 2>&1 || die "tag push failed"
+}
+
+# cut_release <tag> <commit> -- #4805. The GitHub release is the public step: it fires
+# binary-release.yml and names the version. It is made only when BOTH publish gates are
+# green on the tag -- the unchanged publish preflight and the clean-room gate, exactly as
+# cascade-publish.sh will run them (scripts/release/release_gate.sh). v0.70.0 was tagged
+# and released, then refused at publish; a refused release gate here leaves a pushed tag
+# with no release, binaries or crates. 1 = refused, 2 = not measured: no release.
+# scripts/check_tag_step_gated.sh runs this function against stubs, with mutants.
+cut_release() {
+    local t=$1 mc=$2 rc=0
+    [ "$(git rev-parse --verify --quiet "refs/tags/${t}^{commit}" 2>/dev/null)" = "$mc" ] \
+        || die "tag $t does not name $mc here -- no release"
+    bash "$REPO_ROOT/scripts/release/release_gate.sh" "$t" "$WT" >> "$LOG" 2>&1 || rc=$?
+    [ "$rc" -eq 0 ] || die "release gate rc=$rc on $t (publish preflight + clean-room on the tag; $LOG) -- no release"
+    grep -qx "RELEASE-GATE PASS preflight=PASS clean-room=PASS tag=$t sha=$mc" "$LOG" \
+        || die "release gate passed, but not for $t at $mc (no matching RELEASE-GATE PASS in $LOG) -- no release"
+    say "RELEASE-GATE preflight + clean-room green on $t at $mc"
+    gh release create "$t" --repo "$REPO" --verify-tag --title "aprender ${t#v}" --notes-file "$AP/release_notes.md" >> "$LOG" 2>&1 \
+        || die "gh release create failed"
 }
 if run_step tag; then
   git rev-parse -q --verify "refs/tags/$T" > /dev/null && die "tag $T already exists locally"
   [ -f "$AP/release_notes.md" ] || die "no $AP/release_notes.md (prepare_bump.sh writes it from CHANGELOG [$V])"
   cut_tag "$V" "$T" "$MC"
-  say "TAGGED $T at $MC"
-  gh release create "$T" --repo $REPO --verify-tag --title "aprender $V" --notes-file "$AP/release_notes.md" >> "$LOG" 2>&1 || die "gh release create failed"
+  say "TAGGED $T at $MC (pushed; the GitHub release waits for the \`release\` step)"
+fi
+
+
+# 3b. cleanroom (T-3): dispatch paiml/infra clean-room.yml ON THE TAG (infra#621 ref input), record the
+#     run id, wait, require the `clean-room (aprender)` job green. The run's own first step asserts
+#     HEAD == the ref; cascade-publish.sh re-derives all of this fail-closed before T-4.
+if run_step cleanroom; then
+  # B2-cpu: paiml/infra clean-room.yml on the tag. Attach to a run already dispatched (cleanroom-attach) or dispatch.
+  if [ -s "$AP/cleanroom-attach" ]; then
+    crun=$(cat "$AP/cleanroom-attach"); say "CLEANROOM attached to run $crun"
+  else
+    t0=$(date -u +%s)  # bashrs disable-line=DET002
+    gh workflow run clean-room.yml --repo $INFRA -f repos=aprender -f ref="$T" >> "$LOG" 2>&1 || die "clean-room.yml dispatch on $T failed"
+    say "CLEANROOM dispatched on $T"
+    crun=""; for _ in $(seq 1 30); do
+      crun=$(gh run list --repo $INFRA --workflow clean-room.yml --event workflow_dispatch --limit 10 --json databaseId,createdAt --jq "[.[] | select((.createdAt | fromdateiso8601) >= $t0 - 30)] | sort_by(.createdAt) | last | .databaseId // empty")
+      [ -n "$crun" ] && break; sleep 20
+    done
+    [ -n "$crun" ] || die "no clean-room.yml workflow_dispatch run appeared after the dispatch"
+    say "CLEANROOM RUN $crun"
+  fi
+  # B2-gpu: paiml/aprender b2-gpu.yml on the same ref (the org GPU runner groups admit aprender only). In parallel.
+  if [ -s "$AP/b2gpu-attach" ]; then
+    grun=$(cat "$AP/b2gpu-attach"); say "B2-GPU attached to run $grun"
+  else
+    t1=$(date -u +%s)  # bashrs disable-line=DET002
+    gh workflow run b2-gpu.yml --repo $REPO --ref main -f ref="$T" >> "$LOG" 2>&1 || die "b2-gpu.yml dispatch on $T failed (is aprender#3467 merged?)"
+    grun=""; for _ in $(seq 1 30); do
+      grun=$(gh run list --repo $REPO --workflow b2-gpu.yml --event workflow_dispatch --limit 10 --json databaseId,createdAt --jq "[.[] | select((.createdAt | fromdateiso8601) >= $t1 - 30)] | sort_by(.createdAt) | last | .databaseId // empty")
+      [ -n "$grun" ] && break; sleep 20
+    done
+    [ -n "$grun" ] || die "no b2-gpu.yml run appeared after the dispatch"
+    say "B2-GPU RUN $grun"
+  fi
+  # the JOB conclusion, not the run status: a sibling job that can never start must not hold the verdict hostage
+  jc=""; for _ in $(seq 1 240); do
+    jc=$(gh run view "$crun" --repo $INFRA --json jobs --jq '.jobs[] | select(.name=="clean-room (aprender)") | select(.status=="completed") | .conclusion' | head -1)
+    [ -n "$jc" ] && break; sleep 60
+  done
+  [ "$jc" = success ] || die "clean-room (aprender) on $T concluded '${jc:-absent}' (run $crun)"
+  say "B2-CPU GREEN on $T (infra run $crun)"
+  gc=""; for _ in $(seq 1 120); do
+    gs=$(gh run view "$grun" --repo $REPO --json status,conclusion,headSha --jq '"\(.status) \(.conclusion)"'); case "$gs" in completed*) gc=${gs#completed }; break;; esac; sleep 60
+  done
+  [ "$gc" = success ] || die "b2-gpu on $T concluded '${gc:-absent}' (aprender run $grun)"
+  ok=0; for _ in 1 2 3 4 5 6; do gh run view "$grun" --repo $REPO --log > "$AP/b2gpu-run.log" 2>/dev/null; grep -q "tested-sha: $MC" "$AP/b2gpu-run.log" && { ok=1; break; }; sleep 30; done; [ $ok = 1 ] || die "b2-gpu run $grun did not test $MC"
+  printf '%s\n' "$crun" > "$AP/cleanroom-run-id"; printf '%s\n' "$grun" > "$AP/b2gpu-run-id"
+  say "CLEANROOM GREEN on $T: B2-cpu infra run $crun + B2-gpu aprender run $grun, both on $MC"
+fi
+
+# 3c. release (#4805): the GitHub release only once the publish preflight AND the clean-room job are
+#     green on the tag -- the two gates cascade-publish.sh runs at publish, run here first.
+if run_step release; then
+  [ -f "$AP/release_notes.md" ] || die "no $AP/release_notes.md (prepare_bump.sh writes it from CHANGELOG [$V])"
+  cut_release "$T" "$MC"
   say "RELEASED $(gh release view "$T" --repo $REPO --json url -q .url)"
 fi
+
 
 # 4. assets: the release run completes and all sixteen assets are on the release, checked by command
 if run_step assets; then
