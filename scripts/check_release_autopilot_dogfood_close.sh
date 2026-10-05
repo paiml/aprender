@@ -130,7 +130,8 @@ fixture() {
     r="$d/repo"
     mkdir -p "$r/scripts/release" "$d/ap" "$d/state" || return 2
     cp -- "$subject" "$r/scripts/release/autopilot.sh" && cp -- "$PARAMS" "$r/scripts/release/lib_release_params.sh" \
-        && cp -- "$preflight" "$r/scripts/check_publish_preflight.sh" || return 2
+        && cp -- "$preflight" "$r/scripts/check_publish_preflight.sh" \
+        && cp -- "$ROOT/scripts/release/lib_code_identity.sh" "$r/scripts/release/" || return 2
     printf '#!/usr/bin/env bash\nexit 0\n' > "$r/scripts/bump-version.sh"
     # dogfood.sh: writes the receipt a real run writes; the row picks verdict/version/commit
     cat > "$r/scripts/dogfood.sh" <<'STUB'
