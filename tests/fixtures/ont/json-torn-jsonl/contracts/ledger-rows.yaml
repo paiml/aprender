@@ -18,6 +18,7 @@ vocabulary:
 shape:
   targetClass: led:Row
   closed: true
+  ignoredProperties: [rdf:type]
   properties:
     - {path: led:kind, minCount: 1, maxCount: 1, in: [tick, push, would]}
     - {path: led:tick, minCount: 1, maxCount: 1, datatype: xsd:integer}

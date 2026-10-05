@@ -200,7 +200,7 @@ fn s(v: &serde_json::Value, k: &str) -> Option<String> {
 }
 
 /// One record → one focus node. Every property the shapes name is written here; nothing else is, so
-/// `closed: true` with an empty `ignoredProperties` is a statement about this function.
+/// `closed: true` with `ignoredProperties: [rdf:type]` alone is a statement about this function.
 fn emit(g: &mut Graph, root: &Path, rel: &str, v: &serde_json::Value, stats: &mut ParityStats) {
     let node = iri("parity-receipt", rel);
     let comparator = v.get("comparator");

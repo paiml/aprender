@@ -14,6 +14,7 @@ entity:
   ref: README.md
 shape:
   closed: true
+  ignoredProperties: [rdf:type]
   properties:
     - {path: readme:schemaVersion, minCount: 1, maxCount: 1, pattern: "^[0-9]+\\.[0-9]+$"}
     - {path: readme:kind, in: [library, cli, service, spec]}

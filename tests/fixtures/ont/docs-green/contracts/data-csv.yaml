@@ -16,6 +16,7 @@ entity:
     producer: gen.sh
 shape:
   closed: true
+  ignoredProperties: [rdf:type]
   properties:
     - {path: csv:column, minCount: 3, maxCount: 3}
     - {path: csv:header, in: ["feature1,feature2,label"]}

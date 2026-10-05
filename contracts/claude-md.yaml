@@ -41,6 +41,7 @@ relations:
 shape:
   targetClass: llm:LlmContext
   closed: true
+  ignoredProperties: [rdf:type]
   properties:
     - {path: llm:section, minCount: 0}
     - {path: llm:purposeSection, minCount: 1}

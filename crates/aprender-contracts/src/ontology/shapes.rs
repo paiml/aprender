@@ -860,7 +860,8 @@ fn check_pairs(
     }
 }
 
-/// `sh:closed`: every predicate the focus carries is declared, ignored, or `rdf:type`.
+/// `sh:closed`: every predicate the focus carries is declared or ignored. `rdf:type` gets no pass of its own
+/// (SHACL 1.0 §4.8.1; W3C node/closed-002 lists it in `sh:ignoredProperties` for that reason, #4837).
 fn check_closed(
     graph: &Graph,
     shape: &NodeShape,
@@ -872,7 +873,6 @@ fn check_closed(
         .iter()
         .map(|p| p.path.as_str())
         .chain(shape.ignored_properties.iter().map(String::as_str))
-        .chain(std::iter::once(RDF_TYPE))
         .collect();
     for pred in graph.predicates_of(focus) {
         if !allowed.contains(pred) {
@@ -1459,13 +1459,23 @@ mod tests {
     }
 
     #[test]
-    fn closed_rejects_an_undeclared_predicate_and_ignores_rdf_type() {
+    fn closed_gives_rdf_type_no_pass_unless_ignored_properties_lists_it() {
+        // #4837: SHACL 1.0 §4.8.1. The oracle found the implicit pass as 6 corpus disagreements.
         let mut g = graph_with("a", None);
         g.insert(iri("contract", "a"), ont("extra"), Term::string("x"));
         let s = shape("entity: {type: pv-contract}\nshape:\n  closed: true\n  properties:\n    - {path: ont:id}\n");
         let r = validate(&g, &[s]);
-        assert_eq!(r.violations(), 1);
-        assert_eq!(r.results[0].component, "closed");
+        let mut paths: Vec<&str> = r.results.iter().filter_map(|x| x.path.as_deref()).collect();
+        paths.sort_unstable();
+        let (extra, ty) = (ont("extra"), RDF_TYPE.to_string());
+        let mut want = vec![extra.as_str(), ty.as_str()];
+        want.sort_unstable();
+        assert_eq!(paths, want, "{:?}", r.results);
+        assert!(r.results.iter().all(|x| x.component == "closed"));
+        let listed = shape("entity: {type: pv-contract}\nshape:\n  closed: true\n  ignoredProperties: [rdf:type]\n  properties:\n    - {path: ont:id}\n");
+        let r = validate(&g, &[listed]);
+        assert_eq!(r.violations(), 1, "{:?}", r.results);
+        assert_eq!(r.results[0].path.as_deref(), Some(extra.as_str()));
     }
 
     #[test]

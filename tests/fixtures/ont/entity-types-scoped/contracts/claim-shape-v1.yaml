@@ -12,6 +12,6 @@ metadata:
 shape:
   targetClass: entity:claim
   closed: true
-  ignoredProperties: [ont:id, ont:file, ont:name, ont:version, ont:status, ont:kind, ont:entityType, ont:entityRef]
+  ignoredProperties: [rdf:type, ont:id, ont:file, ont:name, ont:version, ont:status, ont:kind, ont:entityType, ont:entityRef]
   properties:
     - {path: claim:row, minCount: 1, maxCount: 1, pattern: "^EV-[0-9]+[a-z]?$"}

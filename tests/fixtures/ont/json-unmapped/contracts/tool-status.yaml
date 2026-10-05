@@ -20,6 +20,7 @@ vocabulary:
 shape:
   targetClass: tool:Status
   closed: true
+  ignoredProperties: [rdf:type]
   properties:
     - {path: tool:schema, minCount: 1, maxCount: 1, in: ["tool/status-v1"]}
     - {path: tool:ok,     minCount: 1, maxCount: 1, datatype: xsd:boolean}

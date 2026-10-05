@@ -21,7 +21,7 @@ entity:
 shape:
   targetClass: ont:Contract
   closed: true
-  ignoredProperties: [ont:id, ont:file, ont:name, ont:version, ont:status, ont:kind, ont:entityType, ont:entityRef]
+  ignoredProperties: [rdf:type, ont:id, ont:file, ont:name, ont:version, ont:status, ont:kind, ont:entityType, ont:entityRef]
   properties:
     - {path: study:scale, minCount: 1, maxCount: 1, in: [linear, log10, log2, sqrt, logit]}
     - {path: study:denominator, minCount: 1, maxCount: 1, in: [population-100k, count]}

@@ -43,7 +43,7 @@ relations:
 shape:
   targetClass: model:AprModel
   closed: true
-  ignoredProperties: [model:file, model:contract]
+  ignoredProperties: [rdf:type, model:file, model:contract]
   properties:
     - {path: model:format, in: ["apr"]}
     - {path: model:aprVersion, minCount: 1, maxCount: 1, pattern: "^[0-9]+\\.[0-9]+$"}

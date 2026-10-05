@@ -13,5 +13,6 @@ shape:
   targetClass: ghost:Nothing
   allowEmpty: "fixture: this class is empty in the good state"
   closed: true
+  ignoredProperties: [rdf:type]
   properties:
     - {path: ghost:must_exist, minCount: 1, maxCount: 1, datatype: xsd:string}

@@ -12,5 +12,6 @@ status: active
 shape:
   targetClass: ghost:Nothing
   closed: true
+  ignoredProperties: [rdf:type]
   properties:
     - {path: ghost:must_exist, minCount: 1, maxCount: 1, datatype: xsd:string}

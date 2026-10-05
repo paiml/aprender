@@ -101,6 +101,7 @@ vocabulary:
 shape:
   targetClass: refusal:Refusal
   closed: true
+  ignoredProperties: [rdf:type]
   properties:
     # The join into the registry. A refusal naming a verb `apr --help` does not carry is a dangling
     # reference; the registry is the universe and this field is the only thing pointing at it.

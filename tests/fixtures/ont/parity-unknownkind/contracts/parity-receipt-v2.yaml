@@ -85,7 +85,7 @@ shapes:
   - id: parity-receipt-complete
     targetClass: parity:ParityReceipt
     closed: true
-    ignoredProperties: []
+    ignoredProperties: [rdf:type]
     properties:
       - {path: parity:file, minCount: 1, maxCount: 1}
       - {path: parity:host, minCount: 1, maxCount: 1}
