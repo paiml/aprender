@@ -147,7 +147,10 @@ mod server_commands {
         // `run_qwen3_moe_generate` (which borrows per-expert tensors
         // directly from the mmap). For non-MoE archs this is just an extra
         // Arc reference; for MoE it's the critical lifetime anchor.
-        let state = state.with_mapped_gguf_model(std::sync::Arc::new(mapped));
+        // #4804: every GGUF state above tokenizes as GGUFModel::encode does, not greedily.
+        let state = state
+            .with_byte_level_bpe(mapped.model.byte_level_bpe())
+            .with_mapped_gguf_model(std::sync::Arc::new(mapped));
 
         Ok(PreparedServer {
             state,

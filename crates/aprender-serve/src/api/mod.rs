@@ -273,10 +273,13 @@ impl AppState {
     /// pre-tokenizer this crate does not implement) keeps the tokenizer as built.
     #[must_use]
     pub fn with_byte_level_bpe(
-        self,
+        mut self,
         bpe: Option<Arc<crate::gguf::byte_level_bpe::ByteLevelBpe>>,
     ) -> Self {
-        let _ = bpe;
+        if let (Some(bpe), Some(tokenizer)) = (bpe, self.tokenizer.as_ref()) {
+            let canonical = (**tokenizer).clone().with_byte_level_bpe(bpe);
+            self.tokenizer = Some(Arc::new(canonical));
+        }
         self
     }
 

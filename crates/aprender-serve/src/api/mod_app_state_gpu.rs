@@ -281,7 +281,8 @@ impl AppState {
     /// GH-88: Create CUDA model state with proper BPE tokenizer (merge rules + special tokens).
     ///
     /// HuggingFace models (SafeTensors/APR imports) require merge-based BPE encoding.
-    /// GGUF models use greedy longest-match and should use `with_cuda_model_and_vocab`.
+    /// GGUF models use `with_cuda_model_and_vocab` plus their canonical byte-level
+    /// encoder (`with_byte_level_bpe`, #4804); greedy longest match is not their tokenization.
     #[cfg(feature = "cuda")]
     pub fn with_cuda_model_and_bpe(
         cuda_model: crate::gguf::OwnedQuantizedModelCuda,

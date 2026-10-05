@@ -124,6 +124,8 @@ fn run_cpu_server(
         .map_err(|e| CliError::InferenceFailed(format!("Failed to create app state: {e}")))?
         .with_model_source(model_source);
     if let Some(mapped) = mapped_model {
+        // #4804: tokenize as GGUFModel::encode and llama.cpp do, not greedily.
+        state = state.with_byte_level_bpe(mapped.model.byte_level_bpe());
         state = state.with_mapped_gguf_model(mapped);
     }
     let mut state = state.with_verbose(config.verbose); // GH-152: Pass verbose flag to handlers

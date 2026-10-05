@@ -609,6 +609,29 @@ impl PartialOrd for Pending {
     }
 }
 
+impl super::GGUFModel {
+    /// #4804: the canonical encoder `GGUFModel::encode` uses for this file, for a server to
+    /// tokenize with (`AppState::with_byte_level_bpe`). `None` when the file is not byte-level
+    /// (`gpt2`), has no vocabulary, or its pre-tokenizer is not implemented (said on stderr):
+    /// the caller keeps the tokenizer it has.
+    #[must_use]
+    pub fn byte_level_bpe(&self) -> Option<Arc<ByteLevelBpe>> {
+        let byte_level = matches!(
+            self.metadata.get("tokenizer.ggml.model"),
+            Some(GGUFValue::String(s)) if s == "gpt2" || s == "bpe"
+        );
+        if !byte_level {
+            return None;
+        }
+        let vocab = self.vocabulary()?;
+        ByteLevelBpe::from_gguf(&self.metadata, &vocab)
+            .map_err(|refusal| {
+                eprintln!("[#4804] serve tokenizes greedily, not as the model: {refusal}");
+            })
+            .ok()
+    }
+}
+
 #[cfg(test)]
 #[path = "byte_level_bpe_tests.rs"]
 mod tests;
