@@ -32,7 +32,7 @@ not the head.
   `m67_failed_pick_read_is_an_absent_pick` (the array check is dropped, so a failed read looks like an absent pick).
 
 ## What is measured
-- `--self-test`: 87/87 rows. `--mutants`: 67/67 killed (m43-m67; m55-m65 are the J search, m66 and m67 the pick split).
+- `--self-test`: 89/89 rows. `--mutants`: 69/69 killed (m43-m69; m55-m65 and m68-m69 the J search, m66 and m67 the pick split).
 - Merge-queue history on main is not strictly first-parent; those commits carry no main runs and only shorten the
   lookback. Conservative.
 

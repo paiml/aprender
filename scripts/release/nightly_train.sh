@@ -676,6 +676,12 @@ self_test() {
     row a_run_after_noon_needs_the_night_before_too 0 "201 may have measured the pick bbbbbbbbbb" "RELEASABLE H=" -- st_chainl "$d"
     sed -i 's/\t2026-10-04T17:59:00Z\t/\t2026-10-04T18:00:00Z\t/' "$d/runs.tsv"
     row a_run_from_six_pm_needs_its_own_night_only 0 "RELEASABLE H=$ST_C" "NOT RELEASABLE" -- st_chain "$d"
+    # dupx DIR: every plain run also exists on X (ids +1000), so X has a measured run on each plain lane (#4798 J search)
+    dupx() { awk -F '\t' -v OFS='\t' -v X="$ST_X" '{ print } $3 != 201 { $3 = $3 + 1000; $6 = X; print }' "$1/runs.tsv" > "$1/runs.new" && mv "$1/runs.new" "$1/runs.tsv"; printf '1101\t1\n1201\t1\n1301\t1\n1401\t1\n' >> "$1/attempts.tsv"; ranks "$1" "$ST_C" "$ST_X"; }
+    d="$tmp/jchain"; fixture "$d"; sed -i '/\t201\t/s/\tschedule\t/\tworkflow_run\t/' "$d/runs.tsv"; dupx "$d"; printf '2026-10-03\t%s\n' "$ST_X" > "$d/picks.tsv"
+    row the_search_credits_a_chained_run_to_its_pick_not_the_head 0 "RELEASABLE H=$ST_X (judged bbbbbbbbbb, head aaaaaaaaaa, lag 1 commits)" "NOT RELEASABLE" -- st_chain "$d"
+    d="$tmp/jstraddle"; fixture "$d"; sed -i '/\t201\t/s/\tschedule\t/\tworkflow_run\t/; s/\t2026-10-04T02:00:00Z\t/\t2026-10-04T13:00:00Z\t/' "$d/runs.tsv"; dupx "$d"; printf '2026-10-03\t%s\n2026-10-04\t%s\n' "$ST_C" "$ST_X" > "$d/picks.tsv"
+    row the_search_skips_a_commit_whose_chained_run_straddles_two_picks 0 "NOT RELEASABLE: v-b" "(judged" -- st_chain "$d"
     d="$tmp/schedpick"; fixture "$d"; sed -i "s/$ST_C/$ST_X/" "$d/picks.tsv"
     row a_schedule_lane_ignores_the_picks 0 "RELEASABLE H=$ST_C" "NOT RELEASABLE" -- st_decide "$d"
     st_picks() { printf '%s' '{"data":{"repository":{"nightly":{"nodes":[{"name":"2026-10-03","target":{"oid":"c3"}},{"name":"probe","target":{"oid":"p"}}]}}}}' > "$tmp/gqlp.json"; picks_of "$tmp/gqlp.json"; }
@@ -976,7 +982,9 @@ m63_rank_head_unchecked	s/readok \&\& RKO\[0\] == C/readok/
 m64_oldest_commit_wins	s/if (all) { J = h; LAG = k; break }/if (all) { J = h; LAG = k }/
 m65_rank_history_dropped	s/\[(\$c.history.nodes \/\/ \[\])\[\] | .oid | select(. != \$c.oid)\]/[]/
 m66_failed_pick_read_falls_back	s/\[ -s "\$2\/pickfail" \] \&\& \[ "\${rd:-}" = ok \] \&\& rd=/false \&\& rd=/
-m67_failed_pick_read_is_an_absent_pick	s/nodes | type) == "array"/nodes | type) != "zzz"/'
+m67_failed_pick_read_is_an_absent_pick	s/nodes | type) == "array"/nodes | type) != "zzz"/
+m68_search_files_a_chained_run_under_the_head	s/hm = nightc(RC\[r\]);/hm = RH[r];/
+m69_search_ignores_the_straddle	s/ \&\& prevc(RC\[r\]) != hm) hm = ""/ \&\& 0) hm = ""/'
 # each planted mutant must change the file, still parse, and turn at least one row RED
 mutants() {
     local tmp pass=0 fail=0 name expr o rc
