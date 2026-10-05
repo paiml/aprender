@@ -53,7 +53,10 @@
 #
 # Exit: report-only by default, so 0 after printing the verdict ("REPORT: would be RED"
 # when it is not valid). --enforce: 0 valid, 1 invalid, 2 not_measured. 3 caller error.
-#   check_quorum_receipt.sh [--enforce] [--plant FILE:LINE] RECEIPT.json
+#   check_quorum_receipt.sh [--enforce] [--plant FILE:LINE] --receipt RECEIPT.json
+# A receipt is only ever named by --receipt: a bare argument is a caller error (rc 3), and
+# --receipt or --plant with no value or an empty one is rc 2, never a pass. An unset
+# variable then reads as "nothing was linted", not as a bare run that runs the self-test.
 #   check_quorum_receipt.sh --selftest | --mutants | --help
 # A bare run (no argument) runs --selftest and exits its rc: guard-tree runs every
 # scripts/check_*.sh bare, and a usage error there would turn ci / gate red. --help prints
@@ -63,6 +66,7 @@ set -uo pipefail
 SELF="${BASH_SOURCE[0]}"
 
 die() { printf 'check_quorum_receipt: caller error: %s\n' "$1" >&2; exit 3; }
+nm() { printf 'check_quorum_receipt: not_measured: %s; nothing was linted\n' "$1" >&2; exit 2; }
 
 # _qr_lanes RECEIPT PLANT_FILE PLANT_LINE -> one TSV row per lane:
 # lane role verdict model family requested seat measured plant author_model
@@ -383,13 +387,13 @@ selftest() {
     row no_author_is_not_measured "rc=2 not_measured no" "$(verdict "$t/na.json")" "(must fail: author seat unknowable)"
 
     rc_json "$A" "" "$(ln 1 claude-sonnet-5-5 claude PASS)" "$(ln 2 gemini-3.1-pro-high gemini FAIL "$C")" > "$f"
-    bash "$SELF" "$f" > "$t/o" 2>&1
+    bash "$SELF" --receipt "$f" > "$t/o" 2>&1
     row report_only_exits_0 "rc=0 REPORT" "rc=$? $(grep -o '^REPORT' "$t/o")"
-    bash "$SELF" --enforce "$f" > /dev/null 2>&1
+    bash "$SELF" --enforce --receipt "$f" > /dev/null 2>&1
     row enforce_invalid_exits_1 "rc=1" "rc=$?"
-    bash "$SELF" --enforce "$t/np.json" > /dev/null 2>&1
+    bash "$SELF" --enforce --receipt "$t/np.json" > /dev/null 2>&1
     row enforce_not_measured_exits_2 "rc=2" "rc=$?"
-    bash "$SELF" --enforce --plant "$C" "$t/np.json" > /dev/null 2>&1
+    bash "$SELF" --enforce --plant "$C" --receipt "$t/np.json" > /dev/null 2>&1
     row enforce_valid_exits_0 "rc=0" "rc=$?"
     bash "$SELF" --bogus > /dev/null 2>&1
     row caller_error_exits_3 "rc=3" "rc=$?"
@@ -419,6 +423,22 @@ selftest() {
     # guard-tree runs every scripts/check_*.sh bare: a bare run is the self-test, never rc 3.
     row bare_run_is_the_selftest "rc=0 1" "$(bash "$SELF" > "$t/o" 2>&1; echo "rc=$? $(grep -c 'nested, not re-entered' "$t/o")")"
     row help_is_rc0_and_names_selftest "rc=0 1" "$(bash "$SELF" --help > "$t/o" 2>&1; echo "rc=$? $(grep -c -- '--selftest | --mutants' "$t/o")")"
+    # A receipt is named only by --receipt: an unset variable must never become a bare run (rc 0).
+    rc_json "$A" "" "$(ln 1 claude-sonnet-5-5 claude FAIL "$C")" "$(ln 2 gemini-3.1-pro-high gemini FAIL "$C")" > "$f"
+    bash "$SELF" --enforce --receipt > /dev/null 2>&1
+    row receipt_flag_with_no_value_rc2 "rc=2" "rc=$?"
+    bash "$SELF" --enforce --receipt '' > /dev/null 2>&1
+    row receipt_flag_empty_rc2 "rc=2" "rc=$?"
+    bash "$SELF" --receipt '' > /dev/null 2>&1
+    row receipt_flag_empty_report_mode_rc2 "rc=2" "rc=$?"
+    bash "$SELF" --enforce > /dev/null 2>&1
+    row flags_without_receipt_rc2 "rc=2" "rc=$?"
+    bash "$SELF" --enforce --plant '' --receipt "$f" > /dev/null 2>&1
+    row plant_flag_empty_rc2 "rc=2" "rc=$?" "(never falls back to the receipt's own plant)"
+    bash "$SELF" --enforce "$f" > /dev/null 2>&1
+    row bare_receipt_argument_is_caller_error "rc=3" "rc=$?"
+    bash "$SELF" --enforce --receipt "$f" > /dev/null 2>&1
+    row receipt_flag_lints_the_file "rc=0" "rc=$?"
 
     printf '{"lanes":"x"}\n' > "$f"
     row not_a_receipt_not_measured "rc=2 not_measured not" "$(verdict "$f")"
@@ -463,6 +483,10 @@ MUTANTS=(
     'oseries_not_openai|s/        gpt-\* | o\[0-9\]\*-\*) printf/        gpt-*) printf/'
     'bare_is_caller_error|s/^    if \[ "\$#" = 0 \]; then$/    if false; then/'
     'help_is_caller_error|s/^            -h | --help) usage; exit 0 ;;$//'
+    'receipt_novalue_ok|s/^                \[ "\$#" -ge 2 \] || nm "--receipt needs a FILE"$/                :/'
+    'receipt_empty_ok|s/^    \[ -n "\$f" \] || nm "no receipt (--receipt FILE, non-empty)"$/    [ -n "$f" ] || exit 0/'
+    'plant_empty_ok|s/^                \[ "\$#" -ge 2 \] \&\& \[ -n "\$2" \] || nm "--plant needs FILE:LINE"$/                [ "$#" -ge 2 ] || nm x/'
+    'bare_receipt_ok|s/^            \*) die "a receipt is named by --receipt FILE, never bare: \$1" ;;$/            *) f="$1" ;;/'
     'plant_line_ignored|s/ and (((.line \/\/ "") | tostring) == \$L)//'
     'double_dash_ok|s/ | \*--\*) return 1 ;;/) return 1 ;;/'
 )
@@ -504,13 +528,19 @@ main() {
                 [ -z "${QR_NO_MUTANTS:-}" ] || die "--mutants inside a mutant run"
                 mutants; exit $? ;;
             --enforce) enforce=1 ;;
-            --plant) [ "$#" -ge 2 ] || die "--plant needs FILE:LINE"; plant="$2"; shift ;;
+            --plant)
+                [ "$#" -ge 2 ] && [ -n "$2" ] || nm "--plant needs FILE:LINE"
+                plant="$2"; shift ;;
+            --receipt)
+                [ "$#" -ge 2 ] || nm "--receipt needs a FILE"
+                [ -z "$f" ] || die "one receipt at a time"
+                f="$2"; shift ;;
             -*) die "unknown argument $1" ;;
-            *) [ -z "$f" ] || die "one receipt at a time"; f="$1" ;;
+            *) die "a receipt is named by --receipt FILE, never bare: $1" ;;
         esac
         shift
     done
-    [ -n "$f" ] || die "usage: check_quorum_receipt.sh [--enforce] [--plant FILE:LINE] RECEIPT.json"
+    [ -n "$f" ] || nm "no receipt (--receipt FILE, non-empty)"
     [ -r "$f" ] || die "cannot read $f"
     out="$(check_quorum_receipt "$f" "$plant")"; rc=$?
     printf '%s\n' "$out"
