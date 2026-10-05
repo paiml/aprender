@@ -108,16 +108,19 @@ EOF
 
 # lint FILE: every property that keeps the rehearsal from uploading. One line per failure.
 lint() {
-    local f=$1 bad=0 v g t
+    local f=$1 bad=0 v g t x
     need_yq
     [ -f "$f" ] || die "lint: no such file $f"
-    v=$("$YQ" -o=json -I=0 '.permissions' "$f")
+    # Every structural query reads the parsed document with aliases expanded, so a step,
+    # job or key reached through an anchor (`- *a`, `<<: *a`) is checked as Actions sees it.
+    x=$("$YQ" 'explode(.)' "$f" 2>/dev/null) || { echo "lint: yq cannot parse $f"; bad=1; }
+    v=$("$YQ" -o=json -I=0 '.permissions' - <<< "$x")
     [ "$v" = '{"contents":"read"}' ] || { echo "lint: workflow permissions are $v, not exactly contents: read"; bad=1; }
-    v=$("$YQ" '[.jobs[] | select(has("permissions"))] | length' "$f")
+    v=$("$YQ" '[.jobs[] | select(has("permissions"))] | length' - <<< "$x")
     [ "$v" = 0 ] || { echo "lint: $v job(s) set their own permissions"; bad=1; }
-    v=$("$YQ" '[.jobs[] | select(has("environment"))] | length' "$f")
+    v=$("$YQ" '[.jobs[] | select(has("environment"))] | length' - <<< "$x")
     [ "$v" = 0 ] || { echo "lint: $v job(s) name an environment (environment secrets)"; bad=1; }
-    v=$("$YQ" '.on | keys | sort | join(",")' "$f")
+    v=$("$YQ" '.on | keys | sort | join(",")' - <<< "$x")
     [ "$v" = "schedule,workflow_dispatch" ] || { echo "lint: triggers are '$v', not schedule,workflow_dispatch"; bad=1; }
     # The guard is matched on its name AND its body, so a step that only borrows the name
     # (a hollow guard) does not count. Its keys must be exactly the guard's keys: an `if:` can
@@ -125,23 +128,23 @@ lint() {
     # `env:` changes what its body does, so any extra key is a guard that may not hold.
     g=$(mktemp) || die "mktemp failed"
     guard_step > "$g"
-    v=$(G=$g "$YQ" '[.jobs[] | select((.steps[0] // {} | keys | sort | join(",")) != (load(strenv(G)) | keys | sort | join(",")) or (.steps[0].name // "") != load(strenv(G)).name or (.steps[0].shell // "") != load(strenv(G)).shell or (.steps[0].run // "") != load(strenv(G)).run)] | length' "$f")
+    v=$(G=$g "$YQ" '[.jobs[] | select((.steps[0] // {} | keys | sort | join(",")) != (load(strenv(G)) | keys | sort | join(",")) or (.steps[0].name // "") != load(strenv(G)).name or (.steps[0].shell // "") != load(strenv(G)).shell or (.steps[0].run // "") != load(strenv(G)).run)] | length' - <<< "$x")
     rm -f "${g:?}"
     [ "$v" = 0 ] || { echo "lint: $v job(s) do not start with the credential guard"; bad=1; }
     # No step carries an `if:` at all. A step `if:` loses its implicit success() as soon as
     # the expression mentions any status function, so `success() || true`, `!success()`,
     # always() or failure() all run on past the guard's refusal, and a pattern over the
     # expression cannot list every form. The release's build steps use none.
-    v=$("$YQ" '[.jobs[].steps[] | select(has("if"))] | length' "$f")
+    v=$("$YQ" '[.jobs[].steps[] | select(has("if"))] | length' - <<< "$x")
     [ "$v" = 0 ] || { echo "lint: $v step(s) carry an if: (a step if: can run past the credential guard)"; bad=1; }
     # What acts before or around the guard is allowlisted: the workflow's and every job's keys,
     # and job env names. A workflow or job env (BASH_ENV runs before the guard's bash),
     # defaults, container or services is outside the list.
-    v=$("$YQ" '[keys[] | select(test("^(name|on|permissions|concurrency|jobs)$") | not)] | join(" ")' "$f")
+    v=$("$YQ" '[keys[] | select(test("^(name|on|permissions|concurrency|jobs)$") | not)] | join(" ")' - <<< "$x")
     [ -z "$v" ] || { echo "lint: workflow key(s) outside the allowlist (they act before the credential guard): $v"; bad=1; }
-    v=$("$YQ" '[.jobs[] | keys[] | select(test("^(name|runs-on|timeout-minutes|outputs|steps|needs|strategy|env|if)$") | not)] | unique | join(" ")' "$f")
+    v=$("$YQ" '[.jobs[] | keys[] | select(test("^(name|runs-on|timeout-minutes|outputs|steps|needs|strategy|env|if)$") | not)] | unique | join(" ")' - <<< "$x")
     [ -z "$v" ] || { echo "lint: job key(s) outside the allowlist (they act before the credential guard): $v"; bad=1; }
-    v=$("$YQ" '[.jobs[] | (.env // {}) | keys[] | select(test("^(MACOSX_DEPLOYMENT_TARGET)$") | not)] | unique | join(" ")' "$f")
+    v=$("$YQ" '[.jobs[] | (.env // {}) | keys[] | select(test("^(MACOSX_DEPLOYMENT_TARGET)$") | not)] | unique | join(" ")' - <<< "$x")
     [ -z "$v" ] || { echo "lint: job env name(s) outside the allowlist (they act before the credential guard): $v"; bad=1; }
     # No credential is reachable from an expression. The text checked is the file plus
     # the parsed document (aliases expanded, one-line JSON), so a `$` or a letter written
@@ -164,10 +167,10 @@ lint() {
     fi
     # Actions are allowlisted, not denylisted: a release-upload action under any name is
     # outside the list. These three are all the release workflow and the rehearsal use.
-    v=$("$YQ" '[.jobs[].steps[] | select(has("uses")) | .uses | sub("@.*"; "") | select(test("^actions/(checkout|upload-artifact|download-artifact)$") | not)] | unique | join(" ")' "$f")
+    v=$("$YQ" '[.jobs[].steps[] | select(has("uses")) | .uses | sub("@.*"; "") | select(test("^actions/(checkout|upload-artifact|download-artifact)$") | not)] | unique | join(" ")' - <<< "$x")
     [ -z "$v" ] || { echo "lint: an action outside the allowlist (an upload path): $v"; bad=1; }
     for v in $BUILD_JOBS; do
-        "$YQ" -e ".jobs[\"$v\"].steps[] | select(.uses // \"\" | test(\"^actions/upload-artifact@\"))" "$f" > /dev/null 2>&1 \
+        "$YQ" -e ".jobs[\"$v\"].steps[] | select(.uses // \"\" | test(\"^actions/upload-artifact@\"))" - <<< "$x" > /dev/null 2>&1 \
             || { echo "lint: build job $v keeps no checksums"; bad=1; }
     done
     [ "$bad" -eq 0 ] && echo "ok: ${f#"$ROOT"/} cannot upload"
@@ -313,6 +316,12 @@ self_test() {
     out=$(lint "$d/m.yml"); row "a planted gh api call -> lint red" 1 $? 'upload' "$out"
     mut '.jobs["build-apr-cuda"].steps += [{"name": "up", "uses": "softprops/action-gh-release@v2", "with": {"files": "a.tar.gz"}}]'
     out=$(lint "$d/m.yml"); row "a planted release-upload action -> lint red" 1 $? 'outside the allowlist' "$out"
+    # A whole step reached through an alias (`- *a`, the anchor on another step's env) is
+    # the step Actions runs: lint reads the expanded document, so it is checked like any other.
+    mut 'with(.jobs["build-apr-cuda"].steps; . = . + [{"name": "h", "run": "true", "env": {"if": "always()", "name": "z", "run": "echo past the guard"}}] | .[-1].env anchor = "a" | . = . + [null] | .[-1] alias = "a")'
+    out=$(lint "$d/m.yml"); row "a whole-step alias whose anchor carries if: always() -> lint red" 1 $? 'carry an if:' "$out"
+    mut 'with(.jobs["build-apr-cuda"].steps; . = . + [{"name": "h", "run": "true", "env": {"name": "up", "uses": "softprops/action-gh-release@v2"}}] | .[-1].env anchor = "a" | . = . + [null] | .[-1] alias = "a")'
+    out=$(lint "$d/m.yml"); row "a whole-step alias whose anchor carries an unlisted uses: -> lint red" 1 $? 'outside the allowlist' "$out"
     mut '.jobs["build-apr-darwin"].steps[0].run = "true"'
     out=$(lint "$d/m.yml"); row "a hollow guard (right name, empty body) -> lint red" 1 $? 'credential guard' "$out"
     mut 'del(.jobs["build-apr-darwin"].steps[0])'
