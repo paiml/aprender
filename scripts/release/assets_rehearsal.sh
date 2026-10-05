@@ -104,14 +104,16 @@ lint() {
     v=$("$YQ" '.on | keys | sort | join(",")' "$f")
     [ "$v" = "schedule,workflow_dispatch" ] || { echo "lint: triggers are '$v', not schedule,workflow_dispatch"; bad=1; }
     # The guard is matched on its name AND its body, so a step that only borrows the name
-    # (a hollow guard) does not count.
+    # (a hollow guard) does not count. Its keys must be exactly the guard's keys: an `if:` can
+    # skip it, `continue-on-error:` lets the job run on past its refusal, and a `shell:` or
+    # `env:` changes what its body does, so any extra key is a guard that may not hold.
     g=$(mktemp) || die "mktemp failed"
     guard_step > "$g"
-    v=$(G=$g "$YQ" '[.jobs[] | select((.steps[0].name // "") != load(strenv(G)).name or (.steps[0].run // "") != load(strenv(G)).run)] | length' "$f")
+    v=$(G=$g "$YQ" '[.jobs[] | select((.steps[0] // {} | keys | sort | join(",")) != (load(strenv(G)) | keys | sort | join(",")) or (.steps[0].name // "") != load(strenv(G)).name or (.steps[0].shell // "") != load(strenv(G)).shell or (.steps[0].run // "") != load(strenv(G)).run)] | length' "$f")
     rm -f "${g:?}"
     [ "$v" = 0 ] || { echo "lint: $v job(s) do not start with the credential guard"; bad=1; }
     if grep -n -E 'secrets\.' "$f"; then echo "lint: a secrets. reference"; bad=1; fi
-    if grep -n -E 'uploads\.github\.com|-X (POST|PUT|PATCH|DELETE)|gh (release|api)|cargo publish|github\.event\.release|inputs\.tag' "$f"; then
+    if grep -n -E 'uploads\.github\.com|-X ?.?(POST|PUT|PATCH|DELETE)|--request[ =].?(POST|PUT|PATCH|DELETE)|gh (release|api)|cargo publish|github\.event\.release|inputs\.tag' "$f"; then
         echo "lint: an upload, a release write or a release-event input"; bad=1
     fi
     # Actions are allowlisted, not denylisted: a release-upload action under any name is
@@ -212,6 +214,16 @@ self_test() {
     out=$(lint "$d/m.yml"); row "a hollow guard (right name, empty body) -> lint red" 1 $? 'credential guard' "$out"
     mut 'del(.jobs["build-apr-darwin"].steps[0])'
     out=$(lint "$d/m.yml"); row "a job without the guard -> lint red" 1 $? 'credential guard' "$out"
+    mut '.jobs[].steps[0].if = "${{ false }}"'
+    out=$(lint "$d/m.yml"); row "a guard skipped by if: false (every job) -> lint red" 1 $? 'credential guard' "$out"
+    mut '.jobs[].steps[0].continue-on-error = true'
+    out=$(lint "$d/m.yml"); row "a guard with continue-on-error (every job) -> lint red" 1 $? 'credential guard' "$out"
+    mut '.jobs.build.steps[0].shell = "sh"'
+    out=$(lint "$d/m.yml"); row "a guard run by another shell -> lint red" 1 $? 'credential guard' "$out"
+    mut '.jobs["build-apr-cuda"].steps += [{"name": "up", "run": "curl -sSf -XDELETE https://api.github.com/x"}]'
+    out=$(lint "$d/m.yml"); row "a planted curl -XDELETE -> lint red" 1 $? 'upload' "$out"
+    mut '.jobs["build-apr-cuda"].steps += [{"name": "up", "run": "curl -sSf --request POST https://api.github.com/x"}]'
+    out=$(lint "$d/m.yml"); row "a planted curl --request POST -> lint red" 1 $? 'upload' "$out"
     mut 'del(.jobs.build.steps[] | select(.uses // "" | test("^actions/upload-artifact@")))'
     out=$(lint "$d/m.yml"); row "a build job that keeps nothing -> lint red" 1 $? 'keeps no checksums' "$out"
 
