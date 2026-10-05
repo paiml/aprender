@@ -319,9 +319,11 @@ probe() {
         || { printf 'release-ready probe: not_measured: the read of %s rules failed\n' "$repo"; return 2; }
     bp=$("$gh" api "repos/$repo/branches/main/protection/required_status_checks" --jq '.contexts[]' 2> /dev/null) \
         || { printf 'release-ready probe: not_measured: the read of %s branch protection failed\n' "$repo"; return 2; }
+    # each surface must answer on its own: an empty side would hide behind the union
+    [ -n "$(printf '%s\n' "$got" | awk 'NF')" ] || { printf 'release-ready probe: not_measured: the ruleset on %s main carries no required_status_checks rule\n' "$repo"; return 2; }
+    [ -n "$(printf '%s\n' "$bp" | awk 'NF')" ] || { printf 'release-ready probe: not_measured: the branch protection on %s main requires no context\n' "$repo"; return 2; }
     got=$(printf '%s\n%s\n' "$got" "$bp")
     got=$(printf '%s\n' "$got" | awk 'NF' | LC_ALL=C sort -u)
-    [ -n "$got" ] || { printf 'release-ready probe: not_measured: %s main carries no required_status_checks rule\n' "$repo"; return 2; }
     lo=$(LC_ALL=C comm -23 <(printf '%s\n' "$want") <(printf '%s\n' "$got") | paste -sd, -)
     go=$(LC_ALL=C comm -13 <(printf '%s\n' "$want") <(printf '%s\n' "$got") | paste -sd, -)
     printf 'release-ready probe: list=[%s] github=[%s] list-only=[%s] github-only=[%s]\n' \
@@ -522,7 +524,9 @@ STUB
                 'probe-list-extra 1 list-only=[workspace-test]|ci / gate|-|' \
                 'probe-union-of-both 1 list-only=[] github-only=[gate]|gate,workspace-test|ci / gate,workspace-test|' \
                 'probe-read-failed 2 not_measured|ci / gate|-|1' \
-                'probe-protection-failed 2 branch protection failed|ci / gate,workspace-test|-|bp'; do
+                'probe-protection-failed 2 branch protection failed|ci / gate,workspace-test|-|bp' \
+                'probe-ruleset-empty 2 the ruleset on||ci / gate,workspace-test|' \
+                'probe-protection-empty 2 requires no context|ci / gate,workspace-test||'; do
         c=${line%% *}; line=${line#* }; want=${line%% *}; line=${line#* }; pat=${line%%|*}; line=${line#*|}; n=$((n + 1))
         ctx=${line%%|*}; line=${line#*|}; bp=${line%%|*}; sf=${line#*|}
         if [ "$bp" = - ]; then
@@ -559,7 +563,8 @@ M15 claim side optional@@exit bad ? 2 : 0 }@@exit 0 }
 M16 cascade takes any word@@if (w in DEF)@@if (w != "")
 M17 dot-slash unseen@@(\$\{?[A-Za-z_]+\}?\/|\.\/)?scripts@@(\$\{?[A-Za-z_]+\}?\/)?scripts
 M18 lowercase functions only@@if (L[i] ~ /^[A-Za-z_][A-Za-z0-9_]*\(\) *\{/@@if (L[i] ~ /^[a-z_]+\(\) *\{/
-M19 drop protection read@@got=$(printf '"'"'%s\n%s\n'"'"' "$got" "$bp")@@got=$(printf '"'"'%s\n'"'"' "$got")'
+M19 drop protection read@@got=$(printf '"'"'%s\n%s\n'"'"' "$got" "$bp")@@got=$(printf '"'"'%s\n'"'"' "$got")
+M20 empty protection passes@@[ -n "$(printf '"'"'%s\n'"'"' "$bp" | awk '"'"'NF'"'"')" ] ||@@true ||'
 
 mutants() {
     local tmp line id name from to killed=0 total=0 err=0
