@@ -31,7 +31,8 @@ jobs:
               echo "::error::refusing to rehearse: $v is set in this job's environment"; bad=1
             fi
           done
-          ch=$(printenv CARGO_HOME 2>/dev/null) || ch="$HOME/.cargo"
+          # cargo reads an empty CARGO_HOME as unset, so the guard does too.
+          ch=$(printenv CARGO_HOME 2>/dev/null) || true; [ -n "$ch" ] || ch="$HOME/.cargo"
           for f in "$ch/credentials" "$ch/credentials.toml"; do
             if [ -s "$f" ]; then echo "::error::refusing to rehearse: a cargo registry credential file exists: $f"; bad=1; fi
           done
@@ -84,7 +85,8 @@ jobs:
               echo "::error::refusing to rehearse: $v is set in this job's environment"; bad=1
             fi
           done
-          ch=$(printenv CARGO_HOME 2>/dev/null) || ch="$HOME/.cargo"
+          # cargo reads an empty CARGO_HOME as unset, so the guard does too.
+          ch=$(printenv CARGO_HOME 2>/dev/null) || true; [ -n "$ch" ] || ch="$HOME/.cargo"
           for f in "$ch/credentials" "$ch/credentials.toml"; do
             if [ -s "$f" ]; then echo "::error::refusing to rehearse: a cargo registry credential file exists: $f"; bad=1; fi
           done
@@ -230,7 +232,8 @@ jobs:
               echo "::error::refusing to rehearse: $v is set in this job's environment"; bad=1
             fi
           done
-          ch=$(printenv CARGO_HOME 2>/dev/null) || ch="$HOME/.cargo"
+          # cargo reads an empty CARGO_HOME as unset, so the guard does too.
+          ch=$(printenv CARGO_HOME 2>/dev/null) || true; [ -n "$ch" ] || ch="$HOME/.cargo"
           for f in "$ch/credentials" "$ch/credentials.toml"; do
             if [ -s "$f" ]; then echo "::error::refusing to rehearse: a cargo registry credential file exists: $f"; bad=1; fi
           done
@@ -382,7 +385,8 @@ jobs:
               echo "::error::refusing to rehearse: $v is set in this job's environment"; bad=1
             fi
           done
-          ch=$(printenv CARGO_HOME 2>/dev/null) || ch="$HOME/.cargo"
+          # cargo reads an empty CARGO_HOME as unset, so the guard does too.
+          ch=$(printenv CARGO_HOME 2>/dev/null) || true; [ -n "$ch" ] || ch="$HOME/.cargo"
           for f in "$ch/credentials" "$ch/credentials.toml"; do
             if [ -s "$f" ]; then echo "::error::refusing to rehearse: a cargo registry credential file exists: $f"; bad=1; fi
           done
@@ -524,7 +528,8 @@ jobs:
               echo "::error::refusing to rehearse: $v is set in this job's environment"; bad=1
             fi
           done
-          ch=$(printenv CARGO_HOME 2>/dev/null) || ch="$HOME/.cargo"
+          # cargo reads an empty CARGO_HOME as unset, so the guard does too.
+          ch=$(printenv CARGO_HOME 2>/dev/null) || true; [ -n "$ch" ] || ch="$HOME/.cargo"
           for f in "$ch/credentials" "$ch/credentials.toml"; do
             if [ -s "$f" ]; then echo "::error::refusing to rehearse: a cargo registry credential file exists: $f"; bad=1; fi
           done
@@ -671,7 +676,8 @@ jobs:
               echo "::error::refusing to rehearse: $v is set in this job's environment"; bad=1
             fi
           done
-          ch=$(printenv CARGO_HOME 2>/dev/null) || ch="$HOME/.cargo"
+          # cargo reads an empty CARGO_HOME as unset, so the guard does too.
+          ch=$(printenv CARGO_HOME 2>/dev/null) || true; [ -n "$ch" ] || ch="$HOME/.cargo"
           for f in "$ch/credentials" "$ch/credentials.toml"; do
             if [ -s "$f" ]; then echo "::error::refusing to rehearse: a cargo registry credential file exists: $f"; bad=1; fi
           done
@@ -767,7 +773,8 @@ jobs:
               echo "::error::refusing to rehearse: $v is set in this job's environment"; bad=1
             fi
           done
-          ch=$(printenv CARGO_HOME 2>/dev/null) || ch="$HOME/.cargo"
+          # cargo reads an empty CARGO_HOME as unset, so the guard does too.
+          ch=$(printenv CARGO_HOME 2>/dev/null) || true; [ -n "$ch" ] || ch="$HOME/.cargo"
           for f in "$ch/credentials" "$ch/credentials.toml"; do
             if [ -s "$f" ]; then echo "::error::refusing to rehearse: a cargo registry credential file exists: $f"; bad=1; fi
           done
