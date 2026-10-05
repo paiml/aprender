@@ -67,6 +67,15 @@ case "${STUB_MODE:-rows}" in
   empty) printf '[]\n'; exit 0 ;;
   docs)  printf '{"documents":[{"path":"a.rs"},{"path":"b.rs"}]}\n'; exit 0 ;;
 esac
+# STUB_GAP_MODE breaks only the --coverage-gaps query; churn and fault stay normal.
+case " $* " in
+  *" --coverage-gaps "*)
+    case "${STUB_GAP_MODE:-}" in
+      fail)    exit 3 ;;
+      nonjson) printf 'error: cannot parse coverage file\n'; exit 0 ;;
+      empty)   printf '[]\n'; exit 0 ;;
+    esac ;;
+esac
 shift  # drop the `query` subcommand
 # A leading non-flag argument is a free-text semantic query.
 if [ "$#" -gt 0 ] && [ "${1#-}" = "$1" ]; then
@@ -206,7 +215,7 @@ want "PMAT_HUNT=0 tallies no failure" "" "$(cat "$FAILLOG")"
 ARGS="$TMP/pmat.args"
 cov_case() { # name file sha want-rc want-coverage-query(yes|no) want-fail-text
   : > "$FAILLOG"; : > "$ARGS"
-  out=$(STUB_ARGS_LOG="$ARGS" STORY_COVERAGE_FILE="$2" STORY_COVERAGE_SHA="$3" PMAT_HUNT=1 pmat_hunt "check" "$LIB"); rc=$?
+  out=$(STUB_GAP_MODE="${GAP_MODE:-}" STUB_ARGS_LOG="$ARGS" STORY_COVERAGE_FILE="$2" STORY_COVERAGE_SHA="$3" PMAT_HUNT=1 pmat_hunt "check" "$LIB"); rc=$?
   want "$1: hunt returns $4" "$4" "$rc"
   if grep -q -- '--coverage-gaps' "$ARGS"; then ran=yes; else ran=no; fi
   want "$1: coverage-gaps query ran = $5" "$5" "$ran"
@@ -230,6 +239,13 @@ cov_case "coverage path that does not exist" "$TMP/absent.json" "$HEAD_SHA" 1 no
 cov_case "file from another commit" "$COVFILE"     "0000000000000000000000000000000000000000" 1 no "measured on '0000000000000000000000000000000000000000'"
 cov_case "file with no recorded sha" "$COVFILE"    ""                 1 no  "measured on '(none recorded)'"
 cov_case "file from this commit"   "$COVFILE"      "$HEAD_SHA"        0 yes ""
+# The file is this commit's, but the gap query itself is not a measurement: pmat
+# fails on it, or prints no JSON. Churn and fault rows alone must not pass the beat.
+GAP_MODE=fail    cov_case "gap query exits non-zero" "$COVFILE" "$HEAD_SHA" 1 yes "coverage gaps not_measured: the coverage-gaps query failed"
+GAP_MODE=nonjson cov_case "gap query prints non-JSON" "$COVFILE" "$HEAD_SHA" 1 yes "coverage gaps not_measured: the coverage-gaps query on"
+# A parsed [] is a measured zero: no gaps on this path, and churn + fault carry the manifest.
+GAP_MODE=empty   cov_case "gap query returns []"     "$COVFILE" "$HEAD_SHA" 0 yes ""
+cov_case "file from this commit, again" "$COVFILE" "$HEAD_SHA"        0 yes ""
 if grep -q -- "--coverage-file $COVFILE" "$ARGS"; then
   ok "the measured gap query reads the coverage file instead of deriving coverage"
 else
