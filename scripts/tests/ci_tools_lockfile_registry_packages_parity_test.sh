@@ -24,7 +24,7 @@ ROOT="$(git rev-parse --show-toplevel)"
 cd "$ROOT" || exit 1
 PY="${PYTHON:-python3}"
 LRP_PY="$ROOT/scripts/lib/lockfile_registry_packages.py"
-EXPECTED_CASES=40
+EXPECTED_CASES=43
 
 BIN="${CI_TOOLS_BIN:-}"
 if [[ -z "$BIN" ]]; then
@@ -105,6 +105,12 @@ if same basic.lock; then
     echo "FAIL: a planted wrong exit status was not detected" >&2
     exit 1
 fi
+printf '#!/usr/bin/env bash\nshift\n"%s" "%s" "$@" 2>/dev/null\n' "$PY" "$LRP_PY" >"$liar"
+BIN="$liar"
+if same no-such.lock; then
+    echo "FAIL: a planted silent failure (no stderr) was not detected" >&2
+    exit 1
+fi
 BIN="$REAL_BIN"
 
 # --- the real lockfile ---
@@ -179,6 +185,12 @@ fx uni.lock "\xc2\xa0[[package]]\xe3\x80\x80\n\xe2\x80\xa8name = \"nb\"\xc2\x85\
 check "NBSP, U+3000, NEL, U+2028 and U+2029" uni.lock
 fx zw.lock "[[package]]\nname = \"zw\"\xe2\x80\x8b\nsource = \"$REG\"\n\xe2\x80\x8b[[package]]\nname = \"after\"\nsource = \"$REG\"\n"
 check "U+200B is not whitespace on either side" zw.lock
+fx valws.lock "[[package]]\nname = \x1c\"zz\"\xc2\xa0\nsource = \xc2\xa0\"$REG\"\x1f\n"
+check "whitespace stripped from the value, not only the line" valws.lock
+fx midsep.lock "[[package]]\nname = \"a\x1cb\xc2\x85c\xe2\x80\xa8d\x0be\"\nsource = \"$REG\"\n"
+check "line separators inside a name do not split the line" midsep.lock
+fx array.lock "[[package]]\nname = \"arr\"\nsource = \"$REG\"\ndependencies = [\n [\"x\",\n \"y\",\n]\nname = \"after\"\nsource = \"$REG\"\n"
+check "a [ line inside an array is another table" array.lock
 
 # --- argv taken verbatim ---
 check "a missing file" no-such.lock
