@@ -1,0 +1,316 @@
+{
+  "ticket": "PMAT-4593",
+  "base": "origin/main",
+  "base_resolved": "origin/main",
+  "base_note": "no origin/origin/main exists; judged against the local ref; brief_exclude (C45) kept out of the brief: docs/roadmaps/roadmap.yaml",
+  "head": "7188a2b3b457b0348970d67fd41221ded4d57266",
+  "diff_sha256": "a2294db6c675226e08bf4999d10ec572be38c2cd75dfcc602c756b3c2c6b8699",
+  "width": 3,
+  "executor": "agy",
+  "prompt_mode": "inline",
+  "prompt_bytes": 33509,
+  "prompt_sha256": "4d06bb90dd5045528f68d65713de38c411eef3d1eb12065a0c3fc28077d7bd35",
+  "author": {
+    "model": "claude-opus-5-5",
+    "family": "claude",
+    "source": "flag"
+  },
+  "agreed": false,
+  "lanes": [
+    {
+      "lane": 1,
+      "status": "SUCCESS",
+      "verdict": "FAIL",
+      "summary": "The ignore and the refactor match the acceptance criteria, but the author's claim that the n=256 correctness check runs as a separate normal #[test] is false. The check now sits only inside the ignored test, so CI no longer runs it.",
+      "findings": [
+        {
+          "file": "crates/aprender-gpu/src/driver/cublas_tests.rs",
+          "line": 1239,
+          "claim": "REVIEWER CHECK answer: the author's claim is FALSE. There is no separate normal #[test] for the n=256 all-ones check. `assert_all_ones_gemm` (defined at line 1207) has exactly one caller, line 1239 inside `cta64_sweep_row`, and that function is reachable only from `cta64_vs_cta32_vs_cublas_fp16` (line 1268), which is now `#[ignore = \"FLAKE-0 #4593\"]`. A grep for `#[test]` and `assert_all_ones_gemm` finds no other test calling it. The only #[test] after line 818 is the ignored one at 1266. As a result the 64x128 mma.sync correctness assertion no longer runs in any CI test, so the change silently drops a correctness gate. The diff itself says the check stays 'inside the sweep', which is consistent with the diff but contradicts the author's claim.",
+          "grounding": "measured",
+          "fix": "Either correct the claim and record in the ticket that the correctness check is dark while the test is ignored, or extract a small standalone #[test] that runs only the 64x128 mma.sync kernel at n=256 and calls `assert_all_ones_gemm`. That test would allocate far less memory than the sweep."
+        },
+        {
+          "file": "crates/aprender-gpu/src/driver/cublas_tests.rs",
+          "line": 1266,
+          "claim": "The ticket is titled as an OOM defect (CUDA_ERROR_OUT_OF_MEMORY at the 4096 allocation), but the change only ignores the test and restructures it. Nothing reduces device memory use: `cta64_sweep_row` still allocates A, B, C and C16 at n=4096. The OOM is therefore left unfixed. Treating the ignore as the resolution fits an acceptance criterion that asks for it, but the roadmap entry's status and notes do not say the underlying defect is unresolved.",
+          "grounding": "cited"
+        }
+      ],
+      "raw_bytes": 4861,
+      "err_bytes": 0,
+      "envelope_status": "SUCCESS",
+      "verdict_source": "structured_output",
+      "executor": "claude-code",
+      "grounding_check": "parity",
+      "role": "counted",
+      "model": "claude-sonnet-5-5",
+      "model_measured": "claude-sonnet-5-5",
+      "model_source": "flag",
+      "family": "claude",
+      "brief_sha256": "4d06bb90dd5045528f68d65713de38c411eef3d1eb12065a0c3fc28077d7bd35",
+      "trace": {
+        "input_sha256": "bc9db73dc8af637a2ccccbe334769ad0a57941e4104f9afee1b22954152519a2",
+        "output_sha256": "3cc66a1d54032a93c10a01c72f29400b9e300e76f6edeb05a3c460e22f590ca0",
+        "store": null,
+        "store_why": "almacen not provisioned yet (infra-27): the blobs stay in the round's gitignored .lanes dir"
+      },
+      "fallback": {
+        "judged_by": "claude-sonnet-5-5",
+        "exhausted": false,
+        "attempts": [
+          {
+            "model": "claude-sonnet-5-5",
+            "family": "claude",
+            "outcome": "answered"
+          }
+        ],
+        "skipped": []
+      }
+    },
+    {
+      "lane": 2,
+      "status": "MISSING",
+      "verdict": "NO-VERDICT",
+      "summary": "",
+      "findings": [],
+      "raw_bytes": 0,
+      "err_bytes": 0,
+      "role": "counted",
+      "model": "claude-sonnet-5-5",
+      "model_measured": null,
+      "model_source": "declared",
+      "family": "claude",
+      "executor": "claude-code",
+      "fallback": {
+        "judged_by": null,
+        "exhausted": true,
+        "attempts": [],
+        "skipped": [
+          {
+            "model": "claude-sonnet-5-5",
+            "why": "claude-code: the configured seat claude-sonnet-5-5 is already another lane's (one lane per configured seat)"
+          },
+          {
+            "model": "claude-haiku-4-5",
+            "why": "claude-code: a non-Claude family can still answer, and the Claude Code rung fires only when every one is measured out (priority A)"
+          },
+          {
+            "model": "qwen3.5",
+            "why": "not-run: no quorum.local_lane in the config — the aprender lane has no model to load",
+            "row": {
+              "NotRun": "NoExecutor"
+            }
+          }
+        ]
+      }
+    },
+    {
+      "lane": 3,
+      "status": "SUCCESS",
+      "verdict": "PASS",
+      "summary": "The diff satisfies all acceptance criteria for PMAT-4593. The test is marked with #[ignore = \"FLAKE-0 #4593\"], the n=256 correctness assertion is preserved with identical message and remains inline in the sweep loop (line ~1180), all kernel PTX entry names/targets/tiles/blocks/shared-mem are preserved, compile failures still skip the size row, and no separate #[test] exists for the correctness check (criterion 5: author does NOT claim this, code shows only one #[test] marked #[ignore]).",
+      "findings": [],
+      "raw_bytes": 1924,
+      "err_bytes": 0,
+      "envelope_status": "SUCCESS",
+      "verdict_source": "structured_output",
+      "executor": "claude-code",
+      "grounding_check": "parity",
+      "role": "counted",
+      "model": "claude-haiku-4-5",
+      "model_measured": "claude-haiku-4-5",
+      "model_source": "flag",
+      "family": "claude",
+      "brief_sha256": "4d06bb90dd5045528f68d65713de38c411eef3d1eb12065a0c3fc28077d7bd35",
+      "trace": {
+        "input_sha256": "b4639fb7a58fa2e9397b388a5a76b21f8df62fa2db0f854a843070c143c5bb70",
+        "output_sha256": "d5140f7ac46a5e41e284c464f4d6e007e2cc5e33ee0a8191f7490fecbeea6aca",
+        "store": null,
+        "store_why": "almacen not provisioned yet (infra-27): the blobs stay in the round's gitignored .lanes dir"
+      },
+      "fallback": {
+        "judged_by": "claude-haiku-4-5",
+        "exhausted": false,
+        "attempts": [
+          {
+            "model": "claude-haiku-4-5",
+            "family": "claude",
+            "outcome": "answered"
+          }
+        ],
+        "skipped": []
+      }
+    }
+  ],
+  "dissent": [
+    {
+      "lane": 1,
+      "verdict": "FAIL",
+      "summary": "The ignore and the refactor match the acceptance criteria, but the author's claim that the n=256 correctness check runs as a separate normal #[test] is false. The check now sits only inside the ignored test, so CI no longer runs it.",
+      "findings": [
+        {
+          "file": "crates/aprender-gpu/src/driver/cublas_tests.rs",
+          "line": 1239,
+          "claim": "REVIEWER CHECK answer: the author's claim is FALSE. There is no separate normal #[test] for the n=256 all-ones check. `assert_all_ones_gemm` (defined at line 1207) has exactly one caller, line 1239 inside `cta64_sweep_row`, and that function is reachable only from `cta64_vs_cta32_vs_cublas_fp16` (line 1268), which is now `#[ignore = \"FLAKE-0 #4593\"]`. A grep for `#[test]` and `assert_all_ones_gemm` finds no other test calling it. The only #[test] after line 818 is the ignored one at 1266. As a result the 64x128 mma.sync correctness assertion no longer runs in any CI test, so the change silently drops a correctness gate. The diff itself says the check stays 'inside the sweep', which is consistent with the diff but contradicts the author's claim.",
+          "grounding": "measured",
+          "fix": "Either correct the claim and record in the ticket that the correctness check is dark while the test is ignored, or extract a small standalone #[test] that runs only the 64x128 mma.sync kernel at n=256 and calls `assert_all_ones_gemm`. That test would allocate far less memory than the sweep."
+        },
+        {
+          "file": "crates/aprender-gpu/src/driver/cublas_tests.rs",
+          "line": 1266,
+          "claim": "The ticket is titled as an OOM defect (CUDA_ERROR_OUT_OF_MEMORY at the 4096 allocation), but the change only ignores the test and restructures it. Nothing reduces device memory use: `cta64_sweep_row` still allocates A, B, C and C16 at n=4096. The OOM is therefore left unfixed. Treating the ignore as the resolution fits an acceptance criterion that asks for it, but the roadmap entry's status and notes do not say the underlying defect is unresolved.",
+          "grounding": "cited"
+        }
+      ]
+    },
+    {
+      "lane": 2,
+      "verdict": "NO-VERDICT",
+      "summary": "",
+      "findings": []
+    }
+  ],
+  "dedup": [
+    {
+      "file": "crates/aprender-gpu/src/driver/cublas_tests.rs",
+      "line": 1239,
+      "lanes_agreeing": [
+        1
+      ],
+      "claims": [
+        "REVIEWER CHECK answer: the author's claim is FALSE. There is no separate normal #[test] for the n=256 all-ones check. `assert_all_ones_gemm` (defined at line 1207) has exactly one caller, line 1239 inside `cta64_sweep_row`, and that function is reachable only from `cta64_vs_cta32_vs_cublas_fp16` (line 1268), which is now `#[ignore = \"FLAKE-0 #4593\"]`. A grep for `#[test]` and `assert_all_ones_gemm` finds no other test calling it. The only #[test] after line 818 is the ignored one at 1266. As a result the 64x128 mma.sync correctness assertion no longer runs in any CI test, so the change silently drops a correctness gate. The diff itself says the check stays 'inside the sweep', which is consistent with the diff but contradicts the author's claim."
+      ]
+    },
+    {
+      "file": "crates/aprender-gpu/src/driver/cublas_tests.rs",
+      "line": 1266,
+      "lanes_agreeing": [
+        1
+      ],
+      "claims": [
+        "The ticket is titled as an OOM defect (CUDA_ERROR_OUT_OF_MEMORY at the 4096 allocation), but the change only ignores the test and restructures it. Nothing reduces device memory use: `cta64_sweep_row` still allocates A, B, C and C16 at n=4096. The OOM is therefore left unfixed. Treating the ignore as the resolution fits an acceptance criterion that asks for it, but the roadmap entry's status and notes do not say the underlying defect is unresolved."
+      ]
+    }
+  ],
+  "uncovered": [],
+  "coverage_source": "lanes",
+  "partial": true,
+  "partial_reasons": [
+    "lane models: only 2 distinct model ids across 3 lanes (claude-haiku-4-5, claude-sonnet-5-5) — lanes sharing an id are resamples, not independent reviewers (PMAT-125)",
+    "lane 2: lane file missing",
+    "lane 2: fallback chain exhausted — claude-sonnet-5-5 (skipped: claude-code: the configured seat claude-sonnet-5-5 is already another lane's (one lane per configured seat)); claude-haiku-4-5 (skipped: claude-code: a non-Claude family can still answer, and the Claude Code rung fires only when every one is measured out (priority A)); qwen3.5 (skipped: not-run: no quorum.local_lane in the config — the aprender lane has no model to load). NO-VERDICT, never a pass (PMAT-321)",
+    "receipt-lint refused the artifact (PMAT-124/#128): FAIL quorum artifact: lane 2 model 'claude-sonnet-5-5' is DECLARED, never measured (model_measured is null or empty: no lane log line) — a declared family is not a proof of independence (#128)"
+  ],
+  "fallback": {
+    "same_family_width": 2,
+    "chain": [
+      {
+        "model": "claude-sonnet-5-5",
+        "family": "claude",
+        "disposition": "claude-code",
+        "why": "run by Claude Code on its own budget: a configured seat runs every round, a fallback step only when every non-Claude family is measured out (PMAT-360, operator standing rule)"
+      },
+      {
+        "model": "claude-haiku-4-5",
+        "family": "claude",
+        "disposition": "claude-code",
+        "why": "run by Claude Code on its own budget: a configured seat runs every round, a fallback step only when every non-Claude family is measured out (PMAT-360, operator standing rule)"
+      },
+      {
+        "model": "qwen3.5",
+        "family": "qwen",
+        "disposition": "not-run",
+        "why": "no quorum.local_lane in the config — the aprender lane has no model to load"
+      }
+    ],
+    "precheck": [],
+    "degraded": null,
+    "prah": {
+      "source": "install-receipt",
+      "path": "/home/noah/.claude/skills/paiml-implement/bin/prah"
+    },
+    "tier1": {
+      "agy_tier1_only": true,
+      "tier1": false,
+      "matched": [],
+      "paths": 3,
+      "patterns": [
+        "^\\.github/workflows/",
+        "(^|/)release[^/]*\\.(ya?ml|sh|rs|toml)$",
+        "cuda|kernel|\\.cu$|\\.ptx$",
+        "(^|/)[^/]*(gate|guard)[^/]*\\.(sh|rs|py)$|^hooks/",
+        "security|secret|credential|(^|/)deny\\.toml$",
+        "^skills/quorum-review/|(^|/)(receipt-lint|roadmap-lint|release-lint|kind-gate|model-gate)[^/]*$|^crates/prah-lint/"
+      ],
+      "builtin": "^skills/quorum-review/|(^|/)skills/paiml-implement/config\\.json$|(^|/)(modellib|lane-reduce|lane-fallback|lane-group|agy-lane|cc-lane|receipt-lint|route|quota)\\.sh$|^crates/prah-lint/"
+    },
+    "bucket": {
+      "ledger": "/home/noah/.local/state/paiml-implement/agy-bucket.jsonl",
+      "window_s": 18000,
+      "pace": "off",
+      "buckets": {},
+      "closed": []
+    }
+  },
+  "auto_merge": {
+    "checked": false,
+    "was_armed": false,
+    "disarmed": false,
+    "note": "no --pr given: nothing to disarm"
+  },
+  "cheap_seat": "claude-haiku-4-5",
+  "advisory_lane": {
+    "state": "unavailable",
+    "counts": false,
+    "row": {
+      "NotRun": "Busy"
+    },
+    "verdict": "unavailable",
+    "why": "no host answered inside the budget",
+    "served_by": null,
+    "gpu_proof": null,
+    "apr": null,
+    "apr_binary_sha256": null,
+    "apr_tag": null,
+    "apr_commit": null,
+    "apr_build_why": null,
+    "model": null,
+    "model_sha256": null,
+    "rc": 2,
+    "wall_s": 1,
+    "collected_s": 121,
+    "budget_s": 196,
+    "budget_basis": "ledger: 2 x p95 98 s over 126 gx10-cuda Verdict rows",
+    "brief": {
+      "bytes": 33509,
+      "sent_bytes": 33678,
+      "max_bytes": 196608
+    },
+    "trace": {
+      "input_sha256": "14547ac2036aa00baa714468a024425c0dc9c6c25f98f0c04832abe5ac247d19",
+      "raw": "advisory.json"
+    },
+    "attempts": [
+      {
+        "host": "gx10",
+        "ok": false,
+        "wall_s": 1,
+        "error": "busy: executor yielded (unit inactive; last yield: 2026-10-03T00:47:22Z host=gx10-a5b5 event=stopped gpu-priority lock=/tmp/apr-gpu.priority)",
+        "ts": "2026-10-05T09:18:52.986Z",
+        "wall_ms": 591,
+        "request_id": "01a10b5b-e038-7a7d-8d2d-ed27bfa85a42",
+        "load1": 0.13,
+        "cold": null
+      }
+    ],
+    "ledger": "/home/noah/.local/state/paiml-implement/advisory-ledger.jsonl",
+    "raw": "advisory.json",
+    "agrees_with_counted": null,
+    "counted": "NOT-AGREED"
+  },
+  "lint": {
+    "ok": false,
+    "output": "FAIL quorum artifact: lane 2 model 'claude-sonnet-5-5' is DECLARED, never measured (model_measured is null or empty: no lane log line) — a declared family is not a proof of independence (#128)\nFAIL quorum artifact: 3 lanes share the author's family ('claude-opus-5-5'/claude) on a different model id (lanes: 1 2 3) but quorum.same_family_width caps this round at 2 — one family agreeing with itself is not a quorum (R-15a)\nFAIL quorum artifact: 3 lanes share the author's family ('claude-opus-5-5'/claude) and no lane OUTSIDE it answered — the same-family cap is reachable only behind an independent lane that actually returned a verdict (R-15a answered-third)"
+  }
+}
