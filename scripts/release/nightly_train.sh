@@ -8,10 +8,11 @@
 #     NOT RELEASABLE: <lane>, <run id|not_measured>     the first failing verdict lane, then (+N more)
 #     NOT RELEASABLE: nightly-train, <step> ...         the train itself failed part-way (the EXIT trap prints it)
 #   and every line ends with [C=<sha10> pin=<train>.<greens>.<redage>]: the commit judged and the shas of the three
-#   scripts that judged it. H is the commit id of C. C is main's head at the moment of the read, unless the head has
-#   no measured run from some verdict producer: then C is the newest commit every verdict producer has a measured run
-#   on, at most MAX_LAG commits seen in runs behind the head, and the line adds " (head <sha10>, lag>=k)". All lanes
-#   are judged on that one commit, never a per-lane mix; no such commit = the head, as before (#4798).
+#   scripts that judged it. H is the commit id of C. C is the head of main at the moment of the read, unless the head has
+#   no measured run from some verdict producer: then C is the newest commit, at most MAX_LAG commits behind the head,
+#   on which every verdict producer has a measured run, and the line adds " (judged <sha10>, head <sha10>, lag k
+#   commits)". All lanes are judged on that one commit, never a per-lane mix. None within MAX_LAG = the head, which
+#   reads not_measured for a lane with no run there; there is no other fallback (#4798).
 #
 # READ, DON'T RE-RUN. Night 1 runs nothing. Each lane takes the result its existing scheduled producer (a workflow on
 #   main and, optionally, a job-name pattern) recorded for C. A lane is
@@ -66,7 +67,7 @@ HERE="$(cd -- "$(dirname -- "${BASH_SOURCE[0]}")" && pwd)"
 SCRIPT_PATH="$HERE/${BASH_SOURCE[0]##*/}"
 REPO="paiml/aprender"
 MAX_CALLS=10
-MAX_LAG=6   # J (the commit judged) is at most this many commits seen in runs behind main's head
+MAX_LAG=6   # J (the commit judged) is at most this many commits behind the head of main
 RATE_FLOOR=1000
 UNIT="aprender-nightly-train"
 # lane;kind;release-day check;producer workflow;event pattern;job-name pattern[;required job names, default 1]
@@ -109,9 +110,11 @@ evaluate() {
     c="$(cat "$2/C" 2>/dev/null)"; rd="$(cat "$2/read" 2>/dev/null)"
     [ -f "$2/attempts.tsv" ] || : > "$2/attempts.tsv"
     [ -f "$2/runs.tsv" ] || : > "$2/runs.tsv"
+    [ -f "$2/rank.tsv" ] || : > "$2/rank.tsv"
     awk -F '\t' -v OFS='\t' -v C="$c" -v RD="${rd:-failed: no read status}" -v MODE="$3" -v HIST="$2/hist_redage.tsv" -v JOUT="$2/judged" -v MAXLAG="$MAX_LAG" '
     FILENAME == ARGV[1] { split($0, a, ";"); n++; L[n] = a[1]; K[n] = a[2]; CK[n] = a[3]; WF[n] = a[4]; EV[n] = a[5]; RE[n] = a[6]; NEED[n] = (a[7] ~ /^[0-9]+$/ ? a[7] + 0 : 1); next }
     FILENAME == ARGV[2] { AT[$1] = $2; next }
+    FILENAME == ARGV[3] { RKO[$1 + 0] = $2; NRK++; next }
     {
         key = $3 SUBSEP $10 SUBSEP $13
         if (key in seen) next
@@ -151,15 +154,15 @@ evaluate() {
     END {
         if (MODE == "final") print "check", "run_id", "created_at", "branch", "event", "conclusion", "attempt" > HIST
         readok = (RD == "ok" && C ~ /^[0-9a-f]{40}$/)
-        # J, the commit judged (#4798): C when every verdict lane with a producer has a measured (green or red) run on
-        #   it; otherwise the newest commit on main on which every such lane has one. One commit for all lanes, never a
-        #   per-lane mix. Newest = the latest first-run time: a run on main runs on the head of its moment. LAG = the
-        #   commits seen in runs that are newer than J, plus C when C has no run yet, so it is a lower bound. No such
-        #   commit within MAXLAG: J = C, and every lane reads as it would on C. Nothing falls back past that.
+        # J, the commit judged (#4798): the newest commit on main, at or before the read, on which EVERY verdict lane with
+        #   a producer has a measured (green or red) run; C itself when it has them. One commit for all lanes, never a
+        #   per-lane mix. The candidates are rank.tsv: the head of main (rank 0) and its history, newest first, read in the
+        #   same query; LAG is the rank of J, the commits between J and the head. Only ranks 0..MAXLAG are candidates. None
+        #   qualifies (or no rank list): J = C and every lane reads as it would on C, which is not_measured for a lane
+        #   with no run there. Nothing falls back past MAXLAG.
         J = C; LAG = 0
-        if (readok) {
-            split("", FT); split("", HAS); nprod = 0
-            for (q = 1; q <= nr; q++) { r = RID[q]; if (RBR[r] == "main" && (!(RH[r] in FT) || RC[r] < FT[RH[r]])) FT[RH[r]] = RC[r] }
+        if (readok && RKO[0] == C) {
+            split("", HAS); nprod = 0
             for (i = 1; i <= n; i++) {
                 if (WF[i] == "-" || K[i] != "verdict") continue
                 nprod++
@@ -168,16 +171,10 @@ evaluate() {
                     if (RW[r] == WF[i] && REV[r] ~ EV[i] && RBR[r] == "main") { s = lst(i, r); if (s == "green" || s == "red") HAS[RH[r], i] = 1 }
                 }
             }
-            best = ""
-            for (h in FT) {
-                all = (nprod > 0)
+            for (k = 0; k <= MAXLAG && k < NRK && nprod > 0; k++) {
+                h = RKO[k]; all = 1
                 for (i = 1; i <= n && all; i++) if (WF[i] != "-" && K[i] == "verdict" && !((h, i) in HAS)) all = 0
-                if (all) { if (h == C) { best = C; break }; if (best == "" || FT[h] > FT[best]) best = h }
-            }
-            if (best != "" && best != C) {
-                for (h in FT) if (FT[h] > FT[best]) LAG++
-                if (!(C in FT)) LAG++
-                if (LAG <= MAXLAG) J = best; else LAG = 0
+                if (all) { J = h; LAG = k; break }
             }
         }
         if (MODE == "final") print J, C, LAG > JOUT
@@ -225,7 +222,7 @@ evaluate() {
             if (att > 1) out(i, "red", pick, att, "success only at attempt " att ": a retried green is not a green")
             else out(i, "green", pick, att, "")
         }
-    }' <(printf '%s\n' "$1") "$2/attempts.tsv" "$2/runs.tsv"
+    }' <(printf '%s\n' "$1") "$2/attempts.tsv" "$2/rank.tsv" "$2/runs.tsv"
 }
 # hours LANESOUT REDAGE_OUTPUT_FILE -> lane<TAB>hours lost (2 decimals) for every lane red_age measured
 hours() {
@@ -261,7 +258,7 @@ decide() {
             bad++; h = ($1 in H) ? H[$1] + 0 : -1; s = ($3 == "red" ? 1 : 0)
             if (best == "" || s > bs || (s == bs && h > bh)) { best = $1; brun = ($3 == "red" ? $5 : "not_measured"); bs = s; bh = h } }
         END {
-            note = (C != HEAD && HEAD != "" ? " (head " substr(HEAD, 1, 10) ", lag>=" LAG ")" : "")
+            note = (C != HEAD && HEAD != "" ? " (judged " substr(C, 1, 10) ", head " substr(HEAD, 1, 10) ", lag " LAG " commits)" : "")
             if (nv == 0) { print "NOT RELEASABLE: nightly-train, the lane table has no verdict lane"; exit }
             if (bad == 0 && C ~ /^[0-9a-f]{40}$/) { print "RELEASABLE H=" C note; exit }
             if (bad == 0) { print "NOT RELEASABLE: nightly-train, no commit read"; exit }
@@ -324,11 +321,15 @@ normalize() {
               else empty end ) )
       | map(tostring) | join("\t")' "$1"
 }
+# rank_rows GQL -> "rank<TAB>oid", the head of main (rank 0) and then its history, newest first, the head once (#4798)
+rank_rows() {
+    jq -r '.data.repository.defaultBranchRef.target as $c | ([$c.oid] + [($c.history.nodes // [])[] | .oid | select(. != $c.oid)]) | to_entries[] | "\(.key)\t\(.value)"' "$1"
+}
 # fetch RAW CACHE -> RAW/{C,tree,read,runs.tsv,attempts.tsv,graphql.json,workflows.json}; never fails: a failed read
 #   is recorded in RAW/read and makes every producer lane not_measured
 fetch() {
     local raw="$1" cache="$2" lim rem fl hdr st q a ids r
-    printf 'failed: not read\n' > "$raw/read"; : > "$raw/C"; : > "$raw/tree"; : > "$raw/runs.tsv"; : > "$raw/attempts.tsv"
+    printf 'failed: not read\n' > "$raw/read"; : > "$raw/C"; : > "$raw/tree"; : > "$raw/runs.tsv"; : > "$raw/attempts.tsv"; : > "$raw/rank.tsv"
     read -r lim rem <<< "$(gh api rate_limit --jq '"\(.resources.core.limit) \(.resources.core.remaining)"' 2>/dev/null)"
     case "$lim:$rem" in *[!0-9:]*|:*|*:) printf 'failed: rate_limit unreadable\n' > "$raw/read"; return 0 ;; esac
     # the floor is a fifth of the token's own hourly limit, capped at RATE_FLOOR: the fleet PAT (5000) keeps its 1000
@@ -357,6 +358,7 @@ fetch() {
     jq -r '.data.repository.defaultBranchRef.target.tree.oid // empty' "$raw/graphql.json" > "$raw/tree" 2>/dev/null
     grep -q -E '^[0-9a-f]{40}$' "$raw/C" || { printf 'failed: no head of main in the response\n' > "$raw/read"; return 0; }
     normalize "$raw/graphql.json" "$raw/workflows.json" > "$raw/runs.tsv" 2>/dev/null || { printf 'failed: response did not normalize\n' > "$raw/read"; return 0; }
+    rank_rows "$raw/graphql.json" > "$raw/rank.tsv" 2>/dev/null || : > "$raw/rank.tsv"
     printf 'ok\n' > "$raw/read"
     # run_attempt for each green verdict candidate (GraphQL has none); an unread attempt stays unread -> not_measured
     ids="$(evaluate "$LANES" "$raw" cand | sort -u)"
@@ -444,7 +446,7 @@ run_train() {
     mkdir -p "$raw" || exit 1
     step read
     if [ -n "$from" ]; then
-        for f in C read runs.tsv attempts.tsv tree; do [ "$from/$f" -ef "$raw/$f" ] || cp "$from/$f" "$raw/$f" 2>/dev/null || : > "$raw/$f"; done
+        for f in C read runs.tsv attempts.tsv tree rank.tsv; do [ "$from/$f" -ef "$raw/$f" ] || cp "$from/$f" "$raw/$f" 2>/dev/null || : > "$raw/$f"; done
     else fetch "$raw" "$OUTDIR/cache"; fi
     CSHA="$(cat "$raw/C" 2>/dev/null)"
     step judge
@@ -576,7 +578,10 @@ fixture() {
         printf 'wf\t.github/workflows/d.yml\t401\tschedule\tmain\t%s\t2026-10-04T03:00:00Z\tCOMPLETED\tSUCCESS\td\tCOMPLETED\tSUCCESS\t2026-10-04T03:01:00Z\t2026-10-04T03:20:00Z\t1\n' "$ST_C"
     } > "$1/runs.tsv"
     printf '101\t1\n201\t1\n301\t1\n' > "$1/attempts.tsv"
+    printf '0\t%s\n' "$ST_C" > "$1/rank.tsv"
 }
+# ranks DIR SHA... -> DIR/rank.tsv: main's head and history, newest first (rank 0 = the head, aaaa...)
+ranks() { local d="$1" k=0 s; shift; : > "$d/rank.tsv"; for s in "$@"; do printf '%s\t%s\n' "$k" "$s" >> "$d/rank.tsv"; k=$((k + 1)); done; }
 # st_decide DIR -> the line, the lanes and the reds, as one text
 st_decide() { decide "$ST_LANES" "$1" 2026-10-04T06:00:00Z; cat "$1/line" "$1/lanes.tsv" "$1/reds.tsv"; }
 self_test() {
@@ -662,6 +667,10 @@ self_test() {
     }
     # #4798: a push run on an older main commit is read from the history rollup, and the head is not read twice
     row normalize_reads_main_history_rollups 0 "$(printf '1 rollup\t302\t%s' "$ST_X")" "$(printf '2 rollup\t301')" -- st_hist
+    st_rank() { rank_rows "$tmp/hist.json"; }
+    row rank_rows_are_the_head_then_the_history_once 0 "$(printf '0\t%s\n1\t%s' "$ST_C" "$ST_X")" "$(printf '2\t')" -- st_rank
+    d="$tmp/rankhead"; fixture "$d"; sed -i "s/$ST_C/$ST_X/g" "$d/runs.tsv"; ranks "$d" "$ST_Y" "$ST_X"
+    row a_rank_list_for_another_head_is_ignored 0 "NOT RELEASABLE: v-a, not_measured (+2 more)" "RELEASABLE H=" -- st_decide "$d"
     d="$tmp/noprod"; fixture "$d"
     st_a_lane_without_a_producer_is_not_measured() { decide "$ST_LANES
 v-e;verdict;check E;-;-;-" "$d" 2026-10-04T06:00:00Z; cat "$d/line" "$d/lanes.tsv"; }
@@ -689,28 +698,37 @@ v-e;verdict;check E;-;-;-" "$d" 2026-10-04T06:00:00Z; cat "$d/line" "$d/lanes.ts
     d="$tmp/legs"; fixture "$d"
     printf 'wf\t.github/workflows/a.yml\t101\tschedule\tmain\t%s\t2026-10-04T01:00:00Z\tCOMPLETED\tSUCCESS\tjob-a\tCOMPLETED\tFAILURE\t2026-10-04T01:00:30Z\t2026-10-04T01:20:00Z\t2\n' "$ST_C" >> "$d/runs.tsv"
     row a_failed_parallel_leg_of_the_same_name_is_red 0 "NOT RELEASABLE: v-a, 101" "RELEASABLE H=" -- st_decide "$d"
-    # J (#4798): main moved after the producers ran, so the head has no run; every verdict producer ran on one commit
-    d="$tmp/moved"; fixture "$d"; sed -i "s/$ST_C/$ST_X/g" "$d/runs.tsv"
-    row a_moved_head_judges_the_commit_every_producer_ran_on 0 "RELEASABLE H=$ST_X (head aaaaaaaaaa, lag>=1)" "NOT RELEASABLE" -- st_decide "$d"
+    # J (#4798): main moved after the producers ran, so the head has no run; every verdict producer ran on one commit.
+    d="$tmp/moved"; fixture "$d"; sed -i "s/$ST_C/$ST_X/g" "$d/runs.tsv"; ranks "$d" "$ST_C" "$ST_X"
+    row a_moved_head_judges_the_commit_every_producer_ran_on 0 "RELEASABLE H=$ST_X (judged bbbbbbbbbb, head aaaaaaaaaa, lag 1 commits)" "NOT RELEASABLE" -- st_decide "$d"
     # one commit for every lane, never a per-lane mix: v-a ran on X only, the rest on Y only
-    d="$tmp/split"; fixture "$d"; sed -i "s/$ST_C/$ST_Y/g; /\t101\t/s/$ST_Y/$ST_X/" "$d/runs.tsv"
+    d="$tmp/split"; fixture "$d"; sed -i "s/$ST_C/$ST_Y/g; /\t101\t/s/$ST_Y/$ST_X/" "$d/runs.tsv"; ranks "$d" "$ST_C" "$ST_X" "$ST_Y"
     row producers_split_across_commits_are_not_measured 0 "NOT RELEASABLE: v-a, not_measured (+2 more)" "RELEASABLE H=" -- st_decide "$d"
     # a newer commit that only some producers ran on does not win; the lag counts it and the head
-    d="$tmp/partial"; fixture "$d"; sed -i "s/$ST_C/$ST_X/g" "$d/runs.tsv"
+    d="$tmp/partial"; fixture "$d"; sed -i "s/$ST_C/$ST_X/g" "$d/runs.tsv"; ranks "$d" "$ST_C" "$ST_Y" "$ST_X"
     printf 'wf\t.github/workflows/a.yml\t102\tschedule\tmain\t%s\t2026-10-04T05:00:00Z\tCOMPLETED\tSUCCESS\tjob-a\tCOMPLETED\tSUCCESS\t2026-10-04T05:01:00Z\t2026-10-04T05:30:00Z\t1\n' "$ST_Y" >> "$d/runs.tsv"
-    row a_newer_partial_commit_does_not_win 0 "RELEASABLE H=$ST_X (head aaaaaaaaaa, lag>=2)" "NOT RELEASABLE" -- st_decide "$d"
+    row a_newer_partial_commit_does_not_win 0 "RELEASABLE H=$ST_X (judged bbbbbbbbbb, head aaaaaaaaaa, lag 2 commits)" "NOT RELEASABLE" -- st_decide "$d"
+    # a commit with no run at all still counts in the lag: the lag is the history position, not the commits seen in runs
+    d="$tmp/gap"; fixture "$d"; sed -i "s/$ST_C/$ST_X/g" "$d/runs.tsv"; ranks "$d" "$ST_C" "$ST_Y" "$ST_X"
+    row a_commit_without_runs_counts_in_the_lag 0 "(judged bbbbbbbbbb, head aaaaaaaaaa, lag 2 commits)" "NOT RELEASABLE" -- st_decide "$d"
+    # newest = nearest the head in history, not the latest run time: the older commit's runs started later
+    d="$tmp/order"; fixture "$d"; sed -i "s/$ST_C/$ST_X/g" "$d/runs.tsv"; ranks "$d" "$ST_C" "$ST_X" "$ST_Y"
+    awk -F '\t' -v OFS='\t' -v y="$ST_Y" '{ $3 = $3 + 1000; $6 = y; $7 = "2026-10-05T01:00:00Z"; print }' "$d/runs.tsv" >> "$d/runs.tsv.y" && cat "$d/runs.tsv.y" >> "$d/runs.tsv"
+    row the_nearest_commit_wins_not_the_latest_run 0 "H=$ST_X (judged bbbbbbbbbb, head aaaaaaaaaa, lag 1 commits)" "NOT RELEASABLE" -- st_decide "$d"
     # a red on J is a red, named with the head and the lag
-    d="$tmp/movedred"; fixture "$d"; sed -i "s/$ST_C/$ST_X/g; /\t201\t/s/\tx\tCOMPLETED\tSUCCESS\t/\tx\tCOMPLETED\tFAILURE\t/" "$d/runs.tsv"
-    row a_red_on_the_judged_commit_is_red 0 "NOT RELEASABLE: v-b, 201 (head aaaaaaaaaa, lag>=1)" "RELEASABLE H=" -- st_decide "$d"
-    # the lookback is capped: more than MAX_LAG newer commits between J and the head is not_measured, not a stale verdict
-    d="$tmp/stale"; fixture "$d"; sed -i "s/$ST_C/$ST_X/g" "$d/runs.tsv"
-    for v in 1 2 3 4 5 6; do
-        printf 'wf\t.github/workflows/d.yml\t41%s\tschedule\tmain\t%s\t2026-10-04T0%s:30:00Z\tCOMPLETED\tSUCCESS\td\tCOMPLETED\tSUCCESS\t\t\t1\n' "$v" "$(printf "$v%.0s" $(seq 40))" "$((v + 2))" >> "$d/runs.tsv"
-    done
+    d="$tmp/movedred"; fixture "$d"; sed -i "s/$ST_C/$ST_X/g; /\t201\t/s/\tx\tCOMPLETED\tSUCCESS\t/\tx\tCOMPLETED\tFAILURE\t/" "$d/runs.tsv"; ranks "$d" "$ST_C" "$ST_X"
+    row a_red_on_the_judged_commit_is_red 0 "NOT RELEASABLE: v-b, 201 (judged bbbbbbbbbb, head aaaaaaaaaa, lag 1 commits)" "RELEASABLE H=" -- st_decide "$d"
+    # the lookback is capped at MAX_LAG commits behind the head: rank 6 is judged, rank 7 is not_measured, not a stale verdict
+    d="$tmp/edge"; fixture "$d"; sed -i "s/$ST_C/$ST_X/g" "$d/runs.tsv"; ranks "$d" "$ST_C" "$ST_Y" "$ST_Y" "$ST_Y" "$ST_Y" "$ST_Y" "$ST_X"
+    row a_judged_commit_at_the_lag_cap_is_judged 0 "RELEASABLE H=$ST_X (judged bbbbbbbbbb, head aaaaaaaaaa, lag 6 commits)" "NOT RELEASABLE" -- st_decide "$d"
+    d="$tmp/stale"; fixture "$d"; sed -i "s/$ST_C/$ST_X/g" "$d/runs.tsv"; ranks "$d" "$ST_C" "$ST_Y" "$ST_Y" "$ST_Y" "$ST_Y" "$ST_Y" "$ST_Y" "$ST_X"
     row a_judged_commit_past_the_lag_cap_is_not_measured 0 "NOT RELEASABLE: v-a, not_measured (+2 more)" "RELEASABLE H=" -- st_decide "$d"
+    # no history read (an old raw, a failed history): only the head is a candidate, as before
+    d="$tmp/norank"; fixture "$d"; sed -i "s/$ST_C/$ST_X/g" "$d/runs.tsv"; : > "$d/rank.tsv"
+    row no_history_judges_only_the_head 0 "NOT RELEASABLE: v-a, not_measured (+2 more)" "RELEASABLE H=" -- st_decide "$d"
     st_moved_bundle() {
         local m="$tmp/mb/raw" t='\t'
-        mkdir -p "$m"; printf '%s\n' "$ST_C" > "$m/C"; printf 'ok\n' > "$m/read"; printf 'cccc\n' > "$m/tree"; printf '501\t1\n502\t1\n503\t1\n' > "$m/attempts.tsv"
+        mkdir -p "$m"; printf '0\t%s\n1\t%s\n' "$ST_C" "$ST_X" > "$m/rank.tsv"; printf '%s\n' "$ST_C" > "$m/C"; printf 'ok\n' > "$m/read"; printf 'cccc\n' > "$m/tree"; printf '501\t1\n502\t1\n503\t1\n' > "$m/attempts.tsv"
         {
             printf "rollup${t}.github/workflows/ci.yml${t}501${t}push${t}main${t}%s${t}2026-10-03T23:00:00Z${t}COMPLETED${t}SUCCESS${t}ci / gate${t}COMPLETED${t}SUCCESS${t}${t}${t}1\n" "$ST_X"
             printf "rollup${t}.github/workflows/ci.yml${t}501${t}push${t}main${t}%s${t}2026-10-03T23:00:00Z${t}COMPLETED${t}SUCCESS${t}workspace-test${t}COMPLETED${t}SUCCESS${t}${t}${t}1\n" "$ST_X"
@@ -720,7 +738,7 @@ v-e;verdict;check E;-;-;-" "$d" 2026-10-04T06:00:00Z; cat "$d/line" "$d/lanes.ts
         bash "$SCRIPT_PATH" --out "$tmp/mbout" --from "$m" --now 2026-10-04T06:00:00Z > /dev/null 2>&1
         cat "$tmp/mbout/2026-10-04/line"; grep -E '^(ci-main|deep-examples|deep-bins-build)	|^# (head|C|tree)	' "$tmp/mbout/2026-10-04/bundle.tsv"
     }
-    row a_moved_head_bundle_names_judged_and_head 0 "(head aaaaaaaaaa, lag>=1) [C=bbbbbbbbbb pin=" "$(printf '# tree\tcccc')" -- st_moved_bundle
+    row a_moved_head_bundle_names_judged_and_head 0 "(judged bbbbbbbbbb, head aaaaaaaaaa, lag 1 commits) [C=bbbbbbbbbb pin=" "$(printf '# tree\tcccc')" -- st_moved_bundle
     d="$tmp/infoatt"; fixture "$d"
     row an_info_lane_attempt_is_marked_inferred 0 "$(printf 'i-d\tinfo\tgreen\t.github/workflows/d.yml \t401\t%s\tsuccess\t1?' "$ST_C")" "" -- st_decide "$d"
     st_rcut() {
@@ -850,13 +868,17 @@ m39_exit_verdict_always_red	s/^    \[ -z "\$EXIT_VERDICT" \] || verdict_rc "\$li
 m40_config_token_ignored	s/^        if grep -qsE /        if false \&\& grep -qsE /
 m41_home_cargo_unchecked	s/ "\$HOME\/.cargo"; do$/; do/
 m42_floor_ignores_the_limit	s/fl=\$((lim \/ 5))/fl=$RATE_FLOOR/
-m43_judge_only_the_head	s/if (LAG <= MAXLAG) J = best; else LAG = 0/LAG = 0/
-m44_lag_cap_ignored	s/if (LAG <= MAXLAG) J = best;/if (1) J = best;/
+m43_judge_only_the_head	s/if (all) { J = h; LAG = k; break }/if (all \&\& k == 0) { J = h; LAG = k; break }/
+m44_lag_cap_ignored	s/k <= MAXLAG \&\& k < NRK/k < NRK/
 m45_lag_not_printed	s/note = (C != HEAD \&\& /note = (0 \&\& /
 m46_a_partial_commit_counts	s/!((h, i) in HAS)) all = 0/0) all = 0/
 m47_bundle_keeps_the_head	s/\[\[ "\${j:-}" =~ \^\[0-9a-f\]{40}\$ \]\] \&\& CSHA="\$j"/:/
 m48_history_not_read	s/\[\$c\] + \[(\$c.history.nodes \/\/ \[\])\[\] | select(.oid != \$c.oid)\]/[$c]/
-m49_head_read_twice	s/ | select(.oid != \$c.oid)\]/]/'
+m49_head_read_twice	s/ | select(.oid != \$c.oid)\]/]/
+m50_cap_off_by_one	s/k <= MAXLAG/k < MAXLAG/
+m51_rank_head_unchecked	s/readok \&\& RKO\[0\] == C/readok/
+m52_oldest_commit_wins	s/if (all) { J = h; LAG = k; break }/if (all) { J = h; LAG = k }/
+m53_rank_history_dropped	s/\[(\$c.history.nodes \/\/ \[\])\[\] | .oid | select(. != \$c.oid)\]/[]/'
 # each planted mutant must change the file, still parse, and turn at least one row RED
 mutants() {
     local tmp pass=0 fail=0 name expr o rc
