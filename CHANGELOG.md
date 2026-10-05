@@ -7,6 +7,45 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.70.2] - Unreleased (draft)
+
+0.70.2 carries every PR merged to `main` after the 0.70.1 branch point (2026-10-02). It has 22 squash
+merges, and #4776 merges the 0.70.1 release branch back in. Each line is tagged with its class:
+**gate** (changes or moves a check), **code** (product or test code), or **docs**. Every PR that
+changes what a gate accepts, stricter included, needs the operator's sign-off.
+
+### Gate
+
+- Binary release: the assets pre-check no longer dies under `bash -e` before its verdict is read, so fresh releases get their binaries again (#4658).
+- Nightly release train, its helpers and the step baseline (BLD-002 PR-A); new checks, report-only (#4731).
+- Merge queue reuses the `x86-main`, determinism and macOS-check results when the PR head already passed them on the same tree (#4753).
+- The `present` review job runs on its own `review-light` runner; the check logic is unchanged (#4730).
+- FLAKE-0: the EXIT-trap row of the guard-steps self-test was quarantined (#4762), then re-enabled once it waits for the trap to be armed (#4772).
+- A push to `main` reuses the merge queue's `workspace-test` result for the same sha (#4763).
+- Release coverage gate reads the nightly's sha-keyed coverage receipt, accepts a version-only bump, and runs before the tag (#4738).
+- The `pv` pin guard probes a snapshot taken under cargo's build lock (#4770).
+- The determinism job waits for `x86-main` instead of holding an ARM64 runner (#4755).
+- `x86-main` pins jq 1.8.2, sha256-verified, and fails closed (#4784).
+- Merge-queue reuse wiring rows read the job text from a here-string, not a pipe into `grep -q` (#4775).
+- The mutants PR gate keeps `.git` in its scratch copy, so the contracts baseline can resolve `origin/main` (#4782).
+- Nightly producers for the deep-doctests, deep-nodefault and deep-bins-smoke lanes (#4722).
+- Five nightly root-cause fixes in one PR, including mutants-nightly reading its `--exclude` list from `ci/sections.yml` and a self-tested release-prune step (#4777).
+- Ontology extract: the example walk no longer admits packages under a non-workspace root, so the extract is byte-identical run to run (#4773).
+- 0.70.1 merge-back: the publish preflight now handles a recorded emergency scope. When the ladder contract records a scope for the release being published, the release-readiness verdict is printed as evidence rather than gating, and a bare preflight engages that recorded scope (#4776).
+
+### Code
+
+- Serve: KV caches no longer commit every byte at construction. This re-enables the three StreamingKVCache memory-bound tests, which #4771 had ignored after they ran out of memory on a 30 GB runner (#4771, #4778).
+- Code agent: models with a small context window get an input budget (#4599 regression; released in 0.70.1, merged back by #4776).
+- Binary release: the macOS lane builds into `./target`, so the strip step finds `apr` (#4660).
+- Test harness: every modality test that forces a backend env shares one lock (#4767).
+- Test harness: the host-receipts fixture writes its `.crate` atomically (FLAKE-0) (#4766).
+
+### Docs
+
+- No docs-only PRs. Roadmap fragments and their regen ride along in #4730, #4771, #4722 and #4777.
+
+
 ### Known issues
 - **Qwen3 MoE (Qwen3-30B-A3B, Qwen3-Coder-30B-A3B) on GB10 is not claimed for 0.70 (#3715); planned for 0.70.1.**
   On GB10 (sm_121) every verb (run, chat, serve, code) times out at 600 s on the 20k-token rung. The 0.69.1
