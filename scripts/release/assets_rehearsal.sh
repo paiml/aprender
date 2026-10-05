@@ -25,7 +25,9 @@
 # It cannot upload. `lint` checks every property that keeps it so: workflow permissions
 # exactly contents: read, no job-level permissions, no environment, triggers exactly
 # schedule + dispatch, no `secrets.` reference, no upload, release write or release-event
-# input, every job starting with the credential guard, and every build job keeping its
+# input, every job starting with the credential guard, no step that runs past it (a step
+# if: calling always(), failure() or cancelled()), workflow and job keys and job env names
+# from an allowlist (no workflow env, defaults, container or services), and every build job keeping its
 # checksums as a run artifact. The guard looks for the credential itself (a flag is not a
 # guard): it refuses to run when GH_TOKEN, GITHUB_TOKEN, a cargo registry token, an OIDC
 # request token or a cargo credentials file is present. The case table runs lint and the
@@ -126,6 +128,20 @@ lint() {
     v=$(G=$g "$YQ" '[.jobs[] | select((.steps[0] // {} | keys | sort | join(",")) != (load(strenv(G)) | keys | sort | join(",")) or (.steps[0].name // "") != load(strenv(G)).name or (.steps[0].shell // "") != load(strenv(G)).shell or (.steps[0].run // "") != load(strenv(G)).run)] | length' "$f")
     rm -f "${g:?}"
     [ "$v" = 0 ] || { echo "lint: $v job(s) do not start with the credential guard"; bad=1; }
+    # A step `if:` gets an implicit success() unless it calls a status function, so always(),
+    # failure() or cancelled() is a step that runs on past the guard's refusal. Expression
+    # function names are case-insensitive.
+    v=$("$YQ" '[.jobs[].steps[] | select(.if // "" | tostring | test("(?i)(always|failure|cancelled)[[:space:]]*\\("))] | length' "$f")
+    [ "$v" = 0 ] || { echo "lint: $v step(s) run past the credential guard (if: always/failure/cancelled)"; bad=1; }
+    # What acts before or around the guard is allowlisted: the workflow's and every job's keys,
+    # and job env names. A workflow or job env (BASH_ENV runs before the guard's bash),
+    # defaults, container or services is outside the list.
+    v=$("$YQ" '[keys[] | select(test("^(name|on|permissions|concurrency|jobs)$") | not)] | join(" ")' "$f")
+    [ -z "$v" ] || { echo "lint: workflow key(s) outside the allowlist (they act before the credential guard): $v"; bad=1; }
+    v=$("$YQ" '[.jobs[] | keys[] | select(test("^(name|runs-on|timeout-minutes|outputs|steps|needs|strategy|env|if)$") | not)] | unique | join(" ")' "$f")
+    [ -z "$v" ] || { echo "lint: job key(s) outside the allowlist (they act before the credential guard): $v"; bad=1; }
+    v=$("$YQ" '[.jobs[] | (.env // {}) | keys[] | select(test("^(MACOSX_DEPLOYMENT_TARGET)$") | not)] | unique | join(" ")' "$f")
+    [ -z "$v" ] || { echo "lint: job env name(s) outside the allowlist (they act before the credential guard): $v"; bad=1; }
     if grep -n -E 'secrets\.' "$f"; then echo "lint: a secrets. reference"; bad=1; fi
     if grep -n -E 'uploads\.github\.com|-X ?.?(POST|PUT|PATCH|DELETE)|--request[ =].?(POST|PUT|PATCH|DELETE)|gh (release|api)|cargo publish|github\.event\.release|inputs\.tag' "$f"; then
         echo "lint: an upload, a release write or a release-event input"; bad=1
@@ -350,6 +366,28 @@ self_test() {
     out=$(lint "$d/m.yml"); row "a planted curl -XDELETE -> lint red" 1 $? 'upload' "$out"
     mut '.jobs["build-apr-cuda"].steps += [{"name": "up", "run": "curl -sSf --request POST https://api.github.com/x"}]'
     out=$(lint "$d/m.yml"); row "a planted curl --request POST -> lint red" 1 $? 'upload' "$out"
+    mut '.jobs.build.steps[1].if = "${{ always() }}"'
+    out=$(lint "$d/m.yml"); row "a later step under if: always() -> lint red" 1 $? 'run past the credential guard' "$out"
+    mut '.jobs["build-apr-cpu"].steps[1].if = "failure()"'
+    out=$(lint "$d/m.yml"); row "a later step under if: failure() -> lint red" 1 $? 'run past the credential guard' "$out"
+    mut '.jobs["build-apr-cuda"].steps[2].if = "${{ !Cancelled() }}"'
+    out=$(lint "$d/m.yml"); row "a later step under if: !Cancelled() (any case) -> lint red" 1 $? 'run past the credential guard' "$out"
+    mut '.jobs.build.steps[1].if = "${{ success() && github.event_name == '"'"'schedule'"'"' }}"'
+    out=$(lint "$d/m.yml"); row "a later step under if: success() && ... -> still cannot upload" 0 $? 'cannot upload' "$out"
+    mut '.jobs.build.env.BASH_ENV = "x.sh"'
+    out=$(lint "$d/m.yml"); row "a job env BASH_ENV -> lint red" 1 $? 'job env name.*BASH_ENV' "$out"
+    mut '.jobs["build-apr-darwin"].env.MACOSX_DEPLOYMENT_TARGET = "11.0"'
+    out=$(lint "$d/m.yml"); row "the release's own job env (MACOSX_DEPLOYMENT_TARGET) -> still cannot upload" 0 $? 'cannot upload' "$out"
+    mut '.env.BASH_ENV = "x.sh"'
+    out=$(lint "$d/m.yml"); row "a workflow env -> lint red" 1 $? 'workflow key.*env' "$out"
+    mut '.defaults.run.shell = "sh"'
+    out=$(lint "$d/m.yml"); row "workflow defaults -> lint red" 1 $? 'workflow key.*defaults' "$out"
+    mut '.jobs.build.container = "ubuntu:24.04"'
+    out=$(lint "$d/m.yml"); row "a job container -> lint red" 1 $? 'job key.*container' "$out"
+    mut '.jobs.build.services.s.image = "x"'
+    out=$(lint "$d/m.yml"); row "job services -> lint red" 1 $? 'job key.*services' "$out"
+    mut '.jobs.build.defaults.run.working-directory = "x"'
+    out=$(lint "$d/m.yml"); row "job defaults -> lint red" 1 $? 'job key.*defaults' "$out"
     mut 'del(.jobs.build.steps[] | select(.uses // "" | test("^actions/upload-artifact@")))'
     out=$(lint "$d/m.yml"); row "a build job that keeps nothing -> lint red" 1 $? 'keeps no checksums' "$out"
 
