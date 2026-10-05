@@ -3,13 +3,13 @@ target_crate: aprender
 bindings:
 - contract: adamw-kernel-v1.yaml
   equation: weight_update
-  module_path: aprender::nn::optim::rm_sprop
+  module_path: aprender::nn::optim::rm_sprop::AdamW
   function: step
   status: implemented
   notes: '#4369: #[contract] site at crates/aprender-core/src/nn/optim/rm_sprop.rs:97 had no binding row; row added when the binding moved in-tree'
 - contract: batchnorm-kernel-v1.yaml
   equation: batchnorm_train
-  module_path: aprender::nn::normalization
+  module_path: aprender::nn::normalization::BatchNorm1d
   function: forward
   status: implemented
   notes: '#4369: #[contract] site at crates/aprender-core/src/nn/normalization/mod.rs:391 had no binding row; row added when the binding moved in-tree'
@@ -33,7 +33,7 @@ bindings:
   notes: '#4369: #[contract] site at crates/aprender-core/src/nn/conv/mod.rs:292 had no binding row; row added when the binding moved in-tree'
 - contract: cross-entropy-kernel-v1.yaml
   equation: cross_entropy
-  module_path: aprender::nn::loss
+  module_path: aprender::nn::loss::CrossEntropyLoss
   function: forward
   status: implemented
   notes: '#4369: #[contract] site at crates/aprender-core/src/nn/loss.rs:257 had no binding row; row added when the binding moved in-tree'
@@ -75,7 +75,7 @@ bindings:
   notes: '#4369: #[contract] site at crates/aprender-core/src/cluster/kmeans_impl.rs:362 had no binding row; row added when the binding moved in-tree'
 - contract: layernorm-kernel-v1.yaml
   equation: layernorm
-  module_path: aprender::nn::normalization
+  module_path: aprender::nn::normalization::LayerNorm
   function: forward
   status: implemented
   notes: '#4369: #[contract] site at crates/aprender-core/src/nn/normalization/mod.rs:131 had no binding row; row added when the binding moved in-tree'
@@ -87,7 +87,7 @@ bindings:
   notes: '#4369: #[contract] site at crates/aprender-core/src/autograd/ops/activation.rs:272 had no binding row; row added when the binding moved in-tree'
 - contract: rmsnorm-kernel-v1.yaml
   equation: rmsnorm
-  module_path: aprender::nn::normalization::group_norm
+  module_path: aprender::nn::normalization::group_norm::RMSNorm
   function: forward
   status: implemented
   notes: '#4369: #[contract] site at crates/aprender-core/src/nn/normalization/group_norm.rs:348 had no binding row; row added when the binding moved in-tree'
