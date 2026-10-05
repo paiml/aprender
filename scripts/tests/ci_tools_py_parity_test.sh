@@ -14,6 +14,7 @@
 #   tarball-workspace       vs scripts/lib/tarball_workspace.py, read from git (the file is
 #                           deleted; its callers are switched). Its written Cargo.toml is
 #                           compared too, mapping only the one header line that names it.
+#   tarball-build-errors    vs scripts/lib/tarball_build_errors.py
 #   llama-fit-verdict       vs scripts/lib/llama_fit_verdict.py (kept: model_ladder.sh's
 #                           certification path still calls it), exact exit code too, run
 #                           under CPython 3.12/3.13 (LFV_PYTHON=) whose Unicode it follows.
@@ -35,7 +36,7 @@ set -euo pipefail
 ROOT="$(git rev-parse --show-toplevel)"
 cd "$ROOT" || exit 1
 PY="${PYTHON:-python3}"
-EXPECTED_CASES=177
+EXPECTED_CASES=201
 
 BIN="${CI_TOOLS_BIN:-}"
 if [[ -z "$BIN" ]]; then
@@ -400,6 +401,85 @@ printf '{' >"$tmp/tw-meta-bad.json"
 tw_case "--target-dir bad JSON" "$tmp/tw-meta-bad.json" "$tmp/twfix/nopkgs" --target-dir
 tw_case "--target-dir empty stdin" "$tmp/empty" "$tmp/twfix/nopkgs" --target-dir
 tw_case "--target-dir LIVE" "$tmp/live-meta.json" "$tmp/twfix/nopkgs" --target-dir
+
+# --- 5. tarball-build-errors ---
+# The caller (scripts/package_tarball_build.sh) branches on the exact exit code (0 clean,
+# 1 crate RED, 2 bad input, 3 unowned errors only, 4 build host failed), so every case
+# compares the exact code before the stdout. The .py stays in the tree (N-1: its caller is
+# on the publish gate path), so it is run from the tree.
+TBE_PY=("$PY" scripts/lib/tarball_build_errors.py)
+check_tbe() { # NAME ARGS... (the same args go to both sides)
+    local name="$1" prc rrc
+    shift
+    "${TBE_PY[@]}" "$@" </dev/null >/dev/null 2>&1 && prc=0 || prc=$?
+    "$BIN" tarball-build-errors "$@" </dev/null >/dev/null 2>&1 && rrc=0 || rrc=$?
+    if [[ "$prc" -ne "$rrc" ]]; then
+        fail=$((fail + 1))
+        echo "MISMATCH: tarball-build-errors $name exit code (py $prc, rust $rrc)" >&2
+        return
+    fi
+    check "tarball-build-errors $name (rc $prc)" "$tmp/empty" \
+        "${TBE_PY[@]}" "$@" -- "$BIN" tarball-build-errors "$@"
+}
+t="$tmp/tbe"
+mkdir -p "$t/adir"
+D='/w/ws/pkgs'
+printf '   Compiling a v1.0.0\nwarning: unused variable `x` (error is not at line start)\n' >"$t/clean.log"
+printf '\n' >"$t/nl.log"
+{
+    printf '%s/a-1.0.0/src/lib.rs:1:2: error: x\n' "$D"
+    printf 'error: failed to write `/t/x.rlib`: No space left on device (os error 28)\n'
+} >"$t/host1.log"
+{
+    printf 'e1 No space left on device\ne2 os error 28\ne3 failed to write `f`\ne4 Disk quota exceeded\n'
+    printf 'e5 (signal: 9, SIGKILL: kill)\ne6 process didn'"'"'t exit successfully (signal: 9)\ne7 Cannot allocate memory\n'
+} >"$t/host7.log"
+{
+    printf '%s/a-b-0.70.0-rc.1/src/lib.rs:3:4: error[E0425]: cannot find value `y`\n' "$D"
+    printf '%s/a-b-0.70.0-rc.1/tests/t.rs:9:1: error: mismatched types\n' "$D"
+    printf 'error: could not compile `a` (lib) due to 1 previous error\n'
+    printf 'error: could not compile `a-b` (lib test) due to 2 previous errors\n'
+    printf 'error: could not compile `a-b` (test "t")\n'
+} >"$t/prefix.log"
+printf 'pkgs/zz-2.0.0/src/m.rs:10:5: error: no owner reported\n' >"$t/noowner.log"
+for i in $(seq 1 25); do printf '%s/big-1.0.0/src/lib.rs:%s:1: error: e%s\n' "$D" "$i" "$i"; done >"$t/cap20.log"
+printf 'error: could not compile `only` (bin "only")\nerror: could not compile `two` (lib)\n' >"$t/failedonly.log"
+printf 'error: unexpected argument '"'"'--bogus'"'"' found\nerror: aborting\n' >"$t/unowned.log"
+{
+    for i in $(seq 1 12); do printf 'error: other %s\n' "$i"; done
+    printf 'error: could not compile `c` (lib)\n'
+} >"$t/cap10.log"
+printf '%s/k-1.0.0/src/a.rs:1:1: error: A\r%s/k-1.0.0/src/b.rs:2:2: error: B\x0b%s/k-1.0.0/src/c.rs:3:3: error: C\x0cerror: tail\x1cerror: fs\r\n' "$D" "$D" "$D" >"$t/breaks.log"
+printf '%s/u-1.0.0/src/a.rs:1:1: error: L\xe2\x80\xa8%s/u-1.0.0/src/b.rs:2:2: error: P\xc2\x85error: nel\n' "$D" "$D" >"$t/ubreaks.log"
+printf '%s/v-1.0.0/src/a.rs:1:1: error: bad \xff\xfe utf8 \xe2\x82\n' "$D" >"$t/badutf8.log"
+printf '%s/s-1.0.0/src/a\x1fb.rs:1:1: error: unit-separator in path\n' "$D" >"$t/us.log"
+printf '%s/w-1.0.0/src/a.rs:1:1: error[E-1]: not a word code\n%s/w-1.0.0/src/b.rs:2:2: error[]: empty code\n' "$D" "$D" >"$t/code.log"
+printf '/x/pkgs/outer-1.0.0/pkgs/inner-2.0.0/src/a.rs:4:4: error: nested\nerror: could not compile `inner` (lib)\n' >"$t/nested.log"
+printf '%s/é-crate-1.0.0/src/a.rs:1:1: error: non-ascii\nerror: could not compile `é` (lib)\nerror: could not compile `é-crate` (lib)\n' "$D" >"$t/unicode.log"
+check_tbe "clean" "$t/clean.log"
+check_tbe "newline only" "$t/nl.log"
+check_tbe "empty log" "$tmp/empty"
+check_tbe "missing log" "$t/missing.log"
+check_tbe "directory" "$t/adir"
+check_tbe "no args"
+check_tbe "two args" "$t/clean.log" "$t/clean.log"
+check_tbe "hyphen arg" "-x"
+check_tbe "double dash" "--"
+check_tbe "host beats crate" "$t/host1.log"
+check_tbe "host 7 patterns, cap 5" "$t/host7.log"
+check_tbe "longest prefix, rc version" "$t/prefix.log"
+check_tbe "no owner" "$t/noowner.log"
+check_tbe "cap 20" "$t/cap20.log"
+check_tbe "failed only" "$t/failedonly.log"
+check_tbe "unowned only" "$t/unowned.log"
+check_tbe "cap 10 + attributed" "$t/cap10.log"
+check_tbe "line breaks" "$t/breaks.log"
+check_tbe "unicode line breaks" "$t/ubreaks.log"
+check_tbe "invalid utf-8" "$t/badutf8.log"
+check_tbe "unit separator in path" "$t/us.log"
+check_tbe "error codes" "$t/code.log"
+check_tbe "nested pkgs" "$t/nested.log"
+check_tbe "non-ascii crate" "$t/unicode.log"
 
 # --- 6. llama-fit-verdict ---
 # The original raises (exit 1, nothing printed) on a bad argv, rc, free_mib or input file;

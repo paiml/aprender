@@ -1,0 +1,18 @@
+- id: PMAT-4786
+  github_issue: 4786
+  item_type: task
+  title: 'PY-PORT R1: port scripts/lib/dag_status.py to aprender-ci-tools dag-status'
+  status: planned
+  priority: medium
+  assigned_to: null
+  created: 2026-10-05T12:18:07Z
+  updated: 2026-10-05T12:18:07Z
+  spec: null
+  acceptance_criteria: []
+  phases: []
+  subtasks: []
+  estimated_effort: null
+  labels:
+  - kind:code
+  notes: null
+  epic: 4678

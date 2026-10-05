@@ -4,9 +4,11 @@
 //! runs the same cases through both, with the `.py` original as the external validator.
 
 pub mod coverage_report_scope;
+pub mod dag_status;
 pub mod llama_fit_verdict;
 pub mod package_include_diff;
 pub mod publishable_crates;
 pub mod pystr;
+pub mod tarball_build_errors;
 pub mod tarball_shrink_report;
 pub mod tarball_workspace;
