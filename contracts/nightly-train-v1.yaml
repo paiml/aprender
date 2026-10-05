@@ -2,7 +2,7 @@ metadata:
   version: 1.0.0
   created: '2026-10-04'
   author: PAIML Engineering
-  description: "BLD-002 row R4, the nightly evidence train: one entry point judges one commit J of main from the results its lanes' scheduled producers recorded for J, and prints one line, RELEASABLE H=<J> or NOT RELEASABLE: <lane>, <run>. scripts/release/nightly_train.sh is the judge. A lane that cannot be read prints not_measured, never pass. J is the head C unless the head lacks a measured run from some verdict producer; then J is the newest commit at most 6 behind C on which every verdict producer has a green or red run, and the line adds (judged J, head C, lag k commits); none such means J = C. Report-only: it blocks nothing and no release script reads it."
+  description: "BLD-002 row R4, the nightly evidence train: one entry point judges one commit J of main from the results its lanes' scheduled producers recorded for J, and prints one line, RELEASABLE H=<J> or NOT RELEASABLE: <lane>, <run>. scripts/release/nightly_train.sh is the judge. A lane that cannot be read prints not_measured, never pass. C is the nightly pick, the commit of branch nightly/<night> (nightly-pick-v1), and J is C unless C lacks a measured run from some verdict producer; then J is the newest commit at most 6 behind C in the history of the pick on which every verdict producer has a green or red run, and the line adds (judged J, pick C, lag k commits) and the gap of the pick to main; a pin run stands for C only; none such means J = C. Report-only: it blocks nothing and no release script reads it."
   kind: pattern
   references:
     - "scripts/release/nightly_train.sh — the judge, its case table (--self-test) and its planted mutants (--mutants)"
@@ -22,7 +22,7 @@ five_whys:
 equations:
   lane_state:
     formula: "state(lane, J) = not_measured if the lane has no producer, the read failed, no run of the producer on main is for J, the newest such run is unfinished, no matched job ran, or its attempt is unread; red if any matched job (every leg of a repeated name votes) ended failure, timed_out or startup_failure, or the run succeeded only at attempt 2 or later; else green"
-    domain: "one lane of the constant lane table, and the producer runs read for the judged commit J, the one commit every lane is judged on, at most 6 commits behind main's head C"
+    domain: "one lane of the constant lane table, and the producer runs read for the judged commit J, the one commit every lane is judged on, at most 6 commits behind the nightly pick C, in the history of the pick"
     codomain: "{green, red, not_measured} for each lane"
     invariants:
       - "a run on another commit never stands for J; all lanes are judged on the one J, never a per-lane mix"
@@ -133,7 +133,7 @@ falsification_tests:
 qa_gate:
   id: F-NT-001
   name: "Main's head is called releasable only from green evidence for every release-day check"
-  description: "scripts/release/nightly_train.sh reads the night's results for one judged commit J of main (the head, or the newest commit up to 6 behind it that every verdict producer ran on) and prints RELEASABLE H=<J> or NOT RELEASABLE: <lane>, <run>. Its case table pins every lane state and the verdict set; its mutants prove the table can fail."
+  description: "scripts/release/nightly_train.sh reads the night's results for one judged commit J (the nightly pick, or the newest commit up to 6 behind it in its history that every verdict producer ran on) and prints RELEASABLE H=<J> or NOT RELEASABLE: <lane>, <run>. Its case table pins every lane state and the verdict set; its mutants prove the table can fail."
   checks:
     - "lane_state"
     - "verdict_line"

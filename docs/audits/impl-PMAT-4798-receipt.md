@@ -2,6 +2,17 @@
 
 Change: `scripts/release/nightly_train.sh`, plus the matching amendment of `contracts/nightly-train-v1.yaml` (C becomes J), one `Makefile` comment, and the roadmap entry `docs/roadmaps/entries/PMAT-4798.yaml`. Not touched: `.github/workflows/nightly-train.yml`, whose step label still says "main's head" (cosmetic; a workflow edit needs its own gate-keeping proof).
 
+## Joint rule with PMAT-4817 (branch w4798/pin-on-common-commit; cop ruling, wc298 AGREE b98632de81)
+On this branch C is the nightly pick (`refs/heads/nightly/<night>`), not main's head. Wherever this receipt says "the head"
+read "the pick". J is searched in the pick's own history (`pick.target.history(first: 7)`, same query), at most 6 commits
+behind it; the line prints `(judged <sha10>, pick <sha10>, lag k commits)` and the gap of the pick to main
+`[main <sha10> +N]`. A pin run (pin job, inside the night window) stands for C only; a plain run stands for its own commit.
+Where PMAT-4817's "sha != C -> not_measured" row and this rule meet, this rule governs by the cop's ruling: the
+6-commit limit lifts on pinned nights only once the operator signs row pin. Not claimed: the live `compare` call that
+prints N has not been run against GitHub.
+Measured on this branch: self-test 90/90 rows, mutants 65/65 killed (4817: m43-m53; 4798: m54-m64 renumbered; m65 plants
+the pin-run rule).
+
 ## Ticket intent
 The nightly judged C = main's head at the read and counted a lane only from a run on C, so any merge after the
 producers fired voided the night. Now it judges C' = the newest commit, at or before the read, at most 6 commits behind
@@ -15,7 +26,7 @@ lane without a run reads not_measured. There is no other fallback. The line prin
   The prototype ordered by first-run time and counted commits seen in runs, a lower bound that could exceed the cap
   unseen. This replaces it.
 - One commit for all lanes, never a per-lane mix. A rank list whose rank 0 is not the head read is ignored.
-- `--self-test`: 70/70 rows. `--mutants`: 53/53 killed (m43-m49 prototype, m50-m53 new: cap off by one,
+- On the #4798-only branch `w4798/b1-common-commit`: `--self-test` 70/70 rows, `--mutants` 53/53 killed (m43-m49 prototype, m50-m53 new: cap off by one,
   head of the rank list unchecked, oldest wins, history dropped from the rank list).
 - Merge-queue history on main is not strictly first-parent (a merge commit lists the merged branch's commits too);
   those carry no main runs, only shorten the lookback. Conservative.
