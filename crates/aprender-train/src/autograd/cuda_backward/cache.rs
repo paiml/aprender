@@ -279,3 +279,48 @@ pub fn pre_warm_lora_backward_kernels(
     let _ = count;
     Ok(())
 }
+
+/// Compile one backward GEMM under its runtime key, with the dims gemm.rs builds it
+/// with for that key (R15a C6).
+#[cfg(feature = "cuda")]
+fn warm_backward_gemm(
+    cache: &mut KernelCache,
+    target: &str,
+    gemm: &keys::BackwardGemm,
+) -> Result<()> {
+    use super::gemm::BACKWARD_TILE_SIZE;
+    use trueno_gpu::kernels::backward::{GemmBackwardAKernel, GemmBackwardBKernel};
+    use trueno_gpu::kernels::Kernel;
+
+    let (m, n, k) = (gemm.m, gemm.n, gemm.k);
+    let ptx = if keys::is_backward_a(gemm) {
+        GemmBackwardAKernel::tiled_unrolled(m, n, k, BACKWARD_TILE_SIZE).emit_ptx_for_target(target)
+    } else {
+        GemmBackwardBKernel::tiled_unrolled(m, n, k, BACKWARD_TILE_SIZE).emit_ptx_for_target(target)
+    };
+    cache.get_or_compile(&gemm.key, &ptx)?;
+    Ok(())
+}
+
+/// Pre-warm the LoRA backward GEMMs of every adapted target (R15a C6, equation
+/// `lora_backward_prewarm`): `dims` holds `(d_out, d_in)` per target. The q/v shapes
+/// [`pre_warm_lora_backward_kernels`] warms are among them, so they hit the cache.
+#[cfg(feature = "cuda")]
+pub fn pre_warm_lora_target_backward_kernels(
+    dims: &[(u32, u32)],
+    max_seq_len: usize,
+    lora_rank: usize,
+) -> Result<()> {
+    if lora_rank == 0 {
+        return Ok(());
+    }
+    let cache = KERNEL_CACHE.get().ok_or(CudaTensorError::DeviceNotInitialized)?;
+    let mut cache = cache.lock().map_err(|_err| {
+        CudaTensorError::KernelError("Failed to acquire backward kernel cache lock".to_string())
+    })?;
+    let target = cache.sm_target().to_string();
+    for gemm in &keys::lora_backward_gemms(dims, max_seq_len as u32, lora_rank as u32) {
+        warm_backward_gemm(&mut cache, &target, gemm)?;
+    }
+    Ok(())
+}
