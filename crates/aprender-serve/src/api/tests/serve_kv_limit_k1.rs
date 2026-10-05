@@ -9,10 +9,10 @@
 //! things. At the limit it answers 200 with every requested token. At the limit
 //! and one past it, it answers 400 and says the prompt was refused whole.
 //!
-//! The model is synthetic (no file), so the test runs on any CUDA runner. It is
-//! `#[ignore]`d because it needs a device, and it never skips: run it with
-//! `cargo test -p aprender-serve --features cuda --lib serve_kv_limit_k1 -- --ignored`
-//! on a CUDA runner, where a failed device init is a failure, not a pass (L25).
+//! The model is synthetic (no file), so the test runs on any CUDA runner; CI runs
+//! it in `cuda-unit` (ci/sections.yml), which executes every cuda-only lib test by
+//! name on the device. It never skips: without a device it panics, so a run with
+//! no CUDA is a failure, not a pass (L25).
 
 use crate::api::{create_router, AppState};
 use crate::gguf::test_helpers::create_test_model_with_config;
@@ -117,7 +117,7 @@ fn model() -> OwnedQuantizedModel {
 
 /// The router `apr serve` builds for a CUDA GGUF: the model sized by
 /// `for_serving`, behind the continuous-batching scheduler. Panics without a
-/// CUDA device: the test is opt-in, so reaching here without one is a failure.
+/// CUDA device: a cuda build without one is a failure, never a skip (L25).
 fn served() -> (axum::Router, usize) {
     let cuda = match OwnedQuantizedModelCuda::for_serving(model(), 0) {
         Ok(m) => m,
@@ -165,7 +165,6 @@ async fn complete(app: &axum::Router, prompt_tokens: usize) -> (StatusCode, serd
 }
 
 #[tokio::test(flavor = "multi_thread")]
-#[ignore = "needs a CUDA device; run with --features cuda -- --ignored on a CUDA runner"]
 async fn k1_serve_kv_is_the_model_context_and_the_limit_is_a_clean_400() {
     let (app, kv) = served();
     assert_eq!(
