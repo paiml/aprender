@@ -235,7 +235,7 @@ judge() {
     # regenerates before any reader (scripts/roadmap_one_writer_ci.sh). A diff that
     # DOES write roadmap.yaml keeps this rule exactly as before.
     # Only the committed == fresh COMPARISON moves: the fragments must still aggregate (quorum r2 C), or a local
-    # guard_tree run would pass fragments that every later writer and the tag refuse.
+    # guard_tree run would pass fragments that every later writer PR refuses.
     if [ "$roadmap_changed" = 0 ]; then
         out=$(bash "$AGG" --print --roadmap "$td/head.yaml" --entries "$td/entries" 2>&1 >/dev/null)
         rc=$?
@@ -248,7 +248,7 @@ judge() {
             return 2
         fi
         if [ "$rc" = 0 ]; then
-            printf 'MOVED rule 2 (committed %s == aggregate): the fragments aggregate; this diff does not write %s, so the comparison runs on the nightly writer PR and at the tag (RQ-8)\n' \
+            printf 'MOVED rule 2 (committed %s == aggregate): the fragments aggregate; this diff does not write %s, so the comparison runs on the writer PR (RQ-8)\n' \
                 "$ROADMAP_FILE" "$ROADMAP_FILE"
         else
             violations=$((violations + 1))
