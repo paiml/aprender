@@ -75,7 +75,7 @@ deep-bins-build;verdict;autopilot deep: all-bins cargo build --locked --release;
 deep-bins-smoke;verdict;autopilot deep: nightly_manifest.py smoke;.github/workflows/deep-nightly.yml;^schedule$;^deep-bins-smoke$
 dogfood;verdict;dogfood.sh --phase pre-publish + preflight R5;-;-;-
 models;verdict;models_t1.sh GPU-host ladder legs, preflight R7;.github/workflows/models-nightly.yml;^schedule$;^models$
-readiness;verdict;release_readiness.sh, preflight R8;-;-;-
+readiness;verdict;release_readiness.sh, preflight R8;.github/workflows/readiness-nightly.yml;^workflow_run$;^readiness$
 milestone;verdict;check_milestone_cut.sh --must-carry;.github/workflows/release-gates-nightly.yml;^schedule$;^milestone$
 cleanroom-cpu;verdict;clean-room (aprender) on the tag;.github/workflows/release-lanes-nightly.yml;^schedule$;^cleanroom-cpu$
 cleanroom-gpu;verdict;b2-gpu.yml on the tag;.github/workflows/release-lanes-nightly.yml;^schedule$;^cleanroom-gpu$
@@ -590,6 +590,9 @@ self_test() {
     st_verdict_lanes_are_release_day_checks() { printf "verdict=%s;coverage=%s\n" "$(printf "%s\n" "$LANES" | awk -F ";" "\$2 == \"verdict\" { printf \"%s%s\", s, \$1; s = \" \" }")" "$(printf "%s\n" "$LANES" | awk -F ";" "\$1 == \"coverage\" { print \$2 }")"; }
     row verdict_lanes_are_release_day_checks 0 "verdict=ci-main deep-doctests deep-nodefault deep-examples deep-bins-build deep-bins-smoke dogfood models readiness milestone cleanroom-cpu cleanroom-gpu assets preflight publish-dryrun;coverage=info" "" -- \
         st_verdict_lanes_are_release_day_checks
+    # the verdict lanes with no producer on main yet, by name (#4719): wiring one, or unwiring one, moves this row
+    st_unwired_verdict_lanes() { printf '%s\n' "$LANES" | awk -F ';' 'BEGIN { printf "unwired=" } $2 == "verdict" && $4 == "-" { printf "%s%s", s, $1; s = " " } END { print "" }'; }
+    row unwired_verdict_lanes_are_named 0 "unwired=dogfood assets" "" -- st_unwired_verdict_lanes
     st_norm() {
         printf '{"workflows":[{"node_id":"WA","path":".github/workflows/a.yml"},{"node_id":"WC","path":".github/workflows/c.yml"}]}\n' > "$tmp/wf.json"
         printf '%s' '{"data":{"repository":{"defaultBranchRef":{"name":"main","target":{"oid":"'"$ST_C"'","tree":{"oid":"t"},"statusCheckRollup":{"contexts":{"nodes":[{},{"name":"gate","status":"COMPLETED","conclusion":"SUCCESS","startedAt":"s","completedAt":"e","checkSuite":{"status":"COMPLETED","conclusion":"SUCCESS","branch":{"name":"main"},"workflowRun":{"databaseId":301,"event":"push","createdAt":"c","workflow":{"id":"WC"}}}}]}}}}},"w0":{"id":"WA","runs":{"nodes":[{"databaseId":101,"createdAt":"c1","event":"schedule","checkSuite":{"status":"COMPLETED","conclusion":"SUCCESS","branch":{"name":"main"},"commit":{"oid":"'"$ST_C"'"},"checkRuns":{"nodes":[{"name":"job-a","status":"COMPLETED","conclusion":"SUCCESS","startedAt":"s1","completedAt":"e1"},{"name":"job-a","status":"COMPLETED","conclusion":"FAILURE","startedAt":"s0","completedAt":"e0"}]}}}]}}}}' > "$tmp/gql.json"
@@ -767,7 +770,8 @@ m38_verdict_rc_always_red	s/"RELEASABLE "\*) return 0 ;;/"RELEASABLE "*) return 
 m39_exit_verdict_always_red	s/^    \[ -z "\$EXIT_VERDICT" \] || verdict_rc "\$line" || exit 1$/    [ -z "$EXIT_VERDICT" ] || exit 1/
 m40_config_token_ignored	s/^        if grep -qsE /        if false \&\& grep -qsE /
 m41_home_cargo_unchecked	s/ "\$HOME\/.cargo"; do$/; do/
-m42_floor_ignores_the_limit	s/fl=\$((lim \/ 5))/fl=$RATE_FLOOR/'
+m42_floor_ignores_the_limit	s/fl=\$((lim \/ 5))/fl=$RATE_FLOOR/
+m43_readiness_unwired	s/^readiness;verdict;\(.*\);.github\/workflows\/readiness-nightly.yml;.*$/readiness;verdict;\1;-;-;-/'
 # each planted mutant must change the file, still parse, and turn at least one row RED
 mutants() {
     local tmp pass=0 fail=0 name expr o rc
