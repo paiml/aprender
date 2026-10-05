@@ -35,11 +35,14 @@ jobs:
     # Cheap: two API reads. Finds both artifacts at the commit or reports which one is missing.
     runs-on: [self-hosted, X64, Linux, clean-room, intel]
     timeout-minutes: 10
+    # A workflow_run run counts as a night in the judge's readiness lane (^workflow_run$), so it measures only when
+    # the upstream run was itself scheduled: a dispatched dogfood-nightly or models-nightly is skipped here
+    # (not_measured), never a night. A direct dispatch of this workflow still runs; the judge never counts it.
     if: >-
       github.event_name == 'workflow_dispatch' ||
       (github.event.workflow_run.head_branch == 'main' &&
        github.event.workflow_run.head_repository.full_name == github.repository &&
-       github.event.workflow_run.event != 'pull_request')
+       github.event.workflow_run.event == 'schedule')
     outputs:
       ok: ${{ steps.find.outputs.ok }}
       sha: ${{ steps.find.outputs.sha }}
