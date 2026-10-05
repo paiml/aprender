@@ -1,0 +1,459 @@
+diff --git a/crates/aprender-contracts/src/ontology/extract/apr_model.rs b/crates/aprender-contracts/src/ontology/extract/apr_model.rs
+index 18623d5b43..829b0b9fcb 100644
+--- a/crates/aprender-contracts/src/ontology/extract/apr_model.rs
++++ b/crates/aprender-contracts/src/ontology/extract/apr_model.rs
+@@ -169,7 +169,9 @@ pub fn emit_file(g: &mut Graph, stem: &str, rel: &str, bytes: &[u8]) -> Result<(
+ pub fn extract(contract_dir: &Path, g: &mut Graph) -> AprStats {
+     let mut stats = AprStats::default();
+     let root = contract_dir.parent().unwrap_or(contract_dir);
+-    for (stem, _rel, doc) in super::pv_contract::documents(contract_dir) {
++    for (_stem, rel, doc) in super::pv_contract::documents(contract_dir) {
++        // #4709 P-1: the edge names the contract by its path key, the subject `pv_contract` gave it.
++        let key = super::pv_contract::contract_key(&rel);
+         let entity = doc.get("entity");
+         if scalar(entity.and_then(|e| e.get("type"))).as_deref() != Some("apr-model") {
+             continue;
+@@ -179,7 +181,7 @@ pub fn extract(contract_dir: &Path, g: &mut Graph) -> AprStats {
+         };
+         let path = root.join(&r);
+         match std::fs::read(&path) {
+-            Ok(bytes) => match emit_file(g, &stem, &r, &bytes) {
++            Ok(bytes) => match emit_file(g, &key, &r, &bytes) {
+                 Ok(()) => stats.files_read += 1,
+                 Err(e) => stats.errors.push(e),
+             },
+diff --git a/crates/aprender-contracts/src/ontology/extract/code.rs b/crates/aprender-contracts/src/ontology/extract/code.rs
+index 5008b24bca..a1e9d39432 100644
+--- a/crates/aprender-contracts/src/ontology/extract/code.rs
++++ b/crates/aprender-contracts/src/ontology/extract/code.rs
+@@ -1280,6 +1280,9 @@ pub fn emit(g: &mut Graph, b: &Bound, found: &Result<Resolved, Unresolved>) {
+ pub struct Resolution {
+     pub stats: CodeStats,
+     pub symbols: Vec<(Bound, Result<Resolved, Unresolved>)>,
++    /// #4709 P-1: the registry each `symbols` entry came from, index-aligned with `symbols`. A binding row
++    /// names its contract by stem, and the registry's directory says which of a stem's files it means.
++    pub origins: Vec<PathBuf>,
+     /// The repo root has a `[workspace]` manifest.
+     pub at_workspace_root: bool,
+ }
+@@ -1305,7 +1308,7 @@ pub fn resolve_all(contract_dir: &Path) -> Resolution {
+         at_workspace_root: ws.is_workspace_root,
+         ..Resolution::default()
+     };
+-    for (_file, registry) in regs {
++    for (file, registry) in regs {
+         out.stats.registries += 1;
+         for b in bound_of(&registry) {
+             let found = resolver.resolve(&b.module_path, &b.function);
+@@ -1316,6 +1319,7 @@ pub fn resolve_all(contract_dir: &Path) -> Resolution {
+             }
+             out.stats.symbols += 1;
+             out.symbols.push((b, found));
++            out.origins.push(file.clone());
+         }
+     }
+     out.stats.files_parsed = resolver.files_parsed();
+@@ -1327,8 +1331,20 @@ pub fn resolve_all(contract_dir: &Path) -> Resolution {
+ /// dir's parent, into `g`.
+ pub fn extract(contract_dir: &Path, g: &mut Graph) -> CodeStats {
+     let r = resolve_all(contract_dir);
+-    for (b, found) in &r.symbols {
+-        emit(g, b, found);
++    let index = super::pv_contract::ContractIndex::of(contract_dir);
++    for ((b, found), file) in r.symbols.iter().zip(&r.origins) {
++        // #4709 P-1: `sym:implements` names the contract file in the registry's own directory when the stem
++        // has one there, so a twin is no longer one node shared by both files.
++        let from_dir = file
++            .parent()
++            .and_then(|d| d.strip_prefix(contract_dir).ok())
++            .map(|d| d.to_string_lossy().replace('\\', "/"))
++            .unwrap_or_default();
++        let b = Bound {
++            contract: index.resolve(&b.contract, &from_dir),
++            ..b.clone()
++        };
++        emit(g, &b, found);
+     }
+     r.stats
+ }
+@@ -2121,4 +2137,37 @@ mod tests {
+             "a trait is not generic-qualified"
+         );
+     }
++
++    /// #4709 P-1: a binding row in `a/binding.yaml` naming `x-v1` implements `contracts/a/x-v1.yaml`, not its
++    /// twin `contracts/b/x-v1.yaml`; a row writing `../t-v1` names the top-level `t-v1`. Keyed by stem, both
++    /// twins were one node and the relative row named `contract/..%2Ft-v1`, a node no file has. The rows need
++    /// not resolve: `sym:implements` is emitted for an unresolved symbol too.
++    #[test]
++    fn a_binding_row_implements_the_twin_in_its_own_directory() {
++        let tmp = tempfile::tempdir().unwrap();
++        let c = tmp.path().join("contracts");
++        for d in ["a", "b"] {
++            std::fs::create_dir_all(c.join(d)).unwrap();
++            std::fs::write(c.join(d).join("x-v1.yaml"), "name: x\n").unwrap();
++        }
++        std::fs::write(c.join("t-v1.yaml"), "name: t\n").unwrap();
++        std::fs::write(
++            c.join("a/binding.yaml"),
++            "version: 1.0.0\ntarget_crate: k\nbindings:\n\
++             - contract: x-v1.yaml\n  equation: e\n  module_path: k::m\n  function: f\n  status: implemented\n\
++             - contract: ../t-v1.yaml\n  equation: e\n  module_path: k::m\n  function: g\n  status: implemented\n",
++        )
++        .unwrap();
++        let mut g = Graph::new();
++        let stats = extract(&c, &mut g);
++        assert_eq!(stats.symbols, 2);
++        let implements =
++            |f: &str| g.objects(&iri("symbol", &format!("k::m::{f}")), &sym("implements"));
++        assert_eq!(
++            implements("f"),
++            vec![&Term::iri(iri("contract", "a/x-v1"))],
++            "the twin in the registry's directory"
++        );
++        assert_eq!(implements("g"), vec![&Term::iri(iri("contract", "t-v1"))]);
++    }
+ }
+diff --git a/crates/aprender-contracts/src/ontology/extract/gguf.rs b/crates/aprender-contracts/src/ontology/extract/gguf.rs
+index 2cb573da73..0a29a5d5dc 100644
+--- a/crates/aprender-contracts/src/ontology/extract/gguf.rs
++++ b/crates/aprender-contracts/src/ontology/extract/gguf.rs
+@@ -298,12 +298,14 @@ pub fn emit_file(g: &mut Graph, stem: &str, rel: &str, bytes: &[u8]) -> Result<(
+ pub fn extract(contract_dir: &Path, g: &mut Graph) -> GgufStats {
+     let mut stats = GgufStats::default();
+     let mut seen: BTreeSet<String> = BTreeSet::new();
+-    for (stem, rel, doc) in super::pv_contract::documents(contract_dir) {
++    for (_stem, rel, doc) in super::pv_contract::documents(contract_dir) {
++        // #4709 P-1: edges name the contract by its path key, the subject `pv_contract` gave it.
++        let key = super::pv_contract::contract_key(&rel);
+         let ty = scalar(doc.get("entity").and_then(|e| e.get("type")));
+         if ty.as_deref() != Some("gguf") {
+             continue;
+         }
+-        for rung in rungs_of(&stem, &doc) {
++        for rung in rungs_of(&key, &doc) {
+             if seen.insert(rung.sha256.clone()) {
+                 emit_rung(g, &rung);
+             }
+@@ -314,7 +316,7 @@ pub fn extract(contract_dir: &Path, g: &mut Graph) -> GgufStats {
+             let path = root.join(&r);
+             if path.is_file() {
+                 match std::fs::read(&path) {
+-                    Ok(bytes) => match emit_file(g, &stem, &r, &bytes) {
++                    Ok(bytes) => match emit_file(g, &key, &r, &bytes) {
+                         Ok(()) => stats.files_read += 1,
+                         Err(e) => stats.errors.push(e),
+                     },
+@@ -325,7 +327,6 @@ pub fn extract(contract_dir: &Path, g: &mut Graph) -> GgufStats {
+                 }
+             }
+         }
+-        let _ = rel;
+     }
+     stats
+ }
+diff --git a/crates/aprender-contracts/src/ontology/extract/lean.rs b/crates/aprender-contracts/src/ontology/extract/lean.rs
+index 459df26afd..10cf65f2a2 100644
+--- a/crates/aprender-contracts/src/ontology/extract/lean.rs
++++ b/crates/aprender-contracts/src/ontology/extract/lean.rs
+@@ -237,8 +237,8 @@ pub fn emit(g: &mut Graph, s: &Statement, model_of: &[String]) {
+         lean("discharge"),
+         Term::string(if s.sorry_free { "grounded" } else { "admitted" }),
+     );
+-    for stem in model_of {
+-        g.insert(n.clone(), lean("modelOf"), Term::iri(iri("contract", stem)));
++    for key in model_of {
++        g.insert(n.clone(), lean("modelOf"), Term::iri(iri("contract", key)));
+     }
+ }
+ 
+@@ -259,14 +259,16 @@ pub fn extract(contract_dir: &Path, g: &mut Graph) -> LeanStats {
+     let statements = walk(root, &base, &mut stats);
+     let accepted: Vec<BTreeSet<String>> =
+         statements.iter().map(Statement::accepted_names).collect();
+-    // contract stem → its references; reference → the statements it names
++    // contract key → its references; reference → the statements it names
+     let mut model_of: BTreeMap<usize, BTreeSet<String>> = BTreeMap::new();
+-    for (stem, _rel, doc) in super::pv_contract::documents(contract_dir) {
++    for (stem, rel, doc) in super::pv_contract::documents(contract_dir) {
++        // #4709 P-1: `modelOf` names the contract by its path key, the subject `pv_contract` gave it.
++        let key = super::pv_contract::contract_key(&rel);
+         for reference in references_of(&doc) {
+             let mut hit = false;
+             for (i, names) in accepted.iter().enumerate() {
+                 if reference_matches(&reference, names) {
+-                    model_of.entry(i).or_default().insert(stem.clone());
++                    model_of.entry(i).or_default().insert(key.clone());
+                     hit = true;
+                 }
+             }
+diff --git a/crates/aprender-contracts/src/ontology/extract/pv_contract.rs b/crates/aprender-contracts/src/ontology/extract/pv_contract.rs
+index cb202c5864..eb6f798527 100644
+--- a/crates/aprender-contracts/src/ontology/extract/pv_contract.rs
++++ b/crates/aprender-contracts/src/ontology/extract/pv_contract.rs
+@@ -1,6 +1,6 @@
+ //! ONT-001 §3.7, §5 ONT-4b — `extract:pv-contract`: the contract YAML itself becomes triples.
+ //!
+-//! One contract file → one subject, `https://ont.paiml.dev/v1alpha1/contract/<stem>`, typed `ont:Contract`,
++//! One contract file → one subject, `https://ont.paiml.dev/v1alpha1/contract/<key>`, typed `ont:Contract`,
+ //! `prov:Entity` and — when it has an `entity.type` T — `entity:T` (#4160, so a shape can target one type),
+ //! carrying what the corpus already says about it: `ont:id` (the stem — every contract has one, which is why the
+ //! first shape can require it), `ont:file`, `ont:kind` (`metadata.kind`), `ont:name`, `ont:version`,
+@@ -10,7 +10,15 @@
+ //!
+ //! **Reads RAW YAML**, like the sigma and relations gates: `entity:`, `relations:` and `shape:` are §4.2 additive keys
+ //! serde drops from the typed `Contract`. Deterministic: files are visited in byte order and the graph is a set.
++//!
++//! **The key is the path, not the stem** (#4709 P-1): `<key>` is the file's path under the contract dir without
++//! `.yaml` — `contract/http-api-v1` for `contracts/http-api-v1.yaml`, `contract/aprender%2Fhttp-api-v1` for
++//! `contracts/aprender/http-api-v1.yaml` ([`iri`] escapes the `/`). Keyed by stem, the 55 stems that have a file in two directories were
++//! one node with two `ont:file`s, so no edge could say which file it meant. A top-level contract's key IS its
++//! stem, so its IRI did not move. A citation by stem alone (a `relations:` target, a binding row's `contract:`)
++//! goes through [`ContractIndex::resolve`].
+ 
++use std::collections::BTreeMap;
+ use std::path::Path;
+ 
+ use crate::ontology::rdf::{iri, ont, Graph, Term, PROV_ENTITY, RDF_TYPE};
+@@ -20,12 +28,101 @@ use crate::ontology::rdf::{iri, ont, Graph, Term, PROV_ENTITY, RDF_TYPE};
+ #[must_use]
+ pub fn extract(contract_dir: &Path) -> Graph {
+     let mut g = Graph::new();
++    let index = ContractIndex::of(contract_dir);
+     for (stem, rel, doc) in documents(contract_dir) {
+-        extract_one(&mut g, &stem, &rel, &doc);
++        extract_in(&mut g, &stem, &rel, &doc, &index);
+     }
+     g
+ }
+ 
++/// The graph key of the contract at `rel` (a path relative to the repository root, as [`documents`] gives it):
++/// the path under the contract dir — `rel` without its first component — without `.yaml`.
++#[must_use]
++pub fn contract_key(rel: &str) -> String {
++    let under = rel.split_once('/').map_or(rel, |(_, k)| k);
++    under.strip_suffix(".yaml").unwrap_or(under).to_string()
++}
++
++/// The directory part of a key: `""` for a top-level contract.
++fn key_dir(key: &str) -> &str {
++    key.rsplit_once('/').map_or("", |(d, _)| d)
++}
++
++/// Every contract key under a contract dir, by stem: how a file that names another contract by its stem alone
++/// is joined to ONE node. Built from the same walk as [`documents`] without parsing (an unparseable file is
++/// indexed but has no node, which is no worse than the dangling stem edge it would otherwise get).
++#[derive(Debug, Default)]
++pub struct ContractIndex {
++    by_stem: BTreeMap<String, Vec<String>>,
++}
++
++impl ContractIndex {
++    #[must_use]
++    pub fn of(contract_dir: &Path) -> Self {
++        let sigma_path = contract_dir.join("ontology.yaml");
++        let mut files = Vec::new();
++        crate::lint::collect_yaml_files(contract_dir, &mut files);
++        files.sort();
++        let mut by_stem: BTreeMap<String, Vec<String>> = BTreeMap::new();
++        for file in files.iter().filter(|f| **f != sigma_path) {
++            let (Some(stem), Ok(under)) = (
++                file.file_stem().and_then(|s| s.to_str()),
++                file.strip_prefix(contract_dir),
++            ) else {
++                continue;
++            };
++            let under = under.to_string_lossy().replace('\\', "/");
++            let key = under.strip_suffix(".yaml").unwrap_or(&under).to_string();
++            by_stem.entry(stem.to_string()).or_default().push(key);
++        }
++        Self { by_stem }
++    }
++
++    /// The key a citation of `target` from a file in directory `from_dir` (a [`key_dir`]) names. A target that
++    /// starts `./` or `../` is a path relative to `from_dir` (binding rows write `contract: ../x-v1`; keyed by
++    /// stem those 9 edges on main named `contract/..%2Fx-v1`, a node no file has); one that climbs above the
++    /// contract dir is returned as written, so it still dangles visibly. Any other target with a `/` is a path
++    /// under the contract dir, and so already a key. A stem names: its only file; else its file in `from_dir`;
++    /// else its top-level file; else — two files elsewhere and neither local nor top-level — the bare stem, a
++    /// node no file has, so the edge dangles visibly instead of picking a twin by byte order.
++    #[must_use]
++    pub fn resolve(&self, target: &str, from_dir: &str) -> String {
++        if target.starts_with("./") || target.starts_with("../") {
++            let mut parts: Vec<&str> = from_dir.split('/').filter(|p| !p.is_empty()).collect();
++            for seg in target.split('/') {
++                match seg {
++                    "" | "." => {}
++                    ".." => {
++                        if parts.pop().is_none() {
++                            return target.to_string();
++                        }
++                    }
++                    s => parts.push(s),
++                }
++            }
++            return parts.join("/");
++        }
++        if target.contains('/') {
++            return target.to_string();
++        }
++        let Some(keys) = self.by_stem.get(target) else {
++            return target.to_string();
++        };
++        if let [only] = keys.as_slice() {
++            return only.clone();
++        }
++        let local = if from_dir.is_empty() {
++            target.to_string()
++        } else {
++            format!("{from_dir}/{target}")
++        };
++        keys.iter()
++            .find(|k| **k == local)
++            .cloned()
++            .unwrap_or_else(|| target.to_string())
++    }
++}
++
+ /// Every contract document under `contract_dir` (Σ excluded), in byte order: `(stem, path relative to the
+ /// repository root, raw YAML)`. The one walk every extractor shares, so they all see the same corpus.
+ #[must_use]
+@@ -60,9 +157,23 @@ pub fn documents(contract_dir: &Path) -> Vec<(String, String, serde_yaml::Value)
+     out
+ }
+ 
+-/// One contract document into `g`. Public so a fixture can be extracted without a directory.
++/// One contract document into `g`. Public so a fixture can be extracted without a directory: with no index, a
++/// relation target that is a stem names `contract/<stem>`, as before #4709 P-1.
+ pub fn extract_one(g: &mut Graph, stem: &str, file: &str, doc: &serde_yaml::Value) {
+-    let s = iri("contract", stem);
++    extract_in(g, stem, file, doc, &ContractIndex::default());
++}
++
++/// One contract document into `g`, its subject keyed by `file` and its stem-only relation targets resolved
++/// through `index`.
++pub fn extract_in(
++    g: &mut Graph,
++    stem: &str,
++    file: &str,
++    doc: &serde_yaml::Value,
++    index: &ContractIndex,
++) {
++    let key = contract_key(file);
++    let s = iri("contract", &key);
+     g.insert(s.clone(), RDF_TYPE, Term::iri(ont("Contract")));
+     g.insert(s.clone(), RDF_TYPE, Term::iri(PROV_ENTITY));
+     g.insert(s.clone(), ont("id"), Term::string(stem));
+@@ -109,7 +220,8 @@ pub fn extract_one(g: &mut Graph, stem: &str, file: &str, doc: &serde_yaml::Valu
+                 let t = t.trim();
+                 let t = t.strip_prefix("contracts/").unwrap_or(t);
+                 let t = t.strip_suffix(".yaml").unwrap_or(t);
+-                g.insert(s.clone(), ont(role), Term::iri(iri("contract", t)));
++                let t = index.resolve(t, key_dir(&key));
++                g.insert(s.clone(), ont(role), Term::iri(iri("contract", &t)));
+             }
+         }
+     }
+@@ -429,4 +541,102 @@ mod tests {
+         // PMAT-3704: drawn by the shapes gate every run as pc_extract["pv-contract"].
+         assert!(positive_control());
+     }
++
++    // ---- #4709 P-1: a contract is keyed by its path, so twins are two nodes ----
++
++    #[test]
++    fn a_contract_key_is_its_path_under_the_contract_dir() {
++        for (rel, key) in [
++            ("contracts/http-api-v1.yaml", "http-api-v1"),
++            (
++                "contracts/aprender/http-api-v1.yaml",
++                "aprender/http-api-v1",
++            ),
++            ("contracts/work/a/b-v1.yaml", "work/a/b-v1"),
++            ("x/y-v1.yaml", "y-v1"),
++        ] {
++            assert_eq!(contract_key(rel), key, "{rel}");
++        }
++        assert_eq!(key_dir("aprender/http-api-v1"), "aprender");
++        assert_eq!(key_dir("http-api-v1"), "");
++    }
++
++    #[test]
++    fn a_stem_resolves_to_its_local_then_top_level_file_and_never_by_byte_order() {
++        let index = ContractIndex {
++            by_stem: BTreeMap::from([
++                ("solo".to_string(), vec!["work/solo".to_string()]),
++                (
++                    "twin".to_string(),
++                    vec!["a/twin".to_string(), "b/twin".to_string()],
++                ),
++                (
++                    "top".to_string(),
++                    vec!["a/top".to_string(), "top".to_string()],
++                ),
++            ]),
++        };
++        for (target, from, want) in [
++            ("solo", "", "work/solo"), // the only file, wherever it is
++            ("solo", "a", "work/solo"),
++            ("twin", "a", "a/twin"), // the file in the citing directory
++            ("twin", "b", "b/twin"),
++            ("twin", "c", "twin"), // neither local nor top-level: dangles, no pick
++            ("twin", "", "twin"),
++            ("top", "c", "top"), // the top-level file
++            ("top", "a", "a/top"),
++            ("ghost", "a", "ghost"),   // no file: as written
++            ("b/twin", "a", "b/twin"), // a path is already a key
++            ("../top", "a", "top"),    // relative to the citing directory
++            ("./twin", "a", "a/twin"),
++            ("../../x", "a", "../../x"), // climbs out of the contract dir: as written
++        ] {
++            assert_eq!(index.resolve(target, from), want, "{target} from {from:?}");
++        }
++        assert_eq!(ContractIndex::default().resolve("twin", "a"), "twin");
++    }
++
++    #[test]
++    fn twins_are_two_nodes_and_a_stem_relation_names_the_local_one() {
++        let tmp = tempfile::tempdir().expect("temp dir");
++        let c = tmp.path().join("contracts");
++        for d in ["a", "b"] {
++            std::fs::create_dir_all(c.join(d)).expect("dir");
++            std::fs::write(c.join(d).join("x-v1.yaml"), format!("name: x-{d}\n")).expect("write");
++        }
++        std::fs::write(
++            c.join("a/y-v1.yaml"),
++            "name: y\nrelations:\n  depends_on: [x-v1]\n",
++        )
++        .expect("write");
++        std::fs::write(c.join("top-v1.yaml"), "name: top\n").expect("write");
++        let g = extract(&c);
++        assert_eq!(
++            g.instances_of(&ont("Contract")).len(),
++            4,
++            "one node per file"
++        );
++        let (ax, bx) = (iri("contract", "a/x-v1"), iri("contract", "b/x-v1"));
++        assert_eq!(
++            g.objects(&ax, &ont("file")),
++            vec![&Term::string("contracts/a/x-v1.yaml")]
++        );
++        assert_eq!(
++            g.objects(&bx, &ont("file")),
++            vec![&Term::string("contracts/b/x-v1.yaml")]
++        );
++        assert_eq!(
++            g.objects(&ax, &ont("id")),
++            vec![&Term::string("x-v1")],
++            "ont:id stays the stem"
++        );
++        assert_eq!(
++            g.objects(&iri("contract", "a/y-v1"), &ont("depends_on")),
++            vec![&Term::iri(ax)]
++        );
++        assert!(
++            !g.objects(&iri("contract", "top-v1"), RDF_TYPE).is_empty(),
++            "a top-level contract keeps its stem IRI"
++        );
++    }
+ }
