@@ -59,6 +59,17 @@ check() { # check <file...> -> 0 iff every file is readable, holds a mutation ru
     return "$bad"
 }
 
+# The files a bare run judges. The self-test proves every workflow file with a mutation run is listed here.
+defaults=("$ROOT/.github/workflows/mutants-nightly.yml" "$ROOT/ci/sections.yml" "$ROOT/.github/workflows/ci.yml")
+uncovered() { # uncovered <listed file...> -> each workflow file holding a mutation run that is not listed
+    local f l hit
+    for f in "$ROOT"/.github/workflows/*.yml "$ROOT/ci/sections.yml"; do
+        [ -n "$(runs "$f")" ] || continue
+        hit=0; for l in "$@"; do [ "$l" = "$f" ] && hit=1; done
+        [ "$hit" = 1 ] || printf '%s\n' "$f"
+    done
+}
+
 if [ "${1:-}" = "--self-test" ]; then
     d=$(mktemp -d "${TMPDIR:-/tmp}/mutcap.XXXXXX") || exit 2
     trap 'rm -f "${d:?}"/*.yml; rmdir "${d:?}"' EXIT
@@ -109,7 +120,15 @@ if [ "${1:-}" = "--self-test" ]; then
     # Query modes and comments are not mutation runs: a file holding only them has no run to judge.
     printf '    steps:\n      - name: q\n        run: |\n          # bash scripts/mutants_diff_gate.sh pr.diff\n          bash scripts/mutants_diff_gate.sh --exempt-ref "$R" a b\n' > "$d/query.yml"
     mrow 2 queryonly   "$d/query.yml"
+    # A file that exists but cannot be read is never a pass. Dropping the -r test is an equivalent mutant (awk then
+    # fails and runs's rc gives 2); this row pins the outcome. As root every file reads: not measured.
+    cp "$d/capped.yml" "$d/unread.yml"; chmod 000 "$d/unread.yml"
+    if [ -r "$d/unread.yml" ]; then echo "NOT_MEASURED unreadable row: this user reads mode 000"; nm=1; else mrow 2 unreadable "$d/unread.yml"; fi
+    # The bare run's list covers every workflow file that runs mutants; dropping one is caught.
+    u=$(uncovered "${defaults[@]}"); [ -z "$u" ] && echo "ok    defaults cover every mutation file" || { echo "FAIL  not in defaults: $u"; bad=1; }
+    u=$(uncovered "${defaults[@]:0:2}"); [ -n "$u" ] && echo "ok    a dropped default is caught" || { echo "FAIL  dropping ci.yml went unseen"; bad=1; }
+    [ "$bad" = 0 ] && [ "${nm:-0}" = 1 ] && { echo "SELF-TEST NOT MEASURED (1 row)" >&2; exit 2; }
     [ "$bad" = 0 ] && { echo "SELF-TEST PASSED"; exit 0; }
     echo "SELF-TEST FAILED" >&2; exit 1
 fi
-if [ "$#" -gt 0 ]; then check "$@"; else check "$ROOT/.github/workflows/mutants-nightly.yml" "$ROOT/ci/sections.yml" "$ROOT/.github/workflows/ci.yml"; fi
+if [ "$#" -gt 0 ]; then check "$@"; else check "${defaults[@]}"; fi
