@@ -260,8 +260,14 @@ mod tools_reach_the_template_4650 {
         for (name, tpl) in [("qwen25", QWEN25), ("qwen3", QWEN3), ("qwen35", QWEN35)] {
             let got = render(tpl, Some(&tools()));
             let block = format!("<tools>\n{TOOL_JSON}\n</tools>");
-            assert!(got.contains(&block), "{name}: no tools block {block:?} in:\n{got}");
-            assert!(got.contains("<tool_call>"), "{name}: no call format in:\n{got}");
+            assert!(
+                got.contains(&block),
+                "{name}: no tools block {block:?} in:\n{got}"
+            );
+            assert!(
+                got.contains("<tool_call>"),
+                "{name}: no call format in:\n{got}"
+            );
             assert!(
                 got.contains("What is the weather in Paris?"),
                 "{name}: the user turn is gone:\n{got}"
@@ -285,7 +291,8 @@ mod tools_reach_the_template_4650 {
     fn no_tools_renders_exactly_what_render_official_renders_4650() {
         let msgs = vec![ChatMessage::user("What is the weather in Paris?")];
         for tpl in [QWEN25, QWEN3, QWEN35] {
-            let plain = render_official(tpl, None, None, &msgs, true, Some(false)).expect("renders");
+            let plain =
+                render_official(tpl, None, None, &msgs, true, Some(false)).expect("renders");
             assert_eq!(render(tpl, None), plain);
             assert!(!plain.contains("<tools>"));
         }
@@ -295,7 +302,8 @@ mod tools_reach_the_template_4650 {
     /// filter fails both.
     #[test]
     fn tojson_writes_what_json_dumps_writes_4650() {
-        let v = minijinja::Value::from_serialize(serde_json::json!({"a": [1, "x<y&z>'"], "b": null}));
+        let v =
+            minijinja::Value::from_serialize(serde_json::json!({"a": [1, "x<y&z>'"], "b": null}));
         let got = py_tojson(&v).expect("serializes");
         assert_eq!(got.as_str(), Some(r#"{"a": [1, "x<y&z>'"], "b": null}"#));
     }
