@@ -576,7 +576,7 @@ M16 octal bytes not decoded|P24|lib/python_runcount/trace.awk|s/sprintf("%c", v)
 M17 uv not counted|P6|lib/python_runcount/trace.awk|s/    } else if (id\[pid\] == "uv" \&\& why != "exec") emit(pid, "uv", uvname\[pid\])/    }/
 M18 an unreadable #! script is not counted|P26|lib/python_runcount/trace.awk|s/if (h == "?") id\[pid\] = "unk"/if (0) id[pid] = "unk"/
 M19 a process still running at the end is dropped|T7|lib/python_runcount/trace.awk|s/^END { for (p in img) finish(p, "end") }/END { }/
-M20 no fork tree from pass 1|T6|lib/python_runcount/trace.awk|s/if (c + 0 > 0) par1\[c, life1\[c\] + 0\] = \$1/if (0) par1[c, 0] = $1/
+M20 no fork tree from pass 1|T6|lib/python_runcount/trace.awk|s/if (c + 0 > 0) par1\[c, ncl\[c\]++\] = \$1/if (0) par1[c, 0] = $1/
 M21 the shim never joined to the trace|P10|lib/python_runcount/keys.awk|s/src = (\$2 in shim) ? "shim+trace" : "trace"/src = "trace"/
 M22 a tracked script keyed as a temp one|P1|lib/python_runcount/keys.awk|s/^    if (r != "" \&\& (r in tracked)) return "script:" r/    if (0) return "script:" r/
 M23 the shim's call-time hash ignored|P15|lib/python_runcount/keys.awk|s/if ((pid, p) in callh) return/if (0) return/
