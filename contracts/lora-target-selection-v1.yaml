@@ -1,5 +1,5 @@
 metadata:
-  version: "1.8.0"
+  version: "1.9.0"
   created: "2026-04-13"
   author: PAIML Engineering
   registry: true
@@ -13,10 +13,11 @@ metadata:
     - "0.72 R15a cell C4b (la-0.72): the CPU forward of the instruct pipeline adds every selected adapter's delta to its own projection, reading each adapter from its own slot (crates/aprender-train/src/transformer/attention.rs, feedforward.rs, model.rs, and the instruct pipeline's CPU training step and generation); 1.6.0 adds cpu_forward and FALSIFY-LORA_TARGET_SELECTION_V1_008"
     - "0.72 R15a cell C4c (la-0.72): TransformerTrainer builds its LoRA layers by the selected targets and its forward reads each adapter from that same slot (crates/aprender-train/src/train/transformer_trainer/trainer.rs); 1.7.0 adds trainer_forward and FALSIFY-LORA_TARGET_SELECTION_V1_009"
     - "0.72 R15a cell C5a (la-0.72): the CUDA trainer's APR checkpoint, its resume and its PEFT adapter save name and lay out every adapter a block holds by its target (crates/aprender-train/src/train/transformer_trainer/cuda_trainer.rs, lora_checkpoint.rs); 1.8.0 adds checkpoint_names and FALSIFY-LORA_TARGET_SELECTION_V1_010"
+    - "0.72 R15a cell C5b (la-0.72): the CUDA trainer's NF4 blocks, its LoRA scratch and its LoRA gradient workspace hold one adapter per selected target, each initialised by target, and q_proj and v_proj keep the init they had (crates/aprender-train/src/train/transformer_trainer/lora_init.rs)"
   description: "LoRA target module selection"
 
 name: lora-target-selection
-version: "1.8.0"
+version: "1.9.0"
 scope: "crates/aprender-train/src/finetune/"
 
 description: |
@@ -68,6 +69,10 @@ equations:
     description: "The CUDA trainer saves, restores and exports every adapter a block holds under its own target's name and shape, so a checkpoint carries each adapter the block trained and gives it back to the same target"
     formula: "∀ block l, ∀ (t, A, σB) ∈ download_lora_adapters(l): the APR checkpoint holds lora.{l}.{module(t)}.lora_a = A and lora.{l}.{module(t)}.lora_b = σB, with module(t) ∈ {q_proj, k_proj, v_proj, o_proj, gate_proj, up_proj, down_proj}; resume of block l with held targets T_l uploads (t, A, σB) for each t ∈ T_l whose two tensors the file holds, and a layer with none keeps its init; the PEFT adapter holds, for each such (t, A, σB), module model.layers.{l}.self_attn.{module(t)} for t ∈ {q, k, v, o} and model.layers.{l}.mlp.{module(t)} for t ∈ {gate, up, down}, with lora_A = Aᵀ of shape (r, d_in(t)) and lora_B = (σB)ᵀ / σ of shape (d_out(t), r), (d_out, d_in) as in target_slots, and target_modules = the held targets' module names. For T_l = (q_proj, v_proj) every name, shape and value is the one written before"
 
+  nf4_init_targets:
+    description: "The CUDA trainer gives each NF4 block one adapter per selected target, sizes its LoRA scratch and LoRA gradient workspace for those targets, and keeps the q_proj and v_proj init it had"
+    formula: "T = the trainer's targets as in trainer_forward; ∀ block l: lora_targets(l) = T, and ∀ t ∈ T with (d_out, d_in) as in target_slots: A_t[j] = sin((j + φ(l, t))·0.1)·0.01 for j < d_in·r, and B_t = 0 of length r·d_out, where φ(l, q_proj) = 1000·l, φ(l, v_proj) = 2000·l + 500 and φ(l, t) = 1000·l + 100000·p(t) + 333 for every other t, p(t) its position in q, k, v, o, gate, up, down; q_proj and v_proj go to the block through new and every other t through add_lora_adapter; the shared LoRA scratch and gradient workspace are built for T. For T = (q_proj, v_proj) every A and B is the one built before, bit for bit"
+
 falsification:
   - id: FALSIFY-LORA_TARGET_SELECTION_V1_001
     description: "∀ target ∈ selected: target exists in base model weights"
@@ -117,3 +122,7 @@ falsification:
     description: "The CUDA trainer checkpoints every adapter a block holds by its target (0.72 R15a C5a). At 35b92cfc27 its APR save, its resume and its PEFT adapter save went through download_lora_weights / upload_lora_weights and target_qv_projections, so they wrote and read only lora.{l}.q_proj and lora.{l}.v_proj and transposed with the q and v dims. A block holding k, o or MLP adapters lost them on save and resume. Now the snapshot is download_lora_adapters, the APR save writes lora.{l}.{module}.lora_{a,b} for each (target, A, σB), resume reads back the targets the block holds (lora_targets) and calls upload_lora_adapters, and the PEFT save converts each adapter with its target's (d_out, d_in) under model.layers.{l}.self_attn|mlp.{module}, the CPU trainer's paths, with target_modules the held targets. Falsified if a q/v name, shape or value differs from the pre-C5a one, if any target's APR names, PEFT path, PEFT dims or layout is wrong, if an APR write and read loses or misplaces any of the 7 targets, or if a pre-C5a q/v checkpoint no longer restores q and v. Planted mutants that must be RED: a name with the wrong module, the PEFT conversion with the q dims for every target, B left scaled, resume reading only q and v."
     test: "crates/aprender-train/src/train/transformer_trainer/lora_checkpoint_tests.rs::falsify_lora_target_selection_v1_010_apr_round_trip_every_target (with the other falsify_lora_target_selection_v1_010 tests there; no device)"
     evidence: "cargo test -p aprender-train --lib falsify_lora_target_selection_v1_010"
+  - id: FALSIFY-LORA_TARGET_SELECTION_V1_011
+    description: "The CUDA trainer builds its NF4 blocks with one adapter per selected target (0.72 R15a C5b). At 7449d608a7 upload_blocks gave every NF4 block a q_proj and a v_proj adapter through CudaNf4TransformerBlock::new and nothing else, and with_model built the shared LoRA scratch and gradient workspace for q_proj, v_proj, whatever lora_target_modules said. The CPU trainer (C4c) and the checkpoint (C5a) already follow the targets, so a CUDA run asked for all_linear trained and saved q and v only. Now T comes from lora_target_modules as in the CPU trainer (trainer_targets), nf4_init_adapters builds each block's adapters in slot order with A_t[j] = sin((j + φ(l, t))·0.1)·0.01 and B_t = 0 at the target's dims, q_proj and v_proj go to new and every other target to add_lora_adapter, and the scratch and the gradient workspace are built by new_for_targets with T. The optimizer state already follows the adapters a block holds. Falsified if a q_proj or v_proj A or B differs by one bit from the pre-C5b init, if a target's A or B has the wrong length or B is not zero, if two adapters of one block or of two layers get the same A, if the adapters are not in T's order, if a target outside T is built, if new is not given exactly the q_proj and v_proj adapters T holds, or if the default, all_linear, a shorthand and unknown names do not give the CPU trainer's T. Planted mutants that must be RED: v_proj with q_proj's phase, every other target with q_proj's phase, A built with d_out for d_in, the adapters always q_proj and v_proj, and add_lora_adapter also given q_proj. The NF4 block calls themselves need a CUDA device and are covered by the #[ignore] tests of row 005."
+    test: "crates/aprender-train/src/train/transformer_trainer/lora_init_tests.rs::falsify_lora_target_selection_v1_011_qv_init_is_the_old_init (with the other falsify_lora_target_selection_v1_011 tests there; no device)"
+    evidence: "cargo test -p aprender-train --lib falsify_lora_target_selection_v1_011"
