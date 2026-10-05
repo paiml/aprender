@@ -343,6 +343,9 @@ self_test() {
     row 0 "LEGACY_NAMES 0/1" "a QUOTED sunset: \"null\" is a string: the name is sunset" sed -i 's/sunset: null/sunset: "null"/' ledger.yaml
     row 2 "REFUSE" "a sunset YAML could read as a number is refused" sed -i 's/sunset: 0.69.0/sunset: 0/' ledger.yaml
     row 2 "REFUSE" "an empty classes list is refused" sed -i 's/^classes: .*/classes: []/' ledger.yaml
+    row 2 "REFUSE" "a class holding ': ' is a map to YAML, refused" sed -i 's/^classes: \[KEEP,/classes: [KEEP, a: b,/' ledger.yaml
+    row 2 "REFUSE" "a class ending in ':' is a map to YAML, refused" sed -i 's/^classes: \[KEEP,/classes: [KEEP, a:,/' ledger.yaml
+    row 0 "PASS" "control: a:b with no space is a plain string class to YAML" sed -i 's/^classes: \[KEEP,/classes: [KEEP, a:b,/' ledger.yaml
     row 2 "REFUSE" "a root [package] version that is not a string, with no workspace version, is refused" mut_root_version_ws
     row 2 "REFUSE" "a [workspace] package key (inline or dotted) is refused" mut_ws_inline_package
     row 2 "REFUSE" "a quoted key in a package header is refused" sed -i 's/^\[package.metadata\]/[package."metadata"]/' fuzz/Cargo.toml

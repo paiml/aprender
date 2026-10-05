@@ -113,7 +113,8 @@ function yaml_true(key) { return !FQ[key] && F[key] ~ /^(true|True|TRUE|yes|Yes|
         if (v !~ /^\[[^]\[{}"']*\]$/) refuse("classes is not a one-line flow sequence of plain scalars: " v)
         v = substr(v, 2, length(v) - 2); nc = split(v, cs, ",")
         for (j = 1; j <= nc; j++) if (trim(cs[j]) != "") {
-            if (typed_word(trim(cs[j])) || indicator(trim(cs[j])) || index(trim(cs[j]), "\t")) refuse("a class is not a plain string to YAML: " trim(cs[j]))
+            # [KEEP, a: b] holds a map to YAML, not the class "a: b"; a:b (no space) is a string.
+            if (typed_word(trim(cs[j])) || indicator(trim(cs[j])) || index(trim(cs[j]), "\t") || trim(cs[j]) ~ /:([ \t]|$)/) refuse("a class is not a plain string to YAML: " trim(cs[j]))
             print "class\t" trim(cs[j]); ncls++
         }
         if (!ncls) refuse("classes is empty")
