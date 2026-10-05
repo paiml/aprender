@@ -1,0 +1,3 @@
+--only: measuring inv:Qwen3.5-35B-A3B-UD-IQ4_XS.gguf alone; the sweep receipt is not touched
+--- model capability ladder on lambda (NVIDIA GeForce RTX 4090, cc 8.9) apr=/mnt/nvme-raid0/targets/screen-0695/release/apr sha=2add1c6447 version=0.70.0 ---
+    inventory: 26 model(s) matching *q4_k*.gguf,*q4k*.gguf,*q4_k*.apr,*q4k*.apr,*qwen2.5*.gguf,*qwen3.5*.gguf,*qwen2.5*.apr,*qwen3.5*.apr under /home/noah/models:/home/noah/.apr/models:/home/noah/.cache/apr/models

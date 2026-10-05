@@ -1,0 +1,8 @@
+--only: measuring inv:qwen2.5-coder-1.5b-q4k.apr alone; the sweep receipt is not touched
+--- model capability ladder on lambda (NVIDIA GeForce RTX 4090, cc 8.9) apr=/mnt/nvme-raid0/tmp/e6-rc0695/gh-assets-rc1/x-apr-v0.69.5-rc.1-x86_64-unknown-linux-gnu-cuda/apr-v0.69.5-rc.1-x86_64-unknown-linux-gnu-cuda/apr sha=cc4463f7a6 version=0.70.1 ---
+    inventory: 26 model(s) matching *q4_k*.gguf,*q4k*.gguf,*q4_k*.apr,*q4k*.apr,*qwen2.5*.gguf,*qwen3.5*.gguf,*qwen2.5*.apr,*qwen3.5*.apr under /home/noah/models:/home/noah/.apr/models:/home/noah/.cache/apr/models
+  [REFUSE] inv:qwen2.5-coder-1.5b-q4k.apr fit: does-not-fit -- llama-fit-params exit 1: the model does not fit this host's free memory
+Traceback (most recent call last):
+  File "<stdin>", line 3, in <module>
+AssertionError: rungs 1 != appended 0
+decline: the receipt could not be written and verified (python rc=0) (a receipt with a lost write would look complete, so none is written)
