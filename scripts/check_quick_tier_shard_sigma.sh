@@ -108,16 +108,19 @@ sections jobs workspace-test-shard"
 # is a key it cannot count, so it is never a pass.
 job_block() {
     awk -v p="$2:" -v j="  $3:" -v k="$3" '
+        # Round 9: held trailing lines indented 3+ belong to the last block scalar of the job (a
+        # comment there is script text to the loader), so they are digested too, not dropped.
+        function trail(  n, a, i) { n = split(held, a, "\n"); for (i = 1; i < n; i++) if (a[i] ~ /^   /) print a[i]; held = "" }
         BEGIN { dk = "^  [\"'"'"']?" k "[\"'"'"']?[ \t]*:([ \t]|$)" }
         inp && (/\r/ || /^\t/ || /^ [^ ]/) { bad = 1 }
         inp && /^  [^ #]/ && !/^  [A-Za-z0-9_-]+:([ \t]|$)/ { bad = 1 }
         $0 == p { inp = 1; next }
         inp && /^[^ #]/ { inp = 0 }
         inp && $0 ~ dk { seen++ }
-        inb && !/^[[:space:]]*#/ && (/^[^ ]/ || /^ [^ ]/ || /^  [^ ]/) { inb = 0; done = 1 }
+        inb && !/^[[:space:]]*#/ && (/^[^ ]/ || /^ [^ ]/ || /^  [^ ]/) { inb = 0; done = 1; trail() }
         inp && !inb && !done && $0 == j { inb = 1 }
         inb { if ($0 ~ /^[[:space:]]*(#.*)?$/) { held = held $0 "\n"; next } printf "%s%s\n", held, $0; held = "" }
-        END { if (bad) exit 4; if (seen > 1) exit 3 }' "$1"
+        END { if (inb) trail(); if (bad) exit 4; if (seen > 1) exit 3 }' "$1"
 }
 # outside_jobs <file> -> every top-level key line, plus every non-comment line of every top-level
 # block but `jobs:`. That pins by VALUE what reaches every pinned job without touching one of
@@ -420,6 +423,19 @@ jobs:' > "$d/c-env.yml"
     r5 2 "a top-level key hidden behind a lone CR in a workflow comment (round 8)" "$d/r8-wf.yml" "$SEC"
     awk '/^matrix-pins:/ { printf "# x\rsovereign-ci: {uses: evil/x@1}\n" } { print }' "$SEC" > "$d/r8-sec.yml"
     r5 2 "a top-level key hidden behind a lone CR in a sections comment (round 8)" "$WF" "$d/r8-sec.yml"
+    # round 9: a comment after the last line of a pinned job, at that line's indent, is script text
+    # to the loader (the last block scalar), so it must move the digest
+    for t in "workflow workspace-test" "sections workspace-test-shard"; do
+        read -r r9role r9job <<< "$t"
+        if [ "$r9role" = workflow ]; then src=$WF; else src=$SEC; fi
+        awk -v j="  $r9job:" 'function out() { if (inb) { print ind "# r9 injected"; inb = 0 } }
+            inb && /^[^#]/ && (/^[^ ]/ || /^ [^ ]/ || /^  [^ ]/) { out() }
+            $0 == j { inb = 1 }
+            inb && /[^ ]/ && !/^[[:space:]]*#/ { ind = $0; sub(/[^ ].*/, "", ind) }
+            { print } END { out() }' "$src" > "$d/r9-$r9role.yml"
+        if [ "$r9role" = workflow ]; then r5 1 "a trailing comment in the last script line of $r9job (round 9)" "$d/r9-$r9role.yml" "$SEC"
+        else r5 1 "a trailing comment in the last script line of $r9job (round 9)" "$WF" "$d/r9-$r9role.yml"; fi
+    done
     { cat "$WF"; printf 'jobs:\n  other:\n    runs-on: shadow\n'; } > "$d/r5-jobs2.yml"
     r5 1 "a second top-level jobs: (a loader keeps it in place of the first)" "$d/r5-jobs2.yml" "$SEC"
     edit "$WF" 'merge_group:' 'workflow_dispatch:' after '  schedule: [{cron: "0 0 * * *"}]' > "$d/r5-on.yml"
