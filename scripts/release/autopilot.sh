@@ -206,6 +206,12 @@ cut_tag() {
     awk -v n="$need" 'index($0, n) == 1 { f = 1 } END { exit !f }' "${AP:-/nonexistent}/readiness-t1.log" 2>/dev/null \
         || die "no '#3715 ENFORCE PASS' for $v at $mc in ${AP:-<unset AP>}/readiness-t1.log -- release-readiness-v1 missing, skipped or not enforced; no tag"
     say "READINESS-GATE $(grep -F "$need" "$AP/readiness-t1.log" | tail -n 1)"
+    # #4691 + #4734: coverage-nightly's receipt for $mc (or for the commit $mc is a version-only bump of)
+    # must hold COV_FLOOR BEFORE the tag. Missing, stale, unmeasured, below floor or gh failing -> no tag,
+    # nothing carried (on v0.70.1 the coverage refusal came 25 min after the tag was public).
+    bash "$REPO_ROOT/scripts/release/tag_coverage_gate.sh" --resolve "$mc" >> "$LOG" 2>&1 \
+        || die "no coverage receipt at or above COV_FLOOR for $mc (tag_coverage_gate.sh --resolve) -- no tag, nothing carried"
+    say "COVERAGE-RECEIPT $(grep -E '^ok    coverage ' "$LOG" | tail -n 1)"
     bash "$REPO_ROOT/scripts/check_milestone_cut.sh" "$v" --must-carry >> "$LOG" 2>&1 || rc=$?
     case "$rc" in
         0) say "MUST-CARRY $v: no open must-carry issue (check_milestone_cut.sh --must-carry rc=0)" ;;

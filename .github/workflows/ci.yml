@@ -72,7 +72,64 @@ jobs:
   # `workspace-test`, `ci / gate` and `gate`, each reading the fat jobs' results
   # with the same rule the old job of that name applied.
   # ==========================================================================
+  # T43 (Refs #4678): on merge_group, x86-main, determinism and mac-check re-ran a
+  # tree the PR head had already passed on 4 of 5 measured merges (131.5 of their
+  # 163.5 runner-min). mg-reuse READS whether this queue entry may reuse the head's
+  # green jobs: scripts/ci_mg_reuse.sh holds the key (K1-K6) and its case table.
+  # An output is 1 only when every condition was read and held; skipped, failed or
+  # 0 runs the job in full. The RustSec advisory steps are never reused:
+  # x86-main-advisories runs them whenever x86-main is skipped.
+  mg-reuse:
+    if: github.event_name == 'merge_group'
+    runs-on: [self-hosted, Linux, X64, clean-room]
+    timeout-minutes: 10
+    permissions:
+      contents: read
+      actions: read
+      pull-requests: read
+    outputs:
+      x86: ${{ steps.key.outputs.x86 }}
+      det: ${{ steps.key.outputs.det }}
+      mac: ${{ steps.key.outputs.mac }}
+      cite: ${{ steps.key.outputs.cite }}
+    steps:
+      # Full history: the key reads the queue head's parent, the base's parent and
+      # whether the base is an ancestor of the PR head.
+      - uses: actions/checkout@v7
+        with:
+          fetch-depth: 0
+      - name: The reuse key's case table (hermetic)
+        run: bash scripts/ci_mg_reuse.sh --self-test
+      - name: Read the reuse key for this queue entry (3 API calls)
+        id: key
+        env:
+          GH_TOKEN: ${{ github.token }}
+          EVT: ${{ github.event_name }}
+          QREF: ${{ github.event.merge_group.head_ref }}
+          QHEAD: ${{ github.event.merge_group.head_sha }}
+          QBASE: ${{ github.event.merge_group.base_sha }}
+          REPO: ${{ github.repository }}
+        run: |
+          set -euo pipefail
+          out=$(bash scripts/ci_mg_reuse.sh resolve --event "$EVT" --ref "$QREF" --queue-head "$QHEAD" --base "$QBASE" --repo "$REPO")
+          printf '%s\n' "$out"
+          printf '%s\n' "$out" | grep -E '^(x86|det|mac|cite|pr_head)=' >> "$GITHUB_OUTPUT"
+
+  # The same case table on every event, so a change that breaks the key is RED on
+  # its own PR, not first in the queue. gate requires it.
+  mg-reuse-self-test:
+    runs-on: [self-hosted, Linux, clean-room]
+    timeout-minutes: 10
+    permissions:
+      contents: read
+    steps:
+      - uses: actions/checkout@v7
+      - name: The reuse key's case table (hermetic)
+        run: bash scripts/ci_mg_reuse.sh --self-test
+
   x86-main:
+    needs: [mg-reuse]
+    if: ${{ !cancelled() && needs.mg-reuse.outputs.x86 != '1' }}
     runs-on: [self-hosted, Linux, X64, clean-room]
     timeout-minutes: 240
     # The sections carry their own permissions blocks (the sov provenance section
@@ -86,6 +143,36 @@ jobs:
       FAT_VARS_JSON: ${{ toJSON(vars) }}
       FAT_SECRET_PR_REVIEW_SIGNING_KEY_B64: ${{ secrets.PR_REVIEW_SIGNING_KEY_B64 }}
     steps:
+      # The fleet pins jq 1.8.2. Runners in this clean-room pool whose image ships jq 1.6
+      # print a number literal such as 90.00 as 90, so the guard-tree section turns RED
+      # (scripts/release/tag_coverage_gate.sh --self-test, run by check_tag_coverage_gated.sh).
+      # This step puts the pinned jq first on PATH for every later step, and through it for
+      # every section fat_driver runs on the host (step_env copies the driver's PATH; a
+      # section with a job container gets the image's PATH, and none of those calls jq).
+      # Fail closed: a checksum, version or behaviour mismatch stops the job. The sha256 is
+      # the one in the upstream release's sha256sum.txt for jq-linux-amd64.
+      - name: Pin jq 1.8.2 (sha256-verified, fail closed)
+        env:
+          JQ_URL: https://github.com/jqlang/jq/releases/download/jq-1.8.2/jq-linux-amd64
+          JQ_SHA256: b1c22172dd303f3be49e935aa56aa48a8b7a46e0bc838b4997d3bb451495870f
+        run: |
+          set -euo pipefail
+          d="$RUNNER_TEMP/jq-1.8.2"
+          mkdir -p "$d"
+          curl -fsSL --retry 3 --retry-delay 5 -o "$d/jq" "$JQ_URL"
+          printf '%s  %s\n' "$JQ_SHA256" "$d/jq" | sha256sum -c -
+          chmod +x "$d/jq"
+          v=$("$d/jq" --version)
+          [ "$v" = "jq-1.8.2" ] || { echo "::error::the pinned jq reports '$v', not jq-1.8.2"; exit 1; }
+          rc=0; "$d/jq" -e . < /dev/null > /dev/null || rc=$?
+          [ "$rc" = 4 ] || { echo "::error::the pinned jq exits $rc on empty input with -e, not 4"; exit 1; }
+          echo "$d" >> "$GITHUB_PATH"
+      - name: jq on PATH is the pinned one
+        run: |
+          set -euo pipefail
+          command -v jq; jq --version
+          [ "$(command -v jq)" = "$RUNNER_TEMP/jq-1.8.2/jq" ] || { echo "::error::jq on PATH is $(command -v jq), not the pinned one"; exit 1; }
+          [ "$(jq --version)" = "jq-1.8.2" ] || { echo "::error::jq on PATH reports $(jq --version)"; exit 1; }
       # Full history: a section whose own checkout asked for depth 1 (the default)
       # is cut back to exactly that by the driver; one asking for 0 needs it all.
       - uses: actions/checkout@v7
@@ -171,6 +258,46 @@ jobs:
         continue-on-error: true
         with:
           subject-path: ${{ runner.temp }}/fat/sov.provenance/ws/${{ github.event.repository.name }}/Cargo.toml
+
+  # T43: x86-main's RustSec advisory steps, verbatim from ci/sections.yml
+  # guard-cargo, for a merge_group run where mg-reuse skipped x86-main. Their input
+  # is the advisory database, which changes with no commit, so a green head run is
+  # no evidence for them. ci / gate and gate require this job whenever they reuse.
+  x86-main-advisories:
+    needs: [mg-reuse]
+    if: ${{ !cancelled() && needs.mg-reuse.outputs.x86 == '1' }}
+    runs-on: [self-hosted, Linux, X64, clean-room]
+    timeout-minutes: 30
+    permissions:
+      contents: read
+    steps:
+      - uses: actions/checkout@v7
+      - name: Install cargo-deny (if absent)
+        env:
+          CARGO_INSTALL_ROOT: ${{ runner.temp }}/cargo-deny
+        run: |
+          if ! command -v cargo-deny > /dev/null 2>&1; then
+            cargo install cargo-deny --locked
+            echo "$CARGO_INSTALL_ROOT/bin" >> "$GITHUB_PATH"
+            export PATH="$CARGO_INSTALL_ROOT/bin:$PATH"
+          fi
+          cargo deny --version
+      - name: Advisories must pass, with deny.toml exemptions honoured
+        env:
+          GITHUB_TOKEN: ${{ github.token }}
+        run: |
+          export GIT_TERMINAL_PROMPT=0 GIT_CONFIG_COUNT=1 GIT_CONFIG_KEY_0=http.https://github.com/.extraheader
+          GIT_CONFIG_VALUE_0="AUTHORIZATION: basic $(printf 'x-access-token:%s' "$GITHUB_TOKEN" | base64 | tr -d '\n')"
+          export GIT_CONFIG_VALUE_0
+          cargo deny check advisories
+      - name: Every deny.toml exemption must still be live
+        env:
+          GITHUB_TOKEN: ${{ github.token }}
+        run: |
+          export GIT_TERMINAL_PROMPT=0 GIT_CONFIG_COUNT=1 GIT_CONFIG_KEY_0=http.https://github.com/.extraheader
+          GIT_CONFIG_VALUE_0="AUTHORIZATION: basic $(printf 'x-access-token:%s' "$GITHUB_TOKEN" | base64 | tr -d '\n')"
+          export GIT_CONFIG_VALUE_0
+          setsid --wait bash scripts/check_deny_exemptions_live.sh
 
   # The GPU decision stays OFF the GPU hosts, as before #4433: an `if:` that
   # could only be evaluated on gx10/yoga would queue the job to answer it, and
@@ -259,16 +386,25 @@ jobs:
           --results "$RUNNER_TEMP/fat/results.json"
 
   determinism:
+    needs: [mg-reuse, x86-main]
+    if: ${{ !cancelled() && needs.mg-reuse.outputs.det != '1' }}
     runs-on: [self-hosted, Linux, clean-room, ARM64]
     timeout-minutes: 120
+    # T42: start only once x86-main has concluded. The ARM64 raster takes about a minute; before
+    # this, the job sat on one of the two ARM64 clean-room runners for the full artifact wait (3600 s)
+    # whenever x86-main was queued or failed early. !cancelled(): a failed x86-main still runs this
+    # job, so a missing X64 raster is a RED here, never a skip (scripts/check_determinism_wait.sh).
+    # mg-reuse skips this job and x86-main together (one reuse unit), so needs lists both.
     outputs:
       results: ${{ steps.wait.outputs.results }}
     env:
       GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
       FAT_VARS_JSON: ${{ toJSON(vars) }}
-      # determinism-compare downloads both rasters; the X64 one is uploaded by
-      # x86-main mid-run, and the driver polls this run's artifacts for it.
+      # determinism-compare downloads both rasters. x86-main has concluded by the time this
+      # job starts, so the X64 raster is either listed or never will be: the driver reads the
+      # artifact list once (wait 0, one REST call) and a missing raster fails the download.
       FAT_EXPECT_ARTIFACTS: determinism-X64,determinism-ARM64
+      FAT_ARTIFACT_WAIT_S: "0"
     steps:
       - uses: actions/checkout@v7
         with:
@@ -311,6 +447,8 @@ jobs:
   # the runner's own persistent target dir is used and nothing is bind-mounted.
   # Not in `gate`'s needs yet: first-green proof on a real PR before it may block.
   mac-check:
+    needs: [mg-reuse]
+    if: ${{ !cancelled() && needs.mg-reuse.outputs.mac != '1' }}
     runs-on: [self-hosted, macOS, ARM64, apple-silicon, m4, mini]
     timeout-minutes: 60
     env:
@@ -598,14 +736,33 @@ jobs:
     name: ci / gate
     runs-on: [self-hosted, Linux, clean-room]
     timeout-minutes: 10
-    needs: [x86-main]
+    needs: [x86-main, mg-reuse, x86-main-advisories]
     if: always()
     steps:
       - name: The sovereign-ci gate section's result
         env:
           RESULTS: ${{ needs.x86-main.outputs.results }}
+          EVT: ${{ github.event_name }}
+          MG: ${{ needs.mg-reuse.result }}
+          MG_X86: ${{ needs.mg-reuse.outputs.x86 }}
+          MG_DET: ${{ needs.mg-reuse.outputs.det }}
+          MG_CITE: ${{ needs.mg-reuse.outputs.cite }}
+          ADV: ${{ needs.x86-main-advisories.result }}
         run: |
           set -euo pipefail
+          # --- MG-REUSE-VERDICT-BEGIN (T43, Refs #4678; scripts/ci_mg_reuse.sh --self-test runs this block) ---
+          # On merge_group, mg-reuse may skip x86-main and determinism -- both or neither -- when the PR
+          # head's same-named jobs and its gate passed on this exact tree; then the RustSec advisory job
+          # must have passed. A split, a flag off merge_group, or a flag from a failed mg-reuse is RED.
+          REUSE=0
+          case "$EVT:$MG:${MG_X86:-}:${MG_DET:-}:$ADV" in
+            merge_group:success:1:1:success) REUSE=1; echo "x86-main + determinism reused: ${MG_CITE:-}" ;;
+            merge_group:success:1:1:*) echo "::error::x86-main was reused, but the RustSec advisory job is '$ADV'"; exit 1 ;;
+            *:0:0:skipped | *:::skipped) echo "x86-main + determinism ran (event=$EVT mg-reuse=$MG)" ;;
+            *) echo "::error::reuse flags split, off merge_group or from a failed mg-reuse: event=$EVT mg-reuse=$MG x86=${MG_X86:-} det=${MG_DET:-} advisories=$ADV"; exit 1 ;;
+          esac
+          # --- MG-REUSE-VERDICT-END ---
+          if [ "$REUSE" = 1 ]; then echo "ci / gate: the PR head run's ci / gate passed on this tree (${MG_CITE:-})"; exit 0; fi
           r=$(printf '%s' "${RESULTS:-null}" | jq -r '(. // {})."sov.gate".result // "missing"')
           echo "sovereign-ci gate section: $r"
           [ "$r" = success ] || { echo "::error::ci / gate: section result is '$r'"; exit 1; }
@@ -614,7 +771,7 @@ jobs:
     runs-on: [self-hosted, Linux, clean-room]   # arch-neutral: intel, yoga or gx10 (#3100)
     timeout-minutes: 22
     # the GPU sections are advisory (68-C3 / 68-D2); yoga is needed for its mutants-cuda section alone (#4621)
-    needs: [x86-main, workspace-test, determinism, mutants-table-scope, mutants-table, yoga]
+    needs: [x86-main, workspace-test, determinism, mutants-table-scope, mutants-table, yoga, mg-reuse, x86-main-advisories, mg-reuse-self-test]
     if: always()
     steps:
       - name: Check required sections
@@ -627,6 +784,12 @@ jobs:
           SCOPE: ${{ needs.mutants-table-scope.result }}
           IN_SCOPE: ${{ needs.mutants-table-scope.outputs.in_scope }}
           TABLE: ${{ needs.mutants-table.result }}
+          MG: ${{ needs.mg-reuse.result }}
+          MG_X86: ${{ needs.mg-reuse.outputs.x86 }}
+          MG_DET: ${{ needs.mg-reuse.outputs.det }}
+          MG_CITE: ${{ needs.mg-reuse.outputs.cite }}
+          ADV: ${{ needs.x86-main-advisories.result }}
+          MST: ${{ needs.mg-reuse-self-test.result }}
         run: |
           set -euo pipefail
           res() { printf '%s' "${1:-null}" | SEC="$2" jq -r '(. // {})[env.SEC].result // "missing"'; }
@@ -635,14 +798,30 @@ jobs:
           # cuda-unit were never in the gate; they still are not.
           # workspace-test is its own job now (three shard jobs + the Σ fan-in).
           [ "$WT" = success ] || { echo "workspace-test failed: $WT"; exit 1; }
-          for pair in X86:guard-tree X86:guard-cargo X86:sov.gate DET:determinism-compare; do
-            job="${pair%%:*}" sec="${pair#*:}"
-            r=$(res "${!job}" "$sec")
-            if [ "$r" != success ]; then
-              echo "$sec failed: $r"
-              exit 1
-            fi
-          done
+          [ "$MST" = success ] || { echo "mg-reuse-self-test failed: $MST"; exit 1; }
+          # --- MG-REUSE-VERDICT-BEGIN (T43, Refs #4678; scripts/ci_mg_reuse.sh --self-test runs this block) ---
+          # On merge_group, mg-reuse may skip x86-main and determinism -- both or neither -- when the PR
+          # head's same-named jobs and its gate passed on this exact tree; then the RustSec advisory job
+          # must have passed. A split, a flag off merge_group, or a flag from a failed mg-reuse is RED.
+          REUSE=0
+          case "$EVT:$MG:${MG_X86:-}:${MG_DET:-}:$ADV" in
+            merge_group:success:1:1:success) REUSE=1; echo "x86-main + determinism reused: ${MG_CITE:-}" ;;
+            merge_group:success:1:1:*) echo "::error::x86-main was reused, but the RustSec advisory job is '$ADV'"; exit 1 ;;
+            *:0:0:skipped | *:::skipped) echo "x86-main + determinism ran (event=$EVT mg-reuse=$MG)" ;;
+            *) echo "::error::reuse flags split, off merge_group or from a failed mg-reuse: event=$EVT mg-reuse=$MG x86=${MG_X86:-} det=${MG_DET:-} advisories=$ADV"; exit 1 ;;
+          esac
+          # --- MG-REUSE-VERDICT-END ---
+          # x86-main and determinism were skipped when REUSE=1: the PR head run's gate passed these on this tree.
+          if [ "$REUSE" = 0 ]; then
+            for pair in X86:guard-tree X86:guard-cargo X86:sov.gate DET:determinism-compare; do
+              job="${pair%%:*}" sec="${pair#*:}"
+              r=$(res "${!job}" "$sec")
+              if [ "$r" != success ]; then
+                echo "$sec failed: $r"
+                exit 1
+              fi
+            done
+          fi
           # --- MUTANTS-RATCHET (#4646; operator C187(a)/C188(a), 2026-10-01) ---
           # Mutation results are REPORTED here, not blocking: a new gate is adopted as a ratchet, never as an
           # instant absolute bar. What blocks is the shrink-only rule on ci/mutants-debt.tsv: a PR may not GROW that

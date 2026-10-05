@@ -1,0 +1,299 @@
+{
+  "$schema": "https://docs.oasis-open.org/sarif/sarif/v2.1.0/errata01/os/schemas/sarif-schema-2.1.0.json",
+  "version": "2.1.0",
+  "runs": [
+    {
+      "tool": {
+        "driver": {
+          "name": "pmat"
+        }
+      },
+      "invocations": [
+        {
+          "executionSuccessful": true,
+          "toolExecutionNotifications": []
+        }
+      ],
+      "results": [
+        {
+          "ruleId": "pmat_index_consulted",
+          "level": "note",
+          "message": {
+            "text": "pmat semantic index built from a disposable copy of the changed trees (scripts, contracts, workflow) and queried for the nightly-train concept; no existing nightly verdict train surfaced in the top 5."
+          },
+          "properties": {
+            "grounding": "measured",
+            "command": [
+              "pmat",
+              "query",
+              "nightly evidence train release lane verdict",
+              "--limit",
+              "5",
+              "--format",
+              "json"
+            ],
+            "exit_code": 0,
+            "stdout_sha256": "496ba61131a1e4b3ff57683c8232a8b6c684832c30e70f95cb54c7a9ea98fd4a",
+            "failure_scenario": "A Rust-only semantic index over a subset copy cannot see shell prior art; the lexical scan covers that half.",
+            "precision_class": "advisory"
+          }
+        },
+        {
+          "ruleId": "duplication_scan",
+          "level": "note",
+          "message": {
+            "text": "scripts/pr_review_duplication_scan.sh over the full sibling-branch horizon: 71 needles, 40 hits, 1331 of 1331 branches scanned. HEAD hits are generic names (greens, caller_error, selftest_cleanup); branch hits are the squash source branches plus one more branch carrying the same files."
+          },
+          "properties": {
+            "grounding": "measured",
+            "command": [
+              "bash",
+              "scripts/pr_review_duplication_scan.sh",
+              "--base",
+              "316dee2cd4b3b3990ad47cc1a7a661c979a4e1d3",
+              "--head",
+              "6721ab82b1b6e5724a6d94ead021bce79c9db42d",
+              "--rust-semantic",
+              "--json",
+              "dup.json"
+            ],
+            "exit_code": 0,
+            "stdout_sha256": "22ab9c4f650d30c4f0dc25f108e3c9a33031099e053ba0d8f27aee1f1737198d",
+            "failure_scenario": "A re-implementation under a different name is invisible to an exact-name scan.",
+            "precision_class": "advisory"
+          }
+        },
+        {
+          "ruleId": "duplicate_branch_c310_lane_table",
+          "level": "note",
+          "message": {
+            "text": "An unmerged remote branch (c310-lane-table) carries the same ten files at the same paths as this PR's source branches, so the release-evidence scripts exist on a second unmerged line."
+          },
+          "properties": {
+            "grounding": "asserted",
+            "rationale": "read of the scan output: the branch rows list nightly_train.sh, step_table.sh, red_age.sh, nightly_greens.sh and their contracts under that ref; the scan matches filenames only for branches, so content equality is not established.",
+            "failure_scenario": "If that branch merges after this PR the same paths conflict or the older copy reintroduces superseded logic (for example the pre-fix eval rows).",
+            "precision_class": "advisory"
+          }
+        },
+        {
+          "ruleId": "workflow_streak_not_persisted",
+          "level": "note",
+          "message": {
+            "text": "The scheduled workflow writes --out under the runner temp dir with no restore of a previous history file, so greens in a row can never exceed 1 from the workflow; only a user timer with a persistent out dir accumulates a streak."
+          },
+          "properties": {
+            "grounding": "asserted",
+            "rationale": "read of .github/workflows/nightly-train.yml: --out is RUNNER_TEMP/nt, the only artifact step is upload-artifact; carried from the review of the previous head, the workflow is unchanged by the fix commit.",
+            "failure_scenario": "A reader of the workflow summary takes greens in a row: 1 as a streak that is just starting, every night, indefinitely.",
+            "precision_class": "advisory"
+          }
+        }
+      ]
+    },
+    {
+      "tool": {
+        "driver": {
+          "name": "cargo-mutants"
+        }
+      },
+      "invocations": [
+        {
+          "executionSuccessful": true,
+          "toolExecutionNotifications": []
+        }
+      ],
+      "results": [
+        {
+          "ruleId": "guard_selftest_nightly_train",
+          "level": "note",
+          "message": {
+            "text": "scripts/release/nightly_train.sh --self-test: 57/57 rows, exit 0, on the disposable copy of the head tree."
+          },
+          "properties": {
+            "grounding": "measured",
+            "command": [
+              "bash",
+              "scripts/release/nightly_train.sh",
+              "--self-test"
+            ],
+            "exit_code": 0,
+            "stdout_sha256": "7b2936f37dbffe23bbfc5c1b6a54c4fc3355720829054b6e5dbaf56e9be87b10",
+            "failure_scenario": "A case table that cannot fail proves nothing; its mutant set follows.",
+            "precision_class": "advisory"
+          }
+        },
+        {
+          "ruleId": "guard_mutants_nightly_train",
+          "level": "note",
+          "message": {
+            "text": "scripts/release/nightly_train.sh --mutants: 42/42 mutants killed."
+          },
+          "properties": {
+            "grounding": "measured",
+            "command": [
+              "bash",
+              "scripts/release/nightly_train.sh",
+              "--mutants"
+            ],
+            "exit_code": 0,
+            "stdout_sha256": "60e7100b6c510fdc1294b7b652e02ea78728d594e25a7364da140d4b4d695d4e",
+            "failure_scenario": "A surviving mutant would be a rule the script states and nothing tests.",
+            "precision_class": "advisory"
+          }
+        },
+        {
+          "ruleId": "guard_selftest_step_table",
+          "level": "note",
+          "message": {
+            "text": "scripts/release/step_table.sh --selftest: 48/48 rows, exit 0."
+          },
+          "properties": {
+            "grounding": "measured",
+            "command": [
+              "bash",
+              "scripts/release/step_table.sh",
+              "--selftest"
+            ],
+            "exit_code": 0,
+            "stdout_sha256": "7c7246afdc0edf1fa49297985cb90bf93c936701517f535539cc380884d1502b",
+            "failure_scenario": "A case table that cannot fail proves nothing; its mutant set follows.",
+            "precision_class": "advisory"
+          }
+        },
+        {
+          "ruleId": "guard_mutants_step_table",
+          "level": "note",
+          "message": {
+            "text": "scripts/release/step_table.sh --mutants: 16/16 mutants killed, including the seconds_ignored mutant whose pattern was updated for the derived length."
+          },
+          "properties": {
+            "grounding": "measured",
+            "command": [
+              "bash",
+              "scripts/release/step_table.sh",
+              "--mutants"
+            ],
+            "exit_code": 0,
+            "stdout_sha256": "13c648b08e89678630901519bae483d13748b1824f21d8d646eeed64daf7bb05",
+            "failure_scenario": "If the edited mutant pattern no longer matched, the mutant would be a no-op and survive; it was killed.",
+            "precision_class": "advisory"
+          }
+        },
+        {
+          "ruleId": "guard_derive_identity_selftest",
+          "level": "note",
+          "message": {
+            "text": "scripts/check_release_scripts_derive_identity.sh --self-test: 23 rows pass; the real scripts/release tree is clean."
+          },
+          "properties": {
+            "grounding": "measured",
+            "command": [
+              "bash",
+              "scripts/check_release_scripts_derive_identity.sh",
+              "--self-test"
+            ],
+            "exit_code": 0,
+            "stdout_sha256": "d0bb5bd1356d3a6339e36add493cf83b7d5505b507053800da2639c27a017f2c",
+            "failure_scenario": "A literal release identity or count in a release script would pass unnoticed.",
+            "precision_class": "advisory"
+          }
+        },
+        {
+          "ruleId": "fix_commit_no_inline_disable",
+          "level": "note",
+          "message": {
+            "text": "The fix commit adds no inline bashrs or shellcheck disable and no ignore-file change: no such marker in the two edited scripts, the repository ignore file is not in the diff, no eval remains in either script, and bashrs lint at error level exits 0 on nightly_train.sh."
+          },
+          "properties": {
+            "grounding": "measured",
+            "command": [
+              "grep",
+              "-nE",
+              "bashrs:|bashrs-ignore|shellcheck disable|# *nosec",
+              "scripts/release/nightly_train.sh",
+              "scripts/release/step_table.sh"
+            ],
+            "exit_code": 0,
+            "stdout_sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+            "failure_scenario": "An added suppression would hide a real finding from every later lint run; none was added. The grep matched nothing, which is the expected empty output.",
+            "precision_class": "advisory"
+          }
+        },
+        {
+          "ruleId": "span_accepts_out_of_range_dates",
+          "level": "warning",
+          "message": {
+            "text": "The new awk span() checks only the shape of its two timestamps, not the ranges: month 13, day 45, hour 25 are accepted and give a number. The old date -d parser rejected them and printed not_measured."
+          },
+          "properties": {
+            "grounding": "measured",
+            "command": [
+              "bash",
+              "-c",
+              "source span.sh; span 2026-13-45T25:61:61Z 2026-10-04T01:00:00Z"
+            ],
+            "exit_code": 0,
+            "stdout_sha256": "20535408f0ffb6d914bb37ccdafb1b7747ca064349a09a4c73e4c4bda53b25aa",
+            "failure_scenario": "A malformed instant in the budget line prints a nonsense duration such as -3217h-2m instead of not_measured. The line is information only and stays out of the verdict, and the inputs come from the step table whose own time check already refuses such values, so the reach is small.",
+            "precision_class": "advisory"
+          }
+        },
+        {
+          "ruleId": "reporter_default_and_untested",
+          "level": "note",
+          "message": {
+            "text": "The report-line default reporter is now nightly-r4 where it was a session name plus nightly-r4, nothing in the workflow or the user timer sets NIGHTLY_TRAIN_REPORTER, and no self-test row exercises either the override or the refusal of a name outside the allowed characters."
+          },
+          "properties": {
+            "grounding": "asserted",
+            "rationale": "read of the fix diff plus a search for the variable name across scripts, contracts, workflow and Makefile: it appears only in nightly_train.sh at its two uses.",
+            "failure_scenario": "A bad reporter value takes the new return 1 path in the report-line step with no test pinning its effect on the exit code; a deployed run reports under the bare role name.",
+            "precision_class": "advisory"
+          }
+        }
+      ]
+    },
+    {
+      "tool": {
+        "driver": {
+          "name": "antigravity"
+        }
+      },
+      "invocations": [
+        {
+          "executionSuccessful": true,
+          "toolExecutionNotifications": []
+        }
+      ],
+      "results": [
+        {
+          "ruleId": "agy_census_json_not_regenerated",
+          "level": "note",
+          "message": {
+            "text": "agy reports that README.md claims 1893 contracts while contracts/census.json was not regenerated."
+          },
+          "properties": {
+            "grounding": "asserted",
+            "rationale": "raised and measured by the antigravity reviewer (requested model gemini-3.1-pro-high). The primary reached the opposite conclusion: the README count is derived from the tree listing and contracts/census.json is a release-train snapshot already at 1837 against 1889 on the base, so it is not expected to move with this PR. The primary read the claims script and the census file, it did not re-run agy.",
+            "failure_scenario": "If the claim held, the README claims check would go red on this PR; the primary read shows that check reads the live tree, not the snapshot.",
+            "precision_class": "advisory"
+          }
+        },
+        {
+          "ruleId": "agy_witness_relations_hash_unchanged",
+          "level": "note",
+          "message": {
+            "text": "agy reports that the witness JSON had census_id_set_sha256 updated while relations_sha256 stayed the same although the contracts graph file gained edges."
+          },
+          "properties": {
+            "grounding": "asserted",
+            "rationale": "raised and measured by the antigravity reviewer (requested model gemini-3.1-pro-high); the primary did not check it: the witness diff also changes reasoner_git_sha and cpu_ms, which looks like a tool regeneration, but whether relations_sha256 should move was not verified and no ontology tool was run here.",
+            "failure_scenario": "If relations_sha256 must follow the graph, the ontology consistency check fails on this head; this is unconfirmed.",
+            "precision_class": "advisory"
+          }
+        }
+      ]
+    }
+  ]
+}

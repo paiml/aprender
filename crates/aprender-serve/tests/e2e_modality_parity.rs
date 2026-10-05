@@ -54,7 +54,7 @@ fn test_full_modality_matrix() {
 
 /// Run a single modality test with mock trace
 fn run_modality_test(backend: Backend, batch_size: usize) -> ModalityTestResult {
-    force_backend(backend);
+    let _env = force_backend(backend);
 
     // Create mock trace based on backend
     let mut trace = ExecutionTrace::new();
@@ -188,7 +188,7 @@ fn test_backend_env_vars() {
     let backends = [Backend::Scalar, Backend::Simd, Backend::Wgpu, Backend::Cuda];
 
     for backend in &backends {
-        force_backend(*backend);
+        let _env = force_backend(*backend);
 
         match backend {
             Backend::Scalar => {
@@ -417,4 +417,45 @@ fn test_the_bug_detection() {
         buggy_trace.throughput_tok_per_sec() < 100.0,
         "Test setup error - buggy trace should have low throughput"
     );
+}
+
+/// #4727: two tests forcing different backends at once must not see each other's env.
+///
+/// Before the shared lock, `force_backend` on one thread removed `REALIZAR_BACKEND`
+/// between another thread's set and its read (`test_wgpu_in_common_infrastructure`
+/// failed that way on CI). Two threads force Wgpu and Scalar in a tight loop and
+/// check, while still holding their guard, that the env is exactly their own.
+#[test]
+fn test_backend_env_is_serialized_4727() {
+    fn hammer(backend: Backend) -> Result<(), String> {
+        for i in 0..2_000 {
+            let _env = force_backend(backend);
+            let got = std::env::var(backend.env_var()).ok();
+            if got.as_deref() != Some(backend.env_value()) {
+                return Err(format!(
+                    "{backend:?} iter {i}: {} = {got:?}",
+                    backend.env_var()
+                ));
+            }
+            for other in [
+                "REALIZAR_FORCE_SCALAR",
+                "REALIZAR_FORCE_SIMD",
+                "REALIZAR_BACKEND",
+            ] {
+                if other != backend.env_var() && std::env::var(other).is_ok() {
+                    return Err(format!("{backend:?} iter {i}: foreign {other} is set"));
+                }
+            }
+        }
+        Ok(())
+    }
+    let a = std::thread::spawn(|| hammer(Backend::Wgpu));
+    let b = std::thread::spawn(|| hammer(Backend::Scalar));
+    let results = [
+        a.join().expect("wgpu thread"),
+        b.join().expect("scalar thread"),
+    ];
+    for r in results {
+        assert!(r.is_ok(), "FALSIFICATION #4727: backend env raced: {r:?}");
+    }
 }

@@ -74,8 +74,14 @@ impl KVCache {
         }
 
         let cache_size = max_seq_len * head_dim;
-        let keys = vec![vec![0.0; cache_size]; num_layers];
-        let values = vec![vec![0.0; cache_size]; num_layers];
+        // One zeroed allocation per layer, as in `StreamingKVCache::new`: a cloned layer commits every byte.
+        let zeroed = || {
+            (0..num_layers)
+                .map(|_| vec![0.0; cache_size])
+                .collect::<Vec<_>>()
+        };
+        let keys = zeroed();
+        let values = zeroed();
 
         Ok(Self {
             num_layers,
