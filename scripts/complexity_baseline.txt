@@ -450,8 +450,6 @@ crates/aprender-serve/src/cuda/executor/layers/indexed_transformer.rs::transform
 crates/aprender-serve/src/cuda/executor/layers/logits.rs::debug_q6k_lm_head 10 41
 crates/aprender-serve/src/cuda/executor/layers/prefill.rs::prefill_all_layers_gpu 10 29
 crates/aprender-serve/src/cuda/executor/layers/prefill.rs::prefill_multi_prompt 18 41
-crates/aprender-serve/src/cuda/executor/layers/rope.rs::apply_qkv_bias 18 31
-crates/aprender-serve/src/cuda/executor/layers/rope.rs::workspace_qkv_rope_phase 30 31
 crates/aprender-serve/src/cuda/executor/layers/transformer_layer_indexed.rs::transformer_layer_indexed 11 30
 crates/aprender-serve/src/gguf/cuda/clone_layer_weights.rs::forward_single_full_cuda_with_cache 16 31
 crates/aprender-serve/src/gguf/cuda/cuda.rs::forward_single_cuda_with_cache 22 51
