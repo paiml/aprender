@@ -66,7 +66,8 @@ run: |
       echo "::error::refusing to rehearse: $v is set in this job's environment"; bad=1
     fi
   done
-  ch=$(printenv CARGO_HOME 2>/dev/null) || ch="$HOME/.cargo"
+  # cargo reads an empty CARGO_HOME as unset, so the guard does too.
+  ch=$(printenv CARGO_HOME 2>/dev/null) || true; [ -n "$ch" ] || ch="$HOME/.cargo"
   for f in "$ch/credentials" "$ch/credentials.toml"; do
     if [ -s "$f" ]; then echo "::error::refusing to rehearse: a cargo registry credential file exists: $f"; bad=1; fi
   done
@@ -369,6 +370,7 @@ self_test() {
     out=$(gr ACTIONS_ID_TOKEN_REQUEST_TOKEN=x); row "guard: planted OIDC request token -> refuses" 1 $? 'ACTIONS_ID_TOKEN_REQUEST_TOKEN is set' "$out"
     out=$(gr HOME="$d/credhome"); row "guard: planted credentials.toml -> refuses" 1 $? 'credential file' "$out"
     out=$(gr CARGO_HOME="$d/credhome/.cargo"); row "guard: CARGO_HOME credentials -> refuses" 1 $? 'credential file' "$out"
+    out=$(gr HOME="$d/credhome" CARGO_HOME=); row "guard: CARGO_HOME set but empty, home credentials.toml -> refuses" 1 $? 'credential file' "$out"
 
     # The verdict, over a fixture of the release's own list.
     full='{"assets":{"result":"success"},"build":{"result":"success"},"build-all-bins":{"result":"success"},"build-apr-cuda":{"result":"success"},"build-apr-cpu":{"result":"success"},"build-apr-darwin":{"result":"success"}}'
