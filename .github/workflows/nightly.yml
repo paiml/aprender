@@ -80,7 +80,9 @@ jobs:
           ref: main
 
       - name: Case table
-        run: python3 scripts/nightly_manifest.py --self-test
+        run: |
+          python3 scripts/nightly_manifest.py --self-test
+          bash scripts/nightly_prune_release.sh --self-test
 
       - name: Decide (reused | build | red-ci | ci-pending)
         id: gate
@@ -259,6 +261,11 @@ jobs:
       - name: Build apr (host-native, pinned toolchain)
         run: |
           set -euo pipefail
+          # Every later step reads ./target. The mini's runner env redirects cargo's
+          # target dir (CARGO_TARGET_DIR=~/data/cargo-target), so cargo built
+          # elsewhere and the --version line found no apr (run 37171118510, exit
+          # 127). Same fix as binary-release.yml's mini lane (#4660).
+          export CARGO_TARGET_DIR="$GITHUB_WORKSPACE/target"
           rustup show active-toolchain
           cargo build --release --locked -p apr-cli --target "$T"
           "target/$T/release/apr" --version
@@ -320,6 +327,13 @@ jobs:
             > nightly-manifest.json
           cat nightly-manifest.json
           echo "decision=$(python3 -c 'import json;print(json.load(open("nightly-manifest.json"))["decision"])')" >> "$GITHUB_OUTPUT"
+
+      # publish lists one page of assets (100); the release overflowed it, so staged
+      # leftovers and old copies past page one made every upload 422 (run 37171118510).
+      - name: Prune the release to what publish can see
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: bash scripts/nightly_prune_release.sh dist nightly-manifest.json "$NIGHTLY_SHA"
 
       # REST, not `gh`: the fleet boxes carry no gh (binary-release.yml, run 34448908554).
       - name: Publish green arches, then nightly-manifest.json

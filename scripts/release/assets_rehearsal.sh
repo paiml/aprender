@@ -10,25 +10,36 @@
 #
 # binary-release.yml runs only on `release: published` and on dispatch, so the release's
 # asset build had no nightly and could not show three green nights. The rehearsal is that
-# nightly. It is GENERATED from binary-release.yml, never copied by hand: the build jobs
-# (pv, all [[bin]]s, apr cuda, apr cpu, apr darwin) keep their own steps, runners and
-# checks. Only these differ:
-#   - triggers: schedule + dispatch; the tag is v<workspace version>-rc.0 at the run's
-#     commit, so the rc stamp runs as it does on a real rc;
-#   - permissions: contents: read, no `secrets.` reference, no environment, so the job
-#     token cannot write a release and no other token is handed to any step;
-#   - each "Upload assets to release" step becomes a step that checks every packaged
-#     archive against its .sha256 and keeps the .sha256 files as a run artifact;
-#   - the release-reading jobs (verify, smoke, summary) are replaced by `verify`, which runs
-#     check_release_assets.sh --assets-from over the names the build jobs produced;
-#   - every job starts with a guard that refuses to run when an upload credential exists.
-#     A flag is not a guard: the guard looks for the credential itself.
-# The rehearsal's first job regenerates and compares (--check), so a binary-release.yml edit
-# without a regen turns the rehearsal red instead of letting it rehearse a stale build.
+# nightly: the release's own build jobs, run on a schedule, never uploaded.
 #
-# Bash + yq (mikefarah v4). --check compares the two workflows as JSON, so a yq version
-# that formats differently does not read as drift. Exit: 0 ok / green, 1 drift / lint
-# failure / red / not_measured, 2 usage or a missing tool.
+# The workflow is GENERATED from binary-release.yml (`gen`), never copied by hand: the build
+# jobs (pv, all [[bin]]s, apr cuda, apr cpu, apr darwin) keep their own steps, runners and
+# checks. Only these differ: the triggers (schedule + dispatch); the tag (below); the
+# permissions (contents: read, no `secrets.`, no environment); each "Upload assets to
+# release" step, which becomes a step that checks every archive against its .sha256 and
+# keeps the checksums as a run artifact; the release-reading jobs, replaced by `verify`; and
+# the credential guard at the start of every job. The rehearsal's first job regenerates and
+# compares as canonical JSON (--check), so a binary-release.yml edit without a regen turns
+# the rehearsal red instead of letting it rehearse a stale build.
+#
+# It cannot upload. `lint` checks every property that keeps it so: workflow permissions
+# exactly contents: read, no job-level permissions, no environment, triggers exactly
+# schedule + dispatch, no `secrets.` reference, no upload, release write or release-event
+# input, every job starting with the credential guard, and every build job keeping its
+# checksums as a run artifact. The guard looks for the credential itself (a flag is not a
+# guard): it refuses to run when GH_TOKEN, GITHUB_TOKEN, a cargo registry token, an OIDC
+# request token or a cargo credentials file is present. The case table runs lint and the
+# guard over a fixture workflow built from the real step bodies.
+#
+# The verdict: `tag` names the rehearsal's tag, v<workspace version>-rc.0, so
+# the rc stamp runs as it does on a real rc. `verify` judges one night:
+#   - a build job that failed               -> red;
+#   - a build job that did not succeed for any other reason (skipped, cancelled, absent,
+#     unreadable needs)                     -> not_measured, never green;
+#   - otherwise check_release_assets.sh --assets-from over the names the builds kept:
+#     0 green, 1 red, anything else not_measured.
+#
+# Exit: 0 green / ok, 1 red / not_measured / a failed row, 2 usage or a missing tool.
 set -uo pipefail
 PROG=assets_rehearsal
 ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/../.." && pwd)"
@@ -91,6 +102,33 @@ with:
   if-no-files-found: error
   retention-days: 5
 EOF
+}
+
+# lint FILE: every property that keeps the rehearsal from uploading. One line per failure.
+lint() {
+    local f=$1 bad=0 v
+    need_yq
+    [ -f "$f" ] || die "lint: no such file $f"
+    v=$("$YQ" -o=json -I=0 '.permissions' "$f")
+    [ "$v" = '{"contents":"read"}' ] || { echo "lint: workflow permissions are $v, not exactly contents: read"; bad=1; }
+    v=$("$YQ" '[.jobs[] | select(has("permissions"))] | length' "$f")
+    [ "$v" = 0 ] || { echo "lint: $v job(s) set their own permissions"; bad=1; }
+    v=$("$YQ" '[.jobs[] | select(has("environment"))] | length' "$f")
+    [ "$v" = 0 ] || { echo "lint: $v job(s) name an environment (environment secrets)"; bad=1; }
+    v=$("$YQ" '.on | keys | sort | join(",")' "$f")
+    [ "$v" = "schedule,workflow_dispatch" ] || { echo "lint: triggers are '$v', not schedule,workflow_dispatch"; bad=1; }
+    v=$("$YQ" '[.jobs[] | select((.steps[0].name // "") != "'"$GUARD_NAME"'")] | length' "$f")
+    [ "$v" = 0 ] || { echo "lint: $v job(s) do not start with the credential guard"; bad=1; }
+    if grep -n -E 'secrets\.' "$f"; then echo "lint: a secrets. reference"; bad=1; fi
+    if grep -n -E 'uploads\.github\.com|-X (POST|PUT|PATCH|DELETE)|gh release|cargo publish|github\.event\.release|inputs\.tag' "$f"; then
+        echo "lint: an upload, a release write or a release-event input"; bad=1
+    fi
+    for v in $BUILD_JOBS; do
+        "$YQ" -e ".jobs[\"$v\"].steps[] | select(.uses // \"\" | test(\"^actions/upload-artifact@\"))" "$f" > /dev/null 2>&1 \
+            || { echo "lint: build job $v keeps no checksums"; bad=1; }
+    done
+    [ "$bad" -eq 0 ] && echo "ok: ${f#"$ROOT"/} cannot upload"
+    return "$bad"
 }
 
 assets_job() {
@@ -192,31 +230,15 @@ check() {
     return "$rc"
 }
 
-# lint FILE: every property that keeps the rehearsal from uploading. One line per failure.
-lint() {
-    local f=$1 bad=0 v
-    need_yq
-    [ -f "$f" ] || die "lint: no such file $f"
-    v=$("$YQ" -o=json -I=0 '.permissions' "$f")
-    [ "$v" = '{"contents":"read"}' ] || { echo "lint: workflow permissions are $v, not exactly contents: read"; bad=1; }
-    v=$("$YQ" '[.jobs[] | select(has("permissions"))] | length' "$f")
-    [ "$v" = 0 ] || { echo "lint: $v job(s) set their own permissions"; bad=1; }
-    v=$("$YQ" '[.jobs[] | select(has("environment"))] | length' "$f")
-    [ "$v" = 0 ] || { echo "lint: $v job(s) name an environment (environment secrets)"; bad=1; }
-    v=$("$YQ" '.on | keys | sort | join(",")' "$f")
-    [ "$v" = "schedule,workflow_dispatch" ] || { echo "lint: triggers are '$v', not schedule,workflow_dispatch"; bad=1; }
-    v=$("$YQ" '[.jobs[] | select((.steps[0].name // "") != "'"$GUARD_NAME"'")] | length' "$f")
-    [ "$v" = 0 ] || { echo "lint: $v job(s) do not start with the credential guard"; bad=1; }
-    if grep -n -E 'secrets\.' "$f"; then echo "lint: a secrets. reference"; bad=1; fi
-    if grep -n -E 'uploads\.github\.com|-X (POST|PUT|PATCH|DELETE)|gh release|cargo publish|github\.event\.release|inputs\.tag' "$f"; then
-        echo "lint: an upload, a release write or a release-event input"; bad=1
-    fi
-    for v in $BUILD_JOBS; do
-        "$YQ" -e ".jobs[\"$v\"].steps[] | select(.uses // \"\" | test(\"^actions/upload-artifact@\"))" "$f" > /dev/null 2>&1 \
-            || { echo "lint: build job $v keeps no checksums"; bad=1; }
+# fixture DIR: DIR/fx.yml, a workflow whose build jobs are the guard, a build, the keep step
+# and the artifact step — the real step bodies, so lint and the guard are tested on them.
+fixture() {
+    local d=$1 j
+    guard_step > "$d/guard.yml"; keep_step > "$d/keep.yml"; artifact_step > "$d/art.yml"
+    "$YQ" -n '.name = "fixture" | .on = {"schedule": [{"cron": "37 0 * * *"}], "workflow_dispatch": {}} | .permissions = {"contents": "read"}' > "$d/fx.yml" || return 1
+    for j in $BUILD_JOBS; do
+        J=$j T=$d "$YQ" -i '.jobs[strenv(J)] = {"runs-on": "ubuntu-latest", "steps": [load(strenv(T) + "/guard.yml"), {"name": "build", "run": "true"}, load(strenv(T) + "/keep.yml"), load(strenv(T) + "/art.yml")]}' "$d/fx.yml" || return 1
     done
-    [ "$bad" -eq 0 ] && echo "ok: ${f#"$ROOT"/} cannot upload"
-    return "$bad"
 }
 
 tag() {
@@ -263,20 +285,26 @@ row() { # row NAME WANT_RC GOT_RC WANT_PATTERN OUTPUT
 }
 
 self_test() {
-    local d out rc g full
+    local d out g full
     need_yq
     d=$(mktemp -d) || die "mktemp failed"
-    generate > "$d/gen.yml" || die "generation failed"
+    fixture "$d" || die "fixture failed"
 
+    # The generated workflow: no drift, cannot upload, and its guard is the guard step.
+    generate > "$d/gen.yml" || die "generation failed"
     out=$(check "$d/gen.yml"); row "fresh generation -> no drift" 0 $? '^ok' "$out"
     out=$(lint "$d/gen.yml"); row "fresh generation -> cannot upload" 0 $? 'cannot upload' "$out"
     if [ -f "$OUT_DEFAULT" ]; then
         out=$(check); row "committed workflow -> no drift" 0 $? '^ok' "$out"
     fi
-
-    mut() { "$YQ" "$1" "$d/gen.yml" > "$d/m.yml"; }
-    mut '.jobs.build.steps += [{"name": "extra", "run": "true"}]'
+    "$YQ" '.jobs.build.steps += [{"name": "extra", "run": "true"}]' "$d/gen.yml" > "$d/m.yml"
     out=$(check "$d/m.yml"); row "hand edit of a build job -> drift" 1 $? '^drift' "$out"
+    guard_step > "$d/want.yml"
+    out=$(W="$d/want.yml" "$YQ" '[.jobs[] | select(.steps[0].run != load(strenv(W)).run)] | length' "$d/gen.yml")
+    [ "$out" = 0 ]; row "every generated job's guard is the guard step" 0 $? '^0$' "$out"
+
+    out=$(lint "$d/fx.yml"); row "fixture of the real steps -> cannot upload" 0 $? 'cannot upload' "$out"
+    mut() { "$YQ" "$1" "$d/fx.yml" > "$d/m.yml"; }
     mut '.permissions.contents = "write"'
     out=$(lint "$d/m.yml"); row "contents: write -> lint red" 1 $? 'permissions' "$out"
     mut '.jobs.build.permissions = {"contents": "write"}'
@@ -289,19 +317,23 @@ self_test() {
     out=$(lint "$d/m.yml"); row "a secrets. reference -> lint red" 1 $? 'secrets' "$out"
     mut '.jobs["build-apr-cuda"].steps += [{"name": "up", "run": "curl -sSf -X POST --data-binary @a https://uploads.github.com/x"}]'
     out=$(lint "$d/m.yml"); row "a planted upload step -> lint red" 1 $? 'upload' "$out"
+    mut '.jobs["build-apr-cuda"].steps += [{"name": "up", "run": "gh release upload v1 a.tar.gz"}]'
+    out=$(lint "$d/m.yml"); row "a planted gh release upload -> lint red" 1 $? 'upload' "$out"
     mut 'del(.jobs["build-apr-darwin"].steps[0])'
     out=$(lint "$d/m.yml"); row "a job without the guard -> lint red" 1 $? 'credential guard' "$out"
     mut 'del(.jobs.build.steps[] | select(.uses // "" | test("^actions/upload-artifact@")))'
     out=$(lint "$d/m.yml"); row "a build job that keeps nothing -> lint red" 1 $? 'keeps no checksums' "$out"
 
-    # The guard, extracted from the generated workflow and run as the runner would.
-    g="$d/guard.sh"; "$YQ" '.jobs.build.steps[0].run' "$d/gen.yml" > "$g"
+    # The guard, extracted from the fixture and run as the runner would.
+    g="$d/guard.sh"; "$YQ" '.jobs.build.steps[0].run' "$d/fx.yml" > "$g"
     mkdir -p "$d/home/.cargo" "$d/credhome/.cargo"; echo 'token = "x"' > "$d/credhome/.cargo/credentials.toml"
     gr() { env -i PATH="$PATH" HOME="$d/home" "$@" bash "$g" 2>&1; }
     out=$(gr); row "guard: no credential -> runs" 0 $? 'no upload credential' "$out"
     out=$(gr CARGO_REGISTRY_TOKEN=x); row "guard: planted CARGO_REGISTRY_TOKEN -> refuses" 1 $? 'CARGO_REGISTRY_TOKEN is set' "$out"
+    out=$(gr CARGO_REGISTRIES_CRATES_IO_TOKEN=x); row "guard: planted CARGO_REGISTRIES_CRATES_IO_TOKEN -> refuses" 1 $? 'CARGO_REGISTRIES_CRATES_IO_TOKEN is set' "$out"
     out=$(gr GH_TOKEN=x); row "guard: planted GH_TOKEN -> refuses" 1 $? 'GH_TOKEN is set' "$out"
     out=$(gr GITHUB_TOKEN=x); row "guard: planted GITHUB_TOKEN -> refuses" 1 $? 'GITHUB_TOKEN is set' "$out"
+    out=$(gr ACTIONS_ID_TOKEN_REQUEST_TOKEN=x); row "guard: planted OIDC request token -> refuses" 1 $? 'ACTIONS_ID_TOKEN_REQUEST_TOKEN is set' "$out"
     out=$(gr HOME="$d/credhome"); row "guard: planted credentials.toml -> refuses" 1 $? 'credential file' "$out"
     out=$(gr CARGO_HOME="$d/credhome/.cargo"); row "guard: CARGO_HOME credentials -> refuses" 1 $? 'credential file' "$out"
 
