@@ -13,6 +13,7 @@ CI helpers ported from `scripts/**/*.py` to Rust (C301: no Python in the build).
 | `tarball-build-errors LOG` | `scripts/lib/tarball_build_errors.py` (kept: its caller `scripts/package_tarball_build.sh` is on the publish gate path, N-1) |
 | `dag-status --root DIR` (reads `[id, row]` JSON pairs on stdin) | `scripts/lib/dag_status.py` (kept for now, see below) |
 | `git-patch-id [--stable\|--unstable\|--verbatim]` (reads a diff on stdin) | `scripts/lib/git_patch_id.py` (kept: callers `scripts/lib/pr_review_patch_id.sh` and `scripts/check_pr_review_arm4.sh` not yet switched) |
+| `roadmap-aggregate [--check\|--write] [--roadmap PATH] [--entries DIR]` | the `aggregate` arm of `scripts/lib/roadmap_fragments.py` (kept: its callers, `make roadmap-aggregate`/`roadmap-aggregate-check`, the sovereign-ci fragment-parity step, `batch_fold.sh` and `check_roadmap_fragment_required.sh`, are gate paths, N-1; `changed`, `adopt` and `--selftest` are not ported) |
 
 Each port must print the same stdout as its original and agree with it on success
 or failure. `scripts/tests/ci_tools_py_parity_test.sh` checks this. The Python
@@ -31,6 +32,12 @@ versions. They switch, and the `.py` is deleted, in the first change after a rel
 compares the bin with the `.py` and counts those cases on its own. Native `git patch-id`
 is a separate verdict there. On a git older than 2.40 only the text-only cases are
 compared, and the rest print NOT_MEASURED.
+
+`roadmap-aggregate` is checked by `scripts/tests/ci_tools_roadmap_aggregate_parity_test.sh`:
+exact exit code, stdout, stderr and the tree after the run, on fixtures plus
+`docs/roadmaps/` of every commit in `RA_COMMITS` (default `HEAD`). Where the original dies
+in a traceback (a fragment or base that is not UTF-8, a fragment that is a directory) both
+exit 1 and only the stderr differs. A usage error exits 1 here, 2 in the original.
 
 ## Where the argv surface differs from the originals (by design, not parity-checked)
 

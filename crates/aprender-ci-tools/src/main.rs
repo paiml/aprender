@@ -2,7 +2,7 @@
 
 use aprender_ci_tools::{
     coverage_report_scope, dag_status, git_patch_id, package_include_diff, publishable_crates,
-    tarball_build_errors, tarball_shrink_report, tarball_workspace,
+    roadmap_aggregate, tarball_build_errors, tarball_shrink_report, tarball_workspace,
 };
 use clap::{ArgGroup, Parser, Subcommand};
 use std::io::{Read, Write};
@@ -85,6 +85,43 @@ enum Cmd {
         #[arg(allow_hyphen_values = true, value_name = "MODE")]
         mode: Option<String>,
     },
+    /// `roadmap.yaml` rebuilt from the base plus `entries/*.yaml` (the `aggregate` arm of
+    /// scripts/lib/roadmap_fragments.py). Exit 1 a refusal or `--check` red, 2 unreadable base.
+    RoadmapAggregate {
+        /// Fail unless roadmap.yaml is what the aggregator produces (and is idempotent).
+        #[arg(long)]
+        check: bool,
+        /// Write the result over roadmap.yaml instead of printing it.
+        #[arg(long)]
+        write: bool,
+        /// Judge this roadmap.yaml; its sibling `entries/` becomes the default fragments.
+        #[arg(long, value_name = "PATH")]
+        roadmap: Option<String>,
+        /// Read fragments from here instead.
+        #[arg(long, value_name = "DIR")]
+        entries: Option<String>,
+    },
+}
+
+/// The checkout's top directory: the `.py` anchors its default paths on its own location,
+/// which is this checkout's `scripts/lib/`.
+fn repo_root() -> Result<String, String> {
+    let out = Command::new("git")
+        .args(["rev-parse", "--show-toplevel"])
+        .output()
+        .map_err(|e| format!("cannot run git rev-parse: {e}"))?;
+    if !out.status.success() {
+        return Err("not inside a git checkout".to_owned());
+    }
+    String::from_utf8(out.stdout)
+        .map(|s| s.trim_end_matches('\n').to_owned())
+        .map_err(|e| format!("git rev-parse: {e}"))
+}
+
+fn cwd() -> Result<String, String> {
+    std::env::current_dir()
+        .map(|p| p.to_string_lossy().into_owned())
+        .map_err(|e| format!("cwd: {e}"))
 }
 
 fn cargo_metadata() -> Result<String, String> {
@@ -182,6 +219,27 @@ fn run(cmd: Cmd) -> Result<String, Refusal> {
                 .read_to_string(&mut rows)
                 .map_err(|e| nothing_printed(format!("stdin: {e}")))?;
             dag_status::run(&root, &rows).map_err(nothing_printed)
+        }
+        Cmd::RoadmapAggregate {
+            check,
+            write,
+            roadmap,
+            entries,
+        } => {
+            let args = roadmap_aggregate::Args {
+                check,
+                write,
+                roadmap: roadmap.as_deref(),
+                entries: entries.as_deref(),
+            };
+            let o = roadmap_aggregate::run(&args, &repo_root, &cwd);
+            if o.code == 0 {
+                // The success arms report on stderr too (`ok ...`, `aggregate: ...`).
+                eprint!("{}", o.stderr);
+                Ok(o.stdout)
+            } else {
+                Err((o.stdout, o.code, o.stderr.trim_end_matches('\n').to_owned()))
+            }
         }
     }
 }
