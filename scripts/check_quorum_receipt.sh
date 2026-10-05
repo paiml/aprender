@@ -119,13 +119,15 @@ _qr_exact_id() {
     return 1
 }
 
-# _qr_key ID -> the id as one model's identity: no -YYYYMMDD date suffix, and dots read as
-# dashes. The quorum tool's model_canon writes gemini-3.1-pro-high as gemini-3-1-pro-high,
+# _qr_key ID -> the id as one model's identity: dots read as dashes, then no -YYYYMMDD date
+# suffix. The quorum tool's model_canon writes gemini-3.1-pro-high as gemini-3-1-pro-high,
 # so an author recorded that way and its raw lane id are one seat (C314 review of 0bb7147459).
-# Only identity compares use it; _qr_exact_id still reads the id as written.
+# Dashes come first so a dot-dated id (gemini-3.1-pro-high.20260101) loses its date too
+# (C314 review of 5b747ea915). Only identity compares use it; _qr_exact_id still reads the
+# id as written.
 _qr_key() {
-    local k="${1%-[0-9][0-9][0-9][0-9][0-9][0-9][0-9][0-9]}"
-    printf '%s' "${k//./-}"
+    local k="${1//./-}"
+    printf '%s' "${k%-[0-9][0-9][0-9][0-9][0-9][0-9][0-9][0-9]}"
 }
 
 # _qr_is_author MODEL AM -> rc 0 iff MODEL and the author's model (AM arrives lowercased and
@@ -432,6 +434,10 @@ selftest() {
     row dotted_author_owns_dashed_lane "author-seat" "$(lane_tag "$f" 1)"
     rc_json "$A" ',"degraded":{"why":"x"}' "$(ln 1 gemini-3.1-pro-high gemini FAIL "$C")" "$(ln 2 gemini-3-1-pro-high gemini FAIL "$C")" > "$f"
     row dotted_and_dashed_are_one_model "rc=1 INVALID" "$(verdict "$f")" "(degraded needs 2 models)"
+    # The date comes off after dots read as dashes: gemini-3.1-pro-high.20260101 is a dated author.
+    rc_json "gemini-3.1-pro-high.20260101" "" "$(ln 1 gemini-3.1-pro-high gemini FAIL "$C")" "$(ln 2 claude-sonnet-5-5 claude FAIL "$C")" > "$f"
+    row dot_dated_author_owns_its_lane "author-seat" "$(lane_tag "$f" 1)"
+    row dot_dated_author_round_invalid "rc=1 INVALID" "$(verdict "$f")" "(must fail: the author's own seat, dated with a dot)"
     # Canonical as the quorum tool's model_canon / model_family: fable-* is claude, o<N>-* is openai.
     rc_json "fable-5-1" "" "$(ln 1 claude-fable-5-1 claude FAIL "$C")" "$(ln 2 gemini-3.1-pro-high gemini FAIL "$C")" > "$f"
     row fable_alias_author_is_author_seat "author-seat" "$(lane_tag "$f" 1)"
@@ -491,8 +497,9 @@ MUTANTS=(
     'any_role_counts|s/elif \[ "\$role" != independent \] \&\& \[ "\$role" != counted \] \&\& \[ "\$role" != width \]; then/elif false; then/'
     'contradiction_ok|s/elif \[ "\$pv" = caught \] \&\& \[ "\$verdict" = PASS \]; then/elif false; then/'
     'degraded_truthy|s/then "yes" else "" end. "\$f")"$/then "yes" elif .degraded != null and .degraded != false then "yes" else "" end'"'"' "$f")"/'
-    'dated_twin_two|s/    local k="\${1%-\[0-9\]\[0-9\]\[0-9\]\[0-9\]\[0-9\]\[0-9\]\[0-9\]\[0-9\]}"/    local k="$1"/'
-    'dots_not_dashes|s/"\${k\/\/.\/-}"/"$k"/'
+    'dated_twin_two|s/"\${k%-\[0-9\]\[0-9\]\[0-9\]\[0-9\]\[0-9\]\[0-9\]\[0-9\]\[0-9\]}"/"$k"/'
+    'dots_not_dashes|s/local k="\${1\/\/.\/-}"/local k="$1"/'
+    'key_date_before_dash|s/local k="\${1\/\/.\/-}"/local k="${1%-[0-9][0-9][0-9][0-9][0-9][0-9][0-9][0-9]}"/;s/"\${k%-\[0-9\]\[0-9\]\[0-9\]\[0-9\]\[0-9\]\[0-9\]\[0-9\]\[0-9\]}"/"${k\/\/.\/-}"/'
     'measured_from_claim|s/measured: (.model_measured \/\/ ""),/measured: (.model_measured \/\/ .model \/\/ ""),/'
     'decorated_author_ok|s/if \[ "\$am" != human \] \&\& ! _qr_exact_id "\$am"; then/if false; then/'
     'alias_not_canon|s/        opus-\* | sonnet-\* | haiku-\* | fable-\* | mythos-\*) printf .claude-%s. "\$1" ;;//'
