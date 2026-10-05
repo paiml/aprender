@@ -31,6 +31,8 @@
 # BEFORE / AFTER (command: `bash scripts/release/release_ready.sh`):
 #   origin/main 316dee2cd4, no list: unlisted=45 orphaned=0 contradictions=2
 #   HEAD of this change:             unlisted=0  orphaned=0 contradictions=0
+#   after merging main c7569afd3d:   unlisted=4  (main added mg-reuse, mg-reuse-self-test,
+#     x86-main-advisories, tag_coverage_gate.sh); RR-M13..M15 + RR-T15 -> unlisted=0
 #
 # REPORT-ONLY TODAY. No gate calls the checker. It becomes blocking only as a
 # ratchet after three green nights (L31), and only by an operator sign-off.
@@ -174,6 +176,9 @@ requirements:
   - {id: RR-M10, applies_to: [merge], anchor: "merge:ci.yml/gate/section/guard-cargo", checker: ".github/workflows/ci.yml#guard-cargo", provenance: "#4433 (gate section pair; was gate need guard-cargo)", producer: "guards"}
   - {id: RR-M11, applies_to: [merge], anchor: "merge:ci.yml/gate/section/sov.gate", checker: ".github/workflows/ci.yml#sov.*", provenance: "#4433 (gate section pair; sovereign-ci gate)", producer: "ci-main"}
   - {id: RR-M12, applies_to: [merge], anchor: "merge:ci.yml/gate/section/determinism-compare", checker: ".github/workflows/ci.yml#determinism-compare", provenance: "#4433 (gate section pair; was gate need determinism-compare)", producer: "ci-main"}
+  - {id: RR-M13, applies_to: [merge], anchor: "merge:ci.yml/gate/needs/mg-reuse", checker: ".github/workflows/ci.yml#  mg-reuse:", provenance: "#4753 T43 (merge_group reuses the head run on the same tree)", producer: "ci-main"}
+  - {id: RR-M14, applies_to: [merge], anchor: "merge:ci.yml/gate/needs/mg-reuse-self-test", checker: ".github/workflows/ci.yml#  mg-reuse-self-test:", provenance: "#4753 T43 (the reuse reader's own case table)", producer: "ci-main"}
+  - {id: RR-M15, applies_to: [merge], anchor: "merge:ci.yml/gate/needs/x86-main-advisories", checker: ".github/workflows/ci.yml#  x86-main-advisories:", provenance: "#4753 T43 (advisories run whenever mg-reuse skips x86-main)", producer: "ci-main"}
   - {id: RR-T01, applies_to: [tag], anchor: "tag:autopilot/commit/git merge-base --is-ancestor", checker: "scripts/release/autopilot.sh#git merge-base --is-ancestor", provenance: "APR-RELEASE-001 T-0, #3599 (release commit on origin/main)", producer: "ci-main"}
   - {id: RR-T02, applies_to: [tag], anchor: "tag:autopilot/commit/bash scripts/bump-version.sh --check", checker: "scripts/bump-version.sh#--check", provenance: "#3618 (version derived, workspaces agree)", producer: "ci-main"}
   - {id: RR-T03, applies_to: [tag], anchor: "tag:autopilot/deep/cargo test --doc --workspace", checker: "scripts/release/autopilot.sh#cargo test --doc", provenance: "APR-RELEASE-001 T-1 deep", producer: "deep-doctests"}
@@ -188,6 +193,7 @@ requirements:
   - {id: RR-T12, applies_to: [tag], anchor: "tag:autopilot/readiness/bash scripts/release/release_readiness.sh --root", checker: "scripts/release/release_readiness.sh#DEFAULT_MODE=enforce", provenance: "#3715 B1, operator ruling 2026-09-28", producer: "readiness", key: "publish.R8.mode", value: "enforce"}
   - {id: RR-T13, applies_to: [tag], anchor: "tag:autopilot/tag/bash scripts/check_milestone_cut.sh", checker: "scripts/check_milestone_cut.sh", provenance: "milestone cut (#3715 tag gating in cut_tag)", producer: "milestone"}
   - {id: RR-T14, applies_to: [tag], anchor: "tag:autopilot/tag/bash scripts/release/carry_milestone_items.sh", checker: "scripts/release/carry_milestone_items.sh", provenance: "milestone carry before the cut", producer: "milestone"}
+  - {id: RR-T15, applies_to: [tag], anchor: "tag:autopilot/tag/bash scripts/release/tag_coverage_gate.sh --resolve", checker: "scripts/release/tag_coverage_gate.sh", provenance: "#4691 #4734 #4738 (coverage receipt >= COV_FLOOR before the tag)", producer: "coverage"}
   - {id: RR-P01, applies_to: [publish], anchor: "publish:autopilot/cleanroom/gh-workflow clean-room.yml", checker: "scripts/release/autopilot.sh#clean-room.yml", provenance: "APR-RELEASE-001 T-3 (infra#621)", producer: "cleanroom-cpu"}
   - {id: RR-P02, applies_to: [publish], anchor: "publish:autopilot/cleanroom/gh-workflow b2-gpu.yml", checker: ".github/workflows/b2-gpu.yml", provenance: "APR-RELEASE-001 T-3 GPU-host ladder legs", producer: "cleanroom-gpu"}
   - {id: RR-P03, applies_to: [publish], anchor: "publish:autopilot/assets/gh-workflow binary-release.yml", checker: ".github/workflows/binary-release.yml", provenance: "#4657 #4659 release binaries", producer: "assets"}
