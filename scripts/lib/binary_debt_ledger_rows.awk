@@ -40,6 +40,8 @@ function unquote(v) {
     # An anchor (&a v reads as v), alias, tag, block scalar, directive, comment or reserved
     # indicator: PyYAML does not read these as the plain text.
     if (indicator(v)) refuse("a value starting with a YAML indicator: " v)
+    # In a flow map, ": " inside a plain value is a parse error to PyYAML, not text.
+    if (v ~ /:([ \t]|$)/) refuse("a plain value holding ': ': " v)
     return v
 }
 
@@ -66,6 +68,8 @@ function flow(s,    i, c, n, q, part, parts, np, k, colon, key) {
     for (k = 1; k <= np; k++) {
         colon = index(parts[k], ":")
         if (colon == 0) refuse("a flow-map entry without a key: " parts[k])
+        # {crate:alpha} is ONE plain scalar key with a null value to YAML, not crate = alpha.
+        if (substr(parts[k], colon + 1, 1) !~ /^([ \t]|)$/) refuse("a flow-map key without ': ' after it: " parts[k])
         key = trim(substr(parts[k], 1, colon - 1))
         F[key] = unquote(substr(parts[k], colon + 1)); FQ[key] = QUOTED
     }
@@ -99,6 +103,11 @@ function yaml_true(key) { return !FQ[key] && F[key] ~ /^(true|True|TRUE|yes|Yes|
 
 /^[^ \t-]/ {
     sec = ""; sub_ = ""
+    # PyYAML keeps the LAST of a repeated key; this reader would add them up. Refuse instead.
+    if (match($0, /^(classes|ceilings|legacy_names|binaries):/)) {
+        if (substr($0, 1, RLENGTH) in top) refuse("a repeated section: " substr($0, 1, RLENGTH))
+        top[substr($0, 1, RLENGTH)] = 1
+    }
     if ($0 ~ /^classes:/) {
         v = $0; sub(/^classes:[ \t]*/, "", v); sub(/[ \t]+#.*$/, "", v); v = trim(v)
         if (v !~ /^\[[^]\[{}"']*\]$/) refuse("classes is not a one-line flow sequence of plain scalars: " v)

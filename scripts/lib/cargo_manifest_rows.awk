@@ -114,18 +114,18 @@ BEGIN { table = ""; bins = 0; ml = ""; depth = 0; acc = ""; acc_key = "" }
     # A CRLF line ending is a newline to TOML; any other carriage return is not TOML.
     sub(/\r$/, "", line)
     if (index(line, "\r")) refuse("a carriage return inside a line")
-    # Inside a multi-line string another key opened: skip to its close.
+    # Inside a multi-line string another key opened: skip to its close, then read the rest of
+    # the line as usual (inside an array that rest can hold the closing ]).
     if (ml != "") {
         p = ml_end(line, ml)
         if (p == 0) next
         line = substr(line, p); ml = ""
-        scan(line); if (OPEN_ML != "") ml = OPEN_ML
-        next
     }
     scan(line)
     # Inside a multi-line array: accumulate members/exclude, skip any other key's array.
     if (depth > 0) {
         depth += DEPTH_DELTA
+        if (OPEN_ML != "") ml = OPEN_ML
         if (acc_key != "") acc = acc " " CODE
         if (depth == 0 && acc_key != "") { emit_array(acc_key, acc); acc_key = ""; acc = "" }
         next

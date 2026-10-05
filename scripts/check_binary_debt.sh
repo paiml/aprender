@@ -103,7 +103,7 @@ package_bins() {
     fi
     # A [[bin]] whose path is an auto-discovered file replaces that auto entry.
     for ((n = 1; n <= nb; n++)); do
-        if [ -z "${bname[$n]+set}" ]; then printf 'REFUSE %s/Cargo.toml: [[bin]] #%d has no name\n' "$rel" "$n" >&2; return 2; fi
+        if [ -z "${bname[$n]-}" ]; then printf 'REFUSE %s/Cargo.toml: [[bin]] #%d has no or an empty name\n' "$rel" "$n" >&2; return 2; fi
         name="${bname[$n]}" path="${bpath[$n]-}"
         if [ -n "$path" ]; then
             for k in "${!found[@]}"; do [ "${found[$k]}" = "$path" ] && unset 'found[$k]'; done
@@ -280,6 +280,10 @@ self_test() {
     mut_bare_cr() { sed -i "s/^name = \"alpha\"/name = \"al$(printf '\r')pha\"/" crates/alpha/Cargo.toml; }
     mut_escaped_ml_open() { printf 'description = """x\\"""\n[[bin]]\nname = "ghost"\n"""\n' >> crates/alpha/Cargo.toml; }
     mut_ml_extra_quote() { printf 'description = """x"""" # "[\n[[bin]]\nname = "ghost"\n' >> crates/alpha/Cargo.toml; }
+    mut_ml_two_extra() { printf 'description = """x""""" # "[\n[[bin]]\nname = "ghost"\n' >> crates/alpha/Cargo.toml; }
+    mut_ml_in_array() { printf 'x = [\n  """\n]\n[[bin]]\nname = "ghost"\n"""]\n[[bin]]\nname = "real"\n' >> crates/alpha/Cargo.toml; }
+    mut_empty_bin_name() { printf '[[bin]]\nname = ""\npath = "src/main.rs"\n' >> crates/alpha/Cargo.toml; }
+    mut_repeat_section() { sed -n '/^binaries:/,$p' ledger.yaml > ledger.tail && cat ledger.tail >> ledger.yaml; }
     mut_tab_exclude() { sed -i "s|\"tools/extra\"|\"tools/ex$(printf '\t')tra\"|" Cargo.toml; }
     mut_tab_ledger() { sed -i "s/{crate: alpha, bin: alpha,/{crate: alpha, bin: al$(printf '\t')pha,/" ledger.yaml; }
     mut_tab_class() { sed -i "s/, DECIDE\]/, DE$(printf '\t')CIDE]/" ledger.yaml; }
@@ -360,6 +364,12 @@ self_test() {
     row 2 "REFUSE" "a carriage return inside a manifest line is refused" mut_bare_cr
     row 0 "5 binaries in the universe" "an escaped \"\"\" on the opening line does not close the string" mut_escaped_ml_open
     row 1 "NEW      alpha/ghost" "a \"\"\" string may close with extra quotes; a [ in the comment after it opens nothing" mut_ml_extra_quote
+    row 1 "NEW      alpha/ghost" "a \"\"\" string may close with two extra quotes" mut_ml_two_extra
+    row 1 "NEW      alpha/real" "a \"\"\" string inside a multi-line array is skipped to its close; the ] after it closes the array" mut_ml_in_array
+    row 2 "REFUSE" "a [[bin]] with an empty name is refused" mut_empty_bin_name
+    row 2 "REFUSE" "a repeated ledger section is refused (PyYAML keeps the last)" mut_repeat_section
+    row 2 "REFUSE" "a flow key with no space after its colon is refused" sed -i 's/{crate: alpha, bin: alpha,/{crate:alpha, bin: alpha,/' ledger.yaml
+    row 2 "REFUSE" "a plain value holding ': ' is refused" sed -i 's/{crate: alpha, bin: alpha,/{crate: alpha, bin: alpha, why: a: b,/' ledger.yaml
     row 2 "REFUSE" "a tab inside a workspace array string is refused" mut_tab_exclude
     row 2 "REFUSE" "a tab inside a ledger value is refused" mut_tab_ledger
     row 2 "REFUSE" "a tab inside a class is refused" mut_tab_class
