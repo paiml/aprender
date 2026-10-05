@@ -80,11 +80,16 @@ measure() {
     [ $((UNB + BOUND)) -eq "$N" ] || nm "pv census $dir: unanchored+class+instance=$((UNB + BOUND)) != n_parsed=$N"
 }
 
-# measure_ref REF -> the contracts/ of a commit, via git archive into a temp dir.
+# measure_ref REF -> the contracts of a commit, via git archive into a temp dir. pv census also
+# counts crates/*/contracts (of a crate with a Cargo.toml) beside the dir it is given (#4538), so
+# those come along: archiving contracts/ alone measured the ref short of the worktree, and the
+# PR rule read every unchanged tree as "unbound share ROSE".
 measure_ref() {
-    local ref=$1 t
+    local ref=$1 t crate_paths=()
     t="$(mktemp -d "${TMPDIR:-/tmp}/census-ratchet.XXXXXX")"; TMPS+=("$t")
-    git -C "$REPO_ROOT" archive "$ref" contracts 2>/dev/null | tar -x -C "$t" 2>/dev/null \
+    mapfile -t crate_paths < <(git -C "$REPO_ROOT" ls-tree -r --name-only "$ref" -- crates 2>/dev/null \
+        | grep -E '^crates/[^/]+/(Cargo\.toml$|contracts/)' || true)
+    git -C "$REPO_ROOT" archive "$ref" contracts "${crate_paths[@]}" 2>/dev/null | tar -x -C "$t" 2>/dev/null \
         || nm "git archive $ref contracts failed"
     measure "$t/contracts"
 }
@@ -164,6 +169,33 @@ self_test() {
     mk d "$ent_c"; git -C "$r" commit -qam bind2; c3="$(git -C "$r" rev-parse HEAD)"
     expect "release 0.71.0 pays the step (+2 = min(100, 2)): GREEN" 0 --release 0.71.0 --commit "$c3"
     expect "release with no tag below it: NOT_MEASURED" 2 --release 0.0.1 --commit "$c3"
+    # Crate-local contracts (#4538). A stub pv that counts them as pv census does: contracts/ plus
+    # crates/*/contracts beside it, for a crate with a Cargo.toml. It does not depend on which pv is
+    # pinned, so the rows can fail on any host. k1 is unbound and k2 is bound, both committed.
+    local cstub="$t/pv-crates"
+    cat > "$cstub" <<'STUB'
+#!/usr/bin/env bash
+case "$1" in --version) echo "pv 9 (aprender provable-contracts verifier)"; exit 0;; --help) printf '  census  x\n'; exit 0;; esac
+d=$4; fs=()
+for f in "$d"/*.yaml; do [ -e "$f" ] && fs+=("$f"); done
+for c in "$d"/../crates/*/; do [ -f "${c}Cargo.toml" ] || continue; for f in "${c}"contracts/*.yaml; do [ -e "$f" ] && fs+=("$f"); done; done
+n=${#fs[@]} i=0 k=0
+for f in "${fs[@]}"; do if grep -q '^  ref:' "$f"; then i=$((i + 1)); elif grep -q '^entity:' "$f"; then k=$((k + 1)); fi; done
+printf '{"n_parsed":%d,"n_parse_errors":0,"by_anchoring":{"unanchored":%d,"class":%d,"instance":%d}}\n' "$n" $((n - i - k)) "$k" "$i"
+STUB
+    chmod +x "$cstub"
+    mkdir -p "$r/crates/k/contracts"; printf '[package]\nname = "k"\n' > "$r/crates/k/Cargo.toml"
+    printf 'metadata:\n  description: k1\n' > "$r/crates/k/contracts/k1.yaml"
+    printf 'metadata:\n  description: k2\n%s' "$ent_i" > "$r/crates/k/contracts/k2.yaml"
+    git -C "$r" add -A; git -C "$r" commit -qm crate
+    # THE FIX: before it, the base archive held no crates/, read 4 bound / 0 unbound against the
+    # worktree's 5 / 1 of 6, and this unchanged tree went RED.
+    CENSUS_RATCHET_PV="$cstub" expect "crate contracts on both ends, unchanged: GREEN (base not short)" 0 --base HEAD
+    rm "${r:?}/crates/k/contracts/k2.yaml"
+    CENSUS_RATCHET_PV="$cstub" expect "delete a bound crate contract: RED" 1 --base HEAD
+    git -C "$r" checkout -q -- crates; mk a
+    CENSUS_RATCHET_PV="$cstub" expect "unbind a top-level contract (crate stub): RED" 1 --base HEAD
+    git -C "$r" checkout -q -- contracts
     # Never vacuous: stub pvs that carry the identity and census, and lie.
     for case in garbage zero exit parse_err sum; do
         stub="$t/pv-$case"
