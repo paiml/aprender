@@ -30,18 +30,21 @@ DAG="$ROOT/docs/specifications/pp-066-dag.yaml"; RM="$ROOT/docs/roadmaps/roadmap
 DATE=$(date -u -d "@${SOURCE_DATE_EPOCH:-$(date +%s)}" +%F)
 say() { printf '%s\n' "$*"; }
 
-# 1+2: what the DAG and the receipts say vs the roadmap
+# 1+2: what the DAG and the receipts say vs the roadmap (status: aprender-ci-tools dag-status)
+. "$ROOT/scripts/ci_tools_bin.sh" || { printf '%s: ENV - no aprender-ci-tools binary\n' "$PROG" >&2; exit 2; }
 python3 - "$DAG" "$RM" "$ROOT" > "$PLAN" <<'PY'
-import sys, os, yaml
+import sys, os, json, subprocess, yaml
 dag, rm, root = sys.argv[1:4]
-sys.path.insert(0, os.path.join(root, "scripts", "lib")); import dag_status as ds
 d = yaml.safe_load(open(dag, encoding="utf-8")); r = yaml.safe_load(open(rm, encoding="utf-8"))
 entries = {e["id"]: e for e in (r.get("roadmap") or [])}
-for row in d["rows"]:
+out = subprocess.run([os.environ["CI_TOOLS_BIN"], "dag-status", "--root", root], check=True, stdout=subprocess.PIPE, encoding="utf-8",
+                     input=json.dumps(list(enumerate(d["rows"])), default=str)).stdout
+status = dict(json.loads(out)["status"])
+for i, row in enumerate(d["rows"]):
     pid, gh = row.get("pmat_id"), row.get("gh_issue")
     if not pid and gh:
         print(f"ADD\t{row['id']}\t#{gh}\t{(row.get('title') or '')[:100]}")
-    elif pid and ds.derived_status(root, row) == "complete" and entries.get(pid, {}).get("status") != "completed":
+    elif pid and status[i] == "complete" and entries.get(pid, {}).get("status") != "completed":
         print(f"COMPLETE\t{row['id']}\t{pid}\tdocs/audits/impl-{pid}-receipt.md")
     elif pid and pid not in entries:
         print(f"MISSING-ENTRY\t{row['id']}\t{pid}\t(the DAG names a ticket the roadmap does not carry)")

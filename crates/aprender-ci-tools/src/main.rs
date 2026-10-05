@@ -1,6 +1,8 @@
 //! `aprender-ci-tools`: one binary, one subcommand per ported Python helper.
 
-use aprender_ci_tools::{coverage_report_scope, package_include_diff, publishable_crates};
+use aprender_ci_tools::{
+    coverage_report_scope, dag_status, package_include_diff, publishable_crates,
+};
 use clap::{Parser, Subcommand};
 use std::io::{Read, Write};
 use std::path::PathBuf;
@@ -36,6 +38,14 @@ enum Cmd {
         /// A workspace member to leave out; repeatable. Must name a member.
         #[arg(long, value_name = "NAME", allow_hyphen_values = true)]
         exclude: Vec<String>,
+    },
+    /// Each DAG row's status, derived from its receipt, and the D7 lines for a typed
+    /// `status:` that disagrees (was scripts/lib/dag_status.py). Reads the rows as a JSON
+    /// array of `[id, row]` pairs on stdin.
+    DagStatus {
+        /// The repository root the `docs/audits/` receipts live under.
+        #[arg(long, value_name = "DIR")]
+        root: String,
     },
 }
 
@@ -80,6 +90,13 @@ fn run(cmd: Cmd) -> Result<String, (String, String)> {
         Cmd::CoverageReportScope { exclude } => {
             let meta = cargo_metadata().map_err(nothing_printed)?;
             coverage_report_scope::scope(&meta, &exclude).map_err(nothing_printed)
+        }
+        Cmd::DagStatus { root } => {
+            let mut rows = String::new();
+            std::io::stdin()
+                .read_to_string(&mut rows)
+                .map_err(|e| (String::new(), format!("stdin: {e}")))?;
+            dag_status::run(&root, &rows).map_err(nothing_printed)
         }
     }
 }
