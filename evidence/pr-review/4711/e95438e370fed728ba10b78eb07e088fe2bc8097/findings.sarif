@@ -1,0 +1,382 @@
+{
+  "version": "2.1.0",
+  "$schema": "https://docs.oasis-open.org/sarif/sarif/v2.1.0/errata01/os/schemas/sarif-schema-2.1.0.json",
+  "runs": [
+    {
+      "tool": {
+        "driver": {
+          "name": "pmat"
+        }
+      },
+      "results": [
+        {
+          "ruleId": "complexity_delta",
+          "level": "note",
+          "message": {
+            "text": "pmat analyze complexity over head and base copies of the 17 changed non-test .rs files. Only five functions rise: build_tool_calling_message 3->4, to_grammar 1->3, extract_tool_parameters 3->5, gguf/cuda/mod.rs build 6->8 (from #4623), serve run 6->7; all under 10. The extract-fn refactor lowers try_cuda_backend from cyclomatic 14 / cognitive 43 to 9 / 20 and completions_inner from 9 / 26 to 8 / 21."
+          },
+          "properties": {
+            "grounding": "measured",
+            "command": [
+              "pmat",
+              "analyze",
+              "complexity",
+              "--format",
+              "json",
+              "--path",
+              "<head and base copies>"
+            ],
+            "exit_code": 0,
+            "stdout_sha256": "d811c87edb1a71e8ad5a404cb618a58cae0cb7b704af4be14f5efed8f5f92017",
+            "failure_scenario": "a later branch in extract_tool_parameters or try_cuda_backend crosses cyclomatic 10",
+            "precision_class": "advisory"
+          }
+        },
+        {
+          "ruleId": "tdg_delta",
+          "level": "note",
+          "message": {
+            "text": "pmat analyze tdg: no changed file drops a grade. handler_gpu_completion.rs 89.79 -> 88.52, still A-. grammar/tool.rs and gguf/cuda/mod.rs have no base copy in the 17-file set (A at head)."
+          },
+          "properties": {
+            "grounding": "measured",
+            "command": [
+              "pmat",
+              "analyze",
+              "tdg",
+              "--format",
+              "json",
+              "--path",
+              "<head and base copies>"
+            ],
+            "exit_code": 0,
+            "stdout_sha256": "e22114fee548d3aaf38120f9fc90d606f151177cd5e987d43c616a0e0f671442",
+            "failure_scenario": "none: grade unchanged",
+            "precision_class": "advisory"
+          }
+        },
+        {
+          "ruleId": "satd_none_introduced",
+          "level": "note",
+          "message": {
+            "text": "pmat analyze satd over the 17 head files and the base copies: 0 violations on both."
+          },
+          "properties": {
+            "grounding": "measured",
+            "command": [
+              "pmat",
+              "analyze",
+              "satd",
+              "--format",
+              "json",
+              "--path",
+              "<head copy>"
+            ],
+            "exit_code": 0,
+            "stdout_sha256": "4c677a9e5f190ffaa95b108f941bf34ba9f30a27c1aea16cbfbad1ac4f325e28",
+            "failure_scenario": "a TODO added by this diff would be counted",
+            "precision_class": "advisory"
+          }
+        },
+        {
+          "ruleId": "refactor_equivalence_try_cuda_backend",
+          "level": "note",
+          "message": {
+            "text": "Commit 26ccc7f932 extracts dispatch_cuda_stream, cuda_batch_collect, cuda_direct_collect and try_cuda_direct_completions. Read line by line: the 503 batch-queue-full path keeps record_admission_rejected, the 500 and generation_error_status paths are unchanged, timing_tx sends are unchanged, and chain order is unchanged. Two clones became moves. No behaviour change found."
+          },
+          "locations": [
+            {
+              "physicalLocation": {
+                "artifactLocation": {
+                  "uri": "crates/aprender-serve/src/api/cuda_chat_backend.rs"
+                },
+                "region": {
+                  "startLine": 1
+                }
+              }
+            }
+          ],
+          "properties": {
+            "grounding": "asserted",
+            "rationale": "Read by the primary against the base copy; no cargo test could be run on this host, and the extracted paths are device paths.",
+            "failure_scenario": "a dropped record_admission_rejected would under-count 503s with no test failing",
+            "precision_class": "advisory"
+          }
+        },
+        {
+          "ruleId": "qwen_xml_fallback_preempted_by_json",
+          "level": "warning",
+          "message": {
+            "text": "build_tool_calling_message runs the default parser first and tries QwenXml only when it returns no calls. A Qwen XML call whose parameter value contains JSON with name and arguments keys is taken as the call, and the real tool name is discarded. Low likelihood, wrong tool executed when it fires."
+          },
+          "locations": [
+            {
+              "physicalLocation": {
+                "artifactLocation": {
+                  "uri": "crates/aprender-serve/src/api/openai_handlers.rs"
+                },
+                "region": {
+                  "startLine": 643
+                }
+              }
+            }
+          ],
+          "properties": {
+            "grounding": "asserted",
+            "rationale": "Read of the two parse calls at lines 642-650. agy raised the same defect independently. Not run.",
+            "failure_scenario": "model emits <function=write_file><parameter=content>{\"name\":\"rm\",\"arguments\":{}}</parameter></function> and the response carries a call to rm",
+            "precision_class": "advisory"
+          }
+        },
+        {
+          "ruleId": "qwen_xml_parser_edge_cases",
+          "level": "note",
+          "message": {
+            "text": "parse_qwen_xml finds <function= anywhere, ends at </function> or at end of text, and does not skip think blocks. A call quoted inside reasoning, a truncated final call, or a literal </function> inside a string value parse as a call or cut the value short."
+          },
+          "locations": [
+            {
+              "physicalLocation": {
+                "artifactLocation": {
+                  "uri": "crates/aprender-serve/src/grammar/tool.rs"
+                },
+                "region": {
+                  "startLine": 296
+                }
+              }
+            }
+          ],
+          "properties": {
+            "grounding": "asserted",
+            "rationale": "Read of parse_qwen_xml, qwen_xml_arguments and qwen_xml_value. The module is include!d so no mutation or unit run covers it from this host.",
+            "failure_scenario": "a value containing </function> is truncated at that tag and the rest is dropped",
+            "precision_class": "advisory"
+          }
+        },
+        {
+          "ruleId": "legacy_template_tools_warning_noise",
+          "level": "note",
+          "message": {
+            "text": "The legacy template path prints an eprintln! warning on every request that carries tools. Honest, but it is stderr noise per request and not a tracing event."
+          },
+          "locations": [
+            {
+              "physicalLocation": {
+                "artifactLocation": {
+                  "uri": "crates/aprender-serve/src/api/realize_handlers.rs"
+                },
+                "region": {
+                  "startLine": 287
+                }
+              }
+            }
+          ],
+          "properties": {
+            "grounding": "asserted",
+            "rationale": "Read; not run.",
+            "failure_scenario": "a client sending tools on every turn fills the server log",
+            "precision_class": "advisory"
+          }
+        }
+      ]
+    },
+    {
+      "tool": {
+        "driver": {
+          "name": "nvidia-cuda-docs"
+        }
+      },
+      "invocations": [
+        {
+          "executionSuccessful": true,
+          "toolExecutionNotifications": []
+        }
+      ],
+      "results": []
+    },
+    {
+      "tool": {
+        "driver": {
+          "name": "crux"
+        }
+      },
+      "results": [
+        {
+          "ruleId": "crux_surface_covered",
+          "level": "note",
+          "message": {
+            "text": "The #4650 half changes the /v1/chat/completions request (tools reach the chat template) and the response (message.tool_calls for Qwen3.5 XML output). contracts/crux-C-11-v1.yaml (OpenAI tool-use function calling) and contracts/crux-C-03-v1.yaml (finish_reason incl. tool_calls) exist at head. gap_effect none. The Qwen XML shape is an extension below the contract's OpenAI-shaped response and is not itself named in it."
+          },
+          "properties": {
+            "grounding": "measured",
+            "command": [
+              "ls",
+              "contracts/crux-C-11-v1.yaml",
+              "contracts/crux-C-03-v1.yaml"
+            ],
+            "exit_code": 0,
+            "stdout_sha256": "d29327d42a930adfad7c93554099c390e32a0767cbaf5b1a60769e61bdca9e5a",
+            "failure_scenario": "A surface with no covering contract would be crux_coverage none; both contracts are present.",
+            "precision_class": "advisory"
+          }
+        }
+      ]
+    },
+    {
+      "tool": {
+        "driver": {
+          "name": "cargo-mutants"
+        }
+      },
+      "invocations": [
+        {
+          "executionSuccessful": true,
+          "toolExecutionNotifications": [
+            {
+              "level": "note",
+              "message": {
+                "text": "Ran on gx10 only: cargo mutants -p aprender-serve --in-diff <merge-base diff> --jobs 1 --cargo-arg=--lib, test set filtered to 4650 pmat801 chat_template_wiring thinking_on_refusal chat_template_official format_chat. 18 mutants, 11 caught, 7 missed, 0 unviable, 0 timeout. grammar/tool.rs, chat_template_official.rs and mod_create_demo.rs are include!d and cargo-mutants did not enumerate them, so the parser and the tojson filter went unmutated."
+              }
+            }
+          ]
+        }
+      ],
+      "results": [
+        {
+          "ruleId": "mutants_survivors_in_diff",
+          "level": "warning",
+          "message": {
+            "text": "7 of 18 in-diff mutants survived: try_gpu_backend -> None and Some(Default::default()) (openai_handlers.rs:1067), try_cached_backend -> None and Some(Default::default()) (openai_handlers.rs:1185), delete ! in format_chat_messages_official_thinking_tools (realize_handlers.rs:275), and format_chat_messages_for_state_thinking -> Ok(String::new()) and Ok(\"xyzzy\") (realize_handlers.rs:323). The test filter limited which tests could kill them, so some may be killed by the full lib suite. The realize_handlers.rs:275 survivor is the empty-tools guard of the #4650 fix."
+          },
+          "properties": {
+            "grounding": "measured",
+            "command": [
+              "cargo",
+              "mutants",
+              "-p",
+              "aprender-serve",
+              "--in-diff",
+              "<merge-base diff>",
+              "--jobs",
+              "1",
+              "--cargo-arg=--lib"
+            ],
+            "exit_code": 2,
+            "stdout_sha256": "4580a915a8c1438873474bf135d4f078c0c79913aff45be31cf2b23ba076ee35",
+            "failure_scenario": "deleting the ! at realize_handlers.rs:275 makes the filter keep empty tool lists and render an empty tools block, and no filtered test fails",
+            "precision_class": "advisory"
+          }
+        }
+      ]
+    },
+    {
+      "tool": {
+        "driver": {
+          "name": "antigravity"
+        }
+      },
+      "results": [
+        {
+          "ruleId": "agy_memory_probe_failure_reads_zero_free",
+          "level": "note",
+          "message": {
+            "text": "antigravity: executor.memory_info().unwrap_or((0, 0)) turns a failed cudaMemGetInfo into 0 bytes free: KV sized against 0 (2048 floor) and the FP16 batched prefill judged not to fit. The #3715 eprintln prints the 0.0 GB figure, so it is not wholly silent."
+          },
+          "locations": [
+            {
+              "physicalLocation": {
+                "artifactLocation": {
+                  "uri": "crates/aprender-serve/src/gguf/cuda/mod.rs"
+                },
+                "region": {
+                  "startLine": 820
+                }
+              }
+            }
+          ],
+          "properties": {
+            "grounding": "asserted",
+            "rationale": "Raised by antigravity as asserted. The primary read lines 820-847 and confirms the unwrap_or((0,0)) and the eprintln; severity is judgement.",
+            "failure_scenario": "a transient driver error at load leaves the model on a 2048 context and serial prefill with only a stderr line",
+            "precision_class": "advisory"
+          }
+        },
+        {
+          "ruleId": "agy_fit_serving_need_single_slot",
+          "level": "note",
+          "message": {
+            "text": "antigravity: with KvLen::FitServing the fit check computes need for one slot while serving_kv_len divides memory across 1 + SERVE_BATCH_SLOTS. Not re-verified by the primary."
+          },
+          "locations": [
+            {
+              "physicalLocation": {
+                "artifactLocation": {
+                  "uri": "crates/aprender-serve/src/gguf/cuda/mod.rs"
+                },
+                "region": {
+                  "startLine": 837
+                }
+              }
+            }
+          ],
+          "properties": {
+            "grounding": "asserted",
+            "rationale": "Raised by antigravity; the primary read line 837 but did not trace the batch-slot allocation.",
+            "failure_scenario": "the FP16 prefill cache is kept when the batch slots then no longer fit and the scheduler OOMs at allocation",
+            "precision_class": "advisory"
+          }
+        },
+        {
+          "ruleId": "agy_session_kv_len_not_recomputed_after_serial",
+          "level": "note",
+          "message": {
+            "text": "antigravity: after the switch to serial prefill max_seq_len stays clamped by the batched-prefill reserve. Not re-verified by the primary."
+          },
+          "locations": [
+            {
+              "physicalLocation": {
+                "artifactLocation": {
+                  "uri": "crates/aprender-serve/src/gguf/cuda/mod.rs"
+                },
+                "region": {
+                  "startLine": 829
+                }
+              }
+            }
+          ],
+          "properties": {
+            "grounding": "asserted",
+            "rationale": "Raised by antigravity; the primary saw max_seq_len fixed at 829-831 before the fit check and did not measure the effect.",
+            "failure_scenario": "Qwen3-8B on 24 GB serves a smaller context than the memory allows",
+            "precision_class": "advisory"
+          }
+        },
+        {
+          "ruleId": "agy_fp16_message_on_forced_serial",
+          "level": "note",
+          "message": {
+            "text": "antigravity: the [#3413] FP16 batched prefill message prints even when BATCHED_PREFILL=0 forces the serial path. Log-only. Not re-verified by the primary."
+          },
+          "locations": [
+            {
+              "physicalLocation": {
+                "artifactLocation": {
+                  "uri": "crates/aprender-serve/src/gguf/cuda/mod.rs"
+                },
+                "region": {
+                  "startLine": 792
+                }
+              }
+            }
+          ],
+          "properties": {
+            "grounding": "asserted",
+            "rationale": "Raised by antigravity (line 792); the primary did not read it.",
+            "failure_scenario": "an operator reads the log line and chases a serial slowdown in the wrong place",
+            "precision_class": "advisory"
+          }
+        }
+      ]
+    }
+  ]
+}
