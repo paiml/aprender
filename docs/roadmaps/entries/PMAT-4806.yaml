@@ -1,0 +1,23 @@
+- id: PMAT-4806
+  github_issue: 4806
+  item_type: task
+  title: '0702-P3a: nightly assets rehearsal for RR-P03/P04 — build every release asset at main''s head on a schedule, never upload, no secrets (child of #4678)'
+  status: inprogress
+  priority: high
+  assigned_to: aprender-wprodmodels
+  created: 2026-10-05T15:10:00Z
+  updated: 2026-10-05T16:00:00Z
+  spec: null
+  acceptance_criteria:
+  - '`.github/workflows/assets-rehearsal-nightly.yml` is generated from `binary-release.yml` by one script (no hand copy). The build steps are the release''s own; only the trigger, the permissions, the tag source, the checkout ref and the upload steps differ. A drift check (`--check`) regenerates and diffs, and runs first in every rehearsal run, so a release-workflow edit without a regen makes the rehearsal red rather than stale.'
+  - 'It cannot upload: workflow `permissions: contents: read`, no `secrets.` reference, no `environment:`, no upload or release step. Every job starts with a guard that refuses to run when a registry token (env or cargo credentials file) is present. Each property has a planted row in the case table.'
+  - 'The `verify` job runs `check_release_assets.sh <tag> --assets-from <list of built files>` over the union of what the build jobs produced. The tag is `v<workspace version>-rc.0` at the run commit, so the rc stamp runs as on a real rc; a missing asset is red; a build job that could not run reads not_measured, never green.'
+  - 'Fleet-hours per night are stated from measured job durations.'
+  - 'Red/green proof: a planted upload step, a planted `secrets.` reference, a planted token and a hand edit of the generated file each go red; the clean tree is green.'
+  phases: []
+  subtasks: []
+  estimated_effort: null
+  labels:
+  - kind:code
+  notes: 'Split from the assets lane of #4720. Wiring the rehearsal into the train lane table is a gate change and is not part of this ticket: it follows three green scheduled nights.'
+  epic: 4678
