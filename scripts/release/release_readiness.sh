@@ -24,6 +24,10 @@
 # (it does not diff trees), so THIS script earns it: every host receipt names ONE full apr_sha X, and
 # `git diff X <release-commit>` is empty outside evidence/. Otherwise the flag is withheld, pv grades the
 # receipts against the release commit, and a stale receipt is a violation — the row says which.
+# B3 (#4803): a version-only bump reuses them. When X and the release commit differ, the flag is still
+# earned iff the release commit's code is exactly X's after X's own `scripts/bump-version.sh <version>`
+# (code_identity_bump_of, the ONE bump equivalence). Anything else the bump carries withholds it; a
+# bump that cannot be replayed is not_measured and withholds it too — never a reuse.
 #
 # EXIT  0 Pass · 1 Fail ·
 #       2 pv declined / could not judge / is missing ·
@@ -59,9 +63,9 @@ resolve_mode() {
     esac
 }
 
-# receipts_commit root receipts-dir release-commit -> prints X when earned; always prints a reason on fd 3
+# receipts_commit root receipts-dir release-commit version -> prints X when earned; always prints a reason on fd 3
 receipts_commit() {
-    local root="$1" dir="$2" commit="$3" shas x same
+    local root="$1" dir="$2" commit="$3" version="${4:-}" shas x same bump
     shas="$(python3 - "$dir" <<'PY' 2>/dev/null
 import glob, json, os, sys
 out = set()
@@ -99,7 +103,16 @@ PY
         echo "        receipts-commit withheld: the code identity of ${x:0:12} or ${commit:0:12} is not_measured" >&3; return 1
     fi
     if [ "$same" != 0 ]; then
-        echo "        receipts-commit withheld: ${x:0:12} differs from ${commit:0:12} outside evidence/ ($(git -C "$root" diff --name-only "$x" "$commit" -- . ':(exclude)evidence' | wc -l) file(s)), so its receipts are stale for this release" >&3
+        # B3 (#4803): different code may still be X bumped to this release's version and nothing else.
+        bump="$(cd -- "$root" && { code_identity_bump_of "$x" "$commit" "$version"; printf %s "$?"; })" || bump=2
+        if [ "$bump" = 0 ]; then
+            echo "        receipts-commit ${x:0:12}: ${commit:0:12} is a version-only bump of it to ${version} (bump-version.sh replayed, code identity equal), receipts reused" >&3
+            printf '%s\n' "$x"; return 0
+        fi
+        if [ "$bump" = 2 ]; then
+            echo "        receipts-commit withheld: ${x:0:12} differs from ${commit:0:12} and the bump equivalence to '${version}' is not_measured" >&3; return 1
+        fi
+        echo "        receipts-commit withheld: ${x:0:12} differs from ${commit:0:12} outside evidence/ and is not a version-only bump of it to ${version:-<no version>} ($(git -C "$root" diff --name-only "$x" "$commit" -- . ':(exclude)evidence' | wc -l) file(s)), so its receipts are stale for this release" >&3
         return 1
     fi
     echo "        receipts-commit ${x:0:12}: equal to ${commit:0:12} outside evidence/" >&3
@@ -155,7 +168,7 @@ judge() { # judge mode root version commit receipts dogfood out
         done
         args+=(--crux-receipts "$cf")
     fi
-    if rx="$(receipts_commit "$root" "${receipts:-$root/evidence/dogfood/models/$version}" "$commit" 3>"$out")"; then
+    if rx="$(receipts_commit "$root" "${receipts:-$root/evidence/dogfood/models/$version}" "$commit" "$version" 3>"$out")"; then
         args+=(--receipts-commit "$rx")
     fi
     cat -- "$out"
@@ -308,6 +321,41 @@ STUB
     d="$tmp/m"; mk "$d"; printf '{"apr_sha":"%s"}\n' "$(printf '0%.0s' $(seq 40))" > "$d/evidence/dogfood/models/1.2.3/gx10.json"; g "$d" commit -qam split
     row split_apr_sha_withholds                  0 "different apr_sha values" "$d" FX_PV_RC=0 FX_PV_BODY=pass
     argrow split_apr_sha_not_passed              "!--receipts-commit"
+    # B3 (#4803): the receipts were measured at A; the release commit is A bumped by A's own bump tool.
+    mkbump() { # dir bump-version [extra]: commit A (Cargo.toml 1.2.2 and its bump tool), then the bump, then receipts naming A
+        mkdir -p "$1/src" "$1/scripts" "$1/evidence/dogfood/models/1.2.3"; printf 'a\n' > "$1/src/f"
+        printf '[package]\nname = "fx"\nversion = "1.2.2"\n\n[dependencies]\ndep = "0.1"\n' > "$1/Cargo.toml"
+        if [ "${3:-}" != no-tool ]; then
+            printf '#!/usr/bin/env bash\nset -eu\nsed -i "s/^version = \\".*\\"/version = \\"$1\\"/" Cargo.toml\n' > "$1/scripts/bump-version.sh"
+        fi
+        git init -q -b main "$1"; g "$1" add -A; g "$1" commit -qm A
+        local a; a="$(git -C "$1" rev-parse HEAD)"
+        sed -i "s/^version = \".*\"/version = \"$2\"/" "$1/Cargo.toml"
+        case "${3:-}" in
+            src) printf 'b\n' > "$1/src/f" ;;
+            dep) sed -i 's/^dep = "0.1"/dep = "0.2"/' "$1/Cargo.toml" ;;
+        esac
+        g "$1" commit -qam bump
+        printf '{"apr_sha":"%s"}\n' "$a" > "$1/evidence/dogfood/models/1.2.3/lambda.json"
+        printf '{"apr_sha":"%s"}\n' "$a" > "$1/evidence/dogfood/models/1.2.3/gx10.json"
+        g "$1" add -A; g "$1" commit -qm receipts
+        printf '%s\n' "$a"
+    }
+    d="$tmp/b"; x="$(mkbump "$d" 1.2.3)"
+    row version_only_bump_reuses_receipts        0 "is a version-only bump of it to 1.2.3" "$d" FX_PV_RC=0 FX_PV_BODY=pass
+    argrow version_only_bump_passes_the_flag     "--receipts-commit $x"
+    d="$tmp/bs"; mkbump "$d" 1.2.3 src >/dev/null
+    row bump_plus_source_withholds               0 "is not a version-only bump of it to 1.2.3" "$d" FX_PV_RC=0 FX_PV_BODY=pass
+    argrow bump_plus_source_not_passed           "!--receipts-commit"
+    d="$tmp/bd"; mkbump "$d" 1.2.3 dep >/dev/null
+    row bump_plus_dependency_withholds           0 "is not a version-only bump of it to 1.2.3" "$d" FX_PV_RC=0 FX_PV_BODY=pass
+    argrow bump_plus_dependency_not_passed       "!--receipts-commit"
+    d="$tmp/bw"; mkbump "$d" 1.2.4 >/dev/null
+    row bump_to_another_version_withholds        0 "is not a version-only bump of it to 1.2.3" "$d" FX_PV_RC=0 FX_PV_BODY=pass
+    argrow bump_to_another_version_not_passed    "!--receipts-commit"
+    d="$tmp/bn"; mkbump "$d" 1.2.3 no-tool >/dev/null
+    row bump_without_its_tool_is_not_measured    0 "bump equivalence to '1.2.3' is not_measured" "$d" FX_PV_RC=0 FX_PV_BODY=pass
+    argrow bump_without_its_tool_not_passed      "!--receipts-commit"
     # the committed default is what a bare run uses; flipping it is a reviewed commit
     if [ "$DEFAULT_MODE" = enforce ]; then
         printf '  ok    %-44s DEFAULT_MODE=enforce\n' committed_default_is_enforce; pass=$((pass + 1))

@@ -51,7 +51,7 @@
 # KIND: pattern. Vocabulary, extractor and shapes over a graph; the proof is the gate's own case table.
 # ─────────────────────────────────────────────────────────────────────────────
 name: release-readiness
-version: "1.0.0"
+version: "1.1.0"
 scope: >
   Whether a release's evidence proves every (model, host, verb, thinking, context) cell, every (kernel, GPU
   arch) cell and every model's tokenizer-parity cell, from receipts measured at the release commit. Out of scope: producing the receipts (#3712,
@@ -60,10 +60,10 @@ scope: >
 status: active
 
 metadata:
-  version: "1.0.0"
+  version: "1.1.0"
   kind: pattern
   created: '2026-09-21'
-  last_modified: '2026-09-21'
+  last_modified: '2026-10-05'
   author: PAIML Engineering
   description: >
     The release matrix as focus nodes: every obligation of a release is a node derived from measured
@@ -254,6 +254,7 @@ equations:
     codomain: "a PV-ONT-011 violation naming the cell, or none"
     invariants:
       - "fresh ⇔ receipt.version = V ∧ receipt.apr_sha = (receipts_commit ∨ release_commit)"
+      - "receipts_commit = X ⇔ every host receipt names the one full sha X ∧ (same(X, release_commit) ∨ bump_of(X, release_commit, V)), per code-identity-v1 (#4803)"
       - "thinkOk ⇔ thinking = off ∨ think_closed = true"
       - "answered ⇔ answer_chars > 0"
       - "contextMet ⇔ prompt_tokens ≥ tokens(rung), or for declared prompt_tokens + max_tokens ≥ context_length"
@@ -320,6 +321,12 @@ falsification_tests:
     prediction: "the all-green fixture passes with every cell named; a missing, skipped, fallback, stale-sha, unclosed-think, empty-answer, short-context cell each fail naming that cell; a kernel green on sm_121 and red on sm_89 fails naming lambda; a missing host receipt, an inherited dogfood and an absent declared length each fail; no subject declines"
     test: cargo test -p aprender-contracts-cli --test ont_release_readiness
     if_fails: a leak class from 0.69.0 reaches the tag again
+
+  - id: FALSIFY-RR-004
+    rule: a version-only bump reuses the receipts and nothing else does (#4803)
+    prediction: "receipts measured at A earn --receipts-commit A for a release commit that is A plus its own scripts/bump-version.sh to V and nothing else; the same bump plus one source byte, plus one dependency change, or to another version withholds it naming the bump; a bump that cannot be replayed withholds it as not_measured"
+    test: bash scripts/release/release_readiness.sh --selftest
+    if_fails: every version bump re-measures the whole matrix (bump to tag takes hours, not minutes), or a bump that carries code reuses receipts measured on other code
 
 qa_gate:
   id: F-RR-001
