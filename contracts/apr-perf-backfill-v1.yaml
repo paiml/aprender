@@ -1,0 +1,109 @@
+metadata:
+  version: 1.0.0
+  kind: schema
+  created: '2026-10-05'
+  author: PAIML Engineering
+  references:
+  - 'docs/specifications/APR-OBS-001-dogfood-observability.md v1.3 §2.2 (ledgers), §3 (apr-perf-epoch-v1: backfill row read by a series), §7 OBS-14 (its writer row), §7.1 (rows written before the calibration clock), §9.1 (backfill rows in any series: 0), C12'
+  - 'contracts/apr-obs-row-identity-v1.yaml — the identity block every row carries; not restated here'
+  - 'contracts/apr-perf-ledger-v1.yaml — the primary nightly ledger; a backfill row never enters it'
+  - 'aprender#4487 — OBS-00: this schema'
+  description: >
+    The backfill ledger: perf rows recovered from older evidence/perf*
+    receipts, appended once by the OBS-14 importer to its own file under the
+    forjar-declared fleet_perf_dir (§2.2). Each row is the §2.1 identity block
+    (apr-obs-row-identity-v1, schema = "apr-perf-backfill-v1") plus the fields
+    below.
+
+    Backfill is history, never signal. It goes to a separate ledger, never the
+    primary (C12), and no RED, baseline or view series reads it (§2.2; §9.1
+    target 0). Rows written before the calibration clock starts are backfill,
+    not calibration (§7.1).
+
+    The importer takes only receipts with complete identity (OBS-14). A receipt
+    missing any identity field is skipped and counted in the import receipt. The
+    importer never fills a field from a default, a later receipt or the host it
+    runs on. Whether a receipt written before spec v1.3 can ever have complete
+    identity is the open question in apr-obs-row-identity-v1.
+
+    Fields beyond the identity block:
+      source       REQUIRED. {path, sha256}: the evidence receipt the row came from, by repo path and the sha256 of its bytes
+      measurements the receipt's numbers, under their apr-perf-ledger-v1 names (perf_row_shape). A number the receipt does not carry is absent, never defaulted or derived.
+
+equations:
+  row_admissible:
+    formula: |
+      admissible_backfill(r) ⇔ admissible_identity(r) ∧ r.schema = "apr-perf-backfill-v1" ∧ source ∈ keys(r)
+      import appends r ⇒ admissible_identity(r)
+    domain: 'one line of the backfill ledger'
+    codomain: bool
+    invariants:
+    - 'admissible_identity is apr-obs-row-identity-v1 §admissible; this contract does not restate it.'
+    - 'Complete identity only (OBS-14): a receipt that cannot fill every identity field yields no row.'
+
+  separate_ledger:
+    formula: |
+      ∀ r ∈ primary nightly ledger: r.schema ≠ "apr-perf-backfill-v1"
+      ∀ series S ∈ RED ∪ baseline ∪ view: ∀ r ∈ rows(S): r ∉ backfill
+    domain: 'every ledger file, and every series a consumer computes'
+    codomain: bool
+    invariants:
+    - 'C12: backfill goes to a separate ledger, never the primary. §9.1 target: 0 backfill rows in any series.'
+    - 'The read side is also a falsifier of apr-perf-epoch-v1 in spec §3 ("backfill row read by a series"), planted by the same OBS-14 PR.'
+
+  once:
+    formula: |
+      |backfill| > 0 ⇒ an importer run appends 0 rows
+    domain: 'one importer run against the backfill ledger'
+    codomain: bool
+    invariants:
+    - '§2.2 cadence: once. A second run that appended would duplicate history, and the chain would then seal the duplicate.'
+
+falsification_tests:
+  - id: FALSIFY-OBS-BACKFILL-001
+    rule: row_admissible
+    prediction: 'a receipt without model_sha256 yields no row and is counted as skipped in the import receipt'
+    test: 'planted RED→GREEN in the OBS-14 PR; NotRun{NoDeclaredExecutor} until then'
+    if_fails: 'history that cannot name its weights is imported as if it could'
+  - id: FALSIFY-OBS-BACKFILL-002
+    rule: separate_ledger
+    prediction: 'an importer whose output path is the primary nightly ledger writes nothing and fails'
+    test: 'planted RED→GREEN in the OBS-14 PR; NotRun{NoDeclaredExecutor} until then'
+    if_fails: 'old receipts enter the ledger that calibration, baselines and RED rules read'
+  - id: FALSIFY-OBS-BACKFILL-003
+    rule: separate_ledger
+    prediction: 'a backfill row read by a RED, baseline or view series turns that series RED'
+    test: 'the same planted row as the apr-perf-epoch-v1 falsifier "backfill row read by a series" (spec §3), RED→GREEN in the OBS-14 PR; NotRun{NoDeclaredExecutor} until then'
+    if_fails: 'uncalibrated history moves a threshold or a baseline'
+  - id: FALSIFY-OBS-BACKFILL-004
+    rule: once
+    prediction: 'a second importer run on a non-empty backfill ledger appends 0 rows'
+    test: 'planted RED→GREEN in the OBS-14 PR; NotRun{NoDeclaredExecutor} until then'
+    if_fails: 'a re-run doubles the history and the chain seals the duplicate'
+
+proof_obligations:
+  - type: invariant
+    property: 'every backfill row has complete identity'
+    formal: '∀ r ∈ backfill: admissible_identity(r)'
+    applies_to: all
+  - type: invariant
+    property: 'no backfill row is in the primary nightly ledger'
+    formal: '∀ r ∈ primary: r.schema ≠ "apr-perf-backfill-v1"'
+    applies_to: all
+  - type: invariant
+    property: 'no series reads a backfill row'
+    formal: '∀ S ∈ series, r ∈ rows(S): r ∉ backfill'
+    applies_to: all
+  - type: invariant
+    property: 'the importer appends at most once'
+    formal: '|backfill| > 0 ⇒ appended(import) = ∅'
+    applies_to: all
+
+verification_summary:
+  total_obligations: 4
+  proven: 0
+  tested: 0
+  status: proposed
+  notes: >
+    Schema only (OBS-00). The writer is the OBS-14 importer; its PR plants the
+    four falsifiers RED→GREEN. Nothing is tested here and the count says so.

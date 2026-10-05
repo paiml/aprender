@@ -4,47 +4,76 @@ metadata:
   created: '2026-09-27'
   author: PAIML Engineering
   references:
-  - 'docs/specifications/APR-OBS-001-dogfood-observability.md §2.1 (this block), §2.2 (append discipline), §2.5 (GPU proof), §6 R-2/R-9/R-10'
+  - 'docs/specifications/APR-OBS-001-dogfood-observability.md v1.3 §2.1 (this block), §2.2 (append discipline, chain), §2.4 (band), §2.5 (GPU proof), §2.6 (quiescence), §2.8 (lease), §2.9 (epochs), §2.10 (kernel path), §6 R-2/R-9/R-10'
   - 'aprender#4487 — OBS-00: the identity block and the ledger schemas as pv contracts'
-  - 'aprender#4551 — PERF-HIST-001: apr-perf-ledger-v1 (OBS-05) references this block rather than copying it'
-  - 'contracts/apr-lane-row-v1.yaml, contracts/apr-serve-timing-v1.yaml, contracts/apr-trace-v1.yaml — ledgers that embed it'
+  - 'aprender#4551 — OBS-05, the nightly writer: apr-perf-ledger-v1 references this block rather than copying it'
+  - 'contracts/apr-lane-row-v1.yaml, contracts/apr-serve-timing-v1.yaml, contracts/apr-perf-ledger-v1.yaml, contracts/apr-trace-v1.yaml, contracts/apr-perf-backfill-v1.yaml, contracts/apr-ledger-anchor-v1.yaml — ledgers that embed it'
   - 'contracts/apr-bench-receipt-v1.yaml — compute_class is the path TAKEN, not the hardware present; §2.5 is the same rule'
   description: >
     The row identity block shared by every APR-OBS-001 ledger (lane, serve,
-    nightly, trace). A ledger row is only evidence about apr if it says which
-    binary, built how, ran which weights, on which host and backend. This
-    contract owns those fields ONCE; each ledger contract names it in its
-    references and adds only its own fields.
+    nightly, trace, backfill, anchor). A ledger row is only evidence about apr
+    if it says which binary, built how, ran which weights, on which host and
+    backend, under which conditions. This contract owns those fields ONCE; each
+    ledger contract names it in its references and adds only its own fields.
+    The field list is the §2.1 table of APR-OBS-001 v1.3: 22 fields in 20 rows.
 
     A row missing any field is INADMISSIBLE and counts as a missing row (R-2,
     empty is RED). There is no partial credit and no defaulting: a writer that
     cannot measure a field emits an inadmissible row, it never guesses.
 
     Fields (every one REQUIRED; an absent key is never admissible):
-      schema               ledger schema id + version, ^apr-(lane-row|serve-timing|perf-ledger|trace)-v[0-9]+$
+      schema               ledger schema id + version, ^apr-(lane-row|serve-timing|perf-ledger|trace|perf-backfill|ledger-anchor)-v[0-9]+$
       ts                   RFC 3339, UTC
       host                 forjar machine name (fact FLEET_HOST), never $(hostname): lambda is noah-Lambda-Vector
-      apr_version, apr_tag release tag, from scripts/apr_bin.sh or the fleet pin (R-1)
+      apr_version, apr_tag release tag, `dev-<sha>` or `rc.N`, from scripts/apr_bin.sh or the fleet pin (R-1)
       crate_tarball_sha256 ^[0-9a-f]{64}$, cross-host identity (APR-PERF-GATE-001 §4.2.2)
       binary_sha256        ^[0-9a-f]{64}$, sha256 of the resolved binary, host-local anti-substitution
       build_identity       object: rustc_vv, target_triple, features (READ FROM THE BINARY), uname_a, accelerator, driver
+      comparator           object: name, build_commit, binary_sha256, flags, for llama-bench / llama-server (scripts/llama_pin.toml)
       model_id             weights name
       model_sha256         ^[0-9a-f]{64}$, sha256 of the GGUF
       backend              cpu | cuda | wgpu | metal | backend_unproven
       gpu_proof            trace line or used-GPU probe; null iff backend = cpu (§2.5)
+      quiescence_proof     the §2.6 proof, written by the recorder
+      kernel_path          §2.10, from the trace or KREG; null with a kernel_path_reason string until OBS-09 merges
+      tier                 engine | serve, written by the recorder
+      band                 object: c, ctx, workload_id (§2.4)
+      order                object: design "ABBA", seed, blocks (each "ABBA" or "BAAB"), from the recorder RNG
+      epoch_id             §2.9, written by the recorder
+      lease_id             §2.8, from the forjar lease
+      prev_row_sha256      ^[0-9a-f]{64}$, the §2.2 chain: h of the previous row, h0 on the genesis row
       request_id           UUIDv7, client-generated, sent as a header; joins OBS-01 ↔ OBS-03 rows
+
+    The §2.1 table marks two nulls: gpu_proof, only when backend = cpu
+    (gpu_rule), and kernel_path with a kernel_path_reason string, until OBS-09
+    merges (kernel_rule).
+
+    Open spec question, not decided here. The §2.1 header says every row in
+    every ledger carries every field. Read literally, lane, serve and anchor
+    rows must then carry comparator, band, order and quiescence_proof, which
+    only a benchmark row measures. The request_id row names "(lane/serve
+    ledgers)", which may scope it, or may only say which rows it joins. And
+    backfill imports only receipts with complete identity (OBS-14), so under
+    the literal reading a receipt written before lease, order and quiescence
+    existed imports nothing. This contract encodes the header as written until
+    the spec says otherwise.
 
     Status is proposed: OBS-00 lands the schema only. No writer exists yet, so
     every obligation is untested until the first writer row (OBS-01 lane,
-    OBS-03 serve, OBS-05 nightly, OBS-09 trace) plants its falsifiers RED→GREEN
-    in its own PR (spec §3).
+    OBS-03 serve, OBS-05 nightly, OBS-09 trace, OBS-14 backfill, OBS-06 anchor)
+    plants its falsifiers RED→GREEN in its own PR (spec §3). Spec §3 assigns the
+    falsifiers for most v1.3 fields to the contract that owns the rule:
+    quiescence_proof, order and the chain to apr-perf-ledger-v1, and a GPU row
+    with kernel_path null after the OBS-09 merge to apr-kernel-path-v1.
 
 equations:
   admissible:
     formula: |
       FIELDS = {schema, ts, host, apr_version, apr_tag, crate_tarball_sha256, binary_sha256,
-                build_identity, model_id, model_sha256, backend, gpu_proof, request_id}
-      admissible(r) ⇔ FIELDS ⊆ keys(r) ∧ schema_ok(r) ∧ gpu_rule(r)
+                build_identity, comparator, model_id, model_sha256, backend, gpu_proof,
+                quiescence_proof, kernel_path, tier, band, order, epoch_id, lease_id,
+                prev_row_sha256, request_id}
+      admissible(r) ⇔ FIELDS ⊆ keys(r) ∧ schema_ok(r) ∧ gpu_rule(r) ∧ kernel_rule(r)
       REQUIRE: ¬admissible(r) ⇒ r counts as a MISSING row
     domain: 'one JSONL line of any APR-OBS-001 ledger'
     codomain: bool
@@ -63,6 +92,16 @@ equations:
     invariants:
     - 'CUDA_VISIBLE_DEVICES, a flag, or a feature list is NOT proof. Proof is a trace line naming the device kernel path or a used-GPU probe sampled during the run (§2.5).'
     - 'backend_unproven rows are kept (R-8) and excluded from every GPU series.'
+
+  kernel_rule:
+    formula: |
+      kernel_path = null ⇒ kernel_path_reason is a non-empty string
+      REQUIRE: the null is admissible only until OBS-09 merges (§2.1)
+    domain: 'the kernel_path/kernel_path_reason pair of one row'
+    codomain: bool
+    invariants:
+    - 'After the OBS-09 merge, a GPU row with kernel_path null is the apr-kernel-path-v1 falsifier (OBS-15, spec §3), not an admissible null.'
+    - 'A non-null kernel_path has the §2.10 shape: {source: trace | kreg, entries: [{op, kernel_id, qtype, layout, arch, shape_class, precision}]}.'
 
   identity_join:
     formula: |
@@ -108,6 +147,16 @@ falsification_tests:
     prediction: 'a row whose host is $(hostname) (noah-Lambda-Vector) instead of the forjar name (lambda) is refused'
     test: 'lands with the first writer row; NotRun{NoDeclaredExecutor} until then'
     if_fails: 'one host appears as two series and its history halves'
+  - id: FALSIFY-OBS-ID-005
+    rule: admissible
+    prediction: 'a row carrying every v1.0 field but no lease_id is inadmissible and counted as a missing row'
+    test: 'lands with the first writer row; NotRun{NoDeclaredExecutor} until then'
+    if_fails: 'a writer that checks only the 13 v1.0 fields admits rows that cannot say which lease, order or epoch they ran under'
+  - id: FALSIFY-OBS-ID-006
+    rule: kernel_rule
+    prediction: 'a row with kernel_path null and no kernel_path_reason is inadmissible'
+    test: 'lands with the first writer row; NotRun{NoDeclaredExecutor} until then'
+    if_fails: 'an unrecorded kernel path reads as a recorded one, and a ratio change cannot be attributed (§2.10)'
 
 proof_obligations:
   - type: invariant
@@ -122,9 +171,13 @@ proof_obligations:
     property: 'no cross-host ratio across mismatched identity'
     formal: 'ratio(a, b) ∧ a.host ≠ b.host ⇒ same_identity(a, b)'
     applies_to: all
+  - type: invariant
+    property: 'a null kernel_path carries its reason'
+    formal: 'r.kernel_path = null ⇒ r.kernel_path_reason ≠ null'
+    applies_to: all
 
 verification_summary:
-  total_obligations: 3
+  total_obligations: 4
   proven: 0
   tested: 0
   status: proposed

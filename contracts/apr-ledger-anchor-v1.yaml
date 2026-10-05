@@ -1,0 +1,144 @@
+metadata:
+  version: 1.0.0
+  kind: schema
+  created: '2026-10-05'
+  author: PAIML Engineering
+  references:
+  - 'docs/specifications/APR-OBS-001-dogfood-observability.md v1.3 §2.2 (ledgers, chain, anchor catch-up), §3 (its falsifiers), §4 (chain or anchor failure), §10 E8, T5 and E13, §10.2 (KANI-OBS-CHAIN, KANI-OBS-REPLAY), R-12, R-15, C21, C23'
+  - 'contracts/apr-obs-row-identity-v1.yaml — the identity block every row carries; not restated here'
+  - 'contracts/apr-perf-ledger-v1.yaml — owns the chain-break and tail-truncation falsifiers (spec §3)'
+  - 'aprender#4487 — OBS-00: this schema'
+  description: >
+    The anchor ledger: one row per anchored ledger per night, appended by the
+    OBS-06 RED job, a different writer from the recorder, to the same
+    forjar-declared fleet_perf_dir and committed in the RED job receipt (§2.2).
+    Each row is the §2.1 identity block (apr-obs-row-identity-v1, schema =
+    "apr-ledger-anchor-v1") plus the fields below. A row missing any of them is
+    inadmissible and counts as a missing row.
+
+    Why it exists (§10 T5): the hash chain detects any edit, deletion or
+    reordering of a row below the head, but it cannot detect a truncated tail.
+    The anchor can: a ledger verifies only if its row n_rows hashes to the
+    anchored h_n. The recorder also emits (ledger, n_rows, h_n) to the systemd
+    journal after every append, so a truncation must defeat both the anchor and
+    that journal witness.
+
+    Fields beyond the identity block (every one REQUIRED):
+      ledger       the anchored ledger file under fleet_perf_dir
+      n_rows       its row count at anchor time
+      h_n          ^[0-9a-f]{64}$, sha256(canonical_json(row n_rows)) of that ledger
+      catch_up     bool: false on a nightly anchor, true on a catch-up anchor (C21)
+      gap_nights   g, the nights since the last anchor, on a catch-up anchor; null otherwise
+      from         A_m = (n_rows, h_n), the last anchor before the gap, on a catch-up anchor; null otherwise
+
+    catch_up is written on every row, so no reader infers it from an absent key
+    (R-2).
+
+equations:
+  row_admissible:
+    formula: |
+      ANCHOR = {ledger, n_rows, h_n, catch_up, gap_nights, from}
+      admissible_anchor(r) ⇔ admissible_identity(r) ∧ r.schema = "apr-ledger-anchor-v1" ∧ ANCHOR ⊆ keys(r)
+      r.catch_up = false ⇔ r.gap_nights = null ∧ r.from = null
+    domain: 'one line of the anchor ledger'
+    codomain: bool
+    invariants:
+    - 'admissible_identity is apr-obs-row-identity-v1 §admissible; this contract does not restate it.'
+    - 'The writer is the RED job, never the recorder (§2.2, E8). A process that can truncate a ledger must not also be the one that anchors it.'
+
+  anchor_check:
+    formula: |
+      h_0 = sha256(schema ‖ host ‖ backend ‖ epoch_start)
+      h_k = sha256(canonical_json(row_k)),  row_k.prev_row_sha256 = h_{k−1}
+      verify_anchor(L, A) ⇔ |L| ≥ A.n_rows ∧ h(L[A.n_rows]) = A.h_n
+      REQUIRE: chain_ok(L) ∧ verify_anchor(L, A) for the last anchor A of L, else a chain or anchor failure (§4)
+    domain: 'one ledger L and its last anchor A'
+    codomain: bool
+    invariants:
+    - 'T5: the chain alone cannot detect tail truncation. The anchor is necessary.'
+    - 'C23: T5 covers mutation after a row is written. It does not cover a writer that appends false rows with a valid chain; E12, the identity block, the quiescence and GPU proofs and the §3 falsifiers close that class.'
+
+  catchup_ok:
+    formula: |
+      W_j = the journal witness counts in the gap;  m = the gap length in nights
+      catchup_ok ⟺ chain_ok(A_m → head) ∧ n_head ≥ max_j W_j ∧ m ≤ 3
+      ORDER: verify the chain, check the witness, replay every RED rule over each gap night,
+             then write one anchor {catch_up: true, gap_nights: m, from: A_m}
+      m > 3 ⇒ RED on the RED job's own liveness series
+    domain: 'a RED-job run whose last anchor A_m is older than the previous night'
+    codomain: bool
+    invariants:
+    - 'E13 prefix stability: verdicts are a pure function of the ledger prefix (R-15), so the replayed verdict for a gap night equals the verdict the live job would have written, and it is the verdict of record (§4).'
+    - 'E13 residual risk, as the spec states it: tampering inside the gap that also rewrites the journald witness is undetectable. The window is bounded by m ≤ 3 nights.'
+
+falsification_tests:
+  - id: FALSIFY-OBS-ANCHOR-001
+    rule: catchup_ok
+    prediction: 'a catch-up over a gap containing a chain break is refused, not anchored'
+    test: 'planted RED→GREEN in the OBS-06 PR (spec §3); NotRun{NoDeclaredExecutor} until then'
+    if_fails: 'an edited gap night is sealed by the anchor that should have caught it'
+  - id: FALSIFY-OBS-ANCHOR-002
+    rule: catchup_ok
+    prediction: 'a catch-up whose head n_rows is below the largest journal witness count is refused'
+    test: 'planted RED→GREEN in the OBS-06 PR (spec §3); NotRun{NoDeclaredExecutor} until then'
+    if_fails: 'rows truncated during the gap disappear and the truncated head is anchored as complete'
+  - id: FALSIFY-OBS-ANCHOR-003
+    rule: catchup_ok
+    prediction: 'a replayed verdict that differs from the live verdict on the same ledger prefix is RED'
+    test: 'planted RED→GREEN in the OBS-06 PR (spec §3); NotRun{NoDeclaredExecutor} until then'
+    if_fails: 'an evaluator outage changes the verdict of record for the nights it missed'
+  - id: FALSIFY-OBS-ANCHOR-004
+    rule: catchup_ok
+    prediction: 'a catch-up over a gap of 4 nights is RED on the RED job liveness series'
+    test: 'planted RED→GREEN in the OBS-06 PR (spec §3); NotRun{NoDeclaredExecutor} until then'
+    if_fails: 'an evaluator down for 4 nights reads as healthy, and the unwitnessed tamper window grows past 3 nights'
+  - id: FALSIFY-OBS-ANCHOR-005
+    rule: catchup_ok
+    prediction: 'positive specimen (spec §3): a 1-night RED-job outage recovered by catch-up stays GREEN, with replayed verdicts identical to the live ones'
+    test: 'run in the OBS-06 PR as the §3 positive specimen, which must stay GREEN; NotRun{NoDeclaredExecutor} until then'
+    if_fails: 'a correct catch-up is refused, and every missed night becomes a chain failure'
+
+proof_obligations:
+  - id: OBS-ANCHOR-INV-001
+    type: invariant
+    property: 'a ledger verifies against its anchor only at the anchored length and head hash (T5)'
+    formal: 'verify_anchor(L, A) ⇒ |L| ≥ A.n_rows ∧ h(L[A.n_rows]) = A.h_n'
+    applies_to: all
+  - id: OBS-ANCHOR-INV-002
+    type: invariant
+    property: 'a catch-up is accepted only over an intact chain, at or above the journal witness, within 3 nights (E13)'
+    formal: 'catchup_ok ⟺ chain_ok(A_m → head) ∧ n_head ≥ max_j W_j ∧ m ≤ 3'
+    applies_to: all
+  - id: OBS-ANCHOR-INV-003
+    type: invariant
+    property: 'a replayed verdict equals the live verdict on the same prefix (E13 prefix stability)'
+    formal: '∀ P, Q, n ≤ last(P): V(P)[n] = V(P ‖ Q)[n]'
+    applies_to: all
+  - id: OBS-ANCHOR-INV-004
+    type: invariant
+    property: 'the anchor writer is not the writer of the ledger it anchors'
+    formal: 'writer(anchor ledger) ≠ writer(anchored ledger)'
+    applies_to: all
+
+kani_harnesses:
+- id: KANI-OBS-CHAIN
+  obligation: OBS-ANCHOR-INV-001
+  property: 'T5 under an injective hash: for all ledgers of length ≤ 6, any single-row mutation at index j < n−1 makes verify return false, and any truncation below the anchor count makes verify_anchor return false (spec §10 E8)'
+  bound: 6
+  strategy: bounded_int
+- id: KANI-OBS-REPLAY
+  obligation: OBS-ANCHOR-INV-003
+  property: 'E13 prefix stability: for all ledgers of ≤ 6 nights × 1 series with bounded integer L, the verdicts for nights ≤ k computed on the prefix equal those computed on the full ledger (spec §10 E13)'
+  bound: 6
+  strategy: bounded_int
+
+verification_summary:
+  total_obligations: 4
+  proven: 0
+  tested: 0
+  status: proposed
+  notes: >
+    Schema only (OBS-00). The writer is the OBS-06 RED job; its PR plants the
+    four §3 falsifiers RED→GREEN and runs the positive specimen. The two Kani
+    harnesses are declared (spec §10.2) with no harness function yet, so neither
+    is verified and nothing here claims it.
