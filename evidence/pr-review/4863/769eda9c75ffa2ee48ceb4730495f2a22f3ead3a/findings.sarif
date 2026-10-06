@@ -1,0 +1,114 @@
+{
+  "$schema": "https://docs.oasis-open.org/sarif/sarif/v2.1.0/errata01/os/schemas/sarif-schema-2.1.0.json",
+  "version": "2.1.0",
+  "runs": [
+    {
+      "tool": {
+        "driver": {
+          "name": "pmat"
+        }
+      },
+      "invocations": [
+        {
+          "executionSuccessful": true,
+          "toolExecutionNotifications": []
+        }
+      ],
+      "results": [
+        {
+          "ruleId": "build_sha_feature_added",
+          "level": "note",
+          "message": {
+            "text": "The jq in dbs_bins appends build-sha to a package's feature list whenever that package's manifest declares a build-sha feature, then dedupes with reduce, so a bin whose required-features already names build-sha (pv-sat) is not given it twice. Verdict rules (the smoke, the RED on zero bins, the per-bin rows) are untouched, so no verdict is weakened; the only effect is that pv and pv-sat are built the way binary-release.yml builds them and print a build SHA rather than +no-git. A cost: a package that declares build-sha but whose bins do not use it pulls an extra optional dependency into the nightly build; harmless."
+          },
+          "properties": {
+            "grounding": "cited",
+            "source": "scripts/release/deep_bins_smoke.sh",
+            "excerpt": "if ($p.features // {}) | has(\"build-sha\") then [\"build-sha\"] else [] end",
+            "excerpt_sha256": "209d9cc1326966f7774e4ec2ce58220c8ad3c52baf968c008f7798add288058e",
+            "failure_scenario": "A package declaring build-sha but with no bin reading it would still compile with it; the smoke result is unchanged.",
+            "precision_class": "advisory"
+          }
+        },
+        {
+          "ruleId": "self_test_green",
+          "level": "note",
+          "message": {
+            "text": "deep_bins_smoke.sh --self-test at head exits 0 and ends with: deep_bins_smoke self-test: PASS."
+          },
+          "properties": {
+            "grounding": "measured",
+            "command": [
+              "bash",
+              "scripts/release/deep_bins_smoke.sh",
+              "--self-test"
+            ],
+            "exit_code": 0,
+            "stdout_sha256": "a0fb6344fae52af73e664364209c7680a51fae27fc3ca87dcb0e7a3818fdc734",
+            "failure_scenario": "Any fixture row whose expected cargo argument string differs turns the self-test FAIL.",
+            "precision_class": "advisory"
+          }
+        },
+        {
+          "ruleId": "fixture_row_red_on_old_code",
+          "level": "note",
+          "message": {
+            "text": "Mutation: the old dbs_bins function spliced under the new self-test section makes the self-test exit 1. The changed bins row reports want (features cli, then build-sha for pv, then pv-sat with build-sha) and got no build-sha for pv, so the new row is RED on the old code and pins the change."
+          },
+          "properties": {
+            "grounding": "measured",
+            "command": [
+              "bash",
+              "<old dbs_bins with new self-test>",
+              "--self-test"
+            ],
+            "exit_code": 1,
+            "stdout_sha256": "65e729eb420df1289f8efdaa27be6ad6075c4e5db2ec321e55f6e8441ffff7fa",
+            "failure_scenario": "A revert of the jq change turns the fixture row red, so it cannot go unnoticed.",
+            "precision_class": "advisory"
+          }
+        },
+        {
+          "ruleId": "duplication_scan",
+          "level": "note",
+          "message": {
+            "text": "pr_review_duplication_scan.sh at head found 0 needles and 0 hits across 1528 of 1528 sibling branches; the diff adds no new named symbol, only an extension of an existing jq expression."
+          },
+          "properties": {
+            "grounding": "asserted",
+            "rationale": "scan --json output read; zero needles because the diff defines no new function or file",
+            "failure_scenario": "A parallel copy of the jq under another name would escape a lexical scan; none was seen.",
+            "precision_class": "advisory"
+          }
+        },
+        {
+          "ruleId": "patch_id_binds",
+          "level": "note",
+          "message": {
+            "text": "Subject diff 358e9d4d11..769eda9c75 (three-dot) has patch-id eabf50641c97c112e8e19586ec817ca1a0d1ff33 under prpid_compute, matching the value a peer reported."
+          },
+          "properties": {
+            "grounding": "asserted",
+            "rationale": "prpid_compute run under bash -c on the review worktree at head",
+            "failure_scenario": "A stale local origin/main would bind the receipt to a different base than CI computes.",
+            "precision_class": "advisory"
+          }
+        }
+      ]
+    },
+    {
+      "tool": {
+        "driver": {
+          "name": "antigravity"
+        }
+      },
+      "invocations": [
+        {
+          "executionSuccessful": true,
+          "toolExecutionNotifications": []
+        }
+      ],
+      "results": []
+    }
+  ]
+}
