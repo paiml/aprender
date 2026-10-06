@@ -481,9 +481,9 @@ jobs:
   # missing from its fat job's results (the job died before writing them) is a
   # failure, never a pass.
   # ==========================================================================
-  # The workspace tests, one shard per job (nextest hash partition N/3 plus the
-  # explicit runner's round-robin N/3), in parallel on the X64 clean-room pool.
-  # The section body is ci/sections.yml `workspace-test-shard`, unchanged.
+  # One shard per job (nextest hash N/3 + explicit round-robin N/3); body is ci/sections.yml.
+  # X64 on all 3 (C313-6): Σ checks their union against shard 1's universe, which depends on
+  # arch (x86-cfg tests). Mixed arch is RED; all-ARM drops the x86 tests unseen. Keep the pin.
   workspace-test-shard:
     runs-on: [self-hosted, Linux, X64, clean-room]   # same pool as x86-main
     timeout-minutes: 180
