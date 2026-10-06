@@ -91,22 +91,28 @@ doc_contexts_found() {
     ' "$1"
 }
 
-# autopilot_found FILE: per step up to dryrun, the checkers it (and the functions it calls) invokes
+# autopilot_found FILE: per step up to dryrun, the checkers it (and the functions it calls) invokes.
+# A line that names more scripts/*.sh|*.py than the call forms below parse (`bash "$R"/scripts/x.sh`,
+# `python3 "$R/scripts/x.py"`, `./scripts/x.sh`) is not_measured, never skipped: a call form this parser
+# cannot read would otherwise never show as UNLISTED.
 autopilot_found() {
     awk -v F="$2" '
         { L[NR] = $0 }
-        function invs(line, out,   s, w, n, i, f, c) {
+        function invs(line, out,   s, w, n, i, f, c, nr, np) {
             out = ""
             if (line ~ /^[ \t]*#/) return ""
             s = line
+            while (match(s, /scripts\/[A-Za-z0-9_\/.-]+\.(sh|py)/)) { nr++; s = substr(s, RSTART + RLENGTH) }
+            s = line
             while (match(s, /bash +"?(\$\{?[A-Za-z_]+\}?\/|\.\/)?scripts\/[A-Za-z0-9_\/.-]+\.sh"?( +--[a-z][a-z-]*)?/)) {
-                w = substr(s, RSTART, RLENGTH); s = substr(s, RSTART + RLENGTH)
+                w = substr(s, RSTART, RLENGTH); s = substr(s, RSTART + RLENGTH); np++
                 gsub(/"/, "", w); sub(/\$\{?[A-Za-z_]+\}?\//, "", w); sub(/ \.\//, " ", w); gsub(/ +/, " ", w); out = out "\n" w
             }
             s = line
             while (match(s, /python3 +scripts\/[A-Za-z0-9_\/.-]+\.py( +[a-z][a-z-]*)?/)) {
-                w = substr(s, RSTART, RLENGTH); s = substr(s, RSTART + RLENGTH); gsub(/ +/, " ", w); out = out "\n" w
+                w = substr(s, RSTART, RLENGTH); s = substr(s, RSTART + RLENGTH); np++; gsub(/ +/, " ", w); out = out "\n" w
             }
+            if (nr > np) UNP = 1
             s = line
             while (match(s, /cargo +(test|check|build)( +[^ ;|&>)]+)*/)) {
                 w = substr(s, RSTART, RLENGTH); s = substr(s, RSTART + RLENGTH)
@@ -121,6 +127,7 @@ autopilot_found() {
             if (line ~ /git merge-base --is-ancestor/) out = out "\ngit merge-base --is-ancestor"
             return out
         }
+        function unp(ln) { if (UNP) { UL[++nu] = F ":" ln; UNP = 0 } }
         END {
             for (i = 1; i <= NR; i++) if (L[i] ~ /^STEPS=\(/) { s = L[i]; sub(/^STEPS=\(/, "", s); sub(/\).*/, "", s); ns = split(s, ST, / +/) }
             if (!ns) exit 2
@@ -138,11 +145,11 @@ autopilot_found() {
                 if (PH[st] == "") continue
                 delete seen
                 for (e = i + 1; e <= NR && L[e] !~ /^fi/; e++) {
-                    o = invs(L[e]); m = split(o, A, "\n")
+                    o = invs(L[e]); unp(e); m = split(o, A, "\n")
                     for (q = 2; q <= m; q++) if (!(A[q] in seen)) { seen[A[q]] = 1; printf "%s:autopilot/%s/%s\t%s:%d\n", PH[st], st, A[q], F, e; k++ }
                     for (r = 1; r <= nf; r++) if (L[e] !~ /^[ \t]*#/ && match(L[e], "(^|[^A-Za-z0-9_])" FN[r] "([^A-Za-z0-9_]|$)"))
                         for (b = FS0[FN[r]] + 1; b < FE[FN[r]]; b++) {
-                            o = invs(L[b]); m = split(o, A, "\n")
+                            o = invs(L[b]); unp(b); m = split(o, A, "\n")
                             for (q = 2; q <= m; q++) if (!(A[q] in seen)) { seen[A[q]] = 1; printf "%s:autopilot/%s/%s\t%s:%d\n", PH[st], st, A[q], F, b; k++ }
                         }
                 }
@@ -157,10 +164,11 @@ autopilot_found() {
             if (!last) last = NR + 1
             delete seen
             for (i = first + 1; i < last; i++) if (!(i in IN)) {
-                o = invs(L[i]); m = split(o, A, "\n")
+                o = invs(L[i]); unp(i); m = split(o, A, "\n")
                 for (q = 2; q <= m; q++) if (!(A[q] in seen)) { seen[A[q]] = 1; printf "tag:autopilot/commit/%s\t%s:%d\n", A[q], F, i; k++ }
             }
-            if (unk || k == 0) exit 2
+            for (i = 1; i <= nu; i++) printf "unparsed call form at %s\n", UL[i] > "/dev/stderr"
+            if (nu || unk || k == 0) exit 2
         }
     ' "$1"
 }
@@ -453,6 +461,9 @@ mutate() {
         unlisted-dotslash) edit "$d" "$AUTO_REL" '/^  echo waiting/a\  bash ./scripts/dotslash_gate.sh' ;;
         unlisted-camel-function) edit "$d" "$AUTO_REL" 's/^helper() {/Helper2() {/; s/^  helper$/  Helper2/; /^  bash scripts\/helper_gate.sh/a\  bash scripts/camel_gate.sh' ;;
         nm-unknown-step) edit "$d" "$AUTO_REL" 's/^if run_step dryrun;/if run_step dryrnu;/' ;;
+        nm-unparsed-quoted-root) edit "$d" "$AUTO_REL" '/^  echo waiting/a\  bash "$R"/scripts/quoted_gate.sh' ;;
+        nm-unparsed-python-root) edit "$d" "$AUTO_REL" '/^  echo waiting/a\  python3 "$R/scripts/root_gate.py"' ;;
+        nm-unparsed-exec) edit "$d" "$AUTO_REL" '/^  echo waiting/a\  ./scripts/exec_gate.sh' ;;
         malformed-no-producer) edit "$d" "$LIST_REL" 's|, producer: "preflight"||' ;;
         malformed-bad-phase) edit "$d" "$LIST_REL" 's/applies_to: \[merge\], anchor: "merge:ci.yml\/gate\/needs/applies_to: [deploy], anchor: "merge:ci.yml\/gate\/needs/' ;;
         malformed-dup-id) plant "$d" "$LIST_REL" '  - {id: FX-M1, applies_to: [merge], anchor: "x", checker: "Makefile", provenance: "fixture"}' ;;
@@ -490,6 +501,9 @@ nm-claim-side-reworded 2 not_measured
 unlisted-dotslash 1 UNLISTED tag:autopilot/wait/bash scripts/dotslash_gate.sh
 unlisted-camel-function 1 UNLISTED tag:autopilot/tag/bash scripts/camel_gate.sh
 nm-unknown-step 2 not_measured
+nm-unparsed-quoted-root 2 unparsed call form at
+nm-unparsed-python-root 2 unparsed call form at
+nm-unparsed-exec 2 unparsed call form at
 malformed-no-producer 3 names no nightly producer
 malformed-bad-phase 3 applies_to must be a subset
 malformed-dup-id 3 id FX-M1 twice'
@@ -564,7 +578,8 @@ M16 cascade takes any word@@if (w in DEF)@@if (w != "")
 M17 dot-slash unseen@@(\$\{?[A-Za-z_]+\}?\/|\.\/)?scripts@@(\$\{?[A-Za-z_]+\}?\/)?scripts
 M18 lowercase functions only@@if (L[i] ~ /^[A-Za-z_][A-Za-z0-9_]*\(\) *\{/@@if (L[i] ~ /^[a-z_]+\(\) *\{/
 M19 drop protection read@@got=$(printf '"'"'%s\n%s\n'"'"' "$got" "$bp")@@got=$(printf '"'"'%s\n'"'"' "$got")
-M20 empty protection passes@@[ -n "$(printf '"'"'%s\n'"'"' "$bp" | awk '"'"'NF'"'"')" ] ||@@true ||'
+M20 empty protection passes@@[ -n "$(printf '"'"'%s\n'"'"' "$bp" | awk '"'"'NF'"'"')" ] ||@@true ||
+M21 unparsed call form skipped@@if (nr > np) UNP = 1@@if (0) UNP = 1'
 
 mutants() {
     local tmp line id name from to killed=0 total=0 err=0
@@ -577,6 +592,7 @@ mutants() {
             END { if (!done) exit 1 }' "$SCRIPT_PATH" > "$tmp/m.sh" && ! cmp -s "$SCRIPT_PATH" "$tmp/m.sh" && bash -n "$tmp/m.sh" \
             || { printf 'ERROR    %s %s: the patch did not apply (or broke the syntax)\n' "$id" "$name"; err=$((err + 1)); continue; }
         if bash "$tmp/m.sh" --selftest > "$tmp/out" 2>&1; then printf 'SURVIVED %s %s\n' "$id" "$name"
+        elif ! grep -q -e '^FAIL' "$tmp/out"; then printf 'ERROR    %s %s: the case table went red with no FAIL row (a crash is not a kill)\n' "$id" "$name"; err=$((err + 1))
         else killed=$((killed + 1)); printf 'killed   %s %s (%s rows red)\n' "$id" "$name" "$(grep -c -e '^FAIL' "$tmp/out")"; fi
     done <<< "$MUTANTS"
     rm -rf -- "${tmp:?}"
