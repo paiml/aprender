@@ -22,7 +22,7 @@ set -euo pipefail
 
 SELF="$(cd "$(dirname "$0")" && pwd)/${0##*/}"
 HOOK_DIR="$(dirname "$SELF")/hooks"
-WANT_ROWS=31
+WANT_ROWS=36
 ROWS=0
 FAILS=0
 HOOK=''
@@ -91,7 +91,7 @@ check_row() {
 }
 
 write_marker() {
-    printf '%s %s\n' "$1" "$2" > .git/pre-push-release-tag
+    printf '%s %s %s\n' "$1" "$2" "${3:-$(($(date +%s) + 600))}" > .git/pre-push-release-tag
 }
 
 # the steps, each run from the throwaway clone
@@ -122,7 +122,7 @@ step_chained_saw_stdin() { grep -q '^refs/heads/feat [0-9a-f]* refs/heads/feat 0
 step_same_sha() { git push origin keep/old; }
 step_tags_clean() { git push --tags origin; }
 step_release() { git tag -a -m r v0.1.0 && bash "$HOOK" --arm-release v0.1.0 && git push origin v0.1.0; }
-step_release_rc() { git tag v0.1.1-rc.1 && bash "$HOOK" --arm-release v0.1.1-rc.1 && git push origin v0.1.1-rc.1; }
+step_release_rc() { git tag v0.1.1-rc.1 && bash "$HOOK" --arm-release v0.1.1-rc.1 60 && git push origin v0.1.1-rc.1; }
 step_keep() { git tag keep/new && git push origin keep/new; }
 step_keep_annotated() { git tag -a -m n keep/new-ann && git push origin keep/new-ann; }
 step_raw() { git push origin HEAD:refs/tags/keep/raw; }
@@ -135,6 +135,42 @@ step_not_a_release_name() {
     git tag vnext && write_marker refs/tags/vnext "$(git rev-parse vnext)" && git push origin vnext
 }
 step_off_main() { git tag v0.3.0 side && bash "$HOOK" --arm-release v0.3.0 && git push origin v0.3.0; }
+step_expired() {
+    write_marker refs/tags/v0.2.0 "$(git rev-parse v0.2.0)" "$(($(date +%s) - 1))" && git push origin v0.2.0
+}
+step_bad_ttl() {
+    local t rc
+    for t in 0 3601 abc -5 1.5; do
+        rc=0
+        bash "$HOOK" --arm-release v0.2.0 "$t" 2> /dev/null || rc=$?
+        [ "$rc" -eq 2 ] || return 1
+    done
+    [ ! -e .git/pre-push-release-tag ]
+}
+step_verify_ok() { bash "$HOOK" --verify; }
+# a third clone: installed and verified, then another installer rewrites pre-push
+step_verify_overwritten() {
+    local rc=0
+    git clone -q "$TP/remote.git" "$TP/w3" || return 1
+    cd "$TP/w3" || return 1
+    if bash "$HOOK" --install && bash "$HOOK" --verify; then
+        printf '#!/usr/bin/env bash\n# PMAT Pre-Push Quality Gate\nexit 0\n' > .git/hooks/pre-push
+        bash "$HOOK" --verify || rc=$?
+    fi
+    cd "$TP/w" || return 1
+    [ "$rc" -eq 1 ]
+}
+# the same clone reinstalled (the rewritten pre-push is chained), then the guard removed
+step_verify_no_guard() {
+    local rc=0
+    cd "$TP/w3" || return 1
+    if bash "$HOOK" --install && bash "$HOOK" --verify; then
+        rm -f -- "${TP:?}/w3/.git/hooks/pre-push-tags"
+        bash "$HOOK" --verify || rc=$?
+    fi
+    cd "$TP/w" || return 1
+    [ "$rc" -eq 1 ]
+}
 step_spent() {
     bash "$HOOK" --arm-release v0.2.0 && git push -q origin HEAD:refs/heads/spend && git push origin v0.2.0
 }
@@ -214,6 +250,9 @@ self_test() {
     check_row a_second_install_keeps_the_chain "a reinstall chained the dispatcher to itself" step_install
     check_row install_refuses_under_core_hookspath "install did not exit 2 with core.hooksPath set" step_install_under_hookspath
     check_row install_never_replaces_an_existing_chain "install did not exit 2, or changed pre-push or pre-push.chained" step_install_both_exist
+    check_row verify_passes_once_installed "--verify was not 0 in an installed clone" step_verify_ok
+    check_row verify_is_red_when_another_installer_rewrote_pre_push "--verify did not exit 1 after pre-push was rewritten" step_verify_overwritten
+    check_row verify_is_red_when_the_guard_is_gone "--verify did not exit 1 with pre-push-tags removed" step_verify_no_guard
 
     push_row a_branch_push_is_untouched allowed refs/heads/feat step_branch
     check_row the_chained_pre_push_saw_the_same_stdin "chained.log lacks the refs/heads/feat line" step_chained_saw_stdin
@@ -228,6 +267,8 @@ self_test() {
     push_row a_release_tag_without_a_marker_is_refused 'create of refs/tags/v0.2.0 at' refs/tags/v0.2.0 step_no_marker
     push_row a_marker_in_the_environment_arms_nothing 'create of refs/tags/v0.2.0 at' refs/tags/v0.2.0 step_env_marker
     push_row a_marker_for_another_sha_is_refused 'create of refs/tags/v0.2.0 at' refs/tags/v0.2.0 step_other_sha
+    push_row an_expired_marker_is_refused 'create of refs/tags/v0.2.0: its release marker expired' refs/tags/v0.2.0 step_expired
+    check_row arm_release_refuses_a_bad_ttl "--arm-release took a TTL outside 1..3600, or left a marker" step_bad_ttl
     push_row a_marked_v_tag_that_is_not_a_release_name_is_refused 'create of refs/tags/vnext, which is not vX' refs/tags/vnext step_not_a_release_name
     push_row an_armed_release_tag_off_main_is_refused 'create of refs/tags/v0.3.0:' refs/tags/v0.3.0 step_off_main
     push_row the_marker_is_spent_by_one_push 'create of refs/tags/v0.2.0 at' refs/tags/v0.2.0 step_spent
@@ -262,11 +303,15 @@ m04_a_forced_fast_forward_move_is_accepted	pre-push-tags.sh	s/^\(            . "
 m05_the_marker_is_read_from_the_environment	pre-push-tags.sh	s/^        . -L "\$mfile" . || marker=.*$/        marker="${PRE_PUSH_RELEASE_TAG:-}"/
 m06_the_marker_is_not_spent	pre-push-tags.sh	s/^        rm -f -- "\${mfile:?}"$/        true/
 m07_main_is_not_checked	pre-push-tags.sh	s/^        if ! on_main "\$lsha" "\$url"; then$/        if false; then/
-m08_the_marker_sha_is_not_compared	pre-push-tags.sh	s/^        if . "\$marker" != "\$rref \$lsha" .; then$/        if ! test "${marker%% *}" = "$rref"; then/
+m08_the_marker_sha_is_not_compared	pre-push-tags.sh	s/^        if . "\$mref \$msha" != "\$rref \$lsha" .; then$/        if ! test "$mref" = "$rref"; then/
 m09_the_release_name_is_not_checked	pre-push-tags.sh	s/^        if ! is_release_name "\${rref#refs\/tags\/}"; then$/        if false; then/
 m10_the_dispatcher_ignores_the_guard	pre-push-dispatch.sh	s/^printf .%s. "\$in" | bash "\$d\/pre-push-tags" .*$/& || true/
 m11_a_foreign_pre_push_is_overwritten	pre-push-tags.sh	s/^        (c. "\${dir:?}" .. mv -- pre-push pre-push.chained)$/        true/
-m12_an_existing_chain_is_overwritten	pre-push-tags.sh	s/^            return 2$/            :/'
+m12_an_existing_chain_is_overwritten	pre-push-tags.sh	s/^            return 2$/            :/
+m13_the_marker_expiry_is_not_checked	pre-push-tags.sh	s/^        if ! is_count "\$mexp" || .*$/        if false; then/
+m14_verify_ignores_a_rewritten_pre_push	pre-push-tags.sh	s/^    if . ! -x "\$dir\/pre-push" . || ! cmp .*$/    if false; then/
+m15_verify_ignores_a_missing_guard	pre-push-tags.sh	s/^    if . ! -x "\$dir\/pre-push-tags" . || .*$/    if false; then/
+m16_any_ttl_is_accepted	pre-push-tags.sh	s/^    if ! is_count "\$ttl" || .*$/    if false; then/'
 
 mutants() {
     local name file expr rc killed=0 total=0 t
