@@ -208,6 +208,64 @@ fn test_reset_counters() {
 // GPU Memory Pressure Test (PMAT-018: Coverage Killer Remediation)
 // =========================================================================
 
+/// How many chunks the pressure test may take before it stops.
+///
+/// A discrete GPU has a pool of its own, so the test may run it dry (up to
+/// `limit`) and watch the allocator fail gracefully. An integrated GPU (Jetson,
+/// GB10) draws on the same RAM as the host: "until the allocator fails" there
+/// means "until the machine is out of memory", and the answer comes from the
+/// kernel's OOM killer, which picks any victim, not from the allocator. On such
+/// a device the test takes at most a quarter of what is free and never reaches a
+/// limit. At least one chunk is always allowed, because the test asserts that it
+/// allocated something.
+#[cfg(feature = "cuda")]
+fn pressure_budget_chunks(
+    class: crate::driver::DeviceMemoryClass,
+    free_bytes: usize,
+    chunk_bytes: usize,
+    limit: usize,
+) -> usize {
+    match class {
+        crate::driver::DeviceMemoryClass::ClassicDevice => limit,
+        crate::driver::DeviceMemoryClass::UnifiedMemory => {
+            (free_bytes / 4 / chunk_bytes).clamp(1, limit)
+        }
+    }
+}
+
+/// The budget is a pure function of the device class and the free pool, so it is
+/// pinned here without a GPU being asked anything.
+#[cfg(feature = "cuda")]
+#[test]
+fn pressure_budget_stops_short_of_the_host_on_an_integrated_gpu() {
+    use crate::driver::DeviceMemoryClass::{ClassicDevice, UnifiedMemory};
+    const GIB: usize = 1024 * 1024 * 1024;
+    const CHUNK: usize = 64 * 1024 * 1024;
+
+    // A discrete GPU is run dry: the safety limit is the only bound.
+    assert_eq!(
+        pressure_budget_chunks(ClassicDevice, 24 * GIB, CHUNK, 1024),
+        1024
+    );
+    assert_eq!(pressure_budget_chunks(ClassicDevice, 0, CHUNK, 1024), 1024);
+    // A Jetson Orin with 5 GiB free takes a quarter of it: 20 chunks, 1.25 GiB.
+    assert_eq!(
+        pressure_budget_chunks(UnifiedMemory, 5 * GIB, CHUNK, 1024),
+        20
+    );
+    // GB10 with 100 GiB free: 25 GiB, where the unbounded loop took 64 GiB.
+    assert_eq!(
+        pressure_budget_chunks(UnifiedMemory, 100 * GIB, CHUNK, 1024),
+        400
+    );
+    // Never zero, never above the safety limit.
+    assert_eq!(pressure_budget_chunks(UnifiedMemory, 0, CHUNK, 1024), 1);
+    assert_eq!(
+        pressure_budget_chunks(UnifiedMemory, usize::MAX, CHUNK, 1024),
+        1024
+    );
+}
+
 /// Test GPU behavior under memory pressure
 ///
 /// This test exercises the allocation failure path by:
@@ -236,12 +294,21 @@ fn test_gpu_allocation_under_pressure() {
     const CHUNK_SIZE: usize = 64 * 1024 * 1024 / 4; // 64MB in f32s
     const MAX_CHUNKS: usize = 1024; // Safety limit (64GB max)
 
+    // How far this device may be pushed: all the way on a discrete GPU, a
+    // fraction of the free pool on one that shares the host's RAM.
+    let class = crate::driver::classify_device_memory(&ctx)
+        .expect("the device's memory class must be readable");
+    let (free_bytes, _total) = ctx
+        .memory_info()
+        .expect("the device's free memory must be readable");
+    let budget = pressure_budget_chunks(class, free_bytes, CHUNK_SIZE * 4, MAX_CHUNKS);
+
     let mut tensors: Vec<GpuResidentTensor<f32>> = Vec::new();
     let mut allocation_count = 0;
     let mut hit_limit = false;
 
-    // Phase 1: Allocate until we hit memory limit
-    for _ in 0..MAX_CHUNKS {
+    // Phase 1: Allocate until we hit memory limit (or the budget)
+    for _ in 0..budget {
         let data = vec![0.0f32; CHUNK_SIZE];
         match GpuResidentTensor::from_host(&ctx, &data) {
             Ok(tensor) => {
@@ -265,9 +332,11 @@ fn test_gpu_allocation_under_pressure() {
     // Record how many we allocated before hitting the limit
     let tensors_at_limit = tensors.len();
     eprintln!(
-        "GPU pressure test: Allocated {} tensors ({} MB) before limit",
+        "GPU pressure test: Allocated {} tensors ({} MB) before limit (budget {} chunks, {:?})",
         tensors_at_limit,
-        tensors_at_limit * 64
+        tensors_at_limit * 64,
+        budget,
+        class
     );
 
     // Phase 2: Free half the tensors
