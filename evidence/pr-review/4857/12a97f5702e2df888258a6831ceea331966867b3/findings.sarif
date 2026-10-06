@@ -1,0 +1,126 @@
+{
+  "$schema": "https://docs.oasis-open.org/sarif/sarif/v2.1.0/errata01/os/schemas/sarif-schema-2.1.0.json",
+  "version": "2.1.0",
+  "runs": [
+    {
+      "tool": {
+        "driver": {
+          "name": "pmat"
+        }
+      },
+      "invocations": [
+        {
+          "executionSuccessful": true,
+          "toolExecutionNotifications": []
+        }
+      ],
+      "results": [
+        {
+          "ruleId": "round1_selftest_rows_fixed",
+          "level": "note",
+          "message": {
+            "text": "Round-1 gap (no table row for ARM64+gpu without docker, or ARM64+docker without gpu) is fixed: both rows are in the table and give RED. Re-ran the 6-mutant sweep of check_mutants_pool.sh at head: all 6 killed by --self-test, including the two round-1 survivors (drop the docker requirement, drop the gpu requirement)."
+          },
+          "properties": {
+            "grounding": "cited",
+            "source": "scripts/check_mutants_pool.sh:28",
+            "excerpt": "has \"$1\" gpu && has \"$1\" ARM64 && has \"$1\" docker && return 0",
+            "excerpt_sha256": "69e2fa7e3386d09d9ae1cb21dbe89d66b6341cf8c8abebf2f7d3c47948e531b9",
+            "failure_scenario": "Before the rows, loosening the interim pool test to ARM64+gpu or ARM64+docker left the table green and could accept a pool that is not the gx10 docker runner.",
+            "precision_class": "advisory"
+          }
+        },
+        {
+          "ruleId": "round1_image_arch_closed",
+          "level": "note",
+          "message": {
+            "text": "Round-1 note on the image architecture and cargo-mutants install is closed by the coordinator: docker inspect of the sovereign-ci:stable image on that runner reports Architecture arm64, and the job installs cargo-mutants itself. This lane did not run docker inspect; it records the statement as reported. The shared-host contention note (cuda-nightly also uses the gx10 pool) stands as an operational note, not a defect."
+          },
+          "properties": {
+            "grounding": "asserted",
+            "rationale": "coordinator statement of a docker inspect result on the runner; the job step that installs cargo-mutants read in mutants-nightly.yml",
+            "failure_scenario": "If the stable tag were replaced by an x86-only image, the first nightly on the interim pool would fail at container start, visibly.",
+            "precision_class": "advisory"
+          }
+        },
+        {
+          "ruleId": "selftest_green_at_head",
+          "level": "note",
+          "message": {
+            "text": "At head --self-test passes with the interim gx10 row, the empty runs-on ENV row and the two new RED rows. pool_ok rejects clean-room, intel and perf-solo as whole labels before accepting, and the mutants-intel row shows a label that merely contains intel is not accepted."
+          },
+          "properties": {
+            "grounding": "measured",
+            "command": [
+              "bash",
+              "scripts/check_mutants_pool.sh",
+              "--self-test"
+            ],
+            "exit_code": 0,
+            "stdout_sha256": "1fe105a5030229f1068fe0ef3ee3ab6c4ac4f241c6bca4ea793ae74d851b7076",
+            "failure_scenario": "A change that loosens the pool test turns a table row red.",
+            "precision_class": "advisory"
+          }
+        },
+        {
+          "ruleId": "real_workflow_judged",
+          "level": "note",
+          "message": {
+            "text": "The bare run judges the real mutants-nightly.yml runs-on [self-hosted, Linux, ARM64, gpu, docker] as ok; the memory-cap guard is still green."
+          },
+          "properties": {
+            "grounding": "measured",
+            "command": [
+              "bash",
+              "scripts/check_mutants_pool.sh"
+            ],
+            "exit_code": 0,
+            "stdout_sha256": "6c6248b49c9f23f7c4c9eba4c14323f9eb9348e20ed49832b12fb56b57913b86",
+            "failure_scenario": "A runs-on that cannot be parsed gives rc 2, never a pass.",
+            "precision_class": "advisory"
+          }
+        },
+        {
+          "ruleId": "duplication_scan",
+          "level": "note",
+          "message": {
+            "text": "pr_review_duplication_scan.sh at head: 1 needle (pool_ok), 4 hits across 1491 of 1491 sibling branches, all unrelated: two Rust example functions in performance_parity.rs and the two earlier #4643 evidence files that quote the needle. No second runs-on pool guard exists."
+          },
+          "properties": {
+            "grounding": "asserted",
+            "rationale": "scan --json hits read one by one; paths and lines checked",
+            "failure_scenario": "A parallel pool guard under another name would escape a lexical scan; none was seen.",
+            "precision_class": "advisory"
+          }
+        },
+        {
+          "ruleId": "patch_id_binds",
+          "level": "note",
+          "message": {
+            "text": "Subject diff 358e9d4d1188..12a97f5702e2 (three-dot) has patch-id 393a2cfd64869b483564839d7572d4dd9e9a1d56 under prpid_compute; the local origin/main ref was used without a fetch."
+          },
+          "properties": {
+            "grounding": "asserted",
+            "rationale": "prpid_compute run under bash -c on the review worktree at head",
+            "failure_scenario": "A stale local origin/main would bind the receipt to a different base than CI computes.",
+            "precision_class": "advisory"
+          }
+        }
+      ]
+    },
+    {
+      "tool": {
+        "driver": {
+          "name": "antigravity"
+        }
+      },
+      "invocations": [
+        {
+          "executionSuccessful": true,
+          "toolExecutionNotifications": []
+        }
+      ],
+      "results": []
+    }
+  ]
+}
