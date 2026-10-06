@@ -172,11 +172,13 @@ t1_models() {
 # stopped with everything it started. A red in any lane stops the pass (item 4): nothing after this
 # point runs. Each lane gets one row in $AP/t1-steps.tsv (step, start, end, seconds, verdict) and one
 # STEP line in STATUS, with its own log as before. GO = the lane exited 0; RED = it exited non-zero
-# by itself; STOPPED = it was stopped because another lane was red.
+# by itself; STOPPED = it died of the TERM sent because another lane was red; a lane that failed
+# by itself in the same second is still RED.
 #   WHICH LANES A RED STOPS. deep and dogfood run only here, so the first red stops them. models is
 #   never stopped: its remote leg is an ssh with no pty, so killing the local ssh would leave the remote
 #   build and ladder running in the release dir the next pass reuses. models runs to its own verdict.
-#   An INT or TERM to the autopilot stops every lane (the lanes no longer share its process group).
+#   An INT or TERM to the autopilot stops every lane (the lanes no longer share its process group),
+#   models included: the operator chose to stop, and the remote leg may run on to its own end.
 # scripts/check_release_t1_lanes_joined.sh runs this block against stub lanes, and its mutants.
 T1_LANES=(); for s in deep dogfood models; do run_step "$s" && T1_LANES+=("$s"); done
 if [ "${#T1_LANES[@]}" -gt 0 ]; then
@@ -187,12 +189,12 @@ if [ "${#T1_LANES[@]}" -gt 0 ]; then
   set +m
   say "T-1 LANES started together: ${T1_LANES[*]}"
   [ -f "$AP/t1-steps.tsv" ] || printf 'step\tstart\tend\tseconds\tverdict\n' > "$AP/t1-steps.tsv"
-  t1_red=''
+  t1_red=''; t1_term_rc=$((128 + $(kill -l TERM)))
   while [ "${#T1_STEP[@]}" -gt 0 ]; do
     t1_pid=''; wait -n -p t1_pid "${!T1_STEP[@]}"; rc=$?
     [ -n "$t1_pid" ] || die "T-1 join: wait returned no lane (rc=$rc) with ${#T1_STEP[@]} still recorded"
     s=${T1_STEP[$t1_pid]}; unset "T1_STEP[$t1_pid]"; t1=$(date -u +%s)
-    if [ "$rc" -eq 0 ]; then v=GO; elif [ -n "${T1_STOPPED[$s]:-}" ]; then v=STOPPED; else v=RED; t1_red="${t1_red:+$t1_red }$s"; fi
+    if [ "$rc" -eq 0 ]; then v=GO; elif [ -n "${T1_STOPPED[$s]:-}" ] && [ "$rc" -eq "$t1_term_rc" ]; then v=STOPPED; else v=RED; t1_red="${t1_red:+$t1_red }$s"; fi
     printf '%s\t%s\t%s\t%s\t%s\n' "$s" "$(date -u -d "@${T1_T0[$s]}" +%FT%TZ)" "$(date -u -d "@$t1" +%FT%TZ)" \
       "$((t1 - T1_T0[$s]))" "$v" >> "$AP/t1-steps.tsv"
     say "STEP $s $v rc=$rc seconds=$((t1 - T1_T0[$s]))"

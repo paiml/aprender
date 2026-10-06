@@ -14,15 +14,20 @@
 #   solo       dogfood alone      -> rc 0, one GO row
 #   overlap    three 2 s lanes    -> rc 0 in under 5 s (in series they need 6)
 #   interrupt  TERM to the run    -> rc 1 within seconds, nothing after the join, deep's child gone
+#   self-red   deep red; dogfood, signalled, exits 1 by itself -> dogfood RED (not STOPPED), both named
 # and, on the autopilot text itself, that deep and dogfood build into their own target dirs under
-# $REPO_ROOT/target while models keeps CARGO_TARGET_DIR (readiness reads the apr models built).
+# $REPO_ROOT/target while models keeps CARGO_TARGET_DIR (readiness reads the apr models built), and
+# that scripts/check_model_parity.sh runs every apr parity under the ladder's GPU lock (dogfood's C14
+# parity and the ladder now share the GPU).
 # Then it re-runs everything against mutants and requires each to turn it RED.
 # Exit 0 = PASS, 1 = FAIL, 2 = could not run.
 set -uo pipefail
 
 ROOT=$(git -C "$(dirname "$0")" rev-parse --show-toplevel 2>/dev/null) || { echo "ENV: not in a git checkout"; exit 2; }
 AUTOPILOT=${1:-$ROOT/scripts/release/autopilot.sh}
+PARITY=$ROOT/scripts/check_model_parity.sh
 [ -f "$AUTOPILOT" ] || { echo "ENV: no autopilot at $AUTOPILOT"; exit 2; }
+[ -f "$PARITY" ] || { echo "ENV: no $PARITY"; exit 2; }
 TMP=$(mktemp -d) || { echo "ENV: mktemp failed"; exit 2; }
 trap 'rm -rf -- "${TMP:?}"' EXIT
 
@@ -37,7 +42,10 @@ die() { say "STOP $*"; exit 1; }
 run_step() { case " $SEL " in *" $1 "*) return 0 ;; *) return 1 ;; esac; }
 lane() { sleep "$2"; [ "$3" = 0 ] || die "$1 red"; say "$1 GO"; }
 t1_deep() { sleep "$DD" & echo "$!" > "$AP/deep-child"; wait; lane deep 0 "$DR"; }
-t1_dogfood() { lane dogfood "$GD" "$GR"; }
+t1_dogfood() {
+    if [ "${DT:-0}" = 1 ]; then trap 'exit 1' TERM; sleep 5 & wait; exit 1; fi
+    lane dogfood "$GD" "$GR"
+}
 t1_models() { lane models "$MD" "$MR"; }
 # shellcheck disable=SC1090
 . "$JOIN"
@@ -49,7 +57,7 @@ case_run() {
     local j=$1 n=$2 t0 pid
     mkdir -p "$TMP/$n" || return 2
     t0=$(date +%s)
-    ( export APD="$TMP/$n" JOIN="$j" SEL="$3" DD=$4 DR=$5 GD=$6 GR=$7 MD=$8 MR=$9
+    ( export APD="$TMP/$n" JOIN="$j" SEL="$3" DD=$4 DR=$5 GD=$6 GR=$7 MD=$8 MR=$9 DT="${DT:-0}"
       exec bash "$TMP/harness.sh" ) > "$TMP/$n/out.log" 2>&1 &
     pid=$!
     if [ -n "${10:-}" ]; then sleep "${10}"; kill -TERM "$pid" 2>/dev/null; fi
@@ -88,7 +96,18 @@ table() {
     case_run "$j" "$t-int" "deep dogfood models" 20 0 20 0 20 0 1
     [ "$C_RC" != 0 ] && ! after "$t-int" && [ "$C_SECS" -lt 10 ] && child_gone "$t-int" \
         || { echo "interrupt: rc=$C_RC secs=$C_SECS (want non-zero in < 10 s, no AFTER-JOIN, deep's child gone)"; return 1; }
+    DT=1 case_run "$j" "$t-self" "deep dogfood" 1 1 0 0 0 0
+    [ "$C_RC" = 1 ] && [ "$(verdict "$t-self" dogfood)" = RED ] && grep -q 'STOP .*deep dogfood RED' "$TMP/$t-self/STATUS" \
+        || { echo "self-red: rc=$C_RC dogfood=$(verdict "$t-self" dogfood) (want dogfood RED: it exited 1 by itself, not by the signal)"; return 1; }
     return 0
+}
+
+# locked PARITY -> 0 when every apr parity in check_model_parity.sh runs under the ladder's GPU lock
+locked() {
+    local n l
+    n=$(grep -c '"\$APR_BIN" parity' "$1")
+    l=$(grep -B1 '"\$APR_BIN" parity' "$1" | grep -c 'flock -E 75 -w "\${MODEL_LADDER_LOCK_WAIT:-1800}" "\${MODEL_LADDER_GPU_LOCK:-/tmp/apr-gpu.lock}"')
+    [ "$n" -ge 1 ] && [ "$n" = "$l" ] || { echo "check_model_parity.sh: $l of $n apr parity call(s) take the ladder's GPU lock"; return 1; }
 }
 
 # dirs AUTOPILOT -> 0 when deep and dogfood export their own target dirs and models exports none
@@ -107,10 +126,10 @@ dirs() {
 check() {
     awk '/^# The join\./{p=1} p{print} p&&/^fi$/{exit}' "$1" > "$TMP/$2.join"
     grep -q 'wait -n' "$TMP/$2.join" || { echo "no join block (\"# The join.\" .. fi with wait -n)"; return 1; }
-    dirs "$1" && table "$TMP/$2.join" "$2"
+    dirs "$1" && locked "${3:-$PARITY}" && table "$TMP/$2.join" "$2"
 }
 
-if why=$(check "$AUTOPILOT" real); then echo "ok    the join holds (7 cases) and the target dirs are split"
+if why=$(check "$AUTOPILOT" real); then echo "ok    the join holds (8 cases), the target dirs are split, parity takes the GPU lock"
 else echo "FAIL  the autopilot's T-1 lanes: $why"; exit 1; fi
 
 fails=0; nm=0
@@ -130,5 +149,11 @@ mutant first-red   's/t1_red="\${t1_red:+\$t1_red }\$s"/t1_red=${t1_red:-$s}/'
 mutant no-trap     "/^  trap 'for p in/d"
 mutant shared-deep '/^  export CARGO_TARGET_DIR="\$REPO_ROOT\/target\/t1-deep"$/d'
 mutant shared-dogfood 's/target\/t1-dogfood"$/target\/t1-deep"/'
+mutant stopped-any-rc 's/ \&\& \[ "\$rc" -eq "\$t1_term_rc" \]; then v=STOPPED/; then v=STOPPED/'
+nm=$((nm + 1))
+sed -e 's/flock -E 75 -w "\${MODEL_LADDER_LOCK_WAIT:-1800}" "\${MODEL_LADDER_GPU_LOCK:-\/tmp\/apr-gpu.lock}"/env/' "$PARITY" > "$TMP/m-parity.sh"
+if cmp -s "$PARITY" "$TMP/m-parity.sh"; then echo "FAIL  mutant parity-unlocked did not apply (anchor moved)"; fails=$((fails + 1))
+elif why=$(check "$AUTOPILOT" m-parity "$TMP/m-parity.sh"); then echo "FAIL  mutant parity-unlocked survived"; fails=$((fails + 1))
+else echo "ok    mutant parity-unlocked killed ($why)"; fi
 [ "$fails" -eq 0 ] || { echo "FAIL  $fails of $nm mutant(s)"; exit 1; }
-echo "PASS  7 case(s) + target dirs, $nm mutant(s) killed: deep, dogfood and models start together, join before readiness, and a red in any stops the pass"
+echo "PASS  8 case(s) + target dirs + parity lock, $nm mutant(s) killed: deep, dogfood and models start together, join before readiness, and a red in any stops the pass"
