@@ -1,0 +1,225 @@
+{
+  "$schema": "https://json.schemastore.org/sarif-2.1.0.json",
+  "version": "2.1.0",
+  "runs": [
+    {
+      "tool": {
+        "driver": {
+          "name": "pmat",
+          "version": "3.42.0"
+        }
+      },
+      "invocations": [
+        {
+          "executionSuccessful": true,
+          "toolExecutionNotifications": []
+        }
+      ],
+      "results": [
+        {
+          "ruleId": "t1-guard-baseline-held-fix-verified",
+          "level": "note",
+          "message": {
+            "text": "Fix verified. With a mutated autopilot (INT/TERM trap deleted) the baseline case fails and every one of the 11 mutants still runs and prints its line before the verdict: report mode exits 0 with FAIL, REPORT lines after the mutants, ENFORCE=1 exits 1, ENV is rc 2 in both modes. A moved mutant anchor on a green tree gives rc 0 with REPORT and rc 1 under ENFORCE. On the real tree the guard passes 8 cases and 11 of 11 mutants (rc 0) and now ends in finish 0."
+          },
+          "locations": [
+            {
+              "physicalLocation": {
+                "artifactLocation": {
+                  "uri": "scripts/check_release_t1_lanes_joined.sh"
+                },
+                "region": {
+                  "startLine": 146
+                }
+              }
+            }
+          ],
+          "properties": {
+            "grounding": "measured",
+            "command": [
+              "bash",
+              "scripts/check_release_t1_lanes_joined.sh",
+              "<mutated autopilot>"
+            ],
+            "exit_code": 0,
+            "stdout_sha256": "e0fa2fd71b826289beaa3bf3f8e11c6bf539f846772fe7f6435765114655ba6b",
+            "failure_scenario": "none: the previous finding is closed.",
+            "precision_class": "advisory"
+          }
+        },
+        {
+          "ruleId": "t1-guard-kills-vacuous-on-red-baseline",
+          "level": "note",
+          "message": {
+            "text": "When the baseline is red, the mutants are all judged on the same broken tree, so every one that is applied is reported killed. Measured: on the no-trap autopilot the report shows 10 'ok mutant ... killed' lines under a failed baseline. The verdict is still FAIL, so nothing passes wrongly, but those kill lines are not evidence that the case table catches the mutants, and a surviving mutant is masked until the baseline is green (the same shape the author's fix removed for hiding). Fix: print the kill lines only when the baseline is green, or tag them 'not judged (baseline red)'."
+          },
+          "locations": [
+            {
+              "physicalLocation": {
+                "artifactLocation": {
+                  "uri": "scripts/check_release_t1_lanes_joined.sh"
+                },
+                "region": {
+                  "startLine": 148
+                }
+              }
+            }
+          ],
+          "properties": {
+            "grounding": "measured",
+            "command": [
+              "bash",
+              "scripts/check_release_t1_lanes_joined.sh",
+              "<mutated autopilot>"
+            ],
+            "exit_code": 0,
+            "stdout_sha256": "e0fa2fd71b826289beaa3bf3f8e11c6bf539f846772fe7f6435765114655ba6b",
+            "failure_scenario": "A baseline fails and a real mutant regression hides among 10 kill lines that were never independent.",
+            "precision_class": "advisory"
+          }
+        },
+        {
+          "ruleId": "t1-guard-nothing-enforces",
+          "level": "note",
+          "message": {
+            "text": "Unchanged from the previous round: no workflow, Makefile, script or contract sets RELEASE_T1_LANES_ENFORCE, so the guard blocks nowhere; the draft guard matches this. The choom and exit-75 reason gaps remain too. Record a promotion date or a ticket."
+          },
+          "locations": [
+            {
+              "physicalLocation": {
+                "artifactLocation": {
+                  "uri": "scripts/check_release_t1_lanes_joined.sh"
+                },
+                "region": {
+                  "startLine": 24
+                }
+              }
+            }
+          ],
+          "properties": {
+            "grounding": "measured",
+            "command": [
+              "grep",
+              "-rIl",
+              "RELEASE_T1_LANES_ENFORCE",
+              "scripts",
+              ".github",
+              "Makefile",
+              "contracts"
+            ],
+            "exit_code": 0,
+            "stdout_sha256": "fb2d821ed92e2124a98407924ed65add2891c0440bb4896fa119300980a75196",
+            "failure_scenario": "The guard is never promoted.",
+            "precision_class": "advisory"
+          }
+        }
+      ]
+    },
+    {
+      "tool": {
+        "driver": {
+          "name": "cargo-mutants",
+          "version": "bash-sed-mutants"
+        }
+      },
+      "invocations": [
+        {
+          "executionSuccessful": true,
+          "toolExecutionNotifications": []
+        }
+      ],
+      "results": []
+    },
+    {
+      "tool": {
+        "driver": {
+          "name": "antigravity",
+          "version": "1.3.0"
+        }
+      },
+      "invocations": [
+        {
+          "executionSuccessful": true,
+          "toolExecutionNotifications": []
+        }
+      ],
+      "results": [
+        {
+          "ruleId": "agy-mutant-killed-by-red-baseline",
+          "level": "note",
+          "message": {
+            "text": "Mutants are incorrectly counted as killed if the baseline fails."
+          },
+          "locations": [
+            {
+              "physicalLocation": {
+                "artifactLocation": {
+                  "uri": "scripts/check_release_t1_lanes_joined.sh"
+                },
+                "region": {
+                  "startLine": 148
+                }
+              }
+            }
+          ],
+          "properties": {
+            "grounding": "asserted",
+            "rationale": "agy mark measured. Re-marked asserted: agy supplied no command or stdout digest. The primary reproduced it (t1-guard-kills-vacuous-on-red-baseline), so it is agreed.",
+            "failure_scenario": "If the baseline validation fails (`bad=1`), the `check` function will also fail for all mutants because they are based on the same broken baseline. The `mutant()` function interprets any `check` failure as the mutant being 'killed', which artificially inflates the kill count and masks surviving mutants.",
+            "precision_class": "advisory"
+          }
+        },
+        {
+          "ruleId": "agy-inverted-exits",
+          "level": "note",
+          "message": {
+            "text": "There are inverted exits present in the validation logic."
+          },
+          "locations": [
+            {
+              "physicalLocation": {
+                "artifactLocation": {
+                  "uri": "scripts/check_release_t1_lanes_joined.sh"
+                },
+                "region": {
+                  "startLine": 40
+                }
+              }
+            }
+          ],
+          "properties": {
+            "grounding": "asserted",
+            "rationale": "agy mark asserted, with no location or detail. CONTRADICTED by the primary: report mode exits 0, ENFORCE=1 exits 1 and ENV exits 2, measured on a mutated autopilot, a moved anchor and a missing autopilot. No inverted exit exists.",
+            "failure_scenario": "Exit conditions or logic checks evaluate inversely to their intended boolean logic, causing the script to either exit with an incorrect status or produce false positives/negatives during validation.",
+            "precision_class": "advisory"
+          }
+        },
+        {
+          "ruleId": "agy-paths-skip-finish",
+          "level": "note",
+          "message": {
+            "text": "The success path skips the finish function."
+          },
+          "locations": [
+            {
+              "physicalLocation": {
+                "artifactLocation": {
+                  "uri": "scripts/check_release_t1_lanes_joined.sh"
+                },
+                "region": {
+                  "startLine": 173
+                }
+              }
+            }
+          ],
+          "properties": {
+            "grounding": "asserted",
+            "rationale": "agy mark cited. The finding describes the code before this patch; the patch adds finish 0 at the end, so the point is resolved, not open.",
+            "failure_scenario": "Before the patch, the script's success path reached EOF and exited implicitly with code 0 without calling the `finish` function, bypassing the centralized exit logic and reporting. The patch resolves this by adding `finish 0` at the end of the script.",
+            "precision_class": "advisory"
+          }
+        }
+      ]
+    }
+  ]
+}
