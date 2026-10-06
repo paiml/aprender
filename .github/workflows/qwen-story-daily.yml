@@ -1,4 +1,4 @@
-# Nightly Qwen-story regression cron + pmat bug-hunt manifest.
+# Nightly Qwen-story regression run (after coverage-nightly) + pmat bug-hunt manifest.
 #
 # Contract: contracts/qwen-story-v1.yaml § FALSIFY-QWEN-STORY-006.
 # Runs `scripts/qwen-story.sh` against the canonical Qwen model registry,
@@ -16,6 +16,10 @@ on:
   # Chained, not scheduled (T44, #4686): this producer measures the night's
   # C that "Nightly pick" pinned at nightly/<night>, never main's head at
   # whatever hour GitHub got round to creating a scheduled run.
+  # #4715 chained it from Coverage Nightly so the pmat hunt finds coverage's
+  # artifact for the same sha. Coverage now starts from the same pick and takes
+  # 60-70 min, past this job's 30, so the hunt reads not_measured on most nights
+  # until it moves into its own job chained from Coverage Nightly.
   workflow_run:
     workflows: ["Nightly pick"]
     types: [completed]
@@ -34,6 +38,7 @@ on:
 permissions:
   contents: read
   issues: write   # to open/comment on the tracking issue
+  actions: read   # to download coverage-nightly's coverage-json artifact (#4715)
 
 concurrency:
   group: qwen-story-daily
@@ -130,6 +135,39 @@ jobs:
           }
           echo "apr pinned to: $APR"
           "$APR" --version
+
+      # #4715: the pmat hunt reads coverage gaps from coverage-nightly's
+      # coverage-json artifact for THIS commit, never from a fresh per-query run
+      # (>900 s each, which timed this 30-min job out). No such artifact - no
+      # run for this sha, the run still going, or it was cancelled - leaves
+      # STORY_COVERAGE_FILE unset, and the hunt then reports coverage gaps
+      # not_measured and fails. It never reads as a pass.
+      - name: Fetch coverage-nightly's coverage JSON for this commit
+        if: env.PMAT_HUNT == '1'
+        shell: bash
+        env:
+          GH_TOKEN: ${{ github.token }}
+          # Look the coverage run up by the commit this job measures: the night's
+          # C on workflow_run (the triggering run is the pick, which has no
+          # coverage artifact), main's sha on workflow_dispatch.
+          COV_SHA: ${{ env.NIGHTLY_C || github.sha }}
+        run: |
+          set -uo pipefail
+          dir="$RUNNER_TEMP/coverage-json"
+          rm -rf "${dir:?}"
+          run_id=$(gh run list -R "$GITHUB_REPOSITORY" -w coverage-nightly.yml --commit "$COV_SHA" \
+            --limit 5 --json databaseId,status --jq '[.[] | select(.status == "completed")][0].databaseId // empty') || run_id=""
+          if [ -z "$run_id" ]; then
+            echo "::warning::no completed coverage-nightly run for $COV_SHA - pmat hunt coverage gaps will be not_measured"
+            exit 0
+          fi
+          if ! gh run download "$run_id" -R "$GITHUB_REPOSITORY" -n coverage-json -D "$dir"; then
+            echo "::warning::coverage-nightly run $run_id has no coverage-json artifact - pmat hunt coverage gaps will be not_measured"
+            exit 0
+          fi
+          echo "STORY_COVERAGE_FILE=$dir/coverage.json" >> "$GITHUB_ENV"
+          echo "STORY_COVERAGE_SHA=$(cat "$dir/coverage.sha" 2>/dev/null)" >> "$GITHUB_ENV"
+          echo "coverage JSON from coverage-nightly run $run_id, measured on $(cat "$dir/coverage.sha" 2>/dev/null || echo '(none recorded)')"
 
       - name: Run scripts/qwen-story.sh
         id: story

@@ -18483,6 +18483,23 @@ roadmap:
   estimated_effort: null
   labels: []
   notes: 'Before: v0.70.1 tag run completed 25 min after start with no ci / coverage job; the gate refused only at preflight, after the tag and the GitHub release were public (up to 90 tries x 60 s, 2 gh calls/try). After: refused at cut_tag, 0 gh calls, 0 s. NOTE: ci.yml today declares no ci / coverage job (coverage runs inside x86-main), so every release refuses at cut_tag until one is declared or the gate is retargeted.'
+- id: GH-4718
+  github_issue: 4718
+  item_type: task
+  title: '0702-P1: nightly producers for the deep lanes (deep-doctests, deep-nodefault, deep-bins-smoke)'
+  status: inprogress
+  priority: critical
+  assigned_to: null
+  created: 2026-10-04T09:17:34.904751550+00:00
+  updated: 2026-10-04T09:17:34.904751550+00:00
+  spec: null
+  acceptance_criteria: []
+  phases: []
+  subtasks: []
+  estimated_effort: null
+  labels:
+  - P0
+  notes: null
 - id: PMAT-3351
   github_issue: 3347
   item_type: task
@@ -24081,6 +24098,45 @@ Not done, pending the ruling: moving the 31 fixture files to an obviously synthe
   labels:
   - kind:docs
   notes: 'Operator C197, 2026-10-01 12:40Z: re-date via the spec''s own procedure; check unchanged; not a waiver.'
+- id: PMAT-4715
+  github_issue: 4715
+  item_type: task
+  title: 'B2: root-cause fixes for red nightlies on main'
+  status: inprogress
+  priority: critical
+  assigned_to: aprender-wmainred
+  created: 2026-10-04T00:00:00Z
+  updated: 2026-10-04T00:00:00Z
+  acceptance_criteria:
+  - Each red or cancelled scheduled workflow on main has a root cause named in its fix PR, one PR per defect, listed on issue #4715
+  - Each fix PR changes no gate's acceptance; a threshold or acceptance change goes to the train lead's sign-off batch instead
+  - After each fix merges, the next scheduled or dispatched run of that workflow on main gets past the step that failed
+  phases: []
+  subtasks: []
+  estimated_effort: null
+  labels:
+  - kind:ci
+  notes: 'Parent #4678 (0.70.2), bar B2: no check red on main for more than 24 h. Proposed by aprender-a7, minted by cop aprender-14.'
+- id: PMAT-4719
+  github_issue: 4719
+  item_type: task
+  title: '0702-P2: nightly producers for the readiness, milestone and preflight verdict lanes (#4719)'
+  status: inprogress
+  priority: critical
+  assigned_to: null
+  created: 2026-10-04T09:18:17Z
+  updated: 2026-10-04T09:18:17Z
+  spec: null
+  acceptance_criteria:
+  - release-gates-nightly.yml runs milestone (--must-carry) and preflight (--graph-only) at main HEAD
+  - readiness-nightly.yml runs release_readiness.sh on same-commit dogfood-receipt + models-t1, else skipped (not_measured)
+  phases: []
+  subtasks: []
+  estimated_effort: null
+  labels:
+  - kind:code
+  notes: null
+  epic: 4678
 - id: PMAT-4729
   github_issue: 4729
   item_type: task

@@ -176,6 +176,8 @@ jobs:
       - name: aprender-profile lib tests (was gated by nothing)
         run: cargo test -p aprender-profile --lib
       - name: model-tests falsification suites (was gated by nothing, aprender#2522) -- SATD ceiling measured on the comparand (BSE-03)
+        env:
+          NIGHTLY_C: ${{ env.NIGHTLY_C }} # the C step wrote it to GITHUB_ENV; empty on workflow_dispatch
         run: |
           set -euo pipefail
           # The warm sccache lives under the runner user's data dir on the persistent intel
@@ -253,3 +255,4 @@ jobs:
           } >> "$GITHUB_STEP_SUMMARY"
         env:
           JOB_STATUS: ${{ job.status }}
+          NIGHTLY_C: ${{ env.NIGHTLY_C }}

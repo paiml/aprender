@@ -45,7 +45,6 @@ jobs:
     # 2.6 min) -> T = max(15, 68, 65) = 68, rounded up for a shared host. The first three runs replace this basis.
     timeout-minutes: 90
     env:
-      CI_CACHE: /mnt/nvme-raid0/ci-cache/pvl-conleche
       ELAN_VERSION: v4.2.4
       ELAN_SHA256: 42b94d4244e8353142c456ec0e4ca6528fd898a6c604d4059f494e706e431f63
       LEAN_NUM_THREADS: '8'
@@ -64,6 +63,11 @@ jobs:
       - name: Pinned elan in the job's own directory (sha256-checked, never a host install)
         run: |
           set -euo pipefail
+          # The cache lives beside the runner's _work dir, as nightly.yml's cache-nightly does. The old
+          # /mnt/nvme-raid0/ci-cache path exists only on lambda; on the clean-room hosts /mnt/nvme-raid0 is
+          # root-owned, so mkdir failed and the job never ran (runs 37082537768, 37163229207).
+          CI_CACHE="$(cd "$GITHUB_WORKSPACE/../.." && pwd)/cache-conleche"
+          echo "CI_CACHE=$CI_CACHE" >> "$GITHUB_ENV"
           export ELAN_HOME="$CI_CACHE/elan"
           mkdir -p "$CI_CACHE"
           if [ ! -x "$ELAN_HOME/bin/elan" ] || ! "$ELAN_HOME/bin/elan" --version | grep -q "${ELAN_VERSION#v}"; then

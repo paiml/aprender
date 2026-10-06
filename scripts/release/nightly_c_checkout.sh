@@ -85,7 +85,7 @@ commit() { # REPO MSG -> new head sha; the file f holds MSG, so two commits diff
 
 self_test() {
     local FX A W S c1 c2 n=2026-10-04 at=2026-10-04T20:31:07Z env
-    FX="$(mktemp -d "${TMPDIR:-/tmp}/nc-st.XXXXXX")" || caller_error "no temp dir"
+    FX="$(mktemp -d)" || caller_error "no temp dir"
     A="$FX/author"; W="$FX/w"; S="$FX/shallow"
     git init -q --bare -b main "$FX/origin.git" && git clone -q "$FX/origin.git" "$A" 2>/dev/null || caller_error "no fixture repo"
     git -C "$A" checkout -q -b main 2>/dev/null
@@ -183,7 +183,7 @@ mutants() {
     local tmp name expr killed=0 total=0 errors=0 out cut reds
     cut="$(grep -n -m1 -e "^# -* the case table" "$SCRIPT_PATH" | cut -d: -f1)"
     [ -n "$cut" ] || caller_error "no case-table marker"
-    tmp="$(mktemp -d "${TMPDIR:-/tmp}/nc-mu.XXXXXX")" || caller_error "no temp dir"
+    tmp="$(mktemp -d)" || caller_error "no temp dir"
     mkdir -p "$tmp/release" "$tmp/lib"
     cp "$LIB" "$tmp/lib/nightly_pick.sh" || caller_error "cannot copy the lib"
     while IFS="$(printf '\t')" read -r name expr; do

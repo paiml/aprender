@@ -1,0 +1,173 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "version": "2.1.0",
+  "runs": [
+    {
+      "tool": {
+        "driver": {
+          "name": "pmat"
+        }
+      },
+      "results": [
+        {
+          "ruleId": "shalen_loosens_no_verdict",
+          "level": "note",
+          "message": {
+            "text": "R3 holds. shalen appears only in the clause that sets `newest`, which is read only in END after `found` is false; END can only print not_measured. The found/green/red branches compare $5 == c exactly and never touch shalen. The only caller, measure_cpu, is fed C from a gate that requires ^[0-9a-f]{40}$ (GITHUB_SHA check at line 271), so for the real C shalen is 40 and behaviour is identical. For a C that is not 40 hex (a 7-hex abbreviation) infra rows carry the 40-hex tested sha from the log, so no row has length shalen, newest stays empty, and the reason falls to the generic 'no finished clean-room (aprender) job' wording: wording only, still not_measured, never green or red."
+          },
+          "properties": {
+            "grounding": "cited",
+            "source": "scripts/release/release_lanes.sh:110 (judge_cpu awk: the newest clause now uses shalen)",
+            "excerpt": "        NF >= 5 && $3 == \"completed\" && $5 ~ /^[0-9a-f]+$/ && length($5) == shalen && newest == \"\" { newest = substr($5, 1, 12) }",
+            "excerpt_sha256": "460dfe25db25e832ebf259faec5081c8a38736212112aa0275203911ed997b0f",
+            "failure_scenario": "A short C passed to judge_cpu would lose the 'newest tested <sha>' hint in a not_measured reason. It cannot change a verdict, and no caller passes a short C.",
+            "precision_class": "advisory"
+          }
+        },
+        {
+          "ruleId": "sole_caller_passes_40_hex",
+          "level": "note",
+          "message": {
+            "text": "judge_cpu has one production caller, measure_cpu, called with the commit under test; the self-test rows pass c and d, both 40-hex fixtures."
+          },
+          "properties": {
+            "grounding": "cited",
+            "source": "scripts/release/release_lanes.sh:248 (measure_cpu pipes rows into judge_cpu with C)",
+            "excerpt": "    printf '%s\\n' \"$rows\" | judge_cpu \"$c\"",
+            "excerpt_sha256": "7b09ef60cc8b6cfd0fe2e836c1e570c5ea35196ed700da044558bca266bacc3f",
+            "failure_scenario": "If a caller passed an abbreviated sha, found would never match an infra row (exact equality) and the lane would read not_measured; that is unchanged by this delta.",
+            "precision_class": "advisory"
+          }
+        },
+        {
+          "ruleId": "delta_is_exactly_the_claimed_scope",
+          "level": "note",
+          "message": {
+            "text": "Claims 1 and 3 hold. The delta is one file, 16 insertions and 15 deletions. After normalising $gt back to $T the only unmatched lines are: the awk -v shalen line, the length($5)==shalen line, the T= to gt= assignment, the local declaration, and one added comment. The rest of self_test is untouched."
+          },
+          "properties": {
+            "grounding": "measured",
+            "command": [
+              "git",
+              "diff",
+              "a3190a1ea3",
+              "745fa531c0",
+              "--stat"
+            ],
+            "exit_code": 0,
+            "stdout_sha256": "496aa1c1bd7bd59500e74b58c7d4d1cabc9aac13e21908c3dfbd4800b31a94ac",
+            "failure_scenario": "If the rename had touched a case row, a gate could loosen behind a rename; the measured diff changes only the variable name in its uses.",
+            "precision_class": "advisory"
+          }
+        },
+        {
+          "ruleId": "release_identity_guard_green",
+          "level": "note",
+          "message": {
+            "text": "check_release_scripts_derive_identity.sh rc 0 (26 files, no literal release identity) and its --self-test rc 0 (23 rows). R2 and R3 are cleared on the head."
+          },
+          "properties": {
+            "grounding": "measured",
+            "command": [
+              "bash",
+              "scripts/check_release_scripts_derive_identity.sh"
+            ],
+            "exit_code": 0,
+            "stdout_sha256": "609bc9893a786435443f12db0753261e0937b774665e2123187fad840c7ff0ae",
+            "failure_scenario": "A still-red guard-tree would block the PR; it exits 0 on the head.",
+            "precision_class": "advisory"
+          }
+        },
+        {
+          "ruleId": "self_test_69_ok_0_broke",
+          "level": "note",
+          "message": {
+            "text": "release_lanes.sh --self-test: 69 ok, 0 broke, rc 0."
+          },
+          "properties": {
+            "grounding": "measured",
+            "command": [
+              "bash",
+              "scripts/release/release_lanes.sh",
+              "--self-test"
+            ],
+            "exit_code": 0,
+            "stdout_sha256": "d78d910d82a50d153ca79c2ee32b9082afaa014165e6ee47651233fc26fec53e",
+            "failure_scenario": "A rename that dropped a fixture value would break a row; none broke.",
+            "precision_class": "advisory"
+          }
+        },
+        {
+          "ruleId": "mutants_25_of_25",
+          "level": "note",
+          "message": {
+            "text": "release_lanes.sh --mutants: 25/25 mutants killed, rc 0."
+          },
+          "properties": {
+            "grounding": "measured",
+            "command": [
+              "bash",
+              "scripts/release/release_lanes.sh",
+              "--mutants"
+            ],
+            "exit_code": 0,
+            "stdout_sha256": "cdcd6de9fc49e51ea95581fb6c32eee315125eac204b55468617a46ffcee3b89",
+            "failure_scenario": "A judge a planted mutant leaves green would let a wrong verdict through; all 25 were killed.",
+            "precision_class": "advisory"
+          }
+        },
+        {
+          "ruleId": "bashrs_lint_zero_errors",
+          "level": "note",
+          "message": {
+            "text": "bashrs lint: 0 errors, 137 warnings, 166 infos (warnings and infos pre-exist, not in the delta). The command's rc is 1 because bashrs exits 1 when warnings exist."
+          },
+          "properties": {
+            "grounding": "measured",
+            "command": [
+              "bashrs",
+              "lint",
+              "scripts/release/release_lanes.sh"
+            ],
+            "exit_code": 1,
+            "stdout_sha256": "44336b0028171cce36a245dd3c7c80730ce44f73670065c9829b0ca1b673a90a",
+            "failure_scenario": "A lint error introduced by the rename would show as error(s) above 0; it shows 0.",
+            "precision_class": "advisory"
+          }
+        }
+      ]
+    },
+    {
+      "tool": {
+        "driver": {
+          "name": "antigravity"
+        }
+      },
+      "invocations": [
+        {
+          "executionSuccessful": false,
+          "toolExecutionNotifications": [
+            {
+              "level": "error",
+              "message": {
+                "text": "agy was not run: the lane's PreToolUse hook (subagent-lock.sh) refused the call that builds the disposable review tree ('a lane runs read-only git only'). The consultation was not attempted and the block was not worked around."
+              },
+              "properties": {
+                "grounding": "measured",
+                "command": [
+                  "git",
+                  "archive",
+                  "745fa531c03de6bc0d3ef90124e492a339ffc0d1"
+                ],
+                "exit_code": 1,
+                "failure_scenario": "The cross-vendor second reviewer saw nothing, so the receipt cannot claim a second vendor read this delta; it is DEGRADED, never PASS.",
+                "precision_class": "advisory"
+              }
+            }
+          ]
+        }
+      ],
+      "results": []
+    }
+  ]
+}

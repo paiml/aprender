@@ -1,0 +1,132 @@
+{
+  "$schema": "https://docs.oasis-open.org/sarif/sarif/v2.1.0/errata01/os/schemas/sarif-schema-2.1.0.json",
+  "version": "2.1.0",
+  "runs": [
+    {
+      "tool": {
+        "driver": {
+          "name": "pmat"
+        }
+      },
+      "invocations": [
+        {
+          "executionSuccessful": true,
+          "toolExecutionNotifications": []
+        }
+      ],
+      "results": [
+        {
+          "ruleId": "scope_end_double_quote_strip_in_limit",
+          "level": "note",
+          "message": {
+            "text": "Round-3 diff (strip double-quoted spans before the single-quote count) read in full; no new gap within the guard stated limit (a tripwire against an accidental drop, not an author who hides a cap). Residual cases need deliberate construction: a backslash-escaped double quote, or a double-quoted string spanning lines, can still skew parity. The real cuda step balances on every line."
+          },
+          "properties": {
+            "grounding": "cited",
+            "source": "scripts/check_mutants_memory_cap.sh:45",
+            "excerpt": "start && kind == \"scope\" { r = $0; gsub(/\"[^\"]*\"/, \"\", r); inq = (inq + gsub(\"\\047\", \"\", r)) % 2",
+            "excerpt_sha256": "575312458fdc8dc7ec2c948cd782208f6e784587e8eec250a8342903582889bb",
+            "failure_scenario": "An author who writes an escaped double quote on the scope line could skew the parity and reopen the round-1 hole; that is the hidden-cap case the guard states it does not defend.",
+            "precision_class": "advisory"
+          }
+        },
+        {
+          "ruleId": "round2_apostrophe_fixed",
+          "level": "note",
+          "message": {
+            "text": "Round-2 finding (apostrophe inside a double-quoted argument kept the scope open) is fixed: the echo repro with an apostrophe now gives rc 1 (FAIL native: no capped docker run or systemd-run scope), and row scopeapos pins it."
+          },
+          "properties": {
+            "grounding": "measured",
+            "command": [
+              "bash",
+              "scripts/check_mutants_memory_cap.sh",
+              "<temp file: capped systemd-run echo with an apostrophe in double quotes, then bare mutants_diff_gate.sh>"
+            ],
+            "exit_code": 1,
+            "stdout_sha256": "1e43eaf2e5407a157bcb79469941b430c920b3039f09b44a99fb5faf6fc3620c",
+            "failure_scenario": "Without the double-quote strip the repro passes with rc 0.",
+            "precision_class": "advisory"
+          }
+        },
+        {
+          "ruleId": "round1_findings_still_fixed",
+          "level": "note",
+          "message": {
+            "text": "Round-1 findings stay fixed: scope-wraps-echo gives rc 1 (scopeother) and MemorySwapMax=8 gives rc 1 (scopeswnz). --self-test passes at head; the bare run judges the same four runs ok, the cuda scope at ci/sections.yml:3478 included."
+          },
+          "properties": {
+            "grounding": "measured",
+            "command": [
+              "bash",
+              "scripts/check_mutants_memory_cap.sh",
+              "--self-test"
+            ],
+            "exit_code": 0,
+            "stdout_sha256": "8e4a486548a6da60c2af05a254fd63eb9f02dc701ddc248794d54b6f71173043",
+            "failure_scenario": "A guard change that loosens the scope end or the swap test would turn a row red.",
+            "precision_class": "advisory"
+          }
+        },
+        {
+          "ruleId": "bare_run_green",
+          "level": "note",
+          "message": {
+            "text": "The bare run at head exits 0 with four ok runs: mutants-nightly.yml:89, ci/sections.yml:3478 (scope), ci/sections.yml:3987, ci.yml:652."
+          },
+          "properties": {
+            "grounding": "measured",
+            "command": [
+              "bash",
+              "scripts/check_mutants_memory_cap.sh"
+            ],
+            "exit_code": 0,
+            "stdout_sha256": "f2c9b3795bfac857e42d2f2393ded2aab13ba4b6fd5047ce994601f603a3b95f",
+            "failure_scenario": "If the cuda scope lost its flags the bare run would turn rc 1.",
+            "precision_class": "advisory"
+          }
+        },
+        {
+          "ruleId": "duplication_scan",
+          "level": "note",
+          "message": {
+            "text": "pr_review_duplication_scan.sh at head: 1 needle, 0 hits across 1487 of 1487 sibling branches."
+          },
+          "properties": {
+            "grounding": "asserted",
+            "rationale": "scan --json output read: hits_total 0",
+            "failure_scenario": "A parallel guard under another name would escape a lexical scan; none was seen.",
+            "precision_class": "advisory"
+          }
+        },
+        {
+          "ruleId": "patch_id_binds",
+          "level": "note",
+          "message": {
+            "text": "Subject diff 358e9d4d1188..935d1ea114fc has patch-id 137982e615ef947c2aec8b3a13e4abaa6862dd63 under prpid_compute; the local origin/main ref was used without a fetch."
+          },
+          "properties": {
+            "grounding": "asserted",
+            "rationale": "prpid_compute run under bash -c on the review worktree at head",
+            "failure_scenario": "A stale local origin/main would bind the receipt to a different base than CI computes.",
+            "precision_class": "advisory"
+          }
+        }
+      ]
+    },
+    {
+      "tool": {
+        "driver": {
+          "name": "antigravity"
+        }
+      },
+      "invocations": [
+        {
+          "executionSuccessful": true,
+          "toolExecutionNotifications": []
+        }
+      ],
+      "results": []
+    }
+  ]
+}

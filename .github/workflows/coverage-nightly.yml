@@ -226,6 +226,32 @@ jobs:
           # ARMED, it just reports a value first.
           exit "$cov_rc"
 
+      # #4715: hand qwen-story-daily's pmat hunt a coverage file instead of letting
+      # `pmat query --coverage-gaps` re-derive coverage per query (>900 s each on
+      # intel, so the hunt timed the 30-min story job out). The JSON comes from the
+      # profiles `make coverage` just wrote; coverage.sha records the commit it was
+      # measured on, and the hunt uses the file ONLY when that sha is its own
+      # checkout - otherwise it reports coverage gaps not_measured and fails.
+      # continue-on-error: this export never changes what coverage-nightly accepts.
+      - name: Export coverage JSON for the qwen-story pmat hunt
+        if: always() && steps.cov.outcome != 'skipped'
+        continue-on-error: true
+        run: |
+          export PATH="$COV_TOOLS/bin:$HOME/.cargo/bin:$HOME/.local/bin:$PATH"
+          make coverage-json COV_TARGET_DIR=
+
+      - name: Upload coverage JSON
+        if: always() && hashFiles('target/coverage/coverage.json') != ''
+        continue-on-error: true
+        uses: actions/upload-artifact@v7
+        with:
+          name: coverage-json
+          path: |
+            target/coverage/coverage.json
+            target/coverage/coverage.sha
+          retention-days: 7
+          if-no-files-found: error
+
       # RQ-1's producer half (#4672): a receipt keyed by the commit measured -- sha, floor, pct, or
       # status not_measured with a reason. SHADOW: no gate reads it; the release-day read waits on
       # the RQ-1 ruling. Runs whatever the coverage verdict, so a red night still says why.

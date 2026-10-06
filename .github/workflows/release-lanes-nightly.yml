@@ -1,0 +1,155 @@
+# release-lanes-nightly — the nightly producers for the clean-room release lanes (#4720, 0702-P3).
+#
+# nightly_train.sh reads each lane below from this workflow's newest completed run on main's head:
+# the job named exactly the lane, success at attempt 1 = green, failure = red, skipped = not_measured.
+# Each lane is two jobs. `measure: <lane>` does the work (scripts/release/release_lanes.sh) and
+# writes verdict = green | red | not_measured. `<lane>` runs only on green or red and exits 1 on
+# red; on not_measured it is skipped, so a lane that could not run is never a pass. A measure job
+# that dies writes no verdict, and its lane job is skipped the same way.
+#
+#   cleanroom-gpu   b2-gpu.yml called at C on yoga. The release-day dispatch of b2-gpu is unchanged.
+#   cleanroom-cpu   paiml/infra clean-room.yml's `clean-room (aprender)` job that tested C. Its read
+#                   token is INFRA_ACTIONS_READ (paiml/infra, Actions: read), the secret of the
+#                   environment infra-read, which only main can use: a run from any other branch is
+#                   refused before the job starts, and the lane reads not_measured.
+#   publish-dryrun  rc_publish_gate.sh --verify on a worktree of C. not_measured while main's version
+#                   is at or below crates.io's newest: --verify at a published version is a false red.
+#
+# The judges and their case table are in the script; `case table` runs --self-test and --mutants,
+# and a measure job runs only when it is green: a judge that cannot refuse measures nothing.
+#
+# 23:17Z: scheduled runs fire late on this account. Over 14 nights the 20:30–23:17Z slots fired
+# 22:38–02:36Z, and the 00:00–01:00Z slots 3h33m–5h48m late, past the train's 04:45Z read. From
+# a 02:36Z start every job's timeout ends the run before 04:45Z; a run still going then (a queue
+# wait is not timed) reads not_measured. Infra's nightly clean-room ends ~02:55Z, so a run that
+# fires before it finds infra's run on C only when main has not moved since; else cleanroom-cpu
+# reads not_measured.
+name: release-lanes-nightly
+
+on:
+  schedule:
+    - cron: '17 23 * * *'
+  workflow_dispatch:
+
+permissions:
+  contents: read
+  actions: read   # measure: cleanroom-gpu reads this run's own job list
+
+concurrency:
+  group: release-lanes-nightly
+  cancel-in-progress: false
+
+jobs:
+  case-table:
+    name: case table (release_lanes.sh --self-test, --mutants)
+    # LITERAL list with discriminating labels (scripts/check_runner_labels.sh).
+    runs-on: [self-hosted, Linux, X64, clean-room]
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1  # v7.0.1
+        with:
+          fetch-depth: 1
+      - run: bash scripts/release/release_lanes.sh --self-test
+      - run: bash scripts/release/release_lanes.sh --mutants
+
+  # ------------------------------------------------------------------ cleanroom-gpu
+  b2-gpu-at-c:
+    name: b2-gpu at C
+    uses: ./.github/workflows/b2-gpu.yml
+    with:
+      ref: ${{ github.sha }}
+
+  measure-cleanroom-gpu:
+    name: 'measure: cleanroom-gpu'
+    needs: [case-table, b2-gpu-at-c]
+    if: always() && needs.case-table.result == 'success'
+    runs-on: [self-hosted, Linux, X64, clean-room]
+    timeout-minutes: 10
+    outputs:
+      verdict: ${{ steps.m.outputs.verdict }}
+      reason: ${{ steps.m.outputs.reason }}
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1  # v7.0.1
+        with:
+          fetch-depth: 1
+      - id: m
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: bash scripts/release/release_lanes.sh measure cleanroom-gpu
+
+  cleanroom-gpu:
+    name: cleanroom-gpu
+    needs: measure-cleanroom-gpu
+    if: always() && contains(fromJSON('["green","red"]'), needs.measure-cleanroom-gpu.outputs.verdict)
+    runs-on: [self-hosted, Linux, X64, clean-room]
+    timeout-minutes: 5
+    env:
+      VERDICT: ${{ needs.measure-cleanroom-gpu.outputs.verdict }}
+      REASON: ${{ needs.measure-cleanroom-gpu.outputs.reason }}
+    steps:
+      - run: echo "cleanroom-gpu $VERDICT — $REASON"
+      - run: test "$VERDICT" = green
+
+  # ------------------------------------------------------------------ cleanroom-cpu
+  measure-cleanroom-cpu:
+    name: 'measure: cleanroom-cpu'
+    needs: case-table
+    runs-on: [self-hosted, Linux, X64, clean-room]
+    environment: infra-read   # holds INFRA_ACTIONS_READ; only main may use it
+    timeout-minutes: 15
+    outputs:
+      verdict: ${{ steps.m.outputs.verdict }}
+      reason: ${{ steps.m.outputs.reason }}
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1  # v7.0.1
+        with:
+          fetch-depth: 1
+      - id: m
+        env:
+          INFRA_TOKEN: ${{ secrets.INFRA_ACTIONS_READ }}
+        run: bash scripts/release/release_lanes.sh measure cleanroom-cpu
+
+  cleanroom-cpu:
+    name: cleanroom-cpu
+    needs: measure-cleanroom-cpu
+    if: always() && contains(fromJSON('["green","red"]'), needs.measure-cleanroom-cpu.outputs.verdict)
+    runs-on: [self-hosted, Linux, X64, clean-room]
+    timeout-minutes: 5
+    env:
+      VERDICT: ${{ needs.measure-cleanroom-cpu.outputs.verdict }}
+      REASON: ${{ needs.measure-cleanroom-cpu.outputs.reason }}
+    steps:
+      - run: echo "cleanroom-cpu $VERDICT — $REASON"
+      - run: test "$VERDICT" = green
+
+  # ------------------------------------------------------------------ publish-dryrun
+  measure-publish-dryrun:
+    name: 'measure: publish-dryrun'
+    needs: case-table
+    runs-on: [self-hosted, Linux, X64, clean-room]
+    timeout-minutes: 80   # --verify measured 18 min warm (rc_publish_gate.sh header); ends before 04:45Z
+    outputs:
+      verdict: ${{ steps.m.outputs.verdict }}
+      reason: ${{ steps.m.outputs.reason }}
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1  # v7.0.1
+        with:
+          fetch-depth: 1
+      # C beside the checkout, in RUNNER_TEMP, as rc-cut.yml does: no cargo config is inherited
+      - name: A worktree of C
+        run: git worktree add --detach "$RUNNER_TEMP/lanes-c" "$GITHUB_SHA"
+      - id: m
+        run: bash scripts/release/release_lanes.sh measure publish-dryrun "$RUNNER_TEMP/lanes-c"
+
+  publish-dryrun:
+    name: publish-dryrun
+    needs: measure-publish-dryrun
+    if: always() && contains(fromJSON('["green","red"]'), needs.measure-publish-dryrun.outputs.verdict)
+    runs-on: [self-hosted, Linux, X64, clean-room]
+    timeout-minutes: 5
+    env:
+      VERDICT: ${{ needs.measure-publish-dryrun.outputs.verdict }}
+      REASON: ${{ needs.measure-publish-dryrun.outputs.reason }}
+    steps:
+      - run: echo "publish-dryrun $VERDICT — $REASON"
+      - run: test "$VERDICT" = green

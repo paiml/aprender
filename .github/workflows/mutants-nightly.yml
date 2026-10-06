@@ -10,6 +10,9 @@ on:
   # Chained, not scheduled (T44, #4686): this producer measures the night's
   # C that "Nightly pick" pinned at nightly/<night>, never main's head at
   # whatever hour GitHub got round to creating a scheduled run.
+  # infra#1468 wanted 03-05Z, the quietest PR hours, so the PR gpu job on the
+  # same runner waits least. The pick's 20:30Z cron is dispatched 4-7h late
+  # (coverage-nightly.yml), so this run starts at about 00:30-03:30Z.
   workflow_run:
     workflows: ["Nightly pick"]
     types: [completed]
@@ -26,8 +29,11 @@ concurrency:
 
 jobs:
   mutants:
-    runs-on: [self-hosted, Linux, clean-room]
-    timeout-minutes: 360
+    runs-on: [self-hosted, Linux, ARM64, gpu, docker] # infra#1468: no runner carries `mutants` yet; the ARM64 GPU docker pool, off the main CI pool (C100). Back to `mutants` when infra builds that pool. Guard: scripts/check_mutants_pool.sh
+    concurrency: # PP-19: the gpu runner is a perf host; serialise against every other consumer of it (check_perf_concurrency_groups.sh)
+      group: perf-gx10
+      cancel-in-progress: false
+    timeout-minutes: 180   # ends by 06:00Z, before PR traffic rises; a run cut off is red and the next night re-judges from the last success
     env:
       IMAGE: localhost:5000/sovereign-ci:stable
       MUTANTS_JOBS: ${{ vars.MUTANTS_NIGHTLY_JOBS || '8' }}
@@ -98,6 +104,7 @@ jobs:
         run: |
           set -euo pipefail
           docker run --rm \
+            --memory=16g --memory-swap=16g \
             -v "${GITHUB_WORKSPACE}:/workspace" \
             -w /workspace \
             -e MUTANTS_JOBS \
@@ -115,8 +122,9 @@ jobs:
                 }
               fi
               cargo mutants --version || { echo "::error::cargo-mutants not runnable after install"; exit 1; }
-              # the crates ci.yml workspace-test --excludes, derived from its nextest line (see ci.yml mutants)
-              EXCL=$(grep -m1 -E "^[[:space:]]+cargo nextest run --profile ci --workspace --lib" .github/workflows/ci.yml \
+              # the crates workspace-test --excludes, derived from its nextest line. That line moved from
+              # ci.yml into ci/sections.yml (#4655); reading the old file found nothing and failed every night.
+              EXCL=$(grep -m1 -E "^[[:space:]]+cargo nextest run --profile ci --workspace --lib" ci/sections.yml \
                 | grep -oE -- "--exclude [a-z0-9_-]+" | sed "s/^--exclude /--exclude-crate /" | tr "\n" " ")
               [ -n "$EXCL" ] || { echo "::error::no --exclude list found on the workspace-test nextest line"; exit 1; }
               # shellcheck disable=SC2086
