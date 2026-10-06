@@ -23,7 +23,7 @@ metadata:
   description: "LoRA target module selection"
 
 name: lora-target-selection
-version: "1.14.0"
+version: "1.15.0"
 scope: "crates/aprender-train/src/finetune/"
 
 description: |
