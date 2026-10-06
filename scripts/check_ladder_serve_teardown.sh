@@ -305,9 +305,14 @@ if [ "$SELF_TEST" -eq 1 ]; then
     echo "SELF-TEST FAIL: a bare fork TERMed at once never ran the EXIT trap in 12 fresh blocks of 1000 tries — the race row cannot see the defect"; exit 1
   fi
   # The parallel branch (until-hit=0) must itself see the defect and must itself say NM.
-  pp=$(race_fresh "$bare" 1000 4 0)
+  # up to 3 parallel calls (12 blocks, like the plant): one 4-block call reads zero ~0.6% of the time
+  for _try in 1 2 3; do
+    pp=$(race_fresh "$bare" 1000 4 0)
+    case "$pp" in ''|*[!0-9]*) break ;; esac
+    [ "$pp" -gt 0 ] && break
+  done
   case "$pp" in ''|*[!0-9]*) echo "SELF-TEST FAIL: parallel race_fresh on the bare fork printed '$pp', want a count"; exit 1 ;; esac
-  [ "$pp" -gt 0 ] || { echo "SELF-TEST FAIL: the parallel green branch read 0 hits on a bare fork in 4 blocks of 1000 — it cannot see the defect"; exit 1; }
+  [ "$pp" -gt 0 ] || { echo "SELF-TEST FAIL: the parallel green branch read 0 hits on a bare fork in 3 calls of 4 blocks of 1000 — it cannot see the defect"; exit 1; }
   pn=$(race_fresh 'this is ) ( not a function' 3 4 0)
   [ "$pn" = NM ] || { echo "SELF-TEST FAIL: parallel race_fresh on a garbage body printed '$pn', want NM (L25)"; exit 1; }
   # L25 rows: a probe that measures nothing must say NM, never "0 extra runs". Four ways to
