@@ -1,0 +1,184 @@
+{
+  "$schema": "https://docs.oasis-open.org/sarif/sarif/v2.1.0/errata01/os/schemas/sarif-schema-2.1.0.json",
+  "version": "2.1.0",
+  "runs": [
+    {
+      "tool": {
+        "driver": {
+          "name": "pmat"
+        }
+      },
+      "invocations": [
+        {
+          "executionSuccessful": true,
+          "toolExecutionNotifications": []
+        }
+      ],
+      "results": [
+        {
+          "ruleId": "no_reusable_prior_art",
+          "level": "note",
+          "message": {
+            "text": "pmat query over the head-built index for the nightly-train lane table, producer workflow and verdict returns 5 results, none a second lane-row pin the diff should have reused; the duplication scan searched 7 needles over 1529/1529 sibling branches and its single hit is this PR's own head branch."
+          },
+          "properties": {
+            "grounding": "measured",
+            "command": [
+              "pmat",
+              "query",
+              "nightly train lane row producer workflow verdict",
+              "--limit",
+              "5",
+              "--format",
+              "json"
+            ],
+            "exit_code": 0,
+            "stdout_sha256": "dbfa95e09a1cafc94a5f333e6032f5f00651ccbaf8a3bcdc7bc79475d0d70bf1",
+            "rationale": "The one scan hit, scripts/tests/models_lane_row_test.sh on origin/feat/4721-models-lane-row, is the PR under review.",
+            "failure_scenario": "If a lane-row test already existed this PR would add a drifting second copy; neither half of the search found one.",
+            "precision_class": "advisory"
+          }
+        },
+        {
+          "ruleId": "no_satd_introduced",
+          "level": "note",
+          "message": {
+            "text": "The diff adds 0 TODO, FIXME, HACK or XXX markers."
+          },
+          "properties": {
+            "grounding": "measured",
+            "command": [
+              "sh",
+              "-c",
+              "git diff BASE HEAD | grep -E \"^[+]\" | grep -ciE \"TODO|FIXME|HACK|XXX\""
+            ],
+            "exit_code": 0,
+            "stdout_sha256": "9a271f2a916b0b6ee6cecb2426f0b3206ef074578be55d9bc94f6f3fe3ab86aa",
+            "rationale": "Counted on added lines only.",
+            "failure_scenario": "A new debt marker would ship without a ticket; there is none.",
+            "precision_class": "advisory"
+          }
+        },
+        {
+          "ruleId": "bashrs_new_test_5_warnings_0_errors",
+          "level": "note",
+          "message": {
+            "text": "bashrs lint of the new test reports 0 errors and 5 warnings (SC2068 on a quoted \"$@\", SC2086, SC2297, PERF002, REL001); the repo gate check_bashrs_gate.sh, which counts SEC, DET and IDEM errors, prints PASS."
+          },
+          "properties": {
+            "grounding": "measured",
+            "command": [
+              "bashrs",
+              "lint",
+              "scripts/tests/models_lane_row_test.sh"
+            ],
+            "exit_code": 1,
+            "stdout_sha256": "6dc0f19cf33ecc47958c12f72783c4b7c78e70ea787da35392824dac7cc70071",
+            "rationale": "Exit 1 is bashrs's code for warnings present. SC2068 at line 104 is on a line that already quotes \"$@\", so it looks like a false positive; the rest are style.",
+            "failure_scenario": "Warnings could hide a fragile pattern in a CI-run test; none changes a verdict here, and the repo gate is green.",
+            "precision_class": "advisory"
+          }
+        }
+      ]
+    },
+    {
+      "tool": {
+        "driver": {
+          "name": "cargo-mutants"
+        }
+      },
+      "invocations": [
+        {
+          "executionSuccessful": true,
+          "toolExecutionNotifications": []
+        }
+      ],
+      "results": [
+        {
+          "ruleId": "row_mutants_5_of_5_killed_by_behaviour_rows",
+          "level": "note",
+          "message": {
+            "text": "All 5 planted row mutants (unanchored job pattern, dispatch counted as a night, wrong producer, info lane, no producer) are killed, and each is killed by a verdict row, not by the train crashing: with m1, m3 and m5 replayed by hand the train still ran and printed a wrong lane verdict (m1 read a failed relay as red, m3 and m5 read not_measured where green was owed)."
+          },
+          "properties": {
+            "grounding": "measured",
+            "command": [
+              "bash",
+              "scripts/tests/models_lane_row_test.sh",
+              "--mutants"
+            ],
+            "exit_code": 0,
+            "stdout_sha256": "e2ed9303a43581d66070bd4d2c4d478cc1b2c12bee28dbe797a768d298ce7e3d",
+            "rationale": "The case table also passes 13/13 on the real row (bash scripts/tests/models_lane_row_test.sh, exit 0, stdout sha256 b299918eb1d7696a37cadc498db3caf2e91bdeb4ed5d1f5a863ab300ca480c1b), and nightly_train.sh --self-test exits 0 (sha256 7b2936f37dbffe23bbfc5c1b6a54c4fc3355720829054b6e5dbaf56e9be87b10).",
+            "failure_scenario": "A mutant that only crashed the train would be counted killed without any row being proved; the lane() helper does turn a crash into BROKE, and none of the 5 mutants relies on it.",
+            "precision_class": "advisory"
+          }
+        },
+        {
+          "ruleId": "lane_helper_counts_a_crash_as_a_kill",
+          "level": "note",
+          "message": {
+            "text": "lane() reports BROKE when the train exits non-zero, so a future mutant that crashes the train would count as killed. The five committed mutants do not do this."
+          },
+          "properties": {
+            "grounding": "asserted",
+            "rationale": "Reading lane() at scripts/tests/models_lane_row_test.sh:81-87; the same advisory the train's own mutants carry.",
+            "failure_scenario": "A later mutant that breaks the train's parse at runtime would be counted as a kill while proving no row.",
+            "precision_class": "advisory"
+          }
+        }
+      ]
+    },
+    {
+      "tool": {
+        "driver": {
+          "name": "antigravity"
+        }
+      },
+      "invocations": [
+        {
+          "executionSuccessful": true,
+          "toolExecutionNotifications": []
+        }
+      ],
+      "results": [
+        {
+          "ruleId": "bashrs_lint_failure",
+          "level": "note",
+          "message": {
+            "text": "agy (gemini-3.1-pro-high): the new test is not bashrs lint clean (exit 1, REL001 and SC2068)."
+          },
+          "properties": {
+            "grounding": "measured",
+            "command": [
+              "bashrs",
+              "lint",
+              "scripts/tests/models_lane_row_test.sh"
+            ],
+            "exit_code": 1,
+            "stdout_sha256": "6dc0f19cf33ecc47958c12f72783c4b7c78e70ea787da35392824dac7cc70071",
+            "rationale": "Re-run by the primary: 0 errors, 5 warnings; the repo bashrs gate prints PASS.",
+            "failure_scenario": "Fragile shell patterns could degrade CI reliability; none changes a verdict here.",
+            "precision_class": "advisory"
+          }
+        },
+        {
+          "ruleId": "self_test_order",
+          "level": "note",
+          "message": {
+            "text": "agy (gemini-3.1-pro-high): the workflow runs the row test before its --mutants self-test. The primary does not count this as a defect: the step already runs the train's --self-test before --mutants in the same order and all four commands run under the step's default fail-fast shell."
+          },
+          "properties": {
+            "grounding": "cited",
+            "source": ".github/workflows/nightly-train.yml",
+            "excerpt": "bash scripts/tests/models_lane_row_test.sh",
+            "excerpt_sha256": "147d94ba4aca8ea31644fb02eab353d0ac32bf3577e9682df9effe91a3d34769",
+            "rationale": "The table is a self-test of the row; --mutants then proves the table can fail.",
+            "failure_scenario": "If the table passed vacuously before --mutants ran, the mutants run in the same step would still go red; the step fails on either.",
+            "precision_class": "advisory"
+          }
+        }
+      ]
+    }
+  ]
+}
