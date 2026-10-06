@@ -47,6 +47,15 @@ GATING_PREFIXES="('SEC', 'DET', 'IDEM')"
 
 strip_ansi() { sed 's/\x1b\[[0-9;]*m//g'; }
 
+# receipt_ok <stderr-file> <count>: 0 iff bashrs's stderr carries "Linted <count> file(s)".
+# Capture, then match a here-string: under pipefail `strip_ansi | grep -q` lets grep exit on
+# its first match, sed takes SIGPIPE on its next write, and a present receipt reads as missing
+# (scripts/check_no_pipe_into_grep_q.sh).
+receipt_ok() {
+  local receipt; receipt=$(strip_ansi < "$1")
+  grep -q "Linted $2 file(s)" <<< "$receipt"
+}
+
 # classify <json-file>: first line "GATING SOFT OTHER RULE..." then one "file:line CODE" per gating finding
 classify() {
   python3 - "$1" <<'PY'
@@ -112,8 +121,9 @@ gate() {
   fi
   expect=$((n + 1))
   bashrs lint --no-ignore --level error --format json "${args[@]}" "$d/clean-sentinel.sh" > "$d/out.json" 2> "$d/out.err" || rc=$?
-  if ! strip_ansi < "$d/out.err" | grep -q "Linted $expect file(s)"; then
-    echo "bashrs-gate: ENV receipt mismatch - expected 'Linted $expect file(s)', bashrs said: $(strip_ansi < "$d/out.err" | grep -m1 Linted || echo '<no receipt>') (exit=$rc)" >&2
+  if ! receipt_ok "$d/out.err" "$expect"; then
+    local receipt; receipt=$(strip_ansi < "$d/out.err")
+    echo "bashrs-gate: ENV receipt mismatch - expected 'Linted $expect file(s)', bashrs said: $(grep -m1 Linted <<< "$receipt" || echo '<no receipt>') (exit=$rc)" >&2
     return 2
   fi
   classify "$d/out.json" > "$d/class.txt"
@@ -178,7 +188,7 @@ JSON
   printf '#!/bin/sh\necho fine\n' > "$fx/scripts/good.sh"
   git -C "$fx" add -A && git -C "$fx" -c user.name=t -c user.email=t@t -c core.hooksPath=/dev/null commit -qm fixture
   rc=0; out=$(gate "$fx" 2>&1) || rc=$?
-  { [ "$rc" -eq 1 ] && printf '%s\n' "$out" | grep -q '^scripts/bad.sh:5 SEC010$'; } && ok "must-RED: fixture repo with a SEC010 -> exit 1, 'scripts/bad.sh:5 SEC010'" || bad "must-RED: exit=$rc out=$(printf '%s' "$out" | tail -n2 | tr '\n' '|')"
+  { [ "$rc" -eq 1 ] && grep -q '^scripts/bad.sh:5 SEC010$' <<< "$out"; } && ok "must-RED: fixture repo with a SEC010 -> exit 1, 'scripts/bad.sh:5 SEC010'" || bad "must-RED: exit=$rc out=$(printf '%s' "$out" | tail -n2 | tr '\n' '|')"
   # the fixed twin carries #3198's validation: absolute and free of '..' before first use
   printf '%s\n' '#!/usr/bin/env bash' 'set -euo pipefail' 'REPO="${REPO_ROOT:-}"' \
     'while [ $# -gt 0 ]; do case "$1" in --repo) REPO="$2"; shift;; esac; shift; done' \
@@ -186,14 +196,26 @@ JSON
     'rc=0; ( cd "$REPO" && timeout 60 cargo test --no-run ) > out.log 2>&1 || rc=$?' 'echo "$rc"' > "$fx/scripts/bad.sh"
   git -C "$fx" add -A && git -C "$fx" -c user.name=t -c user.email=t@t -c core.hooksPath=/dev/null commit -qm fixed
   rc=0; out=$(gate "$fx" 2>&1) || rc=$?
-  { [ "$rc" -eq 0 ] && printf '%s\n' "$out" | grep -q 'bashrs-gate: PASS 2 file(s)'; } && ok "must-GREEN: the validated fixture -> exit 0 over 2 files" || bad "must-GREEN: exit=$rc out=$(printf '%s' "$out" | tail -n1)"
+  { [ "$rc" -eq 0 ] && grep -q 'bashrs-gate: PASS 2 file(s)' <<< "$out"; } && ok "must-GREEN: the validated fixture -> exit 0 over 2 files" || bad "must-GREEN: exit=$rc out=$(printf '%s' "$out" | tail -n1)"
 
   # 5. vacuity: an empty surface is ENV (2), never a pass; a gitignored script is named
   fx2="$d/fx2"; mkdir -p "$fx2"; git init -q "$fx2"
   printf 'hidden.sh\n' > "$fx2/.gitignore"; printf '#!/bin/sh\ncd "$1"\n' > "$fx2/hidden.sh"
   git -C "$fx2" add -A && git -C "$fx2" -c user.name=t -c user.email=t@t -c core.hooksPath=/dev/null commit -qm v
   rc=0; out=$(gate "$fx2" 2>&1) || rc=$?
-  { [ "$rc" -eq 2 ] && printf '%s' "$out" | grep -q 'gitignored: hidden.sh'; } && ok "vacuity: empty surface with a gitignored script -> exit 2, names it" || bad "vacuity: exit=$rc out=$out"
+  { [ "$rc" -eq 2 ] && grep -q 'gitignored: hidden.sh' <<< "$out"; } && ok "vacuity: empty surface with a gitignored script -> exit 2, names it" || bad "vacuity: exit=$rc out=$out"
+
+  # 6. receipt positive control (FLAKE-0, #4780): the receipt on the FIRST line of a 100 KiB stderr
+  #    must be found 200/200, and a wrong count refused 200/200. Through `strip_ansi | grep -q` the
+  #    first set loses runs to SIGPIPE under pipefail, which turned a clean lint into ENV.
+  { printf '\033[1mLinted 7 file(s)\033[0m\n'; head -c 102400 /dev/zero | tr '\0' 'x' | fold -w 100; } > "$d/big.err"
+  local i hit=0 miss=0
+  for i in $(seq 1 200); do
+    receipt_ok "$d/big.err" 7 && hit=$((hit + 1))
+    receipt_ok "$d/big.err" 8 || miss=$((miss + 1))
+  done
+  [ "$hit" -eq 200 ] && ok "receipt on line 1 of 100 KiB found 200/200" || bad "receipt on line 1 of 100 KiB found $hit/200"
+  [ "$miss" -eq 200 ] && ok "a wrong count refused 200/200" || bad "a wrong count refused $miss/200"
 
   rm -rf "${d:?}"
   if [ "$fail" -eq 0 ]; then echo "SELF-TEST PASS"; return 0; fi
