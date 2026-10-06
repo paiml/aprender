@@ -141,7 +141,7 @@ race_extra_runs() {
     {
       printf 'set -uo pipefail\nTMP=%q\nLOG=%q\ntrap %s EXIT\n' "$TMP" "$log" "'echo ran >> \"\$LOG\"'"
       declare -f wait_pidfile; printf '%s\n' "$body"
-      printf 'f() { idle_child || exit 3; td=$( kill -TERM "$IDLE_PID"; echo x ); }\nf\nexit 0\n'
+      printf 'f() { idle_child || exit 3; td=$( kill -TERM "$IDLE_PID" && echo x ); [ "$td" = x ] || exit 4; }\nf\nexit 0\n'
     } > "$TMP/race.sh" 2>/dev/null || { echo NM; return 0; }
     bash "$TMP/race.sh" >/dev/null 2>&1 || { echo NM; return 0; }
     [ "$(wc -l < "$log")" -ge 1 ] || { echo NM; return 0; }
@@ -290,25 +290,26 @@ if [ "$SELF_TEST" -eq 1 ]; then
   if [ "$rp" -eq 0 ]; then
     echo "SELF-TEST FAIL: a bare fork TERMed at once never ran the EXIT trap in 12 fresh blocks of 1000 tries — the race row cannot see the defect"; exit 1
   fi
-  # L25 rows: a probe that measures nothing must say NM, never "0 extra runs". Three ways to
-  # measure nothing: a body that does not parse, an idle_child that fails, a missing TMP.
-  for nmcase in garbage rc2 notmp; do
+  # L25 rows: a probe that measures nothing must say NM, never "0 extra runs". Four ways to
+  # measure nothing: a body that does not parse, an idle_child that fails, a missing TMP, a TERM that reaches nothing.
+  for nmcase in garbage rc2 notmp nokill; do
     case "$nmcase" in
       garbage) got=$(race_extra_runs 'this is ) ( not a function' 3) ;;
       rc2) got=$(race_extra_runs 'idle_child() { return 2; }' 3) ;;
+      nokill) got=$(race_extra_runs 'idle_child() { IDLE_PID=999999999; }' 3) ;;
       notmp) got=$( TMP=/nonexistent/x; race_extra_runs "$ibody" 3 ) ;;
     esac
     [ "$got" = NM ] || { echo "SELF-TEST FAIL: race probe on '$nmcase' printed '$got', want NM (L25: measured nothing must not read clean)"; exit 1; }
   done
-  echo "SELF-TEST OK: all three planted regressions turned this RED, and three measure-nothing probes read NM"; exit 0
+  echo "SELF-TEST OK: all three planted regressions turned this RED, and four measure-nothing probes read NM"; exit 0
 fi
 
 rc=0; nm=0
 # race: TERM a just-started idle child 100 times; the EXIT trap must run only in this shell
-race_bad=$(race_fresh "$(declare -f idle_child)" 250 4 0)
+race_bad=$(race_fresh "$(declare -f idle_child)" 1000 4 0)
 if [ "$race_bad" = NM ]; then echo "  NOT_MEASURED race: a try sent no TERM or logged no trap run, so nothing here is evidence"; nm=1
-elif [ "$race_bad" -ne 0 ]; then echo "  FAIL race: idle_child let a forked copy run the EXIT trap in $race_bad/1000 tries"; rc=1
-else echo "  ok   race: 1000 TERMs (4 fresh blocks of 250) of a just-started idle child, the EXIT trap ran once each"; fi
+elif [ "$race_bad" -ne 0 ]; then echo "  FAIL race: idle_child let a forked copy run the EXIT trap in $race_bad/4000 tries"; rc=1
+else echo "  ok   race: 4000 TERMs (4 fresh blocks of 1000, >=99% to catch the plant's defect) of a just-started idle child, the EXIT trap ran once each"; fi
 run_cases "$body" || rc=1
 run_wait_cases "$wbody" || rc=1
 [ "$nm" -eq 0 ] || { echo "NOT_MEASURED: a row measured nothing; this is not a pass"; exit 2; }
