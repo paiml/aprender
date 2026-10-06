@@ -865,6 +865,21 @@ mod norm_width_tests {
         let f = crate::gguf::GGUFTransformer::from_gguf(&model, &data).err();
         assert!(f.is_some_and(|e| e.to_string().contains("output_norm.weight")));
     }
+
+    /// `apr serve`, `apr chat` and `apr eval` build their base through
+    /// `Qwen35Model::create_base_model`, not `from_gguf`; it must refuse too.
+    #[test]
+    fn the_qwen35_base_loader_refuses_a_half_width_output_norm() {
+        use crate::gguf::forward_qwen35::Qwen35Model;
+        let good = build_minimal_llama_gguf(100, 64, 256, 4, 4);
+        let model = GGUFModel::from_bytes(&good).expect("parse");
+        Qwen35Model::create_base_model(&model, &good).expect("well-formed base loads");
+
+        let bad = build_minimal_llama_gguf_output_norm_width(100, 64, 256, 4, 4, 32);
+        let model = GGUFModel::from_bytes(&bad).expect("parse");
+        let err = Qwen35Model::create_base_model(&model, &bad).err();
+        assert!(err.is_some_and(|e| e.to_string().contains("output_norm.weight")));
+    }
 }
 
 #[cfg(test)]
