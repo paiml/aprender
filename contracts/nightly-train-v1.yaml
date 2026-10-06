@@ -2,7 +2,7 @@ metadata:
   version: 1.0.0
   created: '2026-10-04'
   author: PAIML Engineering
-  description: "BLD-002 row R4, the nightly evidence train: one entry point judges one commit J of main from the results its lanes' nightly producers recorded for J (a plain producer by the run on J; a producer chained from the nightly pick by its workflow_run runs only, and only when the pick of the night the run was created in, and of the night before for a run created 12:00Z-17:59Z, is J), and prints one line, RELEASABLE H=<J> or NOT RELEASABLE: <lane>, <run>. scripts/release/nightly_train.sh is the judge. A lane that cannot be read prints not_measured, never pass. J is the head C unless the head lacks a measured run from some verdict producer; then J is the newest commit at most 6 behind C on which every verdict producer has a green or red run, and the line adds (judged J, head C, lag k commits); none such means J = C. A night with no pick ref is not_measured for a chained lane; a pick read that failed is not_measured for every lane and never falls back to that. Report-only: it blocks nothing and no release script reads it."
+  description: "BLD-002 row R4, the nightly evidence train: one entry point judges one commit J of main from the results its lanes' nightly producers recorded for J (a plain producer by the run on J; a producer chained from the nightly pick by its workflow_run runs only, and only when the pick of the night of the newest Nightly pick run created at or before it, and of the night before for a run created 12:00Z-17:59Z, is J; a rerun keeps its created_at, so an older pick run updated after that one, or a pick-run list that was not read, is not_measured), and prints one line, RELEASABLE H=<J> or NOT RELEASABLE: <lane>, <run>. scripts/release/nightly_train.sh is the judge. A lane that cannot be read prints not_measured, never pass. J is the head C unless the head lacks a measured run from some verdict producer; then J is the newest commit at most 6 behind C on which every verdict producer has a green or red run, and the line adds (judged J, head C, lag k commits); none such means J = C. A night with no pick ref is not_measured for a chained lane; a pick read that failed is not_measured for every lane and never falls back to that. Report-only: it blocks nothing and no release script reads it."
   kind: pattern
   references:
     - "scripts/release/nightly_train.sh — the judge, its case table (--self-test) and its planted mutants (--mutants)"
@@ -28,7 +28,7 @@ equations:
       - "a run on another commit never stands for J; all lanes are judged on the one J, never a per-lane mix"
       - "an unfinished run, an unread attempt or a failed read is not_measured, never green"
       - "a retried success is red: a retried green is not a green"
-      - "a run whose matched jobs were skipped, cancelled or neutral, or fewer than the lane requires, measured nothing, and the next older run for C is taken; only the matched jobs decide, the run's own conclusion is not read"
+      - "a run whose matched jobs were skipped, cancelled or neutral, or fewer than the lane requires, measured nothing, and the next older run for J is taken; only the matched jobs decide, the run's own conclusion is not read"
 
   verdict_line:
     formula: "RELEASABLE H=J iff every verdict lane is green; else NOT RELEASABLE: L, R where L is the first failing verdict lane, red before not_measured, then by hours lost, then table order, and R its run id or not_measured"

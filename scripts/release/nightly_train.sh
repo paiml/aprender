@@ -19,11 +19,12 @@
 #   its workflow_run runs only (scripts/release/check_producers_chain.sh P6 keeps this table in step with the
 #   triggers). Such a run is filed under main's head when the pick finished, while its tree is the night's pick
 #   (nightly_c_checkout.sh), and the two differ when a merge lands while the pick runs or a pick is dispatched again
-#   later (it keeps the older C). So the run counts only when the pick of its night, refs/heads/nightly/<N> for the
-#   window [N 12:00Z, N+1 12:00Z) that holds the run's creation time, is C; an unread pick is not_measured. The
-#   producer takes its night from the pick's start, this check from the run's creation, so a run created 12:00Z-17:59Z
-#   also needs the night before to be C (the scheduled pick fires at 20:30Z). Limit: a pick that starts before noon
-#   and finishes after 18:00Z is judged by the later night. A lane is
+#   later (it keeps the older C). So the run counts only when the pick of its night is C. Its night is the night of
+#   the newest Nightly pick run created at or before it, refs/heads/nightly/<N> for the window [N 12:00Z, N+1 12:00Z)
+#   that holds that pick run's created_at: a pick rerun the next evening keeps its created_at and its producers build
+#   the old night's pick, so the run's own creation time names the wrong night. An older pick run updated after the
+#   newest one (a rerun that may be what chained the run), an unread pick or an unread pick-run list is not_measured.
+#   A run created 12:00Z-17:59Z also needs the night before to be C (the scheduled pick fires at 20:30Z). A lane is
 #     green         the newest completed run of its producer on C ran every matched job to success, at attempt 1;
 #     red           a matched job ended failure, timed_out or startup_failure, or the run succeeded only at attempt 2
 #                   or later (a retried green is not a green: FLOW-003 G4, CI retries 2 -> 0);
@@ -129,11 +130,12 @@ evaluate() {
         printf '%sT12:00:00Z\t%sT12:00:00Z\t%s\n' "$n" "$e" "$o"
     done < "$2/picks.tsv" > "$2/pickwin.tsv"
     [ -f "$2/rank.tsv" ] || : > "$2/rank.tsv"
-    awk -F '\t' -v OFS='\t' -v C="$c" -v RD="${rd:-failed: no read status}" -v MODE="$3" -v HIST="$2/hist_redage.tsv" -v JOUT="$2/judged" -v MAXLAG="$MAX_LAG" '
+    awk -F '\t' -v OFS='\t' -v C="$c" -v PRF="$2/pickruns.tsv" -v RD="${rd:-failed: no read status}" -v MODE="$3" -v HIST="$2/hist_redage.tsv" -v JOUT="$2/judged" -v MAXLAG="$MAX_LAG" '
     FILENAME == ARGV[1] { split($0, a, ";"); n++; L[n] = a[1]; K[n] = a[2]; CK[n] = a[3]; WF[n] = a[4]; EV[n] = a[5]; RE[n] = a[6]; NEED[n] = (a[7] ~ /^[0-9]+$/ ? a[7] + 0 : 1); next }
     FILENAME == ARGV[2] { AT[$1] = $2; next }
     FILENAME == ARGV[3] { np++; PS[np] = $1; PE[np] = $2; PO[np] = $3; next }
     FILENAME == ARGV[4] { RKO[$1 + 0] = $2; NRK++; next }
+    FILENAME == PRF { npr++; PRC[npr] = "" $1; PRU[npr] = "" $2; next }
     {
         key = $3 SUBSEP $10 SUBSEP $13
         if (key in seen) next
@@ -146,6 +148,17 @@ evaluate() {
     function nightk(t,    k) { for (k = 1; k <= np; k++) if (t >= PS[k] && t < PE[k]) return k; return 0 }
     function nightc(t,    k) { k = nightk(t); return (k ? PO[k] : "") }
     function prevc(t,    k, j) { k = nightk(t); if (!k) return ""; for (j = 1; j <= np; j++) if (PE[j] == PS[k]) return PO[j]; return "" }
+    # chainc(t) -> the C a chained run created at t measured: the night of the newest Nightly pick run created at or before t
+    #   (a producer reads the created_at of its pick run, which a rerun keeps, so a rerun the next evening is the old night);
+    #   "" with CWHY when no pick run is read at or before t, or an older pick run was updated after that one was created
+    #   (a rerun of it may have fired these producers: which pick they measured is unknown, so it is not_measured)
+    function chainc(t,    k, b) {
+        b = ""; CWHY = "no pick for that night"
+        for (k = 1; k <= npr; k++) if (PRC[k] <= t && b < PRC[k]) b = "" PRC[k]
+        if (b == "") { CWHY = "no pick run seen at or before it"; return "" }
+        for (k = 1; k <= npr; k++) if (b > PRC[k] && b < PRU[k]) { CWHY = "the pick run of " PRC[k] " was rerun after " b; return "" }
+        return nightc(b)
+    }
     # lane state of run r for lane i: green | red | pending | void; sets WHY, ST, EN, DUP
     function lst(i, r,    k, b, fb, nm, pend, bad, ok, tot) {
         split("", b); split("", fb); ST = ""; EN = ""; DUP = 0; WHY = ""
@@ -194,7 +207,7 @@ evaluate() {
                     r = RID[q]
                     if (RW[r] == WF[i] && REV[r] ~ EV[i] && RBR[r] == "main") {
                         # a chained run stands for the pick of its night, a plain run for its own commit (see the lane loop below)
-                        if (EV[i] == "^workflow_run$") { hm = nightc(RC[r]); if (substr(RC[r], 12, 2) >= "12" && substr(RC[r], 12, 2) < "18" && prevc(RC[r]) != hm) hm = "" }
+                        if (EV[i] == "^workflow_run$") { hm = chainc(RC[r]); if (substr(RC[r], 12, 2) >= "12" && substr(RC[r], 12, 2) < "18" && prevc(RC[r]) != hm) hm = "" }
                         else hm = RH[r]
                         s = lst(i, r); if (hm != "" && (s == "green" || s == "red")) HAS[hm, i] = 1 }
                 }
@@ -226,7 +239,7 @@ evaluate() {
                 #   but its tree is the pick of its night (nightly_c_checkout.sh), so it stands for that pick and for no other commit:
                 #   it counts only when that pick is J (#4798; a re-dispatched pick keeps an older C and still fires with the newer head)
                 if (EV[i] != "^workflow_run$") { if (RH[r] != J) { if (other == "") other = r " on " substr(RH[r], 1, 10); continue } }
-                else if ((pc = nightc(RC[r])) != J) { if (other == "") other = r " measured the pick " (pc == "" ? "no pick for that night" : substr(pc, 1, 10)); continue }
+                else if ((pc = chainc(RC[r])) != J) { if (other == "") other = r " measured the pick " (pc == "" ? CWHY : substr(pc, 1, 10)); continue }
                 # a run created 12:00Z-17:59Z may come from a pick that started before noon: the night before must be J too
                 if (EV[i] == "^workflow_run$" && substr(RC[r], 12, 2) >= "12" && substr(RC[r], 12, 2) < "18" && (pc = prevc(RC[r])) != J) { if (other == "") other = r " may have measured the pick " (pc == "" ? "no pick for that night" : substr(pc, 1, 10)); continue }
                 if (pick == "" && s != "void") { pick = r; pst = s; pwhy = WHY; pS = ST; pE = EN; pD = DUP }
@@ -256,7 +269,7 @@ evaluate() {
             if (att > 1) out(i, "red", pick, att, "success only at attempt " att ": a retried green is not a green")
             else out(i, "green", pick, att, "")
         }
-    }' <(printf '%s\n' "$1") "$2/attempts.tsv" "$2/pickwin.tsv" "$2/rank.tsv" "$2/runs.tsv"
+    }' <(printf '%s\n' "$1") "$2/attempts.tsv" "$2/pickwin.tsv" "$2/rank.tsv" "$2/pickruns.tsv" "$2/runs.tsv"
 }
 # hours LANESOUT REDAGE_OUTPUT_FILE -> lane<TAB>hours lost (2 decimals) for every lane red_age measured
 hours() {
@@ -318,9 +331,12 @@ gql_query() {
         split("\n") | map(select(length > 0)) as $want
         | ($wf | first | .workflows | map(select(.path as $x | $want | index($x))) ) as $hit
         | if ($hit | length) != ($want | length) then error("producer workflow missing from the list") else . end
+        | ($wf | first | .workflows | map(select(.path == ".github/workflows/nightly-pick.yml")) | first) as $pk
+        | if $pk == null then error("the Nightly pick workflow is missing from the list") else . end
         | ($repo | split("/")) as $own
         | "query { repository(owner: \"\($own | first)\", name: \"\($own | last)\") { defaultBranchRef { name target { ... on Commit { oid tree { oid } statusCheckRollup { contexts(first: 100) { pageInfo { hasNextPage } nodes { ... on CheckRun { name status conclusion startedAt completedAt checkSuite { status conclusion branch { name } workflowRun { databaseId event createdAt workflow { id } } } } } } } history(first: \($hn)) { nodes { oid statusCheckRollup { contexts(first: 100) { pageInfo { hasNextPage } nodes { ... on CheckRun { name status conclusion startedAt completedAt checkSuite { status conclusion branch { name } workflowRun { databaseId event createdAt workflow { id } } } } } } } } } } } nightly: refs(refPrefix: \"refs/heads/nightly/\", first: 40, orderBy: {field: ALPHABETICAL, direction: DESC}) { nodes { name target { oid } } } } } "
-          + ([$hit | to_entries[] | "w\(.key): node(id: \"\(.value.node_id)\") { ... on Workflow { id runs(first: 12) { nodes { databaseId createdAt event checkSuite { status conclusion branch { name } commit { oid } checkRuns(first: 100, filterBy: {checkType: ALL}) { pageInfo { hasNextPage } nodes { name status conclusion startedAt completedAt } } } } } } }"] | join(" ")) + " }"' 2>/dev/null
+          + ([$hit | to_entries[] | "w\(.key): node(id: \"\(.value.node_id)\") { ... on Workflow { id runs(first: 12) { nodes { databaseId createdAt event checkSuite { status conclusion branch { name } commit { oid } checkRuns(first: 100, filterBy: {checkType: ALL}) { pageInfo { hasNextPage } nodes { name status conclusion startedAt completedAt } } } } } } }"] | join(" "))
+          + " pk: node(id: \"\($pk.node_id)\") { ... on Workflow { runs(first: 20) { nodes { createdAt updatedAt } } } } }"' 2>/dev/null
 }
 # picks_read GQLJSON PICKS PICKFAIL -> PICKS (night<TAB>C), and PICKFAIL empty when the refs were read. An absent ref is a row
 #   missing from a good read (PICKFAIL stays empty: the chained lane falls to c310's "no pick for that night"); a response whose
@@ -329,6 +345,14 @@ picks_read() {
     : > "$3"
     if jq -e '(.data.repository.nightly.nodes | type) == "array"' "$1" > /dev/null 2>&1 && picks_of "$1" > "$2" 2>/dev/null; then :
     else : > "$2"; printf 'the nightly pick refs did not parse\n' > "$3"; fi
+}
+# pickruns_read GQLJSON PICKRUNS PICKFAIL -> PICKRUNS (created_at<TAB>updated_at of each Nightly pick run read). A chained run
+#   is the night of the newest pick run created at or before it; a run list that is not an array is a failed read, written
+#   to PICKFAIL: every lane is not_measured, as for the refs
+pickruns_read() {
+    jq -e '(.data.pk.runs.nodes | type) == "array"' "$1" > /dev/null 2>&1 && jq -r '.data.pk.runs.nodes[] | select((.createdAt | type) == "string" and (.updatedAt | type) == "string") | [.createdAt, .updatedAt] | @tsv' "$1" > "$2" 2>/dev/null && return 0
+    printf '' > "$2"
+    printf 'the Nightly pick runs did not parse\n' > "$3"
 }
 # picks_of GQLJSON -> night<TAB>C for each refs/heads/nightly/<YYYY-MM-DD> the query returned; other names are dropped
 picks_of() { jq -r '(.data.repository.nightly.nodes // [])[] | select(.name | test("^[0-9]{4}-[0-9]{2}-[0-9]{2}$")) | [.name, .target.oid] | @tsv' "$1"; }
@@ -373,7 +397,7 @@ rank_rows() {
 #   is recorded in RAW/read and makes every producer lane not_measured
 fetch() {
     local raw="$1" cache="$2" lim rem fl hdr st q a ids r
-    printf 'failed: not read\n' > "$raw/read"; : > "$raw/C"; : > "$raw/tree"; : > "$raw/runs.tsv"; : > "$raw/attempts.tsv"; : > "$raw/picks.tsv"; : > "$raw/rank.tsv"; : > "$raw/pickfail"
+    printf 'failed: not read\n' > "$raw/read"; : > "$raw/C"; : > "$raw/tree"; : > "$raw/runs.tsv"; : > "$raw/attempts.tsv"; : > "$raw/picks.tsv"; : > "$raw/rank.tsv"; : > "$raw/pickfail"; : > "$raw/pickruns.tsv"
     read -r lim rem <<< "$(gh api rate_limit --jq '"\(.resources.core.limit) \(.resources.core.remaining)"' 2>/dev/null)"
     case "$lim:$rem" in *[!0-9:]*|:*|*:) printf 'failed: rate_limit unreadable\n' > "$raw/read"; return 0 ;; esac
     # the floor is a fifth of the token's own hourly limit, capped at RATE_FLOOR: the fleet PAT (5000) keeps its 1000
@@ -404,6 +428,7 @@ fetch() {
     #   "no pick for that night" (the ref is absent: a row missing from a good read) is not "pick read failed" (the refs came
     #   back unusable): the second is written to pickfail and judges every lane not_measured, it never falls back to the first
     picks_read "$raw/graphql.json" "$raw/picks.tsv" "$raw/pickfail"
+    pickruns_read "$raw/graphql.json" "$raw/pickruns.tsv" "$raw/pickfail"
     grep -q -E '^[0-9a-f]{40}$' "$raw/C" || { printf 'failed: no head of main in the response\n' > "$raw/read"; return 0; }
     normalize "$raw/graphql.json" "$raw/workflows.json" > "$raw/runs.tsv" 2>/dev/null || { printf 'failed: response did not normalize\n' > "$raw/read"; return 0; }
     rank_rows "$raw/graphql.json" > "$raw/rank.tsv" 2>/dev/null || : > "$raw/rank.tsv"
@@ -494,7 +519,7 @@ run_train() {
     mkdir -p "$raw" || exit 1
     step read
     if [ -n "$from" ]; then
-        for f in C read runs.tsv attempts.tsv tree picks.tsv rank.tsv pickfail; do [ "$from/$f" -ef "$raw/$f" ] || cp "$from/$f" "$raw/$f" 2>/dev/null || : > "$raw/$f"; done
+        for f in C read runs.tsv attempts.tsv tree picks.tsv rank.tsv pickfail pickruns.tsv; do [ "$from/$f" -ef "$raw/$f" ] || cp "$from/$f" "$raw/$f" 2>/dev/null || : > "$raw/$f"; done
     else fetch "$raw" "$OUTDIR/cache"; fi
     CSHA="$(cat "$raw/C" 2>/dev/null)"
     step judge
@@ -627,6 +652,8 @@ fixture() {
     } > "$1/runs.tsv"
     printf '101\t1\n201\t1\n301\t1\n' > "$1/attempts.tsv"
     printf '2026-10-03\t%s\n2026-10-04\t%s\n' "$ST_C" "$ST_X" > "$1/picks.tsv"   # run 201 (02:00Z on the 4th) is night 2026-10-03
+    # the Nightly pick runs, created_at and updated_at: one at noon each day, so a run belongs to the night whose window holds it
+    printf '2026-10-03T12:00:00Z\t2026-10-03T12:05:00Z\n2026-10-04T12:00:00Z\t2026-10-04T12:05:00Z\n' > "$1/pickruns.tsv"
     printf '0\t%s\n' "$ST_C" > "$1/rank.tsv"
 }
 # ranks DIR SHA... -> DIR/rank.tsv: main's head and history, newest first (rank 0 = the head, aaaa...)
@@ -682,6 +709,24 @@ self_test() {
     row the_search_credits_a_chained_run_to_its_pick_not_the_head 0 "RELEASABLE H=$ST_X (judged bbbbbbbbbb, head aaaaaaaaaa, lag 1 commits)" "NOT RELEASABLE" -- st_chain "$d"
     d="$tmp/jstraddle"; fixture "$d"; sed -i '/\t201\t/s/\tschedule\t/\tworkflow_run\t/; s/\t2026-10-04T02:00:00Z\t/\t2026-10-04T13:00:00Z\t/' "$d/runs.tsv"; dupx "$d"; printf '2026-10-03\t%s\n2026-10-04\t%s\n' "$ST_C" "$ST_X" > "$d/picks.tsv"
     row the_search_skips_a_commit_whose_chained_run_straddles_two_picks 0 "NOT RELEASABLE: v-b" "(judged" -- st_chain "$d"
+    # a pick rerun the next evening keeps its created_at, so its producers built the old night's pick: they are created on
+    #   the new night, but the newest pick run created before them is the old one (measured: one pick built, another judged green)
+    st_rr() { printf '2026-10-05\t%s\n2026-10-06\t%s\n' "$ST_X" "$ST_C" > "$1/picks.tsv"; printf '2026-10-05T20:30:00Z\t%s\n2026-10-06T20:30:00Z\t2026-10-06T20:35:00Z\n' "$2" > "$1/pickruns.tsv"; st_chainl "$1"; }
+    d="$tmp/rerun"; fixture "$d"; sed -i '/\t201\t/s/\tschedule\t/\tworkflow_run\t/; s/\t2026-10-04T02:00:00Z\t/\t2026-10-06T19:05:00Z\t/' "$d/runs.tsv"
+    row a_rerun_pick_next_evening_credits_the_old_night 0 "201 measured the pick bbbbbbbbbb" "RELEASABLE H=" -- st_rr "$d" 2026-10-06T19:00:00Z
+    d="$tmp/rerun2"; fixture "$d"; sed -i '/\t201\t/s/\tschedule\t/\tworkflow_run\t/; s/\t2026-10-04T02:00:00Z\t/\t2026-10-06T21:05:00Z\t/' "$d/runs.tsv"
+    row a_rerun_after_the_next_pick_is_not_measured 0 "201 measured the pick the pick run of 2026-10-05T20:30:00Z was rerun after 2026-10-06T20:30:00Z" "RELEASABLE H=" -- st_rr "$d" 2026-10-06T21:00:00Z
+    d="$tmp/rerun3"; fixture "$d"; sed -i '/\t201\t/s/\tschedule\t/\tworkflow_run\t/; s/\t2026-10-04T02:00:00Z\t/\t2026-10-06T21:05:00Z\t/' "$d/runs.tsv"
+    row a_pick_run_not_rerun_judges_its_own_night 0 "RELEASABLE H=$ST_C" "NOT RELEASABLE" -- st_rr "$d" 2026-10-05T20:35:00Z
+    d="$tmp/noprun"; fixture "$d"; sed -i '/\t201\t/s/\tschedule\t/\tworkflow_run\t/' "$d/runs.tsv"; : > "$d/pickruns.tsv"
+    row a_chained_run_without_a_read_pick_run_is_not_measured 0 "201 measured the pick no pick run seen at or before it" "RELEASABLE H=" -- st_chainl "$d"
+    st_prr() {
+        printf '%s' "$1" > "$tmp/gqlrr.json"; : > "$tmp/prr.fail"
+        pickruns_read "$tmp/gqlrr.json" "$tmp/prr.tsv" "$tmp/prr.fail"
+        cat "$tmp/prr.tsv" "$tmp/prr.fail"
+    }
+    row pickruns_read_keeps_each_run 0 "2026-10-05T20:35:00Z" "did not parse" -- st_prr '{"data":{"pk":{"runs":{"nodes":[{"createdAt":"2026-10-05T20:30:00Z","updatedAt":"2026-10-05T20:35:00Z"}]}}}}'
+    row a_pick_run_list_that_is_not_read_failed 0 "the Nightly pick runs did not parse" "2026" -- st_prr '{"data":{"pk":null}}'
     d="$tmp/schedpick"; fixture "$d"; sed -i "s/$ST_C/$ST_X/" "$d/picks.tsv"
     row a_schedule_lane_ignores_the_picks 0 "RELEASABLE H=$ST_C" "NOT RELEASABLE" -- st_decide "$d"
     st_picks() { printf '%s' '{"data":{"repository":{"nightly":{"nodes":[{"name":"2026-10-03","target":{"oid":"c3"}},{"name":"probe","target":{"oid":"p"}}]}}}}' > "$tmp/gqlp.json"; picks_of "$tmp/gqlp.json"; }
@@ -728,7 +773,7 @@ self_test() {
     row verdict_lanes_are_release_day_checks 0 "verdict=ci-main deep-doctests deep-nodefault deep-examples deep-bins-build deep-bins-smoke dogfood models readiness milestone cleanroom-cpu cleanroom-gpu assets preflight publish-dryrun;coverage=info" "" -- \
         st_verdict_lanes_are_release_day_checks
     st_norm() {
-        printf '{"workflows":[{"node_id":"WA","path":".github/workflows/a.yml"},{"node_id":"WC","path":".github/workflows/c.yml"}]}\n' > "$tmp/wf.json"
+        printf '{"workflows":[{"node_id":"WA","path":".github/workflows/a.yml"},{"node_id":"WC","path":".github/workflows/c.yml"},{"node_id":"WP","path":".github/workflows/nightly-pick.yml"}]}\n' > "$tmp/wf.json"
         printf '%s' '{"data":{"repository":{"defaultBranchRef":{"name":"main","target":{"oid":"'"$ST_C"'","tree":{"oid":"t"},"statusCheckRollup":{"contexts":{"nodes":[{},{"name":"gate","status":"COMPLETED","conclusion":"SUCCESS","startedAt":"s","completedAt":"e","checkSuite":{"status":"COMPLETED","conclusion":"SUCCESS","branch":{"name":"main"},"workflowRun":{"databaseId":301,"event":"push","createdAt":"c","workflow":{"id":"WC"}}}}]}}}}},"w0":{"id":"WA","runs":{"nodes":[{"databaseId":101,"createdAt":"c1","event":"schedule","checkSuite":{"status":"COMPLETED","conclusion":"SUCCESS","branch":{"name":"main"},"commit":{"oid":"'"$ST_C"'"},"checkRuns":{"nodes":[{"name":"job-a","status":"COMPLETED","conclusion":"SUCCESS","startedAt":"s1","completedAt":"e1"},{"name":"job-a","status":"COMPLETED","conclusion":"FAILURE","startedAt":"s0","completedAt":"e0"}]}}}]}}}}' > "$tmp/gql.json"
         normalize "$tmp/gql.json" "$tmp/wf.json"
     }
@@ -737,6 +782,9 @@ self_test() {
     row gql_query_names_every_producer 0 'w1: node(id: "WC")' "" -- gql_query "$(printf '%s\n' "$ST_LANES" | awk -F ';' '$4 ~ /[ac][.]yml$/')" "$tmp/wf.json"
     row gql_query_refuses_a_missing_producer 5 "" "query" -- gql_query "$ST_LANES" "$tmp/wf.json"
     row gql_query_reads_the_nightly_picks 0 'nightly: refs(refPrefix: "refs/heads/nightly/"' "" -- gql_query "$(printf '%s\n' "$ST_LANES" | awk -F ';' '$4 ~ /[ac][.]yml$/')" "$tmp/wf.json"
+    row gql_query_reads_the_pick_runs 0 'pk: node(id: "WP") { ... on Workflow { runs(first: 20) { nodes { createdAt updatedAt' "" -- gql_query "$(printf '%s\n' "$ST_LANES" | awk -F ';' '$4 ~ /[ac][.]yml$/')" "$tmp/wf.json"
+    st_gql_nopick() { sed -e 's/,{"node_id":"WP","path":".github\/workflows\/nightly-pick.yml"}//' "$tmp/wf.json" > "$tmp/wfnp.json"; gql_query "$(printf '%s\n' "$ST_LANES" | awk -F ';' '$4 ~ /[ac][.]yml$/')" "$tmp/wfnp.json"; }
+    row gql_query_refuses_without_the_pick_workflow 5 "" "query" -- st_gql_nopick
     d="$tmp/voidnew"; fixture "$d"
     printf 'wf\t.github/workflows/a.yml\t102\tschedule\tmain\t%s\t2026-10-04T05:00:00Z\tCOMPLETED\tCANCELLED\tjob-a\tCOMPLETED\tCANCELLED\t\t\t1\n' "$ST_C" >> "$d/runs.tsv"
     row a_void_newer_run_falls_to_the_older_green 0 "RELEASABLE H=$ST_C" "NOT RELEASABLE" -- st_decide "$d"
@@ -818,7 +866,7 @@ v-e;verdict;check E;-;-;-" "$d" 2026-10-04T06:00:00Z; cat "$d/line" "$d/lanes.ts
     row no_history_judges_only_the_head 0 "NOT RELEASABLE: v-a, not_measured (+2 more)" "RELEASABLE H=" -- st_decide "$d"
     st_moved_bundle() {
         local m="$tmp/mb/raw" t='\t'
-        mkdir -p "$m"; printf '0\t%s\n1\t%s\n' "$ST_C" "$ST_X" > "$m/rank.tsv"; printf '%s\n' "$ST_C" > "$m/C"; printf 'ok\n' > "$m/read"; printf 'cccc\n' > "$m/tree"; printf '2026-10-03\t%s\n' "$ST_X" > "$m/picks.tsv"; printf '501\t1\n502\t1\n503\t1\n' > "$m/attempts.tsv"
+        mkdir -p "$m"; printf '0\t%s\n1\t%s\n' "$ST_C" "$ST_X" > "$m/rank.tsv"; printf '%s\n' "$ST_C" > "$m/C"; printf 'ok\n' > "$m/read"; printf 'cccc\n' > "$m/tree"; printf '2026-10-03\t%s\n' "$ST_X" > "$m/picks.tsv"; printf '2026-10-03T20:30:00Z\t2026-10-03T20:35:00Z\n' > "$m/pickruns.tsv"; printf '501\t1\n502\t1\n503\t1\n' > "$m/attempts.tsv"
         {
             printf "rollup${t}.github/workflows/ci.yml${t}501${t}push${t}main${t}%s${t}2026-10-03T23:00:00Z${t}COMPLETED${t}SUCCESS${t}ci / gate${t}COMPLETED${t}SUCCESS${t}${t}${t}1\n" "$ST_X"
             printf "rollup${t}.github/workflows/ci.yml${t}501${t}push${t}main${t}%s${t}2026-10-03T23:00:00Z${t}COMPLETED${t}SUCCESS${t}workspace-test${t}COMPLETED${t}SUCCESS${t}${t}${t}1\n" "$ST_X"
@@ -843,7 +891,7 @@ v-e;verdict;check E;-;-;-" "$d" 2026-10-04T06:00:00Z; cat "$d/line" "$d/lanes.ts
         '  *actions/workflows*) printf "HTTP/2.0 200 OK\r\netag: \"e1\"\r\n\r\n"; cat "$STUB_WF" ;;' \
         '  *graphql*) echo "{\"errors\":[{\"message\":\"stub\"}]}" ;;' \
         '  *) echo 1 ;;' 'esac' > "$tmp/bin/gh"; chmod +x "$tmp/bin/gh"
-    printf '{"workflows":[%s]}\n' '{"node_id":"WA","path":".github/workflows/a.yml"},{"node_id":"WB","path":".github/workflows/b.yml"},{"node_id":"WC","path":".github/workflows/c.yml"},{"node_id":"WD","path":".github/workflows/d.yml"}' > "$tmp/wfall.json"
+    printf '{"workflows":[%s]}\n' '{"node_id":"WA","path":".github/workflows/a.yml"},{"node_id":"WB","path":".github/workflows/b.yml"},{"node_id":"WC","path":".github/workflows/c.yml"},{"node_id":"WD","path":".github/workflows/d.yml"},{"node_id":"WP","path":".github/workflows/nightly-pick.yml"}' > "$tmp/wfall.json"
     st_fetch() {
         local f; f="$(realpath -m -s -- "$tmp/f$1")"
         mkdir -p "$f"
@@ -959,12 +1007,12 @@ m40_config_token_ignored	s/^        if grep -qsE /        if false \&\& grep -qs
 m41_home_cargo_unchecked	s/ "\$HOME\/.cargo"; do$/; do/
 m42_floor_ignores_the_limit	s/fl=\$((lim \/ 5))/fl=$RATE_FLOOR/
 m43_any_event_counts	s/ && REV\[r\] ~ EV\[i\]//
-m44_chain_ignores_the_pick	s/(pc = nightc(RC\[r\])) != J)/0)/
+m44_chain_ignores_the_pick	s/(pc = chainc(RC\[r\])) != J)/0)/
 m45_any_night_counts	s/if (t >= PS\[k\] && t < PE\[k\]) return k/if (PO[k] == C) return k/
 m46_window_end_inclusive	s/t < PE\[k\]/t <= PE[k]/
 m47_window_start_exclusive	s/t >= PS\[k\]/t > PS[k]/
 m48_every_lane_checks_the_pick	s/if (EV\[i\] != "\^workflow_run\$") {/if (0) {/
-m49_from_skips_the_picks	s/ tree picks.tsv rank.tsv pickfail; do/ tree rank.tsv pickfail; do/
+m49_from_skips_the_picks	s/ tree picks.tsv rank.tsv pickfail pickruns.tsv; do/ tree rank.tsv pickfail pickruns.tsv; do/
 m50_picks_any_ref_name	s/ | select(.name | test("^\[0-9\]{4}-\[0-9\]{2}-\[0-9\]{2}\$"))//
 m51_query_drops_the_picks	s/ nightly: refs(refPrefix/ unread: refs(refPrefix/
 m52_no_straddle_check	s/ && (pc = prevc(RC\[r\])) != J)/ \&\& 0)/
@@ -983,8 +1031,14 @@ m64_oldest_commit_wins	s/if (all) { J = h; LAG = k; break }/if (all) { J = h; LA
 m65_rank_history_dropped	s/\[(\$c.history.nodes \/\/ \[\])\[\] | .oid | select(. != \$c.oid)\]/[]/
 m66_failed_pick_read_falls_back	s/\[ -s "\$2\/pickfail" \] \&\& \[ "\${rd:-}" = ok \] \&\& rd=/false \&\& rd=/
 m67_failed_pick_read_is_an_absent_pick	s/nodes | type) == "array"/nodes | type) != "zzz"/
-m68_search_files_a_chained_run_under_the_head	s/hm = nightc(RC\[r\]);/hm = RH[r];/
-m69_search_ignores_the_straddle	s/ \&\& prevc(RC\[r\]) != hm) hm = ""/ \&\& 0) hm = ""/'
+m68_search_files_a_chained_run_under_the_head	s/hm = chainc(RC\[r\]);/hm = RH[r];/
+m69_search_ignores_the_straddle	s/ \&\& prevc(RC\[r\]) != hm) hm = ""/ \&\& 0) hm = ""/
+m70_a_chained_run_by_its_own_creation	s/chainc(RC/nightc(RC/g
+m71_an_older_pick_rerun_is_ignored	s/if (b > PRC\[k\] \&\& b < PRU\[k\])/if (0)/
+m72_an_unread_pick_run_list_passes	s/^    printf .the Nightly pick runs did not parse.n. > "\$3"$/    true/
+m73_the_pick_runs_are_not_queried	s/ + " pk: node(id: / + " pq: node(id: /
+m74_the_pick_workflow_may_be_missing	s/if \$pk == null then error/if false then error/
+m75_from_skips_the_pick_runs	s/ pickfail pickruns.tsv; do/ pickfail; do/'
 # each planted mutant must change the file, still parse, and turn at least one row RED
 mutants() {
     local tmp pass=0 fail=0 name expr o rc

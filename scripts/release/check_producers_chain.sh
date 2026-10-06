@@ -157,10 +157,12 @@ judge_file() {
 P7_AT='at="$(gh api "repos/$GITHUB_REPOSITORY/actions/runs/$GITHUB_RUN_ID" --jq .created_at)"'
 P7_NIGHT='night="$(bash scripts/release/nightly_pick.sh night --at "$at")"'
 p7() { # PICKFILE -> FAIL lines; the pick takes its night from its own run's created_at, the clock every producer reads
-    local t
+    local t calls
     t="$(sed -e 's/^[[:space:]]*//' "$1")" || { printf 'FAIL  nightly-pick.yml: P7 unreadable\n'; return 1; }
     # both lines live and exact, and no other live night call (one taking the clock, not created_at)
-    if hasl "$t" -x -F -e "$P7_AT" && hasl "$t" -x -F -e "$P7_NIGHT" && ! printf '%s\n' "$t" | grep -e 'nightly_pick\.sh night' | grep -v -e '^#' | grep -q -v -x -F -e "$P7_NIGHT"; then
+    # the live calls are read whole first: grep -q at the end of a pipe exits early, and pipefail turns the SIGPIPE into a pass
+    calls="$(printf '%s\n' "$t" | sed -n -e '/^#/d' -e '/nightly_pick\.sh night/p')"
+    if hasl "$t" -x -F -e "$P7_AT" && hasl "$t" -x -F -e "$P7_NIGHT" && ! hasl "$calls" -v -x -F -e "$P7_NIGHT"; then
         return 0
     fi
     printf 'FAIL  nightly-pick.yml: P7 the night is not taken from this run'"'"'s created_at (want %s, then %s)\n' "$P7_AT" "$P7_NIGHT"
@@ -267,6 +269,10 @@ m_pick_no_at()    { changed nightly-pick.yml '/^ *at="\$(gh api /d'; }
 m_pick_at_cmt()   { changed nightly-pick.yml 's/^\( *\)at="\$(gh api /\1# at="$(gh api /'; }
 m_pick_2nd_call() { changed nightly-pick.yml 's/^\( *\)rc=0$/\1n2="$(bash scripts\/release\/nightly_pick.sh night)"\n\1rc=0/'; }
 m_pick_cmt_ok()   { changed nightly-pick.yml 's/^\( *\)rc=0$/\1# was: night="$(bash scripts\/release\/nightly_pick.sh night)"\n\1rc=0/'; }
+m_pick_2nd_big()  { # a second live night call ahead of 1.4 MB of exact ones: a pipe into grep -q loses it under pipefail
+    awk -v l="          $P7_NIGHT" 'BEGIN { for (i = 0; i < 20000; i++) print l }' > "$TMP_ST/p7fill"
+    m_pick_2nd_call && changed nightly-pick.yml '/^ *rc=0$/r '"$TMP_ST/p7fill"
+}
 m_chain_other()   { changed book.yml 's/workflows: \["Nightly pick"\]/workflows: ["Nightly"]/'; }
 m_chain_two()     { changed book.yml 's/workflows: \["Nightly pick"\]/workflows: ["Nightly pick", "CI"]/'; }
 m_chain_type()    { changed book.yml '0,/types: \[completed\]/s//types: [requested]/'; }
@@ -342,6 +348,7 @@ self_test() {
     row p7_pick_without_created_at  1 'nightly-pick.yml: P7'                   -- m_pick_no_at
     row p7_pick_created_at_comment  1 'nightly-pick.yml: P7'                   -- m_pick_at_cmt
     row p7_pick_second_night_call   1 'nightly-pick.yml: P7'                   -- m_pick_2nd_call
+    row p7_pick_second_call_big     1 'nightly-pick.yml: P7'                   -- m_pick_2nd_big
     row p7_pick_old_call_in_comment 0 'PASS'                                   -- m_pick_cmt_ok
     row p2_other_workflow           1 'book.yml: P2'                           -- m_chain_other
     row p2_two_workflows            1 'book.yml: P2'                           -- m_chain_two
@@ -443,13 +450,14 @@ m37_no_table_ok	s/if (!done || !lanes) {/if (0) {/
 m38_a_listed_lane_may_be_missing	s/if (!(pp\[k\] in seen)) {/if (0) {/
 m39_a_second_table_ok	s/if (assigned > 1) {/if (0) {/
 m40_hasl_piped	s/\(grep -q "[^"]*"\) <<< \("[^"]*"\)/echo \2 | \1/
-m41_quoted_schedule_unseen	s|\["\\047\]?schedule\["\\047\]?|schedule|
+m49_quoted_schedule_unseen	s|\["\\047\]?schedule\["\\047\]?|schedule|
 m42_spaced_colon_unseen	s|schedule\["\\047\]?\[\[:space:\]\]\*:|schedule["\\047]?:|
 m43_unreadable_passes	s/^        \[ "\$jr" -eq 0 \] || printf -v out /        true || printf -v out /
 m44_no_p7	s/^    p7 "\$wf\/nightly-pick.yml" || rc=1$/    true/
-m45_p7_other_night_call_ok	s/grep -q -v -x -F -e "\$P7_NIGHT"; then/false; then/
+m45_p7_other_night_call_ok	s/ \&\& ! hasl "\$calls" -v -x -F -e "\$P7_NIGHT"; then/; then/
 m46_p7_at_not_exact	s/hasl "\$t" -x -F -e "\$P7_AT"/hasl "$t" -F -e "$P7_AT"/
-m47_p7_comment_counts	s/ | grep -v -e .\^#. | / | /'
+m47_p7_comment_counts	s| -e ./\^#/d. | |
+m48_p7_piped_grep_q	s/! hasl "\$calls" \(-v -x -F -e "\$P7_NIGHT"\)/! printf "%s\\n" "$calls" \| grep -q \1/'
 mutants() {
     local tmp name expr killed=0 total=0 errors=0 out cut reds
     cut="$(grep -n -m1 -e "^# -* the case table" "$SCRIPT_PATH" | cut -d: -f1)"
