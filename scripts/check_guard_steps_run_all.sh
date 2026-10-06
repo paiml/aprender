@@ -180,7 +180,7 @@ mfixture() {
 
 # The A4 rows. Uses self_test's $d, $n, case_row.
 manifest_rows() {
-    local v bad=0 got repo="$d/mrepo" t0 t1 st
+    local v bad=0 got repo="$d/mrepo" t0 t1 st r
     printf 'guard-x 0\n' > "$d/mbase"
     mfixture "$d/m_good.yml" good "true"
     case_row "manifest if:false + runner step -> pass" 0 "$d/m_good.yml" "$d/mbase"
@@ -234,13 +234,17 @@ manifest_rows() {
             CI_GUARDS_SCRATCH="$d/mscratch" bash "$LIB" run --step-timeout "$st" guard-x ) > "$d/out" 2>&1
     done
     v="a timed-out step still runs its EXIT trap (restores a mutant)"
-    if [ ! -e "$d/rt/armed" ]; then
-        q=$((q + 1)); printf 'UNMEASURED %-53s trap never armed by step-timeout %ss\n' "$v" "$st"
-    else
-        n=$((n + 1))
-        if [ -e "$d/rt/restored" ]; then printf 'ok   %-58s step-timeout %ss\n' "$v" "$st"
-        else printf 'FAIL %-58s step-timeout %ss\n' "$v" "$st"; bad=1; fi
-    fi
+    # FLAKE-0 #4759, QUARANTINED again: the armed-marker precondition above (#4772) did not hold
+    # the row. On CI run 37348731047 attempt 1 (job x86-main, guard-tree m2, head be139e0ca0) the
+    # trap WAS armed and `restored` was missing at step-timeout 1s, a FAIL on a diff that does not
+    # touch this script. So the cause is not only "fired before the trap was armed". Until #4759
+    # finds and fixes it, the row runs and prints what it read but never fails the table and is
+    # counted as not measured, never as ok.
+    q=$((q + 1))
+    if [ ! -e "$d/rt/armed" ]; then r="trap never armed"
+    elif [ -e "$d/rt/restored" ]; then r="read ok"
+    else r="read FAIL"; fi
+    printf 'QUARANTINED FLAKE-0 #4759 %-40s (not measured; %s, step-timeout %ss)\n' "$v" "$r" "$st"
     # shellcheck disable=SC2016
     mfixture "$repo/ci/sections.yml" good 'sleep 30 & echo $! > "$RUNNER_TEMP/child.pid"; sleep 30'
     t0=$SECONDS
