@@ -33,13 +33,16 @@ case "${1:-}" in -h|--help) sed -n '2,23p' "$0" | sed 's/^# \{0,1\}//'; exit 0 ;
 if [ "${1:-}" = "--self-test" ]; then
   # A red table kills every mutant for free: the unmutated table must be green first.
   bash "$0" >/dev/null 2>&1 || { echo "check_ci_push_reuse: the unmutated table is red - mutants not_measured"; exit 1; }
+  # The cap stops a hung table, nothing more: a table run took 33 s at load 7, and a
+  # loaded runner once took a 120 s cap past it. A timeout (rc 124) is never a kill.
+  RUN_TIMEOUT="${PUSH_REUSE_RUN_TIMEOUT:-600}"
   work="$(mktemp -d)"; killed=0; total=0
   # run_as SUBJECT COPY: the table with COPY standing in for SUBJECT; prints the table's rc
   run_as() {
     case "${1##*/}" in
-      ci_mg_workspace_result.sh) PUSH_REUSE_LOOKUP="$2" timeout 120 bash "$0" >/dev/null 2>&1 ;;
-      ci_test_tier.sh) PUSH_REUSE_TIER="$2" timeout 120 bash "$0" >/dev/null 2>&1 ;;
-      ci_mg_reuse.sh) PUSH_REUSE_MG="$2" timeout 120 bash "$0" >/dev/null 2>&1 ;;
+      ci_mg_workspace_result.sh) PUSH_REUSE_LOOKUP="$2" timeout "$RUN_TIMEOUT" bash "$0" >/dev/null 2>&1 ;;
+      ci_test_tier.sh) PUSH_REUSE_TIER="$2" timeout "$RUN_TIMEOUT" bash "$0" >/dev/null 2>&1 ;;
+      ci_mg_reuse.sh) PUSH_REUSE_MG="$2" timeout "$RUN_TIMEOUT" bash "$0" >/dev/null 2>&1 ;;
       *) echo 9; return ;;
     esac
     echo $?
@@ -50,13 +53,16 @@ if [ "${1:-}" = "--self-test" ]; then
     # Control: an UNMUTATED copy in the work dir must keep the table green, or a copy that
     # breaks for its location alone would read as every mutant killed.
     cp "$subj" "$work/subject.sh"
-    [ "$(run_as "$subj" "$work/subject.sh")" -eq 0 ] || { echo "check_ci_push_reuse: an unmutated copy of ${subj##*/} turns the table red - mutants not_measured"; rm -rf "${work:?}"; exit 1; }
+    rc="$(run_as "$subj" "$work/subject.sh")"
+    [ "$rc" -ne 124 ] || { echo "check_ci_push_reuse: the table timed out after ${RUN_TIMEOUT}s on an unmutated copy of ${subj##*/} - mutants not_measured"; rm -rf "${work:?}"; exit 1; }
+    [ "$rc" -eq 0 ] || { echo "check_ci_push_reuse: an unmutated copy of ${subj##*/} turns the table red (rc $rc) - mutants not_measured"; rm -rf "${work:?}"; exit 1; }
     for m in "${markers[@]}"; do
       total=$((total+1))
       grep -v "# $m\$" "$subj" >"$work/subject.sh"
       # A mutation that changes nothing is an error, never a survivor and never a kill.
       if cmp -s "$subj" "$work/subject.sh"; then echo "  ERROR    ${subj##*/} $m (the mutation changed nothing)"; continue; fi
       rc="$(run_as "$subj" "$work/subject.sh")"
+      if [ "$rc" -eq 124 ]; then echo "  ERROR    ${subj##*/} $m (timed out after ${RUN_TIMEOUT}s)"; continue; fi
       if [ "$rc" -eq 0 ]; then echo "  SURVIVED ${subj##*/} $m"; else killed=$((killed+1)); echo "  killed   ${subj##*/} $m"; fi
     done
   done
