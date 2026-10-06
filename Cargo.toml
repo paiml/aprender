@@ -31,6 +31,8 @@ members = [
     "crates/aprender-tensor",
     "crates/aprender-gemm-codegen",
     "crates/aprender-compute-xtask",
+    # --- PY-PORT (C301): CI helpers ported from scripts/**/*.py, publish = false ---
+    "crates/aprender-ci-tools",
     # --- APR-MONO Phase 2b: was provable-contracts ---
     "crates/aprender-contracts",
     "crates/aprender-contracts-macros",
@@ -126,6 +128,7 @@ exclude = [
     # it is not chasing a phantom.
     'crates/aprender-zram/bins/trueno-ublk',
     "tools/ccpa-sft-export",
+    "tools/aprender-crux-judge",
     "fuzz",
     # A real package that ships the `aprender-viz-ttop` binary, NOT a shell;
     # excluded, so cargo metadata cannot see it. scripts/check_binary_debt.sh
@@ -215,6 +218,7 @@ lz4_flex = "0.11"
 zstd = "0.13"
 
 # Crypto
+sha1 = "0.10"  # git_patch_id in aprender-ci-tools: git's patch-id is SHA-1 by definition
 sha2 = "0.10"
 # Compile-fail testing. Already a per-crate dev-dep of aprender-contracts-macros and
 # aprender-test-derive at the same "1"; hoisted so a typestate crate can prove

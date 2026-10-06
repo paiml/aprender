@@ -1,0 +1,18 @@
+- id: PMAT-4818
+  github_issue: 4818
+  item_type: task
+  title: 'PY-PORT-2f: port perf041_report.py to aprender-ci-tools perf041-report (C301)'
+  status: planned
+  priority: medium
+  assigned_to: null
+  created: 2026-10-05T16:22:14Z
+  updated: 2026-10-05T18:20:08Z
+  spec: null
+  acceptance_criteria: []
+  phases: []
+  subtasks: []
+  estimated_effort: null
+  labels:
+  - kind:code
+  notes: 'Folded (aprender-0d, 2026-10-06) on batch/0702/py-port-2-fold-4818-4822-4826 with PMAT-4818, PMAT-4822 and PMAT-4826: harness sections 6 (perf041-report, 39 cases), 7 (annotate-book-examples, 24) and 8 (extract-book-examples, 21) on base 115, check_exact once, EXPECTED_CASES 199; parity 199/199 and 86 aprender-ci-tools lib tests on the folded head.'
+  epic: 4741
