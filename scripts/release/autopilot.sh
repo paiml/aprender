@@ -169,14 +169,19 @@ t1_models() {
 }
 
 # The join. Every selected lane starts now, each in its own process group (set -m), so a lane can be
-# stopped with everything it started. A red in any lane stops the pass (item 4): the first red stops
-# the lanes still running, and nothing after this point runs. Each lane gets one row in
-# $AP/t1-steps.tsv (step, start, end, seconds, verdict) and one STEP line in STATUS, with its own log
-# as before. GO = the lane exited 0; RED = it exited non-zero by itself; STOPPED = a sibling was red first.
+# stopped with everything it started. A red in any lane stops the pass (item 4): nothing after this
+# point runs. Each lane gets one row in $AP/t1-steps.tsv (step, start, end, seconds, verdict) and one
+# STEP line in STATUS, with its own log as before. GO = the lane exited 0; RED = it exited non-zero
+# by itself; STOPPED = it was stopped because another lane was red.
+#   WHICH LANES A RED STOPS. deep and dogfood run only here, so the first red stops them. models is
+#   never stopped: its remote leg is an ssh with no pty, so killing the local ssh would leave the remote
+#   build and ladder running in the release dir the next pass reuses. models runs to its own verdict.
+#   An INT or TERM to the autopilot stops every lane (the lanes no longer share its process group).
 # scripts/check_release_t1_lanes_joined.sh runs this block against stub lanes, and its mutants.
 T1_LANES=(); for s in deep dogfood models; do run_step "$s" && T1_LANES+=("$s"); done
 if [ "${#T1_LANES[@]}" -gt 0 ]; then
-  declare -A T1_STEP=() T1_T0=()
+  declare -A T1_STEP=() T1_T0=() T1_STOPPED=()
+  trap 'for p in "${!T1_STEP[@]}"; do kill -TERM -- "-$p" 2> /dev/null; done; die "T-1 lanes interrupted"' INT TERM
   set -m
   for s in "${T1_LANES[@]}"; do "t1_$s" & T1_STEP[$!]=$s; T1_T0[$s]=$(date -u +%s); done
   set +m
@@ -187,15 +192,19 @@ if [ "${#T1_LANES[@]}" -gt 0 ]; then
     t1_pid=''; wait -n -p t1_pid "${!T1_STEP[@]}"; rc=$?
     [ -n "$t1_pid" ] || die "T-1 join: wait returned no lane (rc=$rc) with ${#T1_STEP[@]} still recorded"
     s=${T1_STEP[$t1_pid]}; unset "T1_STEP[$t1_pid]"; t1=$(date -u +%s)
-    if [ "$rc" -eq 0 ]; then v=GO; elif [ -n "$t1_red" ]; then v=STOPPED; else v=RED; t1_red=$s; fi
+    if [ "$rc" -eq 0 ]; then v=GO; elif [ -n "${T1_STOPPED[$s]:-}" ]; then v=STOPPED; else v=RED; t1_red="${t1_red:+$t1_red }$s"; fi
     printf '%s\t%s\t%s\t%s\t%s\n' "$s" "$(date -u -d "@${T1_T0[$s]}" +%FT%TZ)" "$(date -u -d "@$t1" +%FT%TZ)" \
       "$((t1 - T1_T0[$s]))" "$v" >> "$AP/t1-steps.tsv"
     say "STEP $s $v rc=$rc seconds=$((t1 - T1_T0[$s]))"
     if [ "$v" = RED ]; then
-      for p in "${!T1_STEP[@]}"; do kill -TERM -- "-$p" 2> /dev/null; done
+      for p in "${!T1_STEP[@]}"; do
+        [ "${T1_STEP[$p]}" = models ] && continue
+        T1_STOPPED[${T1_STEP[$p]}]=1; kill -TERM -- "-$p" 2> /dev/null
+      done
     fi
   done
-  [ -z "$t1_red" ] || die "T-1 lane $t1_red RED: the lanes still running were stopped, nothing is tagged ($AP/t1-steps.tsv)"
+  trap - INT TERM
+  [ -z "$t1_red" ] || die "T-1 lane(s) $t1_red RED: deep and dogfood were stopped, models ran to its verdict, nothing is tagged ($AP/t1-steps.tsv)"
   say "T-1 LANES joined GO: ${T1_LANES[*]}"
 fi
 # 2c. readiness (#3715 done_when 4): the same receipts, graded by pv's release-readiness-v1 SHACL shape,
