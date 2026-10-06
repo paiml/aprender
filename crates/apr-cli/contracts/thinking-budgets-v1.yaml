@@ -73,14 +73,18 @@ models:
     # and never the 8B-measured `default`. The budget is not what fails here.
     budget: 2048
     basis: |
-      Measured on lambda (RTX 4090, cuda), #3948 receipt @ 5103e07de: on apr's thinking-ON prompt the
-      `<think>` block closes EMPTY at budgets 16, 64 and 2048 alike, so no budget change makes this
-      leg pass on that prompt. ATTRIBUTION IS OPEN, NOT "the model": apr's ON prompt ends
-      `assistant\n` (without_thinking_prefill), while the official Qwen3.5 template ends
-      `assistant\n<think>\n`; on the official prompt this model no longer emits the instant empty
-      block (aprender-36, cop heads-up 2026-09-23). Until the golden ON leg renders the official
-      template (#3990), an empty-think result here is NOT a RED-MODEL verdict (#3957 F9). Caveat:
-      a foreign GPU process was resident during the #3948 measurement; re-run on an empty card.
+      Measured on lambda (RTX 4090, cuda). History: #3948 @ 5103e07de, on apr's old ON prompt
+      (`assistant\n`), the `<think>` block closed EMPTY at 16, 64 and 2048 alike; the official
+      template (#3990, ends `assistant\n<think>\n`) removed that. RE-MEASURED (aprender#4666,
+      operator ruling A, 2026-10-04) on released apr 0.70.1 cuda (04332f838), greedy ON leg on
+      the official template: UNCLOSED at 2048 / 4096 / 8192 / 16384 with 6,723 / 13,225 /
+      26,243 / 52,290 chars; output grows linearly with the budget. The text is coherent,
+      reaches "2 + 2 = 4", then loops ("Wait, I should check..."). So the budget is not what
+      fails and no budget makes this leg pass; it stays FAIL, known_red. A model property, not
+      apr: with Qwen's sampling (T 0.6, top-k 20, top-p 0.95, 8 seeds, 2048) llama.cpp closes
+      2/8 and apr closes 5/8; llama.cpp greedy closes only because an early near-tie resolves
+      differently across engines. Evidence (in-tree):
+      evidence/thinking-budgets/qwen35-0.8b-thinking-on-2026-10-04.md.
 
 # #4046 merge-back: the contract-integrity ratchet requires every contract to state its
 # equations. This is the resolution rule the golden gate's thinking_on_budget_for applies.

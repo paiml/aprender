@@ -610,6 +610,24 @@ ratchet-semantics-test: ## BSE-03: D2 ratchet polarity rows (--class readme)
 # enforces COV_FLOOR, so this is a name, not a new policy.
 coverage-check: coverage
 
+# #4715: an LLVM coverage JSON plus the commit it was measured on, from the profiles a `make coverage`
+# run just left. qwen-story-daily's pmat hunt reads coverage gaps ONLY from this file, and only when the
+# recorded sha is its own checkout; without it `pmat query --coverage-gaps` derives coverage itself,
+# measured at >900 s per query on intel. Same report scope and excludes as the lcov in `coverage`.
+# Under .ONESHELL without -e every line carries its own `|| exit`.
+.PHONY: coverage-json
+coverage-json: ## LLVM coverage JSON + measured sha from the last `make coverage` profiles (pmat --coverage-file)
+	@[ -s target/coverage/lcov.info ] || { echo "❌ coverage-json: no lcov.info - run make coverage first"; exit 1; }
+	rm -f target/coverage/coverage.json target/coverage/coverage.sha || exit 1
+	scripts/coverage_report_scope.sh --self-test > /dev/null || { echo "❌ coverage-json: coverage_report_scope.sh self-test failed"; exit 1; }
+	scripts/coverage_report_scope.sh --exclude aprender-gpu > /dev/null || { echo "❌ coverage-json: no derived report scope"; exit 1; }
+	$(COV_CARGO_ENV) cargo llvm-cov report $$(scripts/coverage_report_scope.sh --exclude aprender-gpu) \
+		--json --output-path $(CURDIR)/target/coverage/coverage.json \
+		--ignore-filename-regex "$$(cat target/coverage/.exclude-re)" || exit 1
+	[ -s target/coverage/coverage.json ] || { echo "❌ coverage-json: no JSON was written"; exit 1; }
+	git rev-parse HEAD > target/coverage/coverage.sha || exit 1
+	echo "coverage-json: $$(du -h target/coverage/coverage.json | cut -f1) for $$(cat target/coverage/coverage.sha)"
+
 # PVL-001 EV-6a (#4139): the ONLY writer of the Lean label ratchet. `pv discharge check` never writes
 # unresolved-labels.json; this rewrites it DOWNWARD (a label that resolves now leaves; a new one is never added).
 .PHONY: label-ratchet

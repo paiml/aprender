@@ -1,0 +1,106 @@
+{
+  "$schema": "https://json.schemastore.org/sarif-2.1.0.json",
+  "version": "2.1.0",
+  "runs": [
+    {
+      "tool": {
+        "driver": {
+          "name": "pmat"
+        }
+      },
+      "invocations": [
+        {
+          "executionSuccessful": true,
+          "toolExecutionNotifications": []
+        }
+      ],
+      "results": [
+        {
+          "ruleId": "gate_not_weakened",
+          "level": "note",
+          "message": {
+            "text": "The Qwen3.5-0.8B-Q4_K_M.gguf entry keeps budget: 2048 (unchanged in the diff; only the basis text changed), so the golden thinking-ON gate resolves the same number and stays FAIL/known_red. No gate is weakened."
+          },
+          "properties": {
+            "grounding": "cited",
+            "source": "contracts/thinking-budgets-v1.yaml:74",
+            "excerpt": "    budget: 2048",
+            "excerpt_sha256": "ba2bede1f0b42316b7013821320c4a919196aa2b2a2684ca493e98e02e847307",
+            "failure_scenario": "A weakened gate would show a changed or removed budget key or a dropped known_red state for this model; the diff hunk touches only the basis block and the budget line is context.",
+            "precision_class": "advisory"
+          }
+        },
+        {
+          "ruleId": "mirror_identical",
+          "level": "note",
+          "message": {
+            "text": "contracts/thinking-budgets-v1.yaml and crates/apr-cli/contracts/thinking-budgets-v1.yaml are byte-identical at head (cmp exit 0); both diffs are the same 20-line change."
+          },
+          "properties": {
+            "grounding": "measured",
+            "command": [
+              "cmp",
+              "contracts/thinking-budgets-v1.yaml",
+              "crates/apr-cli/contracts/thinking-budgets-v1.yaml"
+            ],
+            "exit_code": 0,
+            "stdout_sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+            "failure_scenario": "A drifted mirror would make the packaged apr-cli resolve a different basis/budget than the workspace contract; cmp would exit 1.",
+            "precision_class": "advisory"
+          }
+        },
+        {
+          "ruleId": "evidence_ratio_corrected",
+          "level": "note",
+          "message": {
+            "text": "Round 1 found the evidence file giving 4.35 chars per token for both models; Q4_K_M is 3.19-3.28 (6,723/2048, 13,225/4096, 26,243/8192, 52,290/16384). Commit d7f9b96e7b now states 4.35 for IQ4_XS and 3.2 to 3.3 for Q4_K_M, which matches the table. The delta is evidence text only: contract files, budget and mirror untouched. Residual notes: the IQ4_XS contract entry says 8,901 chars against 8,910 in the evidence, and the evidence cites an aprender#4663 entry not in this diff."
+          },
+          "properties": {
+            "grounding": "cited",
+            "source": "evidence/thinking-budgets/qwen35-0.8b-thinking-on-2026-10-04.md:21",
+            "excerpt": "Output grows linearly with the budget (about 4.35 chars per token for IQ4_XS, 3.2",
+            "excerpt_sha256": "9d4ca4762f076c190ac16d4785bc105db31861bfecf54e3b529801bd8eca975d",
+            "failure_scenario": "Had the wrong ratio stayed, a reader sizing a Q4_K_M budget from 4.35 chars/token would overestimate tokens by about 35 percent; no gate result moved either way.",
+            "precision_class": "advisory"
+          }
+        },
+        {
+          "ruleId": "raw_logs_not_in_tree",
+          "level": "note",
+          "message": {
+            "text": "The evidence file records per-cell char counts, the 8-seed closure rates (llama.cpp 2/8, apr 5/8) and the cross-engine near-tie claim as a summary table only; no raw qa JSON, seed outputs or llama.cpp logs are committed, so they were not independently reproduced here. The figures in the basis match the evidence table (6,723 / 13,225 / 26,243 / 52,290; 2/8; 5/8) but both were authored together."
+          },
+          "properties": {
+            "grounding": "asserted",
+            "failure_scenario": "If a cell were mis-transcribed, the basis and evidence would agree and still be wrong; only a re-run on the 4090 would show it. The conclusion (no budget closes the leg) does not depend on any single cell.",
+            "precision_class": "advisory"
+          }
+        }
+      ]
+    },
+    {
+      "tool": {
+        "driver": {
+          "name": "antigravity"
+        }
+      },
+      "invocations": [
+        {
+          "executionSuccessful": false,
+          "toolExecutionNotifications": [
+            {
+              "level": "error",
+              "message": {
+                "text": "The cross-vendor (antigravity) reviewer was not consulted this run: no agy call was attempted; the review was done by an independent Claude lane. Recorded unreachable, verdict DEGRADED."
+              },
+              "properties": {
+                "grounding": "asserted"
+              }
+            }
+          ]
+        }
+      ],
+      "results": []
+    }
+  ]
+}
