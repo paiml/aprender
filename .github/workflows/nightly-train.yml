@@ -24,6 +24,8 @@ jobs:
         run: |
           bash scripts/release/nightly_train.sh --self-test
           bash scripts/release/nightly_train.sh --mutants
+          bash scripts/tests/models_lane_row_test.sh
+          bash scripts/tests/models_lane_row_test.sh --mutants
       - name: RELEASABLE or NOT RELEASABLE for main's head
         env:
           GH_TOKEN: ${{ github.token }}

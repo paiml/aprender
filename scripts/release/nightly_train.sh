@@ -74,7 +74,7 @@ deep-examples;verdict;autopilot deep: cargo build --workspace --examples;.github
 deep-bins-build;verdict;autopilot deep: all-bins cargo build --locked --release;.github/workflows/nightly.yml;^schedule$;-unknown-linux-gnu on 
 deep-bins-smoke;verdict;autopilot deep: nightly_manifest.py smoke;-;-;-
 dogfood;verdict;dogfood.sh --phase pre-publish + preflight R5;-;-;-
-models;verdict;models_t1.sh GPU-host ladder legs, preflight R7;-;-;-
+models;verdict;models_t1.sh GPU-host ladder legs, preflight R7;.github/workflows/models-nightly.yml;^schedule$;^models$
 readiness;verdict;release_readiness.sh, preflight R8;-;-;-
 milestone;verdict;check_milestone_cut.sh --must-carry;-;-;-
 cleanroom-cpu;verdict;clean-room (aprender) on the tag;-;-;-
@@ -95,7 +95,8 @@ bench;info;nightly-bench;.github/workflows/nightly-bench.yml;^schedule$;
 book;info;book;.github/workflows/book.yml;^schedule$;
 book-contracts;info;book-contracts;.github/workflows/book-contracts.yml;^schedule$;
 install-script;info;install-script;.github/workflows/install-script.yml;^schedule$;
-fleet-toolset;info;fleet-toolset;.github/workflows/fleet-toolset.yml;^schedule$;'
+fleet-toolset;info;fleet-toolset;.github/workflows/fleet-toolset.yml;^schedule$;
+provable-ladder;info;provable-ladder full run, pv discharge run (#4578: info until green 3 nights);.github/workflows/provable-ladder-nightly.yml;^schedule$;^provable-ladder-nightly$'
 caller_error() { printf 'NOT RELEASABLE: nightly-train, caller error: %s\n' "$*"; exit 3; }
 # ---------------------------------------------------------------- judgement (pure: files in, files out) ----------
 # evaluate LANESFILE RAW MODE -> MODE=cand: run ids of green verdict candidates; MODE=final: lanes.tsv rows and
