@@ -221,11 +221,18 @@ impl InFlightCounter {
     /// Saturating: an unmatched `leave` must not wrap the counter to
     /// `usize::MAX` and make every later reading nonsense.
     pub fn leave(&self) {
-        let _ = self
-            .now
-            .fetch_update(Ordering::AcqRel, Ordering::Acquire, |n| {
-                Some(n.saturating_sub(1))
-            });
+        // A CAS loop rather than `fetch_update`: that is deprecated (renamed
+        // `try_update`) on current stable, and `try_update` does not exist on
+        // the pinned toolchain or the MSRV.
+        let mut n = self.now.load(Ordering::Acquire);
+        while let Err(seen) = self.now.compare_exchange_weak(
+            n,
+            n.saturating_sub(1),
+            Ordering::AcqRel,
+            Ordering::Acquire,
+        ) {
+            n = seen;
+        }
     }
 
     /// Requests in flight right now.

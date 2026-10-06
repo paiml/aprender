@@ -52,14 +52,16 @@ ORACLE=${ORACLE:-'"scripts/|"docs/|"README|"contracts/|"\.\./\.\./|"\.\./\.\.|CA
 REGISTRY_DEFAULT="scripts/tree_reader_tests.txt"
 export ORACLE
 
-# The two mutation switches the --self-test falsifier rows need. They are read
+# The three mutation switches the --self-test falsifier rows need. They are read
 # from the environment ONLY under --self-test: a mutation that a CI run could
 # turn on from outside is a hole, not a falsifier.
 MUTATE_NO_INCLUDE=0
 MUTATE_FLAT=0
+MUTATE_NO_2018=0
 if [ "${TREE_READER_SELF_TEST:-0}" = 1 ]; then
     MUTATE_NO_INCLUDE=${TREE_READER_MUTATE_NO_INCLUDE:-0}
     MUTATE_FLAT=${TREE_READER_MUTATE_FLAT:-0}
+    MUTATE_NO_2018=${TREE_READER_MUTATE_NO_2018:-0}
 fi
 
 INDEX_DIR=""
@@ -110,7 +112,7 @@ index_of() { # index_of <root> <crate> -> path of that crate's module index (bui
 }
 
 module_of() { # module_of <root> <crate> <file> [depth] -> the module path; rc 1 = unresolvable
-    local root=$1 c=$2 f=$3 depth=${4:-0} rel base leaf cand idx owner site name parent fn
+    local root=$1 c=$2 f=$3 depth=${4:-0} rel base leaf cand idx owner site name parent fn sib
     if [ "$depth" -gt 4 ]; then
         printf 'WARN unresolved-include %s: include!() chain deeper than 4 hops — falling back to the whole crate (%s --lib)\n' "$f" "$c" >&2
         return 1
@@ -135,7 +137,13 @@ module_of() { # module_of <root> <crate> <file> [depth] -> the module path; rc 1
     leaf=${cand##*::}
     if [ "$MUTATE_FLAT" = 1 ]; then cand=$leaf; fi
     idx=$(index_of "$root" "$c")
-    if awk -F'\t' -v n="$leaf" -v d="$owner" '$1 == "mod" && $2 == n && $4 == d { found = 1 } END { exit !found }' "$idx"; then
+    # ...or in the 2018-layout sibling FILE: `mod b;` for src/a/b.rs may live in
+    # src/a.rs (no src/a/mod.rs). Missing it sent aprender-contracts'
+    # ontology/extract/json/github.rs (declared in json.rs) to the whole-crate
+    # fallback, which then won over every module row of that crate.
+    sib="$owner.rs"
+    if [ "$MUTATE_NO_2018" = 1 ]; then sib=""; fi
+    if awk -F'\t' -v n="$leaf" -v d="$owner" -v s="$sib" '$1 == "mod" && $2 == n && ($4 == d || $3 == s) { found = 1 } END { exit !found }' "$idx"; then
         printf '%s\n' "$cand"; return 0
     fi
     if [ "$MUTATE_NO_INCLUDE" != 1 ]; then
@@ -465,6 +473,7 @@ CASES
     row 0 "  ...src/deep/mod.rs -> deep" '^reader_mods	--lib	deep$' cat "$td/fx.out"
     row 0 "  ...src/deep/leaf.rs -> deep::leaf" '^reader_mods	--lib	deep::leaf$' cat "$td/fx.out"
     row 0 "  ...src/gen/part.rs, pulled by include!() from src/inc.rs -> inc (the INCLUDER's module)" '^reader_mods	--lib	inc$' cat "$td/fx.out"
+    row 0 "  ...src/flat/child.rs, declared in the 2018-layout sibling src/flat.rs -> flat::child" '^reader_mods	--lib	flat::child$' cat "$td/fx.out"
     row 0 "  ...src/attached.rs, declared #[path] as mod bolted from src/deep/mod.rs -> deep::bolted" '^reader_mods	--lib	deep::bolted$' cat "$td/fx.out"
     row 0 "  ...tests/it.rs -> --test it (integration rows unchanged)" '^reader_mods	--test	it$' cat "$td/fx.out"
     row 0 "  ...an unresolvable reader -> the WHOLE crate, 2 columns (fallback, never a guessed module)" '^reader_orphan	--lib$' cat "$td/fx.out"
@@ -480,6 +489,18 @@ CASES
         bash -c "TREE_READER_MUTATE_FLAT=1 bash '$T' --derive '$FX' 2>/dev/null | diff '$FX/derived.golden.txt' -"
     row 0 "  ...and it equals the committed flat golden (deep::leaf -> leaf)" '^$' \
         bash -c "TREE_READER_MUTATE_FLAT=1 bash '$T' --derive '$FX' 2>/dev/null | diff '$FX/derived.flat.golden.txt' -"
+    # MUTATION 3: forget the 2018-layout sibling file (the scanner before this row)
+    # -> src/flat/child.rs is undeclared, and reader_mods falls back whole.
+    # (\074/\076 and the hunk-header filter keep literal angle brackets out of the source.)
+    TREE_READER_MUTATE_NO_2018=1 bash "$T" --derive "$FX" > "$td/no2018.out" 2> /dev/null || true
+    diff "$FX/derived.golden.txt" "$td/no2018.out" > "$td/no2018.diff" || true
+    grep -v -e '^[0-9]' -e '^---$' "$td/no2018.diff" > "$td/no2018.raw" || true
+    LC_ALL=C sort -o "$td/no2018.lines" "$td/no2018.raw"
+    printf '\074 reader_mods\t--lib\tflat::child\n\076 reader_mods\t--lib\n' > "$td/no2018.want"
+    row 0 "MUTATION: 2018-layout sibling ignored (TREE_READER_MUTATE_NO_2018=1) -> the golden DIFFERS" '^[0-9]' cat "$td/no2018.diff"
+    row 0 "  ...and exactly flat::child is lost to the whole-crate fallback (reader_mods --lib)" '^$' diff "$td/no2018.want" "$td/no2018.lines"
+    env -u TREE_READER_SELF_TEST TREE_READER_MUTATE_NO_2018=1 bash "$T" --derive "$FX" > "$td/no2018.inert" 2> /dev/null || true
+    row 0 "  ...and TREE_READER_MUTATE_NO_2018 is inert outside --self-test (the real golden)" '^$' diff "$FX/derived.golden.txt" "$td/no2018.inert"
     # The mutations are self-test-only: without TREE_READER_SELF_TEST the switch is inert.
     row 1 "the mutation switches are inert outside --self-test (TREE_READER_SELF_TEST unset -> the real golden)" '^[<>]' \
         env -u TREE_READER_SELF_TEST TREE_READER_MUTATE_FLAT=1 bash -c "bash '$T' --derive '$FX' 2>/dev/null | diff '$FX/derived.flat.golden.txt' -"
