@@ -256,22 +256,50 @@ fi
 
 # -- 8. Every path the story hunts still exists -----------------------------
 # Cause 3. Static, because a path can rot without anyone running the nightly.
-if [ -f "$STORY" ]; then
-  missing=""
-  checked=0
-  while read -r p; do
-    checked=$((checked + 1))
-    [ -e "$p" ] || missing="$missing $p"
-  done < <(grep -oE '(crates|src)/[A-Za-z0-9_./-]+' "$STORY" \
-             | grep -E '\.rs$|/serve$' | sort -u)
-  want "every source path hunted by qwen-story.sh exists" "" "$missing"
-  # Fail closed: a discovery step that found nothing must not report success.
-  if [ "$checked" -ge 15 ]; then
-    ok "path discovery found $checked hunted paths"
-  else
-    bad "path discovery found enough hunted paths" ">= 15" "$checked"
-  fi
+# The paths live in one table, STORY_HUNTS (lib_story_pmat.sh, #4875), read by
+# both the story's beats and the hunt-only nightly.
+missing=""
+checked=0
+while read -r p; do
+  checked=$((checked + 1))
+  [ -e "$p" ] || missing="$missing $p"
+done < <(sed -e 's/^[^|]*|//' <<< "$STORY_HUNTS" | tr ' ' '\n' | grep -v '^$' | sort -u)
+want "every source path hunted by the story exists" "" "$missing"
+# Fail closed: a discovery step that found nothing must not report success.
+if [ "$checked" -ge 15 ]; then
+  ok "path discovery found $checked hunted paths"
+else
+  bad "path discovery found enough hunted paths" ">= 15" "$checked"
 fi
+
+# -- 10. One table, two readers (#4875) --------------------------------------
+# The story runs line N at the end of beat N; story_pmat_hunt.sh runs all eight.
+# A beat that stops calling its line, or a line no beat calls, is a hunt the
+# nightly no longer runs where the story said it would.
+want "STORY_HUNTS has one line per beat" "8" "$(grep -c '|' <<< "$STORY_HUNTS")"
+want "qwen-story.sh calls story_hunt 1..8 once each, in beat order" "1 2 3 4 5 6 7 8" \
+  "$(sed -n -e 's/^  story_hunt \([0-9][0-9]*\)$/\1/p' "$STORY" | tr '\n' ' ' | sed -e 's/ $//')"
+want "qwen-story.sh names no hunt path itself" "" "$(grep -n -E '^[[:space:]]*pmat_hunt ' "$STORY")"
+: > "$FAILLOG"
+story_hunt 9 >/dev/null 2>&1; rc=$?
+want "a line STORY_HUNTS lacks returns 1" "1" "$rc"
+want "a line STORY_HUNTS lacks tallies a failure" "pmat-hunt beat 9 :: STORY_HUNTS has no line 9" "$(cat "$FAILLOG")"
+: > "$FAILLOG"
+out=$(STORY_COVERAGE_FILE="$COVFILE" STORY_COVERAGE_SHA="$HEAD_SHA" PMAT_HUNT=1 story_hunt 2); rc=$?
+want "story_hunt 2 hunts beat 2's label" "1" "$(grep -c -F -e '-- pmat bug-hunt manifest (qa validate lint) --' <<< "$out")"
+want "story_hunt 2 returns 0 with rows" "0" "$rc"
+
+# The hunt-only nightly, end to end against the stub: eight headers and rc 0 on
+# a coverage file of HEAD; rc 2 (never 0) when that file is absent; rc 1 when
+# pmat is missing, because the library's silent skip would otherwise pass.
+HUNT="scripts/story_pmat_hunt.sh"
+out=$(STORY_COVERAGE_FILE="$COVFILE" STORY_COVERAGE_SHA="$HEAD_SHA" PMAT_HUNT=0 bash "$HUNT" 2>&1); rc=$?
+want "story_pmat_hunt.sh: coverage of HEAD returns 0 (PMAT_HUNT=0 in its env is overridden)" "0" "$rc"
+want "story_pmat_hunt.sh: runs all eight hunts" "8" "$(grep -c -e '-- pmat bug-hunt manifest (' <<< "$out")"
+out=$(env -u STORY_COVERAGE_FILE -u STORY_COVERAGE_SHA bash "$HUNT" 2>&1); rc=$?
+want "story_pmat_hunt.sh: no coverage file returns 2" "2" "$rc"
+out=$(PMAT_BIN="$TMP/bin/no-such-pmat" STORY_COVERAGE_FILE="$COVFILE" STORY_COVERAGE_SHA="$HEAD_SHA" bash "$HUNT" 2>&1); rc=$?
+want "story_pmat_hunt.sh: no pmat returns 1" "1" "$rc"
 
 echo
 if [ "$fails" -eq 0 ]; then

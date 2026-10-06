@@ -1,0 +1,189 @@
+# The qwen story's pmat bug-hunt manifest, in its own job (#4875).
+#
+# The hunt's coverage gaps read coverage-nightly's coverage JSON, and only when
+# that file was measured on the commit being hunted (scripts/lib_story_pmat.sh).
+# qwen-story-daily starts from the nightly pick, as coverage-nightly does, and
+# coverage takes 60-70 min against the story job's 30, so inside the story the
+# gaps read not_measured on most nights. This workflow starts when Coverage
+# Nightly finishes instead, downloads THAT run's coverage-json artifact, and
+# hunts the night's C: the same eight hunts the story's beats name
+# (STORY_HUNTS), via scripts/story_pmat_hunt.sh. The story itself runs with
+# PMAT_HUNT=0 now; a dispatch can still turn its hunts on.
+#
+# One hop from the pick, never two: Coverage Nightly chains from "Nightly pick",
+# and scripts/release/check_producers_chain.sh (HOPS) holds both links. The C
+# step reads the COVERAGE run's created_at and conclusion, so a coverage run
+# that did not succeed makes this run not_measured.
+
+name: qwen-hunt-nightly
+
+on:
+  workflow_run:
+    # The workflow NAME (coverage-nightly.yml `name:`), not the file name.
+    workflows: ["Coverage Nightly"]
+    types: [completed]
+    branches: [main]
+  workflow_dispatch:
+    inputs:
+      file_issue:
+        description: 'File a tracking issue if the hunt fails or the manifest grows'
+        required: false
+        default: 'true'
+
+permissions:
+  contents: read
+  issues: write   # to open/comment on the tracking issue
+  actions: read   # to download coverage-nightly's coverage-json artifact
+
+concurrency:
+  group: qwen-hunt-nightly
+  cancel-in-progress: false
+
+jobs:
+  hunt:
+    name: Qwen story pmat hunt
+    # pmat and the checkout only: no apr, GPU or model, so the clean-room
+    # pool, as guards-nightly, and never a perf host.
+    runs-on: [self-hosted, Linux, X64, clean-room]
+    timeout-minutes: 45
+    steps:
+      - uses: actions/checkout@v7
+        with:
+          fetch-depth: 1
+      - name: Measure the night's C, not main's head (T44)
+        if: github.event_name == 'workflow_run'
+        env:
+          NIGHTLY_PICK_AT: ${{ github.event.workflow_run.created_at }}
+          NIGHTLY_PICK_CONCLUSION: ${{ github.event.workflow_run.conclusion }}
+        run: bash scripts/release/nightly_c_checkout.sh --at "$NIGHTLY_PICK_AT" --pick-conclusion "$NIGHTLY_PICK_CONCLUSION"
+
+      - name: pmat must match the pinned fleet versions (never install)
+        run: |
+          export PATH="$HOME/.cargo/bin:$HOME/.local/bin:$PATH"
+          setsid --wait bash scripts/check_tool_versions.sh
+
+      # The triggering coverage run's own artifact, matched on the coverage.sha it
+      # records, never on that run's head_sha: a merge between the pick's start and
+      # its finish moves head_sha off C while coverage measured C. lib_story_pmat.sh
+      # uses the file only when coverage.sha is this checkout's HEAD; any other
+      # file, or none, makes the gaps not_measured and the hunt red.
+      - name: Fetch the triggering coverage run's coverage JSON
+        shell: bash
+        env:
+          GH_TOKEN: ${{ github.token }}
+          # workflow_run: the Coverage Nightly run that started this one.
+          # workflow_dispatch: empty, so look one up for the checked-out commit.
+          COV_RUN_ID: ${{ github.event.workflow_run.id }}
+        run: |
+          set -uo pipefail
+          dir="$RUNNER_TEMP/coverage-json"
+          rm -rf "${dir:?}"
+          run_id="$COV_RUN_ID"
+          if [ -z "$run_id" ]; then
+            run_id=$(gh run list -R "$GITHUB_REPOSITORY" -w coverage-nightly.yml --commit "$(git rev-parse HEAD)" \
+              --limit 5 --json databaseId,status --jq '[.[] | select(.status == "completed")][0].databaseId // empty') || run_id=""
+          fi
+          if [ -z "$run_id" ]; then
+            echo "::warning::no completed coverage-nightly run for $(git rev-parse HEAD) - pmat hunt coverage gaps will be not_measured"
+            exit 0
+          fi
+          if ! gh run download "$run_id" -R "$GITHUB_REPOSITORY" -n coverage-json -D "$dir"; then
+            echo "::warning::coverage-nightly run $run_id has no coverage-json artifact - pmat hunt coverage gaps will be not_measured"
+            exit 0
+          fi
+          echo "STORY_COVERAGE_FILE=$dir/coverage.json" >> "$GITHUB_ENV"
+          echo "STORY_COVERAGE_SHA=$(cat "$dir/coverage.sha" 2>/dev/null)" >> "$GITHUB_ENV"
+          echo "coverage JSON from coverage-nightly run $run_id, measured on $(cat "$dir/coverage.sha" 2>/dev/null || echo '(none recorded)'); HEAD is $(git rev-parse HEAD)"
+
+      # ${PIPESTATUS[0]}: the hunt's status, not tee's (FALSIFY-QWEN-STORY-009).
+      - name: Run scripts/story_pmat_hunt.sh
+        id: hunt
+        continue-on-error: true
+        shell: bash
+        run: |
+          set +e
+          set -o pipefail
+          export PATH="$HOME/.cargo/bin:$HOME/.local/bin:$PATH"
+          bash scripts/story_pmat_hunt.sh 2>&1 | tee /tmp/hunt.log
+          echo "exit_code=${PIPESTATUS[0]}" >> "$GITHUB_OUTPUT"
+
+      - name: Extract pmat bug-hunt manifest
+        id: manifest
+        shell: bash
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          # Rows are indented; anchor on leading whitespace, as qwen-story-daily does.
+          mkdir -p /tmp/qwen-hunt-artifacts
+          grep -E '^[[:space:]]+(gap|churn|fault)[[:space:]]' /tmp/hunt.log \
+            > /tmp/qwen-hunt-artifacts/pmat-manifest.txt || true
+          LINES=$(wc -l < /tmp/qwen-hunt-artifacts/pmat-manifest.txt)
+          echo "manifest_lines=$LINES" >> "$GITHUB_OUTPUT"
+          PREV_LINES=$(gh run list --workflow=qwen-hunt-nightly.yml --status=success --limit=1 \
+            --json databaseId --jq '.[0].databaseId' 2>/dev/null \
+            | xargs -I {} gh run download {} -n pmat-manifest -D /tmp/prev 2>/dev/null \
+            && wc -l < /tmp/prev/pmat-manifest.txt 2>/dev/null || echo 0)
+          GROWTH=$((LINES - PREV_LINES))
+          echo "growth=$GROWTH" >> "$GITHUB_OUTPUT"
+          echo "Previous manifest: $PREV_LINES lines, current: $LINES lines, growth: $GROWTH"
+
+      - name: Upload pmat manifest artifact
+        if: always()
+        uses: actions/upload-artifact@v7
+        with:
+          name: pmat-manifest
+          path: /tmp/qwen-hunt-artifacts/pmat-manifest.txt
+          retention-days: 90
+
+      - name: Upload hunt log artifact
+        if: always()
+        uses: actions/upload-artifact@v7
+        with:
+          name: hunt-log
+          path: /tmp/hunt.log
+          retention-days: 30
+
+      # Notifies, never judges (continue-on-error), as in qwen-story-daily: a
+      # notification failure must not mask or fake the hunt's own result.
+      - name: File / update tracking issue on failure
+        continue-on-error: true
+        if: |
+          (steps.hunt.outputs.exit_code != '0' ||
+           fromJson(steps.manifest.outputs.growth || '0') > 5) &&
+          (github.event.inputs.file_issue != 'false')
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        shell: bash
+        run: |
+          set -uo pipefail
+          for L in qwen-story-daily regression; do
+            gh label create "$L" --description "Filed by qwen-story-daily" --force >/dev/null 2>&1 || true
+          done
+          TITLE="qwen-hunt-nightly: hunt exit=${{ steps.hunt.outputs.exit_code }} manifest_growth=${{ steps.manifest.outputs.growth }}"
+          EXISTING=$(gh issue list --label qwen-story-daily --state open --limit 1 \
+            --json number --jq '.[0].number // empty')
+          {
+            echo "## Qwen story pmat hunt — $(date -u +%Y-%m-%dT%H:%M:%SZ)"
+            echo ""
+            echo "- Hunt exit code: \`${{ steps.hunt.outputs.exit_code }}\`"
+            echo "- Pmat manifest lines: \`${{ steps.manifest.outputs.manifest_lines }}\` (growth: ${{ steps.manifest.outputs.growth }})"
+            echo "- Workflow run: ${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}"
+            echo ""
+            echo "### Hunt log (tail)"
+            echo '```'
+            tail -50 /tmp/hunt.log
+            echo '```'
+          } > /tmp/issue-body.md
+          if [ -n "$EXISTING" ]; then
+            gh issue comment "$EXISTING" --body-file /tmp/issue-body.md
+          else
+            gh issue create --title "$TITLE" --label qwen-story-daily,regression --body-file /tmp/issue-body.md
+          fi
+
+      # always(): without a status function GitHub prepends success(), and any
+      # earlier failure would skip the verdict.
+      - name: Fail the job if the hunt failed
+        if: always() && steps.hunt.outputs.exit_code != '0'
+        run: |
+          echo "::error::pmat hunt exited ${{ steps.hunt.outputs.exit_code }} - see the hunt-log artifact"
+          exit 1

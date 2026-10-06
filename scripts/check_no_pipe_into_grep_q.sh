@@ -38,7 +38,7 @@ SELF="scripts/check_no_pipe_into_grep_q.sh"
 # it is NOT fed by a pipe, so `cmd || grep -q PAT file` has no producer to kill
 # and no SIGPIPE to misread. The shipped regex matched the SECOND bar of `||`
 # and flagged 2 safe sites in this tree (dogfood.sh:1477 greps a FILE,
-# qwen-story.sh:281 greps a HERE-STRING) plus every new one written since. The
+# qwen-story.sh:275 greps a HERE-STRING) plus every new one written since. The
 # case table below now has a row for it in both directions, because a regex
 # without a discriminating row is how all five previous versions of this pattern
 # shipped wrong.

@@ -1,4 +1,4 @@
-# Nightly Qwen-story regression run (after coverage-nightly) + pmat bug-hunt manifest.
+# Nightly Qwen-story regression run (chained from the nightly pick); its pmat bug-hunt runs in qwen-hunt-nightly.yml.
 #
 # Contract: contracts/qwen-story-v1.yaml § FALSIFY-QWEN-STORY-006.
 # Runs `scripts/qwen-story.sh` against the canonical Qwen model registry,
@@ -16,10 +16,10 @@ on:
   # Chained, not scheduled (T44, #4686): this producer measures the night's
   # C that "Nightly pick" pinned at nightly/<night>, never main's head at
   # whatever hour GitHub got round to creating a scheduled run.
-  # #4715 chained it from Coverage Nightly so the pmat hunt finds coverage's
-  # artifact for the same sha. Coverage now starts from the same pick and takes
-  # 60-70 min, past this job's 30, so the hunt reads not_measured on most nights
-  # until it moves into its own job chained from Coverage Nightly.
+  # The pmat hunt runs in qwen-hunt-nightly.yml (#4875), chained from Coverage
+  # Nightly so it reads that run's coverage of the same C. Coverage starts from the
+  # same pick and takes 60-70 min, past this job's 30, so here PMAT_HUNT defaults
+  # to 0; a dispatch with pmat_hunt=1 still hunts inside the story.
   workflow_run:
     workflows: ["Nightly pick"]
     types: [completed]
@@ -27,9 +27,9 @@ on:
   workflow_dispatch:
     inputs:
       pmat_hunt:
-        description: 'Run pmat bug-hunt manifest (1 = yes, 0 = skip for speed)'
+        description: 'Also run the pmat bug-hunt here (1 = yes; nightly it runs in qwen-hunt-nightly)'
         required: false
-        default: '1'
+        default: '0'
       file_issue:
         description: 'File a tracking issue if manifest grows'
         required: false
@@ -73,7 +73,7 @@ jobs:
       # Default to the runner user's $HOME/models (the models live there, e.g.
       # /home/noah/models). The old hardcoded /home/runner/models was the retired
       # runner's path → every beat SKIPped (missing model) even once scheduled.
-      PMAT_HUNT: ${{ github.event.inputs.pmat_hunt || '1' }}
+      PMAT_HUNT: ${{ github.event.inputs.pmat_hunt || '0' }}
       RUST_BACKTRACE: '1'
     steps:
       - uses: actions/checkout@v7

@@ -9,7 +9,7 @@
 #   P1  still has a `schedule:` trigger (a live line in its on: block; the key quoted or with a space before its colon
 #       is the same key to GitHub);
 #   P2  lacks the chain: workflow_run with workflows: [<the name nightly-pick.yml declares>], types: [completed],
-#       branches: [main];
+#       branches: [main] -- for a hop (HOPS below), workflows: [<the name its upstream producer declares>];
 #   P3  checks this repo out (actions/checkout, unless `repository:` names another repo literally) and the very next step
 #       is not the C step (a host preflight goes after it, so it runs C's own copy): run `bash scripts/release/nightly_c_checkout.sh --at "$NIGHTLY_PICK_AT" --pick-conclusion "$NIGHTLY_PICK_CONCLUSION"`,
 #       env NIGHTLY_PICK_AT from github.event.workflow_run.created_at (the pick run's own time, which a rerun of either
@@ -21,10 +21,12 @@
 #       calls a reusable workflow (`uses:` at job level), whose checkout this file cannot see;
 #   P4  names github.sha, GITHUB_SHA, github.workflow_sha or GITHUB_WORKFLOW_SHA on a live line that names neither
 #       NIGHTLY_C nor workflow_run.head_sha outside a trailing comment;
-#   P5  is listed below and missing, or chains from the pick and is not listed (the list is complete both ways);
+#   P5  is listed below (a producer or a hop) and missing, or chains from the pick and is not listed, or chains from a
+#       listed producer and is not in HOPS (the lists are complete both ways), or is both a producer and a hop; a hop's
+#       upstream that is not a listed producer fails P2;
 #   P6  is read by a lane of scripts/release/nightly_train.sh's LANES table whose event pattern is not exactly
 #       ^workflow_run$ (its scheduled runs are gone), or a lane reads workflow_run runs of a workflow not listed,
-#       or a listed producer has no lane, or LANES is assigned more than once.
+#       or a listed producer or hop has no lane, or LANES is assigned more than once (a hop counts as listed).
 #   P7  (nightly-pick.yml itself) does not take its night from its own run's created_at, the clock every producer
 #       reads: a rerun after noon UTC the next day would pick the next night while the producers build this one.
 # A listed or unlisted workflow this file cannot read is RED, never a silent pass.
@@ -33,6 +35,9 @@
 # not a measurement and is not judged here. It reads `on:` as a block mapping with keys at indent 2; any other
 # layout hides the chain and fails P2 (closed). A flow-style step (`- {uses: actions/checkout@v4}`) is not read as a
 # checkout.
+# A hop's C step reads its upstream run's created_at, which a rerun of the upstream moves: a pick rerun the next
+# evening reruns the upstream, and the hop then asks for the next night. The hop reads that as not_measured (its
+# input was measured on another commit), never as a wrong reading; this guard does not see it.
 #
 # Usage:
 #   check_producers_chain.sh [--root DIR]     judge the tree (default: the repo this file is in)
@@ -46,6 +51,10 @@ SCRIPT_PATH="$HERE/$(basename -- "${BASH_SOURCE[0]}")"
 # The nightly producers: the workflows whose results are read as "the night's" measurement.
 PRODUCERS="beat-speed-nightly book book-contracts conleche-nightly coverage-nightly cuda-nightly examples-nightly
 guards-nightly install-script mutants-nightly nightly nightly-bench qwen-story-daily silicon-nightly toolchain-ceiling"
+# One-hop producers, HOP=UPSTREAM: HOP chains from the UPSTREAM producer's name: instead of the pick, and its C step
+# reads the upstream run's created_at and conclusion. The upstream must be listed above (so its own chain is the pick);
+# a hop of a hop is not allowed. qwen-hunt-nightly reads the coverage JSON its upstream wrote for the same C (#4875).
+HOPS="qwen-hunt-nightly=coverage-nightly"
 
 caller_error() { printf 'check_producers_chain: caller error: %s\n' "$1" >&2; exit 3; }
 
@@ -66,6 +75,11 @@ judge_file() {
             return "\001"
         }
         function unq(s) { if (s ~ /^".*"$/ || s ~ /^\047.*\047$/) s = substr(s, 2, length(s) - 2); return s }
+        function anyup(s,   a, m, i, x) { # the first entry of a workflows: list that names a listed producer (PC_UPS)
+            s = bare(s); if (s !~ /^\[.*\]$/) return ""; m = split(substr(s, 2, length(s) - 2), a, ",")
+            for (i = 1; i <= m; i++) { x = a[i]; gsub(/^[[:space:]]+|[[:space:]]+$/, "", x); x = unq(x)
+                if (x != "" && index(ENVIRON["PC_UPS"], "\n" x "\n")) return x }
+            return "" }
         function stray(st,   a, m, i, p, k, s) { # the first part of the C step that is not name/if/run or the env line
             m = split(st, a, "\n"); p = ind(a[1]) + 2
             for (i = 1; i <= m; i++) {
@@ -125,6 +139,7 @@ judge_file() {
             if (L ~ /^  workflow_run:/) { wr = 1; next }
             if (ind(L) <= 2) wr = 0
             if (wr && L ~ /^    workflows:/ && list1(L) == pick) cw = 1
+            if (wr && L ~ /^    workflows:/ && !listed && cu == "") cu = anyup(L)
             if (wr && L ~ /^    types:/ && list1(L) == "completed") ct = 1
             if (wr && L ~ /^    branches:/ && list1(L) == "main") cb = 1
         }
@@ -144,7 +159,9 @@ judge_file() {
         END {
             if (insteps) flush()
             chained = (cw && ct && cb)
-            if (!listed) { if (cw) printf "FAIL  %s: P5 chains from \"%s\" but is not in the producer list\n", f, pick; exit }
+            if (!listed) { if (cw) printf "FAIL  %s: P5 chains from \"%s\" but is not in the producer list\n", f, pick
+                           else if (cu != "") printf "FAIL  %s: P5 chains from \"%s\", a listed producer, but is not in HOPS\n", f, cu
+                           exit }
             if (sched) fail("P1 still has a schedule: trigger -- a producer starts on the pick, never on its own cron")
             if (!checkouts) fail("P3 no actions/checkout of this repo found -- nothing switches the tree to C")
             if (!chained) fail("P2 no workflow_run on [\"" pick "\"], types [completed], branches [main]" \
@@ -172,7 +189,7 @@ p7() { # PICKFILE -> FAIL lines; the pick takes its night from its own run's cre
 p6() { # ROOT -> FAIL lines; the train's LANES must read a listed producer by its workflow_run runs, and only those
     local t="$1/scripts/release/nightly_train.sh"
     [ -f "$t" ] || { printf 'FAIL  nightly_train.sh: P6 missing, so its LANES table cannot be read\n'; return 1; }
-    awk -F ';' -v prods=" $(printf '%s' "$PRODUCERS" | tr '\n' ' ') " '
+    awk -F ';' -v prods=" $(printf '%s\n' "$PRODUCERS" $HOPS | sed -e 's/=.*//' | tr '\n' ' ') " '
         /^LANES=\047/ { assigned++; inl = 1; sub(/^LANES=\047/, "") }
         inl {
             last = ($0 ~ /\047$/); line = $0; sub(/\047$/, "", line); split(line, a, ";")
@@ -197,22 +214,46 @@ p6() { # ROOT -> FAIL lines; the train's LANES must read a listed producer by it
 # exits at the first match, the printf dies of SIGPIPE, and pipefail turns a found line into a miss.
 hasl() { local text="$1"; shift; grep -q "$@" <<< "$text"; }
 
+wfname() { # FILE -> the name: it declares, unquoted
+    sed -n -e 's/^name:[[:space:]]*//p' "$1" | head -n 1 | sed -e 's/[[:space:]]*$//' -e 's/^"\(.*\)"$/\1/' -e "s/^'\(.*\)'\$/\1/"
+}
+
 judge() { # ROOT
-    local root="$1" wf pick p rc=0 out listed jr
+    local root="$1" wf pick p rc=0 out listed jr h up from ups=$'\n' hops=" "
+    local plist=" $(printf '%s' "$PRODUCERS" | tr '\n' ' ') "   # " a b c ": a case pattern then matches a whole name
     wf="$root/.github/workflows"
     [ -f "$wf/nightly-pick.yml" ] || { printf 'FAIL  nightly-pick.yml is missing: there is no pick to chain from\n'; return 1; }
-    pick="$(sed -n -e 's/^name:[[:space:]]*//p' "$wf/nightly-pick.yml" | head -n 1 | sed -e 's/[[:space:]]*$//' -e 's/^"\(.*\)"$/\1/' -e "s/^'\(.*\)'\$/\1/")"
+    pick="$(wfname "$wf/nightly-pick.yml")"
     [ -n "$pick" ] || { printf 'FAIL  nightly-pick.yml declares no name:\n'; return 1; }
     for p in $PRODUCERS; do
         [ -f "$wf/$p.yml" ] || { printf 'FAIL  %s.yml: P5 listed producer is missing\n' "$p"; rc=1; }
+        up="$( [ -f "$wf/$p.yml" ] && wfname "$wf/$p.yml")"; [ -n "$up" ] && ups="$ups$up"$'\n'
+    done
+    # a hop's upstream is a listed producer (so its own P2 chain is the pick); a hop is never also a producer
+    for h in $HOPS; do
+        p="${h%%=*}"; up="${h#*=}"
+        case "$plist" in
+            *" $up "*) ;;
+            *) printf 'FAIL  %s.yml: P2 hop upstream %s is not a listed producer, so its chain is not the pick\n' "$p" "$up"; rc=1 ;;
+        esac
+        case "$plist" in
+            *" $p "*) printf 'FAIL  %s.yml: P5 is both a producer and a hop\n' "$p"; rc=1 ;;
+        esac
+        [ -f "$wf/$p.yml" ] || { printf 'FAIL  %s.yml: P5 listed hop is missing\n' "$p"; rc=1; }
+        hops="$hops$p "
     done
     for f in "$wf"/*.yml; do
         [ -f "$f" ] || continue
         p="$(basename -- "$f" .yml)"
         [ "$p" = nightly-pick ] && continue
-        listed=0
-        case " $(printf '%s' "$PRODUCERS" | tr '\n' ' ') " in *" $p "*) listed=1 ;; esac
-        out="$(judge_file "$f" "$pick" "$listed" 2>&1)"; jr=$?
+        listed=0; from="$pick"
+        case "$plist" in *" $p "*) listed=1 ;; esac
+        case "$hops" in *" $p "*)
+            listed=1; up="$(printf '%s\n' $HOPS | sed -n -e "s/^$p=//p" | head -n 1)"
+            from="$( [ -f "$wf/$up.yml" ] && wfname "$wf/$up.yml")"
+            [ -n "$from" ] || from="(no name: in $up.yml)" ;;
+        esac
+        out="$(PC_UPS="$ups" judge_file "$f" "$from" "$listed" 2>&1)"; jr=$?
         # a file awk cannot open was judged by nothing: it is RED, never a silent pass
         [ "$jr" -eq 0 ] || printf -v out '%s\nFAIL  %s.yml: unreadable (exit %s), so it was not judged' "$out" "$p" "$jr"
         [ -n "$out" ] && printf '%s\n' "$out"
@@ -228,10 +269,10 @@ judge() { # ROOT
 # ------------------------------------------------------------------------------------ the case table ----
 CASES=0; FAILED=0
 REAL_ROOT="$(cd -- "$HERE/../.." && pwd)"
-fixture() { # DIR: the real producers + nightly-pick.yml
+fixture() { # DIR: the real producers, hops + nightly-pick.yml
     rm -rf -- "${1:?}"; mkdir -p "$1/.github/workflows" || return 1
     local p
-    for p in $PRODUCERS nightly-pick; do cp "$REAL_ROOT/.github/workflows/$p.yml" "$1/.github/workflows/" || return 1; done
+    for p in $PRODUCERS $(printf '%s\n' $HOPS | sed -e 's/=.*//') nightly-pick; do cp "$REAL_ROOT/.github/workflows/$p.yml" "$1/.github/workflows/" || return 1; done
     mkdir -p "$1/scripts/release" && cp "$REAL_ROOT/scripts/release/nightly_train.sh" "$1/scripts/release/" || return 1
 }
 row() { # NAME WANT-RC MUST -- MUTATION-FN (run inside the fixture's workflows dir)
@@ -291,6 +332,14 @@ m_lanes_renamed() { changed "$NT" 's/^LANES=\x27/LANEZ=\x27/'; }
 m_lane_dropped()  { changed "$NT" '/^book;info;book;/d'; }
 m_lanes_twice()   { printf '%s\n' "LANES='book;info;book;.github/workflows/book.yml;^workflow_run$;'" >> "$NT"; }
 m_unlisted()      { synth extra.yml <<< '      - run: true'; }
+m_hop_from_pick() { changed qwen-hunt-nightly.yml 's/workflows: \["Coverage Nightly"\]/workflows: ["Nightly pick"]/'; }
+m_hop_gone()      { rm -f -- qwen-hunt-nightly.yml; }
+m_hop_no_lane()   { changed "$NT" '/^qwen-hunt;info;qwen-hunt-nightly;/d'; }
+m_up_renamed()    { changed coverage-nightly.yml 's/^name: Coverage Nightly$/name: Coverage Nightly 2/'; }
+m_hop_unlisted()  { { printf 'name: Extra\non:\n  workflow_run:\n    workflows: ["Coverage Nightly"]\n    types: [completed]\n    branches: [main]\n'
+                      printf 'jobs:\n  a:\n    runs-on: x\n    steps:\n      - run: true\n'; } > extra.yml; }
+m_hop_unl_two()   { { printf 'name: Extra\non:\n  workflow_run:\n    workflows: [CI, '"'"'Coverage Nightly'"'"']\n    types: [completed]\n'
+                      printf 'jobs:\n  a:\n    runs-on: x\n    steps:\n      - run: true\n'; } > extra.yml; }
 m_no_cstep()      { changed toolchain-ceiling.yml '/- name: Measure the night.s C, not main.s head (T44)/,/nightly_c_checkout.sh/d'; }
 m_cstep_or()      { changed install-script.yml "0,/if: github.event_name == 'workflow_run'\$/s//if: github.event_name == 'workflow_run' || true/"; }
 m_cstep_ifdrop()  { changed cuda-nightly.yml "s/if: github.event_name == 'workflow_run' && (.*)\$/if: github.event_name == 'workflow_run'/"; }
@@ -403,6 +452,17 @@ self_test() {
     row p6_no_lanes_table           1 'P6 no LANES table read'                 -- m_lanes_renamed
     row p6_listed_without_a_lane    1 'P6 listed producer book.yml has no lane' -- m_lane_dropped
     row p6_lanes_assigned_twice     1 'P6 LANES is assigned more than once'   -- m_lanes_twice
+    # one hop (HOPS): chained from a listed producer's name:, never from the pick, and never two hops
+    row hop_chained_from_the_pick   1 'qwen-hunt-nightly.yml: P2 no workflow_run on ["Coverage Nightly"]' -- m_hop_from_pick
+    row hop_missing                 1 'qwen-hunt-nightly.yml: P5 listed hop is missing' -- m_hop_gone
+    row hop_without_a_lane          1 'P6 listed producer qwen-hunt-nightly.yml has no lane' -- m_hop_no_lane
+    row hop_upstream_renamed        1 'qwen-hunt-nightly.yml: P2 no workflow_run on ["Coverage Nightly 2"]' -- m_up_renamed
+    row p5_unlisted_one_hop_chain   1 'extra.yml: P5 chains from "Coverage Nightly", a listed producer, but is not in HOPS' -- m_hop_unlisted
+    row p5_unlisted_hop_second_item 1 'extra.yml: P5 chains from "Coverage Nightly"' -- m_hop_unl_two
+    HOPS="qwen-hunt-nightly=book-x" \
+    row hop_upstream_not_listed     1 'P2 hop upstream book-x is not a listed producer' -- m_none
+    PRODUCERS="$PRODUCERS qwen-hunt-nightly" \
+    row hop_also_a_producer         1 'qwen-hunt-nightly.yml: P5 is both a producer and a hop' -- m_none
     sigpipe_row
     rm -rf -- "${TMP_ST:?}"
     if [ "$FAILED" -eq 0 ]; then printf 'SELF-TEST PASSED: %s rows\n' "$CASES"; return 0; fi
@@ -457,7 +517,16 @@ m44_no_p7	s/^    p7 "\$wf\/nightly-pick.yml" || rc=1$/    true/
 m45_p7_other_night_call_ok	s/ \&\& ! hasl "\$calls" -v -x -F -e "\$P7_NIGHT"; then/; then/
 m46_p7_at_not_exact	s/hasl "\$t" -x -F -e "\$P7_AT"/hasl "$t" -F -e "$P7_AT"/
 m47_p7_comment_counts	s| -e ./\^#/d. | |
-m48_p7_piped_grep_q	s/! hasl "\$calls" \(-v -x -F -e "\$P7_NIGHT"\)/! printf "%s\\n" "$calls" \| grep -q \1/'
+m48_p7_piped_grep_q	s/! hasl "\$calls" \(-v -x -F -e "\$P7_NIGHT"\)/! printf "%s\\n" "$calls" \| grep -q \1/
+m50_unlisted_hop_ok	s/else if (cu != "") printf/else if (0) printf/
+m51_hop_judged_unlisted	s/^            listed=1; up=/            up=/
+m52_hop_upstream_any	/P2 hop upstream/s/printf .*; rc=1 ;;/: ;;/
+m53_hops_not_in_p6	s/"\$PRODUCERS" \$HOPS | sed/"$PRODUCERS" | sed/
+m54_both_ok	/P5 is both a producer and a hop/s/printf .*; rc=1 ;;/: ;;/
+m55_hop_missing_ok	/P5 listed hop is missing/s/rc=1; }/:; }/
+m56_no_upstream_names	s/\[ -n "\$up" \] \&\& ups=/[ -z "$up" ] \&\& ups=/
+m57_hop_judged_from_pick	s/^            from="\$( \[ -f /            from="$pick"; : "$( [ -f /
+m58_anyup_first_only	s/for (i = 1; i <= m; i++) { x = a\[i\]/for (i = 1; i <= 1; i++) { x = a[i]/'
 mutants() {
     local tmp name expr killed=0 total=0 errors=0 out cut reds
     cut="$(grep -n -m1 -e "^# -* the case table" "$SCRIPT_PATH" | cut -d: -f1)"
@@ -503,7 +572,7 @@ main() {
     case "${1:-}" in
         --self-test) self_test; return $? ;;
         --mutants) mutants; return $? ;;
-        -h | --help) sed -n '2,34p' "$SCRIPT_PATH"; return 0 ;;
+        -h | --help) sed -n '2,45p' "$SCRIPT_PATH"; return 0 ;;
         --root) root="${2:-}"; [ -d "$root" ] || caller_error "--root DIR" ;;
         '') ;;
         *) caller_error "unknown argument '$1' (--root DIR|--self-test|--mutants)" ;;

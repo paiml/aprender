@@ -105,6 +105,7 @@ toolchain-ceiling;info;toolchain-ceiling;.github/workflows/toolchain-ceiling.yml
 cuda;info;cuda-nightly;.github/workflows/cuda-nightly.yml;^workflow_run$;
 silicon;info;silicon-nightly;.github/workflows/silicon-nightly.yml;^workflow_run$;
 qwen-story;info;qwen-story-daily;.github/workflows/qwen-story-daily.yml;^workflow_run$;
+qwen-hunt;info;qwen-hunt-nightly;.github/workflows/qwen-hunt-nightly.yml;^workflow_run$;
 beat-speed;info;beat-speed-nightly;.github/workflows/beat-speed-nightly.yml;^workflow_run$;
 conleche;info;conleche-nightly;.github/workflows/conleche-nightly.yml;^workflow_run$;
 bench;info;nightly-bench;.github/workflows/nightly-bench.yml;^workflow_run$;

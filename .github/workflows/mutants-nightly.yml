@@ -33,7 +33,7 @@ jobs:
     concurrency: # PP-19: the gpu runner is a perf host; serialise against every other consumer of it (check_perf_concurrency_groups.sh)
       group: perf-gx10
       cancel-in-progress: false
-    timeout-minutes: 180   # ends by 06:00Z, before PR traffic rises; a run cut off is red and the next night re-judges from the last success
+    timeout-minutes: 180   # a 00:30-03:30Z start ends by about 03:30-06:30Z, later when queued behind the perf group; a run cut off is red and the next night re-judges from the last success
     env:
       IMAGE: localhost:5000/sovereign-ci:stable
       MUTANTS_JOBS: ${{ vars.MUTANTS_NIGHTLY_JOBS || '8' }}

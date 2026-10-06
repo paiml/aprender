@@ -127,7 +127,7 @@ beat1_discover() {
   fi
   # No commands/list.rs: `Commands::List => pull::list(...)` - list and pull are
   # the same module. The dead path was hunted nightly and returned nothing.
-  pmat_hunt "registry list" crates/apr-cli/src/commands/pull.rs
+  story_hunt 1
 }
 
 # The GGUF leg of Beat 2. Deliberately NOT named beat<N>_* - the story has
@@ -217,10 +217,7 @@ beat2_trust() {
   else
     emit_fail "B2 apr lint" "exit=$RC_EC on a known-good model; lint must exit 0 unless there are ERROR-level findings"
   fi
-  pmat_hunt "qa validate lint" \
-    crates/apr-cli/src/commands/qa.rs \
-    crates/apr-cli/src/commands/validate.rs \
-    crates/apr-cli/src/commands/lint.rs
+  story_hunt 2
 }
 
 # -- Beat 3: Explore (1.5B APR  -  has tokenizer next to it) --------------------─
@@ -248,10 +245,7 @@ beat3_explore() {
   fi
   run_cmd 30 apr tree "$M_15B_APR"
   [ "$RC_EC" -eq 0 ] && emit_pass "B3 apr tree" || emit_fail "B3 apr tree" "exit=$RC_EC"
-  pmat_hunt "inspect tensors tree" \
-    crates/apr-cli/src/commands/inspect.rs \
-    crates/apr-cli/src/commands/tensors.rs \
-    crates/apr-cli/src/commands/tree.rs
+  story_hunt 3
 }
 
 # -- Beat 4: Adapt (export + diff; convert path covered by Beat 1 pull) --------
@@ -283,10 +277,7 @@ beat4_adapt() {
   else
     emit_fail "B4 apr export" "unexpected exit=$RC_EC"
   fi
-  pmat_hunt "export convert quantize" \
-    crates/aprender-core/src/format/converter/metadata.rs \
-    crates/apr-cli/src/commands/convert.rs \
-    crates/apr-cli/src/commands/quantize.rs
+  story_hunt 4
 }
 
 # -- Beat 5: Use (1.5B Q4K APR) ------------------------------------------------
@@ -314,10 +305,7 @@ beat5_use() {
   fi
   # `apr code` moved out of apr-cli into aprender-orchestrate; commands/code.rs
   # has not existed for some time and was hunted nightly regardless.
-  pmat_hunt "run chat code" \
-    crates/apr-cli/src/commands/run.rs \
-    crates/apr-cli/src/commands/chat.rs \
-    crates/aprender-orchestrate/src/cli/code.rs
+  story_hunt 5
 }
 
 # -- Beat 6: Serve (1.5B over HTTP) --------------------------------------------
@@ -359,9 +347,7 @@ beat6_serve() {
   kill "$pid" 2>/dev/null; wait "$pid" 2>/dev/null
   # commands/serve.rs became the commands/serve/ DIRECTORY (handlers, routes,
   # server, ollama, auth). The file path had been dead for months.
-  pmat_hunt "serve http chat-completions" \
-    crates/apr-cli/src/commands/serve \
-    crates/aprender-serve/src/api/cuda_chat_backend.rs
+  story_hunt 6
 }
 
 # -- Beat 7: Operate (7B Q4K GGUF  -  profile/bench, NOT apr qa which has #1864) ─
@@ -381,11 +367,7 @@ beat7_operate() {
   run_cmd 60 apr serve plan "$M_7B_GGUF"
   [ "$RC_EC" -eq 0 ] && emit_pass "B7 apr serve plan -- 7B VRAM budget" \
     || emit_fail "B7 apr serve plan" "exit=$RC_EC"
-  pmat_hunt "profile bench gpu parity" \
-    crates/apr-cli/src/commands/profile.rs \
-    crates/apr-cli/src/commands/bench.rs \
-    crates/apr-cli/src/commands/gpu.rs \
-    crates/apr-cli/src/commands/parity.rs
+  story_hunt 7
 }
 
 # -- Beat 8: Scale (30B-MoE) --------------------------------------------------─
@@ -411,9 +393,7 @@ beat8_scale() {
   else
     emit_fail "B8 apr tensors --json" "$n tensors (expected ≥500 for 30B-MoE)"
   fi
-  pmat_hunt "moe inspect qwen3" \
-    crates/aprender-serve/src/infer/qwen3_moe_generate.rs \
-    crates/aprender-serve/src/api/cuda_chat_backend.rs
+  story_hunt 8
 }
 
 # -- Main ----------------------------------------------------------------------

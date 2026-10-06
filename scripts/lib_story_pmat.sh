@@ -215,3 +215,30 @@ pmat_hunt() {
   fi
   return 0
 }
+
+# The eight beats' hunts, one line per beat in beat order: "<label>|<path> <path>...".
+# One table, two readers (#4875): qwen-story.sh runs line N at the end of beat N, and
+# story_pmat_hunt.sh runs all eight on their own, chained from Coverage Nightly, so the
+# gaps read the coverage file of the commit they hunt. A path with a space cannot be
+# listed; check_story_pmat_hunt.sh proves every path exists.
+STORY_HUNTS='registry list|crates/apr-cli/src/commands/pull.rs
+qa validate lint|crates/apr-cli/src/commands/qa.rs crates/apr-cli/src/commands/validate.rs crates/apr-cli/src/commands/lint.rs
+inspect tensors tree|crates/apr-cli/src/commands/inspect.rs crates/apr-cli/src/commands/tensors.rs crates/apr-cli/src/commands/tree.rs
+export convert quantize|crates/aprender-core/src/format/converter/metadata.rs crates/apr-cli/src/commands/convert.rs crates/apr-cli/src/commands/quantize.rs
+run chat code|crates/apr-cli/src/commands/run.rs crates/apr-cli/src/commands/chat.rs crates/aprender-orchestrate/src/cli/code.rs
+serve http chat-completions|crates/apr-cli/src/commands/serve crates/aprender-serve/src/api/cuda_chat_backend.rs
+profile bench gpu parity|crates/apr-cli/src/commands/profile.rs crates/apr-cli/src/commands/bench.rs crates/apr-cli/src/commands/gpu.rs crates/apr-cli/src/commands/parity.rs
+moe inspect qwen3|crates/aprender-serve/src/infer/qwen3_moe_generate.rs crates/aprender-serve/src/api/cuda_chat_backend.rs'
+
+# story_hunt N: run beat N's hunt from STORY_HUNTS. A line that is not there is a
+# caller error (emit_fail, return 1), never an empty hunt that passes.
+story_hunt() {
+  local line paths
+  line=$(sed -n "${1:-0}p" <<< "$STORY_HUNTS" 2>/dev/null)
+  if [ -z "$line" ] || [ "${line#*|}" = "$line" ]; then
+    emit_fail "pmat-hunt beat ${1:-?}" "STORY_HUNTS has no line ${1:-?}"
+    return 1
+  fi
+  read -r -a paths <<< "${line#*|}"
+  pmat_hunt "${line%%|*}" "${paths[@]}"
+}

@@ -79,7 +79,7 @@ proof_obligations:
   - id: QSA60C-INV-003
     type: invariant
     property: "pmat audit runs against the right modules"
-    formal: "Each beat's pmat_hunt call references the apr command-handler files it just exercised"
+    formal: "Each beat's line of STORY_HUNTS (scripts/lib_story_pmat.sh), run by story_hunt N, names the apr command-handler files it just exercised"
     applies_to: pmat_audit_per_beat
 
 falsification_tests:
@@ -107,8 +107,8 @@ falsification_tests:
 
   - id: FALSIFY-QWEN-STORY-004
     rule: "PMAT audit is wired per beat"
-    prediction: "Each beat function calls pmat_hunt at the end"
-    test: "[ \"$(grep -cE 'pmat_hunt ' scripts/qwen-story.sh)\" -ge '8' ]"
+    prediction: "Each beat function ends with story_hunt N, its line of the shared STORY_HUNTS table (#4875)"
+    test: "[ \"$(grep -cE '^  story_hunt [1-8]$' scripts/qwen-story.sh)\" -ge '8' ]"
     if_fails: "Bug-hunting layer disconnected from the story"
 
   - id: FALSIFY-QWEN-STORY-005
