@@ -52,6 +52,16 @@ capacity, busy, aprender-busy, share vs target 80/80/50) and appends it to `evid
 must not; a doomed entry, a healthy one; a green evicted PR, a red one; an idle box with and without a queue) and
 fails on any wrong action. Mutation: removing the two-sample agreement must turn the selftest RED.
 
+Q3 feeds a failed queue run back in as load, so two holds sit on it (both visible in the receipt as
+`refused:andon(<state>)` and `refused:once`). It waits while the intel load alarm is up: `--andon-file`
+names the alarm's log, the newest `infra-res-watch` ANDON or RECOVERED line about intel decides, and a
+missing or unreadable log reads `unknown` and holds Q3 too. And it re-enqueues one PR head at most once:
+a head that falls off the queue again (a wall kill on a loaded host) stays off until a new push, and a
+head whose sha the sample does not carry is never re-enqueued. The once-per-head ledger is kept per mode
+in the state dir and is spent before the write. `--fixtures DIR --state-dir D` replays one recorded case
+(observe only; `--apply` is refused), and the selftest's Q3 case table runs through it, so
+`--selftest --steward <copy>` judges another copy of the script with the same rows.
+
 ## §4 Owed
 
 - [ ] phase 2a `ci.yml` end-of-job GC + `ci_target_gc_check.sh` (this branch)

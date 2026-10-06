@@ -1,0 +1,1 @@
+07:05Z | infra-res-watch | ANDON | intel load 117.38/32 > 3x cores | top cpu: ld.mold | r1.txt

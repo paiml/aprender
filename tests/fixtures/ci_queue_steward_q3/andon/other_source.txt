@@ -1,0 +1,2 @@
+07:15Z | infra-res-watch | RECOVERED | intel.load (was: intel load 117.38/32) | r1.txt
+07:20Z | a-worker | ANDON | intel looks busy, holding my build | x

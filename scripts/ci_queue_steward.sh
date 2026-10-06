@@ -13,17 +13,25 @@ SELFTEST=0
 FIXTURES=''
 MILESTONE=''
 MAX_WRITES=5
+STATE_SET=0
+# --andon-file: the intel load alarm's log. Q3 re-enqueues only while it reads "down"; no file,
+# an unreadable one, or an alarm with no later recovery all hold Q3
+ANDON_FILE=''
+# --steward: under --selftest, the copy of this script the Q3 case table runs (default: this file)
+STEWARD_UNDER_TEST="$0"
 
 while [[ $# -gt 0 ]]; do
   case "$1" in
     --repo) REPO="$2"; shift 2 ;;
-    --state-dir) STATE_DIR="$2"; shift 2 ;;
+    --state-dir) STATE_DIR="$2"; STATE_SET=1; shift 2 ;;
+    --andon-file) ANDON_FILE="$2"; shift 2 ;;
     --apply) APPLY=1; shift ;;
     --selftest) SELFTEST=1; shift ;;
     --fixtures) FIXTURES="$2"; shift 2 ;;
     --milestone) MILESTONE="$2"; shift 2 ;;
     --max-writes) MAX_WRITES="$2"; shift 2 ;;
     --tick) TICK_ARG="$2"; shift 2 ;;
+    --steward) STEWARD_UNDER_TEST="$2"; shift 2 ;;
     *) echo "Unknown arg $1"; exit 1 ;;
   esac
 done
@@ -36,6 +44,40 @@ fi
 if [[ "$SELFTEST" == 1 && "$APPLY" == 1 ]]; then
   echo 'refused: --apply under --selftest' >&2
   exit 2
+fi
+
+# a fixture run replays recorded samples: it never writes to GitHub, and never to the live state
+if [[ -n "$FIXTURES" && "$APPLY" == 1 ]]; then
+  echo 'refused: --apply under --fixtures' >&2
+  exit 2
+fi
+if [[ -n "$FIXTURES" && "$STATE_SET" == 0 ]]; then
+  echo 'refused: --fixtures needs its own --state-dir' >&2
+  exit 2
+fi
+
+# andon_state: the intel load alarm, read from $ANDON_FILE ("HH:MMZ | source | kind | text | ...").
+# Only lines whose source is infra-res-watch, whose kind is ANDON or RECOVERED and whose text starts
+# with "intel" count; the newest such line decides: ANDON -> "up", RECOVERED -> "down", none ->
+# "down". No file or an unreadable one -> "unknown". Only "down" lets Q3 re-enqueue: an alarm we
+# cannot read holds it
+andon_state() {
+  if [[ -z "$ANDON_FILE" ]] || [[ ! -r "$ANDON_FILE" ]]; then
+    echo unknown
+    return
+  fi
+  awk -F'|' '
+    function trim(x) { gsub(/^ +| +$/, "", x); return x }
+    trim($2) == "infra-res-watch" && trim($4) ~ /^intel/ {
+      k = trim($3)
+      if (k == "ANDON") { s = "up" } else if (k == "RECOVERED") { s = "down" }
+    }
+    END { print (s == "" ? "down" : s) }
+  ' "$ANDON_FILE"
+}
+ANDON='down'
+if [[ "$SELFTEST" == 0 ]]; then
+  ANDON=$(andon_state)
 fi
 
 if [[ -z "$FIXTURES" ]]; then
@@ -73,7 +115,7 @@ def q3:
   ($checks | map(select(.name == "ci / gate" and .conclusion == "SUCCESS"))) as $gate |
   ($checks | map(select(.name == "workspace-test" and .conclusion == "SUCCESS"))) as $wt |
   select(($gate | length) > 0 and ($wt | length) > 0) |
-  {rule: "Q3", type: "enqueue", target: ($pr | tostring), target_id: $pr_id};
+  {rule: "Q3", type: "enqueue", target: ($pr | tostring), target_id: $pr_id, sha: (.commits.nodes[0].commit.oid // "")};
 
 def q4:
   (($s3|.[0]).runners | map(select(.name | startswith("intel")))) as $intel |
@@ -183,13 +225,36 @@ process_tick() {
       continue
     fi
     
+    # Q3 feeds a failed queue run back in as load, so it waits for the intel alarm to be down, and
+    # a PR head is re-enqueued once: a head that falls off the queue again (a wall kill) stays off
+    # until a new push. The ledger is per mode, so an observe run never spends an apply re-enqueue
+    if [[ "$rule" == "Q3" ]]; then
+      local sha ledger
+      ledger="$STATE_DIR/q3-heads-$mode.txt"
+      sha=$(echo "$action" | jq -r '.sha')
+      if [[ "$ANDON" != "down" ]]; then
+        echo "decision: Q3 $target quorum=2/2 action=refused:andon($ANDON)"
+        ((refused+=1))
+        continue
+      fi
+      if [[ -z "$sha" ]] || grep -Fqx "$target $sha" "$ledger" 2>/dev/null; then
+        echo "decision: Q3 $target quorum=2/2 action=refused:once head=${sha:-unknown}"
+        ((refused+=1))
+        continue
+      fi
+    fi
+
     if (( writes >= MAX_WRITES )); then
       echo "decision: $rule $target quorum=agree action=refused:cap"
       ((refused+=1))
       continue
     fi
     ((writes+=1))
-    
+    # spent before the write, so a failed or partial enqueue never earns a second one
+    if [[ "$rule" == "Q3" ]]; then
+      echo "$target $sha" >> "$ledger"
+    fi
+
     if [[ "$APPLY" == 0 ]]; then
       if [[ "$rule" == "Q1" || "$rule" == "Q2" ]]; then
         echo "decision: $rule $target quorum=3/3 action=planned"
@@ -257,6 +322,47 @@ if [[ "$SELFTEST" == 1 ]]; then
     esac
   done
 
+
+  # Q3 case table. Each row replays a recorded case through a CHILD run of the
+  # steward under test (--fixtures, observe only, a private --state-dir), so --steward PATH runs the
+  # same rows against another copy of this file: main's copy, which has no alarm or once rule, is RED
+  q3_dir=tests/fixtures/ci_queue_steward_q3
+  q3_rows=0
+  q3_fail=0
+  # q3_row NAME WANT_PLANNED WANT_TEXT STATE_DIR CASE ARGS... -> the child's Q3 200 lines must hold
+  # exactly WANT_PLANNED "action=planned" and, when WANT_TEXT is set, a line containing it
+  q3_row() {
+    local name=$1 want=$2 text=$3 sd=$4 fx=$5 out got
+    shift 5
+    q3_rows=$((q3_rows + 1))
+    out=$(bash "$STEWARD_UNDER_TEST" --fixtures "$q3_dir/$fx" --state-dir "$sd" "$@" 2>&1) || true
+    got=$(printf '%s\n' "$out" | grep -c '^decision: Q3 200 .*action=planned') || true
+    if [[ "$got" == "$want" ]] && { [[ -z "$text" ]] || printf '%s\n' "$out" | grep -Fq -- "$text"; }; then
+      echo "ok   q3 $name"
+    else
+      echo "FAIL q3 $name: planned=$got want=$want text=${text:-none}"
+      q3_fail=1
+    fi
+  }
+  q3_tmp=$(mktemp -d)
+  a="$q3_dir/andon"
+  q3_row an_alarm_that_is_up_holds_q3 0 'action=refused:andon(up)' "$q3_tmp/r1" green --andon-file "$a/up.txt"
+  q3_row a_recovered_alarm_lets_q3_enqueue 1 '' "$q3_tmp/r2" green --andon-file "$a/recovered.txt"
+  q3_row an_alarm_on_another_host_is_ignored 1 '' "$q3_tmp/r3" green --andon-file "$a/other_host.txt"
+  q3_row an_andon_word_from_another_source_is_ignored 1 '' "$q3_tmp/r4" green --andon-file "$a/other_source.txt"
+  q3_row a_log_with_no_alarm_line_reads_down 1 '' "$q3_tmp/r5" green --andon-file "$a/none.txt"
+  q3_row a_missing_alarm_file_holds_q3 0 'action=refused:andon(unknown)' "$q3_tmp/r6" green --andon-file "$q3_tmp/no-such.txt"
+  q3_row no_alarm_file_named_holds_q3 0 'action=refused:andon(unknown)' "$q3_tmp/r7" green
+  q3_row a_head_is_re_enqueued_once 1 'action=refused:once head=1111111111111111111111111111111111111111' "$q3_tmp/r8" once_per_head --andon-file "$a/recovered.txt"
+  q3_row a_new_push_earns_one_more_re_enqueue 2 '' "$q3_tmp/r9" new_head --andon-file "$a/recovered.txt"
+  q3_row a_held_tick_spends_no_re_enqueue_1 0 'action=refused:andon(up)' "$q3_tmp/r10" green --andon-file "$a/up.txt"
+  q3_row a_held_tick_spends_no_re_enqueue_2 1 '' "$q3_tmp/r10" green --andon-file "$a/recovered.txt"
+  q3_row an_unknown_head_is_never_re_enqueued 0 'action=refused:once head=unknown' "$q3_tmp/r12" no_head --andon-file "$a/recovered.txt"
+  q3_row a_fixture_run_refuses_apply 0 'refused: --apply under --fixtures' "$q3_tmp/r11" green --andon-file "$a/recovered.txt" --apply
+  rm -rf -- "${q3_tmp:?}"
+  echo "--- q3: $q3_rows rows, fail=$q3_fail ---"
+  if [[ "$q3_fail" != 0 ]]; then test_fail=1; fi
+
   exit $test_fail
 fi
 
@@ -306,6 +412,7 @@ if [[ -z "$FIXTURES" ]]; then
               commits(last: 1) {
                 nodes {
                   commit {
+                    oid
                     statusCheckRollup {
                       contexts(first: 100) {
                         nodes {
@@ -364,6 +471,12 @@ if [[ -z "$FIXTURES" ]]; then
 
   process_tick "$tick" "$SDIR/s1.json" "$SDIR/s2.json" "$SDIR/s3.json"
 else
-  # process from fixtures
-  echo "fixture run not fully implemented"
+  # replay recorded samples: one tick dir per sample (s1/s2/s3.json), in numeric order, observe only
+  if [[ -z "$MILESTONE" ]]; then
+    MILESTONE="0.67.0"
+  fi
+  mkdir -p "$STATE_DIR"
+  while IFS= read -r tick; do
+    process_tick "$tick" "$FIXTURES/$tick/s1.json" "$FIXTURES/$tick/s2.json" "$FIXTURES/$tick/s3.json"
+  done < <(find "$FIXTURES" -mindepth 1 -maxdepth 1 -type d -printf '%f\n' | grep -E '^[0-9]+$' | sort -n)
 fi
