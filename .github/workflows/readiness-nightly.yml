@@ -38,11 +38,16 @@ jobs:
     # A workflow_run run counts as a night in the judge's readiness lane (^workflow_run$), so it measures only when
     # the upstream run was itself scheduled: a dispatched dogfood-nightly or models-nightly is skipped here
     # (not_measured), never a night. A direct dispatch of this workflow still runs; the judge never counts it.
+    # GitHub stamps a workflow_run run with main HEAD at trigger time, while this job measures the upstream
+    # head_sha. If main moved during the upstream run, the run would be credited to a commit it never measured,
+    # so it measures only when the two agree; otherwise it is skipped (not_measured).
+    # Guard: scripts/check_readiness_nightly_sha_bound.sh
     if: >-
       github.event_name == 'workflow_dispatch' ||
       (github.event.workflow_run.head_branch == 'main' &&
        github.event.workflow_run.head_repository.full_name == github.repository &&
-       github.event.workflow_run.event == 'schedule')
+       github.event.workflow_run.event == 'schedule' &&
+       github.event.workflow_run.head_sha == github.sha)
     outputs:
       ok: ${{ steps.find.outputs.ok }}
       sha: ${{ steps.find.outputs.sha }}
