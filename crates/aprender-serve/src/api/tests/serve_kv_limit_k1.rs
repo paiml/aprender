@@ -10,7 +10,9 @@
 //! and one past it, it answers 400 and says the prompt was refused whole.
 //!
 //! The model is synthetic (no file), so the test runs on any CUDA runner.
-//! Without a device it prints the skip line that `cuda-unit` fails on.
+//! Without a device it panics: a run that could not reach the device measured
+//! nothing, so it is a failure, never a pass (L25). It is not `#[ignore]`d,
+//! because `cuda-unit` runs the cuda-only lib tests without `--ignored`.
 
 use crate::api::{create_router, AppState};
 use crate::gguf::test_helpers::create_test_model_with_config;
@@ -114,15 +116,12 @@ fn model() -> OwnedQuantizedModel {
 }
 
 /// The router `apr serve` builds for a CUDA GGUF: the model sized by
-/// `for_serving`, behind the continuous-batching scheduler. `None` (after the
-/// device-skip line) without a CUDA device.
-fn served() -> Option<(axum::Router, usize)> {
+/// `for_serving`, behind the continuous-batching scheduler. Panics without a
+/// CUDA device: an unreachable device is not measured, never a pass (L25).
+fn served() -> (axum::Router, usize) {
     let cuda = match OwnedQuantizedModelCuda::for_serving(model(), 0) {
         Ok(m) => m,
-        Err(e) => {
-            eprintln!("SKIP K1: CUDA model init failed: {}", e.error);
-            return None;
-        },
+        Err(e) => panic!("K1 not measured: CUDA model init failed: {}", e.error),
     };
     let kv = cuda.executor().max_kv_len();
     let state = AppState::with_cuda_model_and_vocab(cuda, vocab()).expect("state");
@@ -132,7 +131,7 @@ fn served() -> Option<(axum::Router, usize)> {
         crate::api::cuda_batch_scheduler::CudaBatchConfig::default(),
         crate::api::InFlightCounter::new(),
     );
-    Some((create_router(state.with_cuda_batch_tx(tx)), kv))
+    (create_router(state.with_cuda_batch_tx(tx)), kv)
 }
 
 async fn complete(app: &axum::Router, prompt_tokens: usize) -> (StatusCode, serde_json::Value) {
@@ -165,9 +164,7 @@ async fn complete(app: &axum::Router, prompt_tokens: usize) -> (StatusCode, serd
 
 #[tokio::test(flavor = "multi_thread")]
 async fn k1_serve_kv_is_the_model_context_and_the_limit_is_a_clean_400() {
-    let Some((app, kv)) = served() else {
-        return;
-    };
+    let (app, kv) = served();
     assert_eq!(
         kv, CONTEXT,
         "K1: the serving KV is the model's context, not a fixed size"
