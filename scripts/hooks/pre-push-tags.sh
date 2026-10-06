@@ -23,6 +23,8 @@
 #                                                    arm the next push for that one tag
 #   pre-push-tags.sh --install                       copy this file and pre-push-dispatch.sh into
 #                                                    the clone's hooks dir, before any pre-push there
+#   pre-push-tags.sh --uninstall                     undo --install; the chained pre-push goes back only
+#                                                    if its sha256 matches the one recorded at install
 #   pre-push-tags.sh --verify                        RED unless this clone's pre-push is the
 #                                                    dispatcher and the guard beside it is this file
 # exit: 0 allowed (or verified), 1 refused (or RED), 2 usage or environment error.
@@ -132,7 +134,7 @@ arm_release() {
 # install_hook: the guard and the dispatcher into the clone's common hooks dir; a foreign
 # pre-push there becomes pre-push.chained and still runs after the guard
 install_hook() {
-    local dir here
+    local dir here sha
     here="$(dirname "$SELF")"
     if git config --get core.hooksPath > /dev/null; then
         printf 'not_installed: core.hooksPath is set; add pre-push-tags.sh to that pre-push by hand\n' >&2
@@ -147,9 +149,45 @@ install_hook() {
         fi
         (cd "${dir:?}" && mv -- pre-push pre-push.chained)
     fi
+    if [ -e "${dir:?}/pre-push.chained" ]; then
+        # noclobber: the sha256 recorded when the hook was first chained is never rewritten
+        sha="$(sha256sum < "${dir:?}/pre-push.chained")"
+        (set -C && printf '%s\n' "${sha%% *}" > "${dir:?}/pre-push.chained.sha256") 2> /dev/null || true
+    fi
     install -m 0755 "$SELF" "${dir:?}/pre-push-tags"
     install -m 0755 "${here:?}/pre-push-dispatch.sh" "${dir:?}/pre-push"
     printf 'installed: %s/pre-push runs pre-push-tags first\n' "$dir"
+}
+
+# uninstall_hook: undo --install. The pre-push that --install chained goes back as pre-push only
+# if its sha256 still matches the one recorded at install; with none chained, pre-push is
+# removed (the clone had none). A pre-push that is not the dispatcher is never touched
+uninstall_hook() {
+    local dir want='' have
+    if git config --get core.hooksPath > /dev/null; then
+        printf 'not_uninstalled: core.hooksPath is set; this guard was never installed here\n' >&2
+        return 2
+    fi
+    dir="$(hooks_dir)"
+    if [ -e "${dir:?}/pre-push" ] && ! grep -qxF "$DISPATCH_MARK" "${dir:?}/pre-push"; then
+        printf 'not_uninstalled: %s/pre-push is not the dispatcher (another installer rewrote it); nothing changed\n' "$dir" >&2
+        return 2
+    fi
+    if [ -e "${dir:?}/pre-push.chained" ]; then
+        [ ! -f "${dir:?}/pre-push.chained.sha256" ] || want="$(< "${dir:?}/pre-push.chained.sha256")"
+        have="$(sha256sum < "${dir:?}/pre-push.chained")"
+        have="${have%% *}"
+        if [ "$want" != "$have" ]; then
+            printf 'not_uninstalled: pre-push.chained has sha256 %s, not the [%s] recorded at install; nothing changed\n' "$have" "$want" >&2
+            return 1
+        fi
+        (cd "${dir:?}" && mv -- pre-push.chained pre-push)
+        printf 'restored: %s/pre-push, sha256 %s as recorded at install\n' "$dir" "$have"
+    else
+        rm -f -- "${dir:?}/pre-push"
+        printf 'removed: %s/pre-push; the clone had none before the install\n' "$dir"
+    fi
+    rm -f -- "${dir:?}/pre-push-tags" "${dir:?}/pre-push.chained.sha256"
 }
 
 # verify_hook: RED when git would not run this guard on the next push. Run it from the tracked
@@ -182,8 +220,9 @@ verify_hook() {
 case "${1:-}" in
     --arm-release) arm_release "${2:-}" "${3:-}" ;;
     --install) install_hook ;;
+    --uninstall) uninstall_hook ;;
     --verify) verify_hook ;;
-    --help | -h) sed -n '2,28p' "$0" ;;
-    -*) sed -n '20,28p' "$0" >&2; exit 2 ;;
+    --help | -h) sed -n '2,30p' "$0" ;;
+    -*) sed -n '20,30p' "$0" >&2; exit 2 ;;
     *) hook "$@" ;;
 esac

@@ -22,7 +22,7 @@ set -euo pipefail
 
 SELF="$(cd "$(dirname "$0")" && pwd)/${0##*/}"
 HOOK_DIR="$(dirname "$SELF")/hooks"
-WANT_ROWS=36
+WANT_ROWS=40
 ROWS=0
 FAILS=0
 HOOK=''
@@ -148,6 +148,60 @@ step_bad_ttl() {
     [ ! -e .git/pre-push-release-tag ]
 }
 step_verify_ok() { bash "$HOOK" --verify; }
+# sha256 of a file, for the byte-for-byte restore rows
+sum_of() { local s; s="$(sha256sum < "$1")" && printf '%s\n' "${s%% *}"; }
+# a fourth clone with its own pre-push: install, uninstall, and that pre-push is back byte for byte
+step_uninstall_restores() {
+    local rc=9 h="$TP/w4/.git/hooks" before
+    git clone -q "$TP/remote.git" "$TP/w4" || return 1
+    printf '#!/bin/sh\n# four\nexit 0\n' > "$TP/four" && install -m 0755 "$TP/four" "$h/pre-push"
+    before="$(sum_of "$h/pre-push")"
+    cd "$TP/w4" || return 1
+    if bash "$HOOK" --install > /dev/null && bash "$HOOK" --verify > /dev/null; then
+        rc=0
+        bash "$HOOK" --uninstall > /dev/null || rc=$?
+    fi
+    cd "$TP/w" || return 1
+    [ "$rc" -eq 0 ] && [ "$(sum_of "$h/pre-push")" = "$before" ] && [ -x "$h/pre-push" ] \
+        && [ ! -e "$h/pre-push-tags" ] && [ ! -e "$h/pre-push.chained" ] && [ ! -e "$h/pre-push.chained.sha256" ]
+}
+# the same clone reinstalled, then its chained hook edited: uninstall restores nothing
+step_uninstall_refuses_a_changed_chain() {
+    local rc=0 h="$TP/w4/.git/hooks"
+    cd "$TP/w4" || return 1
+    if bash "$HOOK" --install > /dev/null; then
+        printf '# edited after install\n' >> "$h/pre-push.chained"
+        bash "$HOOK" --uninstall 2> /dev/null || rc=$?
+    fi
+    cd "$TP/w" || return 1
+    [ "$rc" -eq 1 ] && grep -q 'edited after install' "$h/pre-push.chained" \
+        && cmp -s "$(dirname "$HOOK")/pre-push-dispatch.sh" "$h/pre-push" && [ -e "$h/pre-push-tags" ]
+}
+# a fifth clone with no pre-push: install, another installer rewrites pre-push, uninstall leaves it
+step_uninstall_keeps_a_rewritten_pre_push() {
+    local rc=0 h="$TP/w5/.git/hooks"
+    git clone -q "$TP/remote.git" "$TP/w5" || return 1
+    printf '#!/usr/bin/env bash\n# PMAT Pre-Push Quality Gate\nexit 0\n' > "$TP/pmat"
+    cd "$TP/w5" || return 1
+    if bash "$HOOK" --install > /dev/null; then
+        printf '#!/usr/bin/env bash\n# PMAT Pre-Push Quality Gate\nexit 0\n' > "$h/pre-push"
+        bash "$HOOK" --uninstall 2> /dev/null || rc=$?
+    fi
+    cd "$TP/w" || return 1
+    [ "$rc" -eq 2 ] && cmp -s "$TP/pmat" "$h/pre-push"
+}
+# a sixth clone with no pre-push: install then uninstall leaves no pre-push at all
+step_uninstall_with_none_before() {
+    local rc=9 h="$TP/w6/.git/hooks"
+    git clone -q "$TP/remote.git" "$TP/w6" || return 1
+    cd "$TP/w6" || return 1
+    if bash "$HOOK" --install > /dev/null; then
+        rc=0
+        bash "$HOOK" --uninstall > /dev/null || rc=$?
+    fi
+    cd "$TP/w" || return 1
+    [ "$rc" -eq 0 ] && [ ! -e "$h/pre-push" ] && [ ! -e "$h/pre-push-tags" ]
+}
 # a third clone: installed and verified, then another installer rewrites pre-push
 step_verify_overwritten() {
     local rc=0
@@ -253,6 +307,10 @@ self_test() {
     check_row verify_passes_once_installed "--verify was not 0 in an installed clone" step_verify_ok
     check_row verify_is_red_when_another_installer_rewrote_pre_push "--verify did not exit 1 after pre-push was rewritten" step_verify_overwritten
     check_row verify_is_red_when_the_guard_is_gone "--verify did not exit 1 with pre-push-tags removed" step_verify_no_guard
+    check_row uninstall_restores_the_old_pre_push_byte_for_byte "uninstall failed, or pre-push differs from the one before install" step_uninstall_restores
+    check_row uninstall_refuses_a_chained_hook_changed_since_install "uninstall did not exit 1, or changed something" step_uninstall_refuses_a_changed_chain
+    check_row uninstall_never_touches_a_rewritten_pre_push "uninstall did not exit 2, or changed the rewritten pre-push" step_uninstall_keeps_a_rewritten_pre_push
+    check_row uninstall_with_no_old_hook_leaves_none "uninstall left a pre-push or the guard behind" step_uninstall_with_none_before
 
     push_row a_branch_push_is_untouched allowed refs/heads/feat step_branch
     check_row the_chained_pre_push_saw_the_same_stdin "chained.log lacks the refs/heads/feat line" step_chained_saw_stdin
@@ -311,7 +369,10 @@ m12_an_existing_chain_is_overwritten	pre-push-tags.sh	s/^            return 2$/ 
 m13_the_marker_expiry_is_not_checked	pre-push-tags.sh	s/^        if ! is_count "\$mexp" || .*$/        if false; then/
 m14_verify_ignores_a_rewritten_pre_push	pre-push-tags.sh	s/^    if . ! -x "\$dir\/pre-push" . || ! cmp .*$/    if false; then/
 m15_verify_ignores_a_missing_guard	pre-push-tags.sh	s/^    if . ! -x "\$dir\/pre-push-tags" . || .*$/    if false; then/
-m16_any_ttl_is_accepted	pre-push-tags.sh	s/^    if ! is_count "\$ttl" || .*$/    if false; then/'
+m16_any_ttl_is_accepted	pre-push-tags.sh	s/^    if ! is_count "\$ttl" || .*$/    if false; then/
+m17_uninstall_skips_the_sha256_check	pre-push-tags.sh	s/^        if . "\$want" != "\$have" .; then$/        if false; then/
+m18_uninstall_touches_a_rewritten_pre_push	pre-push-tags.sh	/^uninstall_hook() {$/,/^}$/s/^    if . -e "\${dir:?}\/pre-push" . .. ! grep -qxF .*$/    if false; then/
+m19_install_records_no_sha256	pre-push-tags.sh	s/^        (set -C .. printf .*$/        true/'
 
 mutants() {
     local name file expr rc killed=0 total=0 t
