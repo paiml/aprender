@@ -18,6 +18,7 @@ pub mod duplicate_stems;
 pub mod evidence_gate;
 pub mod finding;
 mod gates;
+mod legacy_binding;
 pub use gates::collect_yaml_files;
 pub mod bindings_gate;
 mod gates_extended;
@@ -204,6 +205,28 @@ pub enum GateExtra {
         stale: Vec<String>,
         /// Every ambiguous stem, with its variant count and paths, for the report.
         divergent_stems: Vec<String>,
+    },
+    /// PV-VER-003 (report-only): the legacy `falsification:` / `falsification_conditions:` rows PV-VER-002 does
+    /// not read, measured with its rules and compared to `scripts/contract_legacy_binding_baseline.txt`. Rides on
+    /// the strict-test-binding gate and never changes its verdict.
+    #[serde(rename = "legacy_binding")]
+    LegacyBinding {
+        /// Legacy rows read.
+        rows: usize,
+        /// Rows whose every cited test resolves.
+        bound: usize,
+        /// Rows that declare a shell harness.
+        shell: usize,
+        /// Rows from which no test name can be read.
+        unbound: usize,
+        /// Rows citing a test no source defines.
+        dangling: usize,
+        /// Unbound or dangling rows that are in the baseline.
+        baselined: usize,
+        /// `<stem>\t<id>` of unbound or dangling rows NOT in the baseline: the new holes.
+        unbaselined: Vec<String>,
+        /// Baseline lines that are no longer a hole.
+        stale: Vec<String>,
     },
     /// ONT-2b: what Σ declares and what the corpus was checked against.
     #[serde(rename = "sigma")]

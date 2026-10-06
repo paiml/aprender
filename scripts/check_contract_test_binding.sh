@@ -134,6 +134,16 @@ assert_gate_measured() {
     printf '%s\n' "$refs"
 }
 
+# PV-VER-003, REPORT-ONLY: the legacy `falsification:` rows PV-VER-002 does not read. Printed on every run so the
+# nights before it may block are on record; nothing here changes this script's exit status.
+legacy_report() {
+    local json="$1"
+    jq -r '.gates[] | select(.name == "strict-test-binding") | .extra
+        | select(.type == "legacy_binding")
+        | "legacy falsification rows (PV-VER-003, report-only): \(.rows) read, \(.bound) bound, \(.shell) shell, \(.unbound) unbound, \(.dangling) dangling; \(.baselined) baselined, \(.unbaselined | length) new, \(.stale | length) stale",
+          (.unbaselined[] | "  new   \(.)"), (.stale[] | "  stale \(.)")' "$json" | head -n 41
+}
+
 # ---------------------------------------------------------------------------
 # The ratchet. Compares observed `path<TAB>count` ($1) against a baseline ($2).
 # Factored out so --self-test can drive it with fixture data.
@@ -395,6 +405,8 @@ main() {
 
     printf 'Resolved %s test references; %s dangling across %s contract(s).\n' \
         "$refs" "$total" "$(wc -l < "$observed" | tr -d ' ')"
+
+    legacy_report "$json"
 
     if compare_to_baseline "$observed" "$BASELINE"; then
         printf 'PASS: no contract cites more nonexistent tests than its baseline allows.\n'

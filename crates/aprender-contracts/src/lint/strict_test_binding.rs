@@ -168,7 +168,7 @@ pub(crate) fn binding_sources(
 }
 
 /// Extract the Rust test-fn names a binding string claims, given its kind.
-fn cited_names(kind: BindingKind, raw: &str) -> Vec<String> {
+pub(crate) fn cited_names(kind: BindingKind, raw: &str) -> Vec<String> {
     let s = raw.trim().trim_matches('"').trim();
     match kind {
         BindingKind::CargoTest => extract_cited_fn_names(s),
@@ -241,6 +241,15 @@ pub(crate) fn run_strict_test_binding_gate(
         }
     }
 
+    // PV-VER-003: the legacy `falsification:` rows, read with the same rules. Report-only: `gate_passed` below
+    // does not read it (see `lint::legacy_binding`).
+    let (legacy, legacy_findings) = super::legacy_binding::measure(
+        contracts,
+        &index,
+        &super::legacy_binding::read_baseline(project_root),
+    );
+    findings.extend(legacy_findings);
+
     let duration = u64::try_from(start.elapsed().as_millis()).unwrap_or(u64::MAX);
 
     // The gate itself emits Warning-severity findings by default; they are
@@ -261,7 +270,7 @@ pub(crate) fn run_strict_test_binding_gate(
                 existing: total_refs - missing,
                 missing,
             },
-            extra: None,
+            extra: Some(legacy),
         },
         findings,
     )

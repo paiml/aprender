@@ -266,6 +266,15 @@ pub static RULES: &[LintRule] = &[
         description: "Dangling falsification_test reference — cited fn not found in source",
         effort_minutes: 10,
     },
+    // A legacy `falsification:` row that binds no resolvable test and is not in the ratchet baseline. Info: it is
+    // reported, and blocks nothing until the ratchet is armed.
+    LintRule {
+        id: "PV-VER-003",
+        category: RuleCategory::Verify,
+        default_severity: RuleSeverity::Info,
+        description: "Legacy falsification row binds no resolvable test and is not in the baseline",
+        effort_minutes: 10,
+    },
 ];
 
 /// Look up a rule by ID.
