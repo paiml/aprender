@@ -76,11 +76,12 @@ jobs:
         run: |
           set -uo pipefail
           mkdir -p deep
-          cargo check --workspace --no-default-features > deep/deep-nodefault.log 2>&1; rc=$?
-          verdict=$(bash scripts/release/deep_nodefault_verdict.sh deep/deep-nodefault.log "$rc"); vrc=$?
+          # The step shell is `bash -e`: catch both statuses so the DEEP line and ::error:: always print.
+          rc=0; cargo check --workspace --no-default-features --keep-going > deep/deep-nodefault.log 2>&1 || rc=$?
+          vrc=0; verdict=$(bash scripts/release/deep_nodefault_verdict.sh deep/deep-nodefault.log "$rc") || vrc=$?
           echo "$verdict (standing #3176 class is inside it)"
           tail -n 40 deep/deep-nodefault.log
-          [ "$vrc" = 0 ] || { echo "::error::--no-default-features RED outside the #3176 class: $verdict"; exit 1; }
+          [ "$vrc" = 0 ] || { echo "::error::--no-default-features RED: $verdict"; exit 1; }
 
       - name: Publish the log
         if: always()

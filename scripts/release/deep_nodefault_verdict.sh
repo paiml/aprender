@@ -19,14 +19,16 @@
 #       are outside), or
 #   (b) it is exactly the summary  error: could not compile `aprender-distribute` ...
 # Every other error line is OUTSIDE. `warning:` lines never count, wherever they point.
-#   GREEN  no error outside, and (rc == 0, or at least one error line exists to explain the failure)
-#   RED    any error outside; or rc != 0 with zero error lines (unexplained failure)
+#   GREEN  no error outside, and rc == 0, or rc == 101 (cargo's compile-failure exit) with at least
+#          one error line to explain it
+#   RED    any error outside; rc != 0 with zero error lines; or rc not in {0, 101} (killed, terminated:
+#          the run did not finish, so its log explains nothing)
 #   exit 2 LOG missing or unreadable, or RC not a non-negative integer (not_measured; callers read
 #          any non-zero as red)
 #
 # Output: one line,
 #   DEEP --no-default-features rc=<rc> errors_total=<n> errors_outside_aprender-distribute=<m> unexplained=<k>
-# where k is 1 when rc != 0 and the log holds no error line, else 0.
+# where k is 1 when rc != 0 and the log holds no error line, or rc is not 0 or 101, else 0.
 #
 # Usage:
 #   deep_nodefault_verdict.sh LOG RC                the verdict (exit 0 green, 1 red, 2 not_measured)
@@ -39,7 +41,7 @@
 set -uo pipefail
 
 SELF="${BASH_SOURCE[0]}"
-IMPL="${DEEP_NODEFAULT_IMPL:-new}"   # m:old-impl
+IMPL=new   # m:old-impl   (only `--self-test --impl old` changes it; no environment override)
 
 # count LOG -> prints "<errors_total> <errors_outside>"
 count_new() {
@@ -81,6 +83,9 @@ verdict() {
     read -r tot out <<< "$counts"
     # main's old rule never read rc; --impl old reproduces that exactly.
     if [ "$IMPL" != old ] && [ "$rc" != 0 ] && [ "$tot" = 0 ]; then k=1; fi   # m:zero-errors-rule
+    # cargo exits 101 when compilation fails; any other non-zero (137 killed, 143 terminated, ...) means the
+    # run did not finish, so its log cannot explain the failure, whatever errors it holds.
+    if [ "$IMPL" != old ] && [ "$rc" != 0 ] && [ "$rc" != 101 ]; then k=1; fi   # m:abnormal-rc
     printf 'DEEP --no-default-features rc=%s errors_total=%s errors_outside_aprender-distribute=%s unexplained=%s\n' \
         "$rc" "$tot" "$out" "$k"
     if [ "$out" = 0 ] && [ "$k" = 0 ]; then return 0; fi
@@ -188,6 +193,7 @@ LOG
     row C12 1 "$d/truncated.log"         101 "an error[E...] outside whose summary line is cut is still outside"
     row C13 2 "$d/no-such.log"           0   "missing LOG = not_measured"
     row C14 2 "$d/clean.log"             abc "non-integer RC = not_measured"
+    row C15 1 "$d/dist-only.log"         137 "rc 137 (killed) with only #3176 errors: an unfinished run is red"
 
     printf 'deep_nodefault_verdict.sh --self-test (impl=%s): %s/%s rows pass\n' "$IMPL" "$PASS" "$((PASS + FAIL))"
     [ "$FAIL" = 0 ] && return 0
@@ -207,6 +213,7 @@ LOG
 #   warning-counts         `warning:` lines count as errors
 #   summary-unanchored     "could not compile `aprender-distribute-x`" is explained
 #   missing-log            a missing LOG is read as an empty one instead of not_measured
+#   abnormal-rc            a killed or terminated cargo (rc not 0 or 101) whose log holds only #3176 errors is green
 mutants() {
     local name expr killed=0 total=0 first
     d=$(mktemp -d) || return 2
@@ -216,7 +223,7 @@ mutants() {
         total=$((total + 1))
         sed -E "/# (m:[a-zA-Z-]+ )*m:${name}( |\$)/${expr}" "$SELF" > "$d/$name.sh"
         if cmp -s "$d/$name.sh" "$SELF"; then printf 'ERROR  mutant %s did not apply\n' "$name"; return 2; fi
-        DEEP_NODEFAULT_IMPL='' bash "$d/$name.sh" --self-test > "$d/$name.out" 2>&1
+        bash "$d/$name.sh" --self-test > "$d/$name.out" 2>&1
         if [ $? != 0 ]; then
             killed=$((killed + 1))
             first=$(grep '^BROKE' "$d/$name.out" | awk '{printf "%s%s", sep, $2; sep=","}')
@@ -227,12 +234,13 @@ mutants() {
     done <<'MUTANTS'
 zero-errors-rule      s/then k=1; fi/then k=0; fi/
 unanchored-path       s#index\(loc, "crates/aprender-distribute/"\) == 1#loc ~ /aprender-distribute/#
-old-impl              s/:-new\}/:-old}/
+old-impl              s/^IMPL=new/IMPL=old/
 any-could-not-compile s#could not compile `aprender-distribute`\( \|\$\)/#could not compile /#
 ignore-E-form         s#\^error\(\\\[E\[0-9\]\+\\\]\)\?:#^error:#
 warning-counts        s#/\^error\(#/^(error|warning)(#
 summary-unanchored    s#`aprender-distribute`\( \|\$\)/#`aprender-distribute/#
 missing-log           s#^( +)if \[ ! -f.*$#\1[ -r "$log" ] || log=/dev/null; if false; then#
+abnormal-rc           s/then k=1; fi/then k=0; fi/
 MUTANTS
     printf 'deep_nodefault_verdict.sh --mutants: %s/%s killed\n' "$killed" "$total"
     [ "$killed" = "$total" ] && [ "$total" -ge 5 ]

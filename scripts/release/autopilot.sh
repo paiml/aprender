@@ -97,7 +97,7 @@ if run_step deep; then
   cargo test --doc --workspace --exclude aprender-gpu --exclude aprender-cuda-edge --exclude aprender-compute > "$AP/deep-doctests.log" 2>&1; rc=$?
   say "DEEP doctests rc=$rc: $(grep -E '^test result' "$AP/deep-doctests.log" | awk '{p+=$4; f+=$6} END {print p" passed, "f" failed"}')"
   [ $rc -eq 0 ] || die "T-1 doctests RED ($AP/deep-doctests.log)"
-  cargo check --workspace --no-default-features > "$AP/deep-nodefault.log" 2>&1; rc=$?
+  cargo check --workspace --no-default-features --keep-going > "$AP/deep-nodefault.log" 2>&1; rc=$?
   verdict=$(bash "$REPO_ROOT/scripts/release/deep_nodefault_verdict.sh" "$AP/deep-nodefault.log" "$rc"); vrc=$?
   say "$verdict (standing #3176 class is inside it)"
   [ "$vrc" = 0 ] || die "T-1 --no-default-features RED outside the #3176 class ($AP/deep-nodefault.log)"
