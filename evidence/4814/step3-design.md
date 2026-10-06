@@ -167,3 +167,15 @@ Each count is to be re-measured against the vendored YAML before the commit says
   `sh:flags`, dateTime time zones, and the Warning-only harness. The 18 estimate counted cases that need those.
 - The mutant for the receipt (MUTANT 7) is to skip the `own` block in `validate_focus`. It must turn
   `every_embedded_case_parses_and_passes` RED.
+
+## Slice 5 receipt (intel, 8b6f111b6f, 2026-10-06 04:00Z)
+
+The first run at 8f6acc4ff7 had 2300 passing and 1 failing. That failure was an order-only assert: slice 5 lists literal
+focus nodes after the IRIs. 8b6f111b6f sorts the result before comparing, and its rerun is green:
+- `cargo test -p aprender-contracts --tests`: 2538 passed, 0 failed.
+- pv builds, and the shapes gate exits 0.
+- Mutants 1-8 each turn their test RED. Mutant 7 (the node-level block) and mutant 8 (`refuse_node_level`) are new.
+- `aprender-contracts-cli --tests`: 39 binaries, 0 failed.
+- The pinned oracle (shacl 0.3.21) agrees on 36/36 W3C cases. The only disagreement is the corpus 736 vs 730, which is
+  #4837.
+- No contract changes its verdict.
