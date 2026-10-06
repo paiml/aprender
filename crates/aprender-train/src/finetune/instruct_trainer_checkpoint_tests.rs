@@ -89,7 +89,7 @@ fn check_checkpoint(targets: &LoraTargets) {
 
     let bytes = std::fs::read(dir.path().join("model.safetensors")).expect("model.safetensors");
     let st = safetensors::SafeTensors::deserialize(&bytes).expect("a readable safetensors file");
-    let held: BTreeSet<String> = st.names().into_iter().cloned().collect();
+    let held: BTreeSet<String> = st.names().iter().map(ToString::to_string).collect();
 
     let t = targets.as_slice();
     let layers = &trainer.pipeline.lora_layers;
@@ -141,7 +141,7 @@ fn falsify_lora_target_selection_v1_017_default_names_unchanged() {
     trainer.save_checkpoint(dir.path(), 0, &metrics()).expect("save_checkpoint");
     let bytes = std::fs::read(dir.path().join("model.safetensors")).expect("model.safetensors");
     let st = safetensors::SafeTensors::deserialize(&bytes).expect("a readable safetensors file");
-    let held: BTreeSet<&str> = st.names().into_iter().map(String::as_str).collect();
+    let held: BTreeSet<&str> = st.names().into_iter().collect();
     let old: BTreeSet<&str> = [
         "lora.0.q_proj.lora_a",
         "lora.0.q_proj.lora_b",
