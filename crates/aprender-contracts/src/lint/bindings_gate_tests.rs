@@ -396,3 +396,128 @@ fn stale_entries_and_scan_counters_are_reported() {
     assert!(k.registries >= 1, "{k:?}");
     assert!(k.files_parsed >= 1, "{k:?}");
 }
+
+/// #4850 case table: a resolved row counts as carrying its contract only when the item it reaches has a
+/// `#[contract("<row contract>")]`. Each case binds one extra fn in a fresh copy (the fixture's five resolved rows
+/// carry no attribute, so they are always the five `missing` rows the case adds to).
+#[test]
+fn the_contract_attr_case_table() {
+    // (case, source of the bound fn, missing, other)
+    let cases: [(&str, &str, usize, usize); 7] = [
+        (
+            "carries the row's id",
+            "#[contract(\"softmax-kernel-v1\", equation = \"e\")]\npub fn bound() {}\n",
+            5,
+            0,
+        ),
+        (
+            "path-qualified attribute",
+            "#[provable_contracts_macros::contract(\"softmax-kernel-v1\")]\npub fn bound() {}\n",
+            5,
+            0,
+        ),
+        (
+            "id written with .yaml",
+            "#[contract(\"softmax-kernel-v1.yaml\")]\npub fn bound() {}\n",
+            5,
+            0,
+        ),
+        (
+            "one of two ids matches",
+            "#[contract(\"other-v1\")]\n#[contract(\"softmax-kernel-v1\")]\npub fn bound() {}\n",
+            5,
+            0,
+        ),
+        ("no attribute", "pub fn bound() {}\n", 6, 0),
+        (
+            "another contract's id",
+            "#[contract(\"other-v1\")]\npub fn bound() {}\n",
+            5,
+            1,
+        ),
+        (
+            "attribute with no string id",
+            "#[contract(other_v1)]\npub fn bound() {}\n",
+            6,
+            0,
+        ),
+    ];
+    for (case, src, missing, other) in cases {
+        let (_g, c) = workspace();
+        allow(&c, &format!(r#"{{"entries": [{}]}}"#, entry(GHOST)));
+        bind(&c, "kern::nn::functional", "bound", "nn/functional.rs", src);
+        let (r, f) = ran(run_bindings_gate(&c));
+        // Report-only: the count never becomes a finding or a verdict.
+        assert!(f.is_empty(), "{case}: {f:?}");
+        assert_eq!(r.verdict, Verdict::Pass, "{case}");
+        let k = counters(&r);
+        assert_eq!(
+            (k.contract_attr_missing, k.contract_attr_other),
+            (missing, other),
+            "{case}: {k:?}"
+        );
+        assert_eq!(k.contract_attr_report.len(), missing + other, "{case}");
+        let named = k
+            .contract_attr_report
+            .iter()
+            .any(|l| l.starts_with("kern::nn::functional::bound "));
+        assert_eq!(
+            named,
+            missing + other > 5,
+            "{case}: {:#?}",
+            k.contract_attr_report
+        );
+    }
+}
+
+/// #4850: an unresolved row reaches no item, so it is a ghost (PV-ONT-028), never a contract-attribute row; and the
+/// report is sorted and names contract, equation and why.
+#[test]
+fn the_contract_attr_report_skips_ghosts_and_is_sorted() {
+    let (_g, c) = workspace();
+    let (r, _f) = ran(run_bindings_gate(&c));
+    let k = counters(&r);
+    assert_eq!(k.ghosts, 1);
+    assert_eq!(k.contract_attr_missing + k.contract_attr_other, k.resolved);
+    assert!(
+        !k.contract_attr_report
+            .iter()
+            .any(|l| l.contains("no_such_function")),
+        "{:#?}",
+        k.contract_attr_report
+    );
+    let mut sorted = k.contract_attr_report.clone();
+    sorted.sort();
+    assert_eq!(sorted, k.contract_attr_report);
+    assert!(
+        k.contract_attr_report.contains(
+            &"kern::nn::functional::softmax (softmax-kernel-v1 softmax): carries no #[contract] id"
+                .to_string()
+        ),
+        "{:#?}",
+        k.contract_attr_report
+    );
+}
+
+/// #4850 RED proof on the real corpus: rows that name a real fn without its `#[contract]` are reported, and the
+/// count is the report's length. The count itself is not pinned here; promoting it to a blocking ratchet is the
+/// step that pins a baseline.
+#[test]
+fn the_repo_corpus_reports_contract_attr_rows() {
+    let repo = Path::new(env!("CARGO_MANIFEST_DIR")).join("../../contracts");
+    let (r, f) = ran(run_bindings_gate(&repo));
+    assert!(
+        f.is_empty(),
+        "{:#?}",
+        f.iter().map(|x| &x.message).collect::<Vec<_>>()
+    );
+    let k = counters(&r);
+    assert_eq!(
+        k.contract_attr_report.len(),
+        k.contract_attr_missing + k.contract_attr_other
+    );
+    assert!(
+        k.contract_attr_missing + k.contract_attr_other <= k.resolved,
+        "{k:?}"
+    );
+}

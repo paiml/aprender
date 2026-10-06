@@ -11,6 +11,8 @@
 //! - PV-ONT-031 — a `module_path` is written as a file path (`krate::src::…`, a `mod` segment, a `.rs` segment)
 //!   instead of the module path the resolver walks. An allowlisted ghost is exempt: the allowlist only shrinks, and
 //!   the entry leaves it when the row is rewritten to a path that resolves (infra-83 ruling on #4502).
+//! - #4850 (REPORT-ONLY, counters `contract_attr_*`, never a finding) — a resolved row reaches an item that carries no
+//!   `#[contract("<row contract>")]`: a real but wrong function. It blocks only once promoted to a ratchet.
 //!
 //! `not_implemented` and `pending` bindings claim no code and are not resolved. Declines (exit 2, `NoCheckable`): the
 //! corpus's parent has no `[workspace]` manifest (the fixture corpora), no registry binds an `implemented`/`partial`
@@ -89,6 +91,13 @@ pub struct BindingsCounters {
     /// spec's name. An allowlisted ghost is accounted for (`allowlisted`), so it is not unresolved here (#4072).
     pub unresolved: usize,
     pub violations: usize,
+    /// #4850, REPORT-ONLY: never a finding and never a verdict change until it is promoted to a ratchet. Resolved
+    /// rows whose item carries no `#[contract]` id at all ...
+    pub contract_attr_missing: usize,
+    /// ... or carries `#[contract]` ids, none of them the row's contract.
+    pub contract_attr_other: usize,
+    /// One line per row counted above, sorted: `<symbol> (<contract> <equation>): <why>`.
+    pub contract_attr_report: Vec<String>,
 }
 
 /// Read `<contract_dir>/binding-allowlist.json`. Absent is an empty allowlist; malformed is a finding.
@@ -220,6 +229,40 @@ fn record_resolution(
     }
 }
 
+/// #4850, report-only: a resolved row names a real item; count it when that item does not carry the row's
+/// `#[contract("<id>")]`. A row naming a real but wrong function resolves cleanly, and `pv extract` regenerates
+/// `contracts.nt` from it, so no other check sees it. Counted, never a finding: it blocks only once it is a ratchet.
+fn check_contract_attr(
+    b: &crate::ontology::extract::code::Bound,
+    symbol: &str,
+    found: &Result<
+        crate::ontology::extract::code::Resolved,
+        crate::ontology::extract::code::Unresolved,
+    >,
+    c: &mut BindingsCounters,
+) {
+    let Ok(r) = found else { return };
+    if r.contract_ids
+        .iter()
+        .any(|id| crate::binding::normalize_contract_id(id) == b.contract)
+    {
+        return;
+    }
+    let why = if r.contract_ids.is_empty() {
+        c.contract_attr_missing += 1;
+        "carries no #[contract] id".to_string()
+    } else {
+        c.contract_attr_other += 1;
+        format!(
+            "carries #[contract] {}, not {}",
+            r.contract_ids.join(", "),
+            b.contract
+        )
+    };
+    c.contract_attr_report
+        .push(format!("{symbol} ({} {}): {why}", b.contract, b.equation));
+}
+
 /// PV-ONT-029: an allowlist entry that no longer names an unresolved binding is stale and must shrink out.
 fn check_stale_allowlist(
     allow: &[AllowEntry],
@@ -246,6 +289,7 @@ fn check_stale_allowlist(
 /// Build the final [`GateResult`] and [`RatchetOutcome::Ran`] from the counters and findings.
 fn finish(start: Instant, mut c: BindingsCounters, findings: Vec<LintFinding>) -> RatchetOutcome {
     c.unresolved = c.ghosts;
+    c.contract_attr_report.sort();
     c.violations = findings.len();
     let verdict = if findings.is_empty() {
         Verdict::Pass
@@ -331,6 +375,7 @@ pub fn run_bindings_gate(contract_dir: &Path) -> RatchetOutcome {
             &mut findings,
             &mut reported,
         );
+        check_contract_attr(b, &symbol, found, &mut c);
         if found.is_err() {
             unresolved.insert(symbol);
         }

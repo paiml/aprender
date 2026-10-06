@@ -41,6 +41,9 @@ pub struct Resolved {
     pub kind: String,
     /// Attribute paths on the item, in source order (`inline`, `kernel`, `cfg`, …).
     pub attributes: Vec<String>,
+    /// The id (first string literal) of every `#[contract("<id>", …)]` on the item, any path ending `contract`, in
+    /// source order. Read by the `bindings` gate (#4850); not emitted to the graph.
+    pub contract_ids: Vec<String>,
     /// ONT-4c4: no `unsafe fn` signature and no `unsafe { … }` block in the body.
     pub unsafe_free: bool,
     /// ONT-4c4: no `get_unchecked` / `get_unchecked_mut` call in the body — every index is bounds-checked.
@@ -1050,6 +1053,7 @@ fn found(
         visibility: visibility_of(vis),
         kind: kind.to_string(),
         attributes: attr_paths(attrs),
+        contract_ids: contract_ids(attrs),
         unsafe_free: sig.unsafety.is_none() && body.unsafe_blocks == 0,
         bounds_checked: body.unchecked_calls == 0,
     }
@@ -1064,6 +1068,7 @@ fn found_bodiless(kind: &str, vis: &syn::Visibility, attrs: &[syn::Attribute]) -
         visibility: visibility_of(vis),
         kind: kind.to_string(),
         attributes: attr_paths(attrs),
+        contract_ids: contract_ids(attrs),
         unsafe_free: true,
         bounds_checked: true,
     }
@@ -1218,6 +1223,29 @@ fn attr_paths(attrs: &[syn::Attribute]) -> Vec<String> {
                 .map(|s| s.ident.to_string())
                 .collect::<Vec<_>>()
                 .join("::")
+        })
+        .collect()
+}
+
+/// The first string literal of every attribute whose path ends `contract` (`#[contract("softmax-kernel-v1", …)]`,
+/// `#[provable_contracts_macros::contract(…)]`). An attribute whose arguments do not open with a string literal
+/// names no id and is skipped, so a row bound to it reads as carrying none.
+fn contract_ids(attrs: &[syn::Attribute]) -> Vec<String> {
+    attrs
+        .iter()
+        .filter(|a| {
+            a.path()
+                .segments
+                .last()
+                .is_some_and(|s| s.ident == "contract")
+        })
+        .filter_map(|a| {
+            a.parse_args_with(|input: syn::parse::ParseStream<'_>| {
+                let id: syn::LitStr = input.parse()?;
+                input.parse::<proc_macro2::TokenStream>()?;
+                Ok(id.value())
+            })
+            .ok()
         })
         .collect()
 }
@@ -1849,6 +1877,7 @@ mod tests {
                 visibility: "pub".into(),
                 kind: "fn".into(),
                 attributes: attrs.iter().map(|a| (*a).to_string()).collect(),
+                contract_ids: Vec::new(),
                 unsafe_free: true,
                 bounds_checked: false,
             });
