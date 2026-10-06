@@ -250,8 +250,11 @@ mod tools_reach_the_template_4650 {
             .expect("renders")
     }
 
-    /// The tool, as `json.dumps(tool, ensure_ascii=False)` writes it (HuggingFace's `tojson`):
-    /// `", "` / `": "` separators and no HTML escaping. Keys are in serde_json's order.
+    /// The tool with `json.dumps(tool, ensure_ascii=False)`'s separators (`", "` / `": "`) and
+    /// no HTML escaping. NOT json.dumps byte for byte: minijinja is built without
+    /// `preserve_order`, so every object's keys come out sorted, where HF keeps the client's
+    /// order. That is a known gap (see the PR's out-of-scope list), pinned here so a change
+    /// to it is seen.
     const TOOL_JSON: &str = r#"{"function": {"description": "Weather for a city, when a < b & c > d", "name": "get_weather", "parameters": {"properties": {"city": {"type": "string"}}, "required": ["city"], "type": "object"}}, "type": "function"}"#;
 
     /// must-RED on the pre-#4650 renderer: the tools block is absent.
@@ -298,13 +301,43 @@ mod tools_reach_the_template_4650 {
         }
     }
 
+    fn tojson_in(tpl: &str) -> Result<String, minijinja::Error> {
+        let mut env = minijinja::Environment::new();
+        env.add_filter("tojson", py_tojson);
+        let v = serde_json::json!({"a": [1, "x<y&z>'"], "b": null});
+        env.render_str(tpl, minijinja::context! { v => v })
+    }
+
     /// `tojson` is `json.dumps`: no `<` escapes, Python separators. minijinja's own
     /// filter fails both.
     #[test]
     fn tojson_writes_what_json_dumps_writes_4650() {
-        let v =
-            minijinja::Value::from_serialize(serde_json::json!({"a": [1, "x<y&z>'"], "b": null}));
-        let got = py_tojson(&v).expect("serializes");
-        assert_eq!(got.as_str(), Some(r#"{"a": [1, "x<y&z>'"], "b": null}"#));
+        let got = tojson_in("{{ v | tojson }}").expect("serializes");
+        assert_eq!(got, r#"{"a": [1, "x<y&z>'"], "b": null}"#);
+    }
+
+    /// must-RED on a one-argument filter (C129 F1 on #4866): Llama 3.x templates call
+    /// `tojson(indent=4)`, and a refused argument failed the whole render. With an indent
+    /// the text is `json.dumps(v, indent=4)`, keyword or positional.
+    #[test]
+    fn tojson_takes_indent_as_json_dumps_does_4866() {
+        let want = "{\n    \"a\": [\n        1,\n        \"x<y&z>'\"\n    ],\n    \"b\": null\n}";
+        for tpl in ["{{ v | tojson(indent=4) }}", "{{ v | tojson(4) }}"] {
+            assert_eq!(tojson_in(tpl).expect("renders"), want, "{tpl}");
+        }
+        assert_eq!(
+            tojson_in("{{ v | tojson(indent=none) }}").expect("renders"),
+            r#"{"a": [1, "x<y&z>'"], "b": null}"#
+        );
+        assert!(tojson_in("{{ v | tojson(sort_keys=true) }}").is_err());
+    }
+
+    /// The Llama 3.x shape end to end: `tools` defined, each rendered with `tojson(indent=4)`.
+    #[test]
+    fn a_llama3_style_tools_block_renders_4866() {
+        let tpl = "{%- if tools is not none %}{%- for t in tools %}{{ t | tojson(indent=4) }}\n\n{%- endfor %}{%- endif %}{{ messages[0].content }}";
+        let got = render(tpl, Some(&tools()));
+        assert!(got.contains("\n    \"type\": \"function\"\n}"), "{got}");
+        assert!(got.contains("What is the weather in Paris?"), "{got}");
     }
 }

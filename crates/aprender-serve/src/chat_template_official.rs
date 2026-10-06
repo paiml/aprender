@@ -164,16 +164,49 @@ impl serde_json::ser::Formatter for PyJsonFormatter {
 /// and HTML-escapes `<`, `>`, `&` and `'` to `<`-style escapes, so a tool schema that
 /// says "a < b" reached the model as text it was never trained on. The `tools` block and
 /// replayed tool-call arguments are the only places the Qwen templates call it.
-fn py_tojson(value: &minijinja::Value) -> Result<minijinja::Value, minijinja::Error> {
+///
+/// `indent` is taken positionally or as a keyword, as HF and minijinja's built-in take it.
+/// Llama 3.x templates render each tool with `tojson(indent=4)`; a filter that refused the
+/// argument failed the whole render, and the request fell back to apr's built-in template.
+/// With an indent the output is `json.dumps(x, indent=N)`: one item per line, `","`
+/// between items and `": "` after a key.
+fn py_tojson(
+    value: &minijinja::Value,
+    indent: Option<minijinja::Value>,
+    kwargs: minijinja::value::Kwargs,
+) -> Result<minijinja::Value, minijinja::Error> {
     use serde::Serialize;
-    let mut out = Vec::new();
-    let mut ser = serde_json::Serializer::with_formatter(&mut out, PyJsonFormatter);
-    value.serialize(&mut ser).map_err(|e| {
+    let indent = match indent {
+        Some(i) => Some(i),
+        None => kwargs.get::<Option<minijinja::Value>>("indent")?,
+    };
+    kwargs.assert_all_used()?;
+    let bad = |e: serde_json::Error| {
         minijinja::Error::new(
             minijinja::ErrorKind::BadSerialization,
             format!("tojson: {e}"),
         )
-    })?;
+    };
+    let mut out = Vec::new();
+    match indent.filter(|i| !i.is_none()) {
+        None => {
+            let mut ser = serde_json::Serializer::with_formatter(&mut out, PyJsonFormatter);
+            value.serialize(&mut ser).map_err(bad)?;
+        },
+        Some(i) => {
+            let n = i64::try_from(i).map_err(|_| {
+                minijinja::Error::new(
+                    minijinja::ErrorKind::InvalidOperation,
+                    "tojson: indent must be an integer",
+                )
+            })?;
+            // json.dumps treats a negative indent as 0: newlines, no padding.
+            let pad = " ".repeat(usize::try_from(n).unwrap_or(0));
+            let fmt = serde_json::ser::PrettyFormatter::with_indent(pad.as_bytes());
+            let mut ser = serde_json::Serializer::with_formatter(&mut out, fmt);
+            value.serialize(&mut ser).map_err(bad)?;
+        },
+    }
     let s = String::from_utf8(out).map_err(|e| {
         minijinja::Error::new(minijinja::ErrorKind::BadSerialization, e.to_string())
     })?;
