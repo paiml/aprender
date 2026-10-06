@@ -248,7 +248,7 @@ fi
 # The guard-cargo job body: from its key to the next top-level job key.
 # guard-cargo AND its guard-cargo-steps manifest (#4415): the docker steps run by
 # scripts/ci_guards.sh guard-cargo live in the manifest. guard-cargo-b and
-# guard-cargo-b-steps are its second half (rows m46-m76), each under its own wall.
+# guard-cargo-b-steps are its second half (rows m28-m37 and m46-m76), each under its own wall.
 guard_cargo_job="$(awk '/^  guard-cargo(-b)?(-steps)?:/{f=1;print;next} f&&/^  [a-z][a-z0-9_-]*:/{f=0} f' <<<"$ci_text")"
 n_job="$(grep -cE '^  guard-cargo(-b)?:$' <<<"$guard_cargo_job")"
 n_registry_only="$(grep -c -- ':/usr/local/cargo/registry' <<<"$guard_cargo_job")"
