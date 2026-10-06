@@ -1,0 +1,307 @@
+{
+  "$schema": "https://docs.oasis-open.org/sarif/sarif/v2.1.0/errata01/os/schemas/sarif-schema-2.1.0.json",
+  "version": "2.1.0",
+  "runs": [
+    {
+      "tool": {
+        "driver": {
+          "name": "pmat"
+        }
+      },
+      "invocations": [
+        {
+          "executionSuccessful": true,
+          "toolExecutionNotifications": []
+        }
+      ],
+      "results": [
+        {
+          "ruleId": "pmat_index_consulted",
+          "level": "note",
+          "message": {
+            "text": "pmat 3.42.0 index built in the review worktree at head (clean tree, cli transport) and queried for a keyed shell ratchet that admits a new key at zero; the top 5 were Rust, none a reusable shell ratchet."
+          },
+          "properties": {
+            "grounding": "measured",
+            "command": [
+              "pmat",
+              "query",
+              "keyed baseline ratchet new key admitted at zero",
+              "--limit",
+              "5"
+            ],
+            "exit_code": 0,
+            "stdout_sha256": "b643894b960420d6cfef1d6d4e2d794cadb000b53d38895f101a35cf16902e76",
+            "failure_scenario": "A Rust-semantic index cannot see shell prior art; the lexical duplication scan covers that half.",
+            "precision_class": "advisory"
+          }
+        },
+        {
+          "ruleId": "pmat_duplication_scan",
+          "level": "note",
+          "message": {
+            "text": "Duplication scan over 1505/1505 horizon branches and 26 merge-base..main files: 5 hits, all heal_path, the job-setup helper that guard-cargo-b copies verbatim from guard-cargo (also in guards-nightly.yml and docs/specifications/ci-fleet-hygiene.md:28). Intentional per-job copy, no new duplicate logic."
+          },
+          "properties": {
+            "grounding": "measured",
+            "command": [
+              "pr-review duplication scan",
+              "--head",
+              "9648c8b4d7"
+            ],
+            "exit_code": 0,
+            "stdout_sha256": "7de17c737f315a2090ae2e4a91f5ca086b331bbcf1244bf278a3f852b21d03d9",
+            "failure_scenario": "If the heal_path copies drift apart, one section heals its dirs differently from the other; the copy predates this PR.",
+            "precision_class": "advisory"
+          }
+        },
+        {
+          "ruleId": "pmat_shell_outside_complexity",
+          "level": "note",
+          "message": {
+            "text": "pmat analyze complexity finds no gradable source in this diff (shell and yaml only, exit 5), so complexity_delta and tdg_delta are empty; SATD added by the diff: 0."
+          },
+          "properties": {
+            "grounding": "measured",
+            "command": [
+              "pmat",
+              "analyze",
+              "complexity"
+            ],
+            "exit_code": 5,
+            "failure_scenario": "Complexity growth in the shell ratchet library is not graded by any pmat arm.",
+            "precision_class": "advisory"
+          }
+        },
+        {
+          "ruleId": "stale_comment_facade_compat",
+          "level": "note",
+          "message": {
+            "text": "The aprender#2628 comment above the cascade facade-order step contrasts it with check_facade_compat.sh, but after the rebalance that row (old m36) runs in guard-cargo while this step sits in guard-cargo-b-steps, so the comment names a neighbour that is no longer in the section. Wording only."
+          },
+          "properties": {
+            "grounding": "asserted",
+            "rationale": "read of ci/sections.yml at head plus ci_guards.sh --list: facade compat is guard-cargo m28, the order gate is guard-cargo-b m8.",
+            "failure_scenario": "A reader editing guard-cargo-b looks for the facade-compat step the comment names and does not find it; no behaviour changes.",
+            "precision_class": "advisory"
+          },
+          "locations": [
+            {
+              "physicalLocation": {
+                "artifactLocation": {
+                  "uri": "ci/sections.yml"
+                },
+                "region": {
+                  "startLine": 2350
+                }
+              }
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "tool": {
+        "driver": {
+          "name": "cargo-mutants"
+        }
+      },
+      "invocations": [
+        {
+          "executionSuccessful": true,
+          "toolExecutionNotifications": []
+        }
+      ],
+      "results": [
+        {
+          "ruleId": "guard_selftest_baseline_ratchets",
+          "level": "note",
+          "message": {
+            "text": "scripts/check_baseline_ratchets.sh --self-test at head: PASS, 82 case-table rows (10 keyed0), exit 0."
+          },
+          "properties": {
+            "grounding": "measured",
+            "command": [
+              "bash",
+              "scripts/check_baseline_ratchets.sh",
+              "--self-test"
+            ],
+            "exit_code": 0,
+            "stdout_sha256": "028923181a39975e567b6851f2f89f54011ddf7d5f492953a66ad95135b8996c",
+            "failure_scenario": "A case table that cannot fail proves nothing; the mutant set below shows which rules it pins.",
+            "precision_class": "advisory"
+          }
+        },
+        {
+          "ruleId": "guard_mutants_keyed0",
+          "level": "note",
+          "message": {
+            "text": "7 hand mutants over a scratch copy of scripts/: 5 killed by the self-test (numeric zero, never admit, always admit, z dropped, keyed also admits), 2 survived (next two results). Copy restored and compared byte-identical."
+          },
+          "properties": {
+            "grounding": "measured",
+            "command": [
+              "bash",
+              "mutants.sh"
+            ],
+            "exit_code": 0,
+            "stdout_sha256": "f94768073ea38cb0908acaa4392d3fcd832060ddfc352978e9482b3a84ffe0ad",
+            "failure_scenario": "A comparator rule with no killing row can be broken without the self-test going red.",
+            "precision_class": "advisory"
+          }
+        },
+        {
+          "ruleId": "mutant_survivor_keyed0_dispatch",
+          "level": "warning",
+          "message": {
+            "text": "A mutant renaming the keyed0) arm in baseline_ratchet_check survives the self-test (rc 0): no case-table row drives the keyed0 kind through the dispatcher end to end; the rows call _br_cmp_keyed0 directly."
+          },
+          "properties": {
+            "grounding": "measured",
+            "command": [
+              "bash",
+              "scripts/check_baseline_ratchets.sh",
+              "--self-test"
+            ],
+            "exit_code": 0,
+            "stdout_sha256": "f94768073ea38cb0908acaa4392d3fcd832060ddfc352978e9482b3a84ffe0ad",
+            "failure_scenario": "If the dispatch arm is renamed or deleted, the live run hits the default arm and FAILs with unknown comparison kind (fail-closed, so main goes red, not open), but the self-test that guards the guard stays green.",
+            "precision_class": "advisory"
+          },
+          "locations": [
+            {
+              "physicalLocation": {
+                "artifactLocation": {
+                  "uri": "scripts/lib_baseline_ratchet.sh"
+                },
+                "region": {
+                  "startLine": 588
+                }
+              }
+            }
+          ]
+        },
+        {
+          "ruleId": "mutant_survivor_keyed0_classify",
+          "level": "warning",
+          "message": {
+            "text": "A mutant mapping guard_fail_fast_baseline.txt back to keyed survives the self-test (rc 0): no row pins that file to keyed0."
+          },
+          "properties": {
+            "grounding": "measured",
+            "command": [
+              "bash",
+              "scripts/check_baseline_ratchets.sh",
+              "--self-test"
+            ],
+            "exit_code": 0,
+            "stdout_sha256": "f94768073ea38cb0908acaa4392d3fcd832060ddfc352978e9482b3a84ffe0ad",
+            "failure_scenario": "Revert the classification to keyed: the self-test stays green and the live ratchet only goes red while the base lacks the guard-cargo-b row; after this lands, the next new guard section is refused at 0 again, the defect this PR fixes.",
+            "precision_class": "advisory"
+          },
+          "locations": [
+            {
+              "physicalLocation": {
+                "artifactLocation": {
+                  "uri": "scripts/check_baseline_ratchets.sh"
+                },
+                "region": {
+                  "startLine": 151
+                }
+              }
+            }
+          ]
+        },
+        {
+          "ruleId": "guard_wiring_checks",
+          "level": "note",
+          "message": {
+            "text": "At head: ci_guard_steps.sh check-run-all rc 0, guard_tree_test.sh rc 0 (n_job 2), ci_guards.sh --check-coverage rc 0."
+          },
+          "properties": {
+            "grounding": "measured",
+            "command": [
+              "bash",
+              "scripts/tests/guard_tree_test.sh"
+            ],
+            "exit_code": 0,
+            "stdout_sha256": "184b11efad915cd936fc3ef78e4af2fd6eabc5a7ca025c3393303ffcb2e96120",
+            "failure_scenario": "A section missing from the gate or the run-all list would turn one of these red; none did.",
+            "precision_class": "advisory"
+          }
+        },
+        {
+          "ruleId": "live_ratchet_environmental_red",
+          "level": "note",
+          "message": {
+            "text": "Live check_baseline_ratchets.sh rc 1 at head, only on pmat tool_version rows (baselines recorded under 3.41.1, local pmat 3.42.0); the same rows fail at the merge-base. guard_fail_fast_baseline.txt: ok, did not grow vs base."
+          },
+          "properties": {
+            "grounding": "measured",
+            "command": [
+              "bash",
+              "scripts/check_baseline_ratchets.sh"
+            ],
+            "exit_code": 1,
+            "stdout_sha256": "7bbe68312d1c79e31d43adca68d8a745c8f82f00ba943ee10d95906e4e3af45e",
+            "failure_scenario": "Environmental: a reviewer with a newer pmat than the baseline pin; not caused by this diff.",
+            "precision_class": "advisory"
+          }
+        },
+        {
+          "ruleId": "wall_and_cargo_not_measured",
+          "level": "note",
+          "message": {
+            "text": "not_measured: the per-section wall of guard-cargo and guard-cargo-b with m36 back in guard-cargo (the PR body estimates about 2520 s and 3290 s from CI run 37402560966), and any cargo build (cargo is not run on this reviewing host; it runs only on the designated build host)."
+          },
+          "properties": {
+            "grounding": "asserted",
+            "rationale": "no run of the final head is cited; the estimate is the author's.",
+            "failure_scenario": "If guard-cargo-b still lands above the 3300 s rebalance trigger under cold merge-queue load, it hits its 3600 s wall and kills merges again.",
+            "precision_class": "advisory"
+          }
+        }
+      ]
+    },
+    {
+      "tool": {
+        "driver": {
+          "name": "antigravity"
+        }
+      },
+      "invocations": [
+        {
+          "executionSuccessful": true,
+          "toolExecutionNotifications": []
+        }
+      ],
+      "results": [
+        {
+          "ruleId": "agy_cargo_home_check_pooled",
+          "level": "note",
+          "message": {
+            "text": "agy reports that the guard_tree_test CARGO_HOME row pools guard-cargo, guard-cargo-b and both manifests, so guard-cargo-b could drop its CARGO_HOME mount and the row would still pass on guard-cargo."
+          },
+          "properties": {
+            "grounding": "asserted",
+            "rationale": "raised by the antigravity reviewer (requested model gemini-3.1-pro-high). The primary measured the opposite for that direction: at head all three -e CARGO_HOME= lines are in guard-cargo-b-steps (ci/sections.yml:2494, 2720, 2730) and guard-cargo contributes 0, so removing them turns the row red. The residual weakness is the reverse direction (a new docker step in guard-cargo without the mount passes), which is per-step and also true at the merge-base. The primary did not re-run agy.",
+            "failure_scenario": "A new cargo-running docker step added to guard-cargo-steps without -e CARGO_HOME passes the row because guard-cargo-b already satisfies count > 0.",
+            "precision_class": "advisory"
+          },
+          "locations": [
+            {
+              "physicalLocation": {
+                "artifactLocation": {
+                  "uri": "scripts/tests/guard_tree_test.sh"
+                },
+                "region": {
+                  "startLine": 257
+                }
+              }
+            }
+          ]
+        }
+      ]
+    }
+  ]
+}
