@@ -45,7 +45,12 @@ dbs_bins() {
           | . as $p
           | .targets[]
           | select(.kind | index("bin"))
-          | {b: .name, pkg: $p.name, f: (.["required-features"] // []), root: ($p.manifest_path == $root)} ]
+          # a package whose build SHA is behind an optional `build-sha` feature (#4604 C2) is built
+          # with it, as binary-release.yml builds it; without it --version reads "+no-git" (#4219)
+          | {b: .name, pkg: $p.name,
+             f: ((.["required-features"] // []) + (if ($p.features // {}) | has("build-sha") then ["build-sha"] else [] end)
+                 | reduce .[] as $q ([]; if index([$q]) then . else . + [$q] end)),
+             root: ($p.manifest_path == $root)} ]
       | group_by(.b)
       | map( (map(select(.root | not))) as $nr
              | if ($nr | map(.pkg) | unique | length) > 1
@@ -135,13 +140,13 @@ dbs_self_test() {
  "packages":[
   {"id":"f","name":"aprender","version":"0.70.2","manifest_path":"/w/Cargo.toml","targets":[{"name":"apr","kind":["bin"]}]},
   {"id":"a","name":"apr-cli","version":"9.9.9","manifest_path":"/w/crates/apr-cli/Cargo.toml","targets":[{"name":"apr","kind":["bin"]},{"name":"apr_cli","kind":["lib"]}]},
-  {"id":"c","name":"aprender-contracts-cli","manifest_path":"/w/crates/c/Cargo.toml","targets":[{"name":"pv","kind":["bin"],"required-features":["cli"]}]},
+  {"id":"c","name":"aprender-contracts-cli","manifest_path":"/w/crates/c/Cargo.toml","features":{"cli":[],"build-sha":["dep:aprender-build-sha"],"update-check":[]},"targets":[{"name":"pv","kind":["bin"],"required-features":["cli"]},{"name":"pv-sat","kind":["bin"],"required-features":["build-sha"]}]},
   {"id":"x","name":"zz","manifest_path":"/w/crates/zz/Cargo.toml","targets":[{"name":"aprender-zz","kind":["bin"]}]},
   {"id":"dep","name":"notmember","manifest_path":"/r/x/Cargo.toml","targets":[{"name":"evil","kind":["bin"]}]}]}
 J
-    expect "bins: members only, one per name, sorted" "apr,aprender-zz,pv" "$(dbs_bins "$t/meta.json")"
-    expect "bins: facade loses to the member package; features scoped to their package" \
-        "-p apr-cli -p zz -p aprender-contracts-cli --bin apr --bin aprender-zz --bin pv --features aprender-contracts-cli/cli" \
+    expect "bins: members only, one per name, sorted" "apr,aprender-zz,pv,pv-sat" "$(dbs_bins "$t/meta.json")"
+    expect "bins: facade loses to the member package; features scoped to their package; a package with an optional build-sha builds with it, once (#4219)" \
+        "-p apr-cli -p zz -p aprender-contracts-cli --bin apr --bin aprender-zz --bin pv --features aprender-contracts-cli/cli --features aprender-contracts-cli/build-sha --bin pv-sat --features aprender-contracts-cli/build-sha" \
         "$(dbs_bins "$t/meta.json" cargo)"
     jq '.packages[3].targets[0].name = "apr"' "$t/meta.json" > "$t/dup.json"
     rc=0; dbs_bins "$t/dup.json" >/dev/null 2>&1 || rc=$?
