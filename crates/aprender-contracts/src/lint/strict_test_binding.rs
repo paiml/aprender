@@ -1191,7 +1191,9 @@ fn ignored_test_still_counts() {}
         let baseline = read_baseline();
         let mut observed: std::collections::HashMap<String, usize> =
             std::collections::HashMap::new();
-        for f in &findings {
+        // PV-VER-002 only: the gate also returns PV-VER-003's report-only legacy findings, which this baseline
+        // never counted.
+        for f in findings.iter().filter(|f| f.rule_id == "PV-VER-002") {
             *observed.entry(f.file.clone()).or_default() += 1;
         }
 
