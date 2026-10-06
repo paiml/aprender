@@ -29,7 +29,7 @@ case "$WORK" in
 esac
 trap 'rm -rf "${WORK:?}"' EXIT
 
-# ── stubs: gh answers from the row's fixture dir; cargo must never run ──
+# ── stubs: gh answers from the row's fixture dir; the `cargo` stub must never be called ──
 BIN="$WORK/bin"
 mkdir -p "$BIN" "$WORK/ghconfig" "$WORK/home/.cargo"
 printf 'fixture, not a token\n' > "$WORK/home/.cargo/credentials.toml"

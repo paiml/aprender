@@ -112,7 +112,7 @@ proof_obligations:
   - id: PW-DOOR-005
     type: precondition
     property: "publish_strict.sh uploads only after the recorded clean-room run is read back and found green on exactly the tag's commit"
-    formal: "upload(T) => let r = recorded_run(T) in r != none and conclusion(r) = success and tested_sha(r) = commit(T)"
+    formal: "upload(T) ⇒ recorded_run(T) ≠ ∅ ∧ conclusion(recorded_run(T)) = success ∧ tested_sha(recorded_run(T)) = commit(T)"
     applies_to: all
 
 falsification_tests:
