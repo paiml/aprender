@@ -1,0 +1,16 @@
+{
+  "subject": "docs/specifications/KBENCH-001-agent-kernel-bench-loop.md + docs/research/crux-tirx-harness-2026-10-06.md",
+  "author_model": "claude-opus-5-5",
+  "rounds": [
+    {"round": "recommendations (R1-R11)", "lanes": [
+      {"model": "gemini-3.1-pro-high", "backend": "agy", "top5": ["R3","R4","R2","R7","R9"]},
+      {"model": "gpt-oss-120b-medium", "backend": "agy", "top5": ["R3","R4","R5","R7","R9"]},
+      {"model": "claude-sonnet-5-5", "backend": "claude -p", "top5": ["R2","R3","R9","R7","R1"]}],
+     "kept": ["R1","R2","R3","R4","R5","R6(modified, 2/3)","R7","R8","R9","R11"], "dropped": ["R10 (0/3)"]},
+    {"round": "spec review 1", "verdicts": {"gemini-3.1-pro-high": "FAIL", "gpt-oss-120b-medium": "FAIL", "claude-sonnet-5-5": "FAIL"},
+     "fixed": ["m:32 control", "timeout -> rc 1 failure:timeout (no rc 124)", "no perturbable input -> rc 2", "reference not timed", "one task per quant x family", "K-6 done_when falsifiable, strict inequality", "K-1 gx10 via cuda-nightly runner, not F-1", "receipt baseline_us/delta/ratchet_verdict; baseline in perf-matrix.yaml", "K-4 -> E6", "K-5/K-6 empty -> rc 2"],
+     "declined": ["move K-2 off standing epic S1 (standing epics are valid parents, APR-EPIC-001 §2)", "register MCP tool now (that is K-4 itself)"]},
+    {"round": "spec review 2 (final text)", "verdicts": {"gemini-3.1-pro-high": "PASS", "gpt-oss-120b-medium": "PASS (relaunched once: first run auto-denied a tool call in headless mode, no verdict)", "claude-sonnet-5-5": "PASS"}}
+  ],
+  "verdict": "PASS 3/3, 3 distinct models, none the author's"
+}
