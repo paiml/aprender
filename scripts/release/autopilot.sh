@@ -6,7 +6,8 @@
 # one argument; milestone, epic and the state dir AP are read from GitHub and the repo, never literals.
 #
 #   autopilot.sh <version> <bump-pr> [from-step] [to-step]
-#   steps: wait deep dogfood models readiness tag cleanroom assets preflight dryrun cascade install hosts postpub ledger close
+#   steps: wait deep dogfood models readiness tag cleanroom assets preflight publish dryrun cascade install hosts postpub ledger close
+#   The publish dry run (rc_publish_gate.sh --verify) runs in `tag`, ahead of the tag; `dryrun` reads its receipt.
 #   T-4 for THIS train (operator 2026-09-17): cascade DRY-RUN receipt, then STOP and report — the cascade
 #   itself is the operator's step. Default to-step is dryrun; `cascade` and later run only when named.
 #   T-1 'ci / deep' has no workflow on main, so `deep` runs the equivalent locally on the release commit.
@@ -243,6 +244,16 @@ cut_tag() {
 if run_step tag; then
   git rev-parse -q --verify "refs/tags/$T" > /dev/null && die "tag $T already exists locally"
   [ -f "$AP/release_notes.md" ] || die "no $AP/release_notes.md (prepare_bump.sh writes it from CHANGELOG [$V])"
+  # The publish dry run runs AHEAD of the tag. `--verify` builds every publishable crate's tarball
+  # against the local overlay (= `cargo publish --dry-run` for the whole cascade). The worktree is the
+  # release commit the tag will name, so this is the tarball the cascade uploads. A red here stops the
+  # train before anything irreversible: no carry, no tag, no draft (#4287 follow-up, #4690).
+  rm -f -- "${AP:?}/publish-dryrun-commit"
+  bash scripts/release/rc_publish_gate.sh --verify "$WT" > "$AP/publish-dryrun.log" 2>&1; rc=$?
+  tail -2 "$AP/publish-dryrun.log" >> "$STATUS"
+  [ $rc -eq 0 ] || die "publish dry-run refused rc=$rc (1 = a tarball defect, 2 = could not measure; $AP/publish-dryrun.log) -- no tag"
+  printf '%s\n' "$MC" > "$AP/publish-dryrun-commit"
+  say "PUBLISH-DRYRUN green on $MC, ahead of the tag ($AP/publish-dryrun.log)"
   cut_tag "$V" "$T" "$MC"
   say "TAGGED $T at $MC"
   gh release create "$T" --repo "$REPO" --verify-tag --draft --title "aprender $V" --notes-file "$AP/release_notes.md" >> "$LOG" 2>&1 || die "gh release create --draft failed"
@@ -373,12 +384,10 @@ fi
 #     (TO=close), but the line read as a park and cost a minute of reading -- so it now says what it is.
 if run_step dryrun; then
   # The receipt above is about not WAITING for the operator; a tarball that does not compile is a
-  # defect, not a park. `--verify` builds every publishable crate's tarball against the local
-  # overlay (= `cargo publish --dry-run` for the whole cascade), so a red here would have been a
-  # half-uploaded cascade (#4287 follow-up, operator publish word for 0.70.0, 2026-09-24).
-  bash scripts/release/rc_publish_gate.sh --verify "$WT" > "$AP/publish-dryrun.log" 2>&1; rc=$?
-  tail -2 "$AP/publish-dryrun.log" >> "$STATUS"
-  [ $rc -eq 0 ] || die "publish dry-run refused rc=$rc (1 = a tarball defect, 2 = could not measure; $AP/publish-dryrun.log)"
+  # defect, not a park. The `--verify` dry run ran in the tag step, ahead of the tag, on this same
+  # commit. Its receipt must name exactly $MC: missing or another commit is red, never a skip.
+  [ "$(cat "$AP/publish-dryrun-commit" 2>/dev/null)" = "$MC" ] \
+    || die "no green publish dry-run receipt for $MC in $AP/publish-dryrun-commit (the tag step runs it ahead of the tag)"
   bash scripts/cascade-publish.sh --check > "$AP/cascade-check.log" 2>&1; rc=$?
   behind=$(grep -cE "\(want ${V//./\\.}\)" "$AP/cascade-check.log" || true)
   tail -3 "$AP/cascade-check.log" >> "$STATUS"

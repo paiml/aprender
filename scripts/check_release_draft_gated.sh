@@ -165,10 +165,11 @@ run() {
     "$W/state/built" "$FX_ASSETS" "$W/calls" > "$W/scripts/check_release_assets.sh"
   printf '#!/usr/bin/env bash\necho "PREFLIGHT rc=%s" >> %q\nexit %s\n' "$FX_PREFLIGHT" "$W/calls" "$FX_PREFLIGHT" > "$W/scripts/check_publish_preflight.sh"
   printf '#!/usr/bin/env bash\nexit 0\n' > "$W/scripts/release/tag_coverage_gate.sh"
+  printf '#!/usr/bin/env bash\nexit 0\n' > "$W/scripts/release/rc_publish_gate.sh"
   {
     printf 'set -uo pipefail\ncd %q || exit 2\n' "$W"
     printf 'REPO=paiml/aprender INFRA=paiml/infra V=0.0.0 T=v0.0.0 MC=deadbeef\n'
-    printf 'AP=%q LOG=%q STATUS=%q\n' "$W/ap" "$W/log" "$W/status"
+    printf 'AP=%q LOG=%q STATUS=%q WT=%q\n' "$W/ap" "$W/log" "$W/status" "$W"
     printf 'say() { printf "SAY %%s\\n" "$*" >> "$LOG"; }\n'
     printf 'die() { printf "STOP %%s\\n" "$*" >> %q; exit 1; }\n' "$W/calls"
     printf 'sleep() { :; }\n'
