@@ -1,0 +1,328 @@
+{
+  "ticket": "PMAT-4879",
+  "base": "origin/main",
+  "base_resolved": "origin/main",
+  "base_note": "no origin/origin/main exists; judged against the local ref; brief_exclude (C45) kept out of the brief: docs/roadmaps/roadmap.yaml",
+  "head": "99d8663f106c46bc42f5bc613b8a69c4ce00ec81",
+  "diff_sha256": "0a41e6effbaa182721cd13f1e8e292c80bb6ec22d58dbe3398f8c93c9693396d",
+  "width": 3,
+  "executor": "agy",
+  "prompt_mode": "file",
+  "prompt_bytes": 171972,
+  "prompt_sha256": "8c88727534531df3c09bc70c78b46505af932360805bf4084507671a03197b4f",
+  "author": {
+    "model": "claude-sonnet-5-5",
+    "family": "claude",
+    "source": "flag"
+  },
+  "agreed": true,
+  "lanes": [
+    {
+      "lane": 1,
+      "status": "SUCCESS",
+      "verdict": "PASS",
+      "summary": "The diff accurately implements PMAT-4879, including the Jetson GPU lane, CI validation scripts, hardware constraints, and the [N/A] yield probe fix. No unrequested changes or weakened gates were found. No paiml-lane-witness was found in the workspace, which is expected under cc-lane orchestration.",
+      "findings": [],
+      "raw_bytes": 1859,
+      "err_bytes": 0,
+      "envelope_status": "SUCCESS",
+      "verdict_source": "structured_output",
+      "grounding_check": "parity",
+      "role": "independent",
+      "model": "gemini-3.1-pro-high",
+      "model_measured": "gemini-3.1-pro-high",
+      "model_source": "measured",
+      "family": "gemini",
+      "executor": "agy",
+      "brief_sha256": "8c88727534531df3c09bc70c78b46505af932360805bf4084507671a03197b4f",
+      "trace": {
+        "input_sha256": "0c7aedcbdc49775f097ebd56e09dbcc98eb629c41cc464ada5159d1fc100cc0d",
+        "output_sha256": "cf76333fe84a5499e2f06abe1f0179fafbb9f97bb6ec0771dde716e29a676929",
+        "store": null,
+        "store_why": "almacen not provisioned yet (infra-27): the blobs stay in the round's gitignored .lanes dir"
+      },
+      "fallback": {
+        "judged_by": "gemini-3.1-pro-high",
+        "exhausted": false,
+        "attempts": [
+          {
+            "model": "gemini-3.1-pro-high",
+            "family": "gemini",
+            "outcome": "answered"
+          }
+        ],
+        "skipped": []
+      }
+    },
+    {
+      "lane": 2,
+      "status": "SUCCESS",
+      "verdict": "PASS",
+      "summary": "I read the whole brief (3,457 lines: the ticket and the full diff; it contains no separate receipt section) and found nothing that refutes PMAT-4879. The ticket's core claim is that a GPU test must not pass without a GPU, and the diff implements it in three layers. First, all 8 cuda_ctx! macros in aprender-gpu/src and the 5 resident-tensor skip paths now go through testing::require_gpu::skip_or_panic, which panics when APR_REQUIRE_GPU is set. A grep finds no \"Skipping CUDA\" eprintln left anywhere in that source tree. Second, a canary test outside driver:: fails in S2 if no context exists. Third, ci_jetson_gpu.sh forces APR_REQUIRE_GPU=1 and judges each stage's log: a stage is red when its log has no `test result:` line, a failed test, a count under its floor, a device-skip line, a SIGKILL or a crash. It uses PIPESTATUS, not tee's status. The Jetson jobs are advisory: neither is in gate.needs, R9 guards that, and fork PRs are excluded. The yield-probe fix keeps every numeric verdict unchanged. Its replay table proves that against the pre-fix probe ('same' rows must match the old verdict, 'fixed' rows must differ). No existing guard is weakened. check_runner_labels.sh only gains the label. ci_self_hosted_preflight_test.sh's wiring check covers 3 other workflows, not these. The crate edits are cfg(test) or test-module code, and they line up with the tree: the CudaDriver fields, the DeviceMemoryClass re-export and its two variants, memory_info, and to_host(&mut self) all exist as the diff uses them. The findings below are disclosures and risks, not refutations. I ran no build and no self-test, so the claimed self-test counts (114 and 90) are not verified. No paiml-lane-witness file exists in this worktree's git dir (/home/noah/src/aprender/.git/worktrees/wt-aprender-jetson/), so tree_witness is omitted.",
+      "findings": [
+        {
+          "file": "crates/aprender-gpu/src/driver/context.rs",
+          "line": 145,
+          "claim": "The cfg(test) pin_primary_context hides a known production defect (the process-global kernel cache outlives its primary context) in every GPU CI leg that runs the aprender-gpu cuda lib tests, not just the Jetson lane. gpu-quick and the cuda-nightly legs could previously surface it as an intermittent CUDA_ERROR_INVALID_HANDLE or SIGSEGV; now they cannot. The diff discloses this honestly in the doc comment, the eprintln notice and the roadmap notes. But the notes say only that the fix 'needs its own ticket', and no ticket number is cited, so nothing tracks the masked defect.",
+          "grounding": "cited",
+          "fix": "File the cache-lifetime ticket now and cite its number in the pin's doc comment and in the PMAT-4879 notes, so the mask has an owner and an exit condition."
+        },
+        {
+          "file": "scripts/ci_jetson_gpu.sh",
+          "line": 2561,
+          "claim": "Every stage floor (S1 160, S2 1800, S3b 50) and DEVICE_SKIP_RE were derived from x86_64 or yoga runs. The roadmap notes say 'Measured on an RTX 4090, never on the Orin', so the first Orin run may go red on a floor or on an unanticipated skip string. The jobs are advisory, so this blocks nothing, but the warm-up workflow_dispatch the nightly header asks for should be run and recorded before anyone relies on the lane.",
+          "grounding": "cited",
+          "fix": "Record the first green Orin dispatch (run ID and counts) before the silicon-coverage line for aarch64-cuda-sm87 leaves pending, as the notes already say."
+        },
+        {
+          "file": "docs/roadmaps/entries/PMAT-4879.yaml",
+          "line": 951,
+          "claim": "The acceptance criteria state exact self-test sizes: 114 cases for ci_jetson_gpu.sh and 90 for check_jetson_gpu_jobs.sh. The diff contains no recorded gate output, and this lane may not run self-tests, so the counts are unverified here.",
+          "grounding": "asserted",
+          "fix": "Attach the self-test summary lines from a run on this commit to the PR receipt."
+        }
+      ],
+      "raw_bytes": 8482,
+      "err_bytes": 0,
+      "envelope_status": "SUCCESS",
+      "verdict_source": "structured_output",
+      "executor": "claude-code",
+      "grounding_check": "parity",
+      "role": "counted",
+      "model": "claude-opus-5-5",
+      "model_measured": "claude-opus-5-5",
+      "model_source": "flag",
+      "family": "claude",
+      "brief_sha256": "8c88727534531df3c09bc70c78b46505af932360805bf4084507671a03197b4f",
+      "trace": {
+        "input_sha256": "98a4b9ed3551a72bddb988aea972e6964053bbe983355ee74656d1ac9ca616c0",
+        "output_sha256": "624967e7b4a20cdd681d5aacce54c5a690db4958eec2345dfa7c2350ccaa81d9",
+        "store": null,
+        "store_why": "almacen not provisioned yet (infra-27): the blobs stay in the round's gitignored .lanes dir"
+      },
+      "fallback": {
+        "judged_by": "claude-opus-5-5",
+        "exhausted": false,
+        "attempts": [
+          {
+            "model": "claude-opus-5-5",
+            "family": "claude",
+            "outcome": "answered"
+          }
+        ],
+        "skipped": []
+      }
+    },
+    {
+      "lane": 3,
+      "status": "SUCCESS",
+      "verdict": "PASS",
+      "summary": "PMAT-4879 diff correctly implements a fail-fast GPU lane on the Jetson Orin runner with comprehensive safeguards. All six acceptance criteria are addressed: lane/jobs/nightly configuration, shape guards with self-tests, yield-probe fix for [N/A] handling, APR_REQUIRE_GPU enforcement via require_gpu module, memory optimizations (context pinning, pressure budgeting, device classification), and production behavior unchanged. No contradictions found between diff and ticket requirements.",
+      "findings": [],
+      "raw_bytes": 1907,
+      "err_bytes": 0,
+      "envelope_status": "SUCCESS",
+      "verdict_source": "structured_output",
+      "executor": "claude-code",
+      "grounding_check": "parity",
+      "role": "counted",
+      "model": "claude-haiku-4-5",
+      "model_measured": "claude-haiku-4-5",
+      "model_source": "flag",
+      "family": "claude",
+      "brief_sha256": "8c88727534531df3c09bc70c78b46505af932360805bf4084507671a03197b4f",
+      "trace": {
+        "input_sha256": "8d5c5cbcc3dc6474e80e87300b0cb36a31a2c22ede5988a3e37b414759f582fc",
+        "output_sha256": "46ad84d96d1a3d1d87bc4619211382d9899a0a44937c08b41946e9aa83140e2f",
+        "store": null,
+        "store_why": "almacen not provisioned yet (infra-27): the blobs stay in the round's gitignored .lanes dir"
+      },
+      "fallback": {
+        "judged_by": "claude-haiku-4-5",
+        "exhausted": false,
+        "attempts": [
+          {
+            "model": "claude-haiku-4-5",
+            "family": "claude",
+            "outcome": "answered"
+          }
+        ],
+        "skipped": []
+      }
+    }
+  ],
+  "dissent": [],
+  "dedup": [
+    {
+      "file": "crates/aprender-gpu/src/driver/context.rs",
+      "line": 145,
+      "lanes_agreeing": [
+        2
+      ],
+      "claims": [
+        "The cfg(test) pin_primary_context hides a known production defect (the process-global kernel cache outlives its primary context) in every GPU CI leg that runs the aprender-gpu cuda lib tests, not just the Jetson lane. gpu-quick and the cuda-nightly legs could previously surface it as an intermittent CUDA_ERROR_INVALID_HANDLE or SIGSEGV; now they cannot. The diff discloses this honestly in the doc comment, the eprintln notice and the roadmap notes. But the notes say only that the fix 'needs its own ticket', and no ticket number is cited, so nothing tracks the masked defect."
+      ]
+    },
+    {
+      "file": "docs/roadmaps/entries/PMAT-4879.yaml",
+      "line": 951,
+      "lanes_agreeing": [
+        2
+      ],
+      "claims": [
+        "The acceptance criteria state exact self-test sizes: 114 cases for ci_jetson_gpu.sh and 90 for check_jetson_gpu_jobs.sh. The diff contains no recorded gate output, and this lane may not run self-tests, so the counts are unverified here."
+      ]
+    },
+    {
+      "file": "scripts/ci_jetson_gpu.sh",
+      "line": 2561,
+      "lanes_agreeing": [
+        2
+      ],
+      "claims": [
+        "Every stage floor (S1 160, S2 1800, S3b 50) and DEVICE_SKIP_RE were derived from x86_64 or yoga runs. The roadmap notes say 'Measured on an RTX 4090, never on the Orin', so the first Orin run may go red on a floor or on an unanticipated skip string. The jobs are advisory, so this blocks nothing, but the warm-up workflow_dispatch the nightly header asks for should be run and recorded before anyone relies on the lane."
+      ]
+    }
+  ],
+  "uncovered": [],
+  "coverage_source": "lanes",
+  "partial": false,
+  "partial_reasons": [],
+  "fallback": {
+    "same_family_width": 2,
+    "chain": [
+      {
+        "model": "gemini-3.1-pro-high",
+        "family": "gemini",
+        "disposition": "configured"
+      },
+      {
+        "model": "claude-opus-5-5",
+        "family": "claude",
+        "disposition": "claude-code",
+        "why": "run by Claude Code on its own budget: a configured seat runs every round, a fallback step only when every non-Claude family is measured out (PMAT-360, operator standing rule)"
+      },
+      {
+        "model": "claude-haiku-4-5",
+        "family": "claude",
+        "disposition": "claude-code",
+        "why": "run by Claude Code on its own budget: a configured seat runs every round, a fallback step only when every non-Claude family is measured out (PMAT-360, operator standing rule)"
+      },
+      {
+        "model": "gpt-oss-120b-medium",
+        "family": "openai",
+        "disposition": "fallback"
+      }
+    ],
+    "precheck": [
+      {
+        "family": "gemini",
+        "model": "gemini-3.1-pro-high",
+        "probe": 1,
+        "outcome": "live"
+      }
+    ],
+    "degraded": null,
+    "prah": {
+      "source": "install-receipt",
+      "path": "/home/noah/.claude/skills/paiml-implement/bin/prah"
+    },
+    "tier1": {
+      "agy_tier1_only": true,
+      "tier1": true,
+      "matched": [
+        ".github/workflows/ci.yml",
+        ".github/workflows/cuda-nightly.yml",
+        ".github/workflows/jetson-gpu-nightly.yml"
+      ],
+      "paths": 24,
+      "patterns": [
+        "^\\.github/workflows/",
+        "(^|/)release[^/]*\\.(ya?ml|sh|rs|toml)$",
+        "cuda|kernel|\\.cu$|\\.ptx$",
+        "(^|/)[^/]*(gate|guard)[^/]*\\.(sh|rs|py)$|^hooks/",
+        "security|secret|credential|(^|/)deny\\.toml$",
+        "^skills/quorum-review/|(^|/)(receipt-lint|roadmap-lint|release-lint|kind-gate|model-gate)[^/]*$|^crates/prah-lint/"
+      ],
+      "builtin": "^skills/quorum-review/|(^|/)skills/paiml-implement/config\\.json$|(^|/)(modellib|lane-reduce|lane-fallback|lane-group|agy-lane|cc-lane|receipt-lint|route|quota)\\.sh$|^crates/prah-lint/"
+    },
+    "bucket": {
+      "ledger": "/home/noah/.local/state/paiml-implement/agy-bucket.jsonl",
+      "window_s": 18000,
+      "pace": "off",
+      "buckets": {
+        "claude-gpt": {
+          "bucket": "claude-gpt",
+          "state": "unmeasured",
+          "reason": "agy-bucket.sh could not read the ledger; the bucket is not consulted this round"
+        },
+        "gemini": {
+          "bucket": "gemini",
+          "state": "unmeasured",
+          "reason": "agy-bucket.sh could not read the ledger; the bucket is not consulted this round"
+        }
+      },
+      "closed": []
+    }
+  },
+  "auto_merge": {
+    "checked": false,
+    "was_armed": false,
+    "disarmed": false,
+    "note": "no --pr given: nothing to disarm"
+  },
+  "cheap_seat": "claude-haiku-4-5",
+  "advisory_lane": {
+    "state": "unavailable",
+    "counts": false,
+    "row": {
+      "NotRun": "Busy"
+    },
+    "verdict": "unavailable",
+    "why": "no host answered inside the budget",
+    "served_by": null,
+    "gpu_proof": null,
+    "apr": null,
+    "apr_binary_sha256": null,
+    "apr_tag": null,
+    "apr_commit": null,
+    "apr_build_why": null,
+    "model": null,
+    "model_sha256": null,
+    "rc": 2,
+    "wall_s": 1,
+    "collected_s": 385,
+    "budget_s": 196,
+    "budget_basis": "ledger: 2 x p95 98 s over 126 gx10-cuda Verdict rows",
+    "brief": {
+      "bytes": 171972,
+      "sent_bytes": 172141,
+      "max_bytes": 196608
+    },
+    "trace": {
+      "input_sha256": "647f12bb853c7015a8b26ee92937268e7e0aaf2c687a25cc48a57a2a3758a195",
+      "raw": "advisory.json"
+    },
+    "attempts": [
+      {
+        "host": "gx10",
+        "ok": false,
+        "wall_s": 1,
+        "error": "busy: executor yielded (unit inactive; last yield: 2026-10-03T00:47:22Z host=gx10-a5b5 event=stopped gpu-priority lock=/tmp/apr-gpu.priority)",
+        "ts": "2026-10-06T15:36:29.820Z",
+        "wall_ms": 624,
+        "request_id": "01a111db-f379-726a-8761-f47f48ff2f96",
+        "load1": 0.03,
+        "cold": null
+      }
+    ],
+    "ledger": "/home/noah/.local/state/paiml-implement/advisory-ledger.jsonl",
+    "raw": "advisory.json",
+    "agrees_with_counted": null,
+    "counted": "PASS"
+  },
+  "lint": {
+    "ok": true,
+    "output": "receipt complete: kind=artifact lanes=3 author=claude-sonnet-5-5/claude same_family=2/2"
+  }
+}
