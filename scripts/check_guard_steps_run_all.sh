@@ -180,7 +180,7 @@ mfixture() {
 
 # The A4 rows. Uses self_test's $d, $n, case_row.
 manifest_rows() {
-    local v bad=0 got repo="$d/mrepo" t0 t1 st r
+    local v bad=0 got repo="$d/mrepo" t0 t1 st
     printf 'guard-x 0\n' > "$d/mbase"
     mfixture "$d/m_good.yml" good "true"
     case_row "manifest if:false + runner step -> pass" 0 "$d/m_good.yml" "$d/mbase"
@@ -234,17 +234,30 @@ manifest_rows() {
             CI_GUARDS_SCRATCH="$d/mscratch" bash "$LIB" run --step-timeout "$st" guard-x ) > "$d/out" 2>&1
     done
     v="a timed-out step still runs its EXIT trap (restores a mutant)"
-    # FLAKE-0 #4759, QUARANTINED again: the armed-marker precondition above (#4772) did not hold
-    # the row. On CI run 37348731047 attempt 1 (job x86-main, guard-tree m2, head be139e0ca0) the
-    # trap WAS armed and `restored` was missing at step-timeout 1s, a FAIL on a diff that does not
-    # touch this script. So the cause is not only "fired before the trap was armed". Until #4759
-    # finds and fixes it, the row runs and prints what it read but never fails the table and is
-    # counted as not measured, never as ok.
-    q=$((q + 1))
-    if [ ! -e "$d/rt/armed" ]; then r="trap never armed"
-    elif [ -e "$d/rt/restored" ]; then r="read ok"
-    else r="read FAIL"; fi
-    printf 'QUARANTINED FLAKE-0 #4759 %-40s (not measured; %s, step-timeout %ss)\n' "$v" "$r" "$st"
+    # #4759: the armed-and-not-restored FAIL (CI run 37348731047) was timeout's double TERM
+    # killing an untrapped bash before its EXIT trap ran, about 1 in 1,300. The library now
+    # traps TERM in every step; the wiring row below proves that deterministically, since a
+    # 1-in-1,300 race cannot be a reliable must-RED on its own.
+    if [ ! -e "$d/rt/armed" ]; then
+        q=$((q + 1)); printf 'UNMEASURED %-53s trap never armed by step-timeout %ss\n' "$v" "$st"
+    else
+        n=$((n + 1))
+        if [ -e "$d/rt/restored" ]; then printf 'ok   %-58s step-timeout %ss\n' "$v" "$st"
+        else printf 'FAIL %-58s step-timeout %ss\n' "$v" "$st"; bad=1; fi
+    fi
+    # shellcheck disable=SC2016 # expanded by the step's bash, not here
+    mfixture "$repo/ci/sections.yml" good 'trap -p TERM > "$RUNNER_TEMP/termtrap"'
+    rm -f "${d:?}/rt/termtrap"
+    RUNNER_TEMP="$d/rt" mrun "CI: a step runs with TERM trapped (#4759 wiring)" 0 '^SUMMARY: 0 failed / 2 ran'
+    n=$((n + 1)); v="CI: the step's TERM trap is 'exit 143' (#4759)"
+    if grep -q "exit 143" "$d/rt/termtrap" 2> /dev/null; then printf 'ok   %-58s\n' "$v"
+    else printf 'FAIL %-58s trap -p TERM read [%s]\n' "$v" "$(cat "$d/rt/termtrap" 2> /dev/null)"; bad=1; fi
+    # The logged (--no-stream) invocation is a separate command line; pin it too.
+    rm -f "${d:?}/rt/termtrap"
+    RUNNER_TEMP="$d/rt" mrun "CI --no-stream: a step runs with TERM trapped" 0 '^SUMMARY: 0 failed / 2 ran' --no-stream
+    n=$((n + 1)); v="CI --no-stream: the step's TERM trap is 'exit 143'"
+    if grep -q "exit 143" "$d/rt/termtrap" 2> /dev/null; then printf 'ok   %-58s\n' "$v"
+    else printf 'FAIL %-58s trap -p TERM read [%s]\n' "$v" "$(cat "$d/rt/termtrap" 2> /dev/null)"; bad=1; fi
     # shellcheck disable=SC2016
     mfixture "$repo/ci/sections.yml" good 'sleep 30 & echo $! > "$RUNNER_TEMP/child.pid"; sleep 30'
     t0=$SECONDS

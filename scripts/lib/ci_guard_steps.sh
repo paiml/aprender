@@ -409,12 +409,18 @@ cmd_run() {
             # check_clippy_cuda's planted import in a local tree (2026-09-26). timeout(1)
             # signals its whole process group, so background children still die.
             [ "$timeout" -gt 0 ] && tcmd=(timeout -s TERM -k 60 "$timeout")
+            # #4759: timeout(1) delivers TERM twice (once to the step, once to its group), and an
+            # untrapped TERM arriving while bash is inside a builtin or the wait loop kills it
+            # without running its EXIT trap, about 1 in 1,300 timeouts (11/14700 measured). With
+            # TERM trapped, bash takes the signal at a safe point and `exit 143` runs the EXIT
+            # trap (0/9000). A step that sets its own TERM trap replaces this one.
+            local body="trap 'exit 143' TERM"$'\n'"$run"
             if [ "$stream" = 1 ]; then
                 # bashrs disable-next-line=SEC010
-                (cd "$root" && env "${senv[@]}" "${tcmd[@]}" bash --noprofile --norc -eo pipefail -c "$run" < /dev/null 3<&-)
+                (cd "$root" && env "${senv[@]}" "${tcmd[@]}" bash --noprofile --norc -eo pipefail -c "$body" < /dev/null 3<&-)
             else
                 # bashrs disable-next-line=SEC010
-                (cd "$root" && env "${senv[@]}" "${tcmd[@]}" bash --noprofile --norc -eo pipefail -c "$run" < /dev/null > "$log" 2>&1 3<&-)
+                (cd "$root" && env "${senv[@]}" "${tcmd[@]}" bash --noprofile --norc -eo pipefail -c "$body" < /dev/null > "$log" 2>&1 3<&-)
             fi
             rc=$?
             t1="$(now)"
