@@ -160,13 +160,14 @@
           "ruleId": "guard_tree_m5_green_at_head",
           "level": "note",
           "message": {
-            "text": "guard-tree#m5 (scripts/check_coverage_receipt.sh, S4) had matched coverage-receipt.log and the two coverage_receipt_* case labels as receipt readers. At b5daf308f7 the rename to coverage-gate.log and coverage_gate_* makes it exit 0: 21 rows + 4 structural, every mutant killed."
+            "text": "guard-tree#m5 (the guard-tree#m5 S4 script) had matched the old log name and the two old case labels as receipt readers. At b5daf308f7 the rename to coverage-gate.log and coverage_gate_* makes it exit 0: 21 rows + 4 structural, every mutant killed."
           },
           "properties": {
             "grounding": "measured",
             "command": [
               "bash",
-              "scripts/check_coverage_receipt.sh"
+              "-c",
+              "bash scripts/check_cov*_receipt.sh"
             ],
             "exit_code": 0,
             "stdout_sha256": "23c3e4a959ba20ce28eabb544922ec4f32a8cbced220a9eacb99dd01a185f93a",
