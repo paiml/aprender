@@ -14,13 +14,20 @@
 #   tag      scripts/release/autopilot.sh       every checker a step up to and including `tag` invokes
 #   publish  scripts/release/autopilot.sh       every checker a step after `tag` up to `dryrun` invokes
 #   publish  scripts/check_publish_preflight.sh every rule R<n> of its RULES header
-#   publish  scripts/cascade-publish.sh         every `if ! <gate>` the cascade refuses on
+#   publish  scripts/cascade-publish.sh         every `if ! <gate>` the cascade refuses on, and every top-level
+#                                               `if [ … ]` block before the upload loop (first top-level `for …; do`)
+#                                               that exits 1..9
+#   publish  scripts/release/publish_strict.sh  every `|| die "…"` / `&& die "…"` refusal before its first `cargo
+#                                               publish` (the spec's T-4 executor), named by its message
+#   Out: a verdict that runs after an upload (a final verification, autopilot's `cascade incomplete`) is an
+#   outcome of publishing, not a requirement to start it.
 #   A checker inside a step is: `bash scripts/X.sh [--flag]`, `python3 scripts/X.py [sub]`, `cargo test|check|build`
 #   with its first two flags, a workflow it dispatches or reads (`gh-workflow X.yml`), `git merge-base
 #   --is-ancestor`, and the same inside any top-level function the step calls.
 #   Claims (key = value, for contradictions): the R8 wrapper's committed mode (release_readiness.sh DEFAULT_MODE
 #   vs the preflight's RULES text), autopilot's step list (STEPS=() vs its header), the coverage floor (Makefile
-#   vs CLAUDE.md), and every key/value a list entry states.
+#   vs CLAUDE.md), the publish executor (the first script autopilot's `cascade` step runs vs the script the
+#   spec's T-4 row names), and every key/value a list entry states.
 #
 # THE VERDICT fails on three things, and prints one row per finding:
 #   UNLISTED       a surface states a requirement (anchor) that no list entry carries
@@ -55,6 +62,8 @@ DOC_REL=CLAUDE.md
 AUTO_REL=scripts/release/autopilot.sh
 PRE_REL=scripts/check_publish_preflight.sh
 CAS_REL=scripts/cascade-publish.sh
+STR_REL=scripts/release/publish_strict.sh
+SPEC_REL=docs/specifications/APR-RELEASE-001-train-and-build-kaizen.md
 RRW_REL=scripts/release/release_readiness.sh
 MK_REL=Makefile
 
@@ -185,17 +194,60 @@ preflight_found() {
 
 # cascade_found FILE: every `if ! <function|bash script>` the cascade refuses on. A bare word counts only when the
 # file defines it as a function, so `if ! git …`, `if ! grep …` and `if ! gh …` (reads, not gates) are not anchors.
+# Also every top-level `if [ … ]` block before the upload loop (the first top-level `for …; do`) that exits 1..9, named
+# by its condition (quotes dropped). No upload loop, or a block that never closes, is not_measured.
 cascade_found() {
     awk -v F="$2" '
         NR == FNR { if ($0 ~ /^[A-Za-z_][A-Za-z0-9_]*\(\)/) { f = $0; sub(/\(.*/, "", f); DEF[f] = 1 }; next }
         /^[ \t]*#/ { next }
+        /^for .*; do[ \t]*$/ { if (inb) unc = 1; loop = 1 }
+        /^if / && inb { unc = 1 }
+        !loop && /^if \[/ {
+            blk = $0; sub(/;[ \t]*then.*/, "", blk); gsub(/"/, "", blk); bl = FNR; ex = ($0 ~ /exit [1-9]/)
+            if ($0 ~ /;[ \t]*fi[ \t;]*$/) { if (ex) { printf "publish:cascade/%s\t%s:%d\n", blk, F, bl; k++ } }
+            else inb = 1
+            next
+        }
+        inb && /^fi/ { if (ex) { printf "publish:cascade/%s\t%s:%d\n", blk, F, bl; k++ }; inb = 0 }
+        inb && /exit [1-9]/ { ex = 1 }
         /^[ \t]*if ! / {
             s = $0; sub(/^[ \t]*if ! /, "", s)
             if (s ~ /^bash /) { if (match(s, /scripts\/[A-Za-z0-9_\/.-]+\.sh/)) { printf "publish:cascade/%s\t%s:%d\n", substr(s, RSTART, RLENGTH), F, FNR; k++ } }
             else { w = s; sub(/[ ;].*/, "", w); if (w in DEF) { printf "publish:cascade/%s\t%s:%d\n", w, F, FNR; k++ } }
         }
-        END { if (k == 0) exit 2 }
+        END { if (inb || unc) printf "unclosed top-level if at %s:%d\n", F, bl > "/dev/stderr"; if (k == 0 || !loop || inb || unc) exit 2 }
     ' "$1" "$1"
+}
+
+# strict_found FILE: every `|| die "…"` / `&& die "…"` before the first `cargo publish`, named by its message: the
+# text up to the first `$(`, `: ` or closing quote, `$VAR` read as VAR, as at most 8 lowercase words. A `die` that
+# names no word of its own (`die "$msg"`), a `die` without that form, or a name met twice is not_measured.
+strict_found() {
+    awk -v F="$2" '
+        /^[ \t]*#/ { next }
+        /cargo publish/ { cut = 1 }
+        cut { next }
+        /^[ \t]*die\(\)/ { next }
+        /(^|[^A-Za-z0-9_])die[ \t]/ {
+            s = $0
+            if (!match(s, /(\|\||&&)[ \t]*die "/)) { UL[++nu] = F ":" FNR; next }
+            s = substr(s, RSTART + RLENGTH)
+            if (match(s, /\$\(|: |"/)) s = substr(s, 1, RSTART - 1)
+            t = s; gsub(/\$\{?[A-Za-z0-9_]+\}?/, "", t); if (t !~ /[A-Za-z]/) { UL[++nu] = F ":" FNR; next }
+            gsub(/\$\{?/, "", s); gsub(/\}/, "", s)
+            s = tolower(s); gsub(/[^a-z0-9]+/, "-", s); gsub(/^-+|-+$/, "", s)
+            n = split(s, w, "-"); s = ""; for (i = 1; i <= n && i <= 8; i++) s = s (i > 1 ? "-" : "") w[i]
+            if (s == "") { UL[++nu] = F ":" FNR; next }
+            if (s in SEEN) { printf "refusal named twice: %s at %s and %s:%d\n", s, SEEN[s], F, FNR > "/dev/stderr"; dup = 1; next }
+            SEEN[s] = F ":" FNR
+            printf "publish:strict/%s\t%s:%d\n", s, F, FNR; k++
+        }
+        END {
+            for (i = 1; i <= nu; i++) printf "unparsed refusal at %s\n", UL[i] > "/dev/stderr"
+            if (!cut) printf "no cargo publish in %s: the upload line is the boundary\n", F > "/dev/stderr"
+            if (!cut || nu || dup || k == 0) exit 2
+        }
+    ' "$1"
 }
 
 # claims_raw ROOT: "key<TAB>value<TAB>where" for every fact two places can disagree on
@@ -212,6 +264,11 @@ claims_raw() {
         /^STEPS=\(/ { s = $0; sub(/^STEPS=\(/, "", s); sub(/\).*/, "", s); printf "autopilot.steps\t%s\t%s:%d\n", s, F, FNR }
         /^#   steps: / { s = $0; sub(/^#   steps: /, "", s); sub(/[ \t]+$/, "", s); printf "autopilot.steps\t%s\t%s:%d\n", s, F, FNR }
     ' "$root/$AUTO_REL"
+    awk -v F="$AUTO_REL" '
+        /^if run_step cascade; then/ { c = 1; next } c && /^fi/ { c = 0 }
+        c && !/^[ \t]*#/ && match($0, /scripts\/[A-Za-z0-9_\/.-]+\.sh/) { v = substr($0, RSTART, RLENGTH); sub(/.*\//, "", v); printf "publish.executor\t%s\t%s:%d\n", v, F, FNR; exit }
+    ' "$root/$AUTO_REL"
+    awk -v F="$SPEC_REL" '/^\| \*\*T-4 Publish\*\* \|/ && match($0, /`[A-Za-z0-9_.-]+\.sh`/) { v = substr($0, RSTART + 1, RLENGTH - 2); printf "publish.executor\t%s\t%s:%d\n", v, F, FNR; exit }' "$root/$SPEC_REL"
     awk -v F="$MK_REL" '/^COV_FLOOR *:= *[0-9]+/ { v = $0; sub(/.*:= */, "", v); sub(/[^0-9].*/, "", v); printf "coverage.floor\t%s\t%s:%d\n", v, F, FNR }' "$root/$MK_REL"
     awk -v F="$DOC_REL" '{ s = $0; while (match(s, /COV_FLOOR := [0-9]+/)) { v = substr(s, RSTART, RLENGTH); sub(/.*:= /, "", v); printf "coverage.floor\t%s\t%s:%d\n", v, F, FNR; s = substr(s, RSTART + RLENGTH) } }' "$root/$DOC_REL"
 }
@@ -221,7 +278,7 @@ claims_raw() {
 claims() {
     local out
     out=$(claims_raw "$1")
-    printf '%s\n' "$out" | awk -F '\t' -v W="publish.R8.mode:$RRW_REL publish.R8.mode:$PRE_REL autopilot.steps:$AUTO_REL autopilot.steps:$AUTO_REL coverage.floor:$MK_REL coverage.floor:$DOC_REL" '
+    printf '%s\n' "$out" | awk -F '\t' -v W="publish.R8.mode:$RRW_REL publish.R8.mode:$PRE_REL autopilot.steps:$AUTO_REL autopilot.steps:$AUTO_REL coverage.floor:$MK_REL coverage.floor:$DOC_REL publish.executor:$AUTO_REL publish.executor:$SPEC_REL" '
         NF >= 3 { f = $3; sub(/:[0-9]+$/, "", f); N[$1 ":" f]++ }
         END { n = split(W, w, " "); for (i = 1; i <= n; i++) need[w[i]]++
               for (x in need) if (N[x] < need[x]) { printf "claim side missing: %s (want %d, found %d)\n", x, need[x], N[x] + 0 > "/dev/stderr"; bad = 1 }
@@ -232,7 +289,7 @@ claims() {
 # found ROOT: every anchor the surfaces state; rc 2 when a surface is missing or unreadable
 found() {
     local root=$1 f
-    for f in "$CI_REL" "$DOC_REL" "$AUTO_REL" "$PRE_REL" "$CAS_REL" "$RRW_REL" "$MK_REL"; do
+    for f in "$CI_REL" "$DOC_REL" "$AUTO_REL" "$PRE_REL" "$CAS_REL" "$STR_REL" "$SPEC_REL" "$RRW_REL" "$MK_REL"; do
         [ -f "$root/$f" ] || { printf 'surface missing: %s\n' "$f" >&2; return 2; }
     done
     ci_gate_found "$root/$CI_REL" "$CI_REL" || { printf 'surface unreadable: %s job gate\n' "$CI_REL" >&2; return 2; }
@@ -240,6 +297,7 @@ found() {
     autopilot_found "$root/$AUTO_REL" "$AUTO_REL" || { printf 'surface unreadable: %s steps\n' "$AUTO_REL" >&2; return 2; }
     preflight_found "$root/$PRE_REL" "$PRE_REL" || { printf 'surface unreadable: %s RULES\n' "$PRE_REL" >&2; return 2; }
     cascade_found "$root/$CAS_REL" "$CAS_REL" || { printf 'surface unreadable: %s gates\n' "$CAS_REL" >&2; return 2; }
+    strict_found "$root/$STR_REL" "$STR_REL" || { printf 'surface unreadable: %s refusals\n' "$STR_REL" >&2; return 2; }
 }
 
 # ---------------------------------------------------------------- the list ----------------------------------------
@@ -340,7 +398,7 @@ probe() {
 }
 
 # ---------------------------------------------------------------- the case table ----------------------------------
-# fixture DIR: a tree whose five surfaces state 11 requirements, all listed (green)
+# fixture DIR: a tree whose six surfaces state 13 requirements, all listed (green)
 fixture() {
     local d=$1
     mkdir -p "$d/.github/workflows" "$d/scripts/release" "$d/contracts"
@@ -378,6 +436,7 @@ if run_step dryrun; then
   bash scripts/cascade-publish.sh --check
 fi
 if run_step cascade; then
+  bash scripts/release/publish_strict.sh "$V"
   bash scripts/after_dryrun.sh
 fi
 SH
@@ -399,8 +458,28 @@ clean_room_gate() {
 if ! gh api x > /dev/null; then echo read; fi
 if ! clean_room_gate "$ROOT"; then exit 1; fi
 if ! git diff --quiet; then exit 1; fi
+if [ "$N" -lt 1 ]; then
+  echo "Refusing to publish nothing"
+  exit 1
+fi
+# upload loop
+for x in a; do
+  :
+done
+if [ "$OK" = 0 ]; then
+  exit 1
+fi
 # --check
 SH
+    cat > "$d/$STR_REL" <<'SH'
+die() { echo "$*"; exit 1; }
+[ "$(git rev-parse HEAD)" = "$T" ] || die "HEAD is not $T"
+# [ -s r ] || die "commented out"
+cargo publish -p x
+[ "$n" -eq 1 ] || die "final verification: $n live"
+SH
+    mkdir -p "$d/${SPEC_REL%/*}"
+    printf '%s\n' '| **T-4 Publish** | `publish_strict.sh` from a detached checkout of the tag |' > "$d/$SPEC_REL"
     printf '%s\n' 'DEFAULT_MODE=enforce' > "$d/$RRW_REL"
     printf '%s\n' 'COV_FLOOR := 89' > "$d/$MK_REL"
     printf '%s\n' 'exit 0' > "$d/scripts/helper_gate.sh"
@@ -418,6 +497,8 @@ requirements:
   - {id: FX-P3, applies_to: [publish], anchor: "publish:preflight/R1", checker: "scripts/check_publish_preflight.sh#FAIL  R1 ", provenance: "fixture", producer: "preflight"}
   - {id: FX-P4, applies_to: [tag, publish], anchor: "publish:preflight/R8", checker: "scripts/check_publish_preflight.sh#FAIL  R8 ", provenance: "fixture", producer: "readiness", key: "publish.R8.mode", value: "enforce"}
   - {id: FX-P5, applies_to: [publish], anchor: "publish:cascade/clean_room_gate", checker: "scripts/cascade-publish.sh#clean_room_gate() {", provenance: "fixture", producer: "cleanroom-cpu"}
+  - {id: FX-P6, applies_to: [publish], anchor: "publish:strict/head-is-not-t", checker: "scripts/release/publish_strict.sh#HEAD is not $T", provenance: "fixture", producer: "publish-dryrun"}
+  - {id: FX-P7, applies_to: [publish], anchor: "publish:cascade/if [ $N -lt 1 ]", checker: "scripts/cascade-publish.sh#Refusing to publish nothing", provenance: "fixture", producer: "publish-dryrun"}
 YML
 }
 
@@ -464,6 +545,18 @@ mutate() {
         nm-unparsed-quoted-root) edit "$d" "$AUTO_REL" '/^  echo waiting/a\  bash "$R"/scripts/quoted_gate.sh' ;;
         nm-unparsed-python-root) edit "$d" "$AUTO_REL" '/^  echo waiting/a\  python3 "$R/scripts/root_gate.py"' ;;
         nm-unparsed-exec) edit "$d" "$AUTO_REL" '/^  echo waiting/a\  ./scripts/exec_gate.sh' ;;
+        unlisted-strict-refusal) edit "$d" "$STR_REL" '/^cargo publish/i\[ -s r ] || die "no receipt for $T: run T-4"' ;;
+        nm-strict-unparsed) edit "$d" "$STR_REL" '/^cargo publish/i\[ -s r ] || die "$msg"' ;;
+        nm-strict-no-upload) edit "$d" "$STR_REL" '/^cargo publish/d' ;;
+        nm-strict-dup) edit "$d" "$STR_REL" '/^cargo publish/i\[ -n "$T" ] && die "HEAD is not $T"' ;;
+        unlisted-cascade-if-block) edit "$d" "$CAS_REL" '/^# upload loop/i\if [ -z "$TOKEN" ]; then exit 3; fi' ;;
+        green-cascade-if-after-loop) edit "$d" "$CAS_REL" '/^# --check/i\if [ -z "$LATE" ]; then exit 1; fi' ;;
+        contradiction-executor) edit "$d" "$AUTO_REL" 's|bash scripts/release/publish_strict.sh|bash scripts/release/cascade-drain.sh|' ;;
+        nm-executor-spec-reworded) edit "$d" "$SPEC_REL" 's/T-4 Publish/T-4 Upload/' ;;
+        nm-spec-missing) rm -f -- "${d:?}/$SPEC_REL" ;;
+        nm-cascade-no-loop) edit "$d" "$CAS_REL" 's/^for x in a/while false/' ;;
+        nm-cascade-unclosed-if) edit "$d" "$CAS_REL" '/^# upload loop/i\if [ -z "$OPEN" ]; then' ;;
+        nm-cascade-if-spans-loop) edit "$d" "$CAS_REL" '/^# upload loop/i\if [ -z "$OPEN" ]; then' && edit "$d" "$CAS_REL" '/^if \[ "$OK" = 0 \]; then/d' ;;
         malformed-no-producer) edit "$d" "$LIST_REL" 's|, producer: "preflight"||' ;;
         malformed-bad-phase) edit "$d" "$LIST_REL" 's/applies_to: \[merge\], anchor: "merge:ci.yml\/gate\/needs/applies_to: [deploy], anchor: "merge:ci.yml\/gate\/needs/' ;;
         malformed-dup-id) plant "$d" "$LIST_REL" '  - {id: FX-M1, applies_to: [merge], anchor: "x", checker: "Makefile", provenance: "fixture"}' ;;
@@ -472,10 +565,10 @@ mutate() {
 }
 
 # the table: case · expected exit · a pattern the output must carry
-CASES='green 0 unlisted=0 orphaned=0 contradictions=0 listed=11 stated=11
-green-comment-mention 0 stated=11
-green-after-dryrun 0 stated=11
-green-gh-read 0 stated=11
+CASES='green 0 unlisted=0 orphaned=0 contradictions=0 listed=13 stated=13
+green-comment-mention 0 stated=13
+green-after-dryrun 0 stated=13
+green-gh-read 0 stated=13
 unlisted-step-script 1 UNLISTED publish:autopilot/cleanroom/bash scripts/new_gate.sh
 unlisted-function-body 1 UNLISTED tag:autopilot/tag/bash scripts/new_in_helper.sh
 unlisted-between-steps 1 UNLISTED tag:autopilot/commit/bash scripts/new_preamble.sh --check
@@ -504,6 +597,18 @@ nm-unknown-step 2 not_measured
 nm-unparsed-quoted-root 2 unparsed call form at
 nm-unparsed-python-root 2 unparsed call form at
 nm-unparsed-exec 2 unparsed call form at
+unlisted-strict-refusal 1 UNLISTED publish:strict/no-receipt-for-t
+nm-strict-unparsed 2 unparsed refusal at
+nm-strict-no-upload 2 not_measured
+nm-strict-dup 2 refusal named twice
+unlisted-cascade-if-block 1 UNLISTED publish:cascade/if [ -z $TOKEN ]
+green-cascade-if-after-loop 0 stated=13
+contradiction-executor 1 CONTRADICTION publish.executor
+nm-executor-spec-reworded 2 not_measured
+nm-spec-missing 2 surface missing: docs/specifications/APR-RELEASE-001
+nm-cascade-no-loop 2 not_measured
+nm-cascade-unclosed-if 2 unclosed top-level if at
+nm-cascade-if-spans-loop 2 unclosed top-level if at
 malformed-no-producer 3 names no nightly producer
 malformed-bad-phase 3 applies_to must be a subset
 malformed-dup-id 3 id FX-M1 twice'
@@ -579,7 +684,15 @@ M17 dot-slash unseen@@(\$\{?[A-Za-z_]+\}?\/|\.\/)?scripts@@(\$\{?[A-Za-z_]+\}?\/
 M18 lowercase functions only@@if (L[i] ~ /^[A-Za-z_][A-Za-z0-9_]*\(\) *\{/@@if (L[i] ~ /^[a-z_]+\(\) *\{/
 M19 drop protection read@@got=$(printf '"'"'%s\n%s\n'"'"' "$got" "$bp")@@got=$(printf '"'"'%s\n'"'"' "$got")
 M20 empty protection passes@@[ -n "$(printf '"'"'%s\n'"'"' "$bp" | awk '"'"'NF'"'"')" ] ||@@true ||
-M21 unparsed call form skipped@@if (nr > np) UNP = 1@@if (0) UNP = 1'
+M21 unparsed call form skipped@@if (nr > np) UNP = 1@@if (0) UNP = 1
+M22 strict refusals after the upload read@@        cut { next }@@        0 { next }
+M23 unparsed strict refusal passes@@if (!cut || nu || dup || k == 0) exit 2@@if (!cut || dup || k == 0) exit 2
+M24 cascade if-blocks ignored@@!loop && /^if \[/ {@@0 && /^if \[/ {
+M25 executor claim side optional@@ publish.executor:$AUTO_REL publish.executor:$SPEC_REL"@@"
+M26 variable-only refusal named@@if (t !~ /[A-Za-z]/)@@if (0)
+M27 refusal named twice passes@@dup = 1; next }@@next }
+M28 no upload loop passes@@if (k == 0 || !loop || inb || unc) exit 2@@if (k == 0 || inb || unc) exit 2
+M29 if-block spanning the loop passes@@{ if (inb) unc = 1; loop = 1 }@@{ loop = 1 }'
 
 mutants() {
     local tmp line id name from to killed=0 total=0 err=0

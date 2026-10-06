@@ -20,7 +20,7 @@
 # 10; "-" never satisfies it).
 #
 # THE CHECKER is scripts/release/release_ready.sh (bash + awk, no Python). It
-# extracts every requirement the five surfaces state, and FAILS on:
+# extracts every requirement the six surfaces state, and FAILS on:
 #   UNLISTED       a surface states a requirement the list lacks
 #   ORPHANED       a list entry whose checker is absent or lacks its needle, or
 #                  whose anchor no surface states any more
@@ -36,6 +36,11 @@
 #     x86-main-advisories, tag_coverage_gate.sh); RR-M13..M15 + RR-T15 -> unlisted=0
 #   C129 review: --probe read only the ruleset (github=[gate,workspace-test]) while classic
 #     protection requires ci / gate; now it reads both and the list carries gate (RR-M16)
+#   C314 round (w4664): the publish path had two executors and the list read one. Now
+#     publish_strict.sh (the spec's T-4 executor) is a surface: 15 refusals, RR-P20..P34;
+#     cascade-publish's top-level `if [ … ]` refusals are read: RR-P35..P36; and the executor
+#     is a claim. HEAD: unlisted=0 orphaned=0 contradictions=1, the one being publish.executor:
+#     autopilot's `cascade` step runs cascade-drain.sh, the spec's T-4 row names publish_strict.sh.
 #
 # REPORT-ONLY TODAY. No gate calls the checker. It becomes blocking only as a
 # ratchet after three green nights (L31), and only by an operator sign-off.
@@ -46,11 +51,18 @@ scope: >
   The requirements to merge, tag and publish that the repository states in
   .github/workflows/ci.yml (job `gate`), CLAUDE.md ("Required status checks"),
   scripts/release/autopilot.sh (steps wait..dryrun and the top-level lines
-  between them), scripts/check_publish_preflight.sh (RULES R1..R8) and
-  scripts/cascade-publish.sh (`if !` refusals); plus the facts two of those
-  places can disagree on (R8 mode, autopilot's step list, the coverage floor).
-  Out of scope: requirements stated outside the repository, and the CONTENT of
-  each checker (each has its own contract).
+  between them), scripts/check_publish_preflight.sh (RULES R1..R8),
+  scripts/cascade-publish.sh (`if !` refusals, and top-level `if [ … ]`
+  blocks before its upload loop that exit 1..9) and
+  scripts/release/publish_strict.sh (the `die` refusals before its first
+  `cargo publish`; the T-4 executor of APR-RELEASE-001); plus the facts two of
+  those places can disagree on (R8 mode, autopilot's step list, the coverage
+  floor, and the publish executor: autopilot's `cascade` step vs the spec's
+  T-4 row). Both executors are read, so a gate either one drops is seen.
+  Out of scope: requirements stated outside the repository; the CONTENT of
+  each checker (each has its own contract); and a verdict that runs after an
+  upload (a final verification, autopilot's `cascade incomplete`), which is an
+  outcome of publishing, not a requirement to start it.
 status: active
 
 metadata:
@@ -59,7 +71,7 @@ metadata:
                     # `kernel` default never silently applies.
   version: "1.0.0"
   created: '2026-10-04'
-  last_modified: '2026-10-04'
+  last_modified: '2026-10-06'
   author: PAIML Engineering
   references:
     - 'scripts/release/release_ready.sh — the checker (extractors, verdict, probe, case table, mutants)'
@@ -73,7 +85,7 @@ metadata:
 equations:
   rr_listed_equals_stated:
     formula: |
-      let S = anchors stated by the five surfaces (release_ready.sh --found)
+      let S = anchors stated by the six surfaces (release_ready.sh --found)
       let A = { e.anchor : e in requirements }
       UNLISTED = S \ A,  ORPHANED_STALE = A \ S
       |UNLISTED| = 0  and  |ORPHANED_STALE| = 0
@@ -158,7 +170,7 @@ non_goals:
   - "Changing GitHub's required status checks or rulesets. The probe reads them; the operator changes them."
   - "Blocking any merge, tag or publish today. Wiring is a proposal (three green nights first, L31)."
   - "Resolving producer names. Each publish entry must name a producer (checked non-empty); the names are lanes of the nightly release train, which is not on main yet. Resolving them against that lane table is follow-up work, not done here."
-  - "Known extractor limits (a requirement written in these forms is not seen, so it cannot be flagged unlisted): a checker invoked across a backslash line continuation; a cascade refusal not written as `if ! <fn|bash script>`; a needle that survives only in a comment still counts as present; a function name inside an echo string counts as a call."
+  - "Known extractor limits (a requirement written in these forms is not seen, so it cannot be flagged unlisted): a checker invoked across a backslash line continuation; a cascade refusal not written as `if ! <fn|bash script>` nor as a top-level `if [ … ]` block before the upload loop; a publish_strict.sh refusal that is not a `die` (a bare `exit`); a needle that survives only in a comment still counts as present; a function name inside an echo string counts as a call."
 
 binding_registry:
   checker: scripts/release/release_ready.sh
@@ -217,3 +229,20 @@ requirements:
   - {id: RR-P17, applies_to: [publish], anchor: "publish:cascade/facade_upstream_ready", checker: "scripts/cascade-publish.sh#facade_upstream_ready() {", provenance: "cascade-publish facade waits for its upstream crates", producer: "publish-dryrun"}
   - {id: RR-P18, applies_to: [publish], anchor: "publish:cascade/clean_room_gate", checker: "scripts/cascade-publish.sh#clean_room_gate() {", provenance: "infra#621 clean-room green on exactly the tag commit; operator ruling 2026-09-28", producer: "cleanroom-cpu"}
   - {id: RR-P19, applies_to: [publish], anchor: "publish:cascade/scripts/check_publish_preflight.sh", checker: "scripts/check_publish_preflight.sh", provenance: "PMAT-745 cascade refuses without preflight", producer: "preflight"}
+  - {id: RR-P20, applies_to: [publish], anchor: "publish:strict/no-wt", checker: "scripts/release/publish_strict.sh#no $WT", provenance: "APR-RELEASE-001 T-4: publish_strict.sh runs only in the train worktree", producer: "publish-dryrun"}
+  - {id: RR-P21, applies_to: [publish], anchor: "publish:strict/head-is-not-t", checker: "scripts/release/publish_strict.sh#HEAD is not $T", provenance: "APR-RELEASE-001 T-4: HEAD == tag asserted", producer: "publish-dryrun"}
+  - {id: RR-P22, applies_to: [publish], anchor: "publish:strict/checkout-is-not-detached", checker: "scripts/release/publish_strict.sh#checkout is not detached", provenance: "APR-RELEASE-001 rule 7 and T-4: a detached checkout of the tag", producer: "publish-dryrun"}
+  - {id: RR-P23, applies_to: [publish], anchor: "publish:strict/tree-dirty", checker: "scripts/release/publish_strict.sh#tree dirty: ", provenance: "APR-RELEASE-001 T-4: clean tree, never --allow-dirty", producer: "publish-dryrun"}
+  - {id: RR-P24, applies_to: [publish], anchor: "publish:strict/cargo-config-toml-present-in-the-publish-tree", checker: "scripts/release/publish_strict.sh#.cargo/config.toml present in the publish tree", provenance: "APR-RELEASE-001 T-4: no [patch] config in the publish tree", producer: "publish-dryrun"}
+  - {id: RR-P25, applies_to: [publish], anchor: "publish:strict/no-publish-token-on-this-host-precondition-5", checker: "scripts/release/publish_strict.sh#no publish token on this host", provenance: "APR-RELEASE-001 T-4 precondition 5: a publish token on the host", producer: "publish-dryrun"}
+  - {id: RR-P26, applies_to: [publish], anchor: "publish:strict/no-green-clean-room-run-id-recorded-for", checker: "scripts/release/publish_strict.sh#no green clean-room run id recorded", provenance: "APR-RELEASE-001 rule 7, #3335: a green clean-room run on the tag, recorded", producer: "cleanroom-cpu"}
+  - {id: RR-P27, applies_to: [publish], anchor: "publish:strict/no-green-b2-gpu-run-id-recorded-for", checker: "scripts/release/publish_strict.sh#no green B2-gpu run id recorded", provenance: "APR-RELEASE-001 rule 14: a green B2-gpu run on the tag, recorded", producer: "cleanroom-gpu"}
+  - {id: RR-P28, applies_to: [publish], anchor: "publish:strict/no-committed-dry-run-receipt-t-4", checker: "scripts/release/publish_strict.sh#no committed dry-run receipt", provenance: "APR-RELEASE-001 rule 7 and T-4: a committed dry-run receipt", producer: "publish-dryrun"}
+  - {id: RR-P29, applies_to: [publish], anchor: "publish:strict/blank-line-blank-in-publish-order-txt", checker: "scripts/release/publish_strict.sh#in publish-order.txt: an empty crate name", provenance: "#3696: an empty crate name in the order is refused by line", producer: "publish-dryrun"}
+  - {id: RR-P30, applies_to: [publish], anchor: "publish:strict/the-universe-is-empty", checker: "scripts/release/publish_strict.sh#the universe is empty", provenance: "#3657: the publish universe is never empty", producer: "publish-dryrun"}
+  - {id: RR-P31, applies_to: [publish], anchor: "publish:strict/crate-s-twice-in-the-publish-order", checker: "scripts/release/publish_strict.sh#crate(s) twice in the publish order", provenance: "#3657: the order equals the universe as a set (no crate twice)", producer: "publish-dryrun"}
+  - {id: RR-P32, applies_to: [publish], anchor: "publish:strict/in-the-publish-order-but-not-in-the", checker: "scripts/release/publish_strict.sh#in the publish order but not in the universe", provenance: "#3657: the order equals the universe as a set (none extra)", producer: "publish-dryrun"}
+  - {id: RR-P33, applies_to: [publish], anchor: "publish:strict/in-the-universe-but-not-in-the-publish", checker: "scripts/release/publish_strict.sh#in the universe but not in the publish order", provenance: "#3657: the order equals the universe as a set (none missing)", producer: "publish-dryrun"}
+  - {id: RR-P34, applies_to: [publish], anchor: "publish:strict/publish-order-is-not-a-dependency-order", checker: "scripts/release/publish_strict.sh#publish order is not a dependency order", provenance: "#3462 APR-RELEASE-001 T-4: order derived from cargo metadata at the tag, acyclic, re-checked", producer: "publish-dryrun"}
+  - {id: RR-P35, applies_to: [publish], anchor: "publish:cascade/if [ $UNIVERSE_N -lt 70 ]", checker: "scripts/cascade-publish.sh#Refusing to publish against an unknown universe", provenance: "cascade-publish vacuity: an enumeration under 70 crates is refused", producer: "publish-dryrun"}
+  - {id: RR-P36, applies_to: [publish], anchor: "publish:cascade/if [ -f .cargo/config.toml ]", checker: "scripts/cascade-publish.sh#could not create a backup of .cargo/config.toml", provenance: "#2859 the config backup must be creatable outside the tree, or nothing is published", producer: "publish-dryrun"}
