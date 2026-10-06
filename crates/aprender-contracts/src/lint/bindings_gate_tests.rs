@@ -501,7 +501,7 @@ fn the_contract_attr_report_skips_ghosts_and_is_sorted() {
 
 /// #4850 RED proof on the real corpus: rows that name a real fn without its `#[contract]` are reported, and the
 /// count is the report's length. The count itself is not pinned here; promoting it to a blocking ratchet is the
-/// step that pins a baseline.
+/// step that pins a baseline. It must not pass at 0 rows (L25): see [`corpus_report_holds`].
 #[test]
 fn the_repo_corpus_reports_contract_attr_rows() {
     let repo = Path::new(env!("CARGO_MANIFEST_DIR")).join("../../contracts");
@@ -511,13 +511,33 @@ fn the_repo_corpus_reports_contract_attr_rows() {
         "{:#?}",
         f.iter().map(|x| &x.message).collect::<Vec<_>>()
     );
-    let k = counters(&r);
-    assert_eq!(
-        k.contract_attr_report.len(),
-        k.contract_attr_missing + k.contract_attr_other
-    );
-    assert!(
-        k.contract_attr_missing + k.contract_attr_other <= k.resolved,
-        "{k:?}"
-    );
+    corpus_report_holds(&counters(&r));
+}
+
+/// The corpus assertions. A corpus that resolves no row, or a check that reports none, is not a measurement: on
+/// main the report holds hundreds of rows, so an empty one means the check or the corpus went dark.
+fn corpus_report_holds(k: &BindingsCounters) {
+    assert!(k.resolved > 0, "no row resolved: {k:?}");
+    let n = k.contract_attr_missing + k.contract_attr_other;
+    assert!(n > 0, "the contract-attribute report is empty: {k:?}");
+    assert!(n <= k.resolved, "{k:?}");
+    assert_eq!(k.contract_attr_report.len(), n);
+}
+
+/// The in-tree mutant for [`corpus_report_holds`]: an emptied corpus (no row resolved) and an emptied report (rows
+/// resolved, none reported) must each fail it.
+#[test]
+fn an_emptied_corpus_or_report_fails_the_corpus_assertions() {
+    let empty_corpus = BindingsCounters::default();
+    let empty_report = BindingsCounters {
+        resolved: 407,
+        ..BindingsCounters::default()
+    };
+    for (case, k) in [
+        ("empty corpus", empty_corpus),
+        ("empty report", empty_report),
+    ] {
+        let held = std::panic::catch_unwind(|| corpus_report_holds(&k)).is_ok();
+        assert!(!held, "{case} passed the corpus assertions");
+    }
 }
