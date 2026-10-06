@@ -18,6 +18,7 @@
 #       (anchored at the start of the path: crates/aprender-distribute-x/ and docs/aprender-distribute/
 #       are outside), or
 #   (b) it is exactly the summary  error: could not compile `aprender-distribute` ...
+# A `thread '...' panicked` line (a rustc ICE or a cargo panic) is one error, always OUTSIDE.
 # Every other error line is OUTSIDE. `warning:` lines never count, wherever they point.
 #   GREEN  no error outside, and rc == 0, or rc == 101 (cargo's compile-failure exit) with at least
 #          one error line to explain it
@@ -50,6 +51,7 @@ count_new() {
     END {
         tot = 0; out = 0
         for (i = 1; i <= NR; i++) {
+            if (L[i] ~ /^thread .* panicked/) { tot++; out++; continue }   # m:panic-ignored
             if (L[i] !~ /^error(\[E[0-9]+\])?:/) continue   # m:ignore-E-form m:warning-counts
             tot++
             if (L[i] ~ /^error: could not compile `aprender-distribute`( |$)/) continue   # m:any-could-not-compile m:summary-unanchored
@@ -122,6 +124,7 @@ error: cannot find macro `info` in this scope
    |
 error: could not compile `aprender-distribute` (lib) due to 2 previous errors
 LOG
+    { cat "$d/dist-only.log"; printf "%s\n" "thread 'rustc' panicked at compiler/rustc_middle/src/ty/mod.rs:1:1:"; } > "$d/dist-panic.log"
     : > "$d/empty.log"
     cat > "$d/manifest.log" <<'LOG'
 error: failed to load manifest for workspace member `crates/aprender-core`
@@ -194,6 +197,7 @@ LOG
     row C13 2 "$d/no-such.log"           0   "missing LOG = not_measured"
     row C14 2 "$d/clean.log"             abc "non-integer RC = not_measured"
     row C15 1 "$d/dist-only.log"         137 "rc 137 (killed) with only #3176 errors: an unfinished run is red"
+    row C16 1 "$d/dist-panic.log"        101 "rc 101, only #3176 errors plus a panicked thread: a panic is outside"
 
     printf 'deep_nodefault_verdict.sh --self-test (impl=%s): %s/%s rows pass\n' "$IMPL" "$PASS" "$((PASS + FAIL))"
     [ "$FAIL" = 0 ] && return 0
@@ -214,6 +218,7 @@ LOG
 #   summary-unanchored     "could not compile `aprender-distribute-x`" is explained
 #   missing-log            a missing LOG is read as an empty one instead of not_measured
 #   abnormal-rc            a killed or terminated cargo (rc not 0 or 101) whose log holds only #3176 errors is green
+#   panic-ignored          a panicked thread (rustc ICE, cargo panic) next to only #3176 errors is green
 mutants() {
     local name expr killed=0 total=0 first
     d=$(mktemp -d) || return 2
@@ -241,6 +246,7 @@ warning-counts        s#/\^error\(#/^(error|warning)(#
 summary-unanchored    s#`aprender-distribute`\( \|\$\)/#`aprender-distribute/#
 missing-log           s#^( +)if \[ ! -f.*$#\1[ -r "$log" ] || log=/dev/null; if false; then#
 abnormal-rc           s/then k=1; fi/then k=0; fi/
+panic-ignored         s/.*//
 MUTANTS
     printf 'deep_nodefault_verdict.sh --mutants: %s/%s killed\n' "$killed" "$total"
     [ "$killed" = "$total" ] && [ "$total" -ge 5 ]
