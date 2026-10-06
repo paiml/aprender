@@ -1402,11 +1402,12 @@ mod tests {
     #[test]
     fn plain11_types_as_pyyaml_does() {
         for s in [
-            "yes", "Off", "~", "", "1.5", ".inf", "0o7x", "1_000", "0x1F", "1:30",
+            "yes", "Off", "~", "", "1.5", ".inf", "07", "1_000", "0x1F", "1:30",
         ] {
             assert_ne!(plain11(s), Plain11::Str, "{s}");
         }
         assert_eq!(plain11("0o7"), Plain11::Str);
+        assert_eq!(plain11("0o7x"), Plain11::Str);
         assert_eq!(plain11("1e5"), Plain11::Str);
         assert_eq!(plain11("ABC-INV-001"), Plain11::Str);
         assert_eq!(plain11("2024-02-29"), Plain11::NotStr);
