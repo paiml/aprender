@@ -1,0 +1,68 @@
+name: Jetson GPU nightly
+
+# #4879 -- the whole Jetson Orin lane, once a night, on the one persistent runner that carries the `jetson`
+# label (sm_87, nvgpu, 7.4 GB of memory shared by the CPU and the GPU): S0 the box, S1 + S2 the aprender-gpu
+# cuda lib tests, S3 FALSIFY-CB-008 on the resident 1.1 GB q4_k_m GGUF plus the aprender-serve gguf::cuda::
+# lib tests. ci.yml's gpu-failfast-jetson and gpu-e2e-jetson run the same stages on a pull request that touches
+# the GPU set; this workflow is the main-branch coverage, because gpu-touched does not select a push to main.
+#
+# WHAT A GREEN HERE MEANS. Every stage is a subcommand of scripts/ci_jetson_gpu.sh, which judges the LOG and not
+# only the exit code: a CUDA test that finds no device prints a skip line and returns, and libtest counts a
+# return as a pass, so the script fails a stage whose log says a GPU test skipped, whose passed count is under
+# the stage floor, or that printed no `test result:` line at all. APR_REQUIRE_GPU=1 turns the cuda_ctx! skip
+# paths into panics. A green is "these tests ran on the GPU"; it is not a timing and not a perf claim.
+#
+# WARM-UP. The first run on a box builds the shared CARGO_TARGET_DIR from nothing, and that is the slow one.
+# A workflow_dispatch of this workflow, once, before the pull-request jobs are relied on, builds it and records
+# how long S0..S3 take cold, which is what the 15- and 25-minute caps in ci.yml are waiting to be checked against.
+# Nothing is cancelled mid-build: a half-finished cold build is the most expensive thing this lane does.
+#
+# THE DEAD-MAN'S SWITCH GUARDS THIS LANE. lane-liveness (the fleet's nightly audit) reds when a scheduled
+# workflow stops running or stops succeeding. Do not give this job a kill-switch variable or an allowlist entry:
+# a skipped run reads as healthy to that switch, which is exactly how a dead lane stays green.
+#
+# NOT A REQUIRED CHECK and in no job's `needs`. Not a pull_request or push workflow, so it cannot reach a PR.
+
+on:
+  schedule:
+    # Cron is set ~5h EARLY because GitHub dispatches schedule events 3h51m-6h49m late on this account
+    # (measured in #3292, see cuda-nightly.yml): the delayed run lands near 02:50 UTC, clear of the other
+    # nightlies. The delay varies by ~3h, so re-measure before trusting the landing time.
+    - cron: "50 21 * * *"   # 21:50 UTC -> lands ~02:50 UTC
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+# One run on the one box at a time. A dispatch while the scheduled run is going queues behind it, and nothing is
+# cancelled (see WARM-UP above). The group is this workflow's own, so it never meets ci.yml's per-PR jetson groups.
+concurrency:
+  group: jetson-gpu-nightly
+  cancel-in-progress: false
+
+jobs:
+  jetson-gpu:
+    # LITERAL labels, deliberately WITHOUT clean-room (the ARM64 clean-room jobs must never land on a 7.4 GB
+    # box) and WITHOUT cuda or gpu (check_perf_concurrency_groups.sh reads those as perf-sensitive and demands a
+    # perf-<host> group; this lane measures no time). Same set as ci.yml's two jetson jobs.
+    runs-on: [self-hosted, Linux, ARM64, jetson]
+    timeout-minutes: 45
+    env:
+      # trap B: every cuda_ctx! skip path panics instead of returning a pass.
+      APR_REQUIRE_GPU: "1"
+      # trap C: 7.4 GB is the whole box. ci_jetson_gpu.sh enforces both itself and refuses larger numbers.
+      CARGO_BUILD_JOBS: "4"
+      RUST_TEST_THREADS: "2"
+      CARGO_TERM_COLOR: never
+    steps:
+      - uses: actions/checkout@v7
+        with:
+          persist-credentials: false
+      - name: S0 the box (seconds, no compile)
+        run: bash scripts/ci_jetson_gpu.sh preflight
+      - name: "S1 aprender-gpu cuda lib tests under driver:: (the layer every other GPU test stands on)"
+        run: bash scripts/ci_jetson_gpu.sh s1
+      - name: S2 the rest of the aprender-gpu cuda lib tests
+        run: bash scripts/ci_jetson_gpu.sh s2
+      - name: "S3 FALSIFY-CB-008 on the resident q4_k_m GGUF, then the aprender-serve gguf::cuda:: lib tests"
+        run: bash scripts/ci_jetson_gpu.sh s3

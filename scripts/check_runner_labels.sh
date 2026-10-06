@@ -11,6 +11,7 @@
 #   - clean-room  (the provisioned sovereign-ci pool: registry + cached image)
 #   - a GPU label: cuda | gpu | rtx4090 | ada | blackwell | gb10
 #   - a macOS label: apple-silicon | m4 | mini-builder
+#   - a one-box lane label, documented above DISCRIM: perf-solo | review-light | jetson
 # Reusable-workflow jobs (`uses:`) have no `runs-on` and are naturally exempt.
 # GitHub-hosted jobs (ubuntu-latest, …) don't name self-hosted and are exempt.
 set -euo pipefail
@@ -24,7 +25,13 @@ cd "$(dirname "$0")/.."
 # review-light (#4729): one runner on intel-clean-room-15, same unit and isolation as the
 # clean-room pool, deliberately WITHOUT clean-room so build jobs cannot queue in front of
 # pr-review-quorum `present` (a seconds-long check). A one-box label, like perf-solo.
-DISCRIM='clean-room|cuda|gpu|rtx4090|ada|blackwell|gb10|apple-silicon|m4|perf-solo|mini-builder|review-light'
+# jetson (#4879): the Jetson Orin (sm_87, 7.4 GB of memory shared with the GPU), one persistent
+# runner, deliberately WITHOUT clean-room (the ARM64 clean-room jobs, determinism among them, must
+# never land on a 7.4 GB box) and WITHOUT cuda or gpu (check_perf_concurrency_groups.sh reads those as
+# "perf-sensitive" and demands a perf-<host> group that queues stale runs; this lane measures no time).
+# A one-box label, like perf-solo. Used by ci.yml's gpu-failfast-jetson and gpu-e2e-jetson and by
+# jetson-gpu-nightly.yml.
+DISCRIM='clean-room|cuda|gpu|rtx4090|ada|blackwell|gb10|apple-silicon|m4|perf-solo|mini-builder|review-light|jetson'
 fail=0
 
 while IFS=: read -r file line sel; do

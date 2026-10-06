@@ -385,6 +385,92 @@ jobs:
           --sections 'gpu-touched,cuda-unit,mutants-cuda'
           --results "$RUNNER_TEMP/fat/results.json"
 
+  # ==========================================================================
+  # #4879 -- the Jetson Orin lane: a fail-fast GPU test box, and NOT one of the five fat jobs above. Two
+  # ADVISORY jobs (neither is in `gate`'s needs and neither is a required check: a red is visible on the
+  # PR and blocks nothing) on the one persistent runner that carries the `jetson` label (sm_87, nvgpu,
+  # 7.4 GB of memory shared by the CPU and the GPU).
+  #
+  #   gpu-failfast-jetson  S0 box preflight (seconds, no compile) -> S1 the aprender-gpu cuda lib tests under
+  #                        `driver::` -> S2 the rest of the aprender-gpu cuda lib tests, on S1's build. 15 min.
+  #   gpu-e2e-jetson       S0 -> S3: FALSIFY-CB-008 on the resident 1.1 GB q4_k_m GGUF, then the aprender-serve
+  #                        `gguf::cuda::` lib tests. Only after the fail-fast job is green. 25 min.
+  #
+  # Each stage is one subcommand of scripts/ci_jetson_gpu.sh, so a red names its stage. The script judges the
+  # LOG as well as the exit code: a CUDA test that finds no device prints a skip line and returns, and libtest
+  # counts a return as a pass. scripts/check_jetson_gpu_jobs.sh pins everything below it can see: the label
+  # set, the env pins, the trigger, the timeouts, and that no other job's `needs` reaches these two.
+  #
+  # TRIGGER. A same-repo pull_request that gpu-touched says touches the GPU set, or a workflow_dispatch
+  # (gpu-touched is skipped on a dispatch, so the `if` names the event and carries !cancelled(); a bare
+  # `needs` on a skipped job would skip this one too). Never a fork PR: this is one persistent bare-metal
+  # box that keeps its build directory between runs, without the throwaway containers gx10 and yoga have.
+  # Never `push` and never `merge_group`: gpu-touched does not select a push to main, so main is covered by
+  # jetson-gpu-nightly.yml and not by this job.
+  #
+  # LABELS. [self-hosted, Linux, ARM64, jetson], deliberately WITHOUT clean-room (the ARM64 clean-room jobs,
+  # determinism among them, must never land on a 7.4 GB box) and WITHOUT cuda or gpu
+  # (check_perf_concurrency_groups.sh reads those as perf-sensitive and demands a perf-<host> group that
+  # queues stale runs; this lane measures no time, it asks whether the GPU tests ran and passed).
+  #
+  # ENV. APR_REQUIRE_GPU=1 turns every cuda_ctx! skip path into a panic (the other skip paths are caught by the
+  # script reading the log). CARGO_BUILD_JOBS=4 and RUST_TEST_THREADS=2 are the memory budget: rustc at -j8 on
+  # aprender-serve is what the OOM killer ends on a 7.4 GB box. ci_jetson_gpu.sh enforces all three itself and
+  # refuses larger numbers, so deleting a line here loses nothing silently; the guard compares the two.
+  #
+  # CONCURRENCY. One group per PR (per ref on a dispatch), named so that it can never equal this workflow's own
+  # `ci-<number>` group (a job in its own workflow's group waits on that workflow for ever). A newer push
+  # supersedes the run it replaces, a dispatch queues. Everything else queues on the runner itself.
+  gpu-failfast-jetson:
+    runs-on: [self-hosted, Linux, ARM64, jetson]
+    timeout-minutes: 15
+    needs: [gpu-touched]
+    if: ${{ !cancelled() && ((github.event_name == 'pull_request' && github.event.pull_request.head.repo.full_name == github.repository && needs.gpu-touched.outputs.gpu_touched == '1') || github.event_name == 'workflow_dispatch') }}
+    permissions:
+      contents: read
+    concurrency:
+      group: jetson-failfast-${{ github.event.pull_request.number || github.ref }}
+      cancel-in-progress: ${{ github.event_name == 'pull_request' }}
+    env:
+      APR_REQUIRE_GPU: "1"
+      CARGO_BUILD_JOBS: "4"
+      RUST_TEST_THREADS: "2"
+      CARGO_TERM_COLOR: never
+    steps:
+      - uses: actions/checkout@v7
+        with:
+          persist-credentials: false
+      - name: S0 the box (seconds, no compile)
+        run: bash scripts/ci_jetson_gpu.sh preflight
+      - name: "S1 aprender-gpu cuda lib tests under driver:: (the layer every other GPU test stands on)"
+        run: bash scripts/ci_jetson_gpu.sh s1
+      - name: S2 the rest of the aprender-gpu cuda lib tests
+        run: bash scripts/ci_jetson_gpu.sh s2
+
+  gpu-e2e-jetson:
+    runs-on: [self-hosted, Linux, ARM64, jetson]
+    timeout-minutes: 25
+    needs: [gpu-failfast-jetson]
+    if: ${{ !cancelled() && needs.gpu-failfast-jetson.result == 'success' }}
+    permissions:
+      contents: read
+    concurrency:
+      group: jetson-e2e-${{ github.event.pull_request.number || github.ref }}
+      cancel-in-progress: ${{ github.event_name == 'pull_request' }}
+    env:
+      APR_REQUIRE_GPU: "1"
+      CARGO_BUILD_JOBS: "4"
+      RUST_TEST_THREADS: "2"
+      CARGO_TERM_COLOR: never
+    steps:
+      - uses: actions/checkout@v7
+        with:
+          persist-credentials: false
+      - name: S0 the box (seconds, no compile)
+        run: bash scripts/ci_jetson_gpu.sh preflight
+      - name: "S3 FALSIFY-CB-008 on the resident q4_k_m GGUF, then the aprender-serve gguf::cuda:: lib tests"
+        run: bash scripts/ci_jetson_gpu.sh s3
+
   determinism:
     needs: [mg-reuse, x86-main]
     if: ${{ !cancelled() && needs.mg-reuse.outputs.det != '1' }}

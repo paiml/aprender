@@ -28,3 +28,5 @@ self-hosted-runner:
     - mini-builder
     # #4729 / infra#1388: one-box lane for pr-review-quorum `present` (intel-clean-room-15)
     - review-light
+    # #4879: the Jetson Orin GPU lane (one persistent runner; deliberately WITHOUT clean-room and cuda)
+    - jetson
