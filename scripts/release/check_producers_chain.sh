@@ -269,7 +269,7 @@ m_pick_no_at()    { changed nightly-pick.yml '/^ *at="\$(gh api /d'; }
 m_pick_at_cmt()   { changed nightly-pick.yml 's/^\( *\)at="\$(gh api /\1# at="$(gh api /'; }
 m_pick_2nd_call() { changed nightly-pick.yml 's/^\( *\)rc=0$/\1n2="$(bash scripts\/release\/nightly_pick.sh night)"\n\1rc=0/'; }
 m_pick_cmt_ok()   { changed nightly-pick.yml 's/^\( *\)rc=0$/\1# was: night="$(bash scripts\/release\/nightly_pick.sh night)"\n\1rc=0/'; }
-m_pick_2nd_big()  { # a second live night call ahead of 1.4 MB of exact ones: a pipe into grep -q loses it under pipefail
+m_pick_2nd_big()  { # a second live night call ahead of 1.4 MB of exact ones: a pipe into grep -q loses it under pipefail (in live code, check_no_pipe_into_grep_q.sh catches that form)
     awk -v l="          $P7_NIGHT" 'BEGIN { for (i = 0; i < 20000; i++) print l }' > "$TMP_ST/p7fill"
     m_pick_2nd_call && changed nightly-pick.yml '/^ *rc=0$/r '"$TMP_ST/p7fill"
 }
@@ -456,8 +456,7 @@ m43_unreadable_passes	s/^        \[ "\$jr" -eq 0 \] || printf -v out /        tr
 m44_no_p7	s/^    p7 "\$wf\/nightly-pick.yml" || rc=1$/    true/
 m45_p7_other_night_call_ok	s/ \&\& ! hasl "\$calls" -v -x -F -e "\$P7_NIGHT"; then/; then/
 m46_p7_at_not_exact	s/hasl "\$t" -x -F -e "\$P7_AT"/hasl "$t" -F -e "$P7_AT"/
-m47_p7_comment_counts	s| -e ./\^#/d. | |
-m48_p7_piped_grep_q	s/! hasl "\$calls" \(-v -x -F -e "\$P7_NIGHT"\)/! printf "%s\\n" "$calls" \| grep -q \1/'
+m47_p7_comment_counts	s| -e ./\^#/d. | |'
 mutants() {
     local tmp name expr killed=0 total=0 errors=0 out cut reds
     cut="$(grep -n -m1 -e "^# -* the case table" "$SCRIPT_PATH" | cut -d: -f1)"

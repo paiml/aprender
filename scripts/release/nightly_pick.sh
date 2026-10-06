@@ -156,8 +156,8 @@ m11_plain_push_fast_forwards	s/ --force-with-lease="refs\/heads\/nightly\/\$3:"/
 m12_unknown_commit_is_red	/cannot tell whether/s/return 2 ;;/return 1 ;;/
 m13_ref_name_matched_by_tail	s/NF && \$2 != r { found = 1 }/NF \&\& 0 { found = 1 }/
 m14_read_widened_to_the_rolling_tag	s/ls-remote --refs "\$2" "refs\/heads\/nightly\/\$3"/ls-remote --refs "\$2" "nightly"/
-m15_night_checked_per_line	s/\[\[ \$1 =~ \(.*\) \]\] ||/printf "%s\\n" "$1" | grep -qxE "\1" ||/
-m16_sha_checked_per_line	s/\[\[ \$2 =~ \(.*\) \]\] ||/printf "%s\\n" "$2" | grep -qxE "\1" ||/
+m15_night_checked_per_line	s/\[\[ \$1 =~ \(.*\) \]\] ||/grep -qxE "\1" <<< "$1" ||/
+m16_sha_checked_per_line	s/\[\[ \$2 =~ \(.*\) \]\] ||/grep -qxE "\1" <<< "$2" ||/
 m17_no_century_rule	s/ + doe \/ 36524 - doe \/ 146096) \/ 365/) \/ 365/
 m18_jan_feb_keep_the_march_year	s/ + (m <= 2))) "$m"/)) "$m"/
 m19_negative_rounds_toward_zero	s/s >= 0 ? s \/ 86400 : -((86399 - s) \/ 86400)/s \/ 86400/

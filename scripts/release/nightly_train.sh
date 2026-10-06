@@ -113,6 +113,21 @@ book-contracts;info;book-contracts;.github/workflows/book-contracts.yml;^workflo
 install-script;info;install-script;.github/workflows/install-script.yml;^workflow_run$;
 fleet-toolset;info;fleet-toolset;.github/workflows/fleet-toolset.yml;^schedule$;'
 caller_error() { printf 'NOT RELEASABLE: nightly-train, caller error: %s\n' "$*"; exit 3; }
+next_day() {   # next_day YYYY-MM-DD -> the day after, by arithmetic: no date(1), so no clock in reach (bashrs DET002)
+    local y m d dim
+    case "$1" in [0-9][0-9][0-9][0-9]-[0-9][0-9]-[0-9][0-9]) ;; *) return 1 ;; esac
+    y=$((10#${1:0:4})); m=$((10#${1:5:2})); d=$((10#${1:8:2}))
+    case "$m" in
+        1|3|5|7|8|10|12) dim=31 ;;
+        4|6|9|11) dim=30 ;;
+        2) dim=28; { [ $((y % 4)) -eq 0 ] && [ $((y % 100)) -ne 0 ]; } || [ $((y % 400)) -eq 0 ] && dim=29 ;;
+        *) return 1 ;;
+    esac
+    [ "$d" -ge 1 ] && [ "$d" -le "$dim" ] || return 1
+    d=$((d + 1)); [ "$d" -le "$dim" ] || { d=1; m=$((m + 1)); }
+    [ "$m" -le 12 ] || { m=1; y=$((y + 1)); }
+    printf '%04d-%02d-%02d\n' "$y" "$m" "$d"
+}
 # ---------------------------------------------------------------- judgement (pure: files in, files out) ----------
 # evaluate LANESFILE RAW MODE -> MODE=cand: run ids of green verdict candidates; MODE=final: lanes.tsv rows and
 #   RAW/hist_redage.tsv. RAW holds C, read, runs.tsv, attempts.tsv.
@@ -128,7 +143,7 @@ evaluate() {
     local n o e
     while IFS=$'\t' read -r n o; do
         case "$n" in [0-9][0-9][0-9][0-9]-[0-9][0-9]-[0-9][0-9]) ;; *) continue ;; esac
-        e="$(date -u -d "$n + 1 day" +%F 2>/dev/null)" || continue
+        e="$(next_day "$n")" || continue
         printf '%sT12:00:00Z\t%sT12:00:00Z\t%s\n' "$n" "$e" "$o"
     done < "$2/picks.tsv" > "$2/pickwin.tsv"
     [ -f "$2/rank.tsv" ] || : > "$2/rank.tsv"
