@@ -22,7 +22,7 @@ set -euo pipefail
 
 SELF="$(cd "$(dirname "$0")" && pwd)/${0##*/}"
 HOOK_DIR="$(dirname "$SELF")/hooks"
-WANT_ROWS=40
+WANT_ROWS=43
 ROWS=0
 FAILS=0
 HOOK=''
@@ -90,8 +90,11 @@ check_row() {
     if "$step" > "$TP/row.log" 2>&1; then ok "$name"; else fail "$name" "$what"; fi
 }
 
+# the clock as the hook reads it, for marker expiries
+epoch() { printf '%(%s)T\n' -1; }
 write_marker() {
-    printf '%s %s %s\n' "$1" "$2" "${3:-$(($(date +%s) + 600))}" > .git/pre-push-release-tag
+    local exp="${3:-$(($(epoch) + 600))}"
+    printf '%s %s %s\n' "$1" "$2" "$exp" > .git/pre-push-release-tag
 }
 
 # the steps, each run from the throwaway clone
@@ -136,7 +139,37 @@ step_not_a_release_name() {
 }
 step_off_main() { git tag v0.3.0 side && bash "$HOOK" --arm-release v0.3.0 && git push origin v0.3.0; }
 step_expired() {
-    write_marker refs/tags/v0.2.0 "$(git rev-parse v0.2.0)" "$(($(date +%s) - 1))" && git push origin v0.2.0
+    write_marker refs/tags/v0.2.0 "$(git rev-parse v0.2.0)" "$(($(epoch) - 1))" && git push origin v0.2.0
+}
+step_capped() {
+    write_marker refs/tags/v0.2.0 "$(git rev-parse v0.2.0)" "$(($(epoch) + 7200))" && git push origin v0.2.0
+}
+# a linked work tree of w3 with a worktree-scoped core.hooksPath: --verify there is RED, plain
+# --verify in w3 stays green, and --all-worktrees from w3 is RED
+step_verify_worktree_hookspath() {
+    local rc=0 all=0 main=0
+    cd "$TP/w3" || return 1
+    bash "$HOOK" --install > /dev/null || return 1
+    git config extensions.worktreeConfig true && git worktree add -q "$TP/w3b" 2> /dev/null || return 1
+    git -C "$TP/w3b" config --worktree core.hooksPath "$TP/elsewhere"
+    bash "$HOOK" --verify > /dev/null || main=$?
+    bash "$HOOK" --verify --all-worktrees > /dev/null || all=$?
+    cd "$TP/w3b" || return 1
+    bash "$HOOK" --verify > /dev/null || rc=$?
+    cd "$TP/w" || return 1
+    [ "$main" -eq 0 ] && [ "$all" -eq 1 ] && [ "$rc" -eq 1 ]
+}
+# --arm-release with TTL-like variables exported: the expiry is still now + 600, and SECONDS
+# above 3600 is still refused, so nothing in the environment sets or widens the TTL
+step_ttl_not_from_env() {
+    local rc=0 left e
+    env TTL=5 TTL_DEFAULT=5 TTL_MAX=99999 PRE_PUSH_TTL=5 PRE_PUSH_TAGS_TTL=5 ARM_TTL=5 \
+        bash "$HOOK" --arm-release v0.2.0 > /dev/null || return 1
+    read -r _ _ e < .git/pre-push-release-tag || return 1
+    rm -f .git/pre-push-release-tag
+    left=$((e - $(epoch)))
+    env TTL_MAX=99999 PRE_PUSH_TAGS_TTL_MAX=99999 bash "$HOOK" --arm-release v0.2.0 7200 2> /dev/null || rc=$?
+    [ "$left" -ge 595 ] && [ "$left" -le 600 ] && [ "$rc" -eq 2 ] && [ ! -e .git/pre-push-release-tag ]
 }
 step_bad_ttl() {
     local t rc
@@ -307,6 +340,7 @@ self_test() {
     check_row verify_passes_once_installed "--verify was not 0 in an installed clone" step_verify_ok
     check_row verify_is_red_when_another_installer_rewrote_pre_push "--verify did not exit 1 after pre-push was rewritten" step_verify_overwritten
     check_row verify_is_red_when_the_guard_is_gone "--verify did not exit 1 with pre-push-tags removed" step_verify_no_guard
+    check_row verify_judges_the_hooks_path_of_each_worktree "--verify missed a worktree-scoped core.hooksPath, or --all-worktrees did not exit 1" step_verify_worktree_hookspath
     check_row uninstall_restores_the_old_pre_push_byte_for_byte "uninstall failed, or pre-push differs from the one before install" step_uninstall_restores
     check_row uninstall_refuses_a_chained_hook_changed_since_install "uninstall did not exit 1, or changed something" step_uninstall_refuses_a_changed_chain
     check_row uninstall_never_touches_a_rewritten_pre_push "uninstall did not exit 2, or changed the rewritten pre-push" step_uninstall_keeps_a_rewritten_pre_push
@@ -326,7 +360,9 @@ self_test() {
     push_row a_marker_in_the_environment_arms_nothing 'create of refs/tags/v0.2.0 at' refs/tags/v0.2.0 step_env_marker
     push_row a_marker_for_another_sha_is_refused 'create of refs/tags/v0.2.0 at' refs/tags/v0.2.0 step_other_sha
     push_row an_expired_marker_is_refused 'create of refs/tags/v0.2.0: its release marker expired' refs/tags/v0.2.0 step_expired
+    push_row a_marker_past_the_ttl_cap_is_refused 'create of refs/tags/v0.2.0: its release marker expires after the 3600 s cap' refs/tags/v0.2.0 step_capped
     check_row arm_release_refuses_a_bad_ttl "--arm-release took a TTL outside 1..3600, or left a marker" step_bad_ttl
+    check_row the_ttl_is_never_read_from_the_environment "exported TTL-like variables changed the 600 s expiry or let 7200 through" step_ttl_not_from_env
     push_row a_marked_v_tag_that_is_not_a_release_name_is_refused 'create of refs/tags/vnext, which is not vX' refs/tags/vnext step_not_a_release_name
     push_row an_armed_release_tag_off_main_is_refused 'create of refs/tags/v0.3.0:' refs/tags/v0.3.0 step_off_main
     push_row the_marker_is_spent_by_one_push 'create of refs/tags/v0.2.0 at' refs/tags/v0.2.0 step_spent
@@ -364,7 +400,7 @@ m07_main_is_not_checked	pre-push-tags.sh	s/^        if ! on_main "\$lsha" "\$url
 m08_the_marker_sha_is_not_compared	pre-push-tags.sh	s/^        if . "\$mref \$msha" != "\$rref \$lsha" .; then$/        if ! test "$mref" = "$rref"; then/
 m09_the_release_name_is_not_checked	pre-push-tags.sh	s/^        if ! is_release_name "\${rref#refs\/tags\/}"; then$/        if false; then/
 m10_the_dispatcher_ignores_the_guard	pre-push-dispatch.sh	s/^printf .%s. "\$in" | bash "\$d\/pre-push-tags" .*$/& || true/
-m11_a_foreign_pre_push_is_overwritten	pre-push-tags.sh	s/^        (c. "\${dir:?}" .. mv -- pre-push pre-push.chained)$/        true/
+m11_a_foreign_pre_push_is_overwritten	pre-push-tags.sh	s/^        (c. "\${dir:?}" .. m. .. pre-push pre-push.chained)$/        true/
 m12_an_existing_chain_is_overwritten	pre-push-tags.sh	s/^            return 2$/            :/
 m13_the_marker_expiry_is_not_checked	pre-push-tags.sh	s/^        if ! is_count "\$mexp" || .*$/        if false; then/
 m14_verify_ignores_a_rewritten_pre_push	pre-push-tags.sh	s/^    if . ! -x "\$dir\/pre-push" . || ! cmp .*$/    if false; then/
@@ -372,7 +408,11 @@ m15_verify_ignores_a_missing_guard	pre-push-tags.sh	s/^    if . ! -x "\$dir\/pre
 m16_any_ttl_is_accepted	pre-push-tags.sh	s/^    if ! is_count "\$ttl" || .*$/    if false; then/
 m17_uninstall_skips_the_sha256_check	pre-push-tags.sh	s/^        if . "\$want" != "\$have" .; then$/        if false; then/
 m18_uninstall_touches_a_rewritten_pre_push	pre-push-tags.sh	/^uninstall_hook() {$/,/^}$/s/^    if . -e "\${dir:?}\/pre-push" . .. ! grep -qxF .*$/    if false; then/
-m19_install_records_no_sha256	pre-push-tags.sh	s/^        (set -C .. printf .*$/        true/'
+m19_install_records_no_sha256	pre-push-tags.sh	s/^        (set -C .. printf .*$/        true/
+m20_the_ttl_cap_is_not_rechecked	pre-push-tags.sh	s/^        if . "\$mexp" .gt .*$/        if false; then/
+m21_verify_ignores_the_effective_hooks_path	pre-push-tags.sh	s/^    if . "\$eff" != "\$dir" .; then$/    if false; then/
+m22_the_ttl_is_read_from_the_environment	pre-push-tags.sh	s/ttl="\${2:-\$TTL_DEFAULT}"/ttl="\${2:-\${PRE_PUSH_TAGS_TTL:-\$TTL_DEFAULT}}"/
+m23_the_ttl_cap_is_read_from_the_environment	pre-push-tags.sh	s/^TTL_MAX=3600$/TTL_MAX="\${TTL_MAX:-3600}"/'
 
 mutants() {
     local name file expr rc killed=0 total=0 t

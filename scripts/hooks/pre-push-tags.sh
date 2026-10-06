@@ -13,9 +13,9 @@
 #
 # The release marker is a one-shot file in this work tree's git dir. --arm-release writes it
 # with an expiry (600 s, or SECONDS, at most 3600); the next push that runs the hook removes it
-# whatever that push carries. A push with nothing to update never runs the hook, so the expiry
-# bounds how long an unspent marker stays armed. Neither the marker nor its expiry is ever read
-# from the environment: a variable left exported would arm every later push.
+# whatever that push carries, even a push with nothing to update. The expiry bounds a marker that
+# no push spends, and the hook refuses one that expires later than now + 3600. Neither the
+# marker nor its expiry is ever read from the environment: an exported variable would arm every push.
 #
 # usage:
 #   pre-push-tags.sh REMOTE URL < pre-push stdin     run by git as (part of) the pre-push hook
@@ -25,12 +25,13 @@
 #                                                    the clone's hooks dir, before any pre-push there
 #   pre-push-tags.sh --uninstall                     undo --install; the chained pre-push goes back only
 #                                                    if its sha256 matches the one recorded at install
-#   pre-push-tags.sh --verify                        RED unless this clone's pre-push is the
-#                                                    dispatcher and the guard beside it is this file
+#   pre-push-tags.sh --verify [--all-worktrees]      RED unless git, in this work tree (or in every
+#                                                    one), runs the dispatcher and this guard first
 # exit: 0 allowed (or verified), 1 refused (or RED), 2 usage or environment error.
 set -euo pipefail
 
 SELF="$(cd "$(dirname "$0")" && pwd)/${0##*/}"
+HERE="${SELF%/*}"
 DISPATCH_MARK='# written by pre-push-tags.sh --install'
 TTL_DEFAULT=600
 TTL_MAX=3600
@@ -41,6 +42,11 @@ is_zero() {
 
 is_count() {
     case "$1" in '' | *[!0-9]*) return 1 ;; esac
+}
+
+# epoch_now: seconds since the epoch, from the bash builtin clock (no date(1), no environment)
+epoch_now() {
+    printf '%(%s)T\n' -1
 }
 
 is_release_name() {
@@ -79,8 +85,8 @@ hook() {
         rm -f -- "${mfile:?}"
     fi
     read -r mref msha mexp _ <<< "$marker" || true
-    # the marker's expiry is a deadline by design, so the clock is an input here
-    now="$(date +%s)" # bashrs disable-line=DET005
+    # the expiry is a deadline by design, so the clock is an input here
+    now="$(epoch_now)"
     while read -r lref lsha rref rsha; do
         case "$rref" in refs/tags/*) ;; *) continue ;; esac
         if is_zero "$lsha"; then refuse "delete of $rref"; continue; fi
@@ -101,6 +107,9 @@ hook() {
         if ! is_count "$mexp" || [ "$now" -gt "$mexp" ]; then
             refuse "create of $rref: its release marker expired; arm it again"; continue
         fi
+        if [ "$mexp" -gt "$((now + TTL_MAX))" ]; then
+            refuse "create of $rref: its release marker expires after the $TTL_MAX s cap; arm it again"; continue
+        fi
         if ! on_main "$lsha" "$url"; then
             refuse "create of $rref: $lsha is not on the remote's main"; continue
         fi
@@ -113,7 +122,7 @@ hook() {
 }
 
 arm_release() {
-    local tag="${1:-}" ttl="${2:-$TTL_DEFAULT}" ref sha
+    local tag="${1:-}" ttl="${2:-$TTL_DEFAULT}" ref sha exp
     if ! is_release_name "$tag"; then
         printf 'pre-push-tags: --arm-release takes vX.Y.Z or vX.Y.Z-rc.N, not [%s]\n' "$tag" >&2
         return 2
@@ -127,7 +136,8 @@ arm_release() {
         printf 'pre-push-tags: no local tag %s\n' "$ref" >&2
         return 2
     fi
-    printf '%s %s %s\n' "$ref" "$sha" "$(($(date +%s) + ttl))" > "$(marker_file)"
+    exp="$(($(epoch_now) + ttl))"
+    printf '%s %s %s\n' "$ref" "$sha" "$exp" > "$(marker_file)"
     printf 'pre-push-tags: armed %s %s for the next push only, for %s s\n' "$ref" "$sha" "$ttl"
 }
 
@@ -135,7 +145,7 @@ arm_release() {
 # pre-push there becomes pre-push.chained and still runs after the guard
 install_hook() {
     local dir here sha
-    here="$(dirname "$SELF")"
+    here="$HERE"
     if git config --get core.hooksPath > /dev/null; then
         printf 'not_installed: core.hooksPath is set; add pre-push-tags.sh to that pre-push by hand\n' >&2
         return 2
@@ -190,22 +200,19 @@ uninstall_hook() {
     rm -f -- "${dir:?}/pre-push-tags" "${dir:?}/pre-push.chained.sha256"
 }
 
-# verify_hook: RED when git would not run this guard on the next push. Run it from the tracked
-# scripts/hooks/, whose pre-push-dispatch.sh is what --install wrote; a pmat (or any) reinstall
-# that rewrote pre-push, a removed or edited guard, or core.hooksPath each turn it RED
-verify_hook() {
-    local dir here red=0
-    here="$(dirname "$SELF")"
-    if [ ! -f "$here/pre-push-dispatch.sh" ]; then
-        printf 'not_measured: run --verify from the tracked scripts/hooks/, not from %s\n' "$here" >&2
-        return 2
-    fi
-    dir="$(hooks_dir)"
-    if git config --get core.hooksPath > /dev/null; then
-        printf 'pre-push-tags: verify RED: core.hooksPath is set, so git never runs %s/pre-push\n' "$dir"
+# verify_in WT [quiet]: RED when git, run in work tree WT, would not run this guard on the next push.
+# It judges the hooks dir git itself resolves there (--git-path hooks), so core.hooksPath at any
+# scope, a worktree-scoped one included, turns it RED; so does a pre-push that is not the
+# dispatcher (a pmat or any reinstall rewrote it) and a guard that is missing or not this file
+verify_in() {
+    local wt="$1" dir eff red=0
+    dir="$(git -C "$wt" rev-parse --path-format=absolute --git-common-dir)/hooks"
+    eff="$(git -C "$wt" rev-parse --path-format=absolute --git-path hooks)"
+    if [ "$eff" != "$dir" ]; then
+        printf 'pre-push-tags: verify RED: %s: git runs hooks from %s (core.hooksPath), not %s\n' "$wt" "$eff" "$dir"
         red=1
     fi
-    if [ ! -x "$dir/pre-push" ] || ! cmp -s "$here/pre-push-dispatch.sh" "$dir/pre-push"; then
+    if [ ! -x "$dir/pre-push" ] || ! cmp -s "$HERE/pre-push-dispatch.sh" "$dir/pre-push"; then
         printf 'pre-push-tags: verify RED: %s/pre-push is not the dispatcher (missing, not executable, or rewritten by another installer); run --install\n' "$dir"
         red=1
     fi
@@ -214,14 +221,38 @@ verify_hook() {
         red=1
     fi
     if [ "$red" -ne 0 ]; then return 1; fi
-    printf 'pre-push-tags: verified: %s/pre-push runs this guard first\n' "$dir"
+    [ -n "${2:-}" ] || printf 'pre-push-tags: verified: %s runs this guard first\n' "$wt"
+}
+
+# verify_hook [--all-worktrees]: verify_in this work tree, or in every work tree of the clone.
+# Run it from the tracked scripts/hooks/, whose pre-push-dispatch.sh is what --install wrote.
+# A listed work tree whose directory is gone cannot push and is counted as skipped
+verify_hook() {
+    local wt red=0 n=0 skipped=0
+    if [ ! -f "$HERE/pre-push-dispatch.sh" ]; then
+        printf 'not_measured: run --verify from the tracked scripts/hooks/, not from %s\n' "$HERE" >&2
+        return 2
+    fi
+    case "${1:-}" in
+        '') verify_in "$(git rev-parse --show-toplevel)"; return ;;
+        --all-worktrees) ;;
+        *) printf 'pre-push-tags: --verify takes nothing or --all-worktrees, not [%s]\n' "$1" >&2; return 2 ;;
+    esac
+    while read -r wt; do
+        if [ ! -d "$wt" ]; then skipped=$((skipped + 1)); continue; fi
+        n=$((n + 1))
+        verify_in "$wt" quiet || red=$((red + 1))
+    done < <(git worktree list --porcelain | sed -n 's/^worktree //p')
+    printf 'pre-push-tags: verify --all-worktrees: %s checked, %s RED, %s skipped (directory gone)\n' "$n" "$red" "$skipped"
+    if [ "$n" -eq 0 ]; then return 2; fi
+    if [ "$red" -ne 0 ]; then return 1; fi
 }
 
 case "${1:-}" in
     --arm-release) arm_release "${2:-}" "${3:-}" ;;
     --install) install_hook ;;
     --uninstall) uninstall_hook ;;
-    --verify) verify_hook ;;
+    --verify) verify_hook "${2:-}" ;;
     --help | -h) sed -n '2,30p' "$0" ;;
     -*) sed -n '20,30p' "$0" >&2; exit 2 ;;
     *) hook "$@" ;;
