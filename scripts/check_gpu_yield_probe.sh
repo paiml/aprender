@@ -301,7 +301,7 @@ self_test() {
         n=$((n + 1))
         if [ "$rc" != "$want_rc" ]; then
             echo "FAIL  self-test '$case_': rc=$rc, want $want_rc"; printf '%s\n' "$out" | head -n 4 | sed 's/^/        /'; fail=$((fail + 1))
-        elif [ -n "$token" ] && ! printf '%s\n' "$out" | grep -qF -- "$token"; then
+        elif [ -n "$token" ] && ! grep -qF -- "$token" <<< "$out"; then
             echo "FAIL  self-test '$case_': red, but not for the reason it names (no '$token' in the output)"; printf '%s\n' "$out" | head -n 4 | sed 's/^/        /'; fail=$((fail + 1))
         else
             echo "ok    self-test '$case_' -> rc=$rc"
