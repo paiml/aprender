@@ -172,6 +172,16 @@ impl Graph {
             .map(|t| &t.object)
             .collect()
     }
+    /// Subjects of `?s <predicate> <object>`, in byte order. A pass over the graph: only an inverse path asks (#4814
+    /// slice 6), and no contract shape may carry one, so the gate's corpus never pays for it.
+    #[must_use]
+    pub fn subjects(&self, predicate: &str, object: &Term) -> Vec<&str> {
+        self.triples
+            .iter()
+            .filter(|t| t.predicate == predicate && &t.object == object)
+            .map(|t| t.subject.as_str())
+            .collect()
+    }
     /// Every predicate used on `subject`, unique, in byte order (the same range scan, over the subject).
     #[must_use]
     pub fn predicates_of(&self, subject: &str) -> BTreeSet<&str> {

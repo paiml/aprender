@@ -143,6 +143,7 @@ pub fn collect_shapes(
         for shape in shapes::parse_shapes_with(&stem, &doc, &targets)? {
             refuse_non_class_target(&shape)?;
             refuse_node_level(&shape)?;
+            refuse_inverse_path(&shape)?;
             if let Some((_, other)) = shapes.iter().find(|(s, _)| s.id == shape.id) {
                 return Err(ShapeError::Malformed {
                     shape: shape.id.clone(),
@@ -192,6 +193,24 @@ fn refuse_node_level(shape: &NodeShape) -> Result<(), ShapeError> {
         .iter()
         .filter_map(|p| p.node.as_deref())
         .try_for_each(refuse_node_level)
+}
+
+/// #4814 slice 6: a contract shape, or a `node` shape nested in one, may not use an inverse path yet. R-19's
+/// subsumption (`lint::subsumption`) matches a sub-shape's property to its parent's by predicate alone, so `^p` and
+/// `p` would read as one property, and `Graph::subjects` is a pass over the whole graph per focus node. Refused with
+/// the parser's own text from before slice 6, when `path: {inverse: …}` was not a string: the same exit 3 and words.
+fn refuse_inverse_path(shape: &NodeShape) -> Result<(), ShapeError> {
+    if shape.properties.iter().any(|p| p.inverse) {
+        return Err(ShapeError::Malformed {
+            shape: shape.id.clone(),
+            what: "a property has no `path`".into(),
+        });
+    }
+    shape
+        .properties
+        .iter()
+        .filter_map(|p| p.node.as_deref())
+        .try_for_each(refuse_inverse_path)
 }
 
 /// `(shape id, declaring file)` for every shape in the corpus — the arming ratchet's view of "what exists".
@@ -1511,6 +1530,31 @@ mod tests {
             match refuse_node_level(&parse(y)) {
                 Err(ShapeError::Unsupported { component, .. }) => assert_eq!(component, want, "{y}"),
                 other => panic!("{y}: expected Unsupported, got {other:?}"),
+            }
+        }
+    }
+
+    #[test]
+    fn a_contract_shape_with_an_inverse_path_is_refused_with_the_pre_slice_6_text() {
+        // #4814 slice 6: the parser reads `{inverse: p}` now; the gate refuses it, on the shape and on a nested `node`
+        let parse = |y: &str| {
+            shapes::parse_shapes_with(
+                "t",
+                &serde_yaml::from_str(y).expect("yaml"),
+                &shapes::TargetMap::new(),
+            )
+            .expect("parses")
+            .remove(0)
+        };
+        let ok = parse("shape:\n  targetClass: ont:A\n  properties: [{path: ont:p, node: {properties: [{path: ont:q}]}}]\n");
+        assert!(refuse_inverse_path(&ok).is_ok());
+        for y in [
+            "shape:\n  targetClass: ont:A\n  properties: [{path: {inverse: ont:p}, minCount: 1}]\n",
+            "shape:\n  targetClass: ont:A\n  properties: [{path: ont:p, node: {properties: [{path: {inverse: ont:q}}]}}]\n",
+        ] {
+            match refuse_inverse_path(&parse(y)) {
+                Err(ShapeError::Malformed { what, .. }) => assert_eq!(what, "a property has no `path`", "{y}"),
+                other => panic!("{y}: expected Malformed, got {other:?}"),
             }
         }
     }

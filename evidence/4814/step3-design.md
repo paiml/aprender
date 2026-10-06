@@ -179,3 +179,25 @@ focus nodes after the IRIs. 8b6f111b6f sorts the result before comparing, and it
 - The pinned oracle (shacl 0.3.21) agrees on 36/36 W3C cases. The only disagreement is the corpus 736 vs 730, which is
   #4837.
 - No contract changes its verdict.
+
+## Slice 6 as built: inverse path (written 2026-10-06 08:40Z, before compiling; the receipt follows)
+
+**Finding F13: the table overcounted slice 6, which unlocks 1 case and not 4.** Read from the four case files at
+976ed12ad3:
+- `path-strange-001` and `-002` give a path node that is both an RDF list and an `sh:inversePath`. W3C grades the
+  results by the sequence `( ex:p ex:q )`.
+- `path-complex-002` is a sequence of two inverse paths.
+
+All three need slice 7's sequence path. Their `NOT_VENDORED` reasons now say so. Only `path/path-inverse-001` is
+inverse-only, so CASES goes from 36 to 37.
+
+- **Form:** `path: {inverse: <predicate>}`, a YAML mapping and never a string (F8). The values are the subjects `s`
+  of `s p focus`, and a result's path is `^<p>`. Any other path mapping keeps the parser's pre-slice-6 error word for
+  word ("a property has no `path`").
+- **Closed shapes:** an inverse property adds no predicate to the allowed set (SHACL §4.8.1, IRI paths only).
+- **Export:** Turtle writes `sh:path [ sh:inversePath <p> ]`.
+- **Gate:** `refuse_inverse_path` refuses an inverse path in a contract shape, nested `node` shapes included. It
+  uses the pre-slice-6 text, so the gate accepts and prints exactly what it did. R-19's subsumption matches
+  properties by predicate alone, and `Graph::subjects` is a full scan.
+- **The receipt checks:** the shapes-gate JSON must be byte-identical to slice 5's (durations aside). Mutants 9 to 15
+  cover each of the parts above and must each turn their test RED.

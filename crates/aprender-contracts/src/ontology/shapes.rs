@@ -14,7 +14,7 @@
 //! | `closed`, `ignoredProperties` | — |
 //! | `hasValue` (a YAML scalar, #4814) | an IRI value |
 //! | `lessThan`, `lessThanOrEquals`, `equals`, `disjoint` (property pairs) | a language-tagged value (F9: the tag is not kept) |
-//! | a single predicate `path` | sequence, alternative, inverse, `*`/`+` paths |
+//! | a single predicate `path`; an inverse path `{inverse: p}` (#4814 slice 6; not in a CONTRACT shape) | sequence, alternative, `*`/`+` paths |
 //! | — | `and`/`or`/`not`/`xone`, `sparql`, and every component not in this table |
 //!
 //! A key the table does not name is REFUSED, not ignored: an ignored constraint is a shape that reports "conforms"
@@ -117,6 +117,8 @@ impl std::fmt::Display for InEntry {
 #[derive(Debug, Clone)]
 pub struct PropertyShape {
     pub path: String,
+    /// `path: {inverse: p}` (#4814 slice 6): the values are the subjects `s` of `s p focus`, and a result's path is `^p`.
+    pub inverse: bool,
     pub min_count: Option<usize>,
     pub max_count: Option<usize>,
     pub datatype: Option<String>,
@@ -646,8 +648,10 @@ fn parse_property(
     depth: usize,
 ) -> Result<PropertyShape, ShapeError> {
     check_property_keys(shape, pm)?;
-    let path = expand(parse_path(shape, pm)?);
-    parse_constraints(shape, pm, depth, path)
+    let (path, inverse) = parse_path(shape, pm)?;
+    let mut p = parse_constraints(shape, pm, depth, expand(path))?;
+    p.inverse = inverse;
+    Ok(p)
 }
 
 /// Every constraint of one property shape, or of a node shape itself (`path` empty, #4814 slice 5).
@@ -685,6 +689,7 @@ fn parse_constraints(
     let severity = parse_severity(shape, str_key(shape, pm, "severity")?)?;
     Ok(PropertyShape {
         path,
+        inverse: false,
         min_count: count("minCount")?,
         max_count: count("maxCount")?,
         datatype: iri_opt("datatype")?,
@@ -747,12 +752,25 @@ fn check_property_keys(shape: &str, pm: &serde_yaml::Mapping) -> Result<(), Shap
     Ok(())
 }
 
-/// `path`: a single predicate; a SHACL property path expression is outside the subset.
-fn parse_path<'a>(shape: &str, pm: &'a serde_yaml::Mapping) -> Result<&'a str, ShapeError> {
-    let path = pm
-        .get("path")
-        .and_then(serde_yaml::Value::as_str)
-        .ok_or_else(|| malformed_in(shape, "a property has no `path`".into()))?;
+/// `path`: a single predicate, or `{inverse: <predicate>}` (#4814 slice 6), as `(predicate, inverse)`. Every other
+/// SHACL property path is outside the subset. A path structure is only ever a YAML mapping, never a string (F8).
+fn parse_path<'a>(shape: &str, pm: &'a serde_yaml::Mapping) -> Result<(&'a str, bool), ShapeError> {
+    let no_path = || malformed_in(shape, "a property has no `path`".into());
+    // Any mapping but `{inverse: <string>}` keeps the error it had before slice 6, word for word.
+    let (path, inverse) = match pm.get("path") {
+        Some(serde_yaml::Value::Mapping(m)) if m.len() == 1 => (
+            m.get("inverse")
+                .and_then(serde_yaml::Value::as_str)
+                .ok_or_else(no_path)?,
+            true,
+        ),
+        other => (
+            other
+                .and_then(serde_yaml::Value::as_str)
+                .ok_or_else(no_path)?,
+            false,
+        ),
+    };
     // A full IRI keeps its `/`, `*` and `+`, but it can never hold whitespace or `|^<>"{}\` (RFC 3987): such a
     // string is a path expression or a list written with full IRIs, and reading it as one predicate checks a
     // property no data carries (#4814). A prefixed name with whitespace is the same thing.
@@ -768,7 +786,7 @@ fn parse_path<'a>(shape: &str, pm: &'a serde_yaml::Mapping) -> Result<&'a str, S
             component: format!("path `{path}` (only a single predicate is a path here)"),
         });
     }
-    Ok(path)
+    Ok((path, inverse))
 }
 
 // `sh:in` is TERM equality (SHACL §4.5.1), and a term carries its datatype. The YAML scalar's own type is
@@ -1038,8 +1056,39 @@ fn validate_focus(graph: &Graph, shape: &NodeShape, focus: &Term, out: &mut Vec<
         check_has_value(p, &values, &mut no_path);
     }
     for p in &shape.properties {
+        // an inverse path's values are the subjects of `s p focus` (SHACL §2.3.1.4), and its results' path is `^p`
+        let inverse: Vec<Term> = if p.inverse {
+            graph
+                .subjects(&p.path, focus)
+                .into_iter()
+                .map(|s| Term::Iri(s.to_string()))
+                .collect()
+        } else {
+            Vec::new()
+        };
         let focus = focus_s;
-        let values = graph.objects(focus, &p.path);
+        let values = if p.inverse {
+            inverse.iter().collect()
+        } else {
+            graph.objects(focus, &p.path)
+        };
+        let shown = if p.inverse {
+            format!("^{}", p.path)
+        } else {
+            String::new()
+        };
+        let mut push = |s: Severity, path: Option<&str>, c: &'static str, m: String| {
+            push(
+                s,
+                if p.inverse {
+                    Some(shown.as_str())
+                } else {
+                    path
+                },
+                c,
+                m,
+            );
+        };
         check_counts(p, &values, &mut push);
         for v in &values {
             check_value(graph, p, v, &mut push);
@@ -1230,6 +1279,8 @@ fn check_closed(
     let allowed: BTreeSet<&str> = shape
         .properties
         .iter()
+        // only a property whose path is a predicate is allowed (SHACL §4.8.1); an inverse path names no predicate of the focus
+        .filter(|p| !p.inverse)
         .map(|p| p.path.as_str())
         .chain(shape.ignored_properties.iter().map(String::as_str))
         .chain(std::iter::once(RDF_TYPE))
@@ -1749,7 +1800,14 @@ fn turtle_entry(v: &InEntry) -> String {
 /// One `sh:property [ … ] ;` block. Every implemented component has a line; nothing else is emitted.
 fn turtle_property(p: &PropertyShape) -> String {
     let mut o = String::from("    sh:property [\n");
-    o.push_str(&format!("        sh:path <{}> ;\n", p.path));
+    if p.inverse {
+        o.push_str(&format!(
+            "        sh:path [ sh:inversePath <{}> ] ;\n",
+            p.path
+        ));
+    } else {
+        o.push_str(&format!("        sh:path <{}> ;\n", p.path));
+    }
     for l in constraint_lines(p) {
         o.push_str(&format!("        {l} ;\n"));
     }
@@ -1903,6 +1961,76 @@ mod tests {
         g.insert(iri("contract", "x"), RDF_TYPE, Term::iri(ont("Contract"))); // no ont:id at all
         let r = validate(&g, &[shape(BASE)]);
         assert_eq!(r.results[0].component, "minCount");
+    }
+
+    #[test]
+    fn an_inverse_path_reads_the_subjects_and_names_its_result_path_with_a_caret() {
+        // #4814 slice 6: b and c point at a by ont:dep, so a has two values on ^ont:dep and none on ont:dep
+        let mut g = graph_with("a", None);
+        for s in ["b", "c"] {
+            g.insert(
+                iri("contract", s),
+                ont("dep"),
+                Term::iri(iri("contract", "a")),
+            );
+        }
+        let s = shape("entity: {type: pv-contract}\nshape:\n  properties:\n    - {path: {inverse: ont:dep}, maxCount: 1}\n");
+        assert!(s.properties[0].inverse);
+        let r = validate(&g, &[s]);
+        assert_eq!(r.violations(), 1, "{:?}", r.results);
+        assert_eq!(r.results[0].component, "maxCount");
+        assert_eq!(
+            r.results[0].path.as_deref(),
+            Some(format!("^{}", ont("dep")).as_str())
+        );
+        // forward, the same shape is silent: a has no ont:dep of its own
+        let fwd = shape("entity: {type: pv-contract}\nshape:\n  properties:\n    - {path: ont:dep, maxCount: 1}\n");
+        assert_eq!(validate(&g, &[fwd]).violations(), 0);
+    }
+
+    #[test]
+    fn a_path_mapping_other_than_one_inverse_predicate_keeps_the_error_it_had() {
+        for p in [
+            "{alternative: [ont:a, ont:b]}",
+            "{inverse: [ont:a]}",
+            "{inverse: ont:a, zeroOrMorePath: ont:b}",
+            "{}",
+        ] {
+            let y = format!("entity: {{type: pv-contract}}\nshape:\n  properties:\n    - {{path: {p}, minCount: 1}}\n");
+            let doc: serde_yaml::Value = serde_yaml::from_str(&y).unwrap();
+            match parse_shape_with("t", &doc, &pv_map()) {
+                Err(ShapeError::Malformed { what, .. }) => {
+                    assert_eq!(what, "a property has no `path`", "{p}")
+                }
+                other => panic!("{p}: expected the pre-slice-6 Malformed, got {other:?}"),
+            }
+        }
+    }
+
+    #[test]
+    fn a_closed_shape_does_not_allow_the_predicate_of_an_inverse_path() {
+        // SHACL §4.8.1: only a property shape whose path is an IRI adds to the allowed set
+        let mut g = graph_with("a", None);
+        g.insert(
+            iri("contract", "a"),
+            ont("dep"),
+            Term::iri(iri("contract", "b")),
+        );
+        let s = shape("entity: {type: pv-contract}\nshape:\n  closed: true\n  ignoredProperties: [rdf:type]\n  properties:\n    - {path: ont:id}\n    - {path: {inverse: ont:dep}}\n");
+        let r = validate(&g, &[s]);
+        assert_eq!(r.violations(), 1, "{:?}", r.results);
+        assert_eq!(r.results[0].component, "closed");
+        assert_eq!(r.results[0].path.as_deref(), Some(ont("dep").as_str()));
+    }
+
+    #[test]
+    fn an_inverse_path_exports_as_an_inverse_path_node() {
+        let s = shape("entity: {type: pv-contract}\nshape:\n  properties:\n    - {path: {inverse: ont:dep}, minCount: 1}\n");
+        let t = to_turtle(std::slice::from_ref(&s));
+        assert!(
+            t.contains(&format!("sh:path [ sh:inversePath <{}> ] ;", ont("dep"))),
+            "{t}"
+        );
     }
 
     #[test]

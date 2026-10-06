@@ -172,6 +172,10 @@ pub const CASES: &[(&str, &str)] = &[
         "property/hasValue-001",
         include_str!("../../w3c/property-hasValue-001.yaml"),
     ),
+    (
+        "path/path-inverse-001",
+        include_str!("../../w3c/path-path-inverse-001.yaml"),
+    ),
 ];
 
 /// Every case id of the W3C SHACL Core suite, as vendored in `w3c/core-suite.txt` (the header says how it was
@@ -228,14 +232,13 @@ pub const NOT_VENDORED: &[(&str, &str)] = &[
     ("node/qualified-001", "sh:qualifiedValueShape on the node shape itself (slice 9)"),
     ("path/path-alternative-001", "sh:alternativePath (slice 7)"),
     ("path/path-complex-001", "sh:zeroOrMorePath and sh:hasValue (slices 3, 7)"),
-    ("path/path-complex-002", "sh:inversePath (slice 6)"),
-    ("path/path-inverse-001", "sh:inversePath (slice 6)"),
+    ("path/path-complex-002", "a sequence of two inverse paths; its results' path is the sequence (slice 7)"),
     ("path/path-oneOrMore-001", "sh:oneOrMorePath (slice 7)"),
     ("path/path-sequence-001", "a sequence path (slice 7)"),
     ("path/path-sequence-002", "a sequence path (slice 7)"),
     ("path/path-sequence-duplicate-001", "a sequence path (slice 7)"),
-    ("path/path-strange-001", "sh:inversePath (slice 6)"),
-    ("path/path-strange-002", "sh:inversePath (slice 6)"),
+    ("path/path-strange-001", "a path node that is both a list and an sh:inversePath; W3C reads it as the sequence (slice 7)"),
+    ("path/path-strange-002", "a path node that is both a list and an ill-formed sh:inversePath; W3C reads it as the sequence (slice 7)"),
     ("path/path-zeroOrMore-001", "sh:zeroOrMorePath (slice 7)"),
     ("path/path-zeroOrOne-001", "sh:zeroOrOnePath (slice 7)"),
     ("path/path-unused-001", "expects an ill-formed path in an unused shape to be ignored; pv refuses every ill-formed path at parse, by design (fail closed) — permanent"),
@@ -499,7 +502,11 @@ pub fn parse_case(id: &str, yaml: &str) -> Result<Case, CaseError> {
                 .unwrap_or_default();
             expected.push(Expected {
                 focus,
-                path: path.map(|p| expand_term(p, &prefix)),
+                // an inverse path is written `^ex:p` (#4814 slice 6), as the validator names its result path
+                path: path.map(|p| match p.strip_prefix('^') {
+                    Some(inv) => format!("^{}", expand_term(inv, &prefix)),
+                    None => expand_term(p, &prefix),
+                }),
                 component: component.to_string(),
             });
         }
@@ -664,8 +671,8 @@ mod tests {
         }
         // the ratchet (#4814 plan step 4): the vendored count only grows from its measured value
         assert!(
-            CASES.len() >= 36,
-            "vendored W3C cases dropped below 36: the #4814 baseline 19, slice 1's four value-range cases, slice 2's equals and disjoint, slice 3's hasValue, slice 4's three targets, slice 5's seven node-shape cases"
+            CASES.len() >= 37,
+            "vendored W3C cases dropped below 37: the #4814 baseline 19, slice 1's four value-range cases, slice 2's equals and disjoint, slice 3's hasValue, slice 4's three targets, slice 5's seven node-shape cases, slice 6's inverse path"
         );
     }
 

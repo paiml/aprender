@@ -251,6 +251,7 @@ mod tests {
     fn p(path: &str) -> PropertyShape {
         PropertyShape {
             path: path.into(),
+            inverse: false,
             min_count: None,
             max_count: None,
             datatype: None,

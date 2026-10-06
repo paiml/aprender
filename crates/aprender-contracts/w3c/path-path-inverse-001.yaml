@@ -1,0 +1,27 @@
+# vendored: tests/core/path/path-inverse-001.ttl
+id: path/path-inverse-001
+label: "Test of path sh:inversePath 001"
+prefix: "http://datashapes.org/sh/tests/core/path/path-inverse-001.test#"
+targeting: "sh:targetClass ex:Person as written; the property shape's path is [ sh:inversePath ex:child ], written {inverse: ex:child} (#4814 slice 6)"
+shapes:
+  - id: TestShape
+    targetClass: ex:Person
+    properties:
+      - {path: {inverse: ex:child}, minCount: 2, maxCount: 2}
+data: |
+  ex:InvalidResource1 rdf:type ex:Person .
+  ex:InvalidResource2 rdf:type ex:Person .
+  ex:Parent1 ex:child ex:InvalidResource1 .
+  ex:Parent1 ex:child ex:InvalidResource2 .
+  ex:Parent1 ex:child ex:ValidResource1 .
+  ex:Parent2 ex:child ex:InvalidResource2 .
+  ex:Parent2 ex:child ex:ValidResource1 .
+  ex:Parent3 ex:child ex:InvalidResource2 .
+  ex:Person rdf:type rdfs:Class .
+  ex:Person rdfs:subClassOf rdfs:Resource .
+  ex:ValidResource1 rdf:type ex:Person .
+expect:
+  conforms: false
+  results:
+    - {focus: ex:InvalidResource1, path: "^ex:child", component: minCount}
+    - {focus: ex:InvalidResource2, path: "^ex:child", component: maxCount}
