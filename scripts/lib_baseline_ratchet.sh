@@ -397,11 +397,11 @@ _br_cmp_count() { # _br_cmp_count <base-file> <cur-file>
 # and check_shell_lint_ratchet.sh counts error LINES, so a false positive still
 # moves a shrink-only baseline. Feeding awk pre-filtered data keeps both the
 # awk simpler and the lint honest.
-_br_cmp_keyed() { # _br_cmp_keyed <base-file> <cur-file>   (lines are <key><TAB><integer>)
-    BR_DELTA=$(LC_ALL=C awk -F'\t' '
+_br_cmp_keyed() { # _br_cmp_keyed <base-file> <cur-file> [z]   (lines are <key><TAB><integer>; z=1 is keyed0)
+    BR_DELTA=$(LC_ALL=C awk -F'\t' -v z="${3:-0}" '
         NR == FNR { b[$1] = $2; seen[$1] = 1; next }
         {
-            if (!($1 in seen))       { printf "        + NEW KEY  %s (%s)\n", $1, $2 }
+            if (!($1 in seen))       { if (z != 1 || $2 != "0") printf "        + NEW KEY  %s (%s)\n", $1, $2 }
             else if ($2+0 > b[$1]+0) { printf "        + RAISED   %s  %s -> %s\n", $1, b[$1], $2 }
         }
     ' <(_br_data "$1") <(_br_data "$2"))
@@ -411,6 +411,17 @@ _br_cmp_keyed() { # _br_cmp_keyed <base-file> <cur-file>   (lines are <key><TAB>
         END { print n+0 }
     ' <(_br_data "$2") <(_br_data "$1"))
     [ -z "$BR_DELTA" ]
+}
+
+# `keyed0`. The `keyed` rule, except that a NEW key is admitted when its value
+# is the literal 0 -- the floor, below which no key can fall. It exists for
+# scripts/guard_fail_fast_baseline.txt (#4746): check_guard_steps_run_all.sh
+# fails a guard section with NO row, and plain `keyed` refuses every new row,
+# so under `keyed` no guard section could ever be added. A new key at 0 records
+# nothing a later diff could hide behind: no key may rise, so it stays 0. Any
+# other value on a new key ("1", "00", "+0", "") is still refused.
+_br_cmp_keyed0() { # _br_cmp_keyed0 <base-file> <cur-file>   (lines are <key><TAB><integer>)
+    _br_cmp_keyed "$1" "$2" 1
 }
 
 # `keyed2`. The same rule as `keyed` over lines carrying TWO integers,
@@ -499,7 +510,7 @@ baseline_ratchet_resolve() { # baseline_ratchet_resolve <root> <ref> <path>
 # ---------------------------------------------------------------------------
 # The entry point every guard calls.
 #
-#     baseline_ratchet_check <root> <baseline-path> <set|count|keyed|keyed2|set-aperture> [<owning-guard-path>]
+#     baseline_ratchet_check <root> <baseline-path> <set|count|keyed|keyed0|keyed2|set-aperture> [<owning-guard-path>]
 #
 # `set-aperture` takes a fifth argument, the owning guard, and without it every
 # addition is refused — see (b) in the header.
@@ -574,6 +585,7 @@ baseline_ratchet_check() {
         set)   if _br_cmp_set   "$base_copy" "$root/$path"; then cmp_rc=0; else cmp_rc=$?; fi ;;
         count) if _br_cmp_count "$base_copy" "$root/$path"; then cmp_rc=0; else cmp_rc=$?; fi ;;
         keyed) if _br_cmp_keyed "$base_copy" "$root/$path"; then cmp_rc=0; else cmp_rc=$?; fi ;;
+        keyed0) if _br_cmp_keyed0 "$base_copy" "$root/$path"; then cmp_rc=0; else cmp_rc=$?; fi ;;
         keyed2) if _br_cmp_keyed2 "$base_copy" "$root/$path"; then cmp_rc=0; else cmp_rc=$?; fi ;;
         set-aperture)
             if _br_cmp_set_aperture "$base_copy" "$root/$path" "$root" "$ref" "$guard"; then

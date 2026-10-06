@@ -57,6 +57,9 @@ REPO_ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
 #           a swap, which is an append wearing the old total.
 #   count — the file holds one integer, which may only fall.
 #   keyed — lines are <path><TAB><count>; no key may rise, no key may appear.
+#   keyed0 — `keyed`, except a new key may appear at exactly 0, the floor
+#           (#4746: a guard section must have a row, so `keyed` forbade new
+#           sections outright). Any other value on a new key is refused.
 #   keyed2 — lines are <key> <int> <int>; NEITHER number may rise, no key may
 #           appear. The complexity ratchet records a pair per function
 #           (cyclomatic AND cognitive) and its rule is "over EITHER", so a
@@ -145,7 +148,7 @@ classify() { # classify <basename> -> "<kind>[<TAB>reason]", rc 1 if unclassifie
         # an author one conversation, a wrong `set-aperture` costs a hole.
         silent_truncation_baseline.txt)          printf 'set\n' ;;
         shell_lint_baseline.txt)                 printf 'count\n' ;;
-        guard_fail_fast_baseline.txt)            printf 'keyed\n' ;;   # #4415: <guard section><TAB><fail-fast steps>; no section may rise, none may appear (scripts/check_guard_steps_run_all.sh)
+        guard_fail_fast_baseline.txt)            printf 'keyed0\n' ;;   # #4415: <guard section><TAB><fail-fast steps>; no section may rise, a new one only at 0 (#4746: run-all REDs a section with no row) (scripts/check_guard_steps_run_all.sh)
         ci_guards_uncovered.txt)                 printf 'set\n' ;;   # #4415: guard scripts ci_guards.sh cannot reach, one <section> <script> row each; may only shrink (scripts/ci_guards.sh --check-coverage)
         src_test_files_unwired_baseline.txt)     printf 'set\n' ;;   # dark src test files, SHRINK-ONLY exact set (scripts/check_src_test_files_wired.sh, #3809)
         cb200_baseline.txt)                      printf 'count\n' ;;   # mirrors .pmat-gates.toml [tdg] baseline (PMAT-937)
@@ -286,6 +289,25 @@ if [ "${1:-}" = "--self-test" ] || [ "${1:-}" = "--selftest" ]; then
     _br_cmp_keyed "$TD/kv_base" "$TD/kv_lower";  say_row 'keyed one key lowered'         0 $?
     _br_cmp_keyed "$TD/kv_base" "$TD/kv_drop";   say_row 'keyed one key dropped'         0 $?
     _br_cmp_keyed "$TD/kv_base" "$TD/kv_swap";   say_row 'keyed raise + deeper fall'     1 $?
+
+    # -- keyed0 (#4746): a new key is admitted at the literal 0 and nothing
+    #    else; every keyed refusal above still holds. Plain keyed still
+    #    refuses a new key at 0 -- the admission is keyed0's alone.
+    printf 'a\t3\nb\t2\nc\t0\n'    > "$TD/kv_new0"
+    printf 'a\t3\nb\t2\nc\t00\n'   > "$TD/kv_new00"
+    printf 'a\t3\nb\t2\nc\t+0\n'   > "$TD/kv_newp0"
+    printf 'a\t3\nb\t2\nc\t\n'     > "$TD/kv_newnil"
+    printf 'a\t4\nb\t2\nc\t0\n'    > "$TD/kv_new0raise"
+    _br_cmp_keyed  "$TD/kv_base" "$TD/kv_new0";      say_row 'keyed new key at 0 still refused'   1 $?
+    _br_cmp_keyed0 "$TD/kv_base" "$TD/kv_new0";      say_row 'keyed0 new key at 0 admitted'       0 $?
+    _br_cmp_keyed0 "$TD/kv_base" "$TD/kv_newkey";    say_row 'keyed0 new key at 1 refused'        1 $?
+    _br_cmp_keyed0 "$TD/kv_base" "$TD/kv_new00";     say_row 'keyed0 new key at 00 refused'       1 $?
+    _br_cmp_keyed0 "$TD/kv_base" "$TD/kv_newp0";     say_row 'keyed0 new key at +0 refused'       1 $?
+    _br_cmp_keyed0 "$TD/kv_base" "$TD/kv_newnil";    say_row 'keyed0 new key with no value refused' 1 $?
+    _br_cmp_keyed0 "$TD/kv_base" "$TD/kv_raise";     say_row 'keyed0 one key raised'              1 $?
+    _br_cmp_keyed0 "$TD/kv_base" "$TD/kv_new0raise"; say_row 'keyed0 new key at 0 + a raise'      1 $?
+    _br_cmp_keyed0 "$TD/kv_base" "$TD/kv_swap";      say_row 'keyed0 raise + deeper fall'         1 $?
+    _br_cmp_keyed0 "$TD/kv_base" "$TD/kv_drop";      say_row 'keyed0 one key dropped'             0 $?
 
     # -- keyed2: the same rule over a PAIR, and the rows that matter are the
     #    ones a single-number comparator would pass: the second integer rising
@@ -686,7 +708,7 @@ if [ "${1:-}" = "--self-test" ] || [ "${1:-}" = "--selftest" ]; then
         printf '\nSELF-TEST FAILED\n'
         exit 1
     fi
-    printf 'PASS  case table only: %s rows (set, count, keyed, keyed2, comparand resolver,\n' "$rows"
+    printf 'PASS  case table only: %s rows (set, count, keyed, keyed0, keyed2, comparand resolver,\n' "$rows"
     printf '      end-to-end, classification totality, bashrs pin + root fallback + 3 mutants). NO baseline in this tree was\n'
     printf '      compared — run with no arguments for that.\n'
     exit 0
@@ -714,7 +736,7 @@ while IFS= read -r f; do
     n_total=$((n_total + 1))
     if ! entry=$(classify "$f"); then
         printf 'FAIL  %s is not classified.\n' "scripts/$f"
-        printf '      Every baseline is either shrink-only (set / count / keyed / keyed2) or is\n'
+        printf '      Every baseline is either shrink-only (set / count / keyed / keyed0 / keyed2) or is\n'
         printf '      NOT a ratchet and says why. An unclassified file is neither, and\n'
         printf '      "no rule" is how a baseline arrives that nothing ever compares.\n'
         printf '      Add it to classify() in %s.\n' "$(basename "$0")"

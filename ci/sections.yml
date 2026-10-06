@@ -2123,6 +2123,8 @@ jobs:
           # verifies with --exact. Case table both polarities FIRST, then the live check.
           setsid --wait bash scripts/check_readme_claims.sh --self-test
           setsid --wait bash scripts/check_readme_claims.sh
+      - name: provable-contracts 0.3.1 code still compiles against the facades
+        run: setsid --wait bash scripts/check_facade_compat.sh
 
       # Three guards that existed and could not block a merge. The publish-safety
       # one is the gate credited with keeping a 28 MB test.apr out of a published
@@ -2196,8 +2198,9 @@ jobs:
   # makes that 3600 s). Cold merge-queue runs of the single job reached that wall.
   # The split is by measured row time, not row index: the slow rows are the
   # pv/contracts/facade block (old m28-m37; m30 alone took 390-1562 s and m36
-  # 636 s on cold runs), so that block moves to guard-cargo-b with the old tail
-  # m46-m76. The rows are moved, never dropped, each half keeps the old relative
+  # 636 s on cold runs), so that block, less m36, moves to guard-cargo-b with the
+  # old tail m46-m76. m36 stays in guard-cargo: with it, guard-cargo-b measured
+  # 3436 s in CI, past the 3300 s rebalance trigger. The rows are moved, never dropped, each half keeps the old relative
   # order, and `gate` requires both sections. No wall is raised.
   #
   # Its own target dir, `run-<RUN_ID>-guards-b`: the two halves run at the same
@@ -2260,7 +2263,7 @@ jobs:
         run: bash scripts/ci_guards.sh guard-cargo-b
 
   guard-cargo-b-steps:
-    # MANIFEST, never run by GitHub (`if: false`): guard-cargo-b's guard steps (rows m28-m37, then
+    # MANIFEST, never run by GitHub (`if: false`): guard-cargo-b's guard steps (rows m28-m35, m37, then
     # m46-m76, of the unsplit guard-cargo), executed by `scripts/ci_guards.sh guard-cargo-b` and by
     # `make guards-local`. Same rules as guard-cargo-steps: name/run/env only.
     if: false
@@ -2344,8 +2347,6 @@ jobs:
           setsid --wait bash scripts/check_lean_modules_reachable.sh
           setsid --wait bash scripts/mutate_leanchecker_scoped_guard.sh
           setsid --wait bash scripts/mutate_lean_modules_reachable_guard.sh
-      - name: provable-contracts 0.3.1 code still compiles against the facades
-        run: setsid --wait bash scripts/check_facade_compat.sh
       # aprender#2628: check_facade_compat.sh proves the facades COMPILE and are
       # shaped right; it does not touch the cascade's publish-ORDER gate. That
       # gate read its requirement with a line-shaped sed and returned READY when
