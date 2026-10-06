@@ -912,12 +912,13 @@ v-e;verdict;check E;-;-;-" "$d" 2026-10-04T06:00:00Z; cat "$d/line" "$d/lanes.ts
     row no_history_judges_only_the_head 0 "NOT RELEASABLE: v-a, not_measured (+2 more)" "RELEASABLE H=" -- st_decide "$d"
     st_moved_bundle() {
         local m="$tmp/mb/raw" t='\t'
-        mkdir -p "$m"; printf '0\t%s\n1\t%s\n' "$ST_C" "$ST_X" > "$m/rank.tsv"; printf '%s\n' "$ST_C" > "$m/C"; printf 'ok\n' > "$m/read"; printf 'cccc\n' > "$m/tree"; printf '2026-10-03\t%s\n' "$ST_X" > "$m/picks.tsv"; printf '2026-10-03T20:30:00Z\t2026-10-03T20:35:00Z\n' > "$m/pickruns.tsv"; printf '501\t1\n502\t1\n503\t1\n' > "$m/attempts.tsv"
+        mkdir -p "$m"; printf '0\t%s\n1\t%s\n' "$ST_C" "$ST_X" > "$m/rank.tsv"; printf '%s\n' "$ST_C" > "$m/C"; printf 'ok\n' > "$m/read"; printf 'cccc\n' > "$m/tree"; printf '2026-10-03\t%s\n' "$ST_X" > "$m/picks.tsv"; printf '2026-10-03T20:30:00Z\t2026-10-03T20:35:00Z\n' > "$m/pickruns.tsv"; printf '501\t1\n502\t1\n503\t1\n504\t1\n' > "$m/attempts.tsv"
         {
             printf "rollup${t}.github/workflows/ci.yml${t}501${t}push${t}main${t}%s${t}2026-10-03T23:00:00Z${t}COMPLETED${t}SUCCESS${t}ci / gate${t}COMPLETED${t}SUCCESS${t}${t}${t}1\n" "$ST_X"
             printf "rollup${t}.github/workflows/ci.yml${t}501${t}push${t}main${t}%s${t}2026-10-03T23:00:00Z${t}COMPLETED${t}SUCCESS${t}workspace-test${t}COMPLETED${t}SUCCESS${t}${t}${t}1\n" "$ST_X"
             printf "wf${t}.github/workflows/examples-nightly.yml${t}502${t}workflow_run${t}main${t}%s${t}2026-10-04T01:00:00Z${t}COMPLETED${t}SUCCESS${t}examples${t}COMPLETED${t}SUCCESS${t}${t}${t}1\n" "$ST_X"
             printf "wf${t}.github/workflows/nightly.yml${t}503${t}workflow_run${t}main${t}%s${t}2026-10-04T01:10:00Z${t}COMPLETED${t}SUCCESS${t}x86_64-unknown-linux-gnu on box${t}COMPLETED${t}SUCCESS${t}${t}${t}1\n" "$ST_X"
+            printf "wf${t}.github/workflows/models-nightly.yml${t}504${t}schedule${t}main${t}%s${t}2026-10-04T01:20:00Z${t}COMPLETED${t}SUCCESS${t}models${t}COMPLETED${t}SUCCESS${t}${t}${t}1\n" "$ST_X"   # the models lane has a producer since #4868
         } > "$m/runs.tsv"
         bash "$SCRIPT_PATH" --out "$tmp/mbout" --from "$m" --now 2026-10-04T06:00:00Z > /dev/null 2>&1
         cat "$tmp/mbout/2026-10-04/line"; grep -E '^(ci-main|deep-examples|deep-bins-build)	|^# (head|C|tree)	' "$tmp/mbout/2026-10-04/bundle.tsv"
