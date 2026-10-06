@@ -360,7 +360,7 @@ SHIM
     p1_a=$(git -C "$origin_a" log -1 --format="%P" "$merge_sha_a" | awk '{print $1}')
     p2_a=$(git -C "$origin_a" log -1 --format="%P" "$merge_sha_a" | awk '{print $2}')
     if [ "$rc" -eq 0 ] && [ "$p1_a" = "$pr_head_a" ] && [ "$p2_a" = "$main_head_a" ] && \
-            echo "$out" | grep -q "pushed pr=104 merge=$merge_sha_a onto=$pr_head_a branch=feat/pr-104"; then
+            grep -q "pushed pr=104 merge=$merge_sha_a onto=$pr_head_a branch=feat/pr-104" <<< "$out"; then
         st_row 0 '--apply pushes to origin'
     else
         st_row 1 '--apply pushes to origin' "rc=$rc" "out=$out"
@@ -383,7 +383,7 @@ SHIM
     p1_b=$(git -C "$repo_b" log -1 --format="%P" "$local_sha_b" | awk '{print $1}')
     p2_b=$(git -C "$repo_b" log -1 --format="%P" "$local_sha_b" | awk '{print $2}')
     if [ "$rc" -eq 0 ] && [ "$remote_sha_b" = "$pr_head_b" ] && [ "$p1_b" = "$pr_head_b" ] && [ "$p2_b" = "$main_head_b" ] && \
-            echo "$out" | grep -q "merged pr=104 merge=$local_sha_b ref=resolve/104"; then
+            grep -q "merged pr=104 merge=$local_sha_b ref=resolve/104" <<< "$out"; then
         st_row 0 '--apply --no-push leaves local branch and does not push'
     else
         st_row 1 '--apply --no-push leaves local branch and does not push' "rc=$rc" "out=$out" "remote_sha_b=$remote_sha_b"
@@ -401,7 +401,7 @@ SHIM
     rc=0
     out=$(cd "$repo_c" && CI_RESOLVE_DIRTY_PRS_JSON="$repo_c/prs.json" bash "$REPO_ROOT/scripts/$PROG" --apply 2>&1) || rc=$?
     chmod -R u+w "$origin_c"
-    if [ "$rc" -ne 0 ] && echo "$out" | grep -q "push-failed pr=104"; then
+    if [ "$rc" -ne 0 ] && grep -q "push-failed pr=104" <<< "$out"; then
         st_row 0 'apply fails when push fails (mutation)'
     else
         st_row 1 'apply fails when push fails (mutation)' "rc=$rc" "out=$out"

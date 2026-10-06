@@ -196,7 +196,7 @@ EOF2
     # refusing to guess is not the same as refusing the tree. It must still be PRINTED, or the
     # residue disappears — which is the whole reason the crude test is allowed to be crude.
     row 0 "an undecidable row does NOT fail the guard (it refuses to guess, it does not refuse the tree)" engine "$TD/dag.yaml" "$TD/rm.yaml" check
-    if engine "$TD/dag.yaml" "$TD/rm.yaml" check 2>&1 | grep -q "REPORT   X-3"; then
+    if kl_out=$(engine "$TD/dag.yaml" "$TD/rm.yaml" check 2>&1) && grep -q "REPORT   X-3" <<< "$kl_out"; then
         printf 'ok    row %-2s the undecidable row is REPORTED by name, never dropped\n' "$((n+1))"
     else
         printf 'FAIL  row %-2s the undecidable row vanished from the output\n' "$((n+1))"; red=1
