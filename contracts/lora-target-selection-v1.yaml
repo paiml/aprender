@@ -1,5 +1,5 @@
 metadata:
-  version: "1.14.0"
+  version: "1.15.0"
   created: "2026-04-13"
   author: PAIML Engineering
   registry: true
@@ -19,6 +19,7 @@ metadata:
     - "0.72 R15a cell C8 (la-0.72): InstructPipeline::from_pretrained loads a trained adapter only when it fills every LoRA slot, A and B (crates/aprender-train/src/finetune/instruct_pipeline/constructors.rs inject_adapter_weights); 1.12.0 adds adapter_load_complete and FALSIFY-LORA_TARGET_SELECTION_V1_014"
     - "0.72 R15a cell C9 (la-0.72): InstructPipeline::from_pretrained refuses an adapter it cannot read and an adapter whose adapter_config.json declares targets other than lora_targets, instead of warning and serving fresh LoRA weights (crates/aprender-train/src/finetune/instruct_pipeline/constructors.rs load_trained_adapter, check_adapter_targets); 1.13.0 adds adapter_targets_declared and FALSIFY-LORA_TARGET_SELECTION_V1_015"
     - "0.72 R15a cell C10 (la-0.72): apr finetune --lora-targets parses its list with LoraTargets::parse before anything loads and carries the set into InstructConfig.lora_targets on the LoRA training path, and every other finetune mode refuses the flag instead of ignoring it (crates/apr-cli/src/commands/finetune.rs parse_lora_targets_flag, lora_targets_unhonoured_by, build_instruct_config); 1.14.0 adds cli_targets_reach_config and FALSIFY-LORA_TARGET_SELECTION_V1_016"
+    - "0.72 R15a cell C11a (la-0.72): InstructTrainer::save_checkpoint names each LoRA slot by its target, lora.{layer}.{module}.lora_{a,b} as the CUDA trainer does, and records the targets in metadata.json, so an instruct checkpoint taken under any target set gives every adapter back to its own projection (crates/aprender-train/src/finetune/instruct_trainer.rs save_checkpoint)"
   description: "LoRA target module selection"
 
 name: lora-target-selection
@@ -92,6 +93,10 @@ equations:
   cli_targets_reach_config:
     description: "apr finetune --lora-targets selects T for the run it starts, or refuses; it is never silently dropped"
     formula: "Let F be the --lora-targets value, split on commas with each name trimmed. With F absent, T = LoraTargets::default() = {q_proj, v_proj}, as before. With F present, T = LoraTargets::parse(F); an unknown name or an empty list returns an error naming it before any model, corpus or GPU is touched. On the LoRA training path (execute_training), build_instruct_config sets InstructConfig.lora_targets = T, and row 004 still bounds T to {q_proj, v_proj} until it is lifted. A mode that does not build that InstructConfig (--merge, --task classify, --task instruct, --adapters, --plan, the wgpu backend (an explicit --gpu-backend wgpu before anything loads, or auto choosing it), a build without training) returns an error naming the mode when F is present."
+
+  instruct_checkpoint_names:
+    description: "The instruct trainer's checkpoint names every adapter by its own layer and target, and says which targets it holds"
+    formula: "Let T = pipeline.config.lora_targets and n = |T|. InstructTrainer::save_checkpoint writes, for every slot s of lora_layers, lora.{⌊s/n⌋}.{module(T[s mod n])}.lora_a = A_s with shape [r, d_in] and lora.{⌊s/n⌋}.{module(T[s mod n])}.lora_b = B_s with shape [d_out, r], with the names of apr_tensor_names, so slot |T|·l + pos_T(t) is saved under layer l and target t as target_slots places it; metadata.json holds lora_targets = [module(t) for t ∈ T] in slot order. For T = (q_proj, v_proj) the names are lora.{⌊s/2⌋}.q_proj and lora.{⌊s/2⌋}.v_proj, the names it wrote before, and model.safetensors is byte for byte what it was."
 
 falsification:
   - id: FALSIFY-LORA_TARGET_SELECTION_V1_001
@@ -170,3 +175,8 @@ falsification:
     description: "apr finetune --lora-targets reaches InstructConfig.lora_targets or refuses (0.72 R15a C10). At 4384351118 apr finetune had no way to select targets: build_instruct_config took ..InstructConfig::default(), so every run trained q_proj and v_proj, and no flag existed to say otherwise. Now the flag is parsed before anything loads, its set reaches lora_targets on the training path, and every mode that would not train with it refuses it. Falsified if an absent flag changes the default, if a parsed set differs from LoraTargets::parse of the same names, if an unknown or empty name list is accepted, if build_instruct_config drops the set, or if --merge, --task classify, --task instruct, --adapters, --plan, the wgpu backend (an explicit --gpu-backend wgpu before anything loads, or auto choosing it) or a build without training accepts the flag."
     test: "crates/apr-cli/src/commands/finetune_tests.rs::falsify_lora_target_selection_v1_016_flag_reaches_instruct_config (with the other falsify_lora_target_selection_v1_016 tests there)"
     evidence: "cargo test -p apr-cli --lib falsify_lora_target_selection_v1_016"
+
+  - id: FALSIFY-LORA_TARGET_SELECTION_V1_017
+    description: "The instruct trainer's checkpoint names each adapter by its target (0.72 R15a C11a). At 610f290b05 InstructTrainer::save_checkpoint, the checkpoint apr finetune writes for the instruct task, named slot s lora.{s/2}.q_proj when s was even and lora.{s/2}.v_proj when odd, and metadata.json did not say which targets the run trained. Row 004's check keeps the pipeline at q_proj, v_proj, where that is the right name; under all_linear, slot 1 (layer 0's k_proj) would have been saved as layer 0's v_proj and slot 7 (layer 1's q_proj) as layer 3's v_proj, so a merge or a reload would have put each adapter on another projection, and shapes that differ would have failed only at merge time. Now each slot is saved under apr_tensor_names(⌊s/|T|⌋, T[s mod |T|]), the names the CUDA trainer's checkpoint uses (row 010), with A [r, d_in] and B [d_out, r], and metadata.json holds lora_targets. The tests build a two-layer pipeline with all_linear adapters of distinct values and save a checkpoint without a device: the file holds exactly the 28 names lora.{l}.{module}.lora_{a,b}, each with its slot's shape and values, and metadata.json lists the seven modules in slot order; with the default targets it holds exactly lora.{l}.q_proj and lora.{l}.v_proj, each from the slot the forward reads, and lists q_proj, v_proj. Row 004's check stays until C11b lifts it. Planted: naming by the q and v parity, dividing the slot by 2 for the layer, taking the target from the layer instead of the position, and leaving lora_targets out of metadata.json must each be RED."
+    test: "crates/aprender-train/src/finetune/instruct_trainer_checkpoint_tests.rs::falsify_lora_target_selection_v1_017_all_linear_names_every_adapter (with falsify_lora_target_selection_v1_017_default_names_unchanged there; no device)"
+    evidence: "cargo test -p aprender-train --lib falsify_lora_target_selection_v1_017"
