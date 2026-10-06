@@ -8,8 +8,9 @@
 # scripts/ci/provable_ladder_discharge.sh (`schedule` and `workflow_dispatch` are mode full);
 # scripts/ci/ladder_pr_skips_leanchecker.sh is its case table and checks this file's wiring.
 #
-# INFO LANE. Nothing requires this workflow and no release script reads it. It stays information
-# until it has been green three nights in a row; making it a gate after that is a separate change.
+# INFO LANE. Nothing requires this workflow; nightly_train.sh lists it as an info lane, which
+# counts its streak and gates nothing. It stays information until it has been green three
+# nights in a row; making it a gate after that is a separate change.
 #
 # THE SAME SECTION. fat_driver runs the provable-ladder job definition from ci/sections.yml
 # verbatim, so the nightly and the PR run cannot drift apart. That section is continue-on-error

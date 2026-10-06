@@ -115,6 +115,58 @@ row "nightly: it runs the provable-ladder section through fat_driver" \
 row "nightly: its verdict reads the section's result, not the job status" \
     "$(grep -cF '[env.SEC].result' "$NW" 2> /dev/null || echo 0)" 1
 
+# The verdict step itself, RUN on stub results files: a grep of its text cannot see a step that
+# also accepts `failure`, or one that passes when fat_driver never wrote a result.
+# step_lines: the verdict step's lines, from its name to the next step.
+step_lines() { awk -v n="$VNAME" 'index($0, n) { on = 1 } on && /^      - / && !index($0, n) { exit } on' "$NW"; }
+VNAME="name: The ladder's verdict is the section's result, not the job status"
+vblock() { step_lines | sed -n '/^        run: |$/,$p' | sed '1d; s/^          //'; }
+vsec() { step_lines | sed -n 's/^          SEC: //p'; }
+# Stub results.json files, one per case. `absent` is no file at all.
+mkdir -p "$TD/res"
+while IFS='=' read -r name body; do
+    printf '%s\n' "$body" > "$TD/res/$name.json"
+done << 'FIXTURES'
+success={"provable-ladder": {"result": "success"}}
+failure={"provable-ladder": {"result": "failure"}}
+skipped={"provable-ladder": {"result": "skipped"}}
+cancelled={"provable-ladder": {"result": "cancelled"}}
+other={"x": {"result": "success"}}
+garbage=not json
+FIXTURES
+vstep() { # vstep <fixture name, or absent> -> rc of the verdict block
+    local d="$TD/v" rc=0
+    rm -rf "${d:?}"
+    mkdir -p "$d/fat"
+    [ "$1" = absent ] || cp -- "$TD/res/${1:?}.json" "$d/fat/results.json"
+    vblock > "$d/verdict.sh"
+    RUNNER_TEMP="$d" GITHUB_STEP_SUMMARY="$d/summary" SEC="$(vsec)" bash "$d/verdict.sh" > /dev/null 2>&1 || rc=$?
+    echo "$rc"
+}
+if ! command -v jq > /dev/null; then
+    echo "FAIL  nightly verdict rows: no jq on PATH, so the verdict step cannot be run (not measured)"
+    fail=1
+elif [ -z "$(vblock)" ]; then
+    echo "FAIL  nightly verdict rows: the verdict step's run block was not found in $NW"
+    fail=1
+else
+    row "nightly verdict: it judges the provable-ladder section" "$(vsec)" provable-ladder
+    row "nightly verdict: success -> 0" "$(vstep success)" 0
+    row "nightly verdict: failure -> 1" "$(vstep failure)" 1
+    row "nightly verdict: skipped -> 1" "$(vstep skipped)" 1
+    row "nightly verdict: cancelled -> 1" "$(vstep cancelled)" 1
+    row "nightly verdict: another section green, the ladder absent -> 1" "$(vstep other)" 1
+    row "nightly verdict: fat_driver wrote no results.json -> 1" "$(vstep absent)" 1
+    row "nightly verdict: unreadable results.json -> 1" "$(vstep garbage)" 1
+fi
+# The step must run whenever the job was not cancelled, and read the file the run step writes.
+row "nightly: the verdict step runs unless cancelled" "$(step_lines | grep -c '^        if: \${{ !cancelled() }}$')" 1
+results_file="$(printf '%s' '"$RUNNER_TEMP/fat/results.json"')"
+n_writes="$(grep -cF -- "--results $results_file" "$NW" || true)"
+n_refs="$(grep -cF -- "$results_file" "$NW" || true)"
+row "nightly: fat_driver writes the results file the verdict reads" "$n_writes|$n_refs" "1|2"
+row "nightly: the run step calls fat_driver run" "$(grep -cx '          python3 scripts/ci/fat_driver.py run' "$NW" || true)" 1
+
 # mutant <name> <sed expr> <event> <the row's passing output>: the planted defect must change the
 # script, and the named event's row must no longer pass on it.
 mutant() {
