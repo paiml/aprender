@@ -1,0 +1,4 @@
+# Causes that already have a lesson. A queue red whose cause key matches a row here after the
+# lesson date counts as a repeat in scripts/ci_morning_report.sh.
+# <cause glob, matched against "<cause>" or "<cause> wallkill:<step|job>"> TAB <lesson> TAB <lesson date YYYY-MM-DD>
+x86-main/guard-cargo* wallkill:*	guard-cargo killed at its deadline: rows are timed by wall clock, not CPU	2026-10-06
