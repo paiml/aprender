@@ -41,7 +41,8 @@ runs() {
                      if (start) mut = 1; else print NR, "BAD", "native: no capped docker run or systemd-run scope" }
     # A scope caps only its own command: it ends at the first line outside a single-quoted span that has no
     # trailing backslash. A mutation run on a later line of the step is then native, not capped by it.
-    start && kind == "scope" { r = $0; inq = (inq + gsub("\047", "", r)) % 2
+    # Double-quoted strings are dropped first, so a single-quote character inside one opens no span.
+    start && kind == "scope" { r = $0; gsub(/"[^"]*"/, "", r); inq = (inq + gsub("\047", "", r)) % 2
                      if (!inq && $0 !~ /\\[[:space:]]*$/) flush() }
     /^ *- name:/ { flush() }
     END { flush() }' "$1"
@@ -125,6 +126,8 @@ if [ "${1:-}" = "--self-test" ]; then
     # A capped scope around another command does not cap a mutation run on a later line of the same step.
     printf '    steps:\n      - name: o\n        run: |\n          systemd-run --user --scope -q -p MemoryMax=16G -p MemorySwapMax=0 echo hi\n          bash scripts/mutants_diff_gate.sh pr.diff --jobs 1\n' > "$d/scopeother.yml"
     mrow 1 scopeother  "$d/scopeother.yml"
+    printf '    steps:\n      - name: a\n        run: |\n          systemd-run --user --scope -q -p MemoryMax=16G -p MemorySwapMax=0 echo "it%ss capped"\n          bash scripts/mutants_diff_gate.sh pr.diff --jobs 1\n' "'" > "$d/scopeapos.yml"
+    mrow 1 scopeapos   "$d/scopeapos.yml"
     # Query modes and comments are not mutation runs: a file holding only them has no run to judge.
     printf '    steps:\n      - name: q\n        run: |\n          # bash scripts/mutants_diff_gate.sh pr.diff\n          bash scripts/mutants_diff_gate.sh --exempt-ref "$R" a b\n' > "$d/query.yml"
     mrow 2 queryonly   "$d/query.yml"
