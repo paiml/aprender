@@ -21,9 +21,10 @@
 #       calls a reusable workflow (`uses:` at job level), whose checkout this file cannot see;
 #   P4  names github.sha, GITHUB_SHA, github.workflow_sha or GITHUB_WORKFLOW_SHA on a live line that names neither
 #       NIGHTLY_C nor workflow_run.head_sha outside a trailing comment;
-#   P5  is listed below (a producer or a hop) and missing, or chains from the pick and is not listed, or chains from a
-#       listed producer and is not in HOPS (the lists are complete both ways), or is both a producer and a hop; a hop's
-#       upstream that is not a listed producer fails P2;
+#   P5  is listed below (a producer or a hop) and missing, or chains from the pick and is not listed, or names a
+#       listed producer or hop in its workflows: and is not in HOPS (the lists are complete both ways; any entry of a
+#       list counts), or is both a producer and a hop; a hop's upstream that is not a listed producer fails P2, and so
+#       does a workflow_run, in any file, whose workflows: entries this file cannot read;
 #   P6  is read by a lane of scripts/release/nightly_train.sh's LANES table whose event pattern is not exactly
 #       ^workflow_run$ (its scheduled runs are gone), or a lane reads workflow_run runs of a workflow not listed,
 #       or a listed producer or hop has no lane, or LANES is assigned more than once (a hop counts as listed).
@@ -33,8 +34,9 @@
 # Limits: it reads the workflow text, not the scripts a step calls, so a later run step that fetches or checks out
 # main again is not seen; an origin/main a step fetches as a declared comparand (guards-nightly's SATD ceiling) is
 # not a measurement and is not judged here. It reads `on:` as a block mapping with keys at indent 2; any other
-# layout hides the chain and fails P2 (closed). A flow-style step (`- {uses: actions/checkout@v4}`) is not read as a
-# checkout.
+# layout hides the chain and fails P2 (closed). workflows: is read as a flow list, a scalar or one `- item` per
+# line; an inline `on:` or `workflow_run:` that names a workflow_run is unreadable, so RED in any file. A flow-style
+# step (`- {uses: actions/checkout@v4}`) is not read as a checkout.
 # A hop's C step reads its upstream run's created_at, which a rerun of the upstream moves: a pick rerun the next
 # evening reruns the upstream, and the hop then asks for the next night. The hop reads that as not_measured (its
 # input was measured on another commit), never as a wrong reading; this guard does not see it.
@@ -75,11 +77,13 @@ judge_file() {
             return "\001"
         }
         function unq(s) { if (s ~ /^".*"$/ || s ~ /^\047.*\047$/) s = substr(s, 2, length(s) - 2); return s }
-        function anyup(s,   a, m, i, x) { # the first entry of a workflows: list that names a listed producer (PC_UPS)
-            s = bare(s); if (s !~ /^\[.*\]$/) return ""; m = split(substr(s, 2, length(s) - 2), a, ",")
-            for (i = 1; i <= m; i++) { x = a[i]; gsub(/^[[:space:]]+|[[:space:]]+$/, "", x); x = unq(x)
-                if (x != "" && index(ENVIRON["PC_UPS"], "\n" x "\n")) return x }
-            return "" }
+        function nc(s) { sub(/[[:space:]]+#.*$/, "", s); return s }   # drop a trailing comment
+        function ent(s) { s = nc(s); gsub(/^[[:space:]]+|[[:space:]]+$/, "", s); s = unq(s); if (s == "" || s ~ /[\[\]{},]/) wbad = 1; return s }
+        function wfl(s,   v, a, m, i) { # the entries of workflows: into W[1..nw]; a form this cannot read sets wbad
+            v = bare(nc(s)); if (v == "") { inwf = 1; return }   # a block list: its `- item` lines follow
+            if (v ~ /^\[.*\]$/) { m = split(substr(v, 2, length(v) - 2), a, ","); for (i = 1; i <= m; i++) W[++nw] = ent(a[i]); return }
+            if (v ~ /^[\[\]{>|&*!]/) return   # a form this does not read adds no entry, and no entry is unreadable
+            W[++nw] = ent(v) }
         function stray(st,   a, m, i, p, k, s) { # the first part of the C step that is not name/if/run or the env line
             m = split(st, a, "\n"); p = ind(a[1]) + 2
             for (i = 1; i <= m; i++) {
@@ -132,14 +136,17 @@ judge_file() {
         }
         { L = $0 }
         # on: block
-        /^on:[[:space:]]*$/ { inon = 1; next }
+        /^["\047]?on["\047]?[[:space:]]*:/ && !inon { if (bare(nc(L)) == "") { inon = 1; next }   # an inline on: naming workflow_run is unreadable
+            if (L ~ /workflow_run/) wseen = 1 }   # no entry follows, so it is unreadable
         inon && live(L) && ind(L) == 0 { inon = 0; wr = 0 }
         inon && live(L) {
             if (L ~ /^  ["\047]?schedule["\047]?[[:space:]]*:/) sched = 1   # "schedule": is the same key to GitHub
-            if (L ~ /^  workflow_run:/) { wr = 1; next }
+            if (inwf && L ~ /^    +- /) { x = L; sub(/^ *- */, "", x); W[++nw] = ent(x); next }   # a block list item
+            if (inwf && ind(L) > 4) { wbad = 1; next }
+            inwf = 0
+            if (L ~ /^  ["\047]?workflow_run["\047]?[[:space:]]*:/) { wr = 1; wseen = 1; next }   # an inline value adds no entry
             if (ind(L) <= 2) wr = 0
-            if (wr && L ~ /^    workflows:/ && list1(L) == pick) cw = 1
-            if (wr && L ~ /^    workflows:/ && !listed && cu == "") cu = anyup(L)
+            if (wr && L ~ /^    workflows:/) wfl(L)
             if (wr && L ~ /^    types:/ && list1(L) == "completed") ct = 1
             if (wr && L ~ /^    branches:/ && list1(L) == "main") cb = 1
         }
@@ -158,9 +165,12 @@ judge_file() {
         /^ *steps:[[:space:]]*$/ && live(L) { insteps = 1; si = ind(L); n = 0; ii = -1; next }
         END {
             if (insteps) flush()
+            cw = (nw == 1 && W[1] == pick && !wbad)
             chained = (cw && ct && cb)
-            if (!listed) { if (cw) printf "FAIL  %s: P5 chains from \"%s\" but is not in the producer list\n", f, pick
-                           else if (cu != "") printf "FAIL  %s: P5 chains from \"%s\", a listed producer, but is not in HOPS\n", f, cu
+            if (wseen && (wbad || !nw)) fail("P2 a workflow_run whose workflows: entries cannot be read -- write a [flow, list], a name, or one - item per line")
+            if (!listed) { for (i = 1; i <= nw; i++) {   # every entry: a list naming the pick or a listed name anywhere
+                               if (W[i] == pick) { fail("P5 chains from \"" pick "\" but is not in the producer list"); break }
+                               if (index(ENVIRON["PC_UPS"], "\n" W[i] "\n")) { fail("P5 chains from \"" W[i] "\", a listed producer or hop, but is not in HOPS"); break } }
                            exit }
             if (sched) fail("P1 still has a schedule: trigger -- a producer starts on the pick, never on its own cron")
             if (!checkouts) fail("P3 no actions/checkout of this repo found -- nothing switches the tree to C")
@@ -240,6 +250,7 @@ judge() { # ROOT
             *" $p "*) printf 'FAIL  %s.yml: P5 is both a producer and a hop\n' "$p"; rc=1 ;;
         esac
         [ -f "$wf/$p.yml" ] || { printf 'FAIL  %s.yml: P5 listed hop is missing\n' "$p"; rc=1; }
+        up="$( [ -f "$wf/$p.yml" ] && wfname "$wf/$p.yml")"; [ -n "$up" ] && ups="$ups$up"$'\n'   # a hop of a hop names this
         hops="$hops$p "
     done
     for f in "$wf"/*.yml; do
@@ -340,6 +351,10 @@ m_hop_unlisted()  { { printf 'name: Extra\non:\n  workflow_run:\n    workflows: 
                       printf 'jobs:\n  a:\n    runs-on: x\n    steps:\n      - run: true\n'; } > extra.yml; }
 m_hop_unl_two()   { { printf 'name: Extra\non:\n  workflow_run:\n    workflows: [CI, '"'"'Coverage Nightly'"'"']\n    types: [completed]\n'
                       printf 'jobs:\n  a:\n    runs-on: x\n    steps:\n      - run: true\n'; } > extra.yml; }
+wr_extra()        { printf 'name: Extra\non:\n  workflow_run:\n    workflows:%s\n    types: [completed]\n    branches: [main]\njobs:\n  a:\n    runs-on: x\n    steps:\n      - run: true\n' "$1" > extra.yml; }
+m_unl_raw()       { printf 'name: Extra\non:%s\njobs:\n  a:\n    runs-on: x\n    steps:\n      - run: true\n' "$1" > extra.yml; }
+m_hop_block()     { changed qwen-hunt-nightly.yml 's/^    workflows: \["Coverage Nightly"\]$/    workflows:\n      - "Coverage Nightly"   # the upstream/'; }
+m_two_in_block()  { changed nightly.yml 's/^    workflows: \["Nightly pick"\]$/    workflows:\n      - "Nightly pick"\n      - CI/'; }
 m_no_cstep()      { changed toolchain-ceiling.yml '/- name: Measure the night.s C, not main.s head (T44)/,/nightly_c_checkout.sh/d'; }
 m_cstep_or()      { changed install-script.yml "0,/if: github.event_name == 'workflow_run'\$/s//if: github.event_name == 'workflow_run' || true/"; }
 m_cstep_ifdrop()  { changed cuda-nightly.yml "s/if: github.event_name == 'workflow_run' && (.*)\$/if: github.event_name == 'workflow_run'/"; }
@@ -457,12 +472,31 @@ self_test() {
     row hop_missing                 1 'qwen-hunt-nightly.yml: P5 listed hop is missing' -- m_hop_gone
     row hop_without_a_lane          1 'P6 listed producer qwen-hunt-nightly.yml has no lane' -- m_hop_no_lane
     row hop_upstream_renamed        1 'qwen-hunt-nightly.yml: P2 no workflow_run on ["Coverage Nightly 2"]' -- m_up_renamed
-    row p5_unlisted_one_hop_chain   1 'extra.yml: P5 chains from "Coverage Nightly", a listed producer, but is not in HOPS' -- m_hop_unlisted
+    row p5_unlisted_one_hop_chain   1 'extra.yml: P5 chains from "Coverage Nightly", a listed producer or hop, but is not in HOPS' -- m_hop_unlisted
     row p5_unlisted_hop_second_item 1 'extra.yml: P5 chains from "Coverage Nightly"' -- m_hop_unl_two
     HOPS="qwen-hunt-nightly=book-x" \
     row hop_upstream_not_listed     1 'P2 hop upstream book-x is not a listed producer' -- m_none
     PRODUCERS="$PRODUCERS qwen-hunt-nightly" \
     row hop_also_a_producer         1 'qwen-hunt-nightly.yml: P5 is both a producer and a hop' -- m_none
+    # every entry of an unlisted file's workflows:, in any form it can take, and a form the guard cannot read is RED
+    row p5_unlisted_hop_of_a_hop    1 'extra.yml: P5 chains from "qwen-hunt-nightly", a listed producer or hop, but is not in HOPS' -- wr_extra ' ["qwen-hunt-nightly"]'
+    row p5_unlisted_block_upstream  1 'extra.yml: P5 chains from "Coverage Nightly", a listed producer or hop' -- wr_extra $'\n      - "Coverage Nightly"'
+    row p5_unlisted_block_pick      1 'extra.yml: P5 chains from "Nightly pick" but is not in the producer list' -- wr_extra $'\n      - "Nightly pick"'
+    row p5_unlisted_block_commented 1 'extra.yml: P5 chains from "Nightly pick" but is not in the producer list' -- wr_extra $'\n    # the pick\n    - \'Nightly pick\'   # trailing'
+    row p5_unlisted_pick_second     1 'extra.yml: P5 chains from "Nightly pick" but is not in the producer list' -- wr_extra ' [CI, "Nightly pick"]'
+    row p5_unlisted_pick_first      1 'extra.yml: P5 chains from "Nightly pick" but is not in the producer list' -- wr_extra ' ["Nightly pick", CI]   # two'
+    row p5_unlisted_pick_scalar     1 'extra.yml: P5 chains from "Nightly pick" but is not in the producer list' -- wr_extra ' Nightly pick'
+    row p2_unlisted_alias           1 'extra.yml: P2 a workflow_run whose workflows: entries cannot be read' -- wr_extra ' *names'
+    row p2_unlisted_empty_list      1 'extra.yml: P2 a workflow_run whose workflows: entries cannot be read' -- wr_extra ' []'
+    row p2_unlisted_inline_run      1 'extra.yml: P2 a workflow_run whose workflows: entries cannot be read' -- m_unl_raw $'\n  workflow_run: {workflows: ["Nightly pick"], types: [completed]}'
+    row p2_unlisted_inline_on       1 'extra.yml: P2 a workflow_run whose workflows: entries cannot be read' -- m_unl_raw ' {workflow_run: {workflows: ["Nightly pick"]}}'
+    row p2_unlisted_list_next_line  1 'extra.yml: P2 a workflow_run whose workflows: entries cannot be read' -- wr_extra $'\n      ["Nightly pick"]'
+    row p2_unlisted_folded_scalar   1 'extra.yml: P2 a workflow_run whose workflows: entries cannot be read' -- wr_extra $' >\n      Nightly pick'
+    row p2_unlisted_nested_list     1 'extra.yml: P2 a workflow_run whose workflows: entries cannot be read' -- wr_extra ' [["Nightly pick"]]'
+    row p2_unlisted_block_continued 1 'extra.yml: P2 a workflow_run whose workflows: entries cannot be read' -- wr_extra $'\n      - Nightly\n        pick'
+    row unlisted_other_chain_ok     0 'PASS' -- wr_extra ' [CI, "Release readiness"]'
+    row hop_block_single_chained    0 'ok    qwen-hunt-nightly.yml: chained from "Coverage Nightly"' -- m_hop_block
+    row p2_listed_block_two_entries 1 'nightly.yml: P2 no workflow_run on ["Nightly pick"]' -- m_two_in_block
     sigpipe_row
     rm -rf -- "${TMP_ST:?}"
     if [ "$FAILED" -eq 0 ]; then printf 'SELF-TEST PASSED: %s rows\n' "$CASES"; return 0; fi
@@ -472,7 +506,7 @@ self_test() {
 MUTANTS='m01_no_schedule_rule	s/if (sched) fail/if (0) fail/
 m02_any_branch	s/list1(L) == "main") cb = 1/1) cb = 1/
 m03_any_type	s/list1(L) == "completed") ct = 1/1) ct = 1/
-m04_any_workflow	s/list1(L) == pick) cw = 1/1) cw = 1/
+m04_any_workflow	s/cw = (nw == 1 \&\& W\[1\] == pick \&\& !wbad)/cw = 1/
 m05_preflight_skipped	s/^                j = k + 1$/&; if (j <= n && key(S[j], "name") ~ \/^Preflight\/) j++/
 m06_no_repo_exempt	s/ || other(S\[k\])) continue/) continue/
 m07_any_if	s/if (unq(key(S\[j\], "if")) != want)/if (0)/
@@ -481,7 +515,7 @@ m41_any_conclusion_source	s/if (!hasline(S\[j\], "NIGHTLY_PICK_CONCLUSION/if (0 
 m09_no_sha_rule	s|if (tolower(c) ~|if (0 \&\& tolower(c) ~|
 m10_sha_no_exemption	s| \&\& c !~ /NIGHTLY_C\|workflow_run\\.head_sha/)|)|
 m11_no_missing_rule	/P5 listed producer is missing/s/; rc=1; }/; }/
-m12_no_unlisted_rule	s/if (cw) printf "FAIL/if (0) printf "FAIL/
+m12_no_unlisted_rule	s/if (W\[i\] == pick) { fail/if (0) { fail/
 m13_comments_live	s/function live(s) { return s !~ \/^\[\[:space:\]\]\*(#|\$)\/ }/function live(s) { return s !~ \/^[[:space:]]*$\/ }/
 m14_end_of_steps_ok	s/if (j > n) { fail(/if (0) { fail(/
 m15_any_run	s/if (key(S\[j\], "run") != /if (0 \&\& key(S[j], "run") != /
@@ -518,7 +552,7 @@ m45_p7_other_night_call_ok	s/ \&\& ! hasl "\$calls" -v -x -F -e "\$P7_NIGHT"; th
 m46_p7_at_not_exact	s/hasl "\$t" -x -F -e "\$P7_AT"/hasl "$t" -F -e "$P7_AT"/
 m47_p7_comment_counts	s| -e ./\^#/d. | |
 m48_p7_piped_grep_q	s/! hasl "\$calls" \(-v -x -F -e "\$P7_NIGHT"\)/! printf "%s\\n" "$calls" \| grep -q \1/
-m50_unlisted_hop_ok	s/else if (cu != "") printf/else if (0) printf/
+m50_unlisted_hop_ok	s/if (index(ENVIRON\["PC_UPS"\], "\\n" W\[i\] "\\n")) { fail/if (0) { fail/
 m51_hop_judged_unlisted	s/^            listed=1; up=/            up=/
 m52_hop_upstream_any	/P2 hop upstream/s/printf .*; rc=1 ;;/: ;;/
 m53_hops_not_in_p6	s/"\$PRODUCERS" \$HOPS | sed/"$PRODUCERS" | sed/
@@ -526,7 +560,18 @@ m54_both_ok	/P5 is both a producer and a hop/s/printf .*; rc=1 ;;/: ;;/
 m55_hop_missing_ok	/P5 listed hop is missing/s/rc=1; }/:; }/
 m56_no_upstream_names	s/\[ -n "\$up" \] \&\& ups=/[ -z "$up" ] \&\& ups=/
 m57_hop_judged_from_pick	s/^            from="\$( \[ -f /            from="$pick"; : "$( [ -f /
-m58_anyup_first_only	s/for (i = 1; i <= m; i++) { x = a\[i\]/for (i = 1; i <= 1; i++) { x = a[i]/'
+m58_unlisted_first_entry_only	s/for (i = 1; i <= nw; i++) {   # every/for (i = 1; i <= 1; i++) {   # every/
+m59_no_hop_names	/# a hop of a hop names this/s/\[ -n "\$up" \]/[ -z "$up" ]/
+m60_no_block_items	s/if (inwf \&\& L ~ \/^    +- \/)/if (0)/
+m61_block_never_opened	s/if (v == "") { inwf = 1; return }/if (v == "") return/
+m62_no_unreadable_rule	s/if (wseen \&\& (wbad || !nw)) fail/if (0) fail/
+m63_flow_first_only	s/for (i = 1; i <= m; i++) W\[++nw\] = ent(a\[i\])/W[++nw] = ent(a[1])/
+m64_comment_kept	s/function nc(s) { sub(.*); return s }/function nc(s) { return s }/
+m65_inline_on_ok	s/if (L ~ \/workflow_run\/) wseen = 1 }/if (0) wseen = 1 }/
+m67_block_non_item_ok	s/if (inwf \&\& ind(L) > 4) { wbad = 1; next }/if (0) { }/
+m68_bad_entry_ok	s/) wbad = 1; return s }/) ; return s }/
+m69_multi_entry_chains	s/cw = (nw == 1 \&\& /cw = (nw >= 1 \&\& /
+m70_scalar_form_read	/a form this does not read adds no entry/s/if (v ~ [^)]*)/if (0)/'
 mutants() {
     local tmp name expr killed=0 total=0 errors=0 out cut reds
     cut="$(grep -n -m1 -e "^# -* the case table" "$SCRIPT_PATH" | cut -d: -f1)"

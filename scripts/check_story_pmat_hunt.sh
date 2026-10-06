@@ -31,6 +31,13 @@ cd "$(dirname "$0")/.." || exit 1
 
 LIB="scripts/lib_story_pmat.sh"
 STORY="scripts/qwen-story.sh"
+# The awk FALSIFY-QWEN-STORY-004 runs: prints how many of beats 1-8 end with their
+# own story_hunt N, or 0 when any story_hunt call is elsewhere, re-indented or repeated.
+STORY_HUNT_BINDING='/^beat[1-8]_[a-z_]+[(][)] *[{]/ { b = substr($0, 5, 1); last = ""; next }
+/^}/ { if (b != "" && last == "  story_hunt " b) ok[b] = 1; b = ""; next }
+$1 == "story_hunt" && ($0 != "  story_hunt " b || seen[b]++) { bad = 1 }
+/^[[:space:]]*[^#[:space:]]/ { last = $0 }
+END { for (i = 1; i <= 8; i++) n += ok[i]; print (bad ? 0 : n) }'
 [ -f "$LIB" ] || { echo "check_story_pmat_hunt: missing $LIB"; exit 1; }
 
 fails=0
@@ -279,6 +286,12 @@ fi
 want "STORY_HUNTS has one line per beat" "8" "$(grep -c '|' <<< "$STORY_HUNTS")"
 want "qwen-story.sh calls story_hunt 1..8 once each, in beat order" "1 2 3 4 5 6 7 8" \
   "$(sed -n -e 's/^  story_hunt \([0-9][0-9]*\)$/\1/p' "$STORY" | tr '\n' ' ' | sed -e 's/ $//')"
+# File order is not enough: a hunt moved into the previous beat keeps the order.
+# Each beatN_*() must END with story_hunt N (its last live line before the closing
+# brace), and no story_hunt may sit in another function. FALSIFY-QWEN-STORY-004
+# runs the same awk.
+want "each beatN_*() ends with story_hunt N, and no hunt sits elsewhere" "8" \
+  "$(awk "$STORY_HUNT_BINDING" "$STORY")"
 want "qwen-story.sh names no hunt path itself" "" "$(grep -n -E '^[[:space:]]*pmat_hunt ' "$STORY")"
 : > "$FAILLOG"
 story_hunt 9 >/dev/null 2>&1; rc=$?
