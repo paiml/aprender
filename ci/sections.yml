@@ -453,6 +453,7 @@ jobs:
           git update-ref refs/remotes/origin/main "$base"
           printf 'refinement base: %s base %s pinned as origin/main\n' "${GITHUB_EVENT_NAME}" "$(git rev-parse 'origin/main^{commit}')"
       - name: Workspace lib tests (25,300+)
+        shell: bash scripts/ci/build_slot.sh run -- bash -e {0}
         if: steps.tier.outputs.tier == 'full'
         # Excluded: aprender-compute (SIMD SIGSEGV at exit), aprender-gpu and aprender-cuda-edge
         # -- each runs as its own step below. The GPU crates are `default = []`, but they
@@ -522,6 +523,7 @@ jobs:
           mkdir -p "$RUNNER_TEMP/sigma"
           cp "/mnt/nvme-raid0/targets/aprender-ci/${PR_OR_REF}/run-${GITHUB_RUN_ID}/nextest/ci/junit.xml" "$RUNNER_TEMP/sigma/lib.junit.xml"
       - name: "GPU crates on their default features (per-package resolve, no device needed)"
+        shell: bash scripts/ci/build_slot.sh run -- bash -e {0}
         if: steps.tier.outputs.tier == 'full' && matrix.shard == 1
         # aprender-gpu + aprender-cuda-edge, un-darked from the required check (T0 of the
         # NVIDIA CUDA Rust spec, #3062). A per-package resolve keeps `cuda` OFF (see the
@@ -555,6 +557,7 @@ jobs:
           mkdir -p "$RUNNER_TEMP/sigma"
           cp "/mnt/nvme-raid0/targets/aprender-ci/${PR_OR_REF}/run-${GITHUB_RUN_ID}/nextest/ci/junit.xml" "$RUNNER_TEMP/sigma/gpu.junit.xml"
       - name: Compute tests (tolerate SIGSEGV at exit — all tests pass but harness crashes on cleanup)
+        shell: bash scripts/ci/build_slot.sh run -- bash -e {0}
         if: steps.tier.outputs.tier == 'full' && matrix.shard == 1
         run: |
           docker run --rm \
@@ -625,7 +628,7 @@ jobs:
         # 4bbfeb07f — it walks contracts/*.yaml and chokes on contracts/binding.yaml
         # ("missing field `metadata`"), a binding registry rather than a contract.
         # It rotted precisely because nothing watched it; fixing it is separate work.
-        shell: bash
+        shell: bash scripts/ci/build_slot.sh run -- bash --noprofile --norc -eo pipefail {0}
         run: |
           set -euo pipefail
           bash scripts/ci_run_explicit_test_commands.sh --list ci/explicit-test-commands.d
@@ -657,7 +660,7 @@ jobs:
         # lists the universes and checks the shard-1-only GPU and compute steps;
         # the lib and explicit universes go to the workspace-test verdict job,
         # which compares them with the UNION of the three shards' executed ids.
-        shell: bash
+        shell: bash scripts/ci/build_slot.sh run -- bash --noprofile --norc -eo pipefail {0}
         run: |
           set -euo pipefail
           sig="$RUNNER_TEMP/sigma"
@@ -726,6 +729,7 @@ jobs:
       # together. Not a fragment because it is a build, not a test target, and
       # no wiring reader (check_model_tests_wired, check_beats_gated) names it.
       - name: Build every example (workspace, keep-going)
+        shell: bash scripts/ci/build_slot.sh run -- bash -e {0}
         if: steps.tier.outputs.tier == 'full' && matrix.shard == 3
         timeout-minutes: 40
         run: |
@@ -750,6 +754,7 @@ jobs:
       # targets (default features) under the same image and mounts as the full
       # tier. Empty selection (a scripts/docs PR) skips this step; part 2 still runs.
       - name: "Quick tier: lib + integration tests of the selected crates (BSE-17)"
+        shell: bash scripts/ci/build_slot.sh run -- bash -e {0}
         if: steps.tier.outputs.tier == 'quick' && matrix.shard == 1 && steps.tier.outputs.crates != ''
         # 20, not 60 (PMAT-1098, #3084). A quick tier that is ALLOWED an hour is
         # not a quick tier, and 60 is the number that let part 2 burn 55 minutes
@@ -827,6 +832,7 @@ jobs:
           mkdir -p "$RUNNER_TEMP/sigma"
           cp "/mnt/nvme-raid0/targets/aprender-ci/${PR_OR_REF}/run-${GITHUB_RUN_ID}/nextest/ci/junit.xml" "$RUNNER_TEMP/sigma/quick-sel.junit.xml"
       - name: "Quick tier: every test target that reads the tree (BSE-17)"
+        shell: bash scripts/ci/build_slot.sh run -- bash -e {0}
         if: steps.tier.outputs.tier == 'quick' && matrix.shard == 1
         # 45, not 20. Measured 2026-09-11 under train load, this PR's own runs never fit 20: run 34542045481 on
         # yoga-build2 compiled 811 crates in ~9 min (cold per-run target dir, warm shared sccache) and was part way
@@ -906,7 +912,7 @@ jobs:
         env:
           CRATES: ${{ steps.tier.outputs.crates }}
           TARGETS: ${{ steps.tier.outputs.targets }}
-        shell: bash
+        shell: bash scripts/ci/build_slot.sh run -- bash --noprofile --norc -eo pipefail {0}
         run: |
           set -euo pipefail
           sig="$RUNNER_TEMP/sigma"
@@ -944,6 +950,7 @@ jobs:
           python3 scripts/ci/sigma_executed.py nextest --kind "quick tree readers" --junit "$sig/quick-tree.junit.xml" --list-json "$sig/quick-tree.list.json" || rc=1
           exit "$rc"
       - name: "Quick tier: cargo check --workspace (over-the-cap integration, BSE-17 rule (i))"
+        shell: bash scripts/ci/build_slot.sh run -- bash -e {0}
         if: steps.tier.outputs.tier == 'quick' && steps.tier.outputs.check_workspace == '1' && matrix.shard == 1
         timeout-minutes: 20
         env:
@@ -1443,6 +1450,14 @@ jobs:
         run: setsid --wait bash scripts/check_mutants_pool.sh
       - name: mutants-pool guard can still go RED (C108)
         run: setsid --wait bash scripts/check_mutants_pool.sh --self-test
+      # Every heavy cargo step on intel's pool takes a host build slot (C313/10-06
+      # item 3). Text only. Report-only under C313 R4 until three green nights.
+      - name: Every heavy cargo step on the X64 clean-room pool takes a build slot (C313)
+        run: setsid --wait bash scripts/check_build_slot_call_sites.sh
+      - name: build-slot call-site guard can still go RED (C313)
+        run: setsid --wait bash scripts/check_build_slot_call_sites.sh --self-test
+      - name: build-slot tool case table (C313; flock in a temp dir, about 7 s)
+        run: setsid --wait bash scripts/ci/build_slot.sh --self-test
       - name: Every DAG row marked complete has a receipt whose marker says so (C0-7)
         run: setsid --wait bash scripts/check_receipt_complete.sh --dag docs/specifications/pp-066-dag.yaml
       # APR-PERF-GATE-001's PRIMARY gate — Arms A/B1/B2/C/D/E and
@@ -1844,6 +1859,7 @@ jobs:
       # `make guards-local` and the pre-push hook run this same script and print
       # the same `ci_guards: sha256` line.
       - name: Every guard step runs, and every failure is reported (scripts/ci_guards.sh, #4415)
+        shell: bash scripts/ci/build_slot.sh run -- bash -e {0}
         if: ${{ !cancelled() && steps.guard-setup.outcome == 'success' }}
         env:
           GITHUB_TOKEN: ${{ github.token }}
@@ -3553,6 +3569,7 @@ jobs:
         run: bash scripts/ci/libm-ban-live.sh
 
       - name: Render the fixture and write this host's receipt
+        shell: bash scripts/ci/build_slot.sh run -- bash -e {0}
         run: cargo test -p aprender-viz --features text-path,raster --test render_determinism
 
       # APEX-001 EV-2d (#3666): the SVG -> PNG path through the pinned, font-free resvg. The
@@ -3560,6 +3577,7 @@ jobs:
       # tiny-skia picks its pipeline per architecture — so resvg's cross-architecture PNG identity
       # is measured here and RECORDED by raster-compare.sh, never asserted.
       - name: Rasterise the SVG fixture and write this host's raster receipt
+        shell: bash scripts/ci/build_slot.sh run -- bash -e {0}
         run: cargo test -p aprender-viz --features raster --test raster_determinism
 
       # The pre-scan refuses every text element before usvg builds a tree, so NOTHING reachable
@@ -3572,6 +3590,7 @@ jobs:
       # `default = []`, so the raster module is not compiled in the workspace --lib shards and
       # this is the only lane that runs it.
       - name: No font may be resolved on the raster path
+        shell: bash scripts/ci/build_slot.sh run -- bash -e {0}
         run: "cargo test -p aprender-viz --features raster --lib raster::"
 
       - name: No font stack may be compiled into the raster path
@@ -3743,7 +3762,7 @@ jobs:
       - name: Build the in-tree pv
         id: build
         if: ${{ steps.pre.outputs.skip != 'true' }}
-        shell: bash
+        shell: bash scripts/ci/build_slot.sh run -- bash --noprofile --norc -eo pipefail {0}
         run: |
           set -euo pipefail
           cargo build --locked -p aprender-contracts-cli --bin pv
@@ -3962,6 +3981,7 @@ jobs:
             delay=$((delay + 6))
           done
       - name: Install cargo-mutants
+        shell: bash scripts/ci/build_slot.sh run -- bash -e {0}
         if: steps.prdiff.outputs.has_rs == 'true'
         run: |
           docker run --rm \
@@ -3971,6 +3991,7 @@ jobs:
             "$IMAGE" \
             cargo install cargo-mutants --locked
       - name: Run diff-scoped mutation testing (BLOCKING)
+        shell: bash scripts/ci/build_slot.sh run -- bash -e {0}
         if: steps.prdiff.outputs.has_rs == 'true'
         # No continue-on-error: a missed mutant on the PR diff fails the job,
         # which fails `gate`, which blocks merge. --in-diff pr.diff restricts
