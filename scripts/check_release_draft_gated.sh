@@ -21,16 +21,26 @@
 #   public-EARLY       it went public before one of those three
 # followed by `stop` (a run died) or `ran`. Then each mutant is applied to a copy of the autopilot
 # and must turn at least one row WRONG.
-# Not wired as a blocking guard yet (L31: a new check blocks after three green nights); it lives in
-# scripts/release/ so guard_tree does not pick it up.
-# Exit 0 = every row as expected and every mutant killed · 1 = a row or a mutant landed wrong ·
-# 2 = the autopilot has none of the step bodies this table runs, or jq is absent.
+# MODE. guard_tree runs every scripts/check_*.sh, this one included. REPORT by default (L31: a new
+# check blocks only after three green nights): a wrong row or a surviving mutant prints a REPORT line
+# and exits 0. RELEASE_DRAFT_GATED_ENFORCE=1 makes it exit 1. ENV (rc 2) is rc 2 in both modes.
+# Exit 0 = every row as expected and every mutant killed (or report mode) · 1 = a row or a mutant
+# landed wrong under ENFORCE · 2 = the autopilot has none of the step bodies this table runs, or jq
+# is absent.
 set -uo pipefail
 HERE="$(cd -- "$(dirname -- "${BASH_SOURCE[0]}")" && pwd)"
 AUTOPILOT="${1:-$HERE/release/autopilot.sh}"
 command -v jq > /dev/null || { printf 'ENV   jq is not on PATH: the stub cannot apply --jq filters\n' >&2; exit 2; }
 T=$(mktemp -d) || exit 2
 trap 'rm -rf "${T:?}"' EXIT
+
+# finish BAD: the verdict in the current mode (see MODE above).
+finish() {
+  [ "$1" = 0 ] && exit 0
+  [ "${RELEASE_DRAFT_GATED_ENFORCE:-0}" = 1 ] && exit 1
+  printf 'REPORT: a row or a mutant landed wrong -- report mode (L31: blocks only after three green nights; RELEASE_DRAFT_GATED_ENFORCE=1 enforces), #4690\n'
+  exit 0
+}
 mkdir -p "$T/bin"
 
 # The stub gh. State lives in $W/state/{release,built,dispatched,published-event}; every call appends
@@ -231,7 +241,7 @@ bad=0
 table "$AUTOPILOT" || bad=1
 rows=$(grep -c '|' <<< "$CASES")
 [ "$rows" -ge 20 ] || { printf 'VACUOUS %s row(s), fewer than the 20 declared\n' "$rows"; bad=1; }
-[ "${1:-}" = "" ] || exit "$bad"   # an explicit autopilot (e.g. origin/main's) runs the table only
+[ "${1:-}" = "" ] || finish "$bad"   # an explicit autopilot (e.g. origin/main's) runs the table only
 
 # mutant <name> <sed expression>: applied to a copy of the autopilot, the table must go WRONG
 killed=0 total=0
@@ -271,4 +281,4 @@ mutant cleanroom-not-failure 's/^    \[ "\$jc" = success \] || die/    [ "$jc" !
 
 printf 'mutants: %s/%s killed\n' "$killed" "$total"
 [ "$bad" = 0 ] && printf 'PASS  %s row(s) + 4 structural and every mutant killed: the GitHub release is a draft until clean-room, assets and preflight are green (#4690)\n' "$rows"
-exit "$bad"
+finish "$bad"
