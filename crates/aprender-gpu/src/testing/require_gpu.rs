@@ -94,15 +94,20 @@ mod tests {
         }
     }
 
+    // The two tests below drive the skip path on purpose, and `skip_or_panic_with`
+    // prints `Skipping <what>: <reason>` before it decides. The CI script that arms
+    // the switch fails a run that prints `Skipping CUDA test:` (a GPU test that
+    // measured nothing), so these fixtures must not say "CUDA test": the first
+    // positive control on a real GPU went red on exactly these two lines.
     #[test]
     fn a_skip_path_returns_when_no_gpu_is_required() {
-        skip_or_panic_with(false, "CUDA test", &"no device");
+        skip_or_panic_with(false, "fixture", &"synthetic");
     }
 
     #[test]
-    #[should_panic(expected = "APR_REQUIRE_GPU is set but the CUDA test cannot run")]
+    #[should_panic(expected = "APR_REQUIRE_GPU is set but the fixture cannot run")]
     fn a_skip_path_panics_when_a_gpu_is_required() {
-        skip_or_panic_with(true, "CUDA test", &"no device");
+        skip_or_panic_with(true, "fixture", &"synthetic");
     }
 
     #[test]
