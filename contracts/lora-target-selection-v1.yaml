@@ -1,14 +1,15 @@
 metadata:
-  version: "1.0.0"
+  version: "1.0.1"
   created: "2026-04-13"
   author: PAIML Engineering
   registry: true
   references:
     - "Hu et al. (2022). LoRA: Low-Rank Adaptation of Large Language Models."
+    - "1.0.1 (K24 phantom tests): row 002 cites the two tests that pin the default q_proj, v_proj selection. Row 001 has no test because nothing on main checks a target against the base weights; it stays unbound until a refusal exists. The rows sit under falsification:, a key pv lint --strict-test-binding does not read, so these citations were resolved by hand (git grep of each fn), not by the gate."
   description: "LoRA target module selection"
 
 name: lora-target-selection
-version: "1.0.0"
+version: "1.0.1"
 scope: "crates/aprender-train/src/finetune/"
 
 description: |
@@ -26,10 +27,10 @@ equations:
 falsification:
   - id: FALSIFY-LORA_TARGET_SELECTION_V1_001
     description: "∀ target ∈ selected: target exists in base model weights"
-    test: "Related tests in crates/aprender-train/src/finetune/"
+    test: "Related tests in crates/aprender-train/src/finetune/"  # K24: no test on main checks a target against the base weights; unbound until a refusal exists
     evidence: "cargo test --lib"
 
   - id: FALSIFY-LORA_TARGET_SELECTION_V1_002
     description: "default selection = {q_proj, v_proj} for decoder-only LLMs"
-    test: "Related tests in crates/aprender-train/src/finetune/"
-    evidence: "cargo test --lib"
+    test: "crates/aprender-train/src/lora/config.rs::tests::test_default_config"
+    evidence: "cargo test -p aprender-train --lib lora::config::tests::test_default_config; also finetune::instruct_pipeline::tests_cov3::test_cov3_build_lora_layers_q_v_alternating"
