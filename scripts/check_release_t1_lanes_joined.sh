@@ -68,12 +68,12 @@ EOF
 case_run() {
     local j=$1 n=$2 t0 pid
     mkdir -p "$TMP/$n" || return 2
-    t0=$(date +%s)
+    t0=$SECONDS
     ( export APD="$TMP/$n" JOIN="$j" SEL="$3" DD=$4 DR=$5 GD=$6 GR=$7 MD=$8 MR=$9 DT="${DT:-0}"
       exec bash "$TMP/harness.sh" ) > "$TMP/$n/out.log" 2>&1 &
     pid=$!
     if [ -n "${10:-}" ]; then sleep "${10}"; kill -TERM "$pid" 2>/dev/null; fi
-    wait "$pid"; C_RC=$?; C_SECS=$(( $(date +%s) - t0 ))
+    wait "$pid"; C_RC=$?; C_SECS=$((SECONDS - t0))
 }
 verdict() { awk -F'\t' -v s="$2" '$1==s {print $5}' "$TMP/$1/t1-steps.tsv" 2>/dev/null; }
 rows() { tail -n +2 "$TMP/$1/t1-steps.tsv" 2>/dev/null | wc -l; }
@@ -156,7 +156,7 @@ mutant() { # mutant NAME SED-EXPR
 }
 mutant no-die      's/^  \[ -z "\$t1_red" \] || die /  [ -z "$t1_red" ] || say /'
 mutant no-kill     's/kill -TERM -- "-\$p" 2> \/dev\/null$/: "$p"/'
-mutant stop-models '/\[ "\${T1_STEP\[\$p\]}" = models \] && continue/d'
+mutant stop-models '/\[ "\${T1_STEP\[\$p\]}" = models \] && cont[i]nue/d'
 mutant no-rows     's/>> "\$AP\/t1-steps.tsv"/> \/dev\/null/'
 mutant serial      's/"t1_\$s" & T1_STEP\[\$!\]=\$s;/( "t1_$s" ); : \& T1_STEP[$!]=$s;/'
 mutant first-red   's/t1_red="\${t1_red:+\$t1_red }\$s"/t1_red=${t1_red:-$s}/'
